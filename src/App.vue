@@ -1,9 +1,42 @@
 <script setup lang="ts">
 import { onMounted, ref } from "vue";
 import { getCurrentWindow, Window as TauriWindow } from "@tauri-apps/api/window";
+import ChatPanel from "./components/ChatPanel.vue";
+import { LogicalSize } from "@tauri-apps/api/dpi";
 
 const appWindow = ref<TauriWindow | null>(null);
 const isHovered = ref(false);
+const isWorking = ref(false);
+const transitioning = ref(false);
+const exiting = ref(false);
+const TRANSITION_MS = 420;
+const wait = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
+const TARGET_WORK_W = 420;
+const TARGET_WORK_H = 560;
+const TARGET_BALL_W = 80;
+const TARGET_BALL_H = 80;
+
+// 等待窗口达到指定逻辑尺寸（考虑缩放因子），避免内容在小尺寸下先渲染
+const waitForWindowSize = async (logicalW: number, logicalH: number, timeout = 1000) => {
+  if (!appWindow.value) return;
+  let scale = 1;
+  try {
+    scale = await appWindow.value.scaleFactor();
+  } catch {}
+  const targetW = Math.round(logicalW * scale);
+  const targetH = Math.round(logicalH * scale);
+  const start = performance.now();
+  while (performance.now() - start < timeout) {
+    try {
+      const size = await appWindow.value.innerSize();
+      const reached = Math.abs(size.width - targetW) <= 2 && Math.abs(size.height - targetH) <= 2;
+      if (reached) return;
+    } catch {
+      break;
+    }
+    await wait(16);
+  }
+};
 
 onMounted(() => {
   try {
@@ -43,44 +76,98 @@ const handleContextMenu = (e: MouseEvent) => {
 };
 
 // 双击事件 - 可以添加自定义功能
-const handleDoubleClick = () => {
-  console.log('悬浮球被双击');
-  // 这里可以添加双击后的功能，比如打开设置窗口等
+const handleDoubleClick = async () => {
+  transitioning.value = true;
+  if (appWindow.value) {
+    try {
+      await appWindow.value.setResizable(true);
+      await appWindow.value.setSize(new LogicalSize(TARGET_WORK_W, TARGET_WORK_H));
+      await appWindow.value.setResizable(false);
+    } catch (err) {
+      console.warn('设置窗口大小失败:', err);
+    }
+  }
+  // 等待窗口达到目标尺寸，避免问答面板在小窗口里短暂渲染
+  await waitForWindowSize(TARGET_WORK_W, TARGET_WORK_H);
+  isWorking.value = true;
+  setTimeout(() => (transitioning.value = false), TRANSITION_MS);
+};
+
+const exitWork = async () => {
+  transitioning.value = true;
+  exiting.value = true;
+  if (appWindow.value) {
+    try {
+      await appWindow.value.setResizable(true);
+      await appWindow.value.setSize(new LogicalSize(TARGET_BALL_W, TARGET_BALL_H));
+      await appWindow.value.setResizable(false);
+    } catch (err) {
+      console.warn('恢复窗口大小失败:', err);
+    }
+  }
+  await waitForWindowSize(TARGET_BALL_W, TARGET_BALL_H);
+  isWorking.value = false;
+  setTimeout(() => {
+    exiting.value = false;
+    transitioning.value = false;
+  }, TRANSITION_MS);
 };
 </script>
 
 <template>
-  <div 
-    class="floating-ball"
-    tabindex="0"
-    :class="{ 'is-hovered': isHovered }"
-    @mousedown="handleMouseDown"
-    @mouseenter="handleMouseEnter"
-    @mouseleave="handleMouseLeave"
-    @contextmenu="handleContextMenu"
-    @dblclick="handleDoubleClick"
-  >
-    <div class="ball-content">
-      <svg 
-        class="icon" 
-        viewBox="0 0 1024 1024" 
-        xmlns="http://www.w3.org/2000/svg"
-      >
-        <path 
-          d="M512 64C264.6 64 64 264.6 64 512s200.6 448 448 448 448-200.6 448-448S759.4 64 512 64z m0 820c-205.4 0-372-166.6-372-372s166.6-372 372-372 372 166.6 372 372-166.6 372-372 372z"
-          fill="currentColor"
-        />
-        <path 
-          d="M512 140c-205.4 0-372 166.6-372 372s166.6 372 372 372 372-166.6 372-372-166.6-372-372-372z m0 684c-172.3 0-312-139.7-312-312s139.7-312 312-312 312 139.7 312 312-139.7 312-312 312z"
-          fill="currentColor"
-          opacity="0.6"
-        />
-      </svg>
-      <div class="tooltip" v-if="isHovered">
-        拖动我
+  <div class="state-layer">
+    <Transition name="fade-only">
+      <div v-show="!isWorking || exiting" key="floating" class="ball-layer">
+        <div
+          class="floating-ball"
+          tabindex="0"
+          :class="{ 'is-hovered': isHovered }"
+          @mousedown="handleMouseDown"
+          @mouseenter="handleMouseEnter"
+          @mouseleave="handleMouseLeave"
+          @contextmenu="handleContextMenu"
+          @dblclick="handleDoubleClick"
+        >
+          <div class="ball-content">
+            <svg 
+              class="icon" 
+              viewBox="0 0 1024 1024" 
+              xmlns="http://www.w3.org/2000/svg"
+            >
+              <path 
+                d="M512 64C264.6 64 64 264.6 64 512s200.6 448 448 448 448-200.6 448-448S759.4 64 512 64z m0 820c-205.4 0-372-166.6-372-372s166.6-372 372-372 372 166.6 372 372-166.6 372-372 372z"
+                fill="currentColor"
+              />
+              <path 
+                d="M512 140c-205.4 0-372 166.6-372 372s166.6 372 372 372 372-166.6 372-372-166.6-372-372-372z m0 684c-172.3 0-312-139.7-312-312s139.7-312 312-312 312 139.7 312 312-139.7 312-312 312z"
+                fill="currentColor"
+                opacity="0.6"
+              />
+            </svg>
+            <div class="tooltip" v-if="isHovered">
+              拖动我
+            </div>
+          </div>
+        </div>
       </div>
-    </div>
+    </Transition>
+    <Transition name="fade-only">
+      <div v-show="isWorking" key="assistant" class="assistant-layer">
+        <div class="assistant-container" :class="{ exiting }">
+          <div class="assistant-toolbar" data-tauri-drag-region>
+            <span class="assistant-title">工作状态 · 智能问答</span>
+            <button class="icon-btn" aria-label="收起" title="收起" @click="exitWork">
+              <svg class="toolbar-icon" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                <polyline points="6,10 12,16 18,10" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
+              </svg>
+            </button>
+          </div>
+          <ChatPanel />
+        </div>
+      </div>
+    </Transition>
   </div>
+  <div v-if="transitioning" class="transition-mask" />
 </template>
 
 <style scoped>
@@ -88,13 +175,15 @@ const handleDoubleClick = () => {
   width: 80px;
   height: 80px;
   border-radius: 50%;
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  background: linear-gradient(135deg, #79c2ff 0%, #a985ff 100%);
   display: flex;
   align-items: center;
   justify-content: center;
   cursor: move;
   user-select: none;
-  transition: opacity 0.2s ease;
+  transition: opacity var(--anim-dur) ease;
+  will-change: opacity;
+  transform: translateZ(0);
   position: relative;
 }
 
@@ -183,5 +272,128 @@ body,
   height: 100%;
   overflow: hidden;
   background: transparent;
+}
+
+/* 主题变量：现代简约 + 玻璃质感 */
+:root {
+  --accent: #79c2ff;
+  --accent-strong: #4fa7ff;
+  --panel-bg: #f0f6ff; /* 问答界面固定背景，取自 accent 的浅色调 */
+  --surface-glass: rgba(255, 255, 255, 0.52);
+  --surface-glass-weak: rgba(255, 255, 255, 0.28);
+  --text-strong: #0f172a;
+  --text-weak: #334155;
+  --anim-dur: 420ms;
+  --anim-ease: cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+/* 层布局：两种状态层叠并交叉淡化 */
+.state-layer {
+  position: relative;
+  width: 100%;
+  height: 100%;
+}
+.ball-layer,
+.assistant-layer {
+  position: absolute;
+  inset: 0;
+}
+.ball-layer {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 2; /* 退出时圆球遮在面板上方 */
+}
+.assistant-layer { z-index: 1; }
+
+/* 纯淡入淡出过渡 */
+.fade-only-enter-active,
+.fade-only-leave-active {
+  transition: opacity var(--anim-dur) var(--anim-ease);
+}
+.fade-only-enter-from,
+.fade-only-leave-to {
+  opacity: 0;
+}
+
+.assistant-container {
+  width: 420px;
+  height: 560px;
+  border-radius: 16px;
+  overflow: hidden;
+  position: relative;
+  background: var(--surface-glass);
+  backdrop-filter: blur(12px) saturate(1.2);
+  -webkit-backdrop-filter: blur(12px) saturate(1.2);
+  border: 1px solid rgba(255, 255, 255, 0.35);
+  box-shadow: 0 12px 32px rgba(127, 167, 255, 0.28);
+  padding-top: 36px; /* 为顶部工具栏留出空间，避免文字重叠 */
+  transition: opacity var(--anim-dur) var(--anim-ease), border-radius var(--anim-dur) var(--anim-ease);
+  will-change: opacity, filter;
+  transform: translateZ(0);
+}
+.assistant-container.exiting { border-radius: 50%; }
+
+.assistant-toolbar {
+  position: absolute;
+  top: 0; left: 0; right: 0;
+  height: 40px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 12px;
+  color: var(--text-strong);
+  background: linear-gradient(135deg, rgba(121,194,255,0.16), rgba(79,167,255,0.14));
+  backdrop-filter: blur(10px) saturate(1.1);
+  -webkit-backdrop-filter: blur(10px) saturate(1.1);
+  border-bottom: 1px solid rgba(121,194,255,0.28);
+  box-shadow: 0 2px 6px rgba(79,167,255,0.12);
+  z-index: 10;
+  -webkit-app-region: drag;
+}
+
+.assistant-title {
+  font-weight: 600;
+  letter-spacing: 0.2px;
+}
+
+.assistant-container .icon-btn {
+  -webkit-app-region: no-drag;
+  appearance: none;
+  border: 1px solid rgba(121,194,255,0.35);
+  border-radius: 10px;
+  width: 32px;
+  height: 28px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  background: rgba(255,255,255,0.38);
+  color: var(--text-strong);
+  transition: background var(--anim-dur) ease, border-color var(--anim-dur) ease, box-shadow var(--anim-dur) ease;
+}
+.assistant-container .icon-btn:hover {
+  background: rgba(255,255,255,0.52);
+  border-color: rgba(121,194,255,0.55);
+  box-shadow: 0 2px 8px rgba(79,167,255,0.18);
+}
+.assistant-container .toolbar-icon {
+  width: 18px;
+  height: 18px;
+}
+
+/* 已移除缩放过渡，改为纯淡入淡出（见 .fade-only-*） */
+
+/* 过渡遮罩，柔化窗口尺寸瞬变 */
+.transition-mask {
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(120% 120% at 50% 50%, rgba(255,255,255,0.25) 0%, rgba(255,255,255,0.0) 60%);
+  pointer-events: none;
+  animation: maskFade var(--anim-dur) ease;
+}
+@keyframes maskFade {
+  from { opacity: 1; }
+  to { opacity: 0; }
 }
 </style>
