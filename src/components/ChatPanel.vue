@@ -1,7 +1,7 @@
 <script setup lang="ts">
-import { ref, computed } from "vue";
+import { ref } from "vue";
 import type { ChatMessage } from "../services/llm";
-import { chat, chatStream, transcribeAudio } from "../services/llm";
+import { chatStream, transcribeAudio } from "../services/llm";
 import MarkdownIt from 'markdown-it';
 import hljs from 'highlight.js';
 import 'highlight.js/styles/github-dark.css'; // 引入代码高亮样式

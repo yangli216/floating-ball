@@ -1,18 +1,19 @@
 <script setup lang="ts">
 import { onMounted, onUnmounted, ref } from "vue";
-import { getCurrentWindow, Window as TauriWindow, PhysicalPosition, PhysicalSize, currentMonitor } from "@tauri-apps/api/window";
+import { getCurrentWindow, Window as TauriWindow, PhysicalPosition, currentMonitor } from "@tauri-apps/api/window";
 import { exit } from '@tauri-apps/plugin-process';
 import { listen, UnlistenFn } from "@tauri-apps/api/event";
 import { load, Store } from '@tauri-apps/plugin-store';
 import ChatPanel from "./components/ChatPanel.vue";
 import SettingsPanel from "./components/SettingsPanel.vue";
-import { LogicalSize, LogicalPosition } from "@tauri-apps/api/dpi";
+import ConsultationPage from "./components/ConsultationPage.vue";
+import { LogicalSize } from "@tauri-apps/api/dpi";
 
 const appWindow = ref<TauriWindow | null>(null);
 const isFocused = ref(false);
 const isHovered = ref(false);
 const isWorking = ref(false);
-const currentView = ref<'chat' | 'settings'>('chat');
+const currentView = ref<'chat' | 'settings' | 'consultation'>('chat');
 const ballContainerRef = ref<HTMLElement | null>(null);
 let unlistenHover: UnlistenFn | null = null;
 let unlistenMoved: UnlistenFn | null = null;
@@ -125,10 +126,6 @@ const handleMouseLeave = () => {
   isHovered.value = false;
 };
 
-const handleRefresh = () => {
-  window.location.reload();
-};
-
 const openSettings = async () => {
   currentView.value = 'settings';
   if (!isWorking.value) {
@@ -142,12 +139,27 @@ const openChat = async () => {
     await enterWorkMode();
   }
 };
+
+const openConsultation = async () => {
+  currentView.value = 'consultation';
+  if (!isWorking.value) {
+    await enterWorkMode();
+  } else {
+    // If already working, resize window if needed
+    if (appWindow.value) {
+      await appWindow.value.setSize(new LogicalSize(TARGET_CONSULTATION_W, TARGET_CONSULTATION_H));
+      await smartExpand(TARGET_CONSULTATION_W, TARGET_CONSULTATION_H);
+    }
+  }
+};
 const transitioning = ref(false);
 const exiting = ref(false);
 const TRANSITION_MS = 300;
 const wait = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
 const TARGET_WORK_W = 420;
 const TARGET_WORK_H = 560;
+const TARGET_CONSULTATION_W = 1000;
+const TARGET_CONSULTATION_H = 800;
 const TARGET_BALL_W = 160;
 const TARGET_BALL_H = 160;
 
@@ -213,6 +225,7 @@ onUnmounted(() => {
   document.removeEventListener('mousemove', onDocumentMouseMove);
   document.removeEventListener('mouseleave', onDocumentMouseLeave);
   if (unlistenHover) unlistenHover();
+  if (unlistenMoved) unlistenMoved();
 });
 
 // 使用 Tauri 原生拖拽
@@ -249,13 +262,16 @@ const enterWorkMode = async () => {
   if (isWorking.value || transitioning.value) return;
   transitioning.value = true;
   
+  const targetW = currentView.value === 'consultation' ? TARGET_CONSULTATION_W : TARGET_WORK_W;
+  const targetH = currentView.value === 'consultation' ? TARGET_CONSULTATION_H : TARGET_WORK_H;
+
   // 1. 立即设置窗口大小 (背景透明，用户无感知)
   if (appWindow.value) {
     try {
       await appWindow.value.setResizable(true);
-      await appWindow.value.setSize(new LogicalSize(TARGET_WORK_W, TARGET_WORK_H));
+      await appWindow.value.setSize(new LogicalSize(targetW, targetH));
       // 智能调整位置
-      await smartExpand(TARGET_WORK_W, TARGET_WORK_H);
+      await smartExpand(targetW, targetH);
       await appWindow.value.setResizable(true); // 保持可调整大小
     } catch (err) {
       console.warn('设置窗口大小失败:', err);
@@ -263,7 +279,7 @@ const enterWorkMode = async () => {
   }
   
   // 2. 等待窗口大小响应
-  await waitForWindowSize(TARGET_WORK_W, TARGET_WORK_H);
+  await waitForWindowSize(targetW, targetH);
   
   // 3. 触发面板展开动画 (Morph Expand)
   isWorking.value = true;
@@ -337,11 +353,13 @@ const exitWork = async () => {
                 <line x1="12" y1="2" x2="12" y2="12"></line>
               </svg>
             </button>
-             <button class="ring-btn left" @click.stop="handleRefresh" title="刷新">
+             <button class="ring-btn left" @click.stop="openConsultation" title="智能问诊">
               <svg class="ring-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <path d="M23 4v6h-6"></path>
-                <path d="M1 20v-6h6"></path>
-                <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path>
+                <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+                <polyline points="14 2 14 8 20 8"></polyline>
+                <line x1="16" y1="13" x2="8" y2="13"></line>
+                <line x1="16" y1="17" x2="8" y2="17"></line>
+                <polyline points="10 9 9 9 8 9"></polyline>
               </svg>
             </button>
           </div>
@@ -387,7 +405,7 @@ const exitWork = async () => {
                    <path d="M19 12H5M12 19l-7-7 7-7"/>
                  </svg>
               </button>
-              <span class="assistant-title">{{ currentView === 'chat' ? '工作状态 · 智能问答' : '系统设置' }}</span>
+              <span class="assistant-title">{{ currentView === 'chat' ? '工作状态 · 智能问答' : (currentView === 'consultation' ? '智能问诊' : '系统设置') }}</span>
             </div>
             <button class="icon-btn" aria-label="收起" title="收起" @click="exitWork">
               <svg class="toolbar-icon" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
@@ -396,6 +414,7 @@ const exitWork = async () => {
             </button>
           </div>
           <ChatPanel v-if="currentView === 'chat'" />
+          <ConsultationPage v-else-if="currentView === 'consultation'" />
           <SettingsPanel v-else />
         </div>
       </div>
@@ -641,7 +660,7 @@ body,
   -webkit-backdrop-filter: blur(20px) saturate(1.4);
   border: 1px solid rgba(0, 0, 0, 0.1);
   box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.5);
-  padding-top: 52px;
+  padding-top: 40px;
   
   /* 核心：设置变形原点为小球中心 (160/2 = 80) */
   transform-origin: 80px 80px; 
@@ -650,11 +669,11 @@ body,
 .assistant-toolbar {
   position: absolute;
   top: 0; left: 0; right: 0;
-  height: 52px;
+  height: 40px;
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 0 16px;
+  padding: 0 12px;
   color: var(--text-strong);
   background: linear-gradient(180deg, rgba(255,255,255,0.6) 0%, rgba(255,255,255,0.0) 100%);
   -webkit-app-region: drag; /* 整个顶部可拖动 */
@@ -673,7 +692,7 @@ body,
 
 .assistant-title {
   font-weight: 600;
-  font-size: 15px;
+  font-size: 14px;
   letter-spacing: 0.5px;
   color: var(--text-strong);
   opacity: 0.9;
@@ -685,8 +704,8 @@ body,
   appearance: none;
   border: none;
   background: transparent;
-  width: 32px;
-  height: 32px;
+  width: 28px;
+  height: 28px;
   border-radius: 50%;
   display: inline-flex;
   align-items: center;
