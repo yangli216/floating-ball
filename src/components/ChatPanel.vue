@@ -47,6 +47,25 @@ async function handleSend() {
   }
 }
 
+// IME 状态处理
+const isComposing = ref(false);
+
+function onCompositionStart() {
+  isComposing.value = true;
+}
+
+function onCompositionEnd() {
+  // 使用 setTimeout 延迟重置，确保在 Enter 键（keydown）触发时 isComposing 仍为 true
+  setTimeout(() => {
+    isComposing.value = false;
+  }, 0);
+}
+
+function handleEnter(e: KeyboardEvent) {
+  if (isComposing.value || e.isComposing) return;
+  handleSend();
+}
+
 function handleFileChange(e: Event) {
   const files = (e.target as HTMLInputElement).files;
   if (!files || files.length === 0) return;
@@ -104,29 +123,33 @@ function stopRecording() {
     </div>
 
     <div class="chat-footer">
-      <input
-        class="text-input"
-        type="text"
-        v-model="input"
-        placeholder="输入你的问题..."
-        @keyup.enter="handleSend"
-      />
-      <label class="file-btn" title="选择图片" aria-label="选择图片">
-        <svg class="icon" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-          <rect x="3" y="6" width="18" height="14" rx="3" ry="3" fill="currentColor" opacity="0.12" />
-          <rect x="3" y="6" width="18" height="14" rx="3" ry="3" fill="none" stroke="currentColor" stroke-width="1.5" />
-          <circle cx="12" cy="13" r="3.2" fill="none" stroke="currentColor" stroke-width="1.5" />
-          <rect x="6.5" y="4" width="5" height="3" rx="1.2" ry="1.2" fill="currentColor" />
-        </svg>
-        <input type="file" accept="image/*" @change="handleFileChange" hidden />
-      </label>
-      <button class="mic-btn" :class="{ recording }" @click="recording ? stopRecording() : startRecording()" title="语音输入" aria-label="语音输入">
-        <svg class="icon" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-          <rect x="9" y="3.5" width="6" height="10" rx="3" ry="3" fill="none" stroke="currentColor" stroke-width="1.5" />
-          <path d="M6 11.5c0 3.3 2.7 6 6 6s6-2.7 6-6" fill="none" stroke="currentColor" stroke-width="1.5" />
-          <path d="M12 17.5v3" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" />
-        </svg>
-      </button>
+      <div class="input-wrapper">
+        <input
+          class="text-input"
+          type="text"
+          v-model="input"
+          placeholder="输入你的问题..."
+          @compositionstart="onCompositionStart"
+          @compositionend="onCompositionEnd"
+          @keydown.enter="handleEnter"
+        />
+        <label class="action-btn" title="选择图片" aria-label="选择图片">
+          <svg class="icon" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+            <rect x="3" y="6" width="18" height="14" rx="3" ry="3" fill="currentColor" opacity="0.12" />
+            <rect x="3" y="6" width="18" height="14" rx="3" ry="3" fill="none" stroke="currentColor" stroke-width="1.5" />
+            <circle cx="12" cy="13" r="3.2" fill="none" stroke="currentColor" stroke-width="1.5" />
+            <rect x="6.5" y="4" width="5" height="3" rx="1.2" ry="1.2" fill="currentColor" />
+          </svg>
+          <input type="file" accept="image/*" @change="handleFileChange" hidden />
+        </label>
+        <button class="action-btn" :class="{ recording }" @click="recording ? stopRecording() : startRecording()" title="语音输入" aria-label="语音输入">
+          <svg class="icon" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+            <rect x="9" y="3.5" width="6" height="10" rx="3" ry="3" fill="none" stroke="currentColor" stroke-width="1.5" />
+            <path d="M6 11.5c0 3.3 2.7 6 6 6s6-2.7 6-6" fill="none" stroke="currentColor" stroke-width="1.5" />
+            <path d="M12 17.5v3" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" />
+          </svg>
+        </button>
+      </div>
       <button class="send-btn" :disabled="sending" @click="handleSend">发送</button>
     </div>
   </div>
@@ -137,69 +160,203 @@ function stopRecording() {
 .chat-panel {
   width: 100%;
   height: 100%;
-  display: grid;
-  grid-template-rows: 1fr 56px;
-  background: var(--panel-bg);
+  display: flex;
+  flex-direction: column;
+  background: transparent; /* 让父容器背景透过来 */
   color: var(--text-strong);
-  border-radius: 16px;
-  overflow: hidden;
 }
+
 .chat-body {
-  padding: 12px;
-  overflow: auto;
+  flex: 1;
+  padding: 12px 16px;
+  overflow-y: auto;
+  overflow-x: hidden; /* 防止横向滚动 */
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
 }
-.msg { display: flex; margin: 6px 0; }
+
+/* 消息入场动画 */
+.msg {
+  display: flex;
+  width: 100%;
+  animation: slideIn 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+  will-change: transform, opacity;
+}
+@keyframes slideIn {
+  from { opacity: 0; transform: translateY(10px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
 .msg.user { justify-content: flex-end; }
+.msg.assistant { justify-content: flex-start; }
+
 .bubble {
-  max-width: 80%;
-  padding: 10px 12px;
-  border-radius: 12px;
-  background: rgba(255,255,255,0.55);
-  color: var(--text-strong);
-  box-shadow: 0 6px 18px rgba(127,167,255,0.18);
+  max-width: 85%;
+  padding: 10px 14px;
+  border-radius: 18px;
+  line-height: 1.5;
+  font-size: 14px;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.04);
+  position: relative;
 }
+
+.msg.assistant .bubble {
+  background: rgba(255, 255, 255, 0.75);
+  border-top-left-radius: 4px;
+  color: var(--text-strong);
+  border: 1px solid rgba(255,255,255,0.6);
+}
+
 .msg.user .bubble {
   background: linear-gradient(135deg, var(--accent) 0%, var(--accent-strong) 100%);
-  color: #ffffff;
+  color: #fff;
+  border-bottom-right-radius: 4px;
+  box-shadow: 0 4px 12px rgba(79, 167, 255, 0.25);
 }
+
 .bubble pre {
   margin: 0;
   white-space: pre-wrap;
-  font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, "Helvetica Neue", Arial, "Noto Sans", "Apple Color Emoji", "Segoe UI Emoji";
+  font-family: inherit;
+  word-break: break-word; /* 防止长词溢出 */
 }
-.preview { margin: 8px 0; }
-.preview img { max-width: 60%; border-radius: 8px; }
+
+/* 预览图 */
+.preview {
+  margin-top: 6px;
+  align-self: flex-end;
+}
+.preview img {
+  max-width: 120px;
+  max-height: 120px;
+  border-radius: 12px;
+  border: 2px solid #fff;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+}
+
 .chat-footer {
-  display: grid;
-  grid-template-columns: 1fr auto auto auto;
-  gap: 8px;
+  flex-shrink: 0;
+  padding: 12px 16px 20px 16px; /* 底部稍微留多一点 */
+  background: linear-gradient(0deg, rgba(255,255,255,0.8) 0%, rgba(255,255,255,0.4) 100%);
+  backdrop-filter: blur(12px);
+  border-top: 1px solid rgba(255,255,255,0.5);
+  display: flex;
+  gap: 10px;
   align-items: center;
-  padding: 8px 12px;
-  background: var(--surface-glass-weak);
-  border-top: 1px solid rgba(255,255,255,0.28);
 }
+
+/* 输入框容器化，包含文件和语音按钮 */
+.input-wrapper {
+  flex: 1;
+  height: 44px;
+  background: #fff;
+  border-radius: 22px;
+  display: flex;
+  align-items: center;
+  padding: 0 4px 0 16px;
+  box-shadow: 
+    0 2px 6px rgba(0, 0, 0, 0.04),
+    0 0 0 1px rgba(0, 0, 0, 0.04) inset;
+  transition: box-shadow 0.2s ease;
+}
+.input-wrapper:focus-within {
+  box-shadow: 
+    0 4px 12px rgba(121, 194, 255, 0.25),
+    0 0 0 1px var(--accent) inset;
+}
+
 .text-input {
-  width: 100%; height: 36px; border-radius: 8px; border: 1px solid rgba(0,0,0,0.08); padding: 0 10px;
-  background: rgba(255,255,255,0.72);
+  flex: 1;
+  height: 100%;
+  border: none;
+  background: transparent;
+  width: 100%;
+  outline: none;
+  font-size: 14px;
   color: var(--text-strong);
 }
-.file-btn, .mic-btn, .send-btn {
-  height: 36px;
-  border-radius: 8px;
-  border: 1px solid rgba(0,0,0,0.08);
-  padding: 0 12px;
+.text-input::placeholder { color: #94a3b8; }
+
+.action-btn {
+  width: 34px;
+  height: 34px;
+  border: none;
+  background: transparent;
+  border-radius: 50%;
   cursor: pointer;
-  background: rgba(255,255,255,0.65);
-  color: var(--text-strong);
-  transition: background var(--anim-dur) ease;
-  display: inline-flex;
+  display: flex;
   align-items: center;
   justify-content: center;
-  line-height: 1;
+  color: #64748b;
+  transition: all 0.2s ease;
+  margin-left: 2px;
 }
-.file-btn:hover, .mic-btn:hover, .send-btn:hover { background: rgba(255,255,255,0.8); }
-.mic-btn.recording { background: rgba(234, 102, 102, 0.42); color: #fff; }
+.action-btn:hover {
+  background: rgba(0,0,0,0.06);
+  color: var(--accent-strong);
+}
+.action-btn.recording {
+  color: #ef4444;
+  background: rgba(239, 68, 68, 0.1);
+  animation: pulse 1.5s infinite;
+}
+@keyframes pulse {
+  0% { transform: scale(1); }
+  50% { transform: scale(1.1); }
+  100% { transform: scale(1); }
+}
 
-.file-btn, .mic-btn { width: 36px; padding: 0; }
-.file-btn .icon, .mic-btn .icon { width: 18px; height: 18px; display: block; }
+.action-btn input { display: none; }
+.action-btn .icon { width: 20px; height: 20px; }
+
+.send-btn {
+  height: 44px;
+  width: 44px; /* 圆形发送按钮 */
+  border-radius: 50%;
+  border: none;
+  background: linear-gradient(135deg, var(--accent) 0%, var(--accent-strong) 100%);
+  color: white;
+  font-size: 0; /* 隐藏"发送"文字，只显示图标 */
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 4px 12px rgba(121, 194, 255, 0.4);
+  transition: all 0.2s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+.send-btn:hover:not(:disabled) {
+  transform: scale(1.05) rotate(-10deg);
+  box-shadow: 0 6px 16px rgba(121, 194, 255, 0.5);
+}
+.send-btn:active:not(:disabled) {
+  transform: scale(0.95);
+}
+.send-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+  filter: grayscale(0.4);
+}
+/* 发送图标 */
+.send-btn::after {
+  content: "";
+  width: 20px;
+  height: 20px;
+  background-color: currentColor;
+  mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cline x1='22' y1='2' x2='11' y2='13'%3E%3C/line%3E%3Cpolygon points='22 2 15 22 11 13 2 9 22 2'%3E%3C/polygon%3E%3C/svg%3E") no-repeat center/contain;
+  -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cline x1='22' y1='2' x2='11' y2='13'%3E%3C/line%3E%3Cpolygon points='22 2 15 22 11 13 2 9 22 2'%3E%3C/polygon%3E%3C/svg%3E") no-repeat center/contain;
+  transform: translateX(-1px) translateY(1px); /* 视觉居中校正 */
+}
+
+/* 滚动条美化 */
+.chat-body::-webkit-scrollbar {
+  width: 4px;
+}
+.chat-body::-webkit-scrollbar-thumb {
+  background: rgba(0,0,0,0.1);
+  border-radius: 2px;
+}
+.chat-body::-webkit-scrollbar-track {
+  background: transparent;
+}
 </style>

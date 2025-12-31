@@ -15,8 +15,8 @@
       {
         "title": "Floating Ball",
         "label": "main",
-        "width": 80,
-        "height": 80,
+        "width": 160,
+        "height": 160,
         "resizable": false,
         "fullscreen": false,
         "decorations": false,
@@ -24,8 +24,9 @@
         "alwaysOnTop": true,
         "skipTaskbar": true,
         "transparent": true,
-        "x": 100,
-        "y": 100
+        "x": 1400,
+        "y": 200,
+        "acceptFirstMouse": true
       }
     ],
     "security": {
