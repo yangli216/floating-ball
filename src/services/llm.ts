@@ -23,6 +23,80 @@ function getApiKey(explicit?: string): string {
   return key;
 }
 
+export async function chatStream(
+  messages: ChatMessage[],
+  onChunk: (chunk: string) => void,
+  apiKey?: string
+): Promise<void> {
+  const { apiKey: envKey, baseUrl, model } = getLLMConfig();
+  const key = apiKey || envKey;
+  if (!key) throw new Error("缺少 API Key。");
+
+  const payloadMessages = messages.map((m) => {
+    if (m.images && m.images.length > 0) {
+      return {
+        role: m.role,
+        content: [
+          { type: "text", text: m.content },
+          ...m.images.map((url) => ({ type: "image_url", image_url: { url } })),
+        ],
+      };
+    }
+    return { role: m.role, content: m.content };
+  });
+
+  const res = await fetch(`${baseUrl}/chat/completions`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${key}`,
+    },
+    body: JSON.stringify({
+      model: model,
+      messages: payloadMessages,
+      stream: true,
+    }),
+  });
+
+  if (!res.ok) {
+    const data = await res.json();
+    throw new Error(data?.error?.message || res.statusText);
+  }
+
+  const reader = res.body?.getReader();
+  if (!reader) throw new Error("无法获取流式响应");
+
+  const decoder = new TextDecoder("utf-8");
+  let buffer = "";
+
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    
+    buffer += decoder.decode(value, { stream: true });
+    
+    // 处理多行数据
+    const lines = buffer.split('\n');
+    buffer = lines.pop() || ""; // 保留未完整的最后一行
+
+    for (const line of lines) {
+      const trimmed = line.trim();
+      if (!trimmed || !trimmed.startsWith("data: ")) continue;
+      
+      const dataStr = trimmed.slice(6);
+      if (dataStr === "[DONE]") return;
+
+      try {
+        const json = JSON.parse(dataStr);
+        const content = json.choices?.[0]?.delta?.content || "";
+        if (content) onChunk(content);
+      } catch (e) {
+        console.warn("解析流式数据失败:", e);
+      }
+    }
+  }
+}
+
 // 文本与图像的对话（基于 Chat Completions）
 export async function chat(messages: ChatMessage[], apiKey?: string): Promise<string> {
   const { apiKey: envKey, baseUrl, model } = getLLMConfig();

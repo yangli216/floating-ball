@@ -1,10 +1,12 @@
 <script setup lang="ts">
 import { onMounted, onUnmounted, ref } from "vue";
-import { getCurrentWindow, Window as TauriWindow } from "@tauri-apps/api/window";
+import { getCurrentWindow, Window as TauriWindow, PhysicalPosition, PhysicalSize, currentMonitor } from "@tauri-apps/api/window";
+import { exit } from '@tauri-apps/plugin-process';
 import { listen, UnlistenFn } from "@tauri-apps/api/event";
+import { load, Store } from '@tauri-apps/plugin-store';
 import ChatPanel from "./components/ChatPanel.vue";
 import SettingsPanel from "./components/SettingsPanel.vue";
-import { LogicalSize } from "@tauri-apps/api/dpi";
+import { LogicalSize, LogicalPosition } from "@tauri-apps/api/dpi";
 
 const appWindow = ref<TauriWindow | null>(null);
 const isFocused = ref(false);
@@ -13,9 +15,89 @@ const isWorking = ref(false);
 const currentView = ref<'chat' | 'settings'>('chat');
 const ballContainerRef = ref<HTMLElement | null>(null);
 let unlistenHover: UnlistenFn | null = null;
+let unlistenMoved: UnlistenFn | null = null;
+let store: Store | null = null;
+let moveTimeout: ReturnType<typeof setTimeout> | null = null;
 
 const handleFocus = () => { isFocused.value = true; };
 const handleBlur = () => { isFocused.value = false; };
+
+// 保存窗口位置
+const saveWindowPosition = async () => {
+  if (!appWindow.value || !store) return;
+  try {
+    const pos = await appWindow.value.outerPosition();
+    // 只有在小球模式下才保存位置，避免展开后位置偏移覆盖了正确的小球位置
+    if (!isWorking.value) {
+      await store.set('window_pos', { x: pos.x, y: pos.y });
+      await store.save();
+    }
+  } catch (err) {
+    console.error('保存窗口位置失败:', err);
+  }
+};
+
+// 恢复窗口位置
+const restoreWindowPosition = async () => {
+  if (!appWindow.value || !store) return;
+  try {
+    const pos = await store.get<{x: number, y: number}>('window_pos');
+    if (pos) {
+      await appWindow.value.setPosition(new PhysicalPosition(pos.x, pos.y));
+    }
+  } catch (err) {
+    console.error('恢复窗口位置失败:', err);
+  }
+};
+
+// 智能调整展开位置
+const smartExpand = async (targetW: number, targetH: number) => {
+  if (!appWindow.value) return;
+  
+  try {
+    const monitor = await currentMonitor();
+    if (!monitor) return;
+    
+    const monitorSize = monitor.size;
+    const monitorPos = monitor.position;
+    const windowPos = await appWindow.value.outerPosition();
+    const scaleFactor = await appWindow.value.scaleFactor();
+    
+    // 转换为物理像素进行计算
+    const targetPhysicalW = Math.round(targetW * scaleFactor);
+    const targetPhysicalH = Math.round(targetH * scaleFactor);
+    
+    let newX = windowPos.x;
+    let newY = windowPos.y;
+    
+    // 检查右边界
+    if (newX + targetPhysicalW > monitorPos.x + monitorSize.width) {
+      newX = (monitorPos.x + monitorSize.width) - targetPhysicalW;
+    }
+    
+    // 检查下边界
+    if (newY + targetPhysicalH > monitorPos.y + monitorSize.height) {
+      newY = (monitorPos.y + monitorSize.height) - targetPhysicalH;
+    }
+    
+    // 检查左边界 (防止调整后超出左边)
+    if (newX < monitorPos.x) {
+      newX = monitorPos.x;
+    }
+    
+    // 检查上边界
+    if (newY < monitorPos.y) {
+      newY = monitorPos.y;
+    }
+    
+    if (newX !== windowPos.x || newY !== windowPos.y) {
+      await appWindow.value.setPosition(new PhysicalPosition(newX, newY));
+    }
+  } catch (err) {
+    console.error('智能位置调整失败:', err);
+  }
+};
+
 
 // 使用 JS 跟踪鼠标位置，解决窗口未获取焦点时 CSS :hover 不触发的问题
 const onDocumentMouseMove = (e: MouseEvent) => {
@@ -94,6 +176,19 @@ const waitForWindowSize = async (logicalW: number, logicalH: number, timeout = 1
 onMounted(async () => {
   try {
     appWindow.value = getCurrentWindow();
+    
+    // 初始化 store
+    store = await load('.settings.dat');
+    await restoreWindowPosition();
+    
+    // 监听窗口移动结束，保存位置
+    unlistenMoved = await appWindow.value.listen('tauri://move', () => {
+      // 使用防抖保存，避免频繁写入
+      if (moveTimeout) clearTimeout(moveTimeout);
+      moveTimeout = setTimeout(() => {
+        saveWindowPosition();
+      }, 500);
+    });
   } catch (e) {
     console.warn("初始化窗口失败:", e);
   }
@@ -135,10 +230,16 @@ const handleMouseDown = async (e: MouseEvent) => {
 
 
 // 右键菜单 - 退出应用
-const handleContextMenu = (e: MouseEvent) => {
+const handleContextMenu = async (e: MouseEvent) => {
   e.preventDefault();
-  if (confirm('确定要退出悬浮球应用吗？') && appWindow.value) {
-    appWindow.value.close();
+  try {
+    await exit(0);
+  } catch (err) {
+    console.error('退出应用失败:', err);
+    // 降级方案
+    if (appWindow.value) {
+      await appWindow.value.close();
+    }
   }
 };
 
@@ -153,7 +254,9 @@ const enterWorkMode = async () => {
     try {
       await appWindow.value.setResizable(true);
       await appWindow.value.setSize(new LogicalSize(TARGET_WORK_W, TARGET_WORK_H));
-      await appWindow.value.setResizable(false);
+      // 智能调整位置
+      await smartExpand(TARGET_WORK_W, TARGET_WORK_H);
+      await appWindow.value.setResizable(true); // 保持可调整大小
     } catch (err) {
       console.warn('设置窗口大小失败:', err);
     }
@@ -178,6 +281,9 @@ const exitWork = async () => {
   
   // 1. 触发面板收缩动画 (Morph Shrink)
   isWorking.value = false;
+  
+  // 强制关闭 hover 状态，防止收缩过程中因鼠标位置导致环绕菜单闪现
+  isHovered.value = false;
   
   // 2. 等待动画结束
   await wait(TRANSITION_MS);
@@ -206,7 +312,12 @@ const exitWork = async () => {
   <div class="state-layer">
     <Transition name="morph">
       <div v-show="!isWorking" class="ball-layer">
-        <div ref="ballContainerRef" class="ball-container" @mouseleave="handleMouseLeave">
+        <div 
+          ref="ballContainerRef" 
+          class="ball-container" 
+          :class="{ 'no-interaction': transitioning }"
+          @mouseleave="handleMouseLeave"
+        >
           <!-- 环绕菜单 -->
           <div class="ring-menu" :class="{ 'is-active': isHovered }">
             <button class="ring-btn top" @click.stop="openChat" title="打开对话">
@@ -305,6 +416,14 @@ const exitWork = async () => {
   left: 0;
   background: transparent;
   pointer-events: auto;
+}
+
+/* 动画过程中禁用交互，防止环绕菜单误触发 */
+.ball-container.no-interaction {
+  pointer-events: none !important;
+}
+.ball-container.no-interaction .ring-menu {
+  display: none;
 }
 
 .floating-ball {
@@ -512,18 +631,16 @@ body,
 }
 
 .assistant-container {
-  width: 420px;
-  height: 560px;
+  width: 100%;
+  height: 100%;
   border-radius: 20px;
   overflow: hidden;
   position: relative;
   background: var(--surface-glass);
   backdrop-filter: blur(20px) saturate(1.4);
   -webkit-backdrop-filter: blur(20px) saturate(1.4);
-  border: 1px solid rgba(255, 255, 255, 0.6);
-  box-shadow: 
-    0 20px 50px rgba(0, 0, 0, 0.15),
-    0 0 0 1px rgba(255, 255, 255, 0.4) inset;
+  border: 1px solid rgba(0, 0, 0, 0.1);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.5);
   padding-top: 52px;
   
   /* 核心：设置变形原点为小球中心 (160/2 = 80) */

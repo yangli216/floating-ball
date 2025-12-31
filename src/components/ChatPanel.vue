@@ -1,7 +1,31 @@
 <script setup lang="ts">
-import { ref } from "vue";
+import { ref, computed } from "vue";
 import type { ChatMessage } from "../services/llm";
-import { chat, transcribeAudio } from "../services/llm";
+import { chat, chatStream, transcribeAudio } from "../services/llm";
+import MarkdownIt from 'markdown-it';
+import hljs from 'highlight.js';
+import 'highlight.js/styles/github-dark.css'; // 引入代码高亮样式
+
+const md: MarkdownIt = new MarkdownIt({
+  html: false,
+  linkify: true,
+  typographer: true,
+  highlight: function (str: string, lang: string): string {
+    if (lang && hljs.getLanguage(lang)) {
+      try {
+        return '<pre class="hljs"><code>' +
+               hljs.highlight(str, { language: lang, ignoreIllegals: true }).value +
+               '</code></pre>';
+      } catch (__) {}
+    }
+    return '<pre class="hljs"><code>' + md.utils.escapeHtml(str) + '</code></pre>';
+  }
+});
+
+// Markdown 渲染函数
+const renderMarkdown = (content: string) => {
+  return md.render(content);
+};
 
 const messages = ref<ChatMessage[]>([
   { role: "system", content: "你是一个桌面智能助手，简洁回答并给出必要步骤。" },
@@ -25,20 +49,30 @@ function scrollToBottom() {
 async function handleSend() {
   if (!input.value.trim() && !imageDataUrl.value) return;
   sending.value = true;
-  try {
-    const userMsg: ChatMessage = {
-      role: "user",
-      content: input.value.trim() || "",
-      images: imageDataUrl.value ? [imageDataUrl.value] : undefined,
-    };
-    messages.value.push(userMsg);
-    scrollToBottom();
+  
+  // 1. 构造用户消息
+  const userMsg: ChatMessage = {
+    role: "user",
+    content: input.value.trim() || "",
+    images: imageDataUrl.value ? [imageDataUrl.value] : undefined,
+  };
+  messages.value.push(userMsg);
+  
+  // 2. 立即清空输入框和图片
+  input.value = "";
+  imageDataUrl.value = null;
+  scrollToBottom();
 
-    const reply = await chat(messages.value);
-    messages.value.push({ role: "assistant", content: reply });
-    input.value = "";
-    imageDataUrl.value = null;
-    scrollToBottom();
+  try {
+    // 3. 创建空的助手回复消息
+    const assistantMsg = ref<ChatMessage>({ role: "assistant", content: "" });
+    messages.value.push(assistantMsg.value);
+
+    // 4. 调用流式接口
+    await chatStream(messages.value.slice(0, -1), (chunk) => {
+      assistantMsg.value.content += chunk;
+      scrollToBottom();
+    });
   } catch (err) {
     messages.value.push({ role: "assistant", content: `抱歉，调用模型失败：${(err as Error).message}` });
     scrollToBottom();
@@ -114,7 +148,8 @@ function stopRecording() {
     <div id="chat-scroll" class="chat-body">
       <div v-for="(m, idx) in messages" :key="idx" class="msg" :class="m.role">
         <div class="bubble">
-          <pre>{{ m.content }}</pre>
+          <div v-if="m.role === 'assistant'" class="markdown-body" v-html="renderMarkdown(m.content)"></div>
+          <div v-else class="user-text">{{ m.content }}</div>
         </div>
       </div>
       <div v-if="imageDataUrl" class="preview">
@@ -176,6 +211,21 @@ function stopRecording() {
   gap: 16px;
 }
 
+/* Custom Scrollbar */
+.chat-body::-webkit-scrollbar {
+  width: 6px;
+}
+.chat-body::-webkit-scrollbar-track {
+  background: transparent;
+}
+.chat-body::-webkit-scrollbar-thumb {
+  background: rgba(0, 0, 0, 0.2);
+  border-radius: 3px;
+}
+.chat-body::-webkit-scrollbar-thumb:hover {
+  background: rgba(0, 0, 0, 0.3);
+}
+
 /* 消息入场动画 */
 .msg {
   display: flex;
@@ -215,11 +265,56 @@ function stopRecording() {
   box-shadow: 0 4px 12px rgba(79, 167, 255, 0.25);
 }
 
+/* Markdown 样式 */
+.markdown-body {
+  font-size: 14px;
+  line-height: 1.6;
+}
+.markdown-body :deep(p) { margin: 0 0 10px 0; }
+.markdown-body :deep(p:last-child) { margin-bottom: 0; }
+.markdown-body :deep(pre) {
+  background: #2d2d2d;
+  color: #ccc;
+  padding: 12px;
+  border-radius: 8px;
+  overflow-x: auto;
+  margin: 10px 0;
+}
+.markdown-body :deep(code) {
+  font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace;
+  font-size: 12px;
+  background: rgba(0,0,0,0.05);
+  padding: 2px 4px;
+  border-radius: 4px;
+}
+.markdown-body :deep(pre code) {
+  background: transparent;
+  padding: 0;
+  color: inherit;
+}
+.markdown-body :deep(ul), .markdown-body :deep(ol) {
+  padding-left: 20px;
+  margin: 10px 0;
+}
+.markdown-body :deep(a) {
+  color: var(--accent-strong);
+  text-decoration: none;
+}
+.markdown-body :deep(a:hover) {
+  text-decoration: underline;
+}
+
+.user-text {
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
 .bubble pre {
   margin: 0;
   white-space: pre-wrap;
   font-family: inherit;
   word-break: break-word; /* 防止长词溢出 */
+  display: none; /* 隐藏旧的 pre */
 }
 
 /* 预览图 */

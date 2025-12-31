@@ -9,6 +9,7 @@
     "core:window:allow-start-dragging",
     "core:window:allow-set-resizable",
     "core:window:allow-set-size",
-    "opener:default"
+    "opener:default",
+    "process:default"
   ]
 }
