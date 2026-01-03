@@ -34,9 +34,20 @@
          <!-- Allergy Tag -->
          <div class="tag-green">过敏史</div>
       </div>
+
+      <!-- Header Actions -->
+      <div class="header-actions">
+        <template v-if="currentView === 'consultation'">
+             <button class="header-btn primary" @click="handleEndConsultation">结束问诊</button>
+        </template>
+        <template v-else>
+             <button class="header-btn" @click="currentView = 'consultation'">返回</button>
+             <button class="header-btn primary" @click="handleComplete">完成</button>
+        </template>
+      </div>
     </header>
 
-    <div class="content-container">
+    <div class="content-container" v-if="currentView === 'consultation'">
       <!-- Left: Symptom Shortcuts -->
       <aside class="symptom-sidebar">
         <h3>常用症状</h3>
@@ -72,7 +83,13 @@
               <div class="dynamic-form">
                 <template v-for="section in item.config.sections" :key="section.id">
                   <!-- Iterate over fields -->
-                  <div v-for="field in section.fields" :key="field.id" class="form-field">
+                  <div 
+                    v-for="field in section.fields" 
+                    :key="field.id" 
+                    class="form-field"
+                    :id="'field-' + item.key + '-' + field.storageKey"
+                    :class="{ 'has-error': validationErrors[item.key + '_' + field.storageKey] }"
+                  >
                     <label class="field-label">{{ field.label }}</label>
                     
                     <!-- Field Type: input_radio (e.g., OnsetTime) -->
@@ -168,10 +185,73 @@
             </div>
           </template>
         </div>
+        
+        <!-- Fixed Submit Button Removed -->
       </main>
       <main v-else class="empty-state">
-        <p>请选择左侧症状进行问诊（最多可选3项）</p>
+        <div class="empty-icon">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+            <path d="M9 12h6m-6 4h6m2 5H7a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5.586a1 1 0 0 1 .707.293l5.414 5.414a1 1 0 0 1 .293.707V19a2 2 0 0 1-2 2z"></path>
+          </svg>
+        </div>
+        <p>请选择左侧症状进行问诊</p>
+        <span class="sub-text">支持多选，最多3项</span>
       </main>
+    </div>
+
+    <!-- Medical Record View -->
+    <div v-else class="medical-record-page">
+      
+      <div class="record-content">
+        <!-- Left: Generated Record -->
+        <div class="record-panel left-panel">
+          <div class="panel-header">
+            <h3>病历详情</h3>
+            <button class="icon-btn" @click="copyToClipboard" title="复制全部">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M8 2h12v12h-12zM4 6v14h14M8 6h10M8 10h10M8 14h6"></path>
+              </svg>
+            </button>
+          </div>
+          <div class="panel-body">
+            <div class="record-field">
+              <label>主诉</label>
+              <textarea v-model="generatedRecord.chiefComplaint" rows="2"></textarea>
+            </div>
+            <div class="record-field">
+              <label>现病史</label>
+              <textarea v-model="generatedRecord.historyOfPresentIllness" rows="12"></textarea>
+            </div>
+          </div>
+        </div>
+
+        <!-- Right: AI Recommendations -->
+        <div class="record-panel right-panel">
+          <div class="panel-header">
+            <h3>智能辅助 (AI)</h3>
+            <span class="tag-ai">AI生成中</span>
+          </div>
+          <div class="panel-body">
+            <div class="ai-card">
+              <h4>推荐诊断</h4>
+              <div class="ai-placeholder">
+                <div class="skeleton-line" style="width: 60%"></div>
+                <div class="skeleton-line" style="width: 80%"></div>
+              </div>
+            </div>
+            <div class="ai-card">
+              <h4>推荐用药</h4>
+              <div class="ai-placeholder">
+                <div class="skeleton-line" style="width: 90%"></div>
+                <div class="skeleton-line" style="width: 70%"></div>
+                <div class="skeleton-line" style="width: 50%"></div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Footer Actions Removed -->
     </div>
   </div>
 </template>
@@ -237,6 +317,8 @@ const symptoms = ref<any[]>([]);
 const selectedSymptoms = ref<any[]>([]);
 const formData = ref<Record<string, any>>({});
 const searchQuery = ref('');
+const currentView = ref<'consultation' | 'record'>('consultation');
+const generatedRecord = ref({ chiefComplaint: '', historyOfPresentIllness: '' });
 
 onMounted(() => {
   symptoms.value = templatesData;
@@ -281,13 +363,6 @@ const selectSymptom = (symptom: any) => {
   } else {
     // Select
     if (selectedSymptoms.value.length >= 3) {
-      // Max 3 limit - maybe alert or replace oldest? 
-      // Requirement: "最多只能有三个" -> Prevent selection or replace? Usually prevent or auto-remove first.
-      // I'll prevent selection for now or replace the last one? 
-      // "Support multi-select, but max 3". I will alert or just ignore. 
-      // Better UX: Show a toast or shake. For now, I'll just return to enforce limit silently or replace first?
-      // Let's replace the first one if full? Or just do nothing? 
-      // I'll assume standard behavior: prevent selection.
       return; 
     }
     selectedSymptoms.value.push(symptom);
@@ -342,6 +417,171 @@ const handleCheckboxChange = (event: Event, field: any, symptomKey: string) => {
     formData.value[symptomKey][field.storageKey] = currentValues.filter((v: string) => v !== value);
   }
 };
+
+const validationErrors = ref<Record<string, boolean>>({});
+
+const handleEndConsultation = () => {
+  // 1. Validation
+  const errors: string[] = [];
+  validationErrors.value = {}; // Reset errors
+  let firstErrorFieldId = '';
+
+  selectedSymptoms.value.forEach(s => {
+    const data = formData.value[s.key];
+    if (data.onsetTime && (!data.onsetTime.inputValue || !data.onsetTime.radioValue)) {
+      errors.push(`${s.name}: 请填写发病时间`);
+      const errorId = `${s.key}_onsetTime`;
+      validationErrors.value[errorId] = true;
+      if (!firstErrorFieldId) firstErrorFieldId = `field-${s.key}-onsetTime`;
+    }
+  });
+
+  if (errors.length > 0) {
+    alert("请完善以下信息：\n" + errors.join("\n"));
+    
+    // Scroll to first error
+    if (firstErrorFieldId) {
+      const element = document.getElementById(firstErrorFieldId);
+      if (element) {
+        element.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      }
+    }
+    return;
+  }
+
+  // 2. Generation Logic
+  generateMedicalRecord();
+
+  // 3. Switch View
+  currentView.value = 'record';
+};
+
+const generateMedicalRecord = () => {
+  const complaints: string[] = [];
+  const hpiParts: string[] = [];
+  
+  // -- Chief Complaint --
+  selectedSymptoms.value.forEach(s => {
+    const data = formData.value[s.key];
+    if (data.onsetTime) {
+      complaints.push(`${s.name}${data.onsetTime.inputValue}${data.onsetTime.radioValue}`);
+    } else {
+      complaints.push(s.name);
+    }
+  });
+  const chiefComplaint = complaints.join("，") + "。";
+
+  // -- History of Present Illness --
+  // Intro: Patient [duration] ago...
+  const firstSymptom = selectedSymptoms.value[0];
+  const firstData = formData.value[firstSymptom.key];
+  const duration = firstData.onsetTime ? `${firstData.onsetTime.inputValue}${firstData.onsetTime.radioValue}` : '近日';
+  
+  // Try to find precipitating factor for the first symptom
+  let precipitating = '无明显诱因';
+  if (firstData.precipitatingFactor) {
+    if (Array.isArray(firstData.precipitatingFactor)) {
+      if (firstData.precipitatingFactor.length > 0) precipitating = firstData.precipitatingFactor.join('、');
+    } else if (firstData.precipitatingFactor !== '不清楚') {
+      precipitating = firstData.precipitatingFactor;
+    }
+  }
+
+  let intro = `患者于${duration}前，${precipitating}出现`;
+  const symptomNames = selectedSymptoms.value.map(s => s.name).join('、');
+  intro += symptomNames + "。";
+  hpiParts.push(intro);
+
+  // Symptom Details
+  selectedSymptoms.value.forEach(s => {
+    const data = formData.value[s.key];
+    let detail = "";
+    
+    // Custom logic for common symptoms
+    if (s.key === 'fever') {
+      if (data.maximumBodyTemperature) detail += `最高体温${data.maximumBodyTemperature}℃，`;
+      if (data.reliefFactor && data.reliefFactor !== '不清楚') detail += `${data.reliefFactor}，`;
+    } else if (s.key === 'cough') {
+      if (data.frequencyCharacteristic && data.frequencyCharacteristic !== '不清楚') detail += `${data.frequencyCharacteristic}，`;
+      if (data.soundCharacter && data.soundCharacter.length > 0) detail += `${data.soundCharacter.join('、')}，`;
+      if (data.colorFeature && data.colorFeature.length > 0) detail += `咳${data.colorFeature.join('、')}，`;
+    } else {
+      // Generic logic
+      // ... iterate fields? Simplified for now
+    }
+    
+    // Add any other checkbox/radio fields generally if not handled above
+    // This acts as a catch-all to ensure we don't miss data
+    Object.keys(data).forEach(k => {
+      if (k === 'onsetTime' || k === 'precipitatingFactor') return; // Handled in intro
+      if (s.key === 'fever' && (k === 'maximumBodyTemperature' || k === 'reliefFactor')) return; // Handled above
+      if (s.key === 'cough' && (k === 'frequencyCharacteristic' || k === 'soundCharacter' || k === 'colorFeature')) return;
+      
+      const val = data[k];
+      if (Array.isArray(val) && val.length > 0) {
+         // Exclude '不清楚', '以上都无'
+         const validVals = val.filter(v => v !== '不清楚' && v !== '以上都无' && v !== '无');
+         if (validVals.length > 0) detail += `${validVals.join('、')}，`;
+      } else if (typeof val === 'string' && val && val !== '不清楚' && val !== '无') {
+         detail += `${val}，`;
+      }
+    });
+
+    if (detail) {
+      // Clean up trailing comma
+      if (detail.endsWith('，')) detail = detail.slice(0, -1);
+      hpiParts.push(`${s.name}表现为：${detail}。`);
+    }
+  });
+
+  // General Condition
+  const genData = formData.value['general'];
+  if (genData) {
+    const genParts: string[] = [];
+    
+    // Process standard fields first
+    ['spirit', 'sleep', 'appetite'].forEach(k => {
+      if (genData[k] && genData[k] !== '其他') genParts.push(genData[k]);
+    });
+
+    // Special handling for urination and stool optimization
+    const isUrinationNormal = genData['urination'] === '小便正常';
+    const isStoolNormal = genData['stool'] === '大便正常';
+
+    if (isUrinationNormal && isStoolNormal) {
+      genParts.push('二便正常');
+    } else {
+      if (genData['urination'] && genData['urination'] !== '其他') genParts.push(genData['urination']);
+      if (genData['stool'] && genData['stool'] !== '其他') genParts.push(genData['stool']);
+    }
+
+    // Process weight
+    if (genData['weight'] && genData['weight'] !== '其他') genParts.push(genData['weight']);
+
+    if (genParts.length > 0) {
+      hpiParts.push(`一般情况：${genParts.join('，')}。`);
+    }
+  }
+
+  generatedRecord.value = {
+    chiefComplaint,
+    historyOfPresentIllness: hpiParts.join("\n")
+  };
+};
+
+const copyToClipboard = () => {
+  const text = `主诉：${generatedRecord.value.chiefComplaint}\n现病史：\n${generatedRecord.value.historyOfPresentIllness}`;
+  navigator.clipboard.writeText(text).then(() => {
+    alert('已复制到剪贴板');
+  });
+};
+
+const handleComplete = () => {
+  // Logic to complete the consultation
+  alert('病历生成完成');
+  // You might want to save data or reset state here
+};
+
 </script>
 
 <style scoped>
@@ -357,6 +597,10 @@ const handleCheckboxChange = (event: Event, field: any, symptomKey: string) => {
 }
 
 .patient-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: nowrap;
   background: linear-gradient(to right, #ffffff, #f0f9ff);
   padding: 8px 16px; /* Reduced padding */
   box-shadow: 0 2px 8px rgba(24, 144, 255, 0.08);
@@ -370,6 +614,9 @@ const handleCheckboxChange = (event: Event, field: any, symptomKey: string) => {
   align-items: center;
   gap: 12px; /* Reduced gap */
   flex-wrap: wrap;
+  flex: 1;
+  min-width: 0;
+  margin-right: 16px;
 }
 
 .avatar {
@@ -444,6 +691,45 @@ const handleCheckboxChange = (event: Event, field: any, symptomKey: string) => {
   }
 }
 
+/* Header Actions */
+.header-actions {
+  margin-left: auto;
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  flex-shrink: 0;
+}
+
+.header-btn {
+  padding: 6px 16px;
+  border: 1px solid #d1d5db;
+  background: white;
+  border-radius: 18px;
+  color: #4b5563;
+  cursor: pointer;
+  font-size: 13px;
+  transition: all 0.2s;
+  font-weight: 500;
+}
+
+.header-btn:hover {
+  background: #f3f4f6;
+  border-color: #9ca3af;
+  color: #1f2937;
+}
+
+.header-btn.primary {
+  background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%);
+  color: white;
+  border: none;
+  box-shadow: 0 2px 6px rgba(37, 99, 235, 0.2);
+}
+
+.header-btn.primary:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 10px rgba(37, 99, 235, 0.3);
+}
+
 .content-container {
   display: flex;
   flex: 1;
@@ -503,6 +789,7 @@ const handleCheckboxChange = (event: Event, field: any, symptomKey: string) => {
   margin: 0;
   overflow-y: auto;
   flex: 1;
+  min-height: 0; /* Fix for flex child scrolling */
 }
 
 .symptom-list li {
@@ -636,6 +923,24 @@ const handleCheckboxChange = (event: Event, field: any, symptomKey: string) => {
   gap: 8px;
 }
 
+.has-error .text-input {
+  border-color: #ef4444; /* Red-500 */
+  box-shadow: 0 0 0 1px rgba(239, 68, 68, 0.2);
+  animation: shake 0.5s cubic-bezier(.36,.07,.19,.97) both;
+}
+
+.has-error .radio-label {
+  border-color: #fecaca;
+  background-color: #fef2f2;
+}
+
+@keyframes shake {
+  10%, 90% { transform: translate3d(-1px, 0, 0); }
+  20%, 80% { transform: translate3d(2px, 0, 0); }
+  30%, 50%, 70% { transform: translate3d(-4px, 0, 0); }
+  40%, 60% { transform: translate3d(4px, 0, 0); }
+}
+
 .text-input {
   padding: 6px 10px; /* Reduced padding */
   border: 1px solid #d1d5db;
@@ -687,6 +992,277 @@ const handleCheckboxChange = (event: Event, field: any, symptomKey: string) => {
   border-color: #3b82f6;
   font-weight: 500;
   box-shadow: 0 1px 2px rgba(37, 99, 235, 0.1);
+}
+
+.empty-state {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  color: #9ca3af;
+  font-size: 15px;
+}
+
+.empty-icon {
+  width: 64px;
+  height: 64px;
+  margin-bottom: 16px;
+  color: #cbd5e1;
+}
+
+.empty-icon svg {
+  width: 100%;
+  height: 100%;
+}
+
+.sub-text {
+  font-size: 13px;
+  color: #cbd5e1;
+  margin-top: 8px;
+}
+
+.action-area {
+  padding: 20px 0;
+  display: flex;
+  justify-content: center;
+}
+
+.submit-btn {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%);
+  color: white;
+  border: none;
+  padding: 10px 16px;
+  border-radius: 24px;
+  font-size: 15px;
+  font-weight: 600;
+  cursor: pointer;
+  box-shadow: 0 4px 12px rgba(37, 99, 235, 0.2);
+  transition: all 0.3s;
+}
+
+.submit-btn:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 6px 16px rgba(37, 99, 235, 0.3);
+}
+
+.submit-btn svg {
+  width: 18px;
+  height: 18px;
+}
+
+/* Fixed Action Area */
+.fixed-action-area {
+  position: absolute;
+  bottom: 4px;
+  right: 24px;
+  z-index: 50;
+}
+
+/* Medical Record Page Styles */
+.medical-record-page {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  background: #f3f4f6;
+  overflow: hidden;
+  position: relative;
+  min-height: 0;
+}
+
+/* Footer Actions */
+.record-footer {
+  height: 60px;
+  background: white;
+  border-top: 1px solid #e5e7eb;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  padding: 0 24px;
+  gap: 12px;
+  z-index: 100;
+  flex-shrink: 0;
+}
+
+.back-btn-footer {
+  padding: 8px 20px;
+  border: 1px solid #d1d5db;
+  background: white;
+  border-radius: 20px;
+  color: #4b5563;
+  cursor: pointer;
+  font-size: 14px;
+  transition: all 0.2s;
+}
+.back-btn-footer:hover {
+  background: #f3f4f6;
+  border-color: #9ca3af;
+}
+
+.complete-btn {
+  padding: 8px 24px;
+  background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%);
+  color: white;
+  border: none;
+  border-radius: 20px;
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  box-shadow: 0 2px 8px rgba(37, 99, 235, 0.2);
+  transition: all 0.2s;
+}
+.complete-btn:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(37, 99, 235, 0.3);
+}
+
+.record-content {
+  flex: 1;
+  display: flex;
+  gap: 16px; /* Reduced gap */
+  padding: 16px; /* Reduced padding */
+  overflow: hidden;
+  min-height: 0;
+}
+
+.record-panel {
+  flex: 1;
+  background: white;
+  border-radius: 12px;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  border: 1px solid #e5e7eb;
+}
+
+.left-panel {
+  flex: 0.8; /* Reduced width */
+}
+
+.right-panel {
+  flex: 1.2; /* Increased width */
+  background: #f8fafc;
+  border-color: #e2e8f0;
+}
+
+.panel-header {
+  padding: 10px 16px; /* Compact */
+  border-bottom: 1px solid #f0f0f0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background: white;
+}
+
+.right-panel .panel-header {
+  background: #f1f5f9;
+}
+
+.panel-header h3 {
+  margin: 0;
+  font-size: 15px; /* Slightly smaller */
+  color: #374151;
+  font-weight: 600;
+}
+
+.panel-body {
+  flex: 1;
+  padding: 12px; /* Compact */
+  overflow-y: auto;
+}
+
+.record-field {
+  margin-bottom: 12px; /* Compact */
+}
+
+.record-field label {
+  display: block;
+  font-size: 13px; /* Smaller */
+  font-weight: 600;
+  color: #4b5563;
+  margin-bottom: 6px;
+}
+
+.record-field textarea {
+  width: 100%;
+  padding: 8px 10px; /* Compact */
+  border: 1px solid #d1d5db;
+  border-radius: 6px;
+  font-size: 13px;
+  line-height: 1.5;
+  color: #1f2937;
+  resize: vertical;
+  box-sizing: border-box;
+  font-family: inherit;
+  transition: border-color 0.2s;
+}
+
+.record-field textarea:focus {
+  outline: none;
+  border-color: #3b82f6;
+  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+}
+
+.icon-btn {
+  background: transparent;
+  border: none;
+  color: #6b7280;
+  cursor: pointer;
+  padding: 4px;
+  border-radius: 4px;
+  transition: all 0.2s;
+}
+
+.icon-btn:hover {
+  background: #f3f4f6;
+  color: #2563eb;
+}
+
+.tag-ai {
+  background: linear-gradient(135deg, #8b5cf6, #6366f1);
+  color: white;
+  padding: 2px 10px;
+  border-radius: 12px;
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.ai-card {
+  background: white;
+  border-radius: 8px;
+  padding: 16px;
+  margin-bottom: 16px;
+  box-shadow: 0 2px 4px rgba(0,0,0,0.02);
+  border: 1px solid #e2e8f0;
+}
+
+.ai-card h4 {
+  margin: 0 0 12px 0;
+  font-size: 14px;
+  color: #475569;
+}
+
+.ai-placeholder {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.skeleton-line {
+  height: 12px;
+  background: #f1f5f9;
+  border-radius: 6px;
+  animation: pulse 1.5s infinite ease-in-out;
+}
+
+@keyframes pulse {
+  0% { opacity: 0.6; }
+  50% { opacity: 0.3; }
+  100% { opacity: 0.6; }
 }
 
 .field-number {

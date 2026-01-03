@@ -158,8 +158,8 @@ const TRANSITION_MS = 300;
 const wait = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
 const TARGET_WORK_W = 420;
 const TARGET_WORK_H = 560;
-const TARGET_CONSULTATION_W = 1000;
-const TARGET_CONSULTATION_H = 800;
+const TARGET_CONSULTATION_W = 1200;
+const TARGET_CONSULTATION_H = 900;
 const TARGET_BALL_W = 160;
 const TARGET_BALL_H = 160;
 
