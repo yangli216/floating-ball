@@ -40,9 +40,13 @@
         <template v-if="currentView === 'consultation'">
              <button class="header-btn primary" @click="handleEndConsultation">结束问诊</button>
         </template>
-        <template v-else>
+        <template v-else-if="currentView === 'record'">
              <button class="header-btn" @click="currentView = 'consultation'">返回</button>
              <button class="header-btn primary" @click="handleComplete">完成</button>
+        </template>
+        <template v-else>
+             <button class="header-btn primary" @click="printReport">打印</button>
+             <button class="header-btn" @click="handleEndSession">结束</button>
         </template>
       </div>
     </header>
@@ -200,7 +204,7 @@
     </div>
 
     <!-- Medical Record View -->
-    <div v-else class="medical-record-page">
+    <div v-else-if="currentView === 'record'" class="medical-record-page">
       
       <div class="record-content">
         <!-- Left: Generated Record -->
@@ -229,37 +233,155 @@
         <div class="record-panel right-panel">
           <div class="panel-header">
             <h3>智能辅助 (AI)</h3>
-            <span class="tag-ai">AI生成中</span>
+            <span v-if="aiLoading" class="tag-ai">AI生成中...</span>
           </div>
           <div class="panel-body">
             <div class="ai-card">
               <h4>推荐诊断</h4>
-              <div class="ai-placeholder">
+              <div v-if="aiLoading" class="ai-placeholder">
                 <div class="skeleton-line" style="width: 60%"></div>
                 <div class="skeleton-line" style="width: 80%"></div>
               </div>
+              <ul v-else-if="aiDiagnoses.length > 0" class="diagnosis-list">
+                <li 
+                  v-for="diag in aiDiagnoses" 
+                  :key="diag.code"
+                  class="diagnosis-item"
+                  :class="{ active: selectedDiagnosis?.code === diag.code }"
+                  @click="selectedDiagnosis = diag"
+                >
+                  <div class="diag-header">
+                    <span class="diag-name">{{ diag.name }} ({{ diag.code }})</span>
+                    <span class="diag-rate">{{ diag.rate }}</span>
+                  </div>
+                  <div class="diag-rationale">{{ diag.rationale }}</div>
+                </li>
+              </ul>
+              <div v-else class="empty-text">暂无推荐</div>
             </div>
-            <div class="ai-card">
-              <h4>推荐用药</h4>
-              <div class="ai-placeholder">
-                <div class="skeleton-line" style="width: 90%"></div>
-                <div class="skeleton-line" style="width: 70%"></div>
-                <div class="skeleton-line" style="width: 50%"></div>
+            
+            <div class="ai-card" v-if="selectedDiagnosis">
+              <h4>推荐方案 (基于 {{ selectedDiagnosis.name }})</h4>
+              
+              <div v-if="treatmentLoading" class="ai-placeholder">
+                 <div class="skeleton-line" style="width: 90%"></div>
+                 <div class="skeleton-line" style="width: 70%"></div>
+                 <div class="skeleton-line" style="width: 50%"></div>
               </div>
+
+              <div v-else-if="treatmentError" class="error-text">{{ treatmentError }}</div>
+
+              <div v-else-if="treatmentRecommendations.length > 0" class="treatment-list">
+                <div 
+                  v-for="(rec, idx) in treatmentRecommendations" 
+                  :key="idx" 
+                  class="treatment-item"
+                  :class="{ active: rec.selected }"
+                  @click="toggleTreatmentSelection(idx)"
+                >
+                  <div class="selected-mark" v-if="rec.selected">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>
+                  </div>
+                  <div class="rec-content">
+                    <div class="rec-header">
+                      <span class="rec-tag" :class="rec.type">{{ rec.type === 'medicine' ? '药' : '检' }}</span>
+                      <span class="rec-name">{{ rec.name }}</span>
+                      <span v-if="rec.matchedItem" class="matched-inline">
+                        <span class="match-icon">✓</span>
+                        <span class="match-name">{{ rec.matchedItem.name }}</span>
+                        <span class="match-spec" v-if="rec.type === 'medicine'">{{ rec.matchedItem.spec }}</span>
+                      </span>
+                      <span v-else class="unmatched-icon" title="未匹配标准库">🔍</span>
+                    </div>
+                    <div class="rec-reason">{{ rec.reason }}</div>
+                    <div v-if="rec.usage" class="rec-usage">建议：{{ rec.usage }}</div>
+                  </div>
+                </div>
+              </div>
+              <div v-else class="empty-text">暂无推荐方案</div>
             </div>
           </div>
         </div>
       </div>
 
-      <!-- Footer Actions Removed -->
+      <!-- Fixed Action Area -->
+      <div class="fixed-action-area">
+        <button class="submit-btn" @click="handleComplete">
+          <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>
+          完成
+        </button>
+      </div>
+    </div>
+
+    <!-- Final Report View -->
+    <div v-else-if="currentView === 'final_report'" class="final-report-page">
+
+       <div class="report-paper">
+         <h1 class="hospital-title">门诊病历</h1>
+         <div class="report-header">
+           <div class="info-row">
+             <span>姓名：{{ patientInfo.naPi }}</span>
+             <span>性别：{{ patientInfo.sdSexText }}</span>
+             <span>年龄：{{ patientInfo.ageText }}</span>
+           </div>
+           <div class="info-row">
+             <span>科室：全科医学科</span>
+             <span>日期：{{ finalRecord?.date }}</span>
+             <span>卡号：{{ patientInfo.idCard }}</span>
+           </div>
+         </div>
+         
+         <div class="report-section">
+           <div class="section-title">主诉</div>
+           <div class="section-content">{{ finalRecord?.record?.chiefComplaint }}</div>
+         </div>
+
+         <div class="report-section">
+           <div class="section-title">现病史</div>
+           <div class="section-content">{{ finalRecord?.record?.historyOfPresentIllness }}</div>
+         </div>
+
+         <div class="report-section">
+           <div class="section-title">既往史</div>
+           <div class="section-content">否认高血压、糖尿病、冠心病等慢性病史。否认肝炎、结核等传染病史。</div>
+         </div>
+
+         <div class="report-section">
+           <div class="section-title">体格检查</div>
+           <div class="section-content">T: 36.5℃, P: 78次/分, R: 18次/分, BP: 120/80mmHg。神志清，精神可，心肺听诊无明显异常，腹软无压痛。</div>
+         </div>
+
+         <div class="report-section">
+           <div class="section-title">初步诊断</div>
+           <div class="section-content">{{ finalRecord?.diagnosis?.name }} ({{ finalRecord?.diagnosis?.code }})</div>
+         </div>
+
+         <div class="report-section">
+           <div class="section-title">处理意见</div>
+           <div class="section-content">
+             <div v-for="(tx, idx) in finalRecord?.treatments" :key="idx" class="tx-item">
+               {{ idx + 1 }}. {{ tx.name }} {{ tx.matchedItem?.spec ? `(${tx.matchedItem.spec})` : '' }}
+               <div class="tx-usage" v-if="tx.usage">用法：{{ tx.usage }}</div>
+             </div>
+           </div>
+         </div>
+         
+         <div class="report-footer">
+            <span>医师签名：______________</span>
+         </div>
+       </div>
     </div>
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted } from 'vue';
+import { ref, computed, onMounted, watch } from 'vue';
 import templatesData from '../assets/templates.json';
+import medicalCatalog from '../assets/medical_catalog.json';
 import Pinyin from 'tiny-pinyin';
+import { chatStream } from '../services/llm';
+
+const emit = defineEmits(['close']);
 
 // General Condition Configuration
 const generalConditionConfig = {
@@ -317,8 +439,60 @@ const symptoms = ref<any[]>([]);
 const selectedSymptoms = ref<any[]>([]);
 const formData = ref<Record<string, any>>({});
 const searchQuery = ref('');
-const currentView = ref<'consultation' | 'record'>('consultation');
+const currentView = ref<'consultation' | 'record' | 'final_report'>('consultation');
 const generatedRecord = ref({ chiefComplaint: '', historyOfPresentIllness: '' });
+
+// AI Recommendations State
+interface Diagnosis {
+  code: string;
+  name: string;
+  rate: string;
+  rationale: string;
+}
+
+interface TreatmentRecommendation {
+  type: 'medicine' | 'exam';
+  name: string; // AI recommended name
+  reason: string;
+  usage?: string;
+  matchedItem?: any; // Matched item from catalog
+  selected?: boolean;
+}
+
+const aiLoading = ref(false);
+const aiError = ref<string | null>(null);
+const aiDiagnoses = ref<Diagnosis[]>([]);
+const selectedDiagnosis = ref<Diagnosis | null>(null);
+
+const treatmentLoading = ref(false);
+const treatmentError = ref<string | null>(null);
+const treatmentRecommendations = ref<TreatmentRecommendation[]>([]);
+
+interface FinalRecord {
+  patient: any;
+  record: { chiefComplaint: string; historyOfPresentIllness: string };
+  diagnosis: Diagnosis;
+  treatments: TreatmentRecommendation[];
+  date: string;
+}
+
+const finalRecord = ref<FinalRecord | null>(null);
+
+const printReport = () => {
+  window.print();
+};
+
+const handleEndSession = () => {
+  currentView.value = 'consultation';
+  selectedSymptoms.value = [];
+  formData.value = {};
+  generatedRecord.value = { chiefComplaint: '', historyOfPresentIllness: '' };
+  finalRecord.value = null;
+  aiDiagnoses.value = [];
+  selectedDiagnosis.value = null;
+  treatmentRecommendations.value = [];
+  emit('close');
+};
 
 onMounted(() => {
   symptoms.value = templatesData;
@@ -454,7 +628,201 @@ const handleEndConsultation = () => {
 
   // 3. Switch View
   currentView.value = 'record';
+
+  // 4. Trigger AI Diagnosis
+  fetchAIDiagnosis();
 };
+
+const fetchAIDiagnosis = async () => {
+  aiLoading.value = true;
+  aiError.value = null;
+  aiDiagnoses.value = [];
+  selectedDiagnosis.value = null;
+
+  const prompt = `
+你是一个专业的医疗辅助助手。请根据以下患者信息、主诉和现病史，推荐最可能的3个ICD10诊断结果。
+请严格按照JSON数组格式返回，不要包含Markdown标记或其他多余文本。
+
+患者信息：
+姓名：${patientInfo.value.naPi}
+性别：${patientInfo.value.sdSexText}
+年龄：${patientInfo.value.ageText}
+
+主诉：
+${generatedRecord.value.chiefComplaint}
+
+现病史：
+${generatedRecord.value.historyOfPresentIllness}
+
+返回格式要求：
+[
+  {
+    "code": "ICD10编码",
+    "name": "诊断名称",
+    "rate": "符合率(例如 95%)",
+    "rationale": "简短推荐理由"
+  }
+]
+`;
+
+  try {
+    let fullResponse = "";
+    await chatStream([
+      { role: 'system', content: '你是一个专业的医疗辅助助手，只返回JSON格式的数据。' },
+      { role: 'user', content: prompt }
+    ], (chunk) => {
+      fullResponse += chunk;
+    });
+
+    // Clean up response if it contains markdown code blocks
+    let jsonStr = fullResponse.trim();
+    if (jsonStr.startsWith('```json')) {
+      jsonStr = jsonStr.replace(/^```json\s*/, '').replace(/\s*```$/, '');
+    } else if (jsonStr.startsWith('```')) {
+      jsonStr = jsonStr.replace(/^```\s*/, '').replace(/\s*```$/, '');
+    }
+
+    const diagnoses: Diagnosis[] = JSON.parse(jsonStr);
+    
+    // Sort by rate descending
+    diagnoses.sort((a, b) => {
+      const rateA = parseFloat(a.rate.replace('%', '')) || 0;
+      const rateB = parseFloat(b.rate.replace('%', '')) || 0;
+      return rateB - rateA;
+    });
+
+    aiDiagnoses.value = diagnoses;
+  } catch (e) {
+    console.error("Failed to fetch AI diagnosis", e);
+    aiError.value = "无法获取诊断建议，请稍后重试或检查网络。";
+  } finally {
+    aiLoading.value = false;
+  }
+};
+
+const fetchTreatmentRecommendation = async () => {
+  if (!selectedDiagnosis.value) return;
+  
+  treatmentLoading.value = true;
+  treatmentError.value = null;
+  treatmentRecommendations.value = [];
+
+  const prompt = `
+你是一个专业的医疗辅助助手。
+患者信息：${patientInfo.value.naPi}，${patientInfo.value.sdSexText}，${patientInfo.value.ageText}。
+已选诊断：${selectedDiagnosis.value.name} (ICD10: ${selectedDiagnosis.value.code})。
+主诉：${generatedRecord.value.chiefComplaint}
+
+请根据诊断结果，推荐3-5个最需要的药品（通用名）和1-2个必要的检验检查项目。
+请严格按照JSON数组格式返回，不要包含Markdown标记或其他多余文本。
+
+返回格式要求：
+[
+  {
+    "type": "medicine", // 或 "exam"
+    "name": "通用名称",
+    "reason": "推荐理由",
+    "usage": "建议用法用量(仅药品需要)"
+  }
+]
+`;
+
+  try {
+    let fullResponse = "";
+    await chatStream([
+      { role: 'system', content: '你是一个专业的医疗辅助助手，只返回JSON格式的数据。' },
+      { role: 'user', content: prompt }
+    ], (chunk) => {
+      fullResponse += chunk;
+    });
+
+    let jsonStr = fullResponse.trim();
+    if (jsonStr.startsWith('```json')) {
+      jsonStr = jsonStr.replace(/^```json\s*/, '').replace(/\s*```$/, '');
+    } else if (jsonStr.startsWith('```')) {
+      jsonStr = jsonStr.replace(/^```\s*/, '').replace(/\s*```$/, '');
+    }
+
+    const rawRecommendations: any[] = JSON.parse(jsonStr);
+    
+    // Match against catalog
+    const processedRecs: TreatmentRecommendation[] = rawRecommendations.map(rec => {
+      let matchedItem = null;
+      if (rec.type === 'medicine') {
+        // Simple fuzzy match for medicines
+        matchedItem = medicalCatalog.medicines.find(m => 
+          m.genericName.includes(rec.name) || rec.name.includes(m.genericName) || m.name.includes(rec.name)
+        );
+      } else if (rec.type === 'exam') {
+        // Simple fuzzy match for exams
+        matchedItem = medicalCatalog.examinations.find(e => 
+          e.name.includes(rec.name) || rec.name.includes(e.name)
+        );
+      }
+      return {
+        ...rec,
+        matchedItem,
+        selected: false
+      };
+    });
+
+    treatmentRecommendations.value = processedRecs;
+    console.log('Treatment recommendations initialized:', JSON.parse(JSON.stringify(treatmentRecommendations.value)));
+  } catch (e) {
+    console.error("Failed to fetch treatment recommendations", e);
+    treatmentError.value = "无法获取治疗方案建议。";
+  } finally {
+    treatmentLoading.value = false;
+  }
+};
+
+const toggleTreatmentSelection = (index: number) => {
+  console.log('toggleTreatmentSelection called for index:', index);
+  const item = treatmentRecommendations.value[index];
+  console.log('Current item state:', JSON.stringify(item));
+  if (item) {
+    item.selected = !item.selected;
+    console.log('New item selected state:', item.selected);
+  } else {
+    console.warn('Item not found at index:', index);
+  }
+};
+
+const handleComplete = () => {
+  if (!selectedDiagnosis.value) {
+    alert("请先选择一个诊断结果");
+    return;
+  }
+
+  // Build Final Record
+  const selectedTreatments = treatmentRecommendations.value
+    .filter(t => t.selected)
+    .map(t => ({
+      type: t.type,
+      name: t.name,
+      usage: t.usage,
+      matchedItem: t.matchedItem,
+      reason: t.reason
+    }));
+  
+  finalRecord.value = {
+    patient: patientInfo.value,
+    record: generatedRecord.value,
+    diagnosis: selectedDiagnosis.value,
+    treatments: selectedTreatments,
+    date: new Date().toLocaleDateString()
+  };
+
+  currentView.value = 'final_report';
+};
+
+watch(selectedDiagnosis, (newVal) => {
+  if (newVal) {
+    fetchTreatmentRecommendation();
+  } else {
+    treatmentRecommendations.value = [];
+  }
+});
 
 const generateMedicalRecord = () => {
   const complaints: string[] = [];
@@ -576,11 +944,7 @@ const copyToClipboard = () => {
   });
 };
 
-const handleComplete = () => {
-  // Logic to complete the consultation
-  alert('病历生成完成');
-  // You might want to save data or reset state here
-};
+
 
 </script>
 
@@ -1265,6 +1629,234 @@ const handleComplete = () => {
   100% { opacity: 0.6; }
 }
 
+/* Diagnosis List Styles */
+.diagnosis-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.diagnosis-item {
+  padding: 10px;
+  border: 1px solid #e2e8f0;
+  border-radius: 6px;
+  background: #f8fafc;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.diagnosis-item:hover {
+  background: #f1f5f9;
+  border-color: #cbd5e1;
+}
+
+.diagnosis-item.active {
+  background: #eff6ff;
+  border-color: #3b82f6;
+  box-shadow: 0 0 0 1px #3b82f6;
+}
+
+.diag-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 4px;
+}
+
+.diag-name {
+  font-weight: 600;
+  color: #1e293b;
+  font-size: 14px;
+}
+
+.diag-rate {
+  font-size: 12px;
+  color: #2563eb;
+  background: #dbeafe;
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-weight: 500;
+}
+
+.diag-rationale {
+  font-size: 12px;
+  color: #64748b;
+  line-height: 1.4;
+}
+
+.empty-text {
+  text-align: center;
+  color: #94a3b8;
+  font-size: 13px;
+  padding: 20px 0;
+}
+
+.error-text {
+  text-align: center;
+  color: #ef4444;
+  font-size: 13px;
+  padding: 20px 0;
+  background: #fef2f2;
+  border-radius: 6px;
+  border: 1px solid #fee2e2;
+}
+
+.treatment-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.treatment-item {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  background: #fff;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  padding: 10px;
+  gap: 8px;
+  cursor: pointer;
+  transition: all 0.2s;
+  overflow: hidden;
+}
+
+.selected-mark {
+  position: absolute;
+  top: 0;
+  right: 0;
+  width: 24px;
+  height: 24px;
+  background: #3b82f6;
+  color: white;
+  border-radius: 0 0 0 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding-bottom: 2px;
+  padding-left: 2px;
+}
+
+.treatment-item:hover {
+  background-color: #f8fafc;
+  border-color: #cbd5e1;
+}
+
+.treatment-item.active {
+  background-color: #eff6ff;
+  border-color: #3b82f6;
+  box-shadow: 0 0 0 1px #3b82f6;
+}
+
+.rec-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 4px;
+}
+
+.rec-tag {
+  font-size: 10px;
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-weight: bold;
+}
+
+.rec-tag.medicine {
+  background: #dbeafe;
+  color: #2563eb;
+}
+
+.rec-tag.exam {
+  background: #fce7f3;
+  color: #db2777;
+}
+
+.rec-name {
+  font-weight: 600;
+  font-size: 14px;
+  color: #1e293b;
+}
+
+.rec-reason, .rec-usage {
+  font-size: 12px;
+  color: #64748b;
+  line-height: 1.4;
+}
+
+.rec-action {
+  margin-top: 4px;
+  padding-top: 8px;
+  border-top: 1px dashed #e2e8f0;
+}
+
+.match-success {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  background: #f0fdf4;
+  padding: 6px 8px;
+  border-radius: 6px;
+  border: 1px solid #dcfce7;
+}
+
+.match-info {
+  display: flex;
+  flex-direction: column;
+  font-size: 12px;
+}
+
+.match-name {
+  font-weight: 600;
+  color: #166534;
+}
+
+.match-spec, .match-price {
+  color: #15803d;
+  font-size: 11px;
+}
+
+.match-fail {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  background: #f8fafc;
+  padding: 6px 8px;
+  border-radius: 6px;
+  border: 1px solid #f1f5f9;
+}
+
+.unmatched-tip {
+  font-size: 12px;
+  color: #94a3b8;
+}
+
+.btn-add {
+  background: #22c55e;
+  color: white;
+  border: none;
+  width: 24px;
+  height: 24px;
+  border-radius: 12px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 16px;
+}
+
+.btn-search {
+  background: white;
+  border: 1px solid #cbd5e1;
+  border-radius: 4px;
+  padding: 2px 8px;
+  cursor: pointer;
+  font-size: 12px;
+}
+
 .field-number {
   display: flex;
   align-items: center;
@@ -1290,6 +1882,123 @@ const handleComplete = () => {
   border: 2px dashed #dbeafe;
 }
 
+/* Final Report Styles */
+.final-report-page {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  background: #525659;
+  overflow: hidden;
+  position: relative;
+}
+
+.report-actions {
+  height: 60px;
+  background: white;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  padding: 0 24px;
+  gap: 12px;
+  border-bottom: 1px solid #e5e7eb;
+}
+
+.report-paper {
+  margin: 24px auto;
+  width: 210mm;
+  min-height: 297mm;
+  background: white;
+  padding: 40px;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+  overflow-y: auto;
+  font-family: 'SimSun', 'Songti SC', serif;
+  color: #000;
+}
+
+.hospital-title {
+  text-align: center;
+  font-size: 24px;
+  font-weight: bold;
+  margin-bottom: 30px;
+  border-bottom: 2px solid #000;
+  padding-bottom: 10px;
+}
+
+.report-header {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-bottom: 20px;
+  border-bottom: 1px solid #000;
+  padding-bottom: 10px;
+}
+
+.info-row {
+  display: flex;
+  justify-content: space-between;
+}
+
+.report-section {
+  margin-bottom: 20px;
+}
+
+.section-title {
+  font-weight: bold;
+  font-size: 16px;
+  margin-bottom: 5px;
+}
+
+.section-content {
+  font-size: 15px;
+  line-height: 1.6;
+}
+
+.tx-item {
+  margin-bottom: 4px;
+}
+
+.tx-usage {
+  font-size: 14px;
+  color: #444;
+  margin-left: 1em;
+}
+
+.report-footer {
+  margin-top: 50px;
+  display: flex;
+  justify-content: flex-end;
+  padding-right: 50px;
+}
+
+@media print {
+  .consultation-page > header,
+  .symptom-sidebar,
+  .report-actions,
+  .fixed-action-area {
+    display: none !important;
+  }
+  
+  .consultation-page {
+    height: auto;
+    overflow: visible;
+  }
+
+  .final-report-page {
+    background: white;
+    height: auto;
+    overflow: visible;
+    position: static;
+  }
+
+  .report-paper {
+    margin: 0;
+    box-shadow: none;
+    width: 100%;
+    min-height: 0;
+    padding: 0;
+  }
+}
+
 .empty-state::before {
   content: '';
   display: block;
@@ -1297,5 +2006,165 @@ const handleComplete = () => {
   height: 120px;
   background: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="%23bfdbfe" stroke-width="1"><path d="M9 5H7a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-2M9 5a2 2 0 0 0 2 2h2a2 2 0 0 0 2-2M9 5a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2m-3 9h.01"/></svg>') no-repeat center/contain;
   opacity: 0.8;
+}
+
+/* Final Report Styles */
+.final-report-page {
+  flex: 1;
+  background: #525659;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 20px;
+  overflow-y: auto;
+}
+
+.report-paper {
+  background: white;
+  width: 210mm;
+  min-height: 297mm;
+  padding: 20mm;
+  box-shadow: 0 4px 8px rgba(0,0,0,0.2);
+  display: flex;
+  flex-direction: column;
+  box-sizing: border-box;
+}
+
+.paper-header {
+  text-align: center;
+  margin-bottom: 20px;
+  border-bottom: 2px solid #000;
+  padding-bottom: 10px;
+}
+
+.paper-header h1 {
+  margin: 0;
+  font-size: 24px;
+  color: #000;
+}
+
+.hospital-name {
+  font-size: 14px;
+  color: #666;
+  margin-top: 5px;
+}
+
+.paper-info {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-bottom: 20px;
+  font-size: 14px;
+  border-bottom: 1px solid #000;
+  padding-bottom: 10px;
+}
+
+.info-row {
+  display: flex;
+  justify-content: space-between;
+}
+
+.paper-body {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.section-title {
+  font-weight: bold;
+  font-size: 16px;
+  margin-bottom: 8px;
+  color: #000;
+}
+
+.section-content {
+  font-size: 14px;
+  line-height: 1.6;
+  color: #333;
+  padding-left: 10px;
+}
+
+.rp-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+
+.rp-item {
+  display: flex;
+  gap: 10px;
+  margin-bottom: 5px;
+}
+
+.rp-index {
+  font-weight: bold;
+}
+
+.rp-name {
+  font-weight: 500;
+}
+
+.rp-spec {
+  color: #666;
+}
+
+.paper-footer {
+  margin-top: 40px;
+  text-align: right;
+  padding-top: 20px;
+}
+
+.doctor-sign {
+  font-size: 14px;
+}
+
+.report-actions {
+  display: flex;
+  gap: 16px;
+  margin-top: 20px;
+}
+
+.action-btn {
+  padding: 10px 24px;
+  border-radius: 4px;
+  border: none;
+  background: white;
+  color: #333;
+  cursor: pointer;
+  font-size: 14px;
+  box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+}
+
+.action-btn.primary {
+  background: #2563eb;
+  color: white;
+}
+
+@media print {
+  .consultation-page {
+    height: auto;
+    overflow: visible;
+  }
+  
+  .patient-header,
+  .report-actions {
+    display: none !important;
+  }
+  
+  .final-report-page {
+    padding: 0;
+    background: white;
+    height: auto;
+    overflow: visible;
+  }
+  
+  .report-paper {
+    box-shadow: none;
+    width: 100%;
+    min-height: auto;
+    padding: 0;
+    margin: 0;
+  }
 }
 </style>

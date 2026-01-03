@@ -414,7 +414,7 @@ const exitWork = async () => {
             </button>
           </div>
           <ChatPanel v-if="currentView === 'chat'" />
-          <ConsultationPage v-else-if="currentView === 'consultation'" />
+          <ConsultationPage v-else-if="currentView === 'consultation'" @close="exitWork" />
           <SettingsPanel v-else />
         </div>
       </div>

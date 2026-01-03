@@ -1,0 +1,114 @@
+{
+  "medicines": [
+    {
+      "id": "MED001",
+      "name": "阿莫西林胶囊",
+      "genericName": "阿莫西林",
+      "spec": "0.25g*24粒",
+      "price": 12.50,
+      "unit": "盒",
+      "type": "抗生素"
+    },
+    {
+      "id": "MED002",
+      "name": "布洛芬缓释胶囊",
+      "genericName": "布洛芬",
+      "spec": "0.3g*20粒",
+      "price": 24.00,
+      "unit": "盒",
+      "type": "解热镇痛"
+    },
+    {
+      "id": "MED003",
+      "name": "复方氨酚烷胺片",
+      "genericName": "复方氨酚烷胺",
+      "spec": "10片",
+      "price": 8.00,
+      "unit": "盒",
+      "type": "感冒药"
+    },
+    {
+      "id": "MED004",
+      "name": "盐酸氨溴索口服溶液",
+      "genericName": "氨溴索",
+      "spec": "100ml:0.3g",
+      "price": 18.50,
+      "unit": "瓶",
+      "type": "祛痰药"
+    },
+    {
+      "id": "MED005",
+      "name": "头孢拉定胶囊",
+      "genericName": "头孢拉定",
+      "spec": "0.25g*24粒",
+      "price": 15.00,
+      "unit": "盒",
+      "type": "抗生素"
+    },
+    {
+      "id": "MED006",
+      "name": "连花清瘟胶囊",
+      "genericName": "连花清瘟",
+      "spec": "0.35g*24粒",
+      "price": 14.80,
+      "unit": "盒",
+      "type": "中成药"
+    },
+    {
+      "id": "MED007",
+      "name": "左氧氟沙星片",
+      "genericName": "左氧氟沙星",
+      "spec": "0.5g*10片",
+      "price": 22.00,
+      "unit": "盒",
+      "type": "抗生素"
+    },
+    {
+      "id": "MED008",
+      "name": "奥司他韦胶囊",
+      "genericName": "奥司他韦",
+      "spec": "75mg*10粒",
+      "price": 120.00,
+      "unit": "盒",
+      "type": "抗病毒"
+    }
+  ],
+  "examinations": [
+    {
+      "id": "EXM001",
+      "name": "血常规(五分类)",
+      "price": 20.00,
+      "category": "检验"
+    },
+    {
+      "id": "EXM002",
+      "name": "C反应蛋白(CRP)",
+      "price": 35.00,
+      "category": "检验"
+    },
+    {
+      "id": "EXM003",
+      "name": "胸部正侧位片",
+      "price": 80.00,
+      "category": "检查"
+    },
+    {
+      "id": "EXM004",
+      "name": "胸部CT平扫",
+      "price": 280.00,
+      "category": "检查"
+    },
+    {
+      "id": "EXM005",
+      "name": "肺炎支原体抗体测定",
+      "price": 45.00,
+      "category": "检验"
+    },
+    {
+      "id": "EXM006",
+      "name": "甲型/乙型流感病毒抗原检测",
+      "price": 60.00,
+      "category": "检验"
+    }
+  ]
+}
