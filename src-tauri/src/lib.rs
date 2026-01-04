@@ -21,6 +21,12 @@ async fn set_window_position(window: tauri::Window, x: i32, y: i32) -> Result<()
         .map_err(|e| e.to_string())
 }
 
+#[derive(Clone, serde::Serialize)]
+struct MousePosPayload {
+    x: f64,
+    y: f64,
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -44,32 +50,40 @@ pub fn run() {
             std::thread::spawn(move || {
                 let mut was_hovered = false;
                 loop {
-                    std::thread::sleep(std::time::Duration::from_millis(50));
+                    // 动态调整轮询频率：
+                    // - 未 Hover (待机模式): 降低到 100ms (10Hz)，极低功耗，足以捕获鼠标进入
+                    // - Hover 中 (交互模式): 提高到 16ms (~60Hz)，确保按钮响应极致丝滑
+                    let sleep_duration = if was_hovered {
+                        std::time::Duration::from_millis(16)
+                    } else {
+                        std::time::Duration::from_millis(100)
+                    };
+                    std::thread::sleep(sleep_duration);
                     
                     // 获取必要参数
                     let mouse_ret = win_clone.cursor_position();
                     let win_pos_ret = win_clone.outer_position();
                     let win_size_ret = win_clone.inner_size();
                     
-                    let is_hovered = if let (Ok(mouse), Ok(win_pos), Ok(size)) = (mouse_ret, win_pos_ret, win_size_ret) {
-                        // 调试日志：确认坐标系 (打印过于频繁会刷屏，仅在状态变化或特定条件下打印建议开启)
-                        // println!("Mouse: {:?}, Win: {:?}, Size: {:?}", mouse, win_pos, size);
-                        
-                        // 逻辑修正：Tauri 的 cursor_position 返回的是物理屏幕坐标 (PhysicalPosition)
-                        // 我们需要判断鼠标是否落在窗口矩形内
+                    let (is_hovered, rel_x, rel_y) = if let (Ok(mouse), Ok(win_pos), Ok(size)) = (mouse_ret, win_pos_ret, win_size_ret) {
                         let rel_x = mouse.x - win_pos.x as f64;
                         let rel_y = mouse.y - win_pos.y as f64;
                         
-                        rel_x >= 0.0 && rel_x <= size.width as f64 &&
-                        rel_y >= 0.0 && rel_y <= size.height as f64
+                        let hovered = rel_x >= 0.0 && rel_x <= size.width as f64 &&
+                                    rel_y >= 0.0 && rel_y <= size.height as f64;
+                        (hovered, rel_x, rel_y)
                     } else {
-                        false
+                        (false, 0.0, 0.0)
                     };
                     
                     if is_hovered != was_hovered {
-                        // println!("Hover change detected: {} (Mouse in window: {})", is_hovered, is_hovered);
                         let _ = win_clone.emit("hover-change", is_hovered);
                         was_hovered = is_hovered;
+                    }
+
+                    // 如果在窗口内，持续发送坐标用于前端模拟 Hover
+                    if is_hovered {
+                        let _ = win_clone.emit("mouse-pos", MousePosPayload { x: rel_x, y: rel_y });
                     }
                 }
             });

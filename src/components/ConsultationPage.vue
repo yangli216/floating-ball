@@ -379,7 +379,7 @@ import { ref, computed, onMounted, watch } from 'vue';
 import templatesData from '../assets/templates.json';
 import medicalCatalog from '../assets/medical_catalog.json';
 import Pinyin from 'tiny-pinyin';
-import { chatStream } from '../services/llm';
+import { chat } from '../services/llm';
 
 const emit = defineEmits(['close']);
 
@@ -677,12 +677,10 @@ ${generatedRecord.value.historyOfPresentIllness}
 
   try {
     let fullResponse = "";
-    await chatStream([
+    fullResponse = await chat([
       { role: 'system', content: '你是一个专业的医疗辅助助手，只返回JSON格式的数据。' },
       { role: 'user', content: prompt }
-    ], (chunk) => {
-      fullResponse += chunk;
-    });
+    ]);
 
     // Clean up response if it contains markdown code blocks
     const diagnoses: Diagnosis[] = parseLLMJson(fullResponse);
@@ -732,12 +730,10 @@ const fetchTreatmentRecommendation = async () => {
 
   try {
     let fullResponse = "";
-    await chatStream([
+    fullResponse = await chat([
       { role: 'system', content: '你是一个专业的医疗辅助助手，只返回JSON格式的数据。' },
       { role: 'user', content: prompt }
-    ], (chunk) => {
-      fullResponse += chunk;
-    });
+    ]);
 
     const rawRecommendations: any[] = parseLLMJson(fullResponse);
     

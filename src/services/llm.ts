@@ -6,12 +6,17 @@ export interface ChatMessage {
   images?: string[]; // data URLs or public URLs
 }
 
+export const DEFAULT_LLM_CONFIG = {
+  baseUrl: "https://api.openai.com/v1",
+  model: "gpt-4o-mini"
+};
+
 // 获取配置信息
-function getLLMConfig() {
-  const apiKey = import.meta.env.VITE_OPENAI_API_KEY || localStorage.getItem("OPENAI_API_KEY") || "";
+export function getLLMConfig() {
+  const apiKey = localStorage.getItem("OPENAI_API_KEY") || import.meta.env.VITE_OPENAI_API_KEY || "";
   // 默认为 OpenAI 官方地址和模型
-  const baseUrl = (import.meta.env.VITE_LLM_BASE_URL || localStorage.getItem("LLM_BASE_URL") || "https://api.openai.com/v1").replace(/\/+$/, "");
-  const model = import.meta.env.VITE_LLM_MODEL || localStorage.getItem("LLM_MODEL") || "gpt-4o-mini";
+  const baseUrl = (localStorage.getItem("LLM_BASE_URL") || import.meta.env.VITE_LLM_BASE_URL || DEFAULT_LLM_CONFIG.baseUrl).replace(/\/+$/, "");
+  const model = localStorage.getItem("LLM_MODEL") || import.meta.env.VITE_LLM_MODEL || DEFAULT_LLM_CONFIG.model;
 
   return { apiKey, baseUrl, model };
 }

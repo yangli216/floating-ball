@@ -1,14 +1,16 @@
 <script setup lang="ts">
 import { ref, onMounted } from 'vue';
+import { getLLMConfig, DEFAULT_LLM_CONFIG } from '../services/llm';
 
 const apiKey = ref('');
 const baseUrl = ref('');
 const model = ref('');
 
 onMounted(() => {
-  apiKey.value = localStorage.getItem('OPENAI_API_KEY') || '';
-  baseUrl.value = localStorage.getItem('LLM_BASE_URL') || 'https://api.openai.com/v1';
-  model.value = localStorage.getItem('LLM_MODEL') || 'gpt-4o-mini';
+  const config = getLLMConfig();
+  apiKey.value = config.apiKey;
+  baseUrl.value = config.baseUrl;
+  model.value = config.model;
 });
 
 const saveSettings = () => {
@@ -31,14 +33,14 @@ const saveSettings = () => {
       </div>
       <div class="form-group">
         <label>Base URL</label>
-        <input v-model="baseUrl" type="text" placeholder="https://api.openai.com/v1" />
+        <input v-model="baseUrl" type="text" :placeholder="DEFAULT_LLM_CONFIG.baseUrl" />
       </div>
       <div class="form-group">
         <label>Model Name</label>
-        <input v-model="model" type="text" placeholder="gpt-4o-mini" />
+        <input v-model="model" type="text" :placeholder="DEFAULT_LLM_CONFIG.model" />
       </div>
       <button class="save-btn" @click="saveSettings">保存配置</button>
-      <p class="hint">提示：优先读取 .env 文件中的配置。修改后请刷新应用。</p>
+      <p class="hint">提示：设置已保存到本地。如未设置，将使用环境变量默认值。</p>
     </div>
   </div>
 </template>

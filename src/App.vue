@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onMounted, onUnmounted, ref } from "vue";
+import { onMounted, onUnmounted, ref, watch } from "vue";
 import { getCurrentWindow, Window as TauriWindow, PhysicalPosition, currentMonitor } from "@tauri-apps/api/window";
 import { exit } from '@tauri-apps/plugin-process';
 import { listen, UnlistenFn } from "@tauri-apps/api/event";
@@ -12,13 +12,18 @@ import { LogicalSize } from "@tauri-apps/api/dpi";
 const appWindow = ref<TauriWindow | null>(null);
 const isFocused = ref(false);
 const isHovered = ref(false);
+const hoveredBtnIndex = ref(-1); // -1 means no button hovered
 const isWorking = ref(false);
+const isMoving = ref(false);
 const currentView = ref<'chat' | 'settings' | 'consultation'>('chat');
-const ballContainerRef = ref<HTMLElement | null>(null);
+const ringMenuRef = ref<HTMLElement | null>(null);
 let unlistenHover: UnlistenFn | null = null;
+let unlistenMousePos: UnlistenFn | null = null;
 let unlistenMoved: UnlistenFn | null = null;
+let unlistenResize: UnlistenFn | null = null;
 let store: Store | null = null;
 let moveTimeout: ReturnType<typeof setTimeout> | null = null;
+let resizeTimeout: ReturnType<typeof setTimeout> | null = null;
 
 const handleFocus = () => { isFocused.value = true; };
 const handleBlur = () => { isFocused.value = false; };
@@ -99,33 +104,6 @@ const smartExpand = async (targetW: number, targetH: number) => {
   }
 };
 
-
-// 使用 JS 跟踪鼠标位置，解决窗口未获取焦点时 CSS :hover 不触发的问题
-const onDocumentMouseMove = (e: MouseEvent) => {
-  if (!ballContainerRef.value || isWorking.value) {
-    // 这里不再强制设为 false，防止 Rust 事件还没来得及触发就被覆盖
-    // 主要依靠 Rust 事件和 CSS，JS 仅作为激活窗口时的辅助
-    return;
-  }
-  const rect = ballContainerRef.value.getBoundingClientRect();
-  const inBounds = 
-    e.clientX >= rect.left && 
-    e.clientX <= rect.right && 
-    e.clientY >= rect.top && 
-    e.clientY <= rect.bottom;
-  
-  if (inBounds) isHovered.value = true;
-};
-
-// 鼠标离开窗口或容器时重置状态
-const onDocumentMouseLeave = () => {
-  isHovered.value = false;
-};
-
-const handleMouseLeave = () => {
-  isHovered.value = false;
-};
-
 const openSettings = async () => {
   currentView.value = 'settings';
   if (!isWorking.value) {
@@ -185,47 +163,145 @@ const waitForWindowSize = async (logicalW: number, logicalH: number, timeout = 1
   }
 };
 
+// 监听状态变化并持久化
+watch([isWorking, currentView], async () => {
+  if (!store) return;
+  try {
+    await store.set('app_state', {
+      isWorking: isWorking.value,
+      currentView: currentView.value
+    });
+    await store.save();
+  } catch (err) {
+    console.error('保存应用状态失败:', err);
+  }
+});
+
 onMounted(async () => {
   try {
     appWindow.value = getCurrentWindow();
     
     // 初始化 store
     store = await load('.settings.dat');
-    await restoreWindowPosition();
+    
+    // 恢复应用状态 (优先于窗口位置恢复)
+    try {
+      const state = await store.get<{isWorking: boolean, currentView: string}>('app_state');
+      if (state && state.isWorking) {
+        currentView.value = state.currentView as any;
+        isWorking.value = true;
+        
+        // 立即恢复窗口大小
+        const targetW = state.currentView === 'consultation' ? TARGET_CONSULTATION_W : TARGET_WORK_W;
+        const targetH = state.currentView === 'consultation' ? TARGET_CONSULTATION_H : TARGET_WORK_H;
+        
+        if (appWindow.value) {
+          await appWindow.value.setResizable(true);
+          await appWindow.value.setSize(new LogicalSize(targetW, targetH));
+          // 确保窗口在屏幕内
+          await smartExpand(targetW, targetH);
+        }
+      } else {
+        // 仅在非工作模式下恢复小球位置
+        await restoreWindowPosition();
+      }
+    } catch (err) {
+      console.warn('恢复应用状态失败:', err);
+      await restoreWindowPosition();
+    }
     
     // 监听窗口移动结束，保存位置
     unlistenMoved = await appWindow.value.listen('tauri://move', () => {
+      isMoving.value = true;
       // 使用防抖保存，避免频繁写入
       if (moveTimeout) clearTimeout(moveTimeout);
       moveTimeout = setTimeout(() => {
+        isMoving.value = false;
         saveWindowPosition();
       }, 500);
+    });
+
+    // 监听窗口大小变化，防止异常缩小
+    unlistenResize = await appWindow.value.listen('tauri://resize', async () => {
+      if (isWorking.value && !transitioning.value && !exiting.value && appWindow.value) {
+        // 使用防抖避免频繁调整
+        if (resizeTimeout) clearTimeout(resizeTimeout);
+        resizeTimeout = setTimeout(async () => {
+          if (!isWorking.value) return;
+          try {
+            const size = await appWindow.value?.innerSize();
+            if (size) {
+              const targetW = currentView.value === 'consultation' ? TARGET_CONSULTATION_W : TARGET_WORK_W;
+              const targetH = currentView.value === 'consultation' ? TARGET_CONSULTATION_H : TARGET_WORK_H;
+              const scale = await appWindow.value?.scaleFactor() || 1;
+              const minW = targetW * scale * 0.8; // 允许 20% 的误差
+              
+              // 如果宽度明显小于目标宽度 (例如变为小球大小)，则强制恢复
+              if (size.width < minW) {
+                await appWindow.value?.setSize(new LogicalSize(targetW, targetH));
+              }
+            }
+          } catch (e) {
+            console.error('检查窗口大小失败:', e);
+          }
+        }, 200);
+      }
     });
   } catch (e) {
     console.warn("初始化窗口失败:", e);
   }
-  // 添加全局鼠标监听
-  document.addEventListener('mousemove', onDocumentMouseMove);
-  document.addEventListener('mouseleave', onDocumentMouseLeave);
-  
   // 监听 Rust 后端发出的窗口 hover 事件
   try {
     unlistenHover = await listen<boolean>("hover-change", (event) => {
       // 仅在非工作模式下响应
       if (!isWorking.value) {
         isHovered.value = event.payload;
+        if (!event.payload) {
+          hoveredBtnIndex.value = -1; // 移出窗口时重置按钮 hover 状态
+        }
+      }
+    });
+
+    unlistenMousePos = await listen<{x: number, y: number}>("mouse-pos", async (event) => {
+      if (!isWorking.value && isHovered.value && ringMenuRef.value) {
+        // Rust 发送的是物理坐标，需要转换为 CSS 像素
+        // 假设 scaleFactor 为 2 (Retina)，物理坐标 200 -> 逻辑坐标 100
+        // 但注意：Tauri 的 cursor_position 是物理坐标，而 webview 也是基于 scale 缩放的
+        // 我们需要获取当前的 devicePixelRatio
+        const dpr = window.devicePixelRatio || 1;
+        const logicalX = event.payload.x / dpr;
+        const logicalY = event.payload.y / dpr;
+
+        // 查找鼠标下的元素
+        // 由于 elementFromPoint 是基于 viewport 的，我们需要确保坐标系匹配
+        // Rust 发送的是相对于窗口左上角的坐标，这正是 clientX/clientY 在全屏 webview 中的行为
+        
+        const el = document.elementFromPoint(logicalX, logicalY);
+        if (el) {
+          const btn = el.closest('.ring-btn');
+          if (btn) {
+            // 根据类名判断是哪个按钮
+            if (btn.classList.contains('top')) hoveredBtnIndex.value = 0;
+            else if (btn.classList.contains('right')) hoveredBtnIndex.value = 1;
+            else if (btn.classList.contains('bottom')) hoveredBtnIndex.value = 2;
+            else if (btn.classList.contains('left')) hoveredBtnIndex.value = 3;
+            else hoveredBtnIndex.value = -1;
+            return;
+          }
+        }
+        hoveredBtnIndex.value = -1;
       }
     });
   } catch (e) {
-    console.error("监听 hover-change 失败:", e);
+    console.error("监听事件失败:", e);
   }
 });
 
 onUnmounted(() => {
-  document.removeEventListener('mousemove', onDocumentMouseMove);
-  document.removeEventListener('mouseleave', onDocumentMouseLeave);
   if (unlistenHover) unlistenHover();
+  if (unlistenMousePos) unlistenMousePos();
   if (unlistenMoved) unlistenMoved();
+  if (unlistenResize) unlistenResize();
 });
 
 // 使用 Tauri 原生拖拽
@@ -242,8 +318,8 @@ const handleMouseDown = async (e: MouseEvent) => {
 };
 
 
-// 右键菜单 - 退出应用
-const handleContextMenu = async (e: MouseEvent) => {
+// 退出应用
+const handleExitApp = async (e: MouseEvent) => {
   e.preventDefault();
   try {
     await exit(0);
@@ -291,7 +367,7 @@ const enterWorkMode = async () => {
 };
 
 const exitWork = async () => {
-  if (!isWorking.value || transitioning.value) return;
+  if (!isWorking.value || transitioning.value || isMoving.value) return;
   transitioning.value = true;
   exiting.value = true;
   
@@ -329,31 +405,29 @@ const exitWork = async () => {
     <Transition name="morph">
       <div v-show="!isWorking" class="ball-layer">
         <div 
-          ref="ballContainerRef" 
           class="ball-container" 
           :class="{ 'no-interaction': transitioning }"
-          @mouseleave="handleMouseLeave"
         >
           <!-- 环绕菜单 -->
-          <div class="ring-menu" :class="{ 'is-active': isHovered }">
-            <button class="ring-btn top" @click.stop="openChat" title="打开对话">
+          <div ref="ringMenuRef" class="ring-menu" :class="{ 'is-active': isHovered }">
+            <button class="ring-btn top" :class="{ 'manual-hover': hoveredBtnIndex === 0 }" @click.stop="openChat" title="打开对话">
               <svg class="ring-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                 <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path>
               </svg>
             </button>
-            <button class="ring-btn right" @click.stop="openSettings" title="设置">
+            <button class="ring-btn right" :class="{ 'manual-hover': hoveredBtnIndex === 1 }" @click.stop="openSettings" title="设置">
               <svg class="ring-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                 <circle cx="12" cy="12" r="3"></circle>
                 <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
               </svg>
             </button>
-            <button class="ring-btn bottom" @click.stop="handleContextMenu" title="退出">
+            <button class="ring-btn bottom" :class="{ 'manual-hover': hoveredBtnIndex === 2 }" @click.stop="handleExitApp" title="退出">
                <svg class="ring-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                 <path d="M18.36 6.64a9 9 0 1 1-12.73 0"></path>
                 <line x1="12" y1="2" x2="12" y2="12"></line>
               </svg>
             </button>
-             <button class="ring-btn left" @click.stop="openConsultation" title="智能问诊">
+             <button class="ring-btn left" :class="{ 'manual-hover': hoveredBtnIndex === 3 }" @click.stop="openConsultation" title="智能问诊">
               <svg class="ring-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                 <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
                 <polyline points="14 2 14 8 20 8"></polyline>
@@ -367,11 +441,11 @@ const exitWork = async () => {
           <div
             class="floating-ball"
             tabindex="0"
-            :class="{ 'is-focused': isFocused }"
+            :class="{ 'is-focused': isFocused, 'is-hovered': isHovered }"
             @mousedown="handleMouseDown"
             @focus="handleFocus"
             @blur="handleBlur"
-            @contextmenu="handleContextMenu"
+            @contextmenu.prevent
             @dblclick="openChat"
           >
             <div class="ball-content">
@@ -398,14 +472,14 @@ const exitWork = async () => {
     <Transition name="morph">
       <div v-show="isWorking" class="assistant-layer">
         <div class="assistant-container">
-          <div class="assistant-toolbar" data-tauri-drag-region>
-            <div class="toolbar-left">
+          <div class="assistant-toolbar">
+            <div class="toolbar-left" data-tauri-drag-region>
               <button v-if="currentView === 'settings'" class="icon-btn back-btn" @click="openChat" title="返回">
                  <svg class="toolbar-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                    <path d="M19 12H5M12 19l-7-7 7-7"/>
                  </svg>
               </button>
-              <span class="assistant-title">{{ currentView === 'chat' ? '工作状态 · 智能问答' : (currentView === 'consultation' ? '智能问诊' : '系统设置') }}</span>
+              <span class="assistant-title" data-tauri-drag-region>{{ currentView === 'chat' ? '工作状态 · 智能问答' : (currentView === 'consultation' ? '智能问诊' : '系统设置') }}</span>
             </div>
             <button class="icon-btn" aria-label="收起" title="收起" @click="exitWork">
               <svg class="toolbar-icon" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
@@ -461,6 +535,7 @@ const exitWork = async () => {
   position: relative;
   z-index: 5;
   box-shadow: 0 8px 16px rgba(121, 194, 255, 0.4);
+  outline: none; /* 移除默认选中框 */
 }
 
 /* 环绕菜单层 */
@@ -477,7 +552,8 @@ const exitWork = async () => {
   pointer-events: auto;
 }
 
-.floating-ball:hover {
+.floating-ball:hover,
+.floating-ball.is-hovered {
   transform: scale(1.05);
   box-shadow: 0 12px 24px rgba(121, 194, 255, 0.5);
 }
@@ -508,7 +584,8 @@ const exitWork = async () => {
   pointer-events: auto;
   transform: scale(1);
 }
-.ring-btn:hover {
+.ring-btn:hover,
+.ring-btn.manual-hover {
   background: #fff;
   color: var(--accent-strong);
   transform: scale(1.1) !important;
@@ -564,7 +641,8 @@ const exitWork = async () => {
   transition: transform 0.4s ease;
 }
 
-.floating-ball:hover .icon {
+.floating-ball:hover .icon,
+.floating-ball.is-hovered .icon {
   transform: rotate(360deg);
 }
 
@@ -676,7 +754,6 @@ body,
   padding: 0 12px;
   color: var(--text-strong);
   background: linear-gradient(180deg, rgba(255,255,255,0.6) 0%, rgba(255,255,255,0.0) 100%);
-  -webkit-app-region: drag; /* 整个顶部可拖动 */
   z-index: 10;
 }
 
