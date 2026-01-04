@@ -16,23 +16,15 @@ function getLLMConfig() {
   return { apiKey, baseUrl, model };
 }
 
-function getApiKey(explicit?: string): string {
-  const { apiKey } = getLLMConfig();
-  const key = explicit || apiKey;
+function getConfigAndKey(explicitKey?: string) {
+  const { apiKey: envKey, baseUrl, model } = getLLMConfig();
+  const key = explicitKey || envKey;
   if (!key) throw new Error("缺少 API Key。请在 .env 设置 VITE_OPENAI_API_KEY 或在 localStorage 设置 OPENAI_API_KEY。");
-  return key;
+  return { key, baseUrl, model };
 }
 
-export async function chatStream(
-  messages: ChatMessage[],
-  onChunk: (chunk: string) => void,
-  apiKey?: string
-): Promise<void> {
-  const { apiKey: envKey, baseUrl, model } = getLLMConfig();
-  const key = apiKey || envKey;
-  if (!key) throw new Error("缺少 API Key。");
-
-  const payloadMessages = messages.map((m) => {
+function createPayloadMessages(messages: ChatMessage[]) {
+  return messages.map((m) => {
     if (m.images && m.images.length > 0) {
       return {
         role: m.role,
@@ -44,6 +36,15 @@ export async function chatStream(
     }
     return { role: m.role, content: m.content };
   });
+}
+
+export async function chatStream(
+  messages: ChatMessage[],
+  onChunk: (chunk: string) => void,
+  apiKey?: string
+): Promise<void> {
+  const { key, baseUrl, model } = getConfigAndKey(apiKey);
+  const payloadMessages = createPayloadMessages(messages);
 
   const res = await fetch(`${baseUrl}/chat/completions`, {
     method: "POST",
@@ -99,22 +100,8 @@ export async function chatStream(
 
 // 文本与图像的对话（基于 Chat Completions）
 export async function chat(messages: ChatMessage[], apiKey?: string): Promise<string> {
-  const { apiKey: envKey, baseUrl, model } = getLLMConfig();
-  const key = apiKey || envKey;
-  if (!key) throw new Error("缺少 API Key。");
-
-  const payloadMessages = messages.map((m) => {
-    if (m.images && m.images.length > 0) {
-      return {
-        role: m.role,
-        content: [
-          { type: "text", text: m.content },
-          ...m.images.map((url) => ({ type: "image_url", image_url: { url } })),
-        ],
-      };
-    }
-    return { role: m.role, content: m.content };
-  });
+  const { key, baseUrl, model } = getConfigAndKey(apiKey);
+  const payloadMessages = createPayloadMessages(messages);
 
   const res = await fetch(`${baseUrl}/chat/completions`, {
     method: "POST",
@@ -137,7 +124,7 @@ export async function chat(messages: ChatMessage[], apiKey?: string): Promise<st
 
 // 语音转文字（Whisper）
 export async function transcribeAudio(blob: Blob, apiKey?: string): Promise<string> {
-  const key = getApiKey(apiKey);
+  const { key } = getConfigAndKey(apiKey);
   const file = new File([blob], "audio.webm", { type: blob.type || "audio/webm" });
   const form = new FormData();
   form.append("file", file);

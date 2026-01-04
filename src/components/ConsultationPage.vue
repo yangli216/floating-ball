@@ -633,6 +633,16 @@ const handleEndConsultation = () => {
   fetchAIDiagnosis();
 };
 
+const parseLLMJson = (text: string): any => {
+  let jsonStr = text.trim();
+  if (jsonStr.startsWith('```json')) {
+    jsonStr = jsonStr.replace(/^```json\s*/, '').replace(/\s*```$/, '');
+  } else if (jsonStr.startsWith('```')) {
+    jsonStr = jsonStr.replace(/^```\s*/, '').replace(/\s*```$/, '');
+  }
+  return JSON.parse(jsonStr);
+};
+
 const fetchAIDiagnosis = async () => {
   aiLoading.value = true;
   aiError.value = null;
@@ -675,14 +685,7 @@ ${generatedRecord.value.historyOfPresentIllness}
     });
 
     // Clean up response if it contains markdown code blocks
-    let jsonStr = fullResponse.trim();
-    if (jsonStr.startsWith('```json')) {
-      jsonStr = jsonStr.replace(/^```json\s*/, '').replace(/\s*```$/, '');
-    } else if (jsonStr.startsWith('```')) {
-      jsonStr = jsonStr.replace(/^```\s*/, '').replace(/\s*```$/, '');
-    }
-
-    const diagnoses: Diagnosis[] = JSON.parse(jsonStr);
+    const diagnoses: Diagnosis[] = parseLLMJson(fullResponse);
     
     // Sort by rate descending
     diagnoses.sort((a, b) => {
@@ -736,14 +739,7 @@ const fetchTreatmentRecommendation = async () => {
       fullResponse += chunk;
     });
 
-    let jsonStr = fullResponse.trim();
-    if (jsonStr.startsWith('```json')) {
-      jsonStr = jsonStr.replace(/^```json\s*/, '').replace(/\s*```$/, '');
-    } else if (jsonStr.startsWith('```')) {
-      jsonStr = jsonStr.replace(/^```\s*/, '').replace(/\s*```$/, '');
-    }
-
-    const rawRecommendations: any[] = JSON.parse(jsonStr);
+    const rawRecommendations: any[] = parseLLMJson(fullResponse);
     
     // Match against catalog
     const processedRecs: TreatmentRecommendation[] = rawRecommendations.map(rec => {
@@ -767,7 +763,6 @@ const fetchTreatmentRecommendation = async () => {
     });
 
     treatmentRecommendations.value = processedRecs;
-    console.log('Treatment recommendations initialized:', JSON.parse(JSON.stringify(treatmentRecommendations.value)));
   } catch (e) {
     console.error("Failed to fetch treatment recommendations", e);
     treatmentError.value = "无法获取治疗方案建议。";
@@ -777,14 +772,9 @@ const fetchTreatmentRecommendation = async () => {
 };
 
 const toggleTreatmentSelection = (index: number) => {
-  console.log('toggleTreatmentSelection called for index:', index);
   const item = treatmentRecommendations.value[index];
-  console.log('Current item state:', JSON.stringify(item));
   if (item) {
     item.selected = !item.selected;
-    console.log('New item selected state:', item.selected);
-  } else {
-    console.warn('Item not found at index:', index);
   }
 };
 
@@ -863,41 +853,9 @@ const generateMedicalRecord = () => {
   // Symptom Details
   selectedSymptoms.value.forEach(s => {
     const data = formData.value[s.key];
-    let detail = "";
-    
-    // Custom logic for common symptoms
-    if (s.key === 'fever') {
-      if (data.maximumBodyTemperature) detail += `最高体温${data.maximumBodyTemperature}℃，`;
-      if (data.reliefFactor && data.reliefFactor !== '不清楚') detail += `${data.reliefFactor}，`;
-    } else if (s.key === 'cough') {
-      if (data.frequencyCharacteristic && data.frequencyCharacteristic !== '不清楚') detail += `${data.frequencyCharacteristic}，`;
-      if (data.soundCharacter && data.soundCharacter.length > 0) detail += `${data.soundCharacter.join('、')}，`;
-      if (data.colorFeature && data.colorFeature.length > 0) detail += `咳${data.colorFeature.join('、')}，`;
-    } else {
-      // Generic logic
-      // ... iterate fields? Simplified for now
-    }
-    
-    // Add any other checkbox/radio fields generally if not handled above
-    // This acts as a catch-all to ensure we don't miss data
-    Object.keys(data).forEach(k => {
-      if (k === 'onsetTime' || k === 'precipitatingFactor') return; // Handled in intro
-      if (s.key === 'fever' && (k === 'maximumBodyTemperature' || k === 'reliefFactor')) return; // Handled above
-      if (s.key === 'cough' && (k === 'frequencyCharacteristic' || k === 'soundCharacter' || k === 'colorFeature')) return;
-      
-      const val = data[k];
-      if (Array.isArray(val) && val.length > 0) {
-         // Exclude '不清楚', '以上都无'
-         const validVals = val.filter(v => v !== '不清楚' && v !== '以上都无' && v !== '无');
-         if (validVals.length > 0) detail += `${validVals.join('、')}，`;
-      } else if (typeof val === 'string' && val && val !== '不清楚' && val !== '无') {
-         detail += `${val}，`;
-      }
-    });
+    let detail = formatSymptomDetail(s, data);
 
     if (detail) {
-      // Clean up trailing comma
-      if (detail.endsWith('，')) detail = detail.slice(0, -1);
       hpiParts.push(`${s.name}表现为：${detail}。`);
     }
   });
@@ -935,6 +893,39 @@ const generateMedicalRecord = () => {
     chiefComplaint,
     historyOfPresentIllness: hpiParts.join("\n")
   };
+};
+
+const formatSymptomDetail = (s: any, data: any) => {
+    let detail = "";
+    
+    // Custom logic for common symptoms
+    if (s.key === 'fever') {
+      if (data.maximumBodyTemperature) detail += `最高体温${data.maximumBodyTemperature}℃，`;
+      if (data.reliefFactor && data.reliefFactor !== '不清楚') detail += `${data.reliefFactor}，`;
+    } else if (s.key === 'cough') {
+      if (data.frequencyCharacteristic && data.frequencyCharacteristic !== '不清楚') detail += `${data.frequencyCharacteristic}，`;
+      if (data.soundCharacter && data.soundCharacter.length > 0) detail += `${data.soundCharacter.join('、')}，`;
+      if (data.colorFeature && data.colorFeature.length > 0) detail += `咳${data.colorFeature.join('、')}，`;
+    }
+    
+    // Generic logic for remaining fields
+    Object.keys(data).forEach(k => {
+      if (k === 'onsetTime' || k === 'precipitatingFactor') return; // Handled in intro
+      if (s.key === 'fever' && (k === 'maximumBodyTemperature' || k === 'reliefFactor')) return; // Handled above
+      if (s.key === 'cough' && (k === 'frequencyCharacteristic' || k === 'soundCharacter' || k === 'colorFeature')) return;
+      
+      const val = data[k];
+      if (Array.isArray(val) && val.length > 0) {
+         // Exclude '不清楚', '以上都无'
+         const validVals = val.filter(v => v !== '不清楚' && v !== '以上都无' && v !== '无');
+         if (validVals.length > 0) detail += `${validVals.join('、')}，`;
+      } else if (typeof val === 'string' && val && val !== '不清楚' && val !== '无') {
+         detail += `${val}，`;
+      }
+    });
+
+    if (detail.endsWith('，')) detail = detail.slice(0, -1);
+    return detail;
 };
 
 const copyToClipboard = () => {
