@@ -34,8 +34,6 @@ const saveSettings = async () => {
 
   if (showToast) {
     showToast('设置已保存', 'success');
-  } else {
-    alert('设置已保存');
   }
 };
 </script>

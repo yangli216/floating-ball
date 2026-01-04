@@ -411,12 +411,14 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted, watch, onUnmounted } from 'vue';
+import { ref, computed, onMounted, watch, onUnmounted, inject } from 'vue';
 import templatesData from '../assets/templates.json';
 import medicalCatalog from '../assets/medical_catalog.json';
 import Pinyin from 'tiny-pinyin';
 import { chat } from '../services/llm';
 import { invoke } from '@tauri-apps/api/core';
+
+const showToast = inject('showToast') as (msg: string, type: 'success' | 'error' | 'info') => void;
 
 const props = defineProps<{
   initialPatientData?: any;
@@ -571,11 +573,11 @@ const submitToHIS = async () => {
 
   try {
     await invoke('complete_consultation', { result });
-    alert("问诊完成，数据已发送回HIS系统。");
+    showToast("问诊完成，数据已发送回HIS系统。", "success");
     handleEndSession();
   } catch (e) {
     console.error("Failed to submit", e);
-    alert("发送数据失败: " + e);
+    showToast("发送数据失败: " + e, "error");
   }
 };
 
@@ -771,7 +773,7 @@ const handleEndConsultation = () => {
   });
 
   if (errors.length > 0) {
-    alert("请完善以下信息：\n" + errors.join("\n"));
+    showToast("请完善以下信息：" + errors.join("; "), "error");
     
     // Scroll to first error
     if (firstErrorFieldId) {
@@ -936,7 +938,7 @@ const toggleTreatmentSelection = (index: number) => {
 
 const handleComplete = () => {
   if (!selectedDiagnosis.value) {
-    alert("请先选择一个诊断结果");
+    showToast("请先选择一个诊断结果", "info");
     return;
   }
 
@@ -998,6 +1000,7 @@ const generateMedicalRecord = () => {
       if (firstData.precipitatingFactor.length > 0) precipitating = firstData.precipitatingFactor.join('、');
     } else if (firstData.precipitatingFactor !== '不清楚') {
       precipitating = firstData.precipitatingFactor;
+      if (precipitating === '没有原因') precipitating = '无明显诱因';
     }
   }
 
@@ -1012,7 +1015,7 @@ const generateMedicalRecord = () => {
     let detail = formatSymptomDetail(s, data);
 
     if (detail) {
-      hpiParts.push(`${s.name}表现为：${detail}。`);
+      hpiParts.push(`${s.name}，${detail}。`);
     }
   });
 
@@ -1023,7 +1026,7 @@ const generateMedicalRecord = () => {
     
     // Process standard fields first
     ['spirit', 'sleep', 'appetite'].forEach(k => {
-      if (genData[k] && genData[k] !== '其他') genParts.push(genData[k]);
+      if (genData[k] && !['其他', '不清楚', '不详'].includes(genData[k])) genParts.push(genData[k]);
     });
 
     // Special handling for urination and stool optimization
@@ -1033,12 +1036,12 @@ const generateMedicalRecord = () => {
     if (isUrinationNormal && isStoolNormal) {
       genParts.push('二便正常');
     } else {
-      if (genData['urination'] && genData['urination'] !== '其他') genParts.push(genData['urination']);
-      if (genData['stool'] && genData['stool'] !== '其他') genParts.push(genData['stool']);
+      if (genData['urination'] && !['其他', '不清楚', '不详'].includes(genData['urination'])) genParts.push(genData['urination']);
+      if (genData['stool'] && !['其他', '不清楚', '不详'].includes(genData['stool'])) genParts.push(genData['stool']);
     }
 
     // Process weight
-    if (genData['weight'] && genData['weight'] !== '其他') genParts.push(genData['weight']);
+    if (genData['weight'] && !['其他', '不清楚', '不详'].includes(genData['weight'])) genParts.push(genData['weight']);
 
     if (genParts.length > 0) {
       hpiParts.push(`一般情况：${genParts.join('，')}。`);
@@ -1052,42 +1055,69 @@ const generateMedicalRecord = () => {
 };
 
 const formatSymptomDetail = (s: any, data: any) => {
-    let detail = "";
+    const details: string[] = [];
     
-    // Custom logic for common symptoms
-    if (s.key === 'fever') {
-      if (data.maximumBodyTemperature) detail += `最高体温${data.maximumBodyTemperature}℃，`;
-      if (data.reliefFactor && data.reliefFactor !== '不清楚') detail += `${data.reliefFactor}，`;
-    } else if (s.key === 'cough') {
-      if (data.frequencyCharacteristic && data.frequencyCharacteristic !== '不清楚') detail += `${data.frequencyCharacteristic}，`;
-      if (data.soundCharacter && data.soundCharacter.length > 0) detail += `${data.soundCharacter.join('、')}，`;
-      if (data.colorFeature && data.colorFeature.length > 0) detail += `咳${data.colorFeature.join('、')}，`;
-    }
-    
-    // Generic logic for remaining fields
-    Object.keys(data).forEach(k => {
-      if (k === 'onsetTime' || k === 'precipitatingFactor') return; // Handled in intro
-      if (s.key === 'fever' && (k === 'maximumBodyTemperature' || k === 'reliefFactor')) return; // Handled above
-      if (s.key === 'cough' && (k === 'frequencyCharacteristic' || k === 'soundCharacter' || k === 'colorFeature')) return;
-      
-      const val = data[k];
-      if (Array.isArray(val) && val.length > 0) {
-         // Exclude '不清楚', '以上都无'
-         const validVals = val.filter(v => v !== '不清楚' && v !== '以上都无' && v !== '无');
-         if (validVals.length > 0) detail += `${validVals.join('、')}，`;
-      } else if (typeof val === 'string' && val && val !== '不清楚' && val !== '无') {
-         detail += `${val}，`;
-      }
-    });
+    // Iterate through configuration to ensure correct order
+    if (s.config && s.config.sections) {
+        s.config.sections.forEach((section: any) => {
+            section.fields.forEach((field: any) => {
+                const k = field.key;
+                // Skip fields handled in intro
+                if (k === 'onsetTime' || k === 'precipitatingFactor') return;
+                
+                const val = data[k];
+                // Skip empty or invalid values
+                if (val === undefined || val === null || val === '') return;
+                
+                // Filter out common negative/unclear answers
+                const isInvalid = (v: string) => ['不清楚', '无', '以上都无', '未查', '不详', '不记得'].includes(v);
 
-    if (detail.endsWith('，')) detail = detail.slice(0, -1);
-    return detail;
+                let formatted = '';
+
+                if (Array.isArray(val)) {
+                    const validItems = val.filter(v => !isInvalid(v));
+                    if (validItems.length > 0) {
+                        if (s.key === 'cough' && k === 'colorFeature') {
+                             formatted = `咳${validItems.join('、')}`;
+                        } else {
+                             formatted = validItems.join('、');
+                        }
+                    }
+                } else if (typeof val === 'string') {
+                    if (isInvalid(val)) return;
+                    
+                    if (s.key === 'fever' && k === 'maximumBodyTemperature') {
+                        formatted = `最高体温${val}℃`;
+                    } else {
+                        formatted = val;
+                    }
+                } else if (typeof val === 'number') {
+                     if (s.key === 'fever' && k === 'maximumBodyTemperature') {
+                        formatted = `最高体温${val}℃`;
+                    } else {
+                        formatted = String(val);
+                    }
+                }
+                
+                if (formatted) details.push(formatted);
+            });
+        });
+    } else {
+        // Fallback (should typically not be reached if templates are correct)
+         Object.keys(data).forEach(k => {
+            if (k === 'onsetTime' || k === 'precipitatingFactor') return;
+            const val = data[k];
+            if (val && typeof val === 'string' && val !== '不清楚') details.push(val);
+         });
+    }
+
+    return details.join('，');
 };
 
 const copyToClipboard = () => {
   const text = `主诉：${generatedRecord.value.chiefComplaint}\n现病史：\n${generatedRecord.value.historyOfPresentIllness}`;
   navigator.clipboard.writeText(text).then(() => {
-    alert('已复制到剪贴板');
+    showToast('已复制到剪贴板', 'success');
   });
 };
 
