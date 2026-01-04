@@ -38,15 +38,15 @@
       <!-- Header Actions -->
       <div class="header-actions">
         <template v-if="currentView === 'consultation'">
-             <button class="header-btn primary" @click="handleEndConsultation">结束问诊</button>
+             <button class="header-btn primary" @click="handleEndConsultation">生成病历</button>
         </template>
         <template v-else-if="currentView === 'record'">
              <button class="header-btn" @click="currentView = 'consultation'">返回</button>
-             <button class="header-btn primary" @click="handleComplete">完成</button>
+             <button class="header-btn primary" @click="handleComplete">生成报告</button>
         </template>
         <template v-else>
              <button class="header-btn primary" @click="printReport">打印</button>
-             <button class="header-btn" @click="handleEndSession">结束</button>
+             <button class="header-btn primary" @click="submitToHIS">完成问诊</button>
         </template>
       </div>
     </header>
@@ -380,30 +380,40 @@ import templatesData from '../assets/templates.json';
 import medicalCatalog from '../assets/medical_catalog.json';
 import Pinyin from 'tiny-pinyin';
 import { chat } from '../services/llm';
+import { invoke } from '@tauri-apps/api/core';
+
+const props = defineProps<{
+  initialPatientData?: any;
+}>();
 
 const emit = defineEmits(['close']);
 
-// General Condition Configuration
-const generalConditionConfig = {
-  key: 'general',
-  name: '一般情况问诊',
-  config: {
-    sections: [
-      {
-        id: 'general_section',
-        title: '一般情况问诊',
-        fields: [
-          { id: 'spirit', key: 'spirit', label: '精神', type: 'radio', props: { options: ['精神尚可', '精神疲惫', '精神亢奋', '服药后', '其他'] }, storageKey: 'spirit' },
-          { id: 'sleep', key: 'sleep', label: '睡眠', type: 'radio', props: { options: ['睡眠正常', '睡眠一般', '睡眠欠佳', '睡眠差', '其他'] }, storageKey: 'sleep' },
-          { id: 'appetite', key: 'appetite', label: '食欲', type: 'radio', props: { options: ['食欲正常', '食欲增加', '食欲减退', '其他'] }, storageKey: 'appetite' },
-          { id: 'urination', key: 'urination', label: '小便', type: 'radio', props: { options: ['小便正常', '小便增多', '小便减少', '其他'] }, storageKey: 'urination' },
-          { id: 'stool', key: 'stool', label: '大便', type: 'radio', props: { options: ['大便正常', '大便增多', '大便减少', '其他'] }, storageKey: 'stool' },
-          { id: 'weight', key: 'weight', label: '体重', type: 'radio', props: { options: ['体重无变化', '体重增加', '体重减轻', '其他'] }, storageKey: 'weight' }
-        ]
-      }
-    ]
-  }
-};
+// --- Interfaces & State Definitions ---
+
+// AI Recommendations State
+interface Diagnosis {
+  code: string;
+  name: string;
+  rate: string;
+  rationale: string;
+}
+
+interface TreatmentRecommendation {
+  type: 'medicine' | 'exam';
+  name: string; // AI recommended name
+  reason: string;
+  usage?: string;
+  matchedItem?: any; // Matched item from catalog
+  selected?: boolean;
+}
+
+interface FinalRecord {
+  patient: any;
+  record: { chiefComplaint: string; historyOfPresentIllness: string };
+  diagnosis: Diagnosis;
+  treatments: TreatmentRecommendation[];
+  date: string;
+}
 
 // Mock Patient Data
 const patientInfo = ref({
@@ -432,7 +442,8 @@ const patientInfo = ref({
   "sdBloodText": "不详",
   "fgActiveText": "是",
   "sdRhBloodText": "不详",
-  "sdCardText": "身份证"
+  "sdCardText": "身份证",
+  "allergyHistory": "无"
 });
 
 const symptoms = ref<any[]>([]);
@@ -441,23 +452,6 @@ const formData = ref<Record<string, any>>({});
 const searchQuery = ref('');
 const currentView = ref<'consultation' | 'record' | 'final_report'>('consultation');
 const generatedRecord = ref({ chiefComplaint: '', historyOfPresentIllness: '' });
-
-// AI Recommendations State
-interface Diagnosis {
-  code: string;
-  name: string;
-  rate: string;
-  rationale: string;
-}
-
-interface TreatmentRecommendation {
-  type: 'medicine' | 'exam';
-  name: string; // AI recommended name
-  reason: string;
-  usage?: string;
-  matchedItem?: any; // Matched item from catalog
-  selected?: boolean;
-}
 
 const aiLoading = ref(false);
 const aiError = ref<string | null>(null);
@@ -468,15 +462,64 @@ const treatmentLoading = ref(false);
 const treatmentError = ref<string | null>(null);
 const treatmentRecommendations = ref<TreatmentRecommendation[]>([]);
 
-interface FinalRecord {
-  patient: any;
-  record: { chiefComplaint: string; historyOfPresentIllness: string };
-  diagnosis: Diagnosis;
-  treatments: TreatmentRecommendation[];
-  date: string;
-}
-
 const finalRecord = ref<FinalRecord | null>(null);
+
+// General Condition Configuration
+const generalConditionConfig = {
+  key: 'general',
+  name: '一般情况问诊',
+  config: {
+    sections: [
+      {
+        id: 'general_section',
+        title: '一般情况问诊',
+        fields: [
+          { id: 'spirit', key: 'spirit', label: '精神', type: 'radio', props: { options: ['精神尚可', '精神疲惫', '精神亢奋', '服药后', '其他'] }, storageKey: 'spirit' },
+          { id: 'sleep', key: 'sleep', label: '睡眠', type: 'radio', props: { options: ['睡眠正常', '睡眠一般', '睡眠欠佳', '睡眠差', '其他'] }, storageKey: 'sleep' },
+          { id: 'appetite', key: 'appetite', label: '食欲', type: 'radio', props: { options: ['食欲正常', '食欲增加', '食欲减退', '其他'] }, storageKey: 'appetite' },
+          { id: 'urination', key: 'urination', label: '小便', type: 'radio', props: { options: ['小便正常', '小便增多', '小便减少', '其他'] }, storageKey: 'urination' },
+          { id: 'stool', key: 'stool', label: '大便', type: 'radio', props: { options: ['大便正常', '大便增多', '大便减少', '其他'] }, storageKey: 'stool' },
+          { id: 'weight', key: 'weight', label: '体重', type: 'radio', props: { options: ['体重无变化', '体重增加', '体重减轻', '其他'] }, storageKey: 'weight' }
+        ]
+      }
+    ]
+  }
+};
+
+// --- Logic ---
+
+watch(() => props.initialPatientData, (newData) => {
+  if (newData) {
+    patientInfo.value = {
+      ...patientInfo.value,
+      ...newData, // Merge directly as keys now match (naPi, idPi, etc.)
+      // Map old fields if they still come in via alias
+      naPi: newData.naPi || newData.name || patientInfo.value.naPi,
+      idPi: newData.idPi || newData.patientId || patientInfo.value.idPi,
+    };
+  }
+}, { immediate: true });
+
+const submitToHIS = async () => {
+  if (!finalRecord.value) return;
+
+  const result = {
+    consultationId: finalRecord.value.patient.idPi || "unknown",
+    diagnosis: finalRecord.value.diagnosis.name,
+    treatmentPlan: JSON.stringify(finalRecord.value.treatments),
+    medicalSummary: `主诉：${finalRecord.value.record.chiefComplaint}\n现病史：${finalRecord.value.record.historyOfPresentIllness}`,
+    timestamp: Date.now()
+  };
+
+  try {
+    await invoke('complete_consultation', { result });
+    alert("问诊完成，数据已发送回HIS系统。");
+    handleEndSession();
+  } catch (e) {
+    console.error("Failed to submit", e);
+    alert("发送数据失败: " + e);
+  }
+};
 
 const printReport = () => {
   window.print();
@@ -549,24 +592,26 @@ const selectSymptom = (symptom: any) => {
 
 const initFormData = (configItem: any) => {
   const data: Record<string, any> = {};
-  configItem.config.sections.forEach((section: any) => {
-    section.fields.forEach((field: any) => {
-      if (field.type === 'input_radio') {
-        data[field.storageKey] = { inputValue: '', radioValue: '' };
-      } else if (field.type === 'checkbox') {
-        data[field.storageKey] = [];
-      } else {
-        // Set default value for General Condition or if explicitly requested
-        if (configItem.key === 'general' && field.props?.options?.length > 0) {
-           data[field.storageKey] = field.props.options[0];
-        } else {
-           data[field.storageKey] = '';
-        }
-      }
-    });
-  });
-  // Use reactive set
-  formData.value[configItem.key] = data;
+  if (configItem && configItem.config && configItem.config.sections) {
+      configItem.config.sections.forEach((section: any) => {
+        section.fields.forEach((field: any) => {
+          if (field.type === 'input_radio') {
+            data[field.storageKey] = { inputValue: '', radioValue: '' };
+          } else if (field.type === 'checkbox') {
+            data[field.storageKey] = [];
+          } else {
+            // Set default value for General Condition or if explicitly requested
+            if (configItem.key === 'general' && field.props?.options?.length > 0) {
+              data[field.storageKey] = field.props.options[0];
+            } else {
+              data[field.storageKey] = '';
+            }
+          }
+        });
+      });
+      // Use reactive set
+      formData.value[configItem.key] = data;
+  }
 };
 
 const handleCheckboxChange = (event: Event, field: any, symptomKey: string) => {

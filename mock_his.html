@@ -1,0 +1,268 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Mock HIS - 医生工作站</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            margin: 0;
+            padding: 20px;
+            background-color: #f0f2f5;
+        }
+        .container {
+            max-width: 1000px;
+            margin: 0 auto;
+            background: white;
+            padding: 30px;
+            border-radius: 8px;
+            box-shadow: 0 2px 12px rgba(0,0,0,0.1);
+        }
+        h1 {
+            color: #1890ff;
+            border-bottom: 2px solid #f0f0f0;
+            padding-bottom: 15px;
+        }
+        .section {
+            margin-bottom: 30px;
+            border: 1px solid #e8e8e8;
+            padding: 20px;
+            border-radius: 4px;
+        }
+        .section-title {
+            font-size: 16px;
+            font-weight: bold;
+            margin-bottom: 15px;
+            color: #333;
+        }
+        .form-grid {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 20px;
+        }
+        .form-group {
+            margin-bottom: 15px;
+        }
+        label {
+            display: block;
+            margin-bottom: 5px;
+            color: #666;
+        }
+        input, select, textarea {
+            width: 100%;
+            padding: 8px;
+            border: 1px solid #d9d9d9;
+            border-radius: 4px;
+            box-sizing: border-box;
+        }
+        button {
+            background-color: #1890ff;
+            color: white;
+            border: none;
+            padding: 10px 25px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 16px;
+            transition: background 0.3s;
+        }
+        button:hover {
+            background-color: #40a9ff;
+        }
+        button:disabled {
+            background-color: #d9d9d9;
+            cursor: not-allowed;
+        }
+        #result-area {
+            background-color: #fafafa;
+            padding: 15px;
+            border: 1px dashed #d9d9d9;
+            border-radius: 4px;
+            min-height: 100px;
+            white-space: pre-wrap;
+        }
+        .status-badge {
+            display: inline-block;
+            padding: 4px 8px;
+            border-radius: 4px;
+            font-size: 12px;
+            margin-left: 10px;
+        }
+        .status-waiting { background: #fffbe6; color: #faad14; border: 1px solid #ffe58f; }
+        .status-success { background: #f6ffed; color: #52c41a; border: 1px solid #b7eb8f; }
+        .status-error { background: #fff1f0; color: #f5222d; border: 1px solid #ffa39e; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Mock HIS - 门诊医生工作站</h1>
+        
+        <div class="section">
+            <div class="section-title">当前就诊患者信息</div>
+            <div class="form-grid">
+                <div class="form-group">
+                    <label>患者ID (idPi)</label>
+                    <input type="text" id="patientId" value="766842939207974912">
+                </div>
+                <div class="form-group">
+                    <label>姓名 (naPi)</label>
+                    <input type="text" id="name" value="张虎">
+                </div>
+                <div class="form-group">
+                    <label>性别 (sdSexText)</label>
+                    <select id="gender">
+                        <option value="男性">男性</option>
+                        <option value="女性" selected>女性</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label>年龄 (ageText)</label>
+                    <input type="text" id="age" value="19岁">
+                </div>
+                <div class="form-group">
+                    <label>就诊科室 (Department)</label>
+                    <input type="text" id="department" value="呼吸内科">
+                </div>
+                <div class="form-group">
+                    <label>身份证号 (idCard)</label>
+                    <input type="text" id="idCard" value="360731200607117442">
+                </div>
+                <div class="form-group">
+                    <label>联系电话 (mobilePhone)</label>
+                    <input type="text" id="mobilePhone" value="13800138000">
+                </div>
+                <div class="form-group">
+                    <label>过敏史 (allergyHistory)</label>
+                    <input type="text" id="allergyHistory" value="无">
+                </div>
+            </div>
+            
+            <div style="display: flex; gap: 10px;">
+                <button onclick="startConsultation()" id="startBtn" style="flex: 1;">呼叫智能问诊系统</button>
+                <button onclick="stopConsultation()" id="stopBtn" style="flex: 1; background-color: #dc3545;">结束问诊</button>
+            </div>
+            <span id="callStatus" class="status-badge" style="display:none"></span>
+        </div>
+
+        <div class="section">
+            <div class="section-title">
+                智能问诊结果回传 
+                <button onclick="checkResult()" style="font-size: 12px; padding: 4px 10px; margin-left: 10px; background: #52c41a;">手动刷新</button>
+            </div>
+            <div id="result-area">等待问诊开始...</div>
+        </div>
+    </div>
+
+    <script>
+        const API_BASE = 'http://127.0.0.1:8081/api/consultation';
+        let pollingInterval = null;
+
+        async function startConsultation() {
+            // Refactored to match PatientInfo structure directly (no interface conversion needed)
+            const data = {
+                idPi: document.getElementById('patientId').value,
+                naPi: document.getElementById('name').value,
+                sdSexText: document.getElementById('gender').value,
+                ageText: document.getElementById('age').value,
+                department: document.getElementById('department').value,
+                idCard: document.getElementById('idCard').value,
+                mobilePhone: document.getElementById('mobilePhone').value,
+                allergyHistory: document.getElementById('allergyHistory').value
+            };
+
+            const btn = document.getElementById('startBtn');
+            const status = document.getElementById('callStatus');
+            
+            btn.disabled = true;
+            status.style.display = 'inline-block';
+            status.className = 'status-badge status-waiting';
+            status.textContent = '正在呼叫...';
+
+            try {
+                const response = await fetch(`${API_BASE}/start`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify(data)
+                });
+
+                if (response.ok) {
+                    const resData = await response.json();
+                    status.className = 'status-badge status-success';
+                    status.textContent = '呼叫成功，等待结果...';
+                    document.getElementById('result-area').textContent = `已建立连接 (ID: ${resData.consultationId})\n正在等待医生完成问诊...`;
+                    
+                    // Start polling
+                    if (pollingInterval) clearInterval(pollingInterval);
+                    pollingInterval = setInterval(checkResult, 2000);
+                } else {
+                    throw new Error(`HTTP ${response.status}`);
+                }
+            } catch (e) {
+                console.error(e);
+                status.className = 'status-badge status-error';
+                status.textContent = '呼叫失败: ' + e.message;
+                btn.disabled = false;
+            }
+        }
+
+        async function stopConsultation() {
+            const stopBtn = document.getElementById('stopBtn');
+            try {
+                stopBtn.disabled = true;
+                await fetch(`${API_BASE}/stop`, { method: 'POST' });
+                
+                if (pollingInterval) {
+                    clearInterval(pollingInterval);
+                    pollingInterval = null;
+                }
+                
+                document.getElementById('startBtn').disabled = false;
+                document.getElementById('callStatus').style.display = 'none';
+                document.getElementById('result-area').textContent = '等待问诊开始...';
+                
+            } catch (e) {
+                console.error(e);
+            } finally {
+                stopBtn.disabled = false;
+            }
+        }
+
+        async function checkResult() {
+            try {
+                const response = await fetch(`${API_BASE}/result`);
+                if (response.ok) {
+                    const result = await response.json();
+                    
+                    // Stop polling
+                    if (pollingInterval) {
+                        clearInterval(pollingInterval);
+                        pollingInterval = null;
+                    }
+
+                    // Display result
+                    document.getElementById('result-area').innerHTML = `
+                        <strong>问诊完成!</strong> (时间: ${new Date(result.timestamp).toLocaleString()})
+                        <br><br>
+                        <strong>诊断结果:</strong> ${result.diagnosis}
+                        <br>
+                        <strong>处理建议:</strong> ${result.treatmentPlan}
+                        <br>
+                        <strong>病历摘要:</strong>
+                        <pre style="background:#eee; padding:10px;">${result.medicalSummary}</pre>
+                    `;
+                    
+                    document.getElementById('startBtn').disabled = false;
+                    document.getElementById('callStatus').textContent = '问诊已完成';
+                } else if (response.status === 404) {
+                    // Still waiting
+                    console.log('Waiting for result...');
+                }
+            } catch (e) {
+                console.error('Polling error:', e);
+            }
+        }
+    </script>
+</body>
+</html>

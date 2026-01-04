@@ -16,6 +16,7 @@ const hoveredBtnIndex = ref(-1); // -1 means no button hovered
 const isWorking = ref(false);
 const isMoving = ref(false);
 const currentView = ref<'chat' | 'settings' | 'consultation'>('chat');
+const currentPatient = ref<any>(null);
 const ringMenuRef = ref<HTMLElement | null>(null);
 let unlistenHover: UnlistenFn | null = null;
 let unlistenMousePos: UnlistenFn | null = null;
@@ -252,6 +253,21 @@ onMounted(async () => {
   }
   // 监听 Rust 后端发出的窗口 hover 事件
   try {
+    await listen<any>('start-consultation', async (event) => {
+      console.log('Received consultation request:', event.payload);
+      currentPatient.value = event.payload;
+      await openConsultation();
+    });
+
+    await listen<any>('stop-consultation', async () => {
+      console.log('Received stop consultation request');
+      if (currentView.value === 'consultation') {
+        // Reset patient data if needed
+        currentPatient.value = null;
+        await exitWork();
+      }
+    });
+
     unlistenHover = await listen<boolean>("hover-change", (event) => {
       // 仅在非工作模式下响应
       if (!isWorking.value) {
@@ -472,14 +488,21 @@ const exitWork = async () => {
     <Transition name="morph">
       <div v-show="isWorking" class="assistant-layer">
         <div class="assistant-container">
-          <div class="assistant-toolbar">
+          <div class="assistant-toolbar" data-tauri-drag-region>
             <div class="toolbar-left" data-tauri-drag-region>
               <button v-if="currentView === 'settings'" class="icon-btn back-btn" @click="openChat" title="返回">
                  <svg class="toolbar-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                    <path d="M19 12H5M12 19l-7-7 7-7"/>
                  </svg>
               </button>
-              <span class="assistant-title" data-tauri-drag-region>{{ currentView === 'chat' ? '工作状态 · 智能问答' : (currentView === 'consultation' ? '智能问诊' : '系统设置') }}</span>
+              <span class="assistant-title" data-tauri-drag-region>
+                {{ 
+                  currentView === 'chat' ? '工作状态 · 智能问答' : 
+                  (currentView === 'consultation' ? 
+                    (currentPatient ? `智能问诊 - ${currentPatient.naPi}` : '智能问诊') : 
+                    '系统设置') 
+                }}
+              </span>
             </div>
             <button class="icon-btn" aria-label="收起" title="收起" @click="exitWork">
               <svg class="toolbar-icon" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
@@ -488,7 +511,11 @@ const exitWork = async () => {
             </button>
           </div>
           <ChatPanel v-if="currentView === 'chat'" />
-          <ConsultationPage v-else-if="currentView === 'consultation'" @close="exitWork" />
+          <ConsultationPage 
+            v-else-if="currentView === 'consultation'" 
+            @close="exitWork" 
+            :initialPatientData="currentPatient"
+          />
           <SettingsPanel v-else />
         </div>
       </div>

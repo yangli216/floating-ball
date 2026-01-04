@@ -1,4 +1,15 @@
 use tauri::{Manager, Emitter};
+use std::sync::{Arc, Mutex};
+
+mod http_server;
+use http_server::{PatientInfo, ConsultationResult};
+
+pub struct AppState {
+    pub current_consultation: Mutex<Option<PatientInfo>>,
+    pub last_result: Mutex<Option<ConsultationResult>>,
+}
+
+pub type SharedAppState = Arc<AppState>;
 
 // 窗口拖拽命令
 #[tauri::command]
@@ -21,6 +32,17 @@ async fn set_window_position(window: tauri::Window, x: i32, y: i32) -> Result<()
         .map_err(|e| e.to_string())
 }
 
+#[tauri::command]
+async fn complete_consultation(
+    state: tauri::State<'_, SharedAppState>,
+    result: ConsultationResult
+) -> Result<(), String> {
+    let mut last_result = state.last_result.lock().map_err(|e| e.to_string())?;
+    *last_result = Some(result);
+    println!("Consultation completed, result saved.");
+    Ok(())
+}
+
 #[derive(Clone, serde::Serialize)]
 struct MousePosPayload {
     x: f64,
@@ -29,21 +51,33 @@ struct MousePosPayload {
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    let state = Arc::new(AppState {
+        current_consultation: Mutex::new(None),
+        last_result: Mutex::new(None),
+    });
+
     tauri::Builder::default()
+        .manage(state.clone())
         .plugin(tauri_plugin_store::Builder::default().build())
         .plugin(tauri_plugin_process::init())
         .plugin(tauri_plugin_opener::init())
         .invoke_handler(tauri::generate_handler![
             start_drag,
             get_window_position,
-            set_window_position
+            set_window_position,
+            complete_consultation
         ])
-        .setup(|app| {
+        .setup(move |app| {
             // 获取主窗口
             let window = app.get_webview_window("main").unwrap();
             
             // 设置窗口为始终置顶
             window.set_always_on_top(true).unwrap();
+
+            // Start HTTP Server
+            let handle = app.handle().clone();
+            let state_for_server = state.clone();
+            http_server::run_server(handle, state_for_server);
             
             // 启动鼠标位置轮询线程，解决失焦状态下无法检测 Hover 的问题
             let win_clone = window.clone();
