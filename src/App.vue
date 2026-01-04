@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onMounted, onUnmounted, ref, watch } from "vue";
+import { onMounted, onUnmounted, ref, watch, computed } from "vue";
 import { getCurrentWindow, Window as TauriWindow, PhysicalPosition, currentMonitor } from "@tauri-apps/api/window";
 import { exit } from '@tauri-apps/plugin-process';
 import { listen, UnlistenFn } from "@tauri-apps/api/event";
@@ -25,6 +25,17 @@ let unlistenResize: UnlistenFn | null = null;
 let store: Store | null = null;
 let moveTimeout: ReturnType<typeof setTimeout> | null = null;
 let resizeTimeout: ReturnType<typeof setTimeout> | null = null;
+const lastBallPos = ref<{x: number, y: number} | null>(null);
+const ballOffset = ref<{x: number, y: number}>({ x: 0, y: 0 });
+const morphOrigin = ref('80px 80px');
+const containerStyle = computed(() => ({
+  transformOrigin: morphOrigin.value
+}));
+
+const ballStyle = computed(() => ({
+  transform: `translate(${ballOffset.value.x}px, ${ballOffset.value.y}px)`,
+  transition: 'opacity 0.2s ease'
+}));
 
 const handleFocus = () => { isFocused.value = true; };
 const handleBlur = () => { isFocused.value = false; };
@@ -35,7 +46,7 @@ const saveWindowPosition = async () => {
   try {
     const pos = await appWindow.value.outerPosition();
     // 只有在小球模式下才保存位置，避免展开后位置偏移覆盖了正确的小球位置
-    if (!isWorking.value) {
+    if (!isWorking.value && !transitioning.value) {
       await store.set('window_pos', { x: pos.x, y: pos.y });
       await store.save();
     }
@@ -196,6 +207,12 @@ onMounted(async () => {
         const targetW = state.currentView === 'consultation' ? TARGET_CONSULTATION_W : TARGET_WORK_W;
         const targetH = state.currentView === 'consultation' ? TARGET_CONSULTATION_H : TARGET_WORK_H;
         
+        // 尝试加载保存的小球位置，以便首次关闭时能正确动画
+        const savedPos = await store.get<{x: number, y: number}>('window_pos');
+        if (savedPos) {
+          lastBallPos.value = savedPos;
+        }
+
         if (appWindow.value) {
           await appWindow.value.setResizable(true);
           await appWindow.value.setSize(new LogicalSize(targetW, targetH));
@@ -354,6 +371,17 @@ const enterWorkMode = async () => {
   if (isWorking.value || transitioning.value) return;
   transitioning.value = true;
   
+  // 0. 记录当前小球位置 (关键：必须在窗口尺寸/位置改变前记录)
+  if (appWindow.value) {
+    try {
+      const pos = await appWindow.value.outerPosition();
+      lastBallPos.value = { x: pos.x, y: pos.y };
+      console.log('Recorded ball position:', lastBallPos.value);
+    } catch (e) {
+      console.error('Failed to record ball position:', e);
+    }
+  }
+
   const targetW = currentView.value === 'consultation' ? TARGET_CONSULTATION_W : TARGET_WORK_W;
   const targetH = currentView.value === 'consultation' ? TARGET_CONSULTATION_H : TARGET_WORK_H;
 
@@ -373,6 +401,25 @@ const enterWorkMode = async () => {
   // 2. 等待窗口大小响应
   await waitForWindowSize(targetW, targetH);
   
+  // 计算展开动画的原点 (从之前记录的小球位置展开)
+  if (appWindow.value && lastBallPos.value) {
+    try {
+      const winPos = await appWindow.value.outerPosition();
+      const scale = await appWindow.value.scaleFactor() || 1;
+      
+      // 原点 = (小球X - 窗口X) + 小球半径中心(80)
+      const originX = (lastBallPos.value.x - winPos.x) / scale + 80;
+      const originY = (lastBallPos.value.y - winPos.y) / scale + 80;
+      
+      morphOrigin.value = `${originX}px ${originY}px`;
+    } catch (e) {
+      console.warn('计算展开原点失败:', e);
+      morphOrigin.value = '80px 80px';
+    }
+  } else {
+    morphOrigin.value = '80px 80px';
+  }
+
   // 3. 触发面板展开动画 (Morph Expand)
   isWorking.value = true;
   
@@ -387,30 +434,104 @@ const exitWork = async () => {
   transitioning.value = true;
   exiting.value = true;
   
-  // 1. 触发面板收缩动画 (Morph Shrink)
+  // 1. 计算偏移量 (Logical Pixels)
+  if (appWindow.value && lastBallPos.value) {
+    try {
+      const winPos = await appWindow.value.outerPosition();
+      const scale = await appWindow.value.scaleFactor() || 1;
+      
+      const dx = (lastBallPos.value.x - winPos.x) / scale;
+      const dy = (lastBallPos.value.y - winPos.y) / scale;
+      
+      // 设置 ballOffset，让小球在视觉上直接出现在目标位置
+      ballOffset.value = { x: dx, y: dy };
+      
+      // 计算收缩动画的原点，让窗口向小球目标位置收缩
+      // 原点 = (小球X - 窗口X) + 小球半径中心(80)
+      const originX = dx + 80;
+      const originY = dy + 80;
+      morphOrigin.value = `${originX}px ${originY}px`;
+      
+    } catch (e) {
+      console.warn('计算小球偏移失败:', e);
+      morphOrigin.value = '80px 80px';
+    }
+  } else {
+    morphOrigin.value = '80px 80px';
+  }
+
+  // 2. 触发面板收缩动画 (Morph Shrink)
   isWorking.value = false;
   
   // 强制关闭 hover 状态，防止收缩过程中因鼠标位置导致环绕菜单闪现
   isHovered.value = false;
   
-  // 2. 等待动画结束
+  // 3. 等待动画结束
   await wait(TRANSITION_MS);
   
-  // 3. 缩小窗口
+  // 4. 移动窗口并重置偏移
   if (appWindow.value) {
     try {
-      await appWindow.value.setResizable(true);
-      await appWindow.value.setSize(new LogicalSize(TARGET_BALL_W, TARGET_BALL_H));
-      await appWindow.value.setResizable(false);
+      let targetX = 0;
+      let targetY = 0;
+      let hasTarget = false;
+
+      // 确定目标位置
+      if (lastBallPos.value) {
+        targetX = lastBallPos.value.x;
+        targetY = lastBallPos.value.y;
+        hasTarget = true;
+      } else if (store) {
+        const savedPos = await store.get<{x: number, y: number}>('window_pos');
+        if (savedPos) {
+          targetX = savedPos.x;
+          targetY = savedPos.y;
+          hasTarget = true;
+        }
+      }
+
+      if (hasTarget) {
+        // Step 2: 先移动窗口，再调整大小
+        // 这样可以避免 "先缩小导致小球因 offset 处于窗口可视区外而被裁剪消失" 的问题
+        
+        // 开启 Resizable 以便后续调整大小
+        await appWindow.value.setResizable(true);
+        
+        // 并发执行：窗口移动 + 小球归位
+        // 利用透明窗口特性，先让窗口框架对齐目标位置，同时把小球拉回窗口左上角
+        const movePromise = appWindow.value.setPosition(new PhysicalPosition(targetX, targetY));
+        ballOffset.value = { x: 0, y: 0 };
+        await movePromise;
+
+        // Step 3: 移动到位后，再裁剪窗口大小
+        // 此时小球已经在 (0,0)，缩小窗口只会切掉多余的透明区域，不会导致小球消失
+        await appWindow.value.setSize(new LogicalSize(TARGET_BALL_W, TARGET_BALL_H));
+        await appWindow.value.setResizable(false);
+
+        // 二次校验位置 (针对 macOS 边缘情况)
+        await wait(50);
+        const currentPos = await appWindow.value.outerPosition();
+        if (Math.abs(currentPos.x - targetX) > 10 || Math.abs(currentPos.y - targetY) > 10) {
+           console.warn('Position mismatch detected, retrying restore...', currentPos, targetX, targetY);
+           await appWindow.value.setPosition(new PhysicalPosition(targetX, targetY));
+        }
+      } else {
+        // 如果没有目标位置，仅缩小
+        await appWindow.value.setResizable(true);
+        await appWindow.value.setSize(new LogicalSize(TARGET_BALL_W, TARGET_BALL_H));
+        await appWindow.value.setResizable(false);
+      }
+
+      lastBallPos.value = null;
     } catch (err) {
-      console.warn('恢复窗口大小失败:', err);
+      console.warn('恢复窗口状态失败:', err);
     }
   }
   
-  // 4. 等待窗口大小响应
+  // 5. 等待窗口大小响应
   await waitForWindowSize(TARGET_BALL_W, TARGET_BALL_H);
   
-  // 5. 重置状态
+  // 6. 重置状态
   exiting.value = false;
   transitioning.value = false;
 };
@@ -419,10 +540,11 @@ const exitWork = async () => {
 <template>
   <div class="state-layer">
     <Transition name="morph">
-      <div v-show="!isWorking" class="ball-layer">
+      <div v-show="!isWorking" class="ball-layer" :style="containerStyle">
         <div 
           class="ball-container" 
           :class="{ 'no-interaction': transitioning }"
+          :style="ballStyle"
         >
           <!-- 环绕菜单 -->
           <div ref="ringMenuRef" class="ring-menu" :class="{ 'is-active': isHovered }">
@@ -486,9 +608,9 @@ const exitWork = async () => {
       </div>
     </Transition>
     <Transition name="morph">
-      <div v-show="isWorking" class="assistant-layer">
+      <div v-show="isWorking" class="assistant-layer" :style="containerStyle">
         <div class="assistant-container">
-          <div class="assistant-toolbar" data-tauri-drag-region>
+            <div class="assistant-toolbar" data-tauri-drag-region>
             <div class="toolbar-left" data-tauri-drag-region>
               <button v-if="currentView === 'settings'" class="icon-btn back-btn" @click="openChat" title="返回">
                  <svg class="toolbar-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -722,9 +844,7 @@ body,
   inset: 0;
 }
 .ball-layer {
-  display: flex;
-  align-items: center;
-  justify-content: center;
+  display: block;
   z-index: 2; /* 退出时圆球遮在面板上方 */
 }
 .assistant-layer { z-index: 1; }
@@ -766,9 +886,6 @@ body,
   border: 1px solid rgba(0, 0, 0, 0.1);
   box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.5);
   padding-top: 40px;
-  
-  /* 核心：设置变形原点为小球中心 (160/2 = 80) */
-  transform-origin: 80px 80px; 
 }
 
 .assistant-toolbar {
