@@ -56,6 +56,24 @@
       <aside class="symptom-sidebar">
         <h3>常用症状</h3>
         <div class="search-box">
+          <div class="category-filter-container" ref="categoryFilterRef">
+            <div class="category-trigger" @click="toggleCategoryDropdown" :class="{ active: isCategoryDropdownOpen }">
+              <span class="trigger-text">{{ categoryButtonText }}</span>
+              <svg class="trigger-icon" :class="{ rotate: isCategoryDropdownOpen }" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg>
+            </div>
+            
+            <div v-show="isCategoryDropdownOpen" class="category-dropdown">
+              <div class="category-option" @click="toggleCategory('all')" :class="{ selected: selectedCategories.length === 0 }">
+                  <div class="checkbox-custom" :class="{ checked: selectedCategories.length === 0 }"></div>
+                  <span>全部系统</span>
+              </div>
+              <div class="dropdown-divider"></div>
+              <div v-for="cat in uniqueCategories" :key="cat.key" class="category-option" @click="toggleCategory(cat.key)" :class="{ selected: selectedCategories.includes(cat.key) }">
+                  <div class="checkbox-custom" :class="{ checked: selectedCategories.includes(cat.key) }"></div>
+                  <span>{{ cat.label }}</span>
+              </div>
+            </div>
+          </div>
           <input 
             type="text" 
             v-model="searchQuery" 
@@ -82,6 +100,9 @@
             <div class="symptom-form-section">
               <div class="form-header">
                 <h2>{{ item.key === 'general' ? item.name : (item.name + ' - 症状属性问诊') }}</h2>
+                <button v-if="item.key !== 'general'" class="icon-btn remove-btn" @click="removeSymptom(item)" title="移除此症状">
+                  <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>
+                </button>
               </div>
       
               <div class="dynamic-form">
@@ -236,13 +257,23 @@
             <span v-if="aiLoading" class="tag-ai">AI生成中...</span>
           </div>
           <div class="panel-body">
+            <!-- Loading Overlay -->
+            <Transition name="fade">
+              <div v-if="aiLoading" class="loading-overlay">
+                <div class="ai-spinner">
+                  <div class="spinner-ring"></div>
+                  <div class="spinner-core"></div>
+                </div>
+                <div class="loading-content">
+                  <p class="loading-title">AI 正在分析病例</p>
+                  <p class="loading-desc">正在综合患者主诉、现病史及体征信息...</p>
+                </div>
+              </div>
+            </Transition>
+
             <div class="ai-card">
               <h4>推荐诊断</h4>
-              <div v-if="aiLoading" class="ai-placeholder">
-                <div class="skeleton-line" style="width: 60%"></div>
-                <div class="skeleton-line" style="width: 80%"></div>
-              </div>
-              <ul v-else-if="aiDiagnoses.length > 0" class="diagnosis-list">
+              <ul v-if="aiDiagnoses.length > 0" class="diagnosis-list">
                 <li 
                   v-for="diag in aiDiagnoses" 
                   :key="diag.code"
@@ -263,10 +294,15 @@
             <div class="ai-card" v-if="selectedDiagnosis">
               <h4>推荐方案 (基于 {{ selectedDiagnosis.name }})</h4>
               
-              <div v-if="treatmentLoading" class="ai-placeholder">
-                 <div class="skeleton-line" style="width: 90%"></div>
-                 <div class="skeleton-line" style="width: 70%"></div>
-                 <div class="skeleton-line" style="width: 50%"></div>
+              <div v-if="treatmentLoading" class="loading-overlay embedded">
+                <div class="ai-spinner">
+                  <div class="spinner-ring"></div>
+                  <div class="spinner-core"></div>
+                </div>
+                <div class="loading-content">
+                  <p class="loading-title">正在加载推荐方案...</p>
+                  <p class="loading-desc">正在智能匹配药品与检查项目</p>
+                </div>
               </div>
 
               <div v-else-if="treatmentError" class="error-text">{{ treatmentError }}</div>
@@ -375,7 +411,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted, watch } from 'vue';
+import { ref, computed, onMounted, watch, onUnmounted } from 'vue';
 import templatesData from '../assets/templates.json';
 import medicalCatalog from '../assets/medical_catalog.json';
 import Pinyin from 'tiny-pinyin';
@@ -450,8 +486,30 @@ const symptoms = ref<any[]>([]);
 const selectedSymptoms = ref<any[]>([]);
 const formData = ref<Record<string, any>>({});
 const searchQuery = ref('');
+const selectedCategories = ref<string[]>([]);
+const isCategoryDropdownOpen = ref(false);
+const categoryFilterRef = ref<HTMLElement | null>(null);
 const currentView = ref<'consultation' | 'record' | 'final_report'>('consultation');
 const generatedRecord = ref({ chiefComplaint: '', historyOfPresentIllness: '' });
+
+const systemCategories: Record<string, string> = {
+  respiratory: '呼吸系统',
+  circulatory: '循环系统',
+  endocrine: '内分泌系统',
+  digestive: '消化系统',
+  urinary: '泌尿系统',
+  reproductive: '生殖系统',
+  nervous: '神经系统',
+  motor: '运动系统',
+  other: '其他'
+};
+
+const uniqueCategories = computed(() => {
+  return Object.keys(systemCategories).map(key => ({
+    key,
+    label: systemCategories[key] || key
+  }));
+});
 
 const aiLoading = ref(false);
 const aiError = ref<string | null>(null);
@@ -529,6 +587,7 @@ const handleEndSession = () => {
   currentView.value = 'consultation';
   selectedSymptoms.value = [];
   formData.value = {};
+  initFormData(generalConditionConfig);
   generatedRecord.value = { chiefComplaint: '', historyOfPresentIllness: '' };
   finalRecord.value = null;
   aiDiagnoses.value = [];
@@ -537,16 +596,72 @@ const handleEndSession = () => {
   emit('close');
 };
 
+const removeSymptom = (symptom: any) => {
+  const index = selectedSymptoms.value.findIndex(s => s.key === symptom.key);
+  if (index !== -1) {
+    selectedSymptoms.value.splice(index, 1);
+  }
+};
+
+const toggleCategoryDropdown = () => {
+  isCategoryDropdownOpen.value = !isCategoryDropdownOpen.value;
+};
+
+const toggleCategory = (key: string) => {
+  if (key === 'all') {
+    selectedCategories.value = [];
+  } else {
+    const index = selectedCategories.value.indexOf(key);
+    if (index !== -1) {
+      selectedCategories.value.splice(index, 1);
+    } else {
+      selectedCategories.value.push(key);
+    }
+  }
+};
+
+const categoryButtonText = computed(() => {
+  if (selectedCategories.value.length === 0) return '全部系统';
+  if (selectedCategories.value.length === 1) {
+    const cat = uniqueCategories.value.find(c => c.key === selectedCategories.value[0]);
+    return cat ? cat.label : selectedCategories.value[0];
+  }
+  return `已选 ${selectedCategories.value.length} 项`;
+});
+
+const handleClickOutside = (event: MouseEvent) => {
+  if (categoryFilterRef.value && !categoryFilterRef.value.contains(event.target as Node)) {
+    isCategoryDropdownOpen.value = false;
+  }
+};
+
 onMounted(() => {
+  document.addEventListener('click', handleClickOutside);
   symptoms.value = templatesData;
   // Initialize General Condition data
   initFormData(generalConditionConfig);
 });
 
+onUnmounted(() => {
+  document.removeEventListener('click', handleClickOutside);
+});
+
 const filteredSymptoms = computed(() => {
-  if (!searchQuery.value) return symptoms.value;
+  let result = symptoms.value;
+
+  // Filter by Category
+  if (selectedCategories.value.length > 0) {
+    result = result.filter(s => 
+      s.systemCategory && 
+      Array.isArray(s.systemCategory) && 
+      s.systemCategory.some((c: string) => selectedCategories.value.includes(c))
+    );
+  }
+
+  if (!searchQuery.value) return result;
+  
   const query = searchQuery.value.toLowerCase();
-  return symptoms.value.filter(s => {
+  return result.filter(s => {
     const name = s.name.toLowerCase();
     if (name.includes(query)) return true;
     
@@ -1252,6 +1367,19 @@ const copyToClipboard = () => {
   padding: 8px 16px; /* Compact padding */
   border-bottom: 1px solid #e0f2fe;
   border-radius: 12px 12px 0 0;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.remove-btn {
+  color: #94a3b8;
+  padding: 4px;
+}
+
+.remove-btn:hover {
+  color: #ef4444;
+  background: #fef2f2;
 }
 
 .form-header h2 {
@@ -1569,6 +1697,85 @@ const copyToClipboard = () => {
   flex: 1;
   padding: 12px; /* Compact */
   overflow-y: auto;
+  position: relative;
+}
+
+.loading-overlay {
+  position: absolute;
+  inset: 0;
+  background: rgba(255, 255, 255, 0.95);
+  backdrop-filter: blur(5px);
+  z-index: 20;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 20px;
+}
+
+.ai-spinner {
+  position: relative;
+  width: 48px;
+  height: 48px;
+}
+
+.spinner-ring {
+  position: absolute;
+  inset: 0;
+  border: 3px solid #e2e8f0;
+  border-top-color: #3b82f6;
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+}
+
+.spinner-core {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: 24px;
+  height: 24px;
+  background: radial-gradient(circle, #3b82f6 0%, #60a5fa 100%);
+  border-radius: 50%;
+  box-shadow: 0 0 12px rgba(59, 130, 246, 0.5);
+  animation: pulse-core 1.5s ease-in-out infinite;
+}
+
+.loading-content {
+  text-align: center;
+}
+
+.loading-title {
+  color: #1e293b;
+  font-size: 16px;
+  font-weight: 600;
+  margin: 0 0 4px 0;
+}
+
+.loading-desc {
+  color: #64748b;
+  font-size: 13px;
+  margin: 0;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+@keyframes pulse-core {
+  0% { transform: translate(-50%, -50%) scale(0.8); opacity: 0.8; }
+  50% { transform: translate(-50%, -50%) scale(1.1); opacity: 1; }
+  100% { transform: translate(-50%, -50%) scale(0.8); opacity: 0.8; }
+}
+
+.fade-enter-active,
+.fade-leave-active {
+  transition: opacity 0.3s ease;
+}
+
+.fade-enter-from,
+.fade-leave-to {
+  opacity: 0;
 }
 
 .record-field {
@@ -1634,6 +1841,45 @@ const copyToClipboard = () => {
   margin-bottom: 16px;
   box-shadow: 0 2px 4px rgba(0,0,0,0.02);
   border: 1px solid #e2e8f0;
+  position: relative;
+  overflow: hidden;
+  min-height: 200px;
+  overflow-y: auto;
+}
+
+.category-filter {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.category-filter select {
+  flex: 1;
+  padding: 6px;
+  border: 1px solid #dbeafe;
+  border-radius: 6px;
+  font-size: 13px;
+  color: #4b5563;
+  outline: none;
+  background: white;
+}
+
+.clear-filter {
+  background: none;
+  border: none;
+  color: #9ca3af;
+  font-size: 18px;
+  cursor: pointer;
+  padding: 0 4px;
+}
+
+.clear-filter:hover {
+  color: #ef4444;
+}
+
+.loading-overlay.embedded {
+  border-radius: 8px;
 }
 
 .ai-card h4 {
@@ -1945,6 +2191,126 @@ const copyToClipboard = () => {
   overflow-y: auto;
   font-family: 'SimSun', 'Songti SC', serif;
   color: #000;
+}
+
+/* Category Filter Dropdown */
+.category-filter-container {
+  position: relative;
+  margin-bottom: 8px;
+}
+
+.category-trigger {
+  width: 100%;
+  padding: 8px 12px;
+  background: white;
+  border: 1px solid #dbeafe;
+  border-radius: 6px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  transition: all 0.2s;
+}
+
+.category-trigger:hover {
+  border-color: #3b82f6;
+}
+
+.category-trigger.active {
+  border-color: #3b82f6;
+  box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.1);
+}
+
+.trigger-text {
+  font-size: 14px;
+  color: #374151;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  flex: 1;
+}
+
+.trigger-icon {
+  width: 14px;
+  height: 14px;
+  color: #9ca3af;
+  margin-left: 8px;
+  transition: transform 0.2s;
+}
+
+.trigger-icon.rotate {
+  transform: rotate(180deg);
+}
+
+.category-dropdown {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  width: 100%;
+  max-height: 240px;
+  overflow-y: auto;
+  background: white;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+  margin-top: 4px;
+  z-index: 50;
+  padding: 4px 0;
+}
+
+.category-option {
+  padding: 8px 12px;
+  display: flex;
+  align-items: center;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.category-option:hover {
+  background: #f3f4f6;
+}
+
+.category-option.selected {
+  background: #eff6ff;
+  color: #2563eb;
+}
+
+.checkbox-custom {
+  width: 16px;
+  height: 16px;
+  border: 1px solid #d1d5db;
+  border-radius: 4px;
+  margin-right: 8px;
+  position: relative;
+  transition: all 0.2s;
+  background: white;
+}
+
+.category-option:hover .checkbox-custom {
+  border-color: #9ca3af;
+}
+
+.checkbox-custom.checked {
+  background: #3b82f6;
+  border-color: #3b82f6;
+}
+
+.checkbox-custom.checked::after {
+  content: '';
+  position: absolute;
+  left: 5px;
+  top: 2px;
+  width: 4px;
+  height: 8px;
+  border: solid white;
+  border-width: 0 2px 2px 0;
+  transform: rotate(45deg);
+}
+
+.dropdown-divider {
+  height: 1px;
+  background: #e5e7eb;
+  margin: 4px 0;
 }
 
 .hospital-title {

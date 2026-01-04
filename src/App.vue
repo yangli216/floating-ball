@@ -7,9 +7,16 @@ import { load, Store } from '@tauri-apps/plugin-store';
 import ChatPanel from "./components/ChatPanel.vue";
 import SettingsPanel from "./components/SettingsPanel.vue";
 import ConsultationPage from "./components/ConsultationPage.vue";
+import Toast from "./components/Toast.vue";
 import { LogicalSize } from "@tauri-apps/api/dpi";
+import { provide } from "vue";
 
 const appWindow = ref<TauriWindow | null>(null);
+const toastRef = ref<InstanceType<typeof Toast> | null>(null);
+const showToast = (msg: string, type: 'success' | 'error' | 'info' = 'info', duration = 3000) => {
+  toastRef.value?.show(msg, type, duration);
+};
+provide('showToast', showToast);
 const isFocused = ref(false);
 const isHovered = ref(false);
 const hoveredBtnIndex = ref(-1); // -1 means no button hovered
@@ -370,6 +377,13 @@ const handleExitApp = async (e: MouseEvent) => {
 const enterWorkMode = async () => {
   if (isWorking.value || transitioning.value) return;
   transitioning.value = true;
+
+  // Apply Always on Top config
+  if (appWindow.value) {
+    const saved = localStorage.getItem('ALWAYS_ON_TOP');
+    const isAlwaysOnTop = saved === null || saved === 'true';
+    await appWindow.value.setAlwaysOnTop(isAlwaysOnTop);
+  }
   
   // 0. 记录当前小球位置 (关键：必须在窗口尺寸/位置改变前记录)
   if (appWindow.value) {
@@ -431,6 +445,12 @@ const enterWorkMode = async () => {
 
 const exitWork = async () => {
   if (!isWorking.value || transitioning.value || isMoving.value) return;
+  
+  // Restore Always on Top for ball mode
+  if (appWindow.value) {
+      await appWindow.value.setAlwaysOnTop(true);
+  }
+
   transitioning.value = true;
   exiting.value = true;
   
@@ -644,6 +664,7 @@ const exitWork = async () => {
     </Transition>
   </div>
   <div v-if="transitioning" class="transition-mask" />
+  <Toast ref="toastRef" />
 </template>
 
 <style scoped>

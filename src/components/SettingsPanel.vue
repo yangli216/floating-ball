@@ -1,23 +1,42 @@
 <script setup lang="ts">
-import { ref, onMounted } from 'vue';
+import { ref, onMounted, inject } from 'vue';
 import { getLLMConfig, DEFAULT_LLM_CONFIG } from '../services/llm';
+import { getCurrentWindow } from '@tauri-apps/api/window';
 
+const showToast = inject('showToast') as (msg: string, type: 'success' | 'error' | 'info') => void;
 const apiKey = ref('');
 const baseUrl = ref('');
 const model = ref('');
+const alwaysOnTop = ref(true);
 
 onMounted(() => {
   const config = getLLMConfig();
   apiKey.value = config.apiKey;
   baseUrl.value = config.baseUrl;
   model.value = config.model;
+  
+  const savedTop = localStorage.getItem('ALWAYS_ON_TOP');
+  alwaysOnTop.value = savedTop === null || savedTop === 'true';
 });
 
-const saveSettings = () => {
+const saveSettings = async () => {
   localStorage.setItem('OPENAI_API_KEY', apiKey.value);
   localStorage.setItem('LLM_BASE_URL', baseUrl.value);
   localStorage.setItem('LLM_MODEL', model.value);
-  alert('设置已保存，刷新页面后生效。');
+  localStorage.setItem('ALWAYS_ON_TOP', String(alwaysOnTop.value));
+  
+  try {
+    const win = getCurrentWindow();
+    await win.setAlwaysOnTop(alwaysOnTop.value);
+  } catch (e) {
+    console.error('Failed to set always on top:', e);
+  }
+
+  if (showToast) {
+    showToast('设置已保存', 'success');
+  } else {
+    alert('设置已保存');
+  }
 };
 </script>
 
@@ -38,6 +57,13 @@ const saveSettings = () => {
       <div class="form-group">
         <label>Model Name</label>
         <input v-model="model" type="text" :placeholder="DEFAULT_LLM_CONFIG.model" />
+      </div>
+      <div class="form-group row">
+        <label>窗口始终置顶</label>
+        <div class="switch-wrapper">
+          <input type="checkbox" id="always-on-top" v-model="alwaysOnTop">
+          <label for="always-on-top" class="toggle-switch"></label>
+        </div>
       </div>
       <button class="save-btn" @click="saveSettings">保存配置</button>
       <p class="hint">提示：设置已保存到本地。如未设置，将使用环境变量默认值。</p>
@@ -84,6 +110,49 @@ const saveSettings = () => {
 .form-group input:focus {
   border-color: var(--accent);
   background: #fff;
+}
+.form-group.row {
+  flex-direction: row;
+  align-items: center;
+  justify-content: space-between;
+}
+.switch-wrapper {
+  position: relative;
+  width: 44px;
+  height: 24px;
+}
+.switch-wrapper input {
+  opacity: 0;
+  width: 0;
+  height: 0;
+}
+.toggle-switch {
+  position: absolute;
+  cursor: pointer;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background-color: #ccc;
+  transition: .4s;
+  border-radius: 34px;
+}
+.toggle-switch:before {
+  position: absolute;
+  content: "";
+  height: 18px;
+  width: 18px;
+  left: 3px;
+  bottom: 3px;
+  background-color: white;
+  transition: .4s;
+  border-radius: 50%;
+}
+input:checked + .toggle-switch {
+  background-color: var(--accent);
+}
+input:checked + .toggle-switch:before {
+  transform: translateX(20px);
 }
 .save-btn {
   margin-top: 10px;
