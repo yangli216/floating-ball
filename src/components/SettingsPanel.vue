@@ -2,8 +2,20 @@
 import { ref, onMounted, inject } from 'vue';
 import { getLLMConfig, DEFAULT_LLM_CONFIG } from '../services/llm';
 import { getCurrentWindow } from '@tauri-apps/api/window';
+import UpdateChecker from './UpdateChecker.vue';
 
 const showToast = inject('showToast') as (msg: string, type: 'success' | 'error' | 'info') => void;
+
+// Tabs configuration
+type TabType = 'general' | 'model' | 'about';
+const activeTab = ref<TabType>('general');
+const tabs = [
+  { id: 'general', label: '通用' },
+  { id: 'model', label: '模型' },
+  { id: 'about', label: '版本' }
+];
+
+// Settings state
 const apiKey = ref('');
 const baseUrl = ref('');
 const model = ref('');
@@ -40,31 +52,52 @@ const saveSettings = async () => {
 
 <template>
   <div class="settings-panel">
-    <div class="settings-header">
-      <h3>模型配置</h3>
+    <div class="tabs-header">
+      <button 
+        v-for="tab in tabs" 
+        :key="tab.id"
+        :class="['tab-btn', { active: activeTab === tab.id }]"
+        @click="activeTab = tab.id as TabType"
+      >
+        {{ tab.label }}
+      </button>
     </div>
+
     <div class="settings-content">
-      <div class="form-group">
-        <label>API Key</label>
-        <input v-model="apiKey" type="password" placeholder="sk-..." />
-      </div>
-      <div class="form-group">
-        <label>Base URL</label>
-        <input v-model="baseUrl" type="text" :placeholder="DEFAULT_LLM_CONFIG.baseUrl" />
-      </div>
-      <div class="form-group">
-        <label>Model Name</label>
-        <input v-model="model" type="text" :placeholder="DEFAULT_LLM_CONFIG.model" />
-      </div>
-      <div class="form-group row">
-        <label>窗口始终置顶</label>
-        <div class="switch-wrapper">
-          <input type="checkbox" id="always-on-top" v-model="alwaysOnTop">
-          <label for="always-on-top" class="toggle-switch"></label>
+      <!-- General Tab -->
+      <div v-if="activeTab === 'general'" class="tab-pane">
+        <div class="form-group row">
+          <label>窗口始终置顶</label>
+          <div class="switch-wrapper">
+            <input type="checkbox" id="always-on-top" v-model="alwaysOnTop">
+            <label for="always-on-top" class="toggle-switch"></label>
+          </div>
         </div>
+        <button class="save-btn" @click="saveSettings">保存设置</button>
       </div>
-      <button class="save-btn" @click="saveSettings">保存配置</button>
-      <p class="hint">提示：设置已保存到本地。如未设置，将使用环境变量默认值。</p>
+
+      <!-- Model Tab -->
+      <div v-if="activeTab === 'model'" class="tab-pane">
+        <div class="form-group">
+          <label>API Key</label>
+          <input v-model="apiKey" type="password" placeholder="sk-..." />
+        </div>
+        <div class="form-group">
+          <label>Base URL</label>
+          <input v-model="baseUrl" type="text" :placeholder="DEFAULT_LLM_CONFIG.baseUrl" />
+        </div>
+        <div class="form-group">
+          <label>Model Name</label>
+          <input v-model="model" type="text" :placeholder="DEFAULT_LLM_CONFIG.model" />
+        </div>
+        <button class="save-btn" @click="saveSettings">保存配置</button>
+        <p class="hint">提示：设置已保存到本地。如未设置，将使用环境变量默认值。</p>
+      </div>
+
+      <!-- About Tab -->
+      <div v-if="activeTab === 'about'" class="tab-pane">
+        <UpdateChecker />
+      </div>
     </div>
   </div>
 </template>
@@ -75,28 +108,66 @@ const saveSettings = async () => {
   flex-direction: column;
   height: 100%;
   color: var(--text-strong);
-  padding: 16px;
 }
-.settings-header h3 {
+
+.tabs-header {
+  display: flex;
+  border-bottom: 1px solid rgba(0,0,0,0.1);
   margin-bottom: 20px;
-  font-size: 16px;
-  opacity: 0.9;
+  padding: 0 16px;
 }
+
+.tab-btn {
+  padding: 12px 16px;
+  background: transparent;
+  border: none;
+  border-bottom: 2px solid transparent;
+  color: var(--text-weak);
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s;
+  font-size: 14px;
+}
+
+.tab-btn:hover {
+  color: var(--text-strong);
+}
+
+.tab-btn.active {
+  color: var(--accent);
+  border-bottom-color: var(--accent);
+}
+
 .settings-content {
+  flex: 1;
+  overflow-y: auto;
+  padding: 0 16px 16px;
+}
+
+.tab-pane {
   display: flex;
   flex-direction: column;
   gap: 16px;
+  animation: fadeIn 0.3s ease;
 }
+
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(5px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
 .form-group {
   display: flex;
   flex-direction: column;
   gap: 6px;
 }
+
 .form-group label {
   font-size: 12px;
   font-weight: 600;
   color: var(--text-weak);
 }
+
 .form-group input {
   height: 38px;
   border-radius: 8px;
@@ -104,26 +175,32 @@ const saveSettings = async () => {
   padding: 0 12px;
   background: rgba(255,255,255,0.7);
   outline: none;
+  transition: all 0.2s;
 }
+
 .form-group input:focus {
   border-color: var(--accent);
   background: #fff;
 }
+
 .form-group.row {
   flex-direction: row;
   align-items: center;
   justify-content: space-between;
 }
+
 .switch-wrapper {
   position: relative;
   width: 44px;
   height: 24px;
 }
+
 .switch-wrapper input {
   opacity: 0;
   width: 0;
   height: 0;
 }
+
 .toggle-switch {
   position: absolute;
   cursor: pointer;
@@ -135,6 +212,7 @@ const saveSettings = async () => {
   transition: .4s;
   border-radius: 34px;
 }
+
 .toggle-switch:before {
   position: absolute;
   content: "";
@@ -146,12 +224,15 @@ const saveSettings = async () => {
   transition: .4s;
   border-radius: 50%;
 }
+
 input:checked + .toggle-switch {
   background-color: var(--accent);
 }
+
 input:checked + .toggle-switch:before {
   transform: translateX(20px);
 }
+
 .save-btn {
   margin-top: 10px;
   height: 40px;
@@ -164,9 +245,11 @@ input:checked + .toggle-switch:before {
   box-shadow: 0 4px 12px rgba(121, 194, 255, 0.3);
   transition: transform 0.2s ease;
 }
+
 .save-btn:hover {
   transform: translateY(-1px);
 }
+
 .hint {
   font-size: 11px;
   color: var(--text-weak);

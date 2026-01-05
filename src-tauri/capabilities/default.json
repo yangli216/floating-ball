@@ -14,6 +14,7 @@
     "core:webview:allow-print",
     "opener:default",
     "process:default",
-    "store:default"
+    "store:default",
+    "updater:default"
   ]
 }
