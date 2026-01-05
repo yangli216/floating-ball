@@ -413,7 +413,7 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, watch, onUnmounted, inject } from 'vue';
 import templatesData from '../assets/templates.json';
-import medicalCatalog from '../assets/medical_catalog.json';
+import { medicalDataService } from '../services/medicalData';
 import Pinyin from 'tiny-pinyin';
 import { chat } from '../services/llm';
 import { invoke } from '@tauri-apps/api/core';
@@ -430,6 +430,7 @@ const emit = defineEmits(['close']);
 
 // AI Recommendations State
 interface Diagnosis {
+  id?: string;
   code: string;
   name: string;
   rate: string;
@@ -845,8 +846,19 @@ ${generatedRecord.value.historyOfPresentIllness}
     ]);
 
     // Clean up response if it contains markdown code blocks
-    const diagnoses: Diagnosis[] = parseLLMJson(fullResponse);
+    let diagnoses: Diagnosis[] = parseLLMJson(fullResponse);
     
+    // Match against local catalog to get system ID
+    diagnoses = diagnoses.map(d => {
+      const matched = medicalDataService.matchDiagnosis(d.name);
+      return {
+        ...d,
+        id: matched?.id,
+        // Optional: Use local standard name/code if matched? 
+        // For now, we keep AI's output but attach the ID.
+      };
+    });
+
     // Sort by rate descending
     diagnoses.sort((a, b) => {
       const rateA = parseFloat(a.rate.replace('%', '')) || 0;
@@ -903,15 +915,11 @@ const fetchTreatmentRecommendation = async () => {
     const processedRecs: TreatmentRecommendation[] = rawRecommendations.map(rec => {
       let matchedItem = null;
       if (rec.type === 'medicine') {
-        // Simple fuzzy match for medicines
-        matchedItem = medicalCatalog.medicines.find(m => 
-          m.genericName.includes(rec.name) || rec.name.includes(m.genericName) || m.name.includes(rec.name)
-        );
+        // Use service for smart matching
+        matchedItem = medicalDataService.matchMedicine(rec.name);
       } else if (rec.type === 'exam') {
-        // Simple fuzzy match for exams
-        matchedItem = medicalCatalog.examinations.find(e => 
-          e.name.includes(rec.name) || rec.name.includes(e.name)
-        );
+        // Use service for smart matching
+        matchedItem = medicalDataService.matchItem(rec.name);
       }
       return {
         ...rec,
