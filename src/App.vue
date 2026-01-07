@@ -9,6 +9,7 @@ import ChatPanel from "./components/ChatPanel.vue";
 import SettingsPanel from "./components/SettingsPanel.vue";
 import ConsultationPage from "./components/ConsultationPage.vue";
 import Toast from "./components/Toast.vue";
+import RiskAlertPanel, { type RiskItem } from "./components/RiskAlertPanel.vue";
 import { LogicalSize } from "@tauri-apps/api/dpi";
 import { provide } from "vue";
 
@@ -23,9 +24,15 @@ const isHovered = ref(false);
 const hoveredBtnIndex = ref(-1); // -1 means no button hovered
 const isWorking = ref(false);
 const isMoving = ref(false);
-const currentView = ref<'chat' | 'settings' | 'consultation'>('chat');
+const currentView = ref<'chat' | 'settings' | 'consultation' | 'risk-alert'>('chat');
 const currentPatient = ref<any>(null);
 const ringMenuRef = ref<HTMLElement | null>(null);
+
+// 风险提示状态
+const riskPatientName = ref('');
+const riskPatientGender = ref<'M' | 'F'>('M');
+const riskPatientAge = ref(0);
+const riskItems = ref<RiskItem[]>([]);
 let unlistenHover: UnlistenFn | null = null;
 let unlistenMousePos: UnlistenFn | null = null;
 let unlistenMoved: UnlistenFn | null = null;
@@ -158,8 +165,23 @@ const TARGET_WORK_W = 420;
 const TARGET_WORK_H = 560;
 const TARGET_CONSULTATION_W = 1200;
 const TARGET_CONSULTATION_H = 900;
+const TARGET_RISK_ALERT_W = 320;
+const TARGET_RISK_ALERT_H = 300;
 const TARGET_BALL_W = 160;
 const TARGET_BALL_H = 160;
+
+// 打开风险提示界面
+const openRiskAlert = async () => {
+  currentView.value = 'risk-alert';
+  if (!isWorking.value) {
+    await enterWorkMode(TARGET_RISK_ALERT_W, TARGET_RISK_ALERT_H);
+  }
+};
+
+// 关闭风险提示界面
+const closeRiskAlert = async () => {
+  await exitWork();
+};
 
 // 等待窗口达到指定逻辑尺寸
 const waitForWindowSize = async (logicalW: number, logicalH: number, timeout = 1000) => {
@@ -309,6 +331,20 @@ onMounted(async () => {
       }
     });
 
+    // 监听患者风险提示事件
+    await listen<any>('show-patient-risks', async (event) => {
+      console.log('Received patient risks:', event.payload);
+      const data = event.payload;
+      riskPatientName.value = data.patientName || '未知患者';
+      riskPatientGender.value = data.gender || 'M';
+      riskPatientAge.value = data.age || 0;
+      riskItems.value = data.risks || [];
+      if (riskItems.value.length > 0 && !isWorking.value) {
+        // 使用 Morph 过渡进入风险提示界面
+        await openRiskAlert();
+      }
+    });
+
     unlistenHover = await listen<boolean>("hover-change", (event) => {
       // 仅在非工作模式下响应
       if (!isWorking.value) {
@@ -391,7 +427,7 @@ const handleExitApp = async (e: MouseEvent) => {
 
 // 进入工作模式（展开窗口）
 // 进入工作模式（展开窗口）
-const enterWorkMode = async () => {
+const enterWorkMode = async (customW?: number, customH?: number) => {
   if (isWorking.value || transitioning.value) return;
   transitioning.value = true;
 
@@ -413,8 +449,9 @@ const enterWorkMode = async () => {
     }
   }
 
-  const targetW = currentView.value === 'consultation' ? TARGET_CONSULTATION_W : TARGET_WORK_W;
-  const targetH = currentView.value === 'consultation' ? TARGET_CONSULTATION_H : TARGET_WORK_H;
+  // 支持自定义尺寸或根据视图类型确定
+  const targetW = customW ?? (currentView.value === 'consultation' ? TARGET_CONSULTATION_W : TARGET_WORK_W);
+  const targetH = customH ?? (currentView.value === 'consultation' ? TARGET_CONSULTATION_H : TARGET_WORK_H);
 
   // 1. 立即设置窗口大小 (背景透明，用户无感知)
   if (appWindow.value) {
@@ -637,8 +674,9 @@ const exitWork = async () => {
     </Transition>
     <Transition name="morph">
       <div v-show="isWorking" class="assistant-layer" :style="containerStyle">
-        <div class="assistant-container">
-            <div class="assistant-toolbar" data-tauri-drag-region>
+        <div class="assistant-container" :class="{ 'no-toolbar': currentView === 'risk-alert' }">
+          <!-- 工具栏 (risk-alert 视图不显示) -->
+          <div v-if="currentView !== 'risk-alert'" class="assistant-toolbar" data-tauri-drag-region>
             <div class="toolbar-left" data-tauri-drag-region>
               <button v-if="currentView === 'settings'" class="icon-btn back-btn" @click="openChat" title="返回">
                  <svg class="toolbar-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -665,6 +703,15 @@ const exitWork = async () => {
             v-else-if="currentView === 'consultation'" 
             @close="exitWork" 
             :initialPatientData="currentPatient"
+          />
+          <RiskAlertPanel
+            v-else-if="currentView === 'risk-alert'"
+            :patientName="riskPatientName"
+            :gender="riskPatientGender"
+            :age="riskPatientAge"
+            :risks="riskItems"
+            @close="closeRiskAlert"
+            @confirm="closeRiskAlert"
           />
           <SettingsPanel v-else />
         </div>
@@ -904,6 +951,10 @@ body,
   border: 1px solid rgba(0, 0, 0, 0.1);
   box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.5);
   padding-top: 40px;
+}
+
+.assistant-container.no-toolbar {
+  padding-top: 0;
 }
 
 .assistant-toolbar {

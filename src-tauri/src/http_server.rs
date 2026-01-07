@@ -38,6 +38,24 @@ pub struct ConsultationResult {
     pub timestamp: u64,
 }
 
+#[derive(Debug, Serialize, Deserialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct RiskItem {
+    pub level: u8,           // 1=红色, 2=橙色, 3=黄色
+    pub category: String,    // allergy/chronic/medication/population/vital/other
+    pub content: String,     // 显示文本
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct PatientRiskData {
+    pub patient_id: String,
+    pub patient_name: String,
+    pub gender: String,      // "M" or "F"
+    pub age: u32,
+    pub risks: Vec<RiskItem>,
+}
+
 async fn start_consultation(
     data: web::Json<PatientInfo>,
     app_handle: web::Data<tauri::AppHandle>,
@@ -122,6 +140,43 @@ async fn get_result(
     }
 }
 
+async fn show_patient_risks(
+    data: web::Json<PatientRiskData>,
+    app_handle: web::Data<tauri::AppHandle>,
+) -> impl Responder {
+    let risk_data = data.into_inner();
+    println!("Received patient risks for: {} ({} risks)", risk_data.patient_name, risk_data.risks.len());
+
+    // Emit event to Frontend
+    if let Some(window) = app_handle.get_webview_window("main") {
+        if let Err(e) = window.emit("show-patient-risks", &risk_data) {
+            eprintln!("Failed to emit risk event: {}", e);
+            return HttpResponse::InternalServerError().json(serde_json::json!({
+                "status": "error",
+                "message": format!("Failed to emit event: {}", e)
+            }));
+        } else {
+            println!("Event 'show-patient-risks' emitted successfully");
+        }
+        
+        // Force window to front
+        let _ = window.set_focus();
+        let _ = window.unminimize();
+        let _ = window.show();
+    } else {
+        println!("Error: Main window not found");
+        return HttpResponse::InternalServerError().json(serde_json::json!({
+            "status": "error",
+            "message": "Main window not found"
+        }));
+    }
+
+    HttpResponse::Ok().json(serde_json::json!({
+        "status": "success",
+        "patientId": risk_data.patient_id
+    }))
+}
+
 pub fn run_server(app_handle: tauri::AppHandle, state: SharedAppState) {
     std::thread::spawn(move || {
         let sys = actix_web::rt::System::new();
@@ -141,6 +196,7 @@ pub fn run_server(app_handle: tauri::AppHandle, state: SharedAppState) {
                     .route("/api/consultation/start", web::post().to(start_consultation))
                     .route("/api/consultation/stop", web::post().to(stop_consultation))
                     .route("/api/consultation/result", web::get().to(get_result))
+                    .route("/api/patient/risks", web::post().to(show_patient_risks))
             })
             .bind(("127.0.0.1", 8081))
             .expect("Failed to bind port 8081")
