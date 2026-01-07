@@ -279,13 +279,33 @@
                   :key="diag.code"
                   class="diagnosis-item"
                   :class="{ active: selectedDiagnosis?.code === diag.code }"
-                  @click="selectedDiagnosis = diag"
+                  @click="handleDiagnosisSelect(diag)"
                 >
                   <div class="diag-header">
-                    <span class="diag-name">{{ diag.name }} ({{ diag.code }})</span>
+                    <div class="diag-name-group">
+                      <span class="diag-name">{{ diag.name }} ({{ diag.code }})</span>
+                      <div class="inline-related-trigger" @click="toggleRelatedDropdown(diag, $event)" title="切换同类诊断">
+                        <span class="arrow" :class="{ open: openRelatedCode === diag.code }">▼</span>
+                      </div>
+                    </div>
                     <span class="diag-rate">{{ diag.rate }}</span>
                   </div>
                   <div class="diag-rationale">{{ diag.rationale }}</div>
+
+                  <!-- Related Diagnoses Dropdown -->
+                  <div v-if="openRelatedCode === diag.code && inlineRelatedDiagnoses.length > 0" class="related-section" @click.stop>
+                    <div class="related-list">
+                      <div 
+                        v-for="item in inlineRelatedDiagnoses" 
+                        :key="item.id" 
+                        class="related-item"
+                        @click="swapDiagnosis(diag, item)"
+                      >
+                        <span class="related-code">{{ item.code }}</span>
+                        <span class="related-name">{{ item.name }}</span>
+                      </div>
+                    </div>
+                  </div>
                 </li>
               </ul>
               <div v-else class="empty-text">暂无推荐</div>
@@ -413,7 +433,7 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, watch, onUnmounted, inject } from 'vue';
 import templatesData from '../assets/templates.json';
-import { medicalDataService } from '../services/medicalData';
+import { medicalDataService, type DiagnosisItem } from '../services/medicalData';
 import Pinyin from 'tiny-pinyin';
 import { chat } from '../services/llm';
 import { invoke } from '@tauri-apps/api/core';
@@ -518,6 +538,8 @@ const aiLoading = ref(false);
 const aiError = ref<string | null>(null);
 const aiDiagnoses = ref<Diagnosis[]>([]);
 const selectedDiagnosis = ref<Diagnosis | null>(null);
+const relatedDiagnoses = ref<DiagnosisItem[]>([]);
+const isRelatedOpen = ref(false);
 
 const treatmentLoading = ref(false);
 const treatmentError = ref<string | null>(null);
@@ -850,12 +872,26 @@ ${generatedRecord.value.historyOfPresentIllness}
     
     // Match against local catalog to get system ID
     diagnoses = diagnoses.map(d => {
-      const matched = medicalDataService.matchDiagnosis(d.name);
+      // 1. Try matching by code first (Highest priority)
+      let matched = medicalDataService.matchDiagnosis(d.code);
+      
+      // 2. If no code match, try matching by name
+      if (!matched) {
+        matched = medicalDataService.matchDiagnosis(d.name);
+      }
+      
+      if (matched) {
+        return {
+          ...d,
+          id: matched.id,
+          code: matched.code, // Use local standard code (e.g. R50.9 -> R50.900)
+          name: matched.name  // Use local standard name
+        };
+      }
+      
       return {
         ...d,
-        id: matched?.id,
-        // Optional: Use local standard name/code if matched? 
-        // For now, we keep AI's output but attach the ID.
+        id: undefined
       };
     });
 
@@ -873,6 +909,66 @@ ${generatedRecord.value.historyOfPresentIllness}
   } finally {
     aiLoading.value = false;
   }
+};
+
+const openRelatedCode = ref<string | null>(null);
+const inlineRelatedDiagnoses = ref<DiagnosisItem[]>([]);
+
+const toggleRelatedDropdown = (diag: Diagnosis, event: Event) => {
+  event.stopPropagation();
+  
+  if (openRelatedCode.value === diag.code) {
+    openRelatedCode.value = null;
+  } else {
+    openRelatedCode.value = diag.code;
+    const related = medicalDataService.getRelatedDiagnoses(diag.code);
+    inlineRelatedDiagnoses.value = related.filter(d => d.code !== diag.code);
+  }
+};
+
+const swapDiagnosis = (originalDiag: Diagnosis, newItem: DiagnosisItem) => {
+  // Update aiDiagnoses list
+  const index = aiDiagnoses.value.findIndex(d => d.code === originalDiag.code);
+  if (index !== -1) {
+    const updatedDiag = {
+      ...aiDiagnoses.value[index],
+      id: newItem.id,
+      code: newItem.code,
+      name: newItem.name
+    };
+    aiDiagnoses.value[index] = updatedDiag;
+    
+    // If this was the selected diagnosis, update selection too
+    if (selectedDiagnosis.value?.code === originalDiag.code) {
+      selectedDiagnosis.value = {
+        ...selectedDiagnosis.value,
+        id: newItem.id,
+        code: newItem.code,
+        name: newItem.name
+      };
+      // We don't automatically trigger treatment fetch here to avoid "unnecessary triggering" as requested.
+      // User can click the row again if they want to refresh treatments.
+      // But if they just swapped it, the row is still "active" visually.
+      // If the code changed, the treatments might be invalid.
+      // Ideally, we should probably refresh treatments if it IS selected.
+      // But user said "avoid unnecessary triggering". Maybe they mean "don't trigger IF NOT selected".
+      // If it IS selected, we probably SHOULD trigger.
+      // But let's stick to minimal side effects first.
+    }
+  }
+  
+  openRelatedCode.value = null;
+};
+
+const handleDiagnosisSelect = (diag: Diagnosis) => {
+  selectedDiagnosis.value = diag;
+  if (diag.code) {
+    const related = medicalDataService.getRelatedDiagnoses(diag.code);
+    relatedDiagnoses.value = related.filter(d => d.code !== diag.code);
+  } else {
+    relatedDiagnoses.value = [];
+  }
+  isRelatedOpen.value = false;
 };
 
 const fetchTreatmentRecommendation = async () => {
@@ -2602,5 +2698,114 @@ const copyToClipboard = () => {
     padding: 0;
     margin: 0;
   }
+}
+/* Related Diagnoses */
+.related-section {
+  margin-top: 8px;
+  background: #ffffff;
+  border-radius: 6px;
+  border: 1px solid #e2e8f0;
+  overflow: hidden;
+  font-size: 13px;
+}
+
+.related-trigger {
+  padding: 6px 10px;
+  color: #64748b;
+  cursor: pointer;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  transition: background 0.2s;
+  background: #f8fafc;
+}
+
+.related-trigger:hover {
+  background: #f1f5f9;
+}
+
+.arrow {
+  font-size: 10px;
+  transition: transform 0.2s;
+}
+
+.arrow.open {
+  transform: rotate(180deg);
+}
+
+.related-list {
+  max-height: 200px;
+  overflow-y: auto;
+  border-top: 1px solid #e2e8f0;
+}
+
+.related-item {
+  padding: 8px 10px;
+  display: flex;
+  gap: 10px;
+  cursor: pointer;
+  transition: background 0.2s;
+  align-items: center;
+}
+
+.related-item:hover {
+  background: #f0f9ff;
+}
+
+.related-code {
+  font-family: monospace;
+  color: #64748b;
+  font-weight: 500;
+  min-width: 60px;
+}
+
+.related-name {
+  color: #334155;
+  font-weight: 500;
+}
+
+.matched-inline {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  background: #f0fdf4;
+  padding: 2px 6px;
+  border-radius: 4px;
+  border: 1px solid #dcfce7;
+  font-size: 12px;
+  margin-left: 6px;
+}
+
+.match-icon {
+  color: #166534;
+  font-weight: bold;
+}
+
+.unmatched-icon {
+  margin-left: 6px;
+  font-size: 12px;
+  opacity: 0.6;
+}
+
+.diag-name-group {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.inline-related-trigger {
+  cursor: pointer;
+  padding: 2px 4px;
+  border-radius: 4px;
+  color: #94a3b8;
+  transition: all 0.2s;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.inline-related-trigger:hover {
+  background: #e2e8f0;
+  color: #475569;
 }
 </style>

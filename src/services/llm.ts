@@ -8,7 +8,8 @@ export interface ChatMessage {
 
 export const DEFAULT_LLM_CONFIG = {
   baseUrl: "https://api.openai.com/v1",
-  model: "gpt-4o-mini"
+  model: "gpt-4o-mini",
+  audioModel: "whisper-1"
 };
 
 // 获取配置信息
@@ -17,15 +18,16 @@ export function getLLMConfig() {
   // 默认为 OpenAI 官方地址和模型
   const baseUrl = (localStorage.getItem("LLM_BASE_URL") || import.meta.env.VITE_LLM_BASE_URL || DEFAULT_LLM_CONFIG.baseUrl).replace(/\/+$/, "");
   const model = localStorage.getItem("LLM_MODEL") || import.meta.env.VITE_LLM_MODEL || DEFAULT_LLM_CONFIG.model;
+  const audioModel = localStorage.getItem("LLM_AUDIO_MODEL") || import.meta.env.VITE_LLM_AUDIO_MODEL || DEFAULT_LLM_CONFIG.audioModel;
 
-  return { apiKey, baseUrl, model };
+  return { apiKey, baseUrl, model, audioModel };
 }
 
 function getConfigAndKey(explicitKey?: string) {
-  const { apiKey: envKey, baseUrl, model } = getLLMConfig();
+  const { apiKey: envKey, baseUrl, model, audioModel } = getLLMConfig();
   const key = explicitKey || envKey;
   if (!key) throw new Error("缺少 API Key。请在 .env 设置 VITE_OPENAI_API_KEY 或在 localStorage 设置 OPENAI_API_KEY。");
-  return { key, baseUrl, model };
+  return { key, baseUrl, model, audioModel };
 }
 
 function createPayloadMessages(messages: ChatMessage[]) {
@@ -129,13 +131,13 @@ export async function chat(messages: ChatMessage[], apiKey?: string): Promise<st
 
 // 语音转文字（Whisper）
 export async function transcribeAudio(blob: Blob, apiKey?: string): Promise<string> {
-  const { key } = getConfigAndKey(apiKey);
+  const { key, baseUrl, audioModel } = getConfigAndKey(apiKey);
   const file = new File([blob], "audio.webm", { type: blob.type || "audio/webm" });
   const form = new FormData();
   form.append("file", file);
-  form.append("model", "whisper-1");
+  form.append("model", audioModel);
 
-  const res = await fetch("https://api.openai.com/v1/audio/transcriptions", {
+  const res = await fetch(`${baseUrl}/audio/transcriptions`, {
     method: "POST",
     headers: { Authorization: `Bearer ${key}` },
     body: form,

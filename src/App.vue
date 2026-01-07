@@ -4,6 +4,7 @@ import { getCurrentWindow, Window as TauriWindow, PhysicalPosition, currentMonit
 import { exit } from '@tauri-apps/plugin-process';
 import { listen, UnlistenFn } from "@tauri-apps/api/event";
 import { load, Store } from '@tauri-apps/plugin-store';
+import { onOpenUrl } from '@tauri-apps/plugin-deep-link';
 import ChatPanel from "./components/ChatPanel.vue";
 import SettingsPanel from "./components/SettingsPanel.vue";
 import ConsultationPage from "./components/ConsultationPage.vue";
@@ -200,6 +201,22 @@ onMounted(async () => {
   try {
     appWindow.value = getCurrentWindow();
     
+    // 监听 Deep Link
+    try {
+      await onOpenUrl((urls) => {
+        console.log('Deep link received:', urls);
+        if (urls && urls.length > 0) {
+          showToast(`收到外部调用: ${urls[0]}`, 'info');
+          // 如果在非工作模式，自动展开
+          if (!isWorking.value) {
+            enterWorkMode();
+          }
+        }
+      });
+    } catch (e) {
+      console.warn('Failed to register deep link listener:', e);
+    }
+
     // 初始化 store
     store = await load('.settings.dat');
     

@@ -15,6 +15,7 @@
     "opener:default",
     "process:default",
     "store:default",
-    "updater:default"
+    "updater:default",
+    "deep-link:default"
   ]
 }

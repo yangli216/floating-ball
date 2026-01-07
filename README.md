@@ -110,8 +110,8 @@ yarn release major
 ### 医疗数据格式
 系统支持 CSV 格式的数据导入，文件位于 `src/assets/` 目录下：
 - **diagnoses.csv**: `id,code,name,keywords`
-- **medicines.csv**: `id,name,genericName,spec,price,unit,type,keywords`
-- **items.csv**: `id,name,price,category,keywords`
+- **medicines.csv**: `id,name,spec`
+- **items.csv**: `id,name,category`
 
 ## 📄 许可证
 

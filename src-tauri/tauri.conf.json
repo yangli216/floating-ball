@@ -42,9 +42,18 @@
       "icons/128x128@2x.png",
       "icons/icon.icns",
       "icons/icon.ico"
-    ]
+    ],
+    "macOS": {},
+    "windows": {}
   },
   "plugins": {
+    "deep-link": {
+      "desktop": {
+        "schemes": [
+          "floating-ball"
+        ]
+      }
+    },
     "updater": {
       "active": true,
       "endpoints": [

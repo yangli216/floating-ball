@@ -15,20 +15,13 @@ export interface DiagnosisItem {
 export interface MedicineItem {
   id: string;
   name: string;
-  genericName: string;
   spec: string;
-  price: number;
-  unit: string;
-  type: string;
-  keywords?: string[];
 }
 
 export interface MedicalItem {
   id: string;
   name: string;
-  price: number;
   category: string;
-  keywords?: string[];
 }
 
 export interface MedicalCatalog {
@@ -63,12 +56,7 @@ class MedicalDataService {
     return records.map(r => ({
       id: r.id,
       name: r.name,
-      genericName: r.genericName,
-      spec: r.spec,
-      price: parseFloat(r.price) || 0,
-      unit: r.unit,
-      type: r.type,
-      keywords: this.parseKeywords(r.keywords)
+      spec: r.spec
     }));
   }
 
@@ -167,11 +155,26 @@ class MedicalDataService {
     
     // 1. Exact match (name or code)
     const exact = this.catalog.diagnoses.find(d => 
-      d.name === normalizedQuery || d.code === normalizedQuery
+      d.name.toLowerCase() === normalizedQuery || d.code.toLowerCase() === normalizedQuery
     );
     if (exact) return exact;
 
-    // 2. Best fuzzy match
+    // 2. Code prefix match (New)
+    // If the query looks like a code (alphanumeric, maybe dot), try to find best code match
+    // E.g. query "R50.9" matches "R50.900"
+    // We want the shortest matching code that starts with query
+    const codeMatches = this.catalog.diagnoses.filter(d => 
+      d.code.toLowerCase().startsWith(normalizedQuery)
+    );
+    
+    if (codeMatches.length > 0) {
+      // Sort by code length (ascending) to get "R50.900" before "R50.900x001" if such hierarchy exists
+      // Or just return the first one if length is same.
+      codeMatches.sort((a, b) => a.code.length - b.code.length || a.code.localeCompare(b.code));
+      return codeMatches[0];
+    }
+
+    // 3. Best fuzzy match
     let bestMatch: DiagnosisItem | null = null;
     let maxScore = 0;
 
@@ -188,6 +191,20 @@ class MedicalDataService {
   }
 
   /**
+   * Get related diagnoses by ICD10 code prefix
+   * @param code ICD10 code
+   */
+  public getRelatedDiagnoses(code: string): DiagnosisItem[] {
+    if (!code) return [];
+    // Use the first 3 characters as the prefix (e.g. "J06" from "J06.9")
+    // If the code is shorter than 3 chars, use it as is.
+    const prefix = code.split('.')[0];
+    if (!prefix) return [];
+    
+    return this.catalog.diagnoses.filter(d => d.code.startsWith(prefix));
+  }
+
+  /**
    * Find best matching medicine
    * @param query AI output string
    */
@@ -197,7 +214,7 @@ class MedicalDataService {
 
     // 1. Exact match
     const exact = this.catalog.medicines.find(m => 
-      m.name === normalizedQuery || m.genericName === normalizedQuery
+      m.name === normalizedQuery
     );
     if (exact) return exact;
 
@@ -206,10 +223,14 @@ class MedicalDataService {
     let maxScore = 0;
 
     for (const item of this.catalog.medicines) {
-      // Check generic name (higher weight) and product name
-      const genericScore = this.calculateScore(normalizedQuery, item.genericName, item.keywords);
-      const nameScore = this.calculateScore(normalizedQuery, item.name, item.keywords);
-      const score = Math.max(genericScore, nameScore);
+      // Check product name
+      const nameScore = this.calculateScore(normalizedQuery, item.name);
+
+      // Check combined name + spec (to handle same name with different specs)
+      const fullName = `${item.name} ${item.spec}`;
+      const fullNameScore = this.calculateScore(normalizedQuery, fullName);
+
+      const score = Math.max(nameScore, fullNameScore);
 
       if (score > maxScore) {
         maxScore = score;
@@ -237,7 +258,7 @@ class MedicalDataService {
     let maxScore = 0;
 
     for (const item of this.catalog.items) {
-      const score = this.calculateScore(normalizedQuery, item.name, item.keywords);
+      const score = this.calculateScore(normalizedQuery, item.name);
       if (score > maxScore) {
         maxScore = score;
         bestMatch = item;
