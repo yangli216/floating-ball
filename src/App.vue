@@ -624,21 +624,12 @@ const exitWork = async () => {
             @dblclick="openChat"
           >
             <div class="ball-content">
-              <svg 
-                class="icon" 
-                viewBox="0 0 1024 1024" 
-                xmlns="http://www.w3.org/2000/svg"
-              >
-                <path 
-                  d="M512 64C264.6 64 64 264.6 64 512s200.6 448 448 448 448-200.6 448-448S759.4 64 512 64z m0 820c-205.4 0-372-166.6-372-372s166.6-372 372-372 372 166.6 372 372-166.6 372-372 372z"
-                  fill="currentColor"
-                />
-                <path 
-                  d="M512 140c-205.4 0-372 166.6-372 372s166.6 372 372 372 372-166.6 372-372-166.6-372-372-372z m0 684c-172.3 0-312-139.7-312-312s139.7-312 312-312 312 139.7 312 312-139.7 312-312 312z"
-                  fill="currentColor"
-                  opacity="0.6"
-                />
-              </svg>
+              <img 
+                class="robot-avatar" 
+                src="/robot-avatar.png"
+                alt="Robot"
+                draggable="false"
+              />
             </div>
           </div>
         </div>
@@ -710,7 +701,7 @@ const exitWork = async () => {
   width: 56px; /* 进一步压缩球体，留出绝对安全的边距 */
   height: 56px;
   border-radius: 50%;
-  background: linear-gradient(135deg, #79c2ff 0%, #a985ff 100%);
+  background: transparent; /* 移除背景，让机器人图片直接显示 */
   display: flex;
   align-items: center;
   justify-content: center;
@@ -721,7 +712,7 @@ const exitWork = async () => {
   transform: translateZ(0);
   position: relative;
   z-index: 5;
-  box-shadow: 0 8px 16px rgba(121, 194, 255, 0.4);
+  box-shadow: none; /* 移除阴影 */
   outline: none; /* 移除默认选中框 */
 }
 
@@ -742,7 +733,6 @@ const exitWork = async () => {
 .floating-ball:hover,
 .floating-ball.is-hovered {
   transform: scale(1.05);
-  box-shadow: 0 12px 24px rgba(121, 194, 255, 0.5);
 }
 
 /* 环绕菜单按钮基础样式 */
@@ -796,20 +786,7 @@ const exitWork = async () => {
 .ring-menu:not(.is-active):not(div:hover > *) .ring-btn.left { transform: translateX(15px) scale(0.1); }
 
 
-/* 通过伪元素实现圆形内发光 - 调整 */
-.floating-ball::after {
-  content: "";
-  position: absolute;
-  inset: 0; 
-  border-radius: 50%;
-  pointer-events: none;
-  background: radial-gradient(circle at 50% 50%,
-    rgba(255, 255, 255, 0.22) 0%,
-    rgba(255, 255, 255, 0.0) 70%
-  );
-  filter: blur(2px);
-  opacity: 0.8;
-}
+/* 机器人图片模式下无需伪元素内发光 */
 
 .ball-content {
   width: 100%;
@@ -822,15 +799,18 @@ const exitWork = async () => {
   z-index: 2;
 }
 
-.icon {
-  width: 40px;
-  height: 40px;
+.robot-avatar {
+  width: 56px;
+  height: 56px;
+  border-radius: 50%;
+  object-fit: cover;
   transition: transform 0.4s ease;
+  pointer-events: none;
 }
 
-.floating-ball:hover .icon,
-.floating-ball.is-hovered .icon {
-  transform: rotate(360deg);
+.floating-ball:hover .robot-avatar,
+.floating-ball.is-hovered .robot-avatar {
+  transform: scale(1.08);
 }
 
 .tooltip {
