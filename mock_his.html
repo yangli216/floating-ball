@@ -139,6 +139,7 @@
             
             <div style="display: flex; gap: 10px;">
                 <button onclick="startConsultation()" id="startBtn" style="flex: 1;">呼叫智能问诊系统</button>
+                <button onclick="startVoiceConsultation()" id="voiceBtn" style="flex: 1; background-color: #722ed1;">呼叫语音接诊</button>
                 <button onclick="stopConsultation()" id="stopBtn" style="flex: 1; background-color: #dc3545;">结束问诊</button>
             </div>
             <span id="callStatus" class="status-badge" style="display:none"></span>
@@ -156,6 +157,29 @@
     <script>
         const API_BASE = 'http://127.0.0.1:8081/api/consultation';
         let pollingInterval = null;
+
+        async function startVoiceConsultation() {
+            const btn = document.getElementById('voiceBtn');
+            const status = document.getElementById('callStatus');
+            btn.disabled = true;
+            
+            try {
+                const response = await fetch(`${API_BASE}/start-voice`, { method: 'POST' });
+                if (response.ok) {
+                   status.style.display = 'inline-block'; 
+                   status.className = 'status-badge status-success';
+                   status.textContent = '语音接诊呼叫成功';
+                   document.getElementById('result-area').textContent = '已开启语音接诊，主界面应显示胶囊形态...';
+                } else {
+                   throw new Error(response.statusText);
+                }
+            } catch (e) {
+                console.error(e);
+                alert('呼叫语音接诊失败: ' + e);
+            } finally {
+                btn.disabled = false;
+            }
+        }
 
         async function startConsultation() {
             // Refactored to match PatientInfo structure directly (no interface conversion needed)

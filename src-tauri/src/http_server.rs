@@ -96,6 +96,28 @@ async fn start_consultation(
     }))
 }
 
+async fn start_voice_consultation(
+    app_handle: web::Data<tauri::AppHandle>,
+) -> impl Responder {
+    println!("Received voice consultation request");
+
+    // Emit event to Frontend
+    if let Some(window) = app_handle.get_webview_window("main") {
+        if let Err(e) = window.emit("start-voice-consultation", ()) {
+             eprintln!("Failed to emit voice event: {}", e);
+             return HttpResponse::InternalServerError().json(serde_json::json!({ "error": e.to_string() }));
+        }
+        // Force window to front
+        let _ = window.set_focus();
+        let _ = window.unminimize();
+        let _ = window.show();
+    } else {
+        return HttpResponse::InternalServerError().json(serde_json::json!({ "error": "Main window not found" }));
+    }
+
+    HttpResponse::Ok().json(serde_json::json!({ "status": "success" }))
+}
+
 async fn stop_consultation(
     app_handle: web::Data<tauri::AppHandle>,
     state: web::Data<SharedAppState>,
@@ -194,6 +216,7 @@ pub fn run_server(app_handle: tauri::AppHandle, state: SharedAppState) {
                     .app_data(app_handle.clone())
                     .app_data(state.clone())
                     .route("/api/consultation/start", web::post().to(start_consultation))
+                    .route("/api/consultation/start-voice", web::post().to(start_voice_consultation))
                     .route("/api/consultation/stop", web::post().to(stop_consultation))
                     .route("/api/consultation/result", web::get().to(get_result))
                     .route("/api/patient/risks", web::post().to(show_patient_risks))

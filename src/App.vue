@@ -10,6 +10,9 @@ import SettingsPanel from "./components/SettingsPanel.vue";
 import ConsultationPage from "./components/ConsultationPage.vue";
 import Toast from "./components/Toast.vue";
 import RiskAlertPanel, { type RiskItem } from "./components/RiskAlertPanel.vue";
+import VoiceCapsule from "./components/VoiceCapsule.vue";
+import VoiceConsultationResult, { type GeneratedRecord } from "./components/VoiceConsultationResult.vue";
+import { transcribeAudio, chat, type ChatMessage } from "./services/llm";
 import { LogicalSize } from "@tauri-apps/api/dpi";
 import { provide } from "vue";
 
@@ -24,7 +27,7 @@ const isHovered = ref(false);
 const hoveredBtnIndex = ref(-1); // -1 means no button hovered
 const isWorking = ref(false);
 const isMoving = ref(false);
-const currentView = ref<'chat' | 'settings' | 'consultation' | 'risk-alert'>('chat');
+const currentView = ref<'chat' | 'settings' | 'consultation' | 'risk-alert' | 'voice-interaction' | 'voice-result'>('chat');
 const currentPatient = ref<any>(null);
 const ringMenuRef = ref<HTMLElement | null>(null);
 
@@ -169,6 +172,89 @@ const TARGET_RISK_ALERT_W = 320;
 const TARGET_RISK_ALERT_H = 300;
 const TARGET_BALL_W = 160;
 const TARGET_BALL_H = 160;
+const TARGET_CAPSULE_W = 360;
+const TARGET_CAPSULE_H = 80;
+const TARGET_RESULT_W = 900;
+const TARGET_RESULT_H = 800;
+
+// Voice Consultation State
+const generatedRecord = ref<GeneratedRecord | null>(null);
+
+const startVoiceInteraction = async () => {
+  currentView.value = 'voice-interaction';
+  if (!isWorking.value) {
+    await enterWorkMode(TARGET_CAPSULE_W, TARGET_CAPSULE_H);
+  } else {
+      // If already working (e.g. from Chat), resize to capsule
+      enterWorkMode(TARGET_CAPSULE_W, TARGET_CAPSULE_H);
+  }
+};
+
+  const handleVoiceStop = async (audioBlob: Blob) => {
+  // Show loading via some state if needed, or VoiceCapsule can handle "stopping" visual
+  // Ideally, we transition to Result view which has a "Loading" state
+  generatedRecord.value = null; // Reset
+  currentView.value = 'voice-result';
+  
+  // Explicitly resize window for Result View
+  if (appWindow.value) {
+    try {
+        await appWindow.value.setResizable(true);
+        await appWindow.value.setSize(new LogicalSize(TARGET_RESULT_W, TARGET_RESULT_H));
+        await smartExpand(TARGET_RESULT_W, TARGET_RESULT_H);
+    } catch (e) {
+        console.error('Failed to resize for result:', e);
+    }
+  } else {
+     await enterWorkMode(TARGET_RESULT_W, TARGET_RESULT_H);
+  }
+  
+  try {
+    // 1. Transcribe
+    const text = await transcribeAudio(audioBlob);
+    console.log('Transcribed text:', text);
+
+    // 2. LLM Generation
+    const systemPrompt = `你是一名专业的医疗助手。请根据医患对话内容，生成一份结构化的门诊病历。
+    输出格式必须为纯 JSON，包含以下字段：
+    - chiefComplaint: 主诉
+    - historyOfPresentIllness: 现病史
+    - pastMedicalHistory: 既往史
+    - diagnosis: 初步诊断
+    - treatmentPlan: 处理意见 (包含药品和检查)`;
+    
+    const messages: ChatMessage[] = [
+        { role: 'system', content: systemPrompt },
+        { role: 'user', content: `对话内容：\n${text}` }
+    ];
+
+    const jsonStr = await chat(messages);
+    // Try to parse JSON (handle potential markdown code blocks)
+    const cleanJson = jsonStr.replace(/```json\n?|\n?```/g, '').trim();
+    generatedRecord.value = JSON.parse(cleanJson);
+
+  } catch (err) {
+    console.error('Voice processing failed:', err);
+    showToast('语音处理失败，请重试', 'error');
+    // Fallback or stay in loading state with error
+  }
+};
+
+const handleVoiceError = (err: any) => {
+  showToast('录音出错: ' + err, 'error');
+  exitWork();
+};
+
+const handleResultConfirm = async (record: GeneratedRecord) => {
+    console.log('Confirmed record:', record);
+    // TODO: Send to HIS or backend
+    showToast('病历已生成并导入', 'success');
+    await exitWork();
+};
+
+const cancelVoiceResult = async () => {
+    await exitWork();
+};
 
 // 打开风险提示界面
 const openRiskAlert = async () => {
@@ -343,6 +429,12 @@ onMounted(async () => {
         // 使用 Morph 过渡进入风险提示界面
         await openRiskAlert();
       }
+    });
+
+    // 监听语音接诊指令
+    await listen<any>('start-voice-consultation', async () => {
+        console.log('Received start voice consultation command');
+        await startVoiceInteraction();
     });
 
     unlistenHover = await listen<boolean>("hover-change", (event) => {
@@ -674,9 +766,13 @@ const exitWork = async () => {
     </Transition>
     <Transition name="morph">
       <div v-show="isWorking" class="assistant-layer" :style="containerStyle">
-        <div class="assistant-container" :class="{ 'no-toolbar': currentView === 'risk-alert' }">
-          <!-- 工具栏 (risk-alert 视图不显示) -->
-          <div v-if="currentView !== 'risk-alert'" class="assistant-toolbar" data-tauri-drag-region>
+        <div 
+          class="assistant-container" 
+          :class="{ 'no-toolbar': currentView === 'risk-alert' || currentView === 'voice-interaction' }"
+          :style="{ borderRadius: currentView === 'voice-interaction' ? '40px' : '20px' }"
+        >
+          <!-- 工具栏 (risk-alert 和 voice-interaction 视图不显示) -->
+          <div v-if="currentView !== 'risk-alert' && currentView !== 'voice-interaction'" class="assistant-toolbar" data-tauri-drag-region>
             <div class="toolbar-left" data-tauri-drag-region>
               <button v-if="currentView === 'settings'" class="icon-btn back-btn" @click="openChat" title="返回">
                  <svg class="toolbar-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -712,6 +808,17 @@ const exitWork = async () => {
             :risks="riskItems"
             @close="closeRiskAlert"
             @confirm="closeRiskAlert"
+          />
+          <VoiceCapsule
+            v-else-if="currentView === 'voice-interaction'"
+            @stop="handleVoiceStop"
+            @error="handleVoiceError"
+          />
+          <VoiceConsultationResult
+            v-else-if="currentView === 'voice-result'"
+            :initialRecord="generatedRecord"
+            @confirm="handleResultConfirm"
+            @cancel="cancelVoiceResult"
           />
           <SettingsPanel v-else />
         </div>
