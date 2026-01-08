@@ -4,6 +4,9 @@ use std::sync::{Arc, Mutex};
 mod http_server;
 use http_server::{PatientInfo, ConsultationResult};
 
+mod aliyun_speech;
+use aliyun_speech::transcribe_realtime_aliyun;
+
 pub struct AppState {
     pub current_consultation: Mutex<Option<PatientInfo>>,
     pub last_result: Mutex<Option<ConsultationResult>>,
@@ -70,7 +73,9 @@ pub fn run() {
             start_drag,
             get_window_position,
             set_window_position,
-            complete_consultation
+            set_window_position,
+            complete_consultation,
+            transcribe_realtime_aliyun
         ])
         .setup(move |app| {
             // 获取主窗口

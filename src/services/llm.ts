@@ -80,9 +80,9 @@ export async function chatStream(
   while (true) {
     const { done, value } = await reader.read();
     if (done) break;
-    
+
     buffer += decoder.decode(value, { stream: true });
-    
+
     // 处理多行数据
     const lines = buffer.split('\n');
     buffer = lines.pop() || ""; // 保留未完整的最后一行
@@ -90,7 +90,7 @@ export async function chatStream(
     for (const line of lines) {
       const trimmed = line.trim();
       if (!trimmed || !trimmed.startsWith("data: ")) continue;
-      
+
       const dataStr = trimmed.slice(6);
       if (dataStr === "[DONE]") return;
 

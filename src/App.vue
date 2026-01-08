@@ -12,7 +12,7 @@ import Toast from "./components/Toast.vue";
 import RiskAlertPanel, { type RiskItem } from "./components/RiskAlertPanel.vue";
 import VoiceCapsule from "./components/VoiceCapsule.vue";
 import VoiceConsultationResult, { type GeneratedRecord } from "./components/VoiceConsultationResult.vue";
-import { transcribeAudio, chat, type ChatMessage } from "./services/llm";
+import { chat, type ChatMessage } from "./services/llm";
 import { LogicalSize } from "@tauri-apps/api/dpi";
 import { provide } from "vue";
 
@@ -190,9 +190,10 @@ const startVoiceInteraction = async () => {
   }
 };
 
-  const handleVoiceStop = async (audioBlob: Blob) => {
-  // Show loading via some state if needed, or VoiceCapsule can handle "stopping" visual
-  // Ideally, we transition to Result view which has a "Loading" state
+  const handleVoiceStop = async (audioBlob: Blob, transcribedText: string) => {
+  console.log('[App.vue] handleVoiceStop received blob:', audioBlob?.size, 'bytes');
+  console.log('[App.vue] Transcribed text:', transcribedText);
+  
   generatedRecord.value = null; // Reset
   currentView.value = 'voice-result';
   
@@ -210,33 +211,86 @@ const startVoiceInteraction = async () => {
   }
   
   try {
-    // 1. Transcribe
-    const text = await transcribeAudio(audioBlob);
-    console.log('Transcribed text:', text);
+    // Use the transcribed text directly from realtime service
+    const text = transcribedText;
+    console.log('[Voice] Using realtime transcription:', text);
 
-    // 2. LLM Generation
-    const systemPrompt = `你是一名专业的医疗助手。请根据医患对话内容，生成一份结构化的门诊病历。
-    输出格式必须为纯 JSON，包含以下字段：
-    - chiefComplaint: 主诉
-    - historyOfPresentIllness: 现病史
-    - pastMedicalHistory: 既往史
-    - diagnosis: 初步诊断
-    - treatmentPlan: 处理意见 (包含药品和检查)`;
+    if (!text || text.trim().length === 0) {
+        throw new Error("未能识别到有效语音");
+    }
+
+    // 2. LLM Generation - Based on medical record requirements
+    const systemPrompt = `你是一名专业的医疗病历生成助手，具备以下能力：
+
+**语义理解过滤**：对采集到的医患对话音频转写文本进行深度语义理解，区分问诊话术与病情描述，过滤无效对话。
+
+**关键信息提取**：借助医疗领域知识图谱与实体识别能力，自动提取主诉、现病史、用药情况、检验检查信息等关键医疗信息。
+
+**结构化整理输出**：按照电子病历规范格式与医疗文书书写逻辑，将提取信息结构化整理，生成符合临床标准的病历初稿。
+
+**重要规则**：
+1. 如果输入内容与医疗问诊场景无关（如闲聊、测试、无意义内容），请返回以下固定格式：
+   {"error": "非医疗问诊内容", "message": "输入内容与医疗问诊场景无关，请提供有效的医患对话内容"}
+2. 如果是有效的医患对话，请严格按照以下JSON格式输出（不要包含任何markdown标记或额外说明）：
+
+{
+  "chiefComplaint": "主诉内容（简明扼要，如：咳嗽3天，加重伴发热1天）",
+  "historyOfPresentIllness": "现病史内容（详细描述发病时间、症状、诱因、演变过程等）",
+  "pastMedicalHistory": "既往史内容（既往疾病、手术史、过敏史、用药史等，如无则填写'无特殊'）",
+  "diagnosis": "初步诊断（根据症状和病史给出可能的诊断）",
+  "treatmentPlan": "处理意见（包含建议的药品、剂量、用法，以及需要的检验检查项目）"
+}`;
     
     const messages: ChatMessage[] = [
         { role: 'system', content: systemPrompt },
-        { role: 'user', content: `对话内容：\n${text}` }
+        { role: 'user', content: `医患对话内容：\n${text}` }
     ];
 
+    console.log('[LLM] Sending request to LLM...');
+    console.log('[LLM] Input text length:', text.length, 'chars');
+    const llmStart = Date.now();
     const jsonStr = await chat(messages);
+    console.log(`[LLM] Response received in ${Date.now() - llmStart}ms`);
+    console.log('[LLM] Raw response:', jsonStr);
+    
     // Try to parse JSON (handle potential markdown code blocks)
-    const cleanJson = jsonStr.replace(/```json\n?|\n?```/g, '').trim();
-    generatedRecord.value = JSON.parse(cleanJson);
+    let cleanJson = jsonStr.replace(/```json\n?|\n?```/g, '').trim();
+    // Also try to extract JSON from text if wrapped in other content
+    const jsonMatch = cleanJson.match(/\{[\s\S]*\}/);
+    if (jsonMatch) {
+        cleanJson = jsonMatch[0];
+    }
+    
+    console.log('[LLM] Cleaned JSON:', cleanJson);
+    
+    const parsed = JSON.parse(cleanJson);
+    
+    // Check if LLM detected irrelevant content
+    if (parsed.error) {
+        console.warn('[LLM] Irrelevant content detected:', parsed.message);
+        showToast(parsed.message || '输入内容与医疗问诊场景无关', 'error');
+        setTimeout(() => { exitWork(); }, 2000);
+        return;
+    }
+    
+    // Validate required fields
+    const requiredFields = ['chiefComplaint', 'historyOfPresentIllness', 'diagnosis', 'treatmentPlan'];
+    const missingFields = requiredFields.filter(f => !parsed[f]);
+    if (missingFields.length > 0) {
+        console.warn('[LLM] Missing required fields:', missingFields);
+        // Fill with defaults
+        missingFields.forEach(f => { parsed[f] = '未能识别'; });
+    }
+    
+    generatedRecord.value = parsed;
+    console.log('[Voice] Medical record generated successfully');
 
-  } catch (err) {
-    console.error('Voice processing failed:', err);
-    showToast('语音处理失败，请重试', 'error');
-    // Fallback or stay in loading state with error
+  } catch (err: any) {
+    console.error('[Voice] Processing failed:', err);
+    showToast(`处理失败: ${err.message || err}`, 'error');
+    setTimeout(() => {
+        exitWork();
+    }, 2000);
   }
 };
 
@@ -331,7 +385,9 @@ onMounted(async () => {
     // 恢复应用状态 (优先于窗口位置恢复)
     try {
       const state = await store.get<{isWorking: boolean, currentView: string}>('app_state');
-      if (state && state.isWorking) {
+      // Skip restoring transient views like voice-interaction/voice-result
+      const skipViews = ['voice-interaction', 'voice-result'];
+      if (state && state.isWorking && !skipViews.includes(state.currentView)) {
         currentView.value = state.currentView as any;
         isWorking.value = true;
         
@@ -768,11 +824,11 @@ const exitWork = async () => {
       <div v-show="isWorking" class="assistant-layer" :style="containerStyle">
         <div 
           class="assistant-container" 
-          :class="{ 'no-toolbar': currentView === 'risk-alert' || currentView === 'voice-interaction' }"
+          :class="{ 'no-toolbar': currentView === 'risk-alert' || currentView === 'voice-interaction' || currentView === 'voice-result' }"
           :style="{ borderRadius: currentView === 'voice-interaction' ? '40px' : '20px' }"
         >
-          <!-- 工具栏 (risk-alert 和 voice-interaction 视图不显示) -->
-          <div v-if="currentView !== 'risk-alert' && currentView !== 'voice-interaction'" class="assistant-toolbar" data-tauri-drag-region>
+          <!-- 工具栏 (risk-alert, voice-interaction, voice-result 视图不显示) -->
+          <div v-if="currentView !== 'risk-alert' && currentView !== 'voice-interaction' && currentView !== 'voice-result'" class="assistant-toolbar" data-tauri-drag-region>
             <div class="toolbar-left" data-tauri-drag-region>
               <button v-if="currentView === 'settings'" class="icon-btn back-btn" @click="openChat" title="返回">
                  <svg class="toolbar-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -817,6 +873,7 @@ const exitWork = async () => {
           <VoiceConsultationResult
             v-else-if="currentView === 'voice-result'"
             :initialRecord="generatedRecord"
+            :patientInfo="currentPatient"
             @confirm="handleResultConfirm"
             @cancel="cancelVoiceResult"
           />

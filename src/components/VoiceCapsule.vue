@@ -1,5 +1,5 @@
 <template>
-  <div class="voice-capsule">
+  <div class="voice-capsule" data-tauri-drag-region>
     <!-- Left: Avatar -->
     <div class="avatar-section">
       <div class="avatar-wrapper" :class="{ 'speaking': isSpeaking }">
@@ -35,15 +35,21 @@
 <script setup lang="ts">
 import { ref, onMounted, onUnmounted, computed } from 'vue';
 import { audioRecorder } from '../services/audioRecorder';
+import { RealtimeSpeechService, getAliyunSpeechConfig } from '../services/aliyunSpeech';
 
-const emit = defineEmits(['stop', 'error']);
+const emit = defineEmits<{
+  stop: [blob: Blob, transcriptionText: string];
+  error: [error: any];
+}>();
 
 const canvasRef = ref<HTMLCanvasElement | null>(null);
 const isPaused = ref(false);
 const duration = ref(0);
 const startTime = ref(0);
+const realtimeText = ref(''); // 实时识别文本
 let timerInterval: ReturnType<typeof setInterval> | null = null;
 let animationFrameId: number | null = null;
+let speechService: RealtimeSpeechService | null = null;
 
 const isSpeaking = computed(() => {
   // Simple check: if not paused and duration > 0, assume speaking/recording active
@@ -110,8 +116,30 @@ const drawVisualizer = () => {
 };
 
 const startRecording = async () => {
+  console.time('[VoiceCapsule] startRecording');
   try {
+    // 检查 API Key 并初始化实时语音服务
+    const config = getAliyunSpeechConfig();
+    if (config.apiKey) {
+      speechService = new RealtimeSpeechService();
+      console.log('[VoiceCapsule] Starting realtime speech service...');
+      await speechService.start((text, _isFinal) => {
+        realtimeText.value = text;
+        console.log('[VoiceCapsule] Realtime:', text.substring(0, 30) + '...');
+      });
+      // 设置音频回调
+      audioRecorder.setOnAudioChunk((pcmData) => {
+        if (speechService?.isConnected()) {
+          speechService.sendAudio(pcmData);
+        }
+      });
+    } else {
+      console.warn('[VoiceCapsule] No API Key, realtime disabled');
+    }
+    
+    console.log('[VoiceCapsule] Requesting microphone access...');
     await audioRecorder.start();
+    console.log('[VoiceCapsule] Recorder started');
     startTime.value = Date.now();
     timerInterval = setInterval(() => {
         if (!isPaused.value) {
@@ -119,8 +147,10 @@ const startRecording = async () => {
         }
     }, 1000);
     drawVisualizer();
+    console.timeEnd('[VoiceCapsule] startRecording');
   } catch (err) {
-    console.error("Failed to start recording:", err);
+    console.error("[VoiceCapsule] Failed to start recording:", err);
+    console.timeEnd('[VoiceCapsule] startRecording');
     emit('error', err);
   }
 };
@@ -137,15 +167,69 @@ const togglePause = () => {
 };
 
 const handleStop = async () => {
+  console.log('[VoiceCapsule] handleStop called');
   if (timerInterval) clearInterval(timerInterval);
   if (animationFrameId) cancelAnimationFrame(animationFrameId);
   
   try {
+    audioRecorder.setOnAudioChunk(undefined);
+    console.log('[VoiceCapsule] Stopping recorder...');
     const blob = await audioRecorder.stop();
-    emit('stop', blob);
+    console.log('[VoiceCapsule] Got blob:', blob.size, 'bytes');
+    
+    // 调试：保存录音到本地并提供回放
+    await saveAudioForDebug(blob);
+    
+    // 获取实时语音服务的最终结果
+    let transcription = '';
+    if (speechService) {
+      console.log('[VoiceCapsule] Finishing speech service...');
+      transcription = await speechService.finish();
+      console.log('[VoiceCapsule] Final transcription:', transcription);
+      speechService = null;
+    }
+    
+    emit('stop', blob, transcription);
+    console.log('[VoiceCapsule] Emitted stop with transcription');
   } catch (err) {
-    console.error("Failed to stop recording:", err);
+    console.error("[VoiceCapsule] Failed to stop recording:", err);
     emit('error', err);
+  }
+};
+
+/**
+ * 调试功能：保存录音到本地并提供回放
+ */
+const saveAudioForDebug = async (blob: Blob) => {
+  try {
+    // 生成文件名
+    const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+    const filename = `recording_${timestamp}.wav`;
+    
+    // 创建下载链接
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    
+    // 自动下载
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    
+    console.log('[VoiceCapsule] Audio saved as:', filename);
+    console.log('[VoiceCapsule] Audio URL for playback:', url);
+    
+    // 同时在控制台提供回放方式
+    console.log('[VoiceCapsule] To play audio, run in console: new Audio("' + url + '").play()');
+    
+    // 可选：自动播放一次确认
+    // const audio = new Audio(url);
+    // audio.play();
+    
+    // 注意：URL.revokeObjectURL 不在这里调用，以便后续可以回放
+  } catch (err) {
+    console.error('[VoiceCapsule] Failed to save audio:', err);
   }
 };
 
@@ -156,7 +240,9 @@ onMounted(() => {
 onUnmounted(() => {
   if (timerInterval) clearInterval(timerInterval);
   if (animationFrameId) cancelAnimationFrame(animationFrameId);
-  audioRecorder.stop().catch(() => {}); // Ensure cleanup
+  audioRecorder.setOnAudioChunk(undefined);
+  audioRecorder.stop().catch(() => {});
+  if (speechService) { speechService.close(); speechService = null; }
 });
 </script>
 
