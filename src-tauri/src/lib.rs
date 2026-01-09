@@ -109,7 +109,7 @@ pub fn run() {
                     let win_pos_ret = win_clone.outer_position();
                     let win_size_ret = win_clone.inner_size();
                     
-                    let (is_hovered, rel_x, rel_y) = if let (Ok(mouse), Ok(win_pos), Ok(size)) = (mouse_ret, win_pos_ret, win_size_ret) {
+                    let (is_hovered, rel_x, rel_y) = if let (Ok(mouse), Ok(win_pos), Ok(size)) = (mouse_ret.as_ref(), win_pos_ret.as_ref(), win_size_ret.as_ref()) {
                         let rel_x = mouse.x - win_pos.x as f64;
                         let rel_y = mouse.y - win_pos.y as f64;
                         

@@ -43,6 +43,7 @@ let unlistenResize: UnlistenFn | null = null;
 let store: Store | null = null;
 let moveTimeout: ReturnType<typeof setTimeout> | null = null;
 let resizeTimeout: ReturnType<typeof setTimeout> | null = null;
+const cachedMonitor = ref<Monitor | null>(null);
 const lastBallPos = ref<{x: number, y: number} | null>(null);
 const ballOffset = ref<{x: number, y: number}>({ x: 0, y: 0 });
 const morphOrigin = ref('80px 80px');
@@ -65,6 +66,7 @@ const saveWindowPosition = async () => {
     const pos = await appWindow.value.outerPosition();
     // 只有在小球模式下才保存位置，避免展开后位置偏移覆盖了正确的小球位置
     if (!isWorking.value && !transitioning.value) {
+      lastBallPos.value = { x: pos.x, y: pos.y }; // Update in-memory cache
       await store.set('window_pos', { x: pos.x, y: pos.y });
       await store.save();
     }
@@ -86,13 +88,39 @@ const restoreWindowPosition = async () => {
   }
 };
 
+// Update cached monitor
+const updateCurrentMonitor = async () => {
+  try {
+    const start = performance.now();
+    cachedMonitor.value = await currentMonitor();
+    console.log('[App] Monitor cache updated:', cachedMonitor.value ? 'Success' : 'Null', `${(performance.now() - start).toFixed(2)}ms`);
+  } catch (e) {
+    console.warn('[App] Failed to update monitor cache:', e);
+  }
+};
+
 // 智能调整展开位置
 const smartExpand = async (targetW: number, targetH: number, targetMonitor?: Monitor | null) => {
   if (!appWindow.value) return;
   
   try {
-    const monitor = targetMonitor || await currentMonitor();
-    if (!monitor) return;
+    let monitor = targetMonitor;
+    if (monitor) {
+        console.log('[App] smartExpand: Using provided monitor');
+    } else if (cachedMonitor.value) {
+        monitor = cachedMonitor.value;
+        console.log('[App] smartExpand: Using CACHED monitor');
+    } else {
+        console.log('[App] smartExpand: Cache MISS, calling currentMonitor()...');
+        const start = performance.now();
+        monitor = await currentMonitor();
+        console.log('[App] smartExpand: currentMonitor() took', (performance.now() - start).toFixed(2), 'ms');
+    }
+    
+    if (!monitor) {
+        console.warn('[App] smartExpand: No monitor found');
+        return;
+    }
     
     const monitorSize = monitor.size;
     const monitorPos = monitor.position;
@@ -155,9 +183,8 @@ const openConsultation = async () => {
   } else {
     // If already working, resize window if needed
     if (appWindow.value) {
-      const monitor = await currentMonitor();
       await appWindow.value.setSize(new LogicalSize(TARGET_CONSULTATION_W, TARGET_CONSULTATION_H));
-      await smartExpand(TARGET_CONSULTATION_W, TARGET_CONSULTATION_H, monitor);
+      await smartExpand(TARGET_CONSULTATION_W, TARGET_CONSULTATION_H /*, monitor */);
     }
   }
 };
@@ -201,10 +228,9 @@ const startVoiceInteraction = async () => {
   // Explicitly resize window for Result View
   if (appWindow.value) {
     try {
-        const monitor = await currentMonitor();
         await appWindow.value.setResizable(true);
         await appWindow.value.setSize(new LogicalSize(TARGET_RESULT_W, TARGET_RESULT_H));
-        await smartExpand(TARGET_RESULT_W, TARGET_RESULT_H, monitor);
+        await smartExpand(TARGET_RESULT_W, TARGET_RESULT_H /*, monitor */);
     } catch (e) {
         console.error('Failed to resize for result:', e);
     }
@@ -253,11 +279,15 @@ const startVoiceInteraction = async () => {
     }
   ],
   "examinations": [
-    { "name": "检查项目名称（如：血常规+CRP）", "goal": "检查目的（如：明确感染性质）" }
+    { "name": "检查项目名称（如：血常规，不要包含+号，需拆分为独立项目）", "goal": "检查目的（如：明确感染性质）" }
   ],
   "treatmentPlan": "其他处理意见或备注（选填）",
   "healthEducation": "健康宣教内容（如：多喝水、清淡饮食、建议居家休息3-5天等）"
-}`;
+}
+
+3. **细粒度拆分规则**：对于检验检查项目或用药，如果对话中出现"A+B"、"A和B"等组合表述，请务必拆分为[{"name": "A"}, {"name": "B"}]两个独立项目，严禁合并为一个项目输出。例如"查个血常规和CRP"应输出两项："全血细胞计数"和"C反应蛋白测定"（或保持原文"血常规"和"CRP"）。
+
+4. **智能推荐补全**：若对话中未明确涉及诊断名称、用药方案或检验检查相关内容，请务必根据患者的主诉、现病史及查体信息，结合标准诊疗指南，智能推理并推荐最可能的初步诊断、常规用药及必要检查项目填入对应字段，不要留空。`;
     
     const messages: ChatMessage[] = [
         { role: 'system', content: systemPrompt },
@@ -351,6 +381,7 @@ const closeRiskAlert = async () => {
 // 等待窗口达到指定逻辑尺寸
 const waitForWindowSize = async (logicalW: number, logicalH: number, timeout = 1000) => {
   if (!appWindow.value) return;
+  console.time('Target: waitForWindowSize');
   let scale = 1;
   try {
     scale = await appWindow.value.scaleFactor();
@@ -358,16 +389,22 @@ const waitForWindowSize = async (logicalW: number, logicalH: number, timeout = 1
   const targetW = Math.round(logicalW * scale);
   const targetH = Math.round(logicalH * scale);
   const start = performance.now();
+  
   while (performance.now() - start < timeout) {
     try {
       const size = await appWindow.value.innerSize();
       const reached = Math.abs(size.width - targetW) <= 10 && Math.abs(size.height - targetH) <= 10;
-      if (reached) return;
+      if (reached) {
+        console.timeEnd('Target: waitForWindowSize');
+        return;
+      }
     } catch {
       break;
     }
     await wait(16);
   }
+  console.warn(`waitForWindowSize TIMEOUT after ${timeout}ms. Target: ${targetW}x${targetH}`);
+  console.timeEnd('Target: waitForWindowSize');
 };
 
 // 监听状态变化并持久化
@@ -393,10 +430,14 @@ onMounted(async () => {
       await onOpenUrl((urls) => {
         console.log('Deep link received:', urls);
         if (urls && urls.length > 0) {
-          showToast(`收到外部调用: ${urls[0]}`, 'info');
-          // 如果在非工作模式，自动展开
-          if (!isWorking.value) {
-            enterWorkMode();
+          const url = urls[0];
+          showToast(`收到外部调用: ${url}`, 'info');
+          
+          // Simple routing based on URL
+          if (url.includes('voice-consultation')) {
+             startVoiceInteraction();
+          } else if (!isWorking.value) {
+             enterWorkMode();
           }
         }
       });
@@ -442,7 +483,7 @@ onMounted(async () => {
       await restoreWindowPosition();
     }
     
-    // 监听窗口移动结束，保存位置
+    // 监听窗口移动结束，保存位置，并更新显示器信息
     unlistenMoved = await appWindow.value.listen('tauri://move', () => {
       isMoving.value = true;
       // 使用防抖保存，避免频繁写入
@@ -450,8 +491,12 @@ onMounted(async () => {
       moveTimeout = setTimeout(() => {
         isMoving.value = false;
         saveWindowPosition();
+        updateCurrentMonitor(); // Update monitor cache after move
       }, 500);
     });
+
+    // Initial monitor update
+    updateCurrentMonitor();
 
     // 监听窗口大小变化，防止异常缩小
     unlistenResize = await appWindow.value.listen('tauri://resize', async () => {
@@ -601,6 +646,7 @@ const handleExitApp = async (e: MouseEvent) => {
 
 // 进入工作模式（展开窗口）
 // 进入工作模式（展开窗口）
+// 进入工作模式（展开窗口）
 const enterWorkMode = async (customW?: number, customH?: number) => {
   if (isWorking.value || transitioning.value) return;
   transitioning.value = true;
@@ -612,12 +658,11 @@ const enterWorkMode = async (customW?: number, customH?: number) => {
     await appWindow.value.setAlwaysOnTop(isAlwaysOnTop);
   }
   
-  // 0. 记录当前小球位置 (关键：必须在窗口尺寸/位置改变前记录)
-  if (appWindow.value) {
+  // 0. 尝试获取小球位置 (优先使用缓存)
+  if (!lastBallPos.value && appWindow.value) {
     try {
       const pos = await appWindow.value.outerPosition();
       lastBallPos.value = { x: pos.x, y: pos.y };
-      console.log('Recorded ball position:', lastBallPos.value);
     } catch (e) {
       console.error('Failed to record ball position:', e);
     }
@@ -630,11 +675,12 @@ const enterWorkMode = async (customW?: number, customH?: number) => {
   // 1. 立即设置窗口大小 (背景透明，用户无感知)
   if (appWindow.value) {
     try {
-      const monitor = await currentMonitor();
       await appWindow.value.setResizable(true);
       await appWindow.value.setSize(new LogicalSize(targetW, targetH));
+      
       // 智能调整位置
-      await smartExpand(targetW, targetH, monitor);
+      await smartExpand(targetW, targetH); 
+      
       await appWindow.value.setResizable(true); // 保持可调整大小
     } catch (err) {
       console.warn('设置窗口大小失败:', err);
@@ -963,8 +1009,7 @@ const exitWork = async () => {
 }
 
 /* 双重保障：JS 驱动 (is-active) 或 CSS 原生 Hover 均可触发 */
-.ring-menu.is-active,
-.ball-container:hover .ring-menu {
+.ring-menu.is-active {
   pointer-events: auto;
 }
 
@@ -993,8 +1038,7 @@ const exitWork = async () => {
   transition: all 0.3s var(--anim-ease);
 }
 
-.ring-menu.is-active .ring-btn,
-.ball-container:hover .ring-btn {
+.ring-menu.is-active .ring-btn {
   opacity: 1;
   pointer-events: auto;
   transform: scale(1);
