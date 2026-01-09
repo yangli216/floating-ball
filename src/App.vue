@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { onMounted, onUnmounted, ref, watch, computed } from "vue";
-import { getCurrentWindow, Window as TauriWindow, PhysicalPosition, currentMonitor } from "@tauri-apps/api/window";
+import { getCurrentWindow, Window as TauriWindow, PhysicalPosition, currentMonitor, type Monitor } from "@tauri-apps/api/window";
 import { exit } from '@tauri-apps/plugin-process';
 import { listen, UnlistenFn } from "@tauri-apps/api/event";
 import { load, Store } from '@tauri-apps/plugin-store';
@@ -87,11 +87,11 @@ const restoreWindowPosition = async () => {
 };
 
 // 智能调整展开位置
-const smartExpand = async (targetW: number, targetH: number) => {
+const smartExpand = async (targetW: number, targetH: number, targetMonitor?: Monitor | null) => {
   if (!appWindow.value) return;
   
   try {
-    const monitor = await currentMonitor();
+    const monitor = targetMonitor || await currentMonitor();
     if (!monitor) return;
     
     const monitorSize = monitor.size;
@@ -155,8 +155,9 @@ const openConsultation = async () => {
   } else {
     // If already working, resize window if needed
     if (appWindow.value) {
+      const monitor = await currentMonitor();
       await appWindow.value.setSize(new LogicalSize(TARGET_CONSULTATION_W, TARGET_CONSULTATION_H));
-      await smartExpand(TARGET_CONSULTATION_W, TARGET_CONSULTATION_H);
+      await smartExpand(TARGET_CONSULTATION_W, TARGET_CONSULTATION_H, monitor);
     }
   }
 };
@@ -200,9 +201,10 @@ const startVoiceInteraction = async () => {
   // Explicitly resize window for Result View
   if (appWindow.value) {
     try {
+        const monitor = await currentMonitor();
         await appWindow.value.setResizable(true);
         await appWindow.value.setSize(new LogicalSize(TARGET_RESULT_W, TARGET_RESULT_H));
-        await smartExpand(TARGET_RESULT_W, TARGET_RESULT_H);
+        await smartExpand(TARGET_RESULT_W, TARGET_RESULT_H, monitor);
     } catch (e) {
         console.error('Failed to resize for result:', e);
     }
@@ -425,10 +427,11 @@ onMounted(async () => {
         }
 
         if (appWindow.value) {
+          const monitor = await currentMonitor();
           await appWindow.value.setResizable(true);
           await appWindow.value.setSize(new LogicalSize(targetW, targetH));
           // 确保窗口在屏幕内
-          await smartExpand(targetW, targetH);
+          await smartExpand(targetW, targetH, monitor);
         }
       } else {
         // 仅在非工作模式下恢复小球位置
@@ -627,10 +630,11 @@ const enterWorkMode = async (customW?: number, customH?: number) => {
   // 1. 立即设置窗口大小 (背景透明，用户无感知)
   if (appWindow.value) {
     try {
+      const monitor = await currentMonitor();
       await appWindow.value.setResizable(true);
       await appWindow.value.setSize(new LogicalSize(targetW, targetH));
       // 智能调整位置
-      await smartExpand(targetW, targetH);
+      await smartExpand(targetW, targetH, monitor);
       await appWindow.value.setResizable(true); // 保持可调整大小
     } catch (err) {
       console.warn('设置窗口大小失败:', err);
