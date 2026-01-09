@@ -174,8 +174,8 @@ const TARGET_BALL_W = 160;
 const TARGET_BALL_H = 160;
 const TARGET_CAPSULE_W = 360;
 const TARGET_CAPSULE_H = 80;
-const TARGET_RESULT_W = 900;
-const TARGET_RESULT_H = 800;
+const TARGET_RESULT_W = 1200;
+const TARGET_RESULT_H = 900;
 
 // Voice Consultation State
 const generatedRecord = ref<GeneratedRecord | null>(null);
@@ -237,8 +237,24 @@ const startVoiceInteraction = async () => {
   "chiefComplaint": "主诉内容（简明扼要，如：咳嗽3天，加重伴发热1天）",
   "historyOfPresentIllness": "现病史内容（详细描述发病时间、症状、诱因、演变过程等）",
   "pastMedicalHistory": "既往史内容（既往疾病、手术史、过敏史、用药史等，如无则填写'无特殊'）",
-  "diagnosis": "初步诊断（根据症状和病史给出可能的诊断）",
-  "treatmentPlan": "处理意见（包含建议的药品、剂量、用法，以及需要的检验检查项目）"
+  "diagnosisList": [
+    { "name": "诊断名称（如：急性上呼吸道感染）", "code": "可能的ICD10编码（选填）" }
+  ],
+  "medications": [
+    { 
+      "name": "药品名称", 
+      "spec": "规格（如：0.25g*6片/盒，选填）",
+      "dosage": "单次用量（如：0.5g）", 
+      "frequency": "频次（如：每日一次/qd）", 
+      "usage": "用法（如：口服）",
+      "count": "总量（如：1盒）" 
+    }
+  ],
+  "examinations": [
+    { "name": "检查项目名称（如：血常规+CRP）", "goal": "检查目的（如：明确感染性质）" }
+  ],
+  "treatmentPlan": "其他处理意见或备注（选填）",
+  "healthEducation": "健康宣教内容（如：多喝水、清淡饮食、建议居家休息3-5天等）"
 }`;
     
     const messages: ChatMessage[] = [
@@ -274,15 +290,22 @@ const startVoiceInteraction = async () => {
     }
     
     // Validate required fields
-    const requiredFields = ['chiefComplaint', 'historyOfPresentIllness', 'diagnosis', 'treatmentPlan'];
+    const requiredFields = ['chiefComplaint', 'historyOfPresentIllness', 'diagnosisList'];
     const missingFields = requiredFields.filter(f => !parsed[f]);
     if (missingFields.length > 0) {
         console.warn('[LLM] Missing required fields:', missingFields);
         // Fill with defaults
-        missingFields.forEach(f => { parsed[f] = '未能识别'; });
+        if (missingFields.includes('chiefComplaint')) parsed.chiefComplaint = '未能识别';
+        if (missingFields.includes('historyOfPresentIllness')) parsed.historyOfPresentIllness = '未能识别';
+        if (missingFields.includes('diagnosisList')) parsed.diagnosisList = [];
     }
     
-    generatedRecord.value = parsed;
+    // Ensure arrays are initialized
+    parsed.diagnosisList = parsed.diagnosisList || [];
+    parsed.medications = parsed.medications || [];
+    parsed.examinations = parsed.examinations || [];
+    
+    generatedRecord.value = parsed as GeneratedRecord;
     console.log('[Voice] Medical record generated successfully');
 
   } catch (err: any) {

@@ -48,40 +48,102 @@
     </div>
 
     <div class="content-body" v-if="record">
-      <div class="form-section">
-        <div class="section-title">
-          <span class="icon">📝</span> 主诉 &amp; 现病史
-        </div>
-        <div class="field-group">
-          <label>主诉 (Chief Complaint)</label>
-          <textarea v-model="record.chiefComplaint" rows="2" class="full-width"></textarea>
-        </div>
-        <div class="field-group">
-          <label>现病史 (HPI)</label>
-          <textarea v-model="record.historyOfPresentIllness" rows="6" class="full-width"></textarea>
-        </div>
-      </div>
-
-      <div class="form-split">
-        <div class="form-section half">
-          <div class="section-title">
-            <span class="icon">🕒</span> 既往史 (Past History)
+      <div class="main-layout">
+        <!-- Left Column: Medical History -->
+        <div class="left-col">
+          <div class="form-section">
+            <div class="section-title">
+              <span class="icon">📝</span> 主诉 &amp; 现病史
+            </div>
+            <div class="field-group">
+              <label>主诉 (Chief Complaint)</label>
+              <textarea v-model="record.chiefComplaint" rows="2" class="full-width"></textarea>
+            </div>
+            <div class="field-group">
+              <label>现病史 (HPI)</label>
+              <textarea v-model="record.historyOfPresentIllness" rows="8" class="full-width"></textarea>
+            </div>
           </div>
-           <textarea v-model="record.pastMedicalHistory" rows="5" class="full-width"></textarea>
-        </div>
-        <div class="form-section half">
-          <div class="section-title">
-            <span class="icon">🔍</span> 初步诊断 (Diagnosis)
-          </div>
-           <textarea v-model="record.diagnosis" rows="5" class="full-width"></textarea>
-        </div>
-      </div>
 
-      <div class="form-section">
-        <div class="section-title">
-          <span class="icon">💊</span> 处理意见 (Treatment Plan)
+          <div class="form-section">
+            <div class="section-title">
+              <span class="icon">🕒</span> 既往史 (Past History)
+            </div>
+             <textarea v-model="record.pastMedicalHistory" rows="5" class="full-width"></textarea>
+          </div>
         </div>
-        <textarea v-model="record.treatmentPlan" rows="4" class="full-width"></textarea>
+
+        <!-- Right Column: Diagnosis & Treatment -->
+        <div class="right-col">
+          <!-- Diagnosis List -->
+          <div class="form-section">
+            <div class="section-title">
+              <span class="icon">🔍</span> 初步诊断 (Diagnosis)
+            </div>
+            <div class="list-container">
+              <div v-for="(diag, idx) in record.diagnosisList" :key="idx" class="list-item diagnosis-item">
+                <div class="item-content">
+                  <span class="item-name">{{ diag.name }}</span>
+                  <span class="item-code" v-if="diag.code">({{ diag.code }})</span>
+                  <span class="match-tag" v-if="diag.matched" title="已匹配本地数据">✓</span>
+                </div>
+              </div>
+              <div v-if="!record.diagnosisList?.length" class="empty-text">暂无诊断信息</div>
+            </div>
+          </div>
+
+          <!-- Treatment Plan -->
+          <div class="form-section">
+            <div class="section-title">
+              <span class="icon">💊</span> 治疗方案 (Treatment)
+            </div>
+            
+            <!-- Medications -->
+            <div class="sub-section" v-if="record.medications?.length">
+              <div class="sub-title">药品清单</div>
+              <div class="list-container">
+                <div v-for="(med, idx) in record.medications" :key="idx" class="list-item med-item">
+                  <div class="item-header">
+                    <span class="med-name">{{ med.name }}</span>
+                    <span class="med-spec" v-if="med.spec">{{ med.spec }}</span>
+                    <span class="match-tag" v-if="med.matched">✓</span>
+                  </div>
+                  <div class="item-detail">
+                    <span v-if="med.dosage">每次 {{ med.dosage }}</span>
+                    <span v-if="med.frequency">{{ med.frequency }}</span>
+                    <span v-if="med.usage">{{ med.usage }}</span>
+                    <span v-if="med.count" class="med-count">共 {{ med.count }}</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- Examinations -->
+            <div class="sub-section" v-if="record.examinations?.length">
+              <div class="sub-title">检验检查</div>
+              <div class="list-container">
+                <div v-for="(exam, idx) in record.examinations" :key="idx" class="list-item exam-item">
+                  <span class="item-name">{{ exam.name }}</span>
+                  <span class="match-tag" v-if="exam.matched">✓</span>
+                </div>
+              </div>
+            </div>
+
+            <!-- Other Treatment -->
+            <div class="sub-section" v-if="record.treatmentPlan">
+              <div class="sub-title">其他处理</div>
+              <textarea v-model="record.treatmentPlan" rows="3" class="full-width small-text"></textarea>
+            </div>
+          </div>
+
+          <!-- Health Education -->
+          <div class="form-section">
+            <div class="section-title">
+              <span class="icon">📢</span> 健康宣教 (Education)
+            </div>
+            <textarea v-model="record.healthEducation" rows="4" class="full-width"></textarea>
+          </div>
+        </div>
       </div>
     </div>
     
@@ -94,13 +156,39 @@
 
 <script setup lang="ts">
 import { ref, watch } from 'vue';
+import { medicalDataService } from '../services/medicalData';
+
+export interface DiagnosisEntry {
+  name: string;
+  code?: string;
+  matched?: boolean;
+}
+
+export interface MedicationEntry {
+  name: string;
+  spec?: string;
+  dosage?: string;
+  frequency?: string;
+  usage?: string;
+  count?: string;
+  matched?: boolean;
+}
+
+export interface ExamEntry {
+  name: string;
+  goal?: string;
+  matched?: boolean;
+}
 
 export interface GeneratedRecord {
   chiefComplaint: string;
   historyOfPresentIllness: string;
   pastMedicalHistory: string;
-  diagnosis: string;
-  treatmentPlan: string;
+  diagnosisList: DiagnosisEntry[];
+  medications: MedicationEntry[];
+  examinations: ExamEntry[];
+  treatmentPlan?: string;
+  healthEducation?: string;
 }
 
 export interface PatientInfo {
@@ -123,9 +211,51 @@ const emit = defineEmits(['confirm', 'cancel']);
 
 const record = ref<GeneratedRecord | null>(null);
 
+// Match data with local database
+const matchLocalData = (rec: GeneratedRecord) => {
+  // 1. Match Diagnoses
+  if (rec.diagnosisList) {
+    rec.diagnosisList.forEach(d => {
+      if (!d.code) { // Only match if no code provided by LLM (or if we want to override/validate)
+        const match = medicalDataService.matchDiagnosis(d.name);
+        if (match) {
+          d.name = match.name; // Normalize name
+          d.code = match.code;
+          d.matched = true;
+        }
+      }
+    });
+  }
+
+  // 2. Match Medications
+  if (rec.medications) {
+    rec.medications.forEach(m => {
+      const match = medicalDataService.matchMedicine(m.name);
+      if (match) {
+        m.name = match.name; // Normalize name
+        if (!m.spec) m.spec = match.spec;
+        m.matched = true;
+      }
+    });
+  }
+
+  // 3. Match Examinations
+  if (rec.examinations) {
+    rec.examinations.forEach(e => {
+        const match = medicalDataService.matchItem(e.name);
+        if (match) {
+            e.name = match.name;
+            e.matched = true;
+        }
+    });
+  }
+};
+
 watch(() => props.initialRecord, (val) => {
   if (val) {
-    record.value = JSON.parse(JSON.stringify(val)); // Deep copy to allow editing
+    const newVal = JSON.parse(JSON.stringify(val));
+    matchLocalData(newVal);
+    record.value = newVal;
   }
 }, { immediate: true });
 
@@ -172,6 +302,7 @@ const handleConfirm = () => {
   flex: 1;
   min-width: 0;
   margin-right: 16px;
+  pointer-events: none; /* Allow drag through */
 }
 
 .avatar {
@@ -227,6 +358,7 @@ const handleConfirm = () => {
   gap: 16px;
   font-size: 13px;
   color: #6b7280;
+  pointer-events: auto; /* Re-enable for text selection if needed, though usually not needed for drag */
 }
 
 /* Header Actions - 与问诊页面一致 */
@@ -349,30 +481,52 @@ const handleConfirm = () => {
   color: #1e293b;
 }
 
-.content-body {
-  flex: 1;
-  padding: 24px;
-  overflow-y: auto;
+/* Main Layout */
+.main-layout {
   display: flex;
-  flex-direction: column;
-  gap: 20px;
+  height: 100%;
+  overflow: hidden;
+  gap: 16px;
 }
 
+.left-col {
+  flex: 1; /* 50% */
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  overflow-y: auto;
+  padding-right: 4px;
+}
+
+.right-col {
+  flex: 1; /* 50% */
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  overflow-y: auto;
+  padding-right: 4px;
+}
+
+/* Sections */
 .form-section {
   background: white;
-  padding: 20px;
+  padding: 16px;
   border-radius: 12px;
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
   border: 1px solid #e2e8f0;
 }
 
-.form-split {
-  display: flex;
-  gap: 20px;
+.sub-section {
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px dashed #e2e8f0;
 }
 
-.form-section.half {
-  flex: 1;
+.sub-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: #64748b;
+  margin-bottom: 8px;
 }
 
 .section-title {
@@ -382,7 +536,7 @@ const handleConfirm = () => {
   font-size: 15px;
   font-weight: 600;
   color: #334155;
-  margin-bottom: 16px;
+  margin-bottom: 12px;
 }
 
 .icon {
@@ -390,7 +544,7 @@ const handleConfirm = () => {
 }
 
 .field-group {
-  margin-bottom: 16px;
+  margin-bottom: 12px;
 }
 
 .field-group:last-child {
@@ -399,19 +553,20 @@ const handleConfirm = () => {
 
 label {
   display: block;
-  font-size: 13px;
+  font-size: 12px;
   color: #64748b;
-  margin-bottom: 6px;
+  margin-bottom: 4px;
   font-weight: 500;
 }
 
+/* Text Areas */
 textarea.full-width {
   width: 100%;
-  padding: 12px;
+  padding: 10px;
   border: 1px solid #cbd5e1;
-  border-radius: 8px;
+  border-radius: 6px;
   font-size: 14px;
-  line-height: 1.6;
+  line-height: 1.5;
   color: #1e293b;
   resize: vertical;
   background: #f8fafc;
@@ -426,6 +581,106 @@ textarea.full-width:focus {
   box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
 }
 
+textarea.small-text {
+  font-size: 13px;
+  padding: 8px;
+}
+
+/* Lists */
+.list-container {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.list-item {
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 6px;
+  padding: 8px 12px;
+  font-size: 14px;
+}
+
+.diagnosis-item .item-content {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.item-name {
+  font-weight: 500;
+  color: #1e293b;
+}
+
+.item-code {
+  color: #64748b;
+  font-size: 12px;
+  background: #e2e8f0;
+  padding: 1px 6px;
+  border-radius: 4px;
+}
+
+.match-tag {
+  margin-left: auto;
+  color: #10b981;
+  font-weight: bold;
+  font-size: 12px;
+}
+
+.med-item {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.item-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.med-name {
+  font-weight: 600;
+  color: #1e293b;
+}
+
+.med-spec {
+  font-size: 12px;
+  color: #64748b;
+  background: #e2e8f0;
+  padding: 1px 6px;
+  border-radius: 4px;
+}
+
+.item-detail {
+  display: flex;
+  gap: 12px;
+  font-size: 13px;
+  color: #475569;
+}
+
+.med-count {
+  margin-left: auto;
+  color: #64748b;
+}
+
+.exam-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.empty-text {
+  color: #94a3b8;
+  font-size: 13px;
+  text-align: center;
+  padding: 10px;
+  background: #f8fafc;
+  border-radius: 6px;
+  border: 1px dashed #cbd5e1;
+}
+
+/* Loading State */
 .loading-state {
   flex: 1;
   display: flex;
@@ -450,16 +705,18 @@ textarea.full-width:focus {
 }
 
 /* Custom Scrollbar */
-.content-body::-webkit-scrollbar {
+::-webkit-scrollbar {
   width: 6px;
+  height: 6px;
 }
 
-.content-body::-webkit-scrollbar-track {
+::-webkit-scrollbar-track {
   background: transparent;
 }
 
-.content-body::-webkit-scrollbar-thumb {
+::-webkit-scrollbar-thumb {
   background: #cbd5e1;
   border-radius: 3px;
 }
+
 </style>
