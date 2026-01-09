@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref } from "vue";
+import { ref, computed } from "vue";
 import type { ChatMessage } from "../services/llm";
 import { chatStream, transcribeAudio } from "../services/llm";
 import MarkdownIt from 'markdown-it';
@@ -28,8 +28,11 @@ const renderMarkdown = (content: string) => {
 };
 
 const messages = ref<ChatMessage[]>([
-  { role: "system", content: "你是一个桌面智能助手，简洁回答并给出必要步骤。" },
+  { role: "system", content: "你是一个专业的医疗助手，回答请专业、准确、亲切。" },
+  { role: "assistant", content: "您好，我是您的智能医疗助手，请问有什么可以帮您？" }
 ]);
+
+const visibleMessages = computed(() => messages.value.filter(m => m.role !== 'system'));
 const input = ref("");
 const imageDataUrl = ref<string | null>(null);
 const sending = ref(false);
@@ -146,7 +149,7 @@ function stopRecording() {
 <template>
   <div class="chat-panel">
     <div id="chat-scroll" class="chat-body">
-      <div v-for="(m, idx) in messages" :key="idx" class="msg" :class="m.role">
+      <div v-for="(m, idx) in visibleMessages" :key="idx" class="msg" :class="m.role">
         <div class="bubble">
           <div v-if="m.role === 'assistant'" class="markdown-body" v-html="renderMarkdown(m.content)"></div>
           <div v-else class="user-text">{{ m.content }}</div>
@@ -163,7 +166,7 @@ function stopRecording() {
           class="text-input"
           type="text"
           v-model="input"
-          placeholder="输入你的问题..."
+          placeholder="请输入您的问题或描述症状..."
           @compositionstart="onCompositionStart"
           @compositionend="onCompositionEnd"
           @keydown.enter="handleEnter"

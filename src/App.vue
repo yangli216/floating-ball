@@ -82,11 +82,45 @@ const restoreWindowPosition = async () => {
   if (!appWindow.value || !store) return;
   try {
     const pos = await store.get<{x: number, y: number}>('window_pos');
+    console.log('[App] Restoring window position:', pos);
+    
+    let safeX = 100;
+    let safeY = 100;
+
     if (pos) {
-      await appWindow.value.setPosition(new PhysicalPosition(pos.x, pos.y));
+        try {
+            const monitor = await currentMonitor();
+            if (monitor) {
+                const size = monitor.size;
+                const mPos = monitor.position;
+                // Check bounds: within monitor roughly
+                if (pos.x >= mPos.x && pos.x < mPos.x + size.width &&
+                    pos.y >= mPos.y && pos.y < mPos.y + size.height) {
+                    safeX = pos.x;
+                    safeY = pos.y;
+                } else {
+                    console.warn('[App] Restored position out of bounds:', pos, 'Monitor:', mPos, size);
+                }
+            } else {
+                // No monitor info, just ensure not negative
+                safeX = Math.max(0, pos.x);
+                safeY = Math.max(0, pos.y);
+            }
+        } catch (e) {
+            console.warn('[App] Position validation failed:', e);
+            // Fallback to simple check
+            safeX = Math.max(0, pos.x);
+            safeY = Math.max(0, pos.y);
+        }
     }
+
+    console.log('[App] Final position to set:', {x: safeX, y: safeY});
+    await appWindow.value.setPosition(new PhysicalPosition(safeX, safeY));
+    
   } catch (err) {
     console.error('恢复窗口位置失败:', err);
+    // Ultimate fallback
+    await appWindow.value.setPosition(new PhysicalPosition(100, 100));
   }
 };
 
@@ -198,8 +232,6 @@ const TARGET_WORK_W = 420;
 const TARGET_WORK_H = 560;
 const TARGET_CONSULTATION_W = 1200;
 const TARGET_CONSULTATION_H = 900;
-const TARGET_RISK_ALERT_W = 320;
-const TARGET_RISK_ALERT_H = 300;
 const TARGET_BALL_W = 160;
 const TARGET_BALL_H = 160;
 const TARGET_CAPSULE_W = 360;
@@ -384,15 +416,8 @@ const cancelVoiceResult = async () => {
     await exitWork();
 };
 
-// 打开风险提示界面
-const openRiskAlert = async () => {
-  currentView.value = 'risk-alert';
-  if (!isWorking.value) {
-    await enterWorkMode(TARGET_RISK_ALERT_W, TARGET_RISK_ALERT_H);
-  }
-};
-
 // 关闭风险提示界面
+
 const closeRiskAlert = async () => {
   await exitWork();
 };
@@ -483,38 +508,25 @@ onMounted(async () => {
     // 初始化 store
     store = await load('.settings.dat');
     
-    // 恢复应用状态 (优先于窗口位置恢复)
+    // 恢复应用状态
+    // FORCE RESET: 始终以悬浮球模式启动，不恢复之前的展开状态，防止窗口位置/大小异常导致不可见
     try {
-      const state = await store.get<{isWorking: boolean, currentView: string}>('app_state');
-      // Skip restoring transient views like voice-interaction/voice-result
-      const skipViews = ['voice-interaction', 'voice-result'];
-      if (state && state.isWorking && !skipViews.includes(state.currentView)) {
-        currentView.value = state.currentView as any;
-        isWorking.value = true;
+        // 仅恢复位置
+        console.log('[App] Starting in default Floating Ball mode...');
+        isWorking.value = false;
+        currentView.value = 'chat';
         
-        // 立即恢复窗口大小
-        const targetW = state.currentView === 'consultation' ? TARGET_CONSULTATION_W : TARGET_WORK_W;
-        const targetH = state.currentView === 'consultation' ? TARGET_CONSULTATION_H : TARGET_WORK_H;
-        
-        // 尝试加载保存的小球位置，以便首次关闭时能正确动画
-        const savedPos = await store.get<{x: number, y: number}>('window_pos');
-        if (savedPos) {
-          lastBallPos.value = savedPos;
-        }
-
         if (appWindow.value) {
-          const monitor = await currentMonitor();
-          await appWindow.value.setResizable(true);
-          await appWindow.value.setSize(new LogicalSize(targetW, targetH));
-          // 确保窗口在屏幕内
-          await smartExpand(targetW, targetH, monitor);
+            // 先设置大小，再设置位置
+            await appWindow.value.setSize(new LogicalSize(TARGET_BALL_W, TARGET_BALL_H));
+            await restoreWindowPosition();
+            
+            // 确保窗口可见
+            await appWindow.value.show();
+            await appWindow.value.setFocus();
         }
-      } else {
-        // 仅在非工作模式下恢复小球位置
-        await restoreWindowPosition();
-      }
     } catch (err) {
-      console.warn('恢复应用状态失败:', err);
+      console.warn('初始化状态失败:', err);
       await restoreWindowPosition();
     }
     
@@ -647,11 +659,10 @@ onMounted(async () => {
 
     await listen<any>('stop-consultation', async () => {
       console.log('Received stop consultation request');
-      if (currentView.value === 'consultation') {
-        // Reset patient data if needed - depends on workflow. 
-        // User said "before reception...", so maybe we clear on "End Reception" (close button)?
-        // For now, stop-consultation usually just hides the view.
-        // currentPatient.value = null; // Maybe keep it until explicit close?
+      // Force exit work mode regardless of current view
+      if (isWorking.value) {
+        // Optional: clear patient data? 
+        // currentPatient.value = null; 
         await exitWork();
       }
     });
@@ -749,8 +760,29 @@ const handleExitApp = async (e: MouseEvent) => {
 // 进入工作模式（展开窗口）
 // 进入工作模式（展开窗口）
 // 进入工作模式（展开窗口）
+// 调整窗口大小的通用方法
+const resizeWorkWindow = async (targetW: number, targetH: number) => {
+  if (!appWindow.value) return;
+  try {
+    await appWindow.value.setResizable(true);
+    await appWindow.value.setSize(new LogicalSize(targetW, targetH));
+    await smartExpand(targetW, targetH);
+    await waitForWindowSize(targetW, targetH);
+  } catch (err) {
+    console.warn('调整窗口大小失败:', err);
+  }
+};
+
 const enterWorkMode = async (customW?: number, customH?: number) => {
-  if (isWorking.value || transitioning.value) return;
+  // 支持在工作模式下动态调整大小
+  if (isWorking.value) {
+    const targetW = customW ?? (currentView.value === 'consultation' ? TARGET_CONSULTATION_W : TARGET_WORK_W);
+    const targetH = customH ?? (currentView.value === 'consultation' ? TARGET_CONSULTATION_H : TARGET_WORK_H);
+    await resizeWorkWindow(targetW, targetH);
+    return;
+  }
+
+  if (transitioning.value) return;
   transitioning.value = true;
 
   // Apply Always on Top config
@@ -774,23 +806,8 @@ const enterWorkMode = async (customW?: number, customH?: number) => {
   const targetW = customW ?? (currentView.value === 'consultation' ? TARGET_CONSULTATION_W : TARGET_WORK_W);
   const targetH = customH ?? (currentView.value === 'consultation' ? TARGET_CONSULTATION_H : TARGET_WORK_H);
 
-  // 1. 立即设置窗口大小 (背景透明，用户无感知)
-  if (appWindow.value) {
-    try {
-      await appWindow.value.setResizable(true);
-      await appWindow.value.setSize(new LogicalSize(targetW, targetH));
-      
-      // 智能调整位置
-      await smartExpand(targetW, targetH); 
-      
-      await appWindow.value.setResizable(true); // 保持可调整大小
-    } catch (err) {
-      console.warn('设置窗口大小失败:', err);
-    }
-  }
-  
-  // 2. 等待窗口大小响应
-  await waitForWindowSize(targetW, targetH);
+  // 1. 调整窗口大小
+  await resizeWorkWindow(targetW, targetH);
   
   // 计算展开动画的原点 (从之前记录的小球位置展开)
   if (appWindow.value && lastBallPos.value) {
@@ -798,6 +815,7 @@ const enterWorkMode = async (customW?: number, customH?: number) => {
       const winPos = await appWindow.value.outerPosition();
       const scale = await appWindow.value.scaleFactor() || 1;
       
+      // 计算收缩/展开的原点
       // 原点 = (小球X - 窗口X) + 小球半径中心(80)
       const originX = (lastBallPos.value.x - winPos.x) / scale + 80;
       const originY = (lastBallPos.value.y - winPos.y) / scale + 80;
@@ -818,6 +836,31 @@ const enterWorkMode = async (customW?: number, customH?: number) => {
   setTimeout(() => {
     transitioning.value = false;
   }, TRANSITION_MS);
+};
+
+// 收起/关闭处理：根据上下文决定是返回胶囊还是退出
+const handleCollapse = async () => {
+    // 如果处于问诊界面且有当前接诊患者，则收起到接待胶囊
+    if (currentView.value === 'consultation' && currentPatient.value) {
+        currentView.value = 'reception-capsule';
+        // 确保风险提示的基本信息与当前患者一致 (UI同步)
+        riskPatientName.value = currentPatient.value.name || currentPatient.value.naPi || '未知';
+        riskPatientGender.value = (currentPatient.value.gender === 'F' || currentPatient.value.sdSexText === '女性') ? 'F' : 'M';
+        riskPatientAge.value = parseInt(currentPatient.value.age || currentPatient.value.ageText || '0');
+        
+        // 恢复位置到小球原来的位置 (视觉连贯性)
+        if (lastBallPos.value && appWindow.value) {
+            try {
+                await appWindow.value.setPosition(new PhysicalPosition(lastBallPos.value.x, lastBallPos.value.y));
+            } catch (e) {
+                console.warn('Failed to restore position for capsule:', e);
+            }
+        }
+
+        await resizeWorkWindow(TARGET_CAPSULE_W, TARGET_CAPSULE_H);
+    } else {
+        await exitWork();
+    }
 };
 
 const exitWork = async () => {
@@ -1012,14 +1055,14 @@ const exitWork = async () => {
               </button>
               <span class="assistant-title" data-tauri-drag-region>
                 {{ 
-                  currentView === 'chat' ? '工作状态 · 智能问答' : 
+                  currentView === 'chat' ? '智医助理' : 
                   (currentView === 'consultation' ? 
                     (currentPatient ? `智能问诊 - ${currentPatient.name}` : '智能问诊') : 
                     '系统设置') 
                 }}
               </span>
             </div>
-            <button class="icon-btn" aria-label="收起" title="收起" @click="exitWork">
+            <button class="icon-btn" aria-label="收起" title="收起" @click="handleCollapse">
               <svg class="toolbar-icon" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
                 <polyline points="6,10 12,16 18,10" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
               </svg>
@@ -1028,7 +1071,7 @@ const exitWork = async () => {
           <ChatPanel v-if="currentView === 'chat'" />
           <ConsultationPage 
             v-else-if="currentView === 'consultation'" 
-            @close="exitWork" 
+            @close="handleCollapse" 
             :initialPatientData="currentPatient"
           />
           <RiskAlertPanel

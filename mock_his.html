@@ -473,14 +473,20 @@
 
             // 3. Auto Call Reception Service (Risk Assessment)
             try {
+                // Determine if this is a new visit or we are reviewing history.
+                // In this mock, p.cc/p.hpi are labeled "Last Visit" in the UI, so we treat them as history.
+                // We combine them into pastMedicalHistory for the Risk API.
+                const lastVisitInfo = `[上次就诊记录] 主诉：${p.cc}；现病史：${p.hpi}`;
+                const combinedHistory = p.pmh ? `${lastVisitInfo}。既往史：${p.pmh}` : lastVisitInfo;
+
                 const riskPayload = {
                     patientId: p.id,
                     patientName: p.name,
                     gender: p.gender,
                     age: p.age,
-                    chiefComplaint: p.cc,
-                    historyOfPresentIllness: p.hpi,
-                    pastMedicalHistory: p.pmh,
+                    chiefComplaint: '', // Current visit has no CC yet
+                    historyOfPresentIllness: '', // Current visit has no HPI yet
+                    pastMedicalHistory: combinedHistory,
                     allergyHistory: p.allergy,
                     diagnosis: p.diagnosis
                 };

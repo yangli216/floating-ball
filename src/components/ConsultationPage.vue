@@ -480,7 +480,7 @@ const patientInfo = ref({
   "idPi": "766842939207974912",
   "idMpi": "766842939207974912",
   "cdPi": "JG00003125111",
-  "naPi": "张虎",
+  "naPi": "张虎(示例)",
   "sdSex": "2",
   "birthday": "2006-07-11",
   "idCard": "360731200607117442",
@@ -586,12 +586,43 @@ watch(() => props.initialPatientData, (newData) => {
 const submitToHIS = async () => {
   if (!finalRecord.value) return;
 
+  // Transform internal structure to Unified API format (matching VoiceConsultationResult)
+  const medications = finalRecord.value.treatments
+    .filter(t => t.type === 'medicine')
+    .map(t => ({
+      name: t.name,
+      spec: t.matchedItem?.spec,
+      usage: t.usage,
+      // matched: !!t.matchedItem // Optional based on receiver
+    }));
+
+  const examinations = finalRecord.value.treatments
+    .filter(t => t.type === 'exam')
+    .map(t => ({
+      name: t.name,
+      // matched: !!t.matchedItem
+    }));
+
   const result = {
     consultationId: finalRecord.value.patient.idPi || "unknown",
-    diagnosis: finalRecord.value.diagnosis.name,
-    treatmentPlan: JSON.stringify(finalRecord.value.treatments),
-    medicalSummary: `主诉：${finalRecord.value.record.chiefComplaint}\n现病史：${finalRecord.value.record.historyOfPresentIllness}`,
-    timestamp: Date.now()
+    timestamp: Date.now(),
+    
+    // Core Medical Record
+    chiefComplaint: finalRecord.value.record.chiefComplaint,
+    historyOfPresentIllness: finalRecord.value.record.historyOfPresentIllness,
+    pastMedicalHistory: "否认高血压、糖尿病、冠心病等慢性病史。", // TODO: Get from patientInfo or form if available
+    
+    // Structured Data
+    diagnosisList: [{
+      name: finalRecord.value.diagnosis.name,
+      code: finalRecord.value.diagnosis.code
+    }],
+    medications: medications,
+    examinations: examinations,
+    
+    // Text summaries
+    treatmentPlan: "建议门诊随访", // General treatment advice
+    medicalSummary: `主诉：${finalRecord.value.record.chiefComplaint}\n现病史：${finalRecord.value.record.historyOfPresentIllness}` // Keep for legacy if needed
   };
 
   try {
