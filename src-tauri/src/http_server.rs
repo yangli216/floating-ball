@@ -32,10 +32,9 @@ pub struct PatientInfo {
 #[serde(rename_all = "camelCase")]
 pub struct ConsultationResult {
     pub consultation_id: String,
-    pub diagnosis: String,
-    pub treatment_plan: String,
-    pub medical_summary: String,
     pub timestamp: u64,
+    #[serde(flatten)]
+    pub record: serde_json::Value,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -49,10 +48,22 @@ pub struct RiskItem {
 #[derive(Debug, Serialize, Deserialize, Clone)]
 #[serde(rename_all = "camelCase")]
 pub struct PatientRiskData {
+    #[serde(alias = "patientId")]
     pub patient_id: String,
+    #[serde(alias = "patientName")]
     pub patient_name: String,
     pub gender: String,      // "M" or "F"
     pub age: u32,
+    
+    // Raw medical info for analysis
+    pub chief_complaint: Option<String>,
+    pub history_of_present_illness: Option<String>,
+    pub past_medical_history: Option<String>,
+    pub diagnosis: Option<String>,
+    pub allergy_history: Option<String>,
+    
+    // Optional: Keep risks for backward compatibility or if we want to allow direct risk injection
+    #[serde(default)]
     pub risks: Vec<RiskItem>,
 }
 
@@ -167,7 +178,7 @@ async fn show_patient_risks(
     app_handle: web::Data<tauri::AppHandle>,
 ) -> impl Responder {
     let risk_data = data.into_inner();
-    println!("Received patient risks for: {} ({} risks)", risk_data.patient_name, risk_data.risks.len());
+    println!("Received patient risk analysis request for: {}", risk_data.patient_name);
 
     // Emit event to Frontend
     if let Some(window) = app_handle.get_webview_window("main") {

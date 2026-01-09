@@ -148,3 +148,65 @@ export async function transcribeAudio(blob: Blob, apiKey?: string): Promise<stri
   }
   return data?.text ?? "";
 }
+
+export interface RiskAnalysisItem {
+  level: 1 | 2 | 3;
+  category: 'allergy' | 'chronic' | 'medication' | 'population' | 'vital' | 'other';
+  content: string;
+}
+
+export async function analyzePatientRisks(patientData: any, apiKey?: string): Promise<RiskAnalysisItem[]> {
+  // Construct a prompt for the LLM
+  const systemPrompt = `你是一名资深的临床医疗风险评估专家。你的任务是根据提供的患者信息和历史病历数据，分析潜在的健康风险点。
+
+请分析以下维度：
+1. **过敏风险 (allergy)**: 药物或食物过敏史。
+2. **慢性病风险 (chronic)**: 既往高血压、糖尿病等慢性病史。
+3. **用药风险 (medication)**: 当前用药即使与既往史冲突，或存在药物相互作用。
+4. **特殊人群 (population)**: 老人、儿童、孕妇等。
+5. **生命体征/急症 (vital)**: 如高热、呼吸困难等急症迹象。
+6. **其他 (other)**: 其他值得注意的风险。
+
+**输出规则**：
+- 输出必须是标准的 JSON 数组格式。
+- 每个风险项包含：
+    - \`level\`: 风险等级 (1=高风险/红色, 2=中风险/橙色, 3=低风险/黄色)。
+    - \`category\`: 风险类别 (allergy, chronic, medication, population, vital, other)。
+    - \`content\`: 简短明确的风险提示内容（不超过20字）。
+- 如果没有显著风险，请返回空数组 []。
+- 不要包含 markdown 标记 (如 \`\`\`json)，直接返回 JSON 字符串。
+`;
+
+  const userContent = `患者信息：
+姓名: ${patientData.patientName}
+性别: ${patientData.gender}
+年龄: ${patientData.age}
+主诉: ${patientData.chiefComplaint || '无'}
+现病史: ${patientData.historyOfPresentIllness || '无'}
+既往史: ${patientData.pastMedicalHistory || '无'}
+过敏史: ${patientData.allergyHistory || '无'}
+初步诊断: ${patientData.diagnosis || '无'}`;
+
+  const messages: ChatMessage[] = [
+    { role: 'system', content: systemPrompt },
+    { role: 'user', content: userContent }
+  ];
+
+  try {
+    const response = await chat(messages, apiKey);
+    const cleanJson = response.replace(/```json\n?|\n?```/g, '').trim();
+    // Keep only the array part if surrounded by text
+    const jsonMatch = cleanJson.match(/\[[\s\S]*\]/);
+    const targetJson = jsonMatch ? jsonMatch[0] : cleanJson;
+
+    return JSON.parse(targetJson);
+  } catch (e) {
+    console.error('Risk analysis failed:', e);
+    // Return a fallback risk item to indicate failure
+    return [{
+      level: 3,
+      category: 'other',
+      content: '风险评估服务暂时不可用'
+    }];
+  }
+}

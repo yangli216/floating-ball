@@ -11,8 +11,9 @@ import ConsultationPage from "./components/ConsultationPage.vue";
 import Toast from "./components/Toast.vue";
 import RiskAlertPanel, { type RiskItem } from "./components/RiskAlertPanel.vue";
 import VoiceCapsule from "./components/VoiceCapsule.vue";
+import ReceptionCapsule from "./components/ReceptionCapsule.vue";
 import VoiceConsultationResult, { type GeneratedRecord } from "./components/VoiceConsultationResult.vue";
-import { chat, type ChatMessage } from "./services/llm";
+import { chat, analyzePatientRisks, type ChatMessage } from "./services/llm";
 import { LogicalSize } from "@tauri-apps/api/dpi";
 import { provide } from "vue";
 
@@ -27,11 +28,12 @@ const isHovered = ref(false);
 const hoveredBtnIndex = ref(-1); // -1 means no button hovered
 const isWorking = ref(false);
 const isMoving = ref(false);
-const currentView = ref<'chat' | 'settings' | 'consultation' | 'risk-alert' | 'voice-interaction' | 'voice-result'>('chat');
+const currentView = ref<'chat' | 'settings' | 'consultation' | 'risk-alert' | 'voice-interaction' | 'voice-result' | 'reception-capsule'>('chat');
 const currentPatient = ref<any>(null);
 const ringMenuRef = ref<HTMLElement | null>(null);
 
 // 风险提示状态
+const isRiskAnalyzing = ref(false);
 const riskPatientName = ref('');
 const riskPatientGender = ref<'M' | 'F'>('M');
 const riskPatientAge = ref(0);
@@ -202,6 +204,7 @@ const TARGET_BALL_W = 160;
 const TARGET_BALL_H = 160;
 const TARGET_CAPSULE_W = 360;
 const TARGET_CAPSULE_H = 80;
+const TARGET_CAPSULE_EXPANDED_H = 400; // Increased height for risk details
 const TARGET_RESULT_W = 1200;
 const TARGET_RESULT_H = 900;
 
@@ -354,11 +357,27 @@ const handleVoiceError = (err: any) => {
   exitWork();
 };
 
+import { invoke } from "@tauri-apps/api/core";
+
+// ... existing code ...
+
 const handleResultConfirm = async (record: GeneratedRecord) => {
     console.log('Confirmed record:', record);
-    // TODO: Send to HIS or backend
-    showToast('病历已生成并导入', 'success');
-    await exitWork();
+    
+    try {
+        await invoke('complete_consultation', {
+            result: {
+                consultationId: currentPatient.value?.id || 'unknown',
+                timestamp: Date.now(),
+                ...record
+            }
+        });
+        showToast('病历已生成并回传系统', 'success');
+        await exitWork();
+    } catch (e: any) {
+        console.error('Failed to save result:', e);
+        showToast('回传失败: ' + e, 'error');
+    }
 };
 
 const cancelVoiceResult = async () => {
@@ -376,6 +395,22 @@ const openRiskAlert = async () => {
 // 关闭风险提示界面
 const closeRiskAlert = async () => {
   await exitWork();
+};
+
+const handleRiskExpand = async (expanded: boolean) => {
+    console.log('[App] handleRiskExpand:', expanded);
+    const h = expanded ? TARGET_CAPSULE_EXPANDED_H : TARGET_CAPSULE_H;
+    
+    // We reuse enterWorkMode to resize window smoothly
+    // Since we are already in work mode, it should just trigger resize
+    try {
+        if (appWindow.value) {
+            await smartExpand(TARGET_CAPSULE_W, h);
+            await appWindow.value.setSize(new LogicalSize(TARGET_CAPSULE_W, h));
+        }
+    } catch (e) {
+        console.error('Failed to resize for risk details:', e);
+    }
 };
 
 // 等待窗口达到指定逻辑尺寸
@@ -529,38 +564,105 @@ onMounted(async () => {
   }
   // 监听 Rust 后端发出的窗口 hover 事件
   try {
+    // 监听患者风险提示事件 (接诊服务)
+    await listen<any>('show-patient-risks', async (event) => {
+      console.log('Received patient risks request:', event.payload);
+      const data = event.payload;
+      
+      // Update basic info immediately
+      riskPatientName.value = data.patientName || '未知患者';
+      riskPatientGender.value = data.gender || 'M';
+      riskPatientAge.value = data.age || 0;
+      riskItems.value = []; // Reset risks initially
+      isRiskAnalyzing.value = true;
+
+      // GLOBAL STATE: Set current patient context
+      // Normalize data structure for other views
+      currentPatient.value = {
+          ...data,
+          name: data.patientName, 
+          // Early mapping for ConsultationPage compatibility
+          naPi: data.patientName,
+          sdSexText: data.gender === 'M' ? '男性' : '女性',
+          ageText: data.age ? `${data.age}岁` : '',
+          // Ensure other fields are carried over
+      };
+      
+      // Switch to Reception Capsule View
+      // 360x80 matches VoiceCapsule size which looks good for this
+      currentView.value = 'reception-capsule';
+      if (!isWorking.value) {
+        await enterWorkMode(TARGET_CAPSULE_W, TARGET_CAPSULE_H);
+      } else {
+        // Resize if already open
+        enterWorkMode(TARGET_CAPSULE_W, TARGET_CAPSULE_H);
+      }
+
+      // If backend provided pre-calculated risks, use them immediately
+      if (data.risks && data.risks.length > 0) {
+        riskItems.value = data.risks;
+        isRiskAnalyzing.value = false;
+        return;
+      }
+
+      // Otherwise, trigger LLM analysis
+      try {
+        const risks = await analyzePatientRisks(data);
+        console.log('LLM Risk Analysis Result:', risks);
+        riskItems.value = risks || [];
+      } catch (e) {
+        console.error('Risk analysis error:', e);
+        showToast('风险评估失败', 'error');
+      } finally {
+        isRiskAnalyzing.value = false;
+        
+        // If risks exist, show toast as well
+        if (riskItems.value.length > 0) {
+            showToast(`发现 ${riskItems.value.length} 项健康风险`, 'info');
+        }
+      }
+    });
+
     await listen<any>('start-consultation', async (event) => {
       console.log('Received consultation request:', event.payload);
-      currentPatient.value = event.payload;
+      // Validate: Must have active patient logic is good, but we should also allow starting fresh if needed
+      // But typically we have reception flow first.
+      
+      const payload = event.payload || {};
+      
+      // Update/Merge Global Patient Context
+      // This ensures we have the correct keys (naPi, sdSexText) for ConsultationPage
+      currentPatient.value = {
+          ...(currentPatient.value || {}),
+          ...payload,
+          // Fallbacks/Mappings if payload is missing strict keys but has loose keys
+          naPi: payload.naPi || payload.name || currentPatient.value?.patientName || '未知',
+          idPi: payload.idPi || payload.patientId || currentPatient.value?.patientId,
+          ageText: payload.ageText || (currentPatient.value?.age ? `${currentPatient.value.age}岁` : ''),
+          sdSexText: payload.sdSexText || (currentPatient.value?.gender === 'M' ? '男性' : '女性')
+      };
+      
       await openConsultation();
     });
 
     await listen<any>('stop-consultation', async () => {
       console.log('Received stop consultation request');
       if (currentView.value === 'consultation') {
-        // Reset patient data if needed
-        currentPatient.value = null;
+        // Reset patient data if needed - depends on workflow. 
+        // User said "before reception...", so maybe we clear on "End Reception" (close button)?
+        // For now, stop-consultation usually just hides the view.
+        // currentPatient.value = null; // Maybe keep it until explicit close?
         await exitWork();
-      }
-    });
-
-    // 监听患者风险提示事件
-    await listen<any>('show-patient-risks', async (event) => {
-      console.log('Received patient risks:', event.payload);
-      const data = event.payload;
-      riskPatientName.value = data.patientName || '未知患者';
-      riskPatientGender.value = data.gender || 'M';
-      riskPatientAge.value = data.age || 0;
-      riskItems.value = data.risks || [];
-      if (riskItems.value.length > 0 && !isWorking.value) {
-        // 使用 Morph 过渡进入风险提示界面
-        await openRiskAlert();
       }
     });
 
     // 监听语音接诊指令
     await listen<any>('start-voice-consultation', async () => {
         console.log('Received start voice consultation command');
+        if (!currentPatient.value) {
+            showToast('请先接诊患者', 'error');
+            return;
+        }
         await startVoiceInteraction();
     });
 
@@ -897,11 +999,11 @@ const exitWork = async () => {
       <div v-show="isWorking" class="assistant-layer" :style="containerStyle">
         <div 
           class="assistant-container" 
-          :class="{ 'no-toolbar': currentView === 'risk-alert' || currentView === 'voice-interaction' || currentView === 'voice-result' }"
-          :style="{ borderRadius: currentView === 'voice-interaction' ? '40px' : '20px' }"
+          :class="{ 'no-toolbar': currentView === 'risk-alert' || currentView === 'voice-interaction' || currentView === 'voice-result' || currentView === 'reception-capsule' }"
+          :style="{ borderRadius: (currentView === 'voice-interaction' || currentView === 'reception-capsule') ? '40px' : '20px' }"
         >
-          <!-- 工具栏 (risk-alert, voice-interaction, voice-result 视图不显示) -->
-          <div v-if="currentView !== 'risk-alert' && currentView !== 'voice-interaction' && currentView !== 'voice-result'" class="assistant-toolbar" data-tauri-drag-region>
+          <!-- 工具栏 (risk-alert, voice-interaction, voice-result, reception-capsule 视图不显示) -->
+          <div v-if="currentView !== 'risk-alert' && currentView !== 'voice-interaction' && currentView !== 'voice-result' && currentView !== 'reception-capsule'" class="assistant-toolbar" data-tauri-drag-region>
             <div class="toolbar-left" data-tauri-drag-region>
               <button v-if="currentView === 'settings'" class="icon-btn back-btn" @click="openChat" title="返回">
                  <svg class="toolbar-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -912,7 +1014,7 @@ const exitWork = async () => {
                 {{ 
                   currentView === 'chat' ? '工作状态 · 智能问答' : 
                   (currentView === 'consultation' ? 
-                    (currentPatient ? `智能问诊 - ${currentPatient.naPi}` : '智能问诊') : 
+                    (currentPatient ? `智能问诊 - ${currentPatient.name}` : '智能问诊') : 
                     '系统设置') 
                 }}
               </span>
@@ -938,11 +1040,26 @@ const exitWork = async () => {
             @close="closeRiskAlert"
             @confirm="closeRiskAlert"
           />
-          <VoiceCapsule
+          <!-- Voice Interaction View -->
+          <VoiceCapsule 
             v-else-if="currentView === 'voice-interaction'"
             @stop="handleVoiceStop"
             @error="handleVoiceError"
           />
+
+          <!-- Reception Service (Risk) Capsule -->
+          <ReceptionCapsule
+            v-else-if="currentView === 'reception-capsule'"
+            :patient-name="riskPatientName"
+            :gender="riskPatientGender"
+            :age="riskPatientAge"
+            :risks="riskItems"
+            :analyzing="isRiskAnalyzing"
+            @close="closeRiskAlert"
+            @toggle-expand="handleRiskExpand"
+          />
+
+          <!-- Voice Result View -->
           <VoiceConsultationResult
             v-else-if="currentView === 'voice-result'"
             :initialRecord="generatedRecord"

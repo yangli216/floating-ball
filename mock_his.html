@@ -1,292 +1,615 @@
 <!DOCTYPE html>
 <html lang="zh-CN">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Mock HIS - 医生工作站</title>
+    <title>Mock HIS - 智能医生工作站</title>
     <style>
+        :root {
+            --primary-color: #1890ff;
+            --success-color: #52c41a;
+            --warning-color: #faad14;
+            --danger-color: #f5222d;
+            --bg-color: #f0f2f5;
+            --card-bg: #ffffff;
+        }
+
         body {
-            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
             margin: 0;
             padding: 20px;
-            background-color: #f0f2f5;
-        }
-        .container {
-            max-width: 1000px;
-            margin: 0 auto;
-            background: white;
-            padding: 30px;
-            border-radius: 8px;
-            box-shadow: 0 2px 12px rgba(0,0,0,0.1);
-        }
-        h1 {
-            color: #1890ff;
-            border-bottom: 2px solid #f0f0f0;
-            padding-bottom: 15px;
-        }
-        .section {
-            margin-bottom: 30px;
-            border: 1px solid #e8e8e8;
-            padding: 20px;
-            border-radius: 4px;
-        }
-        .section-title {
-            font-size: 16px;
-            font-weight: bold;
-            margin-bottom: 15px;
+            background-color: var(--bg-color);
             color: #333;
         }
-        .form-grid {
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+
+        /* Views */
+        .view-section {
+            display: none;
+            opacity: 0;
+            transition: opacity 0.3s ease;
+        }
+
+        .view-section.active {
+            display: block;
+            opacity: 1;
+        }
+
+        /* Waiting Room */
+        .patient-list {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+            gap: 20px;
+            margin-top: 20px;
+        }
+
+        .patient-card {
+            background: var(--card-bg);
+            border-radius: 8px;
+            padding: 20px;
+            box-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
+            cursor: pointer;
+            transition: all 0.2s;
+            border-left: 4px solid transparent;
+        }
+
+        .patient-card:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+        }
+
+        .patient-card.priority-high {
+            border-left-color: var(--danger-color);
+        }
+
+        .patient-card.priority-normal {
+            border-left-color: var(--success-color);
+        }
+
+        .card-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 15px;
+        }
+
+        .card-name {
+            font-size: 18px;
+            font-weight: 600;
+        }
+
+        .card-tag {
+            background: #e6f7ff;
+            color: #1890ff;
+            padding: 2px 8px;
+            border-radius: 4px;
+            font-size: 12px;
+        }
+
+        .card-info {
+            color: #666;
+            font-size: 14px;
+            line-height: 1.6;
+        }
+
+        /* Workstation */
+        .workstation-layout {
+            display: grid;
+            grid-template-columns: 280px 1fr;
+            gap: 20px;
+            height: calc(100vh - 40px);
+        }
+
+        .sidebar {
+            background: var(--card-bg);
+            border-radius: 8px;
+            padding: 20px;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .main-content {
+            background: var(--card-bg);
+            border-radius: 8px;
+            padding: 20px;
+            display: flex;
+            flex-direction: column;
+            overflow-y: auto;
+        }
+
+        .patient-banner {
+            text-align: center;
+            padding-bottom: 20px;
+            border-bottom: 1px solid #eee;
+            margin-bottom: 20px;
+        }
+
+        .banner-avatar {
+            width: 80px;
+            height: 80px;
+            background: #e6f7ff;
+            border-radius: 50%;
+            margin: 0 auto 10px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 32px;
+        }
+
+        .action-list {
+            display: flex;
+            flex-direction: column;
+            gap: 15px;
+            margin-top: auto;
+        }
+
+        .action-btn {
+            padding: 12px;
+            border: none;
+            border-radius: 6px;
+            font-size: 14px;
+            font-weight: 500;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+            transition: all 0.2s;
+        }
+
+        .btn-primary {
+            background: var(--primary-color);
+            color: white;
+        }
+
+        .btn-primary:hover {
+            background: #40a9ff;
+        }
+
+        .btn-purple {
+            background: #722ed1;
+            color: white;
+        }
+
+        .btn-purple:hover {
+            background: #9254de;
+        }
+
+        .btn-danger {
+            background: #fff1f0;
+            color: var(--danger-color);
+            border: 1px solid #ffa39e;
+        }
+
+        .btn-danger:hover {
+            background: var(--danger-color);
+            color: white;
+        }
+
+        .form-section {
+            margin-bottom: 25px;
+        }
+
+        .form-title {
+            font-size: 16px;
+            font-weight: 600;
+            margin-bottom: 15px;
+            padding-left: 10px;
+            border-left: 4px solid var(--primary-color);
+        }
+
+        .info-grid {
             display: grid;
             grid-template-columns: repeat(2, 1fr);
             gap: 20px;
         }
+
         .form-group {
             margin-bottom: 15px;
         }
-        label {
+
+        .form-group label {
             display: block;
-            margin-bottom: 5px;
             color: #666;
+            font-size: 12px;
+            margin-bottom: 5px;
         }
-        input, select, textarea {
+
+        .form-group input,
+        .form-group textarea {
             width: 100%;
             padding: 8px;
             border: 1px solid #d9d9d9;
             border-radius: 4px;
             box-sizing: border-box;
+            font-size: 14px;
         }
-        button {
-            background-color: #1890ff;
-            color: white;
-            border: none;
-            padding: 10px 25px;
+
+        .form-group textarea {
+            resize: vertical;
+        }
+
+        .status-bar {
+            background: #f6ffed;
+            border: 1px solid #b7eb8f;
+            color: #52c41a;
+            padding: 10px;
             border-radius: 4px;
-            cursor: pointer;
-            font-size: 16px;
-            transition: background 0.3s;
+            margin-bottom: 20px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
         }
-        button:hover {
-            background-color: #40a9ff;
-        }
-        button:disabled {
-            background-color: #d9d9d9;
-            cursor: not-allowed;
-        }
-        #result-area {
-            background-color: #fafafa;
-            padding: 15px;
-            border: 1px dashed #d9d9d9;
-            border-radius: 4px;
-            min-height: 100px;
-            white-space: pre-wrap;
-        }
-        .status-badge {
-            display: inline-block;
-            padding: 4px 8px;
-            border-radius: 4px;
-            font-size: 12px;
-            margin-left: 10px;
-        }
-        .status-waiting { background: #fffbe6; color: #faad14; border: 1px solid #ffe58f; }
-        .status-success { background: #f6ffed; color: #52c41a; border: 1px solid #b7eb8f; }
-        .status-error { background: #fff1f0; color: #f5222d; border: 1px solid #ffa39e; }
     </style>
 </head>
-<body>
-    <div class="container">
-        <h1>Mock HIS - 门诊医生工作站</h1>
-        
-        <div class="section">
-            <div class="section-title">当前就诊患者信息</div>
-            <div class="form-grid">
-                <div class="form-group">
-                    <label>患者ID (idPi)</label>
-                    <input type="text" id="patientId" value="766842939207974912">
-                </div>
-                <div class="form-group">
-                    <label>姓名 (naPi)</label>
-                    <input type="text" id="name" value="张虎">
-                </div>
-                <div class="form-group">
-                    <label>性别 (sdSexText)</label>
-                    <select id="gender">
-                        <option value="男性">男性</option>
-                        <option value="女性" selected>女性</option>
-                    </select>
-                </div>
-                <div class="form-group">
-                    <label>年龄 (ageText)</label>
-                    <input type="text" id="age" value="19岁">
-                </div>
-                <div class="form-group">
-                    <label>就诊科室 (Department)</label>
-                    <input type="text" id="department" value="呼吸内科">
-                </div>
-                <div class="form-group">
-                    <label>身份证号 (idCard)</label>
-                    <input type="text" id="idCard" value="360731200607117442">
-                </div>
-                <div class="form-group">
-                    <label>联系电话 (mobilePhone)</label>
-                    <input type="text" id="mobilePhone" value="13800138000">
-                </div>
-                <div class="form-group">
-                    <label>过敏史 (allergyHistory)</label>
-                    <input type="text" id="allergyHistory" value="无">
-                </div>
-            </div>
-            
-            <div style="display: flex; gap: 10px;">
-                <button onclick="startConsultation()" id="startBtn" style="flex: 1;">呼叫智能问诊系统</button>
-                <button onclick="startVoiceConsultation()" id="voiceBtn" style="flex: 1; background-color: #722ed1;">呼叫语音接诊</button>
-                <button onclick="stopConsultation()" id="stopBtn" style="flex: 1; background-color: #dc3545;">结束问诊</button>
-            </div>
-            <span id="callStatus" class="status-badge" style="display:none"></span>
-        </div>
 
-        <div class="section">
-            <div class="section-title">
-                智能问诊结果回传 
-                <button onclick="checkResult()" style="font-size: 12px; padding: 4px 10px; margin-left: 10px; background: #52c41a;">手动刷新</button>
+<body>
+
+    <!-- View 1: Waiting Room -->
+    <div id="view-waiting" class="view-section active container">
+        <h1>待诊患者列表 <span style="font-size: 14px; font-weight: normal; color: #666; margin-left:10px;">点击卡片开始接诊</span>
+        </h1>
+
+        <div class="patient-list" id="patientList">
+            <!-- Generated by JS -->
+        </div>
+    </div>
+
+    <!-- View 2: Workstation -->
+    <div id="view-workstation" class="view-section" style="height: 100vh; padding: 0; box-sizing: border-box;">
+        <div class="workstation-layout">
+            <!-- Sidebar: Patient Summary -->
+            <div class="sidebar">
+                <div class="patient-banner">
+                    <div class="banner-avatar">👤</div>
+                    <h2 id="ws-name">张三</h2>
+                    <div style="color: #666; font-size: 14px;">
+                        <span id="ws-gender">男</span> · <span id="ws-age">35岁</span>
+                    </div>
+                    <div style="margin-top: 5px; font-size: 12px; color: #999;" id="ws-id">ID: 123456</div>
+                </div>
+
+                <div class="form-group">
+                    <label>过敏史</label>
+                    <div id="ws-allergy" style="font-weight: 500; color: #f5222d;">无</div>
+                </div>
             </div>
-            <div id="result-area">等待问诊开始...</div>
+
+            <!-- Main: EMR Editor -->
+            <div class="main-content">
+                <!-- Header Actions -->
+                <div class="header-bar"
+                    style="display: flex; justify-content: flex-end; gap: 10px; margin-bottom: 20px; border-bottom: 1px solid #eee; padding-bottom: 15px;">
+                    <button class="action-btn btn-primary" onclick="startConsultation()">
+                        <span>💬</span> 症状问诊
+                    </button>
+                    <button class="action-btn btn-purple" onclick="startVoiceConsultation()">
+                        <span>🎤</span> 语音接诊
+                    </button>
+                    <button class="action-btn btn-danger" onclick="finishReception()">
+                        <span>❌</span> 结束接诊
+                    </button>
+                </div>
+
+                <div class="status-bar" id="reception-status" style="display:none">
+                    <span>✅</span> <span>接诊服务已激活，正在进行后台风险评估...</span>
+                </div>
+
+                <!-- History View (Default) -->
+                <div id="history-view" class="form-section">
+                    <div class="form-title">历史病历信息 (上次就诊)</div>
+                    <div class="info-grid">
+                        <div class="form-group" style="grid-column: span 2">
+                            <label>上次主诉 (Last Chief Complaint)</label>
+                            <input type="text" id="ws-cc" readonly style="background-color: #f5f5f5; color: #666;">
+                        </div>
+                        <div class="form-group" style="grid-column: span 2">
+                            <label>上次现病史 (Last HPI)</label>
+                            <textarea id="ws-hpi" rows="3" readonly
+                                style="background-color: #f5f5f5; color: #666;"></textarea>
+                        </div>
+                        <div class="form-group" style="grid-column: span 2">
+                            <label>既往史 (PMH)</label>
+                            <textarea id="ws-pmh" rows="2" readonly
+                                style="background-color: #f5f5f5; color: #666;"></textarea>
+                        </div>
+                        <div class="form-group">
+                            <label>上次诊断</label>
+                            <input type="text" id="ws-diagnosis" readonly
+                                style="background-color: #f5f5f5; color: #666;">
+                        </div>
+                        <div class="form-group">
+                            <label>上次就诊科室</label>
+                            <input type="text" id="ws-dept" readonly style="background-color: #f5f5f5; color: #666;">
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Result View (Hidden initially) -->
+                <div id="result-view" class="form-section" style="display: none;">
+                    <div class="form-title" style="color: #1890ff; border-left-color: #1890ff;">本次就诊病历 (Current Visit)
+                    </div>
+                    <div id="result-content"
+                        style="background: #f0f9ff; padding: 20px; border-radius: 8px; border: 1px solid #bae7ff;">
+                        <!-- Content injected by JS -->
+                    </div>
+                </div>
+
+                <div class="form-section" id="log-section">
+                    <div class="form-title">系统日志</div>
+                    <div id="result-log"
+                        style="background: #fafafa; padding: 15px; border-radius: 4px; border: 1px dashed #d9d9d9; font-family: monospace; font-size: 12px; min-height: 40px; color: #999;">
+                        等待问诊...
+                    </div>
+                    <button onclick="checkResult()" style="margin-top:10px; font-size:12px;">刷新状态</button>
+                </div>
+            </div>
         </div>
     </div>
 
     <script>
-        const API_BASE = 'http://127.0.0.1:8081/api/consultation';
+        const API_BASE = 'http://127.0.0.1:8081/api';
+
+        // Mock Data
+        const patients = [
+            {
+                id: 'p001',
+                name: '李建国',
+                gender: 'M',
+                age: 68,
+                dept: '呼吸内科',
+                priority: 'normal',
+                cc: '反复咳嗽、咳痰20余年，加重伴气喘1周',
+                hpi: '患者20年前无明显诱因出现咳嗽、咳痰，冬春季好发。1周前受凉后上述症状加重，痰多色白质粘，伴胸闷气喘。',
+                pmh: '既往"高血压"病史10年，血压控制可。否认糖尿病冠心病史。',
+                allergy: '无',
+                diagnosis: '慢性阻塞性肺疾病急性加重'
+            },
+            {
+                id: 'p002',
+                name: '王小敏',
+                gender: 'F',
+                age: 24,
+                dept: '急诊科',
+                priority: 'high',
+                cc: '突发全身皮疹伴瘙痒30分钟',
+                hpi: '30分钟前食用海鲜后出现全身风团样皮疹，剧烈瘙痒，伴呼吸不畅。',
+                pmh: '既往有青霉素过敏史。',
+                allergy: '青霉素, 海鲜',
+                diagnosis: '急性荨麻疹'
+            },
+            {
+                id: 'p003',
+                name: '张梓轩',
+                gender: 'M',
+                age: 6,
+                dept: '儿科',
+                priority: 'normal',
+                cc: '发热1天，体温最高39.5℃',
+                hpi: '患儿昨日夜间起发热，无惊厥，偶有轻咳。精神尚可，食欲欠佳。',
+                pmh: '按期接种疫苗。',
+                allergy: '无',
+                diagnosis: '上呼吸道感染'
+            }
+        ];
+
+        let currentPatient = null;
         let pollingInterval = null;
 
-        async function startVoiceConsultation() {
-            const btn = document.getElementById('voiceBtn');
-            const status = document.getElementById('callStatus');
-            btn.disabled = true;
-            
-            try {
-                const response = await fetch(`${API_BASE}/start-voice`, { method: 'POST' });
-                if (response.ok) {
-                   status.style.display = 'inline-block'; 
-                   status.className = 'status-badge status-success';
-                   status.textContent = '语音接诊呼叫成功';
-                   document.getElementById('result-area').textContent = '已开启语音接诊，主界面应显示胶囊形态...';
-                } else {
-                   throw new Error(response.statusText);
-                }
-            } catch (e) {
-                console.error(e);
-                alert('呼叫语音接诊失败: ' + e);
-            } finally {
-                btn.disabled = false;
+        // Init Logic
+        window.onload = () => {
+            renderWaitingRoom();
+        };
+
+        function renderWaitingRoom() {
+            const list = document.getElementById('patientList');
+            list.innerHTML = patients.map((p, idx) => `
+            <div class="patient-card priority-${p.priority}" onclick="receivePatient(${idx})">
+                <div class="card-header">
+                    <span class="card-name">${p.name}</span>
+                    <span class="card-tag">${p.dept}</span>
+                </div>
+                <div class="card-info">
+                    <div>${p.gender === 'M' ? '男' : '女'} · ${p.age}岁</div>
+                    <div style="margin-top: 8px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: #999; font-size: 13px;">
+                        上次主诉: ${p.cc}
+                    </div>
+                </div>
+                <div style="margin-top: 15px; text-align: right;">
+                    <button style="padding: 6px 15px; cursor: pointer; border:1px solid #1890ff; background:white; color:#1890ff; border-radius:4px;">接诊</button>
+                </div>
+            </div>
+        `).join('');
+        }
+
+        function switchView(viewId) {
+            document.querySelectorAll('.view-section').forEach(el => el.classList.remove('active'));
+            document.getElementById(viewId).classList.add('active');
+            if (viewId === 'view-waiting') {
+                document.body.style.padding = '20px'; // Restore padding
+            } else {
+                document.body.style.padding = '20px'; // Keep padding
             }
         }
 
-        async function startConsultation() {
-            // Refactored to match PatientInfo structure directly (no interface conversion needed)
-            const data = {
-                idPi: document.getElementById('patientId').value,
-                naPi: document.getElementById('name').value,
-                sdSexText: document.getElementById('gender').value,
-                ageText: document.getElementById('age').value,
-                department: document.getElementById('department').value,
-                idCard: document.getElementById('idCard').value,
-                mobilePhone: document.getElementById('mobilePhone').value,
-                allergyHistory: document.getElementById('allergyHistory').value
-            };
+        // --- Reception Logic ---
 
-            const btn = document.getElementById('startBtn');
-            const status = document.getElementById('callStatus');
-            
-            btn.disabled = true;
-            status.style.display = 'inline-block';
-            status.className = 'status-badge status-waiting';
-            status.textContent = '正在呼叫...';
+        async function receivePatient(idx) {
+            const p = patients[idx];
+            currentPatient = p;
 
+            // Reset Views
+            document.getElementById('history-view').style.display = 'block';
+            document.getElementById('result-view').style.display = 'none';
+
+            // 1. Fill Workstation Data
+            document.getElementById('ws-name').textContent = p.name;
+            document.getElementById('ws-gender').textContent = p.gender === 'M' ? '男' : '女';
+            document.getElementById('ws-age').textContent = p.age + '岁';
+            document.getElementById('ws-id').textContent = 'ID: ' + p.id;
+            document.getElementById('ws-allergy').textContent = p.allergy;
+            document.getElementById('ws-allergy').style.color = p.allergy === '无' ? '#666' : '#f5222d';
+
+            document.getElementById('ws-cc').value = p.cc;
+            document.getElementById('ws-hpi').value = p.hpi;
+            document.getElementById('ws-pmh').value = p.pmh;
+            document.getElementById('ws-diagnosis').value = p.diagnosis;
+            document.getElementById('ws-dept').value = p.dept;
+
+            document.getElementById('result-log').textContent = '等待问诊结束...';
+            document.getElementById('reception-status').style.display = 'flex';
+
+            // Reset Views
+            document.getElementById('history-view').style.display = 'block';
+            document.getElementById('result-view').style.display = 'none';
+
+            // 2. Switch View
+            switchView('view-workstation');
+
+            // 3. Auto Call Reception Service (Risk Assessment)
             try {
-                const response = await fetch(`${API_BASE}/start`, {
+                const riskPayload = {
+                    patientId: p.id,
+                    patientName: p.name,
+                    gender: p.gender,
+                    age: p.age,
+                    chiefComplaint: p.cc,
+                    historyOfPresentIllness: p.hpi,
+                    pastMedicalHistory: p.pmh,
+                    allergyHistory: p.allergy,
+                    diagnosis: p.diagnosis
+                };
+
+                await fetch(`${API_BASE}/patient/risks`, {
                     method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json'
-                    },
-                    body: JSON.stringify(data)
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(riskPayload)
                 });
 
-                if (response.ok) {
-                    const resData = await response.json();
-                    status.className = 'status-badge status-success';
-                    status.textContent = '呼叫成功，等待结果...';
-                    document.getElementById('result-area').textContent = `已建立连接 (ID: ${resData.consultationId})\n正在等待医生完成问诊...`;
-                    
-                    // Start polling
-                    if (pollingInterval) clearInterval(pollingInterval);
-                    pollingInterval = setInterval(checkResult, 2000);
-                } else {
-                    throw new Error(`HTTP ${response.status}`);
-                }
+                console.log('接诊服务已自动激活');
+
             } catch (e) {
-                console.error(e);
-                status.className = 'status-badge status-error';
-                status.textContent = '呼叫失败: ' + e.message;
-                btn.disabled = false;
+                console.error('激活接诊服务失败', e);
+                alert('连接悬浮球失败，请确认应用已启动');
             }
         }
 
-        async function stopConsultation() {
-            const stopBtn = document.getElementById('stopBtn');
+        // --- Function Buttons ---
+
+        async function startConsultation() {
+            if (!currentPatient) return;
             try {
-                stopBtn.disabled = true;
-                await fetch(`${API_BASE}/stop`, { method: 'POST' });
-                
-                if (pollingInterval) {
-                    clearInterval(pollingInterval);
-                    pollingInterval = null;
-                }
-                
-                document.getElementById('startBtn').disabled = false;
-                document.getElementById('callStatus').style.display = 'none';
-                document.getElementById('result-area').textContent = '等待问诊开始...';
-                
+                await fetch(`${API_BASE}/consultation/start`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        idPi: currentPatient.id,
+                        naPi: currentPatient.name,
+                        sdSexText: currentPatient.gender === 'M' ? '男性' : '女性',
+                        ageText: currentPatient.age + '岁',
+                        department: currentPatient.dept
+                    })
+                });
+                startPolling();
             } catch (e) {
-                console.error(e);
-            } finally {
-                stopBtn.disabled = false;
+                alert('呼叫失败: ' + e);
             }
+        }
+
+        async function startVoiceConsultation() {
+            try {
+                await fetch(`${API_BASE}/consultation/start-voice`, { method: 'POST' });
+                startPolling();
+            } catch (e) {
+                alert('呼叫语音失败: ' + e);
+            }
+        }
+
+        async function finishReception() {
+            // Clear state
+            try {
+                await fetch(`${API_BASE}/consultation/stop`, { method: 'POST' });
+            } catch (e) { }
+
+            currentPatient = null;
+            if (pollingInterval) clearInterval(pollingInterval);
+            switchView('view-waiting');
+        }
+
+        // --- Polling for Result ---
+
+        function startPolling() {
+            if (pollingInterval) clearInterval(pollingInterval);
+            pollingInterval = setInterval(checkResult, 2000);
         }
 
         async function checkResult() {
             try {
-                const response = await fetch(`${API_BASE}/result`);
+                const response = await fetch(`${API_BASE}/consultation/result`);
                 if (response.ok) {
                     const result = await response.json();
-                    
+
                     // Stop polling
                     if (pollingInterval) {
                         clearInterval(pollingInterval);
                         pollingInterval = null;
                     }
 
-                    // Display result
-                    document.getElementById('result-area').innerHTML = `
-                        <strong>问诊完成!</strong> (时间: ${new Date(result.timestamp).toLocaleString()})
-                        <br><br>
-                        <strong>诊断结果:</strong> ${result.diagnosis}
-                        <br>
-                        <strong>处理建议:</strong> ${result.treatmentPlan}
-                        <br>
-                        <strong>病历摘要:</strong>
-                        <pre style="background:#eee; padding:10px;">${result.medicalSummary}</pre>
+                    // Log
+                    document.getElementById('result-log').innerHTML = `[${new Date().toLocaleTimeString()}] 收到病历回传`;
+
+                    // Parse Data
+                    const { chiefComplaint, historyOfPresentIllness, pastMedicalHistory, diagnosisList, treatmentPlan, medications, examinations } = result;
+
+                    // Render Result
+                    const diagHtml = diagnosisList ? diagnosisList.map(d => `<span class="card-tag">${d.name}</span>`).join(' ') : '无';
+                    const medsHtml = medications ? medications.map(m => `<div>${m.name} ${m.spec || ''} ${m.usage || ''}</div>`).join('') : '无';
+                    const examsHtml = examinations ? examinations.map(e => `<div>${e.name}</div>`).join('') : '无';
+
+                    const html = `
+                        <div style="display:grid; grid-template-columns: 100px 1fr; gap:10px; font-size:14px; line-height:1.6;">
+                            <div style="font-weight:bold; color:#666;">主诉:</div>
+                            <div>${chiefComplaint || '-'}</div>
+                            
+                            <div style="font-weight:bold; color:#666;">现病史:</div>
+                            <div>${historyOfPresentIllness || '-'}</div>
+                            
+                            <div style="font-weight:bold; color:#666;">既往史:</div>
+                            <div>${pastMedicalHistory || '-'}</div>
+
+                            <div style="font-weight:bold; color:#666;">初步诊断:</div>
+                            <div>${diagHtml}</div>
+
+                            <div style="font-weight:bold; color:#666;">处方建议:</div>
+                            <div>${medsHtml}</div>
+
+                             <div style="font-weight:bold; color:#666;">检查建议:</div>
+                            <div>${examsHtml}</div>
+
+                            <div style="font-weight:bold; color:#666;">处置意见:</div>
+                            <div>${treatmentPlan || '建议门诊随访'}</div>
+                        </div>
                     `;
-                    
-                    document.getElementById('startBtn').disabled = false;
-                    document.getElementById('callStatus').textContent = '问诊已完成';
-                } else if (response.status === 404) {
-                    // Still waiting
-                    console.log('Waiting for result...');
+
+                    document.getElementById('result-content').innerHTML = html;
+
+                    // Switch Views
+                    document.getElementById('history-view').style.display = 'none';
+                    document.getElementById('result-view').style.display = 'block';
                 }
             } catch (e) {
-                console.error('Polling error:', e);
+                console.error(e);
             }
         }
+
+        // Reset view on receivePatient - REMOVED BROKEN CODE
+
     </script>
 </body>
+
 </html>
