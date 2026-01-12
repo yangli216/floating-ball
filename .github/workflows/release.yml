@@ -46,11 +46,23 @@ jobs:
       - name: Install frontend dependencies
         run: yarn install
 
+      - name: Decode signing key (Unix)
+        if: matrix.platform != 'windows-latest'
+        run: |
+          echo "${{ secrets.TAURI_SIGNING_PRIVATE_KEY_BASE64 }}" | base64 -d > /tmp/tauri-signing-key
+          echo "TAURI_SIGNING_PRIVATE_KEY=$(cat /tmp/tauri-signing-key)" >> $GITHUB_ENV
+
+      - name: Decode signing key (Windows)
+        if: matrix.platform == 'windows-latest'
+        shell: pwsh
+        run: |
+          $key = [System.Text.Encoding]::UTF8.GetString([System.Convert]::FromBase64String("${{ secrets.TAURI_SIGNING_PRIVATE_KEY_BASE64 }}"))
+          echo "TAURI_SIGNING_PRIVATE_KEY=$key" >> $env:GITHUB_ENV
+
       - name: Build the app
         uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         with:
           tagName: ${{ github.ref_name }}
