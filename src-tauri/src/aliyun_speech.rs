@@ -150,7 +150,7 @@ pub async fn transcribe_realtime_aliyun(
 
     // 用于通知发送任务开始的 channel
     let (tx_start, rx_start) = oneshot::channel::<()>();
-    let (tx_result, rx_result) = oneshot::channel::<Result<String, String>>();
+    oneshot::channel::<Result<String, String>>();
     
     // 克隆数据给发送任务
     let audio_for_send = audio_data.clone();

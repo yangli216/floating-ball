@@ -516,6 +516,7 @@
                     body: JSON.stringify({
                         idPi: currentPatient.id,
                         naPi: currentPatient.name,
+                        sdSex: currentPatient.gender === 'M' ? '1' : '2',
                         sdSexText: currentPatient.gender === 'M' ? '男性' : '女性',
                         ageText: currentPatient.age + '岁',
                         department: currentPatient.dept
