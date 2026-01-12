@@ -50,14 +50,18 @@ jobs:
         if: matrix.platform != 'windows-latest'
         run: |
           echo "${{ secrets.TAURI_SIGNING_PRIVATE_KEY_BASE64 }}" | base64 -d > /tmp/tauri-signing-key
-          echo "TAURI_SIGNING_PRIVATE_KEY=$(cat /tmp/tauri-signing-key)" >> $GITHUB_ENV
+          echo "TAURI_SIGNING_PRIVATE_KEY<<EOF" >> $GITHUB_ENV
+          cat /tmp/tauri-signing-key >> $GITHUB_ENV
+          echo "EOF" >> $GITHUB_ENV
 
       - name: Decode signing key (Windows)
         if: matrix.platform == 'windows-latest'
         shell: pwsh
         run: |
           $key = [System.Text.Encoding]::UTF8.GetString([System.Convert]::FromBase64String("${{ secrets.TAURI_SIGNING_PRIVATE_KEY_BASE64 }}"))
-          echo "TAURI_SIGNING_PRIVATE_KEY=$key" >> $env:GITHUB_ENV
+          "TAURI_SIGNING_PRIVATE_KEY<<EOF" | Out-File -FilePath $env:GITHUB_ENV -Append
+          $key | Out-File -FilePath $env:GITHUB_ENV -Append -NoNewline
+          "EOF" | Out-File -FilePath $env:GITHUB_ENV -Append
 
       - name: Build the app
         uses: tauri-apps/tauri-action@v0
