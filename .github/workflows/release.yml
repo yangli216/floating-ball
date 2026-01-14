@@ -9,6 +9,7 @@ jobs:
   release:
     permissions:
       contents: write
+    environment: TAURI_SIGNING_PRIVATE_KEY
     strategy:
       fail-fast: false
       matrix:
