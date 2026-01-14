@@ -47,57 +47,11 @@ jobs:
       - name: Install frontend dependencies
         run: yarn install
 
-      - name: Decode signing key (Unix)
-        if: matrix.platform != 'windows-latest'
-        run: |
-          echo "=== DEBUG: Checking base64 secret ==="
-          echo "Base64 secret length: ${#TAURI_SIGNING_PRIVATE_KEY_BASE64}"
-          
-          echo "${{ secrets.TAURI_SIGNING_PRIVATE_KEY_BASE64 }}" | base64 -d > /tmp/tauri-signing-key
-          
-          echo "=== DEBUG: Decoded key info ==="
-          echo "Decoded key file size: $(wc -c < /tmp/tauri-signing-key) bytes"
-          echo "Decoded key line count: $(wc -l < /tmp/tauri-signing-key)"
-          echo "First line preview: $(head -n1 /tmp/tauri-signing-key | cut -c1-40)..."
-          echo "First 10 chars of line 2: $(sed -n '2p' /tmp/tauri-signing-key | cut -c1-10)..."
-          
-          echo "TAURI_SIGNING_PRIVATE_KEY<<EOF" >> $GITHUB_ENV
-          cat /tmp/tauri-signing-key >> $GITHUB_ENV
-          echo "EOF" >> $GITHUB_ENV
-          
-          echo "=== DEBUG: Verify env var set ==="
-          echo "GITHUB_ENV contents (masked):"
-          cat $GITHUB_ENV | head -n1
-        env:
-          TAURI_SIGNING_PRIVATE_KEY_BASE64: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_BASE64 }}
-
-      - name: Decode signing key (Windows)
-        if: matrix.platform == 'windows-latest'
-        shell: pwsh
-        run: |
-          Write-Host "=== DEBUG: Checking base64 secret ==="
-          $base64 = "${{ secrets.TAURI_SIGNING_PRIVATE_KEY_BASE64 }}"
-          Write-Host "Base64 secret length: $($base64.Length)"
-          
-          $key = [System.Text.Encoding]::UTF8.GetString([System.Convert]::FromBase64String($base64))
-          
-          Write-Host "=== DEBUG: Decoded key info ==="
-          Write-Host "Decoded key length: $($key.Length) chars"
-          $lines = $key -split "`n"
-          Write-Host "Decoded key line count: $($lines.Count)"
-          Write-Host "First line preview: $($lines[0].Substring(0, [Math]::Min(40, $lines[0].Length)))..."
-          if ($lines.Count -gt 1) {
-            Write-Host "First 10 chars of line 2: $($lines[1].Substring(0, [Math]::Min(10, $lines[1].Length)))..."
-          }
-          
-          "TAURI_SIGNING_PRIVATE_KEY<<EOF" | Out-File -FilePath $env:GITHUB_ENV -Append
-          $key | Out-File -FilePath $env:GITHUB_ENV -Append -NoNewline
-          "EOF" | Out-File -FilePath $env:GITHUB_ENV -Append
-
       - name: Build the app
         uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         with:
           tagName: ${{ github.ref_name }}
