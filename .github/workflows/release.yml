@@ -47,6 +47,88 @@ jobs:
       - name: Install frontend dependencies
         run: yarn install
 
+      - name: Debug signing key (Unix)
+        if: matrix.platform != 'windows-latest'
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+        run: |
+          echo "=== TAURI_SIGNING_PRIVATE_KEY Debug ==="
+          echo "Length: ${#TAURI_SIGNING_PRIVATE_KEY}"
+          
+          # 检查是否包含空格
+          if [[ "$TAURI_SIGNING_PRIVATE_KEY" == *" "* ]]; then
+            echo "⚠️ WARNING: Key contains SPACES!"
+            echo "Space positions:"
+            echo "$TAURI_SIGNING_PRIVATE_KEY" | grep -bo ' ' | head -5
+          else
+            echo "✓ No spaces found"
+          fi
+          
+          # 检查是否包含换行
+          linecount=$(echo "$TAURI_SIGNING_PRIVATE_KEY" | wc -l)
+          echo "Line count: $linecount"
+          
+          # 显示前20个字符（安全，只是 base64 前缀）
+          echo "First 20 chars: ${TAURI_SIGNING_PRIVATE_KEY:0:20}"
+          
+          # 显示最后10个字符
+          echo "Last 10 chars: ${TAURI_SIGNING_PRIVATE_KEY: -10}"
+          
+          # 检查是否是有效的 base64
+          if echo "$TAURI_SIGNING_PRIVATE_KEY" | base64 -d > /dev/null 2>&1; then
+            echo "✓ Valid base64 format"
+          else
+            echo "⚠️ WARNING: Invalid base64 format!"
+          fi
+          
+          # 检查字符9位置
+          echo "Character at position 9: '${TAURI_SIGNING_PRIVATE_KEY:8:1}' (ASCII: $(printf '%d' "'${TAURI_SIGNING_PRIVATE_KEY:8:1}"))"
+
+      - name: Debug signing key (Windows)
+        if: matrix.platform == 'windows-latest'
+        shell: pwsh
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+        run: |
+          Write-Host "=== TAURI_SIGNING_PRIVATE_KEY Debug ==="
+          $key = $env:TAURI_SIGNING_PRIVATE_KEY
+          Write-Host "Length: $($key.Length)"
+          
+          # 检查是否包含空格
+          if ($key -match ' ') {
+            Write-Host "⚠️ WARNING: Key contains SPACES!"
+            $spaceIndex = $key.IndexOf(' ')
+            Write-Host "First space at position: $spaceIndex"
+          } else {
+            Write-Host "✓ No spaces found"
+          }
+          
+          # 检查行数
+          $lines = $key -split "`n"
+          Write-Host "Line count: $($lines.Count)"
+          
+          # 显示前20个字符
+          Write-Host "First 20 chars: $($key.Substring(0, [Math]::Min(20, $key.Length)))"
+          
+          # 显示最后10个字符
+          if ($key.Length -gt 10) {
+            Write-Host "Last 10 chars: $($key.Substring($key.Length - 10))"
+          }
+          
+          # 检查字符9位置
+          if ($key.Length -gt 8) {
+            $char9 = $key[8]
+            Write-Host "Character at position 9: '$char9' (ASCII: $([int][char]$char9))"
+          }
+          
+          # 验证 base64
+          try {
+            $decoded = [System.Convert]::FromBase64String($key)
+            Write-Host "✓ Valid base64 format"
+          } catch {
+            Write-Host "⚠️ WARNING: Invalid base64 format! Error: $_"
+          }
+
       - name: Build the app
         uses: tauri-apps/tauri-action@v0
         env:
