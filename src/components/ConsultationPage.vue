@@ -54,43 +54,84 @@
     <div class="content-container" v-if="currentView === 'consultation'">
       <!-- Left: Symptom Shortcuts -->
       <aside class="symptom-sidebar">
-        <h3>常用症状</h3>
-        <div class="search-box">
-          <div class="category-filter-container" ref="categoryFilterRef">
-            <div class="category-trigger" @click="toggleCategoryDropdown" :class="{ active: isCategoryDropdownOpen }">
-              <span class="trigger-text">{{ categoryButtonText }}</span>
-              <svg class="trigger-icon" :class="{ rotate: isCategoryDropdownOpen }" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg>
-            </div>
-            
-            <div v-show="isCategoryDropdownOpen" class="category-dropdown">
-              <div class="category-option" @click="toggleCategory('all')" :class="{ selected: selectedCategories.length === 0 }">
-                  <div class="checkbox-custom" :class="{ checked: selectedCategories.length === 0 }"></div>
-                  <span>全部系统</span>
+        <!-- Selection Mode Tabs -->
+        <div class="selection-tabs">
+          <button
+            :class="['tab-btn', { active: selectionMode === 'common' }]"
+            @click="selectionMode = 'common'"
+          >
+            常用症状
+          </button>
+          <button
+            :class="['tab-btn', { active: selectionMode === 'bodyPart' }]"
+            @click="selectionMode = 'bodyPart'"
+          >
+            按部位
+          </button>
+          <button
+            :class="['tab-btn', { active: selectionMode === 'system' }]"
+            @click="selectionMode = 'system'"
+          >
+            按系统
+          </button>
+        </div>
+
+        <!-- Common Symptoms View -->
+        <div v-if="selectionMode === 'common'" class="selection-content">
+          <div class="search-box">
+            <div class="category-filter-container" ref="categoryFilterRef">
+              <div class="category-trigger" @click="toggleCategoryDropdown" :class="{ active: isCategoryDropdownOpen }">
+                <span class="trigger-text">{{ categoryButtonText }}</span>
+                <svg class="trigger-icon" :class="{ rotate: isCategoryDropdownOpen }" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg>
               </div>
-              <div class="dropdown-divider"></div>
-              <div v-for="cat in uniqueCategories" :key="cat.key" class="category-option" @click="toggleCategory(cat.key)" :class="{ selected: selectedCategories.includes(cat.key) }">
-                  <div class="checkbox-custom" :class="{ checked: selectedCategories.includes(cat.key) }"></div>
-                  <span>{{ cat.label }}</span>
+
+              <div v-show="isCategoryDropdownOpen" class="category-dropdown">
+                <div class="category-option" @click="toggleCategory('all')" :class="{ selected: selectedCategories.length === 0 }">
+                    <div class="checkbox-custom" :class="{ checked: selectedCategories.length === 0 }"></div>
+                    <span>全部系统</span>
+                </div>
+                <div class="dropdown-divider"></div>
+                <div v-for="cat in uniqueCategories" :key="cat.key" class="category-option" @click="toggleCategory(cat.key)" :class="{ selected: selectedCategories.includes(cat.key) }">
+                    <div class="checkbox-custom" :class="{ checked: selectedCategories.includes(cat.key) }"></div>
+                    <span>{{ cat.label }}</span>
+                </div>
               </div>
             </div>
+            <input
+              type="text"
+              v-model="searchQuery"
+              placeholder="搜索症状(支持首字母)..."
+              class="search-input"
+            />
           </div>
-          <input 
-            type="text" 
-            v-model="searchQuery" 
-            placeholder="搜索症状(支持首字母)..." 
-            class="search-input"
+          <ul class="symptom-list">
+            <li
+              v-for="symptom in filteredSymptoms"
+              :key="symptom.key"
+              :class="{ active: selectedSymptoms.some(s => s.key === symptom.key) }"
+              @click="selectSymptom(symptom)"
+            >
+              {{ symptom.name }}
+            </li>
+          </ul>
+        </div>
+
+        <!-- Body Part Selector View -->
+        <div v-if="selectionMode === 'bodyPart'" class="selection-content">
+          <BodyPartSelector
+            :symptoms="allSymptoms"
+            :patient-gender="patientGender"
+            @select-symptom="selectSymptom"
           />
         </div>
-        <ul class="symptom-list">
-          <li 
-            v-for="symptom in filteredSymptoms" 
-            :key="symptom.key"
-            :class="{ active: selectedSymptoms.some(s => s.key === symptom.key) }"
-            @click="selectSymptom(symptom)"
-          >
-            {{ symptom.name }}
-          </li>
-        </ul>
+
+        <!-- System Category Selector View -->
+        <div v-if="selectionMode === 'system'" class="selection-content">
+          <SystemCategorySelector
+            :symptoms="allSymptoms"
+            @select-symptom="selectSymptom"
+          />
+        </div>
       </aside>
 
       <!-- Right: Dynamic Form -->
@@ -437,6 +478,8 @@ import { medicalDataService, type DiagnosisItem } from '../services/medicalData'
 import Pinyin from 'tiny-pinyin';
 import { chat } from '../services/llm';
 import { invoke } from '@tauri-apps/api/core';
+import BodyPartSelector from './BodyPartSelector.vue';
+import SystemCategorySelector from './SystemCategorySelector.vue';
 
 const showToast = inject('showToast') as (msg: string, type: 'success' | 'error' | 'info') => void;
 
@@ -508,14 +551,21 @@ const patientInfo = ref({
 const avatarConfig = computed(() => {
   const info = patientInfo.value;
   console.log('Avatar Config Debug:', info);
-  
+
   // Check code '1' or text '男性'/'男'
   const isMale = info.sdSex === '1' || info.sdSexText === '男性' || info.sdSexText === '男';
-  
+
   return {
     color: isMale ? '#79c2ff' : '#ff9a9e',
     bgColor: isMale ? '#f0f9ff' : '#fff0f1'
   };
+});
+
+// 患者性别（用于 BodyPartSelector）
+const patientGender = computed<'male' | 'female'>(() => {
+  const info = patientInfo.value;
+  const isMale = info.sdSex === '1' || info.sdSexText === '男性' || info.sdSexText === '男';
+  return isMale ? 'male' : 'female';
 });
 
 const symptoms = ref<any[]>([]);
@@ -525,6 +575,12 @@ const searchQuery = ref('');
 const selectedCategories = ref<string[]>([]);
 const isCategoryDropdownOpen = ref(false);
 const categoryFilterRef = ref<HTMLElement | null>(null);
+
+// Selection mode for sidebar tabs
+const selectionMode = ref<'common' | 'bodyPart' | 'system'>('common');
+
+// All symptoms for body part and system selectors
+const allSymptoms = computed(() => symptoms.value);
 const currentView = ref<'consultation' | 'record' | 'final_report'>('consultation');
 const generatedRecord = ref({ chiefComplaint: '', historyOfPresentIllness: '' });
 
@@ -1426,8 +1482,8 @@ const copyToClipboard = () => {
 }
 
 .symptom-sidebar {
-  width: 200px; /* Reduced width */
-  background: rgba(255, 255, 255, 0.8);
+  width: 300px; /* Optimized width for body diagram */
+  background: rgba(255, 255, 255, 0.95);
   backdrop-filter: blur(10px);
   border-right: 1px solid #e6f7ff;
   display: flex;
@@ -1435,6 +1491,51 @@ const copyToClipboard = () => {
   flex-shrink: 0;
   box-shadow: 2px 0 8px rgba(0,0,0,0.02);
   z-index: 5;
+}
+
+/* Selection Mode Tabs */
+.selection-tabs {
+  display: flex;
+  padding: 10px;
+  gap: 6px;
+  border-bottom: 1px solid #e6f7ff;
+  background: transparent;
+  flex-shrink: 0;
+}
+
+.tab-btn {
+  flex: 1;
+  padding: 6px 8px;
+  font-size: 12px;
+  background: transparent;
+  border: 1px solid #dbeafe;
+  border-radius: 6px;
+  color: #6b7280;
+  cursor: pointer;
+  transition: all 0.2s;
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+.tab-btn:hover {
+  background: #f9fafb;
+  border-color: #93c5fd;
+}
+
+.tab-btn.active {
+  background: #eff6ff;
+  border-color: #3b82f6;
+  color: #2563eb;
+  font-weight: 600;
+}
+
+/* Selection Content Area */
+.selection-content {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow-y: auto;
+  overflow-x: hidden;
 }
 
 .symptom-sidebar h3 {
