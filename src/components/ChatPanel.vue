@@ -2,6 +2,7 @@
 import { ref, computed } from "vue";
 import type { ChatMessage } from "../services/llm";
 import { chatStream, transcribeAudio } from "../services/llm";
+import { PROMPTS } from "../prompts";
 import MarkdownIt from 'markdown-it';
 import hljs from 'highlight.js';
 import 'highlight.js/styles/github-dark.css'; // 引入代码高亮样式
@@ -28,8 +29,8 @@ const renderMarkdown = (content: string) => {
 };
 
 const messages = ref<ChatMessage[]>([
-  { role: "system", content: "你是一个专业的医疗助手，回答请专业、准确、亲切。" },
-  { role: "assistant", content: "您好，我是您的智能医疗助手，请问有什么可以帮您？" }
+  { role: "system", content: PROMPTS.chat.defaultSystem },
+  { role: "assistant", content: PROMPTS.chat.welcomeMessage }
 ]);
 
 const visibleMessages = computed(() => messages.value.filter(m => m.role !== 'system'));

@@ -16,6 +16,7 @@ import VoiceConsultationResult, { type GeneratedRecord } from "./components/Voic
 import { chat, analyzePatientRisks, type ChatMessage } from "./services/llm";
 import { LogicalSize } from "@tauri-apps/api/dpi";
 import { provide } from "vue";
+import { PROMPTS } from "./prompts";
 
 const appWindow = ref<TauriWindow | null>(null);
 const toastRef = ref<InstanceType<typeof Toast> | null>(null);
@@ -283,50 +284,9 @@ const startVoiceInteraction = async () => {
     }
 
     // 2. LLM Generation - Based on medical record requirements
-    const systemPrompt = `你是一名专业的医疗病历生成助手，具备以下能力：
-
-**语义理解过滤**：对采集到的医患对话音频转写文本进行深度语义理解，区分问诊话术与病情描述，过滤无效对话。
-
-**关键信息提取**：借助医疗领域知识图谱与实体识别能力，自动提取主诉、现病史、用药情况、检验检查信息等关键医疗信息。
-
-**结构化整理输出**：按照电子病历规范格式与医疗文书书写逻辑，将提取信息结构化整理，生成符合临床标准的病历初稿。
-
-**重要规则**：
-1. 如果输入内容与医疗问诊场景无关（如闲聊、测试、无意义内容），请返回以下固定格式：
-   {"error": "非医疗问诊内容", "message": "输入内容与医疗问诊场景无关，请提供有效的医患对话内容"}
-2. 如果是有效的医患对话，请严格按照以下JSON格式输出（不要包含任何markdown标记或额外说明）：
-
-{
-  "chiefComplaint": "主诉内容（简明扼要，如：咳嗽3天，加重伴发热1天）",
-  "historyOfPresentIllness": "现病史内容（详细描述发病时间、症状、诱因、演变过程等）",
-  "pastMedicalHistory": "既往史内容（既往疾病、手术史、过敏史、用药史等，如无则填写'无特殊'）",
-  "diagnosisList": [
-    { "name": "诊断名称（如：急性上呼吸道感染）", "code": "可能的ICD10编码（选填）" }
-  ],
-  "medications": [
-    { 
-      "name": "药品名称", 
-      "spec": "规格（如：0.25g*6片/盒，选填）",
-      "dosage": "单次用量（如：0.5g）", 
-      "frequency": "频次（如：每日一次/qd）", 
-      "usage": "用法（如：口服）",
-      "count": "总量（如：1盒）" 
-    }
-  ],
-  "examinations": [
-    { "name": "检查项目名称（如：血常规，不要包含+号，需拆分为独立项目）", "goal": "检查目的（如：明确感染性质）" }
-  ],
-  "treatmentPlan": "其他处理意见或备注（选填）",
-  "healthEducation": "健康宣教内容（如：多喝水、清淡饮食、建议居家休息3-5天等）"
-}
-
-3. **细粒度拆分规则**：对于检验检查项目或用药，如果对话中出现"A+B"、"A和B"等组合表述，请务必拆分为[{"name": "A"}, {"name": "B"}]两个独立项目，严禁合并为一个项目输出。例如"查个血常规和CRP"应输出两项："全血细胞计数"和"C反应蛋白测定"（或保持原文"血常规"和"CRP"）。
-
-4. **智能推荐补全**：若对话中未明确涉及诊断名称、用药方案或检验检查相关内容，请务必根据患者的主诉、现病史及查体信息，结合标准诊疗指南，智能推理并推荐最可能的初步诊断、常规用药及必要检查项目填入对应字段，不要留空。`;
-    
     const messages: ChatMessage[] = [
-        { role: 'system', content: systemPrompt },
-        { role: 'user', content: `医患对话内容：\n${text}` }
+        { role: 'system', content: PROMPTS.medical.recordGeneration.system },
+        { role: 'user', content: PROMPTS.medical.recordGeneration.buildUserPrompt(text) }
     ];
 
     console.log('[LLM] Sending request to LLM...');

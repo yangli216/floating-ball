@@ -480,6 +480,7 @@ import { chat } from '../services/llm';
 import { invoke } from '@tauri-apps/api/core';
 import BodyPartSelector from './BodyPartSelector.vue';
 import SystemCategorySelector from './SystemCategorySelector.vue';
+import { PROMPTS } from '../prompts';
 
 const showToast = inject('showToast') as (msg: string, type: 'success' | 'error' | 'info') => void;
 
@@ -934,37 +935,23 @@ const fetchAIDiagnosis = async () => {
   aiDiagnoses.value = [];
   selectedDiagnosis.value = null;
 
-  const prompt = `
-你是一个专业的医疗辅助助手。请根据以下患者信息、主诉和现病史，推荐最可能的3个ICD10诊断结果。
-请严格按照JSON数组格式返回，不要包含Markdown标记或其他多余文本。
-
-患者信息：
-姓名：${patientInfo.value.naPi}
-性别：${patientInfo.value.sdSexText}
-年龄：${patientInfo.value.ageText}
-
-主诉：
-${generatedRecord.value.chiefComplaint}
-
-现病史：
-${generatedRecord.value.historyOfPresentIllness}
-
-返回格式要求：
-[
-  {
-    "code": "ICD10编码",
-    "name": "诊断名称",
-    "rate": "符合率(例如 95%)",
-    "rationale": "简短推荐理由"
-  }
-]
-`;
-
   try {
     let fullResponse = "";
     fullResponse = await chat([
-      { role: 'system', content: '你是一个专业的医疗辅助助手，只返回JSON格式的数据。' },
-      { role: 'user', content: prompt }
+      {
+        role: 'system',
+        content: PROMPTS.consultation.diagnosisRecommendation.system
+      },
+      {
+        role: 'user',
+        content: PROMPTS.consultation.diagnosisRecommendation.buildUserPrompt({
+          patientName: patientInfo.value.naPi,
+          gender: patientInfo.value.sdSexText,
+          age: patientInfo.value.ageText,
+          chiefComplaint: generatedRecord.value.chiefComplaint,
+          historyOfPresentIllness: generatedRecord.value.historyOfPresentIllness
+        })
+      }
     ]);
 
     // Clean up response if it contains markdown code blocks
@@ -1078,31 +1065,24 @@ const fetchTreatmentRecommendation = async () => {
   treatmentError.value = null;
   treatmentRecommendations.value = [];
 
-  const prompt = `
-你是一个专业的医疗辅助助手。
-患者信息：${patientInfo.value.naPi}，${patientInfo.value.sdSexText}，${patientInfo.value.ageText}。
-已选诊断：${selectedDiagnosis.value.name} (ICD10: ${selectedDiagnosis.value.code})。
-主诉：${generatedRecord.value.chiefComplaint}
-
-请根据诊断结果，推荐3-5个最需要的药品（通用名）和1-2个必要的检验检查项目。
-请严格按照JSON数组格式返回，不要包含Markdown标记或其他多余文本。
-
-返回格式要求：
-[
-  {
-    "type": "medicine", // 或 "exam"
-    "name": "通用名称",
-    "reason": "推荐理由",
-    "usage": "建议用法用量(仅药品需要)"
-  }
-]
-`;
-
   try {
     let fullResponse = "";
     fullResponse = await chat([
-      { role: 'system', content: '你是一个专业的医疗辅助助手，只返回JSON格式的数据。' },
-      { role: 'user', content: prompt }
+      {
+        role: 'system',
+        content: PROMPTS.consultation.treatmentRecommendation.system
+      },
+      {
+        role: 'user',
+        content: PROMPTS.consultation.treatmentRecommendation.buildUserPrompt({
+          patientName: patientInfo.value.naPi,
+          gender: patientInfo.value.sdSexText,
+          age: patientInfo.value.ageText,
+          diagnosisName: selectedDiagnosis.value.name,
+          diagnosisCode: selectedDiagnosis.value.code,
+          chiefComplaint: generatedRecord.value.chiefComplaint
+        })
+      }
     ]);
 
     const rawRecommendations: any[] = parseLLMJson(fullResponse);
