@@ -7,6 +7,9 @@ use http_server::{PatientInfo, ConsultationResult};
 mod aliyun_speech;
 use aliyun_speech::transcribe_realtime_aliyun;
 
+mod db;
+mod commands;
+
 pub struct AppState {
     pub current_consultation: Mutex<Option<PatientInfo>>,
     pub last_result: Mutex<Option<ConsultationResult>>,
@@ -68,16 +71,39 @@ pub fn run() {
         }))
         .plugin(tauri_plugin_process::init())
         .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_fs::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
         .invoke_handler(tauri::generate_handler![
             start_drag,
             get_window_position,
             set_window_position,
-            set_window_position,
             complete_consultation,
-            transcribe_realtime_aliyun
+            transcribe_realtime_aliyun,
+            // Feedback system commands
+            commands::feedback::create_session,
+            commands::feedback::update_session_status,
+            commands::feedback::save_message,
+            commands::feedback::save_feedback,
+            commands::feedback::save_recommendation,
+            commands::feedback::log_operation,
+            commands::feedback::record_performance_metric,
+            commands::feedback::get_session_statistics,
+            commands::feedback::get_feedback_statistics,
+            commands::feedback::get_performance_statistics,
+            commands::feedback::export_data
         ])
         .setup(move |app| {
+            // Initialize feedback database
+            println!("[Feedback] Initializing feedback database...");
+            match commands::feedback::init_database(app.handle()) {
+                Ok(_) => println!("[Feedback] Database initialized successfully"),
+                Err(e) => {
+                    eprintln!("[Feedback] Failed to initialize feedback database: {}", e);
+                    eprintln!("[Feedback] Error details: {:?}", e);
+                }
+            }
+
             // 获取主窗口
             let window = app.get_webview_window("main").unwrap();
             

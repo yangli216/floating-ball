@@ -1,11 +1,16 @@
 <script setup lang="ts">
-import { ref, computed } from "vue";
+import { ref, computed, inject } from "vue";
 import type { ChatMessage } from "../services/llm";
 import { chatStream, transcribeAudio } from "../services/llm";
 import { PROMPTS } from "../prompts";
+import { feedbackService } from "../services/feedback";
 import MarkdownIt from 'markdown-it';
 import hljs from 'highlight.js';
 import 'highlight.js/styles/github-dark.css'; // 引入代码高亮样式
+import Icon from "./Icon.vue";
+
+// 注入 showToast 方法
+const showToast = inject<(message: string) => void>('showToast');
 
 const md: MarkdownIt = new MarkdownIt({
   html: false,
@@ -53,7 +58,9 @@ function scrollToBottom() {
 async function handleSend() {
   if (!input.value.trim() && !imageDataUrl.value) return;
   sending.value = true;
-  
+
+  const startTime = Date.now();
+
   // 1. 构造用户消息
   const userMsg: ChatMessage = {
     role: "user",
@@ -61,22 +68,54 @@ async function handleSend() {
     images: imageDataUrl.value ? [imageDataUrl.value] : undefined,
   };
   messages.value.push(userMsg);
-  
+
   // 2. 立即清空输入框和图片
+  const userContent = input.value.trim();
   input.value = "";
   imageDataUrl.value = null;
   scrollToBottom();
 
   try {
-    // 3. 创建空的助手回复消息
+    // 3. 保存用户消息到数据库
+    const userMessageId = await feedbackService.saveMessage({
+      role: 'user',
+      content: userContent,
+      images: userMsg.images,
+    });
+    userMsg.messageId = userMessageId;
+
+    // 4. 创建空的助手回复消息
     const assistantMsg = ref<ChatMessage>({ role: "assistant", content: "" });
     messages.value.push(assistantMsg.value);
 
-    // 4. 调用流式接口
+    // 5. 调用流式接口
     await chatStream(messages.value.slice(0, -1), (chunk) => {
       assistantMsg.value.content += chunk;
       scrollToBottom();
     });
+
+    // 6. 计算性能指标
+    const latencyMs = Date.now() - startTime;
+    const tokenCount = Math.ceil(assistantMsg.value.content.length / 2); // 简单估算
+
+    // 7. 保存助手消息到数据库
+    const assistantMessageId = await feedbackService.saveMessage({
+      role: 'assistant',
+      content: assistantMsg.value.content,
+      tokenCount,
+      latencyMs,
+    });
+    assistantMsg.value.messageId = assistantMessageId;
+    assistantMsg.value.tokenCount = tokenCount;
+    assistantMsg.value.latencyMs = latencyMs;
+
+    // 8. 记录性能指标
+    await feedbackService.recordMetric({
+      metricType: 'llm_latency',
+      metricValue: latencyMs,
+      unit: 'ms',
+    });
+
   } catch (err) {
     messages.value.push({ role: "assistant", content: `抱歉，调用模型失败：${(err as Error).message}` });
     scrollToBottom();
@@ -145,15 +184,61 @@ async function startRecording() {
 function stopRecording() {
   mediaRecorder?.stop();
 }
+
+// 处理反馈
+async function handleFeedback(messageId: string, feedbackType: 'positive' | 'negative') {
+  try {
+    const sessionId = feedbackService.getCurrentSessionId();
+    if (!sessionId) {
+      console.warn('[ChatPanel] No active session for feedback');
+      return;
+    }
+
+    await feedbackService.saveFeedback({
+      sessionId,
+      targetType: 'message',
+      targetId: messageId,
+      feedbackType,
+      rating: feedbackType === 'positive' ? 5 : 1,
+    });
+
+    showToast?.(feedbackType === 'positive' ? '感谢您的反馈！' : '我们会继续改进');
+    console.log(`[ChatPanel] Feedback saved: ${feedbackType} for message ${messageId}`);
+  } catch (error) {
+    console.error('[ChatPanel] Failed to save feedback:', error);
+    showToast?.('保存反馈失败，请稍后再试');
+  }
+}
 </script>
 
 <template>
   <div class="chat-panel">
     <div id="chat-scroll" class="chat-body">
       <div v-for="(m, idx) in visibleMessages" :key="idx" class="msg" :class="m.role">
-        <div class="bubble">
-          <div v-if="m.role === 'assistant'" class="markdown-body" v-html="renderMarkdown(m.content)"></div>
-          <div v-else class="user-text">{{ m.content }}</div>
+        <div class="msg-container">
+          <div class="bubble">
+            <div v-if="m.role === 'assistant'" class="markdown-body" v-html="renderMarkdown(m.content)"></div>
+            <div v-else class="user-text">{{ m.content }}</div>
+          </div>
+          <!-- 反馈按钮（仅助手消息） -->
+          <div v-if="m.role === 'assistant' && m.messageId" class="feedback-buttons">
+            <button
+              class="feedback-btn"
+              @click="handleFeedback(m.messageId!, 'positive')"
+              title="有用"
+              aria-label="有用"
+            >
+              <Icon icon="lucide:thumbs-up" class="icon" size="16" />
+            </button>
+            <button
+              class="feedback-btn"
+              @click="handleFeedback(m.messageId!, 'negative')"
+              title="无用"
+              aria-label="无用"
+            >
+              <Icon icon="lucide:thumbs-down" class="icon" size="16" />
+            </button>
+          </div>
         </div>
       </div>
       <div v-if="imageDataUrl" class="preview">
@@ -173,26 +258,19 @@ function stopRecording() {
           @keydown.enter="handleEnter"
         />
         <label class="action-btn" title="选择图片" aria-label="选择图片">
-          <svg class="icon" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-            <rect x="3" y="6" width="18" height="14" rx="3" ry="3" fill="currentColor" opacity="0.12" />
-            <rect x="3" y="6" width="18" height="14" rx="3" ry="3" fill="none" stroke="currentColor" stroke-width="1.5" />
-            <circle cx="12" cy="13" r="3.2" fill="none" stroke="currentColor" stroke-width="1.5" />
-            <rect x="6.5" y="4" width="5" height="3" rx="1.2" ry="1.2" fill="currentColor" />
-          </svg>
+          <Icon icon="lucide:image" class="icon" size="18" />
           <input type="file" accept="image/*" @change="handleFileChange" hidden />
         </label>
         <button class="action-btn" :class="{ recording }" @click="recording ? stopRecording() : startRecording()" title="语音输入" aria-label="语音输入">
-          <svg class="icon" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-            <rect x="9" y="3.5" width="6" height="10" rx="3" ry="3" fill="none" stroke="currentColor" stroke-width="1.5" />
-            <path d="M6 11.5c0 3.3 2.7 6 6 6s6-2.7 6-6" fill="none" stroke="currentColor" stroke-width="1.5" />
-            <path d="M12 17.5v3" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" />
-          </svg>
+          <Icon :icon="recording ? 'lucide:mic-off' : 'lucide:mic'" class="icon" size="18" />
         </button>
       </div>
-      <button class="send-btn" :disabled="sending" @click="handleSend">发送</button>
+      <button class="send-btn" :disabled="sending" @click="handleSend">
+        <Icon icon="lucide:send" size="18" />
+      </button>
     </div>
   </div>
-  
+
 </template>
 
 <style scoped>
@@ -245,14 +323,25 @@ function stopRecording() {
 .msg.user { justify-content: flex-end; }
 .msg.assistant { justify-content: flex-start; }
 
-.bubble {
+.msg-container {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
   max-width: 85%;
+}
+
+.msg.user .msg-container {
+  align-items: flex-end;
+}
+
+.bubble {
   padding: 10px 14px;
   border-radius: 18px;
   line-height: 1.5;
   font-size: 14px;
   box-shadow: 0 2px 8px rgba(0,0,0,0.04);
   position: relative;
+  width: 100%;
 }
 
 .msg.assistant .bubble {
@@ -436,16 +525,6 @@ function stopRecording() {
   cursor: not-allowed;
   filter: grayscale(0.4);
 }
-/* 发送图标 */
-.send-btn::after {
-  content: "";
-  width: 20px;
-  height: 20px;
-  background-color: currentColor;
-  mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cline x1='22' y1='2' x2='11' y2='13'%3E%3C/line%3E%3Cpolygon points='22 2 15 22 11 13 2 9 22 2'%3E%3C/polygon%3E%3C/svg%3E") no-repeat center/contain;
-  -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cline x1='22' y1='2' x2='11' y2='13'%3E%3C/line%3E%3Cpolygon points='22 2 15 22 11 13 2 9 22 2'%3E%3C/polygon%3E%3C/svg%3E") no-repeat center/contain;
-  transform: translateX(-1px) translateY(1px); /* 视觉居中校正 */
-}
 
 /* 滚动条美化 */
 .chat-body::-webkit-scrollbar {
@@ -457,5 +536,57 @@ function stopRecording() {
 }
 .chat-body::-webkit-scrollbar-track {
   background: transparent;
+}
+
+/* 反馈按钮 */
+.feedback-buttons {
+  display: flex;
+  gap: 8px;
+  margin-top: 8px;
+  opacity: 0;
+  transition: opacity 0.2s ease;
+}
+
+.msg:hover .feedback-buttons {
+  opacity: 1;
+}
+
+.feedback-btn {
+  width: 28px;
+  height: 28px;
+  border: none;
+  background: rgba(255, 255, 255, 0.9);
+  border-radius: 50%;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #64748b;
+  transition: all 0.2s ease;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.08);
+}
+
+.feedback-btn:hover {
+  background: #fff;
+  color: var(--accent-strong);
+  transform: scale(1.1);
+  box-shadow: 0 3px 8px rgba(0, 0, 0, 0.12);
+}
+
+.feedback-btn:active {
+  transform: scale(0.95);
+}
+
+.feedback-btn .icon {
+  width: 16px;
+  height: 16px;
+}
+
+.feedback-btn:hover:first-child {
+  color: #10b981; /* 绿色 - 点赞 */
+}
+
+.feedback-btn:hover:last-child {
+  color: #ef4444; /* 红色 - 踩 */
 }
 </style>

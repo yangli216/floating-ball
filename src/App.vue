@@ -7,13 +7,16 @@ import { load, Store } from '@tauri-apps/plugin-store';
 import { onOpenUrl } from '@tauri-apps/plugin-deep-link';
 import ChatPanel from "./components/ChatPanel.vue";
 import SettingsPanel from "./components/SettingsPanel.vue";
+import AnalyticsPanel from "./components/AnalyticsPanel.vue";
 import ConsultationPage from "./components/ConsultationPage.vue";
 import Toast from "./components/Toast.vue";
 import RiskAlertPanel, { type RiskItem } from "./components/RiskAlertPanel.vue";
 import VoiceCapsule from "./components/VoiceCapsule.vue";
 import ReceptionCapsule from "./components/ReceptionCapsule.vue";
 import VoiceConsultationResult, { type GeneratedRecord } from "./components/VoiceConsultationResult.vue";
+import Icon from "./components/Icon.vue";
 import { chat, analyzePatientRisks, type ChatMessage } from "./services/llm";
+import { feedbackService } from "./services/feedback";
 import { LogicalSize } from "@tauri-apps/api/dpi";
 import { provide } from "vue";
 import { PROMPTS } from "./prompts";
@@ -29,7 +32,7 @@ const isHovered = ref(false);
 const hoveredBtnIndex = ref(-1); // -1 means no button hovered
 const isWorking = ref(false);
 const isMoving = ref(false);
-const currentView = ref<'chat' | 'settings' | 'consultation' | 'risk-alert' | 'voice-interaction' | 'voice-result' | 'reception-capsule'>('chat');
+const currentView = ref<'chat' | 'settings' | 'consultation' | 'risk-alert' | 'voice-interaction' | 'voice-result' | 'reception-capsule' | 'analytics'>('chat');
 const currentPatient = ref<any>(null);
 const ringMenuRef = ref<HTMLElement | null>(null);
 
@@ -208,6 +211,13 @@ const openSettings = async () => {
 
 const openChat = async () => {
   currentView.value = 'chat';
+  if (!isWorking.value) {
+    await enterWorkMode();
+  }
+};
+
+const openAnalytics = async () => {
+  currentView.value = 'analytics';
   if (!isWorking.value) {
     await enterWorkMode();
   }
@@ -791,8 +801,25 @@ const enterWorkMode = async (customW?: number, customH?: number) => {
 
   // 3. 触发面板展开动画 (Morph Expand)
   isWorking.value = true;
-  
-  // 4. 等待动画结束
+
+  // 4. 启动会话 (仅在从小球模式首次进入工作模式时)
+  try {
+    const sessionType = currentView.value === 'consultation' ? 'consultation' :
+                        currentView.value === 'voice-interaction' ? 'voice' :
+                        currentView.value === 'reception-capsule' ? 'reception' : 'chat';
+
+    await feedbackService.startSession(
+      sessionType,
+      currentPatient.value?.patientId || currentPatient.value?.piOi,
+      currentPatient.value?.name || currentPatient.value?.naPi
+    );
+    console.log(`[App] Session started for ${sessionType}`);
+  } catch (error) {
+    console.error('[App] Failed to start session:', error);
+    // 不阻断流程
+  }
+
+  // 5. 等待动画结束
   setTimeout(() => {
     transitioning.value = false;
   }, TRANSITION_MS);
@@ -862,7 +889,16 @@ const exitWork = async () => {
 
   // 2. 触发面板收缩动画 (Morph Shrink)
   isWorking.value = false;
-  
+
+  // 结束当前会话
+  try {
+    await feedbackService.endSession(undefined, 'completed');
+    console.log('[App] Session ended successfully');
+  } catch (error) {
+    console.error('[App] Failed to end session:', error);
+    // 不阻断流程
+  }
+
   // 强制关闭 hover 状态，防止收缩过程中因鼠标位置导致环绕菜单闪现
   isHovered.value = false;
   
@@ -1008,24 +1044,20 @@ const exitWork = async () => {
           <!-- 工具栏 (risk-alert, voice-interaction, voice-result, reception-capsule 视图不显示) -->
           <div v-if="currentView !== 'risk-alert' && currentView !== 'voice-interaction' && currentView !== 'voice-result' && currentView !== 'reception-capsule'" class="assistant-toolbar" data-tauri-drag-region>
             <div class="toolbar-left" data-tauri-drag-region>
-              <button v-if="currentView === 'settings'" class="icon-btn back-btn" @click="openChat" title="返回">
-                 <svg class="toolbar-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                   <path d="M19 12H5M12 19l-7-7 7-7"/>
-                 </svg>
+              <button v-if="currentView === 'settings' || currentView === 'analytics'" class="icon-btn back-btn" @click="openChat" title="返回">
+                 <Icon icon="lucide:arrow-left" class="toolbar-icon" size="20" />
               </button>
               <span class="assistant-title" data-tauri-drag-region>
-                {{ 
-                  currentView === 'chat' ? '智医助理' : 
-                  (currentView === 'consultation' ? 
-                    (currentPatient ? `智能问诊 - ${currentPatient.name}` : '智能问诊') : 
-                    '系统设置') 
+                {{
+                  currentView === 'chat' ? '智医助理' :
+                  (currentView === 'consultation' ?
+                    (currentPatient ? `智能问诊 - ${currentPatient.name}` : '智能问诊') :
+                    (currentView === 'analytics' ? '数据分析' : '系统设置'))
                 }}
               </span>
             </div>
             <button class="icon-btn" aria-label="收起" title="收起" @click="handleCollapse">
-              <svg class="toolbar-icon" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-                <polyline points="6,10 12,16 18,10" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
-              </svg>
+              <Icon icon="lucide:chevron-down" class="toolbar-icon" size="20" />
             </button>
           </div>
           <ChatPanel v-if="currentView === 'chat'" />
@@ -1070,7 +1102,14 @@ const exitWork = async () => {
             @confirm="handleResultConfirm"
             @cancel="cancelVoiceResult"
           />
-          <SettingsPanel v-else />
+          <AnalyticsPanel
+            v-else-if="currentView === 'analytics'"
+            @close="openChat"
+          />
+          <SettingsPanel
+            v-else
+            @view-analytics="openAnalytics"
+          />
         </div>
       </div>
     </Transition>

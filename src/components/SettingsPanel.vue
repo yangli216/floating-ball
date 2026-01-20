@@ -2,16 +2,23 @@
 import { ref, onMounted, inject } from 'vue';
 import { getLLMConfig, DEFAULT_LLM_CONFIG } from '../services/llm';
 import { getCurrentWindow } from '@tauri-apps/api/window';
+import { save } from '@tauri-apps/plugin-dialog';
+import { invoke } from '@tauri-apps/api/core';
 import UpdateChecker from './UpdateChecker.vue';
+
+const emit = defineEmits<{
+  'view-analytics': [];
+}>();
 
 const showToast = inject('showToast') as (msg: string, type: 'success' | 'error' | 'info') => void;
 
 // Tabs configuration
-type TabType = 'general' | 'model' | 'about';
+type TabType = 'general' | 'model' | 'about' | 'data';
 const activeTab = ref<TabType>('general');
 const tabs = [
   { id: 'general', label: '通用' },
   { id: 'model', label: '模型' },
+  { id: 'data', label: '数据' },
   { id: 'about', label: '版本' }
 ];
 
@@ -36,7 +43,7 @@ const saveSettings = async () => {
   localStorage.setItem('LLM_BASE_URL', baseUrl.value);
   localStorage.setItem('LLM_MODEL', model.value);
   localStorage.setItem('ALWAYS_ON_TOP', String(alwaysOnTop.value));
-  
+
   try {
     const win = getCurrentWindow();
     await win.setAlwaysOnTop(alwaysOnTop.value);
@@ -46,6 +53,60 @@ const saveSettings = async () => {
 
   if (showToast) {
     showToast('设置已保存', 'success');
+  }
+};
+
+// Data management
+const exporting = ref(false);
+
+const handleViewAnalytics = () => {
+  emit('view-analytics');
+};
+
+const handleExportData = async () => {
+  exporting.value = true;
+  try {
+    // Get date range - last 90 days
+    const now = new Date();
+    const start = new Date(now);
+    start.setDate(start.getDate() - 90);
+
+    // Convert to Unix timestamps (in seconds)
+    const startDate = Math.floor(start.getTime() / 1000);
+    const endDate = Math.floor(now.getTime() / 1000);
+
+    // Export data from backend
+    const dataJson = await invoke<string>('export_data', {
+      format: 'json',
+      startDate,
+      endDate,
+    });
+
+    // Show save dialog
+    const filePath = await save({
+      defaultPath: `feedback-export-${now.toISOString().split('T')[0]}.json`,
+      filters: [{
+        name: 'JSON',
+        extensions: ['json']
+      }]
+    });
+
+    if (filePath) {
+      // Write file using Tauri filesystem
+      const { writeTextFile } = await import('@tauri-apps/plugin-fs');
+      await writeTextFile(filePath, dataJson);
+
+      if (showToast) {
+        showToast('数据导出成功', 'success');
+      }
+    }
+  } catch (error) {
+    console.error('Failed to export data:', error);
+    if (showToast) {
+      showToast('导出失败: ' + (error as Error).message, 'error');
+    }
+  } finally {
+    exporting.value = false;
   }
 };
 </script>
@@ -97,6 +158,41 @@ const saveSettings = async () => {
       <!-- About Tab -->
       <div v-if="activeTab === 'about'" class="tab-pane">
         <UpdateChecker />
+      </div>
+
+      <!-- Data Tab -->
+      <div v-if="activeTab === 'data'" class="tab-pane">
+        <div class="data-section">
+          <h3>数据分析</h3>
+          <p class="section-desc">查看用户反馈、会话统计和性能指标</p>
+          <button class="action-btn primary" @click="handleViewAnalytics">
+            <span class="btn-icon">📊</span>
+            查看数据分析
+          </button>
+        </div>
+
+        <div class="data-section">
+          <h3>数据导出</h3>
+          <p class="section-desc">导出最近90天的反馈数据为 JSON 格式</p>
+          <button
+            class="action-btn"
+            @click="handleExportData"
+            :disabled="exporting"
+          >
+            <span class="btn-icon">{{ exporting ? '⏳' : '💾' }}</span>
+            {{ exporting ? '导出中...' : '导出数据' }}
+          </button>
+        </div>
+
+        <div class="data-section">
+          <h3>数据说明</h3>
+          <ul class="data-info-list">
+            <li>数据存储在本地 SQLite 数据库中</li>
+            <li>包含会话记录、消息、反馈和性能指标</li>
+            <li>导出的数据可用于备份或外部分析</li>
+            <li>数据格式符合标准 JSON 规范</li>
+          </ul>
+        </div>
       </div>
     </div>
   </div>
@@ -255,5 +351,83 @@ input:checked + .toggle-switch:before {
   color: var(--text-weak);
   margin-top: 12px;
   line-height: 1.4;
+}
+
+/* Data Tab Styles */
+.data-section {
+  padding: 20px;
+  background: rgba(255, 255, 255, 0.5);
+  border-radius: 12px;
+  margin-bottom: 16px;
+}
+
+.data-section h3 {
+  margin: 0 0 8px 0;
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--text-strong);
+}
+
+.section-desc {
+  font-size: 13px;
+  color: var(--text-weak);
+  margin: 0 0 16px 0;
+  line-height: 1.4;
+}
+
+.action-btn {
+  width: 100%;
+  height: 44px;
+  border-radius: 12px;
+  border: 1px solid rgba(0, 0, 0, 0.1);
+  background: #fff;
+  color: var(--text-strong);
+  font-weight: 600;
+  font-size: 14px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  transition: all 0.2s;
+}
+
+.action-btn:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.95);
+  transform: translateY(-1px);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+}
+
+.action-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.action-btn.primary {
+  background: linear-gradient(135deg, var(--accent) 0%, var(--accent-strong) 100%);
+  color: white;
+  border: none;
+  box-shadow: 0 4px 12px rgba(121, 194, 255, 0.3);
+}
+
+.action-btn.primary:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 6px 16px rgba(121, 194, 255, 0.4);
+}
+
+.btn-icon {
+  font-size: 20px;
+}
+
+.data-info-list {
+  margin: 0;
+  padding-left: 20px;
+  font-size: 13px;
+  color: var(--text-weak);
+  line-height: 1.8;
+}
+
+.data-info-list li {
+  margin-bottom: 6px;
 }
 </style>

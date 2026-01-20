@@ -4,6 +4,13 @@ export interface ChatMessage {
   role: ChatRole;
   content: string;
   images?: string[]; // data URLs or public URLs
+  // Feedback tracking fields (optional, backward compatible)
+  messageId?: string;
+  sessionId?: string;
+  tokenCount?: number;
+  llmModel?: string;
+  latencyMs?: number;
+  createdAt?: number;
 }
 
 export const DEFAULT_LLM_CONFIG = {

@@ -16,17 +16,10 @@
     <!-- Right: Controls -->
     <div class="controls-section">
       <button class="control-btn secondary" @click="togglePause" :title="isPaused ? '继续' : '暂停'">
-        <svg v-if="!isPaused" viewBox="0 0 24 24" fill="currentColor">
-          <path d="M6 4h4v16H6V4zm8 0h4v16h-4V4z"/>
-        </svg>
-        <svg v-else viewBox="0 0 24 24" fill="currentColor">
-          <path d="M8 5v14l11-7z"/>
-        </svg>
+        <Icon :icon="isPaused ? 'lucide:play' : 'lucide:pause'" size="20" />
       </button>
       <button class="control-btn primary" @click="handleStop" title="结束接诊">
-        <svg viewBox="0 0 24 24" fill="currentColor">
-          <path d="M4 4h16v16H4z"/>
-        </svg>
+        <Icon icon="lucide:square" size="20" />
       </button>
     </div>
   </div>
@@ -36,6 +29,7 @@
 import { ref, onMounted, onUnmounted, computed } from 'vue';
 import { audioRecorder } from '../services/audioRecorder';
 import { RealtimeSpeechService, getAliyunSpeechConfig } from '../services/aliyunSpeech';
+import Icon from './Icon.vue';
 
 const emit = defineEmits<{
   stop: [blob: Blob, transcriptionText: string];

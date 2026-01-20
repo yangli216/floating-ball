@@ -5,9 +5,7 @@
       <div class="patient-card">
         <!-- Avatar -->
         <div class="avatar" :style="{ background: avatarConfig.bgColor }">
-          <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-            <path d="M12 2C6.48 2 2 6.48 2 12C2 17.52 6.48 22 12 22C17.52 22 22 17.52 22 12C22 6.48 17.52 2 12 2ZM12 5C13.66 5 15 6.34 15 8C15 9.66 13.66 11 12 11C10.34 11 9 9.66 9 8C9 6.34 10.34 5 12 5ZM12 19.2C9.5 19.2 7.29 17.92 6 15.98C6.03 13.99 10 12.9 12 12.9C13.99 12.9 17.97 13.99 18 15.98C16.71 17.92 14.5 19.2 12 19.2Z" :fill="avatarConfig.color"/>
-          </svg>
+          <Icon :icon="avatarConfig.icon" :color="avatarConfig.color" size="48" />
         </div>
         
         <!-- Name -->
@@ -142,7 +140,7 @@
               <div class="form-header">
                 <h2>{{ item.key === 'general' ? item.name : (item.name + ' - 症状属性问诊') }}</h2>
                 <button v-if="item.key !== 'general'" class="icon-btn remove-btn" @click="removeSymptom(item)" title="移除此症状">
-                  <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>
+                  <Icon icon="lucide:trash-2" size="16" />
                 </button>
               </div>
       
@@ -274,9 +272,7 @@
           <div class="panel-header">
             <h3>病历详情</h3>
             <button class="icon-btn" @click="copyToClipboard" title="复制全部">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <path d="M8 2h12v12h-12zM4 6v14h14M8 6h10M8 10h10M8 14h6"></path>
-              </svg>
+              <Icon icon="lucide:copy" size="16" />
             </button>
           </div>
           <div class="panel-body">
@@ -481,6 +477,7 @@ import { invoke } from '@tauri-apps/api/core';
 import BodyPartSelector from './BodyPartSelector.vue';
 import SystemCategorySelector from './SystemCategorySelector.vue';
 import { PROMPTS } from '../prompts';
+import Icon from './Icon.vue';
 
 const showToast = inject('showToast') as (msg: string, type: 'success' | 'error' | 'info') => void;
 
@@ -558,7 +555,8 @@ const avatarConfig = computed(() => {
 
   return {
     color: isMale ? '#79c2ff' : '#ff9a9e',
-    bgColor: isMale ? '#f0f9ff' : '#fff0f1'
+    bgColor: isMale ? '#f0f9ff' : '#fff0f1',
+    icon: isMale ? 'mdi:human-male' : 'mdi:human-female'
   };
 });
 

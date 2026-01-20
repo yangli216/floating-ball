@@ -5,9 +5,7 @@
       <div class="patient-card">
         <!-- Avatar -->
         <div class="avatar">
-          <svg viewBox="0 0 24 24" fill="none">
-            <path d="M12 2C6.48 2 2 6.48 2 12C2 17.52 6.48 22 12 22C17.52 22 22 17.52 22 12C22 6.48 17.52 2 12 2ZM12 5C13.66 5 15 6.34 15 8C15 9.66 13.66 11 12 11C10.34 11 9 9.66 9 8C9 6.34 10.34 5 12 5ZM12 19.2C9.5 19.2 7.29 17.92 6 15.98C6.03 13.99 10 12.9 12 12.9C13.99 12.9 17.97 13.99 18 15.98C16.71 17.92 14.5 19.2 12 19.2Z" fill="#ff9a9e"/>
-          </svg>
+          <Icon icon="mdi:account-circle" color="#ff9a9e" size="48" />
         </div>
         
         <!-- Name -->
@@ -33,9 +31,7 @@
       <div class="header-actions">
         <button class="header-btn" @click="emit('cancel')">放弃</button>
         <button class="header-btn primary" @click="handleConfirm" :disabled="!record">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16">
-            <path d="M20 6L9 17l-5-5"/>
-          </svg>
+          <Icon icon="lucide:check" size="16" />
           确认提交
         </button>
       </div>
@@ -157,6 +153,7 @@
 <script setup lang="ts">
 import { ref, watch } from 'vue';
 import { medicalDataService } from '../services/medicalData';
+import Icon from './Icon.vue';
 
 export interface DiagnosisEntry {
   name: string;
