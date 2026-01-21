@@ -142,7 +142,7 @@ export const DiagnosisRecommendationPrompt = {
     historyOfPresentIllness: string;
   }): string {
     return `
-你是一个专业的医疗辅助助手。请根据以下患者信息、主诉和现病史，推荐最可能的3个ICD10诊断结果。
+你是一个专业的医疗辅助助手。请根据以下患者信息、主诉和现病史，推荐最多3个ICD10诊断结果。
 请严格按照JSON数组格式返回，不要包含Markdown标记或其他多余文本。
 
 患者信息：

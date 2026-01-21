@@ -79,7 +79,9 @@
             <div class="list-container">
               <div v-for="(diag, idx) in record.diagnosisList" :key="idx" class="list-item diagnosis-item">
                 <div class="item-content">
-                  <span class="item-name">{{ diag.name }}</span>
+                  <FactCheckHighlight :issue="getIssueForDiagnosis(diag.name)">
+                    <span class="item-name">{{ diag.name }}</span>
+                  </FactCheckHighlight>
                   <span class="item-code" v-if="diag.code">({{ diag.code }})</span>
                   <span class="match-tag" v-if="diag.matched" title="已匹配本地数据">✓</span>
                 </div>
@@ -100,7 +102,9 @@
               <div class="list-container">
                 <div v-for="(med, idx) in record.medications" :key="idx" class="list-item med-item">
                   <div class="item-header">
-                    <span class="med-name">{{ med.name }}</span>
+                    <FactCheckHighlight :issue="getIssueForMedicine(med.name)">
+                      <span class="med-name">{{ med.name }}</span>
+                    </FactCheckHighlight>
                     <span class="med-spec" v-if="med.spec">{{ med.spec }}</span>
                     <span class="match-tag" v-if="med.matched">✓</span>
                   </div>
@@ -119,7 +123,9 @@
               <div class="sub-title">检验检查</div>
               <div class="list-container">
                 <div v-for="(exam, idx) in record.examinations" :key="idx" class="list-item exam-item">
-                  <span class="item-name">{{ exam.name }}</span>
+                  <FactCheckHighlight :issue="getIssueForExam(exam.name)">
+                    <span class="item-name">{{ exam.name }}</span>
+                  </FactCheckHighlight>
                   <span class="match-tag" v-if="exam.matched">✓</span>
                 </div>
               </div>
@@ -142,11 +148,32 @@
         </div>
       </div>
     </div>
-    
+
     <div v-else class="loading-state">
       <div class="spinner"></div>
       <p>正在生成病历数据...</p>
     </div>
+
+    <!-- Fact Check Notification -->
+    <FactCheckNotification
+      v-model="showFactCheckNotification"
+      :result="factCheckResult"
+      @confirm="showFactCheckNotification = false"
+      @view-details="showFactCheckNotification = false"
+    />
+
+    <!-- Fact Check Widget (Right Bottom Corner) -->
+    <FactCheckWidget
+      :visible="showFactCheckWidget"
+      :status="factCheckWidgetStatus"
+      :issues="factCheckWidgetIssues"
+      :progress="factCheckProgress"
+      :checked-count="factCheckCheckedCount"
+      :total-count="factCheckTotalCount"
+      @close="showFactCheckWidget = false"
+      @view-all="showFactCheckWidget = false"
+      @issue-click="(issue) => console.log('Issue clicked:', issue)"
+    />
   </div>
 </template>
 
@@ -154,6 +181,10 @@
 import { ref, watch } from 'vue';
 import { medicalDataService } from '../services/medicalData';
 import Icon from './Icon.vue';
+import FactCheckNotification from './FactCheckNotification.vue';
+import FactCheckHighlight from './FactCheckHighlight.vue';
+import FactCheckWidget from './FactCheckWidget.vue';
+import { checkDiagnosis, checkMedicine, checkExamination, checkMedicalRecord, type FactCheckResult, type FactCheckIssue } from '../services/factChecker';
 
 export interface DiagnosisEntry {
   name: string;
@@ -208,6 +239,21 @@ const emit = defineEmits(['confirm', 'cancel']);
 
 const record = ref<GeneratedRecord | null>(null);
 
+// Fact Check State
+const showFactCheckNotification = ref(false);
+const factCheckResult = ref<FactCheckResult | null>(null);
+const diagnosisFactChecks = ref<Map<string, FactCheckResult>>(new Map());
+const medicineFactChecks = ref<Map<string, FactCheckResult>>(new Map());
+const examFactChecks = ref<Map<string, FactCheckResult>>(new Map());
+
+// Fact Check Widget State
+const showFactCheckWidget = ref(false);
+const factCheckWidgetStatus = ref<'idle' | 'checking' | 'completed'>('idle');
+const factCheckWidgetIssues = ref<FactCheckIssue[]>([]);
+const factCheckProgress = ref(0);
+const factCheckCheckedCount = ref(0);
+const factCheckTotalCount = ref(0);
+
 // Match data with local database
 const matchLocalData = (rec: GeneratedRecord) => {
   // 1. Match Diagnoses
@@ -253,8 +299,135 @@ watch(() => props.initialRecord, (val) => {
     const newVal = JSON.parse(JSON.stringify(val));
     matchLocalData(newVal);
     record.value = newVal;
+
+    // Perform automatic fact checking after data is loaded
+    performMedicalRecordFactCheck(newVal);
   }
 }, { immediate: true });
+
+// Fact Check Functions
+const performMedicalRecordFactCheck = async (rec: GeneratedRecord) => {
+  if (!rec) return;
+
+  // Calculate total checks
+  const diagCount = rec.diagnosisList?.length || 0;
+  const medCount = rec.medications?.length || 0;
+  const examCount = rec.examinations?.length || 0;
+  const totalChecks = diagCount + medCount + examCount + 1; // +1 for overall record check
+
+  // Show widget in checking state
+  showFactCheckWidget.value = true;
+  factCheckWidgetStatus.value = 'checking';
+  factCheckTotalCount.value = totalChecks;
+  factCheckCheckedCount.value = 0;
+  factCheckProgress.value = 0;
+  factCheckWidgetIssues.value = [];
+
+  try {
+    // Check overall medical record consistency
+    const result = await checkMedicalRecord({
+      chiefComplaint: rec.chiefComplaint,
+      historyOfPresentIllness: rec.historyOfPresentIllness,
+      diagnoses: rec.diagnosisList?.map(d => d.name) || [],
+      medicines: rec.medications?.map(m => m.name) || [],
+      examinations: rec.examinations?.map(e => e.name) || []
+    });
+
+    if (result.hasIssues) {
+      factCheckWidgetIssues.value.push(...result.issues);
+    }
+
+    factCheckCheckedCount.value = 1;
+    factCheckProgress.value = Math.round((1 / totalChecks) * 100);
+
+    // Check each diagnosis individually
+    if (rec.diagnosisList && rec.diagnosisList.length > 0) {
+      for (let i = 0; i < rec.diagnosisList.length; i++) {
+        const diag = rec.diagnosisList[i];
+        const diagResult = await checkDiagnosis({
+          diagnosis: diag.name,
+          chiefComplaint: rec.chiefComplaint,
+          historyOfPresentIllness: rec.historyOfPresentIllness
+        });
+        diagnosisFactChecks.value.set(diag.name, diagResult);
+
+        if (diagResult.hasIssues) {
+          factCheckWidgetIssues.value.push(...diagResult.issues);
+        }
+
+        factCheckCheckedCount.value = 1 + i + 1;
+        factCheckProgress.value = Math.round(((1 + i + 1) / totalChecks) * 100);
+      }
+    }
+
+    // Check each medicine
+    if (rec.medications && rec.medications.length > 0) {
+      for (let i = 0; i < rec.medications.length; i++) {
+        const med = rec.medications[i];
+        const medResult = await checkMedicine({
+          medicineName: med.name,
+          specification: med.spec,
+          dosage: med.dosage,
+          frequency: med.frequency,
+          diagnosis: rec.diagnosisList?.[0]?.name
+        });
+        medicineFactChecks.value.set(med.name, medResult);
+
+        if (medResult.hasIssues) {
+          factCheckWidgetIssues.value.push(...medResult.issues);
+        }
+
+        const currentCount = 1 + diagCount + i + 1;
+        factCheckCheckedCount.value = currentCount;
+        factCheckProgress.value = Math.round((currentCount / totalChecks) * 100);
+      }
+    }
+
+    // Check each examination
+    if (rec.examinations && rec.examinations.length > 0) {
+      for (let i = 0; i < rec.examinations.length; i++) {
+        const exam = rec.examinations[i];
+        const examResult = await checkExamination({
+          examinationName: exam.name,
+          diagnosis: rec.diagnosisList?.[0]?.name
+        });
+        examFactChecks.value.set(exam.name, examResult);
+
+        if (examResult.hasIssues) {
+          factCheckWidgetIssues.value.push(...examResult.issues);
+        }
+
+        const currentCount = 1 + diagCount + medCount + i + 1;
+        factCheckCheckedCount.value = currentCount;
+        factCheckProgress.value = Math.round((currentCount / totalChecks) * 100);
+      }
+    }
+
+    // Update widget to completed state
+    factCheckWidgetStatus.value = 'completed';
+  } catch (e) {
+    console.error('Failed to perform medical record fact check:', e);
+    factCheckWidgetStatus.value = 'completed';
+  }
+};
+
+const getIssueForDiagnosis = (diagName: string): FactCheckIssue | undefined => {
+  const check = diagnosisFactChecks.value.get(diagName);
+  if (!check || !check.hasIssues || check.issues.length === 0) return undefined;
+  return check.issues[0];
+};
+
+const getIssueForMedicine = (medName: string): FactCheckIssue | undefined => {
+  const check = medicineFactChecks.value.get(medName);
+  if (!check || !check.hasIssues || check.issues.length === 0) return undefined;
+  return check.issues[0];
+};
+
+const getIssueForExam = (examName: string): FactCheckIssue | undefined => {
+  const check = examFactChecks.value.get(examName);
+  if (!check || !check.hasIssues || check.issues.length === 0) return undefined;
+  return check.issues[0];
+};
 
 const handleConfirm = () => {
   emit('confirm', record.value);

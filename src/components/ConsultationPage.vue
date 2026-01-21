@@ -320,7 +320,9 @@
                 >
                   <div class="diag-header">
                     <div class="diag-name-group">
-                      <span class="diag-name">{{ diag.name }} ({{ diag.code }})</span>
+                      <FactCheckHighlight :issue="getIssueForDiagnosis(diag.code)">
+                        <span class="diag-name">{{ diag.name }} ({{ diag.code }})</span>
+                      </FactCheckHighlight>
                       <div class="inline-related-trigger" @click="toggleRelatedDropdown(diag, $event)" title="切换同类诊断">
                         <span class="arrow" :class="{ open: openRelatedCode === diag.code }">▼</span>
                       </div>
@@ -378,7 +380,9 @@
                   <div class="rec-content">
                     <div class="rec-header">
                       <span class="rec-tag" :class="rec.type">{{ rec.type === 'medicine' ? '药' : '检' }}</span>
-                      <span class="rec-name">{{ rec.name }}</span>
+                      <FactCheckHighlight :issue="getIssueForTreatment(rec.name)">
+                        <span class="rec-name">{{ rec.name }}</span>
+                      </FactCheckHighlight>
                       <span v-if="rec.matchedItem" class="matched-inline">
                         <span class="match-icon">✓</span>
                         <span class="match-name">{{ rec.matchedItem.name }}</span>
@@ -464,6 +468,27 @@
          </div>
        </div>
     </div>
+
+    <!-- Fact Check Notification -->
+    <FactCheckNotification
+      v-model="showFactCheckNotification"
+      :result="factCheckResult"
+      @confirm="showFactCheckNotification = false"
+      @view-details="showFactCheckNotification = false"
+    />
+
+    <!-- Fact Check Widget (Right Bottom Corner) -->
+    <FactCheckWidget
+      :visible="showFactCheckWidget"
+      :status="factCheckWidgetStatus"
+      :issues="factCheckWidgetIssues"
+      :progress="factCheckProgress"
+      :checked-count="factCheckCheckedCount"
+      :total-count="factCheckTotalCount"
+      @close="showFactCheckWidget = false"
+      @view-all="showFactCheckWidget = false"
+      @issue-click="(issue) => console.log('Issue clicked:', issue)"
+    />
   </div>
 </template>
 
@@ -478,6 +503,10 @@ import BodyPartSelector from './BodyPartSelector.vue';
 import SystemCategorySelector from './SystemCategorySelector.vue';
 import { PROMPTS } from '../prompts';
 import Icon from './Icon.vue';
+import FactCheckNotification from './FactCheckNotification.vue';
+import FactCheckHighlight from './FactCheckHighlight.vue';
+import FactCheckWidget from './FactCheckWidget.vue';
+import { checkDiagnosis, checkMedicine, checkExamination, type FactCheckResult, type FactCheckIssue } from '../services/factChecker';
 
 const showToast = inject('showToast') as (msg: string, type: 'success' | 'error' | 'info') => void;
 
@@ -614,6 +643,20 @@ const treatmentError = ref<string | null>(null);
 const treatmentRecommendations = ref<TreatmentRecommendation[]>([]);
 
 const finalRecord = ref<FinalRecord | null>(null);
+
+// Fact Check State
+const showFactCheckNotification = ref(false);
+const factCheckResult = ref<FactCheckResult | null>(null);
+const diagnosisFactChecks = ref<Map<string, FactCheckResult>>(new Map());
+const treatmentFactChecks = ref<Map<string, FactCheckResult>>(new Map());
+
+// Fact Check Widget State
+const showFactCheckWidget = ref(false);
+const factCheckWidgetStatus = ref<'idle' | 'checking' | 'completed'>('idle');
+const factCheckWidgetIssues = ref<FactCheckIssue[]>([]);
+const factCheckProgress = ref(0);
+const factCheckCheckedCount = ref(0);
+const factCheckTotalCount = ref(0);
 
 // General Condition Configuration
 const generalConditionConfig = {
@@ -988,12 +1031,119 @@ const fetchAIDiagnosis = async () => {
     });
 
     aiDiagnoses.value = diagnoses;
+
+    // Perform automatic fact checking on all diagnoses
+    performDiagnosisFactCheck(diagnoses);
   } catch (e) {
     console.error("Failed to fetch AI diagnosis", e);
     aiError.value = "无法获取诊断建议，请稍后重试或检查网络。";
   } finally {
     aiLoading.value = false;
   }
+};
+
+// Fact Check Functions
+const performDiagnosisFactCheck = async (diagnoses: Diagnosis[]) => {
+  if (!diagnoses || diagnoses.length === 0) return;
+
+  // Show widget in checking state
+  showFactCheckWidget.value = true;
+  factCheckWidgetStatus.value = 'checking';
+  factCheckTotalCount.value = diagnoses.length;
+  factCheckCheckedCount.value = 0;
+  factCheckProgress.value = 0;
+
+  // Clear previous checks
+  diagnosisFactChecks.value.clear();
+  factCheckWidgetIssues.value = [];
+
+  // Check each diagnosis
+  for (let i = 0; i < diagnoses.length; i++) {
+    const diag = diagnoses[i];
+    try {
+      const result = await checkDiagnosis({
+        diagnosis: diag.name,
+        chiefComplaint: generatedRecord.value.chiefComplaint,
+        historyOfPresentIllness: generatedRecord.value.historyOfPresentIllness
+      });
+
+      diagnosisFactChecks.value.set(diag.code, result);
+
+      if (result.hasIssues) {
+        factCheckWidgetIssues.value.push(...result.issues);
+      }
+
+      // Update progress
+      factCheckCheckedCount.value = i + 1;
+      factCheckProgress.value = Math.round(((i + 1) / diagnoses.length) * 100);
+    } catch (e) {
+      console.error(`Failed to fact check diagnosis: ${diag.name}`, e);
+    }
+  }
+
+  // Update widget to completed state
+  factCheckWidgetStatus.value = 'completed';
+};
+
+const performTreatmentFactCheck = async (treatments: TreatmentRecommendation[]) => {
+  if (!treatments || treatments.length === 0) return;
+
+  // Show widget in checking state
+  showFactCheckWidget.value = true;
+  factCheckWidgetStatus.value = 'checking';
+  factCheckTotalCount.value = treatments.length;
+  factCheckCheckedCount.value = 0;
+  factCheckProgress.value = 0;
+
+  treatmentFactChecks.value.clear();
+  factCheckWidgetIssues.value = [];
+
+  for (let i = 0; i < treatments.length; i++) {
+    const treatment = treatments[i];
+    try {
+      let result: FactCheckResult;
+
+      if (treatment.type === 'medicine') {
+        result = await checkMedicine({
+          medicineName: treatment.name,
+          dosage: treatment.usage,
+          diagnosis: selectedDiagnosis.value?.name
+        });
+      } else {
+        result = await checkExamination({
+          examinationName: treatment.name,
+          diagnosis: selectedDiagnosis.value?.name
+        });
+      }
+
+      treatmentFactChecks.value.set(treatment.name, result);
+
+      if (result.hasIssues) {
+        factCheckWidgetIssues.value.push(...result.issues);
+      }
+
+      // Update progress
+      factCheckCheckedCount.value = i + 1;
+      factCheckProgress.value = Math.round(((i + 1) / treatments.length) * 100);
+    } catch (e) {
+      console.error(`Failed to fact check treatment: ${treatment.name}`, e);
+    }
+  }
+
+  // Update widget to completed state
+  factCheckWidgetStatus.value = 'completed';
+};
+
+const getIssueForDiagnosis = (diagCode: string): FactCheckIssue | undefined => {
+  const check = diagnosisFactChecks.value.get(diagCode);
+  if (!check || !check.hasIssues || check.issues.length === 0) return undefined;
+  return check.issues[0]; // Return first issue
+};
+
+const getIssueForTreatment = (treatmentName: string): FactCheckIssue | undefined => {
+  const check = treatmentFactChecks.value.get(treatmentName);
+  if (!check || !check.hasIssues || check.issues.length === 0) return undefined;
+  return check.issues[0]; // Return first issue
 };
 
 const openRelatedCode = ref<string | null>(null);
@@ -1103,6 +1253,9 @@ const fetchTreatmentRecommendation = async () => {
     });
 
     treatmentRecommendations.value = processedRecs;
+
+    // Perform automatic fact checking on treatments
+    performTreatmentFactCheck(processedRecs);
   } catch (e) {
     console.error("Failed to fetch treatment recommendations", e);
     treatmentError.value = "无法获取治疗方案建议。";
