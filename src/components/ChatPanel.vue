@@ -226,17 +226,17 @@ async function handleFeedback(messageId: string, feedbackType: 'positive' | 'neg
               class="feedback-btn"
               @click="handleFeedback(m.messageId!, 'positive')"
               title="有用"
-              aria-label="有用"
+              aria-label="标记此回复有用"
             >
-              <Icon icon="lucide:thumbs-up" class="icon" size="16" />
+              <Icon icon="lucide:thumbs-up" class="icon" size="16" aria-hidden="true" />
             </button>
             <button
               class="feedback-btn"
               @click="handleFeedback(m.messageId!, 'negative')"
               title="无用"
-              aria-label="无用"
+              aria-label="标记此回复无用"
             >
-              <Icon icon="lucide:thumbs-down" class="icon" size="16" />
+              <Icon icon="lucide:thumbs-down" class="icon" size="16" aria-hidden="true" />
             </button>
           </div>
         </div>
@@ -248,25 +248,41 @@ async function handleFeedback(messageId: string, feedbackType: 'positive' | 'neg
 
     <div class="chat-footer">
       <div class="input-wrapper">
+        <label for="chat-input" class="sr-only">输入消息</label>
         <input
+          id="chat-input"
           class="text-input"
           type="text"
           v-model="input"
           placeholder="请输入您的问题或描述症状..."
+          aria-label="输入您的问题或描述症状"
           @compositionstart="onCompositionStart"
           @compositionend="onCompositionEnd"
           @keydown.enter="handleEnter"
         />
         <label class="action-btn" title="选择图片" aria-label="选择图片">
-          <Icon icon="lucide:image" class="icon" size="18" />
+          <Icon icon="lucide:image" class="icon" size="18" aria-hidden="true" />
           <input type="file" accept="image/*" @change="handleFileChange" hidden />
         </label>
-        <button class="action-btn" :class="{ recording }" @click="recording ? stopRecording() : startRecording()" title="语音输入" aria-label="语音输入">
-          <Icon :icon="recording ? 'lucide:mic-off' : 'lucide:mic'" class="icon" size="18" />
+        <button
+          class="action-btn"
+          :class="{ recording }"
+          @click="recording ? stopRecording() : startRecording()"
+          :aria-label="recording ? '停止录音' : '开始语音输入'"
+          :title="recording ? '停止录音' : '语音输入'"
+        >
+          <Icon :icon="recording ? 'lucide:mic-off' : 'lucide:mic'" class="icon" size="18" aria-hidden="true" />
         </button>
       </div>
-      <button class="send-btn" :disabled="sending" @click="handleSend">
-        <Icon icon="lucide:send" size="18" />
+      <button
+        class="send-btn"
+        :disabled="sending"
+        :aria-busy="sending"
+        :aria-label="sending ? '发送中...' : '发送消息'"
+        @click="handleSend"
+      >
+        <Icon v-if="sending" icon="lucide:loader-2" class="animate-spin" size="18" aria-hidden="true" />
+        <Icon v-else icon="lucide:send" size="18" aria-hidden="true" />
       </button>
     </div>
   </div>
@@ -280,7 +296,7 @@ async function handleFeedback(messageId: string, feedbackType: 'positive' | 'neg
   display: flex;
   flex-direction: column;
   background: transparent; /* 让父容器背景透过来 */
-  color: var(--text-strong);
+  color: var(--color-text-strong);
 }
 
 .chat-body {
@@ -301,11 +317,11 @@ async function handleFeedback(messageId: string, feedbackType: 'positive' | 'neg
   background: transparent;
 }
 .chat-body::-webkit-scrollbar-thumb {
-  background: rgba(0, 0, 0, 0.2);
+  background: var(--color-border-medium);
   border-radius: 3px;
 }
 .chat-body::-webkit-scrollbar-thumb:hover {
-  background: rgba(0, 0, 0, 0.3);
+  background: var(--color-border-strong);
 }
 
 /* 消息入场动画 */
@@ -339,23 +355,23 @@ async function handleFeedback(messageId: string, feedbackType: 'positive' | 'neg
   border-radius: 18px;
   line-height: 1.5;
   font-size: 14px;
-  box-shadow: 0 2px 8px rgba(0,0,0,0.04);
+  box-shadow: var(--shadow-sm);
   position: relative;
   width: 100%;
 }
 
 .msg.assistant .bubble {
-  background: rgba(255, 255, 255, 0.75);
+  background: var(--surface-glass);
   border-top-left-radius: 4px;
-  color: var(--text-strong);
-  border: 1px solid rgba(255,255,255,0.6);
+  color: var(--color-text-strong);
+  border: 1px solid var(--color-border-light);
 }
 
 .msg.user .bubble {
-  background: linear-gradient(135deg, var(--accent) 0%, var(--accent-strong) 100%);
-  color: #fff;
+  background: linear-gradient(135deg, var(--color-primary) 0%, var(--color-primary-dark) 100%);
+  color: white;
   border-bottom-right-radius: 4px;
-  box-shadow: 0 4px 12px rgba(79, 167, 255, 0.25);
+  box-shadow: 0 4px 12px var(--color-primary-200);
 }
 
 /* Markdown 样式 */
@@ -366,17 +382,18 @@ async function handleFeedback(messageId: string, feedbackType: 'positive' | 'neg
 .markdown-body :deep(p) { margin: 0 0 10px 0; }
 .markdown-body :deep(p:last-child) { margin-bottom: 0; }
 .markdown-body :deep(pre) {
-  background: #2d2d2d;
-  color: #ccc;
+  background: var(--color-background-gray);
+  color: var(--color-text-primary);
   padding: 12px;
   border-radius: 8px;
   overflow-x: auto;
   margin: 10px 0;
+  border: 1px solid var(--color-border-light);
 }
 .markdown-body :deep(code) {
   font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace;
   font-size: 12px;
-  background: rgba(0,0,0,0.05);
+  background: var(--color-primary-50);
   padding: 2px 4px;
   border-radius: 4px;
 }
@@ -390,7 +407,7 @@ async function handleFeedback(messageId: string, feedbackType: 'positive' | 'neg
   margin: 10px 0;
 }
 .markdown-body :deep(a) {
-  color: var(--accent-strong);
+  color: var(--color-primary);
   text-decoration: none;
 }
 .markdown-body :deep(a:hover) {
@@ -419,16 +436,16 @@ async function handleFeedback(messageId: string, feedbackType: 'positive' | 'neg
   max-width: 120px;
   max-height: 120px;
   border-radius: 12px;
-  border: 2px solid #fff;
-  box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+  border: 2px solid var(--color-border-light);
+  box-shadow: var(--shadow-md);
 }
 
 .chat-footer {
   flex-shrink: 0;
   padding: 12px 16px 20px 16px; /* 底部稍微留多一点 */
-  background: linear-gradient(0deg, rgba(255,255,255,0.8) 0%, rgba(255,255,255,0.4) 100%);
+  background: var(--surface-glass);
   backdrop-filter: blur(12px);
-  border-top: 1px solid rgba(255,255,255,0.5);
+  border-top: 1px solid var(--color-border-light);
   display: flex;
   gap: 10px;
   align-items: center;
@@ -438,20 +455,21 @@ async function handleFeedback(messageId: string, feedbackType: 'positive' | 'neg
 .input-wrapper {
   flex: 1;
   height: 44px;
-  background: #fff;
+  background: var(--color-background-white);
   border-radius: 22px;
   display: flex;
   align-items: center;
   padding: 0 4px 0 16px;
-  box-shadow: 
-    0 2px 6px rgba(0, 0, 0, 0.04),
-    0 0 0 1px rgba(0, 0, 0, 0.04) inset;
-  transition: box-shadow 0.2s ease;
+  border: 1px solid transparent;
+  transition: all var(--duration-normal) var(--ease-out);
+}
+.input-wrapper:hover {
+  border-color: var(--color-border-light);
 }
 .input-wrapper:focus-within {
-  box-shadow: 
-    0 4px 12px rgba(121, 194, 255, 0.25),
-    0 0 0 1px var(--accent) inset;
+  border-color: var(--color-primary);
+  box-shadow: 0 0 0 3px var(--color-primary-200);
+  background: var(--color-background-white);
 }
 
 .text-input {
@@ -462,9 +480,17 @@ async function handleFeedback(messageId: string, feedbackType: 'positive' | 'neg
   width: 100%;
   outline: none;
   font-size: 14px;
-  color: var(--text-strong);
+  color: var(--color-text-strong);
 }
-.text-input::placeholder { color: #94a3b8; }
+.text-input::placeholder { color: var(--color-text-muted); }
+
+/* 禁用 input 自身的所有 focus 样式，因为焦点效果已应用在 input-wrapper 上 */
+.text-input:focus,
+.text-input:focus-visible {
+  outline: none !important;
+  box-shadow: none !important;
+  border: none !important;
+}
 
 .action-btn {
   width: 34px;
@@ -476,17 +502,17 @@ async function handleFeedback(messageId: string, feedbackType: 'positive' | 'neg
   display: flex;
   align-items: center;
   justify-content: center;
-  color: #64748b;
-  transition: all 0.2s ease;
+  color: var(--color-text-muted);
+  transition: all var(--duration-normal) var(--ease-out);
   margin-left: 2px;
 }
 .action-btn:hover {
-  background: rgba(0,0,0,0.06);
-  color: var(--accent-strong);
+  background: var(--color-primary-50);
+  color: var(--color-primary);
 }
 .action-btn.recording {
-  color: #ef4444;
-  background: rgba(239, 68, 68, 0.1);
+  color: var(--color-error);
+  background: var(--color-error-bg);
   animation: pulse 1.5s infinite;
 }
 @keyframes pulse {
@@ -503,19 +529,19 @@ async function handleFeedback(messageId: string, feedbackType: 'positive' | 'neg
   width: 44px; /* 圆形发送按钮 */
   border-radius: 50%;
   border: none;
-  background: linear-gradient(135deg, var(--accent) 0%, var(--accent-strong) 100%);
+  background: linear-gradient(135deg, var(--color-cta) 0%, var(--color-cta-dark) 100%);
   color: white;
   font-size: 0; /* 隐藏"发送"文字，只显示图标 */
   cursor: pointer;
   display: flex;
   align-items: center;
   justify-content: center;
-  box-shadow: 0 4px 12px rgba(121, 194, 255, 0.4);
-  transition: all 0.2s cubic-bezier(0.34, 1.56, 0.64, 1);
+  box-shadow: 0 4px 12px var(--color-cta-200);
+  transition: all var(--duration-normal) cubic-bezier(0.34, 1.56, 0.64, 1);
 }
 .send-btn:hover:not(:disabled) {
   transform: scale(1.05) rotate(-10deg);
-  box-shadow: 0 6px 16px rgba(121, 194, 255, 0.5);
+  box-shadow: 0 6px 16px var(--color-cta-200);
 }
 .send-btn:active:not(:disabled) {
   transform: scale(0.95);
@@ -526,17 +552,7 @@ async function handleFeedback(messageId: string, feedbackType: 'positive' | 'neg
   filter: grayscale(0.4);
 }
 
-/* 滚动条美化 */
-.chat-body::-webkit-scrollbar {
-  width: 4px;
-}
-.chat-body::-webkit-scrollbar-thumb {
-  background: rgba(0,0,0,0.1);
-  border-radius: 2px;
-}
-.chat-body::-webkit-scrollbar-track {
-  background: transparent;
-}
+/* 滚动条美化 - 使用上方的统一样式 */
 
 /* 反馈按钮 */
 .feedback-buttons {
@@ -544,7 +560,7 @@ async function handleFeedback(messageId: string, feedbackType: 'positive' | 'neg
   gap: 8px;
   margin-top: 8px;
   opacity: 0;
-  transition: opacity 0.2s ease;
+  transition: opacity var(--duration-normal) var(--ease-out);
 }
 
 .msg:hover .feedback-buttons {
@@ -555,22 +571,22 @@ async function handleFeedback(messageId: string, feedbackType: 'positive' | 'neg
   width: 28px;
   height: 28px;
   border: none;
-  background: rgba(255, 255, 255, 0.9);
+  background: var(--surface-glass-strong);
   border-radius: 50%;
   cursor: pointer;
   display: flex;
   align-items: center;
   justify-content: center;
-  color: #64748b;
-  transition: all 0.2s ease;
-  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.08);
+  color: var(--color-text-muted);
+  transition: all var(--duration-normal) var(--ease-out);
+  box-shadow: var(--shadow-sm);
 }
 
 .feedback-btn:hover {
-  background: #fff;
-  color: var(--accent-strong);
+  background: var(--color-background-white);
+  color: var(--color-primary);
   transform: scale(1.1);
-  box-shadow: 0 3px 8px rgba(0, 0, 0, 0.12);
+  box-shadow: var(--shadow-md);
 }
 
 .feedback-btn:active {
@@ -583,10 +599,32 @@ async function handleFeedback(messageId: string, feedbackType: 'positive' | 'neg
 }
 
 .feedback-btn:hover:first-child {
-  color: #10b981; /* 绿色 - 点赞 */
+  color: var(--color-success); /* 绿色 - 点赞 */
 }
 
 .feedback-btn:hover:last-child {
-  color: #ef4444; /* 红色 - 踩 */
+  color: var(--color-error); /* 红色 - 踩 */
+}
+
+/* Loading 动画 - 发送按钮 */
+.send-btn .animate-spin {
+  animation: spin 0.6s linear infinite;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* Reduced Motion 支持 */
+@media (prefers-reduced-motion: reduce) {
+  .animate-spin {
+    animation: none;
+  }
+
+  .msg {
+    animation: none;
+  }
 }
 </style>

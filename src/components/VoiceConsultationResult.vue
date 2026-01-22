@@ -438,7 +438,7 @@ const handleConfirm = () => {
 .result-page {
   width: 100%;
   height: 100%;
-  background: #f8fafc;
+  background: var(--color-background);
   display: flex;
   flex-direction: column;
   font-size: 14px;
@@ -451,12 +451,12 @@ const handleConfirm = () => {
   align-items: center;
   justify-content: space-between;
   flex-wrap: nowrap;
-  background: linear-gradient(to right, #ffffff, #f0f9ff);
+  background: var(--surface-glass);
   padding: 10px 16px;
-  box-shadow: 0 2px 8px rgba(24, 144, 255, 0.08);
+  box-shadow: var(--shadow-sm);
   z-index: 10;
   flex-shrink: 0;
-  border-bottom: 1px solid #e6f7ff;
+  border-bottom: 1px solid var(--color-border-light);
   cursor: grab;
 }
 
@@ -480,11 +480,11 @@ const handleConfirm = () => {
   height: 36px;
   border-radius: 50%;
   overflow: hidden;
-  background: #fff0f1;
+  background: var(--color-error-bg);
   display: flex;
   align-items: center;
   justify-content: center;
-  border: 1px solid #ffe4e6;
+  border: 1px solid var(--color-border-light);
   flex-shrink: 0;
 }
 
@@ -496,7 +496,7 @@ const handleConfirm = () => {
 .patient-name {
   font-size: 16px;
   font-weight: 700;
-  color: #1f2937;
+  color: var(--color-text-strong);
 }
 
 .patient-basic {
@@ -504,17 +504,17 @@ const handleConfirm = () => {
   align-items: center;
   gap: 8px;
   font-size: 14px;
-  color: #4b5563;
+  color: var(--color-text-medium);
 }
 
 .divider {
   width: 1px;
   height: 12px;
-  background: #d1d5db;
+  background: var(--color-border-medium);
 }
 
 .tag-ai {
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  background: linear-gradient(135deg, var(--color-primary) 0%, var(--color-primary-dark) 100%);
   color: white;
   padding: 4px 10px;
   border-radius: 12px;
@@ -527,7 +527,7 @@ const handleConfirm = () => {
   align-items: center;
   gap: 16px;
   font-size: 13px;
-  color: #6b7280;
+  color: var(--color-text-muted);
   pointer-events: auto; /* Re-enable for text selection if needed, though usually not needed for drag */
 }
 
@@ -542,35 +542,35 @@ const handleConfirm = () => {
 
 .header-btn {
   padding: 8px 18px;
-  border: 1px solid #d1d5db;
+  border: 1px solid var(--color-border-medium);
   border-radius: 8px;
-  background: white;
+  background: var(--color-background-white);
   font-size: 14px;
   font-weight: 500;
-  color: #374151;
+  color: var(--color-text-medium);
   cursor: pointer;
   display: flex;
   align-items: center;
   gap: 6px;
-  transition: all 0.2s;
+  transition: all var(--duration-normal) var(--ease-out);
 }
 
 .header-btn:hover {
-  background: #f3f4f6;
-  border-color: #9ca3af;
+  background: var(--color-background-hover);
+  border-color: var(--color-border-strong);
 }
 
 .header-btn.primary {
-  background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%);
+  background: linear-gradient(135deg, var(--color-cta) 0%, var(--color-cta-dark) 100%);
   border: none;
   color: white;
-  box-shadow: 0 4px 12px rgba(37, 99, 235, 0.25);
+  box-shadow: 0 4px 12px var(--color-primary-200);
 }
 
 .header-btn.primary:hover {
-  background: linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%);
+  filter: brightness(1.05);
   transform: translateY(-1px);
-  box-shadow: 0 6px 16px rgba(37, 99, 235, 0.3);
+  box-shadow: 0 6px 16px var(--color-primary-200);
 }
 
 .header-btn.primary:disabled {
@@ -585,14 +585,14 @@ const handleConfirm = () => {
 
 /* 提示信息 */
 .info-banner {
-  background: #fffbeb;
-  border-bottom: 1px solid #fde68a;
+  background: var(--color-warning-bg);
+  border-bottom: 1px solid var(--color-warning);
   padding: 10px 20px;
   display: flex;
   align-items: center;
   gap: 8px;
   font-size: 13px;
-  color: #92400e;
+  color: var(--color-warning-text);
 }
 
 .info-icon {
@@ -602,12 +602,12 @@ const handleConfirm = () => {
 .title-group h2 {
   margin: 0;
   font-size: 18px;
-  color: #1e293b;
+  color: var(--color-text-strong);
 }
 
 .sub-title {
   font-size: 13px;
-  color: #64748b;
+  color: var(--color-text-muted);
   margin-top: 4px;
   display: block;
 }
@@ -627,28 +627,28 @@ const handleConfirm = () => {
   display: flex;
   align-items: center;
   gap: 6px;
-  transition: all 0.2s;
+  transition: all var(--duration-normal) var(--ease-out);
 }
 
 .btn.primary {
-  background: #3b82f6;
+  background: var(--color-cta);
   color: white;
-  box-shadow: 0 4px 12px rgba(59, 130, 246, 0.2);
+  box-shadow: 0 4px 12px var(--color-primary-200);
 }
 
 .btn.primary:hover {
-  background: #2563eb;
+  filter: brightness(1.05);
   transform: translateY(-1px);
 }
 
 .btn.secondary {
-  background: #f1f5f9;
-  color: #64748b;
+  background: var(--color-background-gray);
+  color: var(--color-text-muted);
 }
 
 .btn.secondary:hover {
-  background: #e2e8f0;
-  color: #1e293b;
+  background: var(--color-background-hover);
+  color: var(--color-text-strong);
 }
 
 /* Main Layout */
@@ -679,23 +679,23 @@ const handleConfirm = () => {
 
 /* Sections */
 .form-section {
-  background: white;
+  background: var(--color-background-white);
   padding: 16px;
   border-radius: 12px;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
-  border: 1px solid #e2e8f0;
+  box-shadow: var(--shadow-sm);
+  border: 1px solid var(--color-border-light);
 }
 
 .sub-section {
   margin-top: 12px;
   padding-top: 12px;
-  border-top: 1px dashed #e2e8f0;
+  border-top: 1px dashed var(--color-border-light);
 }
 
 .sub-title {
   font-size: 13px;
   font-weight: 600;
-  color: #64748b;
+  color: var(--color-text-muted);
   margin-bottom: 8px;
 }
 
@@ -705,7 +705,7 @@ const handleConfirm = () => {
   gap: 8px;
   font-size: 15px;
   font-weight: 600;
-  color: #334155;
+  color: var(--color-text-strong);
   margin-bottom: 12px;
 }
 
@@ -724,7 +724,7 @@ const handleConfirm = () => {
 label {
   display: block;
   font-size: 12px;
-  color: #64748b;
+  color: var(--color-text-muted);
   margin-bottom: 4px;
   font-weight: 500;
 }
@@ -733,22 +733,22 @@ label {
 textarea.full-width {
   width: 100%;
   padding: 10px;
-  border: 1px solid #cbd5e1;
+  border: 1px solid var(--color-border-medium);
   border-radius: 6px;
   font-size: 14px;
   line-height: 1.5;
-  color: #1e293b;
+  color: var(--color-text-strong);
   resize: vertical;
-  background: #f8fafc;
-  transition: all 0.2s;
+  background: var(--color-background);
+  transition: all var(--duration-normal) var(--ease-out);
   box-sizing: border-box;
 }
 
 textarea.full-width:focus {
   outline: none;
-  border-color: #3b82f6;
-  background: white;
-  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+  border-color: var(--color-primary);
+  background: var(--color-background-white);
+  box-shadow: 0 0 0 3px var(--color-primary-100);
 }
 
 textarea.small-text {
@@ -764,8 +764,8 @@ textarea.small-text {
 }
 
 .list-item {
-  background: #f8fafc;
-  border: 1px solid #e2e8f0;
+  background: var(--color-background);
+  border: 1px solid var(--color-border-light);
   border-radius: 6px;
   padding: 8px 12px;
   font-size: 14px;
@@ -779,20 +779,20 @@ textarea.small-text {
 
 .item-name {
   font-weight: 500;
-  color: #1e293b;
+  color: var(--color-text-strong);
 }
 
 .item-code {
-  color: #64748b;
+  color: var(--color-text-muted);
   font-size: 12px;
-  background: #e2e8f0;
+  background: var(--color-background-gray);
   padding: 1px 6px;
   border-radius: 4px;
 }
 
 .match-tag {
   margin-left: auto;
-  color: #10b981;
+  color: var(--color-success);
   font-weight: bold;
   font-size: 12px;
 }
@@ -811,13 +811,13 @@ textarea.small-text {
 
 .med-name {
   font-weight: 600;
-  color: #1e293b;
+  color: var(--color-text-strong);
 }
 
 .med-spec {
   font-size: 12px;
-  color: #64748b;
-  background: #e2e8f0;
+  color: var(--color-text-muted);
+  background: var(--color-background-gray);
   padding: 1px 6px;
   border-radius: 4px;
 }
@@ -826,12 +826,12 @@ textarea.small-text {
   display: flex;
   gap: 12px;
   font-size: 13px;
-  color: #475569;
+  color: var(--color-text-medium);
 }
 
 .med-count {
   margin-left: auto;
-  color: #64748b;
+  color: var(--color-text-muted);
 }
 
 .exam-item {
@@ -841,13 +841,13 @@ textarea.small-text {
 }
 
 .empty-text {
-  color: #94a3b8;
+  color: var(--color-text-muted);
   font-size: 13px;
   text-align: center;
   padding: 10px;
-  background: #f8fafc;
+  background: var(--color-background);
   border-radius: 6px;
-  border: 1px dashed #cbd5e1;
+  border: 1px dashed var(--color-border-medium);
 }
 
 /* Loading State */
@@ -857,14 +857,14 @@ textarea.small-text {
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  color: #64748b;
+  color: var(--color-text-muted);
 }
 
 .spinner {
   width: 32px;
   height: 32px;
-  border: 3px solid #e2e8f0;
-  border-top-color: #3b82f6;
+  border: 3px solid var(--color-border-light);
+  border-top-color: var(--color-primary);
   border-radius: 50%;
   animation: spin 1s linear infinite;
   margin-bottom: 16px;
@@ -885,8 +885,14 @@ textarea.small-text {
 }
 
 ::-webkit-scrollbar-thumb {
-  background: #cbd5e1;
+  background: var(--color-border-medium);
   border-radius: 3px;
 }
 
+/* Content Body */
+.content-body {
+  flex: 1;
+  padding: 16px;
+  overflow: hidden;
+}
 </style>

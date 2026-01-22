@@ -143,7 +143,7 @@ const getRiskCategory = (cat: string) => {
   border-radius: 40px; 
   position: relative;
   z-index: 2;
-  transition: border-radius 0.2s; /* Smooth transition */
+  transition: border-radius var(--duration-normal) var(--ease-out); /* Smooth transition */
 }
 
 /* When expanded, remove bottom border radius to merge with detail panel */
@@ -208,7 +208,7 @@ const getRiskCategory = (cat: string) => {
 }
 
 .status-analyzing {
-  color: #3b82f6;
+  color: var(--color-primary);
   display: flex;
   align-items: center;
   gap: 6px;
@@ -220,14 +220,14 @@ const getRiskCategory = (cat: string) => {
   width: 6px;
   height: 6px;
   border-radius: 5px;
-  background-color: #3b82f6;
-  color: #3b82f6;
+  background-color: var(--color-primary);
+  color: var(--color-primary);
   animation: dot-flashing 1s infinite linear alternate;
   animation-delay: 0.5s;
 }
 
 @keyframes dot-flashing {
-  0% { background-color: #3b82f6; }
+  0% { background-color: var(--color-primary); }
   50%, 100% { background-color: rgba(59, 130, 246, 0.2); }
 }
 
@@ -239,7 +239,7 @@ const getRiskCategory = (cat: string) => {
   gap: 8px;
   padding: 2px 6px;
   border-radius: 4px;
-  transition: background 0.2s;
+  transition: background var(--duration-normal) var(--ease-out);
   user-select: none;
 }
 
@@ -275,7 +275,7 @@ const getRiskCategory = (cat: string) => {
   align-items: center;
   justify-content: center;
   cursor: pointer;
-  transition: all 0.2s ease;
+  transition: all var(--duration-normal) var(--ease-out);
   background: #f1f5f9;
   color: #64748b;
 }

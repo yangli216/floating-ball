@@ -210,7 +210,7 @@ onUnmounted(() => {
   align-items: center;
   justify-content: center;
   cursor: pointer;
-  transition: all 0.2s ease;
+  transition: all var(--duration-normal) var(--ease-out);
   color: #64748b;
 }
 
@@ -271,7 +271,7 @@ onUnmounted(() => {
 .confirm-btn {
   width: 100%;
   padding: 10px 16px;
-  background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%);
+  background: linear-gradient(135deg, var(--color-primary) 0%, var(--color-primary-dark) 100%);
   color: white;
   border: none;
   border-radius: 10px;
@@ -282,7 +282,7 @@ onUnmounted(() => {
   align-items: center;
   justify-content: center;
   gap: 8px;
-  transition: all 0.2s ease;
+  transition: all var(--duration-normal) var(--ease-out);
 }
 
 .confirm-btn:hover {
@@ -304,7 +304,7 @@ onUnmounted(() => {
 /* Transition animations */
 .bubble-enter-active,
 .bubble-leave-active {
-  transition: all 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+  transition: all var(--duration-slow) cubic-bezier(0.34, 1.56, 0.64, 1);
 }
 
 .bubble-enter-from,

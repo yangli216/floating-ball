@@ -4,7 +4,8 @@ import { ref } from 'vue';
 
 const selectedIcon = ref('mdi:account');
 const iconSize = ref(24);
-const iconColor = ref('#4a90e2');
+// 使用 CSS 变量的十六进制等价值作为默认值（与 --color-primary 对应）
+const iconColor = ref('#0891B2');
 
 // 常用医疗图标示例
 const medicalIcons = [
@@ -143,7 +144,7 @@ import Icon from './Icon.vue';
   &lt;Icon icon="mdi:account" /&gt;
 
   &lt;!-- 自定义大小和颜色 --&gt;
-  &lt;Icon icon="lucide:settings" size="24" color="#4a90e2" /&gt;
+  &lt;Icon icon="lucide:settings" size="24" color="var(--color-primary)" /&gt;
 
   &lt;!-- 在按钮中使用 --&gt;
   &lt;button&gt;
@@ -159,36 +160,44 @@ import Icon from './Icon.vue';
 </template>
 
 <style scoped>
+/**
+ * 组件样式规范：
+ * - 所有颜色使用 var(--color-*) 语义变量
+ * - 间距使用 var(--space-*)
+ * - 动画使用 var(--duration-*) 和 var(--ease-*)
+ * - 参考: src/styles/design-tokens.css
+ */
+
 .icon-showcase {
   max-width: 1200px;
   margin: 0 auto;
-  padding: 40px 20px;
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  padding: var(--space-2xl) var(--space-lg);
+  font-family: var(--font-body);
 }
 
 h1 {
-  font-size: 32px;
-  margin-bottom: 30px;
-  color: #2c3e50;
+  font-size: var(--font-size-4xl);
+  margin-bottom: var(--space-xl);
+  color: var(--color-text-strong);
 }
 
 h2 {
-  font-size: 24px;
-  margin: 30px 0 20px;
-  color: #34495e;
+  font-size: var(--font-size-2xl);
+  margin: var(--space-xl) 0 var(--space-lg);
+  color: var(--color-text-medium);
 }
 
 /* 预览器 */
 .preview-section {
-  background: #f8f9fa;
-  padding: 30px;
-  border-radius: 12px;
-  margin-bottom: 40px;
+  background: var(--color-background-gray);
+  padding: var(--space-xl);
+  border-radius: var(--radius-lg);
+  margin-bottom: var(--space-2xl);
 }
 
 .preview-container {
   display: flex;
-  gap: 40px;
+  gap: var(--space-2xl);
   align-items: center;
 }
 
@@ -199,34 +208,41 @@ h2 {
   display: flex;
   align-items: center;
   justify-content: center;
-  background: white;
-  border-radius: 12px;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+  background: var(--color-background-white);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-md);
 }
 
 .controls {
   flex: 1;
   display: flex;
   flex-direction: column;
-  gap: 20px;
+  gap: var(--space-lg);
 }
 
 .control-group {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: var(--space-sm);
 }
 
 .control-group label {
-  font-weight: 500;
-  color: #555;
+  font-weight: var(--font-weight-medium);
+  color: var(--color-text-weak);
 }
 
 .control-group input[type="text"] {
-  padding: 8px 12px;
-  border: 1px solid #ddd;
-  border-radius: 6px;
-  font-size: 14px;
+  padding: var(--space-sm) var(--space-md);
+  border: 1px solid var(--color-border-light);
+  border-radius: var(--radius-md);
+  font-size: var(--font-size-sm);
+  transition: border-color var(--duration-normal) var(--ease-out);
+}
+
+.control-group input[type="text"]:focus {
+  border-color: var(--color-primary);
+  outline: none;
+  box-shadow: var(--shadow-focus);
 }
 
 .control-group input[type="range"] {
@@ -237,89 +253,94 @@ h2 {
   width: 60px;
   height: 40px;
   border: none;
-  border-radius: 6px;
+  border-radius: var(--radius-md);
   cursor: pointer;
 }
 
 .hint {
-  margin-top: 20px;
-  font-size: 14px;
-  color: #666;
+  margin-top: var(--space-lg);
+  font-size: var(--font-size-sm);
+  color: var(--color-text-muted);
 }
 
 .hint a {
-  color: #4a90e2;
+  color: var(--color-primary);
   text-decoration: none;
+  transition: color var(--duration-fast) var(--ease-out);
 }
 
 .hint a:hover {
+  color: var(--color-primary-dark);
   text-decoration: underline;
 }
 
 /* 图标网格 */
 .icon-section {
-  margin-bottom: 40px;
+  margin-bottom: var(--space-2xl);
 }
 
 .icon-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
-  gap: 16px;
+  gap: var(--space-md);
 }
 
 .icon-item {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 8px;
-  padding: 20px;
-  background: white;
-  border: 1px solid #e0e0e0;
-  border-radius: 8px;
+  gap: var(--space-sm);
+  padding: var(--space-lg);
+  background: var(--color-background-white);
+  border: 1px solid var(--color-border-light);
+  border-radius: var(--radius-md);
   cursor: pointer;
-  transition: all 0.2s;
+  transition: all var(--duration-normal) var(--ease-out);
 }
 
 .icon-item:hover {
-  border-color: #4a90e2;
-  box-shadow: 0 2px 8px rgba(74, 144, 226, 0.2);
+  border-color: var(--color-primary);
+  box-shadow: 0 2px 8px var(--shadow-color);
   transform: translateY(-2px);
 }
 
 .icon-item span {
-  font-size: 14px;
-  color: #2c3e50;
+  font-size: var(--font-size-sm);
+  color: var(--color-text-strong);
   text-align: center;
 }
 
 .icon-item code {
-  font-size: 11px;
-  color: #666;
-  background: #f5f5f5;
+  font-size: var(--font-size-xs);
+  color: var(--color-text-muted);
+  background: var(--color-background-gray);
   padding: 2px 6px;
-  border-radius: 4px;
-  font-family: 'Courier New', monospace;
+  border-radius: var(--radius-sm);
+  font-family: var(--font-mono);
   text-align: center;
   word-break: break-all;
 }
 
-/* 代码示例 */
+/* 代码示例 - 使用深色代码块变量 */
 .code-section {
-  background: #282c34;
-  color: #abb2bf;
-  padding: 30px;
-  border-radius: 12px;
+  --code-bg: #1E293B;
+  --code-text: #E2E8F0;
+
+  background: var(--code-bg);
+  color: var(--code-text);
+  padding: var(--space-xl);
+  border-radius: var(--radius-lg);
   overflow-x: auto;
 }
 
 .code-section pre {
   margin: 0;
-  font-family: 'Courier New', monospace;
-  font-size: 14px;
-  line-height: 1.6;
+  font-family: var(--font-mono);
+  font-size: var(--font-size-sm);
+  line-height: var(--line-height-relaxed);
 }
 
 .code-section code {
-  color: #abb2bf;
+  color: var(--code-text);
 }
 </style>

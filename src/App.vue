@@ -974,7 +974,9 @@ const exitWork = async () => {
 </script>
 
 <template>
-  <div class="state-layer">
+  <a href="#main-content" class="skip-link">跳转到主要内容</a>
+
+  <div class="state-layer" id="main-content" tabindex="-1">
     <Transition name="morph">
       <div v-show="!isWorking" class="ball-layer" :style="containerStyle">
         <div 
@@ -983,26 +985,50 @@ const exitWork = async () => {
           :style="ballStyle"
         >
           <!-- 环绕菜单 -->
-          <div ref="ringMenuRef" class="ring-menu" :class="{ 'is-active': isHovered }">
-            <button class="ring-btn top" :class="{ 'manual-hover': hoveredBtnIndex === 0 }" @click.stop="openChat" title="打开对话">
-              <svg class="ring-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <div ref="ringMenuRef" class="ring-menu" :class="{ 'is-active': isHovered }" role="navigation" aria-label="主菜单">
+            <button
+              class="ring-btn top"
+              :class="{ 'manual-hover': hoveredBtnIndex === 0 }"
+              @click.stop="openChat"
+              aria-label="打开对话"
+              title="打开对话"
+            >
+              <svg class="ring-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
                 <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path>
               </svg>
             </button>
-            <button class="ring-btn right" :class="{ 'manual-hover': hoveredBtnIndex === 1 }" @click.stop="openSettings" title="设置">
-              <svg class="ring-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <button
+              class="ring-btn right"
+              :class="{ 'manual-hover': hoveredBtnIndex === 1 }"
+              @click.stop="openSettings"
+              aria-label="打开设置"
+              title="设置"
+            >
+              <svg class="ring-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
                 <circle cx="12" cy="12" r="3"></circle>
                 <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
               </svg>
             </button>
-            <button class="ring-btn bottom" :class="{ 'manual-hover': hoveredBtnIndex === 2 }" @click.stop="handleExitApp" title="退出">
-               <svg class="ring-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <button
+              class="ring-btn bottom"
+              :class="{ 'manual-hover': hoveredBtnIndex === 2 }"
+              @click.stop="handleExitApp"
+              aria-label="退出应用"
+              title="退出"
+            >
+               <svg class="ring-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
                 <path d="M18.36 6.64a9 9 0 1 1-12.73 0"></path>
                 <line x1="12" y1="2" x2="12" y2="12"></line>
               </svg>
             </button>
-             <button class="ring-btn left" :class="{ 'manual-hover': hoveredBtnIndex === 3 }" @click.stop="openConsultation" title="智能问诊">
-              <svg class="ring-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+             <button
+              class="ring-btn left"
+              :class="{ 'manual-hover': hoveredBtnIndex === 3 }"
+              @click.stop="openConsultation"
+              aria-label="打开智能问诊"
+              title="智能问诊"
+            >
+              <svg class="ring-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
                 <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
                 <polyline points="14 2 14 8 20 8"></polyline>
                 <line x1="16" y1="13" x2="8" y2="13"></line>
@@ -1185,7 +1211,7 @@ const exitWork = async () => {
   border-radius: 50%;
   border: none;
   background: rgba(255, 255, 255, 0.95);
-  color: var(--text-weak);
+  color: var(--color-text-weak);
   box-shadow: 0 4px 12px rgba(0,0,0,0.12);
   display: flex;
   align-items: center;
@@ -1194,7 +1220,7 @@ const exitWork = async () => {
   opacity: 0;
   pointer-events: none;
   transform: scale(0.4);
-  transition: all 0.3s var(--anim-ease);
+  transition: all 0.3s var(--ease-smooth);
 }
 
 .ring-menu.is-active .ring-btn {
@@ -1205,7 +1231,7 @@ const exitWork = async () => {
 .ring-btn:hover,
 .ring-btn.manual-hover {
   background: #fff;
-  color: var(--accent-strong);
+  color: var(--color-primary-dark);
   transform: scale(1.1) !important;
   box-shadow: 0 6px 14px rgba(121, 194, 255, 0.3);
 }
@@ -1262,10 +1288,27 @@ const exitWork = async () => {
 </style>
 
 <style>
-* {
-  margin: 0;
-  padding: 0;
-  box-sizing: border-box;
+/* 导入统一设计令牌 - 医疗产品设计系统 */
+@import './styles/design-tokens.css';
+
+/**
+ * 应用特定的变量覆盖
+ *
+ * 注意：大部分样式变量已统一迁移到 design-tokens.css
+ * 此处仅保留应用特定的覆盖值
+ */
+:root {
+  /* 玻璃态效果 - 使用自定义透明度以适配浮动球设计 */
+  --surface-glass: rgba(255, 255, 255, 0.65);
+  --surface-glass-weak: rgba(255, 255, 255, 0.45);
+}
+
+/* 修复 ChatPanel 输入框的双重焦点效果 */
+.chat-panel .input-wrapper input:focus,
+.chat-panel .input-wrapper input:focus-visible {
+  outline: none !important;
+  box-shadow: none !important;
+  border: none !important;
 }
 
 html,
@@ -1275,20 +1318,7 @@ body,
   height: 100%;
   overflow: hidden;
   background: transparent;
-  font-family: "PingFang SC", "Microsoft YaHei", sans-serif;
-}
-
-/* 主题变量：现代简约 + 玻璃质感 */
-:root {
-  --accent: #79c2ff;
-  --accent-strong: #4fa7ff;
-  --panel-bg: #f9fcff; /* 更亮一点的背景 */
-  --surface-glass: rgba(255, 255, 255, 0.65);
-  --surface-glass-weak: rgba(255, 255, 255, 0.45);
-  --text-strong: #1e293b;
-  --text-weak: #475569;
-  --anim-dur: 250ms;
-  --anim-ease: cubic-bezier(0.25, 1, 0.5, 1); /* 平滑减速，无回弹/过冲 */
+  font-family: var(--font-body);
 }
 
 /* 层布局：两种状态层叠并交叉淡化 */
@@ -1308,10 +1338,14 @@ body,
 }
 .assistant-layer { z-index: 1; }
 
-/* Morph 动画定义 */
+/* Morph 动画定义 - 性能优化：仅动画 transform 和 opacity */
 .morph-enter-active,
 .morph-leave-active {
-  transition: all var(--anim-dur) var(--anim-ease);
+  transition:
+    opacity var(--duration-normal) var(--ease-smooth),
+    transform var(--duration-normal) var(--ease-smooth);
+  /* 使用 GPU 加速 */
+  will-change: transform, opacity;
 }
 
 /* 面板进入前/离开后状态：缩小并定位到小球中心 */
@@ -1359,7 +1393,7 @@ body,
   align-items: center;
   justify-content: space-between;
   padding: 0 12px;
-  color: var(--text-strong);
+  color: var(--color-text-strong);
   background: linear-gradient(180deg, rgba(255,255,255,0.6) 0%, rgba(255,255,255,0.0) 100%);
   z-index: 10;
 }
@@ -1378,7 +1412,7 @@ body,
   font-weight: 600;
   font-size: 14px;
   letter-spacing: 0.5px;
-  color: var(--text-strong);
+  color: var(--color-text-strong);
   opacity: 0.9;
   text-shadow: 0 1px 2px rgba(255,255,255,0.8);
 }
@@ -1395,7 +1429,7 @@ body,
   align-items: center;
   justify-content: center;
   cursor: pointer;
-  color: var(--text-weak);
+  color: var(--color-text-weak);
   transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
   position: relative;
   overflow: hidden;

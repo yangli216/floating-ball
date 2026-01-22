@@ -60,8 +60,8 @@
 
           <div v-else-if="status === 'completed' && !hasIssues" class="success-state">
             <svg width="48" height="48" viewBox="0 0 24 24" fill="none">
-              <circle cx="12" cy="12" r="10" stroke="#10b981" stroke-width="2"/>
-              <path d="M8 12l3 3 5-5" stroke="#10b981" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+              <circle cx="12" cy="12" r="10" stroke="currentColor" stroke-width="2"/>
+              <path d="M8 12l3 3 5-5" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
             </svg>
             <div class="success-text">未发现明显问题</div>
             <div class="success-desc">内容已通过事实核查</div>
@@ -183,16 +183,17 @@ watch(() => props.status, (newStatus) => {
   bottom: 24px;
   right: 24px;
   width: 360px;
-  background: white;
+  background: var(--color-background-white);
   border-radius: 12px;
-  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.12);
+  box-shadow: var(--shadow-lg);
   overflow: hidden;
   z-index: 9999;
-  transition: all 0.3s ease;
+  transition: all var(--duration-slow) var(--ease-out);
+  border: 1px solid var(--color-border-light);
 }
 
 .fact-check-widget.expanded {
-  box-shadow: 0 12px 48px rgba(0, 0, 0, 0.18);
+  box-shadow: var(--shadow-xl);
 }
 
 .widget-header {
@@ -201,11 +202,11 @@ watch(() => props.status, (newStatus) => {
   justify-content: space-between;
   padding: 16px;
   cursor: pointer;
-  transition: background 0.2s;
+  transition: background var(--duration-normal) var(--ease-out);
 }
 
 .widget-header:hover {
-  background: #f9fafb;
+  background: var(--color-background-hover);
 }
 
 .header-left {
@@ -226,18 +227,18 @@ watch(() => props.status, (newStatus) => {
 }
 
 .icon-container.checking {
-  background: #dbeafe;
-  color: #2563eb;
+  background: var(--color-primary-100);
+  color: var(--color-primary);
 }
 
 .icon-container.has-issues {
-  background: #fee2e2;
-  color: #ef4444;
+  background: var(--color-error-bg);
+  color: var(--color-error);
 }
 
 .icon-container.success {
-  background: #d1fae5;
-  color: #10b981;
+  background: var(--color-success-bg);
+  color: var(--color-success);
 }
 
 .spinner-icon {
@@ -261,13 +262,13 @@ watch(() => props.status, (newStatus) => {
 .title {
   font-size: 14px;
   font-weight: 600;
-  color: #1f2937;
+  color: var(--color-text-strong);
   margin-bottom: 2px;
 }
 
 .subtitle {
   font-size: 12px;
-  color: #6b7280;
+  color: var(--color-text-muted);
 }
 
 .header-right {
@@ -275,8 +276,8 @@ watch(() => props.status, (newStatus) => {
 }
 
 .expand-icon {
-  color: #9ca3af;
-  transition: transform 0.3s;
+  color: var(--color-text-muted);
+  transition: transform var(--duration-slow) var(--ease-smooth);
 }
 
 .expand-icon.rotated {
@@ -284,7 +285,7 @@ watch(() => props.status, (newStatus) => {
 }
 
 .widget-content {
-  border-top: 1px solid #f3f4f6;
+  border-top: 1px solid var(--color-border-light);
   padding: 16px;
   max-height: 400px;
   overflow-y: auto;
@@ -297,7 +298,7 @@ watch(() => props.status, (newStatus) => {
 .progress-bar {
   width: 100%;
   height: 4px;
-  background: #e5e7eb;
+  background: var(--color-background-gray);
   border-radius: 2px;
   overflow: hidden;
   margin-bottom: 12px;
@@ -305,14 +306,14 @@ watch(() => props.status, (newStatus) => {
 
 .progress-fill {
   height: 100%;
-  background: linear-gradient(90deg, #3b82f6, #2563eb);
-  transition: width 0.3s;
+  background: linear-gradient(90deg, var(--color-primary), var(--color-primary-dark));
+  transition: width var(--duration-slow) var(--ease-out);
   border-radius: 2px;
 }
 
 .checking-text {
   font-size: 13px;
-  color: #6b7280;
+  color: var(--color-text-muted);
   text-align: center;
 }
 
@@ -330,22 +331,22 @@ watch(() => props.status, (newStatus) => {
 .issues-count {
   font-size: 13px;
   font-weight: 600;
-  color: #1f2937;
+  color: var(--color-text-strong);
 }
 
 .view-all-btn {
   font-size: 12px;
-  color: #2563eb;
+  color: var(--color-primary);
   background: none;
   border: none;
   cursor: pointer;
   padding: 4px 8px;
   border-radius: 4px;
-  transition: background 0.2s;
+  transition: background var(--duration-normal) var(--ease-out);
 }
 
 .view-all-btn:hover {
-  background: #dbeafe;
+  background: var(--color-primary-100);
 }
 
 .issue-items {
@@ -358,14 +359,14 @@ watch(() => props.status, (newStatus) => {
   display: flex;
   gap: 8px;
   padding: 10px;
-  background: #f9fafb;
+  background: var(--color-background);
   border-radius: 8px;
   cursor: pointer;
-  transition: all 0.2s;
+  transition: all var(--duration-normal) var(--ease-out);
 }
 
 .issue-item:hover {
-  background: #f3f4f6;
+  background: var(--color-background-hover);
   transform: translateX(-2px);
 }
 
@@ -380,18 +381,18 @@ watch(() => props.status, (newStatus) => {
 }
 
 .issue-severity.severity-high {
-  background: #fee2e2;
-  color: #ef4444;
+  background: var(--color-error-bg);
+  color: var(--color-error);
 }
 
 .issue-severity.severity-medium {
-  background: #fed7aa;
-  color: #f59e0b;
+  background: var(--color-warning-bg);
+  color: var(--color-warning);
 }
 
 .issue-severity.severity-low {
-  background: #dbeafe;
-  color: #3b82f6;
+  background: var(--color-primary-100);
+  color: var(--color-primary);
 }
 
 .issue-content {
@@ -401,14 +402,14 @@ watch(() => props.status, (newStatus) => {
 
 .issue-text {
   font-size: 13px;
-  color: #1f2937;
+  color: var(--color-text-strong);
   line-height: 1.5;
   margin-bottom: 4px;
 }
 
 .issue-target {
   font-size: 12px;
-  color: #6b7280;
+  color: var(--color-text-muted);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -421,17 +422,21 @@ watch(() => props.status, (newStatus) => {
   padding: 24px 16px;
 }
 
+.success-state svg {
+  color: var(--color-success);
+}
+
 .success-text {
   font-size: 14px;
   font-weight: 600;
-  color: #10b981;
+  color: var(--color-success);
   margin-top: 12px;
   margin-bottom: 4px;
 }
 
 .success-desc {
   font-size: 12px;
-  color: #6b7280;
+  color: var(--color-text-muted);
 }
 
 .widget-actions {
@@ -439,7 +444,7 @@ watch(() => props.status, (newStatus) => {
   gap: 8px;
   margin-top: 16px;
   padding-top: 16px;
-  border-top: 1px solid #f3f4f6;
+  border-top: 1px solid var(--color-border-light);
 }
 
 .action-btn {
@@ -449,32 +454,32 @@ watch(() => props.status, (newStatus) => {
   font-size: 13px;
   font-weight: 500;
   cursor: pointer;
-  transition: all 0.2s;
+  transition: all var(--duration-normal) var(--ease-out);
   border: none;
 }
 
 .action-btn.secondary {
-  background: #f3f4f6;
-  color: #6b7280;
+  background: var(--color-background-gray);
+  color: var(--color-text-muted);
 }
 
 .action-btn.secondary:hover {
-  background: #e5e7eb;
+  background: var(--color-background-hover);
 }
 
 .action-btn.primary {
-  background: #2563eb;
+  background: var(--color-primary);
   color: white;
 }
 
 .action-btn.primary:hover {
-  background: #1d4ed8;
+  filter: brightness(1.1);
 }
 
 /* Transitions */
 .slide-up-enter-active,
 .slide-up-leave-active {
-  transition: all 0.3s ease;
+  transition: all var(--duration-slow) var(--ease-out);
 }
 
 .slide-up-enter-from {
@@ -489,7 +494,7 @@ watch(() => props.status, (newStatus) => {
 
 .expand-enter-active,
 .expand-leave-active {
-  transition: all 0.3s ease;
+  transition: all var(--duration-slow) var(--ease-out);
   overflow: hidden;
 }
 
@@ -515,11 +520,11 @@ watch(() => props.status, (newStatus) => {
 }
 
 .widget-content::-webkit-scrollbar-thumb {
-  background: #d1d5db;
+  background: var(--color-border-medium);
   border-radius: 2px;
 }
 
 .widget-content::-webkit-scrollbar-thumb:hover {
-  background: #9ca3af;
+  background: var(--color-border-strong);
 }
 </style>

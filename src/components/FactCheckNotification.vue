@@ -98,28 +98,37 @@ const getPreviewText = () => {
 </script>
 
 <style scoped>
+/**
+ * 组件样式规范：
+ * - 所有颜色使用 var(--color-*) 语义变量
+ * - 间距使用 var(--space-*)
+ * - 动画使用 var(--duration-*) 和 var(--ease-*)
+ * - 参考: src/styles/design-tokens.css
+ */
+
 .fact-check-overlay {
   position: fixed;
   top: 0;
   left: 0;
   right: 0;
   bottom: 0;
-  background: rgba(0, 0, 0, 0.4);
+  background: var(--surface-overlay);
   display: flex;
   align-items: center;
   justify-content: center;
-  z-index: 10000;
+  z-index: var(--z-modal);
   backdrop-filter: blur(4px);
 }
 
 .fact-check-notification {
-  background: white;
-  border-radius: 16px;
-  padding: 24px;
+  background: var(--color-background-white);
+  border-radius: var(--radius-xl);
+  padding: var(--space-lg);
   max-width: 420px;
   width: 90%;
-  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.15);
-  animation: slideUp 0.3s ease-out;
+  box-shadow: var(--shadow-xl);
+  animation: slideUp var(--duration-slow) var(--ease-out);
+  border: 1px solid var(--color-border-light);
 }
 
 @keyframes slideUp {
@@ -136,89 +145,89 @@ const getPreviewText = () => {
 .notification-header {
   display: flex;
   align-items: center;
-  gap: 12px;
-  margin-bottom: 16px;
+  gap: var(--space-md);
+  margin-bottom: var(--space-md);
 }
 
 .header-icon {
   width: 24px;
   height: 24px;
-  color: #2563eb;
+  color: var(--color-primary);
   flex-shrink: 0;
 }
 
 .notification-header h3 {
   margin: 0;
-  font-size: 18px;
-  font-weight: 600;
-  color: #1f2937;
+  font-size: var(--font-size-lg);
+  font-weight: var(--font-weight-semibold);
+  color: var(--color-text-strong);
 }
 
 .notification-content {
-  margin-bottom: 24px;
+  margin-bottom: var(--space-lg);
 }
 
 .description {
-  margin: 0 0 16px 0;
-  font-size: 14px;
-  line-height: 1.6;
-  color: #6b7280;
+  margin: 0 0 var(--space-md) 0;
+  font-size: var(--font-size-sm);
+  line-height: var(--line-height-relaxed);
+  color: var(--color-text-muted);
 }
 
 .issue-preview {
-  background: #f3f4f6;
-  border-radius: 8px;
-  padding: 12px;
+  background: var(--color-background-gray);
+  border-radius: var(--radius-md);
+  padding: var(--space-md);
   position: relative;
 }
 
 .preview-text {
-  font-size: 13px;
-  line-height: 1.5;
-  color: #374151;
-  margin-bottom: 8px;
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  font-size: var(--font-size-sm);
+  line-height: var(--line-height-normal);
+  color: var(--color-text-medium);
+  margin-bottom: var(--space-sm);
+  font-family: var(--font-body);
 }
 
 .issue-badge {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  background: #1f2937;
+  background: var(--color-text-strong);
   color: white;
-  padding: 4px 10px;
-  border-radius: 12px;
-  font-size: 12px;
-  font-weight: 500;
+  padding: var(--space-xs) 10px;
+  border-radius: var(--radius-lg);
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-medium);
 }
 
 .issue-badge svg {
   width: 16px;
   height: 16px;
-  color: #ef4444;
+  color: var(--color-error);
 }
 
 .notification-actions {
   display: flex;
-  gap: 12px;
+  gap: var(--space-md);
   flex-direction: column;
 }
 
 .primary-button {
   width: 100%;
-  padding: 12px 24px;
-  background: #1f2937;
+  padding: var(--space-md) var(--space-lg);
+  background: var(--color-text-strong);
   color: white;
   border: none;
-  border-radius: 8px;
-  font-size: 14px;
-  font-weight: 500;
+  border-radius: var(--radius-md);
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-medium);
   cursor: pointer;
-  transition: all 0.2s;
+  transition: all var(--duration-normal) var(--ease-out);
 }
 
 .primary-button:hover {
-  background: #374151;
+  filter: brightness(1.2);
 }
 
 .primary-button:active {
@@ -227,20 +236,20 @@ const getPreviewText = () => {
 
 .secondary-button {
   width: 100%;
-  padding: 12px 24px;
-  background: white;
-  color: #1f2937;
-  border: 1px solid #d1d5db;
-  border-radius: 8px;
-  font-size: 14px;
-  font-weight: 500;
+  padding: var(--space-md) var(--space-lg);
+  background: var(--color-background-white);
+  color: var(--color-text-strong);
+  border: 1px solid var(--color-border-medium);
+  border-radius: var(--radius-md);
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-medium);
   cursor: pointer;
-  transition: all 0.2s;
+  transition: all var(--duration-normal) var(--ease-out);
 }
 
 .secondary-button:hover {
-  background: #f9fafb;
-  border-color: #9ca3af;
+  background: var(--color-background-hover);
+  border-color: var(--color-border-strong);
 }
 
 .secondary-button:active {
@@ -249,7 +258,7 @@ const getPreviewText = () => {
 
 .fade-enter-active,
 .fade-leave-active {
-  transition: opacity 0.3s ease;
+  transition: opacity var(--duration-slow) var(--ease-out);
 }
 
 .fade-enter-from,

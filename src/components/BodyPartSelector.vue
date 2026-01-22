@@ -590,29 +590,29 @@ onMounted(() => {
   margin: 0;
   font-size: 14px;
   font-weight: 600;
-  color: #1f2937;
+  color: var(--color-text-strong);
 }
 
 .clear-btn {
   padding: 4px 12px;
   font-size: 12px;
-  background: #f3f4f6;
+  background: var(--color-background-gray);
   border: none;
   border-radius: 4px;
-  color: #6b7280;
+  color: var(--color-text-muted);
   cursor: pointer;
-  transition: all 0.2s;
+  transition: all var(--duration-normal) var(--ease-out);
 }
 
 .clear-btn:hover {
-  background: #e5e7eb;
-  color: #374151;
+  background: var(--color-border-light);
+  color: var(--color-text-medium);
 }
 
 .body-view-toggle {
   display: flex;
   gap: 8px;
-  background: #f3f4f6;
+  background: var(--color-background-gray);
   border-radius: 6px;
   padding: 4px;
 }
@@ -624,14 +624,14 @@ onMounted(() => {
   background: transparent;
   border: none;
   border-radius: 4px;
-  color: #6b7280;
+  color: var(--color-text-muted);
   cursor: pointer;
-  transition: all 0.2s;
+  transition: all var(--duration-normal) var(--ease-out);
 }
 
 .view-btn.active {
   background: white;
-  color: #2563eb;
+  color: var(--color-primary-dark);
   font-weight: 500;
   box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
 }
@@ -680,7 +680,7 @@ onMounted(() => {
 /* Active 效果 - 蓝色半透明覆盖 */
 .body-view :deep(.body-part-group.active path) {
   fill: rgba(59, 130, 246, 0.35) !important;
-  stroke: #3b82f6 !important;
+  stroke: var(--color-primary) !important;
   stroke-width: 2.5;
   filter: drop-shadow(0 0 4px rgba(59, 130, 246, 0.4));
 }
@@ -688,7 +688,7 @@ onMounted(() => {
 /* Active + Hover 叠加效果 */
 .body-view :deep(.body-part-group.active:hover path) {
   fill: rgba(59, 130, 246, 0.45) !important;
-  stroke: #2563eb !important;
+  stroke: var(--color-primary-dark) !important;
   filter: drop-shadow(0 0 6px rgba(59, 130, 246, 0.5));
 }
 
@@ -697,12 +697,12 @@ onMounted(() => {
   min-height: 150px;
   max-height: 200px;
   overflow-y: auto;
-  transition: all 0.3s ease;
+  transition: all var(--duration-slow) var(--ease-out);
 }
 
 .part-symptoms {
   background: white;
-  border: 1px solid #e5e7eb;
+  border: 1px solid var(--color-border-light);
   border-radius: 8px;
   padding: 12px;
   animation: fadeIn 0.3s ease;
@@ -723,7 +723,7 @@ onMounted(() => {
   margin: 0 0 8px 0;
   font-size: 13px;
   font-weight: 600;
-  color: #1f2937;
+  color: var(--color-text-strong);
 }
 
 .symptom-chips {
@@ -735,17 +735,17 @@ onMounted(() => {
 .symptom-chip {
   padding: 6px 12px;
   font-size: 12px;
-  background: #eff6ff;
-  border: 1px solid #dbeafe;
+  background: var(--color-info-bg);
+  border: 1px solid var(--color-info-border);
   border-radius: 6px;
-  color: #2563eb;
+  color: var(--color-primary-dark);
   cursor: pointer;
-  transition: all 0.2s;
+  transition: all var(--duration-normal) var(--ease-out);
 }
 
 .symptom-chip:hover {
-  background: #dbeafe;
-  border-color: #93c5fd;
+  background: var(--color-info-border);
+  border-color: var(--color-info);
   transform: translateY(-1px);
 }
 
@@ -753,8 +753,8 @@ onMounted(() => {
   text-align: center;
   padding: 20px;
   font-size: 13px;
-  color: #9ca3af;
-  background: #f9fafb;
+  color: var(--color-text-disabled);
+  background: var(--color-background-gray);
   border-radius: 8px;
   animation: fadeIn 0.3s ease;
 }
@@ -765,16 +765,16 @@ onMounted(() => {
 }
 
 .symptoms-container::-webkit-scrollbar-track {
-  background: #f3f4f6;
+  background: var(--color-background-gray);
   border-radius: 3px;
 }
 
 .symptoms-container::-webkit-scrollbar-thumb {
-  background: #d1d5db;
+  background: var(--color-border-medium);
   border-radius: 3px;
 }
 
 .symptoms-container::-webkit-scrollbar-thumb:hover {
-  background: #9ca3af;
+  background: var(--color-border-strong);
 }
 </style>

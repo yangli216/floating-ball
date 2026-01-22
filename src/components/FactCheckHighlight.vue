@@ -183,7 +183,7 @@ const getSeverityText = () => {
 }
 
 .highlighted-text {
-  background: linear-gradient(to bottom, transparent 60%, rgba(239, 68, 68, 0.2) 60%);
+  background: linear-gradient(to bottom, transparent 60%, var(--color-error-bg) 60%);
   border-radius: 2px;
   padding: 0 2px;
 }
@@ -198,7 +198,7 @@ const getSeverityText = () => {
 }
 
 .issue-indicator svg {
-  transition: transform 0.2s;
+  transition: transform var(--duration-normal) var(--ease-smooth);
 }
 
 .issue-indicator:hover svg {
@@ -206,26 +206,26 @@ const getSeverityText = () => {
 }
 
 .issue-indicator.severity-high {
-  color: #ef4444;
+  color: var(--color-error);
 }
 
 .issue-indicator.severity-medium {
-  color: #f59e0b;
+  color: var(--color-warning);
 }
 
 .issue-indicator.severity-low {
-  color: #3b82f6;
+  color: var(--color-primary);
 }
 
 /* Global tooltip rendered via Teleport */
 .issue-tooltip-global {
-  background: #1f2937;
+  background: var(--color-text-strong);
   color: white;
   border-radius: 8px;
   padding: 14px;
   min-width: 250px;
   max-width: 450px;
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.2);
+  box-shadow: var(--shadow-lg);
   pointer-events: none;
   white-space: normal;
   word-wrap: break-word;
@@ -237,7 +237,7 @@ const getSeverityText = () => {
   width: 0;
   height: 0;
   border: 6px solid transparent;
-  border-top-color: #1f2937;
+  border-top-color: var(--color-text-strong);
 }
 
 .tooltip-header {
@@ -254,17 +254,17 @@ const getSeverityText = () => {
 }
 
 .severity-badge.severity-high {
-  background: #ef4444;
+  background: var(--color-error);
   color: white;
 }
 
 .severity-badge.severity-medium {
-  background: #f59e0b;
+  background: var(--color-warning);
   color: white;
 }
 
 .severity-badge.severity-low {
-  background: #3b82f6;
+  background: var(--color-primary);
   color: white;
 }
 
@@ -280,7 +280,7 @@ const getSeverityText = () => {
 .tooltip-suggestion {
   font-size: 12px;
   line-height: 1.4;
-  color: #d1d5db;
+  color: var(--color-border-medium);
   border-top: 1px solid rgba(255, 255, 255, 0.1);
   padding-top: 8px;
   white-space: normal;
@@ -294,7 +294,7 @@ const getSeverityText = () => {
 
 .tooltip-fade-enter-active,
 .tooltip-fade-leave-active {
-  transition: opacity 0.2s ease;
+  transition: opacity var(--duration-normal) var(--ease-out);
 }
 
 .tooltip-fade-enter-from,

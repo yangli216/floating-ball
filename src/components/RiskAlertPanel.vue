@@ -230,7 +230,7 @@ onUnmounted(() => {
 .confirm-btn {
   width: 100%;
   padding: 10px 16px;
-  background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%);
+  background: linear-gradient(135deg, var(--color-primary) 0%, var(--color-primary-dark) 100%);
   color: white;
   border: none;
   border-radius: 10px;
@@ -241,7 +241,7 @@ onUnmounted(() => {
   align-items: center;
   justify-content: center;
   gap: 6px;
-  transition: all 0.2s ease;
+  transition: all var(--duration-normal) var(--ease-out);
 }
 
 .confirm-btn svg {
@@ -251,7 +251,7 @@ onUnmounted(() => {
 
 .confirm-btn:hover {
   transform: translateY(-1px);
-  box-shadow: 0 4px 12px rgba(59, 130, 246, 0.4);
+  box-shadow: 0 4px 12px var(--color-primary-200);
 }
 
 .confirm-btn:active {
@@ -277,7 +277,7 @@ onUnmounted(() => {
   font-size: 14px;
   color: #64748b;
   cursor: pointer;
-  transition: all 0.2s ease;
+  transition: all var(--duration-normal) var(--ease-out);
 }
 
 .close-btn-text:hover {

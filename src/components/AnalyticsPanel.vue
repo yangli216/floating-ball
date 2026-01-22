@@ -290,13 +290,14 @@ function getTypeLabel(type: string): string {
 }
 
 function getTypeColor(type: string): string {
+  // 使用设计令牌中的颜色
   const colors: Record<string, string> = {
-    chat: '#4CAF50',
-    consultation: '#2196F3',
-    voice: '#FF9800',
-    reception: '#9C27B0',
+    chat: '#10B981',       // --color-success
+    consultation: '#0891B2', // --color-primary
+    voice: '#F59E0B',      // --color-warning
+    reception: '#8B5CF6',  // 紫色（医疗接诊）
   };
-  return colors[type] || '#757575';
+  return colors[type] || '#64748B'; // --color-text-muted
 }
 
 function formatDuration(ms: number): string {
@@ -315,9 +316,9 @@ onMounted(() => {
   display: flex;
   flex-direction: column;
   height: 100vh;
-  background: linear-gradient(135deg, #e3f2fd 0%, #f5f7fa 100%);
-  color: var(--text-strong);
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  background: linear-gradient(135deg, var(--color-primary-50) 0%, var(--color-background-gray) 100%);
+  color: var(--color-text-strong);
+  font-family: var(--font-body);
 }
 
 .header {
@@ -334,13 +335,13 @@ onMounted(() => {
   margin: 0;
   font-size: 24px;
   font-weight: 600;
-  color: var(--text-strong);
+  color: var(--color-text-strong);
 }
 
 .close-btn {
   background: none;
   border: none;
-  color: var(--text-weak);
+  color: var(--color-text-weak);
   font-size: 32px;
   cursor: pointer;
   padding: 0;
@@ -349,11 +350,11 @@ onMounted(() => {
   display: flex;
   align-items: center;
   justify-content: center;
-  transition: color 0.2s;
+  transition: color var(--duration-normal) var(--ease-out);
 }
 
 .close-btn:hover {
-  color: var(--text-strong);
+  color: var(--color-text-strong);
 }
 
 .content {
@@ -374,22 +375,22 @@ onMounted(() => {
   padding: 8px 20px;
   border: 1px solid rgba(0, 0, 0, 0.15);
   background: rgba(255, 255, 255, 0.8);
-  color: var(--text-strong);
+  color: var(--color-text-strong);
   border-radius: 20px;
   cursor: pointer;
-  transition: all 0.3s;
+  transition: all var(--duration-slow) var(--ease-out);
   font-size: 14px;
 }
 
 .range-btn:hover {
   background: rgba(255, 255, 255, 0.95);
-  border-color: var(--accent);
+  border-color: var(--color-primary);
   transform: translateY(-1px);
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
 }
 
 .range-btn.active {
-  background: linear-gradient(135deg, var(--accent) 0%, var(--accent-strong) 100%);
+  background: linear-gradient(135deg, var(--color-primary) 0%, var(--color-primary-dark) 100%);
   border-color: transparent;
   color: white;
   box-shadow: 0 4px 12px rgba(121, 194, 255, 0.4);
@@ -403,14 +404,14 @@ onMounted(() => {
   justify-content: center;
   padding: 60px 20px;
   gap: 20px;
-  color: var(--text-weak);
+  color: var(--color-text-weak);
 }
 
 .spinner {
   width: 50px;
   height: 50px;
   border: 4px solid rgba(0, 0, 0, 0.1);
-  border-top-color: var(--accent);
+  border-top-color: var(--color-primary);
   border-radius: 50%;
   animation: spin 1s linear infinite;
 }
@@ -441,18 +442,18 @@ onMounted(() => {
 
 .retry-btn {
   padding: 10px 24px;
-  background: var(--accent);
+  background: var(--color-primary);
   color: white;
   border: none;
   border-radius: 8px;
   font-size: 14px;
   font-weight: 600;
   cursor: pointer;
-  transition: all 0.3s;
+  transition: all var(--duration-slow) var(--ease-out);
 }
 
 .retry-btn:hover {
-  background: var(--accent-strong);
+  background: var(--color-primary-dark);
   transform: translateY(-1px);
   box-shadow: 0 4px 12px rgba(121, 194, 255, 0.4);
 }
@@ -475,13 +476,13 @@ onMounted(() => {
 .empty-message {
   font-size: 18px;
   font-weight: 600;
-  color: var(--text-strong);
+  color: var(--color-text-strong);
   margin: 0;
 }
 
 .empty-hint {
   font-size: 14px;
-  color: var(--text-weak);
+  color: var(--color-text-weak);
   margin: 0;
 }
 
@@ -501,7 +502,7 @@ onMounted(() => {
   display: flex;
   align-items: center;
   gap: 15px;
-  transition: all 0.3s;
+  transition: all var(--duration-slow) var(--ease-out);
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
 }
 
@@ -521,14 +522,14 @@ onMounted(() => {
 
 .stat-label {
   font-size: 12px;
-  color: var(--text-weak);
+  color: var(--color-text-weak);
   margin-bottom: 5px;
 }
 
 .stat-value {
   font-size: 28px;
   font-weight: 600;
-  color: var(--text-strong);
+  color: var(--color-text-strong);
 }
 
 /* Chart Sections */
@@ -545,7 +546,7 @@ onMounted(() => {
   margin: 0 0 20px 0;
   font-size: 18px;
   font-weight: 600;
-  color: var(--text-strong);
+  color: var(--color-text-strong);
 }
 
 /* Session Types */
@@ -571,7 +572,7 @@ onMounted(() => {
 
 .type-bar {
   height: 100%;
-  transition: width 0.5s ease;
+  transition: width var(--duration-slower) var(--ease-out);
   border-radius: 15px;
 }
 
@@ -582,12 +583,12 @@ onMounted(() => {
 }
 
 .type-label {
-  color: var(--text-strong);
+  color: var(--color-text-strong);
   font-weight: 500;
 }
 
 .type-count {
-  color: var(--text-weak);
+  color: var(--color-text-weak);
 }
 
 /* Feedback Statistics */
@@ -605,7 +606,7 @@ onMounted(() => {
 
 .feedback-label {
   min-width: 100px;
-  color: var(--text-strong);
+  color: var(--color-text-strong);
   font-size: 14px;
 }
 
@@ -619,22 +620,22 @@ onMounted(() => {
 
 .progress-fill {
   height: 100%;
-  transition: width 0.5s ease;
+  transition: width var(--duration-slower) var(--ease-out);
   border-radius: 12px;
 }
 
 .progress-fill.positive {
-  background: linear-gradient(90deg, #4CAF50, #66BB6A);
+  background: linear-gradient(90deg, var(--color-success), var(--color-success-border));
 }
 
 .progress-fill.adopted {
-  background: linear-gradient(90deg, #2196F3, #42A5F5);
+  background: linear-gradient(90deg, var(--color-primary), var(--color-primary-light));
 }
 
 .feedback-value {
   min-width: 60px;
   text-align: right;
-  color: var(--text-strong);
+  color: var(--color-text-strong);
   font-weight: 600;
   font-size: 14px;
 }
@@ -654,7 +655,7 @@ onMounted(() => {
   background: rgba(0, 0, 0, 0.03);
   border-radius: 8px;
   font-size: 14px;
-  color: var(--text-strong);
+  color: var(--color-text-strong);
 }
 
 .feedback-icon {
@@ -685,14 +686,14 @@ onMounted(() => {
 
 .perf-label {
   font-size: 12px;
-  color: var(--text-weak);
+  color: var(--color-text-weak);
   margin-bottom: 8px;
 }
 
 .perf-value {
   font-size: 24px;
   font-weight: 600;
-  color: var(--accent);
+  color: var(--color-primary);
 }
 
 /* Duration Display */
@@ -704,7 +705,7 @@ onMounted(() => {
 .duration-value {
   font-size: 36px;
   font-weight: 600;
-  color: var(--accent);
+  color: var(--color-primary);
 }
 
 /* Scrollbar */

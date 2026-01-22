@@ -15,11 +15,21 @@
 
     <!-- Right: Controls -->
     <div class="controls-section">
-      <button class="control-btn secondary" @click="togglePause" :title="isPaused ? '继续' : '暂停'">
-        <Icon :icon="isPaused ? 'lucide:play' : 'lucide:pause'" size="20" />
+      <button
+        class="control-btn secondary"
+        @click="togglePause"
+        :aria-label="isPaused ? '继续录音' : '暂停录音'"
+        :title="isPaused ? '继续' : '暂停'"
+      >
+        <Icon :icon="isPaused ? 'lucide:play' : 'lucide:pause'" size="20" aria-hidden="true" />
       </button>
-      <button class="control-btn primary" @click="handleStop" title="结束接诊">
-        <Icon icon="lucide:square" size="20" />
+      <button
+        class="control-btn primary"
+        @click="handleStop"
+        aria-label="结束接诊并保存录音"
+        title="结束接诊"
+      >
+        <Icon icon="lucide:square" size="20" aria-hidden="true" />
       </button>
     </div>
   </div>
@@ -28,6 +38,11 @@
 <script setup lang="ts">
 import { ref, onMounted, onUnmounted, computed } from 'vue';
 import { audioRecorder } from '../services/audioRecorder';
+
+// 获取当前主题的主色调
+const getPrimaryColor = () => {
+  return getComputedStyle(document.documentElement).getPropertyValue('--color-primary').trim() || '#0891B2';
+};
 import { RealtimeSpeechService, getAliyunSpeechConfig } from '../services/aliyunSpeech';
 import Icon from './Icon.vue';
 
@@ -41,6 +56,7 @@ const isPaused = ref(false);
 const duration = ref(0);
 const startTime = ref(0);
 const realtimeText = ref(''); // 实时识别文本
+const prefersReducedMotion = ref(false);
 let timerInterval: ReturnType<typeof setInterval> | null = null;
 let animationFrameId: number | null = null;
 let speechService: RealtimeSpeechService | null = null;
@@ -56,7 +72,7 @@ const formatTime = (seconds: number) => {
   return `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
 };
 
-const drawVisualizer = () => {
+const drawStaticVisualizer = () => {
   if (!canvasRef.value) return;
   const ctx = canvasRef.value.getContext('2d');
   if (!ctx) return;
@@ -66,7 +82,53 @@ const drawVisualizer = () => {
 
   const bufferLength = analyser.frequencyBinCount;
   const dataArray = new Uint8Array(bufferLength);
-  
+
+  // 静态显示 - 仅更新当前音量，无动画
+  analyser.getByteFrequencyData(dataArray);
+
+  ctx.clearRect(0, 0, canvasRef.value.width, canvasRef.value.height);
+
+  // 计算平均音量
+  const sum = dataArray.reduce((a, b) => a + b, 0);
+  const average = sum / bufferLength;
+  const percent = average / 255;
+
+  // 显示单个音量条
+  const barWidth = canvasRef.value.width * 0.6;
+  const height = Math.max(4, percent * canvasRef.value.height);
+  const x = (canvasRef.value.width - barWidth) / 2;
+  const y = (canvasRef.value.height - height) / 2;
+
+  ctx.fillStyle = getPrimaryColor();
+  ctx.globalAlpha = 0.7;
+  ctx.beginPath();
+  ctx.roundRect(x, y, barWidth, height, 2);
+  ctx.fill();
+};
+
+const drawVisualizer = () => {
+  if (!canvasRef.value) return;
+  const ctx = canvasRef.value.getContext('2d');
+  if (!ctx) return;
+
+  const analyser = audioRecorder.getAnalyser();
+  if (!analyser) return;
+
+  // 如果用户偏好减少动画，使用静态显示
+  if (prefersReducedMotion.value) {
+    // 使用 setInterval 定期更新，而不是 requestAnimationFrame
+    const updateInterval = setInterval(() => {
+      if (isPaused.value) return;
+      drawStaticVisualizer();
+    }, 100); // 每 100ms 更新一次，足够显示音量变化
+
+    // 清理函数
+    return () => clearInterval(updateInterval);
+  }
+
+  const bufferLength = analyser.frequencyBinCount;
+  const dataArray = new Uint8Array(bufferLength);
+
   const draw = () => {
     if (isPaused.value) {
       animationFrameId = requestAnimationFrame(draw);
@@ -76,33 +138,33 @@ const drawVisualizer = () => {
     analyser.getByteFrequencyData(dataArray);
 
     ctx.clearRect(0, 0, canvasRef.value!.width, canvasRef.value!.height);
-    
+
     // Draw simplified waveform (bars)
     const barWidth = 3;
     const gap = 2;
     const totalBars = Math.floor(canvasRef.value!.width / (barWidth + gap));
-    
+
     // Use a subset of frequency data for better visuals (low-mid frequencies)
     const step = Math.floor(bufferLength / totalBars);
 
-    ctx.fillStyle = '#3b82f6';
-    
+    ctx.fillStyle = getPrimaryColor();
+
     for(let i = 0; i < totalBars; i++) {
       const dataIndex = i * step;
       const value = dataArray[dataIndex] || 0;
       const percent = value / 255;
       const height = Math.max(4, percent * canvasRef.value!.height);
       const y = (canvasRef.value!.height - height) / 2;
-      
+
       // Dynamic color opacity based on volume
       ctx.globalAlpha = 0.3 + (percent * 0.7);
-      
+
       // Draw rounded rect equivalent
       ctx.beginPath();
       ctx.roundRect((i * (barWidth + gap)), y, barWidth, height, 2);
       ctx.fill();
     }
-    
+
     animationFrameId = requestAnimationFrame(draw);
   };
 
@@ -228,7 +290,21 @@ const saveAudioForDebug = async (blob: Blob) => {
 };
 
 onMounted(() => {
+  // 检查用户是否偏好减少动画
+  const mediaQuery = window.matchMedia('(prefers-reduced-motion: reduce)');
+  prefersReducedMotion.value = mediaQuery.matches;
+
+  // 监听偏好变化
+  const handleMotionPreferenceChange = (e: MediaQueryListEvent) => {
+    prefersReducedMotion.value = e.matches;
+    console.log('[VoiceCapsule] Motion preference changed:', e.matches ? 'reduced' : 'normal');
+  };
+  mediaQuery.addEventListener('change', handleMotionPreferenceChange);
+
+  // 启动录音
   startRecording();
+
+  // 清理函数会在 onUnmounted 中处理
 });
 
 onUnmounted(() => {
@@ -237,6 +313,10 @@ onUnmounted(() => {
   audioRecorder.setOnAudioChunk(undefined);
   audioRecorder.stop().catch(() => {});
   if (speechService) { speechService.close(); speechService = null; }
+
+  // 清理媒体查询监听器
+  const mediaQuery = window.matchMedia('(prefers-reduced-motion: reduce)');
+  mediaQuery.removeEventListener('change', () => {});
 });
 </script>
 
@@ -282,7 +362,7 @@ onUnmounted(() => {
   position: absolute;
   inset: -4px;
   border-radius: 50%;
-  border: 2px solid #3b82f6;
+  border: 2px solid var(--color-primary);
   opacity: 0;
   animation: pulse-ring 2s infinite;
 }
@@ -324,7 +404,7 @@ onUnmounted(() => {
   align-items: center;
   justify-content: center;
   cursor: pointer;
-  transition: all 0.2s ease;
+  transition: all var(--duration-normal) var(--ease-out);
 }
 
 .control-btn svg {
