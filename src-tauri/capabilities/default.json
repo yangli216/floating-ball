@@ -16,6 +16,10 @@
     "process:default",
     "store:default",
     "updater:default",
-    "deep-link:default"
+    "deep-link:default",
+    "dialog:default",
+    "dialog:allow-save",
+    "fs:default",
+    "fs:allow-write-text-file"
   ]
 }

@@ -49,7 +49,7 @@ class FeedbackService {
         return;
       }
 
-      const endTime = Date.now();
+      const endTime = Math.floor(Date.now() / 1000); // Convert to Unix timestamp in seconds
       await invoke('update_session_status', {
         sessionId: targetSessionId,
         status,

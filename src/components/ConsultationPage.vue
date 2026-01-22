@@ -499,6 +499,7 @@ import { medicalDataService, type DiagnosisItem } from '../services/medicalData'
 import Pinyin from 'tiny-pinyin';
 import { chat } from '../services/llm';
 import { invoke } from '@tauri-apps/api/core';
+import { feedbackService } from '../services/feedback';
 import BodyPartSelector from './BodyPartSelector.vue';
 import SystemCategorySelector from './SystemCategorySelector.vue';
 import { PROMPTS } from '../prompts';
@@ -977,6 +978,7 @@ const fetchAIDiagnosis = async () => {
   selectedDiagnosis.value = null;
 
   try {
+    const startTime = Date.now();
     let fullResponse = "";
     fullResponse = await chat([
       {
@@ -994,6 +996,7 @@ const fetchAIDiagnosis = async () => {
         })
       }
     ]);
+    const latencyMs = Date.now() - startTime;
 
     // Clean up response if it contains markdown code blocks
     let diagnoses: Diagnosis[] = parseLLMJson(fullResponse);
@@ -1032,6 +1035,29 @@ const fetchAIDiagnosis = async () => {
 
     aiDiagnoses.value = diagnoses;
 
+    // Save diagnosis recommendations to database
+    try {
+      for (const diagnosis of diagnoses) {
+        await feedbackService.saveRecommendation({
+          recType: 'diagnosis',
+          content: JSON.stringify(diagnosis),
+          matched: !!diagnosis.id,
+          matchConfidence: diagnosis.id ? 1.0 : 0.0,
+          latencyMs,
+        });
+      }
+
+      // Record performance metric
+      await feedbackService.recordMetric({
+        metricType: 'llm_latency',
+        metricValue: latencyMs,
+        unit: 'ms',
+        context: { operation: 'diagnosis_recommendation' }
+      });
+    } catch (err) {
+      console.error('[ConsultationPage] Failed to save diagnosis recommendations:', err);
+    }
+
     // Perform automatic fact checking on all diagnoses
     performDiagnosisFactCheck(diagnoses);
   } catch (e) {
@@ -1040,6 +1066,20 @@ const fetchAIDiagnosis = async () => {
   } finally {
     aiLoading.value = false;
   }
+};
+
+// Helper function to deduplicate issues
+const deduplicateIssues = (issues: FactCheckIssue[]): FactCheckIssue[] => {
+  const seen = new Set<string>();
+  return issues.filter(issue => {
+    // Create a unique key based on content and issue description
+    const key = `${issue.content || ''}-${issue.issue}`;
+    if (seen.has(key)) {
+      return false;
+    }
+    seen.add(key);
+    return true;
+  });
 };
 
 // Fact Check Functions
@@ -1057,6 +1097,8 @@ const performDiagnosisFactCheck = async (diagnoses: Diagnosis[]) => {
   diagnosisFactChecks.value.clear();
   factCheckWidgetIssues.value = [];
 
+  const allIssues: FactCheckIssue[] = [];
+
   // Check each diagnosis
   for (let i = 0; i < diagnoses.length; i++) {
     const diag = diagnoses[i];
@@ -1069,8 +1111,8 @@ const performDiagnosisFactCheck = async (diagnoses: Diagnosis[]) => {
 
       diagnosisFactChecks.value.set(diag.code, result);
 
-      if (result.hasIssues) {
-        factCheckWidgetIssues.value.push(...result.issues);
+      if (result.hasIssues && Array.isArray(result.issues)) {
+        allIssues.push(...result.issues);
       }
 
       // Update progress
@@ -1080,6 +1122,9 @@ const performDiagnosisFactCheck = async (diagnoses: Diagnosis[]) => {
       console.error(`Failed to fact check diagnosis: ${diag.name}`, e);
     }
   }
+
+  // Deduplicate and update issues
+  factCheckWidgetIssues.value = deduplicateIssues(allIssues);
 
   // Update widget to completed state
   factCheckWidgetStatus.value = 'completed';
@@ -1097,6 +1142,8 @@ const performTreatmentFactCheck = async (treatments: TreatmentRecommendation[]) 
 
   treatmentFactChecks.value.clear();
   factCheckWidgetIssues.value = [];
+
+  const allIssues: FactCheckIssue[] = [];
 
   for (let i = 0; i < treatments.length; i++) {
     const treatment = treatments[i];
@@ -1118,8 +1165,8 @@ const performTreatmentFactCheck = async (treatments: TreatmentRecommendation[]) 
 
       treatmentFactChecks.value.set(treatment.name, result);
 
-      if (result.hasIssues) {
-        factCheckWidgetIssues.value.push(...result.issues);
+      if (result.hasIssues && Array.isArray(result.issues)) {
+        allIssues.push(...result.issues);
       }
 
       // Update progress
@@ -1129,6 +1176,9 @@ const performTreatmentFactCheck = async (treatments: TreatmentRecommendation[]) 
       console.error(`Failed to fact check treatment: ${treatment.name}`, e);
     }
   }
+
+  // Deduplicate and update issues
+  factCheckWidgetIssues.value = deduplicateIssues(allIssues);
 
   // Update widget to completed state
   factCheckWidgetStatus.value = 'completed';
@@ -1208,12 +1258,13 @@ const handleDiagnosisSelect = (diag: Diagnosis) => {
 
 const fetchTreatmentRecommendation = async () => {
   if (!selectedDiagnosis.value) return;
-  
+
   treatmentLoading.value = true;
   treatmentError.value = null;
   treatmentRecommendations.value = [];
 
   try {
+    const startTime = Date.now();
     let fullResponse = "";
     fullResponse = await chat([
       {
@@ -1232,9 +1283,10 @@ const fetchTreatmentRecommendation = async () => {
         })
       }
     ]);
+    const latencyMs = Date.now() - startTime;
 
     const rawRecommendations: any[] = parseLLMJson(fullResponse);
-    
+
     // Match against catalog
     const processedRecs: TreatmentRecommendation[] = rawRecommendations.map(rec => {
       let matchedItem = null;
@@ -1253,6 +1305,29 @@ const fetchTreatmentRecommendation = async () => {
     });
 
     treatmentRecommendations.value = processedRecs;
+
+    // Save treatment recommendations to database
+    try {
+      for (const rec of processedRecs) {
+        await feedbackService.saveRecommendation({
+          recType: rec.type === 'medicine' ? 'medication' : 'examination',
+          content: JSON.stringify(rec),
+          matched: !!rec.matchedItem,
+          matchConfidence: rec.matchedItem ? 1.0 : 0.0,
+          latencyMs: latencyMs,
+        });
+      }
+
+      // Record performance metric
+      await feedbackService.recordMetric({
+        metricType: 'llm_latency',
+        metricValue: latencyMs,
+        unit: 'ms',
+        context: { operation: 'treatment_recommendation' }
+      });
+    } catch (err) {
+      console.error('[ConsultationPage] Failed to save treatment recommendations:', err);
+    }
 
     // Perform automatic fact checking on treatments
     performTreatmentFactCheck(processedRecs);

@@ -85,6 +85,7 @@ pub struct PerformanceMetric {
 
 // Statistics Types
 #[derive(Debug, Serialize, Deserialize, Clone)]
+#[serde(rename_all = "camelCase")]
 pub struct SessionStatistics {
     pub total_sessions: i32,
     pub active_sessions: i32,
@@ -98,6 +99,7 @@ pub struct SessionStatistics {
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
+#[serde(rename_all = "camelCase")]
 pub struct FeedbackStatistics {
     pub total_feedbacks: i32,
     pub positive_count: i32,
@@ -112,6 +114,7 @@ pub struct FeedbackStatistics {
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
+#[serde(rename_all = "camelCase")]
 pub struct PerformanceStatistics {
     pub avg_llm_latency_ms: Option<f64>,
     pub avg_api_latency_ms: Option<f64>,

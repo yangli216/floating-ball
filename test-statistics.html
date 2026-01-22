@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Test Statistics API</title>
+</head>
+<body>
+    <h1>Test Statistics Query</h1>
+    <button id="testBtn">Test Query</button>
+    <pre id="output"></pre>
+
+    <script>
+        const { invoke } = window.__TAURI__.core;
+
+        document.getElementById('testBtn').addEventListener('click', async () => {
+            const output = document.getElementById('output');
+            output.textContent = 'Testing...\n';
+
+            try {
+                const now = Math.floor(Date.now() / 1000);
+                const thirtyDaysAgo = now - (30 * 24 * 60 * 60);
+
+                output.textContent += `Query range: ${new Date(thirtyDaysAgo * 1000).toISOString()} to ${new Date(now * 1000).toISOString()}\n\n`;
+
+                output.textContent += 'Calling get_session_statistics...\n';
+                const result = await invoke('get_session_statistics', {
+                    startDate: thirtyDaysAgo,
+                    endDate: now
+                });
+
+                output.textContent += 'Success!\n';
+                output.textContent += JSON.stringify(result, null, 2);
+            } catch (err) {
+                output.textContent += 'ERROR:\n';
+                output.textContent += err.toString();
+                console.error(err);
+            }
+        });
+    </script>
+</body>
+</html>

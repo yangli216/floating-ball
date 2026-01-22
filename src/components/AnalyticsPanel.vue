@@ -217,6 +217,7 @@ async function loadStatistics() {
   loading.value = true;
   error.value = null;
   try {
+    console.log('[AnalyticsPanel] Starting to load statistics...');
     const now = new Date();
     let startTimestamp: number | undefined;
     let endTimestamp: number | undefined;
@@ -229,21 +230,42 @@ async function loadStatistics() {
 
     endTimestamp = Math.floor(now.getTime() / 1000); // Convert to Unix timestamp in seconds
 
+    console.log('[AnalyticsPanel] Query range:', {
+      startTimestamp,
+      endTimestamp,
+      startDate: startTimestamp ? new Date(startTimestamp * 1000).toISOString() : 'all',
+      endDate: new Date(endTimestamp * 1000).toISOString()
+    });
+
     // Load all statistics
-    const [sessions, feedbacks, performance] = await Promise.all([
-      feedbackService.getSessionStatistics(startTimestamp, endTimestamp),
-      feedbackService.getFeedbackStatistics(startTimestamp, endTimestamp),
-      feedbackService.getPerformanceStatistics(startTimestamp, endTimestamp),
-    ]);
+    console.log('[AnalyticsPanel] Calling feedbackService.getSessionStatistics...');
+    const sessions = await feedbackService.getSessionStatistics(startTimestamp, endTimestamp);
+    console.log('[AnalyticsPanel] Session statistics loaded:', sessions);
+
+    console.log('[AnalyticsPanel] Calling feedbackService.getFeedbackStatistics...');
+    const feedbacks = await feedbackService.getFeedbackStatistics(startTimestamp, endTimestamp);
+    console.log('[AnalyticsPanel] Feedback statistics loaded:', feedbacks);
+
+    console.log('[AnalyticsPanel] Calling feedbackService.getPerformanceStatistics...');
+    const performance = await feedbackService.getPerformanceStatistics(startTimestamp, endTimestamp);
+    console.log('[AnalyticsPanel] Performance statistics loaded:', performance);
 
     sessionStats.value = sessions;
     feedbackStats.value = feedbacks;
     performanceStats.value = performance;
+
+    console.log('[AnalyticsPanel] All statistics loaded successfully');
   } catch (err) {
-    console.error('Failed to load statistics:', err);
+    console.error('[AnalyticsPanel] Failed to load statistics:', err);
+    console.error('[AnalyticsPanel] Error details:', {
+      message: err instanceof Error ? err.message : String(err),
+      stack: err instanceof Error ? err.stack : undefined,
+      raw: err
+    });
     error.value = err instanceof Error ? err.message : '加载统计数据失败';
   } finally {
     loading.value = false;
+    console.log('[AnalyticsPanel] Loading finished. loading=false');
   }
 }
 
