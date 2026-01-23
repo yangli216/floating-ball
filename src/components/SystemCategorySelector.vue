@@ -212,15 +212,15 @@ const filteredSymptoms = computed(() => {
 }
 
 .system-card:hover {
-  border-color: var(--color-info-border);
+  border-color: var(--color-primary, #0891B2);
   background: var(--color-background-gray);
   transform: translateY(-2px);
   box-shadow: var(--shadow-sm);
 }
 
 .system-card.active {
-  background: var(--color-info-bg);
-  border-color: var(--color-info);
+  background: var(--color-background, #ECFEFF);
+  border-color: var(--color-primary, #0891B2);
   box-shadow: 0 0 0 3px var(--color-primary-100);
 }
 
@@ -232,7 +232,7 @@ const filteredSymptoms = computed(() => {
 }
 
 .system-card.active .system-icon {
-  color: var(--color-info);
+  color: var(--color-primary, #0891B2);
   transform: scale(1.1);
 }
 
@@ -245,7 +245,7 @@ const filteredSymptoms = computed(() => {
 }
 
 .system-card.active .system-label {
-  color: var(--color-info);
+  color: var(--color-primary, #0891B2);
   font-weight: var(--font-weight-semibold);
 }
 
@@ -280,18 +280,18 @@ const filteredSymptoms = computed(() => {
 .symptom-chip {
   padding: 6px var(--space-md);
   font-size: var(--font-size-xs);
-  background: var(--color-info-bg);
-  border: 1px solid var(--color-info-border);
+  background: var(--color-background, #ECFEFF);
+  border: 1px solid var(--color-primary, #0891B2);
   border-radius: var(--radius-md);
-  color: var(--color-info);
+  color: var(--color-primary, #0891B2);
   cursor: pointer;
   transition: all var(--duration-normal) var(--ease-out);
   white-space: nowrap;
 }
 
 .symptom-chip:hover {
-  background: var(--color-info-border);
-  border-color: var(--color-info);
+  background: var(--color-primary-100);
+  border-color: var(--color-primary, #0891B2);
   transform: translateY(-1px);
 }
 
