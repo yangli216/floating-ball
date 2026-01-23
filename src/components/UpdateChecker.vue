@@ -124,7 +124,24 @@ const installUpdate = async () => {
     
     await relaunch();
   } catch (e: any) {
-    error.value = `更新失败: ${e.message}`;
+    console.error('Update install error:', e);
+    // 处理不同类型的错误对象
+    let errorMsg = '未知错误';
+    if (typeof e === 'string') {
+      errorMsg = e;
+    } else if (e?.message) {
+      errorMsg = e.message;
+    } else if (e?.toString && e.toString() !== '[object Object]') {
+      errorMsg = e.toString();
+    } else {
+      // 尝试 JSON 序列化
+      try {
+        errorMsg = JSON.stringify(e);
+      } catch {
+        errorMsg = '安装过程中发生未知错误';
+      }
+    }
+    error.value = `更新失败: ${errorMsg}`;
     installing.value = false;
   }
 };
