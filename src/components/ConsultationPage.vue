@@ -5,9 +5,7 @@
       <div class="patient-card">
         <!-- Avatar -->
         <div class="avatar" :style="{ background: avatarConfig.bgColor }">
-          <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-            <path d="M12 2C6.48 2 2 6.48 2 12C2 17.52 6.48 22 12 22C17.52 22 22 17.52 22 12C22 6.48 17.52 2 12 2ZM12 5C13.66 5 15 6.34 15 8C15 9.66 13.66 11 12 11C10.34 11 9 9.66 9 8C9 6.34 10.34 5 12 5ZM12 19.2C9.5 19.2 7.29 17.92 6 15.98C6.03 13.99 10 12.9 12 12.9C13.99 12.9 17.97 13.99 18 15.98C16.71 17.92 14.5 19.2 12 19.2Z" :fill="avatarConfig.color"/>
-          </svg>
+          <Icon :icon="avatarConfig.icon" :color="avatarConfig.color" size="48" />
         </div>
         
         <!-- Name -->
@@ -38,7 +36,15 @@
       <!-- Header Actions -->
       <div class="header-actions">
         <template v-if="currentView === 'consultation'">
-             <button class="header-btn primary" @click="handleEndConsultation">生成病历</button>
+             <button
+               class="header-btn primary"
+               :disabled="isGenerating"
+               :aria-busy="isGenerating"
+               @click="handleEndConsultation"
+             >
+               <Icon v-if="isGenerating" icon="lucide:loader-2" class="animate-spin" size="16" aria-hidden="true" />
+               <span>{{ isGenerating ? '生成中...' : '生成病历' }}</span>
+             </button>
         </template>
         <template v-else-if="currentView === 'record'">
              <button class="header-btn" @click="currentView = 'consultation'">返回</button>
@@ -142,7 +148,7 @@
               <div class="form-header">
                 <h2>{{ item.key === 'general' ? item.name : (item.name + ' - 症状属性问诊') }}</h2>
                 <button v-if="item.key !== 'general'" class="icon-btn remove-btn" @click="removeSymptom(item)" title="移除此症状">
-                  <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>
+                  <Icon icon="lucide:trash-2" size="16" />
                 </button>
               </div>
       
@@ -274,9 +280,7 @@
           <div class="panel-header">
             <h3>病历详情</h3>
             <button class="icon-btn" @click="copyToClipboard" title="复制全部">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <path d="M8 2h12v12h-12zM4 6v14h14M8 6h10M8 10h10M8 14h6"></path>
-              </svg>
+              <Icon icon="lucide:copy" size="16" />
             </button>
           </div>
           <div class="panel-body">
@@ -324,7 +328,9 @@
                 >
                   <div class="diag-header">
                     <div class="diag-name-group">
-                      <span class="diag-name">{{ diag.name }} ({{ diag.code }})</span>
+                      <FactCheckHighlight :issue="getIssueForDiagnosis(diag.code)">
+                        <span class="diag-name">{{ diag.name }} ({{ diag.code }})</span>
+                      </FactCheckHighlight>
                       <div class="inline-related-trigger" @click="toggleRelatedDropdown(diag, $event)" title="切换同类诊断">
                         <span class="arrow" :class="{ open: openRelatedCode === diag.code }">▼</span>
                       </div>
@@ -382,7 +388,9 @@
                   <div class="rec-content">
                     <div class="rec-header">
                       <span class="rec-tag" :class="rec.type">{{ rec.type === 'medicine' ? '药' : '检' }}</span>
-                      <span class="rec-name">{{ rec.name }}</span>
+                      <FactCheckHighlight :issue="getIssueForTreatment(rec.name)">
+                        <span class="rec-name">{{ rec.name }}</span>
+                      </FactCheckHighlight>
                       <span v-if="rec.matchedItem" class="matched-inline">
                         <span class="match-icon">✓</span>
                         <span class="match-name">{{ rec.matchedItem.name }}</span>
@@ -468,6 +476,27 @@
          </div>
        </div>
     </div>
+
+    <!-- Fact Check Notification -->
+    <FactCheckNotification
+      v-model="showFactCheckNotification"
+      :result="factCheckResult"
+      @confirm="showFactCheckNotification = false"
+      @view-details="showFactCheckNotification = false"
+    />
+
+    <!-- Fact Check Widget (Right Bottom Corner) -->
+    <FactCheckWidget
+      :visible="showFactCheckWidget"
+      :status="factCheckWidgetStatus"
+      :issues="factCheckWidgetIssues"
+      :progress="factCheckProgress"
+      :checked-count="factCheckCheckedCount"
+      :total-count="factCheckTotalCount"
+      @close="showFactCheckWidget = false"
+      @view-all="showFactCheckWidget = false"
+      @issue-click="(issue) => console.log('Issue clicked:', issue)"
+    />
   </div>
 </template>
 
@@ -478,8 +507,15 @@ import { medicalDataService, type DiagnosisItem } from '../services/medicalData'
 import Pinyin from 'tiny-pinyin';
 import { chat } from '../services/llm';
 import { invoke } from '@tauri-apps/api/core';
+import { feedbackService } from '../services/feedback';
 import BodyPartSelector from './BodyPartSelector.vue';
 import SystemCategorySelector from './SystemCategorySelector.vue';
+import { PROMPTS } from '../prompts';
+import Icon from './Icon.vue';
+import FactCheckNotification from './FactCheckNotification.vue';
+import FactCheckHighlight from './FactCheckHighlight.vue';
+import FactCheckWidget from './FactCheckWidget.vue';
+import { checkDiagnosis, checkMedicine, checkExamination, type FactCheckResult, type FactCheckIssue } from '../services/factChecker';
 
 const showToast = inject('showToast') as (msg: string, type: 'success' | 'error' | 'info') => void;
 
@@ -556,8 +592,9 @@ const avatarConfig = computed(() => {
   const isMale = info.sdSex === '1' || info.sdSexText === '男性' || info.sdSexText === '男';
 
   return {
-    color: isMale ? '#79c2ff' : '#ff9a9e',
-    bgColor: isMale ? '#f0f9ff' : '#fff0f1'
+    color: isMale ? 'var(--color-primary)' : 'var(--color-secondary)', // 医疗蓝 for male, 青色 for female
+    bgColor: isMale ? 'var(--color-background)' : 'var(--color-background-gray)', // 使用设计令牌背景色
+    icon: isMale ? 'mdi:human-male' : 'mdi:human-female'
   };
 });
 
@@ -615,6 +652,23 @@ const treatmentError = ref<string | null>(null);
 const treatmentRecommendations = ref<TreatmentRecommendation[]>([]);
 
 const finalRecord = ref<FinalRecord | null>(null);
+
+// Generating medical record loading state
+const isGenerating = ref(false);
+
+// Fact Check State
+const showFactCheckNotification = ref(false);
+const factCheckResult = ref<FactCheckResult | null>(null);
+const diagnosisFactChecks = ref<Map<string, FactCheckResult>>(new Map());
+const treatmentFactChecks = ref<Map<string, FactCheckResult>>(new Map());
+
+// Fact Check Widget State
+const showFactCheckWidget = ref(false);
+const factCheckWidgetStatus = ref<'idle' | 'checking' | 'completed'>('idle');
+const factCheckWidgetIssues = ref<FactCheckIssue[]>([]);
+const factCheckProgress = ref(0);
+const factCheckCheckedCount = ref(0);
+const factCheckTotalCount = ref(0);
 
 // General Condition Configuration
 const generalConditionConfig = {
@@ -879,7 +933,10 @@ const handleCheckboxChange = (event: Event, field: any, symptomKey: string) => {
 
 const validationErrors = ref<Record<string, boolean>>({});
 
-const handleEndConsultation = () => {
+const handleEndConsultation = async () => {
+  // 防止重复提交
+  if (isGenerating.value) return;
+
   // 1. Validation
   const errors: string[] = [];
   validationErrors.value = {}; // Reset errors
@@ -897,7 +954,7 @@ const handleEndConsultation = () => {
 
   if (errors.length > 0) {
     showToast("请完善以下信息：" + errors.join("; "), "error");
-    
+
     // Scroll to first error
     if (firstErrorFieldId) {
       const element = document.getElementById(firstErrorFieldId);
@@ -908,14 +965,25 @@ const handleEndConsultation = () => {
     return;
   }
 
-  // 2. Generation Logic
-  generateMedicalRecord();
+  // 2. Start loading
+  isGenerating.value = true;
 
-  // 3. Switch View
-  currentView.value = 'record';
+  try {
+    // 3. Generation Logic
+    generateMedicalRecord();
 
-  // 4. Trigger AI Diagnosis
-  fetchAIDiagnosis();
+    // 4. Switch View
+    currentView.value = 'record';
+
+    // 5. Trigger AI Diagnosis
+    await fetchAIDiagnosis();
+  } catch (error) {
+    console.error('Failed to generate medical record:', error);
+    showToast('生成病历失败，请稍后重试', 'error');
+  } finally {
+    // 6. Always clear loading state
+    isGenerating.value = false;
+  }
 };
 
 const parseLLMJson = (text: string): any => {
@@ -934,38 +1002,26 @@ const fetchAIDiagnosis = async () => {
   aiDiagnoses.value = [];
   selectedDiagnosis.value = null;
 
-  const prompt = `
-你是一个专业的医疗辅助助手。请根据以下患者信息、主诉和现病史，推荐最可能的3个ICD10诊断结果。
-请严格按照JSON数组格式返回，不要包含Markdown标记或其他多余文本。
-
-患者信息：
-姓名：${patientInfo.value.naPi}
-性别：${patientInfo.value.sdSexText}
-年龄：${patientInfo.value.ageText}
-
-主诉：
-${generatedRecord.value.chiefComplaint}
-
-现病史：
-${generatedRecord.value.historyOfPresentIllness}
-
-返回格式要求：
-[
-  {
-    "code": "ICD10编码",
-    "name": "诊断名称",
-    "rate": "符合率(例如 95%)",
-    "rationale": "简短推荐理由"
-  }
-]
-`;
-
   try {
+    const startTime = Date.now();
     let fullResponse = "";
     fullResponse = await chat([
-      { role: 'system', content: '你是一个专业的医疗辅助助手，只返回JSON格式的数据。' },
-      { role: 'user', content: prompt }
+      {
+        role: 'system',
+        content: PROMPTS.consultation.diagnosisRecommendation.system
+      },
+      {
+        role: 'user',
+        content: PROMPTS.consultation.diagnosisRecommendation.buildUserPrompt({
+          patientName: patientInfo.value.naPi,
+          gender: patientInfo.value.sdSexText,
+          age: patientInfo.value.ageText,
+          chiefComplaint: generatedRecord.value.chiefComplaint,
+          historyOfPresentIllness: generatedRecord.value.historyOfPresentIllness
+        })
+      }
     ]);
+    const latencyMs = Date.now() - startTime;
 
     // Clean up response if it contains markdown code blocks
     let diagnoses: Diagnosis[] = parseLLMJson(fullResponse);
@@ -1003,12 +1059,166 @@ ${generatedRecord.value.historyOfPresentIllness}
     });
 
     aiDiagnoses.value = diagnoses;
+
+    // Save diagnosis recommendations to database
+    try {
+      for (const diagnosis of diagnoses) {
+        await feedbackService.saveRecommendation({
+          recType: 'diagnosis',
+          content: JSON.stringify(diagnosis),
+          matched: !!diagnosis.id,
+          matchConfidence: diagnosis.id ? 1.0 : 0.0,
+          latencyMs,
+        });
+      }
+
+      // Record performance metric
+      await feedbackService.recordMetric({
+        metricType: 'llm_latency',
+        metricValue: latencyMs,
+        unit: 'ms',
+        context: { operation: 'diagnosis_recommendation' }
+      });
+    } catch (err) {
+      console.error('[ConsultationPage] Failed to save diagnosis recommendations:', err);
+    }
+
+    // Perform automatic fact checking on all diagnoses
+    performDiagnosisFactCheck(diagnoses);
   } catch (e) {
     console.error("Failed to fetch AI diagnosis", e);
     aiError.value = "无法获取诊断建议，请稍后重试或检查网络。";
   } finally {
     aiLoading.value = false;
   }
+};
+
+// Helper function to deduplicate issues
+const deduplicateIssues = (issues: FactCheckIssue[]): FactCheckIssue[] => {
+  const seen = new Set<string>();
+  return issues.filter(issue => {
+    // Create a unique key based on content and issue description
+    const key = `${issue.content || ''}-${issue.issue}`;
+    if (seen.has(key)) {
+      return false;
+    }
+    seen.add(key);
+    return true;
+  });
+};
+
+// Fact Check Functions
+const performDiagnosisFactCheck = async (diagnoses: Diagnosis[]) => {
+  if (!diagnoses || diagnoses.length === 0) return;
+
+  // Show widget in checking state
+  showFactCheckWidget.value = true;
+  factCheckWidgetStatus.value = 'checking';
+  factCheckTotalCount.value = diagnoses.length;
+  factCheckCheckedCount.value = 0;
+  factCheckProgress.value = 0;
+
+  // Clear previous checks
+  diagnosisFactChecks.value.clear();
+  factCheckWidgetIssues.value = [];
+
+  const allIssues: FactCheckIssue[] = [];
+
+  // Check each diagnosis
+  for (let i = 0; i < diagnoses.length; i++) {
+    const diag = diagnoses[i];
+    try {
+      const result = await checkDiagnosis({
+        diagnosis: diag.name,
+        chiefComplaint: generatedRecord.value.chiefComplaint,
+        historyOfPresentIllness: generatedRecord.value.historyOfPresentIllness
+      });
+
+      diagnosisFactChecks.value.set(diag.code, result);
+
+      if (result.hasIssues && Array.isArray(result.issues)) {
+        allIssues.push(...result.issues);
+      }
+
+      // Update progress
+      factCheckCheckedCount.value = i + 1;
+      factCheckProgress.value = Math.round(((i + 1) / diagnoses.length) * 100);
+    } catch (e) {
+      console.error(`Failed to fact check diagnosis: ${diag.name}`, e);
+    }
+  }
+
+  // Deduplicate and update issues
+  factCheckWidgetIssues.value = deduplicateIssues(allIssues);
+
+  // Update widget to completed state
+  factCheckWidgetStatus.value = 'completed';
+};
+
+const performTreatmentFactCheck = async (treatments: TreatmentRecommendation[]) => {
+  if (!treatments || treatments.length === 0) return;
+
+  // Show widget in checking state
+  showFactCheckWidget.value = true;
+  factCheckWidgetStatus.value = 'checking';
+  factCheckTotalCount.value = treatments.length;
+  factCheckCheckedCount.value = 0;
+  factCheckProgress.value = 0;
+
+  treatmentFactChecks.value.clear();
+  factCheckWidgetIssues.value = [];
+
+  const allIssues: FactCheckIssue[] = [];
+
+  for (let i = 0; i < treatments.length; i++) {
+    const treatment = treatments[i];
+    try {
+      let result: FactCheckResult;
+
+      if (treatment.type === 'medicine') {
+        result = await checkMedicine({
+          medicineName: treatment.name,
+          dosage: treatment.usage,
+          diagnosis: selectedDiagnosis.value?.name
+        });
+      } else {
+        result = await checkExamination({
+          examinationName: treatment.name,
+          diagnosis: selectedDiagnosis.value?.name
+        });
+      }
+
+      treatmentFactChecks.value.set(treatment.name, result);
+
+      if (result.hasIssues && Array.isArray(result.issues)) {
+        allIssues.push(...result.issues);
+      }
+
+      // Update progress
+      factCheckCheckedCount.value = i + 1;
+      factCheckProgress.value = Math.round(((i + 1) / treatments.length) * 100);
+    } catch (e) {
+      console.error(`Failed to fact check treatment: ${treatment.name}`, e);
+    }
+  }
+
+  // Deduplicate and update issues
+  factCheckWidgetIssues.value = deduplicateIssues(allIssues);
+
+  // Update widget to completed state
+  factCheckWidgetStatus.value = 'completed';
+};
+
+const getIssueForDiagnosis = (diagCode: string): FactCheckIssue | undefined => {
+  const check = diagnosisFactChecks.value.get(diagCode);
+  if (!check || !check.hasIssues || check.issues.length === 0) return undefined;
+  return check.issues[0]; // Return first issue
+};
+
+const getIssueForTreatment = (treatmentName: string): FactCheckIssue | undefined => {
+  const check = treatmentFactChecks.value.get(treatmentName);
+  if (!check || !check.hasIssues || check.issues.length === 0) return undefined;
+  return check.issues[0]; // Return first issue
 };
 
 const openRelatedCode = ref<string | null>(null);
@@ -1073,40 +1283,35 @@ const handleDiagnosisSelect = (diag: Diagnosis) => {
 
 const fetchTreatmentRecommendation = async () => {
   if (!selectedDiagnosis.value) return;
-  
+
   treatmentLoading.value = true;
   treatmentError.value = null;
   treatmentRecommendations.value = [];
 
-  const prompt = `
-你是一个专业的医疗辅助助手。
-患者信息：${patientInfo.value.naPi}，${patientInfo.value.sdSexText}，${patientInfo.value.ageText}。
-已选诊断：${selectedDiagnosis.value.name} (ICD10: ${selectedDiagnosis.value.code})。
-主诉：${generatedRecord.value.chiefComplaint}
-
-请根据诊断结果，推荐3-5个最需要的药品（通用名）和1-2个必要的检验检查项目。
-请严格按照JSON数组格式返回，不要包含Markdown标记或其他多余文本。
-
-返回格式要求：
-[
-  {
-    "type": "medicine", // 或 "exam"
-    "name": "通用名称",
-    "reason": "推荐理由",
-    "usage": "建议用法用量(仅药品需要)"
-  }
-]
-`;
-
   try {
+    const startTime = Date.now();
     let fullResponse = "";
     fullResponse = await chat([
-      { role: 'system', content: '你是一个专业的医疗辅助助手，只返回JSON格式的数据。' },
-      { role: 'user', content: prompt }
+      {
+        role: 'system',
+        content: PROMPTS.consultation.treatmentRecommendation.system
+      },
+      {
+        role: 'user',
+        content: PROMPTS.consultation.treatmentRecommendation.buildUserPrompt({
+          patientName: patientInfo.value.naPi,
+          gender: patientInfo.value.sdSexText,
+          age: patientInfo.value.ageText,
+          diagnosisName: selectedDiagnosis.value.name,
+          diagnosisCode: selectedDiagnosis.value.code,
+          chiefComplaint: generatedRecord.value.chiefComplaint
+        })
+      }
     ]);
+    const latencyMs = Date.now() - startTime;
 
     const rawRecommendations: any[] = parseLLMJson(fullResponse);
-    
+
     // Match against catalog
     const processedRecs: TreatmentRecommendation[] = rawRecommendations.map(rec => {
       let matchedItem = null;
@@ -1125,6 +1330,32 @@ const fetchTreatmentRecommendation = async () => {
     });
 
     treatmentRecommendations.value = processedRecs;
+
+    // Save treatment recommendations to database
+    try {
+      for (const rec of processedRecs) {
+        await feedbackService.saveRecommendation({
+          recType: rec.type === 'medicine' ? 'medication' : 'examination',
+          content: JSON.stringify(rec),
+          matched: !!rec.matchedItem,
+          matchConfidence: rec.matchedItem ? 1.0 : 0.0,
+          latencyMs: latencyMs,
+        });
+      }
+
+      // Record performance metric
+      await feedbackService.recordMetric({
+        metricType: 'llm_latency',
+        metricValue: latencyMs,
+        unit: 'ms',
+        context: { operation: 'treatment_recommendation' }
+      });
+    } catch (err) {
+      console.error('[ConsultationPage] Failed to save treatment recommendations:', err);
+    }
+
+    // Perform automatic fact checking on treatments
+    performTreatmentFactCheck(processedRecs);
   } catch (e) {
     console.error("Failed to fetch treatment recommendations", e);
     treatmentError.value = "无法获取治疗方案建议。";
@@ -1334,9 +1565,9 @@ const copyToClipboard = () => {
   display: flex;
   flex-direction: column;
   height: 100vh;
-  background-color: #eff6ff; /* Livelier light blue background */
-  color: #1f2937;
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  background-color: var(--color-background, #ECFEFF); /* 医疗背景色 */
+  color: var(--color-text-strong, #0F172A);
+  font-family: var(--font-body);
   font-size: 14px; /* Base font size */
   overflow: hidden;
 }
@@ -1346,12 +1577,12 @@ const copyToClipboard = () => {
   align-items: center;
   justify-content: space-between;
   flex-wrap: nowrap;
-  background: linear-gradient(to right, #ffffff, #f0f9ff);
+  background: linear-gradient(to right, var(--color-background-white), var(--color-background));
   padding: 8px 16px; /* Reduced padding */
-  box-shadow: 0 2px 8px rgba(24, 144, 255, 0.08);
+  box-shadow: 0 2px 8px rgba(8, 145, 178, 0.08);
   z-index: 10;
   flex-shrink: 0;
-  border-bottom: 1px solid #e6f7ff;
+  border-bottom: 1px solid var(--color-border-light);
 }
 
 .patient-card {
@@ -1369,11 +1600,11 @@ const copyToClipboard = () => {
   height: 32px;
   border-radius: 50%;
   overflow: hidden;
-  background: #fff0f1;
+  background: var(--color-background-gray);
   display: flex;
   align-items: center;
   justify-content: center;
-  border: 1px solid #ffe4e6;
+  border: 1px solid var(--color-border-light);
 }
 
 .avatar svg {
@@ -1384,7 +1615,7 @@ const copyToClipboard = () => {
 .patient-name {
   font-size: 16px; /* Slightly reduced */
   font-weight: 700;
-  color: #1f2937;
+  color: var(--color-text-strong);
 }
 
 .patient-basic {
@@ -1392,18 +1623,18 @@ const copyToClipboard = () => {
   align-items: center;
   gap: 8px;
   font-size: 14px;
-  color: #4b5563;
+  color: var(--color-text-weak);
 }
 
 .divider {
   width: 1px;
   height: 12px;
-  background: #d1d5db;
+  background: var(--color-border-medium);
 }
 
 .tag-blue {
-  background: #dbeafe;
-  color: #2563eb;
+  background: var(--color-info-bg);
+  color: var(--color-info);
   padding: 2px 8px;
   border-radius: 4px;
   font-size: 12px;
@@ -1411,8 +1642,8 @@ const copyToClipboard = () => {
 }
 
 .tag-green {
-  background: #dcfce7;
-  color: #16a34a;
+  background: var(--color-success-bg);
+  color: var(--color-success);
   padding: 2px 8px;
   border-radius: 12px; /* Pill shape */
   font-size: 12px;
@@ -1424,7 +1655,7 @@ const copyToClipboard = () => {
   align-items: center;
   gap: 16px;
   font-size: 14px; /* Increased to 14px */
-  color: #6b7280;
+  color: var(--color-text-muted);
   margin-left: auto; /* Push to right if space permits, or just standard flow */
 }
 
@@ -1447,32 +1678,60 @@ const copyToClipboard = () => {
 
 .header-btn {
   padding: 6px 16px;
-  border: 1px solid #d1d5db;
-  background: white;
+  border: 1px solid var(--color-border-medium);
+  background: var(--color-background-white);
   border-radius: 18px;
-  color: #4b5563;
+  color: var(--color-text-weak);
   cursor: pointer;
   font-size: 13px;
-  transition: all 0.2s;
+  transition: all var(--duration-normal) var(--ease-out);
   font-weight: 500;
 }
 
 .header-btn:hover {
-  background: #f3f4f6;
-  border-color: #9ca3af;
-  color: #1f2937;
+  background: var(--color-background-gray);
+  border-color: var(--color-border-strong);
+  color: var(--color-text-strong);
 }
 
 .header-btn.primary {
-  background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%);
+  background: var(--color-cta);
   color: white;
   border: none;
-  box-shadow: 0 2px 6px rgba(37, 99, 235, 0.2);
+  box-shadow: 0 2px 6px var(--color-cta-200);
 }
 
 .header-btn.primary:hover {
+  background: var(--color-cta-hover);
   transform: translateY(-1px);
-  box-shadow: 0 4px 10px rgba(37, 99, 235, 0.3);
+  box-shadow: 0 4px 10px var(--color-cta-200);
+}
+
+.header-btn.primary:disabled {
+  background: var(--color-border-medium);
+  cursor: not-allowed;
+  transform: none;
+  box-shadow: none;
+}
+
+/* Loading 动画样式 */
+.header-btn .animate-spin {
+  display: inline-block;
+  animation: spin 0.6s linear infinite;
+  margin-right: var(--space-xs, 4px);
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* Reduced Motion 支持 */
+@media (prefers-reduced-motion: reduce) {
+  .header-btn .animate-spin {
+    animation: none;
+  }
 }
 
 .content-container {
@@ -1485,7 +1744,7 @@ const copyToClipboard = () => {
   width: 300px; /* Optimized width for body diagram */
   background: rgba(255, 255, 255, 0.95);
   backdrop-filter: blur(10px);
-  border-right: 1px solid #e6f7ff;
+  border-right: 1px solid var(--color-border-light);
   display: flex;
   flex-direction: column;
   flex-shrink: 0;
@@ -1498,7 +1757,7 @@ const copyToClipboard = () => {
   display: flex;
   padding: 10px;
   gap: 6px;
-  border-bottom: 1px solid #e6f7ff;
+  border-bottom: 1px solid var(--color-border-light);
   background: transparent;
   flex-shrink: 0;
 }
@@ -1508,24 +1767,24 @@ const copyToClipboard = () => {
   padding: 6px 8px;
   font-size: 12px;
   background: transparent;
-  border: 1px solid #dbeafe;
+  border: 1px solid var(--color-border-light);
   border-radius: 6px;
-  color: #6b7280;
+  color: var(--color-text-muted);
   cursor: pointer;
-  transition: all 0.2s;
+  transition: all var(--duration-normal) var(--ease-out);
   font-weight: 500;
   white-space: nowrap;
 }
 
 .tab-btn:hover {
-  background: #f9fafb;
-  border-color: #93c5fd;
+  background: var(--color-background-gray);
+  border-color: var(--color-info-border);
 }
 
 .tab-btn.active {
-  background: #eff6ff;
-  border-color: #3b82f6;
-  color: #2563eb;
+  background: var(--color-background, #ECFEFF);
+  border-color: var(--color-primary, #0891B2);
+  color: var(--color-primary, #0891B2);
   font-weight: 600;
 }
 
@@ -1543,15 +1802,15 @@ const copyToClipboard = () => {
   margin: 0;
   font-size: 14px; /* Adjusted to 14px */
   font-weight: 600;
-  color: #0c4a6e; /* Dark blue text */
-  border-bottom: 1px solid #e6f7ff;
+  color: var(--color-text-primary); /* Dark cyan text */
+  border-bottom: 1px solid var(--color-border-light);
   background: transparent;
   flex-shrink: 0;
 }
 
 .search-box {
   padding: 10px; /* Reduced padding */
-  border-bottom: 1px solid #e6f7ff;
+  border-bottom: 1px solid var(--color-border-light);
   background: transparent;
   flex-shrink: 0;
 }
@@ -1559,18 +1818,18 @@ const copyToClipboard = () => {
 .search-input {
   width: 100%;
   padding: 6px 10px; /* Reduced padding */
-  border: 1px solid #dbeafe; /* Blue-100 */
+  border: 1px solid var(--color-border-light); /* Light border */
   border-radius: 6px;
   font-size: 14px; /* Adjusted to 14px */
   box-sizing: border-box;
   outline: none;
-  background: #ffffff;
-  transition: all 0.3s;
+  background: var(--color-background-white);
+  transition: all var(--duration-slow) var(--ease-out);
 }
 
 .search-input:focus {
-  border-color: #3b82f6; /* Blue-500 */
-  box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.2);
+  border-color: var(--color-primary); /* Primary color on focus */
+  box-shadow: 0 0 0 2px var(--color-primary-200);
 }
 
 .symptom-list {
@@ -1585,29 +1844,29 @@ const copyToClipboard = () => {
 .symptom-list li {
   padding: 8px 16px; /* Reduced padding */
   cursor: pointer;
-  border-bottom: 1px solid #f0f9ff;
-  transition: all 0.2s;
-  color: #4b5563;
+  border-bottom: 1px solid var(--color-border-light);
+  transition: all var(--duration-normal) var(--ease-out);
+  color: var(--color-text-weak);
   font-size: 14px;
 }
 
 .symptom-list li:hover {
-  background: #eff6ff;
-  color: #2563eb;
+  background: var(--color-background);
+  color: var(--color-primary);
   padding-left: 20px; /* Subtle movement */
 }
 
 .symptom-list li.active {
-  background: #2563eb; /* Dark blue background */
-  color: #ffffff; /* White text */
+  background: var(--color-primary); /* Primary background */
+  color: var(--color-background-white); /* White text */
   border-right: none;
   font-weight: 600;
-  box-shadow: 0 4px 6px -1px rgba(37, 99, 235, 0.2);
+  box-shadow: 0 4px 6px -1px var(--color-primary-200);
 }
 
 .symptom-list li.active:hover {
-  background: #1d4ed8;
-  color: #ffffff;
+  background: var(--color-primary-dark);
+  color: var(--color-background-white);
 }
 
 .form-container {
@@ -1628,23 +1887,23 @@ const copyToClipboard = () => {
 .symptom-form-section {
   background: rgba(255, 255, 255, 0.9);
   border-radius: 12px;
-  box-shadow: 0 4px 20px rgba(37, 99, 235, 0.06);
+  box-shadow: 0 4px 20px var(--color-primary-50);
   padding: 12px; /* Ultra compact padding */
   margin-bottom: 12px; /* Ultra compact margin */
-  border: 1px solid #dbeafe;
-  transition: transform 0.2s;
+  border: 1px solid var(--color-border-light);
+  transition: transform var(--duration-normal) var(--ease-smooth);
 }
 
 .symptom-form-section:hover {
   transform: translateY(-1px);
-  box-shadow: 0 8px 24px rgba(37, 99, 235, 0.1);
+  box-shadow: 0 8px 24px var(--color-primary-100);
 }
 
 .form-header {
-  background: linear-gradient(to right, #ffffff, #eff6ff);
+  background: linear-gradient(to right, var(--color-background-white), var(--color-background));
   margin: -12px -12px 12px -12px; /* Adjusted for new padding */
   padding: 8px 16px; /* Compact padding */
-  border-bottom: 1px solid #e0f2fe;
+  border-bottom: 1px solid var(--color-border-light);
   border-radius: 12px 12px 0 0;
   display: flex;
   justify-content: space-between;
@@ -1652,20 +1911,20 @@ const copyToClipboard = () => {
 }
 
 .remove-btn {
-  color: #94a3b8;
+  color: var(--color-text-disabled);
   padding: 4px;
 }
 
 .remove-btn:hover {
-  color: #ef4444;
-  background: #fef2f2;
+  color: var(--color-error);
+  background: var(--color-error-bg);
 }
 
 .form-header h2 {
   margin: 0;
   font-size: 15px; /* Slightly smaller font */
   font-weight: 600;
-  color: #1e3a8a; /* Dark blue */
+  color: var(--color-text-primary); /* Dark cyan */
   display: flex;
   align-items: center;
 }
@@ -1675,7 +1934,7 @@ const copyToClipboard = () => {
   display: inline-block;
   width: 4px;
   height: 14px;
-  background: #2563eb;
+  background: var(--color-primary);
   margin-right: 10px;
   border-radius: 2px;
 }
@@ -1688,7 +1947,7 @@ const copyToClipboard = () => {
   display: flex;
   align-items: flex-start;
   margin-bottom: 10px; /* Compact margin */
-  border-bottom: 1px dashed #f0f0f0;
+  border-bottom: 1px dashed var(--color-border-light);
   padding-bottom: 10px; /* Compact padding */
 }
 
@@ -1705,7 +1964,7 @@ const copyToClipboard = () => {
   margin-right: 12px;
   font-weight: 600;
   font-size: 14px;
-  color: #374151;
+  color: var(--color-text-medium);
   padding-top: 5px; /* Visual alignment with inputs */
   text-align: right; /* Align right for cleaner look */
 }
@@ -1727,14 +1986,14 @@ const copyToClipboard = () => {
 }
 
 .has-error .text-input {
-  border-color: #ef4444; /* Red-500 */
+  border-color: var(--color-error); /* Red-500 */
   box-shadow: 0 0 0 1px rgba(239, 68, 68, 0.2);
   animation: shake 0.5s cubic-bezier(.36,.07,.19,.97) both;
 }
 
 .has-error .radio-label {
-  border-color: #fecaca;
-  background-color: #fef2f2;
+  border-color: var(--color-error-border);
+  background-color: var(--color-error-bg);
 }
 
 @keyframes shake {
@@ -1746,12 +2005,12 @@ const copyToClipboard = () => {
 
 .text-input {
   padding: 6px 10px; /* Reduced padding */
-  border: 1px solid #d1d5db;
+  border: 1px solid var(--color-border-medium);
   border-radius: 6px;
   width: 100px; /* Default small width */
   outline: none;
-  transition: all 0.3s;
-  color: #1f2937;
+  transition: all var(--duration-slow) var(--ease-out);
+  color: var(--color-text-strong);
   font-size: 14px; /* Adjusted to 14px */
 }
 
@@ -1760,7 +2019,7 @@ const copyToClipboard = () => {
 }
 
 .text-input:focus {
-  border-color: #1890ff;
+  border-color: var(--color-primary);
   box-shadow: 0 0 0 2px rgba(24, 144, 255, 0.1);
 }
 
@@ -1776,23 +2035,23 @@ const copyToClipboard = () => {
   gap: 6px; /* Reduced gap */
   cursor: pointer;
   font-size: 14px; /* Adjusted to 14px */
-  color: #4b5563;
+  color: var(--color-text-weak);
   padding: 4px 10px; /* Reduced padding */
   border-radius: 20px;
-  transition: all 0.2s;
-  border: 1px solid #e5e7eb; /* Subtle default border */
-  background: #ffffff;
+  transition: all var(--duration-normal) var(--ease-out);
+  border: 1px solid var(--color-border-light); /* Subtle default border */
+  background: var(--color-background-white);
 }
 
 .radio-label:hover, .checkbox-label:hover {
-  background: #f3f4f6;
-  border-color: #d1d5db;
+  background: var(--color-background-gray);
+  border-color: var(--color-border-medium);
 }
 
 .radio-label.is-active, .checkbox-label.is-active {
-  background: #eff6ff;
-  color: #2563eb;
-  border-color: #3b82f6;
+  background: var(--color-primary-50);
+  color: var(--color-primary-dark);
+  border-color: var(--color-primary);
   font-weight: 500;
   box-shadow: 0 1px 2px rgba(37, 99, 235, 0.1);
 }
@@ -1803,7 +2062,7 @@ const copyToClipboard = () => {
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  color: #9ca3af;
+  color: var(--color-text-muted);
   font-size: 15px;
 }
 
@@ -1811,7 +2070,7 @@ const copyToClipboard = () => {
   width: 64px;
   height: 64px;
   margin-bottom: 16px;
-  color: #cbd5e1;
+  color: var(--color-border-medium);
 }
 
 .empty-icon svg {
@@ -1821,7 +2080,7 @@ const copyToClipboard = () => {
 
 .sub-text {
   font-size: 13px;
-  color: #cbd5e1;
+  color: var(--color-border-medium);
   margin-top: 8px;
 }
 
@@ -1835,7 +2094,7 @@ const copyToClipboard = () => {
   display: flex;
   align-items: center;
   gap: 8px;
-  background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%);
+  background: linear-gradient(135deg, var(--color-primary) 0%, var(--color-primary-dark) 100%);
   color: white;
   border: none;
   padding: 10px 16px;
@@ -1844,7 +2103,7 @@ const copyToClipboard = () => {
   font-weight: 600;
   cursor: pointer;
   box-shadow: 0 4px 12px rgba(37, 99, 235, 0.2);
-  transition: all 0.3s;
+  transition: all var(--duration-slow) var(--ease-out);
 }
 
 .submit-btn:hover {
@@ -1870,7 +2129,7 @@ const copyToClipboard = () => {
   flex: 1;
   display: flex;
   flex-direction: column;
-  background: #f3f4f6;
+  background: var(--color-background-gray);
   overflow: hidden;
   position: relative;
   min-height: 0;
@@ -1879,8 +2138,8 @@ const copyToClipboard = () => {
 /* Footer Actions */
 .record-footer {
   height: 60px;
-  background: white;
-  border-top: 1px solid #e5e7eb;
+  background: var(--color-background-white);
+  border-top: 1px solid var(--color-border-light);
   display: flex;
   align-items: center;
   justify-content: flex-end;
@@ -1892,22 +2151,22 @@ const copyToClipboard = () => {
 
 .back-btn-footer {
   padding: 8px 20px;
-  border: 1px solid #d1d5db;
-  background: white;
+  border: 1px solid var(--color-border-medium);
+  background: var(--color-background-white);
   border-radius: 20px;
-  color: #4b5563;
+  color: var(--color-text-weak);
   cursor: pointer;
   font-size: 14px;
-  transition: all 0.2s;
+  transition: all var(--duration-normal) var(--ease-out);
 }
 .back-btn-footer:hover {
-  background: #f3f4f6;
-  border-color: #9ca3af;
+  background: var(--color-background-gray);
+  border-color: var(--color-text-muted);
 }
 
 .complete-btn {
   padding: 8px 24px;
-  background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%);
+  background: linear-gradient(135deg, var(--color-primary) 0%, var(--color-primary-dark) 100%);
   color: white;
   border: none;
   border-radius: 20px;
@@ -1915,7 +2174,7 @@ const copyToClipboard = () => {
   font-weight: 500;
   cursor: pointer;
   box-shadow: 0 2px 8px rgba(37, 99, 235, 0.2);
-  transition: all 0.2s;
+  transition: all var(--duration-normal) var(--ease-out);
 }
 .complete-btn:hover {
   transform: translateY(-1px);
@@ -1933,13 +2192,13 @@ const copyToClipboard = () => {
 
 .record-panel {
   flex: 1;
-  background: white;
+  background: var(--color-background-white);
   border-radius: 12px;
   box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
   display: flex;
   flex-direction: column;
   overflow: hidden;
-  border: 1px solid #e5e7eb;
+  border: 1px solid var(--color-border-light);
 }
 
 .left-panel {
@@ -1948,27 +2207,27 @@ const copyToClipboard = () => {
 
 .right-panel {
   flex: 1.2; /* Increased width */
-  background: #f8fafc;
-  border-color: #e2e8f0;
+  background: var(--color-background-light);
+  border-color: var(--color-border-light);
 }
 
 .panel-header {
   padding: 10px 16px; /* Compact */
-  border-bottom: 1px solid #f0f0f0;
+  border-bottom: 1px solid var(--color-border-light);
   display: flex;
   align-items: center;
   justify-content: space-between;
-  background: white;
+  background: var(--color-background-white);
 }
 
 .right-panel .panel-header {
-  background: #f1f5f9;
+  background: var(--color-background-gray);
 }
 
 .panel-header h3 {
   margin: 0;
   font-size: 15px; /* Slightly smaller */
-  color: #374151;
+  color: var(--color-text-medium);
   font-weight: 600;
 }
 
@@ -2001,8 +2260,8 @@ const copyToClipboard = () => {
 .spinner-ring {
   position: absolute;
   inset: 0;
-  border: 3px solid #e2e8f0;
-  border-top-color: #3b82f6;
+  border: 3px solid var(--color-border-light);
+  border-top-color: var(--color-primary);
   border-radius: 50%;
   animation: spin 1s linear infinite;
 }
@@ -2014,7 +2273,7 @@ const copyToClipboard = () => {
   transform: translate(-50%, -50%);
   width: 24px;
   height: 24px;
-  background: radial-gradient(circle, #3b82f6 0%, #60a5fa 100%);
+  background: radial-gradient(circle, var(--color-primary) 0%, var(--color-primary-light) 100%);
   border-radius: 50%;
   box-shadow: 0 0 12px rgba(59, 130, 246, 0.5);
   animation: pulse-core 1.5s ease-in-out infinite;
@@ -2025,14 +2284,14 @@ const copyToClipboard = () => {
 }
 
 .loading-title {
-  color: #1e293b;
+  color: var(--color-text-strong);
   font-size: 16px;
   font-weight: 600;
   margin: 0 0 4px 0;
 }
 
 .loading-desc {
-  color: #64748b;
+  color: var(--color-text-muted);
   font-size: 13px;
   margin: 0;
 }
@@ -2049,7 +2308,7 @@ const copyToClipboard = () => {
 
 .fade-enter-active,
 .fade-leave-active {
-  transition: opacity 0.3s ease;
+  transition: opacity var(--duration-slow) var(--ease-out);
 }
 
 .fade-enter-from,
@@ -2065,43 +2324,43 @@ const copyToClipboard = () => {
   display: block;
   font-size: 13px; /* Smaller */
   font-weight: 600;
-  color: #4b5563;
+  color: var(--color-text-weak);
   margin-bottom: 6px;
 }
 
 .record-field textarea {
   width: 100%;
   padding: 8px 10px; /* Compact */
-  border: 1px solid #d1d5db;
+  border: 1px solid var(--color-border-medium);
   border-radius: 6px;
   font-size: 13px;
   line-height: 1.5;
-  color: #1f2937;
+  color: var(--color-text-strong);
   resize: vertical;
   box-sizing: border-box;
   font-family: inherit;
-  transition: border-color 0.2s;
+  transition: border-color var(--duration-normal) var(--ease-out);
 }
 
 .record-field textarea:focus {
   outline: none;
-  border-color: #3b82f6;
+  border-color: var(--color-primary);
   box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
 }
 
 .icon-btn {
   background: transparent;
   border: none;
-  color: #6b7280;
+  color: var(--color-text-weak);
   cursor: pointer;
   padding: 4px;
   border-radius: 4px;
-  transition: all 0.2s;
+  transition: all var(--duration-normal) var(--ease-out);
 }
 
 .icon-btn:hover {
-  background: #f3f4f6;
-  color: #2563eb;
+  background: var(--color-background-gray);
+  color: var(--color-primary-dark);
 }
 
 .tag-ai {
@@ -2114,12 +2373,12 @@ const copyToClipboard = () => {
 }
 
 .ai-card {
-  background: white;
+  background: var(--color-background-white);
   border-radius: 8px;
   padding: 16px;
   margin-bottom: 16px;
   box-shadow: 0 2px 4px rgba(0,0,0,0.02);
-  border: 1px solid #e2e8f0;
+  border: 1px solid var(--color-border-light);
   position: relative;
   overflow: hidden;
   min-height: 200px;
@@ -2136,25 +2395,25 @@ const copyToClipboard = () => {
 .category-filter select {
   flex: 1;
   padding: 6px;
-  border: 1px solid #dbeafe;
+  border: 1px solid var(--color-info-bg);
   border-radius: 6px;
   font-size: 13px;
-  color: #4b5563;
+  color: var(--color-text-weak);
   outline: none;
-  background: white;
+  background: var(--color-background-white);
 }
 
 .clear-filter {
   background: none;
   border: none;
-  color: #9ca3af;
+  color: var(--color-text-muted);
   font-size: 18px;
   cursor: pointer;
   padding: 0 4px;
 }
 
 .clear-filter:hover {
-  color: #ef4444;
+  color: var(--color-error);
 }
 
 .loading-overlay.embedded {
@@ -2164,7 +2423,7 @@ const copyToClipboard = () => {
 .ai-card h4 {
   margin: 0 0 12px 0;
   font-size: 14px;
-  color: #475569;
+  color: var(--color-text-weak);
 }
 
 .ai-placeholder {
@@ -2175,7 +2434,7 @@ const copyToClipboard = () => {
 
 .skeleton-line {
   height: 12px;
-  background: #f1f5f9;
+  background: var(--color-background-gray);
   border-radius: 6px;
   animation: pulse 1.5s infinite ease-in-out;
 }
@@ -2198,22 +2457,22 @@ const copyToClipboard = () => {
 
 .diagnosis-item {
   padding: 10px;
-  border: 1px solid #e2e8f0;
+  border: 1px solid var(--color-border-light);
   border-radius: 6px;
-  background: #f8fafc;
+  background: var(--color-background-light);
   cursor: pointer;
-  transition: all 0.2s;
+  transition: all var(--duration-normal) var(--ease-out);
 }
 
 .diagnosis-item:hover {
-  background: #f1f5f9;
-  border-color: #cbd5e1;
+  background: var(--color-background-gray);
+  border-color: var(--color-border-medium);
 }
 
 .diagnosis-item.active {
-  background: #eff6ff;
-  border-color: #3b82f6;
-  box-shadow: 0 0 0 1px #3b82f6;
+  background: var(--color-primary-50);
+  border-color: var(--color-primary);
+  box-shadow: 0 0 0 1px var(--color-primary);
 }
 
 .diag-header {
@@ -2225,14 +2484,14 @@ const copyToClipboard = () => {
 
 .diag-name {
   font-weight: 600;
-  color: #1e293b;
+  color: var(--color-text-strong);
   font-size: 14px;
 }
 
 .diag-rate {
   font-size: 12px;
-  color: #2563eb;
-  background: #dbeafe;
+  color: var(--color-primary-dark);
+  background: var(--color-info-bg);
   padding: 2px 6px;
   border-radius: 4px;
   font-weight: 500;
@@ -2240,25 +2499,25 @@ const copyToClipboard = () => {
 
 .diag-rationale {
   font-size: 12px;
-  color: #64748b;
+  color: var(--color-text-muted);
   line-height: 1.4;
 }
 
 .empty-text {
   text-align: center;
-  color: #94a3b8;
+  color: var(--color-text-muted);
   font-size: 13px;
   padding: 20px 0;
 }
 
 .error-text {
   text-align: center;
-  color: #ef4444;
+  color: var(--color-error);
   font-size: 13px;
   padding: 20px 0;
-  background: #fef2f2;
+  background: var(--color-error-bg);
   border-radius: 6px;
-  border: 1px solid #fee2e2;
+  border: 1px solid var(--color-error-bg);
 }
 
 .treatment-list {
@@ -2271,13 +2530,13 @@ const copyToClipboard = () => {
   position: relative;
   display: flex;
   flex-direction: column;
-  background: #fff;
-  border: 1px solid #e2e8f0;
+  background: var(--color-background-white);
+  border: 1px solid var(--color-border-light);
   border-radius: 8px;
   padding: 10px;
   gap: 8px;
   cursor: pointer;
-  transition: all 0.2s;
+  transition: all var(--duration-normal) var(--ease-out);
   overflow: hidden;
 }
 
@@ -2287,7 +2546,7 @@ const copyToClipboard = () => {
   right: 0;
   width: 24px;
   height: 24px;
-  background: #3b82f6;
+  background: var(--color-primary);
   color: white;
   border-radius: 0 0 0 12px;
   display: flex;
@@ -2298,14 +2557,14 @@ const copyToClipboard = () => {
 }
 
 .treatment-item:hover {
-  background-color: #f8fafc;
-  border-color: #cbd5e1;
+  background-color: var(--color-background-light);
+  border-color: var(--color-border-medium);
 }
 
 .treatment-item.active {
-  background-color: #eff6ff;
-  border-color: #3b82f6;
-  box-shadow: 0 0 0 1px #3b82f6;
+  background-color: var(--color-primary-50);
+  border-color: var(--color-primary);
+  box-shadow: 0 0 0 1px var(--color-primary);
 }
 
 .rec-header {
@@ -2323,41 +2582,41 @@ const copyToClipboard = () => {
 }
 
 .rec-tag.medicine {
-  background: #dbeafe;
-  color: #2563eb;
+  background: var(--color-info-bg);
+  color: var(--color-primary-dark);
 }
 
 .rec-tag.exam {
-  background: #fce7f3;
-  color: #db2777;
+  background: var(--tag-exam-bg);
+  color: var(--tag-exam-text);
 }
 
 .rec-name {
   font-weight: 600;
   font-size: 14px;
-  color: #1e293b;
+  color: var(--color-text-strong);
 }
 
 .rec-reason, .rec-usage {
   font-size: 12px;
-  color: #64748b;
+  color: var(--color-text-muted);
   line-height: 1.4;
 }
 
 .rec-action {
   margin-top: 4px;
   padding-top: 8px;
-  border-top: 1px dashed #e2e8f0;
+  border-top: 1px dashed var(--color-border-light);
 }
 
 .match-success {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  background: #f0fdf4;
+  background: var(--color-success-bg);
   padding: 6px 8px;
   border-radius: 6px;
-  border: 1px solid #dcfce7;
+  border: 1px solid var(--color-success-border);
 }
 
 .match-info {
@@ -2368,11 +2627,11 @@ const copyToClipboard = () => {
 
 .match-name {
   font-weight: 600;
-  color: #166534;
+  color: var(--color-success-text);
 }
 
 .match-spec, .match-price {
-  color: #15803d;
+  color: var(--color-success);
   font-size: 11px;
 }
 
@@ -2380,19 +2639,19 @@ const copyToClipboard = () => {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  background: #f8fafc;
+  background: var(--color-background-light);
   padding: 6px 8px;
   border-radius: 6px;
-  border: 1px solid #f1f5f9;
+  border: 1px solid var(--color-background-gray);
 }
 
 .unmatched-tip {
   font-size: 12px;
-  color: #94a3b8;
+  color: var(--color-text-muted);
 }
 
 .btn-add {
-  background: #22c55e;
+  background: var(--color-success);
   color: white;
   border: none;
   width: 24px;
@@ -2406,8 +2665,8 @@ const copyToClipboard = () => {
 }
 
 .btn-search {
-  background: white;
-  border: 1px solid #cbd5e1;
+  background: var(--color-background-white);
+  border: 1px solid var(--color-border-medium);
   border-radius: 4px;
   padding: 2px 8px;
   cursor: pointer;
@@ -2421,7 +2680,7 @@ const copyToClipboard = () => {
 }
 
 .unit {
-  color: #6b7280;
+  color: var(--color-text-weak);
   font-size: 13px; /* Slightly smaller font */
 }
 
@@ -2430,13 +2689,13 @@ const copyToClipboard = () => {
   display: flex;
   justify-content: center;
   align-items: center;
-  color: #60a5fa; /* Blue-400 */
+  color: var(--color-primary-light); /* Blue-400 */
   flex-direction: column;
   gap: 16px;
   background: rgba(255, 255, 255, 0.4);
   border-radius: 12px;
   margin: 24px;
-  border: 2px dashed #dbeafe;
+  border: 2px dashed var(--color-info-bg);
 }
 
 /* Final Report Styles */
@@ -2444,27 +2703,27 @@ const copyToClipboard = () => {
   flex: 1;
   display: flex;
   flex-direction: column;
-  background: #525659;
+  background: var(--print-bg);
   overflow: hidden;
   position: relative;
 }
 
 .report-actions {
   height: 60px;
-  background: white;
+  background: var(--color-background-white);
   display: flex;
   align-items: center;
   justify-content: flex-end;
   padding: 0 24px;
   gap: 12px;
-  border-bottom: 1px solid #e5e7eb;
+  border-bottom: 1px solid var(--color-border-light);
 }
 
 .report-paper {
   margin: 24px auto;
   width: 210mm;
   min-height: 297mm;
-  background: white;
+  background: var(--color-background-white);
   padding: 40px;
   box-shadow: 0 4px 12px rgba(0,0,0,0.15);
   overflow-y: auto;
@@ -2481,28 +2740,28 @@ const copyToClipboard = () => {
 .category-trigger {
   width: 100%;
   padding: 8px 12px;
-  background: white;
-  border: 1px solid #dbeafe;
+  background: var(--color-background-white);
+  border: 1px solid var(--color-info-bg);
   border-radius: 6px;
   cursor: pointer;
   display: flex;
   align-items: center;
   justify-content: space-between;
-  transition: all 0.2s;
+  transition: all var(--duration-normal) var(--ease-out);
 }
 
 .category-trigger:hover {
-  border-color: #3b82f6;
+  border-color: var(--color-primary);
 }
 
 .category-trigger.active {
-  border-color: #3b82f6;
+  border-color: var(--color-primary);
   box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.1);
 }
 
 .trigger-text {
   font-size: 14px;
-  color: #374151;
+  color: var(--color-text-medium);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -2512,9 +2771,9 @@ const copyToClipboard = () => {
 .trigger-icon {
   width: 14px;
   height: 14px;
-  color: #9ca3af;
+  color: var(--color-text-muted);
   margin-left: 8px;
-  transition: transform 0.2s;
+  transition: transform var(--duration-normal) var(--ease-smooth);
 }
 
 .trigger-icon.rotate {
@@ -2528,8 +2787,8 @@ const copyToClipboard = () => {
   width: 100%;
   max-height: 240px;
   overflow-y: auto;
-  background: white;
-  border: 1px solid #e5e7eb;
+  background: var(--color-background-white);
+  border: 1px solid var(--color-border-light);
   border-radius: 8px;
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
   margin-top: 4px;
@@ -2542,36 +2801,36 @@ const copyToClipboard = () => {
   display: flex;
   align-items: center;
   cursor: pointer;
-  transition: background 0.15s;
+  transition: background var(--duration-fast) var(--ease-out);
 }
 
 .category-option:hover {
-  background: #f3f4f6;
+  background: var(--color-background-gray);
 }
 
 .category-option.selected {
-  background: #eff6ff;
-  color: #2563eb;
+  background: var(--color-primary-50);
+  color: var(--color-primary-dark);
 }
 
 .checkbox-custom {
   width: 16px;
   height: 16px;
-  border: 1px solid #d1d5db;
+  border: 1px solid var(--color-border-medium);
   border-radius: 4px;
   margin-right: 8px;
   position: relative;
-  transition: all 0.2s;
-  background: white;
+  transition: all var(--duration-normal) var(--ease-out);
+  background: var(--color-background-white);
 }
 
 .category-option:hover .checkbox-custom {
-  border-color: #9ca3af;
+  border-color: var(--color-text-muted);
 }
 
 .checkbox-custom.checked {
-  background: #3b82f6;
-  border-color: #3b82f6;
+  background: var(--color-primary);
+  border-color: var(--color-primary);
 }
 
 .checkbox-custom.checked::after {
@@ -2661,7 +2920,7 @@ const copyToClipboard = () => {
   }
 
   .final-report-page {
-    background: white;
+    background: var(--color-background-white);
     height: auto;
     overflow: visible;
     position: static;
@@ -2688,7 +2947,7 @@ const copyToClipboard = () => {
 /* Final Report Styles */
 .final-report-page {
   flex: 1;
-  background: #525659;
+  background: var(--print-bg);
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -2697,7 +2956,7 @@ const copyToClipboard = () => {
 }
 
 .report-paper {
-  background: white;
+  background: var(--color-background-white);
   width: 210mm;
   min-height: 297mm;
   padding: 20mm;
@@ -2806,15 +3065,15 @@ const copyToClipboard = () => {
   padding: 10px 24px;
   border-radius: 4px;
   border: none;
-  background: white;
-  color: #333;
+  background: var(--color-background-white);
+  color: var(--color-text-medium);
   cursor: pointer;
   font-size: 14px;
   box-shadow: 0 2px 4px rgba(0,0,0,0.2);
 }
 
 .action-btn.primary {
-  background: #2563eb;
+  background: var(--color-primary);
   color: white;
 }
 
@@ -2831,7 +3090,7 @@ const copyToClipboard = () => {
   
   .final-report-page {
     padding: 0;
-    background: white;
+    background: var(--color-background-white);
     height: auto;
     overflow: visible;
   }
@@ -2847,31 +3106,31 @@ const copyToClipboard = () => {
 /* Related Diagnoses */
 .related-section {
   margin-top: 8px;
-  background: #ffffff;
+  background: var(--color-background-white);
   border-radius: 6px;
-  border: 1px solid #e2e8f0;
+  border: 1px solid var(--color-border-light);
   overflow: hidden;
   font-size: 13px;
 }
 
 .related-trigger {
   padding: 6px 10px;
-  color: #64748b;
+  color: var(--color-text-muted);
   cursor: pointer;
   display: flex;
   justify-content: space-between;
   align-items: center;
-  transition: background 0.2s;
-  background: #f8fafc;
+  transition: background var(--duration-normal) var(--ease-out);
+  background: var(--color-background-light);
 }
 
 .related-trigger:hover {
-  background: #f1f5f9;
+  background: var(--color-background-gray);
 }
 
 .arrow {
   font-size: 10px;
-  transition: transform 0.2s;
+  transition: transform var(--duration-normal) var(--ease-smooth);
 }
 
 .arrow.open {
@@ -2889,7 +3148,7 @@ const copyToClipboard = () => {
   display: flex;
   gap: 10px;
   cursor: pointer;
-  transition: background 0.2s;
+  transition: background var(--duration-normal) var(--ease-out);
   align-items: center;
 }
 
@@ -2899,7 +3158,7 @@ const copyToClipboard = () => {
 
 .related-code {
   font-family: monospace;
-  color: #64748b;
+  color: var(--color-text-muted);
   font-weight: 500;
   min-width: 60px;
 }
@@ -2913,16 +3172,16 @@ const copyToClipboard = () => {
   display: inline-flex;
   align-items: center;
   gap: 4px;
-  background: #f0fdf4;
+  background: var(--color-success-bg);
   padding: 2px 6px;
   border-radius: 4px;
-  border: 1px solid #dcfce7;
+  border: 1px solid var(--color-success-border);
   font-size: 12px;
   margin-left: 6px;
 }
 
 .match-icon {
-  color: #166534;
+  color: var(--color-success-text);
   font-weight: bold;
 }
 
@@ -2942,8 +3201,8 @@ const copyToClipboard = () => {
   cursor: pointer;
   padding: 2px 4px;
   border-radius: 4px;
-  color: #94a3b8;
-  transition: all 0.2s;
+  color: var(--color-text-muted);
+  transition: all var(--duration-normal) var(--ease-out);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -2951,6 +3210,6 @@ const copyToClipboard = () => {
 
 .inline-related-trigger:hover {
   background: #e2e8f0;
-  color: #475569;
+  color: var(--color-text-weak);
 }
 </style>

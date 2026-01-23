@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { ref } from 'vue';
+import Icon from './Icon.vue';
 
 const visible = ref(false);
 const message = ref('');
@@ -10,7 +11,7 @@ const show = (msg: string, msgType: 'success' | 'error' | 'info' = 'info', durat
   message.value = msg;
   type.value = msgType;
   visible.value = true;
-  
+
   if (timer) clearTimeout(timer);
   timer = setTimeout(() => {
     visible.value = false;
@@ -22,11 +23,36 @@ defineExpose({ show });
 
 <template>
   <Transition name="toast-fade">
-    <div v-if="visible" class="toast" :class="type">
-      <span class="icon" v-if="type === 'success'">✓</span>
-      <span class="icon" v-else-if="type === 'error'">✕</span>
-      <span class="icon" v-else>ℹ</span>
-      <span class="message">{{ message }}</span>
+    <div
+      v-if="visible"
+      class="toast"
+      :class="type"
+      role="status"
+      aria-live="polite"
+      aria-atomic="true"
+    >
+      <Icon
+        v-if="type === 'success'"
+        icon="lucide:check-circle-2"
+        :size="20"
+        aria-hidden="true"
+        class="toast-icon"
+      />
+      <Icon
+        v-else-if="type === 'error'"
+        icon="lucide:x-circle"
+        :size="20"
+        aria-hidden="true"
+        class="toast-icon"
+      />
+      <Icon
+        v-else
+        icon="lucide:info"
+        :size="20"
+        aria-hidden="true"
+        class="toast-icon"
+      />
+      <span class="toast-message">{{ message }}</span>
     </div>
   </Transition>
 </template>
@@ -37,51 +63,85 @@ defineExpose({ show });
   top: 20px;
   left: 50%;
   transform: translateX(-50%);
-  padding: 10px 20px;
-  border-radius: 8px;
-  background: white;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  padding: 12px 20px;
+  border-radius: var(--radius-md, 8px);
+  background: var(--color-background-white, white);
+  box-shadow: var(--shadow-lg, 0 10px 15px rgba(0, 0, 0, 0.1));
   display: flex;
   align-items: center;
-  gap: 8px;
-  z-index: 9999;
-  font-size: 14px;
-  font-weight: 500;
-  border: 1px solid rgba(0, 0, 0, 0.05);
+  gap: var(--space-sm, 8px);
+  z-index: var(--z-notification, 9999);
+  font-size: var(--font-size-sm, 14px);
+  font-weight: var(--font-weight-medium, 500);
+  font-family: var(--font-body);
+  border: 1px solid var(--color-border-light, rgba(0, 0, 0, 0.05));
   min-width: 200px;
+  max-width: 500px;
   justify-content: center;
+  backdrop-filter: blur(8px);
 }
 
+/* 成功状态 */
 .toast.success {
-  color: #16a34a;
-  background: #f0fdf4;
-  border-color: #dcfce7;
+  color: var(--color-success, #10B981);
+  background: var(--color-success-bg, #D1FAE5);
+  border-color: var(--color-success-border, #6EE7B7);
 }
 
+.toast.success .toast-icon {
+  color: var(--color-success, #10B981);
+}
+
+/* 错误状态 */
 .toast.error {
-  color: #dc2626;
-  background: #fef2f2;
-  border-color: #fee2e2;
+  color: var(--color-error, #DC2626);
+  background: var(--color-error-bg, #FEE2E2);
+  border-color: var(--color-error-border, #FCA5A5);
 }
 
+.toast.error .toast-icon {
+  color: var(--color-error, #DC2626);
+}
+
+/* 信息状态 */
 .toast.info {
-  color: #2563eb;
-  background: #eff6ff;
-  border-color: #dbeafe;
+  color: var(--color-info, #2563EB);
+  background: var(--color-info-bg, #DBEAFE);
+  border-color: var(--color-info-border, #93C5FD);
 }
 
-.icon {
-  font-weight: bold;
+.toast.info .toast-icon {
+  color: var(--color-info, #2563EB);
 }
 
+.toast-icon {
+  flex-shrink: 0;
+}
+
+.toast-message {
+  flex: 1;
+  line-height: var(--line-height-normal, 1.5);
+}
+
+/* 过渡动画 - 使用 transform 和 opacity 优化性能 */
 .toast-fade-enter-active,
 .toast-fade-leave-active {
-  transition: all 0.3s ease;
+  transition:
+    opacity var(--duration-normal, 200ms) var(--ease-out, ease-out),
+    transform var(--duration-normal, 200ms) var(--ease-out, ease-out);
 }
 
 .toast-fade-enter-from,
 .toast-fade-leave-to {
   opacity: 0;
   transform: translate(-50%, -20px);
+}
+
+/* 响应式设计 */
+@media (max-width: 767px) {
+  .toast {
+    max-width: calc(100vw - 40px);
+    font-size: var(--font-size-sm, 14px);
+  }
 }
 </style>

@@ -5,9 +5,7 @@
       <div class="patient-card">
         <!-- Avatar -->
         <div class="avatar">
-          <svg viewBox="0 0 24 24" fill="none">
-            <path d="M12 2C6.48 2 2 6.48 2 12C2 17.52 6.48 22 12 22C17.52 22 22 17.52 22 12C22 6.48 17.52 2 12 2ZM12 5C13.66 5 15 6.34 15 8C15 9.66 13.66 11 12 11C10.34 11 9 9.66 9 8C9 6.34 10.34 5 12 5ZM12 19.2C9.5 19.2 7.29 17.92 6 15.98C6.03 13.99 10 12.9 12 12.9C13.99 12.9 17.97 13.99 18 15.98C16.71 17.92 14.5 19.2 12 19.2Z" fill="#ff9a9e"/>
-          </svg>
+          <Icon icon="mdi:account-circle" color="#ff9a9e" size="48" />
         </div>
         
         <!-- Name -->
@@ -33,9 +31,7 @@
       <div class="header-actions">
         <button class="header-btn" @click="emit('cancel')">放弃</button>
         <button class="header-btn primary" @click="handleConfirm" :disabled="!record">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16">
-            <path d="M20 6L9 17l-5-5"/>
-          </svg>
+          <Icon icon="lucide:check" size="16" />
           确认提交
         </button>
       </div>
@@ -83,7 +79,9 @@
             <div class="list-container">
               <div v-for="(diag, idx) in record.diagnosisList" :key="idx" class="list-item diagnosis-item">
                 <div class="item-content">
-                  <span class="item-name">{{ diag.name }}</span>
+                  <FactCheckHighlight :issue="getIssueForDiagnosis(diag.name)">
+                    <span class="item-name">{{ diag.name }}</span>
+                  </FactCheckHighlight>
                   <span class="item-code" v-if="diag.code">({{ diag.code }})</span>
                   <span class="match-tag" v-if="diag.matched" title="已匹配本地数据">✓</span>
                 </div>
@@ -104,7 +102,9 @@
               <div class="list-container">
                 <div v-for="(med, idx) in record.medications" :key="idx" class="list-item med-item">
                   <div class="item-header">
-                    <span class="med-name">{{ med.name }}</span>
+                    <FactCheckHighlight :issue="getIssueForMedicine(med.name)">
+                      <span class="med-name">{{ med.name }}</span>
+                    </FactCheckHighlight>
                     <span class="med-spec" v-if="med.spec">{{ med.spec }}</span>
                     <span class="match-tag" v-if="med.matched">✓</span>
                   </div>
@@ -123,7 +123,9 @@
               <div class="sub-title">检验检查</div>
               <div class="list-container">
                 <div v-for="(exam, idx) in record.examinations" :key="idx" class="list-item exam-item">
-                  <span class="item-name">{{ exam.name }}</span>
+                  <FactCheckHighlight :issue="getIssueForExam(exam.name)">
+                    <span class="item-name">{{ exam.name }}</span>
+                  </FactCheckHighlight>
                   <span class="match-tag" v-if="exam.matched">✓</span>
                 </div>
               </div>
@@ -146,17 +148,43 @@
         </div>
       </div>
     </div>
-    
+
     <div v-else class="loading-state">
       <div class="spinner"></div>
       <p>正在生成病历数据...</p>
     </div>
+
+    <!-- Fact Check Notification -->
+    <FactCheckNotification
+      v-model="showFactCheckNotification"
+      :result="factCheckResult"
+      @confirm="showFactCheckNotification = false"
+      @view-details="showFactCheckNotification = false"
+    />
+
+    <!-- Fact Check Widget (Right Bottom Corner) -->
+    <FactCheckWidget
+      :visible="showFactCheckWidget"
+      :status="factCheckWidgetStatus"
+      :issues="factCheckWidgetIssues"
+      :progress="factCheckProgress"
+      :checked-count="factCheckCheckedCount"
+      :total-count="factCheckTotalCount"
+      @close="showFactCheckWidget = false"
+      @view-all="showFactCheckWidget = false"
+      @issue-click="(issue) => console.log('Issue clicked:', issue)"
+    />
   </div>
 </template>
 
 <script setup lang="ts">
 import { ref, watch } from 'vue';
 import { medicalDataService } from '../services/medicalData';
+import Icon from './Icon.vue';
+import FactCheckNotification from './FactCheckNotification.vue';
+import FactCheckHighlight from './FactCheckHighlight.vue';
+import FactCheckWidget from './FactCheckWidget.vue';
+import { checkDiagnosis, checkMedicine, checkExamination, checkMedicalRecord, type FactCheckResult, type FactCheckIssue } from '../services/factChecker';
 
 export interface DiagnosisEntry {
   name: string;
@@ -211,6 +239,21 @@ const emit = defineEmits(['confirm', 'cancel']);
 
 const record = ref<GeneratedRecord | null>(null);
 
+// Fact Check State
+const showFactCheckNotification = ref(false);
+const factCheckResult = ref<FactCheckResult | null>(null);
+const diagnosisFactChecks = ref<Map<string, FactCheckResult>>(new Map());
+const medicineFactChecks = ref<Map<string, FactCheckResult>>(new Map());
+const examFactChecks = ref<Map<string, FactCheckResult>>(new Map());
+
+// Fact Check Widget State
+const showFactCheckWidget = ref(false);
+const factCheckWidgetStatus = ref<'idle' | 'checking' | 'completed'>('idle');
+const factCheckWidgetIssues = ref<FactCheckIssue[]>([]);
+const factCheckProgress = ref(0);
+const factCheckCheckedCount = ref(0);
+const factCheckTotalCount = ref(0);
+
 // Match data with local database
 const matchLocalData = (rec: GeneratedRecord) => {
   // 1. Match Diagnoses
@@ -256,8 +299,135 @@ watch(() => props.initialRecord, (val) => {
     const newVal = JSON.parse(JSON.stringify(val));
     matchLocalData(newVal);
     record.value = newVal;
+
+    // Perform automatic fact checking after data is loaded
+    performMedicalRecordFactCheck(newVal);
   }
 }, { immediate: true });
+
+// Fact Check Functions
+const performMedicalRecordFactCheck = async (rec: GeneratedRecord) => {
+  if (!rec) return;
+
+  // Calculate total checks
+  const diagCount = rec.diagnosisList?.length || 0;
+  const medCount = rec.medications?.length || 0;
+  const examCount = rec.examinations?.length || 0;
+  const totalChecks = diagCount + medCount + examCount + 1; // +1 for overall record check
+
+  // Show widget in checking state
+  showFactCheckWidget.value = true;
+  factCheckWidgetStatus.value = 'checking';
+  factCheckTotalCount.value = totalChecks;
+  factCheckCheckedCount.value = 0;
+  factCheckProgress.value = 0;
+  factCheckWidgetIssues.value = [];
+
+  try {
+    // Check overall medical record consistency
+    const result = await checkMedicalRecord({
+      chiefComplaint: rec.chiefComplaint,
+      historyOfPresentIllness: rec.historyOfPresentIllness,
+      diagnoses: rec.diagnosisList?.map(d => d.name) || [],
+      medicines: rec.medications?.map(m => m.name) || [],
+      examinations: rec.examinations?.map(e => e.name) || []
+    });
+
+    if (result.hasIssues) {
+      factCheckWidgetIssues.value.push(...result.issues);
+    }
+
+    factCheckCheckedCount.value = 1;
+    factCheckProgress.value = Math.round((1 / totalChecks) * 100);
+
+    // Check each diagnosis individually
+    if (rec.diagnosisList && rec.diagnosisList.length > 0) {
+      for (let i = 0; i < rec.diagnosisList.length; i++) {
+        const diag = rec.diagnosisList[i];
+        const diagResult = await checkDiagnosis({
+          diagnosis: diag.name,
+          chiefComplaint: rec.chiefComplaint,
+          historyOfPresentIllness: rec.historyOfPresentIllness
+        });
+        diagnosisFactChecks.value.set(diag.name, diagResult);
+
+        if (diagResult.hasIssues) {
+          factCheckWidgetIssues.value.push(...diagResult.issues);
+        }
+
+        factCheckCheckedCount.value = 1 + i + 1;
+        factCheckProgress.value = Math.round(((1 + i + 1) / totalChecks) * 100);
+      }
+    }
+
+    // Check each medicine
+    if (rec.medications && rec.medications.length > 0) {
+      for (let i = 0; i < rec.medications.length; i++) {
+        const med = rec.medications[i];
+        const medResult = await checkMedicine({
+          medicineName: med.name,
+          specification: med.spec,
+          dosage: med.dosage,
+          frequency: med.frequency,
+          diagnosis: rec.diagnosisList?.[0]?.name
+        });
+        medicineFactChecks.value.set(med.name, medResult);
+
+        if (medResult.hasIssues) {
+          factCheckWidgetIssues.value.push(...medResult.issues);
+        }
+
+        const currentCount = 1 + diagCount + i + 1;
+        factCheckCheckedCount.value = currentCount;
+        factCheckProgress.value = Math.round((currentCount / totalChecks) * 100);
+      }
+    }
+
+    // Check each examination
+    if (rec.examinations && rec.examinations.length > 0) {
+      for (let i = 0; i < rec.examinations.length; i++) {
+        const exam = rec.examinations[i];
+        const examResult = await checkExamination({
+          examinationName: exam.name,
+          diagnosis: rec.diagnosisList?.[0]?.name
+        });
+        examFactChecks.value.set(exam.name, examResult);
+
+        if (examResult.hasIssues) {
+          factCheckWidgetIssues.value.push(...examResult.issues);
+        }
+
+        const currentCount = 1 + diagCount + medCount + i + 1;
+        factCheckCheckedCount.value = currentCount;
+        factCheckProgress.value = Math.round((currentCount / totalChecks) * 100);
+      }
+    }
+
+    // Update widget to completed state
+    factCheckWidgetStatus.value = 'completed';
+  } catch (e) {
+    console.error('Failed to perform medical record fact check:', e);
+    factCheckWidgetStatus.value = 'completed';
+  }
+};
+
+const getIssueForDiagnosis = (diagName: string): FactCheckIssue | undefined => {
+  const check = diagnosisFactChecks.value.get(diagName);
+  if (!check || !check.hasIssues || check.issues.length === 0) return undefined;
+  return check.issues[0];
+};
+
+const getIssueForMedicine = (medName: string): FactCheckIssue | undefined => {
+  const check = medicineFactChecks.value.get(medName);
+  if (!check || !check.hasIssues || check.issues.length === 0) return undefined;
+  return check.issues[0];
+};
+
+const getIssueForExam = (examName: string): FactCheckIssue | undefined => {
+  const check = examFactChecks.value.get(examName);
+  if (!check || !check.hasIssues || check.issues.length === 0) return undefined;
+  return check.issues[0];
+};
 
 const handleConfirm = () => {
   emit('confirm', record.value);
@@ -268,7 +438,7 @@ const handleConfirm = () => {
 .result-page {
   width: 100%;
   height: 100%;
-  background: #f8fafc;
+  background: var(--color-background);
   display: flex;
   flex-direction: column;
   font-size: 14px;
@@ -281,12 +451,12 @@ const handleConfirm = () => {
   align-items: center;
   justify-content: space-between;
   flex-wrap: nowrap;
-  background: linear-gradient(to right, #ffffff, #f0f9ff);
+  background: var(--surface-glass);
   padding: 10px 16px;
-  box-shadow: 0 2px 8px rgba(24, 144, 255, 0.08);
+  box-shadow: var(--shadow-sm);
   z-index: 10;
   flex-shrink: 0;
-  border-bottom: 1px solid #e6f7ff;
+  border-bottom: 1px solid var(--color-border-light);
   cursor: grab;
 }
 
@@ -310,11 +480,11 @@ const handleConfirm = () => {
   height: 36px;
   border-radius: 50%;
   overflow: hidden;
-  background: #fff0f1;
+  background: var(--color-error-bg);
   display: flex;
   align-items: center;
   justify-content: center;
-  border: 1px solid #ffe4e6;
+  border: 1px solid var(--color-border-light);
   flex-shrink: 0;
 }
 
@@ -326,7 +496,7 @@ const handleConfirm = () => {
 .patient-name {
   font-size: 16px;
   font-weight: 700;
-  color: #1f2937;
+  color: var(--color-text-strong);
 }
 
 .patient-basic {
@@ -334,17 +504,17 @@ const handleConfirm = () => {
   align-items: center;
   gap: 8px;
   font-size: 14px;
-  color: #4b5563;
+  color: var(--color-text-medium);
 }
 
 .divider {
   width: 1px;
   height: 12px;
-  background: #d1d5db;
+  background: var(--color-border-medium);
 }
 
 .tag-ai {
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  background: linear-gradient(135deg, var(--color-primary) 0%, var(--color-primary-dark) 100%);
   color: white;
   padding: 4px 10px;
   border-radius: 12px;
@@ -357,7 +527,7 @@ const handleConfirm = () => {
   align-items: center;
   gap: 16px;
   font-size: 13px;
-  color: #6b7280;
+  color: var(--color-text-muted);
   pointer-events: auto; /* Re-enable for text selection if needed, though usually not needed for drag */
 }
 
@@ -372,35 +542,35 @@ const handleConfirm = () => {
 
 .header-btn {
   padding: 8px 18px;
-  border: 1px solid #d1d5db;
+  border: 1px solid var(--color-border-medium);
   border-radius: 8px;
-  background: white;
+  background: var(--color-background-white);
   font-size: 14px;
   font-weight: 500;
-  color: #374151;
+  color: var(--color-text-medium);
   cursor: pointer;
   display: flex;
   align-items: center;
   gap: 6px;
-  transition: all 0.2s;
+  transition: all var(--duration-normal) var(--ease-out);
 }
 
 .header-btn:hover {
-  background: #f3f4f6;
-  border-color: #9ca3af;
+  background: var(--color-background-hover);
+  border-color: var(--color-border-strong);
 }
 
 .header-btn.primary {
-  background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%);
+  background: linear-gradient(135deg, var(--color-cta) 0%, var(--color-cta-dark) 100%);
   border: none;
   color: white;
-  box-shadow: 0 4px 12px rgba(37, 99, 235, 0.25);
+  box-shadow: 0 4px 12px var(--color-primary-200);
 }
 
 .header-btn.primary:hover {
-  background: linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%);
+  filter: brightness(1.05);
   transform: translateY(-1px);
-  box-shadow: 0 6px 16px rgba(37, 99, 235, 0.3);
+  box-shadow: 0 6px 16px var(--color-primary-200);
 }
 
 .header-btn.primary:disabled {
@@ -415,14 +585,14 @@ const handleConfirm = () => {
 
 /* 提示信息 */
 .info-banner {
-  background: #fffbeb;
-  border-bottom: 1px solid #fde68a;
+  background: var(--color-warning-bg);
+  border-bottom: 1px solid var(--color-warning);
   padding: 10px 20px;
   display: flex;
   align-items: center;
   gap: 8px;
   font-size: 13px;
-  color: #92400e;
+  color: var(--color-warning-text);
 }
 
 .info-icon {
@@ -432,12 +602,12 @@ const handleConfirm = () => {
 .title-group h2 {
   margin: 0;
   font-size: 18px;
-  color: #1e293b;
+  color: var(--color-text-strong);
 }
 
 .sub-title {
   font-size: 13px;
-  color: #64748b;
+  color: var(--color-text-muted);
   margin-top: 4px;
   display: block;
 }
@@ -457,28 +627,28 @@ const handleConfirm = () => {
   display: flex;
   align-items: center;
   gap: 6px;
-  transition: all 0.2s;
+  transition: all var(--duration-normal) var(--ease-out);
 }
 
 .btn.primary {
-  background: #3b82f6;
+  background: var(--color-cta);
   color: white;
-  box-shadow: 0 4px 12px rgba(59, 130, 246, 0.2);
+  box-shadow: 0 4px 12px var(--color-primary-200);
 }
 
 .btn.primary:hover {
-  background: #2563eb;
+  filter: brightness(1.05);
   transform: translateY(-1px);
 }
 
 .btn.secondary {
-  background: #f1f5f9;
-  color: #64748b;
+  background: var(--color-background-gray);
+  color: var(--color-text-muted);
 }
 
 .btn.secondary:hover {
-  background: #e2e8f0;
-  color: #1e293b;
+  background: var(--color-background-hover);
+  color: var(--color-text-strong);
 }
 
 /* Main Layout */
@@ -509,23 +679,23 @@ const handleConfirm = () => {
 
 /* Sections */
 .form-section {
-  background: white;
+  background: var(--color-background-white);
   padding: 16px;
   border-radius: 12px;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
-  border: 1px solid #e2e8f0;
+  box-shadow: var(--shadow-sm);
+  border: 1px solid var(--color-border-light);
 }
 
 .sub-section {
   margin-top: 12px;
   padding-top: 12px;
-  border-top: 1px dashed #e2e8f0;
+  border-top: 1px dashed var(--color-border-light);
 }
 
 .sub-title {
   font-size: 13px;
   font-weight: 600;
-  color: #64748b;
+  color: var(--color-text-muted);
   margin-bottom: 8px;
 }
 
@@ -535,7 +705,7 @@ const handleConfirm = () => {
   gap: 8px;
   font-size: 15px;
   font-weight: 600;
-  color: #334155;
+  color: var(--color-text-strong);
   margin-bottom: 12px;
 }
 
@@ -554,7 +724,7 @@ const handleConfirm = () => {
 label {
   display: block;
   font-size: 12px;
-  color: #64748b;
+  color: var(--color-text-muted);
   margin-bottom: 4px;
   font-weight: 500;
 }
@@ -563,22 +733,22 @@ label {
 textarea.full-width {
   width: 100%;
   padding: 10px;
-  border: 1px solid #cbd5e1;
+  border: 1px solid var(--color-border-medium);
   border-radius: 6px;
   font-size: 14px;
   line-height: 1.5;
-  color: #1e293b;
+  color: var(--color-text-strong);
   resize: vertical;
-  background: #f8fafc;
-  transition: all 0.2s;
+  background: var(--color-background);
+  transition: all var(--duration-normal) var(--ease-out);
   box-sizing: border-box;
 }
 
 textarea.full-width:focus {
   outline: none;
-  border-color: #3b82f6;
-  background: white;
-  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+  border-color: var(--color-primary);
+  background: var(--color-background-white);
+  box-shadow: 0 0 0 3px var(--color-primary-100);
 }
 
 textarea.small-text {
@@ -594,8 +764,8 @@ textarea.small-text {
 }
 
 .list-item {
-  background: #f8fafc;
-  border: 1px solid #e2e8f0;
+  background: var(--color-background);
+  border: 1px solid var(--color-border-light);
   border-radius: 6px;
   padding: 8px 12px;
   font-size: 14px;
@@ -609,20 +779,20 @@ textarea.small-text {
 
 .item-name {
   font-weight: 500;
-  color: #1e293b;
+  color: var(--color-text-strong);
 }
 
 .item-code {
-  color: #64748b;
+  color: var(--color-text-muted);
   font-size: 12px;
-  background: #e2e8f0;
+  background: var(--color-background-gray);
   padding: 1px 6px;
   border-radius: 4px;
 }
 
 .match-tag {
   margin-left: auto;
-  color: #10b981;
+  color: var(--color-success);
   font-weight: bold;
   font-size: 12px;
 }
@@ -641,13 +811,13 @@ textarea.small-text {
 
 .med-name {
   font-weight: 600;
-  color: #1e293b;
+  color: var(--color-text-strong);
 }
 
 .med-spec {
   font-size: 12px;
-  color: #64748b;
-  background: #e2e8f0;
+  color: var(--color-text-muted);
+  background: var(--color-background-gray);
   padding: 1px 6px;
   border-radius: 4px;
 }
@@ -656,12 +826,12 @@ textarea.small-text {
   display: flex;
   gap: 12px;
   font-size: 13px;
-  color: #475569;
+  color: var(--color-text-medium);
 }
 
 .med-count {
   margin-left: auto;
-  color: #64748b;
+  color: var(--color-text-muted);
 }
 
 .exam-item {
@@ -671,13 +841,13 @@ textarea.small-text {
 }
 
 .empty-text {
-  color: #94a3b8;
+  color: var(--color-text-muted);
   font-size: 13px;
   text-align: center;
   padding: 10px;
-  background: #f8fafc;
+  background: var(--color-background);
   border-radius: 6px;
-  border: 1px dashed #cbd5e1;
+  border: 1px dashed var(--color-border-medium);
 }
 
 /* Loading State */
@@ -687,14 +857,14 @@ textarea.small-text {
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  color: #64748b;
+  color: var(--color-text-muted);
 }
 
 .spinner {
   width: 32px;
   height: 32px;
-  border: 3px solid #e2e8f0;
-  border-top-color: #3b82f6;
+  border: 3px solid var(--color-border-light);
+  border-top-color: var(--color-primary);
   border-radius: 50%;
   animation: spin 1s linear infinite;
   margin-bottom: 16px;
@@ -715,8 +885,14 @@ textarea.small-text {
 }
 
 ::-webkit-scrollbar-thumb {
-  background: #cbd5e1;
+  background: var(--color-border-medium);
   border-radius: 3px;
 }
 
+/* Content Body */
+.content-body {
+  flex: 1;
+  padding: 16px;
+  overflow: hidden;
+}
 </style>

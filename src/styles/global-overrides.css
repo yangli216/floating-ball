@@ -1,0 +1,1955 @@
+/**
+ * 全局样式覆盖 - 统一医疗产品设计风格
+ *
+ * 此文件用于统一整个应用的颜色、样式和交互状态
+ * 覆盖所有组件中不一致的颜色定义
+ *
+ * 架构说明：
+ * 1. 所有颜色通过 CSS 变量定义，支持主题切换
+ * 2. 使用语义化命名（如 --form-active-bg 而非 #xxx）
+ * 3. 优先级：全局样式 > 组件样式
+ *
+ * 主题切换方式：
+ * - 默认主题：无需添加类
+ * - 深色主题：html.dark 或 [data-theme="dark"]
+ * - 其他主题：[data-theme="xxx"]
+ */
+
+/* ============================================
+   第一部分：语义化颜色变量（支持主题切换）
+   ============================================ */
+
+:root {
+  /* === 主色系 === */
+  --color-primary: #0891B2;
+  --color-primary-dark: #0E7490;
+  --color-primary-light: #06B6D4;
+  --color-primary-50: rgba(8, 145, 178, 0.05);
+  --color-primary-100: rgba(8, 145, 178, 0.1);
+  --color-primary-200: rgba(8, 145, 178, 0.2);
+
+  /* === 辅色系 === */
+  --color-secondary: #22D3EE;
+  --color-secondary-dark: #06B6D4;
+  --color-secondary-light: #67E8F9;
+
+  /* === CTA 按钮色 === */
+  --color-cta: #059669;
+  --color-cta-hover: #047857;
+  --color-cta-light: #10B981;
+
+  /* === 背景色 === */
+  --color-background: #ECFEFF;
+  --color-background-white: #FFFFFF;
+  --color-background-gray: #F8FAFC;
+  --color-background-light: #F9FAFB;
+  --color-background-hover: #F3F4F6;
+  --color-background-selected: #EFF6FF;
+
+  /* === 文本色 === */
+  --color-text-primary: #164E63;
+  --color-text-strong: #0F172A;
+  --color-text-medium: #334155;
+  --color-text-weak: #475569;
+  --color-text-muted: #64748B;
+  --color-text-disabled: #94A3B8;
+  --color-text-placeholder: #9CA3AF;
+
+  /* === 边框色 === */
+  --color-border-light: #E2E8F0;
+  --color-border-medium: #CBD5E1;
+  --color-border-strong: #94A3B8;
+  --color-border-focus: var(--color-primary);
+
+  /* === 状态色 === */
+  --color-success: #10B981;
+  --color-success-bg: #D1FAE5;
+  --color-success-border: #6EE7B7;
+  --color-success-text: #166534;
+
+  --color-warning: #F59E0B;
+  --color-warning-bg: #FEF3C7;
+  --color-warning-border: #FCD34D;
+  --color-warning-text: #92400E;
+
+  --color-error: #DC2626;
+  --color-error-bg: #FEE2E2;
+  --color-error-border: #FCA5A5;
+  --color-error-text: #991B1B;
+
+  --color-info: #2563EB;
+  --color-info-bg: #DBEAFE;
+  --color-info-border: #93C5FD;
+  --color-info-text: #1E40AF;
+
+  /* === 阴影色 === */
+  --shadow-color: rgba(8, 145, 178, 0.1);
+  --shadow-color-strong: rgba(8, 145, 178, 0.2);
+  --shadow-color-cta: rgba(5, 150, 105, 0.2);
+
+  /* === 表单语义变量 === */
+  --form-border: var(--color-border-medium);
+  --form-border-hover: var(--color-border-strong);
+  --form-border-focus: var(--color-primary);
+  --form-bg: var(--color-background-white);
+  --form-bg-hover: var(--color-background-light);
+  --form-text: var(--color-text-medium);
+  --form-active-bg: var(--color-primary-100);
+  --form-active-border: var(--color-primary);
+  --form-active-text: var(--color-primary);
+
+  /* === 卡片语义变量 === */
+  --card-bg: var(--color-background-white);
+  --card-border: var(--color-border-light);
+  --card-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
+  --card-hover-shadow: 0 4px 12px var(--shadow-color);
+  --card-selected-border: var(--color-primary);
+  --card-selected-bg: var(--color-primary-50);
+
+  /* === 按钮语义变量 === */
+  --btn-primary-bg: var(--color-cta);
+  --btn-primary-bg-hover: var(--color-cta-hover);
+  --btn-primary-text: white;
+  --btn-secondary-bg: transparent;
+  --btn-secondary-border: var(--color-primary);
+  --btn-secondary-text: var(--color-primary);
+  --btn-disabled-bg: var(--color-border-medium);
+  --btn-disabled-text: var(--color-text-disabled);
+
+  /* === 标签/徽章语义变量 === */
+  --tag-medicine-bg: #DBEAFE;
+  --tag-medicine-text: #2563EB;
+  --tag-exam-bg: #FCE7F3;
+  --tag-exam-text: #DB2777;
+  --tag-ai-bg: linear-gradient(135deg, #8B5CF6, #6366F1);
+  --tag-ai-text: white;
+
+  /* === 诊断列表语义变量 === */
+  --diagnosis-bg: var(--color-background-gray);
+  --diagnosis-bg-hover: var(--color-background-hover);
+  --diagnosis-bg-active: var(--color-primary-100);
+  --diagnosis-border: var(--color-border-light);
+  --diagnosis-border-active: var(--color-primary);
+  --diagnosis-rate-bg: var(--color-info-bg);
+  --diagnosis-rate-text: var(--color-info);
+
+  /* === 加载动画语义变量 === */
+  --spinner-track: var(--color-border-light);
+  --spinner-fill: var(--color-primary);
+  --spinner-glow: rgba(8, 145, 178, 0.5);
+
+  /* === 打印页面语义变量 === */
+  --print-bg: #525659;
+  --print-paper-bg: white;
+  --print-text: #000000;
+  --print-muted: #666666;
+}
+
+/* === 深色主题完整覆盖 === */
+[data-theme="dark"],
+html.dark {
+  /* === 背景色 === */
+  --color-background: #0F172A;
+  --color-background-white: #1E293B;
+  --color-background-gray: #334155;
+  --color-background-light: #475569;
+  --color-background-hover: #475569;
+  --color-background-selected: rgba(56, 189, 248, 0.15);
+
+  /* === 主色调 - 深色模式调亮 === */
+  --color-primary: #38BDF8;
+  --color-primary-dark: #0EA5E9;
+  --color-primary-light: #7DD3FC;
+  --color-primary-50: rgba(56, 189, 248, 0.08);
+  --color-primary-100: rgba(56, 189, 248, 0.15);
+  --color-primary-200: rgba(56, 189, 248, 0.25);
+
+  /* === 文本色 - 提高对比度 === */
+  --color-text-primary: #F1F5F9;
+  --color-text-strong: #FFFFFF;
+  --color-text-medium: #E2E8F0;
+  --color-text-weak: #CBD5E1;
+  --color-text-muted: #94A3B8;
+  --color-text-disabled: #64748B;
+  --color-text-placeholder: #64748B;
+
+  /* === 边框色 === */
+  --color-border-light: #334155;
+  --color-border-medium: #475569;
+  --color-border-strong: #64748B;
+
+  /* === 状态色 - 深色模式调亮 === */
+  --color-success: #34D399;
+  --color-success-bg: rgba(16, 185, 129, 0.2);
+  --color-success-border: #10B981;
+  --color-success-text: #34D399;
+
+  --color-warning: #FBBF24;
+  --color-warning-bg: rgba(251, 191, 36, 0.2);
+  --color-warning-border: #F59E0B;
+  --color-warning-text: #FBBF24;
+
+  --color-error: #F87171;
+  --color-error-bg: rgba(248, 113, 113, 0.2);
+  --color-error-border: #EF4444;
+  --color-error-text: #F87171;
+
+  --color-info: #60A5FA;
+  --color-info-bg: rgba(96, 165, 250, 0.2);
+  --color-info-border: #3B82F6;
+  --color-info-text: #60A5FA;
+
+  /* === CTA 按钮色 === */
+  --color-cta: #10B981;
+  --color-cta-hover: #059669;
+  --color-cta-light: #34D399;
+
+  /* === 阴影色 === */
+  --shadow-color: rgba(56, 189, 248, 0.15);
+  --shadow-color-strong: rgba(56, 189, 248, 0.25);
+  --shadow-color-cta: rgba(16, 185, 129, 0.25);
+
+  /* === 卡片和表面 === */
+  --card-bg: #1E293B;
+  --card-border: #334155;
+  --card-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
+  --card-hover-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+
+  /* === 表单 === */
+  --form-bg: #1E293B;
+  --form-border: #475569;
+  --form-border-hover: #64748B;
+  --form-text: #E2E8F0;
+  --form-active-bg: rgba(56, 189, 248, 0.15);
+  --form-active-border: #38BDF8;
+  --form-active-text: #38BDF8;
+
+  /* === 诊断列表 === */
+  --diagnosis-bg: #1E293B;
+  --diagnosis-bg-hover: #334155;
+  --diagnosis-bg-active: rgba(56, 189, 248, 0.15);
+  --diagnosis-border: #334155;
+  --diagnosis-border-active: #38BDF8;
+  --diagnosis-rate-bg: rgba(96, 165, 250, 0.2);
+  --diagnosis-rate-text: #60A5FA;
+
+  /* === 标签 === */
+  --tag-medicine-bg: rgba(96, 165, 250, 0.2);
+  --tag-medicine-text: #60A5FA;
+  --tag-exam-bg: rgba(236, 72, 153, 0.2);
+  --tag-exam-text: #F472B6;
+
+  /* === 加载动画 === */
+  --spinner-track: #334155;
+  --spinner-fill: #38BDF8;
+  --spinner-glow: rgba(56, 189, 248, 0.5);
+
+  /* === 打印（保持浅色） === */
+  --print-bg: #1E293B;
+  --print-paper-bg: #FFFFFF;
+}
+
+/* ============================================
+   第二部分：全局基础样式
+   ============================================ */
+
+/* 原生表单控件颜色 */
+input[type="radio"]:checked,
+input[type="checkbox"]:checked {
+  accent-color: var(--color-primary);
+}
+
+/* 全局焦点样式 */
+*:focus-visible {
+  outline: 3px solid var(--color-primary) !important;
+  outline-offset: 2px;
+}
+
+/* 链接样式 */
+a:not([class]) {
+  color: var(--color-primary);
+  text-decoration: none;
+  transition: color 0.2s ease;
+}
+
+a:not([class]):hover {
+  color: var(--color-primary-dark);
+  text-decoration: underline;
+}
+
+/* ============================================
+   第三部分：表单控件样式
+   ============================================ */
+
+/* --- 输入框 --- */
+.text-input,
+input[type="text"],
+input[type="number"],
+input[type="email"],
+input[type="password"],
+textarea,
+select {
+  border: 1px solid var(--form-border) !important;
+  background: var(--form-bg) !important;
+  color: var(--color-text-strong) !important;
+  transition: border-color 0.2s, box-shadow 0.2s;
+}
+
+.text-input:hover,
+input:hover,
+textarea:hover,
+select:hover {
+  border-color: var(--form-border-hover) !important;
+}
+
+.text-input:focus,
+input:focus,
+textarea:focus,
+select:focus {
+  border-color: var(--form-border-focus) !important;
+  box-shadow: 0 0 0 2px var(--color-primary-200) !important;
+}
+
+/* --- 单选/复选框按钮式样式 --- */
+.radio-label,
+.checkbox-label {
+  border: 1px solid var(--form-border) !important;
+  background: var(--form-bg) !important;
+  color: var(--form-text) !important;
+  transition: all 0.2s ease;
+}
+
+.radio-label:hover,
+.checkbox-label:hover {
+  background: var(--form-bg-hover) !important;
+  border-color: var(--form-border-hover) !important;
+}
+
+.radio-label.is-active,
+.checkbox-label.is-active,
+.radio-label:has(input:checked),
+.checkbox-label:has(input:checked) {
+  background: var(--form-active-bg) !important;
+  border-color: var(--form-active-border) !important;
+  color: var(--form-active-text) !important;
+  font-weight: 500;
+  box-shadow: 0 1px 2px var(--shadow-color) !important;
+}
+
+/* --- 自定义复选框（下拉菜单中） --- */
+.checkbox-custom {
+  border: 1px solid var(--form-border) !important;
+  background: var(--form-bg) !important;
+  transition: all 0.2s;
+}
+
+.checkbox-custom:hover {
+  border-color: var(--form-border-hover) !important;
+}
+
+.checkbox-custom.checked,
+.checkbox-custom:has(input:checked) {
+  background: var(--color-primary) !important;
+  border-color: var(--color-primary) !important;
+}
+
+/* --- 表单错误状态 --- */
+.has-error .text-input,
+.has-error input,
+input.error,
+.error input {
+  border-color: var(--color-error) !important;
+  box-shadow: 0 0 0 1px var(--color-error-border) !important;
+}
+
+/* ============================================
+   第四部分：按钮样式
+   ============================================ */
+
+/* --- 主要按钮 --- */
+.btn-primary,
+.primary-btn,
+button.primary,
+.header-btn.primary,
+.submit-btn,
+.complete-btn,
+.action-btn.primary,
+[data-variant="primary"] {
+  background: var(--btn-primary-bg) !important;
+  color: var(--btn-primary-text) !important;
+  border: none !important;
+  box-shadow: 0 2px 6px var(--shadow-color-cta);
+  transition: all 0.2s ease;
+}
+
+.btn-primary:hover,
+.primary-btn:hover,
+button.primary:hover,
+.header-btn.primary:hover,
+.submit-btn:hover,
+.complete-btn:hover,
+.action-btn.primary:hover,
+[data-variant="primary"]:hover {
+  background: var(--btn-primary-bg-hover) !important;
+  transform: translateY(-1px);
+  box-shadow: 0 4px 10px var(--shadow-color-cta);
+}
+
+.btn-primary:disabled,
+.primary-btn:disabled,
+button.primary:disabled,
+.header-btn.primary:disabled,
+.submit-btn:disabled,
+[data-variant="primary"]:disabled {
+  background: var(--btn-disabled-bg) !important;
+  color: var(--btn-disabled-text) !important;
+  cursor: not-allowed;
+  transform: none;
+  box-shadow: none;
+}
+
+/* --- 次级按钮 --- */
+.btn-secondary,
+.secondary-btn,
+button.secondary,
+.header-btn:not(.primary),
+.back-btn-footer,
+[data-variant="secondary"] {
+  background: var(--btn-secondary-bg) !important;
+  color: var(--color-text-weak) !important;
+  border: 1px solid var(--form-border) !important;
+  transition: all 0.2s ease;
+}
+
+.btn-secondary:hover,
+.secondary-btn:hover,
+button.secondary:hover,
+.header-btn:not(.primary):hover,
+.back-btn-footer:hover,
+[data-variant="secondary"]:hover {
+  background: var(--form-bg-hover) !important;
+  border-color: var(--form-border-hover) !important;
+  color: var(--color-text-strong) !important;
+}
+
+/* --- 图标按钮 --- */
+.icon-btn {
+  background: transparent !important;
+  color: var(--color-text-muted) !important;
+  transition: all 0.2s;
+}
+
+.icon-btn:hover {
+  background: var(--form-bg-hover) !important;
+  color: var(--color-primary) !important;
+}
+
+/* --- 删除按钮 --- */
+.remove-btn,
+.delete-btn {
+  color: var(--color-text-disabled) !important;
+}
+
+.remove-btn:hover,
+.delete-btn:hover {
+  color: var(--color-error) !important;
+  background: var(--color-error-bg) !important;
+}
+
+/* ============================================
+   第五部分：标签页/选项卡样式
+   ============================================ */
+
+.tab-btn,
+.nav-tab,
+[role="tab"] {
+  border: 1px solid var(--color-border-light) !important;
+  background: transparent !important;
+  color: var(--color-text-muted) !important;
+  transition: all 0.2s ease;
+}
+
+.tab-btn:hover,
+.nav-tab:hover,
+[role="tab"]:hover {
+  background: var(--color-background-gray) !important;
+  border-color: var(--color-info-border) !important;
+}
+
+.tab-btn.active,
+.nav-tab.active,
+[role="tab"][aria-selected="true"] {
+  background: var(--color-background) !important;
+  border-color: var(--color-primary) !important;
+  color: var(--color-primary) !important;
+  font-weight: 600;
+}
+
+/* ============================================
+   第六部分：列表项样式
+   ============================================ */
+
+/* --- 症状列表项 --- */
+.symptom-list li {
+  border-bottom: 1px solid var(--color-border-light) !important;
+  color: var(--color-text-weak) !important;
+  transition: all 0.2s;
+}
+
+.symptom-list li:hover {
+  background: var(--color-background) !important;
+  color: var(--color-primary) !important;
+}
+
+.symptom-list li.active {
+  background: var(--color-primary) !important;
+  color: white !important;
+  box-shadow: 0 4px 6px -1px var(--color-primary-200) !important;
+}
+
+.symptom-list li.active:hover {
+  background: var(--color-primary-dark) !important;
+}
+
+/* --- 诊断列表项 --- */
+.diagnosis-item,
+.diagnosis-list li {
+  border: 1px solid var(--diagnosis-border) !important;
+  background: var(--diagnosis-bg) !important;
+  transition: all 0.2s;
+}
+
+.diagnosis-item:hover,
+.diagnosis-list li:hover {
+  background: var(--diagnosis-bg-hover) !important;
+  border-color: var(--color-border-medium) !important;
+}
+
+.diagnosis-item.active,
+.diagnosis-list li.active {
+  background: var(--diagnosis-bg-active) !important;
+  border-color: var(--diagnosis-border-active) !important;
+  box-shadow: 0 0 0 1px var(--diagnosis-border-active) !important;
+}
+
+/* --- 诊断概率标签 --- */
+.diag-rate {
+  background: var(--diagnosis-rate-bg) !important;
+  color: var(--diagnosis-rate-text) !important;
+}
+
+/* --- 治疗推荐项 --- */
+.treatment-item {
+  background: var(--card-bg) !important;
+  border: 1px solid var(--card-border) !important;
+  transition: all 0.2s;
+}
+
+.treatment-item:hover {
+  background: var(--color-background-gray) !important;
+  border-color: var(--color-border-medium) !important;
+}
+
+.treatment-item.active {
+  background: var(--color-primary-100) !important;
+  border-color: var(--color-primary) !important;
+  box-shadow: 0 0 0 1px var(--color-primary) !important;
+}
+
+/* --- 选中标记 --- */
+.selected-mark {
+  background: var(--color-primary) !important;
+}
+
+/* ============================================
+   第七部分：标签/徽章样式
+   ============================================ */
+
+/* --- 药品标签 --- */
+.rec-tag.medicine {
+  background: var(--tag-medicine-bg) !important;
+  color: var(--tag-medicine-text) !important;
+}
+
+/* --- 检查标签 --- */
+.rec-tag.exam {
+  background: var(--tag-exam-bg) !important;
+  color: var(--tag-exam-text) !important;
+}
+
+/* --- AI 标签 --- */
+.tag-ai {
+  background: var(--tag-ai-bg) !important;
+  color: var(--tag-ai-text) !important;
+}
+
+/* --- 匹配成功标签 --- */
+.matched-inline,
+.match-success {
+  background: var(--color-success-bg) !important;
+  border: 1px solid var(--color-success-border) !important;
+}
+
+.match-icon,
+.match-name {
+  color: var(--color-success-text) !important;
+}
+
+.match-spec,
+.match-price {
+  color: var(--color-success) !important;
+}
+
+/* --- 状态标签（通用） --- */
+.tag-blue,
+.badge-blue {
+  background: var(--color-info-bg) !important;
+  color: var(--color-info) !important;
+}
+
+.tag-green,
+.badge-green {
+  background: var(--color-success-bg) !important;
+  color: var(--color-success) !important;
+}
+
+.tag-red,
+.badge-red {
+  background: var(--color-error-bg) !important;
+  color: var(--color-error) !important;
+}
+
+/* ============================================
+   第八部分：卡片和面板样式
+   ============================================ */
+
+/* --- 基础卡片 --- */
+.record-panel,
+.ai-card,
+.symptom-form-section {
+  background: var(--card-bg) !important;
+  border: 1px solid var(--card-border) !important;
+  box-shadow: var(--card-shadow);
+}
+
+.symptom-form-section:hover {
+  box-shadow: var(--card-hover-shadow) !important;
+}
+
+/* --- 面板头部 --- */
+.panel-header {
+  border-bottom: 1px solid var(--color-border-light) !important;
+  background: var(--card-bg) !important;
+}
+
+.panel-header h3 {
+  color: var(--color-text-medium) !important;
+}
+
+.right-panel .panel-header {
+  background: var(--color-background-gray) !important;
+}
+
+/* --- 表单头部 --- */
+.form-header {
+  background: linear-gradient(to right, var(--color-background-white), var(--color-background)) !important;
+  border-bottom: 1px solid var(--color-border-light) !important;
+}
+
+.form-header h2 {
+  color: var(--color-text-primary) !important;
+}
+
+.form-header h2::before {
+  background: var(--color-primary) !important;
+}
+
+/* --- 病历字段 --- */
+.record-field label {
+  color: var(--color-text-weak) !important;
+}
+
+.record-field textarea {
+  border: 1px solid var(--form-border) !important;
+  color: var(--color-text-strong) !important;
+}
+
+.record-field textarea:focus {
+  border-color: var(--form-border-focus) !important;
+  box-shadow: 0 0 0 3px var(--color-primary-100) !important;
+}
+
+/* ============================================
+   第九部分：加载状态样式
+   ============================================ */
+
+/* --- 遮罩层 --- */
+.loading-overlay {
+  background: rgba(255, 255, 255, 0.95) !important;
+}
+
+/* --- 旋转器 --- */
+.spinner-ring {
+  border: 3px solid var(--spinner-track) !important;
+  border-top-color: var(--spinner-fill) !important;
+}
+
+.spinner-core {
+  background: radial-gradient(circle, var(--color-primary) 0%, var(--color-primary-light) 100%) !important;
+  box-shadow: 0 0 12px var(--spinner-glow) !important;
+}
+
+/* --- 加载文本 --- */
+.loading-title {
+  color: var(--color-text-strong) !important;
+}
+
+.loading-desc {
+  color: var(--color-text-muted) !important;
+}
+
+/* --- 骨架屏 --- */
+.skeleton-line {
+  background: var(--color-background-gray) !important;
+}
+
+/* ============================================
+   第十部分：下拉菜单样式
+   ============================================ */
+
+/* --- 分类筛选下拉 --- */
+.category-trigger {
+  border: 1px solid var(--color-border-light) !important;
+  background: var(--card-bg) !important;
+}
+
+.category-trigger:hover {
+  border-color: var(--color-primary) !important;
+}
+
+.category-trigger.active {
+  border-color: var(--color-primary) !important;
+  box-shadow: 0 0 0 2px var(--color-primary-100) !important;
+}
+
+.trigger-text {
+  color: var(--color-text-medium) !important;
+}
+
+.trigger-icon {
+  color: var(--color-text-disabled) !important;
+}
+
+.category-dropdown {
+  background: var(--card-bg) !important;
+  border: 1px solid var(--color-border-light) !important;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+}
+
+.category-option:hover {
+  background: var(--color-background-hover) !important;
+}
+
+.category-option.selected {
+  background: var(--color-primary-100) !important;
+  color: var(--color-primary) !important;
+}
+
+.dropdown-divider {
+  background: var(--color-border-light) !important;
+}
+
+/* --- 相关诊断下拉 --- */
+.related-section {
+  background: var(--card-bg) !important;
+  border: 1px solid var(--card-border) !important;
+}
+
+.related-trigger {
+  background: var(--color-background-gray) !important;
+  color: var(--color-text-muted) !important;
+}
+
+.related-trigger:hover {
+  background: var(--color-background-hover) !important;
+}
+
+.related-list {
+  border-top: 1px solid var(--card-border) !important;
+}
+
+.related-item:hover {
+  background: var(--color-primary-50) !important;
+}
+
+.related-code {
+  color: var(--color-text-muted) !important;
+}
+
+.related-name {
+  color: var(--color-text-medium) !important;
+}
+
+/* --- 切换箭头 --- */
+.inline-related-trigger {
+  color: var(--color-text-disabled) !important;
+}
+
+.inline-related-trigger:hover {
+  background: var(--color-border-light) !important;
+  color: var(--color-text-weak) !important;
+}
+
+/* ============================================
+   第十一部分：侧边栏样式
+   ============================================ */
+
+.symptom-sidebar {
+  border-right: 1px solid var(--color-border-light) !important;
+}
+
+.symptom-sidebar h3 {
+  color: var(--color-text-primary) !important;
+  border-bottom: 1px solid var(--color-border-light) !important;
+}
+
+.search-box {
+  border-bottom: 1px solid var(--color-border-light) !important;
+}
+
+.search-input {
+  border: 1px solid var(--color-border-light) !important;
+  background: var(--form-bg) !important;
+}
+
+.search-input:focus {
+  border-color: var(--color-primary) !important;
+  box-shadow: 0 0 0 2px var(--color-primary-200) !important;
+}
+
+/* ============================================
+   第十二部分：空状态样式
+   ============================================ */
+
+.empty-state {
+  color: var(--color-primary-light) !important;
+  border: 2px dashed var(--color-border-light) !important;
+}
+
+.empty-icon {
+  color: var(--color-border-medium) !important;
+}
+
+.sub-text {
+  color: var(--color-border-medium) !important;
+}
+
+.empty-text {
+  color: var(--color-text-disabled) !important;
+}
+
+.error-text {
+  color: var(--color-error) !important;
+  background: var(--color-error-bg) !important;
+  border: 1px solid var(--color-error-border) !important;
+}
+
+/* ============================================
+   第十三部分：打印页面样式
+   ============================================ */
+
+.final-report-page {
+  background: var(--print-bg) !important;
+}
+
+.report-paper {
+  background: var(--print-paper-bg) !important;
+  color: var(--print-text) !important;
+}
+
+.hospital-title {
+  border-bottom: 2px solid var(--print-text) !important;
+}
+
+.report-header {
+  border-bottom: 1px solid var(--print-text) !important;
+}
+
+.tx-usage {
+  color: var(--print-muted) !important;
+}
+
+/* ============================================
+   第十四部分：滚动条样式
+   ============================================ */
+
+*::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+*::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+*::-webkit-scrollbar-thumb {
+  background-color: var(--color-primary-200);
+  border-radius: 4px;
+}
+
+*::-webkit-scrollbar-thumb:hover {
+  background-color: var(--color-primary);
+}
+
+/* ============================================
+   第十五部分：响应式适配
+   ============================================ */
+
+@media (max-width: 767px) {
+  /* 移动端触摸目标最小尺寸 */
+  button,
+  input[type="radio"] + label,
+  input[type="checkbox"] + label,
+  .radio-label,
+  .checkbox-label,
+  .clickable {
+    min-height: 44px;
+    min-width: 44px;
+  }
+}
+
+/* ============================================
+   第十六部分：动画和过渡
+   ============================================ */
+
+/* Reduced Motion 支持 */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/* ============================================
+   第十七部分：打印媒体查询
+   ============================================ */
+
+@media print {
+  /* 打印时确保颜色正确显示 */
+  .btn-primary,
+  .header-btn.primary {
+    background: #059669 !important;
+    color: white !important;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+
+  .tab-btn.active,
+  .symptom-list li.active {
+    background: #ECFEFF !important;
+    border-color: #0891B2 !important;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+
+  /* 隐藏不需要打印的元素 */
+  .loading-overlay,
+  .fact-check-widget,
+  .header-actions button:not(.primary) {
+    display: none !important;
+  }
+}
+
+/* ============================================
+   第十八部分：高对比度模式（可访问性）
+   ============================================ */
+
+@media (prefers-contrast: high) {
+  :root {
+    --color-primary: #006B8A;
+    --color-cta: #047857;
+    --color-border-light: #64748B;
+    --color-border-medium: #334155;
+  }
+
+  .radio-label,
+  .checkbox-label,
+  .tab-btn {
+    border-width: 2px !important;
+  }
+
+  *:focus-visible {
+    outline-width: 4px !important;
+  }
+}
+
+/* ============================================
+   第十九部分：旧蓝色值覆盖（兼容性）
+   ============================================ */
+
+/*
+ * 以下选择器用于覆盖可能遗留的旧蓝色值
+ * 通过属性选择器捕获内联样式
+ */
+
+/* 覆盖常见的 Tailwind 蓝色类 */
+.bg-blue-50 { background-color: var(--color-primary-50) !important; }
+.bg-blue-100 { background-color: var(--color-primary-100) !important; }
+.bg-blue-500 { background-color: var(--color-primary) !important; }
+.bg-blue-600 { background-color: var(--color-primary-dark) !important; }
+.border-blue-500 { border-color: var(--color-primary) !important; }
+.text-blue-500 { color: var(--color-primary) !important; }
+.text-blue-600 { color: var(--color-primary-dark) !important; }
+
+/* ============================================
+   第二十部分：主题切换辅助类
+   ============================================ */
+
+/* 主题切换动画 */
+[data-theme-transition] * {
+  transition: background-color 0.3s ease, color 0.3s ease, border-color 0.3s ease !important;
+}
+
+/* 主题切换完成后移除过渡 */
+[data-theme-transition="done"] * {
+  transition: none !important;
+}
+
+/* 强制使用主色调 */
+.use-primary {
+  color: var(--color-primary) !important;
+}
+
+.use-primary-bg {
+  background-color: var(--color-primary) !important;
+}
+
+/* 强制使用 CTA 色调 */
+.use-cta {
+  color: var(--color-cta) !important;
+}
+
+.use-cta-bg {
+  background-color: var(--color-cta) !important;
+}
+
+/* ============================================
+   第二十一部分：旧版变量别名（向后兼容）
+   ============================================ */
+
+/*
+ * 为使用旧变量名的组件提供兼容性支持
+ * 例如 AnalyticsPanel 使用 --accent, --text-strong 等
+ */
+:root {
+  /* 旧版颜色变量映射到新设计令牌 */
+  --accent: var(--color-primary);
+  --accent-strong: var(--color-primary-dark);
+  --accent-light: var(--color-primary-light);
+  --text-strong: var(--color-text-strong);
+  --text-weak: var(--color-text-weak);
+  --text-muted: var(--color-text-muted);
+}
+
+/* ============================================
+   第二十二部分：设置面板样式覆盖
+   ============================================ */
+
+/* --- 设置面板容器 --- */
+.settings-panel {
+  background: var(--color-background-gray) !important;
+}
+
+/* --- 设置面板头部 --- */
+.settings-header {
+  background: var(--color-background-white) !important;
+  border-bottom: 2px solid var(--color-border-light) !important;
+}
+
+.settings-title {
+  color: var(--color-text-primary) !important;
+}
+
+.settings-subtitle {
+  color: var(--color-text-muted) !important;
+}
+
+/* --- 设置面板标签页 --- */
+.settings-panel .tabs-header {
+  background: var(--color-background-white) !important;
+  border-bottom: 2px solid var(--color-border-light) !important;
+}
+
+.settings-panel .tab-btn {
+  color: var(--color-text-muted) !important;
+  border: none !important;
+  border-bottom: 3px solid transparent !important;
+  background: transparent !important;
+}
+
+.settings-panel .tab-btn:hover {
+  color: var(--color-text-primary) !important;
+  background: var(--color-background-gray) !important;
+}
+
+.settings-panel .tab-btn.active {
+  color: var(--color-primary) !important;
+  border-bottom-color: var(--color-primary) !important;
+  background: transparent !important;
+}
+
+/* --- 设置区块 --- */
+.settings-section {
+  background: var(--color-background-white) !important;
+  border: 1px solid var(--color-border-light) !important;
+  border-radius: 12px !important;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05) !important;
+}
+
+.section-header {
+  border-bottom: 2px solid var(--color-border-light) !important;
+  color: var(--color-primary) !important;
+}
+
+.section-header h3 {
+  color: var(--color-text-primary) !important;
+}
+
+.section-desc {
+  color: var(--color-text-muted) !important;
+}
+
+/* --- 主题选择器 --- */
+.theme-grid .theme-card {
+  background: var(--color-background-white) !important;
+  border: 2px solid var(--color-border-light) !important;
+  transition: all 0.2s ease !important;
+}
+
+.theme-grid .theme-card:hover {
+  border-color: var(--color-primary-light) !important;
+  box-shadow: 0 4px 12px var(--shadow-color) !important;
+}
+
+.theme-grid .theme-card.active {
+  border-color: var(--color-primary) !important;
+  box-shadow: 0 0 0 3px var(--color-primary-100) !important;
+}
+
+.theme-name {
+  color: var(--color-text-strong) !important;
+}
+
+.theme-desc {
+  color: var(--color-text-muted) !important;
+}
+
+.theme-check {
+  background: var(--color-primary) !important;
+  color: white !important;
+}
+
+/* --- 表单元素 --- */
+.settings-panel .form-group label {
+  color: var(--color-text-primary) !important;
+}
+
+.settings-panel .form-hint {
+  color: var(--color-text-muted) !important;
+}
+
+.settings-panel .required {
+  color: var(--color-error) !important;
+}
+
+.settings-panel .input-with-icon .input-icon {
+  color: var(--color-text-muted) !important;
+}
+
+.settings-panel .form-group input {
+  border: 2px solid var(--color-border-medium) !important;
+  background: var(--color-background-white) !important;
+  color: var(--color-text-strong) !important;
+}
+
+.settings-panel .form-group input:hover {
+  border-color: var(--color-border-strong) !important;
+}
+
+.settings-panel .form-group input:focus {
+  border-color: var(--color-primary) !important;
+  box-shadow: 0 0 0 3px var(--color-primary-100) !important;
+}
+
+/* --- 开关组件 --- */
+.settings-panel .form-group.row {
+  background: var(--color-background-gray) !important;
+}
+
+.settings-panel .toggle-switch {
+  background-color: var(--color-border-medium) !important;
+  box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.1) !important;
+}
+
+.settings-panel input:checked + .toggle-switch {
+  background-color: var(--color-cta) !important;
+}
+
+/* --- 保存按钮 --- */
+.settings-panel .save-btn {
+  background: var(--color-primary) !important;
+  color: white !important;
+  box-shadow: 0 4px 12px var(--shadow-color) !important;
+}
+
+.settings-panel .save-btn:hover {
+  background: var(--color-primary-dark) !important;
+  box-shadow: 0 6px 16px var(--shadow-color-strong) !important;
+}
+
+/* --- 操作按钮 --- */
+.settings-panel .action-btn {
+  border: 2px solid var(--color-primary) !important;
+  background: var(--color-background-white) !important;
+  color: var(--color-primary) !important;
+}
+
+.settings-panel .action-btn:hover:not(:disabled) {
+  background: var(--color-primary) !important;
+  color: white !important;
+  box-shadow: 0 4px 12px var(--shadow-color) !important;
+}
+
+.settings-panel .action-btn.primary {
+  background: var(--color-primary) !important;
+  color: white !important;
+  border: none !important;
+  box-shadow: 0 4px 12px var(--shadow-color) !important;
+}
+
+.settings-panel .action-btn.primary:hover:not(:disabled) {
+  background: var(--color-primary-dark) !important;
+  box-shadow: 0 6px 16px var(--shadow-color-strong) !important;
+}
+
+/* --- 信息横幅 --- */
+.settings-panel .info-banner {
+  background: var(--color-info-bg) !important;
+  border: 1px solid var(--color-info) !important;
+  color: var(--color-text-strong) !important;
+}
+
+/* --- 数据信息列表 --- */
+.settings-panel .data-info-list li {
+  color: var(--color-text-strong) !important;
+}
+
+.settings-panel .data-info-list li :deep(svg) {
+  color: var(--color-primary) !important;
+}
+
+/* ============================================
+   第二十三部分：数据分析面板样式覆盖
+   ============================================ */
+
+/* --- 分析面板容器 --- */
+.analytics-panel {
+  background: linear-gradient(135deg, var(--color-background) 0%, var(--color-background-gray) 100%) !important;
+  color: var(--color-text-strong) !important;
+}
+
+/* --- 分析面板头部 --- */
+.analytics-panel .header {
+  background: rgba(255, 255, 255, 0.8) !important;
+  backdrop-filter: blur(10px) !important;
+  border-bottom: 1px solid var(--color-border-light) !important;
+}
+
+.analytics-panel .header h2 {
+  color: var(--color-text-primary) !important;
+}
+
+.analytics-panel .close-btn {
+  color: var(--color-text-weak) !important;
+}
+
+.analytics-panel .close-btn:hover {
+  color: var(--color-text-strong) !important;
+}
+
+/* --- 时间范围选择器 --- */
+.analytics-panel .time-range-selector {
+  gap: 12px !important;
+}
+
+.analytics-panel .range-btn {
+  border: 1px solid var(--color-border-medium) !important;
+  background: rgba(255, 255, 255, 0.9) !important;
+  color: var(--color-text-strong) !important;
+  border-radius: 20px !important;
+  transition: all 0.2s ease !important;
+}
+
+.analytics-panel .range-btn:hover {
+  background: var(--color-background-white) !important;
+  border-color: var(--color-primary) !important;
+  box-shadow: 0 2px 8px var(--shadow-color) !important;
+}
+
+.analytics-panel .range-btn.active {
+  background: linear-gradient(135deg, var(--color-primary) 0%, var(--color-primary-dark) 100%) !important;
+  border-color: transparent !important;
+  color: white !important;
+  box-shadow: 0 4px 12px var(--shadow-color-strong) !important;
+}
+
+/* --- 加载状态 --- */
+.analytics-panel .loading {
+  color: var(--color-text-weak) !important;
+}
+
+.analytics-panel .spinner {
+  border: 4px solid var(--color-border-light) !important;
+  border-top-color: var(--color-primary) !important;
+}
+
+/* --- 错误状态 --- */
+.analytics-panel .error-message {
+  color: var(--color-error) !important;
+}
+
+.analytics-panel .retry-btn {
+  background: var(--color-primary) !important;
+  color: white !important;
+}
+
+.analytics-panel .retry-btn:hover {
+  background: var(--color-primary-dark) !important;
+  box-shadow: 0 4px 12px var(--shadow-color) !important;
+}
+
+/* --- 空状态 --- */
+.analytics-panel .empty-message {
+  color: var(--color-text-strong) !important;
+}
+
+.analytics-panel .empty-hint {
+  color: var(--color-text-weak) !important;
+}
+
+/* --- 统计卡片 --- */
+.analytics-panel .stat-card {
+  background: rgba(255, 255, 255, 0.95) !important;
+  border: 1px solid var(--color-border-light) !important;
+  border-radius: 12px !important;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04) !important;
+}
+
+.analytics-panel .stat-card:hover {
+  background: var(--color-background-white) !important;
+  box-shadow: 0 4px 16px var(--shadow-color) !important;
+}
+
+.analytics-panel .stat-label {
+  color: var(--color-text-weak) !important;
+}
+
+.analytics-panel .stat-value {
+  color: var(--color-text-strong) !important;
+}
+
+/* --- 图表区块 --- */
+.analytics-panel .chart-section {
+  background: rgba(255, 255, 255, 0.95) !important;
+  border: 1px solid var(--color-border-light) !important;
+  border-radius: 12px !important;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04) !important;
+}
+
+.analytics-panel .chart-section h3 {
+  color: var(--color-text-primary) !important;
+}
+
+/* --- 会话类型分布 - 统一颜色 --- */
+.analytics-panel .type-label {
+  color: var(--color-text-strong) !important;
+}
+
+.analytics-panel .type-count {
+  color: var(--color-text-weak) !important;
+}
+
+.analytics-panel .type-bar-container {
+  background: var(--color-border-light) !important;
+}
+
+/* 会话类型颜色使用设计令牌 */
+.analytics-panel .type-bar {
+  /* 这些颜色通过 JS 设置，我们无法覆盖 */
+  /* 但我们可以提供默认样式 */
+}
+
+/* --- 反馈统计 --- */
+.analytics-panel .feedback-label {
+  color: var(--color-text-strong) !important;
+}
+
+.analytics-panel .progress-bar {
+  background: var(--color-border-light) !important;
+}
+
+.analytics-panel .progress-fill.positive {
+  background: linear-gradient(90deg, var(--color-success) 0%, var(--color-cta-light) 100%) !important;
+}
+
+.analytics-panel .progress-fill.adopted {
+  background: linear-gradient(90deg, var(--color-primary) 0%, var(--color-primary-light) 100%) !important;
+}
+
+.analytics-panel .feedback-value {
+  color: var(--color-text-strong) !important;
+}
+
+.analytics-panel .feedback-item {
+  background: var(--color-background-gray) !important;
+  color: var(--color-text-strong) !important;
+}
+
+/* --- 性能统计 --- */
+.analytics-panel .perf-item {
+  background: var(--color-background-gray) !important;
+}
+
+.analytics-panel .perf-label {
+  color: var(--color-text-weak) !important;
+}
+
+.analytics-panel .perf-value {
+  color: var(--color-primary) !important;
+}
+
+/* --- 时长显示 --- */
+.analytics-panel .duration-value {
+  color: var(--color-primary) !important;
+}
+
+/* --- 滚动条 --- */
+.analytics-panel .content::-webkit-scrollbar-track {
+  background: var(--color-background-gray) !important;
+}
+
+.analytics-panel .content::-webkit-scrollbar-thumb {
+  background: var(--color-primary-200) !important;
+}
+
+.analytics-panel .content::-webkit-scrollbar-thumb:hover {
+  background: var(--color-primary) !important;
+}
+
+/* ============================================
+   第二十四部分：更新检查组件样式覆盖
+   ============================================ */
+
+/* UpdateChecker 组件也需要统一样式 */
+.update-checker {
+  background: var(--color-background-white) !important;
+  border: 1px solid var(--color-border-light) !important;
+  border-radius: 12px !important;
+}
+
+.update-checker .version-info {
+  color: var(--color-text-strong) !important;
+}
+
+.update-checker .version-label {
+  color: var(--color-text-muted) !important;
+}
+
+.update-checker .check-btn {
+  background: var(--color-primary) !important;
+  color: white !important;
+}
+
+.update-checker .check-btn:hover {
+  background: var(--color-primary-dark) !important;
+}
+
+.update-checker .update-available {
+  background: var(--color-success-bg) !important;
+  border: 1px solid var(--color-success-border) !important;
+  color: var(--color-success-text) !important;
+}
+
+.update-checker .no-update {
+  color: var(--color-text-muted) !important;
+}
+
+/* ============================================
+   第二十五部分：深色模式组件覆盖
+   ============================================ */
+
+/* --- 深色模式下的加载遮罩 --- */
+[data-theme="dark"] .loading-overlay,
+html.dark .loading-overlay {
+  background: rgba(15, 23, 42, 0.95) !important;
+}
+
+/* --- 深色模式下的诊断页面 --- */
+[data-theme="dark"] .consultation-page,
+html.dark .consultation-page {
+  background-color: var(--color-background) !important;
+  color: var(--color-text-strong) !important;
+}
+
+/* --- 深色模式下的标题 --- */
+[data-theme="dark"] .consultation-page h1,
+[data-theme="dark"] .consultation-page h2,
+[data-theme="dark"] .consultation-page h3,
+[data-theme="dark"] .consultation-page h4,
+html.dark .consultation-page h1,
+html.dark .consultation-page h2,
+html.dark .consultation-page h3,
+html.dark .consultation-page h4 {
+  color: var(--color-text-strong) !important;
+}
+
+/* --- 深色模式下的段落和标签 --- */
+[data-theme="dark"] .consultation-page p,
+[data-theme="dark"] .consultation-page label,
+[data-theme="dark"] .consultation-page span,
+html.dark .consultation-page p,
+html.dark .consultation-page label,
+html.dark .consultation-page span {
+  color: var(--color-text-medium) !important;
+}
+
+/* --- 深色模式下的侧边栏 --- */
+[data-theme="dark"] .symptom-sidebar,
+html.dark .symptom-sidebar {
+  background: var(--color-background-white) !important;
+  border-right-color: var(--color-border-light) !important;
+}
+
+[data-theme="dark"] .symptom-sidebar li,
+html.dark .symptom-sidebar li {
+  color: var(--color-text-medium) !important;
+  border-bottom-color: var(--color-border-light) !important;
+}
+
+[data-theme="dark"] .symptom-sidebar li:hover,
+html.dark .symptom-sidebar li:hover {
+  background: var(--color-background-gray) !important;
+  color: var(--color-primary) !important;
+}
+
+[data-theme="dark"] .symptom-sidebar li.active,
+html.dark .symptom-sidebar li.active {
+  background: var(--color-primary) !important;
+  color: white !important;
+}
+
+/* --- 深色模式下的表单区块 --- */
+[data-theme="dark"] .symptom-form-section,
+html.dark .symptom-form-section {
+  background: var(--color-background-white) !important;
+  border-color: var(--color-border-light) !important;
+}
+
+[data-theme="dark"] .symptom-form-section .form-header,
+html.dark .symptom-form-section .form-header {
+  background: linear-gradient(to right, var(--color-background-white), var(--color-background-gray)) !important;
+  border-bottom-color: var(--color-border-light) !important;
+}
+
+/* --- 深色模式下的表单字段 --- */
+[data-theme="dark"] .field-label,
+html.dark .field-label {
+  color: var(--color-text-weak) !important;
+}
+
+[data-theme="dark"] .radio-label,
+[data-theme="dark"] .checkbox-label,
+html.dark .radio-label,
+html.dark .checkbox-label {
+  background: var(--color-background-gray) !important;
+  border-color: var(--color-border-medium) !important;
+  color: var(--color-text-medium) !important;
+}
+
+[data-theme="dark"] .radio-label:hover,
+[data-theme="dark"] .checkbox-label:hover,
+html.dark .radio-label:hover,
+html.dark .checkbox-label:hover {
+  background: var(--color-background-light) !important;
+  border-color: var(--color-border-strong) !important;
+}
+
+[data-theme="dark"] .radio-label.is-active,
+[data-theme="dark"] .checkbox-label.is-active,
+html.dark .radio-label.is-active,
+html.dark .checkbox-label.is-active {
+  background: var(--color-primary-100) !important;
+  border-color: var(--color-primary) !important;
+  color: var(--color-primary) !important;
+}
+
+/* --- 深色模式下的病历面板 --- */
+[data-theme="dark"] .record-panel,
+html.dark .record-panel {
+  background: var(--color-background-white) !important;
+  border-color: var(--color-border-light) !important;
+}
+
+[data-theme="dark"] .record-field label,
+html.dark .record-field label {
+  color: var(--color-text-weak) !important;
+}
+
+[data-theme="dark"] .record-field textarea,
+html.dark .record-field textarea {
+  background: var(--color-background-gray) !important;
+  border-color: var(--color-border-medium) !important;
+  color: var(--color-text-strong) !important;
+}
+
+/* --- 深色模式下的 AI 卡片 --- */
+[data-theme="dark"] .ai-card,
+html.dark .ai-card {
+  background: var(--color-background-white) !important;
+  border-color: var(--color-border-light) !important;
+}
+
+[data-theme="dark"] .ai-card .panel-header,
+html.dark .ai-card .panel-header {
+  background: var(--color-background-gray) !important;
+  border-bottom-color: var(--color-border-light) !important;
+}
+
+/* --- 深色模式下的诊断列表 --- */
+[data-theme="dark"] .diagnosis-item,
+html.dark .diagnosis-item {
+  background: var(--color-background-gray) !important;
+  border-color: var(--color-border-medium) !important;
+}
+
+[data-theme="dark"] .diagnosis-item:hover,
+html.dark .diagnosis-item:hover {
+  background: var(--color-background-light) !important;
+}
+
+[data-theme="dark"] .diagnosis-item.active,
+html.dark .diagnosis-item.active {
+  background: var(--color-primary-100) !important;
+  border-color: var(--color-primary) !important;
+}
+
+[data-theme="dark"] .diag-name,
+html.dark .diag-name {
+  color: var(--color-text-strong) !important;
+}
+
+[data-theme="dark"] .diag-code,
+html.dark .diag-code {
+  color: var(--color-text-muted) !important;
+}
+
+[data-theme="dark"] .diag-reason,
+html.dark .diag-reason {
+  color: var(--color-text-weak) !important;
+}
+
+[data-theme="dark"] .diag-rate,
+html.dark .diag-rate {
+  background: var(--color-info-bg) !important;
+  color: var(--color-info) !important;
+}
+
+/* --- 深色模式下的治疗推荐 --- */
+[data-theme="dark"] .treatment-item,
+html.dark .treatment-item {
+  background: var(--color-background-gray) !important;
+  border-color: var(--color-border-medium) !important;
+}
+
+[data-theme="dark"] .treatment-item:hover,
+html.dark .treatment-item:hover {
+  background: var(--color-background-light) !important;
+}
+
+[data-theme="dark"] .treatment-item.active,
+html.dark .treatment-item.active {
+  background: var(--color-primary-100) !important;
+  border-color: var(--color-primary) !important;
+}
+
+[data-theme="dark"] .treatment-name,
+html.dark .treatment-name {
+  color: var(--color-text-strong) !important;
+}
+
+[data-theme="dark"] .treatment-usage,
+html.dark .treatment-usage {
+  color: var(--color-text-weak) !important;
+}
+
+/* --- 深色模式下的匹配标签 --- */
+[data-theme="dark"] .matched-inline,
+html.dark .matched-inline {
+  background: var(--color-success-bg) !important;
+  border-color: var(--color-success-border) !important;
+}
+
+[data-theme="dark"] .match-name,
+html.dark .match-name {
+  color: var(--color-success) !important;
+}
+
+[data-theme="dark"] .match-spec,
+html.dark .match-spec {
+  color: var(--color-success-text) !important;
+}
+
+/* --- 深色模式下的空状态 --- */
+[data-theme="dark"] .empty-state,
+html.dark .empty-state {
+  background: var(--color-background-gray) !important;
+  border-color: var(--color-border-medium) !important;
+}
+
+[data-theme="dark"] .empty-icon,
+html.dark .empty-icon {
+  color: var(--color-text-muted) !important;
+}
+
+[data-theme="dark"] .empty-text,
+html.dark .empty-text {
+  color: var(--color-text-weak) !important;
+}
+
+/* --- 深色模式下的标签页按钮 --- */
+[data-theme="dark"] .tab-btn,
+html.dark .tab-btn {
+  background: var(--color-background-white) !important;
+  border-color: var(--color-border-medium) !important;
+  color: var(--color-text-medium) !important;
+}
+
+[data-theme="dark"] .tab-btn:hover,
+html.dark .tab-btn:hover {
+  background: var(--color-background-gray) !important;
+  border-color: var(--color-primary-light) !important;
+}
+
+[data-theme="dark"] .tab-btn.active,
+html.dark .tab-btn.active {
+  background: var(--color-primary-100) !important;
+  border-color: var(--color-primary) !important;
+  color: var(--color-primary) !important;
+}
+
+/* --- 深色模式下的输入框 --- */
+[data-theme="dark"] input[type="text"],
+[data-theme="dark"] input[type="number"],
+[data-theme="dark"] textarea,
+[data-theme="dark"] select,
+html.dark input[type="text"],
+html.dark input[type="number"],
+html.dark textarea,
+html.dark select {
+  background: var(--color-background-gray) !important;
+  border-color: var(--color-border-medium) !important;
+  color: var(--color-text-strong) !important;
+}
+
+[data-theme="dark"] input::placeholder,
+[data-theme="dark"] textarea::placeholder,
+html.dark input::placeholder,
+html.dark textarea::placeholder {
+  color: var(--color-text-muted) !important;
+}
+
+/* --- 深色模式下的头部 --- */
+[data-theme="dark"] .page-header,
+[data-theme="dark"] .header-bar,
+html.dark .page-header,
+html.dark .header-bar {
+  background: var(--color-background-white) !important;
+  border-bottom-color: var(--color-border-light) !important;
+}
+
+[data-theme="dark"] .patient-name,
+html.dark .patient-name {
+  color: var(--color-text-strong) !important;
+}
+
+[data-theme="dark"] .patient-info,
+html.dark .patient-info {
+  color: var(--color-text-medium) !important;
+}
+
+/* --- 深色模式下的按钮 --- */
+[data-theme="dark"] .header-btn:not(.primary),
+html.dark .header-btn:not(.primary) {
+  background: var(--color-background-gray) !important;
+  border-color: var(--color-border-medium) !important;
+  color: var(--color-text-medium) !important;
+}
+
+[data-theme="dark"] .header-btn:not(.primary):hover,
+html.dark .header-btn:not(.primary):hover {
+  background: var(--color-background-light) !important;
+  border-color: var(--color-primary) !important;
+  color: var(--color-primary) !important;
+}
+
+/* --- 深色模式下的分类下拉 --- */
+[data-theme="dark"] .category-trigger,
+html.dark .category-trigger {
+  background: var(--color-background-gray) !important;
+  border-color: var(--color-border-medium) !important;
+}
+
+[data-theme="dark"] .category-dropdown,
+html.dark .category-dropdown {
+  background: var(--color-background-white) !important;
+  border-color: var(--color-border-medium) !important;
+}
+
+[data-theme="dark"] .category-option,
+html.dark .category-option {
+  color: var(--color-text-medium) !important;
+}
+
+[data-theme="dark"] .category-option:hover,
+html.dark .category-option:hover {
+  background: var(--color-background-gray) !important;
+}
+
+[data-theme="dark"] .category-option.selected,
+html.dark .category-option.selected {
+  background: var(--color-primary-100) !important;
+  color: var(--color-primary) !important;
+}
+
+/* --- 深色模式下的搜索框 --- */
+[data-theme="dark"] .search-input,
+html.dark .search-input {
+  background: var(--color-background-gray) !important;
+  border-color: var(--color-border-medium) !important;
+  color: var(--color-text-strong) !important;
+}
+
+/* --- 深色模式下的分隔线 --- */
+[data-theme="dark"] .divider,
+[data-theme="dark"] hr,
+html.dark .divider,
+html.dark hr {
+  border-color: var(--color-border-light) !important;
+}
+
+/* --- 深色模式下的加载动画 --- */
+[data-theme="dark"] .spinner-ring,
+html.dark .spinner-ring {
+  border-color: var(--color-border-medium) !important;
+  border-top-color: var(--color-primary) !important;
+}
+
+[data-theme="dark"] .loading-title,
+html.dark .loading-title {
+  color: var(--color-text-strong) !important;
+}
+
+[data-theme="dark"] .loading-desc,
+html.dark .loading-desc {
+  color: var(--color-text-weak) !important;
+}
+
+/* --- 深色模式下的设置面板 --- */
+[data-theme="dark"] .settings-panel,
+html.dark .settings-panel {
+  background: var(--color-background) !important;
+}
+
+[data-theme="dark"] .settings-header,
+html.dark .settings-header {
+  background: var(--color-background-white) !important;
+}
+
+[data-theme="dark"] .settings-section,
+html.dark .settings-section {
+  background: var(--color-background-white) !important;
+}
+
+[data-theme="dark"] .theme-card,
+html.dark .theme-card {
+  background: var(--color-background-gray) !important;
+}
+
+/* --- 深色模式下的聊天面板 --- */
+[data-theme="dark"] .chat-panel,
+html.dark .chat-panel {
+  background: var(--color-background) !important;
+}
+
+[data-theme="dark"] .chat-input,
+html.dark .chat-input {
+  background: var(--color-background-white) !important;
+  border-color: var(--color-border-medium) !important;
+}
+
+[data-theme="dark"] .chat-message.assistant,
+html.dark .chat-message.assistant {
+  background: var(--color-background-white) !important;
+  color: var(--color-text-strong) !important;
+}
+
+[data-theme="dark"] .chat-message.user,
+html.dark .chat-message.user {
+  background: var(--color-primary) !important;
+  color: white !important;
+}
+
+/* --- 深色模式下的数据分析面板 --- */
+[data-theme="dark"] .analytics-panel,
+html.dark .analytics-panel {
+  background: linear-gradient(135deg, var(--color-background) 0%, var(--color-background-white) 100%) !important;
+}
+
+[data-theme="dark"] .analytics-panel .header,
+html.dark .analytics-panel .header {
+  background: rgba(30, 41, 59, 0.9) !important;
+}
+
+[data-theme="dark"] .analytics-panel .stat-card,
+html.dark .analytics-panel .stat-card {
+  background: var(--color-background-white) !important;
+  border-color: var(--color-border-light) !important;
+}
+
+[data-theme="dark"] .analytics-panel .chart-section,
+html.dark .analytics-panel .chart-section {
+  background: var(--color-background-white) !important;
+  border-color: var(--color-border-light) !important;
+}
+
+[data-theme="dark"] .analytics-panel .range-btn,
+html.dark .analytics-panel .range-btn {
+  background: var(--color-background-gray) !important;
+  border-color: var(--color-border-medium) !important;
+  color: var(--color-text-medium) !important;
+}
+
+[data-theme="dark"] .analytics-panel .range-btn:hover,
+html.dark .analytics-panel .range-btn:hover {
+  background: var(--color-background-light) !important;
+}
+
+[data-theme="dark"] .analytics-panel .range-btn.active,
+html.dark .analytics-panel .range-btn.active {
+  background: linear-gradient(135deg, var(--color-primary) 0%, var(--color-primary-dark) 100%) !important;
+  color: white !important;
+}

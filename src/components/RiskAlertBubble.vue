@@ -7,15 +7,13 @@
           <span class="patient-name">{{ patientName }}</span>
           <span class="patient-meta">{{ genderText }} · {{ age }}岁</span>
         </div>
-        <button 
-          v-if="!hasCriticalRisk" 
-          class="close-btn" 
+        <button
+          v-if="!hasCriticalRisk"
+          class="close-btn"
           @click="handleClose"
           title="关闭"
         >
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <path d="M18 6L6 18M6 6l12 12"/>
-          </svg>
+          <Icon icon="lucide:x" size="14" />
         </button>
       </div>
 
@@ -35,9 +33,7 @@
       <!-- Confirm Button (for critical risks) -->
       <div v-if="hasCriticalRisk" class="confirm-area">
         <button class="confirm-btn" @click="handleConfirm">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <polyline points="20 6 9 17 4 12"/>
-          </svg>
+          <Icon icon="lucide:check" size="16" />
           我已知悉
         </button>
       </div>
@@ -55,6 +51,7 @@
 
 <script setup lang="ts">
 import { ref, computed, onUnmounted, watch } from 'vue';
+import Icon from './Icon.vue';
 
 export interface RiskItem {
   level: 1 | 2 | 3;
@@ -213,20 +210,12 @@ onUnmounted(() => {
   align-items: center;
   justify-content: center;
   cursor: pointer;
-  transition: all 0.2s ease;
-}
-
-.close-btn svg {
-  width: 14px;
-  height: 14px;
+  transition: all var(--duration-normal) var(--ease-out);
   color: #64748b;
 }
 
 .close-btn:hover {
   background: rgba(0, 0, 0, 0.08);
-}
-
-.close-btn:hover svg {
   color: #ef4444;
 }
 
@@ -282,7 +271,7 @@ onUnmounted(() => {
 .confirm-btn {
   width: 100%;
   padding: 10px 16px;
-  background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%);
+  background: linear-gradient(135deg, var(--color-primary) 0%, var(--color-primary-dark) 100%);
   color: white;
   border: none;
   border-radius: 10px;
@@ -293,12 +282,7 @@ onUnmounted(() => {
   align-items: center;
   justify-content: center;
   gap: 8px;
-  transition: all 0.2s ease;
-}
-
-.confirm-btn svg {
-  width: 16px;
-  height: 16px;
+  transition: all var(--duration-normal) var(--ease-out);
 }
 
 .confirm-btn:hover {
@@ -320,7 +304,7 @@ onUnmounted(() => {
 /* Transition animations */
 .bubble-enter-active,
 .bubble-leave-active {
-  transition: all 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+  transition: all var(--duration-slow) cubic-bezier(0.34, 1.56, 0.64, 1);
 }
 
 .bubble-enter-from,

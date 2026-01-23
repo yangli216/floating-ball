@@ -7,15 +7,19 @@ import { load, Store } from '@tauri-apps/plugin-store';
 import { onOpenUrl } from '@tauri-apps/plugin-deep-link';
 import ChatPanel from "./components/ChatPanel.vue";
 import SettingsPanel from "./components/SettingsPanel.vue";
+import AnalyticsPanel from "./components/AnalyticsPanel.vue";
 import ConsultationPage from "./components/ConsultationPage.vue";
 import Toast from "./components/Toast.vue";
 import RiskAlertPanel, { type RiskItem } from "./components/RiskAlertPanel.vue";
 import VoiceCapsule from "./components/VoiceCapsule.vue";
 import ReceptionCapsule from "./components/ReceptionCapsule.vue";
 import VoiceConsultationResult, { type GeneratedRecord } from "./components/VoiceConsultationResult.vue";
+import Icon from "./components/Icon.vue";
 import { chat, analyzePatientRisks, type ChatMessage } from "./services/llm";
+import { feedbackService } from "./services/feedback";
 import { LogicalSize } from "@tauri-apps/api/dpi";
 import { provide } from "vue";
+import { PROMPTS } from "./prompts";
 
 const appWindow = ref<TauriWindow | null>(null);
 const toastRef = ref<InstanceType<typeof Toast> | null>(null);
@@ -28,7 +32,7 @@ const isHovered = ref(false);
 const hoveredBtnIndex = ref(-1); // -1 means no button hovered
 const isWorking = ref(false);
 const isMoving = ref(false);
-const currentView = ref<'chat' | 'settings' | 'consultation' | 'risk-alert' | 'voice-interaction' | 'voice-result' | 'reception-capsule'>('chat');
+const currentView = ref<'chat' | 'settings' | 'consultation' | 'risk-alert' | 'voice-interaction' | 'voice-result' | 'reception-capsule' | 'analytics'>('chat');
 const currentPatient = ref<any>(null);
 const ringMenuRef = ref<HTMLElement | null>(null);
 
@@ -212,6 +216,13 @@ const openChat = async () => {
   }
 };
 
+const openAnalytics = async () => {
+  currentView.value = 'analytics';
+  if (!isWorking.value) {
+    await enterWorkMode();
+  }
+};
+
 const openConsultation = async () => {
   currentView.value = 'consultation';
   if (!isWorking.value) {
@@ -283,50 +294,9 @@ const startVoiceInteraction = async () => {
     }
 
     // 2. LLM Generation - Based on medical record requirements
-    const systemPrompt = `你是一名专业的医疗病历生成助手，具备以下能力：
-
-**语义理解过滤**：对采集到的医患对话音频转写文本进行深度语义理解，区分问诊话术与病情描述，过滤无效对话。
-
-**关键信息提取**：借助医疗领域知识图谱与实体识别能力，自动提取主诉、现病史、用药情况、检验检查信息等关键医疗信息。
-
-**结构化整理输出**：按照电子病历规范格式与医疗文书书写逻辑，将提取信息结构化整理，生成符合临床标准的病历初稿。
-
-**重要规则**：
-1. 如果输入内容与医疗问诊场景无关（如闲聊、测试、无意义内容），请返回以下固定格式：
-   {"error": "非医疗问诊内容", "message": "输入内容与医疗问诊场景无关，请提供有效的医患对话内容"}
-2. 如果是有效的医患对话，请严格按照以下JSON格式输出（不要包含任何markdown标记或额外说明）：
-
-{
-  "chiefComplaint": "主诉内容（简明扼要，如：咳嗽3天，加重伴发热1天）",
-  "historyOfPresentIllness": "现病史内容（详细描述发病时间、症状、诱因、演变过程等）",
-  "pastMedicalHistory": "既往史内容（既往疾病、手术史、过敏史、用药史等，如无则填写'无特殊'）",
-  "diagnosisList": [
-    { "name": "诊断名称（如：急性上呼吸道感染）", "code": "可能的ICD10编码（选填）" }
-  ],
-  "medications": [
-    { 
-      "name": "药品名称", 
-      "spec": "规格（如：0.25g*6片/盒，选填）",
-      "dosage": "单次用量（如：0.5g）", 
-      "frequency": "频次（如：每日一次/qd）", 
-      "usage": "用法（如：口服）",
-      "count": "总量（如：1盒）" 
-    }
-  ],
-  "examinations": [
-    { "name": "检查项目名称（如：血常规，不要包含+号，需拆分为独立项目）", "goal": "检查目的（如：明确感染性质）" }
-  ],
-  "treatmentPlan": "其他处理意见或备注（选填）",
-  "healthEducation": "健康宣教内容（如：多喝水、清淡饮食、建议居家休息3-5天等）"
-}
-
-3. **细粒度拆分规则**：对于检验检查项目或用药，如果对话中出现"A+B"、"A和B"等组合表述，请务必拆分为[{"name": "A"}, {"name": "B"}]两个独立项目，严禁合并为一个项目输出。例如"查个血常规和CRP"应输出两项："全血细胞计数"和"C反应蛋白测定"（或保持原文"血常规"和"CRP"）。
-
-4. **智能推荐补全**：若对话中未明确涉及诊断名称、用药方案或检验检查相关内容，请务必根据患者的主诉、现病史及查体信息，结合标准诊疗指南，智能推理并推荐最可能的初步诊断、常规用药及必要检查项目填入对应字段，不要留空。`;
-    
     const messages: ChatMessage[] = [
-        { role: 'system', content: systemPrompt },
-        { role: 'user', content: `医患对话内容：\n${text}` }
+        { role: 'system', content: PROMPTS.medical.recordGeneration.system },
+        { role: 'user', content: PROMPTS.medical.recordGeneration.buildUserPrompt(text) }
     ];
 
     console.log('[LLM] Sending request to LLM...');
@@ -831,8 +801,25 @@ const enterWorkMode = async (customW?: number, customH?: number) => {
 
   // 3. 触发面板展开动画 (Morph Expand)
   isWorking.value = true;
-  
-  // 4. 等待动画结束
+
+  // 4. 启动会话 (仅在从小球模式首次进入工作模式时)
+  try {
+    const sessionType = currentView.value === 'consultation' ? 'consultation' :
+                        currentView.value === 'voice-interaction' ? 'voice' :
+                        currentView.value === 'reception-capsule' ? 'reception' : 'chat';
+
+    await feedbackService.startSession(
+      sessionType,
+      currentPatient.value?.patientId || currentPatient.value?.piOi,
+      currentPatient.value?.name || currentPatient.value?.naPi
+    );
+    console.log(`[App] Session started for ${sessionType}`);
+  } catch (error) {
+    console.error('[App] Failed to start session:', error);
+    // 不阻断流程
+  }
+
+  // 5. 等待动画结束
   setTimeout(() => {
     transitioning.value = false;
   }, TRANSITION_MS);
@@ -902,7 +889,16 @@ const exitWork = async () => {
 
   // 2. 触发面板收缩动画 (Morph Shrink)
   isWorking.value = false;
-  
+
+  // 结束当前会话
+  try {
+    await feedbackService.endSession(undefined, 'completed');
+    console.log('[App] Session ended successfully');
+  } catch (error) {
+    console.error('[App] Failed to end session:', error);
+    // 不阻断流程
+  }
+
   // 强制关闭 hover 状态，防止收缩过程中因鼠标位置导致环绕菜单闪现
   isHovered.value = false;
   
@@ -978,7 +974,9 @@ const exitWork = async () => {
 </script>
 
 <template>
-  <div class="state-layer">
+  <a href="#main-content" class="skip-link">跳转到主要内容</a>
+
+  <div class="state-layer" id="main-content" tabindex="-1">
     <Transition name="morph">
       <div v-show="!isWorking" class="ball-layer" :style="containerStyle">
         <div 
@@ -987,26 +985,50 @@ const exitWork = async () => {
           :style="ballStyle"
         >
           <!-- 环绕菜单 -->
-          <div ref="ringMenuRef" class="ring-menu" :class="{ 'is-active': isHovered }">
-            <button class="ring-btn top" :class="{ 'manual-hover': hoveredBtnIndex === 0 }" @click.stop="openChat" title="打开对话">
-              <svg class="ring-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <div ref="ringMenuRef" class="ring-menu" :class="{ 'is-active': isHovered }" role="navigation" aria-label="主菜单">
+            <button
+              class="ring-btn top"
+              :class="{ 'manual-hover': hoveredBtnIndex === 0 }"
+              @click.stop="openChat"
+              aria-label="打开对话"
+              title="打开对话"
+            >
+              <svg class="ring-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
                 <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path>
               </svg>
             </button>
-            <button class="ring-btn right" :class="{ 'manual-hover': hoveredBtnIndex === 1 }" @click.stop="openSettings" title="设置">
-              <svg class="ring-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <button
+              class="ring-btn right"
+              :class="{ 'manual-hover': hoveredBtnIndex === 1 }"
+              @click.stop="openSettings"
+              aria-label="打开设置"
+              title="设置"
+            >
+              <svg class="ring-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
                 <circle cx="12" cy="12" r="3"></circle>
                 <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
               </svg>
             </button>
-            <button class="ring-btn bottom" :class="{ 'manual-hover': hoveredBtnIndex === 2 }" @click.stop="handleExitApp" title="退出">
-               <svg class="ring-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <button
+              class="ring-btn bottom"
+              :class="{ 'manual-hover': hoveredBtnIndex === 2 }"
+              @click.stop="handleExitApp"
+              aria-label="退出应用"
+              title="退出"
+            >
+               <svg class="ring-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
                 <path d="M18.36 6.64a9 9 0 1 1-12.73 0"></path>
                 <line x1="12" y1="2" x2="12" y2="12"></line>
               </svg>
             </button>
-             <button class="ring-btn left" :class="{ 'manual-hover': hoveredBtnIndex === 3 }" @click.stop="openConsultation" title="智能问诊">
-              <svg class="ring-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+             <button
+              class="ring-btn left"
+              :class="{ 'manual-hover': hoveredBtnIndex === 3 }"
+              @click.stop="openConsultation"
+              aria-label="打开智能问诊"
+              title="智能问诊"
+            >
+              <svg class="ring-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
                 <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
                 <polyline points="14 2 14 8 20 8"></polyline>
                 <line x1="16" y1="13" x2="8" y2="13"></line>
@@ -1048,24 +1070,20 @@ const exitWork = async () => {
           <!-- 工具栏 (risk-alert, voice-interaction, voice-result, reception-capsule 视图不显示) -->
           <div v-if="currentView !== 'risk-alert' && currentView !== 'voice-interaction' && currentView !== 'voice-result' && currentView !== 'reception-capsule'" class="assistant-toolbar" data-tauri-drag-region>
             <div class="toolbar-left" data-tauri-drag-region>
-              <button v-if="currentView === 'settings'" class="icon-btn back-btn" @click="openChat" title="返回">
-                 <svg class="toolbar-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                   <path d="M19 12H5M12 19l-7-7 7-7"/>
-                 </svg>
+              <button v-if="currentView === 'settings' || currentView === 'analytics'" class="icon-btn back-btn" @click="openChat" title="返回">
+                 <Icon icon="lucide:arrow-left" class="toolbar-icon" size="20" />
               </button>
               <span class="assistant-title" data-tauri-drag-region>
-                {{ 
-                  currentView === 'chat' ? '智医助理' : 
-                  (currentView === 'consultation' ? 
-                    (currentPatient ? `智能问诊 - ${currentPatient.name}` : '智能问诊') : 
-                    '系统设置') 
+                {{
+                  currentView === 'chat' ? '智医助理' :
+                  (currentView === 'consultation' ?
+                    (currentPatient ? `智能问诊 - ${currentPatient.name}` : '智能问诊') :
+                    (currentView === 'analytics' ? '数据分析' : '系统设置'))
                 }}
               </span>
             </div>
             <button class="icon-btn" aria-label="收起" title="收起" @click="handleCollapse">
-              <svg class="toolbar-icon" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-                <polyline points="6,10 12,16 18,10" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
-              </svg>
+              <Icon icon="lucide:chevron-down" class="toolbar-icon" size="20" />
             </button>
           </div>
           <ChatPanel v-if="currentView === 'chat'" />
@@ -1110,7 +1128,14 @@ const exitWork = async () => {
             @confirm="handleResultConfirm"
             @cancel="cancelVoiceResult"
           />
-          <SettingsPanel v-else />
+          <AnalyticsPanel
+            v-else-if="currentView === 'analytics'"
+            @close="openChat"
+          />
+          <SettingsPanel
+            v-else
+            @view-analytics="openAnalytics"
+          />
         </div>
       </div>
     </Transition>
@@ -1186,7 +1211,7 @@ const exitWork = async () => {
   border-radius: 50%;
   border: none;
   background: rgba(255, 255, 255, 0.95);
-  color: var(--text-weak);
+  color: var(--color-text-weak);
   box-shadow: 0 4px 12px rgba(0,0,0,0.12);
   display: flex;
   align-items: center;
@@ -1195,7 +1220,7 @@ const exitWork = async () => {
   opacity: 0;
   pointer-events: none;
   transform: scale(0.4);
-  transition: all 0.3s var(--anim-ease);
+  transition: all 0.3s var(--ease-smooth);
 }
 
 .ring-menu.is-active .ring-btn {
@@ -1206,7 +1231,7 @@ const exitWork = async () => {
 .ring-btn:hover,
 .ring-btn.manual-hover {
   background: #fff;
-  color: var(--accent-strong);
+  color: var(--color-primary-dark);
   transform: scale(1.1) !important;
   box-shadow: 0 6px 14px rgba(121, 194, 255, 0.3);
 }
@@ -1263,10 +1288,27 @@ const exitWork = async () => {
 </style>
 
 <style>
-* {
-  margin: 0;
-  padding: 0;
-  box-sizing: border-box;
+/* 导入统一设计令牌 - 医疗产品设计系统 */
+@import './styles/design-tokens.css';
+
+/**
+ * 应用特定的变量覆盖
+ *
+ * 注意：大部分样式变量已统一迁移到 design-tokens.css
+ * 此处仅保留应用特定的覆盖值
+ */
+:root {
+  /* 玻璃态效果 - 使用自定义透明度以适配浮动球设计 */
+  --surface-glass: rgba(255, 255, 255, 0.65);
+  --surface-glass-weak: rgba(255, 255, 255, 0.45);
+}
+
+/* 修复 ChatPanel 输入框的双重焦点效果 */
+.chat-panel .input-wrapper input:focus,
+.chat-panel .input-wrapper input:focus-visible {
+  outline: none !important;
+  box-shadow: none !important;
+  border: none !important;
 }
 
 html,
@@ -1276,20 +1318,7 @@ body,
   height: 100%;
   overflow: hidden;
   background: transparent;
-  font-family: "PingFang SC", "Microsoft YaHei", sans-serif;
-}
-
-/* 主题变量：现代简约 + 玻璃质感 */
-:root {
-  --accent: #79c2ff;
-  --accent-strong: #4fa7ff;
-  --panel-bg: #f9fcff; /* 更亮一点的背景 */
-  --surface-glass: rgba(255, 255, 255, 0.65);
-  --surface-glass-weak: rgba(255, 255, 255, 0.45);
-  --text-strong: #1e293b;
-  --text-weak: #475569;
-  --anim-dur: 250ms;
-  --anim-ease: cubic-bezier(0.25, 1, 0.5, 1); /* 平滑减速，无回弹/过冲 */
+  font-family: var(--font-body);
 }
 
 /* 层布局：两种状态层叠并交叉淡化 */
@@ -1309,10 +1338,14 @@ body,
 }
 .assistant-layer { z-index: 1; }
 
-/* Morph 动画定义 */
+/* Morph 动画定义 - 性能优化：仅动画 transform 和 opacity */
 .morph-enter-active,
 .morph-leave-active {
-  transition: all var(--anim-dur) var(--anim-ease);
+  transition:
+    opacity var(--duration-normal) var(--ease-smooth),
+    transform var(--duration-normal) var(--ease-smooth);
+  /* 使用 GPU 加速 */
+  will-change: transform, opacity;
 }
 
 /* 面板进入前/离开后状态：缩小并定位到小球中心 */
@@ -1360,7 +1393,7 @@ body,
   align-items: center;
   justify-content: space-between;
   padding: 0 12px;
-  color: var(--text-strong);
+  color: var(--color-text-strong);
   background: linear-gradient(180deg, rgba(255,255,255,0.6) 0%, rgba(255,255,255,0.0) 100%);
   z-index: 10;
 }
@@ -1379,7 +1412,7 @@ body,
   font-weight: 600;
   font-size: 14px;
   letter-spacing: 0.5px;
-  color: var(--text-strong);
+  color: var(--color-text-strong);
   opacity: 0.9;
   text-shadow: 0 1px 2px rgba(255,255,255,0.8);
 }
@@ -1396,7 +1429,7 @@ body,
   align-items: center;
   justify-content: center;
   cursor: pointer;
-  color: var(--text-weak);
+  color: var(--color-text-weak);
   transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
   position: relative;
   overflow: hidden;

@@ -81,24 +81,9 @@ struct Sentence {
     sentence_end: Option<bool>,
 }
 
-/// 通过 Rust 后端代理阿里云实时语音识别 WebSocket
-/// 返回完整的识别文本
-#[tauri::command]
-pub async fn transcribe_realtime_aliyun(
-    api_key: String,
-    audio_data: Vec<u8>,
-) -> Result<String, String> {
-    println!("[Aliyun WS] Starting transcription, audio: {} bytes", audio_data.len());
-    
-    if api_key.is_empty() {
-        return Err("DashScope API Key 未配置".to_string());
-    }
-
-    // 生成 task_id
-    let task_id = uuid::Uuid::new_v4().to_string().replace("-", "");
-    
-    // 创建带认证 header 的请求
-    let request = tungstenite::http::Request::builder()
+/// 创建 WebSocket 请求
+fn build_ws_request(api_key: &str) -> Result<tungstenite::http::Request<()>, String> {
+    tungstenite::http::Request::builder()
         .uri(DASHSCOPE_WS_URL)
         .header("Authorization", format!("Bearer {}", api_key))
         .header("Host", "dashscope.aliyuncs.com")
@@ -107,15 +92,69 @@ pub async fn transcribe_realtime_aliyun(
         .header("Sec-WebSocket-Version", "13")
         .header("Sec-WebSocket-Key", tungstenite::handshake::client::generate_key())
         .body(())
-        .map_err(|e| format!("Request build error: {}", e))?;
+        .map_err(|e| format!("Request build error: {}", e))
+}
 
-    println!("[Aliyun WS] Connecting to WebSocket...");
+/// 带重试的 WebSocket 连接
+async fn connect_with_retry(
+    api_key: &str,
+    max_retries: usize,
+) -> Result<tokio_tungstenite::WebSocketStream<tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>>, String> {
+    let mut last_error = String::new();
+
+    for attempt in 0..=max_retries {
+        let request = build_ws_request(api_key)?;
+
+        println!("[Aliyun WS] Connection attempt {} of {}", attempt + 1, max_retries + 1);
+
+        match connect_async(request).await {
+            Ok((ws_stream, _)) => {
+                println!("[Aliyun WS] Connected successfully on attempt {}", attempt + 1);
+                return Ok(ws_stream);
+            }
+            Err(e) => {
+                last_error = format!("WebSocket connection failed: {}", e);
+                println!("[Aliyun WS] {}", last_error);
+
+                if attempt < max_retries {
+                    // 指数退避：1s, 2s, 4s
+                    let delay_ms = 1000 * (1 << attempt).min(4);
+                    println!("[Aliyun WS] Retrying in {}ms...", delay_ms);
+                    tokio::time::sleep(tokio::time::Duration::from_millis(delay_ms)).await;
+                }
+            }
+        }
+    }
+
+    Err(last_error)
+}
+
+/// 通过 Rust 后端代理阿里云实时语音识别 WebSocket（带重试和错误处理增强）
+/// 返回完整的识别文本
+#[tauri::command]
+pub async fn transcribe_realtime_aliyun(
+    api_key: String,
+    audio_data: Vec<u8>,
+) -> Result<String, String> {
+    println!("[Aliyun WS] Starting transcription, audio: {} bytes", audio_data.len());
+
+    if api_key.is_empty() {
+        return Err("DashScope API Key 未配置".to_string());
+    }
+
+    if audio_data.is_empty() {
+        return Err("音频数据为空".to_string());
+    }
+
+    // 生成 task_id
+    let task_id = uuid::Uuid::new_v4().to_string().replace("-", "");
+
+    println!("[Aliyun WS] Connecting to WebSocket with retry...");
     let start = std::time::Instant::now();
-    
-    let (ws_stream, _) = connect_async(request)
-        .await
-        .map_err(|e| format!("WebSocket connection failed: {}", e))?;
-    
+
+    // 使用重试机制连接（最多3次尝试）
+    let ws_stream = connect_with_retry(&api_key, 2).await?;
+
     println!("[Aliyun WS] Connected in {:?}", start.elapsed());
     
     let (mut write, mut read) = ws_stream.split();

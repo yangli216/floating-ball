@@ -4,6 +4,13 @@ export interface ChatMessage {
   role: ChatRole;
   content: string;
   images?: string[]; // data URLs or public URLs
+  // Feedback tracking fields (optional, backward compatible)
+  messageId?: string;
+  sessionId?: string;
+  tokenCount?: number;
+  llmModel?: string;
+  latencyMs?: number;
+  createdAt?: number;
 }
 
 export const DEFAULT_LLM_CONFIG = {
@@ -11,6 +18,79 @@ export const DEFAULT_LLM_CONFIG = {
   model: "gpt-4o-mini",
   audioModel: "whisper-1"
 };
+
+// 重试配置
+export interface RetryConfig {
+  maxRetries: number;        // 最大重试次数
+  initialDelay: number;      // 初始延迟（毫秒）
+  maxDelay: number;          // 最大延迟（毫秒）
+  backoffMultiplier: number; // 退避倍数
+}
+
+export const DEFAULT_RETRY_CONFIG: RetryConfig = {
+  maxRetries: 3,
+  initialDelay: 1000,
+  maxDelay: 10000,
+  backoffMultiplier: 2
+};
+
+// 判断错误是否可重试
+function isRetryableError(error: any): boolean {
+  // 网络错误
+  if (error instanceof TypeError && error.message.includes('fetch')) {
+    return true;
+  }
+
+  // HTTP 状态码：429 (速率限制), 500, 502, 503, 504 (服务器错误)
+  if (error.status) {
+    return [429, 500, 502, 503, 504].includes(error.status);
+  }
+
+  // 错误消息中包含速率限制或服务器错误关键词
+  const errorMessage = error.message?.toLowerCase() || '';
+  const retryableKeywords = ['rate limit', 'timeout', 'overloaded', 'unavailable', 'server error'];
+  return retryableKeywords.some(keyword => errorMessage.includes(keyword));
+}
+
+// 通用重试函数（指数退避）
+async function retryWithBackoff<T>(
+  fn: () => Promise<T>,
+  config: RetryConfig = DEFAULT_RETRY_CONFIG,
+  onRetry?: (attempt: number, error: any) => void
+): Promise<T> {
+  let lastError: any;
+
+  for (let attempt = 0; attempt <= config.maxRetries; attempt++) {
+    try {
+      return await fn();
+    } catch (error: any) {
+      lastError = error;
+
+      // 如果是最后一次尝试或错误不可重试，直接抛出
+      if (attempt === config.maxRetries || !isRetryableError(error)) {
+        throw error;
+      }
+
+      // 计算延迟时间（指数退避）
+      const delay = Math.min(
+        config.initialDelay * Math.pow(config.backoffMultiplier, attempt),
+        config.maxDelay
+      );
+
+      // 回调通知重试
+      if (onRetry) {
+        onRetry(attempt + 1, error);
+      }
+
+      console.warn(`API 调用失败，${delay}ms 后进行第 ${attempt + 1} 次重试:`, error.message || error);
+
+      // 等待后重试
+      await new Promise(resolve => setTimeout(resolve, delay));
+    }
+  }
+
+  throw lastError;
+}
 
 // 获取配置信息
 export function getLLMConfig() {
@@ -48,105 +128,168 @@ function createPayloadMessages(messages: ChatMessage[]) {
 export async function chatStream(
   messages: ChatMessage[],
   onChunk: (chunk: string) => void,
-  apiKey?: string
+  apiKey?: string,
+  retryConfig?: RetryConfig,
+  onRetry?: (attempt: number, error: any) => void
 ): Promise<void> {
   const { key, baseUrl, model } = getConfigAndKey(apiKey);
   const payloadMessages = createPayloadMessages(messages);
 
-  const res = await fetch(`${baseUrl}/chat/completions`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${key}`,
-    },
-    body: JSON.stringify({
-      model: model,
-      messages: payloadMessages,
-      stream: true,
-    }),
-  });
+  // 使用重试机制包装整个流式请求
+  await retryWithBackoff(async () => {
+    const res = await fetch(`${baseUrl}/chat/completions`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${key}`,
+      },
+      body: JSON.stringify({
+        model: model,
+        messages: payloadMessages,
+        stream: true,
+      }),
+    });
 
-  if (!res.ok) {
-    const data = await res.json();
-    throw new Error(data?.error?.message || res.statusText);
-  }
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}));
+      const error: any = new Error(data?.error?.message || res.statusText);
+      error.status = res.status;
+      throw error;
+    }
 
-  const reader = res.body?.getReader();
-  if (!reader) throw new Error("无法获取流式响应");
+    const reader = res.body?.getReader();
+    if (!reader) throw new Error("无法获取流式响应");
 
-  const decoder = new TextDecoder("utf-8");
-  let buffer = "";
+    const decoder = new TextDecoder("utf-8");
+    let buffer = "";
 
-  while (true) {
-    const { done, value } = await reader.read();
-    if (done) break;
+    try {
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
 
-    buffer += decoder.decode(value, { stream: true });
+        buffer += decoder.decode(value, { stream: true });
 
-    // 处理多行数据
-    const lines = buffer.split('\n');
-    buffer = lines.pop() || ""; // 保留未完整的最后一行
+        // 处理多行数据
+        const lines = buffer.split('\n');
+        buffer = lines.pop() || ""; // 保留未完整的最后一行
 
-    for (const line of lines) {
-      const trimmed = line.trim();
-      if (!trimmed || !trimmed.startsWith("data: ")) continue;
+        for (const line of lines) {
+          const trimmed = line.trim();
+          if (!trimmed || !trimmed.startsWith("data: ")) continue;
 
-      const dataStr = trimmed.slice(6);
-      if (dataStr === "[DONE]") return;
+          const dataStr = trimmed.slice(6);
+          if (dataStr === "[DONE]") return;
 
-      try {
-        const json = JSON.parse(dataStr);
-        const content = json.choices?.[0]?.delta?.content || "";
-        if (content) onChunk(content);
-      } catch (e) {
-        console.warn("解析流式数据失败:", e);
+          try {
+            const json = JSON.parse(dataStr);
+            const content = json.choices?.[0]?.delta?.content || "";
+            if (content) onChunk(content);
+          } catch (e) {
+            console.warn("解析流式数据失败:", e);
+          }
+        }
       }
+    } catch (error) {
+      // 流式读取过程中的错误也应该可重试
+      reader.cancel();
+      throw error;
+    }
+  }, retryConfig || DEFAULT_RETRY_CONFIG, onRetry);
+}
+
+// 带自动降级的流式对话（如果流式失败，自动回退到普通请求）
+export async function chatStreamWithFallback(
+  messages: ChatMessage[],
+  onChunk: (chunk: string) => void,
+  apiKey?: string,
+  retryConfig?: RetryConfig,
+  onRetry?: (attempt: number, error: any) => void
+): Promise<void> {
+  try {
+    // 尝试流式请求
+    await chatStream(messages, onChunk, apiKey, retryConfig, onRetry);
+  } catch (error) {
+    console.warn("流式请求失败，降级到普通请求:", error);
+
+    try {
+      // 降级到普通请求
+      const response = await chat(messages, apiKey, retryConfig, onRetry);
+      // 模拟流式输出（按字符或按词输出）
+      const chunkSize = 10; // 每次发送10个字符
+      for (let i = 0; i < response.length; i += chunkSize) {
+        onChunk(response.slice(i, i + chunkSize));
+        // 添加小延迟以模拟流式效果
+        await new Promise(resolve => setTimeout(resolve, 20));
+      }
+    } catch (fallbackError) {
+      console.error("降级请求也失败:", fallbackError);
+      throw fallbackError;
     }
   }
 }
 
 // 文本与图像的对话（基于 Chat Completions）
-export async function chat(messages: ChatMessage[], apiKey?: string): Promise<string> {
+export async function chat(
+  messages: ChatMessage[],
+  apiKey?: string,
+  retryConfig?: RetryConfig,
+  onRetry?: (attempt: number, error: any) => void
+): Promise<string> {
   const { key, baseUrl, model } = getConfigAndKey(apiKey);
   const payloadMessages = createPayloadMessages(messages);
 
-  const res = await fetch(`${baseUrl}/chat/completions`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${key}`,
-    },
-    body: JSON.stringify({
-      model: model,
-      messages: payloadMessages,
-    }),
-  });
+  return await retryWithBackoff(async () => {
+    const res = await fetch(`${baseUrl}/chat/completions`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${key}`,
+      },
+      body: JSON.stringify({
+        model: model,
+        messages: payloadMessages,
+      }),
+    });
 
-  const data = await res.json();
-  if (!res.ok) {
-    throw new Error(data?.error?.message || res.statusText);
-  }
-  return data?.choices?.[0]?.message?.content ?? "";
+    const data = await res.json();
+    if (!res.ok) {
+      const error: any = new Error(data?.error?.message || res.statusText);
+      error.status = res.status;
+      throw error;
+    }
+    return data?.choices?.[0]?.message?.content ?? "";
+  }, retryConfig || DEFAULT_RETRY_CONFIG, onRetry);
 }
 
 // 语音转文字（Whisper）
-export async function transcribeAudio(blob: Blob, apiKey?: string): Promise<string> {
+export async function transcribeAudio(
+  blob: Blob,
+  apiKey?: string,
+  retryConfig?: RetryConfig,
+  onRetry?: (attempt: number, error: any) => void
+): Promise<string> {
   const { key, baseUrl, audioModel } = getConfigAndKey(apiKey);
   const file = new File([blob], "audio.webm", { type: blob.type || "audio/webm" });
-  const form = new FormData();
-  form.append("file", file);
-  form.append("model", audioModel);
 
-  const res = await fetch(`${baseUrl}/audio/transcriptions`, {
-    method: "POST",
-    headers: { Authorization: `Bearer ${key}` },
-    body: form,
-  });
-  const data = await res.json();
-  if (!res.ok) {
-    throw new Error(data?.error?.message || res.statusText);
-  }
-  return data?.text ?? "";
+  return await retryWithBackoff(async () => {
+    const form = new FormData();
+    form.append("file", file);
+    form.append("model", audioModel);
+
+    const res = await fetch(`${baseUrl}/audio/transcriptions`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${key}` },
+      body: form,
+    });
+    const data = await res.json();
+    if (!res.ok) {
+      const error: any = new Error(data?.error?.message || res.statusText);
+      error.status = res.status;
+      throw error;
+    }
+    return data?.text ?? "";
+  }, retryConfig || DEFAULT_RETRY_CONFIG, onRetry);
 }
 
 export interface RiskAnalysisItem {
@@ -156,47 +299,12 @@ export interface RiskAnalysisItem {
 }
 
 export async function analyzePatientRisks(patientData: any, apiKey?: string): Promise<RiskAnalysisItem[]> {
-  // Construct a prompt for the LLM
-  const systemPrompt = `你是一名资深的临床医疗风险评估专家。你的任务是根据提供的患者信息和历史病历数据，分析潜在的健康风险点。
-
-**核心原则：**
-1. **严格区分【当前就诊】与【历史记录】**：
-   - 风险项主要应当基于 **当前就诊** (主诉、现病史) 中的急症迹象。
-   - 对于 **历史记录** (既往史、上次就诊记录等)，**必须忽略** 其中描述的急性症状（如"30分钟前呼吸困难"、"昨天发热"等），除非该症状被描述为长期反复发作的慢性病。
-   - **历史急症不等于当前风险**：如果患者"上次就诊"有呼吸困难，但"本次就诊"主诉为空或无相关描述，则**绝对不要**提示气道风险。
-   - **排除已治愈急症**：对于既往史或上次就诊中记录的 **急性且可治愈** 的疾病（如急性荨麻疹、上呼吸道感染、急性胃肠炎等），及其伴随的症状（如呼吸不畅、发热、皮疹），只要不是慢性复发性疾病，**即使症状看起来很严重，或者使用了"曾出现"这样的描述，也绝对不要作为风险项输出**。请完全忽略它们。
-
-2. **风险分类标准**：
-   - **过敏风险 (allergy)**: 必须有明确的药物或食物过敏史（如青霉素、海鲜）。此项永远需要提示，无论是否当前发作。
-   - **慢性病风险 (chronic)**: 既往确诊的高血压、糖尿病、哮喘、冠心病、慢阻肺等长期疾病。
-   - **用药风险 (medication)**: 长期服用抗凝药、激素等特殊药物。
-   - **特殊人群 (population)**: 仅针对高龄(>65岁)、低龄(<6岁)、孕妇。
-   - **生命体征/急症 (vital)**: **仅限本次就诊** 主诉或现病史中提示的高热、呼吸困难、胸痛、意识障碍、剧烈疼痛等急危重症迹象。**历史记录中的此类描述一律忽略**。
-   - **其他 (other)**: 其他持续性风险。**严禁**包含已愈合的外伤、已治愈的急性感染、或历史上的单次急症发作（如"曾出现呼吸困难"）。
-
-**输出规则：**
-- 输出必须是标准的 JSON 数组格式。
-- 每个风险项包含：
-    - \`level\`: 风险等级 (1=高风险/红色, 2=中风险/橙色, 3=低风险/黄色)。
-    - \`category\`: 风险类别 (allergy, chronic, medication, population, vital, other)。
-    - \`content\`: 简短明确的风险提示内容（不超过20字）。
-- 如果没有符合上述定义的显著风险，请返回空数组 []。
-- 不要包含 markdown 标记 (如 \`\`\`json)，直接返回 JSON 字符串。
-`;
-
-  const userContent = `患者信息：
-姓名: ${patientData.patientName}
-性别: ${patientData.gender}
-年龄: ${patientData.age}
-主诉: ${patientData.chiefComplaint || '无'}
-现病史: ${patientData.historyOfPresentIllness || '无'}
-既往史: ${patientData.pastMedicalHistory || '无'}
-过敏史: ${patientData.allergyHistory || '无'}
-初步诊断: ${patientData.diagnosis || '无'}`;
+  // Import prompts
+  const { PROMPTS } = await import('../prompts');
 
   const messages: ChatMessage[] = [
-    { role: 'system', content: systemPrompt },
-    { role: 'user', content: userContent }
+    { role: 'system', content: PROMPTS.medical.riskAnalysis.system },
+    { role: 'user', content: PROMPTS.medical.riskAnalysis.buildUserPrompt(patientData) }
   ];
 
   try {

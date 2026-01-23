@@ -5,9 +5,7 @@
       <!-- Left: Avatar -->
       <div class="avatar-section">
         <div class="avatar-wrapper">
-          <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-            <path d="M12 2C6.48 2 2 6.48 2 12C2 17.52 6.48 22 12 22C17.52 22 22 17.52 22 12C22 6.48 17.52 2 12 2ZM12 5C13.66 5 15 6.34 15 8C15 9.66 13.66 11 12 11C10.34 11 9 9.66 9 8C9 6.34 10.34 5 12 5ZM12 19.2C9.5 19.2 7.29 17.92 6 15.98C6.03 13.99 10 12.9 12 12.9C13.99 12.9 17.97 13.99 18 15.98C16.71 17.92 14.5 19.2 12 19.2Z" :fill="gender === 'F' ? '#ff9a9e' : '#79c2ff'"/>
-          </svg>
+          <Icon :icon="avatarIcon" :color="avatarColor" size="40" />
         </div>
       </div>
 
@@ -34,9 +32,7 @@
       <!-- Right: Actions -->
       <div class="controls-section">
         <button class="control-btn primary" @click="$emit('close')" title="结束接诊">
-          <svg viewBox="0 0 24 24" fill="currentColor">
-            <path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/>
-          </svg>
+          <Icon icon="lucide:x" size="20" />
         </button>
       </div>
     </div>
@@ -59,6 +55,7 @@
 
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue';
+import Icon from './Icon.vue';
 
 export interface RiskItem {
   level: 1 | 2 | 3;
@@ -83,6 +80,8 @@ const emit = defineEmits<{
 const showDetail = ref(false);
 
 const genderText = computed(() => props.gender === 'F' ? '女' : '男');
+const avatarIcon = computed(() => props.gender === 'F' ? 'mdi:human-female' : 'mdi:human-male');
+const avatarColor = computed(() => props.gender === 'F' ? '#ff9a9e' : '#79c2ff');
 const riskCount = computed(() => props.risks.length);
 
 watch(() => props.risks, (newRisks) => {
@@ -144,7 +143,7 @@ const getRiskCategory = (cat: string) => {
   border-radius: 40px; 
   position: relative;
   z-index: 2;
-  transition: border-radius 0.2s; /* Smooth transition */
+  transition: border-radius var(--duration-normal) var(--ease-out); /* Smooth transition */
 }
 
 /* When expanded, remove bottom border radius to merge with detail panel */
@@ -209,7 +208,7 @@ const getRiskCategory = (cat: string) => {
 }
 
 .status-analyzing {
-  color: #3b82f6;
+  color: var(--color-primary);
   display: flex;
   align-items: center;
   gap: 6px;
@@ -221,14 +220,14 @@ const getRiskCategory = (cat: string) => {
   width: 6px;
   height: 6px;
   border-radius: 5px;
-  background-color: #3b82f6;
-  color: #3b82f6;
+  background-color: var(--color-primary);
+  color: var(--color-primary);
   animation: dot-flashing 1s infinite linear alternate;
   animation-delay: 0.5s;
 }
 
 @keyframes dot-flashing {
-  0% { background-color: #3b82f6; }
+  0% { background-color: var(--color-primary); }
   50%, 100% { background-color: rgba(59, 130, 246, 0.2); }
 }
 
@@ -240,7 +239,7 @@ const getRiskCategory = (cat: string) => {
   gap: 8px;
   padding: 2px 6px;
   border-radius: 4px;
-  transition: background 0.2s;
+  transition: background var(--duration-normal) var(--ease-out);
   user-select: none;
 }
 
@@ -276,7 +275,7 @@ const getRiskCategory = (cat: string) => {
   align-items: center;
   justify-content: center;
   cursor: pointer;
-  transition: all 0.2s ease;
+  transition: all var(--duration-normal) var(--ease-out);
   background: #f1f5f9;
   color: #64748b;
 }
