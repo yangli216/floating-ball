@@ -219,13 +219,14 @@ const getSeverityText = () => {
 
 /* Global tooltip rendered via Teleport */
 .issue-tooltip-global {
-  background: var(--color-text-strong);
-  color: white;
+  background: var(--color-background-white);
+  color: var(--color-text-strong);
+  border: 1px solid var(--color-border-medium);
   border-radius: 8px;
   padding: 14px;
   min-width: 250px;
   max-width: 450px;
-  box-shadow: var(--shadow-lg);
+  box-shadow: var(--shadow-xl);
   pointer-events: none;
   white-space: normal;
   word-wrap: break-word;
@@ -237,7 +238,8 @@ const getSeverityText = () => {
   width: 0;
   height: 0;
   border: 6px solid transparent;
-  border-top-color: var(--color-text-strong);
+  border-top-color: var(--color-background-white);
+  filter: drop-shadow(0 -1px 1px rgba(0, 0, 0, 0.1));
 }
 
 .tooltip-header {
@@ -280,8 +282,8 @@ const getSeverityText = () => {
 .tooltip-suggestion {
   font-size: 12px;
   line-height: 1.4;
-  color: var(--color-border-medium);
-  border-top: 1px solid rgba(255, 255, 255, 0.1);
+  color: var(--color-text-medium);
+  border-top: 1px solid var(--color-border-light);
   padding-top: 8px;
   white-space: normal;
   word-wrap: break-word;
@@ -289,7 +291,7 @@ const getSeverityText = () => {
 }
 
 .tooltip-suggestion strong {
-  color: white;
+  color: var(--color-text-strong);
 }
 
 .tooltip-fade-enter-active,
