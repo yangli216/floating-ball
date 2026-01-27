@@ -24,9 +24,6 @@ dist-ssr
 *.sw?
 .claude/
 
-_bmad/
-.trae/
-
 *.key
 CONSULTATION_UX_IMPROVEMENTS.md
 QUICK_REFERENCE.md

@@ -108,12 +108,30 @@
               "id": "fever_field_5",
               "key": "test",
               "storageKey": "test",
-              "label": "测试字段",
-              "type": "input",
+              "label": "测试字段1",
+              "type": "checkbox",
               "props": {
-                "placeholder": "请输入"
+                "placeholder": "请输入",
+                "options": [
+                  "我是A，和B互斥",
+                  "我是B",
+                  "我是C，和D互斥",
+                  "我是D"
+                ],
+                "mutualExclusions": [
+                  [
+                    "我是A，和B互斥",
+                    "我是B"
+                  ],
+                  [
+                    "我是C，和D互斥",
+                    "我是D"
+                  ]
+                ]
               },
-              "applicableGenders": [],
+              "applicablePopulation": {
+                "genders": []
+              },
               "applicableAgeGroups": []
             }
           ]
@@ -8757,9 +8775,11 @@
         {
           "id": "glans-redness_section_0",
           "title": "症状属性问诊",
-          "applicableGenders": [
-            "male"
-          ],
+          "applicablePopulation": {
+            "genders": [
+              "1"
+            ]
+          },
           "fields": [
             {
               "id": "glans-redness_field_0",
@@ -9820,9 +9840,11 @@
         {
           "id": "perineal-itching_section_0",
           "title": "症状属性问诊",
-          "applicableGenders": [
-            "female"
-          ],
+          "applicablePopulation": {
+            "genders": [
+              "2"
+            ]
+          },
           "fields": [
             {
               "id": "perineal-itching_field_0",
@@ -9894,7 +9916,9 @@
       ]
     },
     "applicablePopulation": {
-      "genders": [],
+      "genders": [
+        "2"
+      ],
       "ageGroups": []
     },
     "createdAt": 1766639550475,
@@ -9919,9 +9943,11 @@
         {
           "id": "perineal-pain_section_0",
           "title": "症状属性问诊",
-          "applicableGenders": [
-            "female"
-          ],
+          "applicablePopulation": {
+            "genders": [
+              "2"
+            ]
+          },
           "fields": [
             {
               "id": "perineal-pain_field_0",
@@ -10001,7 +10027,9 @@
       ]
     },
     "applicablePopulation": {
-      "genders": [],
+      "genders": [
+        "2"
+      ],
       "ageGroups": []
     },
     "createdAt": 1766639550475,
@@ -10026,9 +10054,11 @@
         {
           "id": "perineal-odor_section_0",
           "title": "症状属性问诊",
-          "applicableGenders": [
-            "female"
-          ],
+          "applicablePopulation": {
+            "genders": [
+              "2"
+            ]
+          },
           "fields": [
             {
               "id": "perineal-odor_field_0",
@@ -10081,7 +10111,9 @@
       ]
     },
     "applicablePopulation": {
-      "genders": [],
+      "genders": [
+        "2"
+      ],
       "ageGroups": []
     },
     "createdAt": 1766639550475,
@@ -12892,9 +12924,11 @@
         {
           "id": "hirsutism_section_0",
           "title": "症状属性问诊",
-          "applicableGenders": [
-            "female"
-          ],
+          "applicablePopulation": {
+            "genders": [
+              "2"
+            ]
+          },
           "fields": [
             {
               "id": "hirsutism_field_0",
@@ -16923,9 +16957,11 @@
         {
           "id": "breast-pain_section_0",
           "title": "症状属性问诊",
-          "applicableGenders": [
-            "female"
-          ],
+          "applicablePopulation": {
+            "genders": [
+              "2"
+            ]
+          },
           "fields": [
             {
               "id": "breast-pain_field_0",
@@ -17020,9 +17056,11 @@
         {
           "id": "breast-itching_section_0",
           "title": "症状属性问诊",
-          "applicableGenders": [
-            "female"
-          ],
+          "applicablePopulation": {
+            "genders": [
+              "2"
+            ]
+          },
           "fields": [
             {
               "id": "breast-itching_field_0",
@@ -17098,9 +17136,11 @@
         {
           "id": "breast-discharge_section_0",
           "title": "症状属性问诊",
-          "applicableGenders": [
-            "female"
-          ],
+          "applicablePopulation": {
+            "genders": [
+              "2"
+            ]
+          },
           "fields": [
             {
               "id": "breast-discharge_field_0",
@@ -17194,9 +17234,11 @@
         {
           "id": "breast-distension_section_0",
           "title": "症状属性问诊",
-          "applicableGenders": [
-            "female"
-          ],
+          "applicablePopulation": {
+            "genders": [
+              "2"
+            ]
+          },
           "fields": [
             {
               "id": "breast-distension_field_0",
@@ -17276,9 +17318,11 @@
         {
           "id": "breast-mass_section_0",
           "title": "症状属性问诊",
-          "applicableGenders": [
-            "female"
-          ],
+          "applicablePopulation": {
+            "genders": [
+              "2"
+            ]
+          },
           "fields": [
             {
               "id": "breast-mass_field_0",
@@ -17388,9 +17432,11 @@
         {
           "id": "breast-swelling_section_0",
           "title": "症状属性问诊",
-          "applicableGenders": [
-            "female"
-          ],
+          "applicablePopulation": {
+            "genders": [
+              "2"
+            ]
+          },
           "fields": [
             {
               "id": "breast-swelling_field_0",
@@ -17557,9 +17603,11 @@
         {
           "id": "nipple-retraction_section_0",
           "title": "症状属性问诊",
-          "applicableGenders": [
-            "female"
-          ],
+          "applicablePopulation": {
+            "genders": [
+              "2"
+            ]
+          },
           "fields": [
             {
               "id": "nipple-retraction_field_0",
@@ -17637,9 +17685,11 @@
         {
           "id": "nipple-bleeding_section_0",
           "title": "症状属性问诊",
-          "applicableGenders": [
-            "female"
-          ],
+          "applicablePopulation": {
+            "genders": [
+              "2"
+            ]
+          },
           "fields": [
             {
               "id": "nipple-bleeding_field_0",
@@ -17719,9 +17769,11 @@
         {
           "id": "nipple-pain_section_0",
           "title": "症状属性问诊",
-          "applicableGenders": [
-            "female"
-          ],
+          "applicablePopulation": {
+            "genders": [
+              "2"
+            ]
+          },
           "fields": [
             {
               "id": "nipple-pain_field_0",
@@ -17814,9 +17866,11 @@
         {
           "id": "nipple-swelling_section_0",
           "title": "症状属性问诊",
-          "applicableGenders": [
-            "female"
-          ],
+          "applicablePopulation": {
+            "genders": [
+              "2"
+            ]
+          },
           "fields": [
             {
               "id": "nipple-swelling_field_0",
@@ -17907,9 +17961,11 @@
         {
           "id": "areola-itching_section_0",
           "title": "症状属性问诊",
-          "applicableGenders": [
-            "female"
-          ],
+          "applicablePopulation": {
+            "genders": [
+              "2"
+            ]
+          },
           "fields": [
             {
               "id": "areola-itching_field_0",
@@ -26766,9 +26822,11 @@
         {
           "id": "penile-pain_section_0",
           "title": "症状属性问诊",
-          "applicableGenders": [
-            "male"
-          ],
+          "applicablePopulation": {
+            "genders": [
+              "1"
+            ]
+          },
           "fields": [
             {
               "id": "penile-pain_field_0",
@@ -26837,7 +26895,9 @@
       ]
     },
     "applicablePopulation": {
-      "genders": [],
+      "genders": [
+        "1"
+      ],
       "ageGroups": []
     },
     "createdAt": 1766639550476,
@@ -26863,9 +26923,11 @@
         {
           "id": "scrotal-moisture_section_0",
           "title": "症状属性问诊",
-          "applicableGenders": [
-            "male"
-          ],
+          "applicablePopulation": {
+            "genders": [
+              "1"
+            ]
+          },
           "fields": [
             {
               "id": "scrotal-moisture_field_0",
@@ -26932,7 +26994,9 @@
       ]
     },
     "applicablePopulation": {
-      "genders": [],
+      "genders": [
+        "1"
+      ],
       "ageGroups": []
     },
     "createdAt": 1766639550476,

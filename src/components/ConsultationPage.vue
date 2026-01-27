@@ -154,14 +154,15 @@
       
               <div class="dynamic-form">
                 <template v-for="section in item.config.sections" :key="section.id">
-                  <!-- Iterate over fields -->
-                  <div 
-                    v-for="field in section.fields" 
-                    :key="field.id" 
-                    class="form-field"
-                    :id="'field-' + item.key + '-' + field.storageKey"
-                    :class="{ 'has-error': validationErrors[item.key + '_' + field.storageKey] }"
-                  >
+                  <template v-if="isFieldApplicable(section, patientInfo)">
+                    <!-- Iterate over fields -->
+                    <template v-for="field in section.fields" :key="field.id">
+                    <div 
+                      v-if="isFieldApplicable(field, patientInfo)"
+                      class="form-field"
+                      :id="'field-' + item.key + '-' + field.storageKey"
+                      :class="{ 'has-error': validationErrors[item.key + '_' + field.storageKey] }"
+                    >
                     <label class="field-label">{{ field.label }}</label>
                     
                     <!-- Field Type: input_radio (e.g., OnsetTime) -->
@@ -251,7 +252,9 @@
                       />
                     </div>
       
-                  </div>
+                    </div>
+                  </template>
+                  </template>
                 </template>
               </div>
             </div>
@@ -516,6 +519,7 @@ import FactCheckNotification from './FactCheckNotification.vue';
 import FactCheckHighlight from './FactCheckHighlight.vue';
 import FactCheckWidget from './FactCheckWidget.vue';
 import { checkDiagnosis, checkMedicine, checkExamination, type FactCheckResult, type FactCheckIssue } from '../services/factChecker';
+import { isFieldApplicable, generateTextsForSymptom } from '../services/textGeneration';
 
 const showToast = inject('showToast') as (msg: string, type: 'success' | 'error' | 'info') => void;
 
@@ -828,7 +832,7 @@ onUnmounted(() => {
 const filteredSymptoms = computed(() => {
   let result = symptoms.value;
 
-  // Filter by Category
+  // 1. Filter by Category
   if (selectedCategories.value.length > 0) {
     result = result.filter(s => 
       s.systemCategory && 
@@ -837,6 +841,19 @@ const filteredSymptoms = computed(() => {
     );
   }
 
+  // 2. Filter by Gender (Always Execute)
+  const currentGender = patientInfo.value.sdSex;
+  if (currentGender) {
+    result = result.filter(s => {
+      // Assuming 's.applicablePopulation' structure is now standardized
+      if (!s.applicablePopulation?.genders || s.applicablePopulation.genders.length === 0) {
+        return true;
+      }
+      return s.applicablePopulation.genders.includes(currentGender);
+    });
+  }
+
+  // 3. Filter by Search Query
   if (!searchQuery.value) return result;
   
   const query = searchQuery.value.toLowerCase();
@@ -849,12 +866,10 @@ const filteredSymptoms = computed(() => {
        const pinyinFull = Pinyin.convertToPinyin(s.name, '', true); // "fare"
        if (pinyinFull.includes(query)) return true;
        
-       const pinyinInitials = Pinyin.convertToPinyin(s.name, ' ', true)
-          .split(' ')
-          .map(w => w[0])
-          .join('');
+       const pinyinInitials = Pinyin.convertToPinyin(s.name, ' ', true).split(' ').map((char: string) => char[0]).join(''); // "fr"
        if (pinyinInitials.includes(query)) return true;
     }
+    
     return false;
   });
 });
@@ -944,11 +959,44 @@ const handleEndConsultation = async () => {
 
   selectedSymptoms.value.forEach(s => {
     const data = formData.value[s.key];
-    if (data.onsetTime && (!data.onsetTime.inputValue || !data.onsetTime.radioValue)) {
-      errors.push(`${s.name}: 请填写发病时间`);
-      const errorId = `${s.key}_onsetTime`;
-      validationErrors.value[errorId] = true;
-      if (!firstErrorFieldId) firstErrorFieldId = `field-${s.key}-onsetTime`;
+    
+    // Generic Validation based on 'required' config
+    if (s.config && s.config.sections) {
+      s.config.sections.forEach((section: any) => {
+        // Check section applicability (optional, simplified to field check)
+        section.fields.forEach((field: any) => {
+          // Only validate applicable fields
+          if (isFieldApplicable(field, patientInfo.value) && field.required) {
+            const val = data[field.storageKey];
+            let isEmpty = false;
+
+            if (val === undefined || val === null || val === '') {
+              isEmpty = true;
+            } else if (Array.isArray(val)) {
+              isEmpty = val.length === 0;
+            } else if (typeof val === 'object') {
+              // input_radio or specialized objects
+               if ('inputValue' in val || 'radioValue' in val) {
+                 // For input_radio, usually both needed? Or at least one?
+                 // Typically input_radio logic is combined. Let's strict check if partial emptiness is allowed.
+                 // If "required", usually implies complete.
+                 if (!val.inputValue && !val.radioValue) isEmpty = true; 
+                 // If only one part is present? 
+                 // Let's assume if it has inputValue but no unit (radioValue), it's incomplete if required?
+                 // Previous hardcode was (!inputValue || !radioValue).
+                 else if (field.type === 'input_radio' && (!val.inputValue || !val.radioValue)) isEmpty = true;
+               } 
+            }
+
+            if (isEmpty) {
+              errors.push(`${s.name}: ${field.label} 为必填项`);
+              const errorId = `${s.key}_${field.storageKey}`;
+              validationErrors.value[errorId] = true;
+              if (!firstErrorFieldId) firstErrorFieldId = `field-${s.key}-${field.storageKey}`;
+            }
+          }
+        });
+      });
     }
   });
 
@@ -1412,12 +1460,21 @@ const generateMedicalRecord = () => {
   const hpiParts: string[] = [];
   
   // -- Chief Complaint --
+  // 使用 textGenConfig 生成主诉，或回退到默认逻辑
   selectedSymptoms.value.forEach(s => {
     const data = formData.value[s.key];
-    if (data.onsetTime) {
-      complaints.push(`${s.name}${data.onsetTime.inputValue}${data.onsetTime.radioValue}`);
+    
+    // 尝试从 textGenConfig 生成
+    const chiefComplaintTexts = generateTextsForSymptom(s, data, 'chiefComplaint');
+    if (chiefComplaintTexts.length > 0) {
+      complaints.push(`${s.name}${chiefComplaintTexts.join('')}`);
     } else {
-      complaints.push(s.name);
+      // 回退到默认逻辑
+      if (data.onsetTime && data.onsetTime.inputValue && data.onsetTime.radioValue) {
+        complaints.push(`${s.name}${data.onsetTime.inputValue}${data.onsetTime.radioValue}`);
+      } else {
+        complaints.push(s.name);
+      }
     }
   });
   const chiefComplaint = complaints.join("，") + "。";
@@ -1444,13 +1501,20 @@ const generateMedicalRecord = () => {
   intro += symptomNames + "。";
   hpiParts.push(intro);
 
-  // Symptom Details
+  // Symptom Details - 使用 textGenConfig 生成
   selectedSymptoms.value.forEach(s => {
     const data = formData.value[s.key];
-    let detail = formatSymptomDetail(s, data);
-
-    if (detail) {
-      hpiParts.push(`${s.name}，${detail}。`);
+    
+    // 优先使用 textGenConfig 生成现病史文本
+    const hpiTexts = generateTextsForSymptom(s, data, 'historyOfPresentIllness');
+    if (hpiTexts.length > 0) {
+      hpiParts.push(`${s.name}：${hpiTexts.join('，')}。`);
+    } else {
+      // 回退到原有逻辑
+      let detail = formatSymptomDetail(s, data);
+      if (detail) {
+        hpiParts.push(`${s.name}，${detail}。`);
+      }
     }
   });
 

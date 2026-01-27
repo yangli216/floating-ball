@@ -13,6 +13,7 @@ import Toast from "./components/Toast.vue";
 import RiskAlertPanel, { type RiskItem } from "./components/RiskAlertPanel.vue";
 import VoiceCapsule from "./components/VoiceCapsule.vue";
 import ReceptionCapsule from "./components/ReceptionCapsule.vue";
+import SymptomManagement from "./components/SymptomManagement.vue";
 import VoiceConsultationResult, { type GeneratedRecord } from "./components/VoiceConsultationResult.vue";
 import Icon from "./components/Icon.vue";
 import { chat, analyzePatientRisks, type ChatMessage } from "./services/llm";
@@ -32,7 +33,7 @@ const isHovered = ref(false);
 const hoveredBtnIndex = ref(-1); // -1 means no button hovered
 const isWorking = ref(false);
 const isMoving = ref(false);
-const currentView = ref<'chat' | 'settings' | 'consultation' | 'risk-alert' | 'voice-interaction' | 'voice-result' | 'reception-capsule' | 'analytics'>('chat');
+const currentView = ref<'chat' | 'settings' | 'consultation' | 'risk-alert' | 'voice-interaction' | 'voice-result' | 'reception-capsule' | 'analytics' | 'symptom-manage'>('chat');
 const currentPatient = ref<any>(null);
 const ringMenuRef = ref<HTMLElement | null>(null);
 
@@ -209,6 +210,20 @@ const openSettings = async () => {
   }
 };
 
+const openSymptomManagement = async () => {
+  currentView.value = 'symptom-manage';
+  if (!isWorking.value) {
+    await enterWorkMode();
+  } else {
+    // If already working, resize window if needed
+    if (appWindow.value) {
+      // 先调整位置再设置大小，避免窗口闪动到其他显示器
+      await smartExpand(TARGET_SYMPTOM_MANAGE_W, TARGET_SYMPTOM_MANAGE_H);
+      await appWindow.value.setSize(new LogicalSize(TARGET_SYMPTOM_MANAGE_W, TARGET_SYMPTOM_MANAGE_H));
+    }
+  }
+};
+
 const openChat = async () => {
   currentView.value = 'chat';
   if (!isWorking.value) {
@@ -250,6 +265,8 @@ const TARGET_CAPSULE_H = 80;
 const TARGET_CAPSULE_EXPANDED_H = 400; // Increased height for risk details
 const TARGET_RESULT_W = 1200;
 const TARGET_RESULT_H = 900;
+const TARGET_SYMPTOM_MANAGE_W = 1200;
+const TARGET_SYMPTOM_MANAGE_H = 900;
 
 // Voice Consultation State
 const generatedRecord = ref<GeneratedRecord | null>(null);
@@ -735,8 +752,9 @@ const resizeWorkWindow = async (targetW: number, targetH: number) => {
   if (!appWindow.value) return;
   try {
     await appWindow.value.setResizable(true);
-    await appWindow.value.setSize(new LogicalSize(targetW, targetH));
+    // 先调整位置再设置大小，避免窗口闪动到其他显示器
     await smartExpand(targetW, targetH);
+    await appWindow.value.setSize(new LogicalSize(targetW, targetH));
     await waitForWindowSize(targetW, targetH);
   } catch (err) {
     console.warn('调整窗口大小失败:', err);
@@ -970,6 +988,15 @@ const exitWork = async () => {
   // 6. 重置状态
   exiting.value = false;
   transitioning.value = false;
+
+  // 7. 强制刷新 hover 状态
+  try {
+      const isHoveredNow = await invoke('check_mouse_hover');
+      console.log('[App] Forced hover check:', isHoveredNow);
+      isHovered.value = isHoveredNow as boolean;
+  } catch (e) {
+      console.error('Failed to force hover check:', e);
+  }
 };
 </script>
 
@@ -1070,7 +1097,7 @@ const exitWork = async () => {
           <!-- 工具栏 (risk-alert, voice-interaction, voice-result, reception-capsule 视图不显示) -->
           <div v-if="currentView !== 'risk-alert' && currentView !== 'voice-interaction' && currentView !== 'voice-result' && currentView !== 'reception-capsule'" class="assistant-toolbar" data-tauri-drag-region>
             <div class="toolbar-left" data-tauri-drag-region>
-              <button v-if="currentView === 'settings' || currentView === 'analytics'" class="icon-btn back-btn" @click="openChat" title="返回">
+              <button v-if="currentView === 'settings' || currentView === 'analytics' || currentView === 'symptom-manage'" class="icon-btn back-btn" @click="currentView === 'analytics' ? openChat() : handleCollapse()" title="返回">
                  <Icon icon="lucide:arrow-left" class="toolbar-icon" size="20" />
               </button>
               <span class="assistant-title" data-tauri-drag-region>
@@ -1078,7 +1105,9 @@ const exitWork = async () => {
                   currentView === 'chat' ? '智医助理' :
                   (currentView === 'consultation' ?
                     (currentPatient ? `智能问诊 - ${currentPatient.name}` : '智能问诊') :
-                    (currentView === 'analytics' ? '数据分析' : '系统设置'))
+                    (currentView === 'analytics' ? '数据分析' :
+                    (currentView === 'symptom-manage' ? '症状库维护' : '系统设置')))
+
                 }}
               </span>
             </div>
@@ -1132,9 +1161,11 @@ const exitWork = async () => {
             v-else-if="currentView === 'analytics'"
             @close="openChat"
           />
+          <SymptomManagement v-else-if="currentView === 'symptom-manage'" @close="handleCollapse" />
           <SettingsPanel
             v-else
             @view-analytics="openAnalytics"
+            @open-symptom-manage="openSymptomManagement"
           />
         </div>
       </div>

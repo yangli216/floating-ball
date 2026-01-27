@@ -10,6 +10,7 @@ import Icon from './Icon.vue';
 
 const emit = defineEmits<{
   'view-analytics': [];
+  'open-symptom-manage': [];
 }>();
 
 const showToast = inject('showToast') as (msg: string, type: 'success' | 'error' | 'info') => void;
@@ -198,6 +199,13 @@ const handleExportData = async () => {
               <input type="checkbox" id="always-on-top" v-model="alwaysOnTop">
               <label for="always-on-top" class="toggle-switch"></label>
             </div>
+          </div>
+        </div>
+
+        <div class="form-group row clickable" @click="emit('open-symptom-manage')">
+          <label>管理症状库</label>
+          <div class="arrow-icon">
+            <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"></polyline></svg>
           </div>
         </div>
 
@@ -721,6 +729,19 @@ input:checked + .toggle-switch:before {
 }
 
 /* Buttons */
+.clickable {
+  cursor: pointer;
+  padding: 8px 0;
+  transition: opacity 0.2s;
+}
+
+.clickable:hover {
+  opacity: 0.7;
+}
+
+.arrow-icon {
+  color: var(--medical-text-muted);
+}
 .save-btn {
   display: flex;
   align-items: center;
