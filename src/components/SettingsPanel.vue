@@ -126,10 +126,8 @@ const handleExportData = async () => {
 <template>
   <div class="settings-panel">
     <!-- Header -->
-    <div class="settings-header">
-      <h2 class="settings-title">系统设置</h2>
-      <p class="settings-subtitle">配置应用程序、模型和数据管理选项</p>
-    </div>
+    <!-- Header Removed -->
+
 
     <!-- Tabs Navigation -->
     <div class="tabs-header">
@@ -202,11 +200,17 @@ const handleExportData = async () => {
           </div>
         </div>
 
-        <div class="form-group row clickable" @click="emit('open-symptom-manage')">
-          <label>管理症状库</label>
-          <div class="arrow-icon">
-            <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"></polyline></svg>
+        <div class="settings-section clickable-section" @click="emit('open-symptom-manage')">
+          <div class="section-header no-border" style="display: flex; align-items: center; justify-content: space-between;">
+            <div class="header-left" style="display: flex; align-items: center; gap: 12px;">
+              <Icon icon="lucide:file-edit" :size="20" />
+              <h3 style="margin: 0;">症状库管理</h3>
+            </div>
+            <div class="arrow-icon">
+              <Icon icon="lucide:chevron-right" :size="20" />
+            </div>
           </div>
+          <p class="section-desc" style="margin-top: 4px;">配置和维护用于问诊的症状模板库</p>
         </div>
 
         <button class="save-btn" @click="saveSettings">
@@ -352,27 +356,7 @@ const handleExportData = async () => {
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
 }
 
-/* Header */
-.settings-header {
-  padding: 24px 24px 16px;
-  background: var(--medical-bg-primary);
-  border-bottom: 2px solid var(--medical-border-light);
-}
 
-.settings-title {
-  margin: 0 0 8px 0;
-  font-size: 24px;
-  font-weight: 600;
-  color: var(--medical-text-primary);
-  line-height: 1.25;
-}
-
-.settings-subtitle {
-  margin: 0;
-  font-size: 14px;
-  color: var(--medical-text-muted);
-  line-height: 1.5;
-}
 
 /* Tabs */
 .tabs-header {
@@ -796,8 +780,33 @@ input:checked + .toggle-switch:before {
   padding: 12px 24px;
   border-radius: 8px;
   border: 2px solid var(--medical-primary);
-  background: var(--medical-bg-primary);
-  color: var(--medical-primary);
+.clickable-section {
+  cursor: pointer;
+  transition: all var(--duration-normal) var(--ease-out);
+}
+
+.clickable-section:hover {
+  border-color: var(--medical-primary);
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(8, 145, 178, 0.15);
+}
+
+.clickable-section .section-header {
+  justify-content: space-between;
+}
+
+.clickable-section .section-header.no-border {
+  border-bottom: none;
+  margin-bottom: 8px;
+  padding-bottom: 0;
+}
+
+.header-left {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
   font-weight: 600;
   font-size: 14px;
   cursor: pointer;

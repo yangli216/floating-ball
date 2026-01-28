@@ -9,8 +9,10 @@ use uuid::Uuid;
 use crate::db::models::*;
 
 // Database connection manager
+#[allow(dead_code)]
 pub struct DbConnection(Mutex<Connection>);
 
+#[allow(dead_code)]
 impl DbConnection {
     pub fn new(db_path: PathBuf) -> SqlResult<Self> {
         let conn = Connection::open(db_path)?;
@@ -20,7 +22,10 @@ impl DbConnection {
 
 // Helper to get database path
 fn get_db_path(app: &AppHandle) -> PathBuf {
-    let app_data_dir = app.path().app_data_dir().expect("Failed to get app data dir");
+    let app_data_dir = app
+        .path()
+        .app_data_dir()
+        .expect("Failed to get app data dir");
     println!("[Feedback] App data dir: {:?}", app_data_dir);
     std::fs::create_dir_all(&app_data_dir).expect("Failed to create app data directory");
     let db_path = app_data_dir.join("feedback.db");
@@ -39,7 +44,10 @@ pub fn init_database(app: &AppHandle) -> SqlResult<()> {
 
     // Run migrations
     let migration_sql = include_str!("../../migrations/001_initial_schema.sql");
-    println!("[Feedback] Running migrations (SQL length: {} bytes)...", migration_sql.len());
+    println!(
+        "[Feedback] Running migrations (SQL length: {} bytes)...",
+        migration_sql.len()
+    );
     conn.execute_batch(migration_sql)?;
     println!("[Feedback] Migrations completed successfully");
 
@@ -113,6 +121,7 @@ pub async fn update_session_status(
 // Message Management Commands
 
 #[command]
+#[allow(clippy::too_many_arguments)]
 pub async fn save_message(
     app: AppHandle,
     session_id: String,
@@ -152,6 +161,7 @@ pub async fn save_message(
 // Feedback Management Commands
 
 #[command]
+#[allow(clippy::too_many_arguments)]
 pub async fn save_feedback(
     app: AppHandle,
     session_id: String,
@@ -193,6 +203,7 @@ pub async fn save_feedback(
 // Recommendation Management Commands
 
 #[command]
+#[allow(clippy::too_many_arguments)]
 pub async fn save_recommendation(
     app: AppHandle,
     session_id: String,
@@ -338,8 +349,10 @@ pub async fn get_session_statistics(
     );
 
     let mut stmt = conn.prepare(&query).map_err(|e| e.to_string())?;
-    let params_refs: Vec<&dyn rusqlite::ToSql> =
-        params_vec.iter().map(|p| p as &dyn rusqlite::ToSql).collect();
+    let params_refs: Vec<&dyn rusqlite::ToSql> = params_vec
+        .iter()
+        .map(|p| p as &dyn rusqlite::ToSql)
+        .collect();
 
     let stats = stmt
         .query_row(&params_refs[..], |row| {
@@ -370,7 +383,9 @@ pub async fn get_session_statistics(
         date_filter
     );
     let mut type_stmt = conn.prepare(&type_query).map_err(|e| e.to_string())?;
-    let mut rows = type_stmt.query(&params_refs[..]).map_err(|e| e.to_string())?;
+    let mut rows = type_stmt
+        .query(&params_refs[..])
+        .map_err(|e| e.to_string())?;
 
     let mut sessions_by_type = serde_json::Map::new();
     while let Some(row) = rows.next().map_err(|e| e.to_string())? {
@@ -425,8 +440,10 @@ pub async fn get_feedback_statistics(
     );
 
     let mut stmt = conn.prepare(&query).map_err(|e| e.to_string())?;
-    let params_refs: Vec<&dyn rusqlite::ToSql> =
-        params_vec.iter().map(|p| p as &dyn rusqlite::ToSql).collect();
+    let params_refs: Vec<&dyn rusqlite::ToSql> = params_vec
+        .iter()
+        .map(|p| p as &dyn rusqlite::ToSql)
+        .collect();
 
     let stats = stmt
         .query_row(&params_refs[..], |row| {
@@ -463,7 +480,9 @@ pub async fn get_feedback_statistics(
         date_filter
     );
     let mut type_stmt = conn.prepare(&type_query).map_err(|e| e.to_string())?;
-    let mut rows = type_stmt.query(&params_refs[..]).map_err(|e| e.to_string())?;
+    let mut rows = type_stmt
+        .query(&params_refs[..])
+        .map_err(|e| e.to_string())?;
 
     let mut feedbacks_by_target_type = serde_json::Map::new();
     while let Some(row) = rows.next().map_err(|e| e.to_string())? {
@@ -516,8 +535,10 @@ pub async fn get_performance_statistics(
     );
 
     let mut stmt = conn.prepare(&query).map_err(|e| e.to_string())?;
-    let params_refs: Vec<&dyn rusqlite::ToSql> =
-        params_vec.iter().map(|p| p as &dyn rusqlite::ToSql).collect();
+    let params_refs: Vec<&dyn rusqlite::ToSql> = params_vec
+        .iter()
+        .map(|p| p as &dyn rusqlite::ToSql)
+        .collect();
 
     let stats = stmt
         .query_row(&params_refs[..], |row| {
@@ -575,8 +596,10 @@ pub async fn export_data(
         (None, None) => (String::new(), vec![]),
     };
 
-    let params_refs: Vec<&dyn rusqlite::ToSql> =
-        params_vec.iter().map(|p| p as &dyn rusqlite::ToSql).collect();
+    let params_refs: Vec<&dyn rusqlite::ToSql> = params_vec
+        .iter()
+        .map(|p| p as &dyn rusqlite::ToSql)
+        .collect();
 
     // Get sessions
     let sessions_query = format!("SELECT * FROM sessions {}", date_filter);

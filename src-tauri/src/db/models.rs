@@ -2,6 +2,7 @@ use serde::{Deserialize, Serialize};
 
 // Session Types
 #[derive(Debug, Serialize, Deserialize, Clone)]
+#[allow(dead_code)]
 pub struct Session {
     pub session_id: String,
     pub patient_id: Option<String>,
@@ -16,6 +17,7 @@ pub struct Session {
 
 // Message Types
 #[derive(Debug, Serialize, Deserialize, Clone)]
+#[allow(dead_code)]
 pub struct Message {
     pub message_id: String,
     pub session_id: String,
@@ -30,6 +32,7 @@ pub struct Message {
 
 // Feedback Types
 #[derive(Debug, Serialize, Deserialize, Clone)]
+#[allow(dead_code)]
 pub struct Feedback {
     pub feedback_id: String,
     pub session_id: String,
@@ -45,6 +48,7 @@ pub struct Feedback {
 
 // Recommendation Types
 #[derive(Debug, Serialize, Deserialize, Clone)]
+#[allow(dead_code)]
 pub struct Recommendation {
     pub recommendation_id: String,
     pub session_id: String,
@@ -60,6 +64,7 @@ pub struct Recommendation {
 
 // Operation Log Types
 #[derive(Debug, Serialize, Deserialize, Clone)]
+#[allow(dead_code)]
 pub struct OperationLog {
     pub log_id: String,
     pub session_id: Option<String>,
@@ -73,6 +78,7 @@ pub struct OperationLog {
 
 // Performance Metric Types
 #[derive(Debug, Serialize, Deserialize, Clone)]
+#[allow(dead_code)]
 pub struct PerformanceMetric {
     pub metric_id: String,
     pub session_id: Option<String>,

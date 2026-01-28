@@ -118,16 +118,7 @@
                   "我是C，和D互斥",
                   "我是D"
                 ],
-                "mutualExclusions": [
-                  [
-                    "我是A，和B互斥",
-                    "我是B"
-                  ],
-                  [
-                    "我是C，和D互斥",
-                    "我是D"
-                  ]
-                ]
+                "mutualExclusions": []
               },
               "applicablePopulation": {
                 "genders": []

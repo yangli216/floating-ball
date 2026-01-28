@@ -3,6 +3,8 @@ import { ref, computed, onMounted, inject } from 'vue';
 import templatesData from '../assets/templates.json';
 import Pinyin from 'tiny-pinyin';
 import { invoke } from '@tauri-apps/api/core';
+import Icon from './Icon.vue';
+
 const showToast = inject('showToast') as (msg: string, type: 'success' | 'error' | 'info') => void;
 
 const emit = defineEmits(['close']);
@@ -289,7 +291,7 @@ const toggleFieldExpand = (id: string) => {
         <button class="back-btn" @click="emit('close')">
           <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2"><polyline points="15 18 9 12 15 6"></polyline></svg>
         </button>
-        <h1>症状库维护</h1>
+        <h1 class="header-title">症状库维护</h1>
       </div>
       <div class="header-actions">
         <label class="action-btn file-label">
@@ -297,7 +299,9 @@ const toggleFieldExpand = (id: string) => {
           <input type="file" @change="importJson" accept=".json" style="display: none;" />
         </label>
         <button class="action-btn" @click="exportJson">导出 JSON</button>
-        <button class="action-btn primary" @click="saveAll">保存修改</button>
+        <button class="action-btn primary" @click="saveAll">
+          <Icon icon="lucide:save" :size="16" style="margin-right: 4px;"/>保存修改
+        </button>
       </div>
     </header>
 
@@ -403,138 +407,31 @@ const toggleFieldExpand = (id: string) => {
                 </div>
 
                 <div class="field-body" v-show="expandedFields.has(field.id)">
-                  <div class="prop-row">
-                    <label>Storage Key:</label>
-                    <input type="text" v-model="field.storageKey" placeholder="存储键名" />
-                    <label class="check-label" style="margin-left: 12px; font-weight: 500;">
-                      <input type="checkbox" v-model="field.required" /> 必填项
-                    </label>
-                  </div>
-                  
-                  <div class="prop-row" v-if="['radio', 'checkbox', 'input_radio'].includes(field.type)">
-                    <label>选项配置:</label>
-                    <div class="options-manager">
-                      <div class="option-tags">
-                        <div v-for="(opt, oddx) in (field.type === 'input_radio' ? field.props.radioOptions : field.props.options)" :key="oddx" class="option-tag">
-                          <input 
-                            type="text" 
-                            :value="opt" 
-                            @input="(e: any) => updateOption(field, Number(oddx), e.target.value)"
-                          />
-                          <button @click="removeOption(field, Number(oddx))" class="icon-btn-small">×</button>
-                        </div>
-                      </div>
-                      <button @click="addOption(field)" class="btn-tiny">+ 添加选项</button>
-                    </div>
-                  </div>
-
-                  <!-- Mutual Exclusion Section -->
-                  <div class="advanced-section mutual-section" v-if="field.type === 'checkbox'">
-                    <div class="section-title-row clickable" @click="toggleMutualSection(field.id)">
-                      <div class="title-left">
-                        <span class="collapse-icon">
-                          <svg :class="{ rotated: expandedMutualSections.has(field.id) }" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"></polyline></svg>
-                        </span>
-                        <h4 class="sub-title">互斥关系配置</h4>
-                        <span class="summary-badge" v-if="!expandedMutualSections.has(field.id) && field.props.mutualExclusions?.length">
-                          {{ field.props.mutualExclusions.length }} 组
-                        </span>
-                      </div>
-                      <span class="help-icon" title="互斥说明" @click.stop v-if="expandedMutualSections.has(field.id)">?</span>
+                  <!-- Row 1: Key & Required & Population (grouped for compactness) -->
+                  <div class="compact-row">
+                    <div class="input-group flex-1">
+                      <label>Storage Key</label>
+                      <input type="text" v-model="field.storageKey" placeholder="存储键名" class="field-input-sm" />
                     </div>
                     
-                    <!-- 收起状态摘要 -->
-                    <div v-show="!expandedMutualSections.has(field.id)" class="summary-preview clickable" @click="toggleMutualSection(field.id)">
-                       <div v-if="!field.props.mutualExclusions?.length" class="empty-hint">
-                         <span class="plus-icon">+</span> <span class="text-hint">点击配置组间互斥逻辑</span>
-                       </div>
-                       <div v-else class="preview-list">
-                         <div v-for="(group, gidx) in field.props.mutualExclusions" :key="gidx" class="preview-group-tag">
-                           <span class="pgt-label">组{{Number(gidx)+1}}</span>
-                           <span class="pgt-content" :title="group.join('、')">{{ group.join('、') || '空' }}</span>
-                         </div>
-                       </div>
+                    <div class="check-group">
+                       <label class="check-label-sm">
+                        <input type="checkbox" v-model="field.required" /> 
+                        <span class="label-text">必填</span>
+                      </label>
                     </div>
 
-                    <!-- 展开内容 -->
-                    <div v-show="expandedMutualSections.has(field.id)">
-                      <!-- 帮助说明框 -->
-                      <div class="help-box">
-                        <svg class="help-icon-svg" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4M12 8h.01"/></svg>
-                        <div class="help-text">
-                          <strong>组间互斥说明</strong>
-                          <p>不同互斥组之间存在互斥关系。例如：将"无症状"单独设为一组，其他症状设为另一组。</p>
-                          <p>当选中某一互斥组的选项时，会<em>自动清空</em>其他互斥组的选中状态。</p>
-                          <p><em>注：同一互斥组内的选项可以同时选中。</em></p>
-                        </div>
-                      </div>
+                    <div class="separator"></div>
 
-                      <div class="mutual-groups">
-                        <!-- 已有互斥组列表 -->
-                        <div v-for="(group, gidx) in (field.props.mutualExclusions || [])" :key="gidx" class="mutual-group-card">
-                          <div class="group-header">
-                            <div class="group-title">
-                              <span class="group-badge">{{ Number(gidx) + 1 }}</span>
-                              <span class="group-name">互斥组</span>
-                            </div>
-                            <button @click="removeMutualGroup(field, Number(gidx))" class="link-danger" title="删除此互斥组">
-                              <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
-                            </button>
-                          </div>
-                          
-                          <div class="group-body">
-                            <!-- 已选选项 -->
-                            <div class="group-options" v-if="group.length > 0">
-                              <span v-for="opt in group" :key="opt" class="option-chip">
-                                {{ opt }}
-                                <button class="chip-remove" @click="removeFromGroup(field, Number(gidx), opt)" title="移除">×</button>
-                              </span>
-                            </div>
-                            <div class="empty-group" v-else>
-                              <span>暂无选项，请从下方添加 (组内可多选)</span>
-                            </div>
-                            
-                            <!-- 添加选项下拉 -->
-                            <div class="group-add">
-                              <select 
-                                @change="(e: any) => { addToGroup(field, Number(gidx), e.target.value); e.target.value=''; }" 
-                                value=""
-                                class="form-select"
-                              >
-                                <option value="" disabled selected>➕ 添加选项到此组...</option>
-                                <option 
-                                  v-for="opt in (field.props.options || []).filter((o: string) => !group.includes(o))" 
-                                  :key="opt" 
-                                  :value="opt"
-                                >
-                                  {{ opt }}
-                                </option>
-                              </select>
-                            </div>
-                          </div>
-                        </div>
-                        
-                        <!-- 新建互斥组按钮 -->
-                        <button @click="addMutualGroup(field)" class="btn-add-group">
-                          <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
-                          新建互斥组
-                        </button>
-                      </div>
-                    </div>
-                  </div>
-
-                  <!-- Advanced Config: Applicable Population -->
-                  <div class="advanced-section">
-                    <h4 class="sub-title">适用人群设置</h4>
-                    <div class="prop-row">
-                      <label>适用性别:</label>
-                      <div class="check-mini">
-                        <label class="check-item"><input type="checkbox" value="1" :checked="field.applicablePopulation?.genders?.includes('1')" @change="(e: any) => {
+                    <div class="input-group">
+                      <label>适用性别</label>
+                      <div class="check-row">
+                        <label class="check-label-xs"><input type="checkbox" value="1" :checked="field.applicablePopulation?.genders?.includes('1')" @change="(e: any) => {
                           if (!field.applicablePopulation) field.applicablePopulation = { genders: [] };
                           if (e.target.checked) field.applicablePopulation.genders.push('1');
                           else field.applicablePopulation.genders = field.applicablePopulation.genders.filter((g: string) => g !== '1');
                         }" /><span>男</span></label>
-                        <label class="check-item"><input type="checkbox" value="2" :checked="field.applicablePopulation?.genders?.includes('2')" @change="(e: any) => {
+                        <label class="check-label-xs"><input type="checkbox" value="2" :checked="field.applicablePopulation?.genders?.includes('2')" @change="(e: any) => {
                           if (!field.applicablePopulation) field.applicablePopulation = { genders: [] };
                           if (e.target.checked) field.applicablePopulation.genders.push('2');
                           else field.applicablePopulation.genders = field.applicablePopulation.genders.filter((g: string) => g !== '2');
@@ -542,79 +439,127 @@ const toggleFieldExpand = (id: string) => {
                       </div>
                     </div>
                   </div>
-
-                  <!-- Advanced Config: Text Generation -->
-                  <div class="advanced-section">
-                    <h4 class="sub-title">文本生成配置 (textGenConfig)</h4>
-                    <div class="prop-row">
-                      <label>生成目标:</label>
-                      <div class="check-mini">
-                         <label class="check-item"><input type="checkbox" value="chiefComplaint" :checked="field.textGenConfig?.targets?.includes('chiefComplaint')" @change="(e: any) => {
-                            if (!field.textGenConfig) field.textGenConfig = { targets: [], template: '{value}' };
-                            if (e.target.checked) field.textGenConfig.targets.push('chiefComplaint');
-                            else field.textGenConfig.targets = field.textGenConfig.targets.filter((t: string) => t !== 'chiefComplaint');
-                         }" /><span>主诉</span></label>
-                         <label class="check-item"><input type="checkbox" value="historyOfPresentIllness" :checked="field.textGenConfig?.targets?.includes('historyOfPresentIllness')" @change="(e: any) => {
-                            if (!field.textGenConfig) field.textGenConfig = { targets: [], template: '{value}' };
-                            if (e.target.checked) field.textGenConfig.targets.push('historyOfPresentIllness');
-                            else field.textGenConfig.targets = field.textGenConfig.targets.filter((t: string) => t !== 'historyOfPresentIllness');
-                         }" /><span>现病史</span></label>
+                  
+                  <!-- Row 2: Options (Clean Tag Style) -->
+                  <div class="config-block" v-if="['radio', 'checkbox', 'input_radio'].includes(field.type)">
+                    <label class="block-label">选项配置</label>
+                    <div class="options-container">
+                      <div class="option-tags-wrapper">
+                        <div v-for="(opt, oddx) in (field.type === 'input_radio' ? field.props.radioOptions : field.props.options)" :key="oddx" class="option-pill">
+                          <input 
+                            type="text" 
+                            :value="opt" 
+                            @input="(e: any) => updateOption(field, Number(oddx), e.target.value)"
+                            class="pill-input"
+                          />
+                          <button @click="removeOption(field, Number(oddx))" class="pill-remove">×</button>
+                        </div>
+                        <button @click="addOption(field)" class="pill-add">+ 添加</button>
                       </div>
                     </div>
-                    <div class="prop-row">
-                      <label>文本模板:</label>
-                      <div style="flex: 1;">
-                        <input type="text" :value="field.textGenConfig?.template" @input="(e: any) => {
-                          if (!field.textGenConfig) field.textGenConfig = { targets: [], template: '{value}' };
-                          field.textGenConfig.template = e.target.value;
-                        }" placeholder="如：诱因是{value}" 
-                           class="field-input-styled" />
-                        <div class="helper-text" style="font-size: 11px; color: #64748b; margin-top: 4px;">
-                          支持占位符: <code>{label}</code>(字段名), <code>{value}</code>(选中值)
+                  </div>
+
+                  <!-- Advanced: Mutual Exclusion -->
+                  <div class="config-block mutual-block" v-if="field.type === 'checkbox'">
+                     <div class="block-header clickable" @click="toggleMutualSection(field.id)">
+                        <div class="header-left">
+                          <Icon icon="lucide:arrow-right-left" :size="14" class="block-icon"/>
+                          <span>互斥关系配置</span>
+                          <span class="badge-count" v-if="!expandedMutualSections.has(field.id) && field.props.mutualExclusions?.length">
+                            {{ field.props.mutualExclusions.length }}组
+                          </span>
+                        </div>
+                        <Icon icon="lucide:chevron-down" :size="14" :class="{ 'rotate-180': expandedMutualSections.has(field.id) }" class="transition-icon"/>
+                     </div>
+
+                     <div v-show="expandedMutualSections.has(field.id)" class="block-content">
+                        <div class="help-box-sm">
+                          <Icon icon="lucide:info" :size="14" class="help-icon-c"/>
+                          <span>不同组互斥 (选中A组清除B组)，组内可多选。</span>
+                        </div>
+
+                        <div class="mutual-groups-compact">
+                            <div v-for="(group, gidx) in (field.props.mutualExclusions || [])" :key="gidx" class="mutual-group-row">
+                                <span class="group-label">组{{Number(gidx) + 1}}</span>
+                                <div class="group-items">
+                                   <span v-for="opt in group" :key="opt" class="item-tag">
+                                      {{ opt }}
+                                      <span class="remove-x" @click="removeFromGroup(field, Number(gidx), opt)">×</span>
+                                   </span>
+                                   <select 
+                                      @change="(e: any) => { addToGroup(field, Number(gidx), e.target.value); e.target.value=''; }" 
+                                      class="add-select-sm"
+                                    >
+                                      <option value="" disabled selected>+ 添加...</option>
+                                      <option v-for="opt in (field.props.options || []).filter((o: string) => !group.includes(o))" :key="opt" :value="opt">{{ opt }}</option>
+                                    </select>
+                                </div>
+                                <button @click="removeMutualGroup(field, Number(gidx))" class="icon-btn-danger" title="删除组">
+                                  <Icon icon="lucide:trash-2" :size="14"/>
+                                </button>
+                            </div>
+                            <button @click="addMutualGroup(field)" class="btn-text-primary">+ 新建互斥组</button>
+                        </div>
+                     </div>
+                  </div>
+
+                  <!-- Advanced: Text Generation (Card Style) -->
+                  <div class="text-gen-card">
+                    <div class="card-header-sm">
+                      <Icon icon="lucide:sparkles" :size="14" style="color: #7c3aed;"/>
+                      <span style="font-weight: 600; color: #5b21b6;">智能文本生成配置</span>
+                    </div>
+                    <div class="card-body-sm">
+                      <div class="gen-row">
+                        <label>生成目标:</label>
+                        <div class="check-row">
+                           <label class="check-label-xs"><input type="checkbox" value="chiefComplaint" :checked="field.textGenConfig?.targets?.includes('chiefComplaint')" @change="(e: any) => {
+                              if (!field.textGenConfig) field.textGenConfig = { targets: [], template: '{value}' };
+                              if (e.target.checked) field.textGenConfig.targets.push('chiefComplaint');
+                              else field.textGenConfig.targets = field.textGenConfig.targets.filter((t: string) => t !== 'chiefComplaint');
+                           }" /><span>主诉</span></label>
+                           <label class="check-label-xs"><input type="checkbox" value="historyOfPresentIllness" :checked="field.textGenConfig?.targets?.includes('historyOfPresentIllness')" @change="(e: any) => {
+                              if (!field.textGenConfig) field.textGenConfig = { targets: [], template: '{value}' };
+                              if (e.target.checked) field.textGenConfig.targets.push('historyOfPresentIllness');
+                              else field.textGenConfig.targets = field.textGenConfig.targets.filter((t: string) => t !== 'historyOfPresentIllness');
+                           }" /><span>现病史</span></label>
                         </div>
                       </div>
-                    </div>
-                    <div class="prop-row">
-                      <label>忽略值:</label>
-                       <div style="flex: 1;">
-                         <div class="options-manager">
-                           <div class="option-tags" v-if="field.textGenConfig?.optionConfig?.ignoreValues?.length > 0">
-                             <span v-for="(val, idx) in field.textGenConfig.optionConfig.ignoreValues" :key="idx" class="option-chip">
+                      
+                      <div class="gen-row">
+                        <label>文本模板:</label>
+                        <div class="flex-1">
+                          <input type="text" :value="field.textGenConfig?.template" @input="(e: any) => {
+                            if (!field.textGenConfig) field.textGenConfig = { targets: [], template: '{value}' };
+                            field.textGenConfig.template = e.target.value;
+                          }" placeholder="例: 伴随{value}" class="input-underline" />
+                          <div class="hint-xs">可以使用 <code>{value}</code> 代表选中的选项值</div>
+                        </div>
+                      </div>
+
+                      <div class="gen-row">
+                        <label>跳过条件:</label>
+                        <div class="flex-1">
+                           <div class="tags-input-container">
+                             <div class="tag-chip" v-for="(val, idx) in field.textGenConfig?.optionConfig?.ignoreValues || []" :key="idx">
                                {{ val }}
-                               <button class="chip-remove" @click="() => {
-                                 field.textGenConfig.optionConfig.ignoreValues.splice(idx, 1);
-                               }">×</button>
-                             </span>
-                           </div>
-                           <div class="group-add">
-                              <select 
+                               <span class="remove-tag" @click="field.textGenConfig.optionConfig.ignoreValues.splice(idx, 1)">×</span>
+                             </div>
+                             <select 
+                                class="transparent-select" 
                                 @change="(e: any) => { 
                                   const val = e.target.value; 
                                   if(!val) return;
                                   if (!field.textGenConfig) field.textGenConfig = { targets: [], template: '{value}' };
                                   if (!field.textGenConfig.optionConfig) field.textGenConfig.optionConfig = { ignoreValues: [] };
-                                  if(!field.textGenConfig.optionConfig.ignoreValues.includes(val)) {
-                                     field.textGenConfig.optionConfig.ignoreValues.push(val);
-                                  }
+                                  if(!field.textGenConfig.optionConfig.ignoreValues.includes(val)) field.textGenConfig.optionConfig.ignoreValues.push(val);
                                   e.target.value=''; 
-                                }" 
-                                value=""
-                                class="form-select"
+                                }"
                               >
-                                <option value="" disabled selected>➕ 添加忽略值...</option>
-                                <option 
-                                  v-for="opt in (field.type === 'input_radio' ? field.props.radioOptions : field.props.options) || []" 
-                                  :key="opt" 
-                                  :value="opt"
-                                  :disabled="field.textGenConfig?.optionConfig?.ignoreValues?.includes(opt)"
-                                >
-                                  {{ opt }}
-                                </option>
-                              </select>
+                               <option value="" disabled selected>+ 添加条件</option>
+                               <option v-for="opt in (field.type === 'input_radio' ? field.props.radioOptions : field.props.options) || []" :key="opt" :value="opt" :disabled="field.textGenConfig?.optionConfig?.ignoreValues?.includes(opt)">{{ opt }}</option>
+                             </select>
                            </div>
-                         </div>
-                         <div class="helper-text" style="font-size: 11px; color: #64748b; margin-top: 4px;">
-                          当选中这些值时，不会生成对应的文本描述
                         </div>
                       </div>
                     </div>
@@ -642,16 +587,33 @@ const toggleFieldExpand = (id: string) => {
   display: flex;
   flex-direction: column;
   height: 100%;
-  background: #f8fafc;
-  color: #1e293b;
+  background: var(--medical-bg-secondary);
+  color: var(--medical-text-secondary);
   overflow: hidden;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+
+  /* Medical Theme Variables (Mirrored from SettingsPanel) */
+  --medical-primary: #0891B2;
+  --medical-primary-hover: #0E7490;
+  --medical-success: #059669;
+  --medical-text-primary: #164E63;
+  --medical-text-secondary: #0F172A;
+  --medical-text-muted: #475569;
+  --medical-bg-primary: #FFFFFF;
+  --medical-bg-secondary: #F8FAFC;
+  --medical-bg-tertiary: #F1F5F9;
+  --medical-border-light: #E2E8F0;
+  --medical-border-medium: #CBD5E1;
+  --medical-info-bg: #DBEAFE;
+  --medical-info: #3B82F6;
+  --medical-danger: #EF4444;
 }
 
 /* Header */
 .manage-header {
   height: 48px;
-  background: #fff;
-  border-bottom: 1px solid #e2e8f0;
+  background: var(--medical-bg-primary);
+  border-bottom: 1px solid var(--medical-border-light);
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -665,18 +627,19 @@ const toggleFieldExpand = (id: string) => {
   gap: 12px;
 }
 
-.title-group h1 {
-  font-size: 16px;
+.header-title {
+  font-size: 18px;
   font-weight: 600;
   margin: 0;
+  color: var(--medical-text-primary);
 }
 
 .back-btn {
   width: 32px;
   height: 32px;
   border-radius: 8px;
-  border: 1px solid #e2e8f0;
-  background: #fff;
+  border: 1px solid var(--medical-border-light);
+  background: var(--medical-bg-primary);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -700,10 +663,10 @@ const toggleFieldExpand = (id: string) => {
   font-size: 14px;
   font-weight: 500;
   cursor: pointer;
-  border: 1px solid #e2e8f0;
-  background: #fff;
+  border: 1px solid var(--medical-border-light);
+  background: var(--medical-bg-primary);
   transition: all 0.2s;
-  color: #4b5563;
+  color: var(--medical-text-muted);
 }
 
 .action-btn:hover {
@@ -712,15 +675,18 @@ const toggleFieldExpand = (id: string) => {
 }
 
 .action-btn.primary {
-  background: linear-gradient(135deg, #3b82f6, #2563eb);
+  background: var(--medical-primary);
   color: #fff;
   border-color: transparent;
-  box-shadow: 0 2px 8px rgba(59, 130, 246, 0.3);
+  box-shadow: 0 2px 8px rgba(8, 145, 178, 0.3);
+  display: flex;
+  align-items: center;
 }
 
 .action-btn.primary:hover {
+  background: var(--medical-primary-hover);
   transform: translateY(-1px);
-  box-shadow: 0 4px 12px rgba(59, 130, 246, 0.4);
+  box-shadow: 0 4px 12px rgba(8, 145, 178, 0.4);
 }
 
 /* Content Layout */
@@ -735,8 +701,8 @@ const toggleFieldExpand = (id: string) => {
 .symptom-list-panel {
   flex: 0 0 300px;
   width: 300px;
-  background: #fff;
-  border-right: 1px solid #e2e8f0;
+  background: var(--medical-bg-primary);
+  border-right: 1px solid var(--medical-border-light);
   display: flex;
   flex-direction: column;
   overflow: hidden;
@@ -769,10 +735,12 @@ const toggleFieldExpand = (id: string) => {
   padding-left: 36px;
   padding-right: 12px;
   border-radius: 8px;
-  border: 1px solid #e2e8f0;
+  border: 1px solid var(--medical-border-medium);
   font-size: 13px;
   outline: none;
   transition: border-color 0.2s, box-shadow 0.2s;
+  background: var(--medical-bg-primary);
+  color: var(--medical-text-secondary);
 }
 
 .search-bar input:hover {
@@ -780,8 +748,8 @@ const toggleFieldExpand = (id: string) => {
 }
 
 .search-bar input:focus {
-  border-color: #3b82f6;
-  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+  border-color: var(--medical-primary);
+  box-shadow: 0 0 0 3px rgba(8, 145, 178, 0.1);
 }
 
 .filter-bar {
@@ -1647,4 +1615,409 @@ const toggleFieldExpand = (id: string) => {
 .btn-add-group:hover svg {
   transform: rotate(90deg);
 }
+
+/* Compact UI Styles */
+.compact-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.input-group {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.input-group label {
+  font-size: 12px;
+  color: var(--medical-text-muted);
+  font-weight: 500;
+}
+
+.flex-1 { flex: 1; }
+
+.field-input-sm {
+  height: 32px;
+  border-radius: 6px;
+  border: 1px solid var(--medical-border-medium);
+  font-size: 13px;
+  padding: 0 8px;
+  background: var(--medical-bg-primary);
+}
+
+.check-group {
+  display: flex;
+  align-items: center;
+  padding-top: 18px; /* Align with input */
+}
+
+.check-label-sm {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.separator {
+  width: 1px;
+  height: 24px;
+  background: var(--medical-border-light);
+  margin: 0 4px;
+}
+
+.check-row {
+  display: flex;
+  gap: 12px;
+}
+
+.check-label-xs {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+/* Option Configuration Block */
+.config-block {
+  margin-bottom: 12px;
+}
+
+.block-label {
+  display: block;
+  font-size: 12px;
+  color: var(--medical-text-muted);
+  margin-bottom: 6px;
+  font-weight: 500;
+}
+
+.options-container {
+  background: var(--medical-bg-tertiary);
+  padding: 8px;
+  border-radius: 8px;
+  border: 1px solid var(--medical-border-light);
+}
+
+.option-tags-wrapper {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.option-pill {
+  display: flex;
+  align-items: center;
+  background: var(--medical-bg-primary);
+  border: 1px solid var(--medical-border-medium);
+  border-radius: 4px;
+  padding: 2px;
+  padding-right: 6px;
+  box-shadow: 0 1px 2px rgba(0,0,0,0.05);
+}
+
+.pill-input {
+  border: none;
+  background: transparent;
+  width: auto;
+  min-width: 40px;
+  padding: 4px 6px;
+  font-size: 13px;
+  outline: none;
+  color: var(--medical-text-secondary);
+}
+
+.pill-remove {
+  width: 16px;
+  height: 16px;
+  background: #fee2e2;
+  color: #ef4444;
+  border-radius: 4px; /* Squared circle */
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  cursor: pointer;
+  font-size: 14px;
+  line-height: 1;
+  margin-left: 4px;
+}
+
+.pill-remove:hover {
+  background: #fecaca;
+}
+
+.pill-add {
+  padding: 4px 10px;
+  font-size: 12px;
+  border: 1px dashed var(--medical-primary);
+  color: var(--medical-primary);
+  background: transparent;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.pill-add:hover {
+  background: rgba(8, 145, 178, 0.05);
+}
+
+/* Text Gen Card */
+.text-gen-card {
+  background: linear-gradient(to bottom, #f5f3ff, #fff); /* Light purple tint */
+  border: 1px solid #ddd6fe;
+  border-radius: 8px;
+  overflow: hidden;
+  margin-top: 12px;
+}
+
+.card-header-sm {
+  padding: 8px 12px;
+  background: rgba(139, 92, 246, 0.1);
+  border-bottom: 1px solid rgba(139, 92, 246, 0.2);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+}
+
+.card-body-sm {
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.gen-row {
+  display: flex;
+  align-items: flex-start; /* Changed to flex-start for multi-line inputs */
+  gap: 12px;
+}
+
+.gen-row label {
+  width: 60px;
+  font-size: 12px;
+  color: var(--medical-text-muted);
+  padding-top: 6px;
+  text-align: right;
+}
+
+.input-underline {
+  width: 100%;
+  border: none;
+  border-bottom: 1px solid var(--medical-border-medium);
+  border-radius: 0;
+  padding: 4px 0;
+  background: transparent;
+  font-size: 13px;
+}
+
+.input-underline:focus {
+  border-color: #8b5cf6;
+  outline: none;
+}
+
+.tags-input-container {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 0;
+  border: none;
+  background: transparent;
+  min-height: auto;
+}
+
+.tag-chip {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px;
+  background: var(--medical-bg-primary);
+  border: 1px solid var(--medical-border-medium);
+  border-radius: 4px;
+  font-size: 13px;
+  color: var(--medical-text-secondary);
+  box-shadow: 0 1px 2px rgba(0,0,0,0.05);
+}
+
+.remove-tag {
+  cursor: pointer;
+  width: 16px;
+  height: 16px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #fee2e2;
+  color: #ef4444;
+  border-radius: 4px;
+  font-size: 14px;
+}
+
+.remove-tag:hover {
+  background: #fecaca;
+}
+
+.transparent-select {
+  appearance: none;
+  -webkit-appearance: none;
+  border: 1px dashed var(--medical-primary);
+  outline: none;
+  background: transparent;
+  font-size: 12px;
+  color: var(--medical-primary);
+  padding: 4px 10px;
+  border-radius: 4px;
+  cursor: pointer;
+  width: auto;
+  min-width: auto;
+  transition: background 0.2s;
+}
+
+.transparent-select:hover {
+  background: rgba(8, 145, 178, 0.05);
+}
+
+.hint-xs {
+  font-size: 11px;
+  color: #94a3b8;
+  margin-top: 2px;
+}
+
+/* Mutual Block Refinements */
+.mutual-block .block-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 8px;
+  background: var(--medical-bg-tertiary);
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 13px;
+}
+
+.header-left {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 500;
+  color: var(--medical-text-secondary);
+}
+
+.badge-count {
+  background: var(--medical-info);
+  color: white;
+  padding: 1px 6px;
+  font-size: 10px;
+  border-radius: 10px;
+}
+
+.block-content {
+  padding: 8px;
+  border: 1px solid var(--medical-border-light);
+  border-top: none;
+  background: var(--medical-bg-primary);
+  border-bottom-left-radius: 6px;
+  border-bottom-right-radius: 6px;
+}
+
+.help-box-sm {
+  display: flex;
+  gap: 6px;
+  padding: 6px 10px;
+  background: #eff6ff;
+  border-radius: 4px;
+  color: #1e40af;
+  font-size: 11px;
+  margin-bottom: 8px;
+}
+
+.mutual-group-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 6px;
+  background: #f8fafc;
+  border-radius: 4px;
+  margin-bottom: 4px;
+}
+
+.group-label {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--medical-primary);
+  background: rgba(8, 145, 178, 0.1);
+  padding: 1px 4px;
+  border-radius: 3px;
+}
+
+.group-items {
+  flex: 1;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.item-tag {
+  font-size: 11px;
+  padding: 1px 5px;
+  border: 1px solid var(--medical-border-light);
+  border-radius: 3px;
+  background: white;
+  display: flex;
+  align-items: center;
+  gap: 3px;
+}
+
+.remove-x {
+  cursor: pointer;
+  color: #cbd5e1;
+}
+
+.remove-x:hover { color: #ef4444; }
+
+.add-select-sm {
+  border: none;
+  background: transparent;
+  font-size: 11px;
+  color: var(--medical-info);
+  width: 60px;
+  outline: none;
+}
+
+.icon-btn-danger {
+  color: #94a3b8;
+  padding: 4px;
+  border-radius: 4px;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+}
+
+.icon-btn-danger:hover {
+  background: #fee2e2;
+  color: #ef4444;
+}
+
+.rotate-180 {
+  transform: rotate(180deg);
+}
+
+.transition-icon {
+  transition: transform 0.2s;
+}
+.btn-text-primary {
+  background: transparent;
+  border: none;
+  color: var(--medical-primary);
+  font-size: 11px;
+  font-weight: 500;
+  cursor: pointer;
+  padding: 4px 0;
+}
+.btn-text-primary:hover { text-decoration: underline; }
+.btn-tiny {
+  padding: 2px 6px; font-size: 11px; border:1px solid; border-radius:4px; margin-top:4px;
+}
+.icon-btn-small { border:none; background:transparent; font-size:12px; cursor:pointer; color:#94a3b8; }
 </style>
