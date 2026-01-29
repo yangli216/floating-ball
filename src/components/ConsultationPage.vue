@@ -1632,10 +1632,23 @@ const fetchAIDiagnosis = async () => {
     });
 
     // Generate unique IDs for each diagnosis (to handle duplicates with same code but different syndromes)
-    diagnoses = diagnoses.map((d, index) => ({
-      ...d,
-      id: d.id || `diag_${Date.now()}_${index}`
-    }));
+    // For TCM: Even if matched to same disease, different syndromes should have unique IDs
+    const timestamp = Date.now();
+    diagnoses = diagnoses.map((d, index) => {
+      // For TCM diagnoses with same disease but different syndrome/treatment, generate unique composite ID
+      if (d.isTCM && d.id) {
+        const syndromeCode = d.syndromeCode || d.syndrome || '';
+        const treatmentCode = d.treatmentCode || d.treatment || '';
+        return {
+          ...d,
+          id: `${d.id}_${syndromeCode}_${treatmentCode}_${index}`.replace(/\s+/g, '_')
+        };
+      }
+      return {
+        ...d,
+        id: d.id || `diag_${timestamp}_${index}`
+      };
+    });
 
     aiDiagnoses.value = diagnoses;
 
