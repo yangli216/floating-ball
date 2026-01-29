@@ -1954,8 +1954,14 @@ const fetchTreatmentRecommendation = async () => {
     const processedRecs: TreatmentRecommendation[] = rawRecommendations.map(rec => {
       let matchedItem = null;
       if (rec.type === 'medicine') {
-        // Use service for smart matching
-        matchedItem = medicalDataService.matchMedicine(rec.name);
+        // Skip matching for TCM herbal prescriptions (中药方不需要匹配药品)
+        if (consultationMode.value === 'tcm' && rec.ingredients) {
+          // TCM herbal prescription - do not match against medicine catalog
+          matchedItem = null;
+        } else {
+          // Western medicine - use service for smart matching
+          matchedItem = medicalDataService.matchMedicine(rec.name);
+        }
       } else if (rec.type === 'exam') {
         // Use service for smart matching
         matchedItem = medicalDataService.matchItem(rec.name);
