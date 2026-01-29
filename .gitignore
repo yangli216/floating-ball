@@ -23,9 +23,8 @@ dist-ssr
 *.sln
 *.sw?
 .claude/
-
-_bmad/
-.trae/
+.shared/
+.agent/
 
 *.key
 CONSULTATION_UX_IMPROVEMENTS.md

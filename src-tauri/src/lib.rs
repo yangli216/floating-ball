@@ -1,14 +1,14 @@
-use tauri::{Manager, Emitter};
 use std::sync::{Arc, Mutex};
+use tauri::{Emitter, Manager};
 
 mod http_server;
-use http_server::{PatientInfo, ConsultationResult};
+use http_server::{ConsultationResult, PatientInfo};
 
 mod aliyun_speech;
 use aliyun_speech::transcribe_realtime_aliyun;
 
-mod db;
 mod commands;
+mod db;
 
 pub struct AppState {
     pub current_consultation: Mutex<Option<PatientInfo>>,
@@ -34,18 +34,111 @@ async fn get_window_position(window: tauri::Window) -> Result<(i32, i32), String
 #[tauri::command]
 async fn set_window_position(window: tauri::Window, x: i32, y: i32) -> Result<(), String> {
     use tauri::Position;
-    window.set_position(Position::Physical(tauri::PhysicalPosition { x, y }))
+    window
+        .set_position(Position::Physical(tauri::PhysicalPosition { x, y }))
         .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
 async fn complete_consultation(
     state: tauri::State<'_, SharedAppState>,
-    result: ConsultationResult
+    result: ConsultationResult,
 ) -> Result<(), String> {
     let mut last_result = state.last_result.lock().map_err(|e| e.to_string())?;
     *last_result = Some(result);
     println!("Consultation completed, result saved.");
+    Ok(())
+}
+
+#[tauri::command]
+async fn save_templates(content: String) -> Result<(), String> {
+    use std::io::Write;
+    use std::path::Path;
+
+    let cwd = std::env::current_dir().map_err(|e| e.to_string())?;
+    println!("Current working directory: {:?}", cwd);
+
+    // Try multiple possible paths for development
+    let paths = vec![
+        "src/assets/templates.json",       // Run from project root
+        "../src/assets/templates.json",    // Run from src-tauri
+        "../../src/assets/templates.json", // Run from src-tauri/target/debug/...
+    ];
+
+    let mut target_path = std::path::PathBuf::new();
+    let mut found = false;
+
+    // First check if any exists (to overwrite)
+    for p in &paths {
+        if Path::new(p).exists() {
+            target_path = Path::new(p).to_path_buf();
+            found = true;
+            break;
+        }
+    }
+
+    // If not found, try to find a valid directory to create it in
+    if !found {
+        println!("templates.json not found in common paths. Checking parent directories...");
+        for p in &paths {
+            if let Some(parent) = Path::new(p).parent() {
+                if parent.exists() {
+                    target_path = Path::new(p).to_path_buf();
+                    found = true;
+                    break;
+                }
+            }
+        }
+    }
+
+    if !found {
+        return Err(format!(
+            "Could not find src/assets/templates.json path. CWD: {:?}",
+            cwd
+        ));
+    }
+
+    let path_str = target_path.to_string_lossy().to_string();
+    println!("Saving templates to: {}", path_str);
+
+    let mut file = std::fs::File::create(&target_path)
+        .map_err(|e| format!("Failed to create file at {}: {}", path_str, e))?;
+    file.write_all(content.as_bytes())
+        .map_err(|e| e.to_string())?;
+
+    println!("Templates saved successfully.");
+    Ok(())
+}
+
+#[tauri::command]
+async fn check_mouse_hover(window: tauri::Window) -> Result<bool, String> {
+    let mouse = window.cursor_position().map_err(|e| e.to_string())?;
+    let win_pos = window.outer_position().map_err(|e| e.to_string())?;
+    let size = window.inner_size().map_err(|e| e.to_string())?;
+
+    let rel_x = mouse.x - win_pos.x as f64;
+    let rel_y = mouse.y - win_pos.y as f64;
+
+    let is_hovered =
+        rel_x >= 0.0 && rel_x <= size.width as f64 && rel_y >= 0.0 && rel_y <= size.height as f64;
+
+    Ok(is_hovered)
+}
+
+#[tauri::command]
+async fn export_templates_with_dialog(content: String) -> Result<(), String> {
+    let task = rfd::AsyncFileDialog::new()
+        .set_file_name("templates_exported.json")
+        .add_filter("JSON", &["json"])
+        .save_file();
+
+    let result = task.await;
+
+    if let Some(handle) = result {
+        let path = handle.path();
+        std::fs::write(path, content).map_err(|e| e.to_string())?;
+    }
+
     Ok(())
 }
 
@@ -67,7 +160,10 @@ pub fn run() {
         .plugin(tauri_plugin_store::Builder::default().build())
         .plugin(tauri_plugin_deep_link::init())
         .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
-            let _ = app.get_webview_window("main").expect("no main window").set_focus();
+            let _ = app
+                .get_webview_window("main")
+                .expect("no main window")
+                .set_focus();
         }))
         .plugin(tauri_plugin_process::init())
         .plugin(tauri_plugin_opener::init())
@@ -80,6 +176,9 @@ pub fn run() {
             set_window_position,
             complete_consultation,
             transcribe_realtime_aliyun,
+            save_templates,
+            check_mouse_hover,
+            export_templates_with_dialog,
             // Feedback system commands
             commands::feedback::create_session,
             commands::feedback::update_session_status,
@@ -106,7 +205,7 @@ pub fn run() {
 
             // 获取主窗口
             let window = app.get_webview_window("main").unwrap();
-            
+
             // 设置窗口为始终置顶
             window.set_always_on_top(true).unwrap();
 
@@ -114,7 +213,7 @@ pub fn run() {
             let handle = app.handle().clone();
             let state_for_server = state.clone();
             http_server::run_server(handle, state_for_server);
-            
+
             // 启动鼠标位置轮询线程，解决失焦状态下无法检测 Hover 的问题
             let win_clone = window.clone();
             std::thread::spawn(move || {
@@ -129,23 +228,29 @@ pub fn run() {
                         std::time::Duration::from_millis(100)
                     };
                     std::thread::sleep(sleep_duration);
-                    
+
                     // 获取必要参数
                     let mouse_ret = win_clone.cursor_position();
                     let win_pos_ret = win_clone.outer_position();
                     let win_size_ret = win_clone.inner_size();
-                    
-                    let (is_hovered, rel_x, rel_y) = if let (Ok(mouse), Ok(win_pos), Ok(size)) = (mouse_ret.as_ref(), win_pos_ret.as_ref(), win_size_ret.as_ref()) {
+
+                    let (is_hovered, rel_x, rel_y) = if let (Ok(mouse), Ok(win_pos), Ok(size)) = (
+                        mouse_ret.as_ref(),
+                        win_pos_ret.as_ref(),
+                        win_size_ret.as_ref(),
+                    ) {
                         let rel_x = mouse.x - win_pos.x as f64;
                         let rel_y = mouse.y - win_pos.y as f64;
-                        
-                        let hovered = rel_x >= 0.0 && rel_x <= size.width as f64 &&
-                                    rel_y >= 0.0 && rel_y <= size.height as f64;
+
+                        let hovered = rel_x >= 0.0
+                            && rel_x <= size.width as f64
+                            && rel_y >= 0.0
+                            && rel_y <= size.height as f64;
                         (hovered, rel_x, rel_y)
                     } else {
                         (false, 0.0, 0.0)
                     };
-                    
+
                     if is_hovered != was_hovered {
                         let _ = win_clone.emit("hover-change", is_hovered);
                         was_hovered = is_hovered;
@@ -157,7 +262,7 @@ pub fn run() {
                     }
                 }
             });
-            
+
             Ok(())
         })
         .run(tauri::generate_context!())
