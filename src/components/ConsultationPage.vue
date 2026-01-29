@@ -35,6 +35,18 @@
 
       <!-- Header Actions -->
       <div class="header-actions">
+        <!-- Mode Switch -->
+        <div class="mode-switch" v-if="currentView === 'consultation'">
+          <button 
+            :class="['switch-btn', { active: consultationMode === 'western' }]"
+            @click="consultationMode = 'western'"
+          >西医</button>
+          <button 
+            :class="['switch-btn', { active: consultationMode === 'tcm' }]"
+            @click="consultationMode = 'tcm'"
+          >中医</button>
+        </div>
+
         <template v-if="currentView === 'consultation'">
              <button
                class="header-btn primary"
@@ -59,7 +71,7 @@
 
     <div class="content-container" v-if="currentView === 'consultation'">
       <!-- Left: Symptom Shortcuts -->
-      <aside class="symptom-sidebar">
+      <aside class="symptom-sidebar"> 
         <!-- Selection Mode Tabs -->
         <div class="selection-tabs">
           <button
@@ -154,6 +166,9 @@
       
               <div class="dynamic-form">
                 <template v-for="section in item.config.sections" :key="section.id">
+                  <!-- Section Title (shown for multi-section forms like TCM) -->
+                  <h3 v-if="item.config.sections.length > 1" class="section-title">{{ section.title }}</h3>
+
                   <!-- Iterate over fields -->
                   <div 
                     v-for="field in section.fields" 
@@ -292,6 +307,11 @@
               <label>现病史</label>
               <textarea v-model="generatedRecord.historyOfPresentIllness" rows="12"></textarea>
             </div>
+            <!-- TCM Four Examinations -->
+            <div v-if="consultationMode === 'tcm' && generatedRecord.tcmFourExaminations" class="record-field">
+              <label>中医四诊</label>
+              <textarea v-model="generatedRecord.tcmFourExaminations" rows="8"></textarea>
+            </div>
           </div>
         </div>
 
@@ -317,30 +337,60 @@
             </Transition>
 
             <div class="ai-card">
-              <h4>推荐诊断</h4>
+              <h4>{{ consultationMode === 'tcm' ? '中医辨证' : '推荐诊断' }}</h4>
+
+              <!-- Error Message -->
+              <div v-if="aiError" class="error-message" style="color: var(--color-error); padding: 12px; margin-bottom: 12px; background: var(--color-error-bg); border-radius: 8px; font-size: 14px;">
+                {{ aiError }}
+              </div>
+
+              <!-- TCM Warning: No diagnosis data -->
+              <div v-if="!aiLoading && !aiError && aiDiagnoses.length === 0 && consultationMode === 'tcm'" class="warning-message" style="color: var(--color-warning, #f59e0b); padding: 12px; margin-bottom: 12px; background: rgba(245, 158, 11, 0.1); border-radius: 8px; font-size: 14px;">
+                提示：请在问诊表单中填写"中医四诊信息"，以便AI进行准确的中医辨证分析。
+              </div>
+
               <ul v-if="aiDiagnoses.length > 0" class="diagnosis-list">
-                <li 
-                  v-for="diag in aiDiagnoses" 
-                  :key="diag.code"
+                <li
+                  v-for="diag in aiDiagnoses"
+                  :key="diag.id"
                   class="diagnosis-item"
-                  :class="{ active: selectedDiagnosis?.code === diag.code }"
+                  :class="{ active: selectedDiagnosis?.id === diag.id }"
                   @click="handleDiagnosisSelect(diag)"
                 >
                   <div class="diag-header">
                     <div class="diag-name-group">
                       <FactCheckHighlight :issue="getIssueForDiagnosis(diag.code)">
-                        <span class="diag-name">{{ diag.name }} ({{ diag.code }})</span>
+                        <span class="diag-name">
+                          <span v-if="diag.isTCM" class="tcm-badge">中</span>
+                          {{ diag.name }} ({{ diag.code }})
+                        </span>
                       </FactCheckHighlight>
                       <div class="inline-related-trigger" @click="toggleRelatedDropdown(diag, $event)" title="切换同类诊断">
-                        <span class="arrow" :class="{ open: openRelatedCode === diag.code }">▼</span>
+                        <span class="arrow" :class="{ open: openRelatedId === diag.id }">▼</span>
                       </div>
                     </div>
                     <span class="diag-rate">{{ diag.rate }}</span>
                   </div>
                   <div class="diag-rationale">{{ diag.rationale }}</div>
 
+                  <!-- 中医证候和治法 -->
+                  <div v-if="diag.isTCM" class="tcm-detail">
+                    <div v-if="diag.syndrome" class="tcm-syndrome">
+                      <span class="tcm-label">证候:</span>
+                      <span class="tcm-value">{{ diag.syndrome }}</span>
+                      <span v-if="diag.syndromeCode" class="tcm-code">({{ diag.syndromeCode }})</span>
+                      <span v-if="diag.syndromeMatched" class="match-tag" title="已匹配证候数据">✓</span>
+                    </div>
+                    <div v-if="diag.treatment" class="tcm-treatment">
+                      <span class="tcm-label">治法:</span>
+                      <span class="tcm-value">{{ diag.treatment }}</span>
+                      <span v-if="diag.treatmentCode" class="tcm-code">({{ diag.treatmentCode }})</span>
+                      <span v-if="diag.treatmentMatched" class="match-tag" title="已匹配治法数据">✓</span>
+                    </div>
+                  </div>
+
                   <!-- Related Diagnoses Dropdown -->
-                  <div v-if="openRelatedCode === diag.code && inlineRelatedDiagnoses.length > 0" class="related-section" @click.stop>
+                  <div v-if="openRelatedId === diag.id && inlineRelatedDiagnoses.length > 0" class="related-section" @click.stop>
                     <div class="related-list">
                       <div 
                         v-for="item in inlineRelatedDiagnoses" 
@@ -399,6 +449,15 @@
                       <span v-else class="unmatched-icon" title="未匹配标准库">🔍</span>
                     </div>
                     <div class="rec-reason">{{ rec.reason }}</div>
+                    <div v-if="rec.ingredients" class="rec-ingredients-edit" @click.stop>
+                      <label>组成：</label>
+                      <textarea 
+                        v-model="rec.ingredients"
+                        class="ingredients-textarea"
+                        rows="2"
+                        placeholder="请输入方剂组成"
+                      ></textarea>
+                    </div>
                     <div v-if="rec.usage" class="rec-usage">建议：{{ rec.usage }}</div>
                   </div>
                 </div>
@@ -422,7 +481,7 @@
     <div v-else-if="currentView === 'final_report'" class="final-report-page">
 
        <div class="report-paper">
-         <h1 class="hospital-title">门诊病历</h1>
+         <h1 class="hospital-title">{{ consultationMode === 'tcm' ? '中医门诊病历' : '门诊病历' }}</h1>
          <div class="report-header">
            <div class="info-row">
              <span>姓名：{{ patientInfo.naPi }}</span>
@@ -430,12 +489,12 @@
              <span>年龄：{{ patientInfo.ageText }}</span>
            </div>
            <div class="info-row">
-             <span>科室：全科医学科</span>
-             <span>日期：{{ finalRecord?.date }}</span>
-             <span>卡号：{{ patientInfo.idCard }}</span>
+             <span>科室：{{ consultationMode === 'tcm' ? '中医科' : '全科医学科' }}</span>
+             <span>就诊日期：{{ finalRecord?.date }}</span>
+             <span>病历号：{{ patientInfo.idCard }}</span>
            </div>
          </div>
-         
+
          <div class="report-section">
            <div class="section-title">主诉</div>
            <div class="section-content">{{ finalRecord?.record?.chiefComplaint }}</div>
@@ -443,36 +502,93 @@
 
          <div class="report-section">
            <div class="section-title">现病史</div>
-           <div class="section-content">{{ finalRecord?.record?.historyOfPresentIllness }}</div>
+           <div class="section-content" style="white-space: pre-line;">{{ finalRecord?.record?.historyOfPresentIllness }}</div>
          </div>
 
          <div class="report-section">
            <div class="section-title">既往史</div>
-           <div class="section-content">否认高血压、糖尿病、冠心病等慢性病史。否认肝炎、结核等传染病史。</div>
+           <div class="section-content">{{ finalRecord?.record?.pastMedicalHistory }}</div>
          </div>
 
          <div class="report-section">
+           <div class="section-title">过敏史</div>
+           <div class="section-content">{{ finalRecord?.record?.allergyHistory }}</div>
+         </div>
+
+         <!-- TCM Four Examinations (if in TCM mode) -->
+         <div v-if="consultationMode === 'tcm' && finalRecord?.record?.tcmFourExaminations" class="report-section">
+           <div class="section-title">中医四诊</div>
+           <div class="section-content" style="white-space: pre-line;">{{ finalRecord?.record?.tcmFourExaminations }}</div>
+         </div>
+
+         <!-- Physical Examination (Western mode only) -->
+         <div v-if="consultationMode !== 'tcm'" class="report-section">
            <div class="section-title">体格检查</div>
            <div class="section-content">T: 36.5℃, P: 78次/分, R: 18次/分, BP: 120/80mmHg。神志清，精神可，心肺听诊无明显异常，腹软无压痛。</div>
          </div>
 
-         <div class="report-section">
-           <div class="section-title">初步诊断</div>
-           <div class="section-content">{{ finalRecord?.diagnosis?.name }} ({{ finalRecord?.diagnosis?.code }})</div>
-         </div>
-
-         <div class="report-section">
-           <div class="section-title">处理意见</div>
+         <!-- TCM Diagnosis Format -->
+         <div v-if="consultationMode === 'tcm'" class="report-section">
+           <div class="section-title">诊断</div>
            <div class="section-content">
-             <div v-for="(tx, idx) in finalRecord?.treatments" :key="idx" class="tx-item">
-               {{ idx + 1 }}. {{ tx.name }} {{ tx.matchedItem?.spec ? `(${tx.matchedItem.spec})` : '' }}
-               <div class="tx-usage" v-if="tx.usage">用法：{{ tx.usage }}</div>
+             <div class="diagnosis-item">
+               <div class="tcm-diagnosis-primary">
+                 <strong>中医诊断：</strong>{{ finalRecord?.diagnosis?.name }}
+                 <span v-if="finalRecord?.diagnosis?.code" class="diagnosis-code">（{{ finalRecord?.diagnosis?.code }}）</span>
+               </div>
+               <div v-if="finalRecord?.diagnosis?.syndrome" class="tcm-syndrome-line">
+                 <strong>辨证：</strong>{{ finalRecord?.diagnosis?.syndrome }}
+                 <span v-if="finalRecord?.diagnosis?.syndromeCode" class="diagnosis-code">（{{ finalRecord?.diagnosis?.syndromeCode }}）</span>
+               </div>
              </div>
            </div>
          </div>
-         
+
+         <!-- Western Diagnosis Format -->
+         <div v-else class="report-section">
+           <div class="section-title">初步诊断</div>
+           <div class="section-content">
+             {{ finalRecord?.diagnosis?.name }}
+             <span v-if="finalRecord?.diagnosis?.code" class="diagnosis-code">（{{ finalRecord?.diagnosis?.code }}）</span>
+           </div>
+         </div>
+
+         <!-- TCM Treatment Principle -->
+         <div v-if="consultationMode === 'tcm' && finalRecord?.treatmentPrinciple" class="report-section">
+           <div class="section-title">治则治法</div>
+           <div class="section-content">{{ finalRecord?.treatmentPrinciple }}</div>
+         </div>
+
+         <div class="report-section">
+           <div class="section-title">{{ consultationMode === 'tcm' ? '处方' : '处理意见' }}</div>
+           <div class="section-content">
+             <div v-for="(tx, idx) in finalRecord?.treatments" :key="idx" class="tx-item">
+               <div class="tx-header">
+                 {{ idx + 1 }}. {{ tx.name }} {{ tx.matchedItem?.spec ? `(${tx.matchedItem.spec})` : '' }}
+               </div>
+               <div class="tx-usage" v-if="tx.ingredients">
+                 <strong>组成：</strong>{{ tx.ingredients }}
+               </div>
+               <div class="tx-usage" v-if="tx.usage">
+                 <strong>用法用量：</strong>{{ tx.usage }}
+               </div>
+               <div class="tx-reason" v-if="tx.reason">
+                 <strong>说明：</strong>{{ tx.reason }}
+               </div>
+             </div>
+           </div>
+         </div>
+
+         <div v-if="finalRecord?.medicalAdvice" class="report-section">
+           <div class="section-title">医嘱</div>
+           <div class="section-content" style="white-space: pre-line;">{{ finalRecord?.medicalAdvice }}</div>
+         </div>
+
          <div class="report-footer">
-            <span>医师签名：______________</span>
+            <div class="footer-row">
+              <span>医师签名：______________</span>
+              <span>日期：{{ finalRecord?.date }}</span>
+            </div>
          </div>
        </div>
     </div>
@@ -515,7 +631,7 @@ import Icon from './Icon.vue';
 import FactCheckNotification from './FactCheckNotification.vue';
 import FactCheckHighlight from './FactCheckHighlight.vue';
 import FactCheckWidget from './FactCheckWidget.vue';
-import { checkDiagnosis, checkMedicine, checkExamination, type FactCheckResult, type FactCheckIssue } from '../services/factChecker';
+import { checkDiagnosis, checkMedicine, checkExamination, checkTCMDiagnosis, checkTCMMedicine, type FactCheckResult, type FactCheckIssue } from '../services/factChecker';
 
 const showToast = inject('showToast') as (msg: string, type: 'success' | 'error' | 'info') => void;
 
@@ -534,27 +650,75 @@ interface Diagnosis {
   name: string;
   rate: string;
   rationale: string;
+  isTCM?: boolean; // 标记是否为中医诊断
+  // 中医辨证论治相关字段
+  syndrome?: string; // 证候(如:风寒束表证)
+  syndromeCode?: string;
+  syndromeMatched?: boolean;
+  treatment?: string; // 治法(如:辛温解表)
+  treatmentCode?: string;
+  treatmentMatched?: boolean;
+}
+
+interface Patient {
+  idTet?: string;
+  idPi?: string;
+  idMpi?: string;
+  cdPi?: string;
+  naPi: string;
+  sdSex: string;
+  birthday?: string;
+  idCard?: string;
+  mobilePhone?: string;
+  sdNation?: string;
+  sdNaty?: string;
+  sdBlood?: string;
+  sdRhBlood?: string;
+  sdMarital?: string;
+  sdCard?: string;
+  ageNum?: number;
+  ageUnit?: string;
+  ageText?: string;
+  sdNationText?: string;
+  sdNatyText?: string;
+  sdMaritalText?: string;
+  sdSexText?: string;
+  sdBloodText?: string;
+  fgActiveText?: string;
+  sdRhBloodText?: string;
+  sdCardText?: string;
+  allergyHistory?: string;
+  [key: string]: any; // Allow flexibility for extra fields
 }
 
 interface TreatmentRecommendation {
-  type: 'medicine' | 'exam';
+  type: 'medicine' | 'exam' | 'acupuncture';
   name: string; // AI recommended name
   reason: string;
   usage?: string;
+  ingredients?: string; // TCM specific
   matchedItem?: any; // Matched item from catalog
   selected?: boolean;
 }
 
 interface FinalRecord {
-  patient: any;
-  record: { chiefComplaint: string; historyOfPresentIllness: string };
+  patient: Patient;
+  record: {
+    chiefComplaint: string;
+    historyOfPresentIllness: string;
+    tcmFourExaminations?: string;
+    pastMedicalHistory?: string;
+    allergyHistory?: string;
+  };
   diagnosis: Diagnosis;
   treatments: TreatmentRecommendation[];
   date: string;
+  treatmentPrinciple?: string; // 治则治法
+  medicalAdvice?: string; // 医嘱
 }
 
 // Mock Patient Data
-const patientInfo = ref({
+const patientInfo = ref<Patient>({
   "idTet": "BSOFTYL",
   "idPi": "766842939207974912",
   "idMpi": "766842939207974912",
@@ -615,11 +779,12 @@ const categoryFilterRef = ref<HTMLElement | null>(null);
 
 // Selection mode for sidebar tabs
 const selectionMode = ref<'common' | 'bodyPart' | 'system'>('common');
+const consultationMode = ref<'western' | 'tcm'>('western');
 
 // All symptoms for body part and system selectors
 const allSymptoms = computed(() => symptoms.value);
 const currentView = ref<'consultation' | 'record' | 'final_report'>('consultation');
-const generatedRecord = ref({ chiefComplaint: '', historyOfPresentIllness: '' });
+const generatedRecord = ref({ chiefComplaint: '', historyOfPresentIllness: '', tcmFourExaminations: '' });
 
 const systemCategories: Record<string, string> = {
   respiratory: '呼吸系统',
@@ -686,6 +851,220 @@ const generalConditionConfig = {
           { id: 'urination', key: 'urination', label: '小便', type: 'radio', props: { options: ['小便正常', '小便增多', '小便减少', '其他'] }, storageKey: 'urination' },
           { id: 'stool', key: 'stool', label: '大便', type: 'radio', props: { options: ['大便正常', '大便增多', '大便减少', '其他'] }, storageKey: 'stool' },
           { id: 'weight', key: 'weight', label: '体重', type: 'radio', props: { options: ['体重无变化', '体重增加', '体重减轻', '其他'] }, storageKey: 'weight' }
+        ]
+      }
+    ]
+  }
+};
+
+// TCM Inquiry Configuration - 中医四诊
+const tcmInquiryConfig = {
+  key: 'tcm_signs',
+  name: '中医四诊信息',
+  config: {
+    sections: [
+      // 望诊 (Inspection)
+      {
+        id: 'inspection',
+        title: '望诊',
+        fields: [
+          {
+            id: 'spirit',
+            key: 'spirit',
+            label: '望神',
+            type: 'radio',
+            props: { options: ['得神', '少神', '失神', '假神'] },
+            storageKey: 'tcm_spirit'
+          },
+          {
+            id: 'face_color',
+            key: 'face_color',
+            label: '望面色',
+            type: 'radio',
+            props: { options: ['红黄隐隐、明润含蓄', '色青', '色赤', '色黄', '色白', '色黑', '两颧潮红', '颧红如妆'] },
+            storageKey: 'tcm_face_color'
+          },
+          {
+            id: 'body_shape',
+            key: 'body_shape',
+            label: '望形态',
+            type: 'input',
+            props: { placeholder: '强弱胖瘦、肢体、体型' },
+            storageKey: 'tcm_body_shape'
+          },
+          {
+            id: 'tongue_body',
+            key: 'tongue_body',
+            label: '舌质',
+            type: 'radio',
+            props: { options: ['淡红(正常)', '红', '淡白', '绛舌', '淡紫', '绛紫', '红绛', '青紫'] },
+            storageKey: 'tongue_body'
+          },
+          {
+            id: 'tongue_shape',
+            key: 'tongue_shape',
+            label: '舌形',
+            type: 'checkbox',
+            props: { options: ['胖大', '肿胀', '瘦薄', '点刺', '裂纹', '光滑', '齿痕'] },
+            storageKey: 'tcm_tongue_shape'
+          },
+          {
+            id: 'tongue_coating',
+            key: 'tongue_coating',
+            label: '苔色',
+            type: 'radio',
+            props: { options: ['白', '黄', '灰', '黑', '绿'] },
+            storageKey: 'tongue_coating'
+          },
+          {
+            id: 'coating_quality',
+            key: 'coating_quality',
+            label: '苔质',
+            type: 'checkbox',
+            props: { options: ['厚', '薄', '剥落', '无根', '润泽', '滑利', '干燥', '燥裂', '腐苔', '腻苔'] },
+            storageKey: 'tcm_coating_quality'
+          }
+        ]
+      },
+      // 闻诊 (Auscultation and Olfaction)
+      {
+        id: 'auscultation',
+        title: '闻诊',
+        fields: [
+          {
+            id: 'voice',
+            key: 'voice',
+            label: '听声音',
+            type: 'checkbox',
+            props: { options: ['音哑/失音', '声亢有力', '声音重浊', '语声低微', '呻吟不止', '沉默寡言', '烦躁多言', '咳嗽', '呼吸如常', '气喘', '喉间痰鸣'] },
+            storageKey: 'tcm_voice'
+          },
+          {
+            id: 'smell',
+            key: 'smell',
+            label: '嗅气味',
+            type: 'checkbox',
+            props: { options: ['口气', '汗气', '鼻臭', '身臭', '病室气味'] },
+            storageKey: 'tcm_smell'
+          }
+        ]
+      },
+      // 问诊 (Inquiry)
+      {
+        id: 'inquiry',
+        title: '问诊',
+        fields: [
+          {
+            id: 'cold_heat',
+            key: 'cold_heat',
+            label: '寒热',
+            type: 'radio',
+            props: { options: ['无异常', '恶寒发热', '但热不寒', '但寒不热', '寒热往来', '恶寒重发热轻', '发热重恶寒轻', '壮热', '潮热', '微热'] },
+            storageKey: 'tcm_cold_heat'
+          },
+          {
+            id: 'sweating',
+            key: 'sweating',
+            label: '出汗',
+            type: 'checkbox',
+            props: { options: ['自汗', '盗汗', '大汗', '战汗', '头汗', '半身汗', '手足心汗'] },
+            storageKey: 'tcm_sweating'
+          },
+          {
+            id: 'head_body',
+            key: 'head_body',
+            label: '头身',
+            type: 'input',
+            props: { placeholder: '头痛部位、头晕、身痛、身重、四肢痛、腰痛等' },
+            storageKey: 'tcm_head_body'
+          },
+          {
+            id: 'chest_abdomen',
+            key: 'chest_abdomen',
+            label: '胸胁脘腹',
+            type: 'input',
+            props: { placeholder: '疼痛部位、性质、伴随症状' },
+            storageKey: 'tcm_chest_abdomen'
+          },
+          {
+            id: 'ears_eyes',
+            key: 'ears_eyes',
+            label: '耳目',
+            type: 'checkbox',
+            props: { options: ['耳鸣', '耳聋', '重听', '目痛', '目眩', '目昏', '雀目'] },
+            storageKey: 'tcm_ears_eyes'
+          },
+          {
+            id: 'appetite',
+            key: 'appetite',
+            label: '饮食与口味',
+            type: 'radio',
+            props: { options: ['胃纳可', '纳呆', '多食易饥', '饥不欲食', '口不渴', '口渴多饮', '渴不多饮', '口淡乏味', '口甜粘腻', '口中泛酸', '口苦', '口咸'] },
+            storageKey: 'tcm_appetite'
+          },
+          {
+            id: 'sleep',
+            key: 'sleep',
+            label: '睡眠',
+            type: 'radio',
+            props: { options: ['睡眠安', '失眠', '不易入睡', '睡后易醒', '时时惊醒', '夜卧不安', '嗜睡'] },
+            storageKey: 'tcm_sleep'
+          },
+          {
+            id: 'stool',
+            key: 'stool',
+            label: '大便',
+            type: 'radio',
+            props: { options: ['大便调', '便秘', '泄泻', '完谷不化', '溏结不调', '肛门灼热', '排便不爽', '里急后重'] },
+            storageKey: 'tcm_stool'
+          },
+          {
+            id: 'urination',
+            key: 'urination',
+            label: '小便',
+            type: 'radio',
+            props: { options: ['小便可', '尿量增多', '尿量减少', '小便频数', '癃闭', '涩痛', '失禁', '遗尿'] },
+            storageKey: 'tcm_urination'
+          },
+          {
+            id: 'gynecology',
+            key: 'gynecology',
+            label: '妇女(经/带/胎/产)',
+            type: 'input',
+            props: { placeholder: '如为女性，请填写月经、带下、胎孕、产育情况' },
+            storageKey: 'tcm_gynecology'
+          }
+        ]
+      },
+      // 切诊 (Palpation)
+      {
+        id: 'palpation',
+        title: '切诊',
+        fields: [
+          {
+            id: 'pulse',
+            key: 'pulse',
+            label: '脉诊',
+            type: 'checkbox',
+            props: { options: ['浮', '沉', '迟', '数', '洪', '微', '细', '散', '虚', '实', '滑', '涩', '长', '短', '弦', '芤', '紧', '缓', '革', '劳', '弱', '濡', '伏', '动', '促', '结', '代', '疾脉'] },
+            storageKey: 'pulse'
+          },
+          {
+            id: 'palpation',
+            key: 'palpation',
+            label: '按诊',
+            type: 'input',
+            props: { placeholder: '肌肤、手足、胸腹、俞穴' },
+            storageKey: 'tcm_palpation'
+          },
+          {
+            id: 'other_signs',
+            key: 'other_signs',
+            label: '其他',
+            type: 'input',
+            props: { placeholder: '其他中医体征描述' },
+            storageKey: 'other_signs'
+          }
         ]
       }
     ]
@@ -859,10 +1238,33 @@ const filteredSymptoms = computed(() => {
   });
 });
 
-// Computed list of all items to render (Selected Symptoms + General Condition)
+// Computed list of all items to render (Selected Symptoms + TCM Inquiry / General Condition)
 const renderList = computed(() => {
   if (selectedSymptoms.value.length === 0) return [];
-  return [...selectedSymptoms.value, generalConditionConfig];
+  const list = [...selectedSymptoms.value];
+  if (consultationMode.value === 'tcm') {
+    // Initialize TCM data if needed
+    if (!formData.value[tcmInquiryConfig.key]) {
+      initFormData(tcmInquiryConfig);
+    }
+    // Clear general condition data when in TCM mode
+    if (formData.value['general']) {
+      delete formData.value['general'];
+    }
+    list.push(tcmInquiryConfig);
+  } else {
+    // For western medicine, add general condition inquiry
+    // Initialize general condition data if needed
+    if (!formData.value[generalConditionConfig.key]) {
+      initFormData(generalConditionConfig);
+    }
+    // Clear TCM signs data when in Western mode
+    if (formData.value['tcm_signs']) {
+      delete formData.value['tcm_signs'];
+    }
+    list.push(generalConditionConfig);
+  }
+  return list;
 });
 
 const selectSymptom = (symptom: any) => {
@@ -987,13 +1389,20 @@ const handleEndConsultation = async () => {
 };
 
 const parseLLMJson = (text: string): any => {
-  let jsonStr = text.trim();
-  if (jsonStr.startsWith('```json')) {
-    jsonStr = jsonStr.replace(/^```json\s*/, '').replace(/\s*```$/, '');
-  } else if (jsonStr.startsWith('```')) {
-    jsonStr = jsonStr.replace(/^```\s*/, '').replace(/\s*```$/, '');
+  try {
+    let jsonStr = text.trim();
+    if (jsonStr.startsWith('```json')) {
+      jsonStr = jsonStr.replace(/^```json\s*/, '').replace(/\s*```$/, '');
+    } else if (jsonStr.startsWith('```')) {
+      jsonStr = jsonStr.replace(/^```\s*/, '').replace(/\s*```$/, '');
+    }
+    const parsed = JSON.parse(jsonStr);
+    console.log('[parseLLMJson] Successfully parsed:', parsed);
+    return parsed;
+  } catch (err) {
+    console.error('[parseLLMJson] Failed to parse JSON:', text, err);
+    throw new Error(`JSON解析失败: ${err instanceof Error ? err.message : String(err)}`);
   }
-  return JSON.parse(jsonStr);
 };
 
 const fetchAIDiagnosis = async () => {
@@ -1005,51 +1414,167 @@ const fetchAIDiagnosis = async () => {
   try {
     const startTime = Date.now();
     let fullResponse = "";
-    fullResponse = await chat([
-      {
-        role: 'system',
-        content: PROMPTS.consultation.diagnosisRecommendation.system
-      },
-      {
-        role: 'user',
-        content: PROMPTS.consultation.diagnosisRecommendation.buildUserPrompt({
-          patientName: patientInfo.value.naPi,
-          gender: patientInfo.value.sdSexText,
-          age: patientInfo.value.ageText,
-          chiefComplaint: generatedRecord.value.chiefComplaint,
-          historyOfPresentIllness: generatedRecord.value.historyOfPresentIllness
-        })
-      }
-    ]);
+
+    if (consultationMode.value === 'tcm') {
+      // TCM Diagnosis Logic
+      // Collect TCM signs dynamically from all sections
+      const tcmData = formData.value['tcm_signs'] || {};
+      console.log('[TCM Debug] TCM formData:', tcmData);
+      const signs = [];
+
+      // Iterate through all sections and fields in tcmInquiryConfig
+      tcmInquiryConfig.config.sections.forEach(section => {
+        const sectionSigns = [];
+        section.fields.forEach(field => {
+          const value = tcmData[field.storageKey];
+          if (value) {
+            if (Array.isArray(value) && value.length > 0) {
+              // For checkbox fields
+              sectionSigns.push(`${field.label}：${value.join('、')}`);
+            } else if (typeof value === 'string' && value.trim() !== '') {
+              // For radio and input fields
+              sectionSigns.push(`${field.label}：${value}`);
+            }
+          }
+        });
+        if (sectionSigns.length > 0) {
+          signs.push(`【${section.title}】${sectionSigns.join('，')}`);
+        }
+      });
+
+      const tcmSignsText = signs.length > 0 ? signs.join('\n') : '未填写详细四诊信息';
+      console.log('[TCM Debug] Collected TCM Signs:', tcmSignsText);
+
+      const userPrompt = PROMPTS.consultation.tcmDiagnosisRecommendation.buildUserPrompt({
+        patientName: patientInfo.value.naPi,
+        gender: patientInfo.value.sdSexText || '',
+        age: patientInfo.value.ageText || '',
+        chiefComplaint: generatedRecord.value.chiefComplaint,
+        historyOfPresentIllness: generatedRecord.value.historyOfPresentIllness,
+        tcmSigns: tcmSignsText
+      });
+
+      console.log('[TCM Debug] User Prompt:', userPrompt);
+
+      fullResponse = await chat([
+        {
+          role: 'system',
+          content: PROMPTS.consultation.tcmDiagnosisRecommendation.system
+        },
+        {
+          role: 'user',
+          content: userPrompt
+        }
+      ]);
+
+      console.log('[TCM Debug] LLM Response:', fullResponse);
+    } else {
+      // Western Medicine Logic (Existing)
+      fullResponse = await chat([
+        {
+          role: 'system',
+          content: PROMPTS.consultation.diagnosisRecommendation.system
+        },
+        {
+          role: 'user',
+          content: PROMPTS.consultation.diagnosisRecommendation.buildUserPrompt({
+            patientName: patientInfo.value.naPi,
+            gender: patientInfo.value.sdSexText || '',
+            age: patientInfo.value.ageText || '',
+            chiefComplaint: generatedRecord.value.chiefComplaint,
+            historyOfPresentIllness: generatedRecord.value.historyOfPresentIllness
+          })
+        }
+      ]);
+    }
     const latencyMs = Date.now() - startTime;
 
+    console.log('[TCM Debug] Parsing LLM response...');
     // Clean up response if it contains markdown code blocks
     let diagnoses: Diagnosis[] = parseLLMJson(fullResponse);
-    
+    console.log('[TCM Debug] Parsed diagnoses:', diagnoses);
+
     // Match against local catalog to get system ID
-    diagnoses = diagnoses.map(d => {
-      // 1. Try matching by code first (Highest priority)
-      let matched = medicalDataService.matchDiagnosis(d.code);
-      
-      // 2. If no code match, try matching by name
-      if (!matched) {
-        matched = medicalDataService.matchDiagnosis(d.name);
-      }
-      
-      if (matched) {
+    if (consultationMode.value !== 'tcm') {
+      // Western medicine diagnosis matching
+      diagnoses = diagnoses.map(d => {
+        // 1. Try matching by code first (Highest priority)
+        let matched = medicalDataService.matchDiagnosis(d.code);
+
+        // 2. If no code match, try matching by name
+        if (!matched) {
+          matched = medicalDataService.matchDiagnosis(d.name);
+        }
+
+        if (matched) {
+          return {
+            ...d,
+            id: matched.id,
+            code: matched.code, // Use local standard code (e.g. R50.9 -> R50.900)
+            name: matched.name  // Use local standard name
+          };
+        }
+
         return {
           ...d,
-          id: matched.id,
-          code: matched.code, // Use local standard code (e.g. R50.9 -> R50.900)
-          name: matched.name  // Use local standard name
+          id: undefined
         };
-      }
-      
-      return {
-        ...d,
-        id: undefined
-      };
-    });
+      });
+    } else {
+      // TCM diagnosis matching
+      diagnoses = diagnoses.map((d, index) => {
+        // Try matching disease by code first
+        let matched = medicalDataService.matchTCMDiagnosis(d.code);
+
+        // If no code match, try matching by name
+        if (!matched) {
+          matched = medicalDataService.matchTCMDiagnosis(d.name);
+        }
+
+        const result: any = {
+          ...d,
+          isTCM: true // 标记为中医诊断
+        };
+
+        if (matched) {
+          result.id = matched.id;
+          result.code = matched.code; // Use local standard code
+          result.name = matched.name; // Use local standard name
+        } else {
+          // No match found - keep original data but add pseudo-code for tracking
+          result.code = d.code || `TCM${String(index + 1).padStart(3, '0')}`;
+          result.id = undefined;
+        }
+
+        // Match TCM syndrome (证候)
+        if (d.syndrome) {
+          const syndromeMatch = medicalDataService.matchTCMSyndrome(d.syndrome);
+          if (syndromeMatch) {
+            result.syndrome = syndromeMatch.name;
+            result.syndromeCode = syndromeMatch.code;
+            result.syndromeMatched = true;
+          } else {
+            result.syndrome = d.syndrome;
+            result.syndromeMatched = false;
+          }
+        }
+
+        // Match TCM treatment (治法)
+        if (d.treatment) {
+          const treatmentMatch = medicalDataService.matchTCMTreatment(d.treatment);
+          if (treatmentMatch) {
+            result.treatment = treatmentMatch.name;
+            result.treatmentCode = treatmentMatch.code;
+            result.treatmentMatched = true;
+          } else {
+            result.treatment = d.treatment;
+            result.treatmentMatched = false;
+          }
+        }
+
+        return result;
+      });
+    }
 
     // Sort by rate descending
     diagnoses.sort((a, b) => {
@@ -1057,6 +1582,12 @@ const fetchAIDiagnosis = async () => {
       const rateB = parseFloat(b.rate.replace('%', '')) || 0;
       return rateB - rateA;
     });
+
+    // Generate unique IDs for each diagnosis (to handle duplicates with same code but different syndromes)
+    diagnoses = diagnoses.map((d, index) => ({
+      ...d,
+      id: d.id || `diag_${Date.now()}_${index}`
+    }));
 
     aiDiagnoses.value = diagnoses;
 
@@ -1128,11 +1659,24 @@ const performDiagnosisFactCheck = async (diagnoses: Diagnosis[]) => {
   for (let i = 0; i < diagnoses.length; i++) {
     const diag = diagnoses[i];
     try {
-      const result = await checkDiagnosis({
-        diagnosis: diag.name,
-        chiefComplaint: generatedRecord.value.chiefComplaint,
-        historyOfPresentIllness: generatedRecord.value.historyOfPresentIllness
-      });
+      let result: FactCheckResult;
+
+      if (consultationMode.value === 'tcm') {
+        // Use TCM diagnosis checker
+        result = await checkTCMDiagnosis({
+          diagnosis: diag.name,
+          chiefComplaint: generatedRecord.value.chiefComplaint,
+          historyOfPresentIllness: generatedRecord.value.historyOfPresentIllness,
+          tcmFourExaminations: generatedRecord.value.tcmFourExaminations
+        });
+      } else {
+        // Use Western diagnosis checker
+        result = await checkDiagnosis({
+          diagnosis: diag.name,
+          chiefComplaint: generatedRecord.value.chiefComplaint,
+          historyOfPresentIllness: generatedRecord.value.historyOfPresentIllness
+        });
+      }
 
       diagnosisFactChecks.value.set(diag.code, result);
 
@@ -1176,12 +1720,24 @@ const performTreatmentFactCheck = async (treatments: TreatmentRecommendation[]) 
       let result: FactCheckResult;
 
       if (treatment.type === 'medicine') {
-        result = await checkMedicine({
-          medicineName: treatment.name,
-          dosage: treatment.usage,
-          diagnosis: selectedDiagnosis.value?.name
-        });
+        if (consultationMode.value === 'tcm') {
+          // Use TCM medicine checker
+          result = await checkTCMMedicine({
+            medicineName: treatment.name,
+            ingredients: treatment.ingredients,
+            usage: treatment.usage,
+            diagnosis: selectedDiagnosis.value?.name
+          });
+        } else {
+          // Use Western medicine checker
+          result = await checkMedicine({
+            medicineName: treatment.name,
+            dosage: treatment.usage,
+            diagnosis: selectedDiagnosis.value?.name
+          });
+        }
       } else {
+        // For exams and other types, use examination checker
         result = await checkExamination({
           examinationName: treatment.name,
           diagnosis: selectedDiagnosis.value?.name
@@ -1221,41 +1777,39 @@ const getIssueForTreatment = (treatmentName: string): FactCheckIssue | undefined
   return check.issues[0]; // Return first issue
 };
 
-const openRelatedCode = ref<string | null>(null);
+const openRelatedId = ref<string | null>(null);
 const inlineRelatedDiagnoses = ref<DiagnosisItem[]>([]);
 
 const toggleRelatedDropdown = (diag: Diagnosis, event: Event) => {
   event.stopPropagation();
-  
-  if (openRelatedCode.value === diag.code) {
-    openRelatedCode.value = null;
+
+  if (openRelatedId.value === diag.id) {
+    openRelatedId.value = null;
   } else {
-    openRelatedCode.value = diag.code;
-    const related = medicalDataService.getRelatedDiagnoses(diag.code);
+    openRelatedId.value = diag.id;
+    // 根据诊断类型选择合适的方法
+    const related = diag.isTCM
+      ? medicalDataService.getRelatedTCMDiagnoses(diag.code)
+      : medicalDataService.getRelatedDiagnoses(diag.code);
     inlineRelatedDiagnoses.value = related.filter(d => d.code !== diag.code);
   }
 };
 
 const swapDiagnosis = (originalDiag: Diagnosis, newItem: DiagnosisItem) => {
   // Update aiDiagnoses list
-  const index = aiDiagnoses.value.findIndex(d => d.code === originalDiag.code);
+  const index = aiDiagnoses.value.findIndex(d => d.id === originalDiag.id);
   if (index !== -1) {
-    const updatedDiag = {
+    const updatedDiag: Diagnosis = {
       ...aiDiagnoses.value[index],
       id: newItem.id,
       code: newItem.code,
       name: newItem.name
     };
     aiDiagnoses.value[index] = updatedDiag;
-    
+
     // If this was the selected diagnosis, update selection too
-    if (selectedDiagnosis.value?.code === originalDiag.code) {
-      selectedDiagnosis.value = {
-        ...selectedDiagnosis.value,
-        id: newItem.id,
-        code: newItem.code,
-        name: newItem.name
-      };
+    if (selectedDiagnosis.value?.id === originalDiag.id) {
+      selectedDiagnosis.value = updatedDiag;
       // We don't automatically trigger treatment fetch here to avoid "unnecessary triggering" as requested.
       // User can click the row again if they want to refresh treatments.
       // But if they just swapped it, the row is still "active" visually.
@@ -1273,7 +1827,10 @@ const swapDiagnosis = (originalDiag: Diagnosis, newItem: DiagnosisItem) => {
 const handleDiagnosisSelect = (diag: Diagnosis) => {
   selectedDiagnosis.value = diag;
   if (diag.code) {
-    const related = medicalDataService.getRelatedDiagnoses(diag.code);
+    // 根据诊断类型选择合适的方法
+    const related = diag.isTCM
+      ? medicalDataService.getRelatedTCMDiagnoses(diag.code)
+      : medicalDataService.getRelatedDiagnoses(diag.code);
     relatedDiagnoses.value = related.filter(d => d.code !== diag.code);
   } else {
     relatedDiagnoses.value = [];
@@ -1291,23 +1848,43 @@ const fetchTreatmentRecommendation = async () => {
   try {
     const startTime = Date.now();
     let fullResponse = "";
-    fullResponse = await chat([
-      {
-        role: 'system',
-        content: PROMPTS.consultation.treatmentRecommendation.system
-      },
-      {
-        role: 'user',
-        content: PROMPTS.consultation.treatmentRecommendation.buildUserPrompt({
-          patientName: patientInfo.value.naPi,
-          gender: patientInfo.value.sdSexText,
-          age: patientInfo.value.ageText,
-          diagnosisName: selectedDiagnosis.value.name,
-          diagnosisCode: selectedDiagnosis.value.code,
-          chiefComplaint: generatedRecord.value.chiefComplaint
-        })
-      }
-    ]);
+
+    if (consultationMode.value === 'tcm') {
+      fullResponse = await chat([
+        {
+          role: 'system',
+          content: PROMPTS.consultation.tcmTreatmentRecommendation.system
+        },
+        {
+          role: 'user',
+          content: PROMPTS.consultation.tcmTreatmentRecommendation.buildUserPrompt({
+            patientName: patientInfo.value.naPi,
+            gender: patientInfo.value.sdSexText || '',
+            age: patientInfo.value.ageText || '',
+            diagnosisName: selectedDiagnosis.value.name,
+            chiefComplaint: generatedRecord.value.chiefComplaint
+          })
+        }
+      ]);
+    } else {
+      fullResponse = await chat([
+        {
+          role: 'system',
+          content: PROMPTS.consultation.treatmentRecommendation.system
+        },
+        {
+          role: 'user',
+          content: PROMPTS.consultation.treatmentRecommendation.buildUserPrompt({
+            patientName: patientInfo.value.naPi,
+            gender: patientInfo.value.sdSexText || '',
+            age: patientInfo.value.ageText || '',
+            diagnosisName: selectedDiagnosis.value.name,
+            diagnosisCode: selectedDiagnosis.value.code || '',
+            chiefComplaint: generatedRecord.value.chiefComplaint
+          })
+        }
+      ]);
+    }
     const latencyMs = Date.now() - startTime;
 
     const rawRecommendations: any[] = parseLLMJson(fullResponse);
@@ -1384,19 +1961,60 @@ const handleComplete = () => {
       type: t.type,
       name: t.name,
       usage: t.usage,
+      ingredients: t.ingredients, // Add ingredients
       matchedItem: t.matchedItem,
       reason: t.reason
     }));
-  
+
+  // Prepare treatment principle for TCM (治则治法)
+  let treatmentPrinciple = '';
+  if (consultationMode.value === 'tcm' && selectedDiagnosis.value.treatment) {
+    treatmentPrinciple = selectedDiagnosis.value.treatment;
+  }
+
+  // Generate medical advice (医嘱)
+  const medicalAdvice = generateMedicalAdvice();
+
   finalRecord.value = {
     patient: patientInfo.value,
-    record: generatedRecord.value,
+    record: {
+      ...generatedRecord.value,
+      pastMedicalHistory: '否认高血压、糖尿病、冠心病等慢性病史。否认肝炎、结核等传染病史。',
+      allergyHistory: patientInfo.value.allergyHistory || '无'
+    },
     diagnosis: selectedDiagnosis.value,
     treatments: selectedTreatments,
-    date: new Date().toLocaleDateString()
+    date: new Date().toLocaleDateString(),
+    treatmentPrinciple,
+    medicalAdvice
   };
 
   currentView.value = 'final_report';
+};
+
+const generateMedicalAdvice = (): string => {
+  const advice: string[] = [];
+
+  if (consultationMode.value === 'tcm') {
+    // TCM medical advice
+    advice.push('1. 按时服药，遵医嘱用药。');
+    advice.push('2. 注意休息，避风寒，保持心情舒畅。');
+    advice.push('3. 饮食宜清淡，忌辛辣刺激、生冷油腻之品。');
+    advice.push('4. 如症状加重或出现新的不适，请及时复诊。');
+
+    // Check if there are Chinese medicine prescriptions (check for ingredients field)
+    const hasHerbalMedicine = treatmentRecommendations.value.some(t => t.selected && t.ingredients);
+    if (hasHerbalMedicine) {
+      advice.push('5. 中药煎服法：先煎20分钟，文火煎煮30分钟，每日1剂，分早晚两次温服。');
+    }
+  } else {
+    // Western medicine advice
+    advice.push('1. 按时服药，注意观察药物不良反应。');
+    advice.push('2. 多饮水，清淡饮食，注意休息。');
+    advice.push('3. 如症状无缓解或加重，请及时复诊。');
+  }
+
+  return advice.join('\n');
 };
 
 watch(selectedDiagnosis, (newVal) => {
@@ -1454,11 +2072,14 @@ const generateMedicalRecord = () => {
     }
   });
 
-  // General Condition
+  // General Condition (only in Western mode, not TCM)
   const genData = formData.value['general'];
-  if (genData) {
+  let tcmFourExamStr = '';
+
+  // Only add general condition text in Western mode, not in TCM mode
+  if (genData && consultationMode.value !== 'tcm') {
     const genParts: string[] = [];
-    
+
     // Process standard fields first
     ['spirit', 'sleep', 'appetite'].forEach(k => {
       if (genData[k] && !['其他', '不清楚', '不详'].includes(genData[k])) genParts.push(genData[k]);
@@ -1479,13 +2100,57 @@ const generateMedicalRecord = () => {
     if (genData['weight'] && !['其他', '不清楚', '不详'].includes(genData['weight'])) genParts.push(genData['weight']);
 
     if (genParts.length > 0) {
-      hpiParts.push(`一般情况：${genParts.join('，')}。`);
+      hpiParts.push(`${genParts.join('，')}。`);
+    }
+  }
+
+  // TCM Signs
+  if (consultationMode.value === 'tcm') {
+    const tcmData = formData.value['tcm_signs'];
+    if (tcmData) {
+      const clean = (str: string) => str ? str.replace(/\(.*?\)/, '') : '';
+
+      // Iterate through all sections in tcmInquiryConfig
+      tcmInquiryConfig.config.sections.forEach(section => {
+        const sectionSigns = [];
+
+        section.fields.forEach(field => {
+          const value = tcmData[field.storageKey];
+          if (value) {
+            if (Array.isArray(value) && value.length > 0) {
+              // For checkbox fields
+              const cleanedValues = value.map(v => clean(v));
+              sectionSigns.push(`${field.label}${cleanedValues.join('、')}`);
+            } else if (typeof value === 'string' && value.trim() !== '' && !['其他', '不清楚', '不详'].includes(value)) {
+              // For radio and input fields
+              const cleanedValue = clean(value);
+              // For certain fields like tongue and pulse, omit the label if it's redundant
+              if (field.key === 'tongue_body' || field.key === 'tongue_shape') {
+                sectionSigns.push(`舌${cleanedValue}`);
+              } else if (field.key === 'tongue_coating') {
+                sectionSigns.push(`苔${cleanedValue}`);
+              } else if (field.key === 'coating_quality') {
+                sectionSigns.push(`苔质${cleanedValue}`);
+              } else if (field.key === 'pulse') {
+                sectionSigns.push(`脉${cleanedValue}`);
+              } else {
+                sectionSigns.push(`${field.label}${cleanedValue}`);
+              }
+            }
+          }
+        });
+
+        if (sectionSigns.length > 0) {
+          tcmFourExamStr += `${section.title}：${sectionSigns.join('，')}。\n`;
+        }
+      });
     }
   }
 
   generatedRecord.value = {
     chiefComplaint,
-    historyOfPresentIllness: hpiParts.join("\n")
+    historyOfPresentIllness: hpiParts.join("\n"),
+    tcmFourExaminations: tcmFourExamStr.trim()
   };
 };
 
@@ -1714,6 +2379,34 @@ const copyToClipboard = () => {
   box-shadow: none;
 }
 
+/* Mode Switch */
+.mode-switch {
+  display: flex;
+  background: var(--color-background-gray);
+  padding: 2px;
+  border-radius: 16px;
+  margin-right: 12px;
+  border: 1px solid var(--color-border-medium);
+}
+
+.switch-btn {
+  padding: 4px 12px;
+  border-radius: 14px;
+  border: none;
+  background: transparent;
+  font-size: 12px;
+  cursor: pointer;
+  color: var(--color-text-weak);
+  transition: all 0.2s ease;
+}
+
+.switch-btn.active {
+  background: white;
+  color: var(--color-primary);
+  box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+  font-weight: 600;
+}
+
 /* Loading 动画样式 */
 .header-btn .animate-spin {
   display: inline-block;
@@ -1741,7 +2434,7 @@ const copyToClipboard = () => {
 }
 
 .symptom-sidebar {
-  width: 300px; /* Optimized width for body diagram */
+  width: 320px; /* 增加宽度以容纳人体图示 */
   background: rgba(255, 255, 255, 0.95);
   backdrop-filter: blur(10px);
   border-right: 1px solid var(--color-border-light);
@@ -1795,6 +2488,7 @@ const copyToClipboard = () => {
   flex-direction: column;
   overflow-y: auto;
   overflow-x: hidden;
+  padding: 8px; /* 添加内边距 */
 }
 
 .symptom-sidebar h3 {
@@ -1937,6 +2631,34 @@ const copyToClipboard = () => {
   background: var(--color-primary);
   margin-right: 10px;
   border-radius: 2px;
+}
+
+.section-title {
+  margin: 20px 0 12px 0;
+  padding: 8px 12px;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--color-primary);
+  background: linear-gradient(90deg, var(--color-primary-bg) 0%, transparent 100%);
+  border-left: 3px solid var(--color-primary);
+  border-radius: 4px;
+}
+
+.section-title:first-child {
+  margin-top: 0;
+}
+
+/* Override for final report - ensure black text */
+.final-report-page .section-title {
+  margin: 0;
+  margin-bottom: 8px;
+  padding: 0;
+  font-weight: bold;
+  font-size: 16px;
+  color: #000 !important;
+  background: none;
+  border: none;
+  border-radius: 0;
 }
 
 .dynamic-form {
@@ -2486,6 +3208,24 @@ const copyToClipboard = () => {
   font-weight: 600;
   color: var(--color-text-strong);
   font-size: 14px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.tcm-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  background: linear-gradient(135deg, #C9A063 0%, #B8860B 100%);
+  color: white;
+  font-size: 11px;
+  font-weight: 600;
+  border-radius: 50%;
+  flex-shrink: 0;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.15);
 }
 
 .diag-rate {
@@ -2501,6 +3241,56 @@ const copyToClipboard = () => {
   font-size: 12px;
   color: var(--color-text-muted);
   line-height: 1.4;
+}
+
+.tcm-detail {
+  margin-top: 8px;
+  padding: 8px 12px;
+  background: linear-gradient(135deg, rgba(201, 160, 99, 0.05) 0%, rgba(184, 134, 11, 0.05) 100%);
+  border-left: 3px solid #C9A063;
+  border-radius: 4px;
+  font-size: 12px;
+}
+
+.tcm-syndrome,
+.tcm-treatment {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 4px;
+  line-height: 1.6;
+}
+
+.tcm-syndrome:last-child,
+.tcm-treatment:last-child {
+  margin-bottom: 0;
+}
+
+.tcm-label {
+  color: #B8860B;
+  font-weight: 600;
+  flex-shrink: 0;
+  min-width: 40px;
+}
+
+.tcm-value {
+  color: var(--color-text-strong);
+  font-weight: 500;
+}
+
+.tcm-code {
+  color: var(--color-text-muted);
+  font-size: 11px;
+  background: var(--color-background-gray);
+  padding: 1px 6px;
+  border-radius: 4px;
+}
+
+.match-tag {
+  color: var(--color-success);
+  font-weight: bold;
+  font-size: 11px;
+  margin-left: auto;
 }
 
 .empty-text {
@@ -2597,10 +3387,19 @@ const copyToClipboard = () => {
   color: var(--color-text-strong);
 }
 
-.rec-reason, .rec-usage {
+.rec-reason, .rec-usage, .rec-ingredients {
   font-size: 12px;
   color: var(--color-text-muted);
   line-height: 1.4;
+}
+
+.rec-ingredients {
+  color: var(--color-text-strong);
+  font-family: serif;
+  background: var(--color-background-gray);
+  padding: 4px 8px;
+  border-radius: 4px;
+  margin: 4px 0;
 }
 
 .rec-action {
@@ -2731,6 +3530,31 @@ const copyToClipboard = () => {
   color: #000;
 }
 
+/* 强制报告文字为黑色，覆盖主题样式 */
+.report-paper *,
+.report-paper p,
+.report-paper span,
+.report-paper div,
+.report-paper h1,
+.report-paper h2,
+.report-paper h3,
+.report-paper label,
+.final-report-page *,
+.final-report-page p,
+.final-report-page span,
+.final-report-page div,
+.final-report-page h1,
+.final-report-page h2,
+.final-report-page h3,
+.final-report-page label {
+  color: #000 !important;
+}
+
+.report-paper .tx-usage,
+.final-report-page .tx-usage {
+  color: #444 !important;
+}
+
 /* Category Filter Dropdown */
 .category-filter-container {
   position: relative;
@@ -2858,6 +3682,7 @@ const copyToClipboard = () => {
   margin-bottom: 30px;
   border-bottom: 2px solid #000;
   padding-bottom: 10px;
+  color: #000 !important;
 }
 
 .report-header {
@@ -2867,11 +3692,18 @@ const copyToClipboard = () => {
   margin-bottom: 20px;
   border-bottom: 1px solid #000;
   padding-bottom: 10px;
+  color: #000 !important;
 }
 
 .info-row {
   display: flex;
   justify-content: space-between;
+  color: #000 !important;
+  font-size: 14px;
+}
+
+.info-row span {
+  color: #000 !important;
 }
 
 .report-section {
@@ -2882,15 +3714,19 @@ const copyToClipboard = () => {
   font-weight: bold;
   font-size: 16px;
   margin-bottom: 5px;
+  color: #000 !important;
 }
 
 .section-content {
   font-size: 15px;
   line-height: 1.6;
+  color: #000 !important;
+  white-space: pre-wrap;
 }
 
 .tx-item {
   margin-bottom: 4px;
+  color: #000 !important;
 }
 
 .tx-usage {
@@ -2899,11 +3735,52 @@ const copyToClipboard = () => {
   margin-left: 1em;
 }
 
+.tx-header {
+  font-weight: 500;
+  margin-bottom: 4px;
+}
+
+.tx-reason {
+  font-size: 13px;
+  color: #666;
+  margin-left: 1em;
+  margin-top: 4px;
+}
+
+/* TCM Diagnosis Styles */
+.diagnosis-item {
+  line-height: 1.8;
+}
+
+.tcm-diagnosis-primary {
+  margin-bottom: 8px;
+}
+
+.tcm-syndrome-line {
+  margin-left: 2em;
+  color: #2c5282;
+}
+
+.diagnosis-code {
+  font-size: 0.9em;
+  color: #666;
+  margin-left: 8px;
+}
+
 .report-footer {
   margin-top: 50px;
-  display: flex;
-  justify-content: flex-end;
   padding-right: 50px;
+  color: #000 !important;
+}
+
+.footer-row {
+  display: flex;
+  justify-content: space-between;
+  width: 100%;
+}
+
+.report-footer span {
+  color: #000 !important;
 }
 
 @media print {
@@ -2964,6 +3841,17 @@ const copyToClipboard = () => {
   display: flex;
   flex-direction: column;
   box-sizing: border-box;
+  color: #000;
+}
+
+/* 强制报告文字为黑色，覆盖主题样式 */
+.report-paper *,
+.report-paper p,
+.report-paper span,
+.report-paper div,
+.report-paper h1,
+.report-paper label {
+  color: #000 !important;
 }
 
 .paper-header {
@@ -3011,14 +3899,15 @@ const copyToClipboard = () => {
   font-weight: bold;
   font-size: 16px;
   margin-bottom: 8px;
-  color: #000;
+  color: #000 !important;
 }
 
 .section-content {
   font-size: 14px;
   line-height: 1.6;
-  color: #333;
+  color: #000 !important;
   padding-left: 10px;
+  white-space: pre-wrap;
 }
 
 .rp-list {
@@ -3206,6 +4095,42 @@ const copyToClipboard = () => {
   display: flex;
   align-items: center;
   justify-content: center;
+}
+
+.rec-ingredients-edit {
+  margin-top: 6px;
+  background: var(--color-background-gray);
+  padding: 8px;
+  border-radius: 6px;
+  border: 1px solid var(--color-border-light);
+}
+
+.rec-ingredients-edit label {
+  display: block;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--color-text-weak);
+  margin-bottom: 4px;
+}
+
+.ingredients-textarea {
+  width: 100%;
+  border: 1px solid var(--color-border-medium);
+  border-radius: 4px;
+  padding: 4px 6px;
+  font-size: 13px;
+  font-family: inherit;
+  color: var(--color-text-strong);
+  resize: vertical;
+  background: var(--color-background-white);
+  box-sizing: border-box;
+  outline: none;
+  transition: border-color 0.2s;
+}
+
+.ingredients-textarea:focus {
+  border-color: var(--color-primary);
+  box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.1);
 }
 
 .inline-related-trigger:hover {

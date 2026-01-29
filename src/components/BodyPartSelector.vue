@@ -575,8 +575,9 @@ onMounted(() => {
 .body-part-selector {
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 8px;
   height: 100%;
+  padding: 8px;
 }
 
 .selector-header {
@@ -588,62 +589,65 @@ onMounted(() => {
 
 .selector-header h4 {
   margin: 0;
-  font-size: 14px;
+  font-size: 13px;
   font-weight: 600;
-  color: var(--color-text-strong);
+  color: rgba(255, 255, 255, 0.9);
 }
 
 .clear-btn {
-  padding: 4px 12px;
-  font-size: 12px;
-  background: var(--color-background-gray);
-  border: none;
+  padding: 3px 10px;
+  font-size: 11px;
+  background: rgba(255, 255, 255, 0.1);
+  border: 1px solid rgba(255, 255, 255, 0.2);
   border-radius: 4px;
-  color: var(--color-text-muted);
+  color: rgba(255, 255, 255, 0.7);
   cursor: pointer;
   transition: all var(--duration-normal) var(--ease-out);
 }
 
 .clear-btn:hover {
-  background: var(--color-border-light);
-  color: var(--color-text-medium);
+  background: rgba(255, 255, 255, 0.15);
+  color: rgba(255, 255, 255, 0.9);
+  border-color: rgba(255, 255, 255, 0.3);
 }
 
 .body-view-toggle {
   display: flex;
-  gap: 8px;
-  background: var(--color-background-gray);
+  gap: 6px;
+  background: rgba(255, 255, 255, 0.05);
   border-radius: 6px;
-  padding: 4px;
+  padding: 3px;
 }
 
 .view-btn {
   flex: 1;
-  padding: 6px 12px;
-  font-size: 13px;
+  padding: 5px 10px;
+  font-size: 12px;
   background: transparent;
   border: none;
   border-radius: 4px;
-  color: var(--color-text-muted);
+  color: rgba(255, 255, 255, 0.6);
   cursor: pointer;
   transition: all var(--duration-normal) var(--ease-out);
 }
 
 .view-btn.active {
-  background: white;
-  color: var(--color-primary-dark);
+  background: rgba(14, 165, 233, 0.25);
+  color: rgba(125, 211, 252, 1);
   font-weight: 500;
-  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.2);
 }
 
 .body-diagram {
   display: flex;
   justify-content: center;
   align-items: center;
-  background: white;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.1);
   border-radius: 8px;
-  padding: 15px 5px;
-  min-height: 480px;
+  padding: 10px 5px;
+  min-height: 400px;
+  max-height: 450px;
   overflow: hidden;
 }
 
@@ -659,7 +663,8 @@ onMounted(() => {
   width: 100%;
   max-width: 100%;
   height: auto;
-  max-height: 480px;
+  max-height: 400px;
+  filter: brightness(1.1) contrast(0.95);
 }
 
 /* SVG 样式 */
@@ -694,17 +699,17 @@ onMounted(() => {
 
 /* 症状容器 - 固定高度防止跳动 */
 .symptoms-container {
-  min-height: 150px;
-  max-height: 200px;
+  min-height: 120px;
+  max-height: 180px;
   overflow-y: auto;
   transition: all var(--duration-slow) var(--ease-out);
 }
 
 .part-symptoms {
-  background: white;
-  border: 1px solid var(--color-border-light);
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.1);
   border-radius: 8px;
-  padding: 12px;
+  padding: 10px;
   animation: fadeIn 0.3s ease;
 }
 
@@ -720,41 +725,41 @@ onMounted(() => {
 }
 
 .part-symptoms h5 {
-  margin: 0 0 8px 0;
-  font-size: 13px;
+  margin: 0 0 6px 0;
+  font-size: 12px;
   font-weight: 600;
-  color: var(--color-text-strong);
+  color: rgba(255, 255, 255, 0.9);
 }
 
 .symptom-chips {
   display: flex;
   flex-wrap: wrap;
-  gap: 8px;
+  gap: 6px;
 }
 
 .symptom-chip {
-  padding: 6px 12px;
-  font-size: 12px;
-  background: var(--color-info-bg);
-  border: 1px solid var(--color-info-border);
+  padding: 5px 10px;
+  font-size: 11px;
+  background: rgba(14, 165, 233, 0.15);
+  border: 1px solid rgba(14, 165, 233, 0.3);
   border-radius: 6px;
-  color: var(--color-primary-dark);
+  color: rgba(125, 211, 252, 1);
   cursor: pointer;
   transition: all var(--duration-normal) var(--ease-out);
 }
 
 .symptom-chip:hover {
-  background: var(--color-info-border);
-  border-color: var(--color-info);
+  background: rgba(14, 165, 233, 0.25);
+  border-color: rgba(14, 165, 233, 0.5);
   transform: translateY(-1px);
 }
 
 .no-symptoms {
   text-align: center;
-  padding: 20px;
-  font-size: 13px;
-  color: var(--color-text-disabled);
-  background: var(--color-background-gray);
+  padding: 15px;
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.5);
+  background: rgba(255, 255, 255, 0.05);
   border-radius: 8px;
   animation: fadeIn 0.3s ease;
 }
@@ -765,16 +770,16 @@ onMounted(() => {
 }
 
 .symptoms-container::-webkit-scrollbar-track {
-  background: var(--color-background-gray);
+  background: rgba(255, 255, 255, 0.05);
   border-radius: 3px;
 }
 
 .symptoms-container::-webkit-scrollbar-thumb {
-  background: var(--color-border-medium);
+  background: rgba(255, 255, 255, 0.2);
   border-radius: 3px;
 }
 
 .symptoms-container::-webkit-scrollbar-thumb:hover {
-  background: var(--color-border-strong);
+  background: rgba(255, 255, 255, 0.3);
 }
 </style>

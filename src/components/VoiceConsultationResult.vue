@@ -80,10 +80,28 @@
               <div v-for="(diag, idx) in record.diagnosisList" :key="idx" class="list-item diagnosis-item">
                 <div class="item-content">
                   <FactCheckHighlight :issue="getIssueForDiagnosis(diag.name)">
-                    <span class="item-name">{{ diag.name }}</span>
+                    <span class="item-name">
+                      <span v-if="diag.isTCM" class="tcm-badge">中</span>
+                      {{ diag.name }}
+                    </span>
                   </FactCheckHighlight>
                   <span class="item-code" v-if="diag.code">({{ diag.code }})</span>
                   <span class="match-tag" v-if="diag.matched" title="已匹配本地数据">✓</span>
+                </div>
+                <!-- 中医证候和治法 -->
+                <div v-if="diag.isTCM" class="tcm-detail">
+                  <div v-if="diag.syndrome" class="tcm-syndrome">
+                    <span class="tcm-label">证候:</span>
+                    <span class="tcm-value">{{ diag.syndrome }}</span>
+                    <span class="item-code" v-if="diag.syndromeCode">({{ diag.syndromeCode }})</span>
+                    <span class="match-tag" v-if="diag.syndromeMatched" title="已匹配证候数据">✓</span>
+                  </div>
+                  <div v-if="diag.treatment" class="tcm-treatment">
+                    <span class="tcm-label">治法:</span>
+                    <span class="tcm-value">{{ diag.treatment }}</span>
+                    <span class="item-code" v-if="diag.treatmentCode">({{ diag.treatmentCode }})</span>
+                    <span class="match-tag" v-if="diag.treatmentMatched" title="已匹配治法数据">✓</span>
+                  </div>
                 </div>
               </div>
               <div v-if="!record.diagnosisList?.length" class="empty-text">暂无诊断信息</div>
@@ -190,6 +208,14 @@ export interface DiagnosisEntry {
   name: string;
   code?: string;
   matched?: boolean;
+  isTCM?: boolean; // 标记是否为中医诊断
+  // 中医辨证论治相关字段
+  syndrome?: string; // 证候(如:风寒束表证)
+  syndromeCode?: string;
+  syndromeMatched?: boolean;
+  treatment?: string; // 治法(如:辛温解表)
+  treatmentCode?: string;
+  treatmentMatched?: boolean;
 }
 
 export interface MedicationEntry {
@@ -260,11 +286,49 @@ const matchLocalData = (rec: GeneratedRecord) => {
   if (rec.diagnosisList) {
     rec.diagnosisList.forEach(d => {
       if (!d.code) { // Only match if no code provided by LLM (or if we want to override/validate)
-        const match = medicalDataService.matchDiagnosis(d.name);
+        // Try Western medicine first
+        let match = medicalDataService.matchDiagnosis(d.name);
         if (match) {
           d.name = match.name; // Normalize name
           d.code = match.code;
           d.matched = true;
+          d.isTCM = false;
+          return;
+        }
+
+        // Try TCM diagnosis
+        const tcmMatch = medicalDataService.matchTCMDiagnosis(d.name);
+        if (tcmMatch) {
+          d.name = tcmMatch.name; // Normalize name
+          d.code = tcmMatch.code;
+          d.matched = true;
+          d.isTCM = true;
+        }
+      } else {
+        // If code is provided, check if it's a TCM code (starts with 'A' followed by digits)
+        // GB/T 15657 codes follow pattern like A01.01.01
+        if (d.code && /^A\d{2}\./.test(d.code)) {
+          d.isTCM = true;
+        }
+      }
+
+      // Match TCM Syndrome (证候) for TCM diagnoses
+      if (d.isTCM && d.syndrome && !d.syndromeCode) {
+        const syndromeMatch = medicalDataService.matchTCMSyndrome(d.syndrome);
+        if (syndromeMatch) {
+          d.syndrome = syndromeMatch.name;
+          d.syndromeCode = syndromeMatch.code;
+          d.syndromeMatched = true;
+        }
+      }
+
+      // Match TCM Treatment (治法) for TCM diagnoses
+      if (d.isTCM && d.treatment && !d.treatmentCode) {
+        const treatmentMatch = medicalDataService.matchTCMTreatment(d.treatment);
+        if (treatmentMatch) {
+          d.treatment = treatmentMatch.name;
+          d.treatmentCode = treatmentMatch.code;
+          d.treatmentMatched = true;
         }
       }
     });
@@ -780,6 +844,59 @@ textarea.small-text {
 .item-name {
   font-weight: 500;
   color: var(--color-text-strong);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.tcm-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  background: linear-gradient(135deg, #C9A063 0%, #B8860B 100%);
+  color: white;
+  font-size: 11px;
+  font-weight: 600;
+  border-radius: 50%;
+  flex-shrink: 0;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.15);
+}
+
+.tcm-detail {
+  margin-top: 8px;
+  margin-left: 24px;
+  padding: 8px 12px;
+  background: linear-gradient(135deg, rgba(201, 160, 99, 0.05) 0%, rgba(184, 134, 11, 0.05) 100%);
+  border-left: 3px solid #C9A063;
+  border-radius: 4px;
+  font-size: 13px;
+}
+
+.tcm-syndrome,
+.tcm-treatment {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 4px;
+}
+
+.tcm-syndrome:last-child,
+.tcm-treatment:last-child {
+  margin-bottom: 0;
+}
+
+.tcm-label {
+  color: #B8860B;
+  font-weight: 600;
+  flex-shrink: 0;
+  min-width: 40px;
+}
+
+.tcm-value {
+  color: var(--color-text-strong);
+  font-weight: 500;
 }
 
 .item-code {

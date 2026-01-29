@@ -1527,6 +1527,54 @@ html.dark .consultation-page span {
   color: var(--color-text-medium) !important;
 }
 
+/* --- 打印报告区域强制黑色（覆盖深色模式） --- */
+[data-theme="dark"] .final-report-page *,
+[data-theme="dark"] .report-paper *,
+[data-theme="dark"] .final-report-page h1,
+[data-theme="dark"] .final-report-page h2,
+[data-theme="dark"] .final-report-page h3,
+[data-theme="dark"] .final-report-page h4,
+[data-theme="dark"] .final-report-page p,
+[data-theme="dark"] .final-report-page label,
+[data-theme="dark"] .final-report-page span,
+[data-theme="dark"] .final-report-page div,
+[data-theme="dark"] .report-paper h1,
+[data-theme="dark"] .report-paper h2,
+[data-theme="dark"] .report-paper h3,
+[data-theme="dark"] .report-paper h4,
+[data-theme="dark"] .report-paper p,
+[data-theme="dark"] .report-paper label,
+[data-theme="dark"] .report-paper span,
+[data-theme="dark"] .report-paper div,
+html.dark .final-report-page *,
+html.dark .report-paper *,
+html.dark .final-report-page h1,
+html.dark .final-report-page h2,
+html.dark .final-report-page h3,
+html.dark .final-report-page h4,
+html.dark .final-report-page p,
+html.dark .final-report-page label,
+html.dark .final-report-page span,
+html.dark .final-report-page div,
+html.dark .report-paper h1,
+html.dark .report-paper h2,
+html.dark .report-paper h3,
+html.dark .report-paper h4,
+html.dark .report-paper p,
+html.dark .report-paper label,
+html.dark .report-paper span,
+html.dark .report-paper div {
+  color: #000 !important;
+}
+
+/* --- 打印报告次要文字（用法说明等） --- */
+[data-theme="dark"] .final-report-page .tx-usage,
+[data-theme="dark"] .report-paper .tx-usage,
+html.dark .final-report-page .tx-usage,
+html.dark .report-paper .tx-usage {
+  color: #444 !important;
+}
+
 /* --- 深色模式下的侧边栏 --- */
 [data-theme="dark"] .symptom-sidebar,
 html.dark .symptom-sidebar {

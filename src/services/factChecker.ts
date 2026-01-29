@@ -3,7 +3,9 @@ import {
   DiagnosisCheckPrompt,
   MedicineCheckPrompt,
   ExaminationCheckPrompt,
-  MedicalRecordCheckPrompt
+  MedicalRecordCheckPrompt,
+  TCMDiagnosisCheckPrompt,
+  TCMMedicineCheckPrompt
 } from '../prompts/prompts';
 
 export type FactCheckType = 'diagnosis' | 'medicine' | 'examination' | 'medical_record';
@@ -93,6 +95,20 @@ export interface MedicalRecordCheckContext {
   diagnoses?: string[];
   medicines?: string[];
   examinations?: string[];
+}
+
+export interface TCMDiagnosisCheckContext {
+  diagnosis: string; // 病名-证型
+  chiefComplaint?: string;
+  historyOfPresentIllness?: string;
+  tcmFourExaminations?: string; // 四诊信息
+}
+
+export interface TCMMedicineCheckContext {
+  medicineName: string; // 方剂名称
+  ingredients?: string; // 组成（含剂量）
+  usage?: string; // 煎服法
+  diagnosis?: string; // 病名-证型
 }
 
 /**
@@ -260,6 +276,93 @@ export async function checkMedicalRecord(context: MedicalRecordCheckContext): Pr
     };
   } catch (e) {
     console.error('Medical record fact check failed:', e);
+    return {
+      hasIssues: false,
+      issues: [],
+      checkedAt: Date.now()
+    };
+  }
+}
+
+/**
+ * 检查中医诊断（病名-证型）是否合理
+ */
+export async function checkTCMDiagnosis(context: TCMDiagnosisCheckContext): Promise<FactCheckResult> {
+  const messages: ChatMessage[] = [
+    {
+      role: 'system',
+      content: TCMDiagnosisCheckPrompt.system
+    },
+    {
+      role: 'user',
+      content: TCMDiagnosisCheckPrompt.buildUserPrompt(context)
+    }
+  ];
+
+  try {
+    const response = await chat(messages);
+    const result = parseFactCheckResponse(response);
+
+    // 为每个 issue 添加 id 和 type
+    const issues: FactCheckIssue[] = result.issues.map((issue: any, index: number) => ({
+      id: `tcm-diagnosis-${Date.now()}-${index}`,
+      type: 'diagnosis' as FactCheckType,
+      severity: issue.severity || 'medium',
+      content: issue.content || '',
+      issue: issue.issue,
+      suggestion: issue.suggestion
+    }));
+
+    return {
+      hasIssues: result.hasIssues && issues.length > 0,
+      issues,
+      checkedAt: Date.now()
+    };
+  } catch (e) {
+    console.error('TCM diagnosis fact check failed:', e);
+    return {
+      hasIssues: false,
+      issues: [],
+      checkedAt: Date.now()
+    };
+  }
+}
+
+/**
+ * 检查中药方剂使用是否合理
+ */
+export async function checkTCMMedicine(context: TCMMedicineCheckContext): Promise<FactCheckResult> {
+  const messages: ChatMessage[] = [
+    {
+      role: 'system',
+      content: TCMMedicineCheckPrompt.system
+    },
+    {
+      role: 'user',
+      content: TCMMedicineCheckPrompt.buildUserPrompt(context)
+    }
+  ];
+
+  try {
+    const response = await chat(messages);
+    const result = parseFactCheckResponse(response);
+
+    const issues: FactCheckIssue[] = result.issues.map((issue: any, index: number) => ({
+      id: `tcm-medicine-${Date.now()}-${index}`,
+      type: 'medicine' as FactCheckType,
+      severity: issue.severity || 'medium',
+      content: issue.content || '',
+      issue: issue.issue,
+      suggestion: issue.suggestion
+    }));
+
+    return {
+      hasIssues: result.hasIssues && issues.length > 0,
+      issues,
+      checkedAt: Date.now()
+    };
+  } catch (e) {
+    console.error('TCM medicine fact check failed:', e);
     return {
       hasIssues: false,
       issues: [],

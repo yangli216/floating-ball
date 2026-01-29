@@ -381,18 +381,18 @@ watch(() => props.status, (newStatus) => {
 }
 
 .issue-severity.severity-high {
-  background: var(--color-error-bg);
-  color: var(--color-error);
+  background: var(--color-error);
+  color: white;
 }
 
 .issue-severity.severity-medium {
-  background: var(--color-warning-bg);
-  color: var(--color-warning);
+  background: var(--color-warning);
+  color: white;
 }
 
 .issue-severity.severity-low {
-  background: var(--color-primary-100);
-  color: var(--color-primary);
+  background: var(--color-info);
+  color: white;
 }
 
 .issue-content {

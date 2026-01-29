@@ -206,15 +206,15 @@ const getSeverityText = () => {
 }
 
 .issue-indicator.severity-high {
-  color: var(--color-error);
+  color: var(--color-error) !important;
 }
 
 .issue-indicator.severity-medium {
-  color: var(--color-warning);
+  color: var(--color-warning) !important;
 }
 
 .issue-indicator.severity-low {
-  color: var(--color-primary);
+  color: var(--color-info) !important;
 }
 
 /* Global tooltip rendered via Teleport */

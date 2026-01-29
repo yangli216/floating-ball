@@ -4,8 +4,35 @@ import diagnosesRaw from '../assets/diagnoses.csv?raw';
 import medicinesRaw from '../assets/medicines.csv?raw';
 // @ts-ignore
 import itemsRaw from '../assets/items.csv?raw';
+// @ts-ignore
+import tcmDiagnosesRaw from '../assets/tcm-diagnoses.csv?raw';
+// @ts-ignore
+import tcmSyndromesRaw from '../assets/tcm-syndromes.csv?raw';
+// @ts-ignore
+import tcmTreatmentsRaw from '../assets/tcm-treatments.csv?raw';
 
 export interface DiagnosisItem {
+  id: string;
+  code: string;
+  name: string;
+  keywords?: string[];
+}
+
+export interface TCMDiagnosisItem {
+  id: string;
+  code: string;
+  name: string;
+  keywords?: string[];
+}
+
+export interface TCMSyndromeItem {
+  id: string;
+  code: string;
+  name: string;
+  keywords?: string[];
+}
+
+export interface TCMTreatmentItem {
   id: string;
   code: string;
   name: string;
@@ -26,16 +53,22 @@ export interface MedicalItem {
 
 export interface MedicalCatalog {
   diagnoses: DiagnosisItem[];
+  tcmDiagnoses: TCMDiagnosisItem[];
+  tcmSyndromes: TCMSyndromeItem[];
+  tcmTreatments: TCMTreatmentItem[];
   medicines: MedicineItem[];
   items: MedicalItem[];
 }
 
 class MedicalDataService {
   private catalog: MedicalCatalog;
-  
+
   constructor() {
     this.catalog = {
       diagnoses: this.loadDiagnoses(),
+      tcmDiagnoses: this.loadTCMDiagnoses(),
+      tcmSyndromes: this.loadTCMSyndromes(),
+      tcmTreatments: this.loadTCMTreatments(),
       medicines: this.loadMedicines(),
       items: this.loadItems()
     };
@@ -43,6 +76,36 @@ class MedicalDataService {
 
   private loadDiagnoses(): DiagnosisItem[] {
     const records = this.parseCSV(diagnosesRaw);
+    return records.map(r => ({
+      id: r.id,
+      code: r.code,
+      name: r.name,
+      keywords: this.parseKeywords(r.keywords)
+    }));
+  }
+
+  private loadTCMDiagnoses(): TCMDiagnosisItem[] {
+    const records = this.parseCSV(tcmDiagnosesRaw);
+    return records.map(r => ({
+      id: r.id,
+      code: r.code,
+      name: r.name,
+      keywords: this.parseKeywords(r.keywords)
+    }));
+  }
+
+  private loadTCMSyndromes(): TCMSyndromeItem[] {
+    const records = this.parseCSV(tcmSyndromesRaw);
+    return records.map(r => ({
+      id: r.id,
+      code: r.code,
+      name: r.name,
+      keywords: this.parseKeywords(r.keywords)
+    }));
+  }
+
+  private loadTCMTreatments(): TCMTreatmentItem[] {
+    const records = this.parseCSV(tcmTreatmentsRaw);
     return records.map(r => ({
       id: r.id,
       code: r.code,
@@ -137,6 +200,18 @@ class MedicalDataService {
     return this.catalog.diagnoses;
   }
 
+  public getAllTCMDiagnoses(): TCMDiagnosisItem[] {
+    return this.catalog.tcmDiagnoses;
+  }
+
+  public getAllTCMSyndromes(): TCMSyndromeItem[] {
+    return this.catalog.tcmSyndromes;
+  }
+
+  public getAllTCMTreatments(): TCMTreatmentItem[] {
+    return this.catalog.tcmTreatments;
+  }
+
   public getAllMedicines(): MedicineItem[] {
     return this.catalog.medicines;
   }
@@ -200,8 +275,72 @@ class MedicalDataService {
     // If the code is shorter than 3 chars, use it as is.
     const prefix = code.split('.')[0];
     if (!prefix) return [];
-    
+
     return this.catalog.diagnoses.filter(d => d.code.startsWith(prefix));
+  }
+
+  /**
+   * Find best matching TCM diagnosis
+   * @param query AI output string (e.g., "感冒 - 风寒束表证" or "感冒")
+   */
+  public matchTCMDiagnosis(query: string): TCMDiagnosisItem | null {
+    if (!query) return null;
+    const normalizedQuery = query.trim().toLowerCase();
+
+    // Extract disease name from "disease - syndrome" format
+    // e.g., "感冒 - 风寒束表证" -> "感冒"
+    const diseaseName = normalizedQuery.split('-')[0].trim();
+
+    // 1. Exact match (name or code)
+    const exact = this.catalog.tcmDiagnoses.find(d =>
+      d.name.toLowerCase() === normalizedQuery ||
+      d.name.toLowerCase() === diseaseName ||
+      d.code.toLowerCase() === normalizedQuery
+    );
+    if (exact) return exact;
+
+    // 2. Code prefix match
+    const codeMatches = this.catalog.tcmDiagnoses.filter(d =>
+      d.code.toLowerCase().startsWith(normalizedQuery)
+    );
+
+    if (codeMatches.length > 0) {
+      codeMatches.sort((a, b) => a.code.length - b.code.length || a.code.localeCompare(b.code));
+      return codeMatches[0];
+    }
+
+    // 3. Best fuzzy match
+    let bestMatch: TCMDiagnosisItem | null = null;
+    let maxScore = 0;
+
+    for (const item of this.catalog.tcmDiagnoses) {
+      // Try matching both full query and disease name
+      const fullScore = this.calculateScore(normalizedQuery, item.name, item.keywords);
+      const diseaseScore = this.calculateScore(diseaseName, item.name, item.keywords);
+      const score = Math.max(fullScore, diseaseScore);
+
+      if (score > maxScore) {
+        maxScore = score;
+        bestMatch = item;
+      }
+    }
+
+    // Threshold for acceptance
+    return maxScore > 0.3 ? bestMatch : null;
+  }
+
+  /**
+   * Get related TCM diagnoses by code prefix
+   * @param code TCM diagnosis code (e.g., "A01.01.01")
+   */
+  public getRelatedTCMDiagnoses(code: string): TCMDiagnosisItem[] {
+    if (!code) return [];
+    // Use the first two segments as prefix (e.g., "A01.01" from "A01.01.01")
+    const parts = code.split('.');
+    const prefix = parts.slice(0, Math.max(2, parts.length - 1)).join('.');
+    if (!prefix) return [];
+
+    return this.catalog.tcmDiagnoses.filter(d => d.code.startsWith(prefix));
   }
 
   /**
@@ -265,6 +404,90 @@ class MedicalDataService {
       }
     }
 
+    return maxScore > 0.3 ? bestMatch : null;
+  }
+
+  /**
+   * Find best matching TCM syndrome
+   * @param query AI output string (e.g., "风寒束表证" or "表虚证")
+   */
+  public matchTCMSyndrome(query: string): TCMSyndromeItem | null {
+    if (!query) return null;
+    const normalizedQuery = query.trim().toLowerCase();
+
+    // 1. Exact match (name or code)
+    const exact = this.catalog.tcmSyndromes.find(s =>
+      s.name.toLowerCase() === normalizedQuery ||
+      s.code.toLowerCase() === normalizedQuery
+    );
+    if (exact) return exact;
+
+    // 2. Code prefix match
+    const codeMatches = this.catalog.tcmSyndromes.filter(s =>
+      s.code.toLowerCase().startsWith(normalizedQuery)
+    );
+
+    if (codeMatches.length > 0) {
+      codeMatches.sort((a, b) => a.code.length - b.code.length || a.code.localeCompare(b.code));
+      return codeMatches[0];
+    }
+
+    // 3. Best fuzzy match
+    let bestMatch: TCMSyndromeItem | null = null;
+    let maxScore = 0;
+
+    for (const item of this.catalog.tcmSyndromes) {
+      const score = this.calculateScore(normalizedQuery, item.name, item.keywords);
+
+      if (score > maxScore) {
+        maxScore = score;
+        bestMatch = item;
+      }
+    }
+
+    // Threshold for acceptance
+    return maxScore > 0.3 ? bestMatch : null;
+  }
+
+  /**
+   * Find best matching TCM treatment
+   * @param query AI output string (e.g., "疏风解表" or "辛温解表法")
+   */
+  public matchTCMTreatment(query: string): TCMTreatmentItem | null {
+    if (!query) return null;
+    const normalizedQuery = query.trim().toLowerCase();
+
+    // 1. Exact match (name or code)
+    const exact = this.catalog.tcmTreatments.find(t =>
+      t.name.toLowerCase() === normalizedQuery ||
+      t.code.toLowerCase() === normalizedQuery
+    );
+    if (exact) return exact;
+
+    // 2. Code prefix match
+    const codeMatches = this.catalog.tcmTreatments.filter(t =>
+      t.code.toLowerCase().startsWith(normalizedQuery)
+    );
+
+    if (codeMatches.length > 0) {
+      codeMatches.sort((a, b) => a.code.length - b.code.length || a.code.localeCompare(b.code));
+      return codeMatches[0];
+    }
+
+    // 3. Best fuzzy match
+    let bestMatch: TCMTreatmentItem | null = null;
+    let maxScore = 0;
+
+    for (const item of this.catalog.tcmTreatments) {
+      const score = this.calculateScore(normalizedQuery, item.name, item.keywords);
+
+      if (score > maxScore) {
+        maxScore = score;
+        bestMatch = item;
+      }
+    }
+
+    // Threshold for acceptance
     return maxScore > 0.3 ? bestMatch : null;
   }
 
