@@ -40,4 +40,5 @@ tokio-tungstenite = { version = "0.26", features = ["native-tls"] }
 futures-util = "0.3"
 url = "2"
 rfd = "0.17.2"
+window-vibrancy = "0.5"
 

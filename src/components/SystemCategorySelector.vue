@@ -31,7 +31,7 @@
         <button
           v-for="symptom in filteredSymptoms"
           :key="symptom.key"
-          class="symptom-chip"
+          :class="['symptom-chip', { active: isSymptomSelected(symptom.key) }]"
           @click="handleSymptomClick(symptom)"
         >
           {{ symptom.name }}
@@ -60,6 +60,10 @@ const props = defineProps({
   symptoms: {
     type: Array as PropType<Symptom[]>,
     required: true
+  },
+  selectedSymptoms: {
+    type: Array as PropType<{ key: string }[]>,
+    default: () => []
   }
 });
 
@@ -69,6 +73,10 @@ const emit = defineEmits<{
 
 const handleSymptomClick = (symptom: Symptom) => {
   emit('select-symptom', symptom);
+};
+
+const isSymptomSelected = (key: string) => {
+  return props.selectedSymptoms.some(s => s.key === key);
 };
 
 const selectedCategories = ref<string[]>([]);
@@ -302,6 +310,12 @@ const filteredSymptoms = computed(() => {
   background: rgba(14, 165, 233, 0.25);
   border-color: rgba(14, 165, 233, 0.5);
   transform: translateY(-1px);
+}
+
+.symptom-chip.active {
+  background: rgba(14, 165, 233, 0.35);
+  border-color: rgba(14, 165, 233, 0.6);
+  color: #fff;
 }
 
 .no-symptoms {

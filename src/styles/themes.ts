@@ -334,6 +334,79 @@ export const warmOrange: Theme = {
 }
 
 /**
+ * Apple Liquid Glass 主题
+ * 模仿 Apple 的 Liquid Glass 设计语言
+ * 清透玻璃质感，柔和蓝紫色调
+ */
+export const liquidGlass: Theme = {
+  id: 'liquid-glass',
+  name: '流光玻璃',
+  nameEn: 'Liquid Glass',
+  description: 'Apple 风格，清透优雅',
+  icon: '🫧',
+  colors: {
+    // 主色调 - 清透的蓝紫色
+    primary: '#6366F1',
+    primaryDark: '#4F46E5',
+    primaryLight: '#818CF8',
+    primary50: 'rgba(99, 102, 241, 0.05)',
+    primary100: 'rgba(99, 102, 241, 0.1)',
+    primary200: 'rgba(99, 102, 241, 0.2)',
+
+    // 辅助色 - 柔和的紫粉色
+    secondary: '#A78BFA',
+    secondaryDark: '#8B5CF6',
+    secondaryLight: '#C4B5FD',
+
+    // CTA - 清新的蓝色
+    cta: '#3B82F6',
+    ctaDark: '#2563EB',
+    ctaLight: '#60A5FA',
+    ctaHover: '#2563EB',
+    cta50: 'rgba(59, 130, 246, 0.05)',
+    cta100: 'rgba(59, 130, 246, 0.1)',
+    cta200: 'rgba(59, 130, 246, 0.2)',
+
+    // 背景色 - 极淡的蓝紫渐变感
+    background: '#F8FAFF',
+    backgroundWhite: '#FFFFFF',
+    backgroundGray: '#F1F5F9',
+    backgroundHover: '#EEF2FF',
+    backgroundLight: '#FAFAFF',
+
+    // 文本颜色 - 深灰蓝色调
+    textPrimary: '#1E1B4B',
+    textStrong: '#0F0D24',
+    textMedium: '#3730A3',
+    textWeak: '#4338CA',
+    textMuted: '#6366F1',
+    textDisabled: '#A5B4FC',
+
+    // 边框颜色 - 半透明柔和边框
+    borderLight: 'rgba(99, 102, 241, 0.12)',
+    borderMedium: 'rgba(99, 102, 241, 0.2)',
+    borderStrong: 'rgba(99, 102, 241, 0.35)',
+
+    // 表面颜色 - 高透明度玻璃效果
+    surfaceGlass: 'rgba(255, 255, 255, 0.72)',
+    surfaceGlassStrong: 'rgba(255, 255, 255, 0.88)',
+    surfaceOverlay: 'rgba(99, 102, 241, 0.15)',
+
+    // 状态颜色
+    error: '#EF4444',
+    errorBg: 'rgba(239, 68, 68, 0.1)',
+    errorBorder: 'rgba(239, 68, 68, 0.3)',
+    warning: '#F59E0B',
+    warningBg: 'rgba(245, 158, 11, 0.1)',
+    warningBorder: 'rgba(245, 158, 11, 0.3)',
+    warningText: '#B45309',
+    success: '#10B981',
+    successBg: 'rgba(16, 185, 129, 0.1)',
+    successBorder: 'rgba(16, 185, 129, 0.3)',
+  }
+}
+
+/**
  * 深色模式主题
  * 护眼深色，适合夜间使用
  */
@@ -406,6 +479,7 @@ export const themes: Theme[] = [
   medicalBlue,
   lifeGreen,
   warmOrange,
+  liquidGlass,
   darkMode,
 ]
 

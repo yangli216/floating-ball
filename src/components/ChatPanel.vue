@@ -4,6 +4,7 @@ import type { ChatMessage } from "../services/llm";
 import { chatStream, transcribeAudio } from "../services/llm";
 import { PROMPTS } from "../prompts";
 import { feedbackService } from "../services/feedback";
+import { trackClick, trackError } from "../services/operationTracker";
 import MarkdownIt from 'markdown-it';
 import hljs from 'highlight.js';
 import 'highlight.js/styles/github-dark.css'; // 引入代码高亮样式
@@ -71,6 +72,7 @@ async function handleSend() {
 
   // 2. 立即清空输入框和图片
   const userContent = input.value.trim();
+  trackClick('chat_send', { contentLength: userContent.length, hasImage: !!imageDataUrl.value });
   input.value = "";
   imageDataUrl.value = null;
   scrollToBottom();
@@ -117,6 +119,7 @@ async function handleSend() {
     });
 
   } catch (err) {
+    trackError('chat_send_failed', err);
     messages.value.push({ role: "assistant", content: `抱歉，调用模型失败：${(err as Error).message}` });
     scrollToBottom();
   } finally {
@@ -150,6 +153,7 @@ function handleFileChange(e: Event) {
   const reader = new FileReader();
   reader.onload = () => {
     imageDataUrl.value = reader.result as string;
+    trackClick('chat_image_upload');
   };
   reader.readAsDataURL(file);
 }
@@ -165,17 +169,21 @@ async function startRecording() {
     mediaRecorder.onstop = async () => {
       const blob = new Blob(audioChunks, { type: "audio/webm" });
       recording.value = false;
+      trackClick('chat_voice_stop');
       try {
         const text = await transcribeAudio(blob);
         input.value = text;
       } catch (err) {
+        trackError('chat_transcription_failed', err);
         messages.value.push({ role: "assistant", content: `语音识别失败：${(err as Error).message}` });
         scrollToBottom();
       }
     };
     mediaRecorder.start();
     recording.value = true;
+    trackClick('chat_voice_start');
   } catch (err) {
+    trackError('chat_mic_permission_error', err);
     messages.value.push({ role: "assistant", content: `无法开始录音：${(err as Error).message}` });
     scrollToBottom();
   }
@@ -187,6 +195,7 @@ function stopRecording() {
 
 // 处理反馈
 async function handleFeedback(messageId: string, feedbackType: 'positive' | 'negative') {
+  trackClick('chat_message_feedback', { feedbackType, messageId });
   try {
     const sessionId = feedbackService.getCurrentSessionId();
     if (!sessionId) {

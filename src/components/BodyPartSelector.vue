@@ -44,7 +44,7 @@
           <button
             v-for="symptom in filteredSymptoms"
             :key="symptom.key"
-            class="symptom-chip"
+            :class="['symptom-chip', { active: isSymptomSelected(symptom.key) }]"
             @click="handleSymptomClick(symptom)"
           >
             {{ symptom.name }}
@@ -77,6 +77,10 @@ const props = defineProps({
   patientGender: {
     type: String as PropType<'male' | 'female'>,
     default: 'male'
+  },
+  selectedSymptoms: {
+    type: Array as PropType<{ key: string }[]>,
+    default: () => []
   }
 });
 
@@ -183,6 +187,11 @@ const filteredSymptoms = computed(() => {
     symptom.bodyParts.includes(selectedPart.value!)
   );
 });
+
+// 检查症状是否已被选中
+const isSymptomSelected = (key: string) => {
+  return props.selectedSymptoms.some(s => s.key === key);
+};
 
 // SVG 内容
 const maleFrontSVG = `<svg version="1.1" xmlns="http://www.w3.org/2000/svg" x="0px" y="0px" width="240px" height="450px" viewBox="0 0 240 450" class="body-svg">
@@ -591,30 +600,30 @@ onMounted(() => {
   margin: 0;
   font-size: 13px;
   font-weight: 600;
-  color: rgba(255, 255, 255, 0.9);
+  color: var(--color-text-strong);
 }
 
 .clear-btn {
   padding: 3px 10px;
   font-size: 11px;
-  background: rgba(255, 255, 255, 0.1);
-  border: 1px solid rgba(255, 255, 255, 0.2);
+  background: var(--color-primary-100);
+  border: 1px solid var(--color-primary-200);
   border-radius: 4px;
-  color: rgba(255, 255, 255, 0.7);
+  color: var(--color-text-medium);
   cursor: pointer;
   transition: all var(--duration-normal) var(--ease-out);
 }
 
 .clear-btn:hover {
-  background: rgba(255, 255, 255, 0.15);
-  color: rgba(255, 255, 255, 0.9);
-  border-color: rgba(255, 255, 255, 0.3);
+  background: var(--color-primary-200);
+  color: var(--color-text-strong);
+  border-color: var(--color-primary);
 }
 
 .body-view-toggle {
   display: flex;
   gap: 6px;
-  background: rgba(255, 255, 255, 0.05);
+  background: var(--color-primary-50);
   border-radius: 6px;
   padding: 3px;
 }
@@ -626,24 +635,24 @@ onMounted(() => {
   background: transparent;
   border: none;
   border-radius: 4px;
-  color: rgba(255, 255, 255, 0.6);
+  color: var(--color-text-muted);
   cursor: pointer;
   transition: all var(--duration-normal) var(--ease-out);
 }
 
 .view-btn.active {
-  background: rgba(14, 165, 233, 0.25);
-  color: rgba(125, 211, 252, 1);
+  background: var(--color-primary-200);
+  color: var(--color-primary);
   font-weight: 500;
-  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.2);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
 }
 
 .body-diagram {
   display: flex;
   justify-content: center;
   align-items: center;
-  background: rgba(255, 255, 255, 0.05);
-  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: var(--color-primary-50);
+  border: 1px solid var(--color-border-light);
   border-radius: 8px;
   padding: 10px 5px;
   min-height: 400px;
@@ -682,19 +691,19 @@ onMounted(() => {
   filter: brightness(1.15);
 }
 
-/* Active 效果 - 蓝色半透明覆盖 */
+/* Active 效果 - 主题色半透明覆盖 */
 .body-view :deep(.body-part-group.active path) {
-  fill: rgba(59, 130, 246, 0.35) !important;
+  fill: var(--color-primary-200) !important;
   stroke: var(--color-primary) !important;
   stroke-width: 2.5;
-  filter: drop-shadow(0 0 4px rgba(59, 130, 246, 0.4));
+  filter: drop-shadow(0 0 4px var(--color-primary-200));
 }
 
 /* Active + Hover 叠加效果 */
 .body-view :deep(.body-part-group.active:hover path) {
-  fill: rgba(59, 130, 246, 0.45) !important;
+  fill: var(--color-primary-200) !important;
   stroke: var(--color-primary-dark) !important;
-  filter: drop-shadow(0 0 6px rgba(59, 130, 246, 0.5));
+  filter: drop-shadow(0 0 6px var(--color-primary-200));
 }
 
 /* 症状容器 - 固定高度防止跳动 */
@@ -706,8 +715,8 @@ onMounted(() => {
 }
 
 .part-symptoms {
-  background: rgba(255, 255, 255, 0.05);
-  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: var(--color-primary-50);
+  border: 1px solid var(--color-border-light);
   border-radius: 8px;
   padding: 10px;
   animation: fadeIn 0.3s ease;
@@ -728,7 +737,7 @@ onMounted(() => {
   margin: 0 0 6px 0;
   font-size: 12px;
   font-weight: 600;
-  color: rgba(255, 255, 255, 0.9);
+  color: var(--color-text-strong);
 }
 
 .symptom-chips {
@@ -740,26 +749,34 @@ onMounted(() => {
 .symptom-chip {
   padding: 5px 10px;
   font-size: 11px;
-  background: rgba(14, 165, 233, 0.15);
-  border: 1px solid rgba(14, 165, 233, 0.3);
+  background: var(--color-primary-100);
+  border: 1px solid var(--color-primary-200);
   border-radius: 6px;
-  color: rgba(125, 211, 252, 1);
+  color: var(--color-primary);
   cursor: pointer;
   transition: all var(--duration-normal) var(--ease-out);
 }
 
 .symptom-chip:hover {
-  background: rgba(14, 165, 233, 0.25);
-  border-color: rgba(14, 165, 233, 0.5);
+  background: var(--color-primary-200);
+  border-color: var(--color-primary);
   transform: translateY(-1px);
+}
+
+.symptom-chip.active {
+  background: var(--color-primary);
+  border-color: var(--color-primary-dark);
+  color: var(--color-background-white);
+  font-weight: 500;
+  box-shadow: 0 2px 8px var(--color-primary-200);
 }
 
 .no-symptoms {
   text-align: center;
   padding: 15px;
   font-size: 12px;
-  color: rgba(255, 255, 255, 0.5);
-  background: rgba(255, 255, 255, 0.05);
+  color: var(--color-text-muted);
+  background: var(--color-primary-50);
   border-radius: 8px;
   animation: fadeIn 0.3s ease;
 }
@@ -770,16 +787,16 @@ onMounted(() => {
 }
 
 .symptoms-container::-webkit-scrollbar-track {
-  background: rgba(255, 255, 255, 0.05);
+  background: var(--color-primary-50);
   border-radius: 3px;
 }
 
 .symptoms-container::-webkit-scrollbar-thumb {
-  background: rgba(255, 255, 255, 0.2);
+  background: var(--color-primary-200);
   border-radius: 3px;
 }
 
 .symptoms-container::-webkit-scrollbar-thumb:hover {
-  background: rgba(255, 255, 255, 0.3);
+  background: var(--color-primary);
 }
 </style>

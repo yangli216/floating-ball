@@ -38,6 +38,7 @@
 <script setup lang="ts">
 import { ref, onMounted, onUnmounted, computed } from 'vue';
 import { audioRecorder } from '../services/audioRecorder';
+import { trackClick, trackError } from '../services/operationTracker';
 
 // 获取当前主题的主色调
 const getPrimaryColor = () => {
@@ -204,9 +205,11 @@ const startRecording = async () => {
     }, 1000);
     drawVisualizer();
     console.timeEnd('[VoiceCapsule] startRecording');
+    trackClick('voice_recording_start');
   } catch (err) {
     console.error("[VoiceCapsule] Failed to start recording:", err);
     console.timeEnd('[VoiceCapsule] startRecording');
+    trackError('voice_recording_start_failed', err);
     emit('error', err);
   }
 };
@@ -214,16 +217,16 @@ const startRecording = async () => {
 const togglePause = () => {
   if (isPaused.value) {
     audioRecorder.resume();
-    // Adjust start time to account for pause duration? 
-    // For simplicity, just resuming timer flow relative to now not implemented perfectly here but sufficient for demo
   } else {
     audioRecorder.pause();
   }
   isPaused.value = !isPaused.value;
+  trackClick('voice_recording_toggle_pause', { isPaused: isPaused.value });
 };
 
 const handleStop = async () => {
   console.log('[VoiceCapsule] handleStop called');
+  trackClick('voice_recording_stop', { durationSeconds: duration.value });
   if (timerInterval) clearInterval(timerInterval);
   if (animationFrameId) cancelAnimationFrame(animationFrameId);
   
@@ -249,6 +252,7 @@ const handleStop = async () => {
     console.log('[VoiceCapsule] Emitted stop with transcription');
   } catch (err) {
     console.error("[VoiceCapsule] Failed to stop recording:", err);
+    trackError('voice_recording_stop_failed', err);
     emit('error', err);
   }
 };

@@ -142,3 +142,27 @@ export interface ExportOptions {
   includeLogs?: boolean;
   includeMetrics?: boolean;
 }
+
+// Recommendation Statistics
+export interface RecommendationStatistics {
+  totalRecommendations: number;
+  matchedCount: number;
+  unmatchedCount: number;
+  matchRate: number;
+  avgConfidence?: number;
+  totalPromptTokens: number;
+  totalCompletionTokens: number;
+  avgLatencyMs?: number;
+  recommendationsByType: Record<string, { total: number; matched: number }>;
+}
+
+// Operation Log Statistics
+export interface OperationStatistics {
+  totalOperations: number;
+  successCount: number;
+  failureCount: number;
+  successRate: number;
+  operationsByType: Record<string, number>;
+  topOperations: Array<{ name: string; count: number }>;
+  errorOperations: Array<{ name: string; details?: string; createdAt: number }>;
+}

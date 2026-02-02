@@ -10,6 +10,8 @@ import type {
   SessionStatistics,
   FeedbackStatistics,
   PerformanceStatistics,
+  RecommendationStatistics,
+  OperationStatistics,
   ExportFormat
 } from '../types/feedback';
 
@@ -247,6 +249,38 @@ class FeedbackService {
       return stats;
     } catch (error) {
       console.error('[FeedbackService] Failed to get performance statistics:', error);
+      throw error;
+    }
+  }
+
+  async getRecommendationStatistics(
+    startDate?: number,
+    endDate?: number
+  ): Promise<RecommendationStatistics> {
+    try {
+      const stats = await invoke<RecommendationStatistics>('get_recommendation_statistics', {
+        startDate: startDate || null,
+        endDate: endDate || null
+      });
+      return stats;
+    } catch (error) {
+      console.error('[FeedbackService] Failed to get recommendation statistics:', error);
+      throw error;
+    }
+  }
+
+  async getOperationStatistics(
+    startDate?: number,
+    endDate?: number
+  ): Promise<OperationStatistics> {
+    try {
+      const stats = await invoke<OperationStatistics>('get_operation_statistics', {
+        startDate: startDate || null,
+        endDate: endDate || null
+      });
+      return stats;
+    } catch (error) {
+      console.error('[FeedbackService] Failed to get operation statistics:', error);
       throw error;
     }
   }

@@ -18,6 +18,7 @@ import VoiceConsultationResult, { type GeneratedRecord } from "./components/Voic
 import Icon from "./components/Icon.vue";
 import { chat, analyzePatientRisks, type ChatMessage } from "./services/llm";
 import { feedbackService } from "./services/feedback";
+import { trackViewChange, trackClick, trackError, trackApiCall, trackRecommendationAction, startTimedOperation } from "./services/operationTracker";
 import { LogicalSize } from "@tauri-apps/api/dpi";
 import { provide } from "vue";
 import { PROMPTS } from "./prompts";
@@ -204,6 +205,7 @@ const smartExpand = async (targetW: number, targetH: number, targetMonitor?: Mon
 };
 
 const openSettings = async () => {
+  trackViewChange(currentView.value, 'settings');
   currentView.value = 'settings';
   if (!isWorking.value) {
     await enterWorkMode();
@@ -225,6 +227,7 @@ const openSymptomManagement = async () => {
 };
 
 const openChat = async () => {
+  trackViewChange(currentView.value, 'chat');
   currentView.value = 'chat';
   if (!isWorking.value) {
     await enterWorkMode();
@@ -232,6 +235,7 @@ const openChat = async () => {
 };
 
 const openAnalytics = async () => {
+  trackViewChange(currentView.value, 'analytics');
   currentView.value = 'analytics';
   if (!isWorking.value) {
     await enterWorkMode();
@@ -239,6 +243,7 @@ const openAnalytics = async () => {
 };
 
 const openConsultation = async () => {
+  trackViewChange(currentView.value, 'consultation', { hasPatient: !!currentPatient.value });
   currentView.value = 'consultation';
   if (!isWorking.value) {
     await enterWorkMode();
@@ -272,6 +277,7 @@ const TARGET_SYMPTOM_MANAGE_H = 900;
 const generatedRecord = ref<GeneratedRecord | null>(null);
 
 const startVoiceInteraction = async () => {
+  trackViewChange(currentView.value, 'voice-interaction', { patientId: currentPatient.value?.patientId });
   currentView.value = 'voice-interaction';
   if (!isWorking.value) {
     await enterWorkMode(TARGET_CAPSULE_W, TARGET_CAPSULE_H);
@@ -284,10 +290,10 @@ const startVoiceInteraction = async () => {
   const handleVoiceStop = async (audioBlob: Blob, transcribedText: string) => {
   console.log('[App.vue] handleVoiceStop received blob:', audioBlob?.size, 'bytes');
   console.log('[App.vue] Transcribed text:', transcribedText);
-  
+
   generatedRecord.value = null; // Reset
   currentView.value = 'voice-result';
-  
+
   // Explicitly resize window for Result View
   if (appWindow.value) {
     try {
@@ -300,7 +306,8 @@ const startVoiceInteraction = async () => {
   } else {
      await enterWorkMode(TARGET_RESULT_W, TARGET_RESULT_H);
   }
-  
+
+  const finishVoiceLlm = startTimedOperation('voice_llm_processing');
   try {
     // Use the transcribed text directly from realtime service
     const text = transcribedText;
@@ -322,7 +329,7 @@ const startVoiceInteraction = async () => {
     const jsonStr = await chat(messages);
     console.log(`[LLM] Response received in ${Date.now() - llmStart}ms`);
     console.log('[LLM] Raw response:', jsonStr);
-    
+
     // Try to parse JSON (handle potential markdown code blocks)
     let cleanJson = jsonStr.replace(/```json\n?|\n?```/g, '').trim();
     // Also try to extract JSON from text if wrapped in other content
@@ -330,19 +337,19 @@ const startVoiceInteraction = async () => {
     if (jsonMatch) {
         cleanJson = jsonMatch[0];
     }
-    
+
     console.log('[LLM] Cleaned JSON:', cleanJson);
-    
+
     const parsed = JSON.parse(cleanJson);
-    
+
     // Check if LLM detected irrelevant content
     if (parsed.error) {
         console.warn('[LLM] Irrelevant content detected:', parsed.message);
         showToast(parsed.message || '输入内容与医疗问诊场景无关', 'error');
-        setTimeout(() => { exitWork(); }, 2000);
+        setTimeout(() => { exitWork('cancelled'); }, 2000);
         return;
     }
-    
+
     // Validate required fields
     const requiredFields = ['chiefComplaint', 'historyOfPresentIllness', 'diagnosisList'];
     const missingFields = requiredFields.filter(f => !parsed[f]);
@@ -353,27 +360,31 @@ const startVoiceInteraction = async () => {
         if (missingFields.includes('historyOfPresentIllness')) parsed.historyOfPresentIllness = '未能识别';
         if (missingFields.includes('diagnosisList')) parsed.diagnosisList = [];
     }
-    
+
     // Ensure arrays are initialized
     parsed.diagnosisList = parsed.diagnosisList || [];
     parsed.medications = parsed.medications || [];
     parsed.examinations = parsed.examinations || [];
-    
+
     generatedRecord.value = parsed as GeneratedRecord;
     console.log('[Voice] Medical record generated successfully');
+    finishVoiceLlm(true, { transcriptionLength: text.length, diagnosisCount: parsed.diagnosisList.length });
 
   } catch (err: any) {
     console.error('[Voice] Processing failed:', err);
+    trackError('voice_processing_failed', err);
+    finishVoiceLlm(false, { errorMessage: err.message || String(err) });
     showToast(`处理失败: ${err.message || err}`, 'error');
     setTimeout(() => {
-        exitWork();
+        exitWork('error');
     }, 2000);
   }
 };
 
 const handleVoiceError = (err: any) => {
+  trackError('voice_recording_error', err);
   showToast('录音出错: ' + err, 'error');
-  exitWork();
+  exitWork('error');
 };
 
 import { invoke } from "@tauri-apps/api/core";
@@ -382,7 +393,9 @@ import { invoke } from "@tauri-apps/api/core";
 
 const handleResultConfirm = async (record: GeneratedRecord) => {
     console.log('Confirmed record:', record);
-    
+    trackClick('voice_result_confirm');
+    trackRecommendationAction('record', 'voice-record', 'adopted');
+
     try {
         await invoke('complete_consultation', {
             result: {
@@ -395,12 +408,15 @@ const handleResultConfirm = async (record: GeneratedRecord) => {
         await exitWork();
     } catch (e: any) {
         console.error('Failed to save result:', e);
+        trackError('voice_result_submit_failed', e);
         showToast('回传失败: ' + e, 'error');
     }
 };
 
 const cancelVoiceResult = async () => {
-    await exitWork();
+    trackClick('voice_result_cancel');
+    trackRecommendationAction('record', 'voice-record', 'rejected');
+    await exitWork('cancelled');
 };
 
 // 关闭风险提示界面
@@ -478,6 +494,7 @@ onMounted(async () => {
         console.log('Deep link received:', urls);
         if (urls && urls.length > 0) {
           const url = urls[0];
+          trackApiCall('deep_link_received', true, undefined, { url });
           showToast(`收到外部调用: ${url}`, 'info');
           
           // Simple routing based on URL
@@ -567,6 +584,7 @@ onMounted(async () => {
     await listen<any>('show-patient-risks', async (event) => {
       console.log('Received patient risks request:', event.payload);
       const data = event.payload;
+      trackApiCall('his_patient_risks', true, undefined, { patientName: data.patientName, riskCount: data.risks?.length });
       
       // Update basic info immediately
       riskPatientName.value = data.patientName || '未知患者';
@@ -606,11 +624,14 @@ onMounted(async () => {
 
       // Otherwise, trigger LLM analysis
       try {
+        const finishRiskAnalysis = startTimedOperation('risk_analysis_llm');
         const risks = await analyzePatientRisks(data);
         console.log('LLM Risk Analysis Result:', risks);
         riskItems.value = risks || [];
+        finishRiskAnalysis(true, { riskCount: riskItems.value.length });
       } catch (e) {
         console.error('Risk analysis error:', e);
+        trackError('risk_analysis_failed', e);
         showToast('风险评估失败', 'error');
       } finally {
         isRiskAnalyzing.value = false;
@@ -624,10 +645,8 @@ onMounted(async () => {
 
     await listen<any>('start-consultation', async (event) => {
       console.log('Received consultation request:', event.payload);
-      // Validate: Must have active patient logic is good, but we should also allow starting fresh if needed
-      // But typically we have reception flow first.
-      
       const payload = event.payload || {};
+      trackApiCall('his_start_consultation', true, undefined, { patientId: payload.idPi || payload.patientId });
       
       // Update/Merge Global Patient Context
       // This ensures we have the correct keys (naPi, sdSexText) for ConsultationPage
@@ -657,6 +676,7 @@ onMounted(async () => {
     // 监听语音接诊指令
     await listen<any>('start-voice-consultation', async () => {
         console.log('Received start voice consultation command');
+        trackApiCall('his_start_voice', true);
         if (!currentPatient.value) {
             showToast('请先接诊患者', 'error');
             return;
@@ -733,6 +753,7 @@ const handleMouseDown = async (e: MouseEvent) => {
 // 退出应用
 const handleExitApp = async (e: MouseEvent) => {
   e.preventDefault();
+  trackClick('exit_app');
   try {
     await exit(0);
   } catch (err) {
@@ -819,6 +840,7 @@ const enterWorkMode = async (customW?: number, customH?: number) => {
 
   // 3. 触发面板展开动画 (Morph Expand)
   isWorking.value = true;
+  trackClick('enter_work_mode', { view: currentView.value });
 
   // 4. 启动会话 (仅在从小球模式首次进入工作模式时)
   try {
@@ -845,6 +867,7 @@ const enterWorkMode = async (customW?: number, customH?: number) => {
 
 // 收起/关闭处理：根据上下文决定是返回胶囊还是退出
 const handleCollapse = async () => {
+    trackClick('collapse', { from: currentView.value, toReception: currentView.value === 'consultation' && !!currentPatient.value });
     // 如果处于问诊界面且有当前接诊患者，则收起到接待胶囊
     if (currentView.value === 'consultation' && currentPatient.value) {
         currentView.value = 'reception-capsule';
@@ -868,8 +891,9 @@ const handleCollapse = async () => {
     }
 };
 
-const exitWork = async () => {
+const exitWork = async (sessionStatus: 'completed' | 'cancelled' | 'error' = 'completed') => {
   if (!isWorking.value || transitioning.value || isMoving.value) return;
+  trackClick('exit_work_mode', { view: currentView.value, sessionStatus });
   
   // Restore Always on Top for ball mode
   if (appWindow.value) {
@@ -910,7 +934,7 @@ const exitWork = async () => {
 
   // 结束当前会话
   try {
-    await feedbackService.endSession(undefined, 'completed');
+    await feedbackService.endSession(undefined, sessionStatus);
     console.log('[App] Session ended successfully');
   } catch (error) {
     console.error('[App] Failed to end session:', error);

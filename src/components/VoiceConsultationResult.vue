@@ -29,7 +29,7 @@
 
       <!-- Header Actions -->
       <div class="header-actions">
-        <button class="header-btn" @click="emit('cancel')">放弃</button>
+        <button class="header-btn" @click="trackClick('voice_result_cancel'); emit('cancel')">放弃</button>
         <button class="header-btn primary" @click="handleConfirm" :disabled="!record">
           <Icon icon="lucide:check" size="16" />
           确认提交
@@ -53,11 +53,11 @@
             </div>
             <div class="field-group">
               <label>主诉 (Chief Complaint)</label>
-              <textarea v-model="record.chiefComplaint" rows="2" class="full-width"></textarea>
+              <textarea v-model="record.chiefComplaint" rows="2" class="full-width" @blur="trackFieldEdit('chiefComplaint')"></textarea>
             </div>
             <div class="field-group">
               <label>现病史 (HPI)</label>
-              <textarea v-model="record.historyOfPresentIllness" rows="8" class="full-width"></textarea>
+              <textarea v-model="record.historyOfPresentIllness" rows="8" class="full-width" @blur="trackFieldEdit('historyOfPresentIllness')"></textarea>
             </div>
           </div>
 
@@ -65,7 +65,7 @@
             <div class="section-title">
               <span class="icon">🕒</span> 既往史 (Past History)
             </div>
-             <textarea v-model="record.pastMedicalHistory" rows="5" class="full-width"></textarea>
+             <textarea v-model="record.pastMedicalHistory" rows="5" class="full-width" @blur="trackFieldEdit('pastMedicalHistory')"></textarea>
           </div>
         </div>
 
@@ -152,7 +152,7 @@
             <!-- Other Treatment -->
             <div class="sub-section" v-if="record.treatmentPlan">
               <div class="sub-title">其他处理</div>
-              <textarea v-model="record.treatmentPlan" rows="3" class="full-width small-text"></textarea>
+              <textarea v-model="record.treatmentPlan" rows="3" class="full-width small-text" @blur="trackFieldEdit('treatmentPlan')"></textarea>
             </div>
           </div>
 
@@ -161,7 +161,7 @@
             <div class="section-title">
               <span class="icon">📢</span> 健康宣教 (Education)
             </div>
-            <textarea v-model="record.healthEducation" rows="4" class="full-width"></textarea>
+            <textarea v-model="record.healthEducation" rows="4" class="full-width" @blur="trackFieldEdit('healthEducation')"></textarea>
           </div>
         </div>
       </div>
@@ -198,6 +198,7 @@
 <script setup lang="ts">
 import { ref, watch } from 'vue';
 import { medicalDataService } from '../services/medicalData';
+import { trackClick, trackRecommendationAction, trackError } from '../services/operationTracker';
 import Icon from './Icon.vue';
 import FactCheckNotification from './FactCheckNotification.vue';
 import FactCheckHighlight from './FactCheckHighlight.vue';
@@ -264,6 +265,7 @@ const props = defineProps<{
 const emit = defineEmits(['confirm', 'cancel']);
 
 const record = ref<GeneratedRecord | null>(null);
+const originalRecord = ref<GeneratedRecord | null>(null);
 
 // Fact Check State
 const showFactCheckNotification = ref(false);
@@ -361,8 +363,14 @@ const matchLocalData = (rec: GeneratedRecord) => {
 watch(() => props.initialRecord, (val) => {
   if (val) {
     const newVal = JSON.parse(JSON.stringify(val));
+    originalRecord.value = JSON.parse(JSON.stringify(val)); // Deep clone for comparison at confirm
     matchLocalData(newVal);
     record.value = newVal;
+    trackClick('voice_result_loaded', {
+      diagnosisCount: newVal.diagnosisList?.length || 0,
+      medicationCount: newVal.medications?.length || 0,
+      examCount: newVal.examinations?.length || 0,
+    });
 
     // Perform automatic fact checking after data is loaded
     performMedicalRecordFactCheck(newVal);
@@ -471,6 +479,7 @@ const performMedicalRecordFactCheck = async (rec: GeneratedRecord) => {
     factCheckWidgetStatus.value = 'completed';
   } catch (e) {
     console.error('Failed to perform medical record fact check:', e);
+    trackError('voice_result_fact_check_failed', e);
     factCheckWidgetStatus.value = 'completed';
   }
 };
@@ -493,7 +502,42 @@ const getIssueForExam = (examName: string): FactCheckIssue | undefined => {
   return check.issues[0];
 };
 
+const trackFieldEdit = (field: string) => {
+  if (!originalRecord.value || !record.value) return;
+  const orig = (originalRecord.value as any)[field];
+  const curr = (record.value as any)[field];
+  if (typeof orig === 'string' && typeof curr === 'string' && orig !== curr) {
+    trackClick('voice_result_edit_field', { field, changed: true });
+  }
+};
+
 const handleConfirm = () => {
+  // Track field modifications (compare original vs current)
+  if (originalRecord.value && record.value) {
+    const fields: (keyof GeneratedRecord)[] = ['chiefComplaint', 'historyOfPresentIllness', 'pastMedicalHistory', 'treatmentPlan', 'healthEducation'];
+    for (const field of fields) {
+      const orig = originalRecord.value[field];
+      const curr = record.value[field];
+      if (typeof orig === 'string' && typeof curr === 'string' && orig !== curr) {
+        trackRecommendationAction('record', field, 'modified', {
+          originalValue: orig.substring(0, 200),
+          modifiedValue: curr.substring(0, 200),
+        });
+      }
+    }
+  }
+
+  // Track each diagnosis/medication/examination as adopted
+  record.value?.diagnosisList?.forEach(d => {
+    trackRecommendationAction('diagnosis', d.code || d.name, 'adopted', { originalValue: d.name });
+  });
+  record.value?.medications?.forEach(m => {
+    trackRecommendationAction('medication', m.name, 'adopted', { originalValue: m.name });
+  });
+  record.value?.examinations?.forEach(e => {
+    trackRecommendationAction('examination', e.name, 'adopted', { originalValue: e.name });
+  });
+
   emit('confirm', record.value);
 };
 </script>

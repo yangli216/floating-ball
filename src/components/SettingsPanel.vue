@@ -1,10 +1,11 @@
 <script setup lang="ts">
-import { ref, onMounted, inject } from 'vue';
+import { ref, onMounted, inject, watch } from 'vue';
 import { getLLMConfig, DEFAULT_LLM_CONFIG } from '../services/llm';
 import { useTheme } from '../services/themeService';
 import { getCurrentWindow } from '@tauri-apps/api/window';
 import { save } from '@tauri-apps/plugin-dialog';
 import { invoke } from '@tauri-apps/api/core';
+import { trackClick, trackError } from '../services/operationTracker';
 import UpdateChecker from './UpdateChecker.vue';
 import Icon from './Icon.vue';
 
@@ -55,6 +56,7 @@ const saveSettings = async () => {
   localStorage.setItem('LLM_BASE_URL', baseUrl.value);
   localStorage.setItem('LLM_MODEL', model.value);
   localStorage.setItem('ALWAYS_ON_TOP', String(alwaysOnTop.value));
+  trackClick('settings_save', { hasApiKey: !!apiKey.value, hasBaseUrl: !!baseUrl.value, model: model.value, alwaysOnTop: alwaysOnTop.value });
 
   try {
     const win = getCurrentWindow();
@@ -70,36 +72,37 @@ const saveSettings = async () => {
 
 // Data management
 const exporting = ref(false);
+const exportFormat = ref<'json' | 'csv'>('json');
+const exportDays = ref(90);
 
 const handleViewAnalytics = () => {
+  trackClick('settings_view_analytics');
   emit('view-analytics');
 };
 
 const handleExportData = async () => {
   exporting.value = true;
+  trackClick('settings_export_data', { format: exportFormat.value, days: exportDays.value });
   try {
-    // Get date range - last 90 days
     const now = new Date();
     const start = new Date(now);
-    start.setDate(start.getDate() - 90);
+    start.setDate(start.getDate() - exportDays.value);
 
-    // Convert to Unix timestamps (in seconds)
     const startDate = Math.floor(start.getTime() / 1000);
     const endDate = Math.floor(now.getTime() / 1000);
 
-    // Export data from backend
     const dataJson = await invoke<string>('export_data', {
-      format: 'json',
+      format: exportFormat.value,
       startDate,
       endDate,
     });
 
-    // Show save dialog
+    const ext = exportFormat.value;
     const filePath = await save({
-      defaultPath: `feedback-export-${now.toISOString().split('T')[0]}.json`,
+      defaultPath: `feedback-export-${now.toISOString().split('T')[0]}.${ext}`,
       filters: [{
-        name: 'JSON',
-        extensions: ['json']
+        name: ext.toUpperCase(),
+        extensions: [ext]
       }]
     });
 
@@ -114,6 +117,7 @@ const handleExportData = async () => {
     }
   } catch (error) {
     console.error('Failed to export data:', error);
+    trackError('settings_export_failed', error);
     if (showToast) {
       showToast('导出失败: ' + (error as Error).message, 'error');
     }
@@ -121,6 +125,10 @@ const handleExportData = async () => {
     exporting.value = false;
   }
 };
+
+watch(activeTab, (newVal) => {
+  trackClick('settings_tab_change', { tab: newVal });
+});
 </script>
 
 <template>
@@ -158,7 +166,7 @@ const handleExportData = async () => {
               v-for="theme in themes"
               :key="theme.id"
               :class="['theme-card', { active: currentTheme.id === theme.id }]"
-              @click="setTheme(theme)"
+              @click="trackClick('settings_theme_change', { themeId: theme.id }); setTheme(theme)"
             >
               <div class="theme-preview" :style="getThemePreviewStyle(theme)">
                 <div class="preview-header" :style="{ background: theme.colors.primary }"></div>
@@ -200,7 +208,7 @@ const handleExportData = async () => {
           </div>
         </div>
 
-        <div class="settings-section clickable-section" @click="emit('open-symptom-manage')">
+        <div class="settings-section clickable-section" @click="trackClick('settings_open_symptom_manage'); emit('open-symptom-manage')">
           <div class="section-header no-border" style="display: flex; align-items: center; justify-content: space-between;">
             <div class="header-left" style="display: flex; align-items: center; gap: 12px;">
               <Icon icon="lucide:file-edit" :size="20" />
@@ -290,7 +298,39 @@ const handleExportData = async () => {
             <Icon icon="lucide:download" :size="20" />
             <h3>数据导出</h3>
           </div>
-          <p class="section-desc">导出最近90天的反馈数据为 JSON 格式</p>
+          <p class="section-desc">导出反馈数据用于备份或外部分析</p>
+
+          <div class="export-options">
+            <div class="form-group">
+              <label>导出格式</label>
+              <div class="radio-group">
+                <label class="radio-option" :class="{ active: exportFormat === 'json' }">
+                  <input type="radio" v-model="exportFormat" value="json" /> JSON
+                </label>
+                <label class="radio-option" :class="{ active: exportFormat === 'csv' }">
+                  <input type="radio" v-model="exportFormat" value="csv" /> CSV
+                </label>
+              </div>
+            </div>
+            <div class="form-group">
+              <label>时间范围</label>
+              <div class="radio-group">
+                <label class="radio-option" :class="{ active: exportDays === 7 }">
+                  <input type="radio" v-model.number="exportDays" :value="7" /> 7天
+                </label>
+                <label class="radio-option" :class="{ active: exportDays === 30 }">
+                  <input type="radio" v-model.number="exportDays" :value="30" /> 30天
+                </label>
+                <label class="radio-option" :class="{ active: exportDays === 90 }">
+                  <input type="radio" v-model.number="exportDays" :value="90" /> 90天
+                </label>
+                <label class="radio-option" :class="{ active: exportDays === 365 }">
+                  <input type="radio" v-model.number="exportDays" :value="365" /> 全部
+                </label>
+              </div>
+            </div>
+          </div>
+
           <button
             class="action-btn"
             @click="handleExportData"
@@ -870,6 +910,48 @@ input:checked + .toggle-switch:before {
 /* Spinner Animation */
 .spin {
   animation: spin 1s linear infinite;
+}
+
+/* Export Options */
+.export-options {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  margin-bottom: 16px;
+}
+
+.radio-group {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.radio-option {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 6px 14px;
+  border: 1px solid var(--medical-border-medium);
+  border-radius: 20px;
+  font-size: 13px;
+  cursor: pointer;
+  transition: all var(--duration-normal) var(--ease-out);
+  color: var(--medical-text-muted);
+}
+
+.radio-option input {
+  display: none;
+}
+
+.radio-option:hover {
+  border-color: var(--medical-primary);
+  color: var(--medical-primary);
+}
+
+.radio-option.active {
+  background: var(--medical-primary);
+  border-color: var(--medical-primary);
+  color: white;
 }
 
 @keyframes spin {

@@ -139,6 +139,7 @@
           <BodyPartSelector
             :symptoms="allSymptoms"
             :patient-gender="patientGender"
+            :selected-symptoms="selectedSymptoms"
             @select-symptom="selectSymptom"
           />
         </div>
@@ -147,6 +148,7 @@
         <div v-if="selectionMode === 'system'" class="selection-content">
           <SystemCategorySelector
             :symptoms="allSymptoms"
+            :selected-symptoms="selectedSymptoms"
             @select-symptom="selectSymptom"
           />
         </div>
@@ -627,6 +629,7 @@ import Pinyin from 'tiny-pinyin';
 import { chat } from '../services/llm';
 import { invoke } from '@tauri-apps/api/core';
 import { feedbackService } from '../services/feedback';
+import { trackViewChange, trackClick, trackError, trackFormSubmit, trackRecommendationAction, startTimedOperation } from '../services/operationTracker';
 import BodyPartSelector from './BodyPartSelector.vue';
 import SystemCategorySelector from './SystemCategorySelector.vue';
 import { PROMPTS } from '../prompts';
@@ -1133,19 +1136,23 @@ const submitToHIS = async () => {
 
   try {
     await invoke('complete_consultation', { result });
+    trackFormSubmit('submit_to_his', { patientId: finalRecord.value.patient.idPi });
     showToast("问诊完成，数据已发送回HIS系统。", "success");
     handleEndSession();
   } catch (e) {
     console.error("Failed to submit", e);
+    trackError('submit_to_his_failed', e);
     showToast("发送数据失败: " + e, "error");
   }
 };
 
 const printReport = () => {
+  trackClick('print_report');
   window.print();
 };
 
 const handleEndSession = () => {
+  trackClick('end_consultation_session');
   currentView.value = 'consultation';
   selectedSymptoms.value = [];
   formData.value = {};
@@ -1159,6 +1166,7 @@ const handleEndSession = () => {
 };
 
 const removeSymptom = (symptom: any) => {
+  trackClick('symptom_remove', { symptomKey: symptom.key, symptomName: symptom.name });
   const index = selectedSymptoms.value.findIndex(s => s.key === symptom.key);
   if (index !== -1) {
     selectedSymptoms.value.splice(index, 1);
@@ -1286,13 +1294,14 @@ const selectSymptom = (symptom: any) => {
   const index = selectedSymptoms.value.findIndex(s => s.key === symptom.key);
   if (index !== -1) {
     // Deselect
+    trackClick('symptom_deselect', { symptomKey: symptom.key, symptomName: symptom.name });
     selectedSymptoms.value.splice(index, 1);
-    // Optional: clear formData for this symptom? Keeping it might be better for user experience if they re-select.
   } else {
     // Select
     if (selectedSymptoms.value.length >= 3) {
-      return; 
+      return;
     }
+    trackClick('symptom_select', { symptomKey: symptom.key, symptomName: symptom.name, totalSelected: selectedSymptoms.value.length + 1 });
     selectedSymptoms.value.push(symptom);
     // Initialize form data if not exists
     if (!formData.value[symptom.key]) {
@@ -1403,6 +1412,7 @@ const handleEndConsultation = async () => {
   });
 
   if (errors.length > 0) {
+    trackError('record_validation_failed', new Error(errors.join('; ')));
     showToast("请完善以下信息：" + errors.join("; "), "error");
 
     // Scroll to first error
@@ -1424,11 +1434,13 @@ const handleEndConsultation = async () => {
 
     // 4. Switch View
     currentView.value = 'record';
+    trackFormSubmit('generate_medical_record', { symptomCount: selectedSymptoms.value.length, mode: consultationMode.value });
 
     // 5. Trigger AI Diagnosis
     await fetchAIDiagnosis();
   } catch (error) {
     console.error('Failed to generate medical record:', error);
+    trackError('generate_medical_record_failed', error);
     showToast('生成病历失败，请稍后重试', 'error');
   } finally {
     // 6. Always clear loading state
@@ -1458,6 +1470,7 @@ const fetchAIDiagnosis = async () => {
   aiError.value = null;
   aiDiagnoses.value = [];
   selectedDiagnosis.value = null;
+  const finishDiagnosisLlm = startTimedOperation('fetch_ai_diagnosis');
 
   try {
     const startTime = Date.now();
@@ -1677,8 +1690,11 @@ const fetchAIDiagnosis = async () => {
 
     // Perform automatic fact checking on all diagnoses
     performDiagnosisFactCheck(diagnoses);
+    finishDiagnosisLlm(true, { diagnosisCount: diagnoses.length, mode: consultationMode.value });
   } catch (e) {
     console.error("Failed to fetch AI diagnosis", e);
+    trackError('ai_diagnosis_failed', e);
+    finishDiagnosisLlm(false);
     aiError.value = "无法获取诊断建议，请稍后重试或检查网络。";
   } finally {
     aiLoading.value = false;
@@ -1857,6 +1873,10 @@ const toggleRelatedDropdown = (diag: Diagnosis, event: Event) => {
 };
 
 const swapDiagnosis = (originalDiag: Diagnosis, newItem: DiagnosisItem) => {
+  trackRecommendationAction('diagnosis', originalDiag.id || originalDiag.code, 'modified', {
+    originalValue: originalDiag.name,
+    modifiedValue: newItem.name,
+  });
   // Update aiDiagnoses list
   const index = aiDiagnoses.value.findIndex(d => d.id === originalDiag.id);
   if (index !== -1) {
@@ -1886,6 +1906,7 @@ const swapDiagnosis = (originalDiag: Diagnosis, newItem: DiagnosisItem) => {
 };
 
 const handleDiagnosisSelect = (diag: Diagnosis) => {
+  trackClick('diagnosis_select', { diagnosisName: diag.name, diagnosisCode: diag.code, hasId: !!diag.id });
   selectedDiagnosis.value = diag;
   if (diag.code) {
     // 根据诊断类型选择合适的方法
@@ -1905,6 +1926,7 @@ const fetchTreatmentRecommendation = async () => {
   treatmentLoading.value = true;
   treatmentError.value = null;
   treatmentRecommendations.value = [];
+  const finishTreatmentLlm = startTimedOperation('fetch_treatment_recommendation');
 
   try {
     const startTime = Date.now();
@@ -1994,8 +2016,11 @@ const fetchTreatmentRecommendation = async () => {
 
     // Perform automatic fact checking on treatments
     performTreatmentFactCheck(processedRecs);
+    finishTreatmentLlm(true, { treatmentCount: processedRecs.length, mode: consultationMode.value });
   } catch (e) {
     console.error("Failed to fetch treatment recommendations", e);
+    trackError('treatment_recommendation_failed', e);
+    finishTreatmentLlm(false);
     treatmentError.value = "无法获取治疗方案建议。";
   } finally {
     treatmentLoading.value = false;
@@ -2006,6 +2031,11 @@ const toggleTreatmentSelection = (index: number) => {
   const item = treatmentRecommendations.value[index];
   if (item) {
     item.selected = !item.selected;
+    trackClick('treatment_toggle', {
+      treatmentName: item.name,
+      type: item.type,
+      selected: item.selected,
+    });
   }
 };
 
@@ -2026,6 +2056,34 @@ const handleComplete = () => {
       matchedItem: t.matchedItem,
       reason: t.reason
     }));
+
+  // --- Batch acceptance/rejection tracking ---
+  // Diagnosis: selected one is adopted, rest are rejected
+  trackRecommendationAction('diagnosis', selectedDiagnosis.value.id || selectedDiagnosis.value.code, 'adopted', {
+    originalValue: selectedDiagnosis.value.name,
+  });
+  aiDiagnoses.value
+    .filter(d => d.id !== selectedDiagnosis.value?.id)
+    .forEach(d => {
+      trackRecommendationAction('diagnosis', d.id || d.code, 'rejected', { originalValue: d.name });
+    });
+
+  // Treatments: selected are adopted, unselected are rejected
+  treatmentRecommendations.value.forEach(t => {
+    const targetType = t.type === 'medicine' ? 'medication' as const : 'examination' as const;
+    if (t.selected) {
+      trackRecommendationAction(targetType, t.name, 'adopted', { originalValue: t.name });
+    } else {
+      trackRecommendationAction(targetType, t.name, 'rejected', { originalValue: t.name });
+    }
+  });
+
+  trackFormSubmit('generate_final_report', {
+    diagnosisName: selectedDiagnosis.value.name,
+    selectedTreatmentCount: selectedTreatments.length,
+    totalTreatmentCount: treatmentRecommendations.value.length,
+    mode: consultationMode.value,
+  });
 
   // Prepare treatment principle for TCM (治则治法)
   let treatmentPrinciple = '';
@@ -2084,6 +2142,18 @@ watch(selectedDiagnosis, (newVal) => {
   } else {
     treatmentRecommendations.value = [];
   }
+});
+
+watch(consultationMode, (newVal, oldVal) => {
+  trackClick('consultation_mode_change', { from: oldVal, to: newVal });
+});
+
+watch(selectionMode, (newVal) => {
+  trackClick('symptom_selection_mode', { mode: newVal });
+});
+
+watch(currentView, (newVal, oldVal) => {
+  trackViewChange(`consultation:${oldVal}`, `consultation:${newVal}`);
 });
 
 const generateMedicalRecord = () => {
@@ -2292,6 +2362,7 @@ const formatSymptomDetail = (s: any, data: any) => {
 };
 
 const copyToClipboard = () => {
+  trackClick('copy_to_clipboard');
   const text = `主诉：${generatedRecord.value.chiefComplaint}\n现病史：\n${generatedRecord.value.historyOfPresentIllness}`;
   navigator.clipboard.writeText(text).then(() => {
     showToast('已复制到剪贴板', 'success');

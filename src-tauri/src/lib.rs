@@ -1,6 +1,9 @@
 use std::sync::{Arc, Mutex};
 use tauri::{Emitter, Manager};
 
+#[cfg(target_os = "macos")]
+use window_vibrancy::{apply_vibrancy, NSVisualEffectMaterial};
+
 mod http_server;
 use http_server::{ConsultationResult, PatientInfo};
 
@@ -142,6 +145,28 @@ async fn export_templates_with_dialog(content: String) -> Result<(), String> {
     Ok(())
 }
 
+// 设置窗口毛玻璃效果 (macOS only)
+#[tauri::command]
+async fn set_vibrancy(window: tauri::Window, enabled: bool) -> Result<(), String> {
+    #[cfg(target_os = "macos")]
+    {
+        if enabled {
+            // 使用 HudWindow 效果，这是最透明的毛玻璃效果
+            apply_vibrancy(&window, NSVisualEffectMaterial::HudWindow, None, None)
+                .map_err(|e| e.to_string())?;
+        } else {
+            // 清除 vibrancy 效果 - 设置为完全透明
+            apply_vibrancy(&window, NSVisualEffectMaterial::WindowBackground, None, None)
+                .map_err(|_| "Failed to clear vibrancy".to_string())?;
+        }
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        let _ = (window, enabled);
+    }
+    Ok(())
+}
+
 #[derive(Clone, serde::Serialize)]
 struct MousePosPayload {
     x: f64,
@@ -179,6 +204,7 @@ pub fn run() {
             save_templates,
             check_mouse_hover,
             export_templates_with_dialog,
+            set_vibrancy,
             // Feedback system commands
             commands::feedback::create_session,
             commands::feedback::update_session_status,
@@ -190,6 +216,8 @@ pub fn run() {
             commands::feedback::get_session_statistics,
             commands::feedback::get_feedback_statistics,
             commands::feedback::get_performance_statistics,
+            commands::feedback::get_recommendation_statistics,
+            commands::feedback::get_operation_statistics,
             commands::feedback::export_data
         ])
         .setup(move |app| {

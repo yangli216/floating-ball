@@ -131,3 +131,31 @@ pub struct PerformanceStatistics {
     pub total_token_count: i32,
     pub metrics_by_type: serde_json::Value,
 }
+
+// Recommendation Statistics
+#[derive(Debug, Serialize, Deserialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct RecommendationStatistics {
+    pub total_recommendations: i32,
+    pub matched_count: i32,
+    pub unmatched_count: i32,
+    pub match_rate: f64,
+    pub avg_confidence: Option<f64>,
+    pub total_prompt_tokens: i32,
+    pub total_completion_tokens: i32,
+    pub avg_latency_ms: Option<f64>,
+    pub recommendations_by_type: serde_json::Value,
+}
+
+// Operation Log Statistics
+#[derive(Debug, Serialize, Deserialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct OperationStatistics {
+    pub total_operations: i32,
+    pub success_count: i32,
+    pub failure_count: i32,
+    pub success_rate: f64,
+    pub operations_by_type: serde_json::Value,
+    pub top_operations: serde_json::Value,
+    pub error_operations: serde_json::Value,
+}

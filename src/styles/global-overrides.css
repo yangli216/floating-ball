@@ -2001,3 +2001,710 @@ html.dark .analytics-panel .range-btn.active {
   background: linear-gradient(135deg, var(--color-primary) 0%, var(--color-primary-dark) 100%) !important;
   color: white !important;
 }
+
+/* ============================================
+   Apple Liquid Glass 主题专属样式
+   ============================================ */
+
+/* --- Liquid Glass 基础变量 --- */
+[data-theme="liquid-glass"] {
+  --glass-blur: 24px;
+  --glass-blur-strong: 40px;
+  --glass-saturation: 1.8;
+  --glass-brightness: 1.05;
+  --glow-color: rgba(99, 102, 241, 0.15);
+  --glow-color-strong: rgba(99, 102, 241, 0.25);
+  --border-gradient: linear-gradient(135deg, rgba(255,255,255,0.6), rgba(255,255,255,0.2));
+  --surface-shimmer: linear-gradient(135deg, rgba(255,255,255,0.4) 0%, rgba(255,255,255,0.1) 50%, rgba(255,255,255,0.3) 100%);
+
+  /* 覆盖全局表面变量为更透明的值 */
+  --surface-glass: rgba(255, 255, 255, 0.45);
+  --surface-glass-strong: rgba(255, 255, 255, 0.65);
+  --surface-glass-weak: rgba(255, 255, 255, 0.25);
+  --color-background: transparent;
+  --color-background-white: rgba(255, 255, 255, 0.5);
+  --color-background-gray: rgba(248, 250, 255, 0.4);
+  --color-background-light: rgba(255, 255, 255, 0.35);
+}
+
+/* --- Liquid Glass 全局背景 - 真透明 --- */
+[data-theme="liquid-glass"] html,
+[data-theme="liquid-glass"] body,
+[data-theme="liquid-glass"] #app,
+[data-theme="liquid-glass"] .state-layer {
+  background: transparent !important;
+}
+
+/* --- Liquid Glass 主容器 --- */
+[data-theme="liquid-glass"] .assistant-container {
+  background: rgba(255, 255, 255, 0.35) !important;
+  backdrop-filter: blur(var(--glass-blur-strong)) saturate(2) brightness(1.1) !important;
+  -webkit-backdrop-filter: blur(var(--glass-blur-strong)) saturate(2) brightness(1.1) !important;
+  border: 1px solid rgba(255, 255, 255, 0.5) !important;
+  box-shadow:
+    0 8px 32px rgba(99, 102, 241, 0.08),
+    0 0 0 1px rgba(255, 255, 255, 0.6) inset,
+    0 2px 16px rgba(255, 255, 255, 0.3) inset !important;
+}
+
+/* --- Liquid Glass 工具栏 --- */
+[data-theme="liquid-glass"] .assistant-toolbar {
+  background: linear-gradient(180deg, rgba(255,255,255,0.5) 0%, rgba(255,255,255,0.15) 100%) !important;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.4) !important;
+}
+
+/* --- Liquid Glass 面板效果 --- */
+[data-theme="liquid-glass"] .consultation-page,
+[data-theme="liquid-glass"] .settings-panel,
+[data-theme="liquid-glass"] .chat-panel,
+[data-theme="liquid-glass"] .analytics-panel {
+  background: transparent !important;
+  background-color: transparent !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+  border: none !important;
+  box-shadow: none !important;
+}
+
+/* --- Liquid Glass 问诊页面子元素 --- */
+[data-theme="liquid-glass"] .consultation-page .patient-header {
+  background: rgba(255, 255, 255, 0.4) !important;
+  backdrop-filter: blur(20px) saturate(1.6) !important;
+  -webkit-backdrop-filter: blur(20px) saturate(1.6) !important;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.4) !important;
+  box-shadow: 0 2px 12px rgba(99, 102, 241, 0.06) !important;
+}
+
+[data-theme="liquid-glass"] .consultation-page .content-container {
+  background: transparent !important;
+}
+
+[data-theme="liquid-glass"] .consultation-page .symptom-sidebar {
+  background: rgba(255, 255, 255, 0.5) !important;
+  backdrop-filter: blur(24px) saturate(1.6) !important;
+  -webkit-backdrop-filter: blur(24px) saturate(1.6) !important;
+  border-right: 1px solid rgba(99, 102, 241, 0.12) !important;
+  box-shadow: 2px 0 16px rgba(99, 102, 241, 0.05) !important;
+}
+
+[data-theme="liquid-glass"] .consultation-page .selection-content {
+  background: transparent !important;
+}
+
+[data-theme="liquid-glass"] .consultation-page .form-container {
+  background: transparent !important;
+}
+
+[data-theme="liquid-glass"] .consultation-page .empty-state {
+  background: rgba(255, 255, 255, 0.35) !important;
+  backdrop-filter: blur(16px) saturate(1.4) !important;
+  -webkit-backdrop-filter: blur(16px) saturate(1.4) !important;
+  border-radius: 16px !important;
+  margin: 12px !important;
+  border: 1px solid rgba(99, 102, 241, 0.1) !important;
+}
+
+[data-theme="liquid-glass"] .consultation-page .left-panel,
+[data-theme="liquid-glass"] .consultation-page .right-panel {
+  background: transparent !important;
+  background-color: transparent !important;
+}
+
+[data-theme="liquid-glass"] .consultation-page .panel-header {
+  background: rgba(255, 255, 255, 0.35) !important;
+  backdrop-filter: blur(16px) saturate(1.4) !important;
+  -webkit-backdrop-filter: blur(16px) saturate(1.4) !important;
+}
+
+[data-theme="liquid-glass"] .consultation-page .selection-tabs {
+  background: rgba(99, 102, 241, 0.06) !important;
+  border-radius: 10px !important;
+  padding: 4px !important;
+}
+
+[data-theme="liquid-glass"] .consultation-page .selection-tabs .tab-btn {
+  background: transparent !important;
+  color: var(--color-text-medium) !important;
+  border: none !important;
+  border-radius: 8px !important;
+}
+
+[data-theme="liquid-glass"] .consultation-page .selection-tabs .tab-btn.active {
+  background: rgba(99, 102, 241, 0.15) !important;
+  color: var(--color-primary) !important;
+  font-weight: 600 !important;
+  box-shadow: 0 2px 8px rgba(99, 102, 241, 0.12) !important;
+}
+
+[data-theme="liquid-glass"] .consultation-page .selection-tabs .tab-btn:hover:not(.active) {
+  background: rgba(99, 102, 241, 0.08) !important;
+  color: var(--color-primary) !important;
+}
+
+[data-theme="liquid-glass"] .consultation-page .symptom-list {
+  background: transparent !important;
+}
+
+[data-theme="liquid-glass"] .consultation-page .symptom-list li {
+  background: rgba(255, 255, 255, 0.5) !important;
+  backdrop-filter: blur(8px) !important;
+  -webkit-backdrop-filter: blur(8px) !important;
+  border: 1px solid rgba(99, 102, 241, 0.1) !important;
+  border-bottom: 1px solid rgba(99, 102, 241, 0.1) !important;
+  border-radius: 8px !important;
+  margin-bottom: 4px !important;
+  color: var(--color-text-strong) !important;
+}
+
+[data-theme="liquid-glass"] .consultation-page .symptom-list li:hover {
+  background: rgba(99, 102, 241, 0.1) !important;
+  border-color: rgba(99, 102, 241, 0.25) !important;
+  color: var(--color-primary) !important;
+}
+
+[data-theme="liquid-glass"] .consultation-page .symptom-list li.active {
+  background: rgba(99, 102, 241, 0.2) !important;
+  border-color: rgba(99, 102, 241, 0.45) !important;
+  color: var(--color-primary) !important;
+  font-weight: 600 !important;
+  box-shadow: 0 2px 12px rgba(99, 102, 241, 0.2) !important;
+}
+
+/* --- Liquid Glass BodyPartSelector 完整样式覆盖 --- */
+[data-theme="liquid-glass"] .body-part-selector {
+  background: transparent !important;
+}
+
+/* 标题栏 */
+[data-theme="liquid-glass"] .body-part-selector .selector-header h4 {
+  color: var(--color-text-strong) !important;
+}
+
+[data-theme="liquid-glass"] .body-part-selector .clear-btn {
+  background: rgba(99, 102, 241, 0.1) !important;
+  border: 1px solid rgba(99, 102, 241, 0.2) !important;
+  color: var(--color-primary) !important;
+}
+
+[data-theme="liquid-glass"] .body-part-selector .clear-btn:hover {
+  background: rgba(99, 102, 241, 0.2) !important;
+  border-color: rgba(99, 102, 241, 0.3) !important;
+}
+
+/* 正面/背面切换按钮 */
+[data-theme="liquid-glass"] .body-part-selector .body-view-toggle {
+  background: rgba(99, 102, 241, 0.08) !important;
+  border-radius: 8px !important;
+}
+
+[data-theme="liquid-glass"] .body-part-selector .view-btn {
+  background: transparent !important;
+  color: var(--color-text-medium) !important;
+}
+
+[data-theme="liquid-glass"] .body-part-selector .view-btn.active {
+  background: rgba(99, 102, 241, 0.15) !important;
+  color: var(--color-primary) !important;
+  font-weight: 600 !important;
+  box-shadow: 0 2px 8px rgba(99, 102, 241, 0.15) !important;
+}
+
+[data-theme="liquid-glass"] .body-part-selector .view-btn:hover:not(.active) {
+  background: rgba(99, 102, 241, 0.08) !important;
+  color: var(--color-primary) !important;
+}
+
+/* 人体图示区域 */
+[data-theme="liquid-glass"] .body-part-selector .body-diagram {
+  background: rgba(255, 255, 255, 0.4) !important;
+  backdrop-filter: blur(12px) !important;
+  -webkit-backdrop-filter: blur(12px) !important;
+  border: 1px solid rgba(99, 102, 241, 0.15) !important;
+  border-radius: 12px !important;
+}
+
+/* 症状容器 */
+[data-theme="liquid-glass"] .body-part-selector .symptoms-container {
+  background: transparent !important;
+}
+
+[data-theme="liquid-glass"] .body-part-selector .part-symptoms h5 {
+  color: var(--color-text-strong) !important;
+}
+
+/* 症状标签按钮 */
+[data-theme="liquid-glass"] .body-part-selector .symptom-chip {
+  background: rgba(255, 255, 255, 0.6) !important;
+  backdrop-filter: blur(8px) !important;
+  -webkit-backdrop-filter: blur(8px) !important;
+  border: 1px solid rgba(99, 102, 241, 0.15) !important;
+  color: var(--color-text-strong) !important;
+  border-radius: 8px !important;
+  transition: all 0.2s ease !important;
+}
+
+[data-theme="liquid-glass"] .body-part-selector .symptom-chip:hover {
+  background: rgba(99, 102, 241, 0.12) !important;
+  border-color: rgba(99, 102, 241, 0.3) !important;
+  color: var(--color-primary) !important;
+  transform: translateY(-1px) !important;
+  box-shadow: 0 2px 8px rgba(99, 102, 241, 0.1) !important;
+}
+
+[data-theme="liquid-glass"] .body-part-selector .symptom-chip.active {
+  background: rgba(99, 102, 241, 0.2) !important;
+  border-color: rgba(99, 102, 241, 0.45) !important;
+  color: var(--color-primary) !important;
+  font-weight: 600 !important;
+  box-shadow: 0 2px 12px rgba(99, 102, 241, 0.2) !important;
+}
+
+/* 无症状提示 */
+[data-theme="liquid-glass"] .body-part-selector .no-symptoms {
+  color: var(--color-text-muted) !important;
+}
+
+/* --- Liquid Glass SystemCategorySelector 样式覆盖 --- */
+[data-theme="liquid-glass"] .system-category-selector {
+  background: transparent !important;
+}
+
+[data-theme="liquid-glass"] .system-category-selector .selector-header h4 {
+  color: var(--color-text-strong) !important;
+}
+
+[data-theme="liquid-glass"] .system-category-selector .clear-btn {
+  background: rgba(99, 102, 241, 0.1) !important;
+  border: 1px solid rgba(99, 102, 241, 0.2) !important;
+  color: var(--color-primary) !important;
+}
+
+[data-theme="liquid-glass"] .system-category-selector .clear-btn:hover {
+  background: rgba(99, 102, 241, 0.2) !important;
+  border-color: rgba(99, 102, 241, 0.3) !important;
+}
+
+[data-theme="liquid-glass"] .system-category-selector .system-card {
+  background: rgba(255, 255, 255, 0.6) !important;
+  backdrop-filter: blur(8px) !important;
+  -webkit-backdrop-filter: blur(8px) !important;
+  border: 1px solid rgba(99, 102, 241, 0.15) !important;
+  color: var(--color-text-strong) !important;
+}
+
+[data-theme="liquid-glass"] .system-category-selector .system-card:hover {
+  background: rgba(99, 102, 241, 0.1) !important;
+  border-color: rgba(99, 102, 241, 0.3) !important;
+}
+
+[data-theme="liquid-glass"] .system-category-selector .system-card.active {
+  background: rgba(99, 102, 241, 0.2) !important;
+  border-color: rgba(99, 102, 241, 0.5) !important;
+  box-shadow: 0 4px 16px rgba(99, 102, 241, 0.2) !important;
+}
+
+[data-theme="liquid-glass"] .system-category-selector .system-card .system-icon {
+  color: var(--color-primary) !important;
+}
+
+[data-theme="liquid-glass"] .system-category-selector .system-card .system-label {
+  color: var(--color-text-strong) !important;
+}
+
+[data-theme="liquid-glass"] .system-category-selector .category-symptoms h5 {
+  color: var(--color-text-strong) !important;
+}
+
+[data-theme="liquid-glass"] .system-category-selector .symptom-chip {
+  background: rgba(255, 255, 255, 0.6) !important;
+  backdrop-filter: blur(8px) !important;
+  -webkit-backdrop-filter: blur(8px) !important;
+  border: 1px solid rgba(99, 102, 241, 0.15) !important;
+  color: var(--color-text-strong) !important;
+  border-radius: 8px !important;
+  transition: all 0.2s ease !important;
+}
+
+[data-theme="liquid-glass"] .system-category-selector .symptom-chip:hover {
+  background: rgba(99, 102, 241, 0.12) !important;
+  border-color: rgba(99, 102, 241, 0.3) !important;
+  color: var(--color-primary) !important;
+  transform: translateY(-1px) !important;
+  box-shadow: 0 2px 8px rgba(99, 102, 241, 0.1) !important;
+}
+
+[data-theme="liquid-glass"] .system-category-selector .symptom-chip.active {
+  background: rgba(99, 102, 241, 0.2) !important;
+  border-color: rgba(99, 102, 241, 0.45) !important;
+  color: var(--color-primary) !important;
+  font-weight: 600 !important;
+  box-shadow: 0 2px 12px rgba(99, 102, 241, 0.2) !important;
+}
+
+[data-theme="liquid-glass"] .system-category-selector .no-symptoms {
+  color: var(--color-text-muted) !important;
+}
+
+/* --- Liquid Glass forms-scroll-area --- */
+[data-theme="liquid-glass"] .consultation-page .forms-scroll-area {
+  background: transparent !important;
+}
+
+/* --- Liquid Glass 卡片效果 --- */
+[data-theme="liquid-glass"] .symptom-form-section,
+[data-theme="liquid-glass"] .ai-card,
+[data-theme="liquid-glass"] .record-panel,
+[data-theme="liquid-glass"] .settings-section,
+[data-theme="liquid-glass"] .stat-card,
+[data-theme="liquid-glass"] .chart-section {
+  background: rgba(255, 255, 255, 0.4) !important;
+  backdrop-filter: blur(20px) saturate(1.6) !important;
+  -webkit-backdrop-filter: blur(20px) saturate(1.6) !important;
+  border: 1px solid rgba(255, 255, 255, 0.5) !important;
+  border-radius: 16px !important;
+  box-shadow:
+    0 4px 24px rgba(99, 102, 241, 0.06),
+    0 0 0 1px rgba(255, 255, 255, 0.4) inset !important;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1) !important;
+}
+
+[data-theme="liquid-glass"] .symptom-form-section:hover,
+[data-theme="liquid-glass"] .ai-card:hover,
+[data-theme="liquid-glass"] .settings-section:hover,
+[data-theme="liquid-glass"] .stat-card:hover {
+  background: rgba(255, 255, 255, 0.55) !important;
+  box-shadow:
+    0 8px 32px rgba(99, 102, 241, 0.1),
+    0 0 0 1px rgba(255, 255, 255, 0.6) inset,
+    0 0 24px rgba(99, 102, 241, 0.06) !important;
+  transform: translateY(-2px);
+}
+
+/* --- Liquid Glass 头部 --- */
+[data-theme="liquid-glass"] .page-header,
+[data-theme="liquid-glass"] .header-bar,
+[data-theme="liquid-glass"] .settings-header,
+[data-theme="liquid-glass"] .analytics-panel .header {
+  background: rgba(255, 255, 255, 0.45) !important;
+  backdrop-filter: blur(var(--glass-blur-strong)) saturate(2) !important;
+  -webkit-backdrop-filter: blur(var(--glass-blur-strong)) saturate(2) !important;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.4) !important;
+  box-shadow: 0 4px 16px rgba(99, 102, 241, 0.04) !important;
+}
+
+/* --- Liquid Glass 表单头部 --- */
+[data-theme="liquid-glass"] .symptom-form-section .form-header {
+  background: linear-gradient(135deg, rgba(255,255,255,0.5), rgba(238,242,255,0.3)) !important;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.4) !important;
+}
+
+/* --- Liquid Glass 按钮 --- */
+[data-theme="liquid-glass"] .btn-primary,
+[data-theme="liquid-glass"] .header-btn.primary,
+[data-theme="liquid-glass"] .submit-btn {
+  background: linear-gradient(135deg, #6366F1 0%, #4F46E5 100%) !important;
+  border: none !important;
+  box-shadow:
+    0 4px 16px rgba(99, 102, 241, 0.35),
+    0 0 0 1px rgba(255, 255, 255, 0.2) inset !important;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1) !important;
+}
+
+[data-theme="liquid-glass"] .btn-primary:hover,
+[data-theme="liquid-glass"] .header-btn.primary:hover,
+[data-theme="liquid-glass"] .submit-btn:hover {
+  background: linear-gradient(135deg, #4F46E5 0%, #4338CA 100%) !important;
+  box-shadow:
+    0 8px 24px rgba(99, 102, 241, 0.45),
+    0 0 0 1px rgba(255, 255, 255, 0.3) inset,
+    0 0 32px rgba(99, 102, 241, 0.2) !important;
+  transform: translateY(-2px);
+}
+
+[data-theme="liquid-glass"] .btn-secondary,
+[data-theme="liquid-glass"] .header-btn:not(.primary) {
+  background: rgba(255, 255, 255, 0.6) !important;
+  backdrop-filter: blur(12px) !important;
+  -webkit-backdrop-filter: blur(12px) !important;
+  border: 1px solid rgba(99, 102, 241, 0.2) !important;
+  color: var(--color-primary) !important;
+  box-shadow: 0 2px 8px rgba(99, 102, 241, 0.08) !important;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1) !important;
+}
+
+[data-theme="liquid-glass"] .btn-secondary:hover,
+[data-theme="liquid-glass"] .header-btn:not(.primary):hover {
+  background: rgba(255, 255, 255, 0.8) !important;
+  border-color: rgba(99, 102, 241, 0.4) !important;
+  box-shadow:
+    0 4px 16px rgba(99, 102, 241, 0.12),
+    0 0 16px rgba(99, 102, 241, 0.08) !important;
+}
+
+/* --- Liquid Glass 输入框 --- */
+[data-theme="liquid-glass"] input[type="text"],
+[data-theme="liquid-glass"] input[type="number"],
+[data-theme="liquid-glass"] input[type="password"],
+[data-theme="liquid-glass"] textarea,
+[data-theme="liquid-glass"] select,
+[data-theme="liquid-glass"] .search-input,
+[data-theme="liquid-glass"] .chat-input {
+  background: rgba(255, 255, 255, 0.65) !important;
+  backdrop-filter: blur(12px) !important;
+  -webkit-backdrop-filter: blur(12px) !important;
+  border: 1px solid rgba(99, 102, 241, 0.15) !important;
+  border-radius: 12px !important;
+  box-shadow:
+    0 2px 8px rgba(99, 102, 241, 0.06),
+    0 0 0 1px rgba(255, 255, 255, 0.5) inset !important;
+  transition: all 0.25s ease !important;
+}
+
+[data-theme="liquid-glass"] input[type="text"]:focus,
+[data-theme="liquid-glass"] input[type="number"]:focus,
+[data-theme="liquid-glass"] input[type="password"]:focus,
+[data-theme="liquid-glass"] textarea:focus,
+[data-theme="liquid-glass"] select:focus,
+[data-theme="liquid-glass"] .search-input:focus,
+[data-theme="liquid-glass"] .chat-input:focus {
+  background: rgba(255, 255, 255, 0.85) !important;
+  border-color: rgba(99, 102, 241, 0.4) !important;
+  box-shadow:
+    0 4px 16px rgba(99, 102, 241, 0.1),
+    0 0 0 3px rgba(99, 102, 241, 0.1),
+    0 0 0 1px rgba(255, 255, 255, 0.8) inset !important;
+  outline: none !important;
+}
+
+/* --- Liquid Glass 选项标签 --- */
+[data-theme="liquid-glass"] .radio-label,
+[data-theme="liquid-glass"] .checkbox-label {
+  background: rgba(255, 255, 255, 0.5) !important;
+  backdrop-filter: blur(8px) !important;
+  -webkit-backdrop-filter: blur(8px) !important;
+  border: 1px solid rgba(99, 102, 241, 0.12) !important;
+  border-radius: 10px !important;
+  transition: all 0.25s ease !important;
+}
+
+[data-theme="liquid-glass"] .radio-label:hover,
+[data-theme="liquid-glass"] .checkbox-label:hover {
+  background: rgba(255, 255, 255, 0.7) !important;
+  border-color: rgba(99, 102, 241, 0.25) !important;
+  box-shadow: 0 2px 12px rgba(99, 102, 241, 0.1) !important;
+}
+
+[data-theme="liquid-glass"] .radio-label.is-active,
+[data-theme="liquid-glass"] .checkbox-label.is-active {
+  background: rgba(99, 102, 241, 0.12) !important;
+  border-color: rgba(99, 102, 241, 0.4) !important;
+  box-shadow:
+    0 2px 12px rgba(99, 102, 241, 0.15),
+    0 0 0 1px rgba(99, 102, 241, 0.1) inset !important;
+}
+
+/* --- Liquid Glass 标签页 --- */
+[data-theme="liquid-glass"] .tab-btn {
+  background: rgba(255, 255, 255, 0.4) !important;
+  backdrop-filter: blur(8px) !important;
+  -webkit-backdrop-filter: blur(8px) !important;
+  border: 1px solid rgba(99, 102, 241, 0.1) !important;
+  border-radius: 10px !important;
+  transition: all 0.25s ease !important;
+}
+
+[data-theme="liquid-glass"] .tab-btn:hover {
+  background: rgba(255, 255, 255, 0.6) !important;
+  border-color: rgba(99, 102, 241, 0.2) !important;
+}
+
+[data-theme="liquid-glass"] .tab-btn.active {
+  background: rgba(99, 102, 241, 0.15) !important;
+  border-color: rgba(99, 102, 241, 0.35) !important;
+  color: var(--color-primary) !important;
+  box-shadow: 0 2px 12px rgba(99, 102, 241, 0.12) !important;
+}
+
+/* --- Liquid Glass 诊断/治疗项 --- */
+[data-theme="liquid-glass"] .diagnosis-item,
+[data-theme="liquid-glass"] .treatment-item {
+  background: rgba(255, 255, 255, 0.5) !important;
+  backdrop-filter: blur(8px) !important;
+  -webkit-backdrop-filter: blur(8px) !important;
+  border: 1px solid rgba(99, 102, 241, 0.1) !important;
+  border-radius: 12px !important;
+  transition: all 0.25s ease !important;
+}
+
+[data-theme="liquid-glass"] .diagnosis-item:hover,
+[data-theme="liquid-glass"] .treatment-item:hover {
+  background: rgba(255, 255, 255, 0.7) !important;
+  border-color: rgba(99, 102, 241, 0.2) !important;
+  box-shadow: 0 4px 16px rgba(99, 102, 241, 0.1) !important;
+  transform: translateX(4px);
+}
+
+[data-theme="liquid-glass"] .diagnosis-item.active,
+[data-theme="liquid-glass"] .treatment-item.active {
+  background: rgba(99, 102, 241, 0.1) !important;
+  border-color: rgba(99, 102, 241, 0.35) !important;
+  box-shadow:
+    0 4px 16px rgba(99, 102, 241, 0.15),
+    0 0 0 1px rgba(99, 102, 241, 0.1) inset !important;
+}
+
+/* --- Liquid Glass 标签 --- */
+[data-theme="liquid-glass"] .tag,
+[data-theme="liquid-glass"] .badge,
+[data-theme="liquid-glass"] .diag-rate {
+  background: rgba(99, 102, 241, 0.1) !important;
+  backdrop-filter: blur(8px) !important;
+  -webkit-backdrop-filter: blur(8px) !important;
+  border: 1px solid rgba(99, 102, 241, 0.2) !important;
+  border-radius: 8px !important;
+}
+
+/* --- Liquid Glass 匹配标签 --- */
+[data-theme="liquid-glass"] .matched-inline {
+  background: rgba(16, 185, 129, 0.1) !important;
+  backdrop-filter: blur(8px) !important;
+  -webkit-backdrop-filter: blur(8px) !important;
+  border: 1px solid rgba(16, 185, 129, 0.25) !important;
+  border-radius: 8px !important;
+}
+
+/* --- Liquid Glass 下拉菜单 --- */
+[data-theme="liquid-glass"] .category-dropdown,
+[data-theme="liquid-glass"] .dropdown-menu {
+  background: rgba(255, 255, 255, 0.85) !important;
+  backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturation)) !important;
+  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturation)) !important;
+  border: 1px solid rgba(255, 255, 255, 0.6) !important;
+  border-radius: 14px !important;
+  box-shadow:
+    0 8px 32px rgba(99, 102, 241, 0.15),
+    0 0 0 1px rgba(255, 255, 255, 0.5) inset !important;
+}
+
+[data-theme="liquid-glass"] .category-option:hover,
+[data-theme="liquid-glass"] .dropdown-item:hover {
+  background: rgba(99, 102, 241, 0.08) !important;
+}
+
+[data-theme="liquid-glass"] .category-option.selected,
+[data-theme="liquid-glass"] .dropdown-item.selected {
+  background: rgba(99, 102, 241, 0.12) !important;
+  color: var(--color-primary) !important;
+}
+
+/* --- Liquid Glass 聊天消息 --- */
+[data-theme="liquid-glass"] .chat-message.assistant {
+  background: rgba(255, 255, 255, 0.6) !important;
+  backdrop-filter: blur(12px) !important;
+  -webkit-backdrop-filter: blur(12px) !important;
+  border: 1px solid rgba(255, 255, 255, 0.5) !important;
+  border-radius: 16px !important;
+  box-shadow: 0 2px 12px rgba(99, 102, 241, 0.08) !important;
+}
+
+[data-theme="liquid-glass"] .chat-message.user {
+  background: linear-gradient(135deg, #6366F1 0%, #4F46E5 100%) !important;
+  border: none !important;
+  border-radius: 16px !important;
+  box-shadow: 0 4px 16px rgba(99, 102, 241, 0.3) !important;
+}
+
+/* --- Liquid Glass 主题卡片 --- */
+[data-theme="liquid-glass"] .theme-card {
+  background: rgba(255, 255, 255, 0.5) !important;
+  backdrop-filter: blur(12px) !important;
+  -webkit-backdrop-filter: blur(12px) !important;
+  border: 1px solid rgba(99, 102, 241, 0.12) !important;
+  border-radius: 14px !important;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1) !important;
+}
+
+[data-theme="liquid-glass"] .theme-card:hover {
+  background: rgba(255, 255, 255, 0.7) !important;
+  border-color: rgba(99, 102, 241, 0.25) !important;
+  box-shadow: 0 8px 24px rgba(99, 102, 241, 0.12) !important;
+  transform: translateY(-4px);
+}
+
+[data-theme="liquid-glass"] .theme-card.active {
+  border-color: rgba(99, 102, 241, 0.5) !important;
+  box-shadow:
+    0 8px 24px rgba(99, 102, 241, 0.15),
+    0 0 0 2px rgba(99, 102, 241, 0.2) !important;
+}
+
+/* --- Liquid Glass 加载动画 --- */
+[data-theme="liquid-glass"] .loading-overlay {
+  background: rgba(248, 250, 255, 0.85) !important;
+  backdrop-filter: blur(var(--glass-blur-strong)) !important;
+  -webkit-backdrop-filter: blur(var(--glass-blur-strong)) !important;
+}
+
+[data-theme="liquid-glass"] .spinner-ring {
+  border-color: rgba(99, 102, 241, 0.2) !important;
+  border-top-color: #6366F1 !important;
+}
+
+/* --- Liquid Glass 滚动条 --- */
+[data-theme="liquid-glass"] ::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+[data-theme="liquid-glass"] ::-webkit-scrollbar-track {
+  background: rgba(99, 102, 241, 0.05);
+  border-radius: 4px;
+}
+
+[data-theme="liquid-glass"] ::-webkit-scrollbar-thumb {
+  background: rgba(99, 102, 241, 0.2);
+  border-radius: 4px;
+  transition: background 0.2s ease;
+}
+
+[data-theme="liquid-glass"] ::-webkit-scrollbar-thumb:hover {
+  background: rgba(99, 102, 241, 0.35);
+}
+
+/* --- Liquid Glass 分隔线 --- */
+[data-theme="liquid-glass"] .divider,
+[data-theme="liquid-glass"] hr {
+  border-color: rgba(99, 102, 241, 0.1) !important;
+  background: linear-gradient(90deg, transparent, rgba(99, 102, 241, 0.15), transparent) !important;
+}
+
+/* --- Liquid Glass 空状态 --- */
+[data-theme="liquid-glass"] .empty-state {
+  background: rgba(255, 255, 255, 0.4) !important;
+  backdrop-filter: blur(8px) !important;
+  -webkit-backdrop-filter: blur(8px) !important;
+  border: 1px dashed rgba(99, 102, 241, 0.2) !important;
+  border-radius: 14px !important;
+}
+
+/* --- Liquid Glass 数据分析范围按钮 --- */
+[data-theme="liquid-glass"] .analytics-panel .range-btn {
+  background: rgba(255, 255, 255, 0.5) !important;
+  backdrop-filter: blur(8px) !important;
+  -webkit-backdrop-filter: blur(8px) !important;
+  border: 1px solid rgba(99, 102, 241, 0.12) !important;
+  border-radius: 10px !important;
+  transition: all 0.25s ease !important;
+}
+
+[data-theme="liquid-glass"] .analytics-panel .range-btn:hover {
+  background: rgba(255, 255, 255, 0.7) !important;
+  border-color: rgba(99, 102, 241, 0.2) !important;
+}
+
+[data-theme="liquid-glass"] .analytics-panel .range-btn.active {
+  background: linear-gradient(135deg, #6366F1 0%, #4F46E5 100%) !important;
+  border: none !important;
+  color: white !important;
+  box-shadow: 0 4px 16px rgba(99, 102, 241, 0.3) !important;
+}

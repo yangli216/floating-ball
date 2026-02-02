@@ -394,6 +394,23 @@ pub async fn get_session_statistics(
         sessions_by_type.insert(session_type, json!(count));
     }
 
+    // Fix: Populate sessions_by_date
+    let date_query = format!(
+        "SELECT date(start_time, 'unixepoch') as day, COUNT(*) as count FROM sessions {} GROUP BY day ORDER BY day",
+        date_filter
+    );
+    let mut date_stmt = conn.prepare(&date_query).map_err(|e| e.to_string())?;
+    let mut date_rows = date_stmt
+        .query(&params_refs[..])
+        .map_err(|e| e.to_string())?;
+
+    let mut sessions_by_date = Vec::new();
+    while let Some(row) = date_rows.next().map_err(|e| e.to_string())? {
+        let day: String = row.get(0).map_err(|e| e.to_string())?;
+        let count: i32 = row.get(1).map_err(|e| e.to_string())?;
+        sessions_by_date.push(json!({ "date": day, "count": count }));
+    }
+
     Ok(SessionStatistics {
         total_sessions: stats.0,
         active_sessions: stats.1,
@@ -403,7 +420,7 @@ pub async fn get_session_statistics(
         avg_duration_ms: stats.5,
         total_messages,
         sessions_by_type: json!(sessions_by_type),
-        sessions_by_date: json!([]),
+        sessions_by_date: json!(sessions_by_date),
     })
 }
 
@@ -659,6 +676,74 @@ pub async fn export_data(
             "target_type": row.get::<_, String>(2).map_err(|e| e.to_string())?,
             "target_id": row.get::<_, String>(3).map_err(|e| e.to_string())?,
             "feedback_type": row.get::<_, String>(4).map_err(|e| e.to_string())?,
+            "rating": row.get::<_, Option<i32>>(5).map_err(|e| e.to_string())?,
+            "reason": row.get::<_, Option<String>>(6).map_err(|e| e.to_string())?,
+            "original_value": row.get::<_, Option<String>>(7).map_err(|e| e.to_string())?,
+            "modified_value": row.get::<_, Option<String>>(8).map_err(|e| e.to_string())?,
+        }));
+    }
+
+    // Get recommendations
+    let recommendations_query = format!(
+        "SELECT * FROM recommendations WHERE session_id IN (SELECT session_id FROM sessions {})",
+        date_filter
+    );
+    let mut rec_stmt = conn.prepare(&recommendations_query).map_err(|e| e.to_string())?;
+    let mut rec_rows = rec_stmt.query(&params_refs[..]).map_err(|e| e.to_string())?;
+
+    let mut recommendations = Vec::new();
+    while let Some(row) = rec_rows.next().map_err(|e| e.to_string())? {
+        recommendations.push(json!({
+            "recommendation_id": row.get::<_, String>(0).map_err(|e| e.to_string())?,
+            "session_id": row.get::<_, String>(1).map_err(|e| e.to_string())?,
+            "rec_type": row.get::<_, String>(2).map_err(|e| e.to_string())?,
+            "content": row.get::<_, String>(3).map_err(|e| e.to_string())?,
+            "matched": row.get::<_, bool>(4).map_err(|e| e.to_string())?,
+            "match_confidence": row.get::<_, Option<f64>>(5).map_err(|e| e.to_string())?,
+            "prompt_tokens": row.get::<_, Option<i32>>(6).map_err(|e| e.to_string())?,
+            "completion_tokens": row.get::<_, Option<i32>>(7).map_err(|e| e.to_string())?,
+            "latency_ms": row.get::<_, Option<i32>>(8).map_err(|e| e.to_string())?,
+        }));
+    }
+
+    // Get operation logs
+    let logs_query = format!(
+        "SELECT * FROM operation_logs WHERE session_id IN (SELECT session_id FROM sessions {}) OR session_id IS NULL",
+        date_filter
+    );
+    let mut logs_stmt = conn.prepare(&logs_query).map_err(|e| e.to_string())?;
+    let mut logs_rows = logs_stmt.query(&params_refs[..]).map_err(|e| e.to_string())?;
+
+    let mut operation_logs = Vec::new();
+    while let Some(row) = logs_rows.next().map_err(|e| e.to_string())? {
+        operation_logs.push(json!({
+            "log_id": row.get::<_, String>(0).map_err(|e| e.to_string())?,
+            "session_id": row.get::<_, Option<String>>(1).map_err(|e| e.to_string())?,
+            "operation_type": row.get::<_, String>(2).map_err(|e| e.to_string())?,
+            "operation_name": row.get::<_, String>(3).map_err(|e| e.to_string())?,
+            "details": row.get::<_, Option<String>>(4).map_err(|e| e.to_string())?,
+            "success": row.get::<_, bool>(5).map_err(|e| e.to_string())?,
+            "duration_ms": row.get::<_, Option<i32>>(6).map_err(|e| e.to_string())?,
+        }));
+    }
+
+    // Get performance metrics
+    let metrics_query = format!(
+        "SELECT * FROM performance_metrics WHERE session_id IN (SELECT session_id FROM sessions {}) OR session_id IS NULL",
+        date_filter
+    );
+    let mut metrics_stmt = conn.prepare(&metrics_query).map_err(|e| e.to_string())?;
+    let mut metrics_rows = metrics_stmt.query(&params_refs[..]).map_err(|e| e.to_string())?;
+
+    let mut performance_metrics = Vec::new();
+    while let Some(row) = metrics_rows.next().map_err(|e| e.to_string())? {
+        performance_metrics.push(json!({
+            "metric_id": row.get::<_, String>(0).map_err(|e| e.to_string())?,
+            "session_id": row.get::<_, Option<String>>(1).map_err(|e| e.to_string())?,
+            "metric_type": row.get::<_, String>(2).map_err(|e| e.to_string())?,
+            "metric_value": row.get::<_, f64>(3).map_err(|e| e.to_string())?,
+            "unit": row.get::<_, String>(4).map_err(|e| e.to_string())?,
+            "context": row.get::<_, Option<String>>(5).map_err(|e| e.to_string())?,
         }));
     }
 
@@ -671,8 +756,210 @@ pub async fn export_data(
         },
         "sessions": sessions,
         "messages": messages,
-        "feedbacks": feedbacks
+        "feedbacks": feedbacks,
+        "recommendations": recommendations,
+        "operationLogs": operation_logs,
+        "performanceMetrics": performance_metrics
     });
 
     Ok(export_data.to_string())
+}
+
+// Recommendation Statistics Command
+
+#[command]
+pub async fn get_recommendation_statistics(
+    app: AppHandle,
+    start_date: Option<i64>,
+    end_date: Option<i64>,
+) -> Result<RecommendationStatistics, String> {
+    let db = app.state::<DbConnection>();
+    let conn = db.0.lock().map_err(|e| e.to_string())?;
+
+    let (date_filter, params_vec) = match (start_date, end_date) {
+        (Some(start), Some(end)) => (
+            "WHERE created_at BETWEEN ?1 AND ?2".to_string(),
+            vec![start, end],
+        ),
+        (Some(start), None) => ("WHERE created_at >= ?1".to_string(), vec![start]),
+        (None, Some(end)) => ("WHERE created_at <= ?1".to_string(), vec![end]),
+        (None, None) => (String::new(), vec![]),
+    };
+
+    let params_refs: Vec<&dyn rusqlite::ToSql> = params_vec
+        .iter()
+        .map(|p| p as &dyn rusqlite::ToSql)
+        .collect();
+
+    let query = format!(
+        "SELECT
+            COUNT(*) as total,
+            SUM(CASE WHEN matched=1 THEN 1 ELSE 0 END) as matched,
+            SUM(CASE WHEN matched=0 THEN 1 ELSE 0 END) as unmatched,
+            AVG(match_confidence) as avg_confidence,
+            COALESCE(SUM(prompt_tokens), 0) as total_prompt,
+            COALESCE(SUM(completion_tokens), 0) as total_completion,
+            AVG(latency_ms) as avg_latency
+         FROM recommendations {}",
+        date_filter
+    );
+
+    let mut stmt = conn.prepare(&query).map_err(|e| e.to_string())?;
+    let stats = stmt
+        .query_row(&params_refs[..], |row| {
+            Ok((
+                row.get::<_, i32>(0)?,
+                row.get::<_, i32>(1)?,
+                row.get::<_, i32>(2)?,
+                row.get::<_, Option<f64>>(3)?,
+                row.get::<_, i32>(4)?,
+                row.get::<_, i32>(5)?,
+                row.get::<_, Option<f64>>(6)?,
+            ))
+        })
+        .map_err(|e| e.to_string())?;
+
+    let total = stats.0;
+    let matched = stats.1;
+    let match_rate = if total > 0 { matched as f64 / total as f64 } else { 0.0 };
+
+    // Get recommendations by type
+    let type_query = format!(
+        "SELECT rec_type, COUNT(*) as count, SUM(CASE WHEN matched=1 THEN 1 ELSE 0 END) as matched_count
+         FROM recommendations {} GROUP BY rec_type",
+        date_filter
+    );
+    let mut type_stmt = conn.prepare(&type_query).map_err(|e| e.to_string())?;
+    let mut rows = type_stmt.query(&params_refs[..]).map_err(|e| e.to_string())?;
+
+    let mut recommendations_by_type = serde_json::Map::new();
+    while let Some(row) = rows.next().map_err(|e| e.to_string())? {
+        let rec_type: String = row.get(0).map_err(|e| e.to_string())?;
+        let count: i32 = row.get(1).map_err(|e| e.to_string())?;
+        let matched_count: i32 = row.get(2).map_err(|e| e.to_string())?;
+        recommendations_by_type.insert(rec_type, json!({ "total": count, "matched": matched_count }));
+    }
+
+    Ok(RecommendationStatistics {
+        total_recommendations: total,
+        matched_count: matched,
+        unmatched_count: stats.2,
+        match_rate,
+        avg_confidence: stats.3,
+        total_prompt_tokens: stats.4,
+        total_completion_tokens: stats.5,
+        avg_latency_ms: stats.6,
+        recommendations_by_type: json!(recommendations_by_type),
+    })
+}
+
+// Operation Log Statistics Command
+
+#[command]
+pub async fn get_operation_statistics(
+    app: AppHandle,
+    start_date: Option<i64>,
+    end_date: Option<i64>,
+) -> Result<OperationStatistics, String> {
+    let db = app.state::<DbConnection>();
+    let conn = db.0.lock().map_err(|e| e.to_string())?;
+
+    let (date_filter, params_vec) = match (start_date, end_date) {
+        (Some(start), Some(end)) => (
+            "WHERE created_at BETWEEN ?1 AND ?2".to_string(),
+            vec![start, end],
+        ),
+        (Some(start), None) => ("WHERE created_at >= ?1".to_string(), vec![start]),
+        (None, Some(end)) => ("WHERE created_at <= ?1".to_string(), vec![end]),
+        (None, None) => (String::new(), vec![]),
+    };
+
+    let params_refs: Vec<&dyn rusqlite::ToSql> = params_vec
+        .iter()
+        .map(|p| p as &dyn rusqlite::ToSql)
+        .collect();
+
+    let query = format!(
+        "SELECT
+            COUNT(*) as total,
+            SUM(CASE WHEN success=1 THEN 1 ELSE 0 END) as success_count,
+            SUM(CASE WHEN success=0 THEN 1 ELSE 0 END) as failure_count
+         FROM operation_logs {}",
+        date_filter
+    );
+
+    let mut stmt = conn.prepare(&query).map_err(|e| e.to_string())?;
+    let stats = stmt
+        .query_row(&params_refs[..], |row| {
+            Ok((
+                row.get::<_, i32>(0)?,
+                row.get::<_, i32>(1)?,
+                row.get::<_, i32>(2)?,
+            ))
+        })
+        .map_err(|e| e.to_string())?;
+
+    let total = stats.0;
+    let success_rate = if total > 0 { stats.1 as f64 / total as f64 } else { 0.0 };
+
+    // Operations by type
+    let type_query = format!(
+        "SELECT operation_type, COUNT(*) as count FROM operation_logs {} GROUP BY operation_type ORDER BY count DESC",
+        date_filter
+    );
+    let mut type_stmt = conn.prepare(&type_query).map_err(|e| e.to_string())?;
+    let mut type_rows = type_stmt.query(&params_refs[..]).map_err(|e| e.to_string())?;
+
+    let mut operations_by_type = serde_json::Map::new();
+    while let Some(row) = type_rows.next().map_err(|e| e.to_string())? {
+        let op_type: String = row.get(0).map_err(|e| e.to_string())?;
+        let count: i32 = row.get(1).map_err(|e| e.to_string())?;
+        operations_by_type.insert(op_type, json!(count));
+    }
+
+    // Top 10 most frequent operations
+    let top_query = format!(
+        "SELECT operation_name, COUNT(*) as count FROM operation_logs {} GROUP BY operation_name ORDER BY count DESC LIMIT 10",
+        date_filter
+    );
+    let mut top_stmt = conn.prepare(&top_query).map_err(|e| e.to_string())?;
+    let mut top_rows = top_stmt.query(&params_refs[..]).map_err(|e| e.to_string())?;
+
+    let mut top_operations = Vec::new();
+    while let Some(row) = top_rows.next().map_err(|e| e.to_string())? {
+        let name: String = row.get(0).map_err(|e| e.to_string())?;
+        let count: i32 = row.get(1).map_err(|e| e.to_string())?;
+        top_operations.push(json!({ "name": name, "count": count }));
+    }
+
+    // Recent errors (last 20)
+    let error_filter = if date_filter.is_empty() {
+        "WHERE success=0".to_string()
+    } else {
+        format!("{} AND success=0", date_filter)
+    };
+    let error_query = format!(
+        "SELECT operation_name, details, created_at FROM operation_logs {} ORDER BY created_at DESC LIMIT 20",
+        error_filter
+    );
+    let mut error_stmt = conn.prepare(&error_query).map_err(|e| e.to_string())?;
+    let mut error_rows = error_stmt.query(&params_refs[..]).map_err(|e| e.to_string())?;
+
+    let mut error_operations = Vec::new();
+    while let Some(row) = error_rows.next().map_err(|e| e.to_string())? {
+        let name: String = row.get(0).map_err(|e| e.to_string())?;
+        let details: Option<String> = row.get(1).map_err(|e| e.to_string())?;
+        let created_at: i64 = row.get(2).map_err(|e| e.to_string())?;
+        error_operations.push(json!({ "name": name, "details": details, "createdAt": created_at }));
+    }
+
+    Ok(OperationStatistics {
+        total_operations: total,
+        success_count: stats.1,
+        failure_count: stats.2,
+        success_rate,
+        operations_by_type: json!(operations_by_type),
+        top_operations: json!(top_operations),
+        error_operations: json!(error_operations),
+    })
 }

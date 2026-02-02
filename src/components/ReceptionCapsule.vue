@@ -31,7 +31,7 @@
 
       <!-- Right: Actions -->
       <div class="controls-section">
-        <button class="control-btn primary" @click="$emit('close')" title="结束接诊">
+        <button class="control-btn primary" @click="trackClick('reception_close'); $emit('close')" title="结束接诊">
           <Icon icon="lucide:x" size="20" />
         </button>
       </div>
@@ -56,6 +56,7 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue';
 import Icon from './Icon.vue';
+import { trackClick, startTimedOperation } from '../services/operationTracker';
 
 export interface RiskItem {
   level: 1 | 2 | 3;
@@ -78,11 +79,21 @@ const emit = defineEmits<{
 }>();
 
 const showDetail = ref(false);
+let endAnalyzingTimer: ((success?: boolean, details?: Record<string, any>) => void) | null = null;
 
 const genderText = computed(() => props.gender === 'F' ? '女' : '男');
 const avatarIcon = computed(() => props.gender === 'F' ? 'mdi:human-female' : 'mdi:human-male');
 const avatarColor = computed(() => props.gender === 'F' ? '#ff9a9e' : '#79c2ff');
 const riskCount = computed(() => props.risks.length);
+
+watch(() => props.analyzing, (isAnalyzing, wasAnalyzing) => {
+  if (isAnalyzing && !wasAnalyzing) {
+    endAnalyzingTimer = startTimedOperation('reception_risk_analysis');
+  } else if (!isAnalyzing && wasAnalyzing && endAnalyzingTimer) {
+    endAnalyzingTimer(true, { riskCount: props.risks.length, patientName: props.patientName });
+    endAnalyzingTimer = null;
+  }
+});
 
 watch(() => props.risks, (newRisks) => {
   if (newRisks.length > 0) {
@@ -97,6 +108,7 @@ watch(() => props.risks, (newRisks) => {
 const toggleRiskDetail = () => {
   if (riskCount.value === 0) return;
   showDetail.value = !showDetail.value;
+  trackClick('reception_toggle_risk_detail', { expanded: showDetail.value, riskCount: riskCount.value });
   emit('toggle-expand', showDetail.value);
 };
 

@@ -171,18 +171,148 @@
           <div class="duration-value">{{ formatDuration(sessionStats.avgDurationMs) }}</div>
         </div>
       </div>
+
+      <!-- Session Timeline (sessionsByDate) -->
+      <div v-if="sessionStats?.sessionsByDate?.length" class="chart-section">
+        <h3>会话趋势</h3>
+        <div class="timeline-chart">
+          <div class="timeline-bars">
+            <div
+              v-for="item in sessionStats.sessionsByDate"
+              :key="item.date"
+              class="timeline-bar-wrapper"
+              :title="`${item.date}: ${item.count} 会话`"
+            >
+              <div
+                class="timeline-bar"
+                :style="{ height: getTimelineBarHeight(item.count) + '%' }"
+              ></div>
+              <div class="timeline-label">{{ formatDateLabel(item.date) }}</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Recommendation Statistics -->
+      <div v-if="recommendationStats && recommendationStats.totalRecommendations > 0" class="chart-section">
+        <h3>AI 推荐分析</h3>
+        <div class="stats-grid compact">
+          <div class="stat-card small">
+            <div class="stat-icon">🤖</div>
+            <div class="stat-content">
+              <div class="stat-label">总推荐数</div>
+              <div class="stat-value small">{{ recommendationStats.totalRecommendations }}</div>
+            </div>
+          </div>
+          <div class="stat-card small">
+            <div class="stat-icon">🎯</div>
+            <div class="stat-content">
+              <div class="stat-label">匹配率</div>
+              <div class="stat-value small">{{ (recommendationStats.matchRate * 100).toFixed(1) }}%</div>
+            </div>
+          </div>
+          <div class="stat-card small">
+            <div class="stat-icon">🔤</div>
+            <div class="stat-content">
+              <div class="stat-label">总 Token</div>
+              <div class="stat-value small">{{ recommendationStats.totalPromptTokens + recommendationStats.totalCompletionTokens }}</div>
+            </div>
+          </div>
+        </div>
+        <div v-if="Object.keys(recommendationStats.recommendationsByType).length" class="rec-type-list">
+          <div v-for="(info, type) in recommendationStats.recommendationsByType" :key="type" class="rec-type-item">
+            <span class="rec-type-label">{{ getRecTypeLabel(String(type)) }}</span>
+            <span class="rec-type-count">{{ info.total }} 条 (匹配 {{ info.matched }})</span>
+            <div class="progress-bar small">
+              <div class="progress-fill adopted" :style="{ width: (info.total > 0 ? (info.matched / info.total) * 100 : 0) + '%' }"></div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Operation Statistics -->
+      <div v-if="operationStats && operationStats.totalOperations > 0" class="chart-section">
+        <h3>用户操作分析</h3>
+        <div class="stats-grid compact">
+          <div class="stat-card small">
+            <div class="stat-icon">🖱️</div>
+            <div class="stat-content">
+              <div class="stat-label">总操作数</div>
+              <div class="stat-value small">{{ operationStats.totalOperations }}</div>
+            </div>
+          </div>
+          <div class="stat-card small">
+            <div class="stat-icon">✅</div>
+            <div class="stat-content">
+              <div class="stat-label">成功率</div>
+              <div class="stat-value small">{{ (operationStats.successRate * 100).toFixed(1) }}%</div>
+            </div>
+          </div>
+          <div class="stat-card small">
+            <div class="stat-icon">❌</div>
+            <div class="stat-content">
+              <div class="stat-label">错误数</div>
+              <div class="stat-value small">{{ operationStats.failureCount }}</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Operations by type -->
+        <div v-if="Object.keys(operationStats.operationsByType).length" class="op-type-grid">
+          <div v-for="(count, type) in operationStats.operationsByType" :key="type" class="op-type-chip">
+            <span class="op-type-name">{{ getOperationTypeLabel(String(type)) }}</span>
+            <span class="op-type-badge">{{ count }}</span>
+          </div>
+        </div>
+
+        <!-- Top operations -->
+        <div v-if="operationStats.topOperations.length" class="top-operations">
+          <h4>最频繁操作</h4>
+          <div class="top-op-list">
+            <div v-for="(op, idx) in operationStats.topOperations.slice(0, 8)" :key="idx" class="top-op-item">
+              <span class="top-op-rank">{{ idx + 1 }}</span>
+              <span class="top-op-name">{{ op.name }}</span>
+              <span class="top-op-count">{{ op.count }}次</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Recent errors -->
+        <div v-if="operationStats.errorOperations.length" class="error-list-section">
+          <h4>最近错误</h4>
+          <div class="error-list">
+            <div v-for="(err, idx) in operationStats.errorOperations.slice(0, 5)" :key="idx" class="error-item">
+              <span class="error-name">{{ err.name }}</span>
+              <span class="error-time">{{ formatTimestamp(err.createdAt) }}</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Export & Report Actions -->
+      <div class="chart-section actions-section">
+        <h3>数据导出</h3>
+        <div class="action-buttons">
+          <button class="export-btn" @click="handleGenerateReport" :disabled="!hasData || generatingReport">
+            {{ generatingReport ? '生成中...' : '生成使用报告' }}
+          </button>
+        </div>
+      </div>
     </div>
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted, computed } from 'vue';
+import { ref, onMounted, computed, inject } from 'vue';
 import { feedbackService } from '../services/feedback';
-import type { SessionStatistics, FeedbackStatistics, PerformanceStatistics } from '../types/feedback';
+import type { SessionStatistics, FeedbackStatistics, PerformanceStatistics, RecommendationStatistics, OperationStatistics } from '../types/feedback';
+import { generateUsageReport } from '../services/reportGenerator';
 
 defineEmits<{
   close: [];
 }>();
+
+const showToast = inject<(msg: string, type?: string) => void>('showToast');
 
 interface TimeRange {
   label: string;
@@ -203,6 +333,9 @@ const error = ref<string | null>(null);
 const sessionStats = ref<SessionStatistics | null>(null);
 const feedbackStats = ref<FeedbackStatistics | null>(null);
 const performanceStats = ref<PerformanceStatistics | null>(null);
+const recommendationStats = ref<RecommendationStatistics | null>(null);
+const operationStats = ref<OperationStatistics | null>(null);
+const generatingReport = ref(false);
 
 const completionRate = computed(() => {
   if (!sessionStats.value || sessionStats.value.totalSessions === 0) return 0;
@@ -254,6 +387,21 @@ async function loadStatistics() {
     feedbackStats.value = feedbacks;
     performanceStats.value = performance;
 
+    // Load new statistics
+    try {
+      const recommendations = await feedbackService.getRecommendationStatistics(startTimestamp, endTimestamp);
+      recommendationStats.value = recommendations;
+    } catch (err) {
+      console.warn('[AnalyticsPanel] Failed to load recommendation stats:', err);
+    }
+
+    try {
+      const operations = await feedbackService.getOperationStatistics(startTimestamp, endTimestamp);
+      operationStats.value = operations;
+    } catch (err) {
+      console.warn('[AnalyticsPanel] Failed to load operation stats:', err);
+    }
+
     console.log('[AnalyticsPanel] All statistics loaded successfully');
   } catch (err) {
     console.error('[AnalyticsPanel] Failed to load statistics:', err);
@@ -304,6 +452,72 @@ function formatDuration(ms: number): string {
   const minutes = Math.floor(ms / 60000);
   const seconds = Math.floor((ms % 60000) / 1000);
   return `${minutes}分${seconds}秒`;
+}
+
+function getTimelineBarHeight(count: number): number {
+  if (!sessionStats.value?.sessionsByDate?.length) return 0;
+  const max = Math.max(...sessionStats.value.sessionsByDate.map((d: any) => d.count));
+  return max > 0 ? (count / max) * 100 : 0;
+}
+
+function formatDateLabel(dateStr: string): string {
+  const parts = dateStr.split('-');
+  return parts.length >= 3 ? `${parts[1]}/${parts[2]}` : dateStr;
+}
+
+function getRecTypeLabel(type: string): string {
+  const labels: Record<string, string> = {
+    diagnosis: '诊断',
+    medication: '药品',
+    examination: '检查',
+  };
+  return labels[type] || type;
+}
+
+function getOperationTypeLabel(type: string): string {
+  const labels: Record<string, string> = {
+    view_change: '视图切换',
+    button_click: '按钮点击',
+    form_submit: '表单提交',
+    api_call: 'API 调用',
+    error: '错误',
+  };
+  return labels[type] || type;
+}
+
+function formatTimestamp(ts: number): string {
+  return new Date(ts * 1000).toLocaleString('zh-CN', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+}
+
+async function handleGenerateReport() {
+  if (!hasData.value) return;
+  generatingReport.value = true;
+  try {
+    const report = await generateUsageReport(
+      sessionStats.value!,
+      feedbackStats.value!,
+      performanceStats.value!,
+      recommendationStats.value,
+      operationStats.value
+    );
+
+    const { save } = await import('@tauri-apps/plugin-dialog');
+    const { writeTextFile } = await import('@tauri-apps/plugin-fs');
+    const filePath = await save({
+      defaultPath: `usage-report-${new Date().toISOString().split('T')[0]}.md`,
+      filters: [{ name: 'Markdown', extensions: ['md'] }]
+    });
+
+    if (filePath) {
+      await writeTextFile(filePath, report);
+      showToast?.('报告已导出', 'success');
+    }
+  } catch (err) {
+    console.error('[AnalyticsPanel] Failed to generate report:', err);
+    showToast?.('报告生成失败', 'error');
+  } finally {
+    generatingReport.value = false;
+  }
 }
 
 onMounted(() => {
@@ -724,5 +938,241 @@ onMounted(() => {
 
 .content::-webkit-scrollbar-thumb:hover {
   background: rgba(0, 0, 0, 0.3);
+}
+
+/* Compact stats grid */
+.stats-grid.compact {
+  grid-template-columns: repeat(3, 1fr);
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.stat-card.small {
+  padding: 12px;
+}
+
+.stat-value.small {
+  font-size: 20px;
+}
+
+/* Timeline Chart */
+.timeline-chart {
+  padding: 10px 0;
+}
+
+.timeline-bars {
+  display: flex;
+  align-items: flex-end;
+  gap: 4px;
+  height: 120px;
+  overflow-x: auto;
+  padding-bottom: 24px;
+}
+
+.timeline-bar-wrapper {
+  flex: 1;
+  min-width: 20px;
+  max-width: 40px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  height: 100%;
+  justify-content: flex-end;
+}
+
+.timeline-bar {
+  width: 100%;
+  min-height: 4px;
+  background: linear-gradient(180deg, var(--color-primary), var(--color-primary-light));
+  border-radius: 4px 4px 0 0;
+  transition: height var(--duration-slow) var(--ease-out);
+}
+
+.timeline-label {
+  font-size: 10px;
+  color: var(--color-text-weak);
+  margin-top: 4px;
+  white-space: nowrap;
+}
+
+/* Recommendation type list */
+.rec-type-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.rec-type-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  font-size: 14px;
+}
+
+.rec-type-label {
+  min-width: 60px;
+  color: var(--color-text-strong);
+  font-weight: 500;
+}
+
+.rec-type-count {
+  min-width: 100px;
+  color: var(--color-text-weak);
+  font-size: 13px;
+}
+
+.progress-bar.small {
+  flex: 1;
+  height: 8px;
+}
+
+/* Operation type chips */
+.op-type-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 16px 0;
+}
+
+.op-type-chip {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  background: rgba(0, 0, 0, 0.04);
+  border-radius: 16px;
+  font-size: 13px;
+}
+
+.op-type-name {
+  color: var(--color-text-strong);
+}
+
+.op-type-badge {
+  background: var(--color-primary);
+  color: white;
+  font-size: 11px;
+  font-weight: 600;
+  padding: 1px 6px;
+  border-radius: 8px;
+  min-width: 20px;
+  text-align: center;
+}
+
+/* Top operations */
+.top-operations {
+  margin-top: 16px;
+}
+
+.top-operations h4,
+.error-list-section h4 {
+  margin: 0 0 10px 0;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--color-text-muted);
+}
+
+.top-op-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.top-op-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 12px;
+  background: rgba(0, 0, 0, 0.02);
+  border-radius: 8px;
+  font-size: 13px;
+}
+
+.top-op-rank {
+  width: 20px;
+  height: 20px;
+  background: var(--color-primary-50);
+  color: var(--color-primary);
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 11px;
+  font-weight: 600;
+  flex-shrink: 0;
+}
+
+.top-op-name {
+  flex: 1;
+  color: var(--color-text-strong);
+}
+
+.top-op-count {
+  color: var(--color-text-weak);
+  font-size: 12px;
+}
+
+/* Error list */
+.error-list-section {
+  margin-top: 16px;
+}
+
+.error-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.error-item {
+  display: flex;
+  justify-content: space-between;
+  padding: 8px 12px;
+  background: rgba(244, 67, 54, 0.05);
+  border-left: 3px solid #f44336;
+  border-radius: 4px;
+  font-size: 13px;
+}
+
+.error-name {
+  color: #d32f2f;
+  font-weight: 500;
+}
+
+.error-time {
+  color: var(--color-text-weak);
+  font-size: 12px;
+}
+
+/* Action buttons section */
+.actions-section {
+  text-align: center;
+}
+
+.action-buttons {
+  display: flex;
+  gap: 12px;
+  justify-content: center;
+}
+
+.export-btn {
+  padding: 10px 24px;
+  background: linear-gradient(135deg, var(--color-primary), var(--color-primary-dark));
+  color: white;
+  border: none;
+  border-radius: 8px;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all var(--duration-normal) var(--ease-out);
+}
+
+.export-btn:hover:not(:disabled) {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(121, 194, 255, 0.4);
+}
+
+.export-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
 }
 </style>

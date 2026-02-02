@@ -5,6 +5,7 @@
  */
 
 import { ref } from 'vue'
+import { invoke } from '@tauri-apps/api/core'
 import { themes, defaultTheme, getThemeById, type Theme } from '../styles/themes'
 
 const THEME_STORAGE_KEY = 'medical-assistant-theme'
@@ -13,9 +14,21 @@ const THEME_STORAGE_KEY = 'medical-assistant-theme'
 const currentTheme = ref<Theme>(defaultTheme)
 
 /**
+ * 设置窗口毛玻璃效果 (macOS)
+ */
+async function setWindowVibrancy(enabled: boolean): Promise<void> {
+  try {
+    await invoke('set_vibrancy', { enabled })
+    console.log(`[Theme] Vibrancy ${enabled ? 'enabled' : 'disabled'}`)
+  } catch (e) {
+    console.warn('[Theme] Failed to set vibrancy:', e)
+  }
+}
+
+/**
  * 将主题颜色应用到 CSS 变量
  */
-function applyThemeToDOM(theme: Theme): void {
+async function applyThemeToDOM(theme: Theme): Promise<void> {
   const root = document.documentElement
   const { colors } = theme
 
@@ -87,6 +100,10 @@ function applyThemeToDOM(theme: Theme): void {
   } else {
     root.classList.remove('dark')
   }
+
+  // 对于 Liquid Glass 主题，启用系统级毛玻璃效果
+  const isLiquidGlass = theme.id === 'liquid-glass'
+  await setWindowVibrancy(isLiquidGlass)
 }
 
 /**
@@ -125,14 +142,14 @@ export function useTheme() {
   /**
    * 切换到指定主题
    */
-  function setTheme(themeOrId: Theme | string): void {
+  async function setTheme(themeOrId: Theme | string): Promise<void> {
     const theme = typeof themeOrId === 'string'
       ? getThemeById(themeOrId)
       : themeOrId
 
     if (theme) {
       currentTheme.value = theme
-      applyThemeToDOM(theme)
+      await applyThemeToDOM(theme)
       saveTheme(theme)
     }
   }
@@ -140,19 +157,19 @@ export function useTheme() {
   /**
    * 切换到下一个主题 (循环)
    */
-  function toggleNextTheme(): void {
+  async function toggleNextTheme(): Promise<void> {
     const currentIndex = themes.findIndex(t => t.id === currentTheme.value.id)
     const nextIndex = (currentIndex + 1) % themes.length
-    setTheme(themes[nextIndex])
+    await setTheme(themes[nextIndex])
   }
 
   /**
    * 初始化主题
    */
-  function initTheme(): void {
+  async function initTheme(): Promise<void> {
     const savedTheme = loadSavedTheme()
     currentTheme.value = savedTheme
-    applyThemeToDOM(savedTheme)
+    await applyThemeToDOM(savedTheme)
   }
 
   /**
@@ -162,6 +179,13 @@ export function useTheme() {
     return currentTheme.value.id === 'dark-mode'
   }
 
+  /**
+   * 检查是否为 Liquid Glass 主题
+   */
+  function isLiquidGlass(): boolean {
+    return currentTheme.value.id === 'liquid-glass'
+  }
+
   return {
     currentTheme,
     themes,
@@ -169,16 +193,17 @@ export function useTheme() {
     toggleNextTheme,
     initTheme,
     isDarkMode,
+    isLiquidGlass,
   }
 }
 
 /**
  * 独立函数：初始化主题 (在 Vue 组件外使用)
  */
-export function initializeTheme(): void {
+export async function initializeTheme(): Promise<void> {
   const savedTheme = loadSavedTheme()
   currentTheme.value = savedTheme
-  applyThemeToDOM(savedTheme)
+  await applyThemeToDOM(savedTheme)
 }
 
 export { themes, defaultTheme, type Theme }

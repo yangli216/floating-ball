@@ -41,6 +41,7 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, onUnmounted } from 'vue';
 import Icon from './Icon.vue';
+import { trackClick } from '../services/operationTracker';
 
 export interface RiskItem {
   level: 1 | 2 | 3;
@@ -98,10 +99,12 @@ const getRiskIcon = (level: number) => {
 };
 
 const handleClose = () => {
+  trackClick('risk_alert_closed', { auto: false });
   emit('close');
 };
 
 const handleConfirm = () => {
+  trackClick('risk_alert_acknowledged', { riskCount: props.risks.length, hasCritical: hasCriticalRisk.value, criticalCount: props.risks.filter(r => r.level <= 2).length });
   emit('confirm');
 };
 
@@ -113,6 +116,7 @@ onMounted(() => {
       countdown.value--;
       if (countdown.value <= 0) {
         if (countdownTimer) clearInterval(countdownTimer);
+        trackClick('risk_alert_closed', { auto: true });
         emit('close');
       }
     }, 1000);
