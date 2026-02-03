@@ -5,6 +5,12 @@ import { chatStream, transcribeAudio } from "../services/llm";
 import { PROMPTS } from "../prompts";
 import { feedbackService } from "../services/feedback";
 import { trackClick, trackError } from "../services/operationTracker";
+import {
+  detectPromptInjection,
+  INJECTION_BLOCK_RESPONSE,
+  createStreamGuard,
+  LEAKAGE_BLOCK_RESPONSE
+} from "../services/promptGuard";
 import MarkdownIt from 'markdown-it';
 import hljs from 'highlight.js';
 import 'highlight.js/styles/github-dark.css'; // 引入代码高亮样式
@@ -77,6 +83,15 @@ async function handleSend() {
   imageDataUrl.value = null;
   scrollToBottom();
 
+  // 2.5 检测 prompt 注入攻击
+  if (detectPromptInjection(userContent)) {
+    messages.value.push({ role: "assistant", content: INJECTION_BLOCK_RESPONSE });
+    scrollToBottom();
+    sending.value = false;
+    trackClick('chat_injection_blocked', { content: userContent.substring(0, 50) });
+    return;
+  }
+
   try {
     // 3. 保存用户消息到数据库
     const userMessageId = await feedbackService.saveMessage({
@@ -86,21 +101,41 @@ async function handleSend() {
     });
     userMsg.messageId = userMessageId;
 
-    // 4. 创建空的助手回复消息
+    // 4. 构建消息列表
+    const messagesForLLM: ChatMessage[] = [...messages.value.slice(0, -1)];
+    // 添加用户消息
+    messagesForLLM.push(userMsg);
+
+    // 6. 创建空的助手回复消息
     const assistantMsg = ref<ChatMessage>({ role: "assistant", content: "" });
     messages.value.push(assistantMsg.value);
 
-    // 5. 调用流式接口
-    await chatStream(messages.value.slice(0, -1), (chunk) => {
-      assistantMsg.value.content += chunk;
-      scrollToBottom();
+    // 7. 创建流式输出泄露检测器
+    const streamGuard = createStreamGuard({ threshold: 2 });
+
+    // 8. 调用流式接口（带泄露检测）
+    await chatStream(messagesForLLM, (chunk) => {
+      if (streamGuard.check(chunk)) {
+        assistantMsg.value.content += chunk;
+        scrollToBottom();
+      } else {
+        // 检测到泄露，替换输出
+        assistantMsg.value.content = LEAKAGE_BLOCK_RESPONSE;
+        scrollToBottom();
+        trackClick('chat_leakage_blocked');
+      }
     });
 
-    // 6. 计算性能指标
+    // 8.5 最终检查（如果流式过程中被拦截）
+    if (streamGuard.isBlocked()) {
+      assistantMsg.value.content = LEAKAGE_BLOCK_RESPONSE;
+    }
+
+    // 9. 计算性能指标
     const latencyMs = Date.now() - startTime;
     const tokenCount = Math.ceil(assistantMsg.value.content.length / 2); // 简单估算
 
-    // 7. 保存助手消息到数据库
+    // 10. 保存助手消息到数据库
     const assistantMessageId = await feedbackService.saveMessage({
       role: 'assistant',
       content: assistantMsg.value.content,
@@ -111,7 +146,7 @@ async function handleSend() {
     assistantMsg.value.tokenCount = tokenCount;
     assistantMsg.value.latencyMs = latencyMs;
 
-    // 8. 记录性能指标
+    // 11. 记录性能指标
     await feedbackService.recordMetric({
       metricType: 'llm_latency',
       metricValue: latencyMs,
@@ -458,6 +493,8 @@ async function handleFeedback(messageId: string, feedbackType: 'positive' | 'neg
   display: flex;
   gap: 10px;
   align-items: center;
+  flex-wrap: wrap;
+  position: relative;
 }
 
 /* 输入框容器化，包含文件和语音按钮 */
