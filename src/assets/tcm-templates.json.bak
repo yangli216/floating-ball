@@ -1,0 +1,3661 @@
+{
+  "version": "1.0.0",
+  "description": "中医症状问诊模板 - 基于五场专家研讨会设计",
+  "lastUpdated": "2026-02-04",
+  "fieldTypes": {
+    "degree_slider": {
+      "description": "程度滑块（轻/中/重）"
+    },
+    "body_location": {
+      "description": "身体部位选择器"
+    },
+    "tongue_capture": {
+      "description": "舌象拍照采集"
+    },
+    "time_picker_24": {
+      "description": "十二时辰选择器"
+    },
+    "symptom_nature": {
+      "description": "症状性质多选（中医特色）"
+    },
+    "preference_pair": {
+      "description": "喜恶配对选择"
+    }
+  },
+  "symptoms": [
+    {
+      "key": "tcm_headache",
+      "name": "头痛",
+      "priority": "P0",
+      "tcmCategory": "痛证",
+      "relatedMeridians": ["太阳经", "阳明经", "少阳经", "厥阴经"],
+      "relatedOrgans": ["肝", "肾", "脾"],
+      "config": {
+        "sections": [
+          {
+            "title": "疼痛部位",
+            "description": "头痛部位与经络归属密切相关",
+            "fields": [
+              {
+                "key": "painLocation",
+                "label": "头痛部位",
+                "type": "checkbox",
+                "props": {
+                  "options": [
+                    {"value": "forehead", "label": "前额部", "meridian": "阳明经"},
+                    {"value": "temporal", "label": "两侧太阳穴", "meridian": "少阳经"},
+                    {"value": "occipital", "label": "后头部", "meridian": "太阳经"},
+                    {"value": "vertex", "label": "巅顶部", "meridian": "厥阴经"},
+                    {"value": "whole", "label": "全头痛", "meridian": "多经"},
+                    {"value": "uncertain", "label": "部位不固定", "meridian": "风邪"}
+                  ]
+                }
+              }
+            ]
+          },
+          {
+            "title": "疼痛性质",
+            "fields": [
+              {
+                "key": "painNature",
+                "label": "头痛感觉",
+                "type": "checkbox",
+                "props": {
+                  "options": [
+                    {"value": "distending", "label": "胀痛", "indication": "气滞、肝阳"},
+                    {"value": "stabbing", "label": "刺痛", "indication": "血瘀"},
+                    {"value": "dull", "label": "隐痛", "indication": "虚证"},
+                    {"value": "heavy", "label": "重痛如裹", "indication": "湿邪"},
+                    {"value": "pulling", "label": "掣痛连项", "indication": "太阳经"},
+                    {"value": "empty", "label": "空痛", "indication": "肾虚精亏"},
+                    {"value": "throbbing", "label": "跳痛", "indication": "肝阳上亢"}
+                  ]
+                }
+              },
+              {
+                "key": "painDegree",
+                "label": "疼痛程度",
+                "type": "degree_slider",
+                "props": {
+                  "min": 1,
+                  "max": 10,
+                  "labels": ["轻微", "中等", "剧烈"]
+                }
+              }
+            ]
+          },
+          {
+            "title": "时间特点",
+            "fields": [
+              {
+                "key": "onsetTime",
+                "label": "发病时间",
+                "type": "input_radio",
+                "props": {
+                  "radioOptions": ["小时", "天", "周", "月", "年"]
+                }
+              },
+              {
+                "key": "timePattern",
+                "label": "发作规律",
+                "type": "radio",
+                "props": {
+                  "options": [
+                    {"value": "morning", "label": "晨起加重", "indication": "阳虚、痰湿"},
+                    {"value": "afternoon", "label": "午后加重", "indication": "阴虚、血虚"},
+                    {"value": "night", "label": "夜间加重", "indication": "血瘀、阴虚"},
+                    {"value": "fixed", "label": "定时发作", "indication": "瘀血"},
+                    {"value": "continuous", "label": "持续不解", "indication": "实证"},
+                    {"value": "intermittent", "label": "时作时止", "indication": "虚证、风邪"}
+                  ]
+                }
+              },
+              {
+                "key": "weatherRelation",
+                "label": "与天气关系",
+                "type": "checkbox",
+                "props": {
+                  "options": [
+                    {"value": "wind", "label": "刮风时加重", "indication": "风邪"},
+                    {"value": "cold", "label": "遇冷加重", "indication": "寒邪"},
+                    {"value": "heat", "label": "遇热加重", "indication": "热证"},
+                    {"value": "rain", "label": "阴雨天加重", "indication": "湿邪"},
+                    {"value": "none", "label": "与天气无关"}
+                  ]
+                }
+              }
+            ]
+          },
+          {
+            "title": "诱发与缓解因素",
+            "fields": [
+              {
+                "key": "triggers",
+                "label": "诱发因素",
+                "type": "checkbox",
+                "props": {
+                  "options": ["情绪激动", "劳累过度", "睡眠不足", "受凉受风", "饮食不节", "月经前后", "无明显诱因"]
+                }
+              },
+              {
+                "key": "reliefFactors",
+                "label": "缓解因素",
+                "type": "preference_pair",
+                "props": {
+                  "pairs": [
+                    ["按压后减轻", "按压后加重"],
+                    ["温敷后减轻", "冷敷后减轻"],
+                    ["休息后减轻", "活动后减轻"],
+                    ["进食后减轻", "进食后加重"]
+                  ]
+                }
+              }
+            ]
+          },
+          {
+            "title": "伴随症状",
+            "fields": [
+              {
+                "key": "accompaniedSymptoms",
+                "label": "伴随症状",
+                "type": "checkbox",
+                "props": {
+                  "options": [
+                    {"value": "nausea", "label": "恶心欲吐", "indication": "痰饮、肝阳"},
+                    {"value": "dizziness", "label": "头晕目眩", "indication": "肝阳、血虚"},
+                    {"value": "chills", "label": "恶寒发热", "indication": "外感"},
+                    {"value": "tinnitus", "label": "耳鸣", "indication": "肝肾"},
+                    {"value": "irritability", "label": "烦躁易怒", "indication": "肝火"},
+                    {"value": "fatigue", "label": "神疲乏力", "indication": "气虚"},
+                    {"value": "insomnia", "label": "失眠多梦", "indication": "心肝"},
+                    {"value": "blurred_vision", "label": "视物模糊", "indication": "肝血不足"}
+                  ]
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "tcmDiagnosis": {
+        "possiblePatterns": [
+          {"pattern": "肝阳上亢", "keySymptoms": ["胀痛", "跳痛", "两侧", "烦躁"]},
+          {"pattern": "肝肾阴虚", "keySymptoms": ["空痛", "隐痛", "午后重", "耳鸣"]},
+          {"pattern": "气血两虚", "keySymptoms": ["隐痛", "乏力", "面色萎黄"]},
+          {"pattern": "痰湿中阻", "keySymptoms": ["重痛如裹", "阴雨加重", "恶心"]},
+          {"pattern": "瘀血阻络", "keySymptoms": ["刺痛", "固定不移", "夜间重"]},
+          {"pattern": "风寒袭表", "keySymptoms": ["后头痛", "恶寒", "遇冷重"]},
+          {"pattern": "风热上扰", "keySymptoms": ["胀痛", "发热", "口渴"]}
+        ]
+      }
+    },
+    {
+      "key": "tcm_insomnia",
+      "name": "失眠",
+      "priority": "P0",
+      "tcmCategory": "神志病",
+      "relatedOrgans": ["心", "肝", "脾", "肾"],
+      "config": {
+        "sections": [
+          {
+            "title": "失眠类型",
+            "fields": [
+              {
+                "key": "insomniaType",
+                "label": "失眠表现",
+                "type": "checkbox",
+                "props": {
+                  "options": [
+                    {"value": "difficulty_falling", "label": "入睡困难", "indication": "心肝火旺、血虚"},
+                    {"value": "easy_waking", "label": "易醒", "indication": "心脾两虚、心胆气虚"},
+                    {"value": "early_waking", "label": "早醒", "indication": "心肾不交、阴虚"},
+                    {"value": "dreamful", "label": "多梦", "indication": "心火旺、痰热"},
+                    {"value": "nightmare", "label": "噩梦纷纭", "indication": "心胆气虚、痰火"},
+                    {"value": "unable_to_sleep", "label": "彻夜不寐", "indication": "重证"}
+                  ]
+                }
+              },
+              {
+                "key": "sleepDuration",
+                "label": "每晚睡眠时间",
+                "type": "number",
+                "props": {
+                  "unit": "小时",
+                  "min": 0,
+                  "max": 12
+                }
+              },
+              {
+                "key": "duration",
+                "label": "失眠病程",
+                "type": "input_radio",
+                "props": {
+                  "radioOptions": ["天", "周", "月", "年"]
+                }
+              }
+            ]
+          },
+          {
+            "title": "情志因素",
+            "description": "七情与失眠密切相关",
+            "fields": [
+              {
+                "key": "emotionalFactors",
+                "label": "情志状态",
+                "type": "checkbox",
+                "props": {
+                  "options": [
+                    {"value": "anxiety", "label": "心烦焦虑", "indication": "心火、肝郁"},
+                    {"value": "overthinking", "label": "思虑过度", "indication": "心脾两虚"},
+                    {"value": "fear", "label": "心悸易惊", "indication": "心胆气虚"},
+                    {"value": "depression", "label": "情绪低落", "indication": "肝郁"},
+                    {"value": "irritability", "label": "急躁易怒", "indication": "肝火"},
+                    {"value": "none", "label": "情绪平稳"}
+                  ]
+                }
+              },
+              {
+                "key": "stressLevel",
+                "label": "近期压力",
+                "type": "degree_slider",
+                "props": {
+                  "min": 1,
+                  "max": 10,
+                  "labels": ["无压力", "压力适中", "压力很大"]
+                }
+              }
+            ]
+          },
+          {
+            "title": "伴随症状",
+            "fields": [
+              {
+                "key": "accompaniedSymptoms",
+                "label": "伴随不适",
+                "type": "checkbox",
+                "props": {
+                  "options": [
+                    {"value": "palpitation", "label": "心悸", "indication": "心血虚"},
+                    {"value": "forgetfulness", "label": "健忘", "indication": "心脾两虚"},
+                    {"value": "dizziness", "label": "头晕", "indication": "血虚、肝阳"},
+                    {"value": "tinnitus", "label": "耳鸣", "indication": "肾虚"},
+                    {"value": "night_sweat", "label": "盗汗", "indication": "阴虚"},
+                    {"value": "dry_mouth", "label": "口干", "indication": "阴虚"},
+                    {"value": "bitter_mouth", "label": "口苦", "indication": "肝火"},
+                    {"value": "fatigue", "label": "神疲乏力", "indication": "气虚"},
+                    {"value": "poor_appetite", "label": "纳差", "indication": "脾虚"},
+                    {"value": "chest_tightness", "label": "胸闷", "indication": "痰湿"}
+                  ]
+                }
+              }
+            ]
+          },
+          {
+            "title": "饮食习惯",
+            "fields": [
+              {
+                "key": "dietaryFactors",
+                "label": "饮食情况",
+                "type": "checkbox",
+                "props": {
+                  "options": ["晚餐过饱", "睡前饮茶咖啡", "饮酒", "嗜食辛辣", "嗜食肥甘", "饮食规律", "食欲正常"]
+                }
+              }
+            ]
+          },
+          {
+            "title": "舌象脉象",
+            "fields": [
+              {
+                "key": "tongueBody",
+                "label": "舌质",
+                "type": "radio",
+                "props": {
+                  "options": [
+                    {"value": "pale", "label": "淡白", "indication": "气血虚"},
+                    {"value": "red", "label": "红", "indication": "热证、阴虚"},
+                    {"value": "crimson", "label": "绛红", "indication": "热入营血"},
+                    {"value": "purple", "label": "紫暗", "indication": "血瘀"},
+                    {"value": "normal", "label": "淡红（正常）"}
+                  ]
+                }
+              },
+              {
+                "key": "tongueCoating",
+                "label": "舌苔",
+                "type": "radio",
+                "props": {
+                  "options": [
+                    {"value": "thin_white", "label": "薄白", "indication": "正常或表证"},
+                    {"value": "thin_yellow", "label": "薄黄", "indication": "热证"},
+                    {"value": "thick_greasy", "label": "厚腻", "indication": "痰湿"},
+                    {"value": "yellow_greasy", "label": "黄腻", "indication": "湿热"},
+                    {"value": "little_none", "label": "少苔或无苔", "indication": "阴虚"}
+                  ]
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "tcmDiagnosis": {
+        "possiblePatterns": [
+          {"pattern": "心脾两虚", "keySymptoms": ["易醒", "多梦", "心悸", "健忘", "乏力", "舌淡"]},
+          {"pattern": "心肾不交", "keySymptoms": ["入睡难", "早醒", "心烦", "盗汗", "耳鸣", "舌红少苔"]},
+          {"pattern": "肝郁化火", "keySymptoms": ["入睡难", "急躁", "口苦", "头痛", "舌红苔黄"]},
+          {"pattern": "痰热扰心", "keySymptoms": ["多梦", "噩梦", "胸闷", "口苦", "舌红苔黄腻"]},
+          {"pattern": "心胆气虚", "keySymptoms": ["易惊醒", "心悸", "胆怯", "舌淡"]}
+        ]
+      }
+    },
+    {
+      "key": "tcm_dizziness",
+      "name": "眩晕",
+      "priority": "P0",
+      "tcmCategory": "眩晕",
+      "relatedOrgans": ["肝", "脾", "肾"],
+      "classicTheory": "诸风掉眩，皆属于肝；无虚不作眩，无痰不作眩",
+      "config": {
+        "sections": [
+          {
+            "title": "眩晕特点",
+            "fields": [
+              {
+                "key": "dizzinessType",
+                "label": "眩晕感觉",
+                "type": "checkbox",
+                "props": {
+                  "options": [
+                    {"value": "spinning", "label": "天旋地转", "indication": "肝阳上亢"},
+                    {"value": "floating", "label": "头重脚轻", "indication": "痰湿、气虚"},
+                    {"value": "foggy", "label": "昏沉如蒙", "indication": "痰湿"},
+                    {"value": "blurred", "label": "眼花眼黑", "indication": "血虚、肾虚"},
+                    {"value": "unsteady", "label": "站立不稳", "indication": "肝肾亏虚"}
+                  ]
+                }
+              },
+              {
+                "key": "onset",
+                "label": "发作特点",
+                "type": "radio",
+                "props": {
+                  "options": [
+                    {"value": "sudden", "label": "突然发作", "indication": "实证、肝阳"},
+                    {"value": "gradual", "label": "缓慢起病", "indication": "虚证"},
+                    {"value": "recurrent", "label": "反复发作", "indication": "本虚标实"}
+                  ]
+                }
+              }
+            ]
+          },
+          {
+            "title": "诱发因素",
+            "fields": [
+              {
+                "key": "triggers",
+                "label": "诱发因素",
+                "type": "checkbox",
+                "props": {
+                  "options": [
+                    {"value": "position", "label": "体位改变时", "indication": "气血虚"},
+                    {"value": "fatigue", "label": "劳累后", "indication": "气虚"},
+                    {"value": "emotion", "label": "情绪激动后", "indication": "肝阳"},
+                    {"value": "diet", "label": "饮食后", "indication": "痰湿"},
+                    {"value": "menstruation", "label": "月经期间", "indication": "血虚"},
+                    {"value": "none", "label": "无明显诱因"}
+                  ]
+                }
+              }
+            ]
+          },
+          {
+            "title": "伴随症状",
+            "fields": [
+              {
+                "key": "accompaniedSymptoms",
+                "label": "伴随症状",
+                "type": "checkbox",
+                "props": {
+                  "options": [
+                    {"value": "headache", "label": "头痛", "indication": "肝阳"},
+                    {"value": "tinnitus", "label": "耳鸣", "indication": "肝肾"},
+                    {"value": "nausea", "label": "恶心欲吐", "indication": "痰饮"},
+                    {"value": "palpitation", "label": "心悸", "indication": "心血虚"},
+                    {"value": "fatigue", "label": "神疲乏力", "indication": "气虚"},
+                    {"value": "lassitude", "label": "腰膝酸软", "indication": "肾虚"},
+                    {"value": "insomnia", "label": "失眠多梦", "indication": "心肝"},
+                    {"value": "numbness", "label": "肢体麻木", "indication": "风痰、血虚"}
+                  ]
+                }
+              }
+            ]
+          },
+          {
+            "title": "饮食二便",
+            "fields": [
+              {
+                "key": "appetite",
+                "label": "食欲",
+                "type": "radio",
+                "props": {
+                  "options": ["正常", "食欲减退", "食后腹胀", "恶心厌食"]
+                }
+              },
+              {
+                "key": "stool",
+                "label": "大便",
+                "type": "radio",
+                "props": {
+                  "options": ["正常", "便溏", "便秘", "时干时稀"]
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "tcmDiagnosis": {
+        "possiblePatterns": [
+          {"pattern": "肝阳上亢", "keySymptoms": ["天旋地转", "头痛", "急躁", "面红", "舌红"]},
+          {"pattern": "气血亏虚", "keySymptoms": ["头晕眼花", "面色萎黄", "乏力", "心悸", "舌淡"]},
+          {"pattern": "痰湿中阻", "keySymptoms": ["头重如蒙", "恶心", "胸闷", "纳呆", "苔腻"]},
+          {"pattern": "肾精不足", "keySymptoms": ["头晕", "耳鸣", "腰膝酸软", "健忘", "舌淡"]}
+        ]
+      }
+    },
+    {
+      "key": "tcm_cough",
+      "name": "咳嗽",
+      "priority": "P0",
+      "tcmCategory": "肺系病证",
+      "relatedOrgans": ["肺", "脾", "肾"],
+      "classicTheory": "五脏六腑皆令人咳，非独肺也",
+      "config": {
+        "sections": [
+          {
+            "title": "咳嗽特点",
+            "fields": [
+              {
+                "key": "coughSound",
+                "label": "咳嗽声音",
+                "type": "radio",
+                "props": {
+                  "options": [
+                    {"value": "loud", "label": "咳声洪亮有力", "indication": "实证"},
+                    {"value": "weak", "label": "咳声低弱无力", "indication": "虚证"},
+                    {"value": "dry", "label": "干咳少痰", "indication": "燥邪、阴虚"},
+                    {"value": "moist", "label": "痰多易咳", "indication": "痰湿"},
+                    {"value": "barking", "label": "咳如犬吠", "indication": "燥痰"}
+                  ]
+                }
+              },
+              {
+                "key": "coughTiming",
+                "label": "咳嗽时间",
+                "type": "checkbox",
+                "props": {
+                  "options": [
+                    {"value": "morning", "label": "晨起咳甚", "indication": "痰湿"},
+                    {"value": "night", "label": "夜间咳甚", "indication": "阴虚"},
+                    {"value": "after_meal", "label": "食后咳嗽", "indication": "食积"},
+                    {"value": "anytime", "label": "整日咳嗽", "indication": "实证"}
+                  ]
+                }
+              }
+            ]
+          },
+          {
+            "title": "痰液特征",
+            "fields": [
+              {
+                "key": "sputumAmount",
+                "label": "痰量",
+                "type": "radio",
+                "props": {
+                  "options": ["无痰", "少量", "中量", "大量"]
+                }
+              },
+              {
+                "key": "sputumColor",
+                "label": "痰色",
+                "type": "radio",
+                "props": {
+                  "options": [
+                    {"value": "white", "label": "白色", "indication": "寒痰、湿痰"},
+                    {"value": "yellow", "label": "黄色", "indication": "热痰"},
+                    {"value": "green", "label": "黄绿色", "indication": "热毒"},
+                    {"value": "bloody", "label": "带血丝", "indication": "肺热伤络"},
+                    {"value": "clear", "label": "清稀如水", "indication": "寒饮"}
+                  ]
+                }
+              },
+              {
+                "key": "sputumTexture",
+                "label": "痰质",
+                "type": "radio",
+                "props": {
+                  "options": [
+                    {"value": "thin", "label": "稀薄", "indication": "寒证"},
+                    {"value": "thick", "label": "黏稠", "indication": "热证"},
+                    {"value": "lumpy", "label": "成块难咯", "indication": "燥痰"},
+                    {"value": "foamy", "label": "泡沫状", "indication": "风寒"}
+                  ]
+                }
+              }
+            ]
+          },
+          {
+            "title": "寒热辨证",
+            "fields": [
+              {
+                "key": "coldHeat",
+                "label": "寒热感觉",
+                "type": "checkbox",
+                "props": {
+                  "options": [
+                    {"value": "chills", "label": "恶寒", "indication": "表寒"},
+                    {"value": "fever", "label": "发热", "indication": "表证"},
+                    {"value": "sore_throat", "label": "咽痛", "indication": "风热"},
+                    {"value": "itchy_throat", "label": "咽痒", "indication": "风寒"},
+                    {"value": "thirst", "label": "口渴欲饮", "indication": "热证"},
+                    {"value": "no_thirst", "label": "口不渴", "indication": "寒证"}
+                  ]
+                }
+              }
+            ]
+          },
+          {
+            "title": "伴随症状",
+            "fields": [
+              {
+                "key": "accompaniedSymptoms",
+                "label": "伴随症状",
+                "type": "checkbox",
+                "props": {
+                  "options": ["鼻塞流涕", "头痛身痛", "胸闷气短", "咳时胸痛", "咳时遗尿", "盗汗", "消瘦", "食欲减退"]
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "tcmDiagnosis": {
+        "possiblePatterns": [
+          {"pattern": "风寒袭肺", "keySymptoms": ["咽痒", "痰白清稀", "恶寒", "无汗"]},
+          {"pattern": "风热犯肺", "keySymptoms": ["咽痛", "痰黄黏", "发热", "口渴"]},
+          {"pattern": "燥邪伤肺", "keySymptoms": ["干咳少痰", "咽干鼻燥", "痰黏难咯"]},
+          {"pattern": "痰湿蕴肺", "keySymptoms": ["痰多色白", "胸闷", "纳呆", "苔白腻"]},
+          {"pattern": "痰热壅肺", "keySymptoms": ["痰黄黏稠", "咳吐不爽", "口渴", "苔黄腻"]},
+          {"pattern": "肺阴亏虚", "keySymptoms": ["干咳", "痰少质黏", "潮热盗汗", "舌红少苔"]}
+        ]
+      }
+    },
+    {
+      "key": "tcm_abdominal_pain",
+      "name": "腹痛",
+      "priority": "P0",
+      "tcmCategory": "脾胃病证",
+      "relatedOrgans": ["脾", "胃", "肝", "大肠", "小肠"],
+      "config": {
+        "sections": [
+          {
+            "title": "疼痛部位",
+            "fields": [
+              {
+                "key": "painLocation",
+                "label": "疼痛部位",
+                "type": "checkbox",
+                "props": {
+                  "options": [
+                    {"value": "epigastric", "label": "上腹部（胃脘）", "organ": "胃"},
+                    {"value": "umbilical", "label": "脐周", "organ": "小肠"},
+                    {"value": "lower", "label": "小腹（脐下）", "organ": "膀胱、胞宫"},
+                    {"value": "left_lateral", "label": "左侧腹", "organ": "大肠"},
+                    {"value": "right_lateral", "label": "右侧腹", "organ": "肝胆"},
+                    {"value": "hypochondriac", "label": "两胁", "organ": "肝胆"},
+                    {"value": "whole", "label": "全腹", "organ": "多脏腑"}
+                  ]
+                }
+              }
+            ]
+          },
+          {
+            "title": "疼痛性质",
+            "fields": [
+              {
+                "key": "painNature",
+                "label": "疼痛感觉",
+                "type": "checkbox",
+                "props": {
+                  "options": [
+                    {"value": "distending", "label": "胀痛", "indication": "气滞"},
+                    {"value": "stabbing", "label": "刺痛", "indication": "血瘀"},
+                    {"value": "dull", "label": "隐痛", "indication": "虚证"},
+                    {"value": "colicky", "label": "绞痛", "indication": "寒凝、虫积"},
+                    {"value": "burning", "label": "灼痛", "indication": "热证"},
+                    {"value": "cold", "label": "冷痛", "indication": "寒证"},
+                    {"value": "heavy", "label": "重坠", "indication": "湿邪、气虚"}
+                  ]
+                }
+              },
+              {
+                "key": "reliefAggravation",
+                "label": "喜按/拒按",
+                "type": "preference_pair",
+                "props": {
+                  "pairs": [
+                    ["喜按（按压后减轻）", "拒按（按压后加重）"],
+                    ["喜温（热敷后减轻）", "喜凉（冷敷后减轻）"],
+                    ["进食后减轻", "进食后加重"],
+                    ["排便后减轻", "排便后加重"],
+                    ["排气后减轻", "排气无缓解"]
+                  ]
+                }
+              }
+            ]
+          },
+          {
+            "title": "二便情况",
+            "fields": [
+              {
+                "key": "stool",
+                "label": "大便",
+                "type": "radio",
+                "props": {
+                  "options": [
+                    {"value": "normal", "label": "正常"},
+                    {"value": "loose", "label": "便溏", "indication": "脾虚"},
+                    {"value": "diarrhea", "label": "泄泻", "indication": "寒湿、脾虚"},
+                    {"value": "constipation", "label": "便秘", "indication": "热结、气滞"},
+                    {"value": "alternating", "label": "时干时稀", "indication": "肝脾不调"}
+                  ]
+                }
+              },
+              {
+                "key": "stoolOdor",
+                "label": "大便气味",
+                "type": "radio",
+                "props": {
+                  "options": [
+                    "正常",
+                    {"value": "foul", "label": "臭秽", "indication": "湿热"},
+                    {"value": "sour", "label": "酸腐", "indication": "食积"},
+                    {"value": "fishy", "label": "腥臭", "indication": "寒湿"},
+                    {"value": "odorless", "label": "无臭", "indication": "虚寒"}
+                  ]
+                }
+              }
+            ]
+          },
+          {
+            "title": "伴随症状",
+            "fields": [
+              {
+                "key": "accompaniedSymptoms",
+                "label": "伴随症状",
+                "type": "checkbox",
+                "props": {
+                  "options": ["恶心呕吐", "嗳气反酸", "腹胀矢气", "肠鸣辘辘", "食欲不振", "口苦口干", "发热恶寒", "神疲乏力"]
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "tcmDiagnosis": {
+        "possiblePatterns": [
+          {"pattern": "寒邪内阻", "keySymptoms": ["冷痛", "绞痛", "喜温喜按", "得温痛减"]},
+          {"pattern": "湿热蕴结", "keySymptoms": ["灼痛", "拒按", "便臭", "口苦", "苔黄腻"]},
+          {"pattern": "饮食积滞", "keySymptoms": ["胀痛", "嗳腐吞酸", "拒按", "便后痛减"]},
+          {"pattern": "肝气郁结", "keySymptoms": ["胀痛窜痛", "两胁", "情志不遂", "嗳气"]},
+          {"pattern": "脾胃虚寒", "keySymptoms": ["隐痛", "喜按喜温", "便溏", "乏力"]}
+        ]
+      }
+    },
+    {
+      "key": "tcm_chest_pain",
+      "name": "胸闷胸痛",
+      "priority": "P0",
+      "tcmCategory": "心系病证",
+      "relatedOrgans": ["心", "肺", "肝"],
+      "warningNote": "胸痛为急危重症，需排除心梗等急症",
+      "config": {
+        "sections": [
+          {
+            "title": "疼痛部位与放射",
+            "fields": [
+              {
+                "key": "painLocation",
+                "label": "疼痛部位",
+                "type": "checkbox",
+                "props": {
+                  "options": [
+                    {"value": "precordial", "label": "心前区", "organ": "心"},
+                    {"value": "chest_center", "label": "胸骨后", "organ": "心、食道"},
+                    {"value": "left_chest", "label": "左胸", "organ": "心"},
+                    {"value": "bilateral", "label": "两侧胸部", "organ": "肺、肝"},
+                    {"value": "upper_back", "label": "后背", "organ": "心、肺"}
+                  ]
+                }
+              },
+              {
+                "key": "radiation",
+                "label": "放射部位",
+                "type": "checkbox",
+                "props": {
+                  "options": ["放射至左肩臂", "放射至后背", "放射至咽喉", "放射至下颌", "无放射"]
+                }
+              }
+            ]
+          },
+          {
+            "title": "疼痛性质",
+            "fields": [
+              {
+                "key": "painNature",
+                "label": "疼痛/闷感性质",
+                "type": "checkbox",
+                "props": {
+                  "options": [
+                    {"value": "tightness", "label": "闷胀不舒", "indication": "气滞"},
+                    {"value": "stabbing", "label": "刺痛", "indication": "血瘀"},
+                    {"value": "pressing", "label": "压迫感", "indication": "痰阻"},
+                    {"value": "burning", "label": "灼热感", "indication": "热证"},
+                    {"value": "heavy", "label": "重坠感", "indication": "痰湿"}
+                  ]
+                }
+              },
+              {
+                "key": "severity",
+                "label": "疼痛程度",
+                "type": "degree_slider",
+                "props": {
+                  "min": 1,
+                  "max": 10,
+                  "labels": ["轻微不适", "中等", "剧烈难忍"]
+                }
+              },
+              {
+                "key": "duration",
+                "label": "每次发作持续",
+                "type": "radio",
+                "props": {
+                  "options": ["数秒钟", "数分钟", "十余分钟", "半小时以上", "持续不解"]
+                }
+              }
+            ]
+          },
+          {
+            "title": "诱发与缓解",
+            "fields": [
+              {
+                "key": "triggers",
+                "label": "诱发因素",
+                "type": "checkbox",
+                "props": {
+                  "options": [
+                    {"value": "exertion", "label": "劳累活动后", "indication": "心气虚"},
+                    {"value": "emotion", "label": "情绪激动后", "indication": "肝气郁"},
+                    {"value": "cold", "label": "受寒后", "indication": "寒凝"},
+                    {"value": "full_meal", "label": "饱食后", "indication": "痰浊"},
+                    {"value": "rest", "label": "安静休息时", "indication": "阴虚"},
+                    {"value": "none", "label": "无明显诱因"}
+                  ]
+                }
+              },
+              {
+                "key": "relief",
+                "label": "缓解因素",
+                "type": "checkbox",
+                "props": {
+                  "options": ["休息后缓解", "含服药物后缓解", "嗳气后缓解", "按压后缓解", "温敷后缓解", "不能缓解"]
+                }
+              }
+            ]
+          },
+          {
+            "title": "伴随症状",
+            "fields": [
+              {
+                "key": "accompaniedSymptoms",
+                "label": "伴随症状",
+                "type": "checkbox",
+                "props": {
+                  "options": [
+                    {"value": "palpitation", "label": "心悸", "indication": "心"},
+                    {"value": "shortness_breath", "label": "气短", "indication": "心肺气虚"},
+                    {"value": "sweating", "label": "出汗", "indication": "心阳虚、危象"},
+                    {"value": "cold_limbs", "label": "四肢冰冷", "indication": "阳虚"},
+                    {"value": "cyanosis", "label": "面色青紫", "indication": "血瘀重症"},
+                    {"value": "cough", "label": "咳嗽", "indication": "肺"},
+                    {"value": "nausea", "label": "恶心欲吐", "indication": "心胃"},
+                    {"value": "anxiety", "label": "心烦不安", "indication": "心火"}
+                  ]
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "tcmDiagnosis": {
+        "possiblePatterns": [
+          {"pattern": "心血瘀阻", "keySymptoms": ["刺痛固定", "夜间加重", "舌紫暗"]},
+          {"pattern": "痰浊闭阻", "keySymptoms": ["闷痛", "肥胖", "痰多", "苔腻"]},
+          {"pattern": "寒凝心脉", "keySymptoms": ["遇寒加重", "得温缓解", "四肢冷"]},
+          {"pattern": "心气虚", "keySymptoms": ["劳累加重", "气短", "乏力", "自汗"]},
+          {"pattern": "心阴虚", "keySymptoms": ["心烦", "失眠", "盗汗", "舌红少苔"]}
+        ]
+      }
+    },
+    {
+      "key": "tcm_fever",
+      "name": "发热",
+      "priority": "P0",
+      "tcmCategory": "外感病证/内伤发热",
+      "relatedOrgans": ["肺", "卫气", "营血"],
+      "classicTheory": "有一分恶寒便有一分表证",
+      "warningNote": "高热持续不退需排除危急重症",
+      "config": {
+        "sections": [
+          {
+            "title": "发热特点",
+            "fields": [
+              {
+                "key": "feverType",
+                "label": "发热类型",
+                "type": "radio",
+                "props": {
+                  "options": [
+                    {"value": "chills_fever", "label": "恶寒发热并见", "indication": "表证"},
+                    {"value": "high_fever", "label": "壮热不恶寒", "indication": "气分热盛"},
+                    {"value": "tidal_fever", "label": "潮热（午后或夜间加重）", "indication": "阴虚/阳明腑实"},
+                    {"value": "low_grade", "label": "低热不退", "indication": "阴虚/气虚"},
+                    {"value": "alternating", "label": "寒热往来", "indication": "少阳证"},
+                    {"value": "intermittent", "label": "发热时作时止", "indication": "疟疾/肝郁"}
+                  ]
+                }
+              },
+              {
+                "key": "temperature",
+                "label": "最高体温",
+                "type": "number",
+                "props": {
+                  "unit": "℃",
+                  "min": 36,
+                  "max": 42,
+                  "step": 0.1
+                }
+              },
+              {
+                "key": "duration",
+                "label": "发热时间",
+                "type": "input_radio",
+                "props": {
+                  "radioOptions": ["小时", "天", "周"]
+                }
+              }
+            ]
+          },
+          {
+            "title": "恶寒情况",
+            "description": "恶寒与发热的关系是辨别表里的关键",
+            "fields": [
+              {
+                "key": "chillsType",
+                "label": "恶寒程度",
+                "type": "radio",
+                "props": {
+                  "options": [
+                    {"value": "severe", "label": "恶寒重，发热轻", "indication": "风寒表证"},
+                    {"value": "mild", "label": "恶寒轻，发热重", "indication": "风热表证"},
+                    {"value": "none", "label": "但热不寒", "indication": "里热证"},
+                    {"value": "alternating", "label": "寒热交替", "indication": "少阳证/疟疾"}
+                  ]
+                }
+              }
+            ]
+          },
+          {
+            "title": "汗出情况",
+            "fields": [
+              {
+                "key": "sweating",
+                "label": "汗出情况",
+                "type": "radio",
+                "props": {
+                  "options": [
+                    {"value": "no_sweat", "label": "无汗", "indication": "风寒束表"},
+                    {"value": "slight_sweat", "label": "微汗", "indication": "风热/营分"},
+                    {"value": "profuse", "label": "大汗", "indication": "气分热盛/阳虚"},
+                    {"value": "night_sweat", "label": "盗汗", "indication": "阴虚"},
+                    {"value": "cold_sweat", "label": "冷汗", "indication": "阳虚欲脱"}
+                  ]
+                }
+              }
+            ]
+          },
+          {
+            "title": "伴随症状",
+            "fields": [
+              {
+                "key": "headBody",
+                "label": "头身症状",
+                "type": "checkbox",
+                "props": {
+                  "options": [
+                    {"value": "headache", "label": "头痛", "indication": "表证/肝阳"},
+                    {"value": "body_ache", "label": "身体疼痛", "indication": "表证"},
+                    {"value": "stiff_neck", "label": "项背强痛", "indication": "太阳表证"},
+                    {"value": "joint_pain", "label": "关节酸痛", "indication": "风湿"}
+                  ]
+                }
+              },
+              {
+                "key": "respiratory",
+                "label": "呼吸道症状",
+                "type": "checkbox",
+                "props": {
+                  "options": [
+                    {"value": "cough", "label": "咳嗽"},
+                    {"value": "sore_throat", "label": "咽痛", "indication": "风热"},
+                    {"value": "itchy_throat", "label": "咽痒", "indication": "风寒"},
+                    {"value": "runny_nose", "label": "流涕"},
+                    {"value": "nasal_congestion", "label": "鼻塞"}
+                  ]
+                }
+              },
+              {
+                "key": "consciousness",
+                "label": "神志状态",
+                "type": "radio",
+                "props": {
+                  "options": [
+                    {"value": "clear", "label": "神志清楚"},
+                    {"value": "restless", "label": "烦躁不安", "indication": "热扰心神"},
+                    {"value": "drowsy", "label": "嗜睡", "indication": "热入营血"},
+                    {"value": "delirious", "label": "神昏谵语", "indication": "热入心包", "warning": true}
+                  ]
+                }
+              }
+            ]
+          },
+          {
+            "title": "卫气营血辨证（外感热病）",
+            "description": "温病传变规律",
+            "fields": [
+              {
+                "key": "weiQiYingXue",
+                "label": "病位判断",
+                "type": "radio",
+                "props": {
+                  "options": [
+                    {"value": "wei", "label": "卫分证：发热恶寒、头痛、咽痒", "indication": "病在卫分"},
+                    {"value": "qi", "label": "气分证：壮热不寒、大汗、大渴", "indication": "病在气分"},
+                    {"value": "ying", "label": "营分证：身热夜甚、心烦、斑疹隐隐", "indication": "病在营分"},
+                    {"value": "xue", "label": "血分证：高热、神昏、出血", "indication": "病在血分", "warning": true}
+                  ]
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "tcmDiagnosis": {
+        "possiblePatterns": [
+          {"pattern": "风寒束表", "keySymptoms": ["恶寒重", "发热轻", "无汗", "头身痛", "苔薄白"]},
+          {"pattern": "风热犯表", "keySymptoms": ["发热重", "恶寒轻", "微汗", "咽痛", "苔薄黄"]},
+          {"pattern": "暑湿袭表", "keySymptoms": ["身热不扬", "头重如裹", "胸闷", "苔腻"]},
+          {"pattern": "阳明气分热盛", "keySymptoms": ["壮热", "大汗", "大渴", "脉洪大"]},
+          {"pattern": "少阳证", "keySymptoms": ["寒热往来", "胸胁苦满", "口苦", "咽干"]},
+          {"pattern": "阴虚发热", "keySymptoms": ["午后低热", "五心烦热", "盗汗", "舌红少苔"]},
+          {"pattern": "气虚发热", "keySymptoms": ["低热", "劳累加重", "乏力", "自汗", "舌淡"]}
+        ]
+      }
+    },
+    {
+      "key": "tcm_palpitation",
+      "name": "心悸",
+      "priority": "P0",
+      "tcmCategory": "心系病证",
+      "relatedOrgans": ["心", "脾", "肾", "胆"],
+      "classicTheory": "心主血脉，心藏神",
+      "warningNote": "心悸伴胸痛、气促需排除心脏器质性病变",
+      "config": {
+        "sections": [
+          {
+            "title": "心悸特点",
+            "fields": [
+              {
+                "key": "palpitationType",
+                "label": "心悸程度",
+                "type": "radio",
+                "props": {
+                  "options": [
+                    {"value": "mild", "label": "心悸（自觉心跳，时作时止）", "indication": "病情较轻"},
+                    {"value": "severe", "label": "怔忡（心跳剧烈，持续不止）", "indication": "病情较重"}
+                  ]
+                }
+              },
+              {
+                "key": "frequency",
+                "label": "发作频率",
+                "type": "radio",
+                "props": {
+                  "options": [
+                    {"value": "occasional", "label": "偶尔发作"},
+                    {"value": "frequent", "label": "经常发作"},
+                    {"value": "continuous", "label": "持续不止", "indication": "重症"}
+                  ]
+                }
+              },
+              {
+                "key": "duration",
+                "label": "病程",
+                "type": "input_radio",
+                "props": {
+                  "radioOptions": ["天", "周", "月", "年"]
+                }
+              }
+            ]
+          },
+          {
+            "title": "诱发因素",
+            "fields": [
+              {
+                "key": "triggers",
+                "label": "诱发因素",
+                "type": "checkbox",
+                "props": {
+                  "options": [
+                    {"value": "exertion", "label": "劳累后", "indication": "气虚"},
+                    {"value": "emotion", "label": "情绪激动后", "indication": "肝郁、心火"},
+                    {"value": "fright", "label": "受惊吓后", "indication": "心胆气虚"},
+                    {"value": "insomnia", "label": "失眠后", "indication": "心血虚"},
+                    {"value": "eating", "label": "饱食后", "indication": "痰浊"},
+                    {"value": "spontaneous", "label": "无明显诱因"}
+                  ]
+                }
+              }
+            ]
+          },
+          {
+            "title": "伴随症状",
+            "fields": [
+              {
+                "key": "chestSymptoms",
+                "label": "胸部症状",
+                "type": "checkbox",
+                "props": {
+                  "options": [
+                    {"value": "chest_tightness", "label": "胸闷", "indication": "气滞/痰阻"},
+                    {"value": "chest_pain", "label": "胸痛", "indication": "血瘀", "warning": true},
+                    {"value": "shortness_breath", "label": "气短", "indication": "心气虚"},
+                    {"value": "dyspnea", "label": "喘息不能平卧", "indication": "心阳虚/水饮", "warning": true}
+                  ]
+                }
+              },
+              {
+                "key": "generalSymptoms",
+                "label": "全身症状",
+                "type": "checkbox",
+                "props": {
+                  "options": [
+                    {"value": "fatigue", "label": "神疲乏力", "indication": "气虚"},
+                    {"value": "dizziness", "label": "头晕", "indication": "血虚/气虚"},
+                    {"value": "insomnia", "label": "失眠多梦", "indication": "心血虚"},
+                    {"value": "forgetfulness", "label": "健忘", "indication": "心脾两虚"},
+                    {"value": "spontaneous_sweat", "label": "自汗", "indication": "气虚"},
+                    {"value": "night_sweat", "label": "盗汗", "indication": "阴虚"},
+                    {"value": "cold_limbs", "label": "四肢不温", "indication": "阳虚"},
+                    {"value": "edema", "label": "下肢水肿", "indication": "心阳虚/水饮"}
+                  ]
+                }
+              }
+            ]
+          },
+          {
+            "title": "面色与舌象",
+            "fields": [
+              {
+                "key": "complexion",
+                "label": "面色",
+                "type": "radio",
+                "props": {
+                  "options": [
+                    {"value": "pale", "label": "面色苍白", "indication": "气血虚"},
+                    {"value": "sallow", "label": "面色萎黄", "indication": "血虚"},
+                    {"value": "dark", "label": "面色晦暗", "indication": "血瘀"},
+                    {"value": "flushed", "label": "面色红赤", "indication": "心火/阴虚"},
+                    {"value": "normal", "label": "面色正常"}
+                  ]
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "tcmDiagnosis": {
+        "possiblePatterns": [
+          {"pattern": "心气虚", "keySymptoms": ["心悸", "气短", "劳累加重", "自汗", "乏力", "舌淡"]},
+          {"pattern": "心血虚", "keySymptoms": ["心悸", "失眠", "多梦", "头晕", "面色萎黄", "舌淡"]},
+          {"pattern": "心阴虚", "keySymptoms": ["心悸", "心烦", "失眠", "盗汗", "五心烦热", "舌红少苔"]},
+          {"pattern": "心阳虚", "keySymptoms": ["心悸", "胸闷", "畏寒", "肢冷", "水肿", "舌淡胖"]},
+          {"pattern": "心胆气虚", "keySymptoms": ["心悸", "善惊易恐", "坐卧不安", "舌淡"]},
+          {"pattern": "心脾两虚", "keySymptoms": ["心悸", "健忘", "失眠", "纳差", "乏力", "舌淡"]},
+          {"pattern": "心血瘀阻", "keySymptoms": ["心悸", "胸闷刺痛", "面色晦暗", "舌紫暗"]},
+          {"pattern": "痰火扰心", "keySymptoms": ["心悸", "心烦", "失眠", "痰多", "口苦", "苔黄腻"]},
+          {"pattern": "水饮凌心", "keySymptoms": ["心悸", "胸闷", "气短", "水肿", "不能平卧", "舌淡胖"]}
+        ]
+      }
+    },
+    {
+      "key": "tcm_vomiting",
+      "name": "呕吐",
+      "priority": "P0",
+      "tcmCategory": "脾胃病证",
+      "relatedOrgans": ["胃", "脾", "肝"],
+      "classicTheory": "胃气以降为顺，胃气上逆则呕",
+      "config": {
+        "sections": [
+          {
+            "title": "呕吐特点",
+            "fields": [
+              {
+                "key": "vomitingType",
+                "label": "呕吐表现",
+                "type": "radio",
+                "props": {
+                  "options": [
+                    {"value": "nausea_only", "label": "恶心欲吐未吐", "indication": "病势较轻"},
+                    {"value": "dry_heave", "label": "干呕无物", "indication": "胃阴虚/肝气犯胃"},
+                    {"value": "vomiting", "label": "呕吐有物", "indication": "胃有实邪"},
+                    {"value": "projectile", "label": "喷射状呕吐", "indication": "需排除颅内病变", "warning": true}
+                  ]
+                }
+              },
+              {
+                "key": "frequency",
+                "label": "呕吐频率",
+                "type": "radio",
+                "props": {
+                  "options": [
+                    {"value": "occasional", "label": "偶尔"},
+                    {"value": "frequent", "label": "频繁"},
+                    {"value": "continuous", "label": "持续不止", "indication": "重症"}
+                  ]
+                }
+              }
+            ]
+          },
+          {
+            "title": "呕吐物性质",
+            "description": "呕吐物是辨证的重要依据",
+            "fields": [
+              {
+                "key": "vomitusContent",
+                "label": "呕吐物内容",
+                "type": "checkbox",
+                "props": {
+                  "options": [
+                    {"value": "food", "label": "食物残渣", "indication": "食积"},
+                    {"value": "clear_water", "label": "清水", "indication": "痰饮/寒"},
+                    {"value": "sour_water", "label": "酸水", "indication": "食积/肝胃不和"},
+                    {"value": "bitter_water", "label": "苦水（胆汁）", "indication": "肝胆郁热"},
+                    {"value": "phlegm", "label": "痰涎", "indication": "痰饮"},
+                    {"value": "blood", "label": "带血", "indication": "出血", "warning": true}
+                  ]
+                }
+              },
+              {
+                "key": "vomitusOdor",
+                "label": "呕吐物气味",
+                "type": "radio",
+                "props": {
+                  "options": [
+                    {"value": "sour", "label": "酸腐", "indication": "食积"},
+                    {"value": "odorless", "label": "无特殊气味", "indication": "寒证/痰饮"},
+                    {"value": "foul", "label": "臭秽", "indication": "胃热"}
+                  ]
+                }
+              }
+            ]
+          },
+          {
+            "title": "发作规律",
+            "fields": [
+              {
+                "key": "timing",
+                "label": "呕吐时间",
+                "type": "checkbox",
+                "props": {
+                  "options": [
+                    {"value": "after_eating", "label": "食后即吐", "indication": "热证/食积"},
+                    {"value": "delayed", "label": "食后许久才吐", "indication": "寒证"},
+                    {"value": "morning", "label": "晨起呕吐", "indication": "痰饮/妊娠"},
+                    {"value": "anytime", "label": "无规律"}
+                  ]
+                }
+              },
+              {
+                "key": "triggers",
+                "label": "诱发因素",
+                "type": "checkbox",
+                "props": {
+                  "options": [
+                    {"value": "food", "label": "进食后", "indication": "食积"},
+                    {"value": "smell", "label": "闻到异味", "indication": "胃气上逆"},
+                    {"value": "motion", "label": "乘车船", "indication": "晕动"},
+                    {"value": "emotion", "label": "情绪波动", "indication": "肝气犯胃"},
+                    {"value": "cold_food", "label": "进食生冷后", "indication": "寒邪犯胃"}
+                  ]
+                }
+              }
+            ]
+          },
+          {
+            "title": "伴随症状",
+            "fields": [
+              {
+                "key": "abdominalSymptoms",
+                "label": "腹部症状",
+                "type": "checkbox",
+                "props": {
+                  "options": [
+                    {"value": "epigastric_pain", "label": "胃脘疼痛", "indication": "寒邪/食积"},
+                    {"value": "bloating", "label": "脘腹胀满", "indication": "食积/气滞"},
+                    {"value": "belching", "label": "嗳气", "indication": "食积/气滞"},
+                    {"value": "acid_reflux", "label": "泛酸", "indication": "肝胃不和"},
+                    {"value": "diarrhea", "label": "腹泻", "indication": "脾虚/寒湿"}
+                  ]
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "tcmDiagnosis": {
+        "possiblePatterns": [
+          {"pattern": "外邪犯胃", "keySymptoms": ["突然呕吐", "发热恶寒", "头痛", "苔白或黄"]},
+          {"pattern": "饮食停滞", "keySymptoms": ["呕吐酸腐", "脘腹胀满", "嗳气", "不思饮食"]},
+          {"pattern": "痰饮内停", "keySymptoms": ["呕吐清水痰涎", "头晕", "心悸", "苔白滑"]},
+          {"pattern": "肝气犯胃", "keySymptoms": ["呕吐酸水", "胁肋胀痛", "情志诱发", "嗳气"]},
+          {"pattern": "脾胃虚寒", "keySymptoms": ["呕吐清水", "喜温喜按", "纳差", "便溏", "舌淡"]},
+          {"pattern": "胃阴不足", "keySymptoms": ["干呕", "口干", "纳少", "舌红少津"]}
+        ]
+      }
+    },
+    {
+      "key": "tcm_body_joint_pain",
+      "name": "身痛/关节痛",
+      "priority": "P0",
+      "tcmCategory": "痹证",
+      "relatedOrgans": ["肝", "脾", "肾"],
+      "relatedMeridians": ["十二经脉"],
+      "classicTheory": "风寒湿三气杂至，合而为痹",
+      "config": {
+        "sections": [
+          {
+            "title": "疼痛部位",
+            "fields": [
+              {
+                "key": "painLocation",
+                "label": "疼痛部位",
+                "type": "checkbox",
+                "props": {
+                  "options": [
+                    {"value": "shoulder", "label": "肩部"},
+                    {"value": "elbow", "label": "肘部"},
+                    {"value": "wrist", "label": "腕部"},
+                    {"value": "finger", "label": "手指关节"},
+                    {"value": "hip", "label": "髋部"},
+                    {"value": "knee", "label": "膝部"},
+                    {"value": "ankle", "label": "踝部"},
+                    {"value": "toe", "label": "足趾关节"},
+                    {"value": "neck", "label": "颈项"},
+                    {"value": "back", "label": "背部"},
+                    {"value": "lumbar", "label": "腰部"},
+                    {"value": "whole_body", "label": "全身"}
+                  ]
+                }
+              },
+              {
+                "key": "painMobility",
+                "label": "疼痛游走性",
+                "type": "radio",
+                "props": {
+                  "options": [
+                    {"value": "wandering", "label": "游走不定", "indication": "风邪偏盛（行痹）"},
+                    {"value": "fixed", "label": "固定不移", "indication": "寒邪/瘀血"},
+                    {"value": "multiple_fixed", "label": "多处固定疼痛"}
+                  ]
+                }
+              }
+            ]
+          },
+          {
+            "title": "疼痛性质",
+            "fields": [
+              {
+                "key": "painNature",
+                "label": "疼痛感觉",
+                "type": "checkbox",
+                "props": {
+                  "options": [
+                    {"value": "severe", "label": "剧烈疼痛", "indication": "寒邪偏盛（痛痹）"},
+                    {"value": "heavy", "label": "重着酸痛", "indication": "湿邪偏盛（着痹）"},
+                    {"value": "swelling", "label": "红肿热痛", "indication": "热邪偏盛（热痹）"},
+                    {"value": "aching", "label": "酸痛绵绵", "indication": "虚证"},
+                    {"value": "stabbing", "label": "刺痛", "indication": "瘀血"},
+                    {"value": "stiff", "label": "僵硬不利", "indication": "寒凝/血瘀"},
+                    {"value": "numb", "label": "麻木", "indication": "血虚/风痰"}
+                  ]
+                }
+              },
+              {
+                "key": "painDegree",
+                "label": "疼痛程度",
+                "type": "degree_slider",
+                "props": {
+                  "min": 1,
+                  "max": 10,
+                  "labels": ["轻微", "中等", "剧烈"]
+                }
+              }
+            ]
+          },
+          {
+            "title": "加重与缓解因素",
+            "fields": [
+              {
+                "key": "aggravatingFactors",
+                "label": "加重因素",
+                "type": "checkbox",
+                "props": {
+                  "options": [
+                    {"value": "cold", "label": "遇寒加重", "indication": "寒邪"},
+                    {"value": "wind", "label": "刮风加重", "indication": "风邪"},
+                    {"value": "rain", "label": "阴雨天加重", "indication": "湿邪"},
+                    {"value": "heat", "label": "遇热加重", "indication": "热邪"},
+                    {"value": "night", "label": "夜间加重", "indication": "血瘀/阴虚"},
+                    {"value": "morning", "label": "晨起加重", "indication": "湿邪/血瘀"}
+                  ]
+                }
+              },
+              {
+                "key": "relievingFactors",
+                "label": "缓解因素",
+                "type": "preference_pair",
+                "props": {
+                  "pairs": [
+                    ["温敷后减轻", "冷敷后减轻"],
+                    ["活动后减轻", "休息后减轻"],
+                    ["按压后减轻", "按压后加重"]
+                  ]
+                }
+              }
+            ]
+          },
+          {
+            "title": "关节表现",
+            "fields": [
+              {
+                "key": "jointSigns",
+                "label": "关节局部表现",
+                "type": "checkbox",
+                "props": {
+                  "options": [
+                    {"value": "swelling", "label": "关节肿胀", "indication": "湿热/痰瘀"},
+                    {"value": "redness", "label": "关节红", "indication": "热邪"},
+                    {"value": "hot", "label": "关节发热", "indication": "热邪"},
+                    {"value": "deformity", "label": "关节变形", "indication": "久痹"},
+                    {"value": "limited_motion", "label": "活动受限"},
+                    {"value": "crepitus", "label": "关节弹响"}
+                  ]
+                }
+              },
+              {
+                "key": "morningStiffness",
+                "label": "晨僵",
+                "type": "radio",
+                "props": {
+                  "options": [
+                    {"value": "none", "label": "无晨僵"},
+                    {"value": "less_30min", "label": "晨僵小于30分钟"},
+                    {"value": "30_60min", "label": "晨僵30-60分钟"},
+                    {"value": "more_60min", "label": "晨僵超过1小时", "indication": "类风湿可能"}
+                  ]
+                }
+              }
+            ]
+          },
+          {
+            "title": "伴随症状",
+            "fields": [
+              {
+                "key": "accompaniedSymptoms",
+                "label": "伴随症状",
+                "type": "checkbox",
+                "props": {
+                  "options": [
+                    {"value": "fever", "label": "发热", "indication": "热痹/外感"},
+                    {"value": "chills", "label": "恶寒", "indication": "外感/阳虚"},
+                    {"value": "fatigue", "label": "神疲乏力", "indication": "气虚"},
+                    {"value": "heaviness", "label": "身体困重", "indication": "湿邪"},
+                    {"value": "poor_appetite", "label": "纳差", "indication": "脾虚"},
+                    {"value": "numbness", "label": "肢体麻木", "indication": "血虚/风痰"}
+                  ]
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "tcmDiagnosis": {
+        "possiblePatterns": [
+          {"pattern": "行痹（风邪偏盛）", "keySymptoms": ["游走性疼痛", "恶风", "苔薄白"]},
+          {"pattern": "痛痹（寒邪偏盛）", "keySymptoms": ["剧痛", "固定", "遇寒加重", "得温减", "苔白"]},
+          {"pattern": "着痹（湿邪偏盛）", "keySymptoms": ["重着酸痛", "固定", "阴雨加重", "身困", "苔腻"]},
+          {"pattern": "热痹（热邪偏盛）", "keySymptoms": ["红肿热痛", "发热", "口渴", "苔黄"]},
+          {"pattern": "痰瘀痹阻", "keySymptoms": ["关节肿大", "僵硬", "刺痛", "舌紫暗"]},
+          {"pattern": "肝肾亏虚", "keySymptoms": ["酸痛绵绵", "腰膝酸软", "久痹", "舌淡"]}
+        ]
+      }
+    },
+    {
+      "key": "tcm_diarrhea",
+      "name": "泄泻",
+      "priority": "P1",
+      "tcmCategory": "脾胃病证",
+      "relatedOrgans": ["脾", "胃", "肾", "肝"],
+      "classicTheory": "泄泻之本，无不由于脾胃",
+      "config": {
+        "sections": [
+          {
+            "title": "病程特点",
+            "fields": [
+              {
+                "key": "courseType",
+                "label": "发病特点",
+                "type": "radio",
+                "props": {
+                  "options": [
+                    {"value": "acute", "label": "急性起病（暴泻）", "indication": "多实证"},
+                    {"value": "chronic", "label": "慢性反复（久泻）", "indication": "多虚证"},
+                    {"value": "recurrent", "label": "时发时止", "indication": "本虚标实"}
+                  ]
+                }
+              },
+              {
+                "key": "duration",
+                "label": "本次发病时间",
+                "type": "input_radio",
+                "props": {
+                  "radioOptions": ["小时", "天", "周", "月"]
+                }
+              },
+              {
+                "key": "frequency",
+                "label": "每日大便次数",
+                "type": "number",
+                "props": {
+                  "unit": "次/日",
+                  "min": 1,
+                  "max": 30
+                }
+              }
+            ]
+          },
+          {
+            "title": "大便性状",
+            "description": "大便性状是泄泻辨证的核心依据",
+            "fields": [
+              {
+                "key": "stoolConsistency",
+                "label": "大便质地",
+                "type": "radio",
+                "props": {
+                  "options": [
+                    {"value": "watery", "label": "水样便", "indication": "寒湿、急性"},
+                    {"value": "mushy", "label": "稀糊状", "indication": "脾虚"},
+                    {"value": "loose", "label": "溏薄不成形", "indication": "脾虚湿盛"},
+                    {"value": "with_undigested", "label": "夹有不消化食物", "indication": "脾虚、食积"},
+                    {"value": "mucus", "label": "夹有黏液", "indication": "湿热"},
+                    {"value": "bloody", "label": "便中带血", "indication": "热毒、痔疮"}
+                  ]
+                }
+              },
+              {
+                "key": "stoolColor",
+                "label": "大便颜色",
+                "type": "radio",
+                "props": {
+                  "options": [
+                    {"value": "yellow", "label": "黄色", "indication": "正常或湿热"},
+                    {"value": "brown", "label": "褐色", "indication": "正常"},
+                    {"value": "pale", "label": "色淡如水", "indication": "寒湿"},
+                    {"value": "green", "label": "青绿色", "indication": "肝郁"},
+                    {"value": "dark", "label": "黑色", "indication": "瘀血、上消化道出血"}
+                  ]
+                }
+              },
+              {
+                "key": "stoolOdor",
+                "label": "大便气味",
+                "type": "radio",
+                "props": {
+                  "options": [
+                    {"value": "foul", "label": "臭秽难闻", "indication": "湿热"},
+                    {"value": "sour", "label": "酸腐", "indication": "食积"},
+                    {"value": "fishy", "label": "腥臭", "indication": "寒湿"},
+                    {"value": "mild", "label": "气味不重", "indication": "虚寒"}
+                  ]
+                }
+              }
+            ]
+          },
+          {
+            "title": "排便感觉",
+            "fields": [
+              {
+                "key": "urgency",
+                "label": "排便急迫感",
+                "type": "radio",
+                "props": {
+                  "options": [
+                    {"value": "urgent", "label": "急迫难忍", "indication": "湿热"},
+                    {"value": "normal", "label": "尚可控制"},
+                    {"value": "slow", "label": "便意不强", "indication": "气虚"}
+                  ]
+                }
+              },
+              {
+                "key": "sensation",
+                "label": "排便后感觉",
+                "type": "radio",
+                "props": {
+                  "options": [
+                    {"value": "relieved", "label": "排后舒适", "indication": "实证"},
+                    {"value": "incomplete", "label": "排不尽感", "indication": "湿热、气虚"},
+                    {"value": "fatigue", "label": "排后乏力", "indication": "气虚"},
+                    {"value": "prolapse", "label": "肛门下坠", "indication": "中气下陷"}
+                  ]
+                }
+              },
+              {
+                "key": "abdominalPain",
+                "label": "腹痛与泄泻关系",
+                "type": "radio",
+                "props": {
+                  "options": [
+                    {"value": "pain_before", "label": "腹痛即泻，泻后痛减", "indication": "肝郁脾虚"},
+                    {"value": "pain_with", "label": "腹痛与泄泻同时", "indication": "寒湿"},
+                    {"value": "no_pain", "label": "无明显腹痛", "indication": "脾虚"}
+                  ]
+                }
+              }
+            ]
+          },
+          {
+            "title": "时间规律",
+            "fields": [
+              {
+                "key": "timing",
+                "label": "发作时间",
+                "type": "checkbox",
+                "props": {
+                  "options": [
+                    {"value": "dawn", "label": "黎明即泻（五更泻）", "indication": "肾阳虚"},
+                    {"value": "after_meal", "label": "食后即泻", "indication": "脾虚"},
+                    {"value": "emotional", "label": "情绪紧张时", "indication": "肝郁脾虚"},
+                    {"value": "cold_exposure", "label": "受凉后", "indication": "寒湿"},
+                    {"value": "irregular", "label": "无规律"}
+                  ]
+                }
+              }
+            ]
+          },
+          {
+            "title": "诱因",
+            "fields": [
+              {
+                "key": "triggers",
+                "label": "诱发因素",
+                "type": "checkbox",
+                "props": {
+                  "options": [
+                    {"value": "cold_food", "label": "进食生冷", "indication": "寒湿"},
+                    {"value": "greasy_food", "label": "进食油腻", "indication": "湿热"},
+                    {"value": "unclean_food", "label": "饮食不洁", "indication": "湿热"},
+                    {"value": "cold_weather", "label": "受凉", "indication": "寒湿"},
+                    {"value": "emotion", "label": "情志不遂", "indication": "肝郁"},
+                    {"value": "fatigue", "label": "劳累过度", "indication": "脾虚"},
+                    {"value": "none", "label": "无明显诱因"}
+                  ]
+                }
+              }
+            ]
+          },
+          {
+            "title": "伴随症状",
+            "fields": [
+              {
+                "key": "accompaniedSymptoms",
+                "label": "伴随症状",
+                "type": "checkbox",
+                "props": {
+                  "options": [
+                    {"value": "borborygmus", "label": "肠鸣辘辘", "indication": "寒湿、气滞"},
+                    {"value": "bloating", "label": "腹胀", "indication": "气滞、湿阻"},
+                    {"value": "nausea", "label": "恶心欲吐", "indication": "湿浊"},
+                    {"value": "poor_appetite", "label": "纳差", "indication": "脾虚"},
+                    {"value": "fatigue", "label": "神疲乏力", "indication": "气虚"},
+                    {"value": "cold_limbs", "label": "四肢不温", "indication": "阳虚"},
+                    {"value": "thirst", "label": "口渴", "indication": "热证"},
+                    {"value": "fever", "label": "发热", "indication": "湿热、外感"}
+                  ]
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "tcmDiagnosis": {
+        "possiblePatterns": [
+          {"pattern": "寒湿困脾", "keySymptoms": ["水样便", "色淡", "腥臭", "腹痛", "肠鸣", "苔白腻"]},
+          {"pattern": "湿热蕴脾", "keySymptoms": ["便黄臭秽", "急迫", "肛门灼热", "口渴", "苔黄腻"]},
+          {"pattern": "食滞肠胃", "keySymptoms": ["泻下酸腐", "嗳气", "腹胀", "泻后痛减"]},
+          {"pattern": "肝郁脾虚", "keySymptoms": ["情志诱发", "腹痛即泻", "泻后痛减", "嗳气"]},
+          {"pattern": "脾胃虚弱", "keySymptoms": ["久泻", "便溏", "食后即泻", "纳差", "乏力"]},
+          {"pattern": "肾阳虚衰", "keySymptoms": ["五更泻", "完谷不化", "腰膝酸冷", "畏寒"]}
+        ]
+      }
+    },
+    {
+      "key": "tcm_constipation",
+      "name": "便秘",
+      "priority": "P1",
+      "tcmCategory": "脾胃病证",
+      "relatedOrgans": ["大肠", "脾", "肾", "肺"],
+      "classicTheory": "大肠者，传导之官，变化出焉",
+      "config": {
+        "sections": [
+          {
+            "title": "便秘特点",
+            "fields": [
+              {
+                "key": "frequency",
+                "label": "排便频率",
+                "type": "radio",
+                "props": {
+                  "options": [
+                    {"value": "2_3_days", "label": "2-3天一次"},
+                    {"value": "4_5_days", "label": "4-5天一次"},
+                    {"value": "week_plus", "label": "一周以上"},
+                    {"value": "irregular", "label": "无规律"}
+                  ]
+                }
+              },
+              {
+                "key": "duration",
+                "label": "便秘病程",
+                "type": "input_radio",
+                "props": {
+                  "radioOptions": ["天", "周", "月", "年"]
+                }
+              },
+              {
+                "key": "stoolCharacter",
+                "label": "大便性状",
+                "type": "checkbox",
+                "props": {
+                  "options": [
+                    {"value": "dry_hard", "label": "干燥坚硬", "indication": "热结、阴虚"},
+                    {"value": "pellet", "label": "如羊屎状", "indication": "阴虚、燥结"},
+                    {"value": "not_dry", "label": "并不干燥", "indication": "气虚"},
+                    {"value": "first_hard", "label": "初头硬后溏", "indication": "脾虚"},
+                    {"value": "thin", "label": "大便变细", "indication": "需排除器质性病变"}
+                  ]
+                }
+              }
+            ]
+          },
+          {
+            "title": "排便感觉",
+            "fields": [
+              {
+                "key": "defecationDifficulty",
+                "label": "排便困难表现",
+                "type": "checkbox",
+                "props": {
+                  "options": [
+                    {"value": "no_urge", "label": "无便意", "indication": "气虚、阳虚"},
+                    {"value": "urge_but_difficult", "label": "有便意但排不出", "indication": "气滞"},
+                    {"value": "straining", "label": "努挣难下", "indication": "气虚"},
+                    {"value": "incomplete", "label": "排不尽感", "indication": "气虚、气滞"},
+                    {"value": "painful", "label": "排便疼痛", "indication": "热结、肛裂"}
+                  ]
+                }
+              },
+              {
+                "key": "afterDefecation",
+                "label": "排便后感觉",
+                "type": "radio",
+                "props": {
+                  "options": [
+                    {"value": "exhausted", "label": "排后疲惫出汗", "indication": "气虚"},
+                    {"value": "relieved", "label": "排后舒适"},
+                    {"value": "still_bloated", "label": "仍感腹胀", "indication": "气滞"}
+                  ]
+                }
+              }
+            ]
+          },
+          {
+            "title": "寒热辨证",
+            "fields": [
+              {
+                "key": "coldHeatSymptoms",
+                "label": "寒热表现",
+                "type": "checkbox",
+                "props": {
+                  "options": [
+                    {"value": "thirst", "label": "口干口渴", "indication": "热证、阴虚"},
+                    {"value": "bad_breath", "label": "口臭", "indication": "胃热"},
+                    {"value": "bitter_mouth", "label": "口苦", "indication": "肝胆热"},
+                    {"value": "prefer_cold", "label": "喜冷饮", "indication": "热证"},
+                    {"value": "cold_abdomen", "label": "腹部畏寒", "indication": "寒证"},
+                    {"value": "prefer_warm", "label": "喜温喜按", "indication": "虚寒"},
+                    {"value": "cold_limbs", "label": "四肢不温", "indication": "阳虚"}
+                  ]
+                }
+              }
+            ]
+          },
+          {
+            "title": "伴随症状",
+            "fields": [
+              {
+                "key": "accompaniedSymptoms",
+                "label": "伴随症状",
+                "type": "checkbox",
+                "props": {
+                  "options": [
+                    {"value": "bloating", "label": "腹胀", "indication": "气滞"},
+                    {"value": "belching", "label": "嗳气", "indication": "气滞"},
+                    {"value": "poor_appetite", "label": "纳差", "indication": "脾虚"},
+                    {"value": "fatigue", "label": "神疲乏力", "indication": "气虚"},
+                    {"value": "dizziness", "label": "头晕", "indication": "血虚"},
+                    {"value": "palpitation", "label": "心悸", "indication": "血虚"},
+                    {"value": "insomnia", "label": "失眠", "indication": "血虚、阴虚"},
+                    {"value": "lassitude", "label": "腰膝酸软", "indication": "肾虚"}
+                  ]
+                }
+              }
+            ]
+          },
+          {
+            "title": "生活因素",
+            "fields": [
+              {
+                "key": "lifestyleFactors",
+                "label": "生活习惯",
+                "type": "checkbox",
+                "props": {
+                  "options": ["久坐少动", "饮水不足", "蔬菜水果摄入少", "嗜食辛辣", "排便习惯不规律", "抑制便意", "长期使用泻药"]
+                }
+              },
+              {
+                "key": "emotionalFactors",
+                "label": "情志因素",
+                "type": "checkbox",
+                "props": {
+                  "options": [
+                    {"value": "stress", "label": "精神紧张", "indication": "气滞"},
+                    {"value": "depression", "label": "情绪抑郁", "indication": "肝郁"},
+                    {"value": "anxiety", "label": "焦虑", "indication": "气滞"},
+                    {"value": "none", "label": "情绪平稳"}
+                  ]
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "tcmDiagnosis": {
+        "possiblePatterns": [
+          {"pattern": "热秘（肠胃积热）", "keySymptoms": ["便干坚硬", "口渴", "口臭", "面红", "舌红苔黄"]},
+          {"pattern": "气秘（气机郁滞）", "keySymptoms": ["欲便不出", "腹胀", "嗳气", "情志诱发"]},
+          {"pattern": "冷秘（阴寒积滞）", "keySymptoms": ["便不干硬", "腹冷", "喜温", "四肢不温"]},
+          {"pattern": "气虚秘", "keySymptoms": ["努挣难下", "排后疲惫", "气短", "乏力", "舌淡"]},
+          {"pattern": "血虚秘", "keySymptoms": ["便干", "面色萎黄", "头晕", "心悸", "舌淡"]},
+          {"pattern": "阴虚秘", "keySymptoms": ["便如羊屎", "口干", "潮热", "盗汗", "舌红少苔"]},
+          {"pattern": "阳虚秘", "keySymptoms": ["便不干硬", "腹冷", "腰膝酸冷", "畏寒", "舌淡"]}
+        ]
+      }
+    },
+    {
+      "key": "tcm_low_back_pain",
+      "name": "腰痛",
+      "priority": "P1",
+      "tcmCategory": "痹证/肾系病证",
+      "relatedOrgans": ["肾", "膀胱"],
+      "relatedMeridians": ["足太阳膀胱经", "督脉", "带脉"],
+      "classicTheory": "腰者，肾之府，转摇不能，肾将惫矣",
+      "config": {
+        "sections": [
+          {
+            "title": "疼痛部位",
+            "fields": [
+              {
+                "key": "painLocation",
+                "label": "疼痛部位",
+                "type": "checkbox",
+                "props": {
+                  "options": [
+                    {"value": "central", "label": "腰脊正中", "meridian": "督脉"},
+                    {"value": "bilateral", "label": "两侧腰肌", "meridian": "膀胱经"},
+                    {"value": "sacral", "label": "骶尾部", "meridian": "督脉"},
+                    {"value": "hip", "label": "连及臀部", "indication": "经络不通"},
+                    {"value": "leg", "label": "连及下肢", "indication": "坐骨神经"}
+                  ]
+                }
+              },
+              {
+                "key": "radiating",
+                "label": "放射痛",
+                "type": "checkbox",
+                "props": {
+                  "options": ["放射至臀部", "放射至大腿后侧", "放射至小腿", "放射至足部", "无放射"]
+                }
+              }
+            ]
+          },
+          {
+            "title": "疼痛性质",
+            "fields": [
+              {
+                "key": "painNature",
+                "label": "疼痛感觉",
+                "type": "checkbox",
+                "props": {
+                  "options": [
+                    {"value": "soreness", "label": "酸痛绵绵", "indication": "肾虚"},
+                    {"value": "weakness", "label": "酸软无力", "indication": "肾虚"},
+                    {"value": "cold", "label": "冷痛", "indication": "寒湿"},
+                    {"value": "heavy", "label": "重着如坠", "indication": "湿邪"},
+                    {"value": "stabbing", "label": "刺痛固定", "indication": "瘀血"},
+                    {"value": "burning", "label": "灼热疼痛", "indication": "湿热"},
+                    {"value": "stiff", "label": "僵硬不舒", "indication": "气滞血瘀"}
+                  ]
+                }
+              },
+              {
+                "key": "painDegree",
+                "label": "疼痛程度",
+                "type": "degree_slider",
+                "props": {
+                  "min": 1,
+                  "max": 10,
+                  "labels": ["轻微", "中等", "剧烈"]
+                }
+              }
+            ]
+          },
+          {
+            "title": "诱发与缓解",
+            "fields": [
+              {
+                "key": "triggers",
+                "label": "加重因素",
+                "type": "checkbox",
+                "props": {
+                  "options": [
+                    {"value": "fatigue", "label": "劳累后加重", "indication": "肾虚"},
+                    {"value": "cold", "label": "受凉后加重", "indication": "寒湿"},
+                    {"value": "rainy", "label": "阴雨天加重", "indication": "湿邪"},
+                    {"value": "sitting", "label": "久坐加重", "indication": "气滞血瘀"},
+                    {"value": "standing", "label": "久站加重", "indication": "肾虚"},
+                    {"value": "bending", "label": "弯腰加重", "indication": "椎间盘"},
+                    {"value": "morning", "label": "晨起加重", "indication": "寒湿、气滞"}
+                  ]
+                }
+              },
+              {
+                "key": "relief",
+                "label": "缓解因素",
+                "type": "preference_pair",
+                "props": {
+                  "pairs": [
+                    ["按揉后减轻", "按压后加重"],
+                    ["温敷后减轻", "冷敷后减轻"],
+                    ["休息后减轻", "活动后减轻"],
+                    ["平卧后减轻", "平卧后加重"]
+                  ]
+                }
+              }
+            ]
+          },
+          {
+            "title": "伴随症状",
+            "fields": [
+              {
+                "key": "accompaniedSymptoms",
+                "label": "伴随症状",
+                "type": "checkbox",
+                "props": {
+                  "options": [
+                    {"value": "knee_weakness", "label": "膝软无力", "indication": "肾虚"},
+                    {"value": "tinnitus", "label": "耳鸣", "indication": "肾虚"},
+                    {"value": "frequent_urination", "label": "小便频数", "indication": "肾阳虚"},
+                    {"value": "nocturia", "label": "夜尿多", "indication": "肾阳虚"},
+                    {"value": "sexual_dysfunction", "label": "性功能减退", "indication": "肾虚"},
+                    {"value": "cold_limbs", "label": "畏寒肢冷", "indication": "阳虚"},
+                    {"value": "numbness", "label": "下肢麻木", "indication": "血瘀、经络不通"},
+                    {"value": "fatigue", "label": "神疲乏力", "indication": "肾气虚"}
+                  ]
+                }
+              }
+            ]
+          },
+          {
+            "title": "病史与生活",
+            "fields": [
+              {
+                "key": "history",
+                "label": "既往病史",
+                "type": "checkbox",
+                "props": {
+                  "options": ["腰椎间盘突出", "腰椎骨质增生", "腰肌劳损", "强直性脊柱炎", "骨质疏松", "肾脏疾病", "无明确诊断"]
+                }
+              },
+              {
+                "key": "occupation",
+                "label": "职业特点",
+                "type": "checkbox",
+                "props": {
+                  "options": ["长期久坐", "长期久站", "重体力劳动", "弯腰作业", "驾驶员", "无特殊"]
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "tcmDiagnosis": {
+        "possiblePatterns": [
+          {"pattern": "肾阳虚", "keySymptoms": ["酸软无力", "喜按喜揉", "畏寒肢冷", "夜尿多", "舌淡"]},
+          {"pattern": "肾阴虚", "keySymptoms": ["酸痛", "五心烦热", "盗汗", "舌红少苔"]},
+          {"pattern": "寒湿腰痛", "keySymptoms": ["冷痛重着", "阴雨加重", "得温则减", "苔白腻"]},
+          {"pattern": "湿热腰痛", "keySymptoms": ["重着热痛", "活动不利", "口苦", "苔黄腻"]},
+          {"pattern": "瘀血腰痛", "keySymptoms": ["刺痛固定", "拒按", "夜间加重", "舌紫暗"]},
+          {"pattern": "肾虚血瘀", "keySymptoms": ["久痛不愈", "酸痛刺痛并见", "麻木", "舌暗"]}
+        ]
+      }
+    },
+    {
+      "key": "tcm_menstrual_disorder",
+      "name": "月经不调",
+      "priority": "P1",
+      "tcmCategory": "妇科病证",
+      "relatedOrgans": ["肝", "脾", "肾"],
+      "relatedMeridians": ["冲脉", "任脉"],
+      "applicableGender": "female",
+      "classicTheory": "女子以血为本，以肝为先天",
+      "config": {
+        "sections": [
+          {
+            "title": "月经周期",
+            "fields": [
+              {
+                "key": "cyclePattern",
+                "label": "周期情况",
+                "type": "radio",
+                "props": {
+                  "options": [
+                    {"value": "early", "label": "月经先期（提前7天以上）", "indication": "血热、气虚"},
+                    {"value": "late", "label": "月经后期（推迟7天以上）", "indication": "血虚、寒凝、气滞"},
+                    {"value": "irregular", "label": "先后不定期", "indication": "肝郁、肾虚"},
+                    {"value": "normal", "label": "周期正常（28±7天）"}
+                  ]
+                }
+              },
+              {
+                "key": "cycleDays",
+                "label": "平均周期天数",
+                "type": "number",
+                "props": {
+                  "unit": "天",
+                  "min": 15,
+                  "max": 60
+                }
+              },
+              {
+                "key": "menstruationDays",
+                "label": "行经天数",
+                "type": "number",
+                "props": {
+                  "unit": "天",
+                  "min": 1,
+                  "max": 15
+                }
+              }
+            ]
+          },
+          {
+            "title": "月经量",
+            "fields": [
+              {
+                "key": "amount",
+                "label": "经量",
+                "type": "radio",
+                "props": {
+                  "options": [
+                    {"value": "excessive", "label": "量多（每次用卫生巾超过20片）", "indication": "血热、气虚、血瘀"},
+                    {"value": "scanty", "label": "量少（每次用卫生巾少于5片）", "indication": "血虚、肾虚、血瘀、痰湿"},
+                    {"value": "normal", "label": "量正常（约10-15片）"}
+                  ]
+                }
+              },
+              {
+                "key": "amountChange",
+                "label": "经量变化",
+                "type": "radio",
+                "props": {
+                  "options": ["一直较多", "一直较少", "近期变多", "近期变少", "时多时少"]
+                }
+              }
+            ]
+          },
+          {
+            "title": "经色经质",
+            "fields": [
+              {
+                "key": "color",
+                "label": "经血颜色",
+                "type": "radio",
+                "props": {
+                  "options": [
+                    {"value": "pale_red", "label": "淡红", "indication": "血虚、气虚"},
+                    {"value": "normal_red", "label": "正红", "indication": "正常"},
+                    {"value": "dark_red", "label": "深红", "indication": "血热"},
+                    {"value": "purple_dark", "label": "紫暗", "indication": "血瘀"},
+                    {"value": "dark_black", "label": "黑色", "indication": "寒凝血瘀"}
+                  ]
+                }
+              },
+              {
+                "key": "texture",
+                "label": "经血质地",
+                "type": "radio",
+                "props": {
+                  "options": [
+                    {"value": "thin", "label": "质稀如水", "indication": "虚寒"},
+                    {"value": "normal", "label": "不稀不稠"},
+                    {"value": "thick", "label": "质稠黏", "indication": "血热、痰湿"},
+                    {"value": "clots", "label": "有血块", "indication": "血瘀"}
+                  ]
+                }
+              },
+              {
+                "key": "clotSize",
+                "label": "血块大小",
+                "type": "radio",
+                "props": {
+                  "options": [
+                    "无血块",
+                    {"value": "small", "label": "小血块（黄豆大小）"},
+                    {"value": "medium", "label": "中等血块"},
+                    {"value": "large", "label": "大血块（蚕豆以上）", "indication": "血瘀重"}
+                  ]
+                },
+                "showWhen": {"texture": "clots"}
+              }
+            ]
+          },
+          {
+            "title": "伴随症状",
+            "fields": [
+              {
+                "key": "dysmenorrhea",
+                "label": "痛经情况",
+                "type": "radio",
+                "props": {
+                  "options": [
+                    {"value": "none", "label": "无痛经"},
+                    {"value": "before", "label": "经前痛", "indication": "气滞血瘀"},
+                    {"value": "during", "label": "经期痛", "indication": "寒凝、血瘀"},
+                    {"value": "after", "label": "经后痛", "indication": "气血虚"}
+                  ]
+                }
+              },
+              {
+                "key": "painNature",
+                "label": "痛经性质",
+                "type": "checkbox",
+                "props": {
+                  "options": [
+                    {"value": "cold_pain", "label": "冷痛，得温则减", "indication": "寒凝"},
+                    {"value": "distending", "label": "胀痛", "indication": "气滞"},
+                    {"value": "stabbing", "label": "刺痛", "indication": "血瘀"},
+                    {"value": "dull", "label": "隐痛绵绵", "indication": "虚证"},
+                    {"value": "bearing_down", "label": "坠痛", "indication": "气虚"}
+                  ]
+                },
+                "showWhen": {"dysmenorrhea": ["before", "during", "after"]}
+              },
+              {
+                "key": "breastSymptoms",
+                "label": "乳房症状",
+                "type": "checkbox",
+                "props": {
+                  "options": [
+                    {"value": "distension", "label": "经前乳胀", "indication": "肝郁"},
+                    {"value": "pain", "label": "乳房疼痛", "indication": "肝郁气滞"},
+                    {"value": "lumps", "label": "乳房结块", "indication": "痰瘀互结"},
+                    {"value": "none", "label": "无不适"}
+                  ]
+                }
+              },
+              {
+                "key": "otherSymptoms",
+                "label": "其他症状",
+                "type": "checkbox",
+                "props": {
+                  "options": [
+                    {"value": "irritability", "label": "经前烦躁", "indication": "肝郁化火"},
+                    {"value": "depression", "label": "情绪低落", "indication": "肝郁"},
+                    {"value": "edema", "label": "经前水肿", "indication": "脾虚"},
+                    {"value": "acne", "label": "经前长痘", "indication": "湿热"},
+                    {"value": "fatigue", "label": "经期乏力", "indication": "气虚"},
+                    {"value": "dizziness", "label": "头晕", "indication": "血虚"},
+                    {"value": "lassitude", "label": "腰膝酸软", "indication": "肾虚"}
+                  ]
+                }
+              }
+            ]
+          },
+          {
+            "title": "带下情况",
+            "fields": [
+              {
+                "key": "leukorrhea",
+                "label": "白带情况",
+                "type": "radio",
+                "props": {
+                  "options": [
+                    {"value": "normal", "label": "正常"},
+                    {"value": "excessive", "label": "量多", "indication": "脾虚湿盛"},
+                    {"value": "yellow", "label": "色黄", "indication": "湿热"},
+                    {"value": "odorous", "label": "有异味", "indication": "湿热下注"}
+                  ]
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "tcmDiagnosis": {
+        "possiblePatterns": [
+          {"pattern": "气滞血瘀", "keySymptoms": ["经行不畅", "血块", "刺痛胀痛", "乳胀", "舌紫暗"]},
+          {"pattern": "寒凝血瘀", "keySymptoms": ["经期延后", "色黑有块", "冷痛", "得温减", "舌暗"]},
+          {"pattern": "气血两虚", "keySymptoms": ["量少色淡", "质稀", "经后腹痛", "乏力", "舌淡"]},
+          {"pattern": "肝郁气滞", "keySymptoms": ["先后不定", "经前乳胀", "烦躁", "胸闷"]},
+          {"pattern": "肾虚", "keySymptoms": ["周期紊乱", "量少", "腰酸", "耳鸣", "舌淡"]},
+          {"pattern": "血热", "keySymptoms": ["月经先期", "量多色红", "质稠", "烦热", "舌红"]},
+          {"pattern": "痰湿阻滞", "keySymptoms": ["量少", "色淡", "形体肥胖", "带下量多", "苔腻"]}
+        ]
+      }
+    },
+    {
+      "key": "tcm_fatigue",
+      "name": "乏力倦怠",
+      "priority": "P1",
+      "tcmCategory": "虚劳",
+      "relatedOrgans": ["脾", "肾", "心", "肺"],
+      "classicTheory": "脾主四肢肌肉，脾气虚则四肢不用",
+      "config": {
+        "sections": [
+          {
+            "title": "乏力特点",
+            "fields": [
+              {
+                "key": "fatigueType",
+                "label": "乏力表现",
+                "type": "checkbox",
+                "props": {
+                  "options": [
+                    {"value": "general", "label": "全身乏力", "indication": "气虚"},
+                    {"value": "limb_weakness", "label": "四肢无力", "indication": "脾气虚"},
+                    {"value": "heavy", "label": "身体沉重", "indication": "湿邪"},
+                    {"value": "drowsy", "label": "困倦嗜睡", "indication": "痰湿、阳虚"},
+                    {"value": "mental_fatigue", "label": "精神萎靡", "indication": "阳虚、气虚"},
+                    {"value": "lack_motivation", "label": "懒言少动", "indication": "气虚"}
+                  ]
+                }
+              },
+              {
+                "key": "fatigueDegree",
+                "label": "乏力程度",
+                "type": "degree_slider",
+                "props": {
+                  "min": 1,
+                  "max": 10,
+                  "labels": ["轻微", "影响工作", "难以活动"]
+                }
+              },
+              {
+                "key": "duration",
+                "label": "持续时间",
+                "type": "input_radio",
+                "props": {
+                  "radioOptions": ["天", "周", "月", "年"]
+                }
+              }
+            ]
+          },
+          {
+            "title": "时间规律",
+            "fields": [
+              {
+                "key": "timing",
+                "label": "乏力加重时间",
+                "type": "checkbox",
+                "props": {
+                  "options": [
+                    {"value": "morning", "label": "晨起时", "indication": "阳虚"},
+                    {"value": "afternoon", "label": "午后", "indication": "阴虚、气虚"},
+                    {"value": "after_meal", "label": "饭后", "indication": "脾虚"},
+                    {"value": "after_activity", "label": "活动后", "indication": "气虚"},
+                    {"value": "all_day", "label": "整日皆倦", "indication": "虚损较重"}
+                  ]
+                }
+              },
+              {
+                "key": "restEffect",
+                "label": "休息后变化",
+                "type": "radio",
+                "props": {
+                  "options": [
+                    {"value": "relieved", "label": "休息后明显减轻", "indication": "气虚"},
+                    {"value": "slight_relief", "label": "休息后稍有缓解"},
+                    {"value": "no_relief", "label": "休息后仍不缓解", "indication": "血虚、阴虚"}
+                  ]
+                }
+              }
+            ]
+          },
+          {
+            "title": "伴随症状",
+            "fields": [
+              {
+                "key": "accompaniedSymptoms",
+                "label": "伴随症状",
+                "type": "checkbox",
+                "props": {
+                  "options": [
+                    {"value": "shortness_breath", "label": "气短懒言", "indication": "肺气虚"},
+                    {"value": "spontaneous_sweat", "label": "自汗", "indication": "气虚"},
+                    {"value": "poor_appetite", "label": "纳差", "indication": "脾虚"},
+                    {"value": "loose_stool", "label": "便溏", "indication": "脾虚"},
+                    {"value": "palpitation", "label": "心悸", "indication": "心气虚"},
+                    {"value": "dizziness", "label": "头晕", "indication": "血虚、气虚"},
+                    {"value": "pale_face", "label": "面色淡白", "indication": "气血虚"},
+                    {"value": "cold_limbs", "label": "畏寒肢冷", "indication": "阳虚"},
+                    {"value": "lassitude", "label": "腰膝酸软", "indication": "肾虚"},
+                    {"value": "dry_mouth", "label": "口干", "indication": "阴虚"},
+                    {"value": "insomnia", "label": "失眠", "indication": "心血虚、阴虚"}
+                  ]
+                }
+              }
+            ]
+          },
+          {
+            "title": "饮食睡眠",
+            "fields": [
+              {
+                "key": "appetite",
+                "label": "食欲",
+                "type": "radio",
+                "props": {
+                  "options": [
+                    {"value": "normal", "label": "正常"},
+                    {"value": "poor", "label": "食欲不振", "indication": "脾虚"},
+                    {"value": "increased", "label": "多食易饥", "indication": "胃热、阴虚"}
+                  ]
+                }
+              },
+              {
+                "key": "sleep",
+                "label": "睡眠",
+                "type": "radio",
+                "props": {
+                  "options": [
+                    {"value": "normal", "label": "睡眠正常"},
+                    {"value": "insomnia", "label": "失眠", "indication": "心血虚"},
+                    {"value": "excessive", "label": "嗜睡", "indication": "痰湿、阳虚"},
+                    {"value": "unrefreshing", "label": "睡后不解乏", "indication": "气虚"}
+                  ]
+                }
+              }
+            ]
+          },
+          {
+            "title": "病因探查",
+            "fields": [
+              {
+                "key": "possibleCauses",
+                "label": "可能原因",
+                "type": "checkbox",
+                "props": {
+                  "options": ["久病体虚", "大病初愈", "过度劳累", "思虑过度", "饮食不节", "房劳过度", "产后失调", "年老体衰", "原因不明"]
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "tcmDiagnosis": {
+        "possiblePatterns": [
+          {"pattern": "脾气虚", "keySymptoms": ["四肢乏力", "纳差", "便溏", "腹胀", "舌淡苔白"]},
+          {"pattern": "肺气虚", "keySymptoms": ["乏力", "气短", "自汗", "易感冒", "声低"]},
+          {"pattern": "心气虚", "keySymptoms": ["乏力", "心悸", "气短", "自汗", "舌淡"]},
+          {"pattern": "肾气虚", "keySymptoms": ["腰膝酸软", "乏力", "耳鸣", "尿频", "舌淡"]},
+          {"pattern": "气血两虚", "keySymptoms": ["乏力", "面色萎黄", "头晕", "心悸", "舌淡"]},
+          {"pattern": "脾肾阳虚", "keySymptoms": ["乏力", "畏寒肢冷", "便溏", "腰冷", "舌淡胖"]},
+          {"pattern": "阴虚", "keySymptoms": ["午后乏力", "潮热", "盗汗", "口干", "舌红少苔"]},
+          {"pattern": "痰湿困脾", "keySymptoms": ["身重困倦", "嗜睡", "胸闷", "纳呆", "苔腻"]}
+        ]
+      }
+    },
+    {
+      "key": "tcm_sweating",
+      "name": "自汗盗汗",
+      "priority": "P1",
+      "tcmCategory": "汗证",
+      "relatedOrgans": ["肺", "心", "肾"],
+      "classicTheory": "阳加于阴谓之汗；汗为心之液",
+      "config": {
+        "sections": [
+          {
+            "title": "汗出类型",
+            "fields": [
+              {
+                "key": "sweatingType",
+                "label": "出汗时间",
+                "type": "checkbox",
+                "props": {
+                  "options": [
+                    {"value": "spontaneous", "label": "白天出汗（自汗）", "indication": "气虚、阳虚"},
+                    {"value": "night", "label": "睡中出汗（盗汗）", "indication": "阴虚"},
+                    {"value": "both", "label": "昼夜都出汗", "indication": "气阴两虚"}
+                  ]
+                }
+              },
+              {
+                "key": "trigger",
+                "label": "诱发因素",
+                "type": "checkbox",
+                "props": {
+                  "options": [
+                    {"value": "activity", "label": "活动后加重", "indication": "气虚"},
+                    {"value": "eating", "label": "进食后加重", "indication": "脾胃湿热"},
+                    {"value": "emotion", "label": "紧张时加重", "indication": "心气虚"},
+                    {"value": "no_trigger", "label": "无明显诱因", "indication": "阴虚"}
+                  ]
+                }
+              }
+            ]
+          },
+          {
+            "title": "汗出特点",
+            "fields": [
+              {
+                "key": "sweatingAmount",
+                "label": "出汗量",
+                "type": "radio",
+                "props": {
+                  "options": [
+                    {"value": "slight", "label": "微微汗出"},
+                    {"value": "moderate", "label": "中等量汗"},
+                    {"value": "profuse", "label": "大汗淋漓", "indication": "虚脱、阳虚重"}
+                  ]
+                }
+              },
+              {
+                "key": "sweatingLocation",
+                "label": "出汗部位",
+                "type": "checkbox",
+                "props": {
+                  "options": [
+                    {"value": "whole_body", "label": "全身汗出"},
+                    {"value": "head_face", "label": "头面部", "indication": "上焦热、气虚"},
+                    {"value": "hands_feet", "label": "手足心", "indication": "阴虚"},
+                    {"value": "chest_back", "label": "胸背部"},
+                    {"value": "half_body", "label": "半身汗出", "indication": "经络不通"},
+                    {"value": "armpits", "label": "腋下"}
+                  ]
+                }
+              },
+              {
+                "key": "sweatingQuality",
+                "label": "汗液性质",
+                "type": "checkbox",
+                "props": {
+                  "options": [
+                    {"value": "cold", "label": "汗出清冷", "indication": "阳虚"},
+                    {"value": "warm", "label": "汗出温热", "indication": "热证"},
+                    {"value": "sticky", "label": "汗出黏腻", "indication": "湿热"},
+                    {"value": "odorous", "label": "汗味腥臊", "indication": "湿热"},
+                    {"value": "normal", "label": "汗液正常"}
+                  ]
+                }
+              }
+            ]
+          },
+          {
+            "title": "伴随症状",
+            "fields": [
+              {
+                "key": "accompaniedSymptoms",
+                "label": "伴随症状",
+                "type": "checkbox",
+                "props": {
+                  "options": [
+                    {"value": "fatigue", "label": "神疲乏力", "indication": "气虚"},
+                    {"value": "shortness_breath", "label": "气短懒言", "indication": "肺气虚"},
+                    {"value": "palpitation", "label": "心悸", "indication": "心气虚"},
+                    {"value": "pale_face", "label": "面色苍白", "indication": "气虚"},
+                    {"value": "cold_limbs", "label": "畏寒肢冷", "indication": "阳虚"},
+                    {"value": "hot_flashes", "label": "潮热", "indication": "阴虚"},
+                    {"value": "flushed_cheeks", "label": "颧红", "indication": "阴虚"},
+                    {"value": "dry_mouth", "label": "口干", "indication": "阴虚"},
+                    {"value": "insomnia", "label": "失眠", "indication": "阴虚、心血虚"},
+                    {"value": "irritability", "label": "心烦", "indication": "阴虚火旺"}
+                  ]
+                }
+              }
+            ]
+          },
+          {
+            "title": "寒热辨证",
+            "fields": [
+              {
+                "key": "coldHeat",
+                "label": "寒热感觉",
+                "type": "radio",
+                "props": {
+                  "options": [
+                    {"value": "cold", "label": "平素怕冷", "indication": "阳虚"},
+                    {"value": "heat", "label": "平素怕热", "indication": "阴虚"},
+                    {"value": "alternating", "label": "时冷时热", "indication": "阴阳两虚"},
+                    {"value": "normal", "label": "寒热正常"}
+                  ]
+                }
+              }
+            ]
+          },
+          {
+            "title": "病史",
+            "fields": [
+              {
+                "key": "history",
+                "label": "既往情况",
+                "type": "checkbox",
+                "props": {
+                  "options": ["久病体虚", "大病初愈", "产后", "更年期", "甲状腺疾病", "结核病史", "糖尿病", "无特殊"]
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "tcmDiagnosis": {
+        "possiblePatterns": [
+          {"pattern": "肺卫不固", "keySymptoms": ["自汗", "动则汗出", "易感冒", "气短", "舌淡"]},
+          {"pattern": "心血不足", "keySymptoms": ["自汗", "心悸", "失眠", "面色不华", "舌淡"]},
+          {"pattern": "阴虚火旺", "keySymptoms": ["盗汗", "潮热", "颧红", "五心烦热", "舌红少苔"]},
+          {"pattern": "气阴两虚", "keySymptoms": ["自汗盗汗并见", "乏力", "口干", "舌红少苔"]},
+          {"pattern": "脾胃湿热", "keySymptoms": ["汗出黏腻", "头面多汗", "口苦", "苔黄腻"]},
+          {"pattern": "阳虚", "keySymptoms": ["冷汗", "畏寒", "四肢不温", "舌淡胖"]}
+        ]
+      }
+    },
+    {
+      "key": "tcm_tinnitus",
+      "name": "耳鸣",
+      "priority": "P2",
+      "tcmCategory": "耳科病证",
+      "relatedOrgans": ["肾", "肝", "胆", "脾"],
+      "classicTheory": "肾开窍于耳；肝胆之火循经上扰则耳鸣",
+      "config": {
+        "sections": [
+          {
+            "title": "耳鸣特点",
+            "fields": [
+              {
+                "key": "tinnitusSound",
+                "label": "耳鸣声音",
+                "type": "radio",
+                "props": {
+                  "options": [
+                    {"value": "high_pitched", "label": "高调蝉鸣声", "indication": "肾阴虚"},
+                    {"value": "low_pitched", "label": "低调轰鸣声", "indication": "肾阳虚/痰湿"},
+                    {"value": "wind", "label": "如风声呼呼", "indication": "风邪"},
+                    {"value": "thunder", "label": "如雷声隆隆", "indication": "肝火"},
+                    {"value": "pulsatile", "label": "搏动性（与心跳同步）", "indication": "血瘀/血管性"}
+                  ]
+                }
+              },
+              {
+                "key": "tinnitusVolume",
+                "label": "耳鸣响度",
+                "type": "degree_slider",
+                "props": {
+                  "min": 1,
+                  "max": 10,
+                  "labels": ["轻微", "中等", "响亮难忍"]
+                }
+              },
+              {
+                "key": "tinnitusSide",
+                "label": "耳鸣侧别",
+                "type": "radio",
+                "props": {
+                  "options": [
+                    {"value": "left", "label": "左耳"},
+                    {"value": "right", "label": "右耳"},
+                    {"value": "bilateral", "label": "双耳"},
+                    {"value": "alternating", "label": "左右交替"}
+                  ]
+                }
+              }
+            ]
+          },
+          {
+            "title": "发作规律",
+            "fields": [
+              {
+                "key": "onsetType",
+                "label": "起病方式",
+                "type": "radio",
+                "props": {
+                  "options": [
+                    {"value": "sudden", "label": "突然发生", "indication": "实证/外感"},
+                    {"value": "gradual", "label": "逐渐加重", "indication": "虚证"}
+                  ]
+                }
+              },
+              {
+                "key": "duration",
+                "label": "病程",
+                "type": "input_radio",
+                "props": {
+                  "radioOptions": ["天", "周", "月", "年"]
+                }
+              },
+              {
+                "key": "timing",
+                "label": "发作时间",
+                "type": "checkbox",
+                "props": {
+                  "options": [
+                    {"value": "continuous", "label": "持续存在"},
+                    {"value": "night", "label": "夜间加重", "indication": "阴虚"},
+                    {"value": "fatigue", "label": "劳累后加重", "indication": "气虚/肾虚"},
+                    {"value": "emotion", "label": "情绪激动后加重", "indication": "肝火"},
+                    {"value": "intermittent", "label": "时有时无"}
+                  ]
+                }
+              }
+            ]
+          },
+          {
+            "title": "伴随症状",
+            "fields": [
+              {
+                "key": "hearingLoss",
+                "label": "听力情况",
+                "type": "radio",
+                "props": {
+                  "options": [
+                    {"value": "normal", "label": "听力正常"},
+                    {"value": "mild_loss", "label": "轻度下降"},
+                    {"value": "moderate_loss", "label": "中度下降"},
+                    {"value": "severe_loss", "label": "重度下降/耳聋"}
+                  ]
+                }
+              },
+              {
+                "key": "accompaniedSymptoms",
+                "label": "伴随症状",
+                "type": "checkbox",
+                "props": {
+                  "options": [
+                    {"value": "dizziness", "label": "头晕", "indication": "肝肾"},
+                    {"value": "vertigo", "label": "眩晕", "indication": "肝阳/痰饮"},
+                    {"value": "headache", "label": "头痛", "indication": "肝火"},
+                    {"value": "insomnia", "label": "失眠", "indication": "心肾不交"},
+                    {"value": "lassitude", "label": "腰膝酸软", "indication": "肾虚"},
+                    {"value": "irritability", "label": "烦躁易怒", "indication": "肝火"},
+                    {"value": "dry_mouth", "label": "口干", "indication": "阴虚"},
+                    {"value": "bitter_mouth", "label": "口苦", "indication": "肝胆火"},
+                    {"value": "ear_fullness", "label": "耳胀闷感", "indication": "痰湿/气滞"}
+                  ]
+                }
+              }
+            ]
+          },
+          {
+            "title": "缓解因素",
+            "fields": [
+              {
+                "key": "relief",
+                "label": "缓解因素",
+                "type": "checkbox",
+                "props": {
+                  "options": [
+                    {"value": "press", "label": "按压耳部减轻", "indication": "虚证"},
+                    {"value": "rest", "label": "休息后减轻", "indication": "虚证"},
+                    {"value": "none", "label": "无法缓解"}
+                  ]
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "tcmDiagnosis": {
+        "possiblePatterns": [
+          {"pattern": "肾精亏虚", "keySymptoms": ["高调蝉鸣", "渐进加重", "腰膝酸软", "头晕", "舌淡"]},
+          {"pattern": "肾阴虚", "keySymptoms": ["高调耳鸣", "夜间重", "五心烦热", "盗汗", "舌红少苔"]},
+          {"pattern": "肾阳虚", "keySymptoms": ["低调耳鸣", "畏寒肢冷", "腰冷", "夜尿多", "舌淡胖"]},
+          {"pattern": "肝火上炎", "keySymptoms": ["耳鸣如雷", "突发", "头痛", "口苦", "烦躁", "舌红苔黄"]},
+          {"pattern": "痰火郁结", "keySymptoms": ["耳鸣", "耳闷", "头重", "胸闷", "苔黄腻"]},
+          {"pattern": "气血亏虚", "keySymptoms": ["耳鸣", "劳累加重", "乏力", "面色萎黄", "舌淡"]}
+        ]
+      }
+    },
+    {
+      "key": "tcm_eye_symptoms",
+      "name": "目赤目涩",
+      "priority": "P2",
+      "tcmCategory": "眼科病证",
+      "relatedOrgans": ["肝", "肾", "心", "肺"],
+      "classicTheory": "肝开窍于目；五脏六腑之精气皆上注于目",
+      "config": {
+        "sections": [
+          {
+            "title": "主要症状",
+            "fields": [
+              {
+                "key": "mainSymptoms",
+                "label": "眼部症状",
+                "type": "checkbox",
+                "props": {
+                  "options": [
+                    {"value": "redness", "label": "目赤（眼红）", "indication": "肝火/风热"},
+                    {"value": "dryness", "label": "目涩（干涩）", "indication": "阴虚/血虚"},
+                    {"value": "itching", "label": "目痒", "indication": "风邪"},
+                    {"value": "pain", "label": "目痛", "indication": "肝火/血瘀"},
+                    {"value": "tearing", "label": "流泪", "indication": "肝血虚/风寒"},
+                    {"value": "photophobia", "label": "畏光", "indication": "肝火"},
+                    {"value": "discharge", "label": "眼屎多", "indication": "风热/湿热"},
+                    {"value": "blurred_vision", "label": "视物模糊", "indication": "肝肾亏虚"}
+                  ]
+                }
+              },
+              {
+                "key": "affectedEye",
+                "label": "发病眼别",
+                "type": "radio",
+                "props": {
+                  "options": [
+                    {"value": "left", "label": "左眼"},
+                    {"value": "right", "label": "右眼"},
+                    {"value": "bilateral", "label": "双眼"}
+                  ]
+                }
+              }
+            ]
+          },
+          {
+            "title": "发作规律",
+            "fields": [
+              {
+                "key": "timing",
+                "label": "症状加重时间",
+                "type": "checkbox",
+                "props": {
+                  "options": [
+                    {"value": "morning", "label": "晨起时", "indication": "阴虚"},
+                    {"value": "evening", "label": "傍晚时", "indication": "肝血虚"},
+                    {"value": "after_use", "label": "用眼后", "indication": "肝血不足"},
+                    {"value": "night", "label": "夜间", "indication": "阴虚"},
+                    {"value": "anytime", "label": "无规律"}
+                  ]
+                }
+              },
+              {
+                "key": "triggers",
+                "label": "诱发因素",
+                "type": "checkbox",
+                "props": {
+                  "options": [
+                    {"value": "screen", "label": "长时间看电子屏幕"},
+                    {"value": "reading", "label": "阅读"},
+                    {"value": "wind", "label": "吹风后", "indication": "风邪"},
+                    {"value": "emotion", "label": "情绪激动后", "indication": "肝火"},
+                    {"value": "insomnia", "label": "熬夜后", "indication": "阴血虚"},
+                    {"value": "none", "label": "无明显诱因"}
+                  ]
+                }
+              }
+            ]
+          },
+          {
+            "title": "伴随症状",
+            "fields": [
+              {
+                "key": "accompaniedSymptoms",
+                "label": "伴随症状",
+                "type": "checkbox",
+                "props": {
+                  "options": [
+                    {"value": "headache", "label": "头痛", "indication": "肝火"},
+                    {"value": "dizziness", "label": "头晕", "indication": "肝肾虚"},
+                    {"value": "irritability", "label": "烦躁易怒", "indication": "肝火"},
+                    {"value": "dry_mouth", "label": "口干", "indication": "阴虚"},
+                    {"value": "bitter_mouth", "label": "口苦", "indication": "肝火"},
+                    {"value": "insomnia", "label": "失眠", "indication": "心肝火旺"},
+                    {"value": "tinnitus", "label": "耳鸣", "indication": "肝肾虚"},
+                    {"value": "flank_pain", "label": "胁肋胀痛", "indication": "肝气郁结"}
+                  ]
+                }
+              }
+            ]
+          },
+          {
+            "title": "生活习惯",
+            "fields": [
+              {
+                "key": "screenTime",
+                "label": "每日屏幕使用时间",
+                "type": "radio",
+                "props": {
+                  "options": [
+                    {"value": "less_4h", "label": "少于4小时"},
+                    {"value": "4_8h", "label": "4-8小时"},
+                    {"value": "more_8h", "label": "超过8小时"}
+                  ]
+                }
+              },
+              {
+                "key": "sleepTime",
+                "label": "平均睡眠时间",
+                "type": "radio",
+                "props": {
+                  "options": [
+                    {"value": "less_6h", "label": "少于6小时", "indication": "阴血暗耗"},
+                    {"value": "6_8h", "label": "6-8小时"},
+                    {"value": "more_8h", "label": "超过8小时"}
+                  ]
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "tcmDiagnosis": {
+        "possiblePatterns": [
+          {"pattern": "肝火上炎", "keySymptoms": ["目赤", "目痛", "头痛", "口苦", "烦躁", "舌红苔黄"]},
+          {"pattern": "风热上扰", "keySymptoms": ["目赤", "目痒", "流泪", "眼屎多", "恶风"]},
+          {"pattern": "肝肾阴虚", "keySymptoms": ["目涩", "视物模糊", "头晕", "耳鸣", "腰膝酸软", "舌红少苔"]},
+          {"pattern": "肝血不足", "keySymptoms": ["目涩", "视物疲劳", "夜盲", "面色萎黄", "舌淡"]},
+          {"pattern": "肝气郁结", "keySymptoms": ["目胀痛", "胁痛", "情志不舒", "嗳气"]}
+        ]
+      }
+    },
+    {
+      "key": "tcm_edema",
+      "name": "水肿",
+      "priority": "P2",
+      "tcmCategory": "水液代谢病证",
+      "relatedOrgans": ["肺", "脾", "肾", "心"],
+      "classicTheory": "其本在肾，其标在肺，其制在脾",
+      "warningNote": "全身重度水肿需排除心肾功能衰竭",
+      "config": {
+        "sections": [
+          {
+            "title": "水肿部位",
+            "fields": [
+              {
+                "key": "edemaLocation",
+                "label": "水肿部位",
+                "type": "checkbox",
+                "props": {
+                  "options": [
+                    {"value": "eyelid", "label": "眼睑", "indication": "风水/肾"},
+                    {"value": "face", "label": "面部", "indication": "阳水/风水"},
+                    {"value": "upper_limb", "label": "上肢"},
+                    {"value": "lower_limb", "label": "下肢", "indication": "脾肾阳虚"},
+                    {"value": "abdomen", "label": "腹部（腹水）", "indication": "重症", "warning": true},
+                    {"value": "whole_body", "label": "全身", "indication": "重症", "warning": true}
+                  ]
+                }
+              },
+              {
+                "key": "edemaOnset",
+                "label": "水肿起始部位",
+                "type": "radio",
+                "props": {
+                  "options": [
+                    {"value": "face_first", "label": "从头面开始", "indication": "阳水（风水）"},
+                    {"value": "lower_first", "label": "从下肢开始", "indication": "阴水（脾肾）"}
+                  ]
+                }
+              }
+            ]
+          },
+          {
+            "title": "水肿特点",
+            "fields": [
+              {
+                "key": "edemaCharacter",
+                "label": "水肿性质",
+                "type": "radio",
+                "props": {
+                  "options": [
+                    {"value": "pitting", "label": "凹陷性水肿（按之有坑）", "indication": "常见"},
+                    {"value": "non_pitting", "label": "非凹陷性", "indication": "甲减/淋巴"}
+                  ]
+                }
+              },
+              {
+                "key": "skinColor",
+                "label": "水肿处皮肤",
+                "type": "radio",
+                "props": {
+                  "options": [
+                    {"value": "shiny", "label": "皮肤光亮", "indication": "水盛"},
+                    {"value": "normal", "label": "皮肤正常"},
+                    {"value": "dark", "label": "皮肤晦暗", "indication": "血瘀"}
+                  ]
+                }
+              },
+              {
+                "key": "timing",
+                "label": "水肿变化",
+                "type": "radio",
+                "props": {
+                  "options": [
+                    {"value": "morning", "label": "晨起明显，午后减轻", "indication": "肾/阳虚"},
+                    {"value": "evening", "label": "下午加重，晨起减轻", "indication": "脾虚/心"},
+                    {"value": "constant", "label": "持续不退"}
+                  ]
+                }
+              }
+            ]
+          },
+          {
+            "title": "病程与诱因",
+            "fields": [
+              {
+                "key": "onset",
+                "label": "起病方式",
+                "type": "radio",
+                "props": {
+                  "options": [
+                    {"value": "acute", "label": "急性起病", "indication": "阳水"},
+                    {"value": "chronic", "label": "慢性起病", "indication": "阴水"}
+                  ]
+                }
+              },
+              {
+                "key": "duration",
+                "label": "病程",
+                "type": "input_radio",
+                "props": {
+                  "radioOptions": ["天", "周", "月", "年"]
+                }
+              },
+              {
+                "key": "triggers",
+                "label": "诱发因素",
+                "type": "checkbox",
+                "props": {
+                  "options": [
+                    {"value": "wind_cold", "label": "感受风寒后", "indication": "风水"},
+                    {"value": "fatigue", "label": "劳累后", "indication": "脾肾虚"},
+                    {"value": "salt", "label": "进食咸物后"},
+                    {"value": "menstruation", "label": "月经前后"},
+                    {"value": "pregnancy", "label": "妊娠期"},
+                    {"value": "none", "label": "无明显诱因"}
+                  ]
+                }
+              }
+            ]
+          },
+          {
+            "title": "小便情况",
+            "fields": [
+              {
+                "key": "urination",
+                "label": "小便情况",
+                "type": "checkbox",
+                "props": {
+                  "options": [
+                    {"value": "scanty", "label": "尿少", "indication": "水停"},
+                    {"value": "normal", "label": "尿量正常"},
+                    {"value": "frequent", "label": "尿频", "indication": "肾虚"},
+                    {"value": "nocturia", "label": "夜尿多", "indication": "肾阳虚"},
+                    {"value": "foamy", "label": "泡沫多", "indication": "需查蛋白尿"}
+                  ]
+                }
+              }
+            ]
+          },
+          {
+            "title": "伴随症状",
+            "fields": [
+              {
+                "key": "accompaniedSymptoms",
+                "label": "伴随症状",
+                "type": "checkbox",
+                "props": {
+                  "options": [
+                    {"value": "fatigue", "label": "神疲乏力", "indication": "脾虚"},
+                    {"value": "cold_limbs", "label": "畏寒肢冷", "indication": "阳虚"},
+                    {"value": "lassitude", "label": "腰膝酸软", "indication": "肾虚"},
+                    {"value": "poor_appetite", "label": "纳差", "indication": "脾虚"},
+                    {"value": "loose_stool", "label": "便溏", "indication": "脾虚"},
+                    {"value": "palpitation", "label": "心悸", "indication": "心阳虚"},
+                    {"value": "dyspnea", "label": "气短不能平卧", "indication": "水凌心肺", "warning": true},
+                    {"value": "fever", "label": "发热恶寒", "indication": "风水"}
+                  ]
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "tcmDiagnosis": {
+        "possiblePatterns": [
+          {"pattern": "风水泛滥", "keySymptoms": ["头面水肿", "急起", "恶寒发热", "尿少", "苔薄白"]},
+          {"pattern": "湿毒浸淫", "keySymptoms": ["水肿", "疮疡", "小便短赤", "苔黄腻"]},
+          {"pattern": "水湿浸渍", "keySymptoms": ["下肢水肿", "身重", "纳呆", "便溏", "苔白腻"]},
+          {"pattern": "湿热壅盛", "keySymptoms": ["水肿", "皮肤绷急", "尿少赤", "口苦", "苔黄腻"]},
+          {"pattern": "脾阳虚衰", "keySymptoms": ["下肢水肿", "腹胀", "便溏", "乏力", "舌淡胖"]},
+          {"pattern": "肾阳衰微", "keySymptoms": ["全身水肿", "腰冷", "畏寒", "尿少", "舌淡胖"]},
+          {"pattern": "瘀水互结", "keySymptoms": ["水肿日久", "肤色晦暗", "舌紫暗"]}
+        ]
+      }
+    },
+    {
+      "key": "tcm_numbness",
+      "name": "肢体麻木",
+      "priority": "P2",
+      "tcmCategory": "痹证/中风先兆",
+      "relatedOrgans": ["肝", "脾", "心"],
+      "classicTheory": "麻为气虚，木为血虚；不荣则麻，不通则木",
+      "warningNote": "突发一侧肢体麻木需警惕中风",
+      "config": {
+        "sections": [
+          {
+            "title": "麻木部位",
+            "fields": [
+              {
+                "key": "numbnessLocation",
+                "label": "麻木部位",
+                "type": "checkbox",
+                "props": {
+                  "options": [
+                    {"value": "fingers", "label": "手指"},
+                    {"value": "hand", "label": "手掌"},
+                    {"value": "forearm", "label": "前臂"},
+                    {"value": "upper_arm", "label": "上臂"},
+                    {"value": "toes", "label": "足趾"},
+                    {"value": "foot", "label": "足部"},
+                    {"value": "calf", "label": "小腿"},
+                    {"value": "thigh", "label": "大腿"},
+                    {"value": "face", "label": "面部", "indication": "中风先兆", "warning": true},
+                    {"value": "tongue", "label": "舌头", "indication": "中风先兆", "warning": true}
+                  ]
+                }
+              },
+              {
+                "key": "numbnessSide",
+                "label": "发病侧别",
+                "type": "radio",
+                "props": {
+                  "options": [
+                    {"value": "left", "label": "左侧"},
+                    {"value": "right", "label": "右侧"},
+                    {"value": "bilateral", "label": "双侧"},
+                    {"value": "alternating", "label": "左右交替"},
+                    {"value": "one_side_limbs", "label": "一侧上下肢同时", "indication": "中风先兆", "warning": true}
+                  ]
+                }
+              }
+            ]
+          },
+          {
+            "title": "麻木性质",
+            "fields": [
+              {
+                "key": "numbnessType",
+                "label": "感觉异常类型",
+                "type": "checkbox",
+                "props": {
+                  "options": [
+                    {"value": "numbness", "label": "麻（蚁行感）", "indication": "气虚"},
+                    {"value": "wooden", "label": "木（不知痛痒）", "indication": "血虚"},
+                    {"value": "tingling", "label": "刺痛感", "indication": "血瘀"},
+                    {"value": "burning", "label": "灼热感", "indication": "阴虚"},
+                    {"value": "cold", "label": "冷凉感", "indication": "阳虚/寒"},
+                    {"value": "heaviness", "label": "沉重感", "indication": "湿邪"}
+                  ]
+                }
+              },
+              {
+                "key": "onset",
+                "label": "起病方式",
+                "type": "radio",
+                "props": {
+                  "options": [
+                    {"value": "sudden", "label": "突然发生", "indication": "中风/血瘀", "warning": true},
+                    {"value": "gradual", "label": "逐渐加重", "indication": "虚证"}
+                  ]
+                }
+              },
+              {
+                "key": "duration",
+                "label": "病程",
+                "type": "input_radio",
+                "props": {
+                  "radioOptions": ["小时", "天", "周", "月", "年"]
+                }
+              }
+            ]
+          },
+          {
+            "title": "发作规律",
+            "fields": [
+              {
+                "key": "timing",
+                "label": "发作时间",
+                "type": "checkbox",
+                "props": {
+                  "options": [
+                    {"value": "continuous", "label": "持续存在"},
+                    {"value": "intermittent", "label": "时有时无"},
+                    {"value": "night", "label": "夜间明显", "indication": "血虚"},
+                    {"value": "morning", "label": "晨起明显"},
+                    {"value": "after_rest", "label": "静止后", "indication": "气滞血瘀"},
+                    {"value": "after_activity", "label": "活动后", "indication": "气虚"}
+                  ]
+                }
+              },
+              {
+                "key": "triggers",
+                "label": "诱发因素",
+                "type": "checkbox",
+                "props": {
+                  "options": [
+                    {"value": "pressure", "label": "受压后（如睡姿不当）"},
+                    {"value": "cold", "label": "受凉后", "indication": "寒邪"},
+                    {"value": "emotion", "label": "情绪激动后", "indication": "肝风"},
+                    {"value": "fatigue", "label": "劳累后", "indication": "气虚"},
+                    {"value": "none", "label": "无明显诱因"}
+                  ]
+                }
+              }
+            ]
+          },
+          {
+            "title": "伴随症状",
+            "fields": [
+              {
+                "key": "accompaniedSymptoms",
+                "label": "伴随症状",
+                "type": "checkbox",
+                "props": {
+                  "options": [
+                    {"value": "weakness", "label": "肢体无力", "indication": "气虚/中风先兆", "warning": true},
+                    {"value": "dizziness", "label": "头晕", "indication": "肝阳/血虚"},
+                    {"value": "headache", "label": "头痛", "indication": "肝阳"},
+                    {"value": "slurred_speech", "label": "言语不利", "indication": "中风先兆", "warning": true},
+                    {"value": "fatigue", "label": "神疲乏力", "indication": "气虚"},
+                    {"value": "palpitation", "label": "心悸", "indication": "心血虚"},
+                    {"value": "insomnia", "label": "失眠", "indication": "血虚"},
+                    {"value": "pale_face", "label": "面色苍白", "indication": "血虚"}
+                  ]
+                }
+              }
+            ]
+          },
+          {
+            "title": "中风风险评估",
+            "description": "以下症状需高度警惕中风",
+            "fields": [
+              {
+                "key": "strokeRisk",
+                "label": "危险信号",
+                "type": "checkbox",
+                "props": {
+                  "options": [
+                    {"value": "sudden_hemiplegia", "label": "突发一侧肢体麻木无力", "warning": true},
+                    {"value": "facial_droop", "label": "口角歪斜", "warning": true},
+                    {"value": "speech_difficulty", "label": "言语困难", "warning": true},
+                    {"value": "vision_loss", "label": "视物模糊或偏盲", "warning": true},
+                    {"value": "severe_headache", "label": "剧烈头痛", "warning": true},
+                    {"value": "none", "label": "以上都无"}
+                  ]
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "tcmDiagnosis": {
+        "possiblePatterns": [
+          {"pattern": "气血亏虚", "keySymptoms": ["麻木绵绵", "乏力", "面色萎黄", "心悸", "舌淡"]},
+          {"pattern": "肝血不足", "keySymptoms": ["麻木", "夜间重", "视物模糊", "爪甲不荣", "舌淡"]},
+          {"pattern": "痰瘀阻络", "keySymptoms": ["麻木刺痛", "固定", "肢体沉重", "舌紫暗苔腻"]},
+          {"pattern": "风痰阻络", "keySymptoms": ["麻木", "头晕", "肢体沉重", "苔腻"]},
+          {"pattern": "阳虚寒凝", "keySymptoms": ["麻木冷凉", "畏寒", "遇冷加重", "舌淡"]},
+          {"pattern": "肝阳化风", "keySymptoms": ["突发麻木", "头晕头痛", "烦躁", "舌红"], "warning": "中风先兆"}
+        ]
+      }
+    }
+  ],
+  "commonModules": [
+    {
+      "key": "tcm_ten_questions",
+      "name": "十问模块",
+      "description": "中医传统十问框架，适用于所有症状的通用问诊",
+      "reference": "一问寒热二问汗，三问头身四问便，五问饮食六胸腹，七聋八渴俱当辨，九问旧病十问因，再兼服药参机变",
+      "config": {
+        "sections": [
+          {
+            "title": "一问寒热",
+            "fields": [
+              {
+                "key": "coldHeat",
+                "label": "平素寒热",
+                "type": "radio",
+                "props": {
+                  "options": [
+                    {"value": "fear_cold", "label": "怕冷", "indication": "阳虚"},
+                    {"value": "fear_heat", "label": "怕热", "indication": "阴虚"},
+                    {"value": "both", "label": "既怕冷又怕热", "indication": "阴阳两虚"},
+                    {"value": "normal", "label": "寒热适中"}
+                  ]
+                }
+              },
+              {
+                "key": "limbTemperature",
+                "label": "手足温度",
+                "type": "radio",
+                "props": {
+                  "options": [
+                    {"value": "cold", "label": "手足冰凉", "indication": "阳虚"},
+                    {"value": "warm", "label": "手足心热", "indication": "阴虚"},
+                    {"value": "normal", "label": "温度正常"}
+                  ]
+                }
+              }
+            ]
+          },
+          {
+            "title": "二问汗",
+            "fields": [
+              {
+                "key": "sweating",
+                "label": "出汗情况",
+                "type": "checkbox",
+                "props": {
+                  "options": [
+                    {"value": "spontaneous", "label": "自汗（白天易出汗）", "indication": "气虚"},
+                    {"value": "night", "label": "盗汗（睡中出汗）", "indication": "阴虚"},
+                    {"value": "none", "label": "不易出汗"},
+                    {"value": "normal", "label": "出汗正常"}
+                  ]
+                }
+              }
+            ]
+          },
+          {
+            "title": "三问头身",
+            "fields": [
+              {
+                "key": "headBody",
+                "label": "头身感觉",
+                "type": "checkbox",
+                "props": {
+                  "options": [
+                    {"value": "headache", "label": "头痛"},
+                    {"value": "dizziness", "label": "头晕"},
+                    {"value": "heavy_head", "label": "头重如裹", "indication": "湿邪"},
+                    {"value": "body_heavy", "label": "身体困重", "indication": "湿邪"},
+                    {"value": "fatigue", "label": "乏力"},
+                    {"value": "body_pain", "label": "身体疼痛"},
+                    {"value": "none", "label": "无不适"}
+                  ]
+                }
+              }
+            ]
+          },
+          {
+            "title": "四问便",
+            "fields": [
+              {
+                "key": "stool",
+                "label": "大便",
+                "type": "radio",
+                "props": {
+                  "options": [
+                    {"value": "normal", "label": "正常"},
+                    {"value": "loose", "label": "便溏", "indication": "脾虚"},
+                    {"value": "diarrhea", "label": "腹泻"},
+                    {"value": "constipation", "label": "便秘"},
+                    {"value": "dry_hard", "label": "干结", "indication": "阴虚/热"}
+                  ]
+                }
+              },
+              {
+                "key": "urine",
+                "label": "小便",
+                "type": "radio",
+                "props": {
+                  "options": [
+                    {"value": "normal", "label": "正常"},
+                    {"value": "frequent", "label": "尿频", "indication": "肾虚"},
+                    {"value": "scanty_yellow", "label": "短赤", "indication": "湿热"},
+                    {"value": "clear_profuse", "label": "清长", "indication": "阳虚"},
+                    {"value": "nocturia", "label": "夜尿多", "indication": "肾阳虚"}
+                  ]
+                }
+              }
+            ]
+          },
+          {
+            "title": "五问饮食",
+            "fields": [
+              {
+                "key": "appetite",
+                "label": "食欲",
+                "type": "radio",
+                "props": {
+                  "options": [
+                    {"value": "normal", "label": "正常"},
+                    {"value": "poor", "label": "纳差", "indication": "脾虚"},
+                    {"value": "excessive", "label": "多食易饥", "indication": "胃热"},
+                    {"value": "no_hunger", "label": "不知饥饿", "indication": "脾虚"}
+                  ]
+                }
+              },
+              {
+                "key": "taste",
+                "label": "口中感觉",
+                "type": "checkbox",
+                "props": {
+                  "options": [
+                    {"value": "normal", "label": "正常"},
+                    {"value": "bitter", "label": "口苦", "indication": "肝胆热"},
+                    {"value": "sweet", "label": "口甜", "indication": "脾虚湿热"},
+                    {"value": "sour", "label": "口酸", "indication": "肝热"},
+                    {"value": "bland", "label": "口淡", "indication": "脾虚"}
+                  ]
+                }
+              }
+            ]
+          },
+          {
+            "title": "六问胸腹",
+            "fields": [
+              {
+                "key": "chestAbdomen",
+                "label": "胸腹感觉",
+                "type": "checkbox",
+                "props": {
+                  "options": [
+                    {"value": "normal", "label": "正常"},
+                    {"value": "chest_tightness", "label": "胸闷", "indication": "气滞/痰阻"},
+                    {"value": "flank_pain", "label": "胁痛", "indication": "肝郁"},
+                    {"value": "epigastric", "label": "胃脘不适"},
+                    {"value": "bloating", "label": "腹胀", "indication": "气滞"}
+                  ]
+                }
+              }
+            ]
+          },
+          {
+            "title": "七聋八渴",
+            "fields": [
+              {
+                "key": "hearing",
+                "label": "听力",
+                "type": "radio",
+                "props": {
+                  "options": [
+                    {"value": "normal", "label": "正常"},
+                    {"value": "tinnitus", "label": "耳鸣", "indication": "肝肾"},
+                    {"value": "hearing_loss", "label": "听力下降"}
+                  ]
+                }
+              },
+              {
+                "key": "thirst",
+                "label": "口渴",
+                "type": "radio",
+                "props": {
+                  "options": [
+                    {"value": "normal", "label": "正常"},
+                    {"value": "thirsty_cold", "label": "渴喜冷饮", "indication": "热证"},
+                    {"value": "thirsty_warm", "label": "渴喜热饮", "indication": "寒证"},
+                    {"value": "dry_no_desire", "label": "口干不欲饮", "indication": "阴虚/湿热"},
+                    {"value": "no_thirst", "label": "不渴", "indication": "寒证"}
+                  ]
+                }
+              }
+            ]
+          },
+          {
+            "title": "九问旧病十问因",
+            "fields": [
+              {
+                "key": "pastHistory",
+                "label": "既往病史",
+                "type": "input",
+                "props": {
+                  "placeholder": "请描述既往重要疾病"
+                }
+              },
+              {
+                "key": "familyHistory",
+                "label": "家族病史",
+                "type": "input",
+                "props": {
+                  "placeholder": "请描述家族重要疾病"
+                }
+              },
+              {
+                "key": "currentMedication",
+                "label": "目前用药",
+                "type": "input",
+                "props": {
+                  "placeholder": "请描述正在服用的药物"
+                }
+              }
+            ]
+          },
+          {
+            "title": "睡眠情志",
+            "fields": [
+              {
+                "key": "sleep",
+                "label": "睡眠",
+                "type": "radio",
+                "props": {
+                  "options": [
+                    {"value": "normal", "label": "正常"},
+                    {"value": "difficulty", "label": "入睡困难"},
+                    {"value": "easy_wake", "label": "易醒"},
+                    {"value": "dreamful", "label": "多梦"},
+                    {"value": "excessive", "label": "嗜睡", "indication": "痰湿/阳虚"}
+                  ]
+                }
+              },
+              {
+                "key": "emotion",
+                "label": "情志",
+                "type": "checkbox",
+                "props": {
+                  "options": [
+                    {"value": "normal", "label": "情绪平稳"},
+                    {"value": "irritable", "label": "急躁易怒", "indication": "肝火"},
+                    {"value": "depressed", "label": "抑郁", "indication": "肝郁"},
+                    {"value": "anxious", "label": "焦虑"},
+                    {"value": "fearful", "label": "易惊恐", "indication": "心胆虚"}
+                  ]
+                }
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "key": "tcm_tongue_pulse",
+      "name": "舌脉采集模块",
+      "description": "舌象和脉象的结构化采集",
+      "config": {
+        "sections": [
+          {
+            "title": "舌象",
+            "fields": [
+              {
+                "key": "tongueImage",
+                "label": "舌象照片",
+                "type": "tongue_capture",
+                "props": {
+                  "instruction": "请张口伸舌，在自然光线下拍照"
+                }
+              },
+              {
+                "key": "tongueBody",
+                "label": "舌质",
+                "type": "radio",
+                "props": {
+                  "options": [
+                    {"value": "pale", "label": "淡白", "indication": "气血虚/阳虚"},
+                    {"value": "light_red", "label": "淡红", "indication": "正常"},
+                    {"value": "red", "label": "红", "indication": "热证"},
+                    {"value": "crimson", "label": "绛红", "indication": "热入营血"},
+                    {"value": "purple", "label": "紫暗", "indication": "血瘀"},
+                    {"value": "blue_purple", "label": "青紫", "indication": "寒凝血瘀"}
+                  ]
+                }
+              },
+              {
+                "key": "tongueShape",
+                "label": "舌形",
+                "type": "checkbox",
+                "props": {
+                  "options": [
+                    {"value": "normal", "label": "正常"},
+                    {"value": "fat", "label": "胖大", "indication": "阳虚/痰湿"},
+                    {"value": "thin", "label": "瘦薄", "indication": "阴虚/血虚"},
+                    {"value": "teeth_marks", "label": "齿痕", "indication": "脾虚"},
+                    {"value": "cracked", "label": "裂纹", "indication": "阴虚"},
+                    {"value": "prickly", "label": "芒刺", "indication": "热盛"},
+                    {"value": "deviated", "label": "歪斜", "indication": "中风"}
+                  ]
+                }
+              },
+              {
+                "key": "tongueCoating",
+                "label": "舌苔颜色",
+                "type": "radio",
+                "props": {
+                  "options": [
+                    {"value": "thin_white", "label": "薄白", "indication": "正常/表证"},
+                    {"value": "white", "label": "白", "indication": "寒证"},
+                    {"value": "yellow", "label": "黄", "indication": "热证"},
+                    {"value": "gray_black", "label": "灰黑", "indication": "热极/寒极"}
+                  ]
+                }
+              },
+              {
+                "key": "coatingTexture",
+                "label": "苔质",
+                "type": "checkbox",
+                "props": {
+                  "options": [
+                    {"value": "thin", "label": "薄苔", "indication": "正常/表证"},
+                    {"value": "thick", "label": "厚苔", "indication": "痰湿/食积"},
+                    {"value": "greasy", "label": "腻苔", "indication": "痰湿"},
+                    {"value": "dry", "label": "燥苔", "indication": "津伤"},
+                    {"value": "peeled", "label": "剥苔", "indication": "胃阴虚"},
+                    {"value": "none", "label": "无苔", "indication": "胃阴虚"}
+                  ]
+                }
+              }
+            ]
+          },
+          {
+            "title": "脉象",
+            "description": "如已由医师诊脉，请选择脉象特点",
+            "fields": [
+              {
+                "key": "pulseRate",
+                "label": "脉率",
+                "type": "radio",
+                "props": {
+                  "options": [
+                    {"value": "slow", "label": "迟脉（<60次/分）", "indication": "寒证"},
+                    {"value": "normal", "label": "正常（60-90次/分）"},
+                    {"value": "fast", "label": "数脉（>90次/分）", "indication": "热证"}
+                  ]
+                }
+              },
+              {
+                "key": "pulseDepth",
+                "label": "脉位",
+                "type": "radio",
+                "props": {
+                  "options": [
+                    {"value": "floating", "label": "浮脉", "indication": "表证"},
+                    {"value": "normal", "label": "中"},
+                    {"value": "deep", "label": "沉脉", "indication": "里证"}
+                  ]
+                }
+              },
+              {
+                "key": "pulseStrength",
+                "label": "脉力",
+                "type": "radio",
+                "props": {
+                  "options": [
+                    {"value": "strong", "label": "有力", "indication": "实证"},
+                    {"value": "normal", "label": "正常"},
+                    {"value": "weak", "label": "无力", "indication": "虚证"}
+                  ]
+                }
+              },
+              {
+                "key": "pulseShape",
+                "label": "脉形",
+                "type": "checkbox",
+                "props": {
+                  "options": [
+                    {"value": "wiry", "label": "弦脉", "indication": "肝胆病/痛证"},
+                    {"value": "slippery", "label": "滑脉", "indication": "痰湿/食积"},
+                    {"value": "choppy", "label": "涩脉", "indication": "血瘀/精血亏"},
+                    {"value": "thin", "label": "细脉", "indication": "血虚/阴虚"},
+                    {"value": "big", "label": "洪脉", "indication": "热盛"},
+                    {"value": "knotted", "label": "结代脉", "indication": "心病"}
+                  ]
+                }
+              },
+              {
+                "key": "pulseNote",
+                "label": "脉象补充",
+                "type": "input",
+                "props": {
+                  "placeholder": "医师可补充其他脉象特点"
+                }
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "key": "tcm_constitution",
+      "name": "体质辨识模块",
+      "description": "九种体质快速筛查",
+      "reference": "中华中医药学会《中医体质分类与判定》",
+      "config": {
+        "sections": [
+          {
+            "title": "体质快速筛查",
+            "description": "请根据您的日常状态选择最符合的描述",
+            "fields": [
+              {
+                "key": "constitutionType",
+                "label": "体质倾向",
+                "type": "checkbox",
+                "props": {
+                  "options": [
+                    {"value": "balanced", "label": "平和质", "description": "精力充沛，睡眠良好，性格开朗", "indication": "健康状态"},
+                    {"value": "qi_deficiency", "label": "气虚质", "description": "容易疲乏，气短懒言，易出汗", "indication": "需补气"},
+                    {"value": "yang_deficiency", "label": "阳虚质", "description": "怕冷，手脚冰凉，喜热饮食", "indication": "需温阳"},
+                    {"value": "yin_deficiency", "label": "阴虚质", "description": "怕热，手足心热，口干咽干", "indication": "需滋阴"},
+                    {"value": "phlegm_dampness", "label": "痰湿质", "description": "体形肥胖，腹部肥满，痰多", "indication": "需化痰祛湿"},
+                    {"value": "damp_heat", "label": "湿热质", "description": "面部油腻，易生痤疮，口苦口干", "indication": "需清热利湿"},
+                    {"value": "blood_stasis", "label": "血瘀质", "description": "面色晦暗，易有瘀斑，唇色暗", "indication": "需活血化瘀"},
+                    {"value": "qi_stagnation", "label": "气郁质", "description": "情绪低落，多愁善感，胸闷叹息", "indication": "需疏肝理气"},
+                    {"value": "special", "label": "特禀质", "description": "容易过敏，有家族过敏史", "indication": "需益气固表"}
+                  ],
+                  "maxSelect": 3
+                }
+              }
+            ]
+          },
+          {
+            "title": "体质相关症状",
+            "fields": [
+              {
+                "key": "energyLevel",
+                "label": "精力状态",
+                "type": "radio",
+                "props": {
+                  "options": [
+                    {"value": "vigorous", "label": "精力充沛"},
+                    {"value": "moderate", "label": "一般"},
+                    {"value": "low", "label": "容易疲劳", "indication": "气虚"}
+                  ]
+                }
+              },
+              {
+                "key": "coldHeatPreference",
+                "label": "寒热偏好",
+                "type": "radio",
+                "props": {
+                  "options": [
+                    {"value": "cold", "label": "怕冷，喜热", "indication": "阳虚"},
+                    {"value": "heat", "label": "怕热，喜凉", "indication": "阴虚/湿热"},
+                    {"value": "balanced", "label": "不怕冷也不怕热"}
+                  ]
+                }
+              },
+              {
+                "key": "bodyShape",
+                "label": "体形特点",
+                "type": "radio",
+                "props": {
+                  "options": [
+                    {"value": "thin", "label": "偏瘦", "indication": "阴虚/血虚"},
+                    {"value": "normal", "label": "适中"},
+                    {"value": "overweight", "label": "偏胖", "indication": "痰湿"}
+                  ]
+                }
+              },
+              {
+                "key": "emotionalState",
+                "label": "情绪特点",
+                "type": "radio",
+                "props": {
+                  "options": [
+                    {"value": "cheerful", "label": "性格开朗"},
+                    {"value": "moderate", "label": "情绪稳定"},
+                    {"value": "depressed", "label": "容易低落", "indication": "气郁"},
+                    {"value": "irritable", "label": "容易烦躁", "indication": "阴虚/肝火"}
+                  ]
+                }
+              }
+            ]
+          }
+        ]
+      }
+    }
+  ]
+}

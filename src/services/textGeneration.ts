@@ -172,18 +172,19 @@ export function generateTextsForSymptom(
 
     symptom.config.sections.forEach((section: any) => {
         section.fields.forEach((field: any) => {
+            const fieldKey = field.storageKey;
+            if (!fieldKey) return;
+
+            const value = formData[fieldKey];
+            if (value === undefined || value === null || value === '') return;
+
             const textGenConfig = field.textGenConfig as TextGenConfig | undefined;
 
-            // 无配置或不匹配目标
-            if (!textGenConfig || !textGenConfig.targets.includes(target)) {
-                return;
-            }
-
-            const value = formData[field.storageKey];
-            const text = generateFieldText(textGenConfig, value, field.label);
-
-            if (text) {
-                results.push(text);
+            if (textGenConfig && textGenConfig.targets.includes(target)) {
+                const text = generateFieldText(textGenConfig, value, field.label);
+                if (text) {
+                    results.push(text);
+                }
             }
         });
     });

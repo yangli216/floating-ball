@@ -1,7 +1,6 @@
 <script setup lang="ts">
 import { ref, onMounted, inject, watch } from 'vue';
 import { getLLMConfig, DEFAULT_LLM_CONFIG } from '../services/llm';
-import { getKnowledgeConfig, saveKnowledgeConfig, searchKnowledge } from '../services/knowledgeSearch';
 import { useTheme } from '../services/themeService';
 import { getCurrentWindow } from '@tauri-apps/api/window';
 import { save } from '@tauri-apps/plugin-dialog';
@@ -42,20 +41,11 @@ const baseUrl = ref('');
 const model = ref('');
 const alwaysOnTop = ref(true);
 
-// 人卫数智知识检索配置
-const renweiToken = ref('');
-const renweiTestStatus = ref<'idle' | 'testing' | 'success' | 'error'>('idle');
-const renweiTestMessage = ref('');
-
 onMounted(() => {
   const config = getLLMConfig();
   apiKey.value = config.apiKey;
   baseUrl.value = config.baseUrl;
   model.value = config.model;
-
-  // 加载人卫数智配置
-  const knowledgeConfig = getKnowledgeConfig();
-  renweiToken.value = knowledgeConfig.token;
 
   const savedTop = localStorage.getItem('ALWAYS_ON_TOP');
   alwaysOnTop.value = savedTop === null || savedTop === 'true';
@@ -67,10 +57,7 @@ const saveSettings = async () => {
   localStorage.setItem('LLM_MODEL', model.value);
   localStorage.setItem('ALWAYS_ON_TOP', String(alwaysOnTop.value));
 
-  // 保存人卫数智配置
-  saveKnowledgeConfig({ token: renweiToken.value });
-
-  trackClick('settings_save', { hasApiKey: !!apiKey.value, hasBaseUrl: !!baseUrl.value, model: model.value, alwaysOnTop: alwaysOnTop.value, hasRenweiToken: !!renweiToken.value });
+  trackClick('settings_save', { hasApiKey: !!apiKey.value, hasBaseUrl: !!baseUrl.value, model: model.value, alwaysOnTop: alwaysOnTop.value });
 
   try {
     const win = getCurrentWindow();
@@ -81,31 +68,6 @@ const saveSettings = async () => {
 
   if (showToast) {
     showToast('设置已保存', 'success');
-  }
-};
-
-// 测试人卫数智连接
-const testRenweiConnection = async () => {
-  if (!renweiToken.value) {
-    renweiTestStatus.value = 'error';
-    renweiTestMessage.value = '请先填写Token';
-    return;
-  }
-
-  renweiTestStatus.value = 'testing';
-  renweiTestMessage.value = '正在测试连接...';
-
-  try {
-    // 先保存token以便测试使用
-    saveKnowledgeConfig({ token: renweiToken.value });
-
-    // 使用简单查询测试连接
-    const results = await searchKnowledge({ query: '测试', limit: 1 });
-    renweiTestStatus.value = 'success';
-    renweiTestMessage.value = `连接成功！获取到 ${results.length} 条测试结果`;
-  } catch (error) {
-    renweiTestStatus.value = 'error';
-    renweiTestMessage.value = `连接失败: ${(error as Error).message}`;
   }
 };
 
@@ -299,40 +261,6 @@ watch(activeTab, (newVal) => {
               <input id="model-name" v-model="model" type="text" :placeholder="DEFAULT_LLM_CONFIG.model" />
             </div>
             <p class="form-hint">使用的模型名称（如：gpt-4-turbo）</p>
-          </div>
-        </div>
-
-        <!-- 人卫数智知识检索配置 -->
-        <div class="settings-section">
-          <div class="section-header">
-            <Icon icon="lucide:book-open" :size="20" />
-            <h3>人卫数智知识库</h3>
-          </div>
-          <p class="section-desc">配置人卫数智知识检索服务，为AI提供医学知识增强（RAG）</p>
-
-          <div class="form-group">
-            <label for="renwei-token">访问令牌 (Token)</label>
-            <div class="input-with-icon">
-              <Icon icon="lucide:key-round" :size="16" class="input-icon" />
-              <input id="renwei-token" v-model="renweiToken" type="password" placeholder="请输入访问令牌" />
-            </div>
-            <p class="form-hint">人卫数智提供的API访问令牌</p>
-          </div>
-
-          <div class="test-connection-row">
-            <button
-              class="test-btn"
-              @click="testRenweiConnection"
-              :disabled="renweiTestStatus === 'testing'"
-            >
-              <Icon :icon="renweiTestStatus === 'testing' ? 'lucide:loader-2' : 'lucide:plug'" :size="16" :class="{ 'spin': renweiTestStatus === 'testing' }" />
-              {{ renweiTestStatus === 'testing' ? '测试中...' : '测试连接' }}
-            </button>
-            <span v-if="renweiTestMessage" :class="['test-message', renweiTestStatus]">
-              <Icon v-if="renweiTestStatus === 'success'" icon="lucide:check-circle" :size="14" />
-              <Icon v-else-if="renweiTestStatus === 'error'" icon="lucide:x-circle" :size="14" />
-              {{ renweiTestMessage }}
-            </span>
           </div>
         </div>
 

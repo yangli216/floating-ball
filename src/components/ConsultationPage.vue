@@ -211,35 +211,35 @@
                     <!-- Field Type: radio -->
                     <div v-else-if="field.type === 'radio'" class="field-radio">
                       <div class="radio-group">
-                        <label 
-                          v-for="opt in field.props.options" 
-                          :key="opt" 
+                        <label
+                          v-for="opt in field.props.options"
+                          :key="opt"
                           class="radio-label"
                           :class="{ 'is-active': formData[item.key][field.storageKey] === opt }"
                         >
-                          <input 
-                            type="radio" 
-                            :name="field.id + '_' + item.key" 
-                            :value="opt" 
+                          <input
+                            type="radio"
+                            :name="field.id + '_' + item.key"
+                            :value="opt"
                             v-model="formData[item.key][field.storageKey]"
                           />
                           {{ opt }}
                         </label>
                       </div>
                     </div>
-      
+
                     <!-- Field Type: checkbox -->
                     <div v-else-if="field.type === 'checkbox'" class="field-checkbox">
                       <div class="checkbox-group">
-                        <label 
-                          v-for="opt in field.props.options" 
-                          :key="opt" 
+                        <label
+                          v-for="opt in field.props.options"
+                          :key="opt"
                           class="checkbox-label"
                           :class="{ 'is-active': formData[item.key][field.storageKey]?.includes(opt) }"
                         >
-                          <input 
-                            type="checkbox" 
-                            :value="opt" 
+                          <input
+                            type="checkbox"
+                            :value="opt"
                             :checked="formData[item.key][field.storageKey]?.includes(opt)"
                             @change="(e) => handleCheckboxChange(e, field, item.key)"
                           />
@@ -623,7 +623,8 @@
 
 <script setup lang="ts">
 import { ref, computed, onMounted, watch, onUnmounted, inject } from 'vue';
-import templatesData from '../assets/templates.json';
+import westernTemplatesData from '../assets/templates.json';
+import tcmTemplatesData from '../assets/tcm-templates.json';
 import { medicalDataService, type DiagnosisItem } from '../services/medicalData';
 import Pinyin from 'tiny-pinyin';
 import { chat } from '../services/llm';
@@ -787,6 +788,16 @@ const categoryFilterRef = ref<HTMLElement | null>(null);
 // Selection mode for sidebar tabs
 const selectionMode = ref<'common' | 'bodyPart' | 'system'>('common');
 const consultationMode = ref<'western' | 'tcm'>('western');
+
+// 根据问诊模式动态获取模板数据
+const currentTemplatesData = computed(() => {
+  if (consultationMode.value === 'tcm') {
+    // 中医模板结构: { version, symptoms: [...] }
+    return (tcmTemplatesData as any).symptoms || [];
+  }
+  // 西医模板直接是数组
+  return westernTemplatesData;
+});
 
 // All symptoms for body part and system selectors
 const allSymptoms = computed(() => symptoms.value);
@@ -1207,8 +1218,17 @@ const handleClickOutside = (event: MouseEvent) => {
 
 onMounted(() => {
   document.addEventListener('click', handleClickOutside);
-  symptoms.value = templatesData;
+  symptoms.value = currentTemplatesData.value;
   // Initialize General Condition data
+  initFormData(generalConditionConfig);
+});
+
+// 监听问诊模式变化，切换模板
+watch(consultationMode, () => {
+  symptoms.value = currentTemplatesData.value;
+  // 清空已选症状，因为不同模板的症状可能不兼容
+  selectedSymptoms.value = [];
+  formData.value = {};
   initFormData(generalConditionConfig);
 });
 
@@ -1315,16 +1335,20 @@ const initFormData = (configItem: any) => {
   if (configItem && configItem.config && configItem.config.sections) {
       configItem.config.sections.forEach((section: any) => {
         section.fields.forEach((field: any) => {
+          // 兼容中医和西医模板：优先使用 storageKey，回退到 key
+          const fieldKey = field.storageKey || field.key;
+          if (!fieldKey) return;
+
           if (field.type === 'input_radio') {
-            data[field.storageKey] = { inputValue: '', radioValue: '' };
+            data[fieldKey] = { inputValue: '', radioValue: '' };
           } else if (field.type === 'checkbox') {
-            data[field.storageKey] = [];
+            data[fieldKey] = [];
           } else {
             // Set default value for General Condition or if explicitly requested
             if (configItem.key === 'general' && field.props?.options?.length > 0) {
-              data[field.storageKey] = field.props.options[0];
+              data[fieldKey] = field.props.options[0];
             } else {
-              data[field.storageKey] = '';
+              data[fieldKey] = '';
             }
           }
         });
@@ -1337,7 +1361,9 @@ const initFormData = (configItem: any) => {
 const handleCheckboxChange = (event: Event, field: any, symptomKey: string) => {
   const target = event.target as HTMLInputElement;
   const value = target.value;
-  const currentValues = formData.value[symptomKey][field.storageKey] || [];
+  // 兼容中医和西医模板
+  const fieldKey = field.storageKey || field.key;
+  const currentValues = formData.value[symptomKey][fieldKey] || [];
   
   if (target.checked) {
     let newValues = [...currentValues, value];
@@ -1902,7 +1928,7 @@ const swapDiagnosis = (originalDiag: Diagnosis, newItem: DiagnosisItem) => {
     }
   }
   
-  openRelatedCode.value = null;
+  openRelatedId.value = null;
 };
 
 const handleDiagnosisSelect = (diag: Diagnosis) => {

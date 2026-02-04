@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, inject } from 'vue';
-import templatesData from '../assets/templates.json';
+import { getWesternTemplates } from '../services/templateService';
 import Pinyin from 'tiny-pinyin';
 import { invoke } from '@tauri-apps/api/core';
 import Icon from './Icon.vue';
@@ -64,7 +64,7 @@ const systemCategories: Record<string, string> = {
 
 onMounted(() => {
   // Deep clone to avoid mutating origin until save
-  symptoms.value = JSON.parse(JSON.stringify(templatesData));
+  symptoms.value = JSON.parse(JSON.stringify(getWesternTemplates()));
   if (symptoms.value.length > 0) {
     selectedSymptomId.value = symptoms.value[0].id;
   }

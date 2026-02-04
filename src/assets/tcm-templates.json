@@ -1,0 +1,6438 @@
+{
+  "version": "1.0.0",
+  "description": "中医症状问诊模板",
+  "lastUpdated": "2026-02-04",
+  "symptoms": [
+    {
+      "id": "1770191741986",
+      "key": "tcm_headache",
+      "name": "头痛",
+      "description": "中医痛证",
+      "isCommonSymptom": true,
+      "systemCategory": [
+        "nervous"
+      ],
+      "bodyParts": [],
+      "customScript": "",
+      "config": {
+        "title": "智能问诊",
+        "sections": [
+          {
+            "id": "tcm_headache_section_0",
+            "title": "疼痛部位",
+            "description": "头痛部位与经络归属密切相关",
+            "fields": [
+              {
+                "id": "1770191741987",
+                "key": "painLocation",
+                "label": "头痛部位",
+                "type": "checkbox",
+                "props": {
+                  "options": [
+                    "前额部",
+                    "两侧太阳穴",
+                    "后头部",
+                    "巅顶部",
+                    "全头痛",
+                    "部位不固定"
+                  ]
+                },
+                "storageKey": "painLocation",
+                "textGenConfig": {
+                  "targets": [
+                    "historyOfPresentIllness"
+                  ],
+                  "template": "{label}：{value}",
+                  "separator": "、"
+                }
+              }
+            ]
+          },
+          {
+            "id": "tcm_headache_section_1",
+            "title": "疼痛性质",
+            "description": "",
+            "fields": [
+              {
+                "id": "1770191741988",
+                "key": "painNature",
+                "label": "头痛感觉",
+                "type": "checkbox",
+                "props": {
+                  "options": [
+                    "胀痛",
+                    "刺痛",
+                    "隐痛",
+                    "重痛如裹",
+                    "掣痛连项",
+                    "空痛",
+                    "跳痛"
+                  ]
+                },
+                "storageKey": "painNature",
+                "textGenConfig": {
+                  "targets": [
+                    "historyOfPresentIllness"
+                  ],
+                  "template": "{label}：{value}",
+                  "separator": "、"
+                }
+              },
+              {
+                "id": "1770191741989",
+                "key": "painDegree",
+                "label": "疼痛程度",
+                "type": "degree_slider",
+                "props": {
+                  "min": 1,
+                  "max": 10,
+                  "labels": [
+                    "轻微",
+                    "中等",
+                    "剧烈"
+                  ]
+                },
+                "storageKey": "painDegree"
+              }
+            ]
+          },
+          {
+            "id": "tcm_headache_section_2",
+            "title": "时间特点",
+            "description": "",
+            "fields": [
+              {
+                "id": "1770191741990",
+                "key": "onsetTime",
+                "label": "发病时间",
+                "type": "input_radio",
+                "props": {
+                  "radioOptions": [
+                    "小时",
+                    "天",
+                    "周",
+                    "月",
+                    "年"
+                  ]
+                },
+                "storageKey": "onsetTime",
+                "textGenConfig": {
+                  "targets": [
+                    "chiefComplaint"
+                  ],
+                  "template": "{value}"
+                }
+              },
+              {
+                "id": "1770191741991",
+                "key": "timePattern",
+                "label": "发作规律",
+                "type": "radio",
+                "props": {
+                  "options": [
+                    "晨起加重",
+                    "午后加重",
+                    "夜间加重",
+                    "定时发作",
+                    "持续不解",
+                    "时作时止"
+                  ]
+                },
+                "storageKey": "timePattern",
+                "textGenConfig": {
+                  "targets": [
+                    "historyOfPresentIllness"
+                  ],
+                  "template": "{label}：{value}",
+                  "separator": "、"
+                }
+              },
+              {
+                "id": "1770191741992",
+                "key": "weatherRelation",
+                "label": "与天气关系",
+                "type": "checkbox",
+                "props": {
+                  "options": [
+                    "刮风时加重",
+                    "遇冷加重",
+                    "遇热加重",
+                    "阴雨天加重",
+                    "与天气无关"
+                  ]
+                },
+                "storageKey": "weatherRelation",
+                "textGenConfig": {
+                  "targets": [
+                    "historyOfPresentIllness"
+                  ],
+                  "template": "{label}：{value}",
+                  "separator": "、"
+                }
+              }
+            ]
+          },
+          {
+            "id": "tcm_headache_section_3",
+            "title": "诱发与缓解因素",
+            "description": "",
+            "fields": [
+              {
+                "id": "1770191741993",
+                "key": "triggers",
+                "label": "诱发因素",
+                "type": "checkbox",
+                "props": {
+                  "options": [
+                    "情绪激动",
+                    "劳累过度",
+                    "睡眠不足",
+                    "受凉受风",
+                    "饮食不节",
+                    "月经前后",
+                    "无明显诱因"
+                  ]
+                },
+                "storageKey": "triggers",
+                "textGenConfig": {
+                  "targets": [
+                    "historyOfPresentIllness"
+                  ],
+                  "template": "{label}：{value}",
+                  "separator": "、"
+                }
+              },
+              {
+                "id": "1770191741994",
+                "key": "reliefFactors",
+                "label": "缓解因素",
+                "type": "preference_pair",
+                "props": {
+                  "pairs": [
+                    [
+                      "按压后减轻",
+                      "按压后加重"
+                    ],
+                    [
+                      "温敷后减轻",
+                      "冷敷后减轻"
+                    ],
+                    [
+                      "休息后减轻",
+                      "活动后减轻"
+                    ],
+                    [
+                      "进食后减轻",
+                      "进食后加重"
+                    ]
+                  ]
+                },
+                "storageKey": "reliefFactors"
+              }
+            ]
+          },
+          {
+            "id": "tcm_headache_section_4",
+            "title": "伴随症状",
+            "description": "",
+            "fields": [
+              {
+                "id": "1770191741995",
+                "key": "accompaniedSymptoms",
+                "label": "伴随症状",
+                "type": "checkbox",
+                "props": {
+                  "options": [
+                    "恶心欲吐",
+                    "头晕目眩",
+                    "恶寒发热",
+                    "耳鸣",
+                    "烦躁易怒",
+                    "神疲乏力",
+                    "失眠多梦",
+                    "视物模糊"
+                  ]
+                },
+                "storageKey": "accompaniedSymptoms",
+                "textGenConfig": {
+                  "targets": [
+                    "historyOfPresentIllness"
+                  ],
+                  "template": "{label}：{value}",
+                  "separator": "、"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "applicablePopulation": {
+        "genders": [],
+        "ageGroups": []
+      },
+      "createdAt": 1770191741987,
+      "updatedAt": 1770191741987,
+      "tcmMetadata": {
+        "category": "痛证",
+        "relatedMeridians": [
+          "太阳经",
+          "阳明经",
+          "少阳经",
+          "厥阴经"
+        ],
+        "relatedOrgans": [
+          "肝",
+          "肾",
+          "脾"
+        ],
+        "diagnosis": {
+          "possiblePatterns": [
+            {
+              "pattern": "肝阳上亢",
+              "keySymptoms": [
+                "胀痛",
+                "跳痛",
+                "两侧",
+                "烦躁"
+              ]
+            },
+            {
+              "pattern": "肝肾阴虚",
+              "keySymptoms": [
+                "空痛",
+                "隐痛",
+                "午后重",
+                "耳鸣"
+              ]
+            },
+            {
+              "pattern": "气血两虚",
+              "keySymptoms": [
+                "隐痛",
+                "乏力",
+                "面色萎黄"
+              ]
+            },
+            {
+              "pattern": "痰湿中阻",
+              "keySymptoms": [
+                "重痛如裹",
+                "阴雨加重",
+                "恶心"
+              ]
+            },
+            {
+              "pattern": "瘀血阻络",
+              "keySymptoms": [
+                "刺痛",
+                "固定不移",
+                "夜间重"
+              ]
+            },
+            {
+              "pattern": "风寒袭表",
+              "keySymptoms": [
+                "后头痛",
+                "恶寒",
+                "遇冷重"
+              ]
+            },
+            {
+              "pattern": "风热上扰",
+              "keySymptoms": [
+                "胀痛",
+                "发热",
+                "口渴"
+              ]
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "1770191741996",
+      "key": "tcm_insomnia",
+      "name": "失眠",
+      "description": "中医神志病",
+      "isCommonSymptom": true,
+      "systemCategory": [
+        "nervous"
+      ],
+      "bodyParts": [],
+      "customScript": "",
+      "config": {
+        "title": "智能问诊",
+        "sections": [
+          {
+            "id": "tcm_insomnia_section_0",
+            "title": "失眠类型",
+            "description": "",
+            "fields": [
+              {
+                "id": "1770191741997",
+                "key": "insomniaType",
+                "label": "失眠表现",
+                "type": "checkbox",
+                "props": {
+                  "options": [
+                    "入睡困难",
+                    "易醒",
+                    "早醒",
+                    "多梦",
+                    "噩梦纷纭",
+                    "彻夜不寐"
+                  ]
+                },
+                "storageKey": "insomniaType",
+                "textGenConfig": {
+                  "targets": [
+                    "historyOfPresentIllness"
+                  ],
+                  "template": "{label}：{value}",
+                  "separator": "、"
+                }
+              },
+              {
+                "id": "1770191741998",
+                "key": "sleepDuration",
+                "label": "每晚睡眠时间",
+                "type": "number",
+                "props": {
+                  "unit": "小时",
+                  "min": 0,
+                  "max": 12
+                },
+                "storageKey": "sleepDuration",
+                "textGenConfig": {
+                  "targets": [
+                    "historyOfPresentIllness"
+                  ],
+                  "template": "{label}：{value}小时"
+                }
+              },
+              {
+                "id": "1770191741999",
+                "key": "duration",
+                "label": "失眠病程",
+                "type": "input_radio",
+                "props": {
+                  "radioOptions": [
+                    "天",
+                    "周",
+                    "月",
+                    "年"
+                  ]
+                },
+                "storageKey": "duration"
+              }
+            ]
+          },
+          {
+            "id": "tcm_insomnia_section_1",
+            "title": "情志因素",
+            "description": "七情与失眠密切相关",
+            "fields": [
+              {
+                "id": "1770191742000",
+                "key": "emotionalFactors",
+                "label": "情志状态",
+                "type": "checkbox",
+                "props": {
+                  "options": [
+                    "心烦焦虑",
+                    "思虑过度",
+                    "心悸易惊",
+                    "情绪低落",
+                    "急躁易怒",
+                    "情绪平稳"
+                  ]
+                },
+                "storageKey": "emotionalFactors",
+                "textGenConfig": {
+                  "targets": [
+                    "historyOfPresentIllness"
+                  ],
+                  "template": "{label}：{value}",
+                  "separator": "、"
+                }
+              },
+              {
+                "id": "1770191742001",
+                "key": "stressLevel",
+                "label": "近期压力",
+                "type": "degree_slider",
+                "props": {
+                  "min": 1,
+                  "max": 10,
+                  "labels": [
+                    "无压力",
+                    "压力适中",
+                    "压力很大"
+                  ]
+                },
+                "storageKey": "stressLevel"
+              }
+            ]
+          },
+          {
+            "id": "tcm_insomnia_section_2",
+            "title": "伴随症状",
+            "description": "",
+            "fields": [
+              {
+                "id": "1770191742002",
+                "key": "accompaniedSymptoms",
+                "label": "伴随不适",
+                "type": "checkbox",
+                "props": {
+                  "options": [
+                    "心悸",
+                    "健忘",
+                    "头晕",
+                    "耳鸣",
+                    "盗汗",
+                    "口干",
+                    "口苦",
+                    "神疲乏力",
+                    "纳差",
+                    "胸闷"
+                  ]
+                },
+                "storageKey": "accompaniedSymptoms",
+                "textGenConfig": {
+                  "targets": [
+                    "historyOfPresentIllness"
+                  ],
+                  "template": "{label}：{value}",
+                  "separator": "、"
+                }
+              }
+            ]
+          },
+          {
+            "id": "tcm_insomnia_section_3",
+            "title": "饮食习惯",
+            "description": "",
+            "fields": [
+              {
+                "id": "1770191742003",
+                "key": "dietaryFactors",
+                "label": "饮食情况",
+                "type": "checkbox",
+                "props": {
+                  "options": [
+                    "晚餐过饱",
+                    "睡前饮茶咖啡",
+                    "饮酒",
+                    "嗜食辛辣",
+                    "嗜食肥甘",
+                    "饮食规律",
+                    "食欲正常"
+                  ]
+                },
+                "storageKey": "dietaryFactors",
+                "textGenConfig": {
+                  "targets": [
+                    "historyOfPresentIllness"
+                  ],
+                  "template": "{label}：{value}",
+                  "separator": "、"
+                }
+              }
+            ]
+          },
+          {
+            "id": "tcm_insomnia_section_4",
+            "title": "舌象脉象",
+            "description": "",
+            "fields": [
+              {
+                "id": "1770191742004",
+                "key": "tongueBody",
+                "label": "舌质",
+                "type": "radio",
+                "props": {
+                  "options": [
+                    "淡白",
+                    "红",
+                    "绛红",
+                    "紫暗",
+                    "淡红（正常）"
+                  ]
+                },
+                "storageKey": "tongueBody",
+                "textGenConfig": {
+                  "targets": [
+                    "historyOfPresentIllness"
+                  ],
+                  "template": "{label}：{value}",
+                  "separator": "、"
+                }
+              },
+              {
+                "id": "1770191742005",
+                "key": "tongueCoating",
+                "label": "舌苔",
+                "type": "radio",
+                "props": {
+                  "options": [
+                    "薄白",
+                    "薄黄",
+                    "厚腻",
+                    "黄腻",
+                    "少苔或无苔"
+                  ]
+                },
+                "storageKey": "tongueCoating",
+                "textGenConfig": {
+                  "targets": [
+                    "historyOfPresentIllness"
+                  ],
+                  "template": "{label}：{value}",
+                  "separator": "、"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "applicablePopulation": {
+        "genders": [],
+        "ageGroups": []
+      },
+      "createdAt": 1770191741987,
+      "updatedAt": 1770191741987,
+      "tcmMetadata": {
+        "category": "神志病",
+        "relatedOrgans": [
+          "心",
+          "肝",
+          "脾",
+          "肾"
+        ],
+        "diagnosis": {
+          "possiblePatterns": [
+            {
+              "pattern": "心脾两虚",
+              "keySymptoms": [
+                "易醒",
+                "多梦",
+                "心悸",
+                "健忘",
+                "乏力",
+                "舌淡"
+              ]
+            },
+            {
+              "pattern": "心肾不交",
+              "keySymptoms": [
+                "入睡难",
+                "早醒",
+                "心烦",
+                "盗汗",
+                "耳鸣",
+                "舌红少苔"
+              ]
+            },
+            {
+              "pattern": "肝郁化火",
+              "keySymptoms": [
+                "入睡难",
+                "急躁",
+                "口苦",
+                "头痛",
+                "舌红苔黄"
+              ]
+            },
+            {
+              "pattern": "痰热扰心",
+              "keySymptoms": [
+                "多梦",
+                "噩梦",
+                "胸闷",
+                "口苦",
+                "舌红苔黄腻"
+              ]
+            },
+            {
+              "pattern": "心胆气虚",
+              "keySymptoms": [
+                "易惊醒",
+                "心悸",
+                "胆怯",
+                "舌淡"
+              ]
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "1770191742006",
+      "key": "tcm_dizziness",
+      "name": "眩晕",
+      "description": "中医眩晕",
+      "isCommonSymptom": true,
+      "systemCategory": [
+        "other"
+      ],
+      "bodyParts": [],
+      "customScript": "",
+      "config": {
+        "title": "智能问诊",
+        "sections": [
+          {
+            "id": "tcm_dizziness_section_0",
+            "title": "眩晕特点",
+            "description": "",
+            "fields": [
+              {
+                "id": "1770191742007",
+                "key": "dizzinessType",
+                "label": "眩晕感觉",
+                "type": "checkbox",
+                "props": {
+                  "options": [
+                    "天旋地转",
+                    "头重脚轻",
+                    "昏沉如蒙",
+                    "眼花眼黑",
+                    "站立不稳"
+                  ]
+                },
+                "storageKey": "dizzinessType",
+                "textGenConfig": {
+                  "targets": [
+                    "historyOfPresentIllness"
+                  ],
+                  "template": "{label}：{value}",
+                  "separator": "、"
+                }
+              },
+              {
+                "id": "1770191742008",
+                "key": "onset",
+                "label": "发作特点",
+                "type": "radio",
+                "props": {
+                  "options": [
+                    "突然发作",
+                    "缓慢起病",
+                    "反复发作"
+                  ]
+                },
+                "storageKey": "onset",
+                "textGenConfig": {
+                  "targets": [
+                    "historyOfPresentIllness"
+                  ],
+                  "template": "{label}：{value}",
+                  "separator": "、"
+                }
+              }
+            ]
+          },
+          {
+            "id": "tcm_dizziness_section_1",
+            "title": "诱发因素",
+            "description": "",
+            "fields": [
+              {
+                "id": "1770191742009",
+                "key": "triggers",
+                "label": "诱发因素",
+                "type": "checkbox",
+                "props": {
+                  "options": [
+                    "体位改变时",
+                    "劳累后",
+                    "情绪激动后",
+                    "饮食后",
+                    "月经期间",
+                    "无明显诱因"
+                  ]
+                },
+                "storageKey": "triggers",
+                "textGenConfig": {
+                  "targets": [
+                    "historyOfPresentIllness"
+                  ],
+                  "template": "{label}：{value}",
+                  "separator": "、"
+                }
+              }
+            ]
+          },
+          {
+            "id": "tcm_dizziness_section_2",
+            "title": "伴随症状",
+            "description": "",
+            "fields": [
+              {
+                "id": "1770191742010",
+                "key": "accompaniedSymptoms",
+                "label": "伴随症状",
+                "type": "checkbox",
+                "props": {
+                  "options": [
+                    "头痛",
+                    "耳鸣",
+                    "恶心欲吐",
+                    "心悸",
+                    "神疲乏力",
+                    "腰膝酸软",
+                    "失眠多梦",
+                    "肢体麻木"
+                  ]
+                },
+                "storageKey": "accompaniedSymptoms",
+                "textGenConfig": {
+                  "targets": [
+                    "historyOfPresentIllness"
+                  ],
+                  "template": "{label}：{value}",
+                  "separator": "、"
+                }
+              }
+            ]
+          },
+          {
+            "id": "tcm_dizziness_section_3",
+            "title": "饮食二便",
+            "description": "",
+            "fields": [
+              {
+                "id": "1770191742011",
+                "key": "appetite",
+                "label": "食欲",
+                "type": "radio",
+                "props": {
+                  "options": [
+                    "正常",
+                    "食欲减退",
+                    "食后腹胀",
+                    "恶心厌食"
+                  ]
+                },
+                "storageKey": "appetite",
+                "textGenConfig": {
+                  "targets": [
+                    "historyOfPresentIllness"
+                  ],
+                  "template": "{label}：{value}",
+                  "separator": "、"
+                }
+              },
+              {
+                "id": "1770191742012",
+                "key": "stool",
+                "label": "大便",
+                "type": "radio",
+                "props": {
+                  "options": [
+                    "正常",
+                    "便溏",
+                    "便秘",
+                    "时干时稀"
+                  ]
+                },
+                "storageKey": "stool",
+                "textGenConfig": {
+                  "targets": [
+                    "historyOfPresentIllness"
+                  ],
+                  "template": "{label}：{value}",
+                  "separator": "、"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "applicablePopulation": {
+        "genders": [],
+        "ageGroups": []
+      },
+      "createdAt": 1770191741987,
+      "updatedAt": 1770191741987,
+      "tcmMetadata": {
+        "category": "眩晕",
+        "relatedOrgans": [
+          "肝",
+          "脾",
+          "肾"
+        ],
+        "diagnosis": {
+          "possiblePatterns": [
+            {
+              "pattern": "肝阳上亢",
+              "keySymptoms": [
+                "天旋地转",
+                "头痛",
+                "急躁",
+                "面红",
+                "舌红"
+              ]
+            },
+            {
+              "pattern": "气血亏虚",
+              "keySymptoms": [
+                "头晕眼花",
+                "面色萎黄",
+                "乏力",
+                "心悸",
+                "舌淡"
+              ]
+            },
+            {
+              "pattern": "痰湿中阻",
+              "keySymptoms": [
+                "头重如蒙",
+                "恶心",
+                "胸闷",
+                "纳呆",
+                "苔腻"
+              ]
+            },
+            {
+              "pattern": "肾精不足",
+              "keySymptoms": [
+                "头晕",
+                "耳鸣",
+                "腰膝酸软",
+                "健忘",
+                "舌淡"
+              ]
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "1770191742013",
+      "key": "tcm_cough",
+      "name": "咳嗽",
+      "description": "中医肺系病证",
+      "isCommonSymptom": true,
+      "systemCategory": [
+        "other"
+      ],
+      "bodyParts": [],
+      "customScript": "",
+      "config": {
+        "title": "智能问诊",
+        "sections": [
+          {
+            "id": "tcm_cough_section_0",
+            "title": "咳嗽特点",
+            "description": "",
+            "fields": [
+              {
+                "id": "1770191742014",
+                "key": "coughSound",
+                "label": "咳嗽声音",
+                "type": "radio",
+                "props": {
+                  "options": [
+                    "咳声洪亮有力",
+                    "咳声低弱无力",
+                    "干咳少痰",
+                    "痰多易咳",
+                    "咳如犬吠"
+                  ]
+                },
+                "storageKey": "coughSound",
+                "textGenConfig": {
+                  "targets": [
+                    "historyOfPresentIllness"
+                  ],
+                  "template": "{label}：{value}",
+                  "separator": "、"
+                }
+              },
+              {
+                "id": "1770191742015",
+                "key": "coughTiming",
+                "label": "咳嗽时间",
+                "type": "checkbox",
+                "props": {
+                  "options": [
+                    "晨起咳甚",
+                    "夜间咳甚",
+                    "食后咳嗽",
+                    "整日咳嗽"
+                  ]
+                },
+                "storageKey": "coughTiming",
+                "textGenConfig": {
+                  "targets": [
+                    "historyOfPresentIllness"
+                  ],
+                  "template": "{label}：{value}",
+                  "separator": "、"
+                }
+              }
+            ]
+          },
+          {
+            "id": "tcm_cough_section_1",
+            "title": "痰液特征",
+            "description": "",
+            "fields": [
+              {
+                "id": "1770191742016",
+                "key": "sputumAmount",
+                "label": "痰量",
+                "type": "radio",
+                "props": {
+                  "options": [
+                    "无痰",
+                    "少量",
+                    "中量",
+                    "大量"
+                  ]
+                },
+                "storageKey": "sputumAmount",
+                "textGenConfig": {
+                  "targets": [
+                    "historyOfPresentIllness"
+                  ],
+                  "template": "{label}：{value}",
+                  "separator": "、"
+                }
+              },
+              {
+                "id": "1770191742017",
+                "key": "sputumColor",
+                "label": "痰色",
+                "type": "radio",
+                "props": {
+                  "options": [
+                    "白色",
+                    "黄色",
+                    "黄绿色",
+                    "带血丝",
+                    "清稀如水"
+                  ]
+                },
+                "storageKey": "sputumColor",
+                "textGenConfig": {
+                  "targets": [
+                    "historyOfPresentIllness"
+                  ],
+                  "template": "{label}：{value}",
+                  "separator": "、"
+                }
+              },
+              {
+                "id": "1770191742018",
+                "key": "sputumTexture",
+                "label": "痰质",
+                "type": "radio",
+                "props": {
+                  "options": [
+                    "稀薄",
+                    "黏稠",
+                    "成块难咯",
+                    "泡沫状"
+                  ]
+                },
+                "storageKey": "sputumTexture",
+                "textGenConfig": {
+                  "targets": [
+                    "historyOfPresentIllness"
+                  ],
+                  "template": "{label}：{value}",
+                  "separator": "、"
+                }
+              }
+            ]
+          },
+          {
+            "id": "tcm_cough_section_2",
+            "title": "寒热辨证",
+            "description": "",
+            "fields": [
+              {
+                "id": "1770191742019",
+                "key": "coldHeat",
+                "label": "寒热感觉",
+                "type": "checkbox",
+                "props": {
+                  "options": [
+                    "恶寒",
+                    "发热",
+                    "咽痛",
+                    "咽痒",
+                    "口渴欲饮",
+                    "口不渴"
+                  ]
+                },
+                "storageKey": "coldHeat",
+                "textGenConfig": {
+                  "targets": [
+                    "historyOfPresentIllness"
+                  ],
+                  "template": "{label}：{value}",
+                  "separator": "、"
+                }
+              }
+            ]
+          },
+          {
+            "id": "tcm_cough_section_3",
+            "title": "伴随症状",
+            "description": "",
+            "fields": [
+              {
+                "id": "1770191742020",
+                "key": "accompaniedSymptoms",
+                "label": "伴随症状",
+                "type": "checkbox",
+                "props": {
+                  "options": [
+                    "鼻塞流涕",
+                    "头痛身痛",
+                    "胸闷气短",
+                    "咳时胸痛",
+                    "咳时遗尿",
+                    "盗汗",
+                    "消瘦",
+                    "食欲减退"
+                  ]
+                },
+                "storageKey": "accompaniedSymptoms",
+                "textGenConfig": {
+                  "targets": [
+                    "historyOfPresentIllness"
+                  ],
+                  "template": "{label}：{value}",
+                  "separator": "、"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "applicablePopulation": {
+        "genders": [],
+        "ageGroups": []
+      },
+      "createdAt": 1770191741987,
+      "updatedAt": 1770191741987,
+      "tcmMetadata": {
+        "category": "肺系病证",
+        "relatedOrgans": [
+          "肺",
+          "脾",
+          "肾"
+        ],
+        "diagnosis": {
+          "possiblePatterns": [
+            {
+              "pattern": "风寒袭肺",
+              "keySymptoms": [
+                "咽痒",
+                "痰白清稀",
+                "恶寒",
+                "无汗"
+              ]
+            },
+            {
+              "pattern": "风热犯肺",
+              "keySymptoms": [
+                "咽痛",
+                "痰黄黏",
+                "发热",
+                "口渴"
+              ]
+            },
+            {
+              "pattern": "燥邪伤肺",
+              "keySymptoms": [
+                "干咳少痰",
+                "咽干鼻燥",
+                "痰黏难咯"
+              ]
+            },
+            {
+              "pattern": "痰湿蕴肺",
+              "keySymptoms": [
+                "痰多色白",
+                "胸闷",
+                "纳呆",
+                "苔白腻"
+              ]
+            },
+            {
+              "pattern": "痰热壅肺",
+              "keySymptoms": [
+                "痰黄黏稠",
+                "咳吐不爽",
+                "口渴",
+                "苔黄腻"
+              ]
+            },
+            {
+              "pattern": "肺阴亏虚",
+              "keySymptoms": [
+                "干咳",
+                "痰少质黏",
+                "潮热盗汗",
+                "舌红少苔"
+              ]
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "1770191742021",
+      "key": "tcm_abdominal_pain",
+      "name": "腹痛",
+      "description": "中医脾胃病证",
+      "isCommonSymptom": true,
+      "systemCategory": [
+        "other"
+      ],
+      "bodyParts": [],
+      "customScript": "",
+      "config": {
+        "title": "智能问诊",
+        "sections": [
+          {
+            "id": "tcm_abdominal_pain_section_0",
+            "title": "疼痛部位",
+            "description": "",
+            "fields": [
+              {
+                "id": "1770191742022",
+                "key": "painLocation",
+                "label": "疼痛部位",
+                "type": "checkbox",
+                "props": {
+                  "options": [
+                    "上腹部（胃脘）",
+                    "脐周",
+                    "小腹（脐下）",
+                    "左侧腹",
+                    "右侧腹",
+                    "两胁",
+                    "全腹"
+                  ]
+                },
+                "storageKey": "painLocation",
+                "textGenConfig": {
+                  "targets": [
+                    "historyOfPresentIllness"
+                  ],
+                  "template": "{label}：{value}",
+                  "separator": "、"
+                }
+              }
+            ]
+          },
+          {
+            "id": "tcm_abdominal_pain_section_1",
+            "title": "疼痛性质",
+            "description": "",
+            "fields": [
+              {
+                "id": "1770191742023",
+                "key": "painNature",
+                "label": "疼痛感觉",
+                "type": "checkbox",
+                "props": {
+                  "options": [
+                    "胀痛",
+                    "刺痛",
+                    "隐痛",
+                    "绞痛",
+                    "灼痛",
+                    "冷痛",
+                    "重坠"
+                  ]
+                },
+                "storageKey": "painNature",
+                "textGenConfig": {
+                  "targets": [
+                    "historyOfPresentIllness"
+                  ],
+                  "template": "{label}：{value}",
+                  "separator": "、"
+                }
+              },
+              {
+                "id": "1770191742024",
+                "key": "reliefAggravation",
+                "label": "喜按/拒按",
+                "type": "preference_pair",
+                "props": {
+                  "pairs": [
+                    [
+                      "喜按（按压后减轻）",
+                      "拒按（按压后加重）"
+                    ],
+                    [
+                      "喜温（热敷后减轻）",
+                      "喜凉（冷敷后减轻）"
+                    ],
+                    [
+                      "进食后减轻",
+                      "进食后加重"
+                    ],
+                    [
+                      "排便后减轻",
+                      "排便后加重"
+                    ],
+                    [
+                      "排气后减轻",
+                      "排气无缓解"
+                    ]
+                  ]
+                },
+                "storageKey": "reliefAggravation"
+              }
+            ]
+          },
+          {
+            "id": "tcm_abdominal_pain_section_2",
+            "title": "二便情况",
+            "description": "",
+            "fields": [
+              {
+                "id": "1770191742025",
+                "key": "stool",
+                "label": "大便",
+                "type": "radio",
+                "props": {
+                  "options": [
+                    "正常",
+                    "便溏",
+                    "泄泻",
+                    "便秘",
+                    "时干时稀"
+                  ]
+                },
+                "storageKey": "stool",
+                "textGenConfig": {
+                  "targets": [
+                    "historyOfPresentIllness"
+                  ],
+                  "template": "{label}：{value}",
+                  "separator": "、"
+                }
+              },
+              {
+                "id": "1770191742026",
+                "key": "stoolOdor",
+                "label": "大便气味",
+                "type": "radio",
+                "props": {
+                  "options": [
+                    "正常",
+                    "臭秽",
+                    "酸腐",
+                    "腥臭",
+                    "无臭"
+                  ]
+                },
+                "storageKey": "stoolOdor",
+                "textGenConfig": {
+                  "targets": [
+                    "historyOfPresentIllness"
+                  ],
+                  "template": "{label}：{value}",
+                  "separator": "、"
+                }
+              }
+            ]
+          },
+          {
+            "id": "tcm_abdominal_pain_section_3",
+            "title": "伴随症状",
+            "description": "",
+            "fields": [
+              {
+                "id": "1770191742027",
+                "key": "accompaniedSymptoms",
+                "label": "伴随症状",
+                "type": "checkbox",
+                "props": {
+                  "options": [
+                    "恶心呕吐",
+                    "嗳气反酸",
+                    "腹胀矢气",
+                    "肠鸣辘辘",
+                    "食欲不振",
+                    "口苦口干",
+                    "发热恶寒",
+                    "神疲乏力"
+                  ]
+                },
+                "storageKey": "accompaniedSymptoms",
+                "textGenConfig": {
+                  "targets": [
+                    "historyOfPresentIllness"
+                  ],
+                  "template": "{label}：{value}",
+                  "separator": "、"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "applicablePopulation": {
+        "genders": [],
+        "ageGroups": []
+      },
+      "createdAt": 1770191741987,
+      "updatedAt": 1770191741987,
+      "tcmMetadata": {
+        "category": "脾胃病证",
+        "relatedOrgans": [
+          "脾",
+          "胃",
+          "肝",
+          "大肠",
+          "小肠"
+        ],
+        "diagnosis": {
+          "possiblePatterns": [
+            {
+              "pattern": "寒邪内阻",
+              "keySymptoms": [
+                "冷痛",
+                "绞痛",
+                "喜温喜按",
+                "得温痛减"
+              ]
+            },
+            {
+              "pattern": "湿热蕴结",
+              "keySymptoms": [
+                "灼痛",
+                "拒按",
+                "便臭",
+                "口苦",
+                "苔黄腻"
+              ]
+            },
+            {
+              "pattern": "饮食积滞",
+              "keySymptoms": [
+                "胀痛",
+                "嗳腐吞酸",
+                "拒按",
+                "便后痛减"
+              ]
+            },
+            {
+              "pattern": "肝气郁结",
+              "keySymptoms": [
+                "胀痛窜痛",
+                "两胁",
+                "情志不遂",
+                "嗳气"
+              ]
+            },
+            {
+              "pattern": "脾胃虚寒",
+              "keySymptoms": [
+                "隐痛",
+                "喜按喜温",
+                "便溏",
+                "乏力"
+              ]
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "1770191742028",
+      "key": "tcm_chest_pain",
+      "name": "胸闷胸痛",
+      "description": "中医心系病证",
+      "isCommonSymptom": true,
+      "systemCategory": [
+        "other"
+      ],
+      "bodyParts": [],
+      "customScript": "",
+      "config": {
+        "title": "智能问诊",
+        "sections": [
+          {
+            "id": "tcm_chest_pain_section_0",
+            "title": "疼痛部位与放射",
+            "description": "",
+            "fields": [
+              {
+                "id": "1770191742029",
+                "key": "painLocation",
+                "label": "疼痛部位",
+                "type": "checkbox",
+                "props": {
+                  "options": [
+                    "心前区",
+                    "胸骨后",
+                    "左胸",
+                    "两侧胸部",
+                    "后背"
+                  ]
+                },
+                "storageKey": "painLocation",
+                "textGenConfig": {
+                  "targets": [
+                    "historyOfPresentIllness"
+                  ],
+                  "template": "{label}：{value}",
+                  "separator": "、"
+                }
+              },
+              {
+                "id": "1770191742030",
+                "key": "radiation",
+                "label": "放射部位",
+                "type": "checkbox",
+                "props": {
+                  "options": [
+                    "放射至左肩臂",
+                    "放射至后背",
+                    "放射至咽喉",
+                    "放射至下颌",
+                    "无放射"
+                  ]
+                },
+                "storageKey": "radiation",
+                "textGenConfig": {
+                  "targets": [
+                    "historyOfPresentIllness"
+                  ],
+                  "template": "{label}：{value}",
+                  "separator": "、"
+                }
+              }
+            ]
+          },
+          {
+            "id": "tcm_chest_pain_section_1",
+            "title": "疼痛性质",
+            "description": "",
+            "fields": [
+              {
+                "id": "1770191742031",
+                "key": "painNature",
+                "label": "疼痛/闷感性质",
+                "type": "checkbox",
+                "props": {
+                  "options": [
+                    "闷胀不舒",
+                    "刺痛",
+                    "压迫感",
+                    "灼热感",
+                    "重坠感"
+                  ]
+                },
+                "storageKey": "painNature",
+                "textGenConfig": {
+                  "targets": [
+                    "historyOfPresentIllness"
+                  ],
+                  "template": "{label}：{value}",
+                  "separator": "、"
+                }
+              },
+              {
+                "id": "1770191742032",
+                "key": "severity",
+                "label": "疼痛程度",
+                "type": "degree_slider",
+                "props": {
+                  "min": 1,
+                  "max": 10,
+                  "labels": [
+                    "轻微不适",
+                    "中等",
+                    "剧烈难忍"
+                  ]
+                },
+                "storageKey": "severity"
+              },
+              {
+                "id": "1770191742033",
+                "key": "duration",
+                "label": "每次发作持续",
+                "type": "radio",
+                "props": {
+                  "options": [
+                    "数秒钟",
+                    "数分钟",
+                    "十余分钟",
+                    "半小时以上",
+                    "持续不解"
+                  ]
+                },
+                "storageKey": "duration",
+                "textGenConfig": {
+                  "targets": [
+                    "historyOfPresentIllness"
+                  ],
+                  "template": "{label}：{value}",
+                  "separator": "、"
+                }
+              }
+            ]
+          },
+          {
+            "id": "tcm_chest_pain_section_2",
+            "title": "诱发与缓解",
+            "description": "",
+            "fields": [
+              {
+                "id": "1770191742034",
+                "key": "triggers",
+                "label": "诱发因素",
+                "type": "checkbox",
+                "props": {
+                  "options": [
+                    "劳累活动后",
+                    "情绪激动后",
+                    "受寒后",
+                    "饱食后",
+                    "安静休息时",
+                    "无明显诱因"
+                  ]
+                },
+                "storageKey": "triggers",
+                "textGenConfig": {
+                  "targets": [
+                    "historyOfPresentIllness"
+                  ],
+                  "template": "{label}：{value}",
+                  "separator": "、"
+                }
+              },
+              {
+                "id": "1770191742035",
+                "key": "relief",
+                "label": "缓解因素",
+                "type": "checkbox",
+                "props": {
+                  "options": [
+                    "休息后缓解",
+                    "含服药物后缓解",
+                    "嗳气后缓解",
+                    "按压后缓解",
+                    "温敷后缓解",
+                    "不能缓解"
+                  ]
+                },
+                "storageKey": "relief",
+                "textGenConfig": {
+                  "targets": [
+                    "historyOfPresentIllness"
+                  ],
+                  "template": "{label}：{value}",
+                  "separator": "、"
+                }
+              }
+            ]
+          },
+          {
+            "id": "tcm_chest_pain_section_3",
+            "title": "伴随症状",
+            "description": "",
+            "fields": [
+              {
+                "id": "1770191742036",
+                "key": "accompaniedSymptoms",
+                "label": "伴随症状",
+                "type": "checkbox",
+                "props": {
+                  "options": [
+                    "心悸",
+                    "气短",
+                    "出汗",
+                    "四肢冰冷",
+                    "面色青紫",
+                    "咳嗽",
+                    "恶心欲吐",
+                    "心烦不安"
+                  ]
+                },
+                "storageKey": "accompaniedSymptoms",
+                "textGenConfig": {
+                  "targets": [
+                    "historyOfPresentIllness"
+                  ],
+                  "template": "{label}：{value}",
+                  "separator": "、"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "applicablePopulation": {
+        "genders": [],
+        "ageGroups": []
+      },
+      "createdAt": 1770191741987,
+      "updatedAt": 1770191741987,
+      "tcmMetadata": {
+        "category": "心系病证",
+        "relatedOrgans": [
+          "心",
+          "肺",
+          "肝"
+        ],
+        "diagnosis": {
+          "possiblePatterns": [
+            {
+              "pattern": "心血瘀阻",
+              "keySymptoms": [
+                "刺痛固定",
+                "夜间加重",
+                "舌紫暗"
+              ]
+            },
+            {
+              "pattern": "痰浊闭阻",
+              "keySymptoms": [
+                "闷痛",
+                "肥胖",
+                "痰多",
+                "苔腻"
+              ]
+            },
+            {
+              "pattern": "寒凝心脉",
+              "keySymptoms": [
+                "遇寒加重",
+                "得温缓解",
+                "四肢冷"
+              ]
+            },
+            {
+              "pattern": "心气虚",
+              "keySymptoms": [
+                "劳累加重",
+                "气短",
+                "乏力",
+                "自汗"
+              ]
+            },
+            {
+              "pattern": "心阴虚",
+              "keySymptoms": [
+                "心烦",
+                "失眠",
+                "盗汗",
+                "舌红少苔"
+              ]
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "1770191742037",
+      "key": "tcm_fever",
+      "name": "发热",
+      "description": "中医外感病证/内伤发热",
+      "isCommonSymptom": true,
+      "systemCategory": [
+        "other"
+      ],
+      "bodyParts": [],
+      "customScript": "",
+      "config": {
+        "title": "智能问诊",
+        "sections": [
+          {
+            "id": "tcm_fever_section_0",
+            "title": "发热特点",
+            "description": "",
+            "fields": [
+              {
+                "id": "1770191742038",
+                "key": "feverType",
+                "label": "发热类型",
+                "type": "radio",
+                "props": {
+                  "options": [
+                    "恶寒发热并见",
+                    "壮热不恶寒",
+                    "潮热（午后或夜间加重）",
+                    "低热不退",
+                    "寒热往来",
+                    "发热时作时止"
+                  ]
+                },
+                "storageKey": "feverType",
+                "textGenConfig": {
+                  "targets": [
+                    "historyOfPresentIllness"
+                  ],
+                  "template": "{label}：{value}",
+                  "separator": "、"
+                }
+              },
+              {
+                "id": "1770191742039",
+                "key": "temperature",
+                "label": "最高体温",
+                "type": "number",
+                "props": {
+                  "unit": "℃",
+                  "min": 36,
+                  "max": 42,
+                  "step": 0.1
+                },
+                "storageKey": "temperature",
+                "textGenConfig": {
+                  "targets": [
+                    "historyOfPresentIllness"
+                  ],
+                  "template": "{label}：{value}℃"
+                }
+              },
+              {
+                "id": "1770191742040",
+                "key": "duration",
+                "label": "发热时间",
+                "type": "input_radio",
+                "props": {
+                  "radioOptions": [
+                    "小时",
+                    "天",
+                    "周"
+                  ]
+                },
+                "storageKey": "duration"
+              }
+            ]
+          },
+          {
+            "id": "tcm_fever_section_1",
+            "title": "恶寒情况",
+            "description": "恶寒与发热的关系是辨别表里的关键",
+            "fields": [
+              {
+                "id": "1770191742041",
+                "key": "chillsType",
+                "label": "恶寒程度",
+                "type": "radio",
+                "props": {
+                  "options": [
+                    "恶寒重，发热轻",
+                    "恶寒轻，发热重",
+                    "但热不寒",
+                    "寒热交替"
+                  ]
+                },
+                "storageKey": "chillsType",
+                "textGenConfig": {
+                  "targets": [
+                    "historyOfPresentIllness"
+                  ],
+                  "template": "{label}：{value}",
+                  "separator": "、"
+                }
+              }
+            ]
+          },
+          {
+            "id": "tcm_fever_section_2",
+            "title": "汗出情况",
+            "description": "",
+            "fields": [
+              {
+                "id": "1770191742042",
+                "key": "sweating",
+                "label": "汗出情况",
+                "type": "radio",
+                "props": {
+                  "options": [
+                    "无汗",
+                    "微汗",
+                    "大汗",
+                    "盗汗",
+                    "冷汗"
+                  ]
+                },
+                "storageKey": "sweating",
+                "textGenConfig": {
+                  "targets": [
+                    "historyOfPresentIllness"
+                  ],
+                  "template": "{label}：{value}",
+                  "separator": "、"
+                }
+              }
+            ]
+          },
+          {
+            "id": "tcm_fever_section_3",
+            "title": "伴随症状",
+            "description": "",
+            "fields": [
+              {
+                "id": "1770191742043",
+                "key": "headBody",
+                "label": "头身症状",
+                "type": "checkbox",
+                "props": {
+                  "options": [
+                    "头痛",
+                    "身体疼痛",
+                    "项背强痛",
+                    "关节酸痛"
+                  ]
+                },
+                "storageKey": "headBody",
+                "textGenConfig": {
+                  "targets": [
+                    "historyOfPresentIllness"
+                  ],
+                  "template": "{label}：{value}",
+                  "separator": "、"
+                }
+              },
+              {
+                "id": "1770191742044",
+                "key": "respiratory",
+                "label": "呼吸道症状",
+                "type": "checkbox",
+                "props": {
+                  "options": [
+                    "咳嗽",
+                    "咽痛",
+                    "咽痒",
+                    "流涕",
+                    "鼻塞"
+                  ]
+                },
+                "storageKey": "respiratory",
+                "textGenConfig": {
+                  "targets": [
+                    "historyOfPresentIllness"
+                  ],
+                  "template": "{label}：{value}",
+                  "separator": "、"
+                }
+              },
+              {
+                "id": "1770191742045",
+                "key": "consciousness",
+                "label": "神志状态",
+                "type": "radio",
+                "props": {
+                  "options": [
+                    "神志清楚",
+                    "烦躁不安",
+                    "嗜睡",
+                    "神昏谵语"
+                  ]
+                },
+                "storageKey": "consciousness",
+                "textGenConfig": {
+                  "targets": [
+                    "historyOfPresentIllness"
+                  ],
+                  "template": "{label}：{value}",
+                  "separator": "、"
+                }
+              }
+            ]
+          },
+          {
+            "id": "tcm_fever_section_4",
+            "title": "卫气营血辨证（外感热病）",
+            "description": "温病传变规律",
+            "fields": [
+              {
+                "id": "1770191742046",
+                "key": "weiQiYingXue",
+                "label": "病位判断",
+                "type": "radio",
+                "props": {
+                  "options": [
+                    "卫分证：发热恶寒、头痛、咽痒",
+                    "气分证：壮热不寒、大汗、大渴",
+                    "营分证：身热夜甚、心烦、斑疹隐隐",
+                    "血分证：高热、神昏、出血"
+                  ]
+                },
+                "storageKey": "weiQiYingXue",
+                "textGenConfig": {
+                  "targets": [
+                    "historyOfPresentIllness"
+                  ],
+                  "template": "{label}：{value}",
+                  "separator": "、"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "applicablePopulation": {
+        "genders": [],
+        "ageGroups": []
+      },
+      "createdAt": 1770191741987,
+      "updatedAt": 1770191741987,
+      "tcmMetadata": {
+        "category": "外感病证/内伤发热",
+        "relatedOrgans": [
+          "肺",
+          "卫气",
+          "营血"
+        ],
+        "diagnosis": {
+          "possiblePatterns": [
+            {
+              "pattern": "风寒束表",
+              "keySymptoms": [
+                "恶寒重",
+                "发热轻",
+                "无汗",
+                "头身痛",
+                "苔薄白"
+              ]
+            },
+            {
+              "pattern": "风热犯表",
+              "keySymptoms": [
+                "发热重",
+                "恶寒轻",
+                "微汗",
+                "咽痛",
+                "苔薄黄"
+              ]
+            },
+            {
+              "pattern": "暑湿袭表",
+              "keySymptoms": [
+                "身热不扬",
+                "头重如裹",
+                "胸闷",
+                "苔腻"
+              ]
+            },
+            {
+              "pattern": "阳明气分热盛",
+              "keySymptoms": [
+                "壮热",
+                "大汗",
+                "大渴",
+                "脉洪大"
+              ]
+            },
+            {
+              "pattern": "少阳证",
+              "keySymptoms": [
+                "寒热往来",
+                "胸胁苦满",
+                "口苦",
+                "咽干"
+              ]
+            },
+            {
+              "pattern": "阴虚发热",
+              "keySymptoms": [
+                "午后低热",
+                "五心烦热",
+                "盗汗",
+                "舌红少苔"
+              ]
+            },
+            {
+              "pattern": "气虚发热",
+              "keySymptoms": [
+                "低热",
+                "劳累加重",
+                "乏力",
+                "自汗",
+                "舌淡"
+              ]
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "1770191742047",
+      "key": "tcm_palpitation",
+      "name": "心悸",
+      "description": "中医心系病证",
+      "isCommonSymptom": true,
+      "systemCategory": [
+        "other"
+      ],
+      "bodyParts": [],
+      "customScript": "",
+      "config": {
+        "title": "智能问诊",
+        "sections": [
+          {
+            "id": "tcm_palpitation_section_0",
+            "title": "心悸特点",
+            "description": "",
+            "fields": [
+              {
+                "id": "1770191742048",
+                "key": "palpitationType",
+                "label": "心悸程度",
+                "type": "radio",
+                "props": {
+                  "options": [
+                    "心悸（自觉心跳，时作时止）",
+                    "怔忡（心跳剧烈，持续不止）"
+                  ]
+                },
+                "storageKey": "palpitationType",
+                "textGenConfig": {
+                  "targets": [
+                    "historyOfPresentIllness"
+                  ],
+                  "template": "{label}：{value}",
+                  "separator": "、"
+                }
+              },
+              {
+                "id": "1770191742049",
+                "key": "frequency",
+                "label": "发作频率",
+                "type": "radio",
+                "props": {
+                  "options": [
+                    "偶尔发作",
+                    "经常发作",
+                    "持续不止"
+                  ]
+                },
+                "storageKey": "frequency",
+                "textGenConfig": {
+                  "targets": [
+                    "historyOfPresentIllness"
+                  ],
+                  "template": "{label}：{value}",
+                  "separator": "、"
+                }
+              },
+              {
+                "id": "1770191742050",
+                "key": "duration",
+                "label": "病程",
+                "type": "input_radio",
+                "props": {
+                  "radioOptions": [
+                    "天",
+                    "周",
+                    "月",
+                    "年"
+                  ]
+                },
+                "storageKey": "duration"
+              }
+            ]
+          },
+          {
+            "id": "tcm_palpitation_section_1",
+            "title": "诱发因素",
+            "description": "",
+            "fields": [
+              {
+                "id": "1770191742051",
+                "key": "triggers",
+                "label": "诱发因素",
+                "type": "checkbox",
+                "props": {
+                  "options": [
+                    "劳累后",
+                    "情绪激动后",
+                    "受惊吓后",
+                    "失眠后",
+                    "饱食后",
+                    "无明显诱因"
+                  ]
+                },
+                "storageKey": "triggers",
+                "textGenConfig": {
+                  "targets": [
+                    "historyOfPresentIllness"
+                  ],
+                  "template": "{label}：{value}",
+                  "separator": "、"
+                }
+              }
+            ]
+          },
+          {
+            "id": "tcm_palpitation_section_2",
+            "title": "伴随症状",
+            "description": "",
+            "fields": [
+              {
+                "id": "1770191742052",
+                "key": "chestSymptoms",
+                "label": "胸部症状",
+                "type": "checkbox",
+                "props": {
+                  "options": [
+                    "胸闷",
+                    "胸痛",
+                    "气短",
+                    "喘息不能平卧"
+                  ]
+                },
+                "storageKey": "chestSymptoms",
+                "textGenConfig": {
+                  "targets": [
+                    "historyOfPresentIllness"
+                  ],
+                  "template": "{label}：{value}",
+                  "separator": "、"
+                }
+              },
+              {
+                "id": "1770191742053",
+                "key": "generalSymptoms",
+                "label": "全身症状",
+                "type": "checkbox",
+                "props": {
+                  "options": [
+                    "神疲乏力",
+                    "头晕",
+                    "失眠多梦",
+                    "健忘",
+                    "自汗",
+                    "盗汗",
+                    "四肢不温",
+                    "下肢水肿"
+                  ]
+                },
+                "storageKey": "generalSymptoms",
+                "textGenConfig": {
+                  "targets": [
+                    "historyOfPresentIllness"
+                  ],
+                  "template": "{label}：{value}",
+                  "separator": "、"
+                }
+              }
+            ]
+          },
+          {
+            "id": "tcm_palpitation_section_3",
+            "title": "面色与舌象",
+            "description": "",
+            "fields": [
+              {
+                "id": "1770191742054",
+                "key": "complexion",
+                "label": "面色",
+                "type": "radio",
+                "props": {
+                  "options": [
+                    "面色苍白",
+                    "面色萎黄",
+                    "面色晦暗",
+                    "面色红赤",
+                    "面色正常"
+                  ]
+                },
+                "storageKey": "complexion",
+                "textGenConfig": {
+                  "targets": [
+                    "historyOfPresentIllness"
+                  ],
+                  "template": "{label}：{value}",
+                  "separator": "、"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "applicablePopulation": {
+        "genders": [],
+        "ageGroups": []
+      },
+      "createdAt": 1770191741987,
+      "updatedAt": 1770191741987,
+      "tcmMetadata": {
+        "category": "心系病证",
+        "relatedOrgans": [
+          "心",
+          "脾",
+          "肾",
+          "胆"
+        ],
+        "diagnosis": {
+          "possiblePatterns": [
+            {
+              "pattern": "心气虚",
+              "keySymptoms": [
+                "心悸",
+                "气短",
+                "劳累加重",
+                "自汗",
+                "乏力",
+                "舌淡"
+              ]
+            },
+            {
+              "pattern": "心血虚",
+              "keySymptoms": [
+                "心悸",
+                "失眠",
+                "多梦",
+                "头晕",
+                "面色萎黄",
+                "舌淡"
+              ]
+            },
+            {
+              "pattern": "心阴虚",
+              "keySymptoms": [
+                "心悸",
+                "心烦",
+                "失眠",
+                "盗汗",
+                "五心烦热",
+                "舌红少苔"
+              ]
+            },
+            {
+              "pattern": "心阳虚",
+              "keySymptoms": [
+                "心悸",
+                "胸闷",
+                "畏寒",
+                "肢冷",
+                "水肿",
+                "舌淡胖"
+              ]
+            },
+            {
+              "pattern": "心胆气虚",
+              "keySymptoms": [
+                "心悸",
+                "善惊易恐",
+                "坐卧不安",
+                "舌淡"
+              ]
+            },
+            {
+              "pattern": "心脾两虚",
+              "keySymptoms": [
+                "心悸",
+                "健忘",
+                "失眠",
+                "纳差",
+                "乏力",
+                "舌淡"
+              ]
+            },
+            {
+              "pattern": "心血瘀阻",
+              "keySymptoms": [
+                "心悸",
+                "胸闷刺痛",
+                "面色晦暗",
+                "舌紫暗"
+              ]
+            },
+            {
+              "pattern": "痰火扰心",
+              "keySymptoms": [
+                "心悸",
+                "心烦",
+                "失眠",
+                "痰多",
+                "口苦",
+                "苔黄腻"
+              ]
+            },
+            {
+              "pattern": "水饮凌心",
+              "keySymptoms": [
+                "心悸",
+                "胸闷",
+                "气短",
+                "水肿",
+                "不能平卧",
+                "舌淡胖"
+              ]
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "1770191742055",
+      "key": "tcm_vomiting",
+      "name": "呕吐",
+      "description": "中医脾胃病证",
+      "isCommonSymptom": true,
+      "systemCategory": [
+        "other"
+      ],
+      "bodyParts": [],
+      "customScript": "",
+      "config": {
+        "title": "智能问诊",
+        "sections": [
+          {
+            "id": "tcm_vomiting_section_0",
+            "title": "呕吐特点",
+            "description": "",
+            "fields": [
+              {
+                "id": "1770191742056",
+                "key": "vomitingType",
+                "label": "呕吐表现",
+                "type": "radio",
+                "props": {
+                  "options": [
+                    "恶心欲吐未吐",
+                    "干呕无物",
+                    "呕吐有物",
+                    "喷射状呕吐"
+                  ]
+                },
+                "storageKey": "vomitingType",
+                "textGenConfig": {
+                  "targets": [
+                    "historyOfPresentIllness"
+                  ],
+                  "template": "{label}：{value}",
+                  "separator": "、"
+                }
+              },
+              {
+                "id": "1770191742057",
+                "key": "frequency",
+                "label": "呕吐频率",
+                "type": "radio",
+                "props": {
+                  "options": [
+                    "偶尔",
+                    "频繁",
+                    "持续不止"
+                  ]
+                },
+                "storageKey": "frequency",
+                "textGenConfig": {
+                  "targets": [
+                    "historyOfPresentIllness"
+                  ],
+                  "template": "{label}：{value}",
+                  "separator": "、"
+                }
+              }
+            ]
+          },
+          {
+            "id": "tcm_vomiting_section_1",
+            "title": "呕吐物性质",
+            "description": "呕吐物是辨证的重要依据",
+            "fields": [
+              {
+                "id": "1770191742058",
+                "key": "vomitusContent",
+                "label": "呕吐物内容",
+                "type": "checkbox",
+                "props": {
+                  "options": [
+                    "食物残渣",
+                    "清水",
+                    "酸水",
+                    "苦水（胆汁）",
+                    "痰涎",
+                    "带血"
+                  ]
+                },
+                "storageKey": "vomitusContent",
+                "textGenConfig": {
+                  "targets": [
+                    "historyOfPresentIllness"
+                  ],
+                  "template": "{label}：{value}",
+                  "separator": "、"
+                }
+              },
+              {
+                "id": "1770191742059",
+                "key": "vomitusOdor",
+                "label": "呕吐物气味",
+                "type": "radio",
+                "props": {
+                  "options": [
+                    "酸腐",
+                    "无特殊气味",
+                    "臭秽"
+                  ]
+                },
+                "storageKey": "vomitusOdor",
+                "textGenConfig": {
+                  "targets": [
+                    "historyOfPresentIllness"
+                  ],
+                  "template": "{label}：{value}",
+                  "separator": "、"
+                }
+              }
+            ]
+          },
+          {
+            "id": "tcm_vomiting_section_2",
+            "title": "发作规律",
+            "description": "",
+            "fields": [
+              {
+                "id": "1770191742060",
+                "key": "timing",
+                "label": "呕吐时间",
+                "type": "checkbox",
+                "props": {
+                  "options": [
+                    "食后即吐",
+                    "食后许久才吐",
+                    "晨起呕吐",
+                    "无规律"
+                  ]
+                },
+                "storageKey": "timing",
+                "textGenConfig": {
+                  "targets": [
+                    "historyOfPresentIllness"
+                  ],
+                  "template": "{label}：{value}",
+                  "separator": "、"
+                }
+              },
+              {
+                "id": "1770191742061",
+                "key": "triggers",
+                "label": "诱发因素",
+                "type": "checkbox",
+                "props": {
+                  "options": [
+                    "进食后",
+                    "闻到异味",
+                    "乘车船",
+                    "情绪波动",
+                    "进食生冷后"
+                  ]
+                },
+                "storageKey": "triggers",
+                "textGenConfig": {
+                  "targets": [
+                    "historyOfPresentIllness"
+                  ],
+                  "template": "{label}：{value}",
+                  "separator": "、"
+                }
+              }
+            ]
+          },
+          {
+            "id": "tcm_vomiting_section_3",
+            "title": "伴随症状",
+            "description": "",
+            "fields": [
+              {
+                "id": "1770191742062",
+                "key": "abdominalSymptoms",
+                "label": "腹部症状",
+                "type": "checkbox",
+                "props": {
+                  "options": [
+                    "胃脘疼痛",
+                    "脘腹胀满",
+                    "嗳气",
+                    "泛酸",
+                    "腹泻"
+                  ]
+                },
+                "storageKey": "abdominalSymptoms",
+                "textGenConfig": {
+                  "targets": [
+                    "historyOfPresentIllness"
+                  ],
+                  "template": "{label}：{value}",
+                  "separator": "、"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "applicablePopulation": {
+        "genders": [],
+        "ageGroups": []
+      },
+      "createdAt": 1770191741987,
+      "updatedAt": 1770191741987,
+      "tcmMetadata": {
+        "category": "脾胃病证",
+        "relatedOrgans": [
+          "胃",
+          "脾",
+          "肝"
+        ],
+        "diagnosis": {
+          "possiblePatterns": [
+            {
+              "pattern": "外邪犯胃",
+              "keySymptoms": [
+                "突然呕吐",
+                "发热恶寒",
+                "头痛",
+                "苔白或黄"
+              ]
+            },
+            {
+              "pattern": "饮食停滞",
+              "keySymptoms": [
+                "呕吐酸腐",
+                "脘腹胀满",
+                "嗳气",
+                "不思饮食"
+              ]
+            },
+            {
+              "pattern": "痰饮内停",
+              "keySymptoms": [
+                "呕吐清水痰涎",
+                "头晕",
+                "心悸",
+                "苔白滑"
+              ]
+            },
+            {
+              "pattern": "肝气犯胃",
+              "keySymptoms": [
+                "呕吐酸水",
+                "胁肋胀痛",
+                "情志诱发",
+                "嗳气"
+              ]
+            },
+            {
+              "pattern": "脾胃虚寒",
+              "keySymptoms": [
+                "呕吐清水",
+                "喜温喜按",
+                "纳差",
+                "便溏",
+                "舌淡"
+              ]
+            },
+            {
+              "pattern": "胃阴不足",
+              "keySymptoms": [
+                "干呕",
+                "口干",
+                "纳少",
+                "舌红少津"
+              ]
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "1770191742063",
+      "key": "tcm_body_joint_pain",
+      "name": "身痛/关节痛",
+      "description": "中医痹证",
+      "isCommonSymptom": true,
+      "systemCategory": [
+        "other"
+      ],
+      "bodyParts": [],
+      "customScript": "",
+      "config": {
+        "title": "智能问诊",
+        "sections": [
+          {
+            "id": "tcm_body_joint_pain_section_0",
+            "title": "疼痛部位",
+            "description": "",
+            "fields": [
+              {
+                "id": "1770191742064",
+                "key": "painLocation",
+                "label": "疼痛部位",
+                "type": "checkbox",
+                "props": {
+                  "options": [
+                    "肩部",
+                    "肘部",
+                    "腕部",
+                    "手指关节",
+                    "髋部",
+                    "膝部",
+                    "踝部",
+                    "足趾关节",
+                    "颈项",
+                    "背部",
+                    "腰部",
+                    "全身"
+                  ]
+                },
+                "storageKey": "painLocation",
+                "textGenConfig": {
+                  "targets": [
+                    "historyOfPresentIllness"
+                  ],
+                  "template": "{label}：{value}",
+                  "separator": "、"
+                }
+              },
+              {
+                "id": "1770191742065",
+                "key": "painMobility",
+                "label": "疼痛游走性",
+                "type": "radio",
+                "props": {
+                  "options": [
+                    "游走不定",
+                    "固定不移",
+                    "多处固定疼痛"
+                  ]
+                },
+                "storageKey": "painMobility",
+                "textGenConfig": {
+                  "targets": [
+                    "historyOfPresentIllness"
+                  ],
+                  "template": "{label}：{value}",
+                  "separator": "、"
+                }
+              }
+            ]
+          },
+          {
+            "id": "tcm_body_joint_pain_section_1",
+            "title": "疼痛性质",
+            "description": "",
+            "fields": [
+              {
+                "id": "1770191742066",
+                "key": "painNature",
+                "label": "疼痛感觉",
+                "type": "checkbox",
+                "props": {
+                  "options": [
+                    "剧烈疼痛",
+                    "重着酸痛",
+                    "红肿热痛",
+                    "酸痛绵绵",
+                    "刺痛",
+                    "僵硬不利",
+                    "麻木"
+                  ]
+                },
+                "storageKey": "painNature",
+                "textGenConfig": {
+                  "targets": [
+                    "historyOfPresentIllness"
+                  ],
+                  "template": "{label}：{value}",
+                  "separator": "、"
+                }
+              },
+              {
+                "id": "1770191742067",
+                "key": "painDegree",
+                "label": "疼痛程度",
+                "type": "degree_slider",
+                "props": {
+                  "min": 1,
+                  "max": 10,
+                  "labels": [
+                    "轻微",
+                    "中等",
+                    "剧烈"
+                  ]
+                },
+                "storageKey": "painDegree"
+              }
+            ]
+          },
+          {
+            "id": "tcm_body_joint_pain_section_2",
+            "title": "加重与缓解因素",
+            "description": "",
+            "fields": [
+              {
+                "id": "1770191742068",
+                "key": "aggravatingFactors",
+                "label": "加重因素",
+                "type": "checkbox",
+                "props": {
+                  "options": [
+                    "遇寒加重",
+                    "刮风加重",
+                    "阴雨天加重",
+                    "遇热加重",
+                    "夜间加重",
+                    "晨起加重"
+                  ]
+                },
+                "storageKey": "aggravatingFactors",
+                "textGenConfig": {
+                  "targets": [
+                    "historyOfPresentIllness"
+                  ],
+                  "template": "{label}：{value}",
+                  "separator": "、"
+                }
+              },
+              {
+                "id": "1770191742069",
+                "key": "relievingFactors",
+                "label": "缓解因素",
+                "type": "preference_pair",
+                "props": {
+                  "pairs": [
+                    [
+                      "温敷后减轻",
+                      "冷敷后减轻"
+                    ],
+                    [
+                      "活动后减轻",
+                      "休息后减轻"
+                    ],
+                    [
+                      "按压后减轻",
+                      "按压后加重"
+                    ]
+                  ]
+                },
+                "storageKey": "relievingFactors"
+              }
+            ]
+          },
+          {
+            "id": "tcm_body_joint_pain_section_3",
+            "title": "关节表现",
+            "description": "",
+            "fields": [
+              {
+                "id": "1770191742070",
+                "key": "jointSigns",
+                "label": "关节局部表现",
+                "type": "checkbox",
+                "props": {
+                  "options": [
+                    "关节肿胀",
+                    "关节红",
+                    "关节发热",
+                    "关节变形",
+                    "活动受限",
+                    "关节弹响"
+                  ]
+                },
+                "storageKey": "jointSigns",
+                "textGenConfig": {
+                  "targets": [
+                    "historyOfPresentIllness"
+                  ],
+                  "template": "{label}：{value}",
+                  "separator": "、"
+                }
+              },
+              {
+                "id": "1770191742071",
+                "key": "morningStiffness",
+                "label": "晨僵",
+                "type": "radio",
+                "props": {
+                  "options": [
+                    "无晨僵",
+                    "晨僵小于30分钟",
+                    "晨僵30-60分钟",
+                    "晨僵超过1小时"
+                  ]
+                },
+                "storageKey": "morningStiffness",
+                "textGenConfig": {
+                  "targets": [
+                    "historyOfPresentIllness"
+                  ],
+                  "template": "{label}：{value}",
+                  "separator": "、"
+                }
+              }
+            ]
+          },
+          {
+            "id": "tcm_body_joint_pain_section_4",
+            "title": "伴随症状",
+            "description": "",
+            "fields": [
+              {
+                "id": "1770191742072",
+                "key": "accompaniedSymptoms",
+                "label": "伴随症状",
+                "type": "checkbox",
+                "props": {
+                  "options": [
+                    "发热",
+                    "恶寒",
+                    "神疲乏力",
+                    "身体困重",
+                    "纳差",
+                    "肢体麻木"
+                  ]
+                },
+                "storageKey": "accompaniedSymptoms",
+                "textGenConfig": {
+                  "targets": [
+                    "historyOfPresentIllness"
+                  ],
+                  "template": "{label}：{value}",
+                  "separator": "、"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "applicablePopulation": {
+        "genders": [],
+        "ageGroups": []
+      },
+      "createdAt": 1770191741987,
+      "updatedAt": 1770191741987,
+      "tcmMetadata": {
+        "category": "痹证",
+        "relatedMeridians": [
+          "十二经脉"
+        ],
+        "relatedOrgans": [
+          "肝",
+          "脾",
+          "肾"
+        ],
+        "diagnosis": {
+          "possiblePatterns": [
+            {
+              "pattern": "行痹（风邪偏盛）",
+              "keySymptoms": [
+                "游走性疼痛",
+                "恶风",
+                "苔薄白"
+              ]
+            },
+            {
+              "pattern": "痛痹（寒邪偏盛）",
+              "keySymptoms": [
+                "剧痛",
+                "固定",
+                "遇寒加重",
+                "得温减",
+                "苔白"
+              ]
+            },
+            {
+              "pattern": "着痹（湿邪偏盛）",
+              "keySymptoms": [
+                "重着酸痛",
+                "固定",
+                "阴雨加重",
+                "身困",
+                "苔腻"
+              ]
+            },
+            {
+              "pattern": "热痹（热邪偏盛）",
+              "keySymptoms": [
+                "红肿热痛",
+                "发热",
+                "口渴",
+                "苔黄"
+              ]
+            },
+            {
+              "pattern": "痰瘀痹阻",
+              "keySymptoms": [
+                "关节肿大",
+                "僵硬",
+                "刺痛",
+                "舌紫暗"
+              ]
+            },
+            {
+              "pattern": "肝肾亏虚",
+              "keySymptoms": [
+                "酸痛绵绵",
+                "腰膝酸软",
+                "久痹",
+                "舌淡"
+              ]
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "1770191742073",
+      "key": "tcm_diarrhea",
+      "name": "泄泻",
+      "description": "中医脾胃病证",
+      "isCommonSymptom": false,
+      "systemCategory": [
+        "other"
+      ],
+      "bodyParts": [],
+      "customScript": "",
+      "config": {
+        "title": "智能问诊",
+        "sections": [
+          {
+            "id": "tcm_diarrhea_section_0",
+            "title": "病程特点",
+            "description": "",
+            "fields": [
+              {
+                "id": "1770191742074",
+                "key": "courseType",
+                "label": "发病特点",
+                "type": "radio",
+                "props": {
+                  "options": [
+                    "急性起病（暴泻）",
+                    "慢性反复（久泻）",
+                    "时发时止"
+                  ]
+                },
+                "storageKey": "courseType",
+                "textGenConfig": {
+                  "targets": [
+                    "historyOfPresentIllness"
+                  ],
+                  "template": "{label}：{value}",
+                  "separator": "、"
+                }
+              },
+              {
+                "id": "1770191742075",
+                "key": "duration",
+                "label": "本次发病时间",
+                "type": "input_radio",
+                "props": {
+                  "radioOptions": [
+                    "小时",
+                    "天",
+                    "周",
+                    "月"
+                  ]
+                },
+                "storageKey": "duration"
+              },
+              {
+                "id": "1770191742076",
+                "key": "frequency",
+                "label": "每日大便次数",
+                "type": "number",
+                "props": {
+                  "unit": "次/日",
+                  "min": 1,
+                  "max": 30
+                },
+                "storageKey": "frequency",
+                "textGenConfig": {
+                  "targets": [
+                    "historyOfPresentIllness"
+                  ],
+                  "template": "{label}：{value}次/日"
+                }
+              }
+            ]
+          },
+          {
+            "id": "tcm_diarrhea_section_1",
+            "title": "大便性状",
+            "description": "大便性状是泄泻辨证的核心依据",
+            "fields": [
+              {
+                "id": "1770191742077",
+                "key": "stoolConsistency",
+                "label": "大便质地",
+                "type": "radio",
+                "props": {
+                  "options": [
+                    "水样便",
+                    "稀糊状",
+                    "溏薄不成形",
+                    "夹有不消化食物",
+                    "夹有黏液",
+                    "便中带血"
+                  ]
+                },
+                "storageKey": "stoolConsistency",
+                "textGenConfig": {
+                  "targets": [
+                    "historyOfPresentIllness"
+                  ],
+                  "template": "{label}：{value}",
+                  "separator": "、"
+                }
+              },
+              {
+                "id": "1770191742078",
+                "key": "stoolColor",
+                "label": "大便颜色",
+                "type": "radio",
+                "props": {
+                  "options": [
+                    "黄色",
+                    "褐色",
+                    "色淡如水",
+                    "青绿色",
+                    "黑色"
+                  ]
+                },
+                "storageKey": "stoolColor",
+                "textGenConfig": {
+                  "targets": [
+                    "historyOfPresentIllness"
+                  ],
+                  "template": "{label}：{value}",
+                  "separator": "、"
+                }
+              },
+              {
+                "id": "1770191742079",
+                "key": "stoolOdor",
+                "label": "大便气味",
+                "type": "radio",
+                "props": {
+                  "options": [
+                    "臭秽难闻",
+                    "酸腐",
+                    "腥臭",
+                    "气味不重"
+                  ]
+                },
+                "storageKey": "stoolOdor",
+                "textGenConfig": {
+                  "targets": [
+                    "historyOfPresentIllness"
+                  ],
+                  "template": "{label}：{value}",
+                  "separator": "、"
+                }
+              }
+            ]
+          },
+          {
+            "id": "tcm_diarrhea_section_2",
+            "title": "排便感觉",
+            "description": "",
+            "fields": [
+              {
+                "id": "1770191742080",
+                "key": "urgency",
+                "label": "排便急迫感",
+                "type": "radio",
+                "props": {
+                  "options": [
+                    "急迫难忍",
+                    "尚可控制",
+                    "便意不强"
+                  ]
+                },
+                "storageKey": "urgency",
+                "textGenConfig": {
+                  "targets": [
+                    "historyOfPresentIllness"
+                  ],
+                  "template": "{label}：{value}",
+                  "separator": "、"
+                }
+              },
+              {
+                "id": "1770191742081",
+                "key": "sensation",
+                "label": "排便后感觉",
+                "type": "radio",
+                "props": {
+                  "options": [
+                    "排后舒适",
+                    "排不尽感",
+                    "排后乏力",
+                    "肛门下坠"
+                  ]
+                },
+                "storageKey": "sensation",
+                "textGenConfig": {
+                  "targets": [
+                    "historyOfPresentIllness"
+                  ],
+                  "template": "{label}：{value}",
+                  "separator": "、"
+                }
+              },
+              {
+                "id": "1770191742082",
+                "key": "abdominalPain",
+                "label": "腹痛与泄泻关系",
+                "type": "radio",
+                "props": {
+                  "options": [
+                    "腹痛即泻，泻后痛减",
+                    "腹痛与泄泻同时",
+                    "无明显腹痛"
+                  ]
+                },
+                "storageKey": "abdominalPain",
+                "textGenConfig": {
+                  "targets": [
+                    "historyOfPresentIllness"
+                  ],
+                  "template": "{label}：{value}",
+                  "separator": "、"
+                }
+              }
+            ]
+          },
+          {
+            "id": "tcm_diarrhea_section_3",
+            "title": "时间规律",
+            "description": "",
+            "fields": [
+              {
+                "id": "1770191742083",
+                "key": "timing",
+                "label": "发作时间",
+                "type": "checkbox",
+                "props": {
+                  "options": [
+                    "黎明即泻（五更泻）",
+                    "食后即泻",
+                    "情绪紧张时",
+                    "受凉后",
+                    "无规律"
+                  ]
+                },
+                "storageKey": "timing",
+                "textGenConfig": {
+                  "targets": [
+                    "historyOfPresentIllness"
+                  ],
+                  "template": "{label}：{value}",
+                  "separator": "、"
+                }
+              }
+            ]
+          },
+          {
+            "id": "tcm_diarrhea_section_4",
+            "title": "诱因",
+            "description": "",
+            "fields": [
+              {
+                "id": "1770191742084",
+                "key": "triggers",
+                "label": "诱发因素",
+                "type": "checkbox",
+                "props": {
+                  "options": [
+                    "进食生冷",
+                    "进食油腻",
+                    "饮食不洁",
+                    "受凉",
+                    "情志不遂",
+                    "劳累过度",
+                    "无明显诱因"
+                  ]
+                },
+                "storageKey": "triggers",
+                "textGenConfig": {
+                  "targets": [
+                    "historyOfPresentIllness"
+                  ],
+                  "template": "{label}：{value}",
+                  "separator": "、"
+                }
+              }
+            ]
+          },
+          {
+            "id": "tcm_diarrhea_section_5",
+            "title": "伴随症状",
+            "description": "",
+            "fields": [
+              {
+                "id": "1770191742085",
+                "key": "accompaniedSymptoms",
+                "label": "伴随症状",
+                "type": "checkbox",
+                "props": {
+                  "options": [
+                    "肠鸣辘辘",
+                    "腹胀",
+                    "恶心欲吐",
+                    "纳差",
+                    "神疲乏力",
+                    "四肢不温",
+                    "口渴",
+                    "发热"
+                  ]
+                },
+                "storageKey": "accompaniedSymptoms",
+                "textGenConfig": {
+                  "targets": [
+                    "historyOfPresentIllness"
+                  ],
+                  "template": "{label}：{value}",
+                  "separator": "、"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "applicablePopulation": {
+        "genders": [],
+        "ageGroups": []
+      },
+      "createdAt": 1770191741987,
+      "updatedAt": 1770191741987,
+      "tcmMetadata": {
+        "category": "脾胃病证",
+        "relatedOrgans": [
+          "脾",
+          "胃",
+          "肾",
+          "肝"
+        ],
+        "diagnosis": {
+          "possiblePatterns": [
+            {
+              "pattern": "寒湿困脾",
+              "keySymptoms": [
+                "水样便",
+                "色淡",
+                "腥臭",
+                "腹痛",
+                "肠鸣",
+                "苔白腻"
+              ]
+            },
+            {
+              "pattern": "湿热蕴脾",
+              "keySymptoms": [
+                "便黄臭秽",
+                "急迫",
+                "肛门灼热",
+                "口渴",
+                "苔黄腻"
+              ]
+            },
+            {
+              "pattern": "食滞肠胃",
+              "keySymptoms": [
+                "泻下酸腐",
+                "嗳气",
+                "腹胀",
+                "泻后痛减"
+              ]
+            },
+            {
+              "pattern": "肝郁脾虚",
+              "keySymptoms": [
+                "情志诱发",
+                "腹痛即泻",
+                "泻后痛减",
+                "嗳气"
+              ]
+            },
+            {
+              "pattern": "脾胃虚弱",
+              "keySymptoms": [
+                "久泻",
+                "便溏",
+                "食后即泻",
+                "纳差",
+                "乏力"
+              ]
+            },
+            {
+              "pattern": "肾阳虚衰",
+              "keySymptoms": [
+                "五更泻",
+                "完谷不化",
+                "腰膝酸冷",
+                "畏寒"
+              ]
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "1770191742086",
+      "key": "tcm_constipation",
+      "name": "便秘",
+      "description": "中医脾胃病证",
+      "isCommonSymptom": false,
+      "systemCategory": [
+        "other"
+      ],
+      "bodyParts": [],
+      "customScript": "",
+      "config": {
+        "title": "智能问诊",
+        "sections": [
+          {
+            "id": "tcm_constipation_section_0",
+            "title": "便秘特点",
+            "description": "",
+            "fields": [
+              {
+                "id": "1770191742087",
+                "key": "frequency",
+                "label": "排便频率",
+                "type": "radio",
+                "props": {
+                  "options": [
+                    "2-3天一次",
+                    "4-5天一次",
+                    "一周以上",
+                    "无规律"
+                  ]
+                },
+                "storageKey": "frequency",
+                "textGenConfig": {
+                  "targets": [
+                    "historyOfPresentIllness"
+                  ],
+                  "template": "{label}：{value}",
+                  "separator": "、"
+                }
+              },
+              {
+                "id": "1770191742088",
+                "key": "duration",
+                "label": "便秘病程",
+                "type": "input_radio",
+                "props": {
+                  "radioOptions": [
+                    "天",
+                    "周",
+                    "月",
+                    "年"
+                  ]
+                },
+                "storageKey": "duration"
+              },
+              {
+                "id": "1770191742089",
+                "key": "stoolCharacter",
+                "label": "大便性状",
+                "type": "checkbox",
+                "props": {
+                  "options": [
+                    "干燥坚硬",
+                    "如羊屎状",
+                    "并不干燥",
+                    "初头硬后溏",
+                    "大便变细"
+                  ]
+                },
+                "storageKey": "stoolCharacter",
+                "textGenConfig": {
+                  "targets": [
+                    "historyOfPresentIllness"
+                  ],
+                  "template": "{label}：{value}",
+                  "separator": "、"
+                }
+              }
+            ]
+          },
+          {
+            "id": "tcm_constipation_section_1",
+            "title": "排便感觉",
+            "description": "",
+            "fields": [
+              {
+                "id": "1770191742090",
+                "key": "defecationDifficulty",
+                "label": "排便困难表现",
+                "type": "checkbox",
+                "props": {
+                  "options": [
+                    "无便意",
+                    "有便意但排不出",
+                    "努挣难下",
+                    "排不尽感",
+                    "排便疼痛"
+                  ]
+                },
+                "storageKey": "defecationDifficulty",
+                "textGenConfig": {
+                  "targets": [
+                    "historyOfPresentIllness"
+                  ],
+                  "template": "{label}：{value}",
+                  "separator": "、"
+                }
+              },
+              {
+                "id": "1770191742091",
+                "key": "afterDefecation",
+                "label": "排便后感觉",
+                "type": "radio",
+                "props": {
+                  "options": [
+                    "排后疲惫出汗",
+                    "排后舒适",
+                    "仍感腹胀"
+                  ]
+                },
+                "storageKey": "afterDefecation",
+                "textGenConfig": {
+                  "targets": [
+                    "historyOfPresentIllness"
+                  ],
+                  "template": "{label}：{value}",
+                  "separator": "、"
+                }
+              }
+            ]
+          },
+          {
+            "id": "tcm_constipation_section_2",
+            "title": "寒热辨证",
+            "description": "",
+            "fields": [
+              {
+                "id": "1770191742092",
+                "key": "coldHeatSymptoms",
+                "label": "寒热表现",
+                "type": "checkbox",
+                "props": {
+                  "options": [
+                    "口干口渴",
+                    "口臭",
+                    "口苦",
+                    "喜冷饮",
+                    "腹部畏寒",
+                    "喜温喜按",
+                    "四肢不温"
+                  ]
+                },
+                "storageKey": "coldHeatSymptoms",
+                "textGenConfig": {
+                  "targets": [
+                    "historyOfPresentIllness"
+                  ],
+                  "template": "{label}：{value}",
+                  "separator": "、"
+                }
+              }
+            ]
+          },
+          {
+            "id": "tcm_constipation_section_3",
+            "title": "伴随症状",
+            "description": "",
+            "fields": [
+              {
+                "id": "1770191742093",
+                "key": "accompaniedSymptoms",
+                "label": "伴随症状",
+                "type": "checkbox",
+                "props": {
+                  "options": [
+                    "腹胀",
+                    "嗳气",
+                    "纳差",
+                    "神疲乏力",
+                    "头晕",
+                    "心悸",
+                    "失眠",
+                    "腰膝酸软"
+                  ]
+                },
+                "storageKey": "accompaniedSymptoms",
+                "textGenConfig": {
+                  "targets": [
+                    "historyOfPresentIllness"
+                  ],
+                  "template": "{label}：{value}",
+                  "separator": "、"
+                }
+              }
+            ]
+          },
+          {
+            "id": "tcm_constipation_section_4",
+            "title": "生活因素",
+            "description": "",
+            "fields": [
+              {
+                "id": "1770191742094",
+                "key": "lifestyleFactors",
+                "label": "生活习惯",
+                "type": "checkbox",
+                "props": {
+                  "options": [
+                    "久坐少动",
+                    "饮水不足",
+                    "蔬菜水果摄入少",
+                    "嗜食辛辣",
+                    "排便习惯不规律",
+                    "抑制便意",
+                    "长期使用泻药"
+                  ]
+                },
+                "storageKey": "lifestyleFactors",
+                "textGenConfig": {
+                  "targets": [
+                    "historyOfPresentIllness"
+                  ],
+                  "template": "{label}：{value}",
+                  "separator": "、"
+                }
+              },
+              {
+                "id": "1770191742095",
+                "key": "emotionalFactors",
+                "label": "情志因素",
+                "type": "checkbox",
+                "props": {
+                  "options": [
+                    "精神紧张",
+                    "情绪抑郁",
+                    "焦虑",
+                    "情绪平稳"
+                  ]
+                },
+                "storageKey": "emotionalFactors",
+                "textGenConfig": {
+                  "targets": [
+                    "historyOfPresentIllness"
+                  ],
+                  "template": "{label}：{value}",
+                  "separator": "、"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "applicablePopulation": {
+        "genders": [],
+        "ageGroups": []
+      },
+      "createdAt": 1770191741987,
+      "updatedAt": 1770191741987,
+      "tcmMetadata": {
+        "category": "脾胃病证",
+        "relatedOrgans": [
+          "大肠",
+          "脾",
+          "肾",
+          "肺"
+        ],
+        "diagnosis": {
+          "possiblePatterns": [
+            {
+              "pattern": "热秘（肠胃积热）",
+              "keySymptoms": [
+                "便干坚硬",
+                "口渴",
+                "口臭",
+                "面红",
+                "舌红苔黄"
+              ]
+            },
+            {
+              "pattern": "气秘（气机郁滞）",
+              "keySymptoms": [
+                "欲便不出",
+                "腹胀",
+                "嗳气",
+                "情志诱发"
+              ]
+            },
+            {
+              "pattern": "冷秘（阴寒积滞）",
+              "keySymptoms": [
+                "便不干硬",
+                "腹冷",
+                "喜温",
+                "四肢不温"
+              ]
+            },
+            {
+              "pattern": "气虚秘",
+              "keySymptoms": [
+                "努挣难下",
+                "排后疲惫",
+                "气短",
+                "乏力",
+                "舌淡"
+              ]
+            },
+            {
+              "pattern": "血虚秘",
+              "keySymptoms": [
+                "便干",
+                "面色萎黄",
+                "头晕",
+                "心悸",
+                "舌淡"
+              ]
+            },
+            {
+              "pattern": "阴虚秘",
+              "keySymptoms": [
+                "便如羊屎",
+                "口干",
+                "潮热",
+                "盗汗",
+                "舌红少苔"
+              ]
+            },
+            {
+              "pattern": "阳虚秘",
+              "keySymptoms": [
+                "便不干硬",
+                "腹冷",
+                "腰膝酸冷",
+                "畏寒",
+                "舌淡"
+              ]
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "1770191742096",
+      "key": "tcm_low_back_pain",
+      "name": "腰痛",
+      "description": "中医痹证/肾系病证",
+      "isCommonSymptom": false,
+      "systemCategory": [
+        "other"
+      ],
+      "bodyParts": [],
+      "customScript": "",
+      "config": {
+        "title": "智能问诊",
+        "sections": [
+          {
+            "id": "tcm_low_back_pain_section_0",
+            "title": "疼痛部位",
+            "description": "",
+            "fields": [
+              {
+                "id": "1770191742097",
+                "key": "painLocation",
+                "label": "疼痛部位",
+                "type": "checkbox",
+                "props": {
+                  "options": [
+                    "腰脊正中",
+                    "两侧腰肌",
+                    "骶尾部",
+                    "连及臀部",
+                    "连及下肢"
+                  ]
+                },
+                "storageKey": "painLocation",
+                "textGenConfig": {
+                  "targets": [
+                    "historyOfPresentIllness"
+                  ],
+                  "template": "{label}：{value}",
+                  "separator": "、"
+                }
+              },
+              {
+                "id": "1770191742098",
+                "key": "radiating",
+                "label": "放射痛",
+                "type": "checkbox",
+                "props": {
+                  "options": [
+                    "放射至臀部",
+                    "放射至大腿后侧",
+                    "放射至小腿",
+                    "放射至足部",
+                    "无放射"
+                  ]
+                },
+                "storageKey": "radiating",
+                "textGenConfig": {
+                  "targets": [
+                    "historyOfPresentIllness"
+                  ],
+                  "template": "{label}：{value}",
+                  "separator": "、"
+                }
+              }
+            ]
+          },
+          {
+            "id": "tcm_low_back_pain_section_1",
+            "title": "疼痛性质",
+            "description": "",
+            "fields": [
+              {
+                "id": "1770191742099",
+                "key": "painNature",
+                "label": "疼痛感觉",
+                "type": "checkbox",
+                "props": {
+                  "options": [
+                    "酸痛绵绵",
+                    "酸软无力",
+                    "冷痛",
+                    "重着如坠",
+                    "刺痛固定",
+                    "灼热疼痛",
+                    "僵硬不舒"
+                  ]
+                },
+                "storageKey": "painNature",
+                "textGenConfig": {
+                  "targets": [
+                    "historyOfPresentIllness"
+                  ],
+                  "template": "{label}：{value}",
+                  "separator": "、"
+                }
+              },
+              {
+                "id": "1770191742100",
+                "key": "painDegree",
+                "label": "疼痛程度",
+                "type": "degree_slider",
+                "props": {
+                  "min": 1,
+                  "max": 10,
+                  "labels": [
+                    "轻微",
+                    "中等",
+                    "剧烈"
+                  ]
+                },
+                "storageKey": "painDegree"
+              }
+            ]
+          },
+          {
+            "id": "tcm_low_back_pain_section_2",
+            "title": "诱发与缓解",
+            "description": "",
+            "fields": [
+              {
+                "id": "1770191742101",
+                "key": "triggers",
+                "label": "加重因素",
+                "type": "checkbox",
+                "props": {
+                  "options": [
+                    "劳累后加重",
+                    "受凉后加重",
+                    "阴雨天加重",
+                    "久坐加重",
+                    "久站加重",
+                    "弯腰加重",
+                    "晨起加重"
+                  ]
+                },
+                "storageKey": "triggers",
+                "textGenConfig": {
+                  "targets": [
+                    "historyOfPresentIllness"
+                  ],
+                  "template": "{label}：{value}",
+                  "separator": "、"
+                }
+              },
+              {
+                "id": "1770191742102",
+                "key": "relief",
+                "label": "缓解因素",
+                "type": "preference_pair",
+                "props": {
+                  "pairs": [
+                    [
+                      "按揉后减轻",
+                      "按压后加重"
+                    ],
+                    [
+                      "温敷后减轻",
+                      "冷敷后减轻"
+                    ],
+                    [
+                      "休息后减轻",
+                      "活动后减轻"
+                    ],
+                    [
+                      "平卧后减轻",
+                      "平卧后加重"
+                    ]
+                  ]
+                },
+                "storageKey": "relief"
+              }
+            ]
+          },
+          {
+            "id": "tcm_low_back_pain_section_3",
+            "title": "伴随症状",
+            "description": "",
+            "fields": [
+              {
+                "id": "1770191742103",
+                "key": "accompaniedSymptoms",
+                "label": "伴随症状",
+                "type": "checkbox",
+                "props": {
+                  "options": [
+                    "膝软无力",
+                    "耳鸣",
+                    "小便频数",
+                    "夜尿多",
+                    "性功能减退",
+                    "畏寒肢冷",
+                    "下肢麻木",
+                    "神疲乏力"
+                  ]
+                },
+                "storageKey": "accompaniedSymptoms",
+                "textGenConfig": {
+                  "targets": [
+                    "historyOfPresentIllness"
+                  ],
+                  "template": "{label}：{value}",
+                  "separator": "、"
+                }
+              }
+            ]
+          },
+          {
+            "id": "tcm_low_back_pain_section_4",
+            "title": "病史与生活",
+            "description": "",
+            "fields": [
+              {
+                "id": "1770191742104",
+                "key": "history",
+                "label": "既往病史",
+                "type": "checkbox",
+                "props": {
+                  "options": [
+                    "腰椎间盘突出",
+                    "腰椎骨质增生",
+                    "腰肌劳损",
+                    "强直性脊柱炎",
+                    "骨质疏松",
+                    "肾脏疾病",
+                    "无明确诊断"
+                  ]
+                },
+                "storageKey": "history",
+                "textGenConfig": {
+                  "targets": [
+                    "historyOfPresentIllness"
+                  ],
+                  "template": "{label}：{value}",
+                  "separator": "、"
+                }
+              },
+              {
+                "id": "1770191742105",
+                "key": "occupation",
+                "label": "职业特点",
+                "type": "checkbox",
+                "props": {
+                  "options": [
+                    "长期久坐",
+                    "长期久站",
+                    "重体力劳动",
+                    "弯腰作业",
+                    "驾驶员",
+                    "无特殊"
+                  ]
+                },
+                "storageKey": "occupation",
+                "textGenConfig": {
+                  "targets": [
+                    "historyOfPresentIllness"
+                  ],
+                  "template": "{label}：{value}",
+                  "separator": "、"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "applicablePopulation": {
+        "genders": [],
+        "ageGroups": []
+      },
+      "createdAt": 1770191741987,
+      "updatedAt": 1770191741987,
+      "tcmMetadata": {
+        "category": "痹证/肾系病证",
+        "relatedMeridians": [
+          "足太阳膀胱经",
+          "督脉",
+          "带脉"
+        ],
+        "relatedOrgans": [
+          "肾",
+          "膀胱"
+        ],
+        "diagnosis": {
+          "possiblePatterns": [
+            {
+              "pattern": "肾阳虚",
+              "keySymptoms": [
+                "酸软无力",
+                "喜按喜揉",
+                "畏寒肢冷",
+                "夜尿多",
+                "舌淡"
+              ]
+            },
+            {
+              "pattern": "肾阴虚",
+              "keySymptoms": [
+                "酸痛",
+                "五心烦热",
+                "盗汗",
+                "舌红少苔"
+              ]
+            },
+            {
+              "pattern": "寒湿腰痛",
+              "keySymptoms": [
+                "冷痛重着",
+                "阴雨加重",
+                "得温则减",
+                "苔白腻"
+              ]
+            },
+            {
+              "pattern": "湿热腰痛",
+              "keySymptoms": [
+                "重着热痛",
+                "活动不利",
+                "口苦",
+                "苔黄腻"
+              ]
+            },
+            {
+              "pattern": "瘀血腰痛",
+              "keySymptoms": [
+                "刺痛固定",
+                "拒按",
+                "夜间加重",
+                "舌紫暗"
+              ]
+            },
+            {
+              "pattern": "肾虚血瘀",
+              "keySymptoms": [
+                "久痛不愈",
+                "酸痛刺痛并见",
+                "麻木",
+                "舌暗"
+              ]
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "1770191742106",
+      "key": "tcm_menstrual_disorder",
+      "name": "月经不调",
+      "description": "中医妇科病证",
+      "isCommonSymptom": false,
+      "systemCategory": [
+        "other"
+      ],
+      "bodyParts": [],
+      "customScript": "",
+      "config": {
+        "title": "智能问诊",
+        "sections": [
+          {
+            "id": "tcm_menstrual_disorder_section_0",
+            "title": "月经周期",
+            "description": "",
+            "fields": [
+              {
+                "id": "1770191742107",
+                "key": "cyclePattern",
+                "label": "周期情况",
+                "type": "radio",
+                "props": {
+                  "options": [
+                    "月经先期（提前7天以上）",
+                    "月经后期（推迟7天以上）",
+                    "先后不定期",
+                    "周期正常（28±7天）"
+                  ]
+                },
+                "storageKey": "cyclePattern",
+                "textGenConfig": {
+                  "targets": [
+                    "historyOfPresentIllness"
+                  ],
+                  "template": "{label}：{value}",
+                  "separator": "、"
+                }
+              },
+              {
+                "id": "1770191742108",
+                "key": "cycleDays",
+                "label": "平均周期天数",
+                "type": "number",
+                "props": {
+                  "unit": "天",
+                  "min": 15,
+                  "max": 60
+                },
+                "storageKey": "cycleDays",
+                "textGenConfig": {
+                  "targets": [
+                    "historyOfPresentIllness"
+                  ],
+                  "template": "{label}：{value}天"
+                }
+              },
+              {
+                "id": "1770191742109",
+                "key": "menstruationDays",
+                "label": "行经天数",
+                "type": "number",
+                "props": {
+                  "unit": "天",
+                  "min": 1,
+                  "max": 15
+                },
+                "storageKey": "menstruationDays",
+                "textGenConfig": {
+                  "targets": [
+                    "historyOfPresentIllness"
+                  ],
+                  "template": "{label}：{value}天"
+                }
+              }
+            ]
+          },
+          {
+            "id": "tcm_menstrual_disorder_section_1",
+            "title": "月经量",
+            "description": "",
+            "fields": [
+              {
+                "id": "1770191742110",
+                "key": "amount",
+                "label": "经量",
+                "type": "radio",
+                "props": {
+                  "options": [
+                    "量多（每次用卫生巾超过20片）",
+                    "量少（每次用卫生巾少于5片）",
+                    "量正常（约10-15片）"
+                  ]
+                },
+                "storageKey": "amount",
+                "textGenConfig": {
+                  "targets": [
+                    "historyOfPresentIllness"
+                  ],
+                  "template": "{label}：{value}",
+                  "separator": "、"
+                }
+              },
+              {
+                "id": "1770191742111",
+                "key": "amountChange",
+                "label": "经量变化",
+                "type": "radio",
+                "props": {
+                  "options": [
+                    "一直较多",
+                    "一直较少",
+                    "近期变多",
+                    "近期变少",
+                    "时多时少"
+                  ]
+                },
+                "storageKey": "amountChange",
+                "textGenConfig": {
+                  "targets": [
+                    "historyOfPresentIllness"
+                  ],
+                  "template": "{label}：{value}",
+                  "separator": "、"
+                }
+              }
+            ]
+          },
+          {
+            "id": "tcm_menstrual_disorder_section_2",
+            "title": "经色经质",
+            "description": "",
+            "fields": [
+              {
+                "id": "1770191742112",
+                "key": "color",
+                "label": "经血颜色",
+                "type": "radio",
+                "props": {
+                  "options": [
+                    "淡红",
+                    "正红",
+                    "深红",
+                    "紫暗",
+                    "黑色"
+                  ]
+                },
+                "storageKey": "color",
+                "textGenConfig": {
+                  "targets": [
+                    "historyOfPresentIllness"
+                  ],
+                  "template": "{label}：{value}",
+                  "separator": "、"
+                }
+              },
+              {
+                "id": "1770191742113",
+                "key": "texture",
+                "label": "经血质地",
+                "type": "radio",
+                "props": {
+                  "options": [
+                    "质稀如水",
+                    "不稀不稠",
+                    "质稠黏",
+                    "有血块"
+                  ]
+                },
+                "storageKey": "texture",
+                "textGenConfig": {
+                  "targets": [
+                    "historyOfPresentIllness"
+                  ],
+                  "template": "{label}：{value}",
+                  "separator": "、"
+                }
+              },
+              {
+                "id": "1770191742114",
+                "key": "clotSize",
+                "label": "血块大小",
+                "type": "radio",
+                "props": {
+                  "options": [
+                    "无血块",
+                    "小血块（黄豆大小）",
+                    "中等血块",
+                    "大血块（蚕豆以上）"
+                  ]
+                },
+                "storageKey": "clotSize",
+                "textGenConfig": {
+                  "targets": [
+                    "historyOfPresentIllness"
+                  ],
+                  "template": "{label}：{value}",
+                  "separator": "、"
+                }
+              }
+            ]
+          },
+          {
+            "id": "tcm_menstrual_disorder_section_3",
+            "title": "伴随症状",
+            "description": "",
+            "fields": [
+              {
+                "id": "1770191742115",
+                "key": "dysmenorrhea",
+                "label": "痛经情况",
+                "type": "radio",
+                "props": {
+                  "options": [
+                    "无痛经",
+                    "经前痛",
+                    "经期痛",
+                    "经后痛"
+                  ]
+                },
+                "storageKey": "dysmenorrhea",
+                "textGenConfig": {
+                  "targets": [
+                    "historyOfPresentIllness"
+                  ],
+                  "template": "{label}：{value}",
+                  "separator": "、"
+                }
+              },
+              {
+                "id": "1770191742116",
+                "key": "painNature",
+                "label": "痛经性质",
+                "type": "checkbox",
+                "props": {
+                  "options": [
+                    "冷痛，得温则减",
+                    "胀痛",
+                    "刺痛",
+                    "隐痛绵绵",
+                    "坠痛"
+                  ]
+                },
+                "storageKey": "painNature",
+                "textGenConfig": {
+                  "targets": [
+                    "historyOfPresentIllness"
+                  ],
+                  "template": "{label}：{value}",
+                  "separator": "、"
+                }
+              },
+              {
+                "id": "1770191742117",
+                "key": "breastSymptoms",
+                "label": "乳房症状",
+                "type": "checkbox",
+                "props": {
+                  "options": [
+                    "经前乳胀",
+                    "乳房疼痛",
+                    "乳房结块",
+                    "无不适"
+                  ]
+                },
+                "storageKey": "breastSymptoms",
+                "textGenConfig": {
+                  "targets": [
+                    "historyOfPresentIllness"
+                  ],
+                  "template": "{label}：{value}",
+                  "separator": "、"
+                }
+              },
+              {
+                "id": "1770191742118",
+                "key": "otherSymptoms",
+                "label": "其他症状",
+                "type": "checkbox",
+                "props": {
+                  "options": [
+                    "经前烦躁",
+                    "情绪低落",
+                    "经前水肿",
+                    "经前长痘",
+                    "经期乏力",
+                    "头晕",
+                    "腰膝酸软"
+                  ]
+                },
+                "storageKey": "otherSymptoms",
+                "textGenConfig": {
+                  "targets": [
+                    "historyOfPresentIllness"
+                  ],
+                  "template": "{label}：{value}",
+                  "separator": "、"
+                }
+              }
+            ]
+          },
+          {
+            "id": "tcm_menstrual_disorder_section_4",
+            "title": "带下情况",
+            "description": "",
+            "fields": [
+              {
+                "id": "1770191742119",
+                "key": "leukorrhea",
+                "label": "白带情况",
+                "type": "radio",
+                "props": {
+                  "options": [
+                    "正常",
+                    "量多",
+                    "色黄",
+                    "有异味"
+                  ]
+                },
+                "storageKey": "leukorrhea",
+                "textGenConfig": {
+                  "targets": [
+                    "historyOfPresentIllness"
+                  ],
+                  "template": "{label}：{value}",
+                  "separator": "、"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "applicablePopulation": {
+        "genders": [],
+        "ageGroups": []
+      },
+      "createdAt": 1770191741987,
+      "updatedAt": 1770191741987,
+      "tcmMetadata": {
+        "category": "妇科病证",
+        "relatedMeridians": [
+          "冲脉",
+          "任脉"
+        ],
+        "relatedOrgans": [
+          "肝",
+          "脾",
+          "肾"
+        ],
+        "diagnosis": {
+          "possiblePatterns": [
+            {
+              "pattern": "气滞血瘀",
+              "keySymptoms": [
+                "经行不畅",
+                "血块",
+                "刺痛胀痛",
+                "乳胀",
+                "舌紫暗"
+              ]
+            },
+            {
+              "pattern": "寒凝血瘀",
+              "keySymptoms": [
+                "经期延后",
+                "色黑有块",
+                "冷痛",
+                "得温减",
+                "舌暗"
+              ]
+            },
+            {
+              "pattern": "气血两虚",
+              "keySymptoms": [
+                "量少色淡",
+                "质稀",
+                "经后腹痛",
+                "乏力",
+                "舌淡"
+              ]
+            },
+            {
+              "pattern": "肝郁气滞",
+              "keySymptoms": [
+                "先后不定",
+                "经前乳胀",
+                "烦躁",
+                "胸闷"
+              ]
+            },
+            {
+              "pattern": "肾虚",
+              "keySymptoms": [
+                "周期紊乱",
+                "量少",
+                "腰酸",
+                "耳鸣",
+                "舌淡"
+              ]
+            },
+            {
+              "pattern": "血热",
+              "keySymptoms": [
+                "月经先期",
+                "量多色红",
+                "质稠",
+                "烦热",
+                "舌红"
+              ]
+            },
+            {
+              "pattern": "痰湿阻滞",
+              "keySymptoms": [
+                "量少",
+                "色淡",
+                "形体肥胖",
+                "带下量多",
+                "苔腻"
+              ]
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "1770191742120",
+      "key": "tcm_fatigue",
+      "name": "乏力倦怠",
+      "description": "中医虚劳",
+      "isCommonSymptom": false,
+      "systemCategory": [
+        "other"
+      ],
+      "bodyParts": [],
+      "customScript": "",
+      "config": {
+        "title": "智能问诊",
+        "sections": [
+          {
+            "id": "tcm_fatigue_section_0",
+            "title": "乏力特点",
+            "description": "",
+            "fields": [
+              {
+                "id": "1770191742121",
+                "key": "fatigueType",
+                "label": "乏力表现",
+                "type": "checkbox",
+                "props": {
+                  "options": [
+                    "全身乏力",
+                    "四肢无力",
+                    "身体沉重",
+                    "困倦嗜睡",
+                    "精神萎靡",
+                    "懒言少动"
+                  ]
+                },
+                "storageKey": "fatigueType",
+                "textGenConfig": {
+                  "targets": [
+                    "historyOfPresentIllness"
+                  ],
+                  "template": "{label}：{value}",
+                  "separator": "、"
+                }
+              },
+              {
+                "id": "1770191742122",
+                "key": "fatigueDegree",
+                "label": "乏力程度",
+                "type": "degree_slider",
+                "props": {
+                  "min": 1,
+                  "max": 10,
+                  "labels": [
+                    "轻微",
+                    "影响工作",
+                    "难以活动"
+                  ]
+                },
+                "storageKey": "fatigueDegree"
+              },
+              {
+                "id": "1770191742123",
+                "key": "duration",
+                "label": "持续时间",
+                "type": "input_radio",
+                "props": {
+                  "radioOptions": [
+                    "天",
+                    "周",
+                    "月",
+                    "年"
+                  ]
+                },
+                "storageKey": "duration"
+              }
+            ]
+          },
+          {
+            "id": "tcm_fatigue_section_1",
+            "title": "时间规律",
+            "description": "",
+            "fields": [
+              {
+                "id": "1770191742124",
+                "key": "timing",
+                "label": "乏力加重时间",
+                "type": "checkbox",
+                "props": {
+                  "options": [
+                    "晨起时",
+                    "午后",
+                    "饭后",
+                    "活动后",
+                    "整日皆倦"
+                  ]
+                },
+                "storageKey": "timing",
+                "textGenConfig": {
+                  "targets": [
+                    "historyOfPresentIllness"
+                  ],
+                  "template": "{label}：{value}",
+                  "separator": "、"
+                }
+              },
+              {
+                "id": "1770191742125",
+                "key": "restEffect",
+                "label": "休息后变化",
+                "type": "radio",
+                "props": {
+                  "options": [
+                    "休息后明显减轻",
+                    "休息后稍有缓解",
+                    "休息后仍不缓解"
+                  ]
+                },
+                "storageKey": "restEffect",
+                "textGenConfig": {
+                  "targets": [
+                    "historyOfPresentIllness"
+                  ],
+                  "template": "{label}：{value}",
+                  "separator": "、"
+                }
+              }
+            ]
+          },
+          {
+            "id": "tcm_fatigue_section_2",
+            "title": "伴随症状",
+            "description": "",
+            "fields": [
+              {
+                "id": "1770191742126",
+                "key": "accompaniedSymptoms",
+                "label": "伴随症状",
+                "type": "checkbox",
+                "props": {
+                  "options": [
+                    "气短懒言",
+                    "自汗",
+                    "纳差",
+                    "便溏",
+                    "心悸",
+                    "头晕",
+                    "面色淡白",
+                    "畏寒肢冷",
+                    "腰膝酸软",
+                    "口干",
+                    "失眠"
+                  ]
+                },
+                "storageKey": "accompaniedSymptoms",
+                "textGenConfig": {
+                  "targets": [
+                    "historyOfPresentIllness"
+                  ],
+                  "template": "{label}：{value}",
+                  "separator": "、"
+                }
+              }
+            ]
+          },
+          {
+            "id": "tcm_fatigue_section_3",
+            "title": "饮食睡眠",
+            "description": "",
+            "fields": [
+              {
+                "id": "1770191742127",
+                "key": "appetite",
+                "label": "食欲",
+                "type": "radio",
+                "props": {
+                  "options": [
+                    "正常",
+                    "食欲不振",
+                    "多食易饥"
+                  ]
+                },
+                "storageKey": "appetite",
+                "textGenConfig": {
+                  "targets": [
+                    "historyOfPresentIllness"
+                  ],
+                  "template": "{label}：{value}",
+                  "separator": "、"
+                }
+              },
+              {
+                "id": "1770191742128",
+                "key": "sleep",
+                "label": "睡眠",
+                "type": "radio",
+                "props": {
+                  "options": [
+                    "睡眠正常",
+                    "失眠",
+                    "嗜睡",
+                    "睡后不解乏"
+                  ]
+                },
+                "storageKey": "sleep",
+                "textGenConfig": {
+                  "targets": [
+                    "historyOfPresentIllness"
+                  ],
+                  "template": "{label}：{value}",
+                  "separator": "、"
+                }
+              }
+            ]
+          },
+          {
+            "id": "tcm_fatigue_section_4",
+            "title": "病因探查",
+            "description": "",
+            "fields": [
+              {
+                "id": "1770191742129",
+                "key": "possibleCauses",
+                "label": "可能原因",
+                "type": "checkbox",
+                "props": {
+                  "options": [
+                    "久病体虚",
+                    "大病初愈",
+                    "过度劳累",
+                    "思虑过度",
+                    "饮食不节",
+                    "房劳过度",
+                    "产后失调",
+                    "年老体衰",
+                    "原因不明"
+                  ]
+                },
+                "storageKey": "possibleCauses",
+                "textGenConfig": {
+                  "targets": [
+                    "historyOfPresentIllness"
+                  ],
+                  "template": "{label}：{value}",
+                  "separator": "、"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "applicablePopulation": {
+        "genders": [],
+        "ageGroups": []
+      },
+      "createdAt": 1770191741987,
+      "updatedAt": 1770191741987,
+      "tcmMetadata": {
+        "category": "虚劳",
+        "relatedOrgans": [
+          "脾",
+          "肾",
+          "心",
+          "肺"
+        ],
+        "diagnosis": {
+          "possiblePatterns": [
+            {
+              "pattern": "脾气虚",
+              "keySymptoms": [
+                "四肢乏力",
+                "纳差",
+                "便溏",
+                "腹胀",
+                "舌淡苔白"
+              ]
+            },
+            {
+              "pattern": "肺气虚",
+              "keySymptoms": [
+                "乏力",
+                "气短",
+                "自汗",
+                "易感冒",
+                "声低"
+              ]
+            },
+            {
+              "pattern": "心气虚",
+              "keySymptoms": [
+                "乏力",
+                "心悸",
+                "气短",
+                "自汗",
+                "舌淡"
+              ]
+            },
+            {
+              "pattern": "肾气虚",
+              "keySymptoms": [
+                "腰膝酸软",
+                "乏力",
+                "耳鸣",
+                "尿频",
+                "舌淡"
+              ]
+            },
+            {
+              "pattern": "气血两虚",
+              "keySymptoms": [
+                "乏力",
+                "面色萎黄",
+                "头晕",
+                "心悸",
+                "舌淡"
+              ]
+            },
+            {
+              "pattern": "脾肾阳虚",
+              "keySymptoms": [
+                "乏力",
+                "畏寒肢冷",
+                "便溏",
+                "腰冷",
+                "舌淡胖"
+              ]
+            },
+            {
+              "pattern": "阴虚",
+              "keySymptoms": [
+                "午后乏力",
+                "潮热",
+                "盗汗",
+                "口干",
+                "舌红少苔"
+              ]
+            },
+            {
+              "pattern": "痰湿困脾",
+              "keySymptoms": [
+                "身重困倦",
+                "嗜睡",
+                "胸闷",
+                "纳呆",
+                "苔腻"
+              ]
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "1770191742130",
+      "key": "tcm_sweating",
+      "name": "自汗盗汗",
+      "description": "中医汗证",
+      "isCommonSymptom": false,
+      "systemCategory": [
+        "other"
+      ],
+      "bodyParts": [],
+      "customScript": "",
+      "config": {
+        "title": "智能问诊",
+        "sections": [
+          {
+            "id": "tcm_sweating_section_0",
+            "title": "汗出类型",
+            "description": "",
+            "fields": [
+              {
+                "id": "1770191742131",
+                "key": "sweatingType",
+                "label": "出汗时间",
+                "type": "checkbox",
+                "props": {
+                  "options": [
+                    "白天出汗（自汗）",
+                    "睡中出汗（盗汗）",
+                    "昼夜都出汗"
+                  ]
+                },
+                "storageKey": "sweatingType",
+                "textGenConfig": {
+                  "targets": [
+                    "historyOfPresentIllness"
+                  ],
+                  "template": "{label}：{value}",
+                  "separator": "、"
+                }
+              },
+              {
+                "id": "1770191742132",
+                "key": "trigger",
+                "label": "诱发因素",
+                "type": "checkbox",
+                "props": {
+                  "options": [
+                    "活动后加重",
+                    "进食后加重",
+                    "紧张时加重",
+                    "无明显诱因"
+                  ]
+                },
+                "storageKey": "trigger",
+                "textGenConfig": {
+                  "targets": [
+                    "historyOfPresentIllness"
+                  ],
+                  "template": "{label}：{value}",
+                  "separator": "、"
+                }
+              }
+            ]
+          },
+          {
+            "id": "tcm_sweating_section_1",
+            "title": "汗出特点",
+            "description": "",
+            "fields": [
+              {
+                "id": "1770191742133",
+                "key": "sweatingAmount",
+                "label": "出汗量",
+                "type": "radio",
+                "props": {
+                  "options": [
+                    "微微汗出",
+                    "中等量汗",
+                    "大汗淋漓"
+                  ]
+                },
+                "storageKey": "sweatingAmount",
+                "textGenConfig": {
+                  "targets": [
+                    "historyOfPresentIllness"
+                  ],
+                  "template": "{label}：{value}",
+                  "separator": "、"
+                }
+              },
+              {
+                "id": "1770191742134",
+                "key": "sweatingLocation",
+                "label": "出汗部位",
+                "type": "checkbox",
+                "props": {
+                  "options": [
+                    "全身汗出",
+                    "头面部",
+                    "手足心",
+                    "胸背部",
+                    "半身汗出",
+                    "腋下"
+                  ]
+                },
+                "storageKey": "sweatingLocation",
+                "textGenConfig": {
+                  "targets": [
+                    "historyOfPresentIllness"
+                  ],
+                  "template": "{label}：{value}",
+                  "separator": "、"
+                }
+              },
+              {
+                "id": "1770191742135",
+                "key": "sweatingQuality",
+                "label": "汗液性质",
+                "type": "checkbox",
+                "props": {
+                  "options": [
+                    "汗出清冷",
+                    "汗出温热",
+                    "汗出黏腻",
+                    "汗味腥臊",
+                    "汗液正常"
+                  ]
+                },
+                "storageKey": "sweatingQuality",
+                "textGenConfig": {
+                  "targets": [
+                    "historyOfPresentIllness"
+                  ],
+                  "template": "{label}：{value}",
+                  "separator": "、"
+                }
+              }
+            ]
+          },
+          {
+            "id": "tcm_sweating_section_2",
+            "title": "伴随症状",
+            "description": "",
+            "fields": [
+              {
+                "id": "1770191742136",
+                "key": "accompaniedSymptoms",
+                "label": "伴随症状",
+                "type": "checkbox",
+                "props": {
+                  "options": [
+                    "神疲乏力",
+                    "气短懒言",
+                    "心悸",
+                    "面色苍白",
+                    "畏寒肢冷",
+                    "潮热",
+                    "颧红",
+                    "口干",
+                    "失眠",
+                    "心烦"
+                  ]
+                },
+                "storageKey": "accompaniedSymptoms",
+                "textGenConfig": {
+                  "targets": [
+                    "historyOfPresentIllness"
+                  ],
+                  "template": "{label}：{value}",
+                  "separator": "、"
+                }
+              }
+            ]
+          },
+          {
+            "id": "tcm_sweating_section_3",
+            "title": "寒热辨证",
+            "description": "",
+            "fields": [
+              {
+                "id": "1770191742137",
+                "key": "coldHeat",
+                "label": "寒热感觉",
+                "type": "radio",
+                "props": {
+                  "options": [
+                    "平素怕冷",
+                    "平素怕热",
+                    "时冷时热",
+                    "寒热正常"
+                  ]
+                },
+                "storageKey": "coldHeat",
+                "textGenConfig": {
+                  "targets": [
+                    "historyOfPresentIllness"
+                  ],
+                  "template": "{label}：{value}",
+                  "separator": "、"
+                }
+              }
+            ]
+          },
+          {
+            "id": "tcm_sweating_section_4",
+            "title": "病史",
+            "description": "",
+            "fields": [
+              {
+                "id": "1770191742138",
+                "key": "history",
+                "label": "既往情况",
+                "type": "checkbox",
+                "props": {
+                  "options": [
+                    "久病体虚",
+                    "大病初愈",
+                    "产后",
+                    "更年期",
+                    "甲状腺疾病",
+                    "结核病史",
+                    "糖尿病",
+                    "无特殊"
+                  ]
+                },
+                "storageKey": "history",
+                "textGenConfig": {
+                  "targets": [
+                    "historyOfPresentIllness"
+                  ],
+                  "template": "{label}：{value}",
+                  "separator": "、"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "applicablePopulation": {
+        "genders": [],
+        "ageGroups": []
+      },
+      "createdAt": 1770191741987,
+      "updatedAt": 1770191741987,
+      "tcmMetadata": {
+        "category": "汗证",
+        "relatedOrgans": [
+          "肺",
+          "心",
+          "肾"
+        ],
+        "diagnosis": {
+          "possiblePatterns": [
+            {
+              "pattern": "肺卫不固",
+              "keySymptoms": [
+                "自汗",
+                "动则汗出",
+                "易感冒",
+                "气短",
+                "舌淡"
+              ]
+            },
+            {
+              "pattern": "心血不足",
+              "keySymptoms": [
+                "自汗",
+                "心悸",
+                "失眠",
+                "面色不华",
+                "舌淡"
+              ]
+            },
+            {
+              "pattern": "阴虚火旺",
+              "keySymptoms": [
+                "盗汗",
+                "潮热",
+                "颧红",
+                "五心烦热",
+                "舌红少苔"
+              ]
+            },
+            {
+              "pattern": "气阴两虚",
+              "keySymptoms": [
+                "自汗盗汗并见",
+                "乏力",
+                "口干",
+                "舌红少苔"
+              ]
+            },
+            {
+              "pattern": "脾胃湿热",
+              "keySymptoms": [
+                "汗出黏腻",
+                "头面多汗",
+                "口苦",
+                "苔黄腻"
+              ]
+            },
+            {
+              "pattern": "阳虚",
+              "keySymptoms": [
+                "冷汗",
+                "畏寒",
+                "四肢不温",
+                "舌淡胖"
+              ]
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "1770191742139",
+      "key": "tcm_tinnitus",
+      "name": "耳鸣",
+      "description": "中医耳科病证",
+      "isCommonSymptom": false,
+      "systemCategory": [
+        "other"
+      ],
+      "bodyParts": [],
+      "customScript": "",
+      "config": {
+        "title": "智能问诊",
+        "sections": [
+          {
+            "id": "tcm_tinnitus_section_0",
+            "title": "耳鸣特点",
+            "description": "",
+            "fields": [
+              {
+                "id": "1770191742140",
+                "key": "tinnitusSound",
+                "label": "耳鸣声音",
+                "type": "radio",
+                "props": {
+                  "options": [
+                    "高调蝉鸣声",
+                    "低调轰鸣声",
+                    "如风声呼呼",
+                    "如雷声隆隆",
+                    "搏动性（与心跳同步）"
+                  ]
+                },
+                "storageKey": "tinnitusSound",
+                "textGenConfig": {
+                  "targets": [
+                    "historyOfPresentIllness"
+                  ],
+                  "template": "{label}：{value}",
+                  "separator": "、"
+                }
+              },
+              {
+                "id": "1770191742141",
+                "key": "tinnitusVolume",
+                "label": "耳鸣响度",
+                "type": "degree_slider",
+                "props": {
+                  "min": 1,
+                  "max": 10,
+                  "labels": [
+                    "轻微",
+                    "中等",
+                    "响亮难忍"
+                  ]
+                },
+                "storageKey": "tinnitusVolume"
+              },
+              {
+                "id": "1770191742142",
+                "key": "tinnitusSide",
+                "label": "耳鸣侧别",
+                "type": "radio",
+                "props": {
+                  "options": [
+                    "左耳",
+                    "右耳",
+                    "双耳",
+                    "左右交替"
+                  ]
+                },
+                "storageKey": "tinnitusSide",
+                "textGenConfig": {
+                  "targets": [
+                    "historyOfPresentIllness"
+                  ],
+                  "template": "{label}：{value}",
+                  "separator": "、"
+                }
+              }
+            ]
+          },
+          {
+            "id": "tcm_tinnitus_section_1",
+            "title": "发作规律",
+            "description": "",
+            "fields": [
+              {
+                "id": "1770191742143",
+                "key": "onsetType",
+                "label": "起病方式",
+                "type": "radio",
+                "props": {
+                  "options": [
+                    "突然发生",
+                    "逐渐加重"
+                  ]
+                },
+                "storageKey": "onsetType",
+                "textGenConfig": {
+                  "targets": [
+                    "historyOfPresentIllness"
+                  ],
+                  "template": "{label}：{value}",
+                  "separator": "、"
+                }
+              },
+              {
+                "id": "1770191742144",
+                "key": "duration",
+                "label": "病程",
+                "type": "input_radio",
+                "props": {
+                  "radioOptions": [
+                    "天",
+                    "周",
+                    "月",
+                    "年"
+                  ]
+                },
+                "storageKey": "duration"
+              },
+              {
+                "id": "1770191742145",
+                "key": "timing",
+                "label": "发作时间",
+                "type": "checkbox",
+                "props": {
+                  "options": [
+                    "持续存在",
+                    "夜间加重",
+                    "劳累后加重",
+                    "情绪激动后加重",
+                    "时有时无"
+                  ]
+                },
+                "storageKey": "timing",
+                "textGenConfig": {
+                  "targets": [
+                    "historyOfPresentIllness"
+                  ],
+                  "template": "{label}：{value}",
+                  "separator": "、"
+                }
+              }
+            ]
+          },
+          {
+            "id": "tcm_tinnitus_section_2",
+            "title": "伴随症状",
+            "description": "",
+            "fields": [
+              {
+                "id": "1770191742146",
+                "key": "hearingLoss",
+                "label": "听力情况",
+                "type": "radio",
+                "props": {
+                  "options": [
+                    "听力正常",
+                    "轻度下降",
+                    "中度下降",
+                    "重度下降/耳聋"
+                  ]
+                },
+                "storageKey": "hearingLoss",
+                "textGenConfig": {
+                  "targets": [
+                    "historyOfPresentIllness"
+                  ],
+                  "template": "{label}：{value}",
+                  "separator": "、"
+                }
+              },
+              {
+                "id": "1770191742147",
+                "key": "accompaniedSymptoms",
+                "label": "伴随症状",
+                "type": "checkbox",
+                "props": {
+                  "options": [
+                    "头晕",
+                    "眩晕",
+                    "头痛",
+                    "失眠",
+                    "腰膝酸软",
+                    "烦躁易怒",
+                    "口干",
+                    "口苦",
+                    "耳胀闷感"
+                  ]
+                },
+                "storageKey": "accompaniedSymptoms",
+                "textGenConfig": {
+                  "targets": [
+                    "historyOfPresentIllness"
+                  ],
+                  "template": "{label}：{value}",
+                  "separator": "、"
+                }
+              }
+            ]
+          },
+          {
+            "id": "tcm_tinnitus_section_3",
+            "title": "缓解因素",
+            "description": "",
+            "fields": [
+              {
+                "id": "1770191742148",
+                "key": "relief",
+                "label": "缓解因素",
+                "type": "checkbox",
+                "props": {
+                  "options": [
+                    "按压耳部减轻",
+                    "休息后减轻",
+                    "无法缓解"
+                  ]
+                },
+                "storageKey": "relief",
+                "textGenConfig": {
+                  "targets": [
+                    "historyOfPresentIllness"
+                  ],
+                  "template": "{label}：{value}",
+                  "separator": "、"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "applicablePopulation": {
+        "genders": [],
+        "ageGroups": []
+      },
+      "createdAt": 1770191741987,
+      "updatedAt": 1770191741987,
+      "tcmMetadata": {
+        "category": "耳科病证",
+        "relatedOrgans": [
+          "肾",
+          "肝",
+          "胆",
+          "脾"
+        ],
+        "diagnosis": {
+          "possiblePatterns": [
+            {
+              "pattern": "肾精亏虚",
+              "keySymptoms": [
+                "高调蝉鸣",
+                "渐进加重",
+                "腰膝酸软",
+                "头晕",
+                "舌淡"
+              ]
+            },
+            {
+              "pattern": "肾阴虚",
+              "keySymptoms": [
+                "高调耳鸣",
+                "夜间重",
+                "五心烦热",
+                "盗汗",
+                "舌红少苔"
+              ]
+            },
+            {
+              "pattern": "肾阳虚",
+              "keySymptoms": [
+                "低调耳鸣",
+                "畏寒肢冷",
+                "腰冷",
+                "夜尿多",
+                "舌淡胖"
+              ]
+            },
+            {
+              "pattern": "肝火上炎",
+              "keySymptoms": [
+                "耳鸣如雷",
+                "突发",
+                "头痛",
+                "口苦",
+                "烦躁",
+                "舌红苔黄"
+              ]
+            },
+            {
+              "pattern": "痰火郁结",
+              "keySymptoms": [
+                "耳鸣",
+                "耳闷",
+                "头重",
+                "胸闷",
+                "苔黄腻"
+              ]
+            },
+            {
+              "pattern": "气血亏虚",
+              "keySymptoms": [
+                "耳鸣",
+                "劳累加重",
+                "乏力",
+                "面色萎黄",
+                "舌淡"
+              ]
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "1770191742149",
+      "key": "tcm_eye_symptoms",
+      "name": "目赤目涩",
+      "description": "中医眼科病证",
+      "isCommonSymptom": false,
+      "systemCategory": [
+        "other"
+      ],
+      "bodyParts": [],
+      "customScript": "",
+      "config": {
+        "title": "智能问诊",
+        "sections": [
+          {
+            "id": "tcm_eye_symptoms_section_0",
+            "title": "主要症状",
+            "description": "",
+            "fields": [
+              {
+                "id": "1770191742150",
+                "key": "mainSymptoms",
+                "label": "眼部症状",
+                "type": "checkbox",
+                "props": {
+                  "options": [
+                    "目赤（眼红）",
+                    "目涩（干涩）",
+                    "目痒",
+                    "目痛",
+                    "流泪",
+                    "畏光",
+                    "眼屎多",
+                    "视物模糊"
+                  ]
+                },
+                "storageKey": "mainSymptoms",
+                "textGenConfig": {
+                  "targets": [
+                    "historyOfPresentIllness"
+                  ],
+                  "template": "{label}：{value}",
+                  "separator": "、"
+                }
+              },
+              {
+                "id": "1770191742151",
+                "key": "affectedEye",
+                "label": "发病眼别",
+                "type": "radio",
+                "props": {
+                  "options": [
+                    "左眼",
+                    "右眼",
+                    "双眼"
+                  ]
+                },
+                "storageKey": "affectedEye",
+                "textGenConfig": {
+                  "targets": [
+                    "historyOfPresentIllness"
+                  ],
+                  "template": "{label}：{value}",
+                  "separator": "、"
+                }
+              }
+            ]
+          },
+          {
+            "id": "tcm_eye_symptoms_section_1",
+            "title": "发作规律",
+            "description": "",
+            "fields": [
+              {
+                "id": "1770191742152",
+                "key": "timing",
+                "label": "症状加重时间",
+                "type": "checkbox",
+                "props": {
+                  "options": [
+                    "晨起时",
+                    "傍晚时",
+                    "用眼后",
+                    "夜间",
+                    "无规律"
+                  ]
+                },
+                "storageKey": "timing",
+                "textGenConfig": {
+                  "targets": [
+                    "historyOfPresentIllness"
+                  ],
+                  "template": "{label}：{value}",
+                  "separator": "、"
+                }
+              },
+              {
+                "id": "1770191742153",
+                "key": "triggers",
+                "label": "诱发因素",
+                "type": "checkbox",
+                "props": {
+                  "options": [
+                    "长时间看电子屏幕",
+                    "阅读",
+                    "吹风后",
+                    "情绪激动后",
+                    "熬夜后",
+                    "无明显诱因"
+                  ]
+                },
+                "storageKey": "triggers",
+                "textGenConfig": {
+                  "targets": [
+                    "historyOfPresentIllness"
+                  ],
+                  "template": "{label}：{value}",
+                  "separator": "、"
+                }
+              }
+            ]
+          },
+          {
+            "id": "tcm_eye_symptoms_section_2",
+            "title": "伴随症状",
+            "description": "",
+            "fields": [
+              {
+                "id": "1770191742154",
+                "key": "accompaniedSymptoms",
+                "label": "伴随症状",
+                "type": "checkbox",
+                "props": {
+                  "options": [
+                    "头痛",
+                    "头晕",
+                    "烦躁易怒",
+                    "口干",
+                    "口苦",
+                    "失眠",
+                    "耳鸣",
+                    "胁肋胀痛"
+                  ]
+                },
+                "storageKey": "accompaniedSymptoms",
+                "textGenConfig": {
+                  "targets": [
+                    "historyOfPresentIllness"
+                  ],
+                  "template": "{label}：{value}",
+                  "separator": "、"
+                }
+              }
+            ]
+          },
+          {
+            "id": "tcm_eye_symptoms_section_3",
+            "title": "生活习惯",
+            "description": "",
+            "fields": [
+              {
+                "id": "1770191742155",
+                "key": "screenTime",
+                "label": "每日屏幕使用时间",
+                "type": "radio",
+                "props": {
+                  "options": [
+                    "少于4小时",
+                    "4-8小时",
+                    "超过8小时"
+                  ]
+                },
+                "storageKey": "screenTime",
+                "textGenConfig": {
+                  "targets": [
+                    "historyOfPresentIllness"
+                  ],
+                  "template": "{label}：{value}",
+                  "separator": "、"
+                }
+              },
+              {
+                "id": "1770191742156",
+                "key": "sleepTime",
+                "label": "平均睡眠时间",
+                "type": "radio",
+                "props": {
+                  "options": [
+                    "少于6小时",
+                    "6-8小时",
+                    "超过8小时"
+                  ]
+                },
+                "storageKey": "sleepTime",
+                "textGenConfig": {
+                  "targets": [
+                    "historyOfPresentIllness"
+                  ],
+                  "template": "{label}：{value}",
+                  "separator": "、"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "applicablePopulation": {
+        "genders": [],
+        "ageGroups": []
+      },
+      "createdAt": 1770191741987,
+      "updatedAt": 1770191741987,
+      "tcmMetadata": {
+        "category": "眼科病证",
+        "relatedOrgans": [
+          "肝",
+          "肾",
+          "心",
+          "肺"
+        ],
+        "diagnosis": {
+          "possiblePatterns": [
+            {
+              "pattern": "肝火上炎",
+              "keySymptoms": [
+                "目赤",
+                "目痛",
+                "头痛",
+                "口苦",
+                "烦躁",
+                "舌红苔黄"
+              ]
+            },
+            {
+              "pattern": "风热上扰",
+              "keySymptoms": [
+                "目赤",
+                "目痒",
+                "流泪",
+                "眼屎多",
+                "恶风"
+              ]
+            },
+            {
+              "pattern": "肝肾阴虚",
+              "keySymptoms": [
+                "目涩",
+                "视物模糊",
+                "头晕",
+                "耳鸣",
+                "腰膝酸软",
+                "舌红少苔"
+              ]
+            },
+            {
+              "pattern": "肝血不足",
+              "keySymptoms": [
+                "目涩",
+                "视物疲劳",
+                "夜盲",
+                "面色萎黄",
+                "舌淡"
+              ]
+            },
+            {
+              "pattern": "肝气郁结",
+              "keySymptoms": [
+                "目胀痛",
+                "胁痛",
+                "情志不舒",
+                "嗳气"
+              ]
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "1770191742157",
+      "key": "tcm_edema",
+      "name": "水肿",
+      "description": "中医水液代谢病证",
+      "isCommonSymptom": false,
+      "systemCategory": [
+        "other"
+      ],
+      "bodyParts": [],
+      "customScript": "",
+      "config": {
+        "title": "智能问诊",
+        "sections": [
+          {
+            "id": "tcm_edema_section_0",
+            "title": "水肿部位",
+            "description": "",
+            "fields": [
+              {
+                "id": "1770191742158",
+                "key": "edemaLocation",
+                "label": "水肿部位",
+                "type": "checkbox",
+                "props": {
+                  "options": [
+                    "眼睑",
+                    "面部",
+                    "上肢",
+                    "下肢",
+                    "腹部（腹水）",
+                    "全身"
+                  ]
+                },
+                "storageKey": "edemaLocation",
+                "textGenConfig": {
+                  "targets": [
+                    "historyOfPresentIllness"
+                  ],
+                  "template": "{label}：{value}",
+                  "separator": "、"
+                }
+              },
+              {
+                "id": "1770191742159",
+                "key": "edemaOnset",
+                "label": "水肿起始部位",
+                "type": "radio",
+                "props": {
+                  "options": [
+                    "从头面开始",
+                    "从下肢开始"
+                  ]
+                },
+                "storageKey": "edemaOnset",
+                "textGenConfig": {
+                  "targets": [
+                    "historyOfPresentIllness"
+                  ],
+                  "template": "{label}：{value}",
+                  "separator": "、"
+                }
+              }
+            ]
+          },
+          {
+            "id": "tcm_edema_section_1",
+            "title": "水肿特点",
+            "description": "",
+            "fields": [
+              {
+                "id": "1770191742160",
+                "key": "edemaCharacter",
+                "label": "水肿性质",
+                "type": "radio",
+                "props": {
+                  "options": [
+                    "凹陷性水肿（按之有坑）",
+                    "非凹陷性"
+                  ]
+                },
+                "storageKey": "edemaCharacter",
+                "textGenConfig": {
+                  "targets": [
+                    "historyOfPresentIllness"
+                  ],
+                  "template": "{label}：{value}",
+                  "separator": "、"
+                }
+              },
+              {
+                "id": "1770191742161",
+                "key": "skinColor",
+                "label": "水肿处皮肤",
+                "type": "radio",
+                "props": {
+                  "options": [
+                    "皮肤光亮",
+                    "皮肤正常",
+                    "皮肤晦暗"
+                  ]
+                },
+                "storageKey": "skinColor",
+                "textGenConfig": {
+                  "targets": [
+                    "historyOfPresentIllness"
+                  ],
+                  "template": "{label}：{value}",
+                  "separator": "、"
+                }
+              },
+              {
+                "id": "1770191742162",
+                "key": "timing",
+                "label": "水肿变化",
+                "type": "radio",
+                "props": {
+                  "options": [
+                    "晨起明显，午后减轻",
+                    "下午加重，晨起减轻",
+                    "持续不退"
+                  ]
+                },
+                "storageKey": "timing",
+                "textGenConfig": {
+                  "targets": [
+                    "historyOfPresentIllness"
+                  ],
+                  "template": "{label}：{value}",
+                  "separator": "、"
+                }
+              }
+            ]
+          },
+          {
+            "id": "tcm_edema_section_2",
+            "title": "病程与诱因",
+            "description": "",
+            "fields": [
+              {
+                "id": "1770191742163",
+                "key": "onset",
+                "label": "起病方式",
+                "type": "radio",
+                "props": {
+                  "options": [
+                    "急性起病",
+                    "慢性起病"
+                  ]
+                },
+                "storageKey": "onset",
+                "textGenConfig": {
+                  "targets": [
+                    "historyOfPresentIllness"
+                  ],
+                  "template": "{label}：{value}",
+                  "separator": "、"
+                }
+              },
+              {
+                "id": "1770191742164",
+                "key": "duration",
+                "label": "病程",
+                "type": "input_radio",
+                "props": {
+                  "radioOptions": [
+                    "天",
+                    "周",
+                    "月",
+                    "年"
+                  ]
+                },
+                "storageKey": "duration"
+              },
+              {
+                "id": "1770191742165",
+                "key": "triggers",
+                "label": "诱发因素",
+                "type": "checkbox",
+                "props": {
+                  "options": [
+                    "感受风寒后",
+                    "劳累后",
+                    "进食咸物后",
+                    "月经前后",
+                    "妊娠期",
+                    "无明显诱因"
+                  ]
+                },
+                "storageKey": "triggers",
+                "textGenConfig": {
+                  "targets": [
+                    "historyOfPresentIllness"
+                  ],
+                  "template": "{label}：{value}",
+                  "separator": "、"
+                }
+              }
+            ]
+          },
+          {
+            "id": "tcm_edema_section_3",
+            "title": "小便情况",
+            "description": "",
+            "fields": [
+              {
+                "id": "1770191742166",
+                "key": "urination",
+                "label": "小便情况",
+                "type": "checkbox",
+                "props": {
+                  "options": [
+                    "尿少",
+                    "尿量正常",
+                    "尿频",
+                    "夜尿多",
+                    "泡沫多"
+                  ]
+                },
+                "storageKey": "urination",
+                "textGenConfig": {
+                  "targets": [
+                    "historyOfPresentIllness"
+                  ],
+                  "template": "{label}：{value}",
+                  "separator": "、"
+                }
+              }
+            ]
+          },
+          {
+            "id": "tcm_edema_section_4",
+            "title": "伴随症状",
+            "description": "",
+            "fields": [
+              {
+                "id": "1770191742167",
+                "key": "accompaniedSymptoms",
+                "label": "伴随症状",
+                "type": "checkbox",
+                "props": {
+                  "options": [
+                    "神疲乏力",
+                    "畏寒肢冷",
+                    "腰膝酸软",
+                    "纳差",
+                    "便溏",
+                    "心悸",
+                    "气短不能平卧",
+                    "发热恶寒"
+                  ]
+                },
+                "storageKey": "accompaniedSymptoms",
+                "textGenConfig": {
+                  "targets": [
+                    "historyOfPresentIllness"
+                  ],
+                  "template": "{label}：{value}",
+                  "separator": "、"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "applicablePopulation": {
+        "genders": [],
+        "ageGroups": []
+      },
+      "createdAt": 1770191741987,
+      "updatedAt": 1770191741987,
+      "tcmMetadata": {
+        "category": "水液代谢病证",
+        "relatedOrgans": [
+          "肺",
+          "脾",
+          "肾",
+          "心"
+        ],
+        "diagnosis": {
+          "possiblePatterns": [
+            {
+              "pattern": "风水泛滥",
+              "keySymptoms": [
+                "头面水肿",
+                "急起",
+                "恶寒发热",
+                "尿少",
+                "苔薄白"
+              ]
+            },
+            {
+              "pattern": "湿毒浸淫",
+              "keySymptoms": [
+                "水肿",
+                "疮疡",
+                "小便短赤",
+                "苔黄腻"
+              ]
+            },
+            {
+              "pattern": "水湿浸渍",
+              "keySymptoms": [
+                "下肢水肿",
+                "身重",
+                "纳呆",
+                "便溏",
+                "苔白腻"
+              ]
+            },
+            {
+              "pattern": "湿热壅盛",
+              "keySymptoms": [
+                "水肿",
+                "皮肤绷急",
+                "尿少赤",
+                "口苦",
+                "苔黄腻"
+              ]
+            },
+            {
+              "pattern": "脾阳虚衰",
+              "keySymptoms": [
+                "下肢水肿",
+                "腹胀",
+                "便溏",
+                "乏力",
+                "舌淡胖"
+              ]
+            },
+            {
+              "pattern": "肾阳衰微",
+              "keySymptoms": [
+                "全身水肿",
+                "腰冷",
+                "畏寒",
+                "尿少",
+                "舌淡胖"
+              ]
+            },
+            {
+              "pattern": "瘀水互结",
+              "keySymptoms": [
+                "水肿日久",
+                "肤色晦暗",
+                "舌紫暗"
+              ]
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "1770191742168",
+      "key": "tcm_numbness",
+      "name": "肢体麻木",
+      "description": "中医痹证/中风先兆",
+      "isCommonSymptom": false,
+      "systemCategory": [
+        "other"
+      ],
+      "bodyParts": [],
+      "customScript": "",
+      "config": {
+        "title": "智能问诊",
+        "sections": [
+          {
+            "id": "tcm_numbness_section_0",
+            "title": "麻木部位",
+            "description": "",
+            "fields": [
+              {
+                "id": "1770191742169",
+                "key": "numbnessLocation",
+                "label": "麻木部位",
+                "type": "checkbox",
+                "props": {
+                  "options": [
+                    "手指",
+                    "手掌",
+                    "前臂",
+                    "上臂",
+                    "足趾",
+                    "足部",
+                    "小腿",
+                    "大腿",
+                    "面部",
+                    "舌头"
+                  ]
+                },
+                "storageKey": "numbnessLocation",
+                "textGenConfig": {
+                  "targets": [
+                    "historyOfPresentIllness"
+                  ],
+                  "template": "{label}：{value}",
+                  "separator": "、"
+                }
+              },
+              {
+                "id": "1770191742170",
+                "key": "numbnessSide",
+                "label": "发病侧别",
+                "type": "radio",
+                "props": {
+                  "options": [
+                    "左侧",
+                    "右侧",
+                    "双侧",
+                    "左右交替",
+                    "一侧上下肢同时"
+                  ]
+                },
+                "storageKey": "numbnessSide",
+                "textGenConfig": {
+                  "targets": [
+                    "historyOfPresentIllness"
+                  ],
+                  "template": "{label}：{value}",
+                  "separator": "、"
+                }
+              }
+            ]
+          },
+          {
+            "id": "tcm_numbness_section_1",
+            "title": "麻木性质",
+            "description": "",
+            "fields": [
+              {
+                "id": "1770191742171",
+                "key": "numbnessType",
+                "label": "感觉异常类型",
+                "type": "checkbox",
+                "props": {
+                  "options": [
+                    "麻（蚁行感）",
+                    "木（不知痛痒）",
+                    "刺痛感",
+                    "灼热感",
+                    "冷凉感",
+                    "沉重感"
+                  ]
+                },
+                "storageKey": "numbnessType",
+                "textGenConfig": {
+                  "targets": [
+                    "historyOfPresentIllness"
+                  ],
+                  "template": "{label}：{value}",
+                  "separator": "、"
+                }
+              },
+              {
+                "id": "1770191742172",
+                "key": "onset",
+                "label": "起病方式",
+                "type": "radio",
+                "props": {
+                  "options": [
+                    "突然发生",
+                    "逐渐加重"
+                  ]
+                },
+                "storageKey": "onset",
+                "textGenConfig": {
+                  "targets": [
+                    "historyOfPresentIllness"
+                  ],
+                  "template": "{label}：{value}",
+                  "separator": "、"
+                }
+              },
+              {
+                "id": "1770191742173",
+                "key": "duration",
+                "label": "病程",
+                "type": "input_radio",
+                "props": {
+                  "radioOptions": [
+                    "小时",
+                    "天",
+                    "周",
+                    "月",
+                    "年"
+                  ]
+                },
+                "storageKey": "duration"
+              }
+            ]
+          },
+          {
+            "id": "tcm_numbness_section_2",
+            "title": "发作规律",
+            "description": "",
+            "fields": [
+              {
+                "id": "1770191742174",
+                "key": "timing",
+                "label": "发作时间",
+                "type": "checkbox",
+                "props": {
+                  "options": [
+                    "持续存在",
+                    "时有时无",
+                    "夜间明显",
+                    "晨起明显",
+                    "静止后",
+                    "活动后"
+                  ]
+                },
+                "storageKey": "timing",
+                "textGenConfig": {
+                  "targets": [
+                    "historyOfPresentIllness"
+                  ],
+                  "template": "{label}：{value}",
+                  "separator": "、"
+                }
+              },
+              {
+                "id": "1770191742175",
+                "key": "triggers",
+                "label": "诱发因素",
+                "type": "checkbox",
+                "props": {
+                  "options": [
+                    "受压后（如睡姿不当）",
+                    "受凉后",
+                    "情绪激动后",
+                    "劳累后",
+                    "无明显诱因"
+                  ]
+                },
+                "storageKey": "triggers",
+                "textGenConfig": {
+                  "targets": [
+                    "historyOfPresentIllness"
+                  ],
+                  "template": "{label}：{value}",
+                  "separator": "、"
+                }
+              }
+            ]
+          },
+          {
+            "id": "tcm_numbness_section_3",
+            "title": "伴随症状",
+            "description": "",
+            "fields": [
+              {
+                "id": "1770191742176",
+                "key": "accompaniedSymptoms",
+                "label": "伴随症状",
+                "type": "checkbox",
+                "props": {
+                  "options": [
+                    "肢体无力",
+                    "头晕",
+                    "头痛",
+                    "言语不利",
+                    "神疲乏力",
+                    "心悸",
+                    "失眠",
+                    "面色苍白"
+                  ]
+                },
+                "storageKey": "accompaniedSymptoms",
+                "textGenConfig": {
+                  "targets": [
+                    "historyOfPresentIllness"
+                  ],
+                  "template": "{label}：{value}",
+                  "separator": "、"
+                }
+              }
+            ]
+          },
+          {
+            "id": "tcm_numbness_section_4",
+            "title": "中风风险评估",
+            "description": "以下症状需高度警惕中风",
+            "fields": [
+              {
+                "id": "1770191742177",
+                "key": "strokeRisk",
+                "label": "危险信号",
+                "type": "checkbox",
+                "props": {
+                  "options": [
+                    "突发一侧肢体麻木无力",
+                    "口角歪斜",
+                    "言语困难",
+                    "视物模糊或偏盲",
+                    "剧烈头痛",
+                    "以上都无"
+                  ]
+                },
+                "storageKey": "strokeRisk",
+                "textGenConfig": {
+                  "targets": [
+                    "historyOfPresentIllness"
+                  ],
+                  "template": "{label}：{value}",
+                  "separator": "、"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "applicablePopulation": {
+        "genders": [],
+        "ageGroups": []
+      },
+      "createdAt": 1770191741987,
+      "updatedAt": 1770191741987,
+      "tcmMetadata": {
+        "category": "痹证/中风先兆",
+        "relatedOrgans": [
+          "肝",
+          "脾",
+          "心"
+        ],
+        "diagnosis": {
+          "possiblePatterns": [
+            {
+              "pattern": "气血亏虚",
+              "keySymptoms": [
+                "麻木绵绵",
+                "乏力",
+                "面色萎黄",
+                "心悸",
+                "舌淡"
+              ]
+            },
+            {
+              "pattern": "肝血不足",
+              "keySymptoms": [
+                "麻木",
+                "夜间重",
+                "视物模糊",
+                "爪甲不荣",
+                "舌淡"
+              ]
+            },
+            {
+              "pattern": "痰瘀阻络",
+              "keySymptoms": [
+                "麻木刺痛",
+                "固定",
+                "肢体沉重",
+                "舌紫暗苔腻"
+              ]
+            },
+            {
+              "pattern": "风痰阻络",
+              "keySymptoms": [
+                "麻木",
+                "头晕",
+                "肢体沉重",
+                "苔腻"
+              ]
+            },
+            {
+              "pattern": "阳虚寒凝",
+              "keySymptoms": [
+                "麻木冷凉",
+                "畏寒",
+                "遇冷加重",
+                "舌淡"
+              ]
+            },
+            {
+              "pattern": "肝阳化风",
+              "keySymptoms": [
+                "突发麻木",
+                "头晕头痛",
+                "烦躁",
+                "舌红"
+              ],
+              "warning": "中风先兆"
+            }
+          ]
+        }
+      }
+    }
+  ]
+}
