@@ -214,7 +214,7 @@ const listSortOption = ref('relevance');  // 排序选项: relevance, initials_a
 const listLoading = ref(false);
 const listResults = ref<ListSearchItem[]>([]);
 const listPagination = ref({
-  page: 1,
+  page: 0,
   pageSize: 10,
   totalRows: 0,
   totalPage: 0,
@@ -362,7 +362,7 @@ async function performListSearch() {
       key: listSearchKey.value.trim(),
       kgBaseId: kgBaseId,
       pageSize: 20,
-      page: 1,
+      page: 0,
       sortField,
       sortRule,
     });
@@ -370,7 +370,7 @@ async function performListSearch() {
     if (response && response.rows) {
       listResults.value = response.rows;
       listPagination.value = {
-        page: 1,
+        page: 0,
         pageSize: 20,
         totalRows: response.totalRows,
         totalPage: response.totalPage,

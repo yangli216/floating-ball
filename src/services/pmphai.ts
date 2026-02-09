@@ -61,7 +61,7 @@ export interface ListSearchParams {
   tagId?: string;         // 分类ID
   tagName?: string;       // 分类名称
   pageSize?: number;      // 每页条数，默认10
-  page?: number;          // 页码，默认1
+  page?: number;          // 页码，默认0
   sortField?: string;     // 排序字段
   sortRule?: string;      // 排序规则
 }
@@ -660,7 +660,7 @@ class PMPHAIService {
       const requestParams: Record<string, string | number> = {
         token,
         pageSize: params.pageSize || 10,
-        page: params.page || 1,
+        page: params.page || 0,
       };
 
       if (params.key) requestParams.key = params.key;
