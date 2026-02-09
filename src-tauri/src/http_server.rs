@@ -2,8 +2,25 @@ use actix_web::{web, App, HttpResponse, HttpServer, Responder};
 use actix_cors::Cors;
 use serde::{Deserialize, Serialize};
 use tauri::{Emitter, Manager};
+use std::sync::Mutex;
+use std::collections::HashMap;
 
 use crate::SharedAppState;
+
+// PMPHAI Token Cache
+struct PMPHAITokenCache {
+    access_token: Option<String>,
+    refresh_token: Option<String>,
+    expires_at: u64,
+}
+
+lazy_static::lazy_static! {
+    static ref PMPHAI_TOKEN_CACHE: Mutex<PMPHAITokenCache> = Mutex::new(PMPHAITokenCache {
+        access_token: None,
+        refresh_token: None,
+        expires_at: 0,
+    });
+}
 
 #[derive(Debug, Deserialize, Serialize, Clone)]
 #[serde(rename_all = "camelCase")]
@@ -210,6 +227,301 @@ async fn show_patient_risks(
     }))
 }
 
+// ==================== PMPHAI API Proxy ====================
+
+const PMPHAI_TOKEN_URL: &str = "https://inside.pmphai.com/oauth2/access_token";
+const PMPHAI_API_BASE_URL: &str = "https://inside.pmphai.com/gateway/cloud/cloudapi/rest/json";
+const PMPHAI_API_STANDARD_URL: &str = "https://inside.pmphai.com/gateway/cloud/cloudapi/rest";
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct PMPHAITokenRequest {
+    app_key: String,
+    app_secret: String,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct PMPHAISearchRequest {
+    token: String,
+    query: String,
+    #[serde(rename = "type")]
+    search_type: Option<i32>,
+    limit: Option<i32>,
+    score: Option<f64>,
+    enable_abstract: Option<bool>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct PMPHAIClipRequest {
+    token: String,
+    id: String,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct PMPHAIListRequest {
+    token: String,
+    key: Option<String>,
+    kg_base_id: Option<String>,
+    kg_base_name: Option<String>,
+    tag_id: Option<String>,
+    tag_name: Option<String>,
+    page_size: Option<i32>,
+    page: Option<i32>,
+    sort_field: Option<String>,
+    sort_rule: Option<String>,
+}
+
+fn generate_pmphai_sign(params: &HashMap<String, String>, app_secret: &str, app_key: &str) -> String {
+    use md5::{Md5, Digest};
+
+    // Sort parameters by key
+    let mut sorted_keys: Vec<&String> = params.keys().collect();
+    sorted_keys.sort();
+
+    // Build param string
+    let param_str: String = sorted_keys
+        .iter()
+        .map(|k| format!("{}={}", k, params.get(*k).unwrap_or(&String::new())))
+        .collect::<Vec<_>>()
+        .join("&");
+
+    // Sign = MD5(param_str + app_secret + app_key)
+    let sign_string = format!("{}{}{}", param_str, app_secret, app_key);
+
+    let mut hasher = Md5::new();
+    hasher.update(sign_string.as_bytes());
+    format!("{:x}", hasher.finalize())
+}
+
+async fn pmphai_get_token(data: web::Json<PMPHAITokenRequest>) -> impl Responder {
+    let timestamp = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_millis();
+
+    let mut params = HashMap::new();
+    params.insert("app_key".to_string(), data.app_key.clone());
+    params.insert("grant_type".to_string(), "access_token".to_string());
+    params.insert("timestamp".to_string(), timestamp.to_string());
+
+    let sign = generate_pmphai_sign(&params, &data.app_secret, &data.app_key);
+    params.insert("sign".to_string(), sign);
+
+    let client = reqwest::Client::new();
+    match client.post(PMPHAI_TOKEN_URL)
+        .form(&params)
+        .send()
+        .await
+    {
+        Ok(response) => {
+            match response.json::<serde_json::Value>().await {
+                Ok(json) => HttpResponse::Ok().json(json),
+                Err(e) => HttpResponse::InternalServerError().json(serde_json::json!({
+                    "success": false,
+                    "message": format!("Failed to parse response: {}", e)
+                }))
+            }
+        }
+        Err(e) => HttpResponse::InternalServerError().json(serde_json::json!({
+            "success": false,
+            "message": format!("Request failed: {}", e)
+        }))
+    }
+}
+
+async fn pmphai_search(data: web::Json<PMPHAISearchRequest>) -> impl Responder {
+    let url = format!("{}?token={}&method=aiKnowledge", PMPHAI_API_BASE_URL, data.token);
+
+    let mut body = serde_json::json!({
+        "query": data.query,
+        "type": data.search_type.unwrap_or(1),
+        "limit": data.limit.unwrap_or(5)
+    });
+
+    if let Some(score) = data.score {
+        if score > 0.0 {
+            body["score"] = serde_json::json!(score);
+        }
+    }
+    if let Some(enable_abstract) = data.enable_abstract {
+        body["enableAbstract"] = serde_json::json!(enable_abstract);
+    }
+
+    let client = reqwest::Client::new();
+    match client.post(&url)
+        .json(&body)
+        .send()
+        .await
+    {
+        Ok(response) => {
+            match response.json::<serde_json::Value>().await {
+                Ok(json) => HttpResponse::Ok().json(json),
+                Err(e) => HttpResponse::InternalServerError().json(serde_json::json!({
+                    "success": false,
+                    "message": format!("Failed to parse response: {}", e)
+                }))
+            }
+        }
+        Err(e) => HttpResponse::InternalServerError().json(serde_json::json!({
+            "success": false,
+            "message": format!("Request failed: {}", e)
+        }))
+    }
+}
+
+async fn pmphai_get_clip(data: web::Json<PMPHAIClipRequest>) -> impl Responder {
+    let url = format!("{}?token={}&method=aiKnowledgeClip", PMPHAI_API_BASE_URL, data.token);
+
+    let body = serde_json::json!({ "id": data.id });
+
+    let client = reqwest::Client::new();
+    match client.post(&url)
+        .json(&body)
+        .send()
+        .await
+    {
+        Ok(response) => {
+            match response.json::<serde_json::Value>().await {
+                Ok(json) => HttpResponse::Ok().json(json),
+                Err(e) => HttpResponse::InternalServerError().json(serde_json::json!({
+                    "success": false,
+                    "message": format!("Failed to parse response: {}", e)
+                }))
+            }
+        }
+        Err(e) => HttpResponse::InternalServerError().json(serde_json::json!({
+            "success": false,
+            "message": format!("Request failed: {}", e)
+        }))
+    }
+}
+
+// Page API request - for generating signed page URL
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct PMPHAIPageUrlRequest {
+    app_key: String,
+    app_secret: String,
+    page_name: String,
+    #[serde(default)]
+    id: Option<String>,
+    #[serde(default)]
+    kg_base_id: Option<String>,
+    #[serde(default)]
+    content_id: Option<String>,
+    #[serde(default)]
+    origin_url: Option<String>,
+}
+
+async fn pmphai_generate_page_url(data: web::Json<PMPHAIPageUrlRequest>) -> impl Responder {
+    let timestamp = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_millis();
+
+    // Build redirect_url
+    let mut redirect_url = String::from("https://inside.pmphai.com/gateway/cloud/pageapi/rest?");
+    let mut redirect_params = vec![format!("pageName={}", data.page_name)];
+
+    if let Some(ref kg_base_id) = data.kg_base_id {
+        redirect_params.push(format!("kgBaseId={}", kg_base_id));
+    }
+    if let Some(ref id) = data.id {
+        redirect_params.push(format!("id={}", id));
+    }
+    if let Some(ref content_id) = data.content_id {
+        redirect_params.push(format!("contentId={}", content_id));
+    }
+    redirect_url.push_str(&redirect_params.join("&"));
+
+    let final_origin_url = data.origin_url.clone().unwrap_or_else(|| "https://www.pmphai.com".to_string());
+
+    // URL encode the parameters using percent-encoding
+    fn percent_encode(s: &str) -> String {
+        let mut result = String::new();
+        for c in s.chars() {
+            match c {
+                'A'..='Z' | 'a'..='z' | '0'..='9' | '-' | '_' | '.' | '~' => result.push(c),
+                _ => {
+                    for byte in c.to_string().as_bytes() {
+                        result.push_str(&format!("%{:02X}", byte));
+                    }
+                }
+            }
+        }
+        result
+    }
+
+    let encoded_redirect_url = percent_encode(&redirect_url);
+    let encoded_origin_url = percent_encode(&final_origin_url);
+
+    // Build sign params
+    let mut sign_params = HashMap::new();
+    sign_params.insert("app_key".to_string(), data.app_key.clone());
+    sign_params.insert("grant_type".to_string(), "page_token".to_string());
+    sign_params.insert("origin_url".to_string(), encoded_origin_url.to_string());
+    sign_params.insert("redirect_url".to_string(), encoded_redirect_url.to_string());
+    sign_params.insert("timestamp".to_string(), timestamp.to_string());
+
+    let sign = generate_pmphai_sign(&sign_params, &data.app_secret, &data.app_key);
+
+    // Build final authorization URL
+    let auth_url = format!(
+        "https://inside.pmphai.com/aip/oauth/authorize?app_key={}&grant_type=page_token&timestamp={}&sign={}&redirect_url={}&origin_url={}",
+        data.app_key, timestamp, sign, encoded_redirect_url, encoded_origin_url
+    );
+
+    HttpResponse::Ok().json(serde_json::json!({
+        "success": true,
+        "data": {
+            "url": auth_url,
+            "redirectUrl": redirect_url,
+            "sign": sign,
+            "timestamp": timestamp
+        }
+    }))
+}
+
+async fn pmphai_list_search(data: web::Json<PMPHAIListRequest>) -> impl Responder {
+    let url = format!("{}?token={}", PMPHAI_API_STANDARD_URL, data.token);
+
+    let mut form_params = vec![("method", "list".to_string())];
+    form_params.push(("pageSize", data.page_size.unwrap_or(10).to_string()));
+    form_params.push(("page", data.page.unwrap_or(1).to_string()));
+
+    if let Some(ref key) = data.key { form_params.push(("key", key.clone())); }
+    if let Some(ref kg_base_id) = data.kg_base_id { form_params.push(("kgBaseId", kg_base_id.clone())); }
+    if let Some(ref kg_base_name) = data.kg_base_name { form_params.push(("kgBaseName", kg_base_name.clone())); }
+    if let Some(ref tag_id) = data.tag_id { form_params.push(("tagId", tag_id.clone())); }
+    if let Some(ref tag_name) = data.tag_name { form_params.push(("tagName", tag_name.clone())); }
+    if let Some(ref sort_field) = data.sort_field { form_params.push(("sortField", sort_field.clone())); }
+    if let Some(ref sort_rule) = data.sort_rule { form_params.push(("sortRule", sort_rule.clone())); }
+
+    let client = reqwest::Client::new();
+    match client.post(&url)
+        .form(&form_params)
+        .send()
+        .await
+    {
+        Ok(response) => {
+            match response.json::<serde_json::Value>().await {
+                Ok(json) => HttpResponse::Ok().json(json),
+                Err(e) => HttpResponse::InternalServerError().json(serde_json::json!({
+                    "success": false,
+                    "message": format!("Failed to parse response: {}", e)
+                }))
+            }
+        }
+        Err(e) => HttpResponse::InternalServerError().json(serde_json::json!({
+            "success": false,
+            "message": format!("Request failed: {}", e)
+        }))
+    }
+}
+
 pub fn run_server(app_handle: tauri::AppHandle, state: SharedAppState) {
     std::thread::spawn(move || {
         let sys = actix_web::rt::System::new();
@@ -231,6 +543,12 @@ pub fn run_server(app_handle: tauri::AppHandle, state: SharedAppState) {
                     .route("/api/consultation/stop", web::post().to(stop_consultation))
                     .route("/api/consultation/result", web::get().to(get_result))
                     .route("/api/patient/risks", web::post().to(show_patient_risks))
+                    // PMPHAI API Proxy
+                    .route("/api/pmphai/token", web::post().to(pmphai_get_token))
+                    .route("/api/pmphai/search", web::post().to(pmphai_search))
+                    .route("/api/pmphai/clip", web::post().to(pmphai_get_clip))
+                    .route("/api/pmphai/list", web::post().to(pmphai_list_search))
+                    .route("/api/pmphai/page-url", web::post().to(pmphai_generate_page_url))
             })
             .bind(("127.0.0.1", 8081))
             .expect("Failed to bind port 8081")

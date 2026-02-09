@@ -192,6 +192,27 @@
       @view-all="showFactCheckWidget = false"
       @issue-click="(issue) => console.log('Issue clicked:', issue)"
     />
+
+    <!-- Knowledge Panel Toggle Button -->
+    <button
+      v-if="hasKnowledgeResults || knowledgeLoading"
+      class="knowledge-toggle-btn"
+      :class="{ loading: knowledgeLoading, active: showKnowledgePanel }"
+      @click="toggleKnowledgePanel"
+      :title="knowledgeLoading ? '正在搜索相关文献...' : '查看相关医学文献'"
+    >
+      <span v-if="knowledgeLoading" class="spinner-small"></span>
+      <span v-else class="knowledge-icon">📚</span>
+      <span v-if="!knowledgeLoading && hasKnowledgeResults" class="knowledge-badge">!</span>
+    </button>
+
+    <!-- Knowledge Panel -->
+    <KnowledgePanel
+      v-model:visible="showKnowledgePanel"
+      :loading="knowledgeLoading"
+      :results="knowledgeResults"
+      @close="showKnowledgePanel = false"
+    />
   </div>
 </template>
 
@@ -203,7 +224,9 @@ import Icon from './Icon.vue';
 import FactCheckNotification from './FactCheckNotification.vue';
 import FactCheckHighlight from './FactCheckHighlight.vue';
 import FactCheckWidget from './FactCheckWidget.vue';
+import KnowledgePanel from './KnowledgePanel.vue';
 import { checkDiagnosis, checkMedicine, checkExamination, checkMedicalRecord, type FactCheckResult, type FactCheckIssue } from '../services/factChecker';
+import { pmphaiService, isPMPHAIConfigured, type BatchSearchResults } from '../services/pmphai';
 
 export interface DiagnosisEntry {
   name: string;
@@ -281,6 +304,16 @@ const factCheckWidgetIssues = ref<FactCheckIssue[]>([]);
 const factCheckProgress = ref(0);
 const factCheckCheckedCount = ref(0);
 const factCheckTotalCount = ref(0);
+
+// Knowledge Panel State
+const showKnowledgePanel = ref(false);
+const knowledgeLoading = ref(false);
+const knowledgeResults = ref<BatchSearchResults>({
+  diagnoses: new Map(),
+  medications: new Map(),
+  examinations: new Map(),
+});
+const hasKnowledgeResults = ref(false);
 
 // Match data with local database
 const matchLocalData = (rec: GeneratedRecord) => {
@@ -374,6 +407,9 @@ watch(() => props.initialRecord, (val) => {
 
     // Perform automatic fact checking after data is loaded
     performMedicalRecordFactCheck(newVal);
+
+    // Search knowledge base for related medical literature
+    searchKnowledgeBase(newVal);
   }
 }, { immediate: true });
 
@@ -539,6 +575,50 @@ const handleConfirm = () => {
   });
 
   emit('confirm', record.value);
+};
+
+// Knowledge Base Search
+const searchKnowledgeBase = async (rec: GeneratedRecord) => {
+  if (!rec || !isPMPHAIConfigured()) {
+    return;
+  }
+
+  knowledgeLoading.value = true;
+  hasKnowledgeResults.value = false;
+
+  try {
+    // Extract search queries from recommendations
+    const diagnoses = rec.diagnosisList?.map(d => d.name).filter(Boolean) || [];
+    const medications = rec.medications?.map(m => m.name).filter(Boolean) || [];
+    const examinations = rec.examinations?.map(e => e.name).filter(Boolean) || [];
+
+    // Search knowledge base by categories
+    const results = await pmphaiService.searchByCategories(diagnoses, medications, examinations);
+    knowledgeResults.value = results;
+
+    // Check if we have any results
+    const totalResults =
+      Array.from(results.diagnoses.values()).flat().length +
+      Array.from(results.medications.values()).flat().length +
+      Array.from(results.examinations.values()).flat().length;
+
+    hasKnowledgeResults.value = totalResults > 0;
+
+    if (hasKnowledgeResults.value) {
+      showKnowledgePanel.value = true;
+      trackClick('knowledge_search_completed', { totalResults });
+    }
+  } catch (error) {
+    console.error('Knowledge base search failed:', error);
+    trackError('knowledge_search_failed', error);
+  } finally {
+    knowledgeLoading.value = false;
+  }
+};
+
+const toggleKnowledgePanel = () => {
+  showKnowledgePanel.value = !showKnowledgePanel.value;
+  trackClick('knowledge_panel_toggle', { visible: showKnowledgePanel.value });
 };
 </script>
 
@@ -1055,5 +1135,69 @@ textarea.small-text {
   flex: 1;
   padding: 16px;
   overflow: hidden;
+}
+
+/* Knowledge Panel Toggle Button */
+.knowledge-toggle-btn {
+  position: fixed;
+  right: 20px;
+  bottom: 80px;
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
+  border: none;
+  background: linear-gradient(135deg, #3b82f6 0%, #1d4ed8 100%);
+  color: white;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 4px 16px rgba(59, 130, 246, 0.4);
+  transition: all 0.3s ease;
+  z-index: 99;
+}
+
+.knowledge-toggle-btn:hover {
+  transform: scale(1.08);
+  box-shadow: 0 6px 20px rgba(59, 130, 246, 0.5);
+}
+
+.knowledge-toggle-btn.active {
+  background: linear-gradient(135deg, #1d4ed8 0%, #1e40af 100%);
+}
+
+.knowledge-toggle-btn.loading {
+  background: var(--color-background-gray);
+  cursor: wait;
+}
+
+.knowledge-icon {
+  font-size: 22px;
+}
+
+.knowledge-badge {
+  position: absolute;
+  top: -2px;
+  right: -2px;
+  width: 18px;
+  height: 18px;
+  background: var(--color-success, #10b981);
+  color: white;
+  font-size: 12px;
+  font-weight: 700;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 2px solid white;
+}
+
+.spinner-small {
+  width: 20px;
+  height: 20px;
+  border: 2px solid var(--color-border-light);
+  border-top-color: var(--color-primary);
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
 }
 </style>

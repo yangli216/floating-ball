@@ -1,0 +1,116 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>人卫 Inside 知识库</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div id="app">
+        <!-- 顶部导航 -->
+        <header class="header">
+            <div class="header-top">
+                <div class="header-inner">
+                    <div class="logo">
+                        <span class="logo-icon">📚</span>
+                        <span class="logo-text">人卫inside知识库</span>
+                    </div>
+                    <nav class="nav-links">
+                        <a href="index.html" class="nav-link active">知识库首页</a>
+                        <a href="rag.html" class="nav-link">AI智能检索</a>
+                    </nav>
+                </div>
+            </div>
+            <div class="header-banner">
+                <div class="banner-content">
+                    <div class="banner-slogan">
+                        <span>专业权威</span>
+                        <span class="divider">|</span>
+                        <span>实时更新</span>
+                        <span class="divider">|</span>
+                        <span>中国场景</span>
+                    </div>
+                    <div class="search-bar">
+                        <input type="text" id="global-search" placeholder="请输入关键词搜索" />
+                        <select id="search-scope">
+                            <option value="">全部</option>
+                        </select>
+                        <button id="global-search-btn" class="search-btn">🔍</button>
+                    </div>
+                </div>
+            </div>
+        </header>
+
+        <div class="main-container">
+            <!-- 左侧知识库列表 -->
+            <div class="content-area">
+                <!-- 知识库加载中 -->
+                <div id="loading-overlay" class="loading-overlay">
+                    <div class="loading-spinner"></div>
+                    <p>正在加载知识库...</p>
+                </div>
+
+                <!-- 知识库分类区域 - 动态生成 -->
+                <div id="kgbases-content"></div>
+            </div>
+
+            <!-- 右侧分类导航 -->
+            <aside class="sidebar">
+                <div class="sidebar-tabs">
+                    <button class="sidebar-tab active" data-type="category">分类</button>
+                </div>
+                <div id="category-tree" class="category-tree">
+                    <p class="hint">请先选择一个知识库查看分类</p>
+                </div>
+            </aside>
+        </div>
+
+        <!-- 知识列表弹窗 -->
+        <div id="knowledge-modal" class="modal hidden">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h2 id="modal-title">知识列表</h2>
+                    <button class="modal-close" onclick="closeModal()">&times;</button>
+                </div>
+                <div class="modal-search">
+                    <input type="text" id="modal-search-input" placeholder="在当前知识库中搜索..." />
+                    <button id="modal-search-btn">搜索</button>
+                </div>
+                <div class="modal-body">
+                    <div id="modal-loading" class="loading hidden">加载中...</div>
+                    <div id="knowledge-list"></div>
+                    <div id="pagination" class="pagination"></div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 知识详情弹窗 -->
+        <div id="detail-modal" class="modal hidden">
+            <div class="modal-content modal-large">
+                <div class="modal-header">
+                    <h2 id="detail-title">知识详情</h2>
+                    <button class="modal-close" onclick="closeDetailModal()">&times;</button>
+                </div>
+                <div class="modal-body">
+                    <div id="detail-loading" class="loading hidden">加载中...</div>
+                    <div id="detail-content"></div>
+                </div>
+                <div class="modal-footer">
+                    <button class="btn-secondary" onclick="openInPage()">在新页面打开</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- 页脚 -->
+        <footer class="footer">
+            <p>人卫 Inside 知识库 | <a href="https://www.pmphai.com/" target="_blank">北京人卫智数科技有限公司</a></p>
+        </footer>
+    </div>
+
+    <!-- Toast -->
+    <div id="toast" class="toast"></div>
+
+    <script src="script.js"></script>
+</body>
+</html>

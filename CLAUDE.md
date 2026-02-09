@@ -2,6 +2,10 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+## important
+web_project is another project that is just show for how to use API ，don't start the project, just read the code and understand how to use the API, and you can also run the web_project to test the API, but don't start the main project, because the main project is a desktop application built with Tauri, and it requires a lot of setup and configuration, and it's not necessary for you to run it, just read the code and understand how it works.
+
+NO EMOJI ！
 ## Project Overview
 
 This is an AI-powered medical assistant desktop application built with Tauri 2.0 + Vue 3 + TypeScript. It presents as a transparent floating ball that expands into various medical consultation interfaces. The app integrates with external HIS (Hospital Information Systems) via HTTP and supports voice-based consultation using Aliyun real-time speech recognition.

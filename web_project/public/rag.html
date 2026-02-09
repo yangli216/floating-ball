@@ -1,0 +1,126 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI智能检索 - 人卫 Inside 知识库</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div id="app">
+        <!-- 顶部导航 -->
+        <header class="header">
+            <div class="header-top">
+                <div class="header-inner">
+                    <div class="logo">
+                        <span class="logo-icon">📚</span>
+                        <span class="logo-text">人卫inside知识库</span>
+                    </div>
+                    <nav class="nav-links">
+                        <a href="index.html" class="nav-link">知识库首页</a>
+                        <a href="rag.html" class="nav-link active">AI智能检索</a>
+                    </nav>
+                </div>
+            </div>
+            <div class="header-banner rag-banner">
+                <div class="banner-content">
+                    <div class="banner-slogan">
+                        <span>AI智能检索</span>
+                        <span class="divider">|</span>
+                        <span>语义向量搜索</span>
+                        <span class="divider">|</span>
+                        <span>精准匹配</span>
+                    </div>
+                </div>
+            </div>
+        </header>
+
+        <div class="rag-container">
+            <!-- 搜索区域 -->
+            <div class="rag-search-section">
+                <div class="rag-search-box">
+                    <textarea id="search-input" placeholder="请输入您要检索的内容，AI将为您智能匹配最相关的知识片段..." rows="3"></textarea>
+                    <div class="rag-search-options">
+                        <div class="option-group">
+                            <label>检索类型:</label>
+                            <select id="search-type">
+                                <option value="1">知识检索</option>
+                                <option value="2">图书检索</option>
+                                <option value="3">图片检索</option>
+                            </select>
+                        </div>
+                        <div class="option-group">
+                            <label>返回数量:</label>
+                            <select id="limit">
+                                <option value="5">5条</option>
+                                <option value="10" selected>10条</option>
+                                <option value="20">20条</option>
+                                <option value="50">50条</option>
+                            </select>
+                        </div>
+                        <div class="option-group">
+                            <label>最低分数:</label>
+                            <input type="number" id="score" value="0" min="0" max="1" step="0.1" />
+                        </div>
+                        <div class="option-group checkbox">
+                            <label>
+                                <input type="checkbox" id="enable-abstract" checked />
+                                生成AI摘要
+                            </label>
+                        </div>
+                        <button id="search-button" class="btn-primary btn-large">
+                            <span class="btn-icon">🔍</span>
+                            开始检索
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 结果区域 -->
+            <div class="rag-results-section">
+                <div class="rag-results-panel">
+                    <div class="panel-header">
+                        <h3>检索结果</h3>
+                        <span id="result-count" class="result-count"></span>
+                    </div>
+                    <div id="loading" class="loading hidden">
+                        <div class="loading-spinner"></div>
+                        <p>正在智能检索中...</p>
+                    </div>
+                    <div id="results-container" class="results-list">
+                        <div class="placeholder-text">
+                            <p>👆 请在上方输入检索内容</p>
+                            <p>AI将为您从知识库中智能匹配最相关的内容</p>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="rag-detail-panel">
+                    <div class="panel-header">
+                        <h3>原文内容</h3>
+                    </div>
+                    <div id="clip-loading" class="loading hidden">
+                        <div class="loading-spinner"></div>
+                        <p>加载原文中...</p>
+                    </div>
+                    <div id="clip-container" class="clip-content">
+                        <div class="placeholder-text">
+                            <p>👈 点击左侧检索结果查看原文</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 页脚 -->
+        <footer class="footer">
+            <p>人卫 Inside 知识库 | <a href="https://www.pmphai.com/" target="_blank">北京人卫智数科技有限公司</a></p>
+        </footer>
+    </div>
+
+    <!-- Toast -->
+    <div id="toast" class="toast"></div>
+
+    <script src="rag.js"></script>
+</body>
+</html>

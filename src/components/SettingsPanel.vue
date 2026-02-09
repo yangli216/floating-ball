@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { ref, onMounted, inject, watch } from 'vue';
 import { getLLMConfig, DEFAULT_LLM_CONFIG } from '../services/llm';
+import { getPMPHAIConfig, pmphaiService } from '../services/pmphai';
 import { useTheme } from '../services/themeService';
 import { getCurrentWindow } from '@tauri-apps/api/window';
 import { save } from '@tauri-apps/plugin-dialog';
@@ -41,6 +42,14 @@ const baseUrl = ref('');
 const model = ref('');
 const alwaysOnTop = ref(true);
 
+// Knowledge Base (PMPHAI) settings
+const pmphaiAppKey = ref('');
+const pmphaiAppSecret = ref('');
+const pmphaiEnabled = ref(true);
+const pmphaiTesting = ref(false);
+const pmphaiTestResult = ref<{ success: boolean; message: string } | null>(null);
+const pmphaiSearchMode = ref<'rag' | 'list'>('rag');
+
 onMounted(() => {
   const config = getLLMConfig();
   apiKey.value = config.apiKey;
@@ -49,6 +58,13 @@ onMounted(() => {
 
   const savedTop = localStorage.getItem('ALWAYS_ON_TOP');
   alwaysOnTop.value = savedTop === null || savedTop === 'true';
+
+  // Load PMPHAI settings
+  const pmphaiConfig = getPMPHAIConfig();
+  pmphaiAppKey.value = pmphaiConfig.appKey;
+  pmphaiAppSecret.value = pmphaiConfig.appSecret;
+  pmphaiEnabled.value = pmphaiConfig.enabled;
+  pmphaiSearchMode.value = (localStorage.getItem('PMPHAI_SEARCH_MODE') as 'rag' | 'list') || 'rag';
 });
 
 const saveSettings = async () => {
@@ -57,7 +73,13 @@ const saveSettings = async () => {
   localStorage.setItem('LLM_MODEL', model.value);
   localStorage.setItem('ALWAYS_ON_TOP', String(alwaysOnTop.value));
 
-  trackClick('settings_save', { hasApiKey: !!apiKey.value, hasBaseUrl: !!baseUrl.value, model: model.value, alwaysOnTop: alwaysOnTop.value });
+  // Save PMPHAI settings
+  localStorage.setItem('PMPHAI_APP_KEY', pmphaiAppKey.value);
+  localStorage.setItem('PMPHAI_APP_SECRET', pmphaiAppSecret.value);
+  localStorage.setItem('PMPHAI_ENABLED', String(pmphaiEnabled.value));
+  localStorage.setItem('PMPHAI_SEARCH_MODE', pmphaiSearchMode.value);
+
+  trackClick('settings_save', { hasApiKey: !!apiKey.value, hasBaseUrl: !!baseUrl.value, model: model.value, alwaysOnTop: alwaysOnTop.value, pmphaiEnabled: pmphaiEnabled.value });
 
   try {
     const win = getCurrentWindow();
@@ -66,8 +88,34 @@ const saveSettings = async () => {
     console.error('Failed to set always on top:', e);
   }
 
+  // Clear PMPHAI token cache when settings change
+  pmphaiService.clearTokenCache();
+
   if (showToast) {
     showToast('设置已保存', 'success');
+  }
+};
+
+// Test PMPHAI connection
+const testPMPHAIConnection = async () => {
+  pmphaiTesting.value = true;
+  pmphaiTestResult.value = null;
+
+  // Temporarily save settings for testing
+  localStorage.setItem('PMPHAI_APP_KEY', pmphaiAppKey.value);
+  localStorage.setItem('PMPHAI_APP_SECRET', pmphaiAppSecret.value);
+  localStorage.setItem('PMPHAI_ENABLED', 'true');
+  pmphaiService.clearTokenCache();
+
+  try {
+    const result = await pmphaiService.testConnection();
+    pmphaiTestResult.value = result;
+    trackClick('settings_pmphai_test', { success: result.success });
+  } catch (error: any) {
+    pmphaiTestResult.value = { success: false, message: error.message || '连接失败' };
+    trackError('settings_pmphai_test_failed', error);
+  } finally {
+    pmphaiTesting.value = false;
   }
 };
 
@@ -273,6 +321,87 @@ watch(activeTab, (newVal) => {
           <Icon icon="lucide:save" :size="18" />
           保存配置
         </button>
+
+        <!-- Knowledge Base Section -->
+        <div class="settings-section" style="margin-top: 24px;">
+          <div class="section-header">
+            <Icon icon="lucide:book-open" :size="20" />
+            <h3>医学知识库配置</h3>
+          </div>
+          <p class="section-desc">配置人卫 Inside 知识库 API，获取相关医学文献</p>
+
+          <div class="form-group row">
+            <div class="form-label-group">
+              <label for="pmphai-enabled">启用知识库搜索</label>
+              <p class="form-hint">启用后，AI 推荐时将自动搜索相关医学文献</p>
+            </div>
+            <div class="switch-wrapper">
+              <input type="checkbox" id="pmphai-enabled" v-model="pmphaiEnabled">
+              <label for="pmphai-enabled" class="toggle-switch"></label>
+            </div>
+          </div>
+
+          <div class="form-group">
+            <label>搜索模式</label>
+            <div class="mode-selector">
+              <button
+                :class="['mode-option', { active: pmphaiSearchMode === 'rag' }]"
+                @click="pmphaiSearchMode = 'rag'"
+                :disabled="!pmphaiEnabled"
+              >
+                <Icon icon="lucide:sparkles" :size="18" />
+                <div class="mode-info">
+                  <span class="mode-title">智能搜索</span>
+                  <span class="mode-desc">AI 语义匹配，基于向量相似度</span>
+                </div>
+              </button>
+              <button
+                :class="['mode-option', { active: pmphaiSearchMode === 'list' }]"
+                @click="pmphaiSearchMode = 'list'"
+                :disabled="!pmphaiEnabled"
+              >
+                <Icon icon="lucide:list" :size="18" />
+                <div class="mode-info">
+                  <span class="mode-title">文档浏览</span>
+                  <span class="mode-desc">传统关键词搜索，浏览知识库</span>
+                </div>
+              </button>
+            </div>
+          </div>
+
+          <div class="form-group">
+            <label for="pmphai-app-key">APP Key</label>
+            <div class="input-with-icon">
+              <Icon icon="lucide:key" :size="16" class="input-icon" />
+              <input id="pmphai-app-key" v-model="pmphaiAppKey" type="text" placeholder="请输入 APP Key" />
+            </div>
+            <p class="form-hint">人卫 Inside 云应用 APP Key</p>
+          </div>
+
+          <div class="form-group">
+            <label for="pmphai-app-secret">APP Secret</label>
+            <div class="input-with-icon">
+              <Icon icon="lucide:lock" :size="16" class="input-icon" />
+              <input id="pmphai-app-secret" v-model="pmphaiAppSecret" type="password" placeholder="请输入 APP Secret" />
+            </div>
+            <p class="form-hint">人卫 Inside 云应用密钥</p>
+          </div>
+
+          <div class="test-connection-row">
+            <button
+              class="test-btn"
+              @click="testPMPHAIConnection"
+              :disabled="pmphaiTesting || !pmphaiAppKey || !pmphaiAppSecret"
+            >
+              <Icon :icon="pmphaiTesting ? 'lucide:loader-2' : 'lucide:wifi'" :size="16" :class="{ spin: pmphaiTesting }" />
+              {{ pmphaiTesting ? '测试中...' : '测试连接' }}
+            </button>
+            <span v-if="pmphaiTestResult" :class="['test-message', pmphaiTestResult.success ? 'success' : 'error']">
+              <Icon :icon="pmphaiTestResult.success ? 'lucide:check-circle' : 'lucide:x-circle'" :size="16" />
+              {{ pmphaiTestResult.message }}
+            </span>
+          </div>
+        </div>
       </div>
 
       <!-- About Tab -->
@@ -1011,6 +1140,66 @@ input:checked + .toggle-switch:before {
 
 .test-message.testing {
   color: var(--medical-text-muted);
+}
+
+/* Mode Selector */
+.mode-selector {
+  display: flex;
+  gap: 12px;
+}
+
+.mode-option {
+  flex: 1;
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 16px;
+  background: var(--medical-bg-primary);
+  border: 2px solid var(--medical-border-light);
+  border-radius: 10px;
+  cursor: pointer;
+  transition: all var(--duration-normal) var(--ease-out);
+  text-align: left;
+}
+
+.mode-option:hover:not(:disabled) {
+  border-color: var(--medical-primary);
+  background: rgba(8, 145, 178, 0.04);
+}
+
+.mode-option.active {
+  border-color: var(--medical-primary);
+  background: rgba(8, 145, 178, 0.08);
+  box-shadow: 0 0 0 3px rgba(8, 145, 178, 0.1);
+}
+
+.mode-option:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.mode-option :deep(svg) {
+  color: var(--medical-primary);
+  flex-shrink: 0;
+  margin-top: 2px;
+}
+
+.mode-info {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.mode-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--medical-text-primary);
+}
+
+.mode-desc {
+  font-size: 12px;
+  color: var(--medical-text-muted);
+  line-height: 1.4;
 }
 
 /* Responsive */

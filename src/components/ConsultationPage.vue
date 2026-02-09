@@ -324,7 +324,21 @@
         <div class="record-panel right-panel">
           <div class="panel-header">
             <h3>智能辅助 (AI)</h3>
-            <span v-if="aiLoading" class="tag-ai">AI生成中...</span>
+            <div class="panel-header-actions">
+              <button
+                v-if="aiDiagnoses.length > 0 || treatmentRecommendations.length > 0"
+                class="search-knowledge-btn"
+                :class="{ loading: knowledgeLoading, active: showKnowledgePanel }"
+                @click="searchKnowledgeForRecommendations"
+                :disabled="knowledgeLoading"
+                title="搜索相关医学文献"
+              >
+                <span v-if="knowledgeLoading" class="spinner-tiny"></span>
+                <span v-else>📚</span>
+                <span>搜索文献</span>
+              </button>
+              <span v-if="aiLoading" class="tag-ai">AI生成中...</span>
+            </div>
           </div>
           <div class="panel-body">
             <!-- Loading Overlay -->
@@ -618,6 +632,29 @@
       @view-all="showFactCheckWidget = false"
       @issue-click="(issue) => console.log('Issue clicked:', issue)"
     />
+
+    <!-- Knowledge Panel Toggle Button -->
+    <button
+      v-if="hasKnowledgeResults || knowledgeLoading"
+      class="knowledge-toggle-btn"
+      :class="{ loading: knowledgeLoading, active: showKnowledgePanel }"
+      @click="toggleKnowledgePanel"
+      :title="knowledgeLoading ? '正在搜索相关文献...' : '查看相关医学文献'"
+    >
+      <span v-if="knowledgeLoading" class="spinner-small"></span>
+      <span v-else class="knowledge-icon">📚</span>
+      <span v-if="!knowledgeLoading && hasKnowledgeResults" class="knowledge-badge">!</span>
+    </button>
+
+    <!-- Knowledge Panel -->
+    <KnowledgePanel
+      v-model:visible="showKnowledgePanel"
+      :loading="knowledgeLoading"
+      :results="knowledgeResults"
+      :search-keyword="knowledgeSearchKeyword"
+      :search-type="knowledgeSearchType"
+      @close="showKnowledgePanel = false"
+    />
   </div>
 </template>
 
@@ -638,8 +675,10 @@ import Icon from './Icon.vue';
 import FactCheckNotification from './FactCheckNotification.vue';
 import FactCheckHighlight from './FactCheckHighlight.vue';
 import FactCheckWidget from './FactCheckWidget.vue';
+import KnowledgePanel from './KnowledgePanel.vue';
 import { checkDiagnosis, checkMedicine, checkExamination, checkTCMDiagnosis, checkTCMMedicine, type FactCheckResult, type FactCheckIssue } from '../services/factChecker';
 import { isFieldApplicable, generateTextsForSymptom } from '../services/textGeneration';
+import { pmphaiService, isPMPHAIConfigured, type BatchSearchResults } from '../services/pmphai';
 
 const showToast = inject('showToast') as (msg: string, type: 'success' | 'error' | 'info') => void;
 
@@ -852,6 +891,18 @@ const factCheckWidgetIssues = ref<FactCheckIssue[]>([]);
 const factCheckProgress = ref(0);
 const factCheckCheckedCount = ref(0);
 const factCheckTotalCount = ref(0);
+
+// Knowledge Panel State
+const showKnowledgePanel = ref(false);
+const knowledgeLoading = ref(false);
+const knowledgeSearchKeyword = ref('');  // 当前搜索关键词
+const knowledgeSearchType = ref<'diagnosis' | 'medication' | 'examination'>('diagnosis');  // 搜索类型
+const knowledgeResults = ref<BatchSearchResults>({
+  diagnoses: new Map(),
+  medications: new Map(),
+  examinations: new Map(),
+});
+const hasKnowledgeResults = ref(false);
 
 // General Condition Configuration
 const generalConditionConfig = {
@@ -1385,6 +1436,135 @@ const handleCheckboxChange = (event: Event, field: any, symptomKey: string) => {
 
 const validationErrors = ref<Record<string, boolean>>({});
 
+// Knowledge Base Search Functions
+const searchKnowledgeBaseForDiagnoses = async (diagnoses: Diagnosis[]) => {
+  if (!isPMPHAIConfigured() || diagnoses.length === 0) {
+    return;
+  }
+
+  knowledgeLoading.value = true;
+  hasKnowledgeResults.value = false;
+
+  try {
+    const diagnosisNames = diagnoses.map(d => d.name).filter(Boolean);
+    const results = await pmphaiService.batchSearch(diagnosisNames, { limit: 3, enableAbstract: true });
+
+    knowledgeResults.value = {
+      diagnoses: results,
+      medications: new Map(),
+      examinations: new Map(),
+    };
+
+    const totalResults = Array.from(results.values()).flat().length;
+    hasKnowledgeResults.value = totalResults > 0;
+
+    if (hasKnowledgeResults.value) {
+      showKnowledgePanel.value = true;
+      trackClick('knowledge_search_diagnoses', { totalResults });
+    }
+  } catch (error) {
+    console.error('Knowledge base search failed:', error);
+    trackError('knowledge_search_failed', error);
+  } finally {
+    knowledgeLoading.value = false;
+  }
+};
+
+const searchKnowledgeBaseForTreatment = async (medications: string[], examinations: string[]) => {
+  if (!isPMPHAIConfigured()) {
+    return;
+  }
+
+  knowledgeLoading.value = true;
+
+  try {
+    const [medResults, examResults] = await Promise.all([
+      pmphaiService.batchSearch(medications, { limit: 3, enableAbstract: true }),
+      pmphaiService.batchSearch(examinations, { limit: 3, enableAbstract: true }),
+    ]);
+
+    // Merge with existing diagnosis results
+    knowledgeResults.value = {
+      ...knowledgeResults.value,
+      medications: medResults,
+      examinations: examResults,
+    };
+
+    const totalResults =
+      Array.from(knowledgeResults.value.diagnoses.values()).flat().length +
+      Array.from(medResults.values()).flat().length +
+      Array.from(examResults.values()).flat().length;
+
+    hasKnowledgeResults.value = totalResults > 0;
+
+    if (hasKnowledgeResults.value && !showKnowledgePanel.value) {
+      trackClick('knowledge_search_treatment', { totalResults });
+    }
+  } catch (error) {
+    console.error('Knowledge base search failed:', error);
+    trackError('knowledge_search_failed', error);
+  } finally {
+    knowledgeLoading.value = false;
+  }
+};
+
+const toggleKnowledgePanel = () => {
+  showKnowledgePanel.value = !showKnowledgePanel.value;
+  trackClick('knowledge_panel_toggle', { visible: showKnowledgePanel.value });
+};
+
+// Search knowledge base for all current AI recommendations
+const searchKnowledgeForRecommendations = async () => {
+  if (!isPMPHAIConfigured()) {
+    return;
+  }
+
+  knowledgeLoading.value = true;
+  hasKnowledgeResults.value = false;
+
+  try {
+    // Extract search queries from current AI recommendations
+    const diagnoses = aiDiagnoses.value.map(d => d.name).filter(Boolean);
+    const medications: string[] = [];
+    const examinations: string[] = [];
+
+    treatmentRecommendations.value.forEach(rec => {
+      if (rec.type === 'medicine' && rec.name) {
+        medications.push(rec.name);
+      } else if (rec.type === 'exam' && rec.name) {
+        examinations.push(rec.name);
+      }
+    });
+
+    // Search knowledge base by categories
+    const results = await pmphaiService.searchByCategories(diagnoses, medications, examinations);
+    knowledgeResults.value = results;
+
+    // Check if we have any results
+    const totalResults =
+      Array.from(results.diagnoses.values()).flat().length +
+      Array.from(results.medications.values()).flat().length +
+      Array.from(results.examinations.values()).flat().length;
+
+    hasKnowledgeResults.value = totalResults > 0;
+
+    if (hasKnowledgeResults.value) {
+      showKnowledgePanel.value = true;
+      trackClick('knowledge_search_recommendations', {
+        diagnosisCount: diagnoses.length,
+        medicationCount: medications.length,
+        examinationCount: examinations.length,
+        totalResults
+      });
+    }
+  } catch (error) {
+    console.error('Knowledge base search failed:', error);
+    trackError('knowledge_search_failed', error);
+  } finally {
+    knowledgeLoading.value = false;
+  }
+};
+
 const handleEndConsultation = async () => {
   // 防止重复提交
   if (isGenerating.value) return;
@@ -1691,6 +1871,9 @@ const fetchAIDiagnosis = async () => {
 
     aiDiagnoses.value = diagnoses;
 
+    // Search knowledge base for related medical literature
+    searchKnowledgeBaseForDiagnoses(diagnoses);
+
     // Save diagnosis recommendations to database
     try {
       for (const diagnosis of diagnoses) {
@@ -1934,6 +2117,12 @@ const swapDiagnosis = (originalDiag: Diagnosis, newItem: DiagnosisItem) => {
 const handleDiagnosisSelect = (diag: Diagnosis) => {
   trackClick('diagnosis_select', { diagnosisName: diag.name, diagnosisCode: diag.code, hasId: !!diag.id });
   selectedDiagnosis.value = diag;
+
+  // 更新知识库搜索关键词和类型并打开面板
+  knowledgeSearchKeyword.value = diag.name;
+  knowledgeSearchType.value = 'diagnosis';
+  showKnowledgePanel.value = true;
+
   if (diag.code) {
     // 根据诊断类型选择合适的方法
     const related = diag.isTCM
@@ -2062,6 +2251,11 @@ const toggleTreatmentSelection = (index: number) => {
       type: item.type,
       selected: item.selected,
     });
+
+    // 更新知识库搜索关键词和类型并打开面板
+    knowledgeSearchKeyword.value = item.name;
+    knowledgeSearchType.value = item.type === 'medicine' ? 'medication' : 'examination';
+    showKnowledgePanel.value = true;
   }
 };
 
@@ -3125,6 +3319,56 @@ const copyToClipboard = () => {
   font-size: 15px; /* Slightly smaller */
   color: var(--color-text-medium);
   font-weight: 600;
+}
+
+.panel-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.search-knowledge-btn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  border: 1px solid var(--color-primary, #3b82f6);
+  background: transparent;
+  border-radius: 6px;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--color-primary, #3b82f6);
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.search-knowledge-btn:hover:not(:disabled) {
+  background: var(--color-primary, #3b82f6);
+  color: white;
+}
+
+.search-knowledge-btn.active {
+  background: var(--color-primary, #3b82f6);
+  color: white;
+}
+
+.search-knowledge-btn.loading {
+  opacity: 0.7;
+  cursor: wait;
+}
+
+.search-knowledge-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.spinner-tiny {
+  width: 12px;
+  height: 12px;
+  border: 2px solid currentColor;
+  border-top-color: transparent;
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
 }
 
 .panel-body {
@@ -4310,5 +4554,68 @@ const copyToClipboard = () => {
 .inline-related-trigger:hover {
   background: #e2e8f0;
   color: var(--color-text-weak);
+}
+/* Knowledge Panel Toggle Button */
+.knowledge-toggle-btn {
+  position: fixed;
+  right: 20px;
+  bottom: 80px;
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
+  border: none;
+  background: linear-gradient(135deg, #3b82f6 0%, #1d4ed8 100%);
+  color: white;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 4px 16px rgba(59, 130, 246, 0.4);
+  transition: all 0.3s ease;
+  z-index: 99;
+}
+
+.knowledge-toggle-btn:hover {
+  transform: scale(1.08);
+  box-shadow: 0 6px 20px rgba(59, 130, 246, 0.5);
+}
+
+.knowledge-toggle-btn.active {
+  background: linear-gradient(135deg, #1d4ed8 0%, #1e40af 100%);
+}
+
+.knowledge-toggle-btn.loading {
+  background: var(--color-background-gray);
+  cursor: wait;
+}
+
+.knowledge-icon {
+  font-size: 22px;
+}
+
+.knowledge-badge {
+  position: absolute;
+  top: -2px;
+  right: -2px;
+  width: 18px;
+  height: 18px;
+  background: var(--color-success, #10b981);
+  color: white;
+  font-size: 12px;
+  font-weight: 700;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 2px solid white;
+}
+
+.spinner-small {
+  width: 20px;
+  height: 20px;
+  border: 2px solid var(--color-border-light);
+  border-top-color: var(--color-primary);
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
 }
 </style>
