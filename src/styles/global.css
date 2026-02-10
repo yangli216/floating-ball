@@ -1,0 +1,68 @@
+/**
+ * 全局基础样式
+ *
+ * 应用级别的重置和基础设置。
+ * 这些样式应用于整个应用，不受组件作用域限制。
+ *
+ * @module styles/global
+ */
+
+/* ========== 应用基础重置 ========== */
+
+html,
+body,
+#app {
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  background: transparent;
+  font-family: var(--font-body);
+}
+
+/* ========== 全局修复 ========== */
+
+/**
+ * 修复 ChatPanel 输入框的双重焦点效果
+ * 移除默认的 outline 和 box-shadow，使用自定义焦点样式
+ */
+.chat-panel .input-wrapper input:focus,
+.chat-panel .input-wrapper input:focus-visible {
+  outline: none !important;
+  box-shadow: none !important;
+  border: none !important;
+}
+
+/* ========== 辅助类 ========== */
+
+/**
+ * 跳转链接（无障碍优化）
+ * 允许键盘用户快速跳转到主要内容
+ */
+.skip-link {
+  position: absolute;
+  top: -40px;
+  left: 0;
+  background: var(--color-primary);
+  color: white;
+  padding: 8px;
+  text-decoration: none;
+  z-index: 100;
+}
+
+.skip-link:focus {
+  top: 0;
+}
+
+/* ========== 过渡遮罩 ========== */
+
+/**
+ * 过渡遮罩层
+ * 用于柔化窗口尺寸瞬变，提供更平滑的视觉体验
+ */
+.transition-mask {
+  position: absolute;
+  inset: 0;
+  background: white;
+  opacity: 0;
+  pointer-events: none;
+}

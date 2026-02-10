@@ -1,0 +1,194 @@
+/**
+ * 应用布局样式
+ *
+ * 管理应用的主要布局结构，包括：
+ * - 状态层（ball-layer 和 assistant-layer）的层叠关系
+ * - Assistant 容器的基础样式
+ * - 工具栏样式
+ *
+ * @module styles/layouts/app-layout
+ */
+
+/* ========== 状态层布局 ========== */
+
+/**
+ * 状态层容器
+ * 包含悬浮球层和助手面板层，两者通过绝对定位层叠
+ */
+.state-layer {
+  position: relative;
+  width: 100%;
+  height: 100%;
+}
+
+/**
+ * 悬浮球层和助手面板层
+ * 使用绝对定位占满整个状态层
+ */
+.ball-layer,
+.assistant-layer {
+  position: absolute;
+  inset: 0;
+}
+
+/**
+ * 悬浮球层
+ * z-index 更高，确保退出动画时小球显示在面板上方
+ */
+.ball-layer {
+  display: block;
+  z-index: 2;
+}
+
+/**
+ * 助手面板层
+ */
+.assistant-layer {
+  z-index: 1;
+}
+
+/* ========== Assistant 容器 ========== */
+
+/**
+ * Assistant 容器主体
+ * 使用玻璃态（Glassmorphism）设计风格
+ */
+.assistant-container {
+  width: 100%;
+  height: 100%;
+  border-radius: 20px;
+  overflow: hidden;
+  position: relative;
+  background: var(--surface-glass);
+  backdrop-filter: blur(20px) saturate(1.4);
+  -webkit-backdrop-filter: blur(20px) saturate(1.4);
+  border: 1px solid rgba(0, 0, 0, 0.1);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.5);
+  padding-top: 40px;
+}
+
+/**
+ * 无工具栏模式
+ * 用于风险提示、语音交互等全屏视图
+ */
+.assistant-container.no-toolbar {
+  padding-top: 0;
+}
+
+/* ========== 工具栏 ========== */
+
+/**
+ * Assistant 工具栏
+ * 固定在容器顶部，包含标题和操作按钮
+ */
+.assistant-toolbar {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 40px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 12px;
+  color: var(--color-text-strong);
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.6) 0%, rgba(255, 255, 255, 0) 100%);
+  z-index: 10;
+}
+
+/**
+ * 工具栏左侧区域
+ * 包含返回按钮和标题
+ */
+.toolbar-left {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+/**
+ * 返回按钮
+ */
+.back-btn {
+  margin-right: 4px;
+}
+
+/**
+ * Assistant 标题
+ */
+.assistant-title {
+  font-weight: 600;
+  font-size: 14px;
+  letter-spacing: 0.5px;
+  color: var(--color-text-strong);
+  opacity: 0.9;
+  text-shadow: 0 1px 2px rgba(255, 255, 255, 0.8);
+}
+
+/* ========== 图标按钮 ========== */
+
+/**
+ * 图标按钮样式
+ * 用于工具栏中的操作按钮（关闭、返回等）
+ */
+.assistant-container .icon-btn {
+  -webkit-app-region: no-drag;
+  appearance: none;
+  border: none;
+  background: transparent;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  color: var(--color-text-weak);
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  position: relative;
+  overflow: hidden;
+}
+
+/**
+ * 图标按钮悬停效果背景
+ */
+.assistant-container .icon-btn::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.06);
+  border-radius: 50%;
+  opacity: 0;
+  transform: scale(0.6);
+  transition: all 0.2s ease;
+}
+
+/**
+ * 图标按钮悬停状态
+ */
+.assistant-container .icon-btn:hover {
+  color: #ef4444; /* 红色警告色 */
+  transform: rotate(90deg); /* 趣味交互 */
+}
+
+.assistant-container .icon-btn:hover::before {
+  opacity: 1;
+  transform: scale(1);
+}
+
+/**
+ * 图标按钮激活状态
+ */
+.assistant-container .icon-btn:active {
+  transform: rotate(90deg) scale(0.92);
+}
+
+/**
+ * 工具栏图标
+ */
+.assistant-container .toolbar-icon {
+  width: 20px;
+  height: 20px;
+  position: relative;
+  z-index: 1;
+}

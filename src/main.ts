@@ -6,6 +6,11 @@ import "./styles/design-tokens.css";
 import "./styles/global-overrides.css";
 import "./styles/utilities.css";
 
+// 导入应用样式（重构后的模块化样式）
+import "./styles/global.css";
+import "./styles/layouts/app-layout.css";
+import "./styles/animations/morph.css";
+
 // 导入主题服务并初始化
 import { initializeTheme } from "./services/themeService";
 

@@ -1,8 +1,7 @@
 <script setup lang="ts">
-import { onMounted, onUnmounted, ref, watch, computed } from "vue";
-import { getCurrentWindow, Window as TauriWindow, PhysicalPosition, currentMonitor, type Monitor } from "@tauri-apps/api/window";
+import { onMounted, onUnmounted, ref, watch } from "vue";
+import { getCurrentWindow, Window as TauriWindow, currentMonitor, type Monitor } from "@tauri-apps/api/window";
 import { exit } from '@tauri-apps/plugin-process';
-import { listen, UnlistenFn } from "@tauri-apps/api/event";
 import { load, Store } from '@tauri-apps/plugin-store';
 import { onOpenUrl } from '@tauri-apps/plugin-deep-link';
 import ChatPanel from "./components/ChatPanel.vue";
@@ -15,13 +14,17 @@ import VoiceCapsule from "./components/VoiceCapsule.vue";
 import ReceptionCapsule from "./components/ReceptionCapsule.vue";
 import SymptomManagement from "./components/SymptomManagement.vue";
 import VoiceConsultationResult, { type GeneratedRecord } from "./components/VoiceConsultationResult.vue";
+import KnowledgeBasePanel from "./components/KnowledgeBasePanel.vue";
 import Icon from "./components/Icon.vue";
-import { chat, analyzePatientRisks, type ChatMessage } from "./services/llm";
-import { feedbackService } from "./services/feedback";
-import { trackViewChange, trackClick, trackError, trackApiCall, trackRecommendationAction, startTimedOperation } from "./services/operationTracker";
+import { trackClick, trackApiCall } from "./services/operationTracker";
 import { LogicalSize } from "@tauri-apps/api/dpi";
 import { provide } from "vue";
-import { PROMPTS } from "./prompts";
+import { WINDOW_SIZES } from "./constants/windowSizes";
+import { useWindowManagement } from "./composables/useWindowManagement";
+import { useWorkMode } from "./composables/useWorkMode";
+import { useNavigation } from "./composables/useNavigation";
+import { useVoiceConsultation } from "./composables/useVoiceConsultation";
+import { useEventListeners } from "./composables/useEventListeners";
 
 const appWindow = ref<TauriWindow | null>(null);
 const toastRef = ref<InstanceType<typeof Toast> | null>(null);
@@ -33,8 +36,7 @@ const isFocused = ref(false);
 const isHovered = ref(false);
 const hoveredBtnIndex = ref(-1); // -1 means no button hovered
 const isWorking = ref(false);
-const isMoving = ref(false);
-const currentView = ref<'chat' | 'settings' | 'consultation' | 'risk-alert' | 'voice-interaction' | 'voice-result' | 'reception-capsule' | 'analytics' | 'symptom-manage'>('chat');
+const currentView = ref<'chat' | 'settings' | 'consultation' | 'risk-alert' | 'voice-interaction' | 'voice-result' | 'reception-capsule' | 'analytics' | 'symptom-manage' | 'knowledge-base'>('chat');
 const currentPatient = ref<any>(null);
 const ringMenuRef = ref<HTMLElement | null>(null);
 
@@ -44,431 +46,147 @@ const riskPatientName = ref('');
 const riskPatientGender = ref<'M' | 'F'>('M');
 const riskPatientAge = ref(0);
 const riskItems = ref<RiskItem[]>([]);
-let unlistenHover: UnlistenFn | null = null;
-let unlistenMousePos: UnlistenFn | null = null;
-let unlistenMoved: UnlistenFn | null = null;
-let unlistenResize: UnlistenFn | null = null;
-let store: Store | null = null;
-let moveTimeout: ReturnType<typeof setTimeout> | null = null;
-let resizeTimeout: ReturnType<typeof setTimeout> | null = null;
-const cachedMonitor = ref<Monitor | null>(null);
-const lastBallPos = ref<{x: number, y: number} | null>(null);
-const ballOffset = ref<{x: number, y: number}>({ x: 0, y: 0 });
-const morphOrigin = ref('80px 80px');
-const containerStyle = computed(() => ({
-  transformOrigin: morphOrigin.value
-}));
 
-const ballStyle = computed(() => ({
-  transform: `translate(${ballOffset.value.x}px, ${ballOffset.value.y}px)`,
-  transition: 'opacity 0.2s ease'
-}));
+// 语音问诊状态
+const generatedRecord = ref<GeneratedRecord | null>(null);
+
+let store: Store | null = null;
+const resizeTimeoutRef = ref<ReturnType<typeof setTimeout> | null>(null);
+const storeRef = ref<any>(null);
+const transitioning = ref(false);
+
+// 初始化窗口管理 composable
+const windowMgmt = useWindowManagement({
+  appWindow,
+  store: storeRef,
+  isWorking,
+  transitioning,
+});
+
+// 解构窗口管理 API
+const { cachedMonitor, lastBallPos, isMoving } = windowMgmt;
+const {
+  saveWindowPosition,
+  restoreWindowPosition,
+  updateCurrentMonitor,
+  smartExpand,
+  waitForWindowSize,
+  resizeWorkWindow,
+  handleWindowMove,
+} = windowMgmt;
+
+// 风险提示患者信息同步函数
+const syncRiskPatientInfo = (patient: any) => {
+  riskPatientName.value = patient.name || patient.naPi || '未知';
+  riskPatientGender.value = (patient.gender === 'F' || patient.sdSexText === '女性') ? 'F' : 'M';
+  riskPatientAge.value = parseInt(patient.age || patient.ageText || '0');
+};
+
+// 初始化工作模式 composable
+const workMode = useWorkMode({
+  appWindow,
+  windowMgmt,
+  currentView,
+  isWorking,
+  transitioning,
+  isHovered,
+  currentPatient,
+  syncRiskPatientInfo,
+  store: storeRef,
+});
+
+// 解构工作模式 API
+const { exiting, ballOffset, morphOrigin, containerStyle, ballStyle } = workMode;
+const { enterWorkMode, exitWork, handleCollapse } = workMode;
+
+// 初始化导航管理 composable
+const navigation = useNavigation({
+  appWindow,
+  currentView,
+  isWorking,
+  currentPatient,
+  windowMgmt,
+  workMode,
+});
+
+// 解构导航 API
+const {
+  openSettings,
+  openChat,
+  openAnalytics,
+  openSymptomManagement,
+  openConsultation,
+  openKnowledgeBase,
+  startVoiceInteraction,
+} = navigation;
+
+// 初始化语音问诊 composable
+const voiceConsultation = useVoiceConsultation({
+  appWindow,
+  currentView,
+  generatedRecord,
+  currentPatient,
+  showToast,
+  windowMgmt,
+  workMode,
+});
+
+// 解构语音问诊 API
+const {
+  handleVoiceStop,
+  handleVoiceError,
+  handleResultConfirm,
+  cancelVoiceResult,
+} = voiceConsultation;
 
 const handleFocus = () => { isFocused.value = true; };
 const handleBlur = () => { isFocused.value = false; };
 
-// 保存窗口位置
-const saveWindowPosition = async () => {
-  if (!appWindow.value || !store) return;
-  try {
-    const pos = await appWindow.value.outerPosition();
-    // 只有在小球模式下才保存位置，避免展开后位置偏移覆盖了正确的小球位置
-    if (!isWorking.value && !transitioning.value) {
-      lastBallPos.value = { x: pos.x, y: pos.y }; // Update in-memory cache
-      await store.set('window_pos', { x: pos.x, y: pos.y });
-      await store.save();
-    }
-  } catch (err) {
-    console.error('保存窗口位置失败:', err);
-  }
-};
-
-// 恢复窗口位置
-const restoreWindowPosition = async () => {
-  if (!appWindow.value || !store) return;
-  try {
-    const pos = await store.get<{x: number, y: number}>('window_pos');
-    console.log('[App] Restoring window position:', pos);
-    
-    let safeX = 100;
-    let safeY = 100;
-
-    if (pos) {
-        try {
-            const monitor = await currentMonitor();
-            if (monitor) {
-                const size = monitor.size;
-                const mPos = monitor.position;
-                // Check bounds: within monitor roughly
-                if (pos.x >= mPos.x && pos.x < mPos.x + size.width &&
-                    pos.y >= mPos.y && pos.y < mPos.y + size.height) {
-                    safeX = pos.x;
-                    safeY = pos.y;
-                } else {
-                    console.warn('[App] Restored position out of bounds:', pos, 'Monitor:', mPos, size);
-                }
-            } else {
-                // No monitor info, just ensure not negative
-                safeX = Math.max(0, pos.x);
-                safeY = Math.max(0, pos.y);
-            }
-        } catch (e) {
-            console.warn('[App] Position validation failed:', e);
-            // Fallback to simple check
-            safeX = Math.max(0, pos.x);
-            safeY = Math.max(0, pos.y);
-        }
-    }
-
-    console.log('[App] Final position to set:', {x: safeX, y: safeY});
-    await appWindow.value.setPosition(new PhysicalPosition(safeX, safeY));
-    
-  } catch (err) {
-    console.error('恢复窗口位置失败:', err);
-    // Ultimate fallback
-    await appWindow.value.setPosition(new PhysicalPosition(100, 100));
-  }
-};
-
-// Update cached monitor
-const updateCurrentMonitor = async () => {
-  try {
-    const start = performance.now();
-    cachedMonitor.value = await currentMonitor();
-    console.log('[App] Monitor cache updated:', cachedMonitor.value ? 'Success' : 'Null', `${(performance.now() - start).toFixed(2)}ms`);
-  } catch (e) {
-    console.warn('[App] Failed to update monitor cache:', e);
-  }
-};
-
-// 智能调整展开位置
-const smartExpand = async (targetW: number, targetH: number, targetMonitor?: Monitor | null) => {
-  if (!appWindow.value) return;
-  
-  try {
-    let monitor = targetMonitor;
-    if (monitor) {
-        console.log('[App] smartExpand: Using provided monitor');
-    } else if (cachedMonitor.value) {
-        monitor = cachedMonitor.value;
-        console.log('[App] smartExpand: Using CACHED monitor');
-    } else {
-        console.log('[App] smartExpand: Cache MISS, calling currentMonitor()...');
-        const start = performance.now();
-        monitor = await currentMonitor();
-        console.log('[App] smartExpand: currentMonitor() took', (performance.now() - start).toFixed(2), 'ms');
-    }
-    
-    if (!monitor) {
-        console.warn('[App] smartExpand: No monitor found');
-        return;
-    }
-    
-    const monitorSize = monitor.size;
-    const monitorPos = monitor.position;
-    const windowPos = await appWindow.value.outerPosition();
-    const scaleFactor = await appWindow.value.scaleFactor();
-    
-    // 转换为物理像素进行计算
-    const targetPhysicalW = Math.round(targetW * scaleFactor);
-    const targetPhysicalH = Math.round(targetH * scaleFactor);
-    
-    let newX = windowPos.x;
-    let newY = windowPos.y;
-    
-    // 检查右边界
-    if (newX + targetPhysicalW > monitorPos.x + monitorSize.width) {
-      newX = (monitorPos.x + monitorSize.width) - targetPhysicalW;
-    }
-    
-    // 检查下边界
-    if (newY + targetPhysicalH > monitorPos.y + monitorSize.height) {
-      newY = (monitorPos.y + monitorSize.height) - targetPhysicalH;
-    }
-    
-    // 检查左边界 (防止调整后超出左边)
-    if (newX < monitorPos.x) {
-      newX = monitorPos.x;
-    }
-    
-    // 检查上边界
-    if (newY < monitorPos.y) {
-      newY = monitorPos.y;
-    }
-    
-    if (newX !== windowPos.x || newY !== windowPos.y) {
-      await appWindow.value.setPosition(new PhysicalPosition(newX, newY));
-    }
-  } catch (err) {
-    console.error('智能位置调整失败:', err);
-  }
-};
-
-const openSettings = async () => {
-  trackViewChange(currentView.value, 'settings');
-  currentView.value = 'settings';
-  if (!isWorking.value) {
-    await enterWorkMode();
-  }
-};
-
-const openSymptomManagement = async () => {
-  currentView.value = 'symptom-manage';
-  if (!isWorking.value) {
-    await enterWorkMode();
-  } else {
-    // If already working, resize window if needed
-    if (appWindow.value) {
-      // 先调整位置再设置大小，避免窗口闪动到其他显示器
-      await smartExpand(TARGET_SYMPTOM_MANAGE_W, TARGET_SYMPTOM_MANAGE_H);
-      await appWindow.value.setSize(new LogicalSize(TARGET_SYMPTOM_MANAGE_W, TARGET_SYMPTOM_MANAGE_H));
-    }
-  }
-};
-
-const openChat = async () => {
-  trackViewChange(currentView.value, 'chat');
-  currentView.value = 'chat';
-  if (!isWorking.value) {
-    await enterWorkMode();
-  }
-};
-
-const openAnalytics = async () => {
-  trackViewChange(currentView.value, 'analytics');
-  currentView.value = 'analytics';
-  if (!isWorking.value) {
-    await enterWorkMode();
-  }
-};
-
-const openConsultation = async () => {
-  trackViewChange(currentView.value, 'consultation', { hasPatient: !!currentPatient.value });
-  currentView.value = 'consultation';
-  if (!isWorking.value) {
-    await enterWorkMode();
-  } else {
-    // If already working, resize window if needed
-    if (appWindow.value) {
-      await appWindow.value.setSize(new LogicalSize(TARGET_CONSULTATION_W, TARGET_CONSULTATION_H));
-      await smartExpand(TARGET_CONSULTATION_W, TARGET_CONSULTATION_H /*, monitor */);
-    }
-  }
-};
-const transitioning = ref(false);
-const exiting = ref(false);
-const TRANSITION_MS = 300;
-const wait = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
-const TARGET_WORK_W = 420;
-const TARGET_WORK_H = 560;
-const TARGET_CONSULTATION_W = 1200;
-const TARGET_CONSULTATION_H = 900;
-const TARGET_BALL_W = 160;
-const TARGET_BALL_H = 160;
-const TARGET_CAPSULE_W = 360;
-const TARGET_CAPSULE_H = 80;
-const TARGET_CAPSULE_EXPANDED_H = 400; // Increased height for risk details
-const TARGET_RESULT_W = 1200;
-const TARGET_RESULT_H = 900;
-const TARGET_SYMPTOM_MANAGE_W = 1200;
-const TARGET_SYMPTOM_MANAGE_H = 900;
-
-// Voice Consultation State
-const generatedRecord = ref<GeneratedRecord | null>(null);
-
-const startVoiceInteraction = async () => {
-  trackViewChange(currentView.value, 'voice-interaction', { patientId: currentPatient.value?.patientId });
-  currentView.value = 'voice-interaction';
-  if (!isWorking.value) {
-    await enterWorkMode(TARGET_CAPSULE_W, TARGET_CAPSULE_H);
-  } else {
-      // If already working (e.g. from Chat), resize to capsule
-      enterWorkMode(TARGET_CAPSULE_W, TARGET_CAPSULE_H);
-  }
-};
-
-  const handleVoiceStop = async (audioBlob: Blob, transcribedText: string) => {
-  console.log('[App.vue] handleVoiceStop received blob:', audioBlob?.size, 'bytes');
-  console.log('[App.vue] Transcribed text:', transcribedText);
-
-  generatedRecord.value = null; // Reset
-  currentView.value = 'voice-result';
-
-  // Explicitly resize window for Result View
-  if (appWindow.value) {
-    try {
-        await appWindow.value.setResizable(true);
-        await appWindow.value.setSize(new LogicalSize(TARGET_RESULT_W, TARGET_RESULT_H));
-        await smartExpand(TARGET_RESULT_W, TARGET_RESULT_H /*, monitor */);
-    } catch (e) {
-        console.error('Failed to resize for result:', e);
-    }
-  } else {
-     await enterWorkMode(TARGET_RESULT_W, TARGET_RESULT_H);
-  }
-
-  const finishVoiceLlm = startTimedOperation('voice_llm_processing');
-  try {
-    // Use the transcribed text directly from realtime service
-    const text = transcribedText;
-    console.log('[Voice] Using realtime transcription:', text);
-
-    if (!text || text.trim().length === 0) {
-        throw new Error("未能识别到有效语音");
-    }
-
-    // 2. LLM Generation - Based on medical record requirements
-    const messages: ChatMessage[] = [
-        { role: 'system', content: PROMPTS.medical.recordGeneration.system },
-        { role: 'user', content: PROMPTS.medical.recordGeneration.buildUserPrompt(text) }
-    ];
-
-    console.log('[LLM] Sending request to LLM...');
-    console.log('[LLM] Input text length:', text.length, 'chars');
-    const llmStart = Date.now();
-    const jsonStr = await chat(messages);
-    console.log(`[LLM] Response received in ${Date.now() - llmStart}ms`);
-    console.log('[LLM] Raw response:', jsonStr);
-
-    // Try to parse JSON (handle potential markdown code blocks)
-    let cleanJson = jsonStr.replace(/```json\n?|\n?```/g, '').trim();
-    // Also try to extract JSON from text if wrapped in other content
-    const jsonMatch = cleanJson.match(/\{[\s\S]*\}/);
-    if (jsonMatch) {
-        cleanJson = jsonMatch[0];
-    }
-
-    console.log('[LLM] Cleaned JSON:', cleanJson);
-
-    const parsed = JSON.parse(cleanJson);
-
-    // Check if LLM detected irrelevant content
-    if (parsed.error) {
-        console.warn('[LLM] Irrelevant content detected:', parsed.message);
-        showToast(parsed.message || '输入内容与医疗问诊场景无关', 'error');
-        setTimeout(() => { exitWork('cancelled'); }, 2000);
-        return;
-    }
-
-    // Validate required fields
-    const requiredFields = ['chiefComplaint', 'historyOfPresentIllness', 'diagnosisList'];
-    const missingFields = requiredFields.filter(f => !parsed[f]);
-    if (missingFields.length > 0) {
-        console.warn('[LLM] Missing required fields:', missingFields);
-        // Fill with defaults
-        if (missingFields.includes('chiefComplaint')) parsed.chiefComplaint = '未能识别';
-        if (missingFields.includes('historyOfPresentIllness')) parsed.historyOfPresentIllness = '未能识别';
-        if (missingFields.includes('diagnosisList')) parsed.diagnosisList = [];
-    }
-
-    // Ensure arrays are initialized
-    parsed.diagnosisList = parsed.diagnosisList || [];
-    parsed.medications = parsed.medications || [];
-    parsed.examinations = parsed.examinations || [];
-
-    generatedRecord.value = parsed as GeneratedRecord;
-    console.log('[Voice] Medical record generated successfully');
-    finishVoiceLlm(true, { transcriptionLength: text.length, diagnosisCount: parsed.diagnosisList.length });
-
-  } catch (err: any) {
-    console.error('[Voice] Processing failed:', err);
-    trackError('voice_processing_failed', err);
-    finishVoiceLlm(false, { errorMessage: err.message || String(err) });
-    showToast(`处理失败: ${err.message || err}`, 'error');
-    setTimeout(() => {
-        exitWork('error');
-    }, 2000);
-  }
-};
-
-const handleVoiceError = (err: any) => {
-  trackError('voice_recording_error', err);
-  showToast('录音出错: ' + err, 'error');
-  exitWork('error');
-};
-
-import { invoke } from "@tauri-apps/api/core";
-
-// ... existing code ...
-
-const handleResultConfirm = async (record: GeneratedRecord) => {
-    console.log('Confirmed record:', record);
-    trackClick('voice_result_confirm');
-    trackRecommendationAction('record', 'voice-record', 'adopted');
-
-    try {
-        await invoke('complete_consultation', {
-            result: {
-                consultationId: currentPatient.value?.id || 'unknown',
-                timestamp: Date.now(),
-                ...record
-            }
-        });
-        showToast('病历已生成并回传系统', 'success');
-        await exitWork();
-    } catch (e: any) {
-        console.error('Failed to save result:', e);
-        trackError('voice_result_submit_failed', e);
-        showToast('回传失败: ' + e, 'error');
-    }
-};
-
-const cancelVoiceResult = async () => {
-    trackClick('voice_result_cancel');
-    trackRecommendationAction('record', 'voice-record', 'rejected');
-    await exitWork('cancelled');
-};
-
 // 关闭风险提示界面
-
 const closeRiskAlert = async () => {
   await exitWork();
 };
 
 const handleRiskExpand = async (expanded: boolean) => {
     console.log('[App] handleRiskExpand:', expanded);
-    const h = expanded ? TARGET_CAPSULE_EXPANDED_H : TARGET_CAPSULE_H;
+    const h = expanded ? WINDOW_SIZES.CAPSULE_EXPANDED.height : WINDOW_SIZES.CAPSULE.height;
     
     // We reuse enterWorkMode to resize window smoothly
     // Since we are already in work mode, it should just trigger resize
     try {
         if (appWindow.value) {
-            await smartExpand(TARGET_CAPSULE_W, h);
-            await appWindow.value.setSize(new LogicalSize(TARGET_CAPSULE_W, h));
+            await smartExpand(WINDOW_SIZES.CAPSULE.width, h);
+            await appWindow.value.setSize(new LogicalSize(WINDOW_SIZES.CAPSULE.width, h));
         }
     } catch (e) {
         console.error('Failed to resize for risk details:', e);
     }
 };
 
-// 等待窗口达到指定逻辑尺寸
-const waitForWindowSize = async (logicalW: number, logicalH: number, timeout = 1000) => {
-  if (!appWindow.value) return;
-  console.time('Target: waitForWindowSize');
-  let scale = 1;
-  try {
-    scale = await appWindow.value.scaleFactor();
-  } catch {}
-  const targetW = Math.round(logicalW * scale);
-  const targetH = Math.round(logicalH * scale);
-  const start = performance.now();
-  
-  while (performance.now() - start < timeout) {
-    try {
-      const size = await appWindow.value.innerSize();
-      const reached = Math.abs(size.width - targetW) <= 10 && Math.abs(size.height - targetH) <= 10;
-      if (reached) {
-        console.timeEnd('Target: waitForWindowSize');
-        return;
-      }
-    } catch {
-      break;
-    }
-    await wait(16);
-  }
-  console.warn(`waitForWindowSize TIMEOUT after ${timeout}ms. Target: ${targetW}x${targetH}`);
-  console.timeEnd('Target: waitForWindowSize');
-};
+// 初始化事件监听管理 composable
+const eventListeners = useEventListeners({
+  appWindow,
+  currentView,
+  isWorking,
+  transitioning,
+  isHovered,
+  hoveredBtnIndex,
+  ringMenuRef,
+  currentPatient,
+  riskState: {
+    riskPatientName,
+    riskPatientGender,
+    riskPatientAge,
+    riskItems,
+    isRiskAnalyzing,
+  },
+  showToast,
+  handleWindowMove,
+  workMode: { enterWorkMode, exitWork },
+  navigation: { openConsultation, startVoiceInteraction },
+  exiting,
+  resizeTimeoutRef,
+});
 
 // 监听状态变化并持久化
 watch([isWorking, currentView], async () => {
@@ -511,6 +229,7 @@ onMounted(async () => {
 
     // 初始化 store
     store = await load('.settings.dat');
+    storeRef.value = store;  // 同步到 ref，供 composable 使用
     
     // 恢复应用状态
     // FORCE RESET: 始终以悬浮球模式启动，不恢复之前的展开状态，防止窗口位置/大小异常导致不可见
@@ -522,7 +241,7 @@ onMounted(async () => {
         
         if (appWindow.value) {
             // 先设置大小，再设置位置
-            await appWindow.value.setSize(new LogicalSize(TARGET_BALL_W, TARGET_BALL_H));
+            await appWindow.value.setSize(new LogicalSize(WINDOW_SIZES.BALL.width, WINDOW_SIZES.BALL.height));
             await restoreWindowPosition();
             
             // 确保窗口可见
@@ -533,207 +252,19 @@ onMounted(async () => {
       console.warn('初始化状态失败:', err);
       await restoreWindowPosition();
     }
-    
-    // 监听窗口移动结束，保存位置，并更新显示器信息
-    unlistenMoved = await appWindow.value.listen('tauri://move', () => {
-      isMoving.value = true;
-      // 使用防抖保存，避免频繁写入
-      if (moveTimeout) clearTimeout(moveTimeout);
-      moveTimeout = setTimeout(() => {
-        isMoving.value = false;
-        saveWindowPosition();
-        updateCurrentMonitor(); // Update monitor cache after move
-      }, 500);
-    });
+
+    // 注册所有事件监听
+    await eventListeners.registerAllListeners();
 
     // Initial monitor update
     updateCurrentMonitor();
-
-    // 监听窗口大小变化，防止异常缩小
-    unlistenResize = await appWindow.value.listen('tauri://resize', async () => {
-      if (isWorking.value && !transitioning.value && !exiting.value && appWindow.value) {
-        // 使用防抖避免频繁调整
-        if (resizeTimeout) clearTimeout(resizeTimeout);
-        resizeTimeout = setTimeout(async () => {
-          if (!isWorking.value) return;
-          try {
-            const size = await appWindow.value?.innerSize();
-            if (size) {
-              const targetW = currentView.value === 'consultation' ? TARGET_CONSULTATION_W : TARGET_WORK_W;
-              const targetH = currentView.value === 'consultation' ? TARGET_CONSULTATION_H : TARGET_WORK_H;
-              const scale = await appWindow.value?.scaleFactor() || 1;
-              const minW = targetW * scale * 0.8; // 允许 20% 的误差
-              
-              // 如果宽度明显小于目标宽度 (例如变为小球大小)，则强制恢复
-              if (size.width < minW) {
-                await appWindow.value?.setSize(new LogicalSize(targetW, targetH));
-              }
-            }
-          } catch (e) {
-            console.error('检查窗口大小失败:', e);
-          }
-        }, 200);
-      }
-    });
   } catch (e) {
     console.warn("初始化窗口失败:", e);
-  }
-  // 监听 Rust 后端发出的窗口 hover 事件
-  try {
-    // 监听患者风险提示事件 (接诊服务)
-    await listen<any>('show-patient-risks', async (event) => {
-      console.log('Received patient risks request:', event.payload);
-      const data = event.payload;
-      trackApiCall('his_patient_risks', true, undefined, { patientName: data.patientName, riskCount: data.risks?.length });
-      
-      // Update basic info immediately
-      riskPatientName.value = data.patientName || '未知患者';
-      riskPatientGender.value = data.gender || 'M';
-      riskPatientAge.value = data.age || 0;
-      riskItems.value = []; // Reset risks initially
-      isRiskAnalyzing.value = true;
-
-      // GLOBAL STATE: Set current patient context
-      // Normalize data structure for other views
-      currentPatient.value = {
-          ...data,
-          name: data.patientName, 
-          // Early mapping for ConsultationPage compatibility
-          naPi: data.patientName,
-          sdSexText: data.gender === 'M' ? '男性' : '女性',
-          ageText: data.age ? `${data.age}岁` : '',
-          // Ensure other fields are carried over
-      };
-      
-      // Switch to Reception Capsule View
-      // 360x80 matches VoiceCapsule size which looks good for this
-      currentView.value = 'reception-capsule';
-      if (!isWorking.value) {
-        await enterWorkMode(TARGET_CAPSULE_W, TARGET_CAPSULE_H);
-      } else {
-        // Resize if already open
-        enterWorkMode(TARGET_CAPSULE_W, TARGET_CAPSULE_H);
-      }
-
-      // If backend provided pre-calculated risks, use them immediately
-      if (data.risks && data.risks.length > 0) {
-        riskItems.value = data.risks;
-        isRiskAnalyzing.value = false;
-        return;
-      }
-
-      // Otherwise, trigger LLM analysis
-      try {
-        const finishRiskAnalysis = startTimedOperation('risk_analysis_llm');
-        const risks = await analyzePatientRisks(data);
-        console.log('LLM Risk Analysis Result:', risks);
-        riskItems.value = risks || [];
-        finishRiskAnalysis(true, { riskCount: riskItems.value.length });
-      } catch (e) {
-        console.error('Risk analysis error:', e);
-        trackError('risk_analysis_failed', e);
-        showToast('风险评估失败', 'error');
-      } finally {
-        isRiskAnalyzing.value = false;
-        
-        // If risks exist, show toast as well
-        if (riskItems.value.length > 0) {
-            showToast(`发现 ${riskItems.value.length} 项健康风险`, 'info');
-        }
-      }
-    });
-
-    await listen<any>('start-consultation', async (event) => {
-      console.log('Received consultation request:', event.payload);
-      const payload = event.payload || {};
-      trackApiCall('his_start_consultation', true, undefined, { patientId: payload.idPi || payload.patientId });
-      
-      // Update/Merge Global Patient Context
-      // This ensures we have the correct keys (naPi, sdSexText) for ConsultationPage
-      currentPatient.value = {
-          ...(currentPatient.value || {}),
-          ...payload,
-          // Fallbacks/Mappings if payload is missing strict keys but has loose keys
-          naPi: payload.naPi || payload.name || currentPatient.value?.patientName || '未知',
-          idPi: payload.idPi || payload.patientId || currentPatient.value?.patientId,
-          ageText: payload.ageText || (currentPatient.value?.age ? `${currentPatient.value.age}岁` : ''),
-          sdSexText: payload.sdSexText || (currentPatient.value?.gender === 'M' ? '男性' : '女性')
-      };
-      
-      await openConsultation();
-    });
-
-    await listen<any>('stop-consultation', async () => {
-      console.log('Received stop consultation request');
-      // Force exit work mode regardless of current view
-      if (isWorking.value) {
-        // Optional: clear patient data? 
-        // currentPatient.value = null; 
-        await exitWork();
-      }
-    });
-
-    // 监听语音接诊指令
-    await listen<any>('start-voice-consultation', async () => {
-        console.log('Received start voice consultation command');
-        trackApiCall('his_start_voice', true);
-        if (!currentPatient.value) {
-            showToast('请先接诊患者', 'error');
-            return;
-        }
-        await startVoiceInteraction();
-    });
-
-    unlistenHover = await listen<boolean>("hover-change", (event) => {
-      // 仅在非工作模式下响应
-      if (!isWorking.value) {
-        isHovered.value = event.payload;
-        if (!event.payload) {
-          hoveredBtnIndex.value = -1; // 移出窗口时重置按钮 hover 状态
-        }
-      }
-    });
-
-    unlistenMousePos = await listen<{x: number, y: number}>("mouse-pos", async (event) => {
-      if (!isWorking.value && isHovered.value && ringMenuRef.value) {
-        // Rust 发送的是物理坐标，需要转换为 CSS 像素
-        // 假设 scaleFactor 为 2 (Retina)，物理坐标 200 -> 逻辑坐标 100
-        // 但注意：Tauri 的 cursor_position 是物理坐标，而 webview 也是基于 scale 缩放的
-        // 我们需要获取当前的 devicePixelRatio
-        const dpr = window.devicePixelRatio || 1;
-        const logicalX = event.payload.x / dpr;
-        const logicalY = event.payload.y / dpr;
-
-        // 查找鼠标下的元素
-        // 由于 elementFromPoint 是基于 viewport 的，我们需要确保坐标系匹配
-        // Rust 发送的是相对于窗口左上角的坐标，这正是 clientX/clientY 在全屏 webview 中的行为
-        
-        const el = document.elementFromPoint(logicalX, logicalY);
-        if (el) {
-          const btn = el.closest('.ring-btn');
-          if (btn) {
-            // 根据类名判断是哪个按钮
-            if (btn.classList.contains('top')) hoveredBtnIndex.value = 0;
-            else if (btn.classList.contains('right')) hoveredBtnIndex.value = 1;
-            else if (btn.classList.contains('bottom')) hoveredBtnIndex.value = 2;
-            else if (btn.classList.contains('left')) hoveredBtnIndex.value = 3;
-            else hoveredBtnIndex.value = -1;
-            return;
-          }
-        }
-        hoveredBtnIndex.value = -1;
-      }
-    });
-  } catch (e) {
-    console.error("监听事件失败:", e);
   }
 });
 
 onUnmounted(() => {
-  if (unlistenHover) unlistenHover();
-  if (unlistenMousePos) unlistenMousePos();
-  if (unlistenMoved) unlistenMoved();
-  if (unlistenResize) unlistenResize();
+  eventListeners.unregisterAllListeners();
 });
 
 // 使用 Tauri 原生拖拽
@@ -762,264 +293,6 @@ const handleExitApp = async (e: MouseEvent) => {
     if (appWindow.value) {
       await appWindow.value.close();
     }
-  }
-};
-
-// 进入工作模式（展开窗口）
-// 进入工作模式（展开窗口）
-// 进入工作模式（展开窗口）
-// 调整窗口大小的通用方法
-const resizeWorkWindow = async (targetW: number, targetH: number) => {
-  if (!appWindow.value) return;
-  try {
-    await appWindow.value.setResizable(true);
-    // 先调整位置再设置大小，避免窗口闪动到其他显示器
-    await smartExpand(targetW, targetH);
-    await appWindow.value.setSize(new LogicalSize(targetW, targetH));
-    await waitForWindowSize(targetW, targetH);
-  } catch (err) {
-    console.warn('调整窗口大小失败:', err);
-  }
-};
-
-const enterWorkMode = async (customW?: number, customH?: number) => {
-  // 支持在工作模式下动态调整大小
-  if (isWorking.value) {
-    const targetW = customW ?? (currentView.value === 'consultation' ? TARGET_CONSULTATION_W : TARGET_WORK_W);
-    const targetH = customH ?? (currentView.value === 'consultation' ? TARGET_CONSULTATION_H : TARGET_WORK_H);
-    await resizeWorkWindow(targetW, targetH);
-    return;
-  }
-
-  if (transitioning.value) return;
-  transitioning.value = true;
-
-  // Apply Always on Top config
-  if (appWindow.value) {
-    const saved = localStorage.getItem('ALWAYS_ON_TOP');
-    const isAlwaysOnTop = saved === null || saved === 'true';
-    await appWindow.value.setAlwaysOnTop(isAlwaysOnTop);
-  }
-  
-  // 0. 尝试获取小球位置 (优先使用缓存)
-  if (!lastBallPos.value && appWindow.value) {
-    try {
-      const pos = await appWindow.value.outerPosition();
-      lastBallPos.value = { x: pos.x, y: pos.y };
-    } catch (e) {
-      console.error('Failed to record ball position:', e);
-    }
-  }
-
-  // 支持自定义尺寸或根据视图类型确定
-  const targetW = customW ?? (currentView.value === 'consultation' ? TARGET_CONSULTATION_W : TARGET_WORK_W);
-  const targetH = customH ?? (currentView.value === 'consultation' ? TARGET_CONSULTATION_H : TARGET_WORK_H);
-
-  // 1. 调整窗口大小
-  await resizeWorkWindow(targetW, targetH);
-  
-  // 计算展开动画的原点 (从之前记录的小球位置展开)
-  if (appWindow.value && lastBallPos.value) {
-    try {
-      const winPos = await appWindow.value.outerPosition();
-      const scale = await appWindow.value.scaleFactor() || 1;
-      
-      // 计算收缩/展开的原点
-      // 原点 = (小球X - 窗口X) + 小球半径中心(80)
-      const originX = (lastBallPos.value.x - winPos.x) / scale + 80;
-      const originY = (lastBallPos.value.y - winPos.y) / scale + 80;
-      
-      morphOrigin.value = `${originX}px ${originY}px`;
-    } catch (e) {
-      console.warn('计算展开原点失败:', e);
-      morphOrigin.value = '80px 80px';
-    }
-  } else {
-    morphOrigin.value = '80px 80px';
-  }
-
-  // 3. 触发面板展开动画 (Morph Expand)
-  isWorking.value = true;
-  trackClick('enter_work_mode', { view: currentView.value });
-
-  // 4. 启动会话 (仅在从小球模式首次进入工作模式时)
-  try {
-    const sessionType = currentView.value === 'consultation' ? 'consultation' :
-                        currentView.value === 'voice-interaction' ? 'voice' :
-                        currentView.value === 'reception-capsule' ? 'reception' : 'chat';
-
-    await feedbackService.startSession(
-      sessionType,
-      currentPatient.value?.patientId || currentPatient.value?.piOi,
-      currentPatient.value?.name || currentPatient.value?.naPi
-    );
-    console.log(`[App] Session started for ${sessionType}`);
-  } catch (error) {
-    console.error('[App] Failed to start session:', error);
-    // 不阻断流程
-  }
-
-  // 5. 等待动画结束
-  setTimeout(() => {
-    transitioning.value = false;
-  }, TRANSITION_MS);
-};
-
-// 收起/关闭处理：根据上下文决定是返回胶囊还是退出
-const handleCollapse = async () => {
-    trackClick('collapse', { from: currentView.value, toReception: currentView.value === 'consultation' && !!currentPatient.value });
-    // 如果处于问诊界面且有当前接诊患者，则收起到接待胶囊
-    if (currentView.value === 'consultation' && currentPatient.value) {
-        currentView.value = 'reception-capsule';
-        // 确保风险提示的基本信息与当前患者一致 (UI同步)
-        riskPatientName.value = currentPatient.value.name || currentPatient.value.naPi || '未知';
-        riskPatientGender.value = (currentPatient.value.gender === 'F' || currentPatient.value.sdSexText === '女性') ? 'F' : 'M';
-        riskPatientAge.value = parseInt(currentPatient.value.age || currentPatient.value.ageText || '0');
-        
-        // 恢复位置到小球原来的位置 (视觉连贯性)
-        if (lastBallPos.value && appWindow.value) {
-            try {
-                await appWindow.value.setPosition(new PhysicalPosition(lastBallPos.value.x, lastBallPos.value.y));
-            } catch (e) {
-                console.warn('Failed to restore position for capsule:', e);
-            }
-        }
-
-        await resizeWorkWindow(TARGET_CAPSULE_W, TARGET_CAPSULE_H);
-    } else {
-        await exitWork();
-    }
-};
-
-const exitWork = async (sessionStatus: 'completed' | 'cancelled' | 'error' = 'completed') => {
-  if (!isWorking.value || transitioning.value || isMoving.value) return;
-  trackClick('exit_work_mode', { view: currentView.value, sessionStatus });
-  
-  // Restore Always on Top for ball mode
-  if (appWindow.value) {
-      await appWindow.value.setAlwaysOnTop(true);
-  }
-
-  transitioning.value = true;
-  exiting.value = true;
-  
-  // 1. 计算偏移量 (Logical Pixels)
-  if (appWindow.value && lastBallPos.value) {
-    try {
-      const winPos = await appWindow.value.outerPosition();
-      const scale = await appWindow.value.scaleFactor() || 1;
-      
-      const dx = (lastBallPos.value.x - winPos.x) / scale;
-      const dy = (lastBallPos.value.y - winPos.y) / scale;
-      
-      // 设置 ballOffset，让小球在视觉上直接出现在目标位置
-      ballOffset.value = { x: dx, y: dy };
-      
-      // 计算收缩动画的原点，让窗口向小球目标位置收缩
-      // 原点 = (小球X - 窗口X) + 小球半径中心(80)
-      const originX = dx + 80;
-      const originY = dy + 80;
-      morphOrigin.value = `${originX}px ${originY}px`;
-      
-    } catch (e) {
-      console.warn('计算小球偏移失败:', e);
-      morphOrigin.value = '80px 80px';
-    }
-  } else {
-    morphOrigin.value = '80px 80px';
-  }
-
-  // 2. 触发面板收缩动画 (Morph Shrink)
-  isWorking.value = false;
-
-  // 结束当前会话
-  try {
-    await feedbackService.endSession(undefined, sessionStatus);
-    console.log('[App] Session ended successfully');
-  } catch (error) {
-    console.error('[App] Failed to end session:', error);
-    // 不阻断流程
-  }
-
-  // 强制关闭 hover 状态，防止收缩过程中因鼠标位置导致环绕菜单闪现
-  isHovered.value = false;
-  
-  // 3. 等待动画结束
-  await wait(TRANSITION_MS);
-  
-  // 4. 移动窗口并重置偏移
-  if (appWindow.value) {
-    try {
-      let targetX = 0;
-      let targetY = 0;
-      let hasTarget = false;
-
-      // 确定目标位置
-      if (lastBallPos.value) {
-        targetX = lastBallPos.value.x;
-        targetY = lastBallPos.value.y;
-        hasTarget = true;
-      } else if (store) {
-        const savedPos = await store.get<{x: number, y: number}>('window_pos');
-        if (savedPos) {
-          targetX = savedPos.x;
-          targetY = savedPos.y;
-          hasTarget = true;
-        }
-      }
-
-      if (hasTarget) {
-        // Step 2: 先移动窗口，再调整大小
-        // 这样可以避免 "先缩小导致小球因 offset 处于窗口可视区外而被裁剪消失" 的问题
-        
-        // 开启 Resizable 以便后续调整大小
-        await appWindow.value.setResizable(true);
-        
-        // 并发执行：窗口移动 + 小球归位
-        // 利用透明窗口特性，先让窗口框架对齐目标位置，同时把小球拉回窗口左上角
-        const movePromise = appWindow.value.setPosition(new PhysicalPosition(targetX, targetY));
-        ballOffset.value = { x: 0, y: 0 };
-        await movePromise;
-
-        // Step 3: 移动到位后，再裁剪窗口大小
-        // 此时小球已经在 (0,0)，缩小窗口只会切掉多余的透明区域，不会导致小球消失
-        await appWindow.value.setSize(new LogicalSize(TARGET_BALL_W, TARGET_BALL_H));
-        await appWindow.value.setResizable(false);
-
-        // 二次校验位置 (针对 macOS 边缘情况)
-        await wait(50);
-        const currentPos = await appWindow.value.outerPosition();
-        if (Math.abs(currentPos.x - targetX) > 10 || Math.abs(currentPos.y - targetY) > 10) {
-           console.warn('Position mismatch detected, retrying restore...', currentPos, targetX, targetY);
-           await appWindow.value.setPosition(new PhysicalPosition(targetX, targetY));
-        }
-      } else {
-        // 如果没有目标位置，仅缩小
-        await appWindow.value.setResizable(true);
-        await appWindow.value.setSize(new LogicalSize(TARGET_BALL_W, TARGET_BALL_H));
-        await appWindow.value.setResizable(false);
-      }
-
-      lastBallPos.value = null;
-    } catch (err) {
-      console.warn('恢复窗口状态失败:', err);
-    }
-  }
-  
-  // 5. 等待窗口大小响应
-  await waitForWindowSize(TARGET_BALL_W, TARGET_BALL_H);
-  
-  // 6. 重置状态
-  exiting.value = false;
-  transitioning.value = false;
-
-  // 7. 强制刷新 hover 状态
-  try {
-      const isHoveredNow = await invoke('check_mouse_hover');
-      console.log('[App] Forced hover check:', isHoveredNow);
-      isHovered.value = isHoveredNow as boolean;
-  } catch (e) {
-      console.error('Failed to force hover check:', e);
   }
 };
 </script>
@@ -1121,7 +394,7 @@ const exitWork = async (sessionStatus: 'completed' | 'cancelled' | 'error' = 'co
           <!-- 工具栏 (risk-alert, voice-interaction, voice-result, reception-capsule 视图不显示) -->
           <div v-if="currentView !== 'risk-alert' && currentView !== 'voice-interaction' && currentView !== 'voice-result' && currentView !== 'reception-capsule'" class="assistant-toolbar" data-tauri-drag-region>
             <div class="toolbar-left" data-tauri-drag-region>
-              <button v-if="currentView === 'settings' || currentView === 'analytics' || currentView === 'symptom-manage'" class="icon-btn back-btn" @click="currentView === 'analytics' ? openChat() : handleCollapse()" title="返回">
+              <button v-if="currentView === 'settings' || currentView === 'analytics' || currentView === 'symptom-manage' || currentView === 'knowledge-base'" class="icon-btn back-btn" @click="currentView === 'analytics' ? openChat() : handleCollapse()" title="返回">
                  <Icon icon="lucide:arrow-left" class="toolbar-icon" size="20" />
               </button>
               <span class="assistant-title" data-tauri-drag-region>
@@ -1130,7 +403,8 @@ const exitWork = async (sessionStatus: 'completed' | 'cancelled' | 'error' = 'co
                   (currentView === 'consultation' ?
                     (currentPatient ? `智能问诊 - ${currentPatient.name}` : '智能问诊') :
                     (currentView === 'analytics' ? '数据分析' :
-                    (currentView === 'symptom-manage' ? '症状库维护' : '系统设置')))
+                    (currentView === 'symptom-manage' ? '症状库维护' :
+                    (currentView === 'knowledge-base' ? '知识库检索' : '系统设置'))))
 
                 }}
               </span>
@@ -1186,6 +460,7 @@ const exitWork = async (sessionStatus: 'completed' | 'cancelled' | 'error' = 'co
             @close="openChat"
           />
           <SymptomManagement v-else-if="currentView === 'symptom-manage'" @close="handleCollapse" />
+          <KnowledgeBasePanel v-else-if="currentView === 'knowledge-base'" @close="handleCollapse" />
           <SettingsPanel
             v-else
             @view-analytics="openAnalytics"
@@ -1302,6 +577,9 @@ const exitWork = async (sessionStatus: 'completed' | 'cancelled' | 'error' = 'co
 /* 未激活时的收缩动画 
    逻辑：当菜单不在激活状态(is-active) 且 容器未被悬停(:hover) 时应用隐藏样式 
 */
+/* 未激活时的收缩动画
+   逻辑：当菜单不在激活状态(is-active) 且 容器未被悬停(:hover) 时应用隐藏样式
+*/
 .ring-menu:not(.is-active):not(div:hover > *) .ring-btn.top { transform: translateY(15px) scale(0.1); }
 .ring-menu:not(.is-active):not(div:hover > *) .ring-btn.right { transform: translateX(-15px) scale(0.1); }
 .ring-menu:not(.is-active):not(div:hover > *) .ring-btn.bottom { transform: translateY(-15px) scale(0.1); }
@@ -1349,185 +627,16 @@ const exitWork = async (sessionStatus: 'completed' | 'cancelled' | 'error' = 'co
 /**
  * 应用特定的变量覆盖
  *
- * 注意：大部分样式变量已统一迁移到 design-tokens.css
- * 此处仅保留应用特定的覆盖值
+ * 注意：大部分样式已迁移到独立的 CSS 模块
+ * - global.css: 全局基础样式
+ * - layouts/app-layout.css: 布局和容器样式
+ * - animations/morph.css: 过渡动画
+ *
+ * 此处仅保留应用特定的变量覆盖
  */
 :root {
   /* 玻璃态效果 - 使用自定义透明度以适配浮动球设计 */
   --surface-glass: rgba(255, 255, 255, 0.65);
   --surface-glass-weak: rgba(255, 255, 255, 0.45);
-}
-
-/* 修复 ChatPanel 输入框的双重焦点效果 */
-.chat-panel .input-wrapper input:focus,
-.chat-panel .input-wrapper input:focus-visible {
-  outline: none !important;
-  box-shadow: none !important;
-  border: none !important;
-}
-
-html,
-body,
-#app {
-  width: 100%;
-  height: 100%;
-  overflow: hidden;
-  background: transparent;
-  font-family: var(--font-body);
-}
-
-/* 层布局：两种状态层叠并交叉淡化 */
-.state-layer {
-  position: relative;
-  width: 100%;
-  height: 100%;
-}
-.ball-layer,
-.assistant-layer {
-  position: absolute;
-  inset: 0;
-}
-.ball-layer {
-  display: block;
-  z-index: 2; /* 退出时圆球遮在面板上方 */
-}
-.assistant-layer { z-index: 1; }
-
-/* Morph 动画定义 - 性能优化：仅动画 transform 和 opacity */
-.morph-enter-active,
-.morph-leave-active {
-  transition:
-    opacity var(--duration-normal) var(--ease-smooth),
-    transform var(--duration-normal) var(--ease-smooth);
-  /* 使用 GPU 加速 */
-  will-change: transform, opacity;
-}
-
-/* 面板进入前/离开后状态：缩小并定位到小球中心 */
-.morph-enter-from.assistant-layer,
-.morph-leave-to.assistant-layer {
-  opacity: 0;
-  /* 
-     Scale 0.1: 缩小到 10%
-     Translate: 微调位置，确保视觉上是从 (80,80) 展开 
-     (实际 assistant-layer 是 inset:0 占满全屏的，这里只需要 scale 即可，origin 已设置为 80px 80px)
-  */
-  transform: scale(0.35); 
-}
-
-/* 小球进入前/离开后状态 */
-.morph-enter-from.ball-layer,
-.morph-leave-to.ball-layer {
-  opacity: 0;
-  transform: scale(0.5);
-}
-
-.assistant-container {
-  width: 100%;
-  height: 100%;
-  border-radius: 20px;
-  overflow: hidden;
-  position: relative;
-  background: var(--surface-glass);
-  backdrop-filter: blur(20px) saturate(1.4);
-  -webkit-backdrop-filter: blur(20px) saturate(1.4);
-  border: 1px solid rgba(0, 0, 0, 0.1);
-  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.5);
-  padding-top: 40px;
-}
-
-.assistant-container.no-toolbar {
-  padding-top: 0;
-}
-
-.assistant-toolbar {
-  position: absolute;
-  top: 0; left: 0; right: 0;
-  height: 40px;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 0 12px;
-  color: var(--color-text-strong);
-  background: linear-gradient(180deg, rgba(255,255,255,0.6) 0%, rgba(255,255,255,0.0) 100%);
-  z-index: 10;
-}
-
-.toolbar-left {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-.back-btn {
-  margin-right: 4px;
-}
-
-.assistant-title {
-  font-weight: 600;
-  font-size: 14px;
-  letter-spacing: 0.5px;
-  color: var(--color-text-strong);
-  opacity: 0.9;
-  text-shadow: 0 1px 2px rgba(255,255,255,0.8);
-}
-
-.assistant-container .icon-btn {
-  -webkit-app-region: no-drag;
-  appearance: none;
-  border: none;
-  background: transparent;
-  width: 28px;
-  height: 28px;
-  border-radius: 50%;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  cursor: pointer;
-  color: var(--color-text-weak);
-  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
-  position: relative;
-  overflow: hidden;
-}
-
-.assistant-container .icon-btn::before {
-  content: "";
-  position: absolute;
-  inset: 0;
-  background: rgba(0,0,0,0.06);
-  border-radius: 50%;
-  opacity: 0;
-  transform: scale(0.6);
-  transition: all 0.2s ease;
-}
-
-.assistant-container .icon-btn:hover {
-  color: #ef4444; /* 红色警告色 */
-  transform: rotate(90deg); /* 趣味交互 */
-}
-
-.assistant-container .icon-btn:hover::before {
-  opacity: 1;
-  transform: scale(1);
-}
-
-.assistant-container .icon-btn:active {
-  transform: rotate(90deg) scale(0.92);
-}
-
-.assistant-container .toolbar-icon {
-  width: 20px;
-  height: 20px;
-  position: relative;
-  z-index: 1;
-}
-
-/* 过渡遮罩，柔化窗口尺寸瞬变 */
-.transition-mask {
-  position: absolute;
-  inset: 0;
-  background: white; /* 简单白底遮罩，避免视觉干扰 */
-  opacity: 0;
-  pointer-events: none;
 }
 </style>

@@ -1,0 +1,81 @@
+/**
+ * Morph 过渡动画
+ *
+ * 悬浮球 ↔ 助手面板的展开/收起动画效果。
+ * 使用 Vue 的 Transition 组件配合 transform 和 opacity 实现平滑过渡。
+ *
+ * 性能优化：
+ * - 仅动画 transform 和 opacity（GPU 加速）
+ * - 使用 will-change 提示浏览器优化
+ * - 避免触发 layout 和 paint
+ *
+ * @module styles/animations/morph
+ */
+
+/* ========== 过渡动画基础 ========== */
+
+/**
+ * 过渡动画激活状态
+ * 应用于进入和离开过程中的元素
+ */
+.morph-enter-active,
+.morph-leave-active {
+  transition:
+    opacity var(--duration-normal) var(--ease-smooth),
+    transform var(--duration-normal) var(--ease-smooth);
+
+  /* 性能优化：GPU 加速 */
+  will-change: transform, opacity;
+}
+
+/* ========== 助手面板动画 ========== */
+
+/**
+ * 助手面板进入前 / 离开后状态
+ *
+ * 视觉效果：
+ * - 从悬浮球中心位置（scale 0.35）展开到全尺寸
+ * - 透明度从 0 渐变到 1
+ *
+ * transform-origin 由动态计算的 morphOrigin 控制，
+ * 确保动画原点始终位于悬浮球的中心位置。
+ */
+.morph-enter-from.assistant-layer,
+.morph-leave-to.assistant-layer {
+  opacity: 0;
+  transform: scale(0.35);
+}
+
+/* ========== 悬浮球动画 ========== */
+
+/**
+ * 悬浮球进入前 / 离开后状态
+ *
+ * 视觉效果：
+ * - 缩小到 50% 尺寸
+ * - 透明度从 0 渐变到 1
+ *
+ * 比助手面板的缩放比例更大（0.5 vs 0.35），
+ * 营造更明显的"弹出"效果。
+ */
+.morph-enter-from.ball-layer,
+.morph-leave-to.ball-layer {
+  opacity: 0;
+  transform: scale(0.5);
+}
+
+/* ========== 进入后 / 离开前状态 ========== */
+
+/**
+ * 元素的默认显示状态
+ *
+ * Vue Transition 会自动处理：
+ * .morph-enter-to (进入结束状态)
+ * .morph-leave-from (离开开始状态)
+ *
+ * 这些状态默认为：
+ * - opacity: 1
+ * - transform: scale(1)
+ *
+ * 无需显式定义，浏览器会自动从初始状态过渡到这些值。
+ */
