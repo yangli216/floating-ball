@@ -11,7 +11,7 @@ import { ref, type Ref } from 'vue';
 import type { Window as TauriWindow, Monitor } from '@tauri-apps/api/window';
 import { PhysicalPosition, currentMonitor } from '@tauri-apps/api/window';
 import { LogicalSize } from '@tauri-apps/api/dpi';
-import type { Store } from '@tauri-apps/plugin-store';
+// import { Store } from '@tauri-apps/plugin-store'; // Unused
 import { ANIMATION, WINDOW_SIZE_TOLERANCE } from '../constants/animation';
 
 /**
@@ -114,7 +114,7 @@ export function useWindowManagement(options: WindowManagementOptions) {
     if (!appWindow.value || !store.value) return;
 
     try {
-      const pos = await store.value.get<Position>('window_pos');
+      const pos = await store.value.get('window_pos') as Position;
       console.log('[WindowMgmt] Restoring position:', pos);
 
       let safeX = 100;

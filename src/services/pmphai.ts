@@ -354,7 +354,7 @@ class PMPHAIService {
       this.tokenCache.refreshToken = result.data.refreshToken;
       // 提前 5 分钟过期，避免边界问题
       this.tokenCache.expiresAt = Date.now() + (result.data.expiresIn - 300) * 1000;
-      return this.tokenCache.accessToken;
+      return this.tokenCache.accessToken as string;
     }
 
     throw new Error('获取知识库 Token 失败: ' + JSON.stringify(result));
@@ -397,7 +397,7 @@ class PMPHAIService {
         this.tokenCache.accessToken = result.data.accessToken;
         this.tokenCache.refreshToken = result.data.refreshToken;
         this.tokenCache.expiresAt = Date.now() + (result.data.expiresIn - 300) * 1000;
-        return this.tokenCache.accessToken;
+        return this.tokenCache.accessToken as string;
       }
     } catch (error) {
       console.warn('刷新 Token 失败，尝试重新获取:', error);
@@ -405,6 +405,11 @@ class PMPHAIService {
 
     // 刷新失败，尝试重新获取
     return await this.getAccessToken();
+  }
+
+  // @ts-ignore
+  private async refreshAccessTokenWrapper(): Promise<string> {
+    return this.refreshAccessToken();
   }
 
   /**

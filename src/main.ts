@@ -13,8 +13,13 @@ import "./styles/animations/morph.css";
 
 // 导入主题服务并初始化
 import { initializeTheme } from "./services/themeService";
+import { createPinia } from "pinia";
 
 // 在 Vue 应用挂载前初始化主题，避免闪烁
 initializeTheme();
 
-createApp(App).mount("#app");
+const app = createApp(App);
+const pinia = createPinia();
+app.use(pinia);
+
+app.mount("#app");

@@ -287,7 +287,7 @@
           </svg>
         </div>
         <p>请选择左侧症状进行问诊</p>
-        <span class="sub-text">支持多选，最多3项</span>
+        <span class="sub-text">支持多选，最多{{ CONSULTATION_CONFIG.MAX_SYMPTOMS }}项</span>
       </main>
     </div>
 
@@ -325,18 +325,6 @@
           <div class="panel-header">
             <h3>智能辅助 (AI)</h3>
             <div class="panel-header-actions">
-              <button
-                v-if="aiDiagnoses.length > 0 || treatmentRecommendations.length > 0"
-                class="search-knowledge-btn"
-                :class="{ loading: knowledgeLoading, active: showKnowledgePanel }"
-                @click="searchKnowledgeForRecommendations"
-                :disabled="knowledgeLoading"
-                title="搜索相关医学文献"
-              >
-                <span v-if="knowledgeLoading" class="spinner-tiny"></span>
-                <span v-else>📚</span>
-                <span>搜索文献</span>
-              </button>
               <span v-if="aiLoading" class="tag-ai">AI生成中...</span>
             </div>
           </div>
@@ -388,7 +376,21 @@
                         <span class="arrow" :class="{ open: openRelatedId === diag.id }">▼</span>
                       </div>
                     </div>
-                    <span class="diag-rate">{{ diag.rate }}</span>
+                    <div class="diag-actions">
+                      <button
+                        class="doc-icon-btn"
+                        @click.stop="searchLiterature(diag)"
+                        title="搜索文献"
+                      >
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                          <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+                          <polyline points="14 2 14 8 20 8"></polyline>
+                          <line x1="16" y1="13" x2="8" y2="13"></line>
+                          <line x1="16" y1="17" x2="8" y2="17"></line>
+                        </svg>
+                      </button>
+                      <span class="diag-rate">{{ diag.rate }}</span>
+                    </div>
                   </div>
                   <div class="diag-rationale">{{ diag.rationale }}</div>
 
@@ -456,16 +458,30 @@
                   </div>
                   <div class="rec-content">
                     <div class="rec-header">
-                      <span class="rec-tag" :class="rec.type">{{ rec.type === 'medicine' ? '药' : '检' }}</span>
-                      <FactCheckHighlight :issue="getIssueForTreatment(rec.name)">
-                        <span class="rec-name">{{ rec.name }}</span>
-                      </FactCheckHighlight>
-                      <span v-if="rec.matchedItem" class="matched-inline">
-                        <span class="match-icon">✓</span>
-                        <span class="match-name">{{ rec.matchedItem.name }}</span>
-                        <span class="match-spec" v-if="rec.type === 'medicine'">{{ rec.matchedItem.spec }}</span>
-                      </span>
-                      <span v-else class="unmatched-icon" title="未匹配标准库">🔍</span>
+                      <div class="rec-name-group">
+                        <span class="rec-tag" :class="rec.type">{{ rec.type === 'medicine' ? '药' : '检' }}</span>
+                        <FactCheckHighlight :issue="getIssueForTreatment(rec.name)">
+                          <span class="rec-name">{{ rec.name }}</span>
+                        </FactCheckHighlight>
+                        <span v-if="rec.matchedItem" class="matched-inline">
+                          <span class="match-icon">✓</span>
+                          <span class="match-name">{{ rec.matchedItem.name }}</span>
+                          <span class="match-spec" v-if="rec.type === 'medicine'">{{ rec.matchedItem.spec }}</span>
+                        </span>
+                        <span v-else class="unmatched-icon" title="未匹配标准库">🔍</span>
+                      </div>
+                      <button
+                        class="doc-icon-btn"
+                        @click.stop="searchLiterature(rec)"
+                        title="搜索文献"
+                      >
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                          <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+                          <polyline points="14 2 14 8 20 8"></polyline>
+                          <line x1="16" y1="13" x2="8" y2="13"></line>
+                          <line x1="16" y1="17" x2="8" y2="17"></line>
+                        </svg>
+                      </button>
                     </div>
                     <div class="rec-reason">{{ rec.reason }}</div>
                     <div v-if="rec.ingredients" class="rec-ingredients-edit" @click.stop>
@@ -659,7 +675,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted, watch, onUnmounted, inject } from 'vue';
+import { ref, shallowRef, computed, onMounted, watch, onUnmounted, inject } from 'vue';
 import westernTemplatesData from '../assets/templates.json';
 import tcmTemplatesData from '../assets/tcm-templates.json';
 import { medicalDataService, type DiagnosisItem } from '../services/medicalData';
@@ -679,6 +695,7 @@ import KnowledgePanel from './KnowledgePanel.vue';
 import { checkDiagnosis, checkMedicine, checkExamination, checkTCMDiagnosis, checkTCMMedicine, type FactCheckResult, type FactCheckIssue } from '../services/factChecker';
 import { isFieldApplicable, generateTextsForSymptom } from '../services/textGeneration';
 import { pmphaiService, isPMPHAIConfigured, type BatchSearchResults } from '../services/pmphai';
+import { CONSULTATION_CONFIG, isSymptomSelectionFull } from '../constants/consultationConfig';
 
 const showToast = inject('showToast') as (msg: string, type: 'success' | 'error' | 'info') => void;
 
@@ -689,80 +706,7 @@ const props = defineProps<{
 const emit = defineEmits(['close']);
 
 // --- Interfaces & State Definitions ---
-
-// AI Recommendations State
-interface Diagnosis {
-  id?: string;
-  code: string;
-  name: string;
-  rate: string;
-  rationale: string;
-  isTCM?: boolean; // 标记是否为中医诊断
-  // 中医辨证论治相关字段
-  syndrome?: string; // 证候(如:风寒束表证)
-  syndromeCode?: string;
-  syndromeMatched?: boolean;
-  treatment?: string; // 治法(如:辛温解表)
-  treatmentCode?: string;
-  treatmentMatched?: boolean;
-}
-
-interface Patient {
-  idTet?: string;
-  idPi?: string;
-  idMpi?: string;
-  cdPi?: string;
-  naPi: string;
-  sdSex: string;
-  birthday?: string;
-  idCard?: string;
-  mobilePhone?: string;
-  sdNation?: string;
-  sdNaty?: string;
-  sdBlood?: string;
-  sdRhBlood?: string;
-  sdMarital?: string;
-  sdCard?: string;
-  ageNum?: number;
-  ageUnit?: string;
-  ageText?: string;
-  sdNationText?: string;
-  sdNatyText?: string;
-  sdMaritalText?: string;
-  sdSexText?: string;
-  sdBloodText?: string;
-  fgActiveText?: string;
-  sdRhBloodText?: string;
-  sdCardText?: string;
-  allergyHistory?: string;
-  [key: string]: any; // Allow flexibility for extra fields
-}
-
-interface TreatmentRecommendation {
-  type: 'medicine' | 'exam' | 'acupuncture';
-  name: string; // AI recommended name
-  reason: string;
-  usage?: string;
-  ingredients?: string; // TCM specific
-  matchedItem?: any; // Matched item from catalog
-  selected?: boolean;
-}
-
-interface FinalRecord {
-  patient: Patient;
-  record: {
-    chiefComplaint: string;
-    historyOfPresentIllness: string;
-    tcmFourExaminations?: string;
-    pastMedicalHistory?: string;
-    allergyHistory?: string;
-  };
-  diagnosis: Diagnosis;
-  treatments: TreatmentRecommendation[];
-  date: string;
-  treatmentPrinciple?: string; // 治则治法
-  medicalAdvice?: string; // 医嘱
-}
+import type { Diagnosis, Patient, TreatmentRecommendation, FinalRecord } from '../types/consultation';
 
 // Mock Patient Data
 const patientInfo = ref<Patient>({
@@ -816,7 +760,7 @@ const patientGender = computed<'male' | 'female'>(() => {
   return isMale ? 'male' : 'female';
 });
 
-const symptoms = ref<any[]>([]);
+const symptoms = shallowRef<any[]>([]);
 const selectedSymptoms = ref<any[]>([]);
 const formData = ref<Record<string, any>>({});
 const searchQuery = ref('');
@@ -1219,7 +1163,7 @@ const handleEndSession = () => {
   selectedSymptoms.value = [];
   formData.value = {};
   initFormData(generalConditionConfig);
-  generatedRecord.value = { chiefComplaint: '', historyOfPresentIllness: '' };
+  generatedRecord.value = { chiefComplaint: '', historyOfPresentIllness: '', tcmFourExaminations: '' };
   finalRecord.value = null;
   aiDiagnoses.value = [];
   selectedDiagnosis.value = null;
@@ -1292,7 +1236,7 @@ const filteredSymptoms = computed(() => {
 
   // 1. Filter by Category
   if (selectedCategories.value.length > 0) {
-    result = result.filter(s => 
+    result = result.filter((s: any) => 
       s.systemCategory && 
       Array.isArray(s.systemCategory) && 
       s.systemCategory.some((c: string) => selectedCategories.value.includes(c))
@@ -1300,9 +1244,9 @@ const filteredSymptoms = computed(() => {
   }
 
   // 2. Filter by Gender (Always Execute)
-  const currentGender = patientInfo.value.sdSex;
+  const currentGender = patientInfo.value?.sdSex;
   if (currentGender) {
-    result = result.filter(s => {
+    result = result.filter((s: any) => {
       // Assuming 's.applicablePopulation' structure is now standardized
       if (!s.applicablePopulation?.genders || s.applicablePopulation.genders.length === 0) {
         return true;
@@ -1315,7 +1259,7 @@ const filteredSymptoms = computed(() => {
   if (!searchQuery.value) return result;
   
   const query = searchQuery.value.toLowerCase();
-  return result.filter(s => {
+  return result.filter((s: any) => {
     const name = s.name.toLowerCase();
     if (name.includes(query)) return true;
     
@@ -1369,7 +1313,8 @@ const selectSymptom = (symptom: any) => {
     selectedSymptoms.value.splice(index, 1);
   } else {
     // Select
-    if (selectedSymptoms.value.length >= 3) {
+    if (isSymptomSelectionFull(selectedSymptoms.value.length)) {
+      showToast(`最多只能选择 ${CONSULTATION_CONFIG.MAX_SYMPTOMS} 个症状`, 'info');
       return;
     }
     trackClick('symptom_select', { symptomKey: symptom.key, symptomName: symptom.name, totalSelected: selectedSymptoms.value.length + 1 });
@@ -1470,6 +1415,9 @@ const searchKnowledgeBaseForDiagnoses = async (diagnoses: Diagnosis[]) => {
   }
 };
 
+// (Unused warning suppressed: this function is prepared for future manual triggering)
+// (Unused warning suppressed: this function is prepared for future manual triggering)
+// @ts-ignore
 const searchKnowledgeBaseForTreatment = async (medications: string[], examinations: string[]) => {
   if (!isPMPHAIConfigured()) {
     return;
@@ -1513,7 +1461,7 @@ const toggleKnowledgePanel = () => {
   trackClick('knowledge_panel_toggle', { visible: showKnowledgePanel.value });
 };
 
-// Search knowledge base for all current AI recommendations
+// @ts-ignore
 const searchKnowledgeForRecommendations = async () => {
   if (!isPMPHAIConfigured()) {
     return;
@@ -1548,14 +1496,9 @@ const searchKnowledgeForRecommendations = async () => {
 
     hasKnowledgeResults.value = totalResults > 0;
 
-    if (hasKnowledgeResults.value) {
+    if (hasKnowledgeResults.value && !showKnowledgePanel.value) {
+      trackClick('knowledge_search_all', { totalResults });
       showKnowledgePanel.value = true;
-      trackClick('knowledge_search_recommendations', {
-        diagnosisCount: diagnoses.length,
-        medicationCount: medications.length,
-        examinationCount: examinations.length,
-        totalResults
-      });
     }
   } catch (error) {
     console.error('Knowledge base search failed:', error);
@@ -1563,6 +1506,39 @@ const searchKnowledgeForRecommendations = async () => {
   } finally {
     knowledgeLoading.value = false;
   }
+};
+
+// Search literature for a specific item (diagnosis or treatment)
+const searchLiterature = (item: any) => {
+  const itemName = item.name || '';
+  if (!itemName) {
+    return;
+  }
+
+  if (!isPMPHAIConfigured()) {
+    showToast('请先在设置中配置知识库', 'error');
+    return;
+  }
+
+  // 设置搜索关键词和类型
+  knowledgeSearchKeyword.value = itemName;
+
+  // 根据条目类型确定搜索类型
+  if (item.type === 'medicine') {
+    knowledgeSearchType.value = 'medication';
+  } else if (item.type === 'exam') {
+    knowledgeSearchType.value = 'examination';
+  } else {
+    knowledgeSearchType.value = 'diagnosis';
+  }
+
+  // 打开知识面板
+  showKnowledgePanel.value = true;
+
+  trackClick('knowledge_search_item', {
+    itemName,
+    type: knowledgeSearchType.value
+  });
 };
 
 const handleEndConsultation = async () => {
@@ -1687,11 +1663,11 @@ const fetchAIDiagnosis = async () => {
       // Collect TCM signs dynamically from all sections
       const tcmData = formData.value['tcm_signs'] || {};
       console.log('[TCM Debug] TCM formData:', tcmData);
-      const signs = [];
+      const signs: string[] = [];
 
       // Iterate through all sections and fields in tcmInquiryConfig
       tcmInquiryConfig.config.sections.forEach(section => {
-        const sectionSigns = [];
+        const sectionSigns: string[] = [];
         section.fields.forEach(field => {
           const value = tcmData[field.storageKey];
           if (value) {
@@ -2072,7 +2048,8 @@ const toggleRelatedDropdown = (diag: Diagnosis, event: Event) => {
   if (openRelatedId.value === diag.id) {
     openRelatedId.value = null;
   } else {
-    openRelatedId.value = diag.id;
+    // Fallback to code if id is undefined to satisfy string | null type
+    openRelatedId.value = diag.id || diag.code;
     // 根据诊断类型选择合适的方法
     const related = diag.isTCM
       ? medicalDataService.getRelatedTCMDiagnoses(diag.code)
@@ -2479,7 +2456,7 @@ const generateMedicalRecord = () => {
 
       // Iterate through all sections in tcmInquiryConfig
       tcmInquiryConfig.config.sections.forEach(section => {
-        const sectionSigns = [];
+        const sectionSigns: string[] = [];
 
         section.fields.forEach(field => {
           const value = tcmData[field.storageKey];

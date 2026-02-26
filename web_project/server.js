@@ -318,7 +318,7 @@ app.post('/api/list', async (req, res) => {
     if (sortField) params.append('sortField', sortField);
     if (sortRule) params.append('sortRule', sortRule);
     params.append('pageSize', pageSize || 10);
-    params.append('page', page || 1);
+    params.append('page', page || 0);
 
     console.log('🔍 List search request:', params.toString());
 

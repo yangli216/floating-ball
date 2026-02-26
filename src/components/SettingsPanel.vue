@@ -312,16 +312,7 @@ watch(activeTab, (newVal) => {
           </div>
         </div>
 
-        <div class="info-banner">
-          <Icon icon="lucide:info" :size="18" />
-          <p>配置已保存到本地。如未设置，将使用环境变量默认值。</p>
-        </div>
-
-        <button class="save-btn" @click="saveSettings">
-          <Icon icon="lucide:save" :size="18" />
-          保存配置
-        </button>
-
+        
         <!-- Knowledge Base Section -->
         <div class="settings-section" style="margin-top: 24px;">
           <div class="section-header">
@@ -401,7 +392,18 @@ watch(activeTab, (newVal) => {
               {{ pmphaiTestResult.message }}
             </span>
           </div>
+          
         </div>
+        <div class="info-banner">
+          <Icon icon="lucide:info" :size="18" />
+          <p>配置已保存到本地。如未设置，将使用环境变量默认值。</p>
+        </div>
+
+        <button class="save-btn" @click="saveSettings">
+          <Icon icon="lucide:save" :size="18" />
+          保存配置
+        </button>
+
       </div>
 
       <!-- About Tab -->

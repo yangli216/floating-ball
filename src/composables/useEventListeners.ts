@@ -10,7 +10,7 @@
  * @module composables/useEventListeners
  */
 
-import { ref, type Ref } from 'vue';
+import { type Ref } from 'vue';
 import type { Window as TauriWindow } from '@tauri-apps/api/window';
 import type { UnlistenFn } from '@tauri-apps/api/event';
 import { listen } from '@tauri-apps/api/event';

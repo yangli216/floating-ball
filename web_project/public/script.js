@@ -2,7 +2,7 @@ document.addEventListener('DOMContentLoaded', () => {
     // ==================== Global State ====================
     let currentKgBaseId = null;
     let currentKgBaseName = null;
-    let currentPage = 1;
+    let currentPage = 0;
     let currentPageSize = 10;
     let currentSearchKey = '';
 
@@ -168,7 +168,7 @@ document.addEventListener('DOMContentLoaded', () => {
     function openKnowledgeModal(kgBaseId, kgBaseName, searchKey = '') {
         currentKgBaseId = kgBaseId;
         currentKgBaseName = kgBaseName;
-        currentPage = 1;
+        currentPage = 0;
         currentSearchKey = searchKey;
 
         const modal = document.getElementById('knowledge-modal');
@@ -308,7 +308,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 item.classList.add('active');
 
                 const tagId = item.dataset.tagId;
-                currentPage = 1;
+                currentPage = 0;
                 loadKnowledgeList(tagId);
             });
         });
@@ -510,7 +510,7 @@ document.addEventListener('DOMContentLoaded', () => {
             const inputValue = modalSearchInput.value.trim();
             currentSearchKey = inputValue;
             console.log('🔍 Modal search clicked, input value:', inputValue, 'currentSearchKey:', currentSearchKey);
-            currentPage = 1;
+            currentPage = 0;
             loadKnowledgeList();
         });
     } else {
@@ -557,7 +557,7 @@ document.addEventListener('DOMContentLoaded', () => {
     async function performGlobalSearch(query) {
         currentKgBaseId = null;
         currentKgBaseName = '全局搜索';
-        currentPage = 1;
+        currentPage = 0;
         currentSearchKey = query;
 
         const modal = document.getElementById('knowledge-modal');

@@ -71,18 +71,48 @@
       <!-- 知识库搜索 -->
       <div v-if="activeTab === 'search'" class="tab-content">
         <div class="form-group">
-          <label>知识库ID</label>
+          <label>搜索知识库</label>
           <input
-            v-model="searchParams.kgBaseId"
+            v-model="searchQuery"
             type="text"
-            placeholder="请输入知识库ID"
+            placeholder="输入关键词搜索..."
             class="form-input"
+            @input="handleSearch"
           />
         </div>
-        <button @click="openKnowledgeBase" class="action-btn">
-          打开知识库
-        </button>
-        <p class="tip">提示：点击后会在新窗口中打开知识库页面</p>
+
+        <!-- 知识库列表 -->
+        <div v-if="knowledgeList.length > 0" class="knowledge-list">
+          <div
+            v-for="item in filteredKnowledgeList"
+            :key="item.id"
+            class="knowledge-item"
+            @click="() => openKnowledgeDetail(item.id)"
+          >
+            <div class="item-content">
+              <div class="item-title">{{ item.name }}</div>
+              <div v-if="item.description" class="item-desc">{{ item.description }}</div>
+            </div>
+            <button
+              class="doc-icon-btn"
+              @click.stop="searchLiterature(item)"
+              title="搜索文献"
+            >
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+                <polyline points="14 2 14 8 20 8"></polyline>
+                <line x1="16" y1="13" x2="8" y2="13"></line>
+                <line x1="16" y1="17" x2="8" y2="17"></line>
+                <polyline points="10 9 9 9 8 9"></polyline>
+              </svg>
+            </button>
+          </div>
+        </div>
+
+        <div v-else class="empty-state">
+          <p>暂无知识库数据</p>
+          <p class="tip">请先配置知识库或输入关键词搜索</p>
+        </div>
       </div>
 
       <!-- 知识详情 -->
@@ -128,7 +158,7 @@
             />
           </div>
         </div>
-        <button @click="openKnowledgeDetail" class="action-btn">
+        <button @click="() => openKnowledgeDetail()" class="action-btn">
           查看详情
         </button>
         <p class="tip">提示：点击后会在新窗口中打开知识详情页面</p>
@@ -180,7 +210,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted, inject } from 'vue'
+import { ref, computed, onMounted, inject, watch } from 'vue'
 import {
   buildKnowledgeBaseUrl,
   getKnowledgeBaseConfig,
@@ -188,6 +218,14 @@ import {
   type KnowledgeBaseConfig,
   type PageParams
 } from '../services/knowledgeBase'
+import type { BatchSearchResults } from '../services/pmphai'
+
+const props = defineProps<{
+  loading?: boolean
+  results?: BatchSearchResults
+  searchKeyword?: string
+  searchType?: 'diagnosis' | 'medication' | 'examination'
+}>()
 
 const emit = defineEmits(['close'])
 const showToast = inject<(message: string, type?: string) => void>('showToast')
@@ -200,8 +238,33 @@ const config = ref<KnowledgeBaseConfig>({
   baseUrl: 'https://inside.pmphai.com'
 })
 
-const searchParams = ref({
-  kgBaseId: ''
+// 搜索关键词 - 初始化为 prop 值
+const searchQuery = ref(props.searchKeyword || '')
+
+// 监听 searchKeyword prop 的变化
+watch(() => props.searchKeyword, (newKeyword) => {
+  if (newKeyword) {
+    searchQuery.value = newKeyword
+  }
+})
+
+// 知识库列表（示例数据，实际应该从API获取）
+const knowledgeList = ref([
+  { id: 'kb001', name: '急性上呼吸道感染', description: '常见上呼吸道疾病知识库' },
+  { id: 'kb002', name: '高血压诊疗指南', description: '高血压相关医学知识' },
+  { id: 'kb003', name: '糖尿病管理', description: '糖尿病诊断与治疗' },
+])
+
+// 过滤后的知识库列表
+const filteredKnowledgeList = computed(() => {
+  if (!searchQuery.value) {
+    return knowledgeList.value
+  }
+  const query = searchQuery.value.toLowerCase()
+  return knowledgeList.value.filter(item =>
+    item.name.toLowerCase().includes(query) ||
+    item.description?.toLowerCase().includes(query)
+  )
 })
 
 const detailParams = ref({
@@ -241,38 +304,21 @@ function saveConfig() {
   }
 }
 
-function openKnowledgeBase() {
-  if (!searchParams.value.kgBaseId) {
-    showToast?.('请输入知识库ID', 'error')
-    return
-  }
-
-  const pageParams: PageParams = {
-    pageName: 'search',
-    kgBaseId: searchParams.value.kgBaseId
-  }
-
-  try {
-    const url = buildKnowledgeBaseUrl(config.value, pageParams)
-
-    // 在新窗口打开
-    window.open(url, '_blank')
-
-    showToast?.('正在打开知识库页面...', 'info')
-  } catch (error) {
-    showToast?.('构建URL失败: ' + (error as Error).message, 'error')
-  }
+function handleSearch() {
+  // 实时搜索，filteredKnowledgeList 会自动更新
 }
 
-function openKnowledgeDetail() {
-  if (!detailParams.value.id) {
+function openKnowledgeDetail(id?: string) {
+  const knowledgeId = id || detailParams.value.id
+
+  if (!knowledgeId) {
     showToast?.('请输入知识ID', 'error')
     return
   }
 
   const pageParams: PageParams = {
     pageName: 'detail',
-    id: detailParams.value.id,
+    id: knowledgeId,
     kgFields: detailParams.value.kgFields || undefined,
     contentId: detailParams.value.contentId || undefined,
     muluId: detailParams.value.muluId || undefined,
@@ -289,6 +335,14 @@ function openKnowledgeDetail() {
   } catch (error) {
     showToast?.('构建URL失败: ' + (error as Error).message, 'error')
   }
+}
+
+function searchLiterature(item: any) {
+  console.log('搜索文献:', item)
+  showToast?.(`正在搜索"${item.name}"相关文献...`, 'info')
+
+  // TODO: 实现实际的文献搜索逻辑
+  // 可以调用知识库API或打开外部文献数据库
 }
 
 function closeIframe() {

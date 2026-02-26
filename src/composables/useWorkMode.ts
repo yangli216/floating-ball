@@ -171,7 +171,7 @@ export function useWorkMode(options: WorkModeOptions) {
   /**
    * 确定会话类型
    */
-  function getSessionType(): string {
+  function getSessionType(): 'chat' | 'consultation' | 'voice' | 'reception' {
     switch (currentView.value) {
       case 'consultation': return 'consultation';
       case 'voice-interaction': return 'voice';
@@ -314,7 +314,7 @@ export function useWorkMode(options: WorkModeOptions) {
           targetY = lastBallPos.value.y;
           hasTarget = true;
         } else if (store.value) {
-          const savedPos = await store.value.get<Position>('window_pos');
+          const savedPos = await store.value.get('window_pos') as Position;
           if (savedPos) {
             targetX = savedPos.x;
             targetY = savedPos.y;

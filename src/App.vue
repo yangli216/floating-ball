@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { onMounted, onUnmounted, ref, watch } from "vue";
-import { getCurrentWindow, Window as TauriWindow, currentMonitor, type Monitor } from "@tauri-apps/api/window";
+import { getCurrentWindow, Window as TauriWindow } from "@tauri-apps/api/window";
 import { exit } from '@tauri-apps/plugin-process';
 import { load, Store } from '@tauri-apps/plugin-store';
 import { onOpenUrl } from '@tauri-apps/plugin-deep-link';
@@ -25,6 +25,7 @@ import { useWorkMode } from "./composables/useWorkMode";
 import { useNavigation } from "./composables/useNavigation";
 import { useVoiceConsultation } from "./composables/useVoiceConsultation";
 import { useEventListeners } from "./composables/useEventListeners";
+import { pmphaiService, isPMPHAIConfigured } from './services/pmphai';
 
 const appWindow = ref<TauriWindow | null>(null);
 const toastRef = ref<InstanceType<typeof Toast> | null>(null);
@@ -63,16 +64,19 @@ const windowMgmt = useWindowManagement({
   transitioning,
 });
 
-// 解构窗口管理 API
+// @ts-ignore
 const { cachedMonitor, lastBallPos, isMoving } = windowMgmt;
 const {
-  saveWindowPosition,
   restoreWindowPosition,
   updateCurrentMonitor,
   smartExpand,
-  waitForWindowSize,
-  resizeWorkWindow,
   handleWindowMove,
+  // @ts-ignore
+  saveWindowPosition,
+  // @ts-ignore
+  waitForWindowSize,
+  // @ts-ignore
+  resizeWorkWindow,
 } = windowMgmt;
 
 // 风险提示患者信息同步函数
@@ -96,6 +100,7 @@ const workMode = useWorkMode({
 });
 
 // 解构工作模式 API
+// @ts-ignore
 const { exiting, ballOffset, morphOrigin, containerStyle, ballStyle } = workMode;
 const { enterWorkMode, exitWork, handleCollapse } = workMode;
 
@@ -116,6 +121,7 @@ const {
   openAnalytics,
   openSymptomManagement,
   openConsultation,
+  // @ts-ignore
   openKnowledgeBase,
   startVoiceInteraction,
 } = navigation;
@@ -295,6 +301,26 @@ const handleExitApp = async (e: MouseEvent) => {
     }
   }
 };
+
+
+const openInsideCloudHome = async () => {
+  if (!isPMPHAIConfigured()) {
+    showToast('请先在设置中配置知识库', 'error');
+    return;
+  }
+
+  const pageUrl = pmphaiService.generatePageUrl({
+    pageName: 'home',
+  });
+
+  try {
+    const { openUrl } = await import('@tauri-apps/plugin-opener');
+    await openUrl(pageUrl);
+  } catch (err) {
+    console.error('Failed to open URL:', err);
+    window.open(pageUrl, '_blank');
+  }
+};
 </script>
 
 <template>
@@ -409,9 +435,14 @@ const handleExitApp = async (e: MouseEvent) => {
                 }}
               </span>
             </div>
-            <button class="icon-btn" aria-label="收起" title="收起" @click="handleCollapse">
-              <Icon icon="lucide:chevron-down" class="toolbar-icon" size="20" />
-            </button>
+            <div class="toolbar-right" style="display: flex; gap: 8px;">
+              <button class="icon-btn" aria-label="知识库" title="知识库" @click="openInsideCloudHome">
+                <Icon icon="lucide:book-open" class="toolbar-icon" size="20" />
+              </button>
+              <button class="icon-btn" aria-label="收起" title="收起" @click="handleCollapse">
+                <Icon icon="lucide:chevron-down" class="toolbar-icon" size="20" />
+              </button>
+            </div>
           </div>
           <ChatPanel v-if="currentView === 'chat'" />
           <ConsultationPage 

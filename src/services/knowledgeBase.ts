@@ -149,3 +149,65 @@ export async function fetchKnowledgeBases(): Promise<KnowledgeBase[]> {
   // 参考文档中的 3.3.4.1 获取知识库列表信息接口
   return []
 }
+
+/**
+ * 搜索结果项
+ */
+export interface SearchResultItem {
+  id: string
+  title: string
+  content: string
+  source: string
+  relevance?: number
+  kgBaseId?: string
+}
+
+/**
+ * 搜索知识库内容
+ * @param config 配置信息
+ * @param keyword 搜索关键词
+ * @param kgBaseId 知识库ID（可选）
+ */
+export async function searchKnowledgeContent(
+  // @ts-ignore
+  config: KnowledgeBaseConfig,
+  keyword: string,
+  // @ts-ignore
+  kgBaseId?: string
+): Promise<SearchResultItem[]> {
+  // TODO: 实际实现需要调用知识库搜索API
+  // 这里先返回模拟数据
+
+  // 模拟搜索延迟
+  await new Promise(resolve => setTimeout(resolve, 500))
+
+  // 模拟搜索结果
+  const mockResults: SearchResultItem[] = [
+    {
+      id: '1',
+      title: `${keyword} - 诊断标准`,
+      content: `${keyword}的诊断主要依据临床症状、体格检查和辅助检查。主要表现为...`,
+      source: '临床诊疗指南',
+      relevance: 0.95
+    },
+    {
+      id: '2',
+      title: `${keyword} - 治疗方案`,
+      content: `针对${keyword}的治疗，应采用综合治疗方案，包括一般治疗、药物治疗等...`,
+      source: '治疗规范',
+      relevance: 0.88
+    },
+    {
+      id: '3',
+      title: `${keyword} - 用药指导`,
+      content: `${keyword}的常用药物包括...使用时应注意剂量和禁忌症...`,
+      source: '药品说明书',
+      relevance: 0.82
+    }
+  ]
+
+  // 根据关键词过滤（实际应该由后端完成）
+  return mockResults.filter(item =>
+    item.title.includes(keyword) || item.content.includes(keyword)
+  )
+}
