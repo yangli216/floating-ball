@@ -1,6 +1,6 @@
 [package]
 name = "floating-ball"
-version = "0.1.30"
+version = "0.1.31"
 description = "A Desktop Floating Ball Application"
 authors = ["you"]
 edition = "2021"
