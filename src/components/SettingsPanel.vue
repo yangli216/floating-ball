@@ -36,11 +36,31 @@ const tabs = [
   { id: 'about', label: '关于版本', icon: 'lucide:info' }
 ];
 
+// Provider presets
+const PROVIDER_PRESETS = [
+  { name: 'OpenAI', baseUrl: 'https://api.openai.com/v1', model: 'gpt-4o-mini' },
+  { name: 'DeepSeek', baseUrl: 'https://api.deepseek.com/v1', model: 'deepseek-chat' },
+  { name: '百川智能', baseUrl: 'https://api.baichuan-ai.com/v1', model: 'Baichuan-M3' },
+  { name: '阿里通义千问', baseUrl: 'https://dashscope.aliyuncs.com/compatible-mode/v1', model: 'qwen-plus' },
+  { name: '月之暗面 (Kimi)', baseUrl: 'https://api.moonshot.cn/v1', model: 'moonshot-v1-8k' },
+];
+
+const applyPreset = (preset: typeof PROVIDER_PRESETS[0]) => {
+  baseUrl.value = preset.baseUrl;
+  model.value = preset.model;
+  trackClick('settings_apply_preset', { provider: preset.name });
+};
+
 // Settings state
 const apiKey = ref('');
 const baseUrl = ref('');
 const model = ref('');
 const alwaysOnTop = ref(true);
+
+// Reviewer AI state
+const reviewerApiKey = ref('');
+const reviewerBaseUrl = ref('');
+const reviewerModel = ref('');
 
 // Knowledge Base (PMPHAI) settings
 const pmphaiAppKey = ref('');
@@ -59,6 +79,11 @@ onMounted(() => {
   const savedTop = localStorage.getItem('ALWAYS_ON_TOP');
   alwaysOnTop.value = savedTop === null || savedTop === 'true';
 
+  // Load Reviewer AI settings
+  reviewerApiKey.value = localStorage.getItem('REVIEWER_API_KEY') || '';
+  reviewerBaseUrl.value = localStorage.getItem('REVIEWER_BASE_URL') || '';
+  reviewerModel.value = localStorage.getItem('REVIEWER_MODEL') || '';
+
   // Load PMPHAI settings
   const pmphaiConfig = getPMPHAIConfig();
   pmphaiAppKey.value = pmphaiConfig.appKey;
@@ -72,6 +97,11 @@ const saveSettings = async () => {
   localStorage.setItem('LLM_BASE_URL', baseUrl.value);
   localStorage.setItem('LLM_MODEL', model.value);
   localStorage.setItem('ALWAYS_ON_TOP', String(alwaysOnTop.value));
+
+  // Save Reviewer AI settings
+  localStorage.setItem('REVIEWER_API_KEY', reviewerApiKey.value);
+  localStorage.setItem('REVIEWER_BASE_URL', reviewerBaseUrl.value);
+  localStorage.setItem('REVIEWER_MODEL', reviewerModel.value);
 
   // Save PMPHAI settings
   localStorage.setItem('PMPHAI_APP_KEY', pmphaiAppKey.value);
@@ -284,6 +314,21 @@ watch(activeTab, (newVal) => {
             <h3>API 配置</h3>
           </div>
 
+          <!-- Provider Presets -->
+          <div class="preset-container">
+            <label>快速填充常用服务商：</label>
+            <div class="preset-buttons">
+              <button
+                v-for="preset in PROVIDER_PRESETS"
+                :key="preset.name"
+                class="preset-btn"
+                @click="applyPreset(preset)"
+              >
+                {{ preset.name }}
+              </button>
+            </div>
+          </div>
+
           <div class="form-group">
             <label for="api-key">API Key <span class="required">*</span></label>
             <div class="input-with-icon">
@@ -312,6 +357,41 @@ watch(activeTab, (newVal) => {
           </div>
         </div>
 
+        <!-- Reviewer AI Section -->
+        <div class="settings-section" style="margin-top: 24px;">
+          <div class="section-header">
+            <Icon icon="lucide:shield-check" :size="20" />
+            <h3>独立审查 AI 配置</h3>
+          </div>
+          <p class="section-desc" style="margin-bottom: 16px;">配置用于事实核查和第二诊疗意见的独立大模型。如不填写，将默认使用上方的通用模型配置。</p>
+
+          <div class="form-group">
+            <label for="reviewer-api-key">API Key</label>
+            <div class="input-with-icon">
+              <Icon icon="lucide:key" :size="16" class="input-icon" />
+              <input id="reviewer-api-key" v-model="reviewerApiKey" type="password" placeholder="sk-..." />
+            </div>
+            <p class="form-hint">独立审查 AI 的 API 密钥</p>
+          </div>
+
+          <div class="form-group">
+            <label for="reviewer-base-url">Base URL</label>
+            <div class="input-with-icon">
+              <Icon icon="lucide:link" :size="16" class="input-icon" />
+              <input id="reviewer-base-url" v-model="reviewerBaseUrl" type="text" placeholder="https://api.openai.com/v1" />
+            </div>
+            <p class="form-hint">API 服务器地址（留空使用上方默认值）</p>
+          </div>
+
+          <div class="form-group">
+            <label for="reviewer-model-name">Model Name</label>
+            <div class="input-with-icon">
+              <Icon icon="lucide:brain" :size="16" class="input-icon" />
+              <input id="reviewer-model-name" v-model="reviewerModel" type="text" placeholder="gpt-4o-mini" />
+            </div>
+            <p class="form-hint">使用的模型名称（留空使用上方默认值）</p>
+          </div>
+        </div>
         
         <!-- Knowledge Base Section -->
         <div class="settings-section" style="margin-top: 24px;">
@@ -538,6 +618,37 @@ watch(activeTab, (newVal) => {
   background: var(--medical-bg-primary);
   border-bottom: 2px solid var(--medical-border-light);
   overflow-x: auto;
+}
+
+/* Preset Buttons */
+.preset-container {
+  margin-bottom: 20px;
+}
+.preset-container label {
+  display: block;
+  font-size: 13px;
+  color: var(--medical-text-muted);
+  margin-bottom: 8px;
+}
+.preset-buttons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.preset-btn {
+  padding: 6px 12px;
+  font-size: 13px;
+  background: var(--medical-bg-tertiary);
+  border: 1px solid var(--medical-border-medium);
+  border-radius: 16px;
+  color: var(--medical-text-primary);
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+.preset-btn:hover {
+  background: var(--medical-info-bg);
+  border-color: var(--medical-info);
+  color: var(--medical-info);
 }
 
 .tab-btn {

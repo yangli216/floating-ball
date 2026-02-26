@@ -103,11 +103,29 @@ export function getLLMConfig() {
   return { apiKey, baseUrl, model, audioModel };
 }
 
-function getConfigAndKey(explicitKey?: string) {
-  const { apiKey: envKey, baseUrl, model, audioModel } = getLLMConfig();
-  const key = explicitKey || envKey;
-  if (!key) throw new Error("缺少 API Key。请在 .env 设置 VITE_OPENAI_API_KEY 或在 localStorage 设置 OPENAI_API_KEY。");
-  return { key, baseUrl, model, audioModel };
+export interface LLMConfigOverride {
+  apiKey?: string;
+  baseUrl?: string;
+  model?: string;
+  audioModel?: string;
+}
+
+export function getReviewerLLMConfig(): LLMConfigOverride {
+  const apiKey = localStorage.getItem("REVIEWER_API_KEY") || undefined;
+  const baseUrl = localStorage.getItem("REVIEWER_BASE_URL") || undefined;
+  const model = localStorage.getItem("REVIEWER_MODEL") || undefined;
+  return { apiKey, baseUrl, model };
+}
+
+function getConfigAndKey(explicitKey?: string, customConfig?: LLMConfigOverride) {
+  const baseConfig = getLLMConfig();
+  const apiKey = customConfig?.apiKey || explicitKey || baseConfig.apiKey;
+  const baseUrl = customConfig?.baseUrl || baseConfig.baseUrl;
+  const model = customConfig?.model || baseConfig.model;
+  const audioModel = customConfig?.audioModel || baseConfig.audioModel;
+
+  if (!apiKey) throw new Error("缺少 API Key。请在 .env 设置 VITE_OPENAI_API_KEY 或在 localStorage 设置 OPENAI_API_KEY（以及独立审查AI的配置）。");
+  return { key: apiKey, baseUrl, model, audioModel };
 }
 
 function createPayloadMessages(messages: ChatMessage[]) {
@@ -130,9 +148,10 @@ export async function chatStream(
   onChunk: (chunk: string) => void,
   apiKey?: string,
   retryConfig?: RetryConfig,
-  onRetry?: (attempt: number, error: any) => void
+  onRetry?: (attempt: number, error: any) => void,
+  customConfig?: LLMConfigOverride
 ): Promise<void> {
-  const { key, baseUrl, model } = getConfigAndKey(apiKey);
+  const { key, baseUrl, model } = getConfigAndKey(apiKey, customConfig);
   const payloadMessages = createPayloadMessages(messages);
 
   // 使用重试机制包装整个流式请求
@@ -204,11 +223,12 @@ export async function chatStreamWithFallback(
   onChunk: (chunk: string) => void,
   apiKey?: string,
   retryConfig?: RetryConfig,
-  onRetry?: (attempt: number, error: any) => void
+  onRetry?: (attempt: number, error: any) => void,
+  customConfig?: LLMConfigOverride
 ): Promise<void> {
   try {
     // 尝试流式请求
-    await chatStream(messages, onChunk, apiKey, retryConfig, onRetry);
+    await chatStream(messages, onChunk, apiKey, retryConfig, onRetry, customConfig);
   } catch (error) {
     console.warn("流式请求失败，降级到普通请求:", error);
 
@@ -234,9 +254,10 @@ export async function chat(
   messages: ChatMessage[],
   apiKey?: string,
   retryConfig?: RetryConfig,
-  onRetry?: (attempt: number, error: any) => void
+  onRetry?: (attempt: number, error: any) => void,
+  customConfig?: LLMConfigOverride
 ): Promise<string> {
-  const { key, baseUrl, model } = getConfigAndKey(apiKey);
+  const { key, baseUrl, model } = getConfigAndKey(apiKey, customConfig);
   const payloadMessages = createPayloadMessages(messages);
 
   return await retryWithBackoff(async () => {
@@ -267,9 +288,10 @@ export async function transcribeAudio(
   blob: Blob,
   apiKey?: string,
   retryConfig?: RetryConfig,
-  onRetry?: (attempt: number, error: any) => void
+  onRetry?: (attempt: number, error: any) => void,
+  customConfig?: LLMConfigOverride
 ): Promise<string> {
-  const { key, baseUrl, audioModel } = getConfigAndKey(apiKey);
+  const { key, baseUrl, audioModel } = getConfigAndKey(apiKey, customConfig);
   const file = new File([blob], "audio.webm", { type: blob.type || "audio/webm" });
 
   return await retryWithBackoff(async () => {

@@ -2095,11 +2095,6 @@ const handleDiagnosisSelect = (diag: Diagnosis) => {
   trackClick('diagnosis_select', { diagnosisName: diag.name, diagnosisCode: diag.code, hasId: !!diag.id });
   selectedDiagnosis.value = diag;
 
-  // 更新知识库搜索关键词和类型并打开面板
-  knowledgeSearchKeyword.value = diag.name;
-  knowledgeSearchType.value = 'diagnosis';
-  showKnowledgePanel.value = true;
-
   if (diag.code) {
     // 根据诊断类型选择合适的方法
     const related = diag.isTCM
@@ -2228,11 +2223,6 @@ const toggleTreatmentSelection = (index: number) => {
       type: item.type,
       selected: item.selected,
     });
-
-    // 更新知识库搜索关键词和类型并打开面板
-    knowledgeSearchKeyword.value = item.name;
-    knowledgeSearchType.value = item.type === 'medicine' ? 'medication' : 'examination';
-    showKnowledgePanel.value = true;
   }
 };
 

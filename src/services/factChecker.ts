@@ -1,4 +1,4 @@
-import { chat, type ChatMessage } from './llm';
+import { chat, getReviewerLLMConfig, type ChatMessage } from './llm';
 import {
   DiagnosisCheckPrompt,
   MedicineCheckPrompt,
@@ -127,7 +127,7 @@ export async function checkDiagnosis(context: DiagnosisCheckContext): Promise<Fa
   ];
 
   try {
-    const response = await chat(messages);
+    const response = await chat(messages, undefined, undefined, undefined, getReviewerLLMConfig());
     const result = parseFactCheckResponse(response);
 
     // 为每个 issue 添加 id 和 type
@@ -171,7 +171,7 @@ export async function checkMedicine(context: MedicineCheckContext): Promise<Fact
   ];
 
   try {
-    const response = await chat(messages);
+    const response = await chat(messages, undefined, undefined, undefined, getReviewerLLMConfig());
     const result = parseFactCheckResponse(response);
 
     const issues: FactCheckIssue[] = result.issues.map((issue: any, index: number) => ({
@@ -214,7 +214,7 @@ export async function checkExamination(context: ExaminationCheckContext): Promis
   ];
 
   try {
-    const response = await chat(messages);
+    const response = await chat(messages, undefined, undefined, undefined, getReviewerLLMConfig());
     const result = parseFactCheckResponse(response);
 
     const issues: FactCheckIssue[] = result.issues.map((issue: any, index: number) => ({
@@ -257,7 +257,7 @@ export async function checkMedicalRecord(context: MedicalRecordCheckContext): Pr
   ];
 
   try {
-    const response = await chat(messages);
+    const response = await chat(messages, undefined, undefined, undefined, getReviewerLLMConfig());
     const result = parseFactCheckResponse(response);
 
     const issues: FactCheckIssue[] = result.issues.map((issue: any, index: number) => ({
@@ -300,7 +300,7 @@ export async function checkTCMDiagnosis(context: TCMDiagnosisCheckContext): Prom
   ];
 
   try {
-    const response = await chat(messages);
+    const response = await chat(messages, undefined, undefined, undefined, getReviewerLLMConfig());
     const result = parseFactCheckResponse(response);
 
     // 为每个 issue 添加 id 和 type
@@ -344,7 +344,7 @@ export async function checkTCMMedicine(context: TCMMedicineCheckContext): Promis
   ];
 
   try {
-    const response = await chat(messages);
+    const response = await chat(messages, undefined, undefined, undefined, getReviewerLLMConfig());
     const result = parseFactCheckResponse(response);
 
     const issues: FactCheckIssue[] = result.issues.map((issue: any, index: number) => ({
