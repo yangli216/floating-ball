@@ -1012,13 +1012,7 @@ watch(activeTab, (newVal) => {
   box-shadow: 0 1px 4px rgba(0, 0, 0, 0.25);
 }
 
-input:checked+.toggle-switch {
-  background: linear-gradient(135deg, #059669 0%, #10B981 100%);
-  box-shadow: 0 0 0 3px rgba(5, 150, 105, 0.15),
-    inset 0 1px 3px rgba(0, 0, 0, 0.1);
-}
-
-input:checked+.toggle-switch:before {
+.switch-wrapper input:checked+.toggle-switch:before {
   transform: translateX(20px);
   box-shadow: 0 1px 6px rgba(0, 0, 0, 0.2);
 }
