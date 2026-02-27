@@ -222,12 +222,8 @@ watch(activeTab, (newVal) => {
 
     <!-- Tabs Navigation -->
     <div class="tabs-header">
-      <button
-        v-for="tab in tabs"
-        :key="tab.id"
-        :class="['tab-btn', { active: activeTab === tab.id }]"
-        @click="activeTab = tab.id as TabType"
-      >
+      <button v-for="tab in tabs" :key="tab.id" :class="['tab-btn', { active: activeTab === tab.id }]"
+        @click="activeTab = tab.id as TabType">
         <Icon :icon="tab.icon" :size="18" class="tab-icon" />
         <span>{{ tab.label }}</span>
       </button>
@@ -245,12 +241,9 @@ watch(activeTab, (newVal) => {
           <p class="section-desc">选择适合您的视觉风格</p>
 
           <div class="theme-grid">
-            <button
-              v-for="theme in themes"
-              :key="theme.id"
+            <button v-for="theme in themes" :key="theme.id"
               :class="['theme-card', { active: currentTheme.id === theme.id }]"
-              @click="trackClick('settings_theme_change', { themeId: theme.id }); setTheme(theme)"
-            >
+              @click="trackClick('settings_theme_change', { themeId: theme.id }); setTheme(theme)">
               <div class="theme-preview" :style="getThemePreviewStyle(theme)">
                 <div class="preview-header" :style="{ background: theme.colors.primary }"></div>
                 <div class="preview-content">
@@ -279,10 +272,10 @@ watch(activeTab, (newVal) => {
             <h3>窗口设置</h3>
           </div>
 
-          <div class="form-group row">
-            <div class="form-label-group">
-              <label for="always-on-top">窗口始终置顶</label>
-              <p class="form-hint">启用后，应用窗口将保持在其他窗口之上</p>
+          <div class="toggle-row">
+            <div class="toggle-label-group">
+              <label for="always-on-top" class="toggle-label">窗口始终置顶</label>
+              <span class="toggle-hint">启用后，应用窗口将保持在其他窗口之上</span>
             </div>
             <div class="switch-wrapper">
               <input type="checkbox" id="always-on-top" v-model="alwaysOnTop">
@@ -291,8 +284,10 @@ watch(activeTab, (newVal) => {
           </div>
         </div>
 
-        <div class="settings-section clickable-section" @click="trackClick('settings_open_symptom_manage'); emit('open-symptom-manage')">
-          <div class="section-header no-border" style="display: flex; align-items: center; justify-content: space-between;">
+        <div class="settings-section clickable-section"
+          @click="trackClick('settings_open_symptom_manage'); emit('open-symptom-manage')">
+          <div class="section-header no-border"
+            style="display: flex; align-items: center; justify-content: space-between;">
             <div class="header-left" style="display: flex; align-items: center; gap: 12px;">
               <Icon icon="lucide:file-edit" :size="20" />
               <h3 style="margin: 0;">症状库管理</h3>
@@ -322,12 +317,8 @@ watch(activeTab, (newVal) => {
           <div class="preset-container">
             <label>快速填充常用服务商：</label>
             <div class="preset-buttons">
-              <button
-                v-for="preset in PROVIDER_PRESETS"
-                :key="preset.name"
-                class="preset-btn"
-                @click="applyPreset(preset)"
-              >
+              <button v-for="preset in PROVIDER_PRESETS" :key="preset.name" class="preset-btn"
+                @click="applyPreset(preset)">
                 {{ preset.name }}
               </button>
             </div>
@@ -369,10 +360,10 @@ watch(activeTab, (newVal) => {
           </div>
           <p class="section-desc" style="margin-bottom: 16px;">配置用于事实核查和第二诊疗意见的独立大模型。如不填写，将默认使用上方的通用模型配置。</p>
 
-          <div class="form-group row">
-            <div class="form-label-group">
-              <label for="reviewer-enabled">开启独立审查 AI</label>
-              <p class="form-hint">关闭后将不进行独立 AI 事实核查与验证</p>
+          <div class="toggle-row">
+            <div class="toggle-label-group">
+              <label for="reviewer-enabled" class="toggle-label">开启独立审查 AI</label>
+              <span class="toggle-hint">关闭后将不进行独立 AI 事实核查与验证</span>
             </div>
             <div class="switch-wrapper">
               <input type="checkbox" id="reviewer-enabled" v-model="reviewerEnabled">
@@ -394,7 +385,8 @@ watch(activeTab, (newVal) => {
               <label for="reviewer-base-url">Base URL</label>
               <div class="input-with-icon">
                 <Icon icon="lucide:link" :size="16" class="input-icon" />
-                <input id="reviewer-base-url" v-model="reviewerBaseUrl" type="text" placeholder="https://api.openai.com/v1" />
+                <input id="reviewer-base-url" v-model="reviewerBaseUrl" type="text"
+                  placeholder="https://api.openai.com/v1" />
               </div>
               <p class="form-hint">API 服务器地址（留空使用上方默认值）</p>
             </div>
@@ -409,7 +401,7 @@ watch(activeTab, (newVal) => {
             </div>
           </template>
         </div>
-        
+
         <!-- Knowledge Base Section -->
         <div class="settings-section" style="margin-top: 24px;">
           <div class="section-header">
@@ -418,78 +410,70 @@ watch(activeTab, (newVal) => {
           </div>
           <p class="section-desc">配置人卫 Inside 知识库 API，获取相关医学文献</p>
 
-          <div class="form-group row">
-            <div class="form-label-group">
-              <label for="pmphai-enabled">启用知识库搜索</label>
-              <p class="form-hint">启用后，AI 推荐时将自动搜索相关医学文献</p>
+          <div class="toggle-row">
+            <div class="toggle-label-group">
+              <label for="pmphai-enabled" class="toggle-label">启用知识库搜索</label>
+              <span class="toggle-hint">启用后，AI 推荐时将自动搜索相关医学文献</span>
             </div>
             <div class="switch-wrapper">
               <input type="checkbox" id="pmphai-enabled" v-model="pmphaiEnabled">
               <label for="pmphai-enabled" class="toggle-switch"></label>
             </div>
           </div>
+          <template v-if="pmphaiEnabled">
+            <div class="form-group">
+              <label>搜索模式</label>
+              <div class="mode-selector">
+                <button :class="['mode-option', { active: pmphaiSearchMode === 'rag' }]"
+                  @click="pmphaiSearchMode = 'rag'" :disabled="!pmphaiEnabled">
+                  <Icon icon="lucide:sparkles" :size="18" />
+                  <div class="mode-info">
+                    <span class="mode-title">智能搜索</span>
+                    <span class="mode-desc">AI 语义匹配，基于向量相似度</span>
+                  </div>
+                </button>
+                <button :class="['mode-option', { active: pmphaiSearchMode === 'list' }]"
+                  @click="pmphaiSearchMode = 'list'" :disabled="!pmphaiEnabled">
+                  <Icon icon="lucide:list" :size="18" />
+                  <div class="mode-info">
+                    <span class="mode-title">文档浏览</span>
+                    <span class="mode-desc">传统关键词搜索，浏览知识库</span>
+                  </div>
+                </button>
+              </div>
+            </div>
 
-          <div class="form-group">
-            <label>搜索模式</label>
-            <div class="mode-selector">
-              <button
-                :class="['mode-option', { active: pmphaiSearchMode === 'rag' }]"
-                @click="pmphaiSearchMode = 'rag'"
-                :disabled="!pmphaiEnabled"
-              >
-                <Icon icon="lucide:sparkles" :size="18" />
-                <div class="mode-info">
-                  <span class="mode-title">智能搜索</span>
-                  <span class="mode-desc">AI 语义匹配，基于向量相似度</span>
-                </div>
+            <div class="form-group">
+              <label for="pmphai-app-key">APP Key</label>
+              <div class="input-with-icon">
+                <Icon icon="lucide:key" :size="16" class="input-icon" />
+                <input id="pmphai-app-key" v-model="pmphaiAppKey" type="text" placeholder="请输入 APP Key" />
+              </div>
+              <p class="form-hint">人卫 Inside 云应用 APP Key</p>
+            </div>
+
+            <div class="form-group">
+              <label for="pmphai-app-secret">APP Secret</label>
+              <div class="input-with-icon">
+                <Icon icon="lucide:lock" :size="16" class="input-icon" />
+                <input id="pmphai-app-secret" v-model="pmphaiAppSecret" type="password" placeholder="请输入 APP Secret" />
+              </div>
+              <p class="form-hint">人卫 Inside 云应用密钥</p>
+            </div>
+
+            <div class="test-connection-row">
+              <button class="test-btn" @click="testPMPHAIConnection"
+                :disabled="pmphaiTesting || !pmphaiAppKey || !pmphaiAppSecret">
+                <Icon :icon="pmphaiTesting ? 'lucide:loader-2' : 'lucide:wifi'" :size="16"
+                  :class="{ spin: pmphaiTesting }" />
+                {{ pmphaiTesting ? '测试中...' : '测试连接' }}
               </button>
-              <button
-                :class="['mode-option', { active: pmphaiSearchMode === 'list' }]"
-                @click="pmphaiSearchMode = 'list'"
-                :disabled="!pmphaiEnabled"
-              >
-                <Icon icon="lucide:list" :size="18" />
-                <div class="mode-info">
-                  <span class="mode-title">文档浏览</span>
-                  <span class="mode-desc">传统关键词搜索，浏览知识库</span>
-                </div>
-              </button>
+              <span v-if="pmphaiTestResult" :class="['test-message', pmphaiTestResult.success ? 'success' : 'error']">
+                <Icon :icon="pmphaiTestResult.success ? 'lucide:check-circle' : 'lucide:x-circle'" :size="16" />
+                {{ pmphaiTestResult.message }}
+              </span>
             </div>
-          </div>
-
-          <div class="form-group">
-            <label for="pmphai-app-key">APP Key</label>
-            <div class="input-with-icon">
-              <Icon icon="lucide:key" :size="16" class="input-icon" />
-              <input id="pmphai-app-key" v-model="pmphaiAppKey" type="text" placeholder="请输入 APP Key" />
-            </div>
-            <p class="form-hint">人卫 Inside 云应用 APP Key</p>
-          </div>
-
-          <div class="form-group">
-            <label for="pmphai-app-secret">APP Secret</label>
-            <div class="input-with-icon">
-              <Icon icon="lucide:lock" :size="16" class="input-icon" />
-              <input id="pmphai-app-secret" v-model="pmphaiAppSecret" type="password" placeholder="请输入 APP Secret" />
-            </div>
-            <p class="form-hint">人卫 Inside 云应用密钥</p>
-          </div>
-
-          <div class="test-connection-row">
-            <button
-              class="test-btn"
-              @click="testPMPHAIConnection"
-              :disabled="pmphaiTesting || !pmphaiAppKey || !pmphaiAppSecret"
-            >
-              <Icon :icon="pmphaiTesting ? 'lucide:loader-2' : 'lucide:wifi'" :size="16" :class="{ spin: pmphaiTesting }" />
-              {{ pmphaiTesting ? '测试中...' : '测试连接' }}
-            </button>
-            <span v-if="pmphaiTestResult" :class="['test-message', pmphaiTestResult.success ? 'success' : 'error']">
-              <Icon :icon="pmphaiTestResult.success ? 'lucide:check-circle' : 'lucide:x-circle'" :size="16" />
-              {{ pmphaiTestResult.message }}
-            </span>
-          </div>
-          
+          </template>
         </div>
         <div class="info-banner">
           <Icon icon="lucide:info" :size="18" />
@@ -560,11 +544,7 @@ watch(activeTab, (newVal) => {
             </div>
           </div>
 
-          <button
-            class="action-btn"
-            @click="handleExportData"
-            :disabled="exporting"
-          >
+          <button class="action-btn" @click="handleExportData" :disabled="exporting">
             <Icon :icon="exporting ? 'lucide:loader-2' : 'lucide:download'" :size="18" :class="{ 'spin': exporting }" />
             {{ exporting ? '导出中...' : '导出数据' }}
           </button>
@@ -641,17 +621,20 @@ watch(activeTab, (newVal) => {
 .preset-container {
   margin-bottom: 20px;
 }
+
 .preset-container label {
   display: block;
   font-size: 13px;
   color: var(--medical-text-muted);
   margin-bottom: 8px;
 }
+
 .preset-buttons {
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
 }
+
 .preset-btn {
   padding: 6px 12px;
   font-size: 13px;
@@ -662,6 +645,7 @@ watch(activeTab, (newVal) => {
   cursor: pointer;
   transition: all 0.2s ease;
 }
+
 .preset-btn:hover {
   background: var(--medical-info-bg);
   border-color: var(--medical-info);
@@ -719,6 +703,7 @@ watch(activeTab, (newVal) => {
     opacity: 0;
     transform: translateY(12px);
   }
+
   to {
     opacity: 1;
     transform: translateY(0);
@@ -941,34 +926,52 @@ watch(activeTab, (newVal) => {
 }
 
 /* Toggle Row */
-.form-group.row {
-  flex-direction: row;
-  align-items: flex-start;
+.toggle-row {
+  display: flex;
+  align-items: center;
   justify-content: space-between;
   gap: 16px;
-  padding: 16px;
+  padding: 12px 16px;
   background: var(--medical-bg-secondary);
-  border-radius: 8px;
+  border-radius: 10px;
+  border: 1px solid var(--medical-border-light);
+  margin-bottom: 20px;
+  transition: background 0.2s ease;
 }
 
-.form-label-group {
+.toggle-row:hover {
+  background: #EFF6FF;
+}
+
+.toggle-label-group {
+  display: flex;
+  align-items: center;
+  gap: 10px;
   flex: 1;
+  min-width: 0;
 }
 
-.form-label-group label {
-  display: block;
-  margin-bottom: 4px;
+.toggle-label {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--medical-text-primary);
+  white-space: nowrap;
+  cursor: pointer;
 }
 
-.form-label-group .form-hint {
-  margin-top: 4px;
+.toggle-hint {
+  font-size: 12px;
+  color: var(--medical-text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 /* Toggle Switch */
 .switch-wrapper {
   position: relative;
-  width: 52px;
-  height: 28px;
+  width: 44px;
+  height: 24px;
   flex-shrink: 0;
 }
 
@@ -976,6 +979,7 @@ watch(activeTab, (newVal) => {
   opacity: 0;
   width: 0;
   height: 0;
+  position: absolute;
 }
 
 .toggle-switch {
@@ -985,31 +989,38 @@ watch(activeTab, (newVal) => {
   left: 0;
   right: 0;
   bottom: 0;
-  background-color: #CBD5E1;
-  transition: all var(--duration-slow) var(--ease-out);
-  border-radius: 14px;
-  box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.1);
+  min-height: unset;
+  min-width: unset;
+  background: #CBD5E1;
+  transition: background 0.3s cubic-bezier(0.4, 0, 0.2, 1),
+    box-shadow 0.3s ease;
+  border-radius: 12px;
+  box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.15);
 }
 
 .toggle-switch:before {
   position: absolute;
   content: "";
-  height: 22px;
-  width: 22px;
+  height: 18px;
+  width: 18px;
   left: 3px;
   bottom: 3px;
-  background-color: white;
-  transition: all var(--duration-slow) var(--ease-out);
+  background: white;
+  transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1),
+    box-shadow 0.3s ease;
   border-radius: 50%;
-  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.25);
 }
 
-input:checked + .toggle-switch {
-  background-color: var(--medical-success);
+input:checked+.toggle-switch {
+  background: linear-gradient(135deg, #059669 0%, #10B981 100%);
+  box-shadow: 0 0 0 3px rgba(5, 150, 105, 0.15),
+    inset 0 1px 3px rgba(0, 0, 0, 0.1);
 }
 
-input:checked + .toggle-switch:before {
-  transform: translateX(24px);
+input:checked+.toggle-switch:before {
+  transform: translateX(20px);
+  box-shadow: 0 1px 6px rgba(0, 0, 0, 0.2);
 }
 
 /* Buttons */
@@ -1026,6 +1037,7 @@ input:checked + .toggle-switch:before {
 .arrow-icon {
   color: var(--medical-text-muted);
 }
+
 .save-btn {
   display: flex;
   align-items: center;
@@ -1080,32 +1092,33 @@ input:checked + .toggle-switch:before {
   padding: 12px 24px;
   border-radius: 8px;
   border: 2px solid var(--medical-primary);
-.clickable-section {
-  cursor: pointer;
-  transition: all var(--duration-normal) var(--ease-out);
-}
 
-.clickable-section:hover {
-  border-color: var(--medical-primary);
-  transform: translateY(-2px);
-  box-shadow: 0 4px 12px rgba(8, 145, 178, 0.15);
-}
+  .clickable-section {
+    cursor: pointer;
+    transition: all var(--duration-normal) var(--ease-out);
+  }
 
-.clickable-section .section-header {
-  justify-content: space-between;
-}
+  .clickable-section:hover {
+    border-color: var(--medical-primary);
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(8, 145, 178, 0.15);
+  }
 
-.clickable-section .section-header.no-border {
-  border-bottom: none;
-  margin-bottom: 8px;
-  padding-bottom: 0;
-}
+  .clickable-section .section-header {
+    justify-content: space-between;
+  }
 
-.header-left {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-}
+  .clickable-section .section-header.no-border {
+    border-bottom: none;
+    margin-bottom: 8px;
+    padding-bottom: 0;
+  }
+
+  .header-left {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
 
   font-weight: 600;
   font-size: 14px;
