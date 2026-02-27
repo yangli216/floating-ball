@@ -330,7 +330,7 @@ class PMPHAIService {
   private async getAccessToken(): Promise<string> {
     // 检查缓存是否有效
     if (this.tokenCache.accessToken && Date.now() < this.tokenCache.expiresAt) {
-      return this.tokenCache.accessToken;
+      return this.tokenCache.accessToken as string;
     }
 
     const { appKey, appSecret } = getPMPHAIConfig();
