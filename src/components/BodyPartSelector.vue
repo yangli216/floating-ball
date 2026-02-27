@@ -1,7 +1,17 @@
 <template>
   <div class="body-part-selector">
+    <!-- 搜索框 - 始终显示在顶部 -->
+    <div class="top-search-box">
+      <input
+        type="text"
+        v-model="searchQuery"
+        placeholder="搜索症状(支持首字母)..."
+        class="top-search-input"
+      />
+    </div>
+
     <div class="selector-header">
-      <h4>选择症状部位</h4>
+      <span class="selector-hint">点击部位查看症状</span>
       <button class="clear-btn" @click="clearSelection" v-if="selectedPart">
         清空
       </button>
@@ -23,26 +33,19 @@
     </div>
 
     <div class="body-diagram">
-      <!-- 男性正面 -->
       <div v-if="gender === 'male' && viewMode === 'front'" class="body-view" v-html="maleFrontSVG"></div>
-
-      <!-- 男性背面 -->
       <div v-if="gender === 'male' && viewMode === 'back'" class="body-view" v-html="maleBackSVG"></div>
-
-      <!-- 女性正面 -->
       <div v-if="gender === 'female' && viewMode === 'front'" class="body-view" v-html="femaleFrontSVG"></div>
-
-      <!-- 女性背面 -->
       <div v-if="gender === 'female' && viewMode === 'back'" class="body-view" v-html="femaleBackSVG"></div>
     </div>
 
-    <!-- Selected Part Symptoms - 固定高度容器 -->
+    <!-- 症状区域：有搜索词时显示搜索结果、无搜索词时显示部位相关症状 -->
     <div class="symptoms-container">
-      <div v-if="selectedPart && filteredSymptoms.length > 0" class="part-symptoms">
-        <h5>{{ bodyPartLabels[selectedPart] }} 相关症状</h5>
-        <div class="symptom-chips">
+      <!-- 搜索结果模式 -->
+      <div v-if="searchQuery.trim()" class="part-symptoms">
+        <div v-if="searchResultSymptoms.length > 0" class="symptom-chips">
           <button
-            v-for="symptom in filteredSymptoms"
+            v-for="symptom in searchResultSymptoms"
             :key="symptom.key"
             :class="['symptom-chip', { active: isSymptomSelected(symptom.key) }]"
             @click="handleSymptomClick(symptom)"
@@ -50,10 +53,24 @@
             {{ symptom.name }}
           </button>
         </div>
+        <div v-else class="no-symptoms">未找到相关症状</div>
       </div>
-
-      <div v-else-if="selectedPart && filteredSymptoms.length === 0" class="no-symptoms">
-        暂无该部位相关症状
+      <!-- 点选部位模式 -->
+      <div v-else-if="selectedPart" class="part-symptoms">
+        <template v-if="filteredSymptoms.length > 0">
+          <h5>{{ bodyPartLabels[selectedPart] }} 相关症状</h5>
+          <div class="symptom-chips">
+            <button
+              v-for="symptom in filteredSymptoms"
+              :key="symptom.key"
+              :class="['symptom-chip', { active: isSymptomSelected(symptom.key) }]"
+              @click="handleSymptomClick(symptom)"
+            >
+              {{ symptom.name }}
+            </button>
+          </div>
+        </template>
+        <div v-else class="no-symptoms">暂无该部位相关症状</div>
       </div>
     </div>
   </div>
@@ -61,6 +78,7 @@
 
 <script setup lang="ts">
 import { ref, computed, PropType, onMounted, watch } from 'vue';
+import Pinyin from 'tiny-pinyin';
 
 interface Symptom {
   key: string;
@@ -90,12 +108,14 @@ const emit = defineEmits<{
 
 const handleSymptomClick = (symptom: Symptom) => {
   emit('select-symptom', symptom);
+  searchQuery.value = '';
 };
 
 // 根据患者性别自动设置
 const gender = ref<'male' | 'female'>(props.patientGender);
 const viewMode = ref<'front' | 'back'>('front');
 const selectedPart = ref<string | null>(null);
+const searchQuery = ref('');
 
 // 监听患者性别变化
 watch(() => props.patientGender, (newGender) => {
@@ -186,6 +206,26 @@ const filteredSymptoms = computed(() => {
   return props.symptoms.filter(symptom =>
     symptom.bodyParts.includes(selectedPart.value!)
   );
+});
+
+// 直接搜索所有症状（不限部位）
+const matchQuery = (symptom: Symptom, q: string): boolean => {
+  if (symptom.name.toLowerCase().includes(q)) return true;
+  try {
+    const pinyin = Pinyin.convertToPinyin(symptom.name, '', true).toLowerCase();
+    const initial = symptom.name.split('').map((char: string) => {
+      try { return Pinyin.convertToPinyin(char, '', true)[0]?.toLowerCase() || ''; } catch { return ''; }
+    }).join('');
+    return pinyin.includes(q) || initial.includes(q);
+  } catch {
+    return false;
+  }
+};
+
+const searchResultSymptoms = computed(() => {
+  const q = searchQuery.value.trim().toLowerCase();
+  if (!q) return [];
+  return props.symptoms.filter(s => matchQuery(s, q));
 });
 
 // 检查症状是否已被选中
@@ -589,6 +629,43 @@ onMounted(() => {
   padding: 8px;
 }
 
+.top-search-box {
+  flex-shrink: 0;
+}
+
+.top-search-input {
+  width: 100%;
+  padding: 7px 10px;
+  font-size: 12px;
+  border: 1px solid var(--color-border-light);
+  border-radius: 6px;
+  background: var(--color-background-white);
+  color: var(--color-text-strong);
+  outline: none;
+  transition: border-color var(--duration-normal) var(--ease-out);
+  box-sizing: border-box;
+}
+
+.top-search-input:focus {
+  border-color: var(--color-primary);
+  box-shadow: 0 0 0 2px var(--color-primary-100);
+}
+
+.top-search-input::placeholder {
+  color: var(--color-text-muted);
+}
+
+.search-results-container {
+  flex: 1;
+  overflow-y: auto;
+  padding: 4px 0;
+}
+
+.selector-hint {
+  font-size: 12px;
+  color: var(--color-text-muted);
+}
+
 .selector-header {
   display: flex;
   justify-content: space-between;
@@ -722,6 +799,32 @@ onMounted(() => {
   border-radius: 8px;
   padding: 10px;
   animation: fadeIn 0.3s ease;
+}
+
+.symptom-search-box {
+  margin-bottom: 8px;
+}
+
+.symptom-search-input {
+  width: 100%;
+  padding: 7px 10px;
+  font-size: 12px;
+  border: 1px solid var(--color-border-light);
+  border-radius: 6px;
+  background: var(--color-background-white);
+  color: var(--color-text-strong);
+  outline: none;
+  transition: border-color var(--duration-normal) var(--ease-out);
+  box-sizing: border-box;
+}
+
+.symptom-search-input:focus {
+  border-color: var(--color-primary);
+  box-shadow: 0 0 0 2px var(--color-primary-100);
+}
+
+.symptom-search-input::placeholder {
+  color: var(--color-text-muted);
 }
 
 @keyframes fadeIn {
