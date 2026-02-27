@@ -122,7 +122,8 @@ export function generateFieldText(
         // input_radio 类型: { inputValue, radioValue }
         if (value.inputValue && value.radioValue) {
             const combined = `${value.inputValue}${value.radioValue}`;
-            if (!ignoreValues.includes(combined)) {
+            // 对于 input_radio，UI上的跳过条件往往只能选到单位（radioValue）。如果匹配上了就跳过。
+            if (!ignoreValues.includes(combined) && !ignoreValues.includes(value.radioValue)) {
                 processedValues = [valueMap[combined] || combined];
             }
         }
@@ -164,7 +165,8 @@ export function generateFieldText(
 export function generateTextsForSymptom(
     symptom: any,
     formData: Record<string, any>,
-    target: 'chiefComplaint' | 'historyOfPresentIllness'
+    target: 'chiefComplaint' | 'historyOfPresentIllness',
+    excludeKeys: string[] = []
 ): string[] {
     const results: string[] = [];
 
@@ -173,14 +175,22 @@ export function generateTextsForSymptom(
     symptom.config.sections.forEach((section: any) => {
         section.fields.forEach((field: any) => {
             const fieldKey = field.storageKey;
-            if (!fieldKey) return;
+            if (!fieldKey || excludeKeys.includes(fieldKey)) return;
 
             const value = formData[fieldKey];
             if (value === undefined || value === null || value === '') return;
 
-            const textGenConfig = field.textGenConfig as TextGenConfig | undefined;
+            // 获取明确配置，或退回到默认配置
+            const explicitConfig = field.textGenConfig as TextGenConfig | undefined;
+            const defaultConfig = getDefaultTextGenConfig(fieldKey, field.type, symptom.key);
+
+            // 优先使用用户配置，如果完全没有用户配置则使用默认配置
+            const textGenConfig = explicitConfig || defaultConfig;
 
             if (textGenConfig && textGenConfig.targets.includes(target)) {
+                // 如果用户有显式配置，但只配置了现病史没配置主诉，那么主诉就不应该生成
+                // 但是对于 onsetTime 等默认就有主诉的字段，如果用户没有做任何配置，则使用默认的配置参与主诉生成。
+                // 这里的逻辑就是直接判断最终的 textGenConfig.targets 是否包含 target。
                 const text = generateFieldText(textGenConfig, value, field.label);
                 if (text) {
                     results.push(text);
@@ -197,7 +207,8 @@ export function generateTextsForSymptom(
  */
 export function getDefaultTextGenConfig(
     fieldKey: string,
-    _fieldType: string
+    _fieldType: string,
+    symptomKey?: string
 ): TextGenConfig | null {
     // 常见字段的默认配置
     const defaults: Record<string, TextGenConfig> = {
@@ -238,5 +249,33 @@ export function getDefaultTextGenConfig(
         }
     };
 
-    return defaults[fieldKey] || null;
+    if (defaults[fieldKey]) {
+        return defaults[fieldKey];
+    }
+
+    // 针对特定症状下的特定字段产生的定制拼接（取代旧版 formatSymptomDetail 的特异性逻辑）
+    if (symptomKey === 'cough' && fieldKey === 'colorFeature') {
+        return {
+            targets: ['historyOfPresentIllness'],
+            template: '咳{value}',
+            optionConfig: { ignoreValues: ['不清楚', '无', '以上都无', '未查', '不详', '不记得'] }
+        };
+    }
+
+    if (symptomKey === 'fever' && fieldKey === 'maximumBodyTemperature') {
+        return {
+            targets: ['historyOfPresentIllness'],
+            template: '最高体温{value}℃',
+            optionConfig: { ignoreValues: ['不清楚', '无', '以上都无', '未查', '不详', '不记得'] }
+        };
+    }
+
+    // 通用现病史兜底：所有没有显式配置且未命名的有效字段
+    return {
+        targets: ['historyOfPresentIllness'],
+        template: '{value}',
+        optionConfig: {
+            ignoreValues: ['不清楚', '无', '以上都无', '未查', '不详', '不记得']
+        }
+    };
 }

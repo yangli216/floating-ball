@@ -2356,18 +2356,10 @@ const generateMedicalRecord = () => {
   selectedSymptoms.value.forEach(s => {
     const data = formData.value[s.key];
     
-    // 尝试从 textGenConfig 生成
+    // 从 textGenConfig (包含默认 onsetTime 逻辑) 生成主诉
+    // 即使被“跳过条件”全部过滤导致 chiefComplaintTexts 为空，也能确保仅保留症状名，而不触发错误的兜底。
     const chiefComplaintTexts = generateTextsForSymptom(s, data, 'chiefComplaint');
-    if (chiefComplaintTexts.length > 0) {
-      complaints.push(`${s.name}${chiefComplaintTexts.join('')}`);
-    } else {
-      // 回退到默认逻辑
-      if (data.onsetTime && data.onsetTime.inputValue && data.onsetTime.radioValue) {
-        complaints.push(`${s.name}${data.onsetTime.inputValue}${data.onsetTime.radioValue}`);
-      } else {
-        complaints.push(s.name);
-      }
-    }
+    complaints.push(`${s.name}${chiefComplaintTexts.join('')}`);
   });
   const chiefComplaint = complaints.join("，") + "。";
 
@@ -2397,16 +2389,15 @@ const generateMedicalRecord = () => {
   selectedSymptoms.value.forEach(s => {
     const data = formData.value[s.key];
     
-    // 优先使用 textGenConfig 生成现病史文本
-    const hpiTexts = generateTextsForSymptom(s, data, 'historyOfPresentIllness');
+    // 生成现病史文本，跳过由于首句播报而不再需要的字段
+    const excludeKeys = ['onsetTime'];
+    if (s === selectedSymptoms.value[0]) {
+      excludeKeys.push('precipitatingFactor');
+    }
+
+    const hpiTexts = generateTextsForSymptom(s, data, 'historyOfPresentIllness', excludeKeys);
     if (hpiTexts.length > 0) {
       hpiParts.push(`${s.name}：${hpiTexts.join('，')}。`);
-    } else {
-      // 回退到原有逻辑
-      let detail = formatSymptomDetail(s, data);
-      if (detail) {
-        hpiParts.push(`${s.name}，${detail}。`);
-      }
     }
   });
 
@@ -2490,66 +2481,6 @@ const generateMedicalRecord = () => {
     historyOfPresentIllness: hpiParts.join("\n"),
     tcmFourExaminations: tcmFourExamStr.trim()
   };
-};
-
-const formatSymptomDetail = (s: any, data: any) => {
-    const details: string[] = [];
-    
-    // Iterate through configuration to ensure correct order
-    if (s.config && s.config.sections) {
-        s.config.sections.forEach((section: any) => {
-            section.fields.forEach((field: any) => {
-                const k = field.key;
-                // Skip fields handled in intro
-                if (k === 'onsetTime' || k === 'precipitatingFactor') return;
-                
-                const val = data[k];
-                // Skip empty or invalid values
-                if (val === undefined || val === null || val === '') return;
-                
-                // Filter out common negative/unclear answers
-                const isInvalid = (v: string) => ['不清楚', '无', '以上都无', '未查', '不详', '不记得'].includes(v);
-
-                let formatted = '';
-
-                if (Array.isArray(val)) {
-                    const validItems = val.filter(v => !isInvalid(v));
-                    if (validItems.length > 0) {
-                        if (s.key === 'cough' && k === 'colorFeature') {
-                             formatted = `咳${validItems.join('、')}`;
-                        } else {
-                             formatted = validItems.join('、');
-                        }
-                    }
-                } else if (typeof val === 'string') {
-                    if (isInvalid(val)) return;
-                    
-                    if (s.key === 'fever' && k === 'maximumBodyTemperature') {
-                        formatted = `最高体温${val}℃`;
-                    } else {
-                        formatted = val;
-                    }
-                } else if (typeof val === 'number') {
-                     if (s.key === 'fever' && k === 'maximumBodyTemperature') {
-                        formatted = `最高体温${val}℃`;
-                    } else {
-                        formatted = String(val);
-                    }
-                }
-                
-                if (formatted) details.push(formatted);
-            });
-        });
-    } else {
-        // Fallback (should typically not be reached if templates are correct)
-         Object.keys(data).forEach(k => {
-            if (k === 'onsetTime' || k === 'precipitatingFactor') return;
-            const val = data[k];
-            if (val && typeof val === 'string' && val !== '不清楚') details.push(val);
-         });
-    }
-
-    return details.join('，');
 };
 
 const copyToClipboard = () => {
