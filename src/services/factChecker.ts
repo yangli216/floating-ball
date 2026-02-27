@@ -8,6 +8,15 @@ import {
   TCMMedicineCheckPrompt
 } from '../prompts/prompts';
 
+/**
+ * 检查独立审查 AI 是否已启用
+ */
+export function isReviewerEnabled(): boolean {
+  const saved = localStorage.getItem('REVIEWER_ENABLED');
+  // 默认启用；仅当明确设置为 'false' 时禁用
+  return saved === null || saved === 'true';
+}
+
 export type FactCheckType = 'diagnosis' | 'medicine' | 'examination' | 'medical_record';
 
 export interface FactCheckIssue {
@@ -115,6 +124,9 @@ export interface TCMMedicineCheckContext {
  * 检查诊断是否合理
  */
 export async function checkDiagnosis(context: DiagnosisCheckContext): Promise<FactCheckResult> {
+  if (!isReviewerEnabled()) {
+    return { hasIssues: false, issues: [], checkedAt: Date.now() };
+  }
   const messages: ChatMessage[] = [
     {
       role: 'system',
@@ -159,6 +171,9 @@ export async function checkDiagnosis(context: DiagnosisCheckContext): Promise<Fa
  * 检查药物使用是否合理
  */
 export async function checkMedicine(context: MedicineCheckContext): Promise<FactCheckResult> {
+  if (!isReviewerEnabled()) {
+    return { hasIssues: false, issues: [], checkedAt: Date.now() };
+  }
   const messages: ChatMessage[] = [
     {
       role: 'system',
@@ -202,6 +217,9 @@ export async function checkMedicine(context: MedicineCheckContext): Promise<Fact
  * 检查检查项目是否合理
  */
 export async function checkExamination(context: ExaminationCheckContext): Promise<FactCheckResult> {
+  if (!isReviewerEnabled()) {
+    return { hasIssues: false, issues: [], checkedAt: Date.now() };
+  }
   const messages: ChatMessage[] = [
     {
       role: 'system',
@@ -245,6 +263,9 @@ export async function checkExamination(context: ExaminationCheckContext): Promis
  * 检查整个病历记录的一致性和合理性
  */
 export async function checkMedicalRecord(context: MedicalRecordCheckContext): Promise<FactCheckResult> {
+  if (!isReviewerEnabled()) {
+    return { hasIssues: false, issues: [], checkedAt: Date.now() };
+  }
   const messages: ChatMessage[] = [
     {
       role: 'system',
@@ -288,6 +309,9 @@ export async function checkMedicalRecord(context: MedicalRecordCheckContext): Pr
  * 检查中医诊断（病名-证型）是否合理
  */
 export async function checkTCMDiagnosis(context: TCMDiagnosisCheckContext): Promise<FactCheckResult> {
+  if (!isReviewerEnabled()) {
+    return { hasIssues: false, issues: [], checkedAt: Date.now() };
+  }
   const messages: ChatMessage[] = [
     {
       role: 'system',
@@ -332,6 +356,9 @@ export async function checkTCMDiagnosis(context: TCMDiagnosisCheckContext): Prom
  * 检查中药方剂使用是否合理
  */
 export async function checkTCMMedicine(context: TCMMedicineCheckContext): Promise<FactCheckResult> {
+  if (!isReviewerEnabled()) {
+    return { hasIssues: false, issues: [], checkedAt: Date.now() };
+  }
   const messages: ChatMessage[] = [
     {
       role: 'system',

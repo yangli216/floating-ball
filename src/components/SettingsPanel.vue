@@ -58,6 +58,7 @@ const model = ref('');
 const alwaysOnTop = ref(true);
 
 // Reviewer AI state
+const reviewerEnabled = ref(true);
 const reviewerApiKey = ref('');
 const reviewerBaseUrl = ref('');
 const reviewerModel = ref('');
@@ -80,6 +81,8 @@ onMounted(() => {
   alwaysOnTop.value = savedTop === null || savedTop === 'true';
 
   // Load Reviewer AI settings
+  const reviewerEnabledSaved = localStorage.getItem('REVIEWER_ENABLED');
+  reviewerEnabled.value = reviewerEnabledSaved === null ? true : reviewerEnabledSaved === 'true';
   reviewerApiKey.value = localStorage.getItem('REVIEWER_API_KEY') || '';
   reviewerBaseUrl.value = localStorage.getItem('REVIEWER_BASE_URL') || '';
   reviewerModel.value = localStorage.getItem('REVIEWER_MODEL') || '';
@@ -99,6 +102,7 @@ const saveSettings = async () => {
   localStorage.setItem('ALWAYS_ON_TOP', String(alwaysOnTop.value));
 
   // Save Reviewer AI settings
+  localStorage.setItem('REVIEWER_ENABLED', String(reviewerEnabled.value));
   localStorage.setItem('REVIEWER_API_KEY', reviewerApiKey.value);
   localStorage.setItem('REVIEWER_BASE_URL', reviewerBaseUrl.value);
   localStorage.setItem('REVIEWER_MODEL', reviewerModel.value);
@@ -365,32 +369,45 @@ watch(activeTab, (newVal) => {
           </div>
           <p class="section-desc" style="margin-bottom: 16px;">配置用于事实核查和第二诊疗意见的独立大模型。如不填写，将默认使用上方的通用模型配置。</p>
 
-          <div class="form-group">
-            <label for="reviewer-api-key">API Key</label>
-            <div class="input-with-icon">
-              <Icon icon="lucide:key" :size="16" class="input-icon" />
-              <input id="reviewer-api-key" v-model="reviewerApiKey" type="password" placeholder="sk-..." />
+          <div class="form-group row">
+            <div class="form-label-group">
+              <label for="reviewer-enabled">开启独立审查 AI</label>
+              <p class="form-hint">关闭后将不进行独立 AI 事实核查与验证</p>
             </div>
-            <p class="form-hint">独立审查 AI 的 API 密钥</p>
+            <div class="switch-wrapper">
+              <input type="checkbox" id="reviewer-enabled" v-model="reviewerEnabled">
+              <label for="reviewer-enabled" class="toggle-switch"></label>
+            </div>
           </div>
 
-          <div class="form-group">
-            <label for="reviewer-base-url">Base URL</label>
-            <div class="input-with-icon">
-              <Icon icon="lucide:link" :size="16" class="input-icon" />
-              <input id="reviewer-base-url" v-model="reviewerBaseUrl" type="text" placeholder="https://api.openai.com/v1" />
+          <template v-if="reviewerEnabled">
+            <div class="form-group">
+              <label for="reviewer-api-key">API Key</label>
+              <div class="input-with-icon">
+                <Icon icon="lucide:key" :size="16" class="input-icon" />
+                <input id="reviewer-api-key" v-model="reviewerApiKey" type="password" placeholder="sk-..." />
+              </div>
+              <p class="form-hint">独立审查 AI 的 API 密钥</p>
             </div>
-            <p class="form-hint">API 服务器地址（留空使用上方默认值）</p>
-          </div>
 
-          <div class="form-group">
-            <label for="reviewer-model-name">Model Name</label>
-            <div class="input-with-icon">
-              <Icon icon="lucide:brain" :size="16" class="input-icon" />
-              <input id="reviewer-model-name" v-model="reviewerModel" type="text" placeholder="gpt-4o-mini" />
+            <div class="form-group">
+              <label for="reviewer-base-url">Base URL</label>
+              <div class="input-with-icon">
+                <Icon icon="lucide:link" :size="16" class="input-icon" />
+                <input id="reviewer-base-url" v-model="reviewerBaseUrl" type="text" placeholder="https://api.openai.com/v1" />
+              </div>
+              <p class="form-hint">API 服务器地址（留空使用上方默认值）</p>
             </div>
-            <p class="form-hint">使用的模型名称（留空使用上方默认值）</p>
-          </div>
+
+            <div class="form-group">
+              <label for="reviewer-model-name">Model Name</label>
+              <div class="input-with-icon">
+                <Icon icon="lucide:brain" :size="16" class="input-icon" />
+                <input id="reviewer-model-name" v-model="reviewerModel" type="text" placeholder="gpt-4o-mini" />
+              </div>
+              <p class="form-hint">使用的模型名称（留空使用上方默认值）</p>
+            </div>
+          </template>
         </div>
         
         <!-- Knowledge Base Section -->

@@ -225,7 +225,7 @@ import FactCheckNotification from './FactCheckNotification.vue';
 import FactCheckHighlight from './FactCheckHighlight.vue';
 import FactCheckWidget from './FactCheckWidget.vue';
 import KnowledgePanel from './KnowledgePanel.vue';
-import { checkDiagnosis, checkMedicine, checkExamination, checkMedicalRecord, type FactCheckResult, type FactCheckIssue } from '../services/factChecker';
+import { checkDiagnosis, checkMedicine, checkExamination, checkMedicalRecord, isReviewerEnabled, type FactCheckResult, type FactCheckIssue } from '../services/factChecker';
 import { pmphaiService, isPMPHAIConfigured, type BatchSearchResults } from '../services/pmphai';
 
 export interface DiagnosisEntry {
@@ -416,6 +416,7 @@ watch(() => props.initialRecord, (val) => {
 // Fact Check Functions
 const performMedicalRecordFactCheck = async (rec: GeneratedRecord) => {
   if (!rec) return;
+  if (!isReviewerEnabled()) return;
 
   // Calculate total checks
   const diagCount = rec.diagnosisList?.length || 0;

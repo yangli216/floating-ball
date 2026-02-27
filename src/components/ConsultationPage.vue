@@ -378,6 +378,7 @@
                     </div>
                     <div class="diag-actions">
                       <button
+                        v-if="isPMPHAIConfigured()"
                         class="doc-icon-btn"
                         @click.stop="searchLiterature(diag)"
                         title="搜索文献"
@@ -471,6 +472,7 @@
                         <span v-else class="unmatched-icon" title="未匹配标准库">🔍</span>
                       </div>
                       <button
+                        v-if="isPMPHAIConfigured()"
                         class="doc-icon-btn"
                         @click.stop="searchLiterature(rec)"
                         title="搜索文献"
@@ -692,7 +694,7 @@ import FactCheckNotification from './FactCheckNotification.vue';
 import FactCheckHighlight from './FactCheckHighlight.vue';
 import FactCheckWidget from './FactCheckWidget.vue';
 import KnowledgePanel from './KnowledgePanel.vue';
-import { checkDiagnosis, checkMedicine, checkExamination, checkTCMDiagnosis, checkTCMMedicine, type FactCheckResult, type FactCheckIssue } from '../services/factChecker';
+import { checkDiagnosis, checkMedicine, checkExamination, checkTCMDiagnosis, checkTCMMedicine, isReviewerEnabled, type FactCheckResult, type FactCheckIssue } from '../services/factChecker';
 import { isFieldApplicable, generateTextsForSymptom } from '../services/textGeneration';
 import { pmphaiService, isPMPHAIConfigured, type BatchSearchResults } from '../services/pmphai';
 import { CONSULTATION_CONFIG, isSymptomSelectionFull } from '../constants/consultationConfig';
@@ -1903,6 +1905,7 @@ const deduplicateIssues = (issues: FactCheckIssue[]): FactCheckIssue[] => {
 // Fact Check Functions
 const performDiagnosisFactCheck = async (diagnoses: Diagnosis[]) => {
   if (!diagnoses || diagnoses.length === 0) return;
+  if (!isReviewerEnabled()) return;
 
   // Show widget in checking state
   showFactCheckWidget.value = true;
@@ -1963,6 +1966,7 @@ const performDiagnosisFactCheck = async (diagnoses: Diagnosis[]) => {
 
 const performTreatmentFactCheck = async (treatments: TreatmentRecommendation[]) => {
   if (!treatments || treatments.length === 0) return;
+  if (!isReviewerEnabled()) return;
 
   // Show widget in checking state
   showFactCheckWidget.value = true;
