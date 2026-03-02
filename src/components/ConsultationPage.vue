@@ -274,6 +274,28 @@
                   </template>
                 </template>
               </div>
+
+              <!-- 伴随症状推荐 (per-symptom) -->
+              <div v-if="item.key !== 'general' && item.key !== 'tcm_signs' && getSymptomRecommendations(item.key).length > 0" class="recommendation-panel">
+                <div class="recommendation-header">
+                  <div class="recommendation-title">
+                    <Icon icon="lucide:sparkles" size="14" />
+                    <span>伴随症状推荐</span>
+                  </div>
+                </div>
+                <div class="recommendation-chips">
+                  <button
+                    v-for="rec in getSymptomRecommendations(item.key)"
+                    :key="rec.key"
+                    class="recommendation-chip"
+                    @click="selectSymptom(rec)"
+                    :title="'点击添加: ' + rec.name"
+                  >
+                    <span>{{ rec.name }}</span>
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
+                  </button>
+                </div>
+              </div>
             </div>
           </template>
         </div>
@@ -680,6 +702,7 @@
 import { ref, shallowRef, computed, onMounted, watch, onUnmounted, inject } from 'vue';
 import westernTemplatesData from '../assets/templates.json';
 import tcmTemplatesData from '../assets/tcm-templates.json';
+import symptomAssociations from '../assets/symptom-associations.json';
 import { medicalDataService, type DiagnosisItem } from '../services/medicalData';
 import Pinyin from 'tiny-pinyin';
 import { chat } from '../services/llm';
@@ -773,6 +796,22 @@ const categoryFilterRef = ref<HTMLElement | null>(null);
 // Selection mode for sidebar tabs
 const selectionMode = ref<'common' | 'bodyPart' | 'system'>('common');
 const consultationMode = ref<'western' | 'tcm'>('western');
+
+// 伴随症状推荐：per-symptom recommendations
+const getSymptomRecommendations = (symptomKey: string) => {
+  const associations = symptomAssociations as Record<string, string[]>;
+  const related = associations[symptomKey];
+  if (!related) return [];
+  
+  const selectedKeys = new Set(selectedSymptoms.value.map((s: any) => s.key));
+  const allTemplates = symptoms.value;
+  
+  return related
+    .filter(key => !selectedKeys.has(key))
+    .slice(0, 10)
+    .map(key => allTemplates.find((s: any) => s.key === key))
+    .filter(Boolean);
+};
 
 // 根据问诊模式动态获取模板数据
 const currentTemplatesData = computed(() => {
@@ -2831,6 +2870,125 @@ const copyToClipboard = () => {
 .symptom-list li.active:hover {
   background: var(--color-primary-dark);
   color: var(--color-background-white);
+}
+
+/* 伴随症状推荐面板 */
+.recommendation-panel {
+  margin: 12px -12px -12px -12px;
+  border-top: 1px solid var(--color-border-light);
+  background: linear-gradient(to bottom, rgba(8, 145, 178, 0.02), rgba(8, 145, 178, 0.05));
+  border-radius: 0 0 12px 12px;
+  flex-shrink: 0;
+  transition: all var(--duration-normal) var(--ease-out);
+}
+
+.recommendation-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 12px;
+  cursor: pointer;
+  user-select: none;
+  transition: background var(--duration-fast) var(--ease-out);
+}
+
+.recommendation-header:hover {
+  background: rgba(0, 0, 0, 0.02);
+}
+
+.recommendation-title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--color-text-medium);
+}
+
+.recommendation-title .iconify {
+  color: var(--color-warning, #f59e0b);
+}
+
+.recommendation-count {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  font-size: 10px;
+  font-weight: 700;
+  color: var(--color-background-white);
+  background: var(--color-primary);
+  border-radius: 9px;
+}
+
+.collapse-icon {
+  color: var(--color-text-muted);
+  transition: transform var(--duration-normal) var(--ease-out);
+}
+
+.collapse-icon.rotated {
+  transform: rotate(-90deg);
+}
+
+.recommendation-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 4px 12px 12px;
+  max-height: 200px;
+  overflow-y: auto;
+}
+
+.recommendation-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 10px;
+  font-size: 12px;
+  color: var(--color-primary);
+  background: var(--color-primary-50, rgba(8, 145, 178, 0.06));
+  border: 1px dashed var(--color-primary-200, rgba(8, 145, 178, 0.25));
+  border-radius: 14px;
+  cursor: pointer;
+  transition: all var(--duration-normal) var(--ease-out);
+  white-space: nowrap;
+}
+
+.recommendation-chip:hover {
+  background: var(--color-primary-100, rgba(8, 145, 178, 0.12));
+  border-color: var(--color-primary);
+  border-style: solid;
+  transform: translateY(-1px);
+  box-shadow: 0 2px 8px rgba(8, 145, 178, 0.15);
+}
+
+.recommendation-chip:active {
+  transform: translateY(0);
+}
+
+.recommendation-chip svg {
+  color: var(--color-primary);
+  opacity: 0.6;
+  transition: opacity var(--duration-fast);
+}
+
+.recommendation-chip:hover svg {
+  opacity: 1;
+}
+
+.recommendation-chips::-webkit-scrollbar {
+  width: 3px;
+}
+
+.recommendation-chips::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.recommendation-chips::-webkit-scrollbar-thumb {
+  background: var(--color-border-medium);
+  border-radius: 3px;
 }
 
 .form-container {

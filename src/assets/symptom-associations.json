@@ -1,0 +1,1275 @@
+{
+  "fever": [
+    "cough",
+    "headache",
+    "chills",
+    "sore-throat",
+    "nasal-congestion",
+    "body-pain",
+    "tiredness",
+    "dizziness-symptom",
+    "nausea",
+    "decreased-appetite",
+    "pharyngeal-phlegm",
+    "sneezing",
+    "rhinorrhea"
+  ],
+  "cough": [
+    "fever",
+    "pharyngeal-phlegm",
+    "sore-throat",
+    "nasal-congestion",
+    "chest-tightness",
+    "dyspnea",
+    "sneezing",
+    "rhinorrhea",
+    "body-pain",
+    "chills",
+    "hemoptysis"
+  ],
+  "dizziness-symptom": [
+    "headache",
+    "nausea",
+    "vomiting",
+    "tinnitus",
+    "hearing-loss",
+    "blurred-vision",
+    "pallor",
+    "tiredness",
+    "palpitations",
+    "chest-tightness",
+    "insomnia"
+  ],
+  "headache": [
+    "dizziness-symptom",
+    "nausea",
+    "vomiting",
+    "fever",
+    "blurred-vision",
+    "insomnia",
+    "eye-pain",
+    "nasal-congestion",
+    "tiredness",
+    "neck-pain",
+    "photophobia"
+  ],
+  "nasal-congestion": [
+    "rhinorrhea",
+    "sneezing",
+    "sore-throat",
+    "cough",
+    "fever",
+    "headache",
+    "hyposmia",
+    "ear-fullness",
+    "facial-pain"
+  ],
+  "sore-throat": [
+    "fever",
+    "cough",
+    "nasal-congestion",
+    "dysphagia-swallowing",
+    "headache",
+    "sneezing",
+    "rhinorrhea",
+    "ear-pain",
+    "dry-throat",
+    "chills",
+    "hoarseness"
+  ],
+  "chest-pain": [
+    "chest-tightness",
+    "dyspnea",
+    "palpitations",
+    "cough",
+    "fever",
+    "back-pain",
+    "hyperhidrosis",
+    "nausea"
+  ],
+  "chest-tightness": [
+    "dyspnea",
+    "chest-pain",
+    "palpitations",
+    "cough",
+    "tiredness",
+    "dizziness-symptom",
+    "hyperhidrosis",
+    "sighing"
+  ],
+  "dyspnea": [
+    "chest-tightness",
+    "cough",
+    "chest-pain",
+    "palpitations",
+    "cyanosis",
+    "pharyngeal-phlegm",
+    "tiredness",
+    "edema",
+    "hemoptysis"
+  ],
+  "palpitations": [
+    "chest-tightness",
+    "dyspnea",
+    "dizziness-symptom",
+    "insomnia",
+    "tiredness",
+    "hyperhidrosis",
+    "anxiety",
+    "chest-pain",
+    "pallor"
+  ],
+  "abdominal-pain": [
+    "nausea",
+    "vomiting",
+    "diarrhea",
+    "fever",
+    "abdominal-distension",
+    "decreased-appetite",
+    "constipation",
+    "hematochezia"
+  ],
+  "nausea": [
+    "vomiting",
+    "abdominal-pain",
+    "dizziness-symptom",
+    "decreased-appetite",
+    "abdominal-distension",
+    "fever",
+    "headache",
+    "diarrhea",
+    "oil-aversion"
+  ],
+  "vomiting": [
+    "nausea",
+    "abdominal-pain",
+    "dizziness-symptom",
+    "fever",
+    "headache",
+    "diarrhea",
+    "decreased-appetite",
+    "abdominal-distension"
+  ],
+  "diarrhea": [
+    "abdominal-pain",
+    "nausea",
+    "vomiting",
+    "fever",
+    "abdominal-distension",
+    "decreased-appetite",
+    "tenesmus"
+  ],
+  "constipation": [
+    "abdominal-distension",
+    "abdominal-pain",
+    "decreased-appetite",
+    "anal-bleeding",
+    "incomplete-defecation",
+    "painful-defecation"
+  ],
+  "abdominal-distension": [
+    "abdominal-pain",
+    "nausea",
+    "decreased-appetite",
+    "constipation",
+    "diarrhea",
+    "flatulence",
+    "vomiting",
+    "oil-aversion"
+  ],
+  "rhinorrhea": [
+    "nasal-congestion",
+    "sneezing",
+    "cough",
+    "sore-throat",
+    "fever",
+    "headache",
+    "hyposmia",
+    "lacrimation"
+  ],
+  "sneezing": [
+    "rhinorrhea",
+    "nasal-congestion",
+    "sore-throat",
+    "cough",
+    "lacrimation",
+    "eye-itching",
+    "skin-itching"
+  ],
+  "pharyngeal-phlegm": [
+    "cough",
+    "fever",
+    "dyspnea",
+    "chest-tightness",
+    "hemoptysis",
+    "sore-throat"
+  ],
+  "hemoptysis": [
+    "cough",
+    "pharyngeal-phlegm",
+    "fever",
+    "dyspnea",
+    "chest-pain",
+    "weight-loss",
+    "tiredness"
+  ],
+  "insomnia": [
+    "headache",
+    "anxiety",
+    "depression",
+    "tiredness",
+    "palpitations",
+    "dizziness-symptom",
+    "poor-concentration",
+    "mood-instability",
+    "memory-decline"
+  ],
+  "tiredness": [
+    "insomnia",
+    "dizziness-symptom",
+    "decreased-appetite",
+    "weight-loss",
+    "pallor",
+    "palpitations",
+    "dyspnea",
+    "body-pain",
+    "poor-concentration"
+  ],
+  "back-pain": [
+    "low-back-pain",
+    "neck-pain",
+    "lower-limb-pain",
+    "mobility-disorder",
+    "chest-pain",
+    "muscle-stiffness"
+  ],
+  "low-back-pain": [
+    "back-pain",
+    "lower-limb-pain",
+    "lumbar-soreness",
+    "mobility-disorder",
+    "muscle-stiffness",
+    "urinary-urgency",
+    "hematuria"
+  ],
+  "neck-pain": [
+    "headache",
+    "dizziness-symptom",
+    "shoulder-pain",
+    "upper-limb-pain",
+    "muscle-stiffness",
+    "torticollis"
+  ],
+  "shoulder-pain": [
+    "neck-pain",
+    "upper-limb-pain",
+    "mobility-disorder",
+    "joint-stiffness",
+    "muscle-stiffness",
+    "back-pain"
+  ],
+  "joint-swelling": [
+    "joint-stiffness",
+    "joint-clicking",
+    "skin-redness",
+    "warm-skin",
+    "mobility-disorder",
+    "lower-limb-pain"
+  ],
+  "joint-stiffness": [
+    "joint-swelling",
+    "joint-clicking",
+    "mobility-disorder",
+    "muscle-stiffness",
+    "body-pain"
+  ],
+  "lower-limb-pain": [
+    "low-back-pain",
+    "lower-limb-swelling",
+    "mobility-disorder",
+    "joint-stiffness",
+    "difficulty-standing",
+    "ankle-pain"
+  ],
+  "lower-limb-swelling": [
+    "lower-limb-pain",
+    "edema",
+    "skin-redness",
+    "warm-skin",
+    "lower-limb-bruising",
+    "mobility-disorder"
+  ],
+  "upper-limb-pain": [
+    "shoulder-pain",
+    "neck-pain",
+    "wrist-pain",
+    "muscle-stiffness",
+    "mobility-disorder",
+    "joint-stiffness"
+  ],
+  "edema": [
+    "dyspnea",
+    "lower-limb-swelling",
+    "eyelid-swelling",
+    "oliguria",
+    "palpitations",
+    "tiredness"
+  ],
+  "hematuria": [
+    "dysuria",
+    "urinary-urgency",
+    "frequent-urination",
+    "low-back-pain",
+    "abdominal-pain",
+    "fever"
+  ],
+  "frequent-urination": [
+    "urinary-urgency",
+    "dysuria",
+    "hematuria",
+    "cloudy-urine",
+    "urethral-burning",
+    "difficulty-urinating"
+  ],
+  "urinary-urgency": [
+    "frequent-urination",
+    "dysuria",
+    "hematuria",
+    "urethral-burning",
+    "cloudy-urine",
+    "fever"
+  ],
+  "dysuria": [
+    "frequent-urination",
+    "urinary-urgency",
+    "hematuria",
+    "urethral-burning",
+    "cloudy-urine",
+    "fever",
+    "urethral-discharge"
+  ],
+  "jaundice": [
+    "abdominal-pain",
+    "nausea",
+    "vomiting",
+    "decreased-appetite",
+    "oil-aversion",
+    "dark-urine",
+    "tiredness",
+    "fever",
+    "skin-itching"
+  ],
+  "skin-itching": [
+    "skin-rash",
+    "skin-redness",
+    "skin-desquamation",
+    "skin-swelling",
+    "jaundice",
+    "dry-eyes"
+  ],
+  "skin-rash": [
+    "skin-itching",
+    "skin-redness",
+    "fever",
+    "skin-pain",
+    "skin-swelling",
+    "skin-desquamation"
+  ],
+  "skin-redness": [
+    "skin-itching",
+    "skin-rash",
+    "skin-pain",
+    "skin-swelling",
+    "warm-skin",
+    "skin-burning"
+  ],
+  "eye-pain": [
+    "headache",
+    "blurred-vision",
+    "conjunctival-injection",
+    "lacrimation",
+    "photophobia",
+    "eye-swelling",
+    "eye-discharge"
+  ],
+  "blurred-vision": [
+    "eye-pain",
+    "headache",
+    "dizziness-symptom",
+    "scotoma",
+    "lacrimation",
+    "eye-fatigue",
+    "diplopia",
+    "floaters"
+  ],
+  "conjunctival-injection": [
+    "eye-pain",
+    "eye-discharge",
+    "lacrimation",
+    "eye-itching",
+    "eye-swelling",
+    "blurred-vision",
+    "photophobia"
+  ],
+  "ear-pain": [
+    "tinnitus",
+    "hearing-loss",
+    "ear-fullness",
+    "ear-discharge",
+    "fever",
+    "sore-throat",
+    "headache"
+  ],
+  "tinnitus": [
+    "hearing-loss",
+    "dizziness-symptom",
+    "ear-pain",
+    "ear-fullness",
+    "headache",
+    "insomnia",
+    "nausea"
+  ],
+  "hearing-loss": [
+    "tinnitus",
+    "ear-pain",
+    "ear-fullness",
+    "ear-discharge",
+    "dizziness-symptom"
+  ],
+  "hoarseness": [
+    "sore-throat",
+    "cough",
+    "dry-throat",
+    "dysphagia-swallowing",
+    "fever",
+    "neck-pain"
+  ],
+  "dry-throat": [
+    "sore-throat",
+    "hoarseness",
+    "cough",
+    "dry-mouth",
+    "nasal-congestion"
+  ],
+  "dry-mouth": [
+    "dry-throat",
+    "decreased-appetite",
+    "bitter-taste",
+    "halitosis"
+  ],
+  "oral-ulcer": [
+    "halitosis",
+    "fever",
+    "decreased-appetite",
+    "sore-throat"
+  ],
+  "toothache": [
+    "facial-swelling",
+    "headache",
+    "facial-pain",
+    "gingival-bleeding",
+    "fever",
+    "difficulty-opening-mouth"
+  ],
+  "gingival-bleeding": [
+    "toothache",
+    "halitosis",
+    "oral-ulcer"
+  ],
+  "facial-pain": [
+    "headache",
+    "toothache",
+    "nasal-congestion",
+    "rhinorrhea",
+    "facial-swelling",
+    "eye-pain"
+  ],
+  "facial-swelling": [
+    "facial-pain",
+    "toothache",
+    "fever",
+    "skin-redness",
+    "eye-swelling",
+    "eyelid-swelling"
+  ],
+  "facial-asymmetry": [
+    "dysarthria",
+    "headache",
+    "dizziness-symptom",
+    "eye-deviation",
+    "hypersalivation",
+    "difficulty-opening-mouth"
+  ],
+  "dysarthria": [
+    "facial-asymmetry",
+    "muscle-weakness",
+    "dizziness-symptom",
+    "headache",
+    "cognitive-impairment",
+    "mobility-disorder"
+  ],
+  "muscle-weakness": [
+    "dysarthria",
+    "dizziness-symptom",
+    "headache",
+    "mobility-disorder",
+    "muscle-atrophy",
+    "tiredness"
+  ],
+  "limb-tremor": [
+    "muscle-weakness",
+    "mobility-disorder",
+    "abnormal-posture-gait",
+    "muscle-stiffness",
+    "dizziness-symptom"
+  ],
+  "convulsion": [
+    "foaming-mouth",
+    "upward-eye-rolling",
+    "headache",
+    "fever",
+    "urinary-incontinence"
+  ],
+  "hyperhidrosis": [
+    "fever",
+    "chest-pain",
+    "palpitations",
+    "dizziness-symptom",
+    "hot-flashes",
+    "anxiety",
+    "tiredness",
+    "chills"
+  ],
+  "chills": [
+    "fever",
+    "hyperhidrosis",
+    "body-pain",
+    "headache",
+    "tiredness",
+    "sore-throat",
+    "cough"
+  ],
+  "weight-loss": [
+    "decreased-appetite",
+    "tiredness",
+    "diarrhea",
+    "fever",
+    "abdominal-pain",
+    "cough",
+    "hyperhidrosis"
+  ],
+  "decreased-appetite": [
+    "nausea",
+    "abdominal-distension",
+    "weight-loss",
+    "tiredness",
+    "vomiting",
+    "abdominal-pain",
+    "fever",
+    "oil-aversion",
+    "bitter-taste"
+  ],
+  "anxiety": [
+    "insomnia",
+    "palpitations",
+    "chest-tightness",
+    "hyperhidrosis",
+    "tiredness",
+    "poor-concentration",
+    "mood-instability",
+    "depression"
+  ],
+  "depression": [
+    "insomnia",
+    "anxiety",
+    "decreased-appetite",
+    "weight-loss",
+    "tiredness",
+    "poor-concentration",
+    "mood-disorder"
+  ],
+  "poor-concentration": [
+    "insomnia",
+    "memory-decline",
+    "tiredness",
+    "anxiety",
+    "depression",
+    "headache",
+    "dizziness-symptom"
+  ],
+  "memory-decline": [
+    "poor-concentration",
+    "insomnia",
+    "headache",
+    "dizziness-symptom",
+    "cognitive-impairment",
+    "tiredness"
+  ],
+  "cognitive-impairment": [
+    "memory-decline",
+    "behavioral-abnormality",
+    "dysarthria",
+    "poor-concentration",
+    "insomnia",
+    "dizziness-symptom"
+  ],
+  "behavioral-abnormality": [
+    "cognitive-impairment",
+    "mood-disorder",
+    "insomnia",
+    "poor-concentration",
+    "visual-hallucination",
+    "auditory-hallucination"
+  ],
+  "anal-bleeding": [
+    "anal-pain",
+    "constipation",
+    "hematochezia",
+    "perianal-mass",
+    "painful-defecation"
+  ],
+  "anal-pain": [
+    "anal-bleeding",
+    "perianal-mass",
+    "perianal-heaviness",
+    "painful-defecation",
+    "constipation"
+  ],
+  "hematochezia": [
+    "abdominal-pain",
+    "diarrhea",
+    "anal-bleeding",
+    "tenesmus",
+    "fever"
+  ],
+  "acid-reflux": [
+    "epigastric-burning",
+    "nausea",
+    "abdominal-pain",
+    "retrosternal-obstruction",
+    "chest-pain"
+  ],
+  "epigastric-burning": [
+    "acid-reflux",
+    "abdominal-pain",
+    "nausea",
+    "decreased-appetite"
+  ],
+  "oil-aversion": [
+    "nausea",
+    "decreased-appetite",
+    "jaundice",
+    "abdominal-distension",
+    "diarrhea",
+    "vomiting"
+  ],
+  "bitter-taste": [
+    "dry-mouth",
+    "nausea",
+    "decreased-appetite",
+    "abdominal-distension",
+    "oil-aversion"
+  ],
+  "halitosis": [
+    "dry-mouth",
+    "oral-ulcer",
+    "gingival-bleeding",
+    "decreased-appetite",
+    "constipation"
+  ],
+  "dysphagia-swallowing": [
+    "sore-throat",
+    "hoarseness",
+    "retrosternal-obstruction",
+    "weight-loss",
+    "chest-pain",
+    "nausea",
+    "vomiting"
+  ],
+  "retrosternal-obstruction": [
+    "dysphagia-swallowing",
+    "chest-pain",
+    "acid-reflux",
+    "nausea"
+  ],
+  "flatulence": [
+    "abdominal-distension",
+    "abdominal-pain",
+    "constipation",
+    "diarrhea"
+  ],
+  "tenesmus": [
+    "diarrhea",
+    "abdominal-pain",
+    "hematochezia",
+    "fever"
+  ],
+  "urethral-discharge": [
+    "dysuria",
+    "urethral-burning",
+    "urethral-itching",
+    "frequent-urination",
+    "urethral-meatus-redness"
+  ],
+  "urethral-burning": [
+    "dysuria",
+    "frequent-urination",
+    "urinary-urgency",
+    "urethral-discharge",
+    "hematuria"
+  ],
+  "difficulty-urinating": [
+    "frequent-urination",
+    "urinary-hesitancy",
+    "split-urine-stream",
+    "urinary-incontinence"
+  ],
+  "urinary-incontinence": [
+    "frequent-urination",
+    "urinary-urgency",
+    "difficulty-urinating",
+    "cough",
+    "mobility-disorder"
+  ],
+  "cloudy-urine": [
+    "dysuria",
+    "frequent-urination",
+    "urinary-urgency",
+    "hematuria",
+    "fever"
+  ],
+  "foamy-urine": [
+    "edema",
+    "eyelid-swelling",
+    "lower-limb-swelling",
+    "tiredness",
+    "hematuria"
+  ],
+  "dark-urine": [
+    "jaundice",
+    "abdominal-pain",
+    "nausea",
+    "decreased-appetite",
+    "fever"
+  ],
+  "breast-pain": [
+    "breast-distension",
+    "breast-mass",
+    "breast-swelling",
+    "nipple-pain",
+    "breast-discharge"
+  ],
+  "breast-mass": [
+    "breast-pain",
+    "breast-distension",
+    "nipple-retraction",
+    "breast-discharge",
+    "nipple-bleeding",
+    "lymphadenopathy"
+  ],
+  "breast-distension": [
+    "breast-pain",
+    "breast-mass",
+    "breast-swelling"
+  ],
+  "menorrhagia": [
+    "abdominal-pain",
+    "pallor",
+    "dizziness-symptom",
+    "tiredness"
+  ],
+  "hypomenorrhea": [
+    "long-menstrual-cycle",
+    "tiredness",
+    "low-back-pain"
+  ],
+  "perineal-itching": [
+    "perineal-pain",
+    "perineal-odor"
+  ],
+  "perineal-pain": [
+    "perineal-itching",
+    "dysuria",
+    "frequent-urination",
+    "low-back-pain"
+  ],
+  "penile-pain": [
+    "urethral-discharge",
+    "dysuria",
+    "urethral-burning",
+    "scrotal-moisture",
+    "genital-vesicles"
+  ],
+  "hematospermia": [
+    "perineal-pain",
+    "low-back-pain",
+    "dysuria",
+    "frequent-urination"
+  ],
+  "scrotal-moisture": [
+    "skin-itching",
+    "perineal-itching",
+    "penile-pain"
+  ],
+  "lymphadenopathy": [
+    "fever",
+    "tiredness",
+    "weight-loss",
+    "lymph-node-pain",
+    "skin-rash",
+    "sore-throat"
+  ],
+  "lymph-node-pain": [
+    "lymphadenopathy",
+    "fever",
+    "sore-throat",
+    "skin-redness",
+    "tiredness"
+  ],
+  "pallor": [
+    "dizziness-symptom",
+    "tiredness",
+    "palpitations",
+    "dyspnea",
+    "decreased-appetite",
+    "weight-loss"
+  ],
+  "cyanosis": [
+    "dyspnea",
+    "chest-tightness",
+    "cough",
+    "palpitations"
+  ],
+  "ecchymosis": [
+    "skin-pain",
+    "skin-swelling",
+    "gingival-bleeding",
+    "hematuria"
+  ],
+  "body-pain": [
+    "fever",
+    "tiredness",
+    "chills",
+    "headache",
+    "muscle-soreness",
+    "joint-stiffness"
+  ],
+  "muscle-stiffness": [
+    "muscle-soreness",
+    "neck-pain",
+    "low-back-pain",
+    "mobility-disorder",
+    "joint-stiffness"
+  ],
+  "muscle-soreness": [
+    "body-pain",
+    "tiredness",
+    "muscle-stiffness",
+    "fever",
+    "joint-stiffness"
+  ],
+  "muscle-atrophy": [
+    "muscle-weakness",
+    "mobility-disorder",
+    "sensory-disorder"
+  ],
+  "mobility-disorder": [
+    "muscle-weakness",
+    "abnormal-posture-gait",
+    "dizziness-symptom",
+    "muscle-atrophy",
+    "joint-stiffness"
+  ],
+  "impaired-mobility": [
+    "mobility-disorder",
+    "muscle-weakness",
+    "joint-stiffness",
+    "lower-limb-pain",
+    "dizziness-symptom"
+  ],
+  "abnormal-posture-gait": [
+    "mobility-disorder",
+    "muscle-weakness",
+    "dizziness-symptom",
+    "limb-tremor",
+    "muscle-stiffness"
+  ],
+  "difficulty-standing": [
+    "lower-limb-pain",
+    "dizziness-symptom",
+    "muscle-weakness",
+    "mobility-disorder"
+  ],
+  "sensory-disorder": [
+    "muscle-weakness",
+    "mobility-disorder",
+    "muscle-atrophy"
+  ],
+  "neck-thickening": [
+    "exophthalmos",
+    "palpitations",
+    "hyperhidrosis",
+    "weight-loss",
+    "limb-tremor"
+  ],
+  "exophthalmos": [
+    "neck-thickening",
+    "palpitations",
+    "hyperhidrosis",
+    "weight-loss",
+    "limb-tremor",
+    "blurred-vision"
+  ],
+  "lacrimation": [
+    "eye-pain",
+    "conjunctival-injection",
+    "rhinorrhea",
+    "nasal-congestion",
+    "sneezing",
+    "photophobia"
+  ],
+  "photophobia": [
+    "eye-pain",
+    "headache",
+    "lacrimation",
+    "conjunctival-injection",
+    "blurred-vision"
+  ],
+  "eye-itching": [
+    "conjunctival-injection",
+    "lacrimation",
+    "sneezing",
+    "rhinorrhea",
+    "eye-discharge",
+    "eye-swelling"
+  ],
+  "eye-discharge": [
+    "conjunctival-injection",
+    "eye-pain",
+    "eye-swelling",
+    "eyelid-swelling",
+    "blurred-vision"
+  ],
+  "eye-swelling": [
+    "eye-pain",
+    "conjunctival-injection",
+    "eyelid-swelling",
+    "eye-discharge",
+    "blurred-vision"
+  ],
+  "eyelid-swelling": [
+    "eye-swelling",
+    "conjunctival-injection",
+    "eye-pain",
+    "eye-discharge",
+    "edema",
+    "facial-swelling"
+  ],
+  "eye-fatigue": [
+    "blurred-vision",
+    "eye-pain",
+    "headache",
+    "dry-eyes",
+    "insomnia"
+  ],
+  "dry-eyes": [
+    "eye-fatigue",
+    "blurred-vision",
+    "eye-pain",
+    "eye-burning",
+    "eye-itching"
+  ],
+  "scotoma": [
+    "blurred-vision",
+    "headache",
+    "dizziness-symptom",
+    "floaters",
+    "eye-pain"
+  ],
+  "floaters": [
+    "blurred-vision",
+    "scotoma",
+    "eye-fatigue",
+    "photopsia"
+  ],
+  "diplopia": [
+    "blurred-vision",
+    "dizziness-symptom",
+    "headache",
+    "eye-pain",
+    "ptosis",
+    "nystagmus"
+  ],
+  "ptosis": [
+    "diplopia",
+    "blurred-vision",
+    "muscle-weakness",
+    "tiredness",
+    "headache"
+  ],
+  "nystagmus": [
+    "dizziness-symptom",
+    "diplopia",
+    "blurred-vision",
+    "nausea",
+    "vomiting",
+    "hearing-loss"
+  ],
+  "ear-fullness": [
+    "tinnitus",
+    "hearing-loss",
+    "ear-pain",
+    "nasal-congestion",
+    "dizziness-symptom"
+  ],
+  "ear-discharge": [
+    "ear-pain",
+    "hearing-loss",
+    "tinnitus",
+    "fever"
+  ],
+  "hypersalivation": [
+    "facial-asymmetry",
+    "dysarthria",
+    "dysphagia-swallowing",
+    "nausea",
+    "oral-ulcer"
+  ],
+  "hot-flashes": [
+    "hyperhidrosis",
+    "insomnia",
+    "mood-instability",
+    "palpitations",
+    "anxiety"
+  ],
+  "heat-intolerance": [
+    "hyperhidrosis",
+    "palpitations",
+    "weight-loss",
+    "exophthalmos",
+    "neck-thickening",
+    "limb-tremor"
+  ],
+  "increased-appetite": [
+    "weight-loss",
+    "frequent-urination",
+    "tiredness"
+  ],
+  "hunger": [
+    "dizziness-symptom",
+    "hyperhidrosis",
+    "palpitations",
+    "limb-tremor",
+    "tiredness"
+  ],
+  "skin-pain": [
+    "skin-rash",
+    "skin-redness",
+    "skin-swelling",
+    "skin-burning",
+    "skin-itching"
+  ],
+  "skin-swelling": [
+    "skin-redness",
+    "skin-pain",
+    "warm-skin",
+    "skin-rash",
+    "skin-itching"
+  ],
+  "skin-desquamation": [
+    "skin-itching",
+    "skin-redness",
+    "skin-rash",
+    "dry-eyes"
+  ],
+  "skin-burning": [
+    "skin-redness",
+    "skin-pain",
+    "skin-swelling",
+    "warm-skin"
+  ],
+  "skin-erosion": [
+    "skin-rash",
+    "skin-pain",
+    "skin-redness",
+    "skin-ulceration",
+    "skin-itching"
+  ],
+  "skin-ulceration": [
+    "skin-erosion",
+    "skin-pain",
+    "skin-redness",
+    "non-healing-wound",
+    "lesion-discharge"
+  ],
+  "skin-mass": [
+    "skin-pain",
+    "skin-swelling",
+    "lymphadenopathy",
+    "weight-loss"
+  ],
+  "foot-vesicles": [
+    "skin-itching",
+    "skin-desquamation",
+    "skin-redness",
+    "skin-pain"
+  ],
+  "genital-vesicles": [
+    "perineal-itching",
+    "perineal-pain",
+    "skin-pain",
+    "urethral-burning"
+  ],
+  "wrist-pain": [
+    "upper-limb-pain",
+    "joint-swelling",
+    "joint-stiffness",
+    "mobility-disorder"
+  ],
+  "ankle-pain": [
+    "lower-limb-pain",
+    "joint-swelling",
+    "joint-stiffness",
+    "mobility-disorder",
+    "lower-limb-swelling"
+  ],
+  "regurgitation": [
+    "vomiting",
+    "abdominal-distension",
+    "decreased-appetite",
+    "diarrhea"
+  ],
+  "foaming-mouth": [
+    "convulsion",
+    "upward-eye-rolling"
+  ],
+  "upward-eye-rolling": [
+    "convulsion",
+    "foaming-mouth"
+  ],
+  "visual-hallucination": [
+    "auditory-hallucination",
+    "behavioral-abnormality",
+    "insomnia",
+    "anxiety",
+    "cognitive-impairment"
+  ],
+  "auditory-hallucination": [
+    "visual-hallucination",
+    "behavioral-abnormality",
+    "insomnia",
+    "anxiety",
+    "cognitive-impairment"
+  ],
+  "mood-instability": [
+    "insomnia",
+    "anxiety",
+    "depression",
+    "hot-flashes",
+    "poor-concentration"
+  ],
+  "mood-disorder": [
+    "depression",
+    "anxiety",
+    "insomnia",
+    "behavioral-abnormality",
+    "mood-instability"
+  ],
+  "lethargy": [
+    "tiredness",
+    "decreased-appetite",
+    "fever",
+    "insomnia",
+    "pallor"
+  ],
+  "snoring": [
+    "insomnia",
+    "tiredness",
+    "headache",
+    "dyspnea"
+  ],
+  "non-healing-wound": [
+    "skin-ulceration",
+    "lesion-discharge",
+    "skin-redness",
+    "skin-pain"
+  ],
+  "wound-bleeding": [
+    "skin-pain",
+    "skin-swelling",
+    "pallor",
+    "dizziness-symptom"
+  ],
+  "lesion-pain": [
+    "lesion-bleeding",
+    "lesion-discharge",
+    "skin-redness",
+    "skin-swelling"
+  ],
+  "lesion-bleeding": [
+    "lesion-pain",
+    "skin-pain",
+    "wound-bleeding"
+  ],
+  "lesion-discharge": [
+    "lesion-pain",
+    "skin-redness",
+    "fever",
+    "skin-ulceration"
+  ],
+  "fecal-incontinence": [
+    "diarrhea",
+    "mobility-disorder",
+    "urinary-incontinence",
+    "muscle-weakness"
+  ],
+  "incomplete-defecation": [
+    "constipation",
+    "tenesmus",
+    "abdominal-distension"
+  ],
+  "painful-defecation": [
+    "anal-bleeding",
+    "constipation",
+    "anal-pain"
+  ],
+  "perianal-mass": [
+    "anal-pain",
+    "anal-bleeding",
+    "perianal-heaviness"
+  ],
+  "perianal-heaviness": [
+    "perianal-mass",
+    "anal-pain",
+    "constipation"
+  ],
+  "no-bowel-movement": [
+    "constipation",
+    "abdominal-distension",
+    "abdominal-pain",
+    "no-flatus",
+    "nausea"
+  ],
+  "no-flatus": [
+    "abdominal-distension",
+    "abdominal-pain",
+    "no-bowel-movement",
+    "constipation",
+    "vomiting"
+  ],
+  "thin-stool": [
+    "constipation",
+    "abdominal-pain",
+    "hematochezia",
+    "tenesmus"
+  ],
+  "oliguria": [
+    "edema",
+    "lower-limb-swelling",
+    "eyelid-swelling",
+    "tiredness",
+    "hematuria",
+    "nausea",
+    "decreased-appetite"
+  ]
+}
