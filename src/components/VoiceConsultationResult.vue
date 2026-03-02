@@ -275,7 +275,7 @@ export interface PatientInfo {
   sdSexText?: string;
   sex?: string;
   ageText?: string;
-  age?: string;
+  age?: string | number;
   idCard?: string;
   mobilePhone?: string;
 }

@@ -16,10 +16,11 @@ import type { UnlistenFn } from '@tauri-apps/api/event';
 import { listen } from '@tauri-apps/api/event';
 import { onOpenUrl } from '@tauri-apps/plugin-deep-link';
 import { LogicalSize } from '@tauri-apps/api/dpi';
-import { WINDOW_SIZES, type ViewType } from '../constants/windowSizes';
+import { WINDOW_SIZES, getWindowSizeForView, type ViewType } from '../constants/windowSizes';
 import { analyzePatientRisks } from '../services/llm';
 import { trackApiCall, trackError, startTimedOperation } from '../services/operationTracker';
 import type { RiskItem } from '../components/RiskAlertPanel.vue';
+import type { AppPatient } from '../types/appState';
 
 /**
  * 事件监听配置参数
@@ -40,7 +41,7 @@ export interface EventListenersOptions {
   /** 环绕菜单 DOM 引用 */
   ringMenuRef: Ref<HTMLElement | null>;
   /** 当前患者信息 */
-  currentPatient: Ref<any>;
+  currentPatient: Ref<AppPatient | null>;
   /** 风险提示状态 */
   riskState: {
     riskPatientName: Ref<string>;
@@ -67,6 +68,24 @@ export interface EventListenersOptions {
   exiting: Ref<boolean>;
   /** 窗口大小变化防抖超时 */
   resizeTimeoutRef: Ref<ReturnType<typeof setTimeout> | null>;
+}
+
+interface PatientRisksPayload {
+  patientName?: string;
+  gender?: 'M' | 'F' | string;
+  age?: number;
+  risks?: RiskItem[];
+  [key: string]: unknown;
+}
+
+interface StartConsultationPayload {
+  idPi?: string;
+  patientId?: string;
+  naPi?: string;
+  name?: string;
+  ageText?: string;
+  sdSexText?: string;
+  [key: string]: unknown;
 }
 
 /**
@@ -104,6 +123,11 @@ export function useEventListeners(options: EventListenersOptions) {
 
   // ========== 事件监听句柄 ==========
 
+  let unlistenDeepLink: UnlistenFn | null = null;
+  let unlistenPatientRisks: UnlistenFn | null = null;
+  let unlistenStartConsultation: UnlistenFn | null = null;
+  let unlistenStopConsultation: UnlistenFn | null = null;
+  let unlistenStartVoiceConsultation: UnlistenFn | null = null;
   let unlistenHover: UnlistenFn | null = null;
   let unlistenMousePos: UnlistenFn | null = null;
   let unlistenMoved: UnlistenFn | null = null;
@@ -116,7 +140,7 @@ export function useEventListeners(options: EventListenersOptions) {
    */
   async function registerDeepLinkListener(): Promise<void> {
     try {
-      await onOpenUrl((urls) => {
+      unlistenDeepLink = await onOpenUrl((urls) => {
         console.log('Deep link received:', urls);
         if (urls && urls.length > 0) {
           const url = urls[0];
@@ -142,7 +166,7 @@ export function useEventListeners(options: EventListenersOptions) {
    * 注册患者风险提示事件监听
    */
   async function registerPatientRisksListener(): Promise<void> {
-    await listen<any>('show-patient-risks', async (event) => {
+    unlistenPatientRisks = await listen<PatientRisksPayload>('show-patient-risks', async (event) => {
       console.log('Received patient risks request:', event.payload);
       const data = event.payload;
       trackApiCall('his_patient_risks', true, undefined, {
@@ -152,8 +176,8 @@ export function useEventListeners(options: EventListenersOptions) {
 
       // Update basic info immediately
       riskPatientName.value = data.patientName || '未知患者';
-      riskPatientGender.value = data.gender || 'M';
-      riskPatientAge.value = data.age || 0;
+      riskPatientGender.value = data.gender === 'F' ? 'F' : 'M';
+      riskPatientAge.value = typeof data.age === 'number' ? data.age : 0;
       riskItems.value = []; // Reset risks initially
       isRiskAnalyzing.value = true;
 
@@ -211,7 +235,7 @@ export function useEventListeners(options: EventListenersOptions) {
    * 注册开始问诊事件监听
    */
   async function registerStartConsultationListener(): Promise<void> {
-    await listen<any>('start-consultation', async (event) => {
+    unlistenStartConsultation = await listen<StartConsultationPayload>('start-consultation', async (event) => {
       console.log('Received consultation request:', event.payload);
       const payload = event.payload || {};
       trackApiCall('his_start_consultation', true, undefined, {
@@ -226,7 +250,13 @@ export function useEventListeners(options: EventListenersOptions) {
         // Fallbacks/Mappings if payload is missing strict keys but has loose keys
         naPi: payload.naPi || payload.name || currentPatient.value?.patientName || '未知',
         idPi: payload.idPi || payload.patientId || currentPatient.value?.patientId,
-        ageText: payload.ageText || (currentPatient.value?.age ? `${currentPatient.value.age}岁` : ''),
+        ageText: (() => {
+          if (payload.ageText) return payload.ageText;
+          const rawAge = currentPatient.value?.age;
+          if (typeof rawAge === 'number') return `${rawAge}岁`;
+          if (typeof rawAge === 'string' && rawAge.trim() !== '') return rawAge;
+          return '';
+        })(),
         sdSexText: payload.sdSexText || (currentPatient.value?.gender === 'M' ? '男性' : '女性'),
       };
 
@@ -238,7 +268,7 @@ export function useEventListeners(options: EventListenersOptions) {
    * 注册停止问诊事件监听
    */
   async function registerStopConsultationListener(): Promise<void> {
-    await listen<any>('stop-consultation', async () => {
+    unlistenStopConsultation = await listen('stop-consultation', async () => {
       console.log('Received stop consultation request');
       // Force exit work mode regardless of current view
       if (isWorking.value) {
@@ -253,7 +283,7 @@ export function useEventListeners(options: EventListenersOptions) {
    * 注册语音问诊事件监听
    */
   async function registerVoiceConsultationListener(): Promise<void> {
-    await listen<any>('start-voice-consultation', async () => {
+    unlistenStartVoiceConsultation = await listen('start-voice-consultation', async () => {
       console.log('Received start voice consultation command');
       trackApiCall('his_start_voice', true);
       if (!currentPatient.value) {
@@ -336,14 +366,9 @@ export function useEventListeners(options: EventListenersOptions) {
           try {
             const size = await appWindow.value?.innerSize();
             if (size) {
-              const targetW =
-                currentView.value === 'consultation'
-                  ? WINDOW_SIZES.CONSULTATION.width
-                  : WINDOW_SIZES.WORK.width;
-              const targetH =
-                currentView.value === 'consultation'
-                  ? WINDOW_SIZES.CONSULTATION.height
-                  : WINDOW_SIZES.WORK.height;
+              const targetSize = getWindowSizeForView(currentView.value);
+              const targetW = targetSize.width;
+              const targetH = targetSize.height;
               const scale = (await appWindow.value?.scaleFactor()) || 1;
               const minW = targetW * scale * 0.8; // 允许 20% 的误差
 
@@ -367,6 +392,9 @@ export function useEventListeners(options: EventListenersOptions) {
    */
   async function registerAllListeners(): Promise<void> {
     try {
+      // 防御式清理：避免重复注册导致事件重复处理
+      unregisterAllListeners();
+
       // Deep Link 监听
       await registerDeepLinkListener();
 
@@ -394,10 +422,46 @@ export function useEventListeners(options: EventListenersOptions) {
    * 注销所有事件监听
    */
   function unregisterAllListeners(): void {
-    if (unlistenHover) unlistenHover();
-    if (unlistenMousePos) unlistenMousePos();
-    if (unlistenMoved) unlistenMoved();
-    if (unlistenResize) unlistenResize();
+    if (unlistenDeepLink) {
+      unlistenDeepLink();
+      unlistenDeepLink = null;
+    }
+    if (unlistenPatientRisks) {
+      unlistenPatientRisks();
+      unlistenPatientRisks = null;
+    }
+    if (unlistenStartConsultation) {
+      unlistenStartConsultation();
+      unlistenStartConsultation = null;
+    }
+    if (unlistenStopConsultation) {
+      unlistenStopConsultation();
+      unlistenStopConsultation = null;
+    }
+    if (unlistenStartVoiceConsultation) {
+      unlistenStartVoiceConsultation();
+      unlistenStartVoiceConsultation = null;
+    }
+    if (unlistenHover) {
+      unlistenHover();
+      unlistenHover = null;
+    }
+    if (unlistenMousePos) {
+      unlistenMousePos();
+      unlistenMousePos = null;
+    }
+    if (unlistenMoved) {
+      unlistenMoved();
+      unlistenMoved = null;
+    }
+    if (unlistenResize) {
+      unlistenResize();
+      unlistenResize = null;
+    }
+    if (resizeTimeoutRef.value) {
+      clearTimeout(resizeTimeoutRef.value);
+      resizeTimeoutRef.value = null;
+    }
 
     console.log('[EventListeners] All event listeners unregistered');
   }

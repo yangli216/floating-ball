@@ -21,6 +21,7 @@ import { ANIMATION, MORPH_ORIGIN_DEFAULT } from '../constants/animation';
 import { feedbackService } from '../services/feedback';
 import { trackClick } from '../services/operationTracker';
 import type { useWindowManagement } from './useWindowManagement';
+import type { AppPatient, AppStore } from '../types/appState';
 
 /**
  * 位置坐标类型
@@ -47,11 +48,11 @@ export interface WorkModeOptions {
   /** 是否悬停 */
   isHovered: Ref<boolean>;
   /** 当前患者信息 */
-  currentPatient: Ref<any>;
+  currentPatient: Ref<AppPatient | null>;
   /** 风险提示状态更新回调（用于 handleCollapse 中同步患者信息到风险提示） */
-  syncRiskPatientInfo?: (patient: any) => void;
+  syncRiskPatientInfo?: (patient: AppPatient) => void;
   /** Tauri Store 实例（用于 exitWork 中读取保存的位置） */
-  store: Ref<any>;
+  store: Ref<AppStore | null>;
 }
 
 /**
@@ -314,7 +315,7 @@ export function useWorkMode(options: WorkModeOptions) {
           targetY = lastBallPos.value.y;
           hasTarget = true;
         } else if (store.value) {
-          const savedPos = await store.value.get('window_pos') as Position;
+          const savedPos = await store.value.get('window_pos') as Position | null;
           if (savedPos) {
             targetX = savedPos.x;
             targetY = savedPos.y;

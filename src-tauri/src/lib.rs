@@ -167,6 +167,76 @@ async fn set_vibrancy(window: tauri::Window, enabled: bool) -> Result<(), String
     Ok(())
 }
 
+/// 通过 Rust 后端代理音频转写请求，绕过 WebView 的 CORS/ATS 限制。
+#[tauri::command]
+async fn transcribe_audio(
+    api_key: String,
+    base_url: String,
+    audio_model: String,
+    audio_data: Vec<u8>,
+    mime_type: Option<String>,
+) -> Result<String, String> {
+    if api_key.trim().is_empty() {
+        return Err("缺少 API Key".to_string());
+    }
+    if base_url.trim().is_empty() {
+        return Err("缺少 Base URL".to_string());
+    }
+    if audio_model.trim().is_empty() {
+        return Err("缺少音频模型名称".to_string());
+    }
+    if audio_data.is_empty() {
+        return Err("音频数据为空".to_string());
+    }
+
+    let endpoint = format!("{}/audio/transcriptions", base_url.trim_end_matches('/'));
+    let media_type = mime_type.unwrap_or_else(|| "audio/wav".to_string());
+
+    let file_part = reqwest::multipart::Part::bytes(audio_data)
+        .file_name("recording.wav")
+        .mime_str(&media_type)
+        .map_err(|e| format!("无效音频类型 {}: {}", media_type, e))?;
+
+    let form = reqwest::multipart::Form::new()
+        .part("file", file_part)
+        .text("model", audio_model);
+
+    let client = reqwest::Client::new();
+    let response = client
+        .post(&endpoint)
+        .bearer_auth(api_key)
+        .multipart(form)
+        .send()
+        .await
+        .map_err(|e| format!("转写请求失败: {}", e))?;
+
+    let status = response.status();
+    let body = response
+        .text()
+        .await
+        .map_err(|e| format!("读取转写响应失败: {}", e))?;
+
+    let data: serde_json::Value =
+        serde_json::from_str(&body).unwrap_or_else(|_| serde_json::json!({ "raw": body }));
+
+    if !status.is_success() {
+        let api_message = data
+            .get("error")
+            .and_then(|v| v.get("message"))
+            .and_then(|v| v.as_str())
+            .or_else(|| data.get("message").and_then(|v| v.as_str()))
+            .or_else(|| data.get("raw").and_then(|v| v.as_str()))
+            .unwrap_or("未知错误");
+        return Err(format!("转写接口返回错误 ({}): {}", status.as_u16(), api_message));
+    }
+
+    if let Some(text) = data.get("text").and_then(|v| v.as_str()) {
+        return Ok(text.to_string());
+    }
+
+    Err("转写响应中缺少 text 字段".to_string())
+}
+
 #[derive(Clone, serde::Serialize)]
 struct MousePosPayload {
     x: f64,
@@ -205,6 +275,7 @@ pub fn run() {
             check_mouse_hover,
             export_templates_with_dialog,
             set_vibrancy,
+            transcribe_audio,
             // Feedback system commands
             commands::feedback::create_session,
             commands::feedback::update_session_status,

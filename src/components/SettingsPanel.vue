@@ -47,6 +47,7 @@ const PROVIDER_PRESETS = [
 
 const applyPreset = (preset: typeof PROVIDER_PRESETS[0]) => {
   baseUrl.value = preset.baseUrl;
+  audioBaseUrl.value = preset.baseUrl;
   model.value = preset.model;
   trackClick('settings_apply_preset', { provider: preset.name });
 };
@@ -54,7 +55,9 @@ const applyPreset = (preset: typeof PROVIDER_PRESETS[0]) => {
 // Settings state
 const apiKey = ref('');
 const baseUrl = ref('');
+const audioBaseUrl = ref('');
 const model = ref('');
+const audioModel = ref('');
 const alwaysOnTop = ref(true);
 
 // Reviewer AI state
@@ -75,7 +78,9 @@ onMounted(() => {
   const config = getLLMConfig();
   apiKey.value = config.apiKey;
   baseUrl.value = config.baseUrl;
+  audioBaseUrl.value = config.audioBaseUrl;
   model.value = config.model;
+  audioModel.value = config.audioModel;
 
   const savedTop = localStorage.getItem('ALWAYS_ON_TOP');
   alwaysOnTop.value = savedTop === null || savedTop === 'true';
@@ -98,7 +103,9 @@ onMounted(() => {
 const saveSettings = async () => {
   localStorage.setItem('OPENAI_API_KEY', apiKey.value);
   localStorage.setItem('LLM_BASE_URL', baseUrl.value);
+  localStorage.setItem('LLM_AUDIO_BASE_URL', audioBaseUrl.value);
   localStorage.setItem('LLM_MODEL', model.value);
+  localStorage.setItem('LLM_AUDIO_MODEL', audioModel.value);
   localStorage.setItem('ALWAYS_ON_TOP', String(alwaysOnTop.value));
 
   // Save Reviewer AI settings
@@ -113,7 +120,15 @@ const saveSettings = async () => {
   localStorage.setItem('PMPHAI_ENABLED', String(pmphaiEnabled.value));
   localStorage.setItem('PMPHAI_SEARCH_MODE', pmphaiSearchMode.value);
 
-  trackClick('settings_save', { hasApiKey: !!apiKey.value, hasBaseUrl: !!baseUrl.value, model: model.value, alwaysOnTop: alwaysOnTop.value, pmphaiEnabled: pmphaiEnabled.value });
+  trackClick('settings_save', {
+    hasApiKey: !!apiKey.value,
+    hasBaseUrl: !!baseUrl.value,
+    hasAudioBaseUrl: !!audioBaseUrl.value,
+    model: model.value,
+    audioModel: audioModel.value,
+    alwaysOnTop: alwaysOnTop.value,
+    pmphaiEnabled: pmphaiEnabled.value,
+  });
 
   try {
     const win = getCurrentWindow();
@@ -342,6 +357,7 @@ watch(activeTab, (newVal) => {
             <p class="form-hint">API 服务器地址（留空使用默认值）</p>
           </div>
 
+          
           <div class="form-group">
             <label for="model-name">Model Name</label>
             <div class="input-with-icon">
@@ -349,6 +365,25 @@ watch(activeTab, (newVal) => {
               <input id="model-name" v-model="model" type="text" :placeholder="DEFAULT_LLM_CONFIG.model" />
             </div>
             <p class="form-hint">使用的模型名称（如：gpt-4-turbo）</p>
+          </div>
+
+          <div class="form-group">
+            <label for="audio-base-url">Audio Base URL</label>
+            <div class="input-with-icon">
+              <Icon icon="lucide:audio-lines" :size="16" class="input-icon" />
+              <input id="audio-base-url" v-model="audioBaseUrl" type="text" :placeholder="DEFAULT_LLM_CONFIG.audioBaseUrl" />
+            </div>
+            <p class="form-hint">语音转写接口地址（留空默认复用 Base URL）</p>
+          </div>
+
+          
+          <div class="form-group">
+            <label for="audio-model-name">Audio Model</label>
+            <div class="input-with-icon">
+              <Icon icon="lucide:mic" :size="16" class="input-icon" />
+              <input id="audio-model-name" v-model="audioModel" type="text" :placeholder="DEFAULT_LLM_CONFIG.audioModel" />
+            </div>
+            <p class="form-hint">语音转写模型名称（如：whisper-1）</p>
           </div>
         </div>
 

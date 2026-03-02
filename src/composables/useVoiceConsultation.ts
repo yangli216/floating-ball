@@ -20,6 +20,7 @@ import { chat, type ChatMessage } from '../services/llm';
 import { PROMPTS } from '../prompts';
 import { trackClick, trackError, trackRecommendationAction, startTimedOperation } from '../services/operationTracker';
 import type { GeneratedRecord } from '../components/VoiceConsultationResult.vue';
+import type { AppPatient } from '../types/appState';
 
 /**
  * 语音问诊配置参数
@@ -32,7 +33,7 @@ export interface VoiceConsultationOptions {
   /** 生成的病历记录 */
   generatedRecord: Ref<GeneratedRecord | null>;
   /** 当前患者信息 */
-  currentPatient: Ref<any>;
+  currentPatient: Ref<AppPatient | null>;
   /** Toast 提示函数 */
   showToast: (msg: string, type?: 'success' | 'error' | 'info', duration?: number) => void;
   /** 窗口管理 API */
@@ -189,11 +190,12 @@ export function useVoiceConsultation(options: VoiceConsultationOptions) {
         transcriptionLength: text.length,
         diagnosisCount: parsed.diagnosisList.length,
       });
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error('[VoiceConsultation] Processing failed:', err);
       trackError('voice_processing_failed', err);
-      finishVoiceLlm(false, { errorMessage: err.message || String(err) });
-      showToast(`处理失败: ${err.message || err}`, 'error');
+      const errMessage = err instanceof Error ? err.message : String(err);
+      finishVoiceLlm(false, { errorMessage: errMessage });
+      showToast(`处理失败: ${errMessage}`, 'error');
       setTimeout(() => {
         exitWork('error');
       }, 2000);
@@ -205,7 +207,7 @@ export function useVoiceConsultation(options: VoiceConsultationOptions) {
    *
    * @param err - 错误信息
    */
-  function handleVoiceError(err: any): void {
+  function handleVoiceError(err: unknown): void {
     trackError('voice_recording_error', err);
     showToast('录音出错: ' + err, 'error');
     exitWork('error');
@@ -233,7 +235,7 @@ export function useVoiceConsultation(options: VoiceConsultationOptions) {
       });
       showToast('病历已生成并回传系统', 'success');
       await exitWork();
-    } catch (e: any) {
+    } catch (e: unknown) {
       console.error('[VoiceConsultation] Failed to save result:', e);
       trackError('voice_result_submit_failed', e);
       showToast('回传失败: ' + e, 'error');

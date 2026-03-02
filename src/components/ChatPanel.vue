@@ -2,6 +2,7 @@
 import { ref, computed, inject } from "vue";
 import type { ChatMessage } from "../services/llm";
 import { chatStream, transcribeAudio } from "../services/llm";
+import { audioRecorder, getMicrophoneErrorMessage } from "../services/audioRecorder";
 import { PROMPTS } from "../prompts";
 import { feedbackService } from "../services/feedback";
 import { trackClick, trackError } from "../services/operationTracker";
@@ -52,8 +53,6 @@ const sending = ref(false);
 
 // 录音相关
 const recording = ref(false);
-let mediaRecorder: MediaRecorder | null = null;
-let audioChunks: Blob[] = [];
 
 function scrollToBottom() {
   requestAnimationFrame(() => {
@@ -195,37 +194,28 @@ function handleFileChange(e: Event) {
 
 async function startRecording() {
   try {
-    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-    mediaRecorder = new MediaRecorder(stream);
-    audioChunks = [];
-    mediaRecorder.ondataavailable = (evt) => {
-      if (evt.data.size > 0) audioChunks.push(evt.data);
-    };
-    mediaRecorder.onstop = async () => {
-      const blob = new Blob(audioChunks, { type: "audio/webm" });
-      recording.value = false;
-      trackClick('chat_voice_stop');
-      try {
-        const text = await transcribeAudio(blob);
-        input.value = text;
-      } catch (err) {
-        trackError('chat_transcription_failed', err);
-        messages.value.push({ role: "assistant", content: `语音识别失败：${(err as Error).message}` });
-        scrollToBottom();
-      }
-    };
-    mediaRecorder.start();
+    await audioRecorder.start();
     recording.value = true;
     trackClick('chat_voice_start');
   } catch (err) {
     trackError('chat_mic_permission_error', err);
-    messages.value.push({ role: "assistant", content: `无法开始录音：${(err as Error).message}` });
+    messages.value.push({ role: "assistant", content: `无法开始录音：${getMicrophoneErrorMessage(err)}` });
     scrollToBottom();
   }
 }
 
-function stopRecording() {
-  mediaRecorder?.stop();
+async function stopRecording() {
+  try {
+    const blob = await audioRecorder.stop();
+    recording.value = false;
+    trackClick('chat_voice_stop');
+    const text = await transcribeAudio(blob);
+    input.value = text;
+  } catch (err) {
+    trackError('chat_transcription_failed', err);
+    messages.value.push({ role: "assistant", content: `语音识别失败：${(err as Error).message}` });
+    scrollToBottom();
+  }
 }
 
 // 处理反馈

@@ -1,6 +1,95 @@
+type LegacyGetUserMedia = (
+    constraints: MediaStreamConstraints,
+    successCallback: (stream: MediaStream) => void,
+    errorCallback: (error: DOMException) => void
+) => void;
+
+type LegacyNavigator = Navigator & {
+    getUserMedia?: LegacyGetUserMedia;
+    webkitGetUserMedia?: LegacyGetUserMedia;
+    mozGetUserMedia?: LegacyGetUserMedia;
+    msGetUserMedia?: LegacyGetUserMedia;
+};
+
+/**
+ * 请求麦克风流（兼容旧版 WebView）
+ */
+export async function requestMicrophoneStream(
+    constraints: MediaStreamConstraints = { audio: true }
+): Promise<MediaStream> {
+    if (typeof navigator === 'undefined') {
+        throw new Error('当前环境不支持麦克风录音');
+    }
+
+    if (navigator.mediaDevices?.getUserMedia) {
+        return navigator.mediaDevices.getUserMedia(constraints);
+    }
+
+    const legacyNavigator = navigator as LegacyNavigator;
+    const legacyGetUserMedia =
+        legacyNavigator.getUserMedia
+        || legacyNavigator.webkitGetUserMedia
+        || legacyNavigator.mozGetUserMedia
+        || legacyNavigator.msGetUserMedia;
+
+    if (legacyGetUserMedia) {
+        return new Promise((resolve, reject) => {
+            legacyGetUserMedia.call(legacyNavigator, constraints, resolve, reject);
+        });
+    }
+
+    if (typeof window !== 'undefined' && window.isSecureContext === false) {
+        throw new Error('当前页面不是安全上下文，无法访问麦克风');
+    }
+
+    const isMac =
+        typeof navigator !== 'undefined'
+        && /Macintosh|Mac OS X/i.test(navigator.userAgent);
+    if (isMac) {
+        throw new Error('macOS 未启用麦克风能力，请重建应用并在系统设置允许麦克风权限');
+    }
+
+    throw new Error('当前运行环境不支持麦克风接口，请升级 WebView 内核');
+}
+
+/**
+ * 统一麦克风错误提示文案
+ */
+export function getMicrophoneErrorMessage(error: unknown): string {
+    if (error instanceof DOMException) {
+        switch (error.name) {
+            case 'NotAllowedError':
+            case 'PermissionDeniedError':
+                return '麦克风权限被拒绝，请在系统设置中允许访问';
+            case 'NotFoundError':
+            case 'DevicesNotFoundError':
+                return '未检测到可用麦克风设备';
+            case 'NotReadableError':
+            case 'TrackStartError':
+                return '麦克风被其他应用占用，请关闭后重试';
+            case 'SecurityError':
+                return '当前页面安全策略限制了麦克风访问';
+            case 'AbortError':
+                return '麦克风初始化被中断，请重试';
+            case 'OverconstrainedError':
+                return '当前设备不满足录音参数要求';
+            default:
+                break;
+        }
+    }
+
+    const message = error instanceof Error ? error.message : String(error);
+    if (message.includes('macOS 未启用麦克风能力')) {
+        return message;
+    }
+    if (message.includes('mediaDevices') && message.includes('undefined')) {
+        return '当前运行环境不支持麦克风接口，请升级 WebView 内核';
+    }
+
+    return message || '无法访问麦克风，请检查权限和设备状态';
+}
+
 export class AudioRecorder {
-    private mediaRecorder: MediaRecorder | null = null;
-    private audioChunks: Blob[] = []; // Keep for fallback or other uses
     private stream: MediaStream | null = null;
     private audioContext: AudioContext | null = null;
     private analyser: AnalyserNode | null = null;
@@ -30,7 +119,7 @@ export class AudioRecorder {
 
         try {
             console.time('[AudioRecorder] getUserMedia');
-            this.stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+            this.stream = await requestMicrophoneStream({ audio: true });
             console.timeEnd('[AudioRecorder] getUserMedia');
 
             // Setup Audio Context
@@ -75,35 +164,23 @@ export class AudioRecorder {
             this.scriptProcessor.connect(this.audioContext.destination); // Needed for processing to happen
             console.timeEnd('[AudioRecorder] AudioContext setup');
 
-            // Keep MediaRecorder for Visualizer fallback or if we ever want the WebM
-            console.time('[AudioRecorder] MediaRecorder setup');
-            this.mediaRecorder = new MediaRecorder(this.stream);
-            this.audioChunks = [];
-            this.mediaRecorder.ondataavailable = (event) => {
-                if (event.data.size > 0) this.audioChunks.push(event.data);
-            };
-            this.mediaRecorder.start();
-            console.timeEnd('[AudioRecorder] MediaRecorder setup');
-
             this.isRecordingInternal = true;
             console.timeEnd('[AudioRecorder] total start');
         } catch (err) {
             console.error("[AudioRecorder] Error accessing microphone:", err);
             console.timeEnd('[AudioRecorder] total start');
-            throw err;
+            throw new Error(getMicrophoneErrorMessage(err));
         }
     }
 
     pause(): void {
         this.isRecordingInternal = false;
         if (this.audioContext) this.audioContext.suspend();
-        if (this.mediaRecorder && this.mediaRecorder.state === 'recording') this.mediaRecorder.pause();
     }
 
     resume(): void {
         this.isRecordingInternal = true;
         if (this.audioContext) this.audioContext.resume();
-        if (this.mediaRecorder && this.mediaRecorder.state === 'paused') this.mediaRecorder.resume();
     }
 
     async stop(): Promise<Blob> {
@@ -156,9 +233,7 @@ export class AudioRecorder {
         this.analyser = null;
         this.source = null;
         this.scriptProcessor = null;
-        this.mediaRecorder = null;
         this.audioBuffers = [];
-        this.audioChunks = [];
     }
 
     private exportWAV(buffers: Float32Array[], length: number): Blob {

@@ -11,8 +11,8 @@ import { ref, type Ref } from 'vue';
 import type { Window as TauriWindow, Monitor } from '@tauri-apps/api/window';
 import { PhysicalPosition, currentMonitor } from '@tauri-apps/api/window';
 import { LogicalSize } from '@tauri-apps/api/dpi';
-// import { Store } from '@tauri-apps/plugin-store'; // Unused
 import { ANIMATION, WINDOW_SIZE_TOLERANCE } from '../constants/animation';
+import type { AppStore } from '../types/appState';
 
 /**
  * 位置坐标类型
@@ -29,7 +29,7 @@ export interface WindowManagementOptions {
   /** Tauri 窗口实例引用 */
   appWindow: Ref<TauriWindow | null>;
   /** Tauri Store 实例引用 */
-  store: Ref<any>;
+  store: Ref<AppStore | null>;
   /** 是否处于工作模式（用于判断是否保存位置） */
   isWorking: Ref<boolean>;
   /** 是否正在过渡动画中 */

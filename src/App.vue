@@ -3,7 +3,6 @@ import { onMounted, onUnmounted, ref, watch } from "vue";
 import { getCurrentWindow, Window as TauriWindow } from "@tauri-apps/api/window";
 import { exit } from '@tauri-apps/plugin-process';
 import { load, Store } from '@tauri-apps/plugin-store';
-import { onOpenUrl } from '@tauri-apps/plugin-deep-link';
 import ChatPanel from "./components/ChatPanel.vue";
 import SettingsPanel from "./components/SettingsPanel.vue";
 import AnalyticsPanel from "./components/AnalyticsPanel.vue";
@@ -16,16 +15,17 @@ import SymptomManagement from "./components/SymptomManagement.vue";
 import VoiceConsultationResult, { type GeneratedRecord } from "./components/VoiceConsultationResult.vue";
 import KnowledgeBasePanel from "./components/KnowledgeBasePanel.vue";
 import Icon from "./components/Icon.vue";
-import { trackClick, trackApiCall } from "./services/operationTracker";
+import { trackClick } from "./services/operationTracker";
 import { LogicalSize } from "@tauri-apps/api/dpi";
 import { provide } from "vue";
-import { WINDOW_SIZES } from "./constants/windowSizes";
+import { WINDOW_SIZES, type ViewType } from "./constants/windowSizes";
 import { useWindowManagement } from "./composables/useWindowManagement";
 import { useWorkMode } from "./composables/useWorkMode";
 import { useNavigation } from "./composables/useNavigation";
 import { useVoiceConsultation } from "./composables/useVoiceConsultation";
 import { useEventListeners } from "./composables/useEventListeners";
 import { pmphaiService, isPMPHAIConfigured } from './services/pmphai';
+import type { AppPatient, AppStore } from "./types/appState";
 
 const appWindow = ref<TauriWindow | null>(null);
 const toastRef = ref<InstanceType<typeof Toast> | null>(null);
@@ -37,8 +37,8 @@ const isFocused = ref(false);
 const isHovered = ref(false);
 const hoveredBtnIndex = ref(-1); // -1 means no button hovered
 const isWorking = ref(false);
-const currentView = ref<'chat' | 'settings' | 'consultation' | 'risk-alert' | 'voice-interaction' | 'voice-result' | 'reception-capsule' | 'analytics' | 'symptom-manage' | 'knowledge-base'>('chat');
-const currentPatient = ref<any>(null);
+const currentView = ref<ViewType>('chat');
+const currentPatient = ref<AppPatient | null>(null);
 const ringMenuRef = ref<HTMLElement | null>(null);
 
 // 风险提示状态
@@ -53,7 +53,7 @@ const generatedRecord = ref<GeneratedRecord | null>(null);
 
 let store: Store | null = null;
 const resizeTimeoutRef = ref<ReturnType<typeof setTimeout> | null>(null);
-const storeRef = ref<any>(null);
+const storeRef = ref<AppStore | null>(null);
 const transitioning = ref(false);
 
 // 初始化窗口管理 composable
@@ -64,26 +64,20 @@ const windowMgmt = useWindowManagement({
   transitioning,
 });
 
-// @ts-ignore
-const { cachedMonitor, lastBallPos, isMoving } = windowMgmt;
 const {
   restoreWindowPosition,
   updateCurrentMonitor,
   smartExpand,
   handleWindowMove,
-  // @ts-ignore
-  saveWindowPosition,
-  // @ts-ignore
-  waitForWindowSize,
-  // @ts-ignore
-  resizeWorkWindow,
 } = windowMgmt;
 
 // 风险提示患者信息同步函数
-const syncRiskPatientInfo = (patient: any) => {
+const syncRiskPatientInfo = (patient: AppPatient) => {
   riskPatientName.value = patient.name || patient.naPi || '未知';
   riskPatientGender.value = (patient.gender === 'F' || patient.sdSexText === '女性') ? 'F' : 'M';
-  riskPatientAge.value = parseInt(patient.age || patient.ageText || '0');
+  const ageSource = patient.age ?? patient.ageText ?? '0';
+  const age = typeof ageSource === 'number' ? ageSource : Number.parseInt(String(ageSource), 10);
+  riskPatientAge.value = Number.isFinite(age) ? age : 0;
 };
 
 // 初始化工作模式 composable
@@ -100,8 +94,7 @@ const workMode = useWorkMode({
 });
 
 // 解构工作模式 API
-// @ts-ignore
-const { exiting, ballOffset, morphOrigin, containerStyle, ballStyle } = workMode;
+const { exiting, containerStyle, ballStyle } = workMode;
 const { enterWorkMode, exitWork, handleCollapse } = workMode;
 
 // 初始化导航管理 composable
@@ -121,8 +114,6 @@ const {
   openAnalytics,
   openSymptomManagement,
   openConsultation,
-  // @ts-ignore
-  openKnowledgeBase,
   startVoiceInteraction,
 } = navigation;
 
@@ -211,27 +202,6 @@ watch([isWorking, currentView], async () => {
 onMounted(async () => {
   try {
     appWindow.value = getCurrentWindow();
-    
-    // 监听 Deep Link
-    try {
-      await onOpenUrl((urls) => {
-        console.log('Deep link received:', urls);
-        if (urls && urls.length > 0) {
-          const url = urls[0];
-          trackApiCall('deep_link_received', true, undefined, { url });
-          showToast(`收到外部调用: ${url}`, 'info');
-          
-          // Simple routing based on URL
-          if (url.includes('voice-consultation')) {
-             startVoiceInteraction();
-          } else if (!isWorking.value) {
-             enterWorkMode();
-          }
-        }
-      });
-    } catch (e) {
-      console.warn('Failed to register deep link listener:', e);
-    }
 
     // 初始化 store
     store = await load('.settings.dat');
@@ -427,7 +397,7 @@ const openInsideCloudHome = async () => {
                 {{
                   currentView === 'chat' ? '智医助理' :
                   (currentView === 'consultation' ?
-                    (currentPatient ? `智能问诊 - ${currentPatient.name}` : '智能问诊') :
+                    (currentPatient ? `智能问诊 - ${currentPatient.name || currentPatient.naPi || '未知患者'}` : '智能问诊') :
                     (currentView === 'analytics' ? '数据分析' :
                     (currentView === 'symptom-manage' ? '症状库维护' :
                     (currentView === 'knowledge-base' ? '知识库检索' : '系统设置'))))

@@ -14,6 +14,7 @@ import type { Window as TauriWindow } from '@tauri-apps/api/window';
 import { LogicalSize } from '@tauri-apps/api/dpi';
 import { WINDOW_SIZES, type ViewType } from '../constants/windowSizes';
 import { trackViewChange } from '../services/operationTracker';
+import type { AppPatient } from '../types/appState';
 
 /**
  * 导航管理配置参数
@@ -26,7 +27,7 @@ export interface NavigationOptions {
   /** 是否处于工作模式 */
   isWorking: Ref<boolean>;
   /** 当前患者信息 */
-  currentPatient: Ref<any>;
+  currentPatient: Ref<AppPatient | null>;
   /** 窗口管理 API */
   windowMgmt: {
     smartExpand: (width: number, height: number) => Promise<void>;

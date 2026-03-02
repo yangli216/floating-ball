@@ -37,7 +37,7 @@
 
 <script setup lang="ts">
 import { ref, onMounted, onUnmounted, computed } from 'vue';
-import { audioRecorder } from '../services/audioRecorder';
+import { audioRecorder, getMicrophoneErrorMessage } from '../services/audioRecorder';
 import { trackClick, trackError } from '../services/operationTracker';
 
 // 获取当前主题的主色调
@@ -210,7 +210,11 @@ const startRecording = async () => {
     console.error("[VoiceCapsule] Failed to start recording:", err);
     console.timeEnd('[VoiceCapsule] startRecording');
     trackError('voice_recording_start_failed', err);
-    emit('error', err);
+    if (speechService) {
+      speechService.close();
+      speechService = null;
+    }
+    emit('error', getMicrophoneErrorMessage(err));
   }
 };
 

@@ -15,6 +15,7 @@ export interface ChatMessage {
 
 export const DEFAULT_LLM_CONFIG = {
   baseUrl: "https://api.openai.com/v1",
+  audioBaseUrl: "https://api.openai.com/v1",
   model: "gpt-4o-mini",
   audioModel: "whisper-1"
 };
@@ -97,15 +98,21 @@ export function getLLMConfig() {
   const apiKey = localStorage.getItem("OPENAI_API_KEY") || import.meta.env.VITE_OPENAI_API_KEY || "";
   // 默认为 OpenAI 官方地址和模型
   const baseUrl = (localStorage.getItem("LLM_BASE_URL") || import.meta.env.VITE_LLM_BASE_URL || DEFAULT_LLM_CONFIG.baseUrl).replace(/\/+$/, "");
+  const audioBaseUrl = (
+    localStorage.getItem("LLM_AUDIO_BASE_URL")
+    || import.meta.env.VITE_LLM_AUDIO_BASE_URL
+    || baseUrl
+  ).replace(/\/+$/, "");
   const model = localStorage.getItem("LLM_MODEL") || import.meta.env.VITE_LLM_MODEL || DEFAULT_LLM_CONFIG.model;
   const audioModel = localStorage.getItem("LLM_AUDIO_MODEL") || import.meta.env.VITE_LLM_AUDIO_MODEL || DEFAULT_LLM_CONFIG.audioModel;
 
-  return { apiKey, baseUrl, model, audioModel };
+  return { apiKey, baseUrl, audioBaseUrl, model, audioModel };
 }
 
 export interface LLMConfigOverride {
   apiKey?: string;
   baseUrl?: string;
+  audioBaseUrl?: string;
   model?: string;
   audioModel?: string;
 }
@@ -121,11 +128,12 @@ function getConfigAndKey(explicitKey?: string, customConfig?: LLMConfigOverride)
   const baseConfig = getLLMConfig();
   const apiKey = customConfig?.apiKey || explicitKey || baseConfig.apiKey;
   const baseUrl = customConfig?.baseUrl || baseConfig.baseUrl;
+  const audioBaseUrl = customConfig?.audioBaseUrl || baseConfig.audioBaseUrl;
   const model = customConfig?.model || baseConfig.model;
   const audioModel = customConfig?.audioModel || baseConfig.audioModel;
 
   if (!apiKey) throw new Error("缺少 API Key。请在 .env 设置 VITE_OPENAI_API_KEY 或在 localStorage 设置 OPENAI_API_KEY（以及独立审查AI的配置）。");
-  return { key: apiKey, baseUrl, model, audioModel };
+  return { key: apiKey, baseUrl, audioBaseUrl, model, audioModel };
 }
 
 function createPayloadMessages(messages: ChatMessage[]) {
@@ -284,6 +292,52 @@ export async function chat(
 }
 
 // 语音转文字（Whisper）
+function canFallbackToFrontendTranscription(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : String(error);
+  const fallbackSignals = [
+    '__TAURI_INTERNALS__',
+    'window.__TAURI_INTERNALS__',
+    'Command transcribe_audio not found',
+    'unknown IPC command',
+    'not running in Tauri',
+  ];
+  return fallbackSignals.some((signal) => message.includes(signal));
+}
+
+function mapTranscriptionNetworkError(error: unknown, endpoint: string): Error {
+  const message = error instanceof Error ? error.message : String(error);
+  const lowered = message.toLowerCase();
+  if (
+    lowered.includes('load failed')
+    || lowered.includes('failed to fetch')
+    || lowered.includes('networkerror')
+  ) {
+    return new Error(
+      `语音转写网络请求失败（${endpoint}）。请检查 Base URL 是否可访问，并优先使用 HTTPS。`
+    );
+  }
+  return error instanceof Error ? error : new Error(message);
+}
+
+async function transcribeAudioViaTauri(
+  blob: Blob,
+  key: string,
+  audioBaseUrl: string,
+  audioModel: string
+): Promise<string> {
+  const { invoke } = await import('@tauri-apps/api/core');
+  const arrayBuffer = await blob.arrayBuffer();
+  const audioData = Array.from(new Uint8Array(arrayBuffer));
+
+  return invoke<string>('transcribe_audio', {
+    apiKey: key,
+    baseUrl: audioBaseUrl,
+    audioModel,
+    audioData,
+    mimeType: blob.type || 'audio/webm',
+  });
+}
+
 export async function transcribeAudio(
   blob: Blob,
   apiKey?: string,
@@ -291,19 +345,35 @@ export async function transcribeAudio(
   onRetry?: (attempt: number, error: any) => void,
   customConfig?: LLMConfigOverride
 ): Promise<string> {
-  const { key, baseUrl, audioModel } = getConfigAndKey(apiKey, customConfig);
+  const { key, audioBaseUrl, audioModel } = getConfigAndKey(apiKey, customConfig);
   const file = new File([blob], "audio.webm", { type: blob.type || "audio/webm" });
+  const endpoint = `${audioBaseUrl}/audio/transcriptions`;
 
   return await retryWithBackoff(async () => {
+    try {
+      return await transcribeAudioViaTauri(file, key, audioBaseUrl, audioModel);
+    } catch (tauriError) {
+      if (!canFallbackToFrontendTranscription(tauriError)) {
+        throw tauriError;
+      }
+      console.warn('[LLM] Tauri transcription unavailable, fallback to frontend fetch:', tauriError);
+    }
+
     const form = new FormData();
     form.append("file", file);
     form.append("model", audioModel);
 
-    const res = await fetch(`${baseUrl}/audio/transcriptions`, {
-      method: "POST",
-      headers: { Authorization: `Bearer ${key}` },
-      body: form,
-    });
+    let res: Response;
+    try {
+      res = await fetch(endpoint, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${key}` },
+        body: form,
+      });
+    } catch (networkError) {
+      throw mapTranscriptionNetworkError(networkError, endpoint);
+    }
+
     const data = await res.json();
     if (!res.ok) {
       const error: any = new Error(data?.error?.message || res.statusText);
