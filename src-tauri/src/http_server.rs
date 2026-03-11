@@ -8,6 +8,7 @@ use std::collections::HashMap;
 use crate::SharedAppState;
 
 // PMPHAI Token Cache
+#[allow(dead_code)]
 struct PMPHAITokenCache {
     access_token: Option<String>,
     refresh_token: Option<String>,

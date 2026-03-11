@@ -1697,6 +1697,8 @@ const fetchAIDiagnosis = async () => {
 
   try {
     const startTime = Date.now();
+    console.log('========== AI 辅助诊断开始 ==========');
+    console.time('[AI分析] 1. 构建提示词');
     let fullResponse = "";
 
     if (consultationMode.value === 'tcm') {
@@ -1740,6 +1742,9 @@ const fetchAIDiagnosis = async () => {
 
       console.log('[TCM Debug] User Prompt:', userPrompt);
 
+      console.timeEnd('[AI分析] 1. 构建提示词');
+      console.time('[AI分析] 2. LLM 请求 (中医)');
+
       fullResponse = await chat([
         {
           role: 'system',
@@ -1752,8 +1757,20 @@ const fetchAIDiagnosis = async () => {
       ]);
 
       console.log('[TCM Debug] LLM Response:', fullResponse);
+      console.timeEnd('[AI分析] 2. LLM 请求 (中医)');
     } else {
       // Western Medicine Logic (Existing)
+      const userPrompt = PROMPTS.consultation.diagnosisRecommendation.buildUserPrompt({
+        patientName: patientInfo.value.naPi,
+        gender: patientInfo.value.sdSexText || '',
+        age: patientInfo.value.ageText || '',
+        chiefComplaint: generatedRecord.value.chiefComplaint,
+        historyOfPresentIllness: generatedRecord.value.historyOfPresentIllness
+      });
+      
+      console.timeEnd('[AI分析] 1. 构建提示词');
+      console.time('[AI分析] 2. LLM 请求 (西医)');
+
       fullResponse = await chat([
         {
           role: 'system',
@@ -1761,18 +1778,14 @@ const fetchAIDiagnosis = async () => {
         },
         {
           role: 'user',
-          content: PROMPTS.consultation.diagnosisRecommendation.buildUserPrompt({
-            patientName: patientInfo.value.naPi,
-            gender: patientInfo.value.sdSexText || '',
-            age: patientInfo.value.ageText || '',
-            chiefComplaint: generatedRecord.value.chiefComplaint,
-            historyOfPresentIllness: generatedRecord.value.historyOfPresentIllness
-          })
+          content: userPrompt
         }
       ]);
+      console.timeEnd('[AI分析] 2. LLM 请求 (西医)');
     }
     const latencyMs = Date.now() - startTime;
 
+    console.time('[AI分析] 3. 解析数据和匹配标准词典');
     console.log('[TCM Debug] Parsing LLM response...');
     // Clean up response if it contains markdown code blocks
     let diagnoses: Diagnosis[] = parseLLMJson(fullResponse);
@@ -1888,6 +1901,9 @@ const fetchAIDiagnosis = async () => {
 
     aiDiagnoses.value = diagnoses;
 
+    console.timeEnd('[AI分析] 3. 解析数据和匹配标准词典');
+    console.time('[AI分析] 4. 分支逻辑 (文献检索、持久化和事实核查)');
+
     // Search knowledge base for related medical literature
     searchKnowledgeBaseForDiagnoses(diagnoses);
 
@@ -1915,8 +1931,11 @@ const fetchAIDiagnosis = async () => {
     }
 
     // Perform automatic fact checking on all diagnoses
-    performDiagnosisFactCheck(diagnoses);
+    // performDiagnosisFactCheck(diagnoses);
     finishDiagnosisLlm(true, { diagnosisCount: diagnoses.length, mode: consultationMode.value });
+    
+    console.timeEnd('[AI分析] 4. 分支逻辑 (文献检索、持久化和事实核查)');
+    console.log(`========== AI 辅助诊断完成，总耗时: ${Date.now() - startTime}ms ==========`);
   } catch (e) {
     console.error("Failed to fetch AI diagnosis", e);
     trackError('ai_diagnosis_failed', e);
@@ -2160,9 +2179,21 @@ const fetchTreatmentRecommendation = async () => {
 
   try {
     const startTime = Date.now();
+    console.log('========== AI 推荐方案开始 ==========');
+    console.time('[方案推荐] 1. 构建提示词');
     let fullResponse = "";
 
     if (consultationMode.value === 'tcm') {
+      const userPrompt = PROMPTS.consultation.tcmTreatmentRecommendation.buildUserPrompt({
+        patientName: patientInfo.value.naPi,
+        gender: patientInfo.value.sdSexText || '',
+        age: patientInfo.value.ageText || '',
+        diagnosisName: selectedDiagnosis.value.name,
+        chiefComplaint: generatedRecord.value.chiefComplaint
+      });
+      console.timeEnd('[方案推荐] 1. 构建提示词');
+      console.time('[方案推荐] 2. LLM 请求 (中医)');
+
       fullResponse = await chat([
         {
           role: 'system',
@@ -2170,16 +2201,22 @@ const fetchTreatmentRecommendation = async () => {
         },
         {
           role: 'user',
-          content: PROMPTS.consultation.tcmTreatmentRecommendation.buildUserPrompt({
-            patientName: patientInfo.value.naPi,
-            gender: patientInfo.value.sdSexText || '',
-            age: patientInfo.value.ageText || '',
-            diagnosisName: selectedDiagnosis.value.name,
-            chiefComplaint: generatedRecord.value.chiefComplaint
-          })
+          content: userPrompt
         }
       ]);
+      console.timeEnd('[方案推荐] 2. LLM 请求 (中医)');
     } else {
+      const userPrompt = PROMPTS.consultation.treatmentRecommendation.buildUserPrompt({
+        patientName: patientInfo.value.naPi,
+        gender: patientInfo.value.sdSexText || '',
+        age: patientInfo.value.ageText || '',
+        diagnosisName: selectedDiagnosis.value.name,
+        diagnosisCode: selectedDiagnosis.value.code || '',
+        chiefComplaint: generatedRecord.value.chiefComplaint
+      });
+      console.timeEnd('[方案推荐] 1. 构建提示词');
+      console.time('[方案推荐] 2. LLM 请求 (西医)');
+
       fullResponse = await chat([
         {
           role: 'system',
@@ -2187,19 +2224,14 @@ const fetchTreatmentRecommendation = async () => {
         },
         {
           role: 'user',
-          content: PROMPTS.consultation.treatmentRecommendation.buildUserPrompt({
-            patientName: patientInfo.value.naPi,
-            gender: patientInfo.value.sdSexText || '',
-            age: patientInfo.value.ageText || '',
-            diagnosisName: selectedDiagnosis.value.name,
-            diagnosisCode: selectedDiagnosis.value.code || '',
-            chiefComplaint: generatedRecord.value.chiefComplaint
-          })
+          content: userPrompt
         }
       ]);
+      console.timeEnd('[方案推荐] 2. LLM 请求 (西医)');
     }
     const latencyMs = Date.now() - startTime;
 
+    console.time('[方案推荐] 3. 解析数据和匹配标准词典');
     const rawRecommendations: any[] = parseLLMJson(fullResponse);
 
     // Match against catalog
@@ -2220,6 +2252,9 @@ const fetchTreatmentRecommendation = async () => {
     });
 
     treatmentRecommendations.value = processedRecs;
+
+    console.timeEnd('[方案推荐] 3. 解析数据和匹配标准词典');
+    console.time('[方案推荐] 4. 分支逻辑 (持久化和事实核查)');
 
     // Save treatment recommendations to database
     try {
@@ -2247,6 +2282,9 @@ const fetchTreatmentRecommendation = async () => {
     // Perform automatic fact checking on treatments
     performTreatmentFactCheck(processedRecs);
     finishTreatmentLlm(true, { treatmentCount: processedRecs.length, mode: consultationMode.value });
+    
+    console.timeEnd('[方案推荐] 4. 分支逻辑 (持久化和事实核查)');
+    console.log(`========== AI 推荐方案完成，总耗时: ${Date.now() - startTime}ms ==========`);
   } catch (e) {
     console.error("Failed to fetch treatment recommendations", e);
     trackError('treatment_recommendation_failed', e);

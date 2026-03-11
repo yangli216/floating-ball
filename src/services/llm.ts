@@ -277,6 +277,7 @@ export async function chat(
       },
       body: JSON.stringify({
         model: model,
+        "enable_thinking": false,
         messages: payloadMessages,
       }),
     });
@@ -417,3 +418,18 @@ export async function analyzePatientRisks(patientData: any, apiKey?: string): Pr
     }];
   }
 }
+
+export async function testLLMConnection(customConfig?: LLMConfigOverride): Promise<{ success: boolean; message: string }> {
+  try {
+    const messages: ChatMessage[] = [{ role: 'user', content: '您好，这只是一条测试消息，只需回复“测试成功”即可。' }];
+    const response = await chat(messages, undefined, undefined, undefined, customConfig);
+    if (response) {
+      return { success: true, message: '连接成功！模型响应正常。' };
+    } else {
+      return { success: false, message: '请求成功，但模型未返回任何内容。' };
+    }
+  } catch (error: any) {
+    return { success: false, message: error.message || '连接失败或配置有误' };
+  }
+}
+

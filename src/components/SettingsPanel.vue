@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ref, onMounted, inject, watch } from 'vue';
-import { getLLMConfig, DEFAULT_LLM_CONFIG } from '../services/llm';
+import { getLLMConfig, DEFAULT_LLM_CONFIG, testLLMConnection } from '../services/llm';
 import { getPMPHAIConfig, pmphaiService } from '../services/pmphai';
 import { useTheme } from '../services/themeService';
 import { getCurrentWindow } from '@tauri-apps/api/window';
@@ -60,11 +60,19 @@ const model = ref('');
 const audioModel = ref('');
 const alwaysOnTop = ref(true);
 
+// Test General Model connection
+const modelTesting = ref(false);
+const modelTestResult = ref<{ success: boolean; message: string } | null>(null);
+
 // Reviewer AI state
 const reviewerEnabled = ref(true);
 const reviewerApiKey = ref('');
 const reviewerBaseUrl = ref('');
 const reviewerModel = ref('');
+
+// Test Reviewer AI connection
+const reviewerTesting = ref(false);
+const reviewerTestResult = ref<{ success: boolean; message: string } | null>(null);
 
 // Knowledge Base (PMPHAI) settings
 const pmphaiAppKey = ref('');
@@ -142,6 +150,48 @@ const saveSettings = async () => {
 
   if (showToast) {
     showToast('设置已保存', 'success');
+  }
+};
+
+// Test General Model connection
+const testModelConnection = async () => {
+  modelTesting.value = true;
+  modelTestResult.value = null;
+
+  try {
+    const result = await testLLMConnection({
+      apiKey: apiKey.value,
+      baseUrl: baseUrl.value,
+      model: model.value,
+    });
+    modelTestResult.value = result;
+    trackClick('settings_model_test', { success: result.success });
+  } catch (error: any) {
+    modelTestResult.value = { success: false, message: error.message || '连接失败' };
+    trackError('settings_model_test_failed', error);
+  } finally {
+    modelTesting.value = false;
+  }
+};
+
+// Test Reviewer AI connection
+const testReviewerConnection = async () => {
+  reviewerTesting.value = true;
+  reviewerTestResult.value = null;
+
+  try {
+    const result = await testLLMConnection({
+      apiKey: reviewerApiKey.value || apiKey.value,
+      baseUrl: reviewerBaseUrl.value || baseUrl.value,
+      model: reviewerModel.value || model.value,
+    });
+    reviewerTestResult.value = result;
+    trackClick('settings_reviewer_test', { success: result.success });
+  } catch (error: any) {
+    reviewerTestResult.value = { success: false, message: error.message || '连接失败' };
+    trackError('settings_reviewer_test_failed', error);
+  } finally {
+    reviewerTesting.value = false;
   }
 };
 
@@ -385,6 +435,19 @@ watch(activeTab, (newVal) => {
             </div>
             <p class="form-hint">语音转写模型名称（如：whisper-1）</p>
           </div>
+
+          <div class="test-connection-row" style="margin-top: 16px;">
+            <button class="test-btn" @click="testModelConnection"
+              :disabled="modelTesting || !apiKey">
+              <Icon :icon="modelTesting ? 'lucide:loader-2' : 'lucide:wifi'" :size="16"
+                :class="{ spin: modelTesting }" />
+              {{ modelTesting ? '测试中...' : '测试连接' }}
+            </button>
+            <span v-if="modelTestResult" :class="['test-message', modelTestResult.success ? 'success' : 'error']">
+              <Icon :icon="modelTestResult.success ? 'lucide:check-circle' : 'lucide:x-circle'" :size="16" />
+              {{ modelTestResult.message }}
+            </span>
+          </div>
         </div>
 
         <!-- Reviewer AI Section -->
@@ -433,6 +496,19 @@ watch(activeTab, (newVal) => {
                 <input id="reviewer-model-name" v-model="reviewerModel" type="text" placeholder="gpt-4o-mini" />
               </div>
               <p class="form-hint">使用的模型名称（留空使用上方默认值）</p>
+            </div>
+
+            <div class="test-connection-row" style="margin-top: 16px;">
+              <button class="test-btn" @click="testReviewerConnection"
+                :disabled="reviewerTesting || (!reviewerApiKey && !apiKey)">
+                <Icon :icon="reviewerTesting ? 'lucide:loader-2' : 'lucide:wifi'" :size="16"
+                  :class="{ spin: reviewerTesting }" />
+                {{ reviewerTesting ? '测试中...' : '测试连接' }}
+              </button>
+              <span v-if="reviewerTestResult" :class="['test-message', reviewerTestResult.success ? 'success' : 'error']">
+                <Icon :icon="reviewerTestResult.success ? 'lucide:check-circle' : 'lucide:x-circle'" :size="16" />
+                {{ reviewerTestResult.message }}
+              </span>
             </div>
           </template>
         </div>
