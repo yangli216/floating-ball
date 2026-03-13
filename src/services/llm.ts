@@ -396,8 +396,8 @@ export async function analyzePatientRisks(patientData: any, apiKey?: string): Pr
   const { PROMPTS } = await import('../prompts');
 
   const messages: ChatMessage[] = [
-    { role: 'system', content: PROMPTS.medical.riskAnalysis.system },
-    { role: 'user', content: PROMPTS.medical.riskAnalysis.buildUserPrompt(patientData) }
+    { role: 'system', content: PROMPTS.consultation.patientRiskAnalysis.system },
+    { role: 'user', content: PROMPTS.consultation.patientRiskAnalysis.buildUserPrompt(patientData) }
   ];
 
   try {

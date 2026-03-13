@@ -433,6 +433,24 @@
                     </div>
                   </div>
 
+                  <!-- Anti-Misdiagnosis Checklist Button -->
+                  <div class="diag-checklist-wrapper">
+                    <div v-if="selectedDiagnosis?.id === diag.id && !isChecklistLoading && checklistItems.length > 0" class="checklist-indicator" @click.stop="showChecklistModal = true">
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/>
+                        <line x1="12" y1="9" x2="12" y2="13"/>
+                        <line x1="12" y1="17" x2="12.01" y2="17"/>
+                      </svg>
+                      <span>鉴别排查 (待确认)</span>
+                    </div>
+                    <div v-if="selectedDiagnosis?.id === diag.id && isChecklistLoading" class="checklist-indicator loading">
+                      <svg class="spinner" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M21 12a9 9 0 1 1-6.219-8.56"/>
+                      </svg>
+                      <span>安全分析中...</span>
+                    </div>
+                  </div>
+
                   <!-- Related Diagnoses Dropdown -->
                   <div v-if="openRelatedId === diag.id && inlineRelatedDiagnoses.length > 0" class="related-section" @click.stop>
                     <div class="related-list">
@@ -634,7 +652,7 @@
                <div class="tx-reason" v-if="tx.reason">
                  <strong>说明：</strong>{{ tx.reason }}
                </div>
-             </div>
+            </div>
            </div>
          </div>
 
@@ -695,6 +713,46 @@
       :search-type="knowledgeSearchType"
       @close="showKnowledgePanel = false"
     />
+
+    <!-- Anti-Misdiagnosis Checklist Modal -->
+    <Transition name="fade">
+      <div v-if="showChecklistModal" class="modal-overlay" @click.self="showChecklistModal = false">
+        <div class="modal checklist-modal">
+          <div class="modal-header">
+            <h3>鉴别排查确认</h3>
+            <button class="close-btn" @click="showChecklistModal = false">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <path d="M18 6L6 18M6 6l12 12" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+              </svg>
+            </button>
+          </div>
+          <div class="modal-body">
+            <div class="checklist-intro">
+              针对诊断 <strong>{{ activeChecklistDiagnosis?.name }}</strong>，为防止与高危急症混淆或漏诊，系统建议您在进一步诊断前确认以下指征：
+            </div>
+            
+            <div class="checklist-items">
+              <label v-for="(item, index) in checklistItems" :key="index" class="checklist-item-label">
+                <input type="checkbox" v-model="item.checked" />
+                <span class="checklist-text">{{ item.question }}</span>
+              </label>
+            </div>
+
+            <div class="checklist-notes-box">
+              <label>补充说明（如异常发现、查体记录等）</label>
+              <textarea v-model="checklistNotes" placeholder="填写相关补充信息..."></textarea>
+            </div>
+          </div>
+          <div class="modal-footer">
+            <button class="btn secondary" @click="showChecklistModal = false">暂不确认 (跳过)</button>
+            <button class="btn primary" @click="handleChecklistConfirm" :disabled="!checklistItems.some(i => i.checked) && !checklistNotes">
+              确认并更新现病史
+            </button>
+          </div>
+        </div>
+      </div>
+    </Transition>
+
   </div>
 </template>
 
@@ -876,6 +934,13 @@ const factCheckWidgetIssues = ref<FactCheckIssue[]>([]);
 const factCheckProgress = ref(0);
 const factCheckCheckedCount = ref(0);
 const factCheckTotalCount = ref(0);
+
+// Anti-Misdiagnosis Checklist State
+const isChecklistLoading = ref(false);
+const showChecklistModal = ref(false);
+const checklistItems = ref<{ question: string, recordText: string, checked: boolean }[]>([]);
+const checklistNotes = ref('');
+const activeChecklistDiagnosis = ref<Diagnosis | null>(null);
 
 // Knowledge Panel State
 const showKnowledgePanel = ref(false);
@@ -2153,9 +2218,76 @@ const swapDiagnosis = (originalDiag: Diagnosis, newItem: DiagnosisItem) => {
   openRelatedId.value = null;
 };
 
+
+const fetchDiagnosisChecklist = async (diag: Diagnosis) => {
+  isChecklistLoading.value = true;
+  checklistItems.value = [];
+  checklistNotes.value = '';
+  activeChecklistDiagnosis.value = diag;
+  
+  try {
+    const userPrompt = PROMPTS.consultation.diagnosisChecklist.buildUserPrompt({
+      diagnosisName: diag.name,
+      chiefComplaint: generatedRecord.value.chiefComplaint,
+      historyOfPresentIllness: generatedRecord.value.historyOfPresentIllness
+    });
+
+    const response = await chat([
+      { role: 'system', content: PROMPTS.consultation.diagnosisChecklist.system },
+      { role: 'user', content: userPrompt }
+    ]);
+
+    const result = parseLLMJson(response);
+    
+    if (result && result.isNeeded && Array.isArray(result.items) && result.items.length > 0) {
+      checklistItems.value = result.items.map((item: any) => ({ 
+        question: item.question, 
+        recordText: item.recordText, 
+        checked: false 
+      }));
+      // Do not auto-open. Show the inline '鉴别排查' button.
+    }
+  } catch (error) {
+    console.error("Failed to fetch diagnosis checklist:", error);
+  } finally {
+    isChecklistLoading.value = false;
+  }
+};
+
+const handleChecklistConfirm = () => {
+  const checkedTexts = checklistItems.value
+    .filter(i => i.checked)
+    .map(i => i.recordText)
+    .join(' ');
+
+  if (!checkedTexts && !checklistNotes.value) {
+    showChecklistModal.value = false;
+    return;
+  }
+
+  let updateStr = `\n\n[排查记录]：`;
+  if (checkedTexts) {
+    updateStr += `${checkedTexts} `;
+  }
+  if (checklistNotes.value) {
+    updateStr += `${checklistNotes.value}`;
+  }
+
+  generatedRecord.value.historyOfPresentIllness += updateStr.trimEnd();
+  showToast("排查结果已更新至现病史", "success");
+  
+  showChecklistModal.value = false;
+  checklistItems.value = []; // Hide button after confirmation
+};
+
 const handleDiagnosisSelect = (diag: Diagnosis) => {
   trackClick('diagnosis_select', { diagnosisName: diag.name, diagnosisCode: diag.code, hasId: !!diag.id });
   selectedDiagnosis.value = diag;
+  
+  // Asynchronously trigger checklist generation
+  if (diag.name) {
+    fetchDiagnosisChecklist(diag);
+  }
 
   if (diag.code) {
     // 根据诊断类型选择合适的方法
@@ -4716,4 +4848,154 @@ const copyToClipboard = () => {
   border-radius: 50%;
   animation: spin 0.8s linear infinite;
 }
+.checklist-indicator {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  background-color: var(--color-warning-light, #fef3c7);
+  color: var(--color-warning-dark, #b45309);
+  padding: 4px 8px;
+  border-radius: 4px;
+  font-size: 11px;
+  font-weight: 500;
+  margin-top: 8px;
+  cursor: pointer;
+  border: 1px solid var(--color-warning-border, #fcd34d);
+  transition: all 0.2s ease;
+}
+
+.checklist-indicator:hover {
+  background-color: var(--color-warning, #fde68a);
+}
+
+.checklist-indicator.loading {
+  background-color: var(--color-background-gray);
+  color: var(--color-text-muted);
+  border-color: var(--color-border-light);
+  cursor: default;
+}
+
+.checklist-modal {
+  max-width: 500px;
+  width: 90%;
+}
+
+.checklist-modal .modal-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 20px;
+}
+
+.checklist-modal .modal-header h3 {
+  font-size: 18px;
+  font-weight: 600;
+  color: var(--color-text-strong);
+  margin: 0;
+}
+
+.checklist-modal .close-btn {
+  background: transparent;
+  border: none;
+  color: var(--color-text-muted);
+  cursor: pointer;
+  padding: 4px;
+  border-radius: 4px;
+  transition: background 0.2s, color 0.2s;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.checklist-modal .close-btn:hover {
+  background: var(--color-background-gray);
+  color: var(--color-text-strong);
+}
+
+.checklist-modal .modal-body {
+  margin-bottom: 24px;
+}
+
+.checklist-modal .modal-footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 12px;
+  padding-top: 16px;
+  border-top: 1px solid var(--color-border-light);
+}
+
+.checklist-intro {
+  font-size: 13px;
+  color: var(--color-text-strong);
+  line-height: 1.5;
+  margin-bottom: 16px;
+  background: var(--color-warning-bg, #fffbeb);
+  padding: 12px;
+  border-radius: 6px;
+  border-left: 3px solid var(--color-warning, #f59e0b);
+}
+
+.checklist-items {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-bottom: 20px;
+}
+
+.checklist-item-label {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  cursor: pointer;
+  padding: 8px;
+  border-radius: 6px;
+  transition: background 0.2s;
+}
+
+.checklist-item-label:hover {
+  background: var(--color-background-hover);
+}
+
+.checklist-item-label input[type="checkbox"] {
+  margin-top: 2px;
+  width: 16px;
+  height: 16px;
+  cursor: pointer;
+}
+
+.checklist-text {
+  font-size: 14px;
+  color: var(--color-text-strong);
+  line-height: 1.4;
+}
+
+.checklist-notes-box {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.checklist-notes-box label {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--color-text-strong);
+}
+
+.checklist-notes-box textarea {
+  width: 100%;
+  height: 80px;
+  padding: 8px 12px;
+  border: 1px solid var(--color-border-medium);
+  border-radius: 6px;
+  font-size: 14px;
+  resize: none;
+  font-family: inherit;
+}
+
+.checklist-notes-box textarea:focus {
+  outline: none;
+  border-color: var(--color-primary);
+  box-shadow: 0 0 0 2px var(--color-primary-100);
+}
+
 </style>

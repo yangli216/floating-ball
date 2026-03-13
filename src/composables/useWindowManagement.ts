@@ -154,10 +154,14 @@ export function useWindowManagement(options: WindowManagementOptions) {
 
       console.log('[WindowMgmt] Final position:', { x: safeX, y: safeY });
       await appWindow.value.setPosition(new PhysicalPosition(safeX, safeY));
+      
+      // 更新小球模式下的位置缓存，保证动画返回坐标正确
+      lastBallPos.value = { x: safeX, y: safeY };
     } catch (err) {
       console.error('[WindowMgmt] Failed to restore position:', err);
       // 终极降级：默认位置
       await appWindow.value.setPosition(new PhysicalPosition(100, 100));
+      lastBallPos.value = { x: 100, y: 100 };
     }
   };
 

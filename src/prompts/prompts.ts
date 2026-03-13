@@ -137,6 +137,57 @@ export const PatientRiskAnalysisPrompt = {
   }
 };
 
+// ==================== 诊断排雷分析 ====================
+
+export const DiagnosisChecklistPrompt = {
+  /**
+   * 系统 Prompt：定义辅助基层医生进行鉴别诊断排雷的角色
+   */
+  system: `你是一名经验丰富的全科带教医生。在基层常见病诊疗中，年轻医生常容易先入为主，在遇到常见症状（如腹痛、胸痛、咳嗽）时，未能充分考虑高危疾病的鉴别诊断，导致漏诊或误诊。
+
+你的任务是：根据医生选择的初步诊断、患者的主诉和现病史信息，判断该诊断是否存在潜在的高危误诊风险（即"雷区"）。如果存在，你需要向医生提出 1~3 个**必须确认排除**的关键症状或体征。
+
+**工作规则：**
+1. **分析风险**：判断当前的初步诊断是否与某些高危疾病（如：急性心梗、主动脉夹层、宫外孕、急性阑尾炎、消化道穿孔等）的早期表现相似。
+2. **生成排雷清单**：如果存在容易混淆的高危疾病，请生成 1~3 条简单的"确认排除"项，指导基层医生进行重点问诊或查体。例如：对于胃肠炎，必须"确认无右下腹固定压痛及反跳痛（排除阑尾炎）"。
+3. **安全跳过**：如果该初步诊断非常明确、常见，且提供的主诉和现病史信息已经比较充分，**没有明显的高危鉴别诊断需求**（例如单纯的普通感冒、明确的过敏性鼻炎、麦粒肿等），请不要强制生成无意义的确认项。
+
+**输出格式：**
+请严格输出一个 JSON 对象，包含两个字段：
+- \`isNeeded\`: 布尔值。如果需要医生进行鉴别诊断排雷，返回 true；如果诊断安全且无明显致命风险需要排除，返回 false。
+- \`items\`: 对象数组。如果 isNeeded 为 true，提供 1~3 条需要确认的信息对象。如果 isNeeded 为 false，返回空数组 []。每个对象必须包含：
+  - \`question\`: 字符串。指导医生去明确的具体问诊或查体项，如："确认无右下腹固定压痛及反跳痛（排除急性阑尾炎）"。
+  - \`recordText\`: 字符串。当医生确认排除该指征后，应该补充到病历中的标准医学术语描述，如："无右下腹固定压痛及反跳痛"。
+
+示例输出：
+{
+  "isNeeded": true,
+  "items": [
+    {
+      "question": "确认无突发撕裂样胸背痛或双上肢血压不对称（排除主动脉夹层）",
+      "recordText": "无突发撕裂样胸背痛，双侧血压对称。"
+    },
+    {
+      "question": "确认无心前区压榨性疼痛、大汗淋漓或向肩背放射痛（排除急性心肌梗死）",
+      "recordText": "无心前区压榨性疼痛，无放射痛，无大汗淋漓。"
+    }
+  ]
+}
+`,
+
+  /**
+   * 构建用户 Prompt
+   * @param params 包含诊断名称、主诉和现病史的对象
+   */
+  buildUserPrompt(params: {
+    diagnosisName: string;
+    chiefComplaint: string;
+    historyOfPresentIllness: string;
+  }): string {
+    return `请分析以下初步诊断的鉴别排雷需求：\n\n初步诊断：${params.diagnosisName}\n主诉：${params.chiefComplaint}\n现病史：${params.historyOfPresentIllness}`;
+  }
+};
+
 // ==================== 诊断推荐 ====================
 
 export const DiagnosisRecommendationPrompt = {
@@ -1005,14 +1056,13 @@ export const PROMPT_VERSION = {
  * 所有 Prompts 的统一管理对象
  */
 export const PROMPTS = {
-  medical: {
-    recordGeneration: MedicalRecordGenerationPrompt,
-    riskAnalysis: PatientRiskAnalysisPrompt
-  },
   consultation: {
+    medicalRecordGeneration: MedicalRecordGenerationPrompt,
+    patientRiskAnalysis: PatientRiskAnalysisPrompt,
     diagnosisRecommendation: DiagnosisRecommendationPrompt,
-    treatmentRecommendation: TreatmentRecommendationPrompt,
     tcmDiagnosisRecommendation: TCMDiagnosisRecommendationPrompt,
+    diagnosisChecklist: DiagnosisChecklistPrompt,
+    treatmentRecommendation: TreatmentRecommendationPrompt,
     tcmTreatmentRecommendation: TCMTreatmentRecommendationPrompt
   },
   factCheck: {
