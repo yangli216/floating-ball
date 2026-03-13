@@ -134,8 +134,8 @@ export function useVoiceConsultation(options: VoiceConsultationOptions) {
 
       // 2. LLM Generation - Based on medical record requirements
       const messages: ChatMessage[] = [
-        { role: 'system', content: PROMPTS.medical.recordGeneration.system },
-        { role: 'user', content: PROMPTS.medical.recordGeneration.buildUserPrompt(text) },
+        { role: 'system', content: PROMPTS.consultation.medicalRecordGeneration.system },
+        { role: 'user', content: PROMPTS.consultation.medicalRecordGeneration.buildUserPrompt(text) },
       ];
 
       console.log('[VoiceConsultation] Sending request to LLM...');

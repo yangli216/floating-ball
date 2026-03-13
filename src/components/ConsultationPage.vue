@@ -1996,7 +1996,7 @@ const fetchAIDiagnosis = async () => {
     }
 
     // Perform automatic fact checking on all diagnoses
-    // performDiagnosisFactCheck(diagnoses);
+    performDiagnosisFactCheck(diagnoses);
     finishDiagnosisLlm(true, { diagnosisCount: diagnoses.length, mode: consultationMode.value });
     
     console.timeEnd('[AI分析] 4. 分支逻辑 (文献检索、持久化和事实核查)');
