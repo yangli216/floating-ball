@@ -216,17 +216,23 @@ onMounted(async () => {
         currentView.value = 'chat';
         
         if (appWindow.value) {
-            // 先设置大小，再设置位置
+            // 先设置大小
             await appWindow.value.setSize(new LogicalSize(WINDOW_SIZES.BALL.width, WINDOW_SIZES.BALL.height));
-            await restoreWindowPosition();
             
             // 确保窗口可见
             await appWindow.value.show();
             await appWindow.value.setFocus();
+            
+            // 延迟一点时间再恢复位置，避免 macOS 下 setPosition 在 show 之前或者同时调用失效
+            setTimeout(async () => {
+               await restoreWindowPosition();
+            }, 100);
         }
     } catch (err) {
       console.warn('初始化状态失败:', err);
-      await restoreWindowPosition();
+      setTimeout(async () => {
+         await restoreWindowPosition();
+      }, 100);
     }
 
     // 注册所有事件监听
