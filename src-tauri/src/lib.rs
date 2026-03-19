@@ -308,6 +308,27 @@ pub fn run() {
             // 设置窗口为始终置顶
             window.set_always_on_top(true).unwrap();
 
+            // 尝试在 Rust 层直接读取本地存储并恢复悬浮球坐标，避免前端 Vue 初始化带来的闪烁和 macOS 隐藏渲染 Bug
+            if let Ok(app_data_dir) = app.path().app_data_dir() {
+                let settings_path = app_data_dir.join(".settings.dat");
+                if let Ok(content) = std::fs::read_to_string(&settings_path) {
+                    if let Ok(json) = serde_json::from_str::<serde_json::Value>(&content) {
+                        if let Some(pos) = json.get("window_pos") {
+                            if let (Some(x), Some(y)) = (
+                                pos.get("x").and_then(|v| v.as_f64()),
+                                pos.get("y").and_then(|v| v.as_f64()),
+                            ) {
+                                println!("[Rust] Restoring position from .settings.dat: ({}, {})", x, y);
+                                let _ = window.set_position(tauri::Position::Physical(tauri::PhysicalPosition {
+                                    x: x as i32,
+                                    y: y as i32,
+                                }));
+                            }
+                        }
+                    }
+                }
+            }
+
             // Start HTTP Server
             let handle = app.handle().clone();
             let state_for_server = state.clone();

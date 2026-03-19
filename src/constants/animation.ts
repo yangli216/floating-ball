@@ -14,8 +14,8 @@ export const ANIMATION = {
   /** 主过渡动画时长（展开/收起）：300ms */
   TRANSITION_MS: 300,
 
-  /** 窗口移动防抖延迟：500ms */
-  MOVE_DEBOUNCE_MS: 500,
+  /** 窗口移动防抖延迟：100ms */
+  MOVE_DEBOUNCE_MS: 100,
 
   /** 窗口尺寸调整防抖延迟：200ms */
   RESIZE_DEBOUNCE_MS: 200,

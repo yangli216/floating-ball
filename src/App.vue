@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onMounted, onUnmounted, ref, watch } from "vue";
+import { onMounted, onUnmounted, ref, watch, shallowRef } from "vue";
 import { getCurrentWindow, Window as TauriWindow } from "@tauri-apps/api/window";
 import { exit } from '@tauri-apps/plugin-process';
 import { load, Store } from '@tauri-apps/plugin-store';
@@ -53,7 +53,7 @@ const generatedRecord = ref<GeneratedRecord | null>(null);
 
 let store: Store | null = null;
 const resizeTimeoutRef = ref<ReturnType<typeof setTimeout> | null>(null);
-const storeRef = ref<AppStore | null>(null);
+const storeRef = shallowRef<AppStore | null>(null);
 const transitioning = ref(false);
 
 // 初始化窗口管理 composable
@@ -65,7 +65,7 @@ const windowMgmt = useWindowManagement({
 });
 
 const {
-  restoreWindowPosition,
+  saveWindowPosition,
   updateCurrentMonitor,
   smartExpand,
   handleWindowMove,
@@ -203,37 +203,39 @@ onMounted(async () => {
   try {
     appWindow.value = getCurrentWindow();
 
-    // 初始化 store
-    store = await load('.settings.dat');
-    storeRef.value = store;  // 同步到 ref，供 composable 使用
-    
-    // 恢复应用状态
-    // FORCE RESET: 始终以悬浮球模式启动，不恢复之前的展开状态，防止窗口位置/大小异常导致不可见
-    try {
-        // 仅恢复位置
-        console.log('[App] Starting in default Floating Ball mode...');
-        isWorking.value = false;
-        currentView.value = 'chat';
-        
-        if (appWindow.value) {
-            // 先设置大小
-            await appWindow.value.setSize(new LogicalSize(WINDOW_SIZES.BALL.width, WINDOW_SIZES.BALL.height));
-            
-            // 确保窗口可见
-            await appWindow.value.show();
-            await appWindow.value.setFocus();
-            
-            // 延迟一点时间再恢复位置，避免 macOS 下 setPosition 在 show 之前或者同时调用失效
-            setTimeout(async () => {
-               await restoreWindowPosition();
-            }, 100);
+        // 初始化 store
+        try {
+          store = await load('.settings.dat');
+          storeRef.value = store;
+        } catch (storeErr) {
+          console.warn('[App] ⚠️ Failed to load store:', storeErr);
         }
-    } catch (err) {
-      console.warn('初始化状态失败:', err);
-      setTimeout(async () => {
-         await restoreWindowPosition();
-      }, 100);
-    }
+        
+        // 恢复应用状态
+        try {
+            console.log('[App] 🌟 Application starting. mode: Floating Ball');
+            isWorking.value = false;
+            currentView.value = 'chat';
+            
+            if (appWindow.value) {
+                await appWindow.value.setSize(new LogicalSize(WINDOW_SIZES.BALL.width, WINDOW_SIZES.BALL.height));
+                
+                // 【核心修复】：不要在这里调用 restoreWindowPosition！
+                // 因为 Rust 后端已经在窗口启动前，读取本地文件并完美赋予了物理坐标。
+                // 如果在这里使用基于 Tauri-Plugin-Store 的 JS API 读取，刚启动时极易读取异步落后得到空值，
+                // 导致 fallback 到了 (200, 200)，从而强行把位置给毁了。
+                // 我们只需把当前真实位置同步给内存状态即可：
+                try {
+                    const currentPos = await appWindow.value.outerPosition();
+                    windowMgmt.lastBallPos.value = { x: currentPos.x, y: currentPos.y };
+                    console.log('[App] Synchronized Rust position to Vue memory:', currentPos);
+                } catch (posErr) {
+                    console.warn('[App] Failed to read outer position:', posErr);
+                }
+            }
+        } catch (err) {
+          console.warn('[App] ⚠️ Initialization state failed:', err);
+        }
 
     // 注册所有事件监听
     await eventListeners.registerAllListeners();
@@ -268,9 +270,12 @@ const handleExitApp = async (e: MouseEvent) => {
   e.preventDefault();
   trackClick('exit_app');
   try {
+    // 退出前强制保存一次位置
+    console.log('[App] 🚪 App exiting, triggering final position save...');
+    await saveWindowPosition(true);
     await exit(0);
   } catch (err) {
-    console.error('退出应用失败:', err);
+    console.error('[App] ❌ Failed to exit app:', err);
     // 降级方案
     if (appWindow.value) {
       await appWindow.value.close();

@@ -82,86 +82,29 @@ export function useWindowManagement(options: WindowManagementOptions) {
    *
    * 仅在小球模式下保存，避免展开后位置偏移覆盖正确的小球位置。
    *
+   * @param force - 是否强制保存（忽略 transitioning 状态）
+   * @param providedPos - 可选的外部提供位置（避免重复调用 outerPosition）
    * @returns Promise<void>
    */
-  const saveWindowPosition = async (): Promise<void> => {
+  const saveWindowPosition = async (force = false, providedPos?: Position): Promise<void> => {
     if (!appWindow.value || !store.value) return;
 
     try {
-      const pos = await appWindow.value.outerPosition();
+      // 优先使用提供的位置，减少异步开销
+      const pos = providedPos || await appWindow.value.outerPosition();
+      console.log('[WindowMgmt] Position to save:', pos, 'Force:', force);
 
-      // 只有在小球模式下才保存位置
-      if (!isWorking.value && !transitioning.value) {
+      // 只有在小球模式下才保存位置，或者强制保存（用于退出前）
+      if (force || (!isWorking.value && !transitioning.value)) {
         lastBallPos.value = { x: pos.x, y: pos.y };
         await store.value.set('window_pos', { x: pos.x, y: pos.y });
         await store.value.save();
-        console.log('[WindowMgmt] Position saved:', pos);
+        console.log('[WindowMgmt] ✅ Position saved successfully to store:', pos);
+      } else {
+        console.log('[WindowMgmt] ⚠️ Save skipped. Working:', isWorking.value, 'Transitioning:', transitioning.value);
       }
     } catch (err) {
       console.error('[WindowMgmt] Failed to save position:', err);
-    }
-  };
-
-  /**
-   * 从本地存储恢复窗口位置
-   *
-   * 包含边界验证，确保窗口不会出现在屏幕外。
-   * 使用多层降级策略：显示器验证 → 非负验证 → 默认位置 (100, 100)
-   *
-   * @returns Promise<void>
-   */
-  const restoreWindowPosition = async (): Promise<void> => {
-    if (!appWindow.value || !store.value) return;
-
-    try {
-      const pos = await store.value.get('window_pos') as Position;
-      console.log('[WindowMgmt] Restoring position:', pos);
-
-      let safeX = 100;
-      let safeY = 100;
-
-      if (pos) {
-        try {
-          const monitor = await currentMonitor();
-          if (monitor) {
-            const size = monitor.size;
-            const mPos = monitor.position;
-
-            // 边界检查：位置必须在显示器范围内
-            if (
-              pos.x >= mPos.x &&
-              pos.x < mPos.x + size.width &&
-              pos.y >= mPos.y &&
-              pos.y < mPos.y + size.height
-            ) {
-              safeX = pos.x;
-              safeY = pos.y;
-            } else {
-              console.warn('[WindowMgmt] Position out of bounds:', pos, 'Monitor:', mPos, size);
-            }
-          } else {
-            // 无显示器信息，仅确保非负
-            safeX = Math.max(0, pos.x);
-            safeY = Math.max(0, pos.y);
-          }
-        } catch (e) {
-          console.warn('[WindowMgmt] Position validation failed:', e);
-          // 降级：简单的非负检查
-          safeX = Math.max(0, pos.x);
-          safeY = Math.max(0, pos.y);
-        }
-      }
-
-      console.log('[WindowMgmt] Final position:', { x: safeX, y: safeY });
-      await appWindow.value.setPosition(new PhysicalPosition(safeX, safeY));
-      
-      // 更新小球模式下的位置缓存，保证动画返回坐标正确
-      lastBallPos.value = { x: safeX, y: safeY };
-    } catch (err) {
-      console.error('[WindowMgmt] Failed to restore position:', err);
-      // 终极降级：默认位置
-      await appWindow.value.setPosition(new PhysicalPosition(100, 100));
-      lastBallPos.value = { x: 100, y: 100 };
     }
   };
 
@@ -370,18 +313,16 @@ export function useWindowManagement(options: WindowManagementOptions) {
   // ========== 窗口移动监听 ==========
 
   /**
-   * 处理窗口移动事件（带防抖）
-   *
-   * 在移动结束后自动保存位置并更新显示器缓存。
-   * 使用防抖避免频繁写入存储。
+   * 处理窗口移动事件（带防抖和即时缓存）
    */
   const handleWindowMove = (): void => {
     isMoving.value = true;
 
-    // 防抖：移动停止 500ms 后执行
+    // 防抖：移动停止后持久化到磁盘
     if (moveTimeout) clearTimeout(moveTimeout);
     moveTimeout = setTimeout(() => {
       isMoving.value = false;
+      // 直接读取底层最新坐标并保存
       saveWindowPosition();
       updateCurrentMonitor();
     }, ANIMATION.MOVE_DEBOUNCE_MS);
@@ -407,7 +348,6 @@ export function useWindowManagement(options: WindowManagementOptions) {
 
     // 位置管理
     saveWindowPosition,
-    restoreWindowPosition,
 
     // 显示器管理
     updateCurrentMonitor,
