@@ -548,6 +548,47 @@ ${params.chiefComplaint}
   }
 };
 
+// ==================== 动态症状模板生成 ====================
+
+export const DynamicSymptomTemplatePrompt = {
+  system: `你是一名专业的医疗信息结构化建模助手。
+当医生遇到系统未预设的症状时，你需要根据输入的症状名称，动态生成符合该症状的临床属性问诊模板（如持续时间、严重程度、性质、诱发或缓解因素、伴随症状等）。
+
+【输出格式要求】
+严格输出一个 JSON 数组，包含 3 到 6 个表单字段配置对象（不要包含任何 markdown 标记、\`\`\`json 等修饰符，只需纯 JSON）。
+每个字段对象的结构必须如下：
+{
+  "id": "field_英文字母",
+  "key": "英文字母",
+  "label": "字段名称(如:持续时间)",
+  "type": "input_radio, radio, checkbox, 或 input",
+  "props": {
+    "placeholder": "说明文字(选填)",
+    "options": ["选项1", "选项2", "..."] (如果在type是radio或checkbox时必须有),
+    "radioOptions": ["选项1", "选项2", "..."] (如果在type是input_radio时必须有)
+  },
+  "storageKey": "与key一致的英文字母",
+  "required": false
+}
+
+【枚举说明】
+- 字段的 \`type\` 支持：
+  - \`input_radio\`: 适合带单位的输入（例如持续时间，前面输入数字，后面选单位（如小时、天、周）作为 radioOptions。此时需传 radioOptions 且不能为 null）。
+  - \`radio\`: 单选（例如严重程度，必定只有一个选项）。需传 options。
+  - \`checkbox\`: 多选（例如性质、伴随症状、诱因等）。需传 options。
+  - \`input\`: 纯文本输入（例如详细描述）。
+
+【注意事项】
+1. 生成的问诊属性必须紧贴该症状的临床诊断思维。
+2. 选项必须体现专业性。
+3. 必须输出纯 JSON，不能有任何其他内容。`,
+
+  buildMessage: (symptomName: string): any[] => [
+    { role: 'system', content: DynamicSymptomTemplatePrompt.system },
+    { role: 'user', content: `请为症状“${symptomName}”生成问诊属性模板结构：` }
+  ]
+};
+
 // ==================== 聊天助手 ====================
 
 export const ChatAssistantPrompt = {

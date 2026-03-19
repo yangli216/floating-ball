@@ -1,15 +1,5 @@
 <template>
   <div class="system-category-selector">
-    <!-- 搜索框 - 始终显示在顶部 -->
-    <div class="top-search-box">
-      <input
-        type="text"
-        v-model="searchQuery"
-        placeholder="搜索症状(支持首字母)..."
-        class="top-search-input"
-      />
-    </div>
-
     <div class="selector-header">
       <h4>选择症状</h4>
       <button class="clear-btn" @click="clearSelection" v-if="selectedCategories.length > 0">
@@ -31,24 +21,9 @@
       </div>
     </div>
 
-    <!-- 症状区域：有搜索词时显示搜索结果，无搜索词时按系统显示 -->
+    <!-- 症状区域：按系统显示 -->
     <div class="category-symptoms">
-      <!-- 搜索结果模式 -->
-      <template v-if="searchQuery.trim()">
-        <div v-if="searchResultSymptoms.length > 0" class="symptom-chips">
-          <button
-            v-for="symptom in searchResultSymptoms"
-            :key="symptom.key"
-            :class="['symptom-chip', { active: isSymptomSelected(symptom.key) }]"
-            @click="handleSymptomClick(symptom)"
-          >
-            {{ symptom.name }}
-          </button>
-        </div>
-        <div v-else class="no-symptoms">未找到相关症状</div>
-      </template>
-      <!-- 选择系统模式 -->
-      <template v-else-if="selectedCategories.length > 0">
+      <div v-if="selectedCategories.length > 0">
         <div v-if="filteredSymptoms.length > 0">
           <h5>
             已选择 {{ selectedCategories.length }} 个系统
@@ -66,14 +41,13 @@
           </div>
         </div>
         <div v-else class="no-symptoms">所选系统暂无相关症状</div>
-      </template>
+      </div>
     </div>
   </div>
 </template>
 
 <script setup lang="ts">
 import { ref, computed, PropType } from 'vue';
-import Pinyin from 'tiny-pinyin';
 import Icon from './Icon.vue';
 
 interface Symptom {
@@ -100,7 +74,6 @@ const emit = defineEmits<{
 
 const handleSymptomClick = (symptom: Symptom) => {
   emit('select-symptom', symptom);
-  searchQuery.value = '';
 };
 
 const isSymptomSelected = (key: string) => {
@@ -108,7 +81,6 @@ const isSymptomSelected = (key: string) => {
 };
 
 const selectedCategories = ref<string[]>([]);
-const searchQuery = ref('');
 
 const systems = [
   {
@@ -182,25 +154,6 @@ const filteredSymptoms = computed(() => {
   );
 });
 
-// 直接搜索所有症状的辅助函数
-const matchQuery = (symptom: Symptom, q: string): boolean => {
-  if (symptom.name.toLowerCase().includes(q)) return true;
-  try {
-    const pinyin = Pinyin.convertToPinyin(symptom.name, '', true).toLowerCase();
-    const initial = symptom.name.split('').map((char: string) => {
-      try { return Pinyin.convertToPinyin(char, '', true)[0]?.toLowerCase() || ''; } catch { return ''; }
-    }).join('');
-    return pinyin.includes(q) || initial.includes(q);
-  } catch {
-    return false;
-  }
-};
-
-const searchResultSymptoms = computed(() => {
-  const q = searchQuery.value.trim().toLowerCase();
-  if (!q) return [];
-  return props.symptoms.filter(s => matchQuery(s, q));
-});
 </script>
 
 <style scoped>
@@ -216,34 +169,8 @@ const searchResultSymptoms = computed(() => {
   display: flex;
   flex-direction: column;
   gap: var(--space-md);
-  height: 100%;
-  padding: 8px;
-}
-
-.top-search-box {
-  flex-shrink: 0;
-}
-
-.top-search-input {
-  width: 100%;
-  padding: 7px 10px;
-  font-size: 12px;
-  border: 1px solid var(--color-border-light);
-  border-radius: 6px;
-  background: var(--color-background-white);
-  color: var(--color-text-strong);
-  outline: none;
-  transition: border-color var(--duration-normal) var(--ease-out);
-  box-sizing: border-box;
-}
-
-.top-search-input:focus {
-  border-color: var(--color-primary);
-  box-shadow: 0 0 0 2px var(--color-primary-100);
-}
-
-.top-search-input::placeholder {
-  color: var(--color-text-muted);
+  flex: 1;
+  min-height: 0;
 }
 
 .search-results-container {
@@ -406,33 +333,6 @@ const searchResultSymptoms = computed(() => {
   color: var(--color-text-muted);
   background: var(--color-primary-50);
   border-radius: var(--radius-md);
-}
-
-.symptom-search-box {
-  margin-bottom: 8px;
-  flex-shrink: 0;
-}
-
-.symptom-search-input {
-  width: 100%;
-  padding: 7px 10px;
-  font-size: 12px;
-  border: 1px solid var(--color-border-light);
-  border-radius: 6px;
-  background: var(--color-background-white);
-  color: var(--color-text-strong);
-  outline: none;
-  transition: border-color var(--duration-normal) var(--ease-out);
-  box-sizing: border-box;
-}
-
-.symptom-search-input:focus {
-  border-color: var(--color-primary);
-  box-shadow: 0 0 0 2px var(--color-primary-100);
-}
-
-.symptom-search-input::placeholder {
-  color: var(--color-text-muted);
 }
 
 /* Scrollbar Styling */

@@ -72,86 +72,125 @@
     <div class="content-container" v-if="currentView === 'consultation'">
       <!-- Left: Symptom Shortcuts -->
       <aside class="symptom-sidebar"> 
-        <!-- Selection Mode Tabs -->
-        <div class="selection-tabs">
-          <button
-            :class="['tab-btn', { active: selectionMode === 'common' }]"
-            @click="selectionMode = 'common'"
-          >
-            常用症状
-          </button>
-          <button
-            :class="['tab-btn', { active: selectionMode === 'bodyPart' }]"
-            @click="selectionMode = 'bodyPart'"
-          >
-            按部位
-          </button>
-          <button
-            :class="['tab-btn', { active: selectionMode === 'system' }]"
-            @click="selectionMode = 'system'"
-          >
-            按系统
-          </button>
+        <div class="search-box">
+          <input
+            type="text"
+            v-model="searchQuery"
+            placeholder="搜索症状(支持首字母)..."
+            class="search-input"
+          />
         </div>
 
-        <!-- Common Symptoms View -->
-        <div v-if="selectionMode === 'common'" class="selection-content">
-          <div class="search-box">
-            <div class="category-filter-container" ref="categoryFilterRef">
-              <div class="category-trigger" @click="toggleCategoryDropdown" :class="{ active: isCategoryDropdownOpen }">
-                <span class="trigger-text">{{ categoryButtonText }}</span>
-                <svg class="trigger-icon" :class="{ rotate: isCategoryDropdownOpen }" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg>
-              </div>
+        <template v-if="!searchQuery.trim()">
+          <!-- Selection Mode Tabs -->
+          <div class="selection-tabs">
+            <button
+              :class="['tab-btn', { active: selectionMode === 'common' }]"
+              @click="selectionMode = 'common'"
+            >
+              常用症状
+            </button>
+            <button
+              :class="['tab-btn', { active: selectionMode === 'bodyPart' }]"
+              @click="selectionMode = 'bodyPart'"
+            >
+              按部位
+            </button>
+            <button
+              :class="['tab-btn', { active: selectionMode === 'system' }]"
+              @click="selectionMode = 'system'"
+            >
+              按系统
+            </button>
+          </div>
 
-              <div v-show="isCategoryDropdownOpen" class="category-dropdown">
-                <div class="category-option" @click="toggleCategory('all')" :class="{ selected: selectedCategories.length === 0 }">
-                    <div class="checkbox-custom" :class="{ checked: selectedCategories.length === 0 }"></div>
-                    <span>全部系统</span>
+          <!-- Common Symptoms View -->
+          <div v-if="selectionMode === 'common'" class="selection-content">
+            <div class="common-filter-header">
+              <div class="category-filter-container" ref="categoryFilterRef">
+                <div class="category-trigger" @click="toggleCategoryDropdown" :class="{ active: isCategoryDropdownOpen }">
+                  <span class="trigger-text">{{ categoryButtonText }}</span>
+                  <svg class="trigger-icon" :class="{ rotate: isCategoryDropdownOpen }" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg>
                 </div>
-                <div class="dropdown-divider"></div>
-                <div v-for="cat in uniqueCategories" :key="cat.key" class="category-option" @click="toggleCategory(cat.key)" :class="{ selected: selectedCategories.includes(cat.key) }">
-                    <div class="checkbox-custom" :class="{ checked: selectedCategories.includes(cat.key) }"></div>
-                    <span>{{ cat.label }}</span>
+
+                <div v-show="isCategoryDropdownOpen" class="category-dropdown">
+                  <div class="category-option" @click="toggleCategory('all')" :class="{ selected: selectedCategories.length === 0 }">
+                      <div class="checkbox-custom" :class="{ checked: selectedCategories.length === 0 }"></div>
+                      <span>全部系统</span>
+                  </div>
+                  <div class="dropdown-divider"></div>
+                  <div v-for="cat in uniqueCategories" :key="cat.key" class="category-option" @click="toggleCategory(cat.key)" :class="{ selected: selectedCategories.includes(cat.key) }">
+                      <div class="checkbox-custom" :class="{ checked: selectedCategories.includes(cat.key) }"></div>
+                      <span>{{ cat.label }}</span>
+                  </div>
                 </div>
               </div>
             </div>
-            <input
-              type="text"
-              v-model="searchQuery"
-              placeholder="搜索症状(支持首字母)..."
-              class="search-input"
+            <ul class="symptom-list" v-show="filteredSymptoms.length > 0">
+              <li
+                v-for="symptom in filteredSymptoms"
+                :key="symptom.key"
+                :class="{ active: selectedSymptoms.some(s => s.key === symptom.key) }"
+                @click="selectSymptom(symptom)"
+              >
+                {{ symptom.name }}
+              </li>
+            </ul>
+          </div>
+
+          <!-- Body Part Selector View -->
+          <div v-if="selectionMode === 'bodyPart'" class="selection-content">
+            <BodyPartSelector
+              :symptoms="allSymptoms"
+              :patient-gender="patientGender"
+              :selected-symptoms="selectedSymptoms"
+              @select-symptom="selectSymptom"
             />
           </div>
-          <ul class="symptom-list">
-            <li
-              v-for="symptom in filteredSymptoms"
-              :key="symptom.key"
-              :class="{ active: selectedSymptoms.some(s => s.key === symptom.key) }"
-              @click="selectSymptom(symptom)"
-            >
-              {{ symptom.name }}
-            </li>
-          </ul>
-        </div>
 
-        <!-- Body Part Selector View -->
-        <div v-if="selectionMode === 'bodyPart'" class="selection-content">
-          <BodyPartSelector
-            :symptoms="allSymptoms"
-            :patient-gender="patientGender"
-            :selected-symptoms="selectedSymptoms"
-            @select-symptom="selectSymptom"
-          />
-        </div>
+          <!-- System Category Selector View -->
+          <div v-if="selectionMode === 'system'" class="selection-content">
+            <SystemCategorySelector
+              :symptoms="allSymptoms"
+              :selected-symptoms="selectedSymptoms"
+              @select-symptom="selectSymptom"
+            />
+          </div>
+        </template>
 
-        <!-- System Category Selector View -->
-        <div v-if="selectionMode === 'system'" class="selection-content">
-          <SystemCategorySelector
-            :symptoms="allSymptoms"
-            :selected-symptoms="selectedSymptoms"
-            @select-symptom="selectSymptom"
-          />
-        </div>
+        <!-- Immersive Search Results View -->
+        <template v-else>
+          <div class="selection-content immersive-search">
+            <!-- Global Search Results List -->
+            <ul class="symptom-list" v-if="filteredSymptoms.length > 0">
+              <li
+                v-for="symptom in filteredSymptoms"
+                :key="symptom.key"
+                :class="{ active: selectedSymptoms.some(s => s.key === symptom.key) }"
+                @click="selectSymptom(symptom)"
+              >
+                {{ symptom.name }}
+              </li>
+            </ul>
+
+            <!-- AI Add Custom Symptom Button (Empty State) -->
+            <div v-else class="ai-add-symptom">
+               <div class="empty-state-icon">
+                 <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-muted"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
+               </div>
+               <p class="empty-state-text">未找到相关症状</p>
+               <button 
+                 class="ai-add-btn" 
+                 :disabled="isGeneratingSymptom"
+                 @click="handleGenerateDynamicSymptom(searchQuery.trim())"
+               >
+                 <Icon v-if="isGeneratingSymptom" icon="lucide:loader-2" class="animate-spin" size="16" style="margin-right: 6px;"/>
+                 <Icon v-else icon="lucide:sparkles" size="16" style="margin-right: 6px;"/>
+                 <span>{{ isGeneratingSymptom ? 'AI 生成属性中...' : `AI 新增: ${searchQuery}` }}</span>
+               </button>
+            </div>
+          </div>
+        </template>
       </aside>
 
       <!-- Right: Dynamic Form -->
@@ -769,7 +808,7 @@ import { feedbackService } from '../services/feedback';
 import { trackViewChange, trackClick, trackError, trackFormSubmit, trackRecommendationAction, startTimedOperation } from '../services/operationTracker';
 import BodyPartSelector from './BodyPartSelector.vue';
 import SystemCategorySelector from './SystemCategorySelector.vue';
-import { PROMPTS } from '../prompts';
+import { PROMPTS, DynamicSymptomTemplatePrompt } from '../prompts';
 import Icon from './Icon.vue';
 import FactCheckNotification from './FactCheckNotification.vue';
 import FactCheckHighlight from './FactCheckHighlight.vue';
@@ -847,6 +886,7 @@ const symptoms = shallowRef<any[]>([]);
 const selectedSymptoms = ref<any[]>([]);
 const formData = ref<Record<string, any>>({});
 const searchQuery = ref('');
+const isGeneratingSymptom = ref(false);
 const selectedCategories = ref<string[]>([]);
 const isCategoryDropdownOpen = ref(false);
 const categoryFilterRef = ref<HTMLElement | null>(null);
@@ -1192,6 +1232,61 @@ const tcmInquiryConfig = {
 
 // --- Logic ---
 
+// AI 动态生成症状
+const handleGenerateDynamicSymptom = async (name: string) => {
+  if (!name || isGeneratingSymptom.value) return;
+  try {
+    isGeneratingSymptom.value = true;
+    showToast(`正在由 AI 分析【${name}】的临床属性...`, 'info');
+
+    const messages = DynamicSymptomTemplatePrompt.buildMessage(name);
+    let resultJsonStr = await chat(messages);
+
+    // 解析格式
+    if (resultJsonStr.includes('```json')) {
+      resultJsonStr = resultJsonStr.substring(resultJsonStr.indexOf('```json') + 7, resultJsonStr.lastIndexOf('```')).trim();
+    } else if (resultJsonStr.includes('```')) {
+      resultJsonStr = resultJsonStr.substring(resultJsonStr.indexOf('```') + 3, resultJsonStr.lastIndexOf('```')).trim();
+    }
+
+    const fields = JSON.parse(resultJsonStr);
+    if (!Array.isArray(fields) || fields.length === 0) {
+      throw new Error('AI 返回数据不合规');
+    }
+
+    // 动态构造 Symptom 实体并自动挂载
+    const newSymptom = {
+      id: `custom_${Date.now()}`,
+      key: `custom_${Date.now()}`,
+      name: name,
+      description: 'AI 动态生成症状',
+      isCommonSymptom: false,
+      systemCategory: ['other'],
+      bodyParts: [],
+      config: {
+        sections: [{
+          id: 'section_0',
+          title: `属性填写 (AI 动态生成)`,
+          fields: fields
+        }]
+      },
+      applicablePopulation: { genders: [], ageGroups: [] },
+      createdAt: Date.now(),
+      updatedAt: Date.now()
+    };
+
+    selectSymptom(newSymptom);
+
+    searchQuery.value = ''; // 清空搜索，关闭界面提示
+    showToast('已成功添加动态生成的症状模板', 'success');
+  } catch (err: any) {
+    console.error('动态生成症状失败:', err);
+    showToast(`AI 生成失败: ${err.message}`, 'error');
+  } finally {
+    isGeneratingSymptom.value = false;
+  }
+};
+
 watch(() => props.initialPatientData, (newData) => {
   if (newData) {
     patientInfo.value = {
@@ -1337,11 +1432,13 @@ onUnmounted(() => {
   document.removeEventListener('click', handleClickOutside);
 });
 
+// Removed the automatic selectionMode switch watcher since we use v-if="!searchQuery.trim()" to hide tabs
+
 const filteredSymptoms = computed(() => {
   let result = symptoms.value;
 
-  // 1. Filter by Category
-  if (selectedCategories.value.length > 0) {
+  // 1. Filter by Category (Only if NOT searching globally)
+  if (!searchQuery.value && selectedCategories.value.length > 0) {
     result = result.filter((s: any) => 
       s.systemCategory && 
       Array.isArray(s.systemCategory) && 
@@ -2708,7 +2805,7 @@ const copyToClipboard = () => {
 .consultation-page {
   display: flex;
   flex-direction: column;
-  height: 100vh;
+  height: 100%;
   background-color: var(--color-background, #ECFEFF); /* 医疗背景色 */
   color: var(--color-text-strong, #0F172A);
   font-family: var(--font-body);
@@ -2965,7 +3062,7 @@ const copyToClipboard = () => {
   flex: 1;
   display: flex;
   flex-direction: column;
-  overflow-y: auto;
+  min-height: 0;
   overflow-x: hidden;
   padding: 8px; /* 添加内边距 */
 }
@@ -2982,9 +3079,17 @@ const copyToClipboard = () => {
 }
 
 .search-box {
-  padding: 10px; /* Reduced padding */
+  padding: 10px;
   border-bottom: 1px solid var(--color-border-light);
   background: transparent;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+}
+
+.common-filter-header {
+  padding-bottom: 8px;
+  margin-bottom: 4px;
   flex-shrink: 0;
 }
 
@@ -3040,6 +3145,61 @@ const copyToClipboard = () => {
 .symptom-list li.active:hover {
   background: var(--color-primary-dark);
   color: var(--color-background-white);
+}
+
+.ai-add-symptom {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background: var(--color-background-gray);
+  border-radius: 8px;
+  margin: 12px;
+  text-align: center;
+}
+
+.empty-state-icon {
+  margin-bottom: 12px;
+  color: var(--color-text-muted);
+  opacity: 0.5;
+}
+
+.empty-state-text {
+  font-size: 13px;
+  color: var(--color-text-medium);
+  margin-bottom: 20px;
+}
+
+.ai-add-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  width: 100%;
+  padding: 12px 16px;
+  background: linear-gradient(135deg, #10b981, #059669); /* Medical green to indicate adding */
+  color: white;
+  border: none;
+  border-radius: 8px;
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  box-shadow: 0 4px 12px rgba(16, 185, 129, 0.2);
+  transition: all 0.2s ease;
+}
+
+.ai-add-btn:hover:not(:disabled) {
+  transform: translateY(-2px);
+  box-shadow: 0 6px 16px rgba(16, 185, 129, 0.3);
+}
+
+.ai-add-btn:disabled {
+  background: #a7f3d0;
+  cursor: not-allowed;
+  transform: none;
+  box-shadow: none;
 }
 
 /* 伴随症状推荐面板 */
