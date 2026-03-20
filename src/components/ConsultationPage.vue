@@ -850,7 +850,16 @@ import FactCheckNotification from './FactCheckNotification.vue';
 import FactCheckHighlight from './FactCheckHighlight.vue';
 import FactCheckWidget from './FactCheckWidget.vue';
 import KnowledgePanel from './KnowledgePanel.vue';
-import { checkMedicine, checkExamination, checkTCMMedicine, isReviewerEnabled, type FactCheckResult, type FactCheckIssue } from '../services/factChecker';
+import {
+  checkDiagnosis,
+  checkExamination,
+  checkMedicine,
+  checkTCMDiagnosis,
+  checkTCMMedicine,
+  isReviewerEnabled,
+  type FactCheckIssue,
+  type FactCheckResult,
+} from '../services/factChecker';
 import { isFieldApplicable, generateTextsForSymptom } from '../services/textGeneration';
 import { pmphaiService, isPMPHAIConfigured, type BatchSearchResults } from '../services/pmphai';
 import { CONSULTATION_CONFIG, isSymptomSelectionFull } from '../constants/consultationConfig';
@@ -2556,6 +2565,60 @@ const deduplicateIssues = (issues: FactCheckIssue[]): FactCheckIssue[] => {
     seen.add(key);
     return true;
   });
+};
+
+const performDiagnosisFactCheck = async (diagnoses: Diagnosis[]) => {
+  if (!diagnoses || diagnoses.length === 0) return;
+  if (!isReviewerEnabled()) return;
+
+  showFactCheckWidget.value = true;
+  factCheckWidgetStatus.value = 'checking';
+  factCheckTotalCount.value = diagnoses.length;
+  factCheckCheckedCount.value = 0;
+  factCheckProgress.value = 0;
+
+  diagnosisFactChecks.value.clear();
+
+  const allIssues: FactCheckIssue[] = [];
+
+  for (let i = 0; i < diagnoses.length; i++) {
+    const diagnosis = diagnoses[i];
+
+    try {
+      const result = diagnosis.isTCM
+        ? await checkTCMDiagnosis({
+            diagnosis:
+              diagnosis.syndrome && diagnosis.syndrome.trim().length > 0
+                ? `${diagnosis.name}-${diagnosis.syndrome}`
+                : diagnosis.name,
+            chiefComplaint: generatedRecord.value.chiefComplaint,
+            historyOfPresentIllness: generatedRecord.value.historyOfPresentIllness,
+            tcmFourExaminations: generatedRecord.value.tcmFourExaminations,
+          })
+        : await checkDiagnosis({
+            diagnosis: diagnosis.name,
+            chiefComplaint: generatedRecord.value.chiefComplaint,
+            historyOfPresentIllness: generatedRecord.value.historyOfPresentIllness,
+          });
+
+      diagnosisFactChecks.value.set(diagnosis.code, result);
+
+      if (result.hasIssues && Array.isArray(result.issues)) {
+        allIssues.push(...result.issues);
+      }
+
+      factCheckCheckedCount.value = i + 1;
+      factCheckProgress.value = Math.round(((i + 1) / diagnoses.length) * 100);
+    } catch (e) {
+      console.error(`Failed to fact check diagnosis: ${diagnosis.name}`, e);
+    }
+  }
+
+  factCheckWidgetIssues.value = deduplicateIssues([
+    ...factCheckWidgetIssues.value,
+    ...allIssues,
+  ]);
+  factCheckWidgetStatus.value = 'completed';
 };
 
 const performTreatmentFactCheck = async (treatments: TreatmentRecommendation[]) => {
