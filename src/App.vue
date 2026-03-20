@@ -1,12 +1,14 @@
 <script setup lang="ts">
-import { onMounted, onUnmounted, ref, watch, shallowRef } from "vue";
+import { computed, onMounted, onUnmounted, provide, ref, shallowRef, watch } from "vue";
 import { getCurrentWindow, Window as TauriWindow } from "@tauri-apps/api/window";
 import { exit } from '@tauri-apps/plugin-process';
 import { load, Store } from '@tauri-apps/plugin-store';
 import ChatPanel from "./components/ChatPanel.vue";
 import SettingsPanel from "./components/SettingsPanel.vue";
 import AnalyticsPanel from "./components/AnalyticsPanel.vue";
+import ConsultationSessionPanel from "./components/ConsultationSessionPanel.vue";
 import ConsultationPage from "./components/ConsultationPage.vue";
+import DiagnosisPathWindow from "./components/DiagnosisPathWindow.vue";
 import Toast from "./components/Toast.vue";
 import RiskAlertPanel, { type RiskItem } from "./components/RiskAlertPanel.vue";
 import VoiceCapsule from "./components/VoiceCapsule.vue";
@@ -17,7 +19,6 @@ import KnowledgeBasePanel from "./components/KnowledgeBasePanel.vue";
 import Icon from "./components/Icon.vue";
 import { trackClick } from "./services/operationTracker";
 import { LogicalSize } from "@tauri-apps/api/dpi";
-import { provide } from "vue";
 import { WINDOW_SIZES, type ViewType } from "./constants/windowSizes";
 import { useWindowManagement } from "./composables/useWindowManagement";
 import { useWorkMode } from "./composables/useWorkMode";
@@ -26,8 +27,14 @@ import { useVoiceConsultation } from "./composables/useVoiceConsultation";
 import { useEventListeners } from "./composables/useEventListeners";
 import { pmphaiService, isPMPHAIConfigured } from './services/pmphai';
 import type { AppPatient, AppStore } from "./types/appState";
+import type { SessionCardKind } from "./stores/consultationSession";
 
-const appWindow = ref<TauriWindow | null>(null);
+const appWindow = shallowRef<TauriWindow | null>(null);
+const standaloneWindowKind =
+  typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('window') === 'diagnosis-path'
+    ? 'diagnosis-path'
+    : 'main';
+const isDiagnosisPathWindow = standaloneWindowKind === 'diagnosis-path';
 const toastRef = ref<InstanceType<typeof Toast> | null>(null);
 const showToast = (msg: string, type: 'success' | 'error' | 'info' = 'info', duration = 3000) => {
   toastRef.value?.show(msg, type, duration);
@@ -50,6 +57,47 @@ const riskItems = ref<RiskItem[]>([]);
 
 // 语音问诊状态
 const generatedRecord = ref<GeneratedRecord | null>(null);
+const consultationSessionTrigger = ref<{ kind: SessionCardKind; token: number } | null>(null);
+const patientDisplayName = computed(
+  () => currentPatient.value?.name || currentPatient.value?.naPi || '未知患者'
+);
+const assistantTitle = computed(() => {
+  switch (currentView.value) {
+    case 'chat':
+      return '智医助理';
+    case 'consultation-session':
+      return currentPatient.value ? `辅助推荐 - ${patientDisplayName.value}` : '辅助推荐';
+    case 'consultation':
+      return currentPatient.value ? `智能问诊 - ${patientDisplayName.value}` : '智能问诊';
+    case 'analytics':
+      return '数据分析';
+    case 'symptom-manage':
+      return '症状库维护';
+    case 'knowledge-base':
+      return '知识库检索';
+    default:
+      return '系统设置';
+  }
+});
+const showSessionEntry = computed(
+  () => Boolean(currentPatient.value) && currentView.value !== 'consultation-session'
+);
+
+function queueConsultationSessionTrigger(kind: SessionCardKind): void {
+  consultationSessionTrigger.value = {
+    kind,
+    token: Date.now(),
+  };
+}
+
+function clearConsultationSessionTrigger(): void {
+  consultationSessionTrigger.value = null;
+}
+
+async function openFlexibleConsultationSession(): Promise<void> {
+  clearConsultationSessionTrigger();
+  await openConsultationSession();
+}
 
 let store: Store | null = null;
 const resizeTimeoutRef = ref<ReturnType<typeof setTimeout> | null>(null);
@@ -113,6 +161,7 @@ const {
   openChat,
   openAnalytics,
   openSymptomManagement,
+  openConsultationSession,
   openConsultation,
   startVoiceInteraction,
 } = navigation;
@@ -180,13 +229,15 @@ const eventListeners = useEventListeners({
   showToast,
   handleWindowMove,
   workMode: { enterWorkMode, exitWork },
-  navigation: { openConsultation, startVoiceInteraction },
+  navigation: { openConsultationSession, openConsultation, startVoiceInteraction },
+  queueConsultationSessionTrigger,
   exiting,
   resizeTimeoutRef,
 });
 
 // 监听状态变化并持久化
 watch([isWorking, currentView], async () => {
+  if (isDiagnosisPathWindow) return;
   if (!store) return;
   try {
     await store.set('app_state', {
@@ -202,6 +253,12 @@ watch([isWorking, currentView], async () => {
 onMounted(async () => {
   try {
     appWindow.value = getCurrentWindow();
+
+    if (isDiagnosisPathWindow) {
+      await appWindow.value.show();
+      await appWindow.value.setFocus();
+      return;
+    }
 
         // 初始化 store
         try {
@@ -248,7 +305,9 @@ onMounted(async () => {
 });
 
 onUnmounted(() => {
-  eventListeners.unregisterAllListeners();
+  if (!isDiagnosisPathWindow) {
+    eventListeners.unregisterAllListeners();
+  }
 });
 
 // 使用 Tauri 原生拖拽
@@ -305,6 +364,8 @@ const openInsideCloudHome = async () => {
 </script>
 
 <template>
+  <DiagnosisPathWindow v-if="isDiagnosisPathWindow" />
+  <template v-else>
   <a href="#main-content" class="skip-link">跳转到主要内容</a>
 
   <div class="state-layer" id="main-content" tabindex="-1">
@@ -352,13 +413,13 @@ const openInsideCloudHome = async () => {
                 <line x1="12" y1="2" x2="12" y2="12"></line>
               </svg>
             </button>
-             <button
-              class="ring-btn left"
-              :class="{ 'manual-hover': hoveredBtnIndex === 3 }"
-              @click.stop="openConsultation"
-              aria-label="打开智能问诊"
-              title="智能问诊"
-            >
+	             <button
+	              class="ring-btn left"
+	              :class="{ 'manual-hover': hoveredBtnIndex === 3 }"
+	              @click.stop="openConsultation()"
+	              aria-label="打开智能问诊"
+	              title="智能问诊"
+	            >
               <svg class="ring-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
                 <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
                 <polyline points="14 2 14 8 20 8"></polyline>
@@ -395,37 +456,44 @@ const openInsideCloudHome = async () => {
       <div v-show="isWorking" class="assistant-layer" :style="containerStyle">
         <div 
           class="assistant-container" 
-          :class="{ 'no-toolbar': currentView === 'risk-alert' || currentView === 'voice-interaction' || currentView === 'voice-result' || currentView === 'reception-capsule' }"
-          :style="{ borderRadius: (currentView === 'voice-interaction' || currentView === 'reception-capsule') ? '40px' : '20px' }"
+          :class="{ 'no-toolbar': currentView === 'risk-alert' || currentView === 'voice-interaction' || currentView === 'voice-result' || currentView === 'reception-capsule' || currentView === 'consultation-session' }"
+          :style="{ borderRadius: (currentView === 'voice-interaction' || currentView === 'reception-capsule') ? '40px' : (currentView === 'consultation-session' ? '32px' : '20px') }"
         >
-          <!-- 工具栏 (risk-alert, voice-interaction, voice-result, reception-capsule 视图不显示) -->
-          <div v-if="currentView !== 'risk-alert' && currentView !== 'voice-interaction' && currentView !== 'voice-result' && currentView !== 'reception-capsule'" class="assistant-toolbar" data-tauri-drag-region>
+          <!-- 工具栏 (risk-alert, voice-interaction, voice-result, reception-capsule, consultation-session 视图不显示) -->
+          <div v-if="currentView !== 'risk-alert' && currentView !== 'voice-interaction' && currentView !== 'voice-result' && currentView !== 'reception-capsule' && currentView !== 'consultation-session'" class="assistant-toolbar" data-tauri-drag-region>
             <div class="toolbar-left" data-tauri-drag-region>
-              <button v-if="currentView === 'settings' || currentView === 'analytics' || currentView === 'symptom-manage' || currentView === 'knowledge-base'" class="icon-btn back-btn" @click="currentView === 'analytics' ? openChat() : handleCollapse()" title="返回">
-                 <Icon icon="lucide:arrow-left" class="toolbar-icon" size="20" />
-              </button>
-              <span class="assistant-title" data-tauri-drag-region>
-                {{
-                  currentView === 'chat' ? '智医助理' :
-                  (currentView === 'consultation' ?
-                    (currentPatient ? `智能问诊 - ${currentPatient.name || currentPatient.naPi || '未知患者'}` : '智能问诊') :
-                    (currentView === 'analytics' ? '数据分析' :
-                    (currentView === 'symptom-manage' ? '症状库维护' :
-                    (currentView === 'knowledge-base' ? '知识库检索' : '系统设置'))))
-
-                }}
-              </span>
-            </div>
-            <div class="toolbar-right" style="display: flex; gap: 8px;">
-              <button class="icon-btn" aria-label="知识库" title="知识库" @click="openInsideCloudHome">
-                <Icon icon="lucide:book-open" class="toolbar-icon" size="20" />
-              </button>
+	              <button v-if="currentView === 'settings' || currentView === 'analytics' || currentView === 'symptom-manage' || currentView === 'knowledge-base'" class="icon-btn back-btn" @click="currentView === 'analytics' ? openChat() : handleCollapse()" title="返回">
+	                 <Icon icon="lucide:arrow-left" class="toolbar-icon" size="20" />
+	              </button>
+	              <span class="assistant-title" data-tauri-drag-region>{{ assistantTitle }}</span>
+	            </div>
+	            <div class="toolbar-right" style="display: flex; gap: 8px;">
+	              <button
+	                v-if="showSessionEntry"
+	                class="icon-btn"
+	                aria-label="灵活触发"
+	                title="灵活触发"
+	                @click="openFlexibleConsultationSession"
+	              >
+	                <Icon icon="lucide:sparkles" class="toolbar-icon" size="20" />
+	              </button>
+	              <button class="icon-btn" aria-label="知识库" title="知识库" @click="openInsideCloudHome">
+	                <Icon icon="lucide:book-open" class="toolbar-icon" size="20" />
+	              </button>
               <button class="icon-btn" aria-label="收起" title="收起" @click="handleCollapse">
                 <Icon icon="lucide:chevron-down" class="toolbar-icon" size="20" />
               </button>
             </div>
           </div>
           <ChatPanel v-if="currentView === 'chat'" />
+          <ConsultationSessionPanel
+            v-else-if="currentView === 'consultation-session'"
+            :patientInfo="currentPatient"
+            :autoTrigger="consultationSessionTrigger"
+            @close="handleCollapse"
+            @consume-auto-trigger="clearConsultationSessionTrigger"
+            @open-full-consultation="openConsultation"
+          />
           <ConsultationPage 
             v-else-if="currentView === 'consultation'" 
             @close="handleCollapse" 
@@ -484,6 +552,7 @@ const openInsideCloudHome = async () => {
   </div>
   <div v-if="transitioning" class="transition-mask" />
   <Toast ref="toastRef" />
+  </template>
 </template>
 
 <style scoped>

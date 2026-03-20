@@ -21,9 +21,9 @@
             </div>
           </div>
         </div>
-        <div class="popup-actions">
+        <!-- <div class="popup-actions">
           <button class="action-btn primary" @click="handleViewAll">处理详情</button>
-        </div>
+        </div> -->
       </div>
     </Transition>
 
@@ -126,10 +126,6 @@ const handleFabClick = () => {
     // If clicking success icon before timeout, hide immediately
     emit('close');
   }
-};
-
-const handleViewAll = () => {
-  emit('view-all');
 };
 
 const handleIssueClick = (issue: FactCheckIssue) => {

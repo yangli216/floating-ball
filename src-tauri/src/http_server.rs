@@ -38,6 +38,10 @@ pub struct PatientInfo {
     // 保留原有字段，但允许为空或通过别名映射
     pub department: Option<String>,
     pub chief_complaint: Option<String>,
+    pub history_of_present_illness: Option<String>,
+    pub past_medical_history: Option<String>,
+    pub diagnosis: Option<String>,
+    pub vitals: Option<String>,
     
     // 补充 ConsultationPage 需要的其他字段 (可选)
     pub mobile_phone: Option<String>,
@@ -53,6 +57,14 @@ pub struct ConsultationResult {
     pub timestamp: u64,
     #[serde(flatten)]
     pub record: serde_json::Value,
+}
+
+#[derive(Debug, Deserialize, Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct ConsultationAssistRequest {
+    pub action: String,
+    #[serde(flatten)]
+    pub patient: PatientInfo,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -145,6 +157,50 @@ async fn start_voice_consultation(
     }
 
     HttpResponse::Ok().json(serde_json::json!({ "status": "success" }))
+}
+
+async fn start_consultation_assist(
+    data: web::Json<ConsultationAssistRequest>,
+    app_handle: web::Data<tauri::AppHandle>,
+    state: web::Data<SharedAppState>,
+) -> impl Responder {
+    let request = data.into_inner();
+    println!(
+        "Received consultation session assist request for patient: {}, action: {}",
+        request.patient.na_pi, request.action
+    );
+
+    {
+        let mut current = state.current_consultation.lock().unwrap();
+        *current = Some(request.patient.clone());
+        let mut result = state.last_result.lock().unwrap();
+        *result = None;
+    }
+
+    if let Some(window) = app_handle.get_webview_window("main") {
+        if let Err(e) = window.emit("start-consultation-session", &request) {
+            eprintln!("Failed to emit session event: {}", e);
+            return HttpResponse::InternalServerError().json(serde_json::json!({
+                "status": "error",
+                "message": format!("Failed to emit event: {}", e)
+            }));
+        }
+
+        let _ = window.set_focus();
+        let _ = window.unminimize();
+        let _ = window.show();
+    } else {
+        return HttpResponse::InternalServerError().json(serde_json::json!({
+            "status": "error",
+            "message": "Main window not found"
+        }));
+    }
+
+    HttpResponse::Ok().json(serde_json::json!({
+        "status": "success",
+        "consultationId": request.patient.id_pi,
+        "action": request.action
+    }))
 }
 
 async fn stop_consultation(
@@ -540,6 +596,7 @@ pub fn run_server(app_handle: tauri::AppHandle, state: SharedAppState) {
                     .app_data(app_handle.clone())
                     .app_data(state.clone())
                     .route("/api/consultation/start", web::post().to(start_consultation))
+                    .route("/api/consultation/assist", web::post().to(start_consultation_assist))
                     .route("/api/consultation/start-voice", web::post().to(start_voice_consultation))
                     .route("/api/consultation/stop", web::post().to(stop_consultation))
                     .route("/api/consultation/result", web::get().to(get_result))

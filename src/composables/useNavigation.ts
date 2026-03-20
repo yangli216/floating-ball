@@ -151,6 +151,22 @@ export function useNavigation(options: NavigationOptions) {
   }
 
   /**
+   * 打开接诊 session 小窗
+   */
+  async function openConsultationSession(): Promise<void> {
+    trackViewChange(currentView.value, 'consultation-session', { hasPatient: !!currentPatient.value });
+    currentView.value = 'consultation-session';
+    if (!isWorking.value) {
+      await enterWorkMode(WINDOW_SIZES.SESSION.width, WINDOW_SIZES.SESSION.height);
+    } else if (appWindow.value) {
+      await appWindow.value.setSize(
+        new LogicalSize(WINDOW_SIZES.SESSION.width, WINDOW_SIZES.SESSION.height)
+      );
+      await smartExpand(WINDOW_SIZES.SESSION.width, WINDOW_SIZES.SESSION.height);
+    }
+  }
+
+  /**
    * 打开知识库页
    */
   async function openKnowledgeBase(): Promise<void> {
@@ -187,6 +203,7 @@ export function useNavigation(options: NavigationOptions) {
 
     // 业务导航
     openSymptomManagement,
+    openConsultationSession,
     openConsultation,
     openKnowledgeBase,
     startVoiceInteraction,

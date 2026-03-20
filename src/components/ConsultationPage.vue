@@ -405,7 +405,18 @@
             </Transition>
 
             <div class="ai-card">
-              <h4>{{ consultationMode === 'tcm' ? '中医辨证' : '推荐诊断' }}</h4>
+              <div class="ai-card-title-row">
+                <h4>{{ consultationMode === 'tcm' ? '中医辨证' : '推荐诊断' }}</h4>
+                <button
+                  v-if="canOpenDiagnosisPath"
+                  class="diagnosis-path-btn"
+                  type="button"
+                  @click="openDiagnosisPathWindow"
+                >
+                  <Icon icon="lucide:workflow" size="14" />
+                  <span>查看诊断路径</span>
+                </button>
+              </div>
 
               <!-- Error Message -->
               <div v-if="aiError" class="error-message" style="color: var(--color-error); padding: 12px; margin-bottom: 12px; background: var(--color-error-bg); border-radius: 8px; font-size: 14px;">
@@ -417,95 +428,118 @@
                 提示：请在问诊表单中填写"中医四诊信息"，以便AI进行准确的中医辨证分析。
               </div>
 
-              <ul v-if="aiDiagnoses.length > 0" class="diagnosis-list">
-                <li
-                  v-for="diag in aiDiagnoses"
-                  :key="diag.id"
-                  class="diagnosis-item"
-                  :class="{ active: selectedDiagnosis?.id === diag.id }"
-                  @click="handleDiagnosisSelect(diag)"
+              <div v-if="diagnosisGroups.length > 0" class="diagnosis-group-list">
+                <section
+                  v-for="group in diagnosisGroups"
+                  :key="group.key"
+                  class="diagnosis-group"
+                  :class="{ collapsed: group.showHeader && isDiagnosisGroupCollapsed(group.key) }"
                 >
-                  <div class="diag-header">
-                    <div class="diag-name-group">
-                      <FactCheckHighlight :issue="getIssueForDiagnosis(diag.code)">
-                        <span class="diag-name">
-                          <span v-if="diag.isTCM" class="tcm-badge">中</span>
-                          {{ diag.name }} ({{ diag.code }})
-                        </span>
-                      </FactCheckHighlight>
-                      <div class="inline-related-trigger" @click="toggleRelatedDropdown(diag, $event)" title="切换同类诊断">
-                        <span class="arrow" :class="{ open: openRelatedId === diag.id }">▼</span>
+                  <button
+                    v-if="group.showHeader"
+                    type="button"
+                    class="diagnosis-group-header"
+                    @click="toggleDiagnosisGroup(group.key)"
+                  >
+                    <div class="diagnosis-group-title-row">
+                      <span class="diagnosis-group-toggle" :class="{ collapsed: isDiagnosisGroupCollapsed(group.key) }">⌄</span>
+                      <span class="diagnosis-group-title">{{ group.title }}</span>
+                      <span v-if="group.rangeLabel" class="diagnosis-group-range">{{ group.rangeLabel }}</span>
+                    </div>
+                    <span class="diagnosis-group-count">{{ group.diagnoses.length }}</span>
+                  </button>
+
+                  <ul v-show="!group.showHeader || !isDiagnosisGroupCollapsed(group.key)" class="diagnosis-list">
+                    <li
+                      v-for="diag in group.diagnoses"
+                      :key="diag.id"
+                      class="diagnosis-item"
+                      :class="{ active: selectedDiagnosis?.id === diag.id }"
+                      @click="handleDiagnosisSelect(diag)"
+                    >
+                      <div class="diag-header">
+                        <div class="diag-name-group">
+                          <FactCheckHighlight :issue="getIssueForDiagnosis(diag.code)">
+                            <span class="diag-name">
+                              <span v-if="diag.isTCM" class="tcm-badge">中</span>
+                              {{ diag.name }} ({{ diag.code }})
+                            </span>
+                          </FactCheckHighlight>
+                          <div class="inline-related-trigger" @click="toggleRelatedDropdown(diag, $event)" title="切换同类诊断">
+                            <span class="arrow" :class="{ open: openRelatedId === diag.id }">▼</span>
+                          </div>
+                        </div>
+                        <div class="diag-actions">
+                          <button
+                            v-if="isPMPHAIConfigured()"
+                            class="doc-icon-btn"
+                            @click.stop="searchLiterature(diag)"
+                            title="搜索文献"
+                          >
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                              <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+                              <polyline points="14 2 14 8 20 8"></polyline>
+                              <line x1="16" y1="13" x2="8" y2="13"></line>
+                              <line x1="16" y1="17" x2="8" y2="17"></line>
+                            </svg>
+                          </button>
+                          <span class="diag-rate">{{ diag.rate }}</span>
+                        </div>
                       </div>
-                    </div>
-                    <div class="diag-actions">
-                      <button
-                        v-if="isPMPHAIConfigured()"
-                        class="doc-icon-btn"
-                        @click.stop="searchLiterature(diag)"
-                        title="搜索文献"
-                      >
-                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                          <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
-                          <polyline points="14 2 14 8 20 8"></polyline>
-                          <line x1="16" y1="13" x2="8" y2="13"></line>
-                          <line x1="16" y1="17" x2="8" y2="17"></line>
-                        </svg>
-                      </button>
-                      <span class="diag-rate">{{ diag.rate }}</span>
-                    </div>
-                  </div>
-                  <div class="diag-rationale">{{ diag.rationale }}</div>
+                      <div class="diag-rationale">{{ diag.rationale }}</div>
 
-                  <!-- 中医证候和治法 -->
-                  <div v-if="diag.isTCM" class="tcm-detail">
-                    <div v-if="diag.syndrome" class="tcm-syndrome">
-                      <span class="tcm-label">证候:</span>
-                      <span class="tcm-value">{{ diag.syndrome }}</span>
-                      <span v-if="diag.syndromeCode" class="tcm-code">({{ diag.syndromeCode }})</span>
-                      <span v-if="diag.syndromeMatched" class="match-tag" title="已匹配证候数据">✓</span>
-                    </div>
-                    <div v-if="diag.treatment" class="tcm-treatment">
-                      <span class="tcm-label">治法:</span>
-                      <span class="tcm-value">{{ diag.treatment }}</span>
-                      <span v-if="diag.treatmentCode" class="tcm-code">({{ diag.treatmentCode }})</span>
-                      <span v-if="diag.treatmentMatched" class="match-tag" title="已匹配治法数据">✓</span>
-                    </div>
-                  </div>
-
-                  <!-- Anti-Misdiagnosis Checklist Button -->
-                  <div class="diag-checklist-wrapper">
-                    <div v-if="selectedDiagnosis?.id === diag.id && !isChecklistLoading && checklistItems.length > 0" class="checklist-indicator" @click.stop="showChecklistModal = true">
-                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                        <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/>
-                        <line x1="12" y1="9" x2="12" y2="13"/>
-                        <line x1="12" y1="17" x2="12.01" y2="17"/>
-                      </svg>
-                      <span>鉴别排查 (待确认)</span>
-                    </div>
-                    <div v-if="selectedDiagnosis?.id === diag.id && isChecklistLoading" class="checklist-indicator loading">
-                      <svg class="spinner" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                        <path d="M21 12a9 9 0 1 1-6.219-8.56"/>
-                      </svg>
-                      <span>安全分析中...</span>
-                    </div>
-                  </div>
-
-                  <!-- Related Diagnoses Dropdown -->
-                  <div v-if="openRelatedId === diag.id && inlineRelatedDiagnoses.length > 0" class="related-section" @click.stop>
-                    <div class="related-list">
-                      <div 
-                        v-for="item in inlineRelatedDiagnoses" 
-                        :key="item.id" 
-                        class="related-item"
-                        @click="swapDiagnosis(diag, item)"
-                      >
-                        <span class="related-code">{{ item.code }}</span>
-                        <span class="related-name">{{ item.name }}</span>
+                      <!-- 中医证候和治法 -->
+                      <div v-if="diag.isTCM" class="tcm-detail">
+                        <div v-if="diag.syndrome" class="tcm-syndrome">
+                          <span class="tcm-label">证候:</span>
+                          <span class="tcm-value">{{ diag.syndrome }}</span>
+                          <span v-if="diag.syndromeCode" class="tcm-code">({{ diag.syndromeCode }})</span>
+                          <span v-if="diag.syndromeMatched" class="match-tag" title="已匹配证候数据">✓</span>
+                        </div>
+                        <div v-if="diag.treatment" class="tcm-treatment">
+                          <span class="tcm-label">治法:</span>
+                          <span class="tcm-value">{{ diag.treatment }}</span>
+                          <span v-if="diag.treatmentCode" class="tcm-code">({{ diag.treatmentCode }})</span>
+                          <span v-if="diag.treatmentMatched" class="match-tag" title="已匹配治法数据">✓</span>
+                        </div>
                       </div>
-                    </div>
-                  </div>
-                </li>
-              </ul>
+
+                      <!-- Anti-Misdiagnosis Checklist Button -->
+                      <div class="diag-checklist-wrapper">
+                        <div v-if="selectedDiagnosis?.id === diag.id && !isChecklistLoading && checklistItems.length > 0" class="checklist-indicator" @click.stop="showChecklistModal = true">
+                          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/>
+                            <line x1="12" y1="9" x2="12" y2="13"/>
+                            <line x1="12" y1="17" x2="12.01" y2="17"/>
+                          </svg>
+                          <span>鉴别排查 (待确认)</span>
+                        </div>
+                        <div v-if="selectedDiagnosis?.id === diag.id && isChecklistLoading" class="checklist-indicator loading">
+                          <svg class="spinner" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M21 12a9 9 0 1 1-6.219-8.56"/>
+                          </svg>
+                          <span>安全分析中...</span>
+                        </div>
+                      </div>
+
+                      <!-- Related Diagnoses Dropdown -->
+                      <div v-if="openRelatedId === diag.id && inlineRelatedDiagnoses.length > 0" class="related-section" @click.stop>
+                        <div class="related-list">
+                          <div
+                            v-for="item in inlineRelatedDiagnoses"
+                            :key="item.id"
+                            class="related-item"
+                            @click="swapDiagnosis(diag, item)"
+                          >
+                            <span class="related-code">{{ item.code }}</span>
+                            <span class="related-name">{{ item.name }}</span>
+                          </div>
+                        </div>
+                      </div>
+                    </li>
+                  </ul>
+                </section>
+              </div>
               <div v-else class="empty-text">暂无推荐</div>
             </div>
             
@@ -800,10 +834,12 @@ import { ref, shallowRef, computed, onMounted, watch, onUnmounted, inject } from
 import westernTemplatesData from '../assets/templates.json';
 import tcmTemplatesData from '../assets/tcm-templates.json';
 import symptomAssociations from '../assets/symptom-associations.json';
-import { medicalDataService, type DiagnosisItem } from '../services/medicalData';
+import { medicalDataService, type DiagnosisItem, type Icd10CategoryInfo } from '../services/medicalData';
 import Pinyin from 'tiny-pinyin';
 import { chat } from '../services/llm';
 import { invoke } from '@tauri-apps/api/core';
+import { once, emitTo } from '@tauri-apps/api/event';
+import { WebviewWindow } from '@tauri-apps/api/webviewWindow';
 import { feedbackService } from '../services/feedback';
 import { trackViewChange, trackClick, trackError, trackFormSubmit, trackRecommendationAction, startTimedOperation } from '../services/operationTracker';
 import BodyPartSelector from './BodyPartSelector.vue';
@@ -814,10 +850,14 @@ import FactCheckNotification from './FactCheckNotification.vue';
 import FactCheckHighlight from './FactCheckHighlight.vue';
 import FactCheckWidget from './FactCheckWidget.vue';
 import KnowledgePanel from './KnowledgePanel.vue';
-import { checkDiagnosis, checkMedicine, checkExamination, checkTCMDiagnosis, checkTCMMedicine, isReviewerEnabled, type FactCheckResult, type FactCheckIssue } from '../services/factChecker';
+import { checkMedicine, checkExamination, checkTCMMedicine, isReviewerEnabled, type FactCheckResult, type FactCheckIssue } from '../services/factChecker';
 import { isFieldApplicable, generateTextsForSymptom } from '../services/textGeneration';
 import { pmphaiService, isPMPHAIConfigured, type BatchSearchResults } from '../services/pmphai';
 import { CONSULTATION_CONFIG, isSymptomSelectionFull } from '../constants/consultationConfig';
+import { WINDOW_SIZES } from '../constants/windowSizes';
+import { useConsultationSessionStore } from '../stores/consultationSession';
+import { buildDiagnosisPathPayload } from '../services/diagnosisPath';
+import type { SessionOption } from '../stores/consultationSession';
 
 const showToast = inject('showToast') as (msg: string, type: 'success' | 'error' | 'info') => void;
 
@@ -826,6 +866,8 @@ const props = defineProps<{
 }>();
 
 const emit = defineEmits(['close']);
+const consultationSessionStore = useConsultationSessionStore();
+const DIAGNOSIS_PATH_WINDOW_LABEL = 'diagnosis-path-window';
 
 // --- Interfaces & State Definitions ---
 import type { Diagnosis, Patient, TreatmentRecommendation, FinalRecord } from '../types/consultation';
@@ -951,12 +993,344 @@ const aiDiagnoses = ref<Diagnosis[]>([]);
 const selectedDiagnosis = ref<Diagnosis | null>(null);
 const relatedDiagnoses = ref<DiagnosisItem[]>([]);
 const isRelatedOpen = ref(false);
+const collapsedDiagnosisGroups = ref<Record<string, boolean>>({});
 
 const treatmentLoading = ref(false);
 const treatmentError = ref<string | null>(null);
 const treatmentRecommendations = ref<TreatmentRecommendation[]>([]);
 
 const finalRecord = ref<FinalRecord | null>(null);
+
+type DiagnosisDisplayGroup = {
+  key: string;
+  title: string;
+  rangeLabel?: string;
+  diagnoses: Diagnosis[];
+  order: number;
+  showHeader: boolean;
+};
+type DiagnosisPathWindowPhase = 'preparing' | 'cache' | 'generating' | 'rendering' | 'success' | 'error';
+
+const DIAGNOSIS_PATH_GENERATION_TIMEOUT_MS = 60000;
+const DIAGNOSIS_PATH_RENDER_TIMEOUT_MS = 10000;
+
+const buildDiagnosisGroupKey = (category: Icd10CategoryInfo | null) => {
+  return category ? `icd10-${category.key}` : 'icd10-unknown';
+};
+
+const diagnosisGroups = computed<DiagnosisDisplayGroup[]>(() => {
+  if (aiDiagnoses.value.length === 0) {
+    return [];
+  }
+
+  if (consultationMode.value === 'tcm') {
+    return [
+      {
+        key: 'tcm',
+        title: '中医辨证',
+        diagnoses: aiDiagnoses.value,
+        order: 0,
+        showHeader: false
+      }
+    ];
+  }
+
+  const groupMap = new Map<string, DiagnosisDisplayGroup>();
+
+  aiDiagnoses.value.forEach((diagnosis) => {
+    const category = medicalDataService.getIcd10CategoryInfo(diagnosis.code);
+    const groupKey = buildDiagnosisGroupKey(category);
+
+    if (!groupMap.has(groupKey)) {
+      groupMap.set(groupKey, {
+        key: groupKey,
+        title: category?.title || '未分类/待确认',
+        rangeLabel: category?.range,
+        diagnoses: [],
+        order: category?.order ?? Number.MAX_SAFE_INTEGER,
+        showHeader: true
+      });
+    }
+
+    groupMap.get(groupKey)?.diagnoses.push(diagnosis);
+  });
+
+  return Array.from(groupMap.values()).sort((a, b) => {
+    if (a.order !== b.order) {
+      return a.order - b.order;
+    }
+    return a.title.localeCompare(b.title, 'zh-CN');
+  });
+});
+
+const isDiagnosisGroupCollapsed = (groupKey: string) => {
+  return collapsedDiagnosisGroups.value[groupKey] ?? false;
+};
+
+const toggleDiagnosisGroup = (groupKey: string) => {
+  collapsedDiagnosisGroups.value[groupKey] = !isDiagnosisGroupCollapsed(groupKey);
+};
+
+const emitDiagnosisPathStatus = async (payload: {
+  loading: boolean;
+  phase: DiagnosisPathWindowPhase;
+  message: string;
+  detail?: string;
+  clearPayload?: boolean;
+}) => {
+  await emitTo(DIAGNOSIS_PATH_WINDOW_LABEL, 'diagnosis-path:status', payload);
+};
+
+const waitForDiagnosisPathWindowReady = async () => {
+  await new Promise<void>((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error('诊断路径窗口初始化超时。')), 8000);
+    void once<{ label: string }>('diagnosis-path:ready', ({ payload: ready }) => {
+      if (ready?.label !== DIAGNOSIS_PATH_WINDOW_LABEL) {
+        return;
+      }
+      clearTimeout(timer);
+      resolve();
+    });
+  });
+};
+
+const waitForDiagnosisPathRenderResult = async () => {
+  await new Promise<void>((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error('诊断路径渲染超时。')), DIAGNOSIS_PATH_RENDER_TIMEOUT_MS);
+
+    void once<{ label: string }>('diagnosis-path:rendered', ({ payload: ready }) => {
+      if (ready?.label !== DIAGNOSIS_PATH_WINDOW_LABEL) {
+        return;
+      }
+      clearTimeout(timer);
+      resolve();
+    });
+
+    void once<{ label: string; message?: string }>('diagnosis-path:render-failed', ({ payload: failed }) => {
+      if (failed?.label !== DIAGNOSIS_PATH_WINDOW_LABEL) {
+        return;
+      }
+      clearTimeout(timer);
+      reject(new Error(failed?.message || '诊断路径渲染失败。'));
+    });
+  });
+};
+
+const withDiagnosisPathTimeout = async <T,>(promise: Promise<T>): Promise<T> => {
+  let timer: ReturnType<typeof setTimeout> | null = null;
+
+  try {
+    return await Promise.race([
+      promise,
+      new Promise<T>((_, reject) => {
+        timer = setTimeout(() => {
+          reject(new Error('诊断路径生成超时。'));
+        }, DIAGNOSIS_PATH_GENERATION_TIMEOUT_MS);
+      }),
+    ]);
+  } finally {
+    if (timer) {
+      clearTimeout(timer);
+    }
+  }
+};
+
+const ensureDiagnosisPathWindowVisible = (pathWindow: WebviewWindow) => {
+  void pathWindow.show().catch((error) => {
+    console.warn('[DiagnosisPath] Failed to show diagnosis path window:', error);
+  });
+  void pathWindow.setFocus().catch((error) => {
+    console.warn('[DiagnosisPath] Failed to focus diagnosis path window:', error);
+  });
+};
+
+const diagnosisPathContext = computed(() => ({
+  patientName: patientInfo.value.naPi || '未知患者',
+  gender: patientInfo.value.sdSexText || '',
+  age: patientInfo.value.ageText || '',
+  chiefComplaint: generatedRecord.value.chiefComplaint || '尚未填写主诉',
+  historyOfPresentIllness: generatedRecord.value.historyOfPresentIllness || '尚未填写现病史',
+  allergyHistory: patientInfo.value.allergyHistory || '未提供过敏史',
+}));
+
+const diagnosisPathOptions = computed<SessionOption[]>(() =>
+  aiDiagnoses.value.map((diagnosis, index) => ({
+    id: diagnosis.id || `${diagnosis.code || diagnosis.name}-${index}`,
+    title: diagnosis.name,
+    description: diagnosis.rationale,
+    code: diagnosis.code,
+    meta: diagnosis.rate,
+    caption: diagnosis.id ? `已匹配标准诊断 ${diagnosis.code}` : '未匹配标准库',
+    matched: !!diagnosis.id,
+    selected: selectedDiagnosis.value?.id === diagnosis.id,
+  }))
+);
+const getPatientAnchorId = (patient?: {
+  idPi?: string | number;
+  patientId?: string | number;
+  id?: string | number;
+} | null) => String(patient?.idPi || patient?.patientId || patient?.id || '');
+const diagnosisPathSessionSource = computed(() => {
+  const sessionPatient = consultationSessionStore.patient;
+  const currentPatient = patientInfo.value;
+
+  if (
+    sessionPatient &&
+    currentPatient &&
+    getPatientAnchorId(sessionPatient) === getPatientAnchorId(currentPatient)
+  ) {
+    return sessionPatient;
+  }
+
+  return currentPatient;
+});
+
+const canOpenDiagnosisPath = computed(
+  () => consultationMode.value !== 'tcm' && diagnosisPathOptions.value.length > 0
+);
+
+const openDiagnosisPathWindow = async () => {
+  if (!canOpenDiagnosisPath.value) {
+    showToast('当前没有可展示的诊断路径。', 'info');
+    return;
+  }
+
+  const preferredId = selectedDiagnosis.value?.id || diagnosisPathOptions.value[0]?.id;
+  const selectedOption =
+    diagnosisPathOptions.value.find((option) => option.id === preferredId) || diagnosisPathOptions.value[0];
+  const sessionKey = consultationSessionStore.resolveDiagnosisPathSessionKey(
+    diagnosisPathSessionSource.value
+  );
+  const targetKey = consultationSessionStore.resolveDiagnosisPathTargetKey(selectedOption);
+  const candidateSignature = consultationSessionStore.resolveDiagnosisPathCandidateSignature(
+    diagnosisPathOptions.value
+  );
+  let pathWindow = await WebviewWindow.getByLabel(DIAGNOSIS_PATH_WINDOW_LABEL);
+  const shouldWaitReady = !pathWindow;
+
+  if (!pathWindow) {
+    pathWindow = new WebviewWindow(DIAGNOSIS_PATH_WINDOW_LABEL, {
+      url: '/?window=diagnosis-path',
+      title: '诊断推理路径',
+      width: WINDOW_SIZES.DIAGNOSIS_PATH.width,
+      height: WINDOW_SIZES.DIAGNOSIS_PATH.height,
+      minWidth: 920,
+      minHeight: 620,
+      center: true,
+      focus: true,
+      resizable: true,
+    });
+
+    await new Promise<void>((resolve, reject) => {
+      pathWindow?.once('tauri://created', () => resolve());
+      pathWindow?.once('tauri://error', (event) => reject(event.payload));
+    });
+  }
+
+  if (shouldWaitReady) {
+    await waitForDiagnosisPathWindowReady();
+  }
+
+  await emitDiagnosisPathStatus({
+    loading: true,
+    phase: 'cache',
+    clearPayload: true,
+    message: '正在检查诊断路径缓存...',
+    detail: '优先复用当前会话中已生成的推理结果。',
+  });
+  ensureDiagnosisPathWindowVisible(pathWindow);
+
+  try {
+    let payload = consultationSessionStore.getDiagnosisPathCache(
+      sessionKey,
+      targetKey,
+      candidateSignature
+    );
+
+    if (payload) {
+      await emitDiagnosisPathStatus({
+        loading: true,
+        phase: 'rendering',
+        message: '已命中缓存，正在渲染诊断路径...',
+        detail: '正在绘制 Sankey 图和说明面板。',
+      });
+    } else {
+      await emitDiagnosisPathStatus({
+        loading: true,
+        phase: 'generating',
+        message: '正在生成结构化推理链...',
+        detail: '模型会整理支持证据、反证提醒和鉴别要点。',
+      });
+      payload = await withDiagnosisPathTimeout(
+        buildDiagnosisPathPayload(
+          diagnosisPathContext.value,
+          diagnosisPathOptions.value,
+          preferredId
+        )
+      );
+      if (payload) {
+        consultationSessionStore.setDiagnosisPathCache(
+          sessionKey,
+          targetKey,
+          candidateSignature,
+          payload
+        );
+      }
+    }
+
+    if (!payload) {
+      await emitDiagnosisPathStatus({
+        loading: false,
+        phase: 'error',
+        clearPayload: true,
+        message: '暂时无法生成诊断路径。',
+        detail: '模型未返回可用的结构化推理结果。',
+      });
+      showToast('暂时无法生成诊断路径。', 'info');
+      return;
+    }
+
+    await emitDiagnosisPathStatus({
+      loading: true,
+      phase: 'rendering',
+      message: '诊断路径已生成，正在渲染...',
+      detail: '准备绘制图表并填充右侧说明面板。',
+    });
+    const renderResult = waitForDiagnosisPathRenderResult();
+    await emitTo(DIAGNOSIS_PATH_WINDOW_LABEL, 'diagnosis-path:update', payload);
+    await renderResult;
+  } catch (error) {
+    const message = error instanceof Error ? error.message : '诊断路径处理失败。';
+    await emitDiagnosisPathStatus({
+      loading: false,
+      phase: 'error',
+      clearPayload: true,
+      message,
+      detail: message.includes('超时')
+        ? '当前步骤耗时过长，建议稍后重试或检查模型响应。'
+        : '窗口未能完成图表渲染，请查看控制台日志。',
+    });
+    showToast(message, 'error');
+    return;
+  }
+};
+
+watch(diagnosisGroups, (groups) => {
+  const activeKeys = new Set(groups.map(group => group.key));
+  const nextState: Record<string, boolean> = {};
+
+  groups.forEach((group) => {
+    nextState[group.key] = collapsedDiagnosisGroups.value[group.key] ?? false;
+  });
+
+  Object.keys(collapsedDiagnosisGroups.value).forEach((groupKey) => {
+    if (!activeKeys.has(groupKey)) {
+      delete nextState[groupKey];
+    }
+  });
+
+  collapsedDiagnosisGroups.value = nextState;
+}, { immediate: true });
 
 // Generating medical record loading state
 const isGenerating = ref(false);
@@ -1232,6 +1606,63 @@ const tcmInquiryConfig = {
 
 // --- Logic ---
 
+const hasMatchingSessionPatient = computed(() => {
+  const sessionPatient = consultationSessionStore.patient;
+  if (!sessionPatient || !props.initialPatientData) {
+    return false;
+  }
+
+  const sessionId = String(sessionPatient.idPi || sessionPatient.patientId || sessionPatient.id || '');
+  const incomingId = String(
+    props.initialPatientData.idPi || props.initialPatientData.patientId || props.initialPatientData.id || ''
+  );
+  return sessionId !== '' && sessionId === incomingId;
+});
+
+const syncDraftFromSessionStore = () => {
+  if (!hasMatchingSessionPatient.value) {
+    return;
+  }
+
+  const draft = consultationSessionStore.draft;
+
+  if (draft.chiefComplaint) {
+    generatedRecord.value.chiefComplaint = draft.chiefComplaint;
+  }
+  if (draft.historyOfPresentIllness) {
+    generatedRecord.value.historyOfPresentIllness = draft.historyOfPresentIllness;
+  }
+
+  if (draft.diagnoses.length > 0 && aiDiagnoses.value.length === 0) {
+    aiDiagnoses.value = draft.diagnoses.map((item, index) => ({
+      id: `session-diagnosis-${index}`,
+      code: item.code || '',
+      name: item.name,
+      rate: item.rate || '已采纳',
+      rationale: item.rationale || '来自接诊 session 草稿',
+    }));
+    selectedDiagnosis.value = aiDiagnoses.value[0] || null;
+  }
+
+  if (draft.medications.length > 0 || draft.examinations.length > 0) {
+    treatmentRecommendations.value = [
+      ...draft.medications.map((item) => ({
+        type: 'medicine' as const,
+        name: item.name,
+        reason: item.reason || '来自接诊 session 草稿',
+        usage: item.usage,
+        selected: true,
+      })),
+      ...draft.examinations.map((item) => ({
+        type: 'exam' as const,
+        name: item.name,
+        reason: item.reason || '来自接诊 session 草稿',
+        selected: true,
+      })),
+    ];
+  }
+};
+
 // AI 动态生成症状
 const handleGenerateDynamicSymptom = async (name: string) => {
   if (!name || isGeneratingSymptom.value) return;
@@ -1287,6 +1718,7 @@ const handleGenerateDynamicSymptom = async (name: string) => {
   }
 };
 
+
 watch(() => props.initialPatientData, (newData) => {
   if (newData) {
     patientInfo.value = {
@@ -1296,6 +1728,8 @@ watch(() => props.initialPatientData, (newData) => {
       naPi: newData.naPi || newData.name || patientInfo.value.naPi,
       idPi: newData.idPi || newData.patientId || patientInfo.value.idPi,
     };
+
+    syncDraftFromSessionStore();
   }
 }, { immediate: true });
 
@@ -1369,6 +1803,7 @@ const handleEndSession = () => {
   aiDiagnoses.value = [];
   selectedDiagnosis.value = null;
   treatmentRecommendations.value = [];
+  consultationSessionStore.clearSession();
   emit('close');
 };
 
@@ -1417,6 +1852,7 @@ onMounted(() => {
   symptoms.value = currentTemplatesData.value;
   // Initialize General Condition data
   initFormData(generalConditionConfig);
+  syncDraftFromSessionStore();
 });
 
 // 监听问诊模式变化，切换模板
@@ -2122,68 +2558,6 @@ const deduplicateIssues = (issues: FactCheckIssue[]): FactCheckIssue[] => {
   });
 };
 
-// Fact Check Functions
-const performDiagnosisFactCheck = async (diagnoses: Diagnosis[]) => {
-  if (!diagnoses || diagnoses.length === 0) return;
-  if (!isReviewerEnabled()) return;
-
-  // Show widget in checking state
-  showFactCheckWidget.value = true;
-  factCheckWidgetStatus.value = 'checking';
-  factCheckTotalCount.value = diagnoses.length;
-  factCheckCheckedCount.value = 0;
-  factCheckProgress.value = 0;
-
-  // Clear previous checks
-  diagnosisFactChecks.value.clear();
-  factCheckWidgetIssues.value = [];
-
-  const allIssues: FactCheckIssue[] = [];
-
-  // Check each diagnosis
-  for (let i = 0; i < diagnoses.length; i++) {
-    const diag = diagnoses[i];
-    try {
-      let result: FactCheckResult;
-
-      if (consultationMode.value === 'tcm') {
-        // Use TCM diagnosis checker
-        result = await checkTCMDiagnosis({
-          diagnosis: diag.name,
-          chiefComplaint: generatedRecord.value.chiefComplaint,
-          historyOfPresentIllness: generatedRecord.value.historyOfPresentIllness,
-          tcmFourExaminations: generatedRecord.value.tcmFourExaminations
-        });
-      } else {
-        // Use Western diagnosis checker
-        result = await checkDiagnosis({
-          diagnosis: diag.name,
-          chiefComplaint: generatedRecord.value.chiefComplaint,
-          historyOfPresentIllness: generatedRecord.value.historyOfPresentIllness
-        });
-      }
-
-      diagnosisFactChecks.value.set(diag.code, result);
-
-      if (result.hasIssues && Array.isArray(result.issues)) {
-        allIssues.push(...result.issues);
-      }
-
-      // Update progress
-      factCheckCheckedCount.value = i + 1;
-      factCheckProgress.value = Math.round(((i + 1) / diagnoses.length) * 100);
-    } catch (e) {
-      console.error(`Failed to fact check diagnosis: ${diag.name}`, e);
-    }
-  }
-
-  // Deduplicate and update issues
-  factCheckWidgetIssues.value = deduplicateIssues(allIssues);
-
-  // Update widget to completed state
-  factCheckWidgetStatus.value = 'completed';
-};
-
 const performTreatmentFactCheck = async (treatments: TreatmentRecommendation[]) => {
   if (!treatments || treatments.length === 0) return;
   if (!isReviewerEnabled()) return;
@@ -2635,11 +3009,55 @@ const generateMedicalAdvice = (): string => {
 
 watch(selectedDiagnosis, (newVal) => {
   if (newVal) {
+    if (hasMatchingSessionPatient.value) {
+      consultationSessionStore.draft.diagnoses = [{
+        code: newVal.code,
+        name: newVal.name,
+        rationale: newVal.rationale,
+        rate: newVal.rate,
+      }];
+    }
     fetchTreatmentRecommendation();
   } else {
     treatmentRecommendations.value = [];
   }
 });
+
+watch(
+  () => [generatedRecord.value.chiefComplaint, generatedRecord.value.historyOfPresentIllness],
+  ([chiefComplaint, historyOfPresentIllness]) => {
+    if (!hasMatchingSessionPatient.value) {
+      return;
+    }
+    consultationSessionStore.draft.chiefComplaint = chiefComplaint;
+    consultationSessionStore.draft.historyOfPresentIllness = historyOfPresentIllness;
+  }
+);
+
+watch(
+  () => treatmentRecommendations.value,
+  (recommendations) => {
+    if (!hasMatchingSessionPatient.value) {
+      return;
+    }
+
+    consultationSessionStore.draft.medications = recommendations
+      .filter((item) => item.type === 'medicine' && item.selected)
+      .map((item) => ({
+        name: item.name,
+        usage: item.usage,
+        reason: item.reason,
+      }));
+
+    consultationSessionStore.draft.examinations = recommendations
+      .filter((item) => item.type === 'exam' && item.selected)
+      .map((item) => ({
+        name: item.name,
+        reason: item.reason,
+      }));
+  },
+  { deep: true }
+);
 
 watch(consultationMode, (newVal, oldVal) => {
   trackClick('consultation_mode_change', { from: oldVal, to: newVal });
@@ -3956,6 +4374,40 @@ const copyToClipboard = () => {
   color: var(--color-text-weak);
 }
 
+.ai-card-title-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.ai-card-title-row h4 {
+  margin: 0;
+}
+
+.diagnosis-path-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 32px;
+  padding: 0 12px;
+  border: 1px solid rgba(84, 132, 216, 0.22);
+  border-radius: 999px;
+  background: rgba(233, 241, 255, 0.88);
+  color: #3d68b2;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: transform var(--duration-normal) var(--ease-out), box-shadow var(--duration-normal) var(--ease-out), background var(--duration-normal) var(--ease-out);
+}
+
+.diagnosis-path-btn:hover {
+  transform: translateY(-1px);
+  background: rgba(221, 234, 255, 0.98);
+  box-shadow: 0 10px 18px rgba(84, 132, 216, 0.14);
+}
+
 .ai-placeholder {
   display: flex;
   flex-direction: column;
@@ -3976,6 +4428,87 @@ const copyToClipboard = () => {
 }
 
 /* Diagnosis List Styles */
+.diagnosis-group-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.diagnosis-group {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.diagnosis-group-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  padding: 10px 12px;
+  border: 1px solid rgba(14, 116, 144, 0.12);
+  border-radius: 10px;
+  background: linear-gradient(135deg, rgba(240, 249, 255, 0.96), rgba(236, 253, 245, 0.92));
+  color: var(--color-text-strong);
+  cursor: pointer;
+  transition: all var(--duration-normal) var(--ease-out);
+}
+
+.diagnosis-group-header:hover {
+  border-color: rgba(8, 145, 178, 0.28);
+  box-shadow: 0 4px 14px rgba(8, 145, 178, 0.08);
+}
+
+.diagnosis-group-title-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.diagnosis-group-toggle {
+  color: var(--color-primary-dark);
+  font-size: 12px;
+  line-height: 1;
+  transition: transform var(--duration-normal) var(--ease-out);
+}
+
+.diagnosis-group-toggle.collapsed {
+  transform: rotate(-90deg);
+}
+
+.diagnosis-group-title {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--color-text-strong);
+}
+
+.diagnosis-group-range {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: rgba(8, 145, 178, 0.12);
+  color: var(--color-primary-dark);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+}
+
+.diagnosis-group-count {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 24px;
+  height: 24px;
+  padding: 0 8px;
+  border-radius: 999px;
+  background: rgba(15, 118, 110, 0.12);
+  color: #0f766e;
+  font-size: 12px;
+  font-weight: 700;
+}
+
 .diagnosis-list {
   list-style: none;
   padding: 0;

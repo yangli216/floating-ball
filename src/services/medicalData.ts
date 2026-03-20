@@ -60,6 +60,38 @@ export interface MedicalCatalog {
   items: MedicalItem[];
 }
 
+export interface Icd10CategoryInfo {
+  key: string;
+  range: string;
+  title: string;
+  order: number;
+}
+
+const ICD10_CATEGORY_GROUPS: Icd10CategoryInfo[] = [
+  { key: 'A00-B99', range: 'A00-B99', title: '某些传染病和寄生虫病', order: 1 },
+  { key: 'C00-D48', range: 'C00-D48', title: '肿瘤', order: 2 },
+  { key: 'D50-D89', range: 'D50-D89', title: '血液和造血器官疾病及某些涉及免疫机制的疾患', order: 3 },
+  { key: 'E00-E90', range: 'E00-E90', title: '内分泌、营养和代谢疾病', order: 4 },
+  { key: 'F00-F99', range: 'F00-F99', title: '精神和行为障碍', order: 5 },
+  { key: 'G00-G99', range: 'G00-G99', title: '神经系统疾病', order: 6 },
+  { key: 'H00-H59', range: 'H00-H59', title: '眼和附器疾病', order: 7 },
+  { key: 'H60-H95', range: 'H60-H95', title: '耳和乳突疾病', order: 8 },
+  { key: 'I00-I99', range: 'I00-I99', title: '循环系统疾病', order: 9 },
+  { key: 'J00-J99', range: 'J00-J99', title: '呼吸系统疾病', order: 10 },
+  { key: 'K00-K93', range: 'K00-K93', title: '消化系统疾病', order: 11 },
+  { key: 'L00-L99', range: 'L00-L99', title: '皮肤和皮下组织疾病', order: 12 },
+  { key: 'M00-M99', range: 'M00-M99', title: '肌肉骨骼系统和结缔组织疾病', order: 13 },
+  { key: 'N00-N99', range: 'N00-N99', title: '泌尿生殖系统疾病', order: 14 },
+  { key: 'O00-O99', range: 'O00-O99', title: '妊娠、分娩和产褥期', order: 15 },
+  { key: 'P00-P96', range: 'P00-P96', title: '起源于围生期的某些情况', order: 16 },
+  { key: 'Q00-Q99', range: 'Q00-Q99', title: '先天性畸形、变形和染色体异常', order: 17 },
+  { key: 'R00-R99', range: 'R00-R99', title: '症状、体征和临床与实验室异常所见，不可归类在他处者', order: 18 },
+  { key: 'S00-T98', range: 'S00-T98', title: '损伤、中毒和外因的某些其他后果', order: 19 },
+  { key: 'V01-Y98', range: 'V01-Y98', title: '疾病和死亡的外因', order: 20 },
+  { key: 'Z00-Z99', range: 'Z00-Z99', title: '影响健康状态和与保健机构接触的因素', order: 21 },
+  { key: 'U00-U99', range: 'U00-U99', title: '用于特殊目的的编码', order: 22 }
+];
+
 class MedicalDataService {
   private catalog: MedicalCatalog;
 
@@ -220,6 +252,10 @@ class MedicalDataService {
     return this.catalog.items;
   }
 
+  public getAllIcd10CategoryGroups(): Icd10CategoryInfo[] {
+    return [...ICD10_CATEGORY_GROUPS];
+  }
+
   /**
    * Find best matching diagnosis
    * @param query AI output string
@@ -277,6 +313,23 @@ class MedicalDataService {
     if (!prefix) return [];
 
     return this.catalog.diagnoses.filter(d => d.code.startsWith(prefix));
+  }
+
+  public extractIcd10CategoryCode(code: string): string | null {
+    if (!code) return null;
+    const normalized = code.trim().toUpperCase();
+    const match = normalized.match(/[A-Z][0-9]{2}/);
+    return match ? match[0] : null;
+  }
+
+  public getIcd10CategoryInfo(code: string): Icd10CategoryInfo | null {
+    const categoryCode = this.extractIcd10CategoryCode(code);
+    if (!categoryCode) return null;
+
+    return ICD10_CATEGORY_GROUPS.find(group => {
+      const [start, end] = group.range.split('-');
+      return this.isIcd10CategoryInRange(categoryCode, start, end);
+    }) || null;
   }
 
   /**
@@ -520,6 +573,27 @@ class MedicalDataService {
     
     const union = qSet.size + tSet.size - intersection;
     return union === 0 ? 0 : intersection / union;
+  }
+
+  private isIcd10CategoryInRange(categoryCode: string, start: string, end: string): boolean {
+    const currentValue = this.toIcd10Ordinal(categoryCode);
+    const startValue = this.toIcd10Ordinal(start);
+    const endValue = this.toIcd10Ordinal(end);
+
+    if (currentValue == null || startValue == null || endValue == null) {
+      return false;
+    }
+
+    return currentValue >= startValue && currentValue <= endValue;
+  }
+
+  private toIcd10Ordinal(categoryCode: string): number | null {
+    const match = categoryCode.toUpperCase().match(/^([A-Z])([0-9]{2})$/);
+    if (!match) return null;
+
+    const letterValue = match[1].charCodeAt(0) - 65;
+    const numberValue = Number.parseInt(match[2], 10);
+    return (letterValue * 100) + numberValue;
   }
 }
 

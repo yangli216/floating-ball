@@ -6,7 +6,7 @@ import {
   MedicalRecordCheckPrompt,
   TCMDiagnosisCheckPrompt,
   TCMMedicineCheckPrompt
-} from '../prompts/prompts';
+} from '../prompts';
 
 /**
  * 检查独立审查 AI 是否已启用

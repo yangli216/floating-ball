@@ -47,9 +47,49 @@
 }
 ```
 
+### 2.1.1 灵活触发 AI 辅助
+
+用于在不打断原症状问诊主流程的前提下，直接唤起 `floating-ball` 的桌面助手式悬浮小窗，并自动触发某个推荐动作。
+
+- **接口路径**: `/assist`
+- **请求方式**: `POST`
+- **完整 URL**: `http://127.0.0.1:8081/api/consultation/assist`
+
+#### 请求参数 (JSON Body)
+
+| 字段名 | 类型 | 必填 | 描述 | 示例值 |
+| :--- | :--- | :--- | :--- | :--- |
+| `action` | String | 是 | 触发动作，当前支持 `record` / `diagnosis` / `medication` / `examination` | `"diagnosis"` |
+| `idPi` | String | 是 | 患者唯一标识 | `"766842939207974912"` |
+| `naPi` | String | 是 | 患者姓名 | `"张虎"` |
+| `sdSexText` | String | 是 | 性别文本 | `"男性"` |
+| `ageText` | String | 是 | 年龄文本 | `"19岁"` |
+| `department` | String | 否 | 就诊科室 | `"呼吸内科"` |
+| `chiefComplaint` | String | 否 | 当前主诉 | `"咳嗽三天"` |
+| `historyOfPresentIllness` | String | 否 | 当前现病史 | `"受凉后出现咳嗽、咳痰"` |
+| `pastMedicalHistory` | String | 否 | 当前既往史 | `"高血压10年"` |
+| `diagnosis` | String | 否 | 当前医生站诊断草稿 | `"急性支气管炎"` |
+| `vitals` | String | 否 | 当前体征摘要 | `"T 37.8℃，P 92次/分"` |
+| `allergyHistory` | String | 否 | 过敏史 | `"青霉素过敏"` |
+
+#### 响应示例
+
+**成功 (HTTP 200)**
+```json
+{
+  "status": "success",
+  "consultationId": "766842939207974912",
+  "action": "diagnosis"
+}
+```
+
+> **说明**: 此接口只负责唤起桌面助手式悬浮小窗并自动触发推荐，不会直接生成 `/result` 结果。医生在小窗中选中候选项后，可通过卡片内的“确认并回写”一步完成采纳与回写；HIS 仍需通过 `/result` 拉取最终结果。为避免读到上一次旧结果，服务端会在每次 `assist` 触发时先清空本地结果通道。
+
 ### 2.2 获取问诊结果
 
 用于获取医生在智能问诊系统中生成的病历结果。建议在调用“启动问诊”接口成功后，通过定时轮询 (Polling) 的方式调用此接口，直到获取到结果。
+
+> **补充说明**: 结果来源既可以是完整问诊页提交，也可以是接诊 session 小窗中的“回写医生站草稿”。两者最终都会写入同一条本地结果通道，再由 HIS 通过 `/result` 拉取。联调页或 HIS 轮询时应校验返回的 `consultationId` 是否与当前患者一致，避免旧结果误回填。
 
 - **接口路径**: `/result`
 - **请求方式**: `GET`
@@ -61,12 +101,39 @@
 ```json
 {
   "consultationId": "766842939207974912",
-  "diagnosis": "上呼吸道感染",
-  "treatmentPlan": "1. 多饮水，注意休息。\n2. 开具感冒灵颗粒...",
-  "medicalSummary": "患者主诉咳嗽三天，无发热...",
-  "timestamp": 1704355200000
+  "timestamp": 1704355200000,
+  "chiefComplaint": "咳嗽三天",
+  "historyOfPresentIllness": "受凉后出现咳嗽、咳痰，无明显呼吸困难。",
+  "pastMedicalHistory": "否认高血压、糖尿病病史。",
+  "diagnosisList": [
+    {
+      "name": "急性支气管炎",
+      "code": "J20.900"
+    }
+  ],
+  "medications": [
+    {
+      "name": "氨溴索",
+      "usage": "30mg，口服，每日3次"
+    }
+  ],
+  "examinations": [
+    {
+      "name": "血常规"
+    }
+  ],
+  "reminders": [
+    {
+      "level": "urgent",
+      "content": "存在明确药物过敏史，相关推荐用药必须由医生再次确认。"
+    }
+  ],
+  "treatmentPlan": "按时服药，症状加重及时复诊。",
+  "medicalSummary": "主诉：咳嗽三天\n现病史：受凉后出现咳嗽、咳痰，无明显呼吸困难。"
 }
 ```
+
+> **字段说明**: `reminders` 为可选字段，表示接诊 session 小窗在“回写医生站草稿”时一并附带的风险提醒。`mock_his.html` 联调页默认会把 `chiefComplaint/historyOfPresentIllness/pastMedicalHistory/diagnosisList/medications/examinations/treatmentPlan/medicalSummary/reminders` 一起回填到医生站草稿区，右侧结果区仅作为预览。
 
 **等待中 - 结果尚未生成 (HTTP 404)**
 ```json

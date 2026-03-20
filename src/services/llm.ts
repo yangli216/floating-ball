@@ -151,6 +151,17 @@ function createPayloadMessages(messages: ChatMessage[]) {
   });
 }
 
+async function readErrorPayload(res: Response): Promise<any> {
+  const rawText = await res.text();
+  if (!rawText) return {};
+
+  try {
+    return JSON.parse(rawText);
+  } catch {
+    return { error: { message: rawText } };
+  }
+}
+
 export async function chatStream(
   messages: ChatMessage[],
   onChunk: (chunk: string) => void,
@@ -178,7 +189,7 @@ export async function chatStream(
     });
 
     if (!res.ok) {
-      const data = await res.json().catch(() => ({}));
+      const data = await readErrorPayload(res);
       const error: any = new Error(data?.error?.message || res.statusText);
       error.status = res.status;
       throw error;
@@ -277,12 +288,11 @@ export async function chat(
       },
       body: JSON.stringify({
         model: model,
-        "enable_thinking": false,
         messages: payloadMessages,
       }),
     });
 
-    const data = await res.json();
+    const data = await readErrorPayload(res);
     if (!res.ok) {
       const error: any = new Error(data?.error?.message || res.statusText);
       error.status = res.status;
@@ -432,4 +442,3 @@ export async function testLLMConnection(customConfig?: LLMConfigOverride): Promi
     return { success: false, message: error.message || '连接失败或配置有误' };
   }
 }
-

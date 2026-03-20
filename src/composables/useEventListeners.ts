@@ -21,6 +21,7 @@ import { analyzePatientRisks } from '../services/llm';
 import { trackApiCall, trackError, startTimedOperation } from '../services/operationTracker';
 import type { RiskItem } from '../components/RiskAlertPanel.vue';
 import type { AppPatient } from '../types/appState';
+import type { SessionCardKind } from '../stores/consultationSession';
 
 /**
  * 事件监听配置参数
@@ -61,9 +62,12 @@ export interface EventListenersOptions {
   };
   /** 导航函数 */
   navigation: {
+    openConsultationSession: () => Promise<void>;
     openConsultation: () => Promise<void>;
     startVoiceInteraction: () => Promise<void>;
   };
+  /** 队列化灵活模式自动触发请求 */
+  queueConsultationSessionTrigger: (kind: SessionCardKind) => void;
   /** 退出标志（来自 workMode） */
   exiting: Ref<boolean>;
   /** 窗口大小变化防抖超时 */
@@ -88,6 +92,15 @@ interface StartConsultationPayload {
   [key: string]: unknown;
 }
 
+interface SessionAssistPayload extends StartConsultationPayload {
+  action?: string;
+  historyOfPresentIllness?: string;
+  pastMedicalHistory?: string;
+  diagnosis?: string;
+  vitals?: string;
+  allergyHistory?: string;
+}
+
 /**
  * 事件监听管理 Composable
  *
@@ -109,6 +122,7 @@ export function useEventListeners(options: EventListenersOptions) {
     handleWindowMove,
     workMode,
     navigation,
+    queueConsultationSessionTrigger,
     exiting,
     resizeTimeoutRef,
   } = options;
@@ -126,6 +140,7 @@ export function useEventListeners(options: EventListenersOptions) {
   let unlistenDeepLink: UnlistenFn | null = null;
   let unlistenPatientRisks: UnlistenFn | null = null;
   let unlistenStartConsultation: UnlistenFn | null = null;
+  let unlistenStartConsultationSession: UnlistenFn | null = null;
   let unlistenStopConsultation: UnlistenFn | null = null;
   let unlistenStartVoiceConsultation: UnlistenFn | null = null;
   let unlistenHover: UnlistenFn | null = null;
@@ -262,6 +277,56 @@ export function useEventListeners(options: EventListenersOptions) {
 
       await navigation.openConsultation();
     });
+  }
+
+  function normalizeSessionTriggerKind(action?: string): SessionCardKind | null {
+    switch (action) {
+      case 'record':
+      case 'diagnosis':
+      case 'differential':
+      case 'medication':
+      case 'examination':
+      case 'reminder':
+        return action;
+      default:
+        return null;
+    }
+  }
+
+  async function registerStartConsultationSessionListener(): Promise<void> {
+    unlistenStartConsultationSession = await listen<SessionAssistPayload>(
+      'start-consultation-session',
+      async (event) => {
+        console.log('Received consultation session request:', event.payload);
+        const payload = event.payload || {};
+        trackApiCall('his_start_consultation_session', true, undefined, {
+          patientId: payload.idPi || payload.patientId,
+          action: payload.action,
+        });
+
+        currentPatient.value = {
+          ...(currentPatient.value || {}),
+          ...payload,
+          naPi: payload.naPi || payload.name || currentPatient.value?.patientName || '未知',
+          idPi: payload.idPi || payload.patientId || currentPatient.value?.patientId,
+          ageText: (() => {
+            if (payload.ageText) return payload.ageText;
+            const rawAge = currentPatient.value?.age;
+            if (typeof rawAge === 'number') return `${rawAge}岁`;
+            if (typeof rawAge === 'string' && rawAge.trim() !== '') return rawAge;
+            return '';
+          })(),
+          sdSexText: payload.sdSexText || (currentPatient.value?.gender === 'M' ? '男性' : '女性'),
+        };
+
+        const triggerKind = normalizeSessionTriggerKind(payload.action);
+        if (triggerKind) {
+          queueConsultationSessionTrigger(triggerKind);
+        }
+
+        await navigation.openConsultationSession();
+      }
+    );
   }
 
   /**
@@ -405,6 +470,7 @@ export function useEventListeners(options: EventListenersOptions) {
       // HIS 集成事件监听
       await registerPatientRisksListener();
       await registerStartConsultationListener();
+      await registerStartConsultationSessionListener();
       await registerStopConsultationListener();
       await registerVoiceConsultationListener();
 
@@ -433,6 +499,10 @@ export function useEventListeners(options: EventListenersOptions) {
     if (unlistenStartConsultation) {
       unlistenStartConsultation();
       unlistenStartConsultation = null;
+    }
+    if (unlistenStartConsultationSession) {
+      unlistenStartConsultationSession();
+      unlistenStartConsultationSession = null;
     }
     if (unlistenStopConsultation) {
       unlistenStopConsultation();

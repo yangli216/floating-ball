@@ -339,6 +339,125 @@ ${params.historyOfPresentIllness}
   }
 };
 
+// ==================== 诊断路径推理 ====================
+
+export const DiagnosisPathReasoningPrompt = {
+  system: `你是一名擅长临床可解释性的基层全科带教医生。你的任务不是重新给出新的诊断候选，而是基于“已经给出的候选诊断列表”，把医生可理解的诊断推理过程整理成结构化链路，用于 Sankey 诊断路径图展示。
+
+**核心要求：**
+1. 只能围绕提供的候选诊断进行分析，不能新增候选诊断。
+2. 必须优先解释“目标诊断”为何最能解释病例，同时简要说明其他候选为何次之。
+3. 推理链必须体现：
+   - 患者事实节点（年龄、主诉、关键现病史、过敏史等）
+   - 系统/章节归类节点（如呼吸系统疾病、耳和乳突疾病）
+   - 证据汇聚节点（如“关键感染证据”“关键过敏证据”）
+   - 目标诊断节点和备选诊断节点
+4. 节点与连线必须适合 Sankey 图：
+   - 节点名称要简洁，单个节点不超过18字
+   - 连线 value 为 1-100 的整数
+   - links 里的 source 和 target 必须引用 nodes 中出现过的 name
+5. 诊断解释必须额外输出三段式结构化字段：
+   - supportingEvidence：支持目标诊断的证据数组，1-4条
+   - counterEvidence：反证或待排除提醒数组，1-4条；如果暂无明确反证，也要给出保守说明
+   - differentialPoints：鉴别要点数组，1-4条；用于提示与备选诊断的差异
+6. 不能输出 markdown，不要输出额外说明，只返回 JSON 对象。
+
+**输出 JSON 格式：**
+{
+  "summary": "一句话概括本次推理路径",
+  "chapterTitle": "系统/章节名称",
+  "chapterRange": "可选，如J00-J99，没有可留空字符串",
+  "facts": ["患者事实1", "患者事实2"],
+  "rationale": "目标诊断的整体推理说明",
+  "supportingEvidence": ["支持证据1", "支持证据2"],
+  "counterEvidence": ["反证提醒1"],
+  "differentialPoints": ["鉴别要点1", "鉴别要点2"],
+  "nodes": [
+    { "name": "39岁", "depth": 0 },
+    { "name": "耳道分泌物", "depth": 0 },
+    { "name": "耳和乳突疾病", "depth": 1 },
+    { "name": "关键感染证据", "depth": 1 },
+    { "name": "中耳炎(J05.0)", "depth": 2 }
+  ],
+  "links": [
+    { "source": "39岁", "target": "耳和乳突疾病", "value": 30 },
+    { "source": "耳道分泌物", "target": "关键感染证据", "value": 78 },
+    { "source": "关键感染证据", "target": "中耳炎(J05.0)", "value": 84 }
+  ],
+  "alternatives": [
+    {
+      "name": "鼓膜炎",
+      "code": "H73.901",
+      "rate": "62%",
+      "rationale": "可以解释局部症状，但对发热解释较弱。"
+    }
+  ]
+}
+
+**额外约束：**
+1. facts 最多 5 条，alternatives 最多 2 条。
+2. depth 只能是 0、1、2。
+3. 若章节范围无法确定，chapterRange 返回空字符串。
+4. supportingEvidence、counterEvidence、differentialPoints 的每一项都要短句化，适合右侧说明面板直接展示。
+5. 若病例信息不足，也要尽量输出最稳妥的推理链，不要返回空对象。`,
+
+  buildUserPrompt(params: {
+    patientName: string;
+    gender: string;
+    age: string;
+    chiefComplaint: string;
+    historyOfPresentIllness: string;
+    allergyHistory?: string;
+    selectedDiagnosisName: string;
+    selectedDiagnosisCode?: string;
+    selectedDiagnosisRate?: string;
+    selectedDiagnosisRationale?: string;
+    candidateDiagnoses: Array<{
+      name: string;
+      code?: string;
+      rate?: string;
+      rationale?: string;
+      selected?: boolean;
+    }>;
+  }): string {
+    const candidateText = params.candidateDiagnoses
+      .map((item, index) => {
+        const parts = [
+          `${index + 1}. ${item.name}`,
+          item.code ? `编码: ${item.code}` : '',
+          item.rate ? `符合率: ${item.rate}` : '',
+          item.selected ? '当前目标诊断' : '备选诊断',
+          item.rationale ? `依据: ${item.rationale}` : '',
+        ].filter(Boolean);
+        return parts.join(' | ');
+      })
+      .join('\n');
+
+    return `请基于以下病例上下文和候选诊断，生成“诊断推理路径”的结构化 JSON：
+
+患者姓名：${params.patientName}
+性别：${params.gender}
+年龄：${params.age}
+主诉：${params.chiefComplaint}
+现病史：${params.historyOfPresentIllness}
+过敏史：${params.allergyHistory || '未提供过敏史'}
+
+目标诊断：${params.selectedDiagnosisName}${params.selectedDiagnosisCode ? ` (${params.selectedDiagnosisCode})` : ''}
+目标诊断符合率：${params.selectedDiagnosisRate || '未提供'}
+目标诊断原始依据：${params.selectedDiagnosisRationale || '未提供'}
+
+请同时补充三段式结构化说明：
+- supportingEvidence：支持目标诊断的证据
+- counterEvidence：反证或待排除提醒
+- differentialPoints：与备选诊断的鉴别要点
+
+候选诊断列表：
+${candidateText}
+
+请严格返回 JSON 对象。`;
+  }
+};
+
 // ==================== 中医诊断推荐 ====================
 
 export const TCMDiagnosisRecommendationPrompt = {
@@ -1081,6 +1200,7 @@ export const PROMPT_VERSION = {
   medicalRecordGeneration: 'v1.0',
   riskAnalysis: 'v1.0',
   diagnosisRecommendation: 'v1.0',
+  diagnosisPathReasoning: 'v1.0',
   treatmentRecommendation: 'v1.0',
   chatAssistant: 'v1.0',
   diagnosisCheck: 'v1.0',
@@ -1101,6 +1221,7 @@ export const PROMPTS = {
     medicalRecordGeneration: MedicalRecordGenerationPrompt,
     patientRiskAnalysis: PatientRiskAnalysisPrompt,
     diagnosisRecommendation: DiagnosisRecommendationPrompt,
+    diagnosisPathReasoning: DiagnosisPathReasoningPrompt,
     tcmDiagnosisRecommendation: TCMDiagnosisRecommendationPrompt,
     diagnosisChecklist: DiagnosisChecklistPrompt,
     treatmentRecommendation: TreatmentRecommendationPrompt,
