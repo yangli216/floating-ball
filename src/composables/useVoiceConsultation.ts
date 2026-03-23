@@ -86,6 +86,10 @@ export function useVoiceConsultation(options: VoiceConsultationOptions) {
   const { smartExpand } = windowMgmt;
   const { enterWorkMode, exitWork } = workMode;
 
+  function resolveConsultationId(patient: AppPatient | null): string {
+    return String(patient?.idPi || patient?.patientId || patient?.id || 'unknown');
+  }
+
   // ========== 语音处理 ==========
 
   /**
@@ -228,7 +232,7 @@ export function useVoiceConsultation(options: VoiceConsultationOptions) {
     try {
       await invoke('complete_consultation', {
         result: {
-          consultationId: currentPatient.value?.id || 'unknown',
+          consultationId: resolveConsultationId(currentPatient.value),
           timestamp: Date.now(),
           ...record,
         },

@@ -67,6 +67,28 @@ pub struct ConsultationAssistRequest {
     pub patient: PatientInfo,
 }
 
+#[derive(Debug, Deserialize, Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct ConsultationReferenceItem {
+    pub name: String,
+    pub code: Option<String>,
+    #[serde(rename = "type")]
+    pub item_type: Option<String>,
+}
+
+#[derive(Debug, Deserialize, Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct ConsultationReferenceFeedbackRequest {
+    pub consultation_id: String,
+    pub request_id: String,
+    pub reference_type: Option<String>,
+    pub action: Option<String>,
+    pub status: String,
+    pub message: Option<String>,
+    #[serde(default)]
+    pub items: Vec<ConsultationReferenceItem>,
+}
+
 #[derive(Debug, Serialize, Deserialize, Clone)]
 #[serde(rename_all = "camelCase")]
 pub struct RiskItem {
@@ -138,13 +160,24 @@ async fn start_consultation(
 }
 
 async fn start_voice_consultation(
+    data: Option<web::Json<PatientInfo>>,
     app_handle: web::Data<tauri::AppHandle>,
+    state: web::Data<SharedAppState>,
 ) -> impl Responder {
     println!("Received voice consultation request");
 
+    let patient = data.map(|payload| payload.into_inner());
+
+    if let Some(patient) = patient.as_ref() {
+        let mut current = state.current_consultation.lock().unwrap();
+        *current = Some(patient.clone());
+        let mut result = state.last_result.lock().unwrap();
+        *result = None;
+    }
+
     // Emit event to Frontend
     if let Some(window) = app_handle.get_webview_window("main") {
-        if let Err(e) = window.emit("start-voice-consultation", ()) {
+        if let Err(e) = window.emit("start-voice-consultation", &patient) {
              eprintln!("Failed to emit voice event: {}", e);
              return HttpResponse::InternalServerError().json(serde_json::json!({ "error": e.to_string() }));
         }
@@ -156,7 +189,13 @@ async fn start_voice_consultation(
         return HttpResponse::InternalServerError().json(serde_json::json!({ "error": "Main window not found" }));
     }
 
-    HttpResponse::Ok().json(serde_json::json!({ "status": "success" }))
+    HttpResponse::Ok().json(serde_json::json!({
+        "status": "success",
+        "consultationId": patient
+            .as_ref()
+            .map(|item| item.id_pi.clone())
+            .unwrap_or_default()
+    }))
 }
 
 async fn start_consultation_assist(
@@ -245,6 +284,179 @@ async fn get_result(
             "code": "RESULT_NOT_READY"
         }))
     }
+}
+
+async fn reference_feedback(
+    data: web::Json<ConsultationReferenceFeedbackRequest>,
+    app_handle: web::Data<tauri::AppHandle>,
+    state: web::Data<SharedAppState>,
+) -> impl Responder {
+    let request = data.into_inner();
+    let resolved_reference_type = match (&request.reference_type, &request.action) {
+        (Some(reference_type), Some(action)) if reference_type != action => {
+            return HttpResponse::BadRequest().json(serde_json::json!({
+                "status": "error",
+                "code": "INVALID_REFERENCE_TYPE",
+                "message": "referenceType and action must match when both are provided"
+            }));
+        }
+        (Some(reference_type), _) => reference_type.clone(),
+        (_, Some(action)) => action.clone(),
+        _ => {
+            return HttpResponse::BadRequest().json(serde_json::json!({
+                "status": "error",
+                "code": "INVALID_REFERENCE_TYPE",
+                "message": "referenceType or action is required"
+            }));
+        }
+    };
+    println!(
+        "Received consultation reference feedback: consultation={}, request={}, referenceType={}, status={}",
+        request.consultation_id, request.request_id, resolved_reference_type, request.status
+    );
+
+    let timestamp = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_millis() as u64;
+
+    let feedback_payload = serde_json::json!({
+        "consultationId": request.consultation_id,
+        "requestId": request.request_id,
+        "referenceType": resolved_reference_type,
+        "action": resolved_reference_type,
+        "status": request.status,
+        "message": request.message,
+        "items": request.items,
+        "timestamp": timestamp
+    });
+
+    let base_record_map = {
+        let last_result = state.last_result.lock().unwrap();
+        let Some(existing_result) = last_result.as_ref() else {
+            return HttpResponse::Conflict().json(serde_json::json!({
+                "status": "error",
+                "code": "REFERENCE_REQUEST_MISMATCH",
+                "message": "No matching pending reference request for current consultation result"
+            }));
+        };
+
+        if existing_result.consultation_id != request.consultation_id {
+            return HttpResponse::Conflict().json(serde_json::json!({
+                "status": "error",
+                "code": "REFERENCE_REQUEST_MISMATCH",
+                "message": "No matching pending reference request for current consultation result"
+            }));
+        }
+
+        let Some(record_map) = existing_result.record.as_object().cloned() else {
+            return HttpResponse::Conflict().json(serde_json::json!({
+                "status": "error",
+                "code": "REFERENCE_REQUEST_MISMATCH",
+                "message": "No matching pending reference request for current consultation result"
+            }));
+        };
+
+        let existing_request_id = record_map
+            .get("requestId")
+            .and_then(|value| value.as_str())
+            .unwrap_or_default();
+        let existing_result_type = record_map
+            .get("resultType")
+            .and_then(|value| value.as_str())
+            .unwrap_or_default();
+        let existing_reference_type = record_map
+            .get("referenceType")
+            .or_else(|| record_map.get("action"))
+            .and_then(|value| value.as_str())
+            .unwrap_or_default();
+
+        if existing_request_id != request.request_id
+            || existing_result_type != "reference-request"
+            || existing_reference_type != feedback_payload["referenceType"].as_str().unwrap_or_default()
+        {
+            return HttpResponse::Conflict().json(serde_json::json!({
+                "status": "error",
+                "code": "REFERENCE_REQUEST_MISMATCH",
+                "message": "No matching pending reference request for current consultation result"
+            }));
+        }
+
+        record_map
+    };
+
+    let merged_result = {
+        let mut last_result = state.last_result.lock().unwrap();
+        let mut record_map = base_record_map;
+
+        record_map.insert(
+            "resultType".to_string(),
+            serde_json::Value::String("reference-feedback".to_string()),
+        );
+        record_map.insert(
+            "requestId".to_string(),
+            serde_json::Value::String(
+                feedback_payload["requestId"].as_str().unwrap_or_default().to_string(),
+            ),
+        );
+        record_map.insert(
+            "referenceType".to_string(),
+            serde_json::Value::String(
+                feedback_payload["referenceType"].as_str().unwrap_or_default().to_string(),
+            ),
+        );
+        record_map.insert(
+            "action".to_string(),
+            serde_json::Value::String(
+                feedback_payload["action"].as_str().unwrap_or_default().to_string(),
+            ),
+        );
+        record_map.insert(
+            "referenceStatus".to_string(),
+            serde_json::Value::String(
+                feedback_payload["status"].as_str().unwrap_or_default().to_string(),
+            ),
+        );
+        if !feedback_payload["items"].is_null() {
+            record_map.insert(
+                "referenceItems".to_string(),
+                feedback_payload["items"].clone(),
+            );
+        }
+        if let Some(message) = feedback_payload["message"].as_str() {
+            record_map.insert(
+                "referenceMessage".to_string(),
+                serde_json::Value::String(message.to_string()),
+            );
+        } else {
+            record_map.remove("referenceMessage");
+        }
+
+        let result = ConsultationResult {
+            consultation_id: feedback_payload["consultationId"]
+                .as_str()
+                .unwrap_or_default()
+                .to_string(),
+            timestamp,
+            record: serde_json::Value::Object(record_map),
+        };
+        *last_result = Some(result.clone());
+        result
+    };
+
+    if let Some(window) = app_handle.get_webview_window("main") {
+        if let Err(e) = window.emit("consultation-reference-feedback", &feedback_payload) {
+            eprintln!("Failed to emit reference feedback event: {}", e);
+        }
+    }
+
+    HttpResponse::Ok().json(serde_json::json!({
+        "status": "success",
+        "consultationId": merged_result.consultation_id,
+        "requestId": feedback_payload["requestId"],
+        "referenceType": feedback_payload["referenceType"],
+        "timestamp": timestamp
+    }))
 }
 
 async fn show_patient_risks(
@@ -599,6 +811,7 @@ pub fn run_server(app_handle: tauri::AppHandle, state: SharedAppState) {
                     .route("/api/consultation/assist", web::post().to(start_consultation_assist))
                     .route("/api/consultation/start-voice", web::post().to(start_voice_consultation))
                     .route("/api/consultation/stop", web::post().to(stop_consultation))
+                    .route("/api/consultation/reference-feedback", web::post().to(reference_feedback))
                     .route("/api/consultation/result", web::get().to(get_result))
                     .route("/api/patient/risks", web::post().to(show_patient_risks))
                     // PMPHAI API Proxy

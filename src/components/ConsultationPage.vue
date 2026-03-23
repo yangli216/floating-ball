@@ -60,6 +60,10 @@
         </template>
         <template v-else-if="currentView === 'record'">
              <button class="header-btn" @click="currentView = 'consultation'">返回</button>
+             <button class="header-btn" :disabled="isWritingRecord" @click="writeRecordToHIS">
+               {{ isWritingRecord ? '回写中...' : '回写病历' }}
+             </button>
+             <button v-if="selectedDiagnosis" class="header-btn" @click="confirmDiagnosisSelection">确认诊断</button>
              <button class="header-btn primary" @click="handleComplete">生成报告</button>
         </template>
         <template v-else>
@@ -404,7 +408,20 @@
               </div>
             </Transition>
 
-            <div class="ai-card">
+            <div
+              v-if="workflowBannerText"
+              :style="workflowBannerStyle"
+            >
+              <strong v-if="assistFocusLabel">{{ assistFocusLabel }}</strong>
+              <span>{{ workflowBannerText }}</span>
+            </div>
+
+            <div v-if="!showDiagnosisCard && currentDiagnosisSummary" class="ai-card">
+              <h4>当前主诊断</h4>
+              <div class="diag-rationale">{{ currentDiagnosisSummary }}</div>
+            </div>
+
+            <div v-if="showDiagnosisCard" class="ai-card">
               <div class="ai-card-title-row">
                 <h4>{{ consultationMode === 'tcm' ? '中医辨证' : '推荐诊断' }}</h4>
                 <button
@@ -482,7 +499,22 @@
                               <line x1="16" y1="13" x2="8" y2="13"></line>
                               <line x1="16" y1="17" x2="8" y2="17"></line>
                             </svg>
+                        </button>
+                          <button
+                            class="item-reference-btn"
+                            type="button"
+                            :disabled="isDiagnosisReferenceDisabled(diag)"
+                            @click.stop="referenceDiagnosisItemToPHIS(diag)"
+                          >
+                            {{ getDiagnosisReferenceButtonLabel(diag) }}
                           </button>
+                          <span
+                            v-if="getDiagnosisReferenceStatus(diag)"
+                            class="diag-rate"
+                            :title="getDiagnosisReferenceStatus(diag)?.message || ''"
+                          >
+                            {{ getReferenceStatusLabel(getDiagnosisReferenceStatus(diag)?.status || 'pending') }}
+                          </span>
                           <span class="diag-rate">{{ diag.rate }}</span>
                         </div>
                       </div>
@@ -543,8 +575,17 @@
               <div v-else class="empty-text">暂无推荐</div>
             </div>
             
-            <div class="ai-card" v-if="selectedDiagnosis">
-              <h4>推荐方案 (基于 {{ selectedDiagnosis.name }})</h4>
+            <div class="ai-card" v-if="selectedDiagnosis && showTreatmentCard">
+              <div class="ai-card-title-row">
+                <div class="treatment-card-heading">
+                  <h4>推荐方案 (基于 {{ selectedDiagnosis.name }})</h4>
+                  <p class="treatment-card-desc">推荐方案支持多选后按分组一次引入；暂不支持引用的处置建议会单独标出。</p>
+                </div>
+                <div v-if="visibleTreatmentRecommendations.length > 0" class="treatment-summary-pills">
+                  <span class="treatment-summary-pill medicine">已选用药 {{ selectedMedicineCount }}</span>
+                  <span class="treatment-summary-pill exam">已选检查 {{ selectedExamCount }}</span>
+                </div>
+              </div>
               
               <div v-if="treatmentLoading" class="loading-overlay embedded">
                 <div class="ai-spinner">
@@ -559,58 +600,144 @@
 
               <div v-else-if="treatmentError" class="error-text">{{ treatmentError }}</div>
 
-              <div v-else-if="treatmentRecommendations.length > 0" class="treatment-list">
-                <div 
-                  v-for="(rec, idx) in treatmentRecommendations" 
-                  :key="idx" 
-                  class="treatment-item"
-                  :class="{ active: rec.selected }"
-                  @click="toggleTreatmentSelection(idx)"
+              <div v-else-if="visibleTreatmentRecommendations.length > 0" class="treatment-groups">
+                <section
+                  v-for="section in visibleTreatmentReferenceSections"
+                  :key="section.type"
+                  class="treatment-section"
                 >
-                  <div class="selected-mark" v-if="rec.selected">
-                    <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>
+                  <div class="treatment-section-header">
+                    <div>
+                      <h5>{{ section.title }}</h5>
+                      <p>{{ section.description }}</p>
+                    </div>
+                    <button
+                      type="button"
+                      class="item-reference-btn"
+                      :disabled="hasPendingReferenceRequest || section.selectedCount === 0"
+                      @click.stop="referenceSelectedTreatmentsToPHIS(section.type)"
+                    >
+                      {{ getTreatmentReferenceButtonLabel(section.action, section.actionLabel) }}
+                    </button>
                   </div>
-                  <div class="rec-content">
-                    <div class="rec-header">
-                      <div class="rec-name-group">
-                        <span class="rec-tag" :class="rec.type">{{ rec.type === 'medicine' ? '药' : '检' }}</span>
-                        <FactCheckHighlight :issue="getIssueForTreatment(rec.name)">
-                          <span class="rec-name">{{ rec.name }}</span>
-                        </FactCheckHighlight>
-                        <span v-if="rec.matchedItem" class="matched-inline">
-                          <span class="match-icon">✓</span>
-                          <span class="match-name">{{ rec.matchedItem.name }}</span>
-                          <span class="match-spec" v-if="rec.type === 'medicine'">{{ rec.matchedItem.spec }}</span>
-                        </span>
-                        <span v-else class="unmatched-icon" title="未匹配标准库">🔍</span>
+                  <div class="treatment-section-meta">
+                    <span class="treatment-section-pill">{{ section.items.length }} 项推荐</span>
+                    <span class="treatment-section-pill strong">{{ section.selectedCount }} 项已选</span>
+                  </div>
+                  <div class="treatment-list">
+                    <div 
+                      v-for="rec in section.items"
+                      :key="`${rec.type}-${rec.name}`"
+                      class="treatment-item"
+                      :class="{ active: rec.selected }"
+                      @click="toggleTreatmentSelection(rec)"
+                    >
+                      <div class="selected-mark" v-if="rec.selected">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>
                       </div>
-                      <button
-                        v-if="isPMPHAIConfigured()"
-                        class="doc-icon-btn"
-                        @click.stop="searchLiterature(rec)"
-                        title="搜索文献"
-                      >
-                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                          <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
-                          <polyline points="14 2 14 8 20 8"></polyline>
-                          <line x1="16" y1="13" x2="8" y2="13"></line>
-                          <line x1="16" y1="17" x2="8" y2="17"></line>
-                        </svg>
-                      </button>
+                      <div class="rec-content">
+                        <div class="rec-header">
+                          <div class="rec-name-group">
+                            <span class="rec-tag" :class="rec.type">{{ getTreatmentTagLabel(rec.type) }}</span>
+                            <FactCheckHighlight :issue="getIssueForTreatment(rec.name)">
+                              <span class="rec-name">{{ rec.name }}</span>
+                            </FactCheckHighlight>
+                            <span v-if="rec.matchedItem" class="matched-inline">
+                              <span class="match-icon">✓</span>
+                              <span class="match-name">{{ rec.matchedItem.name }}</span>
+                              <span class="match-spec" v-if="rec.type === 'medicine'">{{ rec.matchedItem.spec }}</span>
+                            </span>
+                            <span v-else class="unmatched-icon" title="未匹配标准库">🔍</span>
+                          </div>
+                          <div class="rec-actions">
+                            <button
+                              v-if="isPMPHAIConfigured()"
+                              class="doc-icon-btn"
+                              @click.stop="searchLiterature(rec)"
+                              title="搜索文献"
+                            >
+                              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+                                <polyline points="14 2 14 8 20 8"></polyline>
+                                <line x1="16" y1="13" x2="8" y2="13"></line>
+                                <line x1="16" y1="17" x2="8" y2="17"></line>
+                              </svg>
+                            </button>
+                          </div>
+                        </div>
+                        <div
+                          v-if="getTreatmentReferenceStatus(rec)"
+                          class="diag-rationale"
+                          style="margin-top: 6px;"
+                        >
+                          {{ getReferenceStatusLabel(getTreatmentReferenceStatus(rec)?.status || 'pending') }}
+                          <span v-if="getTreatmentReferenceStatus(rec)?.message">
+                            ：{{ getTreatmentReferenceStatus(rec)?.message }}
+                          </span>
+                        </div>
+                        <div class="rec-reason">{{ rec.reason }}</div>
+                        <div v-if="rec.ingredients" class="rec-ingredients-edit" @click.stop>
+                          <label>组成：</label>
+                          <textarea 
+                            v-model="rec.ingredients"
+                            class="ingredients-textarea"
+                            rows="2"
+                            placeholder="请输入方剂组成"
+                          ></textarea>
+                        </div>
+                        <div v-if="rec.usage" class="rec-usage">建议：{{ rec.usage }}</div>
+                      </div>
                     </div>
-                    <div class="rec-reason">{{ rec.reason }}</div>
-                    <div v-if="rec.ingredients" class="rec-ingredients-edit" @click.stop>
-                      <label>组成：</label>
-                      <textarea 
-                        v-model="rec.ingredients"
-                        class="ingredients-textarea"
-                        rows="2"
-                        placeholder="请输入方剂组成"
-                      ></textarea>
-                    </div>
-                    <div v-if="rec.usage" class="rec-usage">建议：{{ rec.usage }}</div>
                   </div>
-                </div>
+                </section>
+
+                <section
+                  v-if="visibleOtherTreatmentRecommendations.length > 0"
+                  class="treatment-section treatment-section-muted"
+                >
+                  <div class="treatment-section-header">
+                    <div>
+                      <h5>其他处置建议</h5>
+                      <p>这些建议可继续查看或纳入最终报告，但当前不会通过 PHIS 引用接口提交。</p>
+                    </div>
+                    <span class="section-readonly-badge">仅展示</span>
+                  </div>
+                  <div class="treatment-list">
+                    <div 
+                      v-for="rec in visibleOtherTreatmentRecommendations"
+                      :key="`${rec.type}-${rec.name}`"
+                      class="treatment-item treatment-item-muted"
+                      :class="{ active: rec.selected }"
+                      @click="toggleTreatmentSelection(rec)"
+                    >
+                      <div class="selected-mark" v-if="rec.selected">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>
+                      </div>
+                      <div class="rec-content">
+                        <div class="rec-header">
+                          <div class="rec-name-group">
+                            <span class="rec-tag" :class="rec.type">{{ getTreatmentTagLabel(rec.type) }}</span>
+                            <FactCheckHighlight :issue="getIssueForTreatment(rec.name)">
+                              <span class="rec-name">{{ rec.name }}</span>
+                            </FactCheckHighlight>
+                          </div>
+                          <span class="section-readonly-inline">不回写 PHIS</span>
+                        </div>
+                        <div class="rec-reason">{{ rec.reason }}</div>
+                        <div v-if="rec.ingredients" class="rec-ingredients-edit" @click.stop>
+                          <label>组成：</label>
+                          <textarea 
+                            v-model="rec.ingredients"
+                            class="ingredients-textarea"
+                            rows="2"
+                            placeholder="请输入方剂组成"
+                          ></textarea>
+                        </div>
+                        <div v-if="rec.usage" class="rec-usage">建议：{{ rec.usage }}</div>
+                      </div>
+                    </div>
+                  </div>
+                </section>
               </div>
               <div v-else class="empty-text">暂无推荐方案</div>
             </div>
@@ -819,7 +946,7 @@
           <div class="modal-footer">
             <button class="btn secondary" @click="showChecklistModal = false">暂不确认 (跳过)</button>
             <button class="btn primary" @click="handleChecklistConfirm" :disabled="!checklistItems.some(i => i.checked) && !checklistNotes">
-              确认并更新现病史
+              确认并记录
             </button>
           </div>
         </div>
@@ -830,7 +957,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, shallowRef, computed, onMounted, watch, onUnmounted, inject } from 'vue';
+import { ref, shallowRef, computed, onMounted, watch, onUnmounted, inject, nextTick } from 'vue';
 import westernTemplatesData from '../assets/templates.json';
 import tcmTemplatesData from '../assets/tcm-templates.json';
 import symptomAssociations from '../assets/symptom-associations.json';
@@ -838,7 +965,7 @@ import { medicalDataService, type DiagnosisItem, type Icd10CategoryInfo } from '
 import Pinyin from 'tiny-pinyin';
 import { chat } from '../services/llm';
 import { invoke } from '@tauri-apps/api/core';
-import { once, emitTo } from '@tauri-apps/api/event';
+import { once, emitTo, listen } from '@tauri-apps/api/event';
 import { WebviewWindow } from '@tauri-apps/api/webviewWindow';
 import { feedbackService } from '../services/feedback';
 import { trackViewChange, trackClick, trackError, trackFormSubmit, trackRecommendationAction, startTimedOperation } from '../services/operationTracker';
@@ -864,22 +991,67 @@ import { isFieldApplicable, generateTextsForSymptom } from '../services/textGene
 import { pmphaiService, isPMPHAIConfigured, type BatchSearchResults } from '../services/pmphai';
 import { CONSULTATION_CONFIG, isSymptomSelectionFull } from '../constants/consultationConfig';
 import { WINDOW_SIZES } from '../constants/windowSizes';
-import { useConsultationSessionStore } from '../stores/consultationSession';
+import { useDiagnosisPathStore } from '../stores/diagnosisPath';
 import { buildDiagnosisPathPayload } from '../services/diagnosisPath';
-import type { SessionOption } from '../stores/consultationSession';
+import type {
+  ConsultationAssistAction,
+  DiagnosisPathOption,
+} from '../types/consultationAssist';
 
 const showToast = inject('showToast') as (msg: string, type: 'success' | 'error' | 'info') => void;
 
 const props = defineProps<{
   initialPatientData?: any;
+  assistTrigger?: {
+    kind: ConsultationAssistAction;
+    token: number;
+  } | null;
 }>();
 
-const emit = defineEmits(['close']);
-const consultationSessionStore = useConsultationSessionStore();
+const emit = defineEmits(['close', 'consume-auto-trigger']);
+const diagnosisPathStore = useDiagnosisPathStore();
 const DIAGNOSIS_PATH_WINDOW_LABEL = 'diagnosis-path-window';
 
 // --- Interfaces & State Definitions ---
 import type { Diagnosis, Patient, TreatmentRecommendation, FinalRecord } from '../types/consultation';
+type AssistAction = ConsultationAssistAction;
+type ReferenceAction = 'diagnosis' | 'medication' | 'examination';
+type ReferenceLifecycleStatus = 'pending' | 'success' | 'failed';
+type ReferenceableTreatmentType = 'medicine' | 'exam';
+
+interface ReferenceItemPayload {
+  name: string;
+  code?: string;
+  type: 'diagnosis' | 'medication' | 'examination';
+}
+
+interface ReferenceFeedbackPayload {
+  consultationId?: string;
+  requestId: string;
+  referenceType?: ReferenceAction;
+  action: ReferenceAction;
+  status: ReferenceLifecycleStatus;
+  message?: string;
+  items?: ReferenceItemPayload[];
+  timestamp?: number;
+}
+
+interface ReferenceStatusEntry {
+  status: ReferenceLifecycleStatus;
+  requestId: string;
+  message?: string;
+  updatedAt: number;
+}
+
+interface TreatmentReferenceSection {
+  type: ReferenceableTreatmentType;
+  action: Exclude<ReferenceAction, 'diagnosis'>;
+  title: string;
+  description: string;
+  actionLabel: string;
+  items: TreatmentRecommendation[];
+  selectedCount: number;
+}
 
 // Mock Patient Data
 const patientInfo = ref<Patient>({
@@ -976,6 +1148,13 @@ const currentTemplatesData = computed(() => {
 const allSymptoms = computed(() => symptoms.value);
 const currentView = ref<'consultation' | 'record' | 'final_report'>('consultation');
 const generatedRecord = ref({ chiefComplaint: '', historyOfPresentIllness: '', tcmFourExaminations: '' });
+const activePatientAnchorId = ref('');
+const assistFocus = ref<AssistAction | null>(null);
+const activeReferenceRequest = ref<ReferenceFeedbackPayload | null>(null);
+const lastReferenceFeedback = ref<ReferenceFeedbackPayload | null>(null);
+const referenceStatusMap = ref<Record<string, ReferenceStatusEntry>>({});
+const isWritingRecord = ref(false);
+let unlistenReferenceFeedback: (() => void) | null = null;
 
 const systemCategories: Record<string, string> = {
   respiratory: '呼吸系统',
@@ -1009,6 +1188,165 @@ const treatmentError = ref<string | null>(null);
 const treatmentRecommendations = ref<TreatmentRecommendation[]>([]);
 
 const finalRecord = ref<FinalRecord | null>(null);
+const hasRecordDraft = computed(
+  () =>
+    generatedRecord.value.chiefComplaint.trim() !== '' &&
+    generatedRecord.value.historyOfPresentIllness.trim() !== ''
+);
+const visibleTreatmentRecommendations = computed(() => {
+  if (assistFocus.value === 'medication') {
+    return treatmentRecommendations.value.filter((item) => item.type === 'medicine');
+  }
+  if (assistFocus.value === 'examination') {
+    return treatmentRecommendations.value.filter((item) => item.type === 'exam');
+  }
+  return treatmentRecommendations.value;
+});
+const visibleMedicineRecommendations = computed(() =>
+  visibleTreatmentRecommendations.value.filter((item) => item.type === 'medicine')
+);
+const visibleExamRecommendations = computed(() =>
+  visibleTreatmentRecommendations.value.filter((item) => item.type === 'exam')
+);
+const visibleOtherTreatmentRecommendations = computed(() =>
+  visibleTreatmentRecommendations.value.filter(
+    (item) => item.type !== 'medicine' && item.type !== 'exam'
+  )
+);
+const selectedMedicineCount = computed(
+  () => visibleMedicineRecommendations.value.filter((item) => item.selected).length
+);
+const selectedExamCount = computed(
+  () => visibleExamRecommendations.value.filter((item) => item.selected).length
+);
+const visibleTreatmentReferenceSections = computed(() => {
+  const sections: TreatmentReferenceSection[] = [
+    {
+      type: 'medicine',
+      action: 'medication',
+      title: '推荐用药',
+      description: '勾选需要同步到 PHIS 的药品方案，再一次引入所选用药。',
+      actionLabel: '引入所选用药',
+      items: visibleMedicineRecommendations.value,
+      selectedCount: selectedMedicineCount.value,
+    },
+    {
+      type: 'exam',
+      action: 'examination',
+      title: '推荐检查检验',
+      description: '勾选需要同步到 PHIS 的检查检验项目，再一次引入所选检查。',
+      actionLabel: '引入所选检查检验',
+      items: visibleExamRecommendations.value,
+      selectedCount: selectedExamCount.value,
+    },
+  ];
+  return sections.filter((section) => section.items.length > 0);
+});
+const showDiagnosisCard = computed(
+  () => currentView.value === 'record' && assistFocus.value !== 'medication' && assistFocus.value !== 'examination'
+);
+const showTreatmentCard = computed(
+  () => currentView.value === 'record' && assistFocus.value !== 'differential'
+);
+const hasPendingReferenceRequest = computed(
+  () => activeReferenceRequest.value?.status === 'pending'
+);
+const currentDiagnosisSummary = computed(
+  () =>
+    selectedDiagnosis.value?.name ||
+    readPatientText(patientInfo.value as unknown as Record<string, unknown>, ['diagnosis']) ||
+    ''
+);
+const assistFocusLabel = computed(() => {
+  switch (assistFocus.value) {
+    case 'record':
+      return '病历快进';
+    case 'diagnosis':
+      return '诊断快进';
+    case 'medication':
+      return '用药快进';
+    case 'examination':
+      return '检查快进';
+    case 'differential':
+      return '鉴别排查';
+    case 'reminder':
+      return '风险提醒';
+    default:
+      return '';
+  }
+});
+const workflowBannerTone = computed<'info' | 'success' | 'error'>(() => {
+  if (activeReferenceRequest.value?.status === 'pending') {
+    return 'info';
+  }
+  if (lastReferenceFeedback.value?.status === 'success') {
+    return 'success';
+  }
+  if (lastReferenceFeedback.value?.status === 'failed') {
+    return 'error';
+  }
+  return 'info';
+});
+const workflowBannerText = computed(() => {
+  if (activeReferenceRequest.value?.status === 'pending') {
+    return activeReferenceRequest.value.message || '已发起引用请求，等待 PHIS 保存并回执。';
+  }
+  if (lastReferenceFeedback.value) {
+    return lastReferenceFeedback.value.message ||
+      (lastReferenceFeedback.value.status === 'success'
+        ? 'PHIS 已完成引用保存。'
+        : 'PHIS 引用保存失败。');
+  }
+
+  switch (assistFocus.value) {
+    case 'record':
+      return '检测到 HIS 已有主诉与现病史，已直接进入病历详情页。';
+    case 'diagnosis':
+      return '请确认诊断；点击“确认诊断”只记录日志，点击“引用诊断”才会写回 PHIS。';
+    case 'medication':
+      return '请勾选要引用的用药方案，发起引用后会等待 PHIS 回执。';
+    case 'examination':
+      return '请勾选要引用的检查检验项目，发起引用后会等待 PHIS 回执。';
+    case 'differential':
+      return '鉴别排查的确认结果只记录日志，不会改写现病史。';
+    case 'reminder':
+      return '风险提醒已同步，可结合当前病历继续处理。';
+    default:
+      return '';
+  }
+});
+const workflowBannerStyle = computed(() => {
+  const palette =
+    workflowBannerTone.value === 'success'
+      ? {
+          background: 'rgba(34, 197, 94, 0.12)',
+          border: '1px solid rgba(34, 197, 94, 0.28)',
+          color: '#166534',
+        }
+      : workflowBannerTone.value === 'error'
+        ? {
+            background: 'rgba(239, 68, 68, 0.12)',
+            border: '1px solid rgba(239, 68, 68, 0.28)',
+            color: '#991b1b',
+          }
+        : {
+            background: 'rgba(59, 130, 246, 0.1)',
+            border: '1px solid rgba(59, 130, 246, 0.22)',
+            color: '#1d4ed8',
+          };
+
+  return {
+    display: 'flex',
+    gap: '8px',
+    alignItems: 'center',
+    padding: '12px 14px',
+    marginBottom: '14px',
+    borderRadius: '12px',
+    fontSize: '13px',
+    lineHeight: '1.5',
+    ...palette,
+  };
+});
 
 type DiagnosisDisplayGroup = {
   key: string;
@@ -1162,7 +1500,7 @@ const diagnosisPathContext = computed(() => ({
   allergyHistory: patientInfo.value.allergyHistory || '未提供过敏史',
 }));
 
-const diagnosisPathOptions = computed<SessionOption[]>(() =>
+const diagnosisPathOptions = computed<DiagnosisPathOption[]>(() =>
   aiDiagnoses.value.map((diagnosis, index) => ({
     id: diagnosis.id || `${diagnosis.code || diagnosis.name}-${index}`,
     title: diagnosis.name,
@@ -1179,20 +1517,233 @@ const getPatientAnchorId = (patient?: {
   patientId?: string | number;
   id?: string | number;
 } | null) => String(patient?.idPi || patient?.patientId || patient?.id || '');
-const diagnosisPathSessionSource = computed(() => {
-  const sessionPatient = consultationSessionStore.patient;
-  const currentPatient = patientInfo.value;
 
-  if (
-    sessionPatient &&
-    currentPatient &&
-    getPatientAnchorId(sessionPatient) === getPatientAnchorId(currentPatient)
-  ) {
-    return sessionPatient;
+const readPatientText = (
+  source: Record<string, unknown> | null | undefined,
+  keys: string[]
+): string => {
+  if (!source) {
+    return '';
   }
 
-  return currentPatient;
-});
+  for (const key of keys) {
+    const value = source[key];
+    if (typeof value === 'string' && value.trim() !== '') {
+      return value.trim();
+    }
+    if (typeof value === 'number') {
+      return String(value);
+    }
+  }
+
+  return '';
+};
+
+const resolveConsultationId = (): string =>
+  getPatientAnchorId(finalRecord.value?.patient || patientInfo.value) || 'unknown';
+
+const resolvePastMedicalHistory = (): string =>
+  readPatientText(finalRecord.value?.record as unknown as Record<string, unknown>, ['pastMedicalHistory']) ||
+  readPatientText(
+    patientInfo.value as unknown as Record<string, unknown>,
+    ['pastMedicalHistory', 'past_medical_history', 'pastMedicalHistoryText']
+  ) ||
+  '未提供既往病史。';
+
+const buildReferenceKey = (
+  action: ReferenceAction,
+  item: { name: string; code?: string }
+): string => `${action}:${item.code || item.name}`;
+
+const setReferenceStatuses = (
+  action: ReferenceAction,
+  items: ReferenceItemPayload[],
+  entry: ReferenceStatusEntry
+): void => {
+  const nextMap = { ...referenceStatusMap.value };
+  items.forEach((item) => {
+    nextMap[buildReferenceKey(action, item)] = entry;
+  });
+  referenceStatusMap.value = nextMap;
+};
+
+const buildCurrentSummary = (
+  chiefComplaint: string,
+  historyOfPresentIllness: string,
+  diagnoses: Array<{ name: string }>
+): string => {
+  const lines = [
+    chiefComplaint ? `主诉：${chiefComplaint}` : '',
+    historyOfPresentIllness ? `现病史：${historyOfPresentIllness}` : '',
+    diagnoses.length ? `诊断：${diagnoses.map((item) => item.name).join('；')}` : '',
+  ].filter(Boolean);
+  return lines.join('\n');
+};
+
+const buildCurrentDiagnosisList = (): Array<{ name: string; code?: string }> => {
+  if (selectedDiagnosis.value) {
+    return [
+      {
+        name: selectedDiagnosis.value.name,
+        code: selectedDiagnosis.value.code,
+      },
+    ];
+  }
+
+  const diagnosisName = readPatientText(
+    patientInfo.value as unknown as Record<string, unknown>,
+    ['diagnosis']
+  );
+  return diagnosisName ? [{ name: diagnosisName }] : [];
+};
+
+const buildCurrentMedicalPayload = (
+  extra: Record<string, unknown> = {},
+  options: {
+    includeDiagnosis?: boolean;
+    includeTreatments?: boolean;
+    includedTreatmentTypes?: Array<'medicine' | 'exam'>;
+  } = {}
+) => {
+  const includeDiagnosis = options.includeDiagnosis ?? true;
+  const includeTreatments = options.includeTreatments ?? true;
+  const includedTreatmentTypes = options.includedTreatmentTypes;
+  const diagnosisList = includeDiagnosis ? buildCurrentDiagnosisList() : [];
+  const medications = includeTreatments
+    ? treatmentRecommendations.value
+        .filter(
+          (item) =>
+            item.type === 'medicine' &&
+            item.selected &&
+            (!includedTreatmentTypes || includedTreatmentTypes.includes('medicine'))
+        )
+        .map((item) => ({
+          name: item.name,
+          spec: item.matchedItem?.spec,
+          usage: item.usage,
+        }))
+    : [];
+  const examinations = includeTreatments
+    ? treatmentRecommendations.value
+        .filter(
+          (item) =>
+            item.type === 'exam' &&
+            item.selected &&
+            (!includedTreatmentTypes || includedTreatmentTypes.includes('exam'))
+        )
+        .map((item) => ({
+          name: item.name,
+        }))
+    : [];
+
+  return {
+    consultationId: resolveConsultationId(),
+    timestamp: Date.now(),
+    resultType: 'draft',
+    chiefComplaint: generatedRecord.value.chiefComplaint,
+    historyOfPresentIllness: generatedRecord.value.historyOfPresentIllness,
+    pastMedicalHistory: resolvePastMedicalHistory(),
+    diagnosisList,
+    medications,
+    examinations,
+    treatmentPlan:
+      medications.length || examinations.length
+        ? [
+            medications.length
+              ? `建议用药：${medications.map((item) => item.name).join('；')}`
+              : '',
+            examinations.length
+              ? `建议检查：${examinations.map((item) => item.name).join('；')}`
+              : '',
+          ]
+            .filter(Boolean)
+            .join('；')
+        : '建议结合医生站规则完成最终确认。',
+    medicalSummary: buildCurrentSummary(
+      generatedRecord.value.chiefComplaint,
+      generatedRecord.value.historyOfPresentIllness,
+      diagnosisList
+    ),
+    ...extra,
+  };
+};
+
+const prefillGeneratedRecordFromPatient = (force = false): boolean => {
+  const chiefComplaint = readPatientText(
+    patientInfo.value as unknown as Record<string, unknown>,
+    ['chiefComplaint', 'chief_complaint']
+  );
+  const historyOfPresentIllness = readPatientText(
+    patientInfo.value as unknown as Record<string, unknown>,
+    ['historyOfPresentIllness', 'history_of_present_illness']
+  );
+
+  if (!chiefComplaint || !historyOfPresentIllness) {
+    return false;
+  }
+
+  if (force || !generatedRecord.value.chiefComplaint.trim()) {
+    generatedRecord.value.chiefComplaint = chiefComplaint;
+  }
+  if (force || !generatedRecord.value.historyOfPresentIllness.trim()) {
+    generatedRecord.value.historyOfPresentIllness = historyOfPresentIllness;
+  }
+  return true;
+};
+
+const prefillDiagnosisFromPatient = (force = false): boolean => {
+  const diagnosisName = readPatientText(
+    patientInfo.value as unknown as Record<string, unknown>,
+    ['diagnosis']
+  );
+  if (!diagnosisName) {
+    return false;
+  }
+
+  if (
+    !force &&
+    selectedDiagnosis.value &&
+    selectedDiagnosis.value.name.trim() !== ''
+  ) {
+    return true;
+  }
+
+  selectedDiagnosis.value = {
+    id: `phis-diagnosis-${resolveConsultationId()}`,
+    code: '',
+    name: diagnosisName,
+    rate: 'PHIS 当前诊断',
+    rationale: '来自 PHIS 当前诊断草稿',
+  } as Diagnosis;
+  return true;
+};
+
+const resetWorkflowState = () => {
+  currentView.value = 'consultation';
+  assistFocus.value = null;
+  selectedSymptoms.value = [];
+  formData.value = {};
+  searchQuery.value = '';
+  selectedCategories.value = [];
+  isCategoryDropdownOpen.value = false;
+  generatedRecord.value = { chiefComplaint: '', historyOfPresentIllness: '', tcmFourExaminations: '' };
+  finalRecord.value = null;
+  aiDiagnoses.value = [];
+  selectedDiagnosis.value = null;
+  relatedDiagnoses.value = [];
+  treatmentRecommendations.value = [];
+  checklistItems.value = [];
+  checklistNotes.value = '';
+  showChecklistModal.value = false;
+  activeChecklistDiagnosis.value = null;
+  activeReferenceRequest.value = null;
+  lastReferenceFeedback.value = null;
+  referenceStatusMap.value = {};
+  isWritingRecord.value = false;
+  knowledgeLoading.value = false;
+  hasKnowledgeResults.value = false;
+  showKnowledgePanel.value = false;
+};
 
 const canOpenDiagnosisPath = computed(
   () => consultationMode.value !== 'tcm' && diagnosisPathOptions.value.length > 0
@@ -1207,11 +1758,9 @@ const openDiagnosisPathWindow = async () => {
   const preferredId = selectedDiagnosis.value?.id || diagnosisPathOptions.value[0]?.id;
   const selectedOption =
     diagnosisPathOptions.value.find((option) => option.id === preferredId) || diagnosisPathOptions.value[0];
-  const sessionKey = consultationSessionStore.resolveDiagnosisPathSessionKey(
-    diagnosisPathSessionSource.value
-  );
-  const targetKey = consultationSessionStore.resolveDiagnosisPathTargetKey(selectedOption);
-  const candidateSignature = consultationSessionStore.resolveDiagnosisPathCandidateSignature(
+  const sessionKey = diagnosisPathStore.resolveDiagnosisPathSessionKey(patientInfo.value);
+  const targetKey = diagnosisPathStore.resolveDiagnosisPathTargetKey(selectedOption);
+  const candidateSignature = diagnosisPathStore.resolveDiagnosisPathCandidateSignature(
     diagnosisPathOptions.value
   );
   let pathWindow = await WebviewWindow.getByLabel(DIAGNOSIS_PATH_WINDOW_LABEL);
@@ -1250,7 +1799,7 @@ const openDiagnosisPathWindow = async () => {
   ensureDiagnosisPathWindowVisible(pathWindow);
 
   try {
-    let payload = consultationSessionStore.getDiagnosisPathCache(
+    let payload = diagnosisPathStore.getDiagnosisPathCache(
       sessionKey,
       targetKey,
       candidateSignature
@@ -1278,7 +1827,7 @@ const openDiagnosisPathWindow = async () => {
         )
       );
       if (payload) {
-        consultationSessionStore.setDiagnosisPathCache(
+        diagnosisPathStore.setDiagnosisPathCache(
           sessionKey,
           targetKey,
           candidateSignature,
@@ -1615,63 +2164,6 @@ const tcmInquiryConfig = {
 
 // --- Logic ---
 
-const hasMatchingSessionPatient = computed(() => {
-  const sessionPatient = consultationSessionStore.patient;
-  if (!sessionPatient || !props.initialPatientData) {
-    return false;
-  }
-
-  const sessionId = String(sessionPatient.idPi || sessionPatient.patientId || sessionPatient.id || '');
-  const incomingId = String(
-    props.initialPatientData.idPi || props.initialPatientData.patientId || props.initialPatientData.id || ''
-  );
-  return sessionId !== '' && sessionId === incomingId;
-});
-
-const syncDraftFromSessionStore = () => {
-  if (!hasMatchingSessionPatient.value) {
-    return;
-  }
-
-  const draft = consultationSessionStore.draft;
-
-  if (draft.chiefComplaint) {
-    generatedRecord.value.chiefComplaint = draft.chiefComplaint;
-  }
-  if (draft.historyOfPresentIllness) {
-    generatedRecord.value.historyOfPresentIllness = draft.historyOfPresentIllness;
-  }
-
-  if (draft.diagnoses.length > 0 && aiDiagnoses.value.length === 0) {
-    aiDiagnoses.value = draft.diagnoses.map((item, index) => ({
-      id: `session-diagnosis-${index}`,
-      code: item.code || '',
-      name: item.name,
-      rate: item.rate || '已采纳',
-      rationale: item.rationale || '来自接诊 session 草稿',
-    }));
-    selectedDiagnosis.value = aiDiagnoses.value[0] || null;
-  }
-
-  if (draft.medications.length > 0 || draft.examinations.length > 0) {
-    treatmentRecommendations.value = [
-      ...draft.medications.map((item) => ({
-        type: 'medicine' as const,
-        name: item.name,
-        reason: item.reason || '来自接诊 session 草稿',
-        usage: item.usage,
-        selected: true,
-      })),
-      ...draft.examinations.map((item) => ({
-        type: 'exam' as const,
-        name: item.name,
-        reason: item.reason || '来自接诊 session 草稿',
-        selected: true,
-      })),
-    ];
-  }
-};
-
 // AI 动态生成症状
 const handleGenerateDynamicSymptom = async (name: string) => {
   if (!name || isGeneratingSymptom.value) return;
@@ -1727,9 +2219,308 @@ const handleGenerateDynamicSymptom = async (name: string) => {
   }
 };
 
+const applyReferenceFeedback = (payload: ReferenceFeedbackPayload) => {
+  const resolvedAction = payload.referenceType || payload.action;
+  const safePayload: ReferenceFeedbackPayload = {
+    ...payload,
+    action: resolvedAction,
+    referenceType: resolvedAction,
+    timestamp: payload.timestamp || Date.now(),
+  };
+  lastReferenceFeedback.value = safePayload;
+  activeReferenceRequest.value =
+    activeReferenceRequest.value?.requestId === safePayload.requestId
+      ? { ...activeReferenceRequest.value, ...safePayload }
+      : activeReferenceRequest.value;
+
+  const items =
+    (safePayload.items && safePayload.items.length > 0
+      ? safePayload.items
+      : activeReferenceRequest.value?.items) || [];
+  if (items.length > 0) {
+    setReferenceStatuses(safePayload.action, items, {
+      status: safePayload.status,
+      requestId: safePayload.requestId,
+      message: safePayload.message,
+      updatedAt: safePayload.timestamp || Date.now(),
+    });
+  }
+
+  feedbackService.logOperation({
+    operationType: 'api_call',
+    operationName: `reference_feedback:${safePayload.action}`,
+    details: safePayload,
+    success: safePayload.status === 'success',
+  });
+
+  if (safePayload.status === 'success') {
+    showToast(safePayload.message || 'PHIS 已完成引用保存。', 'success');
+  } else {
+    showToast(safePayload.message || 'PHIS 引用保存失败。', 'error');
+  }
+};
+
+const writeRecordToHIS = async () => {
+  if (!hasRecordDraft.value) {
+    showToast('请先完善主诉和现病史，再回写病历。', 'info');
+    return;
+  }
+
+  isWritingRecord.value = true;
+  try {
+    await invoke('complete_consultation', {
+      result: buildCurrentMedicalPayload(
+        { resultType: 'draft' },
+        { includeDiagnosis: false, includeTreatments: false }
+      ),
+    });
+    feedbackService.logOperation({
+      operationType: 'form_submit',
+      operationName: 'write_record_to_his',
+      details: { consultationId: resolveConsultationId() },
+      success: true,
+    });
+    showToast('主诉和现病史已写回医生站草稿。', 'success');
+  } catch (error) {
+    console.error('[ConsultationPage] Failed to write record draft:', error);
+    trackError('write_record_to_his_failed', error);
+    showToast(`回写病历失败：${error instanceof Error ? error.message : String(error)}`, 'error');
+  } finally {
+    isWritingRecord.value = false;
+  }
+};
+
+const confirmDiagnosisSelection = () => {
+  if (!selectedDiagnosis.value) {
+    showToast('请先选择一个诊断。', 'info');
+    return;
+  }
+
+  feedbackService.logOperation({
+    operationType: 'form_submit',
+    operationName: 'confirm_diagnosis_only',
+    details: {
+      consultationId: resolveConsultationId(),
+      diagnosisName: selectedDiagnosis.value.name,
+      diagnosisCode: selectedDiagnosis.value.code,
+    },
+    success: true,
+  });
+  showToast('已记录当前诊断确认日志，未修改病历。', 'success');
+};
+
+const getTreatmentTagLabel = (type: TreatmentRecommendation['type']): string => {
+  switch (type) {
+    case 'medicine':
+      return '药';
+    case 'exam':
+      return '检';
+    default:
+      return '治';
+  }
+};
+
+const buildSelectedTreatmentReferenceItemsByType = (
+  type: ReferenceableTreatmentType
+): ReferenceItemPayload[] =>
+  visibleTreatmentRecommendations.value
+    .filter((item) => item.selected && item.type === type)
+    .map((item): ReferenceItemPayload => ({
+      name: item.name,
+      code: item.matchedItem?.code,
+      type: type === 'medicine' ? 'medication' : 'examination',
+    }));
+
+const isPendingReferenceItem = (
+  action: ReferenceAction,
+  item: { name: string; code?: string }
+): boolean => {
+  if (activeReferenceRequest.value?.status !== 'pending' || activeReferenceRequest.value.action !== action) {
+    return false;
+  }
+
+  return (activeReferenceRequest.value.items || []).some((pendingItem) =>
+    buildReferenceKey(action, pendingItem) === buildReferenceKey(action, item)
+  );
+};
+
+const getDiagnosisReferenceButtonLabel = (diagnosis: Diagnosis): string => {
+  const status = getDiagnosisReferenceStatus(diagnosis)?.status;
+  if (status === 'success') {
+    return '已引用';
+  }
+  if (isPendingReferenceItem('diagnosis', { name: diagnosis.name, code: diagnosis.code })) {
+    return '等待回执...';
+  }
+  if (status === 'failed') {
+    return '重试引用';
+  }
+  return '引用诊断';
+};
+
+const isDiagnosisReferenceDisabled = (diagnosis: Diagnosis): boolean => {
+  const status = getDiagnosisReferenceStatus(diagnosis)?.status;
+  return status === 'success' || hasPendingReferenceRequest.value;
+};
+
+const getTreatmentReferenceAction = (
+  recommendation: TreatmentRecommendation
+): Exclude<ReferenceAction, 'diagnosis'> | null => {
+  if (recommendation.type === 'medicine') {
+    return 'medication';
+  }
+  if (recommendation.type === 'exam') {
+    return 'examination';
+  }
+  return null;
+};
+
+const getTreatmentReferenceButtonLabel = (
+  action: Exclude<ReferenceAction, 'diagnosis'>,
+  fallback: string
+): string => {
+  if (hasPendingReferenceRequest.value && activeReferenceRequest.value?.action === action) {
+    return '等待回执...';
+  }
+  return fallback;
+};
+
+const getReferenceStatusLabel = (status: ReferenceLifecycleStatus): string => {
+  switch (status) {
+    case 'success':
+      return '已引用';
+    case 'failed':
+      return '引用失败';
+    default:
+      return '等待回执';
+  }
+};
+
+const getDiagnosisReferenceStatus = (diagnosis: Diagnosis): ReferenceStatusEntry | null =>
+  referenceStatusMap.value[
+    buildReferenceKey('diagnosis', {
+      name: diagnosis.name,
+      code: diagnosis.code,
+    })
+  ] || null;
+
+const getTreatmentReferenceStatus = (
+  recommendation: TreatmentRecommendation
+): ReferenceStatusEntry | null => {
+  const action = getTreatmentReferenceAction(recommendation);
+  if (!action) {
+    return null;
+  }
+
+  return referenceStatusMap.value[
+    buildReferenceKey(action, {
+      name: recommendation.name,
+      code: recommendation.matchedItem?.code,
+    })
+  ] || null;
+};
+
+const requestReferenceToPHIS = async (
+  action: ReferenceAction,
+  items: ReferenceItemPayload[]
+) => {
+  if (items.length === 0) {
+    showToast('当前没有可引用的项目。', 'info');
+    return;
+  }
+
+  const existingSuccess = items.every(
+    (item) => referenceStatusMap.value[buildReferenceKey(action, item)]?.status === 'success'
+  );
+  if (existingSuccess) {
+    showToast('这些项目已经成功引用到 PHIS，无需重复操作。', 'info');
+    return;
+  }
+
+  const requestId = `ref-${action}-${Date.now()}`;
+  const payload = buildCurrentMedicalPayload(
+    {
+      resultType: 'reference-request',
+      requestId,
+      referenceType: action,
+      action,
+      referenceStatus: 'pending',
+      referenceMessage: '等待 PHIS 保存引用结果',
+      referenceItems: items,
+    },
+    {
+      includeTreatments: action !== 'diagnosis',
+      includedTreatmentTypes:
+        action === 'medication'
+          ? ['medicine']
+          : action === 'examination'
+            ? ['exam']
+            : undefined,
+    }
+  );
+
+  try {
+    await invoke('complete_consultation', { result: payload });
+    setReferenceStatuses(action, items, {
+      status: 'pending',
+      requestId,
+      message: '等待 PHIS 保存引用结果',
+      updatedAt: Date.now(),
+    });
+    activeReferenceRequest.value = {
+      consultationId: resolveConsultationId(),
+      requestId,
+      action,
+      status: 'pending',
+      message: '等待 PHIS 保存引用结果',
+      items,
+      timestamp: Date.now(),
+    };
+    feedbackService.logOperation({
+      operationType: 'form_submit',
+      operationName: `request_reference:${action}`,
+      details: activeReferenceRequest.value,
+      success: true,
+    });
+    showToast('已发起引用请求，等待 PHIS 回执。', 'info');
+  } catch (error) {
+    console.error('[ConsultationPage] Failed to request PHIS reference:', error);
+    trackError('request_reference_failed', error, { action });
+    showToast(`发起引用失败：${error instanceof Error ? error.message : String(error)}`, 'error');
+  }
+};
+
+const referenceDiagnosisItemToPHIS = async (diagnosis: Diagnosis) => {
+  handleDiagnosisSelect(diagnosis);
+  await requestReferenceToPHIS('diagnosis', [
+    {
+      name: diagnosis.name,
+      code: diagnosis.code,
+      type: 'diagnosis',
+    },
+  ]);
+};
+
+const referenceSelectedTreatmentsToPHIS = async (type: ReferenceableTreatmentType) => {
+  const items = buildSelectedTreatmentReferenceItemsByType(type);
+  if (!items.length) {
+    showToast(type === 'exam' ? '请先勾选需要引入的检查检验项目。' : '请先勾选需要引入的用药项目。', 'info');
+    return;
+  }
+
+  const action = type === 'exam' ? 'examination' : 'medication';
+  await requestReferenceToPHIS(action, items);
+};
 
 watch(() => props.initialPatientData, (newData) => {
   if (newData) {
+    const nextPatientId = String(newData.idPi || newData.patientId || newData.id || '');
+    const shouldReset = activePatientAnchorId.value !== '' && nextPatientId !== '' && activePatientAnchorId.value !== nextPatientId;
+
+    if (shouldReset) {
+      resetWorkflowState();
+    }
+
     patientInfo.value = {
       ...patientInfo.value,
       ...newData, // Merge directly as keys now match (naPi, idPi, etc.)
@@ -1737,8 +2528,11 @@ watch(() => props.initialPatientData, (newData) => {
       naPi: newData.naPi || newData.name || patientInfo.value.naPi,
       idPi: newData.idPi || newData.patientId || patientInfo.value.idPi,
     };
+    activePatientAnchorId.value = String(
+      patientInfo.value.idPi || patientInfo.value.patientId || patientInfo.value.id || ''
+    );
 
-    syncDraftFromSessionStore();
+    prefillGeneratedRecordFromPatient(shouldReset);
   }
 }, { immediate: true });
 
@@ -1763,13 +2557,14 @@ const submitToHIS = async () => {
     }));
 
   const result = {
-    consultationId: finalRecord.value.patient.idPi || "unknown",
+    consultationId: resolveConsultationId(),
     timestamp: Date.now(),
+    resultType: 'final-report',
     
     // Core Medical Record
     chiefComplaint: finalRecord.value.record.chiefComplaint,
     historyOfPresentIllness: finalRecord.value.record.historyOfPresentIllness,
-    pastMedicalHistory: "否认高血压、糖尿病、冠心病等慢性病史。", // TODO: Get from patientInfo or form if available
+    pastMedicalHistory: resolvePastMedicalHistory(),
     
     // Structured Data
     diagnosisList: [{
@@ -1786,7 +2581,7 @@ const submitToHIS = async () => {
 
   try {
     await invoke('complete_consultation', { result });
-    trackFormSubmit('submit_to_his', { patientId: finalRecord.value.patient.idPi });
+    trackFormSubmit('submit_to_his', { patientId: result.consultationId });
     showToast("问诊完成，数据已发送回HIS系统。", "success");
     handleEndSession();
   } catch (e) {
@@ -1803,16 +2598,8 @@ const printReport = () => {
 
 const handleEndSession = () => {
   trackClick('end_consultation_session');
-  currentView.value = 'consultation';
-  selectedSymptoms.value = [];
-  formData.value = {};
+  resetWorkflowState();
   initFormData(generalConditionConfig);
-  generatedRecord.value = { chiefComplaint: '', historyOfPresentIllness: '', tcmFourExaminations: '' };
-  finalRecord.value = null;
-  aiDiagnoses.value = [];
-  selectedDiagnosis.value = null;
-  treatmentRecommendations.value = [];
-  consultationSessionStore.clearSession();
   emit('close');
 };
 
@@ -1861,7 +2648,24 @@ onMounted(() => {
   symptoms.value = currentTemplatesData.value;
   // Initialize General Condition data
   initFormData(generalConditionConfig);
-  syncDraftFromSessionStore();
+  prefillGeneratedRecordFromPatient(false);
+
+  void listen<ReferenceFeedbackPayload>('consultation-reference-feedback', (event) => {
+    const payload = event.payload;
+    if (
+      payload.consultationId &&
+      payload.consultationId !== resolveConsultationId()
+    ) {
+      return;
+    }
+    applyReferenceFeedback(payload);
+  })
+    .then((unlisten) => {
+      unlistenReferenceFeedback = unlisten;
+    })
+    .catch((error) => {
+      console.error('[ConsultationPage] Failed to subscribe reference feedback:', error);
+    });
 });
 
 // 监听问诊模式变化，切换模板
@@ -1875,6 +2679,10 @@ watch(consultationMode, () => {
 
 onUnmounted(() => {
   document.removeEventListener('click', handleClickOutside);
+  if (unlistenReferenceFeedback) {
+    unlistenReferenceFeedback();
+    unlistenReferenceFeedback = null;
+  }
 });
 
 // Removed the automatic selectionMode switch watcher since we use v-if="!searchQuery.trim()" to hide tabs
@@ -2192,6 +3000,7 @@ const searchLiterature = (item: any) => {
 const handleEndConsultation = async () => {
   // 防止重复提交
   if (isGenerating.value) return;
+  assistFocus.value = null;
 
   // 1. Validation
   const errors: string[] = [];
@@ -2789,29 +3598,31 @@ const fetchDiagnosisChecklist = async (diag: Diagnosis) => {
 };
 
 const handleChecklistConfirm = () => {
-  const checkedTexts = checklistItems.value
+  const checkedQuestions = checklistItems.value
     .filter(i => i.checked)
-    .map(i => i.recordText)
-    .join(' ');
+    .map(i => i.question);
 
-  if (!checkedTexts && !checklistNotes.value) {
+  if (checkedQuestions.length === 0 && !checklistNotes.value) {
     showChecklistModal.value = false;
     return;
   }
 
-  let updateStr = `\n\n[排查记录]：`;
-  if (checkedTexts) {
-    updateStr += `${checkedTexts} `;
-  }
-  if (checklistNotes.value) {
-    updateStr += `${checklistNotes.value}`;
-  }
+  feedbackService.logOperation({
+    operationType: 'form_submit',
+    operationName: 'confirm_differential_checklist',
+    details: {
+      consultationId: resolveConsultationId(),
+      diagnosisName: activeChecklistDiagnosis.value?.name,
+      checkedQuestions,
+      notes: checklistNotes.value,
+    },
+    success: true,
+  });
+  showToast("鉴别排查已记录，未改写现病史", "success");
 
-  generatedRecord.value.historyOfPresentIllness += updateStr.trimEnd();
-  showToast("排查结果已更新至现病史", "success");
-  
   showChecklistModal.value = false;
   checklistItems.value = []; // Hide button after confirmation
+  checklistNotes.value = '';
 };
 
 const handleDiagnosisSelect = (diag: Diagnosis) => {
@@ -2961,8 +3772,7 @@ const fetchTreatmentRecommendation = async () => {
   }
 };
 
-const toggleTreatmentSelection = (index: number) => {
-  const item = treatmentRecommendations.value[index];
+const toggleTreatmentSelection = (item: TreatmentRecommendation) => {
   if (item) {
     item.selected = !item.selected;
     trackClick('treatment_toggle', {
@@ -2970,6 +3780,99 @@ const toggleTreatmentSelection = (index: number) => {
       type: item.type,
       selected: item.selected,
     });
+  }
+};
+
+const ensureAssistRecordContext = (): boolean => {
+  prefillGeneratedRecordFromPatient(true);
+  if (hasRecordDraft.value) {
+    currentView.value = 'record';
+    return true;
+  }
+
+  currentView.value = 'consultation';
+  showToast('当前患者暂无可直接复用的主诉和现病史，已进入症状选择页。', 'info');
+  return false;
+};
+
+const ensureAssistDiagnosisContext = async (): Promise<boolean> => {
+  if (!ensureAssistRecordContext()) {
+    return false;
+  }
+
+  if (selectedDiagnosis.value || prefillDiagnosisFromPatient(true)) {
+    await nextTick();
+    return true;
+  }
+
+  assistFocus.value = 'diagnosis';
+  if (aiDiagnoses.value.length === 0 && !aiLoading.value) {
+    await fetchAIDiagnosis();
+  }
+  showToast('当前缺少主诊断，请先确认诊断。', 'info');
+  return false;
+};
+
+const handleAssistTrigger = async (kind: AssistAction): Promise<void> => {
+  assistFocus.value = kind;
+
+  try {
+    switch (kind) {
+      case 'record': {
+        if (!ensureAssistRecordContext()) {
+          return;
+        }
+        if (aiDiagnoses.value.length === 0 && !aiLoading.value) {
+          await fetchAIDiagnosis();
+        }
+        return;
+      }
+      case 'diagnosis': {
+        if (!ensureAssistRecordContext()) {
+          return;
+        }
+        if (aiDiagnoses.value.length === 0 && !aiLoading.value) {
+          await fetchAIDiagnosis();
+        }
+        return;
+      }
+      case 'medication':
+      case 'examination': {
+        const hasDiagnosis = await ensureAssistDiagnosisContext();
+        if (!hasDiagnosis) {
+          return;
+        }
+        await nextTick();
+        if (!treatmentLoading.value && visibleTreatmentRecommendations.value.length === 0) {
+          await fetchTreatmentRecommendation();
+        }
+        return;
+      }
+      case 'differential': {
+        const hasDiagnosis = await ensureAssistDiagnosisContext();
+        if (!hasDiagnosis || !selectedDiagnosis.value) {
+          return;
+        }
+        await fetchDiagnosisChecklist(selectedDiagnosis.value);
+        if (checklistItems.value.length > 0) {
+          showChecklistModal.value = true;
+        } else {
+          showToast('当前诊断暂无待确认的鉴别排查项。', 'info');
+        }
+        return;
+      }
+      case 'reminder': {
+        if (ensureAssistRecordContext() && aiDiagnoses.value.length === 0 && !aiLoading.value) {
+          await fetchAIDiagnosis();
+        }
+        showToast('风险提醒已同步，可继续处理当前病历。', 'info');
+        return;
+      }
+      default:
+        return;
+    }
+  } finally {
+    emit('consume-auto-trigger');
   }
 };
 
@@ -3004,7 +3907,15 @@ const handleComplete = () => {
 
   // Treatments: selected are adopted, unselected are rejected
   treatmentRecommendations.value.forEach(t => {
-    const targetType = t.type === 'medicine' ? 'medication' as const : 'examination' as const;
+    const targetType =
+      t.type === 'medicine'
+        ? 'medication' as const
+        : t.type === 'exam'
+          ? 'examination' as const
+          : null;
+    if (!targetType) {
+      return;
+    }
     if (t.selected) {
       trackRecommendationAction(targetType, t.name, 'adopted', { originalValue: t.name });
     } else {
@@ -3032,7 +3943,11 @@ const handleComplete = () => {
     patient: patientInfo.value,
     record: {
       ...generatedRecord.value,
-      pastMedicalHistory: '否认高血压、糖尿病、冠心病等慢性病史。否认肝炎、结核等传染病史。',
+      pastMedicalHistory:
+        readPatientText(
+          patientInfo.value as unknown as Record<string, unknown>,
+          ['pastMedicalHistory', 'past_medical_history', 'pastMedicalHistoryText']
+        ) || '未提供既往病史。',
       allergyHistory: patientInfo.value.allergyHistory || '无'
     },
     diagnosis: selectedDiagnosis.value,
@@ -3072,55 +3987,11 @@ const generateMedicalAdvice = (): string => {
 
 watch(selectedDiagnosis, (newVal) => {
   if (newVal) {
-    if (hasMatchingSessionPatient.value) {
-      consultationSessionStore.draft.diagnoses = [{
-        code: newVal.code,
-        name: newVal.name,
-        rationale: newVal.rationale,
-        rate: newVal.rate,
-      }];
-    }
     fetchTreatmentRecommendation();
   } else {
     treatmentRecommendations.value = [];
   }
 });
-
-watch(
-  () => [generatedRecord.value.chiefComplaint, generatedRecord.value.historyOfPresentIllness],
-  ([chiefComplaint, historyOfPresentIllness]) => {
-    if (!hasMatchingSessionPatient.value) {
-      return;
-    }
-    consultationSessionStore.draft.chiefComplaint = chiefComplaint;
-    consultationSessionStore.draft.historyOfPresentIllness = historyOfPresentIllness;
-  }
-);
-
-watch(
-  () => treatmentRecommendations.value,
-  (recommendations) => {
-    if (!hasMatchingSessionPatient.value) {
-      return;
-    }
-
-    consultationSessionStore.draft.medications = recommendations
-      .filter((item) => item.type === 'medicine' && item.selected)
-      .map((item) => ({
-        name: item.name,
-        usage: item.usage,
-        reason: item.reason,
-      }));
-
-    consultationSessionStore.draft.examinations = recommendations
-      .filter((item) => item.type === 'exam' && item.selected)
-      .map((item) => ({
-        name: item.name,
-        reason: item.reason,
-      }));
-  },
-  { deep: true }
-);
 
 watch(consultationMode, (newVal, oldVal) => {
   trackClick('consultation_mode_change', { from: oldVal, to: newVal });
@@ -3133,6 +4004,18 @@ watch(selectionMode, (newVal) => {
 watch(currentView, (newVal, oldVal) => {
   trackViewChange(`consultation:${oldVal}`, `consultation:${newVal}`);
 });
+
+watch(
+  () => props.assistTrigger?.token,
+  async (token) => {
+    if (!token || !props.assistTrigger) {
+      return;
+    }
+
+    await handleAssistTrigger(props.assistTrigger.kind);
+  },
+  { immediate: true }
+);
 
 const generateMedicalRecord = () => {
   const complaints: string[] = [];
@@ -4449,6 +5332,44 @@ const copyToClipboard = () => {
   margin: 0;
 }
 
+.treatment-card-heading {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.treatment-card-desc {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--color-text-muted);
+}
+
+.treatment-summary-pills {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: flex-end;
+}
+
+.treatment-summary-pill {
+  display: inline-flex;
+  align-items: center;
+  min-height: 30px;
+  padding: 0 12px;
+  border-radius: 999px;
+  background: rgba(14, 165, 233, 0.08);
+  color: #0f6f95;
+  font-size: 12px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.treatment-summary-pill.exam {
+  background: rgba(99, 102, 241, 0.09);
+  color: #4853c7;
+}
+
 .diagnosis-path-btn {
   display: inline-flex;
   align-items: center;
@@ -4714,6 +5635,107 @@ const copyToClipboard = () => {
   border: 1px solid var(--color-error-bg);
 }
 
+.treatment-groups {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.treatment-section {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 14px;
+  border-radius: 14px;
+  border: 1px solid rgba(14, 165, 233, 0.12);
+  background: rgba(255, 255, 255, 0.72);
+}
+
+.treatment-section-muted {
+  border-color: rgba(148, 163, 184, 0.22);
+  background: rgba(248, 250, 252, 0.92);
+}
+
+.treatment-section-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.treatment-section-header h5 {
+  margin: 0 0 4px;
+  font-size: 14px;
+  color: var(--color-text-strong);
+}
+
+.treatment-section-header p {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--color-text-muted);
+}
+
+.item-reference-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 30px;
+  padding: 0 12px;
+  border: 1px solid rgba(8, 145, 178, 0.2);
+  border-radius: 999px;
+  background: rgba(236, 253, 255, 0.94);
+  color: #0f6f95;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: transform var(--duration-normal) var(--ease-out), background var(--duration-normal) var(--ease-out), border-color var(--duration-normal) var(--ease-out), opacity var(--duration-normal) var(--ease-out);
+}
+
+.item-reference-btn:hover {
+  transform: translateY(-1px);
+  background: rgba(207, 250, 254, 0.98);
+  border-color: rgba(8, 145, 178, 0.3);
+}
+
+.item-reference-btn:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+  transform: none;
+}
+
+.treatment-section-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.treatment-section-pill,
+.section-readonly-badge,
+.section-readonly-inline {
+  display: inline-flex;
+  align-items: center;
+  min-height: 28px;
+  padding: 0 10px;
+  border-radius: 999px;
+  background: rgba(14, 165, 233, 0.08);
+  color: #0f6f95;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.treatment-section-pill.strong {
+  background: rgba(34, 197, 94, 0.12);
+  color: #167a43;
+}
+
+.section-readonly-badge,
+.section-readonly-inline {
+  background: rgba(148, 163, 184, 0.14);
+  color: #516171;
+}
+
 .treatment-list {
   display: flex;
   flex-direction: column;
@@ -4763,9 +5785,28 @@ const copyToClipboard = () => {
 
 .rec-header {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
+  justify-content: space-between;
   gap: 8px;
   margin-bottom: 4px;
+}
+
+.diag-actions,
+.rec-actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-left: auto;
+}
+
+.rec-name-group {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  min-width: 0;
 }
 
 .rec-tag {
@@ -4785,10 +5826,19 @@ const copyToClipboard = () => {
   color: var(--tag-exam-text);
 }
 
+.rec-tag.acupuncture {
+  background: rgba(245, 158, 11, 0.12);
+  color: #b45309;
+}
+
 .rec-name {
   font-weight: 600;
   font-size: 14px;
   color: var(--color-text-strong);
+}
+
+.treatment-item-muted {
+  border-style: dashed;
 }
 
 .rec-reason, .rec-usage, .rec-ingredients {

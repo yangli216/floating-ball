@@ -24,7 +24,6 @@ export interface WindowSize {
 export type ViewType =
   | 'chat'
   | 'settings'
-  | 'consultation-session'
   | 'consultation'
   | 'risk-alert'
   | 'voice-interaction'
@@ -46,9 +45,6 @@ export const WINDOW_SIZES = {
 
   /** 标准工作面板：420×560px（聊天、设置等） */
   WORK: { width: 420, height: 560 } as WindowSize,
-
-  /** HIS 接诊会话：400×760px 桌面助手悬浮小窗 */
-  SESSION: { width: 400, height: 760 } as WindowSize,
 
   /** 诊断路径：960×680px 独立 Sankey 说明窗口 */
   DIAGNOSIS_PATH: { width: 1080, height: 760 } as WindowSize,
@@ -83,9 +79,6 @@ export const WINDOW_SIZES = {
  */
 export function getWindowSizeForView(view: ViewType): WindowSize {
   switch (view) {
-    case 'consultation-session':
-      return WINDOW_SIZES.SESSION;
-
     case 'consultation':
       return WINDOW_SIZES.CONSULTATION;
 

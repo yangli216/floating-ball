@@ -4,21 +4,49 @@
 
 ### 1. 进入项目目录
 ```bash
-cd /home/ubuntu/floating-ball
+cd floating-ball
 ```
 
 ### 2. 确保依赖已安装
 ```bash
-pnpm install
+yarn install
 ```
 
 ### 3. 启动开发模式
 ```bash
 source $HOME/.cargo/env
-pnpm tauri dev
+yarn tauri dev
 ```
 
 第一次运行会编译 Rust 代码，需要等待几分钟。之后的启动会快很多。
+
+## Mock HIS 联调
+
+### 1. 启动桌面端
+```bash
+cd floating-ball
+source $HOME/.cargo/env
+yarn tauri dev
+```
+
+### 2. 打开联调页
+
+直接打开 [mock_his.html](./mock_his.html) 即可，或自行用静态文件服务器托管后在浏览器访问。
+
+### 3. 推荐联调顺序
+
+1. 选择一个患者，确认中间草稿区已经带入患者上下文。
+2. 点击“启动完整症状问诊”，验证 `/api/consultation/start` 能唤起 `floating-ball`。
+3. 点击“AI 生成 / AI 推荐”按钮，验证 `/api/consultation/assist` 会把桌面端带入 `ConsultationPage` 快进模式。
+4. 在 `floating-ball` 里完成“回写病历”或“引用诊断 / 用药 / 检查”，观察联调页是否通过 `/api/consultation/result` 收到 `draft` 或 `reference-request`。
+5. 若联调页出现“PHIS 引用回执模拟”面板，点击“模拟保存成功/失败”，验证 `/api/consultation/reference-feedback` 能把结果回推到桌面端和轮询结果通道。
+6. 点击“启动语音接诊”时，联调页现在会把当前患者上下文一起发给 `/api/consultation/start-voice`，并自动开始轮询结果。
+
+### 4. 常见现象
+
+1. `/api/consultation/result` 是单通道，联调页会用 `consultationId` 过滤，只回填当前患者结果。
+2. `reference-feedback` 如果找不到当前匹配的 pending request，会返回 `409 REFERENCE_REQUEST_MISMATCH`，这是为了防止旧回执串到别的患者。
+3. “再次打开恢复现场”当前只保证同一运行期内的内存状态保留；如果桌面端重启，需要重新进入本次患者流程。
 
 ## 项目核心文件说明
 
@@ -147,12 +175,12 @@ tauri-plugin-tray = "2"
 
 ### 开发版本（带调试信息）
 ```bash
-pnpm tauri build --debug
+yarn tauri build --debug
 ```
 
 ### 生产版本（优化性能）
 ```bash
-pnpm tauri build
+yarn tauri build
 ```
 
 构建完成后，可执行文件位于：
@@ -191,16 +219,16 @@ println!("调试信息: {:?}", some_variable);
 
 ```bash
 # 安装依赖
-pnpm install
+yarn install
 
 # 开发模式
-pnpm tauri dev
+yarn tauri dev
 
 # 构建应用
-pnpm tauri build
+yarn tauri build
 
 # 仅构建前端
-pnpm build
+yarn build
 
 # 清理构建缓存
 cargo clean
@@ -208,7 +236,7 @@ cargo clean
 
 ## 遇到问题？
 
-1. **依赖安装失败**：尝试删除 `node_modules` 和 `pnpm-lock.yaml`，重新运行 `pnpm install`
+1. **依赖安装失败**：优先保持单一包管理器，默认使用 `yarn`；若本地依赖损坏，清理后重新执行 `yarn install`
 2. **Rust 编译错误**：确保 Rust 版本 >= 1.70，运行 `rustup update`
 3. **窗口不显示**：检查 `tauri.conf.json` 配置是否正确
 4. **透明效果失效**：Linux 需要安装完整的系统依赖

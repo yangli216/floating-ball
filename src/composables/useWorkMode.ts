@@ -174,7 +174,6 @@ export function useWorkMode(options: WorkModeOptions) {
    */
   function getSessionType(): 'chat' | 'consultation' | 'voice' | 'reception' {
     switch (currentView.value) {
-      case 'consultation-session':
       case 'consultation': return 'consultation';
       case 'voice-interaction': return 'voice';
       case 'reception-capsule': return 'reception';
@@ -383,11 +382,11 @@ export function useWorkMode(options: WorkModeOptions) {
   const handleCollapse = async (): Promise<void> => {
     trackClick('collapse', {
       from: currentView.value,
-      toReception: (currentView.value === 'consultation' || currentView.value === 'consultation-session') && !!currentPatient.value,
+      toReception: currentView.value === 'consultation' && !!currentPatient.value,
     });
 
     // 问诊界面 + 有患者 → 收起到接待胶囊
-    if ((currentView.value === 'consultation' || currentView.value === 'consultation-session') && currentPatient.value) {
+    if (currentView.value === 'consultation' && currentPatient.value) {
       currentView.value = 'reception-capsule' as ViewType;
 
       // 同步患者信息到风险提示

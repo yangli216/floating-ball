@@ -21,7 +21,7 @@ import { analyzePatientRisks } from '../services/llm';
 import { trackApiCall, trackError, startTimedOperation } from '../services/operationTracker';
 import type { RiskItem } from '../components/RiskAlertPanel.vue';
 import type { AppPatient } from '../types/appState';
-import type { SessionCardKind } from '../stores/consultationSession';
+import type { ConsultationAssistAction } from '../types/consultationAssist';
 
 /**
  * 事件监听配置参数
@@ -62,12 +62,11 @@ export interface EventListenersOptions {
   };
   /** 导航函数 */
   navigation: {
-    openConsultationSession: () => Promise<void>;
     openConsultation: () => Promise<void>;
     startVoiceInteraction: () => Promise<void>;
   };
-  /** 队列化灵活模式自动触发请求 */
-  queueConsultationSessionTrigger: (kind: SessionCardKind) => void;
+  /** 队列化快进模式自动触发请求 */
+  queueConsultationAssistTrigger: (kind: ConsultationAssistAction) => void;
   /** 退出标志（来自 workMode） */
   exiting: Ref<boolean>;
   /** 窗口大小变化防抖超时 */
@@ -101,6 +100,30 @@ interface SessionAssistPayload extends StartConsultationPayload {
   allergyHistory?: string;
 }
 
+function mergePatientContext(
+  currentPatient: AppPatient | null,
+  payload: StartConsultationPayload | SessionAssistPayload | null | undefined
+): AppPatient | null {
+  if (!payload) {
+    return currentPatient;
+  }
+
+  return {
+    ...(currentPatient || {}),
+    ...payload,
+    naPi: payload.naPi || payload.name || currentPatient?.patientName || currentPatient?.naPi || '未知',
+    idPi: payload.idPi || payload.patientId || currentPatient?.patientId || currentPatient?.idPi,
+    ageText: (() => {
+      if (payload.ageText) return payload.ageText;
+      const rawAge = currentPatient?.age;
+      if (typeof rawAge === 'number') return `${rawAge}岁`;
+      if (typeof rawAge === 'string' && rawAge.trim() !== '') return rawAge;
+      return '';
+    })(),
+    sdSexText: payload.sdSexText || (currentPatient?.gender === 'M' ? '男性' : '女性'),
+  };
+}
+
 /**
  * 事件监听管理 Composable
  *
@@ -122,7 +145,7 @@ export function useEventListeners(options: EventListenersOptions) {
     handleWindowMove,
     workMode,
     navigation,
-    queueConsultationSessionTrigger,
+    queueConsultationAssistTrigger,
     exiting,
     resizeTimeoutRef,
   } = options;
@@ -140,7 +163,7 @@ export function useEventListeners(options: EventListenersOptions) {
   let unlistenDeepLink: UnlistenFn | null = null;
   let unlistenPatientRisks: UnlistenFn | null = null;
   let unlistenStartConsultation: UnlistenFn | null = null;
-  let unlistenStartConsultationSession: UnlistenFn | null = null;
+  let unlistenConsultationAssist: UnlistenFn | null = null;
   let unlistenStopConsultation: UnlistenFn | null = null;
   let unlistenStartVoiceConsultation: UnlistenFn | null = null;
   let unlistenHover: UnlistenFn | null = null;
@@ -260,26 +283,14 @@ export function useEventListeners(options: EventListenersOptions) {
       // Update/Merge Global Patient Context
       // This ensures we have the correct keys (naPi, sdSexText) for ConsultationPage
       currentPatient.value = {
-        ...(currentPatient.value || {}),
-        ...payload,
-        // Fallbacks/Mappings if payload is missing strict keys but has loose keys
-        naPi: payload.naPi || payload.name || currentPatient.value?.patientName || '未知',
-        idPi: payload.idPi || payload.patientId || currentPatient.value?.patientId,
-        ageText: (() => {
-          if (payload.ageText) return payload.ageText;
-          const rawAge = currentPatient.value?.age;
-          if (typeof rawAge === 'number') return `${rawAge}岁`;
-          if (typeof rawAge === 'string' && rawAge.trim() !== '') return rawAge;
-          return '';
-        })(),
-        sdSexText: payload.sdSexText || (currentPatient.value?.gender === 'M' ? '男性' : '女性'),
+        ...(mergePatientContext(currentPatient.value, payload) || {}),
       };
 
       await navigation.openConsultation();
     });
   }
 
-  function normalizeSessionTriggerKind(action?: string): SessionCardKind | null {
+  function normalizeSessionTriggerKind(action?: string): ConsultationAssistAction | null {
     switch (action) {
       case 'record':
       case 'diagnosis':
@@ -293,8 +304,8 @@ export function useEventListeners(options: EventListenersOptions) {
     }
   }
 
-  async function registerStartConsultationSessionListener(): Promise<void> {
-    unlistenStartConsultationSession = await listen<SessionAssistPayload>(
+  async function registerConsultationAssistListener(): Promise<void> {
+    unlistenConsultationAssist = await listen<SessionAssistPayload>(
       'start-consultation-session',
       async (event) => {
         console.log('Received consultation session request:', event.payload);
@@ -305,26 +316,15 @@ export function useEventListeners(options: EventListenersOptions) {
         });
 
         currentPatient.value = {
-          ...(currentPatient.value || {}),
-          ...payload,
-          naPi: payload.naPi || payload.name || currentPatient.value?.patientName || '未知',
-          idPi: payload.idPi || payload.patientId || currentPatient.value?.patientId,
-          ageText: (() => {
-            if (payload.ageText) return payload.ageText;
-            const rawAge = currentPatient.value?.age;
-            if (typeof rawAge === 'number') return `${rawAge}岁`;
-            if (typeof rawAge === 'string' && rawAge.trim() !== '') return rawAge;
-            return '';
-          })(),
-          sdSexText: payload.sdSexText || (currentPatient.value?.gender === 'M' ? '男性' : '女性'),
+          ...(mergePatientContext(currentPatient.value, payload) || {}),
         };
 
         const triggerKind = normalizeSessionTriggerKind(payload.action);
         if (triggerKind) {
-          queueConsultationSessionTrigger(triggerKind);
+          queueConsultationAssistTrigger(triggerKind);
         }
 
-        await navigation.openConsultationSession();
+        await navigation.openConsultation();
       }
     );
   }
@@ -348,9 +348,10 @@ export function useEventListeners(options: EventListenersOptions) {
    * 注册语音问诊事件监听
    */
   async function registerVoiceConsultationListener(): Promise<void> {
-    unlistenStartVoiceConsultation = await listen('start-voice-consultation', async () => {
+    unlistenStartVoiceConsultation = await listen<SessionAssistPayload | null>('start-voice-consultation', async (event) => {
       console.log('Received start voice consultation command');
       trackApiCall('his_start_voice', true);
+      currentPatient.value = mergePatientContext(currentPatient.value, event.payload);
       if (!currentPatient.value) {
         showToast('请先接诊患者', 'error');
         return;
@@ -470,7 +471,7 @@ export function useEventListeners(options: EventListenersOptions) {
       // HIS 集成事件监听
       await registerPatientRisksListener();
       await registerStartConsultationListener();
-      await registerStartConsultationSessionListener();
+      await registerConsultationAssistListener();
       await registerStopConsultationListener();
       await registerVoiceConsultationListener();
 
@@ -500,9 +501,9 @@ export function useEventListeners(options: EventListenersOptions) {
       unlistenStartConsultation();
       unlistenStartConsultation = null;
     }
-    if (unlistenStartConsultationSession) {
-      unlistenStartConsultationSession();
-      unlistenStartConsultationSession = null;
+    if (unlistenConsultationAssist) {
+      unlistenConsultationAssist();
+      unlistenConsultationAssist = null;
     }
     if (unlistenStopConsultation) {
       unlistenStopConsultation();

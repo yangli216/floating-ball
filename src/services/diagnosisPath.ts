@@ -1,7 +1,9 @@
 import { PROMPTS } from '../prompts';
 import { chat, type ChatMessage } from './llm';
-import type { SessionOption } from '../stores/consultationSession';
-import type { SessionContext } from './consultationSession';
+import type {
+  DiagnosisPathContext,
+  DiagnosisPathOption,
+} from '../types/consultationAssist';
 import { medicalDataService } from './medicalData';
 
 export interface DiagnosisPathNode {
@@ -128,7 +130,7 @@ function normalizeSectionItems(value: string[] | string | undefined, fallback: s
   return normalized.length > 0 ? normalized.slice(0, 4) : fallback;
 }
 
-function buildFacts(context: SessionContext, diagnosisName: string): string[] {
+function buildFacts(context: DiagnosisPathContext, diagnosisName: string): string[] {
   const facts: string[] = [];
 
   if (context.age && context.age !== '未知年龄') {
@@ -161,7 +163,7 @@ function buildFacts(context: SessionContext, diagnosisName: string): string[] {
 }
 
 function buildFallbackExplanationSections(
-  selected: SessionOption,
+  selected: DiagnosisPathOption,
   chapterTitle: string,
   chapterRange: string | undefined,
   facts: string[],
@@ -267,8 +269,8 @@ function decorateNodes(
 }
 
 function buildFallbackDiagnosisPathPayload(
-  context: SessionContext,
-  options: SessionOption[],
+  context: DiagnosisPathContext,
+  options: DiagnosisPathOption[],
   preferredOptionId?: string
 ): DiagnosisPathPayload | null {
   if (!options.length) {
@@ -498,8 +500,8 @@ function sanitizeLLMResponse(
 }
 
 async function fetchDiagnosisPathFromLLM(
-  context: SessionContext,
-  options: SessionOption[],
+  context: DiagnosisPathContext,
+  options: DiagnosisPathOption[],
   preferredOptionId: string | undefined,
   fallback: DiagnosisPathPayload
 ): Promise<DiagnosisPathPayload | null> {
@@ -552,8 +554,8 @@ async function fetchDiagnosisPathFromLLM(
 }
 
 export async function buildDiagnosisPathPayload(
-  context: SessionContext,
-  options: SessionOption[],
+  context: DiagnosisPathContext,
+  options: DiagnosisPathOption[],
   preferredOptionId?: string
 ): Promise<DiagnosisPathPayload | null> {
   const fallback = buildFallbackDiagnosisPathPayload(context, options, preferredOptionId);

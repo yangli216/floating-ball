@@ -266,6 +266,11 @@
             color: var(--brand-deep);
         }
 
+        .draft-status.error {
+            background: var(--danger-soft);
+            color: var(--danger);
+        }
+
         .form-grid {
             display: grid;
             grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -631,7 +636,7 @@
                         </div>
                         <div class="full">
                             <label for="field-reminders">风险提醒</label>
-                            <textarea id="field-reminders" placeholder="回写后会同步 session 小窗附带的提醒。"></textarea>
+                            <textarea id="field-reminders" placeholder="回写后会同步问诊快进流程附带的提醒。"></textarea>
                         </div>
                         <div class="full">
                             <label for="field-summary">AI 回写摘要</label>
@@ -680,7 +685,8 @@
                     <br>4. `start-voice-consultation`
                     <br>5. `stop-consultation`
                     <br>6. `consultation/result`
-                    <br><br>`consultation/assist` 用于直接唤起 floating-ball 的灵活模式，并自动跑指定推荐。
+                    <br>7. `consultation/reference-feedback`
+                    <br><br>`consultation/assist` 会直接进入 floating-ball 症状问诊中的快进页；`reference-feedback` 用于模拟 PHIS 保存成功或失败的回执。
                 </div>
 
                 <div class="bridge-actions" style="margin-top: 16px;">
@@ -713,6 +719,11 @@
                 <div class="result-box">
                     <h4>最近一次回传结果</h4>
                     <div id="latest-result" class="muted">尚未获取结果。</div>
+                </div>
+
+                <div class="result-box">
+                    <h4>PHIS 引用回执模拟</h4>
+                    <div id="reference-feedback-panel" class="muted">暂无待处理的引用请求。</div>
                 </div>
 
                 <div id="log-box" class="log-box">等待操作...</div>
@@ -780,7 +791,9 @@
 
         const state = {
             currentPatient: null,
-            pollingTimer: null
+            pollingTimer: null,
+            pendingReferenceRequest: null,
+            lastResultKey: ""
         };
 
         function log(message, data) {
@@ -826,6 +839,126 @@
             node.className = `draft-status ${variant}`;
         }
 
+        function renderPendingReferencePanel() {
+            const panel = document.getElementById("reference-feedback-panel");
+            const pending = state.pendingReferenceRequest;
+
+            if (!pending) {
+                panel.innerHTML = '<div class="muted">暂无待处理的引用请求。</div>';
+                return;
+            }
+
+            const items = Array.isArray(pending.items) ? pending.items : [];
+            const itemText = items.length
+                ? items.map((item) => `${item.name}${item.code ? `（${item.code}）` : ""}`).join("；")
+                : "无项目";
+
+            panel.innerHTML = `
+                <div class="result-grid">
+                    <div class="result-label">请求 ID</div>
+                    <div>${escapeHtml(pending.requestId || "-")}</div>
+                    <div class="result-label">引用类型</div>
+                    <div>${escapeHtml(pending.referenceType || pending.action || "-")}</div>
+                    <div class="result-label">待保存项目</div>
+                    <div>${escapeHtml(itemText)}</div>
+                </div>
+                <div class="bridge-actions" style="margin-top: 12px;">
+                    <button class="btn primary" onclick="sendReferenceFeedback('success')">模拟保存成功</button>
+                    <button class="btn danger" onclick="sendReferenceFeedback('failed')">模拟保存失败</button>
+                </div>
+            `;
+        }
+
+        function buildResultKey(result) {
+            const record = result.record || result;
+            return JSON.stringify({
+                consultationId: result.consultationId || result.consultation_id || "",
+                resultType: record.resultType || "final-report",
+                requestId: record.requestId || "",
+                referenceStatus: record.referenceStatus || "",
+                timestamp: result.timestamp || record.timestamp || 0
+            });
+        }
+
+        function renderLatestResult(record, diagnosisText, medicationText, examinationText, reminderText, summaryText) {
+            document.getElementById("latest-result").innerHTML = `
+                <div class="result-grid">
+                    <div class="result-label">结果类型</div>
+                    <div>${escapeHtml(record.resultType || "final-report")}</div>
+                    <div class="result-label">主诉</div>
+                    <div>${escapeHtml(record.chiefComplaint || "-")}</div>
+                    <div class="result-label">现病史</div>
+                    <div>${escapeHtml(record.historyOfPresentIllness || "-")}</div>
+                    <div class="result-label">既往史</div>
+                    <div>${escapeHtml(record.pastMedicalHistory || "-")}</div>
+                    <div class="result-label">诊断</div>
+                    <div>${escapeHtml(diagnosisText || "-")}</div>
+                    <div class="result-label">用药</div>
+                    <div>${escapeHtml(medicationText || "-")}</div>
+                    <div class="result-label">检查</div>
+                    <div>${escapeHtml(examinationText || "-")}</div>
+                    <div class="result-label">处置计划</div>
+                    <div>${escapeHtml(record.treatmentPlan || "-")}</div>
+                    <div class="result-label">风险提醒</div>
+                    <div>${reminderText ? escapeHtml(reminderText).replace(/\n/g, "<br>") : "-"}</div>
+                    <div class="result-label">AI 摘要</div>
+                    <div>${summaryText ? escapeHtml(summaryText).replace(/\n/g, "<br>") : "-"}</div>
+                    <div class="result-label">引用状态</div>
+                    <div>${escapeHtml(record.referenceStatus || "-")}${record.referenceMessage ? `：${escapeHtml(record.referenceMessage)}` : ""}</div>
+                </div>
+            `;
+        }
+
+        function applyDoctorStationRecord(record, options = {}) {
+            const diagnosisList = record.diagnosisList || [];
+            const medications = record.medications || [];
+            const examinations = record.examinations || [];
+            const reminders = record.reminders || [];
+            const diagnosisText = formatDiagnosisList(diagnosisList);
+            const medicationText = formatMedicationList(medications);
+            const examinationText = formatExaminationList(examinations);
+            const reminderText = formatReminderList(reminders);
+            const summaryText = record.medicalSummary || [
+                record.chiefComplaint ? `主诉：${record.chiefComplaint}` : "",
+                record.historyOfPresentIllness ? `现病史：${record.historyOfPresentIllness}` : "",
+                diagnosisText ? `诊断：${diagnosisText}` : ""
+            ].filter(Boolean).join("\n");
+            const {
+                updateDiagnosis = true,
+                updateTreatments = true
+            } = options;
+
+            if (record.chiefComplaint) {
+                setValue("field-chief", record.chiefComplaint);
+            }
+            if (record.historyOfPresentIllness) {
+                setValue("field-hpi", record.historyOfPresentIllness);
+            }
+            if (record.pastMedicalHistory) {
+                setValue("field-pmh", record.pastMedicalHistory);
+            }
+            if (updateDiagnosis && diagnosisList.length) {
+                setValue("field-diagnosis", diagnosisText);
+            }
+            if (updateTreatments) {
+                setValue("field-medications", medicationText);
+                setValue("field-exams", examinationText);
+                setValue("field-plan", record.treatmentPlan || "");
+            }
+            setValue("field-reminders", reminderText);
+            setValue("field-summary", summaryText);
+
+            if (updateDiagnosis || updateTreatments) {
+                fillResultFields(
+                    updateDiagnosis ? diagnosisList : [],
+                    updateTreatments ? medications : [],
+                    updateTreatments ? examinations : []
+                );
+            }
+
+            renderLatestResult(record, diagnosisText, medicationText, examinationText, reminderText, summaryText);
+        }
+
         function formatDiagnosisList(diagnoses) {
             return diagnoses.length ? diagnoses.map((item) => item.name || item).join("；") : "";
         }
@@ -869,6 +1002,8 @@
                 return;
             }
 
+            stopPolling();
+
             document.getElementById("patient-banner-name").textContent = `${patient.naPi} 门诊医生站`;
             document.getElementById("patient-banner-meta").textContent = `${patient.sdSexText} · ${patient.ageText} · ${patient.department}`;
             document.getElementById("patient-banner-tags").innerHTML = `
@@ -899,7 +1034,10 @@
             document.getElementById("status-session").textContent = "已加载 HIS 草稿";
             document.getElementById("latest-result").textContent = "尚未获取结果。";
             setDraftWritebackStatus("待 AI 回写", "pending");
+            state.pendingReferenceRequest = null;
+            state.lastResultKey = "";
             fillResultFields([], [], []);
+            renderPendingReferencePanel();
         }
 
         function buildConsultationPayload() {
@@ -958,6 +1096,28 @@
                 pastMedicalHistory: getValue("field-pmh"),
                 diagnosis: getValue("field-diagnosis"),
                 allergyHistory: getValue("field-allergy")
+            };
+        }
+
+        function buildVoicePayload() {
+            if (!state.currentPatient) {
+                throw new Error("请先选择患者");
+            }
+
+            return {
+                idPi: state.currentPatient.idPi,
+                naPi: state.currentPatient.naPi,
+                sdSexText: state.currentPatient.sdSexText,
+                ageText: state.currentPatient.ageText,
+                department: state.currentPatient.department,
+                idCard: state.currentPatient.idCard,
+                mobilePhone: state.currentPatient.mobilePhone,
+                allergyHistory: getValue("field-allergy"),
+                chiefComplaint: getValue("field-chief"),
+                historyOfPresentIllness: getValue("field-hpi"),
+                pastMedicalHistory: getValue("field-pmh"),
+                diagnosis: getValue("field-diagnosis"),
+                vitals: getValue("field-vitals")
             };
         }
 
@@ -1041,11 +1201,11 @@
             try {
                 const payload = buildAssistPayload(action);
                 setLastCall("POST /consultation/assist");
-                log(`${label}，唤起灵活模式`, payload);
+                log(`${label}，唤起问诊快进模式`, payload);
                 const result = await postJson("/consultation/assist", payload);
-                document.getElementById("status-session").textContent = `已唤起 floating-ball 灵活模式：${label}，等待回写`;
+                document.getElementById("status-session").textContent = `已唤起 floating-ball 快进模式：${label}，等待回写`;
                 setDraftWritebackStatus("等待 floating-ball 回写", "pending");
-                log("灵活模式触发成功", result);
+                log("快进模式触发成功", result);
                 startPolling();
             } catch (error) {
                 document.getElementById("status-session").textContent = `${label} 触发失败`;
@@ -1056,14 +1216,13 @@
 
         async function startVoiceConsultation() {
             try {
-                if (!state.currentPatient) {
-                    throw new Error("请先选择患者");
-                }
+                const payload = buildVoicePayload();
                 setLastCall("POST /consultation/start-voice");
-                log("启动语音接诊");
-                const result = await postJson("/consultation/start-voice", {});
+                log("启动语音接诊", payload);
+                const result = await postJson("/consultation/start-voice", payload);
                 document.getElementById("status-session").textContent = "已唤起 floating-ball 语音接诊";
                 log("语音接诊启动成功", result);
+                startPolling();
             } catch (error) {
                 document.getElementById("status-session").textContent = "语音接诊启动失败";
                 log(`语音接诊失败: ${error.message}`);
@@ -1117,64 +1276,99 @@
 
         function fillDoctorStationFromResult(result) {
             const record = result.record || result;
-            const diagnosisList = record.diagnosisList || [];
-            const medications = record.medications || [];
-            const examinations = record.examinations || [];
-            const reminders = record.reminders || [];
-            const diagnosisText = formatDiagnosisList(diagnosisList);
-            const medicationText = formatMedicationList(medications);
-            const examinationText = formatExaminationList(examinations);
-            const reminderText = formatReminderList(reminders);
-            const summaryText = record.medicalSummary || [
-                record.chiefComplaint ? `主诉：${record.chiefComplaint}` : "",
-                record.historyOfPresentIllness ? `现病史：${record.historyOfPresentIllness}` : "",
-                diagnosisText ? `诊断：${diagnosisText}` : ""
-            ].filter(Boolean).join("\n");
+            const resultType = record.resultType || "final-report";
 
-            if (record.chiefComplaint) {
-                setValue("field-chief", record.chiefComplaint);
+            if (resultType === "reference-request") {
+                state.pendingReferenceRequest = {
+                    consultationId: result.consultationId || result.consultation_id || state.currentPatient?.idPi || "",
+                    requestId: record.requestId,
+                    referenceType: record.referenceType || record.action,
+                    action: record.action,
+                    items: record.referenceItems || [],
+                    message: record.referenceMessage || "等待 PHIS 保存引用结果"
+                };
+                renderPendingReferencePanel();
+                renderLatestResult(
+                    record,
+                    formatDiagnosisList(record.diagnosisList || []),
+                    formatMedicationList(record.medications || []),
+                    formatExaminationList(record.examinations || []),
+                    formatReminderList(record.reminders || []),
+                    record.medicalSummary || ""
+                );
+                setDraftWritebackStatus("等待 PHIS 引用结果", "pending");
+                document.getElementById("status-session").textContent = "收到引用请求，等待 PHIS 处理";
+                return;
             }
-            if (record.historyOfPresentIllness) {
-                setValue("field-hpi", record.historyOfPresentIllness);
-            }
-            if (record.pastMedicalHistory) {
-                setValue("field-pmh", record.pastMedicalHistory);
-            }
-            if (diagnosisList.length) {
-                setValue("field-diagnosis", diagnosisText);
-            }
-            setValue("field-medications", medicationText);
-            setValue("field-exams", examinationText);
-            setValue("field-plan", record.treatmentPlan || "");
-            setValue("field-reminders", reminderText);
-            setValue("field-summary", summaryText);
 
-            fillResultFields(diagnosisList, medications, examinations);
-            setDraftWritebackStatus("已从 floating-ball 回写", "synced");
-            document.getElementById("status-session").textContent = "医生站草稿已收到回写";
+            if (resultType === "reference-feedback") {
+                const isSuccess = record.referenceStatus === "success";
+                state.pendingReferenceRequest = null;
+                renderPendingReferencePanel();
 
-            document.getElementById("latest-result").innerHTML = `
-                <div class="result-grid">
-                    <div class="result-label">主诉</div>
-                    <div>${escapeHtml(record.chiefComplaint || "-")}</div>
-                    <div class="result-label">现病史</div>
-                    <div>${escapeHtml(record.historyOfPresentIllness || "-")}</div>
-                    <div class="result-label">既往史</div>
-                    <div>${escapeHtml(record.pastMedicalHistory || "-")}</div>
-                    <div class="result-label">诊断</div>
-                    <div>${escapeHtml(diagnosisText || "-")}</div>
-                    <div class="result-label">用药</div>
-                    <div>${escapeHtml(medicationText || "-")}</div>
-                    <div class="result-label">检查</div>
-                    <div>${escapeHtml(examinationText || "-")}</div>
-                    <div class="result-label">处置计划</div>
-                    <div>${escapeHtml(record.treatmentPlan || "-")}</div>
-                    <div class="result-label">风险提醒</div>
-                    <div>${reminderText ? escapeHtml(reminderText).replace(/\n/g, "<br>") : "-"}</div>
-                    <div class="result-label">AI 摘要</div>
-                    <div>${summaryText ? escapeHtml(summaryText).replace(/\n/g, "<br>") : "-"}</div>
-                </div>
-            `;
+                if (isSuccess) {
+                    applyDoctorStationRecord(record, {
+                        updateDiagnosis: true,
+                        updateTreatments: record.action === "medication" || record.action === "examination"
+                    });
+                    setDraftWritebackStatus("PHIS 引用成功", "synced");
+                    document.getElementById("status-session").textContent = "PHIS 已确认保存引用结果";
+                } else {
+                    renderLatestResult(
+                        record,
+                        formatDiagnosisList(record.diagnosisList || []),
+                        formatMedicationList(record.medications || []),
+                        formatExaminationList(record.examinations || []),
+                        formatReminderList(record.reminders || []),
+                        record.medicalSummary || ""
+                    );
+                    setDraftWritebackStatus("PHIS 引用失败", "error");
+                    document.getElementById("status-session").textContent = "PHIS 引用失败，等待重新处理";
+                }
+                return;
+            }
+
+            state.pendingReferenceRequest = null;
+            renderPendingReferencePanel();
+            applyDoctorStationRecord(record, {
+                updateDiagnosis: resultType !== "draft",
+                updateTreatments: resultType !== "draft"
+            });
+            setDraftWritebackStatus(resultType === "draft" ? "病历草稿已回写" : "已从 floating-ball 回写", "synced");
+            document.getElementById("status-session").textContent = resultType === "draft"
+                ? "病历草稿已收到回写"
+                : "医生站草稿已收到回写";
+        }
+
+        async function sendReferenceFeedback(status) {
+            try {
+                if (!state.pendingReferenceRequest) {
+                    throw new Error("当前没有待处理的引用请求");
+                }
+
+                const pending = state.pendingReferenceRequest;
+                const payload = {
+                    consultationId: pending.consultationId || state.currentPatient?.idPi || "",
+                    requestId: pending.requestId,
+                    referenceType: pending.referenceType || pending.action,
+                    action: pending.action || pending.referenceType,
+                    status,
+                    message: status === "success" ? "PHIS 保存成功，已同步引用结果" : "PHIS 保存失败，请医生稍后重试",
+                    items: pending.items || []
+                };
+                setLastCall("POST /consultation/reference-feedback");
+                log(`模拟 PHIS 引用回执：${status}`, payload);
+                const result = await postJson("/consultation/reference-feedback", payload);
+                document.getElementById("status-session").textContent = status === "success"
+                    ? "已发送 PHIS 成功回执"
+                    : "已发送 PHIS 失败回执";
+                log("PHIS 引用回执发送成功", result);
+                startPolling();
+            } catch (error) {
+                document.getElementById("status-session").textContent = "PHIS 引用回执发送失败";
+                log(`PHIS 引用回执发送失败: ${error.message}`);
+                alert(`PHIS 引用回执发送失败：${error.message}`);
+            }
         }
 
         function isResultForCurrentPatient(result) {
@@ -1197,10 +1391,18 @@
                     document.getElementById("status-session").textContent = "等待当前患者结果回写";
                     return;
                 }
-                document.getElementById("status-session").textContent = "已收到 floating-ball 回传结果";
+                const resultKey = buildResultKey(result);
+                if (state.lastResultKey === resultKey) {
+                    return;
+                }
+                state.lastResultKey = resultKey;
                 log("收到问诊回传结果", result);
                 fillDoctorStationFromResult(result);
-                stopPolling();
+                const record = result.record || result;
+                const shouldKeepPolling = (record.resultType || "") === "reference-request";
+                if (!shouldKeepPolling) {
+                    stopPolling();
+                }
             } catch (error) {
                 if (error.status === 404) {
                     log("结果尚未生成，继续等待");

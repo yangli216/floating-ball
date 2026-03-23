@@ -6,7 +6,6 @@ import { load, Store } from '@tauri-apps/plugin-store';
 import ChatPanel from "./components/ChatPanel.vue";
 import SettingsPanel from "./components/SettingsPanel.vue";
 import AnalyticsPanel from "./components/AnalyticsPanel.vue";
-import ConsultationSessionPanel from "./components/ConsultationSessionPanel.vue";
 import ConsultationPage from "./components/ConsultationPage.vue";
 import DiagnosisPathWindow from "./components/DiagnosisPathWindow.vue";
 import Toast from "./components/Toast.vue";
@@ -27,7 +26,7 @@ import { useVoiceConsultation } from "./composables/useVoiceConsultation";
 import { useEventListeners } from "./composables/useEventListeners";
 import { pmphaiService, isPMPHAIConfigured } from './services/pmphai';
 import type { AppPatient, AppStore } from "./types/appState";
-import type { SessionCardKind } from "./stores/consultationSession";
+import type { ConsultationAssistAction } from "./types/consultationAssist";
 
 const appWindow = shallowRef<TauriWindow | null>(null);
 const standaloneWindowKind =
@@ -57,7 +56,7 @@ const riskItems = ref<RiskItem[]>([]);
 
 // 语音问诊状态
 const generatedRecord = ref<GeneratedRecord | null>(null);
-const consultationSessionTrigger = ref<{ kind: SessionCardKind; token: number } | null>(null);
+const consultationAssistTrigger = ref<{ kind: ConsultationAssistAction; token: number } | null>(null);
 const patientDisplayName = computed(
   () => currentPatient.value?.name || currentPatient.value?.naPi || '未知患者'
 );
@@ -65,8 +64,6 @@ const assistantTitle = computed(() => {
   switch (currentView.value) {
     case 'chat':
       return '智医助理';
-    case 'consultation-session':
-      return currentPatient.value ? `辅助推荐 - ${patientDisplayName.value}` : '辅助推荐';
     case 'consultation':
       return currentPatient.value ? `智能问诊 - ${patientDisplayName.value}` : '智能问诊';
     case 'analytics':
@@ -80,23 +77,25 @@ const assistantTitle = computed(() => {
   }
 });
 const showSessionEntry = computed(
-  () => Boolean(currentPatient.value) && currentView.value !== 'consultation-session'
+  () =>
+    Boolean(currentPatient.value) &&
+    currentView.value !== 'consultation'
 );
 
-function queueConsultationSessionTrigger(kind: SessionCardKind): void {
-  consultationSessionTrigger.value = {
+function queueConsultationAssistTrigger(kind: ConsultationAssistAction): void {
+  consultationAssistTrigger.value = {
     kind,
     token: Date.now(),
   };
 }
 
-function clearConsultationSessionTrigger(): void {
-  consultationSessionTrigger.value = null;
+function clearConsultationAssistTrigger(): void {
+  consultationAssistTrigger.value = null;
 }
 
-async function openFlexibleConsultationSession(): Promise<void> {
-  clearConsultationSessionTrigger();
-  await openConsultationSession();
+async function openConsultationAssist(): Promise<void> {
+  queueConsultationAssistTrigger('record');
+  await openConsultation();
 }
 
 let store: Store | null = null;
@@ -161,7 +160,6 @@ const {
   openChat,
   openAnalytics,
   openSymptomManagement,
-  openConsultationSession,
   openConsultation,
   startVoiceInteraction,
 } = navigation;
@@ -229,8 +227,8 @@ const eventListeners = useEventListeners({
   showToast,
   handleWindowMove,
   workMode: { enterWorkMode, exitWork },
-  navigation: { openConsultationSession, openConsultation, startVoiceInteraction },
-  queueConsultationSessionTrigger,
+  navigation: { openConsultation, startVoiceInteraction },
+  queueConsultationAssistTrigger,
   exiting,
   resizeTimeoutRef,
 });
@@ -456,11 +454,11 @@ const openInsideCloudHome = async () => {
       <div v-show="isWorking" class="assistant-layer" :style="containerStyle">
         <div 
           class="assistant-container" 
-          :class="{ 'no-toolbar': currentView === 'risk-alert' || currentView === 'voice-interaction' || currentView === 'voice-result' || currentView === 'reception-capsule' || currentView === 'consultation-session' }"
-          :style="{ borderRadius: (currentView === 'voice-interaction' || currentView === 'reception-capsule') ? '40px' : (currentView === 'consultation-session' ? '32px' : '20px') }"
+          :class="{ 'no-toolbar': currentView === 'risk-alert' || currentView === 'voice-interaction' || currentView === 'voice-result' || currentView === 'reception-capsule' }"
+          :style="{ borderRadius: (currentView === 'voice-interaction' || currentView === 'reception-capsule') ? '40px' : '20px' }"
         >
-          <!-- 工具栏 (risk-alert, voice-interaction, voice-result, reception-capsule, consultation-session 视图不显示) -->
-          <div v-if="currentView !== 'risk-alert' && currentView !== 'voice-interaction' && currentView !== 'voice-result' && currentView !== 'reception-capsule' && currentView !== 'consultation-session'" class="assistant-toolbar" data-tauri-drag-region>
+          <!-- 工具栏 (risk-alert, voice-interaction, voice-result, reception-capsule 视图不显示) -->
+          <div v-if="currentView !== 'risk-alert' && currentView !== 'voice-interaction' && currentView !== 'voice-result' && currentView !== 'reception-capsule'" class="assistant-toolbar" data-tauri-drag-region>
             <div class="toolbar-left" data-tauri-drag-region>
 	              <button v-if="currentView === 'settings' || currentView === 'analytics' || currentView === 'symptom-manage' || currentView === 'knowledge-base'" class="icon-btn back-btn" @click="currentView === 'analytics' ? openChat() : handleCollapse()" title="返回">
 	                 <Icon icon="lucide:arrow-left" class="toolbar-icon" size="20" />
@@ -473,7 +471,7 @@ const openInsideCloudHome = async () => {
 	                class="icon-btn"
 	                aria-label="灵活触发"
 	                title="灵活触发"
-	                @click="openFlexibleConsultationSession"
+	                @click="openConsultationAssist"
 	              >
 	                <Icon icon="lucide:sparkles" class="toolbar-icon" size="20" />
 	              </button>
@@ -486,18 +484,12 @@ const openInsideCloudHome = async () => {
             </div>
           </div>
           <ChatPanel v-if="currentView === 'chat'" />
-          <ConsultationSessionPanel
-            v-else-if="currentView === 'consultation-session'"
-            :patientInfo="currentPatient"
-            :autoTrigger="consultationSessionTrigger"
-            @close="handleCollapse"
-            @consume-auto-trigger="clearConsultationSessionTrigger"
-            @open-full-consultation="openConsultation"
-          />
           <ConsultationPage 
             v-else-if="currentView === 'consultation'" 
             @close="handleCollapse" 
             :initialPatientData="currentPatient"
+            :assistTrigger="consultationAssistTrigger"
+            @consume-auto-trigger="clearConsultationAssistTrigger"
           />
           <RiskAlertPanel
             v-else-if="currentView === 'risk-alert'"

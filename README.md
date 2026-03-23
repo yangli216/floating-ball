@@ -58,7 +58,9 @@ floating-ball/
 ### 环境要求
 - Node.js 18+
 - Rust 1.70+
-- Yarn (推荐) 或 npm/pnpm
+- Yarn（默认）
+
+> 当前仓库仍保留历史 `package-lock.json` / `pnpm-lock.yaml`。除非任务明确是“统一包管理器”，否则默认使用 `yarn`，不要混用多套安装命令。
 
 ### 快速开始
 1. **安装依赖**
@@ -72,6 +74,11 @@ floating-ball/
    ```
 
 3. **构建应用**
+   ```bash
+   yarn build
+   ```
+
+4. **构建桌面应用**
    ```bash
    yarn tauri build
    ```
