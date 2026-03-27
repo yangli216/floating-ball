@@ -312,7 +312,8 @@ http://127.0.0.1:8081/api/consultation/result
   "diagnosisList": [
     {
       "name": "急性支气管炎",
-      "code": "J20.900"
+      "code": "J20.900",
+      "isTCM": false
     }
   ],
   "medications": [
@@ -364,7 +365,8 @@ http://127.0.0.1:8081/api/consultation/result
     {
       "name": "急性支气管炎",
       "code": "J20.900",
-      "type": "diagnosis"
+      "type": "diagnosis",
+      "isTCM": false
     }
   ],
   "chiefComplaint": "咳嗽三天",
@@ -394,7 +396,8 @@ http://127.0.0.1:8081/api/consultation/result
     {
       "name": "急性支气管炎",
       "code": "J20.900",
-      "type": "diagnosis"
+      "type": "diagnosis",
+      "isTCM": false
     }
   ],
   "chiefComplaint": "咳嗽三天",

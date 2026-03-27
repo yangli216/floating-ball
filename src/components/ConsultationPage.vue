@@ -1024,7 +1024,8 @@ type ReferenceableTreatmentType = 'medicine' | 'exam' | 'lab_test' | 'procedure'
 interface ReferenceItemPayload {
   name: string;
   code?: string;
-  type: 'diagnosis' | 'medication' | 'examination';
+  type: 'diagnosis' | 'medication' | 'examination' | 'lab_test' | 'procedure';
+  isTCM?: boolean;
 }
 
 interface ReferenceFeedbackPayload {
@@ -1636,12 +1637,13 @@ const buildCurrentSummary = (
   return lines.join('\n');
 };
 
-const buildCurrentDiagnosisList = (): Array<{ name: string; code?: string }> => {
+const buildCurrentDiagnosisList = (): Array<{ name: string; code?: string; isTCM?: boolean }> => {
   if (selectedDiagnosis.value) {
     return [
       {
         name: selectedDiagnosis.value.name,
         code: selectedDiagnosis.value.code,
+        isTCM: selectedDiagnosis.value.isTCM,
       },
     ];
   }
@@ -2586,6 +2588,7 @@ const referenceDiagnosisItemToPHIS = async (diagnosis: Diagnosis) => {
       name: diagnosis.name,
       code: diagnosis.code,
       type: 'diagnosis',
+      isTCM: diagnosis.isTCM,
     },
   ]);
 };
