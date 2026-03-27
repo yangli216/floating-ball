@@ -461,6 +461,52 @@ class MedicalDataService {
   }
 
   /**
+   * Find best matching examination item (imaging/device: X-ray, CT, B-ultrasound, ECG, etc.)
+   * Only matches items with category === '检查'
+   */
+  public matchExamItem(query: string): MedicalItem | null {
+    return this.matchItemByCategory(query, '检查');
+  }
+
+  /**
+   * Find best matching lab test item (blood test, urine test, biochemistry, etc.)
+   * Only matches items with category === '检验'
+   */
+  public matchLabTestItem(query: string): MedicalItem | null {
+    return this.matchItemByCategory(query, '检验');
+  }
+
+  /**
+   * Find best matching procedure item (dressing change, suture removal, nebulization, etc.)
+   * Only matches items with category === '治疗'
+   */
+  public matchProcedureItem(query: string): MedicalItem | null {
+    return this.matchItemByCategory(query, '治疗');
+  }
+
+  private matchItemByCategory(query: string, category: string): MedicalItem | null {
+    if (!query) return null;
+    const normalizedQuery = query.trim().toLowerCase();
+    const filtered = this.catalog.items.filter(i => i.category === category);
+
+    const exact = filtered.find(i => i.name === normalizedQuery);
+    if (exact) return exact;
+
+    let bestMatch: MedicalItem | null = null;
+    let maxScore = 0;
+
+    for (const item of filtered) {
+      const score = this.calculateScore(normalizedQuery, item.name);
+      if (score > maxScore) {
+        maxScore = score;
+        bestMatch = item;
+      }
+    }
+
+    return maxScore > 0.3 ? bestMatch : null;
+  }
+
+  /**
    * Find best matching TCM syndrome
    * @param query AI output string (e.g., "风寒束表证" or "表虚证")
    */

@@ -4,10 +4,10 @@
 export type SessionType = 'chat' | 'consultation' | 'voice' | 'reception';
 export type SessionStatus = 'active' | 'completed' | 'cancelled' | 'error';
 export type FeedbackType = 'positive' | 'negative' | 'adopted' | 'rejected' | 'modified';
-export type TargetType = 'message' | 'diagnosis' | 'medication' | 'examination' | 'record';
+export type TargetType = 'message' | 'diagnosis' | 'medication' | 'examination' | 'lab_test' | 'procedure' | 'record';
 export type OperationType = 'view_change' | 'button_click' | 'form_submit' | 'api_call' | 'error';
 export type MetricType = 'llm_latency' | 'api_latency' | 'ui_render' | 'memory_usage';
-export type RecommendationType = 'diagnosis' | 'medication' | 'examination';
+export type RecommendationType = 'diagnosis' | 'medication' | 'examination' | 'lab_test' | 'procedure';
 
 // Core Data Models
 export interface SessionInfo {

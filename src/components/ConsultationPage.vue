@@ -584,17 +584,19 @@
                 <div v-if="visibleTreatmentRecommendations.length > 0" class="treatment-summary-pills">
                   <span class="treatment-summary-pill medicine">已选用药 {{ selectedMedicineCount }}</span>
                   <span class="treatment-summary-pill exam">已选检查 {{ selectedExamCount }}</span>
+                  <span class="treatment-summary-pill lab-test">已选检验 {{ selectedLabTestCount }}</span>
+                  <span class="treatment-summary-pill procedure">已选处置 {{ selectedProcedureCount }}</span>
                 </div>
               </div>
               
-              <div v-if="treatmentLoading" class="loading-overlay embedded">
+              <div v-if="anyRecommendationLoading" class="loading-overlay embedded">
                 <div class="ai-spinner">
                   <div class="spinner-ring"></div>
                   <div class="spinner-core"></div>
                 </div>
                 <div class="loading-content">
                   <p class="loading-title">正在加载推荐方案...</p>
-                  <p class="loading-desc">正在智能匹配药品与检查项目</p>
+                  <p class="loading-desc">正在智能匹配用药、检查、检验与处置项目</p>
                 </div>
               </div>
 
@@ -1015,9 +1017,9 @@ const DIAGNOSIS_PATH_WINDOW_LABEL = 'diagnosis-path-window';
 // --- Interfaces & State Definitions ---
 import type { Diagnosis, Patient, TreatmentRecommendation, FinalRecord } from '../types/consultation';
 type AssistAction = ConsultationAssistAction;
-type ReferenceAction = 'diagnosis' | 'medication' | 'examination';
+type ReferenceAction = 'diagnosis' | 'medication' | 'examination' | 'lab_test' | 'procedure';
 type ReferenceLifecycleStatus = 'pending' | 'success' | 'failed';
-type ReferenceableTreatmentType = 'medicine' | 'exam';
+type ReferenceableTreatmentType = 'medicine' | 'exam' | 'lab_test' | 'procedure';
 
 interface ReferenceItemPayload {
   name: string;
@@ -1187,30 +1189,49 @@ const treatmentLoading = ref(false);
 const treatmentError = ref<string | null>(null);
 const treatmentRecommendations = ref<TreatmentRecommendation[]>([]);
 
+// 检查推荐（影像/器械）
+const examRecommendations = ref<TreatmentRecommendation[]>([]);
+const examLoading = ref(false);
+const examError = ref<string | null>(null);
+
+// 检验推荐（实验室）
+const labTestRecommendations = ref<TreatmentRecommendation[]>([]);
+const labTestLoading = ref(false);
+const labTestError = ref<string | null>(null);
+
+// 处置推荐
+const procedureRecommendations = ref<TreatmentRecommendation[]>([]);
+const procedureLoading = ref(false);
+const procedureError = ref<string | null>(null);
+
 const finalRecord = ref<FinalRecord | null>(null);
 const hasRecordDraft = computed(
   () =>
     generatedRecord.value.chiefComplaint.trim() !== '' &&
     generatedRecord.value.historyOfPresentIllness.trim() !== ''
 );
+// 当前聚焦的 assistFocus 过滤：各路独立
 const visibleTreatmentRecommendations = computed(() => {
-  if (assistFocus.value === 'medication') {
-    return treatmentRecommendations.value.filter((item) => item.type === 'medicine');
-  }
-  if (assistFocus.value === 'examination') {
-    return treatmentRecommendations.value.filter((item) => item.type === 'exam');
-  }
-  return treatmentRecommendations.value;
+  const focus = assistFocus.value;
+  if (focus === 'medication') return treatmentRecommendations.value;
+  if (focus === 'examination') return examRecommendations.value;
+  if (focus === 'lab_test') return labTestRecommendations.value;
+  if (focus === 'procedure') return procedureRecommendations.value;
+  // 未聚焦时合并所有
+  return [
+    ...treatmentRecommendations.value,
+    ...examRecommendations.value,
+    ...labTestRecommendations.value,
+    ...procedureRecommendations.value,
+  ];
 });
-const visibleMedicineRecommendations = computed(() =>
-  visibleTreatmentRecommendations.value.filter((item) => item.type === 'medicine')
-);
-const visibleExamRecommendations = computed(() =>
-  visibleTreatmentRecommendations.value.filter((item) => item.type === 'exam')
-);
+const visibleMedicineRecommendations = computed(() => treatmentRecommendations.value);
+const visibleExamRecommendations = computed(() => examRecommendations.value);
+const visibleLabTestRecommendations = computed(() => labTestRecommendations.value);
+const visibleProcedureRecommendations = computed(() => procedureRecommendations.value);
 const visibleOtherTreatmentRecommendations = computed(() =>
   visibleTreatmentRecommendations.value.filter(
-    (item) => item.type !== 'medicine' && item.type !== 'exam'
+    (item) => item.type !== 'medicine' && item.type !== 'exam' && item.type !== 'lab_test' && item.type !== 'procedure'
   )
 );
 const selectedMedicineCount = computed(
@@ -1218,6 +1239,15 @@ const selectedMedicineCount = computed(
 );
 const selectedExamCount = computed(
   () => visibleExamRecommendations.value.filter((item) => item.selected).length
+);
+const selectedLabTestCount = computed(
+  () => visibleLabTestRecommendations.value.filter((item) => item.selected).length
+);
+const selectedProcedureCount = computed(
+  () => visibleProcedureRecommendations.value.filter((item) => item.selected).length
+);
+const anyRecommendationLoading = computed(
+  () => treatmentLoading.value || examLoading.value || labTestLoading.value || procedureLoading.value
 );
 const visibleTreatmentReferenceSections = computed(() => {
   const sections: TreatmentReferenceSection[] = [
@@ -1233,17 +1263,35 @@ const visibleTreatmentReferenceSections = computed(() => {
     {
       type: 'exam',
       action: 'examination',
-      title: '推荐检查检验',
-      description: '勾选需要同步到 PHIS 的检查检验项目，再一次引入所选检查。',
-      actionLabel: '引入所选检查检验',
+      title: '推荐检查',
+      description: '勾选需要同步到 PHIS 的检查项目（影像/器械类），再一次引入所选检查。',
+      actionLabel: '引入所选检查',
       items: visibleExamRecommendations.value,
       selectedCount: selectedExamCount.value,
+    },
+    {
+      type: 'lab_test',
+      action: 'lab_test',
+      title: '推荐检验',
+      description: '勾选需要同步到 PHIS 的检验项目（实验室类），再一次引入所选检验。',
+      actionLabel: '引入所选检验',
+      items: visibleLabTestRecommendations.value,
+      selectedCount: selectedLabTestCount.value,
+    },
+    {
+      type: 'procedure',
+      action: 'procedure',
+      title: '推荐处置',
+      description: '勾选需要同步到 PHIS 的处置项目，再一次引入所选处置。',
+      actionLabel: '引入所选处置',
+      items: visibleProcedureRecommendations.value,
+      selectedCount: selectedProcedureCount.value,
     },
   ];
   return sections.filter((section) => section.items.length > 0);
 });
 const showDiagnosisCard = computed(
-  () => currentView.value === 'record' && assistFocus.value !== 'medication' && assistFocus.value !== 'examination'
+  () => currentView.value === 'record' && assistFocus.value !== 'medication' && assistFocus.value !== 'examination' && assistFocus.value !== 'lab_test' && assistFocus.value !== 'procedure'
 );
 const showTreatmentCard = computed(
   () => currentView.value === 'record' && assistFocus.value !== 'differential'
@@ -1267,6 +1315,10 @@ const assistFocusLabel = computed(() => {
       return '用药快进';
     case 'examination':
       return '检查快进';
+    case 'lab_test':
+      return '检验快进';
+    case 'procedure':
+      return '处置快进';
     case 'differential':
       return '鉴别排查';
     case 'reminder':
@@ -1306,7 +1358,11 @@ const workflowBannerText = computed(() => {
     case 'medication':
       return '请勾选要引用的用药方案，发起引用后会等待 PHIS 回执。';
     case 'examination':
-      return '请勾选要引用的检查检验项目，发起引用后会等待 PHIS 回执。';
+      return '请勾选要引用的检查项目，发起引用后会等待 PHIS 回执。';
+    case 'lab_test':
+      return '请勾选要引用的检验项目，发起引用后会等待 PHIS 回执。';
+    case 'procedure':
+      return '请勾选要引用的处置项目，发起引用后会等待 PHIS 回执。';
     case 'differential':
       return '鉴别排查的确认结果只记录日志，不会改写现病史。';
     case 'reminder':
@@ -1602,39 +1658,50 @@ const buildCurrentMedicalPayload = (
   options: {
     includeDiagnosis?: boolean;
     includeTreatments?: boolean;
-    includedTreatmentTypes?: Array<'medicine' | 'exam'>;
+    includedTreatmentTypes?: Array<'medicine' | 'exam' | 'lab_test' | 'procedure'>;
   } = {}
 ) => {
   const includeDiagnosis = options.includeDiagnosis ?? true;
   const includeTreatments = options.includeTreatments ?? true;
   const includedTreatmentTypes = options.includedTreatmentTypes;
   const diagnosisList = includeDiagnosis ? buildCurrentDiagnosisList() : [];
-  const medications = includeTreatments
+  const medications = includeTreatments && (!includedTreatmentTypes || includedTreatmentTypes.includes('medicine'))
     ? treatmentRecommendations.value
-        .filter(
-          (item) =>
-            item.type === 'medicine' &&
-            item.selected &&
-            (!includedTreatmentTypes || includedTreatmentTypes.includes('medicine'))
-        )
+        .filter((item) => item.selected)
         .map((item) => ({
           name: item.name,
           spec: item.matchedItem?.spec,
           usage: item.usage,
         }))
     : [];
-  const examinations = includeTreatments
-    ? treatmentRecommendations.value
-        .filter(
-          (item) =>
-            item.type === 'exam' &&
-            item.selected &&
-            (!includedTreatmentTypes || includedTreatmentTypes.includes('exam'))
-        )
+  const examinations = includeTreatments && (!includedTreatmentTypes || includedTreatmentTypes.includes('exam'))
+    ? examRecommendations.value
+        .filter((item) => item.selected)
         .map((item) => ({
           name: item.name,
         }))
     : [];
+  const labTests = includeTreatments && (!includedTreatmentTypes || includedTreatmentTypes.includes('lab_test'))
+    ? labTestRecommendations.value
+        .filter((item) => item.selected)
+        .map((item) => ({
+          name: item.name,
+        }))
+    : [];
+  const procedures = includeTreatments && (!includedTreatmentTypes || includedTreatmentTypes.includes('procedure'))
+    ? procedureRecommendations.value
+        .filter((item) => item.selected)
+        .map((item) => ({
+          name: item.name,
+        }))
+    : [];
+
+  const treatmentPlanParts = [
+    medications.length ? `建议用药：${medications.map((item) => item.name).join('；')}` : '',
+    examinations.length ? `建议检查：${examinations.map((item) => item.name).join('；')}` : '',
+    labTests.length ? `建议检验：${labTests.map((item) => item.name).join('；')}` : '',
+    procedures.length ? `建议处置：${procedures.map((item) => item.name).join('；')}` : '',
+  ].filter(Boolean);
 
   return {
     consultationId: resolveConsultationId(),
@@ -1646,19 +1713,11 @@ const buildCurrentMedicalPayload = (
     diagnosisList,
     medications,
     examinations,
-    treatmentPlan:
-      medications.length || examinations.length
-        ? [
-            medications.length
-              ? `建议用药：${medications.map((item) => item.name).join('；')}`
-              : '',
-            examinations.length
-              ? `建议检查：${examinations.map((item) => item.name).join('；')}`
-              : '',
-          ]
-            .filter(Boolean)
-            .join('；')
-        : '建议结合医生站规则完成最终确认。',
+    labTests,
+    procedures,
+    treatmentPlan: treatmentPlanParts.length > 0
+      ? treatmentPlanParts.join('；')
+      : '建议结合医生站规则完成最终确认。',
     medicalSummary: buildCurrentSummary(
       generatedRecord.value.chiefComplaint,
       generatedRecord.value.historyOfPresentIllness,
@@ -1732,6 +1791,9 @@ const resetWorkflowState = () => {
   selectedDiagnosis.value = null;
   relatedDiagnoses.value = [];
   treatmentRecommendations.value = [];
+  examRecommendations.value = [];
+  labTestRecommendations.value = [];
+  procedureRecommendations.value = [];
   checklistItems.value = [];
   checklistNotes.value = '';
   showChecklistModal.value = false;
@@ -2314,7 +2376,11 @@ const getTreatmentTagLabel = (type: TreatmentRecommendation['type']): string => 
     case 'medicine':
       return '药';
     case 'exam':
-      return '检';
+      return '查';
+    case 'lab_test':
+      return '验';
+    case 'procedure':
+      return '处';
     default:
       return '治';
   }
@@ -2322,14 +2388,27 @@ const getTreatmentTagLabel = (type: TreatmentRecommendation['type']): string => 
 
 const buildSelectedTreatmentReferenceItemsByType = (
   type: ReferenceableTreatmentType
-): ReferenceItemPayload[] =>
-  visibleTreatmentRecommendations.value
-    .filter((item) => item.selected && item.type === type)
+): ReferenceItemPayload[] => {
+  const sourceMap: Record<ReferenceableTreatmentType, TreatmentRecommendation[]> = {
+    medicine: treatmentRecommendations.value,
+    exam: examRecommendations.value,
+    lab_test: labTestRecommendations.value,
+    procedure: procedureRecommendations.value,
+  };
+  const actionMap: Record<ReferenceableTreatmentType, string> = {
+    medicine: 'medication',
+    exam: 'examination',
+    lab_test: 'lab_test',
+    procedure: 'procedure',
+  };
+  return sourceMap[type]
+    .filter((item) => item.selected)
     .map((item): ReferenceItemPayload => ({
       name: item.name,
       code: item.matchedItem?.code,
-      type: type === 'medicine' ? 'medication' : 'examination',
+      type: actionMap[type] as ReferenceItemPayload['type'],
     }));
+};
 
 const isPendingReferenceItem = (
   action: ReferenceAction,
@@ -2371,6 +2450,12 @@ const getTreatmentReferenceAction = (
   }
   if (recommendation.type === 'exam') {
     return 'examination';
+  }
+  if (recommendation.type === 'lab_test') {
+    return 'lab_test';
+  }
+  if (recommendation.type === 'procedure') {
+    return 'procedure';
   }
   return null;
 };
@@ -2455,7 +2540,11 @@ const requestReferenceToPHIS = async (
           ? ['medicine']
           : action === 'examination'
             ? ['exam']
-            : undefined,
+            : action === 'lab_test'
+              ? ['lab_test']
+              : action === 'procedure'
+                ? ['procedure']
+                : undefined,
     }
   );
 
@@ -2504,12 +2593,23 @@ const referenceDiagnosisItemToPHIS = async (diagnosis: Diagnosis) => {
 const referenceSelectedTreatmentsToPHIS = async (type: ReferenceableTreatmentType) => {
   const items = buildSelectedTreatmentReferenceItemsByType(type);
   if (!items.length) {
-    showToast(type === 'exam' ? '请先勾选需要引入的检查检验项目。' : '请先勾选需要引入的用药项目。', 'info');
+    const labelMap: Record<ReferenceableTreatmentType, string> = {
+      medicine: '用药',
+      exam: '检查',
+      lab_test: '检验',
+      procedure: '处置',
+    };
+    showToast(`请先勾选需要引入的${labelMap[type]}项目。`, 'info');
     return;
   }
 
-  const action = type === 'exam' ? 'examination' : 'medication';
-  await requestReferenceToPHIS(action, items);
+  const actionMap: Record<ReferenceableTreatmentType, ReferenceAction> = {
+    medicine: 'medication',
+    exam: 'examination',
+    lab_test: 'lab_test',
+    procedure: 'procedure',
+  };
+  await requestReferenceToPHIS(actionMap[type], items);
 };
 
 watch(() => props.initialPatientData, (newData) => {
@@ -3656,8 +3756,6 @@ const fetchTreatmentRecommendation = async () => {
 
   try {
     const startTime = Date.now();
-    console.log('========== AI 推荐方案开始 ==========');
-    console.time('[方案推荐] 1. 构建提示词');
     let fullResponse = "";
 
     if (consultationMode.value === 'tcm') {
@@ -3668,20 +3766,11 @@ const fetchTreatmentRecommendation = async () => {
         diagnosisName: selectedDiagnosis.value.name,
         chiefComplaint: generatedRecord.value.chiefComplaint
       });
-      console.timeEnd('[方案推荐] 1. 构建提示词');
-      console.time('[方案推荐] 2. LLM 请求 (中医)');
 
       fullResponse = await chat([
-        {
-          role: 'system',
-          content: PROMPTS.consultation.tcmTreatmentRecommendation.system
-        },
-        {
-          role: 'user',
-          content: userPrompt
-        }
+        { role: 'system', content: PROMPTS.consultation.tcmTreatmentRecommendation.system },
+        { role: 'user', content: userPrompt }
       ]);
-      console.timeEnd('[方案推荐] 2. LLM 请求 (中医)');
     } else {
       const userPrompt = PROMPTS.consultation.treatmentRecommendation.buildUserPrompt({
         patientName: patientInfo.value.naPi,
@@ -3691,61 +3780,36 @@ const fetchTreatmentRecommendation = async () => {
         diagnosisCode: selectedDiagnosis.value.code || '',
         chiefComplaint: generatedRecord.value.chiefComplaint
       });
-      console.timeEnd('[方案推荐] 1. 构建提示词');
-      console.time('[方案推荐] 2. LLM 请求 (西医)');
 
       fullResponse = await chat([
-        {
-          role: 'system',
-          content: PROMPTS.consultation.treatmentRecommendation.system
-        },
-        {
-          role: 'user',
-          content: userPrompt
-        }
+        { role: 'system', content: PROMPTS.consultation.treatmentRecommendation.system },
+        { role: 'user', content: userPrompt }
       ]);
-      console.timeEnd('[方案推荐] 2. LLM 请求 (西医)');
     }
     const latencyMs = Date.now() - startTime;
-
-    console.time('[方案推荐] 3. 解析数据和匹配标准词典');
     const rawRecommendations: any[] = parseLLMJson(fullResponse);
 
-    // Match against catalog
-    const processedRecs: TreatmentRecommendation[] = rawRecommendations.map(rec => {
-      let matchedItem = null;
-      if (rec.type === 'medicine') {
-        // Use service for smart matching
-        matchedItem = medicalDataService.matchMedicine(rec.name);
-      } else if (rec.type === 'exam') {
-        // Use service for smart matching
-        matchedItem = medicalDataService.matchItem(rec.name);
-      }
-      return {
+    const processedRecs: TreatmentRecommendation[] = rawRecommendations
+      .filter(rec => !rec.type || rec.type === 'medicine')
+      .map(rec => ({
         ...rec,
-        matchedItem,
+        type: 'medicine' as const,
+        matchedItem: medicalDataService.matchMedicine(rec.name),
         selected: false
-      };
-    });
+      }));
 
     treatmentRecommendations.value = processedRecs;
 
-    console.timeEnd('[方案推荐] 3. 解析数据和匹配标准词典');
-    console.time('[方案推荐] 4. 分支逻辑 (持久化和事实核查)');
-
-    // Save treatment recommendations to database
     try {
       for (const rec of processedRecs) {
         await feedbackService.saveRecommendation({
-          recType: rec.type === 'medicine' ? 'medication' : 'examination',
+          recType: 'medication',
           content: JSON.stringify(rec),
           matched: !!rec.matchedItem,
           matchConfidence: rec.matchedItem ? 1.0 : 0.0,
-          latencyMs: latencyMs,
+          latencyMs,
         });
       }
-
-      // Record performance metric
       await feedbackService.recordMetric({
         metricType: 'llm_latency',
         metricValue: latencyMs,
@@ -3753,23 +3817,206 @@ const fetchTreatmentRecommendation = async () => {
         context: { operation: 'treatment_recommendation' }
       });
     } catch (err) {
-      console.error('[ConsultationPage] Failed to save treatment recommendations:', err);
+      console.error('[ConsultationPage] Failed to save medication recommendations:', err);
     }
 
-    // Perform automatic fact checking on treatments
     performTreatmentFactCheck(processedRecs);
     finishTreatmentLlm(true, { treatmentCount: processedRecs.length, mode: consultationMode.value });
-    
-    console.timeEnd('[方案推荐] 4. 分支逻辑 (持久化和事实核查)');
-    console.log(`========== AI 推荐方案完成，总耗时: ${Date.now() - startTime}ms ==========`);
   } catch (e) {
-    console.error("Failed to fetch treatment recommendations", e);
+    console.error("Failed to fetch medication recommendations", e);
     trackError('treatment_recommendation_failed', e);
     finishTreatmentLlm(false);
-    treatmentError.value = "无法获取治疗方案建议。";
+    treatmentError.value = "无法获取用药方案建议。";
   } finally {
     treatmentLoading.value = false;
   }
+};
+
+const fetchExamRecommendation = async () => {
+  if (!selectedDiagnosis.value || consultationMode.value === 'tcm') return;
+
+  examLoading.value = true;
+  examError.value = null;
+  examRecommendations.value = [];
+
+  try {
+    const startTime = Date.now();
+    const userPrompt = PROMPTS.consultation.examinationRecommendation.buildUserPrompt({
+      patientName: patientInfo.value.naPi,
+      gender: patientInfo.value.sdSexText || '',
+      age: patientInfo.value.ageText || '',
+      diagnosisName: selectedDiagnosis.value.name,
+      diagnosisCode: selectedDiagnosis.value.code || '',
+      chiefComplaint: generatedRecord.value.chiefComplaint
+    });
+
+    const fullResponse = await chat([
+      { role: 'system', content: PROMPTS.consultation.examinationRecommendation.system },
+      { role: 'user', content: userPrompt }
+    ]);
+    const latencyMs = Date.now() - startTime;
+    const rawRecommendations: any[] = parseLLMJson(fullResponse);
+    console.log('[检查推荐] LLM raw count:', rawRecommendations.length, rawRecommendations.map(r => ({ name: r.name, type: r.type })));
+
+    const processedRecs: TreatmentRecommendation[] = rawRecommendations
+      .filter(rec => !rec.type || rec.type === 'exam')
+      .map(rec => ({
+        ...rec,
+        type: 'exam' as const,
+        matchedItem: medicalDataService.matchExamItem(rec.name),
+        selected: false
+      }));
+
+    examRecommendations.value = processedRecs;
+
+    try {
+      for (const rec of processedRecs) {
+        await feedbackService.saveRecommendation({
+          recType: 'examination',
+          content: JSON.stringify(rec),
+          matched: !!rec.matchedItem,
+          matchConfidence: rec.matchedItem ? 1.0 : 0.0,
+          latencyMs,
+        });
+      }
+    } catch (err) {
+      console.error('[ConsultationPage] Failed to save exam recommendations:', err);
+    }
+  } catch (e) {
+    console.error("Failed to fetch exam recommendations", e);
+    examError.value = "无法获取检查推荐。";
+  } finally {
+    examLoading.value = false;
+  }
+};
+
+const fetchLabTestRecommendation = async () => {
+  if (!selectedDiagnosis.value || consultationMode.value === 'tcm') return;
+
+  labTestLoading.value = true;
+  labTestError.value = null;
+  labTestRecommendations.value = [];
+
+  try {
+    const startTime = Date.now();
+    const userPrompt = PROMPTS.consultation.labTestRecommendation.buildUserPrompt({
+      patientName: patientInfo.value.naPi,
+      gender: patientInfo.value.sdSexText || '',
+      age: patientInfo.value.ageText || '',
+      diagnosisName: selectedDiagnosis.value.name,
+      diagnosisCode: selectedDiagnosis.value.code || '',
+      chiefComplaint: generatedRecord.value.chiefComplaint
+    });
+
+    const fullResponse = await chat([
+      { role: 'system', content: PROMPTS.consultation.labTestRecommendation.system },
+      { role: 'user', content: userPrompt }
+    ]);
+    const latencyMs = Date.now() - startTime;
+    const rawRecommendations: any[] = parseLLMJson(fullResponse);
+    console.log('[检验推荐] LLM raw count:', rawRecommendations.length, rawRecommendations.map(r => ({ name: r.name, type: r.type })));
+
+    const processedRecs: TreatmentRecommendation[] = rawRecommendations
+      .filter(rec => !rec.type || rec.type === 'lab_test')
+      .map(rec => ({
+        ...rec,
+        type: 'lab_test' as const,
+        matchedItem: medicalDataService.matchLabTestItem(rec.name),
+        selected: false
+      }));
+
+    labTestRecommendations.value = processedRecs;
+
+    try {
+      for (const rec of processedRecs) {
+        await feedbackService.saveRecommendation({
+          recType: 'lab_test',
+          content: JSON.stringify(rec),
+          matched: !!rec.matchedItem,
+          matchConfidence: rec.matchedItem ? 1.0 : 0.0,
+          latencyMs,
+        });
+      }
+    } catch (err) {
+      console.error('[ConsultationPage] Failed to save lab test recommendations:', err);
+    }
+  } catch (e) {
+    console.error("Failed to fetch lab test recommendations", e);
+    labTestError.value = "无法获取检验推荐。";
+  } finally {
+    labTestLoading.value = false;
+  }
+};
+
+const fetchProcedureRecommendation = async () => {
+  if (!selectedDiagnosis.value || consultationMode.value === 'tcm') return;
+
+  procedureLoading.value = true;
+  procedureError.value = null;
+  procedureRecommendations.value = [];
+
+  try {
+    const startTime = Date.now();
+    const userPrompt = PROMPTS.consultation.procedureRecommendation.buildUserPrompt({
+      patientName: patientInfo.value.naPi,
+      gender: patientInfo.value.sdSexText || '',
+      age: patientInfo.value.ageText || '',
+      diagnosisName: selectedDiagnosis.value.name,
+      diagnosisCode: selectedDiagnosis.value.code || '',
+      chiefComplaint: generatedRecord.value.chiefComplaint
+    });
+
+    const fullResponse = await chat([
+      { role: 'system', content: PROMPTS.consultation.procedureRecommendation.system },
+      { role: 'user', content: userPrompt }
+    ]);
+    const latencyMs = Date.now() - startTime;
+    const rawRecommendations: any[] = parseLLMJson(fullResponse);
+    console.log('[处置推荐] LLM raw count:', rawRecommendations.length, rawRecommendations.map(r => ({ name: r.name, type: r.type })));
+    
+    // Debug toast to see exactly what came back
+    showToast(`[调试-处置返回] 共 ${rawRecommendations.length} 项: ${rawRecommendations.map(r => r.name).join(', ')}`, 'info');
+
+    const processedRecs: TreatmentRecommendation[] = rawRecommendations
+      .filter(rec => !rec.type || rec.type === 'procedure')
+      .map(rec => ({
+        ...rec,
+        type: 'procedure' as const,
+        matchedItem: medicalDataService.matchProcedureItem(rec.name),
+        selected: false
+      }));
+
+    procedureRecommendations.value = processedRecs;
+
+    try {
+      for (const rec of processedRecs) {
+        await feedbackService.saveRecommendation({
+          recType: 'procedure',
+          content: JSON.stringify(rec),
+          matched: !!rec.matchedItem,
+          matchConfidence: rec.matchedItem ? 1.0 : 0.0,
+          latencyMs,
+        });
+      }
+    } catch (err) {
+      console.error('[ConsultationPage] Failed to save procedure recommendations:', err);
+    }
+  } catch (e) {
+    console.error("Failed to fetch procedure recommendations", e);
+    procedureError.value = "无法获取处置推荐。";
+  } finally {
+    procedureLoading.value = false;
+  }
+};
+
+/** 并行触发所有四路推荐 */
+const fetchAllRecommendations = async () => {
+  await Promise.all([
+    fetchTreatmentRecommendation(),
+    fetchExamRecommendation(),
+    fetchLabTestRecommendation(),
+    fetchProcedureRecommendation(),
+  ]);
 };
 
 const toggleTreatmentSelection = (item: TreatmentRecommendation) => {
@@ -3836,15 +4083,39 @@ const handleAssistTrigger = async (kind: AssistAction): Promise<void> => {
         }
         return;
       }
-      case 'medication':
+      case 'medication': {
+        const hasDiagnosis = await ensureAssistDiagnosisContext();
+        if (!hasDiagnosis) return;
+        await nextTick();
+        if (!treatmentLoading.value && treatmentRecommendations.value.length === 0) {
+          await fetchTreatmentRecommendation();
+        }
+        return;
+      }
       case 'examination': {
         const hasDiagnosis = await ensureAssistDiagnosisContext();
-        if (!hasDiagnosis) {
-          return;
-        }
+        if (!hasDiagnosis) return;
         await nextTick();
-        if (!treatmentLoading.value && visibleTreatmentRecommendations.value.length === 0) {
-          await fetchTreatmentRecommendation();
+        if (!examLoading.value && examRecommendations.value.length === 0) {
+          await fetchExamRecommendation();
+        }
+        return;
+      }
+      case 'lab_test': {
+        const hasDiagnosis = await ensureAssistDiagnosisContext();
+        if (!hasDiagnosis) return;
+        await nextTick();
+        if (!labTestLoading.value && labTestRecommendations.value.length === 0) {
+          await fetchLabTestRecommendation();
+        }
+        return;
+      }
+      case 'procedure': {
+        const hasDiagnosis = await ensureAssistDiagnosisContext();
+        if (!hasDiagnosis) return;
+        await nextTick();
+        if (!procedureLoading.value && procedureRecommendations.value.length === 0) {
+          await fetchProcedureRecommendation();
         }
         return;
       }
@@ -3883,7 +4154,12 @@ const handleComplete = () => {
   }
 
   // Build Final Record
-  const selectedTreatments = treatmentRecommendations.value
+  const selectedTreatments = [
+    ...treatmentRecommendations.value,
+    ...examRecommendations.value,
+    ...labTestRecommendations.value,
+    ...procedureRecommendations.value,
+  ]
     .filter(t => t.selected)
     .map(t => ({
       type: t.type,
@@ -3987,9 +4263,12 @@ const generateMedicalAdvice = (): string => {
 
 watch(selectedDiagnosis, (newVal) => {
   if (newVal) {
-    fetchTreatmentRecommendation();
+    fetchAllRecommendations();
   } else {
     treatmentRecommendations.value = [];
+    examRecommendations.value = [];
+    labTestRecommendations.value = [];
+    procedureRecommendations.value = [];
   }
 });
 

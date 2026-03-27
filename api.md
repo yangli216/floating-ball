@@ -192,7 +192,7 @@ http://127.0.0.1:8081/api/consultation/assist
 
 | 字段名 | 类型 | 必填 | 说明 |
 | :--- | :--- | :--- | :--- |
-| `action` | String | 是 | 支持 `record` / `diagnosis` / `differential` / `medication` / `examination` / `reminder` |
+| `action` | String | 是 | 支持 `record`(病历记录) / `diagnosis`(诊断推荐) / `differential`(鉴别诊断) / `medication`(用药方案) / `examination`(检查推荐) / `lab_test`(检验推荐) / `procedure`(处置推荐) / `reminder`(智能提醒) |
 | `idPi` | String | 是 | 患者唯一标识 |
 | `naPi` | String | 是 | 患者姓名 |
 | `sdSexText` | String | 是 | 性别文本 |
@@ -233,8 +233,9 @@ http://127.0.0.1:8081/api/consultation/assist
 1. 当前接口底层仍发出历史事件名 `start-consultation-session`，但前端唯一落点已经是 `ConsultationPage` 灵活模式。
 2. 每次 `assist` 调用都会先清空本地结果通道。
 3. 如果已经提供 `chiefComplaint + historyOfPresentIllness`，桌面端通常会直接跳过症状采集。
-4. 如果触发 `differential / medication / examination`，但当前诊断不足，前端会提示医生先补全诊断。
+4. 如果触发 `differential / medication / examination / lab_test / procedure`，但当前诊断不足，前端会提示医生先补全诊断。
 5. 当前一个 `action` 只负责自动触发一个目标模块，不代表本次问诊到此结束。
+6. `examination`、`lab_test`、`procedure` 三路推荐独立加载，各自有独立的 loading 状态和引用闭环。
 
 ### 6.3 `POST /api/consultation/start-voice`
 
@@ -324,6 +325,16 @@ http://127.0.0.1:8081/api/consultation/result
   "examinations": [
     {
       "name": "血常规"
+    }
+  ],
+  "labTests": [
+    {
+      "name": "血常规"
+    }
+  ],
+  "procedures": [
+    {
+      "name": "雾化吸入治疗"
     }
   ],
   "reminders": [
@@ -416,7 +427,7 @@ HTTP 状态码：`404`
 | `timestamp` | 本条结果生成时间戳 |
 | `resultType` | 当前可能为 `draft` / `reference-request` / `reference-feedback` / `final-report` |
 | `requestId` | 引用闭环请求 ID，仅引用相关结果存在 |
-| `referenceType` | 当前引用对象类型，支持 `diagnosis` / `medication` / `examination`；HIS 应优先用它判断这是一条什么回执 |
+| `referenceType` | 当前引用对象类型，支持 `diagnosis` / `medication` / `examination` / `lab_test` / `procedure`；HIS 应优先用它判断这是一条什么回执 |
 | `action` | 兼容旧版联调字段，语义与 `referenceType` 相同，建议新接入只把它当兼容字段使用 |
 | `referenceStatus` | 引用状态，常见值 `pending` / `success` / `failed` |
 | `referenceMessage` | 当前状态说明或失败原因 |
@@ -430,7 +441,9 @@ HIS 处理建议：
    - `reference-request + diagnosis` = 请求 PHIS 保存诊断
    - `reference-feedback + diagnosis` = 诊断保存回执
    - `reference-feedback + medication` = 用药保存回执
-   - `reference-feedback + examination` = 检查检验保存回执
+   - `reference-feedback + examination` = 检查保存回执
+   - `reference-feedback + lab_test` = 检验保存回执
+   - `reference-feedback + procedure` = 处置保存回执
 4. 收到 `reference-request` 后不要立刻停止轮询；应在 PHIS 回执完成后继续取到 `reference-feedback`。
 
 ### 6.5 `POST /api/consultation/reference-feedback`
@@ -449,7 +462,7 @@ http://127.0.0.1:8081/api/consultation/reference-feedback
 | :--- | :--- | :--- | :--- |
 | `consultationId` | String | 是 | 当前患者 / 当前问诊标识 |
 | `requestId` | String | 是 | 对应 `reference-request` 中的请求 ID |
-| `referenceType` | String | 否 | 建议新接入显式传入的引用对象类型，支持 `diagnosis` / `medication` / `examination` |
+| `referenceType` | String | 否 | 建议新接入显式传入的引用对象类型，支持 `diagnosis` / `medication` / `examination` / `lab_test` / `procedure` |
 | `action` | String | 否 | 兼容旧版字段，语义与 `referenceType` 相同；`referenceType` 与 `action` 至少要传一个 |
 | `status` | String | 是 | `success` / `failed` |
 | `message` | String | 否 | 成功说明或失败原因 |
@@ -591,7 +604,7 @@ HIS 侧至少要识别以下 4 类结果：
 1. `draft` 与 `final-report` 都可能携带结构化诊断、用药、检查列表。
 2. `reference-request` 和 `reference-feedback` 都可能附带同一份病历上下文，便于 HIS 在当前界面直接处理。
 3. 对引用闭环结果，HIS 应继续结合 `referenceType` 判断具体业务对象，不建议只看 `resultType`。
-4. 当前推荐诊断为单选引用；推荐用药、推荐检查支持多选后按分组一次引用。
+4. 当前推荐诊断为单选引用；推荐用药、推荐检查、推荐检验、推荐处置支持多选后按分组一次引用。
 
 ## 8. 推荐轮询与去重策略
 

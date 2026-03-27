@@ -187,6 +187,8 @@ export function useVoiceConsultation(options: VoiceConsultationOptions) {
       parsed.diagnosisList = parsed.diagnosisList || [];
       parsed.medications = parsed.medications || [];
       parsed.examinations = parsed.examinations || [];
+      parsed.labTests = parsed.labTests || [];
+      parsed.procedures = parsed.procedures || [];
 
       generatedRecord.value = parsed as GeneratedRecord;
       console.log('[VoiceConsultation] Medical record generated successfully');

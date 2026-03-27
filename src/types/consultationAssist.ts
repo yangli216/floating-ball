@@ -4,6 +4,8 @@ export type ConsultationAssistAction =
   | 'differential'
   | 'medication'
   | 'examination'
+  | 'lab_test'
+  | 'procedure'
   | 'reminder';
 
 export interface DiagnosisPathOption {

@@ -12,10 +12,12 @@
 
 ## 必读顺序
 
-1. 先读 [ARCHITECTURE.md](./ARCHITECTURE.md)
-2. 涉及本地 HIS 联调时再读 [api.md](./api.md)
-3. 涉及交互、产品约束时再读 [PRODUCT.md](./PRODUCT.md)
-4. 只有在做未来区域化改造时，才读取 `docs/regionalization/*.md`
+1. 先读 [CODE_MAP.md](./CODE_MAP.md) 快速定位要改的模块，按需深入
+2. 再读 [ARCHITECTURE.md](./ARCHITECTURE.md) 理解整体架构
+3. 涉及本地 HIS 联调时再读 [api.md](./api.md)
+4. 涉及交互、产品约束时再读 [PRODUCT.md](./PRODUCT.md)
+5. 遇到疑似踩过的坑时，先查 [RETRO.md](./RETRO.md) 已有经验
+6. 只有在做未来区域化改造时，才读取 `docs/regionalization/*.md`
 
 ## 强制流程
 
@@ -24,39 +26,47 @@
 3. 规则同步：包管理器、验证命令、目录职责、Review 关注点变化时，必须同步更新本文件。
 4. 交付顺序：`ARCHITECTURE/API/PRODUCT/AGENTS -> 代码 -> 构建/测试/手测说明`
 
+## 硬约束（禁止）
+
+以下规则优先级高于一切建议性条款，违反即视为无效交付：
+
+1. **ConsultationPage.vue 冻结堆砌**：该文件已超 1300 行，禁止继续向其中添加新功能或新 UI 区块；新能力必须先拆出独立 composable 或子组件，经人工确认后才可合入。
+2. **App.vue 不承接新业务逻辑**：新逻辑必须放入 composable，App.vue 只做编排。
+3. **跨层调用禁止**：Service 不能直接操作 UI 状态；Store 只暴露显式 action，外部不得直接 mutate state。
+4. **单边契约变更禁止**：修改 `http_server.rs` 接口定义而不同步更新 `api.md`，视为无效交付。修改前端调用而不同步更新后端实现和文档，同理。
+5. **盲目新增全局状态禁止**：不得为临时 UI 状态新增 Pinia store；新增 store 必须先说明为什么 ref/reactive 不够用。
+6. **锁文件混用禁止**：除非任务明确是"统一包管理器"，否则不得混用 npm/yarn/pnpm 安装或刷新锁文件。
+
+## 棘轮式治理
+
+以下模块已识别为高风险区域，改动时必须执行对应的额外约束：
+
+| 文件/模块 | 当前风险 | 约束 |
+| --- | --- | --- |
+| `ConsultationPage.vue` | 1300+ 行，职责过重 | 只允许拆分和缩减，不允许净增行数 |
+| `useEventListeners.ts` | 475 行，监听器集中 | 新增监听器必须说明为什么不能放在更局部的 composable |
+| `useWindowManagement.ts` | 422 行 | 窗口尺寸/位置改动必须同步校验多显示器边界 |
+| `http_server.rs` 接口定义 | 共享契约 | 任何字段变更必须同步 api.md + 前端调用方 |
+
+治理原则：每轮迭代只允许往"更好"的方向变化。如果一次改动会让上述文件变得更大或职责更模糊，必须先拆解再继续。
+
 ## 当前架构基线
 
-### 入口编排
+-> 见 [ARCHITECTURE.md](./ARCHITECTURE.md)，该文件是架构的唯一真实来源。
 
-1. `src/App.vue` 只负责全局状态编排、窗口视图切换、根组件装配。
-2. 窗口/导航/事件/语音逻辑优先放在 composables，而不是继续堆回 `App.vue`。
+以下仅列出 AGENTS.md 层面需要额外强调的架构约束（不重复 ARCHITECTURE.md 已有内容）：
 
-### 核心视图
+1. `ConsultationPage.vue` 是完整问诊 + 灵活模式的唯一落点，不允许维护第二套推荐口径。
+2. Pinia 当前只有 `consultationConfig` 和 `diagnosisPath` 两个权威 store，新增需人工审批。
+3. 知识库入口主次关系：`pmphai.ts` 为主，`KnowledgeBasePanel.vue` 为保留备选。
 
-1. `ConsultationPage.vue`
-   - 仍是完整问诊主流程的权威实现。
-   - `/api/consultation/assist`、工具栏灵活模式入口和 PHIS 引用回执后的页面状态恢复，默认都以这里为准。
-   - 诊断、用药、检查的候选生成和标准库匹配规则以这里为准。
-2. `DiagnosisPathWindow.vue`
-   - 只负责解释和可视化，不成为新的诊断真相源。
-3. `VoiceConsultationResult.vue`
-   - 负责语音病历人工确认后的回传，不直接定义新的本地结果契约。
+## 工程复盘
 
-### 状态层
+-> 见 [RETRO.md](./RETRO.md)，记录开发过程中反复出现的错误和 vibe coding 典型困难。
 
-1. `ref/reactive` 仍是默认状态方案。
-2. Pinia 目前只有两类权威共享状态：
-   - `stores/consultationConfig.ts`
-   - `stores/diagnosisPath.ts`
-3. 不要为临时 UI 状态盲目新增 store。
-
-### 服务层
-
-1. `llm.ts`、`aliyunSpeech.ts`、`audioRecorder.ts` 负责模型与语音能力。
-2. `diagnosisPath.ts` 负责诊断路径数据装配；`types/consultationAssist.ts` 负责主问诊灵活模式类型定义。
-3. `medicalData.ts` 是标准库匹配与诊断章节分组的权威来源。
-4. `pmphai.ts` 是当前主用的知识库外部集成入口。
-5. `knowledgeBase.ts` / `KnowledgeBasePanel.vue` 目前保留为内置知识库面板能力，若继续演进，必须先明确它和 `pmphai.ts` 的主次关系。
+1. 遇到似曾相识的问题时，先查 RETRO.md 是否已有记录和解决方案。
+2. 新发现的典型错误或反复踩坑，必须追加到 RETRO.md（使用文件末尾的模板）。
+3. 如果某条经验足够通用且反复触发，应升级为本文件的硬约束或棘轮条目。
 
 ## 文档更新矩阵
 
@@ -64,6 +74,8 @@
 2. 本地 HTTP Bridge 接口、字段、回写结果变化：更新 `api.md`
 3. 医生交互约束、灵活模式门禁、引用闭环变化：更新 `PRODUCT.md`
 4. 协作流程、验证命令、Review 热点变化：更新 `AGENTS.md`
+5. 开发错误、踩坑经验、反复出现的困难：更新 `RETRO.md`
+6. 模块新增/删除/重命名、文件职责迁移、依赖关系/数据流变更：更新 `CODE_MAP.md`
 
 ## 包管理与命令约束
 
@@ -93,7 +105,9 @@
 8. 语音问诊确认后能写回同一条本地结果通道
 9. 诊断路径窗口能够正确复用缓存并在超时/失败时显示明确状态
 
-## Review 重点
+## Review 门禁
+
+以下改动模式已反复出现问题，必须在提交前逐条核对（不是建议，是门禁）：
 
 1. `currentPatient` 的标识字段映射必须优先考虑 `idPi / patientId`，不能只依赖宽泛的 `id`
 2. 任何写回本地结果通道的代码都要核对 `consultationId`、`resultType`、`requestId`、`referenceStatus`、可选字段和 HIS 轮询行为

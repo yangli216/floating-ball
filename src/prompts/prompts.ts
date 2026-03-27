@@ -18,7 +18,7 @@ export const MedicalRecordGenerationPrompt = {
 
 **语义理解过滤**：对采集到的医患对话音频转写文本进行深度语义理解，区分问诊话术与病情描述，过滤无效对话。
 
-**关键信息提取**：借助医疗领域知识图谱与实体识别能力，自动提取主诉、现病史、用药情况、检验检查信息等关键医疗信息。
+**关键信息提取**：借助医疗领域知识图谱与实体识别能力，自动提取主诉、现病史、用药情况、检查、检验、处置信息等关键医疗信息。
 
 **结构化整理输出**：按照电子病历规范格式与医疗文书书写逻辑，将提取信息结构化整理，生成符合临床标准的病历初稿。
 
@@ -51,15 +51,21 @@ export const MedicalRecordGenerationPrompt = {
     }
   ],
   "examinations": [
-    { "name": "检查项目名称（如：血常规，不要包含+号，需拆分为独立项目）", "goal": "检查目的（如：明确感染性质）" }
+    { "name": "影像/器械检查名称（如：颈椎正侧位X线，不要包含+号，需拆分为独立项目）", "goal": "检查目的（如：评估颈椎退变情况）" }
+  ],
+  "labTests": [
+    { "name": "实验室检验名称（如：血常规，需拆分为独立项目）", "goal": "检验目的（如：明确感染性质）" }
+  ],
+  "procedures": [
+    { "name": "处置操作名称（如：普通针刺、拔罐疗法）", "goal": "处置目的（如：疏通经络）" }
   ],
   "treatmentPlan": "其他处理意见或备注（选填）",
   "healthEducation": "健康宣教内容（如：多喝水、清淡饮食、建议居家休息3-5天等）"
 }
 
-3. **细粒度拆分规则**：对于检验检查项目或用药，如果对话中出现"A+B"、"A和B"等组合表述，请务必拆分为[{"name": "A"}, {"name": "B"}]两个独立项目，严禁合并为一个项目输出。例如"查个血常规和CRP"应输出两项："全血细胞计数"和"C反应蛋白测定"（或保持原文"血常规"和"CRP"）。
+3. **细粒度拆分规则**：对于检查、检验项目或用药，如果对话中出现"A+B"、"A和B"等组合表述，请务必拆分为[{"name": "A"}, {"name": "B"}]两个独立项目，严禁合并为一个项目输出。例如"查个血常规和CRP"应拆分到 labTests 中："全血细胞计数"和"C反应蛋白测定"（或保持原文"血常规"和"CRP"）。
 
-4. **智能推荐补全**：若对话中未明确涉及诊断名称、用药方案或检验检查相关内容，请务必根据患者的主诉、现病史及查体信息，结合标准诊疗指南，智能推理并推荐最可能的初步诊断、常规用药及必要检查项目填入对应字段，不要留空。
+4. **智能推荐补全**：若对话中未明确涉及诊断名称、用药方案或检查检验相关内容，请务必根据患者的主诉、现病史及查体信息，结合标准诊疗指南，智能推理并推荐最可能的初步诊断、常规用药及必要检查检验项目填入对应字段，不要留空。
 
 5. **中医辨证论治流程**：对于中医诊断（isTCM: true），必须遵循"症状→疾病→证候→治法→药方"的完整流程：
    - name字段填写中医疾病名称（如：感冒、咳嗽、胃痛等）
@@ -524,9 +530,9 @@ ${params.tcmSigns || '未提供详细舌脉象，请根据症状推断'}
 
 export const TreatmentRecommendationPrompt = {
   /**
-   * 系统 Prompt
+   * 系统 Prompt — 仅用药推荐
    */
-  system: `你是一名基层全科医生，擅长基于国家基层诊疗指南和基本药物目录制定治疗方案。
+  system: `你是一名基层全科医生，擅长基于国家基层诊疗指南和基本药物目录制定用药方案。
 
 **用药依据：**
 1. 遵循《国家基本药物临床应用指南》
@@ -542,18 +548,10 @@ export const TreatmentRecommendationPrompt = {
 4. **个体化**：考虑患者年龄、性别、过敏史、合并症
 5. **抗菌药慎用**：严格掌握抗生素使用指征，避免滥用
 
-**检查原则：**
-1. 基于诊断需要，推荐基层可开展的检查项目
-2. 避免过度检查，优先必要的常规检查
-3. 考虑检查的性价比和可及性
-
 **输出要求：**
+只返回用药推荐，不要包含检查、检验或处置项目。
 严格返回JSON数组格式，不包含markdown标记`,
 
-  /**
-   * 构建用户 Prompt
-   * @param params 患者信息和诊断
-   */
   buildUserPrompt(params: {
     patientName: string;
     gender: string;
@@ -563,7 +561,7 @@ export const TreatmentRecommendationPrompt = {
     chiefComplaint: string;
   }): string {
     return `
-请基于基层诊疗指南和基本药物目录，为以下患者制定治疗方案：
+请基于基层诊疗指南和基本药物目录，为以下患者推荐用药方案：
 
 **患者信息：**
 ${params.patientName}，${params.gender}，${params.age}
@@ -575,31 +573,20 @@ ${params.diagnosisName} (ICD10: ${params.diagnosisCode})
 ${params.chiefComplaint}
 
 **任务要求：**
-1. 根据诊断和基层诊疗指南，推荐3-5个药品（优先基本药物目录）
-2. 推荐1-2个必要的、基层可开展的检验检查项目
-3. 药品必须是通用名（非商品名），符合基本药物目录
-4. 用法用量必须规范，符合说明书和指南要求
-5. 如需抗生素，说明使用指征和注意事项
-6. 避免过度用药和过度检查
+1. 推荐3-5个药品（优先基本药物目录）
+2. 药品必须是通用名（非商品名），符合基本药物目录
+3. 用法用量必须规范，符合说明书和指南要求
+4. 如需抗生素，说明使用指征和注意事项
+5. 避免过度用药
+6. 不要推荐检查、检验或处置项目
 
-**返回格式示例：**
+**返回格式：**
 [
   {
     "type": "medicine",
     "name": "阿莫西林胶囊",
-    "reason": "符合急性支气管炎细菌感染治疗指南，基本药物目录药品，安全性好",
+    "reason": "符合急性支气管炎细菌感染治疗指南，基本药物目录药品",
     "usage": "0.5g，口服，每日3次，疗程5-7天。注意：青霉素过敏者禁用"
-  },
-  {
-    "type": "medicine",
-    "name": "氨溴索口服液",
-    "reason": "祛痰药，促进痰液排出，基本药物，适用于咳嗽咳痰患者",
-    "usage": "30mg，口服，每日3次，疗程不超过7天"
-  },
-  {
-    "type": "exam",
-    "name": "血常规",
-    "reason": "鉴别细菌性或病毒性感染，指导抗生素使用，基层常规检查项目"
   }
 ]
 
@@ -664,6 +651,185 @@ ${params.chiefComplaint}
 3. 可辅以针灸等其他疗法。
 
 严格返回JSON数组格式。`;
+  }
+};
+
+// ==================== 检查推荐（影像/器械类） ====================
+
+export const ExaminationRecommendationPrompt = {
+  system: `你是一名基层全科医生，擅长根据诊断合理安排检查项目。
+
+**检查范围：**
+仅推荐影像和器械类检查项目，例如：X线、CT、B超/彩超、心电图、肺功能检查、骨密度检测等。
+不要推荐实验室检验（血常规、尿常规等）、药品、或处置操作。
+
+**检查原则：**
+1. 基于诊断需要，推荐基层可开展的检查项目
+2. 避免过度检查，优先必要的常规检查
+3. 考虑检查的性价比和可及性
+4. 检查项目名称使用基层医疗机构标准名称
+
+**输出要求：**
+严格返回JSON数组格式，不包含markdown标记`,
+
+  buildUserPrompt(params: {
+    patientName: string;
+    gender: string;
+    age: string;
+    diagnosisName: string;
+    diagnosisCode: string;
+    chiefComplaint: string;
+  }): string {
+    return `
+请为以下患者推荐必要的检查项目（仅限影像/器械类）：
+
+**患者信息：**
+${params.patientName}，${params.gender}，${params.age}
+
+**已选诊断：**
+${params.diagnosisName} (ICD10: ${params.diagnosisCode})
+
+**主诉：**
+${params.chiefComplaint}
+
+**任务要求：**
+1. 推荐1-3个必要的影像或器械类检查项目（X线、CT、B超、心电图等）
+2. 仅推荐基层可开展的检查
+3. 不要推荐实验室检验项目（血常规、尿常规等归检验类）
+4. 不要推荐药品或处置操作
+
+**返回格式：**
+[
+  {
+    "type": "exam",
+    "name": "胸部X线",
+    "reason": "排除肺部感染，基层常规检查项目"
+  }
+]
+
+严格按照以上JSON格式返回，不要包含\`\`\`json等markdown标记。`;
+  }
+};
+
+// ==================== 检验推荐（实验室类） ====================
+
+export const LabTestRecommendationPrompt = {
+  system: `你是一名基层全科医生，擅长根据诊断合理安排实验室检验项目。
+
+**检验范围：**
+仅推荐实验室检验项目，例如：血常规、尿常规、肝功能、肾功能、血糖、血脂、C反应蛋白、血沉、甲功等。
+不要推荐影像检查（X线、CT、B超等）、药品、或处置操作。
+
+**检验原则：**
+1. 基于诊断需要，推荐必要的实验室检验
+2. 避免过度检验，优先常规必查项目
+3. 考虑检验对诊断和治疗的实际指导价值
+4. 检验项目名称使用基层医疗机构标准名称
+
+**输出要求：**
+严格返回JSON数组格式，不包含markdown标记`,
+
+  buildUserPrompt(params: {
+    patientName: string;
+    gender: string;
+    age: string;
+    diagnosisName: string;
+    diagnosisCode: string;
+    chiefComplaint: string;
+  }): string {
+    return `
+请为以下患者推荐必要的实验室检验项目：
+
+**患者信息：**
+${params.patientName}，${params.gender}，${params.age}
+
+**已选诊断：**
+${params.diagnosisName} (ICD10: ${params.diagnosisCode})
+
+**主诉：**
+${params.chiefComplaint}
+
+**任务要求：**
+1. 推荐1-3个必要的实验室检验项目（血常规、尿常规、生化等）
+2. 重点推荐对诊断和治疗有直接指导意义的检验
+3. 不要推荐影像检查项目（X线、CT等归检查类）
+4. 不要推荐药品或处置操作
+
+**返回格式：**
+[
+  {
+    "type": "lab_test",
+    "name": "血常规",
+    "reason": "鉴别细菌性或病毒性感染，指导抗生素使用"
+  }
+]
+
+严格按照以上JSON格式返回，不要包含\`\`\`json等markdown标记。`;
+  }
+};
+
+// ==================== 处置推荐 ====================
+
+export const ProcedureRecommendationPrompt = {
+  system: `你是一名基层全科医生，擅长根据诊断合理安排处置操作。
+
+**处置范围：**
+仅推荐基层可执行的处置操作，例如：理疗、针灸、推拿、拔罐、贴敷、雾化吸入、换药、拆线、清创缝合、导尿、灌肠、冲洗、注射（肌注/皮下/静脉）等。
+注意：对于颈肩腰腿痛等骨骼肌肉系统疾病，强烈建议推荐理疗、中医适宜技术（针灸、推拿、拔罐等）作为首选处置。
+不要推荐药品、影像检查、或实验室检验。
+
+**处置原则：**
+1. 基于诊断和治疗需要，推荐必要的处置操作（尤其是疼痛类疾病的理疗和中医手法）
+2. 只推荐基层医疗机构有条件执行的处置
+3. 避免推荐需要上级医院才能完成的高风险操作
+4. 处置名称尽量贴近基层医疗机构标准名称（如：针刺、拔罐、推拿治疗、微波治疗、红外线治疗等）
+
+**输出要求：**
+严格返回JSON数组格式，不包含markdown标记`,
+
+  buildUserPrompt(params: {
+    patientName: string;
+    gender: string;
+    age: string;
+    diagnosisName: string;
+    diagnosisCode: string;
+    chiefComplaint: string;
+  }): string {
+    return `
+请为以下患者推荐必要的处置操作：
+
+**患者信息：**
+${params.patientName}，${params.gender}，${params.age}
+
+**已选诊断：**
+${params.diagnosisName} (ICD10: ${params.diagnosisCode})
+
+**主诉：**
+${params.chiefComplaint}
+
+**任务要求：**
+1. 推荐0-2个必要的处置操作
+2. 仅推荐基层可执行的操作
+3. 如当前诊断无需处置，返回空数组 []
+4. 不要推荐药品、检查或检验项目
+
+**返回格式：**
+[
+  {
+    "type": "procedure",
+    "name": "普通针刺",
+    "reason": "疏通经络，行气活血，缓解肌肉痉挛和疼痛"
+  },
+  {
+    "type": "procedure",
+    "name": "拔罐疗法",
+    "reason": "散寒除湿，活血通络，减轻局部疼痛程度"
+  }
+]
+
+如无需处置，返回：[]
+
+严格按照以上JSON格式返回，不要包含\`\`\`json等markdown标记。`;
   }
 };
 
@@ -1129,7 +1295,7 @@ export const MedicalRecordCheckPrompt = {
 
 检查要点：
 1. 主诉、现病史、诊断之间是否有严重的逻辑矛盾
-2. 药物、检查项目是否与诊断明显不符
+2. 药物、检查、检验、处置是否与诊断明显不符
 3. 病历书写是否有重大缺陷
 4. 是否存在明显的医疗风险
 
@@ -1163,6 +1329,8 @@ export const MedicalRecordCheckPrompt = {
     diagnoses?: string[];
     medicines?: string[];
     examinations?: string[];
+    labTests?: string[];
+    procedures?: string[];
   }): string {
     let prompt = `请检查以下病历记录是否完整、一致、合理：\n\n`;
 
@@ -1186,6 +1354,14 @@ export const MedicalRecordCheckPrompt = {
       prompt += `检查：${context.examinations.join('、')}\n`;
     }
 
+    if (context.labTests && context.labTests.length > 0) {
+      prompt += `检验：${context.labTests.join('、')}\n`;
+    }
+
+    if (context.procedures && context.procedures.length > 0) {
+      prompt += `处置：${context.procedures.join('、')}\n`;
+    }
+
     return prompt;
   }
 };
@@ -1201,7 +1377,10 @@ export const PROMPT_VERSION = {
   riskAnalysis: 'v1.0',
   diagnosisRecommendation: 'v1.0',
   diagnosisPathReasoning: 'v1.0',
-  treatmentRecommendation: 'v1.0',
+  treatmentRecommendation: 'v2.0',
+  examinationRecommendation: 'v1.0',
+  labTestRecommendation: 'v1.0',
+  procedureRecommendation: 'v1.0',
   chatAssistant: 'v1.0',
   diagnosisCheck: 'v1.0',
   medicineCheck: 'v1.0',
@@ -1225,7 +1404,10 @@ export const PROMPTS = {
     tcmDiagnosisRecommendation: TCMDiagnosisRecommendationPrompt,
     diagnosisChecklist: DiagnosisChecklistPrompt,
     treatmentRecommendation: TreatmentRecommendationPrompt,
-    tcmTreatmentRecommendation: TCMTreatmentRecommendationPrompt
+    tcmTreatmentRecommendation: TCMTreatmentRecommendationPrompt,
+    examinationRecommendation: ExaminationRecommendationPrompt,
+    labTestRecommendation: LabTestRecommendationPrompt,
+    procedureRecommendation: ProcedureRecommendationPrompt
   },
   factCheck: {
     diagnosis: DiagnosisCheckPrompt,

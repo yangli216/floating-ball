@@ -138,13 +138,35 @@
 
             <!-- Examinations -->
             <div class="sub-section" v-if="record.examinations?.length">
-              <div class="sub-title">检验检查</div>
+              <div class="sub-title">检查项目</div>
               <div class="list-container">
                 <div v-for="(exam, idx) in record.examinations" :key="idx" class="list-item exam-item">
                   <FactCheckHighlight :issue="getIssueForExam(exam.name)">
                     <span class="item-name">{{ exam.name }}</span>
                   </FactCheckHighlight>
                   <span class="match-tag" v-if="exam.matched">✓</span>
+                </div>
+              </div>
+            </div>
+
+            <!-- Lab Tests -->
+            <div class="sub-section" v-if="record.labTests?.length">
+              <div class="sub-title">检验项目</div>
+              <div class="list-container">
+                <div v-for="(test, idx) in record.labTests" :key="idx" class="list-item exam-item">
+                  <span class="item-name">{{ test.name }}</span>
+                  <span class="match-tag" v-if="test.matched">✓</span>
+                </div>
+              </div>
+            </div>
+
+            <!-- Procedures -->
+            <div class="sub-section" v-if="record.procedures?.length">
+              <div class="sub-title">临床处置</div>
+              <div class="list-container">
+                <div v-for="(proc, idx) in record.procedures" :key="idx" class="list-item exam-item">
+                  <span class="item-name">{{ proc.name }}</span>
+                  <span class="match-tag" v-if="proc.matched">✓</span>
                 </div>
               </div>
             </div>
@@ -265,6 +287,8 @@ export interface GeneratedRecord {
   diagnosisList: DiagnosisEntry[];
   medications: MedicationEntry[];
   examinations: ExamEntry[];
+  labTests: ExamEntry[];
+  procedures: ExamEntry[];
   treatmentPlan?: string;
   healthEducation?: string;
 }
@@ -384,7 +408,29 @@ const matchLocalData = (rec: GeneratedRecord) => {
   // 3. Match Examinations
   if (rec.examinations) {
     rec.examinations.forEach(e => {
-        const match = medicalDataService.matchItem(e.name);
+        const match = medicalDataService.matchExamItem(e.name);
+        if (match) {
+            e.name = match.name;
+            e.matched = true;
+        }
+    });
+  }
+
+  // 4. Match Lab Tests
+  if (rec.labTests) {
+    rec.labTests.forEach(e => {
+        const match = medicalDataService.matchLabTestItem(e.name);
+        if (match) {
+            e.name = match.name;
+            e.matched = true;
+        }
+    });
+  }
+
+  // 5. Match Procedures
+  if (rec.procedures) {
+    rec.procedures.forEach(e => {
+        const match = medicalDataService.matchProcedureItem(e.name);
         if (match) {
             e.name = match.name;
             e.matched = true;
@@ -403,6 +449,8 @@ watch(() => props.initialRecord, (val) => {
       diagnosisCount: newVal.diagnosisList?.length || 0,
       medicationCount: newVal.medications?.length || 0,
       examCount: newVal.examinations?.length || 0,
+      labTestCount: newVal.labTests?.length || 0,
+      procedureCount: newVal.procedures?.length || 0,
     });
 
     // Perform automatic fact checking after data is loaded
@@ -573,6 +621,12 @@ const handleConfirm = () => {
   });
   record.value?.examinations?.forEach(e => {
     trackRecommendationAction('examination', e.name, 'adopted', { originalValue: e.name });
+  });
+  record.value?.labTests?.forEach(l => {
+    trackRecommendationAction('lab_test', l.name, 'adopted', { originalValue: l.name });
+  });
+  record.value?.procedures?.forEach(p => {
+    trackRecommendationAction('procedure', p.name, 'adopted', { originalValue: p.name });
   });
 
   emit('confirm', record.value);
