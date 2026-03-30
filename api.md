@@ -1,6 +1,6 @@
 # floating-ball HIS 接入指南 / 接口说明
 
-> 最后更新: 2026-03-23
+> 最后更新: 2026-03-30
 >
 > 本文档面向准备接入 `floating-ball` 的 HIS / 医生站 / PHIS 项目。
 > 当前真实运行契约以 `src-tauri/src/http_server.rs` 与当前前端实现为准；`docs/regionalization/*.md` 仍属于规划文档，不能替代本文档。
@@ -299,13 +299,39 @@ http://127.0.0.1:8081/api/consultation/result
 2. 返回内容可能来自完整问诊、病历草稿回写、推荐项引用请求、PHIS 回执、语音问诊确认。
 3. 当前是“最新结果覆盖旧结果”的单槽模型，HIS 必须自己做去重和当前患者校验。
 
-#### 成功响应: 病历草稿或最终报告
+#### 成功响应: 病历草稿回写
+
+当前 `draft` 类型仅包含主诉和现病史，不含诊断和治疗方案。
 
 ```json
 {
   "consultationId": "766842939207974912",
   "timestamp": 1704355200000,
   "resultType": "draft",
+  "requestId": "draft-record-1704355200000",
+  "chiefComplaint": "咳嗽三天",
+  "historyOfPresentIllness": "受凉后出现咳嗽、咳痰，无明显呼吸困难。",
+  "pastMedicalHistory": "否认高血压、糖尿病病史。",
+  "diagnosisList": [],
+  "medications": [],
+  "examinations": [],
+  "labTests": [],
+  "procedures": [],
+  "treatmentPlan": "建议结合医生站规则完成最终确认。",
+  "medicalSummary": "主诉：咳嗽三天\n现病史：受凉后出现咳嗽、咳痰，无明显呼吸困难。"
+}
+```
+
+#### 成功响应: 最终报告
+
+`final-report` 类型包含完整结构化数据。
+
+```json
+{
+  "consultationId": "766842939207974912",
+  "timestamp": 1704355200000,
+  "resultType": "final-report",
+  "requestId": "final-report-1704355200000",
   "chiefComplaint": "咳嗽三天",
   "historyOfPresentIllness": "受凉后出现咳嗽、咳痰，无明显呼吸困难。",
   "pastMedicalHistory": "否认高血压、糖尿病病史。",
@@ -338,13 +364,7 @@ http://127.0.0.1:8081/api/consultation/result
       "name": "雾化吸入治疗"
     }
   ],
-  "reminders": [
-    {
-      "level": "urgent",
-      "content": "存在明确药物过敏史，相关推荐用药必须由医生再次确认。"
-    }
-  ],
-  "treatmentPlan": "按时服药，症状加重及时复诊。",
+  "treatmentPlan": "建议用药：氨溴索；建议检查：血常规",
   "medicalSummary": "主诉：咳嗽三天\n现病史：受凉后出现咳嗽、咳痰，无明显呼吸困难。"
 }
 ```
@@ -429,7 +449,7 @@ HTTP 状态码：`404`
 | `consultationId` | 当前患者标识，现阶段默认等于 `idPi / patientId` |
 | `timestamp` | 本条结果生成时间戳 |
 | `resultType` | 当前可能为 `draft` / `reference-request` / `reference-feedback` / `final-report` |
-| `requestId` | 引用闭环请求 ID，仅引用相关结果存在 |
+| `requestId` | 请求 ID，`draft` 类型格式为 `draft-record-{timestamp}`，引用闭环类型格式为 `ref-{action}-{timestamp}` |
 | `referenceType` | 当前引用对象类型，支持 `diagnosis` / `medication` / `examination` / `lab_test` / `procedure`；HIS 应优先用它判断这是一条什么回执 |
 | `action` | 兼容旧版联调字段，语义与 `referenceType` 相同，建议新接入只把它当兼容字段使用 |
 | `referenceStatus` | 引用状态，常见值 `pending` / `success` / `failed` |
@@ -597,8 +617,8 @@ HIS 侧至少要识别以下 4 类结果：
 
 | `resultType` | 含义 | HIS 建议动作 |
 | :--- | :--- | :--- |
-| `draft` | 病历草稿回写 | 回填主诉、现病史、诊断和建议 |
-| `final-report` | 完整问诊最终报告 | 作为完整结构化结果回写 |
+| `draft` | 病历草稿回写（仅主诉+现病史） | 回填主诉和现病史到医生站草稿 |
+| `final-report` | 完整问诊最终报告（含诊断、治疗方案） | 作为完整结构化结果回写 |
 | `reference-request` | `floating-ball` 请求 PHIS 保存引用 | 调用 PHIS 保存，并准备回执 |
 | `reference-feedback` | PHIS 回执后的最新状态 | 更新医生站状态，提示成功或失败 |
 

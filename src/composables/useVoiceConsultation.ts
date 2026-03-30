@@ -232,10 +232,13 @@ export function useVoiceConsultation(options: VoiceConsultationOptions) {
     trackRecommendationAction('record', 'voice-record', 'adopted');
 
     try {
+      const requestId = `voice-record-${Date.now()}`;
       await invoke('complete_consultation', {
         result: {
           consultationId: resolveConsultationId(currentPatient.value),
           timestamp: Date.now(),
+          resultType: 'final-report',
+          requestId,
           ...record,
         },
       });

@@ -2331,10 +2331,11 @@ const writeRecordToHIS = async () => {
   }
 
   isWritingRecord.value = true;
+  const requestId = `draft-record-${Date.now()}`;
   try {
     await invoke('complete_consultation', {
       result: buildCurrentMedicalPayload(
-        { resultType: 'draft' },
+        { resultType: 'draft', requestId },
         { includeDiagnosis: false, includeTreatments: false }
       ),
     });
@@ -2642,45 +2643,10 @@ watch(() => props.initialPatientData, (newData) => {
 const submitToHIS = async () => {
   if (!finalRecord.value) return;
 
-  // Transform internal structure to Unified API format (matching VoiceConsultationResult)
-  const medications = finalRecord.value.treatments
-    .filter(t => t.type === 'medicine')
-    .map(t => ({
-      name: t.name,
-      spec: t.matchedItem?.spec,
-      usage: t.usage,
-      // matched: !!t.matchedItem // Optional based on receiver
-    }));
-
-  const examinations = finalRecord.value.treatments
-    .filter(t => t.type === 'exam')
-    .map(t => ({
-      name: t.name,
-      // matched: !!t.matchedItem
-    }));
-
-  const result = {
-    consultationId: resolveConsultationId(),
-    timestamp: Date.now(),
-    resultType: 'final-report',
-    
-    // Core Medical Record
-    chiefComplaint: finalRecord.value.record.chiefComplaint,
-    historyOfPresentIllness: finalRecord.value.record.historyOfPresentIllness,
-    pastMedicalHistory: resolvePastMedicalHistory(),
-    
-    // Structured Data
-    diagnosisList: [{
-      name: finalRecord.value.diagnosis.name,
-      code: finalRecord.value.diagnosis.code
-    }],
-    medications: medications,
-    examinations: examinations,
-    
-    // Text summaries
-    treatmentPlan: "建议门诊随访", // General treatment advice
-    medicalSummary: `主诉：${finalRecord.value.record.chiefComplaint}\n现病史：${finalRecord.value.record.historyOfPresentIllness}` // Keep for legacy if needed
-  };
+  const requestId = `final-report-${Date.now()}`;
+  const result = buildCurrentMedicalPayload(
+    { resultType: 'final-report', requestId },
+  );
 
   try {
     await invoke('complete_consultation', { result });
