@@ -407,6 +407,70 @@ export const liquidGlass: Theme = {
 }
 
 /**
+ * 问诊蓝主题
+ * 传统医疗系统风格，蓝色渐变标题栏，清晰结构化布局
+ */
+export const consultationBlue: Theme = {
+  id: 'consultation-blue',
+  name: '问诊蓝',
+  nameEn: 'Consultation Blue',
+  description: '传统医疗风格，清晰结构化',
+  icon: '🩺',
+  colors: {
+    primary: '#2B7BF7',
+    primaryDark: '#1A5CD4',
+    primaryLight: '#5A9AFF',
+    primary50: 'rgba(43, 123, 247, 0.05)',
+    primary100: 'rgba(43, 123, 247, 0.1)',
+    primary200: 'rgba(43, 123, 247, 0.2)',
+
+    secondary: '#5A9AFF',
+    secondaryDark: '#2B7BF7',
+    secondaryLight: '#8BB8FF',
+
+    cta: '#2B7BF7',
+    ctaDark: '#1A5CD4',
+    ctaLight: '#5A9AFF',
+    ctaHover: '#1A5CD4',
+    cta50: 'rgba(43, 123, 247, 0.05)',
+    cta100: 'rgba(43, 123, 247, 0.1)',
+    cta200: 'rgba(43, 123, 247, 0.2)',
+
+    background: '#F5F7FA',
+    backgroundWhite: '#FFFFFF',
+    backgroundGray: '#F0F2F5',
+    backgroundHover: '#E8F1FF',
+    backgroundLight: '#F5F7FA',
+
+    textPrimary: '#333333',
+    textStrong: '#333333',
+    textMedium: '#666666',
+    textWeak: '#999999',
+    textMuted: '#BBBBBB',
+    textDisabled: '#CCCCCC',
+
+    borderLight: '#E8E8E8',
+    borderMedium: '#D9D9D9',
+    borderStrong: '#BFBFBF',
+
+    surfaceGlass: 'rgba(255, 255, 255, 0.95)',
+    surfaceGlassStrong: 'rgba(255, 255, 255, 0.98)',
+    surfaceOverlay: 'rgba(0, 0, 0, 0.45)',
+
+    error: '#FF4D4F',
+    errorBg: '#FFF2F0',
+    errorBorder: '#FFCCC7',
+    warning: '#FAAD14',
+    warningBg: '#FFFBE6',
+    warningBorder: '#FFE58F',
+    warningText: '#AD6800',
+    success: '#52C41A',
+    successBg: '#F6FFED',
+    successBorder: '#B7EB8F',
+  }
+}
+
+/**
  * 深色模式主题
  * 护眼深色，适合夜间使用
  */
@@ -477,6 +541,7 @@ export const darkMode: Theme = {
 export const themes: Theme[] = [
   trustBlue,
   medicalBlue,
+  consultationBlue,
   lifeGreen,
   warmOrange,
   liquidGlass,

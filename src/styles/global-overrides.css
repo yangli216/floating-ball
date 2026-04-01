@@ -2708,3 +2708,693 @@ html.dark .analytics-panel .range-btn.active {
   color: white !important;
   box-shadow: 0 4px 16px rgba(99, 102, 241, 0.3) !important;
 }
+
+/* ============================================
+   问诊蓝主题 (Consultation Blue)
+   传统医疗系统风格，蓝色渐变标题栏，结构化布局
+   ============================================ */
+
+[data-theme="consultation-blue"] {
+  /* --- 语义变量覆盖 --- */
+  --form-border: #D9D9D9;
+  --form-border-hover: #BFBFBF;
+  --form-border-focus: #2B7BF7;
+  --form-bg: #FFFFFF;
+  --form-bg-hover: #F5F7FA;
+  --form-text: #666666;
+  --form-active-bg: #E8F1FF;
+  --form-active-border: #2B7BF7;
+  --form-active-text: #2B7BF7;
+
+  --card-bg: #FFFFFF;
+  --card-border: #E8E8E8;
+  --card-shadow: 0 1px 4px rgba(0, 0, 0, 0.06);
+  --card-hover-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+
+  --btn-primary-bg: #2B7BF7;
+  --btn-primary-bg-hover: #1A5CD4;
+  --btn-primary-text: white;
+
+  --shadow-color: rgba(43, 123, 247, 0.1);
+  --shadow-color-strong: rgba(43, 123, 247, 0.2);
+  --shadow-color-cta: rgba(43, 123, 247, 0.2);
+
+  --diagnosis-bg: #FFFFFF;
+  --diagnosis-bg-hover: #F5F7FA;
+  --diagnosis-bg-active: #E8F1FF;
+  --diagnosis-border: #E8E8E8;
+  --diagnosis-border-active: #2B7BF7;
+  --diagnosis-rate-bg: #E8F1FF;
+  --diagnosis-rate-text: #2B7BF7;
+
+  --tag-medicine-bg: #E8F1FF;
+  --tag-medicine-text: #2B7BF7;
+  --tag-exam-bg: #FFF0F0;
+  --tag-exam-text: #FF4D4F;
+}
+
+/* --- 问诊蓝: 移除玻璃态效果 --- */
+[data-theme="consultation-blue"] .consultation-page,
+[data-theme="consultation-blue"] .settings-panel,
+[data-theme="consultation-blue"] .chat-panel,
+[data-theme="consultation-blue"] .analytics-panel {
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+}
+
+/* --- 问诊蓝: 患者标题栏 --- */
+[data-theme="consultation-blue"] .patient-header {
+  background: linear-gradient(135deg, #1A5CD4, #2B7BF7) !important;
+  border-bottom: none !important;
+  box-shadow: 0 2px 8px rgba(26, 92, 212, 0.3) !important;
+}
+
+[data-theme="consultation-blue"] .patient-name {
+  color: #FFFFFF !important;
+}
+
+[data-theme="consultation-blue"] .patient-basic {
+  color: rgba(255, 255, 255, 0.85) !important;
+}
+
+[data-theme="consultation-blue"] .patient-basic .divider {
+  background: rgba(255, 255, 255, 0.4) !important;
+}
+
+[data-theme="consultation-blue"] .contact-info {
+  color: rgba(255, 255, 255, 0.85) !important;
+}
+
+[data-theme="consultation-blue"] .avatar {
+  border: 2px solid rgba(255, 255, 255, 0.8) !important;
+  background: rgba(255, 255, 255, 0.2) !important;
+}
+
+[data-theme="consultation-blue"] .tag-blue {
+  background: rgba(255, 255, 255, 0.2) !important;
+  color: #FFFFFF !important;
+  border: 1px solid rgba(255, 255, 255, 0.4) !important;
+}
+
+[data-theme="consultation-blue"] .tag-green {
+  background: #52C41A !important;
+  color: #FFFFFF !important;
+  border: none !important;
+}
+
+[data-theme="consultation-blue"] .tag-red,
+[data-theme="consultation-blue"] .tag-warning {
+  background: #FF4D4F !important;
+  color: #FFFFFF !important;
+  border: none !important;
+}
+
+/* --- 问诊蓝: 标题栏按钮 --- */
+[data-theme="consultation-blue"] .header-btn:not(.primary) {
+  background: rgba(255, 255, 255, 0.15) !important;
+  border: 1px solid rgba(255, 255, 255, 0.4) !important;
+  color: #FFFFFF !important;
+}
+
+[data-theme="consultation-blue"] .header-btn:not(.primary):hover {
+  background: rgba(255, 255, 255, 0.25) !important;
+  border-color: rgba(255, 255, 255, 0.6) !important;
+}
+
+[data-theme="consultation-blue"] .header-btn.primary {
+  background: #FF4D4F !important;
+  color: #FFFFFF !important;
+  border: none !important;
+  box-shadow: 0 2px 6px rgba(255, 77, 79, 0.3) !important;
+}
+
+[data-theme="consultation-blue"] .header-btn.primary:hover {
+  background: #FF7875 !important;
+  box-shadow: 0 4px 10px rgba(255, 77, 79, 0.4) !important;
+}
+
+/* --- 问诊蓝: 模式切换 --- */
+[data-theme="consultation-blue"] .mode-switch {
+  background: rgba(255, 255, 255, 0.15) !important;
+  border: 1px solid rgba(255, 255, 255, 0.3) !important;
+}
+
+[data-theme="consultation-blue"] .switch-btn {
+  color: rgba(255, 255, 255, 0.7) !important;
+}
+
+[data-theme="consultation-blue"] .switch-btn.active {
+  background: #FFFFFF !important;
+  color: #2B7BF7 !important;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.15) !important;
+}
+
+/* --- 问诊蓝: 侧边栏 --- */
+[data-theme="consultation-blue"] .symptom-sidebar {
+  background: #FFFFFF !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+  border-right: 1px solid #E8E8E8 !important;
+  box-shadow: none !important;
+}
+
+/* --- 问诊蓝: 侧边栏 Tab 下划线风格 --- */
+[data-theme="consultation-blue"] .selection-tabs {
+  border-bottom: 1px solid #E8E8E8 !important;
+  gap: 0 !important;
+  padding: 0 !important;
+}
+
+[data-theme="consultation-blue"] .selection-tabs .tab-btn {
+  border: none !important;
+  border-bottom: 2px solid transparent !important;
+  border-radius: 0 !important;
+  background: transparent !important;
+  color: #999999 !important;
+  font-size: 14px !important;
+  padding: 10px 16px !important;
+  font-weight: 400 !important;
+}
+
+[data-theme="consultation-blue"] .selection-tabs .tab-btn:hover {
+  color: #2B7BF7 !important;
+  background: transparent !important;
+  border-bottom-color: rgba(43, 123, 247, 0.3) !important;
+}
+
+[data-theme="consultation-blue"] .selection-tabs .tab-btn.active {
+  color: #2B7BF7 !important;
+  border-bottom-color: #2B7BF7 !important;
+  background: transparent !important;
+  font-weight: 600 !important;
+}
+
+/* --- 问诊蓝: 搜索框 --- */
+[data-theme="consultation-blue"] .search-input {
+  border: 1px solid #E8E8E8 !important;
+  border-radius: 4px !important;
+  background: #FFFFFF !important;
+  box-shadow: none !important;
+}
+
+[data-theme="consultation-blue"] .search-input:focus {
+  border-color: #2B7BF7 !important;
+  box-shadow: 0 0 0 2px rgba(43, 123, 247, 0.15) !important;
+}
+
+/* --- 问诊蓝: 症状列表 --- */
+[data-theme="consultation-blue"] .symptom-list li {
+  border-bottom: 1px solid #F0F0F0 !important;
+  color: #333333 !important;
+  padding: 10px 16px !important;
+  border-left: 3px solid transparent !important;
+  border-radius: 0 !important;
+  margin: 0 !important;
+  background: transparent !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+}
+
+[data-theme="consultation-blue"] .symptom-list li:hover {
+  background: #F5F7FA !important;
+  color: #2B7BF7 !important;
+}
+
+[data-theme="consultation-blue"] .symptom-list li.active {
+  background: #E8F1FF !important;
+  color: #2B7BF7 !important;
+  border-left-color: #2B7BF7 !important;
+  font-weight: 500 !important;
+  box-shadow: none !important;
+}
+
+[data-theme="consultation-blue"] .symptom-list li.active:hover {
+  background: #D6E8FF !important;
+}
+
+/* --- 问诊蓝: 主内容区 --- */
+[data-theme="consultation-blue"] .content-container {
+  background: #F5F7FA !important;
+}
+
+[data-theme="consultation-blue"] .forms-scroll-area {
+  background: #F5F7FA !important;
+}
+
+/* --- 问诊蓝: 表单卡片 --- */
+[data-theme="consultation-blue"] .symptom-form-section {
+  background: #FFFFFF !important;
+  border: 1px solid #E8E8E8 !important;
+  border-radius: 8px !important;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.06) !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+}
+
+[data-theme="consultation-blue"] .symptom-form-section:hover {
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1) !important;
+  transform: none !important;
+}
+
+/* --- 问诊蓝: 表单标题 --- */
+[data-theme="consultation-blue"] .form-header {
+  background: #FFFFFF !important;
+  border-bottom: 1px solid #F0F0F0 !important;
+  padding-left: 16px !important;
+}
+
+[data-theme="consultation-blue"] .form-header h2 {
+  color: #333333 !important;
+  font-size: 15px !important;
+  font-weight: 600 !important;
+}
+
+[data-theme="consultation-blue"] .form-header h2::before {
+  content: '' !important;
+  display: inline-block !important;
+  width: 3px !important;
+  height: 16px !important;
+  background: #2B7BF7 !important;
+  border-radius: 2px !important;
+  margin-right: 8px !important;
+  vertical-align: middle !important;
+}
+
+/* --- 问诊蓝: 表单字段 --- */
+[data-theme="consultation-blue"] .field-label {
+  color: #666666 !important;
+  font-size: 14px !important;
+  font-weight: 500 !important;
+}
+
+/* --- 问诊蓝: Radio 原生样式 --- */
+[data-theme="consultation-blue"] .radio-label,
+[data-theme="consultation-blue"] .checkbox-label {
+  border: none !important;
+  background: transparent !important;
+  padding: 4px 8px !important;
+  border-radius: 0 !important;
+  font-size: 13px !important;
+  color: #666666 !important;
+  box-shadow: none !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+}
+
+[data-theme="consultation-blue"] .radio-label:hover,
+[data-theme="consultation-blue"] .checkbox-label:hover {
+  background: transparent !important;
+  border: none !important;
+  color: #333333 !important;
+}
+
+[data-theme="consultation-blue"] .radio-label.is-active,
+[data-theme="consultation-blue"] .checkbox-label.is-active,
+[data-theme="consultation-blue"] .radio-label:has(input:checked),
+[data-theme="consultation-blue"] .checkbox-label:has(input:checked) {
+  background: transparent !important;
+  border: none !important;
+  color: #2B7BF7 !important;
+  font-weight: 500 !important;
+  box-shadow: none !important;
+}
+
+/* 显示原生 radio/checkbox */
+[data-theme="consultation-blue"] .radio-label input[type="radio"],
+[data-theme="consultation-blue"] .checkbox-label input[type="checkbox"] {
+  position: relative !important;
+  width: 16px !important;
+  height: 16px !important;
+  opacity: 1 !important;
+  clip: auto !important;
+  margin-right: 6px !important;
+  accent-color: #2B7BF7 !important;
+  cursor: pointer !important;
+}
+
+/* --- 问诊蓝: 数字输入 --- */
+[data-theme="consultation-blue"] input[type="number"] {
+  border: 1px solid #D9D9D9 !important;
+  border-radius: 4px !important;
+  background: #FFFFFF !important;
+  padding: 4px 8px !important;
+}
+
+[data-theme="consultation-blue"] input[type="number"]:focus {
+  border-color: #2B7BF7 !important;
+  box-shadow: 0 0 0 2px rgba(43, 123, 247, 0.15) !important;
+}
+
+/* --- 问诊蓝: 推荐症状面板 --- */
+[data-theme="consultation-blue"] .recommendation-panel {
+  background: #FAFBFC !important;
+  border-top: 1px solid #F0F0F0 !important;
+}
+
+[data-theme="consultation-blue"] .recommendation-title {
+  color: #2B7BF7 !important;
+}
+
+[data-theme="consultation-blue"] .recommendation-title .iconify {
+  color: #2B7BF7 !important;
+}
+
+[data-theme="consultation-blue"] .recommendation-chip {
+  background: transparent !important;
+  border: none !important;
+  color: #2B7BF7 !important;
+  font-size: 13px !important;
+  padding: 2px 4px !important;
+  border-radius: 0 !important;
+}
+
+[data-theme="consultation-blue"] .recommendation-chip:hover {
+  color: #1A5CD4 !important;
+  text-decoration: underline !important;
+  transform: none !important;
+  box-shadow: none !important;
+}
+
+[data-theme="consultation-blue"] .recommendation-chip svg {
+  color: #2B7BF7 !important;
+  opacity: 0.8 !important;
+}
+
+/* --- 问诊蓝: 推荐症状标签(兼容) --- */
+[data-theme="consultation-blue"] .recommend-tag,
+[data-theme="consultation-blue"] .companion-tag {
+  background: transparent !important;
+  border: none !important;
+  color: #2B7BF7 !important;
+  font-size: 13px !important;
+  cursor: pointer !important;
+  padding: 2px 4px !important;
+}
+
+[data-theme="consultation-blue"] .recommend-tag:hover,
+[data-theme="consultation-blue"] .companion-tag:hover {
+  color: #1A5CD4 !important;
+  text-decoration: underline !important;
+}
+
+/* --- 问诊蓝: 底部操作栏 --- */
+[data-theme="consultation-blue"] .footer-actions,
+[data-theme="consultation-blue"] .bottom-bar,
+[data-theme="consultation-blue"] .record-footer {
+  background: #FFFFFF !important;
+  border-top: 1px solid #E8E8E8 !important;
+  box-shadow: 0 -1px 4px rgba(0, 0, 0, 0.04) !important;
+}
+
+[data-theme="consultation-blue"] .submit-btn {
+  background: #FF4D4F !important;
+  border-radius: 4px !important;
+  box-shadow: 0 2px 6px rgba(255, 77, 79, 0.3) !important;
+  font-size: 14px !important;
+  padding: 8px 20px !important;
+}
+
+[data-theme="consultation-blue"] .submit-btn:hover {
+  background: #FF7875 !important;
+  transform: none !important;
+  box-shadow: 0 4px 10px rgba(255, 77, 79, 0.4) !important;
+}
+
+[data-theme="consultation-blue"] .back-btn-footer {
+  border-radius: 4px !important;
+  border: 1px solid #D9D9D9 !important;
+  background: #FFFFFF !important;
+  color: #666666 !important;
+}
+
+[data-theme="consultation-blue"] .back-btn-footer:hover {
+  border-color: #2B7BF7 !important;
+  color: #2B7BF7 !important;
+}
+
+/* --- 问诊蓝: 删除按钮 --- */
+[data-theme="consultation-blue"] .remove-btn,
+[data-theme="consultation-blue"] .delete-btn {
+  color: #CCCCCC !important;
+}
+
+[data-theme="consultation-blue"] .remove-btn:hover,
+[data-theme="consultation-blue"] .delete-btn:hover {
+  color: #FF4D4F !important;
+  background: #FFF2F0 !important;
+}
+
+/* --- 问诊蓝: AI 卡片 --- */
+[data-theme="consultation-blue"] .ai-card {
+  background: #FFFFFF !important;
+  border: 1px solid #E8E8E8 !important;
+  border-radius: 8px !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+}
+
+[data-theme="consultation-blue"] .ai-card .panel-header {
+  background: #F5F7FA !important;
+  border-bottom: 1px solid #E8E8E8 !important;
+}
+
+/* --- 问诊蓝: 病历面板 --- */
+[data-theme="consultation-blue"] .record-panel {
+  background: #FFFFFF !important;
+  border: 1px solid #E8E8E8 !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+}
+
+/* --- 问诊蓝: 空状态 --- */
+[data-theme="consultation-blue"] .empty-state {
+  background: #FFFFFF !important;
+  border: 2px dashed #E8E8E8 !important;
+  color: #999999 !important;
+}
+
+/* --- 问诊蓝: 聊天面板 --- */
+[data-theme="consultation-blue"] .chat-panel {
+  background: #F5F7FA !important;
+}
+
+[data-theme="consultation-blue"] .chat-message.assistant {
+  background: #FFFFFF !important;
+  border: 1px solid #E8E8E8 !important;
+  color: #333333 !important;
+}
+
+[data-theme="consultation-blue"] .chat-message.user {
+  background: #2B7BF7 !important;
+  color: #FFFFFF !important;
+}
+
+/* --- 问诊蓝: 设置面板 --- */
+[data-theme="consultation-blue"] .settings-panel {
+  background: #F5F7FA !important;
+}
+
+[data-theme="consultation-blue"] .settings-header {
+  background: #FFFFFF !important;
+  border-bottom: 1px solid #E8E8E8 !important;
+}
+
+[data-theme="consultation-blue"] .settings-section {
+  background: #FFFFFF !important;
+  border: 1px solid #E8E8E8 !important;
+}
+
+/* --- 问诊蓝: 分析面板 --- */
+[data-theme="consultation-blue"] .analytics-panel {
+  background: #F5F7FA !important;
+}
+
+[data-theme="consultation-blue"] .analytics-panel .header {
+  background: #FFFFFF !important;
+  border-bottom: 1px solid #E8E8E8 !important;
+  backdrop-filter: none !important;
+}
+
+[data-theme="consultation-blue"] .analytics-panel .stat-card {
+  background: #FFFFFF !important;
+  border: 1px solid #E8E8E8 !important;
+}
+
+[data-theme="consultation-blue"] .analytics-panel .chart-section {
+  background: #FFFFFF !important;
+  border: 1px solid #E8E8E8 !important;
+}
+
+[data-theme="consultation-blue"] .analytics-panel .range-btn {
+  border: 1px solid #D9D9D9 !important;
+  background: #FFFFFF !important;
+  color: #666666 !important;
+}
+
+[data-theme="consultation-blue"] .analytics-panel .range-btn:hover {
+  border-color: #2B7BF7 !important;
+  color: #2B7BF7 !important;
+}
+
+[data-theme="consultation-blue"] .analytics-panel .range-btn.active {
+  background: #2B7BF7 !important;
+  border-color: #2B7BF7 !important;
+  color: #FFFFFF !important;
+}
+
+/* --- 问诊蓝: Body Part Selector --- */
+[data-theme="consultation-blue"] .body-part-selector {
+  background: #FFFFFF !important;
+}
+
+[data-theme="consultation-blue"] .body-part-selector .body-diagram {
+  background: #F5F7FA !important;
+  border: 1px solid #E8E8E8 !important;
+  border-radius: 8px !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+}
+
+[data-theme="consultation-blue"] .body-part-selector .symptom-chip {
+  background: #FFFFFF !important;
+  border: 1px solid #E8E8E8 !important;
+  color: #333333 !important;
+  border-radius: 4px !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+}
+
+[data-theme="consultation-blue"] .body-part-selector .symptom-chip:hover {
+  border-color: #2B7BF7 !important;
+  color: #2B7BF7 !important;
+  transform: none !important;
+  box-shadow: none !important;
+}
+
+[data-theme="consultation-blue"] .body-part-selector .symptom-chip.active {
+  background: #E8F1FF !important;
+  border-color: #2B7BF7 !important;
+  color: #2B7BF7 !important;
+  box-shadow: none !important;
+}
+
+[data-theme="consultation-blue"] .body-part-selector .view-btn {
+  border-radius: 4px !important;
+}
+
+[data-theme="consultation-blue"] .body-part-selector .view-btn.active {
+  background: #2B7BF7 !important;
+  color: #FFFFFF !important;
+}
+
+[data-theme="consultation-blue"] .body-part-selector .clear-btn {
+  background: #FFFFFF !important;
+  border: 1px solid #D9D9D9 !important;
+  color: #666666 !important;
+  border-radius: 4px !important;
+}
+
+[data-theme="consultation-blue"] .body-part-selector .clear-btn:hover {
+  border-color: #2B7BF7 !important;
+  color: #2B7BF7 !important;
+}
+
+/* --- 问诊蓝: System Category Selector --- */
+[data-theme="consultation-blue"] .system-category-selector {
+  background: #FFFFFF !important;
+}
+
+[data-theme="consultation-blue"] .system-category-selector .system-card {
+  background: #FFFFFF !important;
+  border: 1px solid #E8E8E8 !important;
+  color: #333333 !important;
+  border-radius: 8px !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+}
+
+[data-theme="consultation-blue"] .system-category-selector .system-card:hover {
+  border-color: #2B7BF7 !important;
+  background: #F5F7FA !important;
+}
+
+[data-theme="consultation-blue"] .system-category-selector .system-card.active {
+  background: #E8F1FF !important;
+  border-color: #2B7BF7 !important;
+  box-shadow: 0 0 0 1px #2B7BF7 !important;
+}
+
+[data-theme="consultation-blue"] .system-category-selector .system-card .system-icon {
+  color: #2B7BF7 !important;
+}
+
+[data-theme="consultation-blue"] .system-category-selector .symptom-chip {
+  background: #FFFFFF !important;
+  border: 1px solid #E8E8E8 !important;
+  color: #333333 !important;
+  border-radius: 4px !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+}
+
+[data-theme="consultation-blue"] .system-category-selector .symptom-chip:hover {
+  border-color: #2B7BF7 !important;
+  color: #2B7BF7 !important;
+  transform: none !important;
+  box-shadow: none !important;
+}
+
+[data-theme="consultation-blue"] .system-category-selector .symptom-chip.active {
+  background: #E8F1FF !important;
+  border-color: #2B7BF7 !important;
+  color: #2B7BF7 !important;
+  box-shadow: none !important;
+}
+
+[data-theme="consultation-blue"] .system-category-selector .clear-btn {
+  background: #FFFFFF !important;
+  border: 1px solid #D9D9D9 !important;
+  color: #666666 !important;
+  border-radius: 4px !important;
+}
+
+[data-theme="consultation-blue"] .system-category-selector .clear-btn:hover {
+  border-color: #2B7BF7 !important;
+  color: #2B7BF7 !important;
+}
+
+/* --- 问诊蓝: 分类筛选下拉 --- */
+[data-theme="consultation-blue"] .category-trigger {
+  border: 1px solid #E8E8E8 !important;
+  background: #FFFFFF !important;
+  border-radius: 4px !important;
+}
+
+[data-theme="consultation-blue"] .category-trigger:hover {
+  border-color: #2B7BF7 !important;
+}
+
+[data-theme="consultation-blue"] .category-dropdown {
+  background: #FFFFFF !important;
+  border: 1px solid #E8E8E8 !important;
+  border-radius: 4px !important;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1) !important;
+}
+
+[data-theme="consultation-blue"] .category-option:hover {
+  background: #F5F7FA !important;
+}
+
+[data-theme="consultation-blue"] .category-option.selected {
+  background: #E8F1FF !important;
+  color: #2B7BF7 !important;
+}
+
+/* --- 问诊蓝: 滚动条 --- */
+[data-theme="consultation-blue"] ::-webkit-scrollbar-thumb {
+  background-color: rgba(43, 123, 247, 0.2) !important;
+}
+
+[data-theme="consultation-blue"] ::-webkit-scrollbar-thumb:hover {
+  background-color: rgba(43, 123, 247, 0.4) !important;
+}

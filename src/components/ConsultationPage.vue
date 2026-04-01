@@ -5,7 +5,7 @@
       <div class="patient-card">
         <!-- Avatar -->
         <div class="avatar" :style="{ background: avatarConfig.bgColor }">
-          <Icon :icon="avatarConfig.icon" :color="avatarConfig.color" size="48" />
+          <Icon :icon="avatarConfig.icon" :color="avatarConfig.color" size="18" />
         </div>
         
         <!-- Name -->
@@ -30,33 +30,13 @@
         </div>
 
          <!-- Allergy Tag -->
-         <div class="tag-green">过敏史</div>
+         <div class="tag-allergy">过敏史</div>
       </div>
 
       <!-- Header Actions -->
       <div class="header-actions">
-        <!-- Mode Switch -->
-        <div class="mode-switch" v-if="currentView === 'consultation'">
-          <button 
-            :class="['switch-btn', { active: consultationMode === 'western' }]"
-            @click="consultationMode = 'western'"
-          >西医</button>
-          <button 
-            :class="['switch-btn', { active: consultationMode === 'tcm' }]"
-            @click="consultationMode = 'tcm'"
-          >中医</button>
-        </div>
-
         <template v-if="currentView === 'consultation'">
-             <button
-               class="header-btn primary"
-               :disabled="isGenerating"
-               :aria-busy="isGenerating"
-               @click="handleEndConsultation"
-             >
-               <Icon v-if="isGenerating" icon="lucide:loader-2" class="animate-spin" size="16" aria-hidden="true" />
-               <span>{{ isGenerating ? '生成中...' : '生成病历' }}</span>
-             </button>
+          <!-- actions moved to consultation-footer -->
         </template>
         <template v-else-if="currentView === 'record'">
              <button class="header-btn" @click="currentView = 'consultation'">返回</button>
@@ -75,7 +55,42 @@
 
     <div class="content-container" v-if="currentView === 'consultation'">
       <!-- Left: Symptom Shortcuts -->
-      <aside class="symptom-sidebar"> 
+      <aside class="symptom-sidebar">
+        <!-- Mode Switch: 西医 / 中医 - vertical tabs on left edge -->
+        <div class="sidebar-mode-switch">
+          <button
+            :class="['sidebar-switch-btn', { active: consultationMode === 'western' }]"
+            @click="consultationMode = 'western'"
+          >西医</button>
+          <button
+            :class="['sidebar-switch-btn', { active: consultationMode === 'tcm' }]"
+            @click="consultationMode = 'tcm'"
+          >中医</button>
+        </div>
+        <!-- Symptom content area -->
+        <div class="sidebar-content">
+        <!-- Selection Mode Tabs (always visible) -->
+        <div class="selection-tabs">
+          <button
+            :class="['tab-btn', { active: selectionMode === 'common' }]"
+            @click="selectionMode = 'common'"
+          >
+            常用症状
+          </button>
+          <button
+            :class="['tab-btn', { active: selectionMode === 'bodyPart' }]"
+            @click="selectionMode = 'bodyPart'"
+          >
+            按部位
+          </button>
+          <button
+            :class="['tab-btn', { active: selectionMode === 'system' }]"
+            @click="selectionMode = 'system'"
+          >
+            按系统
+          </button>
+        </div>
+
         <div class="search-box">
           <input
             type="text"
@@ -86,27 +101,8 @@
         </div>
 
         <template v-if="!searchQuery.trim()">
-          <!-- Selection Mode Tabs -->
-          <div class="selection-tabs">
-            <button
-              :class="['tab-btn', { active: selectionMode === 'common' }]"
-              @click="selectionMode = 'common'"
-            >
-              常用症状
-            </button>
-            <button
-              :class="['tab-btn', { active: selectionMode === 'bodyPart' }]"
-              @click="selectionMode = 'bodyPart'"
-            >
-              按部位
-            </button>
-            <button
-              :class="['tab-btn', { active: selectionMode === 'system' }]"
-              @click="selectionMode = 'system'"
-            >
-              按系统
-            </button>
-          </div>
+          <!-- placeholder to keep template structure -->
+          <span style="display:none"></span>
 
           <!-- Common Symptoms View -->
           <div v-if="selectionMode === 'common'" class="selection-content">
@@ -195,6 +191,7 @@
             </div>
           </div>
         </template>
+        </div><!-- end sidebar-content -->
       </aside>
 
       <!-- Right: Dynamic Form -->
@@ -333,10 +330,7 @@
                     class="recommendation-chip"
                     @click="selectSymptom(rec)"
                     :title="'点击添加: ' + rec.name"
-                  >
-                    <span>{{ rec.name }}</span>
-                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
-                  </button>
+                  >{{ rec.name }} +</button>
                 </div>
               </div>
             </div>
@@ -354,6 +348,20 @@
         <p>请选择左侧症状进行问诊</p>
         <span class="sub-text">支持多选，最多{{ CONSULTATION_CONFIG.MAX_SYMPTOMS }}项</span>
       </main>
+    </div>
+
+    <!-- Consultation Footer Actions -->
+    <div v-if="currentView === 'consultation'" class="consultation-footer">
+      <button class="footer-cancel-btn" @click="$emit('close')">取消</button>
+      <button
+        class="footer-submit-btn"
+        :disabled="isGenerating"
+        :aria-busy="isGenerating"
+        @click="handleEndConsultation"
+      >
+        <Icon v-if="isGenerating" icon="lucide:loader-2" class="animate-spin" size="14" aria-hidden="true" />
+        <span>{{ isGenerating ? '生成中...' : '生成病历' }}</span>
+      </button>
     </div>
 
     <!-- Medical Record View -->
@@ -1095,8 +1103,8 @@ const avatarConfig = computed(() => {
   const isMale = info.sdSex === '1' || info.sdSexText === '男性' || info.sdSexText === '男';
 
   return {
-    color: isMale ? 'var(--color-primary)' : 'var(--color-secondary)', // 医疗蓝 for male, 青色 for female
-    bgColor: isMale ? 'var(--color-background)' : 'var(--color-background-gray)', // 使用设计令牌背景色
+    color: '#fff',
+    bgColor: isMale ? 'rgba(255,255,255,0.25)' : 'rgba(255,200,220,0.35)',
     icon: isMale ? 'mdi:human-male' : 'mdi:human-female'
   };
 });
@@ -4430,12 +4438,12 @@ const copyToClipboard = () => {
   align-items: center;
   justify-content: space-between;
   flex-wrap: nowrap;
-  background: linear-gradient(to right, var(--color-background-white), var(--color-background));
-  padding: 8px 16px; /* Reduced padding */
-  box-shadow: 0 2px 8px rgba(8, 145, 178, 0.08);
+  background: linear-gradient(135deg, #2681ff 0%, #4a9bff 100%);
+  padding: 10px 20px;
+  box-shadow: 0 2px 12px rgba(38, 129, 255, 0.25);
   z-index: 10;
   flex-shrink: 0;
-  border-bottom: 1px solid var(--color-border-light);
+  border-bottom: none;
 }
 
 .patient-card {
@@ -4449,26 +4457,21 @@ const copyToClipboard = () => {
 }
 
 .avatar {
-  width: 32px; /* Reduced size */
-  height: 32px;
+  width: 36px;
+  height: 36px;
   border-radius: 50%;
   overflow: hidden;
-  background: var(--color-background-gray);
   display: flex;
   align-items: center;
   justify-content: center;
-  border: 1px solid var(--color-border-light);
-}
-
-.avatar svg {
-  width: 20px; /* Reduced icon size */
-  height: 20px;
+  border: 2px solid rgba(255, 255, 255, 0.5);
+  flex-shrink: 0;
 }
 
 .patient-name {
-  font-size: 16px; /* Slightly reduced */
+  font-size: 16px;
   font-weight: 700;
-  color: var(--color-text-strong);
+  color: #fff;
 }
 
 .patient-basic {
@@ -4476,22 +4479,23 @@ const copyToClipboard = () => {
   align-items: center;
   gap: 8px;
   font-size: 14px;
-  color: var(--color-text-weak);
+  color: rgba(255, 255, 255, 0.9);
 }
 
 .divider {
   width: 1px;
   height: 12px;
-  background: var(--color-border-medium);
+  background: rgba(255, 255, 255, 0.4);
 }
 
 .tag-blue {
-  background: var(--color-info-bg);
-  color: var(--color-info);
+  background: rgba(255, 255, 255, 0.2);
+  color: #fff;
   padding: 2px 8px;
   border-radius: 4px;
   font-size: 12px;
   font-weight: 500;
+  border: 1px solid rgba(255, 255, 255, 0.3);
 }
 
 .tag-green {
@@ -4503,13 +4507,22 @@ const copyToClipboard = () => {
   font-weight: 500;
 }
 
+.tag-allergy {
+  background: rgba(239, 68, 68, 0.85);
+  color: #fff;
+  padding: 2px 8px;
+  border-radius: 12px;
+  font-size: 12px;
+  font-weight: 500;
+}
+
 .contact-info {
   display: flex;
   align-items: center;
   gap: 16px;
-  font-size: 14px; /* Increased to 14px */
-  color: var(--color-text-muted);
-  margin-left: auto; /* Push to right if space permits, or just standard flow */
+  font-size: 13px;
+  color: rgba(255, 255, 255, 0.85);
+  margin-left: auto;
 }
 
 @media (max-width: 800px) {
@@ -4531,10 +4544,10 @@ const copyToClipboard = () => {
 
 .header-btn {
   padding: 6px 16px;
-  border: 1px solid var(--color-border-medium);
-  background: var(--color-background-white);
+  border: 1px solid rgba(255, 255, 255, 0.4);
+  background: rgba(255, 255, 255, 0.15);
   border-radius: 18px;
-  color: var(--color-text-weak);
+  color: #fff;
   cursor: pointer;
   font-size: 13px;
   transition: all var(--duration-normal) var(--ease-out);
@@ -4542,57 +4555,131 @@ const copyToClipboard = () => {
 }
 
 .header-btn:hover {
-  background: var(--color-background-gray);
-  border-color: var(--color-border-strong);
-  color: var(--color-text-strong);
+  background: rgba(255, 255, 255, 0.25);
+  border-color: rgba(255, 255, 255, 0.6);
+  color: #fff;
 }
 
 .header-btn.primary {
-  background: var(--color-cta);
-  color: white;
+  background: #fff;
+  color: #2681ff;
   border: none;
-  box-shadow: 0 2px 6px var(--color-cta-200);
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.1);
+  font-weight: 600;
 }
 
 .header-btn.primary:hover {
-  background: var(--color-cta-hover);
+  background: #f0f7ff;
   transform: translateY(-1px);
-  box-shadow: 0 4px 10px var(--color-cta-200);
+  box-shadow: 0 4px 10px rgba(0, 0, 0, 0.15);
 }
 
 .header-btn.primary:disabled {
-  background: var(--color-border-medium);
+  background: rgba(255, 255, 255, 0.5);
+  color: rgba(38, 129, 255, 0.5);
   cursor: not-allowed;
   transform: none;
   box-shadow: none;
 }
 
-/* Mode Switch */
-.mode-switch {
+/* Sidebar Mode Switch: 西医 / 中医 - vertical tabs on left edge */
+.sidebar-mode-switch {
   display: flex;
-  background: var(--color-background-gray);
-  padding: 2px;
-  border-radius: 16px;
-  margin-right: 12px;
-  border: 1px solid var(--color-border-medium);
+  flex-direction: column;
+  width: 28px;
+  flex-shrink: 0;
+  background: #f7f9fc;
+  border-right: 1px solid #e8edf2;
+  padding-top: 8px;
+  gap: 2px;
 }
 
-.switch-btn {
-  padding: 4px 12px;
-  border-radius: 14px;
+.sidebar-switch-btn {
+  width: 100%;
+  height: 52px;
+  flex-shrink: 0;
+  padding: 0;
   border: none;
   background: transparent;
-  font-size: 12px;
+  font-size: 13px;
   cursor: pointer;
-  color: var(--color-text-weak);
+  color: #8c98a5;
+  transition: all 0.2s ease;
+  font-weight: 500;
+  writing-mode: vertical-rl;
+  text-orientation: upright;
+  letter-spacing: 2px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 2px 0 0 2px;
+}
+
+.sidebar-switch-btn.active {
+  background: #e8f1ff;
+  color: #2681ff;
+  font-weight: 600;
+  border-right: 2px solid #2681ff;
+}
+
+/* Consultation Footer */
+.consultation-footer {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
+  padding: 10px 20px;
+  background: #fff;
+  border-top: 1px solid #e8edf2;
+  flex-shrink: 0;
+  z-index: 10;
+}
+
+.footer-cancel-btn {
+  padding: 7px 20px;
+  border: 1px solid #dce3eb;
+  background: #fff;
+  border-radius: 4px;
+  font-size: 14px;
+  color: #5a6577;
+  cursor: pointer;
   transition: all 0.2s ease;
 }
 
-.switch-btn.active {
-  background: white;
-  color: var(--color-primary);
-  box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+.footer-cancel-btn:hover {
+  background: #f7f9fc;
+  border-color: #b0bac5;
+}
+
+.footer-submit-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 22px;
+  background: #2681ff;
+  color: #fff;
+  border: none;
+  border-radius: 4px;
+  font-size: 14px;
   font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  box-shadow: 0 2px 6px rgba(38, 129, 255, 0.3);
+}
+
+.footer-submit-btn:hover:not(:disabled) {
+  background: #1a6ef5;
+  box-shadow: 0 4px 10px rgba(38, 129, 255, 0.4);
+}
+
+.footer-submit-btn:disabled {
+  background: rgba(38, 129, 255, 0.5);
+  cursor: not-allowed;
+  box-shadow: none;
+}
+
+.footer-submit-btn .animate-spin {
+  animation: spin 0.6s linear infinite;
 }
 
 /* Loading 动画样式 */
@@ -4622,50 +4709,58 @@ const copyToClipboard = () => {
 }
 
 .symptom-sidebar {
-  width: 320px; /* 增加宽度以容纳人体图示 */
-  background: rgba(255, 255, 255, 0.95);
-  backdrop-filter: blur(10px);
-  border-right: 1px solid var(--color-border-light);
+  width: 260px;
+  background: #fff;
+  border-right: 1px solid #e8edf2;
+  display: flex;
+  flex-direction: row;
+  flex-shrink: 0;
+  z-index: 5;
+}
+
+.sidebar-content {
+  flex: 1;
   display: flex;
   flex-direction: column;
-  flex-shrink: 0;
-  box-shadow: 2px 0 8px rgba(0,0,0,0.02);
-  z-index: 5;
+  min-width: 0;
+  overflow: hidden;
 }
 
 /* Selection Mode Tabs */
 .selection-tabs {
   display: flex;
-  padding: 10px;
-  gap: 6px;
-  border-bottom: 1px solid var(--color-border-light);
+  padding: 0;
+  gap: 0;
+  border-bottom: 1px solid #e8edf2;
   background: transparent;
   flex-shrink: 0;
 }
 
 .tab-btn {
   flex: 1;
-  padding: 6px 8px;
-  font-size: 12px;
+  padding: 10px 0;
+  font-size: 13px;
   background: transparent;
-  border: 1px solid var(--color-border-light);
-  border-radius: 6px;
-  color: var(--color-text-muted);
+  border: none;
+  border-bottom: 2px solid transparent;
+  border-radius: 0;
+  color: #8c98a5;
   cursor: pointer;
   transition: all var(--duration-normal) var(--ease-out);
   font-weight: 500;
   white-space: nowrap;
+  text-align: center;
 }
 
 .tab-btn:hover {
-  background: var(--color-background-gray);
-  border-color: var(--color-info-border);
+  color: #2681ff;
+  background: transparent;
 }
 
 .tab-btn.active {
-  background: var(--color-background, #ECFEFF);
-  border-color: var(--color-primary, #0891B2);
-  color: var(--color-primary, #0891B2);
+  background: transparent;
+  border-bottom-color: #2681ff;
+  color: #2681ff;
   font-weight: 600;
 }
 
@@ -4676,7 +4771,7 @@ const copyToClipboard = () => {
   flex-direction: column;
   min-height: 0;
   overflow-x: hidden;
-  padding: 8px; /* 添加内边距 */
+  padding: 0;
 }
 
 .symptom-sidebar h3 {
@@ -4691,8 +4786,8 @@ const copyToClipboard = () => {
 }
 
 .search-box {
-  padding: 10px;
-  border-bottom: 1px solid var(--color-border-light);
+  padding: 8px 12px;
+  border-bottom: none;
   background: transparent;
   flex-shrink: 0;
   display: flex;
@@ -4707,19 +4802,20 @@ const copyToClipboard = () => {
 
 .search-input {
   width: 100%;
-  padding: 6px 10px; /* Reduced padding */
-  border: 1px solid var(--color-border-light); /* Light border */
+  padding: 7px 10px;
+  border: 1px solid #dce3eb;
   border-radius: 6px;
-  font-size: 14px; /* Adjusted to 14px */
+  font-size: 13px;
   box-sizing: border-box;
   outline: none;
-  background: var(--color-background-white);
+  background: #f7f9fc;
   transition: all var(--duration-slow) var(--ease-out);
 }
 
 .search-input:focus {
-  border-color: var(--color-primary); /* Primary color on focus */
-  box-shadow: 0 0 0 2px var(--color-primary-200);
+  border-color: #2681ff;
+  box-shadow: 0 0 0 2px rgba(38, 129, 255, 0.1);
+  background: #fff;
 }
 
 .symptom-list {
@@ -4728,35 +4824,32 @@ const copyToClipboard = () => {
   margin: 0;
   overflow-y: auto;
   flex: 1;
-  min-height: 0; /* Fix for flex child scrolling */
+  min-height: 0;
 }
 
 .symptom-list li {
-  padding: 8px 16px; /* Reduced padding */
+  padding: 9px 14px;
   cursor: pointer;
-  border-bottom: 1px solid var(--color-border-light);
-  transition: all var(--duration-normal) var(--ease-out);
-  color: var(--color-text-weak);
+  border-bottom: none;
+  transition: background 0.15s ease, color 0.15s ease;
+  color: #4a5568;
   font-size: 14px;
 }
 
 .symptom-list li:hover {
-  background: var(--color-background);
-  color: var(--color-primary);
-  padding-left: 20px; /* Subtle movement */
+  background: #f0f5ff;
+  color: #2681ff;
 }
 
 .symptom-list li.active {
-  background: var(--color-primary); /* Primary background */
-  color: var(--color-background-white); /* White text */
-  border-right: none;
+  background: #e8f1ff;
+  color: #2681ff;
   font-weight: 600;
-  box-shadow: 0 4px 6px -1px var(--color-primary-200);
 }
 
 .symptom-list li.active:hover {
-  background: var(--color-primary-dark);
-  color: var(--color-background-white);
+  background: #dceaff;
+  color: #1a6ef5;
 }
 
 .ai-add-symptom {
@@ -4816,35 +4909,31 @@ const copyToClipboard = () => {
 
 /* 伴随症状推荐面板 */
 .recommendation-panel {
-  margin: 12px -12px -12px -12px;
-  border-top: 1px solid var(--color-border-light);
-  background: linear-gradient(to bottom, rgba(8, 145, 178, 0.02), rgba(8, 145, 178, 0.05));
-  border-radius: 0 0 12px 12px;
+  margin: 0;
+  padding: 12px 16px;
+  border-top: 1px solid #eef1f5;
+  background: #fafbfd;
+  border-radius: 0 0 8px 8px;
   flex-shrink: 0;
-  transition: all var(--duration-normal) var(--ease-out);
 }
 
 .recommendation-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 8px 12px;
-  cursor: pointer;
+  padding: 0 0 6px 0;
   user-select: none;
-  transition: background var(--duration-fast) var(--ease-out);
 }
 
-.recommendation-header:hover {
-  background: rgba(0, 0, 0, 0.02);
-}
+
 
 .recommendation-title {
   display: flex;
   align-items: center;
   gap: 6px;
-  font-size: 12px;
+  font-size: 13px;
   font-weight: 600;
-  color: var(--color-text-medium);
+  color: #2681ff;
 }
 
 .recommendation-title .iconify {
@@ -4877,8 +4966,8 @@ const copyToClipboard = () => {
 .recommendation-chips {
   display: flex;
   flex-wrap: wrap;
-  gap: 8px;
-  padding: 4px 12px 12px;
+  gap: 4px 8px;
+  padding: 0;
   max-height: 200px;
   overflow-y: auto;
 }
@@ -4886,38 +4975,25 @@ const copyToClipboard = () => {
 .recommendation-chip {
   display: inline-flex;
   align-items: center;
-  gap: 4px;
-  padding: 4px 10px;
-  font-size: 12px;
-  color: var(--color-primary);
-  background: var(--color-primary-50, rgba(8, 145, 178, 0.06));
-  border: 1px dashed var(--color-primary-200, rgba(8, 145, 178, 0.25));
-  border-radius: 14px;
+  padding: 3px 8px;
+  font-size: 13px;
+  color: #2681ff;
+  background: transparent;
+  border: none;
+  border-radius: 0;
   cursor: pointer;
-  transition: all var(--duration-normal) var(--ease-out);
+  transition: color 0.15s ease;
   white-space: nowrap;
+  text-decoration: none;
 }
 
 .recommendation-chip:hover {
-  background: var(--color-primary-100, rgba(8, 145, 178, 0.12));
-  border-color: var(--color-primary);
-  border-style: solid;
-  transform: translateY(-1px);
-  box-shadow: 0 2px 8px rgba(8, 145, 178, 0.15);
+  color: #1a6ef5;
+  text-decoration: underline;
 }
 
 .recommendation-chip:active {
-  transform: translateY(0);
-}
-
-.recommendation-chip svg {
-  color: var(--color-primary);
-  opacity: 0.6;
-  transition: opacity var(--duration-fast);
-}
-
-.recommendation-chip:hover svg {
-  opacity: 1;
+  color: #1456cc;
 }
 
 .recommendation-chips::-webkit-scrollbar {
@@ -4938,44 +5014,43 @@ const copyToClipboard = () => {
   display: flex;
   flex-direction: column;
   overflow: hidden;
-  background: transparent;
+  background: #f5f7fa;
 }
 
 .forms-scroll-area {
   flex: 1;
   overflow-y: auto;
-  padding: 12px; /* Reduced padding */
-  padding-bottom: 80px; /* Extra padding to prevent last item truncation */
+  padding: 16px 20px;
+  padding-bottom: 16px;
 }
 
 .symptom-form-section {
-  background: rgba(255, 255, 255, 0.9);
-  border-radius: 12px;
-  box-shadow: 0 4px 20px var(--color-primary-50);
-  padding: 12px; /* Ultra compact padding */
-  margin-bottom: 12px; /* Ultra compact margin */
-  border: 1px solid var(--color-border-light);
-  transition: transform var(--duration-normal) var(--ease-smooth);
+  background: #fff;
+  border-radius: 8px;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.06);
+  padding: 0;
+  margin-bottom: 16px;
+  border: 1px solid #e8edf2;
+  transition: none;
 }
 
 .symptom-form-section:hover {
-  transform: translateY(-1px);
-  box-shadow: 0 8px 24px var(--color-primary-100);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
 }
 
 .form-header {
-  background: linear-gradient(to right, var(--color-background-white), var(--color-background));
-  margin: -12px -12px 12px -12px; /* Adjusted for new padding */
-  padding: 8px 16px; /* Compact padding */
-  border-bottom: 1px solid var(--color-border-light);
-  border-radius: 12px 12px 0 0;
+  background: #f5f8ff;
+  margin: 0;
+  padding: 10px 16px;
+  border-bottom: 1px solid #e4eaf5;
+  border-radius: 8px 8px 0 0;
   display: flex;
   justify-content: space-between;
   align-items: center;
 }
 
 .remove-btn {
-  color: var(--color-text-disabled);
+  color: #c1c8d1;
   padding: 4px;
 }
 
@@ -4986,9 +5061,9 @@ const copyToClipboard = () => {
 
 .form-header h2 {
   margin: 0;
-  font-size: 15px; /* Slightly smaller font */
+  font-size: 15px;
   font-weight: 600;
-  color: var(--color-text-primary); /* Dark cyan */
+  color: #1a2233;
   display: flex;
   align-items: center;
 }
@@ -4997,8 +5072,8 @@ const copyToClipboard = () => {
   content: '';
   display: inline-block;
   width: 4px;
-  height: 14px;
-  background: var(--color-primary);
+  height: 16px;
+  background: #2681ff;
   margin-right: 10px;
   border-radius: 2px;
 }
@@ -5032,33 +5107,33 @@ const copyToClipboard = () => {
 }
 
 .dynamic-form {
-  padding-top: 4px; /* Reduced */
+  padding: 10px 16px;
 }
 
 .form-field {
   display: flex;
   align-items: flex-start;
-  margin-bottom: 10px; /* Compact margin */
-  border-bottom: 1px dashed var(--color-border-light);
-  padding-bottom: 10px; /* Compact padding */
+  margin-bottom: 0;
+  border-bottom: 1px solid #f0f2f5;
+  padding: 10px 0;
 }
 
 .form-field:last-child {
   border-bottom: none;
   margin-bottom: 0;
-  padding-bottom: 0;
+  padding-bottom: 6px;
 }
 
 .field-label {
   flex-shrink: 0;
-  width: 70px; /* Fixed width for alignment */
+  width: 72px;
   margin-bottom: 0;
-  margin-right: 12px;
-  font-weight: 600;
+  margin-right: 16px;
+  font-weight: 500;
   font-size: 14px;
-  color: var(--color-text-medium);
-  padding-top: 5px; /* Visual alignment with inputs */
-  text-align: right; /* Align right for cleaner look */
+  color: #5a6577;
+  padding-top: 4px;
+  text-align: right;
 }
 
 /* Ensure input containers take remaining space */
@@ -5074,7 +5149,7 @@ const copyToClipboard = () => {
 .field-input-radio {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 10px;
 }
 
 .has-error .text-input {
@@ -5096,14 +5171,15 @@ const copyToClipboard = () => {
 }
 
 .text-input {
-  padding: 6px 10px; /* Reduced padding */
-  border: 1px solid var(--color-border-medium);
-  border-radius: 6px;
-  width: 100px; /* Default small width */
+  padding: 5px 10px;
+  border: 1px solid #dce3eb;
+  border-radius: 4px;
+  width: 100px;
   outline: none;
   transition: all var(--duration-slow) var(--ease-out);
-  color: var(--color-text-strong);
-  font-size: 14px; /* Adjusted to 14px */
+  color: #1a2233;
+  font-size: 14px;
+  background: #fff;
 }
 
 .field-input .text-input {
@@ -5111,41 +5187,54 @@ const copyToClipboard = () => {
 }
 
 .text-input:focus {
-  border-color: var(--color-primary);
-  box-shadow: 0 0 0 2px rgba(24, 144, 255, 0.1);
+  border-color: #2681ff;
+  box-shadow: 0 0 0 2px rgba(38, 129, 255, 0.1);
 }
 
 .radio-group, .checkbox-group {
   display: flex;
   flex-wrap: wrap;
-  gap: 8px; /* Reduced gap */
+  gap: 4px 16px;
+  align-items: center;
 }
 
 .radio-label, .checkbox-label {
-  display: flex;
+  display: inline-flex;
   align-items: center;
-  gap: 6px; /* Reduced gap */
+  gap: 4px;
   cursor: pointer;
-  font-size: 14px; /* Adjusted to 14px */
-  color: var(--color-text-weak);
-  padding: 4px 10px; /* Reduced padding */
-  border-radius: 20px;
-  transition: all var(--duration-normal) var(--ease-out);
-  border: 1px solid var(--color-border-light); /* Subtle default border */
-  background: var(--color-background-white);
+  font-size: 14px;
+  color: #5a6577;
+  padding: 2px 0;
+  border-radius: 0;
+  transition: color 0.15s ease;
+  border: none;
+  background: transparent;
+  white-space: nowrap;
+}
+
+.radio-label input[type="radio"],
+.checkbox-label input[type="checkbox"] {
+  appearance: auto;
+  -webkit-appearance: auto;
+  width: 14px;
+  height: 14px;
+  margin: 0;
+  accent-color: #2681ff;
+  cursor: pointer;
 }
 
 .radio-label:hover, .checkbox-label:hover {
-  background: var(--color-background-gray);
-  border-color: var(--color-border-medium);
+  color: #2681ff;
+  background: transparent;
 }
 
 .radio-label.is-active, .checkbox-label.is-active {
-  background: var(--color-primary-50);
-  color: var(--color-primary-dark);
-  border-color: var(--color-primary);
+  color: #2681ff;
   font-weight: 500;
-  box-shadow: 0 1px 2px rgba(37, 99, 235, 0.1);
+  background: transparent;
+  border: none;
+  box-shadow: none;
 }
 
 .empty-state {
