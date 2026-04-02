@@ -43,14 +43,14 @@ export const WINDOW_SIZES = {
   /** 悬浮球模式：160×160px 透明窗口 */
   BALL: { width: 160, height: 160 } as WindowSize,
 
-  /** 标准工作面板：420×560px（聊天、设置等） */
-  WORK: { width: 420, height: 560 } as WindowSize,
+  /** 标准工作面板：378×449px（聊天、设置等） */
+  WORK: { width: 378, height: 449 } as WindowSize,
 
-  /** 诊断路径：960×680px 独立 Sankey 说明窗口 */
-  DIAGNOSIS_PATH: { width: 1080, height: 760 } as WindowSize,
+  /** 诊断路径：972×608px 独立 Sankey 说明窗口 */
+  DIAGNOSIS_PATH: { width: 972, height: 608 } as WindowSize,
 
-  /** 问诊页面：1200×900px 大面板 */
-  CONSULTATION: { width: 1200, height: 900 } as WindowSize,
+  /** 问诊页面：1080×720px 大面板 */
+  CONSULTATION: { width: 1080, height: 720 } as WindowSize,
 
   /** 语音/风险胶囊：360×80px 胶囊形态 */
   CAPSULE: { width: 360, height: 80 } as WindowSize,
@@ -58,11 +58,11 @@ export const WINDOW_SIZES = {
   /** 风险详情展开：360×400px */
   CAPSULE_EXPANDED: { width: 360, height: 400 } as WindowSize,
 
-  /** 语音结果编辑：1200×900px */
-  RESULT: { width: 1200, height: 900 } as WindowSize,
+  /** 语音结果编辑：1080×720px */
+  RESULT: { width: 1080, height: 720 } as WindowSize,
 
-  /** 症状库管理：1200×900px */
-  SYMPTOM_MANAGE: { width: 1200, height: 900 } as WindowSize,
+  /** 症状库管理：1080×720px */
+  SYMPTOM_MANAGE: { width: 1080, height: 720 } as WindowSize,
 } as const;
 
 /**
@@ -74,7 +74,7 @@ export const WINDOW_SIZES = {
  * @example
  * ```typescript
  * const size = getWindowSizeForView('consultation');
- * // => { width: 1200, height: 900 }
+ * // => { width: 1080, height: 720 }
  * ```
  */
 export function getWindowSizeForView(view: ViewType): WindowSize {
