@@ -5,8 +5,10 @@ import App from "./App.vue";
 import { addCollection } from "@iconify/vue/offline";
 import lucideIcons from "@iconify-json/lucide/icons.json";
 import mdiIcons from "@iconify-json/mdi/icons.json";
+import healthIcons from "@iconify-json/healthicons/icons.json";
 addCollection(lucideIcons as never);
 addCollection(mdiIcons as never);
+addCollection(healthIcons as never);
 
 // 导入全局设计令牌和样式覆盖
 import "./styles/design-tokens.css";

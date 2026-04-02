@@ -157,6 +157,13 @@
   resolved "https://registry.yarnpkg.com/@esbuild/win32-x64/-/win32-x64-0.25.12.tgz#9bdad8176be7811ad148d1f8772359041f46c6c5"
   integrity sha512-alJC0uCZpTFrSL0CCDjcgleBXPnCrEAhTBILpeAp7M/OFgoqtAetfBzX0xM00MUsVVPpVjlPuMbREqnZCXaTnA==
 
+"@iconify-json/healthicons@^1.2.12":
+  version "1.2.12"
+  resolved "https://registry.yarnpkg.com/@iconify-json/healthicons/-/healthicons-1.2.12.tgz#41a69a607f5b40b04cade78bbdb3b1186af32143"
+  integrity sha512-0ohosj8zla9Bf+OT0wPYASVp1OvLzkdBof/B03lzGWmC5FzkvtFeAa4TtzLMCOVaeToIpT6JPs9kSfp7dJifdA==
+  dependencies:
+    "@iconify/types" "*"
+
 "@iconify-json/lucide@^1.2.101":
   version "1.2.101"
   resolved "https://registry.yarnpkg.com/@iconify-json/lucide/-/lucide-1.2.101.tgz#088a7aa6570275261afa0eba07585ca99d2e04de"
