@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { Icon as IconifyIcon } from '@iconify/vue';
+import { Icon as IconifyIcon } from '@iconify/vue/offline';
 import { computed } from 'vue';
 
 interface Props {

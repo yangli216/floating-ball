@@ -1,6 +1,13 @@
 import { createApp } from "vue";
 import App from "./App.vue";
 
+// 离线图标集：预注册本地 JSON，避免内网环境从 Iconify CDN 拉取
+import { addCollection } from "@iconify/vue/offline";
+import lucideIcons from "@iconify-json/lucide/icons.json";
+import mdiIcons from "@iconify-json/mdi/icons.json";
+addCollection(lucideIcons as never);
+addCollection(mdiIcons as never);
+
 // 导入全局设计令牌和样式覆盖
 import "./styles/design-tokens.css";
 import "./styles/global-overrides.css";
