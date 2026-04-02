@@ -345,18 +345,20 @@ pub fn run() {
                     }
                 }
             }
-            // 无有效保存位置时，设到主显示器右上角安全区域
+            // 无有效保存位置时，设到主显示器右上角安全区域（基准 1920×1080）
             if !restored {
-                if let Ok(Some(monitor)) = window.primary_monitor() {
+                let (safe_x, safe_y) = if let Ok(Some(monitor)) = window.primary_monitor() {
                     let ms = monitor.size();
-                    let safe_x = (ms.width as i32).saturating_sub(200);
-                    let safe_y = 100;
-                    println!("[Rust] Setting safe default position: ({}, {})", safe_x, safe_y);
-                    let _ = window.set_position(tauri::Position::Physical(tauri::PhysicalPosition {
-                        x: safe_x,
-                        y: safe_y,
-                    }));
-                }
+                    ((ms.width as i32).saturating_sub(200), 100)
+                } else {
+                    // 获取显示器信息失败，按 1920×1080 估算
+                    (1720, 100)
+                };
+                println!("[Rust] Setting safe default position: ({}, {})", safe_x, safe_y);
+                let _ = window.set_position(tauri::Position::Physical(tauri::PhysicalPosition {
+                    x: safe_x,
+                    y: safe_y,
+                }));
             }
             // 位置就绪后再显示窗口，避免在错误位置闪烁
             let _ = window.show();
