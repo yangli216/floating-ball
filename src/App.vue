@@ -483,16 +483,17 @@ const openInsideCloudHome = async () => {
               </button>
             </div>
           </div>
-          <ChatPanel v-if="currentView === 'chat'" />
-          <ConsultationPage 
-            v-else-if="currentView === 'consultation'" 
-            @close="handleCollapse" 
+          <!-- 问诊页面用 v-show 保持常驻，避免切换视图时组件销毁导致数据丢失 -->
+          <ConsultationPage
+            v-show="currentView === 'consultation'"
+            @close="handleCollapse"
             :initialPatientData="currentPatient"
             :assistTrigger="consultationAssistTrigger"
             @consume-auto-trigger="clearConsultationAssistTrigger"
           />
+          <ChatPanel v-if="currentView === 'chat'" />
           <RiskAlertPanel
-            v-else-if="currentView === 'risk-alert'"
+            v-if="currentView === 'risk-alert'"
             :patientName="riskPatientName"
             :gender="riskPatientGender"
             :age="riskPatientAge"
@@ -501,15 +502,15 @@ const openInsideCloudHome = async () => {
             @confirm="closeRiskAlert"
           />
           <!-- Voice Interaction View -->
-          <VoiceCapsule 
-            v-else-if="currentView === 'voice-interaction'"
+          <VoiceCapsule
+            v-if="currentView === 'voice-interaction'"
             @stop="handleVoiceStop"
             @error="handleVoiceError"
           />
 
           <!-- Reception Service (Risk) Capsule -->
           <ReceptionCapsule
-            v-else-if="currentView === 'reception-capsule'"
+            v-if="currentView === 'reception-capsule'"
             :patient-name="riskPatientName"
             :gender="riskPatientGender"
             :age="riskPatientAge"
@@ -521,20 +522,20 @@ const openInsideCloudHome = async () => {
 
           <!-- Voice Result View -->
           <VoiceConsultationResult
-            v-else-if="currentView === 'voice-result'"
+            v-if="currentView === 'voice-result'"
             :initialRecord="generatedRecord"
             :patientInfo="currentPatient"
             @confirm="handleResultConfirm"
             @cancel="cancelVoiceResult"
           />
           <AnalyticsPanel
-            v-else-if="currentView === 'analytics'"
+            v-if="currentView === 'analytics'"
             @close="openChat"
           />
-          <SymptomManagement v-else-if="currentView === 'symptom-manage'" @close="handleCollapse" />
-          <KnowledgeBasePanel v-else-if="currentView === 'knowledge-base'" @close="handleCollapse" />
+          <SymptomManagement v-if="currentView === 'symptom-manage'" @close="handleCollapse" />
+          <KnowledgeBasePanel v-if="currentView === 'knowledge-base'" @close="handleCollapse" />
           <SettingsPanel
-            v-else
+            v-if="currentView === 'settings'"
             @view-analytics="openAnalytics"
             @open-symptom-manage="openSymptomManagement"
           />
