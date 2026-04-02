@@ -1682,6 +1682,7 @@ const buildCurrentMedicalPayload = (
           name: item.name,
           spec: item.matchedItem?.spec,
           usage: item.usage,
+          idMedPro: item.matchedItem?.id,
         }))
     : [];
   const examinations = includeTreatments && (!includedTreatmentTypes || includedTreatmentTypes.includes('exam'))
@@ -1689,6 +1690,7 @@ const buildCurrentMedicalPayload = (
         .filter((item) => item.selected)
         .map((item) => ({
           name: item.name,
+          idCli: item.matchedItem?.id,
         }))
     : [];
   const labTests = includeTreatments && (!includedTreatmentTypes || includedTreatmentTypes.includes('lab_test'))
@@ -1696,6 +1698,7 @@ const buildCurrentMedicalPayload = (
         .filter((item) => item.selected)
         .map((item) => ({
           name: item.name,
+          idCli: item.matchedItem?.id,
         }))
     : [];
   const procedures = includeTreatments && (!includedTreatmentTypes || includedTreatmentTypes.includes('procedure'))

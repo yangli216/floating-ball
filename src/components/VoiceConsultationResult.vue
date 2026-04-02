@@ -272,12 +272,14 @@ export interface MedicationEntry {
   usage?: string;
   count?: string;
   matched?: boolean;
+  idMedPro?: string;
 }
 
 export interface ExamEntry {
   name: string;
   goal?: string;
   matched?: boolean;
+  idCli?: string;
 }
 
 export interface GeneratedRecord {
@@ -401,6 +403,7 @@ const matchLocalData = (rec: GeneratedRecord) => {
         m.name = match.name; // Normalize name
         if (!m.spec) m.spec = match.spec;
         m.matched = true;
+        m.idMedPro = match.id;
       }
     });
   }
@@ -412,6 +415,7 @@ const matchLocalData = (rec: GeneratedRecord) => {
         if (match) {
             e.name = match.name;
             e.matched = true;
+            e.idCli = match.id;
         }
     });
   }
@@ -423,6 +427,7 @@ const matchLocalData = (rec: GeneratedRecord) => {
         if (match) {
             e.name = match.name;
             e.matched = true;
+            e.idCli = match.id;
         }
     });
   }
