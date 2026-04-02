@@ -309,6 +309,7 @@ pub fn run() {
             window.set_always_on_top(true).unwrap();
 
             // 尝试在 Rust 层直接读取本地存储并恢复悬浮球坐标，避免前端 Vue 初始化带来的闪烁和 macOS 隐藏渲染 Bug
+            let mut restored = false;
             if let Ok(app_data_dir) = app.path().app_data_dir() {
                 let settings_path = app_data_dir.join(".settings.dat");
                 if let Ok(content) = std::fs::read_to_string(&settings_path) {
@@ -318,16 +319,47 @@ pub fn run() {
                                 pos.get("x").and_then(|v| v.as_f64()),
                                 pos.get("y").and_then(|v| v.as_f64()),
                             ) {
-                                println!("[Rust] Restoring position from .settings.dat: ({}, {})", x, y);
-                                let _ = window.set_position(tauri::Position::Physical(tauri::PhysicalPosition {
-                                    x: x as i32,
-                                    y: y as i32,
-                                }));
+                                // 校验位置是否在任意显示器范围内，防止窗口跑到屏幕外不可见
+                                let in_bounds = window.available_monitors().ok()
+                                    .map(|monitors| monitors.iter().any(|m| {
+                                        let mp = m.position();
+                                        let ms = m.size();
+                                        x >= mp.x as f64
+                                            && y >= mp.y as f64
+                                            && x < (mp.x as f64 + ms.width as f64)
+                                            && y < (mp.y as f64 + ms.height as f64)
+                                    }))
+                                    .unwrap_or(false);
+                                if in_bounds {
+                                    println!("[Rust] Restoring position from .settings.dat: ({}, {})", x, y);
+                                    let _ = window.set_position(tauri::Position::Physical(tauri::PhysicalPosition {
+                                        x: x as i32,
+                                        y: y as i32,
+                                    }));
+                                    restored = true;
+                                } else {
+                                    println!("[Rust] Saved position ({}, {}) is off-screen, using safe default", x, y);
+                                }
                             }
                         }
                     }
                 }
             }
+            // 无有效保存位置时，设到主显示器右上角安全区域
+            if !restored {
+                if let Ok(Some(monitor)) = window.primary_monitor() {
+                    let ms = monitor.size();
+                    let safe_x = (ms.width as i32).saturating_sub(200);
+                    let safe_y = 100;
+                    println!("[Rust] Setting safe default position: ({}, {})", safe_x, safe_y);
+                    let _ = window.set_position(tauri::Position::Physical(tauri::PhysicalPosition {
+                        x: safe_x,
+                        y: safe_y,
+                    }));
+                }
+            }
+            // 位置就绪后再显示窗口，避免在错误位置闪烁
+            let _ = window.show();
 
             // Start HTTP Server
             let handle = app.handle().clone();
