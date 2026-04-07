@@ -1048,6 +1048,7 @@ interface ReferenceItemPayload {
   code?: string;
   type: 'diagnosis' | 'medication' | 'examination' | 'lab_test' | 'procedure';
   isTCM?: boolean;
+  idCli?: string;
 }
 
 interface ReferenceFeedbackPayload {
@@ -1746,6 +1747,7 @@ const buildCurrentMedicalPayload = (
         .filter((item) => item.selected)
         .map((item) => ({
           name: item.name,
+          idCli: item.matchedItem?.id,
         }))
     : [];
 
@@ -2461,6 +2463,7 @@ const buildSelectedTreatmentReferenceItemsByType = (
       name: item.name,
       code: item.matchedItem?.code,
       type: actionMap[type] as ReferenceItemPayload['type'],
+      idCli: item.matchedItem?.id,
     }));
 };
 
