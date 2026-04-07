@@ -40,10 +40,10 @@
         </template>
         <template v-else-if="currentView === 'record'">
              <button class="header-btn" @click="currentView = 'consultation'">返回</button>
-             <button class="header-btn" :disabled="isWritingRecord" @click="writeRecordToHIS">
+             <!-- <button class="header-btn" :disabled="isWritingRecord" @click="writeRecordToHIS">
                {{ isWritingRecord ? '回写中...' : '回写病历' }}
-             </button>
-             <button v-if="selectedDiagnosis" class="header-btn" @click="confirmDiagnosisSelection">确认诊断</button>
+             </button> -->
+             <!-- <button v-if="selectedDiagnosis" class="header-btn" @click="confirmDiagnosisSelection">确认诊断</button> -->
              <button class="header-btn primary" @click="handleComplete">生成报告</button>
         </template>
         <template v-else>
@@ -446,7 +446,7 @@
               <div class="ai-card-title-row">
                 <h4>{{ consultationMode === 'tcm' ? '中医辨证' : '推荐诊断' }}</h4>
                 <div class="ai-card-title-actions">
-                  <button
+                  <!-- <button
                     v-if="canOpenDiagnosisPath"
                     class="diagnosis-path-btn"
                     type="button"
@@ -454,7 +454,7 @@
                   >
                     <Icon icon="lucide:workflow" size="14" />
                     <span>查看诊断路径</span>
-                  </button>
+                  </button> -->
                   <button class="ai-recommend-btn" type="button" @click="fetchAIDiagnosis" :disabled="aiLoading">
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><path d="M12 16v-4"></path><path d="M12 8h.01"></path></svg>
                     AI推荐诊断
@@ -543,7 +543,6 @@
                             {{ getReferenceStatusLabel(getDiagnosisReferenceStatus(diag)?.status || 'pending') }}
                           </span>
                           <span class="diag-rate" :class="getDiagRateClass(diag.rate)">{{ diag.rate }}</span>
-                          <span class="diag-select-dot" :class="{ active: selectedDiagnosis?.id === diag.id }"></span>
                         </div>
                       </div>
                       <div class="diag-rationale">{{ diag.rationale }}</div>
@@ -6033,10 +6032,14 @@ const copyToClipboard = () => {
 }
 
 .diagnosis-group-title::before {
-  content: '\26A1';
+  content: '';
   display: inline-block;
+  width: 4px;
+  height: 4px;
+  background: var(--color-info);
+  border-radius: var(--radius-full);
   margin-right: 6px;
-  font-size: 14px;
+  vertical-align: middle;
 }
 
 .diagnosis-group-range {
@@ -6389,40 +6392,19 @@ const copyToClipboard = () => {
   border: none;
   border-bottom: 1px solid rgba(226, 232, 240, 0.6);
   border-radius: 0;
-  padding: 12px 4px 12px 28px;
+  padding: 10px 4px;
   gap: 4px;
   cursor: pointer;
   transition: background var(--duration-normal) var(--ease-out);
   overflow: visible;
 }
 
-.treatment-item::before {
-  content: '';
-  position: absolute;
-  left: 4px;
-  top: 14px;
-  width: 16px;
-  height: 16px;
-  border: 2px solid var(--color-border-medium);
-  border-radius: var(--radius-sm);
-  transition: all var(--duration-normal) var(--ease-out);
-}
-
-.treatment-item.active::before {
-  background: var(--color-info);
-  border-color: var(--color-info);
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='white' stroke-width='4' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='20 6 9 17 4 12'%3E%3C/polyline%3E%3C/svg%3E");
-  background-repeat: no-repeat;
-  background-position: center;
-  background-size: 10px;
-}
 
 .treatment-item:last-child {
   border-bottom: none;
 }
 
 .selected-mark {
-  display: none;
   position: absolute;
   top: 8px;
   left: -2px;
