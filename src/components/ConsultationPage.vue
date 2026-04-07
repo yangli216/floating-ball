@@ -988,8 +988,7 @@ import { medicalDataService, type DiagnosisItem, type Icd10CategoryInfo } from '
 import Pinyin from 'tiny-pinyin';
 import { chat } from '../services/llm';
 import { invoke } from '@tauri-apps/api/core';
-import { once, emitTo, listen } from '@tauri-apps/api/event';
-import { WebviewWindow } from '@tauri-apps/api/webviewWindow';
+import { listen } from '@tauri-apps/api/event';
 import { feedbackService } from '../services/feedback';
 import { trackViewChange, trackClick, trackError, trackFormSubmit, trackRecommendationAction, startTimedOperation } from '../services/operationTracker';
 import BodyPartSelector from './BodyPartSelector.vue';
@@ -1013,12 +1012,9 @@ import {
 import { isFieldApplicable, generateTextsForSymptom } from '../services/textGeneration';
 import { pmphaiService, isPMPHAIConfigured, type BatchSearchResults } from '../services/pmphai';
 import { CONSULTATION_CONFIG, isSymptomSelectionFull } from '../constants/consultationConfig';
-import { WINDOW_SIZES } from '../constants/windowSizes';
-import { useDiagnosisPathStore } from '../stores/diagnosisPath';
-import { buildDiagnosisPathPayload } from '../services/diagnosisPath';
+/* WINDOW_SIZES / diagnosisPath imports removed - feature commented out */
 import type {
   ConsultationAssistAction,
-  DiagnosisPathOption,
 } from '../types/consultationAssist';
 
 const showToast = inject('showToast') as (msg: string, type: 'success' | 'error' | 'info') => void;
@@ -1032,8 +1028,6 @@ const props = defineProps<{
 }>();
 
 const emit = defineEmits(['close', 'consume-auto-trigger']);
-const diagnosisPathStore = useDiagnosisPathStore();
-const DIAGNOSIS_PATH_WINDOW_LABEL = 'diagnosis-path-window';
 
 // --- Interfaces & State Definitions ---
 import type { Diagnosis, Patient, TreatmentRecommendation, FinalRecord } from '../types/consultation';
@@ -1461,10 +1455,9 @@ type DiagnosisDisplayGroup = {
   order: number;
   showHeader: boolean;
 };
-type DiagnosisPathWindowPhase = 'preparing' | 'cache' | 'generating' | 'rendering' | 'success' | 'error';
+/* DiagnosisPathWindowPhase type removed - feature commented out */
 
-const DIAGNOSIS_PATH_GENERATION_TIMEOUT_MS = 60000;
-const DIAGNOSIS_PATH_RENDER_TIMEOUT_MS = 10000;
+/* DIAGNOSIS_PATH timeouts removed - feature commented out */
 
 const buildDiagnosisGroupKey = (category: Icd10CategoryInfo | null) => {
   return category ? `icd10-${category.key}` : 'icd10-unknown';
@@ -1523,100 +1516,7 @@ const toggleDiagnosisGroup = (groupKey: string) => {
   collapsedDiagnosisGroups.value[groupKey] = !isDiagnosisGroupCollapsed(groupKey);
 };
 
-const emitDiagnosisPathStatus = async (payload: {
-  loading: boolean;
-  phase: DiagnosisPathWindowPhase;
-  message: string;
-  detail?: string;
-  clearPayload?: boolean;
-}) => {
-  await emitTo(DIAGNOSIS_PATH_WINDOW_LABEL, 'diagnosis-path:status', payload);
-};
-
-const waitForDiagnosisPathWindowReady = async () => {
-  await new Promise<void>((resolve, reject) => {
-    const timer = setTimeout(() => reject(new Error('诊断路径窗口初始化超时。')), 8000);
-    void once<{ label: string }>('diagnosis-path:ready', ({ payload: ready }) => {
-      if (ready?.label !== DIAGNOSIS_PATH_WINDOW_LABEL) {
-        return;
-      }
-      clearTimeout(timer);
-      resolve();
-    });
-  });
-};
-
-const waitForDiagnosisPathRenderResult = async () => {
-  await new Promise<void>((resolve, reject) => {
-    const timer = setTimeout(() => reject(new Error('诊断路径渲染超时。')), DIAGNOSIS_PATH_RENDER_TIMEOUT_MS);
-
-    void once<{ label: string }>('diagnosis-path:rendered', ({ payload: ready }) => {
-      if (ready?.label !== DIAGNOSIS_PATH_WINDOW_LABEL) {
-        return;
-      }
-      clearTimeout(timer);
-      resolve();
-    });
-
-    void once<{ label: string; message?: string }>('diagnosis-path:render-failed', ({ payload: failed }) => {
-      if (failed?.label !== DIAGNOSIS_PATH_WINDOW_LABEL) {
-        return;
-      }
-      clearTimeout(timer);
-      reject(new Error(failed?.message || '诊断路径渲染失败。'));
-    });
-  });
-};
-
-const withDiagnosisPathTimeout = async <T,>(promise: Promise<T>): Promise<T> => {
-  let timer: ReturnType<typeof setTimeout> | null = null;
-
-  try {
-    return await Promise.race([
-      promise,
-      new Promise<T>((_, reject) => {
-        timer = setTimeout(() => {
-          reject(new Error('诊断路径生成超时。'));
-        }, DIAGNOSIS_PATH_GENERATION_TIMEOUT_MS);
-      }),
-    ]);
-  } finally {
-    if (timer) {
-      clearTimeout(timer);
-    }
-  }
-};
-
-const ensureDiagnosisPathWindowVisible = (pathWindow: WebviewWindow) => {
-  void pathWindow.show().catch((error) => {
-    console.warn('[DiagnosisPath] Failed to show diagnosis path window:', error);
-  });
-  void pathWindow.setFocus().catch((error) => {
-    console.warn('[DiagnosisPath] Failed to focus diagnosis path window:', error);
-  });
-};
-
-const diagnosisPathContext = computed(() => ({
-  patientName: patientInfo.value.naPi || '未知患者',
-  gender: patientInfo.value.sdSexText || '',
-  age: patientInfo.value.ageText || '',
-  chiefComplaint: generatedRecord.value.chiefComplaint || '尚未填写主诉',
-  historyOfPresentIllness: generatedRecord.value.historyOfPresentIllness || '尚未填写现病史',
-  allergyHistory: patientInfo.value.allergyHistory || '未提供过敏史',
-}));
-
-const diagnosisPathOptions = computed<DiagnosisPathOption[]>(() =>
-  aiDiagnoses.value.map((diagnosis, index) => ({
-    id: diagnosis.id || `${diagnosis.code || diagnosis.name}-${index}`,
-    title: diagnosis.name,
-    description: diagnosis.rationale,
-    code: diagnosis.code,
-    meta: diagnosis.rate,
-    caption: diagnosis.id ? `已匹配标准诊断 ${diagnosis.code}` : '未匹配标准库',
-    matched: !!diagnosis.id,
-    selected: selectedDiagnosis.value?.id === diagnosis.id,
-  }))
-);
+/* emitDiagnosisPathStatus / diagnosisPathOptions removed - feature commented out */
 const getPatientAnchorId = (patient?: {
   idPi?: string | number;
   patientId?: string | number;
@@ -1861,133 +1761,7 @@ const resetWorkflowState = () => {
   showKnowledgePanel.value = false;
 };
 
-const canOpenDiagnosisPath = computed(
-  () => consultationMode.value !== 'tcm' && diagnosisPathOptions.value.length > 0
-);
-
-const openDiagnosisPathWindow = async () => {
-  if (!canOpenDiagnosisPath.value) {
-    showToast('当前没有可展示的诊断路径。', 'info');
-    return;
-  }
-
-  const preferredId = selectedDiagnosis.value?.id || diagnosisPathOptions.value[0]?.id;
-  const selectedOption =
-    diagnosisPathOptions.value.find((option) => option.id === preferredId) || diagnosisPathOptions.value[0];
-  const sessionKey = diagnosisPathStore.resolveDiagnosisPathSessionKey(patientInfo.value);
-  const targetKey = diagnosisPathStore.resolveDiagnosisPathTargetKey(selectedOption);
-  const candidateSignature = diagnosisPathStore.resolveDiagnosisPathCandidateSignature(
-    diagnosisPathOptions.value
-  );
-  let pathWindow = await WebviewWindow.getByLabel(DIAGNOSIS_PATH_WINDOW_LABEL);
-  const shouldWaitReady = !pathWindow;
-
-  if (!pathWindow) {
-    pathWindow = new WebviewWindow(DIAGNOSIS_PATH_WINDOW_LABEL, {
-      url: '/?window=diagnosis-path',
-      title: '诊断推理路径',
-      width: WINDOW_SIZES.DIAGNOSIS_PATH.width,
-      height: WINDOW_SIZES.DIAGNOSIS_PATH.height,
-      minWidth: 920,
-      minHeight: 620,
-      center: true,
-      focus: true,
-      resizable: true,
-    });
-
-    await new Promise<void>((resolve, reject) => {
-      pathWindow?.once('tauri://created', () => resolve());
-      pathWindow?.once('tauri://error', (event) => reject(event.payload));
-    });
-  }
-
-  if (shouldWaitReady) {
-    await waitForDiagnosisPathWindowReady();
-  }
-
-  await emitDiagnosisPathStatus({
-    loading: true,
-    phase: 'cache',
-    clearPayload: true,
-    message: '正在检查诊断路径缓存...',
-    detail: '优先复用当前会话中已生成的推理结果。',
-  });
-  ensureDiagnosisPathWindowVisible(pathWindow);
-
-  try {
-    let payload = diagnosisPathStore.getDiagnosisPathCache(
-      sessionKey,
-      targetKey,
-      candidateSignature
-    );
-
-    if (payload) {
-      await emitDiagnosisPathStatus({
-        loading: true,
-        phase: 'rendering',
-        message: '已命中缓存，正在渲染诊断路径...',
-        detail: '正在绘制 Sankey 图和说明面板。',
-      });
-    } else {
-      await emitDiagnosisPathStatus({
-        loading: true,
-        phase: 'generating',
-        message: '正在生成结构化推理链...',
-        detail: '模型会整理支持证据、反证提醒和鉴别要点。',
-      });
-      payload = await withDiagnosisPathTimeout(
-        buildDiagnosisPathPayload(
-          diagnosisPathContext.value,
-          diagnosisPathOptions.value,
-          preferredId
-        )
-      );
-      if (payload) {
-        diagnosisPathStore.setDiagnosisPathCache(
-          sessionKey,
-          targetKey,
-          candidateSignature,
-          payload
-        );
-      }
-    }
-
-    if (!payload) {
-      await emitDiagnosisPathStatus({
-        loading: false,
-        phase: 'error',
-        clearPayload: true,
-        message: '暂时无法生成诊断路径。',
-        detail: '模型未返回可用的结构化推理结果。',
-      });
-      showToast('暂时无法生成诊断路径。', 'info');
-      return;
-    }
-
-    await emitDiagnosisPathStatus({
-      loading: true,
-      phase: 'rendering',
-      message: '诊断路径已生成，正在渲染...',
-      detail: '准备绘制图表并填充右侧说明面板。',
-    });
-    const renderResult = waitForDiagnosisPathRenderResult();
-    await emitTo(DIAGNOSIS_PATH_WINDOW_LABEL, 'diagnosis-path:update', payload);
-    await renderResult;
-  } catch (error) {
-    const message = error instanceof Error ? error.message : '诊断路径处理失败。';
-    await emitDiagnosisPathStatus({
-      loading: false,
-      phase: 'error',
-      clearPayload: true,
-      message,
-      detail: message.includes('超时')
-        ? '当前步骤耗时过长，建议稍后重试或检查模型响应。'
-        : '窗口未能完成图表渲染，请查看控制台日志。',
-    });
-    showToast(message, 'error');
-    return;
-  }
-};
+/* canOpenDiagnosisPath / openDiagnosisPathWindow removed - template usage commented out */
 
 watch(diagnosisGroups, (groups) => {
   const activeKeys = new Set(groups.map(group => group.key));
@@ -2376,55 +2150,7 @@ const applyReferenceFeedback = (payload: ReferenceFeedbackPayload) => {
   }
 };
 
-const writeRecordToHIS = async () => {
-  if (!hasRecordDraft.value) {
-    showToast('请先完善主诉和现病史，再回写病历。', 'info');
-    return;
-  }
-
-  isWritingRecord.value = true;
-  const requestId = `draft-record-${Date.now()}`;
-  try {
-    await invoke('complete_consultation', {
-      result: buildCurrentMedicalPayload(
-        { resultType: 'draft', requestId },
-        { includeDiagnosis: false, includeTreatments: false }
-      ),
-    });
-    feedbackService.logOperation({
-      operationType: 'form_submit',
-      operationName: 'write_record_to_his',
-      details: { consultationId: resolveConsultationId() },
-      success: true,
-    });
-    showToast('主诉和现病史已写回医生站草稿。', 'success');
-  } catch (error) {
-    console.error('[ConsultationPage] Failed to write record draft:', error);
-    trackError('write_record_to_his_failed', error);
-    showToast(`回写病历失败：${error instanceof Error ? error.message : String(error)}`, 'error');
-  } finally {
-    isWritingRecord.value = false;
-  }
-};
-
-const confirmDiagnosisSelection = () => {
-  if (!selectedDiagnosis.value) {
-    showToast('请先选择一个诊断。', 'info');
-    return;
-  }
-
-  feedbackService.logOperation({
-    operationType: 'form_submit',
-    operationName: 'confirm_diagnosis_only',
-    details: {
-      consultationId: resolveConsultationId(),
-      diagnosisName: selectedDiagnosis.value.name,
-      diagnosisCode: selectedDiagnosis.value.code,
-    },
-    success: true,
-  });
-  showToast('已记录当前诊断确认日志，未修改病历。', 'success');
-};
+/* writeRecordToHIS / confirmDiagnosisSelection removed - template usage commented out */
 
 const getTreatmentTagLabel = (type: TreatmentRecommendation['type']): string => {
   switch (type) {
