@@ -93,8 +93,24 @@ async function retryWithBackoff<T>(
   throw lastError;
 }
 
+import { isRegionalMode, getCachedBootstrap, createRegionalSSE } from './regionalClient';
+
 // 获取配置信息
 export function getLLMConfig() {
+  // 区域化模式：从 bootstrap 配置获取（密钥不下发到端，由后端代理处理）
+  if (isRegionalMode()) {
+    const bootstrap = getCachedBootstrap();
+    if (bootstrap?.llm) {
+      return {
+        apiKey: '__REGIONAL_PROXY__', // 占位符，实际请求走后端代理
+        baseUrl: bootstrap.llm.baseUrl,
+        audioBaseUrl: bootstrap.llm.audioBaseUrl || bootstrap.llm.baseUrl,
+        model: bootstrap.llm.model,
+        audioModel: bootstrap.llm.audioModel || DEFAULT_LLM_CONFIG.audioModel,
+      };
+    }
+  }
+
   const apiKey = localStorage.getItem("OPENAI_API_KEY") || import.meta.env.VITE_OPENAI_API_KEY || "";
   // 默认为 OpenAI 官方地址和模型
   const baseUrl = (localStorage.getItem("LLM_BASE_URL") || import.meta.env.VITE_LLM_BASE_URL || DEFAULT_LLM_CONFIG.baseUrl).replace(/\/+$/, "");
@@ -132,7 +148,8 @@ function getConfigAndKey(explicitKey?: string, customConfig?: LLMConfigOverride)
   const model = customConfig?.model || baseConfig.model;
   const audioModel = customConfig?.audioModel || baseConfig.audioModel;
 
-  if (!apiKey) throw new Error("缺少 API Key。请在 .env 设置 VITE_OPENAI_API_KEY 或在 localStorage 设置 OPENAI_API_KEY（以及独立审查AI的配置）。");
+  // 区域化模式下 apiKey 是占位符，不校验
+  if (!apiKey && !isRegionalMode()) throw new Error("缺少 API Key。请在 .env 设置 VITE_OPENAI_API_KEY 或在 localStorage 设置 OPENAI_API_KEY（以及独立审查AI的配置）。");
   return { key: apiKey, baseUrl, audioBaseUrl, model, audioModel };
 }
 
@@ -170,6 +187,20 @@ export async function chatStream(
   onRetry?: (attempt: number, error: any) => void,
   customConfig?: LLMConfigOverride
 ): Promise<void> {
+  // 区域化模式：通过后端 AI 代理
+  if (isRegionalMode() && !customConfig?.apiKey) {
+    const { model } = getConfigAndKey(undefined, customConfig);
+    const payloadMessages = createPayloadMessages(messages);
+    await retryWithBackoff(async () => {
+      await createRegionalSSE('/v1/ai/chat', {
+        model,
+        messages: payloadMessages,
+        stream: true,
+      }, onChunk);
+    }, retryConfig || DEFAULT_RETRY_CONFIG, onRetry);
+    return;
+  }
+
   const { key, baseUrl, model } = getConfigAndKey(apiKey, customConfig);
   const payloadMessages = createPayloadMessages(messages);
 
@@ -276,6 +307,21 @@ export async function chat(
   onRetry?: (attempt: number, error: any) => void,
   customConfig?: LLMConfigOverride
 ): Promise<string> {
+  // 区域化模式：通过后端 AI 代理
+  if (isRegionalMode() && !customConfig?.apiKey) {
+    const { model } = getConfigAndKey(undefined, customConfig);
+    const payloadMessages = createPayloadMessages(messages);
+    return await retryWithBackoff(async () => {
+      const { regionalPost } = await import('./regionalClient');
+      const resp = await regionalPost<{ content: string }>('/v1/ai/chat', {
+        model,
+        messages: payloadMessages,
+        stream: false,
+      });
+      return resp.content;
+    }, retryConfig || DEFAULT_RETRY_CONFIG, onRetry);
+  }
+
   const { key, baseUrl, model } = getConfigAndKey(apiKey, customConfig);
   const payloadMessages = createPayloadMessages(messages);
 
@@ -356,6 +402,20 @@ export async function transcribeAudio(
   onRetry?: (attempt: number, error: any) => void,
   customConfig?: LLMConfigOverride
 ): Promise<string> {
+  // 区域化模式：通过后端语音代理
+  if (isRegionalMode() && !customConfig?.apiKey) {
+    return await retryWithBackoff(async () => {
+      const { regionalPost } = await import('./regionalClient');
+      const arrayBuffer = await blob.arrayBuffer();
+      const base64 = btoa(String.fromCharCode(...new Uint8Array(arrayBuffer)));
+      const resp = await regionalPost<{ text: string }>('/v1/ai/speech/transcribe', {
+        audio: base64,
+        mimeType: blob.type || 'audio/webm',
+      });
+      return resp.text;
+    }, retryConfig || DEFAULT_RETRY_CONFIG, onRetry);
+  }
+
   const { key, audioBaseUrl, audioModel } = getConfigAndKey(apiKey, customConfig);
   const file = new File([blob], "audio.webm", { type: blob.type || "audio/webm" });
   const endpoint = `${audioBaseUrl}/audio/transcriptions`;

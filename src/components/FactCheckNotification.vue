@@ -108,29 +108,29 @@ const getPreviewText = () => {
   position: fixed;
   right: 24px;
   bottom: 24px;
-  background: var(--color-background-white);
-  border-radius: var(--radius-lg);
-  padding: var(--space-md) var(--space-lg);
-  max-width: 320px;
+  background: #fff;
+  border-radius: 10px;
+  padding: 12px 16px;
+  max-width: 300px;
   width: auto;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15); /* Stronger shadow for floating widget */
-  border: 1px solid var(--color-border-light);
-  z-index: 1000; /* Ensure it stays on top of content but below modal overlays */
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.1);
+  border: 1px solid #EEF2F6;
+  z-index: 1000;
   display: flex;
   flex-direction: column;
-  gap: var(--space-sm);
+  gap: 8px;
 }
 
 .notification-header {
   display: flex;
   align-items: center;
-  gap: var(--space-md);
+  gap: 10px;
 }
 
 .header-icon {
-  width: 20px;
-  height: 20px;
-  color: var(--color-primary);
+  width: 18px;
+  height: 18px;
+  color: #2B7FE3;
   flex-shrink: 0;
   display: flex;
   align-items: center;
@@ -144,25 +144,25 @@ const getPreviewText = () => {
 
 .header-title h3 {
   margin: 0;
-  font-size: var(--font-size-md);
-  font-weight: var(--font-weight-semibold);
-  color: var(--color-text-strong);
+  font-size: 13px;
+  font-weight: 600;
+  color: #1E293B;
   line-height: 1.2;
 }
 
 .description {
   margin: 2px 0 0 0;
-  font-size: var(--font-size-xs);
-  color: var(--color-text-muted);
+  font-size: 11px;
+  color: #94A3B8;
 }
 
 .close-btn {
   background: none;
   border: none;
-  color: var(--color-text-muted);
+  color: #94A3B8;
   cursor: pointer;
   padding: 4px;
-  border-radius: var(--radius-sm);
+  border-radius: 4px;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -170,46 +170,45 @@ const getPreviewText = () => {
 }
 
 .close-btn:hover {
-  background: var(--color-background-hover);
-  color: var(--color-text-strong);
+  background: #F0F6FF;
+  color: #2B7FE3;
 }
 
 .notification-content {
-  margin-top: var(--space-xs);
+  margin-top: 4px;
   display: flex;
   flex-direction: column;
-  gap: var(--space-sm);
+  gap: 8px;
 }
 
 .issue-preview {
-  background: var(--color-background-gray);
-  border-radius: var(--radius-md);
-  padding: var(--space-sm) var(--space-md);
+  background: #FAFBFD;
+  border-radius: 6px;
+  padding: 8px 10px;
 }
 
 .preview-text {
-  font-size: var(--font-size-sm);
-  line-height: var(--line-height-normal);
-  color: var(--color-text-medium);
-  margin-bottom: var(--space-sm);
-  font-family: var(--font-body);
+  font-size: 12px;
+  line-height: 1.5;
+  color: #64748B;
+  margin-bottom: 6px;
 }
 
 .issue-badge {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
-  background: var(--color-error-bg, #FEF2F2);
-  color: var(--color-error);
-  padding: 2px 8px;
-  border-radius: var(--radius-sm);
-  font-size: var(--font-size-xs);
-  font-weight: var(--font-weight-medium);
+  gap: 4px;
+  background: rgba(245, 158, 11, 0.1);
+  color: #B45309;
+  padding: 2px 6px;
+  border-radius: 3px;
+  font-size: 11px;
+  font-weight: 600;
 }
 
 .issue-badge svg {
-  width: 14px;
-  height: 14px;
+  width: 12px;
+  height: 12px;
 }
 
 .notification-actions {
@@ -218,20 +217,21 @@ const getPreviewText = () => {
 }
 
 .secondary-button {
-  padding: 6px 16px;
-  background: var(--color-background-white);
-  color: var(--color-primary);
-  border: 1px solid var(--color-primary);
-  border-radius: var(--radius-sm);
-  font-size: var(--font-size-sm);
-  font-weight: var(--font-weight-medium);
+  padding: 4px 12px;
+  background: #fff;
+  color: #2B7FE3;
+  border: 1px solid rgba(43, 127, 227, 0.2);
+  border-radius: 4px;
+  font-size: 12px;
+  font-weight: 500;
   cursor: pointer;
-  transition: all var(--duration-normal) var(--ease-out);
+  transition: all 0.2s;
 }
 
 .secondary-button:hover {
-  background: var(--color-primary);
+  background: #2B7FE3;
   color: white;
+  border-color: #2B7FE3;
 }
 
 .secondary-button:active {

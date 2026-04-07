@@ -2,10 +2,8 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-## important
-web_project is another project that is just show for how to use API ，don't start the project, just read the code and understand how to use the API, and you can also run the web_project to test the API, but don't start the main project, because the main project is a desktop application built with Tauri, and it requires a lot of setup and configuration, and it's not necessary for you to run it, just read the code and understand how it works.
+NO EMOJI
 
-NO EMOJI ！
 ## Project Overview
 
 This is an AI-powered medical assistant desktop application built with Tauri 2.0 + Vue 3 + TypeScript. It presents as a transparent floating ball that expands into various medical consultation interfaces. The app integrates with external HIS (Hospital Information Systems) via HTTP and supports voice-based consultation using Aliyun real-time speech recognition.
@@ -21,7 +19,7 @@ This is an AI-powered medical assistant desktop application built with Tauri 2.0
 
 ```bash
 # Install dependencies
-yarn install  # or: pnpm install
+yarn install
 
 # Development (hot reload)
 yarn tauri dev
@@ -202,13 +200,20 @@ HIS System (HTTP) → Rust HTTP Server → Tauri Events → Vue Components
 
 ## Testing Notes
 
-- No formal test suite currently exists
-- Manual testing workflow:
-  1. Start dev server (`yarn tauri dev`)
-  2. Test ball hover/ring menu interactions
-  3. Test HIS integration via curl: `curl -X POST http://localhost:8899/api/patient/consultation/start -H "Content-Type: application/json" -d '{"patientId":"123","name":"测试患者","gender":"男性","age":"30岁"}'`
-  4. Test voice consultation: Use deep link or HTTP trigger
-  5. Test form consultation: Click left ring button (consultation icon)
+最小质量门禁（见 [AGENTS.md](./AGENTS.md)）：
+
+1. 前端：`yarn build`（必须通过）
+2. Rust 侧：`cargo check`（必须通过）
+3. 若无法完成构建，必须在交付说明中写明阻塞原因
+4. 关键手测清单见 `AGENTS.md` 的"关键手测清单"节（9 条）
+
+HIS 联调快速验证：
+
+```bash
+curl -X POST http://localhost:8899/api/patient/consultation/start \
+  -H "Content-Type: application/json" \
+  -d '{"patientId":"123","name":"测试患者","gender":"男性","age":"30岁"}'
+```
 
 ## Build & Release
 

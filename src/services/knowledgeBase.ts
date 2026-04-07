@@ -1,8 +1,10 @@
 import CryptoJS from 'crypto-js'
+import { isRegionalMode, getCachedBootstrap } from './regionalClient'
 
 /**
  * 知识库检索服务
  * 基于inside云版通用页面接口
+ * 区域化模式下凭证由后端管理，URL 生成通过后端代理
  */
 
 export interface KnowledgeBaseConfig {
@@ -106,9 +108,22 @@ export function buildKnowledgeBaseUrl(
 
 /**
  * 获取知识库配置
- * 从localStorage读取
+ * 区域化模式下从 bootstrap 获取，本地模式从 localStorage 读取
  */
 export function getKnowledgeBaseConfig(): KnowledgeBaseConfig | null {
+  // 区域化模式：检查 bootstrap feature
+  if (isRegionalMode()) {
+    const bootstrap = getCachedBootstrap()
+    if (bootstrap?.knowledgeBase?.enabled) {
+      return {
+        appKey: '__REGIONAL__',
+        appSecret: '__REGIONAL__',
+        baseUrl: bootstrap.knowledgeBase.baseUrl || 'https://inside.pmphai.com'
+      }
+    }
+    return null
+  }
+
   const appKey = localStorage.getItem('KB_APP_KEY')
   const appSecret = localStorage.getItem('KB_APP_SECRET')
   const baseUrl = localStorage.getItem('KB_BASE_URL') || 'https://inside.pmphai.com'

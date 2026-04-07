@@ -722,13 +722,53 @@ src/styles/
 | `promptGuard.ts` | Prompt 注入与泄漏保护 | [src/services/promptGuard.ts](src/services/promptGuard.ts) |
 | `textGeneration.ts` | 主诉/现病史等文本生成辅助 | [src/services/textGeneration.ts](src/services/textGeneration.ts) |
 | `reportGenerator.ts` | 使用报告导出 | [src/services/reportGenerator.ts](src/services/reportGenerator.ts) |
+| `regionalClient.ts` | 区域化核心客户端：终端注册、bootstrap 配置拉取、心跳、JWT 鉴权、SSE 流式代理 | [src/services/regionalClient.ts](src/services/regionalClient.ts) |
+| `promptOverride.ts` | 远程 Prompt 覆盖层：管理端发布的自定义 prompt 替换本地默认值 | [src/services/promptOverride.ts](src/services/promptOverride.ts) |
+| `auditUploader.ts` | 审计事件批量上报：离线队列 + 定时刷盘到区域平台 | [src/services/auditUploader.ts](src/services/auditUploader.ts) |
 
 ### 当前模板/映射读取策略
 
-1. `templateService.ts` 以本地 JSON 模板为主。
-2. `medicalData.ts` 以本地 CSV / JSON 目录数据为主，并负责诊断、药品、检查项目的匹配。
+1. `templateService.ts` 以本地 JSON 模板为主；区域化模式下优先从远程缓存读取，本地仍作为兜底。
+2. `medicalData.ts` 以本地 CSV / JSON 目录数据为主；区域化模式下可通过 `syncRemoteData()` 增量同步远程数据。
 3. `catalog` 匹配归一化规则固定为：小写后去除空格、连字符、下划线（`/[\s_-]/g`），用于兼容 `tcm_diagnoses/tcm-diagnoses/tcm diagnoses` 等格式。
-4. 西医推荐诊断的 UI 分组固定按 ICD-10 类目码前三位做章节归类；当编码无法解析到标准章节时，前端回退到“未分类/待确认”分组，避免丢失候选项。
+4. 西医推荐诊断的 UI 分组固定按 ICD-10 类目码前三位做章节归类；当编码无法解析到标准章节时，前端回退到"未分类/待确认"分组，避免丢失候选项。
+
+### 区域化模式运行链路
+
+当 `REGIONAL_ENABLED=true` 时，应用启动流程扩展为：
+
+```
+main.ts mount
+    ↓
+isRegionalMode() === true ?
+    ↓ Yes
+initializeRegionalClient()
+    ├─ registerDevice() → POST /v1/client/register
+    ├─ getBootstrapConfig() → GET /v1/client/bootstrap
+    └─ startHeartbeat() (30s interval)
+    ↓
+Promise.allSettled([
+    syncRemotePrompts(),    → GET /v1/client/prompts/delta
+    syncRemoteTemplates(),  → GET /v1/client/templates/delta
+    syncRemoteData(),       → GET /v1/client/mappings/delta
+])
+    ↓
+startAuditUploader() (30s batch upload)
+```
+
+区域化模式下各服务的路由变化：
+
+| 服务 | 本地模式 | 区域化模式 |
+|------|----------|-----------|
+| LLM Chat (stream) | 直连 apiUrl + apiKey | → SSE /v1/ai/chat (后端持有 apiKey) |
+| LLM Chat (non-stream) | 直连 apiUrl + apiKey | → POST /v1/ai/chat |
+| 语音转写 | 直连 Whisper | → POST /v1/ai/speech/transcribe |
+| 阿里实时语音 | 直连 DashScope | → POST /v1/ai/speech/realtime |
+| Prompt 来源 | 本地 prompts/index.ts | bootstrap + delta 覆盖 → 本地兜底 |
+| 模板来源 | 本地 templates.json | delta 同步 → localStorage 缓存 → 本地兜底 |
+| 医学数据 | 本地 CSV/JSON | delta 同步 → localStorage 缓存 → 本地兜底 |
+| 操作日志 | 仅本地 SQLite | 本地写入 + auditUploader 批量上报 |
+| Reviewer/PMPHAI/KB 配置 | localStorage | bootstrap 下发 |
 
 ### 当前本地桥接与知识库链路
 

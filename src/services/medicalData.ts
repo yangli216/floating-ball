@@ -10,6 +10,7 @@ import tcmDiagnosesRaw from '../assets/tcm-diagnoses.csv?raw';
 import tcmSyndromesRaw from '../assets/tcm-syndromes.csv?raw';
 // @ts-ignore
 import tcmTreatmentsRaw from '../assets/tcm-treatments.csv?raw';
+import { isRegionalMode, regionalGet } from './regionalClient';
 
 export interface DiagnosisItem {
   id: string;
@@ -640,6 +641,119 @@ class MedicalDataService {
     const letterValue = match[1].charCodeAt(0) - 65;
     const numberValue = Number.parseInt(match[2], 10);
     return (letterValue * 100) + numberValue;
+  }
+
+  // ─── 区域化远程数据同步 ────────────────────────────────────────────────
+
+  private static readonly DATA_CACHE_KEY = 'REGIONAL_MEDICAL_DATA_CACHE';
+  private static readonly DATA_VERSION_KEY = 'REGIONAL_MEDICAL_DATA_VERSION';
+
+  /**
+   * 从 core-service 增量同步医学数据包
+   * 服务端按机构管理数据，返回 CSV 格式数据
+   */
+  async syncRemoteData(): Promise<void> {
+    if (!isRegionalMode()) return;
+
+    try {
+      const currentVersion = localStorage.getItem(MedicalDataService.DATA_VERSION_KEY) || '0';
+      const resp = await regionalGet<{
+        version: string;
+        diagnoses?: string;
+        medicines?: string;
+        items?: string;
+        tcmDiagnoses?: string;
+        tcmSyndromes?: string;
+        tcmTreatments?: string;
+      }>(`/v1/client/mappings/delta?version=${encodeURIComponent(currentVersion)}`);
+
+      let updated = false;
+
+      if (resp.diagnoses) {
+        this.catalog.diagnoses = this.loadDiagnosesFromRaw(resp.diagnoses);
+        updated = true;
+      }
+      if (resp.medicines) {
+        this.catalog.medicines = this.loadMedicinesFromRaw(resp.medicines);
+        updated = true;
+      }
+      if (resp.items) {
+        this.catalog.items = this.loadItemsFromRaw(resp.items);
+        updated = true;
+      }
+      if (resp.tcmDiagnoses) {
+        this.catalog.tcmDiagnoses = this.loadTCMItemsFromRaw(resp.tcmDiagnoses);
+        updated = true;
+      }
+      if (resp.tcmSyndromes) {
+        this.catalog.tcmSyndromes = this.loadTCMItemsFromRaw(resp.tcmSyndromes);
+        updated = true;
+      }
+      if (resp.tcmTreatments) {
+        this.catalog.tcmTreatments = this.loadTCMItemsFromRaw(resp.tcmTreatments);
+        updated = true;
+      }
+
+      if (updated) {
+        // 缓存到 localStorage（用于离线场景）
+        localStorage.setItem(MedicalDataService.DATA_CACHE_KEY, JSON.stringify(this.catalog));
+        localStorage.setItem(MedicalDataService.DATA_VERSION_KEY, resp.version);
+        console.log(`[MedicalData] Synced data, version=${resp.version}`);
+      }
+    } catch (err) {
+      console.warn('[MedicalData] Remote sync failed, using local data:', err);
+      // 尝试从 localStorage 恢复缓存
+      this.restoreFromCache();
+    }
+  }
+
+  private restoreFromCache(): void {
+    try {
+      const cached = localStorage.getItem(MedicalDataService.DATA_CACHE_KEY);
+      if (cached) {
+        const data = JSON.parse(cached) as MedicalCatalog;
+        if (data.diagnoses?.length > 0) this.catalog = data;
+        console.log('[MedicalData] Restored from cache');
+      }
+    } catch { /* ignore */ }
+  }
+
+  private loadDiagnosesFromRaw(raw: string): DiagnosisItem[] {
+    const records = this.parseCSV(raw);
+    return records.map(r => ({
+      id: r.id,
+      code: r.code,
+      name: r.name,
+      keywords: this.parseKeywords(r.keywords)
+    }));
+  }
+
+  private loadMedicinesFromRaw(raw: string): MedicineItem[] {
+    const records = this.parseCSV(raw);
+    return records.map(r => ({
+      id: r.id,
+      name: r.name,
+      spec: r.spec
+    }));
+  }
+
+  private loadItemsFromRaw(raw: string): MedicalItem[] {
+    const records = this.parseCSV(raw);
+    return records.map(r => ({
+      id: r.id,
+      name: r.name,
+      category: r.category
+    }));
+  }
+
+  private loadTCMItemsFromRaw(raw: string): TCMDiagnosisItem[] {
+    const records = this.parseCSV(raw);
+    return records.map(r => ({
+      id: r.id,
+      code: r.code,
+      name: r.name,
+      keywords: this.parseKeywords(r.keywords)
+    }));
   }
 }
 

@@ -1,4 +1,5 @@
 import { invoke } from '@tauri-apps/api/core';
+import { enqueueAuditEvent } from './auditUploader';
 import type {
   SessionType,
   SessionStatus,
@@ -33,6 +34,15 @@ class FeedbackService {
       });
       this.currentSessionId = sessionId;
       console.log(`[FeedbackService] Session started: ${sessionId} (${sessionType})`);
+
+      // 区域化双写
+      enqueueAuditEvent('session', {
+        sessionId,
+        sessionType,
+        patientId,
+        action: 'start',
+      });
+
       return sessionId;
     } catch (error) {
       console.error('[FeedbackService] Failed to start session:', error);
@@ -121,6 +131,18 @@ class FeedbackService {
       });
 
       console.log(`[FeedbackService] Feedback saved: ${feedbackId} (${feedback.feedbackType} on ${feedback.targetType})`);
+
+      // 区域化双写
+      enqueueAuditEvent('feedback', {
+        feedbackId,
+        sessionId,
+        targetType: feedback.targetType,
+        targetId: feedback.targetId,
+        feedbackType: feedback.feedbackType,
+        rating: feedback.rating,
+        reason: feedback.reason,
+      });
+
       return feedbackId;
     } catch (error) {
       console.error('[FeedbackService] Failed to save feedback:', error);
@@ -153,6 +175,17 @@ class FeedbackService {
       });
 
       console.log(`[FeedbackService] Recommendation saved: ${recId} (${rec.recType})`);
+
+      // 区域化双写
+      enqueueAuditEvent('feedback', {
+        recommendationId: recId,
+        sessionId,
+        recType: rec.recType,
+        matched: rec.matched,
+        matchConfidence: rec.matchConfidence,
+        latencyMs: rec.latencyMs,
+      });
+
       return recId;
     } catch (error) {
       console.error('[FeedbackService] Failed to save recommendation:', error);
@@ -173,6 +206,16 @@ class FeedbackService {
         details: log.details ? JSON.stringify(log.details) : null,
         success: log.success !== false,
         durationMs: log.durationMs || null
+      });
+
+      // 区域化双写：本地写入成功后加入上报队列
+      enqueueAuditEvent('operation', {
+        sessionId,
+        operationType: log.operationType,
+        operationName: log.operationName,
+        details: log.details,
+        success: log.success !== false,
+        durationMs: log.durationMs,
       });
 
       console.log(`[FeedbackService] Operation logged: ${log.operationType} - ${log.operationName}`);
@@ -197,6 +240,15 @@ class FeedbackService {
       });
 
       console.log(`[FeedbackService] Metric recorded: ${metric.metricType} = ${metric.metricValue} ${metric.unit}`);
+
+      // 区域化双写
+      enqueueAuditEvent('metric', {
+        sessionId,
+        metricType: metric.metricType,
+        metricValue: metric.metricValue,
+        unit: metric.unit,
+        context: metric.context,
+      });
     } catch (error) {
       console.error('[FeedbackService] Failed to record metric:', error);
       // Don't throw - metric recording failures shouldn't break the app

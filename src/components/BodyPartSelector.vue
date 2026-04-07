@@ -654,8 +654,8 @@ onMounted(() => {
   display: flex;
   justify-content: center;
   align-items: center;
-  background: var(--color-primary-50);
-  border: 1px solid var(--color-border-light);
+  background: #FAFBFD;
+  border: 1px solid #EEF2F6;
   border-radius: 8px;
   padding: 10px 5px;
   min-height: 400px;
@@ -688,27 +688,27 @@ onMounted(() => {
   transition: all 0.25s ease;
 }
 
-/* Hover 效果 - 明显高亮 */
+/* Hover 效果 */
 .body-view :deep(.body-part-group:hover path) {
   filter: brightness(1.3) saturate(1.2);
-  stroke: var(--color-primary);
+  stroke: #2B7FE3;
   stroke-width: 1.5;
   stroke-opacity: 0.6;
 }
 
-/* Active 效果 - 主题色半透明覆盖 */
+/* Active 效果 */
 .body-view :deep(.body-part-group.active path) {
-  fill: var(--color-primary-200) !important;
-  stroke: var(--color-primary) !important;
+  fill: rgba(43, 127, 227, 0.2) !important;
+  stroke: #2B7FE3 !important;
   stroke-width: 2.5;
-  filter: drop-shadow(0 0 4px var(--color-primary-200));
+  filter: drop-shadow(0 0 4px rgba(43, 127, 227, 0.2));
 }
 
 /* Active + Hover 叠加效果 */
 .body-view :deep(.body-part-group.active:hover path) {
-  fill: var(--color-primary-200) !important;
-  stroke: var(--color-primary-dark) !important;
-  filter: drop-shadow(0 0 6px var(--color-primary-200));
+  fill: rgba(43, 127, 227, 0.25) !important;
+  stroke: #1A6FD5 !important;
+  filter: drop-shadow(0 0 6px rgba(43, 127, 227, 0.25));
 }
 
 /* 症状容器 - 固定高度防止跳动 */
@@ -720,8 +720,8 @@ onMounted(() => {
 }
 
 .part-symptoms {
-  background: var(--color-primary-50);
-  border: 1px solid var(--color-border-light);
+  background: #FAFBFD;
+  border: 1px solid #EEF2F6;
   border-radius: 8px;
   padding: 10px;
   animation: fadeIn 0.3s ease;
@@ -778,28 +778,27 @@ onMounted(() => {
 }
 
 .symptom-chip {
-  padding: 5px 10px;
-  font-size: 11px;
-  background: var(--color-primary-100);
-  border: 1px solid var(--color-primary-200);
-  border-radius: 6px;
-  color: var(--color-primary);
+  padding: 4px 10px;
+  font-size: 12px;
+  background: #fff;
+  border: 1px solid #E2E8F0;
+  border-radius: 4px;
+  color: #475569;
   cursor: pointer;
-  transition: all var(--duration-normal) var(--ease-out);
+  transition: all 0.2s ease;
 }
 
 .symptom-chip:hover {
-  background: var(--color-primary-200);
-  border-color: var(--color-primary);
-  transform: translateY(-1px);
+  background: #F0F6FF;
+  border-color: rgba(43, 127, 227, 0.3);
+  color: #2B7FE3;
 }
 
 .symptom-chip.active {
-  background: var(--color-primary);
-  border-color: var(--color-primary-dark);
-  color: var(--color-background-white);
+  background: #2B7FE3;
+  border-color: #1A6FD5;
+  color: #fff;
   font-weight: 500;
-  box-shadow: 0 2px 8px var(--color-primary-200);
 }
 
 .no-symptoms {

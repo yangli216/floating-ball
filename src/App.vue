@@ -555,7 +555,7 @@ const openInsideCloudHome = async () => {
   display: flex;
   align-items: center;
   justify-content: center;
-  position: absolute; /* 绝对定位锚定 */
+  position: absolute;
   top: 0;
   left: 0;
   background: transparent;
@@ -571,22 +571,41 @@ const openInsideCloudHome = async () => {
 }
 
 .floating-ball {
-  width: 56px; /* 进一步压缩球体，留出绝对安全的边距 */
-  height: 56px;
+  width: 52px;
+  height: 52px;
   border-radius: 50%;
-  background: transparent; /* 移除背景，让机器人图片直接显示 */
+  background: linear-gradient(135deg, #4DA2FF 0%, #2B7FE3 50%, #1A6FD5 100%);
   display: flex;
   align-items: center;
   justify-content: center;
   cursor: move;
   user-select: none;
-  transition: all 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+  transition: all 0.35s cubic-bezier(0.34, 1.56, 0.64, 1);
   will-change: transform, box-shadow;
   transform: translateZ(0);
   position: relative;
   z-index: 5;
-  box-shadow: none; /* 移除阴影 */
-  outline: none; /* 移除默认选中框 */
+  box-shadow:
+    0 2px 8px rgba(43, 127, 227, 0.3),
+    0 4px 16px rgba(43, 127, 227, 0.15);
+  outline: none;
+}
+
+/* 呼吸光晕动画 */
+.floating-ball::before {
+  content: '';
+  position: absolute;
+  inset: -3px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, rgba(77, 162, 255, 0.4), rgba(43, 127, 227, 0.2));
+  z-index: -1;
+  opacity: 0.6;
+  animation: ball-breathe 3s ease-in-out infinite;
+}
+
+@keyframes ball-breathe {
+  0%, 100% { transform: scale(1); opacity: 0.4; }
+  50% { transform: scale(1.15); opacity: 0.7; }
 }
 
 /* 环绕菜单层 */
@@ -597,34 +616,75 @@ const openInsideCloudHome = async () => {
   z-index: 1;
 }
 
-/* 双重保障：JS 驱动 (is-active) 或 CSS 原生 Hover 均可触发 */
+/* 展开时的柔和光晕背景 */
+.ring-menu::before {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 130px;
+  height: 130px;
+  margin-top: -65px;
+  margin-left: -65px;
+  border-radius: 50%;
+  background: radial-gradient(
+    circle,
+    rgba(240, 245, 255, 0.92) 0%,
+    rgba(235, 243, 255, 0.75) 45%,
+    rgba(230, 240, 255, 0.3) 70%,
+    transparent 100%
+  );
+  opacity: 0;
+  transform: scale(0.5);
+  transition: all 0.35s cubic-bezier(0.34, 1.56, 0.64, 1);
+  z-index: -1;
+}
+
+.ring-menu.is-active::before {
+  opacity: 1;
+  transform: scale(1);
+}
+
+/* JS 驱动 (is-active) 或 CSS 原生 Hover 均可触发 */
 .ring-menu.is-active {
   pointer-events: auto;
 }
 
 .floating-ball:hover,
 .floating-ball.is-hovered {
-  transform: scale(1.05);
+  transform: scale(1.08);
+  box-shadow:
+    0 3px 12px rgba(43, 127, 227, 0.35),
+    0 6px 24px rgba(43, 127, 227, 0.2);
 }
 
-/* 环绕菜单按钮基础样式 */
+.floating-ball:hover::before,
+.floating-ball.is-hovered::before {
+  animation-play-state: paused;
+  opacity: 0.8;
+  transform: scale(1.2);
+}
+
+/* 环绕菜单按钮 */
 .ring-btn {
   position: absolute;
-  width: 38px;
-  height: 38px;
+  width: 34px;
+  height: 34px;
   border-radius: 50%;
-  border: none;
-  background: rgba(255, 255, 255, 0.95);
-  color: var(--color-text-weak);
-  box-shadow: 0 4px 12px rgba(0,0,0,0.12);
+  border: 1px solid rgba(43, 127, 227, 0.08);
+  background: rgba(255, 255, 255, 0.92);
+  color: #6B7B8D;
+  box-shadow:
+    0 1px 4px rgba(0, 0, 0, 0.06),
+    0 2px 8px rgba(43, 127, 227, 0.06);
   display: flex;
   align-items: center;
   justify-content: center;
   cursor: pointer;
   opacity: 0;
   pointer-events: none;
-  transform: scale(0.4);
-  transition: all 0.3s var(--ease-smooth);
+  transform: scale(0.3);
+  transition: all 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
 }
 
 .ring-menu.is-active .ring-btn {
@@ -632,35 +692,42 @@ const openInsideCloudHome = async () => {
   pointer-events: auto;
   transform: scale(1);
 }
+
+/* 按钮依次弹出的延迟动画 */
+.ring-menu.is-active .ring-btn.top { transition-delay: 0ms; }
+.ring-menu.is-active .ring-btn.right { transition-delay: 40ms; }
+.ring-menu.is-active .ring-btn.bottom { transition-delay: 80ms; }
+.ring-menu.is-active .ring-btn.left { transition-delay: 120ms; }
+
 .ring-btn:hover,
 .ring-btn.manual-hover {
   background: #fff;
-  color: var(--color-primary-dark);
-  transform: scale(1.1) !important;
-  box-shadow: 0 6px 14px rgba(121, 194, 255, 0.3);
+  color: #2B7FE3;
+  border-color: rgba(43, 127, 227, 0.2);
+  transform: scale(1.12) !important;
+  box-shadow:
+    0 2px 8px rgba(43, 127, 227, 0.15),
+    0 4px 16px rgba(43, 127, 227, 0.1);
 }
 
-.ring-icon { width: 18px; height: 18px; }
+.ring-btn:active {
+  transform: scale(0.95) !important;
+  transition-duration: 0.1s;
+}
 
-/* 按钮分布：安全距离 (18px)，确保在 160x160 窗口内完全舒展 */
-.ring-btn.top { top: 18px; left: 50%; margin-left: -19px; }
-.ring-btn.right { top: 50%; right: 18px; margin-top: -19px; }
-.ring-btn.bottom { bottom: 18px; left: 50%; margin-left: -19px; }
-.ring-btn.left { top: 50%; left: 18px; margin-top: -19px; }
+.ring-icon { width: 16px; height: 16px; stroke-width: 1.8; }
 
-/* 未激活时的收缩动画 
-   逻辑：当菜单不在激活状态(is-active) 且 容器未被悬停(:hover) 时应用隐藏样式 
-*/
-/* 未激活时的收缩动画
-   逻辑：当菜单不在激活状态(is-active) 且 容器未被悬停(:hover) 时应用隐藏样式
-*/
-.ring-menu:not(.is-active):not(div:hover > *) .ring-btn.top { transform: translateY(15px) scale(0.1); }
-.ring-menu:not(.is-active):not(div:hover > *) .ring-btn.right { transform: translateX(-15px) scale(0.1); }
-.ring-menu:not(.is-active):not(div:hover > *) .ring-btn.bottom { transform: translateY(-15px) scale(0.1); }
-.ring-menu:not(.is-active):not(div:hover > *) .ring-btn.left { transform: translateX(15px) scale(0.1); }
+/* 按钮分布位置 */
+.ring-btn.top { top: 16px; left: 50%; margin-left: -17px; }
+.ring-btn.right { top: 50%; right: 16px; margin-top: -17px; }
+.ring-btn.bottom { bottom: 16px; left: 50%; margin-left: -17px; }
+.ring-btn.left { top: 50%; left: 16px; margin-top: -17px; }
 
-
-/* 机器人图片模式下无需伪元素内发光 */
+/* 未激活时的收缩动画 */
+.ring-menu:not(.is-active):not(div:hover > *) .ring-btn.top { transform: translateY(12px) scale(0.1); }
+.ring-menu:not(.is-active):not(div:hover > *) .ring-btn.right { transform: translateX(-12px) scale(0.1); }
+.ring-menu:not(.is-active):not(div:hover > *) .ring-btn.bottom { transform: translateY(-12px) scale(0.1); }
+.ring-menu:not(.is-active):not(div:hover > *) .ring-btn.left { transform: translateX(12px) scale(0.1); }
 
 .ball-content {
   width: 100%;
@@ -674,21 +741,21 @@ const openInsideCloudHome = async () => {
 }
 
 .robot-avatar {
-  width: 56px;
-  height: 56px;
+  width: 48px;
+  height: 48px;
   border-radius: 50%;
   object-fit: cover;
-  transition: transform 0.4s ease;
+  transition: transform 0.35s cubic-bezier(0.34, 1.56, 0.64, 1);
   pointer-events: none;
+  filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.1));
 }
 
 .floating-ball:hover .robot-avatar,
 .floating-ball.is-hovered .robot-avatar {
-  transform: scale(1.08);
+  transform: scale(1.06);
 }
 
 .tooltip {
-  /* 已移除 Tooltip，改用环绕菜单 */
   display: none;
 }
 

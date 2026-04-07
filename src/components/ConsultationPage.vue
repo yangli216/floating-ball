@@ -324,13 +324,26 @@
                   </div>
                 </div>
                 <div class="recommendation-chips">
-                  <button
+                  <label
                     v-for="rec in getSymptomRecommendations(item.key)"
                     :key="rec.key"
                     class="recommendation-chip"
-                    @click="selectSymptom(rec)"
-                    :title="'点击添加: ' + rec.name"
-                  >{{ rec.name }} +</button>
+                    :class="{ checked: isCompanionSelected(rec.key) }"
+                  >
+                    <input
+                      type="checkbox"
+                      class="companion-checkbox"
+                      :checked="isCompanionSelected(rec.key)"
+                      @change="toggleCompanionSymptom(rec.key)"
+                    />
+                    <span class="companion-name">{{ rec.name }}</span>
+                    <button
+                      type="button"
+                      class="companion-add-btn"
+                      @click.prevent.stop="selectSymptom(rec)"
+                      title="展开详细问诊"
+                    >+</button>
+                  </label>
                 </div>
               </div>
             </div>
@@ -432,15 +445,21 @@
             <div v-if="showDiagnosisCard" class="ai-card">
               <div class="ai-card-title-row">
                 <h4>{{ consultationMode === 'tcm' ? '中医辨证' : '推荐诊断' }}</h4>
-                <button
-                  v-if="canOpenDiagnosisPath"
-                  class="diagnosis-path-btn"
-                  type="button"
-                  @click="openDiagnosisPathWindow"
-                >
-                  <Icon icon="lucide:workflow" size="14" />
-                  <span>查看诊断路径</span>
-                </button>
+                <div class="ai-card-title-actions">
+                  <button
+                    v-if="canOpenDiagnosisPath"
+                    class="diagnosis-path-btn"
+                    type="button"
+                    @click="openDiagnosisPathWindow"
+                  >
+                    <Icon icon="lucide:workflow" size="14" />
+                    <span>查看诊断路径</span>
+                  </button>
+                  <button class="ai-recommend-btn" type="button" @click="fetchAIDiagnosis" :disabled="aiLoading">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><path d="M12 16v-4"></path><path d="M12 8h.01"></path></svg>
+                    AI推荐诊断
+                  </button>
+                </div>
               </div>
 
               <!-- Error Message -->
@@ -523,7 +542,8 @@
                           >
                             {{ getReferenceStatusLabel(getDiagnosisReferenceStatus(diag)?.status || 'pending') }}
                           </span>
-                          <span class="diag-rate">{{ diag.rate }}</span>
+                          <span class="diag-rate" :class="getDiagRateClass(diag.rate)">{{ diag.rate }}</span>
+                          <span class="diag-select-dot" :class="{ active: selectedDiagnosis?.id === diag.id }"></span>
                         </div>
                       </div>
                       <div class="diag-rationale">{{ diag.rationale }}</div>
@@ -586,25 +606,28 @@
             <div class="ai-card" v-if="selectedDiagnosis && showTreatmentCard">
               <div class="ai-card-title-row">
                 <div class="treatment-card-heading">
-                  <h4>推荐方案 (基于 {{ selectedDiagnosis.name }})</h4>
-                  <p class="treatment-card-desc">推荐方案支持多选后按分组一次引入；暂不支持引用的处置建议会单独标出。</p>
-                </div>
-                <div v-if="visibleTreatmentRecommendations.length > 0" class="treatment-summary-pills">
-                  <span class="treatment-summary-pill medicine">已选用药 {{ selectedMedicineCount }}</span>
-                  <span class="treatment-summary-pill exam">已选检查 {{ selectedExamCount }}</span>
-                  <span class="treatment-summary-pill lab-test">已选检验 {{ selectedLabTestCount }}</span>
-                  <span class="treatment-summary-pill procedure">已选处置 {{ selectedProcedureCount }}</span>
+                  <h4><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#2B7FE3" stroke-width="2"><path d="M14 9V5a3 3 0 0 0-3-3l-4 9v11h11.28a2 2 0 0 0 2-1.7l1.38-9a2 2 0 0 0-2-2.3zM7 22H4a2 2 0 0 1-2-2v-7a2 2 0 0 1 2-2h3"></path></svg> 推荐方案（基于【{{ selectedDiagnosis.name }}】）</h4>
                 </div>
               </div>
+              <p class="treatment-card-desc">（勾选需要同步到PHIS的处置项目，再一次引入所选处置。）</p>
               
               <div v-if="anyRecommendationLoading" class="loading-overlay embedded">
-                <div class="ai-spinner">
-                  <div class="spinner-ring"></div>
-                  <div class="spinner-core"></div>
+                <div class="treatment-loading-icon">
+                  <svg width="48" height="48" viewBox="0 0 48 48" fill="none">
+                    <circle cx="24" cy="20" r="10" fill="#E8F1FF" stroke="#2B7FE3" stroke-width="1.5"/>
+                    <circle cx="24" cy="18" r="3" fill="#2B7FE3"/>
+                    <rect x="16" y="30" width="16" height="12" rx="3" fill="#E8F1FF" stroke="#2B7FE3" stroke-width="1.5"/>
+                    <path d="M20 36h8" stroke="#2B7FE3" stroke-width="1.5" stroke-linecap="round"/>
+                    <path d="M20 39h5" stroke="#2B7FE3" stroke-width="1.5" stroke-linecap="round"/>
+                    <circle cx="21" cy="17" r="1" fill="#fff"/>
+                    <circle cx="27" cy="17" r="1" fill="#fff"/>
+                    <path d="M22 21c0 0 1 1.5 2 1.5s2-1.5 2-1.5" stroke="#fff" stroke-width="1" stroke-linecap="round"/>
+                  </svg>
+                  <div class="treatment-loading-pulse"></div>
                 </div>
                 <div class="loading-content">
-                  <p class="loading-title">正在加载推荐方案...</p>
-                  <p class="loading-desc">正在智能匹配用药、检查、检验与处置项目</p>
+                  <p class="loading-title">正在智能推荐方案</p>
+                  <p class="loading-desc">正在匹配医院标准库和医嘱目录...</p>
                 </div>
               </div>
 
@@ -617,22 +640,11 @@
                   class="treatment-section"
                 >
                   <div class="treatment-section-header">
-                    <div>
-                      <h5>{{ section.title }}</h5>
-                      <p>{{ section.description }}</p>
+                    <h5>{{ section.title }}</h5>
+                    <div class="treatment-section-header-right">
+                      <span class="treatment-section-pill"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 9V5a3 3 0 0 0-3-3l-4 9v11h11.28a2 2 0 0 0 2-1.7l1.38-9a2 2 0 0 0-2-2.3zM7 22H4a2 2 0 0 1-2-2v-7a2 2 0 0 1 2-2h3"></path></svg> {{ section.items.length }} 项推荐</span>
+                      <span class="treatment-section-pill strong"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg> {{ section.selectedCount }} 项已选</span>
                     </div>
-                    <button
-                      type="button"
-                      class="item-reference-btn"
-                      :disabled="hasPendingReferenceRequest || section.selectedCount === 0"
-                      @click.stop="referenceSelectedTreatmentsToPHIS(section.type)"
-                    >
-                      {{ getTreatmentReferenceButtonLabel(section.action, section.actionLabel) }}
-                    </button>
-                  </div>
-                  <div class="treatment-section-meta">
-                    <span class="treatment-section-pill">{{ section.items.length }} 项推荐</span>
-                    <span class="treatment-section-pill strong">{{ section.selectedCount }} 项已选</span>
                   </div>
                   <div class="treatment-list">
                     <div 
@@ -757,9 +769,11 @@
 
       <!-- Fixed Action Area -->
       <div class="fixed-action-area">
-        <button class="submit-btn" @click="handleComplete">
-          <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>
-          完成
+        <button class="writeback-btn" @click="handleBatchWriteBack" :disabled="!canBatchWriteBack">
+          一键回写
+        </button>
+        <button class="back-btn" @click="$emit('close')">
+          返回
         </button>
       </div>
     </div>
@@ -1128,6 +1142,32 @@ const categoryFilterRef = ref<HTMLElement | null>(null);
 // Selection mode for sidebar tabs
 const selectionMode = ref<'common' | 'bodyPart' | 'system'>('common');
 const consultationMode = ref<'western' | 'tcm'>('western');
+
+// 伴随症状：仅勾选标记，不展开详细问诊表单
+const companionSymptoms = ref<Set<string>>(new Set());
+
+const toggleCompanionSymptom = (symptomKey: string) => {
+  const newSet = new Set(companionSymptoms.value);
+  if (newSet.has(symptomKey)) {
+    newSet.delete(symptomKey);
+  } else {
+    newSet.add(symptomKey);
+  }
+  companionSymptoms.value = newSet;
+};
+
+const isCompanionSelected = (symptomKey: string) => {
+  return companionSymptoms.value.has(symptomKey);
+};
+
+// 获取所有伴随症状名称列表（用于病历生成）
+const companionSymptomNames = computed(() => {
+  return Array.from(companionSymptoms.value)
+    .map(key => {
+      const s = symptoms.value.find((item: any) => item.key === key);
+      return s ? s.name : key;
+    });
+});
 
 // 伴随症状推荐：per-symptom recommendations
 const getSymptomRecommendations = (symptomKey: string) => {
@@ -2451,6 +2491,15 @@ const getDiagnosisReferenceButtonLabel = (diagnosis: Diagnosis): string => {
   return '引用诊断';
 };
 
+const getDiagRateClass = (rate: string | undefined): string => {
+  if (!rate) return '';
+  const num = parseInt(rate);
+  if (isNaN(num)) return '';
+  if (num >= 70) return 'rate-high';
+  if (num >= 60) return 'rate-medium';
+  return 'rate-low';
+};
+
 const isDiagnosisReferenceDisabled = (diagnosis: Diagnosis): boolean => {
   const status = getDiagnosisReferenceStatus(diagnosis)?.status;
   return status === 'success' || hasPendingReferenceRequest.value;
@@ -2474,15 +2523,7 @@ const getTreatmentReferenceAction = (
   return null;
 };
 
-const getTreatmentReferenceButtonLabel = (
-  action: Exclude<ReferenceAction, 'diagnosis'>,
-  fallback: string
-): string => {
-  if (hasPendingReferenceRequest.value && activeReferenceRequest.value?.action === action) {
-    return '等待回执...';
-  }
-  return fallback;
-};
+/* getTreatmentReferenceButtonLabel removed - per-section reference replaced by batch 一键回写 */
 
 const getReferenceStatusLabel = (status: ReferenceLifecycleStatus): string => {
   switch (status) {
@@ -2605,26 +2646,49 @@ const referenceDiagnosisItemToPHIS = async (diagnosis: Diagnosis) => {
   ]);
 };
 
-const referenceSelectedTreatmentsToPHIS = async (type: ReferenceableTreatmentType) => {
-  const items = buildSelectedTreatmentReferenceItemsByType(type);
-  if (!items.length) {
-    const labelMap: Record<ReferenceableTreatmentType, string> = {
-      medicine: '用药',
-      exam: '检查',
-      lab_test: '检验',
-      procedure: '处置',
-    };
-    showToast(`请先勾选需要引入的${labelMap[type]}项目。`, 'info');
+/* referenceSelectedTreatmentsToPHIS removed - per-section reference replaced by batch 一键回写 */
+
+const canBatchWriteBack = computed(() => {
+  if (hasPendingReferenceRequest.value) return false;
+  if (!selectedDiagnosis.value) return false;
+  const hasSelectedTreatments = visibleTreatmentReferenceSections.value.some(
+    (s) => s.selectedCount > 0
+  );
+  return hasSelectedTreatments;
+});
+
+const handleBatchWriteBack = async () => {
+  if (!selectedDiagnosis.value) {
+    showToast('请先选择一个诊断结果', 'info');
     return;
   }
 
-  const actionMap: Record<ReferenceableTreatmentType, ReferenceAction> = {
+  // Reference diagnosis first
+  await requestReferenceToPHIS('diagnosis', [
+    {
+      name: selectedDiagnosis.value.name,
+      code: selectedDiagnosis.value.code,
+      type: 'diagnosis',
+      isTCM: selectedDiagnosis.value.isTCM,
+    },
+  ]);
+
+  // Reference each treatment type that has selected items
+  const typeActionMap: Record<ReferenceableTreatmentType, ReferenceAction> = {
     medicine: 'medication',
     exam: 'examination',
     lab_test: 'lab_test',
     procedure: 'procedure',
   };
-  await requestReferenceToPHIS(actionMap[type], items);
+
+  for (const section of visibleTreatmentReferenceSections.value) {
+    if (section.selectedCount > 0) {
+      const items = buildSelectedTreatmentReferenceItemsByType(section.type);
+      if (items.length > 0) {
+        await requestReferenceToPHIS(typeActionMap[section.type], items);
+      }
+    }
+  }
 };
 
 watch(() => props.initialPatientData, (newData) => {
@@ -2855,6 +2919,12 @@ const selectSymptom = (symptom: any) => {
     }
     trackClick('symptom_select', { symptomKey: symptom.key, symptomName: symptom.name, totalSelected: selectedSymptoms.value.length + 1 });
     selectedSymptoms.value.push(symptom);
+    // 从伴随症状中移除（已升级为详细问诊）
+    if (companionSymptoms.value.has(symptom.key)) {
+      const newSet = new Set(companionSymptoms.value);
+      newSet.delete(symptom.key);
+      companionSymptoms.value = newSet;
+    }
     // Initialize form data if not exists
     if (!formData.value[symptom.key]) {
       initFormData(symptom);
@@ -4405,6 +4475,11 @@ const generateMedicalRecord = () => {
     }
   }
 
+  // 伴随症状（仅勾选、未展开详细问诊的）
+  if (companionSymptomNames.value.length > 0) {
+    hpiParts.push(`伴${companionSymptomNames.value.join('、')}。`);
+  }
+
   generatedRecord.value = {
     chiefComplaint,
     historyOfPresentIllness: hpiParts.join("\n"),
@@ -4441,9 +4516,9 @@ const copyToClipboard = () => {
   align-items: center;
   justify-content: space-between;
   flex-wrap: nowrap;
-  background: linear-gradient(135deg, #2681ff 0%, #4a9bff 100%);
-  padding: 10px 20px;
-  box-shadow: 0 2px 12px rgba(38, 129, 255, 0.25);
+  background: linear-gradient(135deg, #1A6FD5 0%, #2B7FE3 50%, #4A9BF5 100%);
+  padding: 10px 16px;
+  box-shadow: 0 1px 6px rgba(43, 127, 227, 0.2);
   z-index: 10;
   flex-shrink: 0;
   border-bottom: none;
@@ -4565,23 +4640,21 @@ const copyToClipboard = () => {
 
 .header-btn.primary {
   background: #fff;
-  color: #2681ff;
+  color: #2B7FE3;
   border: none;
-  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.1);
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.08);
   font-weight: 600;
 }
 
 .header-btn.primary:hover {
-  background: #f0f7ff;
-  transform: translateY(-1px);
-  box-shadow: 0 4px 10px rgba(0, 0, 0, 0.15);
+  background: #F0F6FF;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.12);
 }
 
 .header-btn.primary:disabled {
   background: rgba(255, 255, 255, 0.5);
-  color: rgba(38, 129, 255, 0.5);
+  color: rgba(43, 127, 227, 0.5);
   cursor: not-allowed;
-  transform: none;
   box-shadow: none;
 }
 
@@ -4591,10 +4664,10 @@ const copyToClipboard = () => {
   flex-direction: column;
   width: 28px;
   flex-shrink: 0;
-  background: #f7f9fc;
-  border-right: 1px solid #e8edf2;
-  padding-top: 8px;
-  gap: 2px;
+  background: #F8FAFC;
+  border-right: 1px solid #EEF2F6;
+  padding-top: 6px;
+  gap: 0;
 }
 
 .sidebar-switch-btn {
@@ -4606,7 +4679,7 @@ const copyToClipboard = () => {
   background: transparent;
   font-size: 13px;
   cursor: pointer;
-  color: #8c98a5;
+  color: #94A3B8;
   transition: all 0.2s ease;
   font-weight: 500;
   writing-mode: vertical-rl;
@@ -4615,14 +4688,14 @@ const copyToClipboard = () => {
   display: flex;
   align-items: center;
   justify-content: center;
-  border-radius: 2px 0 0 2px;
+  border-radius: 0;
 }
 
 .sidebar-switch-btn.active {
-  background: #e8f1ff;
-  color: #2681ff;
+  background: #EFF6FF;
+  color: #2B7FE3;
   font-weight: 600;
-  border-right: 2px solid #2681ff;
+  border-right: 2px solid #2B7FE3;
 }
 
 /* Consultation Footer */
@@ -4631,27 +4704,27 @@ const copyToClipboard = () => {
   align-items: center;
   justify-content: flex-end;
   gap: 10px;
-  padding: 10px 20px;
+  padding: 10px 16px;
   background: #fff;
-  border-top: 1px solid #e8edf2;
+  border-top: 1px solid #EEF2F6;
   flex-shrink: 0;
   z-index: 10;
 }
 
 .footer-cancel-btn {
   padding: 7px 20px;
-  border: 1px solid #dce3eb;
+  border: 1px solid #E2E8F0;
   background: #fff;
-  border-radius: 4px;
-  font-size: 14px;
-  color: #5a6577;
+  border-radius: 6px;
+  font-size: 13px;
+  color: #64748B;
   cursor: pointer;
   transition: all 0.2s ease;
 }
 
 .footer-cancel-btn:hover {
-  background: #f7f9fc;
-  border-color: #b0bac5;
+  background: #F8FAFC;
+  border-color: #CBD5E1;
 }
 
 .footer-submit-btn {
@@ -4659,24 +4732,24 @@ const copyToClipboard = () => {
   align-items: center;
   gap: 6px;
   padding: 7px 22px;
-  background: #2681ff;
+  background: #2B7FE3;
   color: #fff;
   border: none;
-  border-radius: 4px;
+  border-radius: 6px;
   font-size: 14px;
   font-weight: 600;
   cursor: pointer;
   transition: all 0.2s ease;
-  box-shadow: 0 2px 6px rgba(38, 129, 255, 0.3);
+  box-shadow: 0 1px 4px rgba(43, 127, 227, 0.25);
 }
 
 .footer-submit-btn:hover:not(:disabled) {
-  background: #1a6ef5;
-  box-shadow: 0 4px 10px rgba(38, 129, 255, 0.4);
+  background: #1A6FD5;
+  box-shadow: 0 2px 8px rgba(43, 127, 227, 0.35);
 }
 
 .footer-submit-btn:disabled {
-  background: rgba(38, 129, 255, 0.5);
+  background: rgba(43, 127, 227, 0.45);
   cursor: not-allowed;
   box-shadow: none;
 }
@@ -4714,7 +4787,7 @@ const copyToClipboard = () => {
 .symptom-sidebar {
   width: 260px;
   background: #fff;
-  border-right: 1px solid #e8edf2;
+  border-right: 1px solid #EEF2F6;
   display: flex;
   flex-direction: row;
   flex-shrink: 0;
@@ -4734,36 +4807,36 @@ const copyToClipboard = () => {
   display: flex;
   padding: 0;
   gap: 0;
-  border-bottom: 1px solid #e8edf2;
-  background: transparent;
+  border-bottom: 1px solid #EEF2F6;
+  background: #FAFBFD;
   flex-shrink: 0;
 }
 
 .tab-btn {
   flex: 1;
-  padding: 10px 0;
+  padding: 9px 0;
   font-size: 13px;
   background: transparent;
   border: none;
   border-bottom: 2px solid transparent;
   border-radius: 0;
-  color: #8c98a5;
+  color: #94A3B8;
   cursor: pointer;
-  transition: all var(--duration-normal) var(--ease-out);
+  transition: all 0.2s ease;
   font-weight: 500;
   white-space: nowrap;
   text-align: center;
 }
 
 .tab-btn:hover {
-  color: #2681ff;
+  color: #2B7FE3;
   background: transparent;
 }
 
 .tab-btn.active {
   background: transparent;
-  border-bottom-color: #2681ff;
-  color: #2681ff;
+  border-bottom-color: #2B7FE3;
+  color: #2B7FE3;
   font-weight: 600;
 }
 
@@ -4789,7 +4862,7 @@ const copyToClipboard = () => {
 }
 
 .search-box {
-  padding: 8px 12px;
+  padding: 8px 10px;
   border-bottom: none;
   background: transparent;
   flex-shrink: 0;
@@ -4798,26 +4871,26 @@ const copyToClipboard = () => {
 }
 
 .common-filter-header {
-  padding-bottom: 8px;
-  margin-bottom: 4px;
+  padding: 0 10px 6px;
+  margin-bottom: 2px;
   flex-shrink: 0;
 }
 
 .search-input {
   width: 100%;
   padding: 7px 10px;
-  border: 1px solid #dce3eb;
+  border: 1px solid #E2E8F0;
   border-radius: 6px;
   font-size: 13px;
   box-sizing: border-box;
   outline: none;
-  background: #f7f9fc;
-  transition: all var(--duration-slow) var(--ease-out);
+  background: #F8FAFC;
+  transition: all 0.2s ease;
 }
 
 .search-input:focus {
-  border-color: #2681ff;
-  box-shadow: 0 0 0 2px rgba(38, 129, 255, 0.1);
+  border-color: #2B7FE3;
+  box-shadow: 0 0 0 2px rgba(43, 127, 227, 0.08);
   background: #fff;
 }
 
@@ -4831,28 +4904,34 @@ const copyToClipboard = () => {
 }
 
 .symptom-list li {
-  padding: 9px 14px;
+  padding: 8px 14px;
   cursor: pointer;
+  border-bottom: 1px solid rgba(238, 242, 246, 0.6);
+  transition: all 0.15s ease;
+  color: #475569;
+  font-size: 13px;
+}
+
+.symptom-list li:last-child {
   border-bottom: none;
-  transition: background 0.15s ease, color 0.15s ease;
-  color: #4a5568;
-  font-size: 14px;
 }
 
 .symptom-list li:hover {
-  background: #f0f5ff;
-  color: #2681ff;
+  background: #F0F6FF;
+  color: #2B7FE3;
 }
 
 .symptom-list li.active {
-  background: #e8f1ff;
-  color: #2681ff;
+  background: #EFF6FF;
+  color: #2B7FE3;
   font-weight: 600;
+  border-left: 2px solid #2B7FE3;
+  padding-left: 12px;
 }
 
 .symptom-list li.active:hover {
-  background: #dceaff;
-  color: #1a6ef5;
+  background: #E0EDFF;
+  color: #1A6FD5;
 }
 
 .ai-add-symptom {
@@ -4913,9 +4992,9 @@ const copyToClipboard = () => {
 /* 伴随症状推荐面板 */
 .recommendation-panel {
   margin: 0;
-  padding: 12px 16px;
-  border-top: 1px solid #eef1f5;
-  background: #fafbfd;
+  padding: 10px 16px;
+  border-top: 1px solid #EEF2F6;
+  background: #FAFBFD;
   border-radius: 0 0 8px 8px;
   flex-shrink: 0;
 }
@@ -4928,15 +5007,13 @@ const copyToClipboard = () => {
   user-select: none;
 }
 
-
-
 .recommendation-title {
   display: flex;
   align-items: center;
-  gap: 6px;
-  font-size: 13px;
+  gap: 5px;
+  font-size: 12px;
   font-weight: 600;
-  color: #2681ff;
+  color: #2B7FE3;
 }
 
 .recommendation-title .iconify {
@@ -4978,25 +5055,64 @@ const copyToClipboard = () => {
 .recommendation-chip {
   display: inline-flex;
   align-items: center;
-  padding: 3px 8px;
+  gap: 4px;
+  padding: 3px 4px 3px 2px;
   font-size: 13px;
-  color: #2681ff;
+  color: #2B7FE3;
   background: transparent;
   border: none;
-  border-radius: 0;
-  cursor: pointer;
-  transition: color 0.15s ease;
+  border-radius: 4px;
+  cursor: default;
+  transition: background 0.15s ease;
   white-space: nowrap;
-  text-decoration: none;
 }
 
 .recommendation-chip:hover {
-  color: #1a6ef5;
-  text-decoration: underline;
+  background: rgba(43, 127, 227, 0.04);
 }
 
-.recommendation-chip:active {
-  color: #1456cc;
+.recommendation-chip.checked {
+  background: rgba(43, 127, 227, 0.06);
+}
+
+.companion-checkbox {
+  appearance: auto;
+  -webkit-appearance: auto;
+  width: 14px;
+  height: 14px;
+  margin: 0;
+  accent-color: #2B7FE3;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.companion-name {
+  cursor: pointer;
+  user-select: none;
+  line-height: 1;
+}
+
+.companion-add-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  border: none;
+  border-radius: 3px;
+  background: transparent;
+  color: #2B7FE3;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  padding: 0;
+  line-height: 1;
+}
+
+.companion-add-btn:hover {
+  background: rgba(43, 127, 227, 0.1);
+  color: #1A6FD5;
 }
 
 .recommendation-chips::-webkit-scrollbar {
@@ -5017,35 +5133,34 @@ const copyToClipboard = () => {
   display: flex;
   flex-direction: column;
   overflow: hidden;
-  background: #f5f7fa;
+  background: #F7F8FA;
 }
 
 .forms-scroll-area {
   flex: 1;
   overflow-y: auto;
-  padding: 16px 20px;
-  padding-bottom: 16px;
+  padding: 14px 16px;
 }
 
 .symptom-form-section {
   background: #fff;
   border-radius: 8px;
-  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.06);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
   padding: 0;
-  margin-bottom: 16px;
-  border: 1px solid #e8edf2;
+  margin-bottom: 12px;
+  border: 1px solid #EEF2F6;
   transition: none;
 }
 
 .symptom-form-section:hover {
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+  box-shadow: 0 1px 6px rgba(0, 0, 0, 0.06);
 }
 
 .form-header {
-  background: #f5f8ff;
+  background: #FAFBFD;
   margin: 0;
   padding: 10px 16px;
-  border-bottom: 1px solid #e4eaf5;
+  border-bottom: 1px solid #EEF2F6;
   border-radius: 8px 8px 0 0;
   display: flex;
   justify-content: space-between;
@@ -5053,8 +5168,10 @@ const copyToClipboard = () => {
 }
 
 .remove-btn {
-  color: #c1c8d1;
+  color: #CBD5E1;
   padding: 4px;
+  border-radius: 4px;
+  transition: all 0.15s ease;
 }
 
 .remove-btn:hover {
@@ -5064,9 +5181,9 @@ const copyToClipboard = () => {
 
 .form-header h2 {
   margin: 0;
-  font-size: 15px;
+  font-size: 14px;
   font-weight: 600;
-  color: #1a2233;
+  color: #1E293B;
   display: flex;
   align-items: center;
 }
@@ -5074,22 +5191,22 @@ const copyToClipboard = () => {
 .form-header h2::before {
   content: '';
   display: inline-block;
-  width: 4px;
-  height: 16px;
-  background: #2681ff;
+  width: 3px;
+  height: 14px;
+  background: #2B7FE3;
   margin-right: 10px;
   border-radius: 2px;
 }
 
 .section-title {
-  margin: 20px 0 12px 0;
-  padding: 8px 12px;
-  font-size: 14px;
+  margin: 16px 0 10px 0;
+  padding: 6px 12px;
+  font-size: 13px;
   font-weight: 600;
-  color: var(--color-primary);
-  background: linear-gradient(90deg, var(--color-primary-bg) 0%, transparent 100%);
-  border-left: 3px solid var(--color-primary);
-  border-radius: 4px;
+  color: #475569;
+  background: #F8FAFC;
+  border-left: 3px solid #2B7FE3;
+  border-radius: 0 4px 4px 0;
 }
 
 .section-title:first-child {
@@ -5110,32 +5227,32 @@ const copyToClipboard = () => {
 }
 
 .dynamic-form {
-  padding: 10px 16px;
+  padding: 8px 16px;
 }
 
 .form-field {
   display: flex;
   align-items: flex-start;
   margin-bottom: 0;
-  border-bottom: 1px solid #f0f2f5;
-  padding: 10px 0;
+  border-bottom: 1px solid rgba(238, 242, 246, 0.8);
+  padding: 9px 0;
 }
 
 .form-field:last-child {
   border-bottom: none;
   margin-bottom: 0;
-  padding-bottom: 6px;
+  padding-bottom: 4px;
 }
 
 .field-label {
   flex-shrink: 0;
   width: 72px;
   margin-bottom: 0;
-  margin-right: 16px;
+  margin-right: 14px;
   font-weight: 500;
-  font-size: 14px;
-  color: #5a6577;
-  padding-top: 4px;
+  font-size: 13px;
+  color: #64748B;
+  padding-top: 3px;
   text-align: right;
 }
 
@@ -5175,29 +5292,29 @@ const copyToClipboard = () => {
 
 .text-input {
   padding: 5px 10px;
-  border: 1px solid #dce3eb;
+  border: 1px solid #E2E8F0;
   border-radius: 4px;
   width: 100px;
   outline: none;
-  transition: all var(--duration-slow) var(--ease-out);
-  color: #1a2233;
-  font-size: 14px;
+  transition: all 0.2s ease;
+  color: #1E293B;
+  font-size: 13px;
   background: #fff;
 }
 
 .field-input .text-input {
-  width: 100%; /* Full width for standalone inputs */
+  width: 100%;
 }
 
 .text-input:focus {
-  border-color: #2681ff;
-  box-shadow: 0 0 0 2px rgba(38, 129, 255, 0.1);
+  border-color: #2B7FE3;
+  box-shadow: 0 0 0 2px rgba(43, 127, 227, 0.08);
 }
 
 .radio-group, .checkbox-group {
   display: flex;
   flex-wrap: wrap;
-  gap: 4px 16px;
+  gap: 3px 14px;
   align-items: center;
 }
 
@@ -5206,8 +5323,8 @@ const copyToClipboard = () => {
   align-items: center;
   gap: 4px;
   cursor: pointer;
-  font-size: 14px;
-  color: #5a6577;
+  font-size: 13px;
+  color: #64748B;
   padding: 2px 0;
   border-radius: 0;
   transition: color 0.15s ease;
@@ -5223,17 +5340,17 @@ const copyToClipboard = () => {
   width: 14px;
   height: 14px;
   margin: 0;
-  accent-color: #2681ff;
+  accent-color: #2B7FE3;
   cursor: pointer;
 }
 
 .radio-label:hover, .checkbox-label:hover {
-  color: #2681ff;
+  color: #2B7FE3;
   background: transparent;
 }
 
 .radio-label.is-active, .checkbox-label.is-active {
-  color: #2681ff;
+  color: #2B7FE3;
   font-weight: 500;
   background: transparent;
   border: none;
@@ -5274,38 +5391,60 @@ const copyToClipboard = () => {
   justify-content: center;
 }
 
-.submit-btn {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  background: linear-gradient(135deg, var(--color-primary) 0%, var(--color-primary-dark) 100%);
-  color: white;
-  border: none;
-  padding: 10px 16px;
-  border-radius: 24px;
-  font-size: 15px;
-  font-weight: 600;
-  cursor: pointer;
-  box-shadow: 0 4px 12px rgba(37, 99, 235, 0.2);
-  transition: all var(--duration-slow) var(--ease-out);
-}
-
-.submit-btn:hover {
-  transform: translateY(-2px);
-  box-shadow: 0 6px 16px rgba(37, 99, 235, 0.3);
-}
-
-.submit-btn svg {
-  width: 18px;
-  height: 18px;
-}
-
 /* Fixed Action Area */
 .fixed-action-area {
   position: absolute;
-  bottom: 4px;
+  bottom: 12px;
   right: 24px;
   z-index: 50;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.writeback-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 36px;
+  padding: 0 var(--space-lg);
+  background: var(--color-info);
+  color: white;
+  border: none;
+  border-radius: var(--radius-sm);
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-medium);
+  cursor: pointer;
+  transition: all var(--duration-normal) var(--ease-out);
+}
+
+.writeback-btn:hover {
+  background: var(--color-primary-dark);
+}
+
+.writeback-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.back-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 36px;
+  padding: 0 var(--space-lg);
+  background: var(--color-background-white);
+  color: var(--color-text-medium);
+  border: 1px solid var(--color-border-medium);
+  border-radius: var(--radius-sm);
+  font-size: var(--font-size-sm);
+  cursor: pointer;
+  transition: all var(--duration-normal) var(--ease-out);
+}
+
+.back-btn:hover {
+  border-color: var(--color-info);
+  color: var(--color-info);
 }
 
 /* Medical Record Page Styles */
@@ -5368,50 +5507,55 @@ const copyToClipboard = () => {
 .record-content {
   flex: 1;
   display: flex;
-  gap: 16px; /* Reduced gap */
-  padding: 16px; /* Reduced padding */
+  gap: 0;
+  padding: 0;
   overflow: hidden;
   min-height: 0;
 }
 
 .record-panel {
   flex: 1;
-  background: var(--color-background-white);
-  border-radius: 12px;
-  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
+  background: #fff;
+  border-radius: 0;
+  box-shadow: none;
   display: flex;
   flex-direction: column;
   overflow: hidden;
-  border: 1px solid var(--color-border-light);
+  border: none;
+  border-right: 1px solid #EEF2F6;
+}
+
+.record-panel:last-child {
+  border-right: none;
 }
 
 .left-panel {
-  flex: 0.8; /* Reduced width */
+  flex: 0.8;
 }
 
 .right-panel {
-  flex: 1.2; /* Increased width */
-  background: var(--color-background-light);
-  border-color: var(--color-border-light);
+  flex: 1.2;
+  background: #FAFBFD;
+  border-right: none;
 }
 
 .panel-header {
-  padding: 10px 16px; /* Compact */
-  border-bottom: 1px solid var(--color-border-light);
+  padding: 10px 16px;
+  border-bottom: 1px solid #EEF2F6;
   display: flex;
   align-items: center;
   justify-content: space-between;
-  background: var(--color-background-white);
+  background: #fff;
 }
 
 .right-panel .panel-header {
-  background: var(--color-background-gray);
+  background: #FAFBFD;
 }
 
 .panel-header h3 {
   margin: 0;
-  font-size: 15px; /* Slightly smaller */
-  color: var(--color-text-medium);
+  font-size: 14px;
+  color: #1E293B;
   font-weight: 600;
 }
 
@@ -5475,27 +5619,27 @@ const copyToClipboard = () => {
 .loading-overlay {
   position: absolute;
   inset: 0;
-  background: rgba(255, 255, 255, 0.95);
-  backdrop-filter: blur(5px);
+  background: rgba(255, 255, 255, 0.96);
+  backdrop-filter: blur(4px);
   z-index: 20;
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 20px;
+  gap: 16px;
 }
 
 .ai-spinner {
   position: relative;
-  width: 48px;
-  height: 48px;
+  width: 44px;
+  height: 44px;
 }
 
 .spinner-ring {
   position: absolute;
   inset: 0;
-  border: 3px solid var(--color-border-light);
-  border-top-color: var(--color-primary);
+  border: 2.5px solid #EEF2F6;
+  border-top-color: #2B7FE3;
   border-radius: 50%;
   animation: spin 1s linear infinite;
 }
@@ -5505,11 +5649,11 @@ const copyToClipboard = () => {
   top: 50%;
   left: 50%;
   transform: translate(-50%, -50%);
-  width: 24px;
-  height: 24px;
-  background: radial-gradient(circle, var(--color-primary) 0%, var(--color-primary-light) 100%);
+  width: 20px;
+  height: 20px;
+  background: radial-gradient(circle, #2B7FE3 0%, #4A9BF5 100%);
   border-radius: 50%;
-  box-shadow: 0 0 12px rgba(59, 130, 246, 0.5);
+  box-shadow: 0 0 10px rgba(43, 127, 227, 0.35);
   animation: pulse-core 1.5s ease-in-out infinite;
 }
 
@@ -5518,15 +5662,15 @@ const copyToClipboard = () => {
 }
 
 .loading-title {
-  color: var(--color-text-strong);
-  font-size: 16px;
+  color: #1E293B;
+  font-size: 15px;
   font-weight: 600;
   margin: 0 0 4px 0;
 }
 
 .loading-desc {
-  color: var(--color-text-muted);
-  font-size: 13px;
+  color: #94A3B8;
+  font-size: 12px;
   margin: 0;
 }
 
@@ -5608,11 +5752,11 @@ const copyToClipboard = () => {
 
 .ai-card {
   background: var(--color-background-white);
-  border-radius: 8px;
-  padding: 16px;
-  margin-bottom: 16px;
-  box-shadow: 0 2px 4px rgba(0,0,0,0.02);
-  border: 1px solid var(--color-border-light);
+  border-radius: 10px;
+  padding: 16px 18px;
+  margin-bottom: 12px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
+  border: 1px solid rgba(226, 232, 240, 0.8);
   position: relative;
   overflow: hidden;
   min-height: 200px;
@@ -5652,62 +5796,140 @@ const copyToClipboard = () => {
 
 .loading-overlay.embedded {
   border-radius: 8px;
+  position: relative;
+  background: rgba(255, 255, 255, 0.92);
+  min-height: 180px;
+}
+
+.treatment-loading-icon {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.treatment-loading-pulse {
+  position: absolute;
+  inset: -8px;
+  border-radius: 50%;
+  background: rgba(43, 127, 227, 0.08);
+  animation: treatment-pulse 2s ease-in-out infinite;
+}
+
+@keyframes treatment-pulse {
+  0%, 100% { transform: scale(0.9); opacity: 0.5; }
+  50% { transform: scale(1.15); opacity: 1; }
 }
 
 .ai-card h4 {
-  margin: 0 0 12px 0;
+  margin: 0 0 10px 0;
   font-size: 14px;
-  color: var(--color-text-weak);
+  font-weight: 600;
+  color: var(--color-text-strong);
 }
 
 .ai-card-title-row {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   justify-content: space-between;
   gap: 12px;
-  margin-bottom: 12px;
+  margin-bottom: 10px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid var(--color-border-light);
 }
 
 .ai-card-title-row h4 {
   margin: 0;
 }
 
+.ai-card-title-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.ai-recommend-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-xs);
+  padding: var(--space-xs) var(--space-md);
+  border: 1px solid var(--color-info);
+  border-radius: var(--radius-sm);
+  background: var(--color-background-white);
+  color: var(--color-info);
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-medium);
+  cursor: pointer;
+  transition: all var(--duration-normal) var(--ease-out);
+  white-space: nowrap;
+}
+
+.ai-recommend-btn:hover {
+  background: var(--color-info-bg);
+}
+
+.ai-recommend-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
 .treatment-card-heading {
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 2px;
+}
+
+.treatment-card-heading h4 {
+  display: flex;
+  align-items: center;
+  gap: 6px;
 }
 
 .treatment-card-desc {
-  margin: 0;
-  font-size: 12px;
-  line-height: 1.5;
+  margin: 0 0 var(--space-sm);
+  font-size: var(--font-size-xs);
+  line-height: var(--line-height-normal);
   color: var(--color-text-muted);
 }
 
 .treatment-summary-pills {
   display: flex;
   flex-wrap: wrap;
-  gap: 8px;
+  gap: 6px;
   justify-content: flex-end;
 }
 
 .treatment-summary-pill {
   display: inline-flex;
   align-items: center;
-  min-height: 30px;
-  padding: 0 12px;
-  border-radius: 999px;
-  background: rgba(14, 165, 233, 0.08);
-  color: #0f6f95;
-  font-size: 12px;
-  font-weight: 700;
+  min-height: 24px;
+  padding: 0 8px;
+  border-radius: 4px;
+  background: rgba(43, 127, 227, 0.06);
+  color: #4A7AB5;
+  font-size: 11px;
+  font-weight: 600;
   white-space: nowrap;
 }
 
+.treatment-summary-pill.medicine {
+  background: rgba(16, 185, 129, 0.06);
+  color: #059669;
+}
+
 .treatment-summary-pill.exam {
-  background: rgba(99, 102, 241, 0.09);
-  color: #4853c7;
+  background: rgba(99, 102, 241, 0.06);
+  color: #4F46E5;
+}
+
+.treatment-summary-pill.lab-test {
+  background: rgba(245, 158, 11, 0.06);
+  color: #D97706;
+}
+
+.treatment-summary-pill.procedure {
+  background: rgba(236, 72, 153, 0.06);
+  color: #DB2777;
 }
 
 .diagnosis-path-btn {
@@ -5769,18 +5991,18 @@ const copyToClipboard = () => {
   align-items: center;
   justify-content: space-between;
   width: 100%;
-  padding: 10px 12px;
-  border: 1px solid rgba(14, 116, 144, 0.12);
-  border-radius: 10px;
-  background: linear-gradient(135deg, rgba(240, 249, 255, 0.96), rgba(236, 253, 245, 0.92));
-  color: var(--color-text-strong);
+  padding: 8px 12px;
+  border: none;
+  border-radius: 0;
+  border-bottom: 1px solid #EEF2F6;
+  background: transparent;
+  color: #1E293B;
   cursor: pointer;
-  transition: all var(--duration-normal) var(--ease-out);
+  transition: all 0.2s ease;
 }
 
 .diagnosis-group-header:hover {
-  border-color: rgba(8, 145, 178, 0.28);
-  box-shadow: 0 4px 14px rgba(8, 145, 178, 0.08);
+  background: rgba(43, 127, 227, 0.03);
 }
 
 .diagnosis-group-title-row {
@@ -5791,10 +6013,10 @@ const copyToClipboard = () => {
 }
 
 .diagnosis-group-toggle {
-  color: var(--color-primary-dark);
+  color: #2B7FE3;
   font-size: 12px;
   line-height: 1;
-  transition: transform var(--duration-normal) var(--ease-out);
+  transition: transform 0.2s ease;
 }
 
 .diagnosis-group-toggle.collapsed {
@@ -5802,35 +6024,41 @@ const copyToClipboard = () => {
 }
 
 .diagnosis-group-title {
-  font-size: 14px;
-  font-weight: 700;
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-bold);
   color: var(--color-text-strong);
+}
+
+.diagnosis-group-title::before {
+  content: '\26A1';
+  display: inline-block;
+  margin-right: 6px;
+  font-size: 14px;
 }
 
 .diagnosis-group-range {
   display: inline-flex;
   align-items: center;
-  padding: 2px 8px;
-  border-radius: 999px;
-  background: rgba(8, 145, 178, 0.12);
-  color: var(--color-primary-dark);
+  padding: 1px 6px;
+  border-radius: 3px;
+  background: rgba(43, 127, 227, 0.08);
+  color: #2B7FE3;
   font-size: 11px;
-  font-weight: 700;
-  letter-spacing: 0.02em;
+  font-weight: 600;
 }
 
 .diagnosis-group-count {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  min-width: 24px;
-  height: 24px;
-  padding: 0 8px;
-  border-radius: 999px;
-  background: rgba(15, 118, 110, 0.12);
-  color: #0f766e;
-  font-size: 12px;
-  font-weight: 700;
+  min-width: 20px;
+  height: 20px;
+  padding: 0 6px;
+  border-radius: 3px;
+  background: rgba(43, 127, 227, 0.08);
+  color: #2B7FE3;
+  font-size: 11px;
+  font-weight: 600;
 }
 
 .diagnosis-list {
@@ -5839,27 +6067,52 @@ const copyToClipboard = () => {
   margin: 0;
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 6px;
 }
 
 .diagnosis-item {
-  padding: 10px;
+  position: relative;
+  padding: 12px 16px;
   border: 1px solid var(--color-border-light);
-  border-radius: 6px;
-  background: var(--color-background-light);
+  border-radius: var(--radius-md);
+  background: var(--color-background-white);
   cursor: pointer;
   transition: all var(--duration-normal) var(--ease-out);
 }
 
 .diagnosis-item:hover {
-  background: var(--color-background-gray);
-  border-color: var(--color-border-medium);
+  background: #F8FAFC;
+  border-color: #CBD5E1;
 }
 
 .diagnosis-item.active {
-  background: var(--color-primary-50);
-  border-color: var(--color-primary);
-  box-shadow: 0 0 0 1px var(--color-primary);
+  background: rgba(43, 127, 227, 0.04);
+  border-color: #2B7FE3;
+  box-shadow: 0 0 0 1px rgba(43, 127, 227, 0.15);
+}
+
+.diagnosis-item::before {
+  content: '';
+  display: inline-block;
+  width: 16px;
+  height: 16px;
+  border: 2px solid var(--color-border-medium);
+  border-radius: var(--radius-sm);
+  margin-right: var(--space-sm);
+  vertical-align: middle;
+  flex-shrink: 0;
+  position: absolute;
+  left: 16px;
+  top: 14px;
+}
+
+.diagnosis-item.active::before {
+  background: var(--color-info);
+  border-color: var(--color-info);
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='white' stroke-width='4' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='20 6 9 17 4 12'%3E%3C/polyline%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: center;
+  background-size: 10px;
 }
 
 .diag-header {
@@ -5867,12 +6120,13 @@ const copyToClipboard = () => {
   justify-content: space-between;
   align-items: center;
   margin-bottom: 4px;
+  padding-left: 28px;
 }
 
 .diag-name {
-  font-weight: 600;
-  color: var(--color-text-strong);
-  font-size: 14px;
+  font-weight: var(--font-weight-semibold);
+  color: var(--color-info);
+  font-size: var(--font-size-sm);
   display: flex;
   align-items: center;
   gap: 6px;
@@ -5894,22 +6148,52 @@ const copyToClipboard = () => {
 }
 
 .diag-rate {
-  font-size: 12px;
-  color: var(--color-primary-dark);
-  background: var(--color-info-bg);
-  padding: 2px 6px;
-  border-radius: 4px;
-  font-weight: 500;
+  font-size: var(--font-size-xs);
+  color: var(--color-background-white);
+  background: var(--color-success);
+  padding: 2px 8px;
+  border-radius: var(--radius-full);
+  font-weight: var(--font-weight-medium);
+}
+
+.diag-rate.rate-high {
+  background: var(--color-success);
+}
+
+.diag-rate.rate-medium {
+  background: var(--color-info);
+}
+
+.diag-rate.rate-low {
+  background: var(--color-warning);
+  color: var(--color-background-white);
+}
+
+.diag-select-dot {
+  display: inline-block;
+  width: 18px;
+  height: 18px;
+  border-radius: var(--radius-full);
+  border: 2px solid var(--color-border-medium);
+  flex-shrink: 0;
+  transition: all var(--duration-normal) var(--ease-out);
+}
+
+.diag-select-dot.active {
+  background: var(--color-info);
+  border-color: var(--color-info);
 }
 
 .diag-rationale {
-  font-size: 12px;
+  font-size: var(--font-size-xs);
   color: var(--color-text-muted);
-  line-height: 1.4;
+  line-height: var(--line-height-normal);
+  padding-left: 28px;
 }
 
 .tcm-detail {
   margin-top: 8px;
+  margin-left: 28px;
   padding: 8px 12px;
   background: linear-gradient(135deg, rgba(201, 160, 99, 0.05) 0%, rgba(184, 134, 11, 0.05) 100%);
   border-left: 3px solid #C9A063;
@@ -5978,77 +6262,89 @@ const copyToClipboard = () => {
 .treatment-groups {
   display: flex;
   flex-direction: column;
-  gap: 16px;
+  gap: 4px;
 }
 
 .treatment-section {
   display: flex;
   flex-direction: column;
-  gap: 12px;
-  padding: 14px;
-  border-radius: 14px;
-  border: 1px solid rgba(14, 165, 233, 0.12);
-  background: rgba(255, 255, 255, 0.72);
+  gap: 0;
+  padding: 0;
+  border-radius: 0;
+  border: none;
+  border-bottom: 1px solid var(--color-border-light);
+  background: transparent;
+}
+
+.treatment-section:last-child {
+  border-bottom: none;
 }
 
 .treatment-section-muted {
-  border-color: rgba(148, 163, 184, 0.22);
-  background: rgba(248, 250, 252, 0.92);
+  border-color: var(--color-border-light);
+  background: transparent;
 }
 
 .treatment-section-header {
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   justify-content: space-between;
   gap: 12px;
+  padding: 14px 0 8px;
+  border-bottom: 1px solid var(--color-border-light);
 }
 
 .treatment-section-header h5 {
-  margin: 0 0 4px;
-  font-size: 14px;
+  margin: 0;
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-bold);
   color: var(--color-text-strong);
+  display: flex;
+  align-items: center;
+  gap: 6px;
 }
 
-.treatment-section-header p {
-  margin: 0;
-  font-size: 12px;
-  line-height: 1.5;
-  color: var(--color-text-muted);
+.treatment-section-header h5::before {
+  content: '';
+  display: inline-block;
+  width: 3px;
+  height: 14px;
+  border-radius: 2px;
+  background: #2B7FE3;
+}
+
+.treatment-section-header-right {
+  display: flex;
+  align-items: center;
+  gap: 12px;
 }
 
 .item-reference-btn {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  min-height: 30px;
-  padding: 0 12px;
-  border: 1px solid rgba(8, 145, 178, 0.2);
-  border-radius: 999px;
-  background: rgba(236, 253, 255, 0.94);
-  color: #0f6f95;
+  min-height: 28px;
+  padding: 0 14px;
+  border: 1px solid rgba(43, 127, 227, 0.18);
+  border-radius: 6px;
+  background: rgba(240, 247, 255, 0.9);
+  color: #2B7FE3;
   font-size: 12px;
-  font-weight: 700;
+  font-weight: 600;
   cursor: pointer;
   white-space: nowrap;
-  transition: transform var(--duration-normal) var(--ease-out), background var(--duration-normal) var(--ease-out), border-color var(--duration-normal) var(--ease-out), opacity var(--duration-normal) var(--ease-out);
+  transition: all var(--duration-normal) var(--ease-out);
 }
 
 .item-reference-btn:hover {
-  transform: translateY(-1px);
-  background: rgba(207, 250, 254, 0.98);
-  border-color: rgba(8, 145, 178, 0.3);
+  background: rgba(224, 239, 255, 0.98);
+  border-color: rgba(43, 127, 227, 0.3);
+  box-shadow: 0 1px 4px rgba(43, 127, 227, 0.1);
 }
 
 .item-reference-btn:disabled {
   cursor: not-allowed;
-  opacity: 0.55;
-  transform: none;
-}
-
-.treatment-section-meta {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
+  opacity: 0.45;
 }
 
 .treatment-section-pill,
@@ -6056,79 +6352,105 @@ const copyToClipboard = () => {
 .section-readonly-inline {
   display: inline-flex;
   align-items: center;
-  min-height: 28px;
-  padding: 0 10px;
-  border-radius: 999px;
-  background: rgba(14, 165, 233, 0.08);
-  color: #0f6f95;
-  font-size: 12px;
-  font-weight: 700;
+  gap: var(--space-xs);
+  min-height: 22px;
+  padding: 0 var(--space-sm);
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--color-text-muted);
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-normal);
 }
 
 .treatment-section-pill.strong {
-  background: rgba(34, 197, 94, 0.12);
-  color: #167a43;
+  color: var(--color-success);
 }
 
 .section-readonly-badge,
 .section-readonly-inline {
-  background: rgba(148, 163, 184, 0.14);
-  color: #516171;
+  background: rgba(148, 163, 184, 0.1);
+  color: #7A8A9A;
 }
 
 .treatment-list {
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 0;
 }
 
 .treatment-item {
   position: relative;
   display: flex;
   flex-direction: column;
-  background: var(--color-background-white);
-  border: 1px solid var(--color-border-light);
-  border-radius: 8px;
-  padding: 10px;
-  gap: 8px;
+  background: transparent;
+  border: none;
+  border-bottom: 1px solid rgba(226, 232, 240, 0.6);
+  border-radius: 0;
+  padding: 12px 4px 12px 28px;
+  gap: 4px;
   cursor: pointer;
+  transition: background var(--duration-normal) var(--ease-out);
+  overflow: visible;
+}
+
+.treatment-item::before {
+  content: '';
+  position: absolute;
+  left: 4px;
+  top: 14px;
+  width: 16px;
+  height: 16px;
+  border: 2px solid var(--color-border-medium);
+  border-radius: var(--radius-sm);
   transition: all var(--duration-normal) var(--ease-out);
-  overflow: hidden;
+}
+
+.treatment-item.active::before {
+  background: var(--color-info);
+  border-color: var(--color-info);
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='white' stroke-width='4' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='20 6 9 17 4 12'%3E%3C/polyline%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: center;
+  background-size: 10px;
+}
+
+.treatment-item:last-child {
+  border-bottom: none;
 }
 
 .selected-mark {
+  display: none;
   position: absolute;
-  top: 0;
-  right: 0;
-  width: 24px;
-  height: 24px;
-  background: var(--color-primary);
+  top: 8px;
+  left: -2px;
+  width: 18px;
+  height: 18px;
+  background: #2B7FE3;
   color: white;
-  border-radius: 0 0 0 12px;
+  border-radius: 50%;
   display: flex;
   align-items: center;
   justify-content: center;
-  padding-bottom: 2px;
-  padding-left: 2px;
+  padding: 0;
+  box-shadow: 0 1px 3px rgba(43, 127, 227, 0.3);
 }
 
 .treatment-item:hover {
-  background-color: var(--color-background-light);
-  border-color: var(--color-border-medium);
+  background: rgba(43, 127, 227, 0.03);
 }
 
 .treatment-item.active {
-  background-color: var(--color-primary-50);
-  border-color: var(--color-primary);
-  box-shadow: 0 0 0 1px var(--color-primary);
+  background: rgba(43, 127, 227, 0.04);
+  border-color: rgba(43, 127, 227, 0.12);
+  padding-left: 20px;
 }
 
 .rec-header {
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   justify-content: space-between;
   gap: 8px;
-  margin-bottom: 4px;
+  margin-bottom: 0;
 }
 
 .diag-actions,
@@ -6137,7 +6459,7 @@ const copyToClipboard = () => {
   align-items: center;
   flex-wrap: wrap;
   justify-content: flex-end;
-  gap: 8px;
+  gap: 6px;
   margin-left: auto;
 }
 
@@ -6150,41 +6472,73 @@ const copyToClipboard = () => {
 }
 
 .rec-tag {
-  font-size: 10px;
-  padding: 2px 6px;
-  border-radius: 4px;
-  font-weight: bold;
+  font-size: 11px;
+  padding: 1px 6px;
+  border-radius: 3px;
+  font-weight: 600;
+  line-height: 1.6;
 }
 
 .rec-tag.medicine {
-  background: var(--color-info-bg);
-  color: var(--color-primary-dark);
+  background: rgba(16, 185, 129, 0.1);
+  color: #059669;
 }
 
 .rec-tag.exam {
-  background: var(--tag-exam-bg);
-  color: var(--tag-exam-text);
+  background: rgba(99, 102, 241, 0.08);
+  color: #4F46E5;
+}
+
+.rec-tag.lab_test {
+  background: rgba(245, 158, 11, 0.1);
+  color: #D97706;
+}
+
+.rec-tag.procedure {
+  background: rgba(236, 72, 153, 0.08);
+  color: #DB2777;
 }
 
 .rec-tag.acupuncture {
-  background: rgba(245, 158, 11, 0.12);
+  background: rgba(245, 158, 11, 0.1);
   color: #b45309;
 }
 
 .rec-name {
   font-weight: 600;
-  font-size: 14px;
+  font-size: 13px;
   color: var(--color-text-strong);
 }
 
 .treatment-item-muted {
   border-style: dashed;
+  border-color: rgba(148, 163, 184, 0.3);
 }
 
 .rec-reason, .rec-usage, .rec-ingredients {
   font-size: 12px;
   color: var(--color-text-muted);
-  line-height: 1.4;
+  line-height: 1.5;
+}
+
+.doc-icon-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--color-text-muted);
+  cursor: pointer;
+  transition: all var(--duration-normal) var(--ease-out);
+  padding: 0;
+}
+
+.doc-icon-btn:hover {
+  background: rgba(43, 127, 227, 0.08);
+  color: #2B7FE3;
 }
 
 .rec-ingredients {
@@ -6854,24 +7208,25 @@ const copyToClipboard = () => {
 .matched-inline {
   display: inline-flex;
   align-items: center;
-  gap: 4px;
-  background: var(--color-success-bg);
-  padding: 2px 6px;
-  border-radius: 4px;
-  border: 1px solid var(--color-success-border);
-  font-size: 12px;
-  margin-left: 6px;
+  gap: 3px;
+  background: rgba(16, 185, 129, 0.08);
+  padding: 1px 6px;
+  border-radius: 3px;
+  border: 1px solid rgba(16, 185, 129, 0.2);
+  font-size: 11px;
+  margin-left: 4px;
 }
 
 .match-icon {
-  color: var(--color-success-text);
-  font-weight: bold;
+  color: #059669;
+  font-weight: 600;
+  font-size: 10px;
 }
 
 .unmatched-icon {
-  margin-left: 6px;
-  font-size: 12px;
-  opacity: 0.6;
+  margin-left: 4px;
+  font-size: 11px;
+  opacity: 0.5;
 }
 
 .diag-name-group {
@@ -7005,6 +7360,7 @@ const copyToClipboard = () => {
   font-size: 11px;
   font-weight: 500;
   margin-top: 8px;
+  margin-left: 28px;
   cursor: pointer;
   border: 1px solid var(--color-warning-border, #fcd34d);
   transition: all 0.2s ease;
@@ -7022,84 +7378,134 @@ const copyToClipboard = () => {
 }
 
 .checklist-modal {
-  max-width: 500px;
+  max-width: 520px;
   width: 90%;
+  border-radius: 12px;
+  padding: 24px;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.12);
 }
 
 .checklist-modal .modal-header {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  margin-bottom: 20px;
+  margin-bottom: 16px;
 }
 
 .checklist-modal .modal-header h3 {
-  font-size: 18px;
+  font-size: 16px;
   font-weight: 600;
-  color: var(--color-text-strong);
+  color: #1E293B;
   margin: 0;
 }
 
 .checklist-modal .close-btn {
   background: transparent;
   border: none;
-  color: var(--color-text-muted);
+  color: #94A3B8;
   cursor: pointer;
   padding: 4px;
   border-radius: 4px;
-  transition: background 0.2s, color 0.2s;
+  transition: all 0.15s ease;
   display: flex;
   align-items: center;
   justify-content: center;
 }
 
 .checklist-modal .close-btn:hover {
-  background: var(--color-background-gray);
-  color: var(--color-text-strong);
+  background: #F1F5F9;
+  color: #475569;
 }
 
 .checklist-modal .modal-body {
-  margin-bottom: 24px;
+  margin-bottom: 20px;
 }
 
 .checklist-modal .modal-footer {
   display: flex;
   justify-content: flex-end;
-  gap: 12px;
+  gap: 10px;
   padding-top: 16px;
-  border-top: 1px solid var(--color-border-light);
+  border-top: 1px solid #EEF2F6;
+}
+
+.checklist-modal .modal-footer .btn.secondary {
+  background: #fff;
+  color: #64748B;
+  border: 1px solid #E2E8F0;
+  border-radius: 6px;
+  font-size: 13px;
+  padding: 7px 16px;
+}
+
+.checklist-modal .modal-footer .btn.secondary:hover {
+  background: #F8FAFC;
+  border-color: #CBD5E1;
+}
+
+.checklist-modal .modal-footer .btn.primary {
+  background: #2B7FE3;
+  color: #fff;
+  border: none;
+  border-radius: 6px;
+  font-size: 13px;
+  font-weight: 600;
+  padding: 7px 16px;
+  box-shadow: 0 1px 4px rgba(43, 127, 227, 0.25);
+}
+
+.checklist-modal .modal-footer .btn.primary:hover {
+  background: #1A6FD5;
+}
+
+.checklist-modal .modal-footer .btn.primary:disabled {
+  background: rgba(43, 127, 227, 0.4);
+  cursor: not-allowed;
+  box-shadow: none;
 }
 
 .checklist-intro {
   font-size: 13px;
-  color: var(--color-text-strong);
-  line-height: 1.5;
+  color: #1E293B;
+  line-height: 1.6;
   margin-bottom: 16px;
-  background: var(--color-warning-bg, #fffbeb);
-  padding: 12px;
-  border-radius: 6px;
-  border-left: 3px solid var(--color-warning, #f59e0b);
+  background: #FEF9EC;
+  padding: 12px 14px;
+  border-radius: 8px;
+  border-left: 3px solid #F59E0B;
+}
+
+.checklist-intro strong {
+  color: #2B7FE3;
 }
 
 .checklist-items {
   display: flex;
   flex-direction: column;
-  gap: 12px;
-  margin-bottom: 20px;
+  gap: 8px;
+  margin-bottom: 16px;
 }
 
 .checklist-item-label {
   display: flex;
   align-items: flex-start;
-  gap: 8px;
+  gap: 10px;
   cursor: pointer;
-  padding: 8px;
-  border-radius: 6px;
-  transition: background 0.2s;
+  padding: 10px 12px;
+  border-radius: 8px;
+  border: 1px solid #EEF2F6;
+  background: #FAFBFD;
+  transition: all 0.15s ease;
 }
 
 .checklist-item-label:hover {
-  background: var(--color-background-hover);
+  background: #F0F6FF;
+  border-color: rgba(43, 127, 227, 0.2);
+}
+
+.checklist-item-label:has(input:checked) {
+  background: rgba(43, 127, 227, 0.04);
+  border-color: #2B7FE3;
 }
 
 .checklist-item-label input[type="checkbox"] {
@@ -7107,41 +7513,46 @@ const copyToClipboard = () => {
   width: 16px;
   height: 16px;
   cursor: pointer;
+  accent-color: #2B7FE3;
+  flex-shrink: 0;
 }
 
 .checklist-text {
-  font-size: 14px;
-  color: var(--color-text-strong);
-  line-height: 1.4;
+  font-size: 13px;
+  color: #334155;
+  line-height: 1.5;
 }
 
 .checklist-notes-box {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 6px;
 }
 
 .checklist-notes-box label {
-  font-size: 13px;
+  font-size: 12px;
   font-weight: 500;
-  color: var(--color-text-strong);
+  color: #64748B;
 }
 
 .checklist-notes-box textarea {
   width: 100%;
-  height: 80px;
+  height: 76px;
   padding: 8px 12px;
-  border: 1px solid var(--color-border-medium);
+  border: 1px solid #E2E8F0;
   border-radius: 6px;
-  font-size: 14px;
+  font-size: 13px;
   resize: none;
   font-family: inherit;
+  color: #1E293B;
+  background: #FAFBFD;
 }
 
 .checklist-notes-box textarea:focus {
   outline: none;
-  border-color: var(--color-primary);
-  box-shadow: 0 0 0 2px var(--color-primary-100);
+  border-color: #2B7FE3;
+  box-shadow: 0 0 0 2px rgba(43, 127, 227, 0.08);
+  background: #fff;
 }
 
 </style>

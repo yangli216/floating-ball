@@ -32,3 +32,27 @@ const pinia = createPinia();
 app.use(pinia);
 
 app.mount("#app");
+
+// 区域化客户端初始化（异步，不阻塞渲染）
+import { initializeRegionalClient, isRegionalMode } from "./services/regionalClient";
+import { startAuditUploader } from "./services/auditUploader";
+import { syncRemotePrompts } from "./services/promptOverride";
+import { syncRemoteTemplates } from "./services/templateService";
+import { medicalDataService } from "./services/medicalData";
+
+if (isRegionalMode()) {
+  initializeRegionalClient().then(async (config) => {
+    if (config) {
+      startAuditUploader();
+      // 并行同步远程数据
+      await Promise.allSettled([
+        syncRemotePrompts(),
+        syncRemoteTemplates(),
+        medicalDataService.syncRemoteData(),
+      ]);
+      console.log('[App] Regional initialization complete');
+    }
+  }).catch(err => {
+    console.warn('[App] Regional init failed, running in local mode:', err);
+  });
+}

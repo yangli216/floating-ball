@@ -28,6 +28,7 @@ export const DEFAULT_SPEECH_RETRY_CONFIG: SpeechRetryConfig = {
 };
 
 export function getAliyunSpeechConfig(): AliyunSpeechConfig {
+    // 区域化模式下不需要本地 key，由后端代理
     const apiKey = localStorage.getItem('DASHSCOPE_API_KEY') || import.meta.env.VITE_DASHSCOPE_API_KEY || '';
     return {
         apiKey,
@@ -159,6 +160,29 @@ export async function transcribeWithAliyun(
         // 模拟延迟，让用户看到加载效果
         await new Promise(r => setTimeout(r, 500));
         return TEST_MODE_SAMPLE_TEXT;
+    }
+
+    // 区域化模式：通过后端语音代理
+    const { isRegionalMode } = await import('./regionalClient');
+    if (isRegionalMode()) {
+        try {
+            const { regionalPost } = await import('./regionalClient');
+            const arrayBuffer = await audioBlob.arrayBuffer();
+            const base64 = btoa(String.fromCharCode(...new Uint8Array(arrayBuffer)));
+            const resp = await regionalPost<{ text: string }>('/v1/ai/speech/realtime', {
+                audio: base64,
+                format: 'pcm',
+            });
+            return resp.text;
+        } catch (error: any) {
+            console.error('[AliyunSpeech] Regional proxy failed:', error);
+            if (enableWhisperFallback) {
+                console.warn('[AliyunSpeech] 降级到本地 Whisper...');
+                const { transcribeAudio } = await import('./llm');
+                return await transcribeAudio(audioBlob);
+            }
+            throw error;
+        }
     }
 
     try {

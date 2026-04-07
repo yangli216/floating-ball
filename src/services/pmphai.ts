@@ -1,7 +1,9 @@
 /**
  * 人卫 Inside 知识库服务
  * 提供医学知识库的向量搜索和文档检索功能
+ * 区域化模式下凭证由后端管理
  */
+import { isRegionalMode, getCachedBootstrap } from './regionalClient';
 
 // 配置常量
 const DEFAULT_CONFIG = {
@@ -128,8 +130,15 @@ const CACHE_TTL = 5 * 60 * 1000;
 
 /**
  * 获取知识库配置
+ * 区域化模式下由后端管理凭证
  */
 export function getPMPHAIConfig() {
+  if (isRegionalMode()) {
+    const bootstrap = getCachedBootstrap();
+    const enabled = bootstrap?.pmphai?.enabled ?? false;
+    return { appKey: '__REGIONAL__', appSecret: '__REGIONAL__', enabled };
+  }
+
   // Trim values to avoid whitespace issues
   const appKey = (localStorage.getItem('PMPHAI_APP_KEY') || import.meta.env.VITE_PMPHAI_APP_KEY || '').trim();
   const appSecret = (localStorage.getItem('PMPHAI_APP_SECRET') || import.meta.env.VITE_PMPHAI_APP_SECRET || '').trim();

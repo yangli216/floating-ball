@@ -157,62 +157,51 @@ const filteredSymptoms = computed(() => {
 </script>
 
 <style scoped>
-/**
- * 组件样式规范：
- * - 所有颜色使用 var(--color-*) 语义变量
- * - 间距使用 var(--space-*)
- * - 动画使用 var(--duration-*) 和 var(--ease-*)
- * - 参考: src/styles/design-tokens.css
- */
-
 .system-category-selector {
   display: flex;
   flex-direction: column;
-  gap: var(--space-md);
+  gap: 10px;
   flex: 1;
   min-height: 0;
-}
-
-.search-results-container {
-  flex: 1;
-  overflow-y: auto;
-  padding: 4px 0;
+  padding: 0 10px;
 }
 
 .selector-header {
   display: flex;
   justify-content: space-between;
   align-items: center;
+  padding: 2px 0;
 }
 
 .selector-header h4 {
   margin: 0;
   font-size: 13px;
-  font-weight: var(--font-weight-semibold);
-  color: var(--color-text-strong);
+  font-weight: 600;
+  color: #1E293B;
 }
 
 .clear-btn {
   padding: 3px 10px;
   font-size: 11px;
-  background: var(--color-primary-100);
-  border: 1px solid var(--color-primary-200);
+  background: transparent;
+  border: 1px solid #dce3eb;
   border-radius: 4px;
-  color: var(--color-text-medium);
+  color: #8c98a5;
   cursor: pointer;
-  transition: all var(--duration-normal) var(--ease-out);
+  transition: all 0.2s ease;
 }
 
 .clear-btn:hover {
-  background: var(--color-primary-200);
-  color: var(--color-text-strong);
-  border-color: var(--color-primary);
+  background: #f0f5ff;
+  color: #2B7FE3;
+  border-color: #2B7FE3;
 }
 
+/* -- System Grid -- */
 .systems-grid {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
-  gap: 8px;
+  gap: 6px;
   flex-shrink: 0;
 }
 
@@ -221,58 +210,63 @@ const filteredSymptoms = computed(() => {
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 4px;
-  padding: 8px 6px;
-  background: var(--color-primary-50);
-  border: 2px solid var(--color-border-light);
-  border-radius: var(--radius-md);
+  gap: 5px;
+  padding: 10px 4px 8px;
+  background: #F8FAFC;
+  border: 1.5px solid #EEF2F6;
+  border-radius: 8px;
   cursor: pointer;
-  transition: all var(--duration-normal) var(--ease-out);
-  min-height: 70px;
+  transition: all 0.2s ease;
+  min-height: 68px;
 }
 
 .system-card:hover {
-  border-color: var(--color-primary);
-  background: var(--color-primary-100);
-  transform: translateY(-2px);
-  box-shadow: 0 4px 8px rgba(8, 145, 178, 0.15);
+  border-color: rgba(43, 127, 227, 0.3);
+  background: #F0F6FF;
 }
 
 .system-card.active {
-  background: var(--color-primary-200);
-  border-color: var(--color-primary);
-  box-shadow: 0 0 0 2px var(--color-primary-200);
+  background: #E8F1FF;
+  border-color: #2B7FE3;
+  box-shadow: 0 0 0 1px rgba(43, 127, 227, 0.15);
 }
 
 .system-icon {
   width: 28px;
   height: 28px;
-  color: var(--color-text-muted);
-  transition: all var(--duration-normal) var(--ease-out);
+  color: #94A3B8;
+  transition: all 0.2s ease;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.system-card:hover .system-icon {
+  color: #64A3E8;
 }
 
 .system-card.active .system-icon {
-  color: var(--color-primary);
-  transform: scale(1.1);
+  color: #2B7FE3;
 }
 
 .system-label {
   font-size: 11px;
-  font-weight: var(--font-weight-medium);
-  color: var(--color-text-weak);
+  font-weight: 500;
+  color: #64748B;
   text-align: center;
   line-height: 1.2;
 }
 
 .system-card.active .system-label {
-  color: var(--color-primary);
-  font-weight: var(--font-weight-semibold);
+  color: #2B7FE3;
+  font-weight: 600;
 }
 
+/* -- Category Symptoms Area -- */
 .category-symptoms {
-  background: var(--color-primary-50);
-  border: 1px solid var(--color-border-light);
-  border-radius: var(--radius-md);
+  background: #FAFBFD;
+  border: 1px solid #EEF2F6;
+  border-radius: 8px;
   padding: 10px;
   flex: 1;
   min-height: 0;
@@ -284,14 +278,17 @@ const filteredSymptoms = computed(() => {
 .category-symptoms h5 {
   margin: 0 0 8px 0;
   font-size: 12px;
-  font-weight: var(--font-weight-semibold);
-  color: var(--color-text-strong);
+  font-weight: 600;
+  color: #1E293B;
   flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  gap: 4px;
 }
 
 .symptom-count {
-  font-weight: var(--font-weight-normal);
-  color: var(--color-text-muted);
+  font-weight: 400;
+  color: #94A3B8;
   font-size: 11px;
 }
 
@@ -303,54 +300,52 @@ const filteredSymptoms = computed(() => {
 }
 
 .symptom-chip {
-  padding: 5px 10px;
-  font-size: 11px;
-  background: var(--color-primary-100);
-  border: 1px solid var(--color-primary-200);
-  border-radius: 6px;
-  color: var(--color-primary);
+  padding: 4px 10px;
+  font-size: 12px;
+  background: #fff;
+  border: 1px solid #E2E8F0;
+  border-radius: 4px;
+  color: #475569;
   cursor: pointer;
-  transition: all var(--duration-normal) var(--ease-out);
+  transition: all 0.2s ease;
   white-space: nowrap;
 }
 
 .symptom-chip:hover {
-  background: var(--color-primary-200);
-  border-color: var(--color-primary);
-  transform: translateY(-1px);
+  background: #F0F6FF;
+  border-color: rgba(43, 127, 227, 0.3);
+  color: #2B7FE3;
 }
 
 .symptom-chip.active {
-  background: var(--color-primary);
-  border-color: var(--color-primary-dark);
-  color: var(--color-background-white);
+  background: #2B7FE3;
+  border-color: #1A6FD5;
+  color: #fff;
+  font-weight: 500;
 }
 
 .no-symptoms {
   text-align: center;
-  padding: 15px;
+  padding: 20px;
   font-size: 12px;
-  color: var(--color-text-muted);
-  background: var(--color-primary-50);
-  border-radius: var(--radius-md);
+  color: #94A3B8;
 }
 
-/* Scrollbar Styling */
+/* Scrollbar */
 .category-symptoms::-webkit-scrollbar {
-  width: 6px;
+  width: 4px;
 }
 
 .category-symptoms::-webkit-scrollbar-track {
-  background: var(--color-primary-50);
-  border-radius: 3px;
+  background: transparent;
 }
 
 .category-symptoms::-webkit-scrollbar-thumb {
-  background: var(--color-border-medium);
-  border-radius: 3px;
+  background: #CBD5E1;
+  border-radius: 2px;
 }
 
 .category-symptoms::-webkit-scrollbar-thumb:hover {
-  background: var(--color-border-strong);
+  background: #94A3B8;
 }
 </style>
