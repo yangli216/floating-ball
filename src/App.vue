@@ -170,6 +170,7 @@ const voiceConsultation = useVoiceConsultation({
   appWindow,
   currentView,
   generatedRecord,
+  voiceRecord,
   currentPatient,
   showToast,
   windowMgmt,
