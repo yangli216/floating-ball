@@ -193,14 +193,14 @@ const closeRiskAlert = async () => {
 
 const handleRiskExpand = async (expanded: boolean) => {
     console.log('[App] handleRiskExpand:', expanded);
-    const h = expanded ? WINDOW_SIZES.CAPSULE_EXPANDED.height : WINDOW_SIZES.CAPSULE.height;
-    
+    const h = expanded ? WINDOW_SIZES.RISK_CARD_EXPANDED.height : WINDOW_SIZES.RISK_CARD.height;
+
     // We reuse enterWorkMode to resize window smoothly
     // Since we are already in work mode, it should just trigger resize
     try {
         if (appWindow.value) {
-            await smartExpand(WINDOW_SIZES.CAPSULE.width, h);
-            await appWindow.value.setSize(new LogicalSize(WINDOW_SIZES.CAPSULE.width, h));
+            await smartExpand(WINDOW_SIZES.RISK_CARD.width, h);
+            await appWindow.value.setSize(new LogicalSize(WINDOW_SIZES.RISK_CARD.width, h));
         }
     } catch (e) {
         console.error('Failed to resize for risk details:', e);
@@ -455,7 +455,7 @@ const openInsideCloudHome = async () => {
         <div 
           class="assistant-container" 
           :class="{ 'no-toolbar': currentView === 'risk-alert' || currentView === 'voice-interaction' || currentView === 'voice-result' || currentView === 'reception-capsule' }"
-          :style="{ borderRadius: (currentView === 'voice-interaction' || currentView === 'reception-capsule') ? '40px' : '20px' }"
+          :style="currentView === 'reception-capsule' ? { borderRadius: '16px', background: 'transparent', backdropFilter: 'none', WebkitBackdropFilter: 'none', border: 'none', boxShadow: 'none' } : { borderRadius: currentView === 'voice-interaction' ? '40px' : '20px' }"
         >
           <!-- 工具栏 (risk-alert, voice-interaction, voice-result, reception-capsule 视图不显示) -->
           <div v-if="currentView !== 'risk-alert' && currentView !== 'voice-interaction' && currentView !== 'voice-result' && currentView !== 'reception-capsule'" class="assistant-toolbar" data-tauri-drag-region>

@@ -598,7 +598,7 @@ http://127.0.0.1:8081/api/consultation/stop
 
 ### 6.7 `POST /api/patient/risks`（可选）
 
-用途：把 HIS 当前患者的风险信息推送到 `floating-ball`，用于风险提醒展示。
+用途：把 HIS 当前患者的风险信息推送到 `floating-ball`，触发患者风险评估提醒。
 
 完整地址：
 
@@ -606,19 +606,80 @@ http://127.0.0.1:8081/api/consultation/stop
 http://127.0.0.1:8081/api/patient/risks
 ```
 
-请求示例：
+请求字段：
+
+| 字段名 | 类型 | 必填 | 说明 |
+| :--- | :--- | :--- | :--- |
+| `patientId` | String | 是 | 患者唯一标识 |
+| `patientName` | String | 是 | 患者姓名 |
+| `gender` | String | 是 | `M`（男）或 `F`（女） |
+| `age` | Number | 是 | 年龄（整数） |
+| `chiefComplaint` | String | 否 | 主诉 |
+| `historyOfPresentIllness` | String | 否 | 现病史 |
+| `pastMedicalHistory` | String | 否 | 既往史 |
+| `diagnosis` | String | 否 | 当前诊断 |
+| `allergyHistory` | String | 否 | 过敏史 |
+| `risks` | RiskItem[] | 否 | 预计算的风险项（若为空数组或不传，则由 LLM 自动分析） |
+
+#### RiskItem 结构
+
+当 HIS 已经有风险评估结果时，可以通过 `risks` 数组直接注入，跳过 LLM 分析：
+
+| 字段名 | 类型 | 必填 | 说明 |
+| :--- | :--- | :--- | :--- |
+| `level` | Number | 是 | 风险等级：`1` = 红色（高危），`2` = 橙色（中危），`3` = 黄色（低危） |
+| `category` | String | 是 | 风险类别：`allergy`（过敏）/ `chronic`（慢病）/ `medication`（用药）/ `population`（特殊人群）/ `vital`（体征）/ `other`（其他） |
+| `content` | String | 是 | 风险描述文本，直接展示给医生 |
+
+#### 两种使用方式
+
+**方式一：HIS 传入患者信息，由 LLM 自动分析风险**
+
+适用于 HIS 没有自己的风险评估引擎的场景。`risks` 传空数组或不传。
 
 ```json
 {
   "patientId": "766842939207974912",
   "patientName": "张虎",
   "gender": "M",
-  "age": 19,
+  "age": 65,
   "chiefComplaint": "咳嗽三天",
   "historyOfPresentIllness": "受凉后出现咳嗽、咳痰",
-  "pastMedicalHistory": "高血压10年",
+  "pastMedicalHistory": "高血压10年，糖尿病5年",
   "diagnosis": "急性支气管炎",
-  "allergyHistory": "青霉素过敏"
+  "allergyHistory": "青霉素过敏",
+  "risks": []
+}
+```
+
+**方式二：HIS 直接注入预计算的风险项**
+
+适用于 HIS 已有风险评估结果的场景，前端直接展示，不再调用 LLM。
+
+```json
+{
+  "patientId": "766842939207974912",
+  "patientName": "张虎",
+  "gender": "M",
+  "age": 65,
+  "allergyHistory": "青霉素过敏",
+  "risks": [
+    {
+      "level": 1,
+      "category": "allergy",
+      "content": "青霉素过敏，当前处方含阿莫西林，存在交叉过敏风险"
+    },
+    {
+      "level": 2,
+      "category": "chronic",
+      "content": "高血压合并糖尿病，需关注肾功能指标"
+    },
+    {
+      "level": 3,
+      "category": "population",
+      "content": "65岁以上老年患者，用药剂量需酌减"
+    }
+  ]
 }
 ```
 
@@ -630,6 +691,13 @@ http://127.0.0.1:8081/api/patient/risks
   "patientId": "766842939207974912"
 }
 ```
+
+#### 前端展示行为
+
+1. 收到请求后，`floating-ball` 会置顶窗口并展示风险提醒面板。
+2. 风险项按 `level` 排序展示（红色在前，黄色在后）。
+3. 如果存在 level 1 或 level 2 的高危/中危风险，医生必须手动点击"我已知悉"才能关闭面板。
+4. 如果仅有 level 3 低危风险，面板将在 10 秒后自动关闭。
 
 该接口不是问诊主链路必需项，可以后补。
 

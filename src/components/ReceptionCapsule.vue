@@ -1,60 +1,69 @@
 <template>
-  <div class="reception-layout">
-    <!-- Main Capsule Bar -->
-    <div class="reception-capsule" :class="{ 'is-expanded': showDetail && riskCount > 0 }" data-tauri-drag-region>
-      <!-- Left: Avatar -->
-      <div class="avatar-section">
-        <div class="avatar-wrapper">
-          <Icon :icon="avatarIcon" :color="avatarColor" size="40" />
+  <div
+    class="rc-root"
+    :style="{ border: '2px solid ' + borderColor }"
+    data-tauri-drag-region
+  >
+    <!-- Close -->
+    <div class="rc-close" @click="trackClick('reception_close'); $emit('close')">
+      <Icon icon="lucide:x" size="14" />
+    </div>
+
+    <!-- Header row -->
+    <div class="rc-header">
+      <!-- Avatar -->
+      <div class="rc-avatar">
+        <Icon :icon="gender === 'F' ? 'mdi:human-female' : 'mdi:human-male'" :color="gender === 'F' ? '#ff9a9e' : '#79c2ff'" size="30" />
+      </div>
+
+      <!-- Info -->
+      <div class="rc-info">
+        <div class="rc-name-row">
+          <span class="rc-name">{{ patientName }}</span>
+          <span class="rc-meta">{{ gender === 'F' ? '女' : '男' }}</span>
+          <span class="rc-meta">{{ age }}岁</span>
+        </div>
+        <div class="rc-badge-row">
+          <span v-if="analyzing" class="rc-badge rc-badge--blue">
+            <span class="rc-dot"></span>
+            正在评估...
+          </span>
+          <span v-else-if="risks.length > 0" class="rc-badge rc-badge--orange">
+            <Icon icon="lucide:alert-circle" size="14" />
+            {{ risks.length }}项健康风险
+          </span>
+          <span v-else class="rc-badge rc-badge--green">
+            <Icon icon="lucide:thumbs-up" size="14" />
+            健康状态良好
+          </span>
         </div>
       </div>
 
-      <!-- Center: Patient Info & Status -->
-      <div class="info-section">
-        <div class="patient-line">
-          <span class="patient-name">{{ patientName }}</span>
-          <span class="patient-meta">{{ genderText }} {{ age }}岁</span>
-        </div>
-        <div class="status-line">
-          <span v-if="analyzing" class="status-analyzing">
-            <span class="dot-flashing"></span> 正在评估健康风险...
-          </span>
-          <span v-else-if="riskCount > 0" class="status-risk" @click="toggleRiskDetail">
-            <span class="risk-badge">⚠️ {{ riskCount }}项健康风险</span>
-            <span class="risk-hint">{{ showDetail ? '收起详情' : '点击查看详情' }}</span>
-          </span>
-          <span v-else class="status-safe">
-            ✅ 健康状况良好
-          </span>
-        </div>
-      </div>
-
-      <!-- Right: Actions -->
-      <div class="controls-section">
-        <button class="control-btn primary" @click="trackClick('reception_close'); $emit('close')" title="结束接诊">
-          <Icon icon="lucide:x" size="20" />
-        </button>
+      <!-- Expand toggle -->
+      <div
+        v-if="risks.length > 0 && !analyzing"
+        class="rc-toggle"
+        @click="toggle"
+      >
+        <Icon :icon="expanded ? 'lucide:chevron-up' : 'lucide:chevron-down'" size="18" />
       </div>
     </div>
 
-    <!-- Risk Detail List (Expanded View) -->
-    <div v-if="showDetail && riskCount > 0" class="risk-detail-panel">
-      <div class="detail-header">风险详情</div>
-      <div class="risk-list">
-        <div v-for="(risk, idx) in risks" :key="idx" class="risk-item" :class="'level-' + risk.level">
-          <span class="item-icon">{{ getRiskIcon(risk.level) }}</span>
-          <div class="item-content-wrapper">
-             <span class="item-cat">[{{ getRiskCategory(risk.category) }}]</span>
-             <span class="item-text">{{ risk.content }}</span>
-          </div>
-        </div>
+    <!-- Risk items -->
+    <div v-if="expanded && risks.length > 0" class="rc-risks">
+      <div v-for="(r, i) in risks" :key="i" class="rc-risk-row">
+        <span
+          class="rc-tag"
+          :style="{ color: tagColor(r.category), borderColor: tagColor(r.category) }"
+        >{{ tagLabel(r.category) }}</span>
+        <span class="rc-risk-text">{{ r.content }}</span>
       </div>
     </div>
   </div>
 </template>
 
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue';
+import { ref, computed, watch } from 'vue';
 import Icon from './Icon.vue';
 import { trackClick, startTimedOperation } from '../services/operationTracker';
 
@@ -64,304 +73,201 @@ export interface RiskItem {
   content: string;
 }
 
-interface Props {
+const props = defineProps<{
   patientName: string;
   gender: 'M' | 'F';
   age: number;
   risks: RiskItem[];
   analyzing?: boolean;
-}
+}>();
 
-const props = defineProps<Props>();
 const emit = defineEmits<{
   (e: 'close'): void;
   (e: 'toggle-expand', expanded: boolean): void;
 }>();
 
-const showDetail = ref(false);
-let endAnalyzingTimer: ((success?: boolean, details?: Record<string, any>) => void) | null = null;
+const expanded = ref(false);
+let endTimer: ((s?: boolean, d?: Record<string, any>) => void) | null = null;
 
-const genderText = computed(() => props.gender === 'F' ? '女' : '男');
-const avatarIcon = computed(() => props.gender === 'F' ? 'mdi:human-female' : 'mdi:human-male');
-const avatarColor = computed(() => props.gender === 'F' ? '#ff9a9e' : '#79c2ff');
-const riskCount = computed(() => props.risks.length);
+const borderColor = computed(() => {
+  if (props.analyzing) return '#93c5fd';
+  if (props.risks.length > 0) return '#fb923c';
+  return '#4ade80';
+});
 
-watch(() => props.analyzing, (isAnalyzing, wasAnalyzing) => {
-  if (isAnalyzing && !wasAnalyzing) {
-    endAnalyzingTimer = startTimedOperation('reception_risk_analysis');
-  } else if (!isAnalyzing && wasAnalyzing && endAnalyzingTimer) {
-    endAnalyzingTimer(true, { riskCount: props.risks.length, patientName: props.patientName });
-    endAnalyzingTimer = null;
+watch(() => props.analyzing, (now, was) => {
+  if (now && !was) endTimer = startTimedOperation('reception_risk_analysis');
+  else if (!now && was && endTimer) {
+    endTimer(true, { riskCount: props.risks.length, patientName: props.patientName });
+    endTimer = null;
   }
 });
 
-watch(() => props.risks, (newRisks) => {
-  if (newRisks.length > 0) {
-    showDetail.value = true;
-    emit('toggle-expand', true);
-  } else {
-    showDetail.value = false;
-    emit('toggle-expand', false);
-  }
+watch(() => props.risks, (r) => {
+  const open = r.length > 0;
+  expanded.value = open;
+  emit('toggle-expand', open);
 }, { immediate: true });
 
-const toggleRiskDetail = () => {
-  if (riskCount.value === 0) return;
-  showDetail.value = !showDetail.value;
-  trackClick('reception_toggle_risk_detail', { expanded: showDetail.value, riskCount: riskCount.value });
-  emit('toggle-expand', showDetail.value);
+function toggle() {
+  expanded.value = !expanded.value;
+  trackClick('reception_toggle_risk_detail', { expanded: expanded.value, riskCount: props.risks.length });
+  emit('toggle-expand', expanded.value);
+}
+
+const CATEGORY_COLORS: Record<string, string> = {
+  allergy: '#dc2626',
+  chronic: '#ea580c',
+  medication: '#d97706',
+  population: '#2563eb',
+  vital: '#16a34a',
+  other: '#64748b',
+};
+const CATEGORY_LABELS: Record<string, string> = {
+  allergy: '过敏',
+  chronic: '慢病',
+  medication: '用药',
+  population: '人群',
+  vital: '体征',
+  other: '其他',
 };
 
-const getRiskIcon = (level: number) => {
-  switch (level) {
-    case 1: return '🔴';
-    case 2: return '🟠';
-    case 3: return '🟡';
-    default: return '⚪';
-  }
-};
-
-const getRiskCategory = (cat: string) => {
-    const map: Record<string, string> = {
-        'allergy': '过敏',
-        'chronic': '慢病',
-        'medication': '用药',
-        'population': '人群',
-        'vital': '体征',
-        'other': '其他'
-    };
-    return map[cat] || '其他';
-};
+function tagColor(cat: string) { return CATEGORY_COLORS[cat] || '#64748b'; }
+function tagLabel(cat: string) { return CATEGORY_LABELS[cat] || '其他'; }
 </script>
 
 <style scoped>
-/* ... layout ... */
-.reception-layout {
-  width: 100%;
-  height: 100%;
+.rc-root {
+  position: absolute;
+  inset: 0;
+  background: #ffffff !important;
+  border-radius: 14px;
   display: flex;
   flex-direction: column;
-}
-
-.reception-capsule {
-  width: 100%;
-  height: 80px;
-  flex-shrink: 0;
-  display: flex;
-  align-items: center;
-  padding: 0 12px;
+  padding: 16px;
   box-sizing: border-box;
-  background: rgba(255, 255, 255, 0.98);
-  border-radius: 40px; 
-  position: relative;
-  z-index: 2;
-  transition: border-radius var(--duration-normal) var(--ease-out); /* Smooth transition */
+  overflow: hidden;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
 }
 
-/* When expanded, remove bottom border radius to merge with detail panel */
-.reception-capsule.is-expanded {
-  border-bottom-left-radius: 0;
-  border-bottom-right-radius: 0;
-  border-bottom: 1px solid #f1f5f9; /* Subtle separator */
-}
-
-.avatar-section {
-  flex-shrink: 0;
-  margin-right: 12px;
-}
-
-.avatar-wrapper {
-  width: 44px;
-  height: 44px;
+/* ---- close ---- */
+.rc-close {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  width: 24px;
+  height: 24px;
   border-radius: 50%;
-  background: linear-gradient(135deg, #f0f9ff 0%, #e8f4ff 100%);
+  background: rgba(0,0,0,0.06);
   display: flex;
   align-items: center;
   justify-content: center;
-  box-shadow: 0 2px 6px rgba(0,0,0,0.05);
+  cursor: pointer;
+  color: #94a3b8;
+  z-index: 2;
+  -webkit-app-region: no-drag;
 }
+.rc-close:hover { background: rgba(0,0,0,0.12); color: #475569; }
 
-.avatar-wrapper svg {
-  width: 28px;
-  height: 28px;
-}
-
-.info-section {
-  flex: 1;
+/* ---- header ---- */
+.rc-header {
   display: flex;
-  flex-direction: column;
-  justify-content: center;
-  overflow: hidden;
+  align-items: center;
+  gap: 12px;
+  flex-shrink: 0;
 }
 
-.patient-line {
+.rc-avatar {
+  width: 50px;
+  height: 50px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, #e8eaf6, #d1d5e8);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.rc-info { flex: 1; min-width: 0; }
+
+.rc-name-row {
   display: flex;
   align-items: baseline;
   gap: 8px;
-  margin-bottom: 2px;
+  margin-bottom: 6px;
 }
+.rc-name { font-size: 17px; font-weight: 700; color: #1e293b; }
+.rc-meta { font-size: 14px; color: #94a3b8; }
 
-.patient-name {
-  font-size: 16px;
+/* ---- badge ---- */
+.rc-badge-row { display: flex; }
+
+.rc-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 10px;
+  border-radius: 12px;
+  font-size: 13px;
   font-weight: 600;
-  color: #1e293b;
+  line-height: 20px;
 }
+.rc-badge--green { background: #dcfce7; color: #16a34a; }
+.rc-badge--orange { background: #fff4e5; color: #ea580c; }
+.rc-badge--blue { background: #dbeafe; color: #3b82f6; gap: 6px; }
 
-.patient-meta {
-  font-size: 12px;
-  color: #64748b;
+.rc-dot {
+  width: 6px; height: 6px; border-radius: 50%;
+  background: #3b82f6;
+  animation: rc-pulse 1s infinite alternate;
 }
+@keyframes rc-pulse { 0%{opacity:1} 100%{opacity:.3} }
 
-.status-line {
-  font-size: 12px;
-  display: flex;
-  align-items: center;
-  height: 20px;
-}
-
-.status-analyzing {
-  color: var(--color-primary);
-  display: flex;
-  align-items: center;
-  gap: 6px;
-}
-
-/** Flashing dot animation **/
-.dot-flashing {
-  position: relative;
-  width: 6px;
-  height: 6px;
-  border-radius: 5px;
-  background-color: var(--color-primary);
-  color: var(--color-primary);
-  animation: dot-flashing 1s infinite linear alternate;
-  animation-delay: 0.5s;
-}
-
-@keyframes dot-flashing {
-  0% { background-color: var(--color-primary); }
-  50%, 100% { background-color: rgba(59, 130, 246, 0.2); }
-}
-
-.status-risk {
-  color: #ea580c;
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 2px 6px;
-  border-radius: 4px;
-  transition: background var(--duration-normal) var(--ease-out);
-  user-select: none;
-}
-
-.status-risk:hover {
-  background: #fff7ed;
-}
-
-.risk-badge {
-  font-weight: 600;
-}
-
-.risk-hint {
-  color: #94a3b8;
-  font-size: 10px;
-}
-
-.status-safe {
-  color: #10b981;
-  font-weight: 500;
-}
-
-.controls-section {
-  flex-shrink: 0;
-  margin-left: 12px;
-}
-
-.control-btn {
-  width: 36px;
-  height: 36px;
+/* ---- toggle ---- */
+.rc-toggle {
+  width: 30px; height: 30px;
   border-radius: 50%;
-  border: none;
+  background: rgba(0,0,0,0.04);
   display: flex;
   align-items: center;
   justify-content: center;
   cursor: pointer;
-  transition: all var(--duration-normal) var(--ease-out);
-  background: #f1f5f9;
   color: #64748b;
+  flex-shrink: 0;
+  -webkit-app-region: no-drag;
 }
+.rc-toggle:hover { background: rgba(0,0,0,0.08); color: #1e293b; }
 
-.control-btn:hover {
-  background: #cbd5e1;
-  color: #1e293b;
-}
-
-.control-btn svg {
-  width: 20px;
-  height: 20px;
-}
-
-/* Detail Panel */
-.risk-detail-panel {
-  flex: 1;
-  background: #fff;
-  /* border-top removed, handled by capsule bottom border */
-  padding: 12px 16px;
-  overflow-y: auto;
-  box-shadow: inset 0 4px 6px -4px rgba(0,0,0,0.1);
-  animation: slide-down 0.2s ease-out;
-}
-
-@keyframes slide-down {
-  from { opacity: 0; transform: translateY(-10px); }
-  to { opacity: 1; transform: translateY(0); }
-}
-
-.detail-header {
-  font-size: 12px;
-  font-weight: 600;
-  color: #94a3b8;
-  margin-bottom: 8px;
-}
-
-.risk-list {
+/* ---- risk list ---- */
+.rc-risks {
+  margin-top: 16px;
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 14px;
+  overflow-y: auto;
+  flex: 1;
 }
 
-.risk-item {
+.rc-risk-row {
   display: flex;
-  align-items: start;
-  gap: 8px;
-  padding: 8px;
-  border-radius: 8px;
+  align-items: center;
+  gap: 12px;
+}
+
+.rc-tag {
+  flex-shrink: 0;
+  padding: 2px 12px;
+  border-radius: 12px;
   font-size: 13px;
-  line-height: 1.5;
+  font-weight: 600;
+  border: 1.5px solid;
+  background: transparent;
+  white-space: nowrap;
 }
 
-.risk-item.level-1 { background: #fef2f2; color: #b91c1c; }
-.risk-item.level-2 { background: #fff7ed; color: #c2410c; }
-.risk-item.level-3 { background: #fefce8; color: #a16207; }
-
-.item-icon {
-  font-size: 14px;
-  margin-top: 2px;
-}
-
-.item-content-wrapper {
-    display: flex;
-    flex-direction: column;
-}
-
-.item-cat {
-    font-size: 11px;
-    opacity: 0.8;
-    margin-bottom: 2px;
-}
-
-.item-text {
-    font-weight: 500;
+.rc-risk-text {
+  font-size: 15px;
+  color: #334155;
 }
 </style>

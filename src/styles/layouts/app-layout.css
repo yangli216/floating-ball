@@ -75,6 +75,18 @@
   padding-top: 0;
 }
 
+/**
+ * 透明容器模式
+ * 去除玻璃态效果，让子组件自行管理背景和边框
+ */
+.assistant-container.transparent-container {
+  background: transparent;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+  border: none;
+  box-shadow: none;
+}
+
 /* ========== 工具栏 ========== */
 
 /**

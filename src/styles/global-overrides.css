@@ -2047,6 +2047,15 @@ html.dark .analytics-panel .range-btn.active {
     0 2px 16px rgba(255, 255, 255, 0.3) inset !important;
 }
 
+/* --- Liquid Glass 透明容器模式覆盖 --- */
+[data-theme="liquid-glass"] .assistant-container.transparent-container {
+  background: transparent !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+  border: none !important;
+  box-shadow: none !important;
+}
+
 /* --- Liquid Glass 工具栏 --- */
 [data-theme="liquid-glass"] .assistant-toolbar {
   background: linear-gradient(180deg, rgba(255,255,255,0.5) 0%, rgba(255,255,255,0.15) 100%) !important;

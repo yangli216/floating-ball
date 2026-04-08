@@ -52,11 +52,14 @@ export const WINDOW_SIZES = {
   /** 问诊页面：1080×720px 大面板 */
   CONSULTATION: { width: 1080, height: 720 } as WindowSize,
 
-  /** 语音/风险胶囊：360×80px 胶囊形态 */
+  /** 语音胶囊：360×80px 胶囊形态 */
   CAPSULE: { width: 360, height: 80 } as WindowSize,
 
-  /** 风险详情展开：360×400px */
-  CAPSULE_EXPANDED: { width: 360, height: 400 } as WindowSize,
+  /** 风险评估卡片：340×120px */
+  RISK_CARD: { width: 340, height: 120 } as WindowSize,
+
+  /** 风险评估卡片展开：340×360px */
+  RISK_CARD_EXPANDED: { width: 340, height: 360 } as WindowSize,
 
   /** 语音结果编辑：1080×720px */
   RESULT: { width: 1080, height: 720 } as WindowSize,
@@ -83,8 +86,10 @@ export function getWindowSizeForView(view: ViewType): WindowSize {
       return WINDOW_SIZES.CONSULTATION;
 
     case 'voice-interaction':
-    case 'reception-capsule':
       return WINDOW_SIZES.CAPSULE;
+
+    case 'reception-capsule':
+      return WINDOW_SIZES.RISK_CARD;
 
     case 'voice-result':
       return WINDOW_SIZES.RESULT;
@@ -109,7 +114,7 @@ export function getWindowSizeForView(view: ViewType): WindowSize {
  * @returns 是否为胶囊形态
  */
 export function isCapsuleView(view: ViewType): boolean {
-  return view === 'voice-interaction' || view === 'reception-capsule';
+  return view === 'voice-interaction';
 }
 
 /**
