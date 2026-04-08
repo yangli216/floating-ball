@@ -1398,7 +1398,7 @@ dependencies = [
 
 [[package]]
 name = "floating-ball"
-version = "0.1.37"
+version = "1.2.3"
 dependencies = [
  "actix-cors",
  "actix-web",
