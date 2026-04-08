@@ -2385,23 +2385,60 @@ const canBatchWriteBack = computed(() => {
   return hasSelectedTreatments;
 });
 
+/**
+ * Send a reference request and wait for HIS feedback before resolving.
+ * This prevents overwriting `last_result` before HIS has consumed the previous one.
+ */
+const requestReferenceAndWaitFeedback = async (
+  action: ReferenceAction,
+  items: ReferenceItemPayload[],
+  timeoutMs = 30000,
+): Promise<void> => {
+  // Capture the requestId that requestReferenceToPHIS will generate
+  const expectedRequestIdPrefix = `ref-${action}-`;
+
+  // Register listener BEFORE sending the request to avoid race condition
+  let resolveFeedback: () => void;
+  let rejectFeedback: (err: Error) => void;
+  const feedbackPromise = new Promise<void>((resolve, reject) => {
+    resolveFeedback = resolve;
+    rejectFeedback = reject;
+  });
+
+  const unlisten = await listen<ReferenceFeedbackPayload>(
+    'consultation-reference-feedback',
+    (event) => {
+      const payload = event.payload;
+      if (
+        payload.requestId?.startsWith(expectedRequestIdPrefix) &&
+        payload.status !== 'pending'
+      ) {
+        clearTimeout(timer);
+        unlisten();
+        if (payload.status === 'success') {
+          resolveFeedback();
+        } else {
+          rejectFeedback(new Error(payload.message || `PHIS 引用失败 (${action})`));
+        }
+      }
+    },
+  );
+
+  const timer = setTimeout(() => {
+    unlisten();
+    rejectFeedback!(new Error(`等待 PHIS 回执超时 (${action})`));
+  }, timeoutMs);
+
+  await requestReferenceToPHIS(action, items);
+  await feedbackPromise;
+};
+
 const handleBatchWriteBack = async () => {
   if (!selectedDiagnosis.value) {
     showToast('请先选择一个诊断结果', 'info');
     return;
   }
 
-  // Reference diagnosis first
-  await requestReferenceToPHIS('diagnosis', [
-    {
-      name: selectedDiagnosis.value.name,
-      code: selectedDiagnosis.value.code,
-      type: 'diagnosis',
-      isTCM: selectedDiagnosis.value.isTCM,
-    },
-  ]);
-
-  // Reference each treatment type that has selected items
   const typeActionMap: Record<ReferenceableTreatmentType, ReferenceAction> = {
     medicine: 'medication',
     exam: 'examination',
@@ -2409,14 +2446,47 @@ const handleBatchWriteBack = async () => {
     procedure: 'procedure',
   };
 
+  // Build the full list of requests to send sequentially
+  const requests: { action: ReferenceAction; items: ReferenceItemPayload[] }[] = [];
+
+  // Diagnosis first
+  requests.push({
+    action: 'diagnosis',
+    items: [
+      {
+        name: selectedDiagnosis.value.name,
+        code: selectedDiagnosis.value.code,
+        type: 'diagnosis',
+        isTCM: selectedDiagnosis.value.isTCM,
+      },
+    ],
+  });
+
+  // Then each treatment type that has selected items
   for (const section of visibleTreatmentReferenceSections.value) {
     if (section.selectedCount > 0) {
       const items = buildSelectedTreatmentReferenceItemsByType(section.type);
       if (items.length > 0) {
-        await requestReferenceToPHIS(typeActionMap[section.type], items);
+        requests.push({ action: typeActionMap[section.type], items });
       }
     }
   }
+
+  // Send each request, waiting for HIS feedback before the next
+  for (const req of requests) {
+    try {
+      await requestReferenceAndWaitFeedback(req.action, req.items);
+    } catch (error) {
+      console.error(`[ConsultationPage] Batch writeback failed at ${req.action}:`, error);
+      showToast(
+        `回写中断：${error instanceof Error ? error.message : String(error)}`,
+        'error',
+      );
+      return;
+    }
+  }
+
+  showToast('一键回写完成', 'success');
 };
 
 watch(() => props.initialPatientData, (newData) => {

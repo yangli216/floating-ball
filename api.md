@@ -1,6 +1,6 @@
 # floating-ball HIS 接入指南 / 接口说明
 
-> 最后更新: 2026-03-30
+> 最后更新: 2026-04-08
 >
 > 本文档面向准备接入 `floating-ball` 的 HIS / 医生站 / PHIS 项目。
 > 当前真实运行契约以 `src-tauri/src/http_server.rs` 与当前前端实现为准；`docs/regionalization/*.md` 仍属于规划文档，不能替代本文档。
@@ -65,10 +65,12 @@
 1. HIS / PHIS 轮询到 `reference-request`
 2. 读取其中的 `requestId`、`action`、`referenceItems`
 3. 在 HIS / PHIS 内完成保存
-4. 保存成功或失败后，调用 `POST /api/consultation/reference-feedback`
+4. 保存成功或失败后，**必须**调用 `POST /api/consultation/reference-feedback`
 5. `floating-ball` 收到回执后会更新当前页面状态，并把最新状态继续暴露到 `GET /result`
 
 这是当前联调最关键的一步，也是推荐诊断 / 用药 / 检查真正写入 HIS 的闭环。
+
+**重要：回执是强制要求的。** 当医生点击"一键回写"时，`floating-ball` 会按顺序发出多条 `reference-request`（诊断 -> 药品 -> 检查 -> 检验 -> 处置），每条请求**必须收到回执后才会发出下一条**。如果 PHIS 不回执，30 秒后超时，后续回写将中断。
 
 ## 4. 标准字段与映射规则
 
@@ -127,13 +129,31 @@
 4. HIS 持续轮询 `GET /api/consultation/result`
 5. 如果收到 `reference-request`，进入 PHIS 引用处理
 
-### 5.3 引用闭环时序
+### 5.3 引用闭环时序（一键回写）
 
-1. `floating-ball` 返回 `reference-request`
-2. HIS / PHIS 保存诊断、用药或检查
-3. PHIS 调用 `POST /api/consultation/reference-feedback`
-4. `floating-ball` 页面显示“引用成功”或“引用失败”
-5. HIS 再次轮询 `GET /api/consultation/result`，可读到 `reference-feedback`
+医生点击”一键回写”后，`floating-ball` 会按顺序逐条发出引用请求，**每条必须收到回执后才发下一条**：
+
+1. `floating-ball` 发出第 1 条 `reference-request`（如诊断）
+2. PHIS 轮询到该请求，执行保存
+3. PHIS **必须**调用 `POST /api/consultation/reference-feedback` 回执
+4. `floating-ball` 收到回执，页面更新状态
+5. `floating-ball` 发出第 2 条 `reference-request`（如药品）
+6. 重复步骤 2-4，直到所有引用类型处理完毕
+
+超时机制：如果某条请求 30 秒内未收到回执，一键回写将中断并提示错误。
+
+```text
+PHIS                                floating-ball
+ |                                       |
+ |  <-- GET /result (reference-request, diagnosis)
+ |  处理诊断保存                          |  等待回执...
+ |  POST /reference-feedback (success) -->|
+ |                                       |  收到回执, 发下一条
+ |  <-- GET /result (reference-request, medication)
+ |  处理用药保存                          |  等待回执...
+ |  POST /reference-feedback (success) -->|
+ |                                       |  全部完成
+```
 
 ## 6. 接口清单
 
@@ -467,11 +487,13 @@ HIS 处理建议：
    - `reference-feedback + examination` = 检查保存回执
    - `reference-feedback + lab_test` = 检验保存回执
    - `reference-feedback + procedure` = 处置保存回执
-4. 收到 `reference-request` 后不要立刻停止轮询；应在 PHIS 回执完成后继续取到 `reference-feedback`。
+4. 收到 `reference-request` 后**必须尽快调用 `/reference-feedback` 回执**，否则一键回写流程将阻塞直至超时（30 秒）。回执完成后继续轮询可取到 `reference-feedback` 确认状态。
 
-### 6.5 `POST /api/consultation/reference-feedback`
+### 6.5 `POST /api/consultation/reference-feedback`（必须）
 
-用途：PHIS 在保存推荐诊断 / 用药 / 检查后，将成功或失败结果回执给 `floating-ball`。
+用途：PHIS 在保存推荐诊断 / 用药 / 检查后，**必须**将成功或失败结果回执给 `floating-ball`。
+
+**强制要求：** 每收到一条 `reference-request`，PHIS 都必须调用本接口回执。一键回写场景下，`floating-ball` 会等待回执后才发出下一条引用请求；不回执将导致 30 秒超时中断。
 
 完整地址：
 
@@ -709,7 +731,8 @@ HIS 接入完成后，至少验证以下场景：
 3. `/result` 能回收到当前患者的 `draft` 或 `final-report`
 4. 推荐诊断引用时能先收到 `reference-request`
 5. PHIS 调用 `/reference-feedback` 后，`/result` 能继续返回 `reference-feedback`
-6. 切换患者后不会把上一位患者的结果误回填到当前医生站
-7. 语音接诊结果也能走同一条 `/result` 通道回写
+6. 一键回写场景：PHIS 能按顺序处理多条 `reference-request`，每条都及时回执，全部完成后页面显示"一键回写完成"
+7. 切换患者后不会把上一位患者的结果误回填到当前医生站
+8. 语音接诊结果也能走同一条 `/result` 通道回写
 
 如果你们 HIS 需要，我建议下一步可以再按这份文档继续拆一版“给后端开发直接对接的字段清单”和“一版给联调测试直接执行的验收用例”。
