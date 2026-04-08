@@ -56,6 +56,7 @@ const riskItems = ref<RiskItem[]>([]);
 
 // 语音问诊状态
 const generatedRecord = ref<GeneratedRecord | null>(null);
+const voiceRecord = ref<{ chiefComplaint: string; historyOfPresentIllness: string } | null>(null);
 const consultationAssistTrigger = ref<{ kind: ConsultationAssistAction; token: number } | null>(null);
 const patientDisplayName = computed(
   () => currentPatient.value?.name || currentPatient.value?.naPi || '未知患者'
@@ -486,10 +487,12 @@ const openInsideCloudHome = async () => {
           <!-- 问诊页面用 v-show 保持常驻，避免切换视图时组件销毁导致数据丢失 -->
           <ConsultationPage
             v-show="currentView === 'consultation'"
-            @close="handleCollapse"
+            @close="() => { voiceRecord = null; handleCollapse(); }"
             :initialPatientData="currentPatient"
             :assistTrigger="consultationAssistTrigger"
+            :voiceRecord="voiceRecord"
             @consume-auto-trigger="clearConsultationAssistTrigger"
+            @consume-voice-record="voiceRecord = null"
           />
           <ChatPanel v-if="currentView === 'chat'" />
           <RiskAlertPanel
