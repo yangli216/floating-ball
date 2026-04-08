@@ -70,7 +70,7 @@
 
 这是当前联调最关键的一步，也是推荐诊断 / 用药 / 检查真正写入 HIS 的闭环。
 
-**重要：回执是强制要求的。** 当医生点击"一键回写"时，`floating-ball` 会按顺序发出多条 `reference-request`（诊断 -> 药品 -> 检查 -> 检验 -> 处置），每条请求**必须收到回执后才会发出下一条**。如果 PHIS 不回执，30 秒后超时，后续回写将中断。
+**重要：回执是强制要求的。** 当医生点击"一键回写"时，`floating-ball` 会发出**一条** `reference-request`（`referenceType` 为 `batch`），其 `referenceItems` 包含诊断、药品、检查、检验、处置等所有选中项目。PHIS 收到后应一次性处理全部项目，处理完成后**必须**调用回执接口。
 
 ## 4. 标准字段与映射规则
 
@@ -131,28 +131,22 @@
 
 ### 5.3 引用闭环时序（一键回写）
 
-医生点击”一键回写”后，`floating-ball` 会按顺序逐条发出引用请求，**每条必须收到回执后才发下一条**：
+医生点击”一键回写”后，`floating-ball` 会发出**一条** `reference-request`，`referenceType` 为 `batch`，`referenceItems` 包含所有选中项目（诊断 + 药品 + 检查 + 检验 + 处置）：
 
-1. `floating-ball` 发出第 1 条 `reference-request`（如诊断）
-2. PHIS 轮询到该请求，执行保存
+1. `floating-ball` 发出 `reference-request`（`referenceType: “batch”`），`referenceItems` 包含全部选中项
+2. PHIS 轮询到该请求，遍历 `referenceItems`，按每项的 `type` 字段分类处理并保存
 3. PHIS **必须**调用 `POST /api/consultation/reference-feedback` 回执
-4. `floating-ball` 收到回执，页面更新状态
-5. `floating-ball` 发出第 2 条 `reference-request`（如药品）
-6. 重复步骤 2-4，直到所有引用类型处理完毕
+4. `floating-ball` 收到回执，页面更新全部项目状态
 
-超时机制：如果某条请求 30 秒内未收到回执，一键回写将中断并提示错误。
+每个 `referenceItems` 条目自带 `type` 字段（`diagnosis` / `medication` / `examination` / `lab_test` / `procedure`），PHIS 据此判断每项应写入哪个业务模块。
 
 ```text
 PHIS                                floating-ball
  |                                       |
- |  <-- GET /result (reference-request, diagnosis)
- |  处理诊断保存                          |  等待回执...
+ |  <-- GET /result (reference-request, batch)
+ |  遍历 referenceItems 按 type 分类保存   |
  |  POST /reference-feedback (success) -->|
- |                                       |  收到回执, 发下一条
- |  <-- GET /result (reference-request, medication)
- |  处理用药保存                          |  等待回执...
- |  POST /reference-feedback (success) -->|
- |                                       |  全部完成
+ |                                       |  回写完成
 ```
 
 ## 6. 接口清单
@@ -389,16 +383,16 @@ http://127.0.0.1:8081/api/consultation/result
 }
 ```
 
-#### 成功响应: 引用请求
+#### 成功响应: 引用请求（一键回写 batch）
 
 ```json
 {
   "consultationId": "766842939207974912",
   "timestamp": 1704355203000,
   "resultType": "reference-request",
-  "requestId": "ref-diagnosis-1704355203000",
-  "referenceType": "diagnosis",
-  "action": "diagnosis",
+  "requestId": "ref-batch-1704355203000",
+  "referenceType": "batch",
+  "action": "batch",
   "referenceStatus": "pending",
   "referenceMessage": "等待 PHIS 保存引用结果",
   "referenceItems": [
@@ -407,6 +401,30 @@ http://127.0.0.1:8081/api/consultation/result
       "code": "J20.900",
       "type": "diagnosis",
       "isTCM": false
+    },
+    {
+      "name": "阿莫西林胶囊",
+      "code": null,
+      "type": "medication",
+      "idCli": "10023"
+    },
+    {
+      "name": "布洛芬缓释胶囊",
+      "code": null,
+      "type": "medication",
+      "idCli": "10056"
+    },
+    {
+      "name": "血常规",
+      "code": null,
+      "type": "lab_test",
+      "idCli": "20045"
+    },
+    {
+      "name": "胸部X线",
+      "code": null,
+      "type": "examination",
+      "idCli": "30012"
     }
   ],
   "chiefComplaint": "咳嗽三天",
@@ -415,6 +433,32 @@ http://127.0.0.1:8081/api/consultation/result
     {
       "name": "急性支气管炎",
       "code": "J20.900"
+    }
+  ],
+  "medications": [
+    {
+      "name": "阿莫西林胶囊",
+      "spec": "0.25g*24粒",
+      "usage": "口服，每日3次，每次1粒",
+      "idMedPro": "10023"
+    },
+    {
+      "name": "布洛芬缓释胶囊",
+      "spec": "0.3g*20粒",
+      "usage": "口服，每日2次，每次1粒",
+      "idMedPro": "10056"
+    }
+  ],
+  "examinations": [
+    {
+      "name": "胸部X线",
+      "idCli": "30012"
+    }
+  ],
+  "labTests": [
+    {
+      "name": "血常规",
+      "idCli": "20045"
     }
   ]
 }
@@ -427,17 +471,41 @@ http://127.0.0.1:8081/api/consultation/result
   "consultationId": "766842939207974912",
   "timestamp": 1704355205000,
   "resultType": "reference-feedback",
-  "requestId": "ref-diagnosis-1704355203000",
-  "referenceType": "diagnosis",
-  "action": "diagnosis",
+  "requestId": "ref-batch-1704355203000",
+  "referenceType": "batch",
+  "action": "batch",
   "referenceStatus": "success",
-  "referenceMessage": "PHIS 已成功保存诊断",
+  "referenceMessage": "PHIS 已成功保存全部引用项目",
   "referenceItems": [
     {
       "name": "急性支气管炎",
       "code": "J20.900",
       "type": "diagnosis",
       "isTCM": false
+    },
+    {
+      "name": "阿莫西林胶囊",
+      "code": null,
+      "type": "medication",
+      "idCli": "10023"
+    },
+    {
+      "name": "布洛芬缓释胶囊",
+      "code": null,
+      "type": "medication",
+      "idCli": "10056"
+    },
+    {
+      "name": "血常规",
+      "code": null,
+      "type": "lab_test",
+      "idCli": "20045"
+    },
+    {
+      "name": "胸部X线",
+      "code": null,
+      "type": "examination",
+      "idCli": "30012"
     }
   ],
   "chiefComplaint": "咳嗽三天",
@@ -470,7 +538,7 @@ HTTP 状态码：`404`
 | `timestamp` | 本条结果生成时间戳 |
 | `resultType` | 当前可能为 `draft` / `reference-request` / `reference-feedback` / `final-report` |
 | `requestId` | 请求 ID，`draft` 类型格式为 `draft-record-{timestamp}`，引用闭环类型格式为 `ref-{action}-{timestamp}` |
-| `referenceType` | 当前引用对象类型，支持 `diagnosis` / `medication` / `examination` / `lab_test` / `procedure`；HIS 应优先用它判断这是一条什么回执 |
+| `referenceType` | 当前引用对象类型，支持 `diagnosis` / `medication` / `examination` / `lab_test` / `procedure` / `batch`；一键回写场景下为 `batch`，此时 `referenceItems` 包含所有类型的项目，每项通过 `type` 字段区分 |
 | `action` | 兼容旧版联调字段，语义与 `referenceType` 相同，建议新接入只把它当兼容字段使用 |
 | `referenceStatus` | 引用状态，常见值 `pending` / `success` / `failed` |
 | `referenceMessage` | 当前状态说明或失败原因 |
@@ -480,20 +548,22 @@ HIS 处理建议：
 
 1. 必须先校验 `consultationId` 是否匹配当前患者。
 2. 建议按 `consultationId + requestId + resultType + timestamp` 做去重。
-3. 判断“这是一条什么回执”时，建议优先看 `resultType + referenceType`：
-   - `reference-request + diagnosis` = 请求 PHIS 保存诊断
+3. 判断”这是一条什么回执”时，建议优先看 `resultType + referenceType`：
+   - `reference-request + batch` = 一键回写请求，`referenceItems` 包含所有类型项目，按每项 `type` 分类处理
+   - `reference-request + diagnosis` = 请求 PHIS 保存诊断（单项引用场景）
+   - `reference-feedback + batch` = 一键回写回执
    - `reference-feedback + diagnosis` = 诊断保存回执
    - `reference-feedback + medication` = 用药保存回执
    - `reference-feedback + examination` = 检查保存回执
    - `reference-feedback + lab_test` = 检验保存回执
    - `reference-feedback + procedure` = 处置保存回执
-4. 收到 `reference-request` 后**必须尽快调用 `/reference-feedback` 回执**，否则一键回写流程将阻塞直至超时（30 秒）。回执完成后继续轮询可取到 `reference-feedback` 确认状态。
+4. 收到 `reference-request` 后**必须尽快调用 `/reference-feedback` 回执**。回执完成后继续轮询可取到 `reference-feedback` 确认状态。
 
 ### 6.5 `POST /api/consultation/reference-feedback`（必须）
 
 用途：PHIS 在保存推荐诊断 / 用药 / 检查后，**必须**将成功或失败结果回执给 `floating-ball`。
 
-**强制要求：** 每收到一条 `reference-request`，PHIS 都必须调用本接口回执。一键回写场景下，`floating-ball` 会等待回执后才发出下一条引用请求；不回执将导致 30 秒超时中断。
+**强制要求：** 每收到一条 `reference-request`，PHIS 都必须调用本接口回执。一键回写场景下只有一条 `batch` 类型请求，PHIS 处理完全部项目后回执一次即可。
 
 完整地址：
 
@@ -507,27 +577,37 @@ http://127.0.0.1:8081/api/consultation/reference-feedback
 | :--- | :--- | :--- | :--- |
 | `consultationId` | String | 是 | 当前患者 / 当前问诊标识 |
 | `requestId` | String | 是 | 对应 `reference-request` 中的请求 ID |
-| `referenceType` | String | 否 | 建议新接入显式传入的引用对象类型，支持 `diagnosis` / `medication` / `examination` / `lab_test` / `procedure` |
+| `referenceType` | String | 否 | 建议新接入显式传入的引用对象类型，支持 `diagnosis` / `medication` / `examination` / `lab_test` / `procedure` / `batch` |
 | `action` | String | 否 | 兼容旧版字段，语义与 `referenceType` 相同；`referenceType` 与 `action` 至少要传一个 |
 | `status` | String | 是 | `success` / `failed` |
 | `message` | String | 否 | 成功说明或失败原因 |
 | `items` | Array | 否 | 本次实际保存的项目列表 |
 
-请求示例：
+请求示例（一键回写 batch 回执）：
 
 ```json
 {
   "consultationId": "766842939207974912",
-  "requestId": "ref-diagnosis-1704355203000",
-  "referenceType": "diagnosis",
-  "action": "diagnosis",
+  "requestId": "ref-batch-1704355203000",
+  "referenceType": "batch",
+  "action": "batch",
   "status": "success",
-  "message": "PHIS 已成功保存诊断",
+  "message": "PHIS 已成功保存全部引用项目",
   "items": [
     {
       "name": "急性支气管炎",
       "code": "J20.900",
       "type": "diagnosis"
+    },
+    {
+      "name": "阿莫西林胶囊",
+      "type": "medication",
+      "idCli": "10023"
+    },
+    {
+      "name": "血常规",
+      "type": "lab_test",
+      "idCli": "20045"
     }
   ]
 }
@@ -539,8 +619,8 @@ http://127.0.0.1:8081/api/consultation/reference-feedback
 {
   "status": "success",
   "consultationId": "766842939207974912",
-  "requestId": "ref-diagnosis-1704355203000",
-  "referenceType": "diagnosis",
+  "requestId": "ref-batch-1704355203000",
+  "referenceType": "batch",
   "timestamp": 1704355205000
 }
 ```
@@ -717,7 +797,7 @@ HIS 侧至少要识别以下 4 类结果：
 1. `draft` 与 `final-report` 都可能携带结构化诊断、用药、检查列表。
 2. `reference-request` 和 `reference-feedback` 都可能附带同一份病历上下文，便于 HIS 在当前界面直接处理。
 3. 对引用闭环结果，HIS 应继续结合 `referenceType` 判断具体业务对象，不建议只看 `resultType`。
-4. 当前推荐诊断为单选引用；推荐用药、推荐检查、推荐检验、推荐处置支持多选后按分组一次引用。
+4. 一键回写场景下，`referenceType` 为 `batch`，`referenceItems` 包含诊断和所有选中治疗项目，每项通过 `type` 字段区分业务类型。单项引用场景下 `referenceType` 仍为具体类型（如 `diagnosis`）。
 
 ## 8. 推荐轮询与去重策略
 
@@ -768,23 +848,28 @@ curl -X POST 'http://127.0.0.1:8081/api/consultation/start' \
 curl 'http://127.0.0.1:8081/api/consultation/result'
 ```
 
-### 10.3 回执引用结果
+### 10.3 回执引用结果（一键回写 batch）
 
 ```bash
 curl -X POST 'http://127.0.0.1:8081/api/consultation/reference-feedback' \
   -H 'Content-Type: application/json' \
   -d '{
     "consultationId": "766842939207974912",
-    "requestId": "ref-diagnosis-1704355203000",
-    "referenceType": "diagnosis",
-    "action": "diagnosis",
+    "requestId": "ref-batch-1704355203000",
+    "referenceType": "batch",
+    "action": "batch",
     "status": "success",
-    "message": "PHIS 已成功保存诊断",
+    "message": "PHIS 已成功保存全部引用项目",
     "items": [
       {
         "name": "急性支气管炎",
         "code": "J20.900",
         "type": "diagnosis"
+      },
+      {
+        "name": "阿莫西林胶囊",
+        "type": "medication",
+        "idCli": "10023"
       }
     ]
   }'
@@ -799,7 +884,7 @@ HIS 接入完成后，至少验证以下场景：
 3. `/result` 能回收到当前患者的 `draft` 或 `final-report`
 4. 推荐诊断引用时能先收到 `reference-request`
 5. PHIS 调用 `/reference-feedback` 后，`/result` 能继续返回 `reference-feedback`
-6. 一键回写场景：PHIS 能按顺序处理多条 `reference-request`，每条都及时回执，全部完成后页面显示"一键回写完成"
+6. 一键回写场景：PHIS 收到一条 `batch` 类型 `reference-request`，遍历 `referenceItems` 按 `type` 分类处理，回执后页面显示"一键回写完成"
 7. 切换患者后不会把上一位患者的结果误回填到当前医生站
 8. 语音接诊结果也能走同一条 `/result` 通道回写
 
