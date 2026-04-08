@@ -99,10 +99,9 @@ export function useVoiceConsultation(options: VoiceConsultationOptions) {
    * 处理语音停止事件
    *
    * 流程：
-   * 1. 切换到结果视图并调整窗口大小
-   * 2. 调用 LLM 生成病历
-   * 3. 解析并验证 JSON 结果
-   * 4. 更新 generatedRecord
+   * 1. 保持在语音胶囊视图，调用 LLM 生成病历
+   * 2. 解析 JSON，提取主诉和现病史
+   * 3. 存入 voiceRecord 并导航到问诊页（consultation）
    *
    * @param audioBlob - 录音音频数据（当前未使用）
    * @param transcribedText - 转写后的文本
