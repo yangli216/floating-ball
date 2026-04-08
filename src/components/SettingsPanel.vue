@@ -82,6 +82,9 @@ const pmphaiTesting = ref(false);
 const pmphaiTestResult = ref<{ success: boolean; message: string } | null>(null);
 const pmphaiSearchMode = ref<'rag' | 'list'>('rag');
 
+// Speech test mode
+const speechTestMode = ref(false);
+
 onMounted(() => {
   const config = getLLMConfig();
   apiKey.value = config.apiKey;
@@ -106,6 +109,10 @@ onMounted(() => {
   pmphaiAppSecret.value = pmphaiConfig.appSecret;
   pmphaiEnabled.value = pmphaiConfig.enabled;
   pmphaiSearchMode.value = (localStorage.getItem('PMPHAI_SEARCH_MODE') as 'rag' | 'list') || 'rag';
+
+  // Load speech test mode
+  speechTestMode.value = localStorage.getItem('SPEECH_TEST_MODE') === 'true'
+    || import.meta.env.VITE_SPEECH_TEST_MODE === 'true';
 });
 
 const saveSettings = async () => {
@@ -127,6 +134,13 @@ const saveSettings = async () => {
   localStorage.setItem('PMPHAI_APP_SECRET', pmphaiAppSecret.value);
   localStorage.setItem('PMPHAI_ENABLED', String(pmphaiEnabled.value));
   localStorage.setItem('PMPHAI_SEARCH_MODE', pmphaiSearchMode.value);
+
+  // Save speech test mode
+  if (speechTestMode.value) {
+    localStorage.setItem('SPEECH_TEST_MODE', 'true');
+  } else {
+    localStorage.removeItem('SPEECH_TEST_MODE');
+  }
 
   trackClick('settings_save', {
     hasApiKey: !!apiKey.value,
@@ -434,6 +448,17 @@ watch(activeTab, (newVal) => {
               <input id="audio-model-name" v-model="audioModel" type="text" :placeholder="DEFAULT_LLM_CONFIG.audioModel" />
             </div>
             <p class="form-hint">语音转写模型名称（如：whisper-1）</p>
+          </div>
+
+          <div class="toggle-row" style="margin-top: 8px;">
+            <div class="toggle-label-group">
+              <label for="speech-test-mode" class="toggle-label">语音识别测试模式</label>
+              <span class="toggle-hint">启用后将跳过真实语音识别，直接返回示例文本</span>
+            </div>
+            <div class="switch-wrapper">
+              <input type="checkbox" id="speech-test-mode" v-model="speechTestMode">
+              <label for="speech-test-mode" class="toggle-switch"></label>
+            </div>
           </div>
 
           <div class="test-connection-row" style="margin-top: 16px;">
