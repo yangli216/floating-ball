@@ -100,21 +100,17 @@ pub struct RiskItem {
 #[derive(Debug, Serialize, Deserialize, Clone)]
 #[serde(rename_all = "camelCase")]
 pub struct PatientRiskData {
-    #[serde(alias = "patientId")]
-    pub patient_id: String,
-    #[serde(alias = "patientName")]
-    pub patient_name: String,
-    pub gender: String,      // "M" or "F"
-    pub age: u32,
-    
-    // Raw medical info for analysis
+    pub id_pi: String,
+    pub na_pi: String,
+    pub sd_sex_text: String,
+    pub age_text: String,
+
     pub chief_complaint: Option<String>,
     pub history_of_present_illness: Option<String>,
     pub past_medical_history: Option<String>,
     pub diagnosis: Option<String>,
     pub allergy_history: Option<String>,
-    
-    // Optional: Keep risks for backward compatibility or if we want to allow direct risk injection
+
     #[serde(default)]
     pub risks: Vec<RiskItem>,
 }
@@ -464,7 +460,7 @@ async fn show_patient_risks(
     app_handle: web::Data<tauri::AppHandle>,
 ) -> impl Responder {
     let risk_data = data.into_inner();
-    println!("Received patient risk analysis request for: {}", risk_data.patient_name);
+    println!("Received patient risk analysis request for: {}", risk_data.na_pi);
 
     // Emit event to Frontend
     if let Some(window) = app_handle.get_webview_window("main") {
@@ -492,7 +488,7 @@ async fn show_patient_risks(
 
     HttpResponse::Ok().json(serde_json::json!({
         "status": "success",
-        "patientId": risk_data.patient_id
+        "idPi": risk_data.id_pi
     }))
 }
 

@@ -74,9 +74,15 @@ export interface EventListenersOptions {
 }
 
 interface PatientRisksPayload {
-  patientName?: string;
-  gender?: 'M' | 'F' | string;
-  age?: number;
+  idPi?: string;
+  naPi?: string;
+  sdSexText?: string;
+  ageText?: string;
+  chiefComplaint?: string;
+  historyOfPresentIllness?: string;
+  pastMedicalHistory?: string;
+  diagnosis?: string;
+  allergyHistory?: string;
   risks?: RiskItem[];
   [key: string]: unknown;
 }
@@ -208,27 +214,25 @@ export function useEventListeners(options: EventListenersOptions) {
       console.log('Received patient risks request:', event.payload);
       const data = event.payload;
       trackApiCall('his_patient_risks', true, undefined, {
-        patientName: data.patientName,
+        patientName: data.naPi,
         riskCount: data.risks?.length,
       });
 
       // Update basic info immediately
-      riskPatientName.value = data.patientName || '未知患者';
-      riskPatientGender.value = data.gender === 'F' ? 'F' : 'M';
-      riskPatientAge.value = typeof data.age === 'number' ? data.age : 0;
-      riskItems.value = []; // Reset risks initially
+      riskPatientName.value = data.naPi || '未知患者';
+      riskPatientGender.value = data.sdSexText?.includes('女') ? 'F' : 'M';
+      riskPatientAge.value = parseInt(data.ageText || '') || 0;
+      riskItems.value = [];
       isRiskAnalyzing.value = true;
 
       // GLOBAL STATE: Set current patient context
-      // Normalize data structure for other views
       currentPatient.value = {
         ...data,
-        name: data.patientName,
-        // Early mapping for ConsultationPage compatibility
-        naPi: data.patientName,
-        sdSexText: data.gender === 'M' ? '男性' : '女性',
-        ageText: data.age ? `${data.age}岁` : '',
-        // Ensure other fields are carried over
+        idPi: data.idPi,
+        name: data.naPi,
+        naPi: data.naPi,
+        sdSexText: data.sdSexText,
+        ageText: data.ageText,
       };
 
       // Switch to Reception Capsule View

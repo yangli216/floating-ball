@@ -690,10 +690,10 @@ http://127.0.0.1:8081/api/patient/risks
 
 | 字段名 | 类型 | 必填 | 说明 |
 | :--- | :--- | :--- | :--- |
-| `patientId` | String | 是 | 患者唯一标识 |
-| `patientName` | String | 是 | 患者姓名 |
-| `gender` | String | 是 | `M`（男）或 `F`（女） |
-| `age` | Number | 是 | 年龄（整数） |
+| `idPi` | String | 是 | 患者唯一标识 |
+| `naPi` | String | 是 | 患者姓名 |
+| `sdSexText` | String | 是 | 性别文本，如 `男性` / `女性` |
+| `ageText` | String | 是 | 年龄文本，如 `65岁` |
 | `chiefComplaint` | String | 否 | 主诉 |
 | `historyOfPresentIllness` | String | 否 | 现病史 |
 | `pastMedicalHistory` | String | 否 | 既往史 |
@@ -719,10 +719,10 @@ http://127.0.0.1:8081/api/patient/risks
 
 ```json
 {
-  "patientId": "766842939207974912",
-  "patientName": "张虎",
-  "gender": "M",
-  "age": 65,
+  "idPi": "766842939207974912",
+  "naPi": "张虎",
+  "sdSexText": "男性",
+  "ageText": "65岁",
   "chiefComplaint": "咳嗽三天",
   "historyOfPresentIllness": "受凉后出现咳嗽、咳痰",
   "pastMedicalHistory": "高血压10年，糖尿病5年",
@@ -738,10 +738,10 @@ http://127.0.0.1:8081/api/patient/risks
 
 ```json
 {
-  "patientId": "766842939207974912",
-  "patientName": "张虎",
-  "gender": "M",
-  "age": 65,
+  "idPi": "766842939207974912",
+  "naPi": "张虎",
+  "sdSexText": "男性",
+  "ageText": "65岁",
   "allergyHistory": "青霉素过敏",
   "risks": [
     {
@@ -768,7 +768,7 @@ http://127.0.0.1:8081/api/patient/risks
 ```json
 {
   "status": "success",
-  "patientId": "766842939207974912"
+  "idPi": "766842939207974912"
 }
 ```
 
