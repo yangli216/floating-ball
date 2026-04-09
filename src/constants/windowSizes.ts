@@ -52,7 +52,7 @@ export const WINDOW_SIZES = {
   /** 问诊页面：1080×720px 大面板 */
   CONSULTATION: { width: 1080, height: 720 } as WindowSize,
 
-  /** 语音胶囊：360×80px 胶囊形态 */
+  /** 语音胶囊：360×80px 千千静听歌词风格紧凑条 */
   CAPSULE: { width: 360, height: 80 } as WindowSize,
 
   /** 风险评估卡片：340×120px */

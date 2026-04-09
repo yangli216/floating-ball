@@ -8,7 +8,10 @@ mod http_server;
 use http_server::{ConsultationResult, PatientInfo};
 
 mod aliyun_speech;
-use aliyun_speech::transcribe_realtime_aliyun;
+use aliyun_speech::{
+    transcribe_realtime_aliyun, start_realtime_speech, send_speech_chunk, stop_realtime_speech,
+    RealtimeSpeechSessionState,
+};
 
 mod whisper_speech;
 use whisper_speech::{
@@ -257,6 +260,7 @@ pub fn run() {
 
     tauri::Builder::default()
         .manage(state.clone())
+        .manage(RealtimeSpeechSessionState::new())
         .plugin(tauri_plugin_store::Builder::default().build())
         .plugin(tauri_plugin_deep_link::init())
         .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
@@ -276,6 +280,9 @@ pub fn run() {
             set_window_position,
             complete_consultation,
             transcribe_realtime_aliyun,
+            start_realtime_speech,
+            send_speech_chunk,
+            stop_realtime_speech,
             transcribe_local_whisper,
             check_whisper_model,
             download_whisper_model,

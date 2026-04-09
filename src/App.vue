@@ -455,7 +455,7 @@ const openInsideCloudHome = async () => {
         <div 
           class="assistant-container" 
           :class="{ 'no-toolbar': currentView === 'risk-alert' || currentView === 'voice-interaction' || currentView === 'voice-result' || currentView === 'reception-capsule' }"
-          :style="currentView === 'reception-capsule' ? { borderRadius: '16px', background: 'transparent', backdropFilter: 'none', WebkitBackdropFilter: 'none', border: 'none', boxShadow: 'none' } : { borderRadius: currentView === 'voice-interaction' ? '40px' : '20px' }"
+          :style="currentView === 'reception-capsule' ? { borderRadius: '16px', background: 'transparent', backdropFilter: 'none', WebkitBackdropFilter: 'none', border: 'none', boxShadow: 'none' } : { borderRadius: '20px' }"
         >
           <!-- 工具栏 (risk-alert, voice-interaction, voice-result, reception-capsule 视图不显示) -->
           <div v-if="currentView !== 'risk-alert' && currentView !== 'voice-interaction' && currentView !== 'voice-result' && currentView !== 'reception-capsule'" class="assistant-toolbar" data-tauri-drag-region>

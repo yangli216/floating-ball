@@ -1,9 +1,37 @@
 use serde::{Deserialize, Serialize};
 use tokio_tungstenite::{connect_async, tungstenite};
 use futures_util::{StreamExt, SinkExt};
-use tokio::sync::oneshot;
+use tokio::sync::{mpsc, oneshot, Mutex as TokioMutex};
+use tauri::Emitter;
 
 const DASHSCOPE_WS_URL: &str = "wss://dashscope.aliyuncs.com/api-ws/v1/inference/";
+
+// ===== Realtime streaming types =====
+
+pub enum SpeechCmd {
+    Audio(Vec<u8>),
+    Finish,
+}
+
+pub struct RealtimeSpeechSessionState {
+    pub cmd_tx: TokioMutex<Option<mpsc::Sender<SpeechCmd>>>,
+    pub result_rx: TokioMutex<Option<oneshot::Receiver<String>>>,
+}
+
+impl RealtimeSpeechSessionState {
+    pub fn new() -> Self {
+        Self {
+            cmd_tx: TokioMutex::new(None),
+            result_rx: TokioMutex::new(None),
+        }
+    }
+}
+
+#[derive(Clone, Serialize)]
+pub struct SpeechTextEvent {
+    pub text: String,
+    pub is_sentence_end: bool,
+}
 
 #[derive(Debug, Serialize)]
 struct RunTaskMessage {
@@ -317,10 +345,251 @@ pub async fn transcribe_realtime_aliyun(
     }
 
     send_task.abort();
-    
+
     if full_text.is_empty() {
         Err("未能获取识别结果".to_string())
     } else {
         Ok(full_text)
+    }
+}
+
+// ===== Realtime streaming commands =====
+
+/// Start a realtime speech recognition session.
+/// Opens WebSocket, sends run-task, and spawns a background task that:
+/// - Receives audio chunks via mpsc channel
+/// - Forwards them to the WebSocket
+/// - Emits `speech-realtime-text` events with intermediate results
+#[tauri::command]
+pub async fn start_realtime_speech(
+    api_key: String,
+    state: tauri::State<'_, RealtimeSpeechSessionState>,
+    app_handle: tauri::AppHandle,
+) -> Result<(), String> {
+    // Check if already running
+    {
+        let tx = state.cmd_tx.lock().await;
+        if tx.is_some() {
+            return Err("实时语音会话已在运行".to_string());
+        }
+    }
+
+    if api_key.is_empty() {
+        return Err("DashScope API Key 未配置".to_string());
+    }
+
+    let task_id = uuid::Uuid::new_v4().to_string().replace("-", "");
+
+    println!("[RealtimeSpeech] Starting streaming session, task_id: {}", task_id);
+
+    // Connect WebSocket
+    let ws_stream = connect_with_retry(&api_key, 2).await?;
+    let (mut ws_write, mut ws_read) = ws_stream.split();
+
+    // Send run-task
+    let run_task = RunTaskMessage {
+        header: RunTaskHeader {
+            action: "run-task".to_string(),
+            task_id: task_id.clone(),
+            streaming: "duplex".to_string(),
+        },
+        payload: RunTaskPayload {
+            task_group: "audio".to_string(),
+            task: "asr".to_string(),
+            function: "recognition".to_string(),
+            model: "paraformer-realtime-v2".to_string(),
+            parameters: TaskParameters {
+                format: "pcm".to_string(),
+                sample_rate: 16000,
+            },
+            input: serde_json::json!({}),
+        },
+    };
+
+    let run_task_json = serde_json::to_string(&run_task)
+        .map_err(|e| format!("JSON serialize error: {}", e))?;
+
+    ws_write
+        .send(tungstenite::Message::Text(run_task_json.into()))
+        .await
+        .map_err(|e| format!("Send run-task failed: {}", e))?;
+
+    // Create channels
+    let (cmd_tx, mut cmd_rx) = mpsc::channel::<SpeechCmd>(256);
+    let (result_tx, result_rx) = oneshot::channel::<String>();
+
+    // Store state
+    *state.cmd_tx.lock().await = Some(cmd_tx);
+    *state.result_rx.lock().await = Some(result_rx);
+
+    let task_id_for_finish = task_id.clone();
+
+    // Spawn background task
+    tokio::spawn(async move {
+        let mut full_text = String::new();
+        let mut task_started = false;
+        let mut audio_buffer: Vec<Vec<u8>> = Vec::new();
+
+        loop {
+            tokio::select! {
+                cmd = cmd_rx.recv() => {
+                    match cmd {
+                        Some(SpeechCmd::Audio(data)) => {
+                            if task_started {
+                                if let Err(e) = ws_write.send(tungstenite::Message::Binary(data.into())).await {
+                                    println!("[RealtimeSpeech] Send audio failed: {}", e);
+                                    break;
+                                }
+                            } else {
+                                audio_buffer.push(data);
+                            }
+                        }
+                        Some(SpeechCmd::Finish) => {
+                            println!("[RealtimeSpeech] Finish requested");
+                            let finish_task = FinishTaskMessage {
+                                header: FinishTaskHeader {
+                                    action: "finish-task".to_string(),
+                                    task_id: task_id_for_finish.clone(),
+                                    streaming: "duplex".to_string(),
+                                },
+                                payload: FinishTaskPayload {
+                                    input: serde_json::json!({}),
+                                },
+                            };
+                            if let Ok(json) = serde_json::to_string(&finish_task) {
+                                let _ = ws_write.send(tungstenite::Message::Text(json.into())).await;
+                            }
+                        }
+                        None => {
+                            println!("[RealtimeSpeech] Command channel closed");
+                            break;
+                        }
+                    }
+                }
+                msg = ws_read.next() => {
+                    match msg {
+                        Some(Ok(tungstenite::Message::Text(text))) => {
+                            let text_str = text.to_string();
+                            if let Ok(response) = serde_json::from_str::<ResponseMessage>(&text_str) {
+                                if let Some(header) = &response.header {
+                                    match header.event.as_deref() {
+                                        Some("task-started") => {
+                                            println!("[RealtimeSpeech] Task started");
+                                            task_started = true;
+                                            // Flush buffered audio
+                                            for chunk in audio_buffer.drain(..) {
+                                                if let Err(e) = ws_write.send(tungstenite::Message::Binary(chunk.into())).await {
+                                                    println!("[RealtimeSpeech] Flush buffered audio failed: {}", e);
+                                                    break;
+                                                }
+                                            }
+                                        }
+                                        Some("result-generated") => {
+                                            if let Some(payload) = &response.payload {
+                                                if let Some(output) = &payload.output {
+                                                    if let Some(sentence) = &output.sentence {
+                                                        let is_end = sentence.sentence_end == Some(true);
+                                                        if let Some(text) = &sentence.text {
+                                                            if is_end {
+                                                                full_text.push_str(text);
+                                                            }
+                                                            // Emit event to frontend
+                                                            let _ = app_handle.emit("speech-realtime-text", SpeechTextEvent {
+                                                                text: text.clone(),
+                                                                is_sentence_end: is_end,
+                                                            });
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                        }
+                                        Some("task-finished") => {
+                                            println!("[RealtimeSpeech] Task finished, full text: {}", full_text);
+                                            let _ = result_tx.send(full_text);
+                                            return;
+                                        }
+                                        Some("task-failed") => {
+                                            let error = header.error_message.as_ref()
+                                                .or(header.message.as_ref())
+                                                .map(|s| s.as_str())
+                                                .unwrap_or("Unknown error");
+                                            println!("[RealtimeSpeech] Task failed: {}", error);
+                                            let _ = result_tx.send(full_text);
+                                            return;
+                                        }
+                                        _ => {}
+                                    }
+                                }
+                            }
+                        }
+                        Some(Ok(tungstenite::Message::Close(_))) => {
+                            println!("[RealtimeSpeech] WebSocket closed by server");
+                            break;
+                        }
+                        Some(Err(e)) => {
+                            println!("[RealtimeSpeech] WebSocket error: {}", e);
+                            break;
+                        }
+                        None => {
+                            println!("[RealtimeSpeech] WebSocket stream ended");
+                            break;
+                        }
+                        _ => {}
+                    }
+                }
+            }
+        }
+
+        // If we break out of loop without sending result, send what we have
+        let _ = result_tx.send(full_text);
+    });
+
+    Ok(())
+}
+
+/// Send an audio chunk to the active realtime speech session
+#[tauri::command]
+pub async fn send_speech_chunk(
+    audio_data: Vec<u8>,
+    state: tauri::State<'_, RealtimeSpeechSessionState>,
+) -> Result<(), String> {
+    let tx = state.cmd_tx.lock().await;
+    if let Some(tx) = tx.as_ref() {
+        tx.send(SpeechCmd::Audio(audio_data))
+            .await
+            .map_err(|_| "语音会话已关闭".to_string())?;
+        Ok(())
+    } else {
+        Err("无活跃的语音会话".to_string())
+    }
+}
+
+/// Stop the realtime speech session and return the final transcription
+#[tauri::command]
+pub async fn stop_realtime_speech(
+    state: tauri::State<'_, RealtimeSpeechSessionState>,
+) -> Result<String, String> {
+    // Send finish command
+    {
+        let tx = state.cmd_tx.lock().await;
+        if let Some(tx) = tx.as_ref() {
+            let _ = tx.send(SpeechCmd::Finish).await;
+        }
+    }
+
+    // Take the result receiver
+    let rx = state.result_rx.lock().await.take();
+
+    // Clean up cmd_tx
+    *state.cmd_tx.lock().await = None;
+
+    if let Some(rx) = rx {
+        match tokio::time::timeout(tokio::time::Duration::from_secs(30), rx).await {
+            Ok(Ok(text)) => Ok(text),
+            Ok(Err(_)) => Err("语音会话结果通道已关闭".to_string()),
+            Err(_) => Err("等待语音识别结果超时".to_string()),
+        }
+    } else {
+        Err("无活跃的语音会话".to_string())
     }
 }

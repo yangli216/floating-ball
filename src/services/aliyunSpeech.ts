@@ -247,39 +247,109 @@ export async function transcribeWithLocalWhisper(audioBlob: Blob): Promise<strin
 }
 
 /**
- * 实时语音识别服务类（简化版）
- * 由于后端代理模式，这里不再需要前端管理 WebSocket 连接
- * 直接在录音结束后调用 transcribeWithAliyun 即可
+ * 实时语音识别服务类
+ * 支持两种模式：
+ * 1. 流式模式：通过 Rust 后端 WebSocket 实时流式识别（优先）
+ * 2. 批量模式：录音结束后批量转写（降级方案）
  */
 export class RealtimeSpeechService {
     private audioChunks: Int16Array[] = [];
     private onTextCallback?: (text: string, isFinal: boolean) => void;
     private isStarted: boolean = false;
+    private isStreaming: boolean = false;
+    private unlistenFn?: () => void;
+    private finalizedText: string = '';
+    private currentSentence: string = '';
 
     constructor() {
     }
 
     /**
-     * 开始录音会话（初始化状态）
+     * 开始录音会话
+     * 优先尝试流式模式，失败则降级为批量模式
      */
     async start(onText?: (text: string, isFinal: boolean) => void): Promise<void> {
         this.onTextCallback = onText;
         this.audioChunks = [];
         this.isStarted = true;
-        console.log('[Speech] Session started (collecting audio)');
+        this.isStreaming = false;
+        this.finalizedText = '';
+        this.currentSentence = '';
+
+        // 测试模式不走流式
+        if (isTestModeEnabled()) {
+            console.log('[Speech] Test mode, using batch mode');
+            return;
+        }
+
+        // 区域化模式不走流式
+        const { isRegionalMode } = await import('./regionalClient');
+        if (isRegionalMode()) {
+            console.log('[Speech] Regional mode, using batch mode');
+            return;
+        }
+
+        // 尝试启动流式识别
+        try {
+            const { invoke } = await import('@tauri-apps/api/core');
+            const { listen } = await import('@tauri-apps/api/event');
+            const config = getAliyunSpeechConfig();
+
+            if (!config.apiKey) {
+                console.log('[Speech] No API key, using batch mode');
+                return;
+            }
+
+            // 监听实时文本事件
+            this.unlistenFn = await listen<{ text: string; is_sentence_end: boolean }>(
+                'speech-realtime-text',
+                (event) => {
+                    const { text, is_sentence_end } = event.payload;
+                    if (is_sentence_end) {
+                        this.finalizedText += text;
+                        this.currentSentence = '';
+                    } else {
+                        this.currentSentence = text;
+                    }
+                    const displayText = this.finalizedText + this.currentSentence;
+                    this.onTextCallback?.(displayText, is_sentence_end);
+                }
+            );
+
+            await invoke('start_realtime_speech', { apiKey: config.apiKey });
+            this.isStreaming = true;
+            console.log('[Speech] Streaming session started');
+        } catch (error: any) {
+            console.warn('[Speech] Failed to start streaming, falling back to batch mode:', error);
+            this.cleanupListener();
+            this.isStreaming = false;
+        }
     }
 
     /**
-     * 接收音频数据块（存储到缓冲区）
+     * 接收音频数据块
+     * 流式模式：直接发送到 Rust 后端
+     * 批量模式：存储到缓冲区
      */
     sendAudio(pcmData: Int16Array): void {
         if (!this.isStarted) return;
-        this.audioChunks.push(new Int16Array(pcmData));
+
+        if (this.isStreaming) {
+            // 流式模式：发送到 Rust 后端
+            const bytes = Array.from(new Uint8Array(pcmData.buffer, pcmData.byteOffset, pcmData.byteLength));
+            import('@tauri-apps/api/core').then(({ invoke }) => {
+                invoke('send_speech_chunk', { audioData: bytes }).catch((e: any) => {
+                    console.warn('[Speech] Send chunk failed:', e);
+                });
+            });
+        } else {
+            // 批量模式：收集音频
+            this.audioChunks.push(new Int16Array(pcmData));
+        }
     }
 
     /**
      * 结束录音并获取转写结果
-     * 自动检测: 有本地模型用 Whisper，没有走阿里云 API
      */
     async finish(enableWhisperFallback: boolean = true): Promise<string> {
         if (!this.isStarted) {
@@ -288,7 +358,27 @@ export class RealtimeSpeechService {
 
         this.isStarted = false;
 
-        // 合并所有音频块
+        if (this.isStreaming) {
+            // 流式模式：调用 stop 并等待最终结果
+            try {
+                const { invoke } = await import('@tauri-apps/api/core');
+                const finalText = await invoke<string>('stop_realtime_speech');
+                console.log('[Speech] Streaming final text:', finalText);
+                this.onTextCallback?.(finalText, true);
+                return finalText;
+            } catch (error: any) {
+                console.error('[Speech] Stop streaming failed:', error);
+                // 返回已收集的文本
+                const collected = this.finalizedText + this.currentSentence;
+                if (collected) return collected;
+                throw error;
+            } finally {
+                this.cleanupListener();
+                this.isStreaming = false;
+            }
+        }
+
+        // 批量模式：合并音频并转写
         const totalLength = this.audioChunks.reduce((sum, chunk) => sum + chunk.length, 0);
         const mergedData = new Int16Array(totalLength);
         let offset = 0;
@@ -297,12 +387,11 @@ export class RealtimeSpeechService {
             offset += chunk.length;
         }
 
-        console.log('[Speech] Total audio collected:', mergedData.length * 2, 'bytes');
+        console.log('[Speech] Batch mode, total audio:', mergedData.length * 2, 'bytes');
 
         const audioBlob = new Blob([mergedData.buffer], { type: 'audio/pcm' });
 
         try {
-            // 检测本地模型是否存在
             const modelStatus = await checkLocalWhisperModel();
             if (modelStatus.exists) {
                 console.log('[Speech] Local whisper model found, using local transcription');
@@ -311,7 +400,6 @@ export class RealtimeSpeechService {
                 return text;
             }
 
-            // 本地模型不存在，走原有 API 流程
             console.log('[Speech] No local model, using API transcription');
             const text = await transcribeWithAliyun(audioBlob, enableWhisperFallback);
             this.onTextCallback?.(text, true);
@@ -330,6 +418,13 @@ export class RealtimeSpeechService {
     close(): void {
         this.isStarted = false;
         this.audioChunks = [];
+        this.cleanupListener();
+        if (this.isStreaming) {
+            import('@tauri-apps/api/core').then(({ invoke }) => {
+                invoke('stop_realtime_speech').catch(() => {});
+            });
+            this.isStreaming = false;
+        }
     }
 
     /**
@@ -337,5 +432,12 @@ export class RealtimeSpeechService {
      */
     isConnected(): boolean {
         return this.isStarted;
+    }
+
+    private cleanupListener(): void {
+        if (this.unlistenFn) {
+            this.unlistenFn();
+            this.unlistenFn = undefined;
+        }
     }
 }
