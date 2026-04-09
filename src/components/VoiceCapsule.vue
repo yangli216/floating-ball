@@ -21,6 +21,9 @@
         <button class="ctl-btn stop" @click="handleStop" title="结束接诊">
           <Icon icon="lucide:square" size="16" aria-hidden="true" />
         </button>
+        <button class="ctl-btn" @click="handleClose" title="收起">
+          <Icon icon="lucide:x" size="16" aria-hidden="true" />
+        </button>
       </div>
 
       <!-- Row 2: Scrolling lyrics-style transcription -->
@@ -87,6 +90,7 @@ import Icon from './Icon.vue';
 const emit = defineEmits<{
   stop: [blob: Blob, transcriptionText: string];
   error: [error: any];
+  close: [];
 }>();
 
 const canvasRef = ref<HTMLCanvasElement | null>(null);
@@ -253,19 +257,7 @@ const drawVisualizer = () => {
 const startRecording = async () => {
   console.time('[VoiceCapsule] startRecording');
   try {
-    // 初始化语音服务，录音结束后自动检测使用本地模型或 API
-    speechService = new RealtimeSpeechService();
-    await speechService.start((text, _isFinal) => {
-      realtimeText.value = text;
-    });
-
-    // 收集音频块用于录音结束后批量处理
-    audioRecorder.setOnAudioChunk((pcmData) => {
-      if (speechService?.isConnected()) {
-        speechService.sendAudio(pcmData);
-      }
-    });
-
+    // 先获取麦克风权限并开始录音，不阻塞在语音服务初始化上
     console.log('[VoiceCapsule] Requesting microphone access...');
     await audioRecorder.start();
     console.log('[VoiceCapsule] Recorder started');
@@ -278,6 +270,26 @@ const startRecording = async () => {
     drawVisualizer();
     console.timeEnd('[VoiceCapsule] startRecording');
     trackClick('voice_recording_start');
+
+    // 后台初始化流式语音识别服务（不阻塞录音）
+    speechService = new RealtimeSpeechService();
+    speechService.start((text, _isFinal) => {
+      realtimeText.value = text;
+    }).then(() => {
+      // 语音服务就绪，开始发送音频
+      audioRecorder.setOnAudioChunk((pcmData) => {
+        if (speechService?.isConnected()) {
+          speechService.sendAudio(pcmData);
+        }
+      });
+      console.log('[VoiceCapsule] Speech service connected, sending audio');
+    }).catch((err) => {
+      console.warn('[VoiceCapsule] Speech service init failed, batch mode:', err);
+      // 批量模式下仍需收集音频
+      audioRecorder.setOnAudioChunk((pcmData) => {
+        speechService?.sendAudio(pcmData);
+      });
+    });
   } catch (err) {
     console.error("[VoiceCapsule] Failed to start recording:", err);
     console.timeEnd('[VoiceCapsule] startRecording');
@@ -355,6 +367,16 @@ const handleCancel = () => {
   resizeWindow(CAPSULE_W, CAPSULE_H_RECORDING);
   // 重新开始录音
   startRecording();
+};
+
+const handleClose = async () => {
+  trackClick('voice_recording_close');
+  if (timerInterval) clearInterval(timerInterval);
+  if (animationFrameId) cancelAnimationFrame(animationFrameId);
+  audioRecorder.setOnAudioChunk(undefined);
+  await audioRecorder.stop().catch(() => {});
+  if (speechService) { speechService.close(); speechService = null; }
+  emit('close');
 };
 
 /**

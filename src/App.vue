@@ -506,6 +506,7 @@ const openInsideCloudHome = async () => {
             v-if="currentView === 'voice-interaction'"
             @stop="handleVoiceStop"
             @error="handleVoiceError"
+            @close="handleCollapse"
           />
 
           <!-- Reception Service (Risk) Capsule -->
