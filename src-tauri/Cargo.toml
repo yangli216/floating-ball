@@ -45,3 +45,15 @@ rfd = "0.17.2"
 window-vibrancy = "0.5"
 whisper-rs = "0.13"
 
+[profile.release]
+# 增加并行编译单元数量，加快构建速度
+codegen-units = 16
+# 禁用链接时优化 (LTO)，大幅缩短链接时间
+lto = false
+# 保持高优化级别，确保运行速度
+opt-level = 3
+# 开启增量编译，有助于缓存利用
+incremental = true
+# 去除符号信息以进一步缩小包体积并略微加快链接
+strip = true
+
