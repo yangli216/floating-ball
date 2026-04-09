@@ -85,7 +85,15 @@ const pmphaiSearchMode = ref<'rag' | 'list'>('rag');
 // Speech test mode
 const speechTestMode = ref(false);
 
-onMounted(() => {
+// 本地语音识别状态
+const whisperModelStatus = ref<{ exists: boolean; path: string; size_mb: number }>({
+  exists: false, path: '', size_mb: 0
+});
+const whisperDownloading = ref(false);
+const whisperDownloadProgress = ref(0);
+const whisperDeleting = ref(false);
+
+onMounted(async () => {
   const config = getLLMConfig();
   apiKey.value = config.apiKey;
   baseUrl.value = config.baseUrl;
@@ -113,6 +121,19 @@ onMounted(() => {
   // Load speech test mode
   speechTestMode.value = localStorage.getItem('SPEECH_TEST_MODE') === 'true'
     || import.meta.env.VITE_SPEECH_TEST_MODE === 'true';
+
+  // 检测本地 Whisper 模型状态
+  try {
+    whisperModelStatus.value = await invoke('check_whisper_model');
+  } catch (e) {
+    console.error('[Settings] Failed to check whisper model:', e);
+  }
+
+  // 监听模型下载进度
+  const { listen } = await import('@tauri-apps/api/event');
+  listen('whisper-download-progress', (event: any) => {
+    whisperDownloadProgress.value = event.payload.progress;
+  });
 });
 
 const saveSettings = async () => {
@@ -164,6 +185,35 @@ const saveSettings = async () => {
 
   if (showToast) {
     showToast('设置已保存', 'success');
+  }
+};
+
+const downloadWhisperModel = async () => {
+  whisperDownloading.value = true;
+  whisperDownloadProgress.value = 0;
+  try {
+    await invoke('download_whisper_model');
+    whisperModelStatus.value = await invoke('check_whisper_model');
+    showToast('语音模型下载完成', 'success');
+  } catch (e: any) {
+    console.error('[Settings] Whisper download failed:', e);
+    showToast('模型下载失败: ' + e, 'error');
+  } finally {
+    whisperDownloading.value = false;
+  }
+};
+
+const deleteWhisperModel = async () => {
+  whisperDeleting.value = true;
+  try {
+    await invoke('delete_whisper_model');
+    whisperModelStatus.value = await invoke('check_whisper_model');
+    showToast('语音模型已删除', 'success');
+  } catch (e: any) {
+    console.error('[Settings] Whisper delete failed:', e);
+    showToast('模型删除失败: ' + e, 'error');
+  } finally {
+    whisperDeleting.value = false;
   }
 };
 
@@ -458,6 +508,63 @@ watch(activeTab, (newVal) => {
             <div class="switch-wrapper">
               <input type="checkbox" id="speech-test-mode" v-model="speechTestMode">
               <label for="speech-test-mode" class="toggle-switch"></label>
+            </div>
+          </div>
+
+          <!-- 本地语音识别 -->
+          <div class="settings-section" style="margin-top: 16px;">
+            <div class="section-header">
+              <Icon icon="lucide:hard-drive" :size="20" />
+              <h3>本地语音识别</h3>
+            </div>
+            <p class="section-desc">
+              下载 Whisper 模型到本地，无需网络即可进行语音识别。模型大小约 1.5 GB。
+            </p>
+
+            <div class="whisper-status" style="margin-top: 12px;">
+              <div v-if="whisperModelStatus.exists" class="whisper-info">
+                <div class="status-row">
+                  <Icon icon="lucide:check-circle" :size="16" style="color: var(--color-success, #22c55e);" />
+                  <span>模型已就绪 ({{ whisperModelStatus.size_mb }} MB)</span>
+                </div>
+                <p class="form-hint" style="margin-top: 4px;">语音识别将优先使用本地模型，无需联网</p>
+                <button
+                  class="test-btn"
+                  style="margin-top: 8px; color: #ef4444;"
+                  @click="deleteWhisperModel"
+                  :disabled="whisperDeleting"
+                >
+                  <Icon :icon="whisperDeleting ? 'lucide:loader-2' : 'lucide:trash-2'" :size="16" :class="{ spin: whisperDeleting }" />
+                  {{ whisperDeleting ? '删除中...' : '删除模型' }}
+                </button>
+              </div>
+
+              <div v-else class="whisper-info">
+                <div class="status-row">
+                  <Icon icon="lucide:cloud-off" :size="16" style="color: #94a3b8;" />
+                  <span>本地模型未下载</span>
+                </div>
+                <p class="form-hint" style="margin-top: 4px;">当前使用在线 API 进行语音识别</p>
+
+                <div v-if="whisperDownloading" style="margin-top: 8px;">
+                  <div class="progress-bar-bg">
+                    <div class="progress-bar-fill" :style="{ width: whisperDownloadProgress + '%' }"></div>
+                  </div>
+                  <span class="form-hint" style="margin-top: 4px; display: block;">
+                    下载中... {{ whisperDownloadProgress }}%
+                  </span>
+                </div>
+
+                <button
+                  v-else
+                  class="test-btn"
+                  style="margin-top: 8px;"
+                  @click="downloadWhisperModel"
+                >
+                  <Icon icon="lucide:download" :size="16" />
+                  下载模型 (~1.5 GB)
+                </button>
+              </div>
             </div>
           </div>
 
@@ -1506,5 +1613,34 @@ watch(activeTab, (newVal) => {
     flex-direction: column;
     align-items: stretch;
   }
+}
+
+.whisper-status {
+  padding: 12px;
+  background: var(--bg-secondary, #f8fafc);
+  border-radius: 8px;
+  border: 1px solid var(--border-light, #e2e8f0);
+}
+
+.status-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 14px;
+}
+
+.progress-bar-bg {
+  width: 100%;
+  height: 6px;
+  background: var(--border-light, #e2e8f0);
+  border-radius: 3px;
+  overflow: hidden;
+}
+
+.progress-bar-fill {
+  height: 100%;
+  background: var(--color-primary, #0891b2);
+  border-radius: 3px;
+  transition: width 0.3s ease;
 }
 </style>
