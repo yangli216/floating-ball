@@ -10,6 +10,11 @@ use http_server::{ConsultationResult, PatientInfo};
 mod aliyun_speech;
 use aliyun_speech::transcribe_realtime_aliyun;
 
+mod whisper_speech;
+use whisper_speech::{
+    check_whisper_model, delete_whisper_model, download_whisper_model, transcribe_local_whisper,
+};
+
 mod commands;
 mod db;
 
@@ -271,6 +276,10 @@ pub fn run() {
             set_window_position,
             complete_consultation,
             transcribe_realtime_aliyun,
+            transcribe_local_whisper,
+            check_whisper_model,
+            download_whisper_model,
+            delete_whisper_model,
             save_templates,
             check_mouse_hover,
             export_templates_with_dialog,
