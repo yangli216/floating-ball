@@ -32,8 +32,6 @@ export interface VoiceConsultationOptions {
   currentView: Ref<ViewType>;
   /** 生成的病历记录 */
   generatedRecord: Ref<GeneratedRecord | null>;
-  /** Voice record output for ConsultationPage */
-  voiceRecord: Ref<{ chiefComplaint: string; historyOfPresentIllness: string } | null>;
   /** 当前患者信息 */
   currentPatient: Ref<AppPatient | null>;
   /** Toast 提示函数 */
@@ -78,8 +76,7 @@ export function useVoiceConsultation(options: VoiceConsultationOptions) {
   const {
     appWindow,
     currentView,
-    generatedRecord: _generatedRecord,
-    voiceRecord,
+    generatedRecord,
     currentPatient,
     showToast,
     windowMgmt,
@@ -99,9 +96,10 @@ export function useVoiceConsultation(options: VoiceConsultationOptions) {
    * 处理语音停止事件
    *
    * 流程：
-   * 1. 保持在语音胶囊视图，调用 LLM 生成病历
-   * 2. 解析 JSON，提取主诉和现病史
-   * 3. 存入 voiceRecord 并导航到问诊页（consultation）
+   * 1. 切换到结果视图并调整窗口大小
+   * 2. 调用 LLM 生成病历
+   * 3. 解析并验证 JSON 结果
+   * 4. 更新 generatedRecord
    *
    * @param audioBlob - 录音音频数据（当前未使用）
    * @param transcribedText - 转写后的文本
@@ -110,9 +108,27 @@ export function useVoiceConsultation(options: VoiceConsultationOptions) {
     console.log('[VoiceConsultation] handleVoiceStop received blob:', audioBlob?.size, 'bytes');
     console.log('[VoiceConsultation] Transcribed text:', transcribedText);
 
-    // Stay on voice-interaction view while processing
+    generatedRecord.value = null; // Reset
+    currentView.value = 'voice-result';
+
+    // Explicitly resize window for Result View
+    if (appWindow.value) {
+      try {
+        await appWindow.value.setResizable(true);
+        await appWindow.value.setSize(
+          new LogicalSize(WINDOW_SIZES.RESULT.width, WINDOW_SIZES.RESULT.height)
+        );
+        await smartExpand(WINDOW_SIZES.RESULT.width, WINDOW_SIZES.RESULT.height);
+      } catch (e) {
+        console.error('[VoiceConsultation] Failed to resize for result:', e);
+      }
+    } else {
+      await enterWorkMode(WINDOW_SIZES.RESULT.width, WINDOW_SIZES.RESULT.height);
+    }
+
     const finishVoiceLlm = startTimedOperation('voice_llm_processing');
     try {
+      // Use the transcribed text directly from realtime service
       const text = transcribedText;
       console.log('[VoiceConsultation] Using realtime transcription:', text);
 
@@ -120,23 +136,28 @@ export function useVoiceConsultation(options: VoiceConsultationOptions) {
         throw new Error('未能识别到有效语音');
       }
 
-      // LLM Generation
+      // 2. LLM Generation - Based on medical record requirements
       const messages: ChatMessage[] = [
         { role: 'system', content: PROMPTS.consultation.medicalRecordGeneration.system },
         { role: 'user', content: PROMPTS.consultation.medicalRecordGeneration.buildUserPrompt(text) },
       ];
 
       console.log('[VoiceConsultation] Sending request to LLM...');
+      console.log('[VoiceConsultation] Input text length:', text.length, 'chars');
       const llmStart = Date.now();
       const jsonStr = await chat(messages);
       console.log(`[VoiceConsultation] Response received in ${Date.now() - llmStart}ms`);
+      console.log('[VoiceConsultation] Raw response:', jsonStr);
 
-      // Parse JSON
+      // Try to parse JSON (handle potential markdown code blocks)
       let cleanJson = jsonStr.replace(/```json\n?|\n?```/g, '').trim();
+      // Also try to extract JSON from text if wrapped in other content
       const jsonMatch = cleanJson.match(/\{[\s\S]*\}/);
       if (jsonMatch) {
         cleanJson = jsonMatch[0];
       }
+
+      console.log('[VoiceConsultation] Cleaned JSON:', cleanJson);
 
       const parsed = JSON.parse(cleanJson);
 
@@ -151,34 +172,29 @@ export function useVoiceConsultation(options: VoiceConsultationOptions) {
       }
 
       // Validate required fields
-      if (!parsed.chiefComplaint) parsed.chiefComplaint = '未能识别';
-      if (!parsed.historyOfPresentIllness) parsed.historyOfPresentIllness = '未能识别';
-
-      // Store voice record for ConsultationPage
-      voiceRecord.value = {
-        chiefComplaint: parsed.chiefComplaint,
-        historyOfPresentIllness: parsed.historyOfPresentIllness,
-      };
-
-      // Navigate to consultation view
-      currentView.value = 'consultation';
-      if (appWindow.value) {
-        try {
-          await appWindow.value.setResizable(true);
-          await appWindow.value.setSize(
-            new LogicalSize(WINDOW_SIZES.CONSULTATION.width, WINDOW_SIZES.CONSULTATION.height)
-          );
-          await smartExpand(WINDOW_SIZES.CONSULTATION.width, WINDOW_SIZES.CONSULTATION.height);
-        } catch (e) {
-          console.error('[VoiceConsultation] Failed to resize for consultation:', e);
-        }
-      } else {
-        await enterWorkMode(WINDOW_SIZES.CONSULTATION.width, WINDOW_SIZES.CONSULTATION.height);
+      const requiredFields = ['chiefComplaint', 'historyOfPresentIllness', 'diagnosisList'];
+      const missingFields = requiredFields.filter((f) => !parsed[f]);
+      if (missingFields.length > 0) {
+        console.warn('[VoiceConsultation] Missing required fields:', missingFields);
+        // Fill with defaults
+        if (missingFields.includes('chiefComplaint')) parsed.chiefComplaint = '未能识别';
+        if (missingFields.includes('historyOfPresentIllness'))
+          parsed.historyOfPresentIllness = '未能识别';
+        if (missingFields.includes('diagnosisList')) parsed.diagnosisList = [];
       }
 
-      console.log('[VoiceConsultation] Navigated to consultation with voice record');
+      // Ensure arrays are initialized
+      parsed.diagnosisList = parsed.diagnosisList || [];
+      parsed.medications = parsed.medications || [];
+      parsed.examinations = parsed.examinations || [];
+      parsed.labTests = parsed.labTests || [];
+      parsed.procedures = parsed.procedures || [];
+
+      generatedRecord.value = parsed as GeneratedRecord;
+      console.log('[VoiceConsultation] Medical record generated successfully');
       finishVoiceLlm(true, {
         transcriptionLength: text.length,
+        diagnosisCount: parsed.diagnosisList.length,
       });
     } catch (err: unknown) {
       console.error('[VoiceConsultation] Processing failed:', err);

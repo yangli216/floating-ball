@@ -53,7 +53,7 @@
       </div>
     </header>
 
-    <div class="content-container" v-if="currentView === 'consultation' && !isVoiceMode">
+    <div class="content-container" v-if="currentView === 'consultation'">
       <!-- Left: Symptom Shortcuts -->
       <aside class="symptom-sidebar">
         <!-- Mode Switch: 西医 / 中医 - vertical tabs on left edge -->
@@ -364,7 +364,7 @@
     </div>
 
     <!-- Consultation Footer Actions -->
-    <div v-if="currentView === 'consultation' && !isVoiceMode" class="consultation-footer">
+    <div v-if="currentView === 'consultation'" class="consultation-footer">
       <button class="footer-cancel-btn" @click="$emit('close')">取消</button>
       <button
         class="footer-submit-btn"
@@ -1025,13 +1025,9 @@ const props = defineProps<{
     kind: ConsultationAssistAction;
     token: number;
   } | null;
-  voiceRecord?: {
-    chiefComplaint: string;
-    historyOfPresentIllness: string;
-  } | null;
 }>();
 
-const emit = defineEmits(['close', 'consume-auto-trigger', 'consume-voice-record']);
+const emit = defineEmits(['close', 'consume-auto-trigger']);
 
 // --- Interfaces & State Definitions ---
 import type { Diagnosis, Patient, TreatmentRecommendation, FinalRecord } from '../types/consultation';
@@ -1196,7 +1192,6 @@ const currentTemplatesData = computed(() => {
 // All symptoms for body part and system selectors
 const allSymptoms = computed(() => symptoms.value);
 const currentView = ref<'consultation' | 'record' | 'final_report'>('consultation');
-const isVoiceMode = ref(false);
 const generatedRecord = ref({ chiefComplaint: '', historyOfPresentIllness: '', tcmFourExaminations: '' });
 const activePatientAnchorId = ref('');
 const assistFocus = ref<AssistAction | null>(null);
@@ -1738,7 +1733,6 @@ const prefillDiagnosisFromPatient = (force = false): boolean => {
 
 const resetWorkflowState = () => {
   currentView.value = 'consultation';
-  isVoiceMode.value = false;
   assistFocus.value = null;
   selectedSymptoms.value = [];
   formData.value = {};
@@ -4096,32 +4090,6 @@ watch(
     }
 
     await handleAssistTrigger(props.assistTrigger.kind);
-  },
-  { immediate: true }
-);
-
-watch(
-  () => props.voiceRecord,
-  async (record) => {
-    if (!record) return;
-
-    // Enter voice mode
-    isVoiceMode.value = true;
-
-    // Fill chief complaint and HPI
-    generatedRecord.value.chiefComplaint = record.chiefComplaint;
-    generatedRecord.value.historyOfPresentIllness = record.historyOfPresentIllness;
-
-    // Consume the prop so it doesn't re-trigger
-    emit('consume-voice-record');
-
-    // Switch to record view and trigger diagnosis
-    await nextTick();
-    currentView.value = 'record';
-    assistFocus.value = 'diagnosis';
-    if (aiDiagnoses.value.length === 0 && !aiLoading.value) {
-      await fetchAIDiagnosis();
-    }
   },
   { immediate: true }
 );
