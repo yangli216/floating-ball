@@ -44,7 +44,7 @@ import { trackClick, trackError } from '../services/operationTracker';
 const getPrimaryColor = () => {
   return getComputedStyle(document.documentElement).getPropertyValue('--color-primary').trim() || '#0891B2';
 };
-import { RealtimeSpeechService, getAliyunSpeechConfig } from '../services/aliyunSpeech';
+import { RealtimeSpeechService } from '../services/aliyunSpeech';
 import Icon from './Icon.vue';
 
 const emit = defineEmits<{
@@ -175,25 +175,19 @@ const drawVisualizer = () => {
 const startRecording = async () => {
   console.time('[VoiceCapsule] startRecording');
   try {
-    // 检查 API Key 并初始化实时语音服务
-    const config = getAliyunSpeechConfig();
-    if (config.apiKey) {
-      speechService = new RealtimeSpeechService();
-      console.log('[VoiceCapsule] Starting realtime speech service...');
-      await speechService.start((text, _isFinal) => {
-        realtimeText.value = text;
-        console.log('[VoiceCapsule] Realtime:', text.substring(0, 30) + '...');
-      });
-      // 设置音频回调
-      audioRecorder.setOnAudioChunk((pcmData) => {
-        if (speechService?.isConnected()) {
-          speechService.sendAudio(pcmData);
-        }
-      });
-    } else {
-      console.warn('[VoiceCapsule] No API Key, realtime disabled');
-    }
-    
+    // 初始化语音服务，录音结束后自动检测使用本地模型或 API
+    speechService = new RealtimeSpeechService();
+    await speechService.start((text, _isFinal) => {
+      realtimeText.value = text;
+    });
+
+    // 收集音频块用于录音结束后批量处理
+    audioRecorder.setOnAudioChunk((pcmData) => {
+      if (speechService?.isConnected()) {
+        speechService.sendAudio(pcmData);
+      }
+    });
+
     console.log('[VoiceCapsule] Requesting microphone access...');
     await audioRecorder.start();
     console.log('[VoiceCapsule] Recorder started');

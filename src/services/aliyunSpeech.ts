@@ -210,32 +210,63 @@ export async function transcribeWithAliyun(
 }
 
 /**
+ * 检查本地 Whisper 模型是否存在
+ */
+export async function checkLocalWhisperModel(): Promise<{ exists: boolean; path: string; size_mb: number }> {
+    const { invoke } = await import('@tauri-apps/api/core');
+    return await invoke('check_whisper_model');
+}
+
+/**
+ * 通过本地 Whisper 模型进行语音识别
+ * 接收 PCM 音频 Blob，调用 Rust 后端 whisper 命令
+ */
+export async function transcribeWithLocalWhisper(audioBlob: Blob): Promise<string> {
+    const { invoke } = await import('@tauri-apps/api/core');
+
+    console.log('[Whisper] Transcribing locally:', audioBlob.size, 'bytes');
+
+    const arrayBuffer = await audioBlob.arrayBuffer();
+    const fullData = new Uint8Array(arrayBuffer);
+
+    // 如果是 WAV 格式，跳过 44 字节头
+    const isWav = audioBlob.type === 'audio/wav' || audioBlob.type === 'audio/wave';
+    const dataOffset = isWav ? 44 : 0;
+    const audioData = Array.from(fullData.slice(dataOffset));
+
+    console.log('[Whisper] PCM data:', audioData.length, 'bytes');
+
+    const startTime = Date.now();
+    const text = await invoke<string>('transcribe_local_whisper', {
+        audioData: audioData,
+    });
+
+    console.log(`[Whisper] Transcription complete in ${Date.now() - startTime}ms`);
+    console.log('[Whisper] Result:', text);
+    return text;
+}
+
+/**
  * 实时语音识别服务类（简化版）
  * 由于后端代理模式，这里不再需要前端管理 WebSocket 连接
  * 直接在录音结束后调用 transcribeWithAliyun 即可
  */
 export class RealtimeSpeechService {
-    private config: AliyunSpeechConfig;
     private audioChunks: Int16Array[] = [];
     private onTextCallback?: (text: string, isFinal: boolean) => void;
     private isStarted: boolean = false;
 
-    constructor(config?: Partial<AliyunSpeechConfig>) {
-        this.config = { ...getAliyunSpeechConfig(), ...config };
+    constructor() {
     }
 
     /**
      * 开始录音会话（初始化状态）
      */
     async start(onText?: (text: string, isFinal: boolean) => void): Promise<void> {
-        if (!this.config.apiKey) {
-            throw new Error('DashScope API Key 未配置。请在设置中添加阿里云 API Key。');
-        }
-
         this.onTextCallback = onText;
         this.audioChunks = [];
         this.isStarted = true;
-        console.log('[AliyunSpeech] Session started (collecting audio)');
+        console.log('[Speech] Session started (collecting audio)');
     }
 
     /**
@@ -247,7 +278,8 @@ export class RealtimeSpeechService {
     }
 
     /**
-     * 结束录音并获取转写结果（带自动降级）
+     * 结束录音并获取转写结果
+     * 自动检测: 有本地模型用 Whisper，没有走阿里云 API
      */
     async finish(enableWhisperFallback: boolean = true): Promise<string> {
         if (!this.isStarted) {
@@ -265,17 +297,27 @@ export class RealtimeSpeechService {
             offset += chunk.length;
         }
 
-        console.log('[AliyunSpeech] Total audio collected:', mergedData.length * 2, 'bytes');
+        console.log('[Speech] Total audio collected:', mergedData.length * 2, 'bytes');
 
-        // 转换为 Blob 用于调用后端
         const audioBlob = new Blob([mergedData.buffer], { type: 'audio/pcm' });
 
         try {
+            // 检测本地模型是否存在
+            const modelStatus = await checkLocalWhisperModel();
+            if (modelStatus.exists) {
+                console.log('[Speech] Local whisper model found, using local transcription');
+                const text = await transcribeWithLocalWhisper(audioBlob);
+                this.onTextCallback?.(text, true);
+                return text;
+            }
+
+            // 本地模型不存在，走原有 API 流程
+            console.log('[Speech] No local model, using API transcription');
             const text = await transcribeWithAliyun(audioBlob, enableWhisperFallback);
             this.onTextCallback?.(text, true);
             return text;
         } catch (error: any) {
-            console.error('[AliyunSpeech] Finish error:', error);
+            console.error('[Speech] Transcription failed:', error);
             throw error;
         } finally {
             this.audioChunks = [];
