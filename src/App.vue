@@ -15,6 +15,7 @@ import ReceptionCapsule from "./components/ReceptionCapsule.vue";
 import SymptomManagement from "./components/SymptomManagement.vue";
 import VoiceConsultationResult, { type GeneratedRecord } from "./components/VoiceConsultationResult.vue";
 import KnowledgeBasePanel from "./components/KnowledgeBasePanel.vue";
+import VoiceConsultationPage from "./components/VoiceConsultationPage.vue";
 import Icon from "./components/Icon.vue";
 import { trackClick } from "./services/operationTracker";
 import { LogicalSize } from "@tauri-apps/api/dpi";
@@ -66,6 +67,8 @@ const assistantTitle = computed(() => {
       return '智医助理';
     case 'consultation':
       return currentPatient.value ? `智能问诊 - ${patientDisplayName.value}` : '智能问诊';
+    case 'voice-consultation':
+      return currentPatient.value ? `语音问诊 - ${patientDisplayName.value}` : '语音问诊';
     case 'analytics':
       return '数据分析';
     case 'symptom-manage':
@@ -161,6 +164,7 @@ const {
   openAnalytics,
   openSymptomManagement,
   openConsultation,
+  openVoiceConsultation,
   startVoiceInteraction,
 } = navigation;
 
@@ -168,7 +172,6 @@ const {
 const voiceConsultation = useVoiceConsultation({
   appWindow,
   currentView,
-  generatedRecord,
   currentPatient,
   showToast,
   windowMgmt,
@@ -227,7 +230,7 @@ const eventListeners = useEventListeners({
   showToast,
   handleWindowMove,
   workMode: { enterWorkMode, exitWork },
-  navigation: { openConsultation, startVoiceInteraction },
+  navigation: { openConsultation, openVoiceConsultation, startVoiceInteraction },
   queueConsultationAssistTrigger,
   exiting,
   resizeTimeoutRef,
@@ -534,6 +537,11 @@ const openInsideCloudHome = async () => {
             @close="openChat"
           />
           <SymptomManagement v-if="currentView === 'symptom-manage'" @close="handleCollapse" />
+          <VoiceConsultationPage
+            v-if="currentView === 'voice-consultation'"
+            :initialPatientData="currentPatient"
+            @close="handleCollapse"
+          />
           <KnowledgeBasePanel v-if="currentView === 'knowledge-base'" @close="handleCollapse" />
           <SettingsPanel
             v-if="currentView === 'settings'"

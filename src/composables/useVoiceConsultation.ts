@@ -29,8 +29,6 @@ export interface VoiceConsultationOptions {
   appWindow: Ref<TauriWindow | null>;
   /** 当前视图 */
   currentView: Ref<ViewType>;
-  /** 生成的病历记录 */
-  generatedRecord: Ref<GeneratedRecord | null>;
   /** 当前患者信息 */
   currentPatient: Ref<AppPatient | null>;
   /** Toast 提示函数 */
@@ -57,7 +55,6 @@ export interface VoiceConsultationOptions {
  * const voiceConsultation = useVoiceConsultation({
  *   appWindow,
  *   currentView,
- *   generatedRecord,
  *   currentPatient,
  *   showToast,
  *   windowMgmt,
@@ -107,6 +104,11 @@ export function useVoiceConsultation(options: VoiceConsultationOptions) {
   async function handleVoiceStop(audioBlob: Blob, transcribedText: string): Promise<void> {
     console.log('[VoiceConsultation] handleVoiceStop received blob:', audioBlob?.size, 'bytes');
     console.log('[VoiceConsultation] Transcribed text:', transcribedText);
+
+    if (!transcribedText?.trim()) {
+      showToast('未识别到有效语音内容', 'error');
+      return;
+    }
 
     try {
       intentRecognition.addTranscript(transcribedText);
