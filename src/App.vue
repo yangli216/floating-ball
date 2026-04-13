@@ -15,7 +15,7 @@ import ReceptionCapsule from "./components/ReceptionCapsule.vue";
 import SymptomManagement from "./components/SymptomManagement.vue";
 import VoiceConsultationResult, { type GeneratedRecord } from "./components/VoiceConsultationResult.vue";
 import KnowledgeBasePanel from "./components/KnowledgeBasePanel.vue";
-import VoiceConsultationPage from "./components/VoiceConsultationPage.vue";
+import VoiceConsultationNew from "./components/VoiceConsultationNew.vue";
 import Icon from "./components/Icon.vue";
 import { trackClick } from "./services/operationTracker";
 import { LogicalSize } from "@tauri-apps/api/dpi";
@@ -180,6 +180,7 @@ const voiceConsultation = useVoiceConsultation({
 
 // 解构语音问诊 API
 const {
+  intentResult,
   handleVoiceStop,
   handleVoiceError,
   handleResultConfirm,
@@ -537,9 +538,10 @@ const openInsideCloudHome = async () => {
             @close="openChat"
           />
           <SymptomManagement v-if="currentView === 'symptom-manage'" @close="handleCollapse" />
-          <VoiceConsultationPage
+          <VoiceConsultationNew
             v-if="currentView === 'voice-consultation'"
             :initialPatientData="currentPatient"
+            :intentResult="intentResult"
             @close="handleCollapse"
           />
           <KnowledgeBasePanel v-if="currentView === 'knowledge-base'" @close="handleCollapse" />
