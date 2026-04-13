@@ -3,24 +3,23 @@
  *
  * 管理语音问诊的完整流程，包括：
  * - 语音识别处理
- * - LLM 病历生成
+ * - 意图识别与结构化提取
  * - 结果确认与提交
  * - 错误处理
  *
  * @module composables/useVoiceConsultation
  */
 
-import { type Ref } from 'vue';
+import { ref, type Ref } from 'vue';
 import type { Window as TauriWindow } from '@tauri-apps/api/window';
 import { LogicalSize } from '@tauri-apps/api/dpi';
 import { invoke } from '@tauri-apps/api/core';
 import type { ViewType } from '../constants/windowSizes';
 import { WINDOW_SIZES } from '../constants/windowSizes';
-import { chat, type ChatMessage } from '../services/llm';
-import { PROMPTS } from '../prompts';
-import { trackClick, trackError, trackRecommendationAction, startTimedOperation } from '../services/operationTracker';
+import { trackClick, trackError, trackRecommendationAction } from '../services/operationTracker';
 import type { GeneratedRecord } from '../components/VoiceConsultationResult.vue';
 import type { AppPatient } from '../types/appState';
+import { useVoiceIntentRecognition, type VoiceIntentResult } from './useVoiceIntentRecognition';
 
 /**
  * 语音问诊配置参数
@@ -76,7 +75,6 @@ export function useVoiceConsultation(options: VoiceConsultationOptions) {
   const {
     appWindow,
     currentView,
-    generatedRecord,
     currentPatient,
     showToast,
     windowMgmt,
@@ -85,6 +83,9 @@ export function useVoiceConsultation(options: VoiceConsultationOptions) {
 
   const { smartExpand } = windowMgmt;
   const { enterWorkMode, exitWork } = workMode;
+
+  const intentRecognition = useVoiceIntentRecognition();
+  const intentResult = ref<VoiceIntentResult | null>(null);
 
   function resolveConsultationId(patient: AppPatient | null): string {
     return String(patient?.idPi || patient?.patientId || patient?.id || 'unknown');
@@ -96,10 +97,9 @@ export function useVoiceConsultation(options: VoiceConsultationOptions) {
    * 处理语音停止事件
    *
    * 流程：
-   * 1. 切换到结果视图并调整窗口大小
-   * 2. 调用 LLM 生成病历
-   * 3. 解析并验证 JSON 结果
-   * 4. 更新 generatedRecord
+   * 1. 调用意图识别处理转写文本
+   * 2. 保存意图识别结果
+   * 3. 切换到语音问诊视图并调整窗口大小
    *
    * @param audioBlob - 录音音频数据（当前未使用）
    * @param transcribedText - 转写后的文本
@@ -108,99 +108,42 @@ export function useVoiceConsultation(options: VoiceConsultationOptions) {
     console.log('[VoiceConsultation] handleVoiceStop received blob:', audioBlob?.size, 'bytes');
     console.log('[VoiceConsultation] Transcribed text:', transcribedText);
 
-    generatedRecord.value = null; // Reset
-    currentView.value = 'voice-result';
-
-    // Explicitly resize window for Result View
-    if (appWindow.value) {
-      try {
-        await appWindow.value.setResizable(true);
-        await appWindow.value.setSize(
-          new LogicalSize(WINDOW_SIZES.RESULT.width, WINDOW_SIZES.RESULT.height)
-        );
-        await smartExpand(WINDOW_SIZES.RESULT.width, WINDOW_SIZES.RESULT.height);
-      } catch (e) {
-        console.error('[VoiceConsultation] Failed to resize for result:', e);
-      }
-    } else {
-      await enterWorkMode(WINDOW_SIZES.RESULT.width, WINDOW_SIZES.RESULT.height);
-    }
-
-    const finishVoiceLlm = startTimedOperation('voice_llm_processing');
     try {
-      // Use the transcribed text directly from realtime service
-      const text = transcribedText;
-      console.log('[VoiceConsultation] Using realtime transcription:', text);
+      intentRecognition.addTranscript(transcribedText);
+      const result = await intentRecognition.processTranscript(transcribedText);
 
-      if (!text || text.trim().length === 0) {
-        throw new Error('未能识别到有效语音');
-      }
-
-      // 2. LLM Generation - Based on medical record requirements
-      const messages: ChatMessage[] = [
-        { role: 'system', content: PROMPTS.consultation.medicalRecordGeneration.system },
-        { role: 'user', content: PROMPTS.consultation.medicalRecordGeneration.buildUserPrompt(text) },
-      ];
-
-      console.log('[VoiceConsultation] Sending request to LLM...');
-      console.log('[VoiceConsultation] Input text length:', text.length, 'chars');
-      const llmStart = Date.now();
-      const jsonStr = await chat(messages);
-      console.log(`[VoiceConsultation] Response received in ${Date.now() - llmStart}ms`);
-      console.log('[VoiceConsultation] Raw response:', jsonStr);
-
-      // Try to parse JSON (handle potential markdown code blocks)
-      let cleanJson = jsonStr.replace(/```json\n?|\n?```/g, '').trim();
-      // Also try to extract JSON from text if wrapped in other content
-      const jsonMatch = cleanJson.match(/\{[\s\S]*\}/);
-      if (jsonMatch) {
-        cleanJson = jsonMatch[0];
-      }
-
-      console.log('[VoiceConsultation] Cleaned JSON:', cleanJson);
-
-      const parsed = JSON.parse(cleanJson);
-
-      // Check if LLM detected irrelevant content
-      if (parsed.error) {
-        console.warn('[VoiceConsultation] Irrelevant content detected:', parsed.message);
-        showToast(parsed.message || '输入内容与医疗问诊场景无关', 'error');
+      if (!result) {
+        const errMsg = intentRecognition.processingError.value || '意图识别失败';
+        showToast(errMsg, 'error');
         setTimeout(() => {
-          exitWork('cancelled');
+          exitWork('error');
         }, 2000);
         return;
       }
 
-      // Validate required fields
-      const requiredFields = ['chiefComplaint', 'historyOfPresentIllness', 'diagnosisList'];
-      const missingFields = requiredFields.filter((f) => !parsed[f]);
-      if (missingFields.length > 0) {
-        console.warn('[VoiceConsultation] Missing required fields:', missingFields);
-        // Fill with defaults
-        if (missingFields.includes('chiefComplaint')) parsed.chiefComplaint = '未能识别';
-        if (missingFields.includes('historyOfPresentIllness'))
-          parsed.historyOfPresentIllness = '未能识别';
-        if (missingFields.includes('diagnosisList')) parsed.diagnosisList = [];
+      intentResult.value = result;
+      currentView.value = 'voice-consultation';
+
+      // Resize window for Voice Consultation View
+      if (appWindow.value) {
+        try {
+          await appWindow.value.setResizable(true);
+          await appWindow.value.setSize(
+            new LogicalSize(WINDOW_SIZES.VOICE_CONSULTATION.width, WINDOW_SIZES.VOICE_CONSULTATION.height)
+          );
+          await smartExpand(WINDOW_SIZES.VOICE_CONSULTATION.width, WINDOW_SIZES.VOICE_CONSULTATION.height);
+        } catch (e) {
+          console.error('[VoiceConsultation] Failed to resize for voice-consultation:', e);
+        }
+      } else {
+        await enterWorkMode(WINDOW_SIZES.VOICE_CONSULTATION.width, WINDOW_SIZES.VOICE_CONSULTATION.height);
       }
 
-      // Ensure arrays are initialized
-      parsed.diagnosisList = parsed.diagnosisList || [];
-      parsed.medications = parsed.medications || [];
-      parsed.examinations = parsed.examinations || [];
-      parsed.labTests = parsed.labTests || [];
-      parsed.procedures = parsed.procedures || [];
-
-      generatedRecord.value = parsed as GeneratedRecord;
-      console.log('[VoiceConsultation] Medical record generated successfully');
-      finishVoiceLlm(true, {
-        transcriptionLength: text.length,
-        diagnosisCount: parsed.diagnosisList.length,
-      });
+      console.log('[VoiceConsultation] Intent recognition completed successfully');
     } catch (err: unknown) {
       console.error('[VoiceConsultation] Processing failed:', err);
       trackError('voice_processing_failed', err);
       const errMessage = err instanceof Error ? err.message : String(err);
-      finishVoiceLlm(false, { errorMessage: errMessage });
       showToast(`处理失败: ${errMessage}`, 'error');
       setTimeout(() => {
         exitWork('error');
@@ -263,6 +206,7 @@ export function useVoiceConsultation(options: VoiceConsultationOptions) {
   // ========== 导出 ==========
 
   return {
+    intentResult,
     handleVoiceStop,
     handleVoiceError,
     handleResultConfirm,
