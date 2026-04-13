@@ -28,6 +28,7 @@ export type ViewType =
   | 'risk-alert'
   | 'voice-interaction'
   | 'voice-result'
+  | 'voice-consultation'
   | 'reception-capsule'
   | 'analytics'
   | 'symptom-manage'
@@ -66,6 +67,9 @@ export const WINDOW_SIZES = {
 
   /** 症状库管理：1080×720px */
   SYMPTOM_MANAGE: { width: 1080, height: 720 } as WindowSize,
+
+  /** 语音问诊页面：1080×720px */
+  VOICE_CONSULTATION: { width: 1080, height: 720 } as WindowSize,
 } as const;
 
 /**
@@ -97,6 +101,9 @@ export function getWindowSizeForView(view: ViewType): WindowSize {
     case 'symptom-manage':
       return WINDOW_SIZES.SYMPTOM_MANAGE;
 
+    case 'voice-consultation':
+      return WINDOW_SIZES.VOICE_CONSULTATION;
+
     case 'chat':
     case 'settings':
     case 'analytics':
@@ -124,5 +131,5 @@ export function isCapsuleView(view: ViewType): boolean {
  * @returns 是否为大面板
  */
 export function isLargePanelView(view: ViewType): boolean {
-  return view === 'consultation' || view === 'voice-result' || view === 'symptom-manage';
+  return view === 'consultation' || view === 'voice-result' || view === 'symptom-manage' || view === 'voice-consultation';
 }

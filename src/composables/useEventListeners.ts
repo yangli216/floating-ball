@@ -63,6 +63,7 @@ export interface EventListenersOptions {
   /** 导航函数 */
   navigation: {
     openConsultation: () => Promise<void>;
+    openVoiceConsultation: () => Promise<void>;
     startVoiceInteraction: () => Promise<void>;
   };
   /** 队列化快进模式自动触发请求 */

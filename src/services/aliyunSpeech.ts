@@ -32,7 +32,7 @@ export function getAliyunSpeechConfig(): AliyunSpeechConfig {
     const apiKey = localStorage.getItem('DASHSCOPE_API_KEY') || import.meta.env.VITE_DASHSCOPE_API_KEY || '';
     return {
         apiKey,
-        model: 'paraformer-realtime-v2',
+        model: 'fun-asr-flash-8k-realtime',
         sampleRate: 16000,
         format: 'pcm'
     };

@@ -162,6 +162,26 @@ export function useNavigation(options: NavigationOptions) {
   }
 
   /**
+   * 打开语音问诊页
+   */
+  async function openVoiceConsultation(): Promise<void> {
+    trackViewChange(currentView.value, 'voice-consultation', {
+      patientId: currentPatient.value?.patientId,
+    });
+    currentView.value = 'voice-consultation';
+    if (!isWorking.value) {
+      await enterWorkMode(WINDOW_SIZES.VOICE_CONSULTATION.width, WINDOW_SIZES.VOICE_CONSULTATION.height);
+    } else {
+      if (appWindow.value) {
+        await smartExpand(WINDOW_SIZES.VOICE_CONSULTATION.width, WINDOW_SIZES.VOICE_CONSULTATION.height);
+        await appWindow.value.setSize(
+          new LogicalSize(WINDOW_SIZES.VOICE_CONSULTATION.width, WINDOW_SIZES.VOICE_CONSULTATION.height)
+        );
+      }
+    }
+  }
+
+  /**
    * 开始语音交互
    */
   async function startVoiceInteraction(): Promise<void> {
@@ -188,6 +208,7 @@ export function useNavigation(options: NavigationOptions) {
     // 业务导航
     openSymptomManagement,
     openConsultation,
+    openVoiceConsultation,
     openKnowledgeBase,
     startVoiceInteraction,
   };
