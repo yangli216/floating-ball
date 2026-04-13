@@ -5,12 +5,13 @@ import Icon from './Icon.vue';
 import { chat, type ChatMessage } from '../services/llm';
 import { PROMPTS } from '../prompts';
 import { medicalDataService } from '../services/medicalData';
-import type { Patient, TreatmentRecommendation, Diagnosis } from '../types/consultation';
+import type { TreatmentRecommendation, Diagnosis } from '../types/consultation';
+import type { AppPatient } from '../types/appState';
 import type { VoiceIntentResult, MatchedTreatment } from '../composables/useVoiceIntentRecognition';
 
 // ── Props & Emits ──────────────────────────────────────────────────────
 const props = defineProps<{
-  initialPatientData?: Patient;
+  initialPatientData?: AppPatient;
   intentResult: VoiceIntentResult | null;
 }>();
 
@@ -39,10 +40,11 @@ const treatmentLoading = ref(false);
 const submitting = ref(false);
 
 // ── Patient helpers ────────────────────────────────────────────────────
-const patientName = computed(() => props.initialPatientData?.naPi || '');
-const patientGender = computed(() => props.initialPatientData?.sdSexText || props.initialPatientData?.sdSex || '');
-const patientAge = computed(() => props.initialPatientData?.ageText || (props.initialPatientData?.ageNum ? `${props.initialPatientData.ageNum}${props.initialPatientData.ageUnit || '岁'}` : ''));
-const patientIdCard = computed(() => props.initialPatientData?.idCard || '');
+const s = (v: unknown): string => (typeof v === 'string' ? v : '');
+const patientName = computed((): string => s(props.initialPatientData?.naPi));
+const patientGender = computed((): string => s(props.initialPatientData?.sdSexText) || s(props.initialPatientData?.sdSex));
+const patientAge = computed((): string => s(props.initialPatientData?.ageText) || (props.initialPatientData?.ageNum != null ? `${props.initialPatientData.ageNum}${s(props.initialPatientData.ageUnit) || '岁'}` : ''));
+const patientIdCard = computed((): string => s(props.initialPatientData?.idCard));
 
 const getPatientAnchorId = (): string => {
   const p = props.initialPatientData;

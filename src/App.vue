@@ -540,7 +540,7 @@ const openInsideCloudHome = async () => {
           <SymptomManagement v-if="currentView === 'symptom-manage'" @close="handleCollapse" />
           <VoiceConsultationNew
             v-if="currentView === 'voice-consultation'"
-            :initialPatientData="currentPatient"
+            :initialPatientData="currentPatient ?? undefined"
             :intentResult="intentResult"
             @close="handleCollapse"
           />
