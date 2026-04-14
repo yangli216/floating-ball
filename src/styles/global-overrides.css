@@ -733,7 +733,7 @@ button.secondary:hover,
 }
 
 .trigger-text {
-  color: var(--color-text-medium) !important;
+  color: #999999 !important;
 }
 
 .trigger-icon {
@@ -2800,8 +2800,8 @@ html.dark .analytics-panel .range-btn.active {
 }
 
 [data-theme="consultation-blue"] .tag-blue {
-  background: rgba(255, 255, 255, 0.2) !important;
-  color: #FFFFFF !important;
+  background: #E0EFFF !important;
+  color:#2469F2 !important;
   border: 1px solid rgba(255, 255, 255, 0.4) !important;
 }
 
@@ -2967,7 +2967,7 @@ html.dark .analytics-panel .range-btn.active {
 
 /* --- 问诊蓝: 表单标题 --- */
 [data-theme="consultation-blue"] .form-header {
-  background: #FFFFFF !important;
+  background: linear-gradient( 90deg, #DCECFF 0%, rgba(189,220,255,0) 100%) !important;
   border-bottom: 1px solid #F0F0F0 !important;
   padding-left: 16px !important;
 }
@@ -3002,18 +3002,19 @@ html.dark .analytics-panel .range-btn.active {
   border: none !important;
   background: transparent !important;
   padding: 4px 8px !important;
-  border-radius: 0 !important;
+  border-radius: 4px !important;
   font-size: 13px !important;
   color: #666666 !important;
   box-shadow: none !important;
   backdrop-filter: none !important;
   -webkit-backdrop-filter: none !important;
+  border: 1px solid #DBDBDB !important;
 }
 
 [data-theme="consultation-blue"] .radio-label:hover,
 [data-theme="consultation-blue"] .checkbox-label:hover {
   background: transparent !important;
-  border: none !important;
+  border: 1px solid #DBDBDB !important;
   color: #333333 !important;
 }
 
@@ -3022,7 +3023,7 @@ html.dark .analytics-panel .range-btn.active {
 [data-theme="consultation-blue"] .radio-label:has(input:checked),
 [data-theme="consultation-blue"] .checkbox-label:has(input:checked) {
   background: transparent !important;
-  border: none !important;
+  border: 1px solid #DBDBDB !important;
   color: #2B7BF7 !important;
   font-weight: 500 !important;
   box-shadow: none !important;
@@ -3056,7 +3057,7 @@ html.dark .analytics-panel .range-btn.active {
 
 /* --- 问诊蓝: 推荐症状面板 --- */
 [data-theme="consultation-blue"] .recommendation-panel {
-  background: #FAFBFC !important;
+  background: #F9F9F9 !important;
   border-top: 1px solid #F0F0F0 !important;
 }
 
@@ -3069,12 +3070,12 @@ html.dark .analytics-panel .range-btn.active {
 }
 
 [data-theme="consultation-blue"] .recommendation-chip {
-  background: transparent !important;
+  background: #FFFFFF !important;
   border: none !important;
-  color: #2B7BF7 !important;
-  font-size: 13px !important;
-  padding: 2px 4px !important;
-  border-radius: 0 !important;
+  color: #2469F2 !important;
+  font-size: 14px !important;
+  padding: 8px 8px !important;
+  border-radius: 16px 16px 16px 16px !important;
 }
 
 [data-theme="consultation-blue"] .recommendation-chip:hover {
@@ -3144,7 +3145,7 @@ html.dark .analytics-panel .range-btn.active {
 /* --- 问诊蓝: 删除按钮 --- */
 [data-theme="consultation-blue"] .remove-btn,
 [data-theme="consultation-blue"] .delete-btn {
-  color: #CCCCCC !important;
+  color: #262626 !important;
 }
 
 [data-theme="consultation-blue"] .remove-btn:hover,
@@ -3314,8 +3315,8 @@ html.dark .analytics-panel .range-btn.active {
 }
 
 [data-theme="consultation-blue"] .system-category-selector .system-card {
-  background: #FFFFFF !important;
-  border: 1px solid #E8E8E8 !important;
+  background: #F9F9F9 !important;
+  border: none !important;
   color: #333333 !important;
   border-radius: 8px !important;
   backdrop-filter: none !important;
@@ -3328,7 +3329,7 @@ html.dark .analytics-panel .range-btn.active {
 }
 
 [data-theme="consultation-blue"] .system-category-selector .system-card.active {
-  background: #E8F1FF !important;
+  background:  linear-gradient( 331deg, #2469F2 0%, #2469F2 98.57%) !important;
   border-color: #2B7BF7 !important;
   box-shadow: 0 0 0 1px #2B7BF7 !important;
 }

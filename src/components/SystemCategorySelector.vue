@@ -15,7 +15,7 @@
         @click="toggleSystem(system.key)"
       >
         <div class="system-icon">
-          <Icon :icon="system.icon" size="32" />
+          <svgIcon :file="system.icon" :color="isSelected(system.key)?'#FFFFFF':'#CCCCCC'" :fontSize="'28px'"></svgIcon>
         </div>
         <span class="system-label">{{ system.label }}</span>
       </div>
@@ -49,6 +49,7 @@
 <script setup lang="ts">
 import { ref, computed, PropType } from 'vue';
 import Icon from './Icon.vue';
+import SvgIcon from "../components/svgIcon.vue";
 
 interface Symptom {
   key: string;
@@ -86,47 +87,47 @@ const systems = [
   {
     key: 'respiratory',
     label: '呼吸系统',
-    icon: 'healthicons:lungs'
+    icon: '/lungs_sys.svg'
   },
   {
     key: 'circulatory',
     label: '循环系统',
-    icon: 'mdi:heart-pulse'
+    icon: '/circulatory_sys.svg'
   },
   {
     key: 'digestive',
     label: '消化系统',
-    icon: 'healthicons:stomach'
+    icon: '/stomach_sys.svg'
   },
   {
     key: 'urinary',
     label: '泌尿系统',
-    icon: 'healthicons:kidneys'
+    icon: '/kidneys_sys.svg'
   },
   {
     key: 'reproductive',
     label: '生殖系统',
-    icon: 'mdi:gender-male-female'
+    icon: '/reproductive_sys.svg'
   },
   {
     key: 'nervous',
     label: '神经系统',
-    icon: 'mdi:brain'
+    icon: '/brain_sys.svg'
   },
   {
     key: 'endocrine',
     label: '内分泌系统',
-    icon: 'mdi:flask'
+    icon: '/flask_sys.svg'
   },
   {
     key: 'motor',
     label: '运动系统',
-    icon: 'mdi:run'
+    icon: '/training.svg'
   },
   {
     key: 'other',
     label: '其他',
-    icon: 'mdi:dots-horizontal-circle'
+    icon: '/other_sys.svg'
   }
 ];
 
@@ -250,16 +251,17 @@ const filteredSymptoms = computed(() => {
 }
 
 .system-label {
+  font-family: Microsoft YaHei, Microsoft YaHei;
   font-size: 11px;
   font-weight: 500;
-  color: #64748B;
+  color: #262626;
   text-align: center;
   line-height: 1.2;
 }
 
 .system-card.active .system-label {
-  color: #2B7FE3;
-  font-weight: 600;
+  color: #FFFFFF;
+  font-weight: 400;
 }
 
 /* -- Category Symptoms Area -- */

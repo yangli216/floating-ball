@@ -4,9 +4,7 @@
     <header class="patient-header">
       <div class="patient-card">
         <!-- Avatar -->
-        <div class="avatar" :style="{ background: avatarConfig.bgColor }">
-          <Icon :icon="avatarConfig.icon" :color="avatarConfig.color" size="18" />
-        </div>
+        <img class="avatar-img" :src="avatarSrc" alt="头像" draggable="false"/>
         
         <!-- Name -->
         <div class="patient-name">{{ patientInfo.naPi }}</div>
@@ -39,12 +37,12 @@
           <!-- actions moved to consultation-footer -->
         </template>
         <template v-else-if="currentView === 'record'">
-             <button class="header-btn" @click="currentView = 'consultation'">返回</button>
+<!--             <button class="header-btn" @click="$emit('close')">返回</button>-->
              <!-- <button class="header-btn" :disabled="isWritingRecord" @click="writeRecordToHIS">
                {{ isWritingRecord ? '回写中...' : '回写病历' }}
              </button> -->
              <!-- <button v-if="selectedDiagnosis" class="header-btn" @click="confirmDiagnosisSelection">确认诊断</button> -->
-             <button class="header-btn primary" @click="handleComplete">生成报告</button>
+<!--             <button class="header-btn primary" @click="handleComplete">生成报告</button>-->
         </template>
         <template v-else>
              <button class="header-btn primary" @click="printReport">打印</button>
@@ -202,7 +200,7 @@
               <div class="form-header">
                 <h2>{{ item.key === 'general' ? item.name : (item.name + ' - 症状属性问诊') }}</h2>
                 <button v-if="item.key !== 'general'" class="icon-btn remove-btn" @click="removeSymptom(item)" title="移除此症状">
-                  <Icon icon="lucide:trash-2" size="16" />
+                  <Icon icon="lucide:trash-2" size="16"/>
                 </button>
               </div>
       
@@ -320,7 +318,7 @@
                 <div class="recommendation-header">
                   <div class="recommendation-title">
                     <Icon icon="lucide:sparkles" size="14" />
-                    <span>伴随症状推荐</span>
+                    <span class="recommendation-title-word">伴随症状推荐</span>
                   </div>
                 </div>
                 <div class="recommendation-chips">
@@ -342,7 +340,7 @@
                       class="companion-add-btn"
                       @click.prevent.stop="selectSymptom(rec)"
                       title="展开详细问诊"
-                    >+</button>
+                    >十</button>
                   </label>
                 </div>
               </div>
@@ -365,16 +363,16 @@
 
     <!-- Consultation Footer Actions -->
     <div v-if="currentView === 'consultation'" class="consultation-footer">
-      <button class="footer-cancel-btn" @click="$emit('close')">取消</button>
       <button
-        class="footer-submit-btn"
-        :disabled="isGenerating"
-        :aria-busy="isGenerating"
-        @click="handleEndConsultation"
+          class="footer-submit-btn"
+          :disabled="isGenerating"
+          :aria-busy="isGenerating"
+          @click="handleEndConsultation"
       >
         <Icon v-if="isGenerating" icon="lucide:loader-2" class="animate-spin" size="14" aria-hidden="true" />
         <span>{{ isGenerating ? '生成中...' : '生成病历' }}</span>
       </button>
+      <button class="footer-cancel-btn" @click="$emit('close')">取消</button>
     </div>
 
     <!-- Medical Record View -->
@@ -386,16 +384,18 @@
           <div class="panel-header">
             <h3>病历详情</h3>
             <button class="icon-btn" @click="copyToClipboard" title="复制全部">
-              <Icon icon="lucide:copy" size="16" />
+              <svg t="1775896266752" class="icon" viewBox="0 0 1024 1024" version="1.1" xmlns="http://www.w3.org/2000/svg" p-id="120110" width="16px" height="16px"><path d="M704 256H128a64 64 0 0 0-64 64v576a64 64 0 0 0 64 64h576a64 64 0 0 0 64-64V320a64 64 0 0 0-64-64z m0 640H128V320h576v576zM896 64H320a64 64 0 0 0-64 64v64h64v-64h576v576h-64v64h64a64 64 0 0 0 64-64V128a64 64 0 0 0-64-64zM288 640h96v96a32 32 0 0 0 64 0v-96h96a32 32 0 0 0 0-64h-96v-96a32 32 0 0 0-64 0v96h-96a32 32 0 0 0 0 64z" p-id="120111"></path></svg>
             </button>
           </div>
           <div class="panel-body">
             <div class="record-field">
-              <label>主诉</label>
+              <label class="record-field-checkbox" :class="{ 'is-active': medRecordDetails.includes('1') }">
+                <input type="checkbox" value="1" v-model="medRecordDetails"/>主诉</label>
               <textarea v-model="generatedRecord.chiefComplaint" rows="2"></textarea>
             </div>
             <div class="record-field">
-              <label>现病史</label>
+              <label class="record-field-checkbox" :class="{ 'is-active': medRecordDetails.includes('2') }">
+                <input type="checkbox" value="2" v-model="medRecordDetails"/>现病史</label>
               <textarea v-model="generatedRecord.historyOfPresentIllness" rows="12"></textarea>
             </div>
             <!-- TCM Four Examinations -->
@@ -411,17 +411,20 @@
           <div class="panel-header">
             <h3>智能辅助 (AI)</h3>
             <div class="panel-header-actions">
-              <span v-if="aiLoading" class="tag-ai">AI生成中...</span>
+              <span v-if="aiLoading" class="tag-ai">
+                <img class="ai-recommend-btn-img" src="/ai-recommend.png" alt="AI推荐诊断" draggable="false"/>
+                AI生成中...</span>
             </div>
           </div>
           <div class="panel-body">
             <!-- Loading Overlay -->
             <Transition name="fade">
               <div v-if="aiLoading" class="loading-overlay">
-                <div class="ai-spinner">
-                  <div class="spinner-ring"></div>
-                  <div class="spinner-core"></div>
-                </div>
+<!--                <div class="ai-spinner">-->
+<!--                  <div class="spinner-ring"></div>-->
+<!--                  <div class="spinner-core"></div>-->
+<!--                </div>-->
+                <img class="treatment-loading-img" src="/loading.png" alt="正在分析病例" draggable="false"/>
                 <div class="loading-content">
                   <p class="loading-title">AI 正在分析病例</p>
                   <p class="loading-desc">正在综合患者主诉、现病史及体征信息...</p>
@@ -455,8 +458,9 @@
                     <Icon icon="lucide:workflow" size="14" />
                     <span>查看诊断路径</span>
                   </button> -->
+                  <div class="ai-recommend-btn-border"></div>
                   <button class="ai-recommend-btn" type="button" @click="fetchAIDiagnosis" :disabled="aiLoading">
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><path d="M12 16v-4"></path><path d="M12 8h.01"></path></svg>
+                    <img class="ai-recommend-btn-img" src="/ai-recommend.png" alt="AI推荐诊断" draggable="false"/>
                     AI推荐诊断
                   </button>
                 </div>
@@ -510,7 +514,9 @@
                             </span>
                           </FactCheckHighlight>
                           <div class="inline-related-trigger" @click="toggleRelatedDropdown(diag, $event)" title="切换同类诊断">
-                            <span class="arrow" :class="{ open: openRelatedId === diag.id }">▼</span>
+                            <span class="arrow" :class="{ open: openRelatedId === diag.id }">
+                              <svg t="1775994070219" class="icon" viewBox="0 0 1024 1024" version="1.1" xmlns="http://www.w3.org/2000/svg" p-id="167774" width="11" height="11"><path d="M512 672a32 32 0 0 1-22.4-9.6l-256-256a32 32 0 1 1 45.44-45.44L512 594.56l233.6-233.6a32 32 0 0 1 45.44 45.44l-256 256a32 32 0 0 1-23.04 9.6z" p-id="167775" fill="#ffffff"></path></svg>
+                            </span>
                           </div>
                         </div>
                         <div class="diag-actions">
@@ -612,16 +618,8 @@
               
               <div v-if="anyRecommendationLoading" class="loading-overlay embedded">
                 <div class="treatment-loading-icon">
-                  <svg width="48" height="48" viewBox="0 0 48 48" fill="none">
-                    <circle cx="24" cy="20" r="10" fill="#E8F1FF" stroke="#2B7FE3" stroke-width="1.5"/>
-                    <circle cx="24" cy="18" r="3" fill="#2B7FE3"/>
-                    <rect x="16" y="30" width="16" height="12" rx="3" fill="#E8F1FF" stroke="#2B7FE3" stroke-width="1.5"/>
-                    <path d="M20 36h8" stroke="#2B7FE3" stroke-width="1.5" stroke-linecap="round"/>
-                    <path d="M20 39h5" stroke="#2B7FE3" stroke-width="1.5" stroke-linecap="round"/>
-                    <circle cx="21" cy="17" r="1" fill="#fff"/>
-                    <circle cx="27" cy="17" r="1" fill="#fff"/>
-                    <path d="M22 21c0 0 1 1.5 2 1.5s2-1.5 2-1.5" stroke="#fff" stroke-width="1" stroke-linecap="round"/>
-                  </svg>
+                  <img class="treatment-loading-img" src="/loading.png" alt="正在智能推荐方案"
+                       draggable="false"/>
                   <div class="treatment-loading-pulse"></div>
                 </div>
                 <div class="loading-content">
@@ -653,16 +651,14 @@
                       :class="{ active: rec.selected }"
                       @click="toggleTreatmentSelection(rec)"
                     >
-                      <div class="selected-mark" v-if="rec.selected">
-                        <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>
-                      </div>
                       <div class="rec-content">
                         <div class="rec-header">
                           <div class="rec-name-group">
-                            <span class="rec-tag" :class="rec.type">{{ getTreatmentTagLabel(rec.type) }}</span>
+                            <input type="checkbox" :checked="rec.selected">
                             <FactCheckHighlight :issue="getIssueForTreatment(rec.name)">
                               <span class="rec-name">{{ rec.name }}</span>
                             </FactCheckHighlight>
+                            <span class="rec-tag" :class="rec.type">{{ getTreatmentTagLabel(rec.type) }}</span>
                             <span v-if="rec.matchedItem" class="matched-inline">
                               <span class="match-icon">✓</span>
                               <span class="match-name">{{ rec.matchedItem.name }}</span>
@@ -771,7 +767,7 @@
         <button class="writeback-btn" @click="handleBatchWriteBack" :disabled="!canBatchWriteBack">
           一键回写
         </button>
-        <button class="back-btn" @click="$emit('close')">
+        <button class="back-btn" @click="currentView = 'consultation'">
           返回
         </button>
       </div>
@@ -956,22 +952,22 @@
             
             <div class="checklist-items">
               <label v-for="(item, index) in checklistItems" :key="index" class="checklist-item-label">
-                <input type="checkbox" v-model="item.checked" />
+<!--                <input type="checkbox" v-model="item.checked" />-->
                 <span class="checklist-text">{{ item.question }}</span>
               </label>
             </div>
 
-            <div class="checklist-notes-box">
-              <label>补充说明（如异常发现、查体记录等）</label>
-              <textarea v-model="checklistNotes" placeholder="填写相关补充信息..."></textarea>
-            </div>
+<!--            <div class="checklist-notes-box">-->
+<!--              <label>补充说明（如异常发现、查体记录等）</label>-->
+<!--              <textarea v-model="checklistNotes" placeholder="填写相关补充信息..."></textarea>-->
+<!--            </div>-->
           </div>
-          <div class="modal-footer">
-            <button class="btn secondary" @click="showChecklistModal = false">暂不确认 (跳过)</button>
-            <button class="btn primary" @click="handleChecklistConfirm" :disabled="!checklistItems.some(i => i.checked) && !checklistNotes">
-              确认并记录
-            </button>
-          </div>
+<!--          <div class="modal-footer">-->
+<!--            <button class="btn secondary" @click="showChecklistModal = false">暂不确认 (跳过)</button>-->
+<!--            <button class="btn primary" @click="handleChecklistConfirm" :disabled="!checklistItems.some(i => i.checked) && !checklistNotes">-->
+<!--              确认并记录-->
+<!--            </button>-->
+<!--          </div>-->
         </div>
       </div>
     </Transition>
@@ -1079,7 +1075,7 @@ const patientInfo = ref<Patient>({
   "idMpi": "766842939207974912",
   "cdPi": "JG00003125111",
   "naPi": "张虎(示例)",
-  "sdSex": "2",
+  "sdSex": "1",
   "birthday": "2006-07-11",
   "idCard": "360731200607117442",
   "mobilePhone": "13800138000",
@@ -1095,7 +1091,7 @@ const patientInfo = ref<Patient>({
   "sdNationText": "汉族",
   "sdNatyText": "中国",
   "sdMaritalText": "未婚",
-  "sdSexText": "女性",
+  "sdSexText": "男性",
   "sdBloodText": "不详",
   "fgActiveText": "是",
   "sdRhBloodText": "不详",
@@ -1103,18 +1099,18 @@ const patientInfo = ref<Patient>({
   "allergyHistory": "无"
 });
 
-const avatarConfig = computed(() => {
+const avatarSrc = computed(() => {
   const info = patientInfo.value;
-  console.log('Avatar Config Debug:', info);
+  let src = '/defaultAvtar.png'
+  console.log(info);
 
   // Check code '1' or text '男性'/'男'
-  const isMale = info.sdSex === '1' || info.sdSexText === '男性' || info.sdSexText === '男';
-
-  return {
-    color: '#fff',
-    bgColor: isMale ? 'rgba(255,255,255,0.25)' : 'rgba(255,200,220,0.35)',
-    icon: isMale ? 'mdi:human-male' : 'mdi:human-female'
-  };
+  // if(info.sdSex === '1'|| info.sdSexText === '男性' || info.sdSexText === '男') {
+  //
+  // }else{
+  //
+  // }
+  return src
 });
 
 // 患者性别（用于 BodyPartSelector）
@@ -1132,6 +1128,7 @@ const isGeneratingSymptom = ref(false);
 const selectedCategories = ref<string[]>([]);
 const isCategoryDropdownOpen = ref(false);
 const categoryFilterRef = ref<HTMLElement | null>(null);
+const medRecordDetails = ref<string[]>([]);
 
 // Selection mode for sidebar tabs
 const selectionMode = ref<'common' | 'bodyPart' | 'system'>('common');
@@ -4282,16 +4279,9 @@ const copyToClipboard = () => {
   margin-right: 16px;
 }
 
-.avatar {
+.avatar-img {
   width: 36px;
   height: 36px;
-  border-radius: 50%;
-  overflow: hidden;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  border: 2px solid rgba(255, 255, 255, 0.5);
-  flex-shrink: 0;
 }
 
 .patient-name {
@@ -4315,13 +4305,18 @@ const copyToClipboard = () => {
 }
 
 .tag-blue {
-  background: rgba(255, 255, 255, 0.2);
-  color: #fff;
-  padding: 2px 8px;
-  border-radius: 4px;
+  width: 64px;
+  height: 20px;
+  background: #E0EFFF;
+  border-radius: 10px 10px 10px 10px;
+  font-family: Microsoft YaHei, Microsoft YaHei;
+  font-weight: 400;
   font-size: 12px;
-  font-weight: 500;
-  border: 1px solid rgba(255, 255, 255, 0.3);
+  color: #2469F2;
+  line-height: 20px;
+  text-align: center;
+  font-style: normal;
+  text-transform: none;
 }
 
 .tag-green {
@@ -4334,12 +4329,13 @@ const copyToClipboard = () => {
 }
 
 .tag-allergy {
-  background: rgba(239, 68, 68, 0.85);
+  background: #E03134;
   color: #fff;
   padding: 2px 8px;
-  border-radius: 12px;
+  border-radius: 10px 10px 10px 10px;
   font-size: 12px;
-  font-weight: 500;
+  font-weight: 400;
+  border: 1px solid #FFFFFF;
 }
 
 .contact-info {
@@ -4412,9 +4408,9 @@ const copyToClipboard = () => {
   flex-direction: column;
   width: 28px;
   flex-shrink: 0;
-  background: #F8FAFC;
+  background: #FFFFFF;
   border-right: 1px solid #EEF2F6;
-  padding-top: 6px;
+  padding-top: 0px;
   gap: 0;
 }
 
@@ -4427,7 +4423,7 @@ const copyToClipboard = () => {
   background: transparent;
   font-size: 13px;
   cursor: pointer;
-  color: #94A3B8;
+  color: #262626;
   transition: all 0.2s ease;
   font-weight: 500;
   writing-mode: vertical-rl;
@@ -4440,10 +4436,10 @@ const copyToClipboard = () => {
 }
 
 .sidebar-switch-btn.active {
-  background: #EFF6FF;
-  color: #2B7FE3;
+  background: #E0EFFF;
+  color: #2469F2;
   font-weight: 600;
-  border-right: 2px solid #2B7FE3;
+  /*border-right: 2px solid #2B7FE3;*/
 }
 
 /* Consultation Footer */
@@ -4460,12 +4456,16 @@ const copyToClipboard = () => {
 }
 
 .footer-cancel-btn {
-  padding: 7px 20px;
-  border: 1px solid #E2E8F0;
+  width: 64px;
+  height: 32px;
+  padding: 5px 14px;
+  border: 1px solid #DBDBDB;
   background: #fff;
-  border-radius: 6px;
-  font-size: 13px;
-  color: #64748B;
+  border-radius: 4px;
+  font-family: Microsoft YaHei, Microsoft YaHei;
+  font-weight: 400;
+  font-size: 14px;
+  color: #262626;
   cursor: pointer;
   transition: all 0.2s ease;
 }
@@ -4478,17 +4478,19 @@ const copyToClipboard = () => {
 .footer-submit-btn {
   display: inline-flex;
   align-items: center;
+  width: 88px;
+  height: 32px;
   gap: 6px;
-  padding: 7px 22px;
-  background: #2B7FE3;
+  padding: 5px 16px;
+  background: #2469F2;
   color: #fff;
   border: none;
-  border-radius: 6px;
+  border-radius: 4px;
+  font-family: Microsoft YaHei, Microsoft YaHei;
   font-size: 14px;
-  font-weight: 600;
+  font-weight: 400;
   cursor: pointer;
   transition: all 0.2s ease;
-  box-shadow: 0 1px 4px rgba(43, 127, 227, 0.25);
 }
 
 .footer-submit-btn:hover:not(:disabled) {
@@ -4530,6 +4532,7 @@ const copyToClipboard = () => {
   display: flex;
   flex: 1;
   overflow: hidden;
+  padding: 16px 0 0 16px;
 }
 
 .symptom-sidebar {
@@ -4611,7 +4614,7 @@ const copyToClipboard = () => {
 
 .search-box {
   padding: 8px 10px;
-  border-bottom: none;
+  border-bottom: none !important;
   background: transparent;
   flex-shrink: 0;
   display: flex;
@@ -4742,7 +4745,7 @@ const copyToClipboard = () => {
   margin: 0;
   padding: 10px 16px;
   border-top: 1px solid #EEF2F6;
-  background: #FAFBFD;
+  background: #F9F9F9;
   border-radius: 0 0 8px 8px;
   flex-shrink: 0;
 }
@@ -4762,6 +4765,9 @@ const copyToClipboard = () => {
   font-size: 12px;
   font-weight: 600;
   color: #2B7FE3;
+}
+.recommendation-title .recommendation-title-word{
+  color: #262626!important;
 }
 
 .recommendation-title .iconify {
@@ -4804,15 +4810,16 @@ const copyToClipboard = () => {
   display: inline-flex;
   align-items: center;
   gap: 4px;
-  padding: 3px 4px 3px 2px;
-  font-size: 13px;
-  color: #2B7FE3;
-  background: transparent;
+  padding: 8px 8px 8px 8px;
+  font-size: 14px;
+  color: #2469F2;
+  background: #FFFFFF;
   border: none;
-  border-radius: 4px;
+  border-radius: 16px 16px 16px 16px;
   cursor: default;
   transition: background 0.15s ease;
   white-space: nowrap;
+  height: 32px;
 }
 
 .recommendation-chip:hover {
@@ -4826,8 +4833,8 @@ const copyToClipboard = () => {
 .companion-checkbox {
   appearance: auto;
   -webkit-appearance: auto;
-  width: 14px;
-  height: 14px;
+  width: 16px;
+  height: 16px;
   margin: 0;
   accent-color: #2B7FE3;
   cursor: pointer;
@@ -4850,8 +4857,8 @@ const copyToClipboard = () => {
   border-radius: 3px;
   background: transparent;
   color: #2B7FE3;
-  font-size: 14px;
-  font-weight: 600;
+  font-size: 13px;
+  font-weight: 400;
   cursor: pointer;
   transition: all 0.15s ease;
   padding: 0;
@@ -4887,7 +4894,7 @@ const copyToClipboard = () => {
 .forms-scroll-area {
   flex: 1;
   overflow-y: auto;
-  padding: 14px 16px;
+  padding: 0 16px 14px 8px;
 }
 
 .symptom-form-section {
@@ -4905,7 +4912,7 @@ const copyToClipboard = () => {
 }
 
 .form-header {
-  background: #FAFBFD;
+  background: linear-gradient( 90deg, #DCECFF 0%, rgba(189,220,255,0) 100%);
   margin: 0;
   padding: 10px 16px;
   border-bottom: 1px solid #EEF2F6;
@@ -5156,7 +5163,7 @@ const copyToClipboard = () => {
   justify-content: center;
   min-height: 36px;
   padding: 0 var(--space-lg);
-  background: var(--color-info);
+  background: #E5710B;
   color: white;
   border: none;
   border-radius: var(--radius-sm);
@@ -5204,6 +5211,7 @@ const copyToClipboard = () => {
   overflow: hidden;
   position: relative;
   min-height: 0;
+  padding: 16px;
 }
 
 /* Footer Actions */
@@ -5285,15 +5293,16 @@ const copyToClipboard = () => {
   flex: 1.2;
   background: #FAFBFD;
   border-right: none;
+  margin-left: 16px;
 }
 
 .panel-header {
-  padding: 10px 16px;
+  padding: 4px 16px;
   border-bottom: 1px solid #EEF2F6;
   display: flex;
   align-items: center;
   justify-content: space-between;
-  background: #fff;
+  background: #F2F8FF !important;
 }
 
 .right-panel .panel-header {
@@ -5303,7 +5312,7 @@ const copyToClipboard = () => {
 .panel-header h3 {
   margin: 0;
   font-size: 14px;
-  color: #1E293B;
+  color: #262626 !important;
   font-weight: 600;
 }
 
@@ -5454,6 +5463,17 @@ const copyToClipboard = () => {
   margin-bottom: 6px;
 }
 
+.record-field .record-field-checkbox{
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: #262626 !important;
+}
+
+.record-field .record-field-checkbox.is-active{
+  color: #2469F2 !important;
+}
+
 .record-field textarea {
   width: 100%;
   padding: 8px 10px; /* Compact */
@@ -5490,12 +5510,17 @@ const copyToClipboard = () => {
 }
 
 .tag-ai {
-  background: linear-gradient(135deg, #8b5cf6, #6366f1);
-  color: white;
+  background: var(--color-background-gradient)!important;
+  color: #262626!important;
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
   padding: 2px 10px;
-  border-radius: 12px;
-  font-size: 12px;
+  border-radius: var(--radius-sm);
+  font-size: 14px;
   font-weight: 500;
+  border: 1px solid transparent;
+  border-image: var(--color-border-gradient);
 }
 
 .ai-card {
@@ -5547,6 +5572,7 @@ const copyToClipboard = () => {
   position: relative;
   background: rgba(255, 255, 255, 0.92);
   min-height: 180px;
+  flex-direction: row;
 }
 
 .treatment-loading-icon {
@@ -5554,6 +5580,11 @@ const copyToClipboard = () => {
   display: flex;
   align-items: center;
   justify-content: center;
+}
+
+.treatment-loading-img{
+  height: 102px;
+  width: 87px;
 }
 
 .treatment-loading-pulse {
@@ -5597,19 +5628,35 @@ const copyToClipboard = () => {
 }
 
 .ai-recommend-btn {
+  position: relative;
   display: inline-flex;
   align-items: center;
   gap: var(--space-xs);
-  padding: var(--space-xs) var(--space-md);
-  border: 1px solid var(--color-info);
+  padding: var(--space-xs) 13px;
+  border: 1px solid transparent;
+  /*border-image: var(--color-border-gradient);*/
   border-radius: var(--radius-sm);
-  background: var(--color-background-white);
-  color: var(--color-info);
+  background: var(--color-background-gradient);
+  color: #262626;
   font-size: var(--font-size-xs);
   font-weight: var(--font-weight-medium);
   cursor: pointer;
   transition: all var(--duration-normal) var(--ease-out);
   white-space: nowrap;
+}
+.ai-recommend-btn-border{
+  position: absolute;
+  width: 108px;
+  height: 28px;
+  right: 17.5px;
+  background: linear-gradient(
+      88deg,
+      rgba(5, 213, 255, 1),
+      rgba(88, 5, 255, 1),
+      rgba(5, 134, 255, 1)
+  );
+  border-radius: var(--radius-sm);
+  overflow: hidden;
 }
 
 .ai-recommend-btn:hover {
@@ -5619,6 +5666,11 @@ const copyToClipboard = () => {
 .ai-recommend-btn:disabled {
   opacity: 0.5;
   cursor: not-allowed;
+}
+
+.ai-recommend-btn-img{
+  width: 16px;
+  height: 16px;
 }
 
 .treatment-card-heading {
@@ -6026,6 +6078,7 @@ const copyToClipboard = () => {
   border: none;
   border-bottom: 1px solid var(--color-border-light);
   background: transparent;
+  border-radius: 0px 0px 16px 16px;
 }
 
 .treatment-section:last-child {
@@ -6042,8 +6095,11 @@ const copyToClipboard = () => {
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  padding: 14px 0 8px;
-  border-bottom: 1px solid var(--color-border-light);
+  padding: 14px 16px 8px;
+  /*border-bottom: 1px solid var(--color-border-light);*/
+  background: #F2F5F7;
+  border-radius: 16px 16px 0px 0px;
+  border: 1px solid #DBDBDB;
 }
 
 .treatment-section-header h5 {
@@ -6056,14 +6112,14 @@ const copyToClipboard = () => {
   gap: 6px;
 }
 
-.treatment-section-header h5::before {
-  content: '';
-  display: inline-block;
-  width: 3px;
-  height: 14px;
-  border-radius: 2px;
-  background: #2B7FE3;
-}
+/*.treatment-section-header h5::before {*/
+/*  content: '';*/
+/*  display: inline-block;*/
+/*  width: 3px;*/
+/*  height: 14px;*/
+/*  border-radius: 2px;*/
+/*  background: #2B7FE3;*/
+/*}*/
 
 .treatment-section-header-right {
   display: flex;
@@ -6138,7 +6194,7 @@ const copyToClipboard = () => {
   border: none;
   border-bottom: 1px solid rgba(226, 232, 240, 0.6);
   border-radius: 0;
-  padding: 10px 4px;
+  padding: 10px 16px;
   gap: 4px;
   cursor: pointer;
   transition: background var(--duration-normal) var(--ease-out);
@@ -6147,7 +6203,8 @@ const copyToClipboard = () => {
 
 
 .treatment-item:last-child {
-  border-bottom: none;
+  border-bottom: none!important;
+  border-radius: 0px 0px 16px 16px;
 }
 
 .selected-mark {
@@ -6372,7 +6429,7 @@ const copyToClipboard = () => {
   gap: 16px;
   background: rgba(255, 255, 255, 0.4);
   border-radius: 12px;
-  margin: 24px;
+  margin: 8px 24px 24px 24px;
   border: 2px dashed var(--color-info-bg);
 }
 
@@ -6442,7 +6499,7 @@ const copyToClipboard = () => {
 
 .category-trigger {
   width: 100%;
-  padding: 8px 12px;
+  padding: 5px 12px;
   background: var(--color-background-white);
   border: 1px solid var(--color-info-bg);
   border-radius: 6px;
@@ -6899,6 +6956,13 @@ const copyToClipboard = () => {
 .arrow {
   font-size: 10px;
   transition: transform var(--duration-normal) var(--ease-smooth);
+  width: 13px;
+  height: 13px;
+  background-color: #2469F2;
+  border-radius: 50%;
+  display: flex;
+  justify-content: center;
+  align-items: center;
 }
 
 .arrow.open {

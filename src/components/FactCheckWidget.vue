@@ -5,7 +5,9 @@
     <Transition name="fade-slide">
       <div v-if="isExpanded && status === 'completed' && hasIssues" class="fact-check-popup">
         <div class="popup-header">
-          <span class="popup-title">发现 {{ issueCount }} 个问题</span>
+          <span class="popup-title">
+            <img class="popup-title-img" src="/error.png" alt="问题" draggable="false"/>
+            发现 {{ issueCount }} 个问题</span>
           <button class="close-popup-btn" @click.stop="isExpanded = false" aria-label="收起详情">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M18 6L6 18M6 6l12 12"/></svg>
           </button>
@@ -55,15 +57,9 @@
 
         <!-- Issue State (Dynamic Badge) -->
         <div v-else-if="status === 'completed' && hasIssues" class="fab-content has-issues">
-          <svg class="report-icon" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
-            <polyline points="14 2 14 8 20 8" />
-            <line x1="16" y1="13" x2="8" y2="13" />
-            <line x1="16" y1="17" x2="8" y2="17" />
-            <polyline points="10 9 9 9 8 9" />
-          </svg>
+          <img class="issue-badge-img" src="/issues-robot.png" alt="问题" draggable="false"/>
           <div class="issue-badge-count" :class="'severity-bg-' + highestSeverity">
-            {{ issueCount }}
+            问题数：{{ issueCount }}
           </div>
         </div>
       </div>
@@ -203,8 +199,8 @@ onUnmounted(() => {
 
 /* ---------------- FAB Icon Styles ---------------- */
 .fact-check-fab {
-  width: 44px;
-  height: 44px;
+  width: 0;
+  height: 0;
   border-radius: 50%;
   display: flex;
   align-items: center;
@@ -272,26 +268,31 @@ onUnmounted(() => {
 .report-icon {
   color: var(--color-primary);
 }
+.issue-badge-img{
+  width: 89px;
+  height: 71px;
+}
 
 .fab-content.has-issues {
   position: relative;
+  bottom: 60px;
+  right: 43px;
 }
 
 .issue-badge-count {
   position: absolute;
-  top: -6px;
-  right: -6px;
-  min-width: 20px;
-  height: 20px;
-  border-radius: 10px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 11px;
+  bottom: -30px;
+  width: 65px;
+  height: 22px;
+  font-family: Microsoft YaHei, Microsoft YaHei;
   font-weight: 700;
-  color: white;
-  border: 2px solid var(--color-background-white);
-  padding: 0 4px;
+  font-size: 14px;
+  color: #E5710B;
+  line-height: 22px;
+  text-align: left;
+  font-style: normal;
+  text-transform: none;
+  background-color: transparent!important;
 }
 
 .severity-bg-high { background: var(--color-error, #EF4444); }
@@ -328,13 +329,10 @@ onUnmounted(() => {
   gap: 6px;
 }
 
-.popup-title::before {
-  content: '';
-  display: inline-block;
-  width: 6px;
-  height: 6px;
-  background: #F59E0B;
-  border-radius: 50%;
+.popup-title-img{
+  width: 48px;
+  height: 48px;
+  border: 1px dashed #848484;
 }
 
 .close-popup-btn {

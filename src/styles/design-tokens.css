@@ -44,6 +44,7 @@
   --color-background: #ECFEFF;
   --color-background-white: #FFFFFF;
   --color-background-gray: #F8FAFC;
+  --color-background-gradient:linear-gradient( 134deg, #E7FFF7 0%, #ECE7FF 52.05%, #E7EFFF 100%);
 
   /* 文本颜色 - 深蓝灰 */
   --color-text-primary: #164E63;
@@ -74,6 +75,7 @@
   --color-border-light: #E2E8F0;
   --color-border-medium: #CBD5E1;
   --color-border-strong: #94A3B8;
+  --color-border-gradient: linear-gradient(88deg, rgba(5.000000176951289, 213.3333358168602, 255, 1), rgba(88.33333566784859, 5.000000176951289, 255, 1), rgba(5.000000176951289, 134.16666626930237, 255, 1)) 1 1;
 
   /* 表面颜色 - 玻璃态效果 */
   --surface-glass: rgba(255, 255, 255, 0.85);
