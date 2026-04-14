@@ -2,12 +2,21 @@
 import { ref, computed, watch, inject } from 'vue';
 import { invoke } from '@tauri-apps/api/core';
 import Icon from './Icon.vue';
+import FactCheckHighlight from './FactCheckHighlight.vue';
 import { chat, type ChatMessage } from '../services/llm';
 import { PROMPTS } from '../prompts';
-import { medicalDataService } from '../services/medicalData';
+import { medicalDataService, type DiagnosisItem } from '../services/medicalData';
+import {
+  checkDiagnosis,
+  checkMedicine,
+  checkExamination,
+  isReviewerEnabled,
+  type FactCheckIssue,
+  type FactCheckResult,
+} from '../services/factChecker';
 import type { TreatmentRecommendation, Diagnosis } from '../types/consultation';
 import type { AppPatient } from '../types/appState';
-import type { VoiceIntentResult, MatchedTreatment } from '../composables/useVoiceIntentRecognition';
+import type { VoiceIntentResult, MatchedTreatment, MatchedDiagnosis } from '../composables/useVoiceIntentRecognition';
 
 // ── Props & Emits ──────────────────────────────────────────────────────
 const props = defineProps<{
@@ -68,12 +77,33 @@ watch(
     chiefComplaint.value = result.chiefComplaint;
     historyOfPresentIllness.value = result.historyOfPresentIllness;
     pastMedicalHistory.value = result.pastMedicalHistory;
+    // Initialize diagnoses from voice
+    if (result.diagnoses && result.diagnoses.length > 0) {
+      aiDiagnoses.value = initDiagnosesFromIntent(result.diagnoses);
+      // Auto-select first matched diagnosis
+      const firstMatched = aiDiagnoses.value.find((d) => d.id || d.code);
+      if (firstMatched) {
+        selectedDiagnosis.value = firstMatched;
+      }
+    }
+    // Initialize treatments from voice
     if (result.treatments.length > 0) {
       treatments.value = initTreatmentsFromIntent(result.treatments);
     }
   },
   { immediate: true }
 );
+
+// ── Map MatchedDiagnosis -> Diagnosis ─────────────────────────────────
+function initDiagnosesFromIntent(matched: MatchedDiagnosis[]): Diagnosis[] {
+  return matched.map((m) => ({
+    id: m.matchedItem?.id,
+    name: m.matchedItem?.name || m.name,
+    code: m.matchedItem?.code || m.code || '',
+    rate: m.matchedItem ? '医生口述' : '未匹配',
+    rationale: `医生口述诊断: "${m.name}"`,
+  }));
+}
 
 // ── Map MatchedTreatment -> TreatmentRecommendation ────────────────────
 function mapTreatmentType(t: MatchedTreatment['type']): TreatmentRecommendation['type'] {
@@ -185,70 +215,233 @@ async function fetchAIDiagnosis() {
   }
 }
 
-// ── AI Treatment ───────────────────────────────────────────────────────
+// ── AI Treatment (calls 4 prompts in parallel: medicine + exam + labTest + procedure) ──
 async function fetchAITreatment() {
   if (treatmentLoading.value || !selectedDiagnosis.value) return;
   treatmentLoading.value = true;
+
+  const baseParams = {
+    patientName: patientName.value,
+    gender: patientGender.value,
+    age: patientAge.value,
+    diagnosisName: selectedDiagnosis.value.name,
+    diagnosisCode: selectedDiagnosis.value.code,
+    chiefComplaint: chiefComplaint.value,
+  };
+
   try {
-    const messages: ChatMessage[] = [
-      { role: 'system', content: PROMPTS.consultation.treatmentRecommendation.system },
-      {
-        role: 'user',
-        content: PROMPTS.consultation.treatmentRecommendation.buildUserPrompt({
-          patientName: patientName.value,
-          gender: patientGender.value,
-          age: patientAge.value,
-          diagnosisName: selectedDiagnosis.value.name,
-          diagnosisCode: selectedDiagnosis.value.code,
-          chiefComplaint: chiefComplaint.value,
-        }),
-      },
-    ];
-    const response = await chat(messages);
-    const cleanJson = response.replace(/```json\n?|\n?```/g, '').trim();
-    const jsonMatch = cleanJson.match(/\[[\s\S]*\]/);
-    const targetJson = jsonMatch ? jsonMatch[0] : cleanJson;
-    const parsed: TreatmentRecommendation[] = JSON.parse(targetJson);
+    // Call all 4 recommendation prompts in parallel
+    const [medResponse, examResponse, labResponse, procResponse] = await Promise.allSettled([
+      chat([
+        { role: 'system', content: PROMPTS.consultation.treatmentRecommendation.system },
+        { role: 'user', content: PROMPTS.consultation.treatmentRecommendation.buildUserPrompt(baseParams) },
+      ]),
+      chat([
+        { role: 'system', content: PROMPTS.consultation.examinationRecommendation.system },
+        { role: 'user', content: PROMPTS.consultation.examinationRecommendation.buildUserPrompt(baseParams) },
+      ]),
+      chat([
+        { role: 'system', content: PROMPTS.consultation.labTestRecommendation.system },
+        { role: 'user', content: PROMPTS.consultation.labTestRecommendation.buildUserPrompt(baseParams) },
+      ]),
+      chat([
+        { role: 'system', content: PROMPTS.consultation.procedureRecommendation.system },
+        { role: 'user', content: PROMPTS.consultation.procedureRecommendation.buildUserPrompt(baseParams) },
+      ]),
+    ]);
 
-    // Match each item against local catalog
-    const matched = parsed.map((rec) => {
-      let matchedItem: TreatmentRecommendation['matchedItem'] = undefined;
-      switch (rec.type) {
-        case 'medicine': {
-          const m = medicalDataService.matchMedicine(rec.name);
-          if (m) matchedItem = { id: m.id, name: m.name, spec: m.spec };
-          break;
-        }
-        case 'exam': {
-          const m = medicalDataService.matchExamItem(rec.name);
-          if (m) matchedItem = { id: m.id, name: m.name };
-          break;
-        }
-        case 'lab_test': {
-          const m = medicalDataService.matchLabTestItem(rec.name);
-          if (m) matchedItem = { id: m.id, name: m.name };
-          break;
-        }
-        case 'procedure': {
-          const m = medicalDataService.matchProcedureItem(rec.name);
-          if (m) matchedItem = { id: m.id, name: m.name };
-          break;
-        }
-      }
-      return {
-        ...rec,
-        matchedItem,
-        selected: !!matchedItem,
-      };
-    });
+    const allRecs: TreatmentRecommendation[] = [];
 
-    treatments.value = matched;
+    // Parse each response and match against local catalog
+    const parseAndMatch = (
+      response: PromiseSettledResult<string>,
+      matchFn: (name: string) => { id: string; name: string; spec?: string } | null,
+    ): TreatmentRecommendation[] => {
+      if (response.status !== 'fulfilled') return [];
+      try {
+        const clean = response.value.replace(/```json\n?|\n?```/g, '').trim();
+        const match = clean.match(/\[[\s\S]*\]/);
+        const parsed: TreatmentRecommendation[] = JSON.parse(match ? match[0] : clean);
+        return parsed.map((rec) => {
+          const matched = matchFn(rec.name);
+          return {
+            ...rec,
+            matchedItem: matched ? { id: matched.id, name: matched.name, spec: matched.spec } : undefined,
+            selected: !!matched,
+          };
+        });
+      } catch { return []; }
+    };
+
+    allRecs.push(...parseAndMatch(medResponse, (n) => medicalDataService.matchMedicine(n)));
+    allRecs.push(...parseAndMatch(examResponse, (n) => medicalDataService.matchExamItem(n)));
+    allRecs.push(...parseAndMatch(labResponse, (n) => medicalDataService.matchLabTestItem(n)));
+    allRecs.push(...parseAndMatch(procResponse, (n) => medicalDataService.matchProcedureItem(n)));
+
+    treatments.value = allRecs;
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : String(err);
     showToast?.(`方案推荐失败: ${msg}`, 'error');
   } finally {
     treatmentLoading.value = false;
   }
+}
+
+// ── Related Diagnosis Dropdown ─────────────────────────────────────────
+const openRelatedId = ref<string | null>(null);
+const inlineRelatedDiagnoses = ref<DiagnosisItem[]>([]);
+
+function toggleRelatedDropdown(diag: Diagnosis, event: Event) {
+  event.stopPropagation();
+  if (openRelatedId.value === (diag.id || diag.code)) {
+    openRelatedId.value = null;
+  } else {
+    openRelatedId.value = diag.id || diag.code;
+    const related = medicalDataService.getRelatedDiagnoses(diag.code);
+    inlineRelatedDiagnoses.value = related.filter((d) => d.code !== diag.code);
+  }
+}
+
+function swapDiagnosis(originalDiag: Diagnosis, newItem: DiagnosisItem) {
+  const index = aiDiagnoses.value.findIndex(
+    (d) => (d.id || d.code) === (originalDiag.id || originalDiag.code),
+  );
+  if (index !== -1) {
+    const updatedDiag: Diagnosis = {
+      ...aiDiagnoses.value[index],
+      id: newItem.id,
+      code: newItem.code,
+      name: newItem.name,
+    };
+    aiDiagnoses.value[index] = updatedDiag;
+    if (
+      selectedDiagnosis.value &&
+      (selectedDiagnosis.value.id || selectedDiagnosis.value.code) ===
+        (originalDiag.id || originalDiag.code)
+    ) {
+      selectedDiagnosis.value = updatedDiag;
+    }
+  }
+  openRelatedId.value = null;
+}
+
+// ── Diagnosis Checklist (Anti-misdiagnosis) ───────────────────────────
+const isChecklistLoading = ref(false);
+const showChecklistModal = ref(false);
+const checklistItems = ref<{ question: string; recordText: string; checked: boolean }[]>([]);
+const checklistNotes = ref('');
+
+async function fetchDiagnosisChecklist(diag: Diagnosis) {
+  isChecklistLoading.value = true;
+  checklistItems.value = [];
+  checklistNotes.value = '';
+
+  try {
+    const userPrompt = PROMPTS.consultation.diagnosisChecklist.buildUserPrompt({
+      diagnosisName: diag.name,
+      chiefComplaint: chiefComplaint.value,
+      historyOfPresentIllness: historyOfPresentIllness.value,
+    });
+
+    const response = await chat([
+      { role: 'system', content: PROMPTS.consultation.diagnosisChecklist.system },
+      { role: 'user', content: userPrompt },
+    ]);
+
+    const clean = response.replace(/```json\n?|\n?```/g, '').trim();
+    const jsonMatch = clean.match(/\{[\s\S]*\}/);
+    const result = JSON.parse(jsonMatch ? jsonMatch[0] : clean);
+
+    if (result && result.isNeeded && Array.isArray(result.items) && result.items.length > 0) {
+      checklistItems.value = result.items.map((item: { question: string; recordText: string }) => ({
+        question: item.question,
+        recordText: item.recordText,
+        checked: false,
+      }));
+    }
+  } catch (error) {
+    console.error('Failed to fetch diagnosis checklist:', error);
+  } finally {
+    isChecklistLoading.value = false;
+  }
+}
+
+function handleChecklistConfirm() {
+  showChecklistModal.value = false;
+}
+
+// ── Fact Check (AI Independent Verification) ──────────────────────────
+const diagnosisFactChecks = ref<Map<string, FactCheckResult>>(new Map());
+const treatmentFactChecks = ref<Map<string, FactCheckResult>>(new Map());
+
+function getIssueForDiagnosis(diagCode: string): FactCheckIssue | undefined {
+  const check = diagnosisFactChecks.value.get(diagCode);
+  if (!check || !check.hasIssues || check.issues.length === 0) return undefined;
+  return check.issues[0];
+}
+
+function getIssueForTreatment(treatmentName: string): FactCheckIssue | undefined {
+  const check = treatmentFactChecks.value.get(treatmentName);
+  if (!check || !check.hasIssues || check.issues.length === 0) return undefined;
+  return check.issues[0];
+}
+
+async function performDiagnosisFactCheck(diagnoses: Diagnosis[]) {
+  if (!diagnoses || diagnoses.length === 0) return;
+  if (!isReviewerEnabled()) return;
+
+  diagnosisFactChecks.value.clear();
+
+  for (const diagnosis of diagnoses) {
+    try {
+      const result = await checkDiagnosis({
+        diagnosis: diagnosis.name,
+        chiefComplaint: chiefComplaint.value,
+        historyOfPresentIllness: historyOfPresentIllness.value,
+      });
+      diagnosisFactChecks.value.set(diagnosis.code, result);
+    } catch (e) {
+      console.error(`Failed to fact check diagnosis: ${diagnosis.name}`, e);
+    }
+  }
+}
+
+async function performTreatmentFactCheck(treatments: TreatmentRecommendation[]) {
+  if (!treatments || treatments.length === 0) return;
+  if (!isReviewerEnabled()) return;
+
+  treatmentFactChecks.value.clear();
+
+  for (const treatment of treatments) {
+    try {
+      let result: FactCheckResult;
+      if (treatment.type === 'medicine') {
+        result = await checkMedicine({
+          medicine: treatment.name,
+          chiefComplaint: chiefComplaint.value,
+          diagnosis: selectedDiagnosis.value?.name || '',
+        });
+      } else {
+        result = await checkExamination({
+          examination: treatment.name,
+          chiefComplaint: chiefComplaint.value,
+          diagnosis: selectedDiagnosis.value?.name || '',
+        });
+      }
+      treatmentFactChecks.value.set(treatment.name, result);
+    } catch (e) {
+      console.error(`Failed to fact check treatment: ${treatment.name}`, e);
+    }
+  }
+}
+
+// ── Diagnosis rate class ──────────────────────────────────────────────
+function getDiagRateClass(rate?: string): string {
+  if (!rate) return '';
+  if (rate.includes('高') || rate === '医生口述') return 'rate-high';
+  if (rate.includes('中')) return 'rate-medium';
+  if (rate.includes('低') || rate === '未匹配') return 'rate-low';
+  return '';
 }
 
 // ── Treatment tag label ────────────────────────────────────────────────
@@ -357,7 +550,8 @@ async function handleBatchWriteBack() {
     </div>
 
     <!-- Main content -->
-    <div v-else class="record-content">
+    <div v-else class="medical-record-page">
+      <div class="record-content">
       <!-- Left: Medical Record -->
       <div class="record-panel left-panel">
         <div class="panel-header">
@@ -413,10 +607,9 @@ async function handleBatchWriteBack() {
               >
                 <div class="diag-header">
                   <div class="diag-name-group">
-                    <span v-if="selectedDiagnosis?.code === diag.code && selectedDiagnosis?.name === diag.name" class="diag-check">&#10003;</span>
                     <span class="diag-name">{{ diag.name }} ({{ diag.code }})</span>
                   </div>
-                  <span class="diag-rate">{{ diag.rate }}</span>
+                  <span class="diag-rate" :class="getDiagRateClass(diag.rate)">{{ diag.rate }}</span>
                 </div>
                 <div class="diag-rationale">{{ diag.rationale }}</div>
               </li>
@@ -429,7 +622,7 @@ async function handleBatchWriteBack() {
             <div class="ai-card-title-row">
               <h4>治疗方案 (Treatment)</h4>
               <button
-                v-if="!hasTreatments && selectedDiagnosis"
+                v-if="selectedDiagnosis"
                 class="ai-recommend-btn"
                 type="button"
                 @click="fetchAITreatment"
@@ -456,7 +649,10 @@ async function handleBatchWriteBack() {
               >
                 <div class="treatment-section-header">
                   <h5>{{ section.title }}</h5>
-                  <span class="treatment-section-pill">{{ section.items.length }} 项</span>
+                  <div class="treatment-section-header-right">
+                    <span class="treatment-section-pill">{{ section.items.length }} 项推荐</span>
+                    <span class="treatment-section-pill strong">{{ section.items.filter(i => i.selected).length }} 项已选</span>
+                  </div>
                 </div>
                 <div class="treatment-list">
                   <div
@@ -497,6 +693,16 @@ async function handleBatchWriteBack() {
           </div>
         </div>
       </div>
+      </div>
+
+      <!-- Fixed Action Area -->
+      <div class="fixed-action-area">
+        <button class="writeback-btn" :disabled="!canSubmit" @click="handleBatchWriteBack">
+          <template v-if="submitting">提交中...</template>
+          <template v-else>一键回写</template>
+        </button>
+        <button class="back-btn" @click="emit('close')">返回</button>
+      </div>
     </div>
   </div>
 </template>
@@ -507,7 +713,7 @@ async function handleBatchWriteBack() {
   height: 100%;
   display: flex;
   flex-direction: column;
-  background: #f8f9fc;
+  background: var(--color-background-gray, #f8f9fc);
   overflow: hidden;
 }
 
@@ -618,9 +824,9 @@ async function handleBatchWriteBack() {
 }
 
 .loading-title {
+  color: #1E293B;
   font-size: 15px;
-  color: #64748b;
-  font-weight: 500;
+  font-weight: 600;
 }
 
 .ai-spinner {
@@ -637,23 +843,28 @@ async function handleBatchWriteBack() {
 .spinner-ring {
   position: absolute;
   inset: 0;
-  border: 2.5px solid #eef2f6;
-  border-top-color: #667eea;
+  border: 2.5px solid #EEF2F6;
+  border-top-color: #2B7FE3;
   border-radius: 50%;
   animation: spin 1s linear infinite;
 }
 
 .spinner-core {
   position: absolute;
-  inset: 8px;
-  background: linear-gradient(135deg, #667eea, #764ba2);
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: 20px;
+  height: 20px;
+  background: radial-gradient(circle, #2B7FE3 0%, #4A9BF5 100%);
   border-radius: 50%;
-  opacity: 0.3;
-  animation: pulse-core 2s ease-in-out infinite;
+  box-shadow: 0 0 10px rgba(43, 127, 227, 0.35);
+  animation: pulse-core 1.5s ease-in-out infinite;
 }
 
 .ai-spinner.small .spinner-core {
-  inset: 5px;
+  width: 10px;
+  height: 10px;
 }
 
 @keyframes spin {
@@ -661,8 +872,9 @@ async function handleBatchWriteBack() {
 }
 
 @keyframes pulse-core {
-  0%, 100% { opacity: 0.3; transform: scale(1); }
-  50% { opacity: 0.6; transform: scale(1.1); }
+  0% { transform: translate(-50%, -50%) scale(0.8); opacity: 0.8; }
+  50% { transform: translate(-50%, -50%) scale(1.1); opacity: 1; }
+  100% { transform: translate(-50%, -50%) scale(0.8); opacity: 0.8; }
 }
 
 .loading-inline {
@@ -670,8 +882,19 @@ async function handleBatchWriteBack() {
   align-items: center;
   gap: 10px;
   padding: 12px 0;
-  color: #64748b;
+  color: var(--color-text-muted, #64748b);
   font-size: 13px;
+}
+
+/* ── Medical Record Page ─────────────────────────────── */
+.medical-record-page {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  background: var(--color-background-gray, #f8f9fc);
+  overflow: hidden;
+  position: relative;
+  min-height: 0;
 }
 
 /* ── Two-Column Layout ───────────────────────────────── */
@@ -684,11 +907,15 @@ async function handleBatchWriteBack() {
 }
 
 .record-panel {
+  flex: 1;
   background: #fff;
+  border-radius: 0;
+  box-shadow: none;
   display: flex;
   flex-direction: column;
   overflow: hidden;
-  border-right: 1px solid #eef2f6;
+  border: none;
+  border-right: 1px solid #EEF2F6;
 }
 
 .record-panel:last-child {
@@ -696,27 +923,32 @@ async function handleBatchWriteBack() {
 }
 
 .left-panel {
-  flex: 0 0 42%;
+  flex: 0.8;
 }
 
 .right-panel {
-  flex: 0 0 58%;
-  background: #fafbfd;
+  flex: 1.2;
+  background: #FAFBFD;
+  border-right: none;
 }
 
 .panel-header {
   padding: 10px 16px;
-  border-bottom: 1px solid #eef2f6;
+  border-bottom: 1px solid #EEF2F6;
   display: flex;
   align-items: center;
   justify-content: space-between;
-  background: inherit;
+  background: #fff;
+}
+
+.right-panel .panel-header {
+  background: #FAFBFD;
 }
 
 .panel-header h3 {
   margin: 0;
   font-size: 14px;
-  color: #1e293b;
+  color: #1E293B;
   font-weight: 600;
 }
 
@@ -724,6 +956,7 @@ async function handleBatchWriteBack() {
   flex: 1;
   padding: 12px;
   overflow-y: auto;
+  position: relative;
 }
 
 /* ── Record Fields ───────────────────────────────────── */
@@ -733,53 +966,61 @@ async function handleBatchWriteBack() {
 
 .record-field label {
   display: block;
-  font-size: 12px;
+  font-size: 13px;
   font-weight: 600;
-  color: #475569;
-  margin-bottom: 4px;
+  color: var(--color-text-weak, #475569);
+  margin-bottom: 6px;
 }
 
 .record-field textarea {
   width: 100%;
-  border: 1px solid #e2e8f0;
-  border-radius: 6px;
   padding: 8px 10px;
+  border: 1px solid var(--color-border-medium, #e2e8f0);
+  border-radius: 6px;
   font-size: 13px;
   line-height: 1.5;
-  color: #1e293b;
+  color: var(--color-text-strong, #1e293b);
   resize: vertical;
-  background: #fff;
-  transition: border-color 0.2s;
   box-sizing: border-box;
+  font-family: inherit;
+  transition: border-color 0.2s;
 }
 
 .record-field textarea:focus {
   outline: none;
-  border-color: #667eea;
-  box-shadow: 0 0 0 2px rgba(102, 126, 234, 0.1);
+  border-color: var(--color-primary, #3b82f6);
+  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
 }
 
 /* ── AI Card ─────────────────────────────────────────── */
 .ai-card {
+  background: var(--color-background-white, #fff);
+  border-radius: 10px;
+  padding: 16px 18px;
   margin-bottom: 12px;
-  padding: 12px;
-  background: #fff;
-  border-radius: 8px;
-  border: 1px solid #eef2f6;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
+  border: 1px solid rgba(226, 232, 240, 0.8);
+  position: relative;
+  overflow: hidden;
+  min-height: 120px;
+  overflow-y: auto;
 }
 
 .ai-card-title-row {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   justify-content: space-between;
+  gap: 12px;
   margin-bottom: 10px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid var(--color-border-light, #EEF2F6);
 }
 
 .ai-card-title-row h4 {
   margin: 0;
   font-size: 14px;
   font-weight: 600;
-  color: #1e293b;
+  color: var(--color-text-strong, #1e293b);
 }
 
 .ai-recommend-btn {
@@ -787,19 +1028,19 @@ async function handleBatchWriteBack() {
   align-items: center;
   gap: 4px;
   padding: 5px 12px;
-  border: 1px solid rgba(102, 126, 234, 0.3);
+  border: 1px solid var(--color-info, #2B7FE3);
   border-radius: 6px;
-  background: rgba(102, 126, 234, 0.06);
-  color: #667eea;
+  background: var(--color-background-white, #fff);
+  color: var(--color-info, #2B7FE3);
   font-size: 12px;
   font-weight: 600;
   cursor: pointer;
   transition: all 0.2s;
+  white-space: nowrap;
 }
 
 .ai-recommend-btn:hover:not(:disabled) {
-  background: rgba(102, 126, 234, 0.12);
-  border-color: rgba(102, 126, 234, 0.5);
+  background: var(--color-info-bg, rgba(43, 127, 227, 0.06));
 }
 
 .ai-recommend-btn:disabled {
@@ -814,24 +1055,50 @@ async function handleBatchWriteBack() {
   padding: 0;
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 6px;
 }
 
 .diagnosis-item {
-  padding: 8px 10px;
-  border-radius: 6px;
-  border: 1px solid #eef2f6;
+  position: relative;
+  padding: 12px 16px;
+  border: 1px solid var(--color-border-light, #EEF2F6);
+  border-radius: 8px;
+  background: var(--color-background-white, #fff);
   cursor: pointer;
   transition: all 0.2s;
 }
 
 .diagnosis-item:hover {
-  background: rgba(102, 126, 234, 0.04);
+  background: #F8FAFC;
+  border-color: #CBD5E1;
 }
 
 .diagnosis-item.active {
-  background: rgba(102, 126, 234, 0.06);
-  border-color: rgba(102, 126, 234, 0.3);
+  background: rgba(43, 127, 227, 0.04);
+  border-color: #2B7FE3;
+  box-shadow: 0 0 0 1px rgba(43, 127, 227, 0.15);
+}
+
+.diagnosis-item::before {
+  content: '';
+  display: inline-block;
+  width: 16px;
+  height: 16px;
+  border: 2px solid var(--color-border-medium, #CBD5E1);
+  border-radius: 4px;
+  position: absolute;
+  left: 16px;
+  top: 14px;
+  flex-shrink: 0;
+}
+
+.diagnosis-item.active::before {
+  background: var(--color-info, #2B7FE3);
+  border-color: var(--color-info, #2B7FE3);
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='white' stroke-width='4' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='20 6 9 17 4 12'%3E%3C/polyline%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: center;
+  background-size: 10px;
 }
 
 .diag-header {
@@ -839,46 +1106,57 @@ async function handleBatchWriteBack() {
   align-items: center;
   justify-content: space-between;
   gap: 8px;
+  margin-bottom: 4px;
+  padding-left: 28px;
 }
 
 .diag-name-group {
   display: flex;
   align-items: center;
-  gap: 6px;
-}
-
-.diag-check {
-  color: #667eea;
-  font-weight: 700;
-  font-size: 14px;
+  gap: 8px;
 }
 
 .diag-name {
   font-weight: 600;
   font-size: 13px;
-  color: #1e293b;
+  color: var(--color-info, #2B7FE3);
+  display: flex;
+  align-items: center;
+  gap: 6px;
 }
 
 .diag-rate {
   font-size: 11px;
-  color: #fff;
-  background: #10b981;
+  color: var(--color-background-white, #fff);
+  background: var(--color-success, #10b981);
   padding: 2px 8px;
   border-radius: 10px;
   font-weight: 500;
 }
 
+.diag-rate.rate-high {
+  background: var(--color-success, #10b981);
+}
+
+.diag-rate.rate-medium {
+  background: var(--color-info, #2B7FE3);
+}
+
+.diag-rate.rate-low {
+  background: var(--color-warning, #f59e0b);
+  color: var(--color-background-white, #fff);
+}
+
 .diag-rationale {
   font-size: 12px;
-  color: #64748b;
+  color: var(--color-text-muted, #64748b);
   line-height: 1.5;
-  margin-top: 4px;
-  padding-left: 20px;
+  padding-left: 28px;
 }
 
 .empty-text {
   text-align: center;
-  color: #94a3b8;
+  color: var(--color-text-muted, #94a3b8);
   font-size: 13px;
   padding: 20px 0;
 }
@@ -887,29 +1165,32 @@ async function handleBatchWriteBack() {
 .treatment-section {
   display: flex;
   flex-direction: column;
-  border-bottom: 1px solid #eef2f6;
-  padding-bottom: 4px;
-  margin-bottom: 4px;
+  gap: 0;
+  padding: 0;
+  border-radius: 0;
+  border: none;
+  border-bottom: 1px solid var(--color-border-light, #EEF2F6);
+  background: transparent;
 }
 
 .treatment-section:last-child {
   border-bottom: none;
-  margin-bottom: 0;
 }
 
 .treatment-section-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 10px 0 6px;
-  border-bottom: 1px solid #eef2f6;
+  gap: 12px;
+  padding: 14px 0 8px;
+  border-bottom: 1px solid var(--color-border-light, #EEF2F6);
 }
 
 .treatment-section-header h5 {
   margin: 0;
   font-size: 13px;
-  font-weight: 600;
-  color: #1e293b;
+  font-weight: 700;
+  color: var(--color-text-strong, #1e293b);
   display: flex;
   align-items: center;
   gap: 6px;
@@ -921,29 +1202,51 @@ async function handleBatchWriteBack() {
   width: 3px;
   height: 14px;
   border-radius: 2px;
-  background: #667eea;
+  background: #2B7FE3;
+}
+
+.treatment-section-header-right {
+  display: flex;
+  align-items: center;
+  gap: 12px;
 }
 
 .treatment-section-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-height: 22px;
+  padding: 0 8px;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--color-text-muted, #94a3b8);
   font-size: 11px;
-  color: #94a3b8;
-  padding: 0 6px;
+  font-weight: 400;
+}
+
+.treatment-section-pill.strong {
+  color: var(--color-success, #10b981);
 }
 
 .treatment-list {
   display: flex;
   flex-direction: column;
+  gap: 0;
 }
 
 .treatment-item {
   position: relative;
   display: flex;
   flex-direction: column;
+  background: transparent;
+  border: none;
   border-bottom: 1px solid rgba(226, 232, 240, 0.6);
-  padding: 8px 4px;
+  border-radius: 0;
+  padding: 10px 4px;
   gap: 4px;
   cursor: pointer;
   transition: background 0.2s;
+  overflow: visible;
 }
 
 .treatment-item:last-child {
@@ -951,12 +1254,12 @@ async function handleBatchWriteBack() {
 }
 
 .treatment-item:hover {
-  background: rgba(102, 126, 234, 0.03);
+  background: rgba(43, 127, 227, 0.03);
 }
 
 .treatment-item.active {
-  background: rgba(102, 126, 234, 0.04);
-  border-color: rgba(102, 126, 234, 0.12);
+  background: rgba(43, 127, 227, 0.04);
+  border-color: rgba(43, 127, 227, 0.12);
   padding-left: 20px;
 }
 
@@ -966,13 +1269,14 @@ async function handleBatchWriteBack() {
   left: -2px;
   width: 18px;
   height: 18px;
-  background: #667eea;
+  background: #2B7FE3;
   color: white;
   border-radius: 50%;
   display: flex;
   align-items: center;
   justify-content: center;
-  box-shadow: 0 1px 3px rgba(102, 126, 234, 0.3);
+  padding: 0;
+  box-shadow: 0 1px 3px rgba(43, 127, 227, 0.3);
 }
 
 .rec-content {
@@ -985,6 +1289,7 @@ async function handleBatchWriteBack() {
   align-items: center;
   justify-content: space-between;
   gap: 8px;
+  margin-bottom: 0;
 }
 
 .rec-name-group {
@@ -1010,23 +1315,23 @@ async function handleBatchWriteBack() {
 
 .rec-tag.exam {
   background: rgba(99, 102, 241, 0.08);
-  color: #4f46e5;
+  color: #4F46E5;
 }
 
 .rec-tag.lab_test {
   background: rgba(245, 158, 11, 0.1);
-  color: #d97706;
+  color: #D97706;
 }
 
 .rec-tag.procedure {
   background: rgba(236, 72, 153, 0.08);
-  color: #db2777;
+  color: #DB2777;
 }
 
 .rec-name {
   font-weight: 600;
   font-size: 13px;
-  color: #1e293b;
+  color: var(--color-text-strong, #1e293b);
 }
 
 .matched-inline {
@@ -1049,23 +1354,80 @@ async function handleBatchWriteBack() {
 
 .match-name {
   font-weight: 600;
-  color: #059669;
+  color: var(--color-success-text, #059669);
 }
 
 .match-spec {
-  color: #10b981;
+  color: var(--color-success, #10b981);
   font-size: 11px;
 }
 
 .unmatched-icon {
   margin-left: 4px;
   font-size: 11px;
+  opacity: 0.5;
 }
 
 .rec-reason,
 .rec-usage {
   font-size: 12px;
-  color: #64748b;
+  color: var(--color-text-muted, #64748b);
   line-height: 1.5;
+}
+
+/* ── Fixed Action Area ───────────────────────────────── */
+.fixed-action-area {
+  position: absolute;
+  bottom: 12px;
+  right: 24px;
+  z-index: 50;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.writeback-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 36px;
+  padding: 0 20px;
+  background: var(--color-info, #2B7FE3);
+  color: white;
+  border: none;
+  border-radius: 6px;
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.writeback-btn:hover {
+  background: var(--color-primary-dark, #1d6fc9);
+}
+
+.writeback-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.back-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 36px;
+  padding: 0 20px;
+  background: var(--color-background-white, #fff);
+  color: var(--color-text-medium, #64748b);
+  border: 1px solid var(--color-border-medium, #CBD5E1);
+  border-radius: 6px;
+  font-size: 14px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.back-btn:hover {
+  border-color: var(--color-info, #2B7FE3);
+  color: var(--color-info, #2B7FE3);
 }
 </style>

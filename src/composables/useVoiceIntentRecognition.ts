@@ -12,6 +12,7 @@ import {
   VoiceIntentRecognitionPrompt,
   type VoiceExtractionResult,
   type TreatmentHint,
+  type DiagnosisHint,
 } from '../prompts/voiceIntentPrompts';
 import { trackError, startTimedOperation } from '../services/operationTracker';
 
@@ -20,11 +21,17 @@ export interface MatchedTreatment extends TreatmentHint {
   matchedItem?: { id: string; name: string; spec?: string; code?: string } | null;
 }
 
+export interface MatchedDiagnosis extends DiagnosisHint {
+  /** 匹配到的标准诊断库项目 */
+  matchedItem?: { id: string; code: string; name: string } | null;
+}
+
 export interface VoiceIntentResult {
   chiefComplaint: string;
   historyOfPresentIllness: string;
   pastMedicalHistory: string;
   symptoms: string[];
+  diagnoses: MatchedDiagnosis[];
   treatments: MatchedTreatment[];
 }
 
@@ -81,7 +88,12 @@ export function useVoiceIntentRecognition() {
         return null;
       }
 
-      // Step 2: 匹配治疗方案提示到医疗数据库
+      // Step 2: 匹配诊断提示到诊断数据库
+      const matchedDiagnoses: MatchedDiagnosis[] = (parsed.diagnosisHints || []).map(
+        (hint) => matchDiagnosisHint(hint)
+      );
+
+      // Step 3: 匹配治疗方案提示到医疗数据库
       const matchedTreatments: MatchedTreatment[] = (parsed.treatmentHints || []).map(
         (hint) => matchTreatmentHint(hint)
       );
@@ -91,6 +103,7 @@ export function useVoiceIntentRecognition() {
         historyOfPresentIllness: parsed.historyOfPresentIllness || '',
         pastMedicalHistory: parsed.pastMedicalHistory || '无特殊',
         symptoms: parsed.symptoms || [],
+        diagnoses: matchedDiagnoses,
         treatments: matchedTreatments,
       };
 
@@ -98,6 +111,8 @@ export function useVoiceIntentRecognition() {
       finishTimer(true, {
         transcriptionLength: text.length,
         symptomCount: intentResult.symptoms.length,
+        diagnosisHintCount: matchedDiagnoses.length,
+        diagnosisMatchedCount: matchedDiagnoses.filter((d) => d.matchedItem).length,
         treatmentHintCount: matchedTreatments.length,
         matchedCount: matchedTreatments.filter((t) => t.matchedItem).length,
       });
@@ -112,6 +127,17 @@ export function useVoiceIntentRecognition() {
     } finally {
       isProcessing.value = false;
     }
+  }
+
+  function matchDiagnosisHint(hint: DiagnosisHint): MatchedDiagnosis {
+    let matchedItem: MatchedDiagnosis['matchedItem'] = null;
+    // Try matching by name first, then by code
+    const matched = medicalDataService.matchDiagnosis(hint.name)
+      || (hint.code ? medicalDataService.matchDiagnosis(hint.code) : null);
+    if (matched) {
+      matchedItem = { id: matched.id, code: matched.code, name: matched.name };
+    }
+    return { ...hint, matchedItem };
   }
 
   function matchTreatmentHint(hint: TreatmentHint): MatchedTreatment {

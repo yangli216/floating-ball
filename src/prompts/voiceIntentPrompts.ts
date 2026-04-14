@@ -22,6 +22,13 @@ export interface TreatmentHint {
   usage?: string;
 }
 
+export interface DiagnosisHint {
+  /** 诊断名称 */
+  name: string;
+  /** ICD-10 编码（如医生口述了） */
+  code?: string;
+}
+
 export interface VoiceExtractionResult {
   /** 提取的主诉 */
   chiefComplaint: string;
@@ -29,6 +36,8 @@ export interface VoiceExtractionResult {
   historyOfPresentIllness: string;
   /** 识别出的症状列表 */
   symptoms: string[];
+  /** 医生口述的诊断提示 */
+  diagnosisHints: DiagnosisHint[];
   /** 医生口述的治疗方案提示 */
   treatmentHints: TreatmentHint[];
   /** 既往史 */
@@ -44,25 +53,30 @@ export const VoiceIntentRecognitionPrompt = {
 
 **核心任务**：分析医生录音转写文本，识别意图并提取结构化医疗信息。
 
-**意图分类**（Phase 1 仅处理主诉/症状描述）：
+**意图分类**：
 - 主诉/症状描述：患者主要不适、症状表现、发病时间、诱因等
+- 诊断提示：医生口述的诊断结论（如"急性上呼吸道感染"、"支气管炎"等）
 - 治疗方案提示：医生口述的用药、检查、检验、处置方案
 
 **提取规则**：
 1. **主诉 (chiefComplaint)**：概括为一句话，格式 "主要症状+持续时间"，如"咳嗽3天，加重伴发热1天"
 2. **现病史 (historyOfPresentIllness)**：将口述内容整理为规范的现病史叙述，包含发病时间、诱因、症状演变、伴随症状、既往治疗等
 3. **症状列表 (symptoms)**：提取所有提到的症状关键词，如 ["咳嗽", "发热", "咽痛"]
-4. **治疗方案提示 (treatmentHints)**：如果医生口述了具体的用药或诊疗安排，逐项提取：
+4. **诊断提示 (diagnosisHints)**：如果医生明确说了诊断（如"考虑急性上呼吸道感染"、"诊断支气管炎"），提取诊断名称和编码（如果提到了）
+5. **治疗方案提示 (treatmentHints)**：如果医生口述了具体的用药或诊疗安排，逐项提取：
    - 药品：提取名称、规格、用量、频次、用法
    - 检查/检验/处置：提取名称
    - "A+B"、"A和B" 必须拆分为独立项目
-5. **既往史 (pastMedicalHistory)**：如果对话中提到既往疾病、手术史、过敏史等
+6. **既往史 (pastMedicalHistory)**：如果对话中提到既往疾病、手术史、过敏史等
 
 **输出格式**：严格 JSON，不要包含 markdown 标记
 {
   "chiefComplaint": "主诉",
   "historyOfPresentIllness": "现病史",
   "symptoms": ["症状1", "症状2"],
+  "diagnosisHints": [
+    { "name": "诊断名称", "code": "ICD-10编码（如提到）" }
+  ],
   "treatmentHints": [
     { "type": "medicine", "text": "口述原文片段", "name": "药品名", "spec": "规格", "dosage": "用量", "frequency": "频次", "usage": "用法" },
     { "type": "examination", "text": "口述原文片段", "name": "检查名" },
@@ -77,6 +91,7 @@ export const VoiceIntentRecognitionPrompt = {
 - 如果输入与医疗无关，返回 {"error": true, "message": "输入内容与医疗问诊场景无关"}
 - 如果语音转写质量很差难以理解，返回 {"error": true, "message": "语音识别质量不足，请重新录制"}
 - **不要猜测**没有提到的信息，仅提取明确表达的内容
+- diagnosisHints 只在医生明确口述诊断时才填写，不要自行推断诊断
 - treatmentHints 只在医生明确口述时才填写，不要自行推荐`,
 
   buildUserPrompt(transcribedText: string): string {
