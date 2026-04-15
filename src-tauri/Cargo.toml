@@ -43,7 +43,6 @@ futures-util = "0.3"
 url = "2"
 rfd = "0.17.2"
 window-vibrancy = "0.5"
-whisper-rs = "0.13"
 
 [profile.release]
 # 增加并行编译单元数量，加快构建速度

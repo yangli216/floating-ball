@@ -98,7 +98,7 @@ export class AudioRecorder {
     private audioBuffers: Float32Array[] = [];
     private isRecordingInternal: boolean = false;
     private recordingLength: number = 0;
-    private sampleRate: number = 16000; // Force 16kHz for Whisper
+    private sampleRate: number = 16000;
 
     // 实时音频回调
     private onAudioChunkCallback?: (pcmData: Int16Array) => void;
@@ -124,12 +124,6 @@ export class AudioRecorder {
 
             // Setup Audio Context
             console.time('[AudioRecorder] AudioContext setup');
-            // Use 16kHz context if possible, or resample later. simpler to just let context run and capture.
-            // But Whisper.cpp expects 16kHz. 
-            // We set context to 16000 if browser allows, otherwise we might need to downsample.
-            // For now, let's try to constrain getUserMedia, or just assume we capture what we get.
-            // Actually, setting latencyHint/sampleRate in AudioContext constructor is better.
-            // Note: Setting sampleRate to 16000 may cause delay as browser resamples
             this.audioContext = new (window.AudioContext || (window as any).webkitAudioContext)({ sampleRate: 16000 });
 
             this.analyser = this.audioContext.createAnalyser();

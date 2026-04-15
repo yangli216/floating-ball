@@ -13,11 +13,6 @@ use aliyun_speech::{
     RealtimeSpeechSessionState,
 };
 
-mod whisper_speech;
-use whisper_speech::{
-    check_whisper_model, delete_whisper_model, download_whisper_model, transcribe_local_whisper,
-};
-
 mod commands;
 mod db;
 
@@ -283,10 +278,6 @@ pub fn run() {
             start_realtime_speech,
             send_speech_chunk,
             stop_realtime_speech,
-            transcribe_local_whisper,
-            check_whisper_model,
-            download_whisper_model,
-            delete_whisper_model,
             save_templates,
             check_mouse_hover,
             export_templates_with_dialog,

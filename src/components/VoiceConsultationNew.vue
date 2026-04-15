@@ -90,6 +90,18 @@ watch(
     if (result.treatments.length > 0) {
       treatments.value = initTreatmentsFromIntent(result.treatments);
     }
+
+    // Trigger fact checks (async, non-blocking)
+    if (aiDiagnoses.value.length > 0) {
+      performDiagnosisFactCheck(aiDiagnoses.value);
+      // Trigger checklist for selected diagnosis
+      if (selectedDiagnosis.value) {
+        fetchDiagnosisChecklist(selectedDiagnosis.value);
+      }
+    }
+    if (treatments.value.length > 0) {
+      performTreatmentFactCheck(treatments.value);
+    }
   },
   { immediate: true }
 );
@@ -207,6 +219,12 @@ async function fetchAIDiagnosis() {
     if (!selectedDiagnosis.value && aiDiagnoses.value.length > 0) {
       selectedDiagnosis.value = aiDiagnoses.value[0];
     }
+
+    // Trigger fact check + checklist
+    performDiagnosisFactCheck(aiDiagnoses.value);
+    if (selectedDiagnosis.value) {
+      fetchDiagnosisChecklist(selectedDiagnosis.value);
+    }
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : String(err);
     showToast?.(`诊断推荐失败: ${msg}`, 'error');
@@ -279,6 +297,9 @@ async function fetchAITreatment() {
     allRecs.push(...parseAndMatch(procResponse, (n) => medicalDataService.matchProcedureItem(n)));
 
     treatments.value = allRecs;
+
+    // Trigger fact check
+    performTreatmentFactCheck(allRecs);
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : String(err);
     showToast?.(`方案推荐失败: ${msg}`, 'error');
@@ -417,14 +438,12 @@ async function performTreatmentFactCheck(treatments: TreatmentRecommendation[]) 
       let result: FactCheckResult;
       if (treatment.type === 'medicine') {
         result = await checkMedicine({
-          medicine: treatment.name,
-          chiefComplaint: chiefComplaint.value,
+          medicineName: treatment.name,
           diagnosis: selectedDiagnosis.value?.name || '',
         });
       } else {
         result = await checkExamination({
-          examination: treatment.name,
-          chiefComplaint: chiefComplaint.value,
+          examinationName: treatment.name,
           diagnosis: selectedDiagnosis.value?.name || '',
         });
       }
@@ -607,11 +626,49 @@ async function handleBatchWriteBack() {
               >
                 <div class="diag-header">
                   <div class="diag-name-group">
-                    <span class="diag-name">{{ diag.name }} ({{ diag.code }})</span>
+                    <FactCheckHighlight :issue="getIssueForDiagnosis(diag.code)">
+                      <span class="diag-name">{{ diag.name }} ({{ diag.code }})</span>
+                    </FactCheckHighlight>
+                    <div class="inline-related-trigger" @click="toggleRelatedDropdown(diag, $event)" title="切换同类诊断">
+                      <span class="arrow" :class="{ open: openRelatedId === (diag.id || diag.code) }">&#9660;</span>
+                    </div>
                   </div>
                   <span class="diag-rate" :class="getDiagRateClass(diag.rate)">{{ diag.rate }}</span>
                 </div>
                 <div class="diag-rationale">{{ diag.rationale }}</div>
+
+                <!-- Anti-Misdiagnosis Checklist -->
+                <div class="diag-checklist-wrapper">
+                  <div v-if="selectedDiagnosis?.code === diag.code && selectedDiagnosis?.name === diag.name && !isChecklistLoading && checklistItems.length > 0" class="checklist-indicator" @click.stop="showChecklistModal = true">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                      <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/>
+                      <line x1="12" y1="9" x2="12" y2="13"/>
+                      <line x1="12" y1="17" x2="12.01" y2="17"/>
+                    </svg>
+                    <span>鉴别排查 (待确认)</span>
+                  </div>
+                  <div v-if="selectedDiagnosis?.code === diag.code && selectedDiagnosis?.name === diag.name && isChecklistLoading" class="checklist-indicator loading">
+                    <svg class="spinner" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                      <path d="M21 12a9 9 0 1 1-6.219-8.56"/>
+                    </svg>
+                    <span>安全分析中...</span>
+                  </div>
+                </div>
+
+                <!-- Related Diagnoses Dropdown -->
+                <div v-if="openRelatedId === (diag.id || diag.code) && inlineRelatedDiagnoses.length > 0" class="related-section" @click.stop>
+                  <div class="related-list">
+                    <div
+                      v-for="item in inlineRelatedDiagnoses"
+                      :key="item.id"
+                      class="related-item"
+                      @click="swapDiagnosis(diag, item)"
+                    >
+                      <span class="related-code">{{ item.code }}</span>
+                      <span class="related-name">{{ item.name }}</span>
+                    </div>
+                  </div>
+                </div>
               </li>
             </ul>
             <div v-else class="empty-text">点击"AI推荐诊断"获取诊断建议</div>
@@ -669,7 +726,9 @@ async function handleBatchWriteBack() {
                       <div class="rec-header">
                         <div class="rec-name-group">
                           <span class="rec-tag" :class="rec.type">{{ getTreatmentTagLabel(rec.type) }}</span>
-                          <span class="rec-name">{{ rec.name }}</span>
+                          <FactCheckHighlight :issue="getIssueForTreatment(rec.name)">
+                            <span class="rec-name">{{ rec.name }}</span>
+                          </FactCheckHighlight>
                           <span v-if="rec.matchedItem" class="matched-inline">
                             <span class="match-icon">&#10003;</span>
                             <span class="match-name">{{ rec.matchedItem.name }}</span>
@@ -702,6 +761,37 @@ async function handleBatchWriteBack() {
           <template v-else>一键回写</template>
         </button>
         <button class="back-btn" @click="emit('close')">返回</button>
+      </div>
+    </div>
+
+    <!-- Checklist Modal -->
+    <div v-if="showChecklistModal" class="modal-overlay" @click.self="showChecklistModal = false">
+      <div class="modal checklist-modal">
+        <div class="modal-header">
+          <h3>鉴别排查</h3>
+          <button class="close-btn" @click="showChecklistModal = false">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+          </button>
+        </div>
+        <div class="modal-body">
+          <div class="checklist-intro">
+            <p>以下问题有助于排查诊断风险，请逐项确认：</p>
+          </div>
+          <div class="checklist-items">
+            <label v-for="(item, index) in checklistItems" :key="index" class="checklist-item-label">
+              <input type="checkbox" v-model="item.checked" />
+              <span class="checklist-text">{{ item.question }}</span>
+            </label>
+          </div>
+          <div class="checklist-notes-box">
+            <label>补充说明：</label>
+            <textarea v-model="checklistNotes" placeholder="填写相关补充信息..."></textarea>
+          </div>
+          <div class="checklist-actions">
+            <button class="btn-secondary" @click="showChecklistModal = false">暂不确认 (跳过)</button>
+            <button class="btn-primary" @click="handleChecklistConfirm" :disabled="!checklistItems.some(i => i.checked) && !checklistNotes">确认</button>
+          </div>
+        </div>
       </div>
     </div>
   </div>
@@ -1429,5 +1519,276 @@ async function handleBatchWriteBack() {
 .back-btn:hover {
   border-color: var(--color-info, #2B7FE3);
   color: var(--color-info, #2B7FE3);
+}
+
+/* ── Related Diagnosis Dropdown ────────────────────── */
+.inline-related-trigger {
+  cursor: pointer;
+  padding: 2px 4px;
+  border-radius: 4px;
+  color: var(--color-text-muted, #94a3b8);
+  transition: all 0.2s;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.inline-related-trigger:hover {
+  background: rgba(43, 127, 227, 0.08);
+  color: #2B7FE3;
+}
+
+.arrow {
+  font-size: 10px;
+  transition: transform 0.2s;
+}
+
+.arrow.open {
+  transform: rotate(180deg);
+}
+
+.related-section {
+  margin-top: 8px;
+  padding-left: 28px;
+}
+
+.related-list {
+  max-height: 200px;
+  overflow-y: auto;
+  border-top: 1px solid #e2e8f0;
+}
+
+.related-item {
+  padding: 8px 10px;
+  display: flex;
+  gap: 10px;
+  cursor: pointer;
+  transition: background 0.2s;
+  align-items: center;
+}
+
+.related-item:hover {
+  background: #f0f9ff;
+}
+
+.related-code {
+  font-family: monospace;
+  color: var(--color-text-muted, #94a3b8);
+  font-weight: 500;
+  min-width: 60px;
+}
+
+.related-name {
+  color: #334155;
+  font-weight: 500;
+}
+
+/* ── Checklist Indicator ───────────────────────────── */
+.diag-checklist-wrapper {
+  padding-left: 28px;
+  margin-top: 6px;
+}
+
+.checklist-indicator {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  border-radius: 6px;
+  background: rgba(245, 158, 11, 0.08);
+  color: #d97706;
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.checklist-indicator:hover {
+  background: rgba(245, 158, 11, 0.15);
+}
+
+.checklist-indicator.loading {
+  color: var(--color-text-muted, #94a3b8);
+  background: rgba(148, 163, 184, 0.08);
+  cursor: default;
+}
+
+.checklist-indicator .spinner {
+  animation: spin 1s linear infinite;
+}
+
+/* ── Modal ─────────────────────────────────────────── */
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.4);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+}
+
+.modal {
+  background: var(--color-background-white, #fff);
+  border-radius: 12px;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.15);
+  max-width: 520px;
+  width: 90%;
+  max-height: 80vh;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+.modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 20px;
+  border-bottom: 1px solid var(--color-border-light, #EEF2F6);
+}
+
+.modal-header h3 {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--color-text-strong, #1e293b);
+}
+
+.close-btn {
+  background: transparent;
+  border: none;
+  color: var(--color-text-muted, #94a3b8);
+  cursor: pointer;
+  padding: 4px;
+  border-radius: 4px;
+  transition: all 0.2s;
+}
+
+.close-btn:hover {
+  background: var(--color-background-gray, #f1f5f9);
+  color: var(--color-text-strong, #1e293b);
+}
+
+.modal-body {
+  padding: 20px;
+  overflow-y: auto;
+}
+
+.checklist-intro {
+  margin-bottom: 16px;
+  font-size: 13px;
+  color: var(--color-text-muted, #64748b);
+}
+
+.checklist-intro p {
+  margin: 0;
+}
+
+.checklist-items {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-bottom: 16px;
+}
+
+.checklist-item-label {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 10px 12px;
+  border: 1px solid var(--color-border-light, #EEF2F6);
+  border-radius: 8px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.checklist-item-label:hover {
+  background: rgba(43, 127, 227, 0.03);
+}
+
+.checklist-item-label input[type="checkbox"] {
+  margin-top: 2px;
+  flex-shrink: 0;
+}
+
+.checklist-text {
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--color-text-strong, #1e293b);
+}
+
+.checklist-notes-box {
+  margin-bottom: 16px;
+}
+
+.checklist-notes-box label {
+  display: block;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--color-text-weak, #475569);
+  margin-bottom: 6px;
+}
+
+.checklist-notes-box textarea {
+  width: 100%;
+  padding: 8px 10px;
+  border: 1px solid var(--color-border-medium, #e2e8f0);
+  border-radius: 6px;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--color-text-strong, #1e293b);
+  resize: vertical;
+  box-sizing: border-box;
+  font-family: inherit;
+  min-height: 60px;
+}
+
+.checklist-notes-box textarea:focus {
+  outline: none;
+  border-color: var(--color-primary, #3b82f6);
+  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+}
+
+.checklist-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+}
+
+.btn-secondary {
+  padding: 8px 16px;
+  border: 1px solid var(--color-border-medium, #CBD5E1);
+  background: var(--color-background-white, #fff);
+  border-radius: 6px;
+  color: var(--color-text-medium, #64748b);
+  font-size: 13px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.btn-secondary:hover {
+  background: var(--color-background-gray, #f1f5f9);
+}
+
+.btn-primary {
+  padding: 8px 16px;
+  border: none;
+  background: var(--color-info, #2B7FE3);
+  border-radius: 6px;
+  color: white;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.btn-primary:hover {
+  background: var(--color-primary-dark, #1d6fc9);
+}
+
+.btn-primary:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
 }
 </style>
