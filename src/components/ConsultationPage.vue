@@ -3492,7 +3492,8 @@ const fetchDiagnosisChecklist = async (diag: Diagnosis) => {
   }
 };
 
-const handleChecklistConfirm = () => {
+// @ts-ignore: kept for future use (currently commented out in template)
+const _handleChecklistConfirm = () => {
   const checkedQuestions = checklistItems.value
     .filter(i => i.checked)
     .map(i => i.question);
@@ -3942,7 +3943,8 @@ const handleAssistTrigger = async (kind: AssistAction): Promise<void> => {
   }
 };
 
-const handleComplete = () => {
+// @ts-ignore: kept for future use (currently commented out in template)
+const _handleComplete = () => {
   if (!selectedDiagnosis.value) {
     showToast("请先选择一个诊断结果", "info");
     return;

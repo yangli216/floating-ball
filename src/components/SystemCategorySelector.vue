@@ -48,7 +48,6 @@
 
 <script setup lang="ts">
 import { ref, computed, PropType } from 'vue';
-import Icon from './Icon.vue';
 import SvgIcon from "../components/svgIcon.vue";
 
 interface Symptom {
