@@ -463,6 +463,20 @@ function getDiagRateClass(rate?: string): string {
   return '';
 }
 
+// ── Editable field options ─────────────────────────────────────────────
+const frequencyOptions = [
+  '每天一次', '每天两次', '每天三次', '隔日一次',
+  '每周一次', '每周两次', '必要时', '立即',
+];
+const routeOptions = [
+  '口服', '静脉注射', '肌肉注射', '皮下注射',
+  '外用', '雾化吸入', '舌下含服', '直肠给药', '滴眼',
+];
+const dosageUnits = ['mg', 'g', 'ml', 'ug', '片', '粒', '支', '袋'];
+const medicineTotalUnits = ['盒', '瓶', '袋', '支', '片', '粒'];
+const pharmacyOptions = ['西药房', '中药房', '急诊药房', '住院药房'];
+const insuranceOptions = ['医保使用', '自费'];
+
 // ── Treatment tag label ────────────────────────────────────────────────
 function getTreatmentTagLabel(type: string): string {
   const map: Record<string, string> = {
@@ -509,18 +523,45 @@ async function handleBatchWriteBack() {
         spec: m.matchedItem?.spec || '',
         usage: m.usage || '',
         idMedPro: m.matchedItem?.id || '',
+        dosage: m.dosage || '',
+        dosageUnit: m.dosageUnit || '',
+        totalQty: m.totalQty || '',
+        totalUnit: m.totalUnit || '',
+        frequency: m.frequency || '',
+        route: m.route || '',
+        days: m.days || '',
+        pharmacy: m.pharmacy || '',
+        remark: m.remark || '',
+        regulatedDisease: m.regulatedDisease || '',
+        insuranceType: m.insuranceType || '医保使用',
       })),
       examinations: exams.map((e) => ({
         name: e.matchedItem?.name || e.name,
         idCli: e.matchedItem?.id || '',
+        regulatedDisease: e.regulatedDisease || '',
+        bodySite: e.bodySite || '',
+        totalQty: e.totalQty || '',
+        execDept: e.execDept || '',
+        remark: e.remark || '',
+        insuranceType: e.insuranceType || '医保使用',
       })),
       labTests: labs.map((l) => ({
         name: l.matchedItem?.name || l.name,
         idCli: l.matchedItem?.id || '',
+        regulatedDisease: l.regulatedDisease || '',
+        bodySite: l.bodySite || '',
+        totalQty: l.totalQty || '',
+        execDept: l.execDept || '',
+        remark: l.remark || '',
+        insuranceType: l.insuranceType || '医保使用',
       })),
       procedures: procs.map((p) => ({
         name: p.matchedItem?.name || p.name,
         idCli: p.matchedItem?.id || '',
+        regulatedDisease: p.regulatedDisease || '',
+        totalQty: p.totalQty || '',
+        execDept: p.execDept || '',
+        insuranceType: p.insuranceType || '医保使用',
       })),
       treatmentPlan: treatmentPlanParts,
     };
@@ -739,6 +780,147 @@ async function handleBatchWriteBack() {
                       </div>
                       <div class="rec-reason">{{ rec.reason }}</div>
                       <div v-if="rec.usage" class="rec-usage">建议: {{ rec.usage }}</div>
+
+                      <!-- Inline editable fields (shown when selected) -->
+                      <div v-if="rec.selected" class="rec-edit-fields" @click.stop>
+                        <!-- Common: 规定病 (all types) -->
+                        <div class="edit-field">
+                          <label>规定病</label>
+                          <input v-model="rec.regulatedDisease" type="text" placeholder="规定病" class="edit-input" />
+                        </div>
+
+                        <!-- Medicine fields -->
+                        <template v-if="rec.type === 'medicine'">
+                          <div class="edit-field">
+                            <label>每次剂量</label>
+                            <div class="edit-field-row">
+                              <input v-model="rec.dosage" type="text" placeholder="剂量" class="edit-input small" />
+                              <select v-model="rec.dosageUnit" class="edit-select mini">
+                                <option value="">单位</option>
+                                <option v-for="u in dosageUnits" :key="u" :value="u">{{ u }}</option>
+                              </select>
+                            </div>
+                          </div>
+                          <div class="edit-field">
+                            <label>频次</label>
+                            <select v-model="rec.frequency" class="edit-select">
+                              <option value="">请选择</option>
+                              <option v-for="f in frequencyOptions" :key="f" :value="f">{{ f }}</option>
+                            </select>
+                          </div>
+                          <div class="edit-field">
+                            <label>用法</label>
+                            <select v-model="rec.route" class="edit-select">
+                              <option value="">请选择</option>
+                              <option v-for="r in routeOptions" :key="r" :value="r">{{ r }}</option>
+                            </select>
+                          </div>
+                          <div class="edit-field">
+                            <label>天数</label>
+                            <input v-model="rec.days" type="text" placeholder="天" class="edit-input mini" />
+                          </div>
+                          <div class="edit-field">
+                            <label>总量</label>
+                            <div class="edit-field-row">
+                              <input v-model="rec.totalQty" type="text" placeholder="数量" class="edit-input small" />
+                              <select v-model="rec.totalUnit" class="edit-select mini">
+                                <option value="">单位</option>
+                                <option v-for="u in medicineTotalUnits" :key="u" :value="u">{{ u }}</option>
+                              </select>
+                            </div>
+                          </div>
+                          <div class="edit-field">
+                            <label>药房</label>
+                            <select v-model="rec.pharmacy" class="edit-select">
+                              <option value="">请选择</option>
+                              <option v-for="p in pharmacyOptions" :key="p" :value="p">{{ p }}</option>
+                            </select>
+                          </div>
+                          <div class="edit-field">
+                            <label>备注</label>
+                            <input v-model="rec.remark" type="text" placeholder="备注" class="edit-input" />
+                          </div>
+                          <div class="edit-field">
+                            <label>医保限用</label>
+                            <select v-model="rec.insuranceType" class="edit-select">
+                              <option v-for="i in insuranceOptions" :key="i" :value="i">{{ i }}</option>
+                            </select>
+                          </div>
+                        </template>
+
+                        <!-- Exam fields -->
+                        <template v-if="rec.type === 'exam'">
+                          <div class="edit-field">
+                            <label>部位方式</label>
+                            <input v-model="rec.bodySite" type="text" placeholder="请输入部位" class="edit-input" />
+                          </div>
+                          <div class="edit-field">
+                            <label>总量</label>
+                            <input v-model="rec.totalQty" type="text" placeholder="数量" class="edit-input mini" />
+                          </div>
+                          <div class="edit-field">
+                            <label>执行科室</label>
+                            <input v-model="rec.execDept" type="text" placeholder="科室" class="edit-input" />
+                          </div>
+                          <div class="edit-field">
+                            <label>备注</label>
+                            <input v-model="rec.remark" type="text" placeholder="备注" class="edit-input" />
+                          </div>
+                          <div class="edit-field">
+                            <label>医保限用</label>
+                            <select v-model="rec.insuranceType" class="edit-select">
+                              <option v-for="i in insuranceOptions" :key="i" :value="i">{{ i }}</option>
+                            </select>
+                          </div>
+                        </template>
+
+                        <!-- Lab test fields -->
+                        <template v-if="rec.type === 'lab_test'">
+                          <div class="edit-field">
+                            <label>部位方式</label>
+                            <input v-model="rec.bodySite" type="text" placeholder="部位" class="edit-input" />
+                          </div>
+                          <div class="edit-field">
+                            <label>总量</label>
+                            <input v-model="rec.totalQty" type="text" placeholder="数量" class="edit-input mini" />
+                          </div>
+                          <div class="edit-field">
+                            <label>执行科室</label>
+                            <input v-model="rec.execDept" type="text" placeholder="科室" class="edit-input" />
+                          </div>
+                          <div class="edit-field">
+                            <label>备注</label>
+                            <input v-model="rec.remark" type="text" placeholder="备注" class="edit-input" />
+                          </div>
+                          <div class="edit-field">
+                            <label>医保限用</label>
+                            <select v-model="rec.insuranceType" class="edit-select">
+                              <option v-for="i in insuranceOptions" :key="i" :value="i">{{ i }}</option>
+                            </select>
+                          </div>
+                        </template>
+
+                        <!-- Procedure fields -->
+                        <template v-if="rec.type === 'procedure'">
+                          <div class="edit-field">
+                            <label>总量</label>
+                            <div class="edit-field-row">
+                              <input v-model="rec.totalQty" type="text" placeholder="数量" class="edit-input small" />
+                              <span class="edit-unit">次</span>
+                            </div>
+                          </div>
+                          <div class="edit-field">
+                            <label>执行科室</label>
+                            <input v-model="rec.execDept" type="text" placeholder="科室" class="edit-input" />
+                          </div>
+                          <div class="edit-field">
+                            <label>医保限用</label>
+                            <select v-model="rec.insuranceType" class="edit-select">
+                              <option v-for="i in insuranceOptions" :key="i" :value="i">{{ i }}</option>
+                            </select>
+                          </div>
+                        </template>
+                      </div>
                     </div>
                   </div>
                 </div>
@@ -1463,6 +1645,83 @@ async function handleBatchWriteBack() {
   font-size: 12px;
   color: var(--color-text-muted, #64748b);
   line-height: 1.5;
+}
+
+/* ── Inline Edit Fields ──────────────────────────────── */
+.rec-edit-fields {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 12px;
+  margin-top: 8px;
+  padding: 8px 10px;
+  background: rgba(43, 127, 227, 0.03);
+  border: 1px solid rgba(43, 127, 227, 0.1);
+  border-radius: 6px;
+}
+
+.edit-field {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+}
+
+.edit-field label {
+  font-size: 11px;
+  color: var(--color-text-muted, #64748b);
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.edit-field-row {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.edit-input,
+.edit-select {
+  font-size: 12px;
+  padding: 3px 6px;
+  border: 1px solid #d1d5db;
+  border-radius: 4px;
+  background: #fff;
+  color: var(--color-text-strong, #1e293b);
+  outline: none;
+  transition: border-color 0.15s;
+}
+
+.edit-input:focus,
+.edit-select:focus {
+  border-color: #2B7FE3;
+  box-shadow: 0 0 0 2px rgba(43, 127, 227, 0.1);
+}
+
+.edit-input {
+  width: 80px;
+}
+
+.edit-input.small {
+  width: 56px;
+}
+
+.edit-input.mini {
+  width: 42px;
+}
+
+.edit-select {
+  min-width: 72px;
+  cursor: pointer;
+}
+
+.edit-select.mini {
+  min-width: 50px;
+}
+
+.edit-unit {
+  font-size: 11px;
+  color: var(--color-text-muted, #64748b);
+  margin-left: 2px;
 }
 
 /* ── Fixed Action Area ───────────────────────────────── */

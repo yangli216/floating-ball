@@ -53,6 +53,20 @@ export interface TreatmentRecommendation {
     ingredients?: string; // TCM specific
     matchedItem?: any; // Matched item from catalog
     selected?: boolean;
+    // Editable fields for PHIS import
+    dosage?: string;        // 每次剂量 (medicine)
+    dosageUnit?: string;    // 剂量单位 (medicine)
+    totalQty?: string;      // 总量 (all types)
+    totalUnit?: string;     // 总量单位
+    frequency?: string;     // 频次 (medicine)
+    route?: string;         // 药品用法/给药途径 (medicine)
+    days?: string;          // 天数 (medicine)
+    pharmacy?: string;      // 药房 (medicine)
+    regulatedDisease?: string; // 规定病 (all types)
+    bodySite?: string;      // 部位方式 (exam/lab_test)
+    execDept?: string;      // 执行科室 (exam/lab_test/procedure)
+    remark?: string;        // 备注
+    insuranceType?: string; // 医保限用 (all types)
 }
 
 export interface FinalRecord {

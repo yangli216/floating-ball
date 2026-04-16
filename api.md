@@ -1,6 +1,6 @@
 # floating-ball HIS 接入指南 / 接口说明
 
-> 最后更新: 2026-04-08
+> 最后更新: 2026-04-16
 >
 > 本文档面向准备接入 `floating-ball` 的 HIS / 医生站 / PHIS 项目。
 > 当前真实运行契约以 `src-tauri/src/http_server.rs` 与当前前端实现为准；`docs/regionalization/*.md` 仍属于规划文档，不能替代本文档。
@@ -383,6 +383,141 @@ http://127.0.0.1:8081/api/consultation/result
 }
 ```
 
+#### 成功响应: 语音问诊批量回写（batch）
+
+`batch` 类型来自语音问诊确认提交。与 `reference-request` 不同，这是医生在语音问诊结果页直接确认后一次性提交的完整数据，不走引用闭环，PHIS 可直接用于调入确认。
+
+```json
+{
+  "consultationId": "766842939207974912",
+  "timestamp": 1704355201000,
+  "resultType": "batch",
+  "requestId": "voice-batch-1704355201000",
+  "chiefComplaint": "咳嗽三天",
+  "historyOfPresentIllness": "受凉后出现咳嗽、咳痰，无明显呼吸困难。",
+  "pastMedicalHistory": "否认高血压、糖尿病病史。",
+  "diagnosisList": [
+    {
+      "name": "急性支气管炎",
+      "code": "J20.900"
+    }
+  ],
+  "medications": [
+    {
+      "name": "对乙酰氨基酚缓释片",
+      "spec": "0.5g*20片",
+      "usage": "口服，每日1次，每次1g",
+      "idMedPro": "10023",
+      "dosage": "1",
+      "dosageUnit": "g",
+      "totalQty": "1",
+      "totalUnit": "盒",
+      "frequency": "每天一次",
+      "route": "口服",
+      "days": "3",
+      "pharmacy": "西药房",
+      "remark": "",
+      "regulatedDisease": "",
+      "insuranceType": "医保使用"
+    }
+  ],
+  "examinations": [
+    {
+      "name": "深部X线照射",
+      "idCli": "30012",
+      "regulatedDisease": "",
+      "bodySite": "胸部正位",
+      "totalQty": "1",
+      "execDept": "放射科",
+      "remark": "",
+      "insuranceType": "医保使用"
+    }
+  ],
+  "labTests": [
+    {
+      "name": "血常规（五分类）",
+      "idCli": "20045",
+      "regulatedDisease": "",
+      "bodySite": "无部位",
+      "totalQty": "1",
+      "execDept": "医技科",
+      "remark": "",
+      "insuranceType": "医保使用"
+    }
+  ],
+  "procedures": [
+    {
+      "name": "拔罐疗法(火罐)",
+      "idCli": "40001",
+      "regulatedDisease": "",
+      "totalQty": "1",
+      "execDept": "中医科",
+      "insuranceType": "医保使用"
+    }
+  ],
+  "treatmentPlan": "用药：对乙酰氨基酚缓释片。检查：深部X线照射。检验：血常规（五分类）。处置：拔罐疗法(火罐)"
+}
+```
+
+##### batch 各类型项目字段说明
+
+**medications（西成药）字段：**
+
+| 字段名 | 类型 | 说明 |
+| :--- | :--- | :--- |
+| `name` | String | 药品名称（匹配后标准名） |
+| `spec` | String | 规格 |
+| `usage` | String | AI 建议用法（文本） |
+| `idMedPro` | String | 本地药品目录 ID |
+| `dosage` | String | 每次剂量数值 |
+| `dosageUnit` | String | 剂量单位（mg/g/ml/片/粒等） |
+| `totalQty` | String | 总量数值 |
+| `totalUnit` | String | 总量单位（盒/瓶/袋等） |
+| `frequency` | String | 频次（每天一次/每天两次/每天三次等） |
+| `route` | String | 给药途径（口服/静脉注射/外用等） |
+| `days` | String | 用药天数 |
+| `pharmacy` | String | 药房（西药房/中药房/急诊药房/住院药房） |
+| `remark` | String | 备注 |
+| `regulatedDisease` | String | 规定病 |
+| `insuranceType` | String | 医保限用（医保使用/自费），默认 `医保使用` |
+
+**examinations（检查）字段：**
+
+| 字段名 | 类型 | 说明 |
+| :--- | :--- | :--- |
+| `name` | String | 检查项目名称 |
+| `idCli` | String | 本地项目目录 ID |
+| `regulatedDisease` | String | 规定病 |
+| `bodySite` | String | 部位方式 |
+| `totalQty` | String | 总量 |
+| `execDept` | String | 执行科室 |
+| `remark` | String | 备注 |
+| `insuranceType` | String | 医保限用，默认 `医保使用` |
+
+**labTests（检验）字段：**
+
+| 字段名 | 类型 | 说明 |
+| :--- | :--- | :--- |
+| `name` | String | 检验项目名称 |
+| `idCli` | String | 本地项目目录 ID |
+| `regulatedDisease` | String | 规定病 |
+| `bodySite` | String | 部位方式 |
+| `totalQty` | String | 总量 |
+| `execDept` | String | 执行科室 |
+| `remark` | String | 备注 |
+| `insuranceType` | String | 医保限用，默认 `医保使用` |
+
+**procedures（处置）字段：**
+
+| 字段名 | 类型 | 说明 |
+| :--- | :--- | :--- |
+| `name` | String | 处置项目名称 |
+| `idCli` | String | 本地项目目录 ID |
+| `regulatedDisease` | String | 规定病 |
+| `totalQty` | String | 总量 |
+| `execDept` | String | 执行科室 |
+| `insuranceType` | String | 医保限用，默认 `医保使用` |
+
 #### 成功响应: 引用请求（一键回写 batch）
 
 ```json
@@ -464,6 +599,8 @@ http://127.0.0.1:8081/api/consultation/result
 }
 ```
 
+> **注意：** `reference-request` 来自 ConsultationPage（表单问诊），其 `medications` / `examinations` / `labTests` / `procedures` 目前仅包含基础字段（name/spec/usage/idMedPro/idCli），不含 PHIS 调入确认扩展字段。语音问诊的 `batch` 类型结果包含完整的 PHIS 调入确认字段，详见上方字段说明表。
+
 #### 成功响应: 引用回执结果
 
 ```json
@@ -536,7 +673,7 @@ HTTP 状态码：`404`
 | :--- | :--- |
 | `consultationId` | 当前患者标识，现阶段默认等于 `idPi / patientId` |
 | `timestamp` | 本条结果生成时间戳 |
-| `resultType` | 当前可能为 `draft` / `reference-request` / `reference-feedback` / `final-report` |
+| `resultType` | 当前可能为 `draft` / `batch` / `reference-request` / `reference-feedback` / `final-report` |
 | `requestId` | 请求 ID，`draft` 类型格式为 `draft-record-{timestamp}`，引用闭环类型格式为 `ref-{action}-{timestamp}` |
 | `referenceType` | 当前引用对象类型，支持 `diagnosis` / `medication` / `examination` / `lab_test` / `procedure` / `batch`；一键回写场景下为 `batch`，此时 `referenceItems` 包含所有类型的项目，每项通过 `type` 字段区分 |
 | `action` | 兼容旧版联调字段，语义与 `referenceType` 相同，建议新接入只把它当兼容字段使用 |
@@ -783,21 +920,23 @@ http://127.0.0.1:8081/api/patient/risks
 
 ## 7. `resultType` 处理约定
 
-HIS 侧至少要识别以下 4 类结果：
+HIS 侧至少要识别以下 5 类结果：
 
 | `resultType` | 含义 | HIS 建议动作 |
 | :--- | :--- | :--- |
 | `draft` | 病历草稿回写（仅主诉+现病史） | 回填主诉和现病史到医生站草稿 |
 | `final-report` | 完整问诊最终报告（含诊断、治疗方案） | 作为完整结构化结果回写 |
+| `batch` | 语音问诊批量回写（含完整 PHIS 调入确认字段） | 直接用于 PHIS 调入确认弹窗，不走引用闭环 |
 | `reference-request` | `floating-ball` 请求 PHIS 保存引用 | 调用 PHIS 保存，并准备回执 |
 | `reference-feedback` | PHIS 回执后的最新状态 | 更新医生站状态，提示成功或失败 |
 
 补充说明：
 
 1. `draft` 与 `final-report` 都可能携带结构化诊断、用药、检查列表。
-2. `reference-request` 和 `reference-feedback` 都可能附带同一份病历上下文，便于 HIS 在当前界面直接处理。
-3. 对引用闭环结果，HIS 应继续结合 `referenceType` 判断具体业务对象，不建议只看 `resultType`。
-4. 一键回写场景下，`referenceType` 为 `batch`，`referenceItems` 包含诊断和所有选中治疗项目，每项通过 `type` 字段区分业务类型。单项引用场景下 `referenceType` 仍为具体类型（如 `diagnosis`）。
+2. `batch` 来自语音问诊确认提交，其 `medications` / `examinations` / `labTests` / `procedures` 包含 PHIS 调入确认所需的全部字段（每次剂量、频次、用法、天数、药房、总量、执行科室、部位方式、规定病、医保限用、备注等）。PHIS 收到后可直接填充到调入确认弹窗，无需二次补录。
+3. `reference-request` 和 `reference-feedback` 都可能附带同一份病历上下文，便于 HIS 在当前界面直接处理。
+4. 对引用闭环结果，HIS 应继续结合 `referenceType` 判断具体业务对象，不建议只看 `resultType`。
+5. 一键回写场景下，`referenceType` 为 `batch`，`referenceItems` 包含诊断和所有选中治疗项目，每项通过 `type` 字段区分业务类型。单项引用场景下 `referenceType` 仍为具体类型（如 `diagnosis`）。
 
 ## 8. 推荐轮询与去重策略
 
@@ -886,6 +1025,6 @@ HIS 接入完成后，至少验证以下场景：
 5. PHIS 调用 `/reference-feedback` 后，`/result` 能继续返回 `reference-feedback`
 6. 一键回写场景：PHIS 收到一条 `batch` 类型 `reference-request`，遍历 `referenceItems` 按 `type` 分类处理，回执后页面显示"一键回写完成"
 7. 切换患者后不会把上一位患者的结果误回填到当前医生站
-8. 语音接诊结果也能走同一条 `/result` 通道回写
+8. 语音问诊批量回写：PHIS 收到 `resultType: "batch"` 结果后，`medications` 包含剂量/频次/用法/天数/药房/总量/备注/规定病/医保限用等完整字段，`examinations`/`labTests` 包含部位方式/总量/执行科室/备注/规定病/医保限用，`procedures` 包含总量/执行科室/规定病/医保限用，可直接填充到 PHIS 调入确认弹窗
 
 如果你们 HIS 需要，我建议下一步可以再按这份文档继续拆一版“给后端开发直接对接的字段清单”和“一版给联调测试直接执行的验收用例”。
