@@ -120,6 +120,7 @@ const {
   updateCurrentMonitor,
   smartExpand,
   handleWindowMove,
+  persistCurrentWindowSize,
 } = windowMgmt;
 
 // 风险提示患者信息同步函数
@@ -231,6 +232,7 @@ const eventListeners = useEventListeners({
   },
   showToast,
   handleWindowMove,
+  persistCurrentWindowSize,
   workMode: { enterWorkMode, exitWork },
   navigation: { openConsultation, openVoiceConsultation, startVoiceInteraction },
   queueConsultationAssistTrigger,

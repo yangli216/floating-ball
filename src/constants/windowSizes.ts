@@ -114,6 +114,17 @@ export function getWindowSizeForView(view: ViewType): WindowSize {
   }
 }
 
+export function supportsPersistentWindowSize(view: ViewType): boolean {
+  return view === 'chat'
+    || view === 'settings'
+    || view === 'consultation'
+    || view === 'voice-result'
+    || view === 'voice-consultation'
+    || view === 'analytics'
+    || view === 'symptom-manage'
+    || view === 'knowledge-base';
+}
+
 /**
  * 判断视图是否为胶囊形态
  *

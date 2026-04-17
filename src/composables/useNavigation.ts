@@ -11,7 +11,6 @@
 
 import { type Ref } from 'vue';
 import type { Window as TauriWindow } from '@tauri-apps/api/window';
-import { LogicalSize } from '@tauri-apps/api/dpi';
 import { WINDOW_SIZES, type ViewType } from '../constants/windowSizes';
 import { trackViewChange } from '../services/operationTracker';
 import type { AppPatient } from '../types/appState';
@@ -31,6 +30,7 @@ export interface NavigationOptions {
   /** 窗口管理 API */
   windowMgmt: {
     smartExpand: (width: number, height: number) => Promise<void>;
+    resizeWindowForView: (view: ViewType) => Promise<void>;
   };
   /** 工作模式 API */
   workMode: {
@@ -64,7 +64,6 @@ export interface NavigationOptions {
  */
 export function useNavigation(options: NavigationOptions) {
   const {
-    appWindow,
     currentView,
     isWorking,
     currentPatient,
@@ -72,7 +71,7 @@ export function useNavigation(options: NavigationOptions) {
     workMode,
   } = options;
 
-  const { smartExpand } = windowMgmt;
+  const { resizeWindowForView } = windowMgmt;
   const { enterWorkMode } = workMode;
 
   // ========== 基础导航 ==========
@@ -85,6 +84,8 @@ export function useNavigation(options: NavigationOptions) {
     currentView.value = 'settings';
     if (!isWorking.value) {
       await enterWorkMode();
+    } else {
+      await resizeWindowForView('settings');
     }
   }
 
@@ -96,6 +97,8 @@ export function useNavigation(options: NavigationOptions) {
     currentView.value = 'chat';
     if (!isWorking.value) {
       await enterWorkMode();
+    } else {
+      await resizeWindowForView('chat');
     }
   }
 
@@ -107,6 +110,8 @@ export function useNavigation(options: NavigationOptions) {
     currentView.value = 'analytics';
     if (!isWorking.value) {
       await enterWorkMode();
+    } else {
+      await resizeWindowForView('analytics');
     }
   }
 
@@ -120,14 +125,7 @@ export function useNavigation(options: NavigationOptions) {
     if (!isWorking.value) {
       await enterWorkMode();
     } else {
-      // If already working, resize window if needed
-      if (appWindow.value) {
-        // 先调整位置再设置大小，避免窗口闪动到其他显示器
-        await smartExpand(WINDOW_SIZES.SYMPTOM_MANAGE.width, WINDOW_SIZES.SYMPTOM_MANAGE.height);
-        await appWindow.value.setSize(
-          new LogicalSize(WINDOW_SIZES.SYMPTOM_MANAGE.width, WINDOW_SIZES.SYMPTOM_MANAGE.height)
-        );
-      }
+      await resizeWindowForView('symptom-manage');
     }
   }
 
@@ -140,13 +138,7 @@ export function useNavigation(options: NavigationOptions) {
     if (!isWorking.value) {
       await enterWorkMode();
     } else {
-      // If already working, resize window if needed
-      if (appWindow.value) {
-        await appWindow.value.setSize(
-          new LogicalSize(WINDOW_SIZES.CONSULTATION.width, WINDOW_SIZES.CONSULTATION.height)
-        );
-        await smartExpand(WINDOW_SIZES.CONSULTATION.width, WINDOW_SIZES.CONSULTATION.height);
-      }
+      await resizeWindowForView('consultation');
     }
   }
 
@@ -158,6 +150,8 @@ export function useNavigation(options: NavigationOptions) {
     currentView.value = 'knowledge-base';
     if (!isWorking.value) {
       await enterWorkMode();
+    } else {
+      await resizeWindowForView('knowledge-base');
     }
   }
 
@@ -170,14 +164,9 @@ export function useNavigation(options: NavigationOptions) {
     });
     currentView.value = 'voice-consultation';
     if (!isWorking.value) {
-      await enterWorkMode(WINDOW_SIZES.VOICE_CONSULTATION.width, WINDOW_SIZES.VOICE_CONSULTATION.height);
+      await enterWorkMode();
     } else {
-      if (appWindow.value) {
-        await smartExpand(WINDOW_SIZES.VOICE_CONSULTATION.width, WINDOW_SIZES.VOICE_CONSULTATION.height);
-        await appWindow.value.setSize(
-          new LogicalSize(WINDOW_SIZES.VOICE_CONSULTATION.width, WINDOW_SIZES.VOICE_CONSULTATION.height)
-        );
-      }
+      await resizeWindowForView('voice-consultation');
     }
   }
 

@@ -12,6 +12,13 @@ import type { Window as TauriWindow, Monitor } from '@tauri-apps/api/window';
 import { PhysicalPosition, currentMonitor } from '@tauri-apps/api/window';
 import { LogicalSize } from '@tauri-apps/api/dpi';
 import { ANIMATION, WINDOW_SIZE_TOLERANCE } from '../constants/animation';
+import {
+  getWindowSizeForView,
+  supportsPersistentWindowSize,
+  type ViewType,
+  type WindowSize,
+  WINDOW_SIZES,
+} from '../constants/windowSizes';
 import type { AppStore } from '../types/appState';
 
 /**
@@ -60,6 +67,7 @@ export interface WindowManagementOptions {
  */
 export function useWindowManagement(options: WindowManagementOptions) {
   const { appWindow, store, isWorking, transitioning } = options;
+  const WINDOW_SIZES_STORE_KEY = 'window_sizes';
 
   // ========== 状态管理 ==========
 
@@ -74,6 +82,85 @@ export function useWindowManagement(options: WindowManagementOptions) {
 
   /** 移动防抖定时器 */
   let moveTimeout: ReturnType<typeof setTimeout> | null = null;
+
+  const isValidStoredWindowSize = (value: unknown): value is WindowSize => {
+    if (!value || typeof value !== 'object') return false;
+    const candidate = value as Record<string, unknown>;
+    return Number.isFinite(candidate.width)
+      && Number.isFinite(candidate.height)
+      && Number(candidate.width) >= WINDOW_SIZES.BALL.width
+      && Number(candidate.height) >= WINDOW_SIZES.BALL.height;
+  };
+
+  const getSavedWindowSizes = async (): Promise<Partial<Record<ViewType, WindowSize>>> => {
+    if (!store.value) return {};
+    const saved = await store.value.get<Partial<Record<ViewType, WindowSize>>>(WINDOW_SIZES_STORE_KEY);
+    return saved || {};
+  };
+
+  const getPreferredWindowSize = async (view: ViewType): Promise<WindowSize> => {
+    const fallback = getWindowSizeForView(view);
+    if (!supportsPersistentWindowSize(view) || !store.value) {
+      return fallback;
+    }
+
+    try {
+      const savedSizes = await getSavedWindowSizes();
+      const savedSize = savedSizes[view];
+      if (isValidStoredWindowSize(savedSize)) {
+        return {
+          width: Math.round(savedSize.width),
+          height: Math.round(savedSize.height),
+        };
+      }
+    } catch (err) {
+      console.warn('[WindowMgmt] Failed to get preferred window size:', err);
+    }
+
+    return fallback;
+  };
+
+  const saveWindowSizeForView = async (view: ViewType, size: WindowSize): Promise<void> => {
+    if (!supportsPersistentWindowSize(view) || !store.value || !isValidStoredWindowSize(size)) {
+      return;
+    }
+
+    try {
+      const savedSizes = await getSavedWindowSizes();
+      savedSizes[view] = {
+        width: Math.round(size.width),
+        height: Math.round(size.height),
+      };
+      await store.value.set(WINDOW_SIZES_STORE_KEY, savedSizes);
+      await store.value.save();
+    } catch (err) {
+      console.warn('[WindowMgmt] Failed to save window size:', err);
+    }
+  };
+
+  const persistCurrentWindowSize = async (view: ViewType): Promise<void> => {
+    if (!appWindow.value || !store.value || !supportsPersistentWindowSize(view)) return;
+
+    try {
+      const [size, scaleFactor] = await Promise.all([
+        appWindow.value.innerSize(),
+        appWindow.value.scaleFactor(),
+      ]);
+
+      const logicalSize = {
+        width: Math.round(size.width / scaleFactor),
+        height: Math.round(size.height / scaleFactor),
+      };
+
+      if (logicalSize.width < WINDOW_SIZES.BALL.width || logicalSize.height < WINDOW_SIZES.BALL.height) {
+        return;
+      }
+
+      await saveWindowSizeForView(view, logicalSize);
+    } catch (err) {
+      console.warn('[WindowMgmt] Failed to persist current window size:', err);
+    }
+  };
 
   // ========== 位置持久化 ==========
 
@@ -310,6 +397,11 @@ export function useWindowManagement(options: WindowManagementOptions) {
     }
   };
 
+  const resizeWindowForView = async (view: ViewType): Promise<void> => {
+    const preferredSize = await getPreferredWindowSize(view);
+    await resizeWorkWindow(preferredSize.width, preferredSize.height);
+  };
+
   // ========== 窗口移动监听 ==========
 
   /**
@@ -356,8 +448,12 @@ export function useWindowManagement(options: WindowManagementOptions) {
     smartExpand,
 
     // 尺寸管理
+    getPreferredWindowSize,
+    saveWindowSizeForView,
+    persistCurrentWindowSize,
     waitForWindowSize,
     resizeWorkWindow,
+    resizeWindowForView,
 
     // 事件处理
     handleWindowMove,

@@ -16,7 +16,7 @@ import type { Window as TauriWindow } from '@tauri-apps/api/window';
 import { PhysicalPosition } from '@tauri-apps/api/window';
 import { LogicalSize } from '@tauri-apps/api/dpi';
 import { invoke } from '@tauri-apps/api/core';
-import { WINDOW_SIZES, getWindowSizeForView, type ViewType } from '../constants/windowSizes';
+import { WINDOW_SIZES, type ViewType } from '../constants/windowSizes';
 import { ANIMATION, MORPH_ORIGIN_DEFAULT } from '../constants/animation';
 import { feedbackService } from '../services/feedback';
 import { trackClick } from '../services/operationTracker';
@@ -97,6 +97,7 @@ export function useWorkMode(options: WorkModeOptions) {
   const {
     lastBallPos,
     isMoving,
+    getPreferredWindowSize,
     resizeWorkWindow,
     waitForWindowSize,
   } = windowMgmt;
@@ -128,11 +129,11 @@ export function useWorkMode(options: WorkModeOptions) {
   /**
    * 根据视图类型确定目标窗口尺寸
    */
-  function resolveTargetSize(customW?: number, customH?: number): { w: number; h: number } {
+  async function resolveTargetSize(customW?: number, customH?: number): Promise<{ w: number; h: number }> {
     if (customW !== undefined && customH !== undefined) {
       return { w: customW, h: customH };
     }
-    const size = getWindowSizeForView(currentView.value);
+    const size = await getPreferredWindowSize(currentView.value);
     return { w: customW ?? size.width, h: customH ?? size.height };
   }
 
@@ -198,7 +199,7 @@ export function useWorkMode(options: WorkModeOptions) {
    * @param customH - 自定义高度（可选）
    */
   const enterWorkMode = async (customW?: number, customH?: number): Promise<void> => {
-    const { w: targetW, h: targetH } = resolveTargetSize(customW, customH);
+    const { w: targetW, h: targetH } = await resolveTargetSize(customW, customH);
 
     // 已在工作模式：仅调整尺寸
     if (isWorking.value) {

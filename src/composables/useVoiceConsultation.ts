@@ -12,7 +12,6 @@
 
 import { ref, type Ref } from 'vue';
 import type { Window as TauriWindow } from '@tauri-apps/api/window';
-import { LogicalSize } from '@tauri-apps/api/dpi';
 import { invoke } from '@tauri-apps/api/core';
 import type { ViewType } from '../constants/windowSizes';
 import { WINDOW_SIZES } from '../constants/windowSizes';
@@ -36,6 +35,7 @@ export interface VoiceConsultationOptions {
   /** 窗口管理 API */
   windowMgmt: {
     smartExpand: (width: number, height: number) => Promise<void>;
+    resizeWindowForView: (view: ViewType) => Promise<void>;
   };
   /** 工作模式 API */
   workMode: {
@@ -78,7 +78,7 @@ export function useVoiceConsultation(options: VoiceConsultationOptions) {
     workMode,
   } = options;
 
-  const { smartExpand } = windowMgmt;
+  const { resizeWindowForView } = windowMgmt;
   const { enterWorkMode, exitWork } = workMode;
 
   const intentRecognition = useVoiceIntentRecognition();
@@ -130,10 +130,7 @@ export function useVoiceConsultation(options: VoiceConsultationOptions) {
       if (appWindow.value) {
         try {
           await appWindow.value.setResizable(true);
-          await appWindow.value.setSize(
-            new LogicalSize(WINDOW_SIZES.VOICE_CONSULTATION.width, WINDOW_SIZES.VOICE_CONSULTATION.height)
-          );
-          await smartExpand(WINDOW_SIZES.VOICE_CONSULTATION.width, WINDOW_SIZES.VOICE_CONSULTATION.height);
+          await resizeWindowForView('voice-consultation');
         } catch (e) {
           console.error('[VoiceConsultation] Failed to resize for voice-consultation:', e);
         }

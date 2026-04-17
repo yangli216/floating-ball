@@ -15,8 +15,7 @@ import type { Window as TauriWindow } from '@tauri-apps/api/window';
 import type { UnlistenFn } from '@tauri-apps/api/event';
 import { listen } from '@tauri-apps/api/event';
 import { onOpenUrl } from '@tauri-apps/plugin-deep-link';
-import { LogicalSize } from '@tauri-apps/api/dpi';
-import { WINDOW_SIZES, getWindowSizeForView, type ViewType } from '../constants/windowSizes';
+import { WINDOW_SIZES, supportsPersistentWindowSize, type ViewType } from '../constants/windowSizes';
 import { analyzePatientRisks } from '../services/llm';
 import { trackApiCall, trackError, startTimedOperation } from '../services/operationTracker';
 import type { RiskItem } from '../components/RiskAlertPanel.vue';
@@ -55,6 +54,8 @@ export interface EventListenersOptions {
   showToast: (msg: string, type?: 'success' | 'error' | 'info', duration?: number) => void;
   /** 窗口移动处理函数 */
   handleWindowMove: () => void;
+  /** 窗口大小持久化函数 */
+  persistCurrentWindowSize: (view: ViewType) => Promise<void>;
   /** 工作模式相关函数 */
   workMode: {
     enterWorkMode: (customW?: number, customH?: number) => Promise<void>;
@@ -150,6 +151,7 @@ export function useEventListeners(options: EventListenersOptions) {
     riskState,
     showToast,
     handleWindowMove,
+    persistCurrentWindowSize,
     workMode,
     navigation,
     queueConsultationAssistTrigger,
@@ -430,27 +432,14 @@ export function useEventListeners(options: EventListenersOptions) {
 
     unlistenResize = await appWindow.value.listen('tauri://resize', async () => {
       if (isWorking.value && !transitioning.value && !exiting.value && appWindow.value) {
-        // 使用防抖避免频繁调整
         if (resizeTimeoutRef.value) clearTimeout(resizeTimeoutRef.value);
         resizeTimeoutRef.value = setTimeout(async () => {
           if (!isWorking.value) return;
-          try {
-            const size = await appWindow.value?.innerSize();
-            if (size) {
-              const targetSize = getWindowSizeForView(currentView.value);
-              const targetW = targetSize.width;
-              const targetH = targetSize.height;
-              const scale = (await appWindow.value?.scaleFactor()) || 1;
-              const minW = targetW * scale * 0.8; // 允许 20% 的误差
-
-              // 如果宽度明显小于目标宽度 (例如变为小球大小)，则强制恢复
-              if (size.width < minW) {
-                await appWindow.value?.setSize(new LogicalSize(targetW, targetH));
-              }
-            }
-          } catch (e) {
-            console.error('检查窗口大小失败:', e);
+          if (!supportsPersistentWindowSize(currentView.value)) {
+            return;
           }
+
+          await persistCurrentWindowSize(currentView.value);
         }, 200);
       }
     });
