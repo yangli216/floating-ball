@@ -1,5 +1,6 @@
 use std::sync::{Arc, Mutex};
 use tauri::{Emitter, Manager};
+use tauri_plugin_updater::UpdaterExt;
 
 #[cfg(target_os = "macos")]
 use window_vibrancy::{apply_vibrancy, NSVisualEffectMaterial};
@@ -22,6 +23,124 @@ pub struct AppState {
 }
 
 pub type SharedAppState = Arc<AppState>;
+
+#[derive(Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+struct UpdateMetadata {
+    version: String,
+    body: Option<String>,
+    date: Option<String>,
+    current_version: String,
+    download_url: String,
+    target: String,
+}
+
+#[derive(Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+struct UpdateProgressPayload {
+    downloaded: usize,
+    content_length: Option<u64>,
+    percent: u8,
+    finished: bool,
+}
+
+fn build_runtime_updater(
+    app: &tauri::AppHandle,
+    endpoint: Option<String>,
+) -> Result<tauri_plugin_updater::Updater, String> {
+    let mut builder = app.updater_builder();
+
+    if let Some(endpoint_value) = endpoint
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty())
+    {
+        let parsed = url::Url::parse(&endpoint_value)
+            .map_err(|error| format!("无效更新地址: {}", error))?;
+        builder = builder
+            .endpoints(vec![parsed])
+            .map_err(|error| format!("设置更新地址失败: {}", error))?;
+    }
+
+    builder
+        .build()
+        .map_err(|error| format!("构建更新器失败: {}", error))
+}
+
+#[tauri::command]
+async fn check_app_update(
+    app: tauri::AppHandle,
+    endpoint: Option<String>,
+) -> Result<Option<UpdateMetadata>, String> {
+    let updater = build_runtime_updater(&app, endpoint)?;
+    let update = updater
+        .check()
+        .await
+        .map_err(|error| format!("检查更新失败: {}", error))?;
+
+    Ok(update.map(|item| UpdateMetadata {
+        version: item.version,
+        body: item.body,
+        date: item.date.map(|value| value.to_string()),
+        current_version: item.current_version,
+        download_url: item.download_url.to_string(),
+        target: item.target,
+    }))
+}
+
+#[tauri::command]
+async fn install_app_update(app: tauri::AppHandle, endpoint: Option<String>) -> Result<(), String> {
+    let updater = build_runtime_updater(&app, endpoint)?;
+    let update = updater
+        .check()
+        .await
+        .map_err(|error| format!("检查更新失败: {}", error))?
+        .ok_or_else(|| "当前没有可安装的更新".to_string())?;
+
+    let progress_app = app.clone();
+    let finish_app = app.clone();
+    let mut downloaded = 0usize;
+
+    update
+        .download_and_install(
+            move |chunk_length, content_length| {
+                downloaded += chunk_length;
+                let percent = content_length
+                    .map(|total| {
+                        if total == 0 {
+                            0
+                        } else {
+                            ((downloaded as f64 / total as f64) * 100.0).round() as u8
+                        }
+                    })
+                    .unwrap_or(0);
+
+                let _ = progress_app.emit(
+                    "update-download-progress",
+                    UpdateProgressPayload {
+                        downloaded,
+                        content_length,
+                        percent,
+                        finished: false,
+                    },
+                );
+            },
+            move || {
+                let _ = finish_app.emit(
+                    "update-download-progress",
+                    UpdateProgressPayload {
+                        downloaded: 0,
+                        content_length: None,
+                        percent: 100,
+                        finished: true,
+                    },
+                );
+            },
+        )
+        .await
+        .map_err(|error| format!("安装更新失败: {}", error))?;
+
+    Ok(())
+}
 
 // 窗口拖拽命令
 #[tauri::command]
@@ -274,6 +393,8 @@ pub fn run() {
             get_window_position,
             set_window_position,
             complete_consultation,
+            check_app_update,
+            install_app_update,
             transcribe_realtime_aliyun,
             start_realtime_speech,
             send_speech_chunk,

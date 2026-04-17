@@ -6,6 +6,36 @@
     </div>
     
     <div class="content">
+      <div class="config-panel">
+        <div class="config-title">更新源配置</div>
+
+        <div class="form-group">
+          <label for="update-environment">当前环境</label>
+          <select id="update-environment" v-model="updateEnvironment" class="form-select">
+            <option value="production">正式内网</option>
+            <option value="testing">测试内网</option>
+          </select>
+        </div>
+
+        <div class="form-group">
+          <label for="production-url">正式内网地址</label>
+          <input id="production-url" v-model="productionUrl" type="text" class="form-input"
+            placeholder="https://intra.example.com/med-hermes/stable/latest.json" />
+        </div>
+
+        <div class="form-group">
+          <label for="testing-url">测试内网地址</label>
+          <input id="testing-url" v-model="testingUrl" type="text" class="form-input"
+            placeholder="https://intra-test.example.com/med-hermes/stable/latest.json" />
+        </div>
+
+        <div class="config-footer">
+          <span class="source-tag">当前使用：{{ activeEnvironmentLabel }}</span>
+          <button @click="saveConfig" class="check-btn">保存更新源</button>
+        </div>
+        <div class="endpoint-preview">{{ activeEndpoint || '未配置，回退到应用内默认更新地址' }}</div>
+      </div>
+
       <div v-if="checking" class="status-loading">
         <div class="spinner"></div>
         <span>正在检查更新...</span>
@@ -46,30 +76,92 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted } from 'vue';
-import { check } from '@tauri-apps/plugin-updater';
+import { computed, inject, onMounted, onUnmounted, ref } from 'vue';
 import { getVersion } from '@tauri-apps/api/app';
+import { listen, type UnlistenFn } from '@tauri-apps/api/event';
+import { invoke } from '@tauri-apps/api/core';
 import { relaunch } from '@tauri-apps/plugin-process';
+import {
+  getActiveUpdateEndpoint,
+  getUpdateConfig,
+  getUpdateEnvironmentLabel,
+  saveUpdateConfig,
+  type UpdateEnvironment,
+} from '../services/updateConfig';
+
+interface UpdateInfo {
+  version: string;
+  body?: string | null;
+  date?: string | null;
+  currentVersion: string;
+  downloadUrl: string;
+  target: string;
+}
+
+interface UpdateProgressPayload {
+  downloaded: number;
+  contentLength?: number | null;
+  percent: number;
+  finished: boolean;
+}
 
 const currentVersion = ref('');
 const checking = ref(false);
 const updateAvailable = ref(false);
-const updateInfo = ref<any>(null);
+const updateInfo = ref<UpdateInfo | null>(null);
 const installing = ref(false);
 const downloadProgress = ref(0);
 const error = ref('');
+const updateEnvironment = ref<UpdateEnvironment>('production');
+const productionUrl = ref('');
+const testingUrl = ref('');
+const showToast = inject('showToast', null) as ((msg: string, type: 'success' | 'error' | 'info') => void) | null;
 
-// Hold reference to the update object
-let pendingUpdate: any = null;
+let unlistenProgress: UnlistenFn | null = null;
+
+const activeEnvironmentLabel = computed(() => getUpdateEnvironmentLabel(updateEnvironment.value));
+const activeEndpoint = computed(() => {
+  return getActiveUpdateEndpoint({
+    environment: updateEnvironment.value,
+    productionUrl: productionUrl.value,
+    testingUrl: testingUrl.value,
+  });
+});
 
 onMounted(async () => {
+  const config = getUpdateConfig();
+  updateEnvironment.value = config.environment;
+  productionUrl.value = config.productionUrl;
+  testingUrl.value = config.testingUrl;
+
   try {
     currentVersion.value = await getVersion();
   } catch (e) {
     console.error('Failed to get version', e);
     currentVersion.value = '未知';
   }
+
+  unlistenProgress = await listen<UpdateProgressPayload>('update-download-progress', (event) => {
+    downloadProgress.value = event.payload.percent;
+  });
 });
+
+onUnmounted(() => {
+  if (unlistenProgress) {
+    unlistenProgress();
+  }
+});
+
+const saveConfig = () => {
+  saveUpdateConfig({
+    environment: updateEnvironment.value,
+    productionUrl: productionUrl.value,
+    testingUrl: testingUrl.value,
+  });
+  if (showToast) {
+    showToast(`更新源已切换为${activeEnvironmentLabel.value}`, 'success');
+  }
+};
 
 const checkAndStore = async () => {
   checking.value = true;
@@ -77,15 +169,12 @@ const checkAndStore = async () => {
   updateAvailable.value = false;
   
   try {
-    const update = await check();
+    const update = await invoke<UpdateInfo | null>('check_app_update', {
+      endpoint: activeEndpoint.value || null,
+    });
     if (update) {
-      pendingUpdate = update;
       updateAvailable.value = true;
-      updateInfo.value = {
-        version: update.version,
-        body: update.body,
-        date: update.date
-      };
+      updateInfo.value = update;
     }
   } catch (e: any) {
     console.error(e);
@@ -96,36 +185,19 @@ const checkAndStore = async () => {
 };
 
 const installUpdate = async () => {
-  if (!pendingUpdate) return;
+  if (!updateInfo.value) return;
   
   installing.value = true;
   downloadProgress.value = 0;
   
   try {
-    let downloaded = 0;
-    let contentLength = 0;
-    
-    await pendingUpdate.downloadAndInstall((event: any) => {
-      switch (event.event) {
-        case 'Started':
-          contentLength = event.data.contentLength || 0;
-          break;
-        case 'Progress':
-          downloaded += event.data.chunkLength;
-          if (contentLength > 0) {
-            downloadProgress.value = Math.round((downloaded / contentLength) * 100);
-          }
-          break;
-        case 'Finished':
-          downloadProgress.value = 100;
-          break;
-      }
+    await invoke('install_app_update', {
+      endpoint: activeEndpoint.value || null,
     });
-    
+
     await relaunch();
   } catch (e: any) {
     console.error('Update install error:', e);
-    // 处理不同类型的错误对象
     let errorMsg = '未知错误';
     if (typeof e === 'string') {
       errorMsg = e;
@@ -182,6 +254,65 @@ const installUpdate = async () => {
 
 .content {
   padding: 20px;
+}
+
+.config-panel {
+  padding: 16px;
+  border: 1px solid var(--color-border-light, #e2e8f0);
+  border-radius: 10px;
+  background: var(--color-background-gray, #f8fafc);
+  margin-bottom: 18px;
+}
+
+.config-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--color-text-strong, #0F172A);
+  margin-bottom: 14px;
+}
+
+.form-group {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 12px;
+}
+
+.form-group label {
+  font-size: 13px;
+  color: var(--color-text-muted, #64748b);
+}
+
+.form-input,
+.form-select {
+  min-height: 40px;
+  border: 1px solid var(--color-border-light, #cbd5e1);
+  border-radius: 8px;
+  padding: 0 12px;
+  font-size: 14px;
+  background: var(--color-background-white, #fff);
+  color: var(--color-text-strong, #0F172A);
+}
+
+.config-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 8px;
+}
+
+.source-tag {
+  font-size: 12px;
+  color: var(--color-primary, #0891B2);
+  font-weight: 600;
+}
+
+.endpoint-preview {
+  margin-top: 10px;
+  font-size: 12px;
+  color: var(--color-text-muted, #64748b);
+  word-break: break-all;
 }
 
 .status-loading {
