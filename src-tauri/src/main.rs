@@ -2,5 +2,5 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 fn main() {
-    med_hermes_lib::run()
+    floating_ball_lib::run()
 }

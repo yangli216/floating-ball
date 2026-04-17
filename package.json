@@ -1,0 +1,43 @@
+{
+  "name": "tauri-app",
+  "private": true,
+  "version": "1.2.8",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vue-tsc --noEmit && vite build",
+    "preview": "vite preview",
+    "tauri": "tauri",
+    "release": "node scripts/release.mjs"
+  },
+  "dependencies": {
+    "@iconify-json/healthicons": "^1.2.12",
+    "@iconify-json/lucide": "^1.2.101",
+    "@iconify-json/mdi": "^1.2.3",
+    "@iconify/vue": "^5.0.0",
+    "@tauri-apps/api": "^2",
+    "@tauri-apps/plugin-deep-link": "^2.4.5",
+    "@tauri-apps/plugin-dialog": "^2.6.0",
+    "@tauri-apps/plugin-fs": "^2.4.5",
+    "@tauri-apps/plugin-opener": "^2",
+    "@tauri-apps/plugin-process": "^2.3.1",
+    "@tauri-apps/plugin-store": "^2.4.1",
+    "@tauri-apps/plugin-updater": "^2.9.0",
+    "@types/markdown-it": "^14.1.2",
+    "crypto-js": "^4.2.0",
+    "echarts": "^5.6.0",
+    "highlight.js": "^11.11.1",
+    "markdown-it": "^14.1.0",
+    "pinia": "^3.0.4",
+    "tiny-pinyin": "^1.3.2",
+    "vue": "^3.5.13"
+  },
+  "devDependencies": {
+    "@tauri-apps/cli": "^2",
+    "@types/crypto-js": "^4.2.2",
+    "@vitejs/plugin-vue": "^5.2.1",
+    "typescript": "~5.6.2",
+    "vite": "^6.0.3",
+    "vue-tsc": "^2.1.10"
+  }
+}

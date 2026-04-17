@@ -9,6 +9,19 @@ on:
         description: '版本号 (例如 v1.0.0)'
         required: true
         type: string
+      channel:
+        description: '内网更新通道'
+        required: false
+        default: 'stable'
+        type: string
+      publish_base_url:
+        description: '内网更新根地址，例如 https://intra.example.com/med-hermes/stable'
+        required: false
+        type: string
+      release_notes:
+        description: '写入 latest.json 的更新说明'
+        required: false
+        type: string
 
 jobs:
   release:
@@ -165,3 +178,34 @@ jobs:
           releaseDraft: true
           prerelease: false
           args: ${{ matrix.platform == 'macos-14' && '--target universal-apple-darwin' || '' }}
+
+      - name: Prepare Windows intranet update bundle
+        if: matrix.platform == 'windows-latest'
+        shell: bash
+        env:
+          RELEASE_TAG: ${{ github.event.inputs.tag || github.ref_name }}
+          RELEASE_CHANNEL: ${{ github.event.inputs.channel || 'stable' }}
+          PUBLISH_BASE_URL: ${{ github.event.inputs.publish_base_url || vars.INTRANET_UPDATE_BASE_URL }}
+          RELEASE_NOTES: ${{ github.event.inputs.release_notes || '' }}
+        run: |
+          if [[ -z "$PUBLISH_BASE_URL" ]]; then
+            echo "INTRANET_UPDATE_BASE_URL is required. Set workflow input publish_base_url or repository variable INTRANET_UPDATE_BASE_URL."
+            exit 1
+          fi
+
+          VERSION="${RELEASE_TAG#v}"
+          node scripts/package-windows-internal-update.mjs \
+            --artifacts-dir src-tauri/target/release/bundle/nsis \
+            --output-dir dist/intranet-update \
+            --base-url "$PUBLISH_BASE_URL" \
+            --version "$VERSION" \
+            --channel "$RELEASE_CHANNEL" \
+            --notes "$RELEASE_NOTES"
+
+      - name: Upload Windows intranet update artifact
+        if: matrix.platform == 'windows-latest'
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-internal-update-${{ github.event.inputs.tag || github.ref_name }}
+          path: dist/intranet-update/**
+          if-no-files-found: error
