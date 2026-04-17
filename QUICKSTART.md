@@ -4,7 +4,7 @@
 
 ### 1. 进入项目目录
 ```bash
-cd floating-ball
+cd med-hermes
 ```
 
 ### 2. 确保依赖已安装
@@ -24,7 +24,7 @@ yarn tauri dev
 
 ### 1. 启动桌面端
 ```bash
-cd floating-ball
+cd med-hermes
 source $HOME/.cargo/env
 yarn tauri dev
 ```
@@ -36,9 +36,9 @@ yarn tauri dev
 ### 3. 推荐联调顺序
 
 1. 选择一个患者，确认中间草稿区已经带入患者上下文。
-2. 点击“启动完整症状问诊”，验证 `/api/consultation/start` 能唤起 `floating-ball`。
+2. 点击“启动完整症状问诊”，验证 `/api/consultation/start` 能唤起 `med-hermes`。
 3. 点击“AI 生成 / AI 推荐”按钮，验证 `/api/consultation/assist` 会把桌面端带入 `ConsultationPage` 快进模式。
-4. 在 `floating-ball` 里完成“回写病历”或“引用诊断 / 用药 / 检查”，观察联调页是否通过 `/api/consultation/result` 收到 `draft` 或 `reference-request`。
+4. 在 `med-hermes` 里完成“回写病历”或“引用诊断 / 用药 / 检查”，观察联调页是否通过 `/api/consultation/result` 收到 `draft` 或 `reference-request`。
 5. 若联调页出现“PHIS 引用回执模拟”面板，点击“模拟保存成功/失败”，验证 `/api/consultation/reference-feedback` 能把结果回推到桌面端和轮询结果通道。
 6. 点击“启动语音接诊”时，联调页现在会把当前患者上下文一起发给 `/api/consultation/start-voice`，并自动开始轮询结果。
 
@@ -89,7 +89,7 @@ yarn tauri dev
 
 同时修改 `src/App.vue` 中的样式：
 ```css
-.floating-ball {
+.med-hermes {
   width: 100px;   /* 与配置保持一致 */
   height: 100px;
 }
@@ -99,7 +99,7 @@ yarn tauri dev
 
 编辑 `src/App.vue` 的样式部分：
 ```css
-.floating-ball {
+.med-hermes {
   background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
   /* 修改为你喜欢的渐变色 */
 }
@@ -132,7 +132,7 @@ const handleClick = () => {
 
 <template>
   <div 
-    class="floating-ball"
+    class="med-hermes"
     @click="handleClick"
   >
     <!-- ... -->
@@ -184,9 +184,9 @@ yarn tauri build
 ```
 
 构建完成后，可执行文件位于：
-- Linux: `src-tauri/target/release/floating-ball`
-- Windows: `src-tauri/target/release/floating-ball.exe`
-- macOS: `src-tauri/target/release/bundle/macos/floating-ball.app`
+- Linux: `src-tauri/target/release/med-hermes`
+- Windows: `src-tauri/target/release/med-hermes.exe`
+- macOS: `src-tauri/target/release/bundle/macos/med-hermes.app`
 
 ## 调试技巧
 
