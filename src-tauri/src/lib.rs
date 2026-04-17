@@ -6,7 +6,58 @@ use tauri_plugin_updater::UpdaterExt;
 use window_vibrancy::{apply_vibrancy, NSVisualEffectMaterial};
 
 mod http_server;
-use http_server::{ConsultationResult, PatientInfo};
+
+use serde::{Deserialize, Serialize};
+use serde_json;
+
+// Browser context from HIS SDK handshake
+#[derive(Debug, Deserialize, Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct BrowserContext {
+    #[serde(default)]
+    pub origin: String,
+    #[serde(default)]
+    pub href: String,
+    #[serde(default)]
+    pub cookie: String,
+    #[serde(default)]
+    pub user_agent: String,
+    #[serde(default)]
+    pub timestamp: u64,
+    #[serde(default)]
+    pub sdk_version: String,
+    #[serde(default)]
+    pub extra: serde_json::Value,
+}
+
+#[derive(Debug, Deserialize, Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct PatientInfo {
+    #[serde(alias = "patientId")]
+    pub id_pi: String,          // 对应 idPi
+    #[serde(alias = "name")]
+    pub na_pi: String,          // 对应 naPi
+    #[serde(alias = "gender")]
+    pub sd_sex_text: String,    // 对应 sdSexText
+    #[serde(alias = "age")]
+    pub age_text: String,       // 对应 ageText
+    
+    // 保留原有字段，但允许为空或通过别名映射
+    pub department: Option<String>,
+    pub chief_complaint: Option<String>,
+    pub history_of_present_illness: Option<String>,
+    pub past_medical_history: Option<String>,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct ConsultationResult {
+    pub status: Option<String>,
+    pub consultation_id: String,
+    pub timestamp: u64,
+    #[serde(flatten)]
+    pub record: serde_json::Value,
+}
 
 mod aliyun_speech;
 use aliyun_speech::{
@@ -20,6 +71,8 @@ mod db;
 pub struct AppState {
     pub current_consultation: Mutex<Option<PatientInfo>>,
     pub last_result: Mutex<Option<ConsultationResult>>,
+    pub browser_context: Mutex<Option<BrowserContext>>,
+    pub result_tx: tokio::sync::broadcast::Sender<()>,
 }
 
 pub type SharedAppState = Arc<AppState>;
@@ -169,10 +222,52 @@ async fn complete_consultation(
     state: tauri::State<'_, SharedAppState>,
     result: ConsultationResult,
 ) -> Result<(), String> {
-    let mut last_result = state.last_result.lock().map_err(|e| e.to_string())?;
-    *last_result = Some(result);
-    println!("Consultation completed, result saved.");
+    {
+        let mut last_result = state.last_result.lock().map_err(|e| e.to_string())?;
+        *last_result = Some(result);
+    }
+    let _ = state.result_tx.send(());
+    println!("Consultation completed, result saved and notified.");
     Ok(())
+}
+
+/// 仅在 last_result 为空时写入取消结果。
+/// 用于 exitWork 时兜底：如果接诊已正常完成（已有 result），则不覆盖；
+/// 如果用户直接关闭窗口导致没有结果，则写入 cancelled 通知 SDK 停止轮询。
+#[tauri::command]
+async fn cancel_consultation_if_pending(
+    state: tauri::State<'_, SharedAppState>,
+) -> Result<bool, String> {
+    let consultation_id = {
+        let current = state.current_consultation.lock().map_err(|e| e.to_string())?;
+        current.as_ref().map(|p| p.id_pi.clone()).unwrap_or_default()
+    };
+
+    let mut last_result = state.last_result.lock().map_err(|e| e.to_string())?;
+    if last_result.is_some() {
+        // 已有结果（正常完成或已取消），不覆盖
+        println!("cancel_consultation_if_pending: result already exists, skip.");
+        return Ok(false);
+    }
+
+    // 没有结果 → 写入取消
+    let timestamp = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_millis() as u64;
+    *last_result = Some(ConsultationResult {
+        status: Some("cancelled".to_string()),
+        consultation_id,
+        timestamp,
+        record: serde_json::json!({
+            "resultType": "cancelled",
+            "reason": "User closed the consultation window"
+        }),
+    });
+    drop(last_result); // release lock before send
+    let _ = state.result_tx.send(());
+    println!("cancel_consultation_if_pending: wrote cancelled result and notified.");
+    Ok(true)
 }
 
 #[tauri::command]
@@ -367,9 +462,12 @@ struct MousePosPayload {
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    let (result_tx, _) = tokio::sync::broadcast::channel(16);
     let state = Arc::new(AppState {
         current_consultation: Mutex::new(None),
         last_result: Mutex::new(None),
+        browser_context: Mutex::new(None),
+        result_tx,
     });
 
     tauri::Builder::default()
@@ -393,6 +491,7 @@ pub fn run() {
             get_window_position,
             set_window_position,
             complete_consultation,
+            cancel_consultation_if_pending,
             check_app_update,
             install_app_update,
             transcribe_realtime_aliyun,

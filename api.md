@@ -151,7 +151,63 @@ PHIS                                MedHermes
 
 ## 6. 接口清单
 
-### 6.1 `POST /api/consultation/start`
+### 6.1 `POST /api/handshake`
+
+用途：SDK 初始化握手，将浏览器上下文（域名、Cookie、UA 等）传递给桌面端，同时检测桌面端是否在线。
+
+完整地址：
+
+```text
+http://127.0.0.1:8081/api/handshake
+```
+
+请求字段：
+
+| 字段名 | 类型 | 必填 | 说明 |
+| :--- | :--- | :--- | :--- |
+| `origin` | String | 否 | 浏览器 `location.origin`，如 `https://his.hospital.com` |
+| `href` | String | 否 | 浏览器 `location.href`（完整 URL） |
+| `cookie` | String | 否 | 浏览器 `document.cookie`，桌面端可借此调用 HIS 后端服务 |
+| `userAgent` | String | 否 | 浏览器 `navigator.userAgent` |
+| `timestamp` | Number | 否 | 初始化时间戳 |
+| `sdkVersion` | String | 否 | SDK 版本号 |
+| `extra` | Object | 否 | HIS 自定义扩展字段，如 `{ hospitalCode: "H001", userId: "doc-123" }` |
+
+请求示例：
+
+```json
+{
+  "origin": "https://his.hospital.com",
+  "href": "https://his.hospital.com/doctor/outpatient",
+  "cookie": "SESSION=abc123; JSESSIONID=xyz789",
+  "userAgent": "Mozilla/5.0 ...",
+  "timestamp": 1704355200000,
+  "sdkVersion": "1.0.0",
+  "extra": {
+    "hospitalCode": "H001",
+    "userId": "doc-123"
+  }
+}
+```
+
+成功响应：
+
+```json
+{
+  "status": "success",
+  "version": "1.2.8",
+  "timestamp": 1704355200100
+}
+```
+
+实现说明：
+
+1. 桌面端会将浏览器上下文存入 `AppState`，后续业务接口可从中读取 Cookie 等信息。
+2. 桌面端收到握手后会向前端发出 `sdk-handshake` 事件，前端可据此感知 HIS SDK 已连接。
+3. 此接口支持重复调用，每次调用都会更新存储的浏览器上下文。
+4. 推荐 HIS 在页面加载时调用一次，在用户重新登录后再调用一次以刷新 Cookie。
+
+### 6.2 `POST /api/consultation/start`
 
 用途：启动完整问诊，并同步当前患者上下文。
 
@@ -299,7 +355,7 @@ http://127.0.0.1:8081/api/consultation/start-voice
 
 ### 6.4 `GET /api/consultation/result`
 
-用途：获取当前最新一条问诊结果。
+用途：获取当前问诊结果。**此接口采用长轮询（Long Polling）方案。**
 
 完整地址：
 
@@ -307,11 +363,28 @@ http://127.0.0.1:8081/api/consultation/start-voice
 http://127.0.0.1:8081/api/consultation/result
 ```
 
+实现逻辑：
+
+1. 如果当前已有最新结果，立即返回。
+2. 如果当前无结果（如问诊正在进行中），服务器会挂起请求。
+3. 当结果生成或发生变更时，立即返回结果。
+4. 如果挂起超过 `30 秒` 仍无结果，返回 `200 OK`，状态为 `pending`。
+
 结果通道说明：
 
 1. 这是当前唯一的结果回传通道。
 2. 返回内容可能来自完整问诊、病历草稿回写、推荐项引用请求、PHIS 回执、语音问诊确认。
 3. 当前是“最新结果覆盖旧结果”的单槽模型，HIS 必须自己做去重和当前患者校验。
+
+#### 尚未就绪响应 (超时)
+
+```json
+{
+  "status": "pending",
+  "message": "Consultation result not available",
+  "timestamp": 1704355200000
+}
+```
 
 #### 成功响应: 病历草稿回写
 
@@ -938,16 +1011,14 @@ HIS 侧至少要识别以下 5 类结果：
 4. 对引用闭环结果，HIS 应继续结合 `referenceType` 判断具体业务对象，不建议只看 `resultType`。
 5. 一键回写场景下，`referenceType` 为 `batch`，`referenceItems` 包含诊断和所有选中治疗项目，每项通过 `type` 字段区分业务类型。单项引用场景下 `referenceType` 仍为具体类型（如 `diagnosis`）。
 
-## 8. 推荐轮询与去重策略
+## 8. 长轮询与去重策略
 
 推荐策略：
 
-1. 调用 `/start`、`/assist`、`/start-voice` 成功后，立即开始轮询 `/result`
-2. 轮询间隔建议 `1~2 秒`
-3. `404 RESULT_NOT_READY` 视为正常等待，不应报错中断
-4. 收到非当前患者 `consultationId` 的结果时直接忽略
-5. 收到 `reference-request` 后继续轮询，直到拿到 `reference-feedback`
-6. 收到同一条结果时按唯一键去重，避免重复回填
+1. 调用 `/start`、`/assist` 或 `/start-voice` 成功后，发起第一个 `/result` 长轮询。
+2. 收到结果后，根据 `resultType` 判断是否结束。如果是 `reference-request`，需在回执后立即发起下一个长轮询以等待 `reference-feedback`。
+3. 发生 `404` 或 `网络超时` 时，立即发起下一个长轮询。
+4. SDK 内部已封装此逻辑，HIS 接入建议直接使用 SDK 的事件监听。
 
 推荐唯一键：
 

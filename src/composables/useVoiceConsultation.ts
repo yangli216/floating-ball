@@ -101,6 +101,26 @@ export function useVoiceConsultation(options: VoiceConsultationOptions) {
    * @param audioBlob - 录音音频数据（当前未使用）
    * @param transcribedText - 转写后的文本
    */
+  /**
+   * 写入取消/错误结果到后端，使 SDK 轮询能检测到终止信号
+   */
+  async function writeCancelledResult(reason: string): Promise<void> {
+    try {
+      await invoke('complete_consultation', {
+        result: {
+          consultationId: resolveConsultationId(currentPatient.value),
+          timestamp: Date.now(),
+          resultType: 'cancelled',
+          requestId: `voice-cancelled-${Date.now()}`,
+          reason,
+        },
+      });
+      console.log('[VoiceConsultation] Cancelled result written to backend:', reason);
+    } catch (e) {
+      console.error('[VoiceConsultation] Failed to write cancelled result:', e);
+    }
+  }
+
   async function handleVoiceStop(audioBlob: Blob, transcribedText: string): Promise<void> {
     console.log('[VoiceConsultation] handleVoiceStop received blob:', audioBlob?.size, 'bytes');
     console.log('[VoiceConsultation] Transcribed text:', transcribedText);
@@ -117,6 +137,7 @@ export function useVoiceConsultation(options: VoiceConsultationOptions) {
       if (!result) {
         const errMsg = intentRecognition.processingError.value || '意图识别失败';
         showToast(errMsg, 'error');
+        await writeCancelledResult(errMsg);
         setTimeout(() => {
           exitWork('error');
         }, 2000);
@@ -144,6 +165,7 @@ export function useVoiceConsultation(options: VoiceConsultationOptions) {
       trackError('voice_processing_failed', err);
       const errMessage = err instanceof Error ? err.message : String(err);
       showToast(`处理失败: ${errMessage}`, 'error');
+      await writeCancelledResult(`处理失败: ${errMessage}`);
       setTimeout(() => {
         exitWork('error');
       }, 2000);
@@ -155,9 +177,10 @@ export function useVoiceConsultation(options: VoiceConsultationOptions) {
    *
    * @param err - 错误信息
    */
-  function handleVoiceError(err: unknown): void {
+  async function handleVoiceError(err: unknown): Promise<void> {
     trackError('voice_recording_error', err);
     showToast('录音出错: ' + err, 'error');
+    await writeCancelledResult('录音出错: ' + err);
     exitWork('error');
   }
 
@@ -199,6 +222,7 @@ export function useVoiceConsultation(options: VoiceConsultationOptions) {
   async function cancelVoiceResult(): Promise<void> {
     trackClick('voice_result_cancel');
     trackRecommendationAction('record', 'voice-record', 'rejected');
+    await writeCancelledResult('用户取消语音问诊结果');
     await exitWork('cancelled');
   }
 

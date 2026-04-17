@@ -283,6 +283,14 @@ export function useWorkMode(options: WorkModeOptions) {
     transitioning.value = true;
     exiting.value = true;
 
+    // 兜底：如果当前会话还没有产出结果（用户直接关闭窗口），
+    // 写入 cancelled 通知 SDK 停止轮询。已有结果时不会覆盖。
+    try {
+      await invoke('cancel_consultation_if_pending');
+    } catch (e) {
+      console.warn('[WorkMode] cancel_consultation_if_pending failed:', e);
+    }
+
     // 1. 计算收缩动画参数
     await calculateMorphOrigin('shrink');
 

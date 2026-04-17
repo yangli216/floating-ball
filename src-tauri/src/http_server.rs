@@ -5,7 +5,7 @@ use tauri::{Emitter, Manager};
 use std::sync::Mutex;
 use std::collections::HashMap;
 
-use crate::SharedAppState;
+use crate::{SharedAppState, BrowserContext, PatientInfo, ConsultationResult};
 
 // PMPHAI Token Cache
 #[allow(dead_code)]
@@ -21,42 +21,6 @@ lazy_static::lazy_static! {
         refresh_token: None,
         expires_at: 0,
     });
-}
-
-#[derive(Debug, Deserialize, Serialize, Clone)]
-#[serde(rename_all = "camelCase")]
-pub struct PatientInfo {
-    #[serde(alias = "patientId")]
-    pub id_pi: String,          // 对应 idPi
-    #[serde(alias = "name")]
-    pub na_pi: String,          // 对应 naPi
-    #[serde(alias = "gender")]
-    pub sd_sex_text: String,    // 对应 sdSexText
-    #[serde(alias = "age")]
-    pub age_text: String,       // 对应 ageText
-    
-    // 保留原有字段，但允许为空或通过别名映射
-    pub department: Option<String>,
-    pub chief_complaint: Option<String>,
-    pub history_of_present_illness: Option<String>,
-    pub past_medical_history: Option<String>,
-    pub diagnosis: Option<String>,
-    pub vitals: Option<String>,
-    
-    // 补充 ConsultationPage 需要的其他字段 (可选)
-    pub mobile_phone: Option<String>,
-    pub id_card: Option<String>,
-    #[serde(alias = "allergyHistory")]
-    pub allergy_history: Option<String>,
-}
-
-#[derive(Debug, Serialize, Deserialize, Clone)]
-#[serde(rename_all = "camelCase")]
-pub struct ConsultationResult {
-    pub consultation_id: String,
-    pub timestamp: u64,
-    #[serde(flatten)]
-    pub record: serde_json::Value,
 }
 
 #[derive(Debug, Deserialize, Serialize, Clone)]
@@ -244,11 +208,33 @@ async fn stop_consultation(
 ) -> impl Responder {
     println!("Received stop consultation request");
     
-    // 1. Update State
-    {
+    // 1. Update State + Write cancelled result for SDK polling
+    let consultation_id = {
         let mut current = state.current_consultation.lock().unwrap();
+        let id = current.as_ref().map(|p| p.id_pi.clone()).unwrap_or_default();
         *current = None;
+        id
+    };
+
+    // Write a cancelled result so SDK long-polling can detect the stop
+    {
+        let timestamp = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_millis() as u64;
+        let mut last_result = state.last_result.lock().unwrap();
+        *last_result = Some(ConsultationResult {
+            status: Some("cancelled".to_string()),
+            consultation_id: consultation_id.clone(),
+            timestamp,
+            record: serde_json::json!({
+                "resultType": "cancelled",
+                "reason": "Consultation stopped by user"
+            }),
+        });
     }
+    // Notify any waiting long-poll requests
+    let _ = state.result_tx.send(());
 
     // 2. Emit event to Frontend
     if let Some(window) = app_handle.get_webview_window("main") {
@@ -271,13 +257,47 @@ async fn stop_consultation(
 async fn get_result(
     state: web::Data<SharedAppState>,
 ) -> impl Responder {
-    let result = state.last_result.lock().unwrap();
-    if let Some(res) = &*result {
-        HttpResponse::Ok().json(res)
+    // 1. Check if result exists immediately
+    {
+        let result = state.last_result.lock().unwrap();
+        if let Some(res) = &*result {
+            return HttpResponse::Ok().json(res);
+        }
+    }
+
+    // 2. Long polling: wait for notification or timeout
+    let mut rx = state.result_tx.subscribe();
+    let timeout = tokio::time::sleep(std::time::Duration::from_secs(10));
+
+    let final_result = tokio::select! {
+        recv_res = rx.recv() => {
+            match recv_res {
+                Ok(_) => {
+                    let result = state.last_result.lock().unwrap();
+                    result.clone()
+                },
+                Err(_) => None,
+            }
+        }
+        _ = timeout => {
+            None
+        }
+    };
+
+    if let Some(res) = final_result {
+        let mut val = serde_json::to_value(res).unwrap();
+        if let Some(obj) = val.as_object_mut() {
+            obj.insert("status".to_string(), serde_json::json!("success"));
+        }
+        HttpResponse::Ok().json(val)
     } else {
-        HttpResponse::NotFound().json(serde_json::json!({
-            "error": "Consultation result not available",
-            "code": "RESULT_NOT_READY"
+        HttpResponse::Ok().json(serde_json::json!({
+            "status": "pending",
+            "message": "Consultation result not available",
+            "timestamp": std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_millis() as u64
         }))
     }
 }
@@ -429,6 +449,7 @@ async fn reference_feedback(
         }
 
         let result = ConsultationResult {
+            status: Some("success".to_string()),
             consultation_id: feedback_payload["consultationId"]
                 .as_str()
                 .unwrap_or_default()
@@ -439,6 +460,7 @@ async fn reference_feedback(
         *last_result = Some(result.clone());
         result
     };
+    let _ = state.result_tx.send(());
 
     if let Some(window) = app_handle.get_webview_window("main") {
         if let Err(e) = window.emit("consultation-reference-feedback", &feedback_payload) {
@@ -489,6 +511,38 @@ async fn show_patient_risks(
     HttpResponse::Ok().json(serde_json::json!({
         "status": "success",
         "idPi": risk_data.id_pi
+    }))
+}
+
+async fn handshake(
+    data: web::Json<BrowserContext>,
+    app_handle: web::Data<tauri::AppHandle>,
+    state: web::Data<SharedAppState>,
+) -> impl Responder {
+    let ctx = data.into_inner();
+    println!(
+        "[Handshake] SDK connected from origin={}, sdk_version={}",
+        ctx.origin, ctx.sdk_version
+    );
+
+    // Store browser context in shared state
+    {
+        let mut browser_ctx = state.browser_context.lock().unwrap();
+        *browser_ctx = Some(ctx.clone());
+    }
+
+    // Emit event to frontend so it knows HIS SDK is connected
+    if let Some(window) = app_handle.get_webview_window("main") {
+        let _ = window.emit("sdk-handshake", &ctx);
+    }
+
+    HttpResponse::Ok().json(serde_json::json!({
+        "status": "success",
+        "version": env!("CARGO_PKG_VERSION"),
+        "timestamp": std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_millis() as u64
     }))
 }
 
@@ -803,6 +857,7 @@ pub fn run_server(app_handle: tauri::AppHandle, state: SharedAppState) {
                     .wrap(cors)
                     .app_data(app_handle.clone())
                     .app_data(state.clone())
+                    .route("/api/handshake", web::post().to(handshake))
                     .route("/api/consultation/start", web::post().to(start_consultation))
                     .route("/api/consultation/assist", web::post().to(start_consultation_assist))
                     .route("/api/consultation/start-voice", web::post().to(start_voice_consultation))
