@@ -23,7 +23,7 @@
 | 修改知识库 | [pmphai.ts](src/services/pmphai.ts)（主） / [KnowledgeBasePanel.vue](src/components/KnowledgeBasePanel.vue)（备） |
 | 修改设置面板 | [SettingsPanel.vue](src/components/SettingsPanel.vue) |
 | 修改医学数据匹配 | [medicalData.ts](src/services/medicalData.ts) + [src/assets/*.csv](src/assets/) |
-| 测试 HIS 集成 | [mock_his.html](./mock_his.html) |
+| 测试 HIS 集成 | [mock_his.html](./docs/mock_his.html) |
 
 ---
 

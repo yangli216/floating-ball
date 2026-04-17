@@ -31,7 +31,7 @@ yarn tauri dev
 
 ### 2. 打开联调页
 
-直接打开 [mock_his.html](./mock_his.html) 即可，或自行用静态文件服务器托管后在浏览器访问。
+直接打开 [mock_his.html](./docs/mock_his.html) 即可，或自行用静态文件服务器托管后在浏览器访问。
 
 ### 3. 推荐联调顺序
 
