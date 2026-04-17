@@ -1,22 +1,22 @@
-# floating-ball HIS 接入指南 / 接口说明
+# MedHermes HIS 接入指南 / 接口说明
 
 > 最后更新: 2026-04-16
 >
-> 本文档面向准备接入 `floating-ball` 的 HIS / 医生站 / PHIS 项目。
+> 本文档面向准备接入 `MedHermes` 的 HIS / 医生站 / PHIS 项目。
 > 当前真实运行契约以 `src-tauri/src/http_server.rs` 与当前前端实现为准；`docs/regionalization/*.md` 仍属于规划文档，不能替代本文档。
 
 ## 1. 文档目标
 
 本文档回答 4 件事：
 
-1. HIS 应该按什么顺序接入 `floating-ball`
+1. HIS 应该按什么顺序接入 `MedHermes`
 2. 当前本地 HTTP Bridge 暴露了哪些接口
 3. 各接口的请求字段、响应字段、异常场景是什么
-4. 推荐诊断 / 用药 / 检查的“引用请求 -> PHIS 保存 -> 回执 floating-ball”闭环应该怎么做
+4. 推荐诊断 / 用药 / 检查的“引用请求 -> PHIS 保存 -> 回执 MedHermes”闭环应该怎么做
 
 ## 2. 当前接入形态
 
-`floating-ball` 当前通过本地 HTTP Bridge 与 HIS 对接：
+`MedHermes` 当前通过本地 HTTP Bridge 与 HIS 对接：
 
 - 本地服务地址: `http://127.0.0.1:8081`
 - 接口前缀: `/api`
@@ -26,7 +26,7 @@
 
 约束说明：
 
-1. `floating-ball` 必须先在医生本机启动，否则接口不可访问。
+1. `MedHermes` 必须先在医生本机启动，否则接口不可访问。
 2. 当前服务只监听 `127.0.0.1:8081`，默认供本机 HIS / 联调页调用。
 3. 当前结果通道是“单槽内存态”而不是结果队列。
    也就是说，`GET /api/consultation/result` 读到的是“当前最新一条结果”，不是历史列表。
@@ -53,7 +53,7 @@
 1. HIS 在当前患者上下文下调用 `POST /api/consultation/assist`
 2. 指定 `action` 为 `record / diagnosis / differential / medication / examination / reminder`
 3. 继续轮询 `GET /api/consultation/result`
-4. 如果收到 `reference-request`，说明医生在 `floating-ball` 内点击了“引用”
+4. 如果收到 `reference-request`，说明医生在 `MedHermes` 内点击了“引用”
 
 适用场景：
 
@@ -66,11 +66,11 @@
 2. 读取其中的 `requestId`、`action`、`referenceItems`
 3. 在 HIS / PHIS 内完成保存
 4. 保存成功或失败后，**必须**调用 `POST /api/consultation/reference-feedback`
-5. `floating-ball` 收到回执后会更新当前页面状态，并把最新状态继续暴露到 `GET /result`
+5. `MedHermes` 收到回执后会更新当前页面状态，并把最新状态继续暴露到 `GET /result`
 
 这是当前联调最关键的一步，也是推荐诊断 / 用药 / 检查真正写入 HIS 的闭环。
 
-**重要：回执是强制要求的。** 当医生点击"一键回写"时，`floating-ball` 会发出**一条** `reference-request`（`referenceType` 为 `batch`），其 `referenceItems` 包含诊断、药品、检查、检验、处置等所有选中项目。PHIS 收到后应一次性处理全部项目，处理完成后**必须**调用回执接口。
+**重要：回执是强制要求的。** 当医生点击"一键回写"时，`MedHermes` 会发出**一条** `reference-request`（`referenceType` 为 `batch`），其 `referenceItems` 包含诊断、药品、检查、检验、处置等所有选中项目。PHIS 收到后应一次性处理全部项目，处理完成后**必须**调用回执接口。
 
 ## 4. 标准字段与映射规则
 
@@ -116,32 +116,32 @@
 ### 5.1 完整问诊时序
 
 1. HIS 调用 `POST /api/consultation/start`
-2. `floating-ball` 置顶并进入完整问诊主流程
+2. `MedHermes` 置顶并进入完整问诊主流程
 3. HIS 轮询 `GET /api/consultation/result`
-4. 医生在 `floating-ball` 中完成问诊或草稿回写
+4. 医生在 `MedHermes` 中完成问诊或草稿回写
 5. HIS 收到 `draft` 或 `final-report` 后更新医生站
 
 ### 5.2 灵活模式时序
 
 1. HIS 调用 `POST /api/consultation/assist`
-2. `floating-ball` 直接进入 `ConsultationPage` 对应阶段
+2. `MedHermes` 直接进入 `ConsultationPage` 对应阶段
 3. 医生在同一问诊页面中继续补充病历、看推荐、发起引用
 4. HIS 持续轮询 `GET /api/consultation/result`
 5. 如果收到 `reference-request`，进入 PHIS 引用处理
 
 ### 5.3 引用闭环时序（一键回写）
 
-医生点击”一键回写”后，`floating-ball` 会发出**一条** `reference-request`，`referenceType` 为 `batch`，`referenceItems` 包含所有选中项目（诊断 + 药品 + 检查 + 检验 + 处置）：
+医生点击”一键回写”后，`MedHermes` 会发出**一条** `reference-request`，`referenceType` 为 `batch`，`referenceItems` 包含所有选中项目（诊断 + 药品 + 检查 + 检验 + 处置）：
 
-1. `floating-ball` 发出 `reference-request`（`referenceType: “batch”`），`referenceItems` 包含全部选中项
+1. `MedHermes` 发出 `reference-request`（`referenceType: “batch”`），`referenceItems` 包含全部选中项
 2. PHIS 轮询到该请求，遍历 `referenceItems`，按每项的 `type` 字段分类处理并保存
 3. PHIS **必须**调用 `POST /api/consultation/reference-feedback` 回执
-4. `floating-ball` 收到回执，页面更新全部项目状态
+4. `MedHermes` 收到回执，页面更新全部项目状态
 
 每个 `referenceItems` 条目自带 `type` 字段（`diagnosis` / `medication` / `examination` / `lab_test` / `procedure`），PHIS 据此判断每项应写入哪个业务模块。
 
 ```text
-PHIS                                floating-ball
+PHIS                                MedHermes
  |                                       |
  |  <-- GET /result (reference-request, batch)
  |  遍历 referenceItems 按 type 分类保存   |
@@ -190,7 +190,7 @@ http://127.0.0.1:8081/api/consultation/start
 
 1. 此接口会刷新当前患者上下文。
 2. 此接口会清空上一条本地结果，避免直接读到旧结果。
-3. `floating-ball` 收到后会尝试置顶主窗口并进入完整问诊。
+3. `MedHermes` 收到后会尝试置顶主窗口并进入完整问诊。
 
 ### 6.2 `POST /api/consultation/assist`
 
@@ -698,7 +698,7 @@ HIS 处理建议：
 
 ### 6.5 `POST /api/consultation/reference-feedback`（必须）
 
-用途：PHIS 在保存推荐诊断 / 用药 / 检查后，**必须**将成功或失败结果回执给 `floating-ball`。
+用途：PHIS 在保存推荐诊断 / 用药 / 检查后，**必须**将成功或失败结果回执给 `MedHermes`。
 
 **强制要求：** 每收到一条 `reference-request`，PHIS 都必须调用本接口回执。一键回写场景下只有一条 `batch` 类型请求，PHIS 处理完全部项目后回执一次即可。
 
@@ -779,7 +779,7 @@ HTTP 状态码：`409`
 1. 当前回执必须匹配“最新一条结果”里的 `requestId` 且其 `resultType` 必须还是 `reference-request`。
 2. 如果 HIS 传错 `consultationId` 或 `requestId`，会返回 `409 REFERENCE_REQUEST_MISMATCH`。
 3. `referenceType` 与 `action` 如果同时传入，语义必须一致；不一致时接口会返回 `400 INVALID_REFERENCE_TYPE`。
-4. 建议 `status = failed` 时，把失败原因写进 `message`，便于医生在 `floating-ball` 里理解失败原因。
+4. 建议 `status = failed` 时，把失败原因写进 `message`，便于医生在 `MedHermes` 里理解失败原因。
 5. 如果想让页面上的逐项“已引用/引用失败”状态更准确，建议原样回传本次成功或失败的 `items`。
 
 ### 6.6 `POST /api/consultation/stop`
@@ -815,7 +815,7 @@ http://127.0.0.1:8081/api/consultation/stop
 
 ### 6.7 `POST /api/patient/risks`（可选）
 
-用途：把 HIS 当前患者的风险信息推送到 `floating-ball`，触发患者风险评估提醒。
+用途：把 HIS 当前患者的风险信息推送到 `MedHermes`，触发患者风险评估提醒。
 
 完整地址：
 
@@ -911,7 +911,7 @@ http://127.0.0.1:8081/api/patient/risks
 
 #### 前端展示行为
 
-1. 收到请求后，`floating-ball` 会置顶窗口并展示风险提醒面板。
+1. 收到请求后，`MedHermes` 会置顶窗口并展示风险提醒面板。
 2. 风险项按 `level` 排序展示（红色在前，黄色在后）。
 3. 如果存在 level 1 或 level 2 的高危/中危风险，医生必须手动点击"我已知悉"才能关闭面板。
 4. 如果仅有 level 3 低危风险，面板将在 10 秒后自动关闭。
@@ -927,7 +927,7 @@ HIS 侧至少要识别以下 5 类结果：
 | `draft` | 病历草稿回写（仅主诉+现病史） | 回填主诉和现病史到医生站草稿 |
 | `final-report` | 完整问诊最终报告（含诊断、治疗方案） | 作为完整结构化结果回写 |
 | `batch` | 语音问诊批量回写（含完整 PHIS 调入确认字段） | 直接用于 PHIS 调入确认弹窗，不走引用闭环 |
-| `reference-request` | `floating-ball` 请求 PHIS 保存引用 | 调用 PHIS 保存，并准备回执 |
+| `reference-request` | `MedHermes` 请求 PHIS 保存引用 | 调用 PHIS 保存，并准备回执 |
 | `reference-feedback` | PHIS 回执后的最新状态 | 更新医生站状态，提示成功或失败 |
 
 补充说明：
@@ -957,12 +957,12 @@ consultationId + resultType + requestId + timestamp
 
 ## 9. 联调注意事项
 
-1. 当前真实联调参考页是 `floating-ball/mock_his.html`。
+1. 当前真实联调参考页是 `MedHermes/mock_his.html`。
 2. `consultationId` 当前不是独立就诊流水，因此 HIS 侧必须防止“同患者旧结果误命中当前就诊”。
 3. `/assist` 每次调用都会清空上一次结果通道；不要在旧轮询结果未消费完成时复用旧状态。
 4. `reference-feedback` 只接受与“当前最新待处理引用请求”匹配的回执。
-5. 当前页面恢复依赖同一运行期内的前端内存状态；如果 `floating-ball` 进程已经退出或重启，不保证还能恢复到回执前页面。
-6. `floating-ball` 内所有推荐结果本质上都是医生确认前的草稿，HIS / PHIS 仍应保留最终校验与保存逻辑。
+5. 当前页面恢复依赖同一运行期内的前端内存状态；如果 `MedHermes` 进程已经退出或重启，不保证还能恢复到回执前页面。
+6. `MedHermes` 内所有推荐结果本质上都是医生确认前的草稿，HIS / PHIS 仍应保留最终校验与保存逻辑。
 
 ## 10. 最小接入示例
 

@@ -80,7 +80,7 @@ HIS System (HTTP) → Rust HTTP Server → Tauri Events → Vue Components
 
 ### Voice Consultation Workflow
 
-1. **Trigger:** Deep link (`floating-ball://voice-consultation`) or HTTP `/api/consultation/voice`
+1. **Trigger:** Deep link (`med-hermes://voice-consultation`) or HTTP `/api/consultation/voice`
 2. **Recording:** [VoiceCapsule.vue](src/components/VoiceCapsule.vue)
    - Uses [audioRecorder.ts](src/services/audioRecorder.ts) (Web Audio API with PCM16 conversion)
    - Streams PCM data to Aliyun WebSocket ([aliyunSpeech.ts](src/services/aliyunSpeech.ts))
@@ -222,7 +222,7 @@ curl -X POST http://localhost:8899/api/patient/consultation/start \
 - **Windows:** Uses `installMode: passive` for silent updates
 - **Linux:** Builds AppImage and deb packages
 
-**Updater:** Auto-checks `https://github.com/yangli216/floating-ball/releases/latest/download/latest.json` on startup. Users can manually check via Settings panel.
+**Updater:** Auto-checks `https://github.com/yangli216/med-hermes/releases/latest/download/latest.json` on startup. Users can manually check via Settings panel.
 
 ## Known Issues & Workarounds
 
