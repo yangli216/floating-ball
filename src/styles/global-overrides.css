@@ -2991,8 +2991,8 @@ html.dark .analytics-panel .range-btn.active {
 
 /* --- 问诊蓝: 表单字段 --- */
 [data-theme="consultation-blue"] .field-label {
-  color: #666666 !important;
-  font-size: 14px !important;
+  color: #262626 !important;
+  font-size: 12px !important;
   font-weight: 500 !important;
 }
 
@@ -3003,8 +3003,8 @@ html.dark .analytics-panel .range-btn.active {
   background: transparent !important;
   padding: 4px 8px !important;
   border-radius: 4px !important;
-  font-size: 13px !important;
-  color: #666666 !important;
+  font-size: 12px !important;
+  color: #262626 !important;
   box-shadow: none !important;
   backdrop-filter: none !important;
   -webkit-backdrop-filter: none !important;
@@ -3016,6 +3016,15 @@ html.dark .analytics-panel .range-btn.active {
   background: transparent !important;
   border: 1px solid #DBDBDB !important;
   color: #333333 !important;
+}
+
+[data-theme="consultation-blue"] .radio-label:hover input[type="radio"],
+[data-theme="consultation-blue"] .checkbox-label:hover input[type="checkbox"]{
+  border: 1px solid #DBDBDB !important;
+}
+[data-theme="consultation-blue"] .radio-label.is-active:hover input[type="radio"],
+[data-theme="consultation-blue"] .checkbox-label.is-active:hover input[type="checkbox"]{
+  border: 1px solid #2469F2 !important;
 }
 
 [data-theme="consultation-blue"] .radio-label.is-active,
@@ -3033,14 +3042,80 @@ html.dark .analytics-panel .range-btn.active {
 [data-theme="consultation-blue"] .radio-label input[type="radio"],
 [data-theme="consultation-blue"] .checkbox-label input[type="checkbox"] {
   position: relative !important;
-  width: 16px !important;
-  height: 16px !important;
+  width: 14px !important;
+  height: 14px !important;
   opacity: 1 !important;
   clip: auto !important;
-  margin-right: 6px !important;
+  margin-right: 0 !important;
   accent-color: #2B7BF7 !important;
   cursor: pointer !important;
 }
+/* 全局：只改边框颜色，其余和原生完全一样 */
+[data-theme="consultation-blue"] .radio-label input[type="radio"],
+[data-theme="consultation-blue"] .checkbox-label input[type="checkbox"] {
+  appearance: none;
+  outline: none;
+}
+
+/* 原生 radio 完美复刻 */
+[data-theme="consultation-blue"] .radio-label input[type="radio"],
+[data-theme="consultation-blue"] input[type="radio"] {
+  border: 1px solid #DBDBDB;
+  border-radius: 50%;
+  background: #fff;
+  position: relative;
+  box-sizing: border-box !important;
+  width: 14px !important;
+  height: 14px !important;
+  flex-shrink: 0;
+  min-width: 14px;
+  min-height: 14px;
+  appearance: none;
+  outline: none;
+  background-clip: padding-box;
+}
+[data-theme="consultation-blue"] .radio-label input[type="radio"]::before,
+[data-theme="consultation-blue"] input[type="radio"]::before {
+  content: "";
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #2469F2;
+  transform: translate(-50%, -50%) scale(0);
+  transition: 0.15s transform;
+}
+[data-theme="consultation-blue"] .radio-label input[type="radio"]:checked,
+[data-theme="consultation-blue"] input[type="radio"]:checked {
+  border: 1px solid #2469F2;
+}
+[data-theme="consultation-blue"] .radio-label input[type="radio"]:checked::before,
+[data-theme="consultation-blue"] input[type="radio"]:checked::before {
+  transform: translate(-50%, -50%) scale(1);
+}
+
+/* 原生 checkbox 完美复刻 */
+input[type="checkbox"] {
+  width: 15px;
+  height: 15px;
+  border: 1px solid #DBDBDB;
+  border-radius: 2px;
+  background: #fff;
+  display: inline-grid;
+  place-content: center;
+}
+
+input[type="checkbox"]:checked {
+  background: var(--color-info);
+  border-color: var(--color-info);
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='white' stroke-width='4' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='20 6 9 17 4 12'%3E%3C/polyline%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: center;
+  background-size: 10px;
+}
+
 
 /* --- 问诊蓝: 数字输入 --- */
 [data-theme="consultation-blue"] input[type="number"] {
@@ -3073,7 +3148,7 @@ html.dark .analytics-panel .range-btn.active {
   background: #FFFFFF !important;
   border: none !important;
   color: #2469F2 !important;
-  font-size: 14px !important;
+  font-size: 13px !important;
   padding: 8px 8px !important;
   border-radius: 16px 16px 16px 16px !important;
 }
@@ -3299,8 +3374,8 @@ html.dark .analytics-panel .range-btn.active {
 
 [data-theme="consultation-blue"] .body-part-selector .clear-btn {
   background: #FFFFFF !important;
-  border: 1px solid #D9D9D9 !important;
-  color: #666666 !important;
+  border: none !important;
+  color: #262626 !important;
   border-radius: 4px !important;
 }
 
@@ -3363,8 +3438,8 @@ html.dark .analytics-panel .range-btn.active {
 
 [data-theme="consultation-blue"] .system-category-selector .clear-btn {
   background: #FFFFFF !important;
-  border: 1px solid #D9D9D9 !important;
-  color: #666666 !important;
+  border: none !important;
+  color: #262626 !important;
   border-radius: 4px !important;
 }
 

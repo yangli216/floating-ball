@@ -93,9 +93,12 @@
           <input
             type="text"
             v-model="searchQuery"
-            placeholder="搜索症状(支持首字母)..."
+            placeholder="搜索症状(支持首字母)"
             class="search-input"
           />
+          <svg class="search-box-svg" viewBox="0 0 1024 1024" version="1.1" xmlns="http://www.w3.org/2000/svg" p-id="8275" width="14" height="14"><path d="M949.888 904.64l-154.816-154.816a416
+          416 0 1 0-45.248 45.248l154.816 154.816a32 32 0 0 0 45.184-45.248zM127.936 479.68a352 352 0
+          1 1 352 352 352 352 0 0 1-352-352z m0 0" p-id="8276" fill="#999999"></path></svg>
         </div>
 
         <template v-if="!searchQuery.trim()">
@@ -352,9 +355,7 @@
       </main>
       <main v-else class="empty-state">
         <div class="empty-icon">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
-            <path d="M9 12h6m-6 4h6m2 5H7a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5.586a1 1 0 0 1 .707.293l5.414 5.414a1 1 0 0 1 .293.707V19a2 2 0 0 1-2 2z"></path>
-          </svg>
+          <img src="/loading.png" alt="AI Agent" />
         </div>
         <p>请选择左侧症状进行问诊</p>
         <span class="sub-text">支持多选，最多{{ CONSULTATION_CONFIG.MAX_SYMPTOMS }}项</span>
@@ -490,7 +491,23 @@
                     @click="toggleDiagnosisGroup(group.key)"
                   >
                     <div class="diagnosis-group-title-row">
-                      <span class="diagnosis-group-toggle" :class="{ collapsed: isDiagnosisGroupCollapsed(group.key) }">⌄</span>
+                      <span class="diagnosis-group-toggle" :class="{ collapsed: isDiagnosisGroupCollapsed(group.key) }">
+                        <svg viewBox="0 0 1024 1024" version="1.1" xmlns="http://www.w3.org/2000/svg" p-id="8069" width="14" height="14"><path d="M32 512c0 265.152 214.848 480 480 480s480-214.848 480-480S777.152 32 512 32A479.872 479.872 0 0 0 32 512z m649.344-86.656a32 32 0 0 1 45.248 45.248l-192.064 192a32 32 0 0 1-45.184 0.128l-0.064-0.128-192-192a32.128 32.128 0 0 1 0-45.248 31.936 31.936 0 0 1 45.12-0.192l0.256 0.256L512 594.752l169.344-169.408z" p-id="8070" fill="#2469F2"></path></svg>
+                      </span>
+                      <svg t="1776397241811" class="icon" viewBox="0 0 1024 1024" version="1.1" xmlns="http://www.w3.org/2000/svg" p-id="1735" width="16" height="16"><path d="M515.168 164.001C510.071 180.23 494.91 192 477 192c-22.091
+                        0-40-17.909-40-40s17.909-40 40-40c11.19 0 21.306 4.594 28.565 12h31.473C603.29 124 657
+                        177.726 657 244c0 6.315-0.498 12.62-1.49 18.854l-0.205 1.246-36.008 212c-9.7 57.115-58.772
+                        99.054-116.515 99.887l-1.752 0.013h-57.031l0.001 12c0 11.046-8.954 20-20 20h-19v175c0 49.153
+                        39.847 89 89 89 48.662 0 88.202-39.054 88.988-87.528L583 783v-89.781C583 621.853 640.755 564
+                        712 564c70.532 0 127.844 56.702 128.983 127.083l0.017 2.136-0.001 59.78h-40l0.001-59.824c0-48.757-39.054-88.376-87.528-89.163L712
+                        604c-48.662 0-88.202 39.13-88.988 87.7l-0.012 1.475-0.002 30.825H623v59c0 70.532-56.606 127.844-126.867 128.983L494 912c-70.532
+                        0-127.844-56.606-128.983-126.867L365 783V608h-19c-11.046 0-20-8.954-20-20l-0.001-12h-59.01c-57.914 0-107.468-41.369-117.96-98.174l-0.307-1.726-36.008-212c-11.098-65.338 32.856-127.304
+                        98.173-138.405a119.925 119.925 0 0 1 18.832-1.688l1.262-0.007h32.454c7.26-7.406 17.376-12 28.565-12 22.091 0 40 17.909
+                        40 40s-17.909 40-40 40c-17.91 0-33.071-11.771-38.168-27.999L230.984 164c-4.143 0-8.28
+                        0.322-12.373 0.963l-1.022 0.167c-43.108 7.327-72.257 47.889-65.657 90.964l0.21 1.306
+                        36.007 212c6.467 38.076 39.18 66.036 77.674 66.592l1.168 0.008h59.008l0.001-4c0-11.046
+                        8.954-20 20-20h78c11.046 0 20 8.954 20 20l-0.001 4h57.023c38.608 0 71.642-27.58 78.638-65.45l0.204-1.15
+                        36.006-212A80.028 80.028 0 0 0 617 244c0-43.741-35.092-79.283-78.649-79.99l-1.323-0.01z" fill="#222222" p-id="1736"></path><path d="M817 720c53.02 0 96 42.98 96 96s-42.98 96-96 96-96-42.98-96-96 42.98-96 96-96z m0 40c-30.928 0-56 25.072-56 56s25.072 56 56 56 56-25.072 56-56-25.072-56-56-56z" fill="#03AD82" p-id="1737"></path></svg>
                       <span class="diagnosis-group-title">{{ group.title }}</span>
                       <span v-if="group.rangeLabel" class="diagnosis-group-range">{{ group.rangeLabel }}</span>
                     </div>
@@ -515,7 +532,7 @@
                           </FactCheckHighlight>
                           <div class="inline-related-trigger" @click="toggleRelatedDropdown(diag, $event)" title="切换同类诊断">
                             <span class="arrow" :class="{ open: openRelatedId === diag.id }">
-                              <svg t="1775994070219" class="icon" viewBox="0 0 1024 1024" version="1.1" xmlns="http://www.w3.org/2000/svg" p-id="167774" width="11" height="11"><path d="M512 672a32 32 0 0 1-22.4-9.6l-256-256a32 32 0 1 1 45.44-45.44L512 594.56l233.6-233.6a32 32 0 0 1 45.44 45.44l-256 256a32 32 0 0 1-23.04 9.6z" p-id="167775" fill="#ffffff"></path></svg>
+                             <svg viewBox="0 0 1024 1024" version="1.1" xmlns="http://www.w3.org/2000/svg" p-id="8069" width="14" height="14"><path d="M32 512c0 265.152 214.848 480 480 480s480-214.848 480-480S777.152 32 512 32A479.872 479.872 0 0 0 32 512z m649.344-86.656a32 32 0 0 1 45.248 45.248l-192.064 192a32 32 0 0 1-45.184 0.128l-0.064-0.128-192-192a32.128 32.128 0 0 1 0-45.248 31.936 31.936 0 0 1 45.12-0.192l0.256 0.256L512 594.752l169.344-169.408z" p-id="8070" fill="#2469F2"></path></svg>
                             </span>
                           </div>
                         </div>
@@ -654,7 +671,9 @@
                       <div class="rec-content">
                         <div class="rec-header">
                           <div class="rec-name-group">
-                            <input type="checkbox" :checked="rec.selected">
+                            <label class="checkbox-label rec-name-group-checkbox">
+                              <input type="checkbox" :checked="rec.selected">
+                            </label>
                             <FactCheckHighlight :issue="getIssueForTreatment(rec.name)">
                               <span class="rec-name">{{ rec.name }}</span>
                             </FactCheckHighlight>
@@ -4615,12 +4634,17 @@ const copyToClipboard = () => {
 }
 
 .search-box {
+  position: relative;
   padding: 8px 10px;
   border-bottom: none !important;
   background: transparent;
   flex-shrink: 0;
   display: flex;
   align-items: center;
+}
+.search-box-svg{
+  position: absolute;
+  right: 20px;
 }
 
 .common-filter-header {
@@ -4631,7 +4655,7 @@ const copyToClipboard = () => {
 
 .search-input {
   width: 100%;
-  padding: 7px 10px;
+  padding: 5px 7px;
   border: 1px solid #E2E8F0;
   border-radius: 6px;
   font-size: 13px;
@@ -4639,6 +4663,16 @@ const copyToClipboard = () => {
   outline: none;
   background: #F8FAFC;
   transition: all 0.2s ease;
+}
+.search-input::placeholder{
+  font-family: Microsoft YaHei, Microsoft YaHei;
+  font-weight: 400;
+  font-size: 13px;
+  color: #999999;
+  line-height: 22px;
+  text-align: left;
+  font-style: normal;
+  text-transform: none;
 }
 
 .search-input:focus {
@@ -4821,7 +4855,8 @@ const copyToClipboard = () => {
   cursor: default;
   transition: background 0.15s ease;
   white-space: nowrap;
-  height: 32px;
+  height: 26px;
+  font-family: Microsoft YaHei, Microsoft YaHei;
 }
 
 .recommendation-chip:hover {
@@ -4833,14 +4868,27 @@ const copyToClipboard = () => {
 }
 
 .companion-checkbox {
-  appearance: auto;
+  appearance: none !important;
   -webkit-appearance: auto;
-  width: 16px;
-  height: 16px;
+  width: 14px;
+  height: 14px;
   margin: 0;
   accent-color: #2B7FE3;
   cursor: pointer;
   flex-shrink: 0;
+  border: 1px solid #DBDBDB;
+  border-radius: 2px;
+  background: #fff;
+  display: inline-grid;
+  place-content: center;
+}
+.companion-checkbox:checked {
+  background: var(--color-info);
+  border-color: var(--color-info);
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='white' stroke-width='4' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='20 6 9 17 4 12'%3E%3C/polyline%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: center;
+  background-size: 10px;
 }
 
 .companion-name {
@@ -4859,7 +4907,7 @@ const copyToClipboard = () => {
   border-radius: 3px;
   background: transparent;
   color: #2B7FE3;
-  font-size: 13px;
+  font-size: 12px;
   font-weight: 400;
   cursor: pointer;
   transition: all 0.15s ease;
@@ -5071,7 +5119,7 @@ const copyToClipboard = () => {
 .radio-group, .checkbox-group {
   display: flex;
   flex-wrap: wrap;
-  gap: 3px 14px;
+  gap: 8px 14px;
   align-items: center;
 }
 
@@ -5125,13 +5173,13 @@ const copyToClipboard = () => {
 }
 
 .empty-icon {
-  width: 64px;
-  height: 64px;
+  width: 87px;
+  height: 102px;
   margin-bottom: 16px;
   color: var(--color-border-medium);
 }
 
-.empty-icon svg {
+.empty-icon img {
   width: 100%;
   height: 100%;
 }
@@ -5213,7 +5261,7 @@ const copyToClipboard = () => {
   overflow: hidden;
   position: relative;
   min-height: 0;
-  padding: 16px;
+  padding: 12px;
 }
 
 /* Footer Actions */
@@ -5295,7 +5343,7 @@ const copyToClipboard = () => {
   flex: 1.2;
   background: #FAFBFD;
   border-right: none;
-  margin-left: 16px;
+  margin-left: 10px;
 }
 
 .panel-header {
@@ -5308,7 +5356,7 @@ const copyToClipboard = () => {
 }
 
 .right-panel .panel-header {
-  background: #FAFBFD;
+  background: linear-gradient( 90deg, #DCECFF 0%, rgba(189,220,255,0) 100%) !important;
 }
 
 .panel-header h3 {
@@ -5471,10 +5519,29 @@ const copyToClipboard = () => {
   gap: 8px;
   color: #262626 !important;
 }
-
-.record-field .record-field-checkbox.is-active{
-  color: #2469F2 !important;
+.record-field .record-field-checkbox input[type="checkbox"] {
+  appearance: none;
+  outline: none;
+  width: 14px;
+  height: 14px;
+  border: 1px solid #DBDBDB;
+  border-radius: 2px;
+  background: #fff;
+  display: inline-grid;
+  place-content: center;
 }
+.record-field .record-field-checkbox.is-active input[type="checkbox"] {
+  background: var(--color-info);
+  border-color: var(--color-info);
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='white' stroke-width='4' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='20 6 9 17 4 12'%3E%3C/polyline%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: center;
+  background-size: 10px;
+}
+
+/*.record-field .record-field-checkbox.is-active{*/
+/*  color: #2469F2 !important;*/
+/*}*/
 
 .record-field textarea {
   width: 100%;
@@ -5648,16 +5715,16 @@ const copyToClipboard = () => {
 }
 .ai-recommend-btn-border{
   position: absolute;
-  width: 108px;
+  width: 109px;
   height: 28px;
-  right: 17.5px;
+  right: 17px;
   background: linear-gradient(
       88deg,
       rgba(5, 213, 255, 1),
       rgba(88, 5, 255, 1),
       rgba(5, 134, 255, 1)
   );
-  border-radius: var(--radius-sm);
+  border-radius: 5px;
   overflow: hidden;
 }
 
@@ -5831,16 +5898,16 @@ const copyToClipboard = () => {
   color: var(--color-text-strong);
 }
 
-.diagnosis-group-title::before {
-  content: '';
-  display: inline-block;
-  width: 4px;
-  height: 4px;
-  background: var(--color-info);
-  border-radius: var(--radius-full);
-  margin-right: 6px;
-  vertical-align: middle;
-}
+/*.diagnosis-group-title::before {*/
+/*  content: '';*/
+/*  display: inline-block;*/
+/*  width: 4px;*/
+/*  height: 4px;*/
+/*  background: var(--color-info);*/
+/*  border-radius: var(--radius-full);*/
+/*  margin-right: 6px;*/
+/*  vertical-align: middle;*/
+/*}*/
 
 .diagnosis-group-range {
   display: inline-flex;
@@ -5900,16 +5967,16 @@ const copyToClipboard = () => {
 .diagnosis-item::before {
   content: '';
   display: inline-block;
-  width: 16px;
-  height: 16px;
-  border: 2px solid var(--color-border-medium);
-  border-radius: var(--radius-sm);
+  width: 14px;
+  height: 14px;
+  border: 1px solid #DBDBDB;
+  border-radius: 2px;
   margin-right: var(--space-sm);
   vertical-align: middle;
   flex-shrink: 0;
   position: absolute;
-  left: 16px;
-  top: 14px;
+  left: 19px;
+  top: 19px;
 }
 
 .diagnosis-item.active::before {
@@ -6260,6 +6327,16 @@ const copyToClipboard = () => {
   gap: 6px;
   min-width: 0;
 }
+.checkbox-label.rec-name-group-checkbox {
+  border: none!important;
+  padding: 0!important;
+}
+.checkbox-label.rec-name-group-checkbox:hover{
+  border: none!important;
+}
+.checkbox-label.rec-name-group-checkbox:has(input:checked){
+  border: none!important;
+}
 
 .rec-tag {
   font-size: 11px;
@@ -6501,7 +6578,7 @@ const copyToClipboard = () => {
 
 .category-trigger {
   width: 100%;
-  padding: 5px 12px;
+  padding: 3px 7px;
   background: var(--color-background-white);
   border: 1px solid var(--color-info-bg);
   border-radius: 6px;
@@ -6522,12 +6599,18 @@ const copyToClipboard = () => {
 }
 
 .trigger-text {
-  font-size: 14px;
+  font-size: 13px;
   color: var(--color-text-medium);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
   flex: 1;
+  font-family: Microsoft YaHei, Microsoft YaHei;
+  font-weight: 400;
+  line-height: 22px;
+  text-align: left;
+  font-style: normal;
+  text-transform: none;
 }
 
 .trigger-icon {
@@ -6750,14 +6833,14 @@ const copyToClipboard = () => {
   }
 }
 
-.empty-state::before {
-  content: '';
-  display: block;
-  width: 120px;
-  height: 120px;
-  background: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="%23bfdbfe" stroke-width="1"><path d="M9 5H7a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-2M9 5a2 2 0 0 0 2 2h2a2 2 0 0 0 2-2M9 5a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2m-3 9h.01"/></svg>') no-repeat center/contain;
-  opacity: 0.8;
-}
+/*.empty-state::before {*/
+/*  content: '';*/
+/*  display: block;*/
+/*  width: 120px;*/
+/*  height: 120px;*/
+/*  background: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="%23bfdbfe" stroke-width="1"><path d="M9 5H7a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-2M9 5a2 2 0 0 0 2 2h2a2 2 0 0 0 2-2M9 5a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2m-3 9h.01"/></svg>') no-repeat center/contain;*/
+/*  opacity: 0.8;*/
+/*}*/
 
 /* Final Report Styles */
 .final-report-page {
@@ -6956,15 +7039,15 @@ const copyToClipboard = () => {
 }
 
 .arrow {
-  font-size: 10px;
-  transition: transform var(--duration-normal) var(--ease-smooth);
-  width: 13px;
-  height: 13px;
-  background-color: #2469F2;
-  border-radius: 50%;
-  display: flex;
-  justify-content: center;
-  align-items: center;
+  /*font-size: 10px;*/
+  /*transition: transform var(--duration-normal) var(--ease-smooth);*/
+  width: 14px;
+  height: 22px;
+  /*background-color: #2469F2;*/
+  /*border-radius: 50%;*/
+  /*display: flex;*/
+  /*justify-content: center;*/
+  /*align-items: center;*/
 }
 
 .arrow.open {

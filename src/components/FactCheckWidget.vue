@@ -181,7 +181,7 @@ onUnmounted(() => {
 <style scoped>
 .fact-check-widget-container {
   position: fixed;
-  bottom: 24px;
+  bottom: 116px;
   right: 24px;
   z-index: 9999;
   display: flex;
@@ -275,7 +275,7 @@ onUnmounted(() => {
 
 .fab-content.has-issues {
   position: relative;
-  bottom: 60px;
+  bottom: -28px;
   right: 43px;
 }
 
@@ -330,9 +330,8 @@ onUnmounted(() => {
 }
 
 .popup-title-img{
-  width: 48px;
-  height: 48px;
-  border: 1px dashed #848484;
+  width: 44px;
+  height: 44px;
 }
 
 .close-popup-btn {
@@ -376,6 +375,7 @@ onUnmounted(() => {
   border-radius: 6px;
   cursor: pointer;
   transition: all 0.2s;
+  flex-direction: column;
 }
 
 .issue-item:hover {
@@ -392,6 +392,7 @@ onUnmounted(() => {
   height: fit-content;
   color: white;
   line-height: 1.6;
+  width: 42px;
 }
 
 .issue-severity.severity-high { background: #EF4444; }
