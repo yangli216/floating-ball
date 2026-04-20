@@ -7,6 +7,7 @@
 
 import { ref } from 'vue';
 import { chat, type ChatMessage } from '../services/llm';
+import { isTestModeEnabled } from '../services/aliyunSpeech';
 import { medicalDataService } from '../services/medicalData';
 import {
   VoiceIntentRecognitionPrompt,
@@ -15,6 +16,9 @@ import {
   type DiagnosisHint,
 } from '../prompts/voiceIntentPrompts';
 import { trackError, startTimedOperation } from '../services/operationTracker';
+
+/** Mock 模式下缓存的意图识别结果，避免重复调用 LLM */
+let cachedTestModeResult: VoiceIntentResult | null = null;
 
 export interface MatchedTreatment extends TreatmentHint {
   /** 匹配到的标准库项目 */
@@ -64,6 +68,17 @@ export function useVoiceIntentRecognition() {
       return null;
     }
 
+    // Mock 模式下优先使用缓存结果
+    if (isTestModeEnabled() && cachedTestModeResult) {
+      console.log('[VoiceIntent] Test mode: returning cached result');
+      isProcessing.value = true;
+      // 模拟短暂延迟，让 UI 能展示 loading 效果
+      await new Promise(r => setTimeout(r, 600));
+      result.value = cachedTestModeResult;
+      isProcessing.value = false;
+      return cachedTestModeResult;
+    }
+
     isProcessing.value = true;
     processingError.value = null;
     const finishTimer = startTimedOperation('voice_intent_recognition');
@@ -108,6 +123,13 @@ export function useVoiceIntentRecognition() {
       };
 
       result.value = intentResult;
+
+      // Mock 模式下缓存首次 LLM 结果
+      if (isTestModeEnabled() && !cachedTestModeResult) {
+        cachedTestModeResult = intentResult;
+        console.log('[VoiceIntent] Test mode: cached LLM result for reuse');
+      }
+
       finishTimer(true, {
         transcriptionLength: text.length,
         symptomCount: intentResult.symptoms.length,

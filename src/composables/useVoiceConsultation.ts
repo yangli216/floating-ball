@@ -83,6 +83,7 @@ export function useVoiceConsultation(options: VoiceConsultationOptions) {
 
   const intentRecognition = useVoiceIntentRecognition();
   const intentResult = ref<VoiceIntentResult | null>(null);
+  const isProcessingVoice = ref(false);
 
   function resolveConsultationId(patient: AppPatient | null): string {
     return String(patient?.idPi || patient?.patientId || patient?.id || 'unknown');
@@ -130,11 +131,13 @@ export function useVoiceConsultation(options: VoiceConsultationOptions) {
       return;
     }
 
+    isProcessingVoice.value = true;
     try {
       intentRecognition.addTranscript(transcribedText);
       const result = await intentRecognition.processTranscript(transcribedText);
 
       if (!result) {
+        isProcessingVoice.value = false;
         const errMsg = intentRecognition.processingError.value || '意图识别失败';
         showToast(errMsg, 'error');
         await writeCancelledResult(errMsg);
@@ -144,6 +147,7 @@ export function useVoiceConsultation(options: VoiceConsultationOptions) {
         return;
       }
 
+      isProcessingVoice.value = false;
       intentResult.value = result;
       currentView.value = 'voice-consultation';
 
@@ -161,6 +165,7 @@ export function useVoiceConsultation(options: VoiceConsultationOptions) {
 
       console.log('[VoiceConsultation] Intent recognition completed successfully');
     } catch (err: unknown) {
+      isProcessingVoice.value = false;
       console.error('[VoiceConsultation] Processing failed:', err);
       trackError('voice_processing_failed', err);
       const errMessage = err instanceof Error ? err.message : String(err);
@@ -230,6 +235,7 @@ export function useVoiceConsultation(options: VoiceConsultationOptions) {
 
   return {
     intentResult,
+    isProcessingVoice,
     handleVoiceStop,
     handleVoiceError,
     handleResultConfirm,

@@ -236,7 +236,7 @@ export function useEventListeners(options: EventListenersOptions) {
 
       if (baseUrl && token) {
         // 初始化 HIS 服务单例
-        const his = getHisService(baseUrl, token);
+        getHisService(baseUrl, token);
         console.log('[EventListeners] HisService initialized with origin:', baseUrl);
       } else {
         console.warn('[EventListeners] Handshake missing baseUrl or token');

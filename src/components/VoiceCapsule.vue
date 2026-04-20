@@ -1,7 +1,25 @@
 <template>
   <div class="voice-capsule-wrapper" data-tauri-drag-region>
+    <!-- Processing state: waiting for LLM analysis -->
+    <template v-if="processing">
+      <div class="voice-capsule-bar">
+        <div class="avatar-wrapper processing-pulse">
+          <img src="/robot-avatar.png" alt="AI Agent" />
+        </div>
+        <span class="processing-label">正在分析语音内容...</span>
+        <div class="processing-dots">
+          <span class="dot"></span>
+          <span class="dot"></span>
+          <span class="dot"></span>
+        </div>
+      </div>
+      <div class="processing-bar-track">
+        <div class="processing-bar-fill"></div>
+      </div>
+    </template>
+
     <!-- Recording state: compact TTPlayer-style bar -->
-    <template v-if="!isStopped">
+    <template v-else-if="!isStopped">
       <!-- Row 1: avatar + waveform + timer + controls -->
       <div class="voice-capsule-bar">
         <div class="avatar-wrapper" :class="{ 'speaking': isSpeaking }">
@@ -87,6 +105,12 @@ const getPrimaryColor = () => {
 import { RealtimeSpeechService } from '../services/aliyunSpeech';
 import Icon from './Icon.vue';
 
+const props = withDefaults(defineProps<{
+  processing?: boolean;
+}>(), {
+  processing: false,
+});
+
 const emit = defineEmits<{
   stop: [blob: Blob, transcriptionText: string];
   error: [error: any];
@@ -108,6 +132,7 @@ let stoppedBlob: Blob | null = null;
 // Compact window dimensions
 const CAPSULE_W = 360;
 const CAPSULE_H_RECORDING = 80;
+const CAPSULE_H_PROCESSING = 80;    // processing state height
 const CAPSULE_H_STOPPED = 140;      // collapsed preview + action buttons
 const CAPSULE_H_EXPANDED = 248;     // expanded editor + action buttons
 
@@ -124,6 +149,13 @@ const resizeWindow = async (w: number, h: number) => {
 watch(isStopped, (stopped) => {
   if (stopped) {
     resizeWindow(CAPSULE_W, CAPSULE_H_STOPPED);
+  }
+});
+
+// Resize window when entering processing state
+watch(() => props.processing, (isProcessing) => {
+  if (isProcessing) {
+    resizeWindow(CAPSULE_W, CAPSULE_H_PROCESSING);
   }
 });
 
@@ -671,5 +703,70 @@ onUnmounted(() => {
 .action-btn.confirm:disabled {
   opacity: 0.5;
   cursor: not-allowed;
+}
+
+/* ===== Processing state ===== */
+.processing-label {
+  font-size: 13px;
+  font-weight: 500;
+  color: #334155;
+  flex: 1;
+}
+
+.processing-dots {
+  display: flex;
+  gap: 4px;
+  align-items: center;
+  padding-right: 4px;
+}
+
+.processing-dots .dot {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--color-primary, #0891B2);
+  animation: dot-bounce 1.4s ease-in-out infinite;
+}
+
+.processing-dots .dot:nth-child(2) {
+  animation-delay: 0.16s;
+}
+
+.processing-dots .dot:nth-child(3) {
+  animation-delay: 0.32s;
+}
+
+@keyframes dot-bounce {
+  0%, 80%, 100% { opacity: 0.3; transform: scale(0.8); }
+  40% { opacity: 1; transform: scale(1.2); }
+}
+
+.avatar-wrapper.processing-pulse::after {
+  content: '';
+  position: absolute;
+  inset: -3px;
+  border-radius: 50%;
+  border: 1.5px solid var(--color-primary, #0891B2);
+  opacity: 0;
+  animation: pulse-ring 2s infinite;
+}
+
+.processing-bar-track {
+  height: 3px;
+  background: #e2e8f0;
+  overflow: hidden;
+}
+
+.processing-bar-fill {
+  height: 100%;
+  width: 40%;
+  background: var(--color-primary, #0891B2);
+  border-radius: 2px;
+  animation: progress-slide 1.5s ease-in-out infinite;
+}
+
+@keyframes progress-slide {
+  0% { transform: translateX(-100%); }
+  100% { transform: translateX(350%); }
 }
 </style>

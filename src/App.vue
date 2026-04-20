@@ -183,6 +183,7 @@ const voiceConsultation = useVoiceConsultation({
 // 解构语音问诊 API
 const {
   intentResult,
+  isProcessingVoice,
   handleVoiceStop,
   handleVoiceError,
   handleResultConfirm,
@@ -497,6 +498,7 @@ const openInsideCloudHome = async () => {
           <!-- Voice Interaction View -->
           <VoiceCapsule
             v-if="currentView === 'voice-interaction'"
+            :processing="isProcessingVoice"
             @stop="handleVoiceStop"
             @error="handleVoiceError"
             @close="handleCollapse"
