@@ -4553,7 +4553,7 @@ const copyToClipboard = () => {
   display: flex;
   flex: 1;
   overflow: hidden;
-  padding: 16px 0 0 16px;
+  padding: 14px 0 0 14px;
 }
 
 .symptom-sidebar {
@@ -4944,7 +4944,7 @@ const copyToClipboard = () => {
 .forms-scroll-area {
   flex: 1;
   overflow-y: auto;
-  padding: 0 16px 14px 8px;
+  padding: 0 14px 2px 8px;
 }
 
 .symptom-form-section {
