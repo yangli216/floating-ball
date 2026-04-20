@@ -575,29 +575,39 @@
   /** HTTP 调用 + 离线协议拉起兜底 */
   MedHermes.prototype._callWithFallback = function (httpCall, protocolPath, params) {
     var self = this;
-    return httpCall().catch(function (err) {
-      // 网络失败（桌面端可能不在线），尝试协议拉起
-      if (err.message === 'Request timeout' || err.message === 'Failed to fetch' || !err.status) {
-        self._emitter.emit('launching');
-        self._launcher.launch(protocolPath, params);
+    
+    // 静默执行一次握手，确保小球端上下文（如 Token）是最新的，以应对小球可能刚刚重启的情况。
+    // 如果握手失败，我们忽略异常（catch），继续走后面的请求和兜底逻辑。
+    var ensureHandshake = this._handshake().catch(function() {});
 
-        return new Promise(function (resolve, reject) {
-          setTimeout(function () {
-            httpCall()
-              .then(resolve)
-              .catch(function () {
-                var offlineErr = new Error('MedHermes 桌面端未启动');
-                offlineErr.code = 'OFFLINE';
-                self._emitter.emit('launch-failed');
-                self._emitter.emit('error', offlineErr);
-                reject(offlineErr);
+    return ensureHandshake.then(function() {
+      return httpCall().catch(function (err) {
+        // 网络失败（桌面端可能不在线），尝试协议拉起
+        if (err.message === 'Request timeout' || err.message === 'Failed to fetch' || !err.status) {
+          self._emitter.emit('launching');
+          self._launcher.launch(protocolPath, params);
+
+          return new Promise(function (resolve, reject) {
+            setTimeout(function () {
+              // 拉起后重试前，同样先做一次静默握手
+              self._handshake().catch(function() {}).then(function() {
+                httpCall()
+                  .then(resolve)
+                  .catch(function () {
+                    var offlineErr = new Error('MedHermes 桌面端未启动');
+                    offlineErr.code = 'OFFLINE';
+                    self._emitter.emit('launch-failed');
+                    self._emitter.emit('error', offlineErr);
+                    reject(offlineErr);
+                  });
               });
-          }, self._opts.launchRetryMs);
-        });
-      }
-      // 其他 HTTP 错误直接抛出
-      self._emitter.emit('error', err);
-      throw err;
+            }, self._opts.launchRetryMs);
+          });
+        }
+        // 其他 HTTP 错误直接抛出
+        self._emitter.emit('error', err);
+        throw err;
+      });
     });
   };
 

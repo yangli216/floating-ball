@@ -495,8 +495,8 @@ async function handleBatchWriteBack() {
     const result = {
       consultationId: resolveConsultationId(),
       timestamp: Date.now(),
-      resultType: 'batch',
-      requestId: `voice-batch-${Date.now()}`,
+      resultType: 'record-confirmed',
+      requestId: `record-confirmed-${Date.now()}`,
       chiefComplaint: chiefComplaint.value,
       historyOfPresentIllness: historyOfPresentIllness.value,
       pastMedicalHistory: pastMedicalHistory.value,
