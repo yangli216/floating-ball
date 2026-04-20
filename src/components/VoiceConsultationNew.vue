@@ -1,10 +1,11 @@
 <script setup lang="ts">
-import { ref, computed, watch, inject } from 'vue';
+import { ref, computed, watch, inject, onMounted } from 'vue';
 import { invoke } from '@tauri-apps/api/core';
 import Icon from './Icon.vue';
 import FactCheckHighlight from './FactCheckHighlight.vue';
 import { chat, type ChatMessage } from '../services/llm';
 import { PROMPTS } from '../prompts';
+import { getHisService } from '../services/hisService';
 import { medicalDataService, type DiagnosisItem } from '../services/medicalData';
 import {
   checkDiagnosis,
@@ -67,43 +68,6 @@ const canSubmit = computed(() =>
   chiefComplaint.value.trim().length > 0 &&
   selectedDiagnosis.value !== null &&
   !submitting.value
-);
-
-// ── Initialize from intentResult ───────────────────────────────────────
-watch(
-  () => props.intentResult,
-  (result) => {
-    if (!result) return;
-    chiefComplaint.value = result.chiefComplaint;
-    historyOfPresentIllness.value = result.historyOfPresentIllness;
-    pastMedicalHistory.value = result.pastMedicalHistory;
-    // Initialize diagnoses from voice
-    if (result.diagnoses && result.diagnoses.length > 0) {
-      aiDiagnoses.value = initDiagnosesFromIntent(result.diagnoses);
-      // Auto-select first matched diagnosis
-      const firstMatched = aiDiagnoses.value.find((d) => d.id || d.code);
-      if (firstMatched) {
-        selectedDiagnosis.value = firstMatched;
-      }
-    }
-    // Initialize treatments from voice
-    if (result.treatments.length > 0) {
-      treatments.value = initTreatmentsFromIntent(result.treatments);
-    }
-
-    // Trigger fact checks (async, non-blocking)
-    if (aiDiagnoses.value.length > 0) {
-      performDiagnosisFactCheck(aiDiagnoses.value);
-      // Trigger checklist for selected diagnosis
-      if (selectedDiagnosis.value) {
-        fetchDiagnosisChecklist(selectedDiagnosis.value);
-      }
-    }
-    if (treatments.value.length > 0) {
-      performTreatmentFactCheck(treatments.value);
-    }
-  },
-  { immediate: true }
 );
 
 // ── Map MatchedDiagnosis -> Diagnosis ─────────────────────────────────
@@ -464,10 +428,31 @@ function getDiagRateClass(rate?: string): string {
 }
 
 // ── Editable field options ─────────────────────────────────────────────
-const frequencyOptions = [
+const frequencyOptions = ref<string[]>([
   '每天一次', '每天两次', '每天三次', '隔日一次',
   '每周一次', '每周两次', '必要时', '立即',
-];
+]); // 保留默认值，以免 HIS 请求失败时没有选项
+
+async function fetchFrequencyOptions() {
+  const his = getHisService();
+  if (!his) {
+    console.warn('[VoiceConsultationNew] HisService not initialized, using default frequency options');
+    return;
+  }
+  try {
+    const res = await his.post<{ items: Array<{ key: string; text: string }> }>('api/base.tenantDicService/frequency', {});
+    if (res && res.body && res.body.items && res.body.items.length > 0) {
+      frequencyOptions.value = res.body.items.map(item => item.text);
+      console.log('[VoiceConsultationNew] Loaded frequency options from HIS:', frequencyOptions.value);
+    }
+  } catch (e) {
+    console.error('[VoiceConsultationNew] Failed to load frequency options from HIS', e);
+  }
+}
+
+onMounted(() => {
+  fetchFrequencyOptions();
+});
 const routeOptions = [
   '口服', '静脉注射', '肌肉注射', '皮下注射',
   '外用', '雾化吸入', '舌下含服', '直肠给药', '滴眼',
@@ -576,6 +561,43 @@ async function handleBatchWriteBack() {
     submitting.value = false;
   }
 }
+// ── Initialize from intentResult ───────────────────────────────────────
+watch(
+  () => props.intentResult,
+  (result) => {
+    if (!result) return;
+    chiefComplaint.value = result.chiefComplaint;
+    historyOfPresentIllness.value = result.historyOfPresentIllness;
+    pastMedicalHistory.value = result.pastMedicalHistory;
+    // Initialize diagnoses from voice
+    if (result.diagnoses && result.diagnoses.length > 0) {
+      aiDiagnoses.value = initDiagnosesFromIntent(result.diagnoses);
+      // Auto-select first matched diagnosis
+      const firstMatched = aiDiagnoses.value.find((d) => d.id || d.code);
+      if (firstMatched) {
+        selectedDiagnosis.value = firstMatched;
+      }
+    }
+    // Initialize treatments from voice
+    if (result.treatments.length > 0) {
+      treatments.value = initTreatmentsFromIntent(result.treatments);
+    }
+
+    // Trigger fact checks (async, non-blocking)
+    if (aiDiagnoses.value.length > 0) {
+      performDiagnosisFactCheck(aiDiagnoses.value);
+      // Trigger checklist for selected diagnosis
+      if (selectedDiagnosis.value) {
+        fetchDiagnosisChecklist(selectedDiagnosis.value);
+      }
+    }
+    if (treatments.value.length > 0) {
+      performTreatmentFactCheck(treatments.value);
+    }
+  },
+  { immediate: true }
+);
+
 </script>
 
 <template>
