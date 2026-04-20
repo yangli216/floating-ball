@@ -21,6 +21,7 @@ import { trackApiCall, trackError, startTimedOperation } from '../services/opera
 import type { RiskItem } from '../components/RiskAlertPanel.vue';
 import type { AppPatient } from '../types/appState';
 import type { ConsultationAssistAction } from '../types/consultationAssist';
+import { getHisService } from '../services/hisService';
 
 /**
  * 事件监听配置参数
@@ -108,6 +109,17 @@ interface SessionAssistPayload extends StartConsultationPayload {
   allergyHistory?: string;
 }
 
+interface SdkHandshakePayload {
+  origin: string;
+  href: string;
+  extra?: {
+    emrAccessToken?: string;
+    urt?: string;
+    [key: string]: any;
+  };
+  [key: string]: any;
+}
+
 function mergePatientContext(
   currentPatient: AppPatient | null,
   payload: StartConsultationPayload | SessionAssistPayload | null | undefined
@@ -179,6 +191,7 @@ export function useEventListeners(options: EventListenersOptions) {
   let unlistenMousePos: UnlistenFn | null = null;
   let unlistenMoved: UnlistenFn | null = null;
   let unlistenResize: UnlistenFn | null = null;
+  let unlistenSdkHandshake: UnlistenFn | null = null;
 
   // ========== Deep Link 监听 ==========
 
@@ -205,6 +218,30 @@ export function useEventListeners(options: EventListenersOptions) {
     } catch (e) {
       console.warn('Failed to register deep link listener:', e);
     }
+  }
+
+  // ========== SDK 握手监听 ==========
+
+  /**
+   * 注册 SDK 握手完成监听
+   * 用于初始化 HIS 服务工具类
+   */
+  async function registerHandshakeListener(): Promise<void> {
+    unlistenSdkHandshake = await listen<SdkHandshakePayload>('sdk-handshake', (event) => {
+      const ctx = event.payload;
+      console.log('[EventListeners] SDK Handshake received:', ctx);
+
+      const baseUrl = ctx.origin;
+      const token = ctx.extra?.emrAccessToken;
+
+      if (baseUrl && token) {
+        // 初始化 HIS 服务单例
+        const his = getHisService(baseUrl, token);
+        console.log('[EventListeners] HisService initialized with origin:', baseUrl);
+      } else {
+        console.warn('[EventListeners] Handshake missing baseUrl or token');
+      }
+    });
   }
 
   // ========== HIS 集成事件监听 ==========
@@ -469,6 +506,9 @@ export function useEventListeners(options: EventListenersOptions) {
       await registerStopConsultationListener();
       await registerVoiceConsultationListener();
 
+      // SDK 握手监听
+      await registerHandshakeListener();
+
       // 鼠标事件监听
       await registerHoverListener();
       await registerMousePosListener();
@@ -522,6 +562,10 @@ export function useEventListeners(options: EventListenersOptions) {
     if (unlistenResize) {
       unlistenResize();
       unlistenResize = null;
+    }
+    if (unlistenSdkHandshake) {
+      unlistenSdkHandshake();
+      unlistenSdkHandshake = null;
     }
     if (resizeTimeoutRef.value) {
       clearTimeout(resizeTimeoutRef.value);

@@ -47,6 +47,14 @@
   var bridgeUrl = currentScript.getAttribute('data-bridge-url') || DEFAULTS.bridgeUrl;
   var scheme = currentScript.getAttribute('data-scheme') || DEFAULTS.scheme;
 
+  // 如果未显式指定 SDK URL，从小球本地 HTTP 服务推导
+  // bridgeUrl 通常是 http://127.0.0.1:8081/api，去掉 /api 得到 baseOrigin
+  if (!sdkUrl) {
+    var baseOrigin = bridgeUrl.replace(/\/api\/?$/, '');
+    sdkUrl = baseOrigin + '/sdk/med-hermes-sdk.js';
+    log('SDK URL 自动推导为: ' + sdkUrl);
+  }
+
   // ─── 状态 ───
 
   var state = {

@@ -145,6 +145,7 @@ useEventListeners (全局事件) -> 触发 useNavigation & useWorkMode
 
 | 服务 | 行数 | 职责 |
 |------|------|------|
+| **hisService.ts** | ~80 | 封装 Tauri HTTP 插件，绕过浏览器同源与 Cookie 限制，供前端直接调用 HIS 接口 |
 | **factChecker.ts** | ~399 | AI 输出验证（医学指南核查） |
 | **feedback.ts** | ~312 | 操作追踪与反馈 |
 | **knowledgeBase.ts** | ~213 | 通用知识库 CRUD |

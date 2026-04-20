@@ -193,7 +193,21 @@
 
   function collectBrowserContext(extra) {
     return {
-      origin: typeof location !== 'undefined' ? location.origin : '',
+      origin: (function() {
+        if (typeof location === 'undefined') return '';
+        var origin = location.origin;
+        var pathname = location.pathname;
+        var contextPath = '';
+        if (pathname && pathname.length > 1) {
+          var segments = pathname.split('/');
+          // 如果路径类似 /his-web/xxx，则提取 /his-web
+          // 注意排除常见的前端路由或静态资源目录，如果有特定的应用名可以更精确匹配
+          if (segments.length > 1 && segments[1] && segments[1].indexOf('.html') === -1) {
+             contextPath = '/' + segments[1];
+          }
+        }
+        return origin + contextPath;
+      })(),
       href: typeof location !== 'undefined' ? location.href : '',
       cookie: typeof document !== 'undefined' ? document.cookie : '',
       userAgent: typeof navigator !== 'undefined' ? navigator.userAgent : '',
@@ -252,15 +266,24 @@
    */
   MedHermes.prototype.init = function (extra) {
     var self = this;
-    this._browserCtx = collectBrowserContext(assign({}, this._opts.extra, extra));
 
-    return this._handshake()
+    // 先尝试获取 HIS 上下文，然后再执行握手
+    return this._collectHISContext(extra)
+      .then(function (finalExtra) {
+        self._browserCtx = collectBrowserContext(finalExtra);
+        return self._handshake();
+      })
       .then(function (result) {
         self._connected = true;
         self._emitter.emit('connected', result);
         return result;
       })
-      .catch(function () {
+      .catch(function (err) {
+        // 如果是 HIS 接口报错但不是连接报错，记录一下但继续尝试握手（除非是因为桌面端没启动）
+        if (err && err.message && err.message.indexOf('MedHermes') === -1) {
+          console.warn('[MedHermes] HIS context collection failed:', err);
+        }
+
         // 桌面端不在线，尝试协议拉起
         self._emitter.emit('launching');
         self._launcher.launch('launch');
@@ -283,9 +306,59 @@
       });
   };
 
+  /**
+   * 异步采集 HIS 特定上下文 (emrAccessToken, urt)
+   * @private
+   */
+  MedHermes.prototype._collectHISContext = function (extra) {
+    var self = this;
+    var finalExtra = assign({}, this._opts.extra, extra);
+
+    // 1. 获取 urt (同步)
+    try {
+      if (typeof $env !== 'undefined' && $env.globalContext && typeof $env.globalContext.get === 'function') {
+        var urt = $env.globalContext.get('urt');
+        if (urt) {
+          finalExtra.urt = urt;
+        }
+      }
+    } catch (e) {
+      console.warn('[MedHermes] Failed to get urt from $env:', e);
+    }
+
+    // 2. 获取 accessToken (异步)
+    if (typeof $ajax === 'function') {
+      return new Promise(function (resolve) {
+        try {
+          $ajax({
+            method: "POST",
+            url: "api/base.publicService/emrAccessToken",
+            timeout: 5000,
+            jsonData: {}
+          }).then(function (res) {
+            if (res && res.body) {
+              finalExtra.emrAccessToken = res.body;
+              finalExtra.accessToken = res.body; // 兼容性字段
+            }
+            resolve(finalExtra);
+          }).catch(function (err) {
+            console.warn('[MedHermes] $ajax emrAccessToken failed:', err);
+            resolve(finalExtra); // 报错也继续，不阻塞握手
+          });
+        } catch (e) {
+          console.warn('[MedHermes] Error calling $ajax:', e);
+          resolve(finalExtra);
+        }
+      });
+    }
+
+    return Promise.resolve(finalExtra);
+  };
+
   /** 内部握手方法 */
   MedHermes.prototype._handshake = function () {
-    return this._http.post('/handshake', this._browserCtx);
+    var ctx = this._browserCtx || collectBrowserContext(this._opts.extra);
+    return this._http.post('/handshake', ctx);
   };
 
   /**
@@ -293,7 +366,12 @@
    * @returns {Promise<Object>} 包含版本号等信息
    */
   MedHermes.prototype.ping = function () {
-    return this._http.post('/handshake', this._browserCtx || collectBrowserContext());
+    var self = this;
+    // ping 也要尝试带上最新上下文
+    return this._collectHISContext()
+      .then(function (extra) {
+        return self._http.post('/handshake', collectBrowserContext(extra));
+      });
   };
 
   /**

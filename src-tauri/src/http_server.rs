@@ -841,6 +841,28 @@ async fn pmphai_list_search(data: web::Json<PMPHAIListRequest>) -> impl Responde
     }
 }
 
+// ==================== SDK Static File Serving ====================
+
+/// 提供 med-hermes-sdk.js 静态文件，供第三方 HIS 通过 HTTP 获取 SDK
+async fn serve_sdk_js() -> impl Responder {
+    const SDK_JS: &str = include_str!("../../sdk/med-hermes-sdk.js");
+    HttpResponse::Ok()
+        .content_type("application/javascript; charset=utf-8")
+        .insert_header(("Cache-Control", "public, max-age=3600"))
+        .insert_header(("Access-Control-Allow-Origin", "*"))
+        .body(SDK_JS)
+}
+
+/// 提供 med-hermes-loader.js 引导加载器
+async fn serve_loader_js() -> impl Responder {
+    const LOADER_JS: &str = include_str!("../../sdk/med-hermes-loader.js");
+    HttpResponse::Ok()
+        .content_type("application/javascript; charset=utf-8")
+        .insert_header(("Cache-Control", "public, max-age=86400"))
+        .insert_header(("Access-Control-Allow-Origin", "*"))
+        .body(LOADER_JS)
+}
+
 pub fn run_server(app_handle: tauri::AppHandle, state: SharedAppState) {
     std::thread::spawn(move || {
         let sys = actix_web::rt::System::new();
@@ -871,6 +893,9 @@ pub fn run_server(app_handle: tauri::AppHandle, state: SharedAppState) {
                     .route("/api/pmphai/clip", web::post().to(pmphai_get_clip))
                     .route("/api/pmphai/list", web::post().to(pmphai_list_search))
                     .route("/api/pmphai/page-url", web::post().to(pmphai_generate_page_url))
+                    // SDK static files
+                    .route("/sdk/med-hermes-sdk.js", web::get().to(serve_sdk_js))
+                    .route("/sdk/med-hermes-loader.js", web::get().to(serve_loader_js))
             })
             .bind(("127.0.0.1", 8081))
             .expect("Failed to bind port 8081")
