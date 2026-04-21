@@ -11,6 +11,99 @@ type LegacyNavigator = Navigator & {
     msGetUserMedia?: LegacyGetUserMedia;
 };
 
+const AUDIO_INPUT_DEVICE_STORAGE_KEY = 'AUDIO_INPUT_DEVICE_ID';
+
+export interface AudioInputDeviceOption {
+    deviceId: string;
+    label: string;
+}
+
+function getStoredAudioInputDeviceId(): string | null {
+    if (typeof localStorage === 'undefined') {
+        return null;
+    }
+
+    const deviceId = localStorage.getItem(AUDIO_INPUT_DEVICE_STORAGE_KEY)?.trim();
+    return deviceId ? deviceId : null;
+}
+
+function clearStoredAudioInputDeviceId(): void {
+    if (typeof localStorage === 'undefined') {
+        return;
+    }
+
+    localStorage.removeItem(AUDIO_INPUT_DEVICE_STORAGE_KEY);
+}
+
+export function getPreferredAudioInputDeviceId(): string | null {
+    return getStoredAudioInputDeviceId();
+}
+
+export function setPreferredAudioInputDeviceId(deviceId: string | null): void {
+    if (typeof localStorage === 'undefined') {
+        return;
+    }
+
+    const normalizedDeviceId = deviceId?.trim();
+    if (normalizedDeviceId) {
+        localStorage.setItem(AUDIO_INPUT_DEVICE_STORAGE_KEY, normalizedDeviceId);
+        return;
+    }
+
+    clearStoredAudioInputDeviceId();
+}
+
+export async function listAudioInputDevices(options: { requestPermission?: boolean } = {}): Promise<AudioInputDeviceOption[]> {
+    if (typeof navigator === 'undefined' || !navigator.mediaDevices?.enumerateDevices) {
+        return [];
+    }
+
+    let permissionProbeStream: MediaStream | null = null;
+    if (options.requestPermission) {
+        permissionProbeStream = await requestMicrophoneStream({ audio: true });
+    }
+
+    try {
+        const devices = await navigator.mediaDevices.enumerateDevices();
+        let fallbackIndex = 1;
+
+        return devices
+            .filter((device) => device.kind === 'audioinput')
+            .map((device) => ({
+                deviceId: device.deviceId,
+                label: device.label?.trim() || `输入设备 ${fallbackIndex++}`,
+            }));
+    } finally {
+        permissionProbeStream?.getTracks().forEach((track) => track.stop());
+    }
+}
+
+function isUnavailableAudioInputError(error: unknown): boolean {
+    if (error instanceof DOMException) {
+        return error.name === 'OverconstrainedError'
+            || error.name === 'NotFoundError'
+            || error.name === 'DevicesNotFoundError';
+    }
+
+    const message = error instanceof Error ? error.message : String(error);
+    return message.includes('OverconstrainedError') || message.includes('NotFoundError');
+}
+
+async function resolveAudioInputConstraint(): Promise<MediaTrackConstraints | boolean> {
+    const preferredDeviceId = getStoredAudioInputDeviceId();
+    if (!preferredDeviceId) {
+        return true;
+    }
+
+    const availableDevices = await listAudioInputDevices();
+    if (availableDevices.some((device) => device.deviceId === preferredDeviceId)) {
+        return { deviceId: { exact: preferredDeviceId } };
+    }
+
+    clearStoredAudioInputDeviceId();
+    return true;
+}
+
 /**
  * 请求麦克风流（兼容旧版 WebView）
  */
@@ -119,7 +212,17 @@ export class AudioRecorder {
 
         try {
             console.time('[AudioRecorder] getUserMedia');
-            this.stream = await requestMicrophoneStream({ audio: true });
+            const audioConstraint = await resolveAudioInputConstraint();
+            try {
+                this.stream = await requestMicrophoneStream({ audio: audioConstraint });
+            } catch (err) {
+                if (audioConstraint !== true && isUnavailableAudioInputError(err)) {
+                    clearStoredAudioInputDeviceId();
+                    this.stream = await requestMicrophoneStream({ audio: true });
+                } else {
+                    throw err;
+                }
+            }
             console.timeEnd('[AudioRecorder] getUserMedia');
 
             // Setup Audio Context

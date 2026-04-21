@@ -1449,38 +1449,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "floating-ball"
-version = "1.2.8"
-dependencies = [
- "actix-cors",
- "actix-web",
- "futures-util",
- "lazy_static",
- "md-5",
- "reqwest",
- "rfd 0.17.2",
- "rusqlite",
- "serde",
- "serde_json",
- "tauri",
- "tauri-build",
- "tauri-plugin-deep-link",
- "tauri-plugin-dialog",
- "tauri-plugin-fs",
- "tauri-plugin-opener",
- "tauri-plugin-process",
- "tauri-plugin-single-instance",
- "tauri-plugin-sql",
- "tauri-plugin-store",
- "tauri-plugin-updater",
- "tokio",
- "tokio-tungstenite",
- "url",
- "uuid",
- "window-vibrancy 0.5.3",
-]
-
-[[package]]
 name = "flume"
 version = "0.11.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2782,7 +2750,7 @@ dependencies = [
 
 [[package]]
 name = "med-hermes"
-version = "1.2.8"
+version = "1.2.9"
 dependencies = [
  "actix-cors",
  "actix-web",

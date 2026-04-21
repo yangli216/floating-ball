@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, onMounted, inject, watch } from 'vue';
+import { ref, computed, onMounted, onUnmounted, inject, watch } from 'vue';
 import { getLLMConfig, DEFAULT_LLM_CONFIG, testLLMConnection } from '../services/llm';
 import { getPMPHAIConfig, pmphaiService } from '../services/pmphai';
 import { useTheme } from '../services/themeService';
@@ -7,6 +7,13 @@ import { getCurrentWindow } from '@tauri-apps/api/window';
 import { save } from '@tauri-apps/plugin-dialog';
 import { invoke } from '@tauri-apps/api/core';
 import { trackClick, trackError } from '../services/operationTracker';
+import {
+  getMicrophoneErrorMessage,
+  getPreferredAudioInputDeviceId,
+  listAudioInputDevices,
+  setPreferredAudioInputDeviceId,
+  type AudioInputDeviceOption,
+} from '../services/audioRecorder';
 import UpdateChecker from './UpdateChecker.vue';
 import Icon from './Icon.vue';
 
@@ -35,6 +42,9 @@ const tabs = [
   { id: 'data', label: '数据管理', icon: 'lucide:database' },
   { id: 'about', label: '关于版本', icon: 'lucide:info' }
 ];
+
+const settingsLoaded = ref(false);
+const lastSavedSnapshot = ref('');
 
 // Provider presets
 const PROVIDER_PRESETS = [
@@ -85,6 +95,125 @@ const pmphaiSearchMode = ref<'rag' | 'list'>('rag');
 // Speech test mode
 const speechTestMode = ref(false);
 
+const DEFAULT_AUDIO_INPUT_VALUE = '__system_default__';
+const audioInputDevices = ref<AudioInputDeviceOption[]>([]);
+const selectedAudioInputDeviceId = ref(DEFAULT_AUDIO_INPUT_VALUE);
+const audioDeviceLoading = ref(false);
+const audioDeviceError = ref('');
+
+const audioInputOptions = computed(() => {
+  const hasSelectedOption = audioInputDevices.value.some(
+    (device) => device.deviceId === selectedAudioInputDeviceId.value
+  );
+
+  if (
+    selectedAudioInputDeviceId.value !== DEFAULT_AUDIO_INPUT_VALUE
+    && selectedAudioInputDeviceId.value
+    && !hasSelectedOption
+  ) {
+    return [
+      {
+        deviceId: selectedAudioInputDeviceId.value,
+        label: '已保存设备（当前待检测或不可用）',
+      },
+      ...audioInputDevices.value,
+    ];
+  }
+
+  return audioInputDevices.value;
+});
+
+const applyPreferredAudioInputSelection = (devices: AudioInputDeviceOption[]) => {
+  const preferredDeviceId = getPreferredAudioInputDeviceId();
+  if (!preferredDeviceId) {
+    selectedAudioInputDeviceId.value = DEFAULT_AUDIO_INPUT_VALUE;
+    return;
+  }
+
+  if (devices.length > 0 && !devices.some((device) => device.deviceId === preferredDeviceId)) {
+    setPreferredAudioInputDeviceId(null);
+    selectedAudioInputDeviceId.value = DEFAULT_AUDIO_INPUT_VALUE;
+    return;
+  }
+
+  selectedAudioInputDeviceId.value = preferredDeviceId;
+};
+
+const refreshAudioInputDevices = async (requestPermission = false) => {
+  audioDeviceLoading.value = true;
+  audioDeviceError.value = '';
+
+  try {
+    const devices = await listAudioInputDevices({ requestPermission });
+    audioInputDevices.value = devices;
+    applyPreferredAudioInputSelection(devices);
+    trackClick('settings_audio_devices_refresh', { requestPermission, deviceCount: devices.length });
+  } catch (error) {
+    audioDeviceError.value = getMicrophoneErrorMessage(error);
+    trackError('settings_audio_devices_refresh_failed', error);
+  } finally {
+    audioDeviceLoading.value = false;
+  }
+};
+
+const handleAudioDeviceChange = () => {
+  refreshAudioInputDevices();
+};
+
+const currentSettingsSnapshot = computed(() => JSON.stringify({
+  themeId: currentTheme.value.id,
+  alwaysOnTop: alwaysOnTop.value,
+  selectedAudioInputDeviceId: selectedAudioInputDeviceId.value,
+  apiKey: apiKey.value,
+  baseUrl: baseUrl.value,
+  audioBaseUrl: audioBaseUrl.value,
+  model: model.value,
+  audioModel: audioModel.value,
+  reviewerEnabled: reviewerEnabled.value,
+  reviewerApiKey: reviewerApiKey.value,
+  reviewerBaseUrl: reviewerBaseUrl.value,
+  reviewerModel: reviewerModel.value,
+  pmphaiEnabled: pmphaiEnabled.value,
+  pmphaiAppKey: pmphaiAppKey.value,
+  pmphaiAppSecret: pmphaiAppSecret.value,
+  pmphaiSearchMode: pmphaiSearchMode.value,
+  speechTestMode: speechTestMode.value,
+}));
+
+const shouldShowSaveBar = computed(() => activeTab.value === 'general' || activeTab.value === 'model');
+const hasUnsavedChanges = computed(() => settingsLoaded.value && currentSettingsSnapshot.value !== lastSavedSnapshot.value);
+const saveShortcutLabel = computed(() => {
+  if (typeof navigator === 'undefined') {
+    return 'Cmd/Ctrl+S';
+  }
+
+  return /Macintosh|Mac OS X|MacIntel/i.test(navigator.userAgent) ? 'Cmd+S' : 'Ctrl+S';
+});
+
+const saveBarDescription = computed(() => {
+  if (!hasUnsavedChanges.value) {
+    return '当前页面修改已保存';
+  }
+
+  return activeTab.value === 'general'
+    ? '通用设置有未保存变更'
+    : '模型配置有未保存变更';
+});
+
+const updateSavedSnapshot = () => {
+  lastSavedSnapshot.value = currentSettingsSnapshot.value;
+};
+
+const handleSaveShortcut = async (event: KeyboardEvent) => {
+  const pressedSaveShortcut = (event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 's';
+  if (!pressedSaveShortcut || !shouldShowSaveBar.value || !hasUnsavedChanges.value) {
+    return;
+  }
+
+  event.preventDefault();
+  await saveSettings();
+};
+
 onMounted(async () => {
   const config = getLLMConfig();
   apiKey.value = config.apiKey;
@@ -114,6 +243,24 @@ onMounted(async () => {
   speechTestMode.value = localStorage.getItem('SPEECH_TEST_MODE') === 'true'
     || import.meta.env.VITE_SPEECH_TEST_MODE === 'true';
 
+  await refreshAudioInputDevices();
+  updateSavedSnapshot();
+  settingsLoaded.value = true;
+
+  if (navigator.mediaDevices?.addEventListener) {
+    navigator.mediaDevices.addEventListener('devicechange', handleAudioDeviceChange);
+  }
+
+  window.addEventListener('keydown', handleSaveShortcut);
+
+});
+
+onUnmounted(() => {
+  if (navigator.mediaDevices?.removeEventListener) {
+    navigator.mediaDevices.removeEventListener('devicechange', handleAudioDeviceChange);
+  }
+
+  window.removeEventListener('keydown', handleSaveShortcut);
 });
 
 const saveSettings = async () => {
@@ -143,6 +290,12 @@ const saveSettings = async () => {
     localStorage.removeItem('SPEECH_TEST_MODE');
   }
 
+  setPreferredAudioInputDeviceId(
+    selectedAudioInputDeviceId.value === DEFAULT_AUDIO_INPUT_VALUE
+      ? null
+      : selectedAudioInputDeviceId.value
+  );
+
   trackClick('settings_save', {
     hasApiKey: !!apiKey.value,
     hasBaseUrl: !!baseUrl.value,
@@ -151,6 +304,7 @@ const saveSettings = async () => {
     audioModel: audioModel.value,
     alwaysOnTop: alwaysOnTop.value,
     pmphaiEnabled: pmphaiEnabled.value,
+    audioInputMode: selectedAudioInputDeviceId.value === DEFAULT_AUDIO_INPUT_VALUE ? 'system-default' : 'custom-device',
   });
 
   try {
@@ -162,6 +316,7 @@ const saveSettings = async () => {
 
   // Clear PMPHAI token cache when settings change
   pmphaiService.clearTokenCache();
+  updateSavedSnapshot();
 
   if (showToast) {
     showToast('设置已保存', 'success');
@@ -364,6 +519,43 @@ watch(activeTab, (newVal) => {
           </div>
         </div>
 
+        <div class="settings-section">
+          <div class="section-header">
+            <Icon icon="lucide:mic" :size="20" />
+            <h3>音频设置</h3>
+          </div>
+          <p class="section-desc">聊天语音输入和语音接诊共用同一套麦克风选择。若指定设备失效，录音会自动回退到系统默认输入设备。</p>
+
+          <div class="form-group">
+            <label for="audio-input-device">输入设备</label>
+            <div class="input-with-icon">
+              <Icon icon="lucide:audio-lines" :size="16" class="input-icon" />
+              <select id="audio-input-device" v-model="selectedAudioInputDeviceId" class="select-input">
+                <option :value="DEFAULT_AUDIO_INPUT_VALUE">跟随系统默认输入设备</option>
+                <option v-for="device in audioInputOptions" :key="device.deviceId" :value="device.deviceId">
+                  {{ device.label }}
+                </option>
+              </select>
+            </div>
+            <p class="form-hint">选择固定麦克风后，应用会记住该设备；切回默认时始终跟随系统当前默认输入。</p>
+          </div>
+
+          <div class="test-connection-row">
+            <button class="test-btn" @click="refreshAudioInputDevices(true)" :disabled="audioDeviceLoading">
+              <Icon :icon="audioDeviceLoading ? 'lucide:loader-2' : 'lucide:refresh-cw'" :size="16" :class="{ spin: audioDeviceLoading }" />
+              {{ audioDeviceLoading ? '刷新中...' : '刷新设备列表' }}
+            </button>
+            <span v-if="audioDeviceError" class="test-message error">
+              <Icon icon="lucide:triangle-alert" :size="16" />
+              {{ audioDeviceError }}
+            </span>
+            <span v-else class="test-message success">
+              <Icon icon="lucide:mic-2" :size="16" />
+              已检测到 {{ audioInputDevices.length }} 个输入设备
+            </span>
+          </div>
+        </div>
+
         <div class="settings-section clickable-section"
           @click="trackClick('settings_open_symptom_manage'); emit('open-symptom-manage')">
           <div class="section-header no-border"
@@ -379,10 +571,6 @@ watch(activeTab, (newVal) => {
           <p class="section-desc" style="margin-top: 4px;">配置和维护用于问诊的症状模板库</p>
         </div>
 
-        <button class="save-btn" @click="saveSettings">
-          <Icon icon="lucide:check" :size="18" />
-          保存设置
-        </button>
       </div>
 
       <!-- Model Tab -->
@@ -618,11 +806,6 @@ watch(activeTab, (newVal) => {
           <p>配置已保存到本地。如未设置，将使用环境变量默认值。</p>
         </div>
 
-        <button class="save-btn" @click="saveSettings">
-          <Icon icon="lucide:save" :size="18" />
-          保存配置
-        </button>
-
       </div>
 
       <!-- About Tab -->
@@ -713,6 +896,21 @@ watch(activeTab, (newVal) => {
           </ul>
         </div>
       </div>
+    </div>
+
+    <div v-if="shouldShowSaveBar" class="settings-save-bar" :class="{ dirty: hasUnsavedChanges }">
+      <div class="save-bar-status">
+        <div class="save-bar-title">
+          <Icon :icon="hasUnsavedChanges ? 'lucide:circle-alert' : 'lucide:check-circle-2'" :size="16" />
+          <span>{{ saveBarDescription }}</span>
+        </div>
+        <span class="save-bar-divider">·</span>
+        <span class="save-bar-hint">{{ saveShortcutLabel }}</span>
+      </div>
+      <button class="save-btn compact" @click="saveSettings" :disabled="!hasUnsavedChanges">
+        <Icon :icon="hasUnsavedChanges ? 'lucide:save' : 'lucide:check'" :size="16" />
+        {{ hasUnsavedChanges ? '保存更改' : '已保存' }}
+      </button>
     </div>
   </div>
 </template>
@@ -827,6 +1025,50 @@ watch(activeTab, (newVal) => {
   flex: 1;
   overflow-y: auto;
   padding: 24px;
+}
+
+.settings-save-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 16px;
+  background: rgba(255, 255, 255, 0.94);
+  border-top: 1px solid var(--medical-border-light);
+  box-shadow: 0 -4px 14px rgba(15, 23, 42, 0.05);
+  backdrop-filter: blur(12px);
+}
+
+.settings-save-bar.dirty {
+  border-top-color: rgba(8, 145, 178, 0.24);
+  box-shadow: 0 -6px 18px rgba(8, 145, 178, 0.09);
+}
+
+.save-bar-status {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.save-bar-title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--medical-text-primary);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.save-bar-divider {
+  color: var(--medical-border-medium);
+  font-size: 12px;
+}
+
+.save-bar-hint {
+  color: var(--medical-text-muted);
+  font-size: 11px;
+  white-space: nowrap;
 }
 
 .tab-pane {
@@ -1035,7 +1277,12 @@ watch(activeTab, (newVal) => {
   padding-left: 44px !important;
 }
 
-.form-group input {
+.input-with-icon .select-input {
+  padding-left: 44px !important;
+}
+
+.form-group input,
+.form-group select {
   height: 48px;
   border-radius: 8px;
   border: 2px solid var(--medical-border-medium);
@@ -1047,13 +1294,20 @@ watch(activeTab, (newVal) => {
   font-size: 16px;
 }
 
-.form-group input:hover {
+.form-group input:hover,
+.form-group select:hover {
   border-color: var(--medical-border-medium);
 }
 
-.form-group input:focus {
+.form-group input:focus,
+.form-group select:focus {
   border-color: var(--medical-primary);
   box-shadow: 0 0 0 3px rgba(8, 145, 178, 0.1);
+}
+
+.form-group select {
+  appearance: none;
+  width: 100%;
 }
 
 .form-hint {
@@ -1197,6 +1451,28 @@ watch(activeTab, (newVal) => {
 
 .save-btn:active {
   transform: translateY(0);
+}
+
+.save-btn.compact {
+  width: auto;
+  min-width: 104px;
+  min-height: 36px;
+  padding: 8px 14px;
+  font-size: 14px;
+  flex-shrink: 0;
+}
+
+.save-btn:disabled {
+  background: #94A3B8;
+  box-shadow: none;
+  cursor: default;
+  transform: none;
+}
+
+.save-btn:disabled:hover {
+  background: #94A3B8;
+  transform: none;
+  box-shadow: none;
 }
 
 /* Info Banner */
@@ -1479,6 +1755,22 @@ watch(activeTab, (newVal) => {
 
 /* Responsive */
 @media (max-width: 640px) {
+  .settings-save-bar {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 8px;
+    padding: 10px 12px;
+  }
+
+  .save-btn.compact {
+    width: 100%;
+  }
+
+  .save-bar-status {
+    justify-content: space-between;
+    flex-wrap: wrap;
+  }
+
   .settings-header {
     padding: 16px;
   }

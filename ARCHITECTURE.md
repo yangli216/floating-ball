@@ -124,6 +124,7 @@
 3. 若未来引入真实登录态，应新增专用文档章节并在 `AGENTS.md` / `api.md` 中同步说明。
 4. Windows 内网更新源采用本地配置驱动：测试环境地址、正式环境地址和当前生效环境保存在 `localStorage`，前端只负责展示与选择，真正的 updater endpoint 在 Rust 侧通过 `updater_builder()` 运行时注入。
 5. 主窗口的聊天、设置、问诊等可调整工作视图会将用户最后一次手动调整后的窗口尺寸写入 `.settings.dat`，再次打开对应视图时优先恢复该尺寸。
+6. 通用设置页新增音频输入设备配置，首选麦克风 `deviceId` 保存在 `localStorage`；聊天录音和语音接诊共用同一配置，若指定设备不存在则自动回退到系统默认输入设备。
 
 ### 与主流程关系
 
@@ -534,7 +535,7 @@ eventListeners.unregisterAllListeners();
 | 组件 | 职责 | 文件 |
 |------|------|------|
 | `ChatPanel.vue` | LLM 对话界面 | [src/components/ChatPanel.vue](src/components/ChatPanel.vue) |
-| `SettingsPanel.vue` | 系统设置（含文本/音频模型配置） | [src/components/SettingsPanel.vue](src/components/SettingsPanel.vue) |
+| `SettingsPanel.vue` | 系统设置（含文本/音频模型配置、音频输入设备选择） | [src/components/SettingsPanel.vue](src/components/SettingsPanel.vue) |
 | `ConsultationPage.vue` | 完整症状问诊主链路，同时承接新的“内嵌灵活模式”；支持根据 `/assist` 上下文直接跳过症状采集进入病历详情页，继续复用现有推荐诊断、诊断鉴别、推荐用药、推荐检查与诊断路径能力，并负责处理 PHIS 引用闭环的页面状态；诊断保持单选引用，推荐方案支持多选后分组批量引入 | [src/components/ConsultationPage.vue](src/components/ConsultationPage.vue) |
 | `DiagnosisPathWindow.vue` | 独立诊断推理路径窗口，使用 ECharts Sankey 展示患者事实、章节归类、证据汇聚与诊断去向；默认提供更宽画布，并按容器尺寸动态计算 Sankey 的布局盒子，用对称留白实现“适应屏幕并居中”的默认视图，再开放滚轮缩放、平移与节点拖动；点击入口后窗口先显示 loading 动画，并按“检查缓存 -> 生成推理链 -> 渲染图表”的阶段更新提示，若生成超时或渲染失败会切换到明确错误态；正文容器在收到 payload 后保持挂载，loading 改为遮罩层，避免 `chartEl` 尚未挂载时误判渲染成功；开窗后的 `show/focus` 调用采用 best-effort 非阻塞方式，避免 Tauri 原生命令卡住整个推理链；右侧说明面板采用“支持证据 / 反证提醒 / 鉴别要点”三段式，未返回结构化分段时回退显示整体 rationale | [src/components/DiagnosisPathWindow.vue](src/components/DiagnosisPathWindow.vue) |
 | `VoiceCapsule.vue` | 语音录制胶囊 | [src/components/VoiceCapsule.vue](src/components/VoiceCapsule.vue) |
@@ -710,7 +711,7 @@ src/styles/
 |------|------|------|
 | `llm.ts` | LLM API 通信（OpenAI 兼容） | [src/services/llm.ts](src/services/llm.ts) |
 | `aliyunSpeech.ts` | 语音转写编排（DashScope + OpenAI 兼容降级） | [src/services/aliyunSpeech.ts](src/services/aliyunSpeech.ts) |
-| `audioRecorder.ts` | Web Audio API 录音 | [src/services/audioRecorder.ts](src/services/audioRecorder.ts) |
+| `audioRecorder.ts` | Web Audio API 录音、音频输入设备枚举与首选设备回退 | [src/services/audioRecorder.ts](src/services/audioRecorder.ts) |
 | `medicalData.ts` | 医疗数据匹配（诊断、药品、检查项）；同时负责根据 ICD-10 前三位类目码（如 `J06`）解析章节分组，用于推荐诊断分组展示 | [src/services/medicalData.ts](src/services/medicalData.ts) |
 | `diagnosisPath.ts` | 诊断路径数据构建与独立窗口事件载荷封装；优先通过 LLM 生成结构化推理链，再在前端校验并映射为 Sankey 节点、连线和说明文案，失败时回退本地兜底链路；载荷中补充 `supportingEvidence`、`counterEvidence`、`differentialPoints` 三段式解释字段，供窗口右侧说明面板直接渲染 | [src/services/diagnosisPath.ts](src/services/diagnosisPath.ts) |
 | `feedback.ts` | 会话反馈服务 | [src/services/feedback.ts](src/services/feedback.ts) |
@@ -783,6 +784,7 @@ startAuditUploader() (30s batch upload)
 
 - 统一封装麦克风流请求：优先 `navigator.mediaDevices.getUserMedia`，兼容 legacy `getUserMedia` 系列 API
 - 提供麦克风错误归一化：将浏览器/系统异常映射为用户可理解提示
+- 提供输入设备枚举、首选 `deviceId` 持久化与设备失效回退，保证 `VoiceCapsule.vue` 与 `ChatPanel.vue` 复用同一套音频选择策略
 - 为 `VoiceCapsule.vue` 与 `ChatPanel.vue` 提供一致的录音能力基座
 
 ### 语音转写网络策略

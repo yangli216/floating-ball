@@ -76,7 +76,7 @@ floating-ball/
 
 | 组件 | 行数 | 职责 |
 |------|------|------|
-| **SettingsPanel.vue** | ~1500 | LLM 配置、窗口行为、自动更新、主题 |
+| **SettingsPanel.vue** | ~1500 | LLM 配置、窗口行为、音频输入设备、自动更新、主题 |
 | **AnalyticsPanel.vue** | ~1200 | 数据分析看板（ECharts） |
 | **KnowledgePanel.vue** | ~850 | PMPHAI 医学知识检索 |
 | **BodyPartSelector.vue** | ~830 | 人体部位交互选症状（分性别） |
@@ -139,7 +139,7 @@ useEventListeners (全局事件) -> 触发 useNavigation & useWorkMode
 | 服务 | 行数 | 职责 |
 |------|------|------|
 | **aliyunSpeech.ts** | ~275 | 阿里云实时语音识别（WebSocket 流式） |
-| **audioRecorder.ts** | ~317 | 浏览器音频录制（Web Audio API, PCM16） |
+| **audioRecorder.ts** | ~317 | 浏览器音频录制（Web Audio API, PCM16），并统一处理输入设备枚举、首选设备持久化和失效回退 |
 
 ### 辅助服务
 
