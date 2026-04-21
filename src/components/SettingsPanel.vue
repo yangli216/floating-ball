@@ -2,6 +2,13 @@
 import { ref, computed, onMounted, onUnmounted, inject, watch } from 'vue';
 import { getLLMConfig, DEFAULT_LLM_CONFIG, testLLMConnection } from '../services/llm';
 import { getPMPHAIConfig, pmphaiService } from '../services/pmphai';
+import {
+  DEFAULT_SPEECH_CONFIG,
+  getSpeechConfig,
+  getSpeechConfigStorageKeys,
+  getSpeechProviderOptions,
+  type SpeechProvider,
+} from '../services/speechConfig';
 import { useTheme } from '../services/themeService';
 import { getCurrentWindow } from '@tauri-apps/api/window';
 import { save } from '@tauri-apps/plugin-dialog';
@@ -58,7 +65,6 @@ const PROVIDER_PRESETS = [
 
 const applyPreset = (preset: typeof PROVIDER_PRESETS[0]) => {
   baseUrl.value = preset.baseUrl;
-  audioBaseUrl.value = preset.baseUrl;
   model.value = preset.model;
   trackClick('settings_apply_preset', { provider: preset.name });
 };
@@ -66,9 +72,7 @@ const applyPreset = (preset: typeof PROVIDER_PRESETS[0]) => {
 // Settings state
 const apiKey = ref('');
 const baseUrl = ref('');
-const audioBaseUrl = ref('');
 const model = ref('');
-const audioModel = ref('');
 const alwaysOnTop = ref(true);
 
 // Test General Model connection
@@ -95,6 +99,13 @@ const pmphaiSearchMode = ref<'rag' | 'list'>('rag');
 
 // Speech test mode
 const speechTestMode = ref(false);
+const speechConfigStorageKeys = getSpeechConfigStorageKeys();
+const speechProviderOptions = getSpeechProviderOptions();
+const speechProvider = ref<SpeechProvider>(DEFAULT_SPEECH_CONFIG.provider);
+const speechApiKey = ref('');
+const speechBaseUrl = ref(DEFAULT_SPEECH_CONFIG.baseUrl);
+const speechModel = ref(DEFAULT_SPEECH_CONFIG.model);
+const isOpenAICompatibleSpeechProvider = computed(() => speechProvider.value === 'openai-compatible');
 
 const DEFAULT_AUDIO_INPUT_VALUE = '__system_default__';
 const AUDIO_INPUT_AUTO_HYDRATION_SESSION_KEY = 'SETTINGS_AUDIO_INPUT_AUTO_HYDRATED';
@@ -228,9 +239,11 @@ const currentSettingsSnapshot = computed(() => JSON.stringify({
   selectedAudioInputDeviceId: selectedAudioInputDeviceId.value,
   apiKey: apiKey.value,
   baseUrl: baseUrl.value,
-  audioBaseUrl: audioBaseUrl.value,
   model: model.value,
-  audioModel: audioModel.value,
+  speechProvider: speechProvider.value,
+  speechApiKey: speechApiKey.value,
+  speechBaseUrl: speechBaseUrl.value,
+  speechModel: speechModel.value,
   reviewerEnabled: reviewerEnabled.value,
   reviewerApiKey: reviewerApiKey.value,
   reviewerBaseUrl: reviewerBaseUrl.value,
@@ -266,6 +279,26 @@ const updateSavedSnapshot = () => {
   lastSavedSnapshot.value = currentSettingsSnapshot.value;
 };
 
+watch(speechProvider, (nextProvider, previousProvider) => {
+  if (nextProvider === previousProvider) {
+    return;
+  }
+
+  if (nextProvider === 'openai-compatible') {
+    if (!speechBaseUrl.value) {
+      speechBaseUrl.value = DEFAULT_SPEECH_CONFIG.baseUrl;
+    }
+    if (!speechModel.value || speechModel.value === DEFAULT_SPEECH_CONFIG.model) {
+      speechModel.value = 'whisper-1';
+    }
+    return;
+  }
+
+  if (!speechModel.value || speechModel.value === 'whisper-1') {
+    speechModel.value = DEFAULT_SPEECH_CONFIG.model;
+  }
+});
+
 const handleSaveShortcut = async (event: KeyboardEvent) => {
   const pressedSaveShortcut = (event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 's';
   if (!pressedSaveShortcut || !shouldShowSaveBar.value || !hasUnsavedChanges.value) {
@@ -278,11 +311,14 @@ const handleSaveShortcut = async (event: KeyboardEvent) => {
 
 onMounted(async () => {
   const config = getLLMConfig();
+  const speechConfig = getSpeechConfig();
   apiKey.value = config.apiKey;
   baseUrl.value = config.baseUrl;
-  audioBaseUrl.value = config.audioBaseUrl;
   model.value = config.model;
-  audioModel.value = config.audioModel;
+  speechProvider.value = speechConfig.provider;
+  speechApiKey.value = speechConfig.apiKey === '__REGIONAL_PROXY__' ? '' : speechConfig.apiKey;
+  speechBaseUrl.value = speechConfig.baseUrl;
+  speechModel.value = speechConfig.model;
 
   const savedTop = localStorage.getItem('ALWAYS_ON_TOP');
   alwaysOnTop.value = savedTop === null || savedTop === 'true';
@@ -328,10 +364,21 @@ onUnmounted(() => {
 const saveSettings = async () => {
   localStorage.setItem('OPENAI_API_KEY', apiKey.value);
   localStorage.setItem('LLM_BASE_URL', baseUrl.value);
-  localStorage.setItem('LLM_AUDIO_BASE_URL', audioBaseUrl.value);
   localStorage.setItem('LLM_MODEL', model.value);
-  localStorage.setItem('LLM_AUDIO_MODEL', audioModel.value);
   localStorage.setItem('ALWAYS_ON_TOP', String(alwaysOnTop.value));
+  localStorage.setItem(speechConfigStorageKeys.provider, speechProvider.value);
+  localStorage.setItem(speechConfigStorageKeys.apiKey, speechApiKey.value);
+  localStorage.setItem(speechConfigStorageKeys.baseUrl, speechBaseUrl.value);
+  localStorage.setItem(speechConfigStorageKeys.model, speechModel.value);
+
+  if (speechProvider.value === 'aliyun-dashscope') {
+    localStorage.setItem('DASHSCOPE_API_KEY', speechApiKey.value);
+    localStorage.removeItem('LLM_AUDIO_BASE_URL');
+    localStorage.removeItem('LLM_AUDIO_MODEL');
+  } else {
+    localStorage.setItem('LLM_AUDIO_BASE_URL', speechBaseUrl.value);
+    localStorage.setItem('LLM_AUDIO_MODEL', speechModel.value);
+  }
 
   // Save Reviewer AI settings
   localStorage.setItem('REVIEWER_ENABLED', String(reviewerEnabled.value));
@@ -361,9 +408,11 @@ const saveSettings = async () => {
   trackClick('settings_save', {
     hasApiKey: !!apiKey.value,
     hasBaseUrl: !!baseUrl.value,
-    hasAudioBaseUrl: !!audioBaseUrl.value,
     model: model.value,
-    audioModel: audioModel.value,
+    speechProvider: speechProvider.value,
+    hasSpeechApiKey: !!speechApiKey.value,
+    hasSpeechBaseUrl: !!speechBaseUrl.value,
+    speechModel: speechModel.value,
     alwaysOnTop: alwaysOnTop.value,
     pmphaiEnabled: pmphaiEnabled.value,
     audioInputMode: selectedAudioInputDeviceId.value === DEFAULT_AUDIO_INPUT_VALUE ? 'system-default' : 'custom-device',
@@ -640,8 +689,9 @@ watch(activeTab, (newVal) => {
         <div class="settings-section">
           <div class="section-header">
             <Icon icon="lucide:key" :size="20" />
-            <h3>API 配置</h3>
+            <h3>通用 LLM</h3>
           </div>
+          <p class="section-desc" style="margin-bottom: 16px;">用于聊天、病历整理、推荐生成等文本大模型能力。</p>
 
           <!-- Provider Presets -->
           <div class="preset-container">
@@ -655,63 +705,31 @@ watch(activeTab, (newVal) => {
           </div>
 
           <div class="form-group">
-            <label for="api-key">API Key <span class="required">*</span></label>
+            <label for="api-key">LLM API Key <span class="required">*</span></label>
             <div class="input-with-icon">
               <Icon icon="lucide:key" :size="16" class="input-icon" />
               <input id="api-key" v-model="apiKey" type="password" placeholder="sk-..." />
             </div>
-            <p class="form-hint">请输入您的 OpenAI 兼容 API 密钥</p>
+            <p class="form-hint">文本大模型使用的 OpenAI 兼容 API 密钥。</p>
           </div>
 
           <div class="form-group">
-            <label for="base-url">Base URL</label>
+            <label for="base-url">LLM Base URL</label>
             <div class="input-with-icon">
               <Icon icon="lucide:link" :size="16" class="input-icon" />
               <input id="base-url" v-model="baseUrl" type="text" :placeholder="DEFAULT_LLM_CONFIG.baseUrl" />
             </div>
-            <p class="form-hint">API 服务器地址（留空使用默认值）</p>
+            <p class="form-hint">文本对话与结构化生成使用的 API 服务地址。</p>
           </div>
 
-          
           <div class="form-group">
-            <label for="model-name">Model Name</label>
+            <label for="model-name">LLM Model</label>
             <div class="input-with-icon">
               <Icon icon="lucide:brain" :size="16" class="input-icon" />
               <input id="model-name" v-model="model" type="text" :placeholder="DEFAULT_LLM_CONFIG.model" />
             </div>
-            <p class="form-hint">使用的模型名称（如：gpt-4-turbo）</p>
+            <p class="form-hint">如 `gpt-4o-mini`、`deepseek-chat`、`qwen-plus`。</p>
           </div>
-
-          <div class="form-group">
-            <label for="audio-base-url">Audio Base URL</label>
-            <div class="input-with-icon">
-              <Icon icon="lucide:audio-lines" :size="16" class="input-icon" />
-              <input id="audio-base-url" v-model="audioBaseUrl" type="text" :placeholder="DEFAULT_LLM_CONFIG.audioBaseUrl" />
-            </div>
-            <p class="form-hint">语音转写接口地址（留空默认复用 Base URL）</p>
-          </div>
-
-          
-          <div class="form-group">
-            <label for="audio-model-name">Audio Model</label>
-            <div class="input-with-icon">
-              <Icon icon="lucide:mic" :size="16" class="input-icon" />
-              <input id="audio-model-name" v-model="audioModel" type="text" :placeholder="DEFAULT_LLM_CONFIG.audioModel" />
-            </div>
-            <p class="form-hint">语音转写模型名称（如：whisper-1）</p>
-          </div>
-
-          <div class="toggle-row" style="margin-top: 8px;">
-            <div class="toggle-label-group">
-              <label for="speech-test-mode" class="toggle-label">语音识别测试模式</label>
-              <span class="toggle-hint">启用后将跳过真实语音识别，直接返回示例文本</span>
-            </div>
-            <div class="switch-wrapper">
-              <input type="checkbox" id="speech-test-mode" v-model="speechTestMode">
-              <label for="speech-test-mode" class="toggle-switch"></label>
-            </div>
-          </div>
-
 
           <div class="test-connection-row" style="margin-top: 16px;">
             <button class="test-btn" @click="testModelConnection"
@@ -724,6 +742,95 @@ watch(activeTab, (newVal) => {
               <Icon :icon="modelTestResult.success ? 'lucide:check-circle' : 'lucide:x-circle'" :size="16" />
               {{ modelTestResult.message }}
             </span>
+          </div>
+        </div>
+
+        <div class="settings-section" style="margin-top: 24px;">
+          <div class="section-header">
+            <Icon icon="lucide:audio-lines" :size="20" />
+            <h3>语音转写</h3>
+          </div>
+          <p class="section-desc" style="margin-bottom: 16px;">聊天录音和语音接诊共用这一组配置。默认建议使用阿里云 DashScope。</p>
+
+          <div class="form-group">
+            <label>语音服务提供方</label>
+            <div class="mode-selector">
+              <button
+                v-for="option in speechProviderOptions"
+                :key="option.value"
+                :class="['mode-option', { active: speechProvider === option.value }]"
+                @click="speechProvider = option.value"
+              >
+                <Icon :icon="option.value === 'aliyun-dashscope' ? 'lucide:radio' : 'lucide:mic'" :size="18" />
+                <div class="mode-info">
+                  <span class="mode-title">{{ option.label }}</span>
+                  <span class="mode-desc">{{ option.description }}</span>
+                </div>
+              </button>
+            </div>
+          </div>
+
+          <div class="form-group">
+            <label for="speech-api-key">语音 API Key</label>
+            <div class="input-with-icon">
+              <Icon icon="lucide:key" :size="16" class="input-icon" />
+              <input id="speech-api-key" v-model="speechApiKey" type="password" placeholder="sk-..." />
+            </div>
+            <p class="form-hint">
+              <span v-if="speechProvider === 'aliyun-dashscope'">阿里云 DashScope 的 API Key，语音接诊会优先使用实时识别。</span>
+              <span v-else>OpenAI 兼容语音转写接口使用的 API Key；留空时默认复用上方 LLM API Key。</span>
+            </p>
+          </div>
+
+          <div v-if="isOpenAICompatibleSpeechProvider" class="form-group">
+            <label for="speech-base-url">语音 Base URL</label>
+            <div class="input-with-icon">
+              <Icon icon="lucide:link" :size="16" class="input-icon" />
+              <input id="speech-base-url" v-model="speechBaseUrl" type="text" :placeholder="DEFAULT_SPEECH_CONFIG.baseUrl" />
+            </div>
+            <p class="form-hint">OpenAI 兼容语音转写接口地址，通常以 `/v1` 结尾。</p>
+          </div>
+
+          <div v-else class="form-group">
+            <label for="speech-base-url-readonly">语音接入方式</label>
+            <div class="input-with-icon">
+              <Icon icon="lucide:cloud" :size="16" class="input-icon" />
+              <input
+                id="speech-base-url-readonly"
+                type="text"
+                value="DashScope WebSocket（由 Rust 后端代理）"
+                readonly
+              />
+            </div>
+            <p class="form-hint">当前 provider 走阿里云实时语音识别，不需要单独填写 Base URL。</p>
+          </div>
+
+          <div class="form-group">
+            <label for="speech-model-name">语音模型</label>
+            <div class="input-with-icon">
+              <Icon icon="lucide:mic" :size="16" class="input-icon" />
+              <input
+                id="speech-model-name"
+                v-model="speechModel"
+                type="text"
+                :placeholder="speechProvider === 'aliyun-dashscope' ? 'paraformer-realtime-v2' : 'whisper-1'"
+              />
+            </div>
+            <p class="form-hint">
+              <span v-if="speechProvider === 'aliyun-dashscope'">默认使用阿里云实时识别模型 `paraformer-realtime-v2`。</span>
+              <span v-else>例如 `whisper-1` 或兼容网关支持的其他语音转写模型。</span>
+            </p>
+          </div>
+
+          <div class="toggle-row" style="margin-top: 8px;">
+            <div class="toggle-label-group">
+              <label for="speech-test-mode" class="toggle-label">语音识别测试模式</label>
+              <span class="toggle-hint">启用后将跳过真实语音识别，直接返回示例文本</span>
+            </div>
+            <div class="switch-wrapper">
+              <input type="checkbox" id="speech-test-mode" v-model="speechTestMode">
+              <label for="speech-test-mode" class="toggle-switch"></label>
+            </div>
           </div>
         </div>
 

@@ -97,6 +97,13 @@
 - **解决方案**: 设置页首次加载时先做一次快速枚举，再根据麦克风权限状态自动补做一次设备列表预热；对 `prompt` 状态仅在单次会话内自动尝试一次，避免反复弹权限。
 - **后续防护**: 后续凡是依赖 `enumerateDevices()` 的设置页首屏展示，都要先确认是否需要权限预热或二次枚举，不能默认首次结果稳定可靠。
 
+### RETRO-011: 语音设置字段和真实运行链路脱节 [已解决]
+
+- **现象**: 设置页里的 `Audio Base URL / Audio Model` 会影响聊天录音转写，但不会影响 `VoiceCapsule` 的实时语音识别；医生误以为改了 Audio 配置就能切换所有语音链路。
+- **根因**: 语音能力被拆成 `llm.ts/transcribeAudio` 和 `aliyunSpeech.ts` 两条链路，前者读取 OpenAI 兼容 Audio 配置，后者直接读取 `DASHSCOPE_API_KEY`，配置域没有统一。
+- **解决方案**: 抽出统一 speech config，`ChatPanel` 与 `VoiceCapsule` 共用同一套 provider / key / baseUrl / model 解析逻辑；设置页将“通用 LLM”和“语音转写”分开展示。
+- **后续防护**: 后续新增 provider 或修改语音链路时，必须先检查两个入口（聊天录音、语音接诊）是否仍读取同一配置域，不能只改一侧 UI 或一侧 service。
+
 ---
 
 ## 模板

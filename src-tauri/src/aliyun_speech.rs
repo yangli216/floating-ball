@@ -162,6 +162,7 @@ async fn connect_with_retry(
 #[tauri::command]
 pub async fn transcribe_realtime_aliyun(
     api_key: String,
+    model: Option<String>,
     audio_data: Vec<u8>,
 ) -> Result<String, String> {
     println!("[Aliyun WS] Starting transcription, audio: {} bytes", audio_data.len());
@@ -173,6 +174,11 @@ pub async fn transcribe_realtime_aliyun(
     if audio_data.is_empty() {
         return Err("音频数据为空".to_string());
     }
+
+    let speech_model = model
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty())
+        .unwrap_or_else(|| "paraformer-realtime-v2".to_string());
 
     // 生成 task_id
     let task_id = uuid::Uuid::new_v4().to_string().replace("-", "");
@@ -198,7 +204,7 @@ pub async fn transcribe_realtime_aliyun(
             task_group: "audio".to_string(),
             task: "asr".to_string(),
             function: "recognition".to_string(),
-            model: "paraformer-realtime-v2".to_string(),
+            model: speech_model,
             parameters: TaskParameters {
                 format: "pcm".to_string(),
                 sample_rate: 16000,
@@ -363,6 +369,7 @@ pub async fn transcribe_realtime_aliyun(
 #[tauri::command]
 pub async fn start_realtime_speech(
     api_key: String,
+    model: Option<String>,
     state: tauri::State<'_, RealtimeSpeechSessionState>,
     app_handle: tauri::AppHandle,
 ) -> Result<(), String> {
@@ -377,6 +384,11 @@ pub async fn start_realtime_speech(
     if api_key.is_empty() {
         return Err("DashScope API Key 未配置".to_string());
     }
+
+    let speech_model = model
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty())
+        .unwrap_or_else(|| "paraformer-realtime-v2".to_string());
 
     let task_id = uuid::Uuid::new_v4().to_string().replace("-", "");
 
@@ -397,7 +409,7 @@ pub async fn start_realtime_speech(
             task_group: "audio".to_string(),
             task: "asr".to_string(),
             function: "recognition".to_string(),
-            model: "paraformer-realtime-v2".to_string(),
+            model: speech_model,
             parameters: TaskParameters {
                 format: "pcm".to_string(),
                 sample_rate: 16000,

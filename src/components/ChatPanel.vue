@@ -1,7 +1,8 @@
 <script setup lang="ts">
 import { ref, computed, inject } from "vue";
 import type { ChatMessage } from "../services/llm";
-import { chatStream, transcribeAudio } from "../services/llm";
+import { chatStream } from "../services/llm";
+import { transcribeSpeech } from "../services/aliyunSpeech";
 import { audioRecorder, getMicrophoneErrorMessage } from "../services/audioRecorder";
 import { PROMPTS } from "../prompts";
 import { feedbackService } from "../services/feedback";
@@ -209,7 +210,7 @@ async function stopRecording() {
     const blob = await audioRecorder.stop();
     recording.value = false;
     trackClick('chat_voice_stop');
-    const text = await transcribeAudio(blob);
+    const text = await transcribeSpeech(blob);
     input.value = text;
   } catch (err) {
     trackError('chat_transcription_failed', err);

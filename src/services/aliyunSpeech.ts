@@ -5,6 +5,9 @@
  * 官方文档: https://help.aliyun.com/zh/model-studio/websocket-for-paraformer-real-time-service
  */
 
+import { transcribeAudio } from './llm';
+import { getSpeechConfig } from './speechConfig';
+
 export interface AliyunSpeechConfig {
     apiKey: string;
     model?: string;
@@ -28,13 +31,12 @@ export const DEFAULT_SPEECH_RETRY_CONFIG: SpeechRetryConfig = {
 };
 
 export function getAliyunSpeechConfig(): AliyunSpeechConfig {
-    // 区域化模式下不需要本地 key，由后端代理
-    const apiKey = localStorage.getItem('DASHSCOPE_API_KEY') || import.meta.env.VITE_DASHSCOPE_API_KEY || '';
+    const speechConfig = getSpeechConfig();
     return {
-        apiKey,
-        model: 'fun-asr-flash-8k-realtime',
-        sampleRate: 16000,
-        format: 'pcm'
+        apiKey: speechConfig.apiKey,
+        model: speechConfig.model,
+        sampleRate: speechConfig.sampleRate,
+        format: speechConfig.format,
     };
 }
 
@@ -117,6 +119,7 @@ async function transcribeWithAliyunInternal(
             const startTime = Date.now();
             const text = await invoke<string>('transcribe_realtime_aliyun', {
                 apiKey: config.apiKey,
+                model: config.model,
                 audioData: audioData
             });
 
@@ -164,17 +167,33 @@ export async function transcribeWithAliyun(
     // 区域化模式：通过后端语音代理
     const { isRegionalMode } = await import('./regionalClient');
     if (isRegionalMode()) {
+        const speechConfig = getSpeechConfig();
         const { regionalPost } = await import('./regionalClient');
         const arrayBuffer = await audioBlob.arrayBuffer();
         const base64 = btoa(String.fromCharCode(...new Uint8Array(arrayBuffer)));
         const resp = await regionalPost<{ text: string }>('/v1/ai/speech/realtime', {
             audio: base64,
             format: 'pcm',
+            model: speechConfig.model,
         });
         return resp.text;
     }
 
     return await transcribeWithAliyunInternal(audioBlob);
+}
+
+export async function transcribeSpeech(audioBlob: Blob): Promise<string> {
+    const speechConfig = getSpeechConfig();
+
+    if (speechConfig.provider === 'openai-compatible') {
+        return transcribeAudio(audioBlob, undefined, undefined, undefined, {
+            apiKey: speechConfig.apiKey || undefined,
+            audioBaseUrl: speechConfig.baseUrl,
+            audioModel: speechConfig.model,
+        });
+    }
+
+    return transcribeWithAliyun(audioBlob);
 }
 
 
@@ -227,6 +246,11 @@ export class RealtimeSpeechService {
             const { listen } = await import('@tauri-apps/api/event');
             const config = getAliyunSpeechConfig();
 
+            if (getSpeechConfig().provider !== 'aliyun-dashscope') {
+                console.log('[Speech] Non-Aliyun provider configured, using batch mode');
+                return;
+            }
+
             if (!config.apiKey) {
                 console.log('[Speech] No API key, using batch mode');
                 return;
@@ -248,7 +272,7 @@ export class RealtimeSpeechService {
                 }
             );
 
-            await invoke('start_realtime_speech', { apiKey: config.apiKey });
+            await invoke('start_realtime_speech', { apiKey: config.apiKey, model: config.model });
             this.isStreaming = true;
             console.log('[Speech] Streaming session started');
         } catch (error: any) {
@@ -324,7 +348,7 @@ export class RealtimeSpeechService {
         const audioBlob = new Blob([mergedData.buffer], { type: 'audio/pcm' });
 
         try {
-            const text = await transcribeWithAliyun(audioBlob);
+            const text = await transcribeSpeech(audioBlob);
             this.onTextCallback?.(text, true);
             return text;
         } catch (error: any) {

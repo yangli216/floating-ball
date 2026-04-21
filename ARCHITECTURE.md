@@ -119,12 +119,13 @@
 
 ### 前端分层设计
 
-1. 当前设置与凭据状态通过 `localStorage`、`consultationConfig` store、本地 Tauri Store 管理。
+1. 当前设置与凭据状态通过 `localStorage`、`consultationConfig` store、本地 Tauri Store 管理，其中“通用 LLM”和“语音转写”配置分域存储，避免同一组 Audio 字段误导到不同 provider。
 2. 本地 HIS 对接入口由 `src-tauri/src/http_server.rs` 提供。
 3. 若未来引入真实登录态，应新增专用文档章节并在 `AGENTS.md` / `api.md` 中同步说明。
 4. Windows 内网更新源采用本地配置驱动：测试环境地址、正式环境地址和当前生效环境保存在 `localStorage`，前端只负责展示与选择，真正的 updater endpoint 在 Rust 侧通过 `updater_builder()` 运行时注入。
 5. 主窗口的聊天、设置、问诊等可调整工作视图会将用户最后一次手动调整后的窗口尺寸写入 `.settings.dat`，再次打开对应视图时优先恢复该尺寸。
 6. 通用设置页新增音频输入设备配置，首选麦克风 `deviceId` 保存在 `localStorage`；聊天录音和语音接诊共用同一配置，若指定设备不存在则自动回退到系统默认输入设备。设置页首次进入时会按权限状态自动补做一次设备列表预热，尽量避免初次枚举不完整、必须手动刷新后才看到全部麦克风。
+7. 语音转写配置与通用 LLM 配置分离：本地模式下默认 provider 为阿里云 DashScope，`VoiceCapsule.vue` 实时语音和 `ChatPanel.vue` 录音转写共用同一套 speech config；若切换到 OpenAI 兼容 provider，则统一降级为批量转写链路。
 
 ### 与主流程关系
 
@@ -789,20 +790,17 @@ startAuditUploader() (30s batch upload)
 
 ### 语音转写网络策略
 
-- `llm.ts` 中 `transcribeAudio` 采用“后端优先，前端回退”策略：
+- `llm.ts` 中 `transcribeAudio` 负责 OpenAI 兼容批量转写，采用“后端优先，前端回退”策略：
   - 优先调用 Tauri Command（Rust `reqwest`）代理 `/audio/transcriptions`，规避 WebView CORS/ATS 限制
   - 若后端通道不可用，再回退到前端 `fetch` 直连
-- `aliyunSpeech.ts` 中 `RealtimeSpeechService` 采用“提供商可插拔”策略：
+- `aliyunSpeech.ts` 中 `RealtimeSpeechService` 负责统一语音转写编排：
   - 默认采集 PCM 音频块并在 `finish()` 时统一转写
-  - 若配置 `DASHSCOPE_API_KEY`，优先走 DashScope 实时识别
-  - DashScope 不可用或未配置时，自动降级到 `llm.ts/transcribeAudio`（OpenAI 兼容 `/audio/transcriptions`）
-  - 因此 DashScope API Key 为**可选配置**，不再是语音问诊启动前置条件
-- 文本与语音支持独立地址配置：
-  - 文本模型使用 `LLM_BASE_URL`
-  - 语音转写使用 `LLM_AUDIO_BASE_URL`（未配置时回退到 `LLM_BASE_URL`）
-- 文本与语音支持独立密钥配置：
-  - 文本模型使用 `OPENAI_API_KEY`
-  - 语音转写使用 `LLM_AUDIO_API_KEY`（未配置时回退到 `OPENAI_API_KEY`）
+  - speech provider 为 `aliyun-dashscope` 时，优先走 Rust 后端代理的 DashScope WebSocket 实时识别
+  - speech provider 为 `openai-compatible` 时，不启用实时流式，统一走 `llm.ts/transcribeAudio` 的批量转写
+  - `ChatPanel.vue` 与 `VoiceCapsule.vue` 共用同一套 speech config，不再分别读取互不一致的配置项
+- 文本与语音支持独立配置域：
+  - 文本模型使用 `OPENAI_API_KEY` / `LLM_BASE_URL` / `LLM_MODEL`
+  - 语音转写使用独立的 speech provider / key / baseUrl / model；其中 OpenAI 兼容 speech provider 未填写 key 时可回退复用通用 LLM API Key
 - 审查 AI（`factChecker.ts` -> `llm.ts/chat`）走独立的 `/chat/completions` 文本链路：
   - 配置项为 `REVIEWER_ENABLED`、`REVIEWER_API_KEY`、`REVIEWER_BASE_URL`、`REVIEWER_MODEL`
   - 若独立审查配置缺省，则回退到主模型配置
