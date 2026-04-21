@@ -174,7 +174,10 @@ watch(realtimeText, () => {
 });
 let timerInterval: ReturnType<typeof setInterval> | null = null;
 let animationFrameId: number | null = null;
+let visualizerInterval: ReturnType<typeof setInterval> | null = null;
 let speechService: RealtimeSpeechService | null = null;
+let motionMediaQuery: MediaQueryList | null = null;
+let motionPreferenceListener: ((event: MediaQueryListEvent) => void) | null = null;
 
 const isSpeaking = computed(() => {
   // Simple check: if not paused and duration > 0, assume speaking/recording active
@@ -185,6 +188,50 @@ const formatTime = (seconds: number) => {
   const m = Math.floor(seconds / 60);
   const s = seconds % 60;
   return `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
+};
+
+const clearTimer = () => {
+  if (timerInterval) {
+    clearInterval(timerInterval);
+    timerInterval = null;
+  }
+};
+
+const clearVisualizer = () => {
+  if (visualizerInterval) {
+    clearInterval(visualizerInterval);
+    visualizerInterval = null;
+  }
+  if (animationFrameId) {
+    cancelAnimationFrame(animationFrameId);
+    animationFrameId = null;
+  }
+};
+
+const closeSpeechService = () => {
+  if (speechService) {
+    speechService.close();
+    speechService = null;
+  }
+};
+
+const cleanupRecordingResources = async () => {
+  clearTimer();
+  clearVisualizer();
+  audioRecorder.setOnAudioChunk(undefined);
+  await audioRecorder.stop().catch(() => {});
+  closeSpeechService();
+};
+
+const resetRecordingState = () => {
+  isPaused.value = false;
+  isStopped.value = false;
+  isExpanded.value = false;
+  editableText.value = '';
+  stoppedBlob = null;
+  realtimeText.value = '';
+  duration.value = 0;
+  startTime.value = 0;
 };
 
 const drawStaticVisualizer = () => {
@@ -231,15 +278,16 @@ const drawVisualizer = () => {
 
   // 如果用户偏好减少动画，使用静态显示
   if (prefersReducedMotion.value) {
+    clearVisualizer();
     // 使用 setInterval 定期更新，而不是 requestAnimationFrame
-    const updateInterval = setInterval(() => {
+    visualizerInterval = setInterval(() => {
       if (isPaused.value) return;
       drawStaticVisualizer();
     }, 100); // 每 100ms 更新一次，足够显示音量变化
-
-    // 清理函数
-    return () => clearInterval(updateInterval);
+    return;
   }
+
+  clearVisualizer();
 
   const bufferLength = analyser.frequencyBinCount;
   const dataArray = new Uint8Array(bufferLength);
@@ -289,6 +337,9 @@ const drawVisualizer = () => {
 const startRecording = async () => {
   console.time('[VoiceCapsule] startRecording');
   try {
+    await cleanupRecordingResources();
+    resetRecordingState();
+
     // 先获取麦克风权限并开始录音，不阻塞在语音服务初始化上
     console.log('[VoiceCapsule] Requesting microphone access...');
     await audioRecorder.start();
@@ -326,10 +377,7 @@ const startRecording = async () => {
     console.error("[VoiceCapsule] Failed to start recording:", err);
     console.timeEnd('[VoiceCapsule] startRecording');
     trackError('voice_recording_start_failed', err);
-    if (speechService) {
-      speechService.close();
-      speechService = null;
-    }
+    await cleanupRecordingResources();
     emit('error', getMicrophoneErrorMessage(err));
   }
 };
@@ -347,8 +395,8 @@ const togglePause = () => {
 const handleStop = async () => {
   console.log('[VoiceCapsule] handleStop called');
   trackClick('voice_recording_stop', { durationSeconds: duration.value });
-  if (timerInterval) clearInterval(timerInterval);
-  if (animationFrameId) cancelAnimationFrame(animationFrameId);
+  clearTimer();
+  clearVisualizer();
   
   try {
     audioRecorder.setOnAudioChunk(undefined);
@@ -387,27 +435,17 @@ const handleConfirm = () => {
   }
 };
 
-const handleCancel = () => {
+const handleCancel = async () => {
   trackClick('voice_transcription_cancel');
-  // 重置状态，不发送结果
-  isStopped.value = false;
-  isExpanded.value = false;
-  editableText.value = '';
-  stoppedBlob = null;
-  realtimeText.value = '';
-  duration.value = 0;
+  await cleanupRecordingResources();
+  resetRecordingState();
   resizeWindow(CAPSULE_W, CAPSULE_H_RECORDING);
-  // 重新开始录音
-  startRecording();
+  await startRecording();
 };
 
 const handleClose = async () => {
   trackClick('voice_recording_close');
-  if (timerInterval) clearInterval(timerInterval);
-  if (animationFrameId) cancelAnimationFrame(animationFrameId);
-  audioRecorder.setOnAudioChunk(undefined);
-  await audioRecorder.stop().catch(() => {});
-  if (speechService) { speechService.close(); speechService = null; }
+  await cleanupRecordingResources();
   emit('close');
 };
 
@@ -449,15 +487,15 @@ const saveAudioForDebug = async (blob: Blob) => {
 
 onMounted(() => {
   // 检查用户是否偏好减少动画
-  const mediaQuery = window.matchMedia('(prefers-reduced-motion: reduce)');
-  prefersReducedMotion.value = mediaQuery.matches;
+  motionMediaQuery = window.matchMedia('(prefers-reduced-motion: reduce)');
+  prefersReducedMotion.value = motionMediaQuery.matches;
 
   // 监听偏好变化
-  const handleMotionPreferenceChange = (e: MediaQueryListEvent) => {
+  motionPreferenceListener = (e: MediaQueryListEvent) => {
     prefersReducedMotion.value = e.matches;
     console.log('[VoiceCapsule] Motion preference changed:', e.matches ? 'reduced' : 'normal');
   };
-  mediaQuery.addEventListener('change', handleMotionPreferenceChange);
+  motionMediaQuery.addEventListener('change', motionPreferenceListener);
 
   // 启动录音
   startRecording();
@@ -466,15 +504,14 @@ onMounted(() => {
 });
 
 onUnmounted(() => {
-  if (timerInterval) clearInterval(timerInterval);
-  if (animationFrameId) cancelAnimationFrame(animationFrameId);
-  audioRecorder.setOnAudioChunk(undefined);
-  audioRecorder.stop().catch(() => {});
-  if (speechService) { speechService.close(); speechService = null; }
+  cleanupRecordingResources();
 
   // 清理媒体查询监听器
-  const mediaQuery = window.matchMedia('(prefers-reduced-motion: reduce)');
-  mediaQuery.removeEventListener('change', () => {});
+  if (motionMediaQuery && motionPreferenceListener) {
+    motionMediaQuery.removeEventListener('change', motionPreferenceListener);
+  }
+  motionMediaQuery = null;
+  motionPreferenceListener = null;
 });
 </script>
 

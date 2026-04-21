@@ -68,6 +68,8 @@ export interface EventListenersOptions {
     openVoiceConsultation: () => Promise<void>;
     startVoiceInteraction: () => Promise<void>;
   };
+  /** 重置语音会话状态 */
+  resetVoiceSessionState: () => void;
   /** 队列化快进模式自动触发请求 */
   queueConsultationAssistTrigger: (kind: ConsultationAssistAction) => void;
   /** 退出标志（来自 workMode） */
@@ -166,6 +168,7 @@ export function useEventListeners(options: EventListenersOptions) {
     persistCurrentWindowSize,
     workMode,
     navigation,
+    resetVoiceSessionState,
     queueConsultationAssistTrigger,
     exiting,
     resizeTimeoutRef,
@@ -209,6 +212,7 @@ export function useEventListeners(options: EventListenersOptions) {
 
           // Simple routing based on URL
           if (url.includes('voice-consultation')) {
+            resetVoiceSessionState();
             navigation.startVoiceInteraction();
           } else if (!isWorking.value) {
             workMode.enterWorkMode();
@@ -379,6 +383,7 @@ export function useEventListeners(options: EventListenersOptions) {
   async function registerStopConsultationListener(): Promise<void> {
     unlistenStopConsultation = await listen('stop-consultation', async () => {
       console.log('Received stop consultation request');
+      resetVoiceSessionState();
       // Force exit work mode regardless of current view
       if (isWorking.value) {
         // Optional: clear patient data?
@@ -395,6 +400,7 @@ export function useEventListeners(options: EventListenersOptions) {
     unlistenStartVoiceConsultation = await listen<SessionAssistPayload | null>('start-voice-consultation', async (event) => {
       console.log('Received start voice consultation command');
       trackApiCall('his_start_voice', true);
+      resetVoiceSessionState();
       currentPatient.value = mergePatientContext(currentPatient.value, event.payload);
       if (!currentPatient.value) {
         showToast('请先接诊患者', 'error');

@@ -84,6 +84,7 @@ export function useVoiceConsultation(options: VoiceConsultationOptions) {
   const intentRecognition = useVoiceIntentRecognition();
   const intentResult = ref<VoiceIntentResult | null>(null);
   const isProcessingVoice = ref(false);
+  let processingToken = 0;
 
   function resolveConsultationId(patient: AppPatient | null): string {
     return String(patient?.idPi || patient?.patientId || patient?.id || 'unknown');
@@ -122,6 +123,13 @@ export function useVoiceConsultation(options: VoiceConsultationOptions) {
     }
   }
 
+  function resetVoiceSessionState(): void {
+    processingToken += 1;
+    isProcessingVoice.value = false;
+    intentResult.value = null;
+    intentRecognition.clearTranscripts();
+  }
+
   async function handleVoiceStop(audioBlob: Blob, transcribedText: string): Promise<void> {
     console.log('[VoiceConsultation] handleVoiceStop received blob:', audioBlob?.size, 'bytes');
     console.log('[VoiceConsultation] Transcribed text:', transcribedText);
@@ -131,10 +139,17 @@ export function useVoiceConsultation(options: VoiceConsultationOptions) {
       return;
     }
 
+    const currentToken = processingToken + 1;
+    processingToken = currentToken;
     isProcessingVoice.value = true;
     try {
+      intentRecognition.clearTranscripts();
       intentRecognition.addTranscript(transcribedText);
       const result = await intentRecognition.processTranscript(transcribedText);
+
+      if (currentToken !== processingToken) {
+        return;
+      }
 
       if (!result) {
         isProcessingVoice.value = false;
@@ -142,7 +157,9 @@ export function useVoiceConsultation(options: VoiceConsultationOptions) {
         showToast(errMsg, 'error');
         await writeCancelledResult(errMsg);
         setTimeout(() => {
-          exitWork('error');
+          if (currentToken === processingToken) {
+            exitWork('error');
+          }
         }, 2000);
         return;
       }
@@ -165,6 +182,10 @@ export function useVoiceConsultation(options: VoiceConsultationOptions) {
 
       console.log('[VoiceConsultation] Intent recognition completed successfully');
     } catch (err: unknown) {
+      if (currentToken !== processingToken) {
+        return;
+      }
+
       isProcessingVoice.value = false;
       console.error('[VoiceConsultation] Processing failed:', err);
       trackError('voice_processing_failed', err);
@@ -172,7 +193,9 @@ export function useVoiceConsultation(options: VoiceConsultationOptions) {
       showToast(`处理失败: ${errMessage}`, 'error');
       await writeCancelledResult(`处理失败: ${errMessage}`);
       setTimeout(() => {
-        exitWork('error');
+        if (currentToken === processingToken) {
+          exitWork('error');
+        }
       }, 2000);
     }
   }
@@ -183,6 +206,7 @@ export function useVoiceConsultation(options: VoiceConsultationOptions) {
    * @param err - 错误信息
    */
   async function handleVoiceError(err: unknown): Promise<void> {
+    resetVoiceSessionState();
     trackError('voice_recording_error', err);
     showToast('录音出错: ' + err, 'error');
     await writeCancelledResult('录音出错: ' + err);
@@ -227,6 +251,7 @@ export function useVoiceConsultation(options: VoiceConsultationOptions) {
   async function cancelVoiceResult(): Promise<void> {
     trackClick('voice_result_cancel');
     trackRecommendationAction('record', 'voice-record', 'rejected');
+    resetVoiceSessionState();
     await writeCancelledResult('用户取消语音问诊结果');
     await exitWork('cancelled');
   }
@@ -236,6 +261,7 @@ export function useVoiceConsultation(options: VoiceConsultationOptions) {
   return {
     intentResult,
     isProcessingVoice,
+    resetVoiceSessionState,
     handleVoiceStop,
     handleVoiceError,
     handleResultConfirm,

@@ -58,6 +58,7 @@ const riskItems = ref<RiskItem[]>([]);
 
 // 语音问诊状态
 const generatedRecord = ref<GeneratedRecord | null>(null);
+const voiceInteractionSessionKey = ref(0);
 const consultationAssistTrigger = ref<{ kind: ConsultationAssistAction; token: number } | null>(null);
 const patientDisplayName = computed(
   () => currentPatient.value?.name || currentPatient.value?.naPi || '未知患者'
@@ -167,7 +168,7 @@ const {
   openSymptomManagement,
   openConsultation,
   openVoiceConsultation,
-  startVoiceInteraction,
+  startVoiceInteraction: startVoiceInteractionBase,
 } = navigation;
 
 // 初始化语音问诊 composable
@@ -184,11 +185,18 @@ const voiceConsultation = useVoiceConsultation({
 const {
   intentResult,
   isProcessingVoice,
+  resetVoiceSessionState,
   handleVoiceStop,
   handleVoiceError,
   handleResultConfirm,
   cancelVoiceResult,
 } = voiceConsultation;
+
+async function startVoiceInteraction(): Promise<void> {
+  resetVoiceSessionState();
+  voiceInteractionSessionKey.value += 1;
+  await startVoiceInteractionBase();
+}
 
 const handleFocus = () => { isFocused.value = true; };
 const handleBlur = () => { isFocused.value = false; };
@@ -236,6 +244,7 @@ const eventListeners = useEventListeners({
   persistCurrentWindowSize,
   workMode: { enterWorkMode, exitWork },
   navigation: { openConsultation, openVoiceConsultation, startVoiceInteraction },
+  resetVoiceSessionState,
   queueConsultationAssistTrigger,
   exiting,
   resizeTimeoutRef,
@@ -497,6 +506,7 @@ const openInsideCloudHome = async () => {
           />
           <!-- Voice Interaction View -->
           <VoiceCapsule
+            :key="voiceInteractionSessionKey"
             v-if="currentView === 'voice-interaction'"
             :processing="isProcessingVoice"
             @stop="handleVoiceStop"
