@@ -139,7 +139,7 @@ useEventListeners (全局事件) -> 触发 useNavigation & useWorkMode
 | 服务 | 行数 | 职责 |
 |------|------|------|
 | **aliyunSpeech.ts** | ~275 | 阿里云实时语音识别（WebSocket 流式） |
-| **audioRecorder.ts** | ~317 | 浏览器音频录制（Web Audio API, PCM16），并统一处理输入设备枚举、首选设备持久化和失效回退 |
+| **audioRecorder.ts** | ~317 | 浏览器音频录制（Web Audio API, PCM16），并统一处理输入设备枚举、首选设备持久化、首开权限预热和失效回退 |
 
 ### 辅助服务
 

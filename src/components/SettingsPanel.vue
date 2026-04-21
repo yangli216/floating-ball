@@ -9,6 +9,7 @@ import { invoke } from '@tauri-apps/api/core';
 import { trackClick, trackError } from '../services/operationTracker';
 import {
   getMicrophoneErrorMessage,
+  getMicrophonePermissionState,
   getPreferredAudioInputDeviceId,
   listAudioInputDevices,
   setPreferredAudioInputDeviceId,
@@ -96,6 +97,7 @@ const pmphaiSearchMode = ref<'rag' | 'list'>('rag');
 const speechTestMode = ref(false);
 
 const DEFAULT_AUDIO_INPUT_VALUE = '__system_default__';
+const AUDIO_INPUT_AUTO_HYDRATION_SESSION_KEY = 'SETTINGS_AUDIO_INPUT_AUTO_HYDRATED';
 const audioInputDevices = ref<AudioInputDeviceOption[]>([]);
 const selectedAudioInputDeviceId = ref(DEFAULT_AUDIO_INPUT_VALUE);
 const audioDeviceLoading = ref(false);
@@ -130,7 +132,8 @@ const applyPreferredAudioInputSelection = (devices: AudioInputDeviceOption[]) =>
     return;
   }
 
-  if (devices.length > 0 && !devices.some((device) => device.deviceId === preferredDeviceId)) {
+  const hasResolvableDevices = devices.some((device) => Boolean(device.deviceId));
+  if (hasResolvableDevices && !devices.some((device) => device.deviceId === preferredDeviceId)) {
     setPreferredAudioInputDeviceId(null);
     selectedAudioInputDeviceId.value = DEFAULT_AUDIO_INPUT_VALUE;
     return;
@@ -139,25 +142,84 @@ const applyPreferredAudioInputSelection = (devices: AudioInputDeviceOption[]) =>
   selectedAudioInputDeviceId.value = preferredDeviceId;
 };
 
-const refreshAudioInputDevices = async (requestPermission = false) => {
+type AudioDeviceSyncSource = 'initial' | 'manual' | 'auto-hydrate' | 'devicechange';
+
+const hasAutoHydratedAudioInputsThisSession = () => {
+  if (typeof sessionStorage === 'undefined') {
+    return false;
+  }
+
+  return sessionStorage.getItem(AUDIO_INPUT_AUTO_HYDRATION_SESSION_KEY) === 'true';
+};
+
+const markAudioInputsAutoHydrated = () => {
+  if (typeof sessionStorage === 'undefined') {
+    return;
+  }
+
+  sessionStorage.setItem(AUDIO_INPUT_AUTO_HYDRATION_SESSION_KEY, 'true');
+};
+
+const syncAudioInputDevices = async ({
+  requestPermission = false,
+  source = 'manual',
+  showError = true,
+}: {
+  requestPermission?: boolean;
+  source?: AudioDeviceSyncSource;
+  showError?: boolean;
+} = {}) => {
   audioDeviceLoading.value = true;
-  audioDeviceError.value = '';
+  if (showError) {
+    audioDeviceError.value = '';
+  }
 
   try {
     const devices = await listAudioInputDevices({ requestPermission });
     audioInputDevices.value = devices;
     applyPreferredAudioInputSelection(devices);
-    trackClick('settings_audio_devices_refresh', { requestPermission, deviceCount: devices.length });
+
+    if (source === 'manual') {
+      trackClick('settings_audio_devices_refresh', { requestPermission, deviceCount: devices.length });
+    }
   } catch (error) {
-    audioDeviceError.value = getMicrophoneErrorMessage(error);
+    if (showError) {
+      audioDeviceError.value = getMicrophoneErrorMessage(error);
+    }
     trackError('settings_audio_devices_refresh_failed', error);
   } finally {
     audioDeviceLoading.value = false;
   }
 };
 
+const refreshAudioInputDevices = async () => {
+  await syncAudioInputDevices({ requestPermission: true, source: 'manual' });
+};
+
+const hydrateAudioInputDevicesOnMount = async () => {
+  await syncAudioInputDevices({ source: 'initial' });
+
+  const permissionState = await getMicrophonePermissionState();
+  if (permissionState === 'granted') {
+    await syncAudioInputDevices({ requestPermission: true, source: 'auto-hydrate' });
+    return;
+  }
+
+  if (
+    (permissionState === 'prompt' || permissionState === 'unsupported')
+    && !hasAutoHydratedAudioInputsThisSession()
+  ) {
+    markAudioInputsAutoHydrated();
+    await syncAudioInputDevices({
+      requestPermission: true,
+      source: 'auto-hydrate',
+      showError: false,
+    });
+  }
+};
+
 const handleAudioDeviceChange = () => {
-  refreshAudioInputDevices();
+  syncAudioInputDevices({ source: 'devicechange' });
 };
 
 const currentSettingsSnapshot = computed(() => JSON.stringify({
@@ -243,7 +305,7 @@ onMounted(async () => {
   speechTestMode.value = localStorage.getItem('SPEECH_TEST_MODE') === 'true'
     || import.meta.env.VITE_SPEECH_TEST_MODE === 'true';
 
-  await refreshAudioInputDevices();
+  await hydrateAudioInputDevicesOnMount();
   updateSavedSnapshot();
   settingsLoaded.value = true;
 
@@ -541,7 +603,7 @@ watch(activeTab, (newVal) => {
           </div>
 
           <div class="test-connection-row">
-            <button class="test-btn" @click="refreshAudioInputDevices(true)" :disabled="audioDeviceLoading">
+            <button class="test-btn" @click="refreshAudioInputDevices()" :disabled="audioDeviceLoading">
               <Icon :icon="audioDeviceLoading ? 'lucide:loader-2' : 'lucide:refresh-cw'" :size="16" :class="{ spin: audioDeviceLoading }" />
               {{ audioDeviceLoading ? '刷新中...' : '刷新设备列表' }}
             </button>

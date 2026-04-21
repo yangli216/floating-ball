@@ -124,7 +124,7 @@
 3. 若未来引入真实登录态，应新增专用文档章节并在 `AGENTS.md` / `api.md` 中同步说明。
 4. Windows 内网更新源采用本地配置驱动：测试环境地址、正式环境地址和当前生效环境保存在 `localStorage`，前端只负责展示与选择，真正的 updater endpoint 在 Rust 侧通过 `updater_builder()` 运行时注入。
 5. 主窗口的聊天、设置、问诊等可调整工作视图会将用户最后一次手动调整后的窗口尺寸写入 `.settings.dat`，再次打开对应视图时优先恢复该尺寸。
-6. 通用设置页新增音频输入设备配置，首选麦克风 `deviceId` 保存在 `localStorage`；聊天录音和语音接诊共用同一配置，若指定设备不存在则自动回退到系统默认输入设备。
+6. 通用设置页新增音频输入设备配置，首选麦克风 `deviceId` 保存在 `localStorage`；聊天录音和语音接诊共用同一配置，若指定设备不存在则自动回退到系统默认输入设备。设置页首次进入时会按权限状态自动补做一次设备列表预热，尽量避免初次枚举不完整、必须手动刷新后才看到全部麦克风。
 
 ### 与主流程关系
 
@@ -784,7 +784,7 @@ startAuditUploader() (30s batch upload)
 
 - 统一封装麦克风流请求：优先 `navigator.mediaDevices.getUserMedia`，兼容 legacy `getUserMedia` 系列 API
 - 提供麦克风错误归一化：将浏览器/系统异常映射为用户可理解提示
-- 提供输入设备枚举、首选 `deviceId` 持久化与设备失效回退，保证 `VoiceCapsule.vue` 与 `ChatPanel.vue` 复用同一套音频选择策略
+- 提供输入设备枚举、首选 `deviceId` 持久化、首开权限预热与设备失效回退，保证 `VoiceCapsule.vue` 与 `ChatPanel.vue` 复用同一套音频选择策略
 - 为 `VoiceCapsule.vue` 与 `ChatPanel.vue` 提供一致的录音能力基座
 
 ### 语音转写网络策略

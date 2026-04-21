@@ -13,6 +13,8 @@ type LegacyNavigator = Navigator & {
 
 const AUDIO_INPUT_DEVICE_STORAGE_KEY = 'AUDIO_INPUT_DEVICE_ID';
 
+export type MicrophonePermissionState = PermissionState | 'unsupported';
+
 export interface AudioInputDeviceOption {
     deviceId: string;
     label: string;
@@ -78,6 +80,27 @@ export async function listAudioInputDevices(options: { requestPermission?: boole
     }
 }
 
+export async function getMicrophonePermissionState(): Promise<MicrophonePermissionState> {
+    if (typeof navigator === 'undefined' || !navigator.permissions?.query) {
+        return 'unsupported';
+    }
+
+    try {
+        const permissionStatus = await navigator.permissions.query({
+            name: 'microphone' as PermissionName,
+        });
+
+        return permissionStatus.state;
+    } catch (error) {
+        console.warn('[AudioRecorder] Failed to query microphone permission state:', error);
+        return 'unsupported';
+    }
+}
+
+function hasResolvableAudioInputDevices(devices: AudioInputDeviceOption[]): boolean {
+    return devices.some((device) => Boolean(device.deviceId));
+}
+
 function isUnavailableAudioInputError(error: unknown): boolean {
     if (error instanceof DOMException) {
         return error.name === 'OverconstrainedError'
@@ -96,6 +119,10 @@ async function resolveAudioInputConstraint(): Promise<MediaTrackConstraints | bo
     }
 
     const availableDevices = await listAudioInputDevices();
+    if (!hasResolvableAudioInputDevices(availableDevices)) {
+        return { deviceId: { exact: preferredDeviceId } };
+    }
+
     if (availableDevices.some((device) => device.deviceId === preferredDeviceId)) {
         return { deviceId: { exact: preferredDeviceId } };
     }
