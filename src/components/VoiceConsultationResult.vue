@@ -7,7 +7,6 @@
         <div class="avatar">
           <Icon icon="mdi:account-circle" color="#ff9a9e" size="48" />
         </div>
-        
         <!-- Name -->
         <div class="patient-name">{{ patientInfo?.naPi || patientInfo?.name || '未知患者' }}</div>
         
