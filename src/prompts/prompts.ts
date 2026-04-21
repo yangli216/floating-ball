@@ -85,6 +85,94 @@ export const MedicalRecordGenerationPrompt = {
   }
 };
 
+// ==================== 语音意图识别 ====================
+
+export interface TreatmentHint {
+  /** 治疗项类型: medicine=药品, examination=检查, labTest=检验, procedure=处置 */
+  type: 'medicine' | 'examination' | 'labTest' | 'procedure';
+  /** 对话依据文本 */
+  text: string;
+  /** 提取的项目名称 */
+  name: string;
+  /** 规格 (药品适用) */
+  spec?: string;
+  /** 用量 (药品适用) */
+  dosage?: string;
+  /** 频次 (药品适用) */
+  frequency?: string;
+  /** 用法 (药品适用) */
+  usage?: string;
+}
+
+export interface DiagnosisHint {
+  /** 诊断名称 */
+  name: string;
+  /** ICD-10 编码（如模型可分析得到） */
+  code?: string;
+}
+
+export interface VoiceExtractionResult {
+  /** 提取的主诉 */
+  chiefComplaint: string;
+  /** 整理后的现病史 */
+  historyOfPresentIllness: string;
+  /** 识别出的症状列表 */
+  symptoms: string[];
+  /** 模型分析出的诊断提示 */
+  diagnosisHints: DiagnosisHint[];
+  /** 模型分析出的治疗方案提示 */
+  treatmentHints: TreatmentHint[];
+  /** 既往史 */
+  pastMedicalHistory: string;
+  /** 是否识别为无效/非医疗内容 */
+  error: boolean;
+  /** 错误消息 */
+  message?: string;
+}
+
+export const VoiceIntentRecognitionPrompt = {
+  system: `你是一名专业的医疗助手。请根据医患对话内容，整理一份结构化的门诊问诊结果，供后续病历编辑和推荐使用。
+
+输出格式必须为纯 JSON，不要包含 markdown 标记或额外说明，包含以下字段：
+{
+  "chiefComplaint": "主诉",
+  "historyOfPresentIllness": "现病史",
+  "pastMedicalHistory": "既往史，如无则填'无特殊'",
+  "symptoms": ["症状1", "症状2"],
+  "diagnosisHints": [
+    { "name": "诊断名称", "code": "ICD-10编码（如可分析得到）" }
+  ],
+  "treatmentHints": [
+    { "type": "medicine", "text": "分析依据片段", "name": "药品名", "spec": "规格", "dosage": "用量", "frequency": "频次", "usage": "用法" },
+    { "type": "examination", "text": "分析依据片段", "name": "检查名" },
+    { "type": "labTest", "text": "分析依据片段", "name": "检验名" },
+    { "type": "procedure", "text": "分析依据片段", "name": "处置名" }
+  ],
+  "error": false
+}
+
+规则：
+1. 你要基于整段医患对话做病历级理解，不要机械摘抄零散句子。
+2. chiefComplaint 请概括为一句话，尽量写成“主要症状 + 持续时间”。
+3. historyOfPresentIllness 请整理成规范现病史，包含起病时间、诱因、症状演变、伴随症状、已做处理等。
+4. symptoms 提取关键症状关键词。
+5. pastMedicalHistory 提取既往疾病、手术史、过敏史、长期用药史等；没有就写“无特殊”。
+6. diagnosisHints 和 treatmentHints 由模型基于整段对话分析得出，不要求必须来自医生明确表述；如果对话中虽然没直接说结论，但根据主诉和现病史能够形成常见、合理的初步判断或处理建议，可以给出 1~3 条提示。
+7. treatmentHints 中：
+   - 药品用 type=medicine，并尽量补充 spec、dosage、frequency、usage
+   - 检查用 type=examination
+   - 检验用 type=labTest
+   - 处置用 type=procedure
+8. 如果对话中出现“A+B”“A和B”等组合表述，必须拆分为独立项目。
+9. 如果输入与医疗问诊场景无关，返回 {"error": true, "message": "输入内容与医疗问诊场景无关"}。
+10. 如果语音转写质量很差难以理解，返回 {"error": true, "message": "语音识别质量不足，请重新录制"}。
+11. 除 error/message 外，其余字段尽量补全；实在没有内容时，字符串字段给空字符串，数组字段给空数组。`,
+
+  buildUserPrompt(transcribedText: string): string {
+    return `医患对话内容：\n${transcribedText}`;
+  }
+};
+
 // ==================== 患者风险分析 ====================
 
 export const PatientRiskAnalysisPrompt = {
@@ -1374,6 +1462,7 @@ export const MedicalRecordCheckPrompt = {
  */
 export const PROMPT_VERSION = {
   medicalRecordGeneration: 'v1.0',
+  voiceIntentRecognition: 'v1.0',
   riskAnalysis: 'v1.0',
   diagnosisRecommendation: 'v1.0',
   diagnosisPathReasoning: 'v1.0',
@@ -1398,6 +1487,7 @@ export const PROMPT_VERSION = {
 export const PROMPTS = {
   consultation: {
     medicalRecordGeneration: MedicalRecordGenerationPrompt,
+    voiceIntentRecognition: VoiceIntentRecognitionPrompt,
     patientRiskAnalysis: PatientRiskAnalysisPrompt,
     diagnosisRecommendation: DiagnosisRecommendationPrompt,
     diagnosisPathReasoning: DiagnosisPathReasoningPrompt,

@@ -33,11 +33,11 @@ import { PROMPTS } from '../prompts';
 const messages: ChatMessage[] = [
   {
     role: 'system',
-    content: PROMPTS.medical.recordGeneration.system
+    content: PROMPTS.consultation.medicalRecordGeneration.system
   },
   {
     role: 'user',
-    content: PROMPTS.medical.recordGeneration.buildUserPrompt(transcribedText)
+    content: PROMPTS.consultation.medicalRecordGeneration.buildUserPrompt(transcribedText)
   }
 ];
 
@@ -50,11 +50,11 @@ const response = await chat(messages);
 const messages: ChatMessage[] = [
   {
     role: 'system',
-    content: PROMPTS.medical.riskAnalysis.system
+    content: PROMPTS.consultation.patientRiskAnalysis.system
   },
   {
     role: 'user',
-    content: PROMPTS.medical.riskAnalysis.buildUserPrompt({
+    content: PROMPTS.consultation.patientRiskAnalysis.buildUserPrompt({
       patientName: '张三',
       gender: '男',
       age: '45岁',
@@ -141,6 +141,14 @@ const messages = ref<ChatMessage[]>([
 
 ### Consultation（问诊辅助）
 
+#### `voiceIntentRecognition` - 语音意图识别
+- **用途**: 将录音转写文本整理为主诉、现病史、诊断提示、治疗提示
+- **输入**: 医患对话转写文本
+- **输出**: JSON 格式的结构化提取结果
+- **特点**:
+  - 只提取明确表达的信息，不自行补全诊断和治疗
+  - 支持药品、检查、检验、处置的拆分提取
+
 #### `diagnosisRecommendation` - 诊断推荐
 - **用途**: 根据症状推荐 ICD10 诊断
 - **输入**: 患者信息 + 主诉 + 现病史
@@ -179,7 +187,7 @@ export const PROMPT_VERSION = {
 
 ### 1. 修改现有 Prompt
 
-直接编辑 `src/prompts/index.ts` 文件中的对应 Prompt：
+直接编辑 `src/prompts/prompts.ts` 文件中的对应 Prompt：
 
 ```typescript
 export const MedicalRecordGenerationPrompt = {
@@ -193,7 +201,7 @@ export const MedicalRecordGenerationPrompt = {
 
 ### 2. 添加新 Prompt
 
-在 `src/prompts/index.ts` 中添加新的 Prompt 对象：
+在 `src/prompts/prompts.ts` 中添加新的 Prompt 对象：
 
 ```typescript
 export const NewFeaturePrompt = {
@@ -279,8 +287,8 @@ export const MedicalRecordGenerationPromptV2 = {
 
 // 使用时切换
 const prompt = useV2
-  ? PROMPTS.medical.recordGenerationV2
-  : PROMPTS.medical.recordGeneration;
+  ? PROMPTS.consultation.medicalRecordGenerationV2
+  : PROMPTS.consultation.medicalRecordGeneration;
 ```
 
 ## 迁移记录
@@ -295,7 +303,8 @@ const prompt = useV2
 
 ### 迁移后（集中管理）
 
-- ✅ `src/prompts/index.ts` - 所有 prompts 统一管理
+- ✅ `src/prompts/prompts.ts` - 所有 prompts 统一定义
+- ✅ `src/prompts/index.ts` - 统一导出入口
 - ✅ 各组件通过 `import { PROMPTS } from '../prompts'` 使用
 
 ## 优势总结
@@ -322,7 +331,8 @@ const prompt = useV2
 
 ## 相关文件
 
-- `src/prompts/index.ts` - Prompts 定义
+- `src/prompts/prompts.ts` - Prompts 定义
+- `src/prompts/index.ts` - 统一导出入口
 - `src/App.vue` - 使用医疗记录生成 Prompt
 - `src/services/llm.ts` - 使用风险分析 Prompt
 - `src/components/ConsultationPage.vue` - 使用诊断和治疗推荐 Prompts

@@ -71,14 +71,63 @@ const canSubmit = computed(() =>
 );
 
 // ── Map MatchedDiagnosis -> Diagnosis ─────────────────────────────────
+function normalizeAnalysisText(text: string): string {
+  return text
+    .replace(/\s+/g, ' ')
+    .replace(/^[“"'`]+|[”"'`]+$/g, '')
+    .replace(/^(分析依据|模型分析|医生口述诊断|医生口述)[:：\s]*/u, '')
+    .trim();
+}
+
+function truncateAnalysisText(text: string, maxLength: number): string {
+  if (text.length <= maxLength) return text;
+  return `${text.slice(0, maxLength)}...`;
+}
+
+function buildEncounterSummary(): string {
+  const complaint = truncateAnalysisText(normalizeAnalysisText(chiefComplaint.value), 24);
+  const history = truncateAnalysisText(normalizeAnalysisText(historyOfPresentIllness.value), 32);
+
+  if (complaint && history) {
+    return `结合主诉“${complaint}”及现病史“${history}”`;
+  }
+  if (complaint) {
+    return `结合主诉“${complaint}”`;
+  }
+  if (history) {
+    return `结合现病史“${history}”`;
+  }
+  return '结合当前问诊信息';
+}
+
+function buildDiagnosisRationale(matchedDiagnosis: MatchedDiagnosis, displayName: string): string {
+  const summary = buildEncounterSummary();
+  const matchNote = matchedDiagnosis.matchedItem
+    ? ''
+    : '当前标准库中暂未匹配到完全一致的诊断条目，需人工确认。';
+  return `${summary}，模型初步考虑${displayName}，建议结合查体和必要检查进一步确认。${matchNote}`;
+}
+
+function buildTreatmentReason(name: string, basisText?: string): string {
+  const summary = buildEncounterSummary();
+  const normalizedBasis = normalizeAnalysisText(basisText || '').replace(/[。；;，,]+$/u, '');
+  if (normalizedBasis) {
+    return `${summary}，模型建议将${name}纳入当前处理方案，主要依据是${normalizedBasis}。`;
+  }
+  return `${summary}，模型建议将${name}纳入当前处理方案。`;
+}
+
 function initDiagnosesFromIntent(matched: MatchedDiagnosis[]): Diagnosis[] {
-  return matched.map((m) => ({
-    id: m.matchedItem?.id,
-    name: m.matchedItem?.name || m.name,
-    code: m.matchedItem?.code || m.code || '',
-    rate: m.matchedItem ? '医生口述' : '未匹配',
-    rationale: `医生口述诊断: "${m.name}"`,
-  }));
+  return matched.map((m) => {
+    const name = m.matchedItem?.name || m.name;
+    return {
+      id: m.matchedItem?.id,
+      name,
+      code: m.matchedItem?.code || m.code || '',
+      rate: 'AI分析',
+      rationale: buildDiagnosisRationale(m, name),
+    };
+  });
 }
 
 // ── Map MatchedTreatment -> TreatmentRecommendation ────────────────────
@@ -96,7 +145,7 @@ function initTreatmentsFromIntent(matched: MatchedTreatment[]): TreatmentRecomme
     return {
       type: mapTreatmentType(m.type),
       name,
-      reason: `医生口述: "${m.text}"`,
+      reason: buildTreatmentReason(name, m.text),
       usage,
       matchedItem: m.matchedItem || undefined,
       selected: !!m.matchedItem,
@@ -421,7 +470,7 @@ async function performTreatmentFactCheck(treatments: TreatmentRecommendation[]) 
 // ── Diagnosis rate class ──────────────────────────────────────────────
 function getDiagRateClass(rate?: string): string {
   if (!rate) return '';
-  if (rate.includes('高') || rate === '医生口述') return 'rate-high';
+  if (rate.includes('高') || rate.includes('分析')) return 'rate-high';
   if (rate.includes('中')) return 'rate-medium';
   if (rate.includes('低') || rate === '未匹配') return 'rate-low';
   return '';

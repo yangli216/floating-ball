@@ -17,8 +17,8 @@
 | 了解踩坑记录 | [RETRO.md](./RETRO.md) |
 | 修改问诊主流程 | [ConsultationPage.vue](src/components/ConsultationPage.vue) + [SymptomManagement.vue](src/components/SymptomManagement.vue) |
 | 修改窗口/动画行为 | [useWindowManagement.ts](src/composables/useWindowManagement.ts) + [useWorkMode.ts](src/composables/useWorkMode.ts) |
-| 修改 LLM 调用 | [llm.ts](src/services/llm.ts) |
-| 修改语音问诊 | [VoiceCapsule.vue](src/components/VoiceCapsule.vue) + [aliyunSpeech.ts](src/services/aliyunSpeech.ts) + [audioRecorder.ts](src/services/audioRecorder.ts) |
+| 修改 LLM 调用 | [llm.ts](src/services/llm.ts) + [prompts.ts](src/prompts/prompts.ts) |
+| 修改语音问诊 | [VoiceCapsule.vue](src/components/VoiceCapsule.vue) + [useVoiceConsultation.ts](src/composables/useVoiceConsultation.ts) + [useVoiceIntentRecognition.ts](src/composables/useVoiceIntentRecognition.ts) + [prompts.ts](src/prompts/prompts.ts) + [aliyunSpeech.ts](src/services/aliyunSpeech.ts) + [audioRecorder.ts](src/services/audioRecorder.ts) |
 | 修改诊断路径 | [DiagnosisPathWindow.vue](src/components/DiagnosisPathWindow.vue) + [diagnosisPath.ts](src/services/diagnosisPath.ts) + [stores/diagnosisPath.ts](src/stores/diagnosisPath.ts) |
 | 修改知识库 | [pmphai.ts](src/services/pmphai.ts)（主） / [KnowledgeBasePanel.vue](src/components/KnowledgeBasePanel.vue)（备） |
 | 修改设置面板 | [SettingsPanel.vue](src/components/SettingsPanel.vue) |
@@ -40,7 +40,7 @@ floating-ball/
 │   ├── stores/                 # 2 个 Pinia store
 │   ├── types/                  # TypeScript 类型定义
 │   ├── constants/              # 配置常量
-│   ├── prompts/                # LLM 提示词
+│   ├── prompts/                # LLM 提示词（统一收敛到 prompts.ts）
 │   ├── styles/                 # CSS 模块（设计令牌、布局、动画）
 │   ├── assets/                 # 医学数据 CSV + 模板 JSON
 │   ├── utils/                  # 工具函数

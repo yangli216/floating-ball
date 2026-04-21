@@ -10,11 +10,11 @@ import { chat, type ChatMessage } from '../services/llm';
 import { isTestModeEnabled } from '../services/aliyunSpeech';
 import { medicalDataService } from '../services/medicalData';
 import {
-  VoiceIntentRecognitionPrompt,
+  PROMPTS,
   type VoiceExtractionResult,
   type TreatmentHint,
   type DiagnosisHint,
-} from '../prompts/voiceIntentPrompts';
+} from '../prompts';
 import { trackError, startTimedOperation } from '../services/operationTracker';
 
 /** Mock 模式下缓存的意图识别结果，避免重复调用 LLM */
@@ -86,8 +86,8 @@ export function useVoiceIntentRecognition() {
     try {
       // Step 1: LLM 意图识别 + 结构化提取
       const messages: ChatMessage[] = [
-        { role: 'system', content: VoiceIntentRecognitionPrompt.system },
-        { role: 'user', content: VoiceIntentRecognitionPrompt.buildUserPrompt(text) },
+        { role: 'system', content: PROMPTS.consultation.voiceIntentRecognition.system },
+        { role: 'user', content: PROMPTS.consultation.voiceIntentRecognition.buildUserPrompt(text) },
       ];
 
       const jsonStr = await chat(messages);
