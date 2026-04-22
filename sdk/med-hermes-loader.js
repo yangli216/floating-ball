@@ -79,14 +79,10 @@
         reject(new Error('timeout'));
       }, timeout || DEFAULTS.pingTimeout);
 
-      var opts = {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ origin: location.origin, timestamp: Date.now() })
-      };
+      var opts = { method: 'GET' };
       if (controller) opts.signal = controller.signal;
 
-      fetch(url + '/handshake', opts)
+      fetch(url + '/health', opts)
         .then(function (res) {
           clearTimeout(timer);
           if (res.ok) {

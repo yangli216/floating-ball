@@ -27,8 +27,27 @@ import { useNavigation } from "./composables/useNavigation";
 import { useVoiceConsultation } from "./composables/useVoiceConsultation";
 import { useEventListeners } from "./composables/useEventListeners";
 import { pmphaiService, isPMPHAIConfigured } from './services/pmphai';
+import { medicalDataService, type MedicalCatalogClearOptions, type MedicalCatalogClearResult, type MedicalCatalogDebugState } from "./services/medicalData";
 import type { AppPatient, AppStore } from "./types/appState";
 import type { ConsultationAssistAction } from "./types/consultationAssist";
+
+type MedicalCatalogDebugApi = {
+  help: () => string[];
+  state: () => Promise<MedicalCatalogDebugState>;
+  sync: (orgCode?: string | null) => Promise<MedicalCatalogDebugState>;
+  clear: (options?: MedicalCatalogClearOptions) => Promise<MedicalCatalogClearResult>;
+  sample: (limit?: number) => {
+    diagnoses: ReturnType<typeof medicalDataService.getAllDiagnoses>;
+    items: ReturnType<typeof medicalDataService.getAllItems>;
+    medicines: ReturnType<typeof medicalDataService.getAllMedicines>;
+  };
+};
+
+declare global {
+  interface Window {
+    __medicalCatalogDebug__?: MedicalCatalogDebugApi;
+  }
+}
 
 const appWindow = shallowRef<TauriWindow | null>(null);
 const standaloneWindowKind =
@@ -86,6 +105,56 @@ const showSessionEntry = computed(
     Boolean(currentPatient.value) &&
     currentView.value !== 'consultation'
 );
+
+function createMedicalCatalogDebugApi(): MedicalCatalogDebugApi {
+  const printState = (state: MedicalCatalogDebugState): MedicalCatalogDebugState => {
+    console.log('[MedicalCatalogDebug] State:', state);
+    if (state.syncStates.length > 0) {
+      console.table(state.syncStates);
+    } else {
+      console.info('[MedicalCatalogDebug] No sync state records');
+    }
+    return state;
+  };
+
+  return {
+    help() {
+      const messages = [
+        'window.__medicalCatalogDebug__.state()  // 查看 SQLite 缓存状态',
+        'window.__medicalCatalogDebug__.sync()  // 按当前机构上下文触发同步',
+        "window.__medicalCatalogDebug__.sync('机构ID')  // 切换机构并同步",
+        'window.__medicalCatalogDebug__.clear()  // 清空全部目录缓存',
+        "window.__medicalCatalogDebug__.clear({ catalogType: 'items', orgCode: '机构ID' })  // 清理指定机构诊疗项目",
+        'window.__medicalCatalogDebug__.sample(5)  // 查看当前内存目录前几条'
+      ];
+      messages.forEach((message) => console.info(message));
+      return messages;
+    },
+    async state() {
+      return printState(await medicalDataService.getDebugState());
+    },
+    async sync(orgCode?: string | null) {
+      if (typeof orgCode !== 'undefined') {
+        await medicalDataService.setCatalogContext({ orgCode });
+      } else {
+        await medicalDataService.ensureLocalCatalogsSynced();
+      }
+      return printState(await medicalDataService.getDebugState());
+    },
+    async clear(options: MedicalCatalogClearOptions = {}) {
+      const result = await medicalDataService.clearDebugCache(options);
+      console.log('[MedicalCatalogDebug] Clear result:', result);
+      return result;
+    },
+    sample(limit = 10) {
+      return {
+        diagnoses: medicalDataService.getAllDiagnoses().slice(0, limit),
+        items: medicalDataService.getAllItems().slice(0, limit),
+        medicines: medicalDataService.getAllMedicines().slice(0, limit),
+      };
+    },
+  };
+}
 
 function queueConsultationAssistTrigger(kind: ConsultationAssistAction): void {
   consultationAssistTrigger.value = {
@@ -187,15 +256,16 @@ const {
   isProcessingVoice,
   resetVoiceSessionState,
   resumeCachedVoiceResult,
+  hasCachedVoiceResult,
   handleVoiceStop,
   handleVoiceError,
   handleResultConfirm,
   cancelVoiceResult,
 } = voiceConsultation;
 
-async function startVoiceInteraction(): Promise<void> {
+async function startVoiceInteraction(options?: { skipCacheRestore?: boolean }): Promise<void> {
   resetVoiceSessionState();
-  if (await resumeCachedVoiceResult()) {
+  if (!options?.skipCacheRestore && await resumeCachedVoiceResult()) {
     if (!isWorking.value) {
       await enterWorkMode(WINDOW_SIZES.VOICE_CONSULTATION.width, WINDOW_SIZES.VOICE_CONSULTATION.height);
     }
@@ -252,6 +322,7 @@ const eventListeners = useEventListeners({
   workMode: { enterWorkMode, exitWork },
   navigation: { openConsultation, openVoiceConsultation, startVoiceInteraction },
   resetVoiceSessionState,
+  hasCachedVoiceResult,
   queueConsultationAssistTrigger,
   exiting,
   resizeTimeoutRef,
@@ -321,12 +392,16 @@ onMounted(async () => {
 
     // Initial monitor update
     updateCurrentMonitor();
+
+    window.__medicalCatalogDebug__ = createMedicalCatalogDebugApi();
+    console.info('[MedicalCatalogDebug] Debug API ready: window.__medicalCatalogDebug__');
   } catch (e) {
     console.warn("初始化窗口失败:", e);
   }
 });
 
 onUnmounted(() => {
+  delete window.__medicalCatalogDebug__;
   if (!isDiagnosisPathWindow) {
     eventListeners.unregisterAllListeners();
   }
@@ -551,6 +626,7 @@ const openInsideCloudHome = async () => {
             :initialPatientData="currentPatient ?? undefined"
             :intentResult="intentResult"
             @close="handleCollapse"
+            @cancel="cancelVoiceResult"
           />
           <KnowledgeBasePanel v-if="currentView === 'knowledge-base'" @close="handleCollapse" />
           <SettingsPanel

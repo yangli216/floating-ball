@@ -151,9 +151,34 @@ PHIS                                MedHermes
 
 ## 6. 接口清单
 
+### 基础可用性探测 `GET /api/health`
+
+用途：仅检测本地桌面桥接服务是否在线。该接口不写入浏览器上下文，也不做授权握手校验，供 loader / SDK 的 `ping()` 用于避免误判“应用离线”。
+
+完整地址：
+
+```text
+http://127.0.0.1:8081/api/health
+```
+
+成功响应：
+
+```json
+{
+  "status": "success",
+  "version": "1.2.8",
+  "timestamp": 1704355200100
+}
+```
+
+说明：
+
+1. 该接口只表示“桥接服务在线”，不表示当前 HIS 已完成授权握手。
+2. 业务调用前仍需执行 `POST /api/handshake` 并携带有效的 `extra.emrAccessToken`。
+
 ### 6.1 `POST /api/handshake`
 
-用途：SDK 初始化握手，将浏览器上下文（域名、Cookie、UA 等）传递给桌面端，同时检测桌面端是否在线。
+用途：SDK 初始化握手，将浏览器上下文（域名、Cookie、UA 等）传递给桌面端，同时完成桌面端服务授权检测。握手必须携带有效的 `emrAccessToken`，否则桌面端服务不可调用。
 
 完整地址：
 
@@ -171,7 +196,7 @@ http://127.0.0.1:8081/api/handshake
 | `userAgent` | String | 否 | 浏览器 `navigator.userAgent` |
 | `timestamp` | Number | 否 | 初始化时间戳 |
 | `sdkVersion` | String | 否 | SDK 版本号 |
-| `extra` | Object | 否 | HIS 自定义扩展字段，如 `{ hospitalCode: "H001", userId: "doc-123" }` |
+| `extra` | Object | 否 | HIS 自定义扩展字段，必须包含有效的 `emrAccessToken`；可附带 `{ hospitalCode: "H001", userId: "doc-123" }` 等额外字段 |
 
 请求示例：
 
@@ -184,6 +209,7 @@ http://127.0.0.1:8081/api/handshake
   "timestamp": 1704355200000,
   "sdkVersion": "1.0.0",
   "extra": {
+    "emrAccessToken": "valid-token-from-his-sdk",
     "hospitalCode": "H001",
     "userId": "doc-123"
   }
@@ -200,12 +226,28 @@ http://127.0.0.1:8081/api/handshake
 }
 ```
 
+失败响应（缺少或无效 `emrAccessToken`）：
+
+```json
+{
+  "status": "error",
+  "message": "SDK 握手失败：缺少有效的 emrAccessToken，桌面应用服务调用已被拒绝"
+}
+```
+
 实现说明：
 
-1. 桌面端会将浏览器上下文存入 `AppState`，后续业务接口可从中读取 Cookie 等信息。
-2. 桌面端收到握手后会向前端发出 `sdk-handshake` 事件，前端可据此感知 HIS SDK 已连接。
-3. 此接口支持重复调用，每次调用都会更新存储的浏览器上下文。
-4. 推荐 HIS 在页面加载时调用一次，在用户重新登录后再调用一次以刷新 Cookie。
+1. 桌面端会校验 `extra.emrAccessToken`；仅在 token 有效且非空时才会将浏览器上下文存入 `AppState`。
+2. 授权握手成功后，桌面端收到握手会向前端发出 `sdk-handshake` 事件，前端可据此感知 HIS SDK 已连接。
+3. 如果握手失败，桌面端会清空已缓存的浏览器上下文，并拒绝后续桌面应用服务调用。
+4. 此接口支持重复调用，每次成功调用都会更新存储的浏览器上下文。
+5. 推荐 HIS 在页面加载时调用一次，在用户重新登录、刷新 token 或切换组织后再调用一次以刷新授权上下文。
+
+授权门禁说明：
+
+1. 除 `POST /api/handshake` 与 `/sdk/*` 静态文件接口外，其余本地桌面服务接口都要求先完成一次成功握手。
+2. 若未握手，或握手中未携带有效的 `extra.emrAccessToken`，桌面端将统一返回 `401 Unauthorized`。
+3. 推荐 HIS 仅在收到握手成功响应后，再调用完整问诊、灵活问诊、语音问诊、结果轮询、风险提示及知识代理等桌面服务接口。
 
 ### 6.2 `POST /api/consultation/start`
 

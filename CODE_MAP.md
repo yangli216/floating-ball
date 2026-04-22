@@ -18,13 +18,13 @@
 | 修改问诊主流程 | [ConsultationPage.vue](src/components/ConsultationPage.vue) + [SymptomManagement.vue](src/components/SymptomManagement.vue) |
 | 修改窗口/动画行为 | [useWindowManagement.ts](src/composables/useWindowManagement.ts) + [useWorkMode.ts](src/composables/useWorkMode.ts) |
 | 修改 LLM 调用 | [llm.ts](src/services/llm.ts) + [prompts.ts](src/prompts/prompts.ts) |
-| 修改语音问诊 | [VoiceCapsule.vue](src/components/VoiceCapsule.vue) + [VoiceConsultationNew.vue](src/components/VoiceConsultationNew.vue) + [VoiceConsultationResult.vue](src/components/VoiceConsultationResult.vue) + [useVoiceConsultation.ts](src/composables/useVoiceConsultation.ts) + [useVoiceIntentRecognition.ts](src/composables/useVoiceIntentRecognition.ts) + [prompts.ts](src/prompts/prompts.ts) + [aliyunSpeech.ts](src/services/aliyunSpeech.ts) + [speechConfig.ts](src/services/speechConfig.ts) + [audioRecorder.ts](src/services/audioRecorder.ts) |
+| 修改语音问诊 | [VoiceCapsule.vue](src/components/VoiceCapsule.vue) + [VoiceConsultationNew.vue](src/components/VoiceConsultationNew.vue) + [VoiceConsultationResult.vue](src/components/VoiceConsultationResult.vue) + [useVoiceConsultation.ts](src/composables/useVoiceConsultation.ts) + [useVoiceIntentRecognition.ts](src/composables/useVoiceIntentRecognition.ts) + [prompts.ts](src/prompts/prompts.ts) + [aliyunSpeech.ts](src/services/aliyunSpeech.ts) + [speechConfig.ts](src/services/speechConfig.ts) + [audioRecorder.ts](src/services/audioRecorder.ts)；重点关注语音抽取契约是否覆盖病例草稿、explicit/inferred 来源标记、诊断/检查/药品结构化字段 |
 | 修改诊断路径 | [DiagnosisPathWindow.vue](src/components/DiagnosisPathWindow.vue) + [diagnosisPath.ts](src/services/diagnosisPath.ts) + [stores/diagnosisPath.ts](src/stores/diagnosisPath.ts) |
 | 修改知识库 | [pmphai.ts](src/services/pmphai.ts)（主） / [KnowledgeBasePanel.vue](src/components/KnowledgeBasePanel.vue)（备） |
 | 修改设置面板 | [SettingsPanel.vue](src/components/SettingsPanel.vue) + [llm.ts](src/services/llm.ts) + [speechConfig.ts](src/services/speechConfig.ts) |
 | 修改 Windows 更新源 | [UpdateChecker.vue](src/components/UpdateChecker.vue) + [updateConfig.ts](src/services/updateConfig.ts) + [lib.rs](src-tauri/src/lib.rs) |
 | 修改窗口尺寸记忆 | [useWindowManagement.ts](src/composables/useWindowManagement.ts) + [useNavigation.ts](src/composables/useNavigation.ts) + [useEventListeners.ts](src/composables/useEventListeners.ts) + [windowSizes.ts](src/constants/windowSizes.ts) |
-| 修改医学数据匹配 | [medicalData.ts](src/services/medicalData.ts) + [hisService.ts](src/services/hisService.ts) + [src/assets/*.csv](src/assets/) |
+| 修改医学数据匹配 | [medicalData.ts](src/services/medicalData.ts) + [hisService.ts](src/services/hisService.ts) + [medical_catalog.rs](src-tauri/src/commands/medical_catalog.rs) + [src/assets/*.csv](src/assets/) |
 | 测试 HIS 集成 | [mock_his.html](./docs/mock_his.html) |
 
 ---
@@ -70,14 +70,14 @@ floating-ball/
 | **SymptomManagement.vue** | ~2000 | 症状管理：关联症状建议、中西医切换 | 与 ConsultationPage 强耦合 |
 | **DiagnosisPathWindow.vue** | ~980 | 独立窗口：诊断推理路径可视化（ECharts 图） | 有独立 Pinia 缓存，注意缓存 key 策略 |
 | **VoiceConsultationResult.vue** | ~1200 | 语音转写后的结构化病历编辑器 | 与语音链路串联 |
-| **VoiceConsultationNew.vue** | ~2100 | 当前语音问诊主结果页：左侧病例正文编辑，右侧 AI 诊断/治疗推荐与一键回写；药品频次/用法字段在此处接 HIS 字典并允许筛选 | 推荐依据默认应折叠，避免右栏信息过载 |
+| **VoiceConsultationNew.vue** | ~2100 | 当前语音问诊主结果页：左侧病例正文编辑，右侧 AI 诊断/治疗推荐与一键回写；消费语音抽取阶段生成的病例草稿与结构化诊断/处方提示，药品频次/用法字段在此处接 HIS 字典并允许筛选 | 推荐依据默认应折叠，避免右栏信息过载 |
 | **VoiceCapsule.vue** | ~450 | 语音录制界面：音频采集(PCM16) + 流式传输 | 配合 audioRecorder + aliyunSpeech |
 
 ### 辅助功能组件
 
 | 组件 | 行数 | 职责 |
 |------|------|------|
-| **SettingsPanel.vue** | ~1500 | LLM 配置、窗口行为、音频输入设备、自动更新、主题 |
+| **SettingsPanel.vue** | ~1500 | LLM 配置、窗口行为、音频输入设备、基础数据缓存查看/清理、自动更新、主题 |
 | **AnalyticsPanel.vue** | ~1200 | 数据分析看板（ECharts） |
 | **KnowledgePanel.vue** | ~850 | PMPHAI 医学知识检索 |
 | **BodyPartSelector.vue** | ~830 | 人体部位交互选症状（分性别） |
@@ -106,10 +106,11 @@ floating-ball/
 
 | 模块 | 行数 | 职责 | 关键导出 |
 |------|------|------|---------|
-| **useEventListeners.ts** | ~475 | 全局事件枢纽：HIS HTTP 事件、深链接、鼠标/窗口事件、Tauri 事件监听 | HIS 事件绑定、deep link 处理 |
+| **useEventListeners.ts** | ~475 | 全局事件枢纽：HIS HTTP 事件、深链接、鼠标/窗口事件、Tauri 事件监听；`start-voice-consultation` 会按目标患者判断是否恢复未提交语音缓存，同患者有缓存则恢复结果页，否则开启新语音会话；仅在已处于录音胶囊页时对重复请求做幂等处理 | HIS 事件绑定、deep link 处理 |
 | **useWindowManagement.ts** | ~422 | 窗口位置/尺寸/显示器管理 | `saveWindowPosition()`, `restoreWindowPosition()`, `smartExpand()`, `resizeWorkWindow()` |
 | **useWorkMode.ts** | ~422 | 球体 <-> 工作面板的切换 | `enterWorkMode()`, `exitWork()`, `handleCollapse()` |
 | **useVoiceConsultation.ts** | -- | 语音录制 -> 转写 -> 病历生成；按 `consultationId` 缓存语音病例解析结果并支持重启后恢复未提交结果 | 录制控制、转写回调、结果提交 |
+| **useVoiceIntentRecognition.ts** | -- | 语音结构化抽取：把医患对话整理成病例草稿、诊断/检查/药品提示，并保留 explicit/inferred 来源标记与处方核心字段，供 `VoiceConsultationNew.vue` 直接落地到可编辑结果页；同时在抽取后分流“条件性用药”和“患者已自行服用药”，避免误入当前处方候选 | LLM 抽取、结果结构校验、一次修复重试、目录匹配、结构归一、治疗项后处理 |
 | **useNavigation.ts** | -- | 视图导航 | `openSettings()`, `openConsultation()`, `openChat()` 等 |
 
 **依赖链**：
@@ -130,7 +131,7 @@ useEventListeners (全局事件) -> 触发 useNavigation & useWorkMode
 | 服务 | 行数 | 职责 | 关键接口 |
 |------|------|------|---------|
 | **llm.ts** | ~444 | LLM API（OpenAI 兼容） | `chatStream()`, `chat()`, `analyzePatientRisks()`, `getLLMConfig()` |
-| **medicalData.ts** | ~600 | 医学数据目录加载、缓存与匹配（ICD-10 诊断/药品/检查项）；本地模式优先走 HISService 同步并按全局/机构维度缓存，CSV 作为兜底数据源 | 模糊匹配 + 拼音支持 |
+| **medicalData.ts** | ~600 | 医学数据目录加载、SQLite 缓存与匹配（ICD-10 诊断/药品/检查项）；本地模式优先走 HISService，同步结果写入本地 SQLite，CSV 作为兜底数据源；同时暴露调试态查询/清理能力 | 模糊匹配 + 拼音支持 |
 | **diagnosisPath.ts** | ~568 | 诊断推理路径生成 | ECharts 节点/连线数据，ICD-10 匹配 |
 | **pmphai.ts** | ~806 | PMPHAI 医学知识库（主通道） | 向量搜索、列表搜索、文档检索、OAuth 令牌管理 |
 | **textGeneration.ts** | ~281 | 主诉/现病史文本生成 | 症状数据 -> LLM -> 医学叙事文本 |
@@ -148,6 +149,7 @@ useEventListeners (全局事件) -> 触发 useNavigation & useWorkMode
 | 服务 | 行数 | 职责 |
 |------|------|------|
 | **hisService.ts** | ~80 | 封装 Tauri HTTP 插件，绕过浏览器同源与 Cookie 限制，供前端直接调用 HIS 接口；同时承接诊断、药品、诊疗项目目录及药品频次/用法字典读取 |
+| **medical_catalog.rs** | -- | 医学目录 SQLite 持久化命令：诊断全局缓存、诊疗项目/药品按机构缓存与同步状态管理，并提供调试态查看/清理命令 | 供 `medicalData.ts` 调用 |
 | **factChecker.ts** | ~399 | AI 输出验证（医学指南核查） |
 | **feedback.ts** | ~312 | 操作追踪与反馈 |
 | **knowledgeBase.ts** | ~213 | 通用知识库 CRUD |
@@ -161,6 +163,7 @@ useEventListeners (全局事件) -> 触发 useNavigation & useWorkMode
 ```
 llm.ts <- factChecker.ts, diagnosisPath.ts, textGeneration.ts
 hisService.ts -> medicalData.ts
+medical_catalog.rs -> medicalData.ts
 medicalData.ts <- diagnosisPath.ts, ConsultationPage.vue
 pmphai.ts (独立知识库服务)
 speechConfig.ts -> aliyunSpeech.ts, ChatPanel.vue, SettingsPanel.vue

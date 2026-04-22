@@ -65,7 +65,9 @@ interface HiBdDieListBody {
 interface HiBdCliOrgListBody {
   start?: number;
   limit?: number;
+  total?: number;
   items?: Array<{
+    id?: string;
     idCli?: string;
     naCli?: string;
     unit?: string;
@@ -100,6 +102,13 @@ interface OrgMedicineConfigItem {
   specSale?: string;
   idSto?: string;
   idOrg?: string;
+}
+
+interface OrgMedicineConfigListBody {
+  start?: number;
+  limit?: number;
+  total?: number;
+  items?: OrgMedicineConfigItem[];
 }
 
 const HIS_CATALOG_ENDPOINTS = {
@@ -165,6 +174,7 @@ export class HisService {
       console.log('[HisService] RESPONSE', {
         url: fullUrl,
         code: (result as HisResponse<T>).code,
+        message: (result as HisResponse<T>).message,
         summary: this.summarizePayload((result as HisResponse<T>).body ?? (result as HisResponse<T>).data),
       });
       return result as HisResponse<T>;
@@ -228,6 +238,7 @@ export class HisService {
       HIS_CATALOG_ENDPOINTS.diagnoses,
       [{ start: 0, limit: -1 }]
     );
+    this.assertBusinessSuccess(HIS_CATALOG_ENDPOINTS.diagnoses, response);
 
     const items = response.body?.items ?? [];
     return items
@@ -259,31 +270,78 @@ export class HisService {
    * 同步诊疗项目目录（检查 / 检验 / 治疗）
    */
   async fetchInstitutionMedicalItemsCatalog(orgCode: string): Promise<HisMedicalItemCatalogItem[]> {
-    void orgCode;
+    const pageSize = 500;
+    let start = 0;
+    let total = 0;
+    const items: NonNullable<HiBdCliOrgListBody['items']> = [];
+    const pageSummaries: Array<{ start: number; rawCount: number; total: number }> = [];
 
-    const response = await this.post<HiBdCliOrgListBody>(
-      HIS_CATALOG_ENDPOINTS.medicalItems,
-      [{ start: 0, limit: -1 }]
-    );
+    do {
+      const response = await this.post<HiBdCliOrgListBody>(
+        HIS_CATALOG_ENDPOINTS.medicalItems,
+        [{ start, limit: pageSize, params: { fgActive: '1', fgSingle: '1', source: '-1' } }]
+      );
+      this.assertBusinessSuccess(HIS_CATALOG_ENDPOINTS.medicalItems, response);
 
-    const items = response.body?.items ?? [];
-    return items
-      .filter((item) => item.fgActive !== '0')
-      .map((item) => {
-        const name = item.naCli?.trim() || '';
-        const sdCliText = item.sdCliText?.trim() || '';
-        const keywords = [item.py?.trim(), item.naCstmg?.trim(), sdCliText]
-          .filter((part): part is string => Boolean(part));
+      const pageItems = response.body?.items ?? [];
+      total = Number(response.body?.total ?? 0);
+      items.push(...pageItems);
+      pageSummaries.push({
+        start,
+        rawCount: pageItems.length,
+        total,
+      });
 
-        return {
-          id: item.idCli?.trim() || name,
-          code: item.idCli?.trim() || '',
-          name,
-          category: this.mapCliCategory(sdCliText, item.sdCli?.trim()),
-          keywords: keywords.length > 0 ? Array.from(new Set(keywords)) : undefined
-        };
-      })
-      .filter(item => item.id || item.name);
+      start += pageSize;
+
+      if (pageItems.length === 0) {
+        break;
+      }
+    } while (total > 0 && items.length < total);
+
+    const activeItems = items.filter((item) => item.fgActive !== '0');
+    const normalizedItems = new Map<string, HisMedicalItemCatalogItem>();
+    let duplicateCount = 0;
+
+    activeItems.forEach((item) => {
+      const name = item.naCli?.trim() || '';
+      if (!name) {
+        return;
+      }
+
+      const sdCliText = item.sdCliText?.trim() || '';
+      const keywords = [item.py?.trim(), item.naCstmg?.trim(), sdCliText]
+        .filter((part): part is string => Boolean(part));
+      const id = item.id?.trim() || item.idCli?.trim() || name;
+
+      if (normalizedItems.has(id)) {
+        duplicateCount += 1;
+        return;
+      }
+
+      normalizedItems.set(id, {
+        id,
+        code: item.idCli?.trim() || id,
+        name,
+        category: this.mapCliCategory(sdCliText, item.sdCli?.trim()),
+        keywords: keywords.length > 0 ? Array.from(new Set(keywords)) : undefined
+      });
+    });
+
+    const normalizedList = Array.from(normalizedItems.values());
+
+    console.log('[HisService] Medical items catalog summary', {
+      orgCode,
+      total,
+      pages: pageSummaries,
+      rawCount: items.length,
+      inactiveFiltered: items.length - activeItems.length,
+      duplicateCount,
+      normalizedCount: normalizedList.length,
+      sample: normalizedList[0] ?? null,
+    });
+
+    return normalizedList;
   }
 
   /**
@@ -292,30 +350,44 @@ export class HisService {
   async fetchInstitutionMedicineCatalog(orgCode: string): Promise<HisMedicineCatalogItem[]> {
     const storeIds = await this.fetchWesternMedicineStoreIds(orgCode);
     if (storeIds.length === 0) {
+      console.warn('[HisService] Medicine catalog skipped because no valid western medicine stores were matched', {
+        orgCode,
+      });
       return [];
     }
 
     const responses = await Promise.all(
-      storeIds.map((idSto) => this.post<OrgMedicineConfigItem[]>(
+      storeIds.map((idSto) => this.post<OrgMedicineConfigListBody>(
         HIS_CATALOG_ENDPOINTS.medicines,
         [{ start: 0, limit: -1, params: { idSto } }]
       ))
     );
+    responses.forEach((response) => this.assertBusinessSuccess(HIS_CATALOG_ENDPOINTS.medicines, response));
 
-    const merged = responses.flatMap(response => response.body ?? response.data ?? []);
+    const responseSummaries = responses.map((response, index) => {
+      const items = response.body?.items ?? response.data?.items ?? [];
+      return {
+        idSto: storeIds[index],
+        rawCount: items.length,
+      };
+    });
+    const merged = responses.flatMap(response => response.body?.items ?? response.data?.items ?? []);
+    const activeItems = merged.filter(item => item.fgActive !== '0' && item.orgActive !== '0' && item.medActive !== '0');
+    const westMedicineItems = activeItems.filter(item => (item.sdMed == '1' || item.sdMed == '2'));
     const unique = new Map<string, HisMedicineCatalogItem>();
+    let missingNameCount = 0;
+    let duplicateCount = 0;
 
-    merged
-      .filter(item => item.fgActive !== '0' && item.orgActive !== '0' && item.medActive !== '0')
-      .filter(item => (item.sdMed == '1' || item.sdMed == '2'))
-      .forEach((item) => {
+    westMedicineItems.forEach((item) => {
         const name = item.naMedPro?.trim() || item.naMed?.trim() || '';
         if (!name) {
+          missingNameCount += 1;
           return;
         }
 
         const id = item.idMedPro?.trim() || item.idMed?.trim() || name;
         if (unique.has(id)) {
+          duplicateCount += 1;
           return;
         }
 
@@ -327,7 +399,22 @@ export class HisService {
         });
       });
 
-    return Array.from(unique.values());
+    const normalizedMedicines = Array.from(unique.values());
+
+    console.log('[HisService] Medicine catalog summary', {
+      orgCode,
+      storeIds,
+      responses: responseSummaries,
+      mergedCount: merged.length,
+      inactiveFiltered: merged.length - activeItems.length,
+      sdMedFiltered: activeItems.length - westMedicineItems.length,
+      missingNameCount,
+      duplicateCount,
+      normalizedCount: normalizedMedicines.length,
+      sample: normalizedMedicines[0] ?? null,
+    });
+
+    return normalizedMedicines;
   }
 
   /**
@@ -374,28 +461,58 @@ export class HisService {
     );
 
     const stores = response.body ?? response.data ?? [];
+    let inactiveFiltered = 0;
+    let orgFiltered = 0;
+    let sdStoFiltered = 0;
+    let scopeFiltered = 0;
+
     const validStores = stores.filter((store) => {
       if (store.fgActive === '0') {
+        inactiveFiltered += 1;
         return false;
       }
       if (orgCode && store.idOrg?.trim() && store.idOrg.trim() !== orgCode) {
+        orgFiltered += 1;
         return false;
       }
 
       const sdSto = store.sdSto?.trim();
+      if (sdSto !== '2') {
+        sdStoFiltered += 1;
+        return false;
+      }
+
       const stoScopes = (store.sdsStoPro || '')
         .split(',')
         .map(item => item.trim())
         .filter(Boolean);
+      if (!stoScopes.includes('1') || !stoScopes.includes('2')) {
+        scopeFiltered += 1;
+        return false;
+      }
 
-      return sdSto === '2' && stoScopes.includes('1') && stoScopes.includes('2');
+      return true;
     });
 
-    return Array.from(new Set(
+    const storeIds = Array.from(new Set(
       validStores
         .map(store => store.idSto?.trim())
         .filter((idSto): idSto is string => Boolean(idSto))
     ));
+
+    console.log('[HisService] Western medicine store filter summary', {
+      orgCode,
+      rawCount: stores.length,
+      inactiveFiltered,
+      orgFiltered,
+      sdStoFiltered,
+      scopeFiltered,
+      matchedCount: validStores.length,
+      matchedStoreIds: storeIds,
+      sampleStore: stores[0] ?? null,
+    });
+
+    return storeIds;
   }
 
   private composeMedicineSpec(specSale?: string, unitSale?: string): string {
@@ -404,6 +521,21 @@ export class HisService {
     }
 
     return specSale || unitSale || '';
+  }
+
+  private assertBusinessSuccess<T>(endpoint: string, response: HisResponse<T>): void {
+    const code = response.code;
+    if (code === 200 || code === '200' || response.success === true) {
+      return;
+    }
+
+    const message = response.message?.trim() || `HIS business error: ${String(code ?? 'unknown')}`;
+    console.warn('[HisService] Business response rejected', {
+      endpoint,
+      code,
+      message,
+    });
+    throw new Error(`[HisService] ${endpoint} failed: ${message} (code=${String(code ?? 'unknown')})`);
   }
 
   private buildUrlWithQuery(base: string, query?: Record<string, string | number | boolean | null | undefined>): string {

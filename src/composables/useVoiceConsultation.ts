@@ -29,6 +29,42 @@ interface VoiceConsultationCacheEntry {
 
 const VOICE_CONSULTATION_CACHE_PREFIX = 'VOICE_CONSULTATION_CACHE_V1';
 
+function resolveVoiceConsultationId(patient: AppPatient | null | undefined): string {
+  return String(patient?.idPi || patient?.patientId || patient?.id || 'unknown');
+}
+
+function getVoiceConsultationCacheKey(consultationId: string): string {
+  return `${VOICE_CONSULTATION_CACHE_PREFIX}:${consultationId}`;
+}
+
+export function clearVoiceConsultationCache(patient?: AppPatient | null): void {
+  const consultationId = resolveVoiceConsultationId(patient);
+  if (!consultationId || consultationId === 'unknown') {
+    return;
+  }
+
+  try {
+    localStorage.removeItem(getVoiceConsultationCacheKey(consultationId));
+    console.log('[VoiceConsultation] Cache cleared', { consultationId });
+  } catch (error) {
+    console.warn('[VoiceConsultation] Failed to clear cache:', consultationId, error);
+  }
+}
+
+export function hasVoiceConsultationCache(patient?: AppPatient | null): boolean {
+  const consultationId = resolveVoiceConsultationId(patient);
+  if (!consultationId || consultationId === 'unknown') {
+    return false;
+  }
+
+  try {
+    return Boolean(localStorage.getItem(getVoiceConsultationCacheKey(consultationId)));
+  } catch (error) {
+    console.warn('[VoiceConsultation] Failed to inspect cache:', consultationId, error);
+    return false;
+  }
+}
+
 /**
  * 语音问诊配置参数
  */
@@ -95,12 +131,8 @@ export function useVoiceConsultation(options: VoiceConsultationOptions) {
   const isProcessingVoice = ref(false);
   let processingToken = 0;
 
-  function resolveConsultationId(patient: AppPatient | null): string {
-    return String(patient?.idPi || patient?.patientId || patient?.id || 'unknown');
-  }
-
   function getCacheKey(consultationId: string): string {
-    return `${VOICE_CONSULTATION_CACHE_PREFIX}:${consultationId}`;
+    return getVoiceConsultationCacheKey(consultationId);
   }
 
   function readCache(consultationId: string): VoiceConsultationCacheEntry | null {
@@ -136,16 +168,7 @@ export function useVoiceConsultation(options: VoiceConsultationOptions) {
   }
 
   function clearCache(consultationId?: string): void {
-    if (!consultationId || consultationId === 'unknown') {
-      return;
-    }
-
-    try {
-      localStorage.removeItem(getCacheKey(consultationId));
-      console.log('[VoiceConsultation] Cache cleared', { consultationId });
-    } catch (error) {
-      console.warn('[VoiceConsultation] Failed to clear cache:', consultationId, error);
-    }
+    clearVoiceConsultationCache(consultationId ? ({ idPi: consultationId } as AppPatient) : null);
   }
 
   async function showIntentResult(result: VoiceIntentResult, source: 'llm' | 'cache'): Promise<void> {
@@ -186,7 +209,7 @@ export function useVoiceConsultation(options: VoiceConsultationOptions) {
     try {
       await invoke('complete_consultation', {
         result: {
-          consultationId: resolveConsultationId(currentPatient.value),
+          consultationId: resolveVoiceConsultationId(currentPatient.value),
           timestamp: Date.now(),
           resultType: 'cancelled',
           requestId: `voice-cancelled-${Date.now()}`,
@@ -207,7 +230,7 @@ export function useVoiceConsultation(options: VoiceConsultationOptions) {
   }
 
   async function resumeCachedVoiceResult(): Promise<boolean> {
-    const consultationId = resolveConsultationId(currentPatient.value);
+    const consultationId = resolveVoiceConsultationId(currentPatient.value);
     const cached = readCache(consultationId);
 
     if (!cached) {
@@ -238,7 +261,7 @@ export function useVoiceConsultation(options: VoiceConsultationOptions) {
     isProcessingVoice.value = true;
     try {
       const normalizedText = transcribedText.trim();
-      const consultationId = resolveConsultationId(currentPatient.value);
+      const consultationId = resolveVoiceConsultationId(currentPatient.value);
       const cached = readCache(consultationId);
       if (cached?.transcribedText === normalizedText) {
         console.log('[VoiceConsultation] Cache hit, skip LLM parsing', {
@@ -307,7 +330,7 @@ export function useVoiceConsultation(options: VoiceConsultationOptions) {
    */
   async function handleVoiceError(err: unknown): Promise<void> {
     resetVoiceSessionState();
-    clearCache(resolveConsultationId(currentPatient.value));
+    clearCache(resolveVoiceConsultationId(currentPatient.value));
     trackError('voice_recording_error', err);
     showToast('录音出错: ' + err, 'error');
     await writeCancelledResult('录音出错: ' + err);
@@ -330,14 +353,14 @@ export function useVoiceConsultation(options: VoiceConsultationOptions) {
       const requestId = `voice-record-${Date.now()}`;
       await invoke('complete_consultation', {
         result: {
-          consultationId: resolveConsultationId(currentPatient.value),
+          consultationId: resolveVoiceConsultationId(currentPatient.value),
           timestamp: Date.now(),
           resultType: 'final-report',
           requestId,
           ...record,
         },
       });
-      clearCache(resolveConsultationId(currentPatient.value));
+      clearCache(resolveVoiceConsultationId(currentPatient.value));
       showToast('病历已生成并回传系统', 'success');
       await exitWork();
     } catch (e: unknown) {
@@ -354,7 +377,7 @@ export function useVoiceConsultation(options: VoiceConsultationOptions) {
     trackClick('voice_result_cancel');
     trackRecommendationAction('record', 'voice-record', 'rejected');
     resetVoiceSessionState();
-    clearCache(resolveConsultationId(currentPatient.value));
+    clearCache(resolveVoiceConsultationId(currentPatient.value));
     await writeCancelledResult('用户取消语音问诊结果');
     await exitWork('cancelled');
   }
@@ -366,6 +389,7 @@ export function useVoiceConsultation(options: VoiceConsultationOptions) {
     isProcessingVoice,
     resetVoiceSessionState,
     resumeCachedVoiceResult,
+    hasCachedVoiceResult: (patient?: AppPatient | null) => hasVoiceConsultationCache(patient ?? currentPatient.value),
     handleVoiceStop,
     handleVoiceError,
     handleResultConfirm,

@@ -67,10 +67,12 @@ export interface EventListenersOptions {
   navigation: {
     openConsultation: () => Promise<void>;
     openVoiceConsultation: () => Promise<void>;
-    startVoiceInteraction: () => Promise<void>;
+    startVoiceInteraction: (options?: { skipCacheRestore?: boolean }) => Promise<void>;
   };
   /** 重置语音会话状态 */
   resetVoiceSessionState: () => void;
+  /** 检查指定患者是否存在未提交语音缓存 */
+  hasCachedVoiceResult: (patient?: AppPatient | null) => boolean;
   /** 队列化快进模式自动触发请求 */
   queueConsultationAssistTrigger: (kind: ConsultationAssistAction) => void;
   /** 退出标志（来自 workMode） */
@@ -144,7 +146,15 @@ function readHandshakeStringField(
   }
 
   const value = payload[field];
-  return typeof value === 'string' && value.trim() ? value.trim() : null;
+  if (typeof value === 'string' && value.trim()) {
+    return value.trim();
+  }
+
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    return String(value);
+  }
+
+  return null;
 }
 
 function resolveUrtPayload(raw: unknown): Record<string, unknown> | undefined {
@@ -247,6 +257,7 @@ export function useEventListeners(options: EventListenersOptions) {
     workMode,
     navigation,
     resetVoiceSessionState,
+    hasCachedVoiceResult,
     queueConsultationAssistTrigger,
     exiting,
     resizeTimeoutRef,
@@ -331,6 +342,10 @@ export function useEventListeners(options: EventListenersOptions) {
           hasToken: Boolean(token),
           orgCode,
         });
+      }
+
+      if (!orgCode) {
+        console.warn('[EventListeners] Handshake did not resolve orgCode, org-scoped medical catalogs will be skipped');
       }
 
       await medicalDataService.setCatalogContext({ orgCode });
@@ -489,13 +504,20 @@ export function useEventListeners(options: EventListenersOptions) {
     unlistenStartVoiceConsultation = await listen<SessionAssistPayload | null>('start-voice-consultation', async (event) => {
       console.log('Received start voice consultation command');
       trackApiCall('his_start_voice', true);
-      resetVoiceSessionState();
       currentPatient.value = mergePatientContext(currentPatient.value, event.payload);
       if (!currentPatient.value) {
         showToast('请先接诊患者', 'error');
         return;
       }
-      await navigation.startVoiceInteraction();
+
+      if (isWorking.value && currentView.value === 'voice-interaction') {
+        console.info('[EventListeners] Duplicate start voice request ignored while voice interaction is already active');
+        return;
+      }
+
+      const shouldRestoreCache = hasCachedVoiceResult(currentPatient.value);
+      resetVoiceSessionState();
+      await navigation.startVoiceInteraction({ skipCacheRestore: !shouldRestoreCache });
     });
   }
 

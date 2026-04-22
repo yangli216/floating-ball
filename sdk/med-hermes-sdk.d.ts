@@ -189,6 +189,17 @@ export interface HandshakeResponse {
   timestamp: number;
 }
 
+/** 浏览器上下文 / 调试握手参数 */
+export interface HandshakeContext {
+  origin?: string;
+  href?: string;
+  cookie?: string;
+  userAgent?: string;
+  timestamp?: number;
+  sdkVersion?: string;
+  extra?: Record<string, any>;
+}
+
 /** API 响应 */
 export interface ApiResponse {
   status: string;
@@ -208,7 +219,10 @@ export declare class MedHermes {
   /** 初始化 SDK：采集浏览器上下文 + 与桌面端握手 */
   init(extra?: Record<string, any>): Promise<HandshakeResponse>;
 
-  /** 检测桌面端是否在线 */
+  /** 调试模式：手动覆盖握手入参 */
+  debugHandshake(overrides?: HandshakeContext): Promise<HandshakeResponse>;
+
+  /** 仅检测桌面端桥接服务是否在线，不执行授权握手 */
   ping(): Promise<HandshakeResponse>;
 
   /** 启动完整问诊 */

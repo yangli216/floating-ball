@@ -7,6 +7,7 @@ import { chat, type ChatMessage } from '../services/llm';
 import { PROMPTS } from '../prompts';
 import { getHisService } from '../services/hisService';
 import { medicalDataService, type DiagnosisItem } from '../services/medicalData';
+import { clearVoiceConsultationCache } from '../composables/useVoiceConsultation';
 import {
   checkDiagnosis,
   checkMedicine,
@@ -33,9 +34,7 @@ const props = defineProps<{
   intentResult: VoiceIntentResult | null;
 }>();
 
-const emit = defineEmits<{
-  close: [];
-}>();
+const emit = defineEmits(['close', 'cancel']);
 
 const showToast = inject<(msg: string, type?: string) => void>('showToast');
 
@@ -51,6 +50,7 @@ const treatments = ref<TreatmentRecommendation[]>([]);
 const treatmentLoading = ref(false);
 
 const submitting = ref(false);
+const showCancelConfirm = ref(false);
 
 const s = (value: unknown): string => (typeof value === 'string' ? value : '');
 const patientName = computed((): string => s(props.initialPatientData?.naPi));
@@ -79,9 +79,24 @@ function truncateAnalysisText(text: string, maxLength: number): string {
 }
 
 const canSubmit = computed(() => chiefComplaint.value.trim().length > 0 && selectedDiagnosis.value !== null && !submitting.value);
-const selectedTreatmentCount = computed(() => treatments.value.filter((item) => item.selected).length);
-const overviewChiefComplaint = computed(() => truncateAnalysisText(normalizeAnalysisText(chiefComplaint.value), 30) || '待补充');
-const overviewDiagnosis = computed(() => selectedDiagnosis.value?.name || '待选择');
+
+function handleCancelClick(): void {
+  if (submitting.value) {
+    return;
+  }
+
+  showCancelConfirm.value = true;
+}
+
+function closeCancelConfirm(): void {
+  showCancelConfirm.value = false;
+}
+
+function confirmCancel(): void {
+  showCancelConfirm.value = false;
+
+  emit('cancel');
+}
 
 const expandedTreatmentEditors = ref<Set<string>>(new Set());
 const lastTreatmentDiagnosisKey = ref('');
@@ -104,17 +119,83 @@ function buildEncounterSummary(): string {
 
 function buildDiagnosisRationale(matchedDiagnosis: MatchedDiagnosis, displayName: string): string {
   const summary = buildEncounterSummary();
+  const evidenceText = normalizeAnalysisText(matchedDiagnosis.evidenceText || '').replace(/[。；;，,]+$/u, '');
+  const rationaleText = normalizeAnalysisText(matchedDiagnosis.rationale || '').replace(/[。；;，,]+$/u, '');
+  const sourceText = matchedDiagnosis.sourceType === 'inferred'
+    ? '该诊断为模型结合完整对话推断得出'
+    : matchedDiagnosis.sourceType === 'uncertain'
+      ? '该诊断为信息不足时的谨慎提示'
+      : '该诊断在对话中有明确依据';
   const matchNote = matchedDiagnosis.matchedItem ? '' : '当前标准库中暂未匹配到完全一致的诊断条目，需人工确认。';
-  return `${summary}，模型初步考虑${displayName}，建议结合查体和必要检查进一步确认。${matchNote}`;
+  const rationaleBody = rationaleText || `${sourceText}，建议结合查体和必要检查进一步确认。`;
+  if (evidenceText) {
+    return `${summary}，模型初步考虑${displayName}，依据为“${evidenceText}”。${rationaleBody}${matchNote}`;
+  }
+  return `${summary}，模型初步考虑${displayName}。${rationaleBody}${matchNote}`;
 }
 
-function buildTreatmentReason(name: string, basisText?: string): string {
+function buildTreatmentReason(item: MatchedTreatment, name: string): string {
   const summary = buildEncounterSummary();
-  const normalizedBasis = normalizeAnalysisText(basisText || '').replace(/[。；;，,]+$/u, '');
-  if (normalizedBasis) {
-    return `${summary}，模型建议将${name}纳入当前处理方案，主要依据是${normalizedBasis}。`;
+  const normalizedBasis = normalizeAnalysisText(item.evidenceText || item.text || '').replace(/[。；;，,]+$/u, '');
+  const goalText = normalizeAnalysisText(item.goal || '').replace(/[。；;，,]+$/u, '');
+
+  if (item.type === 'medicine' && isConditionalMedicine(item)) {
+    return `${summary}，${name}属于需结合检验或后续评估再决定的条件性用药，当前不建议默认纳入处方。${normalizedBasis ? `依据：${normalizedBasis}。` : ''}`;
   }
-  return `${summary}，模型建议将${name}纳入当前处理方案。`;
+
+  if (item.type === 'medicine' && isHistoricalSelfMedication(item)) {
+    return `${summary}，${name}主要来自患者已自行服药信息，当前更适合作为用药史参考，不默认继续纳入处方。${normalizedBasis ? `依据：${normalizedBasis}。` : ''}`;
+  }
+
+  const sourceText = item.sourceType === 'inferred'
+    ? '该项为模型结合病情补全的建议'
+    : item.sourceType === 'uncertain'
+      ? '该项为信息不足时的谨慎提示'
+      : '该项在对话中有明确依据';
+  if (normalizedBasis && goalText) {
+    return `${summary}，模型建议将${name}纳入当前处理方案，主要依据是${normalizedBasis}，处理目标为${goalText}。${sourceText}。`;
+  }
+  if (normalizedBasis) {
+    return `${summary}，模型建议将${name}纳入当前处理方案，主要依据是${normalizedBasis}。${sourceText}。`;
+  }
+  if (goalText) {
+    return `${summary}，模型建议将${name}纳入当前处理方案，处理目标为${goalText}。${sourceText}。`;
+  }
+  return `${summary}，模型建议将${name}纳入当前处理方案。${sourceText}。`;
+}
+
+function getTreatmentEvidenceCorpus(item: Pick<MatchedTreatment, 'name' | 'evidenceText' | 'text' | 'goal'>): string {
+  return normalizeAnalysisText([item.name, item.evidenceText, item.text, item.goal].filter(Boolean).join(' '));
+}
+
+function isConditionalMedicine(item: MatchedTreatment): boolean {
+  const corpus = getTreatmentEvidenceCorpus(item);
+  return /如果|若|待|查完|结果出来|结果回报|明确后|必要时|再用|再考虑|细菌感染就|病毒感染就|视情况/u.test(corpus);
+}
+
+function isHistoricalSelfMedication(item: MatchedTreatment): boolean {
+  const corpus = getTreatmentEvidenceCorpus(item);
+  return /吃了|已服用|已经服用|自行服用|自服|服用过|在家服用|院外已用/u.test(corpus);
+}
+
+function shouldAutoSelectTreatment(item: MatchedTreatment): boolean {
+  if (!item.matchedItem) {
+    return false;
+  }
+
+  if (item.type !== 'medicine') {
+    return item.sourceType !== 'uncertain';
+  }
+
+  if (item.sourceType === 'uncertain') {
+    return false;
+  }
+
+  if (isConditionalMedicine(item) || isHistoricalSelfMedication(item)) {
+    return false;
+  }
+
+  return true;
 }
 
 function getTreatmentEditorKey(rec: TreatmentRecommendation): string {
@@ -318,14 +399,22 @@ function initTreatmentsFromIntent(matched: MatchedTreatment[]): TreatmentRecomme
     const normalized = normalizeTreatmentRecommendation({
       type: mapTreatmentType(item.type),
       name,
-      reason: buildTreatmentReason(name, item.text),
-      usage: [item.dosage, item.frequency, item.usage].filter(Boolean).join('，'),
-      dosage: dosagePair.dosage,
-      dosageUnit: dosagePair.dosageUnit,
-      frequency: inferFrequencyFromText([item.frequency, item.text].filter(Boolean).join(' ')),
-      route: inferRouteFromText([item.usage, item.text].filter(Boolean).join(' ')),
+      reason: buildTreatmentReason(item, name),
+      usage: [item.usage, item.frequency, item.dosage, item.dosageUnit].filter(Boolean).join('，'),
+      dosage: item.dosage || dosagePair.dosage,
+      dosageUnit: item.dosageUnit || dosagePair.dosageUnit,
+      frequency: item.frequency || inferFrequencyFromText([item.frequency, item.evidenceText, item.text].filter(Boolean).join(' ')),
+      frequencyKey: item.frequencyKey || '',
+      route: item.usage || inferRouteFromText([item.usage, item.evidenceText, item.text].filter(Boolean).join(' ')),
+      routeKey: item.usageKey || '',
+      totalQty: item.totalQty || '',
+      totalUnit: item.totalUnit || '',
+      days: item.days || '',
+      sourceType: item.sourceType,
+      evidenceText: item.evidenceText || item.text || '',
+      goal: item.goal || '',
       matchedItem: item.matchedItem || undefined,
-      selected: !!item.matchedItem,
+      selected: shouldAutoSelectTreatment(item),
     });
     return normalized;
   });
@@ -743,16 +832,6 @@ const medicineTotalUnits = ['盒', '瓶', '袋', '支', '片', '粒'];
 const pharmacyOptions = ['西药房', '中药房', '急诊药房', '住院药房'];
 const insuranceOptions = ['医保使用', '自费'];
 
-function getTreatmentTagLabel(type: string): string {
-  const map: Record<string, string> = {
-    medicine: '药品',
-    exam: '检查',
-    lab_test: '检验',
-    procedure: '处置',
-  };
-  return map[type] || type;
-}
-
 function getTreatmentSpec(rec: TreatmentRecommendation): string {
   return rec.type === 'medicine' ? rec.matchedItem?.spec || '' : '';
 }
@@ -805,7 +884,10 @@ function getMedicineFieldDisplay(rec: TreatmentRecommendation, field: MedicinePr
     case 'route':
       return normalized.route || '点击选择';
     case 'total':
-      return [normalized.totalQty, normalized.totalUnit].filter(Boolean).join(' ') || '点击填写';
+      return [
+        [normalized.totalQty, normalized.totalUnit].filter(Boolean).join(' '),
+        normalized.days ? `${normalized.days}天` : '',
+      ].filter(Boolean).join(' / ') || '点击填写';
   }
 }
 
@@ -820,7 +902,7 @@ function isMedicineFieldEmpty(rec: TreatmentRecommendation, field: MedicinePrima
     case 'route':
       return !normalized.route;
     case 'total':
-      return !normalized.totalQty && !normalized.totalUnit;
+      return !normalized.totalQty && !normalized.totalUnit && !normalized.days;
   }
 }
 
@@ -1046,6 +1128,7 @@ async function handleBatchWriteBack(): Promise<void> {
     };
 
     await invoke('complete_consultation', { result });
+    clearVoiceConsultationCache(props.initialPatientData);
     showToast?.('病历已提交', 'success');
     emit('close');
   } catch (error: unknown) {
@@ -1118,7 +1201,7 @@ watch(
         </div>
       </div>
       <div class="voice-topbar-actions">
-        <button class="back-btn topbar-btn" type="button" @click="emit('close')">返回</button>
+        <button class="back-btn topbar-btn" type="button" @click="handleCancelClick">放弃</button>
         <button class="writeback-btn topbar-btn" type="button" :disabled="!canSubmit" @click="handleBatchWriteBack">
           <template v-if="submitting">提交中...</template>
           <template v-else>一键回写</template>
@@ -1139,7 +1222,6 @@ watch(
         <section class="vcn-panel pane-card vcn-left-panel">
           <div class="section-heading">
             <div>
-              <p class="section-kicker">病例正文</p>
               <h3 class="section-title">病历详情</h3>
             </div>
           </div>
@@ -1161,22 +1243,13 @@ watch(
         </section>
 
         <section class="vcn-right-panel">
-          <div class="decision-overview pane-card">
-            <div class="overview-item">
-              <span class="overview-label">主诉</span>
-              <strong class="overview-value">{{ overviewChiefComplaint }}</strong>
-            </div>
-            <div class="overview-item">
-              <span class="overview-label">当前诊断</span>
-              <strong class="overview-value">{{ overviewDiagnosis }}</strong>
-            </div>
-            <div class="overview-item overview-item-compact">
-              <span class="overview-label">已选方案</span>
-              <strong class="overview-value">{{ selectedTreatmentCount }} 项</strong>
-            </div>
-          </div>
-
           <div class="decision-card pane-card">
+            <div class="section-heading">
+              <div>
+                <h3 class="section-title">诊断建议</h3>
+              </div>
+            </div>
+
             <div v-if="diagnosisLoading" class="loading-inline">
               <div class="ai-spinner small">
                 <div class="spinner-ring"></div>
@@ -1281,7 +1354,6 @@ watch(
                               <span class="hover-reason-tooltip">{{ rec.reason }}</span>
                             </span>
                           </div>
-                          <span class="meta-token">{{ getTreatmentTagLabel(rec.type) }}</span>
                           <span v-if="getTreatmentSpec(rec)" class="meta-token">规格 {{ getTreatmentSpec(rec) }}</span>
                           <span class="meta-token" :class="{ warning: !rec.matchedItem }">{{ rec.matchedItem ? getTreatmentMatchLabel(rec) : '待人工确认' }}</span>
                           <span v-if="rec.type !== 'medicine' && rec.usage" class="meta-token">建议 {{ rec.usage }}</span>
@@ -1524,6 +1596,19 @@ watch(
       </div>
 
     </div>
+
+    <div v-if="showCancelConfirm" class="confirm-overlay" @click.self="closeCancelConfirm">
+      <div class="confirm-dialog pane-card" role="dialog" aria-modal="true" aria-labelledby="voice-cancel-title">
+        <div class="confirm-dialog-body">
+          <p id="voice-cancel-title" class="confirm-dialog-title">确认放弃当前语音结果？</p>
+          <p class="confirm-dialog-text">放弃后将清空当前未提交的语音结果，并退回小球状态。</p>
+        </div>
+        <div class="confirm-dialog-actions">
+          <button class="confirm-btn secondary" type="button" @click="closeCancelConfirm">继续编辑</button>
+          <button class="confirm-btn danger" type="button" @click="confirmCancel">确认放弃</button>
+        </div>
+      </div>
+    </div>
   </div>
 </template>
 
@@ -1576,6 +1661,79 @@ watch(
   gap: 10px;
   margin-left: auto;
   flex-shrink: 0;
+}
+
+.confirm-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 20;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background: rgba(15, 23, 42, 0.3);
+  backdrop-filter: blur(6px);
+}
+
+.confirm-dialog {
+  width: min(420px, 100%);
+  padding: 22px;
+  border-radius: 20px;
+  box-shadow: 0 18px 48px rgba(15, 23, 42, 0.18);
+}
+
+.confirm-dialog-body {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.confirm-dialog-title {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--voice-text);
+}
+
+.confirm-dialog-text {
+  margin: 0;
+  color: var(--voice-text-muted);
+  line-height: 1.6;
+}
+
+.confirm-dialog-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  margin-top: 18px;
+}
+
+.confirm-btn {
+  min-width: 96px;
+  height: 40px;
+  padding: 0 16px;
+  border-radius: 12px;
+  border: 1px solid transparent;
+  font-size: var(--voice-font-main);
+  font-weight: 600;
+  cursor: pointer;
+  transition: opacity 0.2s ease, transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+.confirm-btn:hover {
+  opacity: 0.92;
+}
+
+.confirm-btn.secondary {
+  border-color: var(--voice-border-strong);
+  background: #fff;
+  color: var(--voice-text);
+}
+
+.confirm-btn.danger {
+  background: #cf4a3c;
+  color: #fff;
+  box-shadow: 0 10px 20px rgba(207, 74, 60, 0.18);
 }
 
 .topbar-btn {

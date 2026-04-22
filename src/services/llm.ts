@@ -334,6 +334,7 @@ export async function chat(
       },
       body: JSON.stringify({
         model: model,
+        "enable_thinking": false,
         messages: payloadMessages,
       }),
     });

@@ -88,7 +88,7 @@ MedHermesLoader.detect().then(function(online) { ... });
   │
   ├─ DOMContentLoaded
   │
-  ├─ 1. ping 桌面端 (POST /api/handshake)
+  ├─ 1. ping 桌面端 (GET /api/health)
   │     ├─ 在线 → 继续
   │     └─ 离线 → med-hermes://launch 拉起 → 等 4 秒 → 重试 (最多 2 次)
   │
@@ -127,6 +127,13 @@ const mh = new MedHermes();
 // 初始化：采集浏览器上下文（域名、Cookie 等），与桌面端握手
 // 如果桌面端未启动，会自动尝试通过协议拉起
 await mh.init();
+
+// 调试模式：手动覆盖握手入参（例如联调页手动塞 emrAccessToken）
+await mh.debugHandshake({
+  extra: {
+    emrAccessToken: 'debug-sdk-test-token'
+  }
+});
 ```
 
 ### 3. 启动问诊并监听结果
@@ -316,7 +323,7 @@ await mh.startConsultation({
 
 #### `ping(): Promise`
 
-检测桌面端是否在线。
+检测桌面端桥接服务是否在线，不会执行授权握手。
 
 #### `startPolling() / stopPolling()`
 

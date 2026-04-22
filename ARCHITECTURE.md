@@ -429,7 +429,8 @@ await navigation.openConsultation();
 - ✅ 处理语音停止事件（转录 + LLM 生成）
 - ✅ 命中本地缓存时跳过重复 LLM 解析，应用重启后可恢复未提交结果
 - ✅ 当实时转写为空时，自动使用音频文件兜底转写
-- ✅ LLM 病历生成（结构化 JSON）
+- ✅ LLM 病历生成（结构化 JSON，包含病例草稿、诊断/项目/药品提示与来源标记）
+- ✅ 对语音抽取结果做结构校验与一次修复重试，降低模型输出格式漂移导致的整链路失败
 - ✅ JSON 解析和验证
 - ✅ 病历确认并提交到 HIS
 - ✅ 错误处理和降级
@@ -481,7 +482,7 @@ await voiceConsultation.handleResultConfirm(record);
   - `start-consultation` - 开始问诊
   - `start-consultation-session` - HIS 灵活模式 / assist 兼容事件（当前默认打开 `ConsultationPage` 并写入自动触发上下文）
   - `stop-consultation` - 停止问诊
-  - `start-voice-consultation` - 语音问诊
+  - `start-voice-consultation` - 语音问诊；来自 HIS / HTTP Bridge 的显式开始语音请求会先按目标患者 `idPi / patientId` 判断是否存在未提交缓存：同患者且存在缓存时直接恢复到语音结果页，否则开启新语音会话；仅在已处于录音胶囊页时对重复请求做幂等忽略
 - ✅ 鼠标事件监听
   - `hover-change` - 悬停状态
   - `mouse-pos` - 鼠标位置（环绕菜单高亮）
@@ -537,11 +538,11 @@ eventListeners.unregisterAllListeners();
 | 组件 | 职责 | 文件 |
 |------|------|------|
 | `ChatPanel.vue` | LLM 对话界面 | [src/components/ChatPanel.vue](src/components/ChatPanel.vue) |
-| `SettingsPanel.vue` | 系统设置（含文本/音频模型配置、音频输入设备选择） | [src/components/SettingsPanel.vue](src/components/SettingsPanel.vue) |
+| `SettingsPanel.vue` | 系统设置（含文本/音频模型配置、音频输入设备选择、基础数据缓存管理） | [src/components/SettingsPanel.vue](src/components/SettingsPanel.vue) |
 | `ConsultationPage.vue` | 完整症状问诊主链路，同时承接新的“内嵌灵活模式”；支持根据 `/assist` 上下文直接跳过症状采集进入病历详情页，继续复用现有推荐诊断、诊断鉴别、推荐用药、推荐检查与诊断路径能力，并负责处理 PHIS 引用闭环的页面状态；诊断保持单选引用，推荐方案支持多选后分组批量引入 | [src/components/ConsultationPage.vue](src/components/ConsultationPage.vue) |
 | `DiagnosisPathWindow.vue` | 独立诊断推理路径窗口，使用 ECharts Sankey 展示患者事实、章节归类、证据汇聚与诊断去向；默认提供更宽画布，并按容器尺寸动态计算 Sankey 的布局盒子，用对称留白实现“适应屏幕并居中”的默认视图，再开放滚轮缩放、平移与节点拖动；点击入口后窗口先显示 loading 动画，并按“检查缓存 -> 生成推理链 -> 渲染图表”的阶段更新提示，若生成超时或渲染失败会切换到明确错误态；正文容器在收到 payload 后保持挂载，loading 改为遮罩层，避免 `chartEl` 尚未挂载时误判渲染成功；开窗后的 `show/focus` 调用采用 best-effort 非阻塞方式，避免 Tauri 原生命令卡住整个推理链；右侧说明面板采用“支持证据 / 反证提醒 / 鉴别要点”三段式，未返回结构化分段时回退显示整体 rationale | [src/components/DiagnosisPathWindow.vue](src/components/DiagnosisPathWindow.vue) |
 | `VoiceCapsule.vue` | 语音录制胶囊 | [src/components/VoiceCapsule.vue](src/components/VoiceCapsule.vue) |
-| `VoiceConsultationNew.vue` | 当前语音问诊主结果页：左侧聚焦病例正文编辑，右侧展示 AI 诊断/治疗推荐与一键回写；整体采用“双栏正文 + 右侧决策卡片”结构，名称/规格/匹配状态按“单行优先”压缩展示；推荐依据不再以单独文本块展开，而是以名称后的悬停图标提示完整内容，避免右栏信息过载；诊断区保持单选切换且不允许取消为空，当前页不再承载诊断鉴别排查弹窗；药品项默认只展开“一次剂量、频次、用法、总量”四类核心字段，其余字段由头部箭头按需展开，检查/检验/处置编辑项默认收起；顶部患者信息栏右侧固定承载返回与一键回写操作，组件自身负责纵向滚动与右侧列圆角裁切，以适应固定窗口高度并隔离全局面板样式；视觉层面统一遵守最小 13px、正文 14px、重点 14px 加粗的字号基线，并仅用左上角轻量勾选标记表达选中态 | [src/components/VoiceConsultationNew.vue](src/components/VoiceConsultationNew.vue) |
+| `VoiceConsultationNew.vue` | 当前语音问诊主结果页：左侧聚焦病例正文编辑，右侧展示 AI 诊断/治疗推荐与一键回写；整体采用“双栏正文 + 右侧决策卡片”结构，名称/规格/匹配状态按“单行优先”压缩展示；消费 `useVoiceIntentRecognition` 产出的“病例草稿 + 带 explicit/inferred 来源标记的诊断/处方/检查提示”，优先直接填充主诉、现病史、既往史和可映射的处方核心字段，减少医生二次录入；其中“条件成立后再考虑”的药物与“患者已自行服用”的药物不作为当前处方候选，前者降级到处理意见，后者保留在用药史语义中；推荐依据不再以单独文本块展开，而是以名称后的悬停图标提示完整内容，避免右栏信息过载；诊断区保持单选切换且不允许取消为空，当前页不再承载诊断鉴别排查弹窗；药品项默认只展开“一次剂量、频次、用法、总量”四类核心字段，其余字段由头部箭头按需展开，检查/检验/处置编辑项默认收起；顶部患者信息栏右侧固定承载“放弃”和“一键回写”操作，其中“放弃”必须先经过二次确认，再清空当前患者的语音缓存并退回小球状态；组件自身负责纵向滚动与右侧列圆角裁切，以适应固定窗口高度并隔离全局面板样式；视觉层面统一遵守最小 13px、正文 14px、重点 14px 加粗的字号基线，并仅用左上角轻量勾选标记表达选中态 | [src/components/VoiceConsultationNew.vue](src/components/VoiceConsultationNew.vue) |
 | `VoiceConsultationResult.vue` | 语音结果编辑 | [src/components/VoiceConsultationResult.vue](src/components/VoiceConsultationResult.vue) |
 | `ReceptionCapsule.vue` | 接待胶囊（风险提示） | [src/components/ReceptionCapsule.vue](src/components/ReceptionCapsule.vue) |
 | `RiskAlertPanel.vue` | 风险详情面板 | [src/components/RiskAlertPanel.vue](src/components/RiskAlertPanel.vue) |
@@ -715,7 +716,7 @@ src/styles/
 | `llm.ts` | LLM API 通信（OpenAI 兼容） | [src/services/llm.ts](src/services/llm.ts) |
 | `aliyunSpeech.ts` | 语音转写编排（DashScope + OpenAI 兼容降级） | [src/services/aliyunSpeech.ts](src/services/aliyunSpeech.ts) |
 | `audioRecorder.ts` | Web Audio API 录音、音频输入设备枚举与首选设备回退 | [src/services/audioRecorder.ts](src/services/audioRecorder.ts) |
-| `medicalData.ts` | 医疗数据目录加载、缓存与匹配（诊断、药品、检查项）；本地模式优先通过 `hisService.ts` 同步目录数据并落本地缓存，CSV 仅作兜底；同时负责根据 ICD-10 前三位类目码（如 `J06`）解析章节分组，用于推荐诊断分组展示 | [src/services/medicalData.ts](src/services/medicalData.ts) |
+| `medicalData.ts` | 医疗数据目录加载、SQLite 缓存与匹配（诊断、药品、检查项）；本地模式优先通过 `hisService.ts` 同步目录数据并落本地 SQLite，CSV 仅作兜底；同时负责根据 ICD-10 前三位类目码（如 `J06`）解析章节分组，用于推荐诊断分组展示 | [src/services/medicalData.ts](src/services/medicalData.ts) |
 | `hisService.ts` | HIS HTTP 调用封装：统一处理鉴权头、POST/GET 请求，以及诊断/药品/诊疗项目目录与药品频次、用法等字典读取，供主问诊和语音问诊复用 | [src/services/hisService.ts](src/services/hisService.ts) |
 | `diagnosisPath.ts` | 诊断路径数据构建与独立窗口事件载荷封装；优先通过 LLM 生成结构化推理链，再在前端校验并映射为 Sankey 节点、连线和说明文案，失败时回退本地兜底链路；载荷中补充 `supportingEvidence`、`counterEvidence`、`differentialPoints` 三段式解释字段，供窗口右侧说明面板直接渲染 | [src/services/diagnosisPath.ts](src/services/diagnosisPath.ts) |
 | `feedback.ts` | 会话反馈服务 | [src/services/feedback.ts](src/services/feedback.ts) |
@@ -738,7 +739,8 @@ src/styles/
 1. `templateService.ts` 以本地 JSON 模板为主；区域化模式下优先从远程缓存读取，本地仍作为兜底。
 2. `medicalData.ts` 的目录数据分两条链路：
    - 区域化模式下继续通过 `syncRemoteData()` 增量同步区域服务数据。
-   - 本地模式下优先通过 `hisService.ts` 同步 HIS 目录并缓存：诊断全局只同步一次，诊疗项目按机构同步一次，药品按机构每天同步一次；机构标识来自 `sdk-handshake` 的握手上下文；若 HIS 目录不可用则回退本地 CSV。
+   - 本地模式下优先通过 `hisService.ts` 同步 HIS 目录，并通过 Rust 侧 SQLite 持久化：诊断全局只同步一次，诊疗项目按机构每天同步一次，药品按机构每天同步一次；机构标识来自 `sdk-handshake` 的握手上下文；若握手缺少 `tk` 则禁止发起目录请求；若 HIS 目录不可用则回退本地 CSV。
+   - 运行期可通过 `window.__medicalCatalogDebug__` 查看 SQLite 路径、同步状态、清理指定目录缓存并手动触发重同步，用于日常联调排查。
 3. `catalog` 匹配归一化规则固定为：小写后去除空格、连字符、下划线（`/[\s_-]/g`），用于兼容 `tcm_diagnoses/tcm-diagnoses/tcm diagnoses` 等格式。
 4. 西医推荐诊断的 UI 分组固定按 ICD-10 类目码前三位做章节归类；当编码无法解析到标准章节时，前端回退到"未分类/待确认"分组，避免丢失候选项。
 
@@ -775,7 +777,7 @@ startAuditUploader() (30s batch upload)
 | 阿里实时语音 | 直连 DashScope | → POST /v1/ai/speech/realtime |
 | Prompt 来源 | 本地 prompts/index.ts | bootstrap + delta 覆盖 → 本地兜底 |
 | 模板来源 | 本地 templates.json | delta 同步 → localStorage 缓存 → 本地兜底 |
-| 医学数据 | 本地 CSV/JSON + HIS 目录 | 区域化：delta 同步；本地模式：HIS 目录同步并按全局/机构缓存；失败时回退本地 CSV |
+| 医学数据 | 本地 CSV/JSON + HIS 目录 | 区域化：delta 同步；本地模式：HIS 目录同步并落本地 SQLite，诊断全局一次、诊疗项目/药品按机构每天同步；失败时回退本地 CSV |
 | 操作日志 | 仅本地 SQLite | 本地写入 + auditUploader 批量上报 |
 | Reviewer/PMPHAI/KB 配置 | localStorage | bootstrap 下发 |
 

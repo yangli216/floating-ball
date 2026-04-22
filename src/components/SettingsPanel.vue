@@ -9,6 +9,11 @@ import {
   getSpeechProviderOptions,
   type SpeechProvider,
 } from '../services/speechConfig';
+import {
+  medicalDataService,
+  type MedicalCatalogClearResult,
+  type MedicalCatalogDebugState,
+} from '../services/medicalData';
 import { useTheme } from '../services/themeService';
 import { getCurrentWindow } from '@tauri-apps/api/window';
 import { save } from '@tauri-apps/plugin-dialog';
@@ -22,6 +27,7 @@ import {
   setPreferredAudioInputDeviceId,
   type AudioInputDeviceOption,
 } from '../services/audioRecorder';
+import { isRegionalMode } from '../services/regionalClient';
 import UpdateChecker from './UpdateChecker.vue';
 import Icon from './Icon.vue';
 
@@ -503,6 +509,127 @@ const testPMPHAIConnection = async () => {
 const exporting = ref(false);
 const exportFormat = ref<'json' | 'csv'>('json');
 const exportDays = ref(90);
+const localMedicalCatalogEnabled = computed(() => !isRegionalMode());
+const medicalCatalogLoading = ref(false);
+const medicalCatalogClearing = ref(false);
+const medicalCatalogDebugState = ref<MedicalCatalogDebugState | null>(null);
+const medicalCatalogActionResult = ref<{ success: boolean; message: string } | null>(null);
+
+const formatUnixTimestamp = (value?: number | null) => {
+  if (!value) {
+    return '未同步';
+  }
+
+  try {
+    return new Date(value * 1000).toLocaleString('zh-CN', {
+      hour12: false,
+    });
+  } catch {
+    return '未同步';
+  }
+};
+
+const medicalCatalogOverviewCards = computed(() => {
+  const state = medicalCatalogDebugState.value;
+  return [
+    {
+      key: 'diagnoses',
+      label: '诊断目录',
+      rowCount: state?.diagnosisCount ?? 0,
+      description: '全局缓存，同步一次后长期复用',
+    },
+    {
+      key: 'items',
+      label: '诊疗项目',
+      rowCount: state?.itemCount ?? 0,
+      description: '按机构缓存，每天同步一次',
+    },
+    {
+      key: 'medicines',
+      label: '药品目录',
+      rowCount: state?.medicineCount ?? 0,
+      description: '按机构缓存，每天同步一次',
+    },
+  ];
+});
+
+const medicalCatalogSyncStates = computed(() => {
+  const state = medicalCatalogDebugState.value;
+  if (!state) {
+    return [];
+  }
+
+  return state.syncStates.map((entry) => ({
+    ...entry,
+    label: entry.catalogType === 'diagnoses'
+      ? '诊断目录'
+      : entry.catalogType === 'items'
+        ? '诊疗项目'
+        : entry.catalogType === 'medicines'
+          ? '药品目录'
+          : entry.catalogType,
+    scopeText: entry.orgCode ? `机构 ${entry.orgCode}` : '全局',
+    lastSyncText: formatUnixTimestamp(entry.lastSyncAt),
+    syncDateText: entry.syncDate || '未记录',
+  }));
+});
+
+const loadMedicalCatalogState = async () => {
+  if (!localMedicalCatalogEnabled.value) {
+    medicalCatalogDebugState.value = null;
+    return;
+  }
+
+  medicalCatalogLoading.value = true;
+  medicalCatalogActionResult.value = null;
+
+  try {
+    medicalCatalogDebugState.value = await medicalDataService.getDebugState();
+  } catch (error) {
+    console.error('Failed to load medical catalog state:', error);
+    trackError('settings_medical_catalog_state_failed', error);
+    medicalCatalogActionResult.value = {
+      success: false,
+      message: `基础数据状态读取失败: ${(error as Error).message}`,
+    };
+  } finally {
+    medicalCatalogLoading.value = false;
+  }
+};
+
+const clearMedicalCatalogCache = async () => {
+  medicalCatalogClearing.value = true;
+  medicalCatalogActionResult.value = null;
+  trackClick('settings_medical_catalog_clear_all');
+
+  try {
+    const result: MedicalCatalogClearResult = await medicalDataService.clearDebugCache({
+      catalogType: 'all',
+      orgCode: '',
+    });
+    await loadMedicalCatalogState();
+    const removedRows = result.diagnosisRows + result.itemRows + result.medicineRows;
+    medicalCatalogActionResult.value = {
+      success: true,
+      message: `基础数据缓存已清空，共删除 ${removedRows} 条目录记录`,
+    };
+    if (showToast) {
+      showToast('基础数据缓存已清空', 'success');
+    }
+  } catch (error) {
+    console.error('Failed to clear medical catalog cache:', error);
+    trackError('settings_medical_catalog_clear_failed', error);
+    medicalCatalogActionResult.value = {
+      success: false,
+      message: `清理基础数据缓存失败: ${(error as Error).message}`,
+    };
+    if (showToast) {
+      showToast(`清理基础数据缓存失败: ${(error as Error).message}`, 'error');
+    }
+  } finally {
+    medicalCatalogClearing.value = false;
+  }
+};
 
 const handleViewAnalytics = () => {
   trackClick('settings_view_analytics');
@@ -557,6 +684,10 @@ const handleExportData = async () => {
 
 watch(activeTab, (newVal) => {
   trackClick('settings_tab_change', { tab: newVal });
+
+  if (newVal === 'data' && localMedicalCatalogEnabled.value) {
+    loadMedicalCatalogState();
+  }
 });
 </script>
 
@@ -998,6 +1129,78 @@ watch(activeTab, (newVal) => {
 
         <div class="settings-section">
           <div class="section-header">
+            <Icon icon="lucide:database-zap" :size="20" />
+            <h3>基础数据管理</h3>
+          </div>
+          <p v-if="localMedicalCatalogEnabled" class="section-desc">查看本地 SQLite 中诊断、诊疗项目和药品目录的缓存状态，并支持一键清空后重新按规则同步。</p>
+          <p v-else class="section-desc">当前为区域化模式，此处不展示本地 HIS 基础目录缓存状态。</p>
+
+          <template v-if="localMedicalCatalogEnabled">
+            <div class="catalog-summary-grid">
+              <div
+                v-for="card in medicalCatalogOverviewCards"
+                :key="card.key"
+                class="catalog-summary-card"
+              >
+                <span class="catalog-summary-label">{{ card.label }}</span>
+                <strong class="catalog-summary-value">{{ card.rowCount }}</strong>
+                <span class="catalog-summary-desc">{{ card.description }}</span>
+              </div>
+            </div>
+
+            <div class="catalog-actions-row">
+              <button class="test-btn" @click="loadMedicalCatalogState" :disabled="medicalCatalogLoading || medicalCatalogClearing">
+                <Icon :icon="medicalCatalogLoading ? 'lucide:loader-2' : 'lucide:refresh-cw'" :size="16" :class="{ spin: medicalCatalogLoading }" />
+                {{ medicalCatalogLoading ? '刷新中...' : '刷新状态' }}
+              </button>
+              <button class="test-btn danger" @click="clearMedicalCatalogCache" :disabled="medicalCatalogLoading || medicalCatalogClearing">
+                <Icon :icon="medicalCatalogClearing ? 'lucide:loader-2' : 'lucide:trash-2'" :size="16" :class="{ spin: medicalCatalogClearing }" />
+                {{ medicalCatalogClearing ? '清理中...' : '一键清缓存' }}
+              </button>
+              <span
+                v-if="medicalCatalogActionResult"
+                :class="['test-message', medicalCatalogActionResult.success ? 'success' : 'error']"
+              >
+                <Icon :icon="medicalCatalogActionResult.success ? 'lucide:check-circle' : 'lucide:triangle-alert'" :size="16" />
+                {{ medicalCatalogActionResult.message }}
+              </span>
+            </div>
+
+            <div class="catalog-meta-grid">
+              <div class="catalog-meta-item">
+                <span class="catalog-meta-label">数据库路径</span>
+                <span class="catalog-meta-value">{{ medicalCatalogDebugState?.dbPath || '未获取' }}</span>
+              </div>
+              <div class="catalog-meta-item">
+                <span class="catalog-meta-label">同步状态数</span>
+                <span class="catalog-meta-value">{{ medicalCatalogSyncStates.length }}</span>
+              </div>
+            </div>
+
+            <div v-if="medicalCatalogSyncStates.length > 0" class="catalog-sync-list">
+              <div v-for="entry in medicalCatalogSyncStates" :key="`${entry.catalogType}-${entry.orgCode}`" class="catalog-sync-item">
+                <div class="catalog-sync-main">
+                  <div class="catalog-sync-title-row">
+                    <span class="catalog-sync-title">{{ entry.label }}</span>
+                    <span class="catalog-sync-scope">{{ entry.scopeText }}</span>
+                  </div>
+                  <div class="catalog-sync-detail-row">
+                    <span>表行数 {{ entry.rowCount }}</span>
+                    <span>同步日期 {{ entry.syncDateText }}</span>
+                    <span>最近同步 {{ entry.lastSyncText }}</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+            <div v-else class="catalog-empty-state">
+              <Icon icon="lucide:database" :size="18" />
+              <span>{{ medicalCatalogLoading ? '正在读取基础数据状态...' : '当前还没有基础数据同步记录' }}</span>
+            </div>
+          </template>
+        </div>
+
+        <div class="settings-section">
+          <div class="section-header">
             <Icon icon="lucide:download" :size="20" />
             <h3>数据导出</h3>
           </div>
@@ -1053,6 +1256,10 @@ watch(activeTab, (newVal) => {
             <li>
               <Icon icon="lucide:file-text" :size="16" />
               包含会话记录、消息、反馈和性能指标
+            </li>
+            <li>
+              <Icon icon="lucide:book-copy" :size="16" />
+              基础数据目录单独存储在本地 SQLite 中，可在上方查看同步状态并清理缓存
             </li>
             <li>
               <Icon icon="lucide:archive" :size="16" />
@@ -1732,6 +1939,144 @@ watch(activeTab, (newVal) => {
   box-shadow: 0 6px 16px rgba(8, 145, 178, 0.4);
 }
 
+.catalog-summary-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.catalog-summary-card {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 14px 16px;
+  border-radius: 10px;
+  border: 1px solid var(--medical-border-light);
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.96) 0%, rgba(248, 250, 252, 0.96) 100%);
+}
+
+.catalog-summary-label {
+  font-size: 13px;
+  color: var(--medical-text-muted);
+}
+
+.catalog-summary-value {
+  font-size: 28px;
+  line-height: 1;
+  color: var(--medical-text-primary);
+}
+
+.catalog-summary-desc {
+  font-size: 12px;
+  color: var(--medical-text-muted);
+  line-height: 1.4;
+}
+
+.catalog-actions-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-bottom: 16px;
+}
+
+.catalog-meta-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.catalog-meta-item {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 12px 14px;
+  border-radius: 10px;
+  background: var(--medical-bg-secondary);
+  border: 1px solid var(--medical-border-light);
+}
+
+.catalog-meta-label {
+  font-size: 12px;
+  color: var(--medical-text-muted);
+}
+
+.catalog-meta-value {
+  font-size: 13px;
+  color: var(--medical-text-primary);
+  word-break: break-all;
+  line-height: 1.5;
+}
+
+.catalog-sync-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.catalog-sync-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 14px 16px;
+  border-radius: 10px;
+  border: 1px solid var(--medical-border-light);
+  background: var(--medical-bg-secondary);
+}
+
+.catalog-sync-main {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+  width: 100%;
+}
+
+.catalog-sync-title-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.catalog-sync-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--medical-text-primary);
+}
+
+.catalog-sync-scope {
+  font-size: 12px;
+  color: var(--medical-primary);
+  background: rgba(8, 145, 178, 0.08);
+  border: 1px solid rgba(8, 145, 178, 0.16);
+  border-radius: 999px;
+  padding: 4px 10px;
+}
+
+.catalog-sync-detail-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 16px;
+  font-size: 12px;
+  color: var(--medical-text-muted);
+  line-height: 1.5;
+}
+
+.catalog-empty-state {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 14px 16px;
+  border-radius: 10px;
+  border: 1px dashed var(--medical-border-medium);
+  color: var(--medical-text-muted);
+  background: rgba(248, 250, 252, 0.9);
+}
+
 /* Data Info List */
 .data-info-list {
   margin: 0;
@@ -1836,6 +2181,17 @@ watch(activeTab, (newVal) => {
 .test-btn:hover:not(:disabled) {
   border-color: var(--medical-primary);
   color: var(--medical-primary);
+}
+
+.test-btn.danger {
+  border-color: rgba(220, 38, 38, 0.24);
+  color: #B91C1C;
+}
+
+.test-btn.danger:hover:not(:disabled) {
+  border-color: rgba(220, 38, 38, 0.5);
+  color: #991B1B;
+  background: rgba(220, 38, 38, 0.04);
 }
 
 .test-btn:disabled {

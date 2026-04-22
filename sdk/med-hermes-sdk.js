@@ -217,6 +217,16 @@
     };
   }
 
+  function buildHandshakeContext(baseCtx, overrides) {
+    var payload = assign({}, baseCtx || {}, overrides || {});
+    var baseExtra = (baseCtx && baseCtx.extra && typeof baseCtx.extra === 'object') ? baseCtx.extra : {};
+    var overrideExtra = (overrides && overrides.extra && typeof overrides.extra === 'object') ? overrides.extra : {};
+
+    payload.extra = assign({}, baseExtra, overrideExtra);
+    payload.timestamp = Date.now();
+    return payload;
+  }
+
   // ─── 主类 ───
 
   /**
@@ -362,16 +372,31 @@
   };
 
   /**
+   * 调试模式：手动覆盖握手入参。
+   * 常用于联调页或非真实 HIS 环境下手动传入 emrAccessToken。
+   * @param {Object} [overrides] 可覆盖 origin/href/cookie/userAgent/extra 等字段
+   * @returns {Promise<Object>} 握手结果
+   */
+  MedHermes.prototype.debugHandshake = function (overrides) {
+    this._browserCtx = buildHandshakeContext(
+      this._browserCtx || collectBrowserContext(this._opts.extra),
+      overrides
+    );
+
+    var self = this;
+    return this._handshake().then(function (result) {
+      self._connected = true;
+      self._emitter.emit('connected', result);
+      return result;
+    });
+  };
+
+  /**
    * 检测 MedHermes 桌面端是否在线
    * @returns {Promise<Object>} 包含版本号等信息
    */
   MedHermes.prototype.ping = function () {
-    var self = this;
-    // ping 也要尝试带上最新上下文
-    return this._collectHISContext()
-      .then(function (extra) {
-        return self._http.post('/handshake', collectBrowserContext(extra));
-      });
+    return this._http.get('/health');
   };
 
   /**

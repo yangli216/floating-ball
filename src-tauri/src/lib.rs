@@ -30,6 +30,17 @@ pub struct BrowserContext {
     pub extra: serde_json::Value,
 }
 
+impl BrowserContext {
+    pub fn emr_access_token(&self) -> Option<String> {
+        self.extra
+            .get("emrAccessToken")
+            .and_then(|value| value.as_str())
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .map(str::to_string)
+    }
+}
+
 #[derive(Debug, Deserialize, Serialize, Clone)]
 #[serde(rename_all = "camelCase")]
 pub struct PatientInfo {
@@ -76,6 +87,25 @@ pub struct AppState {
 }
 
 pub type SharedAppState = Arc<AppState>;
+
+pub fn validate_browser_context(ctx: &BrowserContext) -> Result<(), String> {
+    if ctx.emr_access_token().is_none() {
+        return Err("SDK 握手失败：缺少有效的 emrAccessToken，桌面应用服务调用已被拒绝".to_string());
+    }
+
+    Ok(())
+}
+
+pub fn ensure_desktop_service_access(app: &tauri::AppHandle) -> Result<BrowserContext, String> {
+    let state = app.state::<SharedAppState>();
+    let browser_context = state.browser_context.lock().map_err(|error| error.to_string())?;
+    let ctx = browser_context
+        .clone()
+        .ok_or_else(|| "桌面应用服务调用被拒绝：尚未完成 SDK 授权握手".to_string())?;
+
+    validate_browser_context(&ctx)?;
+    Ok(ctx)
+}
 
 #[derive(Clone, serde::Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -517,7 +547,14 @@ pub fn run() {
             commands::feedback::get_performance_statistics,
             commands::feedback::get_recommendation_statistics,
             commands::feedback::get_operation_statistics,
-            commands::feedback::export_data
+            commands::feedback::export_data,
+            // Medical catalog cache commands
+            commands::medical_catalog::load_medical_catalog_snapshot,
+            commands::medical_catalog::replace_diagnosis_catalog,
+            commands::medical_catalog::replace_org_medical_item_catalog,
+            commands::medical_catalog::replace_org_medicine_catalog,
+            commands::medical_catalog::get_medical_catalog_debug_state,
+            commands::medical_catalog::clear_medical_catalog_cache
         ])
         .setup(move |app| {
             // Initialize feedback database
@@ -527,6 +564,15 @@ pub fn run() {
                 Err(e) => {
                     eprintln!("[Feedback] Failed to initialize feedback database: {}", e);
                     eprintln!("[Feedback] Error details: {:?}", e);
+                }
+            }
+
+            println!("[MedicalCatalog] Initializing medical catalog database...");
+            match commands::medical_catalog::init_database(app.handle()) {
+                Ok(_) => println!("[MedicalCatalog] Database initialized successfully"),
+                Err(e) => {
+                    eprintln!("[MedicalCatalog] Failed to initialize database: {}", e);
+                    eprintln!("[MedicalCatalog] Error details: {:?}", e);
                 }
             }
 

@@ -5,7 +5,26 @@ use tauri::{Emitter, Manager};
 use std::sync::Mutex;
 use std::collections::HashMap;
 
-use crate::{SharedAppState, BrowserContext, PatientInfo, ConsultationResult};
+use crate::{validate_browser_context, SharedAppState, BrowserContext, PatientInfo, ConsultationResult};
+
+fn ensure_http_service_access(state: &web::Data<SharedAppState>) -> Result<(), HttpResponse> {
+    let browser_context = state.browser_context.lock().unwrap();
+    let Some(ctx) = browser_context.as_ref() else {
+        return Err(HttpResponse::Unauthorized().json(serde_json::json!({
+            "status": "error",
+            "message": "桌面应用服务调用被拒绝：尚未完成 SDK 授权握手"
+        })));
+    };
+
+    if let Err(message) = validate_browser_context(ctx) {
+        return Err(HttpResponse::Unauthorized().json(serde_json::json!({
+            "status": "error",
+            "message": message
+        })));
+    }
+
+    Ok(())
+}
 
 // PMPHAI Token Cache
 #[allow(dead_code)]
@@ -84,6 +103,10 @@ async fn start_consultation(
     app_handle: web::Data<tauri::AppHandle>,
     state: web::Data<SharedAppState>,
 ) -> impl Responder {
+    if let Err(response) = ensure_http_service_access(&state) {
+        return response;
+    }
+
     let patient = data.into_inner();
     println!("Received consultation request for patient: {}", patient.na_pi);
     
@@ -124,6 +147,10 @@ async fn start_voice_consultation(
     app_handle: web::Data<tauri::AppHandle>,
     state: web::Data<SharedAppState>,
 ) -> impl Responder {
+    if let Err(response) = ensure_http_service_access(&state) {
+        return response;
+    }
+
     println!("Received voice consultation request");
 
     let patient = data.map(|payload| payload.into_inner());
@@ -163,6 +190,10 @@ async fn start_consultation_assist(
     app_handle: web::Data<tauri::AppHandle>,
     state: web::Data<SharedAppState>,
 ) -> impl Responder {
+    if let Err(response) = ensure_http_service_access(&state) {
+        return response;
+    }
+
     let request = data.into_inner();
     println!(
         "Received consultation session assist request for patient: {}, action: {}",
@@ -206,6 +237,10 @@ async fn stop_consultation(
     app_handle: web::Data<tauri::AppHandle>,
     state: web::Data<SharedAppState>,
 ) -> impl Responder {
+    if let Err(response) = ensure_http_service_access(&state) {
+        return response;
+    }
+
     println!("Received stop consultation request");
     
     // 1. Update State + Write cancelled result for SDK polling
@@ -257,6 +292,10 @@ async fn stop_consultation(
 async fn get_result(
     state: web::Data<SharedAppState>,
 ) -> impl Responder {
+    if let Err(response) = ensure_http_service_access(&state) {
+        return response;
+    }
+
     // 1. Check if result exists immediately
     {
         let result = state.last_result.lock().unwrap();
@@ -307,6 +346,10 @@ async fn reference_feedback(
     app_handle: web::Data<tauri::AppHandle>,
     state: web::Data<SharedAppState>,
 ) -> impl Responder {
+    if let Err(response) = ensure_http_service_access(&state) {
+        return response;
+    }
+
     let request = data.into_inner();
     let resolved_reference_type = match (&request.reference_type, &request.action) {
         (Some(reference_type), Some(action)) if reference_type != action => {
@@ -480,7 +523,12 @@ async fn reference_feedback(
 async fn show_patient_risks(
     data: web::Json<PatientRiskData>,
     app_handle: web::Data<tauri::AppHandle>,
+    state: web::Data<SharedAppState>,
 ) -> impl Responder {
+    if let Err(response) = ensure_http_service_access(&state) {
+        return response;
+    }
+
     let risk_data = data.into_inner();
     println!("Received patient risk analysis request for: {}", risk_data.na_pi);
 
@@ -514,12 +562,37 @@ async fn show_patient_risks(
     }))
 }
 
+async fn health_check() -> impl Responder {
+    HttpResponse::Ok().json(serde_json::json!({
+        "status": "success",
+        "version": env!("CARGO_PKG_VERSION"),
+        "timestamp": std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_millis() as u64
+    }))
+}
+
 async fn handshake(
     data: web::Json<BrowserContext>,
     app_handle: web::Data<tauri::AppHandle>,
     state: web::Data<SharedAppState>,
 ) -> impl Responder {
     let ctx = data.into_inner();
+
+    if let Err(message) = validate_browser_context(&ctx) {
+        {
+            let mut browser_ctx = state.browser_context.lock().unwrap();
+            *browser_ctx = None;
+        }
+
+        println!("[Handshake] Rejected unauthorized SDK handshake: {}", message);
+        return HttpResponse::Unauthorized().json(serde_json::json!({
+            "status": "error",
+            "message": message,
+        }));
+    }
+
     println!(
         "[Handshake] SDK connected from origin={}, sdk_version={}",
         ctx.origin, ctx.sdk_version
@@ -615,7 +688,14 @@ fn generate_pmphai_sign(params: &HashMap<String, String>, app_secret: &str, app_
     format!("{:x}", hasher.finalize())
 }
 
-async fn pmphai_get_token(data: web::Json<PMPHAITokenRequest>) -> impl Responder {
+async fn pmphai_get_token(
+    data: web::Json<PMPHAITokenRequest>,
+    state: web::Data<SharedAppState>,
+) -> impl Responder {
+    if let Err(response) = ensure_http_service_access(&state) {
+        return response;
+    }
+
     let timestamp = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .unwrap()
@@ -651,7 +731,14 @@ async fn pmphai_get_token(data: web::Json<PMPHAITokenRequest>) -> impl Responder
     }
 }
 
-async fn pmphai_search(data: web::Json<PMPHAISearchRequest>) -> impl Responder {
+async fn pmphai_search(
+    data: web::Json<PMPHAISearchRequest>,
+    state: web::Data<SharedAppState>,
+) -> impl Responder {
+    if let Err(response) = ensure_http_service_access(&state) {
+        return response;
+    }
+
     let url = format!("{}?token={}&method=aiKnowledge", PMPHAI_API_BASE_URL, data.token);
 
     let mut body = serde_json::json!({
@@ -691,7 +778,14 @@ async fn pmphai_search(data: web::Json<PMPHAISearchRequest>) -> impl Responder {
     }
 }
 
-async fn pmphai_get_clip(data: web::Json<PMPHAIClipRequest>) -> impl Responder {
+async fn pmphai_get_clip(
+    data: web::Json<PMPHAIClipRequest>,
+    state: web::Data<SharedAppState>,
+) -> impl Responder {
+    if let Err(response) = ensure_http_service_access(&state) {
+        return response;
+    }
+
     let url = format!("{}?token={}&method=aiKnowledgeClip", PMPHAI_API_BASE_URL, data.token);
 
     let body = serde_json::json!({ "id": data.id });
@@ -735,7 +829,14 @@ struct PMPHAIPageUrlRequest {
     origin_url: Option<String>,
 }
 
-async fn pmphai_generate_page_url(data: web::Json<PMPHAIPageUrlRequest>) -> impl Responder {
+async fn pmphai_generate_page_url(
+    data: web::Json<PMPHAIPageUrlRequest>,
+    state: web::Data<SharedAppState>,
+) -> impl Responder {
+    if let Err(response) = ensure_http_service_access(&state) {
+        return response;
+    }
+
     let timestamp = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .unwrap()
@@ -804,7 +905,14 @@ async fn pmphai_generate_page_url(data: web::Json<PMPHAIPageUrlRequest>) -> impl
     }))
 }
 
-async fn pmphai_list_search(data: web::Json<PMPHAIListRequest>) -> impl Responder {
+async fn pmphai_list_search(
+    data: web::Json<PMPHAIListRequest>,
+    state: web::Data<SharedAppState>,
+) -> impl Responder {
+    if let Err(response) = ensure_http_service_access(&state) {
+        return response;
+    }
+
     let url = format!("{}?token={}", PMPHAI_API_STANDARD_URL, data.token);
 
     let mut form_params = vec![("method", "list".to_string())];
@@ -879,6 +987,7 @@ pub fn run_server(app_handle: tauri::AppHandle, state: SharedAppState) {
                     .wrap(cors)
                     .app_data(app_handle.clone())
                     .app_data(state.clone())
+                    .route("/api/health", web::get().to(health_check))
                     .route("/api/handshake", web::post().to(handshake))
                     .route("/api/consultation/start", web::post().to(start_consultation))
                     .route("/api/consultation/assist", web::post().to(start_consultation_assist))
