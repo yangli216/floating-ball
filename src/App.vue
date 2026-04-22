@@ -266,9 +266,6 @@ const {
 async function startVoiceInteraction(options?: { skipCacheRestore?: boolean }): Promise<void> {
   resetVoiceSessionState();
   if (!options?.skipCacheRestore && await resumeCachedVoiceResult()) {
-    if (!isWorking.value) {
-      await enterWorkMode(WINDOW_SIZES.VOICE_CONSULTATION.width, WINDOW_SIZES.VOICE_CONSULTATION.height);
-    }
     return;
   }
   voiceInteractionSessionKey.value += 1;

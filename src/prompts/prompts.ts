@@ -44,10 +44,12 @@ export const MedicalRecordGenerationPrompt = {
     {
       "name": "药品名称",
       "spec": "规格（如：0.25g*6片/盒，选填）",
-      "dosage": "单次用量（如：0.5g）",
+      "dosage": "单次用量值（如：0.5）",
+      "dosageUnit": "单次用量单位（如：g、片、ml）",
       "frequency": "频次（如：每日一次/qd）",
       "usage": "用法（如：口服）",
-      "count": "总量（如：1盒）"
+      "totalQty": "总量值（如：1）",
+      "totalUnit": "总量单位（如：盒）"
     }
   ],
   "examinations": [
@@ -132,6 +134,8 @@ export interface TreatmentHint {
   totalQty?: string;
   /** 总量单位 */
   totalUnit?: string;
+  /** 兼容旧提示词字段：总量（如 1盒） */
+  count?: string;
   /** 疗程天数 */
   days?: string;
 }
@@ -263,7 +267,7 @@ export const VoiceIntentRecognitionPrompt = {
   - 患者已自行服用、既往长期服用、院外先行处理过的药，默认写入 currentMedicationHistory，不要直接作为当前 treatmentHints 输出；
   - 只有医生在当前计划中明确建议继续、调整、补开、开立的药，才能进入当前 treatmentHints；
   - “如果化验提示细菌感染再用阿奇霉素”“必要时再考虑某药”这类条件性方案，不要作为当前已确定药品输出到 treatmentHints，应写入 treatmentPlan。
-8. 对于当前已明确推荐的药品，优先拆分出剂量值和单位，不要把“0.5g”完整塞进 dosage；频次和用法优先输出文本，同时在能确定标准简码时补充 frequencyKey、usageKey，否则留空。
+8. 对于当前已明确推荐的药品，尽量补充规格 spec；同时优先拆分出剂量值和单位，不要把“0.5g”完整塞进 dosage，也不要再使用旧的 count 字段承载总量；频次和用法优先输出文本，同时在能确定标准简码时补充 frequencyKey、usageKey，否则留空。
 9. 如果对话已明确当前要用某药，但没有给出一次剂量、频次、疗程或总量，可结合基层门诊常见方案谨慎补全这些字段，以提升可直接引用性；此时必须将该药的 sourceType 设为 inferred，并在 evidenceText 或 goal 中明确说明“处方细节为模型按常用门诊方案补全”。
 10. 如果药品本身都未被当前方案明确推荐，或处方细节无法从常规门诊方案合理补全，就不要臆造 dosage、frequency、days、totalQty、totalUnit。
 11. 如果对话中出现“A+B”“A和B”“先做A再做B”等组合表述，必须拆分为独立的诊断、药品、检查、检验、处置项目。

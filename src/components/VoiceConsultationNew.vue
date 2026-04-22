@@ -341,6 +341,7 @@ function normalizeTreatmentRecommendation(rec: Partial<TreatmentRecommendation>)
     type: rec.type || 'medicine',
     name: rec.name || '',
     reason: rec.reason || '',
+    spec: rec.spec || '',
     usage: rec.usage || '',
     matchedItem: rec.matchedItem,
     selected: !!rec.selected,
@@ -400,6 +401,7 @@ function initTreatmentsFromIntent(matched: MatchedTreatment[]): TreatmentRecomme
       type: mapTreatmentType(item.type),
       name,
       reason: buildTreatmentReason(item, name),
+      spec: item.spec || item.matchedItem?.spec || '',
       usage: [item.usage, item.frequency, item.dosage, item.dosageUnit].filter(Boolean).join('，'),
       dosage: item.dosage || dosagePair.dosage,
       dosageUnit: item.dosageUnit || dosagePair.dosageUnit,
@@ -827,13 +829,11 @@ async function fetchRouteOptions(): Promise<void> {
 onMounted(() => {
   void Promise.all([fetchFrequencyOptions(), fetchRouteOptions()]);
 });
-const dosageUnits = ['mg', 'g', 'ml', 'ug', '片', '粒', '支', '袋'];
-const medicineTotalUnits = ['盒', '瓶', '袋', '支', '片', '粒'];
 const pharmacyOptions = ['西药房', '中药房', '急诊药房', '住院药房'];
 const insuranceOptions = ['医保使用', '自费'];
 
 function getTreatmentSpec(rec: TreatmentRecommendation): string {
-  return rec.type === 'medicine' ? rec.matchedItem?.spec || '' : '';
+  return rec.type === 'medicine' ? rec.spec || rec.matchedItem?.spec || '' : '';
 }
 
 function getTreatmentMatchLabel(rec: TreatmentRecommendation): string {
@@ -1081,7 +1081,7 @@ async function handleBatchWriteBack(): Promise<void> {
       diagnosisList: selectedDiagnosis.value ? [{ name: selectedDiagnosis.value.name, code: selectedDiagnosis.value.code }] : [],
       medications: meds.map((item) => ({
         name: item.matchedItem?.name || item.name,
-        spec: item.matchedItem?.spec || '',
+        spec: item.spec || item.matchedItem?.spec || '',
         usage: item.usage || '',
         idMedPro: item.matchedItem?.id || '',
         dosage: item.dosage || '',
@@ -1381,10 +1381,7 @@ watch(
                             <label>一次剂量</label>
                             <div v-if="isEditableFieldActive(rec, 'dosage')" class="field-editor edit-field-row" @focusout="handleEditableFieldBlur(rec, 'dosage', $event)">
                               <input :ref="(el) => registerEditableFieldElement(getEditableFieldKey(rec, 'dosage'), el)" v-model="rec.dosage" type="text" placeholder="剂量" class="edit-input small" />
-                              <select v-model="rec.dosageUnit" class="edit-select mini">
-                                <option value="">单位</option>
-                                <option v-for="unit in dosageUnits" :key="unit" :value="unit">{{ unit }}</option>
-                              </select>
+                              <span class="edit-unit static-unit" :class="{ placeholder: !rec.dosageUnit }">{{ rec.dosageUnit || '单位待识别' }}</span>
                             </div>
                             <button v-else class="field-read-btn" :class="{ placeholder: isMedicineFieldEmpty(rec, 'dosage') }" type="button" @click.stop="activateEditableField(rec, 'dosage', $event)">
                               {{ getMedicineFieldDisplay(rec, 'dosage') }}
@@ -1454,10 +1451,7 @@ watch(
                             <label>总量</label>
                             <div v-if="isEditableFieldActive(rec, 'total')" class="field-editor edit-field-row" @focusout="handleEditableFieldBlur(rec, 'total', $event)">
                               <input :ref="(el) => registerEditableFieldElement(getEditableFieldKey(rec, 'total'), el)" v-model="rec.totalQty" type="text" placeholder="数量" class="edit-input small" />
-                              <select v-model="rec.totalUnit" class="edit-select mini">
-                                <option value="">单位</option>
-                                <option v-for="unit in medicineTotalUnits" :key="unit" :value="unit">{{ unit }}</option>
-                              </select>
+                              <span class="edit-unit static-unit" :class="{ placeholder: !rec.totalUnit }">{{ rec.totalUnit || '单位待识别' }}</span>
                             </div>
                             <button v-else class="field-read-btn" :class="{ placeholder: isMedicineFieldEmpty(rec, 'total') }" type="button" @click.stop="activateEditableField(rec, 'total', $event)">
                               {{ getMedicineFieldDisplay(rec, 'total') }}

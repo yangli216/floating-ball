@@ -14,6 +14,7 @@ import { LogicalSize } from '@tauri-apps/api/dpi';
 import { ANIMATION, WINDOW_SIZE_TOLERANCE } from '../constants/animation';
 import {
   getWindowSizeForView,
+  isLargePanelView,
   supportsPersistentWindowSize,
   type ViewType,
   type WindowSize,
@@ -92,6 +93,19 @@ export function useWindowManagement(options: WindowManagementOptions) {
       && Number(candidate.height) >= WINDOW_SIZES.BALL.height;
   };
 
+  const isAcceptablePersistentWindowSize = (view: ViewType, size: WindowSize): boolean => {
+    if (!isValidStoredWindowSize(size)) {
+      return false;
+    }
+
+    // 大面板视图不应回退到聊天面板/胶囊这类明显错误的小尺寸。
+    if (isLargePanelView(view)) {
+      return size.width > WINDOW_SIZES.WORK.width && size.height > WINDOW_SIZES.WORK.height;
+    }
+
+    return true;
+  };
+
   const getSavedWindowSizes = async (): Promise<Partial<Record<ViewType, WindowSize>>> => {
     if (!store.value) return {};
     const saved = await store.value.get<Partial<Record<ViewType, WindowSize>>>(WINDOW_SIZES_STORE_KEY);
@@ -107,7 +121,7 @@ export function useWindowManagement(options: WindowManagementOptions) {
     try {
       const savedSizes = await getSavedWindowSizes();
       const savedSize = savedSizes[view];
-      if (isValidStoredWindowSize(savedSize)) {
+      if (savedSize && isAcceptablePersistentWindowSize(view, savedSize)) {
         return {
           width: Math.round(savedSize.width),
           height: Math.round(savedSize.height),
@@ -121,7 +135,7 @@ export function useWindowManagement(options: WindowManagementOptions) {
   };
 
   const saveWindowSizeForView = async (view: ViewType, size: WindowSize): Promise<void> => {
-    if (!supportsPersistentWindowSize(view) || !store.value || !isValidStoredWindowSize(size)) {
+    if (!supportsPersistentWindowSize(view) || !store.value || !isAcceptablePersistentWindowSize(view, size)) {
       return;
     }
 
@@ -152,10 +166,6 @@ export function useWindowManagement(options: WindowManagementOptions) {
         height: Math.round(size.height / scaleFactor),
       };
 
-      if (logicalSize.width < WINDOW_SIZES.BALL.width || logicalSize.height < WINDOW_SIZES.BALL.height) {
-        return;
-      }
-
       await saveWindowSizeForView(view, logicalSize);
     } catch (err) {
       console.warn('[WindowMgmt] Failed to persist current window size:', err);
@@ -179,16 +189,12 @@ export function useWindowManagement(options: WindowManagementOptions) {
     try {
       // 优先使用提供的位置，减少异步开销
       const pos = providedPos || await appWindow.value.outerPosition();
-      console.log('[WindowMgmt] Position to save:', pos, 'Force:', force);
 
       // 只有在小球模式下才保存位置，或者强制保存（用于退出前）
       if (force || (!isWorking.value && !transitioning.value)) {
         lastBallPos.value = { x: pos.x, y: pos.y };
         await store.value.set('window_pos', { x: pos.x, y: pos.y });
         await store.value.save();
-        console.log('[WindowMgmt] ✅ Position saved successfully to store:', pos);
-      } else {
-        console.log('[WindowMgmt] ⚠️ Save skipped. Working:', isWorking.value, 'Transitioning:', transitioning.value);
       }
     } catch (err) {
       console.error('[WindowMgmt] Failed to save position:', err);
@@ -207,14 +213,7 @@ export function useWindowManagement(options: WindowManagementOptions) {
    */
   const updateCurrentMonitor = async (): Promise<void> => {
     try {
-      const start = performance.now();
       cachedMonitor.value = await currentMonitor();
-      const duration = (performance.now() - start).toFixed(2);
-      console.log(
-        '[WindowMgmt] Monitor cache updated:',
-        cachedMonitor.value ? 'Success' : 'Null',
-        `${duration}ms`
-      );
     } catch (e) {
       console.warn('[WindowMgmt] Failed to update monitor cache:', e);
     }
@@ -248,18 +247,7 @@ export function useWindowManagement(options: WindowManagementOptions) {
 
     try {
       // 显示器获取优先级：提供的 > 缓存 > 实时查询
-      let monitor = targetMonitor;
-      if (monitor) {
-        console.log('[WindowMgmt] smartExpand: Using provided monitor');
-      } else if (cachedMonitor.value) {
-        monitor = cachedMonitor.value;
-        console.log('[WindowMgmt] smartExpand: Using CACHED monitor');
-      } else {
-        console.log('[WindowMgmt] smartExpand: Cache MISS, calling currentMonitor()...');
-        const start = performance.now();
-        monitor = await currentMonitor();
-        console.log('[WindowMgmt] smartExpand: currentMonitor() took', (performance.now() - start).toFixed(2), 'ms');
-      }
+      const monitor = targetMonitor ?? cachedMonitor.value ?? await currentMonitor();
 
       if (!monitor) {
         console.warn('[WindowMgmt] smartExpand: No monitor found');
@@ -301,7 +289,6 @@ export function useWindowManagement(options: WindowManagementOptions) {
 
       // 仅在需要时调整位置
       if (newX !== windowPos.x || newY !== windowPos.y) {
-        console.log('[WindowMgmt] Adjusting position:', { from: windowPos, to: { x: newX, y: newY } });
         await appWindow.value.setPosition(new PhysicalPosition(newX, newY));
       }
     } catch (err) {
@@ -329,6 +316,7 @@ export function useWindowManagement(options: WindowManagementOptions) {
   ): Promise<void> => {
     if (!appWindow.value) return;
 
+    const start = performance.now();
     console.time('[WindowMgmt] waitForWindowSize');
 
     let scale = 1;
@@ -340,7 +328,6 @@ export function useWindowManagement(options: WindowManagementOptions) {
 
     const targetW = Math.round(logicalW * scale);
     const targetH = Math.round(logicalH * scale);
-    const start = performance.now();
 
     while (performance.now() - start < timeout) {
       try {

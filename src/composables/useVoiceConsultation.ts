@@ -14,7 +14,6 @@ import { ref, type Ref } from 'vue';
 import type { Window as TauriWindow } from '@tauri-apps/api/window';
 import { invoke } from '@tauri-apps/api/core';
 import type { ViewType } from '../constants/windowSizes';
-import { WINDOW_SIZES } from '../constants/windowSizes';
 import { trackClick, trackError, trackRecommendationAction } from '../services/operationTracker';
 import type { GeneratedRecord } from '../components/VoiceConsultationResult.vue';
 import type { AppPatient } from '../types/appState';
@@ -115,15 +114,12 @@ export interface VoiceConsultationOptions {
  */
 export function useVoiceConsultation(options: VoiceConsultationOptions) {
   const {
-    appWindow,
     currentView,
     currentPatient,
     showToast,
-    windowMgmt,
     workMode,
   } = options;
 
-  const { resizeWindowForView } = windowMgmt;
   const { enterWorkMode, exitWork } = workMode;
 
   const intentRecognition = useVoiceIntentRecognition();
@@ -175,15 +171,10 @@ export function useVoiceConsultation(options: VoiceConsultationOptions) {
     intentResult.value = result;
     currentView.value = 'voice-consultation';
 
-    if (appWindow.value) {
-      try {
-        await appWindow.value.setResizable(true);
-        await resizeWindowForView('voice-consultation');
-      } catch (e) {
-        console.error('[VoiceConsultation] Failed to resize for voice-consultation:', e);
-      }
-    } else {
-      await enterWorkMode(WINDOW_SIZES.VOICE_CONSULTATION.width, WINDOW_SIZES.VOICE_CONSULTATION.height);
+    try {
+      await enterWorkMode();
+    } catch (e) {
+      console.error('[VoiceConsultation] Failed to enter preferred voice-consultation size:', e);
     }
 
     console.log('[VoiceConsultation] Intent result applied', { source });

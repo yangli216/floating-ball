@@ -118,6 +118,23 @@ function getText(value: unknown): string {
   return typeof value === 'string' ? value.trim() : '';
 }
 
+function splitValueAndUnit(value: string, knownUnits: string[]): { value: string; unit: string } {
+  const normalized = value.trim();
+  if (!normalized) {
+    return { value: '', unit: '' };
+  }
+
+  const matchedUnit = knownUnits.find((unit) => normalized.endsWith(unit));
+  if (!matchedUnit) {
+    return { value: normalized, unit: '' };
+  }
+
+  return {
+    value: normalized.slice(0, -matchedUnit.length).trim(),
+    unit: matchedUnit,
+  };
+}
+
 function getTextList(value: unknown): string[] {
   if (!Array.isArray(value)) {
     return [];
@@ -207,24 +224,39 @@ function normalizeTreatmentHints(hints: TreatmentHint[] | undefined): TreatmentH
   }
 
   return hints
-    .map((hint) => ({
-      ...hint,
-      name: getText(hint?.name),
-      text: getText(hint?.text),
-      evidenceText: getText(hint?.evidenceText || hint?.text),
-      sourceType: getHintSourceType(hint?.sourceType),
-      goal: getText(hint?.goal),
-      spec: getText(hint?.spec),
-      dosage: getText(hint?.dosage),
-      dosageUnit: getText(hint?.dosageUnit),
-      frequency: getText(hint?.frequency),
-      frequencyKey: getText(hint?.frequencyKey),
-      usage: getText(hint?.usage),
-      usageKey: getText(hint?.usageKey),
-      totalQty: getText(hint?.totalQty),
-      totalUnit: getText(hint?.totalUnit),
-      days: getText(hint?.days),
-    }))
+    .map((hint) => {
+      const legacyHint = hint as TreatmentHint & { specification?: unknown; count?: unknown };
+      const rawDosage = getText(hint?.dosage);
+      const rawDosageUnit = getText(hint?.dosageUnit);
+      const dosageParts = rawDosageUnit
+        ? { value: rawDosage, unit: rawDosageUnit }
+        : splitValueAndUnit(rawDosage, ['mg', 'g', 'ml', 'ug', '片', '粒', '支', '袋']);
+      const rawTotalQty = getText(hint?.totalQty || legacyHint.count);
+      const rawTotalUnit = getText(hint?.totalUnit);
+      const totalParts = rawTotalUnit
+        ? { value: rawTotalQty, unit: rawTotalUnit }
+        : splitValueAndUnit(rawTotalQty, ['盒', '瓶', '袋', '支', '片', '粒', '次', 'ml', 'mg', 'g']);
+
+      return {
+        ...hint,
+        name: getText(hint?.name),
+        text: getText(hint?.text),
+        evidenceText: getText(hint?.evidenceText || hint?.text),
+        sourceType: getHintSourceType(hint?.sourceType),
+        goal: getText(hint?.goal),
+        spec: getText(hint?.spec || legacyHint.specification),
+        dosage: dosageParts.value,
+        dosageUnit: dosageParts.unit,
+        frequency: getText(hint?.frequency),
+        frequencyKey: getText(hint?.frequencyKey),
+        usage: getText(hint?.usage),
+        usageKey: getText(hint?.usageKey),
+        totalQty: totalParts.value,
+        totalUnit: totalParts.unit,
+        count: getText(legacyHint.count),
+        days: getText(hint?.days),
+      };
+    })
     .filter((hint) => hint.name);
 }
 
