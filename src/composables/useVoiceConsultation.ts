@@ -20,6 +20,15 @@ import type { GeneratedRecord } from '../components/VoiceConsultationResult.vue'
 import type { AppPatient } from '../types/appState';
 import { useVoiceIntentRecognition, type VoiceIntentResult } from './useVoiceIntentRecognition';
 
+interface VoiceConsultationCacheEntry {
+  consultationId: string;
+  transcribedText: string;
+  intentResult: VoiceIntentResult;
+  savedAt: number;
+}
+
+const VOICE_CONSULTATION_CACHE_PREFIX = 'VOICE_CONSULTATION_CACHE_V1';
+
 /**
  * 语音问诊配置参数
  */
@@ -90,6 +99,73 @@ export function useVoiceConsultation(options: VoiceConsultationOptions) {
     return String(patient?.idPi || patient?.patientId || patient?.id || 'unknown');
   }
 
+  function getCacheKey(consultationId: string): string {
+    return `${VOICE_CONSULTATION_CACHE_PREFIX}:${consultationId}`;
+  }
+
+  function readCache(consultationId: string): VoiceConsultationCacheEntry | null {
+    try {
+      const raw = localStorage.getItem(getCacheKey(consultationId));
+      if (!raw) {
+        return null;
+      }
+
+      const parsed = JSON.parse(raw) as VoiceConsultationCacheEntry;
+      if (!parsed?.intentResult || !parsed.transcribedText) {
+        return null;
+      }
+
+      return parsed;
+    } catch (error) {
+      console.warn('[VoiceConsultation] Failed to read cache:', consultationId, error);
+      return null;
+    }
+  }
+
+  function writeCache(entry: VoiceConsultationCacheEntry): void {
+    try {
+      localStorage.setItem(getCacheKey(entry.consultationId), JSON.stringify(entry));
+      console.log('[VoiceConsultation] Cache persisted', {
+        consultationId: entry.consultationId,
+        savedAt: entry.savedAt,
+        transcriptionLength: entry.transcribedText.length,
+      });
+    } catch (error) {
+      console.warn('[VoiceConsultation] Failed to persist cache:', entry.consultationId, error);
+    }
+  }
+
+  function clearCache(consultationId?: string): void {
+    if (!consultationId || consultationId === 'unknown') {
+      return;
+    }
+
+    try {
+      localStorage.removeItem(getCacheKey(consultationId));
+      console.log('[VoiceConsultation] Cache cleared', { consultationId });
+    } catch (error) {
+      console.warn('[VoiceConsultation] Failed to clear cache:', consultationId, error);
+    }
+  }
+
+  async function showIntentResult(result: VoiceIntentResult, source: 'llm' | 'cache'): Promise<void> {
+    intentResult.value = result;
+    currentView.value = 'voice-consultation';
+
+    if (appWindow.value) {
+      try {
+        await appWindow.value.setResizable(true);
+        await resizeWindowForView('voice-consultation');
+      } catch (e) {
+        console.error('[VoiceConsultation] Failed to resize for voice-consultation:', e);
+      }
+    } else {
+      await enterWorkMode(WINDOW_SIZES.VOICE_CONSULTATION.width, WINDOW_SIZES.VOICE_CONSULTATION.height);
+    }
+
+    console.log('[VoiceConsultation] Intent result applied', { source });
+  }
+
   // ========== 语音处理 ==========
 
   /**
@@ -130,6 +206,24 @@ export function useVoiceConsultation(options: VoiceConsultationOptions) {
     intentRecognition.clearTranscripts();
   }
 
+  async function resumeCachedVoiceResult(): Promise<boolean> {
+    const consultationId = resolveConsultationId(currentPatient.value);
+    const cached = readCache(consultationId);
+
+    if (!cached) {
+      console.log('[VoiceConsultation] No cached voice result found', { consultationId });
+      return false;
+    }
+
+    await showIntentResult(cached.intentResult, 'cache');
+    showToast('已恢复上次未提交的语音病例解析结果', 'info');
+    console.log('[VoiceConsultation] Restored cached voice result', {
+      consultationId,
+      savedAt: cached.savedAt,
+    });
+    return true;
+  }
+
   async function handleVoiceStop(audioBlob: Blob, transcribedText: string): Promise<void> {
     console.log('[VoiceConsultation] handleVoiceStop received blob:', audioBlob?.size, 'bytes');
     console.log('[VoiceConsultation] Transcribed text:', transcribedText);
@@ -143,6 +237,19 @@ export function useVoiceConsultation(options: VoiceConsultationOptions) {
     processingToken = currentToken;
     isProcessingVoice.value = true;
     try {
+      const normalizedText = transcribedText.trim();
+      const consultationId = resolveConsultationId(currentPatient.value);
+      const cached = readCache(consultationId);
+      if (cached?.transcribedText === normalizedText) {
+        console.log('[VoiceConsultation] Cache hit, skip LLM parsing', {
+          consultationId,
+          transcriptionLength: normalizedText.length,
+        });
+        isProcessingVoice.value = false;
+        await showIntentResult(cached.intentResult, 'cache');
+        return;
+      }
+
       intentRecognition.clearTranscripts();
       intentRecognition.addTranscript(transcribedText);
       const result = await intentRecognition.processTranscript(transcribedText);
@@ -165,20 +272,13 @@ export function useVoiceConsultation(options: VoiceConsultationOptions) {
       }
 
       isProcessingVoice.value = false;
-      intentResult.value = result;
-      currentView.value = 'voice-consultation';
-
-      // Resize window for Voice Consultation View
-      if (appWindow.value) {
-        try {
-          await appWindow.value.setResizable(true);
-          await resizeWindowForView('voice-consultation');
-        } catch (e) {
-          console.error('[VoiceConsultation] Failed to resize for voice-consultation:', e);
-        }
-      } else {
-        await enterWorkMode(WINDOW_SIZES.VOICE_CONSULTATION.width, WINDOW_SIZES.VOICE_CONSULTATION.height);
-      }
+      writeCache({
+        consultationId,
+        transcribedText: normalizedText,
+        intentResult: result,
+        savedAt: Date.now(),
+      });
+      await showIntentResult(result, 'llm');
 
       console.log('[VoiceConsultation] Intent recognition completed successfully');
     } catch (err: unknown) {
@@ -207,6 +307,7 @@ export function useVoiceConsultation(options: VoiceConsultationOptions) {
    */
   async function handleVoiceError(err: unknown): Promise<void> {
     resetVoiceSessionState();
+    clearCache(resolveConsultationId(currentPatient.value));
     trackError('voice_recording_error', err);
     showToast('录音出错: ' + err, 'error');
     await writeCancelledResult('录音出错: ' + err);
@@ -236,6 +337,7 @@ export function useVoiceConsultation(options: VoiceConsultationOptions) {
           ...record,
         },
       });
+      clearCache(resolveConsultationId(currentPatient.value));
       showToast('病历已生成并回传系统', 'success');
       await exitWork();
     } catch (e: unknown) {
@@ -252,6 +354,7 @@ export function useVoiceConsultation(options: VoiceConsultationOptions) {
     trackClick('voice_result_cancel');
     trackRecommendationAction('record', 'voice-record', 'rejected');
     resetVoiceSessionState();
+    clearCache(resolveConsultationId(currentPatient.value));
     await writeCancelledResult('用户取消语音问诊结果');
     await exitWork('cancelled');
   }
@@ -262,6 +365,7 @@ export function useVoiceConsultation(options: VoiceConsultationOptions) {
     intentResult,
     isProcessingVoice,
     resetVoiceSessionState,
+    resumeCachedVoiceResult,
     handleVoiceStop,
     handleVoiceError,
     handleResultConfirm,

@@ -186,6 +186,7 @@ const {
   intentResult,
   isProcessingVoice,
   resetVoiceSessionState,
+  resumeCachedVoiceResult,
   handleVoiceStop,
   handleVoiceError,
   handleResultConfirm,
@@ -194,6 +195,12 @@ const {
 
 async function startVoiceInteraction(): Promise<void> {
   resetVoiceSessionState();
+  if (await resumeCachedVoiceResult()) {
+    if (!isWorking.value) {
+      await enterWorkMode(WINDOW_SIZES.VOICE_CONSULTATION.width, WINDOW_SIZES.VOICE_CONSULTATION.height);
+    }
+    return;
+  }
   voiceInteractionSessionKey.value += 1;
   await startVoiceInteractionBase();
 }

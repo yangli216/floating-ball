@@ -21,7 +21,8 @@ import { trackApiCall, trackError, startTimedOperation } from '../services/opera
 import type { RiskItem } from '../components/RiskAlertPanel.vue';
 import type { AppPatient } from '../types/appState';
 import type { ConsultationAssistAction } from '../types/consultationAssist';
-import { getHisService } from '../services/hisService';
+import { getHisService, resetHisService } from '../services/hisService';
+import { medicalDataService } from '../services/medicalData';
 
 /**
  * 事件监听配置参数
@@ -116,10 +117,87 @@ interface SdkHandshakePayload {
   href: string;
   extra?: {
     emrAccessToken?: string;
-    urt?: string;
+    urt?: unknown;
     [key: string]: any;
   };
   [key: string]: any;
+}
+
+const HANDSHAKE_ORG_CODE_FIELDS = [
+  'orgCode',
+  'cdOrg',
+  'institutionCode',
+  'institutionId',
+  'hospitalCode',
+  'hospitalId',
+  'tenantId',
+  'organizationCode',
+  'medicalInstitutionCode'
+] as const;
+
+function readHandshakeStringField(
+  payload: Record<string, unknown> | undefined,
+  field: string
+): string | null {
+  if (!payload) {
+    return null;
+  }
+
+  const value = payload[field];
+  return typeof value === 'string' && value.trim() ? value.trim() : null;
+}
+
+function resolveUrtPayload(raw: unknown): Record<string, unknown> | undefined {
+  if (!raw) {
+    return undefined;
+  }
+
+  if (typeof raw === 'object') {
+    return raw as Record<string, unknown>;
+  }
+
+  if (typeof raw === 'string') {
+    try {
+      const parsed = JSON.parse(raw);
+      if (parsed && typeof parsed === 'object') {
+        return parsed as Record<string, unknown>;
+      }
+    } catch {
+      return undefined;
+    }
+  }
+
+  return undefined;
+}
+
+function resolveHandshakeOrgCode(ctx: SdkHandshakePayload): string | null {
+  const extra = (ctx.extra && typeof ctx.extra === 'object') ? ctx.extra as Record<string, unknown> : undefined;
+  const urt = resolveUrtPayload(extra?.urt);
+  const nestedSources: Array<Record<string, unknown> | undefined> = [
+    urt,
+    ctx as Record<string, unknown>,
+    extra,
+    (extra?.org && typeof extra.org === 'object') ? extra.org as Record<string, unknown> : undefined,
+    (extra?.institution && typeof extra.institution === 'object') ? extra.institution as Record<string, unknown> : undefined,
+    (extra?.hospital && typeof extra.hospital === 'object') ? extra.hospital as Record<string, unknown> : undefined,
+    (extra?.tenant && typeof extra.tenant === 'object') ? extra.tenant as Record<string, unknown> : undefined,
+  ];
+
+  const orgId = readHandshakeStringField(urt, 'orgId');
+  if (orgId) {
+    return orgId;
+  }
+
+  for (const source of nestedSources) {
+    for (const field of HANDSHAKE_ORG_CODE_FIELDS) {
+      const value = readHandshakeStringField(source, field);
+      if (value) {
+        return value;
+      }
+    }
+  }
+
+  return null;
 }
 
 function mergePatientContext(
@@ -231,20 +309,31 @@ export function useEventListeners(options: EventListenersOptions) {
    * 用于初始化 HIS 服务工具类
    */
   async function registerHandshakeListener(): Promise<void> {
-    unlistenSdkHandshake = await listen<SdkHandshakePayload>('sdk-handshake', (event) => {
+    unlistenSdkHandshake = await listen<SdkHandshakePayload>('sdk-handshake', async (event) => {
       const ctx = event.payload;
       console.log('[EventListeners] SDK Handshake received:', ctx);
 
       const baseUrl = ctx.origin;
       const token = ctx.extra?.emrAccessToken;
+      const orgCode = resolveHandshakeOrgCode(ctx);
 
       if (baseUrl && token) {
         // 初始化 HIS 服务单例
-        getHisService(baseUrl, token);
-        console.log('[EventListeners] HisService initialized with origin:', baseUrl);
+        getHisService(baseUrl, { token });
+        console.log('[EventListeners] HisService initialized with origin:', baseUrl, {
+          hasToken: Boolean(token),
+          orgCode,
+        });
       } else {
-        console.warn('[EventListeners] Handshake missing baseUrl or token');
+        resetHisService();
+        console.warn('[EventListeners] Handshake missing baseUrl or tk token, medical catalog sync skipped', {
+          hasBaseUrl: Boolean(baseUrl),
+          hasToken: Boolean(token),
+          orgCode,
+        });
       }
+
+      await medicalDataService.setCatalogContext({ orgCode });
     });
   }
 

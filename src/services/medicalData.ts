@@ -10,6 +10,13 @@ import tcmDiagnosesRaw from '../assets/tcm-diagnoses.csv?raw';
 import tcmSyndromesRaw from '../assets/tcm-syndromes.csv?raw';
 // @ts-ignore
 import tcmTreatmentsRaw from '../assets/tcm-treatments.csv?raw';
+import {
+  getHisService,
+  type HisDiagnosisCatalogItem,
+  type HisMedicalItemCatalogItem,
+  type HisMedicineCatalogItem,
+  type HisService
+} from './hisService';
 import { isRegionalMode, regionalGet } from './regionalClient';
 
 export interface DiagnosisItem {
@@ -50,6 +57,7 @@ export interface MedicalItem {
   id: string;
   name: string;
   category: string;
+  keywords?: string[];
 }
 
 export interface MedicalCatalog {
@@ -66,6 +74,17 @@ export interface Icd10CategoryInfo {
   range: string;
   title: string;
   order: number;
+}
+
+interface LocalCatalogCacheEntry<T> {
+  data: T[];
+  syncedAt: number;
+  syncDate: string;
+  orgCode?: string;
+}
+
+export interface MedicalCatalogContext {
+  orgCode?: string | null;
 }
 
 const ICD10_CATEGORY_GROUPS: Icd10CategoryInfo[] = [
@@ -94,7 +113,13 @@ const ICD10_CATEGORY_GROUPS: Icd10CategoryInfo[] = [
 ];
 
 class MedicalDataService {
+  private static readonly DATA_CACHE_KEY = 'REGIONAL_MEDICAL_DATA_CACHE';
+  private static readonly DATA_VERSION_KEY = 'REGIONAL_MEDICAL_DATA_VERSION';
+  private static readonly LOCAL_HIS_CACHE_PREFIX = 'LOCAL_HIS_MEDICAL_DATA_CACHE_V1';
+
   private catalog: MedicalCatalog;
+  private currentOrgCode: string | null = null;
+  private localSyncPromise: Promise<void> | null = null;
 
   constructor() {
     this.catalog = {
@@ -105,6 +130,7 @@ class MedicalDataService {
       medicines: this.loadMedicines(),
       items: this.loadItems()
     };
+    this.restoreLocalDiagnosisCache();
   }
 
   private loadDiagnoses(): DiagnosisItem[] {
@@ -161,7 +187,6 @@ class MedicalDataService {
     return records.map(r => ({
       id: r.id,
       name: r.name,
-      price: parseFloat(r.price) || 0,
       category: r.category,
       keywords: this.parseKeywords(r.keywords)
     }));
@@ -229,6 +254,110 @@ class MedicalDataService {
     return result;
   }
 
+  private normalizeOrgCode(orgCode?: string | null): string | null {
+    const normalized = orgCode?.trim();
+    return normalized ? normalized : null;
+  }
+
+  private getTodayTag(): string {
+    const now = new Date();
+    const year = now.getFullYear();
+    const month = `${now.getMonth() + 1}`.padStart(2, '0');
+    const day = `${now.getDate()}`.padStart(2, '0');
+    return `${year}-${month}-${day}`;
+  }
+
+  private getDiagnosisCacheKey(): string {
+    return `${MedicalDataService.LOCAL_HIS_CACHE_PREFIX}:diagnoses`;
+  }
+
+  private getItemsCacheKey(orgCode: string): string {
+    return `${MedicalDataService.LOCAL_HIS_CACHE_PREFIX}:items:${orgCode}`;
+  }
+
+  private getMedicinesCacheKey(orgCode: string): string {
+    return `${MedicalDataService.LOCAL_HIS_CACHE_PREFIX}:medicines:${orgCode}`;
+  }
+
+  private readCacheEntry<T>(key: string): LocalCatalogCacheEntry<T> | null {
+    try {
+      const raw = localStorage.getItem(key);
+      if (!raw) {
+        return null;
+      }
+
+      const parsed = JSON.parse(raw) as LocalCatalogCacheEntry<T>;
+      if (!parsed || !Array.isArray(parsed.data)) {
+        return null;
+      }
+
+      return parsed;
+    } catch {
+      return null;
+    }
+  }
+
+  private writeCacheEntry<T>(key: string, data: T[], orgCode?: string): void {
+    try {
+      const entry: LocalCatalogCacheEntry<T> = {
+        data,
+        syncedAt: Date.now(),
+        syncDate: this.getTodayTag(),
+        ...(orgCode ? { orgCode } : {})
+      };
+      localStorage.setItem(key, JSON.stringify(entry));
+      console.log('[MedicalData] Cache persisted', {
+        key,
+        orgCode,
+        itemCount: data.length,
+        syncDate: entry.syncDate,
+      });
+    } catch (error) {
+      console.warn('[MedicalData] Failed to persist cache entry:', key, error);
+    }
+  }
+
+  private restoreLocalDiagnosisCache(): void {
+    const cached = this.readCacheEntry<DiagnosisItem>(this.getDiagnosisCacheKey());
+    if (cached?.data.length) {
+      this.catalog.diagnoses = this.normalizeDiagnosisItems(cached.data);
+      console.log('[MedicalData] Diagnosis cache restored', {
+        key: this.getDiagnosisCacheKey(),
+        itemCount: cached.data.length,
+      });
+    }
+  }
+
+  private restoreOrgScopedCaches(): void {
+    this.catalog.items = this.loadItems();
+    this.catalog.medicines = this.loadMedicines();
+
+    if (!this.currentOrgCode) {
+      return;
+    }
+
+    const itemsCache = this.readCacheEntry<MedicalItem>(this.getItemsCacheKey(this.currentOrgCode));
+    if (itemsCache?.data.length) {
+      this.catalog.items = this.normalizeMedicalItems(itemsCache.data);
+      console.log('[MedicalData] Item cache restored', {
+        key: this.getItemsCacheKey(this.currentOrgCode),
+        orgCode: this.currentOrgCode,
+        itemCount: itemsCache.data.length,
+      });
+    }
+
+    const medicinesCache = this.readCacheEntry<MedicineItem>(this.getMedicinesCacheKey(this.currentOrgCode));
+    if (medicinesCache?.data.length) {
+      this.catalog.medicines = this.normalizeMedicineItems(medicinesCache.data);
+      console.log('[MedicalData] Medicine cache restored', {
+        key: this.getMedicinesCacheKey(this.currentOrgCode),
+        orgCode: this.currentOrgCode,
+        itemCount: medicinesCache.data.length,
+        syncDate: medicinesCache.syncDate,
+      });
+    }
+  }
+
   public getAllDiagnoses(): DiagnosisItem[] {
     return this.catalog.diagnoses;
   }
@@ -255,6 +384,58 @@ class MedicalDataService {
 
   public getAllIcd10CategoryGroups(): Icd10CategoryInfo[] {
     return [...ICD10_CATEGORY_GROUPS];
+  }
+
+  public async setCatalogContext(context: MedicalCatalogContext): Promise<void> {
+    const nextOrgCode = this.normalizeOrgCode(context.orgCode);
+    const orgChanged = nextOrgCode !== this.currentOrgCode;
+    console.log('[MedicalData] setCatalogContext', {
+      currentOrgCode: this.currentOrgCode,
+      nextOrgCode,
+      orgChanged,
+    });
+
+    this.currentOrgCode = nextOrgCode;
+
+    if (orgChanged) {
+      this.restoreOrgScopedCaches();
+    }
+
+    await this.ensureLocalCatalogsSynced();
+  }
+
+  public async ensureLocalCatalogsSynced(): Promise<void> {
+    if (isRegionalMode()) {
+      console.log('[MedicalData] Local HIS catalog sync skipped in regional mode');
+      return;
+    }
+
+    this.restoreLocalDiagnosisCache();
+    this.restoreOrgScopedCaches();
+
+    const hisService = getHisService();
+    if (!hisService) {
+      console.warn('[MedicalData] HisService not ready, skip local catalog sync');
+      return;
+    }
+
+    if (!this.localSyncPromise) {
+      console.log('[MedicalData] Start local catalog sync', {
+        orgCode: this.currentOrgCode,
+      });
+      this.localSyncPromise = this.syncLocalCatalogs(hisService).finally(() => {
+        console.log('[MedicalData] Local catalog sync finished', {
+          orgCode: this.currentOrgCode,
+        });
+        this.localSyncPromise = null;
+      });
+    } else {
+      console.log('[MedicalData] Reuse in-flight local catalog sync', {
+        orgCode: this.currentOrgCode,
+      });
+    }
+
+    await this.localSyncPromise;
   }
 
   /**
@@ -643,10 +824,192 @@ class MedicalDataService {
     return (letterValue * 100) + numberValue;
   }
 
-  // ─── 区域化远程数据同步 ────────────────────────────────────────────────
+  private normalizeKeywords(keywords?: string[] | string): string[] | undefined {
+    if (Array.isArray(keywords)) {
+      return keywords.map(item => item.trim()).filter(Boolean);
+    }
+    return this.parseKeywords(keywords);
+  }
 
-  private static readonly DATA_CACHE_KEY = 'REGIONAL_MEDICAL_DATA_CACHE';
-  private static readonly DATA_VERSION_KEY = 'REGIONAL_MEDICAL_DATA_VERSION';
+  private normalizeDiagnosisItems(items: Array<Partial<DiagnosisItem> | HisDiagnosisCatalogItem>): DiagnosisItem[] {
+    const normalized: DiagnosisItem[] = [];
+
+    items.forEach((item, index) => {
+      const name = item.name?.trim();
+      const code = item.code?.trim() || '';
+      if (!name) {
+        return;
+      }
+
+      normalized.push({
+        id: item.id?.toString().trim() || code || `${index + 1}`,
+        code,
+        name,
+        keywords: this.normalizeKeywords(item.keywords)
+      });
+    });
+
+    return normalized;
+  }
+
+  private normalizeMedicineItems(items: Array<Partial<MedicineItem> | HisMedicineCatalogItem>): MedicineItem[] {
+    const normalized: MedicineItem[] = [];
+
+    items.forEach((item, index) => {
+      const name = item.name?.trim();
+      if (!name) {
+        return;
+      }
+
+      normalized.push({
+        id: item.id?.toString().trim() || `${index + 1}`,
+        name,
+        spec: item.spec?.trim() || ''
+      });
+    });
+
+    return normalized;
+  }
+
+  private normalizeMedicalItems(items: Array<Partial<MedicalItem> | HisMedicalItemCatalogItem>): MedicalItem[] {
+    const normalized: MedicalItem[] = [];
+
+    items.forEach((item, index) => {
+      const name = item.name?.trim();
+      if (!name) {
+        return;
+      }
+
+      normalized.push({
+        id: item.id?.toString().trim() || `${index + 1}`,
+        name,
+        category: item.category?.trim() || '其他',
+        keywords: this.normalizeKeywords(item.keywords)
+      });
+    });
+
+    return normalized;
+  }
+
+  private async syncLocalCatalogs(hisService: HisService): Promise<void> {
+    await this.syncGlobalDiagnosesIfNeeded(hisService);
+
+    if (!this.currentOrgCode) {
+      return;
+    }
+
+    const orgCode = this.currentOrgCode;
+    await Promise.allSettled([
+      this.syncInstitutionItemsIfNeeded(hisService, orgCode),
+      this.syncInstitutionMedicinesIfNeeded(hisService, orgCode)
+    ]);
+  }
+
+  private async syncGlobalDiagnosesIfNeeded(hisService: HisService): Promise<void> {
+    const diagnosisCache = this.readCacheEntry<DiagnosisItem>(this.getDiagnosisCacheKey());
+    if (diagnosisCache?.data.length) {
+      console.log('[MedicalData] Skip diagnosis sync, cache hit', {
+        key: this.getDiagnosisCacheKey(),
+        itemCount: diagnosisCache.data.length,
+      });
+      return;
+    }
+
+    try {
+      console.log('[MedicalData] Fetch diagnosis catalog from HIS');
+      const diagnoses = this.normalizeDiagnosisItems(await hisService.fetchDiagnosisCatalog());
+      if (!diagnoses.length) {
+        console.warn('[MedicalData] Diagnosis catalog returned empty result');
+        return;
+      }
+
+      this.catalog.diagnoses = diagnoses;
+      this.writeCacheEntry(this.getDiagnosisCacheKey(), diagnoses);
+      console.log('[MedicalData] Diagnosis catalog synced', {
+        itemCount: diagnoses.length,
+      });
+    } catch (error) {
+      console.warn('[MedicalData] Failed to sync diagnosis catalog from HIS, fallback to CSV:', error);
+    }
+  }
+
+  private async syncInstitutionItemsIfNeeded(hisService: HisService, orgCode: string): Promise<void> {
+    const cacheKey = this.getItemsCacheKey(orgCode);
+    const itemsCache = this.readCacheEntry<MedicalItem>(cacheKey);
+    if (itemsCache?.data.length) {
+      console.log('[MedicalData] Skip medical items sync, cache hit', {
+        key: cacheKey,
+        orgCode,
+        itemCount: itemsCache.data.length,
+      });
+      return;
+    }
+
+    try {
+      console.log('[MedicalData] Fetch medical items catalog from HIS', {
+        orgCode,
+      });
+      const items = this.normalizeMedicalItems(await hisService.fetchInstitutionMedicalItemsCatalog(orgCode));
+      if (!items.length) {
+        console.warn('[MedicalData] Medical items catalog returned empty result', {
+          orgCode,
+        });
+        return;
+      }
+
+      this.catalog.items = items;
+      this.writeCacheEntry(cacheKey, items, orgCode);
+      console.log('[MedicalData] Medical items catalog synced', {
+        orgCode,
+        itemCount: items.length,
+      });
+    } catch (error) {
+      console.warn(`[MedicalData] Failed to sync medical items for org ${orgCode}, fallback to CSV:`, error);
+    }
+  }
+
+  private async syncInstitutionMedicinesIfNeeded(hisService: HisService, orgCode: string): Promise<void> {
+    const cacheKey = this.getMedicinesCacheKey(orgCode);
+    const medicinesCache = this.readCacheEntry<MedicineItem>(cacheKey);
+    const today = this.getTodayTag();
+
+    if (medicinesCache?.data.length && medicinesCache.syncDate === today) {
+      console.log('[MedicalData] Skip medicine sync, same-day cache hit', {
+        key: cacheKey,
+        orgCode,
+        itemCount: medicinesCache.data.length,
+        syncDate: medicinesCache.syncDate,
+      });
+      return;
+    }
+
+    try {
+      console.log('[MedicalData] Fetch medicine catalog from HIS', {
+        orgCode,
+        hasCache: Boolean(medicinesCache?.data.length),
+        cacheDate: medicinesCache?.syncDate,
+        today,
+      });
+      const medicines = this.normalizeMedicineItems(await hisService.fetchInstitutionMedicineCatalog(orgCode));
+      if (!medicines.length) {
+        console.warn('[MedicalData] Medicine catalog returned empty result', {
+          orgCode,
+        });
+        return;
+      }
+
+      this.catalog.medicines = medicines;
+      this.writeCacheEntry(cacheKey, medicines, orgCode);
+      console.log('[MedicalData] Medicine catalog synced', {
+        orgCode,
+        itemCount: medicines.length,
+      });
+    } catch (error) {
+      console.warn(`[MedicalData] Failed to sync medicines for org ${orgCode}, fallback to cached/CSV data:`, error);
+    }
+  }
+
+  // ─── 区域化远程数据同步 ────────────────────────────────────────────────
 
   /**
    * 从 core-service 增量同步医学数据包
@@ -719,31 +1082,15 @@ class MedicalDataService {
   }
 
   private loadDiagnosesFromRaw(raw: string): DiagnosisItem[] {
-    const records = this.parseCSV(raw);
-    return records.map(r => ({
-      id: r.id,
-      code: r.code,
-      name: r.name,
-      keywords: this.parseKeywords(r.keywords)
-    }));
+    return this.normalizeDiagnosisItems(this.parseCSV(raw));
   }
 
   private loadMedicinesFromRaw(raw: string): MedicineItem[] {
-    const records = this.parseCSV(raw);
-    return records.map(r => ({
-      id: r.id,
-      name: r.name,
-      spec: r.spec
-    }));
+    return this.normalizeMedicineItems(this.parseCSV(raw));
   }
 
   private loadItemsFromRaw(raw: string): MedicalItem[] {
-    const records = this.parseCSV(raw);
-    return records.map(r => ({
-      id: r.id,
-      name: r.name,
-      category: r.category
-    }));
+    return this.normalizeMedicalItems(this.parseCSV(raw));
   }
 
   private loadTCMItemsFromRaw(raw: string): TCMDiagnosisItem[] {

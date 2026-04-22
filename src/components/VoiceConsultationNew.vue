@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed, watch, inject, onMounted } from 'vue';
+import { ref, computed, watch, inject, onMounted, nextTick } from 'vue';
 import { invoke } from '@tauri-apps/api/core';
 import Icon from './Icon.vue';
 import FactCheckHighlight from './FactCheckHighlight.vue';
@@ -19,7 +19,15 @@ import type { TreatmentRecommendation, Diagnosis } from '../types/consultation';
 import type { AppPatient } from '../types/appState';
 import type { VoiceIntentResult, MatchedTreatment, MatchedDiagnosis } from '../composables/useVoiceIntentRecognition';
 
-// ── Props & Emits ──────────────────────────────────────────────────────
+interface UsageOption {
+  key: string;
+  text: string;
+  py: string;
+  wb: string;
+  mcode: string;
+  normalizedTokens: string[];
+}
+
 const props = defineProps<{
   initialPatientData?: AppPatient;
   intentResult: VoiceIntentResult | null;
@@ -29,48 +37,34 @@ const emit = defineEmits<{
   close: [];
 }>();
 
-// ── Toast ──────────────────────────────────────────────────────────────
 const showToast = inject<(msg: string, type?: string) => void>('showToast');
 
-// ── Medical Record (editable) ──────────────────────────────────────────
 const chiefComplaint = ref('');
 const historyOfPresentIllness = ref('');
 const pastMedicalHistory = ref('');
 
-// ── Diagnosis ──────────────────────────────────────────────────────────
 const aiDiagnoses = ref<Diagnosis[]>([]);
 const selectedDiagnosis = ref<Diagnosis | null>(null);
 const diagnosisLoading = ref(false);
 
-// ── Treatments ─────────────────────────────────────────────────────────
 const treatments = ref<TreatmentRecommendation[]>([]);
 const treatmentLoading = ref(false);
 
-// ── Submitting ─────────────────────────────────────────────────────────
 const submitting = ref(false);
 
-// ── Patient helpers ────────────────────────────────────────────────────
-const s = (v: unknown): string => (typeof v === 'string' ? v : '');
+const s = (value: unknown): string => (typeof value === 'string' ? value : '');
 const patientName = computed((): string => s(props.initialPatientData?.naPi));
 const patientGender = computed((): string => s(props.initialPatientData?.sdSexText) || s(props.initialPatientData?.sdSex));
 const patientAge = computed((): string => s(props.initialPatientData?.ageText) || (props.initialPatientData?.ageNum != null ? `${props.initialPatientData.ageNum}${s(props.initialPatientData.ageUnit) || '岁'}` : ''));
 const patientIdCard = computed((): string => s(props.initialPatientData?.idCard));
 
 const getPatientAnchorId = (): string => {
-  const p = props.initialPatientData;
-  return String(p?.idPi || p?.idTet || p?.idMpi || '');
+  const patient = props.initialPatientData;
+  return String(patient?.idPi || patient?.idTet || patient?.idMpi || '');
 };
 
 const resolveConsultationId = (): string => getPatientAnchorId() || 'unknown';
 
-// ── canSubmit ──────────────────────────────────────────────────────────
-const canSubmit = computed(() =>
-  chiefComplaint.value.trim().length > 0 &&
-  selectedDiagnosis.value !== null &&
-  !submitting.value
-);
-
-// ── Map MatchedDiagnosis -> Diagnosis ─────────────────────────────────
 function normalizeAnalysisText(text: string): string {
   return text
     .replace(/\s+/g, ' ')
@@ -84,27 +78,33 @@ function truncateAnalysisText(text: string, maxLength: number): string {
   return `${text.slice(0, maxLength)}...`;
 }
 
+const canSubmit = computed(() => chiefComplaint.value.trim().length > 0 && selectedDiagnosis.value !== null && !submitting.value);
+const selectedTreatmentCount = computed(() => treatments.value.filter((item) => item.selected).length);
+const overviewChiefComplaint = computed(() => truncateAnalysisText(normalizeAnalysisText(chiefComplaint.value), 30) || '待补充');
+const overviewDiagnosis = computed(() => selectedDiagnosis.value?.name || '待选择');
+
+const expandedTreatmentEditors = ref<Set<string>>(new Set());
+const lastTreatmentDiagnosisKey = ref('');
+const activeEditableFieldKey = ref<string | null>(null);
+const editableFieldElements = new Map<string, HTMLInputElement | HTMLSelectElement>();
+const frequencySearchKeywords = ref<Record<string, string>>({});
+const routeSearchKeywords = ref<Record<string, string>>({});
+
+type MedicinePrimaryField = 'dosage' | 'frequency' | 'route' | 'total';
+
 function buildEncounterSummary(): string {
   const complaint = truncateAnalysisText(normalizeAnalysisText(chiefComplaint.value), 24);
   const history = truncateAnalysisText(normalizeAnalysisText(historyOfPresentIllness.value), 32);
 
-  if (complaint && history) {
-    return `结合主诉“${complaint}”及现病史“${history}”`;
-  }
-  if (complaint) {
-    return `结合主诉“${complaint}”`;
-  }
-  if (history) {
-    return `结合现病史“${history}”`;
-  }
+  if (complaint && history) return `结合主诉“${complaint}”及现病史“${history}”`;
+  if (complaint) return `结合主诉“${complaint}”`;
+  if (history) return `结合现病史“${history}”`;
   return '结合当前问诊信息';
 }
 
 function buildDiagnosisRationale(matchedDiagnosis: MatchedDiagnosis, displayName: string): string {
   const summary = buildEncounterSummary();
-  const matchNote = matchedDiagnosis.matchedItem
-    ? ''
-    : '当前标准库中暂未匹配到完全一致的诊断条目，需人工确认。';
+  const matchNote = matchedDiagnosis.matchedItem ? '' : '当前标准库中暂未匹配到完全一致的诊断条目，需人工确认。';
   return `${summary}，模型初步考虑${displayName}，建议结合查体和必要检查进一步确认。${matchNote}`;
 }
 
@@ -117,87 +117,277 @@ function buildTreatmentReason(name: string, basisText?: string): string {
   return `${summary}，模型建议将${name}纳入当前处理方案。`;
 }
 
+function getTreatmentEditorKey(rec: TreatmentRecommendation): string {
+  return `editor:${rec.type}:${rec.matchedItem?.id || rec.name}`;
+}
+
+function getEditableFieldKey(rec: TreatmentRecommendation, field: MedicinePrimaryField): string {
+  return `${getTreatmentEditorKey(rec)}:${field}`;
+}
+
+function getDiagnosisIdentity(diag: Diagnosis | null): string {
+  if (!diag) return '';
+  return `${diag.code || ''}:${diag.name || ''}`;
+}
+
+function resetTreatmentEditorState(): void {
+  expandedTreatmentEditors.value = new Set();
+  activeEditableFieldKey.value = null;
+  frequencySearchKeywords.value = {};
+  routeSearchKeywords.value = {};
+}
+
+function isTreatmentEditorExpanded(rec: TreatmentRecommendation): boolean {
+  return expandedTreatmentEditors.value.has(getTreatmentEditorKey(rec));
+}
+
+function toggleTreatmentEditor(rec: TreatmentRecommendation, event?: Event): void {
+  event?.stopPropagation();
+  const key = getTreatmentEditorKey(rec);
+  const nextEditors = new Set(expandedTreatmentEditors.value);
+
+  if (nextEditors.has(key)) {
+    nextEditors.delete(key);
+  } else {
+    nextEditors.add(key);
+  }
+
+  expandedTreatmentEditors.value = nextEditors;
+}
+
+function registerEditableFieldElement(key: string, element: unknown): void {
+  if (element instanceof HTMLInputElement || element instanceof HTMLSelectElement) {
+    editableFieldElements.set(key, element);
+    return;
+  }
+  editableFieldElements.delete(key);
+}
+
+function isEditableFieldActive(rec: TreatmentRecommendation, field: MedicinePrimaryField): boolean {
+  return activeEditableFieldKey.value === getEditableFieldKey(rec, field);
+}
+
+function activateEditableField(rec: TreatmentRecommendation, field: MedicinePrimaryField, event?: Event): void {
+  event?.stopPropagation();
+  if (rec.type === 'medicine') {
+    Object.assign(rec, normalizeTreatmentRecommendation(rec));
+  }
+  if (field === 'frequency') {
+    syncFrequencySearchKeyword(rec);
+  }
+  if (field === 'route') {
+    syncRouteSearchKeyword(rec);
+  }
+  const key = getEditableFieldKey(rec, field);
+  activeEditableFieldKey.value = key;
+  void nextTick(() => editableFieldElements.get(key)?.focus());
+}
+
+function handleEditableFieldBlur(rec: TreatmentRecommendation, field: MedicinePrimaryField, event: FocusEvent): void {
+  const container = event.currentTarget as HTMLElement | null;
+  const nextTarget = event.relatedTarget as Node | null;
+
+  if (container && nextTarget && container.contains(nextTarget)) {
+    return;
+  }
+
+  if (activeEditableFieldKey.value === getEditableFieldKey(rec, field)) {
+    if (field === 'frequency') {
+      rec.frequency = resolveFrequencyValueFromKeyword(rec);
+      syncFrequencySearchKeyword(rec);
+    }
+    if (field === 'route') {
+      rec.route = resolveRouteValueFromKeyword(rec);
+      syncRouteSearchKeyword(rec);
+    }
+    activeEditableFieldKey.value = null;
+  }
+}
+
+function splitDosageAndUnit(value?: string): { dosage: string; dosageUnit: string } {
+  const raw = (value || '').trim();
+  if (!raw) {
+    return { dosage: '', dosageUnit: '' };
+  }
+
+  const matchedUnit = ['mg', 'g', 'ml', 'ug', '片', '粒', '支', '袋'].find((unit) => raw.endsWith(unit));
+  if (!matchedUnit) {
+    return { dosage: raw, dosageUnit: '' };
+  }
+
+  return {
+    dosage: raw.slice(0, -matchedUnit.length).trim(),
+    dosageUnit: matchedUnit,
+  };
+}
+
+function inferFrequencyFromText(text: string): string {
+  const normalizedText = text.trim();
+  if (!normalizedText) return '';
+
+  const exactOption = frequencyOptions.value.find((option) => normalizedText.includes(option.text));
+  if (exactOption) return exactOption.text;
+
+  const matched = normalizedText.match(/(每日[^，,；;。\s]*次?|每天[^，,；;。\s]*次?|每周[^，,；;。\s]*次?|隔日一次|必要时|立即|间隔\d+小时[^，,；;。\s]*|qd|bid|tid|qid|qn|prn|q\d+h)/i);
+  return matched?.[0]?.trim() || '';
+}
+
+function inferRouteFromText(text: string): string {
+  const normalizedText = text.trim();
+  if (!normalizedText) return '';
+  return routeOptions.value.find((option) => normalizedText.includes(option.text))?.text || '';
+}
+
+function inferMedicineDefaults(rec: Partial<TreatmentRecommendation>): {
+  dosage: string;
+  dosageUnit: string;
+  frequency: string;
+  route: string;
+} {
+  const dosagePair = splitDosageAndUnit(rec.dosage);
+  const usageText = [rec.usage, rec.route].filter(Boolean).join('，');
+
+  return {
+    dosage: dosagePair.dosage,
+    dosageUnit: dosagePair.dosageUnit,
+    frequency: rec.frequency || inferFrequencyFromText([rec.frequency, usageText].filter(Boolean).join(' ')),
+    route: rec.route || inferRouteFromText([rec.route, rec.usage].filter(Boolean).join(' ')),
+  };
+}
+
+function normalizeTreatmentRecommendation(rec: Partial<TreatmentRecommendation>): TreatmentRecommendation {
+  const base: TreatmentRecommendation = {
+    type: rec.type || 'medicine',
+    name: rec.name || '',
+    reason: rec.reason || '',
+    usage: rec.usage || '',
+    matchedItem: rec.matchedItem,
+    selected: !!rec.selected,
+    dosage: rec.dosage || '',
+    dosageUnit: rec.dosageUnit || '',
+    totalQty: rec.totalQty || '',
+    totalUnit: rec.totalUnit || '',
+    frequency: rec.frequency || '',
+    route: rec.route || '',
+    days: rec.days || '',
+    pharmacy: rec.pharmacy || '',
+    remark: rec.remark || '',
+    regulatedDisease: rec.regulatedDisease || '',
+    bodySite: rec.bodySite || '',
+    execDept: rec.execDept || '',
+    insuranceType: rec.insuranceType || '医保使用',
+  };
+
+  if (base.type !== 'medicine') {
+    return base;
+  }
+
+  const defaults = inferMedicineDefaults(base);
+  return {
+    ...base,
+    dosage: base.dosage || defaults.dosage,
+    dosageUnit: base.dosageUnit || defaults.dosageUnit,
+    frequency: base.frequency || defaults.frequency,
+    route: base.route || defaults.route,
+  };
+}
+
 function initDiagnosesFromIntent(matched: MatchedDiagnosis[]): Diagnosis[] {
-  return matched.map((m) => {
-    const name = m.matchedItem?.name || m.name;
+  return matched.map((item) => {
+    const name = item.matchedItem?.name || item.name;
     return {
-      id: m.matchedItem?.id,
+      id: item.matchedItem?.id,
       name,
-      code: m.matchedItem?.code || m.code || '',
+      code: item.matchedItem?.code || item.code || '',
       rate: 'AI分析',
-      rationale: buildDiagnosisRationale(m, name),
+      rationale: buildDiagnosisRationale(item, name),
     };
   });
 }
 
-// ── Map MatchedTreatment -> TreatmentRecommendation ────────────────────
-function mapTreatmentType(t: MatchedTreatment['type']): TreatmentRecommendation['type'] {
-  if (t === 'examination') return 'exam';
-  if (t === 'labTest') return 'lab_test';
-  return t; // 'medicine' | 'procedure' stay the same
+function mapTreatmentType(type: MatchedTreatment['type']): TreatmentRecommendation['type'] {
+  if (type === 'examination') return 'exam';
+  if (type === 'labTest') return 'lab_test';
+  return type;
 }
 
 function initTreatmentsFromIntent(matched: MatchedTreatment[]): TreatmentRecommendation[] {
-  return matched.map((m) => {
-    const name = m.matchedItem?.name || m.name;
-    const usageParts = [m.dosage, m.frequency, m.usage].filter(Boolean);
-    const usage = usageParts.length > 0 ? usageParts.join(', ') : undefined;
-    return {
-      type: mapTreatmentType(m.type),
+  return matched.map((item) => {
+    const name = item.matchedItem?.name || item.name;
+    const dosagePair = splitDosageAndUnit(item.dosage);
+    const normalized = normalizeTreatmentRecommendation({
+      type: mapTreatmentType(item.type),
       name,
-      reason: buildTreatmentReason(name, m.text),
-      usage,
-      matchedItem: m.matchedItem || undefined,
-      selected: !!m.matchedItem,
-    };
+      reason: buildTreatmentReason(name, item.text),
+      usage: [item.dosage, item.frequency, item.usage].filter(Boolean).join('，'),
+      dosage: dosagePair.dosage,
+      dosageUnit: dosagePair.dosageUnit,
+      frequency: inferFrequencyFromText([item.frequency, item.text].filter(Boolean).join(' ')),
+      route: inferRouteFromText([item.usage, item.text].filter(Boolean).join(' ')),
+      matchedItem: item.matchedItem || undefined,
+      selected: !!item.matchedItem,
+    });
+    return normalized;
   });
 }
 
-// ── Treatment display sections ─────────────────────────────────────────
 interface TreatmentSection {
-  type: string;
+  type: TreatmentRecommendation['type'];
   title: string;
   items: TreatmentRecommendation[];
 }
 
 const treatmentSections = computed<TreatmentSection[]>(() => {
-  const sections: { type: TreatmentRecommendation['type']; title: string }[] = [
+  const sections: Array<{ type: TreatmentRecommendation['type']; title: string }> = [
     { type: 'medicine', title: '药品' },
     { type: 'exam', title: '检查项目' },
     { type: 'lab_test', title: '检验项目' },
     { type: 'procedure', title: '处置项目' },
   ];
+
   return sections
-    .map((s) => ({
-      ...s,
-      items: treatments.value.filter((t) => t.type === s.type),
+    .map((section) => ({
+      ...section,
+      items: treatments.value.filter((item) => item.type === section.type),
     }))
-    .filter((s) => s.items.length > 0);
+    .filter((section) => section.items.length > 0);
 });
 
 const hasTreatments = computed(() => treatments.value.length > 0);
 
-// ── Toggle treatment selection ─────────────────────────────────────────
-function toggleTreatment(item: TreatmentRecommendation) {
+function toggleTreatment(item: TreatmentRecommendation): void {
   item.selected = !item.selected;
-}
 
-// ── Toggle diagnosis selection ─────────────────────────────────────────
-function toggleDiagnosis(diag: Diagnosis) {
-  if (selectedDiagnosis.value?.code === diag.code && selectedDiagnosis.value?.name === diag.name) {
-    selectedDiagnosis.value = null;
-  } else {
-    selectedDiagnosis.value = diag;
+  if (item.selected && item.type === 'medicine') {
+    Object.assign(item, normalizeTreatmentRecommendation(item));
+  }
+
+  if (!item.selected) {
+    const editorKey = getTreatmentEditorKey(item);
+    const nextEditors = new Set(expandedTreatmentEditors.value);
+    nextEditors.delete(editorKey);
+    expandedTreatmentEditors.value = nextEditors;
+
+    if (activeEditableFieldKey.value?.startsWith(`${editorKey}:`)) {
+      activeEditableFieldKey.value = null;
+    }
   }
 }
 
-// ── AI Diagnosis ───────────────────────────────────────────────────────
-async function fetchAIDiagnosis() {
+function toggleDiagnosis(diag: Diagnosis): void {
+  if (selectedDiagnosis.value?.code === diag.code && selectedDiagnosis.value?.name === diag.name) {
+    return;
+  }
+  selectedDiagnosis.value = diag;
+}
+
+async function fetchAIDiagnosis(): Promise<void> {
   if (diagnosisLoading.value) return;
   if (!chiefComplaint.value.trim()) {
     showToast?.('请先填写主诉', 'warning');
     return;
   }
+
   diagnosisLoading.value = true;
   try {
     const messages: ChatMessage[] = [
@@ -213,44 +403,38 @@ async function fetchAIDiagnosis() {
         }),
       },
     ];
+
     const response = await chat(messages);
     const cleanJson = response.replace(/```json\n?|\n?```/g, '').trim();
     const jsonMatch = cleanJson.match(/\[[\s\S]*\]/);
-    const targetJson = jsonMatch ? jsonMatch[0] : cleanJson;
-    const parsed: Diagnosis[] = JSON.parse(targetJson);
+    const parsed: Diagnosis[] = JSON.parse(jsonMatch ? jsonMatch[0] : cleanJson);
 
-    // Match each against local catalog
-    aiDiagnoses.value = parsed.map((d) => {
-      const matched = medicalDataService.matchDiagnosis(d.name) || medicalDataService.matchDiagnosis(d.code);
+    aiDiagnoses.value = parsed.map((diag) => {
+      const matched = medicalDataService.matchDiagnosis(diag.name) || medicalDataService.matchDiagnosis(diag.code);
       if (matched) {
-        return { ...d, code: matched.code, name: matched.name, id: matched.id };
+        return { ...diag, code: matched.code, name: matched.name, id: matched.id };
       }
-      return d;
+      return diag;
     });
 
-    // Auto-select first if none selected
     if (!selectedDiagnosis.value && aiDiagnoses.value.length > 0) {
       selectedDiagnosis.value = aiDiagnoses.value[0];
     }
 
-    // Trigger fact check + checklist
-    performDiagnosisFactCheck(aiDiagnoses.value);
-    if (selectedDiagnosis.value) {
-      fetchDiagnosisChecklist(selectedDiagnosis.value);
-    }
-  } catch (err: unknown) {
-    const msg = err instanceof Error ? err.message : String(err);
+    void performDiagnosisFactCheck(aiDiagnoses.value);
+  } catch (error: unknown) {
+    const msg = error instanceof Error ? error.message : String(error);
     showToast?.(`诊断推荐失败: ${msg}`, 'error');
   } finally {
     diagnosisLoading.value = false;
   }
 }
 
-// ── AI Treatment (calls 4 prompts in parallel: medicine + exam + labTest + procedure) ──
-async function fetchAITreatment() {
+async function fetchAITreatment(): Promise<void> {
   if (treatmentLoading.value || !selectedDiagnosis.value) return;
   treatmentLoading.value = true;
 
+  const diagnosisIdentity = getDiagnosisIdentity(selectedDiagnosis.value);
   const baseParams = {
     patientName: patientName.value,
     gender: patientGender.value,
@@ -261,7 +445,6 @@ async function fetchAITreatment() {
   };
 
   try {
-    // Call all 4 recommendation prompts in parallel
     const [medResponse, examResponse, labResponse, procResponse] = await Promise.allSettled([
       chat([
         { role: 'system', content: PROMPTS.consultation.treatmentRecommendation.system },
@@ -281,130 +464,115 @@ async function fetchAITreatment() {
       ]),
     ]);
 
-    const allRecs: TreatmentRecommendation[] = [];
+    type CatalogMatch = { id: string; name: string; spec?: string } | null;
 
-    // Parse each response and match against local catalog
     const parseAndMatch = (
       response: PromiseSettledResult<string>,
-      matchFn: (name: string) => { id: string; name: string; spec?: string } | null,
+      matchFn: (name: string) => CatalogMatch,
     ): TreatmentRecommendation[] => {
       if (response.status !== 'fulfilled') return [];
+
       try {
         const clean = response.value.replace(/```json\n?|\n?```/g, '').trim();
-        const match = clean.match(/\[[\s\S]*\]/);
-        const parsed: TreatmentRecommendation[] = JSON.parse(match ? match[0] : clean);
+        const jsonMatch = clean.match(/\[[\s\S]*\]/);
+        const parsed: TreatmentRecommendation[] = JSON.parse(jsonMatch ? jsonMatch[0] : clean);
+
         return parsed.map((rec) => {
           const matched = matchFn(rec.name);
-          return {
+          return normalizeTreatmentRecommendation({
             ...rec,
-            matchedItem: matched ? { id: matched.id, name: matched.name, spec: matched.spec } : undefined,
-            selected: !!matched,
-          };
+            matchedItem: matched ? ({ id: matched.id, name: matched.name, spec: matched.spec } as TreatmentRecommendation['matchedItem']) : rec.matchedItem,
+            selected: !!matched || !!rec.matchedItem,
+          });
         });
-      } catch { return []; }
+      } catch {
+        return [];
+      }
     };
 
-    allRecs.push(...parseAndMatch(medResponse, (n) => medicalDataService.matchMedicine(n)));
-    allRecs.push(...parseAndMatch(examResponse, (n) => medicalDataService.matchExamItem(n)));
-    allRecs.push(...parseAndMatch(labResponse, (n) => medicalDataService.matchLabTestItem(n)));
-    allRecs.push(...parseAndMatch(procResponse, (n) => medicalDataService.matchProcedureItem(n)));
+    const nextTreatments: TreatmentRecommendation[] = [];
+    nextTreatments.push(...parseAndMatch(medResponse, (name) => medicalDataService.matchMedicine(name)));
+    nextTreatments.push(...parseAndMatch(examResponse, (name) => medicalDataService.matchExamItem(name)));
+    nextTreatments.push(...parseAndMatch(labResponse, (name) => medicalDataService.matchLabTestItem(name)));
+    nextTreatments.push(...parseAndMatch(procResponse, (name) => medicalDataService.matchProcedureItem(name)));
 
-    treatments.value = allRecs;
+    if (diagnosisIdentity !== getDiagnosisIdentity(selectedDiagnosis.value)) {
+      return;
+    }
 
-    // Trigger fact check
-    performTreatmentFactCheck(allRecs);
-  } catch (err: unknown) {
-    const msg = err instanceof Error ? err.message : String(err);
+    treatments.value = nextTreatments;
+    lastTreatmentDiagnosisKey.value = diagnosisIdentity;
+    void performTreatmentFactCheck(nextTreatments);
+  } catch (error: unknown) {
+    const msg = error instanceof Error ? error.message : String(error);
     showToast?.(`方案推荐失败: ${msg}`, 'error');
   } finally {
     treatmentLoading.value = false;
   }
 }
 
-// ── Related Diagnosis Dropdown ─────────────────────────────────────────
 const openRelatedId = ref<string | null>(null);
 const inlineRelatedDiagnoses = ref<DiagnosisItem[]>([]);
 
-function toggleRelatedDropdown(diag: Diagnosis, event: Event) {
+function toggleRelatedDropdown(diag: Diagnosis, event: Event): void {
   event.stopPropagation();
-  if (openRelatedId.value === (diag.id || diag.code)) {
+  const targetId = diag.id || diag.code;
+
+  if (openRelatedId.value === targetId) {
     openRelatedId.value = null;
-  } else {
-    openRelatedId.value = diag.id || diag.code;
-    const related = medicalDataService.getRelatedDiagnoses(diag.code);
-    inlineRelatedDiagnoses.value = related.filter((d) => d.code !== diag.code);
+    inlineRelatedDiagnoses.value = [];
+    return;
   }
+
+  openRelatedId.value = targetId;
+  const related = medicalDataService.getRelatedDiagnoses(diag.code);
+  inlineRelatedDiagnoses.value = related.filter((item) => item.code !== diag.code);
 }
 
-function swapDiagnosis(originalDiag: Diagnosis, newItem: DiagnosisItem) {
-  const index = aiDiagnoses.value.findIndex(
-    (d) => (d.id || d.code) === (originalDiag.id || originalDiag.code),
-  );
-  if (index !== -1) {
-    const updatedDiag: Diagnosis = {
-      ...aiDiagnoses.value[index],
-      id: newItem.id,
-      code: newItem.code,
-      name: newItem.name,
-    };
-    aiDiagnoses.value[index] = updatedDiag;
-    if (
-      selectedDiagnosis.value &&
-      (selectedDiagnosis.value.id || selectedDiagnosis.value.code) ===
-        (originalDiag.id || originalDiag.code)
-    ) {
-      selectedDiagnosis.value = updatedDiag;
-    }
+function swapDiagnosis(originalDiag: Diagnosis, newItem: DiagnosisItem): void {
+  const index = aiDiagnoses.value.findIndex((item) => (item.id || item.code) === (originalDiag.id || originalDiag.code));
+  if (index === -1) return;
+
+  const updatedDiag: Diagnosis = {
+    ...aiDiagnoses.value[index],
+    id: newItem.id,
+    code: newItem.code,
+    name: newItem.name,
+  };
+
+  aiDiagnoses.value[index] = updatedDiag;
+
+  if (selectedDiagnosis.value && (selectedDiagnosis.value.id || selectedDiagnosis.value.code) === (originalDiag.id || originalDiag.code)) {
+    selectedDiagnosis.value = updatedDiag;
   }
+
   openRelatedId.value = null;
+  inlineRelatedDiagnoses.value = [];
 }
 
-// ── Diagnosis Checklist (Anti-misdiagnosis) ───────────────────────────
-const isChecklistLoading = ref(false);
-const showChecklistModal = ref(false);
-const checklistItems = ref<{ question: string; recordText: string; checked: boolean }[]>([]);
-const checklistNotes = ref('');
+watch(
+  () => getDiagnosisIdentity(selectedDiagnosis.value),
+  (currentIdentity, previousIdentity) => {
+    openRelatedId.value = null;
 
-async function fetchDiagnosisChecklist(diag: Diagnosis) {
-  isChecklistLoading.value = true;
-  checklistItems.value = [];
-  checklistNotes.value = '';
-
-  try {
-    const userPrompt = PROMPTS.consultation.diagnosisChecklist.buildUserPrompt({
-      diagnosisName: diag.name,
-      chiefComplaint: chiefComplaint.value,
-      historyOfPresentIllness: historyOfPresentIllness.value,
-    });
-
-    const response = await chat([
-      { role: 'system', content: PROMPTS.consultation.diagnosisChecklist.system },
-      { role: 'user', content: userPrompt },
-    ]);
-
-    const clean = response.replace(/```json\n?|\n?```/g, '').trim();
-    const jsonMatch = clean.match(/\{[\s\S]*\}/);
-    const result = JSON.parse(jsonMatch ? jsonMatch[0] : clean);
-
-    if (result && result.isNeeded && Array.isArray(result.items) && result.items.length > 0) {
-      checklistItems.value = result.items.map((item: { question: string; recordText: string }) => ({
-        question: item.question,
-        recordText: item.recordText,
-        checked: false,
-      }));
+    if (!currentIdentity || !selectedDiagnosis.value) {
+      treatments.value = [];
+      lastTreatmentDiagnosisKey.value = '';
+      resetTreatmentEditorState();
+      return;
     }
-  } catch (error) {
-    console.error('Failed to fetch diagnosis checklist:', error);
-  } finally {
-    isChecklistLoading.value = false;
-  }
-}
 
-function handleChecklistConfirm() {
-  showChecklistModal.value = false;
-}
+    if (currentIdentity !== previousIdentity) {
+      resetTreatmentEditorState();
+    }
 
-// ── Fact Check (AI Independent Verification) ──────────────────────────
+    if (currentIdentity !== lastTreatmentDiagnosisKey.value) {
+      treatments.value = [];
+      void fetchAITreatment();
+    }
+  },
+);
+
 const diagnosisFactChecks = ref<Map<string, FactCheckResult>>(new Map());
 const treatmentFactChecks = ref<Map<string, FactCheckResult>>(new Map());
 
@@ -420,10 +588,8 @@ function getIssueForTreatment(treatmentName: string): FactCheckIssue | undefined
   return check.issues[0];
 }
 
-async function performDiagnosisFactCheck(diagnoses: Diagnosis[]) {
-  if (!diagnoses || diagnoses.length === 0) return;
-  if (!isReviewerEnabled()) return;
-
+async function performDiagnosisFactCheck(diagnoses: Diagnosis[]): Promise<void> {
+  if (!diagnoses.length || !isReviewerEnabled()) return;
   diagnosisFactChecks.value.clear();
 
   for (const diagnosis of diagnoses) {
@@ -434,19 +600,17 @@ async function performDiagnosisFactCheck(diagnoses: Diagnosis[]) {
         historyOfPresentIllness: historyOfPresentIllness.value,
       });
       diagnosisFactChecks.value.set(diagnosis.code, result);
-    } catch (e) {
-      console.error(`Failed to fact check diagnosis: ${diagnosis.name}`, e);
+    } catch (error) {
+      console.error(`Failed to fact check diagnosis: ${diagnosis.name}`, error);
     }
   }
 }
 
-async function performTreatmentFactCheck(treatments: TreatmentRecommendation[]) {
-  if (!treatments || treatments.length === 0) return;
-  if (!isReviewerEnabled()) return;
-
+async function performTreatmentFactCheck(items: TreatmentRecommendation[]): Promise<void> {
+  if (!items.length || !isReviewerEnabled()) return;
   treatmentFactChecks.value.clear();
 
-  for (const treatment of treatments) {
+  for (const treatment of items) {
     try {
       let result: FactCheckResult;
       if (treatment.type === 'medicine') {
@@ -460,58 +624,125 @@ async function performTreatmentFactCheck(treatments: TreatmentRecommendation[]) 
           diagnosis: selectedDiagnosis.value?.name || '',
         });
       }
+
       treatmentFactChecks.value.set(treatment.name, result);
-    } catch (e) {
-      console.error(`Failed to fact check treatment: ${treatment.name}`, e);
+    } catch (error) {
+      console.error(`Failed to fact check treatment: ${treatment.name}`, error);
     }
   }
 }
 
-// ── Diagnosis rate class ──────────────────────────────────────────────
-function getDiagRateClass(rate?: string): string {
-  if (!rate) return '';
-  if (rate.includes('高') || rate.includes('分析')) return 'rate-high';
-  if (rate.includes('中')) return 'rate-medium';
-  if (rate.includes('低') || rate === '未匹配') return 'rate-low';
-  return '';
+const frequencyOptions = ref<UsageOption[]>(dedupeUsageOptions([
+  createUsageOption({ key: '每天一次', text: '每天一次' }),
+  createUsageOption({ key: '每天两次', text: '每天两次' }),
+  createUsageOption({ key: '每天三次', text: '每天三次' }),
+  createUsageOption({ key: '隔日一次', text: '隔日一次' }),
+  createUsageOption({ key: '每周一次', text: '每周一次' }),
+  createUsageOption({ key: '每周两次', text: '每周两次' }),
+  createUsageOption({ key: '必要时', text: '必要时' }),
+  createUsageOption({ key: '立即', text: '立即' }),
+]));
+
+function normalizeUsageKeyword(value: string): string {
+  return value.trim().toLowerCase().replace(/\s+/g, '');
 }
 
-// ── Editable field options ─────────────────────────────────────────────
-const frequencyOptions = ref<string[]>([
-  '每天一次', '每天两次', '每天三次', '隔日一次',
-  '每周一次', '每周两次', '必要时', '立即',
-]); // 保留默认值，以免 HIS 请求失败时没有选项
+function createUsageOption(item: {
+  key?: string;
+  text?: string;
+  py?: string;
+  wb?: string;
+  mcode?: string;
+}): UsageOption {
+  const text = (item.text || '').trim();
+  const py = (item.py || '').trim();
+  const wb = (item.wb || '').trim();
+  const mcode = (item.mcode || '').trim();
+  const key = (item.key || text).trim();
 
-async function fetchFrequencyOptions() {
+  return {
+    key,
+    text,
+    py,
+    wb,
+    mcode,
+    normalizedTokens: Array.from(new Set(
+      [text, py, wb, mcode, key]
+        .map(normalizeUsageKeyword)
+        .filter(Boolean)
+    )),
+  };
+}
+
+function dedupeUsageOptions(items: UsageOption[]): UsageOption[] {
+  const unique = new Map<string, UsageOption>();
+
+  items.forEach((item) => {
+    if (!item.text) return;
+
+    const identity = item.key || item.text;
+    if (!unique.has(identity)) {
+      unique.set(identity, item);
+    }
+  });
+
+  return Array.from(unique.values());
+}
+
+const routeOptions = ref<UsageOption[]>(dedupeUsageOptions([
+  createUsageOption({ key: '口服', text: '口服', py: 'kf' }),
+  createUsageOption({ key: '静脉注射', text: '静脉注射', py: 'jmzs' }),
+  createUsageOption({ key: '肌肉注射', text: '肌肉注射', py: 'jrzs' }),
+  createUsageOption({ key: '皮下注射', text: '皮下注射', py: 'pxzs' }),
+  createUsageOption({ key: '外用', text: '外用', py: 'wy' }),
+  createUsageOption({ key: '雾化吸入', text: '雾化吸入', py: 'whxr' }),
+  createUsageOption({ key: '舌下含服', text: '舌下含服', py: 'sxhf' }),
+  createUsageOption({ key: '直肠给药', text: '直肠给药', py: 'zcgy' }),
+  createUsageOption({ key: '滴眼', text: '滴眼', py: 'dy' }),
+]));
+
+async function fetchFrequencyOptions(): Promise<void> {
   const his = getHisService();
   if (!his) {
     console.warn('[VoiceConsultationNew] HisService not initialized, using default frequency options');
     return;
   }
+
   try {
-    const res = await his.post<{ items: Array<{ key: string; text: string }> }>('api/base.tenantDicService/frequency', {});
-    if (res && res.body && res.body.items && res.body.items.length > 0) {
-      frequencyOptions.value = res.body.items.map(item => item.text);
-      console.log('[VoiceConsultationNew] Loaded frequency options from HIS:', frequencyOptions.value);
+    const response = await his.post<{ items: Array<{ key?: string; text?: string; py?: string; wb?: string; mcode?: string }> }>('api/base.tenantDicService/frequency', {});
+    if (response?.body?.items?.length) {
+      frequencyOptions.value = dedupeUsageOptions(response.body.items.map((item) => createUsageOption(item)));
     }
-  } catch (e) {
-    console.error('[VoiceConsultationNew] Failed to load frequency options from HIS', e);
+  } catch (error) {
+    console.error('[VoiceConsultationNew] Failed to load frequency options from HIS', error);
+  }
+}
+
+async function fetchRouteOptions(): Promise<void> {
+  const his = getHisService();
+  if (!his) {
+    console.warn('[VoiceConsultationNew] HisService not initialized, using default route options');
+    return;
+  }
+
+  try {
+    const items = await his.fetchMedicineUsageDictionary();
+    if (items.length > 0) {
+      routeOptions.value = dedupeUsageOptions(items.map((item) => createUsageOption(item)));
+    }
+  } catch (error) {
+    console.error('[VoiceConsultationNew] Failed to load route options from HIS', error);
   }
 }
 
 onMounted(() => {
-  fetchFrequencyOptions();
+  void Promise.all([fetchFrequencyOptions(), fetchRouteOptions()]);
 });
-const routeOptions = [
-  '口服', '静脉注射', '肌肉注射', '皮下注射',
-  '外用', '雾化吸入', '舌下含服', '直肠给药', '滴眼',
-];
 const dosageUnits = ['mg', 'g', 'ml', 'ug', '片', '粒', '支', '袋'];
 const medicineTotalUnits = ['盒', '瓶', '袋', '支', '片', '粒'];
 const pharmacyOptions = ['西药房', '中药房', '急诊药房', '住院药房'];
 const insuranceOptions = ['医保使用', '自费'];
 
-// ── Treatment tag label ────────────────────────────────────────────────
 function getTreatmentTagLabel(type: string): string {
   const map: Record<string, string> = {
     medicine: '药品',
@@ -522,23 +753,239 @@ function getTreatmentTagLabel(type: string): string {
   return map[type] || type;
 }
 
-// ── Submit ─────────────────────────────────────────────────────────────
-async function handleBatchWriteBack() {
+function getTreatmentSpec(rec: TreatmentRecommendation): string {
+  return rec.type === 'medicine' ? rec.matchedItem?.spec || '' : '';
+}
+
+function getTreatmentMatchLabel(rec: TreatmentRecommendation): string {
+  if (!rec.matchedItem) return '';
+  return rec.matchedItem.name === rec.name ? '标准库已匹配' : rec.matchedItem.name;
+}
+
+function formatOptionLabel(option: UsageOption): string {
+  const text = option.text.trim();
+  const key = option.key.trim();
+  if (!key || key === text) {
+    return text;
+  }
+  return `${text}(${key})`;
+}
+
+function findFrequencyOptionByValue(value?: string): UsageOption | undefined {
+  const normalizedValue = (value || '').trim();
+  if (!normalizedValue) {
+    return undefined;
+  }
+
+  return frequencyOptions.value.find((option) => option.text === normalizedValue || option.key === normalizedValue);
+}
+
+function getFrequencyDisplayValue(value?: string): string {
+  const normalizedValue = (value || '').trim();
+  if (!normalizedValue) {
+    return '';
+  }
+
+  const matchedOption = findFrequencyOptionByValue(normalizedValue);
+  if (matchedOption) {
+    return formatOptionLabel(matchedOption);
+  }
+
+  return normalizedValue;
+}
+
+function getMedicineFieldDisplay(rec: TreatmentRecommendation, field: MedicinePrimaryField): string {
+  const normalized = normalizeTreatmentRecommendation(rec);
+
+  switch (field) {
+    case 'dosage':
+      return [normalized.dosage, normalized.dosageUnit].filter(Boolean).join(' ') || '点击填写';
+    case 'frequency':
+      return getFrequencyDisplayValue(normalized.frequency) || '点击选择';
+    case 'route':
+      return normalized.route || '点击选择';
+    case 'total':
+      return [normalized.totalQty, normalized.totalUnit].filter(Boolean).join(' ') || '点击填写';
+  }
+}
+
+function isMedicineFieldEmpty(rec: TreatmentRecommendation, field: MedicinePrimaryField): boolean {
+  const normalized = normalizeTreatmentRecommendation(rec);
+
+  switch (field) {
+    case 'dosage':
+      return !normalized.dosage && !normalized.dosageUnit;
+    case 'frequency':
+      return !normalized.frequency;
+    case 'route':
+      return !normalized.route;
+    case 'total':
+      return !normalized.totalQty && !normalized.totalUnit;
+  }
+}
+
+function getFrequencySearchKey(rec: TreatmentRecommendation): string {
+  return `${getTreatmentEditorKey(rec)}:frequency-search`;
+}
+
+function getFrequencySearchKeyword(rec: TreatmentRecommendation): string {
+  const cached = frequencySearchKeywords.value[getFrequencySearchKey(rec)];
+  if (typeof cached === 'string') {
+    return cached;
+  }
+  return normalizeTreatmentRecommendation(rec).frequency || '';
+}
+
+function setFrequencySearchKeyword(rec: TreatmentRecommendation, value: string): void {
+  frequencySearchKeywords.value = {
+    ...frequencySearchKeywords.value,
+    [getFrequencySearchKey(rec)]: value,
+  };
+}
+
+function syncFrequencySearchKeyword(rec: TreatmentRecommendation): void {
+  setFrequencySearchKeyword(rec, normalizeTreatmentRecommendation(rec).frequency || '');
+}
+
+function handleFrequencySearchInput(rec: TreatmentRecommendation, event: Event): void {
+  const target = event.target as HTMLInputElement | null;
+  setFrequencySearchKeyword(rec, target?.value || '');
+}
+
+function getFilteredFrequencyOptionsForRecord(rec: TreatmentRecommendation): UsageOption[] {
+  const query = normalizeUsageKeyword(getFrequencySearchKeyword(rec));
+  const matchedOptions = !query
+    ? frequencyOptions.value
+    : frequencyOptions.value.filter((option) => option.normalizedTokens.some((token) => token.includes(query)));
+
+  const currentValue = (normalizeTreatmentRecommendation(rec).frequency || '').trim();
+  if (currentValue && !matchedOptions.some((option) => option.text === currentValue)) {
+    return [createUsageOption({ key: currentValue, text: currentValue }), ...matchedOptions];
+  }
+
+  return matchedOptions;
+}
+
+function resolveFrequencyValueFromKeyword(rec: TreatmentRecommendation): string {
+  const keyword = getFrequencySearchKeyword(rec).trim();
+  if (!keyword) {
+    return '';
+  }
+
+  const normalizedKeyword = normalizeUsageKeyword(keyword);
+  const exactTextMatch = frequencyOptions.value.find((option) => option.text === keyword);
+  if (exactTextMatch) {
+    return exactTextMatch.text;
+  }
+
+  const exactTokenMatch = frequencyOptions.value.find((option) => option.normalizedTokens.includes(normalizedKeyword));
+  if (exactTokenMatch) {
+    return exactTokenMatch.text;
+  }
+
+  const filteredOptions = getFilteredFrequencyOptionsForRecord(rec);
+  if (filteredOptions.length === 1) {
+    return filteredOptions[0].text;
+  }
+
+  return normalizeTreatmentRecommendation(rec).frequency || '';
+}
+
+function selectFrequencyOption(rec: TreatmentRecommendation, option: UsageOption): void {
+  rec.frequency = option.text;
+  setFrequencySearchKeyword(rec, option.text);
+  activeEditableFieldKey.value = null;
+}
+
+function getRouteSearchKey(rec: TreatmentRecommendation): string {
+  return `${getTreatmentEditorKey(rec)}:route-search`;
+}
+
+function getRouteSearchKeyword(rec: TreatmentRecommendation): string {
+  const cached = routeSearchKeywords.value[getRouteSearchKey(rec)];
+  if (typeof cached === 'string') {
+    return cached;
+  }
+  return normalizeTreatmentRecommendation(rec).route || '';
+}
+
+function setRouteSearchKeyword(rec: TreatmentRecommendation, value: string): void {
+  routeSearchKeywords.value = {
+    ...routeSearchKeywords.value,
+    [getRouteSearchKey(rec)]: value,
+  };
+}
+
+function syncRouteSearchKeyword(rec: TreatmentRecommendation): void {
+  setRouteSearchKeyword(rec, normalizeTreatmentRecommendation(rec).route || '');
+}
+
+function handleRouteSearchInput(rec: TreatmentRecommendation, event: Event): void {
+  const target = event.target as HTMLInputElement | null;
+  setRouteSearchKeyword(rec, target?.value || '');
+}
+
+function getFilteredRouteOptionsForRecord(rec: TreatmentRecommendation): UsageOption[] {
+  const query = normalizeUsageKeyword(getRouteSearchKeyword(rec));
+  const matchedOptions = !query
+    ? routeOptions.value
+    : routeOptions.value.filter((option) => option.normalizedTokens.some((token) => token.includes(query)));
+
+  const currentValue = (normalizeTreatmentRecommendation(rec).route || '').trim();
+  if (currentValue && !matchedOptions.some((option) => option.text === currentValue)) {
+    return [createUsageOption({ key: currentValue, text: currentValue }), ...matchedOptions];
+  }
+
+  return matchedOptions;
+}
+
+function resolveRouteValueFromKeyword(rec: TreatmentRecommendation): string {
+  const keyword = getRouteSearchKeyword(rec).trim();
+  if (!keyword) {
+    return '';
+  }
+
+  const normalizedKeyword = normalizeUsageKeyword(keyword);
+  const exactTextMatch = routeOptions.value.find((option) => option.text === keyword);
+  if (exactTextMatch) {
+    return exactTextMatch.text;
+  }
+
+  const exactTokenMatch = routeOptions.value.find((option) => option.normalizedTokens.includes(normalizedKeyword));
+  if (exactTokenMatch) {
+    return exactTokenMatch.text;
+  }
+
+  const filteredOptions = getFilteredRouteOptionsForRecord(rec);
+  if (filteredOptions.length === 1) {
+    return filteredOptions[0].text;
+  }
+
+  return normalizeTreatmentRecommendation(rec).route || '';
+}
+
+function selectRouteOption(rec: TreatmentRecommendation, option: UsageOption): void {
+  rec.route = option.text;
+  setRouteSearchKeyword(rec, option.text);
+  activeEditableFieldKey.value = null;
+}
+
+async function handleBatchWriteBack(): Promise<void> {
   if (!canSubmit.value) return;
   submitting.value = true;
 
   try {
-    const selected = treatments.value.filter((t) => t.selected);
-    const meds = selected.filter((t) => t.type === 'medicine');
-    const exams = selected.filter((t) => t.type === 'exam');
-    const labs = selected.filter((t) => t.type === 'lab_test');
-    const procs = selected.filter((t) => t.type === 'procedure');
+    const selected = treatments.value.filter((item) => item.selected);
+    const meds = selected.filter((item) => item.type === 'medicine');
+    const exams = selected.filter((item) => item.type === 'exam');
+    const labs = selected.filter((item) => item.type === 'lab_test');
+    const procs = selected.filter((item) => item.type === 'procedure');
 
-    const treatmentPlanParts = [
-      meds.length ? `用药：${meds.map((m) => m.name).join('；')}` : '',
-      exams.length ? `检查：${exams.map((e) => e.name).join('；')}` : '',
-      labs.length ? `检验：${labs.map((l) => l.name).join('；')}` : '',
-      procs.length ? `处置：${procs.map((p) => p.name).join('；')}` : '',
+    const treatmentPlan = [
+      meds.length ? `用药：${meds.map((item) => item.name).join('；')}` : '',
+      exams.length ? `检查：${exams.map((item) => item.name).join('；')}` : '',
+      labs.length ? `检验：${labs.map((item) => item.name).join('；')}` : '',
+      procs.length ? `处置：${procs.map((item) => item.name).join('；')}` : '',
     ].filter(Boolean).join('。');
 
     const result = {
@@ -549,130 +996,137 @@ async function handleBatchWriteBack() {
       chiefComplaint: chiefComplaint.value,
       historyOfPresentIllness: historyOfPresentIllness.value,
       pastMedicalHistory: pastMedicalHistory.value,
-      diagnosisList: selectedDiagnosis.value
-        ? [{ name: selectedDiagnosis.value.name, code: selectedDiagnosis.value.code }]
-        : [],
-      medications: meds.map((m) => ({
-        name: m.matchedItem?.name || m.name,
-        spec: m.matchedItem?.spec || '',
-        usage: m.usage || '',
-        idMedPro: m.matchedItem?.id || '',
-        dosage: m.dosage || '',
-        dosageUnit: m.dosageUnit || '',
-        totalQty: m.totalQty || '',
-        totalUnit: m.totalUnit || '',
-        frequency: m.frequency || '',
-        route: m.route || '',
-        days: m.days || '',
-        pharmacy: m.pharmacy || '',
-        remark: m.remark || '',
-        regulatedDisease: m.regulatedDisease || '',
-        insuranceType: m.insuranceType || '医保使用',
+      diagnosisList: selectedDiagnosis.value ? [{ name: selectedDiagnosis.value.name, code: selectedDiagnosis.value.code }] : [],
+      medications: meds.map((item) => ({
+        name: item.matchedItem?.name || item.name,
+        spec: item.matchedItem?.spec || '',
+        usage: item.usage || '',
+        idMedPro: item.matchedItem?.id || '',
+        dosage: item.dosage || '',
+        dosageUnit: item.dosageUnit || '',
+        totalQty: item.totalQty || '',
+        totalUnit: item.totalUnit || '',
+        frequency: item.frequency || '',
+        route: item.route || '',
+        days: item.days || '',
+        pharmacy: item.pharmacy || '',
+        remark: item.remark || '',
+        regulatedDisease: item.regulatedDisease || '',
+        insuranceType: item.insuranceType || '医保使用',
       })),
-      examinations: exams.map((e) => ({
-        name: e.matchedItem?.name || e.name,
-        idCli: e.matchedItem?.id || '',
-        regulatedDisease: e.regulatedDisease || '',
-        bodySite: e.bodySite || '',
-        totalQty: e.totalQty || '',
-        execDept: e.execDept || '',
-        remark: e.remark || '',
-        insuranceType: e.insuranceType || '医保使用',
+      examinations: exams.map((item) => ({
+        name: item.matchedItem?.name || item.name,
+        idCli: item.matchedItem?.id || '',
+        regulatedDisease: item.regulatedDisease || '',
+        bodySite: item.bodySite || '',
+        totalQty: item.totalQty || '',
+        execDept: item.execDept || '',
+        remark: item.remark || '',
+        insuranceType: item.insuranceType || '医保使用',
       })),
-      labTests: labs.map((l) => ({
-        name: l.matchedItem?.name || l.name,
-        idCli: l.matchedItem?.id || '',
-        regulatedDisease: l.regulatedDisease || '',
-        bodySite: l.bodySite || '',
-        totalQty: l.totalQty || '',
-        execDept: l.execDept || '',
-        remark: l.remark || '',
-        insuranceType: l.insuranceType || '医保使用',
+      labTests: labs.map((item) => ({
+        name: item.matchedItem?.name || item.name,
+        idCli: item.matchedItem?.id || '',
+        regulatedDisease: item.regulatedDisease || '',
+        bodySite: item.bodySite || '',
+        totalQty: item.totalQty || '',
+        execDept: item.execDept || '',
+        remark: item.remark || '',
+        insuranceType: item.insuranceType || '医保使用',
       })),
-      procedures: procs.map((p) => ({
-        name: p.matchedItem?.name || p.name,
-        idCli: p.matchedItem?.id || '',
-        regulatedDisease: p.regulatedDisease || '',
-        totalQty: p.totalQty || '',
-        execDept: p.execDept || '',
-        insuranceType: p.insuranceType || '医保使用',
+      procedures: procs.map((item) => ({
+        name: item.matchedItem?.name || item.name,
+        idCli: item.matchedItem?.id || '',
+        regulatedDisease: item.regulatedDisease || '',
+        totalQty: item.totalQty || '',
+        execDept: item.execDept || '',
+        insuranceType: item.insuranceType || '医保使用',
       })),
-      treatmentPlan: treatmentPlanParts,
+      treatmentPlan,
     };
 
     await invoke('complete_consultation', { result });
     showToast?.('病历已提交', 'success');
     emit('close');
-  } catch (err: unknown) {
-    const msg = err instanceof Error ? err.message : String(err);
+  } catch (error: unknown) {
+    const msg = error instanceof Error ? error.message : String(error);
     showToast?.(`提交失败: ${msg}`, 'error');
   } finally {
     submitting.value = false;
   }
 }
-// ── Initialize from intentResult ───────────────────────────────────────
+
 watch(
   () => props.intentResult,
   (result) => {
     if (!result) return;
+
+    resetTreatmentEditorState();
+    lastTreatmentDiagnosisKey.value = '';
+    openRelatedId.value = null;
+    inlineRelatedDiagnoses.value = [];
+    aiDiagnoses.value = [];
+    selectedDiagnosis.value = null;
+    treatments.value = [];
+
     chiefComplaint.value = result.chiefComplaint;
     historyOfPresentIllness.value = result.historyOfPresentIllness;
     pastMedicalHistory.value = result.pastMedicalHistory;
-    // Initialize diagnoses from voice
-    if (result.diagnoses && result.diagnoses.length > 0) {
+
+    if (result.diagnoses?.length) {
       aiDiagnoses.value = initDiagnosesFromIntent(result.diagnoses);
-      // Auto-select first matched diagnosis
-      const firstMatched = aiDiagnoses.value.find((d) => d.id || d.code);
+      const firstMatched = aiDiagnoses.value.find((diag) => diag.id || diag.code);
       if (firstMatched) {
         selectedDiagnosis.value = firstMatched;
       }
     }
-    // Initialize treatments from voice
+
     if (result.treatments.length > 0) {
       treatments.value = initTreatmentsFromIntent(result.treatments);
+      lastTreatmentDiagnosisKey.value = getDiagnosisIdentity(selectedDiagnosis.value);
     }
 
-    // Trigger fact checks (async, non-blocking)
     if (aiDiagnoses.value.length > 0) {
-      performDiagnosisFactCheck(aiDiagnoses.value);
-      // Trigger checklist for selected diagnosis
-      if (selectedDiagnosis.value) {
-        fetchDiagnosisChecklist(selectedDiagnosis.value);
-      }
+      void performDiagnosisFactCheck(aiDiagnoses.value);
+    } else if (chiefComplaint.value.trim()) {
+      void fetchAIDiagnosis();
     }
+
     if (treatments.value.length > 0) {
-      performTreatmentFactCheck(treatments.value);
+      void performTreatmentFactCheck(treatments.value);
     }
   },
-  { immediate: true }
+  { immediate: true },
 );
-
 </script>
 
 <template>
   <div class="voice-consultation-new">
-    <!-- Patient Header -->
-    <div class="patient-header">
-      <div class="patient-card">
-        <div class="avatar">
-          <Icon icon="lucide:user" size="20" color="#fff" />
+    <header class="voice-topbar pane-card">
+      <div class="patient-summary">
+        <div class="patient-avatar">
+          <Icon icon="lucide:user" size="18" color="#fff" />
         </div>
-        <span class="patient-name">{{ patientName || '未知患者' }}</span>
-        <span v-if="patientGender" class="patient-tag">{{ patientGender }}</span>
-        <span v-if="patientAge" class="patient-tag">{{ patientAge }}</span>
-        <span v-if="patientIdCard" class="patient-tag id-tag">{{ patientIdCard }}</span>
+        <div class="patient-summary-text">
+          <div class="patient-summary-line">
+            <span class="patient-name">{{ patientName || '未知患者' }}</span>
+            <span v-if="patientGender" class="patient-chip">{{ patientGender }}</span>
+            <span v-if="patientAge" class="patient-chip">{{ patientAge }}</span>
+            <span v-if="patientIdCard" class="patient-chip patient-chip-wide">{{ patientIdCard }}</span>
+          </div>
+          <div class="patient-summary-subline">语音问诊结果已结构化，可直接核对后回写</div>
+        </div>
       </div>
-      <div class="header-actions">
-        <button class="btn-cancel" @click="emit('close')">取消</button>
-        <button class="btn-submit" :disabled="!canSubmit" @click="handleBatchWriteBack">
+      <div class="voice-topbar-actions">
+        <button class="back-btn topbar-btn" type="button" @click="emit('close')">返回</button>
+        <button class="writeback-btn topbar-btn" type="button" :disabled="!canSubmit" @click="handleBatchWriteBack">
           <template v-if="submitting">提交中...</template>
-          <template v-else>确认提交</template>
+          <template v-else>一键回写</template>
         </button>
       </div>
-    </div>
+    </header>
 
-    <!-- Loading state -->
-    <div v-if="!intentResult" class="loading-state">
+    <div v-if="!intentResult" class="loading-state pane-card">
       <div class="ai-spinner">
         <div class="spinner-ring"></div>
         <div class="spinner-core"></div>
@@ -680,46 +1134,49 @@ watch(
       <p class="loading-title">AI 正在识别语音意图...</p>
     </div>
 
-    <!-- Main content -->
     <div v-else class="medical-record-page">
       <div class="record-content">
-      <!-- Left: Medical Record -->
-      <div class="record-panel left-panel">
-        <div class="panel-header">
-          <h3>病历详情</h3>
-        </div>
-        <div class="panel-body">
-          <div class="record-field">
-            <label>主诉</label>
-            <textarea v-model="chiefComplaint" rows="2" placeholder="请输入主诉..."></textarea>
-          </div>
-          <div class="record-field">
-            <label>现病史</label>
-            <textarea v-model="historyOfPresentIllness" rows="10" placeholder="请输入现病史..."></textarea>
-          </div>
-          <div class="record-field">
-            <label>既往史</label>
-            <textarea v-model="pastMedicalHistory" rows="2" placeholder="请输入既往史..."></textarea>
-          </div>
-        </div>
-      </div>
-
-      <!-- Right: Diagnosis & Treatment -->
-      <div class="record-panel right-panel">
-        <div class="panel-header">
-          <h3>诊断与治疗方案</h3>
-        </div>
-        <div class="panel-body">
-          <!-- Diagnosis Section -->
-          <div class="ai-card">
-            <div class="ai-card-title-row">
-              <h4>初步诊断 (Diagnosis)</h4>
-              <button class="ai-recommend-btn" type="button" @click="fetchAIDiagnosis" :disabled="diagnosisLoading">
-                <template v-if="diagnosisLoading">推荐中...</template>
-                <template v-else>AI推荐诊断</template>
-              </button>
+        <section class="vcn-panel pane-card vcn-left-panel">
+          <div class="section-heading">
+            <div>
+              <p class="section-kicker">病例正文</p>
+              <h3 class="section-title">病历详情</h3>
             </div>
+          </div>
 
+          <div class="record-fields">
+            <div class="record-field">
+              <label>主诉</label>
+              <textarea v-model="chiefComplaint" rows="3" placeholder="请输入主诉..."></textarea>
+            </div>
+            <div class="record-field field-grow">
+              <label>现病史</label>
+              <textarea v-model="historyOfPresentIllness" rows="13" placeholder="请输入现病史..."></textarea>
+            </div>
+            <div class="record-field">
+              <label>既往史</label>
+              <textarea v-model="pastMedicalHistory" rows="4" placeholder="请输入既往史..."></textarea>
+            </div>
+          </div>
+        </section>
+
+        <section class="vcn-right-panel">
+          <div class="decision-overview pane-card">
+            <div class="overview-item">
+              <span class="overview-label">主诉</span>
+              <strong class="overview-value">{{ overviewChiefComplaint }}</strong>
+            </div>
+            <div class="overview-item">
+              <span class="overview-label">当前诊断</span>
+              <strong class="overview-value">{{ overviewDiagnosis }}</strong>
+            </div>
+            <div class="overview-item overview-item-compact">
+              <span class="overview-label">已选方案</span>
+              <strong class="overview-value">{{ selectedTreatmentCount }} 项</strong>
+            </div>
+          </div>
+
+          <div class="decision-card pane-card">
             <div v-if="diagnosisLoading" class="loading-inline">
               <div class="ai-spinner small">
                 <div class="spinner-ring"></div>
@@ -728,78 +1185,59 @@ watch(
               <span>AI 正在分析...</span>
             </div>
 
-            <ul v-else-if="aiDiagnoses.length > 0" class="diagnosis-list">
+            <ul v-else-if="aiDiagnoses.length > 0" class="vcn-diagnosis-list">
               <li
                 v-for="diag in aiDiagnoses"
                 :key="diag.code + diag.name"
-                class="diagnosis-item"
-                :class="{ active: selectedDiagnosis?.code === diag.code && selectedDiagnosis?.name === diag.name }"
+                class="vcn-diagnosis-item"
+                :class="{ selected: selectedDiagnosis?.code === diag.code && selectedDiagnosis?.name === diag.name }"
                 @click="toggleDiagnosis(diag)"
               >
-                <div class="diag-header">
-                  <div class="diag-name-group">
-                    <FactCheckHighlight :issue="getIssueForDiagnosis(diag.code)">
-                      <span class="diag-name">{{ diag.name }} ({{ diag.code }})</span>
-                    </FactCheckHighlight>
-                    <div class="inline-related-trigger" @click="toggleRelatedDropdown(diag, $event)" title="切换同类诊断">
-                      <span class="arrow" :class="{ open: openRelatedId === (diag.id || diag.code) }">&#9660;</span>
+                <div v-if="selectedDiagnosis?.code === diag.code && selectedDiagnosis?.name === diag.name" class="diag-selected-mark">
+                  <svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>
+                </div>
+
+                <div class="card-row">
+                  <div class="card-main">
+                    <div class="card-title-line">
+                      <div class="card-title-wrap">
+                        <FactCheckHighlight :issue="getIssueForDiagnosis(diag.code)">
+                          <span class="card-title">{{ diag.name }}</span>
+                        </FactCheckHighlight>
+                        <span v-if="diag.rationale" class="reason-tooltip-trigger" @click.stop>
+                          <button class="reason-icon-btn" type="button" aria-label="查看诊断依据" title="查看诊断依据" @click.stop>
+                            <Icon icon="lucide:circle-help" size="14" />
+                          </button>
+                          <span class="hover-reason-tooltip">{{ diag.rationale }}</span>
+                        </span>
+                      </div>
+                      <span v-if="diag.code" class="meta-token">编码 {{ diag.code }}</span>
+                      <button class="inline-arrow-btn" type="button" title="切换同类诊断" @click.stop="toggleRelatedDropdown(diag, $event)">
+                        <span class="inline-arrow" :class="{ open: openRelatedId === (diag.id || diag.code) }"></span>
+                      </button>
                     </div>
                   </div>
-                  <span class="diag-rate" :class="getDiagRateClass(diag.rate)">{{ diag.rate }}</span>
-                </div>
-                <div class="diag-rationale">{{ diag.rationale }}</div>
-
-                <!-- Anti-Misdiagnosis Checklist -->
-                <div class="diag-checklist-wrapper">
-                  <div v-if="selectedDiagnosis?.code === diag.code && selectedDiagnosis?.name === diag.name && !isChecklistLoading && checklistItems.length > 0" class="checklist-indicator" @click.stop="showChecklistModal = true">
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                      <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/>
-                      <line x1="12" y1="9" x2="12" y2="13"/>
-                      <line x1="12" y1="17" x2="12.01" y2="17"/>
-                    </svg>
-                    <span>鉴别排查 (待确认)</span>
-                  </div>
-                  <div v-if="selectedDiagnosis?.code === diag.code && selectedDiagnosis?.name === diag.name && isChecklistLoading" class="checklist-indicator loading">
-                    <svg class="spinner" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                      <path d="M21 12a9 9 0 1 1-6.219-8.56"/>
-                    </svg>
-                    <span>安全分析中...</span>
-                  </div>
                 </div>
 
-                <!-- Related Diagnoses Dropdown -->
                 <div v-if="openRelatedId === (diag.id || diag.code) && inlineRelatedDiagnoses.length > 0" class="related-section" @click.stop>
                   <div class="related-list">
-                    <div
-                      v-for="item in inlineRelatedDiagnoses"
-                      :key="item.id"
-                      class="related-item"
-                      @click="swapDiagnosis(diag, item)"
-                    >
+                    <button v-for="item in inlineRelatedDiagnoses" :key="item.id" class="related-item" type="button" @click="swapDiagnosis(diag, item)">
                       <span class="related-code">{{ item.code }}</span>
                       <span class="related-name">{{ item.name }}</span>
-                    </div>
+                    </button>
                   </div>
                 </div>
               </li>
             </ul>
-            <div v-else class="empty-text">点击"AI推荐诊断"获取诊断建议</div>
+
+            <div v-else class="empty-text">暂无诊断建议</div>
           </div>
 
-          <!-- Treatment Section -->
-          <div class="ai-card">
-            <div class="ai-card-title-row">
-              <h4>治疗方案 (Treatment)</h4>
-              <button
-                v-if="selectedDiagnosis"
-                class="ai-recommend-btn"
-                type="button"
-                @click="fetchAITreatment"
-                :disabled="treatmentLoading"
-              >
-                <template v-if="treatmentLoading">推荐中...</template>
-                <template v-else>AI推荐方案</template>
-              </button>
+          <div class="decision-card pane-card">
+            <div class="section-heading treatment-heading">
+              <div>
+                <h3 class="section-title">治疗方案</h3>
+              </div>
             </div>
 
             <div v-if="treatmentLoading" class="loading-inline">
@@ -811,1322 +1249,1159 @@ watch(
             </div>
 
             <template v-else-if="hasTreatments">
-              <section
-                v-for="section in treatmentSections"
-                :key="section.type"
-                class="treatment-section"
-              >
+              <section v-for="section in treatmentSections" :key="section.type" class="treatment-section">
                 <div class="treatment-section-header">
                   <h5>{{ section.title }}</h5>
-                  <div class="treatment-section-header-right">
-                    <span class="treatment-section-pill">{{ section.items.length }} 项推荐</span>
-                    <span class="treatment-section-pill strong">{{ section.items.filter(i => i.selected).length }} 项已选</span>
-                  </div>
+                  <span class="treatment-section-summary">{{ section.items.length }} 项推荐 / {{ section.items.filter((item) => item.selected).length }} 项已选</span>
                 </div>
-                <div class="treatment-list">
-                  <div
+
+                <div class="vcn-treatment-list">
+                  <article
                     v-for="rec in section.items"
                     :key="`${rec.type}-${rec.name}`"
-                    class="treatment-item"
-                    :class="{ active: rec.selected }"
+                    class="vcn-treatment-item"
+                    :class="{ selected: rec.selected }"
                     @click="toggleTreatment(rec)"
                   >
-                    <div class="selected-mark" v-if="rec.selected">
-                      <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>
+                    <div v-if="rec.selected" class="card-selected-mark">
+                      <svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>
                     </div>
-                    <div class="rec-content">
-                      <div class="rec-header">
-                        <div class="rec-name-group">
-                          <span class="rec-tag" :class="rec.type">{{ getTreatmentTagLabel(rec.type) }}</span>
-                          <FactCheckHighlight :issue="getIssueForTreatment(rec.name)">
-                            <span class="rec-name">{{ rec.name }}</span>
-                          </FactCheckHighlight>
-                          <span v-if="rec.matchedItem" class="matched-inline">
-                            <span class="match-icon">&#10003;</span>
-                            <span class="match-name">{{ rec.matchedItem.name }}</span>
-                            <span v-if="rec.type === 'medicine' && rec.matchedItem.spec" class="match-spec">{{ rec.matchedItem.spec }}</span>
-                          </span>
-                          <span v-else class="unmatched-icon" title="未匹配标准库">&#128269;</span>
+
+                    <div class="card-row">
+                      <div class="card-main">
+                        <div class="card-title-line">
+                          <div class="card-title-wrap">
+                            <FactCheckHighlight :issue="getIssueForTreatment(rec.name)">
+                              <span class="card-title">{{ rec.name }}</span>
+                            </FactCheckHighlight>
+                            <span v-if="rec.reason" class="reason-tooltip-trigger" @click.stop>
+                              <button class="reason-icon-btn" type="button" aria-label="查看推荐依据" title="查看推荐依据" @click.stop>
+                                <Icon icon="lucide:circle-help" size="14" />
+                              </button>
+                              <span class="hover-reason-tooltip">{{ rec.reason }}</span>
+                            </span>
+                          </div>
+                          <span class="meta-token">{{ getTreatmentTagLabel(rec.type) }}</span>
+                          <span v-if="getTreatmentSpec(rec)" class="meta-token">规格 {{ getTreatmentSpec(rec) }}</span>
+                          <span class="meta-token" :class="{ warning: !rec.matchedItem }">{{ rec.matchedItem ? getTreatmentMatchLabel(rec) : '待人工确认' }}</span>
+                          <span v-if="rec.type !== 'medicine' && rec.usage" class="meta-token">建议 {{ rec.usage }}</span>
                         </div>
                       </div>
-                      <div class="rec-reason">{{ rec.reason }}</div>
-                      <div v-if="rec.usage" class="rec-usage">建议: {{ rec.usage }}</div>
 
-                      <!-- Inline editable fields (shown when selected) -->
-                      <div v-if="rec.selected" class="rec-edit-fields" @click.stop>
-                        <!-- Common: 规定病 (all types) -->
-                        <div class="edit-field">
-                          <label>规定病</label>
-                          <input v-model="rec.regulatedDisease" type="text" placeholder="规定病" class="edit-input" />
-                        </div>
+                      <div class="card-actions">
+                        <button
+                          v-if="rec.selected"
+                          class="inline-arrow-btn action-arrow"
+                          type="button"
+                          :title="isTreatmentEditorExpanded(rec) ? '收起更多编辑' : '展开更多编辑'"
+                          :aria-label="isTreatmentEditorExpanded(rec) ? '收起更多编辑' : '展开更多编辑'"
+                          @click.stop="toggleTreatmentEditor(rec, $event)"
+                        >
+                          <span class="inline-arrow" :class="{ open: isTreatmentEditorExpanded(rec) }"></span>
+                        </button>
+                      </div>
+                    </div>
 
-                        <!-- Medicine fields -->
-                        <template v-if="rec.type === 'medicine'">
-                          <div class="edit-field">
-                            <label>每次剂量</label>
-                            <div class="edit-field-row">
-                              <input v-model="rec.dosage" type="text" placeholder="剂量" class="edit-input small" />
+                    <div v-if="rec.selected && (rec.type === 'medicine' || isTreatmentEditorExpanded(rec))" class="editor-shell" @click.stop>
+                      <template v-if="rec.type === 'medicine'">
+                        <div class="medicine-primary-fields">
+                          <div class="primary-field" :class="{ editing: isEditableFieldActive(rec, 'dosage') }">
+                            <label>一次剂量</label>
+                            <div v-if="isEditableFieldActive(rec, 'dosage')" class="field-editor edit-field-row" @focusout="handleEditableFieldBlur(rec, 'dosage', $event)">
+                              <input :ref="(el) => registerEditableFieldElement(getEditableFieldKey(rec, 'dosage'), el)" v-model="rec.dosage" type="text" placeholder="剂量" class="edit-input small" />
                               <select v-model="rec.dosageUnit" class="edit-select mini">
                                 <option value="">单位</option>
-                                <option v-for="u in dosageUnits" :key="u" :value="u">{{ u }}</option>
+                                <option v-for="unit in dosageUnits" :key="unit" :value="unit">{{ unit }}</option>
                               </select>
                             </div>
+                            <button v-else class="field-read-btn" :class="{ placeholder: isMedicineFieldEmpty(rec, 'dosage') }" type="button" @click.stop="activateEditableField(rec, 'dosage', $event)">
+                              {{ getMedicineFieldDisplay(rec, 'dosage') }}
+                            </button>
                           </div>
-                          <div class="edit-field">
+
+                          <div class="primary-field" :class="{ editing: isEditableFieldActive(rec, 'frequency') }">
                             <label>频次</label>
-                            <select v-model="rec.frequency" class="edit-select">
-                              <option value="">请选择</option>
-                              <option v-for="f in frequencyOptions" :key="f" :value="f">{{ f }}</option>
-                            </select>
+                            <div v-if="isEditableFieldActive(rec, 'frequency')" class="field-editor route-field-editor" @focusout="handleEditableFieldBlur(rec, 'frequency', $event)">
+                              <input
+                                :ref="(el) => registerEditableFieldElement(getEditableFieldKey(rec, 'frequency'), el)"
+                                :value="getFrequencySearchKeyword(rec)"
+                                type="text"
+                                placeholder="输入名称筛选频次"
+                                class="edit-input"
+                                @input="handleFrequencySearchInput(rec, $event)"
+                              />
+                              <div class="route-option-list" role="listbox" aria-label="药品频次候选项">
+                                <button
+                                  v-for="option in getFilteredFrequencyOptionsForRecord(rec).slice(0, 8)"
+                                  :key="option.key"
+                                  class="route-option-item"
+                                  type="button"
+                                  @mousedown.prevent.stop="selectFrequencyOption(rec, option)"
+                                >
+                                  <span class="route-option-text">{{ formatOptionLabel(option) }}</span>
+                                </button>
+                                <div v-if="getFilteredFrequencyOptionsForRecord(rec).length === 0" class="route-option-empty">未找到匹配频次</div>
+                              </div>
+                            </div>
+                            <button v-else class="field-read-btn" :class="{ placeholder: isMedicineFieldEmpty(rec, 'frequency') }" type="button" @click.stop="activateEditableField(rec, 'frequency', $event)">
+                              {{ getMedicineFieldDisplay(rec, 'frequency') }}
+                            </button>
                           </div>
-                          <div class="edit-field">
+
+                          <div class="primary-field" :class="{ editing: isEditableFieldActive(rec, 'route') }">
                             <label>用法</label>
-                            <select v-model="rec.route" class="edit-select">
-                              <option value="">请选择</option>
-                              <option v-for="r in routeOptions" :key="r" :value="r">{{ r }}</option>
-                            </select>
+                            <div v-if="isEditableFieldActive(rec, 'route')" class="field-editor route-field-editor" @focusout="handleEditableFieldBlur(rec, 'route', $event)">
+                              <input
+                                :ref="(el) => registerEditableFieldElement(getEditableFieldKey(rec, 'route'), el)"
+                                :value="getRouteSearchKeyword(rec)"
+                                type="text"
+                                placeholder="输入名称/拼音筛选用法"
+                                class="edit-input"
+                                @input="handleRouteSearchInput(rec, $event)"
+                              />
+                              <div class="route-option-list" role="listbox" aria-label="药品用法候选项">
+                                <button
+                                  v-for="option in getFilteredRouteOptionsForRecord(rec).slice(0, 8)"
+                                  :key="option.key"
+                                  class="route-option-item"
+                                  type="button"
+                                  @mousedown.prevent.stop="selectRouteOption(rec, option)"
+                                >
+                                  <span class="route-option-text">{{ option.text }}</span>
+                                  <span v-if="option.py || option.mcode" class="route-option-meta">{{ [option.py, option.mcode].filter(Boolean).join(' / ') }}</span>
+                                </button>
+                                <div v-if="getFilteredRouteOptionsForRecord(rec).length === 0" class="route-option-empty">未找到匹配用法</div>
+                              </div>
+                            </div>
+                            <button v-else class="field-read-btn" :class="{ placeholder: isMedicineFieldEmpty(rec, 'route') }" type="button" @click.stop="activateEditableField(rec, 'route', $event)">
+                              {{ getMedicineFieldDisplay(rec, 'route') }}
+                            </button>
                           </div>
-                          <div class="edit-field">
+
+                          <div class="primary-field" :class="{ editing: isEditableFieldActive(rec, 'total') }">
+                            <label>总量</label>
+                            <div v-if="isEditableFieldActive(rec, 'total')" class="field-editor edit-field-row" @focusout="handleEditableFieldBlur(rec, 'total', $event)">
+                              <input :ref="(el) => registerEditableFieldElement(getEditableFieldKey(rec, 'total'), el)" v-model="rec.totalQty" type="text" placeholder="数量" class="edit-input small" />
+                              <select v-model="rec.totalUnit" class="edit-select mini">
+                                <option value="">单位</option>
+                                <option v-for="unit in medicineTotalUnits" :key="unit" :value="unit">{{ unit }}</option>
+                              </select>
+                            </div>
+                            <button v-else class="field-read-btn" :class="{ placeholder: isMedicineFieldEmpty(rec, 'total') }" type="button" @click.stop="activateEditableField(rec, 'total', $event)">
+                              {{ getMedicineFieldDisplay(rec, 'total') }}
+                            </button>
+                          </div>
+                        </div>
+
+                        <div v-if="isTreatmentEditorExpanded(rec)" class="secondary-field-grid">
+                          <div class="secondary-field">
+                            <label>规定病</label>
+                            <input v-model="rec.regulatedDisease" type="text" placeholder="规定病" class="edit-input" />
+                          </div>
+                          <div class="secondary-field">
                             <label>天数</label>
                             <input v-model="rec.days" type="text" placeholder="天" class="edit-input mini" />
                           </div>
-                          <div class="edit-field">
-                            <label>总量</label>
-                            <div class="edit-field-row">
-                              <input v-model="rec.totalQty" type="text" placeholder="数量" class="edit-input small" />
-                              <select v-model="rec.totalUnit" class="edit-select mini">
-                                <option value="">单位</option>
-                                <option v-for="u in medicineTotalUnits" :key="u" :value="u">{{ u }}</option>
-                              </select>
-                            </div>
-                          </div>
-                          <div class="edit-field">
+                          <div class="secondary-field">
                             <label>药房</label>
                             <select v-model="rec.pharmacy" class="edit-select">
                               <option value="">请选择</option>
-                              <option v-for="p in pharmacyOptions" :key="p" :value="p">{{ p }}</option>
+                              <option v-for="option in pharmacyOptions" :key="option" :value="option">{{ option }}</option>
                             </select>
                           </div>
-                          <div class="edit-field">
+                          <div class="secondary-field">
                             <label>备注</label>
                             <input v-model="rec.remark" type="text" placeholder="备注" class="edit-input" />
                           </div>
-                          <div class="edit-field">
+                          <div class="secondary-field">
                             <label>医保限用</label>
                             <select v-model="rec.insuranceType" class="edit-select">
-                              <option v-for="i in insuranceOptions" :key="i" :value="i">{{ i }}</option>
+                              <option v-for="option in insuranceOptions" :key="option" :value="option">{{ option }}</option>
                             </select>
                           </div>
-                        </template>
+                        </div>
+                      </template>
 
-                        <!-- Exam fields -->
-                        <template v-if="rec.type === 'exam'">
-                          <div class="edit-field">
+                      <template v-if="rec.type === 'exam' && isTreatmentEditorExpanded(rec)">
+                        <div class="secondary-field-grid">
+                          <div class="secondary-field">
+                            <label>规定病</label>
+                            <input v-model="rec.regulatedDisease" type="text" placeholder="规定病" class="edit-input" />
+                          </div>
+                          <div class="secondary-field">
                             <label>部位方式</label>
                             <input v-model="rec.bodySite" type="text" placeholder="请输入部位" class="edit-input" />
                           </div>
-                          <div class="edit-field">
+                          <div class="secondary-field">
                             <label>总量</label>
                             <input v-model="rec.totalQty" type="text" placeholder="数量" class="edit-input mini" />
                           </div>
-                          <div class="edit-field">
+                          <div class="secondary-field">
                             <label>执行科室</label>
                             <input v-model="rec.execDept" type="text" placeholder="科室" class="edit-input" />
                           </div>
-                          <div class="edit-field">
+                          <div class="secondary-field">
                             <label>备注</label>
                             <input v-model="rec.remark" type="text" placeholder="备注" class="edit-input" />
                           </div>
-                          <div class="edit-field">
+                          <div class="secondary-field">
                             <label>医保限用</label>
                             <select v-model="rec.insuranceType" class="edit-select">
-                              <option v-for="i in insuranceOptions" :key="i" :value="i">{{ i }}</option>
+                              <option v-for="option in insuranceOptions" :key="option" :value="option">{{ option }}</option>
                             </select>
                           </div>
-                        </template>
+                        </div>
+                      </template>
 
-                        <!-- Lab test fields -->
-                        <template v-if="rec.type === 'lab_test'">
-                          <div class="edit-field">
+                      <template v-if="rec.type === 'lab_test' && isTreatmentEditorExpanded(rec)">
+                        <div class="secondary-field-grid">
+                          <div class="secondary-field">
+                            <label>规定病</label>
+                            <input v-model="rec.regulatedDisease" type="text" placeholder="规定病" class="edit-input" />
+                          </div>
+                          <div class="secondary-field">
                             <label>部位方式</label>
                             <input v-model="rec.bodySite" type="text" placeholder="部位" class="edit-input" />
                           </div>
-                          <div class="edit-field">
+                          <div class="secondary-field">
                             <label>总量</label>
                             <input v-model="rec.totalQty" type="text" placeholder="数量" class="edit-input mini" />
                           </div>
-                          <div class="edit-field">
+                          <div class="secondary-field">
                             <label>执行科室</label>
                             <input v-model="rec.execDept" type="text" placeholder="科室" class="edit-input" />
                           </div>
-                          <div class="edit-field">
+                          <div class="secondary-field">
                             <label>备注</label>
                             <input v-model="rec.remark" type="text" placeholder="备注" class="edit-input" />
                           </div>
-                          <div class="edit-field">
+                          <div class="secondary-field">
                             <label>医保限用</label>
                             <select v-model="rec.insuranceType" class="edit-select">
-                              <option v-for="i in insuranceOptions" :key="i" :value="i">{{ i }}</option>
+                              <option v-for="option in insuranceOptions" :key="option" :value="option">{{ option }}</option>
                             </select>
                           </div>
-                        </template>
+                        </div>
+                      </template>
 
-                        <!-- Procedure fields -->
-                        <template v-if="rec.type === 'procedure'">
-                          <div class="edit-field">
+                      <template v-if="rec.type === 'procedure' && isTreatmentEditorExpanded(rec)">
+                        <div class="secondary-field-grid">
+                          <div class="secondary-field">
+                            <label>规定病</label>
+                            <input v-model="rec.regulatedDisease" type="text" placeholder="规定病" class="edit-input" />
+                          </div>
+                          <div class="secondary-field">
                             <label>总量</label>
                             <div class="edit-field-row">
                               <input v-model="rec.totalQty" type="text" placeholder="数量" class="edit-input small" />
                               <span class="edit-unit">次</span>
                             </div>
                           </div>
-                          <div class="edit-field">
+                          <div class="secondary-field">
                             <label>执行科室</label>
                             <input v-model="rec.execDept" type="text" placeholder="科室" class="edit-input" />
                           </div>
-                          <div class="edit-field">
+                          <div class="secondary-field">
                             <label>医保限用</label>
                             <select v-model="rec.insuranceType" class="edit-select">
-                              <option v-for="i in insuranceOptions" :key="i" :value="i">{{ i }}</option>
+                              <option v-for="option in insuranceOptions" :key="option" :value="option">{{ option }}</option>
                             </select>
                           </div>
-                        </template>
-                      </div>
+                        </div>
+                      </template>
                     </div>
-                  </div>
+                  </article>
                 </div>
               </section>
             </template>
 
             <div v-else class="empty-text">
-              <template v-if="selectedDiagnosis">点击"AI推荐方案"获取治疗建议</template>
-              <template v-else>请先选择诊断后再获取治疗方案</template>
+              <template v-if="selectedDiagnosis">暂无治疗建议</template>
+              <template v-else>请先选择诊断</template>
             </div>
           </div>
-        </div>
-      </div>
+        </section>
       </div>
 
-      <!-- Fixed Action Area -->
-      <div class="fixed-action-area">
-        <button class="writeback-btn" :disabled="!canSubmit" @click="handleBatchWriteBack">
-          <template v-if="submitting">提交中...</template>
-          <template v-else>一键回写</template>
-        </button>
-        <button class="back-btn" @click="emit('close')">返回</button>
-      </div>
-    </div>
-
-    <!-- Checklist Modal -->
-    <div v-if="showChecklistModal" class="modal-overlay" @click.self="showChecklistModal = false">
-      <div class="modal checklist-modal">
-        <div class="modal-header">
-          <h3>鉴别排查</h3>
-          <button class="close-btn" @click="showChecklistModal = false">
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
-          </button>
-        </div>
-        <div class="modal-body">
-          <div class="checklist-intro">
-            <p>以下问题有助于排查诊断风险，请逐项确认：</p>
-          </div>
-          <div class="checklist-items">
-            <label v-for="(item, index) in checklistItems" :key="index" class="checklist-item-label">
-              <input type="checkbox" v-model="item.checked" />
-              <span class="checklist-text">{{ item.question }}</span>
-            </label>
-          </div>
-          <div class="checklist-notes-box">
-            <label>补充说明：</label>
-            <textarea v-model="checklistNotes" placeholder="填写相关补充信息..."></textarea>
-          </div>
-          <div class="checklist-actions">
-            <button class="btn-secondary" @click="showChecklistModal = false">暂不确认 (跳过)</button>
-            <button class="btn-primary" @click="handleChecklistConfirm" :disabled="!checklistItems.some(i => i.checked) && !checklistNotes">确认</button>
-          </div>
-        </div>
-      </div>
     </div>
   </div>
 </template>
 
 <style scoped>
 .voice-consultation-new {
-  width: 100%;
+  --voice-font-min: 13px;
+  --voice-font-main: 14px;
+  --voice-font-strong: 14px;
+  --voice-border: #dbe4ef;
+  --voice-border-strong: #cbd7e6;
+  --voice-text: #1f2937;
+  --voice-text-muted: #66758a;
+  --voice-accent: #2b7fe3;
+  --voice-warning: #c97a11;
+  box-sizing: border-box;
   height: 100%;
-  display: flex;
-  flex-direction: column;
-  background: var(--color-background-gray, #f8f9fc);
-  overflow: hidden;
+  min-height: 0;
+  padding: 20px 20px 28px;
+  background: linear-gradient(180deg, #f8fafc 0%, #f5f7fb 100%);
+  color: var(--voice-text);
+  font-size: var(--voice-font-main);
+  overflow-y: auto;
+  overflow-x: hidden;
+  scrollbar-gutter: stable;
 }
 
-/* ── Patient Header ──────────────────────────────────── */
-.patient-header {
+.pane-card {
+  background: rgba(255, 255, 255, 0.96);
+  border: 1px solid var(--voice-border);
+  border-radius: 18px;
+  box-shadow: 0 10px 28px rgba(15, 23, 42, 0.04);
+}
+
+.voice-topbar {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  flex-wrap: nowrap;
-  background: #ffffff;
-  padding: 12px 20px;
-  border-bottom: 1px solid #e2e8f0;
-  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.02);
-  z-index: 10;
+  gap: 12px;
+  padding: 14px 16px;
+  margin-bottom: 16px;
+  position: sticky;
+  top: 0;
+  z-index: 6;
+}
+
+.voice-topbar-actions {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
+  margin-left: auto;
   flex-shrink: 0;
 }
 
-.patient-card {
+.topbar-btn {
+  min-width: 96px;
+}
+
+.patient-summary {
   display: flex;
   align-items: center;
   gap: 12px;
-  flex: 1;
   min-width: 0;
 }
 
-.avatar {
-  width: 36px;
-  height: 36px;
-  border-radius: 50%;
+.patient-avatar {
+  width: 38px;
+  height: 38px;
+  border-radius: 12px;
   display: flex;
   align-items: center;
   justify-content: center;
-  background: #f1f5f9;
-  color: #64748b;
+  background: linear-gradient(135deg, #2b7fe3, #3fa2ff);
   flex-shrink: 0;
+}
+
+.patient-summary-text {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.patient-summary-line {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
 }
 
 .patient-name {
-  font-size: 16px;
-  font-weight: 600;
-  color: #0f172a;
+  font-size: var(--voice-font-strong);
+  font-weight: 700;
+  color: var(--voice-text);
 }
 
-.patient-tag {
-  font-size: 12px;
-  color: #475569;
-  background: #f1f5f9;
-  padding: 3px 10px;
-  border-radius: 12px;
-  font-weight: 500;
-}
-
-.id-tag {
-  font-family: monospace;
-  letter-spacing: 0.5px;
-}
-
-.header-actions {
-  display: flex;
+.patient-chip {
+  display: inline-flex;
   align-items: center;
-  gap: 12px;
-  flex-shrink: 0;
+  min-height: 28px;
+  padding: 0 10px;
+  border-radius: 999px;
+  background: #eef3f8;
+  color: var(--voice-text-muted);
+  font-size: var(--voice-font-min);
 }
 
-.btn-cancel {
-  padding: 8px 18px;
-  border: 1px solid #cbd5e1;
-  border-radius: 8px;
-  background: #fff;
-  color: #475569;
-  font-size: 13px;
-  font-weight: 500;
-  cursor: pointer;
-  transition: all 0.2s;
+.patient-chip-wide {
+  max-width: 280px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
-.btn-cancel:hover {
-  background: #f8fafc;
-  color: #0f172a;
+.patient-summary-subline {
+  font-size: var(--voice-font-min);
+  color: var(--voice-text-muted);
 }
 
-.btn-submit {
-  padding: 8px 20px;
-  border: none;
-  border-radius: 8px;
-  background: #2563eb;
-  color: #ffffff;
-  font-size: 13px;
-  font-weight: 600;
-  cursor: pointer;
-  transition: all 0.2s;
-  box-shadow: 0 2px 4px rgba(37, 99, 235, 0.2);
-}
-
-.btn-submit:hover:not(:disabled) {
-  background: #1d4ed8;
-  box-shadow: 0 4px 8px rgba(37, 99, 235, 0.3);
-}
-
-.btn-submit:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-  box-shadow: none;
-}
-
-/* ── Loading State ───────────────────────────────────── */
 .loading-state {
-  flex: 1;
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
+  gap: 12px;
+  min-height: 280px;
+}
+
+.loading-title,
+.loading-inline span,
+.empty-text {
+  font-size: var(--voice-font-main);
+  color: var(--voice-text-muted);
+}
+
+.medical-record-page {
+  display: flex;
+  flex-direction: column;
   gap: 16px;
 }
 
-.loading-title {
-  color: #1E293B;
-  font-size: 15px;
-  font-weight: 600;
-}
-
-.ai-spinner {
-  position: relative;
-  width: 44px;
-  height: 44px;
-}
-
-.ai-spinner.small {
-  width: 24px;
-  height: 24px;
-}
-
-.spinner-ring {
-  position: absolute;
-  inset: 0;
-  border: 2.5px solid #EEF2F6;
-  border-top-color: #2B7FE3;
-  border-radius: 50%;
-  animation: spin 1s linear infinite;
-}
-
-.spinner-core {
-  position: absolute;
-  top: 50%;
-  left: 50%;
-  transform: translate(-50%, -50%);
-  width: 20px;
-  height: 20px;
-  background: radial-gradient(circle, #2B7FE3 0%, #4A9BF5 100%);
-  border-radius: 50%;
-  box-shadow: 0 0 10px rgba(43, 127, 227, 0.35);
-  animation: pulse-core 1.5s ease-in-out infinite;
-}
-
-.ai-spinner.small .spinner-core {
-  width: 10px;
-  height: 10px;
-}
-
-@keyframes spin {
-  to { transform: rotate(360deg); }
-}
-
-@keyframes pulse-core {
-  0% { transform: translate(-50%, -50%) scale(0.8); opacity: 0.8; }
-  50% { transform: translate(-50%, -50%) scale(1.1); opacity: 1; }
-  100% { transform: translate(-50%, -50%) scale(0.8); opacity: 0.8; }
-}
-
-.loading-inline {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 12px 0;
-  color: var(--color-text-muted, #64748b);
-  font-size: 13px;
-}
-
-/* ── Medical Record Page ─────────────────────────────── */
-.medical-record-page {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  background: var(--color-background-gray, #f8f9fc);
-  overflow: hidden;
-  position: relative;
-  min-height: 0;
-}
-
-/* ── Two-Column Layout ───────────────────────────────── */
 .record-content {
-  flex: 1;
-  display: flex;
-  gap: 0;
-  overflow: hidden;
-  min-height: 0;
+  display: grid;
+  grid-template-columns: minmax(360px, 0.92fr) minmax(0, 1.08fr);
+  gap: 16px;
+  align-items: start;
 }
 
-.record-panel {
-  flex: 1;
-  background: #fff;
-  border-radius: 0;
-  box-shadow: none;
+.vcn-panel {
+  min-width: 0;
+}
+
+.vcn-left-panel {
+  padding: 18px;
+}
+
+.vcn-right-panel {
   display: flex;
   flex-direction: column;
-  overflow: hidden;
-  border: none;
-  border-right: 1px solid #EEF2F6;
+  gap: 14px;
+  min-width: 0;
+  border-radius: 20px;
+  overflow: clip;
+  isolation: isolate;
 }
 
-.record-panel:last-child {
-  border-right: none;
-}
-
-.left-panel {
-  flex: 0.8;
-}
-
-.right-panel {
-  flex: 1.2;
-  background: #FAFBFD;
-  border-right: none;
-}
-
-.panel-header {
-  padding: 10px 16px;
-  border-bottom: 1px solid #EEF2F6;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  background: #fff;
-}
-
-.right-panel .panel-header {
-  background: #FAFBFD;
-}
-
-.panel-header h3 {
-  margin: 0;
-  font-size: 14px;
-  color: #1E293B;
-  font-weight: 600;
-}
-
-.panel-body {
-  flex: 1;
-  padding: 12px;
-  overflow-y: auto;
-  position: relative;
-}
-
-/* ── Record Fields ───────────────────────────────────── */
-.record-field {
-  margin-bottom: 16px;
-}
-
-.record-field label {
-  display: block;
-  font-size: 13px;
-  font-weight: 600;
-  color: #334155;
-  margin-bottom: 8px;
-}
-
-.record-field textarea {
-  width: 100%;
-  padding: 10px 12px;
-  background: #f8fafc;
-  border: 1px solid transparent;
-  border-radius: 8px;
-  font-size: 14px;
-  line-height: 1.6;
-  color: #0f172a;
-  resize: vertical;
-  box-sizing: border-box;
-  font-family: inherit;
-  transition: all 0.2s;
-}
-
-.record-field textarea:focus {
-  outline: none;
-  background: #fff;
-  border-color: #2563eb;
-  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.1);
-}
-
-/* ── AI Card ─────────────────────────────────────────── */
-.ai-card {
-  background: #ffffff;
-  border-radius: 12px;
-  padding: 20px;
-  margin-bottom: 16px;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.03);
-  border: 1px solid #f1f5f9;
-  position: relative;
-  min-height: 120px;
-}
-
-.ai-card-title-row {
+.section-heading {
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
   gap: 12px;
-  margin-bottom: 16px;
-  padding-bottom: 12px;
-  border-bottom: 1px solid #f1f5f9;
+  margin-bottom: 14px;
 }
 
-.ai-card-title-row h4 {
+.section-heading-split {
+  margin-bottom: 12px;
+}
+
+.treatment-heading {
+  margin-bottom: 12px;
+}
+
+.section-kicker {
+  margin: 0 0 4px;
+  font-size: var(--voice-font-min);
+  color: var(--voice-text-muted);
+}
+
+.section-title {
   margin: 0;
-  font-size: 15px;
+  font-size: var(--voice-font-strong);
   font-weight: 700;
-  color: #0f172a;
+  color: var(--voice-text);
 }
 
-.ai-recommend-btn {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  padding: 6px 14px;
-  border: none;
-  border-radius: 8px;
-  background: #eff6ff;
-  color: #2563eb;
-  font-size: 13px;
-  font-weight: 600;
-  cursor: pointer;
-  transition: all 0.2s;
+.section-summary {
+  font-size: var(--voice-font-min);
+  color: var(--voice-text-muted);
+  white-space: nowrap;
 }
 
-.ai-recommend-btn:hover:not(:disabled) {
-  background: #dbeafe;
-}
-
-.ai-recommend-btn:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-}
-
-/* ── Diagnosis List ──────────────────────────────────── */
-.diagnosis-list {
-  list-style: none;
-  margin: 0;
-  padding: 0;
+.record-fields {
   display: flex;
   flex-direction: column;
+  gap: 14px;
+}
+
+.record-field {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.field-grow {
+  flex: 1;
+}
+
+.record-field label,
+.primary-field label,
+.secondary-field label {
+  font-size: var(--voice-font-min);
+  color: var(--voice-text-muted);
+  font-weight: 500;
+}
+
+.record-field textarea,
+.edit-input,
+.edit-select {
+  width: 100%;
+  border: 1px solid var(--voice-border);
+  border-radius: 12px;
+  background: #fff;
+  color: var(--voice-text);
+  font-size: var(--voice-font-main);
+  outline: none;
+  transition: border-color 0.18s ease, box-shadow 0.18s ease;
+}
+
+.record-field textarea {
+  padding: 12px 14px;
+  line-height: 1.7;
+  resize: vertical;
+}
+
+.record-field textarea:focus,
+.edit-input:focus,
+.edit-select:focus {
+  border-color: rgba(43, 127, 227, 0.5);
+  box-shadow: 0 0 0 3px rgba(43, 127, 227, 0.1);
+}
+
+.decision-overview,
+.decision-card {
+  padding: 16px;
+}
+
+.decision-overview {
+  display: grid;
+  grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr) 132px;
   gap: 10px;
 }
 
-.diagnosis-item {
+.overview-item {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+  padding: 12px 14px;
+  border-radius: 14px;
+  background: #f7f9fc;
+  border: 1px solid #e7edf5;
+}
+
+.overview-item-compact {
+  align-items: flex-start;
+}
+
+.overview-label {
+  font-size: var(--voice-font-min);
+  color: var(--voice-text-muted);
+}
+
+.overview-value {
+  font-size: var(--voice-font-strong);
+  font-weight: 700;
+  color: var(--voice-text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.vcn-diagnosis-list,
+.vcn-treatment-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.vcn-diagnosis-item,
+.vcn-treatment-item {
   position: relative;
-  padding: 14px 18px;
-  border: 1px solid transparent;
-  border-radius: 10px;
-  background: #f8fafc;
-  cursor: pointer;
-  transition: all 0.2s ease;
-}
-
-.diagnosis-item:hover {
-  background: #f1f5f9;
-}
-
-.diagnosis-item.active {
-  background: #eff6ff;
-  border-color: #bfdbfe;
-  box-shadow: 0 2px 8px rgba(59, 130, 246, 0.08);
-}
-
-.diagnosis-item::before {
-  content: '';
-  display: inline-block;
-  width: 18px;
-  height: 18px;
-  border: 2px solid #cbd5e1;
-  border-radius: 50%;
-  position: absolute;
-  left: 18px;
-  top: 16px;
-  flex-shrink: 0;
+  padding: 12px 14px 12px 34px;
+  border: 1px solid var(--voice-border);
+  border-radius: 14px;
   background: #fff;
-  transition: all 0.2s;
+  cursor: pointer;
+  transition: border-color 0.18s ease, box-shadow 0.18s ease, transform 0.18s ease;
 }
 
-.diagnosis-item.active::before {
-  background: #2563eb;
-  border-color: #2563eb;
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='white' stroke-width='4' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='20 6 9 17 4 12'%3E%3C/polyline%3E%3C/svg%3E");
-  background-repeat: no-repeat;
-  background-position: center;
-  background-size: 10px;
+.vcn-diagnosis-item:hover,
+.vcn-treatment-item:hover {
+  border-color: var(--voice-border-strong);
+  box-shadow: 0 8px 22px rgba(15, 23, 42, 0.04);
 }
 
-.diag-header {
+.vcn-diagnosis-item.selected,
+.vcn-treatment-item.selected {
+  background: #fff;
+  border-color: var(--voice-border);
+  box-shadow: none;
+}
+
+.diag-selected-mark,
+.card-selected-mark {
+  position: absolute;
+  top: 14px;
+  left: 14px;
+  width: 12px;
+  height: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--voice-accent);
+}
+
+.card-row {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 8px;
-  margin-bottom: 6px;
-  padding-left: 32px;
+  gap: 12px;
+  min-width: 0;
 }
 
-.diag-name-group {
+.card-main {
+  flex: 1;
+  min-width: 0;
+}
+
+.card-title-wrap {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+  max-width: 100%;
+}
+
+.card-title-line {
   display: flex;
   align-items: center;
   gap: 8px;
+  min-width: 0;
+  flex-wrap: nowrap;
+  overflow: hidden;
 }
 
-.diag-name {
+.card-title {
+  display: block;
+  font-size: var(--voice-font-strong);
   font-weight: 700;
-  font-size: 14px;
-  color: #0f172a;
-  display: flex;
+  color: var(--voice-text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.reason-tooltip-trigger {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  flex-shrink: 0;
+}
+
+.reason-icon-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: #8a98aa;
+  cursor: help;
+}
+
+.reason-icon-btn:hover,
+.reason-tooltip-trigger:hover .reason-icon-btn,
+.reason-tooltip-trigger:focus-within .reason-icon-btn {
+  color: var(--voice-accent);
+}
+
+.hover-reason-tooltip {
+  position: absolute;
+  left: 0;
+  top: calc(100% + 8px);
+  z-index: 12;
+  width: min(320px, 48vw);
+  padding: 10px 12px;
+  border-radius: 12px;
+  border: 1px solid #d7e3f0;
+  background: rgba(255, 255, 255, 0.98);
+  box-shadow: 0 14px 28px rgba(15, 23, 42, 0.14);
+  color: var(--voice-text-muted);
+  font-size: var(--voice-font-min);
+  line-height: 1.6;
+  white-space: normal;
+  opacity: 0;
+  visibility: hidden;
+  transform: translateY(-4px);
+  transition: opacity 0.16s ease, transform 0.16s ease, visibility 0.16s ease;
+  pointer-events: none;
+}
+
+.reason-tooltip-trigger:hover .hover-reason-tooltip,
+.reason-tooltip-trigger:focus-within .hover-reason-tooltip {
+  opacity: 1;
+  visibility: visible;
+  transform: translateY(0);
+}
+
+.meta-token {
+  flex-shrink: 0;
+  font-size: var(--voice-font-min);
+  color: var(--voice-text-muted);
+  white-space: nowrap;
+}
+
+.meta-token.warning,
+.status-chip.warning {
+  color: var(--voice-warning);
+}
+
+.card-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.inline-arrow-btn,
+.close-btn {
+  border: none;
+  background: transparent;
+  padding: 0;
+  color: var(--voice-text-muted);
+  cursor: pointer;
+}
+
+.inline-arrow-btn:hover,
+.close-btn:hover {
+  color: var(--voice-accent);
+}
+
+.inline-arrow-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 999px;
+}
+
+.action-arrow {
+  background: #f1f5f9;
+}
+
+.inline-arrow {
+  width: 7px;
+  height: 7px;
+  border-right: 1.5px solid currentColor;
+  border-bottom: 1.5px solid currentColor;
+  transform: rotate(45deg);
+  transition: transform 0.18s ease;
+}
+
+.inline-arrow.open {
+  transform: rotate(225deg);
+}
+
+.status-chip {
+  display: inline-flex;
   align-items: center;
   gap: 6px;
+  min-height: 28px;
+  padding: 0 10px;
+  border-radius: 999px;
+  background: #f7f9fc;
+  border: 1px solid #ebf0f6;
+  font-size: var(--voice-font-min);
+  color: var(--voice-text-muted);
 }
 
-.active .diag-name {
-  color: #1e40af;
+.related-section {
+  margin-top: 10px;
 }
 
-.diag-rate {
-  font-size: 11px;
-  color: #fff;
-  background: #10b981;
-  padding: 3px 10px;
-  border-radius: 12px;
-  font-weight: 600;
-}
-
-.diag-rate.rate-high {
-  background: #10b981;
-}
-
-.diag-rate.rate-medium {
-  background: #3b82f6;
-}
-
-.diag-rate.rate-low {
-  background: #f59e0b;
-}
-
-.diag-rationale {
-  font-size: 13px;
-  color: #64748b;
-  line-height: 1.6;
-  padding-left: 32px;
-}
-
-.empty-text {
-  text-align: center;
-  color: var(--color-text-muted, #94a3b8);
-  font-size: 13px;
-  padding: 20px 0;
-}
-
-/* ── Treatment Sections ──────────────────────────────── */
-.treatment-section {
+.related-list {
   display: flex;
-  flex-direction: column;
-  gap: 0;
-  padding: 0;
-  border-radius: 0;
-  border: none;
-  border-bottom: 1px solid var(--color-border-light, #EEF2F6);
-  background: transparent;
+  flex-wrap: wrap;
+  gap: 8px;
 }
 
-.treatment-section:last-child {
-  border-bottom: none;
+.related-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 32px;
+  padding: 0 12px;
+  border: 1px solid var(--voice-border);
+  border-radius: 999px;
+  background: #fff;
+  color: var(--voice-text);
+  font-size: var(--voice-font-min);
+  cursor: pointer;
+}
+
+.related-item:hover {
+  border-color: var(--voice-accent);
+  color: var(--voice-accent);
+}
+
+.related-code {
+  color: var(--voice-text-muted);
+}
+
+.treatment-section + .treatment-section {
+  margin-top: 14px;
 }
 
 .treatment-section-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 12px;
-  padding: 14px 0 8px;
-  border-bottom: 1px solid var(--color-border-light, #EEF2F6);
+  gap: 10px;
+  margin-bottom: 10px;
 }
 
 .treatment-section-header h5 {
   margin: 0;
-  font-size: 13px;
+  font-size: var(--voice-font-strong);
   font-weight: 700;
-  color: var(--color-text-strong, #1e293b);
+  color: var(--voice-text);
+}
+
+.treatment-section-summary {
+  font-size: var(--voice-font-min);
+  color: var(--voice-text-muted);
+}
+
+.editor-shell {
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid #ebf0f6;
+}
+
+.medicine-primary-fields {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.primary-field,
+.secondary-field {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 8px;
+  min-width: 0;
+  padding: 8px 10px;
+  border-radius: 12px;
+  border: 1px solid #e7edf5;
+  background: #fafbfd;
 }
 
-.treatment-section-header h5::before {
-  content: '';
-  display: inline-block;
-  width: 3px;
-  height: 14px;
-  border-radius: 2px;
-  background: #2B7FE3;
+.primary-field {
+  min-height: 44px;
 }
 
-.treatment-section-header-right {
-  display: flex;
-  align-items: center;
-  gap: 12px;
+.primary-field.editing {
+  border-color: rgba(43, 127, 227, 0.36);
+  background: #fff;
 }
 
-.treatment-section-pill {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  min-height: 22px;
-  padding: 0 8px;
-  border-radius: 4px;
+.primary-field label,
+.secondary-field label {
+  flex-shrink: 0;
+  white-space: nowrap;
+}
+
+.field-read-btn {
+  flex: 1;
+  min-width: 0;
+  border: none;
   background: transparent;
-  color: var(--color-text-muted, #94a3b8);
-  font-size: 11px;
-  font-weight: 400;
+  padding: 0;
+  text-align: left;
+  font-size: var(--voice-font-strong);
+  font-weight: 700;
+  color: var(--voice-text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  cursor: text;
 }
 
-.treatment-section-pill.strong {
-  color: var(--color-success, #10b981);
+.field-read-btn.placeholder {
+  color: #98a6b9;
+  font-weight: 500;
 }
 
-.treatment-list {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-  padding-top: 8px;
-}
-
-.treatment-item {
-  position: relative;
-  display: flex;
-  flex-direction: column;
-  background: #f8fafc;
-  border: 1px solid transparent;
-  border-radius: 10px;
-  padding: 14px;
-  gap: 6px;
-  cursor: pointer;
-  transition: all 0.2s ease;
-  overflow: visible;
-}
-
-.treatment-item:hover {
-  background: #f1f5f9;
-}
-
-.treatment-item.active {
-  background: #eff6ff;
-  border-color: #bfdbfe;
-  box-shadow: 0 2px 8px rgba(59, 130, 246, 0.08);
-}
-
-.selected-mark {
-  position: absolute;
-  top: 14px;
-  left: 14px;
-  width: 18px;
-  height: 18px;
-  background: #2563eb;
-  color: white;
-  border-radius: 50%;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  box-shadow: 0 2px 4px rgba(37, 99, 235, 0.3);
-}
-
-.active .rec-content {
-  padding-left: 28px;
-}
-
-.rec-content {
+.field-editor {
   flex: 1;
   min-width: 0;
 }
 
-.rec-header {
+.route-field-editor {
+  position: relative;
+}
+
+.route-option-list {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  right: auto;
+  z-index: 8;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: max(100%, 200px);
+  width: max-content;
+  max-width: min(360px, 48vw);
+  max-height: 188px;
+  overflow-y: auto;
+  padding: 6px;
+  border: 1px solid #d7e3f0;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.98);
+  box-shadow: 0 12px 24px rgba(15, 23, 42, 0.12);
+}
+
+.route-option-item {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 8px;
-  margin-bottom: 0;
+  width: 100%;
+  min-height: 34px;
+  padding: 0 10px;
+  border: none;
+  border-radius: 10px;
+  background: transparent;
+  color: var(--voice-text);
+  cursor: pointer;
+  text-align: left;
 }
 
-.rec-name-group {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 6px;
+.route-option-item:hover {
+  background: #f3f7fc;
+}
+
+.route-option-text,
+.route-option-meta {
   min-width: 0;
+  font-size: var(--voice-font-min);
 }
 
-.rec-tag {
-  font-size: 11px;
-  padding: 1px 6px;
-  border-radius: 3px;
-  font-weight: 600;
-  line-height: 1.6;
-}
-
-.rec-tag.medicine {
-  background: rgba(16, 185, 129, 0.1);
-  color: #059669;
-}
-
-.rec-tag.exam {
-  background: rgba(99, 102, 241, 0.08);
-  color: #4F46E5;
-}
-
-.rec-tag.lab_test {
-  background: rgba(245, 158, 11, 0.1);
-  color: #D97706;
-}
-
-.rec-tag.procedure {
-  background: rgba(236, 72, 153, 0.08);
-  color: #DB2777;
-}
-
-.rec-name {
-  font-weight: 600;
-  font-size: 13px;
-  color: var(--color-text-strong, #1e293b);
-}
-
-.matched-inline {
-  display: inline-flex;
-  align-items: center;
-  gap: 3px;
-  background: rgba(16, 185, 129, 0.08);
-  padding: 1px 6px;
-  border-radius: 3px;
-  border: 1px solid rgba(16, 185, 129, 0.2);
-  font-size: 11px;
-  margin-left: 4px;
-}
-
-.match-icon {
-  color: #059669;
-  font-weight: 600;
-  font-size: 10px;
-}
-
-.match-name {
-  font-weight: 600;
-  color: var(--color-success-text, #059669);
-}
-
-.match-spec {
-  color: var(--color-success, #10b981);
-  font-size: 11px;
-}
-
-.unmatched-icon {
-  margin-left: 4px;
-  font-size: 11px;
-  opacity: 0.5;
-}
-
-.rec-reason,
-.rec-usage {
-  font-size: 12px;
-  color: var(--color-text-muted, #64748b);
-  line-height: 1.5;
-}
-
-/* ── Inline Edit Fields ──────────────────────────────── */
-.rec-edit-fields {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 12px;
-  margin-top: 12px;
-  padding: 14px;
-  background: #ffffff;
-  border-radius: 8px;
-  box-shadow: 0 1px 3px rgba(0,0,0,0.02);
-}
-
-.edit-field {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  min-width: 0;
-}
-
-.edit-field label {
-  font-size: 12px;
-  color: #64748b;
-  font-weight: 500;
+.route-option-text {
+  flex: 1;
+  color: var(--voice-text);
   white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.route-option-meta,
+.route-option-empty {
+  color: var(--voice-text-muted);
+}
+
+.route-option-meta {
   flex-shrink: 0;
+  white-space: nowrap;
+}
+
+.route-option-empty {
+  padding: 6px 10px;
+  font-size: var(--voice-font-min);
 }
 
 .edit-field-row {
   display: flex;
   align-items: center;
-  gap: 4px;
+  gap: 6px;
+}
+
+.secondary-field-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+  margin-top: 8px;
 }
 
 .edit-input,
 .edit-select {
-  font-size: 13px;
-  padding: 4px 8px;
-  border: 1px solid #e2e8f0;
-  border-radius: 6px;
-  background: #f8fafc;
-  color: #0f172a;
-  outline: none;
-  transition: all 0.2s;
+  min-height: 38px;
+  padding: 0 10px;
 }
 
-.edit-input:hover,
-.edit-select:hover {
-  background: #fff;
-  border-color: #cbd5e1;
+.edit-input.small {
+  max-width: 86px;
 }
 
-.edit-input:focus,
-.edit-select:focus {
-  background: #fff;
-  border-color: #2563eb;
-  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.1);
-}
-
-.edit-input { width: 80px; }
-.edit-input.small { width: 56px; }
-.edit-input.mini { width: 44px; }
-
-.edit-select {
-  min-width: 72px;
-  cursor: pointer;
-}
-
+.edit-input.mini,
 .edit-select.mini {
-  min-width: 54px;
+  max-width: 74px;
 }
 
 .edit-unit {
-  font-size: 12px;
-  color: #64748b;
-  margin-left: 2px;
+  font-size: var(--voice-font-min);
+  color: var(--voice-text-muted);
 }
 
-/* ── Fixed Action Area ───────────────────────────────── */
-.fixed-action-area {
-  position: absolute;
-  bottom: 12px;
-  right: 24px;
-  z-index: 50;
-  display: flex;
-  align-items: center;
-  gap: 12px;
-}
-
-.writeback-btn {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  min-height: 36px;
-  padding: 0 20px;
-  background: var(--color-info, #2B7FE3);
-  color: white;
-  border: none;
-  border-radius: 6px;
-  font-size: 14px;
-  font-weight: 500;
-  cursor: pointer;
-  transition: all 0.2s;
-}
-
-.writeback-btn:hover {
-  background: var(--color-primary-dark, #1d6fc9);
-}
-
-.writeback-btn:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-}
-
-.back-btn {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  min-height: 36px;
-  padding: 0 20px;
-  background: var(--color-background-white, #fff);
-  color: var(--color-text-medium, #64748b);
-  border: 1px solid var(--color-border-medium, #CBD5E1);
-  border-radius: 6px;
-  font-size: 14px;
-  cursor: pointer;
-  transition: all 0.2s;
-}
-
-.back-btn:hover {
-  border-color: var(--color-info, #2B7FE3);
-  color: var(--color-info, #2B7FE3);
-}
-
-/* ── Related Diagnosis Dropdown ────────────────────── */
-.inline-related-trigger {
-  cursor: pointer;
-  padding: 2px 4px;
-  border-radius: 4px;
-  color: var(--color-text-muted, #94a3b8);
-  transition: all 0.2s;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-
-.inline-related-trigger:hover {
-  background: rgba(43, 127, 227, 0.08);
-  color: #2B7FE3;
-}
-
-.arrow {
-  font-size: 10px;
-  transition: transform 0.2s;
-}
-
-.arrow.open {
-  transform: rotate(180deg);
-}
-
-.related-section {
-  margin-top: 8px;
-  padding-left: 28px;
-}
-
-.related-list {
-  max-height: 200px;
-  overflow-y: auto;
-  border-top: 1px solid #e2e8f0;
-}
-
-.related-item {
-  padding: 8px 10px;
-  display: flex;
-  gap: 10px;
-  cursor: pointer;
-  transition: background 0.2s;
-  align-items: center;
-}
-
-.related-item:hover {
-  background: #f0f9ff;
-}
-
-.related-code {
-  font-family: monospace;
-  color: var(--color-text-muted, #94a3b8);
-  font-weight: 500;
-  min-width: 60px;
-}
-
-.related-name {
-  color: #334155;
-  font-weight: 500;
-}
-
-/* ── Checklist Indicator ───────────────────────────── */
-.diag-checklist-wrapper {
-  padding-left: 28px;
-  margin-top: 6px;
-}
-
-.checklist-indicator {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  padding: 4px 10px;
-  border-radius: 6px;
-  background: rgba(245, 158, 11, 0.08);
-  color: #d97706;
-  font-size: 12px;
-  font-weight: 500;
-  cursor: pointer;
-  transition: all 0.2s;
-}
-
-.checklist-indicator:hover {
-  background: rgba(245, 158, 11, 0.15);
-}
-
-.checklist-indicator.loading {
-  color: var(--color-text-muted, #94a3b8);
-  background: rgba(148, 163, 184, 0.08);
-  cursor: default;
-}
-
-.checklist-indicator .spinner {
-  animation: spin 1s linear infinite;
-}
-
-/* ── Modal ─────────────────────────────────────────── */
-.modal-overlay {
-  position: fixed;
-  inset: 0;
-  background: rgba(0, 0, 0, 0.4);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  z-index: 1000;
-}
-
-.modal {
-  background: var(--color-background-white, #fff);
-  border-radius: 12px;
-  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.15);
-  max-width: 520px;
-  width: 90%;
-  max-height: 80vh;
-  overflow: hidden;
-  display: flex;
-  flex-direction: column;
-}
-
-.modal-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 16px 20px;
-  border-bottom: 1px solid var(--color-border-light, #EEF2F6);
-}
-
-.modal-header h3 {
-  margin: 0;
-  font-size: 16px;
-  font-weight: 600;
-  color: var(--color-text-strong, #1e293b);
-}
-
-.close-btn {
-  background: transparent;
-  border: none;
-  color: var(--color-text-muted, #94a3b8);
-  cursor: pointer;
-  padding: 4px;
-  border-radius: 4px;
-  transition: all 0.2s;
-}
-
-.close-btn:hover {
-  background: var(--color-background-gray, #f1f5f9);
-  color: var(--color-text-strong, #1e293b);
-}
-
-.modal-body {
-  padding: 20px;
-  overflow-y: auto;
-}
-
-.checklist-intro {
-  margin-bottom: 16px;
-  font-size: 13px;
-  color: var(--color-text-muted, #64748b);
-}
-
-.checklist-intro p {
-  margin: 0;
-}
-
-.checklist-items {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-  margin-bottom: 16px;
-}
-
-.checklist-item-label {
-  display: flex;
-  align-items: flex-start;
-  gap: 10px;
-  padding: 10px 12px;
-  border: 1px solid var(--color-border-light, #EEF2F6);
-  border-radius: 8px;
-  cursor: pointer;
-  transition: all 0.2s;
-}
-
-.checklist-item-label:hover {
-  background: rgba(43, 127, 227, 0.03);
-}
-
-.checklist-item-label input[type="checkbox"] {
-  margin-top: 2px;
-  flex-shrink: 0;
-}
-
-.checklist-text {
-  font-size: 13px;
-  line-height: 1.5;
-  color: var(--color-text-strong, #1e293b);
-}
-
-.checklist-notes-box {
-  margin-bottom: 16px;
-}
-
-.checklist-notes-box label {
-  display: block;
-  font-size: 12px;
-  font-weight: 600;
-  color: var(--color-text-weak, #475569);
-  margin-bottom: 6px;
-}
-
-.checklist-notes-box textarea {
-  width: 100%;
-  padding: 8px 10px;
-  border: 1px solid var(--color-border-medium, #e2e8f0);
-  border-radius: 6px;
-  font-size: 13px;
-  line-height: 1.5;
-  color: var(--color-text-strong, #1e293b);
-  resize: vertical;
-  box-sizing: border-box;
-  font-family: inherit;
-  min-height: 60px;
-}
-
-.checklist-notes-box textarea:focus {
-  outline: none;
-  border-color: var(--color-primary, #3b82f6);
-  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
-}
-
-.checklist-actions {
-  display: flex;
-  justify-content: flex-end;
-  gap: 10px;
-}
-
+.writeback-btn,
+.back-btn,
+.btn-primary,
 .btn-secondary {
-  padding: 8px 16px;
-  border: 1px solid var(--color-border-medium, #CBD5E1);
-  background: var(--color-background-white, #fff);
-  border-radius: 6px;
-  color: var(--color-text-medium, #64748b);
-  font-size: 13px;
+  min-height: 42px;
+  padding: 0 16px;
+  border-radius: 12px;
+  font-size: var(--voice-font-main);
+  font-weight: 600;
   cursor: pointer;
-  transition: all 0.2s;
 }
 
-.btn-secondary:hover {
-  background: var(--color-background-gray, #f1f5f9);
-}
-
+.writeback-btn,
 .btn-primary {
-  padding: 8px 16px;
   border: none;
-  background: var(--color-info, #2B7FE3);
-  border-radius: 6px;
-  color: white;
-  font-size: 13px;
-  font-weight: 500;
-  cursor: pointer;
-  transition: all 0.2s;
+  background: var(--voice-accent);
+  color: #fff;
 }
 
-.btn-primary:hover {
-  background: var(--color-primary-dark, #1d6fc9);
-}
-
+.writeback-btn:disabled,
 .btn-primary:disabled {
-  opacity: 0.5;
+  opacity: 0.55;
   cursor: not-allowed;
+}
+
+.back-btn,
+.btn-secondary {
+  border: 1px solid var(--voice-border);
+  background: rgba(255, 255, 255, 0.96);
+  color: var(--voice-text);
+}
+
+.ai-spinner {
+  position: relative;
+  width: 42px;
+  height: 42px;
+}
+
+.ai-spinner.small {
+  width: 18px;
+  height: 18px;
+}
+
+.spinner-ring,
+.spinner-core,
+.spinner {
+  animation: voice-spin 0.9s linear infinite;
+}
+
+.spinner-ring {
+  position: absolute;
+  inset: 0;
+  border: 2px solid rgba(43, 127, 227, 0.18);
+  border-top-color: var(--voice-accent);
+  border-radius: 50%;
+}
+
+.spinner-core {
+  position: absolute;
+  inset: 9px;
+  border-radius: 50%;
+  background: rgba(43, 127, 227, 0.14);
+}
+
+.loading-inline {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+@keyframes voice-spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (max-width: 1280px) {
+  .record-content {
+    grid-template-columns: minmax(320px, 0.94fr) minmax(0, 1.06fr);
+  }
+
+  .decision-overview {
+    grid-template-columns: 1fr;
+  }
+
+  .medicine-primary-fields {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .secondary-field-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 900px) {
+  .voice-consultation-new {
+    padding: 16px 16px 24px;
+  }
+
+  .record-content {
+    grid-template-columns: 1fr;
+  }
+
+}
+
+@media (max-width: 720px) {
+  .voice-topbar,
+  .decision-overview,
+  .decision-card,
+  .vcn-left-panel {
+    padding: 14px;
+  }
+
+  .patient-summary-line,
+  .card-title-line {
+    flex-wrap: wrap;
+  }
+
+  .voice-topbar {
+    align-items: flex-start;
+  }
+
+  .voice-topbar-actions {
+    width: 100%;
+    justify-content: flex-end;
+  }
+
+  .card-row,
+  .treatment-section-header,
+  .section-heading {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .card-actions {
+    justify-content: flex-start;
+  }
+
+  .medicine-primary-fields,
+  .secondary-field-grid {
+    grid-template-columns: 1fr;
+  }
 }
 </style>
