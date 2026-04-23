@@ -799,7 +799,8 @@ export const TreatmentRecommendationPrompt = {
 
 **输出要求：**
 只返回用药推荐，不要包含检查、检验或处置项目。
-严格返回JSON数组格式，不包含markdown标记`,
+严格返回JSON数组格式，不包含markdown标记。
+每个药品尽量提供结构化字段：spec、dosage、dosageUnit、frequency、frequencyKey、usage、usageKey、totalQty、totalUnit、days；如果确实无法确定，可留空字符串，不要把全部信息只塞进 usage 一项。`,
 
   buildUserPrompt(params: {
     patientName: string;
@@ -828,14 +829,26 @@ ${params.chiefComplaint}
 4. 如需抗生素，说明使用指征和注意事项
 5. 避免过度用药
 6. 不要推荐检查、检验或处置项目
+7. 优先返回结构化字段：规格 spec、单次剂量 dosage、剂量单位 dosageUnit、频次 frequency、频次编码 frequencyKey、用法 usage、用法编码 usageKey、总量 totalQty、总量单位 totalUnit、疗程 days
+8. 若频次/用法能明确标准表达，优先输出中文文本；frequencyKey、usageKey 能确定就补充，不能确定可留空
+9. 若 dosage、总量、疗程无法合理确定，可留空字符串，但不要把这类字段全部混写进 usage
 
 **返回格式：**
 [
   {
     "type": "medicine",
     "name": "阿莫西林胶囊",
+    "spec": "0.25g*24粒/盒",
     "reason": "符合急性支气管炎细菌感染治疗指南，基本药物目录药品",
-    "usage": "0.5g，口服，每日3次，疗程5-7天。注意：青霉素过敏者禁用"
+    "dosage": "0.5",
+    "dosageUnit": "g",
+    "frequency": "每日3次",
+    "frequencyKey": "tid",
+    "usage": "口服",
+    "usageKey": "po",
+    "totalQty": "14",
+    "totalUnit": "粒",
+    "days": "5-7"
   }
 ]
 

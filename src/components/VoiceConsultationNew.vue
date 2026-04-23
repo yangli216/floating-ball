@@ -100,6 +100,8 @@ function confirmCancel(): void {
 
 const expandedTreatmentEditors = ref<Set<string>>(new Set());
 const lastTreatmentDiagnosisKey = ref('');
+const suppressDiagnosisTreatmentRefetch = ref(false);
+const activeReasonTooltipKey = ref<string | null>(null);
 const activeEditableFieldKey = ref<string | null>(null);
 const editableFieldElements = new Map<string, HTMLInputElement | HTMLSelectElement>();
 const frequencySearchKeywords = ref<Record<string, string>>({});
@@ -302,6 +304,57 @@ function splitDosageAndUnit(value?: string): { dosage: string; dosageUnit: strin
   };
 }
 
+function inferDosageFromText(text: string): { dosage: string; dosageUnit: string } {
+  const normalizedText = text.trim();
+  if (!normalizedText) {
+    return { dosage: '', dosageUnit: '' };
+  }
+
+  const matched = normalizedText.match(/(\d+(?:\.\d+)?)\s*(mg|g|ml|ug|片|粒|支|袋)/i);
+  if (!matched) {
+    return { dosage: '', dosageUnit: '' };
+  }
+
+  return {
+    dosage: matched[1]?.trim() || '',
+    dosageUnit: matched[2]?.trim() || '',
+  };
+}
+
+function inferTotalFromText(text: string): { totalQty: string; totalUnit: string } {
+  const normalizedText = text.trim();
+  if (!normalizedText) {
+    return { totalQty: '', totalUnit: '' };
+  }
+
+  const explicitMatch = normalizedText.match(/(?:总量|共|开(?:具|立)?|发药|给)\s*(\d+(?:\.\d+)?)\s*(盒|瓶|袋|支|片|粒|包|板|次)/i);
+  if (explicitMatch) {
+    return {
+      totalQty: explicitMatch[1]?.trim() || '',
+      totalUnit: explicitMatch[2]?.trim() || '',
+    };
+  }
+
+  const matches = Array.from(normalizedText.matchAll(/(\d+(?:\.\d+)?)\s*(盒|瓶|袋|支|片|粒|包|板|次)/gi));
+  if (matches.length > 1) {
+    const fallback = matches[matches.length - 1];
+    return {
+      totalQty: fallback?.[1]?.trim() || '',
+      totalUnit: fallback?.[2]?.trim() || '',
+    };
+  }
+
+  return { totalQty: '', totalUnit: '' };
+}
+
+function inferDaysFromText(text: string): string {
+  const normalizedText = text.trim();
+  if (!normalizedText) return '';
+
+  const matched = normalizedText.match(/(\d+(?:\s*[-~到至]\s*\d+)?)\s*天/i);
+  return matched?.[1]?.replace(/\s+/g, '') || '';
+}
+
 function inferFrequencyFromText(text: string): string {
   const normalizedText = text.trim();
   if (!normalizedText) return '';
@@ -324,15 +377,25 @@ function inferMedicineDefaults(rec: Partial<TreatmentRecommendation>): {
   dosageUnit: string;
   frequency: string;
   route: string;
+  totalQty: string;
+  totalUnit: string;
+  days: string;
 } {
   const dosagePair = splitDosageAndUnit(rec.dosage);
   const usageText = [rec.usage, rec.route].filter(Boolean).join('，');
+  const inferredDosage = dosagePair.dosage || dosagePair.dosageUnit ? dosagePair : inferDosageFromText(usageText);
+  const inferredTotal = rec.totalQty || rec.totalUnit
+    ? { totalQty: rec.totalQty || '', totalUnit: rec.totalUnit || '' }
+    : inferTotalFromText(usageText);
 
   return {
-    dosage: dosagePair.dosage,
-    dosageUnit: dosagePair.dosageUnit,
+    dosage: rec.dosage || inferredDosage.dosage,
+    dosageUnit: rec.dosageUnit || inferredDosage.dosageUnit,
     frequency: rec.frequency || inferFrequencyFromText([rec.frequency, usageText].filter(Boolean).join(' ')),
     route: rec.route || inferRouteFromText([rec.route, rec.usage].filter(Boolean).join(' ')),
+    totalQty: rec.totalQty || inferredTotal.totalQty,
+    totalUnit: rec.totalUnit || inferredTotal.totalUnit,
+    days: rec.days || inferDaysFromText(usageText),
   };
 }
 
@@ -371,6 +434,9 @@ function normalizeTreatmentRecommendation(rec: Partial<TreatmentRecommendation>)
     dosageUnit: base.dosageUnit || defaults.dosageUnit,
     frequency: base.frequency || defaults.frequency,
     route: base.route || defaults.route,
+    totalQty: base.totalQty || defaults.totalQty,
+    totalUnit: base.totalUnit || defaults.totalUnit,
+    days: base.days || defaults.days,
   };
 }
 
@@ -447,6 +513,7 @@ const treatmentSections = computed<TreatmentSection[]>(() => {
 const hasTreatments = computed(() => treatments.value.length > 0);
 
 function toggleTreatment(item: TreatmentRecommendation): void {
+  activeReasonTooltipKey.value = null;
   item.selected = !item.selected;
 
   if (item.selected && item.type === 'medicine') {
@@ -466,10 +533,20 @@ function toggleTreatment(item: TreatmentRecommendation): void {
 }
 
 function toggleDiagnosis(diag: Diagnosis): void {
+  activeReasonTooltipKey.value = null;
   if (selectedDiagnosis.value?.code === diag.code && selectedDiagnosis.value?.name === diag.name) {
     return;
   }
   selectedDiagnosis.value = diag;
+}
+
+function getReasonTooltipKey(kind: 'diagnosis' | 'treatment', primary: string, secondary = ''): string {
+  return `${kind}:${primary}:${secondary}`;
+}
+
+function toggleReasonTooltip(key: string, event?: Event): void {
+  event?.stopPropagation();
+  activeReasonTooltipKey.value = activeReasonTooltipKey.value === key ? null : key;
 }
 
 async function fetchAIDiagnosis(): Promise<void> {
@@ -526,6 +603,12 @@ async function fetchAITreatment(): Promise<void> {
   treatmentLoading.value = true;
 
   const diagnosisIdentity = getDiagnosisIdentity(selectedDiagnosis.value);
+  console.info('[VoiceConsultationNew] Fetching treatment recommendations', {
+    diagnosisIdentity,
+    diagnosisName: selectedDiagnosis.value.name,
+    existingTreatmentCount: treatments.value.length,
+  });
+
   const baseParams = {
     patientName: patientName.value,
     gender: patientGender.value,
@@ -576,7 +659,11 @@ async function fetchAITreatment(): Promise<void> {
             selected: !!matched || !!rec.matchedItem,
           });
         });
-      } catch {
+      } catch (error) {
+        console.warn('[VoiceConsultationNew] Failed to parse treatment recommendation response', {
+          error: error instanceof Error ? error.message : String(error),
+          responsePreview: response.value.slice(0, 400),
+        });
         return [];
       }
     };
@@ -586,6 +673,14 @@ async function fetchAITreatment(): Promise<void> {
     nextTreatments.push(...parseAndMatch(examResponse, (name) => medicalDataService.matchExamItem(name)));
     nextTreatments.push(...parseAndMatch(labResponse, (name) => medicalDataService.matchLabTestItem(name)));
     nextTreatments.push(...parseAndMatch(procResponse, (name) => medicalDataService.matchProcedureItem(name)));
+
+    console.info('[VoiceConsultationNew] Treatment recommendations loaded', {
+      diagnosisIdentity,
+      totalCount: nextTreatments.length,
+      medicineCount: nextTreatments.filter((item) => item.type === 'medicine').length,
+      medicineWithDosageCount: nextTreatments.filter((item) => item.type === 'medicine' && !!item.dosage).length,
+      medicineWithTotalQtyCount: nextTreatments.filter((item) => item.type === 'medicine' && !!item.totalQty).length,
+    });
 
     if (diagnosisIdentity !== getDiagnosisIdentity(selectedDiagnosis.value)) {
       return;
@@ -655,6 +750,15 @@ watch(
 
     if (currentIdentity !== previousIdentity) {
       resetTreatmentEditorState();
+    }
+
+    if (suppressDiagnosisTreatmentRefetch.value) {
+      console.info('[VoiceConsultationNew] Skip treatment refetch while applying voice intent result', {
+        currentIdentity,
+        previousIdentity,
+        treatmentCount: treatments.value.length,
+      });
+      return;
     }
 
     if (currentIdentity !== lastTreatmentDiagnosisKey.value) {
@@ -889,6 +993,19 @@ function getMedicineFieldDisplay(rec: TreatmentRecommendation, field: MedicinePr
         normalized.days ? `${normalized.days}天` : '',
       ].filter(Boolean).join(' / ') || '点击填写';
   }
+}
+
+function getMedicineInlineSummary(rec: TreatmentRecommendation): string {
+  const normalized = normalizeTreatmentRecommendation(rec);
+  const parts = [
+    normalized.dosage || normalized.dosageUnit ? `一次剂量 ${[normalized.dosage, normalized.dosageUnit].filter(Boolean).join(' ')}` : '',
+    normalized.frequency ? `频次 ${getFrequencyDisplayValue(normalized.frequency)}` : '',
+    normalized.route ? `用法 ${normalized.route}` : '',
+    normalized.days ? `天数 ${normalized.days}天` : '',
+    normalized.totalQty || normalized.totalUnit ? `总量 ${[normalized.totalQty, normalized.totalUnit].filter(Boolean).join(' ')}` : '',
+  ].filter(Boolean);
+
+  return parts.join(' / ');
 }
 
 function isMedicineFieldEmpty(rec: TreatmentRecommendation, field: MedicinePrimaryField): boolean {
@@ -1141,8 +1258,10 @@ async function handleBatchWriteBack(): Promise<void> {
 
 watch(
   () => props.intentResult,
-  (result) => {
+  async (result) => {
     if (!result) return;
+
+    suppressDiagnosisTreatmentRefetch.value = true;
 
     resetTreatmentEditorState();
     lastTreatmentDiagnosisKey.value = '';
@@ -1167,6 +1286,13 @@ watch(
     if (result.treatments.length > 0) {
       treatments.value = initTreatmentsFromIntent(result.treatments);
       lastTreatmentDiagnosisKey.value = getDiagnosisIdentity(selectedDiagnosis.value);
+      console.info('[VoiceConsultationNew] Applied voice intent treatments', {
+        diagnosisIdentity: lastTreatmentDiagnosisKey.value,
+        treatmentCount: treatments.value.length,
+        medicineCount: treatments.value.filter((item) => item.type === 'medicine').length,
+        medicineWithDosageCount: treatments.value.filter((item) => item.type === 'medicine' && !!item.dosage).length,
+        medicineWithTotalQtyCount: treatments.value.filter((item) => item.type === 'medicine' && !!item.totalQty).length,
+      });
     }
 
     if (aiDiagnoses.value.length > 0) {
@@ -1177,6 +1303,17 @@ watch(
 
     if (treatments.value.length > 0) {
       void performTreatmentFactCheck(treatments.value);
+    }
+
+    await nextTick();
+    suppressDiagnosisTreatmentRefetch.value = false;
+
+    if (treatments.value.length === 0 && selectedDiagnosis.value) {
+      console.info('[VoiceConsultationNew] No voice intent treatments found, fetching default recommendations for selected diagnosis', {
+        diagnosisIdentity: getDiagnosisIdentity(selectedDiagnosis.value),
+        diagnosisName: selectedDiagnosis.value.name,
+      });
+      void fetchAITreatment();
     }
   },
   { immediate: true },
@@ -1277,8 +1414,13 @@ watch(
                         <FactCheckHighlight :issue="getIssueForDiagnosis(diag.code)">
                           <span class="card-title">{{ diag.name }}</span>
                         </FactCheckHighlight>
-                        <span v-if="diag.rationale" class="reason-tooltip-trigger" @click.stop>
-                          <button class="reason-icon-btn" type="button" aria-label="查看诊断依据" title="查看诊断依据" @click.stop>
+                        <span
+                          v-if="diag.rationale"
+                          class="reason-tooltip-trigger"
+                          :class="{ open: activeReasonTooltipKey === getReasonTooltipKey('diagnosis', diag.code, diag.name) }"
+                          @click.stop
+                        >
+                          <button class="reason-icon-btn" type="button" aria-label="查看诊断依据" title="查看诊断依据" @click.stop="toggleReasonTooltip(getReasonTooltipKey('diagnosis', diag.code, diag.name), $event)">
                             <Icon icon="lucide:circle-help" size="14" />
                           </button>
                           <span class="hover-reason-tooltip">{{ diag.rationale }}</span>
@@ -1347,16 +1489,28 @@ watch(
                             <FactCheckHighlight :issue="getIssueForTreatment(rec.name)">
                               <span class="card-title">{{ rec.name }}</span>
                             </FactCheckHighlight>
-                            <span v-if="rec.reason" class="reason-tooltip-trigger" @click.stop>
-                              <button class="reason-icon-btn" type="button" aria-label="查看推荐依据" title="查看推荐依据" @click.stop>
+                            <span v-if="getTreatmentSpec(rec)" class="meta-token">规格 {{ getTreatmentSpec(rec) }}</span>
+                            <span
+                              v-if="rec.reason"
+                              class="reason-tooltip-trigger"
+                              :class="{ open: activeReasonTooltipKey === getReasonTooltipKey('treatment', rec.type, rec.name) }"
+                              @click.stop
+                            >
+                              <button class="reason-icon-btn" type="button" aria-label="查看推荐依据" title="查看推荐依据" @click.stop="toggleReasonTooltip(getReasonTooltipKey('treatment', rec.type, rec.name), $event)">
                                 <Icon icon="lucide:circle-help" size="14" />
                               </button>
                               <span class="hover-reason-tooltip">{{ rec.reason }}</span>
                             </span>
                           </div>
-                          <span v-if="getTreatmentSpec(rec)" class="meta-token">规格 {{ getTreatmentSpec(rec) }}</span>
                           <span class="meta-token" :class="{ warning: !rec.matchedItem }">{{ rec.matchedItem ? getTreatmentMatchLabel(rec) : '待人工确认' }}</span>
                           <span v-if="rec.type !== 'medicine' && rec.usage" class="meta-token">建议 {{ rec.usage }}</span>
+                        </div>
+
+                        <div
+                          v-if="rec.type === 'medicine' && getMedicineInlineSummary(rec) && !isTreatmentEditorExpanded(rec)"
+                          class="medicine-inline-summary"
+                        >
+                          {{ getMedicineInlineSummary(rec) }}
                         </div>
                       </div>
 
@@ -2025,6 +2179,7 @@ watch(
 .card-main {
   flex: 1;
   min-width: 0;
+  overflow: visible;
 }
 
 .card-title-wrap {
@@ -2032,6 +2187,7 @@ watch(
   align-items: center;
   gap: 4px;
   min-width: 0;
+  flex: 1;
   max-width: 100%;
 }
 
@@ -2041,7 +2197,7 @@ watch(
   gap: 8px;
   min-width: 0;
   flex-wrap: nowrap;
-  overflow: hidden;
+  overflow: visible;
 }
 
 .card-title {
@@ -2103,10 +2259,21 @@ watch(
 }
 
 .reason-tooltip-trigger:hover .hover-reason-tooltip,
-.reason-tooltip-trigger:focus-within .hover-reason-tooltip {
+.reason-tooltip-trigger:focus-within .hover-reason-tooltip,
+.reason-tooltip-trigger.open .hover-reason-tooltip {
   opacity: 1;
   visibility: visible;
   transform: translateY(0);
+}
+
+.medicine-inline-summary {
+  margin-top: 6px;
+  font-size: var(--voice-font-min);
+  color: var(--voice-text-muted);
+  line-height: 1.5;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .meta-token {
