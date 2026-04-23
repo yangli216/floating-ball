@@ -2340,7 +2340,7 @@ watch(
   gap: 14px;
   min-width: 0;
   border-radius: 20px;
-  overflow: clip;
+  overflow: visible;
   isolation: isolate;
 }
 

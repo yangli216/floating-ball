@@ -1,20 +1,30 @@
 <template>
-  <div class="voice-capsule-wrapper" data-tauri-drag-region>
+  <div
+    class="voice-capsule-wrapper"
+    :class="{ 'voice-capsule-wrapper--processing': processing }"
+    data-tauri-drag-region
+  >
     <!-- Processing state: waiting for LLM analysis -->
     <template v-if="processing">
-      <div class="voice-capsule-bar">
-        <div class="avatar-wrapper processing-pulse">
-          <img src="/robot-avatar.png" alt="AI Agent" />
+      <div class="processing-state">
+        <div class="voice-capsule-bar voice-capsule-bar--processing">
+          <div class="avatar-wrapper processing-pulse">
+            <img src="/robot-avatar.png" alt="AI Agent" />
+          </div>
+          <div class="processing-main">
+            <span class="processing-label">正在分析语音内容...</span>
+          </div>
+          <div class="processing-dots">
+            <span class="dot"></span>
+            <span class="dot"></span>
+            <span class="dot"></span>
+          </div>
         </div>
-        <span class="processing-label">正在分析语音内容...</span>
-        <div class="processing-dots">
-          <span class="dot"></span>
-          <span class="dot"></span>
-          <span class="dot"></span>
+        <div class="processing-bar-shell">
+          <div class="processing-bar-track">
+            <div class="processing-bar-fill"></div>
+          </div>
         </div>
-      </div>
-      <div class="processing-bar-track">
-        <div class="processing-bar-fill"></div>
       </div>
     </template>
 
@@ -132,7 +142,7 @@ let stoppedBlob: Blob | null = null;
 // Compact window dimensions
 const CAPSULE_W = 360;
 const CAPSULE_H_RECORDING = 80;
-const CAPSULE_H_PROCESSING = 80;    // processing state height
+const CAPSULE_H_PROCESSING = 96;    // processing state height
 const CAPSULE_H_STOPPED = 140;      // collapsed preview + action buttons
 const CAPSULE_H_EXPANDED = 248;     // expanded editor + action buttons
 
@@ -529,6 +539,10 @@ onUnmounted(() => {
   overflow: hidden;
 }
 
+.voice-capsule-wrapper--processing {
+  min-height: 96px;
+}
+
 /* ===== Top bar: single row, all inline ===== */
 .voice-capsule-bar {
   display: flex;
@@ -536,6 +550,11 @@ onUnmounted(() => {
   gap: 8px;
   padding: 6px 10px;
   flex-shrink: 0;
+}
+
+.voice-capsule-bar--processing {
+  padding: 12px 12px 8px;
+  min-height: 60px;
 }
 
 .avatar-wrapper {
@@ -743,18 +762,37 @@ onUnmounted(() => {
 }
 
 /* ===== Processing state ===== */
-.processing-label {
-  font-size: 13px;
-  font-weight: 500;
-  color: #334155;
+.processing-state {
+  display: flex;
+  flex-direction: column;
+  min-height: 96px;
+}
+
+.processing-main {
   flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+}
+
+.processing-label {
+  display: block;
+  min-width: 0;
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 1.4;
+  color: #334155;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .processing-dots {
   display: flex;
   gap: 4px;
   align-items: center;
-  padding-right: 4px;
+  padding-left: 4px;
+  flex-shrink: 0;
 }
 
 .processing-dots .dot {
@@ -788,10 +826,15 @@ onUnmounted(() => {
   animation: pulse-ring 2s infinite;
 }
 
+.processing-bar-shell {
+  padding: 0 12px 12px;
+}
+
 .processing-bar-track {
-  height: 3px;
+  height: 4px;
   background: #e2e8f0;
   overflow: hidden;
+  border-radius: 999px;
 }
 
 .processing-bar-fill {
