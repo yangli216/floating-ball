@@ -5,8 +5,8 @@ import Icon from './Icon.vue';
 import FactCheckHighlight from './FactCheckHighlight.vue';
 import { chat, type ChatMessage } from '../services/llm';
 import { PROMPTS } from '../prompts';
-import { getHisService, type PharmacyOption } from '../services/hisService';
-import { medicalDataService, type DiagnosisItem } from '../services/medicalData';
+import { getHisService, type HisDictionaryItem, type PharmacyOption } from '../services/hisService';
+import { medicalDataService, type DiagnosisItem, type MedicalItem, type MedicineItem } from '../services/medicalData';
 import { clearVoiceConsultationCache } from '../composables/useVoiceConsultation';
 import {
   checkDiagnosis,
@@ -27,6 +27,11 @@ interface UsageOption {
   wb: string;
   mcode: string;
   normalizedTokens: string[];
+}
+
+interface ExecDeptOption {
+  key: string;
+  text: string;
 }
 
 const props = defineProps<{
@@ -115,6 +120,12 @@ const activeEditableFieldKey = ref<string | null>(null);
 const editableFieldElements = new Map<string, HTMLInputElement | HTMLSelectElement>();
 const frequencySearchKeywords = ref<Record<string, string>>({});
 const routeSearchKeywords = ref<Record<string, string>>({});
+const activeManualMatchKey = ref<string | null>(null);
+const manualMatchKeywords = ref<Record<string, string>>({});
+const activeSecondarySelectorKey = ref<string | null>(null);
+const pharmacySearchKeywords = ref<Record<string, string>>({});
+const execDeptSearchKeywords = ref<Record<string, string>>({});
+const insuranceSearchKeywords = ref<Record<string, string>>({});
 
 type MedicinePrimaryField = 'dosage' | 'frequency' | 'route' | 'total';
 
@@ -261,8 +272,12 @@ function replaceDiagnosisSelection(diags: Diagnosis[], primary?: Diagnosis | nul
 function resetTreatmentEditorState(): void {
   expandedTreatmentEditors.value = new Set();
   activeEditableFieldKey.value = null;
+  activeSecondarySelectorKey.value = null;
   frequencySearchKeywords.value = {};
   routeSearchKeywords.value = {};
+  pharmacySearchKeywords.value = {};
+  execDeptSearchKeywords.value = {};
+  insuranceSearchKeywords.value = {};
 }
 
 function isTreatmentEditorExpanded(rec: TreatmentRecommendation): boolean {
@@ -447,17 +462,24 @@ function inferMedicineDefaults(rec: Partial<TreatmentRecommendation>): {
 }
 
 function normalizeTreatmentRecommendation(rec: Partial<TreatmentRecommendation>): TreatmentRecommendation {
+  const matchedRaw = rec.matchedItem?.raw && typeof rec.matchedItem.raw === 'object'
+    ? rec.matchedItem.raw as Record<string, unknown>
+    : undefined;
   const base: TreatmentRecommendation = {
     type: rec.type || 'medicine',
     name: rec.name || '',
+    originalName: rec.originalName || '',
     reason: rec.reason || '',
     spec: rec.spec || '',
     usage: rec.usage || '',
     matchedItem: rec.matchedItem,
+    suggestedMatchItem: rec.suggestedMatchItem,
+    matchStatus: rec.matchStatus || (rec.matchedItem ? 'exact' : 'unmatched'),
+    manualMatched: !!rec.manualMatched,
     selected: !!rec.selected,
     dosage: rec.dosage || '',
     dosageUnit: rec.dosageUnit || '',
-    totalQty: rec.totalQty || '',
+    totalQty: rec.totalQty || (((rec.type || 'medicine') === 'exam' || (rec.type || 'medicine') === 'lab_test') ? '1' : ''),
     totalUnit: rec.totalUnit || '',
     frequency: rec.frequency || '',
     frequencyKey: rec.frequencyKey || '',
@@ -468,7 +490,9 @@ function normalizeTreatmentRecommendation(rec: Partial<TreatmentRecommendation>)
     remark: rec.remark || '',
     regulatedDisease: rec.regulatedDisease || '',
     bodySite: rec.bodySite || '',
-    execDept: rec.execDept || '',
+    execDept: rec.execDept || (rec.type && rec.type !== 'medicine'
+      ? (rec.matchedItem?.idDeptExec || readFirstString(matchedRaw, ['idDeptExec', 'idDept']))
+      : '') || '',
     insuranceType: rec.insuranceType || '医保使用',
   };
 
@@ -512,11 +536,14 @@ function mapTreatmentType(type: MatchedTreatment['type']): TreatmentRecommendati
 
 function initTreatmentsFromIntent(matched: MatchedTreatment[]): TreatmentRecommendation[] {
   return matched.map((item) => {
-    const name = item.matchedItem?.name || item.name;
+    const suggestedName = item.name;
+    const assessment = assessTreatmentCatalogMatch(mapTreatmentType(item.type), suggestedName, item.aliases);
+    const name = assessment.matchedItem?.name || suggestedName;
     const dosagePair = splitDosageAndUnit(item.dosage);
     const normalized = normalizeTreatmentRecommendation({
       type: mapTreatmentType(item.type),
       name,
+      originalName: suggestedName,
       reason: buildTreatmentReason(item, name),
       spec: item.spec || item.matchedItem?.spec || '',
       usage: [item.usage, item.frequency, item.dosage, item.dosageUnit].filter(Boolean).join('，'),
@@ -532,8 +559,11 @@ function initTreatmentsFromIntent(matched: MatchedTreatment[]): TreatmentRecomme
       sourceType: item.sourceType,
       evidenceText: item.evidenceText || item.text || '',
       goal: item.goal || '',
-      matchedItem: item.matchedItem || undefined,
-      selected: shouldAutoSelectTreatment(item),
+      matchedItem: assessment.matchedItem,
+      suggestedMatchItem: assessment.suggestedMatchItem,
+      matchStatus: assessment.matchStatus,
+      manualMatched: false,
+      selected: assessment.matchStatus === 'exact' && shouldAutoSelectTreatment(item),
     });
     return normalized;
   });
@@ -563,8 +593,281 @@ const treatmentSections = computed<TreatmentSection[]>(() => {
 
 const hasTreatments = computed(() => treatments.value.length > 0);
 
+function getManualMatchKey(rec: TreatmentRecommendation): string {
+  return `manual-match:${rec.type}:${rec.name}`;
+}
+
+function getManualMatchSearchKey(rec: TreatmentRecommendation): string {
+  return `${getManualMatchKey(rec)}:search`;
+}
+
+function getManualMatchKeyword(rec: TreatmentRecommendation): string {
+  const cached = manualMatchKeywords.value[getManualMatchSearchKey(rec)];
+  return typeof cached === 'string' ? cached : rec.name;
+}
+
+function setManualMatchKeyword(rec: TreatmentRecommendation, value: string): void {
+  manualMatchKeywords.value = {
+    ...manualMatchKeywords.value,
+    [getManualMatchSearchKey(rec)]: value,
+  };
+}
+
+function handleManualMatchInput(rec: TreatmentRecommendation, event: Event): void {
+  const target = event.target as HTMLInputElement | null;
+  setManualMatchKeyword(rec, target?.value || '');
+}
+
+function requiresManualMatchBeforeSelect(rec: TreatmentRecommendation): boolean {
+  return !rec.matchedItem;
+}
+
+function isManualMatchOpen(rec: TreatmentRecommendation): boolean {
+  return activeManualMatchKey.value === getManualMatchKey(rec);
+}
+
+function toggleManualMatch(rec: TreatmentRecommendation, event?: Event): void {
+  event?.stopPropagation();
+  activeReasonTooltipKey.value = null;
+  const key = getManualMatchKey(rec);
+  const isOpening = activeManualMatchKey.value !== key;
+  activeManualMatchKey.value = isOpening ? key : null;
+  if (isOpening) {
+    setManualMatchKeyword(rec, getManualMatchKeyword(rec) || rec.name);
+  }
+}
+
+function isMedicineSearchCandidate(candidate: MedicineItem | MedicalItem): candidate is MedicineItem {
+  return 'spec' in candidate;
+}
+
+function getManualMatchCandidates(rec: TreatmentRecommendation): Array<MedicineItem | MedicalItem> {
+  const query = getManualMatchKeyword(rec).trim();
+  if (!query) {
+    return [];
+  }
+
+  switch (rec.type) {
+    case 'medicine':
+      return medicalDataService.searchMedicines(query, undefined, 8);
+    case 'exam':
+      return medicalDataService.searchExamItems(query, undefined, 8);
+    case 'lab_test':
+      return medicalDataService.searchLabTestItems(query, undefined, 8);
+    case 'procedure':
+      return medicalDataService.searchProcedureItems(query, undefined, 8);
+    default:
+      return [];
+  }
+}
+
+function buildMedicineMatchedItem(item: MedicineItem): TreatmentRecommendation['matchedItem'] {
+  return {
+    id: item.id,
+    name: item.name,
+    spec: item.spec,
+    idSrv: item.idSrv,
+    naSrv: item.naSrv,
+    sdSrv: item.sdSrv,
+    idDeptExec: item.idDeptExec,
+    fgCheckOrd: item.fgCheckOrd,
+    fgSkintest: item.fgSkintest,
+    raw: item.raw,
+  };
+}
+
+function buildMedicalItemMatchedItem(item: MedicalItem): TreatmentRecommendation['matchedItem'] {
+  return {
+    id: item.id,
+    name: item.name,
+    code: item.code,
+    idSrv: item.idSrv,
+    naSrv: item.naSrv,
+    sdSrv: item.sdSrv,
+    idDeptExec: item.idDeptExec,
+    idPart: item.idPart,
+    jsonField: item.jsonField,
+    fgCheckOrd: item.fgCheckOrd,
+    raw: item.raw,
+  };
+}
+
+async function hydrateMatchedMedicalItemDetail(rec: TreatmentRecommendation): Promise<void> {
+  if (rec.type === 'medicine' || !rec.matchedItem) {
+    return;
+  }
+
+  const his = getHisService();
+  if (!his) {
+    return;
+  }
+
+  const idCli = (rec.matchedItem.code || readFirstString(getMatchedItemRaw(rec), ['idCli']) || '').trim();
+  if (!idCli) {
+    return;
+  }
+
+  try {
+    const detail = await his.fetchMedicalItemDetail(idCli);
+    if (!detail) {
+      return;
+    }
+
+    const mergedRaw = {
+      ...(getMatchedItemRaw(rec) || {}),
+      ...detail,
+      __detailLoaded: true,
+    };
+
+    rec.matchedItem = {
+      ...rec.matchedItem,
+      name: detail.naCli?.trim() || rec.matchedItem.name || rec.name,
+      code: detail.idCli?.trim() || rec.matchedItem.code || idCli,
+      idDeptExec: detail.idDeptExec?.trim() || rec.matchedItem.idDeptExec || '',
+      raw: mergedRaw,
+    };
+
+    if (!rec.execDept && detail.idDeptExec?.trim()) {
+      rec.execDept = detail.idDeptExec.trim();
+    }
+
+    if (!rec.totalUnit && detail.unit?.trim()) {
+      rec.totalUnit = detail.unit.trim();
+    }
+
+    syncTreatmentExecDeptSelections();
+  } catch (error) {
+    console.error('[VoiceConsultationNew] Failed to hydrate medical item detail', {
+      idCli,
+      name: rec.name,
+      error,
+    });
+  }
+}
+
+async function hydrateMatchedMedicalItemDetails(items: TreatmentRecommendation[]): Promise<void> {
+  const candidates = items.filter((item) => item.type !== 'medicine' && !!item.matchedItem);
+  await Promise.all(candidates.map((item) => hydrateMatchedMedicalItemDetail(item)));
+}
+
+function assessTreatmentCatalogMatch(
+  type: TreatmentRecommendation['type'],
+  name: string,
+  aliases?: string[],
+): Pick<TreatmentRecommendation, 'matchedItem' | 'suggestedMatchItem' | 'matchStatus'> {
+  switch (type) {
+    case 'medicine': {
+      const result = medicalDataService.assessMedicineMatch(name, aliases);
+      return {
+        matchedItem: result.status === 'exact' && result.candidate ? buildMedicineMatchedItem(result.candidate) : undefined,
+        suggestedMatchItem: result.status === 'probable' && result.candidate ? buildMedicineMatchedItem(result.candidate) : undefined,
+        matchStatus: result.status,
+      };
+    }
+    case 'exam': {
+      const result = medicalDataService.assessExamItemMatch(name, aliases);
+      return {
+        matchedItem: result.status === 'exact' && result.candidate ? buildMedicalItemMatchedItem(result.candidate) : undefined,
+        suggestedMatchItem: result.status === 'probable' && result.candidate ? buildMedicalItemMatchedItem(result.candidate) : undefined,
+        matchStatus: result.status,
+      };
+    }
+    case 'lab_test': {
+      const result = medicalDataService.assessLabTestItemMatch(name, aliases);
+      return {
+        matchedItem: result.status === 'exact' && result.candidate ? buildMedicalItemMatchedItem(result.candidate) : undefined,
+        suggestedMatchItem: result.status === 'probable' && result.candidate ? buildMedicalItemMatchedItem(result.candidate) : undefined,
+        matchStatus: result.status,
+      };
+    }
+    case 'procedure': {
+      const result = medicalDataService.assessProcedureItemMatch(name, aliases);
+      return {
+        matchedItem: result.status === 'exact' && result.candidate ? buildMedicalItemMatchedItem(result.candidate) : undefined,
+        suggestedMatchItem: result.status === 'probable' && result.candidate ? buildMedicalItemMatchedItem(result.candidate) : undefined,
+        matchStatus: result.status,
+      };
+    }
+    default:
+      return {
+        matchedItem: undefined,
+        suggestedMatchItem: undefined,
+        matchStatus: 'unmatched',
+      };
+  }
+}
+
+function hasProbableMatch(rec: TreatmentRecommendation): boolean {
+  return rec.matchStatus === 'probable' && !!rec.suggestedMatchItem;
+}
+
+function getSuggestedMatchName(rec: TreatmentRecommendation): string {
+  return (rec.suggestedMatchItem?.name || '').trim();
+}
+
+function confirmSuggestedMatch(rec: TreatmentRecommendation, event?: Event): void {
+  event?.stopPropagation();
+  if (!rec.suggestedMatchItem) {
+    return;
+  }
+
+  rec.originalName = rec.originalName || rec.name;
+  rec.matchedItem = { ...rec.suggestedMatchItem };
+  rec.name = rec.suggestedMatchItem.name || rec.name;
+  rec.matchStatus = 'confirmed';
+  rec.manualMatched = false;
+  rec.selected = true;
+  rec.suggestedMatchItem = undefined;
+
+  if (rec.type === 'medicine') {
+    Object.assign(rec, normalizeTreatmentRecommendation(rec));
+  }
+
+  void hydrateMatchedMedicalItemDetail(rec);
+
+  showToast?.(`${rec.name} 已确认匹配`, 'success');
+}
+
+function applyManualMatch(rec: TreatmentRecommendation, candidate: MedicineItem | MedicalItem, event?: Event): void {
+  event?.stopPropagation();
+
+  if (rec.type === 'medicine' && isMedicineSearchCandidate(candidate)) {
+    rec.matchedItem = buildMedicineMatchedItem(candidate);
+    rec.spec = candidate.spec || rec.spec || '';
+  } else if (rec.type !== 'medicine' && !isMedicineSearchCandidate(candidate)) {
+    rec.matchedItem = buildMedicalItemMatchedItem(candidate);
+  } else {
+    return;
+  }
+
+  rec.originalName = rec.originalName || rec.name;
+  rec.name = candidate.name;
+  rec.manualMatched = true;
+  rec.matchStatus = 'manual';
+  rec.selected = true;
+  rec.suggestedMatchItem = undefined;
+
+  if (rec.type === 'medicine') {
+    Object.assign(rec, normalizeTreatmentRecommendation(rec));
+  }
+
+  activeManualMatchKey.value = null;
+  void hydrateMatchedMedicalItemDetail(rec);
+  showToast?.(`${candidate.name} 已完成标准库匹配`, 'success');
+}
+
 function toggleTreatment(item: TreatmentRecommendation): void {
   activeReasonTooltipKey.value = null;
+  if (!item.selected && requiresManualMatchBeforeSelect(item)) {
+    if (hasProbableMatch(item)) {
+      showToast?.('该推荐仅为大概率匹配，请先确认匹配或改为手动匹配', 'warning');
+      return;
+    }
+    activeManualMatchKey.value = getManualMatchKey(item);
+    setManualMatchKeyword(item, getManualMatchKeyword(item) || item.name);
+    showToast?.('该推荐尚未匹配标准库，请先手动匹配', 'warning');
+    return;
+  }
   item.selected = !item.selected;
 
   if (item.selected && item.type === 'medicine') {
@@ -732,11 +1035,8 @@ async function fetchAITreatment(): Promise<void> {
       ]),
     ]);
 
-    type CatalogMatch = TreatmentRecommendation['matchedItem'] | null;
-
     const parseAndMatch = (
       response: PromiseSettledResult<string>,
-      matchFn: (name: string, aliases?: string[]) => CatalogMatch,
     ): TreatmentRecommendation[] => {
       if (response.status !== 'fulfilled') return [];
 
@@ -746,11 +1046,19 @@ async function fetchAITreatment(): Promise<void> {
         const parsed: TreatmentRecommendation[] = JSON.parse(jsonMatch ? jsonMatch[0] : clean);
 
         return parsed.map((rec) => {
-          const matched = matchFn(rec.name, Array.isArray(rec.aliases) ? rec.aliases : undefined);
+          const assessment = assessTreatmentCatalogMatch(
+            rec.type,
+            rec.name,
+            Array.isArray(rec.aliases) ? rec.aliases : undefined,
+          );
           return normalizeTreatmentRecommendation({
             ...rec,
-            matchedItem: matched ? ({ ...matched } as TreatmentRecommendation['matchedItem']) : rec.matchedItem,
-            selected: !!matched || !!rec.matchedItem,
+            originalName: rec.originalName || rec.name,
+            matchedItem: assessment.matchedItem,
+            suggestedMatchItem: assessment.suggestedMatchItem,
+            matchStatus: assessment.matchStatus,
+            manualMatched: false,
+            selected: assessment.matchStatus === 'exact',
           });
         });
       } catch (error) {
@@ -763,10 +1071,10 @@ async function fetchAITreatment(): Promise<void> {
     };
 
     const nextTreatments: TreatmentRecommendation[] = [];
-    nextTreatments.push(...parseAndMatch(medResponse, (name, aliases) => medicalDataService.matchMedicine(name, aliases)));
-    nextTreatments.push(...parseAndMatch(examResponse, (name, aliases) => medicalDataService.matchExamItem(name, aliases)));
-    nextTreatments.push(...parseAndMatch(labResponse, (name, aliases) => medicalDataService.matchLabTestItem(name, aliases)));
-    nextTreatments.push(...parseAndMatch(procResponse, (name, aliases) => medicalDataService.matchProcedureItem(name, aliases)));
+    nextTreatments.push(...parseAndMatch(medResponse));
+    nextTreatments.push(...parseAndMatch(examResponse));
+    nextTreatments.push(...parseAndMatch(labResponse));
+    nextTreatments.push(...parseAndMatch(procResponse));
 
     console.info('[VoiceConsultationNew] Treatment recommendations loaded', {
       diagnosisIdentity,
@@ -782,6 +1090,7 @@ async function fetchAITreatment(): Promise<void> {
 
     treatments.value = nextTreatments;
     lastTreatmentDiagnosisKey.value = diagnosisIdentity;
+    void hydrateMatchedMedicalItemDetails(nextTreatments);
     void performTreatmentFactCheck(nextTreatments);
   } catch (error: unknown) {
     const msg = error instanceof Error ? error.message : String(error);
@@ -1051,10 +1360,69 @@ async function fetchPharmacyOptions(): Promise<void> {
   }
 }
 
+function dedupeExecDeptOptions(items: HisDictionaryItem[]): ExecDeptOption[] {
+  const unique = new Map<string, ExecDeptOption>();
+
+  items.forEach((item) => {
+    const key = (item.key || item.text || '').trim();
+    const text = (item.text || item.key || '').trim();
+    if (!key || !text || unique.has(key)) {
+      return;
+    }
+
+    unique.set(key, { key, text });
+  });
+
+  return Array.from(unique.values());
+}
+
+function syncTreatmentExecDeptSelections(): void {
+  if (execDeptOptions.value.length === 0) {
+    return;
+  }
+
+  const keyByText = new Map(execDeptOptions.value.map((option) => [option.text, option.key]));
+  treatments.value.forEach((rec) => {
+    if (rec.type === 'medicine') {
+      return;
+    }
+
+    const currentValue = (rec.execDept || '').trim();
+    if (!currentValue) {
+      return;
+    }
+
+    if (execDeptOptions.value.some((option) => option.key === currentValue)) {
+      return;
+    }
+
+    rec.execDept = keyByText.get(currentValue) || rec.execDept;
+  });
+}
+
+async function fetchExecDeptOptions(): Promise<void> {
+  const his = getHisService();
+  if (!his) {
+    console.warn('[VoiceConsultationNew] HisService not initialized, execution department options skipped');
+    execDeptOptions.value = [];
+    return;
+  }
+
+  try {
+    const items = await his.fetchExecutionDepartments();
+    execDeptOptions.value = dedupeExecDeptOptions(items);
+    syncTreatmentExecDeptSelections();
+  } catch (error) {
+    console.error('[VoiceConsultationNew] Failed to load execution department options from HIS', error);
+    execDeptOptions.value = [];
+  }
+}
+
 onMounted(() => {
-  void Promise.all([fetchFrequencyOptions(), fetchRouteOptions(), fetchPharmacyOptions()]);
+  void Promise.all([fetchFrequencyOptions(), fetchRouteOptions(), fetchPharmacyOptions(), fetchExecDeptOptions()]);
 });
 const pharmacyOptions = ref<PharmacyOption[]>([]);
+const execDeptOptions = ref<ExecDeptOption[]>([]);
 const insuranceOptions = ['医保使用', '自费'];
 
 function getMatchedItemRaw(rec: TreatmentRecommendation): Record<string, unknown> | undefined {
@@ -1130,7 +1498,11 @@ function getSelectedPharmacyOption(rec: TreatmentRecommendation): PharmacyOption
 function getOrderExecDeptId(rec: TreatmentRecommendation): string {
   const raw = getMatchedItemRaw(rec);
   const pharmacyOption = rec.type === 'medicine' ? getSelectedPharmacyOption(rec) : undefined;
+  const selectedExecDeptKey = (rec.type !== 'medicine'
+    ? (execDeptOptions.value.find((option) => option.key === (rec.execDept || '').trim() || option.text === (rec.execDept || '').trim())?.key || rec.execDept || '')
+    : '').trim();
   return (
+    selectedExecDeptKey ||
     pharmacyOption?.idSto ||
     rec.matchedItem?.idDeptExec ||
     readFirstString(raw, ['idDeptExec', 'idDept']) ||
@@ -1173,7 +1545,7 @@ function getOrderFgSkintest(rec: TreatmentRecommendation): string {
   return (rec.matchedItem?.fgSkintest || readFirstString(raw, ['fgSkintest']) || '0').trim() || '0';
 }
 
-function buildOrderListItem(rec: TreatmentRecommendation): Record<string, string | number> {
+function buildOrderListItem(rec: TreatmentRecommendation): Record<string, string | number | Record<string, unknown>> {
   const normalized = normalizeTreatmentRecommendation(rec);
   const orderServiceId = getOrderServiceId(rec);
   const execDeptId = getOrderExecDeptId(rec);
@@ -1204,7 +1576,7 @@ function buildOrderListItem(rec: TreatmentRecommendation): Record<string, string
   return {
     ...base,
     ...(partId ? { idPart: partId } : {}),
-    ...(jsonField ? { jsonField } : {}),
+    ...(jsonField ? { jsonField: jsonField } : { jsonField:{} }),
   };
 }
 
@@ -1241,8 +1613,25 @@ function getTreatmentSpec(rec: TreatmentRecommendation): string {
 }
 
 function getTreatmentMatchLabel(rec: TreatmentRecommendation): string {
+  if (rec.matchStatus === 'manual') return '已手动匹配';
+  if (rec.matchStatus === 'confirmed') return '已确认匹配';
+  if (rec.matchStatus === 'exact') return '匹配成功';
+  if (rec.matchStatus === 'probable') return '大概率匹配';
   if (!rec.matchedItem) return '';
-  return rec.matchedItem.name === rec.name ? '标准库已匹配' : rec.matchedItem.name;
+  return '匹配成功';
+}
+
+function getTreatmentOriginalName(rec: TreatmentRecommendation): string {
+  if (rec.matchStatus !== 'manual' && rec.matchStatus !== 'confirmed') {
+    return '';
+  }
+
+  const originalName = (rec.originalName || '').trim();
+  if (!originalName || originalName === rec.name) {
+    return '';
+  }
+
+  return originalName;
 }
 
 function formatOptionLabel(option: UsageOption): string {
@@ -1540,6 +1929,217 @@ function selectRouteOption(rec: TreatmentRecommendation, option: UsageOption): v
   activeEditableFieldKey.value = null;
 }
 
+type SecondarySelectorField = 'pharmacy' | 'execDept' | 'insurance';
+
+function getSecondarySelectorKey(rec: TreatmentRecommendation, field: SecondarySelectorField): string {
+  return `${getTreatmentEditorKey(rec)}:${field}`;
+}
+
+function isSecondarySelectorOpen(rec: TreatmentRecommendation, field: SecondarySelectorField): boolean {
+  return activeSecondarySelectorKey.value === getSecondarySelectorKey(rec, field);
+}
+
+function openSecondarySelector(rec: TreatmentRecommendation, field: SecondarySelectorField): void {
+  activeSecondarySelectorKey.value = getSecondarySelectorKey(rec, field);
+  if (field === 'pharmacy') {
+    syncPharmacySearchKeyword(rec);
+  } else if (field === 'execDept') {
+    syncExecDeptSearchKeyword(rec);
+  } else {
+    syncInsuranceSearchKeyword(rec);
+  }
+}
+
+function closeSecondarySelector(rec: TreatmentRecommendation, field: SecondarySelectorField, event: FocusEvent): void {
+  const container = event.currentTarget as HTMLElement | null;
+  const nextTarget = event.relatedTarget as Node | null;
+  if (container && nextTarget && container.contains(nextTarget)) {
+    return;
+  }
+
+  if (field === 'pharmacy') {
+    syncPharmacySearchKeyword(rec);
+  } else if (field === 'execDept') {
+    syncExecDeptSearchKeyword(rec);
+  } else {
+    syncInsuranceSearchKeyword(rec);
+  }
+
+  if (isSecondarySelectorOpen(rec, field)) {
+    activeSecondarySelectorKey.value = null;
+  }
+}
+
+function getPharmacySearchKey(rec: TreatmentRecommendation): string {
+  return `${getTreatmentEditorKey(rec)}:pharmacy-search`;
+}
+
+function getPharmacySearchKeyword(rec: TreatmentRecommendation): string {
+  const cached = pharmacySearchKeywords.value[getPharmacySearchKey(rec)];
+  return typeof cached === 'string' ? cached : (rec.pharmacy || '');
+}
+
+function setPharmacySearchKeyword(rec: TreatmentRecommendation, value: string): void {
+  pharmacySearchKeywords.value = {
+    ...pharmacySearchKeywords.value,
+    [getPharmacySearchKey(rec)]: value,
+  };
+}
+
+function syncPharmacySearchKeyword(rec: TreatmentRecommendation): void {
+  setPharmacySearchKeyword(rec, rec.pharmacy || '');
+}
+
+function handlePharmacySearchInput(rec: TreatmentRecommendation, event: Event): void {
+  const target = event.target as HTMLInputElement | null;
+  setPharmacySearchKeyword(rec, target?.value || '');
+}
+
+function getPharmacyUsageOptions(): UsageOption[] {
+  return dedupeUsageOptions(
+    pharmacyOptions.value.map((option) => createUsageOption({
+      key: option.idSto || option.idDept || option.name,
+      text: option.name,
+      mcode: option.idDept,
+    })),
+  );
+}
+
+function getFilteredPharmacyOptionsForRecord(rec: TreatmentRecommendation): UsageOption[] {
+  const query = normalizeUsageKeyword(getPharmacySearchKeyword(rec));
+  const options = getPharmacyUsageOptions();
+  const matched = !query
+    ? options
+    : options.filter((option) => option.normalizedTokens.some((token) => token.includes(query)));
+
+  const currentValue = (rec.pharmacy || '').trim();
+  if (currentValue && !matched.some((option) => option.text === currentValue)) {
+    return [createUsageOption({ key: currentValue, text: currentValue }), ...matched];
+  }
+
+  return matched;
+}
+
+function selectPharmacyOption(rec: TreatmentRecommendation, option: UsageOption): void {
+  rec.pharmacy = option.text;
+  setPharmacySearchKeyword(rec, option.text);
+  activeSecondarySelectorKey.value = null;
+}
+
+function getExecDeptSearchKey(rec: TreatmentRecommendation): string {
+  return `${getTreatmentEditorKey(rec)}:execDept-search`;
+}
+
+function getExecDeptSearchKeyword(rec: TreatmentRecommendation): string {
+  const cached = execDeptSearchKeywords.value[getExecDeptSearchKey(rec)];
+  if (typeof cached === 'string') {
+    return cached;
+  }
+
+  const currentValue = (rec.execDept || '').trim();
+  const matched = execDeptOptions.value.find((option) => option.key === currentValue || option.text === currentValue);
+  return matched?.text || currentValue;
+}
+
+function setExecDeptSearchKeyword(rec: TreatmentRecommendation, value: string): void {
+  execDeptSearchKeywords.value = {
+    ...execDeptSearchKeywords.value,
+    [getExecDeptSearchKey(rec)]: value,
+  };
+}
+
+function syncExecDeptSearchKeyword(rec: TreatmentRecommendation): void {
+  setExecDeptSearchKeyword(rec, getExecDeptSearchKeyword(rec));
+}
+
+function handleExecDeptSearchInput(rec: TreatmentRecommendation, event: Event): void {
+  const target = event.target as HTMLInputElement | null;
+  setExecDeptSearchKeyword(rec, target?.value || '');
+}
+
+function getExecDeptUsageOptions(): UsageOption[] {
+  return dedupeUsageOptions(
+    execDeptOptions.value.map((option) => createUsageOption({
+      key: option.key,
+      text: option.text,
+      mcode: option.key,
+    })),
+  );
+}
+
+function getFilteredExecDeptOptionsForRecord(rec: TreatmentRecommendation): UsageOption[] {
+  const query = normalizeUsageKeyword(getExecDeptSearchKeyword(rec));
+  const options = getExecDeptUsageOptions();
+  const matched = !query
+    ? options
+    : options.filter((option) => option.normalizedTokens.some((token) => token.includes(query)));
+
+  const currentValue = getExecDeptSearchKeyword(rec).trim();
+  if (currentValue && !matched.some((option) => option.text === currentValue)) {
+    return [createUsageOption({ key: currentValue, text: currentValue }), ...matched];
+  }
+
+  return matched;
+}
+
+function selectExecDeptOption(rec: TreatmentRecommendation, option: UsageOption): void {
+  rec.execDept = option.key || option.text;
+  setExecDeptSearchKeyword(rec, option.text);
+  activeSecondarySelectorKey.value = null;
+}
+
+function getInsuranceSearchKey(rec: TreatmentRecommendation): string {
+  return `${getTreatmentEditorKey(rec)}:insurance-search`;
+}
+
+function getInsuranceSearchKeyword(rec: TreatmentRecommendation): string {
+  const cached = insuranceSearchKeywords.value[getInsuranceSearchKey(rec)];
+  return typeof cached === 'string' ? cached : (rec.insuranceType || '');
+}
+
+function setInsuranceSearchKeyword(rec: TreatmentRecommendation, value: string): void {
+  insuranceSearchKeywords.value = {
+    ...insuranceSearchKeywords.value,
+    [getInsuranceSearchKey(rec)]: value,
+  };
+}
+
+function syncInsuranceSearchKeyword(rec: TreatmentRecommendation): void {
+  setInsuranceSearchKeyword(rec, rec.insuranceType || '');
+}
+
+function handleInsuranceSearchInput(rec: TreatmentRecommendation, event: Event): void {
+  const target = event.target as HTMLInputElement | null;
+  setInsuranceSearchKeyword(rec, target?.value || '');
+}
+
+function getInsuranceUsageOptions(): UsageOption[] {
+  return dedupeUsageOptions(
+    insuranceOptions.map((option) => createUsageOption({ key: option, text: option })),
+  );
+}
+
+function getFilteredInsuranceOptionsForRecord(rec: TreatmentRecommendation): UsageOption[] {
+  const query = normalizeUsageKeyword(getInsuranceSearchKeyword(rec));
+  const options = getInsuranceUsageOptions();
+  const matched = !query
+    ? options
+    : options.filter((option) => option.normalizedTokens.some((token) => token.includes(query)));
+
+  const currentValue = (rec.insuranceType || '').trim();
+  if (currentValue && !matched.some((option) => option.text === currentValue)) {
+    return [createUsageOption({ key: currentValue, text: currentValue }), ...matched];
+  }
+
+  return matched;
+}
+
+function selectInsuranceOption(rec: TreatmentRecommendation, option: UsageOption): void {
+  rec.insuranceType = option.text;
+  setInsuranceSearchKeyword(rec, option.text);
+  activeSecondarySelectorKey.value = null;
+}
+
 async function handleBatchWriteBack(): Promise<void> {
   if (!canSubmit.value) return;
   submitting.value = true;
@@ -1596,6 +2196,7 @@ watch(
     lastTreatmentDiagnosisKey.value = '';
     openRelatedId.value = null;
     inlineRelatedDiagnoses.value = [];
+    activeManualMatchKey.value = null;
     aiDiagnoses.value = [];
     selectedDiagnosisKeys.value = new Set();
     selectedDiagnosis.value = null;
@@ -1614,6 +2215,7 @@ watch(
     if (result.treatments.length > 0) {
       treatments.value = initTreatmentsFromIntent(result.treatments);
       lastTreatmentDiagnosisKey.value = getDiagnosisIdentity(selectedDiagnosis.value);
+      void hydrateMatchedMedicalItemDetails(treatments.value);
       console.info('[VoiceConsultationNew] Applied voice intent treatments', {
         diagnosisIdentity: lastTreatmentDiagnosisKey.value,
         treatmentCount: treatments.value.length,
@@ -1696,11 +2298,11 @@ watch(
           <div class="record-fields">
             <div class="record-field">
               <label>主诉</label>
-              <textarea v-model="chiefComplaint" rows="3" placeholder="请输入主诉..."></textarea>
+              <textarea v-model="chiefComplaint" rows="2" placeholder="请输入主诉..."></textarea>
             </div>
             <div class="record-field field-grow">
               <label>现病史</label>
-              <textarea v-model="historyOfPresentIllness" rows="13" placeholder="请输入现病史..."></textarea>
+              <textarea v-model="historyOfPresentIllness" rows="6" placeholder="请输入现病史..."></textarea>
             </div>
             <div class="record-field">
               <label>既往史</label>
@@ -1738,7 +2340,7 @@ watch(
                 @click="toggleDiagnosis(diag)"
               >
                 <div v-if="isDiagnosisSelected(diag)" class="diag-selected-mark">
-                  <svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>
+                  <svg xmlns="http://www.w3.org/2000/svg" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="20 6 9 17 4 12"></polyline></svg>
                 </div>
 
                 <div class="card-row">
@@ -1823,11 +2425,11 @@ watch(
                     v-for="rec in section.items"
                     :key="`${rec.type}-${rec.name}`"
                     class="vcn-treatment-item"
-                    :class="{ selected: rec.selected }"
+                    :class="{ selected: rec.selected, locked: requiresManualMatchBeforeSelect(rec), matching: isManualMatchOpen(rec) }"
                     @click="toggleTreatment(rec)"
                   >
                     <div v-if="rec.selected" class="card-selected-mark">
-                      <svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>
+                      <svg xmlns="http://www.w3.org/2000/svg" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="20 6 9 17 4 12"></polyline></svg>
                     </div>
 
                     <div class="card-row">
@@ -1850,8 +2452,18 @@ watch(
                               <span class="hover-reason-tooltip">{{ rec.reason }}</span>
                             </span>
                           </div>
-                          <span class="meta-token" :class="{ warning: !rec.matchedItem }">{{ rec.matchedItem ? getTreatmentMatchLabel(rec) : '待人工确认' }}</span>
+                          <span class="meta-token" :class="{ warning: rec.matchStatus === 'probable' || rec.matchStatus === 'unmatched', success: rec.matchStatus === 'manual' || rec.matchStatus === 'confirmed' }">
+                            {{ rec.matchedItem || rec.matchStatus === 'probable' ? getTreatmentMatchLabel(rec) : '未匹配标准库' }}
+                          </span>
                           <span v-if="rec.type !== 'medicine' && rec.usage" class="meta-token">建议 {{ rec.usage }}</span>
+                        </div>
+
+                        <div v-if="hasProbableMatch(rec)" class="manual-match-origin-note">
+                          候选标准项：{{ getSuggestedMatchName(rec) }}
+                        </div>
+
+                        <div v-if="getTreatmentOriginalName(rec)" class="manual-match-origin-note">
+                          AI 原建议：{{ getTreatmentOriginalName(rec) }}
                         </div>
 
                         <div
@@ -1864,6 +2476,24 @@ watch(
 
                       <div class="card-actions">
                         <button
+                          v-if="hasProbableMatch(rec)"
+                          class="confirm-match-btn"
+                          type="button"
+                          title="确认采用该标准库候选"
+                          @click.stop="confirmSuggestedMatch(rec, $event)"
+                        >
+                          确认匹配
+                        </button>
+                        <button
+                          v-if="!rec.matchedItem"
+                          class="manual-match-btn"
+                          type="button"
+                          :title="isManualMatchOpen(rec) ? '收起手动匹配' : '手动匹配标准库项目'"
+                          @click.stop="toggleManualMatch(rec, $event)"
+                        >
+                          {{ isManualMatchOpen(rec) ? '收起匹配' : '手动匹配' }}
+                        </button>
+                        <button
                           v-if="rec.selected"
                           class="inline-arrow-btn action-arrow"
                           type="button"
@@ -1873,6 +2503,39 @@ watch(
                         >
                           <span class="inline-arrow" :class="{ open: isTreatmentEditorExpanded(rec) }"></span>
                         </button>
+                      </div>
+                    </div>
+
+                    <div v-if="!rec.matchedItem && isManualMatchOpen(rec)" class="manual-match-shell" @click.stop>
+                      <div class="manual-match-header">
+                        <div class="manual-match-title">从标准库选择{{ section.title.replace('项目', '') }}</div>
+                        <div class="manual-match-desc">匹配成功后才可纳入本次回写</div>
+                      </div>
+
+                      <input
+                        :value="getManualMatchKeyword(rec)"
+                        type="text"
+                        class="edit-input"
+                        placeholder="输入名称筛选标准库"
+                        @input="handleManualMatchInput(rec, $event)"
+                      />
+
+                      <div class="manual-match-list">
+                        <button
+                          v-for="candidate in getManualMatchCandidates(rec)"
+                          :key="candidate.id"
+                          class="manual-match-option"
+                          type="button"
+                          @click.stop="applyManualMatch(rec, candidate, $event)"
+                        >
+                          <span class="manual-match-option-name">{{ candidate.name }}</span>
+                          <span v-if="isMedicineSearchCandidate(candidate) && candidate.spec" class="manual-match-option-meta">{{ candidate.spec }}</span>
+                          <span v-else-if="!isMedicineSearchCandidate(candidate) && candidate.code" class="manual-match-option-meta">{{ candidate.code }}</span>
+                        </button>
+
+                        <div v-if="getManualMatchCandidates(rec).length === 0" class="manual-match-empty">
+                          未找到可用的标准库项目，请修改关键字后重试
+                        </div>
                       </div>
                     </div>
 
@@ -1972,10 +2635,29 @@ watch(
                           </div>
                           <div class="secondary-field">
                             <label>药房</label>
-                            <select v-model="rec.pharmacy" class="edit-select">
-                              <option value="">请选择</option>
-                              <option v-for="option in pharmacyOptions" :key="`${option.name}-${option.idDept}`" :value="option.name">{{ option.name }}</option>
-                            </select>
+                            <div class="field-editor route-field-editor" @focusout="closeSecondarySelector(rec, 'pharmacy', $event)">
+                              <input
+                                :value="getPharmacySearchKeyword(rec)"
+                                type="text"
+                                placeholder="输入名称筛选药房"
+                                class="edit-input"
+                                @focus="openSecondarySelector(rec, 'pharmacy')"
+                                @input="handlePharmacySearchInput(rec, $event)"
+                              />
+                              <div v-if="isSecondarySelectorOpen(rec, 'pharmacy')" class="route-option-list" role="listbox" aria-label="药房候选项">
+                                <button
+                                  v-for="option in getFilteredPharmacyOptionsForRecord(rec).slice(0, 8)"
+                                  :key="option.key"
+                                  class="route-option-item"
+                                  type="button"
+                                  @mousedown.prevent.stop="selectPharmacyOption(rec, option)"
+                                >
+                                  <span class="route-option-text">{{ option.text }}</span>
+                                  <span v-if="option.mcode" class="route-option-meta">{{ option.mcode }}</span>
+                                </button>
+                                <div v-if="getFilteredPharmacyOptionsForRecord(rec).length === 0" class="route-option-empty">未找到匹配药房</div>
+                              </div>
+                            </div>
                           </div>
                           <div class="secondary-field">
                             <label>备注</label>
@@ -1983,9 +2665,28 @@ watch(
                           </div>
                           <div class="secondary-field">
                             <label>医保限用</label>
-                            <select v-model="rec.insuranceType" class="edit-select">
-                              <option v-for="option in insuranceOptions" :key="option" :value="option">{{ option }}</option>
-                            </select>
+                            <div class="field-editor route-field-editor" @focusout="closeSecondarySelector(rec, 'insurance', $event)">
+                              <input
+                                :value="getInsuranceSearchKeyword(rec)"
+                                type="text"
+                                placeholder="输入名称筛选医保类型"
+                                class="edit-input"
+                                @focus="openSecondarySelector(rec, 'insurance')"
+                                @input="handleInsuranceSearchInput(rec, $event)"
+                              />
+                              <div v-if="isSecondarySelectorOpen(rec, 'insurance')" class="route-option-list" role="listbox" aria-label="医保限用候选项">
+                                <button
+                                  v-for="option in getFilteredInsuranceOptionsForRecord(rec).slice(0, 8)"
+                                  :key="option.key"
+                                  class="route-option-item"
+                                  type="button"
+                                  @mousedown.prevent.stop="selectInsuranceOption(rec, option)"
+                                >
+                                  <span class="route-option-text">{{ option.text }}</span>
+                                </button>
+                                <div v-if="getFilteredInsuranceOptionsForRecord(rec).length === 0" class="route-option-empty">未找到匹配医保类型</div>
+                              </div>
+                            </div>
                           </div>
                         </div>
                       </template>
@@ -1993,30 +2694,67 @@ watch(
                       <template v-if="rec.type === 'exam' && isTreatmentEditorExpanded(rec)">
                         <div class="secondary-field-grid">
                           <div class="secondary-field">
-                            <label>规定病</label>
-                            <input v-model="rec.regulatedDisease" type="text" placeholder="规定病" class="edit-input" />
+                            <label>执行科室</label>
+                            <div class="field-editor route-field-editor" @focusout="closeSecondarySelector(rec, 'execDept', $event)">
+                              <input
+                                :value="getExecDeptSearchKeyword(rec)"
+                                type="text"
+                                placeholder="输入名称筛选科室"
+                                class="edit-input"
+                                @focus="openSecondarySelector(rec, 'execDept')"
+                                @input="handleExecDeptSearchInput(rec, $event)"
+                              />
+                              <div v-if="isSecondarySelectorOpen(rec, 'execDept')" class="route-option-list" role="listbox" aria-label="执行科室候选项">
+                                <button
+                                  v-for="option in getFilteredExecDeptOptionsForRecord(rec).slice(0, 8)"
+                                  :key="option.key"
+                                  class="route-option-item"
+                                  type="button"
+                                  @mousedown.prevent.stop="selectExecDeptOption(rec, option)"
+                                >
+                                  <span class="route-option-text">{{ option.text }}</span>
+                                  <span v-if="option.key !== option.text" class="route-option-meta">{{ option.key }}</span>
+                                </button>
+                                <div v-if="getFilteredExecDeptOptionsForRecord(rec).length === 0" class="route-option-empty">未找到匹配科室</div>
+                              </div>
+                            </div>
                           </div>
                           <div class="secondary-field">
                             <label>部位方式</label>
                             <input v-model="rec.bodySite" type="text" placeholder="请输入部位" class="edit-input" />
                           </div>
                           <div class="secondary-field">
-                            <label>总量</label>
-                            <input v-model="rec.totalQty" type="text" placeholder="数量" class="edit-input mini" />
+                            <label>医保限用</label>
+                            <div class="field-editor route-field-editor" @focusout="closeSecondarySelector(rec, 'insurance', $event)">
+                              <input
+                                :value="getInsuranceSearchKeyword(rec)"
+                                type="text"
+                                placeholder="输入名称筛选医保类型"
+                                class="edit-input"
+                                @focus="openSecondarySelector(rec, 'insurance')"
+                                @input="handleInsuranceSearchInput(rec, $event)"
+                              />
+                              <div v-if="isSecondarySelectorOpen(rec, 'insurance')" class="route-option-list" role="listbox" aria-label="医保限用候选项">
+                                <button
+                                  v-for="option in getFilteredInsuranceOptionsForRecord(rec).slice(0, 8)"
+                                  :key="option.key"
+                                  class="route-option-item"
+                                  type="button"
+                                  @mousedown.prevent.stop="selectInsuranceOption(rec, option)"
+                                >
+                                  <span class="route-option-text">{{ option.text }}</span>
+                                </button>
+                                <div v-if="getFilteredInsuranceOptionsForRecord(rec).length === 0" class="route-option-empty">未找到匹配医保类型</div>
+                              </div>
+                            </div>
                           </div>
                           <div class="secondary-field">
-                            <label>执行科室</label>
-                            <input v-model="rec.execDept" type="text" placeholder="科室" class="edit-input" />
+                            <label>规定病</label>
+                            <input v-model="rec.regulatedDisease" type="text" placeholder="规定病" class="edit-input" />
                           </div>
                           <div class="secondary-field">
                             <label>备注</label>
                             <input v-model="rec.remark" type="text" placeholder="备注" class="edit-input" />
-                          </div>
-                          <div class="secondary-field">
-                            <label>医保限用</label>
-                            <select v-model="rec.insuranceType" class="edit-select">
-                              <option v-for="option in insuranceOptions" :key="option" :value="option">{{ option }}</option>
-                            </select>
                           </div>
                         </div>
                       </template>
@@ -2024,30 +2762,63 @@ watch(
                       <template v-if="rec.type === 'lab_test' && isTreatmentEditorExpanded(rec)">
                         <div class="secondary-field-grid">
                           <div class="secondary-field">
+                            <label>执行科室</label>
+                            <div class="field-editor route-field-editor" @focusout="closeSecondarySelector(rec, 'execDept', $event)">
+                              <input
+                                :value="getExecDeptSearchKeyword(rec)"
+                                type="text"
+                                placeholder="输入名称筛选科室"
+                                class="edit-input"
+                                @focus="openSecondarySelector(rec, 'execDept')"
+                                @input="handleExecDeptSearchInput(rec, $event)"
+                              />
+                              <div v-if="isSecondarySelectorOpen(rec, 'execDept')" class="route-option-list" role="listbox" aria-label="执行科室候选项">
+                                <button
+                                  v-for="option in getFilteredExecDeptOptionsForRecord(rec).slice(0, 8)"
+                                  :key="option.key"
+                                  class="route-option-item"
+                                  type="button"
+                                  @mousedown.prevent.stop="selectExecDeptOption(rec, option)"
+                                >
+                                  <span class="route-option-text">{{ option.text }}</span>
+                                  <span v-if="option.key !== option.text" class="route-option-meta">{{ option.key }}</span>
+                                </button>
+                                <div v-if="getFilteredExecDeptOptionsForRecord(rec).length === 0" class="route-option-empty">未找到匹配科室</div>
+                              </div>
+                            </div>
+                          </div>
+                          <div class="secondary-field">
+                            <label>医保限用</label>
+                            <div class="field-editor route-field-editor" @focusout="closeSecondarySelector(rec, 'insurance', $event)">
+                              <input
+                                :value="getInsuranceSearchKeyword(rec)"
+                                type="text"
+                                placeholder="输入名称筛选医保类型"
+                                class="edit-input"
+                                @focus="openSecondarySelector(rec, 'insurance')"
+                                @input="handleInsuranceSearchInput(rec, $event)"
+                              />
+                              <div v-if="isSecondarySelectorOpen(rec, 'insurance')" class="route-option-list" role="listbox" aria-label="医保限用候选项">
+                                <button
+                                  v-for="option in getFilteredInsuranceOptionsForRecord(rec).slice(0, 8)"
+                                  :key="option.key"
+                                  class="route-option-item"
+                                  type="button"
+                                  @mousedown.prevent.stop="selectInsuranceOption(rec, option)"
+                                >
+                                  <span class="route-option-text">{{ option.text }}</span>
+                                </button>
+                                <div v-if="getFilteredInsuranceOptionsForRecord(rec).length === 0" class="route-option-empty">未找到匹配医保类型</div>
+                              </div>
+                            </div>
+                          </div>
+                          <div class="secondary-field">
                             <label>规定病</label>
                             <input v-model="rec.regulatedDisease" type="text" placeholder="规定病" class="edit-input" />
                           </div>
                           <div class="secondary-field">
-                            <label>部位方式</label>
-                            <input v-model="rec.bodySite" type="text" placeholder="部位" class="edit-input" />
-                          </div>
-                          <div class="secondary-field">
-                            <label>总量</label>
-                            <input v-model="rec.totalQty" type="text" placeholder="数量" class="edit-input mini" />
-                          </div>
-                          <div class="secondary-field">
-                            <label>执行科室</label>
-                            <input v-model="rec.execDept" type="text" placeholder="科室" class="edit-input" />
-                          </div>
-                          <div class="secondary-field">
                             <label>备注</label>
                             <input v-model="rec.remark" type="text" placeholder="备注" class="edit-input" />
-                          </div>
-                          <div class="secondary-field">
-                            <label>医保限用</label>
-                            <select v-model="rec.insuranceType" class="edit-select">
-                              <option v-for="option in insuranceOptions" :key="option" :value="option">{{ option }}</option>
-                            </select>
                           </div>
                         </div>
                       </template>
@@ -2067,13 +2838,54 @@ watch(
                           </div>
                           <div class="secondary-field">
                             <label>执行科室</label>
-                            <input v-model="rec.execDept" type="text" placeholder="科室" class="edit-input" />
+                            <div class="field-editor route-field-editor" @focusout="closeSecondarySelector(rec, 'execDept', $event)">
+                              <input
+                                :value="getExecDeptSearchKeyword(rec)"
+                                type="text"
+                                placeholder="输入名称筛选科室"
+                                class="edit-input"
+                                @focus="openSecondarySelector(rec, 'execDept')"
+                                @input="handleExecDeptSearchInput(rec, $event)"
+                              />
+                              <div v-if="isSecondarySelectorOpen(rec, 'execDept')" class="route-option-list" role="listbox" aria-label="执行科室候选项">
+                                <button
+                                  v-for="option in getFilteredExecDeptOptionsForRecord(rec).slice(0, 8)"
+                                  :key="option.key"
+                                  class="route-option-item"
+                                  type="button"
+                                  @mousedown.prevent.stop="selectExecDeptOption(rec, option)"
+                                >
+                                  <span class="route-option-text">{{ option.text }}</span>
+                                  <span v-if="option.key !== option.text" class="route-option-meta">{{ option.key }}</span>
+                                </button>
+                                <div v-if="getFilteredExecDeptOptionsForRecord(rec).length === 0" class="route-option-empty">未找到匹配科室</div>
+                              </div>
+                            </div>
                           </div>
                           <div class="secondary-field">
                             <label>医保限用</label>
-                            <select v-model="rec.insuranceType" class="edit-select">
-                              <option v-for="option in insuranceOptions" :key="option" :value="option">{{ option }}</option>
-                            </select>
+                            <div class="field-editor route-field-editor" @focusout="closeSecondarySelector(rec, 'insurance', $event)">
+                              <input
+                                :value="getInsuranceSearchKeyword(rec)"
+                                type="text"
+                                placeholder="输入名称筛选医保类型"
+                                class="edit-input"
+                                @focus="openSecondarySelector(rec, 'insurance')"
+                                @input="handleInsuranceSearchInput(rec, $event)"
+                              />
+                              <div v-if="isSecondarySelectorOpen(rec, 'insurance')" class="route-option-list" role="listbox" aria-label="医保限用候选项">
+                                <button
+                                  v-for="option in getFilteredInsuranceOptionsForRecord(rec).slice(0, 8)"
+                                  :key="option.key"
+                                  class="route-option-item"
+                                  type="button"
+                                  @mousedown.prevent.stop="selectInsuranceOption(rec, option)"
+                                >
+                                  <span class="route-option-text">{{ option.text }}</span>
+                                </button>
+                                <div v-if="getFilteredInsuranceOptionsForRecord(rec).length === 0" class="route-option-empty">未找到匹配医保类型</div>
+                              </div>
+                            </div>
                           </div>
                         </div>
                       </template>
@@ -2113,17 +2925,34 @@ watch(
   --voice-font-min: 13px;
   --voice-font-main: 14px;
   --voice-font-strong: 14px;
-  --voice-border: #dbe4ef;
-  --voice-border-strong: #cbd7e6;
-  --voice-text: #1f2937;
-  --voice-text-muted: #66758a;
-  --voice-accent: #2b7fe3;
-  --voice-warning: #c97a11;
+  --voice-border: var(--color-border-light, #dbe4ef);
+  --voice-border-strong: var(--color-border-medium, #cbd7e6);
+  --voice-text: var(--color-text-strong, #1f2937);
+  --voice-text-muted: var(--color-text-muted, #66758a);
+  --voice-text-disabled: var(--color-text-disabled, #98a6b9);
+  --voice-accent: var(--color-cta, #2b7fe3);
+  --voice-accent-strong: var(--color-cta-dark, #1f6fd0);
+  --voice-accent-soft: var(--color-cta-100, rgba(43, 127, 227, 0.12));
+  --voice-accent-softer: var(--color-cta-50, rgba(43, 127, 227, 0.06));
+  --voice-warning: var(--color-warning-text, #c97a11);
+  --voice-success: var(--color-success, #1f8a5b);
+  --voice-danger: var(--color-error, #cf4a3c);
+  --voice-danger-soft: var(--color-error-bg, #fee2e2);
+  --voice-surface: var(--color-background-white, #ffffff);
+  --voice-surface-soft: var(--color-background-light, #f7f9fc);
+  --voice-surface-hover: var(--color-background-hover, #f3f7fc);
+  --voice-surface-muted: var(--color-background-gray, #eef3f8);
+  --voice-surface-glass: var(--surface-glass-strong, rgba(255, 255, 255, 0.96));
+  --voice-overlay: var(--surface-overlay, rgba(15, 23, 42, 0.3));
+  position: relative;
   box-sizing: border-box;
   height: 100%;
   min-height: 0;
   padding: 20px 20px 28px;
-  background: linear-gradient(180deg, #f8fafc 0%, #f5f7fb 100%);
+  background:
+    radial-gradient(960px 300px at 82% -6%, var(--color-primary-100, rgba(59, 130, 246, 0.1)) 0%, transparent 60%),
+    radial-gradient(720px 220px at 18% 0%, var(--color-cta-50, rgba(43, 127, 227, 0.06)) 0%, transparent 58%),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.96) 0%, var(--color-background-gray, #f8fafc) 18%, var(--color-background, #f5f7fb) 100%);
   color: var(--voice-text);
   font-size: var(--voice-font-main);
   overflow-y: auto;
@@ -2132,10 +2961,13 @@ watch(
 }
 
 .pane-card {
-  background: rgba(255, 255, 255, 0.96);
+  background: var(--voice-surface-glass);
   border: 1px solid var(--voice-border);
   border-radius: 18px;
-  box-shadow: 0 10px 28px rgba(15, 23, 42, 0.04);
+  box-shadow:
+    0 1px 0 rgba(255, 255, 255, 0.72) inset,
+    0 10px 24px rgba(15, 23, 42, 0.035),
+    0 2px 6px rgba(15, 23, 42, 0.02);
 }
 
 .voice-topbar {
@@ -2148,6 +2980,8 @@ watch(
   position: sticky;
   top: 0;
   z-index: 6;
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
 }
 
 .voice-topbar-actions {
@@ -2167,7 +3001,7 @@ watch(
   align-items: center;
   justify-content: center;
   padding: 24px;
-  background: rgba(15, 23, 42, 0.3);
+  background: var(--voice-overlay);
   backdrop-filter: blur(6px);
 }
 
@@ -2222,12 +3056,12 @@ watch(
 
 .confirm-btn.secondary {
   border-color: var(--voice-border-strong);
-  background: #fff;
+  background: var(--voice-surface);
   color: var(--voice-text);
 }
 
 .confirm-btn.danger {
-  background: #cf4a3c;
+  background: var(--voice-danger);
   color: #fff;
   box-shadow: 0 10px 20px rgba(207, 74, 60, 0.18);
 }
@@ -2250,7 +3084,7 @@ watch(
   display: flex;
   align-items: center;
   justify-content: center;
-  background: linear-gradient(135deg, #2b7fe3, #3fa2ff);
+  background: linear-gradient(135deg, var(--voice-accent), var(--color-primary-light, #3fa2ff));
   flex-shrink: 0;
 }
 
@@ -2280,7 +3114,7 @@ watch(
   min-height: 28px;
   padding: 0 10px;
   border-radius: 999px;
-  background: #eef3f8;
+  background: var(--voice-surface-muted);
   color: var(--voice-text-muted);
   font-size: var(--voice-font-min);
 }
@@ -2332,6 +3166,7 @@ watch(
 
 .vcn-left-panel {
   padding: 18px;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.98) 0%, var(--voice-surface-glass) 100%);
 }
 
 .vcn-right-panel {
@@ -2342,6 +3177,10 @@ watch(
   border-radius: 20px;
   overflow: visible;
   isolation: isolate;
+}
+
+.decision-card {
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.985) 0%, var(--voice-surface-glass) 100%);
 }
 
 .section-heading {
@@ -2415,11 +3254,12 @@ watch(
   width: 100%;
   border: 1px solid var(--voice-border);
   border-radius: 12px;
-  background: #fff;
+  background: var(--voice-surface);
   color: var(--voice-text);
   font-size: var(--voice-font-main);
   outline: none;
-  transition: border-color 0.18s ease, box-shadow 0.18s ease;
+  transition: border-color 0.18s ease, box-shadow 0.18s ease, background-color 0.18s ease;
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.015) inset;
 }
 
 .record-field textarea {
@@ -2431,8 +3271,9 @@ watch(
 .record-field textarea:focus,
 .edit-input:focus,
 .edit-select:focus {
-  border-color: rgba(43, 127, 227, 0.5);
-  box-shadow: 0 0 0 3px rgba(43, 127, 227, 0.1);
+  border-color: var(--voice-accent);
+  box-shadow: 0 0 0 3px var(--voice-accent-soft);
+  background: rgba(255, 255, 255, 0.98);
 }
 
 .decision-overview,
@@ -2453,8 +3294,8 @@ watch(
   min-width: 0;
   padding: 12px 14px;
   border-radius: 14px;
-  background: #f7f9fc;
-  border: 1px solid #e7edf5;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.72) 0%, var(--voice-surface-soft) 100%);
+  border: 1px solid var(--voice-border);
 }
 
 .overview-item-compact {
@@ -2491,40 +3332,71 @@ watch(
   padding: 12px 14px 12px 34px;
   border: 1px solid var(--voice-border);
   border-radius: 14px;
-  background: #fff;
+  background: var(--voice-surface);
   cursor: pointer;
-  transition: border-color 0.18s ease, box-shadow 0.18s ease, transform 0.18s ease;
+  transition: border-color 0.18s ease, box-shadow 0.18s ease, transform 0.18s ease, background-color 0.18s ease;
 }
 
 .vcn-diagnosis-item:hover,
 .vcn-treatment-item:hover {
   border-color: var(--voice-border-strong);
-  box-shadow: 0 8px 22px rgba(15, 23, 42, 0.04);
+  box-shadow: 0 8px 18px rgba(15, 23, 42, 0.035);
 }
 
 .vcn-diagnosis-item.selected,
 .vcn-treatment-item.selected {
-  background: #fff;
-  border-color: var(--voice-border);
-  box-shadow: none;
+  background: var(--voice-surface);
+  border-color: var(--voice-accent);
+  box-shadow:
+    0 0 0 1px var(--voice-accent-soft),
+    0 8px 18px rgba(15, 23, 42, 0.028);
+}
+
+.vcn-treatment-item.locked {
+  border-style: dashed;
+}
+
+.vcn-treatment-item.matching {
+  border-color: var(--voice-accent);
+  box-shadow:
+    0 0 0 1px var(--voice-accent-soft),
+    0 10px 20px rgba(15, 23, 42, 0.03);
 }
 
 .vcn-diagnosis-item.primary {
-  border-color: rgba(43, 127, 227, 0.38);
-  box-shadow: 0 10px 24px rgba(43, 127, 227, 0.08);
+  border-color: var(--voice-accent);
+  box-shadow:
+    0 0 0 1px var(--voice-accent-soft),
+    0 10px 20px rgba(15, 23, 42, 0.03);
 }
 
 .diag-selected-mark,
 .card-selected-mark {
   position: absolute;
-  top: 14px;
-  left: 14px;
-  width: 12px;
-  height: 12px;
+  top: -1px;
+  left: -1px;
+  width: 26px;
+  height: 26px;
   display: flex;
   align-items: center;
   justify-content: center;
-  color: var(--voice-accent);
+  border-radius: 14px 0 12px 0;
+  background: var(--voice-accent-softer);
+  color: var(--voice-accent-strong);
+  border-right: 1px solid var(--voice-accent-soft);
+  border-bottom: 1px solid var(--voice-accent-soft);
+  z-index: 2;
+}
+
+.diag-selected-mark::after,
+.card-selected-mark::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-top: 1px solid rgba(255, 255, 255, 0.38);
+  border-left: 1px solid rgba(255, 255, 255, 0.28);
+  border-radius: inherit;
+  pointer-events: none;
 }
 
 .card-row {
@@ -2585,7 +3457,7 @@ watch(
   padding: 0;
   border: none;
   background: transparent;
-  color: #8a98aa;
+  color: var(--voice-text-muted);
   cursor: help;
 }
 
@@ -2603,8 +3475,8 @@ watch(
   width: min(320px, 48vw);
   padding: 10px 12px;
   border-radius: 12px;
-  border: 1px solid #d7e3f0;
-  background: rgba(255, 255, 255, 0.98);
+  border: 1px solid var(--voice-border);
+  background: var(--voice-surface-glass);
   box-shadow: 0 14px 28px rgba(15, 23, 42, 0.14);
   color: var(--voice-text-muted);
   font-size: var(--voice-font-min);
@@ -2635,6 +3507,13 @@ watch(
   text-overflow: ellipsis;
 }
 
+.manual-match-origin-note {
+  margin-top: 6px;
+  font-size: var(--voice-font-min);
+  color: var(--voice-text-muted);
+  line-height: 1.5;
+}
+
 .meta-token {
   flex-shrink: 0;
   font-size: var(--voice-font-min);
@@ -2647,6 +3526,10 @@ watch(
   color: var(--voice-warning);
 }
 
+.meta-token.success {
+  color: var(--voice-success);
+}
+
 .diag-role-token {
   color: var(--voice-accent);
 }
@@ -2655,17 +3538,17 @@ watch(
   flex-shrink: 0;
   min-height: 24px;
   padding: 0 8px;
-  border: 1px solid #cfe0f2;
+  border: 1px solid var(--voice-accent-soft);
   border-radius: 999px;
-  background: #f8fbff;
+  background: var(--voice-accent-softer);
   color: var(--voice-accent);
   font-size: var(--voice-font-min);
   cursor: pointer;
 }
 
 .diag-action-btn.subtle {
-  border-color: #e2e8f0;
-  background: #fff;
+  border-color: var(--voice-border);
+  background: var(--voice-surface);
   color: var(--voice-text-muted);
 }
 
@@ -2683,6 +3566,39 @@ watch(
   align-items: center;
   gap: 8px;
   flex-shrink: 0;
+}
+
+.manual-match-btn {
+  min-height: 28px;
+  padding: 0 10px;
+  border: 1px solid var(--voice-accent-soft);
+  border-radius: 999px;
+  background: var(--voice-accent-softer);
+  color: var(--voice-accent);
+  font-size: var(--voice-font-min);
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.manual-match-btn:hover {
+  border-color: var(--voice-accent);
+  background: var(--voice-accent-soft);
+}
+
+.confirm-match-btn {
+  min-height: 28px;
+  padding: 0 10px;
+  border: none;
+  border-radius: 999px;
+  background: var(--voice-accent);
+  color: #fff;
+  font-size: var(--voice-font-min);
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.confirm-match-btn:hover {
+  filter: brightness(1.06);
 }
 
 .inline-arrow-btn,
@@ -2709,7 +3625,7 @@ watch(
 }
 
 .action-arrow {
-  background: #f1f5f9;
+  background: var(--voice-surface-soft);
 }
 
 .inline-arrow {
@@ -2732,14 +3648,90 @@ watch(
   min-height: 28px;
   padding: 0 10px;
   border-radius: 999px;
-  background: #f7f9fc;
-  border: 1px solid #ebf0f6;
+  background: var(--voice-surface-soft);
+  border: 1px solid var(--voice-border);
   font-size: var(--voice-font-min);
   color: var(--voice-text-muted);
 }
 
 .related-section {
   margin-top: 10px;
+}
+
+.manual-match-shell {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid var(--voice-border);
+}
+
+.manual-match-header {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.manual-match-title {
+  font-size: var(--voice-font-main);
+  font-weight: 700;
+  color: var(--voice-text);
+}
+
+.manual-match-desc {
+  font-size: var(--voice-font-min);
+  color: var(--voice-text-muted);
+}
+
+.manual-match-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.manual-match-option {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-height: 38px;
+  width: 100%;
+  padding: 0 12px;
+  border: 1px solid var(--voice-border);
+  border-radius: 12px;
+  background: var(--voice-surface-soft);
+  color: var(--voice-text);
+  cursor: pointer;
+  text-align: left;
+}
+
+.manual-match-option:hover {
+  border-color: var(--voice-accent);
+  background: var(--voice-accent-softer);
+}
+
+.manual-match-option-name {
+  flex: 1;
+  min-width: 0;
+  font-size: var(--voice-font-main);
+  font-weight: 600;
+  color: var(--voice-text);
+}
+
+.manual-match-option-meta,
+.manual-match-empty {
+  font-size: var(--voice-font-min);
+  color: var(--voice-text-muted);
+}
+
+.manual-match-option-meta {
+  flex-shrink: 0;
+  white-space: nowrap;
+}
+
+.manual-match-empty {
+  padding: 8px 2px 0;
 }
 
 .related-list {
@@ -2756,7 +3748,7 @@ watch(
   padding: 0 12px;
   border: 1px solid var(--voice-border);
   border-radius: 999px;
-  background: #fff;
+  background: var(--voice-surface);
   color: var(--voice-text);
   font-size: var(--voice-font-min);
   cursor: pointer;
@@ -2798,7 +3790,7 @@ watch(
 .editor-shell {
   margin-top: 10px;
   padding-top: 10px;
-  border-top: 1px solid #ebf0f6;
+  border-top: 1px solid var(--voice-border);
 }
 
 .medicine-primary-fields {
@@ -2815,8 +3807,8 @@ watch(
   min-width: 0;
   padding: 8px 10px;
   border-radius: 12px;
-  border: 1px solid #e7edf5;
-  background: #fafbfd;
+  border: 1px solid var(--voice-border);
+  background: var(--voice-surface-soft);
 }
 
 .primary-field {
@@ -2824,8 +3816,8 @@ watch(
 }
 
 .primary-field.editing {
-  border-color: rgba(43, 127, 227, 0.36);
-  background: #fff;
+  border-color: var(--voice-accent);
+  background: var(--voice-surface);
 }
 
 .primary-field label,
@@ -2851,7 +3843,7 @@ watch(
 }
 
 .field-read-btn.placeholder {
-  color: #98a6b9;
+  color: var(--voice-text-disabled);
   font-weight: 500;
 }
 
@@ -2879,9 +3871,9 @@ watch(
   max-height: 188px;
   overflow-y: auto;
   padding: 6px;
-  border: 1px solid #d7e3f0;
+  border: 1px solid var(--voice-border);
   border-radius: 12px;
-  background: rgba(255, 255, 255, 0.98);
+  background: var(--voice-surface-glass);
   box-shadow: 0 12px 24px rgba(15, 23, 42, 0.12);
 }
 
@@ -2902,7 +3894,7 @@ watch(
 }
 
 .route-option-item:hover {
-  background: #f3f7fc;
+  background: var(--voice-surface-hover);
 }
 
 .route-option-text,
@@ -2995,7 +3987,7 @@ watch(
 .back-btn,
 .btn-secondary {
   border: 1px solid var(--voice-border);
-  background: rgba(255, 255, 255, 0.96);
+  background: var(--voice-surface-glass);
   color: var(--voice-text);
 }
 
@@ -3019,7 +4011,7 @@ watch(
 .spinner-ring {
   position: absolute;
   inset: 0;
-  border: 2px solid rgba(43, 127, 227, 0.18);
+  border: 2px solid var(--voice-accent-soft);
   border-top-color: var(--voice-accent);
   border-radius: 50%;
 }
@@ -3028,7 +4020,7 @@ watch(
   position: absolute;
   inset: 9px;
   border-radius: 50%;
-  background: rgba(43, 127, 227, 0.14);
+  background: var(--voice-accent-soft);
 }
 
 .loading-inline {

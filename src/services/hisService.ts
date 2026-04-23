@@ -111,6 +111,38 @@ interface HiBdCliOrgListBody {
   }>;
 }
 
+interface HiBdCliDetailBody {
+  idTet?: string;
+  idCli?: string;
+  naCli?: string;
+  unit?: string;
+  cdCli?: string;
+  priceSale?: number;
+  idCstmg?: string;
+  sdUse?: string;
+  fgMed?: string;
+  sdCli?: string;
+  fgCombination?: string;
+  fgSingle?: string;
+  py?: string;
+  fgPri?: string;
+  sdPacstype?: string;
+  idSrv?: string;
+  fgActive?: string;
+  insertUser?: string;
+  id?: string;
+  count?: number;
+  sdSpecimenText?: string;
+  naCstmg?: string;
+  idDeptExec?: string;
+  fgImp?: boolean;
+  sdUseText?: string;
+  fgMedText?: string;
+  fgCombinationText?: string;
+  fgSingleText?: string;
+  fgPriText?: string;
+}
+
 
 interface OrgMedicineConfigItem {
   idMedPro?: string;
@@ -160,11 +192,19 @@ interface OrgMedicineStoreListBody {
   items?: OrgMedicineStoreItem[];
 }
 
+interface OrganDeptListBody {
+  start?: number;
+  limit?: number;
+  items?: HisDictionaryItem[];
+}
+
 const HIS_CATALOG_ENDPOINTS = {
   diagnoses: 'api/base.hiBdDieService/queryList',
   medicalItems: 'api/phis.hiBdCliOrgService/queryHiBdCliOrgList',
+  medicalItemDetail: 'api/phis.hiBdCliService/loadHiBdCliDetail',
   medicineStores: 'api/phis.medicineDispensingService/queryDispensingSto',
   orgMedicineStores: 'api/phis.orgMedStoManageService/queryOrgSto',
+  execDepartments: 'api/base.organDicService/deptListByTec',
   medicines: 'api/phis.orgMedicineConfig/queryList',
 } as const;
 
@@ -490,6 +530,38 @@ export class HisService {
   async fetchMedicineUsageDictionary(): Promise<HisDictionaryItem[]> {
     const response = await this.get<HisDictionaryResponse>('rbmh.base.med.usage.dic');
     return Array.isArray(response?.items) ? response.items : [];
+  }
+
+  /**
+   * 获取检验检查/处置可选执行科室
+   */
+  async fetchExecutionDepartments(): Promise<HisDictionaryItem[]> {
+    const response = await this.post<OrganDeptListBody>(
+      HIS_CATALOG_ENDPOINTS.execDepartments,
+      []
+    );
+    this.assertBusinessSuccess(HIS_CATALOG_ENDPOINTS.execDepartments, response);
+
+    const items = response.body?.items ?? response.data?.items ?? [];
+    return Array.isArray(items) ? items : [];
+  }
+
+  /**
+   * 获取诊疗项目详情
+   */
+  async fetchMedicalItemDetail(idCli: string): Promise<HiBdCliDetailBody | null> {
+    const normalizedIdCli = idCli.trim();
+    if (!normalizedIdCli) {
+      return null;
+    }
+
+    const response = await this.post<HiBdCliDetailBody>(
+      HIS_CATALOG_ENDPOINTS.medicalItemDetail,
+      [normalizedIdCli, 'org']
+    );
+    this.assertBusinessSuccess(HIS_CATALOG_ENDPOINTS.medicalItemDetail, response);
+
+    return response.body ?? response.data ?? null;
   }
 
   /**

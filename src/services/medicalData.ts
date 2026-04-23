@@ -144,6 +144,14 @@ interface ScoredCandidate<T> {
   primaryScore: number;
 }
 
+export type CatalogMatchStatus = 'exact' | 'probable' | 'unmatched';
+
+export interface CatalogMatchAssessment<T> {
+  status: CatalogMatchStatus;
+  candidate: T | null;
+  confidence: number;
+}
+
 const ICD10_CATEGORY_GROUPS: Icd10CategoryInfo[] = [
   { key: 'A00-B99', range: 'A00-B99', title: '某些传染病和寄生虫病', order: 1 },
   { key: 'C00-D48', range: 'C00-D48', title: '肿瘤', order: 2 },
@@ -170,6 +178,8 @@ const ICD10_CATEGORY_GROUPS: Icd10CategoryInfo[] = [
 ];
 
 class MedicalDataService {
+  private static readonly PROBABLE_MATCH_THRESHOLD = 0.86;
+  private static readonly PROBABLE_MATCH_MARGIN = 0.08;
   private static readonly DATA_CACHE_KEY = 'REGIONAL_MEDICAL_DATA_CACHE';
   private static readonly DATA_VERSION_KEY = 'REGIONAL_MEDICAL_DATA_VERSION';
 
@@ -660,6 +670,14 @@ class MedicalDataService {
     return this.matchMedicineByVariants(query, aliases);
   }
 
+  public searchMedicines(query: string, aliases?: string[], limit = 8): MedicineItem[] {
+    return this.searchMedicinesByVariants(query, aliases, limit);
+  }
+
+  public assessMedicineMatch(query: string, aliases?: string[]): CatalogMatchAssessment<MedicineItem> {
+    return this.assessMedicineByVariants(query, aliases);
+  }
+
   /**
    * Find best matching examination/lab item
    * @param query AI output string
@@ -676,12 +694,28 @@ class MedicalDataService {
     return this.matchItemByCategory(query, '检查', aliases);
   }
 
+  public searchExamItems(query: string, aliases?: string[], limit = 8): MedicalItem[] {
+    return this.searchItemsByCategory(query, '检查', aliases, limit);
+  }
+
+  public assessExamItemMatch(query: string, aliases?: string[]): CatalogMatchAssessment<MedicalItem> {
+    return this.assessItemByCategory(query, '检查', aliases);
+  }
+
   /**
    * Find best matching lab test item (blood test, urine test, biochemistry, etc.)
    * Only matches items with category === '检验'
    */
   public matchLabTestItem(query: string, aliases?: string[]): MedicalItem | null {
     return this.matchItemByCategory(query, '检验', aliases);
+  }
+
+  public searchLabTestItems(query: string, aliases?: string[], limit = 8): MedicalItem[] {
+    return this.searchItemsByCategory(query, '检验', aliases, limit);
+  }
+
+  public assessLabTestItemMatch(query: string, aliases?: string[]): CatalogMatchAssessment<MedicalItem> {
+    return this.assessItemByCategory(query, '检验', aliases);
   }
 
   /**
@@ -692,27 +726,113 @@ class MedicalDataService {
     return this.matchItemByCategory(query, '治疗', aliases);
   }
 
+  public searchProcedureItems(query: string, aliases?: string[], limit = 8): MedicalItem[] {
+    return this.searchItemsByCategory(query, '治疗', aliases, limit);
+  }
+
+  public assessProcedureItemMatch(query: string, aliases?: string[]): CatalogMatchAssessment<MedicalItem> {
+    return this.assessItemByCategory(query, '治疗', aliases);
+  }
+
   private matchItemByCategory(query: string, category: string, aliases?: string[]): MedicalItem | null {
     if (!query) return null;
     const filtered = this.catalog.items.filter(i => i.category === category);
     return this.matchMedicalItemByVariants(filtered, query, aliases);
   }
 
+  private searchItemsByCategory(query: string, category: string, aliases?: string[], limit = 8): MedicalItem[] {
+    if (!query) return [];
+    const filtered = this.catalog.items.filter(i => i.category === category);
+    return this.searchMedicalItemsByVariants(filtered, query, aliases, limit);
+  }
+
+  private assessItemByCategory(query: string, category: string, aliases?: string[]): CatalogMatchAssessment<MedicalItem> {
+    if (!query) {
+      return { status: 'unmatched', candidate: null, confidence: 0 };
+    }
+
+    const filtered = this.catalog.items.filter(i => i.category === category);
+    return this.assessMedicalItemByVariants(filtered, query, aliases);
+  }
+
   private matchMedicineByVariants(query: string, aliases?: string[]): MedicineItem | null {
+    const top = this.collectScoredMedicineCandidates(query, aliases, 1)[0];
+    return top && top.score > 0.3 ? top.item : null;
+  }
+
+  private searchMedicinesByVariants(query: string, aliases?: string[], limit = 8): MedicineItem[] {
+    return this.collectScoredMedicineCandidates(query, aliases, limit)
+      .slice(0, limit)
+      .map((candidate) => candidate.item);
+  }
+
+  private assessMedicineByVariants(query: string, aliases?: string[]): CatalogMatchAssessment<MedicineItem> {
+    const exact = this.findExactMedicineMatch(query);
+    if (exact) {
+      return { status: 'exact', candidate: exact, confidence: 1 };
+    }
+
+    const ranked = this.collectScoredMedicineCandidates(query, aliases, 2);
+    const top = ranked[0];
+    const second = ranked[1];
+
+    if (top && top.score >= MedicalDataService.PROBABLE_MATCH_THRESHOLD) {
+      const margin = second ? top.score - second.score : 1;
+      if (margin >= MedicalDataService.PROBABLE_MATCH_MARGIN) {
+        return {
+          status: 'probable',
+          candidate: top.item,
+          confidence: Number(top.score.toFixed(3)),
+        };
+      }
+    }
+
+    return { status: 'unmatched', candidate: null, confidence: 0 };
+  }
+
+  private matchMedicalItemByVariants(items: MedicalItem[], query: string, aliases?: string[]): MedicalItem | null {
+    const top = this.collectScoredMedicalItemCandidates(items, query, aliases, 1)[0];
+    return top && top.score > 0.3 ? top.item : null;
+  }
+
+  private searchMedicalItemsByVariants(items: MedicalItem[], query: string, aliases?: string[], limit = 8): MedicalItem[] {
+    return this.collectScoredMedicalItemCandidates(items, query, aliases, limit)
+      .slice(0, limit)
+      .map((candidate) => candidate.item);
+  }
+
+  private assessMedicalItemByVariants(items: MedicalItem[], query: string, aliases?: string[]): CatalogMatchAssessment<MedicalItem> {
+    const exact = this.findExactMedicalItemMatch(items, query);
+    if (exact) {
+      return { status: 'exact', candidate: exact, confidence: 1 };
+    }
+
+    const ranked = this.collectScoredMedicalItemCandidates(items, query, aliases, 2);
+    const top = ranked[0];
+    const second = ranked[1];
+
+    if (top && top.score >= MedicalDataService.PROBABLE_MATCH_THRESHOLD) {
+      const margin = second ? top.score - second.score : 1;
+      if (margin >= MedicalDataService.PROBABLE_MATCH_MARGIN) {
+        return {
+          status: 'probable',
+          candidate: top.item,
+          confidence: Number(top.score.toFixed(3)),
+        };
+      }
+    }
+
+    return { status: 'unmatched', candidate: null, confidence: 0 };
+  }
+
+  private collectScoredMedicineCandidates(query: string, aliases?: string[], limit = Number.POSITIVE_INFINITY): Array<ScoredCandidate<MedicineItem>> {
     const variants = this.buildMatchVariants(query, aliases);
     if (variants.length === 0) {
-      return null;
+      return [];
     }
+
     const primaryVariant = variants[0];
-
-    const exact = this.catalog.medicines.find((item) =>
-      item.name.trim().toLowerCase() === primaryVariant.normalized,
-    );
-    if (exact) {
-      return exact;
-    }
-
-    let bestCandidate: ScoredCandidate<MedicineItem> | null = null;
+    const medicineCandidates: Array<ScoredCandidate<MedicineItem>> = [];
 
     for (const item of this.catalog.medicines) {
       const primaryNameScore = this.calculateScore(primaryVariant.normalized, item.name);
@@ -731,36 +851,22 @@ class MedicalDataService {
         score = Math.max(score, nameScore, fullNameScore);
       }
 
-      if (!bestCandidate || score > bestCandidate.score || (score === bestCandidate.score && primaryScore > bestCandidate.primaryScore)) {
-        bestCandidate = { item, score, primaryScore };
-      }
+      medicineCandidates.push({ item, score, primaryScore });
     }
 
-    return bestCandidate && bestCandidate.score > 0.3 ? bestCandidate.item : null;
+    return medicineCandidates
+      .sort((left, right) => right.score - left.score || right.primaryScore - left.primaryScore || left.item.name.localeCompare(right.item.name))
+      .slice(0, limit);
   }
 
-  private matchMedicalItemByVariants(items: MedicalItem[], query: string, aliases?: string[]): MedicalItem | null {
+  private collectScoredMedicalItemCandidates(items: MedicalItem[], query: string, aliases?: string[], limit = Number.POSITIVE_INFINITY): Array<ScoredCandidate<MedicalItem>> {
     const variants = this.buildMatchVariants(query, aliases);
     if (variants.length === 0) {
-      return null;
+      return [];
     }
+
     const primaryVariant = variants[0];
-
-    const exact = items.find((item) =>
-      item.name.trim().toLowerCase() === primaryVariant.normalized || item.code.trim().toLowerCase() === primaryVariant.normalized,
-    );
-    if (exact) {
-      return exact;
-    }
-
-    const routineAliasExact = items.find((item) =>
-      this.normalizeRoutineItemAlias(item.name) === primaryVariant.normalizedRoutineAlias,
-    );
-    if (routineAliasExact) {
-      return routineAliasExact;
-    }
-
-    let bestCandidate: ScoredCandidate<MedicalItem> | null = null;
+    const candidates: Array<ScoredCandidate<MedicalItem>> = [];
 
     for (const item of items) {
       const primaryScore = Math.max(
@@ -782,12 +888,12 @@ class MedicalDataService {
         score = Math.max(score, baseScore, routineAliasScore);
       }
 
-      if (!bestCandidate || score > bestCandidate.score || (score === bestCandidate.score && primaryScore > bestCandidate.primaryScore)) {
-        bestCandidate = { item, score, primaryScore };
-      }
+      candidates.push({ item, score, primaryScore });
     }
 
-    return bestCandidate && bestCandidate.score > 0.3 ? bestCandidate.item : null;
+    return candidates
+      .sort((left, right) => right.score - left.score || right.primaryScore - left.primaryScore || left.item.name.localeCompare(right.item.name))
+      .slice(0, limit);
   }
 
   private buildMatchVariants(query: string, aliases?: string[]): MatchVariant[] {
@@ -822,6 +928,31 @@ class MedicalDataService {
       .replace(/\s+/gu, '')
       .replace(/^常规/u, '')
       .replace(/(检查|检验|检测|测定|项目)$/u, '');
+  }
+
+  private normalizeExactMatchText(value: string): string {
+    return value
+      .trim()
+      .toLowerCase()
+      .replace(/[\s\-_()（）[\]【】,，.。/\\]/gu, '');
+  }
+
+  private findExactMedicineMatch(query: string): MedicineItem | null {
+    const normalizedQuery = this.normalizeExactMatchText(query);
+    if (!normalizedQuery) {
+      return null;
+    }
+
+    return this.catalog.medicines.find((item) => this.normalizeExactMatchText(item.name) === normalizedQuery) || null;
+  }
+
+  private findExactMedicalItemMatch(items: MedicalItem[], query: string): MedicalItem | null {
+    const normalizedQuery = this.normalizeExactMatchText(query);
+    if (!normalizedQuery) {
+      return null;
+    }
+
+    return items.find((item) => this.normalizeExactMatchText(item.name) === normalizedQuery || item.code.trim().toLowerCase() === query.trim().toLowerCase()) || null;
   }
 
   /**

@@ -48,12 +48,16 @@ export interface Patient {
 export interface TreatmentRecommendation {
     type: 'medicine' | 'exam' | 'lab_test' | 'procedure' | 'acupuncture';
     name: string; // AI recommended name
+    originalName?: string; // AI 原始推荐名称（手动匹配后保留）
     aliases?: string[];
     reason: string;
     spec?: string;
     usage?: string;
     ingredients?: string; // TCM specific
     matchedItem?: any; // Matched item from catalog
+    suggestedMatchItem?: any; // 高相似候选项，待医生确认
+    matchStatus?: 'exact' | 'probable' | 'confirmed' | 'manual' | 'unmatched';
+    manualMatched?: boolean;
     selected?: boolean;
     sourceType?: 'explicit' | 'inferred' | 'uncertain';
     evidenceText?: string;
