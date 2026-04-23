@@ -71,7 +71,7 @@ floating-ball/
 | **SymptomManagement.vue** | ~2000 | 症状管理：关联症状建议、中西医切换 | 与 ConsultationPage 强耦合 |
 | **DiagnosisPathWindow.vue** | ~980 | 独立窗口：诊断推理路径可视化（ECharts 图） | 有独立 Pinia 缓存，注意缓存 key 策略 |
 | **VoiceConsultationResult.vue** | ~1200 | 语音转写后的结构化病历编辑器 | 与语音链路串联 |
-| **VoiceConsultationNew.vue** | ~2100 | 当前语音问诊主结果页：左侧病例正文编辑，右侧 AI 诊断/治疗推荐与一键回写；消费语音抽取阶段生成的病例草稿与结构化诊断/处方提示，药品频次/用法字段在此处接 HIS 字典并允许筛选 | 推荐依据默认应折叠，避免右栏信息过载 |
+| **VoiceConsultationNew.vue** | ~2100 | 当前语音问诊主结果页：左侧病例正文编辑，右侧 AI 诊断/治疗推荐与一键回写；消费语音抽取阶段生成的病例草稿与结构化诊断/处方提示，药品频次/用法字段在此处接 HIS 字典并允许筛选，药房列表也按 SDK 握手里的 `userRoleDepts` 过滤后从 HIS 动态加载 | 推荐依据默认应折叠，避免右栏信息过载 |
 | **VoiceCapsule.vue** | ~450 | 语音录制界面：音频采集(PCM16) + 流式传输 | 配合 audioRecorder + aliyunSpeech |
 
 ### 辅助功能组件
@@ -150,7 +150,7 @@ useEventListeners (全局事件) -> 触发 useNavigation & useWorkMode
 
 | 服务 | 行数 | 职责 |
 |------|------|------|
-| **hisService.ts** | ~80 | 封装 Tauri HTTP 插件，绕过浏览器同源与 Cookie 限制，供前端直接调用 HIS 接口；同时承接诊断、药品、诊疗项目目录及药品频次/用法字典读取 |
+| **hisService.ts** | ~80 | 封装 Tauri HTTP 插件，绕过浏览器同源与 Cookie 限制，供前端直接调用 HIS 接口；同时承接诊断、药品、诊疗项目目录及药品频次/用法字典读取，并根据 SDK 握手 `extra.urt.userRoleDepts` 中的 `deptId` 过滤语音结果页可见药房 |
 | **medical_catalog.rs** | -- | 医学目录 SQLite 持久化命令：诊断全局缓存、诊疗项目/药品按机构缓存与同步状态管理，并提供调试态查看/清理命令 | 供 `medicalData.ts` 调用 |
 | **factChecker.ts** | ~399 | AI 输出验证（医学指南核查） |
 | **feedback.ts** | ~312 | 操作追踪与反馈 |

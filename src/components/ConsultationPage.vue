@@ -3615,7 +3615,7 @@ const fetchTreatmentRecommendation = async () => {
       .map(rec => ({
         ...rec,
         type: 'medicine' as const,
-        matchedItem: medicalDataService.matchMedicine(rec.name),
+        matchedItem: medicalDataService.matchMedicine(rec.name, Array.isArray(rec.aliases) ? rec.aliases : undefined),
         selected: false
       }));
 
@@ -3684,7 +3684,7 @@ const fetchExamRecommendation = async () => {
       .map(rec => ({
         ...rec,
         type: 'exam' as const,
-        matchedItem: medicalDataService.matchExamItem(rec.name),
+        matchedItem: medicalDataService.matchExamItem(rec.name, Array.isArray(rec.aliases) ? rec.aliases : undefined),
         selected: false
       }));
 
@@ -3742,7 +3742,7 @@ const fetchLabTestRecommendation = async () => {
       .map(rec => ({
         ...rec,
         type: 'lab_test' as const,
-        matchedItem: medicalDataService.matchLabTestItem(rec.name),
+        matchedItem: medicalDataService.matchLabTestItem(rec.name, Array.isArray(rec.aliases) ? rec.aliases : undefined),
         selected: false
       }));
 
@@ -3803,7 +3803,7 @@ const fetchProcedureRecommendation = async () => {
       .map(rec => ({
         ...rec,
         type: 'procedure' as const,
-        matchedItem: medicalDataService.matchProcedureItem(rec.name),
+        matchedItem: medicalDataService.matchProcedureItem(rec.name, Array.isArray(rec.aliases) ? rec.aliases : undefined),
         selected: false
       }));
 

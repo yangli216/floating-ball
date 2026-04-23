@@ -114,6 +114,8 @@ export interface TreatmentHint {
   sourceType?: HintSourceType;
   /** 提取的项目名称 */
   name: string;
+  /** 常用别名，便于与院内目录做加权匹配 */
+  aliases?: string[];
   /** 处理目的或引用理由 */
   goal?: string;
   /** 规格 (药品适用) */
@@ -198,12 +200,13 @@ export const VoiceIntentRecognitionPrompt = {
     "allergyHistory": "过敏史，如无则写无特殊",
     "currentMedicationHistory": "长期或当前用药史，如无则写无特殊",
     "symptoms": ["症状1", "症状2"],
-    "negativeSymptoms": ["否认症状1", "否认症状2"],
+    "negativeSymptoms": ["症状1", "症状2"],
     "treatmentPlan": "其他处理意见，没有则空字符串",
     "healthEducation": "健康宣教，没有则空字符串"
   },
   "diagnosisHints": [
     {
+      "aliases": ["常用简称1", "院内常见别名2"],
       "name": "诊断名称",
       "code": "ICD-10 编码，如无法确定可留空",
       "evidenceText": "支持该诊断的对话证据片段",
@@ -233,6 +236,7 @@ export const VoiceIntentRecognitionPrompt = {
     {
       "type": "examination",
       "name": "检查名称",
+      "aliases": ["医院常用简称1", "常见别名2"],
       "evidenceText": "对话证据片段",
       "sourceType": "explicit",
       "goal": "检查目的"
@@ -240,6 +244,7 @@ export const VoiceIntentRecognitionPrompt = {
     {
       "type": "labTest",
       "name": "检验名称",
+      "aliases": ["医院常用简称1", "常见别名2"],
       "evidenceText": "对话证据片段",
       "sourceType": "explicit",
       "goal": "检验目的"
@@ -247,6 +252,7 @@ export const VoiceIntentRecognitionPrompt = {
     {
       "type": "procedure",
       "name": "处置名称",
+      "aliases": ["医院常用简称1", "常见别名2"],
       "evidenceText": "对话证据片段",
       "sourceType": "explicit",
       "goal": "处置目的"
@@ -261,21 +267,25 @@ export const VoiceIntentRecognitionPrompt = {
 2. recordDraft 是病例正文草稿，目标是让医生少改字、少补字段，但必须尽量忠于对话。
 3. chiefComplaint 尽量写成“主要症状 + 持续时间”；不要把诊断写进主诉。
 4. historyOfPresentIllness 必须按“起病时间/诱因 -> 核心症状 -> 伴随症状与重要阴性 -> 已做处理/关键查体或检查”整理成 2-4 句紧凑表述；不要重复医生问话、缴费复诊流程、泛化宣教、明显重复的阴性信息。
-5. pastMedicalHistory、allergyHistory、currentMedicationHistory 要分别整理；若对话未提及，写“无特殊”或空字符串，不要编造。
-6. diagnosisHints 和 treatmentHints 允许在病例事实基础上做合理补全，但所有推断项必须把 sourceType 标记为 inferred，对话明确提到的内容标记为 explicit；信息不足但仍给出谨慎提示时标记为 uncertain。
-7. 对于药品，必须严格区分三类信息：
+5. negativeSymptoms 只填写阴性症状名称本身，例如“咳痰”“胸痛”；不要携带“否认”“无”“未见”“不伴”等否定前缀。
+6. pastMedicalHistory、allergyHistory、currentMedicationHistory 要分别整理；若对话未提及，写“无特殊”或空字符串，不要编造。
+7. diagnosisHints 和 treatmentHints 允许在病例事实基础上做合理补全，但所有推断项必须把 sourceType 标记为 inferred，对话明确提到的内容标记为 explicit；信息不足但仍给出谨慎提示时标记为 uncertain。
+7.1 diagnosisHints 允许返回多条诊断，但前提必须是病例中存在明确的并存诊断或需要同时成立的诊断；如果只是鉴别诊断、待排除方向或可能性排序，不要直接并列写进 diagnosisHints。
+7.2 diagnosisHints 如返回多条，第一条必须是主诊断，后续条目才是伴随诊断或并存诊断。
+8. 对于药品，必须严格区分三类信息：
   - 患者已自行服用、既往长期服用、院外先行处理过的药，默认写入 currentMedicationHistory，不要直接作为当前 treatmentHints 输出；
   - 只有医生在当前计划中明确建议继续、调整、补开、开立的药，才能进入当前 treatmentHints；
   - “如果化验提示细菌感染再用阿奇霉素”“必要时再考虑某药”这类条件性方案，不要作为当前已确定药品输出到 treatmentHints，应写入 treatmentPlan。
-8. 对于当前已明确推荐的药品，尽量补充规格 spec；同时优先拆分出剂量值和单位，不要把“0.5g”完整塞进 dosage，也不要再使用旧的 count 字段承载总量；频次和用法优先输出文本，同时在能确定标准简码时补充 frequencyKey、usageKey，否则留空。
-9. 如果对话已明确当前要用某药，但没有给出一次剂量、频次、疗程或总量，可结合基层门诊常见方案谨慎补全这些字段，以提升可直接引用性；此时必须将该药的 sourceType 设为 inferred，并在 evidenceText 或 goal 中明确说明“处方细节为模型按常用门诊方案补全”。
-10. 如果药品本身都未被当前方案明确推荐，或处方细节无法从常规门诊方案合理补全，就不要臆造 dosage、frequency、days、totalQty、totalUnit。
-11. 如果对话中出现“A+B”“A和B”“先做A再做B”等组合表述，必须拆分为独立的诊断、药品、检查、检验、处置项目。
-12. evidenceText 要尽量保留与该项最相关的对话证据，便于结果页展示“为什么提了这条”。
-13. 诊断、检查、检验、处置、药品名称应尽量标准化，但不要为了标准化篡改原意。
-14. 如果输入与医疗问诊场景无关，返回 {"error": true, "message": "输入内容与医疗问诊场景无关"}。
-15. 如果语音转写质量太差，导致关键病情无法理解，返回 {"error": true, "message": "语音识别质量不足，请重新录制"}。
-16. 除 error/message 外，其余字段尽量补全；实在没有内容时，字符串字段给空字符串，数组字段给空数组。`,
+9. 对于当前已明确推荐的药品，尽量补充规格 spec；同时优先拆分出剂量值和单位，不要把“0.5g”完整塞进 dosage，也不要再使用旧的 count 字段承载总量；频次和用法优先输出文本，同时在能确定标准简码时补充 frequencyKey、usageKey，否则留空。
+10. 如果对话已明确当前要用某药，但没有给出一次剂量、频次、疗程或总量，可结合基层门诊常见方案谨慎补全这些字段，以提升可直接引用性；此时必须将该药的 sourceType 设为 inferred，并在 evidenceText 或 goal 中明确说明“处方细节为模型按常用门诊方案补全”。
+11. 如果药品本身都未被当前方案明确推荐，或处方细节无法从常规门诊方案合理补全，就不要臆造 dosage、frequency、days、totalQty、totalUnit。
+12. 如果对话中出现“A+B”“A和B”“先做A再做B”等组合表述，必须拆分为独立的诊断、药品、检查、检验、处置项目。
+13. evidenceText 要尽量保留与该项最相关的对话证据，便于结果页展示“为什么提了这条”。
+14. 对于药品、检查、检验、处置项目，name 尽量填写规范名称；如果日常医院使用中常存在 1-3 个稳定简称或别名，请同步填写 aliases，优先写门诊医生常说的简称，不要编造冷门别名。
+15. 诊断、检查、检验、处置、药品名称应尽量标准化，但不要为了标准化篡改原意。
+16. 如果输入与医疗问诊场景无关，返回 {"error": true, "message": "输入内容与医疗问诊场景无关"}。
+17. 如果语音转写质量太差，导致关键病情无法理解，返回 {"error": true, "message": "语音识别质量不足，请重新录制"}。
+18. 除 error/message 外，其余字段尽量补全；实在没有内容时，字符串字段给空字符串，数组字段给空数组。`,
 
   buildUserPrompt(transcribedText: string): string {
     return `医患对话内容：\n${transcribedText}`;
@@ -535,7 +545,8 @@ export const DiagnosisRecommendationPrompt = {
 
 **临床思维要求：**
 - 基于主诉分析最可能的疾病（马蹄声原则：听到马蹄声，首先想到马，而非斑马）
-- 推荐2-3个诊断，按可能性从高到低排序
+- 返回 1-3 条可以直接成立的诊断；若存在并存诊断，可返回多条，且第一条必须是主诊断
+- 不要把纯鉴别诊断、待排除诊断直接与已成立诊断并列输出
 - 符合率应真实（60-90%区间，不要都很高）
 - 每个诊断的rationale必须说明支持和不支持的证据
 
@@ -569,10 +580,11 @@ ${params.historyOfPresentIllness}
 
 **诊断任务：**
 1. 分析主诉和现病史，提取关键症状（发病时间、性质、诱因、伴随症状、加重/缓解因素等）
-2. 基于"常见病优先"和"马蹄声原则"，推荐2-3个最可能的基层常见诊断
+2. 基于"常见病优先"和"马蹄声原则"，返回 1-3 个可以直接成立的基层常见诊断；若存在并存诊断，可返回多条，第一条必须为主诊断
 3. 每个诊断必须符合相应的基层诊疗指南诊断标准
 4. 避免罕见病、需要复杂检查才能确诊的疾病、模糊诊断（如"其他特指的"）
 5. 符合率应真实反映症状匹配度（建议在60-90%区间，按可能性递减）
+6. 如果只是需要提示医生做鉴别诊断或排除风险，不要把该项直接输出为正式诊断
 
 **返回格式示例：**
 [
@@ -832,12 +844,14 @@ ${params.chiefComplaint}
 7. 优先返回结构化字段：规格 spec、单次剂量 dosage、剂量单位 dosageUnit、频次 frequency、频次编码 frequencyKey、用法 usage、用法编码 usageKey、总量 totalQty、总量单位 totalUnit、疗程 days
 8. 若频次/用法能明确标准表达，优先输出中文文本；frequencyKey、usageKey 能确定就补充，不能确定可留空
 9. 若 dosage、总量、疗程无法合理确定，可留空字符串，但不要把这类字段全部混写进 usage
+10. name 优先填写规范通用名；如果门诊日常还常用 1-3 个稳定简称或别名，请补充到 aliases，便于与院内目录匹配
 
 **返回格式：**
 [
   {
     "type": "medicine",
     "name": "阿莫西林胶囊",
+    "aliases": ["阿莫西林", "阿莫西林胶囊剂"],
     "spec": "0.25g*24粒/盒",
     "reason": "符合急性支气管炎细菌感染治疗指南，基本药物目录药品",
     "dosage": "0.5",
@@ -930,6 +944,7 @@ export const ExaminationRecommendationPrompt = {
 2. 避免过度检查，优先必要的常规检查
 3. 考虑检查的性价比和可及性
 4. 检查项目名称使用基层医疗机构标准名称
+5. 如果基层日常存在常用简称或别名，请一并补充，便于与院内目录匹配
 
 **输出要求：**
 严格返回JSON数组格式，不包含markdown标记`,
@@ -964,7 +979,8 @@ ${params.chiefComplaint}
 [
   {
     "type": "exam",
-    "name": "胸部X线",
+    "name": "胸部X线检查",
+    "aliases": ["胸片", "胸部平片"],
     "reason": "排除肺部感染，基层常规检查项目"
   }
 ]
@@ -987,6 +1003,7 @@ export const LabTestRecommendationPrompt = {
 2. 避免过度检验，优先常规必查项目
 3. 考虑检验对诊断和治疗的实际指导价值
 4. 检验项目名称使用基层医疗机构标准名称
+5. 如果临床日常常用简称稳定明确，可补充 1-3 个 aliases 便于目录匹配
 
 **输出要求：**
 严格返回JSON数组格式，不包含markdown标记`,
@@ -1022,6 +1039,7 @@ ${params.chiefComplaint}
   {
     "type": "lab_test",
     "name": "血常规",
+    "aliases": ["血常规检查", "全血细胞计数"],
     "reason": "鉴别细菌性或病毒性感染，指导抗生素使用"
   }
 ]
@@ -1045,6 +1063,7 @@ export const ProcedureRecommendationPrompt = {
 2. 只推荐基层医疗机构有条件执行的处置
 3. 避免推荐需要上级医院才能完成的高风险操作
 4. 处置名称尽量贴近基层医疗机构标准名称（如：针刺、拔罐、推拿治疗、微波治疗、红外线治疗等）
+5. 如果门诊日常存在稳定简称或别名，可补充 1-3 个 aliases 便于院内目录匹配
 
 **输出要求：**
 严格返回JSON数组格式，不包含markdown标记`,

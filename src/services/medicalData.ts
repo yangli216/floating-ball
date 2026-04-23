@@ -52,6 +52,13 @@ export interface MedicineItem {
   id: string;
   name: string;
   spec: string;
+  idSrv?: string;
+  naSrv?: string;
+  sdSrv?: string;
+  idDeptExec?: string;
+  fgCheckOrd?: string;
+  fgSkintest?: string;
+  raw?: Record<string, unknown>;
 }
 
 export interface MedicalItem {
@@ -60,6 +67,14 @@ export interface MedicalItem {
   name: string;
   category: string;
   keywords?: string[];
+  idSrv?: string;
+  naSrv?: string;
+  sdSrv?: string;
+  idDeptExec?: string;
+  idPart?: string;
+  jsonField?: string;
+  fgCheckOrd?: string;
+  raw?: Record<string, unknown>;
 }
 
 export interface MedicalCatalog {
@@ -115,6 +130,18 @@ export interface MedicalCatalogClearResult {
   itemRows: number;
   medicineRows: number;
   syncStateRows: number;
+}
+
+interface MatchVariant {
+  normalized: string;
+  weight: number;
+  normalizedRoutineAlias: string;
+}
+
+interface ScoredCandidate<T> {
+  item: T;
+  score: number;
+  primaryScore: number;
 }
 
 const ICD10_CATEGORY_GROUPS: Icd10CategoryInfo[] = [
@@ -629,37 +656,8 @@ class MedicalDataService {
    * Find best matching medicine
    * @param query AI output string
    */
-  public matchMedicine(query: string): MedicineItem | null {
-    if (!query) return null;
-    const normalizedQuery = query.trim().toLowerCase();
-
-    // 1. Exact match
-    const exact = this.catalog.medicines.find(m => 
-      m.name === normalizedQuery
-    );
-    if (exact) return exact;
-
-    // 2. Best fuzzy match
-    let bestMatch: MedicineItem | null = null;
-    let maxScore = 0;
-
-    for (const item of this.catalog.medicines) {
-      // Check product name
-      const nameScore = this.calculateScore(normalizedQuery, item.name);
-
-      // Check combined name + spec (to handle same name with different specs)
-      const fullName = `${item.name} ${item.spec}`;
-      const fullNameScore = this.calculateScore(normalizedQuery, fullName);
-
-      const score = Math.max(nameScore, fullNameScore);
-
-      if (score > maxScore) {
-        maxScore = score;
-        bestMatch = item;
-      }
-    }
-
-    return maxScore > 0.3 ? bestMatch : null;
+  public matchMedicine(query: string, aliases?: string[]): MedicineItem | null {
+    return this.matchMedicineByVariants(query, aliases);
   }
 
   /**
@@ -667,72 +665,163 @@ class MedicalDataService {
    * @param query AI output string
    */
   public matchItem(query: string): MedicalItem | null {
-    if (!query) return null;
-    const normalizedQuery = query.trim().toLowerCase();
-
-    // 1. Exact match
-    const exact = this.catalog.items.find(i => i.name === normalizedQuery);
-    if (exact) return exact;
-
-    // 2. Best fuzzy match
-    let bestMatch: MedicalItem | null = null;
-    let maxScore = 0;
-
-    for (const item of this.catalog.items) {
-      const score = this.calculateScore(normalizedQuery, item.name);
-      if (score > maxScore) {
-        maxScore = score;
-        bestMatch = item;
-      }
-    }
-
-    return maxScore > 0.3 ? bestMatch : null;
+    return this.matchMedicalItemByVariants(this.catalog.items, query);
   }
 
   /**
    * Find best matching examination item (imaging/device: X-ray, CT, B-ultrasound, ECG, etc.)
    * Only matches items with category === '检查'
    */
-  public matchExamItem(query: string): MedicalItem | null {
-    return this.matchItemByCategory(query, '检查');
+  public matchExamItem(query: string, aliases?: string[]): MedicalItem | null {
+    return this.matchItemByCategory(query, '检查', aliases);
   }
 
   /**
    * Find best matching lab test item (blood test, urine test, biochemistry, etc.)
    * Only matches items with category === '检验'
    */
-  public matchLabTestItem(query: string): MedicalItem | null {
-    return this.matchItemByCategory(query, '检验');
+  public matchLabTestItem(query: string, aliases?: string[]): MedicalItem | null {
+    return this.matchItemByCategory(query, '检验', aliases);
   }
 
   /**
    * Find best matching procedure item (dressing change, suture removal, nebulization, etc.)
    * Only matches items with category === '治疗'
    */
-  public matchProcedureItem(query: string): MedicalItem | null {
-    return this.matchItemByCategory(query, '治疗');
+  public matchProcedureItem(query: string, aliases?: string[]): MedicalItem | null {
+    return this.matchItemByCategory(query, '治疗', aliases);
   }
 
-  private matchItemByCategory(query: string, category: string): MedicalItem | null {
+  private matchItemByCategory(query: string, category: string, aliases?: string[]): MedicalItem | null {
     if (!query) return null;
-    const normalizedQuery = query.trim().toLowerCase();
     const filtered = this.catalog.items.filter(i => i.category === category);
+    return this.matchMedicalItemByVariants(filtered, query, aliases);
+  }
 
-    const exact = filtered.find(i => i.name === normalizedQuery);
-    if (exact) return exact;
+  private matchMedicineByVariants(query: string, aliases?: string[]): MedicineItem | null {
+    const variants = this.buildMatchVariants(query, aliases);
+    if (variants.length === 0) {
+      return null;
+    }
+    const primaryVariant = variants[0];
 
-    let bestMatch: MedicalItem | null = null;
-    let maxScore = 0;
+    const exact = this.catalog.medicines.find((item) =>
+      item.name.trim().toLowerCase() === primaryVariant.normalized,
+    );
+    if (exact) {
+      return exact;
+    }
 
-    for (const item of filtered) {
-      const score = this.calculateScore(normalizedQuery, item.name);
-      if (score > maxScore) {
-        maxScore = score;
-        bestMatch = item;
+    let bestCandidate: ScoredCandidate<MedicineItem> | null = null;
+
+    for (const item of this.catalog.medicines) {
+      const primaryNameScore = this.calculateScore(primaryVariant.normalized, item.name);
+      const primaryFullNameScore = this.calculateScore(primaryVariant.normalized, `${item.name} ${item.spec}`);
+      const primaryScore = Math.max(primaryNameScore, primaryFullNameScore);
+
+      if (primaryScore < 0.2) {
+        continue;
+      }
+
+      let score = primaryScore;
+
+      for (const variant of variants.slice(1)) {
+        const nameScore = this.calculateScore(variant.normalized, item.name) * variant.weight;
+        const fullNameScore = this.calculateScore(variant.normalized, `${item.name} ${item.spec}`) * variant.weight;
+        score = Math.max(score, nameScore, fullNameScore);
+      }
+
+      if (!bestCandidate || score > bestCandidate.score || (score === bestCandidate.score && primaryScore > bestCandidate.primaryScore)) {
+        bestCandidate = { item, score, primaryScore };
       }
     }
 
-    return maxScore > 0.3 ? bestMatch : null;
+    return bestCandidate && bestCandidate.score > 0.3 ? bestCandidate.item : null;
+  }
+
+  private matchMedicalItemByVariants(items: MedicalItem[], query: string, aliases?: string[]): MedicalItem | null {
+    const variants = this.buildMatchVariants(query, aliases);
+    if (variants.length === 0) {
+      return null;
+    }
+    const primaryVariant = variants[0];
+
+    const exact = items.find((item) =>
+      item.name.trim().toLowerCase() === primaryVariant.normalized || item.code.trim().toLowerCase() === primaryVariant.normalized,
+    );
+    if (exact) {
+      return exact;
+    }
+
+    const routineAliasExact = items.find((item) =>
+      this.normalizeRoutineItemAlias(item.name) === primaryVariant.normalizedRoutineAlias,
+    );
+    if (routineAliasExact) {
+      return routineAliasExact;
+    }
+
+    let bestCandidate: ScoredCandidate<MedicalItem> | null = null;
+
+    for (const item of items) {
+      const primaryScore = Math.max(
+        this.calculateScore(primaryVariant.normalized, item.name, item.keywords),
+        this.normalizeRoutineItemAlias(item.name) === primaryVariant.normalizedRoutineAlias ? 0.96 : 0,
+      );
+
+      if (primaryScore < 0.2) {
+        continue;
+      }
+
+      let score = primaryScore;
+
+      for (const variant of variants.slice(1)) {
+        const baseScore = this.calculateScore(variant.normalized, item.name, item.keywords) * variant.weight;
+        const routineAliasScore = this.normalizeRoutineItemAlias(item.name) === variant.normalizedRoutineAlias
+          ? Math.min(0.94, primaryScore + 0.08) * variant.weight
+          : 0;
+        score = Math.max(score, baseScore, routineAliasScore);
+      }
+
+      if (!bestCandidate || score > bestCandidate.score || (score === bestCandidate.score && primaryScore > bestCandidate.primaryScore)) {
+        bestCandidate = { item, score, primaryScore };
+      }
+    }
+
+    return bestCandidate && bestCandidate.score > 0.3 ? bestCandidate.item : null;
+  }
+
+  private buildMatchVariants(query: string, aliases?: string[]): MatchVariant[] {
+    const rawValues = [query, ...(aliases || [])]
+      .map((item) => item?.trim())
+      .filter(Boolean) as string[];
+
+    const seen = new Set<string>();
+    const variants: MatchVariant[] = [];
+
+    rawValues.forEach((value, index) => {
+      const normalized = value.toLowerCase();
+      if (!normalized || seen.has(normalized)) {
+        return;
+      }
+      seen.add(normalized);
+
+      variants.push({
+        normalized,
+        weight: index === 0 ? 1 : Math.max(0.72, 0.92 - ((index - 1) * 0.08)),
+        normalizedRoutineAlias: this.normalizeRoutineItemAlias(value),
+      });
+    });
+
+    return variants;
+  }
+
+  private normalizeRoutineItemAlias(value: string): string {
+    return value
+      .trim()
+      .toLowerCase()
+      .replace(/\s+/gu, '')
+      .replace(/^常规/u, '')
+      .replace(/(检查|检验|检测|测定|项目)$/u, '');
   }
 
   /**
@@ -911,7 +1000,14 @@ class MedicalDataService {
       normalized.push({
         id: item.id?.toString().trim() || `${index + 1}`,
         name,
-        spec: item.spec?.trim() || ''
+        spec: item.spec?.trim() || '',
+        idSrv: item.idSrv?.toString().trim() || item.id?.toString().trim() || `${index + 1}`,
+        naSrv: item.naSrv?.toString().trim() || name,
+        sdSrv: item.sdSrv?.toString().trim() || '11',
+        idDeptExec: item.idDeptExec?.toString().trim() || '',
+        fgCheckOrd: item.fgCheckOrd?.toString().trim() || '1',
+        fgSkintest: item.fgSkintest?.toString().trim() || '0',
+        raw: item.raw && typeof item.raw === 'object' ? item.raw : undefined,
       });
     });
 
@@ -932,7 +1028,15 @@ class MedicalDataService {
         code: item.code?.toString().trim() || item.id?.toString().trim() || name,
         name,
         category: item.category?.trim() || '其他',
-        keywords: this.normalizeKeywords(item.keywords)
+        keywords: this.normalizeKeywords(item.keywords),
+        idSrv: item.idSrv?.toString().trim() || item.id?.toString().trim() || `${index + 1}`,
+        naSrv: item.naSrv?.toString().trim() || name,
+        sdSrv: item.sdSrv?.toString().trim() || '',
+        idDeptExec: item.idDeptExec?.toString().trim() || '',
+        idPart: item.idPart?.toString().trim() || '',
+        jsonField: item.jsonField?.toString().trim() || '',
+        fgCheckOrd: item.fgCheckOrd?.toString().trim() || '1',
+        raw: item.raw && typeof item.raw === 'object' ? item.raw : undefined,
       });
     });
 
@@ -1035,11 +1139,39 @@ class MedicalDataService {
   ): Promise<void> {
     const today = this.getTodayTag();
 
-    if (snapshot?.medicines.length && snapshot.medicineSyncDate === today) {
-      console.log('[MedicalData] Skip medicine sync, same-day SQLite cache hit', {
-        orgCode,
-        itemCount: snapshot.medicines.length,
-        syncDate: snapshot.medicineSyncDate,
+    // 获取当前机构的西药房 storeId 列表，以此作为缓存键（按药房缓存）
+    let storeIds: string[];
+    try {
+      storeIds = await hisService.fetchMedicineStoreIds(orgCode);
+    } catch (error) {
+      console.warn('[MedicalData] Failed to fetch medicine store IDs, fallback to org-scoped cache', { orgCode, error });
+      storeIds = [];
+    }
+
+    const cacheKey = storeIds.length > 0 ? storeIds.slice().sort().join(',') : orgCode;
+
+    // 用药房维度的 cacheKey 加载 SQLite 快照（与 items 使用的 orgCode 快照分开）
+    let pharmacySnapshot: MedicalCatalogSnapshot | null = null;
+    if (cacheKey !== orgCode) {
+      try {
+        pharmacySnapshot = await invoke<MedicalCatalogSnapshot>('load_medical_catalog_snapshot', { orgCode: cacheKey });
+      } catch {
+        pharmacySnapshot = null;
+      }
+    } else {
+      pharmacySnapshot = snapshot;
+    }
+
+    // 先将已缓存的药品目录加载到内存（网络请求完成前先提供可用数据）
+    if (pharmacySnapshot?.medicines.length) {
+      this.catalog.medicines = this.normalizeMedicineItems(pharmacySnapshot.medicines);
+    }
+
+    if (pharmacySnapshot?.medicines.length && pharmacySnapshot.medicineSyncDate === today) {
+      console.log('[MedicalData] Skip medicine sync, same-day pharmacy-scoped SQLite cache hit', {
+        cacheKey,
+        itemCount: pharmacySnapshot.medicines.length,
+        syncDate: pharmacySnapshot.medicineSyncDate,
       });
       return;
     }
@@ -1047,22 +1179,22 @@ class MedicalDataService {
     try {
       console.log('[MedicalData] Fetch medicine catalog from HIS', {
         orgCode,
-        hasCache: Boolean(snapshot?.medicines.length),
-        cacheDate: snapshot?.medicineSyncDate,
+        cacheKey,
+        hasCache: Boolean(pharmacySnapshot?.medicines.length),
+        cacheDate: pharmacySnapshot?.medicineSyncDate,
         today,
       });
       const medicines = this.normalizeMedicineItems(await hisService.fetchInstitutionMedicineCatalog(orgCode));
       if (!medicines.length) {
-        console.warn('[MedicalData] Medicine catalog returned empty result', {
-          orgCode,
-        });
+        console.warn('[MedicalData] Medicine catalog returned empty result', { orgCode, cacheKey });
         return;
       }
 
       this.catalog.medicines = medicines;
-      await this.persistMedicineCatalog(orgCode, medicines, today);
+      await this.persistMedicineCatalog(cacheKey, medicines, today);
       console.log('[MedicalData] Medicine catalog synced', {
         orgCode,
+        cacheKey,
         itemCount: medicines.length,
       });
     } catch (error) {

@@ -721,7 +721,7 @@ src/styles/
 | `aliyunSpeech.ts` | 语音转写编排（DashScope + OpenAI 兼容降级） | [src/services/aliyunSpeech.ts](src/services/aliyunSpeech.ts) |
 | `audioRecorder.ts` | Web Audio API 录音、音频输入设备枚举与首选设备回退 | [src/services/audioRecorder.ts](src/services/audioRecorder.ts) |
 | `medicalData.ts` | 医疗数据目录加载、SQLite 缓存与匹配（诊断、药品、检查项）；本地模式优先通过 `hisService.ts` 同步目录数据并落本地 SQLite，CSV 仅作兜底；同时负责根据 ICD-10 前三位类目码（如 `J06`）解析章节分组，用于推荐诊断分组展示 | [src/services/medicalData.ts](src/services/medicalData.ts) |
-| `hisService.ts` | HIS HTTP 调用封装：统一处理鉴权头、POST/GET 请求，以及诊断/药品/诊疗项目目录与药品频次、用法等字典读取，供主问诊和语音问诊复用 | [src/services/hisService.ts](src/services/hisService.ts) |
+| `hisService.ts` | HIS HTTP 调用封装：统一处理鉴权头、POST/GET 请求，以及诊断/药品/诊疗项目目录与药品频次、用法等字典读取，供主问诊和语音问诊复用；语音结果页药房列表也通过该服务调用 `api/phis.orgMedStoManageService/queryOrgSto`，并按 SDK 握手 `extra.urt.userRoleDepts` 中的 `deptId` 过滤可见范围 | [src/services/hisService.ts](src/services/hisService.ts) |
 | `diagnosisPath.ts` | 诊断路径数据构建与独立窗口事件载荷封装；优先通过 LLM 生成结构化推理链，再在前端校验并映射为 Sankey 节点、连线和说明文案，失败时回退本地兜底链路；载荷中补充 `supportingEvidence`、`counterEvidence`、`differentialPoints` 三段式解释字段，供窗口右侧说明面板直接渲染 | [src/services/diagnosisPath.ts](src/services/diagnosisPath.ts) |
 | `feedback.ts` | 会话反馈服务 | [src/services/feedback.ts](src/services/feedback.ts) |
 | `aiTrace.ts` | 最近一次区域化 AI 调用链路上下文缓存；向反馈面板暴露 `traceId`、模型、场景、输入/输出摘要与耗时 | [src/services/aiTrace.ts](src/services/aiTrace.ts) |

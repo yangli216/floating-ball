@@ -48,6 +48,7 @@ export interface Patient {
 export interface TreatmentRecommendation {
     type: 'medicine' | 'exam' | 'lab_test' | 'procedure' | 'acupuncture';
     name: string; // AI recommended name
+    aliases?: string[];
     reason: string;
     spec?: string;
     usage?: string;

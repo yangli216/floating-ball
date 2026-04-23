@@ -5,7 +5,7 @@ import Icon from './Icon.vue';
 import FactCheckHighlight from './FactCheckHighlight.vue';
 import { chat, type ChatMessage } from '../services/llm';
 import { PROMPTS } from '../prompts';
-import { getHisService } from '../services/hisService';
+import { getHisService, type PharmacyOption } from '../services/hisService';
 import { medicalDataService, type DiagnosisItem } from '../services/medicalData';
 import { clearVoiceConsultationCache } from '../composables/useVoiceConsultation';
 import {
@@ -44,6 +44,7 @@ const pastMedicalHistory = ref('');
 
 const aiDiagnoses = ref<Diagnosis[]>([]);
 const selectedDiagnosis = ref<Diagnosis | null>(null);
+const selectedDiagnosisKeys = ref<Set<string>>(new Set());
 const diagnosisLoading = ref(false);
 
 const treatments = ref<TreatmentRecommendation[]>([]);
@@ -57,6 +58,14 @@ const patientName = computed((): string => s(props.initialPatientData?.naPi));
 const patientGender = computed((): string => s(props.initialPatientData?.sdSexText) || s(props.initialPatientData?.sdSex));
 const patientAge = computed((): string => s(props.initialPatientData?.ageText) || (props.initialPatientData?.ageNum != null ? `${props.initialPatientData.ageNum}${s(props.initialPatientData.ageUnit) || '岁'}` : ''));
 const patientIdCard = computed((): string => s(props.initialPatientData?.idCard));
+const patientTetId = computed((): string => s(props.initialPatientData?.idTet));
+
+function getDiagnosisKey(diag: Diagnosis | null | undefined): string {
+  if (!diag) return '';
+  return `${diag.id || ''}|${diag.code || ''}|${diag.name || ''}`;
+}
+
+const selectedDiagnoses = computed(() => aiDiagnoses.value.filter((diag) => selectedDiagnosisKeys.value.has(getDiagnosisKey(diag))));
 
 const getPatientAnchorId = (): string => {
   const patient = props.initialPatientData;
@@ -78,7 +87,7 @@ function truncateAnalysisText(text: string, maxLength: number): string {
   return `${text.slice(0, maxLength)}...`;
 }
 
-const canSubmit = computed(() => chiefComplaint.value.trim().length > 0 && selectedDiagnosis.value !== null && !submitting.value);
+const canSubmit = computed(() => chiefComplaint.value.trim().length > 0 && selectedDiagnosis.value !== null && selectedDiagnoses.value.length > 0 && !submitting.value);
 
 function handleCancelClick(): void {
   if (submitting.value) {
@@ -213,6 +222,42 @@ function getDiagnosisIdentity(diag: Diagnosis | null): string {
   return `${diag.code || ''}:${diag.name || ''}`;
 }
 
+function isDiagnosisSelected(diag: Diagnosis): boolean {
+  return selectedDiagnosisKeys.value.has(getDiagnosisKey(diag));
+}
+
+function isPrimaryDiagnosis(diag: Diagnosis): boolean {
+  return getDiagnosisKey(selectedDiagnosis.value) === getDiagnosisKey(diag);
+}
+
+function setDiagnosisSelection(keys: Iterable<string>): void {
+  selectedDiagnosisKeys.value = new Set(Array.from(keys).filter(Boolean));
+}
+
+function syncPrimaryDiagnosis(preferred?: Diagnosis | null): void {
+  const preferredKey = getDiagnosisKey(preferred);
+  if (preferred && selectedDiagnosisKeys.value.has(preferredKey)) {
+    selectedDiagnosis.value = preferred;
+    return;
+  }
+
+  const currentKey = getDiagnosisKey(selectedDiagnosis.value);
+  if (currentKey && selectedDiagnosisKeys.value.has(currentKey)) {
+    const matchedCurrent = aiDiagnoses.value.find((diag) => getDiagnosisKey(diag) === currentKey);
+    selectedDiagnosis.value = matchedCurrent || null;
+    if (selectedDiagnosis.value) {
+      return;
+    }
+  }
+
+  selectedDiagnosis.value = aiDiagnoses.value.find((diag) => selectedDiagnosisKeys.value.has(getDiagnosisKey(diag))) || null;
+}
+
+function replaceDiagnosisSelection(diags: Diagnosis[], primary?: Diagnosis | null): void {
+  setDiagnosisSelection(diags.map((diag) => getDiagnosisKey(diag)));
+  syncPrimaryDiagnosis(primary || diags[0] || null);
+}
+
 function resetTreatmentEditorState(): void {
   expandedTreatmentEditors.value = new Set();
   activeEditableFieldKey.value = null;
@@ -277,10 +322,12 @@ function handleEditableFieldBlur(rec: TreatmentRecommendation, field: MedicinePr
   if (activeEditableFieldKey.value === getEditableFieldKey(rec, field)) {
     if (field === 'frequency') {
       rec.frequency = resolveFrequencyValueFromKeyword(rec);
+      rec.frequencyKey = resolveFrequencyKeyFromKeyword(rec);
       syncFrequencySearchKeyword(rec);
     }
     if (field === 'route') {
       rec.route = resolveRouteValueFromKeyword(rec);
+      rec.routeKey = resolveRouteKeyFromKeyword(rec);
       syncRouteSearchKeyword(rec);
     }
     activeEditableFieldKey.value = null;
@@ -413,7 +460,9 @@ function normalizeTreatmentRecommendation(rec: Partial<TreatmentRecommendation>)
     totalQty: rec.totalQty || '',
     totalUnit: rec.totalUnit || '',
     frequency: rec.frequency || '',
+    frequencyKey: rec.frequencyKey || '',
     route: rec.route || '',
+    routeKey: rec.routeKey || '',
     days: rec.days || '',
     pharmacy: rec.pharmacy || '',
     remark: rec.remark || '',
@@ -433,7 +482,9 @@ function normalizeTreatmentRecommendation(rec: Partial<TreatmentRecommendation>)
     dosage: base.dosage || defaults.dosage,
     dosageUnit: base.dosageUnit || defaults.dosageUnit,
     frequency: base.frequency || defaults.frequency,
+    frequencyKey: base.frequencyKey || findFrequencyOptionByValue(base.frequency || defaults.frequency)?.key || '',
     route: base.route || defaults.route,
+    routeKey: base.routeKey || findRouteOptionByValue(base.route || defaults.route)?.key || '',
     totalQty: base.totalQty || defaults.totalQty,
     totalUnit: base.totalUnit || defaults.totalUnit,
     days: base.days || defaults.days,
@@ -534,10 +585,50 @@ function toggleTreatment(item: TreatmentRecommendation): void {
 
 function toggleDiagnosis(diag: Diagnosis): void {
   activeReasonTooltipKey.value = null;
-  if (selectedDiagnosis.value?.code === diag.code && selectedDiagnosis.value?.name === diag.name) {
+  if (!isDiagnosisSelected(diag)) {
+    const nextKeys = new Set(selectedDiagnosisKeys.value);
+    nextKeys.add(getDiagnosisKey(diag));
+    setDiagnosisSelection(nextKeys);
+    if (!selectedDiagnosis.value) {
+      selectedDiagnosis.value = diag;
+    }
     return;
   }
+
+  if (!isPrimaryDiagnosis(diag)) {
+    selectedDiagnosis.value = diag;
+    return;
+  }
+}
+
+function setPrimaryDiagnosis(diag: Diagnosis, event?: Event): void {
+  event?.stopPropagation();
+  if (!isDiagnosisSelected(diag)) {
+    const nextKeys = new Set(selectedDiagnosisKeys.value);
+    nextKeys.add(getDiagnosisKey(diag));
+    setDiagnosisSelection(nextKeys);
+  }
   selectedDiagnosis.value = diag;
+}
+
+function removeDiagnosis(diag: Diagnosis, event?: Event): void {
+  event?.stopPropagation();
+  const key = getDiagnosisKey(diag);
+  if (!key || !selectedDiagnosisKeys.value.has(key)) {
+    return;
+  }
+
+  const nextKeys = new Set(selectedDiagnosisKeys.value);
+  nextKeys.delete(key);
+
+  if (nextKeys.size === 0) {
+    return;
+  }
+
+  setDiagnosisSelection(nextKeys);
+  if (isPrimaryDiagnosis(diag)) {
+    syncPrimaryDiagnosis();
+  }
 }
 
 function getReasonTooltipKey(kind: 'diagnosis' | 'treatment', primary: string, secondary = ''): string {
@@ -585,8 +676,11 @@ async function fetchAIDiagnosis(): Promise<void> {
       return diag;
     });
 
-    if (!selectedDiagnosis.value && aiDiagnoses.value.length > 0) {
-      selectedDiagnosis.value = aiDiagnoses.value[0];
+    if (aiDiagnoses.value.length > 0) {
+      replaceDiagnosisSelection([aiDiagnoses.value[0]], aiDiagnoses.value[0]);
+    } else {
+      setDiagnosisSelection([]);
+      selectedDiagnosis.value = null;
     }
 
     void performDiagnosisFactCheck(aiDiagnoses.value);
@@ -638,11 +732,11 @@ async function fetchAITreatment(): Promise<void> {
       ]),
     ]);
 
-    type CatalogMatch = { id: string; name: string; spec?: string } | null;
+    type CatalogMatch = TreatmentRecommendation['matchedItem'] | null;
 
     const parseAndMatch = (
       response: PromiseSettledResult<string>,
-      matchFn: (name: string) => CatalogMatch,
+      matchFn: (name: string, aliases?: string[]) => CatalogMatch,
     ): TreatmentRecommendation[] => {
       if (response.status !== 'fulfilled') return [];
 
@@ -652,10 +746,10 @@ async function fetchAITreatment(): Promise<void> {
         const parsed: TreatmentRecommendation[] = JSON.parse(jsonMatch ? jsonMatch[0] : clean);
 
         return parsed.map((rec) => {
-          const matched = matchFn(rec.name);
+          const matched = matchFn(rec.name, Array.isArray(rec.aliases) ? rec.aliases : undefined);
           return normalizeTreatmentRecommendation({
             ...rec,
-            matchedItem: matched ? ({ id: matched.id, name: matched.name, spec: matched.spec } as TreatmentRecommendation['matchedItem']) : rec.matchedItem,
+            matchedItem: matched ? ({ ...matched } as TreatmentRecommendation['matchedItem']) : rec.matchedItem,
             selected: !!matched || !!rec.matchedItem,
           });
         });
@@ -669,10 +763,10 @@ async function fetchAITreatment(): Promise<void> {
     };
 
     const nextTreatments: TreatmentRecommendation[] = [];
-    nextTreatments.push(...parseAndMatch(medResponse, (name) => medicalDataService.matchMedicine(name)));
-    nextTreatments.push(...parseAndMatch(examResponse, (name) => medicalDataService.matchExamItem(name)));
-    nextTreatments.push(...parseAndMatch(labResponse, (name) => medicalDataService.matchLabTestItem(name)));
-    nextTreatments.push(...parseAndMatch(procResponse, (name) => medicalDataService.matchProcedureItem(name)));
+    nextTreatments.push(...parseAndMatch(medResponse, (name, aliases) => medicalDataService.matchMedicine(name, aliases)));
+    nextTreatments.push(...parseAndMatch(examResponse, (name, aliases) => medicalDataService.matchExamItem(name, aliases)));
+    nextTreatments.push(...parseAndMatch(labResponse, (name, aliases) => medicalDataService.matchLabTestItem(name, aliases)));
+    nextTreatments.push(...parseAndMatch(procResponse, (name, aliases) => medicalDataService.matchProcedureItem(name, aliases)));
 
     console.info('[VoiceConsultationNew] Treatment recommendations loaded', {
       diagnosisIdentity,
@@ -728,8 +822,19 @@ function swapDiagnosis(originalDiag: Diagnosis, newItem: DiagnosisItem): void {
 
   aiDiagnoses.value[index] = updatedDiag;
 
+  const originalKey = getDiagnosisKey(originalDiag);
+  const updatedKey = getDiagnosisKey(updatedDiag);
+  if (selectedDiagnosisKeys.value.has(originalKey)) {
+    const nextKeys = new Set(selectedDiagnosisKeys.value);
+    nextKeys.delete(originalKey);
+    nextKeys.add(updatedKey);
+    setDiagnosisSelection(nextKeys);
+  }
+
   if (selectedDiagnosis.value && (selectedDiagnosis.value.id || selectedDiagnosis.value.code) === (originalDiag.id || originalDiag.code)) {
     selectedDiagnosis.value = updatedDiag;
+  } else {
+    syncPrimaryDiagnosis();
   }
 
   openRelatedId.value = null;
@@ -930,11 +1035,206 @@ async function fetchRouteOptions(): Promise<void> {
   }
 }
 
+async function fetchPharmacyOptions(): Promise<void> {
+  const his = getHisService();
+  if (!his) {
+    console.warn('[VoiceConsultationNew] HisService not initialized, pharmacy options skipped');
+    pharmacyOptions.value = [];
+    return;
+  }
+
+  try {
+    pharmacyOptions.value = await his.fetchAvailablePharmacies();
+  } catch (error) {
+    console.error('[VoiceConsultationNew] Failed to load pharmacy options from HIS', error);
+    pharmacyOptions.value = [];
+  }
+}
+
 onMounted(() => {
-  void Promise.all([fetchFrequencyOptions(), fetchRouteOptions()]);
+  void Promise.all([fetchFrequencyOptions(), fetchRouteOptions(), fetchPharmacyOptions()]);
 });
-const pharmacyOptions = ['西药房', '中药房', '急诊药房', '住院药房'];
+const pharmacyOptions = ref<PharmacyOption[]>([]);
 const insuranceOptions = ['医保使用', '自费'];
+
+function getMatchedItemRaw(rec: TreatmentRecommendation): Record<string, unknown> | undefined {
+  const raw = rec.matchedItem?.raw;
+  return raw && typeof raw === 'object' ? raw : undefined;
+}
+
+function readFirstString(source: Record<string, unknown> | undefined, keys: string[]): string {
+  if (!source) {
+    return '';
+  }
+
+  for (const key of keys) {
+    const value = source[key];
+    if (typeof value === 'string' && value.trim()) {
+      return value.trim();
+    }
+    if (typeof value === 'number' && Number.isFinite(value)) {
+      return String(value);
+    }
+  }
+
+  return '';
+}
+
+function toPositiveNumber(value: unknown, fallback = 1): number {
+  const text = typeof value === 'string' ? value.trim() : String(value ?? '').trim();
+  const parsed = Number(text);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
+}
+
+function getDefaultOrderServiceCode(type: TreatmentRecommendation['type']): string {
+  switch (type) {
+    case 'medicine':
+      return '11';
+    case 'exam':
+      return '31';
+    case 'lab_test':
+      return '41';
+    default:
+      return '21';
+  }
+}
+
+function getOrderServiceCode(rec: TreatmentRecommendation): string {
+  const raw = getMatchedItemRaw(rec);
+  const explicitCode = (rec.matchedItem?.sdSrv || readFirstString(raw, ['sdSrv'])).trim();
+  if (explicitCode && explicitCode !== '1' && explicitCode !== '2') {
+    return explicitCode;
+  }
+  return getDefaultOrderServiceCode(rec.type);
+}
+
+function getOrderServiceId(rec: TreatmentRecommendation): string {
+  const raw = getMatchedItemRaw(rec);
+  return (rec.matchedItem?.idSrv || readFirstString(raw, ['idSrv', 'idCli', 'idMedPro', 'idMed', 'id']) || rec.matchedItem?.id || '').trim();
+}
+
+function getOrderServiceName(rec: TreatmentRecommendation): string {
+  const raw = getMatchedItemRaw(rec);
+  return (rec.matchedItem?.naSrv || readFirstString(raw, ['naSrv', 'naCli', 'naMedPro', 'naMed']) || rec.matchedItem?.name || rec.name || '').trim();
+}
+
+function getSelectedPharmacyOption(rec: TreatmentRecommendation): PharmacyOption | undefined {
+  const pharmacyName = (rec.pharmacy || '').trim();
+  if (!pharmacyName) {
+    return pharmacyOptions.value[0];
+  }
+
+  return pharmacyOptions.value.find((option) => option.name === pharmacyName) || pharmacyOptions.value[0];
+}
+
+function getOrderExecDeptId(rec: TreatmentRecommendation): string {
+  const raw = getMatchedItemRaw(rec);
+  const pharmacyOption = rec.type === 'medicine' ? getSelectedPharmacyOption(rec) : undefined;
+  return (
+    pharmacyOption?.idSto ||
+    rec.matchedItem?.idDeptExec ||
+    readFirstString(raw, ['idDeptExec', 'idDept']) ||
+    getHisService()?.getDefaultExecDeptId() ||
+    ''
+  ).trim();
+}
+
+function getOrderPartId(rec: TreatmentRecommendation): string {
+  const raw = getMatchedItemRaw(rec);
+  return (rec.matchedItem?.idPart || readFirstString(raw, ['idPart'])).trim();
+}
+
+function getOrderJsonField(rec: TreatmentRecommendation): string {
+  const raw = getMatchedItemRaw(rec);
+  const explicitJsonField = (rec.matchedItem?.jsonField || readFirstString(raw, ['jsonField'])).trim();
+  if (explicitJsonField) {
+    return explicitJsonField;
+  }
+
+  const idLisCategory = readFirstString(raw, ['idLisCategory']);
+  const fgCombination = readFirstString(raw, ['fgCombination']);
+  if (!idLisCategory && !fgCombination) {
+    return '';
+  }
+
+  return JSON.stringify({
+    ...(idLisCategory ? { idLisCategory } : {}),
+    ...(fgCombination ? { fgCombination } : {}),
+  });
+}
+
+function getOrderFgCheckOrd(rec: TreatmentRecommendation): string {
+  const raw = getMatchedItemRaw(rec);
+  return (rec.matchedItem?.fgCheckOrd || readFirstString(raw, ['fgCheckOrd']) || '1').trim() || '1';
+}
+
+function getOrderFgSkintest(rec: TreatmentRecommendation): string {
+  const raw = getMatchedItemRaw(rec);
+  return (rec.matchedItem?.fgSkintest || readFirstString(raw, ['fgSkintest']) || '0').trim() || '0';
+}
+
+function buildOrderListItem(rec: TreatmentRecommendation): Record<string, string | number> {
+  const normalized = normalizeTreatmentRecommendation(rec);
+  const orderServiceId = getOrderServiceId(rec);
+  const execDeptId = getOrderExecDeptId(rec);
+  const base: Record<string, string | number> = {
+    amount: toPositiveNumber(normalized.totalQty, 1),
+    fgCheckOrd: getOrderFgCheckOrd(rec),
+    sdSrv: getOrderServiceCode(rec),
+    naSrv: getOrderServiceName(rec),
+    idDeptExec: execDeptId,
+    ...(orderServiceId ? { idSrv: orderServiceId } : {}),
+  };
+
+  if (rec.type === 'medicine') {
+    return {
+      ...base,
+      doseOnce: normalized.dosage || '',
+      unitDose: normalized.dosageUnit || '',
+      idFreq: getResolvedFrequencyKey(rec),
+      idUsge: getResolvedRouteKey(rec),
+      takeDays: toPositiveNumber(normalized.days, 1),
+      fgSkintest: getOrderFgSkintest(rec),
+    };
+  }
+
+  const partId = getOrderPartId(rec);
+  const jsonField = getOrderJsonField(rec);
+
+  return {
+    ...base,
+    ...(partId ? { idPart: partId } : {}),
+    ...(jsonField ? { jsonField } : {}),
+  };
+}
+
+function getDiagnosisCategoryCode(diag: Diagnosis): string {
+  return diag.isTCM ? '2' : '1';
+}
+
+function getDiagnosisCategoryText(diag: Diagnosis): string {
+  return diag.isTCM ? '中医诊断' : '西医诊断';
+}
+
+function buildDiagList(): Array<Record<string, string>> {
+  const primaryKey = getDiagnosisKey(selectedDiagnosis.value);
+  const orderedDiagnoses = [...selectedDiagnoses.value].sort((left, right) => {
+    if (getDiagnosisKey(left) === primaryKey) return -1;
+    if (getDiagnosisKey(right) === primaryKey) return 1;
+    return 0;
+  });
+
+  return orderedDiagnoses.map((diag) => ({
+    idTet: patientTetId.value,
+    idDiag: diag.id || '',
+    naDiag: diag.name,
+    sdDiag: getDiagnosisCategoryCode(diag),
+    cdIcd10: diag.code || '',
+    naIcd10: diag.name,
+    fgMain: getDiagnosisKey(diag) === primaryKey ? '1' : '0',
+    sdDiagText: getDiagnosisCategoryText(diag),
+  }));
+}
 
 function getTreatmentSpec(rec: TreatmentRecommendation): string {
   return rec.type === 'medicine' ? rec.spec || rec.matchedItem?.spec || '' : '';
@@ -961,6 +1261,25 @@ function findFrequencyOptionByValue(value?: string): UsageOption | undefined {
   }
 
   return frequencyOptions.value.find((option) => option.text === normalizedValue || option.key === normalizedValue);
+}
+
+function findRouteOptionByValue(value?: string): UsageOption | undefined {
+  const normalizedValue = (value || '').trim();
+  if (!normalizedValue) {
+    return undefined;
+  }
+
+  return routeOptions.value.find((option) => option.text === normalizedValue || option.key === normalizedValue);
+}
+
+function getResolvedFrequencyKey(rec: TreatmentRecommendation): string {
+  const normalized = normalizeTreatmentRecommendation(rec);
+  return normalized.frequencyKey || findFrequencyOptionByValue(normalized.frequency)?.key || '';
+}
+
+function getResolvedRouteKey(rec: TreatmentRecommendation): string {
+  const normalized = normalizeTreatmentRecommendation(rec);
+  return normalized.routeKey || findRouteOptionByValue(normalized.route)?.key || '';
 }
 
 function getFrequencyDisplayValue(value?: string): string {
@@ -1090,8 +1409,34 @@ function resolveFrequencyValueFromKeyword(rec: TreatmentRecommendation): string 
   return normalizeTreatmentRecommendation(rec).frequency || '';
 }
 
+function resolveFrequencyKeyFromKeyword(rec: TreatmentRecommendation): string {
+  const keyword = getFrequencySearchKeyword(rec).trim();
+  if (!keyword) {
+    return '';
+  }
+
+  const normalizedKeyword = normalizeUsageKeyword(keyword);
+  const exactTextMatch = frequencyOptions.value.find((option) => option.text === keyword);
+  if (exactTextMatch) {
+    return exactTextMatch.key;
+  }
+
+  const exactTokenMatch = frequencyOptions.value.find((option) => option.normalizedTokens.includes(normalizedKeyword));
+  if (exactTokenMatch) {
+    return exactTokenMatch.key;
+  }
+
+  const filteredOptions = getFilteredFrequencyOptionsForRecord(rec);
+  if (filteredOptions.length === 1) {
+    return filteredOptions[0].key;
+  }
+
+  return normalizeTreatmentRecommendation(rec).frequencyKey || '';
+}
+
 function selectFrequencyOption(rec: TreatmentRecommendation, option: UsageOption): void {
   rec.frequency = option.text;
+  rec.frequencyKey = option.key;
   setFrequencySearchKeyword(rec, option.text);
   activeEditableFieldKey.value = null;
 }
@@ -1163,8 +1508,34 @@ function resolveRouteValueFromKeyword(rec: TreatmentRecommendation): string {
   return normalizeTreatmentRecommendation(rec).route || '';
 }
 
+function resolveRouteKeyFromKeyword(rec: TreatmentRecommendation): string {
+  const keyword = getRouteSearchKeyword(rec).trim();
+  if (!keyword) {
+    return '';
+  }
+
+  const normalizedKeyword = normalizeUsageKeyword(keyword);
+  const exactTextMatch = routeOptions.value.find((option) => option.text === keyword);
+  if (exactTextMatch) {
+    return exactTextMatch.key;
+  }
+
+  const exactTokenMatch = routeOptions.value.find((option) => option.normalizedTokens.includes(normalizedKeyword));
+  if (exactTokenMatch) {
+    return exactTokenMatch.key;
+  }
+
+  const filteredOptions = getFilteredRouteOptionsForRecord(rec);
+  if (filteredOptions.length === 1) {
+    return filteredOptions[0].key;
+  }
+
+  return normalizeTreatmentRecommendation(rec).routeKey || '';
+}
+
 function selectRouteOption(rec: TreatmentRecommendation, option: UsageOption): void {
   rec.route = option.text;
+  rec.routeKey = option.key;
   setRouteSearchKeyword(rec, option.text);
   activeEditableFieldKey.value = null;
 }
@@ -1179,6 +1550,8 @@ async function handleBatchWriteBack(): Promise<void> {
     const exams = selected.filter((item) => item.type === 'exam');
     const labs = selected.filter((item) => item.type === 'lab_test');
     const procs = selected.filter((item) => item.type === 'procedure');
+    const diagList = buildDiagList();
+    const orderList = selected.map((item) => buildOrderListItem(item));
 
     const treatmentPlan = [
       meds.length ? `用药：${meds.map((item) => item.name).join('；')}` : '',
@@ -1195,52 +1568,8 @@ async function handleBatchWriteBack(): Promise<void> {
       chiefComplaint: chiefComplaint.value,
       historyOfPresentIllness: historyOfPresentIllness.value,
       pastMedicalHistory: pastMedicalHistory.value,
-      diagnosisList: selectedDiagnosis.value ? [{ name: selectedDiagnosis.value.name, code: selectedDiagnosis.value.code }] : [],
-      medications: meds.map((item) => ({
-        name: item.matchedItem?.name || item.name,
-        spec: item.spec || item.matchedItem?.spec || '',
-        usage: item.usage || '',
-        idMedPro: item.matchedItem?.id || '',
-        dosage: item.dosage || '',
-        dosageUnit: item.dosageUnit || '',
-        totalQty: item.totalQty || '',
-        totalUnit: item.totalUnit || '',
-        frequency: item.frequency || '',
-        route: item.route || '',
-        days: item.days || '',
-        pharmacy: item.pharmacy || '',
-        remark: item.remark || '',
-        regulatedDisease: item.regulatedDisease || '',
-        insuranceType: item.insuranceType || '医保使用',
-      })),
-      examinations: exams.map((item) => ({
-        name: item.matchedItem?.name || item.name,
-        idCli: item.matchedItem?.id || '',
-        regulatedDisease: item.regulatedDisease || '',
-        bodySite: item.bodySite || '',
-        totalQty: item.totalQty || '',
-        execDept: item.execDept || '',
-        remark: item.remark || '',
-        insuranceType: item.insuranceType || '医保使用',
-      })),
-      labTests: labs.map((item) => ({
-        name: item.matchedItem?.name || item.name,
-        idCli: item.matchedItem?.id || '',
-        regulatedDisease: item.regulatedDisease || '',
-        bodySite: item.bodySite || '',
-        totalQty: item.totalQty || '',
-        execDept: item.execDept || '',
-        remark: item.remark || '',
-        insuranceType: item.insuranceType || '医保使用',
-      })),
-      procedures: procs.map((item) => ({
-        name: item.matchedItem?.name || item.name,
-        idCli: item.matchedItem?.id || '',
-        regulatedDisease: item.regulatedDisease || '',
-        totalQty: item.totalQty || '',
-        execDept: item.execDept || '',
-        insuranceType: item.insuranceType || '医保使用',
-      })),
+      diagList,
+      orderList,
       treatmentPlan,
     };
 
@@ -1268,6 +1597,7 @@ watch(
     openRelatedId.value = null;
     inlineRelatedDiagnoses.value = [];
     aiDiagnoses.value = [];
+    selectedDiagnosisKeys.value = new Set();
     selectedDiagnosis.value = null;
     treatments.value = [];
 
@@ -1278,9 +1608,7 @@ watch(
     if (result.diagnoses?.length) {
       aiDiagnoses.value = initDiagnosesFromIntent(result.diagnoses);
       const firstMatched = aiDiagnoses.value.find((diag) => diag.id || diag.code);
-      if (firstMatched) {
-        selectedDiagnosis.value = firstMatched;
-      }
+      replaceDiagnosisSelection(firstMatched ? [firstMatched] : aiDiagnoses.value.slice(0, 1), firstMatched || aiDiagnoses.value[0] || null);
     }
 
     if (result.treatments.length > 0) {
@@ -1308,10 +1636,12 @@ watch(
     await nextTick();
     suppressDiagnosisTreatmentRefetch.value = false;
 
-    if (treatments.value.length === 0 && selectedDiagnosis.value) {
+    const primaryDiagnosis = selectedDiagnosis.value;
+    const primaryDiagnosisName = primaryDiagnosis ? s((primaryDiagnosis as Record<string, unknown>).name) : '';
+    if (treatments.value.length === 0 && primaryDiagnosis) {
       console.info('[VoiceConsultationNew] No voice intent treatments found, fetching default recommendations for selected diagnosis', {
-        diagnosisIdentity: getDiagnosisIdentity(selectedDiagnosis.value),
-        diagnosisName: selectedDiagnosis.value.name,
+        diagnosisIdentity: getDiagnosisIdentity(primaryDiagnosis),
+        diagnosisName: primaryDiagnosisName,
       });
       void fetchAITreatment();
     }
@@ -1384,6 +1714,10 @@ watch(
             <div class="section-heading">
               <div>
                 <h3 class="section-title">诊断建议</h3>
+                <div v-if="selectedDiagnoses.length > 0" class="section-subtitle">
+                  已纳入 {{ selectedDiagnoses.length }} 项诊断
+                  <span v-if="selectedDiagnosis">，主诊断：{{ selectedDiagnosis.name }}</span>
+                </div>
               </div>
             </div>
 
@@ -1400,10 +1734,10 @@ watch(
                 v-for="diag in aiDiagnoses"
                 :key="diag.code + diag.name"
                 class="vcn-diagnosis-item"
-                :class="{ selected: selectedDiagnosis?.code === diag.code && selectedDiagnosis?.name === diag.name }"
+                :class="{ selected: isDiagnosisSelected(diag), primary: isPrimaryDiagnosis(diag) }"
                 @click="toggleDiagnosis(diag)"
               >
-                <div v-if="selectedDiagnosis?.code === diag.code && selectedDiagnosis?.name === diag.name" class="diag-selected-mark">
+                <div v-if="isDiagnosisSelected(diag)" class="diag-selected-mark">
                   <svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>
                 </div>
 
@@ -1427,6 +1761,20 @@ watch(
                         </span>
                       </div>
                       <span v-if="diag.code" class="meta-token">编码 {{ diag.code }}</span>
+                      <span v-if="isPrimaryDiagnosis(diag)" class="meta-token diag-role-token">主诊断</span>
+                      <span v-else-if="isDiagnosisSelected(diag)" class="meta-token diag-role-token">已纳入</span>
+                      <button
+                        v-if="isDiagnosisSelected(diag) && !isPrimaryDiagnosis(diag)"
+                        class="diag-action-btn"
+                        type="button"
+                        @click.stop="setPrimaryDiagnosis(diag, $event)"
+                      >设为主诊</button>
+                      <button
+                        v-if="isDiagnosisSelected(diag) && selectedDiagnoses.length > 1"
+                        class="diag-action-btn subtle"
+                        type="button"
+                        @click.stop="removeDiagnosis(diag, $event)"
+                      >移除</button>
                       <button class="inline-arrow-btn" type="button" title="切换同类诊断" @click.stop="toggleRelatedDropdown(diag, $event)">
                         <span class="inline-arrow" :class="{ open: openRelatedId === (diag.id || diag.code) }"></span>
                       </button>
@@ -1626,7 +1974,7 @@ watch(
                             <label>药房</label>
                             <select v-model="rec.pharmacy" class="edit-select">
                               <option value="">请选择</option>
-                              <option v-for="option in pharmacyOptions" :key="option" :value="option">{{ option }}</option>
+                              <option v-for="option in pharmacyOptions" :key="`${option.name}-${option.idDept}`" :value="option.name">{{ option.name }}</option>
                             </select>
                           </div>
                           <div class="secondary-field">
@@ -2025,6 +2373,12 @@ watch(
   color: var(--voice-text);
 }
 
+.section-subtitle {
+  margin-top: 4px;
+  font-size: var(--voice-font-min);
+  color: var(--voice-text-muted);
+}
+
 .section-summary {
   font-size: var(--voice-font-min);
   color: var(--voice-text-muted);
@@ -2153,6 +2507,11 @@ watch(
   background: #fff;
   border-color: var(--voice-border);
   box-shadow: none;
+}
+
+.vcn-diagnosis-item.primary {
+  border-color: rgba(43, 127, 227, 0.38);
+  box-shadow: 0 10px 24px rgba(43, 127, 227, 0.08);
 }
 
 .diag-selected-mark,
@@ -2286,6 +2645,37 @@ watch(
 .meta-token.warning,
 .status-chip.warning {
   color: var(--voice-warning);
+}
+
+.diag-role-token {
+  color: var(--voice-accent);
+}
+
+.diag-action-btn {
+  flex-shrink: 0;
+  min-height: 24px;
+  padding: 0 8px;
+  border: 1px solid #cfe0f2;
+  border-radius: 999px;
+  background: #f8fbff;
+  color: var(--voice-accent);
+  font-size: var(--voice-font-min);
+  cursor: pointer;
+}
+
+.diag-action-btn.subtle {
+  border-color: #e2e8f0;
+  background: #fff;
+  color: var(--voice-text-muted);
+}
+
+.diag-action-btn:hover {
+  border-color: var(--voice-accent);
+}
+
+.diag-action-btn.subtle:hover {
+  color: var(--voice-text);
+  border-color: var(--voice-border-strong);
 }
 
 .card-actions {

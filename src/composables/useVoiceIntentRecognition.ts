@@ -24,7 +24,21 @@ let cachedTestModeResult: VoiceIntentResult | null = null;
 
 export interface MatchedTreatment extends TreatmentHint {
   /** 匹配到的标准库项目 */
-  matchedItem?: { id: string; name: string; spec?: string; code?: string } | null;
+  matchedItem?: {
+    id: string;
+    name: string;
+    spec?: string;
+    code?: string;
+    idSrv?: string;
+    naSrv?: string;
+    sdSrv?: string;
+    idDeptExec?: string;
+    idPart?: string;
+    jsonField?: string;
+    fgCheckOrd?: string;
+    fgSkintest?: string;
+    raw?: Record<string, unknown>;
+  } | null;
 }
 
 export interface MatchedDiagnosis extends DiagnosisHint {
@@ -145,6 +159,35 @@ function getTextList(value: unknown): string[] {
     .filter(Boolean);
 }
 
+function normalizeNegativeSymptomItem(value: string): string {
+  return value
+    .replace(/^(?:(?:否认|无|未诉|未见|未及|没有|不伴有|不伴|未伴有|未伴)\s*)+/u, '')
+    .replace(/[。；;，,、\s]*$/u, '')
+    .trim();
+}
+
+function hasNegativeSymptomMention(historyOfPresentIllness: string, symptom: string): boolean {
+  if (!historyOfPresentIllness || !symptom) {
+    return false;
+  }
+
+  const compactHistory = historyOfPresentIllness.replace(/\s+/gu, '');
+  const candidates = [
+    `否认${symptom}`,
+    `无${symptom}`,
+    `未诉${symptom}`,
+    `未见${symptom}`,
+    `未及${symptom}`,
+    `没有${symptom}`,
+    `不伴${symptom}`,
+    `不伴有${symptom}`,
+    `未伴${symptom}`,
+    `未伴有${symptom}`,
+  ];
+
+  return candidates.some((candidate) => compactHistory.includes(candidate.replace(/\s+/gu, '')));
+}
+
 function getHintSourceType(value: unknown): 'explicit' | 'inferred' | 'uncertain' {
   if (value === 'explicit' || value === 'inferred' || value === 'uncertain') {
     return value;
@@ -158,7 +201,15 @@ function appendNegativeSymptoms(historyOfPresentIllness: string, negativeSymptom
     return historyOfPresentIllness;
   }
 
-  const missingNegativeSymptoms = negativeSymptoms.filter((item) => !historyOfPresentIllness.includes(item));
+  const normalizedNegativeSymptoms = Array.from(new Set(
+    negativeSymptoms
+      .map((item) => normalizeNegativeSymptomItem(item))
+      .filter(Boolean),
+  ));
+
+  const missingNegativeSymptoms = normalizedNegativeSymptoms
+    .filter((item) => !hasNegativeSymptomMention(historyOfPresentIllness, item));
+
   if (missingNegativeSymptoms.length === 0) {
     return historyOfPresentIllness;
   }
@@ -240,6 +291,11 @@ function normalizeTreatmentHints(hints: TreatmentHint[] | undefined): TreatmentH
       return {
         ...hint,
         name: getText(hint?.name),
+        aliases: getTextList((hint as TreatmentHint & { aliases?: unknown }).aliases)
+          .map((item) => item.trim())
+          .filter(Boolean)
+          .filter((item, index, list) => list.indexOf(item) === index)
+          .filter((item) => item !== getText(hint?.name)),
         text: getText(hint?.text),
         evidenceText: getText(hint?.evidenceText || hint?.text),
         sourceType: getHintSourceType(hint?.sourceType),
@@ -701,30 +757,77 @@ export function useVoiceIntentRecognition() {
 
     switch (hint.type) {
       case 'medicine': {
-        const medicine = medicalDataService.matchMedicine(hint.name);
+        const medicine = medicalDataService.matchMedicine(hint.name, hint.aliases);
         if (medicine) {
-          matchedItem = { id: medicine.id, name: medicine.name, spec: medicine.spec };
+          matchedItem = {
+            id: medicine.id,
+            name: medicine.name,
+            spec: medicine.spec,
+            idSrv: medicine.idSrv,
+            naSrv: medicine.naSrv,
+            sdSrv: medicine.sdSrv,
+            idDeptExec: medicine.idDeptExec,
+            fgCheckOrd: medicine.fgCheckOrd,
+            fgSkintest: medicine.fgSkintest,
+            raw: medicine.raw,
+          };
         }
         break;
       }
       case 'examination': {
-        const item = medicalDataService.matchExamItem(hint.name);
+        const item = medicalDataService.matchExamItem(hint.name, hint.aliases);
         if (item) {
-          matchedItem = { id: item.id, name: item.name };
+          matchedItem = {
+            id: item.id,
+            name: item.name,
+            code: item.code,
+            idSrv: item.idSrv,
+            naSrv: item.naSrv,
+            sdSrv: item.sdSrv,
+            idDeptExec: item.idDeptExec,
+            idPart: item.idPart,
+            jsonField: item.jsonField,
+            fgCheckOrd: item.fgCheckOrd,
+            raw: item.raw,
+          };
         }
         break;
       }
       case 'labTest': {
-        const item = medicalDataService.matchLabTestItem(hint.name);
+        const item = medicalDataService.matchLabTestItem(hint.name, hint.aliases);
         if (item) {
-          matchedItem = { id: item.id, name: item.name };
+          matchedItem = {
+            id: item.id,
+            name: item.name,
+            code: item.code,
+            idSrv: item.idSrv,
+            naSrv: item.naSrv,
+            sdSrv: item.sdSrv,
+            idDeptExec: item.idDeptExec,
+            idPart: item.idPart,
+            jsonField: item.jsonField,
+            fgCheckOrd: item.fgCheckOrd,
+            raw: item.raw,
+          };
         }
         break;
       }
       case 'procedure': {
-        const item = medicalDataService.matchProcedureItem(hint.name);
+        const item = medicalDataService.matchProcedureItem(hint.name, hint.aliases);
         if (item) {
-          matchedItem = { id: item.id, name: item.name };
+          matchedItem = {
+            id: item.id,
+            name: item.name,
+            code: item.code,
+            idSrv: item.idSrv,
+            naSrv: item.naSrv,
+            sdSrv: item.sdSrv,
+            idDeptExec: item.idDeptExec,
+            idPart: item.idPart,
+            jsonField: item.jsonField,
+            fgCheckOrd: item.fgCheckOrd,
+            raw: item.raw,
+          };
         }
         break;
       }

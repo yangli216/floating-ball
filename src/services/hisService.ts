@@ -23,6 +23,13 @@ export interface HisMedicineCatalogItem {
   code?: string;
   name?: string;
   spec?: string;
+  idSrv?: string;
+  naSrv?: string;
+  sdSrv?: string;
+  idDeptExec?: string;
+  fgCheckOrd?: string;
+  fgSkintest?: string;
+  raw?: Record<string, unknown>;
 }
 
 export interface HisMedicalItemCatalogItem {
@@ -31,6 +38,20 @@ export interface HisMedicalItemCatalogItem {
   name?: string;
   category?: string;
   keywords?: string[] | string;
+  idSrv?: string;
+  naSrv?: string;
+  sdSrv?: string;
+  idDeptExec?: string;
+  idPart?: string;
+  jsonField?: string;
+  fgCheckOrd?: string;
+  raw?: Record<string, unknown>;
+}
+
+export interface PharmacyOption {
+  name: string;
+  idDept: string;
+  idSto?: string;
 }
 
 export interface HisDictionaryItem {
@@ -45,6 +66,10 @@ export interface HisDictionaryItem {
 export interface HisDictionaryResponse {
   dicId?: string;
   items?: HisDictionaryItem[];
+}
+
+export interface HisServiceContext {
+  userRoleDeptIds?: string[];
 }
 
 interface HiBdDieListBody {
@@ -76,17 +101,16 @@ interface HiBdCliOrgListBody {
     py?: string;
     fgActive?: string;
     naCstmg?: string;
+    sdSrv?: string;
+    idDeptExec?: string;
+    idPart?: string;
+    jsonField?: string;
+    fgCheckOrd?: string;
+    idLisCategory?: string;
+    fgCombination?: string;
   }>;
 }
 
-interface DispensingStoreItem {
-  idOrg?: string;
-  idSto?: string;
-  naSto?: string;
-  fgActive?: string;
-  sdSto?: string;
-  sdsStoPro?: string;
-}
 
 interface OrgMedicineConfigItem {
   idMedPro?: string;
@@ -102,6 +126,10 @@ interface OrgMedicineConfigItem {
   specSale?: string;
   idSto?: string;
   idOrg?: string;
+  sdSrv?: string;
+  idDeptExec?: string;
+  fgCheckOrd?: string;
+  fgSkintest?: string;
 }
 
 interface OrgMedicineConfigListBody {
@@ -111,10 +139,32 @@ interface OrgMedicineConfigListBody {
   items?: OrgMedicineConfigItem[];
 }
 
+interface OrgMedicineStoreItem {
+  idTet?: string;
+  idOrg?: string;
+  id?: string;
+  sdDisp?: string;
+  idSto?: string;
+  idDept?: string;
+  sdUse?: string;
+  naSto?: string;
+  idDeptText?: string;
+  sdUseText?: string;
+  sdDispText?: string;
+}
+
+interface OrgMedicineStoreListBody {
+  start?: number;
+  limit?: number;
+  total?: number;
+  items?: OrgMedicineStoreItem[];
+}
+
 const HIS_CATALOG_ENDPOINTS = {
   diagnoses: 'api/base.hiBdDieService/queryList',
   medicalItems: 'api/phis.hiBdCliOrgService/queryHiBdCliOrgList',
   medicineStores: 'api/phis.medicineDispensingService/queryDispensingSto',
+  orgMedicineStores: 'api/phis.orgMedStoManageService/queryOrgSto',
   medicines: 'api/phis.orgMedicineConfig/queryList',
 } as const;
 
@@ -125,14 +175,16 @@ const HIS_CATALOG_ENDPOINTS = {
 export class HisService {
   private baseUrl: string;
   private token: string;
+  private userRoleDeptIds: string[];
 
   /**
    * @param baseUrl HIS 服务的基地址 (例如: http://192.168.1.100:8080/his/)
    * @param token 握手时由网页端自动获取并传给小球的 emrAccessToken
    */
-  constructor(baseUrl: string, token: string) {
+  constructor(baseUrl: string, token: string, context?: HisServiceContext) {
     this.baseUrl = baseUrl.endsWith('/') ? baseUrl : `${baseUrl}/`;
     this.token = token;
+    this.userRoleDeptIds = this.normalizeDeptIds(context?.userRoleDeptIds);
   }
 
   /**
@@ -324,7 +376,15 @@ export class HisService {
         code: item.idCli?.trim() || id,
         name,
         category: this.mapCliCategory(sdCliText, item.sdCli?.trim()),
-        keywords: keywords.length > 0 ? Array.from(new Set(keywords)) : undefined
+        keywords: keywords.length > 0 ? Array.from(new Set(keywords)) : undefined,
+        idSrv: item.id?.trim() || item.idCli?.trim() || id,
+        naSrv: name,
+        sdSrv: item.sdSrv?.trim() || this.mapOrderServiceCode(this.mapCliCategory(sdCliText, item.sdCli?.trim())),
+        idDeptExec: item.idDeptExec?.trim() || '',
+        idPart: item.idPart?.trim() || '',
+        jsonField: item.jsonField?.trim() || this.buildJsonField(item.idLisCategory?.trim(), item.fgCombination?.trim()),
+        fgCheckOrd: item.fgCheckOrd?.trim() || '1',
+        raw: item as unknown as Record<string, unknown>,
       });
     });
 
@@ -348,7 +408,7 @@ export class HisService {
    * 按机构同步药品目录
    */
   async fetchInstitutionMedicineCatalog(orgCode: string): Promise<HisMedicineCatalogItem[]> {
-    const storeIds = await this.fetchWesternMedicineStoreIds(orgCode);
+    const storeIds = await this.fetchMedicineStoreIds(orgCode);
     if (storeIds.length === 0) {
       console.warn('[HisService] Medicine catalog skipped because no valid western medicine stores were matched', {
         orgCode,
@@ -395,7 +455,14 @@ export class HisService {
           id,
           code: item.idMed?.trim() || item.idMedPro?.trim() || '',
           name,
-          spec: this.composeMedicineSpec(item.specSale?.trim(), item.unitSale?.trim())
+          spec: this.composeMedicineSpec(item.specSale?.trim(), item.unitSale?.trim()),
+          idSrv: item.idMedPro?.trim() || item.idMed?.trim() || id,
+          naSrv: name,
+          sdSrv: item.sdSrv?.trim() || '11',
+          idDeptExec: item.idDeptExec?.trim() || '',
+          fgCheckOrd: item.fgCheckOrd?.trim() || '1',
+          fgSkintest: item.fgSkintest?.trim() || '0',
+          raw: item as unknown as Record<string, unknown>,
         });
       });
 
@@ -426,10 +493,89 @@ export class HisService {
   }
 
   /**
+   * 获取当前用户可见药房列表（仅西药房，且限定当前角色科室）
+   */
+  async fetchAvailablePharmacies(): Promise<PharmacyOption[]> {
+    const response = await this.post<OrgMedicineStoreListBody>(
+      HIS_CATALOG_ENDPOINTS.orgMedicineStores,
+      [{ start: 0, limit: -1, params: { sdUse: '1' } }]
+    );
+    this.assertBusinessSuccess(HIS_CATALOG_ENDPOINTS.orgMedicineStores, response);
+
+    const items = response.body?.items ?? response.data?.items ?? [];
+    if (this.userRoleDeptIds.length === 0) {
+      console.warn('[HisService] Pharmacy fetch skipped because handshake userRoleDeptIds is empty');
+      return [];
+    }
+
+    let sdDispFiltered = 0;
+    let sdUseFiltered = 0;
+    let deptFiltered = 0;
+
+    const pharmacies = new Map<string, PharmacyOption>();
+
+    items.forEach((item) => {
+          if ((item.sdDisp || '').trim() !== '1') {
+            sdDispFiltered += 1;
+            return;
+          }
+
+          const sdUse = (item.sdUse || '').trim();
+          if (sdUse !== '1' && sdUse !== '3') {
+            sdUseFiltered += 1;
+            return;
+          }
+
+          const deptIds = this.normalizeDeptIds((item.idDept || '').split(','));
+          const matchedDeptId = deptIds.find((deptId) => this.userRoleDeptIds.includes(deptId));
+          if (!matchedDeptId) {
+            deptFiltered += 1;
+            return;
+          }
+
+          const name = item.naSto?.trim();
+          if (!name) {
+            return;
+          }
+
+          const optionKey = `${name}::${matchedDeptId}`;
+          if (!pharmacies.has(optionKey)) {
+            pharmacies.set(optionKey, {
+              name,
+              idDept: matchedDeptId,
+              idSto: item.idSto?.trim() || '',
+            });
+          }
+        });
+
+    const pharmacyList = Array.from(pharmacies.values());
+
+    console.log('[HisService] Pharmacy filter summary', {
+      rawCount: items.length,
+      sdDispFiltered,
+      sdUseFiltered,
+      deptFiltered,
+      userRoleDeptIds: this.userRoleDeptIds,
+      matchedPharmacies: pharmacyList,
+      sampleItem: items[0] ?? null,
+    });
+
+    return pharmacyList;
+  }
+
+  /**
    * 更新 Token
    */
   updateToken(newToken: string): void {
     this.token = newToken;
+  }
+
+  updateContext(context: HisServiceContext): void {
+    this.userRoleDeptIds = this.normalizeDeptIds(context.userRoleDeptIds);
+  }
+
+  getDefaultExecDeptId(): string {
+    return this.userRoleDeptIds[0] || '';
   }
 
   private mapCliCategory(sdCliText?: string, sdCli?: string): string {
@@ -454,43 +600,32 @@ export class HisService {
     }
   }
 
-  private async fetchWesternMedicineStoreIds(orgCode: string): Promise<string[]> {
-    const response = await this.post<DispensingStoreItem[]>(
-      HIS_CATALOG_ENDPOINTS.medicineStores,
-      []
-    );
+  private mapOrderServiceCode(category: string): string {
+    switch (category) {
+      case '检查':
+        return '31';
+      case '检验':
+        return '41';
+      default:
+        return '51';
+    }
+  }
 
-    const stores = response.body ?? response.data ?? [];
-    let inactiveFiltered = 0;
-    let orgFiltered = 0;
-    let sdStoFiltered = 0;
-    let scopeFiltered = 0;
+  async fetchMedicineStoreIds(orgCode: string): Promise<string[]> {
+    const response = await this.post<OrgMedicineStoreListBody>(
+      HIS_CATALOG_ENDPOINTS.orgMedicineStores,
+      [{ start: 0, limit: -1, params: orgCode ? { idOrg: orgCode } : {} }]
+    );
+    this.assertBusinessSuccess(HIS_CATALOG_ENDPOINTS.orgMedicineStores, response);
+
+    const stores = response.body?.items ?? response.data?.items ?? [];
+    let sdDispFiltered = 0;
 
     const validStores = stores.filter((store) => {
-      if (store.fgActive === '0') {
-        inactiveFiltered += 1;
+      if ((store.sdDisp || '').trim() !== '1') {
+        sdDispFiltered += 1;
         return false;
       }
-      if (orgCode && store.idOrg?.trim() && store.idOrg.trim() !== orgCode) {
-        orgFiltered += 1;
-        return false;
-      }
-
-      const sdSto = store.sdSto?.trim();
-      if (sdSto !== '2') {
-        sdStoFiltered += 1;
-        return false;
-      }
-
-      const stoScopes = (store.sdsStoPro || '')
-        .split(',')
-        .map(item => item.trim())
-        .filter(Boolean);
-      if (!stoScopes.includes('1') || !stoScopes.includes('2')) {
-        scopeFiltered += 1;
-        return false;
-      }
-
       return true;
     });
 
@@ -500,16 +635,12 @@ export class HisService {
         .filter((idSto): idSto is string => Boolean(idSto))
     ));
 
-    console.log('[HisService] Western medicine store filter summary', {
+    console.log('[HisService] Medicine store filter summary (orgMedicineStores)', {
       orgCode,
       rawCount: stores.length,
-      inactiveFiltered,
-      orgFiltered,
-      sdStoFiltered,
-      scopeFiltered,
+      sdDispFiltered,
       matchedCount: validStores.length,
       matchedStoreIds: storeIds,
-      sampleStore: stores[0] ?? null,
     });
 
     return storeIds;
@@ -521,6 +652,17 @@ export class HisService {
     }
 
     return specSale || unitSale || '';
+  }
+
+  private buildJsonField(idLisCategory?: string, fgCombination?: string): string {
+    const payload: Record<string, string> = {};
+    if (idLisCategory) {
+      payload.idLisCategory = idLisCategory;
+    }
+    if (fgCombination) {
+      payload.fgCombination = fgCombination;
+    }
+    return Object.keys(payload).length > 0 ? JSON.stringify(payload) : '';
   }
 
   private assertBusinessSuccess<T>(endpoint: string, response: HisResponse<T>): void {
@@ -578,6 +720,14 @@ export class HisService {
 
     return payload;
   }
+
+  private normalizeDeptIds(values?: Array<string | null | undefined> | string[]): string[] {
+    return Array.from(new Set(
+      (values || [])
+        .map((value) => (typeof value === 'string' ? value.trim() : ''))
+        .filter(Boolean)
+    ));
+  }
 }
 
 let instance: HisService | null = null;
@@ -591,10 +741,17 @@ export const getHisService = (
   baseUrl?: string,
   auth?: {
     token?: string;
+    userRoleDeptIds?: string[];
   }
 ): HisService | null => {
   if (baseUrl && auth?.token) {
-    instance = new HisService(baseUrl, auth.token);
+    if (instance) {
+      instance = new HisService(baseUrl, auth.token, { userRoleDeptIds: auth.userRoleDeptIds });
+    } else {
+      instance = new HisService(baseUrl, auth.token, { userRoleDeptIds: auth.userRoleDeptIds });
+    }
+  } else if (instance && auth?.userRoleDeptIds) {
+    instance.updateContext({ userRoleDeptIds: auth.userRoleDeptIds });
   }
   return instance;
 };

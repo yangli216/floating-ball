@@ -3,6 +3,7 @@
  */
 export interface AppPatient {
   id?: string;
+  idTet?: string;
   idPi?: string;
   idMpi?: string;
   patientId?: string;

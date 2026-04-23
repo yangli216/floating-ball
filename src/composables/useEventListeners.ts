@@ -210,6 +210,62 @@ function resolveHandshakeOrgCode(ctx: SdkHandshakePayload): string | null {
   return null;
 }
 
+function resolveHandshakeUserRoleDeptIds(ctx: SdkHandshakePayload): string[] {
+  const extra = (ctx.extra && typeof ctx.extra === 'object') ? ctx.extra as Record<string, unknown> : undefined;
+  const urt = resolveUrtPayload(extra?.urt);
+  const rawUserRoleDepts = urt?.userRoleDepts;
+
+  const parsedUserRoleDepts = (() => {
+    if (typeof rawUserRoleDepts === 'string') {
+      try {
+        return JSON.parse(rawUserRoleDepts);
+      } catch {
+        return undefined;
+      }
+    }
+
+    return rawUserRoleDepts;
+  })();
+
+  const collectDeptIds = (value: unknown): string[] => {
+    if (!value) {
+      return [];
+    }
+
+    if (typeof value === 'string') {
+      return value.trim() ? [value.trim()] : [];
+    }
+
+    if (typeof value === 'number' && Number.isFinite(value)) {
+      return [String(value)];
+    }
+
+    if (Array.isArray(value)) {
+      return value.flatMap((item) => collectDeptIds(item));
+    }
+
+    if (typeof value === 'object') {
+      const record = value as Record<string, unknown>;
+      const directDeptId = record.deptId;
+      if (typeof directDeptId === 'string' && directDeptId.trim()) {
+        return [directDeptId.trim()];
+      }
+      if (typeof directDeptId === 'number' && Number.isFinite(directDeptId)) {
+        return [String(directDeptId)];
+      }
+
+      return Object.values(record).flatMap((item) => collectDeptIds(item));
+    }
+
+    return [];
+  };
+
+  return Array.from(new Set(
+    collectDeptIds(parsedUserRoleDepts)
+      .filter(Boolean)
+  ));
+}
+
 function mergePatientContext(
   currentPatient: AppPatient | null,
   payload: StartConsultationPayload | SessionAssistPayload | null | undefined
@@ -327,13 +383,15 @@ export function useEventListeners(options: EventListenersOptions) {
       const baseUrl = ctx.origin;
       const token = ctx.extra?.emrAccessToken;
       const orgCode = resolveHandshakeOrgCode(ctx);
+      const userRoleDeptIds = resolveHandshakeUserRoleDeptIds(ctx);
 
       if (baseUrl && token) {
         // 初始化 HIS 服务单例
-        getHisService(baseUrl, { token });
+        getHisService(baseUrl, { token, userRoleDeptIds });
         console.log('[EventListeners] HisService initialized with origin:', baseUrl, {
           hasToken: Boolean(token),
           orgCode,
+          userRoleDeptIds,
         });
       } else {
         resetHisService();
@@ -341,6 +399,7 @@ export function useEventListeners(options: EventListenersOptions) {
           hasBaseUrl: Boolean(baseUrl),
           hasToken: Boolean(token),
           orgCode,
+          userRoleDeptIds,
         });
       }
 
