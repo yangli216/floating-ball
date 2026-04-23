@@ -1,9 +1,10 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, inject } from 'vue';
-import { getWesternTemplates } from '../services/templateService';
+import { getWesternTemplates, syncRemoteTemplates } from '../services/templateService';
 import Pinyin from 'tiny-pinyin';
 import { invoke } from '@tauri-apps/api/core';
 import Icon from './Icon.vue';
+import { isRegionalMode } from '../services/regionalClient';
 
 const showToast = inject('showToast') as (msg: string, type: 'success' | 'error' | 'info') => void;
 
@@ -63,11 +64,13 @@ const systemCategories: Record<string, string> = {
 };
 
 onMounted(() => {
-  // Deep clone to avoid mutating origin until save
-  symptoms.value = JSON.parse(JSON.stringify(getWesternTemplates()));
-  if (symptoms.value.length > 0) {
-    selectedSymptomId.value = symptoms.value[0].id;
-  }
+  void syncRemoteTemplates().finally(() => {
+    // Deep clone to avoid mutating origin until save
+    symptoms.value = JSON.parse(JSON.stringify(getWesternTemplates()));
+    if (symptoms.value.length > 0) {
+      selectedSymptomId.value = symptoms.value[0].id;
+    }
+  });
 });
 
 // --- Computed ---
@@ -172,6 +175,10 @@ const removeField = (fieldId: string) => {
 };
 
 const saveAll = async () => {
+  if (isRegionalMode()) {
+    showToast('区域化模式下请在 floating-ball-server 管理端维护症状模板', 'info');
+    return;
+  }
   try {
     const content = JSON.stringify(symptoms.value, null, 2);
     await invoke('save_templates', { content });

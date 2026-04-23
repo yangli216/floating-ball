@@ -94,6 +94,7 @@ async function retryWithBackoff<T>(
 }
 
 import { isRegionalMode, getCachedBootstrap, createRegionalSSE } from './regionalClient';
+import { beginAiTrace, failAiTrace, finishAiTrace } from './aiTrace';
 
 // 获取配置信息
 export function getLLMConfig() {
@@ -131,9 +132,15 @@ export interface LLMConfigOverride {
   audioBaseUrl?: string;
   model?: string;
   audioModel?: string;
+  configProfile?: 'default' | 'reviewer';
 }
 
 export function getReviewerLLMConfig(): LLMConfigOverride {
+  if (isRegionalMode()) {
+    return {
+      configProfile: 'reviewer',
+    };
+  }
   const apiKey = localStorage.getItem("REVIEWER_API_KEY") || undefined;
   const baseUrl = localStorage.getItem("REVIEWER_BASE_URL") || undefined;
   const model = localStorage.getItem("REVIEWER_MODEL") || undefined;
@@ -168,6 +175,37 @@ function createPayloadMessages(messages: ChatMessage[]) {
   });
 }
 
+function summarizeText(value: string, limit = 120): string {
+  const normalized = value.replace(/\s+/g, ' ').trim();
+  if (!normalized) {
+    return '';
+  }
+  return normalized.length > limit ? `${normalized.slice(0, limit)}...` : normalized;
+}
+
+function buildChatRequestSummary(messages: ChatMessage[]): string {
+  const userMessages = messages.filter(item => item.role === 'user');
+  const lastUserMessage = [...userMessages].reverse().find(item => item.content.trim());
+  const imageCount = messages.reduce((total, item) => total + (item.images?.length || 0), 0);
+  return [
+    `${messages.length} 条消息`,
+    `${userMessages.length} 条用户输入`,
+    imageCount > 0 ? `${imageCount} 张图片` : '',
+    lastUserMessage?.content ? `最新输入：${summarizeText(lastUserMessage.content, 80)}` : '',
+  ].filter(Boolean).join('，');
+}
+
+function buildSpeechRequestSummary(fileName: string, scene: string, mimeType?: string): string {
+  return [`场景 ${scene}`, `文件 ${fileName}`, mimeType ? `格式 ${mimeType}` : ''].filter(Boolean).join('，');
+}
+
+function extractSseDataPayload(line: string): string | null {
+  if (!line.startsWith("data:")) {
+    return null;
+  }
+  return line.slice(5).trimStart();
+}
+
 async function readErrorPayload(res: Response): Promise<any> {
   const rawText = await res.text();
   if (!rawText) return {};
@@ -189,15 +227,39 @@ export async function chatStream(
 ): Promise<void> {
   // 区域化模式：通过后端 AI 代理
   if (isRegionalMode() && !customConfig?.apiKey) {
-    const { model } = getConfigAndKey(undefined, customConfig);
     const payloadMessages = createPayloadMessages(messages);
-    await retryWithBackoff(async () => {
-      await createRegionalSSE('/v1/ai/chat', {
-        model,
-        messages: payloadMessages,
-        stream: true,
-      }, onChunk);
-    }, retryConfig || DEFAULT_RETRY_CONFIG, onRetry);
+    const trace = beginAiTrace({
+      channel: 'chat',
+      scene: 'chat',
+      sourceModule: 'llm',
+      configProfile: customConfig?.configProfile || 'default',
+      model: getCachedBootstrap()?.llm?.model,
+      requestSummary: buildChatRequestSummary(messages),
+    });
+    let responseText = '';
+    try {
+      await retryWithBackoff(async () => {
+        await createRegionalSSE('/v1/ai/chat', {
+          configProfile: customConfig?.configProfile || 'default',
+          messages: payloadMessages,
+          stream: true,
+          traceId: trace.traceId,
+          scene: 'chat',
+          sourceModule: 'llm',
+          sessionId: trace.sessionId,
+        }, (chunk) => {
+          responseText += chunk;
+          onChunk(chunk);
+        });
+      }, retryConfig || DEFAULT_RETRY_CONFIG, onRetry);
+      finishAiTrace(trace.traceId, {
+        success: true,
+        responseSummary: summarizeText(responseText, 160) || '流式响应已完成',
+      });
+    } catch (error) {
+      failAiTrace(trace.traceId, error instanceof Error ? error.message : String(error));
+      throw error;
+    }
     return;
   }
 
@@ -245,9 +307,10 @@ export async function chatStream(
 
         for (const line of lines) {
           const trimmed = line.trim();
-          if (!trimmed || !trimmed.startsWith("data: ")) continue;
+          if (!trimmed) continue;
 
-          const dataStr = trimmed.slice(6);
+          const dataStr = extractSseDataPayload(trimmed);
+          if (dataStr == null) continue;
           if (dataStr === "[DONE]") return;
 
           try {
@@ -309,17 +372,38 @@ export async function chat(
 ): Promise<string> {
   // 区域化模式：通过后端 AI 代理
   if (isRegionalMode() && !customConfig?.apiKey) {
-    const { model } = getConfigAndKey(undefined, customConfig);
     const payloadMessages = createPayloadMessages(messages);
-    return await retryWithBackoff(async () => {
-      const { regionalPost } = await import('./regionalClient');
-      const resp = await regionalPost<{ content: string }>('/v1/ai/chat', {
-        model,
-        messages: payloadMessages,
-        stream: false,
+    const trace = beginAiTrace({
+      channel: 'chat',
+      scene: 'chat',
+      sourceModule: 'llm',
+      configProfile: customConfig?.configProfile || 'default',
+      model: getCachedBootstrap()?.llm?.model,
+      requestSummary: buildChatRequestSummary(messages),
+    });
+    try {
+      const content = await retryWithBackoff(async () => {
+        const { regionalPost } = await import('./regionalClient');
+        const resp = await regionalPost<{ content: string }>('/v1/ai/chat', {
+          configProfile: customConfig?.configProfile || 'default',
+          messages: payloadMessages,
+          stream: false,
+          traceId: trace.traceId,
+          scene: 'chat',
+          sourceModule: 'llm',
+          sessionId: trace.sessionId,
+        });
+        return resp.content;
+      }, retryConfig || DEFAULT_RETRY_CONFIG, onRetry);
+      finishAiTrace(trace.traceId, {
+        success: true,
+        responseSummary: summarizeText(content, 160) || '非流式响应为空',
       });
-      return resp.content;
-    }, retryConfig || DEFAULT_RETRY_CONFIG, onRetry);
+      return content;
+    } catch (error) {
+      failAiTrace(trace.traceId, error instanceof Error ? error.message : String(error));
+      throw error;
+    }
   }
 
   const { key, baseUrl, model } = getConfigAndKey(apiKey, customConfig);
@@ -405,16 +489,43 @@ export async function transcribeAudio(
 ): Promise<string> {
   // 区域化模式：通过后端语音代理
   if (isRegionalMode() && !customConfig?.apiKey) {
-    return await retryWithBackoff(async () => {
-      const { regionalPost } = await import('./regionalClient');
-      const arrayBuffer = await blob.arrayBuffer();
-      const base64 = btoa(String.fromCharCode(...new Uint8Array(arrayBuffer)));
-      const resp = await regionalPost<{ text: string }>('/v1/ai/speech/transcribe', {
-        audio: base64,
-        mimeType: blob.type || 'audio/webm',
+    const scene = 'chat-input';
+    const fileName = `${scene}-${Date.now()}.webm`;
+    const trace = beginAiTrace({
+      channel: 'speech_transcribe',
+      scene,
+      sourceModule: 'llm',
+      model: getCachedBootstrap()?.llm?.audioModel,
+      requestSummary: buildSpeechRequestSummary(fileName, scene, blob.type || 'audio/webm'),
+    });
+    try {
+      const text = await retryWithBackoff(async () => {
+        const { regionalPost, buildRegionalSpeechUploadPayload } = await import('./regionalClient');
+        const payload = await buildRegionalSpeechUploadPayload(blob, {
+          mimeType: blob.type || 'audio/webm',
+          scene,
+          fileName,
+        });
+        const resp = await regionalPost<{ text: string }>(
+          '/v1/ai/speech/transcribe',
+          {
+            ...payload,
+            traceId: trace.traceId,
+            sourceModule: 'llm',
+            sessionId: trace.sessionId,
+          }
+        );
+        return resp.text;
+      }, retryConfig || DEFAULT_RETRY_CONFIG, onRetry);
+      finishAiTrace(trace.traceId, {
+        success: true,
+        responseSummary: summarizeText(text, 160) || '转写结果为空',
       });
-      return resp.text;
-    }, retryConfig || DEFAULT_RETRY_CONFIG, onRetry);
+      return text;
+    } catch (error) {
+      failAiTrace(trace.traceId, error instanceof Error ? error.message : String(error));
+      throw error;
+    }
   }
 
   const { key, audioBaseUrl, audioModel } = getConfigAndKey(apiKey, customConfig);

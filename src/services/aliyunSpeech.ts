@@ -168,15 +168,42 @@ export async function transcribeWithAliyun(
     const { isRegionalMode } = await import('./regionalClient');
     if (isRegionalMode()) {
         const speechConfig = getSpeechConfig();
-        const { regionalPost } = await import('./regionalClient');
-        const arrayBuffer = await audioBlob.arrayBuffer();
-        const base64 = btoa(String.fromCharCode(...new Uint8Array(arrayBuffer)));
-        const resp = await regionalPost<{ text: string }>('/v1/ai/speech/realtime', {
-            audio: base64,
-            format: 'pcm',
-            model: speechConfig.model,
+        const { regionalPost, buildRegionalSpeechUploadPayload } = await import('./regionalClient');
+        const { beginAiTrace, failAiTrace, finishAiTrace } = await import('./aiTrace');
+        const scene = 'voice-consultation';
+        const fileName = `${scene}-${Date.now()}.pcm`;
+        const trace = beginAiTrace({
+            channel: 'speech_realtime',
+            scene,
+            sourceModule: 'aliyunSpeech',
+            requestSummary: `场景 ${scene}，文件 ${fileName}，格式 ${audioBlob.type || 'audio/pcm'}`,
         });
-        return resp.text;
+        try {
+            const payload = await buildRegionalSpeechUploadPayload(audioBlob, {
+                mimeType: audioBlob.type || 'audio/pcm',
+                format: 'pcm',
+                scene,
+                fileName,
+            });
+            const resp = await regionalPost<{ text: string }>(
+                '/v1/ai/speech/realtime',
+                {
+                    ...payload,
+                    traceId: trace.traceId,
+                    sourceModule: 'aliyunSpeech',
+                    sessionId: trace.sessionId,
+                }
+            );
+            finishAiTrace(trace.traceId, {
+                success: true,
+                responseSummary: resp.text ? resp.text.slice(0, 160) : '转写结果为空',
+                model: speechConfig.model,
+        });
+            return resp.text;
+        } catch (error) {
+            failAiTrace(trace.traceId, error instanceof Error ? error.message : String(error));
+            throw error;
+        }
     }
 
     return await transcribeWithAliyunInternal(audioBlob);

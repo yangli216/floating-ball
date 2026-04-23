@@ -62,6 +62,21 @@ function scrollToBottom() {
   });
 }
 
+function removeEmptyAssistantPlaceholder() {
+  const lastMessage = messages.value[messages.value.length - 1];
+  if (lastMessage?.role === 'assistant' && !lastMessage.content.trim()) {
+    messages.value.pop();
+  }
+}
+
+function formatChatFailureMessage(error: unknown): string {
+  const raw = error instanceof Error ? error.message : String(error);
+  if (!raw) {
+    return '抱歉，当前 AI 服务暂时不可用，请检查后台配置后重试。';
+  }
+  return `抱歉，调用模型失败：${raw}`;
+}
+
 async function handleSend() {
   if (!input.value.trim() && !imageDataUrl.value) return;
   sending.value = true;
@@ -155,7 +170,10 @@ async function handleSend() {
 
   } catch (err) {
     trackError('chat_send_failed', err);
-    messages.value.push({ role: "assistant", content: `抱歉，调用模型失败：${(err as Error).message}` });
+    removeEmptyAssistantPlaceholder();
+    const errorMessage = formatChatFailureMessage(err);
+    messages.value.push({ role: "assistant", content: errorMessage });
+    showToast?.(errorMessage);
     scrollToBottom();
   } finally {
     sending.value = false;

@@ -17,6 +17,7 @@ import SvgIcon from "./components/svgIcon.vue";
 import VoiceConsultationResult, { type GeneratedRecord } from "./components/VoiceConsultationResult.vue";
 import KnowledgeBasePanel from "./components/KnowledgeBasePanel.vue";
 import VoiceConsultationNew from "./components/VoiceConsultationNew.vue";
+import FeedbackSubmissionPanel from "./components/FeedbackSubmissionPanel.vue";
 import Icon from "./components/Icon.vue";
 import { trackClick } from "./services/operationTracker";
 import { LogicalSize } from "@tauri-apps/api/dpi";
@@ -105,6 +106,27 @@ const showSessionEntry = computed(
     Boolean(currentPatient.value) &&
     currentView.value !== 'consultation'
 );
+const feedbackDialogVisible = ref(false);
+const feedbackDialogSuspended = ref(false);
+const feedbackSourceModule = computed(() => `view:${currentView.value}`);
+
+function openFeedbackDialog(): void {
+  trackClick('open_global_feedback_dialog', { currentView: currentView.value });
+  feedbackDialogVisible.value = true;
+}
+
+function closeFeedbackDialog(): void {
+  feedbackDialogVisible.value = false;
+  feedbackDialogSuspended.value = false;
+}
+
+function suspendFeedbackDialogForCapture(): void {
+  feedbackDialogSuspended.value = true;
+}
+
+function resumeFeedbackDialogAfterCapture(): void {
+  feedbackDialogSuspended.value = false;
+}
 
 function createMedicalCatalogDebugApi(): MedicalCatalogDebugApi {
   const printState = (state: MedicalCatalogDebugState): MedicalCatalogDebugState => {
@@ -439,13 +461,17 @@ const handleExitApp = async (e: MouseEvent) => {
 
 const openInsideCloudHome = async () => {
   if (!isPMPHAIConfigured()) {
-    showToast('请先在设置中配置知识库', 'error');
+    showToast('请先在本地设置或后台管理端启用知识库', 'error');
     return;
   }
 
-  const pageUrl = pmphaiService.generatePageUrl({
+  const pageUrl = await pmphaiService.getPageUrl({
     pageName: 'home',
   });
+  if (!pageUrl) {
+    showToast('知识库地址生成失败', 'error');
+    return;
+  }
 
   try {
     const { openUrl } = await import('@tauri-apps/plugin-opener');
@@ -560,6 +586,9 @@ const openInsideCloudHome = async () => {
 	              <button class="icon-btn" aria-label="知识库" title="知识库" @click="openInsideCloudHome">
 	                <Icon icon="lucide:book-open" class="toolbar-icon" size="20" />
 	              </button>
+                <button class="icon-btn feedback-entry-btn" aria-label="问题反馈" title="问题反馈" @click="openFeedbackDialog">
+                  <Icon icon="lucide:message-square-warning" class="toolbar-icon" size="20" />
+                </button>
               <button class="icon-btn" aria-label="收起" title="收起" @click="handleCollapse">
                 <Icon icon="lucide:chevron-down" class="toolbar-icon" size="20" />
               </button>
@@ -635,6 +664,25 @@ const openInsideCloudHome = async () => {
       </div>
     </Transition>
   </div>
+  <Transition name="fade">
+    <div
+      v-if="feedbackDialogVisible"
+      class="feedback-overlay"
+      :class="{ 'feedback-overlay--suspended': feedbackDialogSuspended }"
+      @click.self="closeFeedbackDialog"
+    >
+      <div class="feedback-dialog">
+        <FeedbackSubmissionPanel
+          variant="dialog"
+          :source-module="feedbackSourceModule"
+          @close="closeFeedbackDialog"
+          @submitted="closeFeedbackDialog"
+          @screenshot-capture-start="suspendFeedbackDialogForCapture"
+          @screenshot-capture-end="resumeFeedbackDialogAfterCapture"
+        />
+      </div>
+    </div>
+  </Transition>
   <div v-if="transitioning" class="transition-mask" />
   <Toast ref="toastRef" />
   </template>
@@ -849,6 +897,36 @@ const openInsideCloudHome = async () => {
 
 .tooltip {
   display: none;
+}
+
+.feedback-entry-btn {
+  color: #f97316;
+}
+
+.feedback-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 999;
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding: 72px 24px 24px;
+  background: rgba(15, 23, 42, 0.22);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+}
+
+.feedback-dialog {
+  width: min(720px, calc(100vw - 48px));
+  max-height: calc(100vh - 96px);
+  overflow: auto;
+  border-radius: 24px;
+  box-shadow: 0 24px 80px rgba(15, 23, 42, 0.22);
+}
+
+.feedback-overlay--suspended {
+  opacity: 0;
+  pointer-events: none;
 }
 
 </style>

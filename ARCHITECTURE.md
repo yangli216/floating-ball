@@ -111,11 +111,13 @@
 
 ### 当前状态
 
-当前代码库**尚未落地独立医生登录态**，仍以本地配置和本地桥接链路为主：
+当前代码库**尚未落地独立医生登录态**，运行态分为本地模式与区域化模式两条链路：
 
-1. LLM / 审查模型 / PMPHAI 等凭据主要通过设置页和本地存储管理。
-2. HIS 联调通过本地 HTTP Bridge 完成，不依赖独立登录态。
-3. `docs/regionalization/*.md` 中关于 `auth.ts`、`regionalClient.ts`、`AuthGate.vue` 的设计尚未进入当前实现。
+1. 本地模式下，LLM / 审查模型 / PMPHAI 等凭据仍通过设置页、`localStorage` 与 `.env` 兜底管理。
+2. 区域化模式下，桌面端通过 `SettingsPanel.vue` 或预置的 `REGIONAL_*` 配置项保存 `REGIONAL_ENABLED / REGIONAL_BASE_URL / REGIONAL_ORG_CODE`，再由 `regionalRuntime.ts -> regionalClient.ts` 完成设备注册、`bootstrap` 拉取和 `/v1/*` 调用；当前首启会自动写入默认接入值 `http://127.0.0.1:8080 + ORG001` 并默认启用区域化模式，后续仍允许在设置页修改或关闭；桌面端不再编辑这些密钥类配置。
+2.1 `SettingsPanel.vue` 需要同时提供“桌面端到 floating-ball-server”的接入测试入口，用于验证 `register -> bootstrap` 链路，并与后台“server 到 LLM”测试入口形成分层排障。
+3. HIS 联调通过本地 HTTP Bridge 完成，不依赖独立登录态。
+4. `docs/regionalization/*.md` 中关于 `auth.ts`、`AuthGate.vue` 的更完整登录态设计仍未进入当前实现。
 
 ### 前端分层设计
 
@@ -129,10 +131,11 @@
 
 ### 与主流程关系
 
-1. 现阶段所有问诊、语音、session 回写能力都以本地模式为主。
-2. 未来若接入区域后端，应确保不破坏当前本地桥接链路和医生使用路径。
-3. 登录态设计在当前版本不是前置依赖，不能假定仓库内已有 `auth store` 或受保护 API 基座。
-6. `LLM` 调用默认走 `/v1/ai/chat`；仅当后端不可用且配置了兼容模型时才回退直连（过渡策略）。
+1. 现阶段所有问诊、语音、session 回写能力都必须兼容本地模式。
+2. 区域化模式下，`LLM`、独立审查 AI、PMPHAI 知识库等上游能力默认走 `floating-ball-server` 的 `/v1/*` 代理或服务端签名接口，桌面端不直接保存或下发这些密钥。
+3. 本地模式仍保留直连 OpenAI 兼容接口、DashScope 与本地 PMPHAI 代理的兜底路径。
+4. 区域化模式下，工作区共用顶栏提供全局“问题反馈”入口，反馈弹层会附带最近一次 AI 代理调用的 `traceId`、会话 ID、场景摘要、评分、文字说明和截图数据，一并提交到 `floating-ball-server`，供后台按时间线查看调用链路。
+5. 登录态设计在当前版本不是前置依赖，不能假定仓库内已有 `auth store` 或受保护 API 基座。
 
 ---
 
@@ -720,6 +723,7 @@ src/styles/
 | `hisService.ts` | HIS HTTP 调用封装：统一处理鉴权头、POST/GET 请求，以及诊断/药品/诊疗项目目录与药品频次、用法等字典读取，供主问诊和语音问诊复用 | [src/services/hisService.ts](src/services/hisService.ts) |
 | `diagnosisPath.ts` | 诊断路径数据构建与独立窗口事件载荷封装；优先通过 LLM 生成结构化推理链，再在前端校验并映射为 Sankey 节点、连线和说明文案，失败时回退本地兜底链路；载荷中补充 `supportingEvidence`、`counterEvidence`、`differentialPoints` 三段式解释字段，供窗口右侧说明面板直接渲染 | [src/services/diagnosisPath.ts](src/services/diagnosisPath.ts) |
 | `feedback.ts` | 会话反馈服务 | [src/services/feedback.ts](src/services/feedback.ts) |
+| `aiTrace.ts` | 最近一次区域化 AI 调用链路上下文缓存；向反馈面板暴露 `traceId`、模型、场景、输入/输出摘要与耗时 | [src/services/aiTrace.ts](src/services/aiTrace.ts) |
 | `operationTracker.ts` | 操作追踪和分析 | [src/services/operationTracker.ts](src/services/operationTracker.ts) |
 | `themeService.ts` | 主题管理 | [src/services/themeService.ts](src/services/themeService.ts) |
 | `pmphai.ts` | PMPHAI 集成 | [src/services/pmphai.ts](src/services/pmphai.ts) |
@@ -731,8 +735,10 @@ src/styles/
 | `textGeneration.ts` | 主诉/现病史等文本生成辅助 | [src/services/textGeneration.ts](src/services/textGeneration.ts) |
 | `reportGenerator.ts` | 使用报告导出 | [src/services/reportGenerator.ts](src/services/reportGenerator.ts) |
 | `regionalClient.ts` | 区域化核心客户端：终端注册、bootstrap 配置拉取、心跳、JWT 鉴权、SSE 流式代理 | [src/services/regionalClient.ts](src/services/regionalClient.ts) |
+| `regionalRuntime.ts` | 区域化运行时编排：统一初始化、重连、远程 Prompt/模板/映射同步和审计上传启动/关闭；初始化成功后额外发送 `regional_runtime_initialized` 审计事件，方便直接在后台确认链路打通 | [src/services/regionalRuntime.ts](src/services/regionalRuntime.ts) |
+| `userFeedback.ts` | 区域化问题反馈服务；负责图片编码、评分/说明校验和调用远端 `/v1/client/feedbacks` 接口 | [src/services/userFeedback.ts](src/services/userFeedback.ts) |
 | `promptOverride.ts` | 远程 Prompt 覆盖层：管理端发布的自定义 prompt 替换本地默认值 | [src/services/promptOverride.ts](src/services/promptOverride.ts) |
-| `auditUploader.ts` | 审计事件批量上报：离线队列 + 定时刷盘到区域平台 | [src/services/auditUploader.ts](src/services/auditUploader.ts) |
+| `auditUploader.ts` | 审计事件批量上报：区域化模式下直接调用远端 `/v1/client/audit/events/batch`，本地只保留轻量离线队列用于失败重试；恢复遗留队列后立即补传，新事件入队后也会异步触发一次立即上报尝试；`operation` 事件会保留 `operationType/operationName/details`，并补齐 `module/action/result` 供服务端日志表查询 | [src/services/auditUploader.ts](src/services/auditUploader.ts) |
 
 ### 当前模板/映射读取策略
 
@@ -746,17 +752,19 @@ src/styles/
 
 ### 区域化模式运行链路
 
-当 `REGIONAL_ENABLED=true` 时，应用启动流程扩展为：
+当首启默认值或设置页/环境变量使 `REGIONAL_ENABLED=true`，并且已经配置 `REGIONAL_BASE_URL / REGIONAL_ORG_CODE` 时，应用启动流程扩展为：
 
 ```
 main.ts mount
     ↓
 isRegionalMode() === true ?
     ↓ Yes
-initializeRegionalClient()
-    ├─ registerDevice() → POST /v1/client/register
-    ├─ getBootstrapConfig() → GET /v1/client/bootstrap
-    └─ startHeartbeat() (30s interval)
+initializeRegionalRuntime()
+    ├─ initializeRegionalClient()
+    │   ├─ registerDevice() → POST /v1/client/register
+    │   ├─ getBootstrapConfig() → GET /v1/client/bootstrap
+    │   ├─ stale token 时 clear auth cache 后自动重新 register
+    │   └─ startHeartbeat() (30s interval)
     ↓
 Promise.allSettled([
     syncRemotePrompts(),    → GET /v1/client/prompts/delta
@@ -764,8 +772,16 @@ Promise.allSettled([
     syncRemoteData(),       → GET /v1/client/mappings/delta
 ])
     ↓
-startAuditUploader() (30s batch upload)
+startAuditUploader() (startup flush + enqueue flush + 30s retry)
 ```
+
+设置页保存区域化接入参数时，也复用同一条 `initializeRegionalRuntime() / reinitializeRegionalRuntime()` 链路即时生效，不要求重启应用；当前首启会先把默认值 `REGIONAL_ENABLED=true / REGIONAL_BASE_URL=http://127.0.0.1:8080 / REGIONAL_ORG_CODE=ORG001` 写入本地存储。
+
+保存行为约束：
+
+1. “保存参数”与“连通性校验”分离：即使 `floating-ball-server` 暂时不可达，接入参数也应先持久化成功。
+2. 若后台可连通，设置页显示连接成功状态，并补发 `regional_connection_saved` 操作日志。
+3. 若后台不可达或返回错误，设置页仍保留“参数已保存”的结果，但连接状态与 toast 需要尽量展示真实失败原因，如网络不可达、设备鉴权失败、机构编码未识别或服务端 500；不再把整个保存动作判成失败。
 
 区域化模式下各服务的路由变化：
 
@@ -773,8 +789,8 @@ startAuditUploader() (30s batch upload)
 |------|----------|-----------|
 | LLM Chat (stream) | 直连 apiUrl + apiKey | → SSE /v1/ai/chat (后端持有 apiKey) |
 | LLM Chat (non-stream) | 直连 apiUrl + apiKey | → POST /v1/ai/chat |
-| 语音转写 | 直连 Whisper | → POST /v1/ai/speech/transcribe |
-| 阿里实时语音 | 直连 DashScope | → POST /v1/ai/speech/realtime |
+| 语音转写 | 直连 Whisper | → POST /v1/ai/speech/transcribe（上传 base64 录音 + MIME/文件名元数据） |
+| 阿里实时语音 | 直连 DashScope | → POST /v1/ai/speech/realtime（录制结束后批量上传 base64 录音） |
 | Prompt 来源 | 本地 prompts/index.ts | bootstrap + delta 覆盖 → 本地兜底 |
 | 模板来源 | 本地 templates.json | delta 同步 → localStorage 缓存 → 本地兜底 |
 | 医学数据 | 本地 CSV/JSON + HIS 目录 | 区域化：delta 同步；本地模式：HIS 目录同步并落本地 SQLite，诊断全局一次、诊疗项目/药品按机构每天同步；失败时回退本地 CSV |
@@ -783,7 +799,7 @@ startAuditUploader() (30s batch upload)
 
 ### 当前本地桥接与知识库链路
 
-1. `operationTracker.ts` 与 `feedback.ts` 负责本地操作追踪、会话统计和回溯。
+1. `operationTracker.ts` 与 `feedback.ts` 负责本地操作追踪、会话统计和回溯；本地模式下 `logOperation()` 写入本地 SQLite。区域化模式下，`logOperation()` 不再落本地 SQLite，而是把操作日志规范化为 `{ module, action, result, operationType, operationName, details }` 后直接进入远端审计上传链路。
 2. `src-tauri/src/http_server.rs` 提供 `/api/consultation/*` 与 `/api/pmphai/*` 本地桥接能力。
 3. `pmphai.ts` 优先经本地代理访问 PMPHAI，规避 WebView 跨域问题。
 4. `AnalyticsPanel.vue` 当前读取本地统计与本地数据库查询结果。
@@ -891,6 +907,8 @@ VoiceCapsule.vue (开始录音)
 audioRecorder.ts (麦克风兼容检测 + 采集 PCM16 音频)
     ↓
 RealtimeSpeechService (优先 DashScope，可降级 OpenAI 兼容转写)
+    ↓
+区域化模式：编码整段录音并上传 /v1/ai/speech/realtime
     ↓
 voiceConsultation.handleVoiceStop() (停止录音)
     ↓

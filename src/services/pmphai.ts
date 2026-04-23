@@ -136,7 +136,7 @@ export function getPMPHAIConfig() {
   if (isRegionalMode()) {
     const bootstrap = getCachedBootstrap();
     const enabled = bootstrap?.pmphai?.enabled ?? false;
-    return { appKey: '__REGIONAL__', appSecret: '__REGIONAL__', enabled };
+    return { appKey: '', appSecret: '', enabled };
   }
 
   // Trim values to avoid whitespace issues
@@ -151,8 +151,21 @@ export function getPMPHAIConfig() {
  * 检查知识库是否已配置
  */
 export function isPMPHAIConfigured(): boolean {
+  if (isRegionalMode()) {
+    return getCachedBootstrap()?.pmphai?.enabled ?? false;
+  }
   const { appKey, appSecret, enabled } = getPMPHAIConfig();
   return enabled && !!appKey && !!appSecret;
+}
+
+async function regionalKnowledgePost<T>(path: string, body: unknown): Promise<T> {
+  const { regionalPost } = await import('./regionalClient');
+  return regionalPost<T>(`/v1/knowledge/pmphai${path}`, body);
+}
+
+async function regionalKnowledgeGet<T>(path: string): Promise<T> {
+  const { regionalGet } = await import('./regionalClient');
+  return regionalGet<T>(`/v1/knowledge/pmphai${path}`);
 }
 
 /**
@@ -449,6 +462,21 @@ class PMPHAIService {
     }
 
     try {
+      if (isRegionalMode()) {
+        const results = await regionalKnowledgePost<SearchResult[]>('/search', {
+          query: params.query,
+          type: params.type ?? SearchType.Knowledge,
+          limit: params.limit ?? 5,
+          ...(params.score !== undefined && params.score > 0 ? { score: params.score } : {}),
+          ...(params.enableAbstract !== undefined ? { enableAbstract: params.enableAbstract } : {}),
+        });
+        this.searchCache.set(cacheKey, {
+          results,
+          timestamp: Date.now(),
+        });
+        return results;
+      }
+
       const token = await this.getAccessToken();
       const requestBody = {
         token,
@@ -494,6 +522,10 @@ class PMPHAIService {
     }
 
     try {
+      if (isRegionalMode()) {
+        return await regionalKnowledgePost<ClipData>('/clip', { id });
+      }
+
       const token = await this.getAccessToken();
 
       // Use local proxy to avoid CORS
@@ -586,15 +618,33 @@ class PMPHAIService {
     pageName: string;
     id?: string;
     kgBaseId?: string;
+    kgFields?: string;
     contentId?: string;
+    muluId?: string;
+    catalogueId?: string;
+    originUrl?: string;
   }): Promise<string | null> {
-    const { appKey, appSecret } = getPMPHAIConfig();
-    if (!appKey || !appSecret) {
+    if (!isPMPHAIConfigured()) {
       console.warn('知识库未配置，跳过获取页面URL');
       return null;
     }
 
     try {
+      if (isRegionalMode()) {
+        const result = await regionalKnowledgePost<{ url: string }>('/page-url', {
+          pageName: params.pageName,
+          id: params.id,
+          kgBaseId: params.kgBaseId,
+          kgFields: params.kgFields,
+          contentId: params.contentId,
+          muluId: params.muluId,
+          catalogueId: params.catalogueId,
+          originUrl: params.originUrl,
+        });
+        return result?.url || null;
+      }
+
+      const { appKey, appSecret } = getPMPHAIConfig();
       const response = await fetch(`${DEFAULT_CONFIG.proxyBaseUrl}/page-url`, {
         method: 'POST',
         headers: {
@@ -606,7 +656,11 @@ class PMPHAIService {
           pageName: params.pageName,
           id: params.id,
           kgBaseId: params.kgBaseId,
+          kgFields: params.kgFields,
           contentId: params.contentId,
+          muluId: params.muluId,
+          catalogueId: params.catalogueId,
+          originUrl: params.originUrl,
         }),
       });
 
@@ -645,6 +699,17 @@ class PMPHAIService {
    */
   async testConnection(): Promise<{ success: boolean; message: string }> {
     try {
+      if (isRegionalMode()) {
+        const results = await regionalKnowledgePost<SearchResult[]>('/search', {
+          query: '测试',
+          limit: 1,
+        });
+        return {
+          success: true,
+          message: `连接成功，获取到 ${results.length} 条测试结果`,
+        };
+      }
+
       await this.getAccessToken();
       const results = await this.search({ query: '测试', limit: 1 });
       return {
@@ -669,6 +734,20 @@ class PMPHAIService {
     }
 
     try {
+      if (isRegionalMode()) {
+        return await regionalKnowledgePost<ListSearchResponse>('/list', {
+          key: params.key,
+          kgBaseId: params.kgBaseId,
+          kgBaseName: params.kgBaseName,
+          tagId: params.tagId,
+          tagName: params.tagName,
+          pageSize: params.pageSize || 10,
+          page: params.page || 0,
+          sortField: params.sortField,
+          sortRule: params.sortRule,
+        });
+      }
+
       const token = await this.getAccessToken();
 
       const requestParams: Record<string, string | number> = {
@@ -712,6 +791,11 @@ class PMPHAIService {
     }
 
     try {
+      if (isRegionalMode()) {
+        const query = kgBaseId ? `?kgBaseId=${encodeURIComponent(kgBaseId)}` : '';
+        return await regionalKnowledgeGet<Record<string, KnowledgeBase[]>>(`/kgbases${query}`);
+      }
+
       const token = await this.getAccessToken();
       const requestBody: Record<string, string> = {};
       if (kgBaseId) {
@@ -744,6 +828,10 @@ class PMPHAIService {
     }
 
     try {
+      if (isRegionalMode()) {
+        return await regionalKnowledgeGet<KnowledgeCategory[]>(`/categories?kgBaseId=${encodeURIComponent(kgBaseId)}`);
+      }
+
       const token = await this.getAccessToken();
 
       // Use local proxy to avoid CORS
@@ -774,9 +862,15 @@ class PMPHAIService {
     pageName: string;
     id?: string;
     kgBaseId?: string;
+    kgFields?: string;
     contentId?: string;
+    muluId?: string;
+    catalogueId?: string;
     originUrl?: string;
   }): string {
+    if (isRegionalMode()) {
+      throw new Error('区域化模式下请使用 getPageUrl() 获取服务端签名地址');
+    }
     const { appKey } = getPMPHAIConfig();
     const timestamp = Date.now();
 
@@ -786,7 +880,10 @@ class PMPHAIService {
     redirectParams.set('pageName', params.pageName);
     if (params.kgBaseId) redirectParams.set('kgBaseId', params.kgBaseId);
     if (params.id) redirectParams.set('id', params.id);
+    if (params.kgFields) redirectParams.set('kgFields', params.kgFields);
     if (params.contentId) redirectParams.set('contentId', params.contentId);
+    if (params.muluId) redirectParams.set('muluId', params.muluId);
+    if (params.catalogueId) redirectParams.set('catalogueId', params.catalogueId);
     redirectUrl += redirectParams.toString();
 
     const finalOriginUrl = params.originUrl || 'https://www.pmphai.com';

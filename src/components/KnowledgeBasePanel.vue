@@ -12,7 +12,11 @@
 
     <!-- 配置区域 -->
     <div v-if="!isConfigured" class="config-section">
-      <div class="config-form">
+      <div v-if="regionalMode" class="config-form">
+        <h3>区域化模式下由后台统一配置</h3>
+        <p class="tip">当前机构未在后台启用可用的知识库能力，桌面端不再维护 regional 模式凭据。</p>
+      </div>
+      <div v-else class="config-form">
         <h3>首次使用需要配置</h3>
         <div class="form-group">
           <label>App Key</label>
@@ -64,7 +68,7 @@
           :class="['tab', { active: activeTab === 'config' }]"
           @click="activeTab = 'config'"
         >
-          设置
+          {{ regionalMode ? '服务端配置' : '设置' }}
         </button>
       </div>
 
@@ -166,31 +170,49 @@
 
       <!-- 设置 -->
       <div v-if="activeTab === 'config'" class="tab-content">
-        <div class="form-group">
-          <label>App Key</label>
-          <input
-            v-model="config.appKey"
-            type="text"
-            class="form-input"
-          />
-        </div>
-        <div class="form-group">
-          <label>App Secret</label>
-          <input
-            v-model="config.appSecret"
-            type="password"
-            class="form-input"
-          />
-        </div>
-        <div class="form-group">
-          <label>Base URL</label>
-          <input
-            v-model="config.baseUrl"
-            type="text"
-            class="form-input"
-          />
-        </div>
-        <button @click="saveConfig" class="save-btn">保存配置</button>
+        <template v-if="regionalMode">
+          <div class="server-managed-card">
+            <p class="server-managed-title">知识库凭据由后台统一管理</p>
+            <p class="tip">区域化模式下，桌面端只消费服务端下发能力，不再保存 App Key / App Secret。</p>
+            <div class="form-group">
+              <label>Base URL</label>
+              <input
+                :value="config.baseUrl || 'https://inside.pmphai.com'"
+                type="text"
+                class="form-input"
+                disabled
+              />
+            </div>
+            <p class="tip">如需修改，请在后台 AI 配置中调整 PMPHAI / 知识库参数。</p>
+          </div>
+        </template>
+        <template v-else>
+          <div class="form-group">
+            <label>App Key</label>
+            <input
+              v-model="config.appKey"
+              type="text"
+              class="form-input"
+            />
+          </div>
+          <div class="form-group">
+            <label>App Secret</label>
+            <input
+              v-model="config.appSecret"
+              type="password"
+              class="form-input"
+            />
+          </div>
+          <div class="form-group">
+            <label>Base URL</label>
+            <input
+              v-model="config.baseUrl"
+              type="text"
+              class="form-input"
+            />
+          </div>
+          <button @click="saveConfig" class="save-btn">保存配置</button>
+        </template>
       </div>
     </div>
 
@@ -214,11 +236,13 @@ import { ref, computed, onMounted, inject, watch } from 'vue'
 import {
   buildKnowledgeBaseUrl,
   getKnowledgeBaseConfig,
+  isKnowledgeBaseConfigured,
   saveKnowledgeBaseConfig,
   type KnowledgeBaseConfig,
   type PageParams
 } from '../services/knowledgeBase'
-import type { BatchSearchResults } from '../services/pmphai'
+import { pmphaiService, type BatchSearchResults } from '../services/pmphai'
+import { isRegionalMode } from '../services/regionalClient'
 
 const props = defineProps<{
   loading?: boolean
@@ -231,11 +255,14 @@ const emit = defineEmits(['close'])
 const showToast = inject<(message: string, type?: string) => void>('showToast')
 
 const activeTab = ref<'search' | 'detail' | 'config'>('search')
+const regionalMode = ref(false)
 
 const config = ref<KnowledgeBaseConfig>({
   appKey: '',
   appSecret: '',
-  baseUrl: 'https://inside.pmphai.com'
+  baseUrl: 'https://inside.pmphai.com',
+  managedByServer: false,
+  enabled: false
 })
 
 // 搜索关键词 - 初始化为 prop 值
@@ -280,10 +307,11 @@ const iframeUrl = ref('')
 const iframeTitle = ref('')
 
 const isConfigured = computed(() => {
-  return !!config.value.appKey && !!config.value.appSecret
+  return isKnowledgeBaseConfigured(config.value)
 })
 
 onMounted(() => {
+  regionalMode.value = isRegionalMode()
   const savedConfig = getKnowledgeBaseConfig()
   if (savedConfig) {
     config.value = savedConfig
@@ -291,6 +319,10 @@ onMounted(() => {
 })
 
 function saveConfig() {
+  if (regionalMode.value) {
+    showToast?.('区域化模式下请在后台管理端修改知识库配置', 'info')
+    return
+  }
   if (!config.value.appKey || !config.value.appSecret) {
     showToast?.('请填写App Key和App Secret', 'error')
     return
@@ -308,7 +340,7 @@ function handleSearch() {
   // 实时搜索，filteredKnowledgeList 会自动更新
 }
 
-function openKnowledgeDetail(id?: string) {
+async function openKnowledgeDetail(id?: string) {
   const knowledgeId = id || detailParams.value.id
 
   if (!knowledgeId) {
@@ -326,7 +358,22 @@ function openKnowledgeDetail(id?: string) {
   }
 
   try {
-    const url = buildKnowledgeBaseUrl(config.value, pageParams)
+    const url = regionalMode.value
+      ? await pmphaiService.getPageUrl({
+        pageName: pageParams.pageName,
+        id: pageParams.id,
+        kgBaseId: pageParams.kgBaseId,
+        kgFields: pageParams.kgFields,
+        contentId: pageParams.contentId,
+        muluId: pageParams.muluId,
+        catalogueId: pageParams.catalogueId,
+        originUrl: window.location.href,
+      })
+      : buildKnowledgeBaseUrl(config.value, pageParams)
+
+    if (!url) {
+      throw new Error('未获取到知识库地址')
+    }
 
     // 在新窗口打开
     window.open(url, '_blank')
@@ -414,6 +461,20 @@ function closeIframe() {
   text-align: center;
 }
 
+.server-managed-card {
+  padding: 16px;
+  border: 1px solid #dbeafe;
+  border-radius: 10px;
+  background: #f8fbff;
+}
+
+.server-managed-title {
+  margin: 0 0 12px 0;
+  font-size: 15px;
+  font-weight: 600;
+  color: #1d4ed8;
+}
+
 .form-group {
   margin-bottom: 20px;
 }
@@ -438,6 +499,12 @@ function closeIframe() {
 .form-input:focus {
   outline: none;
   border-color: #3b82f6;
+}
+
+.form-input:disabled {
+  background: #f9fafb;
+  color: #6b7280;
+  cursor: not-allowed;
 }
 
 .inline-inputs {

@@ -19,9 +19,10 @@
 | 修改窗口/动画行为 | [useWindowManagement.ts](src/composables/useWindowManagement.ts) + [useWorkMode.ts](src/composables/useWorkMode.ts) |
 | 修改 LLM 调用 | [llm.ts](src/services/llm.ts) + [prompts.ts](src/prompts/prompts.ts) |
 | 修改语音问诊 | [VoiceCapsule.vue](src/components/VoiceCapsule.vue) + [VoiceConsultationNew.vue](src/components/VoiceConsultationNew.vue) + [VoiceConsultationResult.vue](src/components/VoiceConsultationResult.vue) + [useVoiceConsultation.ts](src/composables/useVoiceConsultation.ts) + [useVoiceIntentRecognition.ts](src/composables/useVoiceIntentRecognition.ts) + [prompts.ts](src/prompts/prompts.ts) + [aliyunSpeech.ts](src/services/aliyunSpeech.ts) + [speechConfig.ts](src/services/speechConfig.ts) + [audioRecorder.ts](src/services/audioRecorder.ts)；重点关注语音抽取契约是否覆盖病例草稿、explicit/inferred 来源标记、诊断/检查/药品结构化字段 |
+| 修改区域化后端接入 | [SettingsPanel.vue](src/components/SettingsPanel.vue) + [regionalClient.ts](src/services/regionalClient.ts) + [regionalRuntime.ts](src/services/regionalRuntime.ts) + [userFeedback.ts](src/services/userFeedback.ts) |
 | 修改诊断路径 | [DiagnosisPathWindow.vue](src/components/DiagnosisPathWindow.vue) + [diagnosisPath.ts](src/services/diagnosisPath.ts) + [stores/diagnosisPath.ts](src/stores/diagnosisPath.ts) |
 | 修改知识库 | [pmphai.ts](src/services/pmphai.ts)（主） / [KnowledgeBasePanel.vue](src/components/KnowledgeBasePanel.vue)（备） |
-| 修改设置面板 | [SettingsPanel.vue](src/components/SettingsPanel.vue) + [llm.ts](src/services/llm.ts) + [speechConfig.ts](src/services/speechConfig.ts) |
+| 修改设置面板 | [SettingsPanel.vue](src/components/SettingsPanel.vue) + [llm.ts](src/services/llm.ts) + [speechConfig.ts](src/services/speechConfig.ts) + [regionalClient.ts](src/services/regionalClient.ts) |
 | 修改 Windows 更新源 | [UpdateChecker.vue](src/components/UpdateChecker.vue) + [updateConfig.ts](src/services/updateConfig.ts) + [lib.rs](src-tauri/src/lib.rs) |
 | 修改窗口尺寸记忆 | [useWindowManagement.ts](src/composables/useWindowManagement.ts) + [useNavigation.ts](src/composables/useNavigation.ts) + [useEventListeners.ts](src/composables/useEventListeners.ts) + [windowSizes.ts](src/constants/windowSizes.ts) |
 | 修改医学数据匹配 | [medicalData.ts](src/services/medicalData.ts) + [hisService.ts](src/services/hisService.ts) + [medical_catalog.rs](src-tauri/src/commands/medical_catalog.rs) + [src/assets/*.csv](src/assets/) |
@@ -77,7 +78,8 @@ floating-ball/
 
 | 组件 | 行数 | 职责 |
 |------|------|------|
-| **SettingsPanel.vue** | ~1500 | LLM 配置、窗口行为、音频输入设备、基础数据缓存查看/清理、自动更新、主题 |
+| **SettingsPanel.vue** | ~1500 | LLM 配置、区域化后端接入、语音 provider / 音频输入设备、基础数据缓存查看/清理、自动更新、主题 |
+| **FeedbackSubmissionPanel.vue** | ~250 | 区域化问题反馈面板 | 上传截图、评分、说明并提交后台 |
 | **AnalyticsPanel.vue** | ~1200 | 数据分析看板（ECharts） |
 | **KnowledgePanel.vue** | ~850 | PMPHAI 医学知识检索 |
 | **BodyPartSelector.vue** | ~830 | 人体部位交互选症状（分性别） |
@@ -152,7 +154,11 @@ useEventListeners (全局事件) -> 触发 useNavigation & useWorkMode
 | **medical_catalog.rs** | -- | 医学目录 SQLite 持久化命令：诊断全局缓存、诊疗项目/药品按机构缓存与同步状态管理，并提供调试态查看/清理命令 | 供 `medicalData.ts` 调用 |
 | **factChecker.ts** | ~399 | AI 输出验证（医学指南核查） |
 | **feedback.ts** | ~312 | 操作追踪与反馈 |
+| **aiTrace.ts** | ~200 | 最近一次 AI 调用链路上下文缓存 |
 | **knowledgeBase.ts** | ~213 | 通用知识库 CRUD |
+| **regionalClient.ts** | ~400 | 区域化核心客户端：终端注册、bootstrap 拉取、心跳、鉴权、SSE 代理 |
+| **regionalRuntime.ts** | ~50 | 区域化运行时编排：统一初始化、重连、远程数据同步、审计上传启停 |
+| **userFeedback.ts** | ~120 | 区域化问题反馈提交服务 |
 | **themeService.ts** | ~209 | 主题管理（深色/浅色模式） |
 | **reportGenerator.ts** | ~152 | 最终报告生成 |
 | **promptGuard.ts** | ~138 | 提示词注入防护 |

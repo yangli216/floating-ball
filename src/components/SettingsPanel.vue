@@ -14,11 +14,22 @@ import {
   type MedicalCatalogClearResult,
   type MedicalCatalogDebugState,
 } from '../services/medicalData';
+import {
+  getCachedBootstrap,
+  getRegionalConnectionConfig,
+  getRegionalConnectionDefaults,
+  isRegionalMode,
+  saveRegionalConnectionConfig,
+} from '../services/regionalClient';
+import {
+  reinitializeRegionalRuntime,
+  shutdownRegionalRuntime,
+} from '../services/regionalRuntime';
 import { useTheme } from '../services/themeService';
 import { getCurrentWindow } from '@tauri-apps/api/window';
 import { save } from '@tauri-apps/plugin-dialog';
 import { invoke } from '@tauri-apps/api/core';
-import { trackClick, trackError } from '../services/operationTracker';
+import { trackClick, trackError, trackFormSubmit } from '../services/operationTracker';
 import {
   getMicrophoneErrorMessage,
   getMicrophonePermissionState,
@@ -27,7 +38,6 @@ import {
   setPreferredAudioInputDeviceId,
   type AudioInputDeviceOption,
 } from '../services/audioRecorder';
-import { isRegionalMode } from '../services/regionalClient';
 import UpdateChecker from './UpdateChecker.vue';
 import Icon from './Icon.vue';
 
@@ -38,29 +48,25 @@ const emit = defineEmits<{
 
 const showToast = inject('showToast') as (msg: string, type: 'success' | 'error' | 'info') => void;
 
-// Theme management
 const { currentTheme, themes, setTheme } = useTheme();
 
-// Get theme preview style
 const getThemePreviewStyle = (theme: typeof themes[0]) => ({
   background: theme.colors.background,
   borderColor: theme.colors.borderLight,
 });
 
-// Tabs configuration
 type TabType = 'general' | 'model' | 'about' | 'data';
 const activeTab = ref<TabType>('general');
 const tabs = [
   { id: 'general', label: '通用设置', icon: 'lucide:settings-2' },
   { id: 'model', label: '模型配置', icon: 'lucide:brain' },
   { id: 'data', label: '数据管理', icon: 'lucide:database' },
-  { id: 'about', label: '关于版本', icon: 'lucide:info' }
+  { id: 'about', label: '关于版本', icon: 'lucide:info' },
 ];
 
 const settingsLoaded = ref(false);
 const lastSavedSnapshot = ref('');
 
-// Provider presets
 const PROVIDER_PRESETS = [
   { name: 'OpenAI', baseUrl: 'https://api.openai.com/v1', model: 'gpt-4o-mini' },
   { name: 'DeepSeek', baseUrl: 'https://api.deepseek.com/v1', model: 'deepseek-chat' },
@@ -75,27 +81,29 @@ const applyPreset = (preset: typeof PROVIDER_PRESETS[0]) => {
   trackClick('settings_apply_preset', { provider: preset.name });
 };
 
-// Settings state
 const apiKey = ref('');
 const baseUrl = ref('');
 const model = ref('');
 const alwaysOnTop = ref(true);
+const regionalMode = ref(false);
+const regionalBaseUrl = ref('');
+const regionalOrgCode = ref('');
+const regionalDeviceCode = ref('');
+const regionalConnectResult = ref<{ success: boolean; message: string } | null>(null);
+const savingSettings = ref(false);
+const testingRegionalConnection = ref(false);
 
-// Test General Model connection
 const modelTesting = ref(false);
 const modelTestResult = ref<{ success: boolean; message: string } | null>(null);
 
-// Reviewer AI state
 const reviewerEnabled = ref(true);
 const reviewerApiKey = ref('');
 const reviewerBaseUrl = ref('');
 const reviewerModel = ref('');
 
-// Test Reviewer AI connection
 const reviewerTesting = ref(false);
 const reviewerTestResult = ref<{ success: boolean; message: string } | null>(null);
 
-// Knowledge Base (PMPHAI) settings
 const pmphaiAppKey = ref('');
 const pmphaiAppSecret = ref('');
 const pmphaiEnabled = ref(true);
@@ -103,7 +111,6 @@ const pmphaiTesting = ref(false);
 const pmphaiTestResult = ref<{ success: boolean; message: string } | null>(null);
 const pmphaiSearchMode = ref<'rag' | 'list'>('rag');
 
-// Speech test mode
 const speechTestMode = ref(false);
 const speechConfigStorageKeys = getSpeechConfigStorageKeys();
 const speechProviderOptions = getSpeechProviderOptions();
@@ -239,9 +246,122 @@ const handleAudioDeviceChange = () => {
   syncAudioInputDevices({ source: 'devicechange' });
 };
 
+function formatRegionalConnectionError(baseUrlValue: string, error: unknown): string {
+  const rawMessage = error instanceof Error ? error.message : String(error || '');
+  const message = rawMessage.trim();
+
+  if (!message || message === 'Load failed' || message === 'Failed to fetch') {
+    return `接入参数已保存，但当前无法连接 ${baseUrlValue}。请确认 floating-ball-server 已启动，且该地址可访问。`;
+  }
+
+  if (message.includes('AUTH-401')) {
+    return `接入参数已保存，但设备鉴权失败。请重新确认 ${baseUrlValue} 的服务状态后重试。`;
+  }
+
+  if (message.includes('机构编码不存在')) {
+    return `接入参数已保存，但机构编码未被后台识别：${message}`;
+  }
+
+  return `接入参数已保存，但当前连接失败：${message}`;
+}
+
+function formatRegionalConnectionToast(error: unknown): string {
+  const rawMessage = error instanceof Error ? error.message : String(error || '');
+  const message = rawMessage.trim();
+
+  if (!message || message === 'Load failed' || message === 'Failed to fetch') {
+    return '区域化接入参数已保存，但当前后台暂不可达';
+  }
+
+  if (message.includes('AUTH-401')) {
+    return '区域化接入参数已保存，但设备鉴权失败';
+  }
+
+  if (message.includes('机构编码不存在')) {
+    return '区域化接入参数已保存，但机构编码未被后台识别';
+  }
+
+  if (message.includes('/v1/client/register failed: 500')) {
+    return '区域化接入参数已保存，但设备注册失败，请查看下方详情';
+  }
+
+  if (message.includes('/v1/client/bootstrap failed: 500')) {
+    return '区域化接入参数已保存，但后台初始化失败，请查看下方详情';
+  }
+
+  return '区域化接入参数已保存，但当前连接失败，请查看下方详情';
+}
+
+function loadRegionalDraftSettings(): void {
+  const regionalConfig = getRegionalConnectionConfig();
+  const regionalDefaults = getRegionalConnectionDefaults();
+  regionalMode.value = regionalConfig.enabled;
+  regionalBaseUrl.value = regionalConfig.baseUrl || regionalDefaults.baseUrl;
+  regionalOrgCode.value = regionalConfig.orgCode || regionalDefaults.orgCode;
+  regionalDeviceCode.value = regionalConfig.deviceCode;
+}
+
+function loadModeDependentSettings(): void {
+  const bootstrap = getCachedBootstrap();
+  const pmphaiConfig = getPMPHAIConfig();
+
+  if (regionalMode.value) {
+    apiKey.value = '';
+    baseUrl.value = bootstrap?.llm?.baseUrl || '';
+    model.value = bootstrap?.llm?.model || '';
+
+    const speechConfig = getSpeechConfig();
+    speechProvider.value = speechConfig.provider;
+    speechApiKey.value = '';
+    speechBaseUrl.value = speechConfig.baseUrl;
+    speechModel.value = speechConfig.model;
+
+    reviewerEnabled.value = bootstrap?.reviewer?.enabled ?? false;
+    reviewerApiKey.value = '';
+    reviewerBaseUrl.value = '';
+    reviewerModel.value = bootstrap?.reviewer?.model || '';
+
+    pmphaiAppKey.value = '';
+    pmphaiAppSecret.value = '';
+    pmphaiEnabled.value = bootstrap?.pmphai?.enabled ?? false;
+    return;
+  }
+
+  const config = getLLMConfig();
+  const speechConfig = getSpeechConfig();
+  apiKey.value = config.apiKey;
+  baseUrl.value = config.baseUrl;
+  model.value = config.model;
+  speechProvider.value = speechConfig.provider;
+  speechApiKey.value = speechConfig.apiKey === '__REGIONAL_PROXY__' ? '' : speechConfig.apiKey;
+  speechBaseUrl.value = speechConfig.baseUrl;
+  speechModel.value = speechConfig.model;
+
+  const reviewerEnabledSaved = localStorage.getItem('REVIEWER_ENABLED');
+  reviewerEnabled.value = reviewerEnabledSaved === null ? true : reviewerEnabledSaved === 'true';
+  reviewerApiKey.value = localStorage.getItem('REVIEWER_API_KEY') || '';
+  reviewerBaseUrl.value = localStorage.getItem('REVIEWER_BASE_URL') || '';
+  reviewerModel.value = localStorage.getItem('REVIEWER_MODEL') || '';
+
+  pmphaiAppKey.value = pmphaiConfig.appKey;
+  pmphaiAppSecret.value = pmphaiConfig.appSecret;
+  pmphaiEnabled.value = pmphaiConfig.enabled;
+}
+
+function loadLocalPreferences(): void {
+  const savedTop = localStorage.getItem('ALWAYS_ON_TOP');
+  alwaysOnTop.value = savedTop === null || savedTop === 'true';
+  pmphaiSearchMode.value = (localStorage.getItem('PMPHAI_SEARCH_MODE') as 'rag' | 'list') || 'rag';
+  speechTestMode.value = localStorage.getItem('SPEECH_TEST_MODE') === 'true'
+    || import.meta.env.VITE_SPEECH_TEST_MODE === 'true';
+}
+
 const currentSettingsSnapshot = computed(() => JSON.stringify({
   themeId: currentTheme.value.id,
   alwaysOnTop: alwaysOnTop.value,
+  regionalMode: regionalMode.value,
+  regionalBaseUrl: regionalBaseUrl.value,
+  regionalOrgCode: regionalOrgCode.value,
   selectedAudioInputDeviceId: selectedAudioInputDeviceId.value,
   apiKey: apiKey.value,
   baseUrl: baseUrl.value,
@@ -307,7 +427,7 @@ watch(speechProvider, (nextProvider, previousProvider) => {
 
 const handleSaveShortcut = async (event: KeyboardEvent) => {
   const pressedSaveShortcut = (event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 's';
-  if (!pressedSaveShortcut || !shouldShowSaveBar.value || !hasUnsavedChanges.value) {
+  if (!pressedSaveShortcut || !shouldShowSaveBar.value || !hasUnsavedChanges.value || savingSettings.value) {
     return;
   }
 
@@ -316,37 +436,9 @@ const handleSaveShortcut = async (event: KeyboardEvent) => {
 };
 
 onMounted(async () => {
-  const config = getLLMConfig();
-  const speechConfig = getSpeechConfig();
-  apiKey.value = config.apiKey;
-  baseUrl.value = config.baseUrl;
-  model.value = config.model;
-  speechProvider.value = speechConfig.provider;
-  speechApiKey.value = speechConfig.apiKey === '__REGIONAL_PROXY__' ? '' : speechConfig.apiKey;
-  speechBaseUrl.value = speechConfig.baseUrl;
-  speechModel.value = speechConfig.model;
-
-  const savedTop = localStorage.getItem('ALWAYS_ON_TOP');
-  alwaysOnTop.value = savedTop === null || savedTop === 'true';
-
-  // Load Reviewer AI settings
-  const reviewerEnabledSaved = localStorage.getItem('REVIEWER_ENABLED');
-  reviewerEnabled.value = reviewerEnabledSaved === null ? true : reviewerEnabledSaved === 'true';
-  reviewerApiKey.value = localStorage.getItem('REVIEWER_API_KEY') || '';
-  reviewerBaseUrl.value = localStorage.getItem('REVIEWER_BASE_URL') || '';
-  reviewerModel.value = localStorage.getItem('REVIEWER_MODEL') || '';
-
-  // Load PMPHAI settings
-  const pmphaiConfig = getPMPHAIConfig();
-  pmphaiAppKey.value = pmphaiConfig.appKey;
-  pmphaiAppSecret.value = pmphaiConfig.appSecret;
-  pmphaiEnabled.value = pmphaiConfig.enabled;
-  pmphaiSearchMode.value = (localStorage.getItem('PMPHAI_SEARCH_MODE') as 'rag' | 'list') || 'rag';
-
-  // Load speech test mode
-  speechTestMode.value = localStorage.getItem('SPEECH_TEST_MODE') === 'true'
-    || import.meta.env.VITE_SPEECH_TEST_MODE === 'true';
-
+  loadRegionalDraftSettings();
+  loadModeDependentSettings();
+  loadLocalPreferences();
   await hydrateAudioInputDevicesOnMount();
   updateSavedSnapshot();
   settingsLoaded.value = true;
@@ -354,9 +446,14 @@ onMounted(async () => {
   if (navigator.mediaDevices?.addEventListener) {
     navigator.mediaDevices.addEventListener('devicechange', handleAudioDeviceChange);
   }
-
   window.addEventListener('keydown', handleSaveShortcut);
 
+  if (isRegionalMode() && getCachedBootstrap()) {
+    regionalConnectResult.value = {
+      success: true,
+      message: `已连接区域后台，机构编码 ${regionalOrgCode.value || '未配置'}，设备编码 ${regionalDeviceCode.value}`,
+    };
+  }
 });
 
 onUnmounted(() => {
@@ -368,89 +465,222 @@ onUnmounted(() => {
 });
 
 const saveSettings = async () => {
-  localStorage.setItem('OPENAI_API_KEY', apiKey.value);
-  localStorage.setItem('LLM_BASE_URL', baseUrl.value);
-  localStorage.setItem('LLM_MODEL', model.value);
-  localStorage.setItem('ALWAYS_ON_TOP', String(alwaysOnTop.value));
-  localStorage.setItem(speechConfigStorageKeys.provider, speechProvider.value);
-  localStorage.setItem(speechConfigStorageKeys.apiKey, speechApiKey.value);
-  localStorage.setItem(speechConfigStorageKeys.baseUrl, speechBaseUrl.value);
-  localStorage.setItem(speechConfigStorageKeys.model, speechModel.value);
-
-  if (speechProvider.value === 'aliyun-dashscope') {
-    localStorage.setItem('DASHSCOPE_API_KEY', speechApiKey.value);
-    localStorage.removeItem('LLM_AUDIO_BASE_URL');
-    localStorage.removeItem('LLM_AUDIO_MODEL');
-  } else {
-    localStorage.setItem('LLM_AUDIO_BASE_URL', speechBaseUrl.value);
-    localStorage.setItem('LLM_AUDIO_MODEL', speechModel.value);
-  }
-
-  // Save Reviewer AI settings
-  localStorage.setItem('REVIEWER_ENABLED', String(reviewerEnabled.value));
-  localStorage.setItem('REVIEWER_API_KEY', reviewerApiKey.value);
-  localStorage.setItem('REVIEWER_BASE_URL', reviewerBaseUrl.value);
-  localStorage.setItem('REVIEWER_MODEL', reviewerModel.value);
-
-  // Save PMPHAI settings
-  localStorage.setItem('PMPHAI_APP_KEY', pmphaiAppKey.value);
-  localStorage.setItem('PMPHAI_APP_SECRET', pmphaiAppSecret.value);
-  localStorage.setItem('PMPHAI_ENABLED', String(pmphaiEnabled.value));
-  localStorage.setItem('PMPHAI_SEARCH_MODE', pmphaiSearchMode.value);
-
-  // Save speech test mode
-  if (speechTestMode.value) {
-    localStorage.setItem('SPEECH_TEST_MODE', 'true');
-  } else {
-    localStorage.removeItem('SPEECH_TEST_MODE');
-  }
-
-  setPreferredAudioInputDeviceId(
-    selectedAudioInputDeviceId.value === DEFAULT_AUDIO_INPUT_VALUE
-      ? null
-      : selectedAudioInputDeviceId.value
-  );
-
-  trackClick('settings_save', {
-    hasApiKey: !!apiKey.value,
-    hasBaseUrl: !!baseUrl.value,
-    model: model.value,
-    speechProvider: speechProvider.value,
-    hasSpeechApiKey: !!speechApiKey.value,
-    hasSpeechBaseUrl: !!speechBaseUrl.value,
-    speechModel: speechModel.value,
-    alwaysOnTop: alwaysOnTop.value,
-    pmphaiEnabled: pmphaiEnabled.value,
-    audioInputMode: selectedAudioInputDeviceId.value === DEFAULT_AUDIO_INPUT_VALUE ? 'system-default' : 'custom-device',
-  });
+  savingSettings.value = true;
+  let regionalToastMessage: string | null = null;
 
   try {
-    const win = getCurrentWindow();
-    await win.setAlwaysOnTop(alwaysOnTop.value);
-  } catch (e) {
-    console.error('Failed to set always on top:', e);
-  }
+    const regionalDefaults = getRegionalConnectionDefaults();
+    const nextRegionalBaseUrl = regionalBaseUrl.value.trim() || regionalDefaults.baseUrl;
+    const nextRegionalOrgCode = regionalOrgCode.value.trim() || regionalDefaults.orgCode;
 
-  // Clear PMPHAI token cache when settings change
-  pmphaiService.clearTokenCache();
-  updateSavedSnapshot();
+    localStorage.setItem('ALWAYS_ON_TOP', String(alwaysOnTop.value));
+    localStorage.setItem('PMPHAI_SEARCH_MODE', pmphaiSearchMode.value);
 
-  if (showToast) {
-    showToast('设置已保存', 'success');
+    if (!regionalMode.value) {
+      localStorage.setItem('OPENAI_API_KEY', apiKey.value);
+      localStorage.setItem('LLM_BASE_URL', baseUrl.value);
+      localStorage.setItem('LLM_MODEL', model.value);
+      localStorage.setItem(speechConfigStorageKeys.provider, speechProvider.value);
+      localStorage.setItem(speechConfigStorageKeys.apiKey, speechApiKey.value);
+      localStorage.setItem(speechConfigStorageKeys.baseUrl, speechBaseUrl.value);
+      localStorage.setItem(speechConfigStorageKeys.model, speechModel.value);
+
+      if (speechProvider.value === 'aliyun-dashscope') {
+        localStorage.setItem('DASHSCOPE_API_KEY', speechApiKey.value);
+        localStorage.removeItem('LLM_AUDIO_BASE_URL');
+        localStorage.removeItem('LLM_AUDIO_MODEL');
+      } else {
+        localStorage.setItem('LLM_AUDIO_BASE_URL', speechBaseUrl.value);
+        localStorage.setItem('LLM_AUDIO_MODEL', speechModel.value);
+      }
+
+      localStorage.setItem('REVIEWER_ENABLED', String(reviewerEnabled.value));
+      localStorage.setItem('REVIEWER_API_KEY', reviewerApiKey.value);
+      localStorage.setItem('REVIEWER_BASE_URL', reviewerBaseUrl.value);
+      localStorage.setItem('REVIEWER_MODEL', reviewerModel.value);
+
+      localStorage.setItem('PMPHAI_APP_KEY', pmphaiAppKey.value);
+      localStorage.setItem('PMPHAI_APP_SECRET', pmphaiAppSecret.value);
+      localStorage.setItem('PMPHAI_ENABLED', String(pmphaiEnabled.value));
+    }
+
+    if (speechTestMode.value) {
+      localStorage.setItem('SPEECH_TEST_MODE', 'true');
+    } else {
+      localStorage.removeItem('SPEECH_TEST_MODE');
+    }
+
+    setPreferredAudioInputDeviceId(
+      selectedAudioInputDeviceId.value === DEFAULT_AUDIO_INPUT_VALUE
+        ? null
+        : selectedAudioInputDeviceId.value
+    );
+
+    trackClick('settings_save', {
+      regionalMode: regionalMode.value,
+      regionalBaseUrlConfigured: !!nextRegionalBaseUrl,
+      regionalOrgCodeConfigured: !!nextRegionalOrgCode,
+      hasApiKey: !!apiKey.value,
+      hasBaseUrl: !!baseUrl.value,
+      model: model.value,
+      speechProvider: speechProvider.value,
+      hasSpeechApiKey: !!speechApiKey.value,
+      hasSpeechBaseUrl: !!speechBaseUrl.value,
+      speechModel: speechModel.value,
+      alwaysOnTop: alwaysOnTop.value,
+      pmphaiEnabled: pmphaiEnabled.value,
+      audioInputMode: selectedAudioInputDeviceId.value === DEFAULT_AUDIO_INPUT_VALUE ? 'system-default' : 'custom-device',
+    });
+
+    saveRegionalConnectionConfig({
+      enabled: regionalMode.value,
+      baseUrl: nextRegionalBaseUrl,
+      orgCode: nextRegionalOrgCode,
+    });
+
+    if (regionalMode.value) {
+      try {
+        await reinitializeRegionalRuntime();
+        loadRegionalDraftSettings();
+        loadModeDependentSettings();
+        regionalConnectResult.value = {
+          success: true,
+          message: `已连接到 ${nextRegionalBaseUrl}，机构编码 ${nextRegionalOrgCode}，设备编码 ${regionalDeviceCode.value}`,
+        };
+        regionalToastMessage = '区域化模式已连接并生效';
+        trackFormSubmit('regional_connection_saved', {
+          regionalMode: true,
+          regionalBaseUrl: nextRegionalBaseUrl,
+          regionalOrgCode: nextRegionalOrgCode,
+        });
+      } catch (error: any) {
+        regionalConnectResult.value = {
+          success: false,
+          message: formatRegionalConnectionError(nextRegionalBaseUrl, error),
+        };
+        regionalToastMessage = formatRegionalConnectionToast(error);
+        trackError('regional_connection_reinitialize_failed', error, {
+          regionalBaseUrl: nextRegionalBaseUrl,
+          regionalOrgCode: nextRegionalOrgCode,
+        });
+      }
+    } else {
+      shutdownRegionalRuntime();
+      regionalConnectResult.value = {
+        success: true,
+        message: '已切回本地模式，远端代理已停用',
+      };
+      loadRegionalDraftSettings();
+      loadModeDependentSettings();
+    }
+
+    try {
+      const win = getCurrentWindow();
+      await win.setAlwaysOnTop(alwaysOnTop.value);
+    } catch (error) {
+      console.error('Failed to set always on top:', error);
+    }
+
+    pmphaiService.clearTokenCache();
+    updateSavedSnapshot();
+
+    if (showToast) {
+      if (!regionalMode.value) {
+        showToast('本地设置已保存', 'success');
+      } else if (regionalConnectResult.value?.success) {
+        showToast(regionalToastMessage || '区域化模式已连接并生效', 'success');
+      } else {
+        showToast(regionalToastMessage || '区域化接入参数已保存，但当前连接失败，请查看下方详情', 'info');
+      }
+    }
+  } catch (error: any) {
+    regionalConnectResult.value = {
+      success: false,
+      message: error.message || '保存失败',
+    };
+    trackError('settings_save_failed', error);
+    if (showToast) {
+      showToast(`保存失败: ${error.message || '未知错误'}`, 'error');
+    }
+  } finally {
+    savingSettings.value = false;
   }
 };
 
-// Test General Model connection
+const testRegionalConnection = async () => {
+  testingRegionalConnection.value = true;
+  regionalConnectResult.value = null;
+
+  const regionalDefaults = getRegionalConnectionDefaults();
+  const nextRegionalBaseUrl = regionalBaseUrl.value.trim() || regionalDefaults.baseUrl;
+  const nextRegionalOrgCode = regionalOrgCode.value.trim() || regionalDefaults.orgCode;
+  const previousConfig = getRegionalConnectionConfig();
+
+  try {
+    saveRegionalConnectionConfig({
+      enabled: true,
+      baseUrl: nextRegionalBaseUrl,
+      orgCode: nextRegionalOrgCode,
+    });
+    await reinitializeRegionalRuntime();
+    loadRegionalDraftSettings();
+    loadModeDependentSettings();
+    regionalConnectResult.value = {
+      success: true,
+      message: `桌面端已连通 ${nextRegionalBaseUrl}，机构编码 ${nextRegionalOrgCode}，设备编码 ${regionalDeviceCode.value}`,
+    };
+    trackClick('settings_regional_test', {
+      success: true,
+      regionalBaseUrl: nextRegionalBaseUrl,
+      regionalOrgCode: nextRegionalOrgCode,
+    });
+    updateSavedSnapshot();
+  } catch (error: any) {
+    regionalConnectResult.value = {
+      success: false,
+      message: formatRegionalConnectionError(nextRegionalBaseUrl, error),
+    };
+    trackError('settings_regional_test_failed', error, {
+      regionalBaseUrl: nextRegionalBaseUrl,
+      regionalOrgCode: nextRegionalOrgCode,
+    });
+
+    saveRegionalConnectionConfig({
+      enabled: previousConfig.enabled,
+      baseUrl: previousConfig.baseUrl,
+      orgCode: previousConfig.orgCode,
+    });
+
+    if (previousConfig.enabled) {
+      try {
+        await reinitializeRegionalRuntime();
+      } catch {
+        // Ignore rollback reinitialize errors; keep the surfaced test failure.
+      }
+    } else {
+      shutdownRegionalRuntime();
+    }
+
+    loadRegionalDraftSettings();
+    loadModeDependentSettings();
+    updateSavedSnapshot();
+  } finally {
+    testingRegionalConnection.value = false;
+  }
+};
+
 const testModelConnection = async () => {
   modelTesting.value = true;
   modelTestResult.value = null;
 
   try {
-    const result = await testLLMConnection({
-      apiKey: apiKey.value,
-      baseUrl: baseUrl.value,
-      model: model.value,
-    });
+    const result = regionalMode.value
+      ? await testLLMConnection()
+      : await testLLMConnection({
+        apiKey: apiKey.value,
+        baseUrl: baseUrl.value,
+        model: model.value,
+      });
     modelTestResult.value = result;
     trackClick('settings_model_test', { success: result.success });
   } catch (error: any) {
@@ -461,17 +691,21 @@ const testModelConnection = async () => {
   }
 };
 
-// Test Reviewer AI connection
 const testReviewerConnection = async () => {
   reviewerTesting.value = true;
   reviewerTestResult.value = null;
 
   try {
-    const result = await testLLMConnection({
-      apiKey: reviewerApiKey.value || apiKey.value,
-      baseUrl: reviewerBaseUrl.value || baseUrl.value,
-      model: reviewerModel.value || model.value,
-    });
+    const result = regionalMode.value
+      ? await testLLMConnection({
+        configProfile: 'reviewer',
+        model: reviewerModel.value || undefined,
+      })
+      : await testLLMConnection({
+        apiKey: reviewerApiKey.value || apiKey.value,
+        baseUrl: reviewerBaseUrl.value || baseUrl.value,
+        model: reviewerModel.value || model.value,
+      });
     reviewerTestResult.value = result;
     trackClick('settings_reviewer_test', { success: result.success });
   } catch (error: any) {
@@ -482,15 +716,15 @@ const testReviewerConnection = async () => {
   }
 };
 
-// Test PMPHAI connection
 const testPMPHAIConnection = async () => {
   pmphaiTesting.value = true;
   pmphaiTestResult.value = null;
 
-  // Temporarily save settings for testing
-  localStorage.setItem('PMPHAI_APP_KEY', pmphaiAppKey.value);
-  localStorage.setItem('PMPHAI_APP_SECRET', pmphaiAppSecret.value);
-  localStorage.setItem('PMPHAI_ENABLED', 'true');
+  if (!regionalMode.value) {
+    localStorage.setItem('PMPHAI_APP_KEY', pmphaiAppKey.value);
+    localStorage.setItem('PMPHAI_APP_SECRET', pmphaiAppSecret.value);
+    localStorage.setItem('PMPHAI_ENABLED', 'true');
+  }
   pmphaiService.clearTokenCache();
 
   try {
@@ -505,11 +739,10 @@ const testPMPHAIConnection = async () => {
   }
 };
 
-// Data management
 const exporting = ref(false);
 const exportFormat = ref<'json' | 'csv'>('json');
 const exportDays = ref(90);
-const localMedicalCatalogEnabled = computed(() => !isRegionalMode());
+const localMedicalCatalogEnabled = computed(() => !regionalMode.value);
 const medicalCatalogLoading = ref(false);
 const medicalCatalogClearing = ref(false);
 const medicalCatalogDebugState = ref<MedicalCatalogDebugState | null>(null);
@@ -658,12 +891,11 @@ const handleExportData = async () => {
       defaultPath: `feedback-export-${now.toISOString().split('T')[0]}.${ext}`,
       filters: [{
         name: ext.toUpperCase(),
-        extensions: [ext]
-      }]
+        extensions: [ext],
+      }],
     });
 
     if (filePath) {
-      // Write file using Tauri filesystem
       const { writeTextFile } = await import('@tauri-apps/plugin-fs');
       await writeTextFile(filePath, dataJson);
 
@@ -675,7 +907,7 @@ const handleExportData = async () => {
     console.error('Failed to export data:', error);
     trackError('settings_export_failed', error);
     if (showToast) {
-      showToast('导出失败: ' + (error as Error).message, 'error');
+      showToast(`导出失败: ${(error as Error).message}`, 'error');
     }
   } finally {
     exporting.value = false;
@@ -688,6 +920,24 @@ watch(activeTab, (newVal) => {
   if (newVal === 'data' && localMedicalCatalogEnabled.value) {
     loadMedicalCatalogState();
   }
+});
+
+watch(regionalMode, (enabled) => {
+  regionalConnectResult.value = null;
+
+  if (enabled) {
+    medicalCatalogDebugState.value = null;
+    medicalCatalogActionResult.value = null;
+    return;
+  }
+
+  if (activeTab.value === 'data') {
+    loadMedicalCatalogState();
+  }
+});
+
+watch([regionalBaseUrl, regionalOrgCode], () => {
+  regionalConnectResult.value = null;
 });
 </script>
 
@@ -763,6 +1013,80 @@ watch(activeTab, (newVal) => {
 
         <div class="settings-section">
           <div class="section-header">
+            <Icon icon="lucide:server" :size="20" />
+            <h3>区域化接入</h3>
+          </div>
+          <p class="section-desc">开启后，桌面端会向 floating-ball-server 注册设备、拉取 bootstrap 配置，并统一走远端 `/v1/*` 代理。区域化模式下实际生效模型以服务端当前配置为准。</p>
+
+          <div class="toggle-row">
+            <div class="toggle-label-group">
+              <label for="regional-mode" class="toggle-label">启用区域化模式</label>
+              <span class="toggle-hint">保存后立即生效；失败时会保留当前接入参数，便于继续排查</span>
+            </div>
+            <div class="switch-wrapper">
+              <input type="checkbox" id="regional-mode" v-model="regionalMode">
+              <label for="regional-mode" class="toggle-switch"></label>
+            </div>
+          </div>
+
+          <div class="form-group">
+            <label for="regional-base-url">后端地址</label>
+            <div class="input-with-icon">
+              <Icon icon="lucide:link" :size="16" class="input-icon" />
+              <input
+                id="regional-base-url"
+                v-model="regionalBaseUrl"
+                type="text"
+                placeholder="http://127.0.0.1:8080"
+              />
+            </div>
+            <p class="form-hint">默认预置 `http://127.0.0.1:8080`；可修改，留空会回退默认值。</p>
+          </div>
+
+          <div class="form-group">
+            <label for="regional-org-code">机构编码</label>
+            <div class="input-with-icon">
+              <Icon icon="lucide:building-2" :size="16" class="input-icon" />
+              <input
+                id="regional-org-code"
+                v-model="regionalOrgCode"
+                type="text"
+                placeholder="ORG001"
+              />
+            </div>
+            <p class="form-hint">默认预置 `ORG001`；需与后台机构表中的 `cdOrg` 一致，留空会回退默认值。</p>
+          </div>
+
+          <div class="form-group">
+            <label for="regional-device-code">设备编码</label>
+            <div class="input-with-icon">
+              <Icon icon="lucide:laptop-minimal-check" :size="16" class="input-icon" />
+              <input
+                id="regional-device-code"
+                :value="regionalDeviceCode"
+                type="text"
+                readonly
+              />
+            </div>
+            <p class="form-hint">客户端首次生成后持久化复用；更换后端地址或机构编码时会自动重新注册。</p>
+          </div>
+
+          <div v-if="regionalConnectResult" :class="['regional-status', regionalConnectResult.success ? 'success' : 'error']">
+            <Icon :icon="regionalConnectResult.success ? 'lucide:check-circle' : 'lucide:alert-circle'" :size="16" />
+            <span>{{ regionalConnectResult.message }}</span>
+          </div>
+
+          <div class="test-connection-row">
+            <button class="test-btn" @click="testRegionalConnection" :disabled="testingRegionalConnection">
+              <Icon :icon="testingRegionalConnection ? 'lucide:loader-2' : 'lucide:wifi'" :size="16" :class="{ spin: testingRegionalConnection }" />
+              {{ testingRegionalConnection ? '测试中...' : '测试 server 连通性' }}
+            </button>
+            <span class="test-message testing">验证桌面端到 floating-ball-server 的注册与 bootstrap 链路</span>
+          </div>
+        </div>
+
+        <div class="settings-section">
+          <div class="section-header">
             <Icon icon="lucide:mic" :size="20" />
             <h3>音频设置</h3>
           </div>
@@ -812,11 +1136,15 @@ watch(activeTab, (newVal) => {
           </div>
           <p class="section-desc" style="margin-top: 4px;">配置和维护用于问诊的症状模板库</p>
         </div>
-
       </div>
 
       <!-- Model Tab -->
       <div v-if="activeTab === 'model'" class="tab-pane">
+        <div v-if="regionalMode" class="info-banner">
+          <Icon icon="lucide:server" :size="18" />
+          <p>当前为区域化模式。模型、独立审查 AI 和知识库凭据由 floating-ball-server 统一管理，桌面端只保留本地模式兜底配置与本地偏好。</p>
+        </div>
+
         <div class="settings-section">
           <div class="section-header">
             <Icon icon="lucide:key" :size="20" />
@@ -824,19 +1152,17 @@ watch(activeTab, (newVal) => {
           </div>
           <p class="section-desc" style="margin-bottom: 16px;">用于聊天、病历整理、推荐生成等文本大模型能力。</p>
 
-          <!-- Provider Presets -->
-          <div class="preset-container">
+          <div v-if="!regionalMode" class="preset-container">
             <label>快速填充常用服务商：</label>
             <div class="preset-buttons">
-              <button v-for="preset in PROVIDER_PRESETS" :key="preset.name" class="preset-btn"
-                @click="applyPreset(preset)">
+              <button v-for="preset in PROVIDER_PRESETS" :key="preset.name" class="preset-btn" @click="applyPreset(preset)">
                 {{ preset.name }}
               </button>
             </div>
           </div>
 
-          <div class="form-group">
-            <label for="api-key">LLM API Key <span class="required">*</span></label>
+          <div v-if="!regionalMode" class="form-group">
+            <label for="api-key">API Key <span class="required">*</span></label>
             <div class="input-with-icon">
               <Icon icon="lucide:key" :size="16" class="input-icon" />
               <input id="api-key" v-model="apiKey" type="password" placeholder="sk-..." />
@@ -848,25 +1174,23 @@ watch(activeTab, (newVal) => {
             <label for="base-url">LLM Base URL</label>
             <div class="input-with-icon">
               <Icon icon="lucide:link" :size="16" class="input-icon" />
-              <input id="base-url" v-model="baseUrl" type="text" :placeholder="DEFAULT_LLM_CONFIG.baseUrl" />
+              <input id="base-url" v-model="baseUrl" type="text" :placeholder="DEFAULT_LLM_CONFIG.baseUrl" :disabled="regionalMode" />
             </div>
-            <p class="form-hint">文本对话与结构化生成使用的 API 服务地址。</p>
+            <p class="form-hint">{{ regionalMode ? '当前生效地址由服务端 bootstrap 下发' : '文本对话与结构化生成使用的 API 服务地址。' }}</p>
           </div>
 
           <div class="form-group">
             <label for="model-name">LLM Model</label>
             <div class="input-with-icon">
               <Icon icon="lucide:brain" :size="16" class="input-icon" />
-              <input id="model-name" v-model="model" type="text" :placeholder="DEFAULT_LLM_CONFIG.model" />
+              <input id="model-name" v-model="model" type="text" :placeholder="DEFAULT_LLM_CONFIG.model" :disabled="regionalMode" />
             </div>
-            <p class="form-hint">如 `gpt-4o-mini`、`deepseek-chat`、`qwen-plus`。</p>
+            <p class="form-hint">{{ regionalMode ? '当前生效模型由服务端统一维护' : '如 `gpt-4o-mini`、`deepseek-chat`、`qwen-plus`。' }}</p>
           </div>
 
           <div class="test-connection-row" style="margin-top: 16px;">
-            <button class="test-btn" @click="testModelConnection"
-              :disabled="modelTesting || !apiKey">
-              <Icon :icon="modelTesting ? 'lucide:loader-2' : 'lucide:wifi'" :size="16"
-                :class="{ spin: modelTesting }" />
+            <button class="test-btn" @click="testModelConnection" :disabled="modelTesting || (!regionalMode && !apiKey)">
+              <Icon :icon="modelTesting ? 'lucide:loader-2' : 'lucide:wifi'" :size="16" :class="{ spin: modelTesting }" />
               {{ modelTesting ? '测试中...' : '测试连接' }}
             </button>
             <span v-if="modelTestResult" :class="['test-message', modelTestResult.success ? 'success' : 'error']">
@@ -889,7 +1213,9 @@ watch(activeTab, (newVal) => {
               <button
                 v-for="option in speechProviderOptions"
                 :key="option.value"
+                type="button"
                 :class="['mode-option', { active: speechProvider === option.value }]"
+                :disabled="regionalMode"
                 @click="speechProvider = option.value"
               >
                 <Icon :icon="option.value === 'aliyun-dashscope' ? 'lucide:radio' : 'lucide:mic'" :size="18" />
@@ -901,7 +1227,7 @@ watch(activeTab, (newVal) => {
             </div>
           </div>
 
-          <div class="form-group">
+          <div v-if="!regionalMode" class="form-group">
             <label for="speech-api-key">语音 API Key</label>
             <div class="input-with-icon">
               <Icon icon="lucide:key" :size="16" class="input-icon" />
@@ -917,9 +1243,9 @@ watch(activeTab, (newVal) => {
             <label for="speech-base-url">语音 Base URL</label>
             <div class="input-with-icon">
               <Icon icon="lucide:link" :size="16" class="input-icon" />
-              <input id="speech-base-url" v-model="speechBaseUrl" type="text" :placeholder="DEFAULT_SPEECH_CONFIG.baseUrl" />
+              <input id="speech-base-url" v-model="speechBaseUrl" type="text" :placeholder="DEFAULT_SPEECH_CONFIG.baseUrl" :disabled="regionalMode" />
             </div>
-            <p class="form-hint">OpenAI 兼容语音转写接口地址，通常以 `/v1` 结尾。</p>
+            <p class="form-hint">{{ regionalMode ? '当前生效语音地址由服务端统一维护' : 'OpenAI 兼容语音转写接口地址，通常以 `/v1` 结尾。' }}</p>
           </div>
 
           <div v-else class="form-group">
@@ -929,11 +1255,11 @@ watch(activeTab, (newVal) => {
               <input
                 id="speech-base-url-readonly"
                 type="text"
-                value="DashScope WebSocket（由 Rust 后端代理）"
+                :value="regionalMode ? '区域化模式下由 floating-ball-server 统一代理' : 'DashScope WebSocket（由 Rust 后端代理）'"
                 readonly
               />
             </div>
-            <p class="form-hint">当前 provider 走阿里云实时语音识别，不需要单独填写 Base URL。</p>
+            <p class="form-hint">{{ regionalMode ? '当前 provider 与代理路径由服务端统一维护。' : '当前 provider 走阿里云实时语音识别，不需要单独填写 Base URL。' }}</p>
           </div>
 
           <div class="form-group">
@@ -945,10 +1271,12 @@ watch(activeTab, (newVal) => {
                 v-model="speechModel"
                 type="text"
                 :placeholder="speechProvider === 'aliyun-dashscope' ? 'paraformer-realtime-v2' : 'whisper-1'"
+                :disabled="regionalMode"
               />
             </div>
             <p class="form-hint">
-              <span v-if="speechProvider === 'aliyun-dashscope'">默认使用阿里云实时识别模型 `paraformer-realtime-v2`。</span>
+              <span v-if="regionalMode">当前生效语音模型由服务端统一维护。</span>
+              <span v-else-if="speechProvider === 'aliyun-dashscope'">默认使用阿里云实时识别模型 `paraformer-realtime-v2`。</span>
               <span v-else>例如 `whisper-1` 或兼容网关支持的其他语音转写模型。</span>
             </p>
           </div>
@@ -965,7 +1293,6 @@ watch(activeTab, (newVal) => {
           </div>
         </div>
 
-        <!-- Reviewer AI Section -->
         <div class="settings-section" style="margin-top: 24px;">
           <div class="section-header">
             <Icon icon="lucide:shield-check" :size="20" />
@@ -979,13 +1306,13 @@ watch(activeTab, (newVal) => {
               <span class="toggle-hint">关闭后将不进行独立 AI 事实核查与验证</span>
             </div>
             <div class="switch-wrapper">
-              <input type="checkbox" id="reviewer-enabled" v-model="reviewerEnabled">
+              <input type="checkbox" id="reviewer-enabled" v-model="reviewerEnabled" :disabled="regionalMode">
               <label for="reviewer-enabled" class="toggle-switch"></label>
             </div>
           </div>
 
           <template v-if="reviewerEnabled">
-            <div class="form-group">
+            <div v-if="!regionalMode" class="form-group">
               <label for="reviewer-api-key">API Key</label>
               <div class="input-with-icon">
                 <Icon icon="lucide:key" :size="16" class="input-icon" />
@@ -994,12 +1321,11 @@ watch(activeTab, (newVal) => {
               <p class="form-hint">独立审查 AI 的 API 密钥</p>
             </div>
 
-            <div class="form-group">
+            <div v-if="!regionalMode" class="form-group">
               <label for="reviewer-base-url">Base URL</label>
               <div class="input-with-icon">
                 <Icon icon="lucide:link" :size="16" class="input-icon" />
-                <input id="reviewer-base-url" v-model="reviewerBaseUrl" type="text"
-                  placeholder="https://api.openai.com/v1" />
+                <input id="reviewer-base-url" v-model="reviewerBaseUrl" type="text" placeholder="https://api.openai.com/v1" />
               </div>
               <p class="form-hint">API 服务器地址（留空使用上方默认值）</p>
             </div>
@@ -1008,16 +1334,14 @@ watch(activeTab, (newVal) => {
               <label for="reviewer-model-name">Model Name</label>
               <div class="input-with-icon">
                 <Icon icon="lucide:brain" :size="16" class="input-icon" />
-                <input id="reviewer-model-name" v-model="reviewerModel" type="text" placeholder="gpt-4o-mini" />
+                <input id="reviewer-model-name" v-model="reviewerModel" type="text" placeholder="gpt-4o-mini" :disabled="regionalMode" />
               </div>
-              <p class="form-hint">使用的模型名称（留空使用上方默认值）</p>
+              <p class="form-hint">{{ regionalMode ? '当前审查模型由服务端统一维护' : '使用的模型名称（留空使用上方默认值）' }}</p>
             </div>
 
             <div class="test-connection-row" style="margin-top: 16px;">
-              <button class="test-btn" @click="testReviewerConnection"
-                :disabled="reviewerTesting || (!reviewerApiKey && !apiKey)">
-                <Icon :icon="reviewerTesting ? 'lucide:loader-2' : 'lucide:wifi'" :size="16"
-                  :class="{ spin: reviewerTesting }" />
+              <button class="test-btn" @click="testReviewerConnection" :disabled="reviewerTesting || (!regionalMode && !reviewerApiKey && !apiKey)">
+                <Icon :icon="reviewerTesting ? 'lucide:loader-2' : 'lucide:wifi'" :size="16" :class="{ spin: reviewerTesting }" />
                 {{ reviewerTesting ? '测试中...' : '测试连接' }}
               </button>
               <span v-if="reviewerTestResult" :class="['test-message', reviewerTestResult.success ? 'success' : 'error']">
@@ -1028,7 +1352,6 @@ watch(activeTab, (newVal) => {
           </template>
         </div>
 
-        <!-- Knowledge Base Section -->
         <div class="settings-section" style="margin-top: 24px;">
           <div class="section-header">
             <Icon icon="lucide:book-open" :size="20" />
@@ -1042,24 +1365,23 @@ watch(activeTab, (newVal) => {
               <span class="toggle-hint">启用后，AI 推荐时将自动搜索相关医学文献</span>
             </div>
             <div class="switch-wrapper">
-              <input type="checkbox" id="pmphai-enabled" v-model="pmphaiEnabled">
+              <input type="checkbox" id="pmphai-enabled" v-model="pmphaiEnabled" :disabled="regionalMode">
               <label for="pmphai-enabled" class="toggle-switch"></label>
             </div>
           </div>
+
           <template v-if="pmphaiEnabled">
             <div class="form-group">
               <label>搜索模式</label>
               <div class="mode-selector">
-                <button :class="['mode-option', { active: pmphaiSearchMode === 'rag' }]"
-                  @click="pmphaiSearchMode = 'rag'" :disabled="!pmphaiEnabled">
+                <button :class="['mode-option', { active: pmphaiSearchMode === 'rag' }]" @click="pmphaiSearchMode = 'rag'" :disabled="!pmphaiEnabled">
                   <Icon icon="lucide:sparkles" :size="18" />
                   <div class="mode-info">
                     <span class="mode-title">智能搜索</span>
                     <span class="mode-desc">AI 语义匹配，基于向量相似度</span>
                   </div>
                 </button>
-                <button :class="['mode-option', { active: pmphaiSearchMode === 'list' }]"
-                  @click="pmphaiSearchMode = 'list'" :disabled="!pmphaiEnabled">
+                <button :class="['mode-option', { active: pmphaiSearchMode === 'list' }]" @click="pmphaiSearchMode = 'list'" :disabled="!pmphaiEnabled">
                   <Icon icon="lucide:list" :size="18" />
                   <div class="mode-info">
                     <span class="mode-title">文档浏览</span>
@@ -1069,7 +1391,7 @@ watch(activeTab, (newVal) => {
               </div>
             </div>
 
-            <div class="form-group">
+            <div v-if="!regionalMode" class="form-group">
               <label for="pmphai-app-key">APP Key</label>
               <div class="input-with-icon">
                 <Icon icon="lucide:key" :size="16" class="input-icon" />
@@ -1078,7 +1400,7 @@ watch(activeTab, (newVal) => {
               <p class="form-hint">人卫 Inside 云应用 APP Key</p>
             </div>
 
-            <div class="form-group">
+            <div v-if="!regionalMode" class="form-group">
               <label for="pmphai-app-secret">APP Secret</label>
               <div class="input-with-icon">
                 <Icon icon="lucide:lock" :size="16" class="input-icon" />
@@ -1088,10 +1410,8 @@ watch(activeTab, (newVal) => {
             </div>
 
             <div class="test-connection-row">
-              <button class="test-btn" @click="testPMPHAIConnection"
-                :disabled="pmphaiTesting || !pmphaiAppKey || !pmphaiAppSecret">
-                <Icon :icon="pmphaiTesting ? 'lucide:loader-2' : 'lucide:wifi'" :size="16"
-                  :class="{ spin: pmphaiTesting }" />
+              <button class="test-btn" @click="testPMPHAIConnection" :disabled="pmphaiTesting || (!regionalMode && (!pmphaiAppKey || !pmphaiAppSecret))">
+                <Icon :icon="pmphaiTesting ? 'lucide:loader-2' : 'lucide:wifi'" :size="16" :class="{ spin: pmphaiTesting }" />
                 {{ pmphaiTesting ? '测试中...' : '测试连接' }}
               </button>
               <span v-if="pmphaiTestResult" :class="['test-message', pmphaiTestResult.success ? 'success' : 'error']">
@@ -1101,11 +1421,11 @@ watch(activeTab, (newVal) => {
             </div>
           </template>
         </div>
+
         <div class="info-banner">
           <Icon icon="lucide:info" :size="18" />
-          <p>配置已保存到本地。如未设置，将使用环境变量默认值。</p>
+          <p>{{ regionalMode ? '区域化模式下这里只保存本地偏好；后端 API 配置请到 floating-ball-server 管理端维护。' : '配置已保存到本地。如未设置，将使用环境变量默认值。' }}</p>
         </div>
-
       </div>
 
       <!-- About Tab -->
@@ -1257,7 +1577,7 @@ watch(activeTab, (newVal) => {
               <Icon icon="lucide:file-text" :size="16" />
               包含会话记录、消息、反馈和性能指标
             </li>
-            <li>
+            <li v-if="localMedicalCatalogEnabled">
               <Icon icon="lucide:book-copy" :size="16" />
               基础数据目录单独存储在本地 SQLite 中，可在上方查看同步状态并清理缓存
             </li>
@@ -1283,9 +1603,9 @@ watch(activeTab, (newVal) => {
         <span class="save-bar-divider">·</span>
         <span class="save-bar-hint">{{ saveShortcutLabel }}</span>
       </div>
-      <button class="save-btn compact" @click="saveSettings" :disabled="!hasUnsavedChanges">
-        <Icon :icon="hasUnsavedChanges ? 'lucide:save' : 'lucide:check'" :size="16" />
-        {{ hasUnsavedChanges ? '保存更改' : '已保存' }}
+      <button class="save-btn compact" @click="saveSettings" :disabled="!hasUnsavedChanges || savingSettings">
+        <Icon :icon="savingSettings ? 'lucide:loader-2' : hasUnsavedChanges ? 'lucide:save' : 'lucide:check'" :size="16" :class="{ spin: savingSettings }" />
+        {{ savingSettings ? '保存中...' : hasUnsavedChanges ? '保存更改' : '已保存' }}
       </button>
     </div>
   </div>
@@ -1829,28 +2149,6 @@ watch(activeTab, (newVal) => {
   transform: translateY(0);
 }
 
-.save-btn.compact {
-  width: auto;
-  min-width: 104px;
-  min-height: 36px;
-  padding: 8px 14px;
-  font-size: 14px;
-  flex-shrink: 0;
-}
-
-.save-btn:disabled {
-  background: #94A3B8;
-  box-shadow: none;
-  cursor: default;
-  transform: none;
-}
-
-.save-btn:disabled:hover {
-  background: #94A3B8;
-  transform: none;
-  box-shadow: none;
-}
-
 /* Info Banner */
 .info-banner {
   display: flex;
@@ -2216,6 +2514,28 @@ watch(activeTab, (newVal) => {
 
 .test-message.testing {
   color: var(--medical-text-muted);
+}
+
+.regional-status {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 12px 14px;
+  border-radius: 8px;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.regional-status.success {
+  background: rgba(5, 150, 105, 0.08);
+  color: var(--medical-success);
+  border: 1px solid rgba(5, 150, 105, 0.18);
+}
+
+.regional-status.error {
+  background: rgba(220, 38, 38, 0.08);
+  color: #DC2626;
+  border: 1px solid rgba(220, 38, 38, 0.18);
 }
 
 /* Mode Selector */

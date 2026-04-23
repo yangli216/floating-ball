@@ -1,5 +1,6 @@
 import { invoke } from '@tauri-apps/api/core';
-import { enqueueAuditEvent } from './auditUploader';
+import { enqueueAuditEvent, flushAuditEvents } from './auditUploader';
+import { isRegionalMode } from './regionalClient';
 import type {
   SessionType,
   SessionStatus,
@@ -15,6 +16,32 @@ import type {
   OperationStatistics,
   ExportFormat
 } from '../types/feedback';
+
+function resolveOperationModule(log: Omit<OperationLog, 'logId' | 'createdAt'>): string {
+  const candidate = log.details?.module;
+  return typeof candidate === 'string' && candidate.trim()
+    ? candidate.trim()
+    : log.operationType;
+}
+
+function buildOperationAuditPayload(
+  log: Omit<OperationLog, 'logId' | 'createdAt'>,
+  sessionId: string | null
+): Record<string, unknown> {
+  const success = log.success !== false;
+
+  return {
+    sessionId,
+    module: resolveOperationModule(log),
+    action: log.operationName,
+    result: success ? 'success' : 'failure',
+    operationType: log.operationType,
+    operationName: log.operationName,
+    success,
+    durationMs: log.durationMs,
+    details: log.details,
+  };
+}
 
 class FeedbackService {
   private currentSessionId: string | null = null;
@@ -196,9 +223,17 @@ class FeedbackService {
   // Operation Logging
 
   async logOperation(log: Omit<OperationLog, 'logId' | 'createdAt'>): Promise<void> {
-    try {
-      const sessionId = log.sessionId || this.currentSessionId;
+    const sessionId = log.sessionId || this.currentSessionId;
+    const auditPayload = buildOperationAuditPayload(log, sessionId || null);
 
+    if (isRegionalMode()) {
+      enqueueAuditEvent('operation', auditPayload);
+      void flushAuditEvents();
+      console.log(`[FeedbackService] Operation forwarded to regional audit: ${log.operationType} - ${log.operationName}`);
+      return;
+    }
+
+    try {
       await invoke('log_operation', {
         sessionId: sessionId || null,
         operationType: log.operationType,
@@ -206,16 +241,6 @@ class FeedbackService {
         details: log.details ? JSON.stringify(log.details) : null,
         success: log.success !== false,
         durationMs: log.durationMs || null
-      });
-
-      // 区域化双写：本地写入成功后加入上报队列
-      enqueueAuditEvent('operation', {
-        sessionId,
-        operationType: log.operationType,
-        operationName: log.operationName,
-        details: log.details,
-        success: log.success !== false,
-        durationMs: log.durationMs,
       });
 
       console.log(`[FeedbackService] Operation logged: ${log.operationType} - ${log.operationName}`);

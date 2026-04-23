@@ -1,9 +1,8 @@
 /**
  * 审计事件批量上报服务
  *
- * 区域化模式下，操作日志和性能指标在本地 SQLite 写入后，
- * 通过此服务异步批量上报到 core-service。
- * 支持离线队列和网络恢复后自动重传。
+ * 区域化模式下，审计事件通过此服务直接上报到 core-service。
+ * 本地只保留轻量离线队列，供失败或断网时自动重传。
  */
 import { isRegionalMode, regionalPost } from './regionalClient';
 
@@ -22,12 +21,16 @@ interface AuditEvent {
 const QUEUE_KEY = 'REGIONAL_AUDIT_QUEUE';
 const BATCH_SIZE = 50;
 const UPLOAD_INTERVAL = 30_000; // 30 秒
+const ENQUEUE_FLUSH_DELAY = 800; // 入队后短暂合并，再异步立即尝试上报
 const MAX_QUEUE_SIZE = 1000; // 防止 localStorage 溢出
 
 // ─── 事件队列 ──────────────────────────────────────────────────────────────
 
 let eventQueue: AuditEvent[] = [];
 let uploadTimer: ReturnType<typeof setInterval> | null = null;
+let flushSoonTimer: ReturnType<typeof setTimeout> | null = null;
+let flushInFlight: Promise<number> | null = null;
+let queueLoaded = false;
 
 function loadQueue(): void {
   try {
@@ -36,9 +39,17 @@ function loadQueue(): void {
       eventQueue = JSON.parse(raw);
     }
   } catch { eventQueue = []; }
+  queueLoaded = true;
+}
+
+function ensureQueueLoaded(): void {
+  if (!queueLoaded) {
+    loadQueue();
+  }
 }
 
 function saveQueue(): void {
+  ensureQueueLoaded();
   try {
     // 限制队列大小
     if (eventQueue.length > MAX_QUEUE_SIZE) {
@@ -47,6 +58,22 @@ function saveQueue(): void {
     localStorage.setItem(QUEUE_KEY, JSON.stringify(eventQueue));
   } catch (err) {
     console.warn('[AuditUploader] Failed to save queue:', err);
+  }
+}
+
+function scheduleFlushSoon(): void {
+  if (!isRegionalMode() || flushSoonTimer) return;
+
+  flushSoonTimer = setTimeout(() => {
+    flushSoonTimer = null;
+    void flushAuditEvents();
+  }, ENQUEUE_FLUSH_DELAY);
+}
+
+function clearScheduledFlush(): void {
+  if (flushSoonTimer) {
+    clearTimeout(flushSoonTimer);
+    flushSoonTimer = null;
   }
 }
 
@@ -60,6 +87,7 @@ export function enqueueAuditEvent(
   payload: Record<string, unknown>
 ): void {
   if (!isRegionalMode()) return;
+  ensureQueueLoaded();
 
   eventQueue.push({
     id: crypto.randomUUID(),
@@ -69,6 +97,7 @@ export function enqueueAuditEvent(
   });
 
   saveQueue();
+  scheduleFlushSoon();
 }
 
 // ─── 批量上报 ──────────────────────────────────────────────────────────────
@@ -77,31 +106,43 @@ export function enqueueAuditEvent(
  * 立即执行一次批量上报
  */
 export async function flushAuditEvents(): Promise<number> {
+  ensureQueueLoaded();
   if (!isRegionalMode() || eventQueue.length === 0) return 0;
+  if (flushInFlight) return flushInFlight;
 
-  const batch = eventQueue.slice(0, BATCH_SIZE);
+  flushInFlight = (async () => {
+    const batch = eventQueue.slice(0, BATCH_SIZE);
 
-  try {
-    await regionalPost<{ accepted: number }>('/v1/client/audit/events/batch', {
-      events: batch.map(e => ({
-        eventId: e.id,
-        eventType: e.eventType,
-        payload: e.payload,
-        timestamp: e.timestamp,
-      })),
-    });
+    try {
+      await regionalPost<{ accepted: number }>('/v1/client/audit/events/batch', {
+        events: batch.map(e => ({
+          eventId: e.id,
+          eventType: e.eventType,
+          payload: e.payload,
+          timestamp: e.timestamp,
+        })),
+      });
 
-    // 上报成功，移除已上报事件
-    const uploadedIds = new Set(batch.map(e => e.id));
-    eventQueue = eventQueue.filter(e => !uploadedIds.has(e.id));
-    saveQueue();
+      // 上报成功，移除已上报事件
+      const uploadedIds = new Set(batch.map(e => e.id));
+      eventQueue = eventQueue.filter(e => !uploadedIds.has(e.id));
+      saveQueue();
 
-    console.log(`[AuditUploader] Flushed ${batch.length} events, remaining: ${eventQueue.length}`);
-    return batch.length;
-  } catch (err) {
-    console.warn('[AuditUploader] Batch upload failed:', err);
-    return 0;
-  }
+      if (eventQueue.length > 0) {
+        scheduleFlushSoon();
+      }
+
+      console.log(`[AuditUploader] Flushed ${batch.length} events, remaining: ${eventQueue.length}`);
+      return batch.length;
+    } catch (err) {
+      console.warn('[AuditUploader] Batch upload failed:', err);
+      return 0;
+    } finally {
+      flushInFlight = null;
+    }
+  })();
+
+  return flushInFlight;
 }
 
 // ─── 定时上报 ──────────────────────────────────────────────────────────────
@@ -111,11 +152,14 @@ export async function flushAuditEvents(): Promise<number> {
  */
 export function startAuditUploader(): void {
   stopAuditUploader();
-  loadQueue();
+  ensureQueueLoaded();
 
   uploadTimer = setInterval(async () => {
     await flushAuditEvents();
   }, UPLOAD_INTERVAL);
+
+  // 启动后先尝试补传上次遗留和当前已缓存的事件，避免必须等待下一个周期。
+  void flushAuditEvents();
 
   console.log(`[AuditUploader] Started, interval=${UPLOAD_INTERVAL}ms, pending=${eventQueue.length}`);
 }
@@ -128,11 +172,13 @@ export function stopAuditUploader(): void {
     clearInterval(uploadTimer);
     uploadTimer = null;
   }
+  clearScheduledFlush();
 }
 
 /**
  * 获取当前队列长度（调试用）
  */
 export function getQueueSize(): number {
+  ensureQueueLoaded();
   return eventQueue.length;
 }

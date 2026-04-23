@@ -41,23 +41,31 @@ export async function syncRemoteTemplates(): Promise<void> {
 
   try {
     const currentVersion = localStorage.getItem(REMOTE_TEMPLATES_VERSION_KEY) || '0';
-    const resp = await regionalGet<{
+    let resp = await regionalGet<{
       version: string;
       western?: any[];
       tcm?: any[];
     }>(`/v1/client/templates/delta?version=${encodeURIComponent(currentVersion)}`);
 
     // 合并到缓存
-    const existing = loadRemoteTemplatesFromCache() || { western: [], tcm: [] };
-    if (resp.western && resp.western.length > 0) {
-      existing.western = resp.western;
-    }
-    if (resp.tcm && resp.tcm.length > 0) {
-      existing.tcm = resp.tcm;
+    const existing = loadRemoteTemplatesFromCache();
+    // 如果只剩版本号但缓存丢失，需要强制拉一次全量，避免误判为“已同步”
+    if (!existing && resp.version === currentVersion && currentVersion !== '0') {
+      resp = await regionalGet<{
+        version: string;
+        western?: any[];
+        tcm?: any[];
+      }>('/v1/client/templates/delta?version=0');
     }
 
-    remoteTemplateCache = existing;
-    localStorage.setItem(REMOTE_TEMPLATES_KEY, JSON.stringify(existing));
+    const merged = existing || { western: [], tcm: [] };
+    if (resp.version !== currentVersion || !existing) {
+      merged.western = Array.isArray(resp.western) ? resp.western : [];
+      merged.tcm = Array.isArray(resp.tcm) ? resp.tcm : [];
+    }
+
+    remoteTemplateCache = merged;
+    localStorage.setItem(REMOTE_TEMPLATES_KEY, JSON.stringify(merged));
     localStorage.setItem(REMOTE_TEMPLATES_VERSION_KEY, resp.version);
     console.log(`[TemplateService] Synced templates, version=${resp.version}`);
   } catch (err) {
@@ -91,8 +99,8 @@ export function getTemplates(): any[] {
   if (isRegionalMode()) {
     const remote = loadRemoteTemplatesFromCache();
     if (remote) {
-      if (mode === 'tcm' && remote.tcm.length > 0) return remote.tcm;
-      if (mode === 'western' && remote.western.length > 0) return remote.western;
+      if (mode === 'tcm') return remote.tcm;
+      if (mode === 'western') return remote.western;
     }
   }
 
@@ -109,7 +117,7 @@ export function getTemplates(): any[] {
 export function getWesternTemplates(): any[] {
   if (isRegionalMode()) {
     const remote = loadRemoteTemplatesFromCache();
-    if (remote && remote.western.length > 0) return remote.western;
+    if (remote) return remote.western;
   }
   return westernTemplates as any[];
 }
@@ -120,7 +128,7 @@ export function getWesternTemplates(): any[] {
 export function getTCMTemplates(): any[] {
   if (isRegionalMode()) {
     const remote = loadRemoteTemplatesFromCache();
-    if (remote && remote.tcm.length > 0) return remote.tcm;
+    if (remote) return remote.tcm;
   }
   return (tcmTemplates as any).symptoms || [];
 }

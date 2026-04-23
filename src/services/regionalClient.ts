@@ -17,6 +17,10 @@ export interface RegionalConfig {
   deviceCode: string;
 }
 
+export interface RegionalConnectionConfig extends RegionalConfig {
+  enabled: boolean;
+}
+
 export interface RegisterRequest {
   cdDevice: string;
   naDevice: string;
@@ -83,6 +87,55 @@ interface ApiResponse<T> {
   timestamp: number;
 }
 
+function parseRegionalErrorMessage(rawText: string, fallback: string): string {
+  const text = rawText.trim();
+  if (!text) return fallback;
+
+  try {
+    const parsed = JSON.parse(text) as Partial<ApiResponse<unknown>> & {
+      error?: { message?: string };
+    };
+    return parsed.message || parsed.error?.message || fallback;
+  } catch {
+    return text;
+  }
+}
+
+function parseUnexpectedSseBody(rawText: string, fallback: string): string {
+  const text = rawText.trim();
+  if (!text) return fallback;
+
+  const sseDataLines = text
+    .split('\n')
+    .map(line => line.trim())
+    .map(extractSseDataPayload)
+    .filter((line): line is string => line !== null);
+
+  if (sseDataLines.length > 0) {
+    const merged = sseDataLines.filter(item => item !== '[DONE]').join('\n');
+    if (merged) {
+      return parseRegionalErrorMessage(merged, fallback);
+    }
+  }
+
+  return parseRegionalErrorMessage(text, fallback);
+}
+
+export interface RegionalSpeechUploadPayload {
+  audio: string;
+  mimeType?: string;
+  format?: string;
+  fileName?: string;
+  scene?: string;
+}
+
+function extractSseDataPayload(line: string): string | null {
+  if (!line.startsWith('data:')) {
+    return null;
+  }
+  return line.slice(5).trimStart();
+}
+
 // ─── 状态管理 ──────────────────────────────────────────────────────────────
 
 const STORAGE_KEYS = {
@@ -97,9 +150,58 @@ const STORAGE_KEYS = {
   BOOTSTRAP_CACHE_TIME: 'REGIONAL_BOOTSTRAP_CACHE_TIME',
 } as const;
 
+const DEFAULT_REGIONAL_BASE_URL = (
+  import.meta.env.VITE_REGIONAL_BASE_URL
+  || 'http://127.0.0.1:8080'
+).trim().replace(/\/+$/, '');
+
+const DEFAULT_REGIONAL_ORG_CODE = (
+  import.meta.env.VITE_REGIONAL_ORG_CODE
+  || 'ORG001'
+).trim();
+
+const DEFAULT_REGIONAL_ENABLED = !['false', '0', 'off'].includes(
+  String(import.meta.env.VITE_REGIONAL_ENABLED ?? 'true').trim().toLowerCase()
+);
+
 let heartbeatTimer: ReturnType<typeof setInterval> | null = null;
 let cachedBootstrap: BootstrapConfig | null = null;
 let initialized = false;
+
+function readStorageValue(key: string): string | null {
+  const raw = localStorage.getItem(key);
+  if (raw == null) {
+    return null;
+  }
+  const text = raw.trim();
+  return text ? text : null;
+}
+
+function clearBootstrapCache(): void {
+  cachedBootstrap = null;
+  localStorage.removeItem(STORAGE_KEYS.BOOTSTRAP_CACHE);
+  localStorage.removeItem(STORAGE_KEYS.BOOTSTRAP_CACHE_TIME);
+}
+
+function clearDeviceRegistration(): void {
+  localStorage.removeItem(STORAGE_KEYS.DEVICE_TOKEN);
+  localStorage.removeItem(STORAGE_KEYS.DEVICE_ID);
+  localStorage.removeItem(STORAGE_KEYS.HEARTBEAT_INTERVAL);
+}
+
+function resetRegionalRuntime(clearRegistration = false): void {
+  stopHeartbeat();
+  initialized = false;
+  clearBootstrapCache();
+  if (clearRegistration) {
+    clearDeviceRegistration();
+  }
+}
+
+function isUnauthorizedError(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : String(error);
+  return message.includes('AUTH-401') || /\b401\b/.test(message);
+}
 
 // ─── 区域化模式判断 ─────────────────────────────────────────────────────────
 
@@ -107,7 +209,10 @@ let initialized = false;
  * 是否启用区域化模式
  */
 export function isRegionalMode(): boolean {
-  return localStorage.getItem(STORAGE_KEYS.REGIONAL_ENABLED) === 'true';
+  const stored = localStorage.getItem(STORAGE_KEYS.REGIONAL_ENABLED);
+  if (stored === 'true') return true;
+  if (stored === 'false') return false;
+  return DEFAULT_REGIONAL_ENABLED;
 }
 
 /**
@@ -116,9 +221,7 @@ export function isRegionalMode(): boolean {
 export function setRegionalMode(enabled: boolean): void {
   localStorage.setItem(STORAGE_KEYS.REGIONAL_ENABLED, enabled ? 'true' : 'false');
   if (!enabled) {
-    stopHeartbeat();
-    cachedBootstrap = null;
-    initialized = false;
+    resetRegionalRuntime(false);
   }
 }
 
@@ -127,9 +230,8 @@ export function setRegionalMode(enabled: boolean): void {
  */
 export function getRegionalBaseUrl(): string {
   return (
-    localStorage.getItem(STORAGE_KEYS.REGIONAL_BASE_URL)
-    || import.meta.env.VITE_REGIONAL_BASE_URL
-    || ''
+    readStorageValue(STORAGE_KEYS.REGIONAL_BASE_URL)
+    || DEFAULT_REGIONAL_BASE_URL
   ).replace(/\/+$/, '');
 }
 
@@ -137,9 +239,63 @@ export function getRegionalBaseUrl(): string {
  * 获取机构编码
  */
 export function getOrgCode(): string {
-  return localStorage.getItem(STORAGE_KEYS.REGIONAL_ORG_CODE)
-    || import.meta.env.VITE_REGIONAL_ORG_CODE
-    || '';
+  return readStorageValue(STORAGE_KEYS.REGIONAL_ORG_CODE)
+    || DEFAULT_REGIONAL_ORG_CODE;
+}
+
+export function getRegionalConnectionDefaults(): Pick<RegionalConnectionConfig, 'enabled' | 'baseUrl' | 'orgCode'> {
+  return {
+    enabled: DEFAULT_REGIONAL_ENABLED,
+    baseUrl: DEFAULT_REGIONAL_BASE_URL,
+    orgCode: DEFAULT_REGIONAL_ORG_CODE,
+  };
+}
+
+export function ensureRegionalConnectionDefaults(): void {
+  if (!readStorageValue(STORAGE_KEYS.REGIONAL_BASE_URL)) {
+    localStorage.setItem(STORAGE_KEYS.REGIONAL_BASE_URL, DEFAULT_REGIONAL_BASE_URL);
+  }
+  if (!readStorageValue(STORAGE_KEYS.REGIONAL_ORG_CODE)) {
+    localStorage.setItem(STORAGE_KEYS.REGIONAL_ORG_CODE, DEFAULT_REGIONAL_ORG_CODE);
+  }
+  const enabledValue = localStorage.getItem(STORAGE_KEYS.REGIONAL_ENABLED);
+  if (enabledValue !== 'true' && enabledValue !== 'false') {
+    localStorage.setItem(STORAGE_KEYS.REGIONAL_ENABLED, DEFAULT_REGIONAL_ENABLED ? 'true' : 'false');
+  }
+}
+
+export function getRegionalConnectionConfig(): RegionalConnectionConfig {
+  return {
+    enabled: isRegionalMode(),
+    baseUrl: getRegionalBaseUrl(),
+    orgCode: getOrgCode(),
+    deviceCode: getDeviceCode(),
+  };
+}
+
+export function hasRegionalConnectionConfig(): boolean {
+  const { baseUrl, orgCode } = getRegionalConnectionConfig();
+  return Boolean(baseUrl && orgCode);
+}
+
+export function saveRegionalConnectionConfig(config: {
+  enabled: boolean;
+  baseUrl: string;
+  orgCode: string;
+}): void {
+  const nextBaseUrl = (config.baseUrl || DEFAULT_REGIONAL_BASE_URL).trim().replace(/\/+$/, '');
+  const nextOrgCode = (config.orgCode || DEFAULT_REGIONAL_ORG_CODE).trim();
+  const currentBaseUrl = getRegionalBaseUrl();
+  const currentOrgCode = getOrgCode();
+  const endpointChanged = nextBaseUrl !== currentBaseUrl || nextOrgCode !== currentOrgCode;
+
+  localStorage.setItem(STORAGE_KEYS.REGIONAL_BASE_URL, nextBaseUrl);
+  localStorage.setItem(STORAGE_KEYS.REGIONAL_ORG_CODE, nextOrgCode);
+  setRegionalMode(config.enabled);
+
+  if (config.enabled) {
+    resetRegionalRuntime(endpointChanged);
+  }
 }
 
 // ─── 设备编码（持久化） ────────────────────────────────────────────────────
@@ -169,12 +325,18 @@ function getDeviceId(): string | null {
 
 async function regionalFetch<T>(
   path: string,
-  options: RequestInit = {}
+  options: RequestInit = {},
+  allowAuthRetry = true
 ): Promise<T> {
   const baseUrl = getRegionalBaseUrl();
   if (!baseUrl) throw new Error('区域化服务地址未配置');
 
-  const token = getDeviceToken();
+  let token = getDeviceToken();
+  if (!token && path !== '/v1/client/register') {
+    await registerDevice();
+    token = getDeviceToken();
+  }
+
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',
     'X-Tenant-Id': getOrgCode(),
@@ -189,13 +351,19 @@ async function regionalFetch<T>(
   });
 
   if (!res.ok) {
+    if (res.status === 401 && allowAuthRetry && path !== '/v1/client/register') {
+      clearDeviceRegistration();
+      initialized = false;
+      await registerDevice();
+      return regionalFetch<T>(path, options, false);
+    }
     const text = await res.text().catch(() => '');
-    throw new Error(`Regional API ${path} failed: ${res.status} ${text}`);
+    throw new Error(parseRegionalErrorMessage(text, `区域化服务请求失败（${res.status}）`));
   }
 
   const body: ApiResponse<T> = await res.json();
   if (body.code !== '0') {
-    throw new Error(`Regional API error: [${body.code}] ${body.message}`);
+    throw new Error(body.message || '区域化服务返回异常');
   }
   return body.data;
 }
@@ -206,6 +374,10 @@ async function regionalFetch<T>(
  * 向 core-service 注册终端
  */
 export async function registerDevice(): Promise<RegisterResponse> {
+  const orgCode = getOrgCode();
+  if (!orgCode) {
+    throw new Error('区域化机构编码未配置');
+  }
   const cdDevice = getDeviceCode();
   let naDevice = 'FloatingBall';
   let osInfo = 'unknown';
@@ -226,7 +398,7 @@ export async function registerDevice(): Promise<RegisterResponse> {
     body: JSON.stringify({
       cdDevice,
       naDevice,
-      cdOrg: getOrgCode(),
+      cdOrg: orgCode,
       clientVersion,
       osInfo,
     } satisfies RegisterRequest),
@@ -320,9 +492,15 @@ function stopHeartbeat(): void {
  * - 如果已有 token 则直接拉取 bootstrap
  * - 否则先注册再 bootstrap
  */
-export async function initializeRegionalClient(): Promise<BootstrapConfig | null> {
+export async function initializeRegionalClient(options?: {
+  allowCachedFallback?: boolean;
+}): Promise<BootstrapConfig | null> {
   if (!isRegionalMode()) return null;
+  if (!hasRegionalConnectionConfig()) {
+    throw new Error('请先配置区域化服务地址和机构编码');
+  }
   if (initialized) return getCachedBootstrap();
+  const allowCachedFallback = options?.allowCachedFallback !== false;
 
   try {
     const existingToken = getDeviceToken();
@@ -330,14 +508,29 @@ export async function initializeRegionalClient(): Promise<BootstrapConfig | null
       await registerDevice();
     }
 
-    const config = await getBootstrapConfig(true);
+    let config: BootstrapConfig;
+    try {
+      config = await getBootstrapConfig(true);
+    } catch (error) {
+      if (existingToken && isUnauthorizedError(error)) {
+        clearDeviceRegistration();
+        await registerDevice();
+        config = await getBootstrapConfig(true);
+      } else {
+        throw error;
+      }
+    }
+
     startHeartbeat();
     initialized = true;
     return config;
   } catch (err) {
     console.error('[RegionalClient] Initialization failed, falling back to local mode:', err);
-    // 离线降级：返回缓存配置或 null
-    return getCachedBootstrap();
+    if (allowCachedFallback) {
+      // 离线降级：返回缓存配置或 null
+      return getCachedBootstrap();
+    }
+    throw err;
   }
 }
 
@@ -345,8 +538,7 @@ export async function initializeRegionalClient(): Promise<BootstrapConfig | null
  * 关闭区域化客户端
  */
 export function shutdownRegionalClient(): void {
-  stopHeartbeat();
-  initialized = false;
+  resetRegionalRuntime(false);
 }
 
 // ─── 带鉴权的通用请求（供其他模块使用） ──────────────────────────────────
@@ -366,6 +558,50 @@ export async function regionalPost<T>(path: string, body: unknown): Promise<T> {
     method: 'POST',
     body: JSON.stringify(body),
   });
+}
+
+function arrayBufferToBase64(arrayBuffer: ArrayBuffer): string {
+  const bytes = new Uint8Array(arrayBuffer);
+  let binary = '';
+  const chunkSize = 0x8000;
+
+  for (let i = 0; i < bytes.length; i += chunkSize) {
+    binary += String.fromCharCode(...bytes.subarray(i, i + chunkSize));
+  }
+
+  return btoa(binary);
+}
+
+function resolveAudioExtension(mimeType?: string, format?: string): string {
+  if (mimeType === 'audio/webm') return '.webm';
+  if (mimeType === 'audio/wav' || mimeType === 'audio/wave') return '.wav';
+  if (mimeType === 'audio/mpeg') return '.mp3';
+  if (mimeType === 'audio/mp4') return '.m4a';
+  if (mimeType === 'audio/ogg') return '.ogg';
+  if (mimeType === 'audio/pcm' || format === 'pcm') return '.pcm';
+  return '.bin';
+}
+
+export async function buildRegionalSpeechUploadPayload(
+  blob: Blob,
+  options: {
+    mimeType?: string;
+    format?: string;
+    fileName?: string;
+    scene?: string;
+  } = {}
+): Promise<RegionalSpeechUploadPayload> {
+  const mimeType = options.mimeType || blob.type || (options.format === 'pcm' ? 'audio/pcm' : undefined);
+  const scene = options.scene || 'speech';
+  const fileName = options.fileName || `${scene}-${Date.now()}${resolveAudioExtension(mimeType, options.format)}`;
+
+  return {
+    audio: arrayBufferToBase64(await blob.arrayBuffer()),
+    mimeType,
+    format: options.format,
+    fileName,
+    scene,
+  };
 }
 
 /**
@@ -396,7 +632,14 @@ export function createRegionalSSE(
 
       if (!res.ok) {
         const text = await res.text().catch(() => '');
-        reject(new Error(`Regional SSE ${path} failed: ${res.status} ${text}`));
+        reject(new Error(parseRegionalErrorMessage(text, `区域化流式请求失败（${res.status}）`)));
+        return;
+      }
+
+      const contentType = res.headers.get('content-type') || '';
+      if (!contentType.includes('text/event-stream')) {
+        const text = await res.text().catch(() => '');
+        reject(new Error(parseUnexpectedSseBody(text, '区域化服务返回了非流式响应')));
         return;
       }
 
@@ -408,6 +651,7 @@ export function createRegionalSSE(
 
       const decoder = new TextDecoder('utf-8');
       let buffer = '';
+      let receivedDone = false;
 
       while (true) {
         const { done, value } = await reader.read();
@@ -419,20 +663,31 @@ export function createRegionalSSE(
 
         for (const line of lines) {
           const trimmed = line.trim();
-          if (!trimmed || !trimmed.startsWith('data: ')) continue;
-          const dataStr = trimmed.slice(6);
+          if (!trimmed) continue;
+          const dataStr = extractSseDataPayload(trimmed);
+          if (dataStr == null) continue;
           if (dataStr === '[DONE]') {
+            receivedDone = true;
             resolve();
             return;
           }
           try {
             const json = JSON.parse(dataStr);
+            const errorMessage = json?.error?.message || json?.message;
+            if (typeof errorMessage === 'string' && errorMessage.trim()) {
+              reject(new Error(errorMessage.trim()));
+              return;
+            }
             const content = json.choices?.[0]?.delta?.content || '';
             if (content) onChunk(content);
           } catch { /* skip malformed SSE */ }
         }
       }
-      resolve();
+      if (receivedDone) {
+        resolve();
+        return;
+      }
+      reject(new Error(parseUnexpectedSseBody(buffer, 'AI 服务响应已中断，请检查后台 AI 配置后重试')));
     } catch (err) {
       reject(err);
     }

@@ -11,6 +11,8 @@ export interface KnowledgeBaseConfig {
   appKey: string
   appSecret: string
   baseUrl: string
+  managedByServer?: boolean
+  enabled?: boolean
 }
 
 export interface PageParams {
@@ -55,6 +57,13 @@ export function buildKnowledgeBaseUrl(
   pageParams: PageParams,
   originUrl: string = window.location.href
 ): string {
+  if (config.managedByServer) {
+    throw new Error('区域化模式下请通过服务端生成知识库页面地址')
+  }
+  if (!config.appKey || !config.appSecret) {
+    throw new Error('知识库凭据未配置')
+  }
+
   const timestamp = Date.now().toString()
 
   // 构建redirect_url
@@ -111,14 +120,17 @@ export function buildKnowledgeBaseUrl(
  * 区域化模式下从 bootstrap 获取，本地模式从 localStorage 读取
  */
 export function getKnowledgeBaseConfig(): KnowledgeBaseConfig | null {
-  // 区域化模式：检查 bootstrap feature
+  // 区域化模式：桌面端不再持有凭据，只保留服务端托管状态
   if (isRegionalMode()) {
     const bootstrap = getCachedBootstrap()
-    if (bootstrap?.knowledgeBase?.enabled) {
+    const enabled = bootstrap?.pmphai?.enabled ?? bootstrap?.knowledgeBase?.enabled ?? false
+    if (enabled) {
       return {
-        appKey: '__REGIONAL__',
-        appSecret: '__REGIONAL__',
-        baseUrl: bootstrap.knowledgeBase.baseUrl || 'https://inside.pmphai.com'
+        appKey: '',
+        appSecret: '',
+        baseUrl: bootstrap?.knowledgeBase?.baseUrl || 'https://inside.pmphai.com',
+        managedByServer: true,
+        enabled: true
       }
     }
     return null
@@ -143,9 +155,22 @@ export function getKnowledgeBaseConfig(): KnowledgeBaseConfig | null {
  * 保存知识库配置
  */
 export function saveKnowledgeBaseConfig(config: KnowledgeBaseConfig): void {
+  if (isRegionalMode() || config.managedByServer) {
+    return
+  }
   localStorage.setItem('KB_APP_KEY', config.appKey)
   localStorage.setItem('KB_APP_SECRET', config.appSecret)
   localStorage.setItem('KB_BASE_URL', config.baseUrl)
+}
+
+export function isKnowledgeBaseConfigured(config: KnowledgeBaseConfig | null): boolean {
+  if (!config) {
+    return false
+  }
+  if (config.managedByServer) {
+    return config.enabled !== false
+  }
+  return !!config.appKey && !!config.appSecret
 }
 
 /**

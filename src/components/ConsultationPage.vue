@@ -996,8 +996,6 @@
 
 <script setup lang="ts">
 import { ref, shallowRef, computed, onMounted, watch, onUnmounted, inject, nextTick } from 'vue';
-import westernTemplatesData from '../assets/templates.json';
-import tcmTemplatesData from '../assets/tcm-templates.json';
 import symptomAssociations from '../assets/symptom-associations.json';
 import { medicalDataService, type DiagnosisItem, type Icd10CategoryInfo } from '../services/medicalData';
 import Pinyin from 'tiny-pinyin';
@@ -1027,6 +1025,7 @@ import {
 import { isFieldApplicable, generateTextsForSymptom } from '../services/textGeneration';
 import { pmphaiService, isPMPHAIConfigured, type BatchSearchResults } from '../services/pmphai';
 import { CONSULTATION_CONFIG, isSymptomSelectionFull } from '../constants/consultationConfig';
+import { getTCMTemplates, getWesternTemplates, syncRemoteTemplates } from '../services/templateService';
 /* WINDOW_SIZES / diagnosisPath imports removed - feature commented out */
 import type {
   ConsultationAssistAction,
@@ -1198,11 +1197,9 @@ const getSymptomRecommendations = (symptomKey: string) => {
 // 根据问诊模式动态获取模板数据
 const currentTemplatesData = computed(() => {
   if (consultationMode.value === 'tcm') {
-    // 中医模板结构: { version, symptoms: [...] }
-    return (tcmTemplatesData as any).symptoms || [];
+    return getTCMTemplates();
   }
-  // 西医模板直接是数组
-  return westernTemplatesData;
+  return getWesternTemplates();
 });
 
 // All symptoms for body part and system selectors
@@ -2554,6 +2551,15 @@ const handleClickOutside = (event: MouseEvent) => {
 onMounted(() => {
   document.addEventListener('click', handleClickOutside);
   symptoms.value = currentTemplatesData.value;
+  void syncRemoteTemplates()
+    .then(() => {
+      if (selectedSymptoms.value.length === 0) {
+        symptoms.value = currentTemplatesData.value;
+      }
+    })
+    .catch((error) => {
+      console.warn('[ConsultationPage] Template sync on mount failed:', error);
+    });
   // Initialize General Condition data
   initFormData(generalConditionConfig);
   prefillGeneratedRecordFromPatient(false);
