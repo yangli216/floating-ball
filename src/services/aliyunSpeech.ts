@@ -176,6 +176,7 @@ export async function transcribeWithAliyun(
             channel: 'speech_realtime',
             scene,
             sourceModule: 'aliyunSpeech',
+            model: speechConfig.model,
             requestSummary: `场景 ${scene}，文件 ${fileName}，格式 ${audioBlob.type || 'audio/pcm'}`,
         });
         try {
@@ -197,8 +198,7 @@ export async function transcribeWithAliyun(
             finishAiTrace(trace.traceId, {
                 success: true,
                 responseSummary: resp.text ? resp.text.slice(0, 160) : '转写结果为空',
-                model: speechConfig.model,
-        });
+            });
             return resp.text;
         } catch (error) {
             failAiTrace(trace.traceId, error instanceof Error ? error.message : String(error));

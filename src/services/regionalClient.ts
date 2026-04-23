@@ -13,7 +13,7 @@ export interface RegionalConfig {
   baseUrl: string;
   /** 机构编码 */
   orgCode: string;
-  /** 设备唯一编码（本地持久化） */
+  /** 设备唯一编码（优先取设备 MAC，并本地持久化） */
   deviceCode: string;
 }
 
@@ -155,6 +155,7 @@ const DEFAULT_REGIONAL_BASE_URL = (
   || 'http://127.0.0.1:8080'
 ).trim().replace(/\/+$/, '');
 
+// 机构编码默认回退 ORG001；仅保留本地构建覆盖入口，不依赖 GitHub Actions Repository Variables
 const DEFAULT_REGIONAL_ORG_CODE = (
   import.meta.env.VITE_REGIONAL_ORG_CODE
   || 'ORG001'
@@ -167,6 +168,8 @@ const DEFAULT_REGIONAL_ENABLED = !['false', '0', 'off'].includes(
 let heartbeatTimer: ReturnType<typeof setInterval> | null = null;
 let cachedBootstrap: BootstrapConfig | null = null;
 let initialized = false;
+let deviceCodeLoadPromise: Promise<string> | null = null;
+let macLookupUnavailable = false;
 
 function readStorageValue(key: string): string | null {
   const raw = localStorage.getItem(key);
@@ -269,7 +272,7 @@ export function getRegionalConnectionConfig(): RegionalConnectionConfig {
     enabled: isRegionalMode(),
     baseUrl: getRegionalBaseUrl(),
     orgCode: getOrgCode(),
-    deviceCode: getDeviceCode(),
+    deviceCode: getStoredDeviceCode(),
   };
 }
 
@@ -298,15 +301,84 @@ export function saveRegionalConnectionConfig(config: {
   }
 }
 
-// ─── 设备编码（持久化） ────────────────────────────────────────────────────
+// ─── 设备编码（优先取设备 MAC） ────────────────────────────────────────────
 
-function getDeviceCode(): string {
-  let code = localStorage.getItem(STORAGE_KEYS.DEVICE_CODE);
-  if (!code) {
-    code = `FB-${Date.now().toString(36)}-${Math.random().toString(36).substring(2, 8)}`;
-    localStorage.setItem(STORAGE_KEYS.DEVICE_CODE, code);
+function getStoredDeviceCode(): string {
+  return readStorageValue(STORAGE_KEYS.DEVICE_CODE) || '';
+}
+
+function normalizeDeviceCode(code: string): string {
+  const trimmedCode = code.trim().toUpperCase();
+  if (/^[0-9A-F]{2}([:-][0-9A-F]{2}){5}$/.test(trimmedCode)) {
+    return trimmedCode.replace(/-/g, ':');
   }
-  return code;
+  return trimmedCode;
+}
+
+function generateFallbackDeviceCode(): string {
+  return `FB-${Date.now().toString(36)}-${Math.random().toString(36).substring(2, 8)}`.toUpperCase();
+}
+
+function persistDeviceCode(nextCode: string): string {
+  const normalizedCode = normalizeDeviceCode(nextCode);
+  if (!normalizedCode) {
+    return '';
+  }
+
+  const previousCode = getStoredDeviceCode();
+  if (previousCode !== normalizedCode) {
+    localStorage.setItem(STORAGE_KEYS.DEVICE_CODE, normalizedCode);
+    if (previousCode) {
+      stopHeartbeat();
+      initialized = false;
+      clearDeviceRegistration();
+    }
+  }
+
+  return normalizedCode;
+}
+
+async function detectDeviceMacAddress(): Promise<string | null> {
+  if (macLookupUnavailable) {
+    return null;
+  }
+
+  try {
+    const { invoke } = await import('@tauri-apps/api/core');
+    const deviceMac = normalizeDeviceCode(await invoke<string>('get_device_mac_address'));
+    return deviceMac || null;
+  } catch (error) {
+    macLookupUnavailable = true;
+    console.warn('[RegionalClient] Failed to detect device MAC address, using fallback device code.', error);
+    return null;
+  }
+}
+
+export async function getDeviceCode(): Promise<string> {
+  if (deviceCodeLoadPromise) {
+    return deviceCodeLoadPromise;
+  }
+
+  deviceCodeLoadPromise = (async () => {
+    const storedCode = getStoredDeviceCode();
+    const deviceMac = await detectDeviceMacAddress();
+
+    if (deviceMac) {
+      return persistDeviceCode(deviceMac);
+    }
+
+    if (storedCode) {
+      return storedCode;
+    }
+
+    return persistDeviceCode(generateFallbackDeviceCode());
+  })();
+
+  try {
+    return await deviceCodeLoadPromise;
+  } finally {
+    deviceCodeLoadPromise = null;
+  }
 }
 
 function getDeviceToken(): string | null {
@@ -330,6 +402,8 @@ async function regionalFetch<T>(
 ): Promise<T> {
   const baseUrl = getRegionalBaseUrl();
   if (!baseUrl) throw new Error('区域化服务地址未配置');
+
+  await getDeviceCode();
 
   let token = getDeviceToken();
   if (!token && path !== '/v1/client/register') {
@@ -378,7 +452,7 @@ export async function registerDevice(): Promise<RegisterResponse> {
   if (!orgCode) {
     throw new Error('区域化机构编码未配置');
   }
-  const cdDevice = getDeviceCode();
+  const cdDevice = await getDeviceCode();
   let naDevice = 'FloatingBall';
   let osInfo = 'unknown';
   let clientVersion = 'unknown';
@@ -503,6 +577,7 @@ export async function initializeRegionalClient(options?: {
   const allowCachedFallback = options?.allowCachedFallback !== false;
 
   try {
+    await getDeviceCode();
     const existingToken = getDeviceToken();
     if (!existingToken) {
       await registerDevice();

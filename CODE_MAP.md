@@ -19,7 +19,7 @@
 | 修改窗口/动画行为 | [useWindowManagement.ts](src/composables/useWindowManagement.ts) + [useWorkMode.ts](src/composables/useWorkMode.ts) |
 | 修改 LLM 调用 | [llm.ts](src/services/llm.ts) + [prompts.ts](src/prompts/prompts.ts) |
 | 修改语音问诊 | [VoiceCapsule.vue](src/components/VoiceCapsule.vue) + [VoiceConsultationNew.vue](src/components/VoiceConsultationNew.vue) + [VoiceConsultationResult.vue](src/components/VoiceConsultationResult.vue) + [useVoiceConsultation.ts](src/composables/useVoiceConsultation.ts) + [useVoiceIntentRecognition.ts](src/composables/useVoiceIntentRecognition.ts) + [prompts.ts](src/prompts/prompts.ts) + [aliyunSpeech.ts](src/services/aliyunSpeech.ts) + [speechConfig.ts](src/services/speechConfig.ts) + [audioRecorder.ts](src/services/audioRecorder.ts)；重点关注语音抽取契约是否覆盖病例草稿、explicit/inferred 来源标记、诊断/检查/药品结构化字段 |
-| 修改区域化后端接入 | [SettingsPanel.vue](src/components/SettingsPanel.vue) + [regionalClient.ts](src/services/regionalClient.ts) + [regionalRuntime.ts](src/services/regionalRuntime.ts) + [userFeedback.ts](src/services/userFeedback.ts) |
+| 修改区域化后端接入 | [SettingsPanel.vue](src/components/SettingsPanel.vue) + [regionalClient.ts](src/services/regionalClient.ts) + [regionalRuntime.ts](src/services/regionalRuntime.ts) + [userFeedback.ts](src/services/userFeedback.ts) + [device.rs](src-tauri/src/commands/device.rs) |
 | 修改诊断路径 | [DiagnosisPathWindow.vue](src/components/DiagnosisPathWindow.vue) + [diagnosisPath.ts](src/services/diagnosisPath.ts) + [stores/diagnosisPath.ts](src/stores/diagnosisPath.ts) |
 | 修改知识库 | [pmphai.ts](src/services/pmphai.ts)（主） / [KnowledgeBasePanel.vue](src/components/KnowledgeBasePanel.vue)（备） |
 | 修改设置面板 | [SettingsPanel.vue](src/components/SettingsPanel.vue) + [llm.ts](src/services/llm.ts) + [speechConfig.ts](src/services/speechConfig.ts) + [regionalClient.ts](src/services/regionalClient.ts) |
@@ -156,7 +156,7 @@ useEventListeners (全局事件) -> 触发 useNavigation & useWorkMode
 | **feedback.ts** | ~312 | 操作追踪与反馈 |
 | **aiTrace.ts** | ~200 | 最近一次 AI 调用链路上下文缓存 |
 | **knowledgeBase.ts** | ~213 | 通用知识库 CRUD |
-| **regionalClient.ts** | ~400 | 区域化核心客户端：终端注册、bootstrap 拉取、心跳、鉴权、SSE 代理 |
+| **regionalClient.ts** | ~400 | 区域化核心客户端：设备 MAC 解析/设备编码持久化、终端注册、bootstrap 拉取、心跳、鉴权、SSE 代理 |
 | **regionalRuntime.ts** | ~50 | 区域化运行时编排：统一初始化、重连、远程数据同步、审计上传启停 |
 | **userFeedback.ts** | ~120 | 区域化问题反馈提交服务 |
 | **themeService.ts** | ~209 | 主题管理（深色/浅色模式） |
@@ -218,7 +218,7 @@ Pinia 跨组件共享状态（仅两个，新增需人工审批）。
 | **http_server.rs** | ~831 | HIS HTTP Bridge（Actix-web, `127.0.0.1:8081`）：问诊启动/结果/引用回执/语音触发 |
 | **aliyun_speech.rs** | ~326 | 阿里云语音 WebSocket + Token 刷新 |
 | **main.rs** | ~6 | 入口，调用 `floating_ball_lib::run()` |
-| **commands/** | -- | 扩展 Tauri 命令 |
+| **commands/** | -- | 扩展 Tauri 命令（反馈、医学目录、设备 MAC 读取等） |
 | **db/** | -- | 数据库模型 |
 
 ### HTTP Server 端点摘要

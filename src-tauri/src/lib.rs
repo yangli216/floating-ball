@@ -548,6 +548,7 @@ pub fn run() {
             commands::feedback::get_recommendation_statistics,
             commands::feedback::get_operation_statistics,
             commands::feedback::export_data,
+            commands::device::get_device_mac_address,
             // Medical catalog cache commands
             commands::medical_catalog::load_medical_catalog_snapshot,
             commands::medical_catalog::replace_diagnosis_catalog,

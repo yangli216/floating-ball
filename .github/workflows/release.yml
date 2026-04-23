@@ -73,6 +73,7 @@ jobs:
         env:
           VITE_LLM_BASE_URL: ${{ vars.VITE_LLM_BASE_URL }}
           VITE_LLM_MODEL: ${{ vars.VITE_LLM_MODEL }}
+          VITE_REGIONAL_BASE_URL: ${{ vars.VITE_REGIONAL_BASE_URL }}
           VITE_OPENAI_API_KEY: ${{ secrets.VITE_OPENAI_API_KEY }}
           VITE_DASHSCOPE_API_KEY: ${{ secrets.VITE_DASHSCOPE_API_KEY }}
 
@@ -166,6 +167,7 @@ jobs:
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
           VITE_LLM_BASE_URL: ${{ vars.VITE_LLM_BASE_URL }}
           VITE_LLM_MODEL: ${{ vars.VITE_LLM_MODEL }}
+          VITE_REGIONAL_BASE_URL: ${{ vars.VITE_REGIONAL_BASE_URL }}
           VITE_OPENAI_API_KEY: ${{ secrets.VITE_OPENAI_API_KEY }}
           VITE_DASHSCOPE_API_KEY: ${{ secrets.VITE_DASHSCOPE_API_KEY }}
           # 启用 sccache

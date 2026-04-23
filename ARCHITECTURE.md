@@ -1,6 +1,6 @@
 # 架构文档 (ARCHITECTURE.md)
 
-> **最后更新**: 2026-04-22
+> **最后更新**: 2026-04-23
 >
 > **重要**: 此文档是项目架构的唯一真实来源。任何架构级别的代码修改都必须同步更新此文档。
 
@@ -114,7 +114,8 @@
 当前代码库**尚未落地独立医生登录态**，运行态分为本地模式与区域化模式两条链路：
 
 1. 本地模式下，LLM / 审查模型 / PMPHAI 等凭据仍通过设置页、`localStorage` 与 `.env` 兜底管理。
-2. 区域化模式下，桌面端通过 `SettingsPanel.vue` 或预置的 `REGIONAL_*` 配置项保存 `REGIONAL_ENABLED / REGIONAL_BASE_URL / REGIONAL_ORG_CODE`，再由 `regionalRuntime.ts -> regionalClient.ts` 完成设备注册、`bootstrap` 拉取和 `/v1/*` 调用；当前首启会自动写入默认接入值 `http://127.0.0.1:8080 + ORG001` 并默认启用区域化模式，后续仍允许在设置页修改或关闭；桌面端不再编辑这些密钥类配置。
+2. 区域化模式下，桌面端通过 `SettingsPanel.vue` 或预置的 `REGIONAL_*` 配置项保存 `REGIONAL_ENABLED / REGIONAL_BASE_URL / REGIONAL_ORG_CODE`，再由 `regionalRuntime.ts -> regionalClient.ts` 完成设备注册、`bootstrap` 拉取和 `/v1/*` 调用；首启默认接入值中的后端地址优先取构建时注入的 `VITE_REGIONAL_BASE_URL`（CI/Release 由 GitHub Actions Repository Variables 注入），机构编码默认回退到 `ORG001`，如需覆盖仅通过本地 `.env` 或设置页手工配置；后续仍允许在设置页修改或关闭；桌面端不再编辑这些密钥类配置。
+2.1 `regionalClient.ts` 会优先通过 Tauri Rust 命令读取设备网卡 MAC 地址，并将其作为 `cdDevice` / 设备编码持久化使用；仅在当前环境无法读取 MAC 时才回退到本地生成的兜底编码。
 2.1 `SettingsPanel.vue` 需要同时提供“桌面端到 floating-ball-server”的接入测试入口，用于验证 `register -> bootstrap` 链路，并与后台“server 到 LLM”测试入口形成分层排障。
 3. HIS 联调通过本地 HTTP Bridge 完成，不依赖独立登录态。
 4. `docs/regionalization/*.md` 中关于 `auth.ts`、`AuthGate.vue` 的更完整登录态设计仍未进入当前实现。
@@ -775,7 +776,7 @@ Promise.allSettled([
 startAuditUploader() (startup flush + enqueue flush + 30s retry)
 ```
 
-设置页保存区域化接入参数时，也复用同一条 `initializeRegionalRuntime() / reinitializeRegionalRuntime()` 链路即时生效，不要求重启应用；当前首启会先把默认值 `REGIONAL_ENABLED=true / REGIONAL_BASE_URL=http://127.0.0.1:8080 / REGIONAL_ORG_CODE=ORG001` 写入本地存储。
+设置页保存区域化接入参数时，也复用同一条 `initializeRegionalRuntime() / reinitializeRegionalRuntime()` 链路即时生效，不要求重启应用；当前首启会先把默认值 `REGIONAL_ENABLED=true / REGIONAL_BASE_URL=<VITE_REGIONAL_BASE_URL 或 http://127.0.0.1:8080> / REGIONAL_ORG_CODE=<本地 VITE_REGIONAL_ORG_CODE 或 ORG001>` 写入本地存储。设备编码则优先写入当前机器 MAC 地址，若 MAC 暂不可读才生成本地兜底值。
 
 保存行为约束：
 

@@ -16,6 +16,7 @@ import {
 } from '../services/medicalData';
 import {
   getCachedBootstrap,
+  getDeviceCode,
   getRegionalConnectionConfig,
   getRegionalConnectionDefaults,
   isRegionalMode,
@@ -89,6 +90,7 @@ const regionalMode = ref(false);
 const regionalBaseUrl = ref('');
 const regionalOrgCode = ref('');
 const regionalDeviceCode = ref('');
+const regionalDefaults = getRegionalConnectionDefaults();
 const regionalConnectResult = ref<{ success: boolean; message: string } | null>(null);
 const savingSettings = ref(false);
 const testingRegionalConnection = ref(false);
@@ -292,13 +294,18 @@ function formatRegionalConnectionToast(error: unknown): string {
   return '区域化接入参数已保存，但当前连接失败，请查看下方详情';
 }
 
-function loadRegionalDraftSettings(): void {
+async function loadRegionalDraftSettings(): Promise<void> {
   const regionalConfig = getRegionalConnectionConfig();
-  const regionalDefaults = getRegionalConnectionDefaults();
   regionalMode.value = regionalConfig.enabled;
   regionalBaseUrl.value = regionalConfig.baseUrl || regionalDefaults.baseUrl;
   regionalOrgCode.value = regionalConfig.orgCode || regionalDefaults.orgCode;
-  regionalDeviceCode.value = regionalConfig.deviceCode;
+  regionalDeviceCode.value = regionalConfig.deviceCode || '读取中...';
+
+  try {
+    regionalDeviceCode.value = await getDeviceCode();
+  } catch {
+    regionalDeviceCode.value = regionalConfig.deviceCode;
+  }
 }
 
 function loadModeDependentSettings(): void {
@@ -436,7 +443,7 @@ const handleSaveShortcut = async (event: KeyboardEvent) => {
 };
 
 onMounted(async () => {
-  loadRegionalDraftSettings();
+  await loadRegionalDraftSettings();
   loadModeDependentSettings();
   loadLocalPreferences();
   await hydrateAudioInputDevicesOnMount();
@@ -469,7 +476,6 @@ const saveSettings = async () => {
   let regionalToastMessage: string | null = null;
 
   try {
-    const regionalDefaults = getRegionalConnectionDefaults();
     const nextRegionalBaseUrl = regionalBaseUrl.value.trim() || regionalDefaults.baseUrl;
     const nextRegionalOrgCode = regionalOrgCode.value.trim() || regionalDefaults.orgCode;
 
@@ -541,7 +547,7 @@ const saveSettings = async () => {
     if (regionalMode.value) {
       try {
         await reinitializeRegionalRuntime();
-        loadRegionalDraftSettings();
+        await loadRegionalDraftSettings();
         loadModeDependentSettings();
         regionalConnectResult.value = {
           success: true,
@@ -570,7 +576,7 @@ const saveSettings = async () => {
         success: true,
         message: '已切回本地模式，远端代理已停用',
       };
-      loadRegionalDraftSettings();
+      await loadRegionalDraftSettings();
       loadModeDependentSettings();
     }
 
@@ -611,7 +617,6 @@ const testRegionalConnection = async () => {
   testingRegionalConnection.value = true;
   regionalConnectResult.value = null;
 
-  const regionalDefaults = getRegionalConnectionDefaults();
   const nextRegionalBaseUrl = regionalBaseUrl.value.trim() || regionalDefaults.baseUrl;
   const nextRegionalOrgCode = regionalOrgCode.value.trim() || regionalDefaults.orgCode;
   const previousConfig = getRegionalConnectionConfig();
@@ -623,7 +628,7 @@ const testRegionalConnection = async () => {
       orgCode: nextRegionalOrgCode,
     });
     await reinitializeRegionalRuntime();
-    loadRegionalDraftSettings();
+    await loadRegionalDraftSettings();
     loadModeDependentSettings();
     regionalConnectResult.value = {
       success: true,
@@ -661,7 +666,7 @@ const testRegionalConnection = async () => {
       shutdownRegionalRuntime();
     }
 
-    loadRegionalDraftSettings();
+    await loadRegionalDraftSettings();
     loadModeDependentSettings();
     updateSavedSnapshot();
   } finally {
@@ -1037,10 +1042,10 @@ watch([regionalBaseUrl, regionalOrgCode], () => {
                 id="regional-base-url"
                 v-model="regionalBaseUrl"
                 type="text"
-                placeholder="http://127.0.0.1:8080"
+                :placeholder="regionalDefaults.baseUrl"
               />
             </div>
-            <p class="form-hint">默认预置 `http://127.0.0.1:8080`；可修改，留空会回退默认值。</p>
+            <p class="form-hint">默认值取构建时注入的 `VITE_REGIONAL_BASE_URL`；当前构建预置为 `{{ regionalDefaults.baseUrl }}`，留空会回退该值。</p>
           </div>
 
           <div class="form-group">
@@ -1051,10 +1056,10 @@ watch([regionalBaseUrl, regionalOrgCode], () => {
                 id="regional-org-code"
                 v-model="regionalOrgCode"
                 type="text"
-                placeholder="ORG001"
+                :placeholder="regionalDefaults.orgCode"
               />
             </div>
-            <p class="form-hint">默认预置 `ORG001`；需与后台机构表中的 `cdOrg` 一致，留空会回退默认值。</p>
+            <p class="form-hint">默认回退 `ORG001`；当前构建预置为 `{{ regionalDefaults.orgCode }}`，需与后台机构表中的 `cdOrg` 一致，留空会回退该值。</p>
           </div>
 
           <div class="form-group">
@@ -1068,7 +1073,7 @@ watch([regionalBaseUrl, regionalOrgCode], () => {
                 readonly
               />
             </div>
-            <p class="form-hint">客户端首次生成后持久化复用；更换后端地址或机构编码时会自动重新注册。</p>
+            <p class="form-hint">优先读取当前设备 MAC 地址作为设备编码并持久化复用；仅在当前环境无法读取 MAC 时才回退到本地兜底编码。更换后端地址、机构编码或设备编码迁移后会自动重新注册。</p>
           </div>
 
           <div v-if="regionalConnectResult" :class="['regional-status', regionalConnectResult.success ? 'success' : 'error']">
