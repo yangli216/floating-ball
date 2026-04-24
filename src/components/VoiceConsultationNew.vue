@@ -2349,7 +2349,7 @@ function getOrderFgSkintest(rec: TreatmentRecommendation): string {
   return (rec.matchedItem?.fgSkintest || readFirstString(raw, ['fgSkintest']) || '0').trim() || '0';
 }
 
-function buildOrderListItem(rec: TreatmentRecommendation): Record<string, string | number | Record<string, unknown>> {
+function buildOrderListItem(rec: TreatmentRecommendation): Record<string, string | number > {
   const normalized = normalizeTreatmentRecommendation(rec);
   const orderServiceId = getOrderServiceId(rec);
   const execDeptId = getOrderExecDeptId(rec);
@@ -2380,7 +2380,7 @@ function buildOrderListItem(rec: TreatmentRecommendation): Record<string, string
   return {
     ...base,
     ...(partId ? { idPart: partId } : {}),
-    ...(jsonField ? { jsonField: jsonField } : { jsonField:{} }),
+    ...(jsonField ? { jsonField: jsonField } : { jsonField:"{}" }),
   };
 }
 
