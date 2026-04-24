@@ -8,7 +8,7 @@ import VoiceRecordFeedbackPopover from './VoiceRecordFeedbackPopover.vue';
 import VoiceSessionFeedbackBar from './VoiceSessionFeedbackBar.vue';
 import { chat, type ChatMessage } from '../services/llm';
 import { PROMPTS } from '../prompts';
-import { getHisService, type HisDictionaryItem, type PharmacyOption } from '../services/hisService';
+import { getHisService, type HisDictionaryItem, type HisMedicineProDetail, type PharmacyOption } from '../services/hisService';
 import { medicalDataService, type DiagnosisItem, type MedicalItem, type MedicineItem } from '../services/medicalData';
 import { clearVoiceConsultationCache } from '../composables/useVoiceConsultation';
 import { useVoiceFeedback } from '../composables/useVoiceFeedback';
@@ -123,16 +123,16 @@ function ensureMedicineDefaultPharmacy(rec: TreatmentRecommendation): void {
     return;
   }
 
-  const defaultPharmacy = getDefaultPharmacyOption();
-  if (!defaultPharmacy?.name) {
+  const raw = getMatchedItemRaw(rec);
+  if (raw?.__medicineDetailLoaded !== true) {
     return;
   }
 
-  rec.pharmacy = defaultPharmacy.name;
-}
-
-function applyDefaultPharmacyToTreatments(items: TreatmentRecommendation[]): void {
-  items.forEach((item) => ensureMedicineDefaultPharmacy(item));
+  const detailStoreId = readFirstString(raw, ['idSto']);
+  const matchedPharmacy = pharmacyOptions.value.find((option) => option.idSto === detailStoreId);
+  if (matchedPharmacy?.name) {
+    rec.pharmacy = matchedPharmacy.name;
+  }
 }
 
 const getPatientAnchorId = (): string => {
@@ -1349,37 +1349,144 @@ function buildMedicalItemMatchedItem(item: MedicalItem): TreatmentRecommendation
   };
 }
 
-async function hydrateMatchedMedicineDetail(rec: TreatmentRecommendation): Promise<void> {
-  if (rec.type !== 'medicine' || !rec.matchedItem) {
-    return;
+interface MedicineDetailLookupResult {
+  detail: HisMedicineProDetail;
+  pharmacy: PharmacyOption;
+}
+
+function getMedicineDetailId(rec: TreatmentRecommendation): string {
+  return (rec.matchedItem?.id || rec.matchedItem?.idSrv || readFirstString(getMatchedItemRaw(rec), ['idMedPro', 'idMed']) || '').trim();
+}
+
+function isValidMedicineProDetail(detail: HisMedicineProDetail | null): detail is HisMedicineProDetail {
+  if (!detail || detail.fgActive === '0') {
+    return false;
   }
 
+  return [
+    detail.idMedPro,
+    detail.idMed,
+    detail.naMedPro,
+    detail.naMed,
+    detail.specSale,
+    detail.unitSale,
+    detail.dose,
+    detail.dftDoseOnce,
+  ].some((value) => typeof value === 'string' && value.trim().length > 0);
+}
+
+function getCandidatePharmaciesForMedicine(): PharmacyOption[] {
+  const seen = new Set<string>();
+  return pharmacyOptions.value.filter((pharmacy) => {
+    const idSto = (pharmacy.idSto || '').trim();
+    if (!idSto || seen.has(idSto)) {
+      return false;
+    }
+
+    seen.add(idSto);
+    return true;
+  });
+}
+
+function isMedicineDetailLoadedForSelectedPharmacy(rec: TreatmentRecommendation): boolean {
+  const raw = getMatchedItemRaw(rec);
+  if (raw?.__medicineDetailLoaded !== true) {
+    return false;
+  }
+
+  const pharmacyName = (rec.pharmacy || '').trim();
+  const detailStoreId = readFirstString(raw, ['idSto']);
+  if (!pharmacyName || !detailStoreId) {
+    return false;
+  }
+
+  return pharmacyOptions.value.some((option) => option.name === pharmacyName && option.idSto === detailStoreId);
+}
+
+async function fetchFirstValidMedicineDetail(rec: TreatmentRecommendation): Promise<MedicineDetailLookupResult | null> {
   const his = getHisService();
   if (!his) {
-    return;
+    console.warn('[VoiceConsultationNew] HisService not initialized, medicine detail unavailable', { name: rec.name });
+    return null;
   }
 
-  const id = (rec.matchedItem.id || rec.matchedItem.idSrv || readFirstString(getMatchedItemRaw(rec), ['idMedPro', 'idMed']) || '').trim();
+  const id = getMedicineDetailId(rec);
   if (!id) {
-    return;
+    return null;
   }
 
-  const defaultPharmacy = pharmacyOptions.value[0];
-  const idSto = defaultPharmacy?.idSto || '';
-  if (!idSto) {
-    console.warn('[VoiceConsultationNew] No pharmacy idSto available, skip medicine detail hydration', { name: rec.name });
-    return;
+  const pharmacies = getCandidatePharmaciesForMedicine();
+  if (pharmacies.length === 0) {
+    console.warn('[VoiceConsultationNew] No pharmacy idSto available, medicine detail unavailable', { name: rec.name });
+    return null;
+  }
+
+  for (const pharmacy of pharmacies) {
+    const idSto = (pharmacy.idSto || '').trim();
+    const detail = await his.fetchMedicineProDetail(id, idSto);
+    if (isValidMedicineProDetail(detail)) {
+      return { detail, pharmacy };
+    }
+
+    console.info('[VoiceConsultationNew] Medicine detail not found in pharmacy, trying next pharmacy', {
+      name: rec.name,
+      id,
+      idSto,
+      pharmacyName: pharmacy.name,
+    });
+  }
+
+  return null;
+}
+
+async function ensureMedicineSelectable(rec: TreatmentRecommendation, notify = false): Promise<boolean> {
+  if (rec.type !== 'medicine') {
+    return true;
+  }
+
+  if (isMedicineDetailLoadedForSelectedPharmacy(rec)) {
+    return true;
+  }
+
+  const hydrated = await hydrateMatchedMedicineDetail(rec);
+  if (!hydrated && notify) {
+    showToast?.(`${rec.name} 在当前可用发药药房中均不存在药品详情，不能选中`, 'warning');
+  }
+
+  return hydrated;
+}
+
+async function hydrateMatchedMedicineDetail(rec: TreatmentRecommendation): Promise<boolean> {
+  if (rec.type !== 'medicine' || !rec.matchedItem) {
+    return false;
+  }
+
+  const id = getMedicineDetailId(rec);
+  if (!id) {
+    return false;
   }
 
   try {
-    const detail = await his.fetchMedicineProDetail(id, idSto);
-    if (!detail) {
-      return;
+    const lookupResult = await fetchFirstValidMedicineDetail(rec);
+    if (!lookupResult) {
+      if (getCandidatePharmaciesForMedicine().length > 0) {
+        rec.selected = false;
+      }
+      console.warn('[VoiceConsultationNew] Medicine detail unavailable in all pharmacies', {
+        id,
+        name: rec.name,
+        pharmacyCount: getCandidatePharmaciesForMedicine().length,
+      });
+      return false;
     }
+
+    const { detail, pharmacy } = lookupResult;
+    const idSto = (pharmacy.idSto || '').trim();
 
     const mergedRaw = {
       ...(getMatchedItemRaw(rec) || {}),
       ...detail,
+      idSto: detail.idSto?.trim() || idSto,
       __medicineDetailLoaded: true,
     };
 
@@ -1470,10 +1577,7 @@ async function hydrateMatchedMedicineDetail(rec: TreatmentRecommendation): Promi
       rec.totalUnit = detail.unitSale.trim();
     }
 
-    // 始终设置药房为第一个可用药房
-    if (defaultPharmacy) {
-      rec.pharmacy = rec.pharmacy || defaultPharmacy.name;
-    }
+    rec.pharmacy = pharmacy.name;
 
     console.log('[VoiceConsultationNew] Medicine detail hydrated', {
       name: rec.name,
@@ -1490,13 +1594,15 @@ async function hydrateMatchedMedicineDetail(rec: TreatmentRecommendation): Promi
       appliedRoute: rec.route,
       appliedPharmacy: rec.pharmacy,
     });
+    return true;
   } catch (error) {
     console.error('[VoiceConsultationNew] Failed to hydrate medicine detail', {
       id,
-      idSto,
       name: rec.name,
       error,
     });
+    rec.selected = false;
+    return false;
   }
 }
 
@@ -1506,7 +1612,8 @@ async function hydrateMatchedMedicalItemDetail(rec: TreatmentRecommendation): Pr
   }
 
   if (rec.type === 'medicine') {
-    return hydrateMatchedMedicineDetail(rec);
+    await hydrateMatchedMedicineDetail(rec);
+    return;
   }
 
   const his = getHisService();
@@ -1618,7 +1725,7 @@ function getSuggestedMatchName(rec: TreatmentRecommendation): string {
   return (rec.suggestedMatchItem?.name || '').trim();
 }
 
-function confirmSuggestedMatch(rec: TreatmentRecommendation, event?: Event): void {
+async function confirmSuggestedMatch(rec: TreatmentRecommendation, event?: Event): Promise<void> {
   event?.stopPropagation();
   if (!rec.suggestedMatchItem) {
     return;
@@ -1629,19 +1736,28 @@ function confirmSuggestedMatch(rec: TreatmentRecommendation, event?: Event): voi
   rec.name = rec.suggestedMatchItem.name || rec.name;
   rec.matchStatus = 'confirmed';
   rec.manualMatched = false;
-  rec.selected = true;
+  rec.selected = false;
   rec.suggestedMatchItem = undefined;
 
   if (rec.type === 'medicine') {
     Object.assign(rec, normalizeTreatmentRecommendation(rec));
   }
 
-  void hydrateMatchedMedicalItemDetail(rec);
+  if (rec.type === 'medicine' && !(await ensureMedicineSelectable(rec))) {
+    showToast?.(`${rec.name} 已确认匹配，但当前药房无药品详情，暂不能选中`, 'warning');
+    return;
+  }
+
+  rec.selected = true;
+
+  if (rec.type !== 'medicine') {
+    void hydrateMatchedMedicalItemDetail(rec);
+  }
 
   showToast?.(`${rec.name} 已确认匹配`, 'success');
 }
 
-function applyManualMatch(rec: TreatmentRecommendation, candidate: MedicineItem | MedicalItem, event?: Event): void {
+async function applyManualMatch(rec: TreatmentRecommendation, candidate: MedicineItem | MedicalItem, event?: Event): Promise<void> {
   event?.stopPropagation();
 
   if (rec.type === 'medicine' && isMedicineSearchCandidate(candidate)) {
@@ -1657,19 +1773,27 @@ function applyManualMatch(rec: TreatmentRecommendation, candidate: MedicineItem 
   rec.name = candidate.name;
   rec.manualMatched = true;
   rec.matchStatus = 'manual';
-  rec.selected = true;
+  rec.selected = false;
   rec.suggestedMatchItem = undefined;
 
   if (rec.type === 'medicine') {
     Object.assign(rec, normalizeTreatmentRecommendation(rec));
   }
 
+  if (rec.type === 'medicine' && !(await ensureMedicineSelectable(rec))) {
+    showToast?.(`${candidate.name} 已完成标准库匹配，但当前药房无药品详情，暂不能选中`, 'warning');
+    return;
+  }
+
+  rec.selected = true;
   activeManualMatchKey.value = null;
-  void hydrateMatchedMedicalItemDetail(rec);
+  if (rec.type !== 'medicine') {
+    void hydrateMatchedMedicalItemDetail(rec);
+  }
   showToast?.(`${candidate.name} 已完成标准库匹配`, 'success');
 }
 
-function toggleTreatment(item: TreatmentRecommendation): void {
+async function toggleTreatment(item: TreatmentRecommendation): Promise<void> {
   activeReasonTooltipKey.value = null;
   if (!item.selected && requiresManualMatchBeforeSelect(item)) {
     if (hasProbableMatch(item)) {
@@ -1681,7 +1805,13 @@ function toggleTreatment(item: TreatmentRecommendation): void {
     showToast?.('该推荐尚未匹配标准库，请先手动匹配', 'warning');
     return;
   }
-  item.selected = !item.selected;
+  const nextSelected = !item.selected;
+
+  if (nextSelected && item.type === 'medicine' && !(await ensureMedicineSelectable(item, true))) {
+    return;
+  }
+
+  item.selected = nextSelected;
 
   if (item.selected && item.type === 'medicine') {
     Object.assign(item, normalizeTreatmentRecommendation(item));
@@ -2216,7 +2346,7 @@ async function fetchPharmacyOptions(): Promise<void> {
 
   try {
     pharmacyOptions.value = await his.fetchAvailablePharmacies();
-    applyDefaultPharmacyToTreatments(treatments.value);
+    void hydrateMatchedMedicalItemDetails(treatments.value);
   } catch (error) {
     console.error('[VoiceConsultationNew] Failed to load pharmacy options from HIS', error);
     pharmacyOptions.value = [];
@@ -3055,6 +3185,14 @@ async function handleBatchWriteBack(): Promise<void> {
 
   try {
     const selected = treatments.value.filter((item) => item.selected);
+    const medicinesReady = await Promise.all(selected
+      .filter((item) => item.type === 'medicine')
+      .map((item) => ensureMedicineSelectable(item, true)));
+    if (medicinesReady.some((ready) => !ready)) {
+      showToast?.('存在当前药房无有效详情的药品，请取消选择后再提交', 'warning');
+      return;
+    }
+
     const meds = selected.filter((item) => item.type === 'medicine');
     const exams = selected.filter((item) => item.type === 'exam');
     const labs = selected.filter((item) => item.type === 'lab_test');
