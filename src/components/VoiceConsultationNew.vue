@@ -3149,7 +3149,7 @@ watch(
                 <div class="session-feedback-dialog-head">
                   <div>
                     <h3 class="confirm-dialog-title">本次结果已回写成功</h3>
-                    <p class="confirm-dialog-text">如有时间，补一条整体反馈，后续推荐会更快收敛。不反馈也可以直接关闭。</p>
+                    <p class="confirm-dialog-text">如有时间，请将您的使用体验反馈给我们，我们会及时处理并改善！</p>
                   </div>
                   <button class="session-feedback-skip" type="button" @click="completeVoiceConsultationFlow">暂不反馈</button>
                 </div>
