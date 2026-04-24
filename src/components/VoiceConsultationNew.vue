@@ -97,6 +97,43 @@ function getDiagnosisKey(diag: Diagnosis | null | undefined): string {
 
 const selectedDiagnoses = computed(() => aiDiagnoses.value.filter((diag) => selectedDiagnosisKeys.value.has(getDiagnosisKey(diag))));
 const selectedTreatments = computed(() => treatments.value.filter((item) => item.selected));
+const treatmentRefreshNeeded = computed(() => {
+  const currentIdentity = getDiagnosisIdentity(selectedDiagnosis.value);
+  if (!currentIdentity || suppressDiagnosisTreatmentRefetch.value) {
+    return false;
+  }
+  return currentIdentity !== lastTreatmentDiagnosisKey.value;
+});
+const treatmentEmptyText = computed(() => {
+  if (!selectedDiagnosis.value) {
+    return '请先选择诊断';
+  }
+  if (treatmentRefreshNeeded.value || !lastTreatmentDiagnosisKey.value) {
+    return '当前诊断暂无已加载的治疗方案，请点击上方刷新方案';
+  }
+  return '暂无治疗建议';
+});
+
+function getDefaultPharmacyOption(): PharmacyOption | undefined {
+  return pharmacyOptions.value[0];
+}
+
+function ensureMedicineDefaultPharmacy(rec: TreatmentRecommendation): void {
+  if (rec.type !== 'medicine' || (rec.pharmacy || '').trim()) {
+    return;
+  }
+
+  const defaultPharmacy = getDefaultPharmacyOption();
+  if (!defaultPharmacy?.name) {
+    return;
+  }
+
+  rec.pharmacy = defaultPharmacy.name;
+}
+
+function applyDefaultPharmacyToTreatments(items: TreatmentRecommendation[]): void {
+  items.forEach((item) => ensureMedicineDefaultPharmacy(item));
+}
 
 const getPatientAnchorId = (): string => {
   const patient = props.initialPatientData;
@@ -1119,7 +1156,7 @@ function normalizeTreatmentRecommendation(rec: Partial<TreatmentRecommendation>)
   const autoTotal = resolveMedicineAutoTotal(normalizedMedicine);
   const preferManualTotal = !!rec.totalManualEdited;
 
-  return {
+  const normalizedResult = {
     ...normalizedMedicine,
     totalQty: preferManualTotal
       ? (normalizedMedicine.totalQty || autoTotal.totalQty)
@@ -1128,6 +1165,9 @@ function normalizeTreatmentRecommendation(rec: Partial<TreatmentRecommendation>)
       ? (normalizedMedicine.totalUnit || autoTotal.totalUnit)
       : (autoTotal.totalUnit || normalizedMedicine.totalUnit),
   };
+
+  ensureMedicineDefaultPharmacy(normalizedResult);
+  return normalizedResult;
 }
 
 function initDiagnosesFromIntent(matched: MatchedDiagnosis[]): Diagnosis[] {
@@ -1633,7 +1673,7 @@ function toggleTreatment(item: TreatmentRecommendation): void {
   activeReasonTooltipKey.value = null;
   if (!item.selected && requiresManualMatchBeforeSelect(item)) {
     if (hasProbableMatch(item)) {
-      showToast?.('该推荐仅为大概率匹配，请先确认匹配或改为手动匹配', 'warning');
+      showToast?.('该推荐存在候选标准项，请先确认匹配或改为手动匹配', 'warning');
       return;
     }
     activeManualMatchKey.value = getManualMatchKey(item);
@@ -1894,6 +1934,13 @@ async function fetchAITreatment(): Promise<void> {
   }
 }
 
+async function handleTreatmentRefresh(event?: Event): Promise<void> {
+  event?.stopPropagation();
+  activeReasonTooltipKey.value = null;
+  resetTreatmentEditorState();
+  await fetchAITreatment();
+}
+
 const openRelatedId = ref<string | null>(null);
 const inlineRelatedDiagnoses = ref<DiagnosisItem[]>([]);
 
@@ -1970,9 +2017,25 @@ watch(
       return;
     }
 
-    if (currentIdentity !== lastTreatmentDiagnosisKey.value) {
-      treatments.value = [];
+    const shouldAutoFetchInitialTreatment = !previousIdentity
+      && !lastTreatmentDiagnosisKey.value
+      && treatments.value.length === 0;
+
+    if (shouldAutoFetchInitialTreatment) {
+      console.info('[VoiceConsultationNew] Auto fetching initial treatment recommendations', {
+        currentIdentity,
+      });
       void fetchAITreatment();
+      return;
+    }
+
+    if (currentIdentity !== lastTreatmentDiagnosisKey.value) {
+      console.info('[VoiceConsultationNew] Diagnosis changed, waiting for manual treatment refresh', {
+        currentIdentity,
+        previousIdentity,
+        lastTreatmentDiagnosisKey: lastTreatmentDiagnosisKey.value,
+        treatmentCount: treatments.value.length,
+      });
     }
   },
 );
@@ -2153,6 +2216,7 @@ async function fetchPharmacyOptions(): Promise<void> {
 
   try {
     pharmacyOptions.value = await his.fetchAvailablePharmacies();
+    applyDefaultPharmacyToTreatments(treatments.value);
   } catch (error) {
     console.error('[VoiceConsultationNew] Failed to load pharmacy options from HIS', error);
     pharmacyOptions.value = [];
@@ -2293,10 +2357,10 @@ function getOrderServiceName(rec: TreatmentRecommendation): string {
 function getSelectedPharmacyOption(rec: TreatmentRecommendation): PharmacyOption | undefined {
   const pharmacyName = (rec.pharmacy || '').trim();
   if (!pharmacyName) {
-    return pharmacyOptions.value[0];
+    return getDefaultPharmacyOption();
   }
 
-  return pharmacyOptions.value.find((option) => option.name === pharmacyName) || pharmacyOptions.value[0];
+  return pharmacyOptions.value.find((option) => option.name === pharmacyName) || getDefaultPharmacyOption();
 }
 
 function getOrderExecDeptId(rec: TreatmentRecommendation): string {
@@ -2420,7 +2484,7 @@ function getTreatmentMatchLabel(rec: TreatmentRecommendation): string {
   if (rec.matchStatus === 'manual') return '已手动匹配';
   if (rec.matchStatus === 'confirmed') return '已确认匹配';
   if (rec.matchStatus === 'exact') return '匹配成功';
-  if (rec.matchStatus === 'probable') return '大概率匹配';
+  if (rec.matchStatus === 'probable') return '待确认';
   if (!rec.matchedItem) return '';
   return '匹配成功';
 }
@@ -3378,8 +3442,18 @@ watch(
 
           <div class="decision-card pane-card">
             <div class="section-heading treatment-heading">
-              <div>
+              <div class="section-heading-main">
                 <h3 class="section-title">治疗方案</h3>
+              </div>
+              <div class="treatment-heading-actions">
+                <button
+                  class="refresh-treatment-btn"
+                  type="button"
+                  :disabled="!selectedDiagnosis || treatmentLoading"
+                  @click="handleTreatmentRefresh"
+                >
+                  {{ treatmentLoading ? '刷新中...' : '刷新方案' }}
+                </button>
               </div>
             </div>
 
@@ -3436,8 +3510,19 @@ watch(
                           <span v-if="rec.type !== 'medicine' && rec.usage" class="meta-token">建议 {{ rec.usage }}</span>
                         </div>
 
-                        <div v-if="hasProbableMatch(rec)" class="manual-match-origin-note">
-                          候选标准项：{{ getSuggestedMatchName(rec) }}
+                        <div v-if="hasProbableMatch(rec)" class="manual-match-origin-note probable-match-note">
+                          <span class="probable-match-copy">
+                            <span class="probable-match-label">候选标准项</span>
+                            <span class="probable-match-name">{{ getSuggestedMatchName(rec) }}</span>
+                          </span>
+                          <button
+                            class="confirm-match-btn inline"
+                            type="button"
+                            title="确认采用该标准库候选"
+                            @click.stop="confirmSuggestedMatch(rec, $event)"
+                          >
+                            确认匹配
+                          </button>
                         </div>
 
                         <div v-if="getTreatmentOriginalName(rec)" class="manual-match-origin-note">
@@ -3473,15 +3558,6 @@ watch(
                             />
                           </div>
                         </div>
-                        <button
-                          v-if="hasProbableMatch(rec)"
-                          class="confirm-match-btn"
-                          type="button"
-                          title="确认采用该标准库候选"
-                          @click.stop="confirmSuggestedMatch(rec, $event)"
-                        >
-                          确认匹配
-                        </button>
                         <button
                           v-if="!rec.matchedItem"
                           class="manual-match-btn"
@@ -3977,10 +4053,7 @@ watch(
               </section>
             </template>
 
-            <div v-else class="empty-text">
-              <template v-if="selectedDiagnosis">暂无治疗建议</template>
-              <template v-else>请先选择诊断</template>
-            </div>
+            <div v-else class="empty-text">{{ treatmentEmptyText }}</div>
           </div>
         </section>
       </div>
@@ -4308,12 +4381,23 @@ watch(
   margin-bottom: 14px;
 }
 
+.section-heading-main {
+  flex: 1;
+  min-width: 0;
+}
+
 .section-heading-split {
   margin-bottom: 12px;
 }
 
 .treatment-heading {
   margin-bottom: 12px;
+}
+
+.treatment-heading-actions {
+  display: inline-flex;
+  align-items: center;
+  flex-shrink: 0;
 }
 
 .section-kicker {
@@ -4333,6 +4417,31 @@ watch(
   margin-top: 4px;
   font-size: var(--voice-font-min);
   color: var(--voice-text-muted);
+}
+
+.refresh-treatment-btn {
+  min-height: 28px;
+  padding: 0 12px;
+  border: 1px solid var(--voice-border);
+  border-radius: 999px;
+  background: var(--voice-surface);
+  color: var(--voice-text-muted);
+  font-size: var(--voice-font-min);
+  font-weight: 600;
+  cursor: pointer;
+  transition: border-color 0.18s ease, color 0.18s ease, background-color 0.18s ease;
+}
+
+.refresh-treatment-btn:hover:not(:disabled) {
+  border-color: var(--voice-accent);
+  color: var(--voice-accent);
+  background: var(--voice-accent-softer);
+}
+
+.refresh-treatment-btn:disabled {
+  cursor: not-allowed;
+  color: var(--voice-text-disabled);
+  background: var(--voice-surface-soft);
 }
 
 .section-summary {
@@ -4556,7 +4665,7 @@ watch(
 }
 
 .treatment-card-row {
-  align-items: flex-start;
+  align-items: baseline;
 }
 
 .card-main {
@@ -4576,7 +4685,7 @@ watch(
 
 .card-title-line {
   display: flex;
-  align-items: center;
+  align-items: baseline;
   gap: 8px;
   min-width: 0;
   flex-wrap: nowrap;
@@ -4666,6 +4775,46 @@ watch(
   line-height: 1.5;
 }
 
+.probable-match-note {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  flex-wrap: wrap;
+  padding: 8px 10px;
+  border-radius: 12px;
+  border: 1px solid rgba(201, 122, 17, 0.18);
+  background: linear-gradient(180deg, rgba(201, 122, 17, 0.09) 0%, rgba(201, 122, 17, 0.04) 100%);
+  color: var(--voice-text);
+}
+
+.probable-match-copy {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  flex-wrap: wrap;
+}
+
+.probable-match-label {
+  display: inline-flex;
+  align-items: center;
+  min-height: 22px;
+  padding: 0 8px;
+  border-radius: 999px;
+  background: rgba(201, 122, 17, 0.14);
+  color: var(--voice-warning);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.01em;
+}
+
+.probable-match-name {
+  color: var(--voice-text);
+  font-weight: 600;
+  word-break: break-word;
+}
+
 .meta-token {
   flex-shrink: 0;
   font-size: var(--voice-font-min);
@@ -4722,8 +4871,9 @@ watch(
 }
 
 .treatment-card-actions {
-  align-items: flex-start;
-  padding-top: 1px;
+  align-items: center;
+  align-self: baseline;
+  min-height: 28px;
 }
 
 .voice-feedback-anchor {
@@ -4781,17 +4931,29 @@ watch(
 .confirm-match-btn {
   min-height: 28px;
   padding: 0 10px;
-  border: none;
+  border: 1px solid rgba(201, 122, 17, 0.22);
   border-radius: 999px;
-  background: var(--voice-accent);
-  color: #fff;
+  background: rgba(255, 255, 255, 0.72);
+  color: #9a5a07;
   font-size: var(--voice-font-min);
   font-weight: 600;
   cursor: pointer;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.36);
+  transition: border-color 0.18s ease, background-color 0.18s ease, color 0.18s ease, transform 0.18s ease;
+}
+
+.confirm-match-btn.inline {
+  min-height: 26px;
+  padding: 0 10px;
+  font-size: 12px;
+  flex-shrink: 0;
 }
 
 .confirm-match-btn:hover {
-  filter: brightness(1.06);
+  border-color: rgba(201, 122, 17, 0.34);
+  background: rgba(201, 122, 17, 0.14);
+  color: #7a4505;
+  transform: translateY(-1px);
 }
 
 .inline-arrow-btn,

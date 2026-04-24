@@ -71,7 +71,7 @@ floating-ball/
 | **SymptomManagement.vue** | ~2000 | 症状管理：关联症状建议、中西医切换 | 与 ConsultationPage 强耦合 |
 | **DiagnosisPathWindow.vue** | ~980 | 独立窗口：诊断推理路径可视化（ECharts 图） | 有独立 Pinia 缓存，注意缓存 key 策略 |
 | **VoiceConsultationResult.vue** | ~1200 | 语音转写后的结构化病历编辑器 | 与语音链路串联 |
-| **VoiceConsultationNew.vue** | ~2100 | 当前语音问诊主结果页：左侧病例正文编辑，右侧 AI 诊断/治疗推荐与一键回写；消费语音抽取阶段生成的病例草稿与结构化诊断/处方提示，药品频次/用法字段在此处接 HIS 字典并允许筛选，药房列表也按 SDK 握手里的 `userRoleDepts` 过滤后从 HIS 动态加载；同时编排推荐项反馈与整页评分入口 | 推荐依据默认应折叠，避免右栏信息过载 |
+| **VoiceConsultationNew.vue** | ~2100 | 当前语音问诊主结果页：左侧病例正文编辑，右侧 AI 诊断/治疗推荐与一键回写；消费语音抽取阶段生成的病例草稿与结构化诊断/处方提示，药品频次/用法字段在此处接 HIS 字典并允许筛选，药房列表也按 SDK 握手里的 `userRoleDepts` 过滤后从 HIS 动态加载；同时编排推荐项反馈与整页评分入口，并在主诊断切换后只提示治疗方案需手动刷新、不自动重拉 | 推荐依据默认应折叠，避免右栏信息过载 |
 | **VoiceRecommendationFeedbackPopover.vue** | -- | 单条诊断 / 治疗推荐反馈弹层 | 输入问题标签、原因和最终处理动作 |
 | **VoiceRecordFeedbackPopover.vue** | -- | 病例字段反馈弹层 | 展示主诉 / 现病史 / 既往史的 AI 原文、医生当前值与前后差异，并提交字段级反馈 |
 | **VoiceSessionFeedbackBar.vue** | -- | 语音问诊整页反馈浮层主体 | 回写成功后弹出，收集评分、点评、整体问题标签 |
