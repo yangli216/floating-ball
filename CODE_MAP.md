@@ -23,7 +23,7 @@
 | 修改诊断路径 | [DiagnosisPathWindow.vue](src/components/DiagnosisPathWindow.vue) + [diagnosisPath.ts](src/services/diagnosisPath.ts) + [stores/diagnosisPath.ts](src/stores/diagnosisPath.ts) |
 | 修改知识库 | [pmphai.ts](src/services/pmphai.ts)（主） / [KnowledgeBasePanel.vue](src/components/KnowledgeBasePanel.vue)（备） |
 | 修改设置面板 | [SettingsPanel.vue](src/components/SettingsPanel.vue) + [llm.ts](src/services/llm.ts) + [speechConfig.ts](src/services/speechConfig.ts) + [regionalClient.ts](src/services/regionalClient.ts) |
-| 修改 Windows 更新源 | [UpdateChecker.vue](src/components/UpdateChecker.vue) + [updateConfig.ts](src/services/updateConfig.ts) + [lib.rs](src-tauri/src/lib.rs) |
+| 修改客户端更新源 | [UpdateChecker.vue](src/components/UpdateChecker.vue) + [updateConfig.ts](src/services/updateConfig.ts) + [lib.rs](src-tauri/src/lib.rs)；内网发布端见 `../floating-ball-server/modules/release` |
 | 修改窗口尺寸记忆 | [useWindowManagement.ts](src/composables/useWindowManagement.ts) + [useNavigation.ts](src/composables/useNavigation.ts) + [useEventListeners.ts](src/composables/useEventListeners.ts) + [windowSizes.ts](src/constants/windowSizes.ts) |
 | 修改医学数据匹配 | [medicalData.ts](src/services/medicalData.ts) + [hisService.ts](src/services/hisService.ts) + [medical_catalog.rs](src-tauri/src/commands/medical_catalog.rs) + [src/assets/*.csv](src/assets/) |
 | 测试 HIS 集成 | [mock_his.html](./docs/mock_his.html) |
@@ -81,7 +81,7 @@ floating-ball/
 
 | 组件 | 行数 | 职责 |
 |------|------|------|
-| **SettingsPanel.vue** | ~1500 | LLM 配置、区域化后端接入、语音 provider / 音频输入设备、基础数据缓存查看/清理、自动更新、主题 |
+| **SettingsPanel.vue** | ~2100 | 通用设置、LLM 配置、区域化后端接入、语音 provider / 音频输入设备、自动更新、主题 |
 | **FeedbackSubmissionPanel.vue** | ~250 | 区域化问题反馈面板 | 上传截图、评分、说明并提交后台 |
 | **AnalyticsPanel.vue** | ~1200 | 数据分析看板（ECharts） |
 | **KnowledgePanel.vue** | ~850 | PMPHAI 医学知识检索 |

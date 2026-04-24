@@ -1,3 +1,5 @@
+import { getRegionalConnectionConfig } from './regionalClient';
+
 export type UpdateEnvironment = 'production' | 'testing';
 
 export interface UpdateConfig {
@@ -22,15 +24,36 @@ function normalizeUrl(value: string): string {
   return value.trim().replace(/\/+$/, '');
 }
 
+function buildRegionalReleaseEndpoint(channel: UpdateEnvironment): string {
+  const regionalConfig = getRegionalConnectionConfig();
+  const baseUrl = normalizeUrl(regionalConfig.baseUrl || '');
+  if (!regionalConfig.enabled || !baseUrl) {
+    return '';
+  }
+  return `${baseUrl}/v1/client/releases/${channel}/latest.json`;
+}
+
 export function getUpdateConfig(): UpdateConfig {
   const storedEnvironment = localStorage.getItem(STORAGE_KEYS.environment);
   const environment: UpdateEnvironment = storedEnvironment === 'testing' ? 'testing' : DEFAULT_UPDATE_CONFIG.environment;
+  const regionalProductionUrl = buildRegionalReleaseEndpoint('production');
+  const regionalTestingUrl = buildRegionalReleaseEndpoint('testing');
 
   return {
     environment,
-    productionUrl: normalizeUrl(localStorage.getItem(STORAGE_KEYS.productionUrl) || DEFAULT_UPDATE_CONFIG.productionUrl),
-    testingUrl: normalizeUrl(localStorage.getItem(STORAGE_KEYS.testingUrl) || DEFAULT_UPDATE_CONFIG.testingUrl),
+    productionUrl: normalizeUrl(localStorage.getItem(STORAGE_KEYS.productionUrl) || DEFAULT_UPDATE_CONFIG.productionUrl || regionalProductionUrl),
+    testingUrl: normalizeUrl(localStorage.getItem(STORAGE_KEYS.testingUrl) || DEFAULT_UPDATE_CONFIG.testingUrl || regionalTestingUrl),
   };
+}
+
+export function resetUpdateConfigToRegionalDefaults(): UpdateConfig {
+  const config: UpdateConfig = {
+    environment: getUpdateConfig().environment,
+    productionUrl: buildRegionalReleaseEndpoint('production'),
+    testingUrl: buildRegionalReleaseEndpoint('testing'),
+  };
+  saveUpdateConfig(config);
+  return config;
 }
 
 export function saveUpdateConfig(config: UpdateConfig): void {

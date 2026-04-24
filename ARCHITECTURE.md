@@ -568,7 +568,7 @@ eventListeners.unregisterAllListeners();
 | 组件 | 职责 | 文件 |
 |------|------|------|
 | `ChatPanel.vue` | LLM 对话界面 | [src/components/ChatPanel.vue](src/components/ChatPanel.vue) |
-| `SettingsPanel.vue` | 系统设置（含文本/音频模型配置、音频输入设备选择、基础数据缓存管理） | [src/components/SettingsPanel.vue](src/components/SettingsPanel.vue) |
+| `SettingsPanel.vue` | 系统设置（含通用设置、文本/音频模型配置、关于版本与音频输入设备选择） | [src/components/SettingsPanel.vue](src/components/SettingsPanel.vue) |
 | `ConsultationPage.vue` | 完整症状问诊主链路，同时承接新的“内嵌灵活模式”；支持根据 `/assist` 上下文直接跳过症状采集进入病历详情页，继续复用现有推荐诊断、诊断鉴别、推荐用药、推荐检查与诊断路径能力，并负责处理 PHIS 引用闭环的页面状态；诊断保持单选引用，推荐方案支持多选后分组批量引入 | [src/components/ConsultationPage.vue](src/components/ConsultationPage.vue) |
 | `DiagnosisPathWindow.vue` | 独立诊断推理路径窗口，使用 ECharts Sankey 展示患者事实、章节归类、证据汇聚与诊断去向；默认提供更宽画布，并按容器尺寸动态计算 Sankey 的布局盒子，用对称留白实现“适应屏幕并居中”的默认视图，再开放滚轮缩放、平移与节点拖动；点击入口后窗口先显示 loading 动画，并按“检查缓存 -> 生成推理链 -> 渲染图表”的阶段更新提示，若生成超时或渲染失败会切换到明确错误态；正文容器在收到 payload 后保持挂载，loading 改为遮罩层，避免 `chartEl` 尚未挂载时误判渲染成功；开窗后的 `show/focus` 调用采用 best-effort 非阻塞方式，避免 Tauri 原生命令卡住整个推理链；右侧说明面板采用“支持证据 / 反证提醒 / 鉴别要点”三段式，未返回结构化分段时回退显示整体 rationale | [src/components/DiagnosisPathWindow.vue](src/components/DiagnosisPathWindow.vue) |
 | `VoiceCapsule.vue` | 语音录制胶囊 | [src/components/VoiceCapsule.vue](src/components/VoiceCapsule.vue) |
@@ -806,7 +806,7 @@ Promise.allSettled([
 startAuditUploader() (startup flush + enqueue flush + 30s retry)
 ```
 
-设置页保存区域化接入参数时，也复用同一条 `initializeRegionalRuntime() / reinitializeRegionalRuntime()` 链路即时生效，不要求重启应用；当前首启会先把默认值 `REGIONAL_ENABLED=true / REGIONAL_BASE_URL=<VITE_REGIONAL_BASE_URL 或 http://127.0.0.1:8080> / REGIONAL_ORG_CODE=<本地 VITE_REGIONAL_ORG_CODE 或 ORG001>` 写入本地存储。设备编码则优先写入当前机器 MAC 地址，若 MAC 暂不可读才生成本地兜底值。
+设置页保存区域化接入参数时，也复用同一条 `initializeRegionalRuntime() / reinitializeRegionalRuntime()` 链路即时生效，不要求重启应用；当前首启会先把默认值 `REGIONAL_ENABLED=true / REGIONAL_BASE_URL=<VITE_REGIONAL_BASE_URL 或 http://127.0.0.1:8080> / REGIONAL_ORG_CODE=<本地 VITE_REGIONAL_ORG_CODE 或 ORG001>` 写入本地存储。设备编码则首次优先写入当前机器 MAC 地址，若 MAC 暂不可读才生成本地兜底值；一旦本地已有 `REGIONAL_DEVICE_CODE`，后续启动不再重复调用系统 MAC 探测命令。Windows 下 MAC 探测子进程使用无窗口模式，避免 `getmac` 控制台窗口闪烁。
 
 保存行为约束：
 
@@ -827,6 +827,13 @@ startAuditUploader() (startup flush + enqueue flush + 30s retry)
 | 医学数据 | 本地 CSV/JSON + HIS 目录 | 区域化：delta 同步；本地模式：HIS 目录同步并落本地 SQLite，诊断全局一次、诊疗项目/药品按机构每天同步；失败时回退本地 CSV |
 | 操作日志 | 仅本地 SQLite | 本地写入 + auditUploader 批量上报 |
 | Reviewer/PMPHAI/KB 配置 | localStorage | bootstrap 下发 |
+
+客户端版本更新链路仍由 Tauri updater 执行安装与签名校验，`UpdateChecker.vue` 只负责更新源配置、检查按钮、进度与安装动作编排。区域化模式下若用户未手工配置内网更新源，`updateConfig.ts` 会从当前后端地址推导出：
+
+- 正式内网：`{REGIONAL_BASE_URL}/v1/client/releases/production/latest.json`
+- 测试内网：`{REGIONAL_BASE_URL}/v1/client/releases/testing/latest.json`
+
+`floating-ball-server` 后台上传版本后生成 Tauri 兼容 `latest.json` 和公开下载地址；这些公开地址不携带设备令牌，避免 updater 下载阶段无法附带自定义鉴权头。内网部署允许使用 `http://` 更新源，`tauri.conf.json` 已开启 updater 的 `dangerousInsecureTransportProtocol`；安装包签名校验仍由 Tauri updater 强制执行。
 
 ### 当前本地桥接与知识库链路
 

@@ -1,6 +1,12 @@
 use std::io::ErrorKind;
 use std::process::Command;
 
+#[cfg(target_os = "windows")]
+use std::os::windows::process::CommandExt;
+
+#[cfg(target_os = "windows")]
+const CREATE_NO_WINDOW: u32 = 0x08000000;
+
 #[cfg(all(unix, not(target_os = "macos")))]
 use std::fs;
 
@@ -109,7 +115,15 @@ fn read_first_mac_from_command(binary: &str, args: &[&str]) -> Result<Option<Str
 }
 
 fn run_command(binary: &str, args: &[&str]) -> Result<String, String> {
-    let output = Command::new(binary).args(args).output().map_err(|error| {
+    let mut command = Command::new(binary);
+    command.args(args);
+
+    #[cfg(target_os = "windows")]
+    {
+        command.creation_flags(CREATE_NO_WINDOW);
+    }
+
+    let output = command.output().map_err(|error| {
         if error.kind() == ErrorKind::NotFound {
             format!("__COMMAND_NOT_FOUND__:{binary}")
         } else {

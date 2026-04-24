@@ -1243,15 +1243,6 @@ button.secondary:hover,
   color: var(--color-text-strong) !important;
 }
 
-/* --- 数据信息列表 --- */
-.settings-panel .data-info-list li {
-  color: var(--color-text-strong) !important;
-}
-
-.settings-panel .data-info-list li :deep(svg) {
-  color: var(--color-primary) !important;
-}
-
 /* ============================================
    第二十三部分：数据分析面板样式覆盖
    ============================================ */

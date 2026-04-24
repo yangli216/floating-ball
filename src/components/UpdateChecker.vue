@@ -31,7 +31,10 @@
 
         <div class="config-footer">
           <span class="source-tag">当前使用：{{ activeEnvironmentLabel }}</span>
-          <button @click="saveConfig" class="check-btn">保存更新源</button>
+          <div class="config-actions">
+            <button @click="useRegionalDefaults" class="secondary-btn">使用后台默认源</button>
+            <button @click="saveConfig" class="check-btn">保存更新源</button>
+          </div>
         </div>
         <div class="endpoint-preview">{{ activeEndpoint || '未配置，回退到应用内默认更新地址' }}</div>
       </div>
@@ -85,6 +88,7 @@ import {
   getActiveUpdateEndpoint,
   getUpdateConfig,
   getUpdateEnvironmentLabel,
+  resetUpdateConfigToRegionalDefaults,
   saveUpdateConfig,
   type UpdateEnvironment,
 } from '../services/updateConfig';
@@ -160,6 +164,20 @@ const saveConfig = () => {
   });
   if (showToast) {
     showToast(`更新源已切换为${activeEnvironmentLabel.value}`, 'success');
+  }
+};
+
+const applyConfig = (config: ReturnType<typeof getUpdateConfig>) => {
+  updateEnvironment.value = config.environment;
+  productionUrl.value = config.productionUrl;
+  testingUrl.value = config.testingUrl;
+};
+
+const useRegionalDefaults = () => {
+  const config = resetUpdateConfigToRegionalDefaults();
+  applyConfig(config);
+  if (showToast) {
+    showToast('已切换为后台发布中心默认更新源', 'success');
   }
 };
 
@@ -302,6 +320,13 @@ const installUpdate = async () => {
   margin-top: 8px;
 }
 
+.config-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
 .source-tag {
   font-size: 12px;
   color: var(--color-primary, #0891B2);
@@ -344,7 +369,7 @@ const installUpdate = async () => {
   gap: 12px;
 }
 
-.retry-btn, .check-btn, .install-btn {
+.retry-btn, .check-btn, .secondary-btn, .install-btn {
   padding: 10px 20px;
   border-radius: 8px;
   border: none;
@@ -372,6 +397,16 @@ const installUpdate = async () => {
 
 .check-btn:hover {
   background: var(--color-primary-200, rgba(8, 145, 178, 0.2));
+}
+
+.secondary-btn {
+  background: var(--color-background-soft, #f8fafc);
+  color: var(--color-text-muted, #64748b);
+  border: 1px solid var(--color-border-light, #cbd5e1);
+}
+
+.secondary-btn:hover {
+  background: var(--color-background-hover, #f1f5f9);
 }
 
 .install-btn {

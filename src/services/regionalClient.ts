@@ -361,14 +361,14 @@ export async function getDeviceCode(): Promise<string> {
 
   deviceCodeLoadPromise = (async () => {
     const storedCode = getStoredDeviceCode();
+    if (storedCode) {
+      return storedCode;
+    }
+
     const deviceMac = await detectDeviceMacAddress();
 
     if (deviceMac) {
       return persistDeviceCode(deviceMac);
-    }
-
-    if (storedCode) {
-      return storedCode;
     }
 
     return persistDeviceCode(generateFallbackDeviceCode());

@@ -255,7 +255,6 @@ const navigation = useNavigation({
 const {
   openSettings,
   openChat,
-  openAnalytics,
   openSymptomManagement,
   openConsultation,
   openVoiceConsultation,
@@ -657,7 +656,6 @@ const openInsideCloudHome = async () => {
           <KnowledgeBasePanel v-if="currentView === 'knowledge-base'" @close="handleCollapse" />
           <SettingsPanel
             v-if="currentView === 'settings'"
-            @view-analytics="openAnalytics"
             @open-symptom-manage="openSymptomManagement"
           />
         </div>
