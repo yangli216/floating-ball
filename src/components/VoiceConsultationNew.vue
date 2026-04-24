@@ -875,6 +875,7 @@ function inferMedicineDefaults(rec: Partial<TreatmentRecommendation>): {
 } {
   const dosagePair = splitDosageAndUnit(rec.dosage);
   const usageText = [rec.usage, rec.route].filter(Boolean).join('，');
+  const daysText = [rec.days, rec.usage, rec.route, rec.reason].filter(Boolean).join('，');
   const inferredDosage = dosagePair.dosage || dosagePair.dosageUnit ? dosagePair : inferDosageFromText(usageText);
   const inferredTotal = rec.totalQty || rec.totalUnit
     ? { totalQty: rec.totalQty || '', totalUnit: rec.totalUnit || '' }
@@ -887,7 +888,7 @@ function inferMedicineDefaults(rec: Partial<TreatmentRecommendation>): {
     route: rec.route || inferRouteFromText([rec.route, rec.usage].filter(Boolean).join(' ')),
     totalQty: rec.totalQty || inferredTotal.totalQty,
     totalUnit: rec.totalUnit || inferredTotal.totalUnit,
-    days: rec.days || inferDaysFromText(usageText),
+    days: rec.days || inferDaysFromText(daysText),
   };
 }
 
@@ -1872,6 +1873,7 @@ async function fetchAITreatment(): Promise<void> {
       totalCount: nextTreatments.length,
       medicineCount: nextTreatments.filter((item) => item.type === 'medicine').length,
       medicineWithDosageCount: nextTreatments.filter((item) => item.type === 'medicine' && !!item.dosage).length,
+      medicineWithDaysCount: nextTreatments.filter((item) => item.type === 'medicine' && !!item.days).length,
       medicineWithTotalQtyCount: nextTreatments.filter((item) => item.type === 'medicine' && !!item.totalQty).length,
     });
 

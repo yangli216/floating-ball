@@ -642,6 +642,7 @@ export class HisService {
     let sdDispFiltered = 0;
     let sdUseFiltered = 0;
     let deptFiltered = 0;
+    let deptBypassed = 0;
 
     const pharmacies = new Map<string, PharmacyOption>();
 
@@ -658,22 +659,29 @@ export class HisService {
           }
 
           const deptIds = this.normalizeDeptIds((item.idDept || '').split(','));
-          const matchedDeptId = deptIds.find((deptId) => this.userRoleDeptIds.includes(deptId));
-          if (!matchedDeptId) {
+          const hasDeptRestriction = deptIds.length > 0;
+          const matchedDeptId = hasDeptRestriction
+            ? deptIds.find((deptId) => this.userRoleDeptIds.includes(deptId))
+            : '';
+          if (hasDeptRestriction && !matchedDeptId) {
             deptFiltered += 1;
             return;
           }
+          if (!hasDeptRestriction) {
+            deptBypassed += 1;
+          }
+          const effectiveDeptId = matchedDeptId || '';
 
-          const name = item.naSto?.trim();
+          const name = item.naSto?.trim() || '';
           if (!name) {
             return;
           }
 
-          const optionKey = `${name}::${matchedDeptId}`;
+          const optionKey = `${name}::${effectiveDeptId}`;
           if (!pharmacies.has(optionKey)) {
             pharmacies.set(optionKey, {
               name,
-              idDept: matchedDeptId,
+              idDept: effectiveDeptId,
               idSto: item.idSto?.trim() || '',
             });
           }
@@ -686,6 +694,7 @@ export class HisService {
       sdDispFiltered,
       sdUseFiltered,
       deptFiltered,
+      deptBypassed,
       userRoleDeptIds: this.userRoleDeptIds,
       matchedPharmacies: pharmacyList,
       sampleItem: items[0] ?? null,

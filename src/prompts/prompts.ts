@@ -822,7 +822,9 @@ export const TreatmentRecommendationPrompt = {
 - targetDose: 临床标准一次剂量的数值，如 "500"（表示一次 500mg）。这是根据诊疗指南和药品说明书推荐的成人常规一次剂量。
 - targetDoseUnit: 剂量单位，如 "mg"、"g"、"ml"。
 - dosage / dosageUnit: 可以留空，系统会根据 targetDose 和匹配到的药品规格自动换算为几片几粒。
-- 其他结构化字段：frequency、frequencyKey、usage、usageKey、totalQty、totalUnit、days；如果确实无法确定可留空字符串，不要把全部信息只塞进 usage 一项。`,
+- 其他结构化字段：frequency、frequencyKey、usage、usageKey、totalQty、totalUnit、days；其中药品项应尽量返回结构化 days，不要只把“连用5天/疗程7天”写进 usage。
+- 如果指南或常规门诊方案能明确疗程，days 必须填写纯数字字符串（如 "3"、"5"、"7"）。
+- 如果短期对症用药没有严格固定疗程，也要给出基层门诊最常用、最保守的疗程天数；只有确实完全无法合理判断时才允许留空。`,
 
   buildUserPrompt(params: {
     patientName: string;
@@ -855,8 +857,9 @@ ${params.chiefComplaint}
 8. targetDose 填写临床标准一次剂量数值（如阿莫西林成人一次 500mg，则 targetDose="500"，targetDoseUnit="mg"）
 9. dosage/dosageUnit 可留空（系统会根据 targetDose 和实际规格自动换算为几片几粒）
 10. 若频次/用法能明确标准表达，优先输出中文文本；frequencyKey、usageKey 能确定就补充，不能确定可留空
-11. 若总量、疗程无法合理确定，可留空字符串
-12. name 优先填写规范通用名；如果门诊日常还常用 1-3 个稳定简称或别名，请补充到 aliases，便于与院内目录匹配
+11. 药品项必须优先返回结构化 days，填写纯数字字符串；不要只在 usage 或 reason 里写“连用5天”
+12. 若总量无法合理确定，可留空字符串；若疗程可由指南或常规门诊方案确定，days 不应留空
+13. name 优先填写规范通用名；如果门诊日常还常用 1-3 个稳定简称或别名，请补充到 aliases，便于与院内目录匹配
 
 **返回格式：**
 [
@@ -1672,7 +1675,7 @@ export const PROMPT_VERSION = {
   riskAnalysis: 'v1.0',
   diagnosisRecommendation: 'v1.0',
   diagnosisPathReasoning: 'v1.0',
-  treatmentRecommendation: 'v2.0',
+  treatmentRecommendation: 'v2.1',
   examinationRecommendation: 'v1.0',
   labTestRecommendation: 'v1.0',
   procedureRecommendation: 'v1.0',

@@ -17,6 +17,20 @@ import type {
   ExportFormat
 } from '../types/feedback';
 
+function normalizeFeedbackTargetType(targetType: FeedbackInfo['targetType']): FeedbackInfo['targetType'] {
+  if (targetType === 'lab_test' || targetType === 'procedure') {
+    return 'examination';
+  }
+  return targetType;
+}
+
+function normalizeRecommendationType(recType: RecommendationExtended['recType']): RecommendationExtended['recType'] {
+  if (recType === 'lab_test' || recType === 'procedure') {
+    return 'examination';
+  }
+  return recType;
+}
+
 function resolveOperationModule(log: Omit<OperationLog, 'logId' | 'createdAt'>): string {
   const candidate = log.details?.module;
   return typeof candidate === 'string' && candidate.trim()
@@ -145,10 +159,11 @@ class FeedbackService {
       if (!sessionId) {
         throw new Error('No active session');
       }
+      const normalizedTargetType = normalizeFeedbackTargetType(feedback.targetType);
 
       const feedbackId = await invoke<string>('save_feedback', {
         sessionId,
-        targetType: feedback.targetType,
+        targetType: normalizedTargetType,
         targetId: feedback.targetId,
         feedbackType: feedback.feedbackType,
         rating: feedback.rating || null,
@@ -157,7 +172,7 @@ class FeedbackService {
         modifiedValue: feedback.modifiedValue || null
       });
 
-      console.log(`[FeedbackService] Feedback saved: ${feedbackId} (${feedback.feedbackType} on ${feedback.targetType})`);
+      console.log(`[FeedbackService] Feedback saved: ${feedbackId} (${feedback.feedbackType} on ${normalizedTargetType})`);
 
       // 区域化双写
       enqueueAuditEvent('feedback', {
@@ -185,6 +200,7 @@ class FeedbackService {
       if (!sessionId) {
         throw new Error('No active session');
       }
+      const normalizedRecType = normalizeRecommendationType((rec.recType || 'diagnosis') as RecommendationExtended['recType']);
 
       const content = typeof rec.content === 'string'
         ? rec.content
@@ -192,7 +208,7 @@ class FeedbackService {
 
       const recId = await invoke<string>('save_recommendation', {
         sessionId,
-        recType: rec.recType || 'diagnosis',
+        recType: normalizedRecType,
         content,
         matched: rec.matched || false,
         matchConfidence: rec.matchConfidence || null,
@@ -201,7 +217,7 @@ class FeedbackService {
         latencyMs: rec.latencyMs || null
       });
 
-      console.log(`[FeedbackService] Recommendation saved: ${recId} (${rec.recType})`);
+      console.log(`[FeedbackService] Recommendation saved: ${recId} (${normalizedRecType})`);
 
       // 区域化双写
       enqueueAuditEvent('feedback', {
