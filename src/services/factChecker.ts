@@ -6,8 +6,16 @@ import {
   ExaminationCheckPrompt,
   MedicalRecordCheckPrompt,
   TCMDiagnosisCheckPrompt,
-  TCMMedicineCheckPrompt
+  TCMMedicineCheckPrompt,
+  VoiceSafetyReviewPrompt
 } from '../prompts';
+import type {
+  VoiceSafetyIssue,
+  VoiceSafetyIssueCategory,
+  VoiceSafetyIssueSeverity,
+  VoiceSafetyReviewContext,
+  VoiceSafetyReviewResult,
+} from '../types/voiceResult';
 
 /**
  * 检查独立审查 AI 是否已启用
@@ -124,6 +132,104 @@ export interface TCMMedicineCheckContext {
   ingredients?: string; // 组成（含剂量）
   usage?: string; // 煎服法
   diagnosis?: string; // 病名-证型
+}
+
+function normalizeVoiceSafetySeverity(value: unknown): VoiceSafetyIssueSeverity {
+  return value === 'high' || value === 'medium' || value === 'low' ? value : 'medium';
+}
+
+function normalizeVoiceSafetyCategory(value: unknown): VoiceSafetyIssueCategory {
+  const validCategories: VoiceSafetyIssueCategory[] = [
+    'drug_interaction',
+    'contraindication',
+    'red_flag',
+    'allergy',
+    'missing_check',
+    'diagnosis_treatment_mismatch',
+    'other',
+  ];
+  return typeof value === 'string' && validCategories.includes(value as VoiceSafetyIssueCategory)
+    ? value as VoiceSafetyIssueCategory
+    : 'other';
+}
+
+function buildPatientSummary(context: VoiceSafetyReviewContext): string {
+  const patient = context.patientInfo;
+  if (!patient) return '未提供';
+
+  const parts = [
+    patient.naPi || patient.name,
+    patient.sdSexText || patient.sex,
+    patient.ageText || patient.age,
+  ]
+    .filter(value => value !== undefined && value !== null && String(value).trim().length > 0)
+    .map(String);
+
+  return parts.length ? parts.join('，') : '未提供';
+}
+
+function normalizeVoiceSafetyIssues(issues: any[], checkedAt: number): VoiceSafetyIssue[] {
+  return issues
+    .filter(issue => issue && typeof issue.message === 'string' && issue.message.trim().length > 0)
+    .map((issue, index) => ({
+      id: `voice-safety-${checkedAt}-${index}`,
+      severity: normalizeVoiceSafetySeverity(issue.severity),
+      category: normalizeVoiceSafetyCategory(issue.category),
+      title: typeof issue.title === 'string' && issue.title.trim() ? issue.title.trim() : '安全提醒',
+      message: issue.message.trim().startsWith('提醒') ? issue.message.trim() : `提醒：${issue.message.trim()}`,
+      suggestion: typeof issue.suggestion === 'string' ? issue.suggestion.trim() : undefined,
+      relatedItems: Array.isArray(issue.relatedItems)
+        ? issue.relatedItems.filter((item: unknown) => typeof item === 'string' && item.trim()).map((item: string) => item.trim())
+        : [],
+      evidence: typeof issue.evidence === 'string' ? issue.evidence.trim() : undefined,
+      acknowledged: false,
+      dismissed: false,
+    }));
+}
+
+export async function checkVoiceSafetyReview(context: VoiceSafetyReviewContext): Promise<VoiceSafetyReviewResult> {
+  const checkedAt = Date.now();
+  if (!isReviewerEnabled()) {
+    return { hasIssues: false, issues: [], checkedAt };
+  }
+
+  const messages: ChatMessage[] = [
+    {
+      role: 'system',
+      content: VoiceSafetyReviewPrompt.system,
+    },
+    {
+      role: 'user',
+      content: VoiceSafetyReviewPrompt.buildUserPrompt({
+        patientSummary: buildPatientSummary(context),
+        chiefComplaint: context.record.chiefComplaint,
+        historyOfPresentIllness: context.record.historyOfPresentIllness,
+        pastMedicalHistory: context.record.pastMedicalHistory,
+        allergyHistory: context.allergyHistory || context.patientInfo?.allergyHistory,
+        diagnoses: context.record.diagnosisList?.map(diagnosis => diagnosis.name) || [],
+        medicines: context.record.medications?.map(medicine => [medicine.name, medicine.spec, medicine.dosage, medicine.frequency, medicine.usage].filter(Boolean).join(' ')) || [],
+        examinations: context.record.examinations?.map(examination => examination.name) || [],
+        labTests: context.record.labTests?.map(labTest => labTest.name) || [],
+        procedures: context.record.procedures?.map(procedure => procedure.name) || [],
+        recentMedications: context.recentMedications || [],
+      }),
+    },
+  ];
+
+  try {
+    const response = await chat(messages, undefined, undefined, undefined, getReviewerLLMConfig());
+    const result = parseFactCheckResponse(response);
+    const issues = normalizeVoiceSafetyIssues(result.issues, checkedAt);
+
+    return {
+      hasIssues: result.hasIssues && issues.length > 0,
+      issues,
+      checkedAt,
+    };
+  } catch (error) {
+    console.error('Voice safety review failed:', error);
+    return { hasIssues: false, issues: [], checkedAt };
+  }
 }
 
 /**

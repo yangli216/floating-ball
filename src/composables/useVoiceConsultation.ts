@@ -15,7 +15,7 @@ import type { Window as TauriWindow } from '@tauri-apps/api/window';
 import { invoke } from '@tauri-apps/api/core';
 import type { ViewType } from '../constants/windowSizes';
 import { trackClick, trackError, trackRecommendationAction } from '../services/operationTracker';
-import type { GeneratedRecord } from '../components/VoiceConsultationResult.vue';
+import type { GeneratedRecord } from '../types/voiceResult';
 import type { AppPatient } from '../types/appState';
 import { useVoiceIntentRecognition, type VoiceIntentResult } from './useVoiceIntentRecognition';
 

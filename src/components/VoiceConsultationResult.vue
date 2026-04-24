@@ -1,46 +1,25 @@
 <template>
   <div class="result-page">
-    <!-- 患者信息头部（与问诊页面一致） -->
-    <header class="patient-header" data-tauri-drag-region>
-      <div class="patient-card">
-        <!-- Avatar -->
-        <div class="avatar">
-          <Icon icon="mdi:account-circle" color="#ff9a9e" size="48" />
-        </div>
-        <!-- Name -->
-        <div class="patient-name">{{ patientInfo?.naPi || patientInfo?.name || '未知患者' }}</div>
-        
-        <!-- Basic Info -->
-        <div class="patient-basic" v-if="patientInfo">
-          <span>{{ patientInfo.sdSexText || patientInfo.sex || '' }}</span>
-          <span class="divider" v-if="patientInfo.ageText || patientInfo.age"></span>
-          <span>{{ patientInfo.ageText || patientInfo.age || '' }}</span>
-        </div>
-
-        <!-- AI 生成标签 -->
-        <div class="tag-ai">🤖 AI 生成</div>
-
-        <!-- Contact Info -->
-        <div class="contact-info" v-if="patientInfo?.idCard">
-          <span>身份证号：{{ patientInfo.idCard }}</span>
-        </div>
-      </div>
-
-      <!-- Header Actions -->
-      <div class="header-actions">
-        <button class="header-btn" @click="trackClick('voice_result_cancel'); emit('cancel')">放弃</button>
-        <button class="header-btn primary" @click="handleConfirm" :disabled="!record">
-          <Icon icon="lucide:check" size="16" />
-          确认提交
-        </button>
-      </div>
-    </header>
+    <VoiceResultHeader
+      :patient-info="patientInfo"
+      :confirm-disabled="!record"
+      @cancel="handleCancel"
+      @confirm="handleConfirm"
+    />
 
     <!-- 提示信息 -->
     <div class="info-banner" v-if="record">
       <span class="info-icon">💡</span>
       <span>以下内容由 AI 根据医患对话自动生成，请审核确认后提交</span>
     </div>
+
+    <VoiceSafetyReviewPanel
+      :status="safetyReviewStatus"
+      :issues="safetyReviewIssues"
+      :error-message="safetyReviewError"
+      @acknowledge="acknowledgeSafetyIssue"
+      @dismiss="dismissSafetyIssue"
+    />
 
     <div class="content-body" v-if="record">
       <div class="main-layout">
@@ -238,72 +217,20 @@
 </template>
 
 <script setup lang="ts">
-import { ref, watch } from 'vue';
-import { medicalDataService } from '../services/medicalData';
-import { trackClick, trackRecommendationAction, trackError } from '../services/operationTracker';
-import Icon from './Icon.vue';
+import { watch } from 'vue';
+import { trackClick } from '../services/operationTracker';
 import FactCheckNotification from './FactCheckNotification.vue';
 import FactCheckHighlight from './FactCheckHighlight.vue';
 import FactCheckWidget from './FactCheckWidget.vue';
 import KnowledgePanel from './KnowledgePanel.vue';
-import { checkDiagnosis, checkMedicine, checkExamination, checkMedicalRecord, isReviewerEnabled, type FactCheckResult, type FactCheckIssue } from '../services/factChecker';
-import { pmphaiService, isPMPHAIConfigured, type BatchSearchResults } from '../services/pmphai';
-
-export interface DiagnosisEntry {
-  name: string;
-  code?: string;
-  matched?: boolean;
-  isTCM?: boolean; // 标记是否为中医诊断
-  // 中医辨证论治相关字段
-  syndrome?: string; // 证候(如:风寒束表证)
-  syndromeCode?: string;
-  syndromeMatched?: boolean;
-  treatment?: string; // 治法(如:辛温解表)
-  treatmentCode?: string;
-  treatmentMatched?: boolean;
-}
-
-export interface MedicationEntry {
-  name: string;
-  spec?: string;
-  dosage?: string;
-  frequency?: string;
-  usage?: string;
-  count?: string;
-  matched?: boolean;
-  idMedPro?: string;
-}
-
-export interface ExamEntry {
-  name: string;
-  goal?: string;
-  matched?: boolean;
-  idCli?: string;
-}
-
-export interface GeneratedRecord {
-  chiefComplaint: string;
-  historyOfPresentIllness: string;
-  pastMedicalHistory: string;
-  diagnosisList: DiagnosisEntry[];
-  medications: MedicationEntry[];
-  examinations: ExamEntry[];
-  labTests: ExamEntry[];
-  procedures: ExamEntry[];
-  treatmentPlan?: string;
-  healthEducation?: string;
-}
-
-export interface PatientInfo {
-  naPi?: string;
-  name?: string;
-  sdSexText?: string;
-  sex?: string;
-  ageText?: string;
-  age?: string | number;
-  idCard?: string;
-  mobilePhone?: string;
-}
+import VoiceSafetyReviewPanel from './VoiceSafetyReviewPanel.vue';
+import VoiceResultHeader from './VoiceResultHeader.vue';
+import { useVoiceCatalogMatching } from '../composables/useVoiceCatalogMatching';
+import { useVoiceKnowledgeSearch } from '../composables/useVoiceKnowledgeSearch';
+import { useVoiceResultRecord } from '../composables/useVoiceResultRecord';
+import { useVoiceResultFactCheck } from '../composables/useVoiceResultFactCheck';
+import { useVoiceSafetyReview } from '../composables/useVoiceSafetyReview';
+import type { GeneratedRecord, PatientInfo } from '../types/voiceResult';
 
 const props = defineProps<{
   initialRecord: GeneratedRecord | null;
@@ -312,373 +239,72 @@ const props = defineProps<{
 
 const emit = defineEmits(['confirm', 'cancel']);
 
-const record = ref<GeneratedRecord | null>(null);
-const originalRecord = ref<GeneratedRecord | null>(null);
-
-// Fact Check State
-const showFactCheckNotification = ref(false);
-const factCheckResult = ref<FactCheckResult | null>(null);
-const diagnosisFactChecks = ref<Map<string, FactCheckResult>>(new Map());
-const medicineFactChecks = ref<Map<string, FactCheckResult>>(new Map());
-const examFactChecks = ref<Map<string, FactCheckResult>>(new Map());
-
-// Fact Check Widget State
-const showFactCheckWidget = ref(false);
-const factCheckWidgetStatus = ref<'idle' | 'checking' | 'completed'>('idle');
-const factCheckWidgetIssues = ref<FactCheckIssue[]>([]);
-const factCheckProgress = ref(0);
-const factCheckCheckedCount = ref(0);
-const factCheckTotalCount = ref(0);
-
-// Knowledge Panel State
-const showKnowledgePanel = ref(false);
-const knowledgeLoading = ref(false);
-const knowledgeResults = ref<BatchSearchResults>({
-  diagnoses: new Map(),
-  medications: new Map(),
-  examinations: new Map(),
-});
-const hasKnowledgeResults = ref(false);
-
-// Match data with local database
-const matchLocalData = (rec: GeneratedRecord) => {
-  // 1. Match Diagnoses
-  if (rec.diagnosisList) {
-    rec.diagnosisList.forEach(d => {
-      if (!d.code) { // Only match if no code provided by LLM (or if we want to override/validate)
-        // Try Western medicine first
-        let match = medicalDataService.matchDiagnosis(d.name);
-        if (match) {
-          d.name = match.name; // Normalize name
-          d.code = match.code;
-          d.matched = true;
-          d.isTCM = false;
-          return;
-        }
-
-        // Try TCM diagnosis
-        const tcmMatch = medicalDataService.matchTCMDiagnosis(d.name);
-        if (tcmMatch) {
-          d.name = tcmMatch.name; // Normalize name
-          d.code = tcmMatch.code;
-          d.matched = true;
-          d.isTCM = true;
-        }
-      } else {
-        // If code is provided, check if it's a TCM code (starts with 'A' followed by digits)
-        // GB/T 15657 codes follow pattern like A01.01.01
-        if (d.code && /^A\d{2}\./.test(d.code)) {
-          d.isTCM = true;
-        }
-      }
-
-      // Match TCM Syndrome (证候) for TCM diagnoses
-      if (d.isTCM && d.syndrome && !d.syndromeCode) {
-        const syndromeMatch = medicalDataService.matchTCMSyndrome(d.syndrome);
-        if (syndromeMatch) {
-          d.syndrome = syndromeMatch.name;
-          d.syndromeCode = syndromeMatch.code;
-          d.syndromeMatched = true;
-        }
-      }
-
-      // Match TCM Treatment (治法) for TCM diagnoses
-      if (d.isTCM && d.treatment && !d.treatmentCode) {
-        const treatmentMatch = medicalDataService.matchTCMTreatment(d.treatment);
-        if (treatmentMatch) {
-          d.treatment = treatmentMatch.name;
-          d.treatmentCode = treatmentMatch.code;
-          d.treatmentMatched = true;
-        }
-      }
-    });
-  }
-
-  // 2. Match Medications
-  if (rec.medications) {
-    rec.medications.forEach(m => {
-      const match = medicalDataService.matchMedicine(m.name);
-      if (match) {
-        m.name = match.name; // Normalize name
-        if (!m.spec) m.spec = match.spec;
-        m.matched = true;
-        m.idMedPro = match.id;
-      }
-    });
-  }
-
-  // 3. Match Examinations
-  if (rec.examinations) {
-    rec.examinations.forEach(e => {
-        const match = medicalDataService.matchExamItem(e.name);
-        if (match) {
-            e.name = match.name;
-            e.matched = true;
-            e.idCli = match.id;
-        }
-    });
-  }
-
-  // 4. Match Lab Tests
-  if (rec.labTests) {
-    rec.labTests.forEach(e => {
-        const match = medicalDataService.matchLabTestItem(e.name);
-        if (match) {
-            e.name = match.name;
-            e.matched = true;
-            e.idCli = match.id;
-        }
-    });
-  }
-
-  // 5. Match Procedures
-  if (rec.procedures) {
-    rec.procedures.forEach(e => {
-        const match = medicalDataService.matchProcedureItem(e.name);
-        if (match) {
-            e.name = match.name;
-            e.matched = true;
-        }
-    });
-  }
-};
+const { matchLocalData } = useVoiceCatalogMatching();
+const {
+  record,
+  loadRecord,
+  trackFieldEdit,
+  trackConfirmAdoption,
+} = useVoiceResultRecord();
+const {
+  showFactCheckNotification,
+  factCheckResult,
+  showFactCheckWidget,
+  factCheckWidgetStatus,
+  factCheckWidgetIssues,
+  factCheckProgress,
+  factCheckCheckedCount,
+  factCheckTotalCount,
+  performMedicalRecordFactCheck,
+  getIssueForDiagnosis,
+  getIssueForMedicine,
+  getIssueForExam,
+} = useVoiceResultFactCheck();
+const {
+  showKnowledgePanel,
+  knowledgeLoading,
+  knowledgeResults,
+  hasKnowledgeResults,
+  searchKnowledgeBase,
+  toggleKnowledgePanel,
+} = useVoiceKnowledgeSearch();
+const {
+  status: safetyReviewStatus,
+  activeIssues: safetyReviewIssues,
+  errorMessage: safetyReviewError,
+  needsSubmitAwareness,
+  runSafetyReview,
+  acknowledgeIssue: acknowledgeSafetyIssue,
+  dismissIssue: dismissSafetyIssue,
+  acknowledgeAllHighRisk,
+} = useVoiceSafetyReview();
 
 watch(() => props.initialRecord, (val) => {
   if (val) {
-    const newVal = JSON.parse(JSON.stringify(val));
-    originalRecord.value = JSON.parse(JSON.stringify(val)); // Deep clone for comparison at confirm
+    const newVal = loadRecord(val);
     matchLocalData(newVal);
-    record.value = newVal;
-    trackClick('voice_result_loaded', {
-      diagnosisCount: newVal.diagnosisList?.length || 0,
-      medicationCount: newVal.medications?.length || 0,
-      examCount: newVal.examinations?.length || 0,
-      labTestCount: newVal.labTests?.length || 0,
-      procedureCount: newVal.procedures?.length || 0,
-    });
-
-    // Perform automatic fact checking after data is loaded
     performMedicalRecordFactCheck(newVal);
-
-    // Search knowledge base for related medical literature
+    runSafetyReview(newVal, props.patientInfo);
     searchKnowledgeBase(newVal);
   }
 }, { immediate: true });
 
-// Fact Check Functions
-const performMedicalRecordFactCheck = async (rec: GeneratedRecord) => {
-  if (!rec) return;
-  if (!isReviewerEnabled()) return;
-
-  // Calculate total checks
-  const diagCount = rec.diagnosisList?.length || 0;
-  const medCount = rec.medications?.length || 0;
-  const examCount = rec.examinations?.length || 0;
-  const totalChecks = diagCount + medCount + examCount + 1; // +1 for overall record check
-
-  // Show widget in checking state
-  showFactCheckWidget.value = true;
-  factCheckWidgetStatus.value = 'checking';
-  factCheckTotalCount.value = totalChecks;
-  factCheckCheckedCount.value = 0;
-  factCheckProgress.value = 0;
-  factCheckWidgetIssues.value = [];
-
-  try {
-    // Check overall medical record consistency
-    const result = await checkMedicalRecord({
-      chiefComplaint: rec.chiefComplaint,
-      historyOfPresentIllness: rec.historyOfPresentIllness,
-      diagnoses: rec.diagnosisList?.map(d => d.name) || [],
-      medicines: rec.medications?.map(m => m.name) || [],
-      examinations: rec.examinations?.map(e => e.name) || []
-    });
-
-    if (result.hasIssues) {
-      factCheckWidgetIssues.value.push(...result.issues);
-    }
-
-    factCheckCheckedCount.value = 1;
-    factCheckProgress.value = Math.round((1 / totalChecks) * 100);
-
-    // Check each diagnosis individually
-    if (rec.diagnosisList && rec.diagnosisList.length > 0) {
-      for (let i = 0; i < rec.diagnosisList.length; i++) {
-        const diag = rec.diagnosisList[i];
-        const diagResult = await checkDiagnosis({
-          diagnosis: diag.name,
-          chiefComplaint: rec.chiefComplaint,
-          historyOfPresentIllness: rec.historyOfPresentIllness
-        });
-        diagnosisFactChecks.value.set(diag.name, diagResult);
-
-        if (diagResult.hasIssues) {
-          factCheckWidgetIssues.value.push(...diagResult.issues);
-        }
-
-        factCheckCheckedCount.value = 1 + i + 1;
-        factCheckProgress.value = Math.round(((1 + i + 1) / totalChecks) * 100);
-      }
-    }
-
-    // Check each medicine
-    if (rec.medications && rec.medications.length > 0) {
-      for (let i = 0; i < rec.medications.length; i++) {
-        const med = rec.medications[i];
-        const medResult = await checkMedicine({
-          medicineName: med.name,
-          specification: med.spec,
-          dosage: med.dosage,
-          frequency: med.frequency,
-          diagnosis: rec.diagnosisList?.[0]?.name
-        });
-        medicineFactChecks.value.set(med.name, medResult);
-
-        if (medResult.hasIssues) {
-          factCheckWidgetIssues.value.push(...medResult.issues);
-        }
-
-        const currentCount = 1 + diagCount + i + 1;
-        factCheckCheckedCount.value = currentCount;
-        factCheckProgress.value = Math.round((currentCount / totalChecks) * 100);
-      }
-    }
-
-    // Check each examination
-    if (rec.examinations && rec.examinations.length > 0) {
-      for (let i = 0; i < rec.examinations.length; i++) {
-        const exam = rec.examinations[i];
-        const examResult = await checkExamination({
-          examinationName: exam.name,
-          diagnosis: rec.diagnosisList?.[0]?.name
-        });
-        examFactChecks.value.set(exam.name, examResult);
-
-        if (examResult.hasIssues) {
-          factCheckWidgetIssues.value.push(...examResult.issues);
-        }
-
-        const currentCount = 1 + diagCount + medCount + i + 1;
-        factCheckCheckedCount.value = currentCount;
-        factCheckProgress.value = Math.round((currentCount / totalChecks) * 100);
-      }
-    }
-
-    // Update widget to completed state
-    factCheckWidgetStatus.value = 'completed';
-  } catch (e) {
-    console.error('Failed to perform medical record fact check:', e);
-    trackError('voice_result_fact_check_failed', e);
-    factCheckWidgetStatus.value = 'completed';
-  }
-};
-
-const getIssueForDiagnosis = (diagName: string): FactCheckIssue | undefined => {
-  const check = diagnosisFactChecks.value.get(diagName);
-  if (!check || !check.hasIssues || check.issues.length === 0) return undefined;
-  return check.issues[0];
-};
-
-const getIssueForMedicine = (medName: string): FactCheckIssue | undefined => {
-  const check = medicineFactChecks.value.get(medName);
-  if (!check || !check.hasIssues || check.issues.length === 0) return undefined;
-  return check.issues[0];
-};
-
-const getIssueForExam = (examName: string): FactCheckIssue | undefined => {
-  const check = examFactChecks.value.get(examName);
-  if (!check || !check.hasIssues || check.issues.length === 0) return undefined;
-  return check.issues[0];
-};
-
-const trackFieldEdit = (field: string) => {
-  if (!originalRecord.value || !record.value) return;
-  const orig = (originalRecord.value as any)[field];
-  const curr = (record.value as any)[field];
-  if (typeof orig === 'string' && typeof curr === 'string' && orig !== curr) {
-    trackClick('voice_result_edit_field', { field, changed: true });
-  }
-};
-
 const handleConfirm = () => {
-  // Track field modifications (compare original vs current)
-  if (originalRecord.value && record.value) {
-    const fields: (keyof GeneratedRecord)[] = ['chiefComplaint', 'historyOfPresentIllness', 'pastMedicalHistory', 'treatmentPlan', 'healthEducation'];
-    for (const field of fields) {
-      const orig = originalRecord.value[field];
-      const curr = record.value[field];
-      if (typeof orig === 'string' && typeof curr === 'string' && orig !== curr) {
-        trackRecommendationAction('record', field, 'modified', {
-          originalValue: orig.substring(0, 200),
-          modifiedValue: curr.substring(0, 200),
-        });
-      }
-    }
+  if (needsSubmitAwareness.value) {
+    const confirmed = window.confirm('仍有高危安全提醒未处理，是否确认已知晓并继续提交？');
+    if (!confirmed) return;
+    acknowledgeAllHighRisk();
   }
 
-  // Track each diagnosis/medication/examination as adopted
-  record.value?.diagnosisList?.forEach(d => {
-    trackRecommendationAction('diagnosis', d.code || d.name, 'adopted', { originalValue: d.name });
-  });
-  record.value?.medications?.forEach(m => {
-    trackRecommendationAction('medication', m.name, 'adopted', { originalValue: m.name });
-  });
-  record.value?.examinations?.forEach(e => {
-    trackRecommendationAction('examination', e.name, 'adopted', { originalValue: e.name });
-  });
-  record.value?.labTests?.forEach(l => {
-    trackRecommendationAction('lab_test', l.name, 'adopted', { originalValue: l.name });
-  });
-  record.value?.procedures?.forEach(p => {
-    trackRecommendationAction('procedure', p.name, 'adopted', { originalValue: p.name });
-  });
-
+  trackConfirmAdoption();
   emit('confirm', record.value);
 };
 
-// Knowledge Base Search
-const searchKnowledgeBase = async (rec: GeneratedRecord) => {
-  if (!rec || !isPMPHAIConfigured()) {
-    return;
-  }
-
-  knowledgeLoading.value = true;
-  hasKnowledgeResults.value = false;
-
-  try {
-    // Extract search queries from recommendations
-    const diagnoses = rec.diagnosisList?.map(d => d.name).filter(Boolean) || [];
-    const medications = rec.medications?.map(m => m.name).filter(Boolean) || [];
-    const examinations = rec.examinations?.map(e => e.name).filter(Boolean) || [];
-
-    // Search knowledge base by categories
-    const results = await pmphaiService.searchByCategories(diagnoses, medications, examinations);
-    knowledgeResults.value = results;
-
-    // Check if we have any results
-    const totalResults =
-      Array.from(results.diagnoses.values()).flat().length +
-      Array.from(results.medications.values()).flat().length +
-      Array.from(results.examinations.values()).flat().length;
-
-    hasKnowledgeResults.value = totalResults > 0;
-
-    if (hasKnowledgeResults.value) {
-      showKnowledgePanel.value = true;
-      trackClick('knowledge_search_completed', { totalResults });
-    }
-  } catch (error) {
-    console.error('Knowledge base search failed:', error);
-    trackError('knowledge_search_failed', error);
-  } finally {
-    knowledgeLoading.value = false;
-  }
+const handleCancel = () => {
+  trackClick('voice_result_cancel');
+  emit('cancel');
 };
 
-const toggleKnowledgePanel = () => {
-  showKnowledgePanel.value = !showKnowledgePanel.value;
-  trackClick('knowledge_panel_toggle', { visible: showKnowledgePanel.value });
-};
 </script>
 
 <style scoped>
@@ -690,144 +316,6 @@ const toggleKnowledgePanel = () => {
   flex-direction: column;
   font-size: 14px;
   overflow: hidden;
-}
-
-/* 患者信息头部 - 与问诊页面一致 */
-.patient-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  flex-wrap: nowrap;
-  background: var(--surface-glass);
-  padding: 10px 16px;
-  box-shadow: var(--shadow-sm);
-  z-index: 10;
-  flex-shrink: 0;
-  border-bottom: 1px solid var(--color-border-light);
-  cursor: grab;
-}
-
-.patient-header:active {
-  cursor: grabbing;
-}
-
-.patient-card {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  flex-wrap: wrap;
-  flex: 1;
-  min-width: 0;
-  margin-right: 16px;
-  pointer-events: none; /* Allow drag through */
-}
-
-.avatar {
-  width: 36px;
-  height: 36px;
-  border-radius: 50%;
-  overflow: hidden;
-  background: var(--color-error-bg);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  border: 1px solid var(--color-border-light);
-  flex-shrink: 0;
-}
-
-.avatar svg {
-  width: 24px;
-  height: 24px;
-}
-
-.patient-name {
-  font-size: 16px;
-  font-weight: 700;
-  color: var(--color-text-strong);
-}
-
-.patient-basic {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  font-size: 14px;
-  color: var(--color-text-medium);
-}
-
-.divider {
-  width: 1px;
-  height: 12px;
-  background: var(--color-border-medium);
-}
-
-.tag-ai {
-  background: linear-gradient(135deg, var(--color-primary) 0%, var(--color-primary-dark) 100%);
-  color: white;
-  padding: 4px 10px;
-  border-radius: 12px;
-  font-size: 12px;
-  font-weight: 500;
-}
-
-.contact-info {
-  display: flex;
-  align-items: center;
-  gap: 16px;
-  font-size: 13px;
-  color: var(--color-text-muted);
-  pointer-events: auto; /* Re-enable for text selection if needed, though usually not needed for drag */
-}
-
-/* Header Actions - 与问诊页面一致 */
-.header-actions {
-  margin-left: auto;
-  display: flex;
-  gap: 12px;
-  align-items: center;
-  flex-shrink: 0;
-}
-
-.header-btn {
-  padding: 8px 18px;
-  border: 1px solid var(--color-border-medium);
-  border-radius: 8px;
-  background: var(--color-background-white);
-  font-size: 14px;
-  font-weight: 500;
-  color: var(--color-text-medium);
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  transition: all var(--duration-normal) var(--ease-out);
-}
-
-.header-btn:hover {
-  background: var(--color-background-hover);
-  border-color: var(--color-border-strong);
-}
-
-.header-btn.primary {
-  background: linear-gradient(135deg, var(--color-cta) 0%, var(--color-cta-dark) 100%);
-  border: none;
-  color: white;
-  box-shadow: 0 4px 12px var(--color-primary-200);
-}
-
-.header-btn.primary:hover {
-  filter: brightness(1.05);
-  transform: translateY(-1px);
-  box-shadow: 0 6px 16px var(--color-primary-200);
-}
-
-.header-btn.primary:disabled {
-  opacity: 0.6;
-  cursor: not-allowed;
-}
-
-.header-btn svg {
-  width: 16px;
-  height: 16px;
 }
 
 /* 提示信息 */

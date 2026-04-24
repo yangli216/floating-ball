@@ -576,7 +576,9 @@ eventListeners.unregisterAllListeners();
 | `VoiceRecommendationFeedbackPopover.vue` | 语音结果页单条推荐反馈弹层：收集问题标签、反馈原因、是否已修正采用以及修正结果摘要 | [src/components/VoiceRecommendationFeedbackPopover.vue](src/components/VoiceRecommendationFeedbackPopover.vue) |
 | `VoiceRecordFeedbackPopover.vue` | 语音结果页病例字段反馈弹层：展示主诉 / 现病史 / 既往史的 AI 原文、当前内容与差异摘要，并提交字段级反馈 | [src/components/VoiceRecordFeedbackPopover.vue](src/components/VoiceRecordFeedbackPopover.vue) |
 | `VoiceSessionFeedbackBar.vue` | 语音结果页整页反馈浮层主体：在一键回写成功后弹出，收集 1-5 分评分、整体问题标签和点评 | [src/components/VoiceSessionFeedbackBar.vue](src/components/VoiceSessionFeedbackBar.vue) |
-| `VoiceConsultationResult.vue` | 语音结果编辑 | [src/components/VoiceConsultationResult.vue](src/components/VoiceConsultationResult.vue) |
+| `VoiceConsultationResult.vue` | 语音结果编辑编排层：负责渲染 AI 生成病历、诊断/用药/检查/检验/处置列表与医生确认入口；结果记录状态、标准库匹配、事实复核、知识库搜索、安全复核员等逻辑必须通过 composable 注入，避免继续在页面内堆积业务流程 | [src/components/VoiceConsultationResult.vue](src/components/VoiceConsultationResult.vue) |
+| `VoiceResultHeader.vue` | 语音结果页患者信息与确认/放弃操作头部；只负责展示和发出 `confirm/cancel` 事件，不承接结果记录、复核或回写逻辑 | [src/components/VoiceResultHeader.vue](src/components/VoiceResultHeader.vue) |
+| `VoiceSafetyReviewPanel.vue` | 语音安全复核员提示面板：展示异步安全复核状态和非干扰提醒，支持展开详情、知晓和忽略；只负责 UI 与事件，不直接调用 LLM 或 HIS | [src/components/VoiceSafetyReviewPanel.vue](src/components/VoiceSafetyReviewPanel.vue) |
 | `ReceptionCapsule.vue` | 接待胶囊（风险提示） | [src/components/ReceptionCapsule.vue](src/components/ReceptionCapsule.vue) |
 | `RiskAlertPanel.vue` | 风险详情面板 | [src/components/RiskAlertPanel.vue](src/components/RiskAlertPanel.vue) |
 | `AnalyticsPanel.vue` | 数据分析 | [src/components/AnalyticsPanel.vue](src/components/AnalyticsPanel.vue) |
@@ -761,7 +763,7 @@ src/styles/
 | `knowledgeBase.ts` | 知识库检索 | [src/services/knowledgeBase.ts](src/services/knowledgeBase.ts) |
 | `types/consultationAssist.ts` | 主问诊灵活模式的动作类型、诊断路径候选类型与上下文结构定义，避免继续依赖历史 session 命名 | [src/types/consultationAssist.ts](src/types/consultationAssist.ts) |
 | `templateService.ts` | 症状模板管理 | [src/services/templateService.ts](src/services/templateService.ts) |
-| `factChecker.ts` | AI 防误防漏 / 审查能力 | [src/services/factChecker.ts](src/services/factChecker.ts) |
+| `factChecker.ts` | AI 防误防漏 / 审查能力；语音结果页只通过 `useVoiceResultFactCheck.ts` 和 `useVoiceSafetyReview.ts` 编排调用，不在组件内直接维护复核进度和 issue map | [src/services/factChecker.ts](src/services/factChecker.ts) |
 | `promptGuard.ts` | Prompt 注入与泄漏保护 | [src/services/promptGuard.ts](src/services/promptGuard.ts) |
 | `textGeneration.ts` | 主诉/现病史等文本生成辅助 | [src/services/textGeneration.ts](src/services/textGeneration.ts) |
 | `reportGenerator.ts` | 使用报告导出 | [src/services/reportGenerator.ts](src/services/reportGenerator.ts) |
