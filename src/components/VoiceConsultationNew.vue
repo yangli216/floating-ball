@@ -567,6 +567,23 @@ function toggleTreatmentEditor(rec: TreatmentRecommendation, event?: Event): voi
   expandedTreatmentEditors.value = nextEditors;
 }
 
+function expandTreatmentEditor(rec: TreatmentRecommendation): void {
+  const key = getTreatmentEditorKey(rec);
+  if (expandedTreatmentEditors.value.has(key)) {
+    return;
+  }
+
+  expandedTreatmentEditors.value = new Set([...expandedTreatmentEditors.value, key]);
+}
+
+function shouldShowTreatmentEditor(rec: TreatmentRecommendation): boolean {
+  if (rec.type === 'medicine') {
+    return !!rec.selected;
+  }
+
+  return isTreatmentEditorExpanded(rec);
+}
+
 function registerEditableFieldElement(key: string, element: unknown): void {
   if (element instanceof HTMLInputElement || element instanceof HTMLSelectElement) {
     editableFieldElements.set(key, element);
@@ -1116,6 +1133,10 @@ function normalizeTreatmentRecommendation(rec: Partial<TreatmentRecommendation>)
       : '') || '',
     insuranceType: rec.insuranceType || '医保使用',
   };
+
+  if (isExecDeptRequired(base) && !getExecDeptDisplay(base)) {
+    base.selected = false;
+  }
 
   if (base.type !== 'medicine') {
     return base;
@@ -1748,11 +1769,18 @@ async function confirmSuggestedMatch(rec: TreatmentRecommendation, event?: Event
     return;
   }
 
-  rec.selected = true;
-
   if (rec.type !== 'medicine') {
-    void hydrateMatchedMedicalItemDetail(rec);
+    await hydrateMatchedMedicalItemDetail(rec);
   }
+
+  if (!hasRequiredExecDept(rec)) {
+    expandTreatmentEditor(rec);
+    openSecondarySelector(rec, 'execDept');
+    showToast?.(`${rec.name} 未设置执行科室，请先设置后再选中`, 'warning');
+    return;
+  }
+
+  rec.selected = true;
 
   showToast?.(`${rec.name} 已确认匹配`, 'success');
 }
@@ -1785,11 +1813,19 @@ async function applyManualMatch(rec: TreatmentRecommendation, candidate: Medicin
     return;
   }
 
+  if (rec.type !== 'medicine') {
+    await hydrateMatchedMedicalItemDetail(rec);
+  }
+
+  if (!hasRequiredExecDept(rec)) {
+    expandTreatmentEditor(rec);
+    openSecondarySelector(rec, 'execDept');
+    showToast?.(`${candidate.name} 未设置执行科室，请先设置后再选中`, 'warning');
+    return;
+  }
+
   rec.selected = true;
   activeManualMatchKey.value = null;
-  if (rec.type !== 'medicine') {
-    void hydrateMatchedMedicalItemDetail(rec);
-  }
   showToast?.(`${candidate.name} 已完成标准库匹配`, 'success');
 }
 
@@ -1808,6 +1844,13 @@ async function toggleTreatment(item: TreatmentRecommendation): Promise<void> {
   const nextSelected = !item.selected;
 
   if (nextSelected && item.type === 'medicine' && !(await ensureMedicineSelectable(item, true))) {
+    return;
+  }
+
+  if (nextSelected && !hasRequiredExecDept(item)) {
+    expandTreatmentEditor(item);
+    openSecondarySelector(item, 'execDept');
+    showToast?.('请先设置执行科室后再选中该项目', 'warning');
     return;
   }
 
@@ -2390,6 +2433,35 @@ function syncTreatmentExecDeptSelections(): void {
     }
 
     rec.execDept = keyByText.get(currentValue) || rec.execDept;
+  });
+}
+
+function isExecDeptRequired(rec: TreatmentRecommendation): boolean {
+  return rec.type === 'exam' || rec.type === 'lab_test';
+}
+
+function getExecDeptDisplay(rec: TreatmentRecommendation): string {
+  const currentValue = (rec.execDept || '').trim();
+  if (!currentValue) {
+    return '';
+  }
+
+  const matched = execDeptOptions.value.find((option) => option.key === currentValue || option.text === currentValue);
+  return matched?.text || currentValue;
+}
+
+function hasRequiredExecDept(rec: TreatmentRecommendation): boolean {
+  return !isExecDeptRequired(rec) || !!getExecDeptDisplay(rec);
+}
+
+function openExecDeptQuickSelector(rec: TreatmentRecommendation, event?: Event): void {
+  event?.stopPropagation();
+  expandTreatmentEditor(rec);
+  openSecondarySelector(rec, 'execDept');
+  void nextTick(() => {
+    const selector = document.querySelector<HTMLInputElement>(`[data-exec-dept-input="${getTreatmentEditorKey(rec)}"]`);
+    selector?.focus();
+    selector?.select();
   });
 }
 
@@ -3120,6 +3192,10 @@ function selectExecDeptOption(rec: TreatmentRecommendation, option: UsageOption)
 function clearExecDeptSelection(rec: TreatmentRecommendation): void {
   rec.execDept = '';
   setExecDeptSearchKeyword(rec, '');
+  if (isExecDeptRequired(rec)) {
+    rec.selected = false;
+    showToast?.('执行科室已清空，请重新设置后再选中该项目', 'warning');
+  }
 }
 
 function getInsuranceSearchKey(rec: TreatmentRecommendation): string {
@@ -3190,6 +3266,14 @@ async function handleBatchWriteBack(): Promise<void> {
       .map((item) => ensureMedicineSelectable(item, true)));
     if (medicinesReady.some((ready) => !ready)) {
       showToast?.('存在当前药房无有效详情的药品，请取消选择后再提交', 'warning');
+      return;
+    }
+
+    const missingExecDept = selected.find((item) => !hasRequiredExecDept(item));
+    if (missingExecDept) {
+      expandTreatmentEditor(missingExecDept);
+      openSecondarySelector(missingExecDept, 'execDept');
+      showToast?.(`${missingExecDept.name} 未设置执行科室，请先设置后再提交`, 'warning');
       return;
     }
 
@@ -3645,6 +3729,17 @@ watch(
                           <span class="meta-token" :class="{ warning: rec.matchStatus === 'probable' || rec.matchStatus === 'unmatched', success: rec.matchStatus === 'manual' || rec.matchStatus === 'confirmed' }">
                             {{ rec.matchedItem || rec.matchStatus === 'probable' ? getTreatmentMatchLabel(rec) : '未匹配标准库' }}
                           </span>
+                          <button
+                            v-if="isExecDeptRequired(rec)"
+                            class="exec-dept-chip"
+                            :class="{ missing: !hasRequiredExecDept(rec) }"
+                            type="button"
+                            :title="hasRequiredExecDept(rec) ? '点击调整执行科室' : '执行科室为空，点击设置后才能选中'"
+                            @click.stop="openExecDeptQuickSelector(rec, $event)"
+                          >
+                            <span v-if="!hasRequiredExecDept(rec)" class="exec-dept-chip-label">执行科室</span>
+                            <span class="exec-dept-chip-value">{{ getExecDeptDisplay(rec) || '待设置' }}</span>
+                          </button>
                           <span v-if="rec.type !== 'medicine' && rec.usage" class="meta-token">建议 {{ rec.usage }}</span>
                         </div>
 
@@ -3751,7 +3846,7 @@ watch(
                       </div>
                     </div>
 
-                    <div v-if="rec.selected && (rec.type === 'medicine' || isTreatmentEditorExpanded(rec))" class="editor-shell" @click.stop>
+                    <div v-if="shouldShowTreatmentEditor(rec)" class="editor-shell" @click.stop>
                       <template v-if="rec.type === 'medicine'">
                         <div class="medicine-primary-fields">
                           <div class="primary-field" :class="{ editing: isEditableFieldActive(rec, 'dosage') }">
@@ -3953,6 +4048,7 @@ watch(
                                 type="text"
                                 placeholder="输入名称筛选科室"
                                 class="edit-input"
+                                :data-exec-dept-input="getTreatmentEditorKey(rec)"
                                 @focus="openSecondarySelector(rec, 'execDept')"
                                 @input="handleExecDeptSearchInput(rec, $event)"
                               />
@@ -4033,6 +4129,7 @@ watch(
                                 type="text"
                                 placeholder="输入名称筛选科室"
                                 class="edit-input"
+                                :data-exec-dept-input="getTreatmentEditorKey(rec)"
                                 @focus="openSecondarySelector(rec, 'execDept')"
                                 @input="handleExecDeptSearchInput(rec, $event)"
                               />
@@ -4124,6 +4221,7 @@ watch(
                                 type="text"
                                 placeholder="输入名称筛选科室"
                                 class="edit-input"
+                                :data-exec-dept-input="getTreatmentEditorKey(rec)"
                                 @focus="openSecondarySelector(rec, 'execDept')"
                                 @input="handleExecDeptSearchInput(rec, $event)"
                               />
@@ -4967,6 +5065,47 @@ watch(
 
 .meta-token.success {
   color: var(--voice-success);
+}
+
+.exec-dept-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-width: 0;
+  max-width: 180px;
+  min-height: 24px;
+  padding: 0 8px;
+  border: 1px solid var(--voice-accent-soft);
+  border-radius: 999px;
+  background: var(--voice-accent-softer);
+  color: var(--voice-accent-strong);
+  cursor: pointer;
+}
+
+.exec-dept-chip:hover {
+  border-color: var(--voice-accent);
+  background: rgba(37, 99, 235, 0.1);
+}
+
+.exec-dept-chip.missing {
+  border-color: rgba(201, 122, 17, 0.28);
+  background: rgba(201, 122, 17, 0.1);
+  color: var(--voice-warning);
+}
+
+.exec-dept-chip-label {
+  flex-shrink: 0;
+  font-size: var(--voice-font-min);
+  font-weight: 700;
+}
+
+.exec-dept-chip-value {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--voice-font-min);
+  font-weight: 700;
 }
 
 .diag-role-token {
