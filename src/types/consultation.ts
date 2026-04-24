@@ -52,6 +52,8 @@ export interface TreatmentRecommendation {
     aliases?: string[];
     reason: string;
     spec?: string;
+    targetDose?: string;      // AI 目标治疗剂量数值 (如 "500")
+    targetDoseUnit?: string;  // AI 剂量单位 (如 "mg")
     usage?: string;
     ingredients?: string; // TCM specific
     matchedItem?: any; // Matched item from catalog
@@ -67,6 +69,7 @@ export interface TreatmentRecommendation {
     dosageUnit?: string;    // 剂量单位 (medicine)
     totalQty?: string;      // 总量 (all types)
     totalUnit?: string;     // 总量单位
+    totalManualEdited?: boolean; // 总量是否已被医生手动修改
     frequency?: string;     // 频次 (medicine)
     frequencyKey?: string;  // 频次编码 (medicine)
     route?: string;         // 药品用法/给药途径 (medicine)

@@ -118,9 +118,13 @@ export interface TreatmentHint {
   aliases?: string[];
   /** 处理目的或引用理由 */
   goal?: string;
-  /** 规格 (药品适用) */
+  /** 制剂规格：每片/每粒/每支的含量（如 "0.25g"、"10mg"），不含包装规格 */
   spec?: string;
-  /** 用量 (药品适用) */
+  /** 目标治疗剂量：临床标准一次剂量数值（如 "500"） */
+  targetDose?: string;
+  /** 目标剂量单位（mg、g、ml 等） */
+  targetDoseUnit?: string;
+  /** 用量 (药品适用，可留空，系统会根据 targetDose 和规格自动换算) */
   dosage?: string;
   /** 剂量单位 (药品适用) */
   dosageUnit?: string;
@@ -812,7 +816,13 @@ export const TreatmentRecommendationPrompt = {
 **输出要求：**
 只返回用药推荐，不要包含检查、检验或处置项目。
 严格返回JSON数组格式，不包含markdown标记。
-每个药品尽量提供结构化字段：spec、dosage、dosageUnit、frequency、frequencyKey、usage、usageKey、totalQty、totalUnit、days；如果确实无法确定，可留空字符串，不要把全部信息只塞进 usage 一项。`,
+
+**剂量输出规则（重要）：**
+- spec: 药品**制剂规格**（每片/每粒/每支的含量），如 "0.25g"、"10mg"、"5ml"。**不要写成包装规格**（如 "0.25g*24粒/盒"）。
+- targetDose: 临床标准一次剂量的数值，如 "500"（表示一次 500mg）。这是根据诊疗指南和药品说明书推荐的成人常规一次剂量。
+- targetDoseUnit: 剂量单位，如 "mg"、"g"、"ml"。
+- dosage / dosageUnit: 可以留空，系统会根据 targetDose 和匹配到的药品规格自动换算为几片几粒。
+- 其他结构化字段：frequency、frequencyKey、usage、usageKey、totalQty、totalUnit、days；如果确实无法确定可留空字符串，不要把全部信息只塞进 usage 一项。`,
 
   buildUserPrompt(params: {
     patientName: string;
@@ -841,10 +851,12 @@ ${params.chiefComplaint}
 4. 如需抗生素，说明使用指征和注意事项
 5. 避免过度用药
 6. 不要推荐检查、检验或处置项目
-7. 优先返回结构化字段：规格 spec、单次剂量 dosage、剂量单位 dosageUnit、频次 frequency、频次编码 frequencyKey、用法 usage、用法编码 usageKey、总量 totalQty、总量单位 totalUnit、疗程 days
-8. 若频次/用法能明确标准表达，优先输出中文文本；frequencyKey、usageKey 能确定就补充，不能确定可留空
-9. 若 dosage、总量、疗程无法合理确定，可留空字符串，但不要把这类字段全部混写进 usage
-10. name 优先填写规范通用名；如果门诊日常还常用 1-3 个稳定简称或别名，请补充到 aliases，便于与院内目录匹配
+7. spec 必须是**制剂规格**（每片/粒/支的含量，如 "0.25g"），不要写包装规格（如 "0.25g*24粒/盒"）
+8. targetDose 填写临床标准一次剂量数值（如阿莫西林成人一次 500mg，则 targetDose="500"，targetDoseUnit="mg"）
+9. dosage/dosageUnit 可留空（系统会根据 targetDose 和实际规格自动换算为几片几粒）
+10. 若频次/用法能明确标准表达，优先输出中文文本；frequencyKey、usageKey 能确定就补充，不能确定可留空
+11. 若总量、疗程无法合理确定，可留空字符串
+12. name 优先填写规范通用名；如果门诊日常还常用 1-3 个稳定简称或别名，请补充到 aliases，便于与院内目录匹配
 
 **返回格式：**
 [
@@ -852,17 +864,17 @@ ${params.chiefComplaint}
     "type": "medicine",
     "name": "阿莫西林胶囊",
     "aliases": ["阿莫西林", "阿莫西林胶囊剂"],
-    "spec": "0.25g*24粒/盒",
+    "spec": "0.25g",
     "reason": "符合急性支气管炎细菌感染治疗指南，基本药物目录药品",
-    "dosage": "0.5",
-    "dosageUnit": "g",
+    "targetDose": "500",
+    "targetDoseUnit": "mg",
     "frequency": "每日3次",
     "frequencyKey": "tid",
     "usage": "口服",
     "usageKey": "po",
     "totalQty": "14",
     "totalUnit": "粒",
-    "days": "5-7"
+    "days": "5"
   }
 ]
 

@@ -1,4 +1,5 @@
 export type VoiceFeedbackAction = 'useful' | 'dissatisfied' | 'corrected';
+export type VoiceRecordFieldKey = 'chiefComplaint' | 'historyOfPresentIllness' | 'pastMedicalHistory';
 
 export interface VoiceRecommendationFeedbackDraft {
   action: VoiceFeedbackAction | '';
@@ -6,6 +7,8 @@ export interface VoiceRecommendationFeedbackDraft {
   comment: string;
   correctedValue: string;
 }
+
+export type VoiceRecordFieldFeedbackDraft = VoiceRecommendationFeedbackDraft;
 
 export interface VoiceSessionFeedbackDraft {
   rating: number;
@@ -15,6 +18,7 @@ export interface VoiceSessionFeedbackDraft {
 
 export interface VoiceFeedbackDraftState {
   recommendationDrafts: Record<string, VoiceRecommendationFeedbackDraft>;
+  recordFieldDrafts: Record<string, VoiceRecordFieldFeedbackDraft>;
   sessionDraft: VoiceSessionFeedbackDraft;
 }
 
@@ -53,6 +57,41 @@ export interface VoiceRecommendationFeedbackPayload {
   createdAt: number;
 }
 
+export interface VoiceRecordFieldDiffSummary {
+  changed: boolean;
+  summaryText: string;
+  originalExcerpt: string;
+  currentExcerpt: string;
+  removedText: string;
+  addedText: string;
+}
+
+export interface VoiceRecordFieldFeedbackPayload {
+  kind: 'record_field';
+  localId: string;
+  consultationId: string;
+  sessionId: string | null;
+  patientId: string;
+  patientName: string;
+  fieldKey: VoiceRecordFieldKey;
+  fieldLabel: string;
+  action: VoiceFeedbackAction;
+  issueTags: string[];
+  comment: string;
+  correctedValue?: string;
+  originalValue: string;
+  currentValue: string;
+  modifiedByDoctor: boolean;
+  diffSummary: VoiceRecordFieldDiffSummary;
+  encounterSummary: {
+    chiefComplaint: string;
+    historyOfPresentIllness: string;
+    pastMedicalHistory: string;
+  };
+  aiTrace?: Record<string, unknown> | null;
+  createdAt: number;
+}
+
 export interface VoiceSessionFeedbackPayload {
   kind: 'session';
   localId: string;
@@ -73,4 +112,7 @@ export interface VoiceSessionFeedbackPayload {
   createdAt: number;
 }
 
-export type VoicePendingFeedbackPayload = VoiceRecommendationFeedbackPayload | VoiceSessionFeedbackPayload;
+export type VoicePendingFeedbackPayload =
+  | VoiceRecommendationFeedbackPayload
+  | VoiceRecordFieldFeedbackPayload
+  | VoiceSessionFeedbackPayload;

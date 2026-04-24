@@ -429,9 +429,9 @@ await navigation.openConsultation();
 
 **核心功能**:
 - ✅ 登记语音结果页诊断 / 治疗推荐快照，便于后续反馈引用稳定 targetId
-- ✅ 管理单条推荐反馈草稿与整页评分草稿
+- ✅ 管理单条推荐反馈、病例字段反馈草稿与整页评分草稿
 - ✅ 调用 `feedback.ts` 完成本地推荐反馈与整页反馈落库
-- ✅ 调用 `voiceFeedback.ts` 生成后续可直推后台的标准 payload 并进入本地待同步队列
+- ✅ 调用 `voiceFeedback.ts` 生成后续可直推后台的标准 payload，并为病例字段反馈补齐 AI 原文 / 医生现值 / 差异摘要
 - ✅ 负责从本地恢复未提交的语音反馈草稿，避免医生误关窗口后丢失
 
 **导出 API**:
@@ -572,8 +572,9 @@ eventListeners.unregisterAllListeners();
 | `ConsultationPage.vue` | 完整症状问诊主链路，同时承接新的“内嵌灵活模式”；支持根据 `/assist` 上下文直接跳过症状采集进入病历详情页，继续复用现有推荐诊断、诊断鉴别、推荐用药、推荐检查与诊断路径能力，并负责处理 PHIS 引用闭环的页面状态；诊断保持单选引用，推荐方案支持多选后分组批量引入 | [src/components/ConsultationPage.vue](src/components/ConsultationPage.vue) |
 | `DiagnosisPathWindow.vue` | 独立诊断推理路径窗口，使用 ECharts Sankey 展示患者事实、章节归类、证据汇聚与诊断去向；默认提供更宽画布，并按容器尺寸动态计算 Sankey 的布局盒子，用对称留白实现“适应屏幕并居中”的默认视图，再开放滚轮缩放、平移与节点拖动；点击入口后窗口先显示 loading 动画，并按“检查缓存 -> 生成推理链 -> 渲染图表”的阶段更新提示，若生成超时或渲染失败会切换到明确错误态；正文容器在收到 payload 后保持挂载，loading 改为遮罩层，避免 `chartEl` 尚未挂载时误判渲染成功；开窗后的 `show/focus` 调用采用 best-effort 非阻塞方式，避免 Tauri 原生命令卡住整个推理链；右侧说明面板采用“支持证据 / 反证提醒 / 鉴别要点”三段式，未返回结构化分段时回退显示整体 rationale | [src/components/DiagnosisPathWindow.vue](src/components/DiagnosisPathWindow.vue) |
 | `VoiceCapsule.vue` | 语音录制胶囊 | [src/components/VoiceCapsule.vue](src/components/VoiceCapsule.vue) |
-| `VoiceConsultationNew.vue` | 当前语音问诊主结果页：左侧聚焦病例正文编辑，右侧展示 AI 诊断/治疗推荐与一键回写；整体采用“双栏正文 + 右侧决策卡片”结构，名称/规格/匹配状态按“单行优先”压缩展示；消费 `useVoiceIntentRecognition` 产出的“病例草稿 + 带 explicit/inferred 来源标记的诊断/处方/检查提示”，优先直接填充主诉、现病史、既往史和可映射的处方核心字段，减少医生二次录入；其中“条件成立后再考虑”的药物与“患者已自行服用”的药物不作为当前处方候选，前者降级到处理意见，后者保留在用药史语义中；推荐依据不再以单独文本块展开，而是以名称后的悬停图标提示完整内容，避免右栏信息过载；诊断区保持单选切换且不允许取消为空，当前页不再承载诊断鉴别排查弹窗；药品项默认只展开“一次剂量、频次、用法、总量”四类核心字段，其余字段由头部箭头按需展开，检查/检验/处置编辑项默认收起；药品和诊疗项目的标准库匹配在本页按“完全匹配 / 大概率匹配待医生确认 / 未匹配需手动匹配”三档执行，只有确认后的标准项才能进入回写；顶部患者信息栏右侧固定承载“放弃”和“一键回写”操作，其中“放弃”必须先经过二次确认，再清空当前患者的语音缓存并退回小球状态；组件自身负责纵向滚动与右侧列圆角裁切，以适应固定窗口高度并隔离全局面板样式；视觉层面统一遵守最小 13px、正文 14px、重点 14px 加粗的字号基线，并仅用贴左上角边框的淡底勾选标记表达选中态；颜色与表面层级优先复用 `themeService` 下发的全局主题变量，确保语音结果页与系统风格设置保持同步；新增反馈能力需通过独立反馈子组件和 composable 接入，避免继续把项级反馈与整页评分逻辑堆积到页面主文件中 | [src/components/VoiceConsultationNew.vue](src/components/VoiceConsultationNew.vue) |
+| `VoiceConsultationNew.vue` | 当前语音问诊主结果页：左侧聚焦病例正文编辑，右侧展示 AI 诊断/治疗推荐与一键回写；整体采用“双栏正文 + 右侧决策卡片”结构，名称/规格/匹配状态按“单行优先”压缩展示；消费 `useVoiceIntentRecognition` 产出的“病例草稿 + 带 explicit/inferred 来源标记的诊断/处方/检查提示”，优先直接填充主诉、现病史、既往史和可映射的处方核心字段，减少医生二次录入；其中“条件成立后再考虑”的药物与“患者已自行服用”的药物不作为当前处方候选，前者降级到处理意见，后者保留在用药史语义中；推荐依据不再以单独文本块展开，而是以名称后的悬停图标提示完整内容，避免右栏信息过载；病例详情标题侧提供字段级反馈入口，页面本身只负责维护当前值与初始快照，AI 原文 / 医生现值 / 差异对比的展示与提交由独立反馈子组件承接；诊断区保持单选切换且不允许取消为空，当前页不再承载诊断鉴别排查弹窗；药品项默认只展开“一次剂量、频次、用法、总量”四类核心字段，其余字段由头部箭头按需展开，检查/检验/处置编辑项默认收起；药品和诊疗项目的标准库匹配在本页按“完全匹配 / 大概率匹配待医生确认 / 未匹配需手动匹配”三档执行，只有确认后的标准项才能进入回写；顶部患者信息栏右侧固定承载“放弃”和“一键回写”操作，其中“放弃”必须先经过二次确认，再清空当前患者的语音缓存并退回小球状态；组件自身负责纵向滚动与右侧列圆角裁切，以适应固定窗口高度并隔离全局面板样式；视觉层面统一遵守最小 13px、正文 14px、重点 14px 加粗的字号基线，并仅用贴左上角边框的淡底勾选标记表达选中态；颜色与表面层级优先复用 `themeService` 下发的全局主题变量，确保语音结果页与系统风格设置保持同步；新增反馈能力需通过独立反馈子组件和 composable 接入，避免继续把项级反馈与整页评分逻辑堆积到页面主文件中 | [src/components/VoiceConsultationNew.vue](src/components/VoiceConsultationNew.vue) |
 | `VoiceRecommendationFeedbackPopover.vue` | 语音结果页单条推荐反馈弹层：收集问题标签、反馈原因、是否已修正采用以及修正结果摘要 | [src/components/VoiceRecommendationFeedbackPopover.vue](src/components/VoiceRecommendationFeedbackPopover.vue) |
+| `VoiceRecordFeedbackPopover.vue` | 语音结果页病例字段反馈弹层：展示主诉 / 现病史 / 既往史的 AI 原文、当前内容与差异摘要，并提交字段级反馈 | [src/components/VoiceRecordFeedbackPopover.vue](src/components/VoiceRecordFeedbackPopover.vue) |
 | `VoiceSessionFeedbackBar.vue` | 语音结果页整页反馈浮层主体：在一键回写成功后弹出，收集 1-5 分评分、整体问题标签和点评 | [src/components/VoiceSessionFeedbackBar.vue](src/components/VoiceSessionFeedbackBar.vue) |
 | `VoiceConsultationResult.vue` | 语音结果编辑 | [src/components/VoiceConsultationResult.vue](src/components/VoiceConsultationResult.vue) |
 | `ReceptionCapsule.vue` | 接待胶囊（风险提示） | [src/components/ReceptionCapsule.vue](src/components/ReceptionCapsule.vue) |
@@ -752,7 +753,7 @@ src/styles/
 | `hisService.ts` | HIS HTTP 调用封装：统一处理鉴权头、POST/GET 请求，以及诊断/药品/诊疗项目目录与药品频次、用法等字典读取，供主问诊和语音问诊复用；语音结果页药房列表也通过该服务调用 `api/phis.orgMedStoManageService/queryOrgSto`，并按 SDK 握手 `extra.urt.userRoleDepts` 中的 `deptId` 过滤可见范围 | [src/services/hisService.ts](src/services/hisService.ts) |
 | `diagnosisPath.ts` | 诊断路径数据构建与独立窗口事件载荷封装；优先通过 LLM 生成结构化推理链，再在前端校验并映射为 Sankey 节点、连线和说明文案，失败时回退本地兜底链路；载荷中补充 `supportingEvidence`、`counterEvidence`、`differentialPoints` 三段式解释字段，供窗口右侧说明面板直接渲染 | [src/services/diagnosisPath.ts](src/services/diagnosisPath.ts) |
 | `feedback.ts` | 会话反馈服务；负责会话、推荐、反馈、性能指标的本地落库与区域化双写 | [src/services/feedback.ts](src/services/feedback.ts) |
-| `voiceFeedback.ts` | 语音反馈服务；负责推荐项 / 整页反馈 payload 组装、本地草稿恢复与待同步队列 | [src/services/voiceFeedback.ts](src/services/voiceFeedback.ts) |
+| `voiceFeedback.ts` | 语音反馈服务；负责推荐项 / 病例字段 / 整页反馈 payload 组装、本地草稿恢复、病例字段差异摘要与待同步队列 | [src/services/voiceFeedback.ts](src/services/voiceFeedback.ts) |
 | `aiTrace.ts` | 最近一次区域化 AI 调用链路上下文缓存；向反馈面板暴露 `traceId`、模型、场景、输入/输出摘要与耗时 | [src/services/aiTrace.ts](src/services/aiTrace.ts) |
 | `operationTracker.ts` | 操作追踪和分析 | [src/services/operationTracker.ts](src/services/operationTracker.ts) |
 | `themeService.ts` | 主题管理 | [src/services/themeService.ts](src/services/themeService.ts) |

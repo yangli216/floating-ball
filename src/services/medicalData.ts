@@ -177,6 +177,40 @@ const ICD10_CATEGORY_GROUPS: Icd10CategoryInfo[] = [
   { key: 'U00-U99', range: 'U00-U99', title: '用于特殊目的的编码', order: 22 }
 ];
 
+/**
+ * 从规格字符串中提取有效成分含量并归一化为 mg。
+ * 示例: "0.25g" → 250, "10mg" → 10, "500ug" → 0.5, "250mg/5ml" → 250, "0.25g*24粒/盒" → 250
+ * 无法识别时返回 null。
+ */
+function extractSpecStrengthMg(spec: string | undefined | null): number | null {
+  if (!spec) return null;
+  const normalized = spec.trim();
+  if (!normalized) return null;
+
+  // 匹配常见规格模式: "0.25g", "10mg", "500ug", "250mg/5ml", "0.25g*24粒/盒", "0.5g/粒"
+  const match = normalized.match(/(\d+(?:\.\d+)?)\s*(g|mg|ug|μg|毫克|克|微克)/i);
+  if (!match) return null;
+
+  const value = parseFloat(match[1]);
+  if (isNaN(value) || value <= 0) return null;
+
+  const unit = match[2].toLowerCase();
+  switch (unit) {
+    case 'g':
+    case '克':
+      return value * 1000;
+    case 'mg':
+    case '毫克':
+      return value;
+    case 'ug':
+    case 'μg':
+    case '微克':
+      return value / 1000;
+    default:
+      return null;
+  }
+}
+
 class MedicalDataService {
   private static readonly PROBABLE_MATCH_THRESHOLD = 0.86;
   private static readonly PROBABLE_MATCH_MARGIN = 0.08;
@@ -674,8 +708,8 @@ class MedicalDataService {
     return this.searchMedicinesByVariants(query, aliases, limit);
   }
 
-  public assessMedicineMatch(query: string, aliases?: string[]): CatalogMatchAssessment<MedicineItem> {
-    return this.assessMedicineByVariants(query, aliases);
+  public assessMedicineMatch(query: string, aliases?: string[], spec?: string): CatalogMatchAssessment<MedicineItem> {
+    return this.assessMedicineByVariants(query, aliases, spec);
   }
 
   /**
@@ -766,13 +800,13 @@ class MedicalDataService {
       .map((candidate) => candidate.item);
   }
 
-  private assessMedicineByVariants(query: string, aliases?: string[]): CatalogMatchAssessment<MedicineItem> {
-    const exact = this.findExactMedicineMatch(query);
+  private assessMedicineByVariants(query: string, aliases?: string[], spec?: string): CatalogMatchAssessment<MedicineItem> {
+    const exact = this.findExactMedicineMatch(query, spec);
     if (exact) {
       return { status: 'exact', candidate: exact, confidence: 1 };
     }
 
-    const ranked = this.collectScoredMedicineCandidates(query, aliases, 2);
+    const ranked = this.collectScoredMedicineCandidates(query, aliases, 2, spec);
     const top = ranked[0];
     const second = ranked[1];
 
@@ -825,12 +859,13 @@ class MedicalDataService {
     return { status: 'unmatched', candidate: null, confidence: 0 };
   }
 
-  private collectScoredMedicineCandidates(query: string, aliases?: string[], limit = Number.POSITIVE_INFINITY): Array<ScoredCandidate<MedicineItem>> {
+  private collectScoredMedicineCandidates(query: string, aliases?: string[], limit = Number.POSITIVE_INFINITY, spec?: string): Array<ScoredCandidate<MedicineItem>> {
     const variants = this.buildMatchVariants(query, aliases);
     if (variants.length === 0) {
       return [];
     }
 
+    const querySpecMg = extractSpecStrengthMg(spec);
     const primaryVariant = variants[0];
     const medicineCandidates: Array<ScoredCandidate<MedicineItem>> = [];
 
@@ -849,6 +884,14 @@ class MedicalDataService {
         const nameScore = this.calculateScore(variant.normalized, item.name) * variant.weight;
         const fullNameScore = this.calculateScore(variant.normalized, `${item.name} ${item.spec}`) * variant.weight;
         score = Math.max(score, nameScore, fullNameScore);
+      }
+
+      // 规格加权：同名候选中，规格含量匹配的加分
+      if (querySpecMg !== null && score >= 0.5) {
+        const itemSpecMg = extractSpecStrengthMg(item.spec);
+        if (itemSpecMg !== null && Math.abs(querySpecMg - itemSpecMg) < 0.01) {
+          score = Math.min(score + 0.15, 1.0);
+        }
       }
 
       medicineCandidates.push({ item, score, primaryScore });
@@ -937,13 +980,32 @@ class MedicalDataService {
       .replace(/[\s\-_()（）[\]【】,，.。/\\]/gu, '');
   }
 
-  private findExactMedicineMatch(query: string): MedicineItem | null {
+  private findExactMedicineMatch(query: string, spec?: string): MedicineItem | null {
     const normalizedQuery = this.normalizeExactMatchText(query);
     if (!normalizedQuery) {
       return null;
     }
 
-    return this.catalog.medicines.find((item) => this.normalizeExactMatchText(item.name) === normalizedQuery) || null;
+    const exactMatches = this.catalog.medicines.filter((item) => this.normalizeExactMatchText(item.name) === normalizedQuery);
+    if (exactMatches.length === 0) {
+      return null;
+    }
+
+    // 同名多规格时，优先返回 spec 含量匹配的
+    if (exactMatches.length > 1 && spec) {
+      const querySpecMg = extractSpecStrengthMg(spec);
+      if (querySpecMg !== null) {
+        const specMatched = exactMatches.find((item) => {
+          const itemSpecMg = extractSpecStrengthMg(item.spec);
+          return itemSpecMg !== null && Math.abs(querySpecMg - itemSpecMg) < 0.01;
+        });
+        if (specMatched) {
+          return specMatched;
+        }
+      }
+    }
+
+    return exactMatches[0];
   }
 
   private findExactMedicalItemMatch(items: MedicalItem[], query: string): MedicalItem | null {

@@ -301,6 +301,8 @@ function normalizeTreatmentHints(hints: TreatmentHint[] | undefined): TreatmentH
         sourceType: getHintSourceType(hint?.sourceType),
         goal: getText(hint?.goal),
         spec: getText(hint?.spec || legacyHint.specification),
+        targetDose: getText(hint?.targetDose),
+        targetDoseUnit: getText(hint?.targetDoseUnit),
         dosage: dosageParts.value,
         dosageUnit: dosageParts.unit,
         frequency: getText(hint?.frequency),

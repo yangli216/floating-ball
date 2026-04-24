@@ -5,6 +5,10 @@ import type {
   VoiceFeedbackDraftState,
   VoiceFeedbackOption,
   VoicePendingFeedbackPayload,
+  VoiceRecordFieldDiffSummary,
+  VoiceRecordFieldFeedbackDraft,
+  VoiceRecordFieldFeedbackPayload,
+  VoiceRecordFieldKey,
   VoiceRecommendationFeedbackDraft,
   VoiceRecommendationFeedbackPayload,
   VoiceSessionFeedbackDraft,
@@ -30,6 +34,20 @@ export const VOICE_SESSION_ISSUE_OPTIONS: VoiceFeedbackOption[] = [
   { key: 'workflow_friction', label: '操作流程不顺手' },
 ];
 
+export const VOICE_RECORD_FIELD_ISSUE_OPTIONS: VoiceFeedbackOption[] = [
+  { key: 'missing_information', label: '遗漏了关键信息' },
+  { key: 'inaccurate_expression', label: '表述不够准确' },
+  { key: 'timeline_conflict', label: '病程时序不清晰' },
+  { key: 'history_confusion', label: '病史归类不准确' },
+  { key: 'unsupported_inference', label: '存在不可靠推断' },
+];
+
+export const VOICE_RECORD_FIELD_LABELS: Record<VoiceRecordFieldKey, string> = {
+  chiefComplaint: '主诉',
+  historyOfPresentIllness: '现病史',
+  pastMedicalHistory: '既往史',
+};
+
 export function createEmptyRecommendationDraft(): VoiceRecommendationFeedbackDraft {
   return {
     action: '',
@@ -37,6 +55,10 @@ export function createEmptyRecommendationDraft(): VoiceRecommendationFeedbackDra
     comment: '',
     correctedValue: '',
   };
+}
+
+export function createEmptyRecordFieldDraft(): VoiceRecordFieldFeedbackDraft {
+  return createEmptyRecommendationDraft();
 }
 
 export function createEmptySessionDraft(): VoiceSessionFeedbackDraft {
@@ -50,6 +72,7 @@ export function createEmptySessionDraft(): VoiceSessionFeedbackDraft {
 export function createEmptyVoiceFeedbackDraftState(): VoiceFeedbackDraftState {
   return {
     recommendationDrafts: {},
+    recordFieldDrafts: {},
     sessionDraft: createEmptySessionDraft(),
   };
 }
@@ -100,6 +123,10 @@ export function loadVoiceFeedbackDraft(consultationId: string): VoiceFeedbackDra
 
   return {
     recommendationDrafts,
+    recordFieldDrafts: Object.entries(raw.recordFieldDrafts || {}).reduce<Record<string, VoiceRecordFieldFeedbackDraft>>((acc, [key, value]) => {
+      acc[key] = normalizeRecommendationDraft(value);
+      return acc;
+    }, {}),
     sessionDraft: normalizeSessionDraft(raw.sessionDraft),
   };
 }
@@ -111,6 +138,10 @@ export function saveVoiceFeedbackDraft(consultationId: string, draft: VoiceFeedb
 
   localStorage.setItem(getDraftStorageKey(consultationId), JSON.stringify({
     recommendationDrafts: Object.entries(draft.recommendationDrafts).reduce<Record<string, VoiceRecommendationFeedbackDraft>>((acc, [key, value]) => {
+      acc[key] = normalizeRecommendationDraft(value);
+      return acc;
+    }, {}),
+    recordFieldDrafts: Object.entries(draft.recordFieldDrafts).reduce<Record<string, VoiceRecordFieldFeedbackDraft>>((acc, [key, value]) => {
       acc[key] = normalizeRecommendationDraft(value);
       return acc;
     }, {}),
@@ -132,6 +163,14 @@ export function getVoiceDiagnosisFeedbackKey(diag: Pick<Diagnosis, 'id' | 'code'
 
 export function getVoiceTreatmentFeedbackKey(rec: Pick<TreatmentRecommendation, 'type' | 'name' | 'originalName' | 'matchedItem'>): string {
   return [rec.type || '', rec.originalName || rec.name || ''].join('|');
+}
+
+export function getVoiceRecordFieldFeedbackKey(fieldKey: VoiceRecordFieldKey): string {
+  return `record:${fieldKey}`;
+}
+
+export function getVoiceRecordFieldLabel(fieldKey: VoiceRecordFieldKey): string {
+  return VOICE_RECORD_FIELD_LABELS[fieldKey];
 }
 
 export function mapTreatmentTypeToRecommendationType(type: TreatmentRecommendation['type']): RecommendationType {
@@ -223,6 +262,120 @@ export function buildVoiceRecommendationFeedbackPayload(input: {
     },
     aiTrace: input.aiTrace ? { ...input.aiTrace } : null,
     recommendationSnapshot: input.recommendationSnapshot,
+    createdAt,
+  };
+}
+
+function normalizeRecordText(value: string): string {
+  return value.replace(/\s+/g, ' ').trim();
+}
+
+function truncatePreview(value: string, maxLength = 80): string {
+  if (value.length <= maxLength) {
+    return value;
+  }
+  return `${value.slice(0, maxLength)}...`;
+}
+
+export function buildVoiceRecordFieldDiffSummary(originalValue: string, currentValue: string): VoiceRecordFieldDiffSummary {
+  const original = normalizeRecordText(originalValue);
+  const current = normalizeRecordText(currentValue);
+
+  if (!original && !current) {
+    return {
+      changed: false,
+      summaryText: '当前内容与 AI 原文一致',
+      originalExcerpt: '',
+      currentExcerpt: '',
+      removedText: '',
+      addedText: '',
+    };
+  }
+
+  if (original === current) {
+    return {
+      changed: false,
+      summaryText: '当前内容与 AI 原文一致',
+      originalExcerpt: truncatePreview(original),
+      currentExcerpt: truncatePreview(current),
+      removedText: '',
+      addedText: '',
+    };
+  }
+
+  let prefixLength = 0;
+  const maxPrefix = Math.min(original.length, current.length);
+  while (prefixLength < maxPrefix && original[prefixLength] === current[prefixLength]) {
+    prefixLength += 1;
+  }
+
+  let suffixLength = 0;
+  const maxSuffix = Math.min(original.length - prefixLength, current.length - prefixLength);
+  while (
+    suffixLength < maxSuffix
+    && original[original.length - 1 - suffixLength] === current[current.length - 1 - suffixLength]
+  ) {
+    suffixLength += 1;
+  }
+
+  const removedText = original.slice(prefixLength, original.length - suffixLength).trim();
+  const addedText = current.slice(prefixLength, current.length - suffixLength).trim();
+  const removedPreview = truncatePreview(removedText || original);
+  const addedPreview = truncatePreview(addedText || current);
+
+  return {
+    changed: true,
+    summaryText: `医生已调整内容：由“${removedPreview || '空'}”改为“${addedPreview || '空'}”`,
+    originalExcerpt: truncatePreview(original),
+    currentExcerpt: truncatePreview(current),
+    removedText,
+    addedText,
+  };
+}
+
+export function buildVoiceRecordFieldFeedbackPayload(input: {
+  consultationId: string;
+  sessionId: string | null;
+  patientId: string;
+  patientName: string;
+  fieldKey: VoiceRecordFieldKey;
+  action: VoiceRecordFieldFeedbackDraft['action'];
+  issueTags: string[];
+  comment: string;
+  correctedValue?: string;
+  originalValue: string;
+  currentValue: string;
+  chiefComplaint: string;
+  historyOfPresentIllness: string;
+  pastMedicalHistory: string;
+  aiTrace: AiTraceContext | null;
+}): VoiceRecordFieldFeedbackPayload {
+  const createdAt = Date.now();
+  const diffSummary = buildVoiceRecordFieldDiffSummary(input.originalValue, input.currentValue);
+
+  return {
+    kind: 'record_field',
+    localId: crypto.randomUUID(),
+    consultationId: input.consultationId,
+    sessionId: input.sessionId,
+    patientId: input.patientId,
+    patientName: input.patientName,
+    fieldKey: input.fieldKey,
+    fieldLabel: getVoiceRecordFieldLabel(input.fieldKey),
+    action: input.action || 'dissatisfied',
+    issueTags: input.issueTags,
+    comment: input.comment,
+    correctedValue: input.correctedValue,
+    originalValue: input.originalValue,
+    currentValue: input.currentValue,
+    modifiedByDoctor: diffSummary.changed,
+    diffSummary,
+    encounterSummary: {
+      chiefComplaint: input.chiefComplaint,
+      historyOfPresentIllness: input.historyOfPresentIllness,
+      pastMedicalHistory: input.pastMedicalHistory,
+    },
+    aiTrace: input.aiTrace ? { ...input.aiTrace } : null,
     createdAt,
   };
 }

@@ -4,6 +4,7 @@ import { invoke } from '@tauri-apps/api/core';
 import Icon from './Icon.vue';
 import FactCheckHighlight from './FactCheckHighlight.vue';
 import VoiceRecommendationFeedbackPopover from './VoiceRecommendationFeedbackPopover.vue';
+import VoiceRecordFeedbackPopover from './VoiceRecordFeedbackPopover.vue';
 import VoiceSessionFeedbackBar from './VoiceSessionFeedbackBar.vue';
 import { chat, type ChatMessage } from '../services/llm';
 import { PROMPTS } from '../prompts';
@@ -21,6 +22,8 @@ import {
 } from '../services/factChecker';
 import {
   getVoiceDiagnosisFeedbackKey,
+  getVoiceRecordFieldFeedbackKey,
+  getVoiceRecordFieldLabel,
   getVoiceTreatmentFeedbackKey,
   mapTreatmentTypeToRecommendationType,
   mapTreatmentTypeToTargetType,
@@ -28,7 +31,12 @@ import {
 import type { TreatmentRecommendation, Diagnosis } from '../types/consultation';
 import type { AppPatient } from '../types/appState';
 import type { VoiceIntentResult, MatchedTreatment, MatchedDiagnosis } from '../composables/useVoiceIntentRecognition';
-import type { VoiceRecommendationFeedbackDraft, VoiceSessionFeedbackDraft } from '../types/voiceFeedback';
+import type {
+  VoiceRecordFieldFeedbackDraft,
+  VoiceRecordFieldKey,
+  VoiceRecommendationFeedbackDraft,
+  VoiceSessionFeedbackDraft,
+} from '../types/voiceFeedback';
 
 interface UsageOption {
   key: string;
@@ -36,6 +44,7 @@ interface UsageOption {
   py: string;
   wb: string;
   mcode: string;
+  execCount?: number;
   normalizedTokens: string[];
 }
 
@@ -56,6 +65,11 @@ const showToast = inject<(msg: string, type?: string) => void>('showToast');
 const chiefComplaint = ref('');
 const historyOfPresentIllness = ref('');
 const pastMedicalHistory = ref('');
+const initialRecordSnapshot = ref<Record<VoiceRecordFieldKey, string>>({
+  chiefComplaint: '',
+  historyOfPresentIllness: '',
+  pastMedicalHistory: '',
+});
 
 const aiDiagnoses = ref<Diagnosis[]>([]);
 const selectedDiagnosis = ref<Diagnosis | null>(null);
@@ -145,14 +159,19 @@ const showSessionFeedbackDialog = ref(false);
 const {
   sessionDraft,
   recommendationSubmittingKey,
+  recordFieldSubmittingKey,
   sessionSubmitting,
   recommendationSubmittedMap,
+  recordFieldSubmittedMap,
   sessionSubmittedAt,
   ensureRecommendationDraft,
+  ensureRecordFieldDraft,
   updateRecommendationDraft,
+  updateRecordFieldDraft,
   updateSessionDraft,
   registerRecommendations,
   submitRecommendationFeedback,
+  submitRecordFieldFeedback,
   submitSessionFeedback,
   clearVoiceFeedbackDraft,
 } = useVoiceFeedback({
@@ -161,6 +180,7 @@ const {
   patientName,
   chiefComplaint,
   historyOfPresentIllness,
+  pastMedicalHistory,
 });
 
 async function registerCurrentRecommendations(): Promise<void> {
@@ -189,6 +209,35 @@ function getRecommendationDraft(recommendationKey: string): VoiceRecommendationF
 
 function getSessionFeedbackDraft(): VoiceSessionFeedbackDraft {
   return sessionDraft.value;
+}
+
+function getRecordFieldFeedbackKey(fieldKey: VoiceRecordFieldKey): string {
+  return getVoiceRecordFieldFeedbackKey(fieldKey);
+}
+
+function getRecordFieldValue(fieldKey: VoiceRecordFieldKey): string {
+  switch (fieldKey) {
+    case 'chiefComplaint':
+      return chiefComplaint.value;
+    case 'historyOfPresentIllness':
+      return historyOfPresentIllness.value;
+    case 'pastMedicalHistory':
+      return pastMedicalHistory.value;
+    default:
+      return '';
+  }
+}
+
+function getRecordFieldDraft(fieldKey: VoiceRecordFieldKey): VoiceRecordFieldFeedbackDraft {
+  return ensureRecordFieldDraft(fieldKey);
+}
+
+function getRecordFieldSubmittedLabel(fieldKey: VoiceRecordFieldKey): string {
+  return recordFieldSubmittedMap.value[getRecordFieldFeedbackKey(fieldKey)]?.actionLabel || '';
+}
+
+function isRecordFieldModified(fieldKey: VoiceRecordFieldKey): boolean {
+  return (initialRecordSnapshot.value[fieldKey] || '').trim() !== getRecordFieldValue(fieldKey).trim();
 }
 
 function getRecommendationSubmittedLabel(recommendationKey: string): string {
@@ -268,6 +317,22 @@ async function handleTreatmentFeedbackSubmit(rec: TreatmentRecommendation, draft
     });
     activeFeedbackPopoverKey.value = null;
     showToast?.('推荐反馈已记录', 'success');
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    showToast?.(`提交反馈失败: ${message}`, 'error');
+  }
+}
+
+async function handleRecordFieldFeedbackSubmit(fieldKey: VoiceRecordFieldKey, draft: VoiceRecordFieldFeedbackDraft): Promise<void> {
+  try {
+    await submitRecordFieldFeedback({
+      fieldKey,
+      draft,
+      originalValue: initialRecordSnapshot.value[fieldKey] || '',
+      currentValue: getRecordFieldValue(fieldKey),
+    });
+    activeFeedbackPopoverKey.value = null;
+    showToast?.(`${getVoiceRecordFieldLabel(fieldKey)}反馈已记录`, 'success');
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     showToast?.(`提交反馈失败: ${message}`, 'error');
@@ -480,7 +545,14 @@ function isEditableFieldActive(rec: TreatmentRecommendation, field: MedicinePrim
 function activateEditableField(rec: TreatmentRecommendation, field: MedicinePrimaryField, event?: Event): void {
   event?.stopPropagation();
   if (rec.type === 'medicine') {
-    Object.assign(rec, normalizeTreatmentRecommendation(rec));
+    const normalized = normalizeTreatmentRecommendation(rec);
+    Object.assign(rec, normalized);
+    if (field === 'total' && !rec.totalManualEdited && normalized.totalQty) {
+      rec.totalQty = normalized.totalQty;
+    }
+    if (field === 'total' && normalized.totalUnit) {
+      rec.totalUnit = normalized.totalUnit;
+    }
   }
   if (field === 'frequency') {
     syncFrequencySearchKeyword(rec);
@@ -516,6 +588,15 @@ function handleEditableFieldBlur(rec: TreatmentRecommendation, field: MedicinePr
   }
 }
 
+function handleTotalQtyInput(rec: TreatmentRecommendation, event: Event): void {
+  const target = event.target as HTMLInputElement | null;
+  rec.totalQty = target?.value || '';
+  rec.totalManualEdited = rec.totalQty.trim().length > 0;
+  if (!rec.totalUnit) {
+    rec.totalUnit = normalizeTreatmentRecommendation(rec).totalUnit || '';
+  }
+}
+
 function splitDosageAndUnit(value?: string): { dosage: string; dosageUnit: string } {
   const raw = (value || '').trim();
   if (!raw) {
@@ -531,6 +612,134 @@ function splitDosageAndUnit(value?: string): { dosage: string; dosageUnit: strin
     dosage: raw.slice(0, -matchedUnit.length).trim(),
     dosageUnit: matchedUnit,
   };
+}
+
+function formatMedicineSpec(spec?: string, unit?: string): string {
+  const normalizedSpec = (spec || '').trim();
+  const normalizedUnit = (unit || '').trim();
+
+  if (!normalizedSpec) {
+    return normalizedUnit;
+  }
+
+  if (!normalizedUnit) {
+    return normalizedSpec;
+  }
+
+  if (normalizedSpec.includes(normalizedUnit)) {
+    return normalizedSpec;
+  }
+
+  return `${normalizedSpec} ${normalizedUnit}`;
+}
+
+function parsePositiveNumber(value: unknown): number | null {
+  if (typeof value === 'number') {
+    return Number.isFinite(value) && value > 0 ? value : null;
+  }
+
+  if (typeof value === 'string') {
+    const parsed = Number(value.trim());
+    return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
+  }
+
+  return null;
+}
+
+/**
+ * 从规格字符串中提取有效含量并归一化为 mg。
+ * 示例: "0.25g" → 250, "10mg" → 10, "0.25" (默认 g) → 250
+ */
+function extractStrengthMg(value: string | undefined | null, unitHint?: string): number | null {
+  if (!value) return null;
+  const text = value.trim();
+  if (!text) return null;
+
+  // 尝试匹配带单位的数值: "0.25g", "10mg", "500ug"
+  const withUnit = text.match(/^(\d+(?:\.\d+)?)\s*(g|mg|ug|μg|毫克|克|微克|ml|毫升)?$/i);
+  if (!withUnit) return null;
+
+  const num = parseFloat(withUnit[1]);
+  if (isNaN(num) || num <= 0) return null;
+
+  let unit = (withUnit[2] || unitHint || '').toLowerCase().trim();
+
+  // 如果没有明确单位，尝试从数值大小推断
+  if (!unit) {
+    if (num < 1) unit = 'g';       // 0.25 → 大概率是 g
+    else if (num <= 100) unit = 'mg'; // 10 → 大概率是 mg
+    else return null;               // 无法推断
+  }
+
+  switch (unit) {
+    case 'g':
+    case '克':
+      return num * 1000;
+    case 'mg':
+    case '毫克':
+      return num;
+    case 'ug':
+    case 'μg':
+    case '微克':
+      return num / 1000;
+    case 'ml':
+    case '毫升':
+      return null; // 液体单位不与固体互换
+    default:
+      return null;
+  }
+}
+
+/**
+ * 根据目标治疗剂量和每单位含量计算一次几个制剂单位。
+ * @param targetDose  AI 目标剂量数值（如 "500"）
+ * @param targetUnit  AI 剂量单位（如 "mg"）
+ * @param unitDose    HIS 每制剂单位含量（如 "0.25"）
+ * @param unitSpec    HIS 制剂规格（如 "0.25g"，用于推断单位）
+ * @returns 制剂单位数（如 2），或 null 表示无法换算
+ */
+function computeDoseCount(
+  targetDose: string | undefined,
+  targetUnit: string | undefined,
+  unitDose: string | undefined,
+  unitSpec: string | undefined,
+): number | null {
+  if (!targetDose) return null;
+
+  // 解析 AI 的目标剂量为 mg
+  const targetMg = extractStrengthMg(targetDose, targetUnit);
+  if (targetMg === null) return null;
+
+  // 解析 HIS 的每单位含量为 mg
+  // 优先用 dose 字段，其次从 spec 字段提取
+  let unitMg = extractStrengthMg(unitDose, unitSpec ? undefined : undefined);
+  if (unitMg === null && unitSpec) {
+    // 从规格字符串提取: "0.25g*24粒/盒" → "0.25g" → 250mg
+    const specMatch = unitSpec.match(/(\d+(?:\.\d+)?)\s*(g|mg|ug|μg)/i);
+    if (specMatch) {
+      unitMg = extractStrengthMg(specMatch[1], specMatch[2]);
+    }
+  }
+  if (unitMg === null || unitMg <= 0) return null;
+
+  const count = targetMg / unitMg;
+
+  // 安全护栏：结果必须在合理范围 [0.25, 20]
+  if (count < 0.25 || count > 20) return null;
+
+  // 结果必须是 0.25 的倍数（临床常见: 0.5, 1, 1.5, 2, 3 等）
+  const rounded = Math.round(count * 4) / 4;
+  if (Math.abs(rounded - count) > 0.05) return null;
+
+  return rounded;
+}
+
+/**
+ * 格式化制剂单位数为字符串。
+ * 1 → "1", 0.5 → "0.5", 2.0 → "2"
+ */
+function formatDoseCount(count: number): string {
+  return count === Math.floor(count) ? String(count) : count.toFixed(2).replace(/0+$/, '');
 }
 
 function inferDosageFromText(text: string): { dosage: string; dosageUnit: string } {
@@ -595,6 +804,60 @@ function inferFrequencyFromText(text: string): string {
   return matched?.[0]?.trim() || '';
 }
 
+function inferExecCountFromFrequencyText(text: string): number | null {
+  const normalizedText = text.trim().toLowerCase();
+  if (!normalizedText) {
+    return null;
+  }
+
+  if (normalizedText === 'qd' || normalizedText.includes('每天一次') || normalizedText.includes('每日一次')) {
+    return 1;
+  }
+  if (normalizedText === 'bid' || normalizedText.includes('每天两次') || normalizedText.includes('每日两次')) {
+    return 2;
+  }
+  if (normalizedText === 'tid' || normalizedText.includes('每天三次') || normalizedText.includes('每日三次')) {
+    return 3;
+  }
+  if (normalizedText === 'qid' || normalizedText.includes('每天四次') || normalizedText.includes('每日四次')) {
+    return 4;
+  }
+  if (normalizedText.includes('隔日一次')) {
+    return 0.5;
+  }
+
+  const timesPerDayMatch = normalizedText.match(/每[日天]\D*(\d+(?:\.\d+)?)\D*次/);
+  if (timesPerDayMatch?.[1]) {
+    return parsePositiveNumber(timesPerDayMatch[1]);
+  }
+
+  const intervalMatch = normalizedText.match(/q(\d+(?:\.\d+)?)h/);
+  if (intervalMatch?.[1]) {
+    const hours = parsePositiveNumber(intervalMatch[1]);
+    if (hours) {
+      return 24 / hours;
+    }
+  }
+
+  return null;
+}
+
+function resolveDoseCountPerAdministration(dosage: string, dosageUnit: string, dose: string, doseUnitHint: string): number | null {
+  const dosageStrength = extractStrengthMg(dosage, dosageUnit);
+  const singleUnitStrength = extractStrengthMg(dose, doseUnitHint);
+  if (dosageStrength !== null && singleUnitStrength !== null && singleUnitStrength > 0) {
+    return dosageStrength / singleUnitStrength;
+  }
+
+  const dosageCount = parsePositiveNumber(dosage);
+  const doseCount = parsePositiveNumber(dose);
+  if (dosageCount !== null && doseCount !== null && doseCount > 0) {
+    return dosageCount / doseCount;
+  }
+
+  return null;
+}
+
 function inferRouteFromText(text: string): string {
   const normalizedText = text.trim();
   if (!normalizedText) return '';
@@ -628,6 +891,156 @@ function inferMedicineDefaults(rec: Partial<TreatmentRecommendation>): {
   };
 }
 
+function resolveMatchedMedicineDosageValue(
+  currentDosage: string,
+  fallbackDosage: string,
+  raw: Record<string, unknown> | undefined,
+): string {
+  const hisDoseOnce = readFirstString(raw, ['dftDoseOnce']);
+  return currentDosage || hisDoseOnce || fallbackDosage;
+}
+
+function resolveMatchedMedicineDosageUnit(
+  _currentDosageUnit: string,
+  _fallbackDosageUnit: string,
+  raw: Record<string, unknown> | undefined,
+): string {
+  return readFirstString(raw, ['unitDose', 'unitPre']) || '';
+}
+
+function resolveMatchedMedicineFrequency(rec: Partial<TreatmentRecommendation>, fallbackFrequency: string): { frequency: string; frequencyKey: string } {
+  const currentFrequencyValue = (rec.frequencyKey || rec.frequency || '').trim();
+  const currentMatchedOption = currentFrequencyValue ? findFrequencyOptionByValue(currentFrequencyValue) : undefined;
+  if (currentMatchedOption) {
+    return {
+      frequency: currentMatchedOption.text,
+      frequencyKey: currentMatchedOption.key,
+    };
+  }
+
+  const raw = rec.matchedItem?.raw && typeof rec.matchedItem.raw === 'object'
+    ? rec.matchedItem.raw as Record<string, unknown>
+    : undefined;
+  const hisDefault = readFirstString(raw, ['dftFreq']).trim();
+  if (hisDefault) {
+    const hisMatchedOption = findFrequencyOptionByValue(hisDefault);
+    if (hisMatchedOption) {
+      return {
+        frequency: hisMatchedOption.text,
+        frequencyKey: hisMatchedOption.key,
+      };
+    }
+
+    return {
+      frequency: hisDefault,
+      frequencyKey: '',
+    };
+  }
+
+  const fallbackMatchedOption = fallbackFrequency ? findFrequencyOptionByValue(fallbackFrequency) : undefined;
+  if (fallbackMatchedOption) {
+    return {
+      frequency: fallbackMatchedOption.text,
+      frequencyKey: fallbackMatchedOption.key,
+    };
+  }
+
+  return {
+    frequency: '',
+    frequencyKey: '',
+  };
+}
+
+function resolveMatchedMedicineRoute(rec: Partial<TreatmentRecommendation>, fallbackRoute: string): { route: string; routeKey: string } {
+  const currentRouteValue = (rec.routeKey || rec.route || '').trim();
+  const currentMatchedOption = currentRouteValue ? findRouteOptionByValue(currentRouteValue) : undefined;
+  if (currentMatchedOption) {
+    return {
+      route: currentMatchedOption.text,
+      routeKey: currentMatchedOption.key,
+    };
+  }
+
+  const raw = rec.matchedItem?.raw && typeof rec.matchedItem.raw === 'object'
+    ? rec.matchedItem.raw as Record<string, unknown>
+    : undefined;
+  const hisDefault = readFirstString(raw, ['dftUsage']).trim();
+  if (hisDefault) {
+    const hisMatchedOption = findRouteOptionByValue(hisDefault);
+    if (hisMatchedOption) {
+      return {
+        route: hisMatchedOption.text,
+        routeKey: hisMatchedOption.key,
+      };
+    }
+
+    return {
+      route: hisDefault,
+      routeKey: '',
+    };
+  }
+
+  const fallbackMatchedOption = fallbackRoute ? findRouteOptionByValue(fallbackRoute) : undefined;
+  if (fallbackMatchedOption) {
+    return {
+      route: fallbackMatchedOption.text,
+      routeKey: fallbackMatchedOption.key,
+    };
+  }
+
+  return {
+    route: '',
+    routeKey: '',
+  };
+}
+
+function getFrequencyExecCount(rec: Partial<TreatmentRecommendation>): number | null {
+  const frequencyValue = (rec.frequencyKey || rec.frequency || '').trim();
+  if (!frequencyValue) {
+    return null;
+  }
+
+  const matchedOption = frequencyOptions.value.find((option) => option.key === frequencyValue || option.text === frequencyValue);
+  return matchedOption?.execCount ?? inferExecCountFromFrequencyText(matchedOption?.text || frequencyValue);
+}
+
+function resolveMedicineAutoTotal(rec: Partial<TreatmentRecommendation>): { totalQty: string; totalUnit: string } {
+  if ((rec.type || 'medicine') !== 'medicine') {
+    return { totalQty: rec.totalQty || '', totalUnit: rec.totalUnit || '' };
+  }
+
+  const raw = rec.matchedItem?.raw && typeof rec.matchedItem.raw === 'object'
+    ? rec.matchedItem.raw as Record<string, unknown>
+    : undefined;
+  const totalUnit = (rec.totalUnit || readFirstString(raw, ['unitSale'])).trim();
+  const dosage = (rec.dosage || '').trim();
+  const dosageUnit = (rec.dosageUnit || '').trim();
+  const hisDose = readFirstString(raw, ['dose']);
+  const hisDoseUnit = readFirstString(raw, ['unitDose', 'unitPre']) || dosageUnit || readFirstString(raw, ['spec', 'specSale']);
+  const days = parsePositiveNumber(rec.days);
+  const unitSaleFactor = parsePositiveNumber(readFirstString(raw, ['unitSaleFactor']));
+  const execCount = getFrequencyExecCount(rec);
+
+  if (!totalUnit || !dosage || !hisDose || !days || !unitSaleFactor || !execCount) {
+    return { totalQty: rec.totalQty || '', totalUnit };
+  }
+
+  const doseCount = resolveDoseCountPerAdministration(dosage, dosageUnit, hisDose, hisDoseUnit);
+  if (doseCount === null || doseCount <= 0) {
+    return { totalQty: rec.totalQty || '', totalUnit };
+  }
+
+  const totalQty = Math.ceil((doseCount * execCount * days) / unitSaleFactor);
+  if (!Number.isFinite(totalQty) || totalQty <= 0) {
+    return { totalQty: rec.totalQty || '', totalUnit };
+  }
+
+  return {
+    totalQty: String(totalQty),
+    totalUnit,
+  };
+}
+
 function normalizeTreatmentRecommendation(rec: Partial<TreatmentRecommendation>): TreatmentRecommendation {
   const matchedRaw = rec.matchedItem?.raw && typeof rec.matchedItem.raw === 'object'
     ? rec.matchedItem.raw as Record<string, unknown>
@@ -638,6 +1051,8 @@ function normalizeTreatmentRecommendation(rec: Partial<TreatmentRecommendation>)
     originalName: rec.originalName || '',
     reason: rec.reason || '',
     spec: rec.spec || '',
+    targetDose: rec.targetDose || '',
+    targetDoseUnit: rec.targetDoseUnit || '',
     usage: rec.usage || '',
     matchedItem: rec.matchedItem,
     suggestedMatchItem: rec.suggestedMatchItem,
@@ -648,6 +1063,7 @@ function normalizeTreatmentRecommendation(rec: Partial<TreatmentRecommendation>)
     dosageUnit: rec.dosageUnit || '',
     totalQty: rec.totalQty || (((rec.type || 'medicine') === 'exam' || (rec.type || 'medicine') === 'lab_test') ? '1' : ''),
     totalUnit: rec.totalUnit || '',
+    totalManualEdited: !!rec.totalManualEdited,
     frequency: rec.frequency || '',
     frequencyKey: rec.frequencyKey || '',
     route: rec.route || '',
@@ -668,17 +1084,48 @@ function normalizeTreatmentRecommendation(rec: Partial<TreatmentRecommendation>)
   }
 
   const defaults = inferMedicineDefaults(base);
-  return {
+  const hisRaw = getMatchedItemRaw(base);
+  const frequencySelection = base.matchedItem
+    ? resolveMatchedMedicineFrequency(base, defaults.frequency)
+    : {
+        frequency: base.frequency || defaults.frequency,
+        frequencyKey: base.frequencyKey || findFrequencyOptionByValue(base.frequency || defaults.frequency)?.key || '',
+      };
+  const routeSelection = base.matchedItem
+    ? resolveMatchedMedicineRoute(base, defaults.route)
+    : {
+        route: base.route || defaults.route,
+        routeKey: base.routeKey || findRouteOptionByValue(base.route || defaults.route)?.key || '',
+      };
+  const normalizedMedicine = {
     ...base,
-    dosage: base.dosage || defaults.dosage,
-    dosageUnit: base.dosageUnit || defaults.dosageUnit,
-    frequency: base.frequency || defaults.frequency,
-    frequencyKey: base.frequencyKey || findFrequencyOptionByValue(base.frequency || defaults.frequency)?.key || '',
-    route: base.route || defaults.route,
-    routeKey: base.routeKey || findRouteOptionByValue(base.route || defaults.route)?.key || '',
+    dosage: base.matchedItem
+      ? resolveMatchedMedicineDosageValue(base.dosage || '', defaults.dosage || '', hisRaw)
+      : (base.dosage || defaults.dosage),
+    dosageUnit: base.matchedItem
+      ? resolveMatchedMedicineDosageUnit(base.dosageUnit || '', defaults.dosageUnit || '', hisRaw)
+      : (base.dosageUnit || defaults.dosageUnit),
+    frequency: frequencySelection.frequency,
+    frequencyKey: frequencySelection.frequencyKey,
+    route: routeSelection.route,
+    routeKey: routeSelection.routeKey,
     totalQty: base.totalQty || defaults.totalQty,
-    totalUnit: base.totalUnit || defaults.totalUnit,
+    totalUnit: base.matchedItem
+      ? (readFirstString(hisRaw, ['unitSale']) || base.totalUnit || defaults.totalUnit)
+      : (base.totalUnit || defaults.totalUnit),
     days: base.days || defaults.days,
+  };
+  const autoTotal = resolveMedicineAutoTotal(normalizedMedicine);
+  const preferManualTotal = !!rec.totalManualEdited;
+
+  return {
+    ...normalizedMedicine,
+    totalQty: preferManualTotal
+      ? (normalizedMedicine.totalQty || autoTotal.totalQty)
+      : (autoTotal.totalQty || normalizedMedicine.totalQty),
+    totalUnit: preferManualTotal
+      ? (normalizedMedicine.totalUnit || autoTotal.totalUnit)
+      : (autoTotal.totalUnit || normalizedMedicine.totalUnit),
   };
 }
 
@@ -704,7 +1151,7 @@ function mapTreatmentType(type: MatchedTreatment['type']): TreatmentRecommendati
 function initTreatmentsFromIntent(matched: MatchedTreatment[]): TreatmentRecommendation[] {
   return matched.map((item) => {
     const suggestedName = item.name;
-    const assessment = assessTreatmentCatalogMatch(mapTreatmentType(item.type), suggestedName, item.aliases);
+    const assessment = assessTreatmentCatalogMatch(mapTreatmentType(item.type), suggestedName, item.aliases, item.spec);
     const name = assessment.matchedItem?.name || suggestedName;
     const dosagePair = splitDosageAndUnit(item.dosage);
     const normalized = normalizeTreatmentRecommendation({
@@ -713,6 +1160,8 @@ function initTreatmentsFromIntent(matched: MatchedTreatment[]): TreatmentRecomme
       originalName: suggestedName,
       reason: buildTreatmentReason(item, name),
       spec: item.spec || item.matchedItem?.spec || '',
+      targetDose: item.targetDose || '',
+      targetDoseUnit: item.targetDoseUnit || '',
       usage: [item.usage, item.frequency, item.dosage, item.dosageUnit].filter(Boolean).join('，'),
       dosage: item.dosage || dosagePair.dosage,
       dosageUnit: item.dosageUnit || dosagePair.dosageUnit,
@@ -900,12 +1349,37 @@ async function hydrateMatchedMedicineDetail(rec: TreatmentRecommendation): Promi
       raw: mergedRaw,
     };
 
-    // HIS 默认剂量：仅当当前为空时回填
-    if (!rec.dosage && detail.dftDoseOnce?.trim()) {
-      rec.dosage = detail.dftDoseOnce.trim();
+    // 剂量换算优先级：
+    // 1. AI targetDose + HIS dose → 自动换算（最可靠）
+    // 2. HIS dftDoseOnce → 直接使用（降级方案）
+    // 3. AI dosage → 保留原值（最低优先级）
+    const doseUnit = detail.unitDose?.trim() || detail.unitPre?.trim() || '';
+    const computedCount = computeDoseCount(
+      rec.targetDose,
+      rec.targetDoseUnit,
+      detail.dose,
+      detail.spec || detail.specSale,
+    );
+
+    if (computedCount !== null) {
+      // 换算成功：一次 N 个制剂单位
+      rec.dosage = formatDoseCount(computedCount);
+      rec.dosageUnit = doseUnit || '片';
+      console.log('[VoiceConsultationNew] Dose computed from targetDose', {
+        name: rec.name,
+        targetDose: rec.targetDose,
+        targetDoseUnit: rec.targetDoseUnit,
+        hisDose: detail.dose,
+        hisSpec: detail.spec,
+        computedCount,
+      });
+    } else if (detail.dftDoseOnce?.trim()) {
+      // 降级：使用 HIS 默认值
+      rec.dosage = rec.dosage || detail.dftDoseOnce.trim();
     }
-    if (!rec.dosageUnit && detail.unitDose?.trim()) {
-      rec.dosageUnit = detail.unitDose.trim();
+
+    if (doseUnit) {
+      rec.dosageUnit = doseUnit;
     }
 
     // HIS 默认频次：如果当前频次不能匹配业务字典，则用 HIS 默认值覆盖
@@ -918,7 +1392,13 @@ async function hydrateMatchedMedicineDetail(rec: TreatmentRecommendation): Promi
       } else if (!rec.frequency && hisFreqOption) {
         rec.frequency = hisFreqOption.text;
         rec.frequencyKey = hisFreqOption.key;
+      } else if (!currentFreqMatched) {
+        rec.frequency = detail.dftFreq.trim();
+        rec.frequencyKey = hisFreqOption?.key || '';
       }
+    } else if (rec.frequency && !findFrequencyOptionByValue(rec.frequencyKey || rec.frequency)) {
+      rec.frequency = '';
+      rec.frequencyKey = '';
     }
 
     // HIS 默认用法：如果当前用法不能匹配业务字典，则用 HIS 默认值覆盖
@@ -931,13 +1411,22 @@ async function hydrateMatchedMedicineDetail(rec: TreatmentRecommendation): Promi
       } else if (!rec.route && hisRouteOption) {
         rec.route = hisRouteOption.text;
         rec.routeKey = hisRouteOption.key;
+      } else if (!currentRouteMatched) {
+        rec.route = detail.dftUsage.trim();
+        rec.routeKey = hisRouteOption?.key || '';
       }
+    } else if (rec.route && !findRouteOptionByValue(rec.routeKey || rec.route)) {
+      rec.route = '';
+      rec.routeKey = '';
     }
 
-    // 回填规格信息
-    if (!rec.spec && (detail.specSale?.trim() || detail.unitSale?.trim())) {
-      const specParts = [detail.specSale?.trim(), detail.unitSale?.trim()].filter(Boolean);
-      rec.spec = specParts.join(' ');
+    // 回填规格信息（始终使用 HIS 权威值）
+    if (detail.specSale?.trim() || detail.unitSale?.trim()) {
+      rec.spec = formatMedicineSpec(detail.specSale, detail.unitSale);
+    }
+
+    if (detail.unitSale?.trim()) {
+      rec.totalUnit = detail.unitSale.trim();
     }
 
     // 始终设置药房为第一个可用药房
@@ -953,6 +1442,9 @@ async function hydrateMatchedMedicineDetail(rec: TreatmentRecommendation): Promi
       dftFreq: detail.dftFreq,
       dftUsage: detail.dftUsage,
       specSale: detail.specSale,
+      hisDose: detail.dose,
+      appliedDosage: rec.dosage,
+      appliedDosageUnit: rec.dosageUnit,
       appliedFrequency: rec.frequency,
       appliedRoute: rec.route,
       appliedPharmacy: rec.pharmacy,
@@ -1033,10 +1525,11 @@ function assessTreatmentCatalogMatch(
   type: TreatmentRecommendation['type'],
   name: string,
   aliases?: string[],
+  spec?: string,
 ): Pick<TreatmentRecommendation, 'matchedItem' | 'suggestedMatchItem' | 'matchStatus'> {
   switch (type) {
     case 'medicine': {
-      const result = medicalDataService.assessMedicineMatch(name, aliases);
+      const result = medicalDataService.assessMedicineMatch(name, aliases, spec);
       return {
         matchedItem: result.status === 'exact' && result.candidate ? buildMedicineMatchedItem(result.candidate) : undefined,
         suggestedMatchItem: result.status === 'probable' && result.candidate ? buildMedicineMatchedItem(result.candidate) : undefined,
@@ -1347,6 +1840,7 @@ async function fetchAITreatment(): Promise<void> {
             rec.type,
             rec.name,
             Array.isArray(rec.aliases) ? rec.aliases : undefined,
+            rec.type === 'medicine' ? rec.spec : undefined,
           );
           return normalizeTreatmentRecommendation({
             ...rec,
@@ -1541,14 +2035,14 @@ async function performTreatmentFactCheck(items: TreatmentRecommendation[]): Prom
 }
 
 const frequencyOptions = ref<UsageOption[]>(dedupeUsageOptions([
-  createUsageOption({ key: '每天一次', text: '每天一次' }),
-  createUsageOption({ key: '每天两次', text: '每天两次' }),
-  createUsageOption({ key: '每天三次', text: '每天三次' }),
-  createUsageOption({ key: '隔日一次', text: '隔日一次' }),
+  createUsageOption({ key: '每天一次', text: '每天一次', execCount: 1 }),
+  createUsageOption({ key: '每天两次', text: '每天两次', execCount: 2 }),
+  createUsageOption({ key: '每天三次', text: '每天三次', execCount: 3 }),
+  createUsageOption({ key: '隔日一次', text: '隔日一次', execCount: 0.5 }),
   createUsageOption({ key: '每周一次', text: '每周一次' }),
   createUsageOption({ key: '每周两次', text: '每周两次' }),
   createUsageOption({ key: '必要时', text: '必要时' }),
-  createUsageOption({ key: '立即', text: '立即' }),
+  createUsageOption({ key: '立即', text: '立即', execCount: 1 }),
 ]));
 
 function normalizeUsageKeyword(value: string): string {
@@ -1561,12 +2055,15 @@ function createUsageOption(item: {
   py?: string;
   wb?: string;
   mcode?: string;
+  properties?: Record<string, unknown>;
+  execCount?: number | string;
 }): UsageOption {
   const text = (item.text || '').trim();
   const py = (item.py || '').trim();
   const wb = (item.wb || '').trim();
   const mcode = (item.mcode || '').trim();
   const key = (item.key || text).trim();
+  const execCount = parsePositiveNumber(item.execCount ?? item.properties?.execCount) ?? inferExecCountFromFrequencyText(text) ?? undefined;
 
   return {
     key,
@@ -1574,6 +2071,7 @@ function createUsageOption(item: {
     py,
     wb,
     mcode,
+    execCount,
     normalizedTokens: Array.from(new Set(
       [text, py, wb, mcode, key]
         .map(normalizeUsageKeyword)
@@ -1617,7 +2115,7 @@ async function fetchFrequencyOptions(): Promise<void> {
   }
 
   try {
-    const response = await his.post<{ items: Array<{ key?: string; text?: string; py?: string; wb?: string; mcode?: string }> }>('api/base.tenantDicService/frequency', {});
+    const response = await his.post<{ items: Array<{ key?: string; text?: string; py?: string; wb?: string; mcode?: string; properties?: Record<string, unknown>; execCount?: number | string }> }>('api/base.tenantDicService/frequency', {});
     if (response?.body?.items?.length) {
       frequencyOptions.value = dedupeUsageOptions(response.body.items.map((item) => createUsageOption(item)));
     }
@@ -2549,6 +3047,11 @@ watch(
     selectedDiagnosis.value = null;
     treatments.value = [];
 
+    initialRecordSnapshot.value = {
+      chiefComplaint: result.chiefComplaint || '',
+      historyOfPresentIllness: result.historyOfPresentIllness || '',
+      pastMedicalHistory: result.pastMedicalHistory || '',
+    };
     chiefComplaint.value = result.chiefComplaint;
     historyOfPresentIllness.value = result.historyOfPresentIllness;
     pastMedicalHistory.value = result.pastMedicalHistory;
@@ -2666,15 +3169,96 @@ watch(
 
           <div class="record-fields">
             <div class="record-field">
-              <label>主诉</label>
+              <div class="record-field-head">
+                <label>主诉</label>
+                <div class="record-field-actions">
+                  <span v-if="isRecordFieldModified('chiefComplaint')" class="record-field-status-chip">已人工修改</span>
+                  <div class="voice-feedback-anchor" @click.stop>
+                    <button
+                      class="voice-feedback-trigger"
+                      :class="{ submitted: !!getRecordFieldSubmittedLabel('chiefComplaint') }"
+                      type="button"
+                      @click.stop="toggleRecommendationFeedback(getRecordFieldFeedbackKey('chiefComplaint'), $event)"
+                    >反馈</button>
+                    <div v-if="isRecommendationFeedbackOpen(getRecordFieldFeedbackKey('chiefComplaint'))" class="voice-feedback-panel">
+                      <VoiceRecordFeedbackPopover
+                        :visible="true"
+                        title="主诉"
+                        :original-value="initialRecordSnapshot.chiefComplaint"
+                        :current-value="chiefComplaint"
+                        :draft="getRecordFieldDraft('chiefComplaint')"
+                        :submitting="recordFieldSubmittingKey === getRecordFieldFeedbackKey('chiefComplaint')"
+                        :submitted-label="getRecordFieldSubmittedLabel('chiefComplaint')"
+                        @close="toggleRecommendationFeedback(getRecordFieldFeedbackKey('chiefComplaint'))"
+                        @update:draft="updateRecordFieldDraft('chiefComplaint', $event)"
+                        @submit="handleRecordFieldFeedbackSubmit('chiefComplaint', $event)"
+                      />
+                    </div>
+                  </div>
+                </div>
+              </div>
               <textarea v-model="chiefComplaint" rows="2" placeholder="请输入主诉..."></textarea>
             </div>
             <div class="record-field field-grow">
-              <label>现病史</label>
+              <div class="record-field-head">
+                <label>现病史</label>
+                <div class="record-field-actions">
+                  <span v-if="isRecordFieldModified('historyOfPresentIllness')" class="record-field-status-chip">已人工修改</span>
+                  <div class="voice-feedback-anchor" @click.stop>
+                    <button
+                      class="voice-feedback-trigger"
+                      :class="{ submitted: !!getRecordFieldSubmittedLabel('historyOfPresentIllness') }"
+                      type="button"
+                      @click.stop="toggleRecommendationFeedback(getRecordFieldFeedbackKey('historyOfPresentIllness'), $event)"
+                    >反馈</button>
+                    <div v-if="isRecommendationFeedbackOpen(getRecordFieldFeedbackKey('historyOfPresentIllness'))" class="voice-feedback-panel">
+                      <VoiceRecordFeedbackPopover
+                        :visible="true"
+                        title="现病史"
+                        :original-value="initialRecordSnapshot.historyOfPresentIllness"
+                        :current-value="historyOfPresentIllness"
+                        :draft="getRecordFieldDraft('historyOfPresentIllness')"
+                        :submitting="recordFieldSubmittingKey === getRecordFieldFeedbackKey('historyOfPresentIllness')"
+                        :submitted-label="getRecordFieldSubmittedLabel('historyOfPresentIllness')"
+                        @close="toggleRecommendationFeedback(getRecordFieldFeedbackKey('historyOfPresentIllness'))"
+                        @update:draft="updateRecordFieldDraft('historyOfPresentIllness', $event)"
+                        @submit="handleRecordFieldFeedbackSubmit('historyOfPresentIllness', $event)"
+                      />
+                    </div>
+                  </div>
+                </div>
+              </div>
               <textarea v-model="historyOfPresentIllness" rows="6" placeholder="请输入现病史..."></textarea>
             </div>
             <div class="record-field">
-              <label>既往史</label>
+              <div class="record-field-head">
+                <label>既往史</label>
+                <div class="record-field-actions">
+                  <span v-if="isRecordFieldModified('pastMedicalHistory')" class="record-field-status-chip">已人工修改</span>
+                  <div class="voice-feedback-anchor" @click.stop>
+                    <button
+                      class="voice-feedback-trigger"
+                      :class="{ submitted: !!getRecordFieldSubmittedLabel('pastMedicalHistory') }"
+                      type="button"
+                      @click.stop="toggleRecommendationFeedback(getRecordFieldFeedbackKey('pastMedicalHistory'), $event)"
+                    >反馈</button>
+                    <div v-if="isRecommendationFeedbackOpen(getRecordFieldFeedbackKey('pastMedicalHistory'))" class="voice-feedback-panel">
+                      <VoiceRecordFeedbackPopover
+                        :visible="true"
+                        title="既往史"
+                        :original-value="initialRecordSnapshot.pastMedicalHistory"
+                        :current-value="pastMedicalHistory"
+                        :draft="getRecordFieldDraft('pastMedicalHistory')"
+                        :submitting="recordFieldSubmittingKey === getRecordFieldFeedbackKey('pastMedicalHistory')"
+                        :submitted-label="getRecordFieldSubmittedLabel('pastMedicalHistory')"
+                        @close="toggleRecommendationFeedback(getRecordFieldFeedbackKey('pastMedicalHistory'))"
+                        @update:draft="updateRecordFieldDraft('pastMedicalHistory', $event)"
+                        @submit="handleRecordFieldFeedbackSubmit('pastMedicalHistory', $event)"
+                      />
+                    </div>
+                  </div>
+                </div>
+              </div>
               <textarea v-model="pastMedicalHistory" rows="4" placeholder="请输入既往史..."></textarea>
             </div>
           </div>
@@ -2824,14 +3408,14 @@ watch(
                       <svg xmlns="http://www.w3.org/2000/svg" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="20 6 9 17 4 12"></polyline></svg>
                     </div>
 
-                    <div class="card-row">
+                    <div class="card-row treatment-card-row">
                       <div class="card-main">
                         <div class="card-title-line">
                           <div class="card-title-wrap">
                             <FactCheckHighlight :issue="getIssueForTreatment(rec.name)">
                               <span class="card-title">{{ rec.name }}</span>
                             </FactCheckHighlight>
-                            <span v-if="getTreatmentSpec(rec)" class="meta-token">规格 {{ getTreatmentSpec(rec) }}</span>
+                            <span v-if="getTreatmentSpec(rec)" class="meta-token">{{ getTreatmentSpec(rec) }}</span>
                             <span
                               v-if="rec.reason"
                               class="reason-tooltip-trigger"
@@ -2866,7 +3450,7 @@ watch(
                         </div>
                       </div>
 
-                      <div class="card-actions">
+                      <div class="card-actions treatment-card-actions">
                         <div class="voice-feedback-anchor" @click.stop>
                           <button
                             class="voice-feedback-trigger"
@@ -3043,7 +3627,14 @@ watch(
                           <div class="primary-field" :class="{ editing: isEditableFieldActive(rec, 'total') }">
                             <label>总量</label>
                             <div v-if="isEditableFieldActive(rec, 'total')" class="field-editor edit-field-row" @focusout="handleEditableFieldBlur(rec, 'total', $event)">
-                              <input :ref="(el) => registerEditableFieldElement(getEditableFieldKey(rec, 'total'), el)" v-model="rec.totalQty" type="text" placeholder="数量" class="edit-input small" />
+                              <input
+                                :ref="(el) => registerEditableFieldElement(getEditableFieldKey(rec, 'total'), el)"
+                                :value="rec.totalQty"
+                                type="text"
+                                placeholder="数量"
+                                class="edit-input small"
+                                @input="handleTotalQtyInput(rec, $event)"
+                              />
                               <span class="edit-unit static-unit" :class="{ placeholder: !rec.totalUnit }">{{ rec.totalUnit || '单位待识别' }}</span>
                             </div>
                             <button v-else class="field-read-btn" :class="{ placeholder: isMedicineFieldEmpty(rec, 'total') }" type="button" @click.stop="activateEditableField(rec, 'total', $event)">
@@ -3760,6 +4351,21 @@ watch(
   gap: 8px;
 }
 
+.record-field-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.record-field-actions {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  min-width: 0;
+}
+
 .field-grow {
   flex: 1;
 }
@@ -3770,6 +4376,22 @@ watch(
   font-size: var(--voice-font-min);
   color: var(--voice-text-muted);
   font-weight: 500;
+}
+
+.record-field-status-chip {
+  display: inline-flex;
+  align-items: center;
+  max-width: min(260px, 36vw);
+  min-height: 26px;
+  padding: 0 10px;
+  border-radius: 999px;
+  background: var(--voice-accent-softer);
+  color: var(--voice-accent-strong);
+  font-size: 12px;
+  line-height: 1;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .record-field textarea,
@@ -3929,6 +4551,10 @@ watch(
   justify-content: space-between;
   gap: 12px;
   min-width: 0;
+}
+
+.treatment-card-row {
+  align-items: flex-start;
 }
 
 .card-main {
@@ -4091,6 +4717,11 @@ watch(
   gap: 8px;
   flex-shrink: 0;
   position: relative;
+}
+
+.treatment-card-actions {
+  align-items: flex-start;
+  padding-top: 1px;
 }
 
 .voice-feedback-anchor {

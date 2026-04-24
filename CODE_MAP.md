@@ -18,7 +18,7 @@
 | 修改问诊主流程 | [ConsultationPage.vue](src/components/ConsultationPage.vue) + [SymptomManagement.vue](src/components/SymptomManagement.vue) |
 | 修改窗口/动画行为 | [useWindowManagement.ts](src/composables/useWindowManagement.ts) + [useWorkMode.ts](src/composables/useWorkMode.ts) |
 | 修改 LLM 调用 | [llm.ts](src/services/llm.ts) + [prompts.ts](src/prompts/prompts.ts) |
-| 修改语音问诊 | [VoiceCapsule.vue](src/components/VoiceCapsule.vue) + [VoiceConsultationNew.vue](src/components/VoiceConsultationNew.vue) + [VoiceConsultationResult.vue](src/components/VoiceConsultationResult.vue) + [VoiceRecommendationFeedbackPopover.vue](src/components/VoiceRecommendationFeedbackPopover.vue) + [VoiceSessionFeedbackBar.vue](src/components/VoiceSessionFeedbackBar.vue) + [useVoiceConsultation.ts](src/composables/useVoiceConsultation.ts) + [useVoiceIntentRecognition.ts](src/composables/useVoiceIntentRecognition.ts) + [useVoiceFeedback.ts](src/composables/useVoiceFeedback.ts) + [prompts.ts](src/prompts/prompts.ts) + [aliyunSpeech.ts](src/services/aliyunSpeech.ts) + [speechConfig.ts](src/services/speechConfig.ts) + [audioRecorder.ts](src/services/audioRecorder.ts) + [voiceFeedback.ts](src/services/voiceFeedback.ts)；重点关注语音抽取契约是否覆盖病例草稿、explicit/inferred 来源标记、诊断/检查/药品结构化字段，以及推荐项反馈 / 整页评分的本地落库和 payload 组装 |
+| 修改语音问诊 | [VoiceCapsule.vue](src/components/VoiceCapsule.vue) + [VoiceConsultationNew.vue](src/components/VoiceConsultationNew.vue) + [VoiceConsultationResult.vue](src/components/VoiceConsultationResult.vue) + [VoiceRecommendationFeedbackPopover.vue](src/components/VoiceRecommendationFeedbackPopover.vue) + [VoiceRecordFeedbackPopover.vue](src/components/VoiceRecordFeedbackPopover.vue) + [VoiceSessionFeedbackBar.vue](src/components/VoiceSessionFeedbackBar.vue) + [useVoiceConsultation.ts](src/composables/useVoiceConsultation.ts) + [useVoiceIntentRecognition.ts](src/composables/useVoiceIntentRecognition.ts) + [useVoiceFeedback.ts](src/composables/useVoiceFeedback.ts) + [prompts.ts](src/prompts/prompts.ts) + [aliyunSpeech.ts](src/services/aliyunSpeech.ts) + [speechConfig.ts](src/services/speechConfig.ts) + [audioRecorder.ts](src/services/audioRecorder.ts) + [voiceFeedback.ts](src/services/voiceFeedback.ts)；重点关注语音抽取契约是否覆盖病例草稿、explicit/inferred 来源标记、诊断/检查/药品结构化字段，以及推荐项反馈 / 整页评分 / 病例字段反馈的本地落库、前后对比快照和 payload 组装 |
 | 修改区域化后端接入 | [SettingsPanel.vue](src/components/SettingsPanel.vue) + [regionalClient.ts](src/services/regionalClient.ts) + [regionalRuntime.ts](src/services/regionalRuntime.ts) + [userFeedback.ts](src/services/userFeedback.ts) + [device.rs](src-tauri/src/commands/device.rs) |
 | 修改诊断路径 | [DiagnosisPathWindow.vue](src/components/DiagnosisPathWindow.vue) + [diagnosisPath.ts](src/services/diagnosisPath.ts) + [stores/diagnosisPath.ts](src/stores/diagnosisPath.ts) |
 | 修改知识库 | [pmphai.ts](src/services/pmphai.ts)（主） / [KnowledgeBasePanel.vue](src/components/KnowledgeBasePanel.vue)（备） |
@@ -73,6 +73,7 @@ floating-ball/
 | **VoiceConsultationResult.vue** | ~1200 | 语音转写后的结构化病历编辑器 | 与语音链路串联 |
 | **VoiceConsultationNew.vue** | ~2100 | 当前语音问诊主结果页：左侧病例正文编辑，右侧 AI 诊断/治疗推荐与一键回写；消费语音抽取阶段生成的病例草稿与结构化诊断/处方提示，药品频次/用法字段在此处接 HIS 字典并允许筛选，药房列表也按 SDK 握手里的 `userRoleDepts` 过滤后从 HIS 动态加载；同时编排推荐项反馈与整页评分入口 | 推荐依据默认应折叠，避免右栏信息过载 |
 | **VoiceRecommendationFeedbackPopover.vue** | -- | 单条诊断 / 治疗推荐反馈弹层 | 输入问题标签、原因和最终处理动作 |
+| **VoiceRecordFeedbackPopover.vue** | -- | 病例字段反馈弹层 | 展示主诉 / 现病史 / 既往史的 AI 原文、医生当前值与前后差异，并提交字段级反馈 |
 | **VoiceSessionFeedbackBar.vue** | -- | 语音问诊整页反馈浮层主体 | 回写成功后弹出，收集评分、点评、整体问题标签 |
 | **VoiceCapsule.vue** | ~450 | 语音录制界面：音频采集(PCM16) + 流式传输 | 配合 audioRecorder + aliyunSpeech |
 
@@ -156,7 +157,7 @@ useEventListeners (全局事件) -> 触发 useNavigation & useWorkMode
 | **medical_catalog.rs** | -- | 医学目录 SQLite 持久化命令：诊断全局缓存、诊疗项目/药品按机构缓存与同步状态管理，并提供调试态查看/清理命令 | 供 `medicalData.ts` 调用 |
 | **factChecker.ts** | ~399 | AI 输出验证（医学指南核查） |
 | **feedback.ts** | ~312 | 操作追踪与反馈 |
-| **voiceFeedback.ts** | -- | 语音反馈 payload 组装、本地草稿、待同步队列 |
+| **voiceFeedback.ts** | -- | 语音反馈 payload 组装、本地草稿、病例字段差异摘要与待同步队列 |
 | **aiTrace.ts** | ~200 | 最近一次 AI 调用链路上下文缓存 |
 | **knowledgeBase.ts** | ~213 | 通用知识库 CRUD |
 | **regionalClient.ts** | ~400 | 区域化核心客户端：设备 MAC 解析/设备编码持久化、终端注册、bootstrap 拉取、心跳、鉴权、SSE 代理 |
