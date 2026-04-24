@@ -1,13 +1,16 @@
 <script setup lang="ts">
-import { ref, computed, watch, inject, onMounted, nextTick } from 'vue';
+import { ref, computed, watch, inject, onMounted, onBeforeUnmount, nextTick } from 'vue';
 import { invoke } from '@tauri-apps/api/core';
 import Icon from './Icon.vue';
 import FactCheckHighlight from './FactCheckHighlight.vue';
+import VoiceRecommendationFeedbackPopover from './VoiceRecommendationFeedbackPopover.vue';
+import VoiceSessionFeedbackBar from './VoiceSessionFeedbackBar.vue';
 import { chat, type ChatMessage } from '../services/llm';
 import { PROMPTS } from '../prompts';
 import { getHisService, type HisDictionaryItem, type PharmacyOption } from '../services/hisService';
 import { medicalDataService, type DiagnosisItem, type MedicalItem, type MedicineItem } from '../services/medicalData';
 import { clearVoiceConsultationCache } from '../composables/useVoiceConsultation';
+import { useVoiceFeedback } from '../composables/useVoiceFeedback';
 import {
   checkDiagnosis,
   checkMedicine,
@@ -16,9 +19,16 @@ import {
   type FactCheckIssue,
   type FactCheckResult,
 } from '../services/factChecker';
+import {
+  getVoiceDiagnosisFeedbackKey,
+  getVoiceTreatmentFeedbackKey,
+  mapTreatmentTypeToRecommendationType,
+  mapTreatmentTypeToTargetType,
+} from '../services/voiceFeedback';
 import type { TreatmentRecommendation, Diagnosis } from '../types/consultation';
 import type { AppPatient } from '../types/appState';
 import type { VoiceIntentResult, MatchedTreatment, MatchedDiagnosis } from '../composables/useVoiceIntentRecognition';
+import type { VoiceRecommendationFeedbackDraft, VoiceSessionFeedbackDraft } from '../types/voiceFeedback';
 
 interface UsageOption {
   key: string;
@@ -64,6 +74,7 @@ const patientGender = computed((): string => s(props.initialPatientData?.sdSexTe
 const patientAge = computed((): string => s(props.initialPatientData?.ageText) || (props.initialPatientData?.ageNum != null ? `${props.initialPatientData.ageNum}${s(props.initialPatientData.ageUnit) || '岁'}` : ''));
 const patientIdCard = computed((): string => s(props.initialPatientData?.idCard));
 const patientTetId = computed((): string => s(props.initialPatientData?.idTet));
+const consultationId = computed((): string => resolveConsultationId());
 
 function getDiagnosisKey(diag: Diagnosis | null | undefined): string {
   if (!diag) return '';
@@ -71,6 +82,7 @@ function getDiagnosisKey(diag: Diagnosis | null | undefined): string {
 }
 
 const selectedDiagnoses = computed(() => aiDiagnoses.value.filter((diag) => selectedDiagnosisKeys.value.has(getDiagnosisKey(diag))));
+const selectedTreatments = computed(() => treatments.value.filter((item) => item.selected));
 
 const getPatientAnchorId = (): string => {
   const patient = props.initialPatientData;
@@ -108,6 +120,7 @@ function closeCancelConfirm(): void {
 
 function confirmCancel(): void {
   showCancelConfirm.value = false;
+  clearVoiceFeedbackDraft();
 
   emit('cancel');
 }
@@ -126,6 +139,160 @@ const activeSecondarySelectorKey = ref<string | null>(null);
 const pharmacySearchKeywords = ref<Record<string, string>>({});
 const execDeptSearchKeywords = ref<Record<string, string>>({});
 const insuranceSearchKeywords = ref<Record<string, string>>({});
+const activeFeedbackPopoverKey = ref<string | null>(null);
+const showSessionFeedbackDialog = ref(false);
+
+const {
+  sessionDraft,
+  recommendationSubmittingKey,
+  sessionSubmitting,
+  recommendationSubmittedMap,
+  sessionSubmittedAt,
+  ensureRecommendationDraft,
+  updateRecommendationDraft,
+  updateSessionDraft,
+  registerRecommendations,
+  submitRecommendationFeedback,
+  submitSessionFeedback,
+  clearVoiceFeedbackDraft,
+} = useVoiceFeedback({
+  consultationId,
+  patientId: computed(() => getPatientAnchorId()),
+  patientName,
+  chiefComplaint,
+  historyOfPresentIllness,
+});
+
+async function registerCurrentRecommendations(): Promise<void> {
+  try {
+    await registerRecommendations({
+      diagnoses: aiDiagnoses.value,
+      treatments: treatments.value,
+      selectedDiagnosis: selectedDiagnosis.value,
+    });
+  } catch (error) {
+    console.error('[VoiceConsultationNew] Failed to register voice recommendations for feedback', error);
+  }
+}
+
+function getDiagnosisFeedbackKey(diag: Diagnosis): string {
+  return getVoiceDiagnosisFeedbackKey(diag);
+}
+
+function getTreatmentFeedbackKey(rec: TreatmentRecommendation): string {
+  return getVoiceTreatmentFeedbackKey(rec);
+}
+
+function getRecommendationDraft(recommendationKey: string): VoiceRecommendationFeedbackDraft {
+  return ensureRecommendationDraft(recommendationKey);
+}
+
+function getSessionFeedbackDraft(): VoiceSessionFeedbackDraft {
+  return sessionDraft.value;
+}
+
+function getRecommendationSubmittedLabel(recommendationKey: string): string {
+  return recommendationSubmittedMap.value[recommendationKey]?.actionLabel || '';
+}
+
+function isRecommendationFeedbackOpen(recommendationKey: string): boolean {
+  return activeFeedbackPopoverKey.value === recommendationKey;
+}
+
+function toggleRecommendationFeedback(recommendationKey: string, event?: Event): void {
+  event?.stopPropagation();
+  activeFeedbackPopoverKey.value = activeFeedbackPopoverKey.value === recommendationKey ? null : recommendationKey;
+}
+
+function buildDiagnosisFeedbackSnapshot(diag: Diagnosis): Record<string, unknown> {
+  return {
+    id: diag.id || '',
+    code: diag.code || '',
+    name: diag.name || '',
+    rationale: diag.rationale || '',
+    selected: isDiagnosisSelected(diag),
+    primary: isPrimaryDiagnosis(diag),
+  };
+}
+
+function buildTreatmentFeedbackSnapshot(rec: TreatmentRecommendation): Record<string, unknown> {
+  return {
+    type: rec.type,
+    name: rec.name,
+    originalName: rec.originalName || '',
+    reason: rec.reason || '',
+    selected: !!rec.selected,
+    matchedItem: rec.matchedItem || null,
+    matchStatus: rec.matchStatus || 'unmatched',
+    dosage: rec.dosage || '',
+    dosageUnit: rec.dosageUnit || '',
+    frequency: rec.frequency || '',
+    route: rec.route || '',
+    totalQty: rec.totalQty || '',
+    totalUnit: rec.totalUnit || '',
+    pharmacy: rec.pharmacy || '',
+    execDept: rec.execDept || '',
+    insuranceType: rec.insuranceType || '',
+  };
+}
+
+async function handleDiagnosisFeedbackSubmit(diag: Diagnosis, draft: VoiceRecommendationFeedbackDraft): Promise<void> {
+  const recommendationKey = getDiagnosisFeedbackKey(diag);
+  try {
+    await submitRecommendationFeedback({
+      recommendationKey,
+      recommendationTitle: diag.name,
+      draft,
+      snapshot: buildDiagnosisFeedbackSnapshot(diag),
+      fallbackTargetType: 'diagnosis',
+      fallbackRecommendationType: 'diagnosis',
+    });
+    activeFeedbackPopoverKey.value = null;
+    showToast?.('诊断反馈已记录', 'success');
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    showToast?.(`提交反馈失败: ${message}`, 'error');
+  }
+}
+
+async function handleTreatmentFeedbackSubmit(rec: TreatmentRecommendation, draft: VoiceRecommendationFeedbackDraft): Promise<void> {
+  const recommendationKey = getTreatmentFeedbackKey(rec);
+  try {
+    await submitRecommendationFeedback({
+      recommendationKey,
+      recommendationTitle: rec.name,
+      draft,
+      snapshot: buildTreatmentFeedbackSnapshot(rec),
+      fallbackTargetType: mapTreatmentTypeToTargetType(rec.type),
+      fallbackRecommendationType: mapTreatmentTypeToRecommendationType(rec.type),
+    });
+    activeFeedbackPopoverKey.value = null;
+    showToast?.('推荐反馈已记录', 'success');
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    showToast?.(`提交反馈失败: ${message}`, 'error');
+  }
+}
+
+async function handleSessionFeedbackSubmit(): Promise<void> {
+  try {
+    await submitSessionFeedback({
+      diagnoses: selectedDiagnoses.value,
+      selectedTreatments: selectedTreatments.value,
+    });
+    showToast?.('整页反馈已记录', 'success');
+    completeVoiceConsultationFlow();
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    showToast?.(`提交整页反馈失败: ${message}`, 'error');
+  }
+}
+
+function completeVoiceConsultationFlow(): void {
+  showSessionFeedbackDialog.value = false;
+  clearVoiceFeedbackDraft();
+  emit('close');
+}
 
 type MedicinePrimaryField = 'dosage' | 'frequency' | 'route' | 'total';
 
@@ -692,9 +859,121 @@ function buildMedicalItemMatchedItem(item: MedicalItem): TreatmentRecommendation
   };
 }
 
-async function hydrateMatchedMedicalItemDetail(rec: TreatmentRecommendation): Promise<void> {
-  if (rec.type === 'medicine' || !rec.matchedItem) {
+async function hydrateMatchedMedicineDetail(rec: TreatmentRecommendation): Promise<void> {
+  if (rec.type !== 'medicine' || !rec.matchedItem) {
     return;
+  }
+
+  const his = getHisService();
+  if (!his) {
+    return;
+  }
+
+  const id = (rec.matchedItem.id || rec.matchedItem.idSrv || readFirstString(getMatchedItemRaw(rec), ['idMedPro', 'idMed']) || '').trim();
+  if (!id) {
+    return;
+  }
+
+  const defaultPharmacy = pharmacyOptions.value[0];
+  const idSto = defaultPharmacy?.idSto || '';
+  if (!idSto) {
+    console.warn('[VoiceConsultationNew] No pharmacy idSto available, skip medicine detail hydration', { name: rec.name });
+    return;
+  }
+
+  try {
+    const detail = await his.fetchMedicineProDetail(id, idSto);
+    if (!detail) {
+      return;
+    }
+
+    const mergedRaw = {
+      ...(getMatchedItemRaw(rec) || {}),
+      ...detail,
+      __medicineDetailLoaded: true,
+    };
+
+    rec.matchedItem = {
+      ...rec.matchedItem,
+      name: detail.naMedPro?.trim() || rec.matchedItem.name || rec.name,
+      fgSkintest: detail.fgSkintest?.trim() || rec.matchedItem.fgSkintest || '0',
+      raw: mergedRaw,
+    };
+
+    // HIS 默认剂量：仅当当前为空时回填
+    if (!rec.dosage && detail.dftDoseOnce?.trim()) {
+      rec.dosage = detail.dftDoseOnce.trim();
+    }
+    if (!rec.dosageUnit && detail.unitDose?.trim()) {
+      rec.dosageUnit = detail.unitDose.trim();
+    }
+
+    // HIS 默认频次：如果当前频次不能匹配业务字典，则用 HIS 默认值覆盖
+    if (detail.dftFreq?.trim()) {
+      const hisFreqOption = findFrequencyOptionByValue(detail.dftFreq.trim());
+      const currentFreqMatched = rec.frequencyKey ? findFrequencyOptionByValue(rec.frequencyKey) : findFrequencyOptionByValue(rec.frequency);
+      if (hisFreqOption && !currentFreqMatched) {
+        rec.frequency = hisFreqOption.text;
+        rec.frequencyKey = hisFreqOption.key;
+      } else if (!rec.frequency && hisFreqOption) {
+        rec.frequency = hisFreqOption.text;
+        rec.frequencyKey = hisFreqOption.key;
+      }
+    }
+
+    // HIS 默认用法：如果当前用法不能匹配业务字典，则用 HIS 默认值覆盖
+    if (detail.dftUsage?.trim()) {
+      const hisRouteOption = findRouteOptionByValue(detail.dftUsage.trim());
+      const currentRouteMatched = rec.routeKey ? findRouteOptionByValue(rec.routeKey) : findRouteOptionByValue(rec.route);
+      if (hisRouteOption && !currentRouteMatched) {
+        rec.route = hisRouteOption.text;
+        rec.routeKey = hisRouteOption.key;
+      } else if (!rec.route && hisRouteOption) {
+        rec.route = hisRouteOption.text;
+        rec.routeKey = hisRouteOption.key;
+      }
+    }
+
+    // 回填规格信息
+    if (!rec.spec && (detail.specSale?.trim() || detail.unitSale?.trim())) {
+      const specParts = [detail.specSale?.trim(), detail.unitSale?.trim()].filter(Boolean);
+      rec.spec = specParts.join(' ');
+    }
+
+    // 始终设置药房为第一个可用药房
+    if (defaultPharmacy) {
+      rec.pharmacy = rec.pharmacy || defaultPharmacy.name;
+    }
+
+    console.log('[VoiceConsultationNew] Medicine detail hydrated', {
+      name: rec.name,
+      id,
+      idSto,
+      dftDoseOnce: detail.dftDoseOnce,
+      dftFreq: detail.dftFreq,
+      dftUsage: detail.dftUsage,
+      specSale: detail.specSale,
+      appliedFrequency: rec.frequency,
+      appliedRoute: rec.route,
+      appliedPharmacy: rec.pharmacy,
+    });
+  } catch (error) {
+    console.error('[VoiceConsultationNew] Failed to hydrate medicine detail', {
+      id,
+      idSto,
+      name: rec.name,
+      error,
+    });
+  }
+}
+
+async function hydrateMatchedMedicalItemDetail(rec: TreatmentRecommendation): Promise<void> {
+  if (!rec.matchedItem) {
+    return;
+  }
+
+  if (rec.type === 'medicine') {
+    return hydrateMatchedMedicineDetail(rec);
   }
 
   const his = getHisService();
@@ -746,7 +1025,7 @@ async function hydrateMatchedMedicalItemDetail(rec: TreatmentRecommendation): Pr
 }
 
 async function hydrateMatchedMedicalItemDetails(items: TreatmentRecommendation[]): Promise<void> {
-  const candidates = items.filter((item) => item.type !== 'medicine' && !!item.matchedItem);
+  const candidates = items.filter((item) => !!item.matchedItem);
   await Promise.all(candidates.map((item) => hydrateMatchedMedicalItemDetail(item)));
 }
 
@@ -943,6 +1222,22 @@ function toggleReasonTooltip(key: string, event?: Event): void {
   activeReasonTooltipKey.value = activeReasonTooltipKey.value === key ? null : key;
 }
 
+function handleGlobalPointerDown(event: PointerEvent): void {
+  const target = event.target as HTMLElement | null;
+
+  if (activeReasonTooltipKey.value) {
+    if (!target?.closest('.reason-tooltip-trigger')) {
+      activeReasonTooltipKey.value = null;
+    }
+  }
+
+  if (activeFeedbackPopoverKey.value) {
+    if (!target?.closest('.voice-feedback-anchor')) {
+      activeFeedbackPopoverKey.value = null;
+    }
+  }
+}
+
 async function fetchAIDiagnosis(): Promise<void> {
   if (diagnosisLoading.value) return;
   if (!chiefComplaint.value.trim()) {
@@ -985,6 +1280,8 @@ async function fetchAIDiagnosis(): Promise<void> {
       setDiagnosisSelection([]);
       selectedDiagnosis.value = null;
     }
+
+    void registerCurrentRecommendations();
 
     void performDiagnosisFactCheck(aiDiagnoses.value);
   } catch (error: unknown) {
@@ -1090,6 +1387,7 @@ async function fetchAITreatment(): Promise<void> {
 
     treatments.value = nextTreatments;
     lastTreatmentDiagnosisKey.value = diagnosisIdentity;
+    void registerCurrentRecommendations();
     void hydrateMatchedMedicalItemDetails(nextTreatments);
     void performTreatmentFactCheck(nextTreatments);
   } catch (error: unknown) {
@@ -1148,6 +1446,7 @@ function swapDiagnosis(originalDiag: Diagnosis, newItem: DiagnosisItem): void {
 
   openRelatedId.value = null;
   inlineRelatedDiagnoses.value = [];
+  void registerCurrentRecommendations();
 }
 
 watch(
@@ -1419,7 +1718,12 @@ async function fetchExecDeptOptions(): Promise<void> {
 }
 
 onMounted(() => {
+  document.addEventListener('pointerdown', handleGlobalPointerDown);
   void Promise.all([fetchFrequencyOptions(), fetchRouteOptions(), fetchPharmacyOptions(), fetchExecDeptOptions()]);
+});
+
+onBeforeUnmount(() => {
+  document.removeEventListener('pointerdown', handleGlobalPointerDown);
 });
 const pharmacyOptions = ref<PharmacyOption[]>([]);
 const execDeptOptions = ref<ExecDeptOption[]>([]);
@@ -1643,6 +1947,20 @@ function formatOptionLabel(option: UsageOption): string {
   return `${text}(${key})`;
 }
 
+function resolveSelectorFilterKeyword(keyword: string, currentValue?: string): string {
+  const normalizedKeyword = normalizeUsageKeyword(keyword);
+  if (!normalizedKeyword) {
+    return '';
+  }
+
+  const normalizedCurrentValue = normalizeUsageKeyword((currentValue || '').trim());
+  if (normalizedCurrentValue && normalizedKeyword === normalizedCurrentValue) {
+    return '';
+  }
+
+  return normalizedKeyword;
+}
+
 function findFrequencyOptionByValue(value?: string): UsageOption | undefined {
   const normalizedValue = (value || '').trim();
   if (!normalizedValue) {
@@ -1760,12 +2078,12 @@ function handleFrequencySearchInput(rec: TreatmentRecommendation, event: Event):
 }
 
 function getFilteredFrequencyOptionsForRecord(rec: TreatmentRecommendation): UsageOption[] {
-  const query = normalizeUsageKeyword(getFrequencySearchKeyword(rec));
+  const currentValue = (normalizeTreatmentRecommendation(rec).frequency || '').trim();
+  const query = resolveSelectorFilterKeyword(getFrequencySearchKeyword(rec), currentValue);
   const matchedOptions = !query
     ? frequencyOptions.value
     : frequencyOptions.value.filter((option) => option.normalizedTokens.some((token) => token.includes(query)));
 
-  const currentValue = (normalizeTreatmentRecommendation(rec).frequency || '').trim();
   if (currentValue && !matchedOptions.some((option) => option.text === currentValue)) {
     return [createUsageOption({ key: currentValue, text: currentValue }), ...matchedOptions];
   }
@@ -1830,6 +2148,12 @@ function selectFrequencyOption(rec: TreatmentRecommendation, option: UsageOption
   activeEditableFieldKey.value = null;
 }
 
+function clearFrequencySelection(rec: TreatmentRecommendation): void {
+  rec.frequency = '';
+  rec.frequencyKey = '';
+  setFrequencySearchKeyword(rec, '');
+}
+
 function getRouteSearchKey(rec: TreatmentRecommendation): string {
   return `${getTreatmentEditorKey(rec)}:route-search`;
 }
@@ -1859,12 +2183,12 @@ function handleRouteSearchInput(rec: TreatmentRecommendation, event: Event): voi
 }
 
 function getFilteredRouteOptionsForRecord(rec: TreatmentRecommendation): UsageOption[] {
-  const query = normalizeUsageKeyword(getRouteSearchKeyword(rec));
+  const currentValue = (normalizeTreatmentRecommendation(rec).route || '').trim();
+  const query = resolveSelectorFilterKeyword(getRouteSearchKeyword(rec), currentValue);
   const matchedOptions = !query
     ? routeOptions.value
     : routeOptions.value.filter((option) => option.normalizedTokens.some((token) => token.includes(query)));
 
-  const currentValue = (normalizeTreatmentRecommendation(rec).route || '').trim();
   if (currentValue && !matchedOptions.some((option) => option.text === currentValue)) {
     return [createUsageOption({ key: currentValue, text: currentValue }), ...matchedOptions];
   }
@@ -1927,6 +2251,12 @@ function selectRouteOption(rec: TreatmentRecommendation, option: UsageOption): v
   rec.routeKey = option.key;
   setRouteSearchKeyword(rec, option.text);
   activeEditableFieldKey.value = null;
+}
+
+function clearRouteSelection(rec: TreatmentRecommendation): void {
+  rec.route = '';
+  rec.routeKey = '';
+  setRouteSearchKeyword(rec, '');
 }
 
 type SecondarySelectorField = 'pharmacy' | 'execDept' | 'insurance';
@@ -2006,13 +2336,13 @@ function getPharmacyUsageOptions(): UsageOption[] {
 }
 
 function getFilteredPharmacyOptionsForRecord(rec: TreatmentRecommendation): UsageOption[] {
-  const query = normalizeUsageKeyword(getPharmacySearchKeyword(rec));
+  const currentValue = (rec.pharmacy || '').trim();
+  const query = resolveSelectorFilterKeyword(getPharmacySearchKeyword(rec), currentValue);
   const options = getPharmacyUsageOptions();
   const matched = !query
     ? options
     : options.filter((option) => option.normalizedTokens.some((token) => token.includes(query)));
 
-  const currentValue = (rec.pharmacy || '').trim();
   if (currentValue && !matched.some((option) => option.text === currentValue)) {
     return [createUsageOption({ key: currentValue, text: currentValue }), ...matched];
   }
@@ -2024,6 +2354,11 @@ function selectPharmacyOption(rec: TreatmentRecommendation, option: UsageOption)
   rec.pharmacy = option.text;
   setPharmacySearchKeyword(rec, option.text);
   activeSecondarySelectorKey.value = null;
+}
+
+function clearPharmacySelection(rec: TreatmentRecommendation): void {
+  rec.pharmacy = '';
+  setPharmacySearchKeyword(rec, '');
 }
 
 function getExecDeptSearchKey(rec: TreatmentRecommendation): string {
@@ -2068,13 +2403,13 @@ function getExecDeptUsageOptions(): UsageOption[] {
 }
 
 function getFilteredExecDeptOptionsForRecord(rec: TreatmentRecommendation): UsageOption[] {
-  const query = normalizeUsageKeyword(getExecDeptSearchKeyword(rec));
+  const currentValue = getExecDeptSearchKeyword(rec).trim();
+  const query = resolveSelectorFilterKeyword(getExecDeptSearchKeyword(rec), currentValue);
   const options = getExecDeptUsageOptions();
   const matched = !query
     ? options
     : options.filter((option) => option.normalizedTokens.some((token) => token.includes(query)));
 
-  const currentValue = getExecDeptSearchKeyword(rec).trim();
   if (currentValue && !matched.some((option) => option.text === currentValue)) {
     return [createUsageOption({ key: currentValue, text: currentValue }), ...matched];
   }
@@ -2086,6 +2421,11 @@ function selectExecDeptOption(rec: TreatmentRecommendation, option: UsageOption)
   rec.execDept = option.key || option.text;
   setExecDeptSearchKeyword(rec, option.text);
   activeSecondarySelectorKey.value = null;
+}
+
+function clearExecDeptSelection(rec: TreatmentRecommendation): void {
+  rec.execDept = '';
+  setExecDeptSearchKeyword(rec, '');
 }
 
 function getInsuranceSearchKey(rec: TreatmentRecommendation): string {
@@ -2120,13 +2460,13 @@ function getInsuranceUsageOptions(): UsageOption[] {
 }
 
 function getFilteredInsuranceOptionsForRecord(rec: TreatmentRecommendation): UsageOption[] {
-  const query = normalizeUsageKeyword(getInsuranceSearchKeyword(rec));
+  const currentValue = (rec.insuranceType || '').trim();
+  const query = resolveSelectorFilterKeyword(getInsuranceSearchKeyword(rec), currentValue);
   const options = getInsuranceUsageOptions();
   const matched = !query
     ? options
     : options.filter((option) => option.normalizedTokens.some((token) => token.includes(query)));
 
-  const currentValue = (rec.insuranceType || '').trim();
   if (currentValue && !matched.some((option) => option.text === currentValue)) {
     return [createUsageOption({ key: currentValue, text: currentValue }), ...matched];
   }
@@ -2138,6 +2478,11 @@ function selectInsuranceOption(rec: TreatmentRecommendation, option: UsageOption
   rec.insuranceType = option.text;
   setInsuranceSearchKeyword(rec, option.text);
   activeSecondarySelectorKey.value = null;
+}
+
+function clearInsuranceSelection(rec: TreatmentRecommendation): void {
+  rec.insuranceType = '';
+  setInsuranceSearchKeyword(rec, '');
 }
 
 async function handleBatchWriteBack(): Promise<void> {
@@ -2176,7 +2521,7 @@ async function handleBatchWriteBack(): Promise<void> {
     await invoke('complete_consultation', { result });
     clearVoiceConsultationCache(props.initialPatientData);
     showToast?.('病历已提交', 'success');
-    emit('close');
+    showSessionFeedbackDialog.value = true;
   } catch (error: unknown) {
     const msg = error instanceof Error ? error.message : String(error);
     showToast?.(`提交失败: ${msg}`, 'error');
@@ -2197,6 +2542,8 @@ watch(
     openRelatedId.value = null;
     inlineRelatedDiagnoses.value = [];
     activeManualMatchKey.value = null;
+    activeFeedbackPopoverKey.value = null;
+    showSessionFeedbackDialog.value = false;
     aiDiagnoses.value = [];
     selectedDiagnosisKeys.value = new Set();
     selectedDiagnosis.value = null;
@@ -2210,11 +2557,13 @@ watch(
       aiDiagnoses.value = initDiagnosesFromIntent(result.diagnoses);
       const firstMatched = aiDiagnoses.value.find((diag) => diag.id || diag.code);
       replaceDiagnosisSelection(firstMatched ? [firstMatched] : aiDiagnoses.value.slice(0, 1), firstMatched || aiDiagnoses.value[0] || null);
+      void registerCurrentRecommendations();
     }
 
     if (result.treatments.length > 0) {
       treatments.value = initTreatmentsFromIntent(result.treatments);
       lastTreatmentDiagnosisKey.value = getDiagnosisIdentity(selectedDiagnosis.value);
+      void registerCurrentRecommendations();
       void hydrateMatchedMedicalItemDetails(treatments.value);
       console.info('[VoiceConsultationNew] Applied voice intent treatments', {
         diagnosisIdentity: lastTreatmentDiagnosisKey.value,
@@ -2291,6 +2640,26 @@ watch(
         <section class="vcn-panel pane-card vcn-left-panel">
           <div class="section-heading">
             <div>
+
+            <div v-if="showSessionFeedbackDialog" class="confirm-overlay session-feedback-overlay" @click.self="completeVoiceConsultationFlow">
+              <div class="session-feedback-dialog pane-card" @click.stop>
+                <div class="session-feedback-dialog-head">
+                  <div>
+                    <h3 class="confirm-dialog-title">本次结果已回写成功</h3>
+                    <p class="confirm-dialog-text">如有时间，补一条整体反馈，后续推荐会更快收敛。不反馈也可以直接关闭。</p>
+                  </div>
+                  <button class="session-feedback-skip" type="button" @click="completeVoiceConsultationFlow">暂不反馈</button>
+                </div>
+
+                <VoiceSessionFeedbackBar
+                  :draft="getSessionFeedbackDraft()"
+                  :submitting="sessionSubmitting"
+                  :submitted-at="sessionSubmittedAt"
+                  @update:draft="updateSessionDraft($event)"
+                  @submit="handleSessionFeedbackSubmit"
+                />
+              </div>
+            </div>
               <h3 class="section-title">病历详情</h3>
             </div>
           </div>
@@ -2382,6 +2751,29 @@ watch(
                       </button>
                     </div>
                   </div>
+
+                  <div class="card-actions">
+                    <div class="voice-feedback-anchor" @click.stop>
+                      <button
+                        class="voice-feedback-trigger"
+                        :class="{ submitted: !!getRecommendationSubmittedLabel(getDiagnosisFeedbackKey(diag)) }"
+                        type="button"
+                        @click.stop="toggleRecommendationFeedback(getDiagnosisFeedbackKey(diag), $event)"
+                      >反馈</button>
+                      <div v-if="isRecommendationFeedbackOpen(getDiagnosisFeedbackKey(diag))" class="voice-feedback-panel">
+                        <VoiceRecommendationFeedbackPopover
+                          :visible="true"
+                          :title="diag.name"
+                          :draft="getRecommendationDraft(getDiagnosisFeedbackKey(diag))"
+                          :submitting="recommendationSubmittingKey === getDiagnosisFeedbackKey(diag)"
+                          :submitted-label="getRecommendationSubmittedLabel(getDiagnosisFeedbackKey(diag))"
+                          @close="toggleRecommendationFeedback(getDiagnosisFeedbackKey(diag))"
+                          @update:draft="updateRecommendationDraft(getDiagnosisFeedbackKey(diag), $event)"
+                          @submit="handleDiagnosisFeedbackSubmit(diag, $event)"
+                        />
+                      </div>
+                    </div>
+                  </div>
                 </div>
 
                 <div v-if="openRelatedId === (diag.id || diag.code) && inlineRelatedDiagnoses.length > 0" class="related-section" @click.stop>
@@ -2467,7 +2859,7 @@ watch(
                         </div>
 
                         <div
-                          v-if="rec.type === 'medicine' && getMedicineInlineSummary(rec) && !isTreatmentEditorExpanded(rec)"
+                          v-if="rec.type === 'medicine' && getMedicineInlineSummary(rec) && !rec.selected && !isTreatmentEditorExpanded(rec)"
                           class="medicine-inline-summary"
                         >
                           {{ getMedicineInlineSummary(rec) }}
@@ -2475,6 +2867,26 @@ watch(
                       </div>
 
                       <div class="card-actions">
+                        <div class="voice-feedback-anchor" @click.stop>
+                          <button
+                            class="voice-feedback-trigger"
+                            :class="{ submitted: !!getRecommendationSubmittedLabel(getTreatmentFeedbackKey(rec)) }"
+                            type="button"
+                            @click.stop="toggleRecommendationFeedback(getTreatmentFeedbackKey(rec), $event)"
+                          >反馈</button>
+                          <div v-if="isRecommendationFeedbackOpen(getTreatmentFeedbackKey(rec))" class="voice-feedback-panel">
+                            <VoiceRecommendationFeedbackPopover
+                              :visible="true"
+                              :title="rec.name"
+                              :draft="getRecommendationDraft(getTreatmentFeedbackKey(rec))"
+                              :submitting="recommendationSubmittingKey === getTreatmentFeedbackKey(rec)"
+                              :submitted-label="getRecommendationSubmittedLabel(getTreatmentFeedbackKey(rec))"
+                              @close="toggleRecommendationFeedback(getTreatmentFeedbackKey(rec))"
+                              @update:draft="updateRecommendationDraft(getTreatmentFeedbackKey(rec), $event)"
+                              @submit="handleTreatmentFeedbackSubmit(rec, $event)"
+                            />
+                          </div>
+                        </div>
                         <button
                           v-if="hasProbableMatch(rec)"
                           class="confirm-match-btn"
@@ -2566,6 +2978,14 @@ watch(
                               />
                               <div class="route-option-list" role="listbox" aria-label="药品频次候选项">
                                 <button
+                                  v-if="normalizeTreatmentRecommendation(rec).frequency"
+                                  class="route-option-item route-option-clear"
+                                  type="button"
+                                  @mousedown.prevent.stop="clearFrequencySelection(rec)"
+                                >
+                                  <span class="route-option-text">清空当前值</span>
+                                </button>
+                                <button
                                   v-for="option in getFilteredFrequencyOptionsForRecord(rec).slice(0, 8)"
                                   :key="option.key"
                                   class="route-option-item"
@@ -2594,6 +3014,14 @@ watch(
                                 @input="handleRouteSearchInput(rec, $event)"
                               />
                               <div class="route-option-list" role="listbox" aria-label="药品用法候选项">
+                                <button
+                                  v-if="normalizeTreatmentRecommendation(rec).route"
+                                  class="route-option-item route-option-clear"
+                                  type="button"
+                                  @mousedown.prevent.stop="clearRouteSelection(rec)"
+                                >
+                                  <span class="route-option-text">清空当前值</span>
+                                </button>
                                 <button
                                   v-for="option in getFilteredRouteOptionsForRecord(rec).slice(0, 8)"
                                   :key="option.key"
@@ -2646,6 +3074,14 @@ watch(
                               />
                               <div v-if="isSecondarySelectorOpen(rec, 'pharmacy')" class="route-option-list" role="listbox" aria-label="药房候选项">
                                 <button
+                                  v-if="rec.pharmacy"
+                                  class="route-option-item route-option-clear"
+                                  type="button"
+                                  @mousedown.prevent.stop="clearPharmacySelection(rec)"
+                                >
+                                  <span class="route-option-text">清空当前值</span>
+                                </button>
+                                <button
                                   v-for="option in getFilteredPharmacyOptionsForRecord(rec).slice(0, 8)"
                                   :key="option.key"
                                   class="route-option-item"
@@ -2676,6 +3112,14 @@ watch(
                               />
                               <div v-if="isSecondarySelectorOpen(rec, 'insurance')" class="route-option-list" role="listbox" aria-label="医保限用候选项">
                                 <button
+                                  v-if="rec.insuranceType"
+                                  class="route-option-item route-option-clear"
+                                  type="button"
+                                  @mousedown.prevent.stop="clearInsuranceSelection(rec)"
+                                >
+                                  <span class="route-option-text">清空当前值</span>
+                                </button>
+                                <button
                                   v-for="option in getFilteredInsuranceOptionsForRecord(rec).slice(0, 8)"
                                   :key="option.key"
                                   class="route-option-item"
@@ -2688,6 +3132,7 @@ watch(
                               </div>
                             </div>
                           </div>
+
                         </div>
                       </template>
 
@@ -2706,6 +3151,14 @@ watch(
                               />
                               <div v-if="isSecondarySelectorOpen(rec, 'execDept')" class="route-option-list" role="listbox" aria-label="执行科室候选项">
                                 <button
+                                  v-if="rec.execDept"
+                                  class="route-option-item route-option-clear"
+                                  type="button"
+                                  @mousedown.prevent.stop="clearExecDeptSelection(rec)"
+                                >
+                                  <span class="route-option-text">清空当前值</span>
+                                </button>
+                                <button
                                   v-for="option in getFilteredExecDeptOptionsForRecord(rec).slice(0, 8)"
                                   :key="option.key"
                                   class="route-option-item"
@@ -2720,10 +3173,6 @@ watch(
                             </div>
                           </div>
                           <div class="secondary-field">
-                            <label>部位方式</label>
-                            <input v-model="rec.bodySite" type="text" placeholder="请输入部位" class="edit-input" />
-                          </div>
-                          <div class="secondary-field">
                             <label>医保限用</label>
                             <div class="field-editor route-field-editor" @focusout="closeSecondarySelector(rec, 'insurance', $event)">
                               <input
@@ -2735,6 +3184,14 @@ watch(
                                 @input="handleInsuranceSearchInput(rec, $event)"
                               />
                               <div v-if="isSecondarySelectorOpen(rec, 'insurance')" class="route-option-list" role="listbox" aria-label="医保限用候选项">
+                                <button
+                                  v-if="rec.insuranceType"
+                                  class="route-option-item route-option-clear"
+                                  type="button"
+                                  @mousedown.prevent.stop="clearInsuranceSelection(rec)"
+                                >
+                                  <span class="route-option-text">清空当前值</span>
+                                </button>
                                 <button
                                   v-for="option in getFilteredInsuranceOptionsForRecord(rec).slice(0, 8)"
                                   :key="option.key"
@@ -2774,6 +3231,14 @@ watch(
                               />
                               <div v-if="isSecondarySelectorOpen(rec, 'execDept')" class="route-option-list" role="listbox" aria-label="执行科室候选项">
                                 <button
+                                  v-if="rec.execDept"
+                                  class="route-option-item route-option-clear"
+                                  type="button"
+                                  @mousedown.prevent.stop="clearExecDeptSelection(rec)"
+                                >
+                                  <span class="route-option-text">清空当前值</span>
+                                </button>
+                                <button
                                   v-for="option in getFilteredExecDeptOptionsForRecord(rec).slice(0, 8)"
                                   :key="option.key"
                                   class="route-option-item"
@@ -2799,6 +3264,14 @@ watch(
                                 @input="handleInsuranceSearchInput(rec, $event)"
                               />
                               <div v-if="isSecondarySelectorOpen(rec, 'insurance')" class="route-option-list" role="listbox" aria-label="医保限用候选项">
+                                <button
+                                  v-if="rec.insuranceType"
+                                  class="route-option-item route-option-clear"
+                                  type="button"
+                                  @mousedown.prevent.stop="clearInsuranceSelection(rec)"
+                                >
+                                  <span class="route-option-text">清空当前值</span>
+                                </button>
                                 <button
                                   v-for="option in getFilteredInsuranceOptionsForRecord(rec).slice(0, 8)"
                                   :key="option.key"
@@ -2849,6 +3322,14 @@ watch(
                               />
                               <div v-if="isSecondarySelectorOpen(rec, 'execDept')" class="route-option-list" role="listbox" aria-label="执行科室候选项">
                                 <button
+                                  v-if="rec.execDept"
+                                  class="route-option-item route-option-clear"
+                                  type="button"
+                                  @mousedown.prevent.stop="clearExecDeptSelection(rec)"
+                                >
+                                  <span class="route-option-text">清空当前值</span>
+                                </button>
+                                <button
                                   v-for="option in getFilteredExecDeptOptionsForRecord(rec).slice(0, 8)"
                                   :key="option.key"
                                   class="route-option-item"
@@ -2874,6 +3355,14 @@ watch(
                                 @input="handleInsuranceSearchInput(rec, $event)"
                               />
                               <div v-if="isSecondarySelectorOpen(rec, 'insurance')" class="route-option-list" role="listbox" aria-label="医保限用候选项">
+                                <button
+                                  v-if="rec.insuranceType"
+                                  class="route-option-item route-option-clear"
+                                  type="button"
+                                  @mousedown.prevent.stop="clearInsuranceSelection(rec)"
+                                >
+                                  <span class="route-option-text">清空当前值</span>
+                                </button>
                                 <button
                                   v-for="option in getFilteredInsuranceOptionsForRecord(rec).slice(0, 8)"
                                   :key="option.key"
@@ -3010,6 +3499,41 @@ watch(
   padding: 22px;
   border-radius: 20px;
   box-shadow: 0 18px 48px rgba(15, 23, 42, 0.18);
+}
+
+.session-feedback-overlay {
+  z-index: 22;
+}
+
+.session-feedback-dialog {
+  width: min(720px, 100%);
+  padding: 18px;
+  border-radius: 22px;
+  box-shadow: 0 20px 52px rgba(15, 23, 42, 0.2);
+}
+
+.session-feedback-dialog-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.session-feedback-skip {
+  min-height: 34px;
+  padding: 0 12px;
+  border: 1px solid var(--voice-border);
+  border-radius: 10px;
+  background: var(--voice-surface);
+  color: var(--voice-text-muted);
+  font-size: var(--voice-font-min);
+  cursor: pointer;
+}
+
+.session-feedback-skip:hover {
+  border-color: var(--voice-border-strong);
+  color: var(--voice-text);
 }
 
 .confirm-dialog-body {
@@ -3566,6 +4090,42 @@ watch(
   align-items: center;
   gap: 8px;
   flex-shrink: 0;
+  position: relative;
+}
+
+.voice-feedback-anchor {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+}
+
+.voice-feedback-trigger {
+  min-height: 28px;
+  padding: 0 10px;
+  border: 1px solid var(--voice-border);
+  border-radius: 999px;
+  background: var(--voice-surface);
+  color: var(--voice-text-muted);
+  font-size: var(--voice-font-min);
+  cursor: pointer;
+}
+
+.voice-feedback-trigger:hover {
+  border-color: var(--voice-accent);
+  color: var(--voice-accent);
+}
+
+.voice-feedback-trigger.submitted {
+  border-color: rgba(31, 138, 91, 0.2);
+  background: rgba(31, 138, 91, 0.08);
+  color: var(--voice-success);
+}
+
+.voice-feedback-panel {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  z-index: 12;
 }
 
 .manual-match-btn {
@@ -3897,6 +4457,12 @@ watch(
   background: var(--voice-surface-hover);
 }
 
+.route-option-clear {
+  border-bottom: 1px solid var(--voice-border);
+  border-radius: 10px 10px 8px 8px;
+  color: var(--voice-text-muted);
+}
+
 .route-option-text,
 .route-option-meta {
   min-width: 0;
@@ -4084,6 +4650,10 @@ watch(
     align-items: flex-start;
   }
 
+  .session-feedback-dialog-head {
+    flex-direction: column;
+  }
+
   .voice-topbar-actions {
     width: 100%;
     justify-content: flex-end;
@@ -4098,6 +4668,11 @@ watch(
 
   .card-actions {
     justify-content: flex-start;
+  }
+
+  .voice-feedback-panel {
+    right: auto;
+    left: 0;
   }
 
   .medicine-primary-fields,

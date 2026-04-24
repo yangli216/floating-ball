@@ -32,6 +32,35 @@ export interface HisMedicineCatalogItem {
   raw?: Record<string, unknown>;
 }
 
+export interface HisMedicineProDetail {
+  specSale?: string;
+  unitSale?: string;
+  naFac?: string;
+  idMedPro?: string;
+  priceSale?: number;
+  idSto?: string;
+  amount?: number;
+  naMedPro?: string;
+  unitSaleFactor?: number;
+  idOrg?: string;
+  idFac?: string;
+  sdChrgitmLv?: string;
+  fgSkintest?: string;
+  dftDoseOnce?: string;
+  unitDose?: string;
+  proUnitFactor?: number;
+  idMed?: string;
+  naMed?: string;
+  sdMed?: string;
+  unitPre?: string;
+  spec?: string;
+  dose?: string;
+  sdSkintest?: string;
+  dftUsage?: string;
+  dftFreq?: string;
+  fgActive?: string;
+}
+
 export interface HisMedicalItemCatalogItem {
   id?: string;
   code?: string;
@@ -206,6 +235,7 @@ const HIS_CATALOG_ENDPOINTS = {
   orgMedicineStores: 'api/phis.orgMedStoManageService/queryOrgSto',
   execDepartments: 'api/base.organDicService/deptListByTec',
   medicines: 'api/phis.orgMedicineConfig/queryList',
+  medicineDetail: 'api/phis.orgMedicineConfig/loadMedicinePro',
 } as const;
 
 /**
@@ -562,6 +592,35 @@ export class HisService {
     this.assertBusinessSuccess(HIS_CATALOG_ENDPOINTS.medicalItemDetail, response);
 
     return response.body ?? response.data ?? null;
+  }
+
+  /**
+   * 获取药品详情（按药房维度）
+   * @param id 药品目录中的 id (idMedPro)
+   * @param idSto 药房 storeId
+   */
+  async fetchMedicineProDetail(id: string, idSto: string): Promise<HisMedicineProDetail | null> {
+    const normalizedId = id.trim();
+    const normalizedIdSto = idSto.trim();
+    if (!normalizedId || !normalizedIdSto) {
+      return null;
+    }
+
+    try {
+      const response = await this.post<HisMedicineProDetail>(
+        HIS_CATALOG_ENDPOINTS.medicineDetail,
+        [normalizedId, normalizedIdSto]
+      );
+      this.assertBusinessSuccess(HIS_CATALOG_ENDPOINTS.medicineDetail, response);
+      return response.body ?? response.data ?? null;
+    } catch (error) {
+      console.warn('[HisService] Failed to fetch medicine pro detail', {
+        id: normalizedId,
+        idSto: normalizedIdSto,
+        error,
+      });
+      return null;
+    }
   }
 
   /**
