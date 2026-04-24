@@ -7,6 +7,48 @@ const host = process.env.TAURI_DEV_HOST;
 // https://vite.dev/config/
 export default defineConfig(async () => ({
   plugins: [vue()],
+  build: {
+    chunkSizeWarningLimit: 3500,
+    rollupOptions: {
+      output: {
+        manualChunks(id) {
+          if (!id.includes('node_modules')) {
+            return undefined;
+          }
+
+          if (id.includes('/echarts/')) {
+            return 'vendor-echarts';
+          }
+          if (id.includes('/@iconify-json/lucide/')) {
+            return 'icons-lucide';
+          }
+          if (id.includes('/@iconify-json/mdi/')) {
+            return 'icons-mdi';
+          }
+          if (id.includes('/@iconify-json/healthicons/')) {
+            return 'icons-health';
+          }
+          if (id.includes('/@iconify/')) {
+            return 'vendor-iconify';
+          }
+          if (id.includes('/@tauri-apps/')) {
+            return 'vendor-tauri';
+          }
+          if (id.includes('/markdown-it/') || id.includes('/highlight.js/')) {
+            return 'vendor-markdown';
+          }
+          if (id.includes('/tiny-pinyin/')) {
+            return 'vendor-pinyin';
+          }
+          if (id.includes('/vue/') || id.includes('/pinia/')) {
+            return 'vendor-vue';
+          }
+
+          return 'vendor';
+        },
+      },
+    },
+  },
 
   // Vite options tailored for Tauri development and only applied in `tauri dev` or `tauri build`
   //

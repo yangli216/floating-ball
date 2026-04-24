@@ -6,6 +6,7 @@ import { fetch } from '@tauri-apps/plugin-http';
 export interface HisResponse<T = unknown> {
   success?: boolean;
   message?: string;
+  msg?: string;
   body?: T;
   data?: T;
   code?: string | number;
@@ -59,6 +60,20 @@ export interface HisMedicineProDetail {
   dftUsage?: string;
   dftFreq?: string;
   fgActive?: string;
+}
+
+export interface HisMedicineInventoryCheckItem {
+  idSto: string;
+  idMedPro: string;
+  naMed: string;
+  amount: number;
+  priceSale: number;
+  sdFrzBiz: '1' | '2' | '3';
+}
+
+export interface HisMedicineInventoryCheckResult {
+  code: number;
+  msg: string;
 }
 
 export interface HisMedicalItemCatalogItem {
@@ -236,6 +251,7 @@ const HIS_CATALOG_ENDPOINTS = {
   execDepartments: 'api/base.organDicService/deptListByTec',
   medicines: 'api/phis.orgMedicineConfig/queryList',
   medicineDetail: 'api/phis.orgMedicineConfig/loadMedicinePro',
+  medicineInventoryCheck: 'api/phis.medicineInventoryService/checkInvEnough',
 } as const;
 
 /**
@@ -621,6 +637,39 @@ export class HisService {
       });
       return null;
     }
+  }
+
+  /**
+   * 校验药品库存是否充足
+   * HIS 约定 code=200 表示库存充足，code>200 表示库存不足，msg 为具体原因。
+   */
+  async checkMedicineInventoryEnough(items: HisMedicineInventoryCheckItem[]): Promise<HisMedicineInventoryCheckResult> {
+    if (items.length === 0) {
+      return { code: 200, msg: '' };
+    }
+
+    const response = await this.post<unknown>(
+      HIS_CATALOG_ENDPOINTS.medicineInventoryCheck,
+      [items]
+    );
+
+    const body = response.body as HisResponse | string | undefined;
+    const data = response.data as HisResponse | string | undefined;
+    const rawCode = response.code
+      ?? (typeof body === 'object' ? body?.code : undefined)
+      ?? (typeof data === 'object' ? data?.code : undefined)
+      ?? 500;
+    const code = typeof rawCode === 'number' ? rawCode : Number(rawCode);
+    const msg = response.msg
+      || response.message
+      || (typeof body === 'object' ? (body?.msg || body?.message) : body)
+      || (typeof data === 'object' ? (data?.msg || data?.message) : data)
+      || '';
+
+    return {
+      code: Number.isFinite(code) ? code : 500,
+      msg: String(msg).trim(),
+    };
   }
 
   /**

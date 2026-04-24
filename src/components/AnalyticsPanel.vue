@@ -304,6 +304,8 @@
 
 <script setup lang="ts">
 import { ref, onMounted, computed, inject } from 'vue';
+import { save } from '@tauri-apps/plugin-dialog';
+import { writeTextFile } from '@tauri-apps/plugin-fs';
 import { feedbackService } from '../services/feedback';
 import type { SessionStatistics, FeedbackStatistics, PerformanceStatistics, RecommendationStatistics, OperationStatistics } from '../types/feedback';
 import { generateUsageReport } from '../services/reportGenerator';
@@ -501,8 +503,6 @@ async function handleGenerateReport() {
       operationStats.value
     );
 
-    const { save } = await import('@tauri-apps/plugin-dialog');
-    const { writeTextFile } = await import('@tauri-apps/plugin-fs');
     const filePath = await save({
       defaultPath: `usage-report-${new Date().toISOString().split('T')[0]}.md`,
       filters: [{ name: 'Markdown', extensions: ['md'] }]

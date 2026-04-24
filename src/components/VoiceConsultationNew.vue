@@ -135,6 +135,47 @@ function ensureMedicineDefaultPharmacy(rec: TreatmentRecommendation): void {
   }
 }
 
+function getMedicineInventoryKey(rec: TreatmentRecommendation): string {
+  return getTreatmentEditorKey(rec);
+}
+
+function getMedicineInventoryWarning(rec: TreatmentRecommendation): string {
+  return medicineInventoryWarnings.value[getMedicineInventoryKey(rec)] || '';
+}
+
+function clearMedicineInventoryWarning(rec: TreatmentRecommendation): void {
+  const key = getMedicineInventoryKey(rec);
+  if (!medicineInventoryWarnings.value[key]) {
+    return;
+  }
+
+  const nextWarnings = { ...medicineInventoryWarnings.value };
+  delete nextWarnings[key];
+  medicineInventoryWarnings.value = nextWarnings;
+}
+
+function setMedicineInventoryWarning(rec: TreatmentRecommendation, message: string): void {
+  medicineInventoryWarnings.value = {
+    ...medicineInventoryWarnings.value,
+    [getMedicineInventoryKey(rec)]: message,
+  };
+}
+
+function isMedicineInventoryChecking(rec: TreatmentRecommendation): boolean {
+  return medicineInventoryCheckingKeys.value.has(getMedicineInventoryKey(rec));
+}
+
+function setMedicineInventoryChecking(rec: TreatmentRecommendation, checking: boolean): void {
+  const key = getMedicineInventoryKey(rec);
+  const nextKeys = new Set(medicineInventoryCheckingKeys.value);
+  if (checking) {
+    nextKeys.add(key);
+  } else {
+    nextKeys.delete(key);
+  }
+  medicineInventoryCheckingKeys.value = nextKeys;
+}
+
 const getPatientAnchorId = (): string => {
   const patient = props.initialPatientData;
   return String(patient?.idPi || patient?.idTet || patient?.idMpi || '');
@@ -192,6 +233,8 @@ const execDeptSearchKeywords = ref<Record<string, string>>({});
 const insuranceSearchKeywords = ref<Record<string, string>>({});
 const activeFeedbackPopoverKey = ref<string | null>(null);
 const showSessionFeedbackDialog = ref(false);
+const medicineInventoryWarnings = ref<Record<string, string>>({});
+const medicineInventoryCheckingKeys = ref<Set<string>>(new Set());
 
 const {
   sessionDraft,
@@ -638,6 +681,9 @@ function handleEditableFieldBlur(rec: TreatmentRecommendation, field: MedicinePr
       rec.routeKey = resolveRouteKeyFromKeyword(rec);
       syncRouteSearchKeyword(rec);
     }
+    if (field === 'total') {
+      void checkMedicineInventoryEnough(rec, true);
+    }
     activeEditableFieldKey.value = null;
   }
 }
@@ -649,6 +695,7 @@ function handleTotalQtyInput(rec: TreatmentRecommendation, event: Event): void {
   if (!rec.totalUnit) {
     rec.totalUnit = normalizeTreatmentRecommendation(rec).totalUnit || '';
   }
+  clearMedicineInventoryWarning(rec);
 }
 
 function splitDosageAndUnit(value?: string): { dosage: string; dosageUnit: string } {
@@ -1475,6 +1522,73 @@ async function ensureMedicineSelectable(rec: TreatmentRecommendation, notify = f
   }
 
   return hydrated;
+}
+
+function buildMedicineInventoryCheckItem(rec: TreatmentRecommendation) {
+  const normalized = normalizeTreatmentRecommendation(rec);
+  const raw = getMatchedItemRaw(rec);
+  const idSto = getSelectedPharmacyOption(rec)?.idSto || readFirstString(raw, ['idSto']);
+  const idMedPro = readFirstString(raw, ['idMedPro']) || rec.matchedItem?.id || rec.matchedItem?.idSrv || '';
+  const naMed = readFirstString(raw, ['naMedPro', 'naMed']) || rec.matchedItem?.name || rec.name || '';
+  const amount = parsePositiveNumber(normalized.totalQty);
+  const priceSale = parsePositiveNumber(readFirstString(raw, ['priceSale'])) ?? 0;
+
+  if (!idSto || !idMedPro || !naMed || !amount) {
+    return null;
+  }
+
+  return {
+    idSto,
+    idMedPro,
+    naMed,
+    amount,
+    priceSale,
+    sdFrzBiz: '1' as const,
+  };
+}
+
+async function checkMedicineInventoryEnough(rec: TreatmentRecommendation, notify = false): Promise<boolean> {
+  if (rec.type !== 'medicine') {
+    return true;
+  }
+
+  if (!(await ensureMedicineSelectable(rec, notify))) {
+    return false;
+  }
+
+  const his = getHisService();
+  const checkItem = buildMedicineInventoryCheckItem(rec);
+  if (!his || !checkItem) {
+    return true;
+  }
+
+  setMedicineInventoryChecking(rec, true);
+  try {
+    const result = await his.checkMedicineInventoryEnough([checkItem]);
+    if (result.code === 200) {
+      clearMedicineInventoryWarning(rec);
+      return true;
+    }
+
+    const message = result.msg || `${rec.name} 库存不足，请调整用药数量或药房`;
+    setMedicineInventoryWarning(rec, message);
+    if (notify) {
+      showToast?.(message, 'warning');
+    }
+    return false;
+  } catch (error) {
+    console.error('[VoiceConsultationNew] Failed to check medicine inventory', {
+      name: rec.name,
+      checkItem,
+      error,
+    });
+    if (notify) {
+      showToast?.('库存校验失败，请稍后重试或手动确认库存', 'warning');
+    }
+    return false;
+  } finally {
+    setMedicineInventoryChecking(rec, false);
+  }
 }
 
 async function hydrateMatchedMedicineDetail(rec: TreatmentRecommendation): Promise<boolean> {
@@ -3119,12 +3233,17 @@ function getFilteredPharmacyOptionsForRecord(rec: TreatmentRecommendation): Usag
 function selectPharmacyOption(rec: TreatmentRecommendation, option: UsageOption): void {
   rec.pharmacy = option.text;
   setPharmacySearchKeyword(rec, option.text);
+  clearMedicineInventoryWarning(rec);
+  if (rec.type === 'medicine' && (rec.totalQty || '').trim()) {
+    void checkMedicineInventoryEnough(rec, true);
+  }
   activeSecondarySelectorKey.value = null;
 }
 
 function clearPharmacySelection(rec: TreatmentRecommendation): void {
   rec.pharmacy = '';
   setPharmacySearchKeyword(rec, '');
+  clearMedicineInventoryWarning(rec);
 }
 
 function getExecDeptSearchKey(rec: TreatmentRecommendation): string {
@@ -3266,6 +3385,14 @@ async function handleBatchWriteBack(): Promise<void> {
       .map((item) => ensureMedicineSelectable(item, true)));
     if (medicinesReady.some((ready) => !ready)) {
       showToast?.('存在当前药房无有效详情的药品，请取消选择后再提交', 'warning');
+      return;
+    }
+
+    const medicineInventoriesReady = await Promise.all(selected
+      .filter((item) => item.type === 'medicine')
+      .map((item) => checkMedicineInventoryEnough(item, true)));
+    if (medicineInventoriesReady.some((ready) => !ready)) {
+      showToast?.('存在库存不足的药品，请调整用药数量或药房后再提交', 'warning');
       return;
     }
 
@@ -3952,6 +4079,13 @@ watch(
                               {{ getMedicineFieldDisplay(rec, 'total') }}
                             </button>
                           </div>
+                        </div>
+
+                        <div v-if="isMedicineInventoryChecking(rec)" class="medicine-inventory-note checking">
+                          正在校验库存...
+                        </div>
+                        <div v-else-if="getMedicineInventoryWarning(rec)" class="medicine-inventory-note warning">
+                          {{ getMedicineInventoryWarning(rec) }}
                         </div>
 
                         <div v-if="isTreatmentEditorExpanded(rec)" class="secondary-field-grid">
@@ -5429,6 +5563,24 @@ watch(
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 8px;
+}
+
+.medicine-inventory-note {
+  margin-top: 8px;
+  padding: 7px 10px;
+  border-radius: 10px;
+  font-size: var(--voice-font-min);
+  line-height: 1.5;
+}
+
+.medicine-inventory-note.checking {
+  background: var(--voice-accent-softer);
+  color: var(--voice-accent);
+}
+
+.medicine-inventory-note.warning {
+  background: rgba(201, 122, 17, 0.1);
+  color: var(--voice-warning);
 }
 
 .primary-field,

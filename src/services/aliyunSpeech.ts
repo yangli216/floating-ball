@@ -7,6 +7,10 @@
 
 import { transcribeAudio } from './llm';
 import { getSpeechConfig } from './speechConfig';
+import { invoke } from '@tauri-apps/api/core';
+import { listen } from '@tauri-apps/api/event';
+import { isRegionalMode, regionalPost, buildRegionalSpeechUploadPayload } from './regionalClient';
+import { beginAiTrace, failAiTrace, finishAiTrace } from './aiTrace';
 
 export interface AliyunSpeechConfig {
     apiKey: string;
@@ -92,7 +96,6 @@ async function transcribeWithAliyunInternal(
     audioBlob: Blob,
     retryConfig: SpeechRetryConfig = DEFAULT_SPEECH_RETRY_CONFIG
 ): Promise<string> {
-    const { invoke } = await import('@tauri-apps/api/core');
     const config = getAliyunSpeechConfig();
 
     if (!config.apiKey) {
@@ -165,11 +168,8 @@ export async function transcribeWithAliyun(
     }
 
     // 区域化模式：通过后端语音代理
-    const { isRegionalMode } = await import('./regionalClient');
     if (isRegionalMode()) {
         const speechConfig = getSpeechConfig();
-        const { regionalPost, buildRegionalSpeechUploadPayload } = await import('./regionalClient');
-        const { beginAiTrace, failAiTrace, finishAiTrace } = await import('./aiTrace');
         const scene = 'voice-consultation';
         const fileName = `${scene}-${Date.now()}.pcm`;
         const trace = beginAiTrace({
@@ -261,7 +261,6 @@ export class RealtimeSpeechService {
         }
 
         // 区域化模式不走流式
-        const { isRegionalMode } = await import('./regionalClient');
         if (isRegionalMode()) {
             console.log('[Speech] Regional mode, using batch mode');
             return;
@@ -269,8 +268,6 @@ export class RealtimeSpeechService {
 
         // 尝试启动流式识别
         try {
-            const { invoke } = await import('@tauri-apps/api/core');
-            const { listen } = await import('@tauri-apps/api/event');
             const config = getAliyunSpeechConfig();
 
             if (getSpeechConfig().provider !== 'aliyun-dashscope') {
@@ -320,10 +317,8 @@ export class RealtimeSpeechService {
         if (this.isStreaming) {
             // 流式模式：发送到 Rust 后端
             const bytes = Array.from(new Uint8Array(pcmData.buffer, pcmData.byteOffset, pcmData.byteLength));
-            import('@tauri-apps/api/core').then(({ invoke }) => {
-                invoke('send_speech_chunk', { audioData: bytes }).catch((e: any) => {
-                    console.warn('[Speech] Send chunk failed:', e);
-                });
+            invoke('send_speech_chunk', { audioData: bytes }).catch((e: any) => {
+                console.warn('[Speech] Send chunk failed:', e);
             });
         } else {
             // 批量模式：收集音频
@@ -344,7 +339,6 @@ export class RealtimeSpeechService {
         if (this.isStreaming) {
             // 流式模式：调用 stop 并等待最终结果
             try {
-                const { invoke } = await import('@tauri-apps/api/core');
                 const finalText = await invoke<string>('stop_realtime_speech');
                 console.log('[Speech] Streaming final text:', finalText);
                 this.onTextCallback?.(finalText, true);
@@ -394,9 +388,7 @@ export class RealtimeSpeechService {
         this.audioChunks = [];
         this.cleanupListener();
         if (this.isStreaming) {
-            import('@tauri-apps/api/core').then(({ invoke }) => {
-                invoke('stop_realtime_speech').catch(() => {});
-            });
+            invoke('stop_realtime_speech').catch(() => {});
             this.isStreaming = false;
         }
     }

@@ -93,7 +93,15 @@ async function retryWithBackoff<T>(
   throw lastError;
 }
 
-import { isRegionalMode, getCachedBootstrap, createRegionalSSE } from './regionalClient';
+import { invoke } from '@tauri-apps/api/core';
+import { PROMPTS } from '../prompts';
+import {
+  isRegionalMode,
+  getCachedBootstrap,
+  createRegionalSSE,
+  regionalPost,
+  buildRegionalSpeechUploadPayload,
+} from './regionalClient';
 import { beginAiTrace, failAiTrace, finishAiTrace } from './aiTrace';
 
 // 获取配置信息
@@ -383,7 +391,6 @@ export async function chat(
     });
     try {
       const content = await retryWithBackoff(async () => {
-        const { regionalPost } = await import('./regionalClient');
         const resp = await regionalPost<{ content: string }>('/v1/ai/chat', {
           configProfile: customConfig?.configProfile || 'default',
           messages: payloadMessages,
@@ -467,7 +474,6 @@ async function transcribeAudioViaTauri(
   audioBaseUrl: string,
   audioModel: string
 ): Promise<string> {
-  const { invoke } = await import('@tauri-apps/api/core');
   const arrayBuffer = await blob.arrayBuffer();
   const audioData = Array.from(new Uint8Array(arrayBuffer));
 
@@ -500,7 +506,6 @@ export async function transcribeAudio(
     });
     try {
       const text = await retryWithBackoff(async () => {
-        const { regionalPost, buildRegionalSpeechUploadPayload } = await import('./regionalClient');
         const payload = await buildRegionalSpeechUploadPayload(blob, {
           mimeType: blob.type || 'audio/webm',
           scene,
@@ -574,9 +579,6 @@ export interface RiskAnalysisItem {
 }
 
 export async function analyzePatientRisks(patientData: any, apiKey?: string): Promise<RiskAnalysisItem[]> {
-  // Import prompts
-  const { PROMPTS } = await import('../prompts');
-
   const messages: ChatMessage[] = [
     { role: 'system', content: PROMPTS.consultation.patientRiskAnalysis.system },
     { role: 'user', content: PROMPTS.consultation.patientRiskAnalysis.buildUserPrompt(patientData) }

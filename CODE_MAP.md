@@ -41,6 +41,7 @@ floating-ball/
 │   ├── stores/                 # 2 个 Pinia store
 │   ├── types/                  # TypeScript 类型定义
 │   ├── constants/              # 配置常量
+│   ├── icons/                  # Iconify 离线图标精简集合
 │   ├── prompts/                # LLM 提示词（统一收敛到 prompts.ts）
 │   ├── styles/                 # CSS 模块（设计令牌、布局、动画）
 │   ├── assets/                 # 医学数据 CSV + 模板 JSON
@@ -71,7 +72,7 @@ floating-ball/
 | **SymptomManagement.vue** | ~2000 | 症状管理：关联症状建议、中西医切换 | 与 ConsultationPage 强耦合 |
 | **DiagnosisPathWindow.vue** | ~980 | 独立窗口：诊断推理路径可视化（ECharts 图） | 有独立 Pinia 缓存，注意缓存 key 策略 |
 | **VoiceConsultationResult.vue** | ~1200 | 语音转写后的结构化病历编辑器 | 与语音链路串联 |
-| **VoiceConsultationNew.vue** | ~2100 | 当前语音问诊主结果页：左侧病例正文编辑，右侧 AI 诊断/治疗推荐与一键回写；消费语音抽取阶段生成的病例草稿与结构化诊断/处方提示，药品频次/用法字段在此处接 HIS 字典并允许筛选，药房列表也按 SDK 握手里的 `userRoleDepts` 过滤后从 HIS 动态加载；药品匹配确认和选中前会按候选药房轮询 `medicineDetail`，以首个有效详情药房作为默认药房；检查/检验在卡片头部展示执行科室，缺失时禁止选中并引导医生先设置；同时编排推荐项反馈与整页评分入口，并在主诊断切换后只提示治疗方案需手动刷新、不自动重拉 | 推荐依据默认应折叠，避免右栏信息过载 |
+| **VoiceConsultationNew.vue** | ~2100 | 当前语音问诊主结果页：左侧病例正文编辑，右侧 AI 诊断/治疗推荐与一键回写；消费语音抽取阶段生成的病例草稿与结构化诊断/处方提示，药品频次/用法字段在此处接 HIS 字典并允许筛选，药房列表也按 SDK 握手里的 `userRoleDepts` 过滤后从 HIS 动态加载；药品匹配确认和选中前会按候选药房轮询 `medicineDetail`，以首个有效详情药房作为默认药房，用药总量变更后还会校验默认药房库存；检查/检验在卡片头部展示执行科室，缺失时禁止选中并引导医生先设置；同时编排推荐项反馈与整页评分入口，并在主诊断切换后只提示治疗方案需手动刷新、不自动重拉 | 推荐依据默认应折叠，避免右栏信息过载 |
 | **VoiceRecommendationFeedbackPopover.vue** | -- | 单条诊断 / 治疗推荐反馈弹层 | 输入问题标签、原因和最终处理动作 |
 | **VoiceRecordFeedbackPopover.vue** | -- | 病例字段反馈弹层 | 展示主诉 / 现病史 / 既往史的 AI 原文、医生当前值与前后差异，并提交字段级反馈 |
 | **VoiceSessionFeedbackBar.vue** | -- | 语音问诊整页反馈浮层主体 | 回写成功后弹出，收集评分、点评、整体问题标签 |
@@ -100,7 +101,7 @@ floating-ball/
 | **KnowledgeResultItem.vue** | ~170 | 知识搜索结果行 |
 | **Toast.vue** | ~150 | 全局通知 |
 | **LoadingSpinner.vue** | ~100 | 加载动画 |
-| **Icon.vue** | ~60 | Iconify 图标包装 |
+| **Icon.vue** | ~60 | Iconify 图标包装；依赖 `src/icons/iconifyCollections.ts` 注册精简离线图标集合，新增图标时需同步该集合 |
 | **IconShowcase.vue** | ~350 | 图标展示（测试用） |
 
 ---
@@ -153,7 +154,7 @@ useEventListeners (全局事件) -> 触发 useNavigation & useWorkMode
 
 | 服务 | 行数 | 职责 |
 |------|------|------|
-| **hisService.ts** | ~80 | 封装 Tauri HTTP 插件，绕过浏览器同源与 Cookie 限制，供前端直接调用 HIS 接口；同时承接诊断、药品、诊疗项目目录及药品频次/用法字典读取，并根据 SDK 握手 `extra.urt.userRoleDepts` 中的 `deptId` 过滤语音结果页可见药房；药品详情仍按单个 `idSto` 请求，由语音结果页负责多药房轮询和默认药房落位 |
+| **hisService.ts** | ~80 | 封装 Tauri HTTP 插件，绕过浏览器同源与 Cookie 限制，供前端直接调用 HIS 接口；同时承接诊断、药品、诊疗项目目录、药品库存校验及药品频次/用法字典读取，并根据 SDK 握手 `extra.urt.userRoleDepts` 中的 `deptId` 过滤语音结果页可见药房；药品详情仍按单个 `idSto` 请求，由语音结果页负责多药房轮询和默认药房落位 |
 | **medical_catalog.rs** | -- | 医学目录 SQLite 持久化命令：诊断全局缓存、诊疗项目/药品按机构缓存与同步状态管理，并提供调试态查看/清理命令 | 供 `medicalData.ts` 调用 |
 | **factChecker.ts** | ~399 | AI 输出验证（医学指南核查） |
 | **feedback.ts** | ~312 | 操作追踪与反馈 |

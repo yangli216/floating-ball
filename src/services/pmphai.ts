@@ -3,7 +3,7 @@
  * 提供医学知识库的向量搜索和文档检索功能
  * 区域化模式下凭证由后端管理
  */
-import { isRegionalMode, getCachedBootstrap } from './regionalClient';
+import { isRegionalMode, getCachedBootstrap, regionalGet, regionalPost } from './regionalClient';
 
 // 配置常量
 const DEFAULT_CONFIG = {
@@ -159,12 +159,10 @@ export function isPMPHAIConfigured(): boolean {
 }
 
 async function regionalKnowledgePost<T>(path: string, body: unknown): Promise<T> {
-  const { regionalPost } = await import('./regionalClient');
   return regionalPost<T>(`/v1/knowledge/pmphai${path}`, body);
 }
 
 async function regionalKnowledgeGet<T>(path: string): Promise<T> {
-  const { regionalGet } = await import('./regionalClient');
   return regionalGet<T>(`/v1/knowledge/pmphai${path}`);
 }
 

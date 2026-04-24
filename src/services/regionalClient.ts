@@ -1,3 +1,6 @@
+import { getVersion } from '@tauri-apps/api/app';
+import { invoke } from '@tauri-apps/api/core';
+
 /**
  * 区域化客户端服务
  * 负责终端注册、配置下发（bootstrap）、心跳保活、JWT 管理
@@ -344,7 +347,6 @@ async function detectDeviceMacAddress(): Promise<string | null> {
   }
 
   try {
-    const { invoke } = await import('@tauri-apps/api/core');
     const deviceMac = normalizeDeviceCode(await invoke<string>('get_device_mac_address'));
     return deviceMac || null;
   } catch (error) {
@@ -458,7 +460,6 @@ export async function registerDevice(): Promise<RegisterResponse> {
   let clientVersion = 'unknown';
 
   try {
-    const { getVersion } = await import('@tauri-apps/api/app');
     clientVersion = await getVersion();
   } catch { /* browser fallback */ }
 
