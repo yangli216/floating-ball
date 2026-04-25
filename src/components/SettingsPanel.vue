@@ -32,6 +32,11 @@ import {
   setPreferredAudioInputDeviceId,
   type AudioInputDeviceOption,
 } from '../services/audioRecorder';
+import {
+  getVoiceRecordingDir,
+  setVoiceRecordingDir,
+  pickVoiceRecordingDir,
+} from '../services/voiceRecordingStorage';
 import UpdateChecker from './UpdateChecker.vue';
 import Icon from './Icon.vue';
 
@@ -119,6 +124,32 @@ const audioInputDevices = ref<AudioInputDeviceOption[]>([]);
 const selectedAudioInputDeviceId = ref(DEFAULT_AUDIO_INPUT_VALUE);
 const audioDeviceLoading = ref(false);
 const audioDeviceError = ref('');
+
+// 语音接诊录音保存目录（空表示使用应用数据目录默认 voice_recordings/）
+const voiceRecordingDir = ref('');
+const voicePickingDir = ref(false);
+const handlePickVoiceRecordingDir = async () => {
+  if (voicePickingDir.value) return;
+  voicePickingDir.value = true;
+  try {
+    const picked = await pickVoiceRecordingDir();
+    if (picked) {
+      voiceRecordingDir.value = picked;
+      setVoiceRecordingDir(picked);
+      showToast?.('录音保存目录已更新', 'success');
+    }
+  } catch (err) {
+    console.error('[Settings] pickVoiceRecordingDir failed', err);
+    showToast?.('选择目录失败：' + (err instanceof Error ? err.message : String(err)), 'error');
+  } finally {
+    voicePickingDir.value = false;
+  }
+};
+const handleClearVoiceRecordingDir = () => {
+  voiceRecordingDir.value = '';
+  setVoiceRecordingDir(null);
+  showToast?.('已恢复默认保存目录', 'info');
+};
 
 const audioInputOptions = computed(() => {
   const hasSelectedOption = audioInputDevices.value.some(
@@ -352,6 +383,7 @@ function loadLocalPreferences(): void {
   pmphaiSearchMode.value = (localStorage.getItem('PMPHAI_SEARCH_MODE') as 'rag' | 'list') || 'rag';
   speechTestMode.value = localStorage.getItem('SPEECH_TEST_MODE') === 'true'
     || import.meta.env.VITE_SPEECH_TEST_MODE === 'true';
+  voiceRecordingDir.value = getVoiceRecordingDir();
 }
 
 const currentSettingsSnapshot = computed(() => JSON.stringify({
@@ -926,6 +958,35 @@ watch([regionalBaseUrl, regionalOrgCode], () => {
               <Icon icon="lucide:mic-2" :size="16" />
               已检测到 {{ audioInputDevices.length }} 个输入设备
             </span>
+          </div>
+
+          <div class="form-group" style="margin-top: 16px;">
+            <label for="voice-recording-dir">录音保存目录</label>
+            <div class="input-with-icon">
+              <Icon icon="lucide:folder" :size="16" class="input-icon" />
+              <input
+                id="voice-recording-dir"
+                type="text"
+                :value="voiceRecordingDir"
+                placeholder="未配置：使用默认目录 (应用数据目录/voice_recordings)"
+                readonly
+              />
+            </div>
+            <p class="form-hint">每次结束语音接诊会把 .wav 音频与对应实时转写文本（同名 .txt）成对落盘到该目录，便于后续追溯。</p>
+            <div class="test-connection-row">
+              <button class="test-btn" @click="handlePickVoiceRecordingDir" :disabled="voicePickingDir">
+                <Icon :icon="voicePickingDir ? 'lucide:loader-2' : 'lucide:folder-open'" :size="16" :class="{ spin: voicePickingDir }" />
+                {{ voicePickingDir ? '选择中...' : '选择目录' }}
+              </button>
+              <button
+                class="test-btn"
+                @click="handleClearVoiceRecordingDir"
+                :disabled="voicePickingDir || !voiceRecordingDir"
+              >
+                <Icon icon="lucide:rotate-ccw" :size="16" />
+                恢复默认
+              </button>
+            </div>
           </div>
         </div>
 

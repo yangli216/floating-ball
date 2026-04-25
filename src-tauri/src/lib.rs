@@ -393,6 +393,123 @@ async fn export_templates_with_dialog(content: String) -> Result<(), String> {
     Ok(())
 }
 
+/// 选择语音录音保存目录
+#[tauri::command]
+async fn pick_voice_recording_dir() -> Result<Option<String>, String> {
+    let task = rfd::AsyncFileDialog::new()
+        .set_title("选择语音接诊录音保存目录")
+        .pick_folder();
+
+    let result = task.await;
+
+    Ok(result.map(|h| h.path().to_string_lossy().to_string()))
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct VoiceRecordingSaveResult {
+    pub audio_path: String,
+    pub transcript_path: String,
+}
+
+/// 将语音录音及对应实时转写文本成对落盘
+/// - `audio`: WAV 字节
+/// - `transcript`: 实时转写文本（可能为空字符串）
+/// - `save_dir`: 用户配置的目录；为 None/空则使用 `<app_data>/voice_recordings`
+#[tauri::command]
+async fn save_voice_recording(
+    audio: Vec<u8>,
+    transcript: String,
+    save_dir: Option<String>,
+    app: tauri::AppHandle,
+) -> Result<VoiceRecordingSaveResult, String> {
+    use std::path::PathBuf;
+
+    let target_dir: PathBuf = match save_dir.as_deref().map(str::trim).filter(|s| !s.is_empty()) {
+        Some(dir) => PathBuf::from(dir),
+        None => app
+            .path()
+            .app_data_dir()
+            .map_err(|e| format!("无法解析应用数据目录: {}", e))?
+            .join("voice_recordings"),
+    };
+
+    std::fs::create_dir_all(&target_dir)
+        .map_err(|e| format!("创建保存目录失败 ({}): {}", target_dir.display(), e))?;
+
+    // 时间戳：使用 epoch 毫秒，避免引入 chrono 依赖；同时生成可读时间字符串
+    use std::time::{SystemTime, UNIX_EPOCH};
+    let epoch_ms = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_millis())
+        .unwrap_or(0);
+    let stamp = format!("{}", epoch_ms);
+    let readable_time = format_local_datetime(epoch_ms);
+
+    let audio_path = target_dir.join(format!("voice_{}.wav", stamp));
+    let transcript_path = target_dir.join(format!("voice_{}.txt", stamp));
+
+    std::fs::write(&audio_path, &audio)
+        .map_err(|e| format!("写入音频文件失败 ({}): {}", audio_path.display(), e))?;
+
+    let audio_filename = audio_path
+        .file_name()
+        .map(|s| s.to_string_lossy().to_string())
+        .unwrap_or_default();
+
+    let transcript_body = if transcript.trim().is_empty() {
+        format!(
+            "# 语音接诊转写\n时间: {}\n音频: {}\n\n[未捕获到转写文本]\n",
+            readable_time, audio_filename,
+        )
+    } else {
+        format!(
+            "# 语音接诊转写\n时间: {}\n音频: {}\n\n{}\n",
+            readable_time, audio_filename, transcript,
+        )
+    };
+
+    std::fs::write(&transcript_path, transcript_body)
+        .map_err(|e| format!("写入转写文本失败 ({}): {}", transcript_path.display(), e))?;
+
+    Ok(VoiceRecordingSaveResult {
+        audio_path: audio_path.to_string_lossy().to_string(),
+        transcript_path: transcript_path.to_string_lossy().to_string(),
+    })
+}
+
+/// 把 epoch 毫秒转换为本地时间字符串（粗粒度，仅用于人类可读时间戳，不依赖 chrono）。
+fn format_local_datetime(epoch_ms: u128) -> String {
+    // 使用本地时区偏移：通过比较 SystemTime 与 UTC 没有现成 API，这里仅按 UTC 输出，
+    // 在文件名以 epoch 毫秒标识、文件内附带 UTC 时间，避免歧义。
+    let secs_total = (epoch_ms / 1000) as i64;
+    let days = secs_total / 86_400;
+    let mut remainder = secs_total - days * 86_400;
+    if remainder < 0 {
+        remainder += 86_400;
+    }
+    let hour = remainder / 3600;
+    let minute = (remainder % 3600) / 60;
+    let second = remainder % 60;
+
+    // Civil-from-days (Howard Hinnant)
+    let z = days + 719_468;
+    let era = if z >= 0 { z } else { z - 146_096 } / 146_097;
+    let doe = (z - era * 146_097) as u64; // [0, 146096]
+    let yoe = (doe - doe / 1460 + doe / 36524 - doe / 146_096) / 365; // [0, 399]
+    let y = yoe as i64 + era * 400;
+    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100); // [0, 365]
+    let mp = (5 * doy + 2) / 153; // [0, 11]
+    let d = doy - (153 * mp + 2) / 5 + 1; // [1, 31]
+    let m = if mp < 10 { mp + 3 } else { mp - 9 }; // [1, 12]
+    let y = if m <= 2 { y + 1 } else { y };
+
+    format!(
+        "{:04}-{:02}-{:02} {:02}:{:02}:{:02} UTC",
+        y, m, d, hour, minute, second
+    )
+}
+
 // 设置窗口毛玻璃效果 (macOS only)
 #[tauri::command]
 async fn set_vibrancy(window: tauri::Window, enabled: bool) -> Result<(), String> {
@@ -533,6 +650,8 @@ pub fn run() {
             save_templates,
             check_mouse_hover,
             export_templates_with_dialog,
+            pick_voice_recording_dir,
+            save_voice_recording,
             set_vibrancy,
             transcribe_audio,
             // Feedback system commands

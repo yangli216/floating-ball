@@ -341,8 +341,15 @@ export class RealtimeSpeechService {
             try {
                 const finalText = await invoke<string>('stop_realtime_speech');
                 console.log('[Speech] Streaming final text:', finalText);
-                this.onTextCallback?.(finalText, true);
-                return finalText;
+                // 防御：Rust 返回的 full_text 仅累积 sentence-end 文本，
+                // 在用户按下结束的瞬间最后一个分句可能尚未 end，会导致返回值短于本地累积。
+                // 因此与本地累积（finalizedText + currentSentence）合并，取最长者，确保不丢失任何已识别文本。
+                const accumulated = `${this.finalizedText}${this.currentSentence}`;
+                const remoteFinal = finalText || '';
+                const result =
+                    remoteFinal.length >= accumulated.length ? remoteFinal : accumulated;
+                this.onTextCallback?.(result, true);
+                return result;
             } catch (error: any) {
                 console.error('[Speech] Stop streaming failed:', error);
                 // 返回已收集的文本

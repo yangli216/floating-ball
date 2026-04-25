@@ -104,6 +104,7 @@
 <script setup lang="ts">
 import { ref, onMounted, onUnmounted, computed, watch, nextTick } from 'vue';
 import { audioRecorder, getMicrophoneErrorMessage } from '../services/audioRecorder';
+import { saveVoiceRecording } from '../services/voiceRecordingStorage';
 import { trackClick, trackError } from '../services/operationTracker';
 import { getCurrentWindow } from '@tauri-apps/api/window';
 import { LogicalSize } from '@tauri-apps/api/dpi';
@@ -413,10 +414,7 @@ const handleStop = async () => {
     console.log('[VoiceCapsule] Stopping recorder...');
     const blob = await audioRecorder.stop();
     console.log('[VoiceCapsule] Got blob:', blob.size, 'bytes');
-    
-    // 调试：保存录音到本地并提供回放
-    await saveAudioForDebug(blob);
-    
+
     // 获取实时语音服务的最终结果
     let transcription = '';
     if (speechService) {
@@ -425,7 +423,10 @@ const handleStop = async () => {
       console.log('[VoiceCapsule] Final transcription:', transcription);
       speechService = null;
     }
-    
+
+    // 与音频成对落盘到本地（音频 + 转写文本）
+    await saveAudioForDebug(blob, transcription || realtimeText.value || '');
+
     // 进入已停止状态，允许医生审核/编辑文字
     stoppedBlob = blob;
     editableText.value = transcription || realtimeText.value;
@@ -460,38 +461,15 @@ const handleClose = async () => {
 };
 
 /**
- * 调试功能：保存录音到本地并提供回放
+ * 把音频和对应实时转写文本成对落盘到用户配置目录（默认 <app_data>/voice_recordings）
+ * 便于后续追溯和质量审计。
  */
-const saveAudioForDebug = async (blob: Blob) => {
+const saveAudioForDebug = async (blob: Blob, transcript: string) => {
   try {
-    // 生成文件名
-    const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
-    const filename = `recording_${timestamp}.wav`;
-    
-    // 创建下载链接
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = filename;
-    
-    // 自动下载
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    
-    console.log('[VoiceCapsule] Audio saved as:', filename);
-    console.log('[VoiceCapsule] Audio URL for playback:', url);
-    
-    // 同时在控制台提供回放方式
-    console.log('[VoiceCapsule] To play audio, run in console: new Audio("' + url + '").play()');
-    
-    // 可选：自动播放一次确认
-    // const audio = new Audio(url);
-    // audio.play();
-    
-    // 注意：URL.revokeObjectURL 不在这里调用，以便后续可以回放
+    const result = await saveVoiceRecording(blob, transcript);
+    console.log('[VoiceCapsule] Voice recording saved:', result);
   } catch (err) {
-    console.error('[VoiceCapsule] Failed to save audio:', err);
+    console.error('[VoiceCapsule] Failed to save voice recording:', err);
   }
 };
 
