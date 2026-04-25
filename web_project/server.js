@@ -1,11 +1,12 @@
 const express = require('express');
 const axios = require('axios');
 const crypto = require('crypto');
+const path = require('path');
 
 const app = express();
 const port = 3000;
 
-app.use(express.static('public'));
+app.use(express.static(path.join(__dirname, 'public')));
 app.use(express.json());
 
 const APPKEY = 'A874F37BD2D8B76F';

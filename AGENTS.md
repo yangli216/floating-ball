@@ -117,6 +117,7 @@
 6. 修改 `windowSizes.ts`、`useWorkMode.ts`、`useWindowManagement.ts` 时，必须同步校验窗口尺寸、显示器边界和动画原点
 7. `DiagnosisPathWindow.vue`、`diagnosisPath.ts`、`stores/diagnosisPath.ts` 的改动必须同时检查窗口生命周期、渲染就绪事件和缓存 key 策略
 8. 知识库相关改动要明确是走 `pmphai.ts` 主链路，还是启用内置 `KnowledgeBasePanel.vue`，避免双轨长期漂移
+9. **HIS 调用边界**：业务代码（`components/` / `composables/` / `services/` 中除 `services/his/*` 之外）禁止直接 `import ... from 'services/hisService'`。必须经 `services/his` 入口：业务调用走 `getHisAdapter()`，仅 SDK handshake / 区域化 bootstrap 等认证场景允许使用 `services/his` 重导出的 `getHisService` / `resetHisService`。新增 PHIS 私有字段读取必须通过 `entry.raw.xxx` 透传，不允许在中性 DTO 上加 PHIS 命名字段。
 
 ## 推荐提交流程
 

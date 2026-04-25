@@ -13,12 +13,20 @@
       <span>以下内容由 AI 根据医患对话自动生成，请审核确认后提交</span>
     </div>
 
+    <VoiceRigidBlockBanner
+      :alerts="rigidBlockAlerts"
+      :is-acknowledged="isRigidBlockAcknowledged"
+      @acknowledge="acknowledgeRigidBlock"
+    />
+
     <VoiceSafetyReviewPanel
       :status="safetyReviewStatus"
       :issues="safetyReviewIssues"
       :error-message="safetyReviewError"
+      :get-action-label="getSafetyIssueActionLabel"
       @acknowledge="acknowledgeSafetyIssue"
       @dismiss="dismissSafetyIssue"
+      @apply="applySafetyIssue"
     />
 
     <div class="content-body" v-if="record">
@@ -224,13 +232,16 @@ import FactCheckHighlight from './FactCheckHighlight.vue';
 import FactCheckWidget from './FactCheckWidget.vue';
 import KnowledgePanel from './KnowledgePanel.vue';
 import VoiceSafetyReviewPanel from './VoiceSafetyReviewPanel.vue';
+import VoiceRigidBlockBanner from './VoiceRigidBlockBanner.vue';
 import VoiceResultHeader from './VoiceResultHeader.vue';
 import { useVoiceCatalogMatching } from '../composables/useVoiceCatalogMatching';
 import { useVoiceKnowledgeSearch } from '../composables/useVoiceKnowledgeSearch';
 import { useVoiceResultRecord } from '../composables/useVoiceResultRecord';
 import { useVoiceResultFactCheck } from '../composables/useVoiceResultFactCheck';
 import { useVoiceSafetyReview } from '../composables/useVoiceSafetyReview';
-import type { GeneratedRecord, PatientInfo } from '../types/voiceResult';
+import { useVoiceRigidBlock } from '../composables/useVoiceRigidBlock';
+import { useSafetyIssueResolver } from '../composables/useSafetyIssueResolver';
+import type { GeneratedRecord, PatientInfo, VoiceSafetyIssue } from '../types/voiceResult';
 
 const props = defineProps<{
   initialRecord: GeneratedRecord | null;
@@ -278,6 +289,48 @@ const {
   dismissIssue: dismissSafetyIssue,
   acknowledgeAllHighRisk,
 } = useVoiceSafetyReview();
+const {
+  alerts: rigidBlockAlerts,
+  unacknowledgedBlocks,
+  requiresConfirmation: requiresRigidConfirmation,
+  evaluate: evaluateRigidBlocks,
+  acknowledge: acknowledgeRigidBlock,
+  acknowledgeAllBlocks: acknowledgeAllRigidBlocks,
+  isAcknowledged: isRigidBlockAcknowledged,
+} = useVoiceRigidBlock();
+
+const { getPlan: getSafetyIssuePlan, applyPlan: applySafetyIssuePlan } = useSafetyIssueResolver({
+  getRecord: () => record.value,
+  onRecordUpdated: (next) => {
+    matchLocalData(next);
+    runSafetyReview(next, props.patientInfo);
+    evaluateRigidBlocks(next, props.patientInfo);
+  },
+});
+
+function getSafetyIssueActionLabel(issue: VoiceSafetyIssue): string {
+  const plan = getSafetyIssuePlan(issue);
+  return plan.kind === 'none' ? '' : plan.actionLabel;
+}
+
+function applySafetyIssue(issueId: string): void {
+  const issue = safetyReviewIssues.value.find(i => i.id === issueId);
+  if (!issue) return;
+  const plan = applySafetyIssuePlan(issue);
+  if (plan.kind === 'none') return;
+  trackClick('voice_safety_issue_applied', {
+    issueId,
+    category: issue.category,
+    actionKind: plan.kind,
+    affected: plan.kind === 'remove_medications'
+      ? plan.targetNames.length
+      : plan.kind === 'add_lab_tests'
+        ? plan.itemsToAdd.length
+        : 0,
+  });
+  // 采纳后自动标记已知晓，避免医生再次手动点击
+  acknowledgeSafetyIssue(issueId);
+}
 
 watch(() => props.initialRecord, (val) => {
   if (val) {
@@ -285,11 +338,37 @@ watch(() => props.initialRecord, (val) => {
     matchLocalData(newVal);
     performMedicalRecordFactCheck(newVal);
     runSafetyReview(newVal, props.patientInfo);
+    evaluateRigidBlocks(newVal, props.patientInfo);
     searchKnowledgeBase(newVal);
   }
 }, { immediate: true });
 
+// 医生编辑诊断/处方/过敏史后重新评估刚性规则（同步、轻量）
+watch(
+  () => [
+    record.value?.diagnosisList?.map(d => d.name).join('|'),
+    record.value?.medications?.map(m => `${m.name}${m.spec || ''}${m.dosage || ''}`).join('|'),
+    props.patientInfo?.allergyHistory,
+    props.patientInfo?.sdSexText ?? props.patientInfo?.sex,
+    props.patientInfo?.ageText ?? props.patientInfo?.age,
+  ],
+  () => {
+    if (record.value) {
+      evaluateRigidBlocks(record.value, props.patientInfo);
+    }
+  },
+);
+
 const handleConfirm = () => {
+  if (requiresRigidConfirmation.value) {
+    const titles = unacknowledgedBlocks.value.map(a => `• ${a.title}`).join('\n');
+    const confirmed = window.confirm(
+      `检测到以下刚性安全阻断项尚未确认：\n${titles}\n\n是否确认已知晓并继续提交？`,
+    );
+    if (!confirmed) return;
+    acknowledgeAllRigidBlocks();
+  }
+
   if (needsSubmitAwareness.value) {
     const confirmed = window.confirm('仍有高危安全提醒未处理，是否确认已知晓并继续提交？');
     if (!confirmed) return;

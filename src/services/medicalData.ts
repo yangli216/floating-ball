@@ -11,13 +11,12 @@ import tcmSyndromesRaw from '../assets/tcm-syndromes.csv?raw';
 // @ts-ignore
 import tcmTreatmentsRaw from '../assets/tcm-treatments.csv?raw';
 import { invoke } from '@tauri-apps/api/core';
-import {
-  getHisService,
-  type HisDiagnosisCatalogItem,
-  type HisMedicalItemCatalogItem,
-  type HisMedicineCatalogItem,
-  type HisService
-} from './hisService';
+import { getHisAdapter, type HisAdapter } from './his';
+import type {
+  DiagnosisCatalogEntry,
+  MedicalItemCatalogEntry,
+  MedicineCatalogEntry,
+} from './his';
 import { isRegionalMode, regionalGet } from './regionalClient';
 
 export interface DiagnosisItem {
@@ -508,9 +507,9 @@ class MedicalDataService {
     const snapshot = await this.loadPersistedCatalogSnapshot();
     this.applyPersistedCatalogSnapshot(snapshot);
 
-    const hisService = getHisService();
+    const hisService = getHisAdapter();
     if (!hisService) {
-      console.warn('[MedicalData] HisService not ready, skip local catalog sync');
+      console.warn('[MedicalData] HisAdapter not ready, skip local catalog sync');
       return;
     }
 
@@ -1160,7 +1159,7 @@ class MedicalDataService {
     return this.parseKeywords(keywords);
   }
 
-  private normalizeDiagnosisItems(items: Array<Partial<DiagnosisItem> | HisDiagnosisCatalogItem>): DiagnosisItem[] {
+  private normalizeDiagnosisItems(items: Array<Partial<DiagnosisItem> | DiagnosisCatalogEntry>): DiagnosisItem[] {
     const normalized: DiagnosisItem[] = [];
 
     items.forEach((item, index) => {
@@ -1181,7 +1180,7 @@ class MedicalDataService {
     return normalized;
   }
 
-  private normalizeMedicineItems(items: Array<Partial<MedicineItem> | HisMedicineCatalogItem>): MedicineItem[] {
+  private normalizeMedicineItems(items: Array<Partial<MedicineItem> | MedicineCatalogEntry>): MedicineItem[] {
     const normalized: MedicineItem[] = [];
 
     items.forEach((item, index) => {
@@ -1190,16 +1189,27 @@ class MedicalDataService {
         return;
       }
 
+      // 兼容三种来源：
+      // 1. 持久化 snapshot（带 idSrv/naSrv 的 partial MedicineItem）
+      // 2. CSV（只有 id/name/spec/keywords）
+      // 3. HIS adapter（中性 entry，PHIS 字段透传在 raw）
+      const partial = item as Partial<MedicineItem>;
+      const raw = (item.raw && typeof item.raw === 'object' ? item.raw : {}) as Record<string, unknown>;
+      const readRawString = (key: string) => {
+        const v = raw[key];
+        return typeof v === 'string' ? v.trim() : '';
+      };
+
       normalized.push({
         id: item.id?.toString().trim() || `${index + 1}`,
         name,
         spec: item.spec?.trim() || '',
-        idSrv: item.idSrv?.toString().trim() || item.id?.toString().trim() || `${index + 1}`,
-        naSrv: item.naSrv?.toString().trim() || name,
-        sdSrv: item.sdSrv?.toString().trim() || '11',
-        idDeptExec: item.idDeptExec?.toString().trim() || '',
-        fgCheckOrd: item.fgCheckOrd?.toString().trim() || '1',
-        fgSkintest: item.fgSkintest?.toString().trim() || '0',
+        idSrv: partial.idSrv?.toString().trim() || readRawString('idSrv') || item.id?.toString().trim() || `${index + 1}`,
+        naSrv: partial.naSrv?.toString().trim() || readRawString('naSrv') || name,
+        sdSrv: partial.sdSrv?.toString().trim() || readRawString('sdSrv') || '11',
+        idDeptExec: partial.idDeptExec?.toString().trim() || readRawString('idDeptExec') || '',
+        fgCheckOrd: partial.fgCheckOrd?.toString().trim() || readRawString('fgCheckOrd') || '1',
+        fgSkintest: partial.fgSkintest?.toString().trim() || readRawString('fgSkintest') || '0',
         raw: item.raw && typeof item.raw === 'object' ? item.raw : undefined,
       });
     });
@@ -1207,7 +1217,7 @@ class MedicalDataService {
     return normalized;
   }
 
-  private normalizeMedicalItems(items: Array<Partial<MedicalItem> | HisMedicalItemCatalogItem>): MedicalItem[] {
+  private normalizeMedicalItems(items: Array<Partial<MedicalItem> | MedicalItemCatalogEntry>): MedicalItem[] {
     const normalized: MedicalItem[] = [];
 
     items.forEach((item, index) => {
@@ -1216,19 +1226,26 @@ class MedicalDataService {
         return;
       }
 
+      const partial = item as Partial<MedicalItem>;
+      const raw = (item.raw && typeof item.raw === 'object' ? item.raw : {}) as Record<string, unknown>;
+      const readRawString = (key: string) => {
+        const v = raw[key];
+        return typeof v === 'string' ? v.trim() : '';
+      };
+
       normalized.push({
         id: item.id?.toString().trim() || `${index + 1}`,
         code: item.code?.toString().trim() || item.id?.toString().trim() || name,
         name,
         category: item.category?.trim() || '其他',
         keywords: this.normalizeKeywords(item.keywords),
-        idSrv: item.idSrv?.toString().trim() || item.id?.toString().trim() || `${index + 1}`,
-        naSrv: item.naSrv?.toString().trim() || name,
-        sdSrv: item.sdSrv?.toString().trim() || '',
-        idDeptExec: item.idDeptExec?.toString().trim() || '',
-        idPart: item.idPart?.toString().trim() || '',
-        jsonField: item.jsonField?.toString().trim() || '',
-        fgCheckOrd: item.fgCheckOrd?.toString().trim() || '1',
+        idSrv: partial.idSrv?.toString().trim() || readRawString('idSrv') || item.id?.toString().trim() || `${index + 1}`,
+        naSrv: partial.naSrv?.toString().trim() || readRawString('naSrv') || name,
+        sdSrv: partial.sdSrv?.toString().trim() || readRawString('sdSrv') || '',
+        idDeptExec: partial.idDeptExec?.toString().trim() || readRawString('idDeptExec') || '',
+        idPart: partial.idPart?.toString().trim() || readRawString('idPart') || '',
+        jsonField: partial.jsonField?.toString().trim() || readRawString('jsonField') || '',
+        fgCheckOrd: partial.fgCheckOrd?.toString().trim() || readRawString('fgCheckOrd') || '1',
         raw: item.raw && typeof item.raw === 'object' ? item.raw : undefined,
       });
     });
@@ -1237,7 +1254,7 @@ class MedicalDataService {
   }
 
   private async syncLocalCatalogs(
-    hisService: HisService,
+    hisService: HisAdapter,
     snapshot: MedicalCatalogSnapshot | null
   ): Promise<void> {
     await this.syncGlobalDiagnosesIfNeeded(hisService, snapshot);
@@ -1255,7 +1272,7 @@ class MedicalDataService {
   }
 
   private async syncGlobalDiagnosesIfNeeded(
-    hisService: HisService,
+    hisService: HisAdapter,
     snapshot: MedicalCatalogSnapshot | null
   ): Promise<void> {
     if (snapshot?.diagnoses.length) {
@@ -1285,7 +1302,7 @@ class MedicalDataService {
   }
 
   private async syncInstitutionItemsIfNeeded(
-    hisService: HisService,
+    hisService: HisAdapter,
     orgCode: string,
     snapshot: MedicalCatalogSnapshot | null
   ): Promise<void> {
@@ -1326,7 +1343,7 @@ class MedicalDataService {
   }
 
   private async syncInstitutionMedicinesIfNeeded(
-    hisService: HisService,
+    hisService: HisAdapter,
     orgCode: string,
     snapshot: MedicalCatalogSnapshot | null
   ): Promise<void> {

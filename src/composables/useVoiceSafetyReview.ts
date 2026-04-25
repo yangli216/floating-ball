@@ -1,6 +1,7 @@
 import { computed, ref } from 'vue';
 import { trackClick, trackError } from '../services/operationTracker';
 import { checkVoiceSafetyReview } from '../services/factChecker';
+import { extractRecentMedications, getPatientMemory } from '../services/patientMemoryStore';
 import type {
   GeneratedRecord,
   PatientInfo,
@@ -32,10 +33,26 @@ export function useVoiceSafetyReview() {
     checkedAt.value = null;
 
     try {
+      const patientId = String((patientInfo as { idPi?: string; patientId?: string; id?: string } | null | undefined)?.idPi
+        || (patientInfo as { patientId?: string } | null | undefined)?.patientId
+        || (patientInfo as { id?: string } | null | undefined)?.id
+        || '');
+      const memory = patientId ? await getPatientMemory(patientId) : null;
+      const recentMedications = extractRecentMedications(memory);
+      // 累积过敏史：如果粘贴中不含某些上次上传的过敏项，仍以累计值为准补足
+      const baseAllergy = patientInfo?.allergyHistory || '';
+      const memoryAllergies = memory?.allergyHistory || [];
+      const mergedAllergy = memoryAllergies.length
+        ? [baseAllergy, memoryAllergies.filter(a => !baseAllergy.includes(a)).join('、')]
+            .filter(Boolean)
+            .join('、')
+        : baseAllergy;
+
       const result = await checkVoiceSafetyReview({
         record,
         patientInfo,
-        allergyHistory: patientInfo?.allergyHistory,
+        allergyHistory: mergedAllergy || undefined,
+        recentMedications,
       });
 
       if (currentToken !== reviewToken) {

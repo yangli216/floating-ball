@@ -18,14 +18,14 @@
 | 修改问诊主流程 | [ConsultationPage.vue](src/components/ConsultationPage.vue) + [SymptomManagement.vue](src/components/SymptomManagement.vue) |
 | 修改窗口/动画行为 | [useWindowManagement.ts](src/composables/useWindowManagement.ts) + [useWorkMode.ts](src/composables/useWorkMode.ts) |
 | 修改 LLM 调用 | [llm.ts](src/services/llm.ts) + [prompts.ts](src/prompts/prompts.ts) |
-| 修改语音问诊 | [VoiceCapsule.vue](src/components/VoiceCapsule.vue) + [VoiceConsultationNew.vue](src/components/VoiceConsultationNew.vue) + [VoiceConsultationResult.vue](src/components/VoiceConsultationResult.vue) + [VoiceResultHeader.vue](src/components/VoiceResultHeader.vue) + [VoiceSafetyReviewPanel.vue](src/components/VoiceSafetyReviewPanel.vue) + [VoiceRecommendationFeedbackPopover.vue](src/components/VoiceRecommendationFeedbackPopover.vue) + [VoiceRecordFeedbackPopover.vue](src/components/VoiceRecordFeedbackPopover.vue) + [VoiceSessionFeedbackBar.vue](src/components/VoiceSessionFeedbackBar.vue) + [useVoiceConsultation.ts](src/composables/useVoiceConsultation.ts) + [useVoiceIntentRecognition.ts](src/composables/useVoiceIntentRecognition.ts) + [useVoiceFeedback.ts](src/composables/useVoiceFeedback.ts) + [useVoiceResultRecord.ts](src/composables/useVoiceResultRecord.ts) + [useVoiceCatalogMatching.ts](src/composables/useVoiceCatalogMatching.ts) + [useVoiceResultFactCheck.ts](src/composables/useVoiceResultFactCheck.ts) + [useVoiceKnowledgeSearch.ts](src/composables/useVoiceKnowledgeSearch.ts) + [useVoiceSafetyReview.ts](src/composables/useVoiceSafetyReview.ts) + [voiceResult.ts](src/types/voiceResult.ts) + [prompts.ts](src/prompts/prompts.ts) + [aliyunSpeech.ts](src/services/aliyunSpeech.ts) + [speechConfig.ts](src/services/speechConfig.ts) + [audioRecorder.ts](src/services/audioRecorder.ts) + [voiceFeedback.ts](src/services/voiceFeedback.ts)；重点关注语音抽取契约是否覆盖病例草稿、explicit/inferred 来源标记、诊断/检查/药品结构化字段，以及推荐项反馈 / 整页评分 / 病例字段反馈的本地落库、前后对比快照和 payload 组装；旧版 `VoiceConsultationResult.vue` 只做结果编辑编排，结果记录状态、标准库匹配、事实复核、知识库搜索、安全复核员分别由 composable 承接 |
+| 修改语音问诊 | [VoiceCapsule.vue](src/components/VoiceCapsule.vue) + [VoiceConsultationNew.vue](src/components/VoiceConsultationNew.vue) + [VoiceConsultationResult.vue](src/components/VoiceConsultationResult.vue) + [VoiceResultHeader.vue](src/components/VoiceResultHeader.vue) + [VoiceSafetyReviewPanel.vue](src/components/VoiceSafetyReviewPanel.vue) + [VoiceRecommendationFeedbackPopover.vue](src/components/VoiceRecommendationFeedbackPopover.vue) + [VoiceRecordFeedbackPopover.vue](src/components/VoiceRecordFeedbackPopover.vue) + [VoiceSessionFeedbackBar.vue](src/components/VoiceSessionFeedbackBar.vue) + [useVoiceConsultation.ts](src/composables/useVoiceConsultation.ts) + [useVoiceIntentRecognition.ts](src/composables/useVoiceIntentRecognition.ts) + [useVoiceFeedback.ts](src/composables/useVoiceFeedback.ts) + [useVoiceResultRecord.ts](src/composables/useVoiceResultRecord.ts) + [useVoiceCatalogMatching.ts](src/composables/useVoiceCatalogMatching.ts) + [useVoiceResultFactCheck.ts](src/composables/useVoiceResultFactCheck.ts) + [useVoiceKnowledgeSearch.ts](src/composables/useVoiceKnowledgeSearch.ts) + [useVoiceSafetyReview.ts](src/composables/useVoiceSafetyReview.ts) + [VoiceRigidBlockBanner.vue](src/components/VoiceRigidBlockBanner.vue) + [useVoiceRigidBlock.ts](src/composables/useVoiceRigidBlock.ts) + [safetyRules.ts](src/services/safetyRules.ts) + [useSafetyIssueResolver.ts](src/composables/useSafetyIssueResolver.ts) + [patientMemoryStore.ts](src/services/patientMemoryStore.ts) + [patientMemoryBackend.ts](src/services/patientMemoryBackend.ts) + [patientMemoryTypes.ts](src/services/patientMemoryTypes.ts) + [commands/patient_memory.rs](src-tauri/src/commands/patient_memory.rs) + [migrations/002_patient_memory_schema.sql](src-tauri/migrations/002_patient_memory_schema.sql) + [voiceResult.ts](src/types/voiceResult.ts) + [prompts.ts](src/prompts/prompts.ts) + [aliyunSpeech.ts](src/services/aliyunSpeech.ts) + [speechConfig.ts](src/services/speechConfig.ts) + [audioRecorder.ts](src/services/audioRecorder.ts) + [voiceFeedback.ts](src/services/voiceFeedback.ts)；重点关注语音抽取契约是否覆盖病例草稿、explicit/inferred 来源标记、诊断/检查/药品结构化字段，以及推荐项反馈 / 整页评分 / 病例字段反馈的本地落库、前后对比快照和 payload 组装；旧版 `VoiceConsultationResult.vue` 只做结果编辑编排，结果记录状态、标准库匹配、事实复核、知识库搜索、安全复核员分别由 composable 承接 |
 | 修改区域化后端接入 | [SettingsPanel.vue](src/components/SettingsPanel.vue) + [regionalClient.ts](src/services/regionalClient.ts) + [regionalRuntime.ts](src/services/regionalRuntime.ts) + [userFeedback.ts](src/services/userFeedback.ts) + [device.rs](src-tauri/src/commands/device.rs) |
 | 修改诊断路径 | [DiagnosisPathWindow.vue](src/components/DiagnosisPathWindow.vue) + [diagnosisPath.ts](src/services/diagnosisPath.ts) + [stores/diagnosisPath.ts](src/stores/diagnosisPath.ts) |
 | 修改知识库 | [pmphai.ts](src/services/pmphai.ts)（主） / [KnowledgeBasePanel.vue](src/components/KnowledgeBasePanel.vue)（备） |
 | 修改设置面板 | [SettingsPanel.vue](src/components/SettingsPanel.vue) + [llm.ts](src/services/llm.ts) + [speechConfig.ts](src/services/speechConfig.ts) + [regionalClient.ts](src/services/regionalClient.ts) |
 | 修改客户端更新源 | [UpdateChecker.vue](src/components/UpdateChecker.vue) + [updateConfig.ts](src/services/updateConfig.ts) + [lib.rs](src-tauri/src/lib.rs)；内网发布端见 `../floating-ball-server/modules/release` |
 | 修改窗口尺寸记忆 | [useWindowManagement.ts](src/composables/useWindowManagement.ts) + [useNavigation.ts](src/composables/useNavigation.ts) + [useEventListeners.ts](src/composables/useEventListeners.ts) + [windowSizes.ts](src/constants/windowSizes.ts) |
-| 修改医学数据匹配 | [medicalData.ts](src/services/medicalData.ts) + [hisService.ts](src/services/hisService.ts) + [medical_catalog.rs](src-tauri/src/commands/medical_catalog.rs) + [src/assets/*.csv](src/assets/) |
+| 修改医学数据匹配 | [medicalData.ts](src/services/medicalData.ts) + [his/HisAdapter.ts](src/services/his/HisAdapter.ts) + [his/PhisHisAdapter.ts](src/services/his/PhisHisAdapter.ts) + [his/registry.ts](src/services/his/registry.ts) + [hisService.ts](src/services/hisService.ts) + [medical_catalog.rs](src-tauri/src/commands/medical_catalog.rs) + [src/assets/*.csv](src/assets/) |
 | 测试 HIS 集成 | [mock_his.html](./docs/mock_his.html) |
 
 ---
@@ -154,7 +154,13 @@ useEventListeners (全局事件) -> 触发 useNavigation & useWorkMode
 
 | 服务 | 行数 | 职责 |
 |------|------|------|
-| **hisService.ts** | ~80 | 封装 Tauri HTTP 插件，绕过浏览器同源与 Cookie 限制，供前端直接调用 HIS 接口；同时承接诊断、药品、诊疗项目目录、药品库存校验及药品频次/用法字典读取，并根据 SDK 握手 `extra.urt.userRoleDepts` 中的 `deptId` 过滤语音结果页可见药房；药品详情仍按单个 `idSto` 请求，由语音结果页负责多药房轮询和默认药房落位 |
+| **hisService.ts** | ~80 | @internal 底层 PHIS HTTP 客户端；仅供 `services/his/*` 包装使用。业务代码禁止跨层 import，必须走 [his](src/services/his/index.ts) 入口（业务调用 `getHisAdapter()`；SDK handshake 走 `getHisService()`） |
+| **his/HisAdapter.ts** | ~120 | 厂商无关的 HIS 适配器接口契约，13 个方法分 4 组（会话 / 目录 / 字典 / 详情）；新厂商接入只需实现本接口 |
+| **his/types.ts** | ~140 | vendor-neutral DTO：详情（`MedicineDetail` / `MedicalItemDetail`）+ 目录（`DiagnosisCatalogEntry` / `MedicineCatalogEntry` / `MedicalItemCatalogEntry`）+ 字典（`DictionaryEntry`）+ 库存（`InventoryCheckRequest` / `InventoryCheckResult`）；语义化字段命名，PHIS 私有字段统一通过 `raw` / `properties` 透传 |
+| **his/PhisHisAdapter.ts** | ~120 | 默认厂商实现：thin wrapper 包装 `HisService` 类，详情方法在此处把 PHIS 字段映射为中性 DTO |
+| **his/MockHisAdapter.ts** | ~150 | 内置 mock 实现：不连接任何后端，返回固定样本数据。主要用于反向验证抽象是否充分 + 本地 demo / E2E；已在 registry 中预注册（vendor='mock'） |
+| **his/registry.ts** | ~100 | 适配器注册表与选择器；`getHisAdapter()` 是业务方唯一入口；选择优先级 setActiveHisVendor > VITE_HIS_VENDOR > localStorage.HIS_VENDOR > 默认 phis |
+| **his/index.ts** | ~30 | 公开入口：重出 adapter / 注册 API / 类型 |
 | **medical_catalog.rs** | -- | 医学目录 SQLite 持久化命令：诊断全局缓存、诊疗项目/药品按机构缓存与同步状态管理，并提供调试态查看/清理命令 | 供 `medicalData.ts` 调用 |
 | **factChecker.ts** | ~399 | AI 输出验证（医学指南核查） |
 | **feedback.ts** | ~312 | 操作追踪与反馈 |
@@ -173,6 +179,10 @@ useEventListeners (全局事件) -> 触发 useNavigation & useWorkMode
 **服务依赖**：
 ```
 llm.ts <- factChecker.ts, diagnosisPath.ts, textGeneration.ts
+his/HisAdapter.ts -> his/PhisHisAdapter.ts -> hisService.ts
+his/registry.ts -> his/PhisHisAdapter.ts
+his/index.ts -> medicalData.ts
+his/index.ts -> VoiceConsultationNew.vue
 hisService.ts -> medicalData.ts
 medical_catalog.rs -> medicalData.ts
 medicalData.ts <- diagnosisPath.ts, ConsultationPage.vue

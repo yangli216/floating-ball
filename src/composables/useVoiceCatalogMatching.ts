@@ -1,8 +1,58 @@
 import { medicalDataService } from '../services/medicalData';
-import type { GeneratedRecord } from '../types/voiceResult';
+import type { ExamEntry, GeneratedRecord } from '../types/voiceResult';
+
+// 组合项分隔符：覆盖 “A+B / A、B / A和B / A及B / A与B / A/B / A,B” 等常见组合表述
+// 防御 LLM 偶尔忽略 prompt 的“细粒度拆分规则”导致检验/检查/处置项被合并、无法命中标准目录的情况
+const COMBO_SEPARATOR_RE = /[+＋、,，/／]|和|及|与/;
+
+function splitCombinedExamName(name: string): string[] {
+  const trimmed = (name ?? '').trim();
+  if (!trimmed) return [];
+  if (!COMBO_SEPARATOR_RE.test(trimmed)) return [trimmed];
+  // 优先尝试整体命中标准目录；若已能匹配，保留原名不拆分，避免误伤“肝肾功能”等本身就是单项的命名
+  if (
+    medicalDataService.matchExamItem(trimmed) ||
+    medicalDataService.matchLabTestItem(trimmed) ||
+    medicalDataService.matchProcedureItem(trimmed)
+  ) {
+    return [trimmed];
+  }
+  const parts = trimmed
+    .split(/[+＋、,，/／]|和|及|与/g)
+    .map(s => s.trim())
+    .filter(s => s.length >= 2);
+  return parts.length > 1 ? parts : [trimmed];
+}
+
+function expandCombinedExamEntries(entries: ExamEntry[] | undefined): ExamEntry[] | undefined {
+  if (!entries || entries.length === 0) return entries;
+  const expanded: ExamEntry[] = [];
+  const seen = new Set<string>();
+  for (const entry of entries) {
+    const parts = splitCombinedExamName(entry.name);
+    if (parts.length <= 1) {
+      const key = (entry.name ?? '').trim();
+      if (!key || seen.has(key)) continue;
+      seen.add(key);
+      expanded.push(entry);
+      continue;
+    }
+    for (const partName of parts) {
+      if (seen.has(partName)) continue;
+      seen.add(partName);
+      // 拆分后保留 goal 等共用字段，但清掉与原始名绑定的命中信息，交给后续匹配阶段重新计算
+      expanded.push({ ...entry, name: partName, matched: false, idCli: undefined });
+    }
+  }
+  return expanded;
+}
 
 export function useVoiceCatalogMatching() {
   function matchLocalData(rec: GeneratedRecord): void {
+    rec.examinations = expandCombinedExamEntries(rec.examinations) ?? rec.examinations;
+    rec.labTests = expandCombinedExamEntries(rec.labTests) ?? rec.labTests;
+    rec.procedures = expandCombinedExamEntries(rec.procedures) ?? rec.procedures;
+
     if (rec.diagnosisList) {
       rec.diagnosisList.forEach(diagnosis => {
         if (!diagnosis.code) {

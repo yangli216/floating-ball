@@ -27,6 +27,14 @@
           <span v-if="issue.evidence">依据：{{ issue.evidence }}</span>
         </div>
         <div class="issue-actions">
+          <button
+            v-if="actionLabelOf(issue)"
+            type="button"
+            class="text-btn primary"
+            @click.stop="emit('apply', issue.id)"
+          >
+            {{ actionLabelOf(issue) }}
+          </button>
           <button type="button" class="text-btn" @click.stop="emit('acknowledge', issue.id)">
             {{ issue.acknowledged ? '已知晓' : '我已知晓' }}
           </button>
@@ -46,12 +54,19 @@ const props = defineProps<{
   status: VoiceSafetyReviewStatus;
   issues: VoiceSafetyIssue[];
   errorMessage?: string;
+  /** 可选：返回当前 issue 可采纳的动作文案，返回空串则不显示采纳按钮 */
+  getActionLabel?: (issue: VoiceSafetyIssue) => string;
 }>();
 
 const emit = defineEmits<{
   acknowledge: [issueId: string];
   dismiss: [issueId: string];
+  apply: [issueId: string];
 }>();
+
+function actionLabelOf(issue: VoiceSafetyIssue): string {
+  return props.getActionLabel ? props.getActionLabel(issue) : '';
+}
 
 const expanded = ref(false);
 const activeIssues = computed(() => props.issues.filter(issue => !issue.dismissed));
@@ -259,5 +274,10 @@ function severityLabel(severity: VoiceSafetyIssue['severity']): string {
 
 .text-btn.muted {
   color: var(--color-text-muted);
+}
+
+.text-btn.primary {
+  color: var(--color-primary, #1677ff);
+  font-weight: 600;
 }
 </style>

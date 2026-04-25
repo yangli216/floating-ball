@@ -187,6 +187,48 @@ function normalizeVoiceSafetyIssues(issues: any[], checkedAt: number): VoiceSafe
     }));
 }
 
+function isPlaceholderHistory(value?: string | null): boolean {
+  if (!value) return true;
+  const trimmed = value.trim();
+  if (!trimmed) return true;
+  return /^(无|无特殊|否认|未提供|未述及|未见特殊|无异常)$/.test(trimmed);
+}
+
+/**
+ * 从 pastMedicalHistory / allergyHistory 文本中抽取过敏相关片段，
+ * 防御 LLM 在病例抽取时把患者基础档案里的过敏信息丢失/简化为"无特殊"。
+ */
+function extractAllergySnippets(text?: string | null): string[] {
+  if (!text) return [];
+  const normalized = text.replace(/\s+/g, ' ').trim();
+  if (!normalized) return [];
+  const segments = normalized.split(/[,，;；。]/).map(s => s.trim()).filter(Boolean);
+  return segments.filter(s => /过敏|皮试阳性|不耐受/.test(s));
+}
+
+function buildSafetyAllergyContext(context: VoiceSafetyReviewContext): string | undefined {
+  const patientAllergy = typeof context.patientInfo?.allergyHistory === 'string' ? context.patientInfo.allergyHistory : undefined;
+  const direct = context.allergyHistory || patientAllergy;
+  const snippets: string[] = [];
+  if (direct && !isPlaceholderHistory(direct)) snippets.push(direct.trim());
+  // 兜底：从 record / patientInfo 的 pastMedicalHistory 中抽取"X过敏"关键片段
+  const recordPmh = typeof context.record.pastMedicalHistory === 'string' ? context.record.pastMedicalHistory : undefined;
+  const patientPmh = typeof context.patientInfo?.pastMedicalHistory === 'string' ? context.patientInfo.pastMedicalHistory : undefined;
+  for (const candidate of [recordPmh, patientPmh]) {
+    snippets.push(...extractAllergySnippets(candidate));
+  }
+  const merged = Array.from(new Set(snippets.map(s => s.trim()).filter(Boolean)));
+  return merged.length ? merged.join('；') : undefined;
+}
+
+function buildSafetyPastMedicalHistory(context: VoiceSafetyReviewContext): string | undefined {
+  const recordHistory = typeof context.record.pastMedicalHistory === 'string' ? context.record.pastMedicalHistory : undefined;
+  if (recordHistory && !isPlaceholderHistory(recordHistory)) return recordHistory;
+  const patientHistory = typeof context.patientInfo?.pastMedicalHistory === 'string' ? context.patientInfo.pastMedicalHistory : undefined;
+  if (patientHistory && !isPlaceholderHistory(patientHistory)) return patientHistory;
+  return recordHistory || patientHistory || undefined;
+}
+
 export async function checkVoiceSafetyReview(context: VoiceSafetyReviewContext): Promise<VoiceSafetyReviewResult> {
   const checkedAt = Date.now();
   if (!isReviewerEnabled()) {
@@ -204,8 +246,8 @@ export async function checkVoiceSafetyReview(context: VoiceSafetyReviewContext):
         patientSummary: buildPatientSummary(context),
         chiefComplaint: context.record.chiefComplaint,
         historyOfPresentIllness: context.record.historyOfPresentIllness,
-        pastMedicalHistory: context.record.pastMedicalHistory,
-        allergyHistory: context.allergyHistory || context.patientInfo?.allergyHistory,
+        pastMedicalHistory: buildSafetyPastMedicalHistory(context),
+        allergyHistory: buildSafetyAllergyContext(context),
         diagnoses: context.record.diagnosisList?.map(diagnosis => diagnosis.name) || [],
         medicines: context.record.medications?.map(medicine => [medicine.name, medicine.spec, medicine.dosage, medicine.frequency, medicine.usage].filter(Boolean).join(' ')) || [],
         examinations: context.record.examinations?.map(examination => examination.name) || [],

@@ -58,6 +58,7 @@ pub struct PatientInfo {
     pub chief_complaint: Option<String>,
     pub history_of_present_illness: Option<String>,
     pub past_medical_history: Option<String>,
+    pub allergy_history: Option<String>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -555,7 +556,11 @@ pub fn run() {
             commands::medical_catalog::replace_org_medical_item_catalog,
             commands::medical_catalog::replace_org_medicine_catalog,
             commands::medical_catalog::get_medical_catalog_debug_state,
-            commands::medical_catalog::clear_medical_catalog_cache
+            commands::medical_catalog::clear_medical_catalog_cache,
+            // Patient long-term memory commands
+            commands::patient_memory::patient_memory_get,
+            commands::patient_memory::patient_memory_append_visit,
+            commands::patient_memory::patient_memory_clear
         ])
         .setup(move |app| {
             // Initialize feedback database
@@ -574,6 +579,14 @@ pub fn run() {
                 Err(e) => {
                     eprintln!("[MedicalCatalog] Failed to initialize database: {}", e);
                     eprintln!("[MedicalCatalog] Error details: {:?}", e);
+                }
+            }
+
+            println!("[PatientMemory] Initializing patient memory database...");
+            match commands::patient_memory::init_database(app.handle()) {
+                Ok(_) => println!("[PatientMemory] Database initialized successfully"),
+                Err(e) => {
+                    eprintln!("[PatientMemory] Failed to initialize database: {}", e);
                 }
             }
 

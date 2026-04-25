@@ -1,3 +1,15 @@
+/**
+ * @internal 底层 HIS（PHIS / 国卫）HTTP 客户端，仅供 `services/his/*` 内部包装使用。
+ *
+ * 业务代码（components / composables / 其它 services）禁止直接 import 本文件。
+ * 必须使用 `services/his` 入口暴露的 `getHisAdapter()` / `getHisService()`：
+ *
+ *   ✗ import { getHisService } from '../services/hisService'
+ *   ✓ import { getHisService } from '../services/his'      // 仅限 SDK handshake
+ *   ✓ import { getHisAdapter } from '../services/his'      // 业务调用首选
+ *
+ * 详见 [services/his/index.ts](./his/index.ts) 与 AGENTS.md。
+ */
 import { fetch } from '@tauri-apps/plugin-http';
 
 /**
@@ -155,7 +167,7 @@ interface HiBdCliOrgListBody {
   }>;
 }
 
-interface HiBdCliDetailBody {
+export interface HiBdCliDetailBody {
   idTet?: string;
   idCli?: string;
   naCli?: string;
@@ -577,6 +589,20 @@ export class HisService {
     const response = await this.get<HisDictionaryResponse>('rbmh.base.med.usage.dic');
     return Array.isArray(response?.items) ? response.items : [];
   }
+
+  /**
+   * 获取频次字典（每日 X 次 / Q12H 等）。
+   * 该方法把 PHIS 私有路径 `api/base.tenantDicService/frequency` 封装到 service 内部，
+   * 调用方走 HisAdapter 接口而不再直接走 raw POST。
+   */
+  async fetchFrequencyDictionary(): Promise<HisDictionaryItem[]> {
+    const response = await this.post<{ items?: HisDictionaryItem[] }>(
+      'api/base.tenantDicService/frequency',
+      {},
+    );
+    return Array.isArray(response?.body?.items) ? (response.body!.items as HisDictionaryItem[]) : [];
+  }
+
 
   /**
    * 获取检验检查/处置可选执行科室

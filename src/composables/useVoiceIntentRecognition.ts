@@ -607,7 +607,17 @@ export function useVoiceIntentRecognition() {
     return rawTranscripts.value.join('\n');
   }
 
-  async function processTranscript(transcribedText?: string): Promise<VoiceIntentResult | null> {
+  async function processTranscript(
+    transcribedText?: string,
+    options?: {
+      memoryContext?: string;
+      patientContext?: {
+        pastMedicalHistory?: string | null;
+        allergyHistory?: string | null;
+        currentMedicationHistory?: string | null;
+      };
+    },
+  ): Promise<VoiceIntentResult | null> {
     const text = transcribedText || getFullTranscript();
     if (!text.trim()) {
       processingError.value = '未检测到有效语音内容';
@@ -640,9 +650,36 @@ export function useVoiceIntentRecognition() {
 
     try {
       // Step 1: LLM 意图识别 + 结构化提取
+      const memoryBlock = options?.memoryContext?.trim() || '';
+
+      // 注入患者档案：HIS 已知的既往史/过敏史/长期用药史，避免 LLM 因对话未提及就丢失基础病历信息
+      const patientContextLines: string[] = [];
+      const patientCtx = options?.patientContext;
+      const cleanCtx = (value?: string | null) => {
+        const trimmed = (value ?? '').trim();
+        if (!trimmed) return '';
+        if (/^(无|无特殊|否认|未述及|未提供)$/.test(trimmed)) return '';
+        return trimmed;
+      };
+      const ctxAllergy = cleanCtx(patientCtx?.allergyHistory);
+      const ctxPmh = cleanCtx(patientCtx?.pastMedicalHistory);
+      const ctxMed = cleanCtx(patientCtx?.currentMedicationHistory);
+      if (ctxAllergy || ctxPmh || ctxMed) {
+        patientContextLines.push('【患者已有档案信息】');
+        if (ctxAllergy) patientContextLines.push(`过敏史：${ctxAllergy}`);
+        if (ctxPmh) patientContextLines.push(`既往史：${ctxPmh}`);
+        if (ctxMed) patientContextLines.push(`长期用药：${ctxMed}`);
+        patientContextLines.push(
+          '请在 recordDraft 中保留以上档案信息：若对话未明确撤销或修订，必须原样保留对应字段，不要因为对话未提及就改写为"无特殊"。'
+        );
+      }
+      const patientContextBlock = patientContextLines.length ? `\n${patientContextLines.join('\n')}` : '';
+
+      const baseUserPrompt = PROMPTS.consultation.voiceIntentRecognition.buildUserPrompt(text);
+      const userContent = `${baseUserPrompt}${patientContextBlock}${memoryBlock ? `\n${memoryBlock}` : ''}`;
       const messages: ChatMessage[] = [
         { role: 'system', content: PROMPTS.consultation.voiceIntentRecognition.system },
-        { role: 'user', content: PROMPTS.consultation.voiceIntentRecognition.buildUserPrompt(text) },
+        { role: 'user', content: userContent },
       ];
 
       rawOutput = await chat(messages);

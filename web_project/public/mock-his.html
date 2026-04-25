@@ -1,0 +1,566 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <title>Mock HIS · 医诺浮球联调台</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <style>
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft YaHei", sans-serif;
+      background: #f3f5f9;
+      color: #1f2933;
+    }
+    header {
+      padding: 18px 24px;
+      background: #1f6feb;
+      color: #fff;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    header h1 { font-size: 18px; margin: 0; font-weight: 600; }
+    header .meta { font-size: 12px; opacity: 0.85; }
+    .layout {
+      display: grid;
+      grid-template-columns: 320px 1fr 360px;
+      gap: 16px;
+      padding: 16px;
+      min-height: calc(100vh - 60px);
+    }
+    .panel {
+      background: #fff;
+      border-radius: 10px;
+      box-shadow: 0 1px 4px rgba(15, 23, 42, 0.06);
+      padding: 16px;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+    .panel h2 {
+      font-size: 14px;
+      margin: 0 0 4px;
+      font-weight: 600;
+      color: #1f6feb;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .panel h2 .badge {
+      font-size: 11px;
+      padding: 2px 8px;
+      border-radius: 10px;
+      background: #e2e8f0;
+      color: #475569;
+      font-weight: normal;
+    }
+    .panel h2 .badge.ok { background: #dcfce7; color: #15803d; }
+    .panel h2 .badge.warn { background: #fee2e2; color: #b91c1c; }
+    label { font-size: 12px; color: #475569; display: flex; flex-direction: column; gap: 4px; }
+    input, select, textarea {
+      font: inherit;
+      padding: 6px 10px;
+      border: 1px solid #cbd5e1;
+      border-radius: 6px;
+      background: #fff;
+      color: #1f2933;
+    }
+    textarea { resize: vertical; min-height: 60px; font-family: ui-monospace, "SF Mono", Menlo, monospace; font-size: 12px; }
+    button {
+      font: inherit;
+      padding: 8px 14px;
+      border-radius: 6px;
+      border: 1px solid transparent;
+      background: #1f6feb;
+      color: #fff;
+      cursor: pointer;
+      font-weight: 500;
+      transition: background 0.15s;
+    }
+    button:hover:not(:disabled) { background: #1a5cca; }
+    button:disabled { background: #94a3b8; cursor: not-allowed; }
+    button.secondary { background: #fff; border-color: #cbd5e1; color: #1f2933; }
+    button.secondary:hover:not(:disabled) { background: #f1f5f9; }
+    button.danger { background: #ef4444; }
+    button.danger:hover:not(:disabled) { background: #dc2626; }
+    .row { display: flex; gap: 8px; flex-wrap: wrap; }
+    .row > * { flex: 1; min-width: 120px; }
+    .row.tight { gap: 6px; }
+    fieldset {
+      border: 1px solid #e2e8f0;
+      border-radius: 6px;
+      padding: 8px 10px;
+      margin: 0;
+    }
+    fieldset legend { font-size: 11px; color: #64748b; padding: 0 4px; }
+    .stack { display: flex; flex-direction: column; gap: 8px; }
+    .log {
+      background: #0f172a;
+      color: #e2e8f0;
+      border-radius: 6px;
+      padding: 10px 12px;
+      font-family: ui-monospace, "SF Mono", Menlo, monospace;
+      font-size: 12px;
+      flex: 1;
+      overflow: auto;
+      white-space: pre-wrap;
+      word-break: break-all;
+      min-height: 280px;
+      max-height: calc(100vh - 200px);
+    }
+    .log .entry { padding: 2px 0; }
+    .log .entry.success { color: #4ade80; }
+    .log .entry.error { color: #f87171; }
+    .log .entry.event { color: #fbbf24; }
+    .log .entry.recv { color: #60a5fa; }
+    .log .ts { color: #64748b; margin-right: 6px; }
+    .result-card {
+      background: #f8fafc;
+      border-radius: 6px;
+      padding: 10px;
+      font-size: 12px;
+      border-left: 3px solid #1f6feb;
+    }
+    .result-card pre {
+      margin: 6px 0 0;
+      font-family: ui-monospace, "SF Mono", Menlo, monospace;
+      font-size: 11px;
+      max-height: 240px;
+      overflow: auto;
+      white-space: pre-wrap;
+      word-break: break-all;
+      background: #fff;
+      padding: 6px 8px;
+      border-radius: 4px;
+      border: 1px solid #e2e8f0;
+    }
+    .pill {
+      display: inline-block;
+      padding: 2px 8px;
+      border-radius: 10px;
+      font-size: 11px;
+      background: #e2e8f0;
+      color: #475569;
+      margin-right: 4px;
+    }
+    .pill.primary { background: #dbeafe; color: #1e40af; }
+    .pill.success { background: #dcfce7; color: #166534; }
+    .pill.warn { background: #fef3c7; color: #92400e; }
+    .pill.error { background: #fee2e2; color: #991b1b; }
+    .pill.muted { background: #f1f5f9; color: #64748b; }
+    hr { border: none; border-top: 1px solid #e2e8f0; margin: 4px 0; }
+    .help { font-size: 11px; color: #64748b; line-height: 1.5; }
+    .help code { background: #f1f5f9; padding: 1px 5px; border-radius: 3px; }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>🩺 Mock HIS · 医诺浮球本地联调台</h1>
+    <div class="meta">
+      Bridge: <code id="bridge-url">http://127.0.0.1:8081/api</code>
+      &nbsp;|&nbsp; SDK <code id="sdk-version">-</code>
+    </div>
+  </header>
+
+  <div class="layout">
+    <!-- ==================== 左：握手 + 患者档案 ==================== -->
+    <section class="panel">
+      <h2>① 握手 / 患者档案 <span id="conn-badge" class="badge warn">未连接</span></h2>
+
+      <fieldset>
+        <legend>SDK 握手</legend>
+        <div class="stack">
+          <label>
+            emrAccessToken（联调用，桌面端必需）
+            <input id="emr-token" type="text" value="mock-token-for-local-debug" />
+          </label>
+          <div class="row tight">
+            <button id="btn-handshake">握手 / 连接</button>
+            <button id="btn-ping" class="secondary">Ping 桌面端</button>
+          </div>
+        </div>
+      </fieldset>
+
+      <fieldset>
+        <legend>患者档案（写入 PatientInfo）</legend>
+        <div class="stack">
+          <label>
+            患者 ID（idPi）
+            <input id="p-id" type="text" value="MOCK-P-001" />
+          </label>
+          <label>
+            姓名（naPi）
+            <input id="p-name" type="text" value="张测试" />
+          </label>
+          <div class="row tight">
+            <label>
+              性别
+              <select id="p-gender">
+                <option>男性</option>
+                <option>女性</option>
+              </select>
+            </label>
+            <label>
+              年龄
+              <input id="p-age" type="text" value="35岁" />
+            </label>
+          </div>
+          <label>
+            主诉（chiefComplaint，可选）
+            <input id="p-cc" type="text" value="咳嗽 3 天，伴黄痰" />
+          </label>
+          <label>
+            既往史（pastMedicalHistory，可选）
+            <input id="p-pmh" type="text" value="高血压 5 年" />
+          </label>
+          <label>
+            过敏史（allergyHistory，可选）
+            <input id="p-allergy" type="text" placeholder="如：青霉素过敏" />
+          </label>
+        </div>
+      </fieldset>
+
+      <p class="help">
+        提示：桌面端需要 <code>emrAccessToken</code> 才能放行所有 HTTP 接口。
+        本页通过 SDK 的 <code>debugHandshake</code> 注入 mock token，即可绕过真实 PHIS。
+      </p>
+    </section>
+
+    <!-- ==================== 中：业务触发 ==================== -->
+    <section class="panel">
+      <h2>② 触发业务流程</h2>
+
+      <fieldset>
+        <legend>语音问诊（核心场景）</legend>
+        <div class="row">
+          <button id="btn-voice-with-patient">🎙 启动语音问诊（携带患者）</button>
+          <button id="btn-voice-empty" class="secondary">🎙 启动语音问诊（不携带）</button>
+        </div>
+        <p class="help">
+          将向桌面端 <code>POST /api/consultation/start-voice</code>，
+          浮球扩展为语音胶囊；录音确认后会自动写回结果，本页右侧"结果回流"面板会即时收到。
+        </p>
+      </fieldset>
+
+      <fieldset>
+        <legend>完整问诊</legend>
+        <div class="row">
+          <button id="btn-start" class="secondary">📋 启动完整问诊</button>
+          <button id="btn-stop" class="danger">⏹ 停止当前问诊</button>
+        </div>
+      </fieldset>
+
+      <fieldset>
+        <legend>灵活模式 Assist</legend>
+        <div class="row">
+          <select id="assist-action">
+            <option value="show-summary">show-summary（查看主诉/现病史）</option>
+            <option value="recommend-diagnosis">recommend-diagnosis（诊断推荐）</option>
+            <option value="recommend-medicine">recommend-medicine（用药推荐）</option>
+            <option value="recommend-examination">recommend-examination（检查推荐）</option>
+          </select>
+          <button id="btn-assist">▶ 触发 Assist</button>
+        </div>
+      </fieldset>
+
+      <fieldset>
+        <legend>引用回执（模拟 PHIS 已写入诊断/处方）</legend>
+        <div class="stack">
+          <div class="row tight">
+            <label>
+              requestId
+              <input id="fb-request-id" type="text" placeholder="自动从最近一次回写填充" />
+            </label>
+            <label>
+              referenceType
+              <select id="fb-ref-type">
+                <option value="diagnosis">diagnosis</option>
+                <option value="medicine">medicine</option>
+                <option value="examination">examination</option>
+              </select>
+            </label>
+          </div>
+          <div class="row tight">
+            <label>
+              status
+              <select id="fb-status">
+                <option value="success">success</option>
+                <option value="failed">failed</option>
+              </select>
+            </label>
+            <label>
+              提示文案
+              <input id="fb-message" type="text" value="已写入 HIS 处方" />
+            </label>
+          </div>
+          <div class="row">
+            <button id="btn-feedback" class="secondary">回执 Reference Feedback</button>
+            <button id="btn-fill-from-result" class="secondary">从最新结果填 requestId</button>
+          </div>
+        </div>
+      </fieldset>
+
+      <fieldset>
+        <legend>风险提示</legend>
+        <button id="btn-risks">触发风险提示气泡</button>
+      </fieldset>
+    </section>
+
+    <!-- ==================== 右：日志 + 结果回流 ==================== -->
+    <section class="panel">
+      <h2>③ 日志 / 结果回流
+        <span id="poll-badge" class="badge">轮询：关</span>
+      </h2>
+
+      <div id="latest-result-card" class="result-card" style="display:none;">
+        <strong>最新回流：</strong>
+        <span id="latest-result-pills"></span>
+        <pre id="latest-result-json"></pre>
+      </div>
+
+      <div class="row tight">
+        <button id="btn-toggle-poll">开始轮询结果</button>
+        <button id="btn-clear-log" class="secondary">清空日志</button>
+      </div>
+
+      <div class="log" id="log"></div>
+    </section>
+  </div>
+
+  <!-- 直接通过本地桥接拉 SDK，确保版本始终匹配桌面端 -->
+  <script src="http://127.0.0.1:8081/sdk/med-hermes-sdk.js"></script>
+  <script>
+  (function () {
+    'use strict';
+
+    // ─── DOM 工具 ───
+    var $ = function (id) { return document.getElementById(id); };
+    var logEl = $('log');
+    var connBadge = $('conn-badge');
+    var pollBadge = $('poll-badge');
+    var sdkVersionEl = $('sdk-version');
+    var latestCard = $('latest-result-card');
+    var latestPills = $('latest-result-pills');
+    var latestJson = $('latest-result-json');
+
+    function ts() {
+      var d = new Date();
+      var pad = function (n) { return String(n).padStart(2, '0'); };
+      return pad(d.getHours()) + ':' + pad(d.getMinutes()) + ':' + pad(d.getSeconds()) + '.' + String(d.getMilliseconds()).padStart(3, '0');
+    }
+
+    function log(kind, label, payload) {
+      var row = document.createElement('div');
+      row.className = 'entry ' + (kind || '');
+      var line = '<span class="ts">' + ts() + '</span>' + label;
+      if (payload !== undefined) {
+        try {
+          line += '\n  ' + (typeof payload === 'string' ? payload : JSON.stringify(payload, null, 2).replace(/\n/g, '\n  '));
+        } catch (e) { line += '\n  [unstringifiable]'; }
+      }
+      row.innerHTML = line;
+      logEl.appendChild(row);
+      logEl.scrollTop = logEl.scrollHeight;
+    }
+
+    function buildPatient() {
+      return {
+        idPi: $('p-id').value.trim() || 'MOCK-P-001',
+        naPi: $('p-name').value.trim() || '匿名患者',
+        sdSexText: $('p-gender').value,
+        ageText: $('p-age').value.trim() || '0岁',
+        chiefComplaint: $('p-cc').value.trim() || undefined,
+        pastMedicalHistory: $('p-pmh').value.trim() || undefined,
+        allergyHistory: $('p-allergy').value.trim() || undefined,
+      };
+    }
+
+    // ─── 初始化 SDK ───
+    if (typeof window.MedHermes !== 'function') {
+      log('error', '[FATAL] 未能加载 MedHermes SDK。请确认桌面端正在 8081 端口运行。');
+      connBadge.textContent = 'SDK 未加载';
+      connBadge.className = 'badge warn';
+      return;
+    }
+
+    var sdk = new window.MedHermes({
+      autoPoll: false, // 由本页显式控制轮询
+      pollInterval: 2000,
+    });
+    sdkVersionEl.textContent = (window.MedHermes.VERSION || sdk._opts && sdk._opts.sdkVersion || '1.x');
+
+    // ─── SDK 事件订阅 ───
+    sdk.on('connected', function (info) {
+      connBadge.textContent = '已连接';
+      connBadge.className = 'badge ok';
+      log('success', '[SDK] connected', info);
+    });
+
+    sdk.on('result', function (result) {
+      log('recv', '[SDK ← 桌面端] result', result);
+      renderLatestResult(result);
+      autoFillRequestId(result);
+    });
+
+    sdk.on('launching', function () { log('event', '[SDK] launching desktop via deep link...'); });
+    sdk.on('launch-failed', function () { log('error', '[SDK] launch failed - 桌面端未启动'); });
+
+    function renderLatestResult(result) {
+      latestCard.style.display = '';
+      latestPills.innerHTML = '';
+
+      var record = (result && result.record) || result || {};
+      var pills = [];
+      pills.push('<span class="pill primary">consultationId: ' + (result.consultationId || result.consultation_id || '-') + '</span>');
+      pills.push('<span class="pill">resultType: ' + (record.resultType || 'final-report') + '</span>');
+      if (record.requestId) pills.push('<span class="pill warn">reqId: ' + record.requestId + '</span>');
+      if (record.referenceStatus) {
+        var cls = record.referenceStatus === 'success' ? 'success' : (record.referenceStatus === 'failed' ? 'error' : 'muted');
+        pills.push('<span class="pill ' + cls + '">refStatus: ' + record.referenceStatus + '</span>');
+      }
+      latestPills.innerHTML = pills.join('');
+      latestJson.textContent = JSON.stringify(result, null, 2);
+    }
+
+    function autoFillRequestId(result) {
+      var record = (result && result.record) || {};
+      if (record.requestId && !$('fb-request-id').value.trim()) {
+        $('fb-request-id').value = record.requestId;
+        log('event', '[页面] 已自动填入 requestId：' + record.requestId);
+      }
+    }
+
+    // ─── 按钮绑定 ───
+    function withBusy(btn, fn) {
+      return function () {
+        var orig = btn.textContent;
+        btn.disabled = true;
+        Promise.resolve()
+          .then(fn)
+          .then(function (res) {
+            if (res !== undefined) log('success', '[← 桌面端] OK', res);
+          })
+          .catch(function (err) {
+            log('error', '[!] ' + (err && err.message ? err.message : err));
+          })
+          .then(function () { btn.disabled = false; btn.textContent = orig; });
+      };
+    }
+
+    $('btn-handshake').addEventListener('click', withBusy($('btn-handshake'), function () {
+      var token = $('emr-token').value.trim() || 'mock-token-for-local-debug';
+      log('event', '[→ /handshake] debugHandshake with emrAccessToken=' + token);
+      return sdk.debugHandshake({ extra: { emrAccessToken: token } });
+    }));
+
+    $('btn-ping').addEventListener('click', withBusy($('btn-ping'), function () {
+      log('event', '[→ /health] ping');
+      return sdk.ping();
+    }));
+
+    $('btn-voice-with-patient').addEventListener('click', withBusy($('btn-voice-with-patient'), function () {
+      var p = buildPatient();
+      log('event', '[→ /consultation/start-voice]', p);
+      return sdk.startVoice(p);
+    }));
+
+    $('btn-voice-empty').addEventListener('click', withBusy($('btn-voice-empty'), function () {
+      log('event', '[→ /consultation/start-voice] (no patient)');
+      // SDK startVoice 默认要求 patient；这里直接走底层 http
+      return sdk._http.post('/consultation/start-voice', {});
+    }));
+
+    $('btn-start').addEventListener('click', withBusy($('btn-start'), function () {
+      var p = buildPatient();
+      log('event', '[→ /consultation/start]', p);
+      return sdk.startConsultation(p);
+    }));
+
+    $('btn-stop').addEventListener('click', withBusy($('btn-stop'), function () {
+      log('event', '[→ /consultation/stop]');
+      return sdk.stop();
+    }));
+
+    $('btn-assist').addEventListener('click', withBusy($('btn-assist'), function () {
+      var p = buildPatient();
+      var action = $('assist-action').value;
+      log('event', '[→ /consultation/assist] action=' + action, p);
+      return sdk.assist(p, action);
+    }));
+
+    $('btn-feedback').addEventListener('click', withBusy($('btn-feedback'), function () {
+      var requestId = $('fb-request-id').value.trim();
+      if (!requestId) throw new Error('缺少 requestId，先触发一次会写入 requestId 的回流');
+      var status = $('fb-status').value;
+      var message = $('fb-message').value;
+      var refType = $('fb-ref-type').value;
+
+      // sendFeedback 签名：(requestId, status, message, items)
+      var items = [];
+      if (refType === 'diagnosis') items = [{ name: '急性支气管炎', code: 'J20.9', type: 'diagnosis' }];
+      else if (refType === 'medicine') items = [{ name: '阿莫西林胶囊 0.25g x 24', code: 'M001', type: 'medicine' }];
+      else items = [{ name: '血常规', code: 'EX001', type: 'examination' }];
+
+      log('event', '[→ /consultation/reference-feedback]', { requestId: requestId, status: status, refType: refType, items: items });
+      return sdk.sendFeedback(requestId, status, message, items);
+    }));
+
+    $('btn-fill-from-result').addEventListener('click', withBusy($('btn-fill-from-result'), function () {
+      return sdk.fetchResult().then(function (result) {
+        autoFillRequestId(result);
+        renderLatestResult(result);
+        return result;
+      });
+    }));
+
+    $('btn-risks').addEventListener('click', withBusy($('btn-risks'), function () {
+      var p = buildPatient();
+      var risks = [
+        { level: 1, category: 'allergy', content: '青霉素皮试阳性（重度过敏史）' },
+        { level: 2, category: 'chronic', content: '高血压 5 年，未规律服药' },
+        { level: 3, category: 'medication', content: '近期服用利尿剂' },
+      ];
+      log('event', '[→ /patient/risks]', { patient: p.naPi, risks: risks });
+      return sdk.sendRisks(p, risks);
+    }));
+
+    // ─── 轮询切换 ───
+    var polling = false;
+    $('btn-toggle-poll').addEventListener('click', function () {
+      var btn = $('btn-toggle-poll');
+      if (!polling) {
+        sdk.startPolling();
+        polling = true;
+        btn.textContent = '停止轮询';
+        btn.classList.add('danger');
+        pollBadge.textContent = '轮询：开';
+        pollBadge.className = 'badge ok';
+        log('event', '[轮询] 已开启');
+      } else {
+        sdk.stopPolling && sdk.stopPolling();
+        polling = false;
+        btn.textContent = '开始轮询结果';
+        btn.classList.remove('danger');
+        pollBadge.textContent = '轮询：关';
+        pollBadge.className = 'badge';
+        log('event', '[轮询] 已关闭');
+      }
+    });
+
+    $('btn-clear-log').addEventListener('click', function () {
+      logEl.innerHTML = '';
+      log('event', '[页面] 日志已清空');
+    });
+
+    // ─── 初始 ping ───
+    log('event', '[页面] mock-his 初始化完成。请先点击"握手 / 连接"。');
+    sdk.ping().then(function (info) {
+      log('success', '[初始 ping] 桌面端在线', info);
+    }).catch(function (err) {
+      log('error', '[初始 ping] 失败：' + (err && err.message ? err.message : err) + '（桌面端可能未启动）');
+    });
+  })();
+  </script>
+</body>
+</html>

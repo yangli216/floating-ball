@@ -8,7 +8,8 @@ import VoiceRecordFeedbackPopover from './VoiceRecordFeedbackPopover.vue';
 import VoiceSessionFeedbackBar from './VoiceSessionFeedbackBar.vue';
 import { chat, type ChatMessage } from '../services/llm';
 import { PROMPTS } from '../prompts';
-import { getHisService, type HisDictionaryItem, type HisMedicineProDetail, type PharmacyOption } from '../services/hisService';
+import { getHisAdapter } from '../services/his';
+import type { DictionaryEntry, InventoryCheckRequest, MedicineDetail, PharmacyOption } from '../services/his';
 import { medicalDataService, type DiagnosisItem, type MedicalItem, type MedicineItem } from '../services/medicalData';
 import { clearVoiceConsultationCache } from '../composables/useVoiceConsultation';
 import { useVoiceFeedback } from '../composables/useVoiceFeedback';
@@ -1418,7 +1419,7 @@ function buildMedicalItemMatchedItem(item: MedicalItem): TreatmentRecommendation
 }
 
 interface MedicineDetailLookupResult {
-  detail: HisMedicineProDetail;
+  detail: MedicineDetail;
   pharmacy: PharmacyOption;
 }
 
@@ -1426,20 +1427,20 @@ function getMedicineDetailId(rec: TreatmentRecommendation): string {
   return (rec.matchedItem?.id || rec.matchedItem?.idSrv || readFirstString(getMatchedItemRaw(rec), ['idMedPro', 'idMed']) || '').trim();
 }
 
-function isValidMedicineProDetail(detail: HisMedicineProDetail | null): detail is HisMedicineProDetail {
-  if (!detail || detail.fgActive === '0') {
+function isValidMedicineProDetail(detail: MedicineDetail | null): detail is MedicineDetail {
+  if (!detail || !detail.active) {
     return false;
   }
 
   return [
-    detail.idMedPro,
-    detail.idMed,
-    detail.naMedPro,
-    detail.naMed,
+    detail.productId,
+    detail.medicineId,
+    detail.productName,
+    detail.medicineName,
     detail.specSale,
     detail.unitSale,
     detail.dose,
-    detail.dftDoseOnce,
+    detail.defaultSingleDose,
   ].some((value) => typeof value === 'string' && value.trim().length > 0);
 }
 
@@ -1472,7 +1473,7 @@ function isMedicineDetailLoadedForSelectedPharmacy(rec: TreatmentRecommendation)
 }
 
 async function fetchFirstValidMedicineDetail(rec: TreatmentRecommendation): Promise<MedicineDetailLookupResult | null> {
-  const his = getHisService();
+  const his = getHisAdapter();
   if (!his) {
     console.warn('[VoiceConsultationNew] HisService not initialized, medicine detail unavailable', { name: rec.name });
     return null;
@@ -1524,26 +1525,26 @@ async function ensureMedicineSelectable(rec: TreatmentRecommendation, notify = f
   return hydrated;
 }
 
-function buildMedicineInventoryCheckItem(rec: TreatmentRecommendation) {
+function buildMedicineInventoryCheckItem(rec: TreatmentRecommendation): InventoryCheckRequest | null {
   const normalized = normalizeTreatmentRecommendation(rec);
   const raw = getMatchedItemRaw(rec);
-  const idSto = getSelectedPharmacyOption(rec)?.idSto || readFirstString(raw, ['idSto']);
-  const idMedPro = readFirstString(raw, ['idMedPro']) || rec.matchedItem?.id || rec.matchedItem?.idSrv || '';
-  const naMed = readFirstString(raw, ['naMedPro', 'naMed']) || rec.matchedItem?.name || rec.name || '';
-  const amount = parsePositiveNumber(normalized.totalQty);
-  const priceSale = parsePositiveNumber(readFirstString(raw, ['priceSale'])) ?? 0;
+  const storeId = getSelectedPharmacyOption(rec)?.idSto || readFirstString(raw, ['idSto']);
+  const productId = readFirstString(raw, ['idMedPro']) || rec.matchedItem?.id || rec.matchedItem?.idSrv || '';
+  const medicineName = readFirstString(raw, ['naMedPro', 'naMed']) || rec.matchedItem?.name || rec.name || '';
+  const quantity = parsePositiveNumber(normalized.totalQty);
+  const unitPrice = parsePositiveNumber(readFirstString(raw, ['priceSale'])) ?? 0;
 
-  if (!idSto || !idMedPro || !naMed || !amount) {
+  if (!storeId || !productId || !medicineName || !quantity) {
     return null;
   }
 
   return {
-    idSto,
-    idMedPro,
-    naMed,
-    amount,
-    priceSale,
-    sdFrzBiz: '1' as const,
+    storeId,
+    productId,
+    medicineName,
+    quantity,
+    unitPrice,
+    businessType: 'outpatient',
   };
 }
 
@@ -1556,7 +1557,7 @@ async function checkMedicineInventoryEnough(rec: TreatmentRecommendation, notify
     return false;
   }
 
-  const his = getHisService();
+  const his = getHisAdapter();
   const checkItem = buildMedicineInventoryCheckItem(rec);
   if (!his || !checkItem) {
     return true;
@@ -1570,7 +1571,7 @@ async function checkMedicineInventoryEnough(rec: TreatmentRecommendation, notify
       return true;
     }
 
-    const message = result.msg || `${rec.name} 库存不足，请调整用药数量或药房`;
+    const message = result.message || `${rec.name} 库存不足，请调整用药数量或药房`;
     setMedicineInventoryWarning(rec, message);
     if (notify) {
       showToast?.(message, 'warning');
@@ -1620,23 +1621,23 @@ async function hydrateMatchedMedicineDetail(rec: TreatmentRecommendation): Promi
 
     const mergedRaw = {
       ...(getMatchedItemRaw(rec) || {}),
-      ...detail,
-      idSto: detail.idSto?.trim() || idSto,
+      ...detail.raw,
+      idSto: detail.storeId || idSto,
       __medicineDetailLoaded: true,
     };
 
     rec.matchedItem = {
       ...rec.matchedItem,
-      name: detail.naMedPro?.trim() || rec.matchedItem.name || rec.name,
-      fgSkintest: detail.fgSkintest?.trim() || rec.matchedItem.fgSkintest || '0',
+      name: detail.productName?.trim() || rec.matchedItem.name || rec.name,
+      fgSkintest: detail.needsSkinTest ? '1' : (rec.matchedItem.fgSkintest || '0'),
       raw: mergedRaw,
     };
 
     // 剂量换算优先级：
     // 1. AI targetDose + HIS dose → 自动换算（最可靠）
-    // 2. HIS dftDoseOnce → 直接使用（降级方案）
+    // 2. HIS defaultSingleDose → 直接使用（降级方案）
     // 3. AI dosage → 保留原值（最低优先级）
-    const doseUnit = detail.unitDose?.trim() || detail.unitPre?.trim() || '';
+    const doseUnit = detail.doseUnit || '';
     const computedCount = computeDoseCount(
       rec.targetDose,
       rec.targetDoseUnit,
@@ -1656,9 +1657,9 @@ async function hydrateMatchedMedicineDetail(rec: TreatmentRecommendation): Promi
         hisSpec: detail.spec,
         computedCount,
       });
-    } else if (detail.dftDoseOnce?.trim()) {
+    } else if (detail.defaultSingleDose) {
       // 降级：使用 HIS 默认值
-      rec.dosage = rec.dosage || detail.dftDoseOnce.trim();
+      rec.dosage = rec.dosage || detail.defaultSingleDose;
     }
 
     if (doseUnit) {
@@ -1666,8 +1667,8 @@ async function hydrateMatchedMedicineDetail(rec: TreatmentRecommendation): Promi
     }
 
     // HIS 默认频次：如果当前频次不能匹配业务字典，则用 HIS 默认值覆盖
-    if (detail.dftFreq?.trim()) {
-      const hisFreqOption = findFrequencyOptionByValue(detail.dftFreq.trim());
+    if (detail.defaultFrequency) {
+      const hisFreqOption = findFrequencyOptionByValue(detail.defaultFrequency);
       const currentFreqMatched = rec.frequencyKey ? findFrequencyOptionByValue(rec.frequencyKey) : findFrequencyOptionByValue(rec.frequency);
       if (hisFreqOption && !currentFreqMatched) {
         rec.frequency = hisFreqOption.text;
@@ -1676,7 +1677,7 @@ async function hydrateMatchedMedicineDetail(rec: TreatmentRecommendation): Promi
         rec.frequency = hisFreqOption.text;
         rec.frequencyKey = hisFreqOption.key;
       } else if (!currentFreqMatched) {
-        rec.frequency = detail.dftFreq.trim();
+        rec.frequency = detail.defaultFrequency;
         rec.frequencyKey = hisFreqOption?.key || '';
       }
     } else if (rec.frequency && !findFrequencyOptionByValue(rec.frequencyKey || rec.frequency)) {
@@ -1685,8 +1686,8 @@ async function hydrateMatchedMedicineDetail(rec: TreatmentRecommendation): Promi
     }
 
     // HIS 默认用法：如果当前用法不能匹配业务字典，则用 HIS 默认值覆盖
-    if (detail.dftUsage?.trim()) {
-      const hisRouteOption = findRouteOptionByValue(detail.dftUsage.trim());
+    if (detail.defaultRoute) {
+      const hisRouteOption = findRouteOptionByValue(detail.defaultRoute);
       const currentRouteMatched = rec.routeKey ? findRouteOptionByValue(rec.routeKey) : findRouteOptionByValue(rec.route);
       if (hisRouteOption && !currentRouteMatched) {
         rec.route = hisRouteOption.text;
@@ -1695,7 +1696,7 @@ async function hydrateMatchedMedicineDetail(rec: TreatmentRecommendation): Promi
         rec.route = hisRouteOption.text;
         rec.routeKey = hisRouteOption.key;
       } else if (!currentRouteMatched) {
-        rec.route = detail.dftUsage.trim();
+        rec.route = detail.defaultRoute;
         rec.routeKey = hisRouteOption?.key || '';
       }
     } else if (rec.route && !findRouteOptionByValue(rec.routeKey || rec.route)) {
@@ -1704,12 +1705,12 @@ async function hydrateMatchedMedicineDetail(rec: TreatmentRecommendation): Promi
     }
 
     // 回填规格信息（始终使用 HIS 权威值）
-    if (detail.specSale?.trim() || detail.unitSale?.trim()) {
+    if (detail.specSale || detail.unitSale) {
       rec.spec = formatMedicineSpec(detail.specSale, detail.unitSale);
     }
 
-    if (detail.unitSale?.trim()) {
-      rec.totalUnit = detail.unitSale.trim();
+    if (detail.unitSale) {
+      rec.totalUnit = detail.unitSale;
     }
 
     rec.pharmacy = pharmacy.name;
@@ -1718,9 +1719,9 @@ async function hydrateMatchedMedicineDetail(rec: TreatmentRecommendation): Promi
       name: rec.name,
       id,
       idSto,
-      dftDoseOnce: detail.dftDoseOnce,
-      dftFreq: detail.dftFreq,
-      dftUsage: detail.dftUsage,
+      defaultSingleDose: detail.defaultSingleDose,
+      defaultFrequency: detail.defaultFrequency,
+      defaultRoute: detail.defaultRoute,
       specSale: detail.specSale,
       hisDose: detail.dose,
       appliedDosage: rec.dosage,
@@ -1751,7 +1752,7 @@ async function hydrateMatchedMedicalItemDetail(rec: TreatmentRecommendation): Pr
     return;
   }
 
-  const his = getHisService();
+  const his = getHisAdapter();
   if (!his) {
     return;
   }
@@ -1769,24 +1770,24 @@ async function hydrateMatchedMedicalItemDetail(rec: TreatmentRecommendation): Pr
 
     const mergedRaw = {
       ...(getMatchedItemRaw(rec) || {}),
-      ...detail,
+      ...detail.raw,
       __detailLoaded: true,
     };
 
     rec.matchedItem = {
       ...rec.matchedItem,
-      name: detail.naCli?.trim() || rec.matchedItem.name || rec.name,
-      code: detail.idCli?.trim() || rec.matchedItem.code || idCli,
-      idDeptExec: detail.idDeptExec?.trim() || rec.matchedItem.idDeptExec || '',
+      name: detail.itemName?.trim() || rec.matchedItem.name || rec.name,
+      code: detail.itemId?.trim() || rec.matchedItem.code || idCli,
+      idDeptExec: detail.executingDeptId || rec.matchedItem.idDeptExec || '',
       raw: mergedRaw,
     };
 
-    if (!rec.execDept && detail.idDeptExec?.trim()) {
-      rec.execDept = detail.idDeptExec.trim();
+    if (!rec.execDept && detail.executingDeptId) {
+      rec.execDept = detail.executingDeptId;
     }
 
-    if (!rec.totalUnit && detail.unit?.trim()) {
-      rec.totalUnit = detail.unit.trim();
+    if (!rec.totalUnit && detail.unit) {
+      rec.totalUnit = detail.unit;
     }
 
     syncTreatmentExecDeptSelections();
@@ -2460,16 +2461,16 @@ const routeOptions = ref<UsageOption[]>(dedupeUsageOptions([
 ]));
 
 async function fetchFrequencyOptions(): Promise<void> {
-  const his = getHisService();
+  const his = getHisAdapter();
   if (!his) {
     console.warn('[VoiceConsultationNew] HisService not initialized, using default frequency options');
     return;
   }
 
   try {
-    const response = await his.post<{ items: Array<{ key?: string; text?: string; py?: string; wb?: string; mcode?: string; properties?: Record<string, unknown>; execCount?: number | string }> }>('api/base.tenantDicService/frequency', {});
-    if (response?.body?.items?.length) {
-      frequencyOptions.value = dedupeUsageOptions(response.body.items.map((item) => createUsageOption(item)));
+    const items = await his.fetchFrequencyDictionary();
+    if (items.length) {
+      frequencyOptions.value = dedupeUsageOptions(items.map((item) => createUsageOption(item)));
     }
   } catch (error) {
     console.error('[VoiceConsultationNew] Failed to load frequency options from HIS', error);
@@ -2477,7 +2478,7 @@ async function fetchFrequencyOptions(): Promise<void> {
 }
 
 async function fetchRouteOptions(): Promise<void> {
-  const his = getHisService();
+  const his = getHisAdapter();
   if (!his) {
     console.warn('[VoiceConsultationNew] HisService not initialized, using default route options');
     return;
@@ -2494,7 +2495,7 @@ async function fetchRouteOptions(): Promise<void> {
 }
 
 async function fetchPharmacyOptions(): Promise<void> {
-  const his = getHisService();
+  const his = getHisAdapter();
   if (!his) {
     console.warn('[VoiceConsultationNew] HisService not initialized, pharmacy options skipped');
     pharmacyOptions.value = [];
@@ -2510,7 +2511,7 @@ async function fetchPharmacyOptions(): Promise<void> {
   }
 }
 
-function dedupeExecDeptOptions(items: HisDictionaryItem[]): ExecDeptOption[] {
+function dedupeExecDeptOptions(items: DictionaryEntry[]): ExecDeptOption[] {
   const unique = new Map<string, ExecDeptOption>();
 
   items.forEach((item) => {
@@ -2580,7 +2581,7 @@ function openExecDeptQuickSelector(rec: TreatmentRecommendation, event?: Event):
 }
 
 async function fetchExecDeptOptions(): Promise<void> {
-  const his = getHisService();
+  const his = getHisAdapter();
   if (!his) {
     console.warn('[VoiceConsultationNew] HisService not initialized, execution department options skipped');
     execDeptOptions.value = [];
@@ -2690,7 +2691,7 @@ function getOrderExecDeptId(rec: TreatmentRecommendation): string {
     pharmacyOption?.idSto ||
     rec.matchedItem?.idDeptExec ||
     readFirstString(raw, ['idDeptExec', 'idDept']) ||
-    getHisService()?.getDefaultExecDeptId() ||
+    getHisAdapter()?.getDefaultExecDeptId() ||
     ''
   ).trim();
 }

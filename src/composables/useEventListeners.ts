@@ -21,7 +21,8 @@ import { trackApiCall, trackError, startTimedOperation } from '../services/opera
 import type { RiskItem } from '../components/RiskAlertPanel.vue';
 import type { AppPatient } from '../types/appState';
 import type { ConsultationAssistAction } from '../types/consultationAssist';
-import { getHisService, resetHisService } from '../services/hisService';
+import { getHisService, resetHisService } from '../services/his';
+import { resetHisAdapter } from '../services/his';
 import { medicalDataService } from '../services/medicalData';
 
 /**
@@ -388,6 +389,8 @@ export function useEventListeners(options: EventListenersOptions) {
       if (baseUrl && token) {
         // 初始化 HIS 服务单例
         getHisService(baseUrl, { token, userRoleDeptIds });
+        // adapter 是基于 HisService 的 wrapper，token 变化后必须清缓存
+        resetHisAdapter();
         console.log('[EventListeners] HisService initialized with origin:', baseUrl, {
           hasToken: Boolean(token),
           orgCode,
@@ -395,6 +398,7 @@ export function useEventListeners(options: EventListenersOptions) {
         });
       } else {
         resetHisService();
+        resetHisAdapter();
         console.warn('[EventListeners] Handshake missing baseUrl or tk token, medical catalog sync skipped', {
           hasBaseUrl: Boolean(baseUrl),
           hasToken: Boolean(token),

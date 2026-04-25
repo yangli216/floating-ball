@@ -1,0 +1,107 @@
+/**
+ * HIS 厂商适配器接口（vendor-neutral）
+ *
+ * 这是医诺浮球与"具体 HIS 厂商接口"之间的契约层。任何新厂商对接，只要
+ * 实现本接口并通过 `registerHisAdapter` 注册即可，无需改动业务调用方。
+ *
+ * 当前默认实现：`PhisHisAdapter`（包装 `HisService` 类，对应 PHIS / 国卫 PHIS 形态）。
+ *
+ * 设计原则：
+ * 1. **业务方法粒度**：一个方法 = 一个业务用例（拉诊断目录 / 拉药品目录 / 校验库存…），
+ *    不暴露原始 HTTP 路径或 PHIS 风格的 `body/items` 包装结构。
+ * 2. **入参 / 返回结构中性化**：调用方只面向 `his/types.ts` 中的中性 DTO 编程；
+ *    厂商私有字段一律通过 `raw` 透传，业务通用代码不读 `raw`。
+ * 3. **失败语义统一**：方法以 `Promise.reject(Error)` 抛错，调用方按 `Error` 处理；
+ *    具体厂商在实现内部把私有错误码翻译成业务异常。
+ * 4. **认证上下文**：通过 `updateContext` 刷新；adapter 自身不感知 token 来源（HIS 网页端
+ *    SDK handshake / 区域化模式 JWT 都走同一个入口）。
+ *
+ * 调用方应优先使用 `getHisAdapter()` 而不是直接 new HisService / new SomeVendorAdapter。
+ */
+
+import type { HisServiceContext, PharmacyOption } from '../hisService';
+import type {
+  DiagnosisCatalogEntry,
+  DictionaryEntry,
+  InventoryCheckRequest,
+  InventoryCheckResult,
+  MedicalItemCatalogEntry,
+  MedicalItemDetail,
+  MedicineCatalogEntry,
+  MedicineDetail,
+} from './types';
+
+export type { HisServiceContext, PharmacyOption };
+export type {
+  DiagnosisCatalogEntry,
+  DictionaryEntry,
+  InventoryCheckRequest,
+  InventoryCheckResult,
+  MedicalItemCatalogEntry,
+  MedicalItemDetail,
+  MedicineCatalogEntry,
+  MedicineDetail,
+} from './types';
+
+/**
+ * HIS 适配器接口
+ *
+ * 所有方法均为异步；实现需保证：在 token / baseUrl 缺失时同步抛错，而不是返回空数组，
+ * 以便调用方的"未初始化"分支能命中（见 VoiceConsultationNew 的 fetchXxxOptions 模式）。
+ */
+export interface HisAdapter {
+  /** 厂商标识，仅用于日志/调试，不参与业务路由 */
+  readonly vendor: string;
+
+  // ---- 上下文与会话 ----
+
+  /** 刷新登录用户/角色相关的上下文（如执行科室列表） */
+  updateContext(context: HisServiceContext): void;
+
+  /** 当前登录用户的默认执行科室 ID（用于检查/检验项默认填充） */
+  getDefaultExecDeptId(): string;
+
+  // ---- 目录同步：用于本地标准库匹配（中央 / 机构两层） ----
+
+  /** 全机构通用：标准诊断（ICD）目录 */
+  fetchDiagnosisCatalog(): Promise<DiagnosisCatalogEntry[]>;
+
+  /** 机构维度：检查/检验/处置项目目录 */
+  fetchInstitutionMedicalItemsCatalog(orgCode: string): Promise<MedicalItemCatalogEntry[]>;
+
+  /** 机构维度：药品目录 */
+  fetchInstitutionMedicineCatalog(orgCode: string): Promise<MedicineCatalogEntry[]>;
+
+  /** 机构维度：药房（药库）storeId 列表，主要用于药品目录的二次拉取 */
+  fetchMedicineStoreIds(orgCode: string): Promise<string[]>;
+
+  // ---- 字典与可选项（语音问诊编辑器使用） ----
+
+  /** 频次字典（每日 X 次 / Q12H 等） */
+  fetchFrequencyDictionary(): Promise<DictionaryEntry[]>;
+
+  /** 用药途径 / 给药方式字典 */
+  fetchMedicineUsageDictionary(): Promise<DictionaryEntry[]>;
+
+  /** 当前用户可见的执行科室字典 */
+  fetchExecutionDepartments(): Promise<DictionaryEntry[]>;
+
+  /** 当前用户可见的药房选项（含 idDept / idSto） */
+  fetchAvailablePharmacies(): Promise<PharmacyOption[]>;
+
+  // ---- 详情按需拉取 ----
+
+  /**
+   * 检查/检验/处置项详情。厂商实现须将私有响应映射为 vendor-neutral 的
+   * `MedicalItemDetail`。原始响应体仍可通过返回值的 `raw` 访问。
+   */
+  fetchMedicalItemDetail(itemId: string): Promise<MedicalItemDetail | null>;
+
+  /**
+   * 药品详情（按药房维度）。同上，返回 vendor-neutral 的 `MedicineDetail`。
+   */
+  fetchMedicineProDetail(productId: string, storeId: string): Promise<MedicineDetail | null>;
+
+  /** 处方下达前的库存校验 */
+  checkMedicineInventoryEnough(items: InventoryCheckRequest[]): Promise<InventoryCheckResult>;
+}

@@ -18,6 +18,11 @@ import { trackClick, trackError, trackRecommendationAction } from '../services/o
 import type { GeneratedRecord } from '../types/voiceResult';
 import type { AppPatient } from '../types/appState';
 import { useVoiceIntentRecognition, type VoiceIntentResult } from './useVoiceIntentRecognition';
+import {
+  appendPatientVisit,
+  formatPatientMemoryForPrompt,
+  getPatientMemory,
+} from '../services/patientMemoryStore';
 
 interface VoiceConsultationCacheEntry {
   consultationId: string;
@@ -266,7 +271,23 @@ export function useVoiceConsultation(options: VoiceConsultationOptions) {
 
       intentRecognition.clearTranscripts();
       intentRecognition.addTranscript(transcribedText);
-      const result = await intentRecognition.processTranscript(transcribedText);
+      const memory = await getPatientMemory(consultationId);
+      const memoryContext = formatPatientMemoryForPrompt(memory);
+      const patientCtxRaw = currentPatient.value as
+        | {
+            allergyHistory?: string;
+            pastMedicalHistory?: string;
+            currentMedicationHistory?: string;
+          }
+        | null;
+      const result = await intentRecognition.processTranscript(transcribedText, {
+        memoryContext,
+        patientContext: {
+          pastMedicalHistory: patientCtxRaw?.pastMedicalHistory ?? null,
+          allergyHistory: patientCtxRaw?.allergyHistory ?? null,
+          currentMedicationHistory: patientCtxRaw?.currentMedicationHistory ?? null,
+        },
+      });
 
       if (currentToken !== processingToken) {
         return;
@@ -351,6 +372,15 @@ export function useVoiceConsultation(options: VoiceConsultationOptions) {
           ...record,
         },
       });
+      try {
+        await appendPatientVisit({
+          patientId: resolveVoiceConsultationId(currentPatient.value),
+          record,
+          allergyHistoryText: (currentPatient.value as { allergyHistory?: string } | null)?.allergyHistory ?? null,
+        });
+      } catch (e) {
+        console.warn('[VoiceConsultation] appendPatientVisit failed:', e);
+      }
       clearCache(resolveVoiceConsultationId(currentPatient.value));
       showToast('病历已生成并回传系统', 'success');
       await exitWork();

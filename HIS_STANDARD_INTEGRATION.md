@@ -480,3 +480,138 @@ curl -X POST 'http://127.0.0.1:8081/api/consultation/reference-feedback' \
 4. `reference-feedback` 只接受与“当前最新待处理引用请求”匹配的回执。
 5. 当前页面恢复依赖同一运行期内的前端内存状态，不代表重启后仍可恢复。
 6. `med-hermes` 内所有推荐结果本质上都是医生确认前草稿，HIS / PHIS 仍应保留最终校验和保存逻辑。
+
+## 11. 出站方向：HIS 厂商适配器
+
+第 1-10 节描述的是 **HIS → med-hermes**（入站）的标准接口；本节描述
+**med-hermes → HIS**（出站）的对接方式：从 HIS 拉取诊断/药品/检查目录、字典、详情、库存校验。
+
+### 11.1 设计目标
+
+不同 HIS 厂商的私有接口形态差异极大，但 med-hermes 业务层关心的能力是**有限且收敛**的：
+
+- 同步标准诊断目录（中央 ICD）
+- 同步机构维度的药品 / 检查 / 检验目录
+- 拉取频次 / 用药途径 / 执行科室 / 药房等可选字典
+- 按需拉取项目详情、药品详情、库存校验
+
+把这些能力抽到一个 vendor-neutral 接口 [`HisAdapter`](src/services/his/HisAdapter.ts) 后：
+
+1. **解耦**：业务层（`medicalData.ts` / `VoiceConsultationNew.vue`）只面向 `HisAdapter` 编程，
+   不再 import `hisService.ts` 内部任何方法
+2. **可插拔**：新厂商只需实现该接口并 `registerHisAdapterFactory(vendor, factory)` 即可；
+   通过 `setActiveHisVendor(vendor)` 或 `VITE_HIS_VENDOR` 环境变量切换
+3. **故障隔离**：未握手 / 未拿到 token 时 `getHisAdapter()` 返回 `null`，调用方按"未就绪"处理
+
+### 11.2 接口契约
+
+定义见 [src/services/his/HisAdapter.ts](src/services/his/HisAdapter.ts)。共 13 个方法，分 4 组：
+
+| 组 | 方法 | 用途 |
+| :--- | :--- | :--- |
+| 会话 | `updateContext(ctx)` / `getDefaultExecDeptId()` | 刷新角色科室上下文，提供默认执行科室 |
+| 目录 | `fetchDiagnosisCatalog()` / `fetchInstitutionMedicalItemsCatalog(orgCode)` / `fetchInstitutionMedicineCatalog(orgCode)` / `fetchMedicineStoreIds(orgCode)` | 同步标准库与机构目录 |
+| 字典 | `fetchFrequencyDictionary()` / `fetchMedicineUsageDictionary()` / `fetchExecutionDepartments()` / `fetchAvailablePharmacies()` | 提供编辑器可选项 |
+| 详情 | `fetchMedicalItemDetail(idCli)` / `fetchMedicineProDetail(id, idSto)` / `checkMedicineInventoryEnough(items)` | 用户编辑/下达时按需调用 |
+
+### 11.3 默认实现：PhisHisAdapter
+
+[src/services/his/PhisHisAdapter.ts](src/services/his/PhisHisAdapter.ts) 是当前默认实现，
+内部包装 [src/services/hisService.ts](src/services/hisService.ts) 的 `HisService` 类
+（即"国卫 PHIS / 院端 HIS"私有接口形态）。
+
+token 与 baseUrl 仍由 `useEventListeners` 在 SDK handshake 完成后注入，方式不变；
+新增的只是上层从 `HisService` 类直接调用变成走 `HisAdapter` 接口。
+
+### 11.4 接入新厂商的最少工作量
+
+1. 新建 `src/services/his/<Vendor>HisAdapter.ts`，实现 `HisAdapter` 接口
+2. 把厂商私有的 baseUrl / 鉴权方式 / 接口路径全部封装在 adapter 内部
+3. 在某个启动钩子里执行：
+
+```ts
+import { registerHisAdapterFactory, setActiveHisVendor } from '@/services/his';
+
+registerHisAdapterFactory('myHis', () => new MyHisAdapter(/* deps */));
+setActiveHisVendor('myHis');
+```
+
+或在 `.env`（构建期）/ localStorage（运行期）中设置 `VITE_HIS_VENDOR=myHis` / `HIS_VENDOR=myHis`。
+
+业务层无需任何改动。
+
+> **参考实现**：[src/services/his/MockHisAdapter.ts](src/services/his/MockHisAdapter.ts) 是不连接任何后端的最小完整实现，
+> 同时已在 registry 中预注册（`vendor='mock'`）。本地 demo 或反向验证抽象层是否够用时，
+> 直接在控制台执行 `localStorage.HIS_VENDOR='mock'` 后刷新即可切换。
+
+### 11.5 已知限制
+
+- 全部业务出站接口均已 vendor-neutral：
+  * 详情：`MedicalItemDetail` / `MedicineDetail`
+  * 目录：`DiagnosisCatalogEntry` / `MedicineCatalogEntry` / `MedicalItemCatalogEntry`
+  * 字典：`DictionaryEntry`
+  * 库存校验：`InventoryCheckRequest` / `InventoryCheckResult`
+  原始 PHIS 字段仅通过返回值的 `raw` / `properties` 透传下游使用，业务通用代码不依赖。
+- `PharmacyOption` 仍保留 `idDept` / `idSto` PHIS 字段。药房体系本身是双层标识（部门与库房），其他厂商接入时可再考虑抽象。
+- 写回 HIS 暂不在适配器范围内：当前所有结果回写都走"前端经 invoke → Tauri → HTTP `/api/consultation/result`
+  → HIS 长轮询拉取"模式（详见第 5-7 节），无 `writeBack(record)` 类的同步出站调用。
+  若未来某厂商需要主动 PUSH 回 HIS，可作为 `HisAdapter` 的 optional 方法扩展。
+
+### 11.6 中性 DTO 字段对照表（PHIS → 通用）
+
+#### `MedicineDetail`
+
+| 通用字段 | PHIS 字段 | 说明 |
+| :--- | :--- | :--- |
+| `productId` | `idMedPro` | 药品商品级 ID |
+| `productName` | `naMedPro` | 商品名 |
+| `medicineId` | `idMed` | 药品基础 ID |
+| `medicineName` | `naMed` | 通用名 |
+| `active` | `fgActive !== '0'` | 是否可发药 |
+| `specSale` / `unitSale` / `dose` / `spec` | 同名 | 规格/单位/剂量 |
+| `doseUnit` | `unitDose` ?? `unitPre` | 制剂单位 |
+| `defaultSingleDose` | `dftDoseOnce` | 默认单次剂量 |
+| `defaultFrequency` | `dftFreq` | 默认频次 |
+| `defaultRoute` | `dftUsage` | 默认用药途径 |
+| `storeId` | `idSto` | 药房 ID |
+| `needsSkinTest` | `fgSkintest === '1'` | 是否需要皮试 |
+| `raw` | 整个 PHIS body | 厂商透传 |
+
+#### `MedicalItemDetail`
+
+| 通用字段 | PHIS 字段 |
+| :--- | :--- |
+| `itemId` | `idCli` |
+| `itemName` | `naCli` |
+| `unit` | `unit` |
+| `executingDeptId` | `idDeptExec` |
+| `raw` | 整个 PHIS body |
+
+#### `DictionaryEntry`
+
+| 通用字段 | PHIS 字段 |
+| :--- | :--- |
+| `key` / `text` | 同名 |
+| `py` / `wb` / `mcode` | 同名 |
+| `properties` | PHIS 其它字段（如频次的 `execCount`）透传 |
+
+#### `InventoryCheckRequest` / `InventoryCheckResult`
+
+| 通用字段 | PHIS 字段 | 说明 |
+| :--- | :--- | :--- |
+| `productId` | `idMedPro` | 药品商品级 ID |
+| `storeId` | `idSto` | 药房 ID |
+| `medicineName` | `naMed` | 药品名 |
+| `quantity` | `amount` | 申请数量 |
+| `unitPrice` | `priceSale` | 单价 |
+| `businessType` | `sdFrzBiz` | `outpatient`=`'1'` / `inpatient`=`'2'` / `emergency`=`'3'` |
+| `result.code` | 同名 | 200=充足 |
+| `result.message` | `msg` | 提示文本 |
+
+#### `DiagnosisCatalogEntry` / `MedicineCatalogEntry` / `MedicalItemCatalogEntry`
+
+| 通用字段 | 说明 |
+| :--- | :--- |
+| `id` / `code` / `name` / `keywords` / `spec` / `category` | 全厂商通用语义字段 |
+| `raw` | PHIS 私有字段 `idSrv` / `naSrv` / `sdSrv` / `idDeptExec` / `fgCheckOrd` / `fgSkintest` / `idPart` / `jsonField` 透传 |
+

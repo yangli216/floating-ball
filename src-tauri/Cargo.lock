@@ -2750,7 +2750,7 @@ dependencies = [
 
 [[package]]
 name = "med-hermes"
-version = "1.2.13"
+version = "1.2.14"
 dependencies = [
  "actix-cors",
  "actix-web",
