@@ -9,6 +9,7 @@ import { syncRemotePrompts } from './promptOverride';
 import { syncRemoteTemplates } from './templateService';
 import { medicalDataService } from './medicalData';
 import { feedbackService } from './feedback';
+import { checkForceUpdateRequired } from './updatePolicy';
 
 async function syncRegionalRuntimeData(): Promise<void> {
   await Promise.allSettled([
@@ -22,6 +23,10 @@ export async function initializeRegionalRuntime(options?: {
   allowCachedFallback?: boolean;
 }): Promise<BootstrapConfig | null> {
   if (!isRegionalMode()) return null;
+  const updateState = await checkForceUpdateRequired();
+  if (updateState.required) {
+    return null;
+  }
 
   const config = await initializeRegionalClient({
     allowCachedFallback: options?.allowCachedFallback,

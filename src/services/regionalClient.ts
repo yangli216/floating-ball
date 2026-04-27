@@ -1,5 +1,10 @@
-import { getVersion } from '@tauri-apps/api/app';
 import { invoke } from '@tauri-apps/api/core';
+import { getActiveUpdateChannel } from './updateConfig';
+import {
+  getCurrentClientVersion,
+  isUpdateRequiredCode,
+  notifyForceUpdateRequired,
+} from './updatePolicy';
 
 /**
  * 区域化客户端服务
@@ -29,6 +34,7 @@ export interface RegisterRequest {
   naDevice: string;
   cdOrg: string;
   clientVersion: string;
+  updateChannel: string;
   osInfo: string;
 }
 
@@ -90,18 +96,30 @@ interface ApiResponse<T> {
   timestamp: number;
 }
 
-function parseRegionalErrorMessage(rawText: string, fallback: string): string {
+interface RegionalErrorInfo {
+  code?: string;
+  message: string;
+}
+
+function parseRegionalError(rawText: string, fallback: string): RegionalErrorInfo {
   const text = rawText.trim();
-  if (!text) return fallback;
+  if (!text) return { message: fallback };
 
   try {
     const parsed = JSON.parse(text) as Partial<ApiResponse<unknown>> & {
-      error?: { message?: string };
+      error?: { message?: string; code?: string };
     };
-    return parsed.message || parsed.error?.message || fallback;
+    return {
+      code: parsed.code || parsed.error?.code,
+      message: parsed.message || parsed.error?.message || fallback,
+    };
   } catch {
-    return text;
+    return { message: text };
   }
+}
+
+function parseRegionalErrorMessage(rawText: string, fallback: string): string {
+  return parseRegionalError(rawText, fallback).message;
 }
 
 function parseUnexpectedSseBody(rawText: string, fallback: string): string {
@@ -412,11 +430,15 @@ async function regionalFetch<T>(
     await registerDevice();
     token = getDeviceToken();
   }
+  const clientVersion = await getCurrentClientVersion();
+  const updateChannel = getActiveUpdateChannel();
 
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',
     'X-Tenant-Id': getOrgCode(),
     'X-Request-Id': crypto.randomUUID(),
+    'X-Client-Version': clientVersion,
+    'X-Update-Channel': updateChannel,
     ...(token ? { Authorization: `Bearer ${token}` } : {}),
     ...(options.headers as Record<string, string> || {}),
   };
@@ -434,11 +456,26 @@ async function regionalFetch<T>(
       return regionalFetch<T>(path, options, false);
     }
     const text = await res.text().catch(() => '');
-    throw new Error(parseRegionalErrorMessage(text, `区域化服务请求失败（${res.status}）`));
+    const errorInfo = parseRegionalError(text, `区域化服务请求失败（${res.status}）`);
+    if (res.status === 426 || isUpdateRequiredCode(errorInfo.code)) {
+      notifyForceUpdateRequired({
+        channel: updateChannel,
+        currentVersion: clientVersion,
+        message: errorInfo.message,
+      });
+    }
+    throw new Error(errorInfo.message);
   }
 
   const body: ApiResponse<T> = await res.json();
   if (body.code !== '0') {
+    if (isUpdateRequiredCode(body.code)) {
+      notifyForceUpdateRequired({
+        channel: updateChannel,
+        currentVersion: clientVersion,
+        message: body.message,
+      });
+    }
     throw new Error(body.message || '区域化服务返回异常');
   }
   return body.data;
@@ -457,11 +494,8 @@ export async function registerDevice(): Promise<RegisterResponse> {
   const cdDevice = await getDeviceCode();
   let naDevice = 'FloatingBall';
   let osInfo = 'unknown';
-  let clientVersion = 'unknown';
-
-  try {
-    clientVersion = await getVersion();
-  } catch { /* browser fallback */ }
+  const clientVersion = await getCurrentClientVersion();
+  const updateChannel = getActiveUpdateChannel();
 
   try {
     osInfo = `${navigator.platform} ${navigator.userAgent.match(/\(([^)]+)\)/)?.[1] || ''}`.trim();
@@ -475,6 +509,7 @@ export async function registerDevice(): Promise<RegisterResponse> {
       naDevice,
       cdOrg: orgCode,
       clientVersion,
+      updateChannel,
       osInfo,
     } satisfies RegisterRequest),
   });
@@ -694,12 +729,16 @@ export function createRegionalSSE(
 
   return new Promise(async (resolve, reject) => {
     try {
+      const clientVersion = await getCurrentClientVersion();
+      const updateChannel = getActiveUpdateChannel();
       const res = await fetch(`${baseUrl}${path}`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
           'X-Tenant-Id': getOrgCode(),
           'X-Request-Id': crypto.randomUUID(),
+          'X-Client-Version': clientVersion,
+          'X-Update-Channel': updateChannel,
           ...(token ? { Authorization: `Bearer ${token}` } : {}),
         },
         body: JSON.stringify(body),
@@ -708,7 +747,15 @@ export function createRegionalSSE(
 
       if (!res.ok) {
         const text = await res.text().catch(() => '');
-        reject(new Error(parseRegionalErrorMessage(text, `区域化流式请求失败（${res.status}）`)));
+        const errorInfo = parseRegionalError(text, `区域化流式请求失败（${res.status}）`);
+        if (res.status === 426 || isUpdateRequiredCode(errorInfo.code)) {
+          notifyForceUpdateRequired({
+            channel: updateChannel,
+            currentVersion: clientVersion,
+            message: errorInfo.message,
+          });
+        }
+        reject(new Error(errorInfo.message));
         return;
       }
 

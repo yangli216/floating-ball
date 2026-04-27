@@ -92,6 +92,7 @@ import {
   saveUpdateConfig,
   type UpdateEnvironment,
 } from '../services/updateConfig';
+import { checkForceUpdateRequired } from '../services/updatePolicy';
 
 interface UpdateInfo {
   version: string;
@@ -120,6 +121,9 @@ const updateEnvironment = ref<UpdateEnvironment>('production');
 const productionUrl = ref('');
 const testingUrl = ref('');
 const showToast = inject('showToast', null) as ((msg: string, type: 'success' | 'error' | 'info') => void) | null;
+const props = defineProps<{
+  forced?: boolean;
+}>();
 
 let unlistenProgress: UnlistenFn | null = null;
 
@@ -148,6 +152,10 @@ onMounted(async () => {
   unlistenProgress = await listen<UpdateProgressPayload>('update-download-progress', (event) => {
     downloadProgress.value = event.payload.percent;
   });
+
+  if (props.forced) {
+    await checkAndStore();
+  }
 });
 
 onUnmounted(() => {
@@ -165,6 +173,7 @@ const saveConfig = () => {
   if (showToast) {
     showToast(`更新源已切换为${activeEnvironmentLabel.value}`, 'success');
   }
+  void checkForceUpdateRequired();
 };
 
 const applyConfig = (config: ReturnType<typeof getUpdateConfig>) => {
@@ -179,9 +188,10 @@ const useRegionalDefaults = () => {
   if (showToast) {
     showToast('已切换为后台发布中心默认更新源', 'success');
   }
+  void checkForceUpdateRequired();
 };
 
-const checkAndStore = async () => {
+async function checkAndStore() {
   checking.value = true;
   error.value = '';
   updateAvailable.value = false;
@@ -200,7 +210,7 @@ const checkAndStore = async () => {
   } finally {
     checking.value = false;
   }
-};
+}
 
 const installUpdate = async () => {
   if (!updateInfo.value) return;

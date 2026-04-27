@@ -1,6 +1,6 @@
 # 架构文档 (ARCHITECTURE.md)
 
-> **最后更新**: 2026-04-23
+> **最后更新**: 2026-04-27
 >
 > **重要**: 此文档是项目架构的唯一真实来源。任何架构级别的代码修改都必须同步更新此文档。
 
@@ -125,7 +125,7 @@
 1. 当前设置与凭据状态通过 `localStorage`、`consultationConfig` store、本地 Tauri Store 管理，其中“通用 LLM”和“语音转写”配置分域存储，避免同一组 Audio 字段误导到不同 provider。
 2. 本地 HIS 对接入口由 `src-tauri/src/http_server.rs` 提供。
 3. 若未来引入真实登录态，应新增专用文档章节并在 `AGENTS.md` / `api.md` 中同步说明。
-4. Windows 内网更新源采用本地配置驱动：测试环境地址、正式环境地址和当前生效环境保存在 `localStorage`，前端只负责展示与选择，真正的 updater endpoint 在 Rust 侧通过 `updater_builder()` 运行时注入。
+4. Windows 内网更新源采用本地配置驱动：测试环境地址、正式环境地址和当前生效环境保存在 `localStorage`，前端只负责展示与选择，真正的 updater endpoint 在 Rust 侧通过 `updater_builder()` 运行时注入。区域化模式下，客户端会按当前更新通道访问 `floating-ball-server` 的 `/v1/client/releases/{channel}/policy.json`；若服务端发布策略要求强制更新且当前版本低于 `minSupportedVersion`，应用进入强制更新门禁，只保留更新源配置、检查更新、下载安装并重启能力。
 5. 主窗口的聊天、设置、问诊等可调整工作视图会将用户最后一次手动调整后的窗口尺寸写入 `.settings.dat`，再次打开对应视图时优先恢复该尺寸。
 6. 通用设置页新增音频输入设备配置，首选麦克风 `deviceId` 保存在 `localStorage`；聊天录音和语音接诊共用同一配置，若指定设备不存在则自动回退到系统默认输入设备。设置页首次进入时会按权限状态自动补做一次设备列表预热，尽量避免初次枚举不完整、必须手动刷新后才看到全部麦克风。
 7. 语音转写配置与通用 LLM 配置分离：本地模式下默认 provider 为阿里云 DashScope，`VoiceCapsule.vue` 实时语音和 `ChatPanel.vue` 录音转写共用同一套 speech config；若切换到 OpenAI 兼容 provider，则统一降级为批量转写链路。
@@ -135,8 +135,14 @@
 1. 现阶段所有问诊、语音、session 回写能力都必须兼容本地模式。
 2. 区域化模式下，`LLM`、独立审查 AI、PMPHAI 知识库等上游能力默认走 `floating-ball-server` 的 `/v1/*` 代理或服务端签名接口，桌面端不直接保存或下发这些密钥。
 3. 本地模式仍保留直连 OpenAI 兼容接口、DashScope 与本地 PMPHAI 代理的兜底路径。
+<<<<<<< HEAD
 4. 区域化模式下，工作区共用顶栏的"问题反馈"入口与一键回写后弹出的整页反馈，统一使用同一份 `FeedbackSubmissionPanel`（紧凑星级 + 预置问题标签 + 选填截图 + 选填补充说明）；语音问诊的推荐项 / 病例字段 / 整页反馈则通过 `voiceFeedback.ts` 映射到同一 `/v1/client/feedbacks` 接口，所有反馈都会附带最近一次 AI 调用的 `traceId`、`sessionId`、`chainContext` 与握手阶段缓存的医生 / 机构 / 科室身份（`feedbackContext.ts`），由 `floating-ball-server` 端按 `kind`（`general | recommendation | record_field | session`）+ `severity` 分类落库。
 5. 登录态设计在当前版本不是前置依赖，不能假定仓库内已有 `auth store` 或受保护 API 基座。
+=======
+4. 区域化模式下，每个 `/v1/*` 业务请求会附带 `X-Client-Version` 与 `X-Update-Channel`，服务端返回 `426 / UPDATE-REQUIRED` 时，客户端立即切换到强制更新门禁，禁止继续使用问诊、语音、知识库、AI 代理、模板同步、反馈等业务能力。
+5. 区域化模式下，工作区共用顶栏提供全局“问题反馈”入口，反馈弹层会附带最近一次 AI 代理调用的 `traceId`、会话 ID、场景摘要、评分、文字说明和截图数据，一并提交到 `floating-ball-server`，供后台按时间线查看调用链路。
+6. 登录态设计在当前版本不是前置依赖，不能假定仓库内已有 `auth store` 或受保护 API 基座。
+>>>>>>> 236c039 (新增强制更新机制)
 
 ---
 

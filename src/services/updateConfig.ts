@@ -66,6 +66,21 @@ export function getActiveUpdateEndpoint(config: UpdateConfig = getUpdateConfig()
   return config.environment === 'testing' ? config.testingUrl : config.productionUrl;
 }
 
+export function getActiveUpdateChannel(config: UpdateConfig = getUpdateConfig()): UpdateEnvironment {
+  return config.environment;
+}
+
+export function getActiveUpdatePolicyEndpoint(config: UpdateConfig = getUpdateConfig()): string {
+  const endpoint = getActiveUpdateEndpoint(config);
+  if (!endpoint) {
+    return '';
+  }
+  if (/\/latest\.json(?:\?.*)?$/.test(endpoint)) {
+    return endpoint.replace(/\/latest\.json(\?.*)?$/, '/policy.json$1');
+  }
+  return `${endpoint.replace(/\/+$/, '')}/policy.json`;
+}
+
 export function getUpdateEnvironmentLabel(environment: UpdateEnvironment): string {
   return environment === 'testing' ? '测试内网' : '正式内网';
 }

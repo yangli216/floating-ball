@@ -20,6 +20,7 @@ import KnowledgeBasePanel from "./components/KnowledgeBasePanel.vue";
 import VoiceConsultationNew from "./components/VoiceConsultationNew.vue";
 import FeedbackSubmissionPanel from "./components/FeedbackSubmissionPanel.vue";
 import Icon from "./components/Icon.vue";
+import ForceUpdateGate from "./components/ForceUpdateGate.vue";
 import { trackClick } from "./services/operationTracker";
 import { LogicalSize } from "@tauri-apps/api/dpi";
 import { WINDOW_SIZES, type ViewType } from "./constants/windowSizes";
@@ -30,6 +31,12 @@ import { useVoiceConsultation } from "./composables/useVoiceConsultation";
 import { useEventListeners } from "./composables/useEventListeners";
 import { pmphaiService, isPMPHAIConfigured } from './services/pmphai';
 import { medicalDataService, type MedicalCatalogClearOptions, type MedicalCatalogClearResult, type MedicalCatalogDebugState } from "./services/medicalData";
+import {
+  checkForceUpdateRequired,
+  getCurrentForceUpdateState,
+  subscribeForceUpdateRequired,
+  type ForceUpdateState,
+} from "./services/updatePolicy";
 import type { AppPatient, AppStore } from "./types/appState";
 import type { ConsultationAssistAction } from "./types/consultationAssist";
 
@@ -69,6 +76,8 @@ const isWorking = ref(false);
 const currentView = ref<ViewType>('chat');
 const currentPatient = ref<AppPatient | null>(null);
 const ringMenuRef = ref<HTMLElement | null>(null);
+const forceUpdateState = ref<ForceUpdateState>(getCurrentForceUpdateState());
+const isForceUpdateRequired = computed(() => forceUpdateState.value.required);
 
 // 风险提示状态
 const isRiskAnalyzing = ref(false);
@@ -199,6 +208,7 @@ let store: Store | null = null;
 const resizeTimeoutRef = ref<ReturnType<typeof setTimeout> | null>(null);
 const storeRef = shallowRef<AppStore | null>(null);
 const transitioning = ref(false);
+let unsubscribeForceUpdate: (() => void) | null = null;
 
 // 初始化窗口管理 composable
 const windowMgmt = useWindowManagement({
@@ -347,6 +357,27 @@ const eventListeners = useEventListeners({
   resizeTimeoutRef,
 });
 
+async function applyForceUpdateWindowState(state: ForceUpdateState): Promise<void> {
+  forceUpdateState.value = state;
+  if (!state.required || isDiagnosisPathWindow) {
+    return;
+  }
+  feedbackDialogVisible.value = false;
+  feedbackDialogSuspended.value = false;
+  isWorking.value = true;
+  currentView.value = 'settings';
+  try {
+    if (appWindow.value) {
+      await smartExpand(760, 620);
+      await appWindow.value.setSize(new LogicalSize(760, 620));
+      await appWindow.value.show();
+      await appWindow.value.setFocus();
+    }
+  } catch (error) {
+    console.warn('[App] Failed to apply force update window state:', error);
+  }
+}
+
 // 监听状态变化并持久化
 watch([isWorking, currentView], async () => {
   if (isDiagnosisPathWindow) return;
@@ -406,6 +437,11 @@ onMounted(async () => {
           console.warn('[App] ⚠️ Initialization state failed:', err);
         }
 
+    unsubscribeForceUpdate = subscribeForceUpdateRequired((state) => {
+      void applyForceUpdateWindowState(state);
+    });
+    void checkForceUpdateRequired().then(applyForceUpdateWindowState);
+
     // 注册所有事件监听
     await eventListeners.registerAllListeners();
 
@@ -421,6 +457,10 @@ onMounted(async () => {
 
 onUnmounted(() => {
   delete window.__medicalCatalogDebug__;
+  if (unsubscribeForceUpdate) {
+    unsubscribeForceUpdate();
+    unsubscribeForceUpdate = null;
+  }
   if (!isDiagnosisPathWindow) {
     eventListeners.unregisterAllListeners();
   }
@@ -562,9 +602,11 @@ const openInsideCloudHome = async () => {
       <div v-show="isWorking" class="assistant-layer" :style="containerStyle">
         <div 
           class="assistant-container" 
-          :class="{ 'no-toolbar': currentView === 'risk-alert' || currentView === 'voice-interaction' || currentView === 'voice-result' || currentView === 'reception-capsule' }"
+          :class="{ 'no-toolbar': isForceUpdateRequired || currentView === 'risk-alert' || currentView === 'voice-interaction' || currentView === 'voice-result' || currentView === 'reception-capsule' }"
           :style="currentView === 'reception-capsule' ? { borderRadius: '16px', background: 'transparent', backdropFilter: 'none', WebkitBackdropFilter: 'none', border: 'none', boxShadow: 'none' } : { borderRadius: '20px' }"
         >
+          <ForceUpdateGate v-if="isForceUpdateRequired" :state="forceUpdateState" />
+          <template v-else>
           <!-- 工具栏 (risk-alert, voice-interaction, voice-result, reception-capsule 视图不显示) -->
           <div v-if="currentView !== 'risk-alert' && currentView !== 'voice-interaction' && currentView !== 'voice-result' && currentView !== 'reception-capsule'" class="assistant-toolbar" data-tauri-drag-region>
             <div class="toolbar-left" data-tauri-drag-region>
@@ -659,13 +701,14 @@ const openInsideCloudHome = async () => {
             v-if="currentView === 'settings'"
             @open-symptom-manage="openSymptomManagement"
           />
+          </template>
         </div>
       </div>
     </Transition>
   </div>
   <Transition name="fade">
     <div
-      v-if="feedbackDialogVisible"
+      v-if="feedbackDialogVisible && !isForceUpdateRequired"
       class="feedback-overlay"
       :class="{ 'feedback-overlay--suspended': feedbackDialogSuspended }"
       @click.self="closeFeedbackDialog"
