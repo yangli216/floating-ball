@@ -1,5 +1,6 @@
 use rusqlite::{params, Connection, OptionalExtension, Result as SqlResult};
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::Mutex;
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -62,6 +63,10 @@ pub struct MedicineCatalogEntry {
     pub code: Option<String>,
     pub name: String,
     pub spec: String,
+    /// 该药品在哪些发药药房目录中出现（org_code/idSto 列表）。
+    /// 为空时表示与所有 scope_codes 关联（兼容 CSV 兜底 / 历史迁移）。
+    #[serde(default)]
+    pub store_ids: Vec<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -97,7 +102,7 @@ fn ensure_medical_catalog_access(app: &AppHandle) -> Result<(), String> {
 
 pub fn init_database(app: &AppHandle) -> SqlResult<()> {
     let db_path = get_db_path(app);
-    let conn = Connection::open(&db_path)?;
+    let mut conn = Connection::open(&db_path)?;
 
     conn.execute_batch(
         "
@@ -147,6 +152,9 @@ pub fn init_database(app: &AppHandle) -> SqlResult<()> {
         "
     )?;
 
+    migrate_legacy_combined_medicine_scopes(&mut conn)
+        .map_err(rusqlite::Error::InvalidParameterName)?;
+
     app.manage(MedicalCatalogDbConnection(Mutex::new(conn)));
     Ok(())
 }
@@ -160,6 +168,142 @@ fn serialize_keywords(keywords: &Option<Vec<String>>) -> Result<Option<String>, 
 
 fn deserialize_keywords(raw: Option<String>) -> Option<Vec<String>> {
     raw.and_then(|value| serde_json::from_str::<Vec<String>>(&value).ok())
+}
+
+fn parse_scope_codes(raw: &str) -> Vec<String> {
+    let normalized = raw.trim();
+    if normalized.is_empty() {
+        return Vec::new();
+    }
+
+    let mut scopes = Vec::new();
+    for code in normalized.split(',').map(str::trim) {
+        if code.is_empty() {
+            continue;
+        }
+        if !scopes.iter().any(|existing| existing == code) {
+            scopes.push(code.to_string());
+        }
+    }
+    scopes
+}
+
+fn migrate_legacy_combined_medicine_scopes(conn: &mut Connection) -> Result<(), String> {
+    let legacy_scope_keys = {
+        let mut stmt = conn
+            .prepare(
+                "SELECT org_code FROM medicine_catalog WHERE instr(org_code, ',') > 0
+                 UNION
+                 SELECT org_code FROM catalog_sync_state
+                 WHERE catalog_type = 'medicines' AND instr(org_code, ',') > 0
+                 ORDER BY org_code",
+            )
+            .map_err(|e| e.to_string())?;
+
+        let rows = stmt
+            .query_map([], |row| row.get::<_, String>(0))
+            .map_err(|e| e.to_string())?;
+        rows.collect::<Result<Vec<_>, _>>()
+            .map_err(|e| e.to_string())?
+    };
+
+    if legacy_scope_keys.is_empty() {
+        return Ok(());
+    }
+
+    let tx = conn.transaction().map_err(|e| e.to_string())?;
+
+    for legacy_scope_key in legacy_scope_keys {
+        let scope_codes = parse_scope_codes(legacy_scope_key.as_str());
+        if scope_codes.len() <= 1 {
+            continue;
+        }
+
+        let legacy_items = {
+            let mut stmt = tx
+                .prepare(
+                    "SELECT id, code, name, spec
+                     FROM medicine_catalog
+                     WHERE org_code = ?1
+                     ORDER BY name, spec",
+                )
+                .map_err(|e| e.to_string())?;
+
+            let rows = stmt
+                .query_map(params![legacy_scope_key.as_str()], |row| {
+                    Ok(MedicineCatalogEntry {
+                        id: row.get(0)?,
+                        code: row.get(1)?,
+                        name: row.get(2)?,
+                        spec: row.get(3)?,
+                        store_ids: Vec::new(),
+                    })
+                })
+                .map_err(|e| e.to_string())?;
+            rows.collect::<Result<Vec<_>, _>>()
+                .map_err(|e| e.to_string())?
+        };
+
+        let (_, legacy_sync_date) = get_sync_state(&tx, "medicines", legacy_scope_key.as_str())?;
+
+        for scope_code in &scope_codes {
+            {
+                let mut insert_stmt = tx
+                    .prepare(
+                        "INSERT OR IGNORE INTO medicine_catalog (org_code, id, code, name, spec, updated_at)
+                         VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+                    )
+                    .map_err(|e| e.to_string())?;
+
+                for item in &legacy_items {
+                    insert_stmt
+                        .execute(params![
+                            scope_code.as_str(),
+                            item.id,
+                            item.code,
+                            item.name,
+                            item.spec,
+                            current_timestamp()
+                        ])
+                        .map_err(|e| e.to_string())?;
+                }
+            }
+
+            let scope_state_exists = tx
+                .query_row(
+                    "SELECT 1 FROM catalog_sync_state WHERE catalog_type = 'medicines' AND org_code = ?1 LIMIT 1",
+                    params![scope_code.as_str()],
+                    |_| Ok(()),
+                )
+                .optional()
+                .map_err(|e| e.to_string())?
+                .is_some();
+
+            if !scope_state_exists {
+                upsert_sync_state(
+                    &tx,
+                    "medicines",
+                    scope_code.as_str(),
+                    legacy_items.len(),
+                    legacy_sync_date.as_deref(),
+                )?;
+            }
+        }
+
+        tx.execute(
+            "DELETE FROM medicine_catalog WHERE org_code = ?1",
+            params![legacy_scope_key.as_str()],
+        )
+        .map_err(|e| e.to_string())?;
+        tx.execute(
+            "DELETE FROM catalog_sync_state WHERE catalog_type = 'medicines' AND org_code = ?1",
+            params![legacy_scope_key.as_str()],
+        )
+        .map_err(|e| e.to_string())?;
+    }
+
+    tx.commit().map_err(|e| e.to_string())?;
+    Ok(())
 }
 
 fn get_sync_state(
@@ -218,8 +362,9 @@ pub async fn load_medical_catalog_snapshot(
     ensure_medical_catalog_access(&app)?;
 
     let db = app.state::<MedicalCatalogDbConnection>();
-    let conn = db.0.lock().map_err(|e| e.to_string())?;
-    let normalized_org_code = org_code.unwrap_or_default();
+    let mut conn = db.0.lock().map_err(|e| e.to_string())?;
+    migrate_legacy_combined_medicine_scopes(&mut conn)?;
+    let normalized_org_code = org_code.unwrap_or_default().trim().to_string();
 
     let mut diagnosis_stmt = conn
         .prepare("SELECT id, code, name, keywords_json FROM diagnosis_catalog ORDER BY code, name")
@@ -270,6 +415,13 @@ pub async fn load_medical_catalog_snapshot(
         let (_, sync_date) = get_sync_state(&conn, "items", normalized_org_code.as_str())?;
         item_sync_date = sync_date;
 
+        let scope_codes = parse_scope_codes(normalized_org_code.as_str());
+        let scope_codes = if scope_codes.is_empty() {
+            vec![normalized_org_code.clone()]
+        } else {
+            scope_codes
+        };
+
         let mut medicine_stmt = conn
             .prepare(
                 "SELECT id, code, name, spec
@@ -278,21 +430,72 @@ pub async fn load_medical_catalog_snapshot(
                  ORDER BY name, spec",
             )
             .map_err(|e| e.to_string())?;
-        medicines = medicine_stmt
-            .query_map(params![normalized_org_code.as_str()], |row| {
-                Ok(MedicineCatalogEntry {
-                    id: row.get(0)?,
-                    code: row.get(1)?,
-                    name: row.get(2)?,
-                    spec: row.get(3)?,
+        let mut unique_medicines = HashMap::<String, MedicineCatalogEntry>::new();
+        for scope_code in &scope_codes {
+            let scoped_items = medicine_stmt
+                .query_map(params![scope_code.as_str()], |row| {
+                    Ok(MedicineCatalogEntry {
+                        id: row.get(0)?,
+                        code: row.get(1)?,
+                        name: row.get(2)?,
+                        spec: row.get(3)?,
+                        store_ids: Vec::new(),
+                    })
                 })
-            })
-            .map_err(|e| e.to_string())?
-            .collect::<Result<Vec<_>, _>>()
-            .map_err(|e| e.to_string())?;
+                .map_err(|e| e.to_string())?
+                .collect::<Result<Vec<_>, _>>()
+                .map_err(|e| e.to_string())?;
 
-        let (_, sync_date) = get_sync_state(&conn, "medicines", normalized_org_code.as_str())?;
-        medicine_sync_date = sync_date;
+            for item in scoped_items {
+                let entry = unique_medicines
+                    .entry(item.id.clone())
+                    .or_insert_with(|| MedicineCatalogEntry {
+                        id: item.id.clone(),
+                        code: item.code.clone(),
+                        name: item.name.clone(),
+                        spec: item.spec.clone(),
+                        store_ids: Vec::new(),
+                    });
+                if !entry.store_ids.iter().any(|existing| existing == scope_code) {
+                    entry.store_ids.push(scope_code.clone());
+                }
+            }
+        }
+
+        medicines = unique_medicines.into_values().collect::<Vec<_>>();
+        medicines.sort_by(|left, right| {
+            left.name
+                .cmp(&right.name)
+                .then(left.spec.cmp(&right.spec))
+                .then(left.id.cmp(&right.id))
+        });
+
+        let mut consistent_sync_date: Option<String> = None;
+        let mut is_sync_date_consistent = true;
+        for scope_code in &scope_codes {
+            let (_, sync_date) = get_sync_state(&conn, "medicines", scope_code.as_str())?;
+            match sync_date {
+                Some(current_date) => {
+                    if let Some(existing_date) = consistent_sync_date.as_ref() {
+                        if existing_date != &current_date {
+                            is_sync_date_consistent = false;
+                            break;
+                        }
+                    } else {
+                        consistent_sync_date = Some(current_date);
+                    }
+                }
+                None => {
+                    is_sync_date_consistent = false;
+                    break;
+                }
+            }
+        }
+        medicine_sync_date = if is_sync_date_consistent {
+            consistent_sync_date
+        } else {
+            None
+        };
     }
 
     Ok(MedicalCatalogSnapshot {
@@ -401,42 +604,79 @@ pub async fn replace_org_medicine_catalog(
 
     let db = app.state::<MedicalCatalogDbConnection>();
     let mut conn = db.0.lock().map_err(|e| e.to_string())?;
+    migrate_legacy_combined_medicine_scopes(&mut conn)?;
     let tx = conn.transaction().map_err(|e| e.to_string())?;
 
-    tx.execute(
-        "DELETE FROM medicine_catalog WHERE org_code = ?1",
-        params![org_code.as_str()],
-    )
-    .map_err(|e| e.to_string())?;
+    let normalized_org_code = org_code.trim().to_string();
+    let scope_codes = parse_scope_codes(normalized_org_code.as_str());
+    let scope_codes = if scope_codes.is_empty() {
+        vec![normalized_org_code.clone()]
+    } else {
+        scope_codes
+    };
 
-    {
-        let mut stmt = tx
-            .prepare(
-                "INSERT INTO medicine_catalog (org_code, id, code, name, spec, updated_at)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
-            )
-            .map_err(|e| e.to_string())?;
-
-        for item in &items {
-            stmt.execute(params![
-                org_code.as_str(),
-                item.id,
-                item.code,
-                item.name,
-                item.spec,
-                current_timestamp()
-            ])
-            .map_err(|e| e.to_string())?;
-        }
+    if scope_codes.len() > 1 {
+        tx.execute(
+            "DELETE FROM medicine_catalog WHERE org_code = ?1",
+            params![normalized_org_code.as_str()],
+        )
+        .map_err(|e| e.to_string())?;
+        tx.execute(
+            "DELETE FROM catalog_sync_state WHERE catalog_type = 'medicines' AND org_code = ?1",
+            params![normalized_org_code.as_str()],
+        )
+        .map_err(|e| e.to_string())?;
     }
 
-    upsert_sync_state(
-        &tx,
-        "medicines",
-        org_code.as_str(),
-        items.len(),
-        Some(sync_date.as_str()),
-    )?;
+    for scope_code in &scope_codes {
+        tx.execute(
+            "DELETE FROM medicine_catalog WHERE org_code = ?1",
+            params![scope_code.as_str()],
+        )
+        .map_err(|e| e.to_string())?;
+
+        let scoped_items: Vec<&MedicineCatalogEntry> = items
+            .iter()
+            .filter(|item| {
+                if item.store_ids.is_empty() {
+                    // 兼容缺省 storeIds 的来源（CSV/历史）：写入到所有 scope
+                    true
+                } else {
+                    item.store_ids.iter().any(|existing| existing == scope_code)
+                }
+            })
+            .collect();
+
+        {
+            let mut stmt = tx
+                .prepare(
+                    "INSERT INTO medicine_catalog (org_code, id, code, name, spec, updated_at)
+                     VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+                )
+                .map_err(|e| e.to_string())?;
+
+            for item in &scoped_items {
+                stmt.execute(params![
+                    scope_code.as_str(),
+                    item.id,
+                    item.code,
+                    item.name,
+                    item.spec,
+                    current_timestamp()
+                ])
+                .map_err(|e| e.to_string())?;
+            }
+        }
+
+        upsert_sync_state(
+            &tx,
+            "medicines",
+            scope_code.as_str(),
+            scoped_items.len(),
+            Some(sync_date.as_str()),
+        )?;
+    }
+
     tx.commit().map_err(|e| e.to_string())?;
     Ok(())
 }
@@ -447,7 +687,8 @@ pub async fn get_medical_catalog_debug_state(app: AppHandle) -> Result<MedicalCa
 
     let db_path = get_db_path(&app);
     let db = app.state::<MedicalCatalogDbConnection>();
-    let conn = db.0.lock().map_err(|e| e.to_string())?;
+    let mut conn = db.0.lock().map_err(|e| e.to_string())?;
+    migrate_legacy_combined_medicine_scopes(&mut conn)?;
 
     let diagnosis_count = conn
         .query_row("SELECT COUNT(*) FROM diagnosis_catalog", [], |row| row.get::<_, i64>(0))
@@ -499,6 +740,7 @@ pub async fn clear_medical_catalog_cache(
 
     let db = app.state::<MedicalCatalogDbConnection>();
     let mut conn = db.0.lock().map_err(|e| e.to_string())?;
+    migrate_legacy_combined_medicine_scopes(&mut conn)?;
     let tx = conn.transaction().map_err(|e| e.to_string())?;
 
     let normalized_type = catalog_type
@@ -565,18 +807,42 @@ pub async fn clear_medical_catalog_cache(
                 )
                 .map_err(|e| e.to_string())?;
         } else {
-            result.medicine_rows = tx
-                .execute(
-                    "DELETE FROM medicine_catalog WHERE org_code = ?1",
-                    params![normalized_org.as_str()],
-                )
-                .map_err(|e| e.to_string())?;
-            result.sync_state_rows += tx
-                .execute(
-                    "DELETE FROM catalog_sync_state WHERE catalog_type = 'medicines' AND org_code = ?1",
-                    params![normalized_org.as_str()],
-                )
-                .map_err(|e| e.to_string())?;
+            let scope_codes = parse_scope_codes(normalized_org.as_str());
+            let scope_codes = if scope_codes.is_empty() {
+                vec![normalized_org.clone()]
+            } else {
+                scope_codes
+            };
+
+            if scope_codes.len() > 1 {
+                result.medicine_rows += tx
+                    .execute(
+                        "DELETE FROM medicine_catalog WHERE org_code = ?1",
+                        params![normalized_org.as_str()],
+                    )
+                    .map_err(|e| e.to_string())?;
+                result.sync_state_rows += tx
+                    .execute(
+                        "DELETE FROM catalog_sync_state WHERE catalog_type = 'medicines' AND org_code = ?1",
+                        params![normalized_org.as_str()],
+                    )
+                    .map_err(|e| e.to_string())?;
+            }
+
+            for scope_code in &scope_codes {
+                result.medicine_rows += tx
+                    .execute(
+                        "DELETE FROM medicine_catalog WHERE org_code = ?1",
+                        params![scope_code.as_str()],
+                    )
+                    .map_err(|e| e.to_string())?;
+                result.sync_state_rows += tx
+                    .execute(
+                        "DELETE FROM catalog_sync_state WHERE catalog_type = 'medicines' AND org_code = ?1",
+                        params![scope_code.as_str()],
+                    )
+                    .map_err(|e| e.to_string())?;
+            }
         }
     }
 

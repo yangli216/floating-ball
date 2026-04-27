@@ -42,6 +42,8 @@ import Icon from './Icon.vue';
 
 const emit = defineEmits<{
   'open-symptom-manage': [];
+  'open-his-log': [];
+  'open-medical-cache': [];
 }>();
 
 const showToast = inject('showToast') as (msg: string, type: 'success' | 'error' | 'info') => void;
@@ -991,6 +993,36 @@ watch([regionalBaseUrl, regionalOrgCode], () => {
             </div>
           </div>
           <p class="section-desc" style="margin-top: 4px;">配置和维护用于问诊的症状模板库</p>
+        </div>
+
+        <div class="settings-section clickable-section"
+          @click="trackClick('settings_open_medical_catalog_cache'); emit('open-medical-cache')">
+          <div class="section-header no-border"
+            style="display: flex; align-items: center; justify-content: space-between;">
+            <div class="header-left" style="display: flex; align-items: center; gap: 12px;">
+              <Icon icon="lucide:database" :size="20" />
+              <h3 style="margin: 0;">基础数据缓存管理</h3>
+            </div>
+            <div class="arrow-icon">
+              <Icon icon="lucide:chevron-right" :size="20" />
+            </div>
+          </div>
+          <p class="section-desc" style="margin-top: 4px;">查看诊断、诊疗项目、药品目录缓存状态，并支持手动同步或清理</p>
+        </div>
+
+        <div class="settings-section clickable-section"
+          @click="trackClick('settings_open_his_integration_log'); emit('open-his-log')">
+          <div class="section-header no-border"
+            style="display: flex; align-items: center; justify-content: space-between;">
+            <div class="header-left" style="display: flex; align-items: center; gap: 12px;">
+              <Icon icon="lucide:scroll-text" :size="20" />
+              <h3 style="margin: 0;">HIS 联调日志</h3>
+            </div>
+            <div class="arrow-icon">
+              <Icon icon="lucide:chevron-right" :size="20" />
+            </div>
+          </div>
+          <p class="section-desc" style="margin-top: 4px;">查看 Bridge 入站与 PHIS 出站调用流水，支持按 traceId 排查和导出</p>
         </div>
       </div>
 

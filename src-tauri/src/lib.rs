@@ -668,6 +668,10 @@ pub fn run() {
             commands::feedback::get_recommendation_statistics,
             commands::feedback::get_operation_statistics,
             commands::feedback::export_data,
+            commands::his_integration_log::record_his_integration_log,
+            commands::his_integration_log::list_his_integration_logs,
+            commands::his_integration_log::clear_his_integration_logs,
+            commands::his_integration_log::export_his_integration_logs,
             commands::device::get_device_mac_address,
             // Medical catalog cache commands
             commands::medical_catalog::load_medical_catalog_snapshot,

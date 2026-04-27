@@ -82,7 +82,9 @@ floating-ball/
 
 | 组件 | 行数 | 职责 |
 |------|------|------|
-| **SettingsPanel.vue** | ~2100 | 通用设置、紧凑主题选择、LLM 配置、区域化后端接入、语音 provider / 音频输入设备、自动更新 |
+| **SettingsPanel.vue** | ~2100 | 通用设置、紧凑主题选择、基础数据缓存管理入口、HIS 联调日志独立入口、LLM 配置、区域化后端接入、语音 provider / 音频输入设备、自动更新 |
+| **HisIntegrationLogPanel.vue** | -- | HIS 联调日志独立视图面板：筛选、查看详情、复制、导出、清空本地 JSONL 日志 |
+| **MedicalCatalogCachePanel.vue** | -- | 基础数据缓存管理独立视图：查看 SQLite 缓存状态、同步状态、手动同步和清理 |
 | **FeedbackSubmissionPanel.vue** | ~560 | 统一问题反馈面板（一键回写 + 右上角入口共用），紧凑星级 + 问题标签 + 选填截图 |
 | **AnalyticsPanel.vue** | ~1200 | 数据分析看板（ECharts） |
 | **KnowledgePanel.vue** | ~850 | PMPHAI 医学知识检索 |
@@ -154,7 +156,8 @@ useEventListeners (全局事件) -> 触发 useNavigation & useWorkMode
 
 | 服务 | 行数 | 职责 |
 |------|------|------|
-| **hisService.ts** | ~80 | @internal 底层 PHIS HTTP 客户端；仅供 `services/his/*` 包装使用。业务代码禁止跨层 import，必须走 [his](src/services/his/index.ts) 入口（业务调用 `getHisAdapter()`；SDK handshake 走 `getHisService()`） |
+| **hisService.ts** | ~80 | @internal 底层 PHIS HTTP 客户端；仅供 `services/his/*` 包装使用。业务代码禁止跨层 import，必须走 [his](src/services/his/index.ts) 入口（业务调用 `getHisAdapter()`；SDK handshake 走 `getHisService()`）；底层 `post/get` 会写入 HIS 联调出站日志 |
+| **hisIntegrationLog.ts** | -- | HIS 联调日志 Tauri 客户端：结构化记录、查询、清空、导出 Bridge / PHIS 调用流水 |
 | **his/HisAdapter.ts** | ~120 | 厂商无关的 HIS 适配器接口契约，13 个方法分 4 组（会话 / 目录 / 字典 / 详情）；新厂商接入只需实现本接口 |
 | **his/types.ts** | ~140 | vendor-neutral DTO：详情（`MedicineDetail` / `MedicalItemDetail`）+ 目录（`DiagnosisCatalogEntry` / `MedicineCatalogEntry` / `MedicalItemCatalogEntry`）+ 字典（`DictionaryEntry`）+ 库存（`InventoryCheckRequest` / `InventoryCheckResult`）；语义化字段命名，PHIS 私有字段统一通过 `raw` / `properties` 透传 |
 | **his/PhisHisAdapter.ts** | ~120 | 默认厂商实现：thin wrapper 包装 `HisService` 类，详情方法在此处把 PHIS 字段映射为中性 DTO |
@@ -231,7 +234,7 @@ Pinia 跨组件共享状态（仅两个，新增需人工审批）。
 | 文件 | 行数 | 职责 |
 |------|------|------|
 | **lib.rs** | ~390 | Tauri 初始化、窗口命令（拖拽/位置/毛玻璃）、AppState 共享状态 |
-| **http_server.rs** | ~831 | HIS HTTP Bridge（Actix-web, `127.0.0.1:8081`）：问诊启动/结果/引用回执/语音触发 |
+| **http_server.rs** | ~831 | HIS HTTP Bridge（Actix-web, `127.0.0.1:8081`）：问诊启动/结果/引用回执/语音触发，并为入站联调请求生成 `traceId` 与结构化日志 |
 | **aliyun_speech.rs** | ~326 | 阿里云语音 WebSocket + Token 刷新 |
 | **main.rs** | ~6 | 入口，调用 `floating_ball_lib::run()` |
 | **commands/** | -- | 扩展 Tauri 命令（反馈、医学目录、设备 MAC 读取等） |

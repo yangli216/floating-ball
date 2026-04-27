@@ -1,11 +1,62 @@
-use actix_web::{web, App, HttpResponse, HttpServer, Responder};
 use actix_cors::Cors;
+use actix_web::{web, App, HttpResponse, HttpServer, Responder};
 use serde::{Deserialize, Serialize};
-use tauri::{Emitter, Manager};
-use std::sync::Mutex;
 use std::collections::HashMap;
+use std::sync::Mutex;
+use std::time::Instant;
+use tauri::{Emitter, Manager};
 
-use crate::{validate_browser_context, SharedAppState, BrowserContext, PatientInfo, ConsultationResult};
+use crate::{
+    commands::his_integration_log::{self, HisIntegrationLogInput},
+    validate_browser_context, BrowserContext, ConsultationResult, PatientInfo, SharedAppState,
+};
+
+fn summarize_for_his_log<T: Serialize>(value: &T) -> serde_json::Value {
+    serde_json::to_value(value)
+        .map(his_integration_log::sanitize_for_log)
+        .unwrap_or_else(|_| serde_json::Value::Null)
+}
+
+#[allow(clippy::too_many_arguments)]
+fn record_bridge_log(
+    app_handle: &web::Data<tauri::AppHandle>,
+    trace_id: &str,
+    operation: &str,
+    method: &str,
+    path: &str,
+    status: &str,
+    http_status: u16,
+    started_at: Instant,
+    request_summary: Option<serde_json::Value>,
+    response_summary: Option<serde_json::Value>,
+    patient_id: Option<String>,
+    consultation_id: Option<String>,
+    request_id: Option<String>,
+    error_message: Option<String>,
+) {
+    let _ = his_integration_log::record_log_entry(
+        app_handle.get_ref(),
+        HisIntegrationLogInput {
+            trace_id: Some(trace_id.to_string()),
+            direction: "inbound".to_string(),
+            operation: operation.to_string(),
+            method: method.to_string(),
+            path: path.to_string(),
+            url: None,
+            status: status.to_string(),
+            http_status: Some(http_status),
+            business_code: None,
+            business_message: error_message.clone(),
+            duration_ms: Some(started_at.elapsed().as_millis() as u64),
+            request_summary,
+            response_summary,
+            patient_id,
+            consultation_id,
+            request_id,
+            error_message,
+        },
+    );
+}
 
 fn ensure_http_service_access(state: &web::Data<SharedAppState>) -> Result<(), HttpResponse> {
     let browser_context = state.browser_context.lock().unwrap();
@@ -75,9 +126,9 @@ pub struct ConsultationReferenceFeedbackRequest {
 #[derive(Debug, Serialize, Deserialize, Clone)]
 #[serde(rename_all = "camelCase")]
 pub struct RiskItem {
-    pub level: u8,           // 1=红色, 2=橙色, 3=黄色
-    pub category: String,    // allergy/chronic/medication/population/vital/other
-    pub content: String,     // 显示文本
+    pub level: u8,        // 1=红色, 2=橙色, 3=黄色
+    pub category: String, // allergy/chronic/medication/population/vital/other
+    pub content: String,  // 显示文本
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -103,13 +154,19 @@ async fn start_consultation(
     app_handle: web::Data<tauri::AppHandle>,
     state: web::Data<SharedAppState>,
 ) -> impl Responder {
+    let started_at = Instant::now();
+    let trace_id = his_integration_log::new_trace_id();
     if let Err(response) = ensure_http_service_access(&state) {
         return response;
     }
 
     let patient = data.into_inner();
-    println!("Received consultation request for patient: {}", patient.na_pi);
-    
+    let request_summary = summarize_for_his_log(&patient);
+    println!(
+        "Received consultation request for patient: {}",
+        patient.na_pi
+    );
+
     // 1. Update State
     {
         let mut current = state.current_consultation.lock().unwrap();
@@ -126,7 +183,7 @@ async fn start_consultation(
         } else {
             println!("Event 'start-consultation' emitted successfully to main window");
         }
-        
+
         // Force window to front
         let _ = window.set_focus();
         let _ = window.unminimize();
@@ -136,10 +193,28 @@ async fn start_consultation(
     }
 
     // 3. Return response
-    HttpResponse::Ok().json(serde_json::json!({
+    let response_body = serde_json::json!({
         "status": "success",
-        "consultationId": patient.id_pi 
-    }))
+        "consultationId": patient.id_pi,
+        "traceId": trace_id
+    });
+    record_bridge_log(
+        &app_handle,
+        response_body["traceId"].as_str().unwrap_or_default(),
+        "consultation.start",
+        "POST",
+        "/api/consultation/start",
+        "success",
+        200,
+        started_at,
+        Some(request_summary),
+        Some(response_body.clone()),
+        Some(patient.id_pi.clone()),
+        Some(patient.id_pi.clone()),
+        None,
+        None,
+    );
+    HttpResponse::Ok().json(response_body)
 }
 
 async fn start_voice_consultation(
@@ -147,6 +222,8 @@ async fn start_voice_consultation(
     app_handle: web::Data<tauri::AppHandle>,
     state: web::Data<SharedAppState>,
 ) -> impl Responder {
+    let started_at = Instant::now();
+    let trace_id = his_integration_log::new_trace_id();
     if let Err(response) = ensure_http_service_access(&state) {
         return response;
     }
@@ -154,6 +231,7 @@ async fn start_voice_consultation(
     println!("Received voice consultation request");
 
     let patient = data.map(|payload| payload.into_inner());
+    let request_summary = summarize_for_his_log(&patient);
 
     if let Some(patient) = patient.as_ref() {
         let mut current = state.current_consultation.lock().unwrap();
@@ -165,24 +243,78 @@ async fn start_voice_consultation(
     // Emit event to Frontend
     if let Some(window) = app_handle.get_webview_window("main") {
         if let Err(e) = window.emit("start-voice-consultation", &patient) {
-             eprintln!("Failed to emit voice event: {}", e);
-             return HttpResponse::InternalServerError().json(serde_json::json!({ "error": e.to_string() }));
+            eprintln!("Failed to emit voice event: {}", e);
+            let response_body = serde_json::json!({ "error": e.to_string(), "traceId": trace_id });
+            record_bridge_log(
+                &app_handle,
+                response_body["traceId"].as_str().unwrap_or_default(),
+                "consultation.startVoice",
+                "POST",
+                "/api/consultation/start-voice",
+                "error",
+                500,
+                started_at,
+                Some(request_summary),
+                Some(response_body.clone()),
+                patient.as_ref().map(|item| item.id_pi.clone()),
+                patient.as_ref().map(|item| item.id_pi.clone()),
+                None,
+                Some(e.to_string()),
+            );
+            return HttpResponse::InternalServerError().json(response_body);
         }
         // Force window to front
         let _ = window.set_focus();
         let _ = window.unminimize();
         let _ = window.show();
     } else {
-        return HttpResponse::InternalServerError().json(serde_json::json!({ "error": "Main window not found" }));
+        let response_body =
+            serde_json::json!({ "error": "Main window not found", "traceId": trace_id });
+        record_bridge_log(
+            &app_handle,
+            response_body["traceId"].as_str().unwrap_or_default(),
+            "consultation.startVoice",
+            "POST",
+            "/api/consultation/start-voice",
+            "error",
+            500,
+            started_at,
+            Some(request_summary),
+            Some(response_body.clone()),
+            patient.as_ref().map(|item| item.id_pi.clone()),
+            patient.as_ref().map(|item| item.id_pi.clone()),
+            None,
+            Some("Main window not found".to_string()),
+        );
+        return HttpResponse::InternalServerError().json(response_body);
     }
 
-    HttpResponse::Ok().json(serde_json::json!({
+    let consultation_id = patient
+        .as_ref()
+        .map(|item| item.id_pi.clone())
+        .unwrap_or_default();
+    let response_body = serde_json::json!({
         "status": "success",
-        "consultationId": patient
-            .as_ref()
-            .map(|item| item.id_pi.clone())
-            .unwrap_or_default()
-    }))
+        "consultationId": consultation_id,
+        "traceId": trace_id
+    });
+    record_bridge_log(
+        &app_handle,
+        response_body["traceId"].as_str().unwrap_or_default(),
+        "consultation.startVoice",
+        "POST",
+        "/api/consultation/start-voice",
+        "success",
+        200,
+        started_at,
+        Some(request_summary),
+        Some(response_body.clone()),
+        patient.as_ref().map(|item| item.id_pi.clone()),
+        Some(consultation_id),
+        None,
+        None,
+    );
+    HttpResponse::Ok().json(response_body)
 }
 
 async fn start_consultation_assist(
@@ -190,11 +322,14 @@ async fn start_consultation_assist(
     app_handle: web::Data<tauri::AppHandle>,
     state: web::Data<SharedAppState>,
 ) -> impl Responder {
+    let started_at = Instant::now();
+    let trace_id = his_integration_log::new_trace_id();
     if let Err(response) = ensure_http_service_access(&state) {
         return response;
     }
 
     let request = data.into_inner();
+    let request_summary = summarize_for_his_log(&request);
     println!(
         "Received consultation session assist request for patient: {}, action: {}",
         request.patient.na_pi, request.action
@@ -210,43 +345,102 @@ async fn start_consultation_assist(
     if let Some(window) = app_handle.get_webview_window("main") {
         if let Err(e) = window.emit("start-consultation-session", &request) {
             eprintln!("Failed to emit session event: {}", e);
-            return HttpResponse::InternalServerError().json(serde_json::json!({
+            let response_body = serde_json::json!({
                 "status": "error",
-                "message": format!("Failed to emit event: {}", e)
-            }));
+                "message": format!("Failed to emit event: {}", e),
+                "traceId": trace_id
+            });
+            record_bridge_log(
+                &app_handle,
+                response_body["traceId"].as_str().unwrap_or_default(),
+                "consultation.assist",
+                "POST",
+                "/api/consultation/assist",
+                "error",
+                500,
+                started_at,
+                Some(request_summary),
+                Some(response_body.clone()),
+                Some(request.patient.id_pi.clone()),
+                Some(request.patient.id_pi.clone()),
+                None,
+                Some(e.to_string()),
+            );
+            return HttpResponse::InternalServerError().json(response_body);
         }
 
         let _ = window.set_focus();
         let _ = window.unminimize();
         let _ = window.show();
     } else {
-        return HttpResponse::InternalServerError().json(serde_json::json!({
+        let response_body = serde_json::json!({
             "status": "error",
-            "message": "Main window not found"
-        }));
+            "message": "Main window not found",
+            "traceId": trace_id
+        });
+        record_bridge_log(
+            &app_handle,
+            response_body["traceId"].as_str().unwrap_or_default(),
+            "consultation.assist",
+            "POST",
+            "/api/consultation/assist",
+            "error",
+            500,
+            started_at,
+            Some(request_summary),
+            Some(response_body.clone()),
+            Some(request.patient.id_pi.clone()),
+            Some(request.patient.id_pi.clone()),
+            None,
+            Some("Main window not found".to_string()),
+        );
+        return HttpResponse::InternalServerError().json(response_body);
     }
 
-    HttpResponse::Ok().json(serde_json::json!({
+    let response_body = serde_json::json!({
         "status": "success",
         "consultationId": request.patient.id_pi,
-        "action": request.action
-    }))
+        "action": request.action,
+        "traceId": trace_id
+    });
+    record_bridge_log(
+        &app_handle,
+        response_body["traceId"].as_str().unwrap_or_default(),
+        "consultation.assist",
+        "POST",
+        "/api/consultation/assist",
+        "success",
+        200,
+        started_at,
+        Some(request_summary),
+        Some(response_body.clone()),
+        Some(request.patient.id_pi.clone()),
+        Some(request.patient.id_pi.clone()),
+        None,
+        None,
+    );
+    HttpResponse::Ok().json(response_body)
 }
 
 async fn stop_consultation(
     app_handle: web::Data<tauri::AppHandle>,
     state: web::Data<SharedAppState>,
 ) -> impl Responder {
+    let started_at = Instant::now();
+    let trace_id = his_integration_log::new_trace_id();
     if let Err(response) = ensure_http_service_access(&state) {
         return response;
     }
 
     println!("Received stop consultation request");
-    
+
     // 1. Update State + Write cancelled result for SDK polling
     let consultation_id = {
         let mut current = state.current_consultation.lock().unwrap();
-        let id = current.as_ref().map(|p| p.id_pi.clone()).unwrap_or_default();
+        let id = current
+            .as_ref()
+            .map(|p| p.id_pi.clone())
+            .unwrap_or_default();
         *current = None;
         id
     };
@@ -283,15 +477,36 @@ async fn stop_consultation(
     }
 
     // 3. Return response
-    HttpResponse::Ok().json(serde_json::json!({
+    let response_body = serde_json::json!({
         "status": "success",
-        "message": "Consultation stopped"
-    }))
+        "message": "Consultation stopped",
+        "traceId": trace_id
+    });
+    record_bridge_log(
+        &app_handle,
+        response_body["traceId"].as_str().unwrap_or_default(),
+        "consultation.stop",
+        "POST",
+        "/api/consultation/stop",
+        "success",
+        200,
+        started_at,
+        None,
+        Some(response_body.clone()),
+        None,
+        Some(consultation_id),
+        None,
+        None,
+    );
+    HttpResponse::Ok().json(response_body)
 }
 
 async fn get_result(
+    app_handle: web::Data<tauri::AppHandle>,
     state: web::Data<SharedAppState>,
 ) -> impl Responder {
+    let started_at = Instant::now();
+    let trace_id = his_integration_log::new_trace_id();
     if let Err(response) = ensure_http_service_access(&state) {
         return response;
     }
@@ -300,7 +515,30 @@ async fn get_result(
     {
         let result = state.last_result.lock().unwrap();
         if let Some(res) = &*result {
-            return HttpResponse::Ok().json(res);
+            let mut response_body = serde_json::to_value(res).unwrap();
+            if let Some(obj) = response_body.as_object_mut() {
+                obj.insert("traceId".to_string(), serde_json::json!(trace_id));
+            }
+            record_bridge_log(
+                &app_handle,
+                response_body["traceId"].as_str().unwrap_or_default(),
+                "consultation.result",
+                "GET",
+                "/api/consultation/result",
+                "success",
+                200,
+                started_at,
+                None,
+                Some(response_body.clone()),
+                None,
+                Some(res.consultation_id.clone()),
+                res.record
+                    .get("requestId")
+                    .and_then(|value| value.as_str())
+                    .map(str::to_string),
+                None,
+            );
+            return HttpResponse::Ok().json(response_body);
         }
     }
 
@@ -324,20 +562,60 @@ async fn get_result(
     };
 
     if let Some(res) = final_result {
-        let mut val = serde_json::to_value(res).unwrap();
+        let mut val = serde_json::to_value(&res).unwrap();
         if let Some(obj) = val.as_object_mut() {
             obj.insert("status".to_string(), serde_json::json!("success"));
         }
+        if let Some(obj) = val.as_object_mut() {
+            obj.insert("traceId".to_string(), serde_json::json!(trace_id));
+        }
+        record_bridge_log(
+            &app_handle,
+            val["traceId"].as_str().unwrap_or_default(),
+            "consultation.result",
+            "GET",
+            "/api/consultation/result",
+            "success",
+            200,
+            started_at,
+            None,
+            Some(val.clone()),
+            None,
+            Some(res.consultation_id.clone()),
+            res.record
+                .get("requestId")
+                .and_then(|value| value.as_str())
+                .map(str::to_string),
+            None,
+        );
         HttpResponse::Ok().json(val)
     } else {
-        HttpResponse::Ok().json(serde_json::json!({
+        let response_body = serde_json::json!({
             "status": "pending",
             "message": "Consultation result not available",
             "timestamp": std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)
                 .unwrap()
-                .as_millis() as u64
-        }))
+                .as_millis() as u64,
+            "traceId": trace_id
+        });
+        record_bridge_log(
+            &app_handle,
+            response_body["traceId"].as_str().unwrap_or_default(),
+            "consultation.result",
+            "GET",
+            "/api/consultation/result",
+            "pending",
+            200,
+            started_at,
+            None,
+            Some(response_body.clone()),
+            None,
+            None,
+            None,
+            None,
+        );
+        HttpResponse::Ok().json(response_body)
     }
 }
 
@@ -346,27 +624,66 @@ async fn reference_feedback(
     app_handle: web::Data<tauri::AppHandle>,
     state: web::Data<SharedAppState>,
 ) -> impl Responder {
+    let started_at = Instant::now();
+    let trace_id = his_integration_log::new_trace_id();
     if let Err(response) = ensure_http_service_access(&state) {
         return response;
     }
 
     let request = data.into_inner();
+    let request_summary = summarize_for_his_log(&request);
     let resolved_reference_type = match (&request.reference_type, &request.action) {
         (Some(reference_type), Some(action)) if reference_type != action => {
-            return HttpResponse::BadRequest().json(serde_json::json!({
+            let response_body = serde_json::json!({
                 "status": "error",
                 "code": "INVALID_REFERENCE_TYPE",
-                "message": "referenceType and action must match when both are provided"
-            }));
+                "message": "referenceType and action must match when both are provided",
+                "traceId": trace_id
+            });
+            record_bridge_log(
+                &app_handle,
+                response_body["traceId"].as_str().unwrap_or_default(),
+                "consultation.referenceFeedback",
+                "POST",
+                "/api/consultation/reference-feedback",
+                "error",
+                400,
+                started_at,
+                Some(request_summary),
+                Some(response_body.clone()),
+                None,
+                Some(request.consultation_id.clone()),
+                Some(request.request_id.clone()),
+                Some("referenceType and action must match when both are provided".to_string()),
+            );
+            return HttpResponse::BadRequest().json(response_body);
         }
         (Some(reference_type), _) => reference_type.clone(),
         (_, Some(action)) => action.clone(),
         _ => {
-            return HttpResponse::BadRequest().json(serde_json::json!({
+            let response_body = serde_json::json!({
                 "status": "error",
                 "code": "INVALID_REFERENCE_TYPE",
-                "message": "referenceType or action is required"
-            }));
+                "message": "referenceType or action is required",
+                "traceId": trace_id
+            });
+            record_bridge_log(
+                &app_handle,
+                response_body["traceId"].as_str().unwrap_or_default(),
+                "consultation.referenceFeedback",
+                "POST",
+                "/api/consultation/reference-feedback",
+                "error",
+                400,
+                started_at,
+                Some(request_summary),
+                Some(response_body.clone()),
+                None,
+                Some(request.consultation_id.clone()),
+                Some(request.request_id.clone()),
+                Some("referenceType or action is required".to_string()),
+            );
+            return HttpResponse::BadRequest().json(response_body);
         }
     };
     println!(
@@ -380,40 +697,103 @@ async fn reference_feedback(
         .as_millis() as u64;
 
     let feedback_payload = serde_json::json!({
-        "consultationId": request.consultation_id,
-        "requestId": request.request_id,
-        "referenceType": resolved_reference_type,
-        "action": resolved_reference_type,
-        "status": request.status,
-        "message": request.message,
-        "items": request.items,
+        "consultationId": request.consultation_id.clone(),
+        "requestId": request.request_id.clone(),
+        "referenceType": resolved_reference_type.clone(),
+        "action": resolved_reference_type.clone(),
+        "status": request.status.clone(),
+        "message": request.message.clone(),
+        "items": request.items.clone(),
         "timestamp": timestamp
     });
 
     let base_record_map = {
         let last_result = state.last_result.lock().unwrap();
         let Some(existing_result) = last_result.as_ref() else {
-            return HttpResponse::Conflict().json(serde_json::json!({
+            let response_body = serde_json::json!({
                 "status": "error",
                 "code": "REFERENCE_REQUEST_MISMATCH",
-                "message": "No matching pending reference request for current consultation result"
-            }));
+                "message": "No matching pending reference request for current consultation result",
+                "traceId": trace_id
+            });
+            record_bridge_log(
+                &app_handle,
+                response_body["traceId"].as_str().unwrap_or_default(),
+                "consultation.referenceFeedback",
+                "POST",
+                "/api/consultation/reference-feedback",
+                "error",
+                409,
+                started_at,
+                Some(request_summary.clone()),
+                Some(response_body.clone()),
+                None,
+                Some(request.consultation_id.clone()),
+                Some(request.request_id.clone()),
+                Some(
+                    "No matching pending reference request for current consultation result"
+                        .to_string(),
+                ),
+            );
+            return HttpResponse::Conflict().json(response_body);
         };
 
         if existing_result.consultation_id != request.consultation_id {
-            return HttpResponse::Conflict().json(serde_json::json!({
+            let response_body = serde_json::json!({
                 "status": "error",
                 "code": "REFERENCE_REQUEST_MISMATCH",
-                "message": "No matching pending reference request for current consultation result"
-            }));
+                "message": "No matching pending reference request for current consultation result",
+                "traceId": trace_id
+            });
+            record_bridge_log(
+                &app_handle,
+                response_body["traceId"].as_str().unwrap_or_default(),
+                "consultation.referenceFeedback",
+                "POST",
+                "/api/consultation/reference-feedback",
+                "error",
+                409,
+                started_at,
+                Some(request_summary.clone()),
+                Some(response_body.clone()),
+                None,
+                Some(request.consultation_id.clone()),
+                Some(request.request_id.clone()),
+                Some(
+                    "No matching pending reference request for current consultation result"
+                        .to_string(),
+                ),
+            );
+            return HttpResponse::Conflict().json(response_body);
         }
 
         let Some(record_map) = existing_result.record.as_object().cloned() else {
-            return HttpResponse::Conflict().json(serde_json::json!({
+            let response_body = serde_json::json!({
                 "status": "error",
                 "code": "REFERENCE_REQUEST_MISMATCH",
-                "message": "No matching pending reference request for current consultation result"
-            }));
+                "message": "No matching pending reference request for current consultation result",
+                "traceId": trace_id
+            });
+            record_bridge_log(
+                &app_handle,
+                response_body["traceId"].as_str().unwrap_or_default(),
+                "consultation.referenceFeedback",
+                "POST",
+                "/api/consultation/reference-feedback",
+                "error",
+                409,
+                started_at,
+                Some(request_summary.clone()),
+                Some(response_body.clone()),
+                None,
+                Some(request.consultation_id.clone()),
+                Some(request.request_id.clone()),
+                Some(
+                    "No matching pending reference request for current consultation result"
+                        .to_string(),
+                ),
+            );
+            return HttpResponse::Conflict().json(response_body);
         };
 
         let existing_request_id = record_map
@@ -432,13 +812,37 @@ async fn reference_feedback(
 
         if existing_request_id != request.request_id
             || existing_result_type != "reference-request"
-            || existing_reference_type != feedback_payload["referenceType"].as_str().unwrap_or_default()
+            || existing_reference_type
+                != feedback_payload["referenceType"]
+                    .as_str()
+                    .unwrap_or_default()
         {
-            return HttpResponse::Conflict().json(serde_json::json!({
+            let response_body = serde_json::json!({
                 "status": "error",
                 "code": "REFERENCE_REQUEST_MISMATCH",
-                "message": "No matching pending reference request for current consultation result"
-            }));
+                "message": "No matching pending reference request for current consultation result",
+                "traceId": trace_id
+            });
+            record_bridge_log(
+                &app_handle,
+                response_body["traceId"].as_str().unwrap_or_default(),
+                "consultation.referenceFeedback",
+                "POST",
+                "/api/consultation/reference-feedback",
+                "error",
+                409,
+                started_at,
+                Some(request_summary.clone()),
+                Some(response_body.clone()),
+                None,
+                Some(request.consultation_id.clone()),
+                Some(request.request_id.clone()),
+                Some(
+                    "No matching pending reference request for current consultation result"
+                        .to_string(),
+                ),
+            );
+            return HttpResponse::Conflict().json(response_body);
         }
 
         record_map
@@ -455,25 +859,37 @@ async fn reference_feedback(
         record_map.insert(
             "requestId".to_string(),
             serde_json::Value::String(
-                feedback_payload["requestId"].as_str().unwrap_or_default().to_string(),
+                feedback_payload["requestId"]
+                    .as_str()
+                    .unwrap_or_default()
+                    .to_string(),
             ),
         );
         record_map.insert(
             "referenceType".to_string(),
             serde_json::Value::String(
-                feedback_payload["referenceType"].as_str().unwrap_or_default().to_string(),
+                feedback_payload["referenceType"]
+                    .as_str()
+                    .unwrap_or_default()
+                    .to_string(),
             ),
         );
         record_map.insert(
             "action".to_string(),
             serde_json::Value::String(
-                feedback_payload["action"].as_str().unwrap_or_default().to_string(),
+                feedback_payload["action"]
+                    .as_str()
+                    .unwrap_or_default()
+                    .to_string(),
             ),
         );
         record_map.insert(
             "referenceStatus".to_string(),
             serde_json::Value::String(
-                feedback_payload["status"].as_str().unwrap_or_default().to_string(),
+                feedback_payload["status"]
+                    .as_str()
+                    .unwrap_or_default()
+                    .to_string(),
             ),
         );
         if !feedback_payload["items"].is_null() {
@@ -511,13 +927,35 @@ async fn reference_feedback(
         }
     }
 
-    HttpResponse::Ok().json(serde_json::json!({
+    let response_body = serde_json::json!({
         "status": "success",
         "consultationId": merged_result.consultation_id,
         "requestId": feedback_payload["requestId"],
         "referenceType": feedback_payload["referenceType"],
-        "timestamp": timestamp
-    }))
+        "timestamp": timestamp,
+        "traceId": trace_id
+    });
+    record_bridge_log(
+        &app_handle,
+        response_body["traceId"].as_str().unwrap_or_default(),
+        "consultation.referenceFeedback",
+        "POST",
+        "/api/consultation/reference-feedback",
+        if request.status == "success" {
+            "success"
+        } else {
+            "business_error"
+        },
+        200,
+        started_at,
+        Some(request_summary),
+        Some(response_body.clone()),
+        None,
+        Some(merged_result.consultation_id),
+        feedback_payload["requestId"].as_str().map(str::to_string),
+        None,
+    );
+    HttpResponse::Ok().json(response_body)
 }
 
 async fn show_patient_risks(
@@ -525,41 +963,101 @@ async fn show_patient_risks(
     app_handle: web::Data<tauri::AppHandle>,
     state: web::Data<SharedAppState>,
 ) -> impl Responder {
+    let started_at = Instant::now();
+    let trace_id = his_integration_log::new_trace_id();
     if let Err(response) = ensure_http_service_access(&state) {
         return response;
     }
 
     let risk_data = data.into_inner();
-    println!("Received patient risk analysis request for: {}", risk_data.na_pi);
+    let request_summary = summarize_for_his_log(&risk_data);
+    println!(
+        "Received patient risk analysis request for: {}",
+        risk_data.na_pi
+    );
 
     // Emit event to Frontend
     if let Some(window) = app_handle.get_webview_window("main") {
         if let Err(e) = window.emit("show-patient-risks", &risk_data) {
             eprintln!("Failed to emit risk event: {}", e);
-            return HttpResponse::InternalServerError().json(serde_json::json!({
+            let response_body = serde_json::json!({
                 "status": "error",
-                "message": format!("Failed to emit event: {}", e)
-            }));
+                "message": format!("Failed to emit event: {}", e),
+                "traceId": trace_id
+            });
+            record_bridge_log(
+                &app_handle,
+                response_body["traceId"].as_str().unwrap_or_default(),
+                "patient.risks",
+                "POST",
+                "/api/patient/risks",
+                "error",
+                500,
+                started_at,
+                Some(request_summary),
+                Some(response_body.clone()),
+                Some(risk_data.id_pi.clone()),
+                None,
+                None,
+                Some(e.to_string()),
+            );
+            return HttpResponse::InternalServerError().json(response_body);
         } else {
             println!("Event 'show-patient-risks' emitted successfully");
         }
-        
+
         // Force window to front
         let _ = window.set_focus();
         let _ = window.unminimize();
         let _ = window.show();
     } else {
         println!("Error: Main window not found");
-        return HttpResponse::InternalServerError().json(serde_json::json!({
+        let response_body = serde_json::json!({
             "status": "error",
-            "message": "Main window not found"
-        }));
+            "message": "Main window not found",
+            "traceId": trace_id
+        });
+        record_bridge_log(
+            &app_handle,
+            response_body["traceId"].as_str().unwrap_or_default(),
+            "patient.risks",
+            "POST",
+            "/api/patient/risks",
+            "error",
+            500,
+            started_at,
+            Some(request_summary),
+            Some(response_body.clone()),
+            Some(risk_data.id_pi.clone()),
+            None,
+            None,
+            Some("Main window not found".to_string()),
+        );
+        return HttpResponse::InternalServerError().json(response_body);
     }
 
-    HttpResponse::Ok().json(serde_json::json!({
+    let response_body = serde_json::json!({
         "status": "success",
-        "idPi": risk_data.id_pi
-    }))
+        "idPi": risk_data.id_pi,
+        "traceId": trace_id
+    });
+    record_bridge_log(
+        &app_handle,
+        response_body["traceId"].as_str().unwrap_or_default(),
+        "patient.risks",
+        "POST",
+        "/api/patient/risks",
+        "success",
+        200,
+        started_at,
+        Some(request_summary),
+        Some(response_body.clone()),
+        Some(risk_data.id_pi.clone()),
+        None,
+        None,
+        None,
+    );
+    HttpResponse::Ok().json(response_body)
 }
 
 async fn health_check() -> impl Responder {
@@ -578,7 +1076,10 @@ async fn handshake(
     app_handle: web::Data<tauri::AppHandle>,
     state: web::Data<SharedAppState>,
 ) -> impl Responder {
+    let started_at = Instant::now();
+    let trace_id = his_integration_log::new_trace_id();
     let ctx = data.into_inner();
+    let request_summary = summarize_for_his_log(&ctx);
 
     if let Err(message) = validate_browser_context(&ctx) {
         {
@@ -586,11 +1087,32 @@ async fn handshake(
             *browser_ctx = None;
         }
 
-        println!("[Handshake] Rejected unauthorized SDK handshake: {}", message);
-        return HttpResponse::Unauthorized().json(serde_json::json!({
+        println!(
+            "[Handshake] Rejected unauthorized SDK handshake: {}",
+            message
+        );
+        let response_body = serde_json::json!({
             "status": "error",
             "message": message,
-        }));
+            "traceId": trace_id
+        });
+        record_bridge_log(
+            &app_handle,
+            response_body["traceId"].as_str().unwrap_or_default(),
+            "handshake",
+            "POST",
+            "/api/handshake",
+            "error",
+            401,
+            started_at,
+            Some(request_summary),
+            Some(response_body.clone()),
+            None,
+            None,
+            None,
+            response_body["message"].as_str().map(str::to_string),
+        );
+        return HttpResponse::Unauthorized().json(response_body);
     }
 
     println!(
@@ -609,14 +1131,32 @@ async fn handshake(
         let _ = window.emit("sdk-handshake", &ctx);
     }
 
-    HttpResponse::Ok().json(serde_json::json!({
+    let response_body = serde_json::json!({
         "status": "success",
         "version": env!("CARGO_PKG_VERSION"),
         "timestamp": std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap()
-            .as_millis() as u64
-    }))
+            .as_millis() as u64,
+        "traceId": trace_id
+    });
+    record_bridge_log(
+        &app_handle,
+        response_body["traceId"].as_str().unwrap_or_default(),
+        "handshake",
+        "POST",
+        "/api/handshake",
+        "success",
+        200,
+        started_at,
+        Some(request_summary),
+        Some(response_body.clone()),
+        None,
+        None,
+        None,
+        None,
+    );
+    HttpResponse::Ok().json(response_body)
 }
 
 // ==================== PMPHAI API Proxy ====================
@@ -666,8 +1206,12 @@ struct PMPHAIListRequest {
     sort_rule: Option<String>,
 }
 
-fn generate_pmphai_sign(params: &HashMap<String, String>, app_secret: &str, app_key: &str) -> String {
-    use md5::{Md5, Digest};
+fn generate_pmphai_sign(
+    params: &HashMap<String, String>,
+    app_secret: &str,
+    app_key: &str,
+) -> String {
+    use md5::{Digest, Md5};
 
     // Sort parameters by key
     let mut sorted_keys: Vec<&String> = params.keys().collect();
@@ -710,24 +1254,18 @@ async fn pmphai_get_token(
     params.insert("sign".to_string(), sign);
 
     let client = reqwest::Client::new();
-    match client.post(PMPHAI_TOKEN_URL)
-        .form(&params)
-        .send()
-        .await
-    {
-        Ok(response) => {
-            match response.json::<serde_json::Value>().await {
-                Ok(json) => HttpResponse::Ok().json(json),
-                Err(e) => HttpResponse::InternalServerError().json(serde_json::json!({
-                    "success": false,
-                    "message": format!("Failed to parse response: {}", e)
-                }))
-            }
-        }
+    match client.post(PMPHAI_TOKEN_URL).form(&params).send().await {
+        Ok(response) => match response.json::<serde_json::Value>().await {
+            Ok(json) => HttpResponse::Ok().json(json),
+            Err(e) => HttpResponse::InternalServerError().json(serde_json::json!({
+                "success": false,
+                "message": format!("Failed to parse response: {}", e)
+            })),
+        },
         Err(e) => HttpResponse::InternalServerError().json(serde_json::json!({
             "success": false,
             "message": format!("Request failed: {}", e)
-        }))
+        })),
     }
 }
 
@@ -739,7 +1277,10 @@ async fn pmphai_search(
         return response;
     }
 
-    let url = format!("{}?token={}&method=aiKnowledge", PMPHAI_API_BASE_URL, data.token);
+    let url = format!(
+        "{}?token={}&method=aiKnowledge",
+        PMPHAI_API_BASE_URL, data.token
+    );
 
     let mut body = serde_json::json!({
         "query": data.query,
@@ -757,24 +1298,18 @@ async fn pmphai_search(
     }
 
     let client = reqwest::Client::new();
-    match client.post(&url)
-        .json(&body)
-        .send()
-        .await
-    {
-        Ok(response) => {
-            match response.json::<serde_json::Value>().await {
-                Ok(json) => HttpResponse::Ok().json(json),
-                Err(e) => HttpResponse::InternalServerError().json(serde_json::json!({
-                    "success": false,
-                    "message": format!("Failed to parse response: {}", e)
-                }))
-            }
-        }
+    match client.post(&url).json(&body).send().await {
+        Ok(response) => match response.json::<serde_json::Value>().await {
+            Ok(json) => HttpResponse::Ok().json(json),
+            Err(e) => HttpResponse::InternalServerError().json(serde_json::json!({
+                "success": false,
+                "message": format!("Failed to parse response: {}", e)
+            })),
+        },
         Err(e) => HttpResponse::InternalServerError().json(serde_json::json!({
             "success": false,
             "message": format!("Request failed: {}", e)
-        }))
+        })),
     }
 }
 
@@ -786,29 +1321,26 @@ async fn pmphai_get_clip(
         return response;
     }
 
-    let url = format!("{}?token={}&method=aiKnowledgeClip", PMPHAI_API_BASE_URL, data.token);
+    let url = format!(
+        "{}?token={}&method=aiKnowledgeClip",
+        PMPHAI_API_BASE_URL, data.token
+    );
 
     let body = serde_json::json!({ "id": data.id });
 
     let client = reqwest::Client::new();
-    match client.post(&url)
-        .json(&body)
-        .send()
-        .await
-    {
-        Ok(response) => {
-            match response.json::<serde_json::Value>().await {
-                Ok(json) => HttpResponse::Ok().json(json),
-                Err(e) => HttpResponse::InternalServerError().json(serde_json::json!({
-                    "success": false,
-                    "message": format!("Failed to parse response: {}", e)
-                }))
-            }
-        }
+    match client.post(&url).json(&body).send().await {
+        Ok(response) => match response.json::<serde_json::Value>().await {
+            Ok(json) => HttpResponse::Ok().json(json),
+            Err(e) => HttpResponse::InternalServerError().json(serde_json::json!({
+                "success": false,
+                "message": format!("Failed to parse response: {}", e)
+            })),
+        },
         Err(e) => HttpResponse::InternalServerError().json(serde_json::json!({
             "success": false,
             "message": format!("Request failed: {}", e)
-        }))
+        })),
     }
 }
 
@@ -857,7 +1389,10 @@ async fn pmphai_generate_page_url(
     }
     redirect_url.push_str(&redirect_params.join("&"));
 
-    let final_origin_url = data.origin_url.clone().unwrap_or_else(|| "https://www.pmphai.com".to_string());
+    let final_origin_url = data
+        .origin_url
+        .clone()
+        .unwrap_or_else(|| "https://www.pmphai.com".to_string());
 
     // URL encode the parameters using percent-encoding
     fn percent_encode(s: &str) -> String {
@@ -919,33 +1454,41 @@ async fn pmphai_list_search(
     form_params.push(("pageSize", data.page_size.unwrap_or(10).to_string()));
     form_params.push(("page", data.page.unwrap_or(1).to_string()));
 
-    if let Some(ref key) = data.key { form_params.push(("key", key.clone())); }
-    if let Some(ref kg_base_id) = data.kg_base_id { form_params.push(("kgBaseId", kg_base_id.clone())); }
-    if let Some(ref kg_base_name) = data.kg_base_name { form_params.push(("kgBaseName", kg_base_name.clone())); }
-    if let Some(ref tag_id) = data.tag_id { form_params.push(("tagId", tag_id.clone())); }
-    if let Some(ref tag_name) = data.tag_name { form_params.push(("tagName", tag_name.clone())); }
-    if let Some(ref sort_field) = data.sort_field { form_params.push(("sortField", sort_field.clone())); }
-    if let Some(ref sort_rule) = data.sort_rule { form_params.push(("sortRule", sort_rule.clone())); }
+    if let Some(ref key) = data.key {
+        form_params.push(("key", key.clone()));
+    }
+    if let Some(ref kg_base_id) = data.kg_base_id {
+        form_params.push(("kgBaseId", kg_base_id.clone()));
+    }
+    if let Some(ref kg_base_name) = data.kg_base_name {
+        form_params.push(("kgBaseName", kg_base_name.clone()));
+    }
+    if let Some(ref tag_id) = data.tag_id {
+        form_params.push(("tagId", tag_id.clone()));
+    }
+    if let Some(ref tag_name) = data.tag_name {
+        form_params.push(("tagName", tag_name.clone()));
+    }
+    if let Some(ref sort_field) = data.sort_field {
+        form_params.push(("sortField", sort_field.clone()));
+    }
+    if let Some(ref sort_rule) = data.sort_rule {
+        form_params.push(("sortRule", sort_rule.clone()));
+    }
 
     let client = reqwest::Client::new();
-    match client.post(&url)
-        .form(&form_params)
-        .send()
-        .await
-    {
-        Ok(response) => {
-            match response.json::<serde_json::Value>().await {
-                Ok(json) => HttpResponse::Ok().json(json),
-                Err(e) => HttpResponse::InternalServerError().json(serde_json::json!({
-                    "success": false,
-                    "message": format!("Failed to parse response: {}", e)
-                }))
-            }
-        }
+    match client.post(&url).form(&form_params).send().await {
+        Ok(response) => match response.json::<serde_json::Value>().await {
+            Ok(json) => HttpResponse::Ok().json(json),
+            Err(e) => HttpResponse::InternalServerError().json(serde_json::json!({
+                "success": false,
+                "message": format!("Failed to parse response: {}", e)
+            })),
+        },
         Err(e) => HttpResponse::InternalServerError().json(serde_json::json!({
             "success": false,
             "message": format!("Request failed: {}", e)
-        }))
+        })),
     }
 }
 
@@ -989,11 +1532,23 @@ pub fn run_server(app_handle: tauri::AppHandle, state: SharedAppState) {
                     .app_data(state.clone())
                     .route("/api/health", web::get().to(health_check))
                     .route("/api/handshake", web::post().to(handshake))
-                    .route("/api/consultation/start", web::post().to(start_consultation))
-                    .route("/api/consultation/assist", web::post().to(start_consultation_assist))
-                    .route("/api/consultation/start-voice", web::post().to(start_voice_consultation))
+                    .route(
+                        "/api/consultation/start",
+                        web::post().to(start_consultation),
+                    )
+                    .route(
+                        "/api/consultation/assist",
+                        web::post().to(start_consultation_assist),
+                    )
+                    .route(
+                        "/api/consultation/start-voice",
+                        web::post().to(start_voice_consultation),
+                    )
                     .route("/api/consultation/stop", web::post().to(stop_consultation))
-                    .route("/api/consultation/reference-feedback", web::post().to(reference_feedback))
+                    .route(
+                        "/api/consultation/reference-feedback",
+                        web::post().to(reference_feedback),
+                    )
                     .route("/api/consultation/result", web::get().to(get_result))
                     .route("/api/patient/risks", web::post().to(show_patient_risks))
                     // PMPHAI API Proxy
@@ -1001,7 +1556,10 @@ pub fn run_server(app_handle: tauri::AppHandle, state: SharedAppState) {
                     .route("/api/pmphai/search", web::post().to(pmphai_search))
                     .route("/api/pmphai/clip", web::post().to(pmphai_get_clip))
                     .route("/api/pmphai/list", web::post().to(pmphai_list_search))
-                    .route("/api/pmphai/page-url", web::post().to(pmphai_generate_page_url))
+                    .route(
+                        "/api/pmphai/page-url",
+                        web::post().to(pmphai_generate_page_url),
+                    )
                     // SDK static files
                     .route("/sdk/med-hermes-sdk.js", web::get().to(serve_sdk_js))
                     .route("/sdk/med-hermes-loader.js", web::get().to(serve_loader_js))

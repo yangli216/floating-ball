@@ -129,6 +129,34 @@ export function useNavigation(options: NavigationOptions) {
     }
   }
 
+
+  /**
+   * 打开 HIS 联调日志页
+   */
+  async function openHisIntegrationLog(): Promise<void> {
+    trackViewChange(currentView.value, 'his-log');
+    currentView.value = 'his-log';
+    if (!isWorking.value) {
+      await enterWorkMode();
+    } else {
+      await resizeWindowForView('his-log');
+    }
+  }
+
+
+  /**
+   * 打开基础数据缓存管理页
+   */
+  async function openMedicalCatalogCache(): Promise<void> {
+    trackViewChange(currentView.value, 'medical-cache');
+    currentView.value = 'medical-cache';
+    if (!isWorking.value) {
+      await enterWorkMode();
+    } else {
+      await resizeWindowForView('medical-cache');
+    }
+  }
+
   /**
    * 打开问诊页
    */
@@ -196,6 +224,8 @@ export function useNavigation(options: NavigationOptions) {
 
     // 业务导航
     openSymptomManagement,
+    openHisIntegrationLog,
+    openMedicalCatalogCache,
     openConsultation,
     openVoiceConsultation,
     openKnowledgeBase,

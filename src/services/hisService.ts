@@ -11,6 +11,14 @@
  * 详见 [services/his/index.ts](./his/index.ts) 与 AGENTS.md。
  */
 import { fetch } from '@tauri-apps/plugin-http';
+import {
+  createHisTraceId,
+  getHisBusinessCode,
+  getHisBusinessMessage,
+  recordHisIntegrationLog,
+  resolveHisLogStatus,
+  summarizeHisPayload,
+} from './hisIntegrationLog';
 
 /**
  * HIS 服务响应基础结构
@@ -36,6 +44,8 @@ export interface HisMedicineCatalogItem {
   code?: string;
   name?: string;
   spec?: string;
+  /** 该药品在哪些发药药房（idSto）目录中出现 */
+  storeIds?: string[];
   idSrv?: string;
   naSrv?: string;
   sdSrv?: string;
@@ -295,7 +305,11 @@ export class HisService {
       throw new Error(`[HisService] Missing tk token, request blocked: ${url}`);
     }
 
+    const traceId = createHisTraceId();
+    const startedAt = Date.now();
+    let failedHttpStatus: number | undefined;
     const fullUrl = this.baseUrl + url;
+    const requestSummary = summarizeHisPayload(data);
     const headers: Record<string, string> = {
       'Content-Type': 'application/json',
       'Cookie': `tk=${this.token}`,
@@ -303,6 +317,7 @@ export class HisService {
       'X-Access-Token': this.token,
     };
     console.log('[HisService] POST', {
+      traceId,
       url: fullUrl,
       body: this.summarizePayload(data),
       hasToken: true,
@@ -317,19 +332,52 @@ export class HisService {
       });
 
       if (!response.ok) {
+        failedHttpStatus = response.status;
         throw new Error(`HIS HTTP Error: ${response.status}`);
       }
 
       const result = await response.json();
+      const hisResponse = result as HisResponse<T>;
+      const responseSummary = summarizeHisPayload(hisResponse.body ?? hisResponse.data ?? hisResponse);
+      const status = resolveHisLogStatus(hisResponse);
       console.log('[HisService] RESPONSE', {
+        traceId,
         url: fullUrl,
-        code: (result as HisResponse<T>).code,
-        message: (result as HisResponse<T>).message,
-        summary: this.summarizePayload((result as HisResponse<T>).body ?? (result as HisResponse<T>).data),
+        code: hisResponse.code,
+        message: hisResponse.message,
+        summary: this.summarizePayload(hisResponse.body ?? hisResponse.data),
       });
-      return result as HisResponse<T>;
+      void recordHisIntegrationLog({
+        traceId,
+        direction: 'outbound',
+        operation: url,
+        method: 'POST',
+        path: url,
+        url: fullUrl,
+        status,
+        httpStatus: response.status,
+        businessCode: getHisBusinessCode(hisResponse),
+        businessMessage: getHisBusinessMessage(hisResponse),
+        durationMs: Date.now() - startedAt,
+        requestSummary,
+        responseSummary,
+      });
+      return hisResponse;
     } catch (error) {
       console.error(`[HisService] Request failed: ${fullUrl}`, error);
+      void recordHisIntegrationLog({
+        traceId,
+        direction: 'outbound',
+        operation: url,
+        method: 'POST',
+        path: url,
+        url: fullUrl,
+        status: 'error',
+        httpStatus: failedHttpStatus,
+        durationMs: Date.now() - startedAt,
+        requestSummary,
+        errorMessage: error instanceof Error ? error.message : String(error),
+      });
       throw error;
     }
   }
@@ -344,7 +392,11 @@ export class HisService {
       throw new Error(`[HisService] Missing tk token, request blocked: ${url}`);
     }
 
+    const traceId = createHisTraceId();
+    const startedAt = Date.now();
+    let failedHttpStatus: number | undefined;
     const fullUrl = this.buildUrlWithQuery(this.baseUrl + url, query);
+    const requestSummary = summarizeHisPayload(query ?? {});
     const headers: Record<string, string> = {
       'Accept': 'application/json',
       'Cookie': `tk=${this.token}`,
@@ -352,6 +404,7 @@ export class HisService {
       'X-Access-Token': this.token,
     };
     console.log('[HisService] GET', {
+      traceId,
       url: fullUrl,
       hasToken: true,
     });
@@ -364,17 +417,49 @@ export class HisService {
       });
 
       if (!response.ok) {
+        failedHttpStatus = response.status;
         throw new Error(`HIS HTTP Error: ${response.status}`);
       }
 
       const result = await response.json();
+      const responseSummary = summarizeHisPayload(result);
+      const status = resolveHisLogStatus(result);
       console.log('[HisService] RESPONSE', {
+        traceId,
         url: fullUrl,
         summary: this.summarizePayload(result),
+      });
+      void recordHisIntegrationLog({
+        traceId,
+        direction: 'outbound',
+        operation: url,
+        method: 'GET',
+        path: url,
+        url: fullUrl,
+        status,
+        httpStatus: response.status,
+        businessCode: getHisBusinessCode(result),
+        businessMessage: getHisBusinessMessage(result),
+        durationMs: Date.now() - startedAt,
+        requestSummary,
+        responseSummary,
       });
       return result as T;
     } catch (error) {
       console.error(`[HisService] Request failed: ${fullUrl}`, error);
+      void recordHisIntegrationLog({
+        traceId,
+        direction: 'outbound',
+        operation: url,
+        method: 'GET',
+        path: url,
+        url: fullUrl,
+        status: 'error',
+        httpStatus: failedHttpStatus,
+        durationMs: Date.now() - startedAt,
+        requestSummary,
+        errorMessage: error instanceof Error ? error.message : String(error),
+      });
       throw error;
     }
   }
@@ -529,14 +614,26 @@ export class HisService {
         rawCount: items.length,
       };
     });
-    const merged = responses.flatMap(response => response.body?.items ?? response.data?.items ?? []);
-    const activeItems = merged.filter(item => item.fgActive !== '0' && item.orgActive !== '0' && item.medActive !== '0');
-    const westMedicineItems = activeItems.filter(item => (item.sdMed == '1' || item.sdMed == '2'));
-    const unique = new Map<string, HisMedicineCatalogItem>();
+    const perStoreEntries = responses.map((response, index) => ({
+      idSto: storeIds[index],
+      items: response.body?.items ?? response.data?.items ?? [],
+    }));
+    const unique = new Map<string, HisMedicineCatalogItem & { storeIds: string[] }>();
     let missingNameCount = 0;
-    let duplicateCount = 0;
+    let inactiveCount = 0;
+    let sdMedFiltered = 0;
 
-    westMedicineItems.forEach((item) => {
+    perStoreEntries.forEach(({ idSto, items: storeItems }) => {
+      storeItems.forEach((item) => {
+        if (item.fgActive === '0' || item.orgActive === '0' || item.medActive === '0') {
+          inactiveCount += 1;
+          return;
+        }
+        if (!(item.sdMed == '1' || item.sdMed == '2')) {
+          sdMedFiltered += 1;
+          return;
+        }
+
         const name = item.naMedPro?.trim() || item.naMed?.trim() || '';
         if (!name) {
           missingNameCount += 1;
@@ -544,8 +641,11 @@ export class HisService {
         }
 
         const id = item.idMedPro?.trim() || item.idMed?.trim() || name;
-        if (unique.has(id)) {
-          duplicateCount += 1;
+        const existing = unique.get(id);
+        if (existing) {
+          if (idSto && !existing.storeIds.includes(idSto)) {
+            existing.storeIds.push(idSto);
+          }
           return;
         }
 
@@ -554,6 +654,7 @@ export class HisService {
           code: item.idMed?.trim() || item.idMedPro?.trim() || '',
           name,
           spec: this.composeMedicineSpec(item.specSale?.trim(), item.unitSale?.trim()),
+          storeIds: idSto ? [idSto] : [],
           idSrv: item.idMedPro?.trim() || item.idMed?.trim() || id,
           naSrv: name,
           sdSrv: item.sdSrv?.trim() || '11',
@@ -563,18 +664,19 @@ export class HisService {
           raw: item as unknown as Record<string, unknown>,
         });
       });
+    });
 
     const normalizedMedicines = Array.from(unique.values());
+    const totalRawCount = perStoreEntries.reduce((sum, entry) => sum + entry.items.length, 0);
 
     console.log('[HisService] Medicine catalog summary', {
       orgCode,
       storeIds,
       responses: responseSummaries,
-      mergedCount: merged.length,
-      inactiveFiltered: merged.length - activeItems.length,
-      sdMedFiltered: activeItems.length - westMedicineItems.length,
+      mergedCount: totalRawCount,
+      inactiveFiltered: inactiveCount,
+      sdMedFiltered,
       missingNameCount,
-      duplicateCount,
       normalizedCount: normalizedMedicines.length,
       sample: normalizedMedicines[0] ?? null,
     });

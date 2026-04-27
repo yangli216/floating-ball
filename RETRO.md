@@ -104,6 +104,21 @@
 - **解决方案**: 抽出统一 speech config，`ChatPanel` 与 `VoiceCapsule` 共用同一套 provider / key / baseUrl / model 解析逻辑；设置页将“通用 LLM”和“语音转写”分开展示。
 - **后续防护**: 后续新增 provider 或修改语音链路时，必须先检查两个入口（聊天录音、语音接诊）是否仍读取同一配置域，不能只改一侧 UI 或一侧 service。
 
+### RETRO-012: 多药房 storeId 被拼成单个 org_code 写入药品缓存 [已解决]
+
+- **现象**: 药品基础数据同步后，`medicine_catalog.org_code` 出现 `storeA,storeB,storeC` 这种逗号拼接值，导致单个药房维度的数据难以排查和清理。
+- **根因**: 运行时为了给“当前可见药房集合”生成缓存键，直接把多个 `storeId` 排序后拼成字符串，并把这个组合键原样传给 SQLite 落库命令；落库层没有把多 scope 拆开处理。
+- **解决方案**: 药品目录改为按独立药房 `storeId` 分 scope 落库；多药房场景读取时对多个 scope 做并集聚合；清理缓存时也同步支持逗号分隔 scope，并删除历史遗留的组合键行。
+- **后续防护**: 之后凡是"组合缓存键"要落库到具名维度字段（如 `org_code`、`dept_id`、`store_id`）时，必须先确认该字段表达的是单实体还是 scope 集合，不能把集合键直接当实体主键写入。
+
+### RETRO-013: 药品匹配 / 单药品发药药房候选不受 scope 约束 [已解决]
+
+- **现象**: 把药品目录按 storeId 分 scope 写入后，仍出现两个症状：(1) LLM 推荐的药品在某些药房并不存在，但仍被匹配并展示；(2) 匹配后单条药品的"发药药房"下拉里出现并不实际拥有该药品的药房，医生误选后开方失败。
+- **根因**: 之前匹配端只看"全院药品 union"和"全部有效药房 union"两个集合，没有把"药品 ↔ 药房"的多对多关系带到前端：合并 catalog 时丢掉了 storeId，候选药房则只看用户角色科室过滤，没有按药品维度收窄。
+- **解决方案**: 在 `MedicineCatalogEntry` / `MedicineItem` 中新增 `storeIds`，HIS catalog 合并时按 storeId 维度 union；SQLite 写入按 `item.storeIds ∩ scope_codes` 落库，读取时聚合每个药品所在的 storeId 集合；`medicalDataService.setActivePharmacyStoreIds` 把当前可用药房注入匹配端，匹配只在交集内进行；`VoiceConsultationNew` 的单药品默认药房 / 候选药房 / 详情轮询都按 `matchedItem.storeIds ∩ pharmacyOptions` 收窄。
+- **后续防护**: 后续新增"机构 → 药房 → 药品"类多对多关系字段时，前端中性 DTO 必须显式带上反向引用（如 `storeIds` / `deptIds`）；任何"按 scope 集合的缓存"读出来后，匹配端不能默认全集，必须再做一次 active scope ∩ entry scope 的过滤。
+
+
 ---
 
 ## 模板

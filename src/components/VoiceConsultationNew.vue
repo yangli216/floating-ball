@@ -115,8 +115,24 @@ const treatmentEmptyText = computed(() => {
   return '暂无治疗建议';
 });
 
-function getDefaultPharmacyOption(): PharmacyOption | undefined {
+function getDefaultPharmacyOption(rec?: TreatmentRecommendation): PharmacyOption | undefined {
+  if (rec) {
+    const candidates = getCandidatePharmaciesForMedicine(rec);
+    if (candidates.length > 0) {
+      return candidates[0];
+    }
+  }
   return pharmacyOptions.value[0];
+}
+
+function getMatchedMedicineStoreIds(rec: TreatmentRecommendation): string[] {
+  const matched = rec.matchedItem as MedicineItem | null | undefined;
+  if (!matched || !Array.isArray(matched.storeIds)) {
+    return [];
+  }
+  return matched.storeIds
+    .map((value) => (typeof value === 'string' ? value.trim() : ''))
+    .filter((value): value is string => Boolean(value));
 }
 
 function ensureMedicineDefaultPharmacy(rec: TreatmentRecommendation): void {
@@ -129,8 +145,9 @@ function ensureMedicineDefaultPharmacy(rec: TreatmentRecommendation): void {
     return;
   }
 
+  const allowed = getCandidatePharmaciesForMedicine(rec);
   const detailStoreId = readFirstString(raw, ['idSto']);
-  const matchedPharmacy = pharmacyOptions.value.find((option) => option.idSto === detailStoreId);
+  const matchedPharmacy = allowed.find((option) => option.idSto === detailStoreId) || allowed[0];
   if (matchedPharmacy?.name) {
     rec.pharmacy = matchedPharmacy.name;
   }
@@ -1444,14 +1461,18 @@ function isValidMedicineProDetail(detail: MedicineDetail | null): detail is Medi
   ].some((value) => typeof value === 'string' && value.trim().length > 0);
 }
 
-function getCandidatePharmaciesForMedicine(): PharmacyOption[] {
+function getCandidatePharmaciesForMedicine(rec?: TreatmentRecommendation): PharmacyOption[] {
   const seen = new Set<string>();
+  const allowedStoreIds = rec ? new Set(getMatchedMedicineStoreIds(rec)) : null;
   return pharmacyOptions.value.filter((pharmacy) => {
     const idSto = (pharmacy.idSto || '').trim();
     if (!idSto || seen.has(idSto)) {
       return false;
     }
-
+    // 如果当前药品明确依附某几个药房（matchedItem.storeIds 非空），只保留交集
+    if (allowedStoreIds && allowedStoreIds.size > 0 && !allowedStoreIds.has(idSto)) {
+      return false;
+    }
     seen.add(idSto);
     return true;
   });
@@ -1484,9 +1505,12 @@ async function fetchFirstValidMedicineDetail(rec: TreatmentRecommendation): Prom
     return null;
   }
 
-  const pharmacies = getCandidatePharmaciesForMedicine();
+  const pharmacies = getCandidatePharmaciesForMedicine(rec);
   if (pharmacies.length === 0) {
-    console.warn('[VoiceConsultationNew] No pharmacy idSto available, medicine detail unavailable', { name: rec.name });
+    console.warn('[VoiceConsultationNew] No pharmacy idSto available for matched medicine, medicine detail unavailable', {
+      name: rec.name,
+      matchedStoreIds: getMatchedMedicineStoreIds(rec),
+    });
     return null;
   }
 
@@ -1605,13 +1629,13 @@ async function hydrateMatchedMedicineDetail(rec: TreatmentRecommendation): Promi
   try {
     const lookupResult = await fetchFirstValidMedicineDetail(rec);
     if (!lookupResult) {
-      if (getCandidatePharmaciesForMedicine().length > 0) {
+      if (getCandidatePharmaciesForMedicine(rec).length > 0) {
         rec.selected = false;
       }
       console.warn('[VoiceConsultationNew] Medicine detail unavailable in all pharmacies', {
         id,
         name: rec.name,
-        pharmacyCount: getCandidatePharmaciesForMedicine().length,
+        pharmacyCount: getCandidatePharmaciesForMedicine(rec).length,
       });
       return false;
     }
@@ -2504,10 +2528,15 @@ async function fetchPharmacyOptions(): Promise<void> {
 
   try {
     pharmacyOptions.value = await his.fetchAvailablePharmacies();
+    const activeStoreIds = pharmacyOptions.value
+      .map((option) => (option.idSto || '').trim())
+      .filter((value): value is string => Boolean(value));
+    medicalDataService.setActivePharmacyStoreIds(activeStoreIds);
     void hydrateMatchedMedicalItemDetails(treatments.value);
   } catch (error) {
     console.error('[VoiceConsultationNew] Failed to load pharmacy options from HIS', error);
     pharmacyOptions.value = [];
+    medicalDataService.setActivePharmacyStoreIds(null);
   }
 }
 
@@ -2674,10 +2703,10 @@ function getOrderServiceName(rec: TreatmentRecommendation): string {
 function getSelectedPharmacyOption(rec: TreatmentRecommendation): PharmacyOption | undefined {
   const pharmacyName = (rec.pharmacy || '').trim();
   if (!pharmacyName) {
-    return getDefaultPharmacyOption();
+    return getDefaultPharmacyOption(rec);
   }
 
-  return pharmacyOptions.value.find((option) => option.name === pharmacyName) || getDefaultPharmacyOption();
+  return pharmacyOptions.value.find((option) => option.name === pharmacyName) || getDefaultPharmacyOption(rec);
 }
 
 function getOrderExecDeptId(rec: TreatmentRecommendation): string {
@@ -3206,20 +3235,20 @@ function handlePharmacySearchInput(rec: TreatmentRecommendation, event: Event): 
   setPharmacySearchKeyword(rec, target?.value || '');
 }
 
-function getPharmacyUsageOptions(): UsageOption[] {
-  return dedupeUsageOptions(
-    pharmacyOptions.value.map((option) => createUsageOption({
+function getFilteredPharmacyOptionsForRecord(rec: TreatmentRecommendation): UsageOption[] {
+  const currentValue = (rec.pharmacy || '').trim();
+  const query = resolveSelectorFilterKeyword(getPharmacySearchKeyword(rec), currentValue);
+  // 仅保留当前药品实际存在的药房（matchedItem.storeIds ∩ 有效发药药房）
+  const allowedPharmacies = rec.type === 'medicine' && rec.matchedItem
+    ? getCandidatePharmaciesForMedicine(rec)
+    : pharmacyOptions.value;
+  const options = dedupeUsageOptions(
+    allowedPharmacies.map((option) => createUsageOption({
       key: option.idSto || option.idDept || option.name,
       text: option.name,
       mcode: option.idDept,
     })),
   );
-}
-
-function getFilteredPharmacyOptionsForRecord(rec: TreatmentRecommendation): UsageOption[] {
-  const currentValue = (rec.pharmacy || '').trim();
-  const query = resolveSelectorFilterKeyword(getPharmacySearchKeyword(rec), currentValue);
-  const options = getPharmacyUsageOptions();
   const matched = !query
     ? options
     : options.filter((option) => option.normalizedTokens.some((token) => token.includes(query)));

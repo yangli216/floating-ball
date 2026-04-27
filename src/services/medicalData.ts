@@ -57,6 +57,8 @@ export interface MedicineItem {
   idDeptExec?: string;
   fgCheckOrd?: string;
   fgSkintest?: string;
+  /** 该药品在哪些发药药房（idSto）目录中出现。为空表示不限药房（CSV/历史迁移兜底） */
+  storeIds?: string[];
   raw?: Record<string, unknown>;
 }
 
@@ -219,6 +221,8 @@ class MedicalDataService {
   private catalog: MedicalCatalog;
   private currentOrgCode: string | null = null;
   private localSyncPromise: Promise<void> | null = null;
+  /** 仅匹配这些发药药房（idSto）下的药品；为空表示不限制（CSV/兜底） */
+  private activeMedicineStoreIds: Set<string> | null = null;
 
   constructor() {
     this.catalog = {
@@ -440,9 +444,17 @@ class MedicalDataService {
   }
 
   private async persistMedicineCatalog(orgCode: string, items: MedicineItem[], syncDate: string): Promise<void> {
+    // 后端仅读 id/code/name/spec/storeIds，显式裁剪减小 IPC payload
+    const payload = items.map((item) => ({
+      id: item.id,
+      code: undefined as string | undefined,
+      name: item.name,
+      spec: item.spec,
+      storeIds: Array.isArray(item.storeIds) ? Array.from(new Set(item.storeIds.filter(Boolean))) : [],
+    }));
     await invoke('replace_org_medicine_catalog', {
       orgCode,
-      items,
+      items: payload,
       syncDate,
     });
     console.log('[MedicalData] Medicine catalog persisted to SQLite', {
@@ -703,6 +715,37 @@ class MedicalDataService {
     return this.matchMedicineByVariants(query, aliases);
   }
 
+  /**
+   * 设定当前可用的发药药房集合（idSto），用于把药品匹配限定到这些药房的目录范围内。
+   * 传入空数组或 null 表示不限制（保留 CSV 兜底）。
+   */
+  public setActivePharmacyStoreIds(storeIds: string[] | null | undefined): void {
+    if (!storeIds || storeIds.length === 0) {
+      this.activeMedicineStoreIds = null;
+      return;
+    }
+    const normalized = storeIds
+      .map((value) => (typeof value === 'string' ? value.trim() : ''))
+      .filter((value): value is string => Boolean(value));
+    this.activeMedicineStoreIds = normalized.length > 0 ? new Set(normalized) : null;
+  }
+
+  /** 当前匹配可见的药品列表：按 activeMedicineStoreIds 与 item.storeIds 取交集；item.storeIds 为空时保留兜底 */
+  private getMatchableMedicines(): MedicineItem[] {
+    const active = this.activeMedicineStoreIds;
+    if (!active || active.size === 0) {
+      return this.catalog.medicines;
+    }
+    return this.catalog.medicines.filter((item) => {
+      if (!Array.isArray(item.storeIds) || item.storeIds.length === 0) {
+        // 缺省 storeIds 的来源（CSV/历史快照）：在 HIS 已同步过的目录里属于"无 scope 信息"的孤项，
+        // 直接排除以避免命中实际不在任何活跃发药药房中的条目。
+        return false;
+      }
+      return item.storeIds.some((idSto) => active.has(idSto));
+    });
+  }
+
   public searchMedicines(query: string, aliases?: string[], limit = 8): MedicineItem[] {
     return this.searchMedicinesByVariants(query, aliases, limit);
   }
@@ -868,7 +911,7 @@ class MedicalDataService {
     const primaryVariant = variants[0];
     const medicineCandidates: Array<ScoredCandidate<MedicineItem>> = [];
 
-    for (const item of this.catalog.medicines) {
+    for (const item of this.getMatchableMedicines()) {
       const primaryNameScore = this.calculateScore(primaryVariant.normalized, item.name);
       const primaryFullNameScore = this.calculateScore(primaryVariant.normalized, `${item.name} ${item.spec}`);
       const primaryScore = Math.max(primaryNameScore, primaryFullNameScore);
@@ -985,7 +1028,7 @@ class MedicalDataService {
       return null;
     }
 
-    const exactMatches = this.catalog.medicines.filter((item) => this.normalizeExactMatchText(item.name) === normalizedQuery);
+    const exactMatches = this.getMatchableMedicines().filter((item) => this.normalizeExactMatchText(item.name) === normalizedQuery);
     if (exactMatches.length === 0) {
       return null;
     }
@@ -1194,11 +1237,18 @@ class MedicalDataService {
       // 2. CSV（只有 id/name/spec/keywords）
       // 3. HIS adapter（中性 entry，PHIS 字段透传在 raw）
       const partial = item as Partial<MedicineItem>;
+      const entry = item as MedicineCatalogEntry;
       const raw = (item.raw && typeof item.raw === 'object' ? item.raw : {}) as Record<string, unknown>;
       const readRawString = (key: string) => {
         const v = raw[key];
         return typeof v === 'string' ? v.trim() : '';
       };
+      const storeIdsSource = partial.storeIds ?? entry.storeIds;
+      const storeIds = Array.isArray(storeIdsSource)
+        ? Array.from(new Set(storeIdsSource
+            .map((value) => (typeof value === 'string' ? value.trim() : ''))
+            .filter((value): value is string => Boolean(value))))
+        : undefined;
 
       normalized.push({
         id: item.id?.toString().trim() || `${index + 1}`,
@@ -1210,6 +1260,7 @@ class MedicalDataService {
         idDeptExec: partial.idDeptExec?.toString().trim() || readRawString('idDeptExec') || '',
         fgCheckOrd: partial.fgCheckOrd?.toString().trim() || readRawString('fgCheckOrd') || '1',
         fgSkintest: partial.fgSkintest?.toString().trim() || readRawString('fgSkintest') || '0',
+        storeIds,
         raw: item.raw && typeof item.raw === 'object' ? item.raw : undefined,
       });
     });
@@ -1267,8 +1318,34 @@ class MedicalDataService {
     const orgCode = this.currentOrgCode;
     await Promise.allSettled([
       this.syncInstitutionItemsIfNeeded(hisService, orgCode, snapshot),
-      this.syncInstitutionMedicinesIfNeeded(hisService, orgCode, snapshot)
+      this.syncInstitutionMedicinesIfNeeded(hisService, orgCode, snapshot),
+      this.syncActivePharmacyStoreIds(hisService),
     ]);
+  }
+
+  /**
+   * 提前同步当前可用的发药药房，写入匹配端 active store 集合。
+   *
+   * 必须在任何 LLM 触发的药品匹配之前完成；否则匹配会落到无 scope 限制的全集，
+   * 导致命中那些不在当前可见药房目录里的药品（详情接口随后会拿不到）。
+   */
+  private async syncActivePharmacyStoreIds(hisService: HisAdapter): Promise<void> {
+    try {
+      const pharmacies = await hisService.fetchAvailablePharmacies();
+      const storeIds = pharmacies
+        .map((option) => (typeof option.idSto === 'string' ? option.idSto.trim() : ''))
+        .filter((value): value is string => Boolean(value));
+      this.setActivePharmacyStoreIds(storeIds);
+      console.log('[MedicalData] Active pharmacy storeIds synced for matching', {
+        storeIds,
+        pharmacyCount: pharmacies.length,
+      });
+    } catch (error) {
+      console.warn('[MedicalData] Failed to sync active pharmacy storeIds, medicine matching falls back to unrestricted', {
+        error: error instanceof Error ? error.message : String(error),
+      });
+      this.setActivePharmacyStoreIds(null);
+    }
   }
 
   private async syncGlobalDiagnosesIfNeeded(

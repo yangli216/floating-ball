@@ -168,6 +168,7 @@
 10. 针对推荐诊断的重复引用，需要区分“同一诊断重复点击”和“更换为新诊断引用”；前者应提示已成功引用，后者应允许 PHIS 进入诊断修改流程并通过回执反馈最终结果。
 11. 后端内部仍沿用 `start-consultation-session` 这个 Tauri 事件名承接 `/api/consultation/assist` 的兼容分发，但前端唯一落点已经是 `navigation.openConsultation()` + `ConsultationPage` 灵活模式，不再存在独立 session 小窗视图。
 12. `ConsultationPage.vue` 里的推荐诊断必须保持单选，并以当前选中诊断作为引用对象；推荐用药、检查、检验、处置则保留多选，并在各自分组级提供一次引入所选项的入口。对暂不支持 PHIS 引用的推荐项，应作为只读处置建议单独展示，避免被误当作检查项提交。
+13. HIS 联调相关的调用必须进入本地 HIS 集成日志：HTTP Bridge 入站接口由 Rust 侧直接记录，前端 `hisService.ts` 出站请求通过 `hisIntegrationLog.ts` 写入同一 JSONL 日志，并在日志面板中按 `traceId`、接口、方向、状态筛选和导出。
 
 ### 代码结构
 
@@ -401,6 +402,8 @@ await workMode.handleCollapse();
 
   // 业务导航
   openSymptomManagement: () => Promise<void>,
+  openHisIntegrationLog: () => Promise<void>,
+  openMedicalCatalogCache: () => Promise<void>,
   openConsultation: () => Promise<void>,
   openKnowledgeBase: () => Promise<void>,
   startVoiceInteraction: () => Promise<void>
@@ -574,7 +577,7 @@ eventListeners.unregisterAllListeners();
 | 组件 | 职责 | 文件 |
 |------|------|------|
 | `ChatPanel.vue` | LLM 对话界面 | [src/components/ChatPanel.vue](src/components/ChatPanel.vue) |
-| `SettingsPanel.vue` | 系统设置（含通用设置、紧凑界面主题选择、文本/音频模型配置、关于版本与音频输入设备选择） | [src/components/SettingsPanel.vue](src/components/SettingsPanel.vue) |
+| `SettingsPanel.vue` | 系统设置（含通用设置、紧凑界面主题选择、文本/音频模型配置、关于版本与音频输入设备选择；通用设置页提供基础数据缓存管理和 HIS 联调日志独立入口） | [src/components/SettingsPanel.vue](src/components/SettingsPanel.vue) |
 | `ConsultationPage.vue` | 完整症状问诊主链路，同时承接新的“内嵌灵活模式”；支持根据 `/assist` 上下文直接跳过症状采集进入病历详情页，继续复用现有推荐诊断、诊断鉴别、推荐用药、推荐检查与诊断路径能力，并负责处理 PHIS 引用闭环的页面状态；诊断保持单选引用，推荐方案支持多选后分组批量引入 | [src/components/ConsultationPage.vue](src/components/ConsultationPage.vue) |
 | `DiagnosisPathWindow.vue` | 独立诊断推理路径窗口，使用 ECharts Sankey 展示患者事实、章节归类、证据汇聚与诊断去向；默认提供更宽画布，并按容器尺寸动态计算 Sankey 的布局盒子，用对称留白实现“适应屏幕并居中”的默认视图，再开放滚轮缩放、平移与节点拖动；点击入口后窗口先显示 loading 动画，并按“检查缓存 -> 生成推理链 -> 渲染图表”的阶段更新提示，若生成超时或渲染失败会切换到明确错误态；正文容器在收到 payload 后保持挂载，loading 改为遮罩层，避免 `chartEl` 尚未挂载时误判渲染成功；开窗后的 `show/focus` 调用采用 best-effort 非阻塞方式，避免 Tauri 原生命令卡住整个推理链；右侧说明面板采用“支持证据 / 反证提醒 / 鉴别要点”三段式，未返回结构化分段时回退显示整体 rationale | [src/components/DiagnosisPathWindow.vue](src/components/DiagnosisPathWindow.vue) |
 | `VoiceCapsule.vue` | 语音录制胶囊 | [src/components/VoiceCapsule.vue](src/components/VoiceCapsule.vue) |
@@ -590,6 +593,8 @@ eventListeners.unregisterAllListeners();
 | `RiskAlertPanel.vue` | 风险详情面板 | [src/components/RiskAlertPanel.vue](src/components/RiskAlertPanel.vue) |
 | `AnalyticsPanel.vue` | 数据分析 | [src/components/AnalyticsPanel.vue](src/components/AnalyticsPanel.vue) |
 | `SymptomManagement.vue` | 症状库维护 | [src/components/SymptomManagement.vue](src/components/SymptomManagement.vue) |
+| `MedicalCatalogCachePanel.vue` | 基础数据缓存管理独立视图：展示诊断 / 诊疗项目 / 药品 SQLite 缓存数量、同步状态、数据库路径，并提供手动同步和定向清理 | [src/components/MedicalCatalogCachePanel.vue](src/components/MedicalCatalogCachePanel.vue) |
+| `HisIntegrationLogPanel.vue` | HIS 联调日志独立视图面板：筛选、查看详情、复制、导出、清空本地 JSONL 日志 | [src/components/HisIntegrationLogPanel.vue](src/components/HisIntegrationLogPanel.vue) |
 | `KnowledgeBasePanel.vue` | 内置知识库检索面板；当前保留但不是默认知识入口，默认入口更偏向 `pmphai.ts` 生成的外部页面 | [src/components/KnowledgeBasePanel.vue](src/components/KnowledgeBasePanel.vue) |
 | `Toast.vue` | 消息提示 | [src/components/Toast.vue](src/components/Toast.vue) |
 | `Icon.vue` | 图标封装；离线图标由 `main.ts` 注册 `src/icons/iconifyCollections.ts` 中的精简 Iconify 集合，避免把完整 `@iconify-json/*` 图标包打进产物 | [src/components/Icon.vue](src/components/Icon.vue) |
@@ -639,6 +644,8 @@ export type ViewType =
   | 'reception-capsule'
   | 'analytics'
   | 'symptom-manage'
+  | 'his-log'
+  | 'medical-cache'
   | 'knowledge-base';
 
 export function getWindowSizeForView(view: ViewType): { width: number; height: number };
@@ -758,12 +765,13 @@ src/styles/
 | `llm.ts` | LLM API 通信（OpenAI 兼容） | [src/services/llm.ts](src/services/llm.ts) |
 | `aliyunSpeech.ts` | 语音转写编排（DashScope + OpenAI 兼容降级） | [src/services/aliyunSpeech.ts](src/services/aliyunSpeech.ts) |
 | `audioRecorder.ts` | Web Audio API 录音、音频输入设备枚举与首选设备回退 | [src/services/audioRecorder.ts](src/services/audioRecorder.ts) |
-| `medicalData.ts` | 医疗数据目录加载、SQLite 缓存与匹配（诊断、药品、检查项）；本地模式优先通过 `hisService.ts` 同步目录数据并落本地 SQLite，CSV 仅作兜底；同时负责根据 ICD-10 前三位类目码（如 `J06`）解析章节分组，用于推荐诊断分组展示。针对语音问诊结果页，还提供药品 / 诊疗项目的严格分档匹配能力：完全匹配直接确认，高相似候选只作为“待确认”建议，未命中则进入手动匹配。 | [src/services/medicalData.ts](src/services/medicalData.ts) |
+| `medicalData.ts` | 医疗数据目录加载、SQLite 缓存与匹配（诊断、药品、检查项）；本地模式优先通过 `hisService.ts` 同步目录数据并落本地 SQLite，CSV 仅作兜底；其中机构级检查/检验项目仍按 `orgCode` 存储，药品目录则按独立药房 `storeId` 分 scope 落库，多药房场景读取时对多个 scope 做并集聚合，避免把多个药房 ID 误写成一个 `org_code`。同时负责根据 ICD-10 前三位类目码（如 `J06`）解析章节分组，用于推荐诊断分组展示。针对语音问诊结果页，还提供药品 / 诊疗项目的严格分档匹配能力：完全匹配直接确认，高相似候选只作为“待确认”建议，未命中则进入手动匹配。 | [src/services/medicalData.ts](src/services/medicalData.ts) |
 | `hisService.ts` | HIS HTTP 调用封装（PHIS 形态默认实现）：统一处理鉴权头、POST/GET 请求，以及诊断/药品/诊疗项目目录与药品频次、用法等字典读取，供主问诊和语音问诊复用；语音结果页药房列表也通过该服务调用 `api/phis.orgMedStoManageService/queryOrgSto`，并按 SDK 握手 `extra.urt.userRoleDepts` 中的 `deptId` 过滤可见范围；药品详情按候选发药药房轮询 `loadMedicinePro`，只有命中有效详情的药房才能作为药品默认药房并允许选中；用药总量变更后通过 `api/phis.medicineInventoryService/checkInvEnough` 校验库存，库存不足时阻止药品回写。**业务方不应直接 import 本文件**：所有出站调用应通过 `services/his` 适配器层 | [src/services/hisService.ts](src/services/hisService.ts) |
 | `services/his/HisAdapter.ts` | 厂商无关的 HIS 适配器接口契约：13 个方法覆盖目录同步 / 字典 / 详情 / 库存校验四组场景。详情类已使用中性 DTO（`MedicineDetail` / `MedicalItemDetail`）。新厂商只需实现该接口并通过 `registerHisAdapterFactory(vendor, factory)` 注入，业务层无需改动 | [src/services/his/HisAdapter.ts](src/services/his/HisAdapter.ts) |
 | `services/his/types.ts` | vendor-neutral DTO 定义：详情（`MedicineDetail` / `MedicalItemDetail`）+ 目录（`DiagnosisCatalogEntry` / `MedicineCatalogEntry` / `MedicalItemCatalogEntry`）+ 字典（`DictionaryEntry`）+ 库存校验（`InventoryCheckRequest` / `InventoryCheckResult`）。业务方只读语义化字段（`productId` / `quantity` / `businessType` 等），不再泄漏 PHIS 命名（`idMedPro` / `amount` / `sdFrzBiz`）；厂商私有字段保留在 `raw` / `properties` 透传 | [src/services/his/types.ts](src/services/his/types.ts) |
 | `services/his/PhisHisAdapter.ts` | 默认厂商实现：thin wrapper，把 `HisService` 类（PHIS 形态）暴露为 `HisAdapter` 接口；详情方法在此处把 PHIS 字段映射为中性 DTO，目录与字典方法仍直接透传 | [src/services/his/PhisHisAdapter.ts](src/services/his/PhisHisAdapter.ts) |
 | `services/his/registry.ts` | 适配器注册表与选择器：`getHisAdapter()` 是业务方唯一入口；选择优先级 `setActiveHisVendor` > `VITE_HIS_VENDOR` > `localStorage.HIS_VENDOR` > 默认 `phis`；handshake 时由 `useEventListeners` 调用 `resetHisAdapter` 清缓存 | [src/services/his/registry.ts](src/services/his/registry.ts) / [src/services/his/index.ts](src/services/his/index.ts) |
+| `hisIntegrationLog.ts` | HIS 联调调用日志客户端：为 PHIS 出站请求生成 / 记录结构化日志，提供查询、清空和导出 Tauri 命令封装 | [src/services/hisIntegrationLog.ts](src/services/hisIntegrationLog.ts) |
 | `diagnosisPath.ts` | 诊断路径数据构建与独立窗口事件载荷封装；优先通过 LLM 生成结构化推理链，再在前端校验并映射为 Sankey 节点、连线和说明文案，失败时回退本地兜底链路；载荷中补充 `supportingEvidence`、`counterEvidence`、`differentialPoints` 三段式解释字段，供窗口右侧说明面板直接渲染 | [src/services/diagnosisPath.ts](src/services/diagnosisPath.ts) |
 | `feedback.ts` | 会话反馈服务；负责会话、推荐、反馈、性能指标的本地落库与区域化双写 | [src/services/feedback.ts](src/services/feedback.ts) |
 | `voiceFeedback.ts` | 语音反馈服务；负责推荐项 / 病例字段 / 整页反馈 payload 组装、本地草稿恢复、病例字段差异摘要与待同步队列 | [src/services/voiceFeedback.ts](src/services/voiceFeedback.ts) |

@@ -1,6 +1,6 @@
 # MedHermes HIS 接入指南 / 接口说明
 
-> 最后更新: 2026-04-16
+> 最后更新: 2026-04-27
 >
 > 本文档面向准备接入 `MedHermes` 的 HIS / 医生站 / PHIS 项目。
 > 当前真实运行契约以 `src-tauri/src/http_server.rs` 与当前前端实现为准；`docs/regionalization/*.md` 仍属于规划文档，不能替代本文档。
@@ -32,6 +32,7 @@
    也就是说，`GET /api/consultation/result` 读到的是“当前最新一条结果”，不是历史列表。
 4. 当前 `consultationId` 默认直接使用 `idPi / patientId`。
    如果 HIS 存在“同患者多次接诊”场景，必须在 HIS 自己的上下文里再绑定一次“当前就诊”。
+5. 当前 Bridge 会为业务接口生成 `traceId` 并写入本地 HIS 集成日志，方便三方 HIS / PHIS 联调时按一次调用链路排查请求、响应和错误。
 
 ## 3. 推荐接入顺序
 
@@ -148,6 +149,14 @@ PHIS                                MedHermes
  |  POST /reference-feedback (success) -->|
  |                                       |  回写完成
 ```
+
+### 5.4 联调日志与 traceId
+
+1. `POST /api/handshake`、`POST /api/consultation/start`、`POST /api/consultation/assist`、`POST /api/consultation/start-voice`、`POST /api/consultation/stop`、`GET /api/consultation/result`、`POST /api/consultation/reference-feedback`、`POST /api/patient/risks` 会写入本地 HIS 集成日志。
+2. 上述业务响应会额外返回 `traceId` 字段。三方联调时请把该值提供给桌面端开发或从“设置 -> HIS 联调日志”入口中筛选查看。
+3. 日志会记录接口方向、路径、请求摘要、响应摘要、HTTP 状态、业务 `code/msg`、耗时、患者 / 问诊 / 回执标识和错误摘要；`Cookie`、`Authorization`、`token`、手机号、身份证号等敏感字段会默认脱敏。
+4. 桌面端主动调用 PHIS 的字典、药品详情、库存校验等出站接口也写入同一日志文件，便于用一次 `traceId` 串联 Bridge 入站与 PHIS 出站排查。
+5. 日志仅保存在医生本机本地数据目录，可在日志面板中刷新、筛选、复制、导出或清空。
 
 ## 6. 接口清单
 
