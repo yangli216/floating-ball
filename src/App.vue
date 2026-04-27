@@ -366,8 +366,21 @@ const eventListeners = useEventListeners({
 });
 
 async function applyForceUpdateWindowState(state: ForceUpdateState): Promise<void> {
+  const wasRequired = forceUpdateState.value.required;
   forceUpdateState.value = state;
-  if (!state.required || isDiagnosisPathWindow) {
+  if (isDiagnosisPathWindow) {
+    return;
+  }
+  if (!state.required) {
+    // 防御：强升状态从 true → false（如服务端解除策略 / 网络恢复后重新拉取）时，
+    // 把之前为了显示升级页强行撑开的窗口恢复成小球态，避免用户卡在已无内容的工作面板上。
+    if (wasRequired) {
+      try {
+        await handleCollapse();
+      } catch (error) {
+        console.warn('[App] Failed to collapse after force update lifted:', error);
+      }
+    }
     return;
   }
   feedbackDialogVisible.value = false;

@@ -102,7 +102,18 @@ export async function checkForceUpdateRequired(): Promise<ForceUpdateState> {
   try {
     const policy = await fetchUpdatePolicy();
     const minSupportedVersion = policy?.minSupportedVersion || policy?.latestVersion || null;
-    const required = Boolean(policy?.forceUpdate && minSupportedVersion && compareVersions(currentVersion, minSupportedVersion) < 0);
+    // 防御：当本地版本读取失败（getVersion 抛错被降级为 'unknown'/空串）时，
+    // 跳过强升判定，避免 compareVersions 返回 -1 把所有用户卡死在升级页。
+    const hasUsableCurrentVersion = !!normalizeVersion(currentVersion);
+    const required = Boolean(
+      hasUsableCurrentVersion
+        && policy?.forceUpdate
+        && minSupportedVersion
+        && compareVersions(currentVersion, minSupportedVersion) < 0
+    );
+    if (!hasUsableCurrentVersion && policy?.forceUpdate) {
+      console.warn('[updatePolicy] 当前客户端版本读取失败，跳过强升判定以避免误锁定');
+    }
     currentState = {
       required,
       channel,

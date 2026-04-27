@@ -1912,6 +1912,12 @@ async function confirmSuggestedMatch(rec: TreatmentRecommendation, event?: Event
     await hydrateMatchedMedicalItemDetail(rec);
   }
 
+  if (!hasRequiredPharmacy(rec)) {
+    openPharmacyQuickSelector(rec);
+    showToast?.(`${rec.name} 当前发药药房不可用，请选择实际拥有该药品的药房后再选中`, 'warning');
+    return;
+  }
+
   if (!hasRequiredExecDept(rec)) {
     expandTreatmentEditor(rec);
     openSecondarySelector(rec, 'execDept');
@@ -1956,6 +1962,12 @@ async function applyManualMatch(rec: TreatmentRecommendation, candidate: Medicin
     await hydrateMatchedMedicalItemDetail(rec);
   }
 
+  if (!hasRequiredPharmacy(rec)) {
+    openPharmacyQuickSelector(rec);
+    showToast?.(`${candidate.name} 当前发药药房不可用，请选择实际拥有该药品的药房后再选中`, 'warning');
+    return;
+  }
+
   if (!hasRequiredExecDept(rec)) {
     expandTreatmentEditor(rec);
     openSecondarySelector(rec, 'execDept');
@@ -1983,6 +1995,12 @@ async function toggleTreatment(item: TreatmentRecommendation): Promise<void> {
   const nextSelected = !item.selected;
 
   if (nextSelected && item.type === 'medicine' && !(await ensureMedicineSelectable(item, true))) {
+    return;
+  }
+
+  if (nextSelected && !hasRequiredPharmacy(item)) {
+    openPharmacyQuickSelector(item);
+    showToast?.('当前发药药房不可用，请选择实际拥有该药品的药房后再选中', 'warning');
     return;
   }
 
@@ -2604,6 +2622,40 @@ function openExecDeptQuickSelector(rec: TreatmentRecommendation, event?: Event):
   openSecondarySelector(rec, 'execDept');
   void nextTick(() => {
     const selector = document.querySelector<HTMLInputElement>(`[data-exec-dept-input="${getTreatmentEditorKey(rec)}"]`);
+    selector?.focus();
+    selector?.select();
+  });
+}
+
+// === 药品发药药房必填机制（复用检查/检验“医技科室”同样的门禁与 Chip 呈现方案） ===
+function isPharmacyRequired(rec: TreatmentRecommendation): boolean {
+  return rec.type === 'medicine';
+}
+
+function getPharmacyDisplay(rec: TreatmentRecommendation): string {
+  const currentValue = (rec.pharmacy || '').trim();
+  if (!currentValue) {
+    return '';
+  }
+
+  // 只认“当前药品实际拥有”的药房（matchedItem.storeIds ∩ 有效发药药房）
+  const allowed = isPharmacyRequired(rec)
+    ? getCandidatePharmaciesForMedicine(rec)
+    : pharmacyOptions.value;
+  const matched = allowed.find((option) => option.name === currentValue || option.idSto === currentValue);
+  return matched?.name || '';
+}
+
+function hasRequiredPharmacy(rec: TreatmentRecommendation): boolean {
+  return !isPharmacyRequired(rec) || !!getPharmacyDisplay(rec);
+}
+
+function openPharmacyQuickSelector(rec: TreatmentRecommendation, event?: Event): void {
+  event?.stopPropagation();
+  expandTreatmentEditor(rec);
+  openSecondarySelector(rec, 'pharmacy');
+  void nextTick(() => {
+    const selector = document.querySelector<HTMLInputElement>(`[data-pharmacy-input="${getTreatmentEditorKey(rec)}"]`);
     selector?.focus();
     selector?.select();
   });
@@ -3274,6 +3326,10 @@ function clearPharmacySelection(rec: TreatmentRecommendation): void {
   rec.pharmacy = '';
   setPharmacySearchKeyword(rec, '');
   clearMedicineInventoryWarning(rec);
+  if (isPharmacyRequired(rec) && rec.selected) {
+    rec.selected = false;
+    showToast?.('发药药房已清空，请重新设置后再选中该药品', 'warning');
+  }
 }
 
 function getExecDeptSearchKey(rec: TreatmentRecommendation): string {
@@ -3423,6 +3479,13 @@ async function handleBatchWriteBack(): Promise<void> {
       .map((item) => checkMedicineInventoryEnough(item, true)));
     if (medicineInventoriesReady.some((ready) => !ready)) {
       showToast?.('存在库存不足的药品，请调整用药数量或药房后再提交', 'warning');
+      return;
+    }
+
+    const missingPharmacy = selected.find((item) => !hasRequiredPharmacy(item));
+    if (missingPharmacy) {
+      openPharmacyQuickSelector(missingPharmacy);
+      showToast?.(`${missingPharmacy.name} 当前发药药房不可用，请选择实际拥有该药品的药房后再提交`, 'warning');
       return;
     }
 
@@ -3897,6 +3960,17 @@ watch(
                             <span v-if="!hasRequiredExecDept(rec)" class="exec-dept-chip-label">执行科室</span>
                             <span class="exec-dept-chip-value">{{ getExecDeptDisplay(rec) || '待设置' }}</span>
                           </button>
+                          <button
+                            v-if="isPharmacyRequired(rec)"
+                            class="exec-dept-chip pharmacy-chip"
+                            :class="{ missing: !hasRequiredPharmacy(rec) }"
+                            type="button"
+                            :title="hasRequiredPharmacy(rec) ? '点击调整发药药房' : '发药药房未设置或不在当前药品可用药房列表，点击选择'"
+                            @click.stop="openPharmacyQuickSelector(rec, $event)"
+                          >
+                            <span v-if="!hasRequiredPharmacy(rec)" class="exec-dept-chip-label">发药药房</span>
+                            <span class="exec-dept-chip-value">{{ getPharmacyDisplay(rec) || '待设置' }}</span>
+                          </button>
                           <span v-if="rec.type !== 'medicine' && rec.usage" class="meta-token">建议 {{ rec.usage }}</span>
                         </div>
 
@@ -4131,6 +4205,7 @@ watch(
                             <label>药房</label>
                             <div class="field-editor route-field-editor" @focusout="closeSecondarySelector(rec, 'pharmacy', $event)">
                               <input
+                                :data-pharmacy-input="getTreatmentEditorKey(rec)"
                                 :value="getPharmacySearchKeyword(rec)"
                                 type="text"
                                 placeholder="输入名称筛选药房"
