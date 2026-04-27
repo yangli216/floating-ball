@@ -1,5 +1,3 @@
-import { getRegionalConnectionConfig } from './regionalClient';
-
 export type UpdateEnvironment = 'production' | 'testing';
 
 export interface UpdateConfig {
@@ -24,13 +22,26 @@ function normalizeUrl(value: string): string {
   return value.trim().replace(/\/+$/, '');
 }
 
+function readStoredRegionalEndpoint(): { enabled: boolean; baseUrl: string } {
+  const enabledText = localStorage.getItem('REGIONAL_ENABLED');
+  const defaultEnabled = !['false', '0', 'off'].includes(
+    String(import.meta.env.VITE_REGIONAL_ENABLED ?? 'true').trim().toLowerCase()
+  );
+  const enabled = enabledText === 'true' || (enabledText !== 'false' && defaultEnabled);
+  const baseUrl = normalizeUrl(
+    localStorage.getItem('REGIONAL_BASE_URL')
+      || import.meta.env.VITE_REGIONAL_BASE_URL
+      || 'http://127.0.0.1:8080'
+  );
+  return { enabled, baseUrl };
+}
+
 function buildRegionalReleaseEndpoint(channel: UpdateEnvironment): string {
-  const regionalConfig = getRegionalConnectionConfig();
-  const baseUrl = normalizeUrl(regionalConfig.baseUrl || '');
-  if (!regionalConfig.enabled || !baseUrl) {
+  const regionalConfig = readStoredRegionalEndpoint();
+  if (!regionalConfig.enabled || !regionalConfig.baseUrl) {
     return '';
   }
-  return `${baseUrl}/v1/client/releases/${channel}/latest.json`;
+  return `${regionalConfig.baseUrl}/v1/client/releases/${channel}/latest.json`;
 }
 
 export function getUpdateConfig(): UpdateConfig {

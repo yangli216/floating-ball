@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, provide, ref, shallowRef, watch } from "vue";
+import { computed, defineAsyncComponent, onMounted, onUnmounted, provide, ref, shallowRef, watch } from "vue";
 import { getCurrentWindow, Window as TauriWindow } from "@tauri-apps/api/window";
 import { exit } from '@tauri-apps/plugin-process';
 import { load, Store } from '@tauri-apps/plugin-store';
@@ -22,7 +22,6 @@ import FeedbackSubmissionPanel from "./components/FeedbackSubmissionPanel.vue";
 import HisIntegrationLogPanel from "./components/HisIntegrationLogPanel.vue";
 import MedicalCatalogCachePanel from "./components/MedicalCatalogCachePanel.vue";
 import Icon from "./components/Icon.vue";
-import ForceUpdateGate from "./components/ForceUpdateGate.vue";
 import { trackClick } from "./services/operationTracker";
 import { LogicalSize } from "@tauri-apps/api/dpi";
 import { WINDOW_SIZES, type ViewType } from "./constants/windowSizes";
@@ -41,6 +40,8 @@ import {
 } from "./services/updatePolicy";
 import type { AppPatient, AppStore } from "./types/appState";
 import type { ConsultationAssistAction } from "./types/consultationAssist";
+
+const ForceUpdateGate = defineAsyncComponent(() => import("./components/ForceUpdateGate.vue"));
 
 type MedicalCatalogDebugApi = {
   help: () => string[];
