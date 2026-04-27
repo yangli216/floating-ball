@@ -24,6 +24,7 @@ import type { ConsultationAssistAction } from '../types/consultationAssist';
 import { getHisService, resetHisService } from '../services/his';
 import { resetHisAdapter } from '../services/his';
 import { medicalDataService } from '../services/medicalData';
+import { resolveFeedbackActorFromUrt, setFeedbackActor } from '../services/feedbackContext';
 
 /**
  * 事件监听配置参数
@@ -385,6 +386,10 @@ export function useEventListeners(options: EventListenersOptions) {
       const token = ctx.extra?.emrAccessToken;
       const orgCode = resolveHandshakeOrgCode(ctx);
       const userRoleDeptIds = resolveHandshakeUserRoleDeptIds(ctx);
+
+      // 缓存反馈 actor（医生/机构/科室），供 userFeedback / voiceFeedback 提交时使用
+      const urtForActor = resolveUrtPayload(ctx.extra?.urt);
+      setFeedbackActor(resolveFeedbackActorFromUrt(urtForActor, orgCode));
 
       if (baseUrl && token) {
         // 初始化 HIS 服务单例

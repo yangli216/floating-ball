@@ -1,6 +1,8 @@
 import type { AiTraceContext } from './aiTrace';
 import type { Diagnosis, TreatmentRecommendation } from '../types/consultation';
 import type { RecommendationType, TargetType } from '../types/feedback';
+import { isRegionalMode } from './regionalClient';
+import { submitUserFeedback, type FeedbackKind, type FeedbackSeverity } from './userFeedback';
 import type {
   VoiceFeedbackDraftState,
   VoiceFeedbackOption,
@@ -217,6 +219,167 @@ export function enqueueVoiceFeedbackPayload(payload: VoicePendingFeedbackPayload
 
 export function listVoiceFeedbackPayloadQueue(): VoicePendingFeedbackPayload[] {
   return getPendingQueue();
+}
+
+/**
+ * 把语音反馈 payload 转为通用 /v1/client/feedbacks 请求并提交。
+ * 仅在区域化模式下生效；失败不抛出，避免阻塞本地草稿清理。
+ */
+export async function submitVoicePendingPayloadToBackend(payload: VoicePendingFeedbackPayload): Promise<void> {
+  if (!isRegionalMode()) {
+    return;
+  }
+
+  try {
+    const score = resolveVoiceScore(payload);
+    const comment = resolveVoiceComment(payload);
+    const sourceModule = resolveVoiceSourceModule(payload);
+    const tags = (payload as { issueTags?: string[] }).issueTags || [];
+    const severity = resolveVoiceSeverity(payload, score);
+    const hasCorrection = resolveVoiceHasCorrection(payload);
+    const traceId = (payload.aiTrace?.traceId as string | undefined) || null;
+    const sessionId = payload.sessionId || (payload.aiTrace?.sessionId as string | undefined) || null;
+
+    await submitUserFeedback({
+      score,
+      comment,
+      sourceModule,
+      kind: payload.kind as FeedbackKind,
+      severity,
+      tags: tags.length > 0 ? tags : undefined,
+      hasCorrection,
+      traceId,
+      sessionId,
+      chainContextOverride: buildVoiceChainContext(payload),
+    });
+  } catch (error) {
+    console.warn('[voiceFeedback] submitVoicePendingPayloadToBackend failed', error);
+  }
+}
+
+function resolveVoiceScore(payload: VoicePendingFeedbackPayload): number {
+  if (payload.kind === 'session') {
+    const rating = (payload as VoiceSessionFeedbackPayload).rating;
+    return rating > 0 ? rating : 3;
+  }
+  // recommendation / record_field：根据 action 推导评分
+  const action = (payload as { action?: string }).action;
+  if (action === 'useful') return 5;
+  if (action === 'corrected') return 3;
+  return 2;
+}
+
+function resolveVoiceComment(payload: VoicePendingFeedbackPayload): string {
+  const trimmed = (payload as { comment?: string }).comment?.trim();
+  if (trimmed) {
+    return trimmed;
+  }
+  const tags = (payload as { issueTags?: string[] }).issueTags || [];
+  if (tags.length > 0) {
+    return `问题标签：${tags.join('、')}`;
+  }
+  if (payload.kind === 'recommendation') {
+    return `${(payload as VoiceRecommendationFeedbackPayload).recommendationTitle || '推荐项'} - 反馈`;
+  }
+  if (payload.kind === 'record_field') {
+    return `${(payload as VoiceRecordFieldFeedbackPayload).fieldLabel || '病例字段'} - 反馈`;
+  }
+  return '语音问诊整页反馈';
+}
+
+function resolveVoiceSourceModule(payload: VoicePendingFeedbackPayload): string {
+  switch (payload.kind) {
+    case 'recommendation': return 'voice_recommendation';
+    case 'record_field': return 'voice_record_field';
+    case 'session': return 'voice_session';
+    default: return 'voice_session';
+  }
+}
+
+function resolveVoiceSeverity(payload: VoicePendingFeedbackPayload, score: number): FeedbackSeverity {
+  if (payload.kind === 'session') {
+    if (score >= 4) return 'low';
+    if (score === 3) return 'medium';
+    return 'high';
+  }
+  const action = (payload as { action?: string }).action;
+  if (action === 'useful') return 'low';
+  if (action === 'corrected') return 'medium';
+  return 'high';
+}
+
+function resolveVoiceHasCorrection(payload: VoicePendingFeedbackPayload): boolean | undefined {
+  if (payload.kind === 'record_field') {
+    const rf = payload as VoiceRecordFieldFeedbackPayload;
+    return rf.modifiedByDoctor || Boolean(rf.correctedValue && rf.correctedValue.trim());
+  }
+  if (payload.kind === 'recommendation') {
+    const r = payload as VoiceRecommendationFeedbackPayload;
+    return r.action === 'corrected' && Boolean(r.correctedValue && r.correctedValue.trim());
+  }
+  return undefined;
+}
+
+function buildVoiceChainContext(payload: VoicePendingFeedbackPayload): Record<string, unknown> {
+  const trace = (payload.aiTrace || null) as Record<string, unknown> | null;
+  const base: Record<string, unknown> = {
+    kind: payload.kind,
+    consultationId: payload.consultationId,
+    sessionId: payload.sessionId,
+    patientId: payload.patientId,
+    patientName: payload.patientName,
+    aiTrace: trace ? {
+      channel: trace.channel,
+      scene: trace.scene,
+      sourceModule: trace.sourceModule,
+      configProfile: trace.configProfile,
+      model: trace.model,
+      requestSummary: trace.requestSummary,
+      responseSummary: trace.responseSummary,
+      startedAt: trace.startedAt,
+      finishedAt: trace.finishedAt,
+      durationMs: trace.durationMs,
+      success: trace.success,
+      errorMessage: trace.errorMessage,
+      traceId: trace.traceId,
+    } : null,
+  };
+
+  if (payload.kind === 'recommendation') {
+    const r = payload as VoiceRecommendationFeedbackPayload;
+    base.recommendation = {
+      targetType: r.targetType,
+      targetId: r.targetId,
+      recommendationType: r.recommendationType,
+      recommendationKey: r.recommendationKey,
+      recommendationTitle: r.recommendationTitle,
+      action: r.action,
+      correctedValue: r.correctedValue,
+      snapshot: r.recommendationSnapshot,
+      encounterSummary: r.encounterSummary,
+    };
+  } else if (payload.kind === 'record_field') {
+    const f = payload as VoiceRecordFieldFeedbackPayload;
+    base.recordField = {
+      fieldKey: f.fieldKey,
+      fieldLabel: f.fieldLabel,
+      action: f.action,
+      originalValue: f.originalValue,
+      currentValue: f.currentValue,
+      correctedValue: f.correctedValue,
+      modifiedByDoctor: f.modifiedByDoctor,
+      diffSummary: f.diffSummary,
+      encounterSummary: f.encounterSummary,
+    };
+  } else {
+    const s = payload as VoiceSessionFeedbackPayload;
+    base.session = {
+      rating: s.rating,
+      encounterSummary: s.encounterSummary,
+    };
+  }
+
+  return base;
 }
 
 export function buildVoiceRecommendationFeedbackPayload(input: {

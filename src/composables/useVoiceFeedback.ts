@@ -21,6 +21,7 @@ import {
   mapTreatmentTypeToRecommendationType,
   mapTreatmentTypeToTargetType,
   saveVoiceFeedbackDraft,
+  submitVoicePendingPayloadToBackend,
 } from '../services/voiceFeedback';
 import type { Diagnosis, TreatmentRecommendation } from '../types/consultation';
 import type { FeedbackType, RecommendationType, TargetType } from '../types/feedback';
@@ -295,6 +296,7 @@ export function useVoiceFeedback(input: UseVoiceFeedbackInput) {
       });
 
       enqueueVoiceFeedbackPayload(pendingPayload);
+      void submitVoicePendingPayloadToBackend(pendingPayload);
       clearRecommendationDraft(payload.recommendationKey);
       recommendationSubmittedMap.value = {
         ...recommendationSubmittedMap.value,
@@ -369,6 +371,7 @@ export function useVoiceFeedback(input: UseVoiceFeedbackInput) {
       });
 
       enqueueVoiceFeedbackPayload(pendingPayload);
+      void submitVoicePendingPayloadToBackend(pendingPayload);
       clearRecordFieldDraft(payload.fieldKey);
       recordFieldSubmittedMap.value = {
         ...recordFieldSubmittedMap.value,
@@ -419,6 +422,7 @@ export function useVoiceFeedback(input: UseVoiceFeedbackInput) {
       });
 
       enqueueVoiceFeedbackPayload(pendingPayload);
+      void submitVoicePendingPayloadToBackend(pendingPayload);
       sessionDraft.value = createEmptySessionDraft();
       persistDraft();
       sessionSubmittedAt.value = Date.now();

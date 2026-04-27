@@ -2,7 +2,7 @@
 import { computed, inject, nextTick, ref } from 'vue';
 import Icon from './Icon.vue';
 import { getLatestAiTrace } from '../services/aiTrace';
-import { submitUserFeedback, type UserFeedbackScreenshot } from '../services/userFeedback';
+import { submitUserFeedback, type UserFeedbackScreenshot, type FeedbackSeverity } from '../services/userFeedback';
 import { isRegionalMode } from '../services/regionalClient';
 import { trackClick, trackError, trackFormSubmit } from '../services/operationTracker';
 
@@ -23,43 +23,45 @@ const emit = defineEmits<{
 
 const showToast = inject('showToast') as ((msg: string, type?: 'success' | 'error' | 'info') => void) | undefined;
 
+const GENERAL_FEEDBACK_ISSUE_OPTIONS: ReadonlyArray<{ key: string; label: string }> = [
+  { key: 'recommendation_quality', label: '推荐质量' },
+  { key: 'data_accuracy', label: '数据准确性' },
+  { key: 'workflow', label: '操作流程' },
+  { key: 'stability', label: '系统稳定性' },
+  { key: 'ui', label: '界面体验' },
+  { key: 'other', label: '其他' },
+];
+
 const submitting = ref(false);
 const score = ref(5);
 const comment = ref('');
 const screenshot = ref<UserFeedbackScreenshot | null>(null);
-const latestTraceVersion = ref(0);
 const capturingScreenshot = ref(false);
-
-const latestTrace = computed(() => {
-  latestTraceVersion.value;
-  return getLatestAiTrace();
-});
+const selectedTags = ref<string[]>([]);
+const showScreenshotPanel = ref(false);
 
 const canSubmit = computed(() => {
-  return isRegionalMode() && !submitting.value && comment.value.trim().length > 0;
+  if (!isRegionalMode() || submitting.value) return false;
+  return comment.value.trim().length > 0 || selectedTags.value.length > 0;
 });
 
-const latestTraceSummary = computed(() => {
-  const trace = latestTrace.value;
-  if (!trace) {
-    return '当前还没有可关联的 AI 调用记录，仍可提交通用反馈。';
+function toggleTag(key: string): void {
+  const idx = selectedTags.value.indexOf(key);
+  if (idx >= 0) {
+    selectedTags.value.splice(idx, 1);
+  } else {
+    selectedTags.value.push(key);
   }
+}
 
-  const parts = [
-    trace.channel === 'chat' ? '文本对话' : trace.channel === 'speech_transcribe' ? '语音转写' : '实时语音',
-    trace.model || '模型待定',
-    trace.requestSummary || '无请求摘要',
-  ];
+function isTagSelected(key: string): boolean {
+  return selectedTags.value.includes(key);
+}
 
-  if (trace.responseSummary) {
-    parts.push(trace.responseSummary);
-  }
-
-  return parts.filter(Boolean).join(' / ');
-});
-
-function refreshTraceSummary(): void {
-  latestTraceVersion.value += 1;
+function deriveSeverity(rating: number): FeedbackSeverity {
+  if (rating <= 2) return 'high';
+  if (rating === 3) return 'medium';
+  return 'low';
 }
 
 async function readFileAsDataUrl(file: File): Promise<string> {
@@ -186,6 +188,19 @@ function clearScreenshot(): void {
   screenshot.value = null;
 }
 
+function buildSubmitComment(): string {
+  const trimmed = comment.value.trim();
+  if (trimmed) return trimmed;
+  if (selectedTags.value.length > 0) {
+    const labels = selectedTags.value.map(key => {
+      const opt = GENERAL_FEEDBACK_ISSUE_OPTIONS.find(o => o.key === key);
+      return opt?.label || key;
+    });
+    return `问题标签：${labels.join('、')}`;
+  }
+  return '';
+}
+
 async function handleSubmit(): Promise<void> {
   if (!canSubmit.value) {
     return;
@@ -193,37 +208,44 @@ async function handleSubmit(): Promise<void> {
 
   submitting.value = true;
   const startedAt = Date.now();
+  const trace = getLatestAiTrace();
   trackClick('feedback_submit_clicked', {
     hasScreenshot: !!screenshot.value,
-    hasTrace: !!latestTrace.value,
+    hasTrace: !!trace,
     score: score.value,
+    tags: selectedTags.value,
   });
 
   try {
     const response = await submitUserFeedback({
       score: score.value,
-      comment: comment.value,
+      comment: buildSubmitComment(),
       screenshot: screenshot.value,
       sourceModule: props.sourceModule,
+      kind: 'general',
+      severity: deriveSeverity(score.value),
+      tags: selectedTags.value.length > 0 ? selectedTags.value : undefined,
     });
 
     trackFormSubmit('feedback_submit', {
       feedbackId: response.feedbackId,
-      hasTrace: !!latestTrace.value?.traceId,
-      traceId: latestTrace.value?.traceId,
+      hasTrace: !!trace?.traceId,
+      traceId: trace?.traceId,
       score: score.value,
+      tags: selectedTags.value,
     }, Date.now() - startedAt);
 
     comment.value = '';
     score.value = 5;
     screenshot.value = null;
+    selectedTags.value = [];
+    showScreenshotPanel.value = false;
     showToast?.('反馈已提交到后台', 'success');
-    refreshTraceSummary();
     emit('submitted');
   } catch (error) {
     trackError('feedback_submit_failed', error, {
       hasScreenshot: !!screenshot.value,
-      traceId: latestTrace.value?.traceId,
+      traceId: trace?.traceId,
     });
     showToast?.(error instanceof Error ? error.message : '反馈提交失败', 'error');
   } finally {
@@ -250,83 +272,95 @@ async function handleSubmit(): Promise<void> {
       </button>
     </div>
     <p class="section-desc">
-      上传截图、评分并描述问题；提交时会自动关联最近一次 AI 调用摘要，方便后台排查。
+      给本次体验打分、勾选问题类型，并在需要时附上简短说明，我们会自动关联最近的 AI 调用记录。
     </p>
 
-    <div class="trace-card">
-      <div class="trace-card__header">
-        <span>最近一次 AI 调用</span>
-        <button class="link-btn" type="button" @click="refreshTraceSummary">刷新上下文</button>
-      </div>
-      <div class="trace-card__body">
-        <div class="trace-summary">{{ latestTraceSummary }}</div>
-        <div v-if="latestTrace?.traceId" class="trace-meta">
-          traceId: {{ latestTrace.traceId }}
-        </div>
-      </div>
-    </div>
-
-    <div class="form-group">
+    <div class="form-group score-group">
       <label>满意度评分</label>
-      <div class="score-row">
+      <div class="score-stars">
         <button
           v-for="value in 5"
           :key="value"
-          class="score-btn"
+          class="star-btn"
           type="button"
           :class="{ active: value <= score }"
+          :aria-label="`评分${value}`"
           @click="score = value"
         >
-          <Icon :icon="value <= score ? 'lucide:star' : 'lucide:star-off'" :size="16" />
-          {{ value }}
+          <Icon :icon="value <= score ? 'lucide:star' : 'lucide:star'" :size="22" />
+        </button>
+        <span class="score-hint">{{ score >= 4 ? '满意' : score === 3 ? '一般' : '不满意' }}</span>
+      </div>
+    </div>
+
+    <div class="form-group">
+      <label>问题类型 <span class="optional">（可多选）</span></label>
+      <div class="tag-row">
+        <button
+          v-for="opt in GENERAL_FEEDBACK_ISSUE_OPTIONS"
+          :key="opt.key"
+          class="tag-chip"
+          type="button"
+          :class="{ active: isTagSelected(opt.key) }"
+          @click="toggleTag(opt.key)"
+        >
+          {{ opt.label }}
         </button>
       </div>
     </div>
 
     <div class="form-group">
-      <label>反馈说明</label>
+      <label>补充说明 <span class="optional">（选填）</span></label>
       <textarea
         v-model="comment"
         class="feedback-textarea"
-        rows="5"
-        maxlength="2000"
-        placeholder="请描述出现了什么问题、在哪个场景出现、你期望看到什么结果。"
+        rows="3"
+        maxlength="500"
+        placeholder="可简单描述场景或期望，便于后台定位。"
       />
-      <div class="helper-text">{{ comment.trim().length }}/2000</div>
+      <div class="helper-text">{{ comment.trim().length }}/500</div>
     </div>
 
-    <div class="form-group">
-      <label>截图上传</label>
-      <div class="upload-row">
-        <button
-          class="action-btn"
-          type="button"
-          :disabled="capturingScreenshot"
-          @click="captureBuiltInScreenshot"
-        >
-          <Icon :icon="capturingScreenshot ? 'lucide:loader-2' : 'lucide:monitor-up'" :size="16" :class="{ spin: capturingScreenshot }" />
-          {{ capturingScreenshot ? '截图中...' : '内置截图' }}
-        </button>
-        <label class="action-btn" aria-label="上传截图">
-          <Icon icon="lucide:image-plus" :size="16" />
-          选择截图
-          <input type="file" accept="image/*" hidden @change="handleFileChange" />
-        </label>
-        <button
-          v-if="screenshot"
-          class="action-btn secondary"
-          type="button"
-          @click="clearScreenshot"
-        >
-          <Icon icon="lucide:trash-2" :size="16" />
-          移除
-        </button>
+    <div class="form-group screenshot-group">
+      <button
+        class="link-btn screenshot-toggle"
+        type="button"
+        @click="showScreenshotPanel = !showScreenshotPanel"
+      >
+        <Icon :icon="showScreenshotPanel ? 'lucide:chevron-up' : 'lucide:image-plus'" :size="14" />
+        {{ showScreenshotPanel ? '收起截图' : '附加截图（选填）' }}
+      </button>
+      <div v-if="showScreenshotPanel" class="screenshot-panel">
+        <div class="upload-row">
+          <button
+            class="action-btn"
+            type="button"
+            :disabled="capturingScreenshot"
+            @click="captureBuiltInScreenshot"
+          >
+            <Icon :icon="capturingScreenshot ? 'lucide:loader-2' : 'lucide:monitor-up'" :size="16" :class="{ spin: capturingScreenshot }" />
+            {{ capturingScreenshot ? '截图中...' : '内置截图' }}
+          </button>
+          <label class="action-btn" aria-label="上传截图">
+            <Icon icon="lucide:image-plus" :size="16" />
+            选择图片
+            <input type="file" accept="image/*" hidden @change="handleFileChange" />
+          </label>
+          <button
+            v-if="screenshot"
+            class="action-btn secondary"
+            type="button"
+            @click="clearScreenshot"
+          >
+            <Icon icon="lucide:trash-2" :size="16" />
+            移除
+          </button>
+        </div>
+        <div v-if="screenshot" class="screenshot-preview">
+          <img :src="screenshot.dataUrl" :alt="screenshot.fileName" />
+          <div class="helper-text">{{ screenshot.fileName }}</div>
+        </div>
       </div>
-      <div v-if="screenshot" class="screenshot-preview">
-        <img :src="screenshot.dataUrl" :alt="screenshot.fileName" />
-        <div class="helper-text">{{ screenshot.fileName }}</div>
-      </div>
-      <div v-else class="helper-text">支持内置截图，也支持上传 PNG/JPG/WebP；单张不超过 3MB。</div>
     </div>
 
     <div v-if="!isRegionalMode()" class="info-banner warning">
@@ -340,7 +374,6 @@ async function handleSubmit(): Promise<void> {
     </button>
   </div>
 </template>
-
 <style scoped>
 .feedback-dialog-panel {
   padding: 22px 24px;
@@ -518,5 +551,82 @@ async function handleSubmit(): Promise<void> {
   margin-top: 18px;
   background: #fff7ed;
   color: #9a3412;
+}
+
+.optional {
+  font-weight: normal;
+  color: var(--medical-text-muted);
+  font-size: 12px;
+}
+
+.score-stars {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.star-btn {
+  width: 32px;
+  height: 32px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  color: #cbd5e1;
+  transition: color 0.15s ease, transform 0.15s ease;
+}
+
+.star-btn:hover {
+  transform: scale(1.08);
+}
+
+.star-btn.active {
+  color: #f59e0b;
+}
+
+.score-hint {
+  margin-left: 8px;
+  font-size: 12px;
+  color: var(--medical-text-muted);
+}
+
+.tag-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.tag-chip {
+  padding: 6px 12px;
+  border-radius: 999px;
+  border: 1px solid var(--medical-border-medium);
+  background: var(--medical-bg-primary);
+  color: var(--medical-text-secondary);
+  font-size: 12px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.tag-chip.active {
+  border-color: var(--medical-primary);
+  background: rgba(8, 145, 178, 0.08);
+  color: var(--medical-primary);
+}
+
+.screenshot-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0;
+}
+
+.screenshot-panel {
+  margin-top: 10px;
+  padding: 12px;
+  border: 1px dashed var(--medical-border-light);
+  border-radius: 12px;
+  background: var(--medical-bg-secondary);
 }
 </style>

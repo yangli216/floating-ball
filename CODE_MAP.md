@@ -82,8 +82,8 @@ floating-ball/
 
 | 组件 | 行数 | 职责 |
 |------|------|------|
-| **SettingsPanel.vue** | ~2100 | 通用设置、LLM 配置、区域化后端接入、语音 provider / 音频输入设备、自动更新、主题 |
-| **FeedbackSubmissionPanel.vue** | ~250 | 区域化问题反馈面板 | 上传截图、评分、说明并提交后台 |
+| **SettingsPanel.vue** | ~2100 | 通用设置、紧凑主题选择、LLM 配置、区域化后端接入、语音 provider / 音频输入设备、自动更新 |
+| **FeedbackSubmissionPanel.vue** | ~560 | 统一问题反馈面板（一键回写 + 右上角入口共用），紧凑星级 + 问题标签 + 选填截图 |
 | **AnalyticsPanel.vue** | ~1200 | 数据分析看板（ECharts） |
 | **KnowledgePanel.vue** | ~850 | PMPHAI 医学知识检索 |
 | **BodyPartSelector.vue** | ~830 | 人体部位交互选症状（分性别） |
@@ -164,12 +164,13 @@ useEventListeners (全局事件) -> 触发 useNavigation & useWorkMode
 | **medical_catalog.rs** | -- | 医学目录 SQLite 持久化命令：诊断全局缓存、诊疗项目/药品按机构缓存与同步状态管理，并提供调试态查看/清理命令 | 供 `medicalData.ts` 调用 |
 | **factChecker.ts** | ~399 | AI 输出验证（医学指南核查） |
 | **feedback.ts** | ~312 | 操作追踪与反馈 |
-| **voiceFeedback.ts** | -- | 语音反馈 payload 组装、本地草稿、病例字段差异摘要与待同步队列 |
+| **voiceFeedback.ts** | -- | 语音反馈 payload 组装、本地草稿、病例字段差异摘要与待同步队列；通过 `submitVoicePendingPayloadToBackend` 映射到统一 `/v1/client/feedbacks` |
 | **aiTrace.ts** | ~200 | 最近一次 AI 调用链路上下文缓存 |
 | **knowledgeBase.ts** | ~213 | 通用知识库 CRUD |
 | **regionalClient.ts** | ~400 | 区域化核心客户端：设备 MAC 解析/设备编码持久化、终端注册、bootstrap 拉取、心跳、鉴权、SSE 代理 |
 | **regionalRuntime.ts** | ~50 | 区域化运行时编排：统一初始化、重连、远程数据同步、审计上传启停 |
-| **userFeedback.ts** | ~120 | 区域化问题反馈提交服务 |
+| **userFeedback.ts** | ~150 | 统一反馈提交服务（kind/severity/tags/hasCorrection），自动附加 doctor/org/dept actor 与 aiTrace |
+| **feedbackContext.ts** | ~80 | 反馈上下文：握手阶段缓存当前医生/机构/科室身份，供反馈提交回填 |
 | **themeService.ts** | ~209 | 主题管理（深色/浅色模式） |
 | **reportGenerator.ts** | ~152 | 最终报告生成 |
 | **promptGuard.ts** | ~138 | 提示词注入防护 |

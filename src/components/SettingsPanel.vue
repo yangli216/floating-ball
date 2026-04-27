@@ -48,10 +48,6 @@ const showToast = inject('showToast') as (msg: string, type: 'success' | 'error'
 
 const { currentTheme, themes, setTheme } = useTheme();
 
-const getThemePreviewStyle = (theme: typeof themes[0]) => ({
-  background: theme.colors.background,
-  borderColor: theme.colors.borderLight,
-});
 
 type TabType = 'general' | 'model' | 'about';
 const activeTab = ref<TabType>('general');
@@ -799,35 +795,27 @@ watch([regionalBaseUrl, regionalOrgCode], () => {
       <!-- General Tab -->
       <div v-if="activeTab === 'general'" class="tab-pane">
         <!-- Theme Selector Section -->
-        <div class="settings-section">
-          <div class="section-header">
-            <Icon icon="lucide:palette" :size="20" />
-            <h3>界面主题</h3>
+        <div class="settings-section theme-section">
+          <div class="section-header theme-section-header">
+            <div class="section-title-inline">
+              <Icon icon="lucide:palette" :size="20" />
+              <h3>界面主题</h3>
+            </div>
+            <span class="current-theme-pill">当前：{{ currentTheme.name }}</span>
           </div>
-          <p class="section-desc">选择适合您的视觉风格</p>
 
-          <div class="theme-grid">
-            <button v-for="theme in themes" :key="theme.id"
+          <div class="theme-grid" role="group" aria-label="界面主题">
+            <button v-for="theme in themes" :key="theme.id" type="button"
               :class="['theme-card', { active: currentTheme.id === theme.id }]"
+              :aria-pressed="currentTheme.id === theme.id"
+              :title="theme.description"
               @click="trackClick('settings_theme_change', { themeId: theme.id }); setTheme(theme)">
-              <div class="theme-preview" :style="getThemePreviewStyle(theme)">
-                <div class="preview-header" :style="{ background: theme.colors.primary }"></div>
-                <div class="preview-content">
-                  <div class="preview-sidebar" :style="{ background: theme.colors.primaryLight }"></div>
-                  <div class="preview-main">
-                    <div class="preview-line" :style="{ background: theme.colors.textMuted }"></div>
-                    <div class="preview-line short" :style="{ background: theme.colors.textMuted }"></div>
-                    <div class="preview-btn" :style="{ background: theme.colors.cta }"></div>
-                  </div>
-                </div>
-              </div>
-              <div class="theme-info">
-                <span class="theme-name">{{ theme.name }}</span>
-                <span class="theme-desc">{{ theme.description }}</span>
-              </div>
-              <div v-if="currentTheme.id === theme.id" class="theme-check">
-                <Icon icon="lucide:check" :size="16" />
-              </div>
+              <span
+                class="theme-swatch"
+                :style="{ background: `linear-gradient(135deg, ${theme.colors.primary}, ${theme.colors.cta})`, borderColor: theme.colors.borderMedium }"
+              ></span>
+              <span class="theme-name">{{ theme.name }}</span>
+              <Icon v-if="currentTheme.id === theme.id" icon="lucide:check" :size="14" class="theme-check" />
             </button>
           </div>
         </div>
@@ -1527,21 +1515,51 @@ watch([regionalBaseUrl, regionalOrgCode], () => {
   line-height: 1.5;
 }
 
-/* Theme Selector Grid */
-.theme-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+/* Theme Selector */
+.theme-section {
+  padding: 18px 20px;
+}
+
+.theme-section-header {
+  justify-content: space-between;
   gap: 12px;
+  margin-bottom: 12px;
+  padding-bottom: 10px;
+}
+
+.section-title-inline {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+}
+
+.current-theme-pill {
+  flex-shrink: 0;
+  padding: 4px 10px;
+  border-radius: 999px;
+  background: rgba(8, 145, 178, 0.08);
+  color: var(--medical-primary);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.theme-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
 }
 
 .theme-card {
-  position: relative;
-  display: flex;
-  flex-direction: column;
-  padding: 12px;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 36px;
+  padding: 7px 10px;
   background: var(--medical-bg-primary);
-  border: 2px solid var(--medical-border-light);
-  border-radius: 12px;
+  border: 1px solid var(--medical-border-light);
+  border-radius: 999px;
+  color: var(--medical-text-primary);
   cursor: pointer;
   transition: all var(--duration-normal) var(--ease-out);
   text-align: left;
@@ -1549,96 +1567,32 @@ watch([regionalBaseUrl, regionalOrgCode], () => {
 
 .theme-card:hover {
   border-color: var(--medical-border-medium);
-  transform: translateY(-2px);
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+  background: var(--medical-bg-secondary);
 }
 
 .theme-card.active {
   border-color: var(--medical-primary);
-  background: rgba(8, 145, 178, 0.04);
-  box-shadow: 0 0 0 3px rgba(8, 145, 178, 0.1);
+  background: rgba(8, 145, 178, 0.06);
+  box-shadow: 0 0 0 2px rgba(8, 145, 178, 0.1);
 }
 
-.theme-preview {
-  width: 100%;
-  height: 80px;
-  border-radius: 8px;
+.theme-swatch {
+  width: 18px;
+  height: 18px;
   border: 1px solid;
-  overflow: hidden;
-  margin-bottom: 10px;
-}
-
-.preview-header {
-  height: 16px;
-}
-
-.preview-content {
-  display: flex;
-  height: calc(100% - 16px);
-  padding: 6px;
-  gap: 6px;
-}
-
-.preview-sidebar {
-  width: 20px;
-  border-radius: 4px;
-  opacity: 0.6;
-}
-
-.preview-main {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  padding: 4px;
-}
-
-.preview-line {
-  height: 6px;
-  border-radius: 3px;
-  opacity: 0.3;
-}
-
-.preview-line.short {
-  width: 60%;
-}
-
-.preview-btn {
-  width: 40px;
-  height: 12px;
-  border-radius: 4px;
-  margin-top: auto;
-}
-
-.theme-info {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
+  border-radius: 50%;
+  box-shadow: inset 0 0 0 2px rgba(255, 255, 255, 0.55);
 }
 
 .theme-name {
-  font-size: 14px;
+  font-size: 13px;
   font-weight: 600;
-  color: var(--medical-text-primary);
-}
-
-.theme-desc {
-  font-size: 12px;
-  color: var(--medical-text-muted);
+  white-space: nowrap;
 }
 
 .theme-check {
-  position: absolute;
-  top: 8px;
-  right: 8px;
-  width: 24px;
-  height: 24px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: var(--medical-primary);
-  color: white;
-  border-radius: 50%;
+  flex-shrink: 0;
+  color: var(--medical-primary);
 }
 
 /* Form Elements */
