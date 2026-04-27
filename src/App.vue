@@ -497,7 +497,7 @@ const openInsideCloudHome = async () => {
           :style="ballStyle"
         >
           <!-- 环绕菜单 -->
-          <div ref="ringMenuRef" class="ring-menu" :class="{ 'is-active': isHovered || isFocused }" role="navigation" aria-label="主菜单">
+          <div ref="ringMenuRef" class="ring-menu" :class="{ 'is-active': isHovered }" role="navigation" aria-label="主菜单">
             <button
               class="ring-btn right"
               :class="{ 'manual-hover': hoveredBtnIndex === 1 }"

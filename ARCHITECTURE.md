@@ -220,8 +220,8 @@ watch([isWorking, currentView], async () => { ... });
 // 窗口状态
 const appWindow = ref<TauriWindow | null>(null);
 const isWorking = ref(false);          // 是否处于工作模式
-const isHovered = ref(false);          // 是否悬停
-const isFocused = ref(false);          // 是否聚焦
+const isHovered = ref(false);          // 鼠标是否位于小球交互范围内（驱动环绕菜单显示）
+const isFocused = ref(false);          // 是否聚焦（不驱动环绕菜单显示）
 const transitioning = ref(false);      // 是否正在过渡动画
 
 // 视图状态
@@ -514,7 +514,7 @@ await voiceConsultation.handleResultConfirm(record);
   - `stop-consultation` - 停止问诊
   - `start-voice-consultation` - 语音问诊；来自 HIS / HTTP Bridge 的显式开始语音请求会先按目标患者 `idPi / patientId` 判断是否存在未提交缓存：同患者且存在缓存时直接恢复到语音结果页，否则开启新语音会话；仅在已处于录音胶囊页时对重复请求做幂等忽略
 - ✅ 鼠标事件监听
-  - `hover-change` - 悬停状态
+  - `hover-change` - 小球交互范围悬停状态，作为环绕菜单唯一展开条件
   - `mouse-pos` - 鼠标位置（环绕菜单高亮）
 - ✅ 窗口事件监听
   - `tauri://move` - 窗口移动
