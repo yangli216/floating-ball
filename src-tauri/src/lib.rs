@@ -150,6 +150,33 @@ fn build_runtime_updater(
         .map_err(|error| format!("构建更新器失败: {}", error))
 }
 
+#[cfg(test)]
+mod update_tests {
+    #[test]
+    fn tauri_updater_config_allows_http_endpoints() {
+        let tauri_config: serde_json::Value =
+            serde_json::from_str(include_str!("../tauri.conf.json")).unwrap();
+        let updater_config_json = tauri_config
+            .get("plugins")
+            .and_then(|plugins| plugins.get("updater"))
+            .cloned()
+            .expect("missing updater plugin config");
+        let updater_config: tauri_plugin_updater::Config =
+            serde_json::from_value(updater_config_json).unwrap();
+
+        assert!(updater_config.dangerous_insecure_transport_protocol);
+
+        let http_config = serde_json::json!({
+            "dangerous-insecure-transport-protocol": updater_config.dangerous_insecure_transport_protocol,
+            "endpoints": ["http://127.0.0.1:8080/v1/client/releases/production/latest.json"],
+            "pubkey": updater_config.pubkey,
+        });
+        let parsed: tauri_plugin_updater::Config = serde_json::from_value(http_config).unwrap();
+
+        assert_eq!(parsed.endpoints[0].scheme(), "http");
+    }
+}
+
 const FLOATING_BALL_LOGICAL_SIZE: f64 = 160.0;
 const FLOATING_BALL_MARGIN_LOGICAL: f64 = 16.0;
 

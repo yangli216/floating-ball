@@ -856,7 +856,7 @@ startAuditUploader() (startup flush + enqueue flush + 30s retry)
 - 正式内网：`{REGIONAL_BASE_URL}/v1/client/releases/production/latest.json`
 - 测试内网：`{REGIONAL_BASE_URL}/v1/client/releases/testing/latest.json`
 
-`floating-ball-server` 后台上传版本后生成 Tauri 兼容 `latest.json` 和公开下载地址；这些公开地址不携带设备令牌，避免 updater 下载阶段无法附带自定义鉴权头。内网部署允许使用 `http://` 更新源，`tauri.conf.json` 已开启 updater 的 `dangerousInsecureTransportProtocol`；安装包签名校验仍由 Tauri updater 强制执行。
+`floating-ball-server` 后台上传版本后生成 Tauri 兼容 `latest.json` 和公开下载地址；这些公开地址不携带设备令牌，避免 updater 下载阶段无法附带自定义鉴权头。内网部署允许使用 `http://` 更新源，`tauri.conf.json` 已通过 updater 的 `dangerous-insecure-transport-protocol` 开启非安全传输协议，运行时注入的 updater endpoint 同样继承该配置；安装包签名校验仍由 Tauri updater 强制执行。
 
 ### 当前本地桥接与知识库链路
 

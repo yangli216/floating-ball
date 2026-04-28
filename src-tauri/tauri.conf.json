@@ -4,9 +4,9 @@
   "version": "1.2.18",
   "identifier": "com.med-hermes.app",
   "build": {
-    "beforeDevCommand": "npm run dev",
+    "beforeDevCommand": "yarn dev",
     "devUrl": "http://localhost:1420",
-    "beforeBuildCommand": "npm run build",
+    "beforeBuildCommand": "yarn build",
     "frontendDist": "../dist"
   },
   "app": {
@@ -62,7 +62,7 @@
     },
     "updater": {
       "active": true,
-      "dangerousInsecureTransportProtocol": true,
+      "dangerous-insecure-transport-protocol": true,
       "endpoints": [
         "https://github.com/yangli216/floating-ball/releases/latest/download/latest.json"
       ],
