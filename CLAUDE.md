@@ -96,9 +96,9 @@ HIS System (HTTP) → Rust HTTP Server → Tauri Events → Vue Components
 ### Medical Data Matching System
 
 **Service:** [medicalData.ts](src/services/medicalData.ts)
-**Data Files:** [src/assets/](src/assets/) (CSV format)
+**Data Files:** [src/assets/](src/assets/) plus HIS/SQLite scoped catalogs
 - `diagnoses.csv`: ICD-10 diagnoses (id, code, name, keywords)
-- `medicines.csv`: Medicines (id, name, spec)
+- Medicines: loaded from HIS/SQLite pharmacy-scoped catalogs; `medicines.csv` is no longer used as a fallback
 - `items.csv`: Medical items/tests (id, name, category)
 
 **Matching Algorithm:**

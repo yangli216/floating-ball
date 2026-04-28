@@ -64,7 +64,7 @@ pub struct MedicineCatalogEntry {
     pub name: String,
     pub spec: String,
     /// 该药品在哪些发药药房目录中出现（org_code/idSto 列表）。
-    /// 为空时表示与所有 scope_codes 关联（兼容 CSV 兜底 / 历史迁移）。
+    /// 为空时不参与药品匹配，也不写入任一药房 scope。
     #[serde(default)]
     pub store_ids: Vec<String>,
 }
@@ -637,14 +637,7 @@ pub async fn replace_org_medicine_catalog(
 
         let scoped_items: Vec<&MedicineCatalogEntry> = items
             .iter()
-            .filter(|item| {
-                if item.store_ids.is_empty() {
-                    // 兼容缺省 storeIds 的来源（CSV/历史）：写入到所有 scope
-                    true
-                } else {
-                    item.store_ids.iter().any(|existing| existing == scope_code)
-                }
-            })
+            .filter(|item| item.store_ids.iter().any(|existing| existing == scope_code))
             .collect();
 
         {

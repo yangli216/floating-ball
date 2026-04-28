@@ -1409,6 +1409,9 @@ function buildMedicineMatchedItem(item: MedicineItem): TreatmentRecommendation['
     id: item.id,
     name: item.name,
     spec: item.spec,
+    storeIds: Array.isArray(item.storeIds)
+      ? Array.from(new Set(item.storeIds.map((value) => (typeof value === 'string' ? value.trim() : '')).filter(Boolean)))
+      : [],
     idSrv: item.idSrv,
     naSrv: item.naSrv,
     sdSrv: item.sdSrv,
@@ -1464,18 +1467,30 @@ function isValidMedicineProDetail(detail: MedicineDetail | null): detail is Medi
 function getCandidatePharmaciesForMedicine(rec?: TreatmentRecommendation): PharmacyOption[] {
   const seen = new Set<string>();
   const allowedStoreIds = rec ? new Set(getMatchedMedicineStoreIds(rec)) : null;
-  return pharmacyOptions.value.filter((pharmacy) => {
+  const uniquePharmacies = pharmacyOptions.value.filter((pharmacy) => {
     const idSto = (pharmacy.idSto || '').trim();
     if (!idSto || seen.has(idSto)) {
-      return false;
-    }
-    // 如果当前药品明确依附某几个药房（matchedItem.storeIds 非空），只保留交集
-    if (allowedStoreIds && allowedStoreIds.size > 0 && !allowedStoreIds.has(idSto)) {
       return false;
     }
     seen.add(idSto);
     return true;
   });
+
+  if (!allowedStoreIds || allowedStoreIds.size === 0) {
+    return uniquePharmacies;
+  }
+
+  const scopedPharmacies = uniquePharmacies.filter((pharmacy) => allowedStoreIds.has((pharmacy.idSto || '').trim()));
+  if (scopedPharmacies.length > 0) {
+    return scopedPharmacies;
+  }
+
+  console.warn('[VoiceConsultationNew] Matched medicine storeIds do not intersect current available pharmacies', {
+    name: rec?.name,
+    matchedStoreIds: Array.from(allowedStoreIds),
+    availableStoreIds: uniquePharmacies.map((pharmacy) => pharmacy.idSto).filter(Boolean),
+  });
+  return [];
 }
 
 function isMedicineDetailLoadedForSelectedPharmacy(rec: TreatmentRecommendation): boolean {
@@ -2177,6 +2192,8 @@ async function fetchAITreatment(): Promise<void> {
   };
 
   try {
+    await fetchPharmacyOptions();
+
     const [medResponse, examResponse, labResponse, procResponse] = await Promise.allSettled([
       chat([
         { role: 'system', content: PROMPTS.consultation.treatmentRecommendation.system },
@@ -2536,7 +2553,17 @@ async function fetchRouteOptions(): Promise<void> {
   }
 }
 
-async function fetchPharmacyOptions(): Promise<void> {
+function fetchPharmacyOptions(): Promise<void> {
+  if (!pharmacyOptionsPromise) {
+    pharmacyOptionsPromise = loadPharmacyOptions().finally(() => {
+      pharmacyOptionsPromise = null;
+    });
+  }
+
+  return pharmacyOptionsPromise;
+}
+
+async function loadPharmacyOptions(): Promise<void> {
   const his = getHisAdapter();
   if (!his) {
     console.warn('[VoiceConsultationNew] HisService not initialized, pharmacy options skipped');
@@ -2545,11 +2572,18 @@ async function fetchPharmacyOptions(): Promise<void> {
   }
 
   try {
-    pharmacyOptions.value = await his.fetchAvailablePharmacies();
+    const availablePharmacies = await his.fetchAvailablePharmacies();
+    pharmacyOptions.value = availablePharmacies.length > 0
+      ? availablePharmacies
+      : (await his.fetchMedicineStoreIds('')).map((idSto) => ({
+          name: idSto,
+          idDept: '',
+          idSto,
+        }));
     const activeStoreIds = pharmacyOptions.value
       .map((option) => (option.idSto || '').trim())
       .filter((value): value is string => Boolean(value));
-    medicalDataService.setActivePharmacyStoreIds(activeStoreIds);
+    await medicalDataService.ensureMedicineCatalogForStoreIds(activeStoreIds, his);
     void hydrateMatchedMedicalItemDetails(treatments.value);
   } catch (error) {
     console.error('[VoiceConsultationNew] Failed to load pharmacy options from HIS', error);
@@ -2690,6 +2724,7 @@ onBeforeUnmount(() => {
 const pharmacyOptions = ref<PharmacyOption[]>([]);
 const execDeptOptions = ref<ExecDeptOption[]>([]);
 const insuranceOptions = ['医保使用', '自费'];
+let pharmacyOptionsPromise: Promise<void> | null = null;
 
 function getMatchedItemRaw(rec: TreatmentRecommendation): Record<string, unknown> | undefined {
   const raw = rec.matchedItem?.raw;
@@ -3572,6 +3607,7 @@ watch(
     }
 
     if (result.treatments.length > 0) {
+      await fetchPharmacyOptions();
       treatments.value = initTreatmentsFromIntent(result.treatments);
       lastTreatmentDiagnosisKey.value = getDiagnosisIdentity(selectedDiagnosis.value);
       void registerCurrentRecommendations();

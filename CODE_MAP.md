@@ -260,7 +260,7 @@ Pinia 跨组件共享状态（仅两个，新增需人工审批）。
 | **diagnoses.csv** | 2.2 MB | 西医诊断库（ICD-10, 2万+条） |
 | **tcm-diagnoses.csv** | 46 KB | 中医诊断 |
 | **tcm-syndromes.csv** | 107 KB | 中医证型 |
-| **medicines.csv** | 137 KB | 药品目录 |
+| **medicines.csv** | 137 KB | 历史药品文件；当前药品匹配不再使用 CSV，改用 HIS/SQLite 药房 scoped 目录 |
 | **items.csv** | 6.5 KB | 检查检验项目 |
 | **templates.json** | 731 KB | 西医症状表单模板（动态字段） |
 | **tcm-templates.json** | 187 KB | 中医症状模板 |

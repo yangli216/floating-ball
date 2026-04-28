@@ -57,6 +57,9 @@ function mapDiagnosisCatalog(item: HisDiagnosisCatalogItem): DiagnosisCatalogEnt
 }
 
 function mapMedicineCatalog(item: HisMedicineCatalogItem): MedicineCatalogEntry {
+  const storeIds = Array.isArray(item.storeIds)
+    ? Array.from(new Set(item.storeIds.map((value) => trim(value)).filter((value): value is string => Boolean(value))))
+    : [];
   // PHIS 私有字段（idSrv / naSrv / sdSrv / idDeptExec / fgCheckOrd / fgSkintest）
   // 全部塞进 raw，业务通用代码不再访问
   return {
@@ -64,8 +67,10 @@ function mapMedicineCatalog(item: HisMedicineCatalogItem): MedicineCatalogEntry 
     code: trim(item.code),
     name: trim(item.name) ?? '',
     spec: trim(item.spec),
+    storeIds,
     raw: {
       ...(item.raw && typeof item.raw === 'object' ? item.raw : {}),
+      storeIds,
       idSrv: item.idSrv,
       naSrv: item.naSrv,
       sdSrv: item.sdSrv,

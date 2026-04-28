@@ -72,7 +72,7 @@ export interface HisAdapter {
   /** 机构维度：药品目录 */
   fetchInstitutionMedicineCatalog(orgCode: string): Promise<MedicineCatalogEntry[]>;
 
-  /** 机构维度：药房（药库）storeId 列表，主要用于药品目录的二次拉取 */
+  /** 机构维度：药房（药库）storeId 列表；优先复用当前可用发药药房，若为空再回退到药房目录 */
   fetchMedicineStoreIds(orgCode: string): Promise<string[]>;
 
   // ---- 字典与可选项（语音问诊编辑器使用） ----

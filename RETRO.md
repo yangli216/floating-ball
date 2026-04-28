@@ -118,6 +118,13 @@
 - **解决方案**: 在 `MedicineCatalogEntry` / `MedicineItem` 中新增 `storeIds`，HIS catalog 合并时按 storeId 维度 union；SQLite 写入按 `item.storeIds ∩ scope_codes` 落库，读取时聚合每个药品所在的 storeId 集合；`medicalDataService.setActivePharmacyStoreIds` 把当前可用药房注入匹配端，匹配只在交集内进行；`VoiceConsultationNew` 的单药品默认药房 / 候选药房 / 详情轮询都按 `matchedItem.storeIds ∩ pharmacyOptions` 收窄。
 - **后续防护**: 后续新增"机构 → 药房 → 药品"类多对多关系字段时，前端中性 DTO 必须显式带上反向引用（如 `storeIds` / `deptIds`）；任何"按 scope 集合的缓存"读出来后，匹配端不能默认全集，必须再做一次 active scope ∩ entry scope 的过滤。
 
+### RETRO-014: 可用药房与药品目录药房口径不一致导致标准库为空 [已解决]
+
+- **现象**: `Pharmacy filter summary` 已能看到有效药房，但治疗方案药品医嘱无法切换发药药房，手动标准库匹配也没有可用药品；控制台出现 active storeIds 已设置但 `medicineCount: 0`。
+- **根因**: UI 可用药房走 `fetchAvailablePharmacies()`，会按 `sdDisp/sdUse/用户角色科室/idSto` 过滤；药品目录同步却另走 `fetchMedicineStoreIds()`，只按 `sdDisp` 取药房，导致 active store scope、缓存 key、药品 `storeIds` 三者口径不一致。进一步排查发现，语音问诊结果页只设置了 active storeIds，没有在治疗推荐匹配前显式按这些 `idSto` 从 SQLite/HIS 加载药品目录；当 SDK 握手缺少机构 `orgCode`、机构同步尚未完成，或区域化开关导致局部同步早退时，即使 SQLite 的 `63e0...` 药房下有阿莫西林，前端内存药品目录仍为 0。再次调试发现 `HisService` 已生成顶层 `storeIds`，但 `PhisHisAdapter.mapMedicineCatalog()` 映射中性 DTO 时丢失了该字段，导致 `getMatchableMedicines()` 只能看到 `raw.idSto` 而看不到顶层 `storeIds`。若再允许 CSV/无 scope 药品兜底，会让医生匹配到并不属于任何可用发药药房的目录项。
+- **解决方案**: `fetchMedicineStoreIds()` 改为先复用 `fetchAvailablePharmacies()` 的有效药房；若该列表为空，再从药房目录取 `idSto` 作为下拉和目录同步兜底。药品标准库匹配只使用带 `storeIds` 的 HIS 药品目录，并按 active store scope 过滤；`VoiceConsultationNew` 拿到药房列表后调用 `ensureMedicineCatalogForStoreIds()`，先按 active `idSto` 读取 SQLite 聚合缓存，必要时再刷新 HIS 目录，治疗推荐解析和语音意图药品初始化都等待该加载完成；`PhisHisAdapter` 必须透传 `storeIds`，`normalizeMedicineItems()` 还要从 `raw.storeIds/raw.storeId/raw.idSto` 做兼容提取；匹配结果保留 `storeIds`，药房候选严格按 `matchedItem.storeIds ∩ pharmacyOptions` 收窄，不再回退到 CSV 或不限 scope 药品。
+- **后续防护**: UI 选项、目录同步、缓存 key、匹配过滤必须共用同一组 scope 解析函数；不要为同一业务维度维护两套过滤逻辑。看到 `activeStoreIds` 非空但 `medicineCount: 0` 时，优先检查是否已按 active storeIds 加载药品目录，而不是先查匹配算法。
+
 
 ---
 

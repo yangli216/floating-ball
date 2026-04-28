@@ -197,7 +197,7 @@ export interface MedicineCatalogEntry {
   name: string;
   spec?: string;
   keywords?: string[] | string;
-  /** 该药品在哪些发药药房（idSto）目录中出现。为空表示不限药房（CSV/历史迁移兜底） */
+  /** 该药品在哪些发药药房（idSto）目录中出现。为空表示未标注药房，不参与药品匹配 */
   storeIds?: string[];
   /** 厂商透传 */
   raw?: Record<string, unknown>;

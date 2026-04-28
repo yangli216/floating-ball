@@ -661,7 +661,11 @@ export class HisService {
           idDeptExec: item.idDeptExec?.trim() || '',
           fgCheckOrd: item.fgCheckOrd?.trim() || '1',
           fgSkintest: item.fgSkintest?.trim() || '0',
-          raw: item as unknown as Record<string, unknown>,
+          raw: {
+            ...(item as unknown as Record<string, unknown>),
+            idSto,
+            storeIds: idSto ? [idSto] : [],
+          },
         });
       });
     });
@@ -929,6 +933,19 @@ export class HisService {
   }
 
   async fetchMedicineStoreIds(orgCode: string): Promise<string[]> {
+    const availablePharmacies = await this.fetchAvailablePharmacies();
+    if (availablePharmacies.length > 0) {
+      const availableStoreIds = this.extractUniqueStoreIds(availablePharmacies);
+
+      console.log('[HisService] Medicine store filter summary (available pharmacies)', {
+        orgCode,
+        matchedCount: availablePharmacies.length,
+        matchedStoreIds: availableStoreIds,
+      });
+
+      return availableStoreIds;
+    }
+
     const response = await this.post<OrgMedicineStoreListBody>(
       HIS_CATALOG_ENDPOINTS.orgMedicineStores,
       [{ start: 0, limit: -1, params: orgCode ? { idOrg: orgCode } : {} }]
@@ -937,30 +954,45 @@ export class HisService {
 
     const stores = response.body?.items ?? response.data?.items ?? [];
     let sdDispFiltered = 0;
+    let sdUseFiltered = 0;
 
-    const validStores = stores.filter((store) => {
+    const fallbackStores = stores.filter((store) => {
       if ((store.sdDisp || '').trim() !== '1') {
         sdDispFiltered += 1;
         return false;
       }
-      return true;
+      const sdUse = (store.sdUse || '').trim();
+      if (sdUse && sdUse !== '1' && sdUse !== '3') {
+        sdUseFiltered += 1;
+        return false;
+      }
+      return Boolean((store.idSto || '').trim());
     });
 
     const storeIds = Array.from(new Set(
-      validStores
-        .map(store => store.idSto?.trim())
+      fallbackStores
+        .map((store) => store.idSto?.trim())
         .filter((idSto): idSto is string => Boolean(idSto))
     ));
 
-    console.log('[HisService] Medicine store filter summary (orgMedicineStores)', {
+    console.log('[HisService] Medicine store filter summary (fallback stores)', {
       orgCode,
       rawCount: stores.length,
       sdDispFiltered,
-      matchedCount: validStores.length,
+      sdUseFiltered,
+      matchedCount: fallbackStores.length,
       matchedStoreIds: storeIds,
     });
 
     return storeIds;
+  }
+
+  private extractUniqueStoreIds(pharmacies: PharmacyOption[]): string[] {
+    return Array.from(new Set(
+      pharmacies
+        .map((store) => store.idSto?.trim())
+        .filter((idSto): idSto is string => Boolean(idSto))
+    ));
   }
 
   private composeMedicineSpec(specSale?: string, unitSale?: string): string {
