@@ -30,6 +30,7 @@ import type {
   InventoryCheckResult,
   MedicalItemCatalogEntry,
   MedicalItemDetail,
+  MedicalItemPartOption,
   MedicineCatalogEntry,
   MedicineDetail,
 } from './types';
@@ -142,6 +143,18 @@ export class MockHisAdapter implements HisAdapter {
       executingDeptId: this.execDeptId,
       raw: { mock: true },
     };
+  }
+
+  async fetchMedicalItemPartOptions(itemId: string): Promise<MedicalItemPartOption[]> {
+    const cat = MOCK_MEDICAL_ITEMS.find((i) => i.id === itemId || i.code === itemId);
+    if (!cat || cat.category !== 'exam') return [];
+    return [{
+      partId: 'mock-part-none',
+      itemId: cat.id,
+      name: '无部位',
+      partAndWay: '无部位',
+      raw: { mock: true },
+    }];
   }
 
   async fetchMedicineProDetail(productId: string, storeId: string): Promise<MedicineDetail | null> {

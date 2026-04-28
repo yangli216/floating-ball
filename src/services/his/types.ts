@@ -14,6 +14,7 @@
  *
  * 已抽象（业务层只面向以下类型编程）：
  * - 详情：`MedicineDetail` / `MedicalItemDetail`
+ * - 检查部位：`MedicalItemPartOption`
  * - 字典：`DictionaryEntry`
  * - 库存校验：`InventoryCheckRequest` / `InventoryCheckResult`
  * - 目录条目：`DiagnosisCatalogEntry` / `MedicineCatalogEntry` / `MedicalItemCatalogEntry`
@@ -97,6 +98,37 @@ export interface MedicalItemDetail {
   /** 默认执行科室 ID */
   executingDeptId?: string;
 
+  /** 厂商透传 */
+  raw: Record<string, unknown>;
+}
+
+
+/**
+ * 检查部位 / 方式候选
+ *
+ * 业务层用途：检查项目匹配后展示可选检查部位；单候选时自动回填到 `idPart`。
+ */
+export interface MedicalItemPartOption {
+  /** 部位方式主键，PHIS 回写时对应 `idPart` */
+  partId: string;
+  /** 归属检查项目 ID */
+  itemId?: string;
+  /** 人读展示名，如 “胸部CT” / “无部位” */
+  name: string;
+  /** 部位 + 方式原始组合文本 */
+  partAndWay?: string;
+  /** 部位 + 方式编码组合 */
+  partAndWayCode?: string;
+  /** PACS 类型编码 */
+  pacsType?: string;
+  /** PACS 类型文本 */
+  pacsTypeText?: string;
+  /** 部位文本 */
+  partText?: string;
+  /** 方式文本 */
+  wayText?: string;
+  /** 默认数量 */
+  amount?: number;
   /** 厂商透传 */
   raw: Record<string, unknown>;
 }

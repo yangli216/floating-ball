@@ -27,6 +27,7 @@ import type {
   InventoryCheckResult,
   MedicalItemCatalogEntry,
   MedicalItemDetail,
+  MedicalItemPartOption,
   MedicineCatalogEntry,
   MedicineDetail,
 } from './types';
@@ -39,6 +40,7 @@ export type {
   InventoryCheckResult,
   MedicalItemCatalogEntry,
   MedicalItemDetail,
+  MedicalItemPartOption,
   MedicineCatalogEntry,
   MedicineDetail,
 } from './types';
@@ -96,6 +98,9 @@ export interface HisAdapter {
    * `MedicalItemDetail`。原始响应体仍可通过返回值的 `raw` 访问。
    */
   fetchMedicalItemDetail(itemId: string): Promise<MedicalItemDetail | null>;
+
+  /** 检查项目部位 / 方式候选。仅检查项目需要，检验 / 处置可返回空数组。 */
+  fetchMedicalItemPartOptions(itemId: string): Promise<MedicalItemPartOption[]>;
 
   /**
    * 药品详情（按药房维度）。同上，返回 vendor-neutral 的 `MedicineDetail`。

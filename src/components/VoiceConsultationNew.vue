@@ -9,7 +9,7 @@ import VoiceSessionFeedbackBar from './VoiceSessionFeedbackBar.vue';
 import { chat, type ChatMessage } from '../services/llm';
 import { PROMPTS } from '../prompts';
 import { getHisAdapter } from '../services/his';
-import type { DictionaryEntry, InventoryCheckRequest, MedicineDetail, PharmacyOption } from '../services/his';
+import type { DictionaryEntry, InventoryCheckRequest, MedicalItemPartOption, MedicineDetail, PharmacyOption } from '../services/his';
 import { medicalDataService, type DiagnosisItem, type MedicalItem, type MedicineItem } from '../services/medicalData';
 import { clearVoiceConsultationCache } from '../composables/useVoiceConsultation';
 import { useVoiceFeedback } from '../composables/useVoiceFeedback';
@@ -89,7 +89,7 @@ const submitting = ref(false);
 const showCancelConfirm = ref(false);
 
 const s = (value: unknown): string => (typeof value === 'string' ? value : '');
-const patientName = computed((): string => s(props.initialPatientData?.naPi) || s(props.initialPatientData?.name) || s(props.initialPatientData?.patientName));
+const patientName = computed((): string => s(props.initialPatientData?.naPi) || s(props.initialPatientData?.['na_pi']) || s(props.initialPatientData?.name) || s(props.initialPatientData?.patientName) || s(props.initialPatientData?.['patient_name']));
 const patientGender = computed((): string => s(props.initialPatientData?.sdSexText) || s(props.initialPatientData?.sdSex));
 const patientAge = computed((): string => s(props.initialPatientData?.ageText) || (props.initialPatientData?.ageNum != null ? `${props.initialPatientData.ageNum}${s(props.initialPatientData.ageUnit) || '岁'}` : ''));
 const patientIdCard = computed((): string => s(props.initialPatientData?.idCard));
@@ -254,6 +254,7 @@ const activeSecondarySelectorKey = ref<string | null>(null);
 const pharmacySearchKeywords = ref<Record<string, string>>({});
 const execDeptSearchKeywords = ref<Record<string, string>>({});
 const insuranceSearchKeywords = ref<Record<string, string>>({});
+const bodySiteSearchKeywords = ref<Record<string, string>>({});
 const activeFeedbackPopoverKey = ref<string | null>(null);
 const showSessionFeedbackDialog = ref(false);
 const medicineInventoryWarnings = ref<Record<string, string>>({});
@@ -385,6 +386,8 @@ function buildTreatmentFeedbackSnapshot(rec: TreatmentRecommendation): Record<st
     pharmacy: rec.pharmacy || '',
     execDept: rec.execDept || '',
     insuranceType: rec.insuranceType || '',
+    bodySite: rec.bodySite || '',
+    bodySiteId: rec.bodySiteId || '',
   };
 }
 
@@ -643,6 +646,7 @@ function resetTreatmentEditorState(): void {
   pharmacySearchKeywords.value = {};
   execDeptSearchKeywords.value = {};
   insuranceSearchKeywords.value = {};
+  bodySiteSearchKeywords.value = {};
 }
 
 function isTreatmentEditorExpanded(rec: TreatmentRecommendation): boolean {
@@ -1228,6 +1232,8 @@ function normalizeTreatmentRecommendation(rec: Partial<TreatmentRecommendation>)
     remark: rec.remark || '',
     regulatedDisease: rec.regulatedDisease || '',
     bodySite: rec.bodySite || '',
+    bodySiteId: rec.bodySiteId || rec.matchedItem?.idPart || readFirstString(matchedRaw, ['idPart']),
+    bodySiteOptions: rec.bodySiteOptions || [],
     execDept: rec.execDept || (rec.type && rec.type !== 'medicine'
       ? (rec.matchedItem?.idDeptExec || readFirstString(matchedRaw, ['idDeptExec', 'idDept']))
       : '') || '',
@@ -1471,6 +1477,54 @@ function buildMedicalItemMatchedItem(item: MedicalItem): TreatmentRecommendation
     fgCheckOrd: item.fgCheckOrd,
     raw: item.raw,
   };
+}
+
+
+function applyMedicalItemPartOption(rec: TreatmentRecommendation, option: MedicalItemPartOption): void {
+  const partId = (option.partId || '').trim();
+  const name = (option.name || option.partAndWay || '').trim();
+  if (!partId && !name) {
+    return;
+  }
+
+  const mergedRaw = {
+    ...(getMatchedItemRaw(rec) || {}),
+    ...option.raw,
+    idPart: partId,
+    partAndWay: option.partAndWay || name,
+    sdPartAndWay: option.partAndWayCode || '',
+    __partOptionsLoaded: true,
+  };
+
+  rec.bodySiteId = partId;
+  rec.bodySite = name;
+  rec.matchedItem = {
+    ...(rec.matchedItem || {}),
+    idPart: partId,
+    raw: mergedRaw,
+  };
+}
+
+function applyMedicalItemPartOptions(rec: TreatmentRecommendation, options: MedicalItemPartOption[]): void {
+  if (rec.type !== 'exam') {
+    return;
+  }
+
+  rec.bodySiteOptions = options;
+  if (options.length === 0) {
+    return;
+  }
+
+  const currentPartId = (rec.bodySiteId || rec.matchedItem?.idPart || readFirstString(getMatchedItemRaw(rec), ['idPart'])).trim();
+  const matchedCurrent = currentPartId ? options.find((option) => option.partId === currentPartId) : undefined;
+  if (matchedCurrent) {
+    applyMedicalItemPartOption(rec, matchedCurrent);
+    return;
+  }
+
+  if (options.length === 1) {
+    applyMedicalItemPartOption(rec, options[0]);
+  }
 }
 
 interface MedicineDetailLookupResult {
@@ -1839,6 +1893,10 @@ async function hydrateMatchedMedicalItemDetail(rec: TreatmentRecommendation): Pr
   try {
     const detail = await his.fetchMedicalItemDetail(idCli);
     if (!detail) {
+      if (rec.type === 'exam') {
+        const partOptions = await his.fetchMedicalItemPartOptions(idCli);
+        applyMedicalItemPartOptions(rec, partOptions);
+      }
       return;
     }
 
@@ -1862,6 +1920,19 @@ async function hydrateMatchedMedicalItemDetail(rec: TreatmentRecommendation): Pr
 
     if (!rec.totalUnit && detail.unit) {
       rec.totalUnit = detail.unit;
+    }
+
+    if (rec.type === 'exam') {
+      try {
+        const partOptions = await his.fetchMedicalItemPartOptions(detail.itemId || idCli);
+        applyMedicalItemPartOptions(rec, partOptions);
+      } catch (partError) {
+        console.error('[VoiceConsultationNew] Failed to hydrate medical item part options', {
+          idCli: detail.itemId || idCli,
+          name: rec.name,
+          error: partError,
+        });
+      }
     }
 
     syncTreatmentExecDeptSelections();
@@ -2850,7 +2921,7 @@ function getOrderExecDeptId(rec: TreatmentRecommendation): string {
 
 function getOrderPartId(rec: TreatmentRecommendation): string {
   const raw = getMatchedItemRaw(rec);
-  return (rec.matchedItem?.idPart || readFirstString(raw, ['idPart'])).trim();
+  return (rec.bodySiteId || rec.matchedItem?.idPart || readFirstString(raw, ['idPart'])).trim();
 }
 
 function getOrderJsonField(rec: TreatmentRecommendation): string {
@@ -3292,7 +3363,7 @@ function clearRouteSelection(rec: TreatmentRecommendation): void {
   setRouteSearchKeyword(rec, '');
 }
 
-type SecondarySelectorField = 'pharmacy' | 'execDept' | 'insurance';
+type SecondarySelectorField = 'pharmacy' | 'execDept' | 'insurance' | 'bodySite';
 
 function getSecondarySelectorKey(rec: TreatmentRecommendation, field: SecondarySelectorField): string {
   return `${getTreatmentEditorKey(rec)}:${field}`;
@@ -3308,6 +3379,8 @@ function openSecondarySelector(rec: TreatmentRecommendation, field: SecondarySel
     syncPharmacySearchKeyword(rec);
   } else if (field === 'execDept') {
     syncExecDeptSearchKeyword(rec);
+  } else if (field === 'bodySite') {
+    syncBodySiteSearchKeyword(rec);
   } else {
     syncInsuranceSearchKeyword(rec);
   }
@@ -3324,6 +3397,8 @@ function closeSecondarySelector(rec: TreatmentRecommendation, field: SecondarySe
     syncPharmacySearchKeyword(rec);
   } else if (field === 'execDept') {
     syncExecDeptSearchKeyword(rec);
+  } else if (field === 'bodySite') {
+    syncBodySiteSearchKeyword(rec);
   } else {
     syncInsuranceSearchKeyword(rec);
   }
@@ -3471,6 +3546,83 @@ function clearExecDeptSelection(rec: TreatmentRecommendation): void {
   if (isExecDeptRequired(rec)) {
     rec.selected = false;
     showToast?.('执行科室已清空，请重新设置后再选中该项目', 'warning');
+  }
+}
+
+
+function getBodySiteSearchKey(rec: TreatmentRecommendation): string {
+  return `${getTreatmentEditorKey(rec)}:bodySite-search`;
+}
+
+function getBodySiteSearchKeyword(rec: TreatmentRecommendation): string {
+  const cached = bodySiteSearchKeywords.value[getBodySiteSearchKey(rec)];
+  return typeof cached === 'string' ? cached : (rec.bodySite || '');
+}
+
+function setBodySiteSearchKeyword(rec: TreatmentRecommendation, value: string): void {
+  bodySiteSearchKeywords.value = {
+    ...bodySiteSearchKeywords.value,
+    [getBodySiteSearchKey(rec)]: value,
+  };
+}
+
+function syncBodySiteSearchKeyword(rec: TreatmentRecommendation): void {
+  setBodySiteSearchKeyword(rec, rec.bodySite || '');
+}
+
+function handleBodySiteSearchInput(rec: TreatmentRecommendation, event: Event): void {
+  const target = event.target as HTMLInputElement | null;
+  setBodySiteSearchKeyword(rec, target?.value || '');
+}
+
+function getBodySiteUsageOptions(rec: TreatmentRecommendation): UsageOption[] {
+  return dedupeUsageOptions((rec.bodySiteOptions || []).map((option) => createUsageOption({
+    key: option.partId || option.name,
+    text: option.name,
+    mcode: option.partAndWayCode || option.partAndWay,
+  })));
+}
+
+function getFilteredBodySiteOptionsForRecord(rec: TreatmentRecommendation): UsageOption[] {
+  const currentValue = (rec.bodySite || '').trim();
+  const query = resolveSelectorFilterKeyword(getBodySiteSearchKeyword(rec), currentValue);
+  const options = getBodySiteUsageOptions(rec);
+  const matched = !query
+    ? options
+    : options.filter((option) => option.normalizedTokens.some((token) => token.includes(query)));
+
+  if (currentValue && !matched.some((option) => option.text === currentValue)) {
+    return [createUsageOption({ key: rec.bodySiteId || currentValue, text: currentValue }), ...matched];
+  }
+
+  return matched;
+}
+
+function selectBodySiteOption(rec: TreatmentRecommendation, option: UsageOption): void {
+  const matched = (rec.bodySiteOptions || []).find((candidate) => candidate.partId === option.key || candidate.name === option.text);
+  if (matched) {
+    applyMedicalItemPartOption(rec, matched);
+  } else {
+    rec.bodySiteId = option.key;
+    rec.bodySite = option.text;
+  }
+  setBodySiteSearchKeyword(rec, option.text);
+  activeSecondarySelectorKey.value = null;
+}
+
+function clearBodySiteSelection(rec: TreatmentRecommendation): void {
+  rec.bodySite = '';
+  rec.bodySiteId = '';
+  setBodySiteSearchKeyword(rec, '');
+  if (rec.matchedItem) {
+    rec.matchedItem = {
+      ...rec.matchedItem,
+      idPart: '',
+      raw: {
+        ...(getMatchedItemRaw(rec) || {}),
+        idPart: '',
+      },
+    };
   }
 }
 
@@ -4385,6 +4537,40 @@ watch(
                                   <span v-if="option.key !== option.text" class="route-option-meta">{{ option.key }}</span>
                                 </button>
                                 <div v-if="getFilteredExecDeptOptionsForRecord(rec).length === 0" class="route-option-empty">未找到匹配科室</div>
+                              </div>
+                            </div>
+                          </div>
+                          <div class="secondary-field">
+                            <label>检查部位</label>
+                            <div class="field-editor route-field-editor" @focusout="closeSecondarySelector(rec, 'bodySite', $event)">
+                              <input
+                                :value="getBodySiteSearchKeyword(rec)"
+                                type="text"
+                                placeholder="输入名称筛选部位"
+                                class="edit-input"
+                                @focus="openSecondarySelector(rec, 'bodySite')"
+                                @input="handleBodySiteSearchInput(rec, $event)"
+                              />
+                              <div v-if="isSecondarySelectorOpen(rec, 'bodySite')" class="route-option-list" role="listbox" aria-label="检查部位候选项">
+                                <button
+                                  v-if="rec.bodySite"
+                                  class="route-option-item route-option-clear"
+                                  type="button"
+                                  @mousedown.prevent.stop="clearBodySiteSelection(rec)"
+                                >
+                                  <span class="route-option-text">清空当前值</span>
+                                </button>
+                                <button
+                                  v-for="option in getFilteredBodySiteOptionsForRecord(rec).slice(0, 8)"
+                                  :key="option.key"
+                                  class="route-option-item"
+                                  type="button"
+                                  @mousedown.prevent.stop="selectBodySiteOption(rec, option)"
+                                >
+                                  <span class="route-option-text">{{ option.text }}</span>
+                                  <span v-if="option.mcode" class="route-option-meta">{{ option.mcode }}</span>
+                                </button>
+                                <div v-if="getFilteredBodySiteOptionsForRecord(rec).length === 0" class="route-option-empty">暂无可选部位</div>
                               </div>
                             </div>
                           </div>

@@ -77,7 +77,15 @@ export interface TreatmentRecommendation {
     days?: string;          // 天数 (medicine)
     pharmacy?: string;      // 药房 (medicine)
     regulatedDisease?: string; // 规定病 (all types)
-    bodySite?: string;      // 部位方式 (exam/lab_test)
+    bodySite?: string;      // 部位方式 (exam)
+    bodySiteId?: string;    // 部位方式 ID，PHIS 回写 idPart
+    bodySiteOptions?: Array<{
+        partId: string;
+        name: string;
+        partAndWay?: string;
+        partAndWayCode?: string;
+        raw: Record<string, unknown>;
+    }>; // 检查项目部位候选
     execDept?: string;      // 执行科室 (exam/lab_test/procedure)
     remark?: string;        // 备注
     insuranceType?: string; // 医保限用 (all types)

@@ -19,6 +19,7 @@ import type {
   HisDiagnosisCatalogItem,
   HisDictionaryItem,
   HisMedicalItemCatalogItem,
+  HisMedicalItemPartOption,
   HisMedicineCatalogItem,
 } from '../hisService';
 import type { HisAdapter, HisServiceContext } from './HisAdapter';
@@ -29,6 +30,7 @@ import type {
   InventoryCheckResult,
   MedicalItemCatalogEntry,
   MedicalItemDetail,
+  MedicalItemPartOption,
   MedicineCatalogEntry,
   MedicineDetail,
 } from './types';
@@ -78,6 +80,27 @@ function mapMedicineCatalog(item: HisMedicineCatalogItem): MedicineCatalogEntry 
       fgCheckOrd: item.fgCheckOrd,
       fgSkintest: item.fgSkintest,
     },
+  };
+}
+
+
+function mapMedicalItemPartOption(item: HisMedicalItemPartOption): MedicalItemPartOption | null {
+  const partId = trim(item.idPart);
+  const name = trim(item.partAndWay) ?? trim(item.sdPartText) ?? trim(item.sdWayText) ?? '无部位';
+  if (!partId && !name) return null;
+
+  return {
+    partId: partId ?? '',
+    itemId: trim(item.idCli),
+    name,
+    partAndWay: trim(item.partAndWay),
+    partAndWayCode: trim(item.sdPartAndWay),
+    pacsType: trim(item.sdPacstype),
+    pacsTypeText: trim(item.sdPacstypeText),
+    partText: trim(item.sdPartText),
+    wayText: trim(item.sdWayText),
+    amount: typeof item.amount === 'number' ? item.amount : undefined,
+    raw: item as unknown as Record<string, unknown>,
   };
 }
 
@@ -192,6 +215,13 @@ export class PhisHisAdapter implements HisAdapter {
       executingDeptId: trim(detail.idDeptExec),
       raw: detail as unknown as Record<string, unknown>,
     };
+  }
+
+  async fetchMedicalItemPartOptions(itemId: string): Promise<MedicalItemPartOption[]> {
+    const items = await this.service.fetchMedicalItemPartOptions(itemId);
+    return items
+      .map(mapMedicalItemPartOption)
+      .filter((item): item is MedicalItemPartOption => Boolean(item));
   }
 
   async fetchMedicineProDetail(productId: string, storeId: string): Promise<MedicineDetail | null> {

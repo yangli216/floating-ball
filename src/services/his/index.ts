@@ -31,6 +31,7 @@ export type {
   InventoryCheckResult,
   MedicalItemCatalogEntry,
   MedicalItemDetail,
+  MedicalItemPartOption,
   MedicineCatalogEntry,
   MedicineDetail,
 } from './types';

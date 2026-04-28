@@ -177,6 +177,29 @@ interface HiBdCliOrgListBody {
   }>;
 }
 
+
+export interface HisMedicalItemPartOption {
+  idPart?: string;
+  idCli?: string;
+  sdPacstype?: string;
+  partAndWay?: string;
+  sdPartAndWay?: string;
+  naCli?: string;
+  count?: number;
+  sdPacstypeText?: string;
+  sdWayText?: string;
+  sdPartText?: string;
+  idDeptExecText?: string;
+  amount?: number;
+}
+
+interface HiBdCliPacsPartAndWayListBody {
+  start?: number;
+  limit?: number;
+  total?: number;
+  items?: HisMedicalItemPartOption[];
+}
+
 export interface HiBdCliDetailBody {
   idTet?: string;
   idCli?: string;
@@ -268,6 +291,7 @@ const HIS_CATALOG_ENDPOINTS = {
   diagnoses: 'api/base.hiBdDieService/queryList',
   medicalItems: 'api/phis.hiBdCliOrgService/queryHiBdCliOrgList',
   medicalItemDetail: 'api/phis.hiBdCliService/loadHiBdCliDetail',
+  medicalItemParts: 'api/phis.hiBdCliPacsPartService/queryExaPartAndWayList',
   medicineStores: 'api/phis.medicineDispensingService/queryDispensingSto',
   orgMedicineStores: 'api/phis.orgMedStoManageService/queryOrgSto',
   execDepartments: 'api/base.organDicService/deptListByTec',
@@ -740,6 +764,25 @@ export class HisService {
     this.assertBusinessSuccess(HIS_CATALOG_ENDPOINTS.medicalItemDetail, response);
 
     return response.body ?? response.data ?? null;
+  }
+
+  /**
+   * 获取检查项目部位 / 方式候选
+   */
+  async fetchMedicalItemPartOptions(idCli: string): Promise<HisMedicalItemPartOption[]> {
+    const normalizedIdCli = idCli.trim();
+    if (!normalizedIdCli) {
+      return [];
+    }
+
+    const response = await this.post<HiBdCliPacsPartAndWayListBody>(
+      HIS_CATALOG_ENDPOINTS.medicalItemParts,
+      [{ params: { idCli: normalizedIdCli }, limit: -1 }]
+    );
+    this.assertBusinessSuccess(HIS_CATALOG_ENDPOINTS.medicalItemParts, response);
+
+    const items = response.body?.items ?? response.data?.items ?? [];
+    return Array.isArray(items) ? items : [];
   }
 
   /**
