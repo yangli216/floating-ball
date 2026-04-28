@@ -84,7 +84,7 @@ const submitting = ref(false);
 const showCancelConfirm = ref(false);
 
 const s = (value: unknown): string => (typeof value === 'string' ? value : '');
-const patientName = computed((): string => s(props.initialPatientData?.naPi));
+const patientName = computed((): string => s(props.initialPatientData?.naPi) || s(props.initialPatientData?.name) || s(props.initialPatientData?.patientName));
 const patientGender = computed((): string => s(props.initialPatientData?.sdSexText) || s(props.initialPatientData?.sdSex));
 const patientAge = computed((): string => s(props.initialPatientData?.ageText) || (props.initialPatientData?.ageNum != null ? `${props.initialPatientData.ageNum}${s(props.initialPatientData.ageUnit) || '岁'}` : ''));
 const patientIdCard = computed((): string => s(props.initialPatientData?.idCard));
