@@ -832,7 +832,7 @@ Promise.allSettled([
 startAuditUploader() (startup flush + enqueue flush + 30s retry)
 ```
 
-设置页保存区域化接入参数时，也复用同一条 `initializeRegionalRuntime() / reinitializeRegionalRuntime()` 链路即时生效，不要求重启应用；当前首启会先把默认值 `REGIONAL_ENABLED=true / REGIONAL_BASE_URL=<VITE_REGIONAL_BASE_URL 或 http://127.0.0.1:8080> / REGIONAL_ORG_CODE=<本地 VITE_REGIONAL_ORG_CODE 或 ORG001>` 写入本地存储。设备编码则首次优先写入当前机器 MAC 地址，若 MAC 暂不可读才生成本地兜底值；一旦本地已有 `REGIONAL_DEVICE_CODE`，后续启动不再重复调用系统 MAC 探测命令。Windows 下 MAC 探测子进程使用无窗口模式，避免 `getmac` 控制台窗口闪烁。
+设置页保存区域化接入参数时，也复用同一条 `initializeRegionalRuntime() / reinitializeRegionalRuntime()` 链路即时生效，不要求重启应用；当前首启会先把默认值 `REGIONAL_ENABLED=true / REGIONAL_BASE_URL=<VITE_REGIONAL_BASE_URL 或 http://127.0.0.1:8080> / REGIONAL_ORG_CODE=<本地 VITE_REGIONAL_ORG_CODE 或 ORG001>` 写入本地存储。设备编码则首次优先写入当前机器 MAC 地址，若 MAC 暂不可读才生成本地兜底值；一旦本地已有 `REGIONAL_DEVICE_CODE`，后续启动不再重复探测 MAC。Windows 下 MAC 探测通过 `GetAdaptersAddresses` 直接读取网卡信息，不再启动 `getmac` / `ipconfig` 子进程，避免控制台窗口闪烁。
 
 保存行为约束：
 

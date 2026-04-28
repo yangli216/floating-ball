@@ -170,7 +170,7 @@ useEventListeners (全局事件) -> 触发 useNavigation & useWorkMode
 | **voiceFeedback.ts** | -- | 语音反馈 payload 组装、本地草稿、病例字段差异摘要与待同步队列；通过 `submitVoicePendingPayloadToBackend` 映射到统一 `/v1/client/feedbacks` |
 | **aiTrace.ts** | ~200 | 最近一次 AI 调用链路上下文缓存 |
 | **knowledgeBase.ts** | ~213 | 通用知识库 CRUD |
-| **regionalClient.ts** | ~400 | 区域化核心客户端：设备 MAC 解析/设备编码持久化、终端注册、bootstrap 拉取、心跳、鉴权、SSE 代理 |
+| **regionalClient.ts** | ~400 | 区域化核心客户端：设备 MAC 解析/设备编码持久化、终端注册、bootstrap 拉取、心跳、鉴权、SSE 代理；MAC 读取由 Tauri `device.rs` 提供，Windows 使用系统网卡 API，避免外部命令窗口闪烁 |
 | **regionalRuntime.ts** | ~50 | 区域化运行时编排：统一初始化、重连、远程数据同步、审计上传启停 |
 | **userFeedback.ts** | ~150 | 统一反馈提交服务（kind/severity/tags/hasCorrection），自动附加 doctor/org/dept actor 与 aiTrace |
 | **feedbackContext.ts** | ~80 | 反馈上下文：握手阶段缓存当前医生/机构/科室身份，供反馈提交回填 |

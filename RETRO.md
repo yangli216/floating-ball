@@ -47,6 +47,13 @@
 
 ## 状态与数据流
 
+### RETRO-015: Windows 启动/设置页弹出 cmd 窗口 [已解决]
+
+- **现象**: Windows 下应用启动、切换到通用设置页时，会短暂弹出多个 cmd 命令窗口；macOS 未复现。
+- **根因**: 区域化设备编码首次会通过 `get_device_mac_address` 读取设备 MAC；旧实现会在 Windows 下启动 `getmac` / `ipconfig` 控制台程序，即使设置 `CREATE_NO_WINDOW`，部分环境仍会闪出子进程窗口。
+- **解决方案**: Windows 分支改用 Win32 `GetAdaptersAddresses` 直接读取网卡物理地址，不再执行外部命令；macOS/Linux 仍保留原有系统命令/文件系统 fallback。
+- **后续防护**: Windows 桌面端凡是启动期、设置页、更新检查等高频路径需要系统信息时，优先使用 API/库，不要调用 `cmd`、`powershell`、`getmac`、`ipconfig` 等外部控制台程序。
+
 ### RETRO-005: consultationId 与旧结果污染 [已解决]
 
 - **现象**: HIS 轮询 `/api/consultation/result` 时读到上一位患者的结果。

@@ -45,6 +45,9 @@ url = "2"
 rfd = "0.17.2"
 window-vibrancy = "0.5"
 
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.61.2", features = ["Win32_Foundation", "Win32_NetworkManagement_IpHelper", "Win32_NetworkManagement_Ndis", "Win32_Networking_WinSock"] }
+
 [profile.release]
 # 增加并行编译单元数量，加快构建速度
 codegen-units = 16

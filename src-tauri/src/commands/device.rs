@@ -2,10 +2,16 @@ use std::io::ErrorKind;
 use std::process::Command;
 
 #[cfg(target_os = "windows")]
-use std::os::windows::process::CommandExt;
-
+use windows_sys::Win32::Foundation::{ERROR_BUFFER_OVERFLOW, ERROR_SUCCESS};
 #[cfg(target_os = "windows")]
-const CREATE_NO_WINDOW: u32 = 0x08000000;
+use windows_sys::Win32::NetworkManagement::IpHelper::{
+    GetAdaptersAddresses, GAA_FLAG_SKIP_ANYCAST, GAA_FLAG_SKIP_DNS_SERVER,
+    GAA_FLAG_SKIP_MULTICAST, IP_ADAPTER_ADDRESSES_LH, IF_TYPE_SOFTWARE_LOOPBACK,
+};
+#[cfg(target_os = "windows")]
+use windows_sys::Win32::NetworkManagement::Ndis::IfOperStatusUp;
+#[cfg(target_os = "windows")]
+use windows_sys::Win32::Networking::WinSock::AF_UNSPEC;
 
 #[cfg(all(unix, not(target_os = "macos")))]
 use std::fs;
@@ -18,10 +24,7 @@ pub async fn get_device_mac_address() -> Result<String, String> {
 fn resolve_device_mac_address() -> Result<String, String> {
     #[cfg(target_os = "windows")]
     {
-        if let Some(mac) = read_first_mac_from_command("getmac", &["/fo", "csv", "/nh"])? {
-            return Ok(mac);
-        }
-        if let Some(mac) = read_first_mac_from_command("ipconfig", &["/all"])? {
+        if let Some(mac) = read_windows_mac_address()? {
             return Ok(mac);
         }
     }
@@ -50,6 +53,71 @@ fn resolve_device_mac_address() -> Result<String, String> {
     }
 
     Err("未获取到可用的设备 MAC 地址".to_string())
+}
+
+#[cfg(target_os = "windows")]
+fn read_windows_mac_address() -> Result<Option<String>, String> {
+    const INITIAL_BUFFER_SIZE: u32 = 15 * 1024;
+    let flags = GAA_FLAG_SKIP_ANYCAST | GAA_FLAG_SKIP_MULTICAST | GAA_FLAG_SKIP_DNS_SERVER;
+    let mut buffer_len = INITIAL_BUFFER_SIZE;
+    let mut buffer = vec![0u8; buffer_len as usize];
+
+    let mut result = unsafe {
+        GetAdaptersAddresses(
+            AF_UNSPEC as u32,
+            flags,
+            std::ptr::null_mut(),
+            buffer.as_mut_ptr() as *mut IP_ADAPTER_ADDRESSES_LH,
+            &mut buffer_len,
+        )
+    };
+
+    if result == ERROR_BUFFER_OVERFLOW {
+        buffer.resize(buffer_len as usize, 0);
+        result = unsafe {
+            GetAdaptersAddresses(
+                AF_UNSPEC as u32,
+                flags,
+                std::ptr::null_mut(),
+                buffer.as_mut_ptr() as *mut IP_ADAPTER_ADDRESSES_LH,
+                &mut buffer_len,
+            )
+        };
+    }
+
+    if result != ERROR_SUCCESS {
+        return Err(format!("读取 Windows 网卡地址失败: {result}"));
+    }
+
+    let mut virtual_candidate: Option<String> = None;
+    let mut adapter = buffer.as_ptr() as *const IP_ADAPTER_ADDRESSES_LH;
+
+    while !adapter.is_null() {
+        let current = unsafe { &*adapter };
+        let physical_len = current.PhysicalAddressLength as usize;
+
+        if physical_len == 6 && current.IfType != IF_TYPE_SOFTWARE_LOOPBACK {
+            let mac = current.PhysicalAddress[..physical_len]
+                .iter()
+                .map(|byte| format!("{:02X}", byte))
+                .collect::<Vec<_>>()
+                .join(":");
+
+            if normalize_mac_address(&mac).is_some() {
+                if current.OperStatus == IfOperStatusUp {
+                    return Ok(Some(mac));
+                }
+
+                if virtual_candidate.is_none() {
+                    virtual_candidate = Some(mac);
+                }
+            }
+        }
+
+        adapter = current.Next as *const IP_ADAPTER_ADDRESSES_LH;
+    }
+
+    Ok(virtual_candidate)
 }
 
 #[cfg(target_os = "macos")]
@@ -117,11 +185,6 @@ fn read_first_mac_from_command(binary: &str, args: &[&str]) -> Result<Option<Str
 fn run_command(binary: &str, args: &[&str]) -> Result<String, String> {
     let mut command = Command::new(binary);
     command.args(args);
-
-    #[cfg(target_os = "windows")]
-    {
-        command.creation_flags(CREATE_NO_WINDOW);
-    }
 
     let output = command.output().map_err(|error| {
         if error.kind() == ErrorKind::NotFound {
