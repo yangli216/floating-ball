@@ -1026,6 +1026,11 @@ import { isFieldApplicable, generateTextsForSymptom } from '../services/textGene
 import { pmphaiService, isPMPHAIConfigured, type BatchSearchResults } from '../services/pmphai';
 import { CONSULTATION_CONFIG, isSymptomSelectionFull } from '../constants/consultationConfig';
 import { getTCMTemplates, getWesternTemplates, syncRemoteTemplates } from '../services/templateService';
+import {
+  buildConsultationSelectionSnapshot,
+  buildConsultationUserLogSnapshot,
+  submitConsultationUserLog,
+} from '../services/consultationUserLog';
 /* WINDOW_SIZES / diagnosisPath imports removed - feature commented out */
 import type {
   ConsultationAssistAction,
@@ -1692,6 +1697,36 @@ const buildCurrentMedicalPayload = (
     ),
     ...extra,
   };
+};
+
+const buildSmartUserLogSnapshot = () => buildConsultationUserLogSnapshot({
+  chiefComplaint: generatedRecord.value.chiefComplaint,
+  historyOfPresentIllness: generatedRecord.value.historyOfPresentIllness,
+  diagnoses: aiDiagnoses.value,
+  selectedDiagnosis: selectedDiagnosis.value,
+  medicines: treatmentRecommendations.value,
+  examinations: examRecommendations.value,
+  labTests: labTestRecommendations.value,
+});
+
+const submitSmartGeneratedUserLog = () => {
+  void submitConsultationUserLog({
+    consultationId: resolveConsultationId(),
+    consultationType: 'smart',
+    patient: patientInfo.value,
+    firstSnapshot: buildSmartUserLogSnapshot(),
+  });
+};
+
+const submitSmartFinalUserLog = () => {
+  const finalSnapshot = buildSmartUserLogSnapshot();
+  void submitConsultationUserLog({
+    consultationId: resolveConsultationId(),
+    consultationType: 'smart',
+    patient: patientInfo.value,
+    finalSnapshot,
+    selectionSnapshot: buildConsultationSelectionSnapshot(finalSnapshot),
+  });
 };
 
 const prefillGeneratedRecordFromPatient = (force = false): boolean => {
@@ -2486,6 +2521,7 @@ const submitToHIS = async () => {
 
   try {
     await invoke('complete_consultation', { result });
+    submitSmartFinalUserLog();
     trackFormSubmit('submit_to_his', { patientId: result.consultationId });
     showToast("问诊完成，数据已发送回HIS系统。", "success");
     handleEndSession();
@@ -3838,6 +3874,7 @@ const fetchAllRecommendations = async () => {
     fetchLabTestRecommendation(),
     fetchProcedureRecommendation(),
   ]);
+  submitSmartGeneratedUserLog();
 };
 
 const toggleTreatmentSelection = (item: TreatmentRecommendation) => {

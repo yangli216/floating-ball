@@ -126,7 +126,7 @@
 2. 本地 HIS 对接入口由 `src-tauri/src/http_server.rs` 提供。
 3. 若未来引入真实登录态，应新增专用文档章节并在 `AGENTS.md` / `api.md` 中同步说明。
 4. Windows 内网更新源采用本地配置驱动：测试环境地址、正式环境地址和当前生效环境保存在 `localStorage`，前端只负责展示与选择，真正的 updater endpoint 在 Rust 侧通过 `updater_builder()` 运行时注入。区域化模式下，客户端会按当前更新通道访问 `floating-ball-server` 的 `/v1/client/releases/{channel}/policy.json`；若服务端发布策略要求强制更新且当前版本低于 `minSupportedVersion`，应用进入强制更新门禁，只保留更新源配置、检查更新、下载安装并重启能力。
-5. 主窗口的聊天、设置、问诊等可调整工作视图会将用户最后一次手动调整后的窗口尺寸写入 `.settings.dat`，再次打开对应视图时优先恢复该尺寸。
+5. 主窗口的聊天、设置、问诊等可调整工作视图会将用户最后一次手动调整后的窗口尺寸写入 `.settings.dat`，再次打开对应视图时优先恢复该尺寸；悬浮球启动阶段在 Rust 层读取 `.settings.dat` 的历史位置，并按当前显示器 `workArea`、实际窗口物理尺寸和最近边缘吸附策略夹回可见安全区域，若历史位置已不属于当前工作区则回落到主屏右侧居中位置。
 6. 通用设置页新增音频输入设备配置，首选麦克风 `deviceId` 保存在 `localStorage`；聊天录音和语音接诊共用同一配置，若指定设备不存在则自动回退到系统默认输入设备。设置页首次进入时会按权限状态自动补做一次设备列表预热，尽量避免初次枚举不完整、必须手动刷新后才看到全部麦克风。
 7. 语音转写配置与通用 LLM 配置分离：本地模式下默认 provider 为阿里云 DashScope，`VoiceCapsule.vue` 实时语音和 `ChatPanel.vue` 录音转写共用同一套 speech config；若切换到 OpenAI 兼容 provider，则统一降级为批量转写链路。
 
@@ -135,14 +135,10 @@
 1. 现阶段所有问诊、语音、session 回写能力都必须兼容本地模式。
 2. 区域化模式下，`LLM`、独立审查 AI、PMPHAI 知识库等上游能力默认走 `floating-ball-server` 的 `/v1/*` 代理或服务端签名接口，桌面端不直接保存或下发这些密钥。
 3. 本地模式仍保留直连 OpenAI 兼容接口、DashScope 与本地 PMPHAI 代理的兜底路径。
-<<<<<<< HEAD
 4. 区域化模式下，工作区共用顶栏的"问题反馈"入口与一键回写后弹出的整页反馈，统一使用同一份 `FeedbackSubmissionPanel`（紧凑星级 + 预置问题标签 + 选填截图 + 选填补充说明）；语音问诊的推荐项 / 病例字段 / 整页反馈则通过 `voiceFeedback.ts` 映射到同一 `/v1/client/feedbacks` 接口，所有反馈都会附带最近一次 AI 调用的 `traceId`、`sessionId`、`chainContext` 与握手阶段缓存的医生 / 机构 / 科室身份（`feedbackContext.ts`），由 `floating-ball-server` 端按 `kind`（`general | recommendation | record_field | session`）+ `severity` 分类落库。
-5. 登录态设计在当前版本不是前置依赖，不能假定仓库内已有 `auth store` 或受保护 API 基座。
-=======
-4. 区域化模式下，每个 `/v1/*` 业务请求会附带 `X-Client-Version` 与 `X-Update-Channel`，服务端返回 `426 / UPDATE-REQUIRED` 时，客户端立即切换到强制更新门禁，禁止继续使用问诊、语音、知识库、AI 代理、模板同步、反馈等业务能力。
-5. 区域化模式下，工作区共用顶栏提供全局“问题反馈”入口，反馈弹层会附带最近一次 AI 代理调用的 `traceId`、会话 ID、场景摘要、评分、文字说明和截图数据，一并提交到 `floating-ball-server`，供后台按时间线查看调用链路。
-6. 登录态设计在当前版本不是前置依赖，不能假定仓库内已有 `auth store` 或受保护 API 基座。
->>>>>>> 236c039 (新增强制更新机制)
+5. 区域化模式下，每个 `/v1/*` 业务请求会附带 `X-Client-Version` 与 `X-Update-Channel`，服务端返回 `426 / UPDATE-REQUIRED` 时，客户端立即切换到强制更新门禁，禁止继续使用问诊、语音、知识库、AI 代理、模板同步、反馈等业务能力。
+6. 区域化模式下，智能问诊和语音问诊会通过 `consultationUserLog.ts` 向 `floating-ball-server` 的 `/v1/client/user-logs/consultations` 上报运维用户日志快照：首版 AI 生成内容与医生最终提交/回写内容分别落到同一条问诊记录中，不记录中间每一次编辑；语音问诊停止录音后会额外上报本次录音和 ASR 识别文字，供后台用户日志详情播放与复盘。
+7. 登录态设计在当前版本不是前置依赖，不能假定仓库内已有 `auth store` 或受保护 API 基座。
 
 ---
 
@@ -577,7 +573,7 @@ eventListeners.unregisterAllListeners();
 | 组件 | 职责 | 文件 |
 |------|------|------|
 | `ChatPanel.vue` | LLM 对话界面 | [src/components/ChatPanel.vue](src/components/ChatPanel.vue) |
-| `SettingsPanel.vue` | 系统设置（含通用设置、紧凑界面主题选择、文本/音频模型配置、关于版本与音频输入设备选择；通用设置页提供基础数据缓存管理和 HIS 联调日志独立入口） | [src/components/SettingsPanel.vue](src/components/SettingsPanel.vue) |
+| `SettingsPanel.vue` | 系统设置（含通用设置、紧凑界面主题选择、区域化接入、关于版本、音频输入设备选择；本地模式下额外显示文本/音频模型配置，区域化模式下隐藏“模型配置”页签；通用设置页提供基础数据缓存管理和 HIS 联调日志独立入口） | [src/components/SettingsPanel.vue](src/components/SettingsPanel.vue) |
 | `ConsultationPage.vue` | 完整症状问诊主链路，同时承接新的“内嵌灵活模式”；支持根据 `/assist` 上下文直接跳过症状采集进入病历详情页，继续复用现有推荐诊断、诊断鉴别、推荐用药、推荐检查与诊断路径能力，并负责处理 PHIS 引用闭环的页面状态；诊断保持单选引用，推荐方案支持多选后分组批量引入 | [src/components/ConsultationPage.vue](src/components/ConsultationPage.vue) |
 | `DiagnosisPathWindow.vue` | 独立诊断推理路径窗口，使用 ECharts Sankey 展示患者事实、章节归类、证据汇聚与诊断去向；默认提供更宽画布，并按容器尺寸动态计算 Sankey 的布局盒子，用对称留白实现“适应屏幕并居中”的默认视图，再开放滚轮缩放、平移与节点拖动；点击入口后窗口先显示 loading 动画，并按“检查缓存 -> 生成推理链 -> 渲染图表”的阶段更新提示，若生成超时或渲染失败会切换到明确错误态；正文容器在收到 payload 后保持挂载，loading 改为遮罩层，避免 `chartEl` 尚未挂载时误判渲染成功；开窗后的 `show/focus` 调用采用 best-effort 非阻塞方式，避免 Tauri 原生命令卡住整个推理链；右侧说明面板采用“支持证据 / 反证提醒 / 鉴别要点”三段式，未返回结构化分段时回退显示整体 rationale | [src/components/DiagnosisPathWindow.vue](src/components/DiagnosisPathWindow.vue) |
 | `VoiceCapsule.vue` | 语音录制胶囊 | [src/components/VoiceCapsule.vue](src/components/VoiceCapsule.vue) |
@@ -794,6 +790,7 @@ src/styles/
 | `regionalClient.ts` | 区域化核心客户端：终端注册、bootstrap 配置拉取、心跳、JWT 鉴权、SSE 流式代理 | [src/services/regionalClient.ts](src/services/regionalClient.ts) |
 | `regionalRuntime.ts` | 区域化运行时编排：统一初始化、重连、远程 Prompt/模板/映射同步和审计上传启动/关闭；初始化成功后额外发送 `regional_runtime_initialized` 审计事件，方便直接在后台确认链路打通 | [src/services/regionalRuntime.ts](src/services/regionalRuntime.ts) |
 | `userFeedback.ts` | 区域化问题反馈服务；负责图片编码、评分/说明校验和调用远端 `/v1/client/feedbacks` 接口 | [src/services/userFeedback.ts](src/services/userFeedback.ts) |
+| `consultationUserLog.ts` | 区域化运维用户日志服务；负责组装智能问诊/语音问诊首版与最终快照，语音问诊额外编码录音和 ASR 文本，并调用远端 `/v1/client/user-logs/consultations` 聚合到同一条问诊日志 | [src/services/consultationUserLog.ts](src/services/consultationUserLog.ts) |
 | `promptOverride.ts` | 远程 Prompt 覆盖层：管理端发布的自定义 prompt 替换本地默认值 | [src/services/promptOverride.ts](src/services/promptOverride.ts) |
 | `auditUploader.ts` | 审计事件批量上报：区域化模式下直接调用远端 `/v1/client/audit/events/batch`，本地只保留轻量离线队列用于失败重试；恢复遗留队列后立即补传，新事件入队后也会异步触发一次立即上报尝试；`operation` 事件会保留 `operationType/operationName/details`，并补齐 `module/action/result` 供服务端日志表查询 | [src/services/auditUploader.ts](src/services/auditUploader.ts) |
 
@@ -847,7 +844,7 @@ startAuditUploader() (startup flush + enqueue flush + 30s retry)
 | LLM Chat (stream) | 直连 apiUrl + apiKey | → SSE /v1/ai/chat (后端持有 apiKey) |
 | LLM Chat (non-stream) | 直连 apiUrl + apiKey | → POST /v1/ai/chat |
 | 语音转写 | 直连 Whisper | → POST /v1/ai/speech/transcribe（上传 base64 录音 + MIME/文件名元数据） |
-| 阿里实时语音 | 直连 DashScope | → POST /v1/ai/speech/realtime（录制结束后批量上传 base64 录音） |
+| 阿里实时语音 | 直连 DashScope | → WebSocket /v1/ai/speech/realtime/ws（逐帧代理 PCM 音频，失败后降级 POST /v1/ai/speech/realtime 批量上传） |
 | Prompt 来源 | 本地 prompts/index.ts | bootstrap + delta 覆盖 → 本地兜底 |
 | 模板来源 | 本地 templates.json | delta 同步 → localStorage 缓存 → 本地兜底 |
 | 医学数据 | 本地 CSV/JSON + HIS 目录 | 区域化：delta 同步；本地模式：HIS 目录同步并落本地 SQLite，诊断全局一次、诊疗项目/药品按机构每天同步；失败时回退本地 CSV |
@@ -883,6 +880,7 @@ startAuditUploader() (startup flush + enqueue flush + 30s retry)
 - `aliyunSpeech.ts` 中 `RealtimeSpeechService` 负责统一语音转写编排：
   - 默认采集 PCM 音频块并在 `finish()` 时统一转写
   - speech provider 为 `aliyun-dashscope` 时，优先走 Rust 后端代理的 DashScope WebSocket 实时识别
+  - 区域化模式下，`aliyun-dashscope` 优先走 `floating-ball-server` 的 `/v1/ai/speech/realtime/ws` WebSocket 代理；WebSocket 启动失败时保留停止后批量转写兜底
   - speech provider 为 `openai-compatible` 时，不启用实时流式，统一走 `llm.ts/transcribeAudio` 的批量转写
   - `ChatPanel.vue` 与 `VoiceCapsule.vue` 共用同一套 speech config，不再分别读取互不一致的配置项
 - 文本与语音支持独立配置域：
@@ -972,7 +970,7 @@ audioRecorder.ts (麦克风兼容检测 + 采集 PCM16 音频)
     ↓
 RealtimeSpeechService (优先 DashScope，可降级 OpenAI 兼容转写)
     ↓
-区域化模式：编码整段录音并上传 /v1/ai/speech/realtime
+区域化模式：优先通过 /v1/ai/speech/realtime/ws 逐帧发送 PCM；不可用时编码整段录音并上传 /v1/ai/speech/realtime
     ↓
 voiceConsultation.handleVoiceStop() (停止录音)
     ↓

@@ -9,7 +9,12 @@ import { transcribeAudio } from './llm';
 import { getSpeechConfig } from './speechConfig';
 import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
-import { isRegionalMode, regionalPost, buildRegionalSpeechUploadPayload } from './regionalClient';
+import {
+    isRegionalMode,
+    regionalPost,
+    buildRegionalSpeechUploadPayload,
+    createRegionalWebSocketUrl,
+} from './regionalClient';
 import { beginAiTrace, failAiTrace, finishAiTrace } from './aiTrace';
 
 export interface AliyunSpeechConfig {
@@ -236,6 +241,11 @@ export class RealtimeSpeechService {
     private isStarted: boolean = false;
     private isStreaming: boolean = false;
     private unlistenFn?: () => void;
+    private regionalSocket: WebSocket | null = null;
+    private regionalFinalPromise: Promise<string> | null = null;
+    private regionalFinalResolve?: (text: string) => void;
+    private regionalFinalReject?: (error: Error) => void;
+    private regionalFinalSettled: boolean = false;
     private finalizedText: string = '';
     private currentSentence: string = '';
 
@@ -260,9 +270,19 @@ export class RealtimeSpeechService {
             return;
         }
 
-        // 区域化模式不走流式
         if (isRegionalMode()) {
-            console.log('[Speech] Regional mode, using batch mode');
+            if (getSpeechConfig().provider !== 'aliyun-dashscope') {
+                console.log('[Speech] Regional non-Aliyun provider configured, using batch mode');
+                return;
+            }
+            try {
+                await this.startRegionalStreaming();
+                console.log('[Speech] Regional streaming session started');
+            } catch (error) {
+                console.warn('[Speech] Failed to start regional streaming, falling back to batch mode:', error);
+                this.cleanupRegionalSocket();
+                this.isStreaming = false;
+            }
             return;
         }
 
@@ -315,6 +335,15 @@ export class RealtimeSpeechService {
         if (!this.isStarted) return;
 
         if (this.isStreaming) {
+            if (this.regionalSocket) {
+                // 保留区域化流式录音副本，WebSocket 中途失败时可在停止后批量兜底。
+                this.audioChunks.push(new Int16Array(pcmData));
+                const bytes = new Uint8Array(pcmData.buffer, pcmData.byteOffset, pcmData.byteLength);
+                if (this.regionalSocket.readyState === WebSocket.OPEN) {
+                    this.regionalSocket.send(bytes);
+                }
+                return;
+            }
             // 流式模式：发送到 Rust 后端
             const bytes = Array.from(new Uint8Array(pcmData.buffer, pcmData.byteOffset, pcmData.byteLength));
             invoke('send_speech_chunk', { audioData: bytes }).catch((e: any) => {
@@ -337,6 +366,9 @@ export class RealtimeSpeechService {
         this.isStarted = false;
 
         if (this.isStreaming) {
+            if (this.regionalSocket) {
+                return await this.finishRegionalStreaming();
+            }
             // 流式模式：调用 stop 并等待最终结果
             try {
                 const finalText = await invoke<string>('stop_realtime_speech');
@@ -363,17 +395,8 @@ export class RealtimeSpeechService {
         }
 
         // 批量模式：合并音频并转写
-        const totalLength = this.audioChunks.reduce((sum, chunk) => sum + chunk.length, 0);
-        const mergedData = new Int16Array(totalLength);
-        let offset = 0;
-        for (const chunk of this.audioChunks) {
-            mergedData.set(chunk, offset);
-            offset += chunk.length;
-        }
-
-        console.log('[Speech] Batch mode, total audio:', mergedData.length * 2, 'bytes');
-
-        const audioBlob = new Blob([mergedData.buffer], { type: 'audio/pcm' });
+        const audioBlob = this.buildBufferedAudioBlob();
+        console.log('[Speech] Batch mode, total audio:', audioBlob.size, 'bytes');
 
         try {
             const text = await transcribeSpeech(audioBlob);
@@ -393,11 +416,18 @@ export class RealtimeSpeechService {
     close(): void {
         this.isStarted = false;
         this.audioChunks = [];
-        this.cleanupListener();
         if (this.isStreaming) {
-            invoke('stop_realtime_speech').catch(() => {});
+            if (this.regionalSocket) {
+                this.cleanupRegionalSocket();
+            } else {
+                this.cleanupListener();
+                invoke('stop_realtime_speech').catch(() => {});
+            }
             this.isStreaming = false;
+            return;
         }
+        this.cleanupListener();
+        this.cleanupRegionalSocket();
     }
 
     /**
@@ -412,5 +442,165 @@ export class RealtimeSpeechService {
             this.unlistenFn();
             this.unlistenFn = undefined;
         }
+    }
+
+    private async startRegionalStreaming(): Promise<void> {
+        const socketUrl = await createRegionalWebSocketUrl('/v1/ai/speech/realtime/ws');
+        const socket = new WebSocket(socketUrl);
+        socket.binaryType = 'arraybuffer';
+        this.regionalSocket = socket;
+        this.regionalFinalSettled = false;
+        this.regionalFinalPromise = new Promise<string>((resolve, reject) => {
+            this.regionalFinalResolve = resolve;
+            this.regionalFinalReject = reject;
+        });
+
+        socket.onmessage = (event) => {
+            this.handleRegionalSocketMessage(event.data);
+        };
+
+        socket.onclose = () => {
+            const accumulated = `${this.finalizedText}${this.currentSentence}`;
+            if (!this.regionalFinalSettled && accumulated) {
+                this.resolveRegionalFinal(accumulated);
+            }
+        };
+
+        socket.onerror = () => {
+            if (!this.regionalFinalSettled) {
+                this.rejectRegionalFinal(new Error('区域化实时语音 WebSocket 连接异常'));
+            }
+        };
+
+        await new Promise<void>((resolve, reject) => {
+            const timer = window.setTimeout(() => {
+                reject(new Error('区域化实时语音 WebSocket 连接超时'));
+            }, 8000);
+            socket.onopen = () => {
+                window.clearTimeout(timer);
+                this.isStreaming = true;
+                resolve();
+            };
+            const originalOnError = socket.onerror;
+            socket.onerror = (event) => {
+                window.clearTimeout(timer);
+                originalOnError?.call(socket, event);
+                reject(new Error('区域化实时语音 WebSocket 连接失败'));
+            };
+        });
+    }
+
+    private handleRegionalSocketMessage(rawData: unknown): void {
+        if (typeof rawData !== 'string') {
+            return;
+        }
+        try {
+            const payload = JSON.parse(rawData) as {
+                type?: string;
+                text?: string;
+                isSentenceEnd?: boolean;
+                message?: string;
+            };
+
+            if (payload.type === 'text') {
+                const text = payload.text || '';
+                if (payload.isSentenceEnd) {
+                    this.finalizedText += text;
+                    this.currentSentence = '';
+                } else {
+                    this.currentSentence = text;
+                }
+                this.onTextCallback?.(`${this.finalizedText}${this.currentSentence}`, Boolean(payload.isSentenceEnd));
+                return;
+            }
+
+            if (payload.type === 'final') {
+                const accumulated = `${this.finalizedText}${this.currentSentence}`;
+                const remoteFinal = payload.text || '';
+                this.resolveRegionalFinal(remoteFinal.length >= accumulated.length ? remoteFinal : accumulated);
+                return;
+            }
+
+            if (payload.type === 'error') {
+                this.rejectRegionalFinal(new Error(payload.message || '区域化实时语音识别失败'));
+            }
+        } catch (error) {
+            this.rejectRegionalFinal(error instanceof Error ? error : new Error(String(error)));
+        }
+    }
+
+    private async finishRegionalStreaming(): Promise<string> {
+        try {
+            if (this.regionalSocket?.readyState === WebSocket.OPEN) {
+                this.regionalSocket.send(JSON.stringify({ type: 'finish' }));
+            }
+
+            const accumulated = `${this.finalizedText}${this.currentSentence}`;
+            const finalText = await Promise.race([
+                this.regionalFinalPromise || Promise.resolve(accumulated),
+                new Promise<string>((resolve) => window.setTimeout(() => resolve(accumulated), 30000)),
+            ]);
+            const result = finalText || accumulated;
+            this.onTextCallback?.(result, true);
+            return result;
+        } catch (error: any) {
+            const collected = this.finalizedText + this.currentSentence;
+            if (collected) return collected;
+            if (this.audioChunks.length > 0) {
+                console.warn('[Speech] Regional streaming failed, falling back to batch transcription:', error);
+                const fallbackText = await transcribeSpeech(this.buildBufferedAudioBlob());
+                this.onTextCallback?.(fallbackText, true);
+                return fallbackText;
+            }
+            throw error;
+        } finally {
+            this.audioChunks = [];
+            this.cleanupRegionalSocket();
+            this.isStreaming = false;
+        }
+    }
+
+    private buildBufferedAudioBlob(): Blob {
+        const totalLength = this.audioChunks.reduce((sum, chunk) => sum + chunk.length, 0);
+        const mergedData = new Int16Array(totalLength);
+        let offset = 0;
+        for (const chunk of this.audioChunks) {
+            mergedData.set(chunk, offset);
+            offset += chunk.length;
+        }
+        return new Blob([mergedData.buffer], { type: 'audio/pcm' });
+    }
+
+    private resolveRegionalFinal(text: string): void {
+        if (this.regionalFinalSettled) {
+            return;
+        }
+        this.regionalFinalSettled = true;
+        this.regionalFinalResolve?.(text);
+    }
+
+    private rejectRegionalFinal(error: Error): void {
+        if (this.regionalFinalSettled) {
+            return;
+        }
+        this.regionalFinalSettled = true;
+        this.regionalFinalReject?.(error);
+    }
+
+    private cleanupRegionalSocket(): void {
+        if (this.regionalSocket) {
+            this.regionalSocket.onopen = null;
+            this.regionalSocket.onmessage = null;
+            this.regionalSocket.onerror = null;
+            this.regionalSocket.onclose = null;
+            if (this.regionalSocket.readyState === WebSocket.OPEN || this.regionalSocket.readyState === WebSocket.CONNECTING) {
+                this.regionalSocket.close();
+            }
+        }
+        this.regionalSocket = null;
+        this.regionalFinalPromise = null;
+        this.regionalFinalResolve = undefined;
+        this.regionalFinalReject = undefined;
+        this.regionalFinalSettled = false;
     }
 }

@@ -19,10 +19,10 @@
 | 修改窗口/动画行为 | [useWindowManagement.ts](src/composables/useWindowManagement.ts) + [useWorkMode.ts](src/composables/useWorkMode.ts) |
 | 修改 LLM 调用 | [llm.ts](src/services/llm.ts) + [prompts.ts](src/prompts/prompts.ts) |
 | 修改语音问诊 | [VoiceCapsule.vue](src/components/VoiceCapsule.vue) + [VoiceConsultationNew.vue](src/components/VoiceConsultationNew.vue) + [VoiceConsultationResult.vue](src/components/VoiceConsultationResult.vue) + [VoiceResultHeader.vue](src/components/VoiceResultHeader.vue) + [VoiceSafetyReviewPanel.vue](src/components/VoiceSafetyReviewPanel.vue) + [VoiceRecommendationFeedbackPopover.vue](src/components/VoiceRecommendationFeedbackPopover.vue) + [VoiceRecordFeedbackPopover.vue](src/components/VoiceRecordFeedbackPopover.vue) + [VoiceSessionFeedbackBar.vue](src/components/VoiceSessionFeedbackBar.vue) + [useVoiceConsultation.ts](src/composables/useVoiceConsultation.ts) + [useVoiceIntentRecognition.ts](src/composables/useVoiceIntentRecognition.ts) + [useVoiceFeedback.ts](src/composables/useVoiceFeedback.ts) + [useVoiceResultRecord.ts](src/composables/useVoiceResultRecord.ts) + [useVoiceCatalogMatching.ts](src/composables/useVoiceCatalogMatching.ts) + [useVoiceResultFactCheck.ts](src/composables/useVoiceResultFactCheck.ts) + [useVoiceKnowledgeSearch.ts](src/composables/useVoiceKnowledgeSearch.ts) + [useVoiceSafetyReview.ts](src/composables/useVoiceSafetyReview.ts) + [VoiceRigidBlockBanner.vue](src/components/VoiceRigidBlockBanner.vue) + [useVoiceRigidBlock.ts](src/composables/useVoiceRigidBlock.ts) + [safetyRules.ts](src/services/safetyRules.ts) + [useSafetyIssueResolver.ts](src/composables/useSafetyIssueResolver.ts) + [patientMemoryStore.ts](src/services/patientMemoryStore.ts) + [patientMemoryBackend.ts](src/services/patientMemoryBackend.ts) + [patientMemoryTypes.ts](src/services/patientMemoryTypes.ts) + [commands/patient_memory.rs](src-tauri/src/commands/patient_memory.rs) + [migrations/002_patient_memory_schema.sql](src-tauri/migrations/002_patient_memory_schema.sql) + [voiceResult.ts](src/types/voiceResult.ts) + [prompts.ts](src/prompts/prompts.ts) + [aliyunSpeech.ts](src/services/aliyunSpeech.ts) + [speechConfig.ts](src/services/speechConfig.ts) + [audioRecorder.ts](src/services/audioRecorder.ts) + [voiceFeedback.ts](src/services/voiceFeedback.ts)；重点关注语音抽取契约是否覆盖病例草稿、explicit/inferred 来源标记、诊断/检查/药品结构化字段，以及推荐项反馈 / 整页评分 / 病例字段反馈的本地落库、前后对比快照和 payload 组装；旧版 `VoiceConsultationResult.vue` 只做结果编辑编排，结果记录状态、标准库匹配、事实复核、知识库搜索、安全复核员分别由 composable 承接 |
-| 修改区域化后端接入 | [SettingsPanel.vue](src/components/SettingsPanel.vue) + [regionalClient.ts](src/services/regionalClient.ts) + [regionalRuntime.ts](src/services/regionalRuntime.ts) + [userFeedback.ts](src/services/userFeedback.ts) + [device.rs](src-tauri/src/commands/device.rs) |
+| 修改区域化后端接入 | [SettingsPanel.vue](src/components/SettingsPanel.vue) + [regionalClient.ts](src/services/regionalClient.ts) + [regionalRuntime.ts](src/services/regionalRuntime.ts) + [userFeedback.ts](src/services/userFeedback.ts) + [consultationUserLog.ts](src/services/consultationUserLog.ts) + [device.rs](src-tauri/src/commands/device.rs) |
 | 修改诊断路径 | [DiagnosisPathWindow.vue](src/components/DiagnosisPathWindow.vue) + [diagnosisPath.ts](src/services/diagnosisPath.ts) + [stores/diagnosisPath.ts](src/stores/diagnosisPath.ts) |
 | 修改知识库 | [pmphai.ts](src/services/pmphai.ts)（主） / [KnowledgeBasePanel.vue](src/components/KnowledgeBasePanel.vue)（备） |
-| 修改设置面板 | [SettingsPanel.vue](src/components/SettingsPanel.vue) + [llm.ts](src/services/llm.ts) + [speechConfig.ts](src/services/speechConfig.ts) + [regionalClient.ts](src/services/regionalClient.ts) |
+| 修改设置面板 | [SettingsPanel.vue](src/components/SettingsPanel.vue) + [llm.ts](src/services/llm.ts) + [speechConfig.ts](src/services/speechConfig.ts) + [regionalClient.ts](src/services/regionalClient.ts)；注意区域化模式下设置页隐藏“模型配置”页签 |
 | 修改客户端更新源 | [UpdateChecker.vue](src/components/UpdateChecker.vue) + [updateConfig.ts](src/services/updateConfig.ts) + [lib.rs](src-tauri/src/lib.rs)；内网发布端见 `../floating-ball-server/modules/release` |
 | 修改窗口尺寸记忆 | [useWindowManagement.ts](src/composables/useWindowManagement.ts) + [useNavigation.ts](src/composables/useNavigation.ts) + [useEventListeners.ts](src/composables/useEventListeners.ts) + [windowSizes.ts](src/constants/windowSizes.ts) |
 | 修改医学数据匹配 | [medicalData.ts](src/services/medicalData.ts) + [his/HisAdapter.ts](src/services/his/HisAdapter.ts) + [his/PhisHisAdapter.ts](src/services/his/PhisHisAdapter.ts) + [his/registry.ts](src/services/his/registry.ts) + [hisService.ts](src/services/hisService.ts) + [medical_catalog.rs](src-tauri/src/commands/medical_catalog.rs) + [src/assets/*.csv](src/assets/) |
@@ -82,7 +82,7 @@ floating-ball/
 
 | 组件 | 行数 | 职责 |
 |------|------|------|
-| **SettingsPanel.vue** | ~2100 | 通用设置、紧凑主题选择、基础数据缓存管理入口、HIS 联调日志独立入口、LLM 配置、区域化后端接入、语音 provider / 音频输入设备、自动更新 |
+| **SettingsPanel.vue** | ~2100 | 通用设置、紧凑主题选择、基础数据缓存管理入口、HIS 联调日志独立入口、区域化后端接入、语音 provider / 音频输入设备、自动更新；本地模式显示 LLM 配置，区域化模式隐藏模型配置页签 |
 | **HisIntegrationLogPanel.vue** | -- | HIS 联调日志独立视图面板：筛选、查看详情、复制、导出、清空本地 JSONL 日志 |
 | **MedicalCatalogCachePanel.vue** | -- | 基础数据缓存管理独立视图：查看 SQLite 缓存状态、同步状态、手动同步和清理 |
 | **FeedbackSubmissionPanel.vue** | ~560 | 统一问题反馈面板（一键回写 + 右上角入口共用），紧凑星级 + 问题标签 + 选填截图 |
@@ -173,6 +173,7 @@ useEventListeners (全局事件) -> 触发 useNavigation & useWorkMode
 | **regionalClient.ts** | ~400 | 区域化核心客户端：设备 MAC 解析/设备编码持久化、终端注册、bootstrap 拉取、心跳、鉴权、SSE 代理；MAC 读取由 Tauri `device.rs` 提供，Windows 使用系统网卡 API，避免外部命令窗口闪烁 |
 | **regionalRuntime.ts** | ~50 | 区域化运行时编排：统一初始化、重连、远程数据同步、审计上传启停 |
 | **userFeedback.ts** | ~150 | 统一反馈提交服务（kind/severity/tags/hasCorrection），自动附加 doctor/org/dept actor 与 aiTrace |
+| **consultationUserLog.ts** | -- | 运维用户日志上报服务：智能问诊/语音问诊首版 AI 内容与最终提交内容快照，按 `consultationId + consultationType` 聚合到后台用户日志模块 |
 | **feedbackContext.ts** | ~80 | 反馈上下文：握手阶段缓存当前医生/机构/科室身份，供反馈提交回填 |
 | **themeService.ts** | ~209 | 主题管理（深色/浅色模式） |
 | **reportGenerator.ts** | ~152 | 最终报告生成 |

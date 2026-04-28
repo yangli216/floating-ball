@@ -18,30 +18,46 @@ const STORAGE_KEYS = {
   testingUrl: 'INTRANET_UPDATE_TESTING_URL',
 } as const;
 
+const REGIONAL_STORAGE_KEYS = {
+  enabled: 'REGIONAL_ENABLED',
+  baseUrl: 'REGIONAL_BASE_URL',
+} as const;
+
+const DEFAULT_REGIONAL_BASE_URL = (
+  import.meta.env.VITE_REGIONAL_BASE_URL
+  || 'http://127.0.0.1:8080'
+).trim().replace(/\/+$/, '');
+
+const DEFAULT_REGIONAL_ENABLED = !['false', '0', 'off'].includes(
+  String(import.meta.env.VITE_REGIONAL_ENABLED ?? 'true').trim().toLowerCase()
+);
+
 function normalizeUrl(value: string): string {
   return value.trim().replace(/\/+$/, '');
 }
 
-function readStoredRegionalEndpoint(): { enabled: boolean; baseUrl: string } {
-  const enabledText = localStorage.getItem('REGIONAL_ENABLED');
-  const defaultEnabled = !['false', '0', 'off'].includes(
-    String(import.meta.env.VITE_REGIONAL_ENABLED ?? 'true').trim().toLowerCase()
-  );
-  const enabled = enabledText === 'true' || (enabledText !== 'false' && defaultEnabled);
-  const baseUrl = normalizeUrl(
-    localStorage.getItem('REGIONAL_BASE_URL')
-      || import.meta.env.VITE_REGIONAL_BASE_URL
-      || 'http://127.0.0.1:8080'
-  );
-  return { enabled, baseUrl };
+function readStorageValue(key: string): string | null {
+  const raw = localStorage.getItem(key);
+  if (raw == null) {
+    return null;
+  }
+  const text = raw.trim();
+  return text ? text : null;
+}
+
+function isRegionalModeEnabledForUpdate(): boolean {
+  const stored = localStorage.getItem(REGIONAL_STORAGE_KEYS.enabled);
+  if (stored === 'true') return true;
+  if (stored === 'false') return false;
+  return DEFAULT_REGIONAL_ENABLED;
 }
 
 function buildRegionalReleaseEndpoint(channel: UpdateEnvironment): string {
-  const regionalConfig = readStoredRegionalEndpoint();
-  if (!regionalConfig.enabled || !regionalConfig.baseUrl) {
+  const baseUrl = normalizeUrl(readStorageValue(REGIONAL_STORAGE_KEYS.baseUrl) || DEFAULT_REGIONAL_BASE_URL);
+  if (!isRegionalModeEnabledForUpdate() || !baseUrl) {
     return '';
   }
-  return `${regionalConfig.baseUrl}/v1/client/releases/${channel}/latest.json`;
+  return `${baseUrl}/v1/client/releases/${channel}/latest.json`;
 }
 
 export function getUpdateConfig(): UpdateConfig {

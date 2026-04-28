@@ -150,6 +150,134 @@ fn build_runtime_updater(
         .map_err(|error| format!("构建更新器失败: {}", error))
 }
 
+const FLOATING_BALL_LOGICAL_SIZE: f64 = 160.0;
+const FLOATING_BALL_MARGIN_LOGICAL: f64 = 16.0;
+
+#[derive(Clone, Copy)]
+struct FloatingBallWindowSize {
+    width: i32,
+    height: i32,
+}
+
+fn clamp_axis(value: i32, min: i32, max: i32) -> i32 {
+    if max < min {
+        min
+    } else {
+        value.clamp(min, max)
+    }
+}
+
+fn scaled_pixels(logical_pixels: f64, monitor: Option<&tauri::Monitor>) -> i32 {
+    let scale_factor = monitor.map(|m| m.scale_factor()).unwrap_or(1.0);
+    (logical_pixels * scale_factor).round().max(1.0) as i32
+}
+
+fn floating_ball_window_size(
+    window: &tauri::WebviewWindow,
+    monitor: Option<&tauri::Monitor>,
+) -> FloatingBallWindowSize {
+    if let Ok(size) = window.outer_size() {
+        if size.width > 0 && size.height > 0 {
+            return FloatingBallWindowSize {
+                width: size.width as i32,
+                height: size.height as i32,
+            };
+        }
+    }
+
+    let fallback_size = scaled_pixels(FLOATING_BALL_LOGICAL_SIZE, monitor);
+    FloatingBallWindowSize {
+        width: fallback_size,
+        height: fallback_size,
+    }
+}
+
+fn floating_ball_margin(monitor: &tauri::Monitor) -> i32 {
+    scaled_pixels(FLOATING_BALL_MARGIN_LOGICAL, Some(monitor))
+}
+
+fn clamp_position_to_work_area(
+    x: i32,
+    y: i32,
+    monitor: &tauri::Monitor,
+    window_size: FloatingBallWindowSize,
+) -> (i32, i32) {
+    let work_area = monitor.work_area();
+    let margin = floating_ball_margin(monitor);
+    let min_x = work_area.position.x + margin;
+    let min_y = work_area.position.y + margin;
+    let max_x = work_area.position.x + work_area.size.width as i32 - window_size.width - margin;
+    let max_y = work_area.position.y + work_area.size.height as i32 - window_size.height - margin;
+
+    (clamp_axis(x, min_x, max_x), clamp_axis(y, min_y, max_y))
+}
+
+fn snap_position_to_work_area(
+    x: i32,
+    y: i32,
+    monitor: &tauri::Monitor,
+    window_size: FloatingBallWindowSize,
+) -> (i32, i32) {
+    let work_area = monitor.work_area();
+    let margin = floating_ball_margin(monitor);
+    let left_x = work_area.position.x + margin;
+    let right_x = work_area.position.x + work_area.size.width as i32 - window_size.width - margin;
+    let window_center_x = x + window_size.width / 2;
+    let work_area_center_x = work_area.position.x + work_area.size.width as i32 / 2;
+    let snapped_x = if window_center_x < work_area_center_x {
+        left_x
+    } else {
+        right_x
+    };
+    let (_, safe_y) = clamp_position_to_work_area(x, y, monitor, window_size);
+
+    (clamp_axis(snapped_x, left_x, right_x), safe_y)
+}
+
+fn active_floating_ball_monitor(window: &tauri::WebviewWindow) -> Option<tauri::Monitor> {
+    window
+        .cursor_position()
+        .ok()
+        .and_then(|cursor| {
+            window
+                .monitor_from_point(cursor.x, cursor.y)
+                .ok()
+                .flatten()
+        })
+        .or_else(|| window.primary_monitor().ok().flatten())
+        .or_else(|| {
+            window
+                .available_monitors()
+                .ok()
+                .and_then(|monitors| monitors.into_iter().next())
+        })
+}
+
+fn restore_floating_ball_position(
+    window: &tauri::WebviewWindow,
+    x: i32,
+    y: i32,
+) -> Option<(i32, i32)> {
+    let monitor = active_floating_ball_monitor(window)?;
+    let window_size = floating_ball_window_size(window, Some(&monitor));
+    Some(snap_position_to_work_area(x, y, &monitor, window_size))
+}
+
+fn default_floating_ball_position(window: &tauri::WebviewWindow) -> (i32, i32) {
+    if let Some(monitor) = active_floating_ball_monitor(window) {
+        let work_area = monitor.work_area();
+        let window_size = floating_ball_window_size(window, Some(&monitor));
+        let margin = floating_ball_margin(&monitor);
+        let preferred_x =
+            work_area.position.x + work_area.size.width as i32 - window_size.width - margin;
+        let preferred_y =
+            work_area.position.y + (work_area.size.height as i32 - window_size.height) / 2;
+        return clamp_position_to_work_area(preferred_x, preferred_y, &monitor, window_size);
+    }
+
+    (1720, 100)
+}
+
 #[tauri::command]
 async fn check_app_update(
     app: tauri::AppHandle,
@@ -718,6 +846,13 @@ pub fn run() {
 
             // 设置窗口为始终置顶
             window.set_always_on_top(true).unwrap();
+            let _ = window.set_visible_on_all_workspaces(true);
+            let _ = window.set_skip_taskbar(true);
+            let _ = window.set_resizable(false);
+            let _ = window.set_size(tauri::LogicalSize::new(
+                FLOATING_BALL_LOGICAL_SIZE,
+                FLOATING_BALL_LOGICAL_SIZE,
+            ));
 
             // 尝试在 Rust 层直接读取本地存储并恢复悬浮球坐标，避免前端 Vue 初始化带来的闪烁和 macOS 隐藏渲染 Bug
             let mut restored = false;
@@ -730,22 +865,11 @@ pub fn run() {
                                 pos.get("x").and_then(|v| v.as_f64()),
                                 pos.get("y").and_then(|v| v.as_f64()),
                             ) {
-                                // 校验位置是否在任意显示器范围内，防止窗口跑到屏幕外不可见
-                                let in_bounds = window.available_monitors().ok()
-                                    .map(|monitors| monitors.iter().any(|m| {
-                                        let mp = m.position();
-                                        let ms = m.size();
-                                        x >= mp.x as f64
-                                            && y >= mp.y as f64
-                                            && x < (mp.x as f64 + ms.width as f64)
-                                            && y < (mp.y as f64 + ms.height as f64)
-                                    }))
-                                    .unwrap_or(false);
-                                if in_bounds {
-                                    println!("[Rust] Restoring position from .settings.dat: ({}, {})", x, y);
+                                if let Some((safe_x, safe_y)) = restore_floating_ball_position(&window, x as i32, y as i32) {
+                                    println!("[Rust] Restoring position from .settings.dat: ({}, {}) -> ({}, {})", x, y, safe_x, safe_y);
                                     let _ = window.set_position(tauri::Position::Physical(tauri::PhysicalPosition {
-                                        x: x as i32,
-                                        y: y as i32,
+                                        x: safe_x,
+                                        y: safe_y,
                                     }));
                                     restored = true;
                                 } else {
@@ -758,13 +882,7 @@ pub fn run() {
             }
             // 无有效保存位置时，设到主显示器右上角安全区域（基准 1920×1080）
             if !restored {
-                let (safe_x, safe_y) = if let Ok(Some(monitor)) = window.primary_monitor() {
-                    let ms = monitor.size();
-                    ((ms.width as i32).saturating_sub(200), 100)
-                } else {
-                    // 获取显示器信息失败，按 1920×1080 估算
-                    (1720, 100)
-                };
+                let (safe_x, safe_y) = default_floating_ball_position(&window);
                 println!("[Rust] Setting safe default position: ({}, {})", safe_x, safe_y);
                 let _ = window.set_position(tauri::Position::Physical(tauri::PhysicalPosition {
                     x: safe_x,
@@ -772,7 +890,32 @@ pub fn run() {
                 }));
             }
             // 位置就绪后再显示窗口，避免在错误位置闪烁
+            let _ = window.unminimize();
             let _ = window.show();
+            let _ = window.set_always_on_top(true);
+            let _ = window.set_focus();
+
+            // 显示后再校验一次实际窗口尺寸与位置。高 DPI、Dock/任务栏或系统延迟应用尺寸时，
+            // 启动前计算出的安全坐标可能仍需要按最终 outer_size 再夹回 work area。
+            if let Ok(current_pos) = window.outer_position() {
+                let verified_pos =
+                    restore_floating_ball_position(&window, current_pos.x, current_pos.y)
+                        .unwrap_or_else(|| default_floating_ball_position(&window));
+                if (current_pos.x - verified_pos.0).abs() > 4
+                    || (current_pos.y - verified_pos.1).abs() > 4
+                {
+                    println!(
+                        "[Rust] Rechecking floating ball position after show: ({}, {}) -> ({}, {})",
+                        current_pos.x, current_pos.y, verified_pos.0, verified_pos.1
+                    );
+                    let _ = window.set_position(tauri::Position::Physical(
+                        tauri::PhysicalPosition {
+                            x: verified_pos.0,
+                            y: verified_pos.1,
+                        },
+                    ));
+                }
+            }
 
             // Start HTTP Server
             let handle = app.handle().clone();

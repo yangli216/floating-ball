@@ -52,12 +52,19 @@ const { currentTheme, themes, setTheme } = useTheme();
 
 
 type TabType = 'general' | 'model' | 'about';
+type TabDefinition = {
+  id: TabType;
+  label: string;
+  icon: string;
+};
+
 const activeTab = ref<TabType>('general');
-const tabs = [
+const regionalMode = ref(false);
+const tabs = computed<TabDefinition[]>(() => [
   { id: 'general', label: '通用设置', icon: 'lucide:settings-2' },
-  { id: 'model', label: '模型配置', icon: 'lucide:brain' },
+  ...(!regionalMode.value ? [{ id: 'model' as const, label: '模型配置', icon: 'lucide:brain' }] : []),
   { id: 'about', label: '关于版本', icon: 'lucide:info' },
-];
+]);
 
 const settingsLoaded = ref(false);
 const lastSavedSnapshot = ref('');
@@ -80,7 +87,6 @@ const apiKey = ref('');
 const baseUrl = ref('');
 const model = ref('');
 const alwaysOnTop = ref(true);
-const regionalMode = ref(false);
 const regionalBaseUrl = ref('');
 const regionalOrgCode = ref('');
 const regionalDeviceCode = ref('');
@@ -409,7 +415,7 @@ const currentSettingsSnapshot = computed(() => JSON.stringify({
   speechTestMode: speechTestMode.value,
 }));
 
-const shouldShowSaveBar = computed(() => activeTab.value === 'general' || activeTab.value === 'model');
+const shouldShowSaveBar = computed(() => activeTab.value === 'general' || (activeTab.value === 'model' && !regionalMode.value));
 const hasUnsavedChanges = computed(() => settingsLoaded.value && currentSettingsSnapshot.value !== lastSavedSnapshot.value);
 const saveShortcutLabel = computed(() => {
   if (typeof navigator === 'undefined') {
@@ -769,8 +775,11 @@ watch(activeTab, (newVal) => {
   trackClick('settings_tab_change', { tab: newVal });
 });
 
-watch(regionalMode, () => {
+watch(regionalMode, (enabled) => {
   regionalConnectResult.value = null;
+  if (enabled && activeTab.value === 'model') {
+    activeTab.value = 'general';
+  }
 });
 
 watch([regionalBaseUrl, regionalOrgCode], () => {
@@ -1027,12 +1036,7 @@ watch([regionalBaseUrl, regionalOrgCode], () => {
       </div>
 
       <!-- Model Tab -->
-      <div v-if="activeTab === 'model'" class="tab-pane">
-        <div v-if="regionalMode" class="info-banner">
-          <Icon icon="lucide:server" :size="18" />
-          <p>当前为区域化模式。模型、独立审查 AI 和知识库凭据由 floating-ball-server 统一管理，桌面端只保留本地模式兜底配置与本地偏好。</p>
-        </div>
-
+      <div v-if="activeTab === 'model' && !regionalMode" class="tab-pane">
         <div class="settings-section">
           <div class="section-header">
             <Icon icon="lucide:key" :size="20" />

@@ -29,6 +29,11 @@ import {
   mapTreatmentTypeToRecommendationType,
   mapTreatmentTypeToTargetType,
 } from '../services/voiceFeedback';
+import {
+  buildConsultationSelectionSnapshot,
+  buildConsultationUserLogSnapshot,
+  submitConsultationUserLog,
+} from '../services/consultationUserLog';
 import type { TreatmentRecommendation, Diagnosis } from '../types/consultation';
 import type { AppPatient } from '../types/appState';
 import type { VoiceIntentResult, MatchedTreatment, MatchedDiagnosis } from '../composables/useVoiceIntentRecognition';
@@ -381,6 +386,36 @@ function buildTreatmentFeedbackSnapshot(rec: TreatmentRecommendation): Record<st
     execDept: rec.execDept || '',
     insuranceType: rec.insuranceType || '',
   };
+}
+
+function buildVoiceUserLogSnapshot() {
+  return buildConsultationUserLogSnapshot({
+    chiefComplaint: chiefComplaint.value,
+    historyOfPresentIllness: historyOfPresentIllness.value,
+    diagnoses: aiDiagnoses.value,
+    selectedDiagnosis: selectedDiagnosis.value,
+    treatments: treatments.value,
+  });
+}
+
+function submitVoiceGeneratedUserLog(): void {
+  void submitConsultationUserLog({
+    consultationId: consultationId.value,
+    consultationType: 'voice',
+    patient: props.initialPatientData || null,
+    firstSnapshot: buildVoiceUserLogSnapshot(),
+  });
+}
+
+function submitVoiceFinalUserLog(): void {
+  const finalSnapshot = buildVoiceUserLogSnapshot();
+  void submitConsultationUserLog({
+    consultationId: consultationId.value,
+    consultationType: 'voice',
+    patient: props.initialPatientData || null,
+    finalSnapshot,
+    selectionSnapshot: buildConsultationSelectionSnapshot(finalSnapshot),
+  });
 }
 
 async function handleDiagnosisFeedbackSubmit(diag: Diagnosis, draft: VoiceRecommendationFeedbackDraft): Promise<void> {
@@ -2273,6 +2308,7 @@ async function fetchAITreatment(): Promise<void> {
     void registerCurrentRecommendations();
     void hydrateMatchedMedicalItemDetails(nextTreatments);
     void performTreatmentFactCheck(nextTreatments);
+    submitVoiceGeneratedUserLog();
   } catch (error: unknown) {
     const msg = error instanceof Error ? error.message : String(error);
     showToast?.(`方案推荐失败: ${msg}`, 'error');
@@ -3560,6 +3596,7 @@ async function handleBatchWriteBack(): Promise<void> {
     };
 
     await invoke('complete_consultation', { result });
+    submitVoiceFinalUserLog();
     clearVoiceConsultationCache(props.initialPatientData);
     showToast?.('病历已提交', 'success');
     showSessionFeedbackDialog.value = true;
@@ -3633,6 +3670,7 @@ watch(
 
     await nextTick();
     suppressDiagnosisTreatmentRefetch.value = false;
+    submitVoiceGeneratedUserLog();
 
     const primaryDiagnosis = selectedDiagnosis.value;
     const primaryDiagnosisName = primaryDiagnosis ? s((primaryDiagnosis as Record<string, unknown>).name) : '';

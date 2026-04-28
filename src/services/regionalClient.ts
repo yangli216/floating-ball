@@ -671,6 +671,28 @@ export async function regionalPost<T>(path: string, body: unknown): Promise<T> {
   });
 }
 
+export async function createRegionalWebSocketUrl(path: string): Promise<string> {
+  const baseUrl = getRegionalBaseUrl();
+  if (!baseUrl) throw new Error('区域化服务地址未配置');
+
+  await getDeviceCode();
+  let token = getDeviceToken();
+  if (!token) {
+    await registerDevice();
+    token = getDeviceToken();
+  }
+  if (!token) {
+    throw new Error('区域化设备令牌未初始化');
+  }
+
+  const url = new URL(path, `${baseUrl}/`);
+  url.protocol = baseUrl.startsWith('https://') ? 'wss:' : 'ws:';
+  url.searchParams.set('token', token);
+  url.searchParams.set('clientVersion', await getCurrentClientVersion());
+  url.searchParams.set('updateChannel', getActiveUpdateChannel());
+  return url.toString();
+}
+
 function arrayBufferToBase64(arrayBuffer: ArrayBuffer): string {
   const bytes = new Uint8Array(arrayBuffer);
   let binary = '';

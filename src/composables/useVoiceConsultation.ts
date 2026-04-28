@@ -23,6 +23,7 @@ import {
   formatPatientMemoryForPrompt,
   getPatientMemory,
 } from '../services/patientMemoryStore';
+import { submitConsultationUserLog } from '../services/consultationUserLog';
 
 interface VoiceConsultationCacheEntry {
   consultationId: string;
@@ -258,6 +259,16 @@ export function useVoiceConsultation(options: VoiceConsultationOptions) {
     try {
       const normalizedText = transcribedText.trim();
       const consultationId = resolveVoiceConsultationId(currentPatient.value);
+      void submitConsultationUserLog({
+        consultationId,
+        consultationType: 'voice',
+        patient: currentPatient.value,
+        speech: {
+          text: normalizedText,
+          audioBlob,
+          mimeType: audioBlob?.type || 'audio/wav',
+        },
+      });
       const cached = readCache(consultationId);
       if (cached?.transcribedText === normalizedText) {
         console.log('[VoiceConsultation] Cache hit, skip LLM parsing', {
