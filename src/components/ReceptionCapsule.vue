@@ -1,7 +1,7 @@
 <template>
   <div
     class="rc-root"
-    :style="{ border: '2px solid ' + borderColor }"
+    :class="stateClass"
     data-tauri-drag-region
   >
     <!-- Close -->
@@ -13,7 +13,13 @@
     <div class="rc-header">
       <!-- Avatar -->
       <div class="rc-avatar">
-        <Icon :icon="gender === 'F' ? 'mdi:human-female' : 'mdi:human-male'" :color="gender === 'F' ? '#ff9a9e' : '#79c2ff'" size="30" />
+        <img
+          class="rc-avatar-img"
+          :src="avatarSrc"
+          @error="onAvatarError"
+          alt=""
+          draggable="false"
+        />
       </div>
 
       <!-- Info -->
@@ -54,7 +60,11 @@
       <div v-for="(r, i) in risks" :key="i" class="rc-risk-row">
         <span
           class="rc-tag"
-          :style="{ color: tagColor(r.category), borderColor: tagColor(r.category) }"
+          :style="{
+            color: tagColor(r.category),
+            borderColor: tagColor(r.category),
+            background: tagBg(r.category),
+          }"
         >{{ tagLabel(r.category) }}</span>
         <span class="rc-risk-text">{{ r.content }}</span>
       </div>
@@ -66,6 +76,7 @@
 import { ref, computed, watch } from 'vue';
 import Icon from './Icon.vue';
 import { trackClick, startTimedOperation } from '../services/operationTracker';
+import { resolvePatientAvatar, PATIENT_AVATAR_FALLBACK } from '../utils/patientAvatar';
 
 export interface RiskItem {
   level: 1 | 2 | 3;
@@ -89,11 +100,28 @@ const emit = defineEmits<{
 const expanded = ref(false);
 let endTimer: ((s?: boolean, d?: Record<string, any>) => void) | null = null;
 
-const borderColor = computed(() => {
-  if (props.analyzing) return '#93c5fd';
-  if (props.risks.length > 0) return '#fb923c';
-  return '#4ade80';
+const stateClass = computed(() => {
+  if (props.analyzing) return 'rc-state-analyzing';
+  if (props.risks.length > 0) return 'rc-state-risk';
+  return 'rc-state-healthy';
 });
+
+// 头像加载策略：依据性别 + 年龄映射到 public/avatar/ 下的切图，
+// 加载失败时回退默认头像。
+const avatarSrc = ref<string>(
+  resolvePatientAvatar({ gender: props.gender, age: props.age })
+);
+watch(
+  () => [props.gender, props.age] as const,
+  ([g, a]) => {
+    avatarSrc.value = resolvePatientAvatar({ gender: g, age: a });
+  }
+);
+function onAvatarError() {
+  if (avatarSrc.value !== PATIENT_AVATAR_FALLBACK) {
+    avatarSrc.value = PATIENT_AVATAR_FALLBACK;
+  }
+}
 
 watch(() => props.analyzing, (now, was) => {
   if (now && !was) endTimer = startTimedOperation('reception_risk_analysis');
@@ -120,8 +148,16 @@ const CATEGORY_COLORS: Record<string, string> = {
   chronic: '#ea580c',
   medication: '#d97706',
   population: '#2563eb',
-  vital: '#16a34a',
+  vital: '#7c3aed',
   other: '#64748b',
+};
+const CATEGORY_BG: Record<string, string> = {
+  allergy: '#fee2e2',
+  chronic: '#fff4e5',
+  medication: '#fef3c7',
+  population: '#dbeafe',
+  vital: '#ede9fe',
+  other: '#f1f5f9',
 };
 const CATEGORY_LABELS: Record<string, string> = {
   allergy: '过敏',
@@ -133,6 +169,7 @@ const CATEGORY_LABELS: Record<string, string> = {
 };
 
 function tagColor(cat: string) { return CATEGORY_COLORS[cat] || '#64748b'; }
+function tagBg(cat: string) { return CATEGORY_BG[cat] || '#f1f5f9'; }
 function tagLabel(cat: string) { return CATEGORY_LABELS[cat] || '其他'; }
 </script>
 
@@ -140,15 +177,36 @@ function tagLabel(cat: string) { return CATEGORY_LABELS[cat] || '其他'; }
 .rc-root {
   position: absolute;
   inset: 0;
-  background: #ffffff !important;
   border-radius: 14px;
   display: flex;
   flex-direction: column;
   padding: 16px;
   box-sizing: border-box;
   overflow: hidden;
+  border: 1.5px solid transparent;
+  background: #ffffff;
+  box-shadow: 0 4px 14px rgba(15, 23, 42, 0.06);
   backdrop-filter: none !important;
   -webkit-backdrop-filter: none !important;
+  transition: background 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+.rc-state-healthy {
+  background: linear-gradient(180deg, #f0fdf4 0%, #ffffff 70%);
+  border-color: #86efac;
+  box-shadow: 0 4px 14px rgba(22, 163, 74, 0.08);
+}
+
+.rc-state-risk {
+  background: linear-gradient(180deg, #fff7ed 0%, #ffffff 70%);
+  border-color: #fdba74;
+  box-shadow: 0 4px 14px rgba(234, 88, 12, 0.1);
+}
+
+.rc-state-analyzing {
+  background: linear-gradient(180deg, #eff6ff 0%, #ffffff 70%);
+  border-color: #93c5fd;
+  box-shadow: 0 4px 14px rgba(59, 130, 246, 0.08);
 }
 
 /* ---- close ---- */
@@ -179,14 +237,27 @@ function tagLabel(cat: string) { return CATEGORY_LABELS[cat] || '其他'; }
 }
 
 .rc-avatar {
-  width: 50px;
-  height: 50px;
+  width: 48px;
+  height: 48px;
   border-radius: 50%;
-  background: linear-gradient(135deg, #e8eaf6, #d1d5e8);
+  overflow: hidden;
   display: flex;
   align-items: center;
   justify-content: center;
   flex-shrink: 0;
+  background: #e8f1fb;
+  box-shadow:
+    0 0 0 2px #ffffff,
+    0 1px 4px rgba(15, 23, 42, 0.08);
+}
+
+.rc-avatar-img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+  user-select: none;
+  -webkit-user-drag: none;
 }
 
 .rc-info { flex: 1; min-width: 0; }
@@ -262,12 +333,11 @@ function tagLabel(cat: string) { return CATEGORY_LABELS[cat] || '其他'; }
   font-size: 13px;
   font-weight: 600;
   border: 1.5px solid;
-  background: transparent;
   white-space: nowrap;
 }
 
 .rc-risk-text {
   font-size: 15px;
-  color: #334155;
+  color: #1e293b;
 }
 </style>

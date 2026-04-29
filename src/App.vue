@@ -319,36 +319,44 @@ async function cancelVoiceResult(): Promise<void> {
   minimizedSessions.clear('voice');
 }
 
-// 可见性门禁：未接诊患者时，悬浮球的症状问诊按钮隐藏。
-const canOpenConsultation = computed(() => currentPatient.value !== null);
+// 可见性/可点击门禁：
+// 问诊按钮始终可见；仅在当前患者存在未结束的问诊（最小化会话）时才可点击，
+// 作为“恢复问诊界面”的入口；否则置灰禁用。
+const hasResumableConsultation = computed(() =>
+  currentPatient.value !== null && minimizedSessions.latestType.value !== null
+);
 
 /**
- * 用户主动收起到小球的统一入口：
+ * 用户主动收起的统一入口：
  *  - 如果当前在症状问诊 / 语音问诊未结束的视图，记录最小化；
- *  - 然后走原 handleCollapse 路径（症状问诊会先到接待胶囊，再由胶囊退出到球）。
+ *  - 问诊态会先回到接待胶囊；从接待胶囊再次关闭时才退出到球；
+ *  - 接待胶囊自身不再覆写最小化类型，避免语音链路被误记成症状链路。
  */
 async function handleUserCollapse(): Promise<void> {
   if (currentView.value === 'consultation' && currentPatient.value) {
     minimizedSessions.record('symptom', currentPatient.value);
   } else if (currentView.value === 'voice-consultation' && currentPatient.value) {
     minimizedSessions.record('voice', currentPatient.value);
-  } else if (currentView.value === 'reception-capsule' && currentPatient.value) {
-    // 用户从接待胶囊再次关闭 → 也作为最小化症状问诊处理
-    minimizedSessions.record('symptom', currentPatient.value);
   }
   await handleCollapse();
 }
 
 /**
- * 点击悬浮球的"症状问诊"按钮：
- *  - 若当前没有患者，按钮已隐藏，这里不会被调用；
- *  - 若存在最小化的症状问诊会话，恢复到原界面（组件 v-show 保活，状态自动保留）；
- *  - 否则按常规进入问诊。
+ * 点击悬浮球的"问诊"按钮：
+ *  - 仅在存在未结束问诊会话时可点（由 hasResumableConsultation 控制）；
+ *  - 点击后按"最后一次"原则恢复语音 / 症状问诊现场。
  *
  * 注意：不在这里清掉最小化记录。下一次再次收起时会以更新后的 timestamp 覆盖；
  * 真正清理发生在「会话完成 / 取消 / 跨自然日」时。
  */
 async function handleConsultationRingClick(): Promise<void> {
+  if (!hasResumableConsultation.value) return;
+  const latest = minimizedSessions.latestType.value;
+  if (latest === 'voice' && currentPatient.value) {
+    currentView.value = 'voice-consultation';
+    await enterWorkMode();
+    return;
+  }
   await openConsultation();
 }
 
@@ -658,12 +666,12 @@ const openInsideCloudHome = async () => {
               <svgIcon file="/off.svg" :color="'#262626'" :hoverColor="'#2B7FE3'" :fontSize="'18px'"></svgIcon>
             </button>
 	             <button
-	              v-if="canOpenConsultation"
 	              class="ring-btn left"
-	              :class="{ 'manual-hover': hoveredBtnIndex === 3 }"
+	              :class="{ 'manual-hover': hoveredBtnIndex === 3, 'is-disabled': !hasResumableConsultation }"
+	              :disabled="!hasResumableConsultation"
 	              @click.stop="handleConsultationRingClick"
-	              aria-label="打开智能问诊"
-	              :title="minimizedSessions.hasSymptom ? '恢复症状问诊' : '智能问诊'"
+	              aria-label="恢复问诊界面"
+	              :title="hasResumableConsultation ? '恢复问诊界面' : '暂无未结束的问诊'"
 	            >
                  <svgIcon file="/consultation.svg" :color="'#262626'" :hoverColor="'#2B7FE3'" :fontSize="'18px'"></svgIcon>
             </button>
@@ -992,6 +1000,24 @@ const openInsideCloudHome = async () => {
 .ring-btn:active {
   transform: scale(0.95) !important;
   transition-duration: 0.1s;
+}
+
+.ring-btn.is-disabled,
+.ring-btn:disabled {
+  cursor: not-allowed;
+  opacity: 0.4;
+  filter: grayscale(0.6);
+}
+
+.ring-btn.is-disabled:hover,
+.ring-btn:disabled:hover {
+  background: rgba(255, 255, 255, 0.92);
+  color: inherit;
+  border-color: rgba(43, 127, 227, 0.08);
+  transform: none !important;
+  box-shadow:
+    0 2px 8px rgba(43, 127, 227, 0.06),
+    0 4px 16px rgba(43, 127, 227, 0.04);
 }
 
 .ring-icon { width: 16px; height: 16px; stroke-width: 1.8; }

@@ -294,6 +294,25 @@ export function useWorkMode(options: WorkModeOptions) {
     // 1. 计算收缩动画参数
     await calculateMorphOrigin('shrink');
 
+    // 1.5 从胶囊退出时预扩窗：胶囊是 320x80，小于球的 160x160 高度，
+      // 若保持胶囊尺寸进入 morph，ball-layer 会被 OS 窗口裁切，
+      // 出现“半个球”。提前把窗口扩到 BALL 尺寸且贴回小球位置，
+      // 让后续 CSS 动画始终能完整呈现小球。
+    if (currentView.value === 'reception-capsule' && appWindow.value) {
+      try {
+        if (lastBallPos.value) {
+          await appWindow.value.setPosition(
+            new PhysicalPosition(lastBallPos.value.x, lastBallPos.value.y)
+          );
+        }
+        await appWindow.value.setSize(
+          new LogicalSize(WINDOW_SIZES.BALL.width, WINDOW_SIZES.BALL.height)
+        );
+      } catch (e) {
+        console.warn('[WorkMode] Pre-resize capsule->ball failed:', e);
+      }
+    }
+
     // 2. 触发收缩动画
     isWorking.value = false;
 
@@ -384,40 +403,44 @@ export function useWorkMode(options: WorkModeOptions) {
   /**
    * 智能收起处理
    *
-   * 根据当前上下文决定收起行为：
-   * - 问诊界面 + 有患者 → 收起到接待胶囊
-   * - 其他情况 → 完全退出工作模式
+   * 问诊态统一先回到风险提示页，其他视图则直接回到悬浮球。
+   * - 症状问诊 / 语音问诊 在收起前已由 App.handleUserCollapse 写入最小化会话记录；
+   * - reception-capsule 作为问诊态与球态之间的统一过渡页；
+   * - 医生从风险提示页再次关闭时，才真正退出到悬浮球。
    */
   const handleCollapse = async (): Promise<void> => {
+    const shouldReturnToReception =
+      (currentView.value === 'consultation' || currentView.value === 'voice-consultation') &&
+      !!currentPatient.value;
+
     trackClick('collapse', {
       from: currentView.value,
-      toReception: currentView.value === 'consultation' && !!currentPatient.value,
+      toReception: shouldReturnToReception,
     });
 
-    // 问诊界面 + 有患者 → 收起到接待胶囊
-    if (currentView.value === 'consultation' && currentPatient.value) {
-      currentView.value = 'reception-capsule' as ViewType;
+    if (shouldReturnToReception && currentPatient.value) {
+      currentView.value = 'reception-capsule';
+      syncRiskPatientInfo?.(currentPatient.value);
 
-      // 同步患者信息到风险提示
-      if (syncRiskPatientInfo) {
-        syncRiskPatientInfo(currentPatient.value);
-      }
+      // 顺序必须是“先缩小、再移位”：
+      // 若先把 1200x900 的问诊窗口贴到小球坐标（右边缘场景），macOS 会
+      // 发现该坐标容不下问诊尺寸，从而跨显示器复位，产生一闪。
+      // 改为先 resize 到胶囊尺寸，再 setPosition 就不会被夹跨屏。
+      await resizeWorkWindow(WINDOW_SIZES.CAPSULE.width, WINDOW_SIZES.CAPSULE.height);
 
-      // 恢复位置到小球原来的位置
       if (lastBallPos.value && appWindow.value) {
         try {
           await appWindow.value.setPosition(
             new PhysicalPosition(lastBallPos.value.x, lastBallPos.value.y)
           );
         } catch (e) {
-          console.warn('[WorkMode] Failed to restore position for capsule:', e);
+          console.warn('[WorkMode] Failed to align capsule to ball position:', e);
         }
       }
-
-      await resizeWorkWindow(WINDOW_SIZES.CAPSULE.width, WINDOW_SIZES.CAPSULE.height);
-    } else {
-      await exitWork();
+      return;
     }
+
+    await exitWork();
   };
 
   // ========== 导出 ==========

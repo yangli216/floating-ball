@@ -983,6 +983,7 @@ import FactCheckHighlight from './FactCheckHighlight.vue';
 import FactCheckWidget from './FactCheckWidget.vue';
 import KnowledgePanel from './KnowledgePanel.vue';
 import PatientHeader from './PatientHeader.vue';
+import { resolvePatientAvatar } from '../utils/patientAvatar';
 import {
   checkDiagnosis,
   checkExamination,
@@ -1096,16 +1097,13 @@ const patientInfo = ref<Patient>({
 
 const avatarSrc = computed(() => {
   const info = patientInfo.value;
-  let src = '/defaultAvtar.png'
-  console.log(info);
-
-  // Check code '1' or text '男性'/'男'
-  // if(info.sdSex === '1'|| info.sdSexText === '男性' || info.sdSexText === '男') {
-  //
-  // }else{
-  //
-  // }
-  return src
+  return resolvePatientAvatar({
+    sdSex: info.sdSex,
+    sdSexText: info.sdSexText,
+    age: (info as any).ageNum,
+    ageUnit: (info as any).ageUnit,
+    ageText: info.ageText,
+  });
 });
 
 // 患者性别（用于 BodyPartSelector）

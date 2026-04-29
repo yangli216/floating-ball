@@ -3,7 +3,13 @@
     <!-- Patient Header -->
     <div class="patient-header">
       <div class="patient-avatar">
-        <Icon :icon="avatarIcon" :color="avatarColor" size="48" />
+        <img
+          class="patient-avatar-img"
+          :src="avatarSrc"
+          @error="onAvatarError"
+          alt=""
+          draggable="false"
+        />
       </div>
       <div class="patient-info">
         <span class="patient-name">{{ patientName }}</span>
@@ -39,9 +45,10 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted, onUnmounted } from 'vue';
+import { ref, computed, onMounted, onUnmounted, watch } from 'vue';
 import Icon from './Icon.vue';
 import { trackClick } from '../services/operationTracker';
+import { resolvePatientAvatar, PATIENT_AVATAR_FALLBACK } from '../utils/patientAvatar';
 
 export interface RiskItem {
   level: 1 | 2 | 3;
@@ -77,8 +84,20 @@ const sortedRisks = computed(() => {
 
 const genderText = computed(() => props.gender === 'F' ? '女' : '男');
 
-const avatarIcon = computed(() => props.gender === 'F' ? 'mdi:human-female' : 'mdi:human-male');
-const avatarColor = computed(() => props.gender === 'F' ? '#ff9a9e' : '#79c2ff');
+const avatarSrc = ref<string>(
+  resolvePatientAvatar({ gender: props.gender, age: props.age })
+);
+watch(
+  () => [props.gender, props.age] as const,
+  ([g, a]) => {
+    avatarSrc.value = resolvePatientAvatar({ gender: g, age: a });
+  }
+);
+function onAvatarError() {
+  if (avatarSrc.value !== PATIENT_AVATAR_FALLBACK) {
+    avatarSrc.value = PATIENT_AVATAR_FALLBACK;
+  }
+}
 
 const getRiskClass = (level: number) => {
   switch (level) {
@@ -156,6 +175,16 @@ onUnmounted(() => {
   align-items: center;
   justify-content: center;
   flex-shrink: 0;
+  overflow: hidden;
+}
+
+.patient-avatar-img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+  user-select: none;
+  -webkit-user-drag: none;
 }
 
 .patient-avatar svg {

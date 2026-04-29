@@ -37,6 +37,7 @@
 
 <script setup lang="ts">
 import { computed } from 'vue';
+import { resolvePatientAvatar, PATIENT_AVATAR_FALLBACK } from '../utils/patientAvatar';
 
 interface PatientLike {
   naPi?: string;
@@ -70,7 +71,7 @@ const props = withDefaults(defineProps<{
 }>(), {
   patient: null,
   payType: '自费',
-  avatar: '/defaultAvtar.png',
+  avatar: '',
 });
 
 const s = (v: unknown): string => (typeof v === 'string' ? v : '');
@@ -123,7 +124,17 @@ const allergyDisplay = computed((): string => {
   return raw;
 });
 
-const avatarSrc = computed(() => props.avatar || '/defaultAvtar.png');
+const avatarSrc = computed(() => {
+  if (props.avatar) return props.avatar;
+  const p = props.patient || {};
+  return resolvePatientAvatar({
+    sdSex: p.sdSex,
+    sdSexText: p.sdSexText,
+    age: p.ageNum,
+    ageUnit: p.ageUnit,
+    ageText: p.ageText,
+  }) || PATIENT_AVATAR_FALLBACK;
+});
 </script>
 
 <style scoped>
