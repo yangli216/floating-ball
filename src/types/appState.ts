@@ -6,6 +6,8 @@ export interface AppPatient {
   idTet?: string;
   idPi?: string;
   idMpi?: string;
+  /** 就诊 ID（visit id），用于区分同一患者的多次就诊；缓存恢复以此为主键 */
+  idVis?: string;
   patientId?: string;
   patientName?: string;
   piOi?: string;

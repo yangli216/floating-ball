@@ -6,12 +6,18 @@ import FactCheckHighlight from './FactCheckHighlight.vue';
 import VoiceRecommendationFeedbackPopover from './VoiceRecommendationFeedbackPopover.vue';
 import VoiceRecordFeedbackPopover from './VoiceRecordFeedbackPopover.vue';
 import VoiceSessionFeedbackBar from './VoiceSessionFeedbackBar.vue';
+import PatientHeader from './PatientHeader.vue';
 import { chat, type ChatMessage } from '../services/llm';
 import { PROMPTS } from '../prompts';
 import { getHisAdapter } from '../services/his';
 import type { DictionaryEntry, InventoryCheckRequest, MedicalItemPartOption, MedicineDetail, PharmacyOption } from '../services/his';
 import { medicalDataService, type DiagnosisItem, type MedicalItem, type MedicineItem } from '../services/medicalData';
-import { clearVoiceConsultationCache } from '../composables/useVoiceConsultation';
+import {
+  clearVoiceConsultationCache,
+  updateVoiceConsultationCache,
+  getVoiceConsultationEditorSnapshot,
+  type VoiceEditorSnapshot,
+} from '../composables/useVoiceConsultation';
 import { useVoiceFeedback } from '../composables/useVoiceFeedback';
 import {
   checkDiagnosis,
@@ -92,7 +98,6 @@ const s = (value: unknown): string => (typeof value === 'string' ? value : '');
 const patientName = computed((): string => s(props.initialPatientData?.naPi) || s(props.initialPatientData?.['na_pi']) || s(props.initialPatientData?.name) || s(props.initialPatientData?.patientName) || s(props.initialPatientData?.['patient_name']));
 const patientGender = computed((): string => s(props.initialPatientData?.sdSexText) || s(props.initialPatientData?.sdSex));
 const patientAge = computed((): string => s(props.initialPatientData?.ageText) || (props.initialPatientData?.ageNum != null ? `${props.initialPatientData.ageNum}${s(props.initialPatientData.ageUnit) || '岁'}` : ''));
-const patientIdCard = computed((): string => s(props.initialPatientData?.idCard));
 const patientTetId = computed((): string => s(props.initialPatientData?.idTet));
 const consultationId = computed((): string => resolveConsultationId());
 
@@ -201,10 +206,104 @@ function setMedicineInventoryChecking(rec: TreatmentRecommendation, checking: bo
 
 const getPatientAnchorId = (): string => {
   const patient = props.initialPatientData;
-  return String(patient?.idPi || patient?.idTet || patient?.idMpi || '');
+  // 与 useVoiceConsultation.resolveVoiceConsultationId 一致：优先就诊 ID（idVis）
+  return String(
+    patient?.idVis
+      || patient?.idPi
+      || patient?.idTet
+      || patient?.idMpi
+      || (patient as { patientId?: string } | undefined)?.patientId
+      || ''
+  );
 };
 
 const resolveConsultationId = (): string => getPatientAnchorId() || 'unknown';
+
+// ---- 编辑器快照（用于跨会话恢复全部病历，避免重新调 fetchAITreatment） ----
+
+/**
+ * 把当前编辑器最新状态写回缓存的 editorSnapshot。
+ * 节流到 600ms，避免输入时频繁写 localStorage。
+ */
+let snapshotPersistTimer: ReturnType<typeof setTimeout> | null = null;
+function schedulePersistEditorSnapshot(): void {
+  if (suppressDiagnosisTreatmentRefetch.value) return;
+  if (!props.initialPatientData) return;
+  if (snapshotPersistTimer) clearTimeout(snapshotPersistTimer);
+  snapshotPersistTimer = setTimeout(() => {
+    snapshotPersistTimer = null;
+    const snapshot: VoiceEditorSnapshot = {
+      chiefComplaint: chiefComplaint.value,
+      historyOfPresentIllness: historyOfPresentIllness.value,
+      pastMedicalHistory: pastMedicalHistory.value,
+      treatments: treatments.value as unknown[],
+      diagnoses: aiDiagnoses.value as unknown[],
+      selectedDiagnosisIdentity: getDiagnosisIdentity(selectedDiagnosis.value),
+      treatmentDiagnosisKey: lastTreatmentDiagnosisKey.value,
+    };
+    updateVoiceConsultationCache(props.initialPatientData, snapshot);
+  }, 600);
+}
+
+/**
+ * 立即写回（不节流），用于完成 fetchAITreatment 之后等关键节点。
+ */
+function persistEditorSnapshotImmediate(): void {
+  if (!props.initialPatientData) return;
+  if (snapshotPersistTimer) {
+    clearTimeout(snapshotPersistTimer);
+    snapshotPersistTimer = null;
+  }
+  updateVoiceConsultationCache(props.initialPatientData, {
+    chiefComplaint: chiefComplaint.value,
+    historyOfPresentIllness: historyOfPresentIllness.value,
+    pastMedicalHistory: pastMedicalHistory.value,
+    treatments: treatments.value as unknown[],
+    diagnoses: aiDiagnoses.value as unknown[],
+    selectedDiagnosisIdentity: getDiagnosisIdentity(selectedDiagnosis.value),
+    treatmentDiagnosisKey: lastTreatmentDiagnosisKey.value,
+  });
+}
+
+/**
+ * 从缓存快照恢复编辑器状态。覆盖 LLM intentResult 已写入的初值。
+ *
+ * 注意：调用方必须在 `suppressDiagnosisTreatmentRefetch.value === true` 时段调用，
+ * 否则诊断/治疗的副作用 watcher 会把 treatments 清空再重拉。
+ */
+async function applyEditorSnapshot(snapshot: VoiceEditorSnapshot): Promise<void> {
+  if (typeof snapshot.chiefComplaint === 'string') {
+    chiefComplaint.value = snapshot.chiefComplaint;
+  }
+  if (typeof snapshot.historyOfPresentIllness === 'string') {
+    historyOfPresentIllness.value = snapshot.historyOfPresentIllness;
+  }
+  if (typeof snapshot.pastMedicalHistory === 'string') {
+    pastMedicalHistory.value = snapshot.pastMedicalHistory;
+  }
+  if (Array.isArray(snapshot.diagnoses) && snapshot.diagnoses.length > 0) {
+    aiDiagnoses.value = snapshot.diagnoses as Diagnosis[];
+    const matchedKey = snapshot.selectedDiagnosisIdentity;
+    const target = matchedKey
+      ? aiDiagnoses.value.find((diag) => getDiagnosisIdentity(diag) === matchedKey)
+      : null;
+    const fallback = aiDiagnoses.value.find((diag) => diag.id || diag.code) || aiDiagnoses.value[0] || null;
+    const chosen = target || fallback;
+    replaceDiagnosisSelection(chosen ? [chosen] : aiDiagnoses.value.slice(0, 1), chosen);
+  }
+  if (Array.isArray(snapshot.treatments) && snapshot.treatments.length > 0) {
+    await fetchPharmacyOptions();
+    treatments.value = snapshot.treatments as TreatmentRecommendation[];
+    lastTreatmentDiagnosisKey.value =
+      snapshot.treatmentDiagnosisKey || getDiagnosisIdentity(selectedDiagnosis.value);
+    void registerCurrentRecommendations();
+    void hydrateMatchedMedicalItemDetails(treatments.value);
+    console.info('[VoiceConsultationNew] Applied editor snapshot from cache', {
+      treatmentCount: treatments.value.length,
+      diagnosisIdentity: lastTreatmentDiagnosisKey.value,
+    });
+  }
+}
 
 function normalizeAnalysisText(text: string): string {
   return text
@@ -2380,6 +2479,8 @@ async function fetchAITreatment(): Promise<void> {
     void hydrateMatchedMedicalItemDetails(nextTreatments);
     void performTreatmentFactCheck(nextTreatments);
     submitVoiceGeneratedUserLog();
+    // 把 LLM 推荐的诊疗方案写回缓存，下次同就诊恢复时直接复用、跳过 fetchAITreatment
+    persistEditorSnapshotImmediate();
   } catch (error: unknown) {
     const msg = error instanceof Error ? error.message : String(error);
     showToast?.(`方案推荐失败: ${msg}`, 'error');
@@ -3045,7 +3146,7 @@ function getTreatmentOriginalName(rec: TreatmentRecommendation): string {
 function formatOptionLabel(option: UsageOption): string {
   const text = option.text.trim();
   const key = option.key.trim();
-  if (!key || key === text) {
+  if (!key || key === text || text.includes(key)) {
     return text;
   }
   return `${text}(${key})`;
@@ -3810,6 +3911,13 @@ watch(
       });
     }
 
+    // 叠加编辑器快照：医生上一次会话内已经编辑/补全的诊断、治疗方案、病历文本
+    // 直接覆盖 LLM 初始化结果，避免再次触发 fetchAITreatment。
+    const editorSnapshot = getVoiceConsultationEditorSnapshot(props.initialPatientData);
+    if (editorSnapshot) {
+      await applyEditorSnapshot(editorSnapshot);
+    }
+
     if (aiDiagnoses.value.length > 0) {
       void performDiagnosisFactCheck(aiDiagnoses.value);
     } else if (chiefComplaint.value.trim()) {
@@ -3836,35 +3944,32 @@ watch(
   },
   { immediate: true },
 );
+
+// 编辑器关键状态发生变化时，节流写回缓存的 editorSnapshot。
+// 下一次恢复同就诊时整张语音病历都从缓存里直接还原。
+watch(
+  () => [
+    chiefComplaint.value,
+    historyOfPresentIllness.value,
+    pastMedicalHistory.value,
+    treatments.value,
+    aiDiagnoses.value,
+    selectedDiagnosis.value,
+    lastTreatmentDiagnosisKey.value,
+  ],
+  () => {
+    schedulePersistEditorSnapshot();
+  },
+  { deep: true },
+);
 </script>
 
 <template>
   <div class="voice-consultation-new">
-    <header class="voice-topbar pane-card">
-      <div class="patient-summary">
-        <div class="patient-avatar">
-          <Icon icon="lucide:user" size="18" color="#fff" />
-        </div>
-        <div class="patient-summary-text">
-          <div class="patient-summary-line">
-            <span class="patient-name">{{ patientName || '未知患者' }}</span>
-            <span v-if="patientGender" class="patient-chip">{{ patientGender }}</span>
-            <span v-if="patientAge" class="patient-chip">{{ patientAge }}</span>
-            <span v-if="patientIdCard" class="patient-chip patient-chip-wide">{{ patientIdCard }}</span>
-          </div>
-          <div class="patient-summary-subline">语音问诊结果已结构化，可直接核对后回写</div>
-        </div>
-      </div>
-      <div class="voice-topbar-actions">
-        <button class="back-btn topbar-btn" type="button" @click="handleCancelClick">放弃</button>
-        <button class="writeback-btn topbar-btn" type="button" :disabled="!canSubmit" @click="handleBatchWriteBack">
-          <template v-if="submitting">提交中...</template>
-          <template v-else>一键回写</template>
-        </button>
-      </div>
-    </header>
+    <PatientHeader :patient="props.initialPatientData" />
 
-    <div v-if="!intentResult" class="loading-state pane-card">
+    <div class="voice-content">
+      <div v-if="!intentResult" class="loading-state pane-card">
       <div class="ai-spinner">
         <div class="spinner-ring"></div>
         <div class="spinner-core"></div>
@@ -4001,12 +4106,10 @@ watch(
         <section class="vcn-right-panel">
           <div class="decision-card pane-card">
             <div class="section-heading">
-              <div>
-                <h3 class="section-title">诊断建议</h3>
-                <div v-if="selectedDiagnoses.length > 0" class="section-subtitle">
-                  已纳入 {{ selectedDiagnoses.length }} 项诊断
-                  <span v-if="selectedDiagnosis">，主诊断：{{ selectedDiagnosis.name }}</span>
-                </div>
+              <h3 class="section-title">诊断建议</h3>
+              <div v-if="selectedDiagnoses.length > 0" class="section-meta">
+                已纳入 {{ selectedDiagnoses.length }} 项
+                <span v-if="selectedDiagnosis" class="section-meta-strong">主：{{ selectedDiagnosis.name }}</span>
               </div>
             </div>
 
@@ -4794,6 +4897,21 @@ watch(
       </div>
 
     </div>
+    </div>
+
+    <div class="voice-footer">
+      <button
+        class="footer-submit-btn"
+        type="button"
+        :disabled="!canSubmit"
+        :aria-busy="submitting"
+        @click="handleBatchWriteBack"
+      >
+        <template v-if="submitting">提交中...</template>
+        <template v-else>一键回写</template>
+      </button>
+      <button class="footer-cancel-btn" type="button" @click="handleCancelClick">放弃</button>
+    </div>
 
     <div v-if="showCancelConfirm" class="confirm-overlay" @click.self="closeCancelConfirm">
       <div class="confirm-dialog pane-card" role="dialog" aria-modal="true" aria-labelledby="voice-cancel-title">
@@ -4817,9 +4935,9 @@ watch(
   --voice-font-strong: 14px;
   --voice-border: var(--color-border-light, #dbe4ef);
   --voice-border-strong: var(--color-border-medium, #cbd7e6);
-  --voice-text: var(--color-text-strong, #1f2937);
-  --voice-text-muted: var(--color-text-muted, #66758a);
-  --voice-text-disabled: var(--color-text-disabled, #98a6b9);
+  --voice-text: var(--color-text-strong, #0f172a);
+  --voice-text-muted: var(--color-text-muted, #475569);
+  --voice-text-disabled: var(--color-text-disabled, #94a3b8);
   --voice-accent: var(--color-cta, #2b7fe3);
   --voice-accent-strong: var(--color-cta-dark, #1f6fd0);
   --voice-accent-soft: var(--color-cta-100, rgba(43, 127, 227, 0.12));
@@ -4836,17 +4954,26 @@ watch(
   --voice-overlay: var(--surface-overlay, rgba(15, 23, 42, 0.3));
   position: relative;
   box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
   height: 100%;
   min-height: 0;
-  padding: 20px 20px 28px;
+  padding: 0;
   background:
     radial-gradient(960px 300px at 82% -6%, var(--color-primary-100, rgba(59, 130, 246, 0.1)) 0%, transparent 60%),
     radial-gradient(720px 220px at 18% 0%, var(--color-cta-50, rgba(43, 127, 227, 0.06)) 0%, transparent 58%),
     linear-gradient(180deg, rgba(255, 255, 255, 0.96) 0%, var(--color-background-gray, #f8fafc) 18%, var(--color-background, #f5f7fb) 100%);
   color: var(--voice-text);
   font-size: var(--voice-font-main);
+  overflow: hidden;
+}
+
+.voice-content {
+  flex: 1;
+  min-height: 0;
   overflow-y: auto;
   overflow-x: hidden;
+  padding: 16px 20px;
   scrollbar-gutter: stable;
 }
 
@@ -4860,27 +4987,64 @@ watch(
     0 2px 6px rgba(15, 23, 42, 0.02);
 }
 
-.voice-topbar {
+/* Voice Footer (与症状问诊底部按钮保持一致) */
+.voice-footer {
   display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  padding: 14px 16px;
-  margin-bottom: 16px;
-  position: sticky;
-  top: 0;
-  z-index: 6;
-  backdrop-filter: blur(10px);
-  -webkit-backdrop-filter: blur(10px);
-}
-
-.voice-topbar-actions {
-  display: inline-flex;
   align-items: center;
   justify-content: flex-end;
   gap: 10px;
-  margin-left: auto;
+  padding: 10px 16px;
+  background: #fff;
+  border-top: 1px solid #EEF2F6;
   flex-shrink: 0;
+}
+
+.voice-footer .footer-cancel-btn {
+  width: 64px;
+  height: 32px;
+  padding: 5px 14px;
+  border: 1px solid #DBDBDB;
+  background: #fff;
+  border-radius: 4px;
+  font-weight: 400;
+  font-size: 14px;
+  color: #262626;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.voice-footer .footer-cancel-btn:hover {
+  background: #F8FAFC;
+  border-color: #CBD5E1;
+}
+
+.voice-footer .footer-submit-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 88px;
+  height: 32px;
+  gap: 6px;
+  padding: 5px 16px;
+  background: #2469F2;
+  color: #fff;
+  border: none;
+  border-radius: 4px;
+  font-size: 14px;
+  font-weight: 400;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.voice-footer .footer-submit-btn:hover:not(:disabled) {
+  background: #1A6FD5;
+  box-shadow: 0 2px 8px rgba(43, 127, 227, 0.35);
+}
+
+.voice-footer .footer-submit-btn:disabled {
+  background: rgba(43, 127, 227, 0.45);
+  cursor: not-allowed;
+  box-shadow: none;
 }
 
 .confirm-overlay {
@@ -4991,71 +5155,6 @@ watch(
   box-shadow: 0 10px 20px rgba(207, 74, 60, 0.18);
 }
 
-.topbar-btn {
-  min-width: 96px;
-}
-
-.patient-summary {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  min-width: 0;
-}
-
-.patient-avatar {
-  width: 38px;
-  height: 38px;
-  border-radius: 12px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: linear-gradient(135deg, var(--voice-accent), var(--color-primary-light, #3fa2ff));
-  flex-shrink: 0;
-}
-
-.patient-summary-text {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  min-width: 0;
-}
-
-.patient-summary-line {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  flex-wrap: wrap;
-}
-
-.patient-name {
-  font-size: var(--voice-font-strong);
-  font-weight: 700;
-  color: var(--voice-text);
-}
-
-.patient-chip {
-  display: inline-flex;
-  align-items: center;
-  min-height: 28px;
-  padding: 0 10px;
-  border-radius: 999px;
-  background: var(--voice-surface-muted);
-  color: var(--voice-text-muted);
-  font-size: var(--voice-font-min);
-}
-
-.patient-chip-wide {
-  max-width: 280px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.patient-summary-subline {
-  font-size: var(--voice-font-min);
-  color: var(--voice-text-muted);
-}
-
 .loading-state {
   display: flex;
   flex-direction: column;
@@ -5110,10 +5209,21 @@ watch(
 
 .section-heading {
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   justify-content: space-between;
   gap: 12px;
-  margin-bottom: 14px;
+  padding: 10px 16px;
+  background: linear-gradient(90deg, #DCECFF 0%, rgba(189, 220, 255, 0) 100%);
+  border-bottom: 1px solid #EEF2F6;
+  border-radius: 18px 18px 0 0;
+}
+
+.vcn-left-panel > .section-heading {
+  margin: -18px -18px 14px;
+}
+
+.decision-card > .section-heading {
+  margin: -16px -16px 14px;
 }
 
 .section-heading-main {
@@ -5138,14 +5248,44 @@ watch(
 .section-kicker {
   margin: 0 0 4px;
   font-size: var(--voice-font-min);
-  color: var(--voice-text-muted);
+  color: #475569;
 }
 
 .section-title {
   margin: 0;
-  font-size: var(--voice-font-strong);
-  font-weight: 700;
-  color: var(--voice-text);
+  padding: 0;
+  background: none;
+  border: none;
+  border-radius: 0;
+  font-size: 14px;
+  font-weight: 600;
+  color: #1E293B;
+  display: flex;
+  align-items: center;
+}
+
+.section-title::before {
+  content: '';
+  display: inline-block;
+  width: 3px;
+  height: 14px;
+  background: #2B7FE3;
+  margin-right: 10px;
+  border-radius: 2px;
+}
+
+.section-meta {
+  flex-shrink: 0;
+  font-size: 12px;
+  color: #475569;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.section-meta-strong {
+  color: #1E293B;
+  font-weight: 600;
 }
 
 .section-subtitle {
@@ -5219,9 +5359,9 @@ watch(
 .record-field label,
 .primary-field label,
 .secondary-field label {
-  font-size: var(--voice-font-min);
-  color: var(--voice-text-muted);
-  font-weight: 500;
+  font-size: 13px;
+  color: #334155;
+  font-weight: 600;
 }
 
 .record-field-status-chip {
@@ -6212,8 +6352,8 @@ watch(
 }
 
 @media (max-width: 900px) {
-  .voice-consultation-new {
-    padding: 16px 16px 24px;
+  .voice-content {
+    padding: 12px 16px;
   }
 
   .record-content {
@@ -6243,8 +6383,8 @@ watch(
     flex-direction: column;
   }
 
-  .voice-topbar-actions {
-    width: 100%;
+  .voice-footer {
+    flex-wrap: wrap;
     justify-content: flex-end;
   }
 

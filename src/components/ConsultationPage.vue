@@ -1,38 +1,8 @@
 <template>
   <div class="consultation-page">
     <!-- Top: Patient Info -->
-    <header class="patient-header">
-      <div class="patient-card">
-        <!-- Avatar -->
-        <img class="avatar-img" :src="avatarSrc" alt="头像" draggable="false"/>
-        
-        <!-- Name -->
-        <div class="patient-name">{{ patientInfo.naPi }}</div>
-        
-        <!-- Basic Info -->
-        <div class="patient-basic">
-          <span>{{ patientInfo.sdSexText }}</span>
-          <span class="divider"></span>
-          <span>{{ patientInfo.ageText }}</span>
-          <span class="divider"></span>
-          <span>{{ patientInfo.sdNationText }} | {{ patientInfo.sdMaritalText }}</span>
-        </div>
-
-        <!-- Tags -->
-        <div class="tag-blue">自费</div>
-
-        <!-- Contact Info -->
-        <div class="contact-info">
-          <span>身份证号：{{ patientInfo.idCard }}</span>
-          <span>联系电话：{{ patientInfo.mobilePhone }}</span>
-        </div>
-
-         <!-- Allergy Tag -->
-         <div class="tag-allergy">过敏史</div>
-      </div>
-
-      <!-- Header Actions -->
-      <div class="header-actions">
+    <PatientHeader :patient="patientInfo" :avatar="avatarSrc">
+      <template #actions>
         <template v-if="currentView === 'consultation'">
           <!-- actions moved to consultation-footer -->
         </template>
@@ -48,8 +18,8 @@
              <button class="header-btn primary" @click="printReport">打印</button>
              <button class="header-btn primary" @click="submitToHIS">完成问诊</button>
         </template>
-      </div>
-    </header>
+      </template>
+    </PatientHeader>
 
     <div class="content-container" v-if="currentView === 'consultation'">
       <!-- Left: Symptom Shortcuts -->
@@ -1012,6 +982,7 @@ import FactCheckNotification from './FactCheckNotification.vue';
 import FactCheckHighlight from './FactCheckHighlight.vue';
 import FactCheckWidget from './FactCheckWidget.vue';
 import KnowledgePanel from './KnowledgePanel.vue';
+import PatientHeader from './PatientHeader.vue';
 import {
   checkDiagnosis,
   checkExamination,
@@ -1091,35 +1062,36 @@ interface TreatmentReferenceSection {
   selectedCount: number;
 }
 
-// Mock Patient Data
+// Patient info: empty defaults; real data flows in via `initialPatientData` watch.
+// 不再预填演示数据，避免在真实就诊场景中显示其他患者的字段（如身份证、电话、民族、婚姻）。
 const patientInfo = ref<Patient>({
-  "idTet": "BSOFTYL",
-  "idPi": "766842939207974912",
-  "idMpi": "766842939207974912",
-  "cdPi": "JG00003125111",
-  "naPi": "张虎(示例)",
-  "sdSex": "1",
-  "birthday": "2006-07-11",
-  "idCard": "360731200607117442",
-  "mobilePhone": "13800138000",
-  "sdNation": "1",
-  "sdNaty": "001",
-  "sdBlood": "5",
-  "sdRhBlood": "3",
-  "sdMarital": "1",
-  "sdCard": "11",
-  "ageNum": 19,
-  "ageUnit": "Y",
-  "ageText": "19岁",
-  "sdNationText": "汉族",
-  "sdNatyText": "中国",
-  "sdMaritalText": "未婚",
-  "sdSexText": "男性",
-  "sdBloodText": "不详",
-  "fgActiveText": "是",
-  "sdRhBloodText": "不详",
-  "sdCardText": "身份证",
-  "allergyHistory": "无"
+  "idTet": "",
+  "idPi": "",
+  "idMpi": "",
+  "cdPi": "",
+  "naPi": "",
+  "sdSex": "",
+  "birthday": "",
+  "idCard": "",
+  "mobilePhone": "",
+  "sdNation": "",
+  "sdNaty": "",
+  "sdBlood": "",
+  "sdRhBlood": "",
+  "sdMarital": "",
+  "sdCard": "",
+  "ageNum": 0,
+  "ageUnit": "",
+  "ageText": "",
+  "sdNationText": "",
+  "sdNatyText": "",
+  "sdMaritalText": "",
+  "sdSexText": "",
+  "sdBloodText": "",
+  "fgActiveText": "",
+  "sdRhBloodText": "",
+  "sdCardText": "",
+  "allergyHistory": ""
 });
 
 const avatarSrc = computed(() => {
@@ -4318,114 +4290,6 @@ const copyToClipboard = () => {
   font-family: var(--font-body);
   font-size: 14px; /* Base font size */
   overflow: hidden;
-}
-
-.patient-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  flex-wrap: nowrap;
-  background: linear-gradient(135deg, #1A6FD5 0%, #2B7FE3 50%, #4A9BF5 100%);
-  padding: 10px 16px;
-  box-shadow: 0 1px 6px rgba(43, 127, 227, 0.2);
-  z-index: 10;
-  flex-shrink: 0;
-  border-bottom: none;
-}
-
-.patient-card {
-  display: flex;
-  align-items: center;
-  gap: 12px; /* Reduced gap */
-  flex-wrap: wrap;
-  flex: 1;
-  min-width: 0;
-  margin-right: 16px;
-}
-
-.avatar-img {
-  width: 36px;
-  height: 36px;
-}
-
-.patient-name {
-  font-size: 16px;
-  font-weight: 700;
-  color: #fff;
-}
-
-.patient-basic {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  font-size: 14px;
-  color: rgba(255, 255, 255, 0.9);
-}
-
-.divider {
-  width: 1px;
-  height: 12px;
-  background: rgba(255, 255, 255, 0.4);
-}
-
-.tag-blue {
-  width: 64px;
-  height: 20px;
-  background: #E0EFFF;
-  border-radius: 10px 10px 10px 10px;
-  font-family: Microsoft YaHei, Microsoft YaHei;
-  font-weight: 400;
-  font-size: 12px;
-  color: #2469F2;
-  line-height: 20px;
-  text-align: center;
-  font-style: normal;
-  text-transform: none;
-}
-
-.tag-green {
-  background: var(--color-success-bg);
-  color: var(--color-success);
-  padding: 2px 8px;
-  border-radius: 12px; /* Pill shape */
-  font-size: 12px;
-  font-weight: 500;
-}
-
-.tag-allergy {
-  background: #E03134;
-  color: #fff;
-  padding: 2px 8px;
-  border-radius: 10px 10px 10px 10px;
-  font-size: 12px;
-  font-weight: 400;
-  border: 1px solid #FFFFFF;
-}
-
-.contact-info {
-  display: flex;
-  align-items: center;
-  gap: 16px;
-  font-size: 13px;
-  color: rgba(255, 255, 255, 0.85);
-  margin-left: auto;
-}
-
-@media (max-width: 800px) {
-  .contact-info {
-    margin-left: 0;
-    width: 100%;
-    margin-top: 8px;
-  }
-}
-
-/* Header Actions */
-.header-actions {
-  margin-left: auto;
-  display: flex;
-  gap: 12px;
-  align-items: center;
-  flex-shrink: 0;
 }
 
 .header-btn {

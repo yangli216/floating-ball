@@ -102,6 +102,7 @@
 | 推荐字段 | 兼容别名 |
 | :--- | :--- |
 | `idPi` | `patientId` |
+| `idVis` | `visitId` |
 | `naPi` | `name` |
 | `sdSexText` | `gender` |
 | `ageText` | `age` |
@@ -110,7 +111,8 @@
 
 1. 新接入项目统一使用标准字段名，不要长期依赖别名。
 2. `consultationId` 当前仍回传 `idPi / patientId`，不是独立的就诊流水号。
-3. 如果你们 HIS 已有自己的 `encounterId / visitId`，请在 HIS 本地自行维护映射，不要假设当前接口已经原生支持多次接诊隔离。
+3. 推荐在 `start-consultation` / `start-voice-consultation` 等入口同时下发 `idVis`（或别名 `visitId`）。桌面端会优先使用 `idVis` 作为语音问诊缓存与最小化会话的就诊锚点；缺失时回退到 `idPi / patientId`，但同一患者多次就诊会共享同一缓存条目，存在被旧就诊数据污染的风险。
+4. 如果你们 HIS 还没有就诊流水号，可暂时不传 `idVis`，但建议尽快补充。
 
 ## 5. 典型业务时序
 

@@ -99,7 +99,9 @@ interface PatientRisksPayload {
 
 interface StartConsultationPayload {
   idPi?: string;
+  idVis?: string;
   patientId?: string;
+  visitId?: string;
   naPi?: string;
   name?: string;
   ageText?: string;
@@ -281,6 +283,7 @@ function mergePatientContext(
     ...payload,
     naPi: payload.naPi || payload.name || currentPatient?.patientName || currentPatient?.naPi || '未知',
     idPi: payload.idPi || payload.patientId || currentPatient?.patientId || currentPatient?.idPi,
+    idVis: payload.idVis || payload.visitId || currentPatient?.idVis,
     ageText: (() => {
       if (payload.ageText) return payload.ageText;
       const rawAge = currentPatient?.age;

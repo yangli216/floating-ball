@@ -30,6 +30,7 @@ import { useWorkMode } from "./composables/useWorkMode";
 import { useNavigation } from "./composables/useNavigation";
 import { useVoiceConsultation } from "./composables/useVoiceConsultation";
 import { useEventListeners } from "./composables/useEventListeners";
+import { useMinimizedSessions } from "./composables/useMinimizedSessions";
 import { pmphaiService, isPMPHAIConfigured } from './services/pmphai';
 import { medicalDataService, type MedicalCatalogClearOptions, type MedicalCatalogClearResult, type MedicalCatalogDebugState } from "./services/medicalData";
 import {
@@ -300,9 +301,78 @@ const {
   hasCachedVoiceResult,
   handleVoiceStop,
   handleVoiceError,
-  handleResultConfirm,
-  cancelVoiceResult,
+  handleResultConfirm: handleResultConfirmRaw,
+  cancelVoiceResult: cancelVoiceResultRaw,
 } = voiceConsultation;
+
+// 最小化会话管理：记录从症状问诊 / 语音问诊收起到小球的现场，
+// 用于通过悬浮球按钮 / 双击小球恢复。跨自然日自动失效。
+const minimizedSessions = useMinimizedSessions();
+
+// 语音问诊结束（提交 / 取消）时一并清除最小化会话标记
+async function handleResultConfirm(record: GeneratedRecord): Promise<void> {
+  await handleResultConfirmRaw(record);
+  minimizedSessions.clear('voice');
+}
+async function cancelVoiceResult(): Promise<void> {
+  await cancelVoiceResultRaw();
+  minimizedSessions.clear('voice');
+}
+
+// 可见性门禁：未接诊患者时，悬浮球的症状问诊按钮隐藏。
+const canOpenConsultation = computed(() => currentPatient.value !== null);
+
+/**
+ * 用户主动收起到小球的统一入口：
+ *  - 如果当前在症状问诊 / 语音问诊未结束的视图，记录最小化；
+ *  - 然后走原 handleCollapse 路径（症状问诊会先到接待胶囊，再由胶囊退出到球）。
+ */
+async function handleUserCollapse(): Promise<void> {
+  if (currentView.value === 'consultation' && currentPatient.value) {
+    minimizedSessions.record('symptom', currentPatient.value);
+  } else if (currentView.value === 'voice-consultation' && currentPatient.value) {
+    minimizedSessions.record('voice', currentPatient.value);
+  } else if (currentView.value === 'reception-capsule' && currentPatient.value) {
+    // 用户从接待胶囊再次关闭 → 也作为最小化症状问诊处理
+    minimizedSessions.record('symptom', currentPatient.value);
+  }
+  await handleCollapse();
+}
+
+/**
+ * 点击悬浮球的"症状问诊"按钮：
+ *  - 若当前没有患者，按钮已隐藏，这里不会被调用；
+ *  - 若存在最小化的症状问诊会话，恢复到原界面（组件 v-show 保活，状态自动保留）；
+ *  - 否则按常规进入问诊。
+ *
+ * 注意：不在这里清掉最小化记录。下一次再次收起时会以更新后的 timestamp 覆盖；
+ * 真正清理发生在「会话完成 / 取消 / 跨自然日」时。
+ */
+async function handleConsultationRingClick(): Promise<void> {
+  await openConsultation();
+}
+
+/**
+ * 双击悬浮球：
+ *  - 优先恢复最近一次最小化的会话（症状问诊或语音问诊）；
+ *  - 否则维持原行为（打开聊天）。
+ *
+ * 与症状问诊按钮一样，恢复后不主动清最小化记录，让下一次收起时再覆盖；
+ * 这样医生在多个会话之间来回切换时不会丢失"还有未完会话"的信号。
+ */
+async function handleBallDblClick(): Promise<void> {
+  const latest = minimizedSessions.latestType.value;
+  if (latest === 'voice' && currentPatient.value) {
+    currentView.value = 'voice-consultation';
+    await enterWorkMode();
+    return;
+  }
+  if (latest === 'symptom' && currentPatient.value) {
+    await openConsultation();
+    return;
+  }
+  await openChat();
+}
 
 async function startVoiceInteraction(options?: { skipCacheRestore?: boolean }): Promise<void> {
   resetVoiceSessionState();
@@ -588,11 +658,12 @@ const openInsideCloudHome = async () => {
               <svgIcon file="/off.svg" :color="'#262626'" :hoverColor="'#2B7FE3'" :fontSize="'18px'"></svgIcon>
             </button>
 	             <button
+	              v-if="canOpenConsultation"
 	              class="ring-btn left"
 	              :class="{ 'manual-hover': hoveredBtnIndex === 3 }"
-	              @click.stop="openConsultation()"
+	              @click.stop="handleConsultationRingClick"
 	              aria-label="打开智能问诊"
-	              title="智能问诊"
+	              :title="minimizedSessions.hasSymptom ? '恢复症状问诊' : '智能问诊'"
 	            >
                  <svgIcon file="/consultation.svg" :color="'#262626'" :hoverColor="'#2B7FE3'" :fontSize="'18px'"></svgIcon>
             </button>
@@ -606,7 +677,7 @@ const openInsideCloudHome = async () => {
             @focus="handleFocus"
             @blur="handleBlur"
             @contextmenu.stop
-            @dblclick="openChat"
+            @dblclick="handleBallDblClick"
           >
             <div class="ball-content">
               <img 
@@ -632,7 +703,7 @@ const openInsideCloudHome = async () => {
           <!-- 工具栏 (risk-alert, voice-interaction, voice-result, reception-capsule 视图不显示) -->
           <div v-if="currentView !== 'risk-alert' && currentView !== 'voice-interaction' && currentView !== 'voice-result' && currentView !== 'reception-capsule'" class="assistant-toolbar" data-tauri-drag-region>
             <div class="toolbar-left" data-tauri-drag-region>
-	              <button v-if="currentView === 'settings' || currentView === 'analytics' || currentView === 'symptom-manage' || currentView === 'his-log' || currentView === 'medical-cache' || currentView === 'knowledge-base'" class="icon-btn back-btn" @click="currentView === 'analytics' ? openChat() : handleCollapse()" title="返回">
+	              <button v-if="currentView === 'settings' || currentView === 'analytics' || currentView === 'symptom-manage' || currentView === 'his-log' || currentView === 'medical-cache' || currentView === 'knowledge-base'" class="icon-btn back-btn" @click="currentView === 'analytics' ? openChat() : handleUserCollapse()" title="返回">
 	                 <Icon icon="lucide:arrow-left" class="toolbar-icon" size="20" />
 	              </button>
 	              <span class="assistant-title" data-tauri-drag-region>{{ assistantTitle }}</span>
@@ -653,7 +724,7 @@ const openInsideCloudHome = async () => {
                 <button class="icon-btn feedback-entry-btn" aria-label="问题反馈" title="问题反馈" @click="openFeedbackDialog">
                   <Icon icon="lucide:message-square-warning" class="toolbar-icon" size="20" />
                 </button>
-              <button class="icon-btn" aria-label="收起" title="收起" @click="handleCollapse">
+              <button class="icon-btn" aria-label="收起" title="收起" @click="handleUserCollapse">
                 <Icon icon="lucide:chevron-down" class="toolbar-icon" size="20" />
               </button>
             </div>
@@ -661,7 +732,7 @@ const openInsideCloudHome = async () => {
           <!-- 问诊页面用 v-show 保持常驻，避免切换视图时组件销毁导致数据丢失 -->
           <ConsultationPage
             v-show="currentView === 'consultation'"
-            @close="handleCollapse"
+            @close="handleUserCollapse"
             :initialPatientData="currentPatient"
             :assistTrigger="consultationAssistTrigger"
             @consume-auto-trigger="clearConsultationAssistTrigger"
@@ -683,7 +754,7 @@ const openInsideCloudHome = async () => {
             :processing="isProcessingVoice"
             @stop="handleVoiceStop"
             @error="handleVoiceError"
-            @close="handleCollapse"
+            @close="handleUserCollapse"
           />
 
           <!-- Reception Service (Risk) Capsule -->
@@ -710,17 +781,17 @@ const openInsideCloudHome = async () => {
             v-if="currentView === 'analytics'"
             @close="openChat"
           />
-          <SymptomManagement v-if="currentView === 'symptom-manage'" @close="handleCollapse" />
+          <SymptomManagement v-if="currentView === 'symptom-manage'" @close="handleUserCollapse" />
           <HisIntegrationLogPanel v-if="currentView === 'his-log'" />
           <MedicalCatalogCachePanel v-if="currentView === 'medical-cache'" />
           <VoiceConsultationNew
             v-if="currentView === 'voice-consultation'"
             :initialPatientData="currentPatient ?? undefined"
             :intentResult="intentResult"
-            @close="handleCollapse"
+            @close="handleUserCollapse"
             @cancel="cancelVoiceResult"
           />
-          <KnowledgeBasePanel v-if="currentView === 'knowledge-base'" @close="handleCollapse" />
+          <KnowledgeBasePanel v-if="currentView === 'knowledge-base'" @close="handleUserCollapse" />
           <SettingsPanel
             v-if="currentView === 'settings'"
             @open-symptom-manage="openSymptomManagement"

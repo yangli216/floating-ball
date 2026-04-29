@@ -52,7 +52,11 @@ pub struct PatientInfo {
     pub sd_sex_text: String,    // 对应 sdSexText
     #[serde(alias = "age")]
     pub age_text: String,       // 对应 ageText
-    
+
+    /// 就诊 ID（visit id）；同一患者多次就诊时用于区分缓存
+    #[serde(default, alias = "visitId")]
+    pub id_vis: Option<String>,
+
     // 保留原有字段，但允许为空或通过别名映射
     pub department: Option<String>,
     pub chief_complaint: Option<String>,

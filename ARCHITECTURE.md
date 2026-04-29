@@ -463,6 +463,8 @@ await navigation.openConsultation();
 **核心功能**:
 - ✅ 处理语音停止事件（转录 + LLM 生成）
 - ✅ 命中本地缓存时跳过重复 LLM 解析，应用重启后可恢复未提交结果
+- ✅ 缓存 key 优先使用 `idVis`（就诊 ID），同患者多就诊互不串扰；缓存跨自然日自动失效
+- ✅ 通过 `editorSnapshot` 持久化整张语音病历快照（治疗方案、诊断、病历文本、当前选中诊断），下次同就诊恢复时直接复用，跳过 `fetchAITreatment`
 - ✅ 当实时转写为空时，自动使用音频文件兜底转写
 - ✅ LLM 病历生成（结构化 JSON，包含病例草稿、诊断/项目/药品提示与来源标记）
 - ✅ 对语音抽取结果做结构校验与一次修复重试，降低模型输出格式漂移导致的整链路失败
@@ -477,7 +479,10 @@ await navigation.openConsultation();
   handleVoiceStop: (audioBlob: Blob, transcribedText: string) => Promise<void>,
   handleVoiceError: (err: any) => void,
   handleResultConfirm: (record: GeneratedRecord) => Promise<void>,
-  cancelVoiceResult: () => Promise<void>
+  cancelVoiceResult: () => Promise<void>,
+  // 模块级缓存接口（顶层导出）
+  // updateVoiceConsultationCache(patient, snapshot): 写回 editorSnapshot
+  // getVoiceConsultationEditorSnapshot(patient): 读取 editorSnapshot
 }
 ```
 
@@ -499,6 +504,36 @@ await voiceConsultation.handleVoiceStop(audioBlob, transcribedText);
 // 确认并提交病历
 await voiceConsultation.handleResultConfirm(record);
 ```
+
+---
+
+### `useMinimizedSessions.ts` ✅
+
+**文件**: [src/composables/useMinimizedSessions.ts](src/composables/useMinimizedSessions.ts)
+
+**职责**: 跟踪症状问诊 / 语音问诊从问诊态收起到悬浮球后的"最小化"现场
+
+**核心功能**:
+- ✅ 两个独立槽位：`symptom` / `voice`，可同时存在
+- ✅ 以 `idVis`（缺失时降级 `idPi / patientId / id`）作为锚点；切换患者不丢弃旧会话
+- ✅ 跨自然日自动失效，并在 init 时一次性清理
+- ✅ 持久化到 `localStorage` (`MINIMIZED_SESSIONS_V1`)，仅存元数据（patientId/Name、anchorId、recordedAt），不存业务状态
+- ✅ `latestType` 计算属性供"双击悬浮球恢复最近一个最小化会话"使用
+
+**导出 API**:
+```typescript
+{
+  symptomSession, voiceSession,
+  hasSymptom, hasVoice, latestType,
+  getActive(type),
+  record(type, patient),
+  clear(type),
+  clearAll()
+}
+```
+
+**约束**:
+- 业务状态（语音病历快照）必须由 `useVoiceConsultation.editorSnapshot` 承接；本模块只负责"是否最小化、何时、对应哪个就诊"三件事
 
 ---
 
