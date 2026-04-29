@@ -44,8 +44,11 @@ function buildOperationAuditPayload(
 ): Record<string, unknown> {
   const success = log.success !== false;
 
+  const consultationId = log.details?.consultationId as string | undefined;
+
   return {
     sessionId,
+    consultationId: consultationId || undefined,
     module: resolveOperationModule(log),
     action: log.operationName,
     result: success ? 'success' : 'failure',

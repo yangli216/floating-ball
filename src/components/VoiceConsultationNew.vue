@@ -39,7 +39,9 @@ import {
   buildConsultationSelectionSnapshot,
   buildConsultationUserLogSnapshot,
   submitConsultationUserLog,
+  computeChangeSummary,
 } from '../services/consultationUserLog';
+import type { ConsultationUserLogSnapshot } from '../services/consultationUserLog';
 import type { TreatmentRecommendation, Diagnosis } from '../types/consultation';
 import type { AppPatient } from '../types/appState';
 import type { VoiceIntentResult, MatchedTreatment, MatchedDiagnosis } from '../composables/useVoiceIntentRecognition';
@@ -93,6 +95,7 @@ const treatmentLoading = ref(false);
 
 const submitting = ref(false);
 const showCancelConfirm = ref(false);
+const firstUserLogSnapshot = ref<ConsultationUserLogSnapshot | null>(null);
 
 const s = (value: unknown): string => (typeof value === 'string' ? value : '');
 const patientName = computed((): string => s(props.initialPatientData?.naPi) || s(props.initialPatientData?.['na_pi']) || s(props.initialPatientData?.name) || s(props.initialPatientData?.patientName) || s(props.initialPatientData?.['patient_name']));
@@ -335,7 +338,7 @@ function closeCancelConfirm(): void {
 function confirmCancel(): void {
   showCancelConfirm.value = false;
   clearVoiceFeedbackDraft();
-
+  submitVoiceAbandonedUserLog();
   emit('cancel');
 }
 
@@ -501,22 +504,48 @@ function buildVoiceUserLogSnapshot() {
 }
 
 function submitVoiceGeneratedUserLog(): void {
+  const snapshot = buildVoiceUserLogSnapshot();
+  firstUserLogSnapshot.value = snapshot;
   void submitConsultationUserLog({
     consultationId: consultationId.value,
     consultationType: 'voice',
     patient: props.initialPatientData || null,
-    firstSnapshot: buildVoiceUserLogSnapshot(),
+    firstSnapshot: snapshot,
   });
 }
 
 function submitVoiceFinalUserLog(): void {
   const finalSnapshot = buildVoiceUserLogSnapshot();
+  const changeSummary = firstUserLogSnapshot.value
+    ? computeChangeSummary(firstUserLogSnapshot.value, finalSnapshot, {
+        pastMedicalHistoryChanged: isRecordFieldModified('pastMedicalHistory'),
+      })
+    : undefined;
   void submitConsultationUserLog({
     consultationId: consultationId.value,
     consultationType: 'voice',
     patient: props.initialPatientData || null,
     finalSnapshot,
     selectionSnapshot: buildConsultationSelectionSnapshot(finalSnapshot),
+    changeSummary,
+  });
+}
+
+function submitVoiceAbandonedUserLog(): void {
+  const finalSnapshot = buildVoiceUserLogSnapshot();
+  const changeSummary = firstUserLogSnapshot.value
+    ? computeChangeSummary(firstUserLogSnapshot.value, finalSnapshot, {
+        pastMedicalHistoryChanged: isRecordFieldModified('pastMedicalHistory'),
+      })
+    : undefined;
+  void submitConsultationUserLog({
+    consultationId: consultationId.value,
+    consultationType: 'voice',
+    patient: props.initialPatientData || null,
+    finalSnapshot,
+    selectionSnapshot: buildConsultationSelectionSnapshot(finalSnapshot),
+    changeSummary,
+    abandoned: true,
   });
 }
 
@@ -3879,6 +3908,7 @@ watch(
     selectedDiagnosisKeys.value = new Set();
     selectedDiagnosis.value = null;
     treatments.value = [];
+    firstUserLogSnapshot.value = null;
 
     initialRecordSnapshot.value = {
       chiefComplaint: result.chiefComplaint || '',

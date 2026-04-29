@@ -253,6 +253,14 @@ export function useVoiceConsultation(options: VoiceConsultationOptions) {
   const isProcessingVoice = ref(false);
   let processingToken = 0;
 
+  function currentConsultationId(): string {
+    return resolveVoiceConsultationId(currentPatient.value);
+  }
+
+  function withConsultationId(extra?: Record<string, unknown>): Record<string, unknown> {
+    return { consultationId: currentConsultationId(), ...extra };
+  }
+
   function readCache(consultationId: string): VoiceConsultationCacheEntry | null {
     return loadCacheEntryRaw(consultationId);
   }
@@ -431,7 +439,7 @@ export function useVoiceConsultation(options: VoiceConsultationOptions) {
 
       isProcessingVoice.value = false;
       console.error('[VoiceConsultation] Processing failed:', err);
-      trackError('voice_processing_failed', err);
+      trackError('voice_processing_failed', err, withConsultationId());
       const errMessage = err instanceof Error ? err.message : String(err);
       showToast(`处理失败: ${errMessage}`, 'error');
       await writeCancelledResult(`处理失败: ${errMessage}`);
@@ -451,7 +459,7 @@ export function useVoiceConsultation(options: VoiceConsultationOptions) {
   async function handleVoiceError(err: unknown): Promise<void> {
     resetVoiceSessionState();
     clearCache(resolveVoiceConsultationId(currentPatient.value));
-    trackError('voice_recording_error', err);
+    trackError('voice_recording_error', err, withConsultationId());
     showToast('录音出错: ' + err, 'error');
     await writeCancelledResult('录音出错: ' + err);
     exitWork('error');
@@ -466,7 +474,7 @@ export function useVoiceConsultation(options: VoiceConsultationOptions) {
    */
   async function handleResultConfirm(record: GeneratedRecord): Promise<void> {
     console.log('[VoiceConsultation] Confirmed record:', record);
-    trackClick('voice_result_confirm');
+    trackClick('voice_result_confirm', withConsultationId());
     trackRecommendationAction('record', 'voice-record', 'adopted');
 
     try {
@@ -494,7 +502,7 @@ export function useVoiceConsultation(options: VoiceConsultationOptions) {
       await exitWork();
     } catch (e: unknown) {
       console.error('[VoiceConsultation] Failed to save result:', e);
-      trackError('voice_result_submit_failed', e);
+      trackError('voice_result_submit_failed', e, withConsultationId());
       showToast('回传失败: ' + e, 'error');
     }
   }
@@ -503,7 +511,7 @@ export function useVoiceConsultation(options: VoiceConsultationOptions) {
    * 取消病历结果
    */
   async function cancelVoiceResult(): Promise<void> {
-    trackClick('voice_result_cancel');
+    trackClick('voice_result_cancel', withConsultationId());
     trackRecommendationAction('record', 'voice-record', 'rejected');
     resetVoiceSessionState();
     clearCache(resolveVoiceConsultationId(currentPatient.value));

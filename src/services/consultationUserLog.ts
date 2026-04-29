@@ -35,6 +35,13 @@ export interface ConsultationSelectionSnapshot {
   selectedLabTestNames: string[];
 }
 
+export interface ConsultationChangeSummary {
+  totalChanges: number;
+  recordFieldChanges: number;
+  diagnosisChanges: number;
+  treatmentChanges: number;
+}
+
 export interface ConsultationSpeechLogInput {
   text?: string;
   audioBlob?: Blob;
@@ -51,6 +58,8 @@ interface SubmitConsultationUserLogInput {
   firstSnapshot?: ConsultationUserLogSnapshot;
   finalSnapshot?: ConsultationUserLogSnapshot;
   selectionSnapshot?: ConsultationSelectionSnapshot;
+  changeSummary?: ConsultationChangeSummary;
+  abandoned?: boolean;
 }
 
 interface BuildSnapshotInput {
@@ -146,6 +155,67 @@ export function buildConsultationSelectionSnapshot(snapshot: ConsultationUserLog
   };
 }
 
+function snapshotItemKey(item: ConsultationSnapshotItem): string {
+  return `${item.name || ''}|${item.code || ''}`;
+}
+
+function countItemListChanges(
+  firstList: ConsultationSnapshotItem[],
+  finalList: ConsultationSnapshotItem[],
+  fields: (keyof ConsultationSnapshotItem)[],
+): number {
+  const firstMap = new Map<string, ConsultationSnapshotItem>();
+  for (const item of firstList) firstMap.set(snapshotItemKey(item), item);
+
+  const visited = new Set<string>();
+  let changes = 0;
+
+  for (const item of finalList) {
+    const key = snapshotItemKey(item);
+    const original = firstMap.get(key);
+    if (!original) {
+      changes++;
+    } else {
+      visited.add(key);
+      const modified = fields.some(f => (original[f] ?? '') !== (item[f] ?? ''));
+      if (modified) changes++;
+    }
+  }
+
+  for (const key of firstMap.keys()) {
+    if (!visited.has(key)) changes++;
+  }
+
+  return changes;
+}
+
+export function computeChangeSummary(
+  first: ConsultationUserLogSnapshot,
+  final: ConsultationUserLogSnapshot,
+  extra?: { pastMedicalHistoryChanged?: boolean },
+): ConsultationChangeSummary {
+  let recordFieldChanges = 0;
+  if (first.chiefComplaint.trim() !== final.chiefComplaint.trim()) recordFieldChanges++;
+  if (first.historyOfPresentIllness.trim() !== final.historyOfPresentIllness.trim()) recordFieldChanges++;
+  if (extra?.pastMedicalHistoryChanged) recordFieldChanges++;
+
+  const diagnosisFields: (keyof ConsultationSnapshotItem)[] = ['selected', 'primary'];
+  const diagnosisChanges = countItemListChanges(first.diagnoses, final.diagnoses, diagnosisFields);
+
+  const treatmentFields: (keyof ConsultationSnapshotItem)[] = ['selected', 'spec', 'dosage', 'frequency', 'route', 'totalQty', 'execDept'];
+  const medicineChanges = countItemListChanges(first.medicines, final.medicines, treatmentFields);
+  const examChanges = countItemListChanges(first.examinations, final.examinations, treatmentFields);
+  const labChanges = countItemListChanges(first.labTests, final.labTests, treatmentFields);
+  const treatmentChanges = medicineChanges + examChanges + labChanges;
+
+  return {
+    totalChanges: recordFieldChanges + diagnosisChanges + treatmentChanges,
+    recordFieldChanges,
+    diagnosisChanges,
+    treatmentChanges,
+  };
+}
+
 export async function submitConsultationUserLog(input: SubmitConsultationUserLogInput): Promise<void> {
   if (!isRegionalMode() || !input.consultationId) return;
 
@@ -184,6 +254,8 @@ export async function submitConsultationUserLog(input: SubmitConsultationUserLog
       firstSnapshot: input.firstSnapshot,
       finalSnapshot: input.finalSnapshot,
       selectionSnapshot: input.selectionSnapshot,
+      changeSummary: input.changeSummary,
+      abandoned: input.abandoned || undefined,
     });
   } catch (error) {
     console.warn('[ConsultationUserLog] Failed to submit consultation user log:', error);
