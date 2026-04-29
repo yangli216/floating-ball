@@ -113,6 +113,14 @@ export function useWorkMode(options: WorkModeOptions) {
   /** 变形动画原点（CSS transform-origin） */
   const morphOrigin = ref(MORPH_ORIGIN_DEFAULT);
 
+  /**
+   * 内容是否可见：默认 true。
+   * 在“问诊页 ↔ 胶囊 ↔ 小球”阶段切换期间临时置 false，
+   * 让 assistant-container 染色薄薄添加隐藏类，
+   * 来掩盖 OS 窗口 setSize / setPosition 期间的内容裁切咨点。
+   */
+  const contentVisible = ref(true);
+
   /** 容器样式（绑定 transform-origin） */
   const containerStyle: ComputedRef<Record<string, string>> = computed(() => ({
     transformOrigin: morphOrigin.value,
@@ -300,6 +308,9 @@ export function useWorkMode(options: WorkModeOptions) {
       // 让后续 CSS 动画始终能完整呈现小球。
     if (currentView.value === 'reception-capsule' && appWindow.value) {
       try {
+        // 先淑出胶囊内容，避免 setSize 瞬间看到胶囊内容被裁切。
+        contentVisible.value = false;
+        await new Promise<void>((resolve) => setTimeout(resolve, ANIMATION.CONTENT_FADE_MS));
         if (lastBallPos.value) {
           await appWindow.value.setPosition(
             new PhysicalPosition(lastBallPos.value.x, lastBallPos.value.y)
@@ -398,6 +409,9 @@ export function useWorkMode(options: WorkModeOptions) {
     } catch (e) {
       console.error('[WorkMode] Failed to force hover check:', e);
     }
+
+    // 8. 恢复内容可见，供下一次进入工作模式使用
+    contentVisible.value = true;
   };
 
   /**
@@ -419,6 +433,10 @@ export function useWorkMode(options: WorkModeOptions) {
     });
 
     if (shouldReturnToReception && currentPatient.value) {
+      // 淑出问诊页内容，避免 OS 窗口缩小期间看到问诊内容被裁切。
+      contentVisible.value = false;
+      await new Promise<void>((resolve) => setTimeout(resolve, ANIMATION.CONTENT_FADE_MS));
+
       currentView.value = 'reception-capsule';
       syncRiskPatientInfo?.(currentPatient.value);
 
@@ -437,6 +455,9 @@ export function useWorkMode(options: WorkModeOptions) {
           console.warn('[WorkMode] Failed to align capsule to ball position:', e);
         }
       }
+
+      // 窗口尺寸到位后再淺入胶囊内容。
+      contentVisible.value = true;
       return;
     }
 
@@ -452,6 +473,7 @@ export function useWorkMode(options: WorkModeOptions) {
     morphOrigin,
     containerStyle,
     ballStyle,
+    contentVisible,
 
     // 方法
     enterWorkMode,

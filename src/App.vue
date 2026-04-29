@@ -257,7 +257,7 @@ const workMode = useWorkMode({
 });
 
 // 解构工作模式 API
-const { exiting, containerStyle, ballStyle } = workMode;
+const { exiting, containerStyle, ballStyle, contentVisible } = workMode;
 const { enterWorkMode, exitWork, handleCollapse } = workMode;
 
 // 初始化导航管理 composable
@@ -703,7 +703,7 @@ const openInsideCloudHome = async () => {
       <div v-show="isWorking" class="assistant-layer" :style="containerStyle">
         <div 
           class="assistant-container" 
-          :class="{ 'no-toolbar': isForceUpdateRequired || currentView === 'risk-alert' || currentView === 'voice-interaction' || currentView === 'voice-result' || currentView === 'reception-capsule' }"
+          :class="{ 'no-toolbar': isForceUpdateRequired || currentView === 'risk-alert' || currentView === 'voice-interaction' || currentView === 'voice-result' || currentView === 'reception-capsule', 'is-content-hidden': !contentVisible }"
           :style="currentView === 'reception-capsule' ? { borderRadius: '16px', background: 'transparent', backdropFilter: 'none', WebkitBackdropFilter: 'none', border: 'none', boxShadow: 'none' } : { borderRadius: '20px' }"
         >
           <ForceUpdateGate v-if="isForceUpdateRequired" :state="forceUpdateState" />

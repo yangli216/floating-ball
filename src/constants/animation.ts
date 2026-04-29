@@ -14,6 +14,9 @@ export const ANIMATION = {
   /** 主过渡动画时长（展开/收起）：300ms */
   TRANSITION_MS: 300,
 
+  /** 内容淺入淑出时长（用于遮盖窗口几何变化期间的裁切）：140ms */
+  CONTENT_FADE_MS: 140,
+
   /** 窗口移动防抖延迟：100ms */
   MOVE_DEBOUNCE_MS: 100,
 
