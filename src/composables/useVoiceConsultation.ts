@@ -250,6 +250,13 @@ export function useVoiceConsultation(options: VoiceConsultationOptions) {
 
   const intentRecognition = useVoiceIntentRecognition();
   const intentResult = ref<VoiceIntentResult | null>(null);
+  /**
+   * 当前 intentResult 的来源。
+   * - 'llm'：本次刚刚由 LLM 解析的全新结果，不应叠加 editorSnapshot
+   *   （快照属于上一次会话编辑痕迹，否则会污染新会话的诊断/治疗对应关系）
+   * - 'cache'：从同就诊缓存恢复，需要叠加 editorSnapshot 还原医生编辑现场
+   */
+  const intentSource = ref<'llm' | 'cache' | null>(null);
   const isProcessingVoice = ref(false);
   let processingToken = 0;
 
@@ -279,6 +286,7 @@ export function useVoiceConsultation(options: VoiceConsultationOptions) {
   }
 
   async function showIntentResult(result: VoiceIntentResult, source: 'llm' | 'cache'): Promise<void> {
+    intentSource.value = source;
     intentResult.value = result;
     currentView.value = 'voice-consultation';
 
@@ -328,6 +336,7 @@ export function useVoiceConsultation(options: VoiceConsultationOptions) {
     processingToken += 1;
     isProcessingVoice.value = false;
     intentResult.value = null;
+    intentSource.value = null;
     intentRecognition.clearTranscripts();
   }
 
@@ -523,6 +532,7 @@ export function useVoiceConsultation(options: VoiceConsultationOptions) {
 
   return {
     intentResult,
+    intentSource,
     isProcessingVoice,
     resetVoiceSessionState,
     resumeCachedVoiceResult,

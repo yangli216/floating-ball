@@ -295,6 +295,7 @@ const voiceConsultation = useVoiceConsultation({
 // 解构语音问诊 API
 const {
   intentResult,
+  intentSource,
   isProcessingVoice,
   resetVoiceSessionState,
   resumeCachedVoiceResult,
@@ -796,6 +797,7 @@ const openInsideCloudHome = async () => {
             v-if="currentView === 'voice-consultation'"
             :initialPatientData="currentPatient ?? undefined"
             :intentResult="intentResult"
+            :intentSource="intentSource"
             @close="handleUserCollapse"
             @cancel="cancelVoiceResult"
           />

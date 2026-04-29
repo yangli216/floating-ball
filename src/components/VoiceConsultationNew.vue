@@ -70,6 +70,13 @@ interface ExecDeptOption {
 const props = defineProps<{
   initialPatientData?: AppPatient;
   intentResult: VoiceIntentResult | null;
+  /**
+   * intentResult 的来源。
+   * - 'llm'：本次 LLM 刚刚解析出的全新结果，不叠加 editorSnapshot
+   * - 'cache'：从同就诊缓存恢复，需叠加 editorSnapshot 还原现场
+   * - null/undefined：未明确，默认不叠加
+   */
+  intentSource?: 'llm' | 'cache' | null;
 }>();
 
 const emit = defineEmits(['close', 'cancel']);
@@ -3941,11 +3948,13 @@ watch(
       });
     }
 
-    // 叠加编辑器快照：医生上一次会话内已经编辑/补全的诊断、治疗方案、病历文本
-    // 直接覆盖 LLM 初始化结果，避免再次触发 fetchAITreatment。
-    const editorSnapshot = getVoiceConsultationEditorSnapshot(props.initialPatientData);
-    if (editorSnapshot) {
-      await applyEditorSnapshot(editorSnapshot);
+    // 仅在“同就诊缓存恢复”路径上叠加编辑快照，避免上一会话的治疗方案/诊断
+    // 污染全新 LLM 语音问诊的默认推荐。
+    if (props.intentSource === 'cache') {
+      const editorSnapshot = getVoiceConsultationEditorSnapshot(props.initialPatientData);
+      if (editorSnapshot) {
+        await applyEditorSnapshot(editorSnapshot);
+      }
     }
 
     if (aiDiagnoses.value.length > 0) {
