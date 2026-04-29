@@ -338,9 +338,10 @@ export class RealtimeSpeechService {
             if (this.regionalSocket) {
                 // 保留区域化流式录音副本，WebSocket 中途失败时可在停止后批量兜底。
                 this.audioChunks.push(new Int16Array(pcmData));
-                const bytes = new Uint8Array(pcmData.buffer, pcmData.byteOffset, pcmData.byteLength);
+                const bytes = new Uint8Array(pcmData.byteLength);
+                bytes.set(new Uint8Array(pcmData.buffer, pcmData.byteOffset, pcmData.byteLength));
                 if (this.regionalSocket.readyState === WebSocket.OPEN) {
-                    this.regionalSocket.send(bytes);
+                    this.regionalSocket.send(bytes.buffer);
                 }
                 return;
             }
