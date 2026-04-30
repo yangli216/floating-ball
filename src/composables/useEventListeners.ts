@@ -21,10 +21,10 @@ import { trackApiCall, trackError, startTimedOperation } from '../services/opera
 import type { RiskItem } from '../components/RiskAlertPanel.vue';
 import type { AppPatient } from '../types/appState';
 import type { ConsultationAssistAction } from '../types/consultationAssist';
-import { getHisService, resetHisService } from '../services/his';
-import { resetHisAdapter } from '../services/his';
+import { getHisService, resetHisService, getHisAdapter, resetHisAdapter } from '../services/his';
 import { medicalDataService } from '../services/medicalData';
 import { resolveFeedbackActorFromUrt, setFeedbackActor } from '../services/feedbackContext';
+import { syncPatientMemoryFromHis } from '../services/patientMemoryStore';
 
 /**
  * 事件监听配置参数
@@ -345,6 +345,7 @@ export function useEventListeners(options: EventListenersOptions) {
   let unlistenMoved: UnlistenFn | null = null;
   let unlistenResize: UnlistenFn | null = null;
   let unlistenSdkHandshake: UnlistenFn | null = null;
+  let unlistenReceivePatient: UnlistenFn | null = null;
 
   // ========== Deep Link 监听 ==========
 
@@ -510,6 +511,84 @@ export function useEventListeners(options: EventListenersOptions) {
       };
 
       await navigation.openConsultation();
+    });
+  }
+
+  /**
+   * 注册接诊患者事件监听
+   */
+  async function registerReceivePatientListener(): Promise<void> {
+    unlistenReceivePatient = await listen<StartConsultationPayload>('receive-patient', async (event) => {
+      console.log('Received patient reception request:', event.payload);
+      const payload = event.payload || {};
+      const patientId = (payload.idPi || payload.patientId) as string;
+      if (!patientId) {
+        showToast('接诊失败：未提供患者ID', 'error');
+        return;
+      }
+
+      trackApiCall('his_receive_patient', true, undefined, { patientId });
+
+      try {
+        const adapter = getHisAdapter();
+        if (!adapter) {
+          showToast('接诊失败：HIS 适配器未初始化', 'error');
+          return;
+        }
+
+        // 1. 获取患者基本信息并合并上下文
+        const hisInfo = await adapter.fetchPatientInfo(patientId);
+        
+        const mergedPayload = hisInfo ? {
+          ...payload,
+          naPi: hisInfo.name,
+          sdSexText: hisInfo.gender === 'M' ? '男性' : (hisInfo.gender === 'F' ? '女性' : '未知'),
+          ageText: hisInfo.ageText || (hisInfo.age ? `${hisInfo.age}岁` : undefined),
+        } : payload;
+
+        currentPatient.value = {
+          ...(mergePatientContext(currentPatient.value, mergedPayload) || {}),
+        };
+
+        // 2. 切换 UI 为胶囊态
+        currentView.value = 'reception-capsule';
+        if (!isWorking.value) {
+          await workMode.enterWorkMode(WINDOW_SIZES.CAPSULE.width, WINDOW_SIZES.CAPSULE.height);
+        } else {
+          workMode.enterWorkMode(WINDOW_SIZES.CAPSULE.width, WINDOW_SIZES.CAPSULE.height);
+        }
+
+        // 重置并显示加载状态
+        riskPatientName.value = currentPatient.value.naPi || '未知患者';
+        riskPatientGender.value = currentPatient.value.sdSexText?.includes('女') ? 'F' : 'M';
+        riskPatientAge.value = parseInt(currentPatient.value.ageText || '') || 0;
+        riskItems.value = [];
+        isRiskAnalyzing.value = true;
+
+        // 3. 异步拉取历史记录并提炼记忆
+        const hisHistory = await adapter.fetchPatientHistory(patientId);
+        if (hisHistory) {
+          await syncPatientMemoryFromHis(patientId, hisHistory);
+        }
+
+        // 4. 触发风险评估
+        const finishRiskAnalysis = startTimedOperation('risk_analysis_llm');
+        // 将合并后的患者信息与更新后的记忆传给评估模型
+        const risks = await analyzePatientRisks(currentPatient.value);
+        console.log('LLM Risk Analysis Result after reception:', risks);
+        riskItems.value = risks || [];
+        finishRiskAnalysis(true, { riskCount: riskItems.value.length });
+
+        if (riskItems.value.length > 0) {
+          showToast(`发现 ${riskItems.value.length} 项健康风险`, 'info');
+        }
+      } catch (e) {
+        console.error('Patient reception failed:', e);
+        trackError('receive_patient_failed', e);
+        showToast('接诊处理异常', 'error');
+      } finally {
+        isRiskAnalyzing.value = false;
+      }
     });
   }
 
@@ -693,6 +772,7 @@ export function useEventListeners(options: EventListenersOptions) {
       await registerConsultationAssistListener();
       await registerStopConsultationListener();
       await registerVoiceConsultationListener();
+      await registerReceivePatientListener();
 
       // SDK 握手监听
       await registerHandshakeListener();
@@ -754,6 +834,10 @@ export function useEventListeners(options: EventListenersOptions) {
     if (unlistenSdkHandshake) {
       unlistenSdkHandshake();
       unlistenSdkHandshake = null;
+    }
+    if (unlistenReceivePatient) {
+      unlistenReceivePatient();
+      unlistenReceivePatient = null;
     }
     if (resizeTimeoutRef.value) {
       clearTimeout(resizeTimeoutRef.value);

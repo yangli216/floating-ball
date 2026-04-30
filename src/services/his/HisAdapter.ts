@@ -30,6 +30,8 @@ import type {
   MedicalItemPartOption,
   MedicineCatalogEntry,
   MedicineDetail,
+  HisPatientInfo,
+  HisPatientHistory,
 } from './types';
 
 export type { HisServiceContext, PharmacyOption };
@@ -43,6 +45,8 @@ export type {
   MedicalItemPartOption,
   MedicineCatalogEntry,
   MedicineDetail,
+  HisPatientInfo,
+  HisPatientHistory,
 } from './types';
 
 /**
@@ -109,4 +113,18 @@ export interface HisAdapter {
 
   /** 处方下达前的库存校验 */
   checkMedicineInventoryEnough(items: InventoryCheckRequest[]): Promise<InventoryCheckResult>;
+
+  // ---- 接诊与患者信息 ----
+
+  /**
+   * 拉取患者基本信息（用于接诊时初始化上下文）
+   */
+  fetchPatientInfo(patientId: string): Promise<HisPatientInfo | null>;
+
+  /**
+   * 拉取患者就诊历史（用于完善本地记忆系统）
+   * @param patientId 患者ID
+   * @returns 就诊历史，若无历史或不支持则返回 null，调用方按无记录处理
+   */
+  fetchPatientHistory(patientId: string): Promise<HisPatientHistory | null>;
 }

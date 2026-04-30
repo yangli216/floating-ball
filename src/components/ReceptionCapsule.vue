@@ -34,24 +34,26 @@
             <span class="rc-dot"></span>
             正在评估...
           </span>
-          <span v-else-if="risks.length > 0" class="rc-badge rc-badge--orange">
+          <span
+            v-else-if="risks.length > 0"
+            class="rc-badge rc-badge--orange rc-badge--clickable"
+            @click="toggle"
+            role="button"
+            :title="expanded ? '收起风险详情' : '展开风险详情'"
+          >
             <Icon icon="lucide:alert-circle" size="14" />
             {{ risks.length }}项健康风险
+            <Icon
+              class="rc-badge-caret"
+              :icon="expanded ? 'lucide:chevron-up' : 'lucide:chevron-down'"
+              size="14"
+            />
           </span>
           <span v-else class="rc-badge rc-badge--green">
             <Icon icon="lucide:thumbs-up" size="14" />
             健康状态良好
           </span>
         </div>
-      </div>
-
-      <!-- Expand toggle -->
-      <div
-        v-if="risks.length > 0 && !analyzing"
-        class="rc-toggle"
-        @click="toggle"
-      >
-        <Icon :icon="expanded ? 'lucide:chevron-up' : 'lucide:chevron-down'" size="18" />
       </div>
     </div>
 
@@ -180,7 +182,7 @@ function tagLabel(cat: string) { return CATEGORY_LABELS[cat] || '其他'; }
   border-radius: 14px;
   display: flex;
   flex-direction: column;
-  padding: 16px;
+  padding: 12px 14px;
   box-sizing: border-box;
   overflow: hidden;
   border: 1.5px solid transparent;
@@ -212,10 +214,10 @@ function tagLabel(cat: string) { return CATEGORY_LABELS[cat] || '其他'; }
 /* ---- close ---- */
 .rc-close {
   position: absolute;
-  top: 10px;
-  right: 10px;
-  width: 24px;
-  height: 24px;
+  top: 8px;
+  right: 8px;
+  width: 22px;
+  height: 22px;
   border-radius: 50%;
   background: rgba(0,0,0,0.06);
   display: flex;
@@ -232,13 +234,15 @@ function tagLabel(cat: string) { return CATEGORY_LABELS[cat] || '其他'; }
 .rc-header {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 10px;
   flex-shrink: 0;
+  /* 预留右侧空间避免与关闭按钮重叠 */
+  padding-right: 24px;
 }
 
 .rc-avatar {
-  width: 48px;
-  height: 48px;
+  width: 40px;
+  height: 40px;
   border-radius: 50%;
   overflow: hidden;
   display: flex;
@@ -266,10 +270,10 @@ function tagLabel(cat: string) { return CATEGORY_LABELS[cat] || '其他'; }
   display: flex;
   align-items: baseline;
   gap: 8px;
-  margin-bottom: 6px;
+  margin-bottom: 4px;
 }
-.rc-name { font-size: 17px; font-weight: 700; color: #1e293b; }
-.rc-meta { font-size: 14px; color: #94a3b8; }
+.rc-name { font-size: 15px; font-weight: 700; color: #1e293b; }
+.rc-meta { font-size: 13px; color: #94a3b8; }
 
 /* ---- badge ---- */
 .rc-badge-row { display: flex; }
@@ -280,13 +284,23 @@ function tagLabel(cat: string) { return CATEGORY_LABELS[cat] || '其他'; }
   gap: 4px;
   padding: 2px 10px;
   border-radius: 12px;
-  font-size: 13px;
+  font-size: 12.5px;
   font-weight: 600;
-  line-height: 20px;
+  line-height: 18px;
 }
 .rc-badge--green { background: #dcfce7; color: #16a34a; }
 .rc-badge--orange { background: #fff4e5; color: #ea580c; }
 .rc-badge--blue { background: #dbeafe; color: #3b82f6; gap: 6px; }
+.rc-badge--clickable {
+  cursor: pointer;
+  -webkit-app-region: no-drag;
+  transition: background 0.15s ease;
+}
+.rc-badge--clickable:hover { background: #ffe5cc; }
+.rc-badge-caret {
+  margin-left: 2px;
+  opacity: 0.75;
+}
 
 .rc-dot {
   width: 6px; height: 6px; border-radius: 50%;
@@ -295,27 +309,12 @@ function tagLabel(cat: string) { return CATEGORY_LABELS[cat] || '其他'; }
 }
 @keyframes rc-pulse { 0%{opacity:1} 100%{opacity:.3} }
 
-/* ---- toggle ---- */
-.rc-toggle {
-  width: 30px; height: 30px;
-  border-radius: 50%;
-  background: rgba(0,0,0,0.04);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  cursor: pointer;
-  color: #64748b;
-  flex-shrink: 0;
-  -webkit-app-region: no-drag;
-}
-.rc-toggle:hover { background: rgba(0,0,0,0.08); color: #1e293b; }
-
 /* ---- risk list ---- */
 .rc-risks {
-  margin-top: 16px;
+  margin-top: 12px;
   display: flex;
   flex-direction: column;
-  gap: 14px;
+  gap: 10px;
   overflow-y: auto;
   flex: 1;
 }

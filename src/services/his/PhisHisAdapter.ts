@@ -21,8 +21,11 @@ import type {
   HisMedicalItemCatalogItem,
   HisMedicalItemPartOption,
   HisMedicineCatalogItem,
+  HisVisitHistoryItem,
+  HisVisitDetailBody,
 } from '../hisService';
 import type { HisAdapter, HisServiceContext } from './HisAdapter';
+import type { HisVisitRecord } from './types';
 import type {
   DiagnosisCatalogEntry,
   DictionaryEntry,
@@ -33,6 +36,8 @@ import type {
   MedicalItemPartOption,
   MedicineCatalogEntry,
   MedicineDetail,
+  HisPatientInfo,
+  HisPatientHistory,
 } from './types';
 
 const trim = (value: unknown): string | undefined => {
@@ -148,6 +153,59 @@ function mapDictionaryItems(items: HisDictionaryItem[]): DictionaryEntry[] {
     if (entry) result.push(entry);
   }
   return result;
+}
+
+/**
+ * 把 PHIS 单次就诊详情映射为中性 HisVisitRecord。
+ *
+ * 时间字段在 queryVisitHistory 列表项中可能位于 dtVis / dtVisit / visitTime；详情接口
+ * 当前响应未提供时间，因此优先取列表项里的时间，缺失时回退到 Date.now()，避免上层
+ * 排序/落地时丢失整条记录。
+ */
+function mapVisitDetail(
+  visit: HisVisitHistoryItem,
+  detail: HisVisitDetailBody,
+): HisVisitRecord {
+  const visitTimeRaw = visit.visitTime ?? visit.dtVis ?? visit.dtVisit;
+  let visitTime: number;
+  if (typeof visitTimeRaw === 'number' && Number.isFinite(visitTimeRaw)) {
+    visitTime = visitTimeRaw;
+  } else if (typeof visitTimeRaw === 'string' && visitTimeRaw.trim()) {
+    const parsed = Date.parse(visitTimeRaw);
+    visitTime = Number.isFinite(parsed) ? parsed : Date.now();
+  } else {
+    visitTime = Date.now();
+  }
+
+  const soap = detail.soapData ?? {};
+  const chiefComplaint = trim((soap as Record<string, unknown>)['chiefComplaint'] as string | undefined);
+  const presentIllness = trim((soap as Record<string, unknown>)['presentIllness'] as string | undefined);
+
+  const diagnoses = (detail.diagList ?? [])
+    .map((d) => trim(d.naDiag) ?? trim(d.naIcd10))
+    .filter((value): value is string => Boolean(value));
+
+  const medications = (detail.orderList ?? [])
+    .map((order) => {
+      const name = trim(order.naOrd);
+      if (!name) return undefined;
+      const desc = trim(order.desOrd);
+      // 数量+单位若与 desOrd 重复则不再追加；这里简单拼接，便于上层 LLM 清洗
+      const amount = typeof order.amount === 'number' ? order.amount : undefined;
+      const unit = trim(order.unitOrd);
+      const qty = amount !== undefined ? `${amount}${unit ?? ''}` : '';
+      const tail = [desc, qty].filter(Boolean).join(' ');
+      return tail ? `${name}（${tail}）` : name;
+    })
+    .filter((value): value is string => Boolean(value));
+
+  return {
+    visitTime,
+    chiefComplaint,
+    presentIllness,
+    diagnoses: diagnoses.length > 0 ? diagnoses : undefined,
+    medications: medications.length > 0 ? medications : undefined,
+  };
 }
 
 export class PhisHisAdapter implements HisAdapter {
@@ -271,5 +329,86 @@ export class PhisHisAdapter implements HisAdapter {
     return this.service
       .checkMedicineInventoryEnough(phisItems)
       .then((result) => ({ code: result.code, message: result.msg }));
+  }
+
+  // ---- 接诊与患者信息 ----
+
+  async fetchPatientInfo(patientId: string): Promise<HisPatientInfo | null> {
+    const idPi = trim(patientId);
+    if (!idPi) return null;
+
+    const detail = await this.service.searchPatientByIdPi(idPi);
+    if (!detail) return null;
+
+    const sdSex = trim(detail.sdSex);
+    const gender: HisPatientInfo['gender'] = sdSex === '1' ? 'M' : sdSex === '2' ? 'F' : 'O';
+
+    // 仅当 ageUnit 为年（'Y'）时把 ageNum 当作"岁"返回；其它单位（D/M）下
+    // ageNum 不是岁数，留空让上层只用 ageText 展示
+    const ageUnit = trim(detail.ageUnit)?.toUpperCase();
+    const age = ageUnit === 'Y' && typeof detail.ageNum === 'number' ? detail.ageNum : undefined;
+
+    return {
+      patientId: trim(detail.idPi) ?? idPi,
+      name: trim(detail.naPi) ?? '',
+      gender,
+      age,
+      ageText: trim(detail.ageText),
+      idNo: trim(detail.idCard),
+      mobilePhone: trim(detail.mobilePhone),
+      raw: detail as unknown as Record<string, unknown>,
+    };
+  }
+
+  async fetchPatientHistory(patientId: string): Promise<HisPatientHistory | null> {
+    const idPi = trim(patientId);
+    if (!idPi) return null;
+
+    // 1) 并发拉过敏史与就诊列表；任一失败不中断另一路
+    const [allergyItems, visitItems] = await Promise.all([
+      this.service.queryPatientAllergy(idPi).catch((error) => {
+        console.warn('[PhisHisAdapter] queryPatientAllergy failed', error);
+        return [];
+      }),
+      this.service.queryPatientVisitHistory(idPi, 5).catch((error) => {
+        console.warn('[PhisHisAdapter] queryPatientVisitHistory failed', error);
+        return [] as HisVisitHistoryItem[];
+      }),
+    ]);
+
+    const allergyHistory = allergyItems
+      .map((item) => trim(item.naAliergy))
+      .filter((value): value is string => Boolean(value));
+
+    // 2) 对列表中的每条并发拉明细（失败跳过该条）
+    const detailEntries = await Promise.all(
+      visitItems.map(async (visit) => {
+        const idVis = trim(visit.idVis);
+        if (!idVis) return null;
+        const visitIdPi = trim(visit.idPi) ?? idPi;
+        try {
+          const detail = await this.service.loadClinicMedicalRecord(idVis, visitIdPi);
+          return detail ? { visit, detail } : null;
+        } catch (error) {
+          console.warn('[PhisHisAdapter] loadClinicMedicalRecord failed', { idVis, error });
+          return null;
+        }
+      })
+    );
+
+    const visits: HisVisitRecord[] = detailEntries
+      .filter((entry): entry is { visit: HisVisitHistoryItem; detail: HisVisitDetailBody } => Boolean(entry))
+      .map(({ visit, detail }) => mapVisitDetail(visit, detail));
+
+    return {
+      patientId: idPi,
+      allergyHistory: allergyHistory.length > 0 ? allergyHistory : undefined,
+      pastMedicalHistory: undefined,
+      visits: visits.length > 0 ? visits : undefined,
+      raw: {
+        allergyItems,
+        visitItems,
+      },
+    };
   }
 }

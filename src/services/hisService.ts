@@ -193,6 +193,102 @@ export interface HisMedicalItemPartOption {
   amount?: number;
 }
 
+/**
+ * PHIS 患者详情（searchByIdPi 返回 body）
+ */
+export interface HisPatientDetailBody {
+  idPi?: string;
+  cdPi?: string;
+  naPi?: string;
+  sdSex?: string;
+  sdSexText?: string;
+  birthday?: string;
+  ageNum?: number;
+  ageUnit?: string;
+  ageText?: string;
+  idTet?: string;
+  sdNation?: string;
+  sdNationText?: string;
+  sdNaty?: string;
+  sdNatyText?: string;
+  sdWork?: string;
+  sdWorkText?: string;
+  sdBlood?: string;
+  sdBloodText?: string;
+  address?: string;
+  cdAddr?: string;
+  cdAddrText?: string;
+  naCompany?: string;
+  fgActive?: string;
+  fgActiveText?: string;
+  py?: string;
+  wb?: string;
+  [key: string]: unknown;
+}
+
+/**
+ * PHIS 过敏史条目（queryHisAllergy 返回 body.items）
+ */
+export interface HisAllergyItem {
+  sdAliergy?: string;
+  naAliergy?: string;
+  fgDrug?: string;
+  [key: string]: unknown;
+}
+
+/**
+ * PHIS 就诊历史列表条目（queryVisitHistory 返回 body.items）
+ *
+ * 字段未在用户示例中明确列出（idVis / idPi 之外可能还携带 dtVis / chiefComplaint 等），
+ * 因此采用宽松定义，未知字段通过索引签名透传。
+ */
+export interface HisVisitHistoryItem {
+  idVis?: string;
+  idPi?: string;
+  dtVis?: string;
+  dtVisit?: string;
+  visitTime?: string | number;
+  [key: string]: unknown;
+}
+
+interface HisVisitHistoryListBody {
+  start?: number;
+  limit?: number;
+  total?: number;
+  items?: HisVisitHistoryItem[];
+}
+
+/**
+ * PHIS 就诊历史详情（loadClinicMedicalRecord 返回 body）
+ */
+export interface HisVisitDetailDiag {
+  naDiag?: string;
+  sdDiag?: string;
+  cdIcd10?: string;
+  naIcd10?: string;
+  fgMain?: string;
+  [key: string]: unknown;
+}
+
+export interface HisVisitDetailOrder {
+  naOrd?: string;
+  desOrd?: string;
+  amount?: number;
+  unitOrd?: string;
+  [key: string]: unknown;
+}
+
+export interface HisVisitDetailBody {
+  soapData?: {
+    chiefComplaint?: string;
+    presentIllness?: string;
+    [key: string]: unknown;
+  };
+  diagList?: HisVisitDetailDiag[];
+  orderList?: HisVisitDetailOrder[];
+  [key: string]: unknown;
+}
+
 interface HiBdCliPacsPartAndWayListBody {
   start?: number;
   limit?: number;
@@ -298,6 +394,10 @@ const HIS_CATALOG_ENDPOINTS = {
   medicines: 'api/phis.orgMedicineConfig/queryList',
   medicineDetail: 'api/phis.orgMedicineConfig/loadMedicinePro',
   medicineInventoryCheck: 'api/phis.medicineInventoryService/checkInvEnough',
+  patientSearchByIdPi: 'api/phis.patientService/searchByIdPi',
+  patientAllergy: 'api/phis.clinicPatientService/queryHisAllergy',
+  patientVisitHistory: 'api/phis.clinicPatientService/queryVisitHistory',
+  patientVisitDetail: 'api/phis.clinicDoctorCoreService/loadClinicMedicalRecord',
 } as const;
 
 /**
@@ -845,6 +945,88 @@ export class HisService {
       code: Number.isFinite(code) ? code : 500,
       msg: String(msg).trim(),
     };
+  }
+
+  /**
+   * 根据 idPi 查询患者基本信息
+   * PHIS 接口：api/phis.patientService/searchByIdPi
+   * 入参：[idPi]，出参 body 为患者详情对象
+   */
+  async searchPatientByIdPi(idPi: string): Promise<HisPatientDetailBody | null> {
+    const normalizedIdPi = idPi.trim();
+    if (!normalizedIdPi) {
+      return null;
+    }
+
+    const response = await this.post<HisPatientDetailBody>(
+      HIS_CATALOG_ENDPOINTS.patientSearchByIdPi,
+      [normalizedIdPi]
+    );
+    this.assertBusinessSuccess(HIS_CATALOG_ENDPOINTS.patientSearchByIdPi, response);
+
+    return response.body ?? response.data ?? null;
+  }
+
+  /**
+   * 查询患者过敏史
+   * PHIS 接口：api/phis.clinicPatientService/queryHisAllergy
+   */
+  async queryPatientAllergy(idPi: string): Promise<HisAllergyItem[]> {
+    const normalizedIdPi = idPi.trim();
+    if (!normalizedIdPi) return [];
+
+    const response = await this.post<HisVisitHistoryListBody>(
+      HIS_CATALOG_ENDPOINTS.patientAllergy,
+      [{ params: { idPi: normalizedIdPi } }]
+    );
+    this.assertBusinessSuccess(HIS_CATALOG_ENDPOINTS.patientAllergy, response);
+
+    const items = response.body?.items ?? response.data?.items ?? [];
+    return Array.isArray(items) ? (items as HisAllergyItem[]) : [];
+  }
+
+  /**
+   * 查询患者就诊历史列表
+   * PHIS 接口：api/phis.clinicPatientService/queryVisitHistory
+   */
+  async queryPatientVisitHistory(idPi: string, limit = 5): Promise<HisVisitHistoryItem[]> {
+    const normalizedIdPi = idPi.trim();
+    if (!normalizedIdPi) return [];
+
+    const response = await this.post<HisVisitHistoryListBody>(
+      HIS_CATALOG_ENDPOINTS.patientVisitHistory,
+      [{ limit, params: { idPi: normalizedIdPi } }]
+    );
+    this.assertBusinessSuccess(HIS_CATALOG_ENDPOINTS.patientVisitHistory, response);
+
+    const items = response.body?.items ?? response.data?.items ?? [];
+    return Array.isArray(items) ? items : [];
+  }
+
+  /**
+   * 加载单次就诊明细（含诊断与医嘱）
+   * PHIS 接口：api/phis.clinicDoctorCoreService/loadClinicMedicalRecord
+   */
+  async loadClinicMedicalRecord(idVis: string, idPi: string): Promise<HisVisitDetailBody | null> {
+    const normalizedIdVis = idVis.trim();
+    const normalizedIdPi = idPi.trim();
+    if (!normalizedIdVis || !normalizedIdPi) return null;
+
+    try {
+      const response = await this.post<HisVisitDetailBody>(
+        HIS_CATALOG_ENDPOINTS.patientVisitDetail,
+        [{ idVis: normalizedIdVis, idPi: normalizedIdPi }]
+      );
+      this.assertBusinessSuccess(HIS_CATALOG_ENDPOINTS.patientVisitDetail, response);
+      return response.body ?? response.data ?? null;
+    } catch (error) {
+      console.warn('[HisService] Failed to load clinic medical record', {
+        idVis: normalizedIdVis,
+        idPi: normalizedIdPi,
+        error,
+      });
+      return null;
+    }
   }
 
   /**

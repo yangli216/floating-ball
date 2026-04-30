@@ -33,6 +33,8 @@ import type {
   MedicalItemPartOption,
   MedicineCatalogEntry,
   MedicineDetail,
+  HisPatientInfo,
+  HisPatientHistory,
 } from './types';
 
 const MOCK_DIAGNOSES: DiagnosisCatalogEntry[] = [
@@ -184,5 +186,38 @@ export class MockHisAdapter implements HisAdapter {
 
   async checkMedicineInventoryEnough(_items: InventoryCheckRequest[]): Promise<InventoryCheckResult> {
     return { code: 200, message: '' };
+  }
+
+  // ---- 接诊与患者信息 ----
+
+  async fetchPatientInfo(patientId: string): Promise<HisPatientInfo | null> {
+    return {
+      patientId,
+      name: '测试患者(Mock)',
+      gender: 'M',
+      age: 35,
+      ageText: '35岁',
+      idNo: '110105198801011234',
+      insuranceType: '自费',
+      raw: { mock: true },
+    };
+  }
+
+  async fetchPatientHistory(patientId: string): Promise<HisPatientHistory | null> {
+    return {
+      patientId,
+      allergyHistory: ['青霉素过敏'],
+      pastMedicalHistory: ['高血压史3年'],
+      visits: [
+        {
+          visitTime: Date.now() - 7 * 24 * 3600 * 1000,
+          chiefComplaint: '咳嗽、咳痰3天',
+          presentIllness: '患者3天前受凉后出现咳嗽，咳少量白痰，无发热。',
+          diagnoses: ['急性支气管炎'],
+          medications: ['阿莫西林胶囊', '复方鲜竹沥液'],
+        }
+      ],
+      raw: { mock: true },
+    };
   }
 }

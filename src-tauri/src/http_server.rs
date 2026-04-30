@@ -149,6 +149,60 @@ pub struct PatientRiskData {
     pub risks: Vec<RiskItem>,
 }
 
+async fn receive_patient(
+    data: web::Json<PatientInfo>,
+    app_handle: web::Data<tauri::AppHandle>,
+    state: web::Data<SharedAppState>,
+) -> impl Responder {
+    let started_at = Instant::now();
+    let trace_id = his_integration_log::new_trace_id();
+    if let Err(response) = ensure_http_service_access(&state) {
+        return response;
+    }
+
+    let patient = data.into_inner();
+    let request_summary = summarize_for_his_log(&patient);
+    println!(
+        "Received patient reception request for patient ID: {}",
+        patient.id_pi
+    );
+
+    // Emit event to Frontend
+    if let Some(window) = app_handle.get_webview_window("main") {
+        if let Err(e) = window.emit("receive-patient", &patient) {
+            eprintln!("Failed to emit event: {}", e);
+        } else {
+            println!("Event 'receive-patient' emitted successfully to main window");
+        }
+    } else {
+        println!("Error: Main window not found");
+    }
+
+    // Return response
+    let response_body = serde_json::json!({
+        "status": "success",
+        "consultationId": patient.id_pi,
+        "traceId": trace_id
+    });
+    record_bridge_log(
+        &app_handle,
+        response_body["traceId"].as_str().unwrap_or_default(),
+        "consultation.receive",
+        "POST",
+        "/api/consultation/receive",
+        "success",
+        200,
+        started_at,
+        Some(request_summary),
+        Some(response_body.clone()),
+        Some(patient.id_pi.clone()),
+        Some(patient.id_pi.clone()),
+        None,
+        None,
+    );
+    HttpResponse::Ok().json(response_body)
+}
+
 async fn start_consultation(
     data: web::Json<PatientInfo>,
     app_handle: web::Data<tauri::AppHandle>,
@@ -1532,6 +1586,10 @@ pub fn run_server(app_handle: tauri::AppHandle, state: SharedAppState) {
                     .app_data(state.clone())
                     .route("/api/health", web::get().to(health_check))
                     .route("/api/handshake", web::post().to(handshake))
+                    .route(
+                        "/api/consultation/receive",
+                        web::post().to(receive_patient),
+                    )
                     .route(
                         "/api/consultation/start",
                         web::post().to(start_consultation),

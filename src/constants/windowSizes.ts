@@ -58,8 +58,8 @@ export const WINDOW_SIZES = {
   /** 语音胶囊：360×80px 千千静听歌词风格紧凑条 */
   CAPSULE: { width: 360, height: 80 } as WindowSize,
 
-  /** 风险评估卡片：340×120px */
-  RISK_CARD: { width: 340, height: 120 } as WindowSize,
+  /** 风险评估卡片：340×92px，仅展示头部（头像+姓名+状态徽章） */
+  RISK_CARD: { width: 340, height: 92 } as WindowSize,
 
   /** 风险评估卡片展开：340×360px */
   RISK_CARD_EXPANDED: { width: 340, height: 360 } as WindowSize,

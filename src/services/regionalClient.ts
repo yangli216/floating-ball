@@ -49,6 +49,7 @@ export interface BootstrapConfig {
   llm: {
     baseUrl: string;
     model: string;
+    fastModel?: string;
     audioBaseUrl?: string;
     audioModel?: string;
   };

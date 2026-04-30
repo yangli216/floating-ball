@@ -474,6 +474,28 @@
   };
 
   /**
+   * 接收患者接诊
+   * @param {string} patientId 患者 ID
+   * @param {Object} [optionalInfo] 可选辅助信息
+   * @returns {Promise<Object>}
+   */
+  MedHermes.prototype.receivePatient = function (patientId, optionalInfo) {
+    var self = this;
+    var payload = assign({ idPi: patientId }, optionalInfo || {});
+    this._currentPatientId = patientId || '';
+    this._lastResultKey = '';
+
+    return this._callWithFallback(
+      function () { return self._http.post('/consultation/receive', payload); },
+      'receive-patient',
+      payload
+    ).then(function (result) {
+      if (self._opts.autoPoll) self.startPolling();
+      return result;
+    });
+  };
+
+  /**
    * 推送患者风险信息
    * @param {Object} patient 患者信息
    * @param {Array} [risks] 预计算风险项（不传则由 LLM 自动分析）

@@ -36,6 +36,111 @@ export async function getPatientMemory(patientId: string | null | undefined): Pr
   }
 }
 
+import { chatFast } from './llm';
+import type { HisPatientHistory } from './his/types';
+
+/**
+ * 异步同步 HIS 就诊历史到本地记忆系统
+ * 如果本地缓存未过期（如24小时内有更新），则跳过以提升性能。
+ * 否则通过轻量级 LLM 将无结构的 HIS 数据提取为标准化记忆并落盘。
+ */
+export async function syncPatientMemoryFromHis(patientId: string, hisHistory: HisPatientHistory): Promise<void> {
+  if (!patientId || !hisHistory) return;
+
+  const memory = await getPatientMemory(patientId);
+  const ONE_DAY = 24 * 3600 * 1000;
+  if (memory && memory.updatedAt && (Date.now() - memory.updatedAt < ONE_DAY)) {
+    console.log('[patientMemory] memory is fresh, skip sync from HIS');
+    return;
+  }
+
+  // 即使 HIS 返回的数据是结构化的，也可能不够简洁，统一用轻量级模型清洗
+  const promptText = `
+请将以下患者历史就诊记录提取为标准化的 JSON 结构：
+【过敏史】：${(hisHistory.allergyHistory || []).join('、') || '无'}
+【既往史/慢病史】：${(hisHistory.pastMedicalHistory || []).join('、') || '无'}
+【历次就诊记录】：
+${(hisHistory.visits || []).map(v => 
+  `时间: ${new Date(v.visitTime).toISOString().slice(0, 10)}
+  主诉: ${v.chiefComplaint || '无'}
+  现病史: ${v.presentIllness || '无'}
+  诊断: ${(v.diagnoses || []).join('、') || '无'}
+  用药: ${(v.medications || []).join('、') || '无'}`
+).join('\n\n')}
+
+要求输出 JSON 格式，严格包含以下三个字段：
+- allergyHistory: 字符串数组，提取所有明确的过敏史（排除"无"等无意义描述）。
+- chronicDiagnosisCandidates: 字符串数组，提取既往史中明确的慢性疾病名称。
+- visits: 对象数组，每个对象包含 chiefComplaint, diagnoses, medications，以及 visitTime(时间戳数值)，按时间从老到新排序（最新的在最后），最多包含最近 5 次的就诊。
+直接返回纯 JSON 数据，不要任何 markdown 标记（不要写 \`\`\`json ）。
+`;
+
+  try {
+    const responseText = await chatFast([
+      { role: 'system', content: '你是一个医疗数据结构化助手，仅输出合法的 JSON 文本，没有任何额外字符。' },
+      { role: 'user', content: promptText }
+    ]);
+    
+    let cleanJson = responseText.replace(/```json\n?|\n?```/g, '').trim();
+    const jsonStart = cleanJson.indexOf('{');
+    const jsonEnd = cleanJson.lastIndexOf('}');
+    if (jsonStart !== -1 && jsonEnd !== -1) {
+      cleanJson = cleanJson.slice(jsonStart, jsonEnd + 1);
+    }
+
+    const parsed = JSON.parse(cleanJson);
+    const allergyHistoryText = (parsed.allergyHistory || []).join('、');
+    
+    // 清空现有历史
+    await clearPatientMemory(patientId);
+    
+    // 按时间顺序（从老到新）重新 append，以便重算慢病候选和保留最新记录
+    const visits = Array.isArray(parsed.visits) ? parsed.visits : [];
+    // 确保按时间顺序，避免乱序导致裁切错误的 5 条
+    visits.sort((a: any, b: any) => (a.visitTime || 0) - (b.visitTime || 0));
+    
+    if (visits.length === 0 && allergyHistoryText) {
+       // 如果只有过敏史没有就诊记录，插入一条空记录携带过敏史
+       await appendPatientVisit({
+         patientId,
+         record: {
+           chiefComplaint: '',
+           historyOfPresentIllness: '',
+           pastMedicalHistory: '',
+           diagnosisList: [],
+           medications: [],
+           examinations: [],
+           labTests: [],
+           procedures: []
+         },
+         allergyHistoryText,
+         completedAt: Date.now()
+       });
+    } else {
+       for (const v of visits) {
+         await appendPatientVisit({
+           patientId,
+           record: {
+             chiefComplaint: v.chiefComplaint || '',
+             historyOfPresentIllness: v.presentIllness || '',
+             pastMedicalHistory: '',
+             diagnosisList: Array.isArray(v.diagnoses) ? v.diagnoses.map((d: string) => ({ name: d })) : [],
+             medications: Array.isArray(v.medications) ? v.medications.map((m: string) => ({ name: m })) : [],
+             examinations: [],
+             labTests: [],
+             procedures: [],
+           },
+           allergyHistoryText,
+           completedAt: v.visitTime || Date.now()
+         });
+       }
+    }
+    console.log('[patientMemory] synced from HIS successfully');
+  } catch (err) {
+    console.warn('[patientMemory] sync from HIS failed, error:', err);
+  }
+}
+
 export interface AppendVisitInput {
   patientId: string;
   record: GeneratedRecord;

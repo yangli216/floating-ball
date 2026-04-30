@@ -249,3 +249,55 @@ export interface MedicalItemCatalogEntry {
   raw?: Record<string, unknown>;
 }
 
+// ============================================================================
+// 患者与就诊历史
+// ============================================================================
+
+/**
+ * HIS 患者基本信息（中性）
+ */
+export interface HisPatientInfo {
+  patientId: string;
+  name: string;
+  gender: 'M' | 'F' | 'O';
+  age?: number;
+  ageText?: string;
+  /** 身份证号 / 医保卡号等可选标识 */
+  idNo?: string;
+  mobilePhone?: string;
+  insuranceType?: string;
+  /** 厂商透传 */
+  raw?: Record<string, unknown>;
+}
+
+/**
+ * 历史就诊记录单次摘要
+ */
+export interface HisVisitRecord {
+  /** 就诊时间戳 */
+  visitTime: number;
+  /** 主诉文本 */
+  chiefComplaint?: string;
+  /** 现病史 */
+  presentIllness?: string;
+  /** 诊断列表文本 */
+  diagnoses?: string[];
+  /** 处方药品列表文本 */
+  medications?: string[];
+}
+
+/**
+ * HIS 患者就诊历史汇总（中性）
+ */
+export interface HisPatientHistory {
+  patientId: string;
+  /** 过敏史文本列表 */
+  allergyHistory?: string[];
+  /** 既往史/慢性病史文本列表 */
+  pastMedicalHistory?: string[];
+  /** 历次就诊记录 */
+  visits?: HisVisitRecord[];
+  /** 厂商透传 */
+  raw?: Record<string, unknown>;
+}
+
