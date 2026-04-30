@@ -243,12 +243,14 @@ fn clamp_position_to_work_area(
     (clamp_axis(x, min_x, max_x), clamp_axis(y, min_y, max_y))
 }
 
+#[allow(dead_code)]
 fn snap_position_to_work_area(
     x: i32,
     y: i32,
     monitor: &tauri::Monitor,
     window_size: FloatingBallWindowSize,
 ) -> (i32, i32) {
+    // 保留以备未来"拖拽吸边"需求；当前 restore 路径已改为只 clamp 不 snap。
     let work_area = monitor.work_area();
     let margin = floating_ball_margin(monitor);
     let left_x = work_area.position.x + margin;
@@ -289,9 +291,16 @@ fn restore_floating_ball_position(
     x: i32,
     y: i32,
 ) -> Option<(i32, i32)> {
-    let monitor = active_floating_ball_monitor(window)?;
+    // 优先选择保存坐标所在的显示器，避免按光标位置选错屏后被另一块屏的工作区夹偏。
+    let monitor = window
+        .monitor_from_point(x as f64, y as f64)
+        .ok()
+        .flatten()
+        .or_else(|| active_floating_ball_monitor(window))?;
     let window_size = floating_ball_window_size(window, Some(&monitor));
-    Some(snap_position_to_work_area(x, y, &monitor, window_size))
+    // 恢复场景：只 clamp 到工作区范围内，不要 snap 到左右边缘，
+    // 否则会把医生上次拖到中间位置的窗口强制吸到屏幕角落。
+    Some(clamp_position_to_work_area(x, y, &monitor, window_size))
 }
 
 fn default_floating_ball_position(window: &tauri::WebviewWindow) -> (i32, i32) {
@@ -887,6 +896,10 @@ pub fn run() {
 
             // 尝试在 Rust 层直接读取本地存储并恢复悬浮球坐标，避免前端 Vue 初始化带来的闪烁和 macOS 隐藏渲染 Bug
             let mut restored = false;
+            // 记录本轮准备应用的目标位置。macOS 上 transparent + always-on-top 窗口的
+            // window.show() 会从 tauri.conf.json 重新护扣 (x, y) 默认值，造成 set_position
+            // 在 show 之后被覆盖。后面需要拿这个变量所记录的位置重新下发一次。
+            let mut desired_pos: Option<(i32, i32)> = None;
             if let Ok(app_data_dir) = app.path().app_data_dir() {
                 let settings_path = app_data_dir.join(".settings.dat");
                 if let Ok(content) = std::fs::read_to_string(&settings_path) {
@@ -902,6 +915,7 @@ pub fn run() {
                                         x: safe_x,
                                         y: safe_y,
                                     }));
+                                    desired_pos = Some((safe_x, safe_y));
                                     restored = true;
                                 } else {
                                     println!("[Rust] Saved position ({}, {}) is off-screen, using safe default", x, y);
@@ -919,6 +933,7 @@ pub fn run() {
                     x: safe_x,
                     y: safe_y,
                 }));
+                desired_pos = Some((safe_x, safe_y));
             }
             // 位置就绪后再显示窗口，避免在错误位置闪烁
             let _ = window.unminimize();
@@ -926,9 +941,23 @@ pub fn run() {
             let _ = window.set_always_on_top(true);
             let _ = window.set_focus();
 
+            // show() 会在 macOS 上重新护扣 tauri.conf.json 的 (x, y)，
+            // 这里重新下发之前计算好的 desired_pos，确保位置不被覆盖。
+            if let Some((dx, dy)) = desired_pos {
+                let _ = window.set_position(tauri::Position::Physical(tauri::PhysicalPosition {
+                    x: dx,
+                    y: dy,
+                }));
+            }
+
             // 显示后再校验一次实际窗口尺寸与位置。高 DPI、Dock/任务栏或系统延迟应用尺寸时，
             // 启动前计算出的安全坐标可能仍需要按最终 outer_size 再夹回 work area。
-            if let Ok(current_pos) = window.outer_position() {
+            // 使用 desired_pos 作为验证起点而不是 outer_position()，后者在 macOS 上可能
+            // 返回被 show() 护扣后的 conf 默认值，导致位置被错误夹回。
+            let pos_for_check = desired_pos
+                .map(|(x, y)| tauri::PhysicalPosition { x, y })
+                .or_else(|| window.outer_position().ok());
+            if let Some(current_pos) = pos_for_check {
                 let verified_pos =
                     restore_floating_ball_position(&window, current_pos.x, current_pos.y)
                         .unwrap_or_else(|| default_floating_ball_position(&window));

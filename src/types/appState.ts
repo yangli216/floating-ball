@@ -17,6 +17,13 @@ export interface AppPatient {
   sdSexText?: string;
   age?: number | string;
   ageText?: string;
+  /**
+   * 是否已经走过 `receivePatient` 接诊流程（拉取过 HIS 详情/历史并完成风险评估）。
+   * 仅 `useEventListeners` 中的接诊处理器会置位；`stop-consultation` 会随 `currentPatient = null`
+   * 一并清空。其它问诊入口（startVoice / startConsultation / startConsultationSession）以此
+   * 作为强制门禁，不允许绕过接诊直接启动问诊。
+   */
+  _receptionEnsured?: boolean;
   [key: string]: unknown;
 }
 

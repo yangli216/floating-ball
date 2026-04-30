@@ -296,6 +296,38 @@ function mergePatientContext(
 }
 
 /**
+ * 校验是否已经走过接诊流程，并且 payload 与当前上下文是否为同一个患者。
+ *
+ * 设计意图：
+ * - `receivePatient` 是建立患者上下文的唯一前置入口，会拉取 HIS 详情、风险、记忆系统；
+ * - `startVoice` / `startConsultation` / `startConsultationSession` 仅启动具体问诊形态，
+ *   不再承担"建立上下文"的责任，否则会绕过风险评估和患者记忆系统。
+ *
+ * 因此这里要求：
+ * 1. `currentPatient._receptionEnsured === true`（即来自接诊流程，而不是残留状态）；
+ * 2. 若 payload 携带 `idPi / patientId`，必须与当前上下文的 `idPi` 完全一致。
+ *
+ * 返回 null 表示通过；返回字符串表示拒绝原因（用于 toast 提示）。
+ */
+function ensureReceptionContext(
+  current: AppPatient | null,
+  payload: StartConsultationPayload | SessionAssistPayload | null | undefined
+): string | null {
+  if (!current || !current.idPi || !current._receptionEnsured) {
+    return '请先接诊患者';
+  }
+
+  if (payload) {
+    const incomingId = (payload.idPi || payload.patientId || '').toString().trim();
+    if (incomingId && incomingId !== String(current.idPi).trim()) {
+      return '当前已接诊其他患者，请先结束当前就诊';
+    }
+  }
+
+  return null;
+}
+
+/**
  * 事件监听管理 Composable
  *
  * @param options - 配置参数
@@ -453,6 +485,8 @@ export function useEventListeners(options: EventListenersOptions) {
         naPi: data.naPi,
         sdSexText: data.sdSexText,
         ageText: data.ageText,
+        // 接诊入口标记：后续 startVoice / startConsultation / assist 仅在该标记存在时放行
+        _receptionEnsured: true,
       };
 
       // Switch to Reception Capsule View
@@ -504,6 +538,13 @@ export function useEventListeners(options: EventListenersOptions) {
         patientId: payload.idPi || payload.patientId,
       });
 
+      // 入口拦截：必须先走过接诊流程，且当前上下文与 payload 为同一患者
+      const guardError = ensureReceptionContext(currentPatient.value, payload);
+      if (guardError) {
+        showToast(guardError, 'error');
+        return;
+      }
+
       // Update/Merge Global Patient Context
       // This ensures we have the correct keys (naPi, sdSexText) for ConsultationPage
       currentPatient.value = {
@@ -548,6 +589,7 @@ export function useEventListeners(options: EventListenersOptions) {
 
         currentPatient.value = {
           ...(mergePatientContext(currentPatient.value, mergedPayload) || {}),
+          _receptionEnsured: true,
         };
 
         // 2. 切换 UI 为胶囊态
@@ -617,6 +659,12 @@ export function useEventListeners(options: EventListenersOptions) {
           action: payload.action,
         });
 
+        const guardError = ensureReceptionContext(currentPatient.value, payload);
+        if (guardError) {
+          showToast(guardError, 'error');
+          return;
+        }
+
         currentPatient.value = {
           ...(mergePatientContext(currentPatient.value, payload) || {}),
         };
@@ -638,10 +686,13 @@ export function useEventListeners(options: EventListenersOptions) {
     unlistenStopConsultation = await listen('stop-consultation', async () => {
       console.log('Received stop consultation request');
       resetVoiceSessionState();
+      // 清理患者上下文，保证"结束就诊后必须重新接诊"的机制生效：
+      // 如果不清，后续不带 payload 的 startVoice / startConsultation 会
+      // 被 mergePatientContext 用残留的 patient 填充，绕过几个入口的
+      // "请先接诊患者" guard。
+      currentPatient.value = null;
       // Force exit work mode regardless of current view
       if (isWorking.value) {
-        // Optional: clear patient data?
-        // currentPatient.value = null;
         await workMode.exitWork();
       }
     });
@@ -654,11 +705,15 @@ export function useEventListeners(options: EventListenersOptions) {
     unlistenStartVoiceConsultation = await listen<SessionAssistPayload | null>('start-voice-consultation', async (event) => {
       console.log('Received start voice consultation command');
       trackApiCall('his_start_voice', true);
-      currentPatient.value = mergePatientContext(currentPatient.value, event.payload);
-      if (!currentPatient.value) {
-        showToast('请先接诊患者', 'error');
+
+      const guardError = ensureReceptionContext(currentPatient.value, event.payload);
+      if (guardError) {
+        showToast(guardError, 'error');
         return;
       }
+
+      // 走到这里说明接诊上下文已存在且身份一致，payload 可能带额外字段需要合并
+      currentPatient.value = mergePatientContext(currentPatient.value, event.payload);
 
       if (isWorking.value && currentView.value === 'voice-interaction') {
         console.info('[EventListeners] Duplicate start voice request ignored while voice interaction is already active');

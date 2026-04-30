@@ -338,6 +338,21 @@ async function handleUserCollapse(): Promise<void> {
     minimizedSessions.record('symptom', currentPatient.value);
   } else if (currentView.value === 'voice-consultation' && currentPatient.value) {
     minimizedSessions.record('voice', currentPatient.value);
+  } else if (
+    currentView.value === 'voice-interaction' &&
+    currentPatient.value &&
+    currentPatient.value._receptionEnsured
+  ) {
+    // 语音采集页点击取消/收起：如果当前还有已接诊的患者上下文，
+    // 返回接诊胶囊态，而不是一路退出到小球，避免医生丢失当前患者上下文。
+    resetVoiceSessionState();
+    currentView.value = 'reception-capsule';
+    try {
+      await enterWorkMode(WINDOW_SIZES.RISK_CARD.width, WINDOW_SIZES.RISK_CARD.height);
+    } catch (e) {
+      console.warn('[App] Failed to switch back to reception capsule on voice cancel:', e);
+    }
+    return;
   }
   await handleCollapse();
 }
