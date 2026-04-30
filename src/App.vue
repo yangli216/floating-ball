@@ -689,7 +689,7 @@ const openInsideCloudHome = async () => {
 	              aria-label="恢复问诊界面"
 	              :title="hasResumableConsultation ? '恢复问诊界面' : '暂无未结束的问诊'"
 	            >
-                 <svgIcon file="/consultation.svg" :color="'#262626'" :hoverColor="'#2B7FE3'" :fontSize="'18px'"></svgIcon>
+                 <Icon icon="lucide:app-window" :size="18" class="ring-btn-icon" aria-hidden="true" />
             </button>
           </div>
           
@@ -1035,6 +1035,15 @@ const openInsideCloudHome = async () => {
   box-shadow:
     0 2px 8px rgba(43, 127, 227, 0.06),
     0 4px 16px rgba(43, 127, 227, 0.04);
+}
+
+/* 禁用状态下：让图标本身不响应 hover 颜色切换，避免“看上去还可点”的误导；
+   但仍保留按钮外圈的 cursor: not-allowed 作为禁用标识。 */
+.ring-btn.is-disabled .svg-icon,
+.ring-btn:disabled .svg-icon,
+.ring-btn.is-disabled .ring-btn-icon,
+.ring-btn:disabled .ring-btn-icon {
+  pointer-events: none;
 }
 
 .ring-icon { width: 16px; height: 16px; stroke-width: 1.8; }
