@@ -932,6 +932,21 @@ button.secondary:hover,
     transition-duration: 0.01ms !important;
     scroll-behavior: auto !important;
   }
+
+  /* 例外：加载/进度类反馈是功能性指示，不应被“减少动画”偷减。
+     Windows 默认关闭动画效果时 prefers-reduced-motion: reduce 会为 true，
+     会让语音处理中、LLM 分析中等进度提示变成静止画面，需要明确豁免。 */
+  .keep-motion,
+  .keep-motion *,
+  .keep-motion *::before,
+  .keep-motion *::after,
+  .processing-dots .dot,
+  .processing-bar-fill,
+  .processing-pulse::after,
+  .speaking::after {
+    animation-duration: revert !important;
+    animation-iteration-count: infinite !important;
+  }
 }
 
 /* ============================================
