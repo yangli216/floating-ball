@@ -573,25 +573,28 @@ async fn get_result(
             if let Some(obj) = response_body.as_object_mut() {
                 obj.insert("traceId".to_string(), serde_json::json!(trace_id));
             }
-            record_bridge_log(
-                &app_handle,
-                response_body["traceId"].as_str().unwrap_or_default(),
-                "consultation.result",
-                "GET",
-                "/api/consultation/result",
-                "success",
-                200,
-                started_at,
-                None,
-                Some(response_body.clone()),
-                None,
-                Some(res.consultation_id.clone()),
-                res.record
-                    .get("requestId")
-                    .and_then(|value| value.as_str())
-                    .map(str::to_string),
-                None,
-            );
+            let is_cancelled = res.status.as_deref() == Some("cancelled");
+            if !is_cancelled {
+                record_bridge_log(
+                    &app_handle,
+                    response_body["traceId"].as_str().unwrap_or_default(),
+                    "consultation.result",
+                    "GET",
+                    "/api/consultation/result",
+                    "success",
+                    200,
+                    started_at,
+                    None,
+                    Some(response_body.clone()),
+                    None,
+                    Some(res.consultation_id.clone()),
+                    res.record
+                        .get("requestId")
+                        .and_then(|value| value.as_str())
+                        .map(str::to_string),
+                    None,
+                );
+            }
             return HttpResponse::Ok().json(response_body);
         }
     }
@@ -618,30 +621,36 @@ async fn get_result(
     if let Some(res) = final_result {
         let mut val = serde_json::to_value(&res).unwrap();
         if let Some(obj) = val.as_object_mut() {
-            obj.insert("status".to_string(), serde_json::json!("success"));
+            if obj.get("status").is_none() {
+                obj.insert("status".to_string(), serde_json::json!("success"));
+            }
         }
         if let Some(obj) = val.as_object_mut() {
             obj.insert("traceId".to_string(), serde_json::json!(trace_id));
         }
-        record_bridge_log(
-            &app_handle,
-            val["traceId"].as_str().unwrap_or_default(),
-            "consultation.result",
-            "GET",
-            "/api/consultation/result",
-            "success",
-            200,
-            started_at,
-            None,
-            Some(val.clone()),
-            None,
-            Some(res.consultation_id.clone()),
-            res.record
-                .get("requestId")
-                .and_then(|value| value.as_str())
-                .map(str::to_string),
-            None,
-        );
+        
+        let is_cancelled = res.status.as_deref() == Some("cancelled");
+        if !is_cancelled {
+            record_bridge_log(
+                &app_handle,
+                val["traceId"].as_str().unwrap_or_default(),
+                "consultation.result",
+                "GET",
+                "/api/consultation/result",
+                "success",
+                200,
+                started_at,
+                None,
+                Some(val.clone()),
+                None,
+                Some(res.consultation_id.clone()),
+                res.record
+                    .get("requestId")
+                    .and_then(|value| value.as_str())
+                    .map(str::to_string),
+                None,
+            );
+        }
         HttpResponse::Ok().json(val)
     } else {
         let response_body = serde_json::json!({
