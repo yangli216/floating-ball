@@ -135,6 +135,16 @@
 
 ---
 
+### RETRO-013: 大型 Vue SFC 跨双侧"卡片级"组件抽取的会话内极限 [部分解决]
+
+- **现象**: 计划把 `VoiceConsultationNew.vue` 与 `ConsultationPage.vue` 的诊断/治疗推荐卡片收敛为共享子组件（语音作为标准 UX）；执行时发现 voice 端单张治疗 `<article>` 卡片就有 ~570 行模板，依赖 setup script 中 30+ 局部 handler/状态（`openExecDeptQuickSelector`、`activeReasonTooltipKey`、`isEditableFieldActive`、`isManualMatchOpen`、`getTreatmentSpec`、`isTreatmentEditorExpanded` 等），强行抽取需要把它们逐一作为 props/事件穿透或通过 provide/inject 暴露。
+- **根因**: 卡片不是"纯渲染组件"，而是一个集成多个子状态机（编辑字段聚焦、二级下拉、库存校验、反馈 popover、手动匹配、提示 tooltip）的复合体；这些状态对父级 setup script 重度耦合。一次性抽出会同时改动两个高风险文件 + 上千行模板，缺少回归保护时容易引入运行期错误。
+- **解决方案**: 把可独立、低耦合的部分先抽成共享 composable / 子组件并落 build：`useSecondarySelector`（药房/执行科室/部位/医保 二级下拉状态）、`useBodySiteOptions`（exam 部位选项落地）、`useTreatmentHydration`（药品详情轮询 + 库存校验，voice 已迁移）。卡片级组件抽取（`TreatmentRecommendationCard` / `DiagnosisRecommendationCard`）以及"症状侧采用 voice 卡片 UX + feedback popover"延后到独立专题轮，需先做：①先把 voice 卡片相关的 30+ 局部 handler 收敛到一个 composable（如 `useTreatmentRecommendationCardState`）；②再以该 composable 为接口抽出 `<article>` 模板。
+- **后续防护**: 跨双侧的"卡片级"组件抽取，在 SFC 单卡片超过 ~300 行模板或依赖 ≥10 个 setup 局部状态时，必须先做"setup 状态收敛"专题轮（拆 composable）再做"模板抽取"专题轮，不要把两者放在同一次提交里。新增 PR 若同时触及 `VoiceConsultationNew.vue` 模板与 `ConsultationPage.vue` 模板，且不带"setup 状态收敛"前置改动，应判为高风险，要求拆分。
+
+
+---
+
 ## 模板
 
 > 新增条目请复制以下模板：

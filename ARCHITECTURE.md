@@ -616,7 +616,6 @@ eventListeners.unregisterAllListeners();
 | `VoiceRecommendationFeedbackPopover.vue` | 语音结果页单条推荐反馈弹层：收集问题标签、反馈原因、是否已修正采用以及修正结果摘要 | [src/components/VoiceRecommendationFeedbackPopover.vue](src/components/VoiceRecommendationFeedbackPopover.vue) |
 | `VoiceRecordFeedbackPopover.vue` | 语音结果页病例字段反馈弹层：展示主诉 / 现病史 / 既往史的 AI 原文、当前内容与差异摘要，并提交字段级反馈 | [src/components/VoiceRecordFeedbackPopover.vue](src/components/VoiceRecordFeedbackPopover.vue) |
 | `VoiceSessionFeedbackBar.vue` | 语音结果页整页反馈浮层主体：在一键回写成功后弹出，收集 1-5 分评分、整体问题标签和点评 | [src/components/VoiceSessionFeedbackBar.vue](src/components/VoiceSessionFeedbackBar.vue) |
-| `VoiceConsultationResult.vue` | 语音结果编辑编排层：负责渲染 AI 生成病历、诊断/用药/检查/检验/处置列表与医生确认入口；结果记录状态、标准库匹配、事实复核、知识库搜索、安全复核员等逻辑必须通过 composable 注入，避免继续在页面内堆积业务流程 | [src/components/VoiceConsultationResult.vue](src/components/VoiceConsultationResult.vue) |
 | `VoiceResultHeader.vue` | 语音结果页患者信息与确认/放弃操作头部；只负责展示和发出 `confirm/cancel` 事件，不承接结果记录、复核或回写逻辑 | [src/components/VoiceResultHeader.vue](src/components/VoiceResultHeader.vue) |
 | `VoiceSafetyReviewPanel.vue` | 语音安全复核员提示面板（L2 柔性提醒）：展示异步 LLM 复核状态和非干扰提醒，支持展开详情、知晓和忽略；当父组件提供 `getActionLabel` 时额外显示"采纳建议"按钮（移除冲突药 / 补充化验），按钮触发 `apply` 事件；面板自身不感知 record，只负责 UI 与事件 | [src/components/VoiceSafetyReviewPanel.vue](src/components/VoiceSafetyReviewPanel.vue) |
 | `VoiceRigidBlockBanner.vue` | 语音刚性阻断条（L1 硬规则）：与 `VoiceSafetyReviewPanel` 并列展示，置于安全复核面板上方；仅渲染由 `useVoiceRigidBlock` 同步评估出的确定性告警，要求医生对每条 `block` 项二次确认；不调用 LLM、不发起网络请求 | [src/components/VoiceRigidBlockBanner.vue](src/components/VoiceRigidBlockBanner.vue) |
@@ -671,7 +670,6 @@ export type ViewType =
   | 'consultation'
   | 'risk-alert'
   | 'voice-interaction'
-  | 'voice-result'
   | 'reception-capsule'
   | 'analytics'
   | 'symptom-manage'
@@ -1013,13 +1011,11 @@ llm.ts (调用 LLM API，生成结构化病历)
     ↓
 JSON 解析验证 (useVoiceConsultation.ts)
     ↓
-更新 generatedRecord (App.vue)
+VoiceConsultationNew.vue (右栏诊断/治疗 + 一键回写)
     ↓
-VoiceConsultationResult.vue (编辑确认)
+buildRecordConfirmedPayload (src/utils/recordConfirmedPayload.ts)
     ↓
-voiceConsultation.handleResultConfirm()
-    ↓
-Tauri Command: complete_consultation
+Tauri Command: complete_consultation（resultType=record-confirmed）
     ↓
 HIS 系统 (通过 HTTP GET /api/consultation/result 获取)
 ```

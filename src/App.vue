@@ -14,8 +14,6 @@ import VoiceCapsule from "./components/VoiceCapsule.vue";
 import ReceptionCapsule from "./components/ReceptionCapsule.vue";
 import SymptomManagement from "./components/SymptomManagement.vue";
 import SvgIcon from "./components/svgIcon.vue";
-import VoiceConsultationResult from "./components/VoiceConsultationResult.vue";
-import type { GeneratedRecord } from "./types/voiceResult";
 import KnowledgeBasePanel from "./components/KnowledgeBasePanel.vue";
 import VoiceConsultationNew from "./components/VoiceConsultationNew.vue";
 import FeedbackSubmissionPanel from "./components/FeedbackSubmissionPanel.vue";
@@ -91,7 +89,6 @@ const riskPatientAge = ref(0);
 const riskItems = ref<RiskItem[]>([]);
 
 // 语音问诊状态
-const generatedRecord = ref<GeneratedRecord | null>(null);
 const voiceInteractionSessionKey = ref(0);
 const consultationAssistTrigger = ref<{ kind: ConsultationAssistAction; token: number } | null>(null);
 const patientDisplayName = computed(
@@ -302,7 +299,6 @@ const {
   hasCachedVoiceResult,
   handleVoiceStop,
   handleVoiceError,
-  handleResultConfirm: handleResultConfirmRaw,
   cancelVoiceResult: cancelVoiceResultRaw,
 } = voiceConsultation;
 
@@ -310,11 +306,7 @@ const {
 // 用于通过悬浮球按钮 / 双击小球恢复。跨自然日自动失效。
 const minimizedSessions = useMinimizedSessions();
 
-// 语音问诊结束（提交 / 取消）时一并清除最小化会话标记
-async function handleResultConfirm(record: GeneratedRecord): Promise<void> {
-  await handleResultConfirmRaw(record);
-  minimizedSessions.clear('voice');
-}
+// 语音问诊结束（取消）时一并清除最小化会话标记
 async function cancelVoiceResult(): Promise<void> {
   await cancelVoiceResultRaw();
   minimizedSessions.clear('voice');
@@ -719,13 +711,13 @@ const openInsideCloudHome = async () => {
       <div v-show="isWorking" class="assistant-layer" :style="containerStyle">
         <div 
           class="assistant-container" 
-          :class="{ 'no-toolbar': isForceUpdateRequired || currentView === 'risk-alert' || currentView === 'voice-interaction' || currentView === 'voice-result' || currentView === 'reception-capsule', 'is-content-hidden': !contentVisible }"
+          :class="{ 'no-toolbar': isForceUpdateRequired || currentView === 'risk-alert' || currentView === 'voice-interaction' || currentView === 'reception-capsule', 'is-content-hidden': !contentVisible }"
           :style="currentView === 'reception-capsule' ? { borderRadius: '16px', background: 'transparent', backdropFilter: 'none', WebkitBackdropFilter: 'none', border: 'none', boxShadow: 'none' } : { borderRadius: '20px' }"
         >
           <ForceUpdateGate v-if="isForceUpdateRequired" :state="forceUpdateState" />
           <template v-else>
-          <!-- 工具栏 (risk-alert, voice-interaction, voice-result, reception-capsule 视图不显示) -->
-          <div v-if="currentView !== 'risk-alert' && currentView !== 'voice-interaction' && currentView !== 'voice-result' && currentView !== 'reception-capsule'" class="assistant-toolbar" data-tauri-drag-region>
+          <!-- 工具栏 (risk-alert, voice-interaction, reception-capsule 视图不显示) -->
+          <div v-if="currentView !== 'risk-alert' && currentView !== 'voice-interaction' && currentView !== 'reception-capsule'" class="assistant-toolbar" data-tauri-drag-region>
             <div class="toolbar-left" data-tauri-drag-region>
 	              <button v-if="currentView === 'settings' || currentView === 'analytics' || currentView === 'symptom-manage' || currentView === 'his-log' || currentView === 'medical-cache' || currentView === 'knowledge-base'" class="icon-btn back-btn" @click="currentView === 'analytics' ? openChat() : handleUserCollapse()" title="返回">
 	                 <Icon icon="lucide:arrow-left" class="toolbar-icon" size="20" />
@@ -793,14 +785,6 @@ const openInsideCloudHome = async () => {
             @toggle-expand="handleRiskExpand"
           />
 
-          <!-- Voice Result View -->
-          <VoiceConsultationResult
-            v-if="currentView === 'voice-result'"
-            :initialRecord="generatedRecord"
-            :patientInfo="currentPatient"
-            @confirm="handleResultConfirm"
-            @cancel="cancelVoiceResult"
-          />
           <AnalyticsPanel
             v-if="currentView === 'analytics'"
             @close="openChat"

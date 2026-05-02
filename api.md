@@ -42,7 +42,7 @@
 
 1. HIS 选择患者后，调用 `POST /api/consultation/start`
 2. 调用成功后开始轮询 `GET /api/consultation/result`
-3. 收到 `draft` 或 `final-report` 后回填医生站草稿
+3. 收到 `draft` 或 `record-confirmed` 后回填医生站草稿
 
 适用场景：
 
@@ -122,7 +122,7 @@
 2. `MedHermes` 置顶并进入完整问诊主流程
 3. HIS 轮询 `GET /api/consultation/result`
 4. 医生在 `MedHermes` 中完成问诊或草稿回写
-5. HIS 收到 `draft` 或 `final-report` 后更新医生站
+5. HIS 收到 `draft` 或 `record-confirmed` 后更新医生站
 
 ### 5.2 灵活模式时序
 
@@ -462,9 +462,9 @@ http://127.0.0.1:8081/api/consultation/result
 }
 ```
 
-#### 成功响应: 最终报告
+#### 成功响应: 最终报告（已废弃）
 
-`final-report` 类型包含完整结构化数据。
+> **DEPRECATED**：`final-report` 为历史结构，前端不再产生此 `resultType`。新链路统一使用下文 `record-confirmed`（包含 `diagList`/`orderList` 中性 PHIS 字段）。HIS 侧若仍需兼容旧字段，可读取 `record-confirmed` 后自行映射。
 
 ```json
 {
@@ -511,7 +511,7 @@ http://127.0.0.1:8081/api/consultation/result
 
 #### 成功响应: 问诊一键确认回写（record-confirmed）
 
-`record-confirmed` 类型来自问诊最终确认提交（如语音问诊确认页或表单问诊的一键回写）。与 `reference-request` 不同，这是医生在结果页直接确认后一次性提交的完整数据，不走引用闭环，PHIS 可直接用于调入确认。
+`record-confirmed` 类型来自问诊最终确认提交。**症状问诊（`ConsultationPage` 完成问诊）和语音问诊（`VoiceConsultationNew` 提交病历）共用此契约**，由 `src/utils/recordConfirmedPayload.ts` 作为唯一构造点产出，字段结构、默认值、PHIS 中性化策略两边完全一致。与 `reference-request` 不同，这是医生在结果页直接确认后一次性提交的完整数据，不走引用闭环，PHIS 可直接用于调入确认。
 
 ```json
 {
@@ -772,7 +772,7 @@ HTTP 状态码：`404`
 | :--- | :--- |
 | `consultationId` | 当前患者标识，现阶段默认等于 `idPi / patientId` |
 | `timestamp` | 本条结果生成时间戳 |
-| `resultType` | 当前可能为 `draft` / `record-confirmed` / `reference-request` / `reference-feedback` / `final-report` |
+| `resultType` | 当前可能为 `draft` / `record-confirmed` / `reference-request` / `reference-feedback`（`final-report` 已废弃） |
 | `requestId` | 请求 ID，`draft` 类型格式为 `draft-record-{timestamp}`，引用闭环类型格式为 `ref-{action}-{timestamp}` |
 | `referenceType` | 当前引用对象类型，支持 `diagnosis` / `medication` / `examination` / `lab_test` / `procedure` / `batch`；一键回写场景下为 `batch`，此时 `referenceItems` 包含所有类型的项目，每项通过 `type` 字段区分 |
 | `action` | 兼容旧版联调字段，语义与 `referenceType` 相同，建议新接入只把它当兼容字段使用 |
@@ -1024,14 +1024,14 @@ HIS 侧至少要识别以下 5 类结果：
 | `resultType` | 含义 | HIS 建议动作 |
 | :--- | :--- | :--- |
 | `draft` | 病历草稿回写（仅主诉+现病史） | 回填主诉和现病史到医生站草稿 |
-| `final-report` | 完整问诊最终报告（含诊断、治疗方案） | 作为完整结构化结果回写 |
+| `final-report` | 【已废弃】完整问诊最终报告（含诊断、治疗方案） | 仅作历史兼容，新链路不产生此类型，统一使用 `record-confirmed` |
 | `record-confirmed` | 问诊一键确认回写（`orderList` 统一格式） | 直接用于 PHIS 调入确认弹窗，不走引用闭环 |
 | `reference-request` | `MedHermes` 请求 PHIS 保存引用 | 调用 PHIS 保存，并准备回执 |
 | `reference-feedback` | PHIS 回执后的最新状态 | 更新医生站状态，提示成功或失败 |
 
 补充说明：
 
-1. `draft` 与 `final-report` 都可能携带结构化诊断、用药、检查列表。
+1. `draft` 仅携带主诉 / 现病史等早期字段；`record-confirmed` 才携带完整的 `diagList` / `orderList`。`final-report` 仅作历史兼容保留，新代码不再产生。
 2. `record-confirmed` 来自问诊结果确认提交，其 `diagList` 和 `orderList` 已转换成 PHIS 可直接消费的结构。PHIS 收到后可直接按 `fgMain` 识别主诊断，再按 `sdSrv`、`idSrv`、`idDeptExec`、`doseOnce`、`idFreq`、`idUsge`、`jsonField`、`idPart` 等字段填充调入确认弹窗，无需二次补录。
 3. `reference-request` 和 `reference-feedback` 都可能附带同一份病历上下文，便于 HIS 在当前界面直接处理。
 4. 对引用闭环结果，HIS 应继续结合 `referenceType` 判断具体业务对象，不建议只看 `resultType`。
@@ -1117,7 +1117,7 @@ HIS 接入完成后，至少验证以下场景：
 
 1. `POST /start` 能唤起完整问诊
 2. `POST /assist` 能进入对应灵活模式阶段
-3. `/result` 能回收到当前患者的 `draft` 或 `final-report`
+3. `/result` 能回收到当前患者的 `draft` 或 `record-confirmed`
 4. 推荐诊断引用时能先收到 `reference-request`
 5. PHIS 调用 `/reference-feedback` 后，`/result` 能继续返回 `reference-feedback`
 6. 一键回写场景：PHIS 收到一条 `batch` 类型 `reference-request`，遍历 `referenceItems` 按 `type` 分类处理，回执后页面显示"一键回写完成"

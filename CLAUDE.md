@@ -50,7 +50,7 @@ The app operates in two primary modes managed in [App.vue](src/App.vue):
    - `settings`: Configuration panel ([SettingsPanel.vue](src/components/SettingsPanel.vue))
    - `consultation`: Form-based consultation ([ConsultationPage.vue](src/components/ConsultationPage.vue))
    - `voice-interaction`: Voice recording capsule ([VoiceCapsule.vue](src/components/VoiceCapsule.vue))
-   - `voice-result`: Voice consultation result editor ([VoiceConsultationResult.vue](src/components/VoiceConsultationResult.vue))
+   - `voice-consultation`: Voice consultation result editor ([VoiceConsultationNew.vue](src/components/VoiceConsultationNew.vue))
    - `reception-capsule`: Patient risk alert capsule ([ReceptionCapsule.vue](src/components/ReceptionCapsule.vue))
 
 **Window Sizing:** Each view has predefined dimensions (e.g., consultation: 1200x900, voice capsule: 360x80). The app uses morphing animations with `transform-origin` tracking to smoothly expand/collapse from ball position.
@@ -88,10 +88,10 @@ HIS System (HTTP) → Rust HTTP Server → Tauri Events → Vue Components
 3. **LLM Processing:** [App.vue:handleVoiceStop](src/App.vue:256-385)
    - Transcribed text → structured medical record via LLM (prompt in [App.vue:286-325](src/App.vue:286-325))
    - Generates: chief complaint, HPI, diagnoses, medications, examinations
-4. **Result Review:** [VoiceConsultationResult.vue](src/components/VoiceConsultationResult.vue)
+4. **Result Review:** [VoiceConsultationNew.vue](src/components/VoiceConsultationNew.vue)
    - User edits/confirms structured data
    - Local medical data matching (diagnoses, medicines, items)
-5. **Submission:** Calls `complete_consultation` command → saves to `AppState` → HIS can fetch via `/api/consultation/result`
+5. **Submission:** Calls `complete_consultation` command (resultType=`record-confirmed`, payload built via [src/utils/recordConfirmedPayload.ts](src/utils/recordConfirmedPayload.ts)) → saves to `AppState` → HIS can fetch via `/api/consultation/result`
 
 ### Medical Data Matching System
 

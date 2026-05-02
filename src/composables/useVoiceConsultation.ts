@@ -15,11 +15,9 @@ import type { Window as TauriWindow } from '@tauri-apps/api/window';
 import { invoke } from '@tauri-apps/api/core';
 import type { ViewType } from '../constants/windowSizes';
 import { trackClick, trackError, trackRecommendationAction } from '../services/operationTracker';
-import type { GeneratedRecord } from '../types/voiceResult';
 import type { AppPatient } from '../types/appState';
 import { useVoiceIntentRecognition, type VoiceIntentResult } from './useVoiceIntentRecognition';
 import {
-  appendPatientVisit,
   formatPatientMemoryForPrompt,
   getPatientMemory,
 } from '../services/patientMemoryStore';
@@ -477,46 +475,6 @@ export function useVoiceConsultation(options: VoiceConsultationOptions) {
   // ========== 结果处理 ==========
 
   /**
-   * 确认并提交病历结果
-   *
-   * @param record - 生成的病历记录
-   */
-  async function handleResultConfirm(record: GeneratedRecord): Promise<void> {
-    console.log('[VoiceConsultation] Confirmed record:', record);
-    trackClick('voice_result_confirm', withConsultationId());
-    trackRecommendationAction('record', 'voice-record', 'adopted');
-
-    try {
-      const requestId = `voice-record-${Date.now()}`;
-      await invoke('complete_consultation', {
-        result: {
-          consultationId: resolveVoiceConsultationId(currentPatient.value),
-          timestamp: Date.now(),
-          resultType: 'final-report',
-          requestId,
-          ...record,
-        },
-      });
-      try {
-        await appendPatientVisit({
-          patientId: resolveVoiceConsultationId(currentPatient.value),
-          record,
-          allergyHistoryText: (currentPatient.value as { allergyHistory?: string } | null)?.allergyHistory ?? null,
-        });
-      } catch (e) {
-        console.warn('[VoiceConsultation] appendPatientVisit failed:', e);
-      }
-      clearCache(resolveVoiceConsultationId(currentPatient.value));
-      showToast('病历已生成并回传系统', 'success');
-      await exitWork();
-    } catch (e: unknown) {
-      console.error('[VoiceConsultation] Failed to save result:', e);
-      trackError('voice_result_submit_failed', e, withConsultationId());
-      showToast('回传失败: ' + e, 'error');
-    }
-  }
-
-  /**
    * 取消病历结果
    */
   async function cancelVoiceResult(): Promise<void> {
@@ -539,7 +497,6 @@ export function useVoiceConsultation(options: VoiceConsultationOptions) {
     hasCachedVoiceResult: (patient?: AppPatient | null) => hasVoiceConsultationCache(patient ?? currentPatient.value),
     handleVoiceStop,
     handleVoiceError,
-    handleResultConfirm,
     cancelVoiceResult,
   };
 }

@@ -654,8 +654,34 @@
                               <span class="match-spec" v-if="rec.type === 'medicine'">{{ rec.matchedItem.spec }}</span>
                             </span>
                             <span v-else class="unmatched-icon" title="未匹配标准库">🔍</span>
+                            <RecAttributeChip
+                              v-if="treatmentGates.isPharmacyRequired(rec)"
+                              label="发药药房"
+                              :value-text="treatmentGates.getPharmacyDisplay(rec)"
+                              :options="getPharmacyChipOptions(rec)"
+                              :missing="!treatmentGates.hasRequiredPharmacy(rec)"
+                              :status="getMedicineHydrationStatus(rec)"
+                              empty-text="当前药品在可用药房无配置，请先手动匹配标准库"
+                              @select="onPharmacySelect(rec, $event)"
+                            />
+                            <RecAttributeChip
+                              v-if="treatmentGates.isExecDeptRequired(rec)"
+                              label="执行科室"
+                              :value-text="treatmentGates.getExecDeptDisplay(rec)"
+                              :options="getExecDeptChipOptions()"
+                              :missing="!treatmentGates.hasRequiredExecDept(rec)"
+                              @select="onExecDeptSelect(rec, $event)"
+                            />
                           </div>
                           <div class="rec-actions">
+                            <button
+                              class="manual-match-toggle-btn"
+                              type="button"
+                              :title="isManualMatchOpen(rec) ? '收起手动匹配' : (rec.matchedItem ? '重新匹配标准库项目' : '手动匹配标准库项目')"
+                              @click.stop="toggleManualMatch(rec, $event)"
+                            >
+                              {{ isManualMatchOpen(rec) ? '收起匹配' : (rec.matchedItem ? '重新匹配' : '手动匹配') }}
+                            </button>
                             <button
                               v-if="isPMPHAIConfigured()"
                               class="doc-icon-btn"
@@ -671,6 +697,14 @@
                             </button>
                           </div>
                         </div>
+                        <ManualMatchPicker
+                          v-if="isManualMatchOpen(rec)"
+                          :title="`从标准库选择${getTreatmentTagLabel(rec.type)}`"
+                          :keyword="getManualMatchKeyword(rec)"
+                          :candidates="getManualMatchPickerCandidates(rec)"
+                          @update:keyword="setManualMatchKeyword(rec, $event)"
+                          @select="applyManualMatchSelection(rec, $event)"
+                        />
                         <div
                           v-if="getTreatmentReferenceStatus(rec)"
                           class="diag-rationale"
@@ -692,6 +726,12 @@
                           ></textarea>
                         </div>
                         <div v-if="rec.usage" class="rec-usage">建议：{{ rec.usage }}</div>
+                        <TreatmentItemEditor
+                          v-if="rec.selected"
+                          :rec="rec"
+                          :frequency-options="hisFrequencyOptions"
+                          :route-options="hisRouteOptions"
+                        />
                       </div>
                     </div>
                   </div>
@@ -980,6 +1020,9 @@ import { PROMPTS, DynamicSymptomTemplatePrompt } from '../prompts';
 import Icon from './Icon.vue';
 import FactCheckNotification from './FactCheckNotification.vue';
 import FactCheckHighlight from './FactCheckHighlight.vue';
+import TreatmentItemEditor from './TreatmentItemEditor.vue';
+import ManualMatchPicker, { type ManualMatchCandidate } from './ManualMatchPicker.vue';
+import RecAttributeChip, { type AttrOption } from './RecAttributeChip.vue';
 import FactCheckWidget from './FactCheckWidget.vue';
 import KnowledgePanel from './KnowledgePanel.vue';
 import PatientHeader from './PatientHeader.vue';
@@ -1022,6 +1065,18 @@ const emit = defineEmits(['close', 'consume-auto-trigger']);
 
 // --- Interfaces & State Definitions ---
 import type { Diagnosis, Patient, TreatmentRecommendation, FinalRecord } from '../types/consultation';
+import {
+  buildDiagList as buildSharedDiagList,
+  buildOrderListItem as buildSharedOrderListItem,
+  buildRecordConfirmedPayload,
+  getMatchedItemRaw,
+  readFirstString,
+  type OrderItemResolvers,
+} from '../utils/recordConfirmedPayload';
+import { useMedicalDictionaries } from '../composables/useMedicalDictionaries';
+import { useTreatmentNormalization } from '../composables/useTreatmentNormalization';
+import { useTreatmentGates } from '../composables/useTreatmentGates';
+import { useTreatmentHydration } from '../composables/useTreatmentHydration';
 type AssistAction = ConsultationAssistAction;
 type ReferenceAction = 'diagnosis' | 'medication' | 'examination' | 'lab_test' | 'procedure' | 'batch';
 type ReferenceLifecycleStatus = 'pending' | 'success' | 'failed';
@@ -1220,6 +1275,10 @@ const treatmentLoading = ref(false);
 const treatmentError = ref<string | null>(null);
 const treatmentRecommendations = ref<TreatmentRecommendation[]>([]);
 
+// 手动匹配候选弹窗状态（药品/检查/检验/处置 共用）
+const activeManualMatchKey = ref<string | null>(null);
+const manualMatchKeywords = ref<Record<string, string>>({});
+
 // 检查推荐（影像/器械）
 const examRecommendations = ref<TreatmentRecommendation[]>([]);
 const examLoading = ref(false);
@@ -1234,6 +1293,36 @@ const labTestError = ref<string | null>(null);
 const procedureRecommendations = ref<TreatmentRecommendation[]>([]);
 const procedureLoading = ref(false);
 const procedureError = ref<string | null>(null);
+
+// HIS 字典 + 治疗项归一化（与语音问诊共用同一份基础设施）
+// 症状侧现已接入“发药药房 / 执行科室”门禁：未设置不允许勾选，不允许参与回写。
+const {
+  frequencyOptions: hisFrequencyOptions,
+  routeOptions: hisRouteOptions,
+  pharmacyOptions: hisPharmacyOptions,
+  execDeptOptions: hisExecDeptOptions,
+  loadAllDictionaries: loadAllHisDictionaries,
+} = useMedicalDictionaries();
+const treatmentGates = useTreatmentGates({
+  pharmacyOptions: hisPharmacyOptions,
+  execDeptOptions: hisExecDeptOptions,
+});
+const treatmentNormalization = useTreatmentNormalization({
+  frequencyOptions: hisFrequencyOptions,
+  routeOptions: hisRouteOptions,
+  ensurePharmacy: treatmentGates.ensurePharmacy,
+  isExecDeptSatisfied: treatmentGates.isExecDeptSatisfied,
+});
+const treatmentHydration = useTreatmentHydration({
+  pharmacyOptions: hisPharmacyOptions,
+  getCandidatePharmaciesForMedicine: treatmentGates.pharmacyCandidatesFor,
+  findFrequencyOptionByValue: treatmentNormalization.findFrequencyOptionByValue,
+  findRouteOptionByValue: treatmentNormalization.findRouteOptionByValue,
+  notify: (message, level) => showToast(message, level || 'info'),
+});
+function normalizeTreatmentRecommendation(rec: Partial<TreatmentRecommendation>): TreatmentRecommendation {
+  return treatmentNormalization.normalize(rec);
+}
 
 const finalRecord = ref<FinalRecord | null>(null);
 const hasRecordDraft = computed(
@@ -2481,18 +2570,57 @@ watch(() => props.initialPatientData, (newData) => {
   }
 }, { immediate: true });
 
+const symptomOrderResolvers: OrderItemResolvers = {
+  getServiceCode: (rec) => (rec.matchedItem?.sdSrv || readFirstString(getMatchedItemRaw(rec), ['sdSrv']) || '').trim(),
+  getServiceId: (rec) => (rec.matchedItem?.idSrv || readFirstString(getMatchedItemRaw(rec), ['idSrv', 'idCli', 'idMedPro', 'idMed', 'id']) || rec.matchedItem?.id || '').trim(),
+  getServiceName: (rec) => (rec.matchedItem?.naSrv || readFirstString(getMatchedItemRaw(rec), ['naSrv', 'naCli', 'naMedPro', 'naMed']) || rec.matchedItem?.name || rec.name || '').trim(),
+  getExecDeptId: (rec) => (rec.matchedItem?.idDeptExec || readFirstString(getMatchedItemRaw(rec), ['idDeptExec', 'idDept']) || '').trim(),
+  getPartId: (rec) => (rec.matchedItem?.idPart || readFirstString(getMatchedItemRaw(rec), ['idPart']) || '').trim(),
+  getJsonField: (rec) => (rec.matchedItem?.jsonField || readFirstString(getMatchedItemRaw(rec), ['jsonField']) || '').trim(),
+};
+
 const submitToHIS = async () => {
   if (!finalRecord.value) return;
 
-  const requestId = `final-report-${Date.now()}`;
-  const result = buildCurrentMedicalPayload(
-    { resultType: 'final-report', requestId },
-  );
+  const requestId = `record-confirmed-${Date.now()}`;
+  const consultationId = resolveConsultationId();
+  const selectedTreatments: TreatmentRecommendation[] = [
+    ...treatmentRecommendations.value,
+    ...examRecommendations.value,
+    ...labTestRecommendations.value,
+    ...procedureRecommendations.value,
+  ].filter((item) => item.selected);
+
+  const diagList = buildSharedDiagList({
+    selectedDiagnoses: selectedDiagnosis.value ? [selectedDiagnosis.value] : [],
+    primaryDiagnosis: selectedDiagnosis.value,
+    patientTetId: (patientInfo.value as unknown as { idTet?: string }).idTet || '',
+  });
+  const orderList = selectedTreatments.map((item) => buildSharedOrderListItem(item, symptomOrderResolvers));
+  const groupNames = (type: TreatmentRecommendation['type']) =>
+    selectedTreatments.filter((item) => item.type === type).map((item) => item.name);
+  const treatmentPlan = [
+    groupNames('medicine').length ? `用药：${groupNames('medicine').join('；')}` : '',
+    groupNames('exam').length ? `检查：${groupNames('exam').join('；')}` : '',
+    groupNames('lab_test').length ? `检验：${groupNames('lab_test').join('；')}` : '',
+    groupNames('procedure').length ? `处置：${groupNames('procedure').join('；')}` : '',
+  ].filter(Boolean).join('。');
+
+  const result = buildRecordConfirmedPayload({
+    consultationId,
+    requestId,
+    chiefComplaint: generatedRecord.value.chiefComplaint,
+    historyOfPresentIllness: generatedRecord.value.historyOfPresentIllness,
+    pastMedicalHistory: resolvePastMedicalHistory(),
+    diagList,
+    orderList,
+    treatmentPlan,
+  });
 
   try {
     await invoke('complete_consultation', { result });
     submitSmartFinalUserLog();
-    trackFormSubmit('submit_to_his', { patientId: result.consultationId });
+    trackFormSubmit('submit_to_his', { patientId: consultationId });
     showToast("问诊完成，数据已发送回HIS系统。", "success");
     handleEndSession();
   } catch (e) {
@@ -2569,6 +2697,12 @@ onMounted(() => {
   // Initialize General Condition data
   initFormData(generalConditionConfig);
   prefillGeneratedRecordFromPatient(false);
+
+  // 预热 HIS 频次/用法/药房/执行科室字典，让后续 normalizeTreatmentRecommendation
+  // 能命中 dftFreq/dftUsage 等默认值。失败时静默降级，仍可走基于关键字的推断。
+  void loadAllHisDictionaries().catch((error) => {
+    console.warn('[ConsultationPage] Failed to preload HIS dictionaries:', error);
+  });
 
   void listen<ReferenceFeedbackPayload>('consultation-reference-feedback', (event) => {
     const payload = event.payload;
@@ -3618,11 +3752,11 @@ const fetchTreatmentRecommendation = async () => {
 
     const processedRecs: TreatmentRecommendation[] = rawRecommendations
       .filter(rec => !rec.type || rec.type === 'medicine')
-      .map(rec => ({
+      .map(rec => normalizeTreatmentRecommendation({
         ...rec,
         type: 'medicine' as const,
         matchedItem: medicalDataService.matchMedicine(rec.name, Array.isArray(rec.aliases) ? rec.aliases : undefined),
-        selected: false
+        selected: false,
       }));
 
     treatmentRecommendations.value = processedRecs;
@@ -3687,11 +3821,11 @@ const fetchExamRecommendation = async () => {
 
     const processedRecs: TreatmentRecommendation[] = rawRecommendations
       .filter(rec => !rec.type || rec.type === 'exam')
-      .map(rec => ({
+      .map(rec => normalizeTreatmentRecommendation({
         ...rec,
         type: 'exam' as const,
         matchedItem: medicalDataService.matchExamItem(rec.name, Array.isArray(rec.aliases) ? rec.aliases : undefined),
-        selected: false
+        selected: false,
       }));
 
     examRecommendations.value = processedRecs;
@@ -3745,11 +3879,11 @@ const fetchLabTestRecommendation = async () => {
 
     const processedRecs: TreatmentRecommendation[] = rawRecommendations
       .filter(rec => !rec.type || rec.type === 'lab_test')
-      .map(rec => ({
+      .map(rec => normalizeTreatmentRecommendation({
         ...rec,
         type: 'lab_test' as const,
         matchedItem: medicalDataService.matchLabTestItem(rec.name, Array.isArray(rec.aliases) ? rec.aliases : undefined),
-        selected: false
+        selected: false,
       }));
 
     labTestRecommendations.value = processedRecs;
@@ -3806,11 +3940,11 @@ const fetchProcedureRecommendation = async () => {
 
     const processedRecs: TreatmentRecommendation[] = rawRecommendations
       .filter(rec => !rec.type || rec.type === 'procedure')
-      .map(rec => ({
+      .map(rec => normalizeTreatmentRecommendation({
         ...rec,
         type: 'procedure' as const,
         matchedItem: medicalDataService.matchProcedureItem(rec.name, Array.isArray(rec.aliases) ? rec.aliases : undefined),
-        selected: false
+        selected: false,
       }));
 
     procedureRecommendations.value = processedRecs;
@@ -3847,16 +3981,190 @@ const fetchAllRecommendations = async () => {
   submitSmartGeneratedUserLog();
 };
 
-const toggleTreatmentSelection = (item: TreatmentRecommendation) => {
-  if (item) {
-    item.selected = !item.selected;
-    trackClick('treatment_toggle', {
-      treatmentName: item.name,
-      type: item.type,
-      selected: item.selected,
-    });
+const toggleTreatmentSelection = async (item: TreatmentRecommendation) => {
+  if (!item) return;
+
+  const nextSelected = !item.selected;
+  if (nextSelected) {
+    if (!treatmentGates.hasRequiredPharmacy(item)) {
+      showToast('请先选择发药药房后再勾选该药品', 'info');
+      return;
+    }
+    if (!treatmentGates.hasRequiredExecDept(item)) {
+      showToast('请先设置执行科室后再勾选该项目', 'info');
+      return;
+    }
+    // 药品：先在候选药房中轮询拉取详情；任一药房返回有效详情即应用并通过
+    if (item.type === 'medicine' && !(await treatmentHydration.ensureMedicineSelectable(item, true))) {
+      return;
+    }
+    // 药品：库存校验失败则保留 warning 并阻止勾选
+    if (item.type === 'medicine' && !(await treatmentHydration.checkMedicineInventoryEnough(item, true))) {
+      return;
+    }
+  } else {
+    treatmentHydration.clearMedicineInventoryWarning(item);
   }
+
+  item.selected = nextSelected;
+
+  // 勾选后按 HIS 默认值重新归一化（用法/频次/总量等可能因详情拉取而更新）
+  if (item.selected && item.type === 'medicine') {
+    Object.assign(item, normalizeTreatmentRecommendation(item));
+  }
+
+  trackClick('treatment_toggle', {
+    treatmentName: item.name,
+    type: item.type,
+    selected: item.selected,
+  });
 };
+
+// === 发药药房 / 执行科室 chip 选择器 ===
+function getPharmacyChipOptions(rec: TreatmentRecommendation): AttrOption[] {
+  return treatmentGates.pharmacyCandidatesFor(rec).map((pharmacy) => ({
+    key: (pharmacy.idSto || '').trim(),
+    text: pharmacy.name || pharmacy.idSto || '',
+    meta: pharmacy.idSto || '',
+  }));
+}
+
+function getExecDeptChipOptions(): AttrOption[] {
+  return treatmentGates.execDeptCandidates.value.map((option) => ({
+    key: option.key,
+    text: option.text,
+    meta: option.key !== option.text ? option.key : '',
+  }));
+}
+
+function onPharmacySelect(rec: TreatmentRecommendation, option: AttrOption): void {
+  if ((rec.pharmacy || '').trim() === option.text) return;
+  rec.pharmacy = option.text;
+  // 切换药房后既有的库存告警与详情缓存已失效；强制下次 toggle 时重新轮询。
+  treatmentHydration.clearMedicineInventoryWarning(rec);
+  const raw = getMatchedItemRaw(rec);
+  if (raw && (raw as Record<string, unknown>).__medicineDetailLoaded === true) {
+    rec.matchedItem = {
+      ...(rec.matchedItem as any),
+      raw: { ...raw, __medicineDetailLoaded: false },
+    };
+  }
+  // 已勾选药品改了药房，需要先取消勾选避免 stale 状态
+  if (rec.selected) rec.selected = false;
+  showToast(`${rec.name} 发药药房已设置为 ${option.text}`, 'success');
+}
+
+function onExecDeptSelect(rec: TreatmentRecommendation, option: AttrOption): void {
+  rec.execDept = option.key;
+  showToast(`${rec.name} 执行科室已设置为 ${option.text}`, 'success');
+}
+
+// 药品 hydration / 库存状态：在 chip 上展示"检测中"或"库存不足"标签（持久化，便于医生定位）
+function getMedicineHydrationStatus(rec: TreatmentRecommendation): { kind: 'checking' | 'warning'; message?: string } | null {
+  if (rec.type !== 'medicine') return null;
+  if (treatmentHydration.isMedicineInventoryChecking(rec)) {
+    return { kind: 'checking', message: '正在校验药品详情与库存…' };
+  }
+  const warning = treatmentHydration.getMedicineInventoryWarning(rec);
+  if (warning) return { kind: 'warning', message: warning };
+  return null;
+}
+
+// === 手动匹配（标准库候选）===
+function getManualMatchKey(rec: TreatmentRecommendation): string {
+  return `manual-match:${rec.type}:${rec.name}`;
+}
+
+function getManualMatchKeyword(rec: TreatmentRecommendation): string {
+  const cached = manualMatchKeywords.value[getManualMatchKey(rec)];
+  return typeof cached === 'string' ? cached : rec.name;
+}
+
+function setManualMatchKeyword(rec: TreatmentRecommendation, value: string): void {
+  manualMatchKeywords.value = {
+    ...manualMatchKeywords.value,
+    [getManualMatchKey(rec)]: value,
+  };
+}
+
+function isManualMatchOpen(rec: TreatmentRecommendation): boolean {
+  return activeManualMatchKey.value === getManualMatchKey(rec);
+}
+
+function toggleManualMatch(rec: TreatmentRecommendation, event?: Event): void {
+  event?.stopPropagation();
+  const key = getManualMatchKey(rec);
+  const isOpening = activeManualMatchKey.value !== key;
+  activeManualMatchKey.value = isOpening ? key : null;
+  if (isOpening) {
+    setManualMatchKeyword(rec, getManualMatchKeyword(rec) || rec.name);
+  }
+}
+
+function getManualMatchPickerCandidates(rec: TreatmentRecommendation): ManualMatchCandidate[] {
+  const query = getManualMatchKeyword(rec).trim();
+  if (!query) {
+    return [];
+  }
+
+  let raw: Array<{ id: string; name: string; spec?: string; code?: string }> = [];
+  switch (rec.type) {
+    case 'medicine':
+      raw = medicalDataService.searchMedicines(query, undefined, 8);
+      break;
+    case 'exam':
+      raw = medicalDataService.searchExamItems(query, undefined, 8);
+      break;
+    case 'lab_test':
+      raw = medicalDataService.searchLabTestItems(query, undefined, 8);
+      break;
+    case 'procedure':
+      raw = medicalDataService.searchProcedureItems(query, undefined, 8);
+      break;
+    default:
+      raw = [];
+  }
+
+  return raw.map((item) => ({
+    id: item.id,
+    name: item.name,
+    meta: item.spec || item.code || '',
+  }));
+}
+
+function applyManualMatchSelection(rec: TreatmentRecommendation, candidate: ManualMatchCandidate): void {
+  const query = getManualMatchKeyword(rec).trim();
+  let pickedRaw: any = null;
+  switch (rec.type) {
+    case 'medicine':
+      pickedRaw = medicalDataService.searchMedicines(query, undefined, 8).find((item) => item.id === candidate.id);
+      break;
+    case 'exam':
+      pickedRaw = medicalDataService.searchExamItems(query, undefined, 8).find((item) => item.id === candidate.id);
+      break;
+    case 'lab_test':
+      pickedRaw = medicalDataService.searchLabTestItems(query, undefined, 8).find((item) => item.id === candidate.id);
+      break;
+    case 'procedure':
+      pickedRaw = medicalDataService.searchProcedureItems(query, undefined, 8).find((item) => item.id === candidate.id);
+      break;
+  }
+
+  if (!pickedRaw) {
+    return;
+  }
+
+  rec.originalName = rec.originalName || rec.name;
+  rec.name = pickedRaw.name;
+  rec.matchedItem = pickedRaw;
+  if (rec.type === 'medicine' && pickedRaw.spec) {
+    rec.spec = pickedRaw.spec;
+  }
+  rec.manualMatched = true;
+  rec.matchStatus = 'manual';
+  activeManualMatchKey.value = null;
+  showToast(`${pickedRaw.name} 已完成标准库匹配`, 'success');
+}
 
 const ensureAssistRecordContext = (): boolean => {
   prefillGeneratedRecordFromPatient(true);
@@ -6311,6 +6619,25 @@ const copyToClipboard = () => {
 .doc-icon-btn:hover {
   background: rgba(43, 127, 227, 0.08);
   color: #2B7FE3;
+}
+
+.manual-match-toggle-btn {
+  display: inline-flex;
+  align-items: center;
+  height: 24px;
+  padding: 0 10px;
+  border: 1px solid #d1d5db;
+  border-radius: 12px;
+  background: #fff;
+  color: #2B7FE3;
+  font-size: 12px;
+  cursor: pointer;
+  transition: all var(--duration-normal) var(--ease-out);
+}
+
+.manual-match-toggle-btn:hover {
+  border-color: #2B7FE3;
+  background: rgba(43, 127, 227, 0.08);
 }
 
 .rec-ingredients {

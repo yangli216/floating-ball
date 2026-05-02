@@ -10,7 +10,7 @@ import PatientHeader from './PatientHeader.vue';
 import { chat, type ChatMessage } from '../services/llm';
 import { PROMPTS } from '../prompts';
 import { getHisAdapter } from '../services/his';
-import type { DictionaryEntry, InventoryCheckRequest, MedicalItemPartOption, MedicineDetail, PharmacyOption } from '../services/his';
+import type { PharmacyOption } from '../services/his';
 import { medicalDataService, type DiagnosisItem, type MedicalItem, type MedicineItem } from '../services/medicalData';
 import {
   clearVoiceConsultationCache,
@@ -45,27 +45,35 @@ import type { ConsultationUserLogSnapshot } from '../services/consultationUserLo
 import type { TreatmentRecommendation, Diagnosis } from '../types/consultation';
 import type { AppPatient } from '../types/appState';
 import type { VoiceIntentResult, MatchedTreatment, MatchedDiagnosis } from '../composables/useVoiceIntentRecognition';
+import {
+  buildDiagList as buildSharedDiagList,
+  buildOrderListItem as buildSharedOrderListItem,
+} from '../utils/recordConfirmedPayload';
+import {
+  normalizeUsageKeyword,
+  createUsageOption,
+  dedupeUsageOptions,
+  type UsageOption,
+} from '../utils/medicalDictionaryHelpers';
+import {
+  splitDosageAndUnit,
+  inferFrequencyFromText as inferFrequencyFromTextPure,
+  inferRouteFromText as inferRouteFromTextPure,
+} from '../utils/treatmentInference';
+import { useMedicalDictionaries } from '../composables/useMedicalDictionaries';
+import { useTreatmentNormalization } from '../composables/useTreatmentNormalization';
+import { useTreatmentGates } from '../composables/useTreatmentGates';
+import { useTreatmentHydration } from '../composables/useTreatmentHydration';
+import { useSecondarySelector, type SecondarySelectorField } from '../composables/useSecondarySelector';
+import { useBodySiteOptions } from '../composables/useBodySiteOptions';
+import MedicineUsageFieldSelector from './MedicineUsageFieldSelector.vue';
+import ManualMatchPicker, { type ManualMatchCandidate } from './ManualMatchPicker.vue';
 import type {
   VoiceRecordFieldFeedbackDraft,
   VoiceRecordFieldKey,
   VoiceRecommendationFeedbackDraft,
   VoiceSessionFeedbackDraft,
 } from '../types/voiceFeedback';
-
-interface UsageOption {
-  key: string;
-  text: string;
-  py: string;
-  wb: string;
-  mcode: string;
-  execCount?: number;
-  normalizedTokens: string[];
-}
-
-interface ExecDeptOption {
-  key: string;
-  text: string;
-}
 
 const props = defineProps<{
   initialPatientData?: AppPatient;
@@ -146,13 +154,7 @@ function getDefaultPharmacyOption(rec?: TreatmentRecommendation): PharmacyOption
 }
 
 function getMatchedMedicineStoreIds(rec: TreatmentRecommendation): string[] {
-  const matched = rec.matchedItem as MedicineItem | null | undefined;
-  if (!matched || !Array.isArray(matched.storeIds)) {
-    return [];
-  }
-  return matched.storeIds
-    .map((value) => (typeof value === 'string' ? value.trim() : ''))
-    .filter((value): value is string => Boolean(value));
+  return treatmentGates.getMatchedMedicineStoreIds(rec);
 }
 
 function ensureMedicineDefaultPharmacy(rec: TreatmentRecommendation): void {
@@ -173,46 +175,9 @@ function ensureMedicineDefaultPharmacy(rec: TreatmentRecommendation): void {
   }
 }
 
-function getMedicineInventoryKey(rec: TreatmentRecommendation): string {
-  return getTreatmentEditorKey(rec);
-}
-
-function getMedicineInventoryWarning(rec: TreatmentRecommendation): string {
-  return medicineInventoryWarnings.value[getMedicineInventoryKey(rec)] || '';
-}
-
-function clearMedicineInventoryWarning(rec: TreatmentRecommendation): void {
-  const key = getMedicineInventoryKey(rec);
-  if (!medicineInventoryWarnings.value[key]) {
-    return;
-  }
-
-  const nextWarnings = { ...medicineInventoryWarnings.value };
-  delete nextWarnings[key];
-  medicineInventoryWarnings.value = nextWarnings;
-}
-
-function setMedicineInventoryWarning(rec: TreatmentRecommendation, message: string): void {
-  medicineInventoryWarnings.value = {
-    ...medicineInventoryWarnings.value,
-    [getMedicineInventoryKey(rec)]: message,
-  };
-}
-
-function isMedicineInventoryChecking(rec: TreatmentRecommendation): boolean {
-  return medicineInventoryCheckingKeys.value.has(getMedicineInventoryKey(rec));
-}
-
-function setMedicineInventoryChecking(rec: TreatmentRecommendation, checking: boolean): void {
-  const key = getMedicineInventoryKey(rec);
-  const nextKeys = new Set(medicineInventoryCheckingKeys.value);
-  if (checking) {
-    nextKeys.add(key);
-  } else {
-    nextKeys.delete(key);
-  }
-  medicineInventoryCheckingKeys.value = nextKeys;
-}
+// 库存校验状态 / 药品详情 hydrate / 库存检查均迁移到共享 `useTreatmentHydration`，
+// 实例化在 `treatmentNormalization` 之后（依赖 pharmacyOptions / treatmentGates / 字典查找函数）。
+// 这里仅保留对外暴露的解构变量名（hydration.* -> 同名函数），call site 不变。
 
 const getPatientAnchorId = (): string => {
   const patient = props.initialPatientData;
@@ -359,16 +324,8 @@ const frequencySearchKeywords = ref<Record<string, string>>({});
 const routeSearchKeywords = ref<Record<string, string>>({});
 const activeManualMatchKey = ref<string | null>(null);
 const manualMatchKeywords = ref<Record<string, string>>({});
-const activeSecondarySelectorKey = ref<string | null>(null);
-const pharmacySearchKeywords = ref<Record<string, string>>({});
-const execDeptSearchKeywords = ref<Record<string, string>>({});
-const insuranceSearchKeywords = ref<Record<string, string>>({});
-const bodySiteSearchKeywords = ref<Record<string, string>>({});
 const activeFeedbackPopoverKey = ref<string | null>(null);
 const showSessionFeedbackDialog = ref(false);
-const medicineInventoryWarnings = ref<Record<string, string>>({});
-const medicineInventoryCheckingKeys = ref<Set<string>>(new Set());
-
 const {
   sessionDraft,
   recommendationSubmittingKey,
@@ -775,13 +732,9 @@ function replaceDiagnosisSelection(diags: Diagnosis[], primary?: Diagnosis | nul
 function resetTreatmentEditorState(): void {
   expandedTreatmentEditors.value = new Set();
   activeEditableFieldKey.value = null;
-  activeSecondarySelectorKey.value = null;
   frequencySearchKeywords.value = {};
   routeSearchKeywords.value = {};
-  pharmacySearchKeywords.value = {};
-  execDeptSearchKeywords.value = {};
-  insuranceSearchKeywords.value = {};
-  bodySiteSearchKeywords.value = {};
+  secondarySelector.resetAll();
 }
 
 function isTreatmentEditorExpanded(rec: TreatmentRecommendation): boolean {
@@ -890,546 +843,38 @@ function handleTotalQtyInput(rec: TreatmentRecommendation, event: Event): void {
   clearMedicineInventoryWarning(rec);
 }
 
-function splitDosageAndUnit(value?: string): { dosage: string; dosageUnit: string } {
-  const raw = (value || '').trim();
-  if (!raw) {
-    return { dosage: '', dosageUnit: '' };
-  }
-
-  const matchedUnit = ['mg', 'g', 'ml', 'ug', '片', '粒', '支', '袋'].find((unit) => raw.endsWith(unit));
-  if (!matchedUnit) {
-    return { dosage: raw, dosageUnit: '' };
-  }
-
-  return {
-    dosage: raw.slice(0, -matchedUnit.length).trim(),
-    dosageUnit: matchedUnit,
-  };
-}
-
-function formatMedicineSpec(spec?: string, unit?: string): string {
-  const normalizedSpec = (spec || '').trim();
-  const normalizedUnit = (unit || '').trim();
-
-  if (!normalizedSpec) {
-    return normalizedUnit;
-  }
-
-  if (!normalizedUnit) {
-    return normalizedSpec;
-  }
-
-  if (normalizedSpec.includes(normalizedUnit)) {
-    return normalizedSpec;
-  }
-
-  return `${normalizedSpec} ${normalizedUnit}`;
-}
-
-function parsePositiveNumber(value: unknown): number | null {
-  if (typeof value === 'number') {
-    return Number.isFinite(value) && value > 0 ? value : null;
-  }
-
-  if (typeof value === 'string') {
-    const parsed = Number(value.trim());
-    return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
-  }
-
-  return null;
-}
-
-/**
- * 从规格字符串中提取有效含量并归一化为 mg。
- * 示例: "0.25g" → 250, "10mg" → 10, "0.25" (默认 g) → 250
- */
-function extractStrengthMg(value: string | undefined | null, unitHint?: string): number | null {
-  if (!value) return null;
-  const text = value.trim();
-  if (!text) return null;
-
-  // 尝试匹配带单位的数值: "0.25g", "10mg", "500ug"
-  const withUnit = text.match(/^(\d+(?:\.\d+)?)\s*(g|mg|ug|μg|毫克|克|微克|ml|毫升)?$/i);
-  if (!withUnit) return null;
-
-  const num = parseFloat(withUnit[1]);
-  if (isNaN(num) || num <= 0) return null;
-
-  let unit = (withUnit[2] || unitHint || '').toLowerCase().trim();
-
-  // 如果没有明确单位，尝试从数值大小推断
-  if (!unit) {
-    if (num < 1) unit = 'g';       // 0.25 → 大概率是 g
-    else if (num <= 100) unit = 'mg'; // 10 → 大概率是 mg
-    else return null;               // 无法推断
-  }
-
-  switch (unit) {
-    case 'g':
-    case '克':
-      return num * 1000;
-    case 'mg':
-    case '毫克':
-      return num;
-    case 'ug':
-    case 'μg':
-    case '微克':
-      return num / 1000;
-    case 'ml':
-    case '毫升':
-      return null; // 液体单位不与固体互换
-    default:
-      return null;
+// 频次/用法字段已迁移到共用 MedicineUsageFieldSelector，
+// 父组件仍通过 activeEditableFieldKey 协调多字段互斥展开。
+function handleFrequencyOpenChange(rec: TreatmentRecommendation, open: boolean): void {
+  if (open) {
+    activateEditableField(rec, 'frequency');
+  } else if (isEditableFieldActive(rec, 'frequency')) {
+    activeEditableFieldKey.value = null;
   }
 }
 
-/**
- * 根据目标治疗剂量和每单位含量计算一次几个制剂单位。
- * @param targetDose  AI 目标剂量数值（如 "500"）
- * @param targetUnit  AI 剂量单位（如 "mg"）
- * @param unitDose    HIS 每制剂单位含量（如 "0.25"）
- * @param unitSpec    HIS 制剂规格（如 "0.25g"，用于推断单位）
- * @returns 制剂单位数（如 2），或 null 表示无法换算
- */
-function computeDoseCount(
-  targetDose: string | undefined,
-  targetUnit: string | undefined,
-  unitDose: string | undefined,
-  unitSpec: string | undefined,
-): number | null {
-  if (!targetDose) return null;
-
-  // 解析 AI 的目标剂量为 mg
-  const targetMg = extractStrengthMg(targetDose, targetUnit);
-  if (targetMg === null) return null;
-
-  // 解析 HIS 的每单位含量为 mg
-  // 优先用 dose 字段，其次从 spec 字段提取
-  let unitMg = extractStrengthMg(unitDose, unitSpec ? undefined : undefined);
-  if (unitMg === null && unitSpec) {
-    // 从规格字符串提取: "0.25g*24粒/盒" → "0.25g" → 250mg
-    const specMatch = unitSpec.match(/(\d+(?:\.\d+)?)\s*(g|mg|ug|μg)/i);
-    if (specMatch) {
-      unitMg = extractStrengthMg(specMatch[1], specMatch[2]);
-    }
+function handleRouteOpenChange(rec: TreatmentRecommendation, open: boolean): void {
+  if (open) {
+    activateEditableField(rec, 'route');
+  } else if (isEditableFieldActive(rec, 'route')) {
+    activeEditableFieldKey.value = null;
   }
-  if (unitMg === null || unitMg <= 0) return null;
-
-  const count = targetMg / unitMg;
-
-  // 安全护栏：结果必须在合理范围 [0.25, 20]
-  if (count < 0.25 || count > 20) return null;
-
-  // 结果必须是 0.25 的倍数（临床常见: 0.5, 1, 1.5, 2, 3 等）
-  const rounded = Math.round(count * 4) / 4;
-  if (Math.abs(rounded - count) > 0.05) return null;
-
-  return rounded;
 }
 
-/**
- * 格式化制剂单位数为字符串。
- * 1 → "1", 0.5 → "0.5", 2.0 → "2"
- */
-function formatDoseCount(count: number): string {
-  return count === Math.floor(count) ? String(count) : count.toFixed(2).replace(/0+$/, '');
-}
-
-function inferDosageFromText(text: string): { dosage: string; dosageUnit: string } {
-  const normalizedText = text.trim();
-  if (!normalizedText) {
-    return { dosage: '', dosageUnit: '' };
-  }
-
-  const matched = normalizedText.match(/(\d+(?:\.\d+)?)\s*(mg|g|ml|ug|片|粒|支|袋)/i);
-  if (!matched) {
-    return { dosage: '', dosageUnit: '' };
-  }
-
-  return {
-    dosage: matched[1]?.trim() || '',
-    dosageUnit: matched[2]?.trim() || '',
-  };
-}
-
-function inferTotalFromText(text: string): { totalQty: string; totalUnit: string } {
-  const normalizedText = text.trim();
-  if (!normalizedText) {
-    return { totalQty: '', totalUnit: '' };
-  }
-
-  const explicitMatch = normalizedText.match(/(?:总量|共|开(?:具|立)?|发药|给)\s*(\d+(?:\.\d+)?)\s*(盒|瓶|袋|支|片|粒|包|板|次)/i);
-  if (explicitMatch) {
-    return {
-      totalQty: explicitMatch[1]?.trim() || '',
-      totalUnit: explicitMatch[2]?.trim() || '',
-    };
-  }
-
-  const matches = Array.from(normalizedText.matchAll(/(\d+(?:\.\d+)?)\s*(盒|瓶|袋|支|片|粒|包|板|次)/gi));
-  if (matches.length > 1) {
-    const fallback = matches[matches.length - 1];
-    return {
-      totalQty: fallback?.[1]?.trim() || '',
-      totalUnit: fallback?.[2]?.trim() || '',
-    };
-  }
-
-  return { totalQty: '', totalUnit: '' };
-}
-
-function inferDaysFromText(text: string): string {
-  const normalizedText = text.trim();
-  if (!normalizedText) return '';
-
-  const matched = normalizedText.match(/(\d+(?:\s*[-~到至]\s*\d+)?)\s*天/i);
-  return matched?.[1]?.replace(/\s+/g, '') || '';
-}
-
+// 频次/给药途径推断需要使用 reactive 字典选项，封装为本地包装函数
 function inferFrequencyFromText(text: string): string {
-  const normalizedText = text.trim();
-  if (!normalizedText) return '';
-
-  const exactOption = frequencyOptions.value.find((option) => normalizedText.includes(option.text));
-  if (exactOption) return exactOption.text;
-
-  const matched = normalizedText.match(/(每日[^，,；;。\s]*次?|每天[^，,；;。\s]*次?|每周[^，,；;。\s]*次?|隔日一次|必要时|立即|间隔\d+小时[^，,；;。\s]*|qd|bid|tid|qid|qn|prn|q\d+h)/i);
-  return matched?.[0]?.trim() || '';
-}
-
-function inferExecCountFromFrequencyText(text: string): number | null {
-  const normalizedText = text.trim().toLowerCase();
-  if (!normalizedText) {
-    return null;
-  }
-
-  if (normalizedText === 'qd' || normalizedText.includes('每天一次') || normalizedText.includes('每日一次')) {
-    return 1;
-  }
-  if (normalizedText === 'bid' || normalizedText.includes('每天两次') || normalizedText.includes('每日两次')) {
-    return 2;
-  }
-  if (normalizedText === 'tid' || normalizedText.includes('每天三次') || normalizedText.includes('每日三次')) {
-    return 3;
-  }
-  if (normalizedText === 'qid' || normalizedText.includes('每天四次') || normalizedText.includes('每日四次')) {
-    return 4;
-  }
-  if (normalizedText.includes('隔日一次')) {
-    return 0.5;
-  }
-
-  const timesPerDayMatch = normalizedText.match(/每[日天]\D*(\d+(?:\.\d+)?)\D*次/);
-  if (timesPerDayMatch?.[1]) {
-    return parsePositiveNumber(timesPerDayMatch[1]);
-  }
-
-  const intervalMatch = normalizedText.match(/q(\d+(?:\.\d+)?)h/);
-  if (intervalMatch?.[1]) {
-    const hours = parsePositiveNumber(intervalMatch[1]);
-    if (hours) {
-      return 24 / hours;
-    }
-  }
-
-  return null;
-}
-
-function resolveDoseCountPerAdministration(dosage: string, dosageUnit: string, dose: string, doseUnitHint: string): number | null {
-  const dosageStrength = extractStrengthMg(dosage, dosageUnit);
-  const singleUnitStrength = extractStrengthMg(dose, doseUnitHint);
-  if (dosageStrength !== null && singleUnitStrength !== null && singleUnitStrength > 0) {
-    return dosageStrength / singleUnitStrength;
-  }
-
-  const dosageCount = parsePositiveNumber(dosage);
-  const doseCount = parsePositiveNumber(dose);
-  if (dosageCount !== null && doseCount !== null && doseCount > 0) {
-    return dosageCount / doseCount;
-  }
-
-  return null;
+  return inferFrequencyFromTextPure(text, frequencyOptions.value);
 }
 
 function inferRouteFromText(text: string): string {
-  const normalizedText = text.trim();
-  if (!normalizedText) return '';
-  return routeOptions.value.find((option) => normalizedText.includes(option.text))?.text || '';
+  return inferRouteFromTextPure(text, routeOptions.value);
 }
 
-function inferMedicineDefaults(rec: Partial<TreatmentRecommendation>): {
-  dosage: string;
-  dosageUnit: string;
-  frequency: string;
-  route: string;
-  totalQty: string;
-  totalUnit: string;
-  days: string;
-} {
-  const dosagePair = splitDosageAndUnit(rec.dosage);
-  const usageText = [rec.usage, rec.route].filter(Boolean).join('，');
-  const daysText = [rec.days, rec.usage, rec.route, rec.reason].filter(Boolean).join('，');
-  const inferredDosage = dosagePair.dosage || dosagePair.dosageUnit ? dosagePair : inferDosageFromText(usageText);
-  const inferredTotal = rec.totalQty || rec.totalUnit
-    ? { totalQty: rec.totalQty || '', totalUnit: rec.totalUnit || '' }
-    : inferTotalFromText(usageText);
-
-  return {
-    dosage: rec.dosage || inferredDosage.dosage,
-    dosageUnit: rec.dosageUnit || inferredDosage.dosageUnit,
-    frequency: rec.frequency || inferFrequencyFromText([rec.frequency, usageText].filter(Boolean).join(' ')),
-    route: rec.route || inferRouteFromText([rec.route, rec.usage].filter(Boolean).join(' ')),
-    totalQty: rec.totalQty || inferredTotal.totalQty,
-    totalUnit: rec.totalUnit || inferredTotal.totalUnit,
-    days: rec.days || inferDaysFromText(daysText),
-  };
-}
-
-function resolveMatchedMedicineDosageValue(
-  currentDosage: string,
-  fallbackDosage: string,
-  raw: Record<string, unknown> | undefined,
-): string {
-  const hisDoseOnce = readFirstString(raw, ['dftDoseOnce']);
-  return currentDosage || hisDoseOnce || fallbackDosage;
-}
-
-function resolveMatchedMedicineDosageUnit(
-  _currentDosageUnit: string,
-  _fallbackDosageUnit: string,
-  raw: Record<string, unknown> | undefined,
-): string {
-  return readFirstString(raw, ['unitDose', 'unitPre']) || '';
-}
-
-function resolveMatchedMedicineFrequency(rec: Partial<TreatmentRecommendation>, fallbackFrequency: string): { frequency: string; frequencyKey: string } {
-  const currentFrequencyValue = (rec.frequencyKey || rec.frequency || '').trim();
-  const currentMatchedOption = currentFrequencyValue ? findFrequencyOptionByValue(currentFrequencyValue) : undefined;
-  if (currentMatchedOption) {
-    return {
-      frequency: currentMatchedOption.text,
-      frequencyKey: currentMatchedOption.key,
-    };
-  }
-
-  const raw = rec.matchedItem?.raw && typeof rec.matchedItem.raw === 'object'
-    ? rec.matchedItem.raw as Record<string, unknown>
-    : undefined;
-  const hisDefault = readFirstString(raw, ['dftFreq']).trim();
-  if (hisDefault) {
-    const hisMatchedOption = findFrequencyOptionByValue(hisDefault);
-    if (hisMatchedOption) {
-      return {
-        frequency: hisMatchedOption.text,
-        frequencyKey: hisMatchedOption.key,
-      };
-    }
-
-    return {
-      frequency: hisDefault,
-      frequencyKey: '',
-    };
-  }
-
-  const fallbackMatchedOption = fallbackFrequency ? findFrequencyOptionByValue(fallbackFrequency) : undefined;
-  if (fallbackMatchedOption) {
-    return {
-      frequency: fallbackMatchedOption.text,
-      frequencyKey: fallbackMatchedOption.key,
-    };
-  }
-
-  return {
-    frequency: '',
-    frequencyKey: '',
-  };
-}
-
-function resolveMatchedMedicineRoute(rec: Partial<TreatmentRecommendation>, fallbackRoute: string): { route: string; routeKey: string } {
-  const currentRouteValue = (rec.routeKey || rec.route || '').trim();
-  const currentMatchedOption = currentRouteValue ? findRouteOptionByValue(currentRouteValue) : undefined;
-  if (currentMatchedOption) {
-    return {
-      route: currentMatchedOption.text,
-      routeKey: currentMatchedOption.key,
-    };
-  }
-
-  const raw = rec.matchedItem?.raw && typeof rec.matchedItem.raw === 'object'
-    ? rec.matchedItem.raw as Record<string, unknown>
-    : undefined;
-  const hisDefault = readFirstString(raw, ['dftUsage']).trim();
-  if (hisDefault) {
-    const hisMatchedOption = findRouteOptionByValue(hisDefault);
-    if (hisMatchedOption) {
-      return {
-        route: hisMatchedOption.text,
-        routeKey: hisMatchedOption.key,
-      };
-    }
-
-    return {
-      route: hisDefault,
-      routeKey: '',
-    };
-  }
-
-  const fallbackMatchedOption = fallbackRoute ? findRouteOptionByValue(fallbackRoute) : undefined;
-  if (fallbackMatchedOption) {
-    return {
-      route: fallbackMatchedOption.text,
-      routeKey: fallbackMatchedOption.key,
-    };
-  }
-
-  return {
-    route: '',
-    routeKey: '',
-  };
-}
-
-function getFrequencyExecCount(rec: Partial<TreatmentRecommendation>): number | null {
-  const frequencyValue = (rec.frequencyKey || rec.frequency || '').trim();
-  if (!frequencyValue) {
-    return null;
-  }
-
-  const matchedOption = frequencyOptions.value.find((option) => option.key === frequencyValue || option.text === frequencyValue);
-  return matchedOption?.execCount ?? inferExecCountFromFrequencyText(matchedOption?.text || frequencyValue);
-}
-
-function resolveMedicineAutoTotal(rec: Partial<TreatmentRecommendation>): { totalQty: string; totalUnit: string } {
-  if ((rec.type || 'medicine') !== 'medicine') {
-    return { totalQty: rec.totalQty || '', totalUnit: rec.totalUnit || '' };
-  }
-
-  const raw = rec.matchedItem?.raw && typeof rec.matchedItem.raw === 'object'
-    ? rec.matchedItem.raw as Record<string, unknown>
-    : undefined;
-  const totalUnit = (rec.totalUnit || readFirstString(raw, ['unitSale'])).trim();
-  const dosage = (rec.dosage || '').trim();
-  const dosageUnit = (rec.dosageUnit || '').trim();
-  const hisDose = readFirstString(raw, ['dose']);
-  const hisDoseUnit = readFirstString(raw, ['unitDose', 'unitPre']) || dosageUnit || readFirstString(raw, ['spec', 'specSale']);
-  const days = parsePositiveNumber(rec.days);
-  const unitSaleFactor = parsePositiveNumber(readFirstString(raw, ['unitSaleFactor']));
-  const execCount = getFrequencyExecCount(rec);
-
-  if (!totalUnit || !dosage || !hisDose || !days || !unitSaleFactor || !execCount) {
-    return { totalQty: rec.totalQty || '', totalUnit };
-  }
-
-  const doseCount = resolveDoseCountPerAdministration(dosage, dosageUnit, hisDose, hisDoseUnit);
-  if (doseCount === null || doseCount <= 0) {
-    return { totalQty: rec.totalQty || '', totalUnit };
-  }
-
-  const totalQty = Math.ceil((doseCount * execCount * days) / unitSaleFactor);
-  if (!Number.isFinite(totalQty) || totalQty <= 0) {
-    return { totalQty: rec.totalQty || '', totalUnit };
-  }
-
-  return {
-    totalQty: String(totalQty),
-    totalUnit,
-  };
-}
-
+// 治疗项归一化：薄包装委托给 useTreatmentNormalization composable，
+// composable 实例（treatmentNormalization）在 useMedicalDictionaries 之后初始化。
+// 函数声明会被 hoist，调用时机均晚于 composable 实例化，所以引用安全。
 function normalizeTreatmentRecommendation(rec: Partial<TreatmentRecommendation>): TreatmentRecommendation {
-  const matchedRaw = rec.matchedItem?.raw && typeof rec.matchedItem.raw === 'object'
-    ? rec.matchedItem.raw as Record<string, unknown>
-    : undefined;
-  const base: TreatmentRecommendation = {
-    type: rec.type || 'medicine',
-    name: rec.name || '',
-    originalName: rec.originalName || '',
-    reason: rec.reason || '',
-    spec: rec.spec || '',
-    targetDose: rec.targetDose || '',
-    targetDoseUnit: rec.targetDoseUnit || '',
-    usage: rec.usage || '',
-    matchedItem: rec.matchedItem,
-    suggestedMatchItem: rec.suggestedMatchItem,
-    matchStatus: rec.matchStatus || (rec.matchedItem ? 'exact' : 'unmatched'),
-    manualMatched: !!rec.manualMatched,
-    selected: !!rec.selected,
-    dosage: rec.dosage || '',
-    dosageUnit: rec.dosageUnit || '',
-    totalQty: rec.totalQty || (((rec.type || 'medicine') === 'exam' || (rec.type || 'medicine') === 'lab_test') ? '1' : ''),
-    totalUnit: rec.totalUnit || '',
-    totalManualEdited: !!rec.totalManualEdited,
-    frequency: rec.frequency || '',
-    frequencyKey: rec.frequencyKey || '',
-    route: rec.route || '',
-    routeKey: rec.routeKey || '',
-    days: rec.days || '',
-    pharmacy: rec.pharmacy || '',
-    remark: rec.remark || '',
-    regulatedDisease: rec.regulatedDisease || '',
-    bodySite: rec.bodySite || '',
-    bodySiteId: rec.bodySiteId || rec.matchedItem?.idPart || readFirstString(matchedRaw, ['idPart']),
-    bodySiteOptions: rec.bodySiteOptions || [],
-    execDept: rec.execDept || (rec.type && rec.type !== 'medicine'
-      ? (rec.matchedItem?.idDeptExec || readFirstString(matchedRaw, ['idDeptExec', 'idDept']))
-      : '') || '',
-    insuranceType: rec.insuranceType || '医保使用',
-  };
-
-  if (isExecDeptRequired(base) && !getExecDeptDisplay(base)) {
-    base.selected = false;
-  }
-
-  if (base.type !== 'medicine') {
-    return base;
-  }
-
-  const defaults = inferMedicineDefaults(base);
-  const hisRaw = getMatchedItemRaw(base);
-  const frequencySelection = base.matchedItem
-    ? resolveMatchedMedicineFrequency(base, defaults.frequency)
-    : {
-        frequency: base.frequency || defaults.frequency,
-        frequencyKey: base.frequencyKey || findFrequencyOptionByValue(base.frequency || defaults.frequency)?.key || '',
-      };
-  const routeSelection = base.matchedItem
-    ? resolveMatchedMedicineRoute(base, defaults.route)
-    : {
-        route: base.route || defaults.route,
-        routeKey: base.routeKey || findRouteOptionByValue(base.route || defaults.route)?.key || '',
-      };
-  const normalizedMedicine = {
-    ...base,
-    dosage: base.matchedItem
-      ? resolveMatchedMedicineDosageValue(base.dosage || '', defaults.dosage || '', hisRaw)
-      : (base.dosage || defaults.dosage),
-    dosageUnit: base.matchedItem
-      ? resolveMatchedMedicineDosageUnit(base.dosageUnit || '', defaults.dosageUnit || '', hisRaw)
-      : (base.dosageUnit || defaults.dosageUnit),
-    frequency: frequencySelection.frequency,
-    frequencyKey: frequencySelection.frequencyKey,
-    route: routeSelection.route,
-    routeKey: routeSelection.routeKey,
-    totalQty: base.totalQty || defaults.totalQty,
-    totalUnit: base.matchedItem
-      ? (readFirstString(hisRaw, ['unitSale']) || base.totalUnit || defaults.totalUnit)
-      : (base.totalUnit || defaults.totalUnit),
-    days: base.days || defaults.days,
-  };
-  const autoTotal = resolveMedicineAutoTotal(normalizedMedicine);
-  const preferManualTotal = !!rec.totalManualEdited;
-
-  const normalizedResult = {
-    ...normalizedMedicine,
-    totalQty: preferManualTotal
-      ? (normalizedMedicine.totalQty || autoTotal.totalQty)
-      : (autoTotal.totalQty || normalizedMedicine.totalQty),
-    totalUnit: preferManualTotal
-      ? (normalizedMedicine.totalUnit || autoTotal.totalUnit)
-      : (autoTotal.totalUnit || normalizedMedicine.totalUnit),
-  };
-
-  ensureMedicineDefaultPharmacy(normalizedResult);
-  return normalizedResult;
+  return treatmentNormalization.normalize(rec);
 }
 
 function initDiagnosesFromIntent(matched: MatchedDiagnosis[]): Diagnosis[] {
@@ -1532,9 +977,22 @@ function setManualMatchKeyword(rec: TreatmentRecommendation, value: string): voi
   };
 }
 
-function handleManualMatchInput(rec: TreatmentRecommendation, event: Event): void {
-  const target = event.target as HTMLInputElement | null;
-  setManualMatchKeyword(rec, target?.value || '');
+function getManualMatchPickerCandidates(rec: TreatmentRecommendation): ManualMatchCandidate[] {
+  return getManualMatchCandidates(rec).map((candidate) => ({
+    id: candidate.id,
+    name: candidate.name,
+    meta: isMedicineSearchCandidate(candidate)
+      ? candidate.spec || ''
+      : candidate.code || '',
+  }));
+}
+
+function handleManualMatchPickerSelect(rec: TreatmentRecommendation, candidate: ManualMatchCandidate): void {
+  const raw = getManualMatchCandidates(rec).find((item) => item.id === candidate.id);
+  if (!raw) {
+    return;
+  }
+  void applyManualMatch(rec, raw);
 }
 
 function requiresManualMatchBeforeSelect(rec: TreatmentRecommendation): boolean {
@@ -1615,395 +1073,33 @@ function buildMedicalItemMatchedItem(item: MedicalItem): TreatmentRecommendation
 }
 
 
-function applyMedicalItemPartOption(rec: TreatmentRecommendation, option: MedicalItemPartOption): void {
-  const partId = (option.partId || '').trim();
-  const name = (option.name || option.partAndWay || '').trim();
-  if (!partId && !name) {
-    return;
-  }
-
-  const mergedRaw = {
-    ...(getMatchedItemRaw(rec) || {}),
-    ...option.raw,
-    idPart: partId,
-    partAndWay: option.partAndWay || name,
-    sdPartAndWay: option.partAndWayCode || '',
-    __partOptionsLoaded: true,
-  };
-
-  rec.bodySiteId = partId;
-  rec.bodySite = name;
-  rec.matchedItem = {
-    ...(rec.matchedItem || {}),
-    idPart: partId,
-    raw: mergedRaw,
-  };
-}
-
-function applyMedicalItemPartOptions(rec: TreatmentRecommendation, options: MedicalItemPartOption[]): void {
-  if (rec.type !== 'exam') {
-    return;
-  }
-
-  rec.bodySiteOptions = options;
-  if (options.length === 0) {
-    return;
-  }
-
-  const currentPartId = (rec.bodySiteId || rec.matchedItem?.idPart || readFirstString(getMatchedItemRaw(rec), ['idPart'])).trim();
-  const matchedCurrent = currentPartId ? options.find((option) => option.partId === currentPartId) : undefined;
-  if (matchedCurrent) {
-    applyMedicalItemPartOption(rec, matchedCurrent);
-    return;
-  }
-
-  if (options.length === 1) {
-    applyMedicalItemPartOption(rec, options[0]);
-  }
-}
-
-interface MedicineDetailLookupResult {
-  detail: MedicineDetail;
-  pharmacy: PharmacyOption;
-}
-
-function getMedicineDetailId(rec: TreatmentRecommendation): string {
-  return (rec.matchedItem?.id || rec.matchedItem?.idSrv || readFirstString(getMatchedItemRaw(rec), ['idMedPro', 'idMed']) || '').trim();
-}
-
-function isValidMedicineProDetail(detail: MedicineDetail | null): detail is MedicineDetail {
-  if (!detail || !detail.active) {
-    return false;
-  }
-
-  return [
-    detail.productId,
-    detail.medicineId,
-    detail.productName,
-    detail.medicineName,
-    detail.specSale,
-    detail.unitSale,
-    detail.dose,
-    detail.defaultSingleDose,
-  ].some((value) => typeof value === 'string' && value.trim().length > 0);
-}
+// 部位选项落地：来自 HIS `fetchMedicalItemPartOptions(idCli)`，统一在 useBodySiteOptions 内处理。
+const { applyMedicalItemPartOption, applyMedicalItemPartOptions } = useBodySiteOptions();
 
 function getCandidatePharmaciesForMedicine(rec?: TreatmentRecommendation): PharmacyOption[] {
-  const seen = new Set<string>();
-  const allowedStoreIds = rec ? new Set(getMatchedMedicineStoreIds(rec)) : null;
-  const uniquePharmacies = pharmacyOptions.value.filter((pharmacy) => {
-    const idSto = (pharmacy.idSto || '').trim();
-    if (!idSto || seen.has(idSto)) {
-      return false;
-    }
-    seen.add(idSto);
-    return true;
-  });
-
-  if (!allowedStoreIds || allowedStoreIds.size === 0) {
-    return uniquePharmacies;
+  if (!rec) {
+    // 无 rec 时返回去重后的全部可用药房（与原逆辑一致）
+    const seen = new Set<string>();
+    return pharmacyOptions.value.filter((pharmacy) => {
+      const idSto = (pharmacy.idSto || '').trim();
+      if (!idSto || seen.has(idSto)) return false;
+      seen.add(idSto);
+      return true;
+    });
   }
-
-  const scopedPharmacies = uniquePharmacies.filter((pharmacy) => allowedStoreIds.has((pharmacy.idSto || '').trim()));
-  if (scopedPharmacies.length > 0) {
-    return scopedPharmacies;
-  }
-
-  console.warn('[VoiceConsultationNew] Matched medicine storeIds do not intersect current available pharmacies', {
-    name: rec?.name,
-    matchedStoreIds: Array.from(allowedStoreIds),
-    availableStoreIds: uniquePharmacies.map((pharmacy) => pharmacy.idSto).filter(Boolean),
-  });
-  return [];
-}
-
-function isMedicineDetailLoadedForSelectedPharmacy(rec: TreatmentRecommendation): boolean {
-  const raw = getMatchedItemRaw(rec);
-  if (raw?.__medicineDetailLoaded !== true) {
-    return false;
-  }
-
-  const pharmacyName = (rec.pharmacy || '').trim();
-  const detailStoreId = readFirstString(raw, ['idSto']);
-  if (!pharmacyName || !detailStoreId) {
-    return false;
-  }
-
-  return pharmacyOptions.value.some((option) => option.name === pharmacyName && option.idSto === detailStoreId);
-}
-
-async function fetchFirstValidMedicineDetail(rec: TreatmentRecommendation): Promise<MedicineDetailLookupResult | null> {
-  const his = getHisAdapter();
-  if (!his) {
-    console.warn('[VoiceConsultationNew] HisService not initialized, medicine detail unavailable', { name: rec.name });
-    return null;
-  }
-
-  const id = getMedicineDetailId(rec);
-  if (!id) {
-    return null;
-  }
-
-  const pharmacies = getCandidatePharmaciesForMedicine(rec);
-  if (pharmacies.length === 0) {
-    console.warn('[VoiceConsultationNew] No pharmacy idSto available for matched medicine, medicine detail unavailable', {
+  const scoped = treatmentGates.pharmacyCandidatesFor(rec);
+  if (scoped.length === 0 && getMatchedMedicineStoreIds(rec).length > 0) {
+    console.warn('[VoiceConsultationNew] Matched medicine storeIds do not intersect current available pharmacies', {
       name: rec.name,
       matchedStoreIds: getMatchedMedicineStoreIds(rec),
-    });
-    return null;
-  }
-
-  for (const pharmacy of pharmacies) {
-    const idSto = (pharmacy.idSto || '').trim();
-    const detail = await his.fetchMedicineProDetail(id, idSto);
-    if (isValidMedicineProDetail(detail)) {
-      return { detail, pharmacy };
-    }
-
-    console.info('[VoiceConsultationNew] Medicine detail not found in pharmacy, trying next pharmacy', {
-      name: rec.name,
-      id,
-      idSto,
-      pharmacyName: pharmacy.name,
+      availableStoreIds: pharmacyOptions.value.map((pharmacy) => pharmacy.idSto).filter(Boolean),
     });
   }
-
-  return null;
+  return scoped;
 }
 
-async function ensureMedicineSelectable(rec: TreatmentRecommendation, notify = false): Promise<boolean> {
-  if (rec.type !== 'medicine') {
-    return true;
-  }
-
-  if (isMedicineDetailLoadedForSelectedPharmacy(rec)) {
-    return true;
-  }
-
-  const hydrated = await hydrateMatchedMedicineDetail(rec);
-  if (!hydrated && notify) {
-    showToast?.(`${rec.name} 在当前可用发药药房中均不存在药品详情，不能选中`, 'warning');
-  }
-
-  return hydrated;
-}
-
-function buildMedicineInventoryCheckItem(rec: TreatmentRecommendation): InventoryCheckRequest | null {
-  const normalized = normalizeTreatmentRecommendation(rec);
-  const raw = getMatchedItemRaw(rec);
-  const storeId = getSelectedPharmacyOption(rec)?.idSto || readFirstString(raw, ['idSto']);
-  const productId = readFirstString(raw, ['idMedPro']) || rec.matchedItem?.id || rec.matchedItem?.idSrv || '';
-  const medicineName = readFirstString(raw, ['naMedPro', 'naMed']) || rec.matchedItem?.name || rec.name || '';
-  const quantity = parsePositiveNumber(normalized.totalQty);
-  const unitPrice = parsePositiveNumber(readFirstString(raw, ['priceSale'])) ?? 0;
-
-  if (!storeId || !productId || !medicineName || !quantity) {
-    return null;
-  }
-
-  return {
-    storeId,
-    productId,
-    medicineName,
-    quantity,
-    unitPrice,
-    businessType: 'outpatient',
-  };
-}
-
-async function checkMedicineInventoryEnough(rec: TreatmentRecommendation, notify = false): Promise<boolean> {
-  if (rec.type !== 'medicine') {
-    return true;
-  }
-
-  if (!(await ensureMedicineSelectable(rec, notify))) {
-    return false;
-  }
-
-  const his = getHisAdapter();
-  const checkItem = buildMedicineInventoryCheckItem(rec);
-  if (!his || !checkItem) {
-    return true;
-  }
-
-  setMedicineInventoryChecking(rec, true);
-  try {
-    const result = await his.checkMedicineInventoryEnough([checkItem]);
-    if (result.code === 200) {
-      clearMedicineInventoryWarning(rec);
-      return true;
-    }
-
-    const message = result.message || `${rec.name} 库存不足，请调整用药数量或药房`;
-    setMedicineInventoryWarning(rec, message);
-    if (notify) {
-      showToast?.(message, 'warning');
-    }
-    return false;
-  } catch (error) {
-    console.error('[VoiceConsultationNew] Failed to check medicine inventory', {
-      name: rec.name,
-      checkItem,
-      error,
-    });
-    if (notify) {
-      showToast?.('库存校验失败，请稍后重试或手动确认库存', 'warning');
-    }
-    return false;
-  } finally {
-    setMedicineInventoryChecking(rec, false);
-  }
-}
-
-async function hydrateMatchedMedicineDetail(rec: TreatmentRecommendation): Promise<boolean> {
-  if (rec.type !== 'medicine' || !rec.matchedItem) {
-    return false;
-  }
-
-  const id = getMedicineDetailId(rec);
-  if (!id) {
-    return false;
-  }
-
-  try {
-    const lookupResult = await fetchFirstValidMedicineDetail(rec);
-    if (!lookupResult) {
-      if (getCandidatePharmaciesForMedicine(rec).length > 0) {
-        rec.selected = false;
-      }
-      console.warn('[VoiceConsultationNew] Medicine detail unavailable in all pharmacies', {
-        id,
-        name: rec.name,
-        pharmacyCount: getCandidatePharmaciesForMedicine(rec).length,
-      });
-      return false;
-    }
-
-    const { detail, pharmacy } = lookupResult;
-    const idSto = (pharmacy.idSto || '').trim();
-
-    const mergedRaw = {
-      ...(getMatchedItemRaw(rec) || {}),
-      ...detail.raw,
-      idSto: detail.storeId || idSto,
-      __medicineDetailLoaded: true,
-    };
-
-    rec.matchedItem = {
-      ...rec.matchedItem,
-      name: detail.productName?.trim() || rec.matchedItem.name || rec.name,
-      fgSkintest: detail.needsSkinTest ? '1' : (rec.matchedItem.fgSkintest || '0'),
-      raw: mergedRaw,
-    };
-
-    // 剂量换算优先级：
-    // 1. AI targetDose + HIS dose → 自动换算（最可靠）
-    // 2. HIS defaultSingleDose → 直接使用（降级方案）
-    // 3. AI dosage → 保留原值（最低优先级）
-    const doseUnit = detail.doseUnit || '';
-    const computedCount = computeDoseCount(
-      rec.targetDose,
-      rec.targetDoseUnit,
-      detail.dose,
-      detail.spec || detail.specSale,
-    );
-
-    if (computedCount !== null) {
-      // 换算成功：一次 N 个制剂单位
-      rec.dosage = formatDoseCount(computedCount);
-      rec.dosageUnit = doseUnit || '片';
-      console.log('[VoiceConsultationNew] Dose computed from targetDose', {
-        name: rec.name,
-        targetDose: rec.targetDose,
-        targetDoseUnit: rec.targetDoseUnit,
-        hisDose: detail.dose,
-        hisSpec: detail.spec,
-        computedCount,
-      });
-    } else if (detail.defaultSingleDose) {
-      // 降级：使用 HIS 默认值
-      rec.dosage = rec.dosage || detail.defaultSingleDose;
-    }
-
-    if (doseUnit) {
-      rec.dosageUnit = doseUnit;
-    }
-
-    // HIS 默认频次：如果当前频次不能匹配业务字典，则用 HIS 默认值覆盖
-    if (detail.defaultFrequency) {
-      const hisFreqOption = findFrequencyOptionByValue(detail.defaultFrequency);
-      const currentFreqMatched = rec.frequencyKey ? findFrequencyOptionByValue(rec.frequencyKey) : findFrequencyOptionByValue(rec.frequency);
-      if (hisFreqOption && !currentFreqMatched) {
-        rec.frequency = hisFreqOption.text;
-        rec.frequencyKey = hisFreqOption.key;
-      } else if (!rec.frequency && hisFreqOption) {
-        rec.frequency = hisFreqOption.text;
-        rec.frequencyKey = hisFreqOption.key;
-      } else if (!currentFreqMatched) {
-        rec.frequency = detail.defaultFrequency;
-        rec.frequencyKey = hisFreqOption?.key || '';
-      }
-    } else if (rec.frequency && !findFrequencyOptionByValue(rec.frequencyKey || rec.frequency)) {
-      rec.frequency = '';
-      rec.frequencyKey = '';
-    }
-
-    // HIS 默认用法：如果当前用法不能匹配业务字典，则用 HIS 默认值覆盖
-    if (detail.defaultRoute) {
-      const hisRouteOption = findRouteOptionByValue(detail.defaultRoute);
-      const currentRouteMatched = rec.routeKey ? findRouteOptionByValue(rec.routeKey) : findRouteOptionByValue(rec.route);
-      if (hisRouteOption && !currentRouteMatched) {
-        rec.route = hisRouteOption.text;
-        rec.routeKey = hisRouteOption.key;
-      } else if (!rec.route && hisRouteOption) {
-        rec.route = hisRouteOption.text;
-        rec.routeKey = hisRouteOption.key;
-      } else if (!currentRouteMatched) {
-        rec.route = detail.defaultRoute;
-        rec.routeKey = hisRouteOption?.key || '';
-      }
-    } else if (rec.route && !findRouteOptionByValue(rec.routeKey || rec.route)) {
-      rec.route = '';
-      rec.routeKey = '';
-    }
-
-    // 回填规格信息（始终使用 HIS 权威值）
-    if (detail.specSale || detail.unitSale) {
-      rec.spec = formatMedicineSpec(detail.specSale, detail.unitSale);
-    }
-
-    if (detail.unitSale) {
-      rec.totalUnit = detail.unitSale;
-    }
-
-    rec.pharmacy = pharmacy.name;
-
-    console.log('[VoiceConsultationNew] Medicine detail hydrated', {
-      name: rec.name,
-      id,
-      idSto,
-      defaultSingleDose: detail.defaultSingleDose,
-      defaultFrequency: detail.defaultFrequency,
-      defaultRoute: detail.defaultRoute,
-      specSale: detail.specSale,
-      hisDose: detail.dose,
-      appliedDosage: rec.dosage,
-      appliedDosageUnit: rec.dosageUnit,
-      appliedFrequency: rec.frequency,
-      appliedRoute: rec.route,
-      appliedPharmacy: rec.pharmacy,
-    });
-    return true;
-  } catch (error) {
-    console.error('[VoiceConsultationNew] Failed to hydrate medicine detail', {
-      id,
-      name: rec.name,
-      error,
-    });
-    rec.selected = false;
-    return false;
-  }
-}
+// hydrateMatchedMedicineDetail / ensureMedicineSelectable / checkMedicineInventoryEnough /
+// isMedicineDetailLoadedForSelectedPharmacy 等已抽到 useTreatmentHydration（详见 treatmentNormalization 之后的实例化）。
 
 async function hydrateMatchedMedicalItemDetail(rec: TreatmentRecommendation): Promise<void> {
   if (!rec.matchedItem) {
@@ -2690,166 +1786,97 @@ async function performTreatmentFactCheck(items: TreatmentRecommendation[]): Prom
   }
 }
 
-const frequencyOptions = ref<UsageOption[]>(dedupeUsageOptions([
-  createUsageOption({ key: '每天一次', text: '每天一次', execCount: 1 }),
-  createUsageOption({ key: '每天两次', text: '每天两次', execCount: 2 }),
-  createUsageOption({ key: '每天三次', text: '每天三次', execCount: 3 }),
-  createUsageOption({ key: '隔日一次', text: '隔日一次', execCount: 0.5 }),
-  createUsageOption({ key: '每周一次', text: '每周一次' }),
-  createUsageOption({ key: '每周两次', text: '每周两次' }),
-  createUsageOption({ key: '必要时', text: '必要时' }),
-  createUsageOption({ key: '立即', text: '立即', execCount: 1 }),
-]));
+const {
+  frequencyOptions,
+  routeOptions,
+  pharmacyOptions,
+  execDeptOptions,
+  loadFrequencyOptions: loadFrequencyDict,
+  loadRouteOptions: loadRouteDict,
+  loadPharmacyOptions: loadPharmacyDict,
+  loadExecDeptOptions: loadExecDeptDict,
+} = useMedicalDictionaries();
 
-function normalizeUsageKeyword(value: string): string {
-  return value.trim().toLowerCase().replace(/\s+/g, '');
-}
+// 门禁逻辑合并到共享 composable，与症状问诊取同一份判定 / 候选过滤口径。
+// 语音侧仅保留 ensureMedicineDefaultPharmacy 另外的语义（需 detail 加载后才设默认）。
+const treatmentGates = useTreatmentGates({ pharmacyOptions, execDeptOptions });
 
-function createUsageOption(item: {
-  key?: string;
-  text?: string;
-  py?: string;
-  wb?: string;
-  mcode?: string;
-  properties?: Record<string, unknown>;
-  execCount?: number | string;
-}): UsageOption {
-  const text = (item.text || '').trim();
-  const py = (item.py || '').trim();
-  const wb = (item.wb || '').trim();
-  const mcode = (item.mcode || '').trim();
-  const key = (item.key || text).trim();
-  const execCount = parsePositiveNumber(item.execCount ?? item.properties?.execCount) ?? inferExecCountFromFrequencyText(text) ?? undefined;
+// 治疗项归一化 composable：注入语音侧的执行科室门禁 & 默认发药药房副作用，
+// 与症状问诊共享同一份归一化口径（症状侧调用时传入对应回调或默认值）。
+const treatmentNormalization = useTreatmentNormalization({
+  frequencyOptions,
+  routeOptions,
+  ensurePharmacy: ensureMedicineDefaultPharmacy,
+  isExecDeptSatisfied: (rec) => !isExecDeptRequired(rec) || !!getExecDeptDisplay(rec),
+});
 
-  return {
-    key,
-    text,
-    py,
-    wb,
-    mcode,
-    execCount,
-    normalizedTokens: Array.from(new Set(
-      [text, py, wb, mcode, key]
-        .map(normalizeUsageKeyword)
-        .filter(Boolean)
-    )),
-  };
-}
+// 二级搜索下拉（药房 / 执行科室 / 部位 / 医保）的统一状态：activeKey + 每条 rec×field 的 keyword 缓存。
+const secondarySelector = useSecondarySelector({
+  getEditorKey: (rec) => getTreatmentEditorKey(rec),
+  fields: {
+    pharmacy: { getCurrentValue: (rec) => rec.pharmacy || '' },
+    execDept: {
+      getCurrentValue: (rec) => {
+        const currentValue = (rec.execDept || '').trim();
+        if (!currentValue) return '';
+        const matched = execDeptOptions.value.find((option) => option.key === currentValue || option.text === currentValue);
+        return matched?.text || currentValue;
+      },
+    },
+    bodySite: { getCurrentValue: (rec) => rec.bodySite || '' },
+    insurance: { getCurrentValue: (rec) => rec.insuranceType || '' },
+  },
+});
 
-function dedupeUsageOptions(items: UsageOption[]): UsageOption[] {
-  const unique = new Map<string, UsageOption>();
-
-  items.forEach((item) => {
-    if (!item.text) return;
-
-    const identity = item.key || item.text;
-    if (!unique.has(identity)) {
-      unique.set(identity, item);
-    }
-  });
-
-  return Array.from(unique.values());
-}
-
-const routeOptions = ref<UsageOption[]>(dedupeUsageOptions([
-  createUsageOption({ key: '口服', text: '口服', py: 'kf' }),
-  createUsageOption({ key: '静脉注射', text: '静脉注射', py: 'jmzs' }),
-  createUsageOption({ key: '肌肉注射', text: '肌肉注射', py: 'jrzs' }),
-  createUsageOption({ key: '皮下注射', text: '皮下注射', py: 'pxzs' }),
-  createUsageOption({ key: '外用', text: '外用', py: 'wy' }),
-  createUsageOption({ key: '雾化吸入', text: '雾化吸入', py: 'whxr' }),
-  createUsageOption({ key: '舌下含服', text: '舌下含服', py: 'sxhf' }),
-  createUsageOption({ key: '直肠给药', text: '直肠给药', py: 'zcgy' }),
-  createUsageOption({ key: '滴眼', text: '滴眼', py: 'dy' }),
-]));
+// 药品详情 hydrate / 库存校验：与症状问诊共享同一份口径（useTreatmentHydration）。
+// 注入：候选药房收窄、字典查找；toast 通过 notify 回调走 voice 侧的 'warning' 级别。
+const {
+  hydrateMatchedMedicineDetail,
+  ensureMedicineSelectable,
+  checkMedicineInventoryEnough,
+  getMedicineInventoryWarning,
+  clearMedicineInventoryWarning,
+  isMedicineInventoryChecking,
+} = useTreatmentHydration({
+  pharmacyOptions,
+  getCandidatePharmaciesForMedicine,
+  findFrequencyOptionByValue,
+  findRouteOptionByValue,
+  getInventoryKey: (rec) => getTreatmentEditorKey(rec),
+  notify: (message) => {
+    showToast?.(message, 'warning');
+  },
+});
 
 async function fetchFrequencyOptions(): Promise<void> {
-  const his = getHisAdapter();
-  if (!his) {
-    console.warn('[VoiceConsultationNew] HisService not initialized, using default frequency options');
-    return;
-  }
-
-  try {
-    const items = await his.fetchFrequencyDictionary();
-    if (items.length) {
-      frequencyOptions.value = dedupeUsageOptions(items.map((item) => createUsageOption(item)));
-    }
-  } catch (error) {
-    console.error('[VoiceConsultationNew] Failed to load frequency options from HIS', error);
-  }
+  await loadFrequencyDict();
 }
 
 async function fetchRouteOptions(): Promise<void> {
-  const his = getHisAdapter();
-  if (!his) {
-    console.warn('[VoiceConsultationNew] HisService not initialized, using default route options');
-    return;
-  }
-
-  try {
-    const items = await his.fetchMedicineUsageDictionary();
-    if (items.length > 0) {
-      routeOptions.value = dedupeUsageOptions(items.map((item) => createUsageOption(item)));
-    }
-  } catch (error) {
-    console.error('[VoiceConsultationNew] Failed to load route options from HIS', error);
-  }
+  await loadRouteDict();
 }
 
-function fetchPharmacyOptions(): Promise<void> {
-  if (!pharmacyOptionsPromise) {
-    pharmacyOptionsPromise = loadPharmacyOptions().finally(() => {
-      pharmacyOptionsPromise = null;
-    });
-  }
-
-  return pharmacyOptionsPromise;
-}
-
-async function loadPharmacyOptions(): Promise<void> {
+async function fetchPharmacyOptions(): Promise<void> {
+  await loadPharmacyDict();
+  // 语音侧专属副作用：拿到药房列表后预热药品目录与匹配项详情
   const his = getHisAdapter();
   if (!his) {
-    console.warn('[VoiceConsultationNew] HisService not initialized, pharmacy options skipped');
-    pharmacyOptions.value = [];
+    medicalDataService.setActivePharmacyStoreIds(null);
     return;
   }
-
+  const activeStoreIds = pharmacyOptions.value
+    .map((option) => (option.idSto || '').trim())
+    .filter((value): value is string => Boolean(value));
+  if (activeStoreIds.length === 0) {
+    medicalDataService.setActivePharmacyStoreIds(null);
+    return;
+  }
   try {
-    const availablePharmacies = await his.fetchAvailablePharmacies();
-    pharmacyOptions.value = availablePharmacies.length > 0
-      ? availablePharmacies
-      : (await his.fetchMedicineStoreIds('')).map((idSto) => ({
-          name: idSto,
-          idDept: '',
-          idSto,
-        }));
-    const activeStoreIds = pharmacyOptions.value
-      .map((option) => (option.idSto || '').trim())
-      .filter((value): value is string => Boolean(value));
     await medicalDataService.ensureMedicineCatalogForStoreIds(activeStoreIds, his);
     void hydrateMatchedMedicalItemDetails(treatments.value);
   } catch (error) {
-    console.error('[VoiceConsultationNew] Failed to load pharmacy options from HIS', error);
-    pharmacyOptions.value = [];
-    medicalDataService.setActivePharmacyStoreIds(null);
+    console.error('[VoiceConsultationNew] ensureMedicineCatalogForStoreIds failed', error);
   }
-}
-
-function dedupeExecDeptOptions(items: DictionaryEntry[]): ExecDeptOption[] {
-  const unique = new Map<string, ExecDeptOption>();
-
-  items.forEach((item) => {
-    const key = (item.key || item.text || '').trim();
-    const text = (item.text || item.key || '').trim();
-    if (!key || !text || unique.has(key)) {
-      return;
-    }
-
-    unique.set(key, { key, text });
-  });
-
-  return Array.from(unique.values());
 }
 
 function syncTreatmentExecDeptSelections(): void {
@@ -2876,22 +1903,21 @@ function syncTreatmentExecDeptSelections(): void {
   });
 }
 
+async function fetchExecDeptOptions(): Promise<void> {
+  await loadExecDeptDict();
+  syncTreatmentExecDeptSelections();
+}
+
 function isExecDeptRequired(rec: TreatmentRecommendation): boolean {
-  return rec.type === 'exam' || rec.type === 'lab_test';
+  return treatmentGates.isExecDeptRequired(rec);
 }
 
 function getExecDeptDisplay(rec: TreatmentRecommendation): string {
-  const currentValue = (rec.execDept || '').trim();
-  if (!currentValue) {
-    return '';
-  }
-
-  const matched = execDeptOptions.value.find((option) => option.key === currentValue || option.text === currentValue);
-  return matched?.text || currentValue;
+  return treatmentGates.getExecDeptDisplay(rec);
 }
 
 function hasRequiredExecDept(rec: TreatmentRecommendation): boolean {
-  return !isExecDeptRequired(rec) || !!getExecDeptDisplay(rec);
+  return treatmentGates.hasRequiredExecDept(rec);
 }
 
 function openExecDeptQuickSelector(rec: TreatmentRecommendation, event?: Event): void {
@@ -2907,25 +1933,15 @@ function openExecDeptQuickSelector(rec: TreatmentRecommendation, event?: Event):
 
 // === 药品发药药房必填机制（复用检查/检验“医技科室”同样的门禁与 Chip 呈现方案） ===
 function isPharmacyRequired(rec: TreatmentRecommendation): boolean {
-  return rec.type === 'medicine';
+  return treatmentGates.isPharmacyRequired(rec);
 }
 
 function getPharmacyDisplay(rec: TreatmentRecommendation): string {
-  const currentValue = (rec.pharmacy || '').trim();
-  if (!currentValue) {
-    return '';
-  }
-
-  // 只认“当前药品实际拥有”的药房（matchedItem.storeIds ∩ 有效发药药房）
-  const allowed = isPharmacyRequired(rec)
-    ? getCandidatePharmaciesForMedicine(rec)
-    : pharmacyOptions.value;
-  const matched = allowed.find((option) => option.name === currentValue || option.idSto === currentValue);
-  return matched?.name || '';
+  return treatmentGates.getPharmacyDisplay(rec);
 }
 
 function hasRequiredPharmacy(rec: TreatmentRecommendation): boolean {
-  return !isPharmacyRequired(rec) || !!getPharmacyDisplay(rec);
+  return treatmentGates.hasRequiredPharmacy(rec);
 }
 
 function openPharmacyQuickSelector(rec: TreatmentRecommendation, event?: Event): void {
@@ -2939,24 +1955,6 @@ function openPharmacyQuickSelector(rec: TreatmentRecommendation, event?: Event):
   });
 }
 
-async function fetchExecDeptOptions(): Promise<void> {
-  const his = getHisAdapter();
-  if (!his) {
-    console.warn('[VoiceConsultationNew] HisService not initialized, execution department options skipped');
-    execDeptOptions.value = [];
-    return;
-  }
-
-  try {
-    const items = await his.fetchExecutionDepartments();
-    execDeptOptions.value = dedupeExecDeptOptions(items);
-    syncTreatmentExecDeptSelections();
-  } catch (error) {
-    console.error('[VoiceConsultationNew] Failed to load execution department options from HIS', error);
-    execDeptOptions.value = [];
-  }
-}
-
 onMounted(() => {
   document.addEventListener('pointerdown', handleGlobalPointerDown);
   void Promise.all([fetchFrequencyOptions(), fetchRouteOptions(), fetchPharmacyOptions(), fetchExecDeptOptions()]);
@@ -2965,10 +1963,7 @@ onMounted(() => {
 onBeforeUnmount(() => {
   document.removeEventListener('pointerdown', handleGlobalPointerDown);
 });
-const pharmacyOptions = ref<PharmacyOption[]>([]);
-const execDeptOptions = ref<ExecDeptOption[]>([]);
 const insuranceOptions = ['医保使用', '自费'];
-let pharmacyOptionsPromise: Promise<void> | null = null;
 
 function getMatchedItemRaw(rec: TreatmentRecommendation): Record<string, unknown> | undefined {
   const raw = rec.matchedItem?.raw;
@@ -2991,12 +1986,6 @@ function readFirstString(source: Record<string, unknown> | undefined, keys: stri
   }
 
   return '';
-}
-
-function toPositiveNumber(value: unknown, fallback = 1): number {
-  const text = typeof value === 'string' ? value.trim() : String(value ?? '').trim();
-  const parsed = Number(text);
-  return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
 }
 
 function getDefaultOrderServiceCode(type: TreatmentRecommendation['type']): string {
@@ -3091,66 +2080,27 @@ function getOrderFgSkintest(rec: TreatmentRecommendation): string {
 }
 
 function buildOrderListItem(rec: TreatmentRecommendation): Record<string, string | number > {
-  const normalized = normalizeTreatmentRecommendation(rec);
-  const orderServiceId = getOrderServiceId(rec);
-  const execDeptId = getOrderExecDeptId(rec);
-  const base: Record<string, string | number> = {
-    amount: toPositiveNumber(normalized.totalQty, 1),
-    fgCheckOrd: getOrderFgCheckOrd(rec),
-    sdSrv: getOrderServiceCode(rec),
-    naSrv: getOrderServiceName(rec),
-    idDeptExec: execDeptId,
-    ...(orderServiceId ? { idSrv: orderServiceId } : {}),
-  };
-
-  if (rec.type === 'medicine') {
-    return {
-      ...base,
-      doseOnce: normalized.dosage || '',
-      unitDose: normalized.dosageUnit || '',
-      idFreq: getResolvedFrequencyKey(rec),
-      idUsge: getResolvedRouteKey(rec),
-      takeDays: toPositiveNumber(normalized.days, 1),
-      fgSkintest: getOrderFgSkintest(rec),
-    };
-  }
-
-  const partId = getOrderPartId(rec);
-  const jsonField = getOrderJsonField(rec);
-
-  return {
-    ...base,
-    ...(partId ? { idPart: partId } : {}),
-    ...(jsonField ? { jsonField: jsonField } : { jsonField:"{}" }),
-  };
-}
-
-function getDiagnosisCategoryCode(diag: Diagnosis): string {
-  return diag.isTCM ? '2' : '1';
-}
-
-function getDiagnosisCategoryText(diag: Diagnosis): string {
-  return diag.isTCM ? '中医诊断' : '西医诊断';
+  return buildSharedOrderListItem(rec, {
+    getServiceCode: getOrderServiceCode,
+    getServiceId: getOrderServiceId,
+    getServiceName: getOrderServiceName,
+    getExecDeptId: getOrderExecDeptId,
+    getPartId: getOrderPartId,
+    getJsonField: getOrderJsonField,
+    getFgCheckOrd: getOrderFgCheckOrd,
+    getFgSkintest: getOrderFgSkintest,
+    getFrequencyKey: getResolvedFrequencyKey,
+    getRouteKey: getResolvedRouteKey,
+    normalize: normalizeTreatmentRecommendation,
+  });
 }
 
 function buildDiagList(): Array<Record<string, string>> {
-  const primaryKey = getDiagnosisKey(selectedDiagnosis.value);
-  const orderedDiagnoses = [...selectedDiagnoses.value].sort((left, right) => {
-    if (getDiagnosisKey(left) === primaryKey) return -1;
-    if (getDiagnosisKey(right) === primaryKey) return 1;
-    return 0;
+  return buildSharedDiagList({
+    selectedDiagnoses: selectedDiagnoses.value,
+    primaryDiagnosis: selectedDiagnosis.value,
+    patientTetId: patientTetId.value,
   });
-
-  return orderedDiagnoses.map((diag) => ({
-    idTet: patientTetId.value,
-    idDiag: diag.id || '',
-    naDiag: diag.name,
-    sdDiag: getDiagnosisCategoryCode(diag),
-    cdIcd10: diag.code || '',
-    naIcd10: diag.name,
-    fgMain: getDiagnosisKey(diag) === primaryKey ? '1' : '0',
-    sdDiagText: getDiagnosisCategoryText(diag),
-  }));
 }
 
 function getTreatmentSpec(rec: TreatmentRecommendation): string {
@@ -3313,11 +2263,6 @@ function syncFrequencySearchKeyword(rec: TreatmentRecommendation): void {
   setFrequencySearchKeyword(rec, normalizeTreatmentRecommendation(rec).frequency || '');
 }
 
-function handleFrequencySearchInput(rec: TreatmentRecommendation, event: Event): void {
-  const target = event.target as HTMLInputElement | null;
-  setFrequencySearchKeyword(rec, target?.value || '');
-}
-
 function getFilteredFrequencyOptionsForRecord(rec: TreatmentRecommendation): UsageOption[] {
   const currentValue = (normalizeTreatmentRecommendation(rec).frequency || '').trim();
   const query = resolveSelectorFilterKeyword(getFrequencySearchKeyword(rec), currentValue);
@@ -3382,19 +2327,6 @@ function resolveFrequencyKeyFromKeyword(rec: TreatmentRecommendation): string {
   return normalizeTreatmentRecommendation(rec).frequencyKey || '';
 }
 
-function selectFrequencyOption(rec: TreatmentRecommendation, option: UsageOption): void {
-  rec.frequency = option.text;
-  rec.frequencyKey = option.key;
-  setFrequencySearchKeyword(rec, option.text);
-  activeEditableFieldKey.value = null;
-}
-
-function clearFrequencySelection(rec: TreatmentRecommendation): void {
-  rec.frequency = '';
-  rec.frequencyKey = '';
-  setFrequencySearchKeyword(rec, '');
-}
-
 function getRouteSearchKey(rec: TreatmentRecommendation): string {
   return `${getTreatmentEditorKey(rec)}:route-search`;
 }
@@ -3416,11 +2348,6 @@ function setRouteSearchKeyword(rec: TreatmentRecommendation, value: string): voi
 
 function syncRouteSearchKeyword(rec: TreatmentRecommendation): void {
   setRouteSearchKeyword(rec, normalizeTreatmentRecommendation(rec).route || '');
-}
-
-function handleRouteSearchInput(rec: TreatmentRecommendation, event: Event): void {
-  const target = event.target as HTMLInputElement | null;
-  setRouteSearchKeyword(rec, target?.value || '');
 }
 
 function getFilteredRouteOptionsForRecord(rec: TreatmentRecommendation): UsageOption[] {
@@ -3487,92 +2414,36 @@ function resolveRouteKeyFromKeyword(rec: TreatmentRecommendation): string {
   return normalizeTreatmentRecommendation(rec).routeKey || '';
 }
 
-function selectRouteOption(rec: TreatmentRecommendation, option: UsageOption): void {
-  rec.route = option.text;
-  rec.routeKey = option.key;
-  setRouteSearchKeyword(rec, option.text);
-  activeEditableFieldKey.value = null;
-}
-
-function clearRouteSelection(rec: TreatmentRecommendation): void {
-  rec.route = '';
-  rec.routeKey = '';
-  setRouteSearchKeyword(rec, '');
-}
-
-type SecondarySelectorField = 'pharmacy' | 'execDept' | 'insurance' | 'bodySite';
-
-function getSecondarySelectorKey(rec: TreatmentRecommendation, field: SecondarySelectorField): string {
-  return `${getTreatmentEditorKey(rec)}:${field}`;
-}
+// 二级选择器统一接口（详见 `useSecondarySelector`）：保留旧函数名作为薄包装，模板/调用方无需感知重构。
 
 function isSecondarySelectorOpen(rec: TreatmentRecommendation, field: SecondarySelectorField): boolean {
-  return activeSecondarySelectorKey.value === getSecondarySelectorKey(rec, field);
+  return secondarySelector.isOpen(rec, field);
 }
 
 function openSecondarySelector(rec: TreatmentRecommendation, field: SecondarySelectorField): void {
-  activeSecondarySelectorKey.value = getSecondarySelectorKey(rec, field);
-  if (field === 'pharmacy') {
-    syncPharmacySearchKeyword(rec);
-  } else if (field === 'execDept') {
-    syncExecDeptSearchKeyword(rec);
-  } else if (field === 'bodySite') {
-    syncBodySiteSearchKeyword(rec);
-  } else {
-    syncInsuranceSearchKeyword(rec);
-  }
+  secondarySelector.open(rec, field);
 }
 
 function closeSecondarySelector(rec: TreatmentRecommendation, field: SecondarySelectorField, event: FocusEvent): void {
-  const container = event.currentTarget as HTMLElement | null;
-  const nextTarget = event.relatedTarget as Node | null;
-  if (container && nextTarget && container.contains(nextTarget)) {
-    return;
-  }
-
-  if (field === 'pharmacy') {
-    syncPharmacySearchKeyword(rec);
-  } else if (field === 'execDept') {
-    syncExecDeptSearchKeyword(rec);
-  } else if (field === 'bodySite') {
-    syncBodySiteSearchKeyword(rec);
-  } else {
-    syncInsuranceSearchKeyword(rec);
-  }
-
-  if (isSecondarySelectorOpen(rec, field)) {
-    activeSecondarySelectorKey.value = null;
-  }
+  secondarySelector.close(rec, field, event);
 }
 
-function getPharmacySearchKey(rec: TreatmentRecommendation): string {
-  return `${getTreatmentEditorKey(rec)}:pharmacy-search`;
-}
-
+// === 发药药房 ===
 function getPharmacySearchKeyword(rec: TreatmentRecommendation): string {
-  const cached = pharmacySearchKeywords.value[getPharmacySearchKey(rec)];
-  return typeof cached === 'string' ? cached : (rec.pharmacy || '');
+  return secondarySelector.getKeyword(rec, 'pharmacy');
 }
 
 function setPharmacySearchKeyword(rec: TreatmentRecommendation, value: string): void {
-  pharmacySearchKeywords.value = {
-    ...pharmacySearchKeywords.value,
-    [getPharmacySearchKey(rec)]: value,
-  };
-}
-
-function syncPharmacySearchKeyword(rec: TreatmentRecommendation): void {
-  setPharmacySearchKeyword(rec, rec.pharmacy || '');
+  secondarySelector.setKeyword(rec, 'pharmacy', value);
 }
 
 function handlePharmacySearchInput(rec: TreatmentRecommendation, event: Event): void {
-  const target = event.target as HTMLInputElement | null;
-  setPharmacySearchKeyword(rec, target?.value || '');
+  secondarySelector.handleInput(rec, 'pharmacy', event);
 }
 
 function getFilteredPharmacyOptionsForRecord(rec: TreatmentRecommendation): UsageOption[] {
   const currentValue = (rec.pharmacy || '').trim();
-  const query = resolveSelectorFilterKeyword(getPharmacySearchKeyword(rec), currentValue);
+  const query = secondarySelector.resolveFilterKeyword(getPharmacySearchKeyword(rec), currentValue);
   // 仅保留当前药品实际存在的药房（matchedItem.storeIds ∩ 有效发药药房）
   const allowedPharmacies = rec.type === 'medicine' && rec.matchedItem
     ? getCandidatePharmaciesForMedicine(rec)
@@ -3602,7 +2473,7 @@ function selectPharmacyOption(rec: TreatmentRecommendation, option: UsageOption)
   if (rec.type === 'medicine' && (rec.totalQty || '').trim()) {
     void checkMedicineInventoryEnough(rec, true);
   }
-  activeSecondarySelectorKey.value = null;
+  secondarySelector.closeAll();
 }
 
 function clearPharmacySelection(rec: TreatmentRecommendation): void {
@@ -3615,35 +2486,17 @@ function clearPharmacySelection(rec: TreatmentRecommendation): void {
   }
 }
 
-function getExecDeptSearchKey(rec: TreatmentRecommendation): string {
-  return `${getTreatmentEditorKey(rec)}:execDept-search`;
-}
-
+// === 执行科室 ===
 function getExecDeptSearchKeyword(rec: TreatmentRecommendation): string {
-  const cached = execDeptSearchKeywords.value[getExecDeptSearchKey(rec)];
-  if (typeof cached === 'string') {
-    return cached;
-  }
-
-  const currentValue = (rec.execDept || '').trim();
-  const matched = execDeptOptions.value.find((option) => option.key === currentValue || option.text === currentValue);
-  return matched?.text || currentValue;
+  return secondarySelector.getKeyword(rec, 'execDept');
 }
 
 function setExecDeptSearchKeyword(rec: TreatmentRecommendation, value: string): void {
-  execDeptSearchKeywords.value = {
-    ...execDeptSearchKeywords.value,
-    [getExecDeptSearchKey(rec)]: value,
-  };
-}
-
-function syncExecDeptSearchKeyword(rec: TreatmentRecommendation): void {
-  setExecDeptSearchKeyword(rec, getExecDeptSearchKeyword(rec));
+  secondarySelector.setKeyword(rec, 'execDept', value);
 }
 
 function handleExecDeptSearchInput(rec: TreatmentRecommendation, event: Event): void {
-  const target = event.target as HTMLInputElement | null;
-  setExecDeptSearchKeyword(rec, target?.value || '');
+  secondarySelector.handleInput(rec, 'execDept', event);
 }
 
 function getExecDeptUsageOptions(): UsageOption[] {
@@ -3658,7 +2511,7 @@ function getExecDeptUsageOptions(): UsageOption[] {
 
 function getFilteredExecDeptOptionsForRecord(rec: TreatmentRecommendation): UsageOption[] {
   const currentValue = getExecDeptSearchKeyword(rec).trim();
-  const query = resolveSelectorFilterKeyword(getExecDeptSearchKeyword(rec), currentValue);
+  const query = secondarySelector.resolveFilterKeyword(getExecDeptSearchKeyword(rec), currentValue);
   const options = getExecDeptUsageOptions();
   const matched = !query
     ? options
@@ -3674,7 +2527,7 @@ function getFilteredExecDeptOptionsForRecord(rec: TreatmentRecommendation): Usag
 function selectExecDeptOption(rec: TreatmentRecommendation, option: UsageOption): void {
   rec.execDept = option.key || option.text;
   setExecDeptSearchKeyword(rec, option.text);
-  activeSecondarySelectorKey.value = null;
+  secondarySelector.closeAll();
 }
 
 function clearExecDeptSelection(rec: TreatmentRecommendation): void {
@@ -3687,29 +2540,17 @@ function clearExecDeptSelection(rec: TreatmentRecommendation): void {
 }
 
 
-function getBodySiteSearchKey(rec: TreatmentRecommendation): string {
-  return `${getTreatmentEditorKey(rec)}:bodySite-search`;
-}
-
+// === 部位 ===
 function getBodySiteSearchKeyword(rec: TreatmentRecommendation): string {
-  const cached = bodySiteSearchKeywords.value[getBodySiteSearchKey(rec)];
-  return typeof cached === 'string' ? cached : (rec.bodySite || '');
+  return secondarySelector.getKeyword(rec, 'bodySite');
 }
 
 function setBodySiteSearchKeyword(rec: TreatmentRecommendation, value: string): void {
-  bodySiteSearchKeywords.value = {
-    ...bodySiteSearchKeywords.value,
-    [getBodySiteSearchKey(rec)]: value,
-  };
-}
-
-function syncBodySiteSearchKeyword(rec: TreatmentRecommendation): void {
-  setBodySiteSearchKeyword(rec, rec.bodySite || '');
+  secondarySelector.setKeyword(rec, 'bodySite', value);
 }
 
 function handleBodySiteSearchInput(rec: TreatmentRecommendation, event: Event): void {
-  const target = event.target as HTMLInputElement | null;
-  setBodySiteSearchKeyword(rec, target?.value || '');
+  secondarySelector.handleInput(rec, 'bodySite', event);
 }
 
 function getBodySiteUsageOptions(rec: TreatmentRecommendation): UsageOption[] {
@@ -3722,7 +2563,7 @@ function getBodySiteUsageOptions(rec: TreatmentRecommendation): UsageOption[] {
 
 function getFilteredBodySiteOptionsForRecord(rec: TreatmentRecommendation): UsageOption[] {
   const currentValue = (rec.bodySite || '').trim();
-  const query = resolveSelectorFilterKeyword(getBodySiteSearchKeyword(rec), currentValue);
+  const query = secondarySelector.resolveFilterKeyword(getBodySiteSearchKeyword(rec), currentValue);
   const options = getBodySiteUsageOptions(rec);
   const matched = !query
     ? options
@@ -3744,7 +2585,7 @@ function selectBodySiteOption(rec: TreatmentRecommendation, option: UsageOption)
     rec.bodySite = option.text;
   }
   setBodySiteSearchKeyword(rec, option.text);
-  activeSecondarySelectorKey.value = null;
+  secondarySelector.closeAll();
 }
 
 function clearBodySiteSelection(rec: TreatmentRecommendation): void {
@@ -3763,29 +2604,17 @@ function clearBodySiteSelection(rec: TreatmentRecommendation): void {
   }
 }
 
-function getInsuranceSearchKey(rec: TreatmentRecommendation): string {
-  return `${getTreatmentEditorKey(rec)}:insurance-search`;
-}
-
+// === 医保 ===
 function getInsuranceSearchKeyword(rec: TreatmentRecommendation): string {
-  const cached = insuranceSearchKeywords.value[getInsuranceSearchKey(rec)];
-  return typeof cached === 'string' ? cached : (rec.insuranceType || '');
+  return secondarySelector.getKeyword(rec, 'insurance');
 }
 
 function setInsuranceSearchKeyword(rec: TreatmentRecommendation, value: string): void {
-  insuranceSearchKeywords.value = {
-    ...insuranceSearchKeywords.value,
-    [getInsuranceSearchKey(rec)]: value,
-  };
-}
-
-function syncInsuranceSearchKeyword(rec: TreatmentRecommendation): void {
-  setInsuranceSearchKeyword(rec, rec.insuranceType || '');
+  secondarySelector.setKeyword(rec, 'insurance', value);
 }
 
 function handleInsuranceSearchInput(rec: TreatmentRecommendation, event: Event): void {
-  const target = event.target as HTMLInputElement | null;
-  setInsuranceSearchKeyword(rec, target?.value || '');
+  secondarySelector.handleInput(rec, 'insurance', event);
 }
 
 function getInsuranceUsageOptions(): UsageOption[] {
@@ -3796,7 +2625,7 @@ function getInsuranceUsageOptions(): UsageOption[] {
 
 function getFilteredInsuranceOptionsForRecord(rec: TreatmentRecommendation): UsageOption[] {
   const currentValue = (rec.insuranceType || '').trim();
-  const query = resolveSelectorFilterKeyword(getInsuranceSearchKeyword(rec), currentValue);
+  const query = secondarySelector.resolveFilterKeyword(getInsuranceSearchKeyword(rec), currentValue);
   const options = getInsuranceUsageOptions();
   const matched = !query
     ? options
@@ -3812,7 +2641,7 @@ function getFilteredInsuranceOptionsForRecord(rec: TreatmentRecommendation): Usa
 function selectInsuranceOption(rec: TreatmentRecommendation, option: UsageOption): void {
   rec.insuranceType = option.text;
   setInsuranceSearchKeyword(rec, option.text);
-  activeSecondarySelectorKey.value = null;
+  secondarySelector.closeAll();
 }
 
 function clearInsuranceSelection(rec: TreatmentRecommendation): void {
@@ -4412,38 +3241,14 @@ watch(
                       </div>
                     </div>
 
-                    <div v-if="!rec.matchedItem && isManualMatchOpen(rec)" class="manual-match-shell" @click.stop>
-                      <div class="manual-match-header">
-                        <div class="manual-match-title">从标准库选择{{ section.title.replace('项目', '') }}</div>
-                        <div class="manual-match-desc">匹配成功后才可纳入本次回写</div>
-                      </div>
-
-                      <input
-                        :value="getManualMatchKeyword(rec)"
-                        type="text"
-                        class="edit-input"
-                        placeholder="输入名称筛选标准库"
-                        @input="handleManualMatchInput(rec, $event)"
-                      />
-
-                      <div class="manual-match-list">
-                        <button
-                          v-for="candidate in getManualMatchCandidates(rec)"
-                          :key="candidate.id"
-                          class="manual-match-option"
-                          type="button"
-                          @click.stop="applyManualMatch(rec, candidate, $event)"
-                        >
-                          <span class="manual-match-option-name">{{ candidate.name }}</span>
-                          <span v-if="isMedicineSearchCandidate(candidate) && candidate.spec" class="manual-match-option-meta">{{ candidate.spec }}</span>
-                          <span v-else-if="!isMedicineSearchCandidate(candidate) && candidate.code" class="manual-match-option-meta">{{ candidate.code }}</span>
-                        </button>
-
-                        <div v-if="getManualMatchCandidates(rec).length === 0" class="manual-match-empty">
-                          未找到可用的标准库项目，请修改关键字后重试
-                        </div>
-                      </div>
-                    </div>
+                    <ManualMatchPicker
+                      v-if="!rec.matchedItem && isManualMatchOpen(rec)"
+                      :title="`从标准库选择${section.title.replace('项目', '')}`"
+                      :keyword="getManualMatchKeyword(rec)"
+                      :candidates="getManualMatchPickerCandidates(rec)"
+                      @update:keyword="setManualMatchKeyword(rec, $event)"
+                      @select="handleManualMatchPickerSelect(rec, $event)"
+                    />
 
                     <div v-if="shouldShowTreatmentEditor(rec)" class="editor-shell" @click.stop>
                       <template v-if="rec.type === 'medicine'">
@@ -4461,77 +3266,27 @@ watch(
 
                           <div class="primary-field" :class="{ editing: isEditableFieldActive(rec, 'frequency') }">
                             <label>频次</label>
-                            <div v-if="isEditableFieldActive(rec, 'frequency')" class="field-editor route-field-editor" @focusout="handleEditableFieldBlur(rec, 'frequency', $event)">
-                              <input
-                                :ref="(el) => registerEditableFieldElement(getEditableFieldKey(rec, 'frequency'), el)"
-                                :value="getFrequencySearchKeyword(rec)"
-                                type="text"
-                                placeholder="输入名称筛选频次"
-                                class="edit-input"
-                                @input="handleFrequencySearchInput(rec, $event)"
-                              />
-                              <div class="route-option-list" role="listbox" aria-label="药品频次候选项">
-                                <button
-                                  v-if="normalizeTreatmentRecommendation(rec).frequency"
-                                  class="route-option-item route-option-clear"
-                                  type="button"
-                                  @mousedown.prevent.stop="clearFrequencySelection(rec)"
-                                >
-                                  <span class="route-option-text">清空当前值</span>
-                                </button>
-                                <button
-                                  v-for="option in getFilteredFrequencyOptionsForRecord(rec).slice(0, 8)"
-                                  :key="option.key"
-                                  class="route-option-item"
-                                  type="button"
-                                  @mousedown.prevent.stop="selectFrequencyOption(rec, option)"
-                                >
-                                  <span class="route-option-text">{{ formatOptionLabel(option) }}</span>
-                                </button>
-                                <div v-if="getFilteredFrequencyOptionsForRecord(rec).length === 0" class="route-option-empty">未找到匹配频次</div>
-                              </div>
-                            </div>
-                            <button v-else class="field-read-btn" :class="{ placeholder: isMedicineFieldEmpty(rec, 'frequency') }" type="button" @click.stop="activateEditableField(rec, 'frequency', $event)">
-                              {{ getMedicineFieldDisplay(rec, 'frequency') }}
-                            </button>
+                            <MedicineUsageFieldSelector
+                              :rec="rec"
+                              field="frequency"
+                              :options="frequencyOptions"
+                              placeholder="请选择频次"
+                              :open="isEditableFieldActive(rec, 'frequency')"
+                              @update:open="(v) => handleFrequencyOpenChange(rec, v)"
+                            />
                           </div>
 
                           <div class="primary-field" :class="{ editing: isEditableFieldActive(rec, 'route') }">
                             <label>用法</label>
-                            <div v-if="isEditableFieldActive(rec, 'route')" class="field-editor route-field-editor" @focusout="handleEditableFieldBlur(rec, 'route', $event)">
-                              <input
-                                :ref="(el) => registerEditableFieldElement(getEditableFieldKey(rec, 'route'), el)"
-                                :value="getRouteSearchKeyword(rec)"
-                                type="text"
-                                placeholder="输入名称/拼音筛选用法"
-                                class="edit-input"
-                                @input="handleRouteSearchInput(rec, $event)"
-                              />
-                              <div class="route-option-list" role="listbox" aria-label="药品用法候选项">
-                                <button
-                                  v-if="normalizeTreatmentRecommendation(rec).route"
-                                  class="route-option-item route-option-clear"
-                                  type="button"
-                                  @mousedown.prevent.stop="clearRouteSelection(rec)"
-                                >
-                                  <span class="route-option-text">清空当前值</span>
-                                </button>
-                                <button
-                                  v-for="option in getFilteredRouteOptionsForRecord(rec).slice(0, 8)"
-                                  :key="option.key"
-                                  class="route-option-item"
-                                  type="button"
-                                  @mousedown.prevent.stop="selectRouteOption(rec, option)"
-                                >
-                                  <span class="route-option-text">{{ option.text }}</span>
-                                  <span v-if="option.py || option.mcode" class="route-option-meta">{{ [option.py, option.mcode].filter(Boolean).join(' / ') }}</span>
-                                </button>
-                                <div v-if="getFilteredRouteOptionsForRecord(rec).length === 0" class="route-option-empty">未找到匹配用法</div>
-                              </div>
-                            </div>
-                            <button v-else class="field-read-btn" :class="{ placeholder: isMedicineFieldEmpty(rec, 'route') }" type="button" @click.stop="activateEditableField(rec, 'route', $event)">
-                              {{ getMedicineFieldDisplay(rec, 'route') }}
-                            </button>
+                            <MedicineUsageFieldSelector
+                              :rec="rec"
+                              field="route"
+                              :options="routeOptions"
+                              :show-meta="true"
+                              placeholder="请选择用法"
+                              :open="isEditableFieldActive(rec, 'route')"
+                              @update:open="(v) => handleRouteOpenChange(rec, v)"
+                            />
                           </div>
 
                           <div class="primary-field" :class="{ editing: isEditableFieldActive(rec, 'total') }">
@@ -5966,82 +4721,6 @@ watch(
 
 .related-section {
   margin-top: 10px;
-}
-
-.manual-match-shell {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-  margin-top: 10px;
-  padding-top: 10px;
-  border-top: 1px solid var(--voice-border);
-}
-
-.manual-match-header {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-}
-
-.manual-match-title {
-  font-size: var(--voice-font-main);
-  font-weight: 700;
-  color: var(--voice-text);
-}
-
-.manual-match-desc {
-  font-size: var(--voice-font-min);
-  color: var(--voice-text-muted);
-}
-
-.manual-match-list {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-}
-
-.manual-match-option {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  min-height: 38px;
-  width: 100%;
-  padding: 0 12px;
-  border: 1px solid var(--voice-border);
-  border-radius: 12px;
-  background: var(--voice-surface-soft);
-  color: var(--voice-text);
-  cursor: pointer;
-  text-align: left;
-}
-
-.manual-match-option:hover {
-  border-color: var(--voice-accent);
-  background: var(--voice-accent-softer);
-}
-
-.manual-match-option-name {
-  flex: 1;
-  min-width: 0;
-  font-size: var(--voice-font-main);
-  font-weight: 600;
-  color: var(--voice-text);
-}
-
-.manual-match-option-meta,
-.manual-match-empty {
-  font-size: var(--voice-font-min);
-  color: var(--voice-text-muted);
-}
-
-.manual-match-option-meta {
-  flex-shrink: 0;
-  white-space: nowrap;
-}
-
-.manual-match-empty {
-  padding: 8px 2px 0;
 }
 
 .related-list {
