@@ -943,7 +943,9 @@ button.secondary:hover,
   .processing-dots .dot,
   .processing-bar-fill,
   .processing-pulse::after,
-  .speaking::after {
+  .speaking::after,
+  .ai-spinner,
+  .ai-spinner * {
     animation-duration: revert !important;
     animation-iteration-count: infinite !important;
   }
