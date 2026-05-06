@@ -77,6 +77,7 @@ const hoveredBtnIndex = ref(-1); // -1 means no button hovered
 const isWorking = ref(false);
 const currentView = ref<ViewType>('chat');
 const currentPatient = ref<AppPatient | null>(null);
+const consultationPageRef = ref<InstanceType<typeof ConsultationPage> | null>(null);
 const ringMenuRef = ref<HTMLElement | null>(null);
 const forceUpdateState = ref<ForceUpdateState>(getCurrentForceUpdateState());
 const isForceUpdateRequired = computed(() => forceUpdateState.value.required);
@@ -326,8 +327,18 @@ const hasResumableConsultation = computed(() =>
  *  - 接待胶囊自身不再覆写最小化类型，避免语音链路被误记成症状链路。
  */
 async function handleUserCollapse(): Promise<void> {
-  if (currentView.value === 'consultation' && currentPatient.value) {
+  const startedFromSymptomConsultation = currentView.value === 'consultation' && !!currentPatient.value;
+
+  if (startedFromSymptomConsultation && currentPatient.value) {
     minimizedSessions.record('symptom', currentPatient.value);
+    await handleCollapse();
+    // handleCollapse 完成后同步重置 ConsultationPage 内部视图。
+    // 不用 await nextTick()：nextTick 在 Vue flush 报错时会 reject，
+    // 且此处已无需等待 DOM flush（handleCollapse 的 await 链已保证更新完成）。
+    if (currentView.value === 'reception-capsule') {
+      consultationPageRef.value?.resetToConsultationView();
+    }
+    return;
   } else if (currentView.value === 'voice-consultation' && currentPatient.value) {
     minimizedSessions.record('voice', currentPatient.value);
   } else if (
@@ -747,6 +758,7 @@ const openInsideCloudHome = async () => {
           </div>
           <!-- 问诊页面用 v-show 保持常驻，避免切换视图时组件销毁导致数据丢失 -->
           <ConsultationPage
+            ref="consultationPageRef"
             v-show="currentView === 'consultation'"
             @close="handleUserCollapse"
             :initialPatientData="currentPatient"

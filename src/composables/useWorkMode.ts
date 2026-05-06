@@ -439,25 +439,30 @@ export function useWorkMode(options: WorkModeOptions) {
 
       currentView.value = 'reception-capsule';
       syncRiskPatientInfo?.(currentPatient.value);
+      // 注意：不在此处 await nextTick()。nextTick 在 Vue flush 期间如有组件更新报错
+      // 会导致 Promise reject 并中断后续逻辑，使 contentVisible 永远不会被还原。
+      // resizeWorkWindow 首个 await setResizable IPC 调用本身已给 Vue flush 留出时机。
 
       // 顺序必须是“先缩小、再移位”：
       // 若先把 1200x900 的问诊窗口贴到小球坐标（右边缘场景），macOS 会
       // 发现该坐标容不下问诊尺寸，从而跨显示器复位，产生一闪。
       // 改为先 resize 到胶囊尺寸，再 setPosition 就不会被夹跨屏。
-      await resizeWorkWindow(WINDOW_SIZES.CAPSULE.width, WINDOW_SIZES.CAPSULE.height);
+      try {
+        await resizeWorkWindow(WINDOW_SIZES.RISK_CARD.width, WINDOW_SIZES.RISK_CARD.height);
 
-      if (lastBallPos.value && appWindow.value) {
-        try {
-          await appWindow.value.setPosition(
-            new PhysicalPosition(lastBallPos.value.x, lastBallPos.value.y)
-          );
-        } catch (e) {
-          console.warn('[WorkMode] Failed to align capsule to ball position:', e);
+        if (lastBallPos.value && appWindow.value) {
+          try {
+            await appWindow.value.setPosition(
+              new PhysicalPosition(lastBallPos.value.x, lastBallPos.value.y)
+            );
+          } catch (e) {
+            console.warn('[WorkMode] Failed to align capsule to ball position:', e);
+          }
         }
+      } finally {
+        // 无论窗口调整成功与否，都必须恢复内容可见性，避免 UI 永久卡在透明状态。
+        contentVisible.value = true;
       }
-
-      // 窗口尺寸到位后再淺入胶囊内容。
-      contentVisible.value = true;
       return;
     }
 

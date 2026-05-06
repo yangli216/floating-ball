@@ -77,6 +77,8 @@ import type {
 const props = defineProps<{
   initialPatientData?: AppPatient;
   intentResult: VoiceIntentResult | null;
+  channel?: 'voice' | 'symptom';
+  showPatientHeader?: boolean;
   /**
    * intentResult 的来源。
    * - 'llm'：本次 LLM 刚刚解析出的全新结果，不叠加 editorSnapshot
@@ -84,9 +86,11 @@ const props = defineProps<{
    * - null/undefined：未明确，默认不叠加
    */
   intentSource?: 'llm' | 'cache' | null;
+  secondaryFooterActionText?: string;
+  secondaryFooterActionDisabled?: boolean;
 }>();
 
-const emit = defineEmits(['close', 'cancel']);
+const emit = defineEmits(['close', 'cancel', 'secondary-footer-action']);
 
 const showToast = inject<(msg: string, type?: string) => void>('showToast');
 
@@ -108,8 +112,16 @@ const treatments = ref<TreatmentRecommendation[]>([]);
 const treatmentLoading = ref(false);
 
 const submitting = ref(false);
+const consultationChannel = computed<'voice' | 'symptom'>(() => props.channel === 'symptom' ? 'symptom' : 'voice');
+const consultationUserLogType = computed(() => consultationChannel.value === 'voice' ? 'voice' as const : 'smart' as const);
+const shouldUseVoiceCache = computed(() => consultationChannel.value === 'voice');
+const shouldShowPatientHeader = computed(() => props.showPatientHeader !== false);
 const showCancelConfirm = ref(false);
 const firstUserLogSnapshot = ref<ConsultationUserLogSnapshot | null>(null);
+const cancelDialogTitle = computed(() => consultationChannel.value === 'voice' ? '确认放弃当前语音结果？' : '确认放弃当前问诊结果？');
+const cancelDialogText = computed(() => consultationChannel.value === 'voice'
+  ? '放弃后将清空当前未提交的语音结果，并退回小球状态。'
+  : '放弃后将清空当前未提交的问诊结果，并退回小球状态。');
 
 const s = (value: unknown): string => (typeof value === 'string' ? value : '');
 const patientName = computed((): string => s(props.initialPatientData?.naPi) || s(props.initialPatientData?.['na_pi']) || s(props.initialPatientData?.name) || s(props.initialPatientData?.patientName) || s(props.initialPatientData?.['patient_name']));
@@ -202,6 +214,7 @@ const resolveConsultationId = (): string => getPatientAnchorId() || 'unknown';
 let snapshotPersistTimer: ReturnType<typeof setTimeout> | null = null;
 function schedulePersistEditorSnapshot(): void {
   if (suppressDiagnosisTreatmentRefetch.value) return;
+  if (!shouldUseVoiceCache.value) return;
   if (!props.initialPatientData) return;
   if (snapshotPersistTimer) clearTimeout(snapshotPersistTimer);
   snapshotPersistTimer = setTimeout(() => {
@@ -223,6 +236,7 @@ function schedulePersistEditorSnapshot(): void {
  * 立即写回（不节流），用于完成 fetchAITreatment 之后等关键节点。
  */
 function persistEditorSnapshotImmediate(): void {
+  if (!shouldUseVoiceCache.value) return;
   if (!props.initialPatientData) return;
   if (snapshotPersistTimer) {
     clearTimeout(snapshotPersistTimer);
@@ -270,6 +284,7 @@ async function applyEditorSnapshot(snapshot: VoiceEditorSnapshot): Promise<void>
     treatments.value = snapshot.treatments as TreatmentRecommendation[];
     lastTreatmentDiagnosisKey.value =
       snapshot.treatmentDiagnosisKey || getDiagnosisIdentity(selectedDiagnosis.value);
+    await reconcileAutoSelectedMedicineInventory(treatments.value);
     void registerCurrentRecommendations();
     void hydrateMatchedMedicalItemDetails(treatments.value);
     console.info('[VoiceConsultationNew] Applied editor snapshot from cache', {
@@ -471,7 +486,7 @@ function submitVoiceGeneratedUserLog(): void {
   firstUserLogSnapshot.value = snapshot;
   void submitConsultationUserLog({
     consultationId: consultationId.value,
-    consultationType: 'voice',
+    consultationType: consultationUserLogType.value,
     patient: props.initialPatientData || null,
     firstSnapshot: snapshot,
   });
@@ -486,7 +501,7 @@ function submitVoiceFinalUserLog(): void {
     : undefined;
   void submitConsultationUserLog({
     consultationId: consultationId.value,
-    consultationType: 'voice',
+    consultationType: consultationUserLogType.value,
     patient: props.initialPatientData || null,
     finalSnapshot,
     selectionSnapshot: buildConsultationSelectionSnapshot(finalSnapshot),
@@ -503,7 +518,7 @@ function submitVoiceAbandonedUserLog(): void {
     : undefined;
   void submitConsultationUserLog({
     consultationId: consultationId.value,
-    consultationType: 'voice',
+    consultationType: consultationUserLogType.value,
     patient: props.initialPatientData || null,
     finalSnapshot,
     selectionSnapshot: buildConsultationSelectionSnapshot(finalSnapshot),
@@ -764,10 +779,6 @@ function expandTreatmentEditor(rec: TreatmentRecommendation): void {
 }
 
 function shouldShowTreatmentEditor(rec: TreatmentRecommendation): boolean {
-  if (rec.type === 'medicine') {
-    return !!rec.selected;
-  }
-
   return isTreatmentEditorExpanded(rec);
 }
 
@@ -1276,6 +1287,14 @@ async function confirmSuggestedMatch(rec: TreatmentRecommendation, event?: Event
     return;
   }
 
+  if (rec.type === 'medicine') {
+    Object.assign(rec, normalizeTreatmentRecommendation(rec));
+    if (!(await checkMedicineInventoryEnough(rec, true))) {
+      expandTreatmentEditor(rec);
+      return;
+    }
+  }
+
   rec.selected = true;
 
   showToast?.(`${rec.name} 已确认匹配`, 'success');
@@ -1326,6 +1345,14 @@ async function applyManualMatch(rec: TreatmentRecommendation, candidate: Medicin
     return;
   }
 
+  if (rec.type === 'medicine') {
+    Object.assign(rec, normalizeTreatmentRecommendation(rec));
+    if (!(await checkMedicineInventoryEnough(rec, true))) {
+      expandTreatmentEditor(rec);
+      return;
+    }
+  }
+
   rec.selected = true;
   activeManualMatchKey.value = null;
   showToast?.(`${candidate.name} 已完成标准库匹配`, 'success');
@@ -1362,11 +1389,15 @@ async function toggleTreatment(item: TreatmentRecommendation): Promise<void> {
     return;
   }
 
-  item.selected = nextSelected;
-
-  if (item.selected && item.type === 'medicine') {
+  if (nextSelected && item.type === 'medicine') {
     Object.assign(item, normalizeTreatmentRecommendation(item));
+    if (!(await checkMedicineInventoryEnough(item, true))) {
+      expandTreatmentEditor(item);
+      return;
+    }
   }
+
+  item.selected = nextSelected;
 
   if (!item.selected) {
     const editorKey = getTreatmentEditorKey(item);
@@ -1606,6 +1637,7 @@ async function fetchAITreatment(): Promise<void> {
 
     treatments.value = nextTreatments;
     lastTreatmentDiagnosisKey.value = diagnosisIdentity;
+    await reconcileAutoSelectedMedicineInventory(nextTreatments);
     void registerCurrentRecommendations();
     void hydrateMatchedMedicalItemDetails(nextTreatments);
     void performTreatmentFactCheck(nextTreatments);
@@ -1630,7 +1662,8 @@ async function handleTreatmentRefresh(event?: Event): Promise<void> {
 const openRelatedId = ref<string | null>(null);
 const inlineRelatedDiagnoses = ref<DiagnosisItem[]>([]);
 
-function toggleRelatedDropdown(diag: Diagnosis, event: Event): void {
+function toggleRelatedDropdown(diag: Diagnosis, event?: Event): void {
+  if (!event) return;
   event.stopPropagation();
   const targetId = diag.id || diag.code;
 
@@ -1645,7 +1678,7 @@ function toggleRelatedDropdown(diag: Diagnosis, event: Event): void {
   inlineRelatedDiagnoses.value = related.filter((item) => item.code !== diag.code);
 }
 
-function swapDiagnosis(originalDiag: Diagnosis, newItem: DiagnosisItem): void {
+function swapDiagnosis(originalDiag: Diagnosis, newItem: { id?: string; code: string; name: string }): void {
   const index = aiDiagnoses.value.findIndex((item) => (item.id || item.code) === (originalDiag.id || originalDiag.code));
   if (index === -1) return;
 
@@ -2211,17 +2244,21 @@ function getMedicineFieldDisplay(rec: TreatmentRecommendation, field: MedicinePr
   }
 }
 
-function getMedicineInlineSummary(rec: TreatmentRecommendation): string {
+function getMedicineCollapsedSummary(rec: TreatmentRecommendation): string {
   const normalized = normalizeTreatmentRecommendation(rec);
   const parts = [
-    normalized.dosage || normalized.dosageUnit ? `一次剂量 ${[normalized.dosage, normalized.dosageUnit].filter(Boolean).join(' ')}` : '',
-    normalized.frequency ? `频次 ${getFrequencyDisplayValue(normalized.frequency)}` : '',
-    normalized.route ? `用法 ${normalized.route}` : '',
-    normalized.days ? `天数 ${normalized.days}天` : '',
-    normalized.totalQty || normalized.totalUnit ? `总量 ${[normalized.totalQty, normalized.totalUnit].filter(Boolean).join(' ')}` : '',
+    normalized.dosage || normalized.dosageUnit
+      ? [normalized.dosage, normalized.dosageUnit].filter(Boolean).join('')
+      : '',
+    normalized.frequency ? getFrequencyDisplayValue(normalized.frequency) : '',
+    normalized.route || '',
+    [
+      [normalized.totalQty, normalized.totalUnit].filter(Boolean).join(''),
+      normalized.days ? `${normalized.days}天` : '',
+    ].filter(Boolean).join('/'),
   ].filter(Boolean);
 
-  return parts.join(' / ');
+  return parts.join(' · ') || '点击展开设置用法用量';
 }
 
 function getFrequencySearchKey(rec: TreatmentRecommendation): string {
@@ -2633,6 +2670,40 @@ function clearInsuranceSelection(rec: TreatmentRecommendation): void {
   setInsuranceSearchKeyword(rec, '');
 }
 
+function getInventoryBlockedToastMessage(items: TreatmentRecommendation[]): string {
+  if (items.length === 0) {
+    return '存在库存不足的药品，请调整用药数量或药房后再提交';
+  }
+
+  const names = Array.from(new Set(items.map((item) => item.name).filter(Boolean)));
+  if (names.length === 1) {
+    return `${names[0]} 库存不足，请调整用药数量或药房后再提交`;
+  }
+
+  const preview = names.slice(0, 3).join('、');
+  return `${preview}${names.length > 3 ? ` 等${names.length}种药品` : ''}库存不足，请调整用药数量或药房后再提交`;
+}
+
+async function reconcileAutoSelectedMedicineInventory(items: TreatmentRecommendation[]): Promise<void> {
+  const autoSelectedMedicines = items.filter((item) => item.type === 'medicine' && item.selected);
+  if (autoSelectedMedicines.length === 0) {
+    return;
+  }
+
+  const inventoryReady = await Promise.all(autoSelectedMedicines
+    .map((item) => checkMedicineInventoryEnough(item, false)));
+  const blockedItems = autoSelectedMedicines.filter((_, index) => !inventoryReady[index]);
+  if (blockedItems.length === 0) {
+    return;
+  }
+
+  blockedItems.forEach((item) => {
+    item.selected = false;
+  });
+  expandTreatmentEditor(blockedItems[0]);
+  showToast?.(getInventoryBlockedToastMessage(blockedItems), 'warning');
+}
+
 async function handleBatchWriteBack(): Promise<void> {
   if (!canSubmit.value) return;
   submitting.value = true;
@@ -2647,11 +2718,12 @@ async function handleBatchWriteBack(): Promise<void> {
       return;
     }
 
-    const medicineInventoriesReady = await Promise.all(selected
-      .filter((item) => item.type === 'medicine')
-      .map((item) => checkMedicineInventoryEnough(item, true)));
-    if (medicineInventoriesReady.some((ready) => !ready)) {
-      showToast?.('存在库存不足的药品，请调整用药数量或药房后再提交', 'warning');
+    const selectedMedicines = selected.filter((item) => item.type === 'medicine');
+    const medicineInventoriesReady = await Promise.all(selectedMedicines
+      .map((item) => checkMedicineInventoryEnough(item, false)));
+    const inventoryBlockedItems = selectedMedicines.filter((_, index) => !medicineInventoriesReady[index]);
+    if (inventoryBlockedItems.length > 0) {
+      showToast?.(getInventoryBlockedToastMessage(inventoryBlockedItems), 'warning');
       return;
     }
 
@@ -2699,7 +2771,9 @@ async function handleBatchWriteBack(): Promise<void> {
 
     await invoke('complete_consultation', { result });
     submitVoiceFinalUserLog();
-    clearVoiceConsultationCache(props.initialPatientData);
+    if (shouldUseVoiceCache.value) {
+      clearVoiceConsultationCache(props.initialPatientData);
+    }
     showToast?.('病历已提交', 'success');
     showSessionFeedbackDialog.value = true;
   } catch (error: unknown) {
@@ -2750,6 +2824,7 @@ watch(
       await fetchPharmacyOptions();
       treatments.value = initTreatmentsFromIntent(result.treatments);
       lastTreatmentDiagnosisKey.value = getDiagnosisIdentity(selectedDiagnosis.value);
+      await reconcileAutoSelectedMedicineInventory(treatments.value);
       void registerCurrentRecommendations();
       void hydrateMatchedMedicalItemDetails(treatments.value);
       console.info('[VoiceConsultationNew] Applied voice intent treatments', {
@@ -2763,7 +2838,7 @@ watch(
 
     // 仅在“同就诊缓存恢复”路径上叠加编辑快照，避免上一会话的治疗方案/诊断
     // 污染全新 LLM 语音问诊的默认推荐。
-    if (props.intentSource === 'cache') {
+    if (shouldUseVoiceCache.value && props.intentSource === 'cache') {
       const editorSnapshot = getVoiceConsultationEditorSnapshot(props.initialPatientData);
       if (editorSnapshot) {
         await applyEditorSnapshot(editorSnapshot);
@@ -2818,7 +2893,7 @@ watch(
 
 <template>
   <div class="voice-consultation-new">
-    <PatientHeader :patient="props.initialPatientData" />
+    <PatientHeader v-if="shouldShowPatientHeader" :patient="props.initialPatientData" />
 
     <div class="voice-content">
       <div v-if="!intentResult" class="loading-state pane-card">
@@ -3060,7 +3135,7 @@ watch(
                     :usage-token="rec.type !== 'medicine' ? (rec.usage || '') : ''"
                     :probable-match-name="hasProbableMatch(rec) ? getSuggestedMatchName(rec) : ''"
                     :original-name="getTreatmentOriginalName(rec)"
-                    :inline-summary="rec.type === 'medicine' && !rec.selected && !isTreatmentEditorExpanded(rec) ? getMedicineInlineSummary(rec) : ''"
+                    :inline-summary="rec.type === 'medicine' && !isTreatmentEditorExpanded(rec) ? getMedicineCollapsedSummary(rec) : ''"
                     :feedback-visible="isRecommendationFeedbackOpen(getTreatmentFeedbackKey(rec))"
                     :feedback-draft="getRecommendationDraft(getTreatmentFeedbackKey(rec))"
                     :feedback-submitting="recommendationSubmittingKey === getTreatmentFeedbackKey(rec)"
@@ -3497,6 +3572,15 @@ watch(
 
     <div class="voice-footer">
       <button
+        v-if="secondaryFooterActionText"
+        class="footer-secondary-btn"
+        type="button"
+        :disabled="secondaryFooterActionDisabled || submitting"
+        @click="emit('secondary-footer-action')"
+      >
+        {{ secondaryFooterActionText }}
+      </button>
+      <button
         class="footer-submit-btn"
         type="button"
         :disabled="!canSubmit"
@@ -3512,8 +3596,8 @@ watch(
     <div v-if="showCancelConfirm" class="confirm-overlay" @click.self="closeCancelConfirm">
       <div class="confirm-dialog pane-card" role="dialog" aria-modal="true" aria-labelledby="voice-cancel-title">
         <div class="confirm-dialog-body">
-          <p id="voice-cancel-title" class="confirm-dialog-title">确认放弃当前语音结果？</p>
-          <p class="confirm-dialog-text">放弃后将清空当前未提交的语音结果，并退回小球状态。</p>
+          <p id="voice-cancel-title" class="confirm-dialog-title">{{ cancelDialogTitle }}</p>
+          <p class="confirm-dialog-text">{{ cancelDialogText }}</p>
         </div>
         <div class="confirm-dialog-actions">
           <button class="confirm-btn secondary" type="button" @click="closeCancelConfirm">继续编辑</button>
@@ -3612,6 +3696,32 @@ watch(
 .voice-footer .footer-cancel-btn:hover {
   background: #F8FAFC;
   border-color: #CBD5E1;
+}
+
+.voice-footer .footer-secondary-btn {
+  min-width: 112px;
+  height: 32px;
+  padding: 5px 14px;
+  border: 1px solid #BFD5F6;
+  background: #F7FBFF;
+  border-radius: 4px;
+  font-weight: 400;
+  font-size: 14px;
+  color: #2469F2;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.voice-footer .footer-secondary-btn:hover:not(:disabled) {
+  background: #EDF5FF;
+  border-color: #95B8F1;
+}
+
+.voice-footer .footer-secondary-btn:disabled {
+  color: #8FA9D4;
+  background: #F5F8FD;
+  border-color: #D8E4F6;
+  cursor: not-allowed;
 }
 
 .voice-footer .footer-submit-btn {

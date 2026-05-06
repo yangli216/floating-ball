@@ -49,6 +49,9 @@
         <button class="ctl-btn stop" @click="handleStop" title="结束接诊">
           <Icon icon="lucide:square" size="16" aria-hidden="true" />
         </button>
+        <button v-if="isRegionalMode()" class="ctl-btn mock" @click="handleMockInput" title="模拟输入">
+          <Icon icon="lucide:keyboard" size="16" aria-hidden="true" />
+        </button>
         <button class="ctl-btn" @click="handleClose" title="收起">
           <Icon icon="lucide:x" size="16" aria-hidden="true" />
         </button>
@@ -115,6 +118,7 @@ const getPrimaryColor = () => {
 };
 import { RealtimeSpeechService } from '../services/aliyunSpeech';
 import Icon from './Icon.vue';
+import { isRegionalMode } from '../services/regionalClient';
 
 const props = withDefaults(defineProps<{
   processing?: boolean;
@@ -435,6 +439,31 @@ const handleStop = async () => {
   } catch (err) {
     console.error("[VoiceCapsule] Failed to stop recording:", err);
     trackError('voice_recording_stop_failed', err);
+    emit('error', err);
+  }
+};
+
+const handleMockInput = async () => {
+  trackClick('voice_recording_mock_input');
+  clearTimer();
+  clearVisualizer();
+  
+  try {
+    audioRecorder.setOnAudioChunk(undefined);
+    await audioRecorder.stop().catch(() => {});
+    
+    if (speechService) {
+      speechService.close();
+      speechService = null;
+    }
+
+    stoppedBlob = new Blob([], { type: 'audio/webm' });
+    editableText.value = '';
+    isStopped.value = true;
+    isExpanded.value = true;
+    console.log('[VoiceCapsule] Entered mock input state for review');
+  } catch (err) {
+    console.error("[VoiceCapsule] Failed to enter mock input mode:", err);
     emit('error', err);
   }
 };

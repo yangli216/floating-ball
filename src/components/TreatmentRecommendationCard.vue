@@ -39,9 +39,15 @@
           </div>
 
           <div v-if="inlineSummary || originalName || usageToken" class="worklist-secondary-row">
-            <div v-if="inlineSummary" class="medicine-inline-summary worklist-inline-text">
+            <button
+              v-if="inlineSummary"
+              class="medicine-inline-summary worklist-inline-text"
+              :class="{ clickable: showEditorToggle && !editorExpanded }"
+              type="button"
+              @click.stop="showEditorToggle && !editorExpanded ? emit('toggle-editor', $event) : undefined"
+            >
               {{ inlineSummary }}
-            </div>
+            </button>
             <div v-if="originalName" class="manual-match-origin-note worklist-inline-text worklist-inline-origin">
               AI 原建议：{{ originalName }}
             </div>
@@ -221,9 +227,15 @@
             AI 原建议：{{ originalName }}
           </div>
 
-          <div v-if="inlineSummary" class="medicine-inline-summary">
+          <button
+            v-if="inlineSummary"
+            class="medicine-inline-summary"
+            :class="{ clickable: showEditorToggle && !editorExpanded }"
+            type="button"
+            @click.stop="showEditorToggle && !editorExpanded ? emit('toggle-editor', $event) : undefined"
+          >
             {{ inlineSummary }}
-          </div>
+          </button>
         </div>
 
         <div class="card-actions treatment-card-actions">
@@ -553,7 +565,7 @@ const emit = defineEmits<{
 
 .worklist-row {
   display: grid;
-  grid-template-columns: 22px minmax(0, 1fr) 56px minmax(132px, 184px) auto;
+  grid-template-columns: 22px minmax(0, 1fr) minmax(92px, 108px) minmax(132px, 184px) auto;
   gap: 12px;
   align-items: start;
 }
@@ -589,6 +601,7 @@ const emit = defineEmits<{
   display: flex;
   flex-direction: column;
   gap: 6px;
+  min-width: 0;
 }
 
 .worklist-primary-row {
@@ -604,6 +617,13 @@ const emit = defineEmits<{
   gap: 6px;
   flex: 1 1 auto;
   min-width: 0;
+}
+
+.worklist-name-wrap .meta-token {
+  min-width: 0;
+  max-width: min(240px, 100%);
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .worklist-secondary-row {
@@ -627,6 +647,7 @@ const emit = defineEmits<{
   display: flex;
   justify-content: flex-start;
   padding-top: 2px;
+  min-width: 0;
 }
 
 .worklist .match-token {
@@ -637,7 +658,8 @@ const emit = defineEmits<{
   display: inline-flex;
   align-items: center;
   justify-content: flex-end;
-  min-width: 48px;
+  min-width: 92px;
+  white-space: nowrap;
 }
 
 .worklist-attr-col {
@@ -761,13 +783,27 @@ const emit = defineEmits<{
 }
 
 .medicine-inline-summary {
+  display: block;
+  width: 100%;
   margin-top: 6px;
+  padding: 0;
+  border: none;
+  background: transparent;
+  text-align: left;
   font-size: var(--voice-font-min);
   color: var(--voice-text-muted);
   line-height: 1.5;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+.medicine-inline-summary.clickable {
+  cursor: pointer;
+}
+
+.medicine-inline-summary.clickable:hover {
+  color: var(--voice-accent);
 }
 
 .worklist .medicine-inline-summary {

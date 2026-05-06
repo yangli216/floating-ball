@@ -1,18 +1,10 @@
 <template>
   <div class="consultation-page">
     <!-- Top: Patient Info -->
-    <PatientHeader :patient="patientInfo" :avatar="avatarSrc">
+    <PatientHeader v-if="currentView !== 'record'" :patient="patientInfo" :avatar="avatarSrc">
       <template #actions>
         <template v-if="currentView === 'consultation'">
           <!-- actions moved to consultation-footer -->
-        </template>
-        <template v-else-if="currentView === 'record'">
-<!--             <button class="header-btn" @click="$emit('close')">返回</button>-->
-             <!-- <button class="header-btn" :disabled="isWritingRecord" @click="writeRecordToHIS">
-               {{ isWritingRecord ? '回写中...' : '回写病历' }}
-             </button> -->
-             <!-- <button v-if="selectedDiagnosis" class="header-btn" @click="confirmDiagnosisSelection">确认诊断</button> -->
-<!--             <button class="header-btn primary" @click="handleComplete">生成报告</button>-->
         </template>
         <template v-else>
              <button class="header-btn primary" @click="printReport">打印</button>
@@ -348,462 +340,18 @@
 
     <!-- Medical Record View -->
     <div v-else-if="currentView === 'record'" class="medical-record-page">
-      
-      <div class="record-content">
-        <!-- Left: Generated Record -->
-        <div class="record-panel left-panel">
-          <div class="panel-header">
-            <h3>病历详情</h3>
-            <button class="icon-btn" @click="copyToClipboard" title="复制全部">
-              <svg t="1775896266752" class="icon" viewBox="0 0 1024 1024" version="1.1" xmlns="http://www.w3.org/2000/svg" p-id="120110" width="16px" height="16px"><path d="M704 256H128a64 64 0 0 0-64 64v576a64 64 0 0 0 64 64h576a64 64 0 0 0 64-64V320a64 64 0 0 0-64-64z m0 640H128V320h576v576zM896 64H320a64 64 0 0 0-64 64v64h64v-64h576v576h-64v64h64a64 64 0 0 0 64-64V128a64 64 0 0 0-64-64zM288 640h96v96a32 32 0 0 0 64 0v-96h96a32 32 0 0 0 0-64h-96v-96a32 32 0 0 0-64 0v96h-96a32 32 0 0 0 0 64z" p-id="120111"></path></svg>
-            </button>
-          </div>
-          <div class="panel-body">
-            <div class="record-field">
-              <label class="record-field-checkbox" :class="{ 'is-active': medRecordDetails.includes('1') }">
-                <input type="checkbox" value="1" v-model="medRecordDetails"/>主诉</label>
-              <textarea v-model="generatedRecord.chiefComplaint" rows="2"></textarea>
-            </div>
-            <div class="record-field">
-              <label class="record-field-checkbox" :class="{ 'is-active': medRecordDetails.includes('2') }">
-                <input type="checkbox" value="2" v-model="medRecordDetails"/>现病史</label>
-              <textarea v-model="generatedRecord.historyOfPresentIllness" rows="12"></textarea>
-            </div>
-            <!-- TCM Four Examinations -->
-            <div v-if="consultationMode === 'tcm' && generatedRecord.tcmFourExaminations" class="record-field">
-              <label>中医四诊</label>
-              <textarea v-model="generatedRecord.tcmFourExaminations" rows="8"></textarea>
-            </div>
-          </div>
-        </div>
-
-        <!-- Right: AI Recommendations -->
-        <div class="record-panel right-panel">
-          <div class="panel-header">
-            <h3>智能辅助 (AI)</h3>
-            <div class="panel-header-actions">
-              <span v-if="aiLoading" class="tag-ai">
-                <img class="ai-recommend-btn-img" src="/ai-recommend.png" alt="AI推荐诊断" draggable="false"/>
-                AI生成中...</span>
-            </div>
-          </div>
-          <div class="panel-body">
-            <!-- Loading Overlay -->
-            <Transition name="fade">
-              <div v-if="aiLoading" class="loading-overlay">
-<!--                <div class="ai-spinner">-->
-<!--                  <div class="spinner-ring"></div>-->
-<!--                  <div class="spinner-core"></div>-->
-<!--                </div>-->
-                <img class="treatment-loading-img" src="/loading.png" alt="正在分析病例" draggable="false"/>
-                <div class="loading-content">
-                  <p class="loading-title">AI 正在分析病例</p>
-                  <p class="loading-desc">正在综合患者主诉、现病史及体征信息...</p>
-                </div>
-              </div>
-            </Transition>
-
-            <div
-              v-if="workflowBannerText"
-              :style="workflowBannerStyle"
-            >
-              <strong v-if="assistFocusLabel">{{ assistFocusLabel }}</strong>
-              <span>{{ workflowBannerText }}</span>
-            </div>
-
-            <div v-if="!showDiagnosisCard && currentDiagnosisSummary" class="ai-card">
-              <h4>当前主诊断</h4>
-              <div class="diag-rationale">{{ currentDiagnosisSummary }}</div>
-            </div>
-
-            <div v-if="showDiagnosisCard" class="ai-card">
-              <div class="ai-card-title-row">
-                <h4>{{ consultationMode === 'tcm' ? '中医辨证' : '推荐诊断' }}</h4>
-                <div class="ai-card-title-actions">
-                  <!-- <button
-                    v-if="canOpenDiagnosisPath"
-                    class="diagnosis-path-btn"
-                    type="button"
-                    @click="openDiagnosisPathWindow"
-                  >
-                    <Icon icon="lucide:workflow" size="14" />
-                    <span>查看诊断路径</span>
-                  </button> -->
-                  <div class="ai-recommend-btn-border"></div>
-                  <button class="ai-recommend-btn" type="button" @click="fetchAIDiagnosis" :disabled="aiLoading">
-                    <img class="ai-recommend-btn-img" src="/ai-recommend.png" alt="AI推荐诊断" draggable="false"/>
-                    AI推荐诊断
-                  </button>
-                </div>
-              </div>
-
-              <!-- Error Message -->
-              <div v-if="aiError" class="error-message" style="color: var(--color-error); padding: 12px; margin-bottom: 12px; background: var(--color-error-bg); border-radius: 8px; font-size: 14px;">
-                {{ aiError }}
-              </div>
-
-              <!-- TCM Warning: No diagnosis data -->
-              <div v-if="!aiLoading && !aiError && aiDiagnoses.length === 0 && consultationMode === 'tcm'" class="warning-message" style="color: var(--color-warning, #f59e0b); padding: 12px; margin-bottom: 12px; background: rgba(245, 158, 11, 0.1); border-radius: 8px; font-size: 14px;">
-                提示：请在问诊表单中填写"中医四诊信息"，以便AI进行准确的中医辨证分析。
-              </div>
-
-              <div v-if="diagnosisGroups.length > 0" class="diagnosis-group-list">
-                <section
-                  v-for="group in diagnosisGroups"
-                  :key="group.key"
-                  class="diagnosis-group"
-                  :class="{ collapsed: group.showHeader && isDiagnosisGroupCollapsed(group.key) }"
-                >
-                  <button
-                    v-if="group.showHeader"
-                    type="button"
-                    class="diagnosis-group-header"
-                    @click="toggleDiagnosisGroup(group.key)"
-                  >
-                    <div class="diagnosis-group-title-row">
-                      <span class="diagnosis-group-toggle" :class="{ collapsed: isDiagnosisGroupCollapsed(group.key) }">
-                        <svg viewBox="0 0 1024 1024" version="1.1" xmlns="http://www.w3.org/2000/svg" p-id="8069" width="14" height="14"><path d="M32 512c0 265.152 214.848 480 480 480s480-214.848 480-480S777.152 32 512 32A479.872 479.872 0 0 0 32 512z m649.344-86.656a32 32 0 0 1 45.248 45.248l-192.064 192a32 32 0 0 1-45.184 0.128l-0.064-0.128-192-192a32.128 32.128 0 0 1 0-45.248 31.936 31.936 0 0 1 45.12-0.192l0.256 0.256L512 594.752l169.344-169.408z" p-id="8070" fill="#2469F2"></path></svg>
-                      </span>
-                      <svg t="1776397241811" class="icon" viewBox="0 0 1024 1024" version="1.1" xmlns="http://www.w3.org/2000/svg" p-id="1735" width="16" height="16"><path d="M515.168 164.001C510.071 180.23 494.91 192 477 192c-22.091
-                        0-40-17.909-40-40s17.909-40 40-40c11.19 0 21.306 4.594 28.565 12h31.473C603.29 124 657
-                        177.726 657 244c0 6.315-0.498 12.62-1.49 18.854l-0.205 1.246-36.008 212c-9.7 57.115-58.772
-                        99.054-116.515 99.887l-1.752 0.013h-57.031l0.001 12c0 11.046-8.954 20-20 20h-19v175c0 49.153
-                        39.847 89 89 89 48.662 0 88.202-39.054 88.988-87.528L583 783v-89.781C583 621.853 640.755 564
-                        712 564c70.532 0 127.844 56.702 128.983 127.083l0.017 2.136-0.001 59.78h-40l0.001-59.824c0-48.757-39.054-88.376-87.528-89.163L712
-                        604c-48.662 0-88.202 39.13-88.988 87.7l-0.012 1.475-0.002 30.825H623v59c0 70.532-56.606 127.844-126.867 128.983L494 912c-70.532
-                        0-127.844-56.606-128.983-126.867L365 783V608h-19c-11.046 0-20-8.954-20-20l-0.001-12h-59.01c-57.914 0-107.468-41.369-117.96-98.174l-0.307-1.726-36.008-212c-11.098-65.338 32.856-127.304
-                        98.173-138.405a119.925 119.925 0 0 1 18.832-1.688l1.262-0.007h32.454c7.26-7.406 17.376-12 28.565-12 22.091 0 40 17.909
-                        40 40s-17.909 40-40 40c-17.91 0-33.071-11.771-38.168-27.999L230.984 164c-4.143 0-8.28
-                        0.322-12.373 0.963l-1.022 0.167c-43.108 7.327-72.257 47.889-65.657 90.964l0.21 1.306
-                        36.007 212c6.467 38.076 39.18 66.036 77.674 66.592l1.168 0.008h59.008l0.001-4c0-11.046
-                        8.954-20 20-20h78c11.046 0 20 8.954 20 20l-0.001 4h57.023c38.608 0 71.642-27.58 78.638-65.45l0.204-1.15
-                        36.006-212A80.028 80.028 0 0 0 617 244c0-43.741-35.092-79.283-78.649-79.99l-1.323-0.01z" fill="#222222" p-id="1736"></path><path d="M817 720c53.02 0 96 42.98 96 96s-42.98 96-96 96-96-42.98-96-96 42.98-96 96-96z m0 40c-30.928 0-56 25.072-56 56s25.072 56 56 56 56-25.072 56-56-25.072-56-56-56z" fill="#03AD82" p-id="1737"></path></svg>
-                      <span class="diagnosis-group-title">{{ group.title }}</span>
-                      <span v-if="group.rangeLabel" class="diagnosis-group-range">{{ group.rangeLabel }}</span>
-                    </div>
-                    <span class="diagnosis-group-count">{{ group.diagnoses.length }}</span>
-                  </button>
-
-                  <ul v-show="!group.showHeader || !isDiagnosisGroupCollapsed(group.key)" class="diagnosis-list">
-                    <DiagnosisRecommendationCard
-                      v-for="diag in group.diagnoses"
-                      :key="diag.id || diag.code || diag.name"
-                      :diag="diag"
-                      :selected="selectedDiagnosis?.id === diag.id"
-                      :is-primary="selectedDiagnosis?.id === diag.id"
-                      :can-remove="false"
-                      :reason-open="false"
-                      :related-open="openRelatedId === (diag.id || diag.code)"
-                      :related-diagnoses="openRelatedId === (diag.id || diag.code) ? inlineRelatedDiagnoses : []"
-                      :issue="getIssueForDiagnosis(diag.code)"
-                      :show-tcm-badge="true"
-                      :feedback-visible="isRecommendationFeedbackOpen(getDiagnosisFeedbackKey(diag))"
-                      :feedback-draft="getRecommendationDraft(getDiagnosisFeedbackKey(diag))"
-                      :feedback-submitting="recommendationSubmittingKey === getDiagnosisFeedbackKey(diag)"
-                      :submitted-label="getRecommendationSubmittedLabel(getDiagnosisFeedbackKey(diag))"
-                      @toggle="handleDiagnosisSelect(diag)"
-                      @toggle-feedback="toggleRecommendationFeedback(getDiagnosisFeedbackKey(diag), $event)"
-                      @update:feedback-draft="updateRecommendationDraft(getDiagnosisFeedbackKey(diag), $event)"
-                      @submit-feedback="handleDiagnosisFeedbackSubmit(diag, $event)"
-                      @toggle-related="toggleRelatedDropdown(diag, $event)"
-                      @swap-related="swapDiagnosis(diag, $event)"
-                    >
-                      <template #actions>
-                        <div class="diag-actions">
-                          <button
-                            v-if="isPMPHAIConfigured()"
-                            class="doc-icon-btn"
-                            @click.stop="searchLiterature(diag)"
-                            title="搜索文献"
-                          >
-                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                              <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
-                              <polyline points="14 2 14 8 20 8"></polyline>
-                              <line x1="16" y1="13" x2="8" y2="13"></line>
-                              <line x1="16" y1="17" x2="8" y2="17"></line>
-                            </svg>
-                          </button>
-                          <button
-                            class="item-reference-btn"
-                            type="button"
-                            :disabled="isDiagnosisReferenceDisabled(diag)"
-                            @click.stop="referenceDiagnosisItemToPHIS(diag)"
-                          >
-                            {{ getDiagnosisReferenceButtonLabel(diag) }}
-                          </button>
-                          <span
-                            v-if="getDiagnosisReferenceStatus(diag)"
-                            class="diag-rate"
-                            :title="getDiagnosisReferenceStatus(diag)?.message || ''"
-                          >
-                            {{ getReferenceStatusLabel(getDiagnosisReferenceStatus(diag)?.status || 'pending') }}
-                          </span>
-                          <span class="diag-rate" :class="getDiagRateClass(diag.rate)">{{ diag.rate }}</span>
-                        </div>
-                      </template>
-
-                      <template #body>
-                        <div class="diag-rationale">{{ diag.rationale }}</div>
-
-                        <div v-if="diag.isTCM" class="tcm-detail">
-                          <div v-if="diag.syndrome" class="tcm-syndrome">
-                            <span class="tcm-label">证候:</span>
-                            <span class="tcm-value">{{ diag.syndrome }}</span>
-                            <span v-if="diag.syndromeCode" class="tcm-code">({{ diag.syndromeCode }})</span>
-                            <span v-if="diag.syndromeMatched" class="match-tag" title="已匹配证候数据">✓</span>
-                          </div>
-                          <div v-if="diag.treatment" class="tcm-treatment">
-                            <span class="tcm-label">治法:</span>
-                            <span class="tcm-value">{{ diag.treatment }}</span>
-                            <span v-if="diag.treatmentCode" class="tcm-code">({{ diag.treatmentCode }})</span>
-                            <span v-if="diag.treatmentMatched" class="match-tag" title="已匹配治法数据">✓</span>
-                          </div>
-                        </div>
-
-                        <div class="diag-checklist-wrapper">
-                          <div v-if="selectedDiagnosis?.id === diag.id && !isChecklistLoading && checklistItems.length > 0" class="checklist-indicator" @click.stop="showChecklistModal = true">
-                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                              <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/>
-                              <line x1="12" y1="9" x2="12" y2="13"/>
-                              <line x1="12" y1="17" x2="12.01" y2="17"/>
-                            </svg>
-                            <span>鉴别排查 (待确认)</span>
-                          </div>
-                          <div v-if="selectedDiagnosis?.id === diag.id && isChecklistLoading" class="checklist-indicator loading">
-                            <svg class="spinner" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                              <path d="M21 12a9 9 0 1 1-6.219-8.56"/>
-                            </svg>
-                            <span>安全分析中...</span>
-                          </div>
-                        </div>
-                      </template>
-                    </DiagnosisRecommendationCard>
-                  </ul>
-                </section>
-              </div>
-              <div v-else class="empty-text">暂无推荐</div>
-            </div>
-            
-            <div class="ai-card" v-if="selectedDiagnosis && showTreatmentCard">
-              <div class="ai-card-title-row">
-                <div class="treatment-card-heading">
-                  <h4><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#2B7FE3" stroke-width="2"><path d="M14 9V5a3 3 0 0 0-3-3l-4 9v11h11.28a2 2 0 0 0 2-1.7l1.38-9a2 2 0 0 0-2-2.3zM7 22H4a2 2 0 0 1-2-2v-7a2 2 0 0 1 2-2h3"></path></svg> 推荐方案（基于【{{ selectedDiagnosis.name }}】）</h4>
-                </div>
-              </div>
-              <p class="treatment-card-desc">（勾选需要同步到PHIS的处置项目，再一次引入所选处置。）</p>
-              
-              <div v-if="anyRecommendationLoading" class="loading-overlay embedded">
-                <div class="treatment-loading-icon">
-                  <img class="treatment-loading-img" src="/loading.png" alt="正在智能推荐方案"
-                       draggable="false"/>
-                  <div class="treatment-loading-pulse"></div>
-                </div>
-                <div class="loading-content">
-                  <p class="loading-title">正在智能推荐方案</p>
-                  <p class="loading-desc">正在匹配医院标准库和医嘱目录...</p>
-                </div>
-              </div>
-
-              <div v-else-if="treatmentError" class="error-text">{{ treatmentError }}</div>
-
-              <div v-else-if="visibleTreatmentRecommendations.length > 0" class="treatment-groups">
-                <section
-                  v-for="section in visibleTreatmentReferenceSections"
-                  :key="section.type"
-                  class="treatment-section"
-                >
-                  <div class="treatment-section-header">
-                    <h5>{{ section.title }}</h5>
-                    <div class="treatment-section-header-right">
-                      <span class="treatment-section-pill"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 9V5a3 3 0 0 0-3-3l-4 9v11h11.28a2 2 0 0 0 2-1.7l1.38-9a2 2 0 0 0-2-2.3zM7 22H4a2 2 0 0 1-2-2v-7a2 2 0 0 1 2-2h3"></path></svg> {{ section.items.length }} 项推荐</span>
-                      <span class="treatment-section-pill strong"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg> {{ section.selectedCount }} 项已选</span>
-                    </div>
-                  </div>
-                  <div class="treatment-list">
-                    <TreatmentRecommendationCard
-                      v-for="rec in section.items"
-                      :key="`${rec.type}-${rec.name}`"
-                      :rec="rec"
-                      layout-variant="worklist"
-                      :selected="rec.selected"
-                      :issue="getIssueForTreatment(rec.name)"
-                      :spec="getTreatmentSpec(rec)"
-                      :reason-open="activeReasonTooltipKey === getReasonTooltipKey('treatment', rec.type, rec.name)"
-                      :match-label="getTreatmentMatchLabel(rec)"
-                      :match-tone="rec.matchStatus === 'probable' ? 'warning' : ((rec.matchStatus === 'manual' || rec.matchStatus === 'confirmed' || rec.matchStatus === 'exact') ? 'success' : 'default')"
-                      :usage-token="rec.type !== 'medicine' ? (rec.usage || '') : ''"
-                      :probable-match-name="hasProbableMatch(rec) ? getSuggestedMatchName(rec) : ''"
-                      :original-name="getTreatmentOriginalName(rec)"
-                      :inline-summary="rec.type === 'medicine' && !rec.selected ? getMedicineInlineSummary(rec) : ''"
-                      :feedback-visible="isRecommendationFeedbackOpen(getTreatmentFeedbackKey(rec))"
-                      :feedback-draft="getRecommendationDraft(getTreatmentFeedbackKey(rec))"
-                      :feedback-submitting="recommendationSubmittingKey === getTreatmentFeedbackKey(rec)"
-                      :feedback-submitted-label="getRecommendationSubmittedLabel(getTreatmentFeedbackKey(rec))"
-                      :show-manual-match-button="!rec.matchedItem"
-                      :manual-match-title="isManualMatchOpen(rec) ? '收起手动匹配' : (rec.matchedItem ? '重新匹配标准库项目' : '手动匹配标准库项目')"
-                      :manual-match-button-text="isManualMatchOpen(rec) ? '收起匹配' : (rec.matchedItem ? '重新匹配' : '手动匹配')"
-                      @toggle="toggleTreatmentSelection(rec)"
-                      @toggle-reason="toggleReasonTooltip(getReasonTooltipKey('treatment', rec.type, rec.name), $event)"
-                      @confirm-probable-match="confirmSuggestedMatch(rec, $event)"
-                      @toggle-feedback="toggleRecommendationFeedback(getTreatmentFeedbackKey(rec), $event)"
-                      @update:feedback-draft="updateRecommendationDraft(getTreatmentFeedbackKey(rec), $event)"
-                      @submit-feedback="handleTreatmentFeedbackSubmit(rec, $event)"
-                      @toggle-manual-match="toggleManualMatch(rec, $event)"
-                    >
-                      <template #title-meta>
-                        <RecAttributeChip
-                          v-if="treatmentGates.isExecDeptRequired(rec)"
-                          variant="voice-card"
-                          label="执行科室"
-                          :value-text="treatmentGates.getExecDeptDisplay(rec)"
-                          :options="getExecDeptChipOptions()"
-                          :missing="!treatmentGates.hasRequiredExecDept(rec)"
-                          @select="onExecDeptSelect(rec, $event)"
-                        />
-                        <RecAttributeChip
-                          v-if="treatmentGates.isPharmacyRequired(rec)"
-                          variant="voice-card"
-                          label="发药药房"
-                          :value-text="treatmentGates.getPharmacyDisplay(rec)"
-                          :options="getPharmacyChipOptions(rec)"
-                          :missing="!treatmentGates.hasRequiredPharmacy(rec)"
-                          :status="getMedicineHydrationStatus(rec)"
-                          empty-text="当前药品在可用药房无配置，请先手动匹配标准库"
-                          @select="onPharmacySelect(rec, $event)"
-                        />
-                      </template>
-
-                      <template #actions>
-                        <button
-                          v-if="isPMPHAIConfigured()"
-                          class="doc-icon-btn"
-                          @click.stop="searchLiterature(rec)"
-                          title="搜索文献"
-                        >
-                          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
-                            <polyline points="14 2 14 8 20 8"></polyline>
-                            <line x1="16" y1="13" x2="8" y2="13"></line>
-                            <line x1="16" y1="17" x2="8" y2="17"></line>
-                          </svg>
-                        </button>
-                      </template>
-
-                      <template #body>
-                        <div v-if="getTreatmentReferenceStatus(rec) || rec.ingredients" class="treatment-detail-panel treatment-body-panel" @click.stop>
-                          <div
-                            v-if="getTreatmentReferenceStatus(rec)"
-                            class="diag-rationale"
-                          >
-                            {{ getReferenceStatusLabel(getTreatmentReferenceStatus(rec)?.status || 'pending') }}
-                            <span v-if="getTreatmentReferenceStatus(rec)?.message">
-                              ：{{ getTreatmentReferenceStatus(rec)?.message }}
-                            </span>
-                          </div>
-                          <div v-if="rec.ingredients" class="rec-ingredients-edit">
-                            <label>组成：</label>
-                            <textarea
-                              v-model="rec.ingredients"
-                              class="ingredients-textarea"
-                              rows="2"
-                              placeholder="请输入方剂组成"
-                            ></textarea>
-                          </div>
-                        </div>
-                      </template>
-
-                      <template #manual-match>
-                        <ManualMatchPicker
-                          v-if="isManualMatchOpen(rec)"
-                          :title="`从标准库选择${getTreatmentTagLabel(rec.type)}`"
-                          :keyword="getManualMatchKeyword(rec)"
-                          :candidates="getManualMatchPickerCandidates(rec)"
-                          @update:keyword="setManualMatchKeyword(rec, $event)"
-                          @select="applyManualMatchSelection(rec, $event)"
-                        />
-                      </template>
-
-                      <template #editor>
-                        <div v-if="rec.selected" class="treatment-detail-panel treatment-editor-panel" @click.stop>
-                          <TreatmentItemEditor
-                            :rec="rec"
-                            :mode="rec.type === 'medicine' ? 'inline' : 'compact'"
-                            :show-exec-dept-readonly="false"
-                            :frequency-options="hisFrequencyOptions"
-                            :route-options="hisRouteOptions"
-                          />
-                        </div>
-                      </template>
-                    </TreatmentRecommendationCard>
-                  </div>
-                </section>
-
-                <section
-                  v-if="visibleOtherTreatmentRecommendations.length > 0"
-                  class="treatment-section treatment-section-muted"
-                >
-                  <div class="treatment-section-header">
-                    <div>
-                      <h5>其他处置建议</h5>
-                      <p>这些建议可继续查看或纳入最终报告，但当前不会通过 PHIS 引用接口提交。</p>
-                    </div>
-                    <span class="section-readonly-badge">仅展示</span>
-                  </div>
-                  <div class="treatment-list">
-                    <div 
-                      v-for="rec in visibleOtherTreatmentRecommendations"
-                      :key="`${rec.type}-${rec.name}`"
-                      class="treatment-item treatment-item-muted"
-                      :class="{ active: rec.selected }"
-                      @click="toggleTreatmentSelection(rec)"
-                    >
-                      <div class="selected-mark" v-if="rec.selected">
-                        <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>
-                      </div>
-                      <div class="rec-content">
-                        <div class="rec-header">
-                          <div class="rec-name-group">
-                            <span class="rec-tag" :class="rec.type">{{ getTreatmentTagLabel(rec.type) }}</span>
-                            <FactCheckHighlight :issue="getIssueForTreatment(rec.name)">
-                              <span class="rec-name">{{ rec.name }}</span>
-                            </FactCheckHighlight>
-                          </div>
-                          <span class="section-readonly-inline">不回写 PHIS</span>
-                        </div>
-                        <div class="rec-reason">{{ rec.reason }}</div>
-                        <div v-if="rec.ingredients" class="rec-ingredients-edit" @click.stop>
-                          <label>组成：</label>
-                          <textarea 
-                            v-model="rec.ingredients"
-                            class="ingredients-textarea"
-                            rows="2"
-                            placeholder="请输入方剂组成"
-                          ></textarea>
-                        </div>
-                        <div v-if="rec.usage" class="rec-usage">建议：{{ rec.usage }}</div>
-                      </div>
-                    </div>
-                  </div>
-                </section>
-              </div>
-              <div v-else class="empty-text">暂无推荐方案</div>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      <!-- Fixed Action Area -->
-      <div class="fixed-action-area">
-        <button class="writeback-btn" @click="submitToHIS" :disabled="!canSubmitToHIS">
-          一键回写
-        </button>
-        <button class="reference-btn" @click="handleBatchReferenceToPHIS" :disabled="!canBatchReferenceToPHIS">
-          批量引用 PHIS
-        </button>
-        <button class="back-btn" @click="currentView = 'consultation'">
-          返回
-        </button>
-      </div>
+      <SymptomConsultationResultPage
+        :initial-patient-data="props.initialPatientData"
+        :generated-record="generatedRecord"
+        :diagnoses="aiDiagnoses"
+        :selected-diagnosis="selectedDiagnosis"
+        :medicines="treatmentRecommendations"
+        :examinations="examRecommendations"
+        :lab-tests="labTestRecommendations"
+        :procedures="procedureRecommendations"
+        @cancel="currentView = 'consultation'"
+        @close="$emit('close')"
+      />
     </div>
 
     <!-- Final Report View -->
@@ -1026,6 +574,7 @@ import Icon from './Icon.vue';
 import FactCheckNotification from './FactCheckNotification.vue';
 import FactCheckHighlight from './FactCheckHighlight.vue';
 import DiagnosisRecommendationCard from './DiagnosisRecommendationCard.vue';
+import SymptomConsultationResultPage from './SymptomConsultationResultPage.vue';
 import TreatmentRecommendationCard from './TreatmentRecommendationCard.vue';
 import TreatmentItemEditor from './TreatmentItemEditor.vue';
 import ManualMatchPicker, { type ManualMatchCandidate } from './ManualMatchPicker.vue';
@@ -1095,7 +644,6 @@ import type { VoiceRecommendationFeedbackDraft } from '../types/voiceFeedback';
 type AssistAction = ConsultationAssistAction;
 type ReferenceAction = 'diagnosis' | 'medication' | 'examination' | 'lab_test' | 'procedure' | 'batch';
 type ReferenceLifecycleStatus = 'pending' | 'success' | 'failed';
-type ReferenceableTreatmentType = 'medicine' | 'exam' | 'lab_test' | 'procedure';
 
 interface ReferenceItemPayload {
   name: string;
@@ -1121,16 +669,6 @@ interface ReferenceStatusEntry {
   requestId: string;
   message?: string;
   updatedAt: number;
-}
-
-interface TreatmentReferenceSection {
-  type: ReferenceableTreatmentType;
-  action: Exclude<ReferenceAction, 'diagnosis'>;
-  title: string;
-  description: string;
-  actionLabel: string;
-  items: TreatmentRecommendation[];
-  selectedCount: number;
 }
 
 // Patient info: empty defaults; real data flows in via `initialPatientData` watch.
@@ -1556,71 +1094,14 @@ const visibleTreatmentRecommendations = computed(() => {
     ...procedureRecommendations.value,
   ];
 });
-const visibleMedicineRecommendations = computed(() => treatmentRecommendations.value);
-const visibleExamRecommendations = computed(() => examRecommendations.value);
-const visibleLabTestRecommendations = computed(() => labTestRecommendations.value);
-const visibleProcedureRecommendations = computed(() => procedureRecommendations.value);
 const visibleOtherTreatmentRecommendations = computed(() =>
   visibleTreatmentRecommendations.value.filter(
     (item) => item.type !== 'medicine' && item.type !== 'exam' && item.type !== 'lab_test' && item.type !== 'procedure'
   )
 );
-const selectedMedicineCount = computed(
-  () => visibleMedicineRecommendations.value.filter((item) => item.selected).length
-);
-const selectedExamCount = computed(
-  () => visibleExamRecommendations.value.filter((item) => item.selected).length
-);
-const selectedLabTestCount = computed(
-  () => visibleLabTestRecommendations.value.filter((item) => item.selected).length
-);
-const selectedProcedureCount = computed(
-  () => visibleProcedureRecommendations.value.filter((item) => item.selected).length
-);
 const anyRecommendationLoading = computed(
   () => treatmentLoading.value || examLoading.value || labTestLoading.value || procedureLoading.value
 );
-const visibleTreatmentReferenceSections = computed(() => {
-  const sections: TreatmentReferenceSection[] = [
-    {
-      type: 'medicine',
-      action: 'medication',
-      title: '推荐用药',
-      description: '勾选需要同步到 PHIS 的药品方案，再一次引入所选用药。',
-      actionLabel: '引入所选用药',
-      items: visibleMedicineRecommendations.value,
-      selectedCount: selectedMedicineCount.value,
-    },
-    {
-      type: 'exam',
-      action: 'examination',
-      title: '推荐检查',
-      description: '勾选需要同步到 PHIS 的检查项目（影像/器械类），再一次引入所选检查。',
-      actionLabel: '引入所选检查',
-      items: visibleExamRecommendations.value,
-      selectedCount: selectedExamCount.value,
-    },
-    {
-      type: 'lab_test',
-      action: 'lab_test',
-      title: '推荐检验',
-      description: '勾选需要同步到 PHIS 的检验项目（实验室类），再一次引入所选检验。',
-      actionLabel: '引入所选检验',
-      items: visibleLabTestRecommendations.value,
-      selectedCount: selectedLabTestCount.value,
-    },
-    {
-      type: 'procedure',
-      action: 'procedure',
-      title: '推荐处置',
-      description: '勾选需要同步到 PHIS 的处置项目，再一次引入所选处置。',
-      actionLabel: '引入所选处置',
-      items: visibleProcedureRecommendations.value,
-      selectedCount: selectedProcedureCount.value,
-    },
-  ];
-  return sections.filter((section) => section.items.length > 0);
-});
 const showDiagnosisCard = computed(
   () => currentView.value === 'record' && assistFocus.value !== 'medication' && assistFocus.value !== 'examination' && assistFocus.value !== 'lab_test' && assistFocus.value !== 'procedure'
 );
@@ -2094,6 +1575,14 @@ const resetWorkflowState = () => {
   hasKnowledgeResults.value = false;
   showKnowledgePanel.value = false;
 };
+
+const resetToConsultationView = () => {
+  currentView.value = 'consultation';
+};
+
+defineExpose({
+  resetToConsultationView,
+});
 
 /* canOpenDiagnosisPath / openDiagnosisPathWindow removed - template usage commented out */
 
@@ -2637,31 +2126,6 @@ async function handleTreatmentFeedbackSubmit(rec: TreatmentRecommendation, draft
   }
 }
 
-const buildSelectedTreatmentReferenceItemsByType = (
-  type: ReferenceableTreatmentType
-): ReferenceItemPayload[] => {
-  const sourceMap: Record<ReferenceableTreatmentType, TreatmentRecommendation[]> = {
-    medicine: treatmentRecommendations.value,
-    exam: examRecommendations.value,
-    lab_test: labTestRecommendations.value,
-    procedure: procedureRecommendations.value,
-  };
-  const actionMap: Record<ReferenceableTreatmentType, string> = {
-    medicine: 'medication',
-    exam: 'examination',
-    lab_test: 'lab_test',
-    procedure: 'procedure',
-  };
-  return sourceMap[type]
-    .filter((item) => item.selected)
-    .map((item): ReferenceItemPayload => ({
-      name: item.name,
-      code: item.matchedItem?.code,
-      type: actionMap[type] as ReferenceItemPayload['type'],
-      idCli: item.matchedItem?.id,
-    }));
-};
-
 const isPendingReferenceItem = (
   action: ReferenceAction,
   item: { name: string; code?: string }
@@ -2864,47 +2328,11 @@ const referenceDiagnosisItemToPHIS = async (diagnosis: Diagnosis) => {
 
 /* referenceSelectedTreatmentsToPHIS removed - per-section reference replaced by batch 一键回写 */
 
-const canBatchReferenceToPHIS = computed(() => {
-  if (hasPendingReferenceRequest.value) return false;
-  if (!selectedDiagnosis.value) return false;
-  const hasSelectedTreatments = visibleTreatmentReferenceSections.value.some(
-    (s) => s.selectedCount > 0
-  );
-  return hasSelectedTreatments;
-});
-
 const canSubmitToHIS = computed(() => {
   if (!selectedDiagnosis.value) return false;
   return generatedRecord.value.chiefComplaint.trim().length > 0
     && generatedRecord.value.historyOfPresentIllness.trim().length > 0;
 });
-
-const handleBatchReferenceToPHIS = async () => {
-  if (!selectedDiagnosis.value) {
-    showToast('请先选择一个诊断结果', 'info');
-    return;
-  }
-
-  // Assemble all items into a single array
-  const allItems: ReferenceItemPayload[] = [
-    {
-      name: selectedDiagnosis.value.name,
-      code: selectedDiagnosis.value.code,
-      type: 'diagnosis',
-      isTCM: selectedDiagnosis.value.isTCM,
-    },
-  ];
-
-  for (const section of visibleTreatmentReferenceSections.value) {
-    if (section.selectedCount > 0) {
-      const items = buildSelectedTreatmentReferenceItemsByType(section.type);
-      allItems.push(...items);
-    }
-  }
-
-  // Single call with all data
-  await requestReferenceToPHIS('batch', allItems);
-};
 
 watch(() => props.initialPatientData, (newData) => {
   if (newData) {
@@ -2946,6 +2374,20 @@ const getSelectedTreatments = (): TreatmentRecommendation[] => [
   ...procedureRecommendations.value,
 ].filter((item) => item.selected);
 
+const getInventoryBlockedSubmitMessage = (items: TreatmentRecommendation[]): string => {
+  if (items.length === 0) {
+    return '存在库存不足的药品，请调整用药数量或药房后再提交';
+  }
+
+  const names = Array.from(new Set(items.map((item) => item.name).filter(Boolean)));
+  if (names.length === 1) {
+    return `${names[0]} 库存不足，请调整用药数量或药房后再提交`;
+  }
+
+  const preview = names.slice(0, 3).join('、');
+  return `${preview}${names.length > 3 ? ` 等${names.length}种药品` : ''}库存不足，请调整用药数量或药房后再提交`;
+};
+
 const ensureSelectedTreatmentsReadyForSubmit = async (selectedTreatments: TreatmentRecommendation[]): Promise<boolean> => {
   const missingPharmacy = selectedTreatments.find((item) => !treatmentGates.hasRequiredPharmacy(item));
   if (missingPharmacy) {
@@ -2967,11 +2409,12 @@ const ensureSelectedTreatmentsReadyForSubmit = async (selectedTreatments: Treatm
     return false;
   }
 
-  const medicineInventoriesReady = await Promise.all(selectedTreatments
-    .filter((item) => item.type === 'medicine')
-    .map((item) => treatmentHydration.checkMedicineInventoryEnough(item, true)));
-  if (medicineInventoriesReady.some((ready) => !ready)) {
-    showToast('存在库存不足的药品，请调整用药数量或药房后再提交', 'info');
+  const selectedMedicines = selectedTreatments.filter((item) => item.type === 'medicine');
+  const medicineInventoriesReady = await Promise.all(selectedMedicines
+    .map((item) => treatmentHydration.checkMedicineInventoryEnough(item, false)));
+  const inventoryBlockedItems = selectedMedicines.filter((_, index) => !medicineInventoriesReady[index]);
+  if (inventoryBlockedItems.length > 0) {
+    showToast(getInventoryBlockedSubmitMessage(inventoryBlockedItems), 'info');
     return false;
   }
 
@@ -3993,7 +3436,8 @@ const getIssueForTreatment = (treatmentName: string): FactCheckIssue | undefined
 const openRelatedId = ref<string | null>(null);
 const inlineRelatedDiagnoses = ref<DiagnosisItem[]>([]);
 
-const toggleRelatedDropdown = (diag: Diagnosis, event: Event) => {
+const toggleRelatedDropdown = (diag: Diagnosis, event?: Event) => {
+  if (!event) return;
   event.stopPropagation();
 
   if (openRelatedId.value === diag.id) {
@@ -4009,7 +3453,7 @@ const toggleRelatedDropdown = (diag: Diagnosis, event: Event) => {
   }
 };
 
-const swapDiagnosis = (originalDiag: Diagnosis, newItem: DiagnosisItem) => {
+const swapDiagnosis = (originalDiag: Diagnosis, newItem: { id?: string; code: string; name: string }) => {
   trackRecommendationAction('diagnosis', originalDiag.id || originalDiag.code, 'modified', {
     originalValue: originalDiag.name,
     modifiedValue: newItem.name,
@@ -5053,6 +4497,68 @@ const copyToClipboard = () => {
     showToast('已复制到剪贴板', 'success');
   });
 };
+
+const removedSymptomRecordViewSymbols = [
+  FactCheckHighlight,
+  DiagnosisRecommendationCard,
+  TreatmentRecommendationCard,
+  TreatmentItemEditor,
+  ManualMatchPicker,
+  RecAttributeChip,
+  medRecordDetails,
+  hasProbableMatch,
+  getSuggestedMatchName,
+  getTreatmentMatchLabel,
+  getTreatmentOriginalName,
+  confirmSuggestedMatch,
+  visibleOtherTreatmentRecommendations,
+  anyRecommendationLoading,
+  showDiagnosisCard,
+  showTreatmentCard,
+  currentDiagnosisSummary,
+  assistFocusLabel,
+  workflowBannerText,
+  workflowBannerStyle,
+  toggleDiagnosisGroup,
+  recommendationSubmittingKey,
+  updateRecommendationDraft,
+  getTreatmentTagLabel,
+  getTreatmentSpec,
+  getMedicineInlineSummary,
+  getReasonTooltipKey,
+  toggleReasonTooltip,
+  getRecommendationDraft,
+  getRecommendationSubmittedLabel,
+  isRecommendationFeedbackOpen,
+  toggleRecommendationFeedback,
+  handleDiagnosisFeedbackSubmit,
+  handleTreatmentFeedbackSubmit,
+  getDiagnosisReferenceButtonLabel,
+  getDiagRateClass,
+  isDiagnosisReferenceDisabled,
+  getReferenceStatusLabel,
+  getTreatmentReferenceStatus,
+  referenceDiagnosisItemToPHIS,
+  searchLiterature,
+  getIssueForDiagnosis,
+  getIssueForTreatment,
+  toggleRelatedDropdown,
+  swapDiagnosis,
+  toggleTreatmentSelection,
+  getMedicineHydrationStatus,
+  isManualMatchOpen,
+  toggleManualMatch,
+  getManualMatchPickerCandidates,
+  applyManualMatchSelection,
+  getPharmacyChipOptions,
+  getExecDeptChipOptions,
+  onPharmacySelect,
+  onExecDeptSelect,
+  canSubmitToHIS,
+  copyToClipboard,
+];
+
+void removedSymptomRecordViewSymbols;
 
 
 

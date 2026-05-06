@@ -27,6 +27,14 @@ const app = createApp(App);
 const pinia = createPinia();
 app.use(pinia);
 
+// 捕获 Vue 组件更新期间的内部错误，防止其转变为 Unhandled Promise Rejection。
+// 背景：Vue 3 在 BaseTransition（morph 过渡区域）内处理组件挂载/卸载时，若 vnode.component
+// 尚为 null，会抛出 "component.emitsOptions" 错误；若不捕获，会通过 nextTick Promise 链
+// 传播并中断调用方的 async 函数逻辑。
+app.config.errorHandler = (err, _instance, info) => {
+  console.warn('[Vue] Caught component error in', info, err);
+};
+
 app.mount("#app");
 
 // 区域化客户端初始化（异步，不阻塞渲染）

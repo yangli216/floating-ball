@@ -120,6 +120,17 @@ export function useTreatmentHydration(deps: Deps) {
     inventoryChecking.value = next;
   }
 
+  function formatInventoryWarningMessage(rec: TreatmentRecommendation, message?: string): string {
+    const trimmed = (message || '').trim();
+    if (!trimmed) {
+      return `${rec.name} 库存不足，请调整用药数量或药房`;
+    }
+    if (trimmed.includes(rec.name)) {
+      return trimmed;
+    }
+    return `${rec.name}：${trimmed}`;
+  }
+
   function isMedicineDetailLoadedForSelectedPharmacy(rec: TreatmentRecommendation): boolean {
     const raw = getMatchedItemRaw(rec);
     if (raw?.__medicineDetailLoaded !== true) return false;
@@ -327,7 +338,7 @@ export function useTreatmentHydration(deps: Deps) {
         clearMedicineInventoryWarning(rec);
         return true;
       }
-      const message = result.message || `${rec.name} 库存不足，请调整用药数量或药房`;
+      const message = formatInventoryWarningMessage(rec, result.message);
       setMedicineInventoryWarning(rec, message);
       if (showNotify) notify?.(message, 'info');
       return false;
@@ -337,7 +348,7 @@ export function useTreatmentHydration(deps: Deps) {
         checkItem,
         error,
       });
-      if (showNotify) notify?.('库存校验失败，请稍后重试或手动确认库存', 'info');
+      if (showNotify) notify?.(`${rec.name} 库存校验失败，请稍后重试或手动确认库存`, 'info');
       return false;
     } finally {
       setMedicineInventoryChecking(rec, false);
