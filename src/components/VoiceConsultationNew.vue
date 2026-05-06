@@ -74,7 +74,7 @@ import type {
   VoiceSessionFeedbackDraft,
 } from '../types/voiceFeedback';
 
-const props = defineProps<{
+const props = withDefaults(defineProps<{
   initialPatientData?: AppPatient;
   intentResult: VoiceIntentResult | null;
   channel?: 'voice' | 'symptom';
@@ -88,7 +88,13 @@ const props = defineProps<{
   intentSource?: 'llm' | 'cache' | null;
   secondaryFooterActionText?: string;
   secondaryFooterActionDisabled?: boolean;
-}>();
+}>(), {
+  channel: 'voice',
+  showPatientHeader: true,
+  intentSource: null,
+  secondaryFooterActionText: '',
+  secondaryFooterActionDisabled: false,
+});
 
 const emit = defineEmits(['close', 'cancel', 'secondary-footer-action']);
 

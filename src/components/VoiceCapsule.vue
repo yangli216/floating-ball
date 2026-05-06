@@ -440,9 +440,7 @@ const handleStop = async () => {
 
     let finalTranscription = transcription || realtimeText.value;
     if (!finalTranscription || !finalTranscription.trim()) {
-      finalTranscription = '患者发热两天，伴有咳嗽、咳痰，最高体温39度，既往体健。';
-      // 自动展开编辑器方便修改
-      isExpanded.value = true;
+      finalTranscription = '【测试Mock数据】患者发热两天，伴有咳嗽、咳痰，最高体温39度，既往体健。';
     }
 
     // 与音频成对落盘到本地（音频 + 转写文本）
@@ -462,9 +460,8 @@ const handleStop = async () => {
     trackError('voice_recording_stop_failed', err);
     
     stoppedBlob = new Blob([], { type: 'audio/webm' });
-    editableText.value = '患者发热两天，伴有咳嗽、咳痰，最高体温39度，既往体健。';
+    editableText.value = '【测试Mock数据】患者发热两天，伴有咳嗽、咳痰，最高体温39度，既往体健。';
     isStopped.value = true;
-    isExpanded.value = true;
   }
 };
 
