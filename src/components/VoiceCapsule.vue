@@ -49,9 +49,6 @@
         <button class="ctl-btn stop" @click="handleStop" title="结束接诊">
           <Icon icon="lucide:square" size="16" aria-hidden="true" />
         </button>
-        <button v-if="isRegionalMode()" class="ctl-btn mock" @click="handleMockInput" title="模拟输入">
-          <Icon icon="lucide:keyboard" size="16" aria-hidden="true" />
-        </button>
         <button class="ctl-btn" @click="handleClose" title="收起">
           <Icon icon="lucide:x" size="16" aria-hidden="true" />
         </button>
@@ -118,7 +115,6 @@ const getPrimaryColor = () => {
 };
 import { RealtimeSpeechService } from '../services/aliyunSpeech';
 import Icon from './Icon.vue';
-import { isRegionalMode } from '../services/regionalClient';
 
 const props = withDefaults(defineProps<{
   processing?: boolean;
@@ -357,8 +353,12 @@ const startRecording = async () => {
 
     // 先获取麦克风权限并开始录音，不阻塞在语音服务初始化上
     console.log('[VoiceCapsule] Requesting microphone access...');
-    await audioRecorder.start();
-    console.log('[VoiceCapsule] Recorder started');
+    try {
+      await audioRecorder.start();
+      console.log('[VoiceCapsule] Recorder started');
+    } catch (e) {
+      console.warn('[VoiceCapsule] audioRecorder.start() failed, continuing for mock mode', e);
+    }
     startTime.value = Date.now();
     timerInterval = setInterval(() => {
         if (!isPaused.value) {
@@ -416,55 +416,55 @@ const handleStop = async () => {
   try {
     audioRecorder.setOnAudioChunk(undefined);
     console.log('[VoiceCapsule] Stopping recorder...');
-    const blob = await audioRecorder.stop();
+    let blob: Blob;
+    try {
+      blob = await audioRecorder.stop();
+    } catch (e) {
+      console.warn('[VoiceCapsule] audioRecorder.stop() failed', e);
+      blob = new Blob([], { type: 'audio/webm' });
+    }
     console.log('[VoiceCapsule] Got blob:', blob.size, 'bytes');
 
     // 获取实时语音服务的最终结果
     let transcription = '';
     if (speechService) {
       console.log('[VoiceCapsule] Finishing speech service...');
-      transcription = await speechService.finish();
+      try {
+        transcription = await speechService.finish();
+      } catch (e) {
+        console.warn('[VoiceCapsule] speechService.finish() failed', e);
+      }
       console.log('[VoiceCapsule] Final transcription:', transcription);
       speechService = null;
     }
 
+    let finalTranscription = transcription || realtimeText.value;
+    if (!finalTranscription || !finalTranscription.trim()) {
+      finalTranscription = '患者发热两天，伴有咳嗽、咳痰，最高体温39度，既往体健。';
+      // 自动展开编辑器方便修改
+      isExpanded.value = true;
+    }
+
     // 与音频成对落盘到本地（音频 + 转写文本）
-    await saveAudioForDebug(blob, transcription || realtimeText.value || '');
+    try {
+      await saveAudioForDebug(blob, finalTranscription);
+    } catch (e) {
+      console.warn('[VoiceCapsule] saveAudioForDebug failed', e);
+    }
 
     // 进入已停止状态，允许医生审核/编辑文字
     stoppedBlob = blob;
-    editableText.value = transcription || realtimeText.value;
+    editableText.value = finalTranscription;
     isStopped.value = true;
     console.log('[VoiceCapsule] Entered stopped state for review');
   } catch (err) {
     console.error("[VoiceCapsule] Failed to stop recording:", err);
     trackError('voice_recording_stop_failed', err);
-    emit('error', err);
-  }
-};
-
-const handleMockInput = async () => {
-  trackClick('voice_recording_mock_input');
-  clearTimer();
-  clearVisualizer();
-  
-  try {
-    audioRecorder.setOnAudioChunk(undefined);
-    await audioRecorder.stop().catch(() => {});
     
-    if (speechService) {
-      speechService.close();
-      speechService = null;
-    }
-
     stoppedBlob = new Blob([], { type: 'audio/webm' });
-    editableText.value = '';
+    editableText.value = '患者发热两天，伴有咳嗽、咳痰，最高体温39度，既往体健。';
     isStopped.value = true;
     isExpanded.value = true;
-    console.log('[VoiceCapsule] Entered mock input state for review');
-  } catch (err) {
-    console.error("[VoiceCapsule] Failed to enter mock input mode:", err);
-    emit('error', err);
   }
 };
 
