@@ -1,9 +1,6 @@
 <script setup lang="ts">
 import { ref, computed, watch, inject, onMounted, onBeforeUnmount, nextTick } from 'vue';
 import { invoke } from '@tauri-apps/api/core';
-import Icon from './Icon.vue';
-import FactCheckHighlight from './FactCheckHighlight.vue';
-import VoiceRecommendationFeedbackPopover from './VoiceRecommendationFeedbackPopover.vue';
 import VoiceRecordFeedbackPopover from './VoiceRecordFeedbackPopover.vue';
 import VoiceSessionFeedbackBar from './VoiceSessionFeedbackBar.vue';
 import PatientHeader from './PatientHeader.vue';
@@ -66,8 +63,10 @@ import { useTreatmentGates } from '../composables/useTreatmentGates';
 import { useTreatmentHydration } from '../composables/useTreatmentHydration';
 import { useSecondarySelector, type SecondarySelectorField } from '../composables/useSecondarySelector';
 import { useBodySiteOptions } from '../composables/useBodySiteOptions';
-import MedicineUsageFieldSelector from './MedicineUsageFieldSelector.vue';
 import ManualMatchPicker, { type ManualMatchCandidate } from './ManualMatchPicker.vue';
+import DiagnosisRecommendationCard from './DiagnosisRecommendationCard.vue';
+import TreatmentRecommendationCard from './TreatmentRecommendationCard.vue';
+import TreatmentItemEditor from './TreatmentItemEditor.vue';
 import type {
   VoiceRecordFieldFeedbackDraft,
   VoiceRecordFieldKey,
@@ -2225,21 +2224,6 @@ function getMedicineInlineSummary(rec: TreatmentRecommendation): string {
   return parts.join(' / ');
 }
 
-function isMedicineFieldEmpty(rec: TreatmentRecommendation, field: MedicinePrimaryField): boolean {
-  const normalized = normalizeTreatmentRecommendation(rec);
-
-  switch (field) {
-    case 'dosage':
-      return !normalized.dosage && !normalized.dosageUnit;
-    case 'frequency':
-      return !normalized.frequency;
-    case 'route':
-      return !normalized.route;
-    case 'total':
-      return !normalized.totalQty && !normalized.totalUnit && !normalized.days;
-  }
-}
-
 function getFrequencySearchKey(rec: TreatmentRecommendation): string {
   return `${getTreatmentEditorKey(rec)}:frequency-search`;
 }
@@ -2990,90 +2974,31 @@ watch(
             </div>
 
             <ul v-else-if="aiDiagnoses.length > 0" class="vcn-diagnosis-list">
-              <li
+              <DiagnosisRecommendationCard
                 v-for="diag in aiDiagnoses"
                 :key="diag.code + diag.name"
-                class="vcn-diagnosis-item"
-                :class="{ selected: isDiagnosisSelected(diag), primary: isPrimaryDiagnosis(diag) }"
-                @click="toggleDiagnosis(diag)"
-              >
-                <div v-if="isDiagnosisSelected(diag)" class="diag-selected-mark">
-                  <svg xmlns="http://www.w3.org/2000/svg" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="20 6 9 17 4 12"></polyline></svg>
-                </div>
-
-                <div class="card-row">
-                  <div class="card-main">
-                    <div class="card-title-line">
-                      <div class="card-title-wrap">
-                        <FactCheckHighlight :issue="getIssueForDiagnosis(diag.code)">
-                          <span class="card-title">{{ diag.name }}</span>
-                        </FactCheckHighlight>
-                        <span
-                          v-if="diag.rationale"
-                          class="reason-tooltip-trigger"
-                          :class="{ open: activeReasonTooltipKey === getReasonTooltipKey('diagnosis', diag.code, diag.name) }"
-                          @click.stop
-                        >
-                          <button class="reason-icon-btn" type="button" aria-label="查看诊断依据" title="查看诊断依据" @click.stop="toggleReasonTooltip(getReasonTooltipKey('diagnosis', diag.code, diag.name), $event)">
-                            <Icon icon="lucide:circle-help" size="14" />
-                          </button>
-                          <span class="hover-reason-tooltip">{{ diag.rationale }}</span>
-                        </span>
-                      </div>
-                      <span v-if="diag.code" class="meta-token">编码 {{ diag.code }}</span>
-                      <span v-if="isPrimaryDiagnosis(diag)" class="meta-token diag-role-token">主诊断</span>
-                      <span v-else-if="isDiagnosisSelected(diag)" class="meta-token diag-role-token">已纳入</span>
-                      <button
-                        v-if="isDiagnosisSelected(diag) && !isPrimaryDiagnosis(diag)"
-                        class="diag-action-btn"
-                        type="button"
-                        @click.stop="setPrimaryDiagnosis(diag, $event)"
-                      >设为主诊</button>
-                      <button
-                        v-if="isDiagnosisSelected(diag) && selectedDiagnoses.length > 1"
-                        class="diag-action-btn subtle"
-                        type="button"
-                        @click.stop="removeDiagnosis(diag, $event)"
-                      >移除</button>
-                      <button class="inline-arrow-btn" type="button" title="切换同类诊断" @click.stop="toggleRelatedDropdown(diag, $event)">
-                        <span class="inline-arrow" :class="{ open: openRelatedId === (diag.id || diag.code) }"></span>
-                      </button>
-                    </div>
-                  </div>
-
-                  <div class="card-actions">
-                    <div class="voice-feedback-anchor" @click.stop>
-                      <button
-                        class="voice-feedback-trigger"
-                        :class="{ submitted: !!getRecommendationSubmittedLabel(getDiagnosisFeedbackKey(diag)) }"
-                        type="button"
-                        @click.stop="toggleRecommendationFeedback(getDiagnosisFeedbackKey(diag), $event)"
-                      >反馈</button>
-                      <div v-if="isRecommendationFeedbackOpen(getDiagnosisFeedbackKey(diag))" class="voice-feedback-panel">
-                        <VoiceRecommendationFeedbackPopover
-                          :visible="true"
-                          :title="diag.name"
-                          :draft="getRecommendationDraft(getDiagnosisFeedbackKey(diag))"
-                          :submitting="recommendationSubmittingKey === getDiagnosisFeedbackKey(diag)"
-                          :submitted-label="getRecommendationSubmittedLabel(getDiagnosisFeedbackKey(diag))"
-                          @close="toggleRecommendationFeedback(getDiagnosisFeedbackKey(diag))"
-                          @update:draft="updateRecommendationDraft(getDiagnosisFeedbackKey(diag), $event)"
-                          @submit="handleDiagnosisFeedbackSubmit(diag, $event)"
-                        />
-                      </div>
-                    </div>
-                  </div>
-                </div>
-
-                <div v-if="openRelatedId === (diag.id || diag.code) && inlineRelatedDiagnoses.length > 0" class="related-section" @click.stop>
-                  <div class="related-list">
-                    <button v-for="item in inlineRelatedDiagnoses" :key="item.id" class="related-item" type="button" @click="swapDiagnosis(diag, item)">
-                      <span class="related-code">{{ item.code }}</span>
-                      <span class="related-name">{{ item.name }}</span>
-                    </button>
-                  </div>
-                </div>
-              </li>
+                :diag="diag"
+                :selected="isDiagnosisSelected(diag)"
+                :is-primary="isPrimaryDiagnosis(diag)"
+                :can-remove="selectedDiagnoses.length > 1"
+                :reason-open="activeReasonTooltipKey === getReasonTooltipKey('diagnosis', diag.code, diag.name)"
+                :related-open="openRelatedId === (diag.id || diag.code)"
+                :related-diagnoses="openRelatedId === (diag.id || diag.code) ? inlineRelatedDiagnoses : []"
+                :issue="getIssueForDiagnosis(diag.code)"
+                :feedback-visible="isRecommendationFeedbackOpen(getDiagnosisFeedbackKey(diag))"
+                :feedback-draft="getRecommendationDraft(getDiagnosisFeedbackKey(diag))"
+                :feedback-submitting="recommendationSubmittingKey === getDiagnosisFeedbackKey(diag)"
+                :submitted-label="getRecommendationSubmittedLabel(getDiagnosisFeedbackKey(diag))"
+                @toggle="toggleDiagnosis(diag)"
+                @toggle-reason="toggleReasonTooltip(getReasonTooltipKey('diagnosis', diag.code, diag.name), $event)"
+                @set-primary="setPrimaryDiagnosis(diag, $event)"
+                @remove="removeDiagnosis(diag, $event)"
+                @toggle-related="toggleRelatedDropdown(diag, $event)"
+                @swap-related="swapDiagnosis(diag, $event)"
+                @toggle-feedback="toggleRecommendationFeedback(getDiagnosisFeedbackKey(diag), $event)"
+                @update:feedback-draft="updateRecommendationDraft(getDiagnosisFeedbackKey(diag), $event)"
+                @submit-feedback="handleDiagnosisFeedbackSubmit(diag, $event)"
+              />
             </ul>
 
             <div v-else class="empty-text">暂无诊断建议</div>
@@ -3112,201 +3037,77 @@ watch(
                 </div>
 
                 <div class="vcn-treatment-list">
-                  <article
+                  <TreatmentRecommendationCard
                     v-for="rec in section.items"
                     :key="`${rec.type}-${rec.name}`"
-                    class="vcn-treatment-item"
-                    :class="{ selected: rec.selected, locked: requiresManualMatchBeforeSelect(rec), matching: isManualMatchOpen(rec) }"
-                    @click="toggleTreatment(rec)"
+                    :rec="rec"
+                    :selected="!!rec.selected"
+                    :locked="requiresManualMatchBeforeSelect(rec)"
+                    :matching="isManualMatchOpen(rec)"
+                    :issue="getIssueForTreatment(rec.name)"
+                    :spec="getTreatmentSpec(rec)"
+                    :reason-open="activeReasonTooltipKey === getReasonTooltipKey('treatment', rec.type, rec.name)"
+                    :match-label="rec.matchedItem || rec.matchStatus === 'probable' ? getTreatmentMatchLabel(rec) : '未匹配标准库'"
+                    :match-tone="rec.matchStatus === 'probable' || rec.matchStatus === 'unmatched' ? 'warning' : (rec.matchStatus === 'manual' || rec.matchStatus === 'confirmed' ? 'success' : 'default')"
+                    :show-exec-dept-chip="isExecDeptRequired(rec)"
+                    :exec-dept-display="getExecDeptDisplay(rec)"
+                    :exec-dept-missing="!hasRequiredExecDept(rec)"
+                    :exec-dept-title="hasRequiredExecDept(rec) ? '点击调整执行科室' : '执行科室为空，点击设置后才能选中'"
+                    :show-pharmacy-chip="isPharmacyRequired(rec)"
+                    :pharmacy-display="getPharmacyDisplay(rec)"
+                    :pharmacy-missing="!hasRequiredPharmacy(rec)"
+                    :pharmacy-title="hasRequiredPharmacy(rec) ? '点击调整发药药房' : '发药药房未设置或不在当前药品可用药房列表，点击选择'"
+                    :usage-token="rec.type !== 'medicine' ? (rec.usage || '') : ''"
+                    :probable-match-name="hasProbableMatch(rec) ? getSuggestedMatchName(rec) : ''"
+                    :original-name="getTreatmentOriginalName(rec)"
+                    :inline-summary="rec.type === 'medicine' && !rec.selected && !isTreatmentEditorExpanded(rec) ? getMedicineInlineSummary(rec) : ''"
+                    :feedback-visible="isRecommendationFeedbackOpen(getTreatmentFeedbackKey(rec))"
+                    :feedback-draft="getRecommendationDraft(getTreatmentFeedbackKey(rec))"
+                    :feedback-submitting="recommendationSubmittingKey === getTreatmentFeedbackKey(rec)"
+                    :feedback-submitted-label="getRecommendationSubmittedLabel(getTreatmentFeedbackKey(rec))"
+                    :show-manual-match-button="!rec.matchedItem"
+                    :manual-match-title="isManualMatchOpen(rec) ? '收起手动匹配' : '手动匹配标准库项目'"
+                    :manual-match-button-text="isManualMatchOpen(rec) ? '收起匹配' : '手动匹配'"
+                    :show-editor-toggle="!!rec.selected"
+                    :editor-expanded="isTreatmentEditorExpanded(rec)"
+                    @toggle="toggleTreatment(rec)"
+                    @toggle-reason="toggleReasonTooltip(getReasonTooltipKey('treatment', rec.type, rec.name), $event)"
+                    @open-exec-dept="openExecDeptQuickSelector(rec, $event)"
+                    @open-pharmacy="openPharmacyQuickSelector(rec, $event)"
+                    @confirm-probable-match="confirmSuggestedMatch(rec, $event)"
+                    @toggle-feedback="toggleRecommendationFeedback(getTreatmentFeedbackKey(rec), $event)"
+                    @update:feedback-draft="updateRecommendationDraft(getTreatmentFeedbackKey(rec), $event)"
+                    @submit-feedback="handleTreatmentFeedbackSubmit(rec, $event)"
+                    @toggle-manual-match="toggleManualMatch(rec, $event)"
+                    @toggle-editor="toggleTreatmentEditor(rec, $event)"
                   >
-                    <div v-if="rec.selected" class="card-selected-mark">
-                      <svg xmlns="http://www.w3.org/2000/svg" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="20 6 9 17 4 12"></polyline></svg>
-                    </div>
+                    <template #manual-match>
+                      <ManualMatchPicker
+                        v-if="!rec.matchedItem && isManualMatchOpen(rec)"
+                        :title="`从标准库选择${section.title.replace('项目', '')}`"
+                        :keyword="getManualMatchKeyword(rec)"
+                        :candidates="getManualMatchPickerCandidates(rec)"
+                        @update:keyword="setManualMatchKeyword(rec, $event)"
+                        @select="handleManualMatchPickerSelect(rec, $event)"
+                      />
+                    </template>
 
-                    <div class="card-row treatment-card-row">
-                      <div class="card-main">
-                        <div class="card-title-line">
-                          <div class="card-title-wrap">
-                            <FactCheckHighlight :issue="getIssueForTreatment(rec.name)">
-                              <span class="card-title">{{ rec.name }}</span>
-                            </FactCheckHighlight>
-                            <span v-if="getTreatmentSpec(rec)" class="meta-token">{{ getTreatmentSpec(rec) }}</span>
-                            <span
-                              v-if="rec.reason"
-                              class="reason-tooltip-trigger"
-                              :class="{ open: activeReasonTooltipKey === getReasonTooltipKey('treatment', rec.type, rec.name) }"
-                              @click.stop
-                            >
-                              <button class="reason-icon-btn" type="button" aria-label="查看推荐依据" title="查看推荐依据" @click.stop="toggleReasonTooltip(getReasonTooltipKey('treatment', rec.type, rec.name), $event)">
-                                <Icon icon="lucide:circle-help" size="14" />
-                              </button>
-                              <span class="hover-reason-tooltip">{{ rec.reason }}</span>
-                            </span>
-                          </div>
-                          <span class="meta-token" :class="{ warning: rec.matchStatus === 'probable' || rec.matchStatus === 'unmatched', success: rec.matchStatus === 'manual' || rec.matchStatus === 'confirmed' }">
-                            {{ rec.matchedItem || rec.matchStatus === 'probable' ? getTreatmentMatchLabel(rec) : '未匹配标准库' }}
-                          </span>
-                          <button
-                            v-if="isExecDeptRequired(rec)"
-                            class="exec-dept-chip"
-                            :class="{ missing: !hasRequiredExecDept(rec) }"
-                            type="button"
-                            :title="hasRequiredExecDept(rec) ? '点击调整执行科室' : '执行科室为空，点击设置后才能选中'"
-                            @click.stop="openExecDeptQuickSelector(rec, $event)"
-                          >
-                            <span v-if="!hasRequiredExecDept(rec)" class="exec-dept-chip-label">执行科室</span>
-                            <span class="exec-dept-chip-value">{{ getExecDeptDisplay(rec) || '待设置' }}</span>
-                          </button>
-                          <button
-                            v-if="isPharmacyRequired(rec)"
-                            class="exec-dept-chip pharmacy-chip"
-                            :class="{ missing: !hasRequiredPharmacy(rec) }"
-                            type="button"
-                            :title="hasRequiredPharmacy(rec) ? '点击调整发药药房' : '发药药房未设置或不在当前药品可用药房列表，点击选择'"
-                            @click.stop="openPharmacyQuickSelector(rec, $event)"
-                          >
-                            <span v-if="!hasRequiredPharmacy(rec)" class="exec-dept-chip-label">发药药房</span>
-                            <span class="exec-dept-chip-value">{{ getPharmacyDisplay(rec) || '待设置' }}</span>
-                          </button>
-                          <span v-if="rec.type !== 'medicine' && rec.usage" class="meta-token">建议 {{ rec.usage }}</span>
-                        </div>
-
-                        <div v-if="hasProbableMatch(rec)" class="manual-match-origin-note probable-match-note">
-                          <span class="probable-match-copy">
-                            <span class="probable-match-label">候选标准项</span>
-                            <span class="probable-match-name">{{ getSuggestedMatchName(rec) }}</span>
-                          </span>
-                          <button
-                            class="confirm-match-btn inline"
-                            type="button"
-                            title="确认采用该标准库候选"
-                            @click.stop="confirmSuggestedMatch(rec, $event)"
-                          >
-                            确认匹配
-                          </button>
-                        </div>
-
-                        <div v-if="getTreatmentOriginalName(rec)" class="manual-match-origin-note">
-                          AI 原建议：{{ getTreatmentOriginalName(rec) }}
-                        </div>
-
-                        <div
-                          v-if="rec.type === 'medicine' && getMedicineInlineSummary(rec) && !rec.selected && !isTreatmentEditorExpanded(rec)"
-                          class="medicine-inline-summary"
-                        >
-                          {{ getMedicineInlineSummary(rec) }}
-                        </div>
-                      </div>
-
-                      <div class="card-actions treatment-card-actions">
-                        <div class="voice-feedback-anchor" @click.stop>
-                          <button
-                            class="voice-feedback-trigger"
-                            :class="{ submitted: !!getRecommendationSubmittedLabel(getTreatmentFeedbackKey(rec)) }"
-                            type="button"
-                            @click.stop="toggleRecommendationFeedback(getTreatmentFeedbackKey(rec), $event)"
-                          >反馈</button>
-                          <div v-if="isRecommendationFeedbackOpen(getTreatmentFeedbackKey(rec))" class="voice-feedback-panel">
-                            <VoiceRecommendationFeedbackPopover
-                              :visible="true"
-                              :title="rec.name"
-                              :draft="getRecommendationDraft(getTreatmentFeedbackKey(rec))"
-                              :submitting="recommendationSubmittingKey === getTreatmentFeedbackKey(rec)"
-                              :submitted-label="getRecommendationSubmittedLabel(getTreatmentFeedbackKey(rec))"
-                              @close="toggleRecommendationFeedback(getTreatmentFeedbackKey(rec))"
-                              @update:draft="updateRecommendationDraft(getTreatmentFeedbackKey(rec), $event)"
-                              @submit="handleTreatmentFeedbackSubmit(rec, $event)"
-                            />
-                          </div>
-                        </div>
-                        <button
-                          v-if="!rec.matchedItem"
-                          class="manual-match-btn"
-                          type="button"
-                          :title="isManualMatchOpen(rec) ? '收起手动匹配' : '手动匹配标准库项目'"
-                          @click.stop="toggleManualMatch(rec, $event)"
-                        >
-                          {{ isManualMatchOpen(rec) ? '收起匹配' : '手动匹配' }}
-                        </button>
-                        <button
-                          v-if="rec.selected"
-                          class="inline-arrow-btn action-arrow"
-                          type="button"
-                          :title="isTreatmentEditorExpanded(rec) ? '收起更多编辑' : '展开更多编辑'"
-                          :aria-label="isTreatmentEditorExpanded(rec) ? '收起更多编辑' : '展开更多编辑'"
-                          @click.stop="toggleTreatmentEditor(rec, $event)"
-                        >
-                          <span class="inline-arrow" :class="{ open: isTreatmentEditorExpanded(rec) }"></span>
-                        </button>
-                      </div>
-                    </div>
-
-                    <ManualMatchPicker
-                      v-if="!rec.matchedItem && isManualMatchOpen(rec)"
-                      :title="`从标准库选择${section.title.replace('项目', '')}`"
-                      :keyword="getManualMatchKeyword(rec)"
-                      :candidates="getManualMatchPickerCandidates(rec)"
-                      @update:keyword="setManualMatchKeyword(rec, $event)"
-                      @select="handleManualMatchPickerSelect(rec, $event)"
-                    />
-
-                    <div v-if="shouldShowTreatmentEditor(rec)" class="editor-shell" @click.stop>
+                    <template #editor>
+                      <div v-if="shouldShowTreatmentEditor(rec)" class="editor-shell" @click.stop>
                       <template v-if="rec.type === 'medicine'">
-                        <div class="medicine-primary-fields">
-                          <div class="primary-field" :class="{ editing: isEditableFieldActive(rec, 'dosage') }">
-                            <label>一次剂量</label>
-                            <div v-if="isEditableFieldActive(rec, 'dosage')" class="field-editor edit-field-row" @focusout="handleEditableFieldBlur(rec, 'dosage', $event)">
-                              <input :ref="(el) => registerEditableFieldElement(getEditableFieldKey(rec, 'dosage'), el)" v-model="rec.dosage" type="text" placeholder="剂量" class="edit-input small" />
-                              <span class="edit-unit static-unit" :class="{ placeholder: !rec.dosageUnit }">{{ rec.dosageUnit || '单位待识别' }}</span>
-                            </div>
-                            <button v-else class="field-read-btn" :class="{ placeholder: isMedicineFieldEmpty(rec, 'dosage') }" type="button" @click.stop="activateEditableField(rec, 'dosage', $event)">
-                              {{ getMedicineFieldDisplay(rec, 'dosage') }}
-                            </button>
-                          </div>
-
-                          <div class="primary-field" :class="{ editing: isEditableFieldActive(rec, 'frequency') }">
-                            <label>频次</label>
-                            <MedicineUsageFieldSelector
-                              :rec="rec"
-                              field="frequency"
-                              :options="frequencyOptions"
-                              placeholder="请选择频次"
-                              :open="isEditableFieldActive(rec, 'frequency')"
-                              @update:open="(v) => handleFrequencyOpenChange(rec, v)"
-                            />
-                          </div>
-
-                          <div class="primary-field" :class="{ editing: isEditableFieldActive(rec, 'route') }">
-                            <label>用法</label>
-                            <MedicineUsageFieldSelector
-                              :rec="rec"
-                              field="route"
-                              :options="routeOptions"
-                              :show-meta="true"
-                              placeholder="请选择用法"
-                              :open="isEditableFieldActive(rec, 'route')"
-                              @update:open="(v) => handleRouteOpenChange(rec, v)"
-                            />
-                          </div>
-
-                          <div class="primary-field" :class="{ editing: isEditableFieldActive(rec, 'total') }">
-                            <label>总量</label>
-                            <div v-if="isEditableFieldActive(rec, 'total')" class="field-editor edit-field-row" @focusout="handleEditableFieldBlur(rec, 'total', $event)">
-                              <input
-                                :ref="(el) => registerEditableFieldElement(getEditableFieldKey(rec, 'total'), el)"
-                                :value="rec.totalQty"
-                                type="text"
-                                placeholder="数量"
-                                class="edit-input small"
-                                @input="handleTotalQtyInput(rec, $event)"
-                              />
-                              <span class="edit-unit static-unit" :class="{ placeholder: !rec.totalUnit }">{{ rec.totalUnit || '单位待识别' }}</span>
-                            </div>
-                            <button v-else class="field-read-btn" :class="{ placeholder: isMedicineFieldEmpty(rec, 'total') }" type="button" @click.stop="activateEditableField(rec, 'total', $event)">
-                              {{ getMedicineFieldDisplay(rec, 'total') }}
-                            </button>
-                          </div>
-                        </div>
+                        <TreatmentItemEditor
+                          :rec="rec"
+                          mode="inline"
+                          :frequency-options="frequencyOptions"
+                          :route-options="routeOptions"
+                          :is-field-active="(field) => isEditableFieldActive(rec, field)"
+                          :activate-field="(field, event) => activateEditableField(rec, field, event)"
+                          :on-field-blur="(field, event) => handleEditableFieldBlur(rec, field, event)"
+                          :register-field-element="(field, element) => registerEditableFieldElement(getEditableFieldKey(rec, field), element)"
+                          :on-total-qty-input="(event) => handleTotalQtyInput(rec, event)"
+                          :on-field-open-change="(field, open) => field === 'frequency' ? handleFrequencyOpenChange(rec, open) : handleRouteOpenChange(rec, open)"
+                          :get-display-value="(field) => getMedicineFieldDisplay(rec, field)"
+                        />
 
                         <div v-if="isMedicineInventoryChecking(rec)" class="medicine-inventory-note checking">
                           正在校验库存...
@@ -3679,8 +3480,9 @@ watch(
                           </div>
                         </div>
                       </template>
-                    </div>
-                  </article>
+                      </div>
+                    </template>
+                  </TreatmentRecommendationCard>
                 </div>
               </section>
             </template>

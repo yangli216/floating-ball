@@ -255,17 +255,20 @@ watch(
   align-items: center;
   justify-content: space-between;
   gap: 6px;
-  padding: 3px 8px;
-  background: #fff;
-  border: 1px solid #d0d7de;
-  border-radius: 4px;
-  font-size: 12px;
+  min-height: 34px;
+  padding: 0 10px;
+  background: var(--voice-surface-soft, #f8fafc);
+  border: 1px solid var(--voice-border, #dbe3ee);
+  border-radius: 10px;
+  font-size: var(--voice-font-main, 14px);
   cursor: pointer;
-  color: var(--text-strong, #333);
+  color: var(--voice-text, #0f172a);
+  box-sizing: border-box;
+  transition: border-color 0.16s ease, box-shadow 0.16s ease, background-color 0.16s ease;
 }
 
 .muf-readonly:hover {
-  border-color: var(--accent, #007aff);
+  border-color: var(--voice-accent, #2563eb);
 }
 
 .muf-value {
@@ -279,22 +282,26 @@ watch(
 .muf-placeholder {
   flex: 1;
   text-align: left;
-  color: #999;
+  color: var(--voice-text-muted, #64748b);
 }
 
 .muf-caret {
   flex-shrink: 0;
-  color: #888;
+  color: var(--voice-text-muted, #64748b);
 }
 
 .muf-input {
   width: 100%;
-  padding: 3px 8px;
-  border: 1px solid var(--accent, #007aff);
-  border-radius: 4px;
-  font-size: 12px;
+  min-height: 34px;
+  padding: 0 10px;
+  border: 1px solid var(--voice-accent, #2563eb);
+  border-radius: 10px;
+  font-size: var(--voice-font-main, 14px);
   outline: none;
-  box-shadow: 0 0 0 2px rgba(0, 122, 255, 0.15);
+  color: var(--voice-text, #0f172a);
+  background: #fff;
+  box-sizing: border-box;
+  box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.12);
 }
 
 .muf-popover {
@@ -304,16 +311,16 @@ watch(
   right: 0;
   z-index: 20;
   background: #fff;
-  border: 1px solid #e0e6ed;
-  border-radius: 6px;
+  border: 1px solid var(--voice-border, #dbe3ee);
+  border-radius: 10px;
   box-shadow: 0 8px 24px rgba(15, 23, 42, 0.12);
-  padding: 4px;
+  padding: 6px;
   max-height: 240px;
   overflow-y: auto;
   display: flex;
   flex-direction: column;
-  gap: 2px;
-  min-width: 220px;
+  gap: 4px;
+  min-width: 240px;
 }
 
 .muf-popover-toolbar {
@@ -325,8 +332,8 @@ watch(
 }
 
 .muf-clear-btn {
-  font-size: 11px;
-  color: #888;
+  font-size: 12px;
+  color: var(--voice-text-muted, #64748b);
   background: transparent;
   border: none;
   cursor: pointer;
@@ -334,7 +341,7 @@ watch(
 }
 
 .muf-clear-btn:hover {
-  color: var(--accent, #007aff);
+  color: var(--voice-accent, #2563eb);
 }
 
 .muf-option {
@@ -342,22 +349,23 @@ watch(
   align-items: center;
   justify-content: space-between;
   gap: 8px;
-  padding: 6px 8px;
+  min-height: 34px;
+  padding: 0 10px;
   border: none;
   background: transparent;
-  border-radius: 4px;
-  font-size: 12px;
-  color: var(--text-strong, #333);
+  border-radius: 8px;
+  font-size: 13px;
+  color: var(--voice-text, #0f172a);
   cursor: pointer;
   text-align: left;
 }
 
 .muf-option:hover {
-  background: rgba(0, 122, 255, 0.08);
+  background: rgba(37, 99, 235, 0.08);
 }
 
 .muf-option-current {
-  background: rgba(0, 122, 255, 0.12);
+  background: rgba(37, 99, 235, 0.12);
   font-weight: 500;
 }
 
@@ -370,16 +378,16 @@ watch(
 
 .muf-option-meta {
   flex-shrink: 0;
-  color: #999;
-  font-size: 11px;
+  color: var(--voice-text-muted, #64748b);
+  font-size: 12px;
   display: inline-flex;
-  gap: 2px;
+  gap: 4px;
 }
 
 .muf-empty {
   padding: 8px;
-  color: #999;
-  font-size: 11px;
+  color: var(--voice-text-muted, #64748b);
+  font-size: 12px;
   text-align: center;
 }
 </style>

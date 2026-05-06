@@ -143,6 +143,12 @@ interface ScoredCandidate<T> {
   primaryScore: number;
 }
 
+interface RoutineMatchDescriptor {
+  alias: string;
+  classificationRank: number | null;
+  hasClassification: boolean;
+}
+
 export type CatalogMatchStatus = 'exact' | 'probable' | 'unmatched';
 
 export interface CatalogMatchAssessment<T> {
@@ -971,7 +977,7 @@ class MedicalDataService {
 
     if (top && top.score >= MedicalDataService.PROBABLE_MATCH_THRESHOLD) {
       const margin = second ? top.score - second.score : 1;
-      if (margin >= MedicalDataService.PROBABLE_MATCH_MARGIN) {
+      if (margin >= MedicalDataService.PROBABLE_MATCH_MARGIN || this.shouldAllowRoutineProbableMatch(query, top, second)) {
         return {
           status: 'probable',
           candidate: top.item,
@@ -1038,7 +1044,7 @@ class MedicalDataService {
     for (const item of items) {
       const primaryScore = Math.max(
         this.calculateScore(primaryVariant.normalized, item.name, item.keywords),
-        this.normalizeRoutineItemAlias(item.name) === primaryVariant.normalizedRoutineAlias ? 0.96 : 0,
+        this.normalizeRoutineItemAlias(item.name) === primaryVariant.normalizedRoutineAlias ? 0.99 : 0,
       );
 
       if (primaryScore < 0.2) {
@@ -1059,7 +1065,24 @@ class MedicalDataService {
     }
 
     return candidates
-      .sort((left, right) => right.score - left.score || right.primaryScore - left.primaryScore || left.item.name.localeCompare(right.item.name))
+      .sort((left, right) => {
+        const scoreDelta = right.score - left.score;
+        if (Math.abs(scoreDelta) > 0.0001) {
+          return scoreDelta;
+        }
+
+        const primaryDelta = right.primaryScore - left.primaryScore;
+        if (Math.abs(primaryDelta) > 0.0001) {
+          return primaryDelta;
+        }
+
+        const routinePriorityDelta = this.compareRoutineCandidatePriority(left.item, right.item, primaryVariant.normalizedRoutineAlias);
+        if (routinePriorityDelta !== 0) {
+          return routinePriorityDelta;
+        }
+
+        return left.item.name.localeCompare(right.item.name);
+      })
       .slice(0, limit);
   }
 
@@ -1093,8 +1116,128 @@ class MedicalDataService {
       .trim()
       .toLowerCase()
       .replace(/\s+/gu, '')
+      .replace(/[—–－-]/gu, '')
+      .replace(/[()（）\[\]【】]/gu, '')
+      .replace(/免费$/u, '')
+      .replace(/[一二三四五六七八九十\d]+分类$/u, '')
+      .replace(/[a-z]+$/u, '')
       .replace(/^常规/u, '')
       .replace(/(检查|检验|检测|测定|项目)$/u, '');
+  }
+
+  private describeRoutineMatch(value: string): RoutineMatchDescriptor {
+    const normalized = value
+      .trim()
+      .toLowerCase()
+      .replace(/\s+/gu, '')
+      .replace(/[()（）\[\]【】]/gu, '');
+    const classificationMatch = normalized.match(/([一二三四五六七八九十\d]+)分类/u);
+    return {
+      alias: this.normalizeRoutineItemAlias(value),
+      classificationRank: this.parseChineseNumberToken(classificationMatch?.[1]),
+      hasClassification: Boolean(classificationMatch),
+    };
+  }
+
+  private parseChineseNumberToken(value?: string): number | null {
+    if (!value) {
+      return null;
+    }
+
+    if (/^\d+$/u.test(value)) {
+      return Number.parseInt(value, 10);
+    }
+
+    const digitMap: Record<string, number> = {
+      一: 1,
+      二: 2,
+      三: 3,
+      四: 4,
+      五: 5,
+      六: 6,
+      七: 7,
+      八: 8,
+      九: 9,
+    };
+
+    if (value === '十') {
+      return 10;
+    }
+
+    if (value.startsWith('十')) {
+      const tail = digitMap[value.slice(1)] || 0;
+      return 10 + tail;
+    }
+
+    if (value.endsWith('十')) {
+      const head = digitMap[value.slice(0, -1)] || 1;
+      return head * 10;
+    }
+
+    const tenIndex = value.indexOf('十');
+    if (tenIndex > 0) {
+      const head = digitMap[value.slice(0, tenIndex)] || 1;
+      const tail = digitMap[value.slice(tenIndex + 1)] || 0;
+      return (head * 10) + tail;
+    }
+
+    return digitMap[value] ?? null;
+  }
+
+  private compareRoutineCandidatePriority(left: MedicalItem, right: MedicalItem, queryAlias: string): number {
+    if (!queryAlias) {
+      return 0;
+    }
+
+    const leftRoutine = this.describeRoutineMatch(left.name);
+    const rightRoutine = this.describeRoutineMatch(right.name);
+
+    if (leftRoutine.alias !== queryAlias || rightRoutine.alias !== queryAlias) {
+      return 0;
+    }
+
+    if (leftRoutine.hasClassification !== rightRoutine.hasClassification) {
+      return leftRoutine.hasClassification ? -1 : 1;
+    }
+
+    if (leftRoutine.classificationRank !== null && rightRoutine.classificationRank !== null && leftRoutine.classificationRank !== rightRoutine.classificationRank) {
+      return leftRoutine.classificationRank - rightRoutine.classificationRank;
+    }
+
+    const leftIsFree = /免费/u.test(left.name);
+    const rightIsFree = /免费/u.test(right.name);
+    if (leftIsFree !== rightIsFree) {
+      return leftIsFree ? 1 : -1;
+    }
+
+    return 0;
+  }
+
+  private shouldAllowRoutineProbableMatch(
+    query: string,
+    top: ScoredCandidate<MedicalItem>,
+    second?: ScoredCandidate<MedicalItem>,
+  ): boolean {
+    const queryRoutine = this.describeRoutineMatch(query);
+    if (!queryRoutine.alias || queryRoutine.hasClassification) {
+      return false;
+    }
+
+    const topRoutine = this.describeRoutineMatch(top.item.name);
+    if (topRoutine.alias !== queryRoutine.alias || !topRoutine.hasClassification) {
+      return false;
+    }
+
+    if (!second) {
+      return true;
+    }
+
+    const secondRoutine = this.describeRoutineMatch(second.item.name);
+    if (secondRoutine.alias !== queryRoutine.alias) {
+      return false;
+    }
+
+    return this.compareRoutineCandidatePriority(top.item, second.item, queryRoutine.alias) < 0;
   }
 
   private normalizeExactMatchText(value: string): string {

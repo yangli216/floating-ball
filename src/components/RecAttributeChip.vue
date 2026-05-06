@@ -7,7 +7,7 @@
  * 父组件控制候选列表的过滤口径（如药房需按药品 storeIds 收窄）。本组件仅做关键字 contains 过滤。
  */
 
-import { computed, ref, watch } from 'vue';
+import { computed, nextTick, ref, watch } from 'vue';
 
 export interface AttrOption {
   /** 唯一键（idSto / execDeptKey 等），点击时通过 select 事件回传 */
@@ -34,12 +34,15 @@ interface Props {
   maxVisible?: number;
   /** 附加状态指示（如"检测中""库存不足"），不影响 chip 主体颜色 */
   status?: { kind: 'checking' | 'warning'; message?: string } | null;
+  /** 视觉变体：默认通用样式；voice-card 用于治疗推荐卡内部，贴近语音侧 chip 语言 */
+  variant?: 'default' | 'voice-card';
 }
 
 const props = withDefaults(defineProps<Props>(), {
   placeholder: '待设置',
   emptyText: '当前可选范围内无可用项',
   maxVisible: 8,
+  variant: 'default',
 });
 
 const emit = defineEmits<{
@@ -48,6 +51,8 @@ const emit = defineEmits<{
 
 const open = ref(false);
 const keyword = ref('');
+const popoverPlacement = ref<'bottom' | 'top'>('bottom');
+const wrapperRef = ref<HTMLElement | null>(null);
 
 watch(() => props.valueText, (value) => {
   if (!open.value) keyword.value = value;
@@ -70,6 +75,9 @@ function toggleOpen(event: Event): void {
   open.value = !open.value;
   if (open.value) {
     keyword.value = '';
+    void nextTick(() => {
+      updatePopoverPlacement();
+    });
   }
 }
 
@@ -88,14 +96,32 @@ function close(): void {
   open.value = false;
 }
 
+function updatePopoverPlacement(): void {
+  const wrapper = wrapperRef.value;
+  if (!wrapper) {
+    popoverPlacement.value = 'bottom';
+    return;
+  }
+
+  const rect = wrapper.getBoundingClientRect();
+  const estimatedPopoverHeight = 280;
+  const viewportPadding = 20;
+  const spaceBelow = window.innerHeight - rect.bottom - viewportPadding;
+  const spaceAbove = rect.top - viewportPadding;
+
+  popoverPlacement.value = spaceBelow < estimatedPopoverHeight && spaceAbove > spaceBelow
+    ? 'top'
+    : 'bottom';
+}
+
 defineExpose({ close });
 </script>
 
 <template>
-  <div class="attr-chip-wrapper" @click.stop>
+  <div ref="wrapperRef" class="attr-chip-wrapper" @click.stop>
     <button
       class="attr-chip"
-      :class="{ missing: props.missing, open }"
+      :class="[props.variant, { missing: props.missing, open }]"
       type="button"
       @click="toggleOpen"
     >
@@ -110,7 +136,7 @@ defineExpose({ close });
       <span class="attr-chip-caret" :class="{ open }"></span>
     </button>
 
-    <div v-if="open" class="attr-chip-popover">
+    <div v-if="open" class="attr-chip-popover" :class="popoverPlacement">
       <input
         :value="keyword"
         type="text"
@@ -128,7 +154,6 @@ defineExpose({ close });
           @click="pick(option, $event)"
         >
           <span class="attr-chip-option-text">{{ option.text }}</span>
-          <span v-if="option.meta" class="attr-chip-option-meta">{{ option.meta }}</span>
         </button>
         <div v-if="filteredOptions.length === 0" class="attr-chip-empty">
           {{ props.emptyText }}
@@ -159,9 +184,25 @@ defineExpose({ close });
   transition: all 160ms ease;
 }
 
+.attr-chip.voice-card {
+  gap: 5px;
+  min-width: 0;
+  max-width: 180px;
+  padding: 0 8px;
+  border-color: var(--voice-accent-soft, rgba(37, 99, 235, 0.22));
+  border-radius: 999px;
+  background: var(--voice-accent-softer, rgba(37, 99, 235, 0.08));
+  color: var(--voice-accent-strong, #1d4ed8);
+}
+
 .attr-chip.open {
   border-color: #2B7FE3;
   background: rgba(43, 127, 227, 0.08);
+}
+
+.attr-chip.voice-card.open {
+  border-color: var(--voice-accent, #2563eb);
+  background: rgba(37, 99, 235, 0.1);
 }
 
 .attr-chip:hover {
@@ -174,6 +215,12 @@ defineExpose({ close });
   color: #b45309;
 }
 
+.attr-chip.voice-card.missing {
+  border-color: rgba(201, 122, 17, 0.28);
+  background: rgba(201, 122, 17, 0.1);
+  color: var(--voice-warning, #c97a11);
+}
+
 .attr-chip.missing:hover {
   border-color: #d97706;
   background: #ffedd5;
@@ -184,8 +231,22 @@ defineExpose({ close });
   margin-right: 2px;
 }
 
+.attr-chip.voice-card .attr-chip-label {
+  margin-right: 0;
+  font-size: var(--voice-font-min, 12px);
+  font-weight: 700;
+}
+
 .attr-chip-value {
   white-space: nowrap;
+}
+
+.attr-chip.voice-card .attr-chip-value {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-size: var(--voice-font-min, 12px);
+  font-weight: 700;
 }
 
 .attr-chip-caret {
@@ -206,7 +267,7 @@ defineExpose({ close });
   position: absolute;
   top: calc(100% + 4px);
   left: 0;
-  z-index: 30;
+  z-index: 120;
   min-width: 220px;
   max-width: 320px;
   padding: 8px;
@@ -217,6 +278,11 @@ defineExpose({ close });
   display: flex;
   flex-direction: column;
   gap: 6px;
+}
+
+.attr-chip-popover.top {
+  top: auto;
+  bottom: calc(100% + 4px);
 }
 
 .attr-chip-input {
@@ -267,12 +333,9 @@ defineExpose({ close });
 .attr-chip-option-text {
   flex: 1;
   min-width: 0;
-}
-
-.attr-chip-option-meta {
-  flex-shrink: 0;
-  font-size: 12px;
-  color: #6b7280;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .attr-chip-empty {

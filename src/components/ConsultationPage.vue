@@ -485,27 +485,30 @@
                   </button>
 
                   <ul v-show="!group.showHeader || !isDiagnosisGroupCollapsed(group.key)" class="diagnosis-list">
-                    <li
+                    <DiagnosisRecommendationCard
                       v-for="diag in group.diagnoses"
-                      :key="diag.id"
-                      class="diagnosis-item"
-                      :class="{ active: selectedDiagnosis?.id === diag.id }"
-                      @click="handleDiagnosisSelect(diag)"
+                      :key="diag.id || diag.code || diag.name"
+                      :diag="diag"
+                      :selected="selectedDiagnosis?.id === diag.id"
+                      :is-primary="selectedDiagnosis?.id === diag.id"
+                      :can-remove="false"
+                      :reason-open="false"
+                      :related-open="openRelatedId === (diag.id || diag.code)"
+                      :related-diagnoses="openRelatedId === (diag.id || diag.code) ? inlineRelatedDiagnoses : []"
+                      :issue="getIssueForDiagnosis(diag.code)"
+                      :show-tcm-badge="true"
+                      :feedback-visible="isRecommendationFeedbackOpen(getDiagnosisFeedbackKey(diag))"
+                      :feedback-draft="getRecommendationDraft(getDiagnosisFeedbackKey(diag))"
+                      :feedback-submitting="recommendationSubmittingKey === getDiagnosisFeedbackKey(diag)"
+                      :submitted-label="getRecommendationSubmittedLabel(getDiagnosisFeedbackKey(diag))"
+                      @toggle="handleDiagnosisSelect(diag)"
+                      @toggle-feedback="toggleRecommendationFeedback(getDiagnosisFeedbackKey(diag), $event)"
+                      @update:feedback-draft="updateRecommendationDraft(getDiagnosisFeedbackKey(diag), $event)"
+                      @submit-feedback="handleDiagnosisFeedbackSubmit(diag, $event)"
+                      @toggle-related="toggleRelatedDropdown(diag, $event)"
+                      @swap-related="swapDiagnosis(diag, $event)"
                     >
-                      <div class="diag-header">
-                        <div class="diag-name-group">
-                          <FactCheckHighlight :issue="getIssueForDiagnosis(diag.code)">
-                            <span class="diag-name">
-                              <span v-if="diag.isTCM" class="tcm-badge">中</span>
-                              {{ diag.name }} ({{ diag.code }})
-                            </span>
-                          </FactCheckHighlight>
-                          <div class="inline-related-trigger" @click="toggleRelatedDropdown(diag, $event)" title="切换同类诊断">
-                            <span class="arrow" :class="{ open: openRelatedId === diag.id }">
-                             <svg viewBox="0 0 1024 1024" version="1.1" xmlns="http://www.w3.org/2000/svg" p-id="8069" width="14" height="14"><path d="M32 512c0 265.152 214.848 480 480 480s480-214.848 480-480S777.152 32 512 32A479.872 479.872 0 0 0 32 512z m649.344-86.656a32 32 0 0 1 45.248 45.248l-192.064 192a32 32 0 0 1-45.184 0.128l-0.064-0.128-192-192a32.128 32.128 0 0 1 0-45.248 31.936 31.936 0 0 1 45.12-0.192l0.256 0.256L512 594.752l169.344-169.408z" p-id="8070" fill="#2469F2"></path></svg>
-                            </span>
-                          </div>
-                        </div>
+                      <template #actions>
                         <div class="diag-actions">
                           <button
                             v-if="isPMPHAIConfigured()"
@@ -519,7 +522,7 @@
                               <line x1="16" y1="13" x2="8" y2="13"></line>
                               <line x1="16" y1="17" x2="8" y2="17"></line>
                             </svg>
-                        </button>
+                          </button>
                           <button
                             class="item-reference-btn"
                             type="button"
@@ -537,58 +540,44 @@
                           </span>
                           <span class="diag-rate" :class="getDiagRateClass(diag.rate)">{{ diag.rate }}</span>
                         </div>
-                      </div>
-                      <div class="diag-rationale">{{ diag.rationale }}</div>
+                      </template>
 
-                      <!-- 中医证候和治法 -->
-                      <div v-if="diag.isTCM" class="tcm-detail">
-                        <div v-if="diag.syndrome" class="tcm-syndrome">
-                          <span class="tcm-label">证候:</span>
-                          <span class="tcm-value">{{ diag.syndrome }}</span>
-                          <span v-if="diag.syndromeCode" class="tcm-code">({{ diag.syndromeCode }})</span>
-                          <span v-if="diag.syndromeMatched" class="match-tag" title="已匹配证候数据">✓</span>
-                        </div>
-                        <div v-if="diag.treatment" class="tcm-treatment">
-                          <span class="tcm-label">治法:</span>
-                          <span class="tcm-value">{{ diag.treatment }}</span>
-                          <span v-if="diag.treatmentCode" class="tcm-code">({{ diag.treatmentCode }})</span>
-                          <span v-if="diag.treatmentMatched" class="match-tag" title="已匹配治法数据">✓</span>
-                        </div>
-                      </div>
+                      <template #body>
+                        <div class="diag-rationale">{{ diag.rationale }}</div>
 
-                      <!-- Anti-Misdiagnosis Checklist Button -->
-                      <div class="diag-checklist-wrapper">
-                        <div v-if="selectedDiagnosis?.id === diag.id && !isChecklistLoading && checklistItems.length > 0" class="checklist-indicator" @click.stop="showChecklistModal = true">
-                          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                            <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/>
-                            <line x1="12" y1="9" x2="12" y2="13"/>
-                            <line x1="12" y1="17" x2="12.01" y2="17"/>
-                          </svg>
-                          <span>鉴别排查 (待确认)</span>
-                        </div>
-                        <div v-if="selectedDiagnosis?.id === diag.id && isChecklistLoading" class="checklist-indicator loading">
-                          <svg class="spinner" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                            <path d="M21 12a9 9 0 1 1-6.219-8.56"/>
-                          </svg>
-                          <span>安全分析中...</span>
-                        </div>
-                      </div>
-
-                      <!-- Related Diagnoses Dropdown -->
-                      <div v-if="openRelatedId === diag.id && inlineRelatedDiagnoses.length > 0" class="related-section" @click.stop>
-                        <div class="related-list">
-                          <div
-                            v-for="item in inlineRelatedDiagnoses"
-                            :key="item.id"
-                            class="related-item"
-                            @click="swapDiagnosis(diag, item)"
-                          >
-                            <span class="related-code">{{ item.code }}</span>
-                            <span class="related-name">{{ item.name }}</span>
+                        <div v-if="diag.isTCM" class="tcm-detail">
+                          <div v-if="diag.syndrome" class="tcm-syndrome">
+                            <span class="tcm-label">证候:</span>
+                            <span class="tcm-value">{{ diag.syndrome }}</span>
+                            <span v-if="diag.syndromeCode" class="tcm-code">({{ diag.syndromeCode }})</span>
+                            <span v-if="diag.syndromeMatched" class="match-tag" title="已匹配证候数据">✓</span>
+                          </div>
+                          <div v-if="diag.treatment" class="tcm-treatment">
+                            <span class="tcm-label">治法:</span>
+                            <span class="tcm-value">{{ diag.treatment }}</span>
+                            <span v-if="diag.treatmentCode" class="tcm-code">({{ diag.treatmentCode }})</span>
+                            <span v-if="diag.treatmentMatched" class="match-tag" title="已匹配治法数据">✓</span>
                           </div>
                         </div>
-                      </div>
-                    </li>
+
+                        <div class="diag-checklist-wrapper">
+                          <div v-if="selectedDiagnosis?.id === diag.id && !isChecklistLoading && checklistItems.length > 0" class="checklist-indicator" @click.stop="showChecklistModal = true">
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                              <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/>
+                              <line x1="12" y1="9" x2="12" y2="13"/>
+                              <line x1="12" y1="17" x2="12.01" y2="17"/>
+                            </svg>
+                            <span>鉴别排查 (待确认)</span>
+                          </div>
+                          <div v-if="selectedDiagnosis?.id === diag.id && isChecklistLoading" class="checklist-indicator loading">
+                            <svg class="spinner" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                              <path d="M21 12a9 9 0 1 1-6.219-8.56"/>
+                            </svg>
+                            <span>安全分析中...</span>
+                          </div>
+                        </div>
+                      </template>
+                    </DiagnosisRecommendationCard>
                   </ul>
                 </section>
               </div>
@@ -631,72 +620,99 @@
                     </div>
                   </div>
                   <div class="treatment-list">
-                    <div 
+                    <TreatmentRecommendationCard
                       v-for="rec in section.items"
                       :key="`${rec.type}-${rec.name}`"
-                      class="treatment-item"
-                      :class="{ active: rec.selected }"
-                      @click="toggleTreatmentSelection(rec)"
+                      :rec="rec"
+                      layout-variant="worklist"
+                      :selected="rec.selected"
+                      :issue="getIssueForTreatment(rec.name)"
+                      :spec="getTreatmentSpec(rec)"
+                      :reason-open="activeReasonTooltipKey === getReasonTooltipKey('treatment', rec.type, rec.name)"
+                      :match-label="getTreatmentMatchLabel(rec)"
+                      :match-tone="rec.matchStatus === 'probable' ? 'warning' : ((rec.matchStatus === 'manual' || rec.matchStatus === 'confirmed' || rec.matchStatus === 'exact') ? 'success' : 'default')"
+                      :usage-token="rec.type !== 'medicine' ? (rec.usage || '') : ''"
+                      :probable-match-name="hasProbableMatch(rec) ? getSuggestedMatchName(rec) : ''"
+                      :original-name="getTreatmentOriginalName(rec)"
+                      :inline-summary="rec.type === 'medicine' && !rec.selected ? getMedicineInlineSummary(rec) : ''"
+                      :feedback-visible="isRecommendationFeedbackOpen(getTreatmentFeedbackKey(rec))"
+                      :feedback-draft="getRecommendationDraft(getTreatmentFeedbackKey(rec))"
+                      :feedback-submitting="recommendationSubmittingKey === getTreatmentFeedbackKey(rec)"
+                      :feedback-submitted-label="getRecommendationSubmittedLabel(getTreatmentFeedbackKey(rec))"
+                      :show-manual-match-button="!rec.matchedItem"
+                      :manual-match-title="isManualMatchOpen(rec) ? '收起手动匹配' : (rec.matchedItem ? '重新匹配标准库项目' : '手动匹配标准库项目')"
+                      :manual-match-button-text="isManualMatchOpen(rec) ? '收起匹配' : (rec.matchedItem ? '重新匹配' : '手动匹配')"
+                      @toggle="toggleTreatmentSelection(rec)"
+                      @toggle-reason="toggleReasonTooltip(getReasonTooltipKey('treatment', rec.type, rec.name), $event)"
+                      @confirm-probable-match="confirmSuggestedMatch(rec, $event)"
+                      @toggle-feedback="toggleRecommendationFeedback(getTreatmentFeedbackKey(rec), $event)"
+                      @update:feedback-draft="updateRecommendationDraft(getTreatmentFeedbackKey(rec), $event)"
+                      @submit-feedback="handleTreatmentFeedbackSubmit(rec, $event)"
+                      @toggle-manual-match="toggleManualMatch(rec, $event)"
                     >
-                      <div class="rec-content">
-                        <div class="rec-header">
-                          <div class="rec-name-group">
-                            <label class="checkbox-label rec-name-group-checkbox">
-                              <input type="checkbox" :checked="rec.selected">
-                            </label>
-                            <FactCheckHighlight :issue="getIssueForTreatment(rec.name)">
-                              <span class="rec-name">{{ rec.name }}</span>
-                            </FactCheckHighlight>
-                            <span class="rec-tag" :class="rec.type">{{ getTreatmentTagLabel(rec.type) }}</span>
-                            <span v-if="rec.matchedItem" class="matched-inline">
-                              <span class="match-icon">✓</span>
-                              <span class="match-name">{{ rec.matchedItem.name }}</span>
-                              <span class="match-spec" v-if="rec.type === 'medicine'">{{ rec.matchedItem.spec }}</span>
+                      <template #title-meta>
+                        <RecAttributeChip
+                          v-if="treatmentGates.isExecDeptRequired(rec)"
+                          variant="voice-card"
+                          label="执行科室"
+                          :value-text="treatmentGates.getExecDeptDisplay(rec)"
+                          :options="getExecDeptChipOptions()"
+                          :missing="!treatmentGates.hasRequiredExecDept(rec)"
+                          @select="onExecDeptSelect(rec, $event)"
+                        />
+                        <RecAttributeChip
+                          v-if="treatmentGates.isPharmacyRequired(rec)"
+                          variant="voice-card"
+                          label="发药药房"
+                          :value-text="treatmentGates.getPharmacyDisplay(rec)"
+                          :options="getPharmacyChipOptions(rec)"
+                          :missing="!treatmentGates.hasRequiredPharmacy(rec)"
+                          :status="getMedicineHydrationStatus(rec)"
+                          empty-text="当前药品在可用药房无配置，请先手动匹配标准库"
+                          @select="onPharmacySelect(rec, $event)"
+                        />
+                      </template>
+
+                      <template #actions>
+                        <button
+                          v-if="isPMPHAIConfigured()"
+                          class="doc-icon-btn"
+                          @click.stop="searchLiterature(rec)"
+                          title="搜索文献"
+                        >
+                          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+                            <polyline points="14 2 14 8 20 8"></polyline>
+                            <line x1="16" y1="13" x2="8" y2="13"></line>
+                            <line x1="16" y1="17" x2="8" y2="17"></line>
+                          </svg>
+                        </button>
+                      </template>
+
+                      <template #body>
+                        <div v-if="getTreatmentReferenceStatus(rec) || rec.ingredients" class="treatment-detail-panel treatment-body-panel" @click.stop>
+                          <div
+                            v-if="getTreatmentReferenceStatus(rec)"
+                            class="diag-rationale"
+                          >
+                            {{ getReferenceStatusLabel(getTreatmentReferenceStatus(rec)?.status || 'pending') }}
+                            <span v-if="getTreatmentReferenceStatus(rec)?.message">
+                              ：{{ getTreatmentReferenceStatus(rec)?.message }}
                             </span>
-                            <span v-else class="unmatched-icon" title="未匹配标准库">🔍</span>
-                            <RecAttributeChip
-                              v-if="treatmentGates.isPharmacyRequired(rec)"
-                              label="发药药房"
-                              :value-text="treatmentGates.getPharmacyDisplay(rec)"
-                              :options="getPharmacyChipOptions(rec)"
-                              :missing="!treatmentGates.hasRequiredPharmacy(rec)"
-                              :status="getMedicineHydrationStatus(rec)"
-                              empty-text="当前药品在可用药房无配置，请先手动匹配标准库"
-                              @select="onPharmacySelect(rec, $event)"
-                            />
-                            <RecAttributeChip
-                              v-if="treatmentGates.isExecDeptRequired(rec)"
-                              label="执行科室"
-                              :value-text="treatmentGates.getExecDeptDisplay(rec)"
-                              :options="getExecDeptChipOptions()"
-                              :missing="!treatmentGates.hasRequiredExecDept(rec)"
-                              @select="onExecDeptSelect(rec, $event)"
-                            />
                           </div>
-                          <div class="rec-actions">
-                            <button
-                              class="manual-match-toggle-btn"
-                              type="button"
-                              :title="isManualMatchOpen(rec) ? '收起手动匹配' : (rec.matchedItem ? '重新匹配标准库项目' : '手动匹配标准库项目')"
-                              @click.stop="toggleManualMatch(rec, $event)"
-                            >
-                              {{ isManualMatchOpen(rec) ? '收起匹配' : (rec.matchedItem ? '重新匹配' : '手动匹配') }}
-                            </button>
-                            <button
-                              v-if="isPMPHAIConfigured()"
-                              class="doc-icon-btn"
-                              @click.stop="searchLiterature(rec)"
-                              title="搜索文献"
-                            >
-                              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                                <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
-                                <polyline points="14 2 14 8 20 8"></polyline>
-                                <line x1="16" y1="13" x2="8" y2="13"></line>
-                                <line x1="16" y1="17" x2="8" y2="17"></line>
-                              </svg>
-                            </button>
+                          <div v-if="rec.ingredients" class="rec-ingredients-edit">
+                            <label>组成：</label>
+                            <textarea
+                              v-model="rec.ingredients"
+                              class="ingredients-textarea"
+                              rows="2"
+                              placeholder="请输入方剂组成"
+                            ></textarea>
                           </div>
                         </div>
+                      </template>
+
+                      <template #manual-match>
                         <ManualMatchPicker
                           v-if="isManualMatchOpen(rec)"
                           :title="`从标准库选择${getTreatmentTagLabel(rec.type)}`"
@@ -705,35 +721,20 @@
                           @update:keyword="setManualMatchKeyword(rec, $event)"
                           @select="applyManualMatchSelection(rec, $event)"
                         />
-                        <div
-                          v-if="getTreatmentReferenceStatus(rec)"
-                          class="diag-rationale"
-                          style="margin-top: 6px;"
-                        >
-                          {{ getReferenceStatusLabel(getTreatmentReferenceStatus(rec)?.status || 'pending') }}
-                          <span v-if="getTreatmentReferenceStatus(rec)?.message">
-                            ：{{ getTreatmentReferenceStatus(rec)?.message }}
-                          </span>
+                      </template>
+
+                      <template #editor>
+                        <div v-if="rec.selected" class="treatment-detail-panel treatment-editor-panel" @click.stop>
+                          <TreatmentItemEditor
+                            :rec="rec"
+                            :mode="rec.type === 'medicine' ? 'inline' : 'compact'"
+                            :show-exec-dept-readonly="false"
+                            :frequency-options="hisFrequencyOptions"
+                            :route-options="hisRouteOptions"
+                          />
                         </div>
-                        <div class="rec-reason">{{ rec.reason }}</div>
-                        <div v-if="rec.ingredients" class="rec-ingredients-edit" @click.stop>
-                          <label>组成：</label>
-                          <textarea 
-                            v-model="rec.ingredients"
-                            class="ingredients-textarea"
-                            rows="2"
-                            placeholder="请输入方剂组成"
-                          ></textarea>
-                        </div>
-                        <div v-if="rec.usage" class="rec-usage">建议：{{ rec.usage }}</div>
-                        <TreatmentItemEditor
-                          v-if="rec.selected"
-                          :rec="rec"
-                          :frequency-options="hisFrequencyOptions"
-                          :route-options="hisRouteOptions"
-                        />
-                      </div>
-                    </div>
+                      </template>
+                    </TreatmentRecommendationCard>
                   </div>
                 </section>
 
@@ -793,8 +794,11 @@
 
       <!-- Fixed Action Area -->
       <div class="fixed-action-area">
-        <button class="writeback-btn" @click="handleBatchWriteBack" :disabled="!canBatchWriteBack">
+        <button class="writeback-btn" @click="submitToHIS" :disabled="!canSubmitToHIS">
           一键回写
+        </button>
+        <button class="reference-btn" @click="handleBatchReferenceToPHIS" :disabled="!canBatchReferenceToPHIS">
+          批量引用 PHIS
         </button>
         <button class="back-btn" @click="currentView = 'consultation'">
           返回
@@ -1007,12 +1011,13 @@
 <script setup lang="ts">
 import { ref, shallowRef, computed, onMounted, watch, onUnmounted, inject, nextTick } from 'vue';
 import symptomAssociations from '../assets/symptom-associations.json';
-import { medicalDataService, type DiagnosisItem, type Icd10CategoryInfo } from '../services/medicalData';
+import { medicalDataService, type DiagnosisItem, type Icd10CategoryInfo, type MedicineItem, type MedicalItem } from '../services/medicalData';
 import Pinyin from 'tiny-pinyin';
 import { chat } from '../services/llm';
 import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 import { feedbackService } from '../services/feedback';
+import { getHisAdapter } from '../services/his';
 import { trackViewChange, trackClick, trackError, trackFormSubmit, trackRecommendationAction, startTimedOperation } from '../services/operationTracker';
 import BodyPartSelector from './BodyPartSelector.vue';
 import SystemCategorySelector from './SystemCategorySelector.vue';
@@ -1020,6 +1025,8 @@ import { PROMPTS, DynamicSymptomTemplatePrompt } from '../prompts';
 import Icon from './Icon.vue';
 import FactCheckNotification from './FactCheckNotification.vue';
 import FactCheckHighlight from './FactCheckHighlight.vue';
+import DiagnosisRecommendationCard from './DiagnosisRecommendationCard.vue';
+import TreatmentRecommendationCard from './TreatmentRecommendationCard.vue';
 import TreatmentItemEditor from './TreatmentItemEditor.vue';
 import ManualMatchPicker, { type ManualMatchCandidate } from './ManualMatchPicker.vue';
 import RecAttributeChip, { type AttrOption } from './RecAttributeChip.vue';
@@ -1077,6 +1084,14 @@ import { useMedicalDictionaries } from '../composables/useMedicalDictionaries';
 import { useTreatmentNormalization } from '../composables/useTreatmentNormalization';
 import { useTreatmentGates } from '../composables/useTreatmentGates';
 import { useTreatmentHydration } from '../composables/useTreatmentHydration';
+import { useVoiceFeedback } from '../composables/useVoiceFeedback';
+import {
+  getVoiceDiagnosisFeedbackKey,
+  getVoiceTreatmentFeedbackKey,
+  mapTreatmentTypeToRecommendationType,
+  mapTreatmentTypeToTargetType,
+} from '../services/voiceFeedback';
+import type { VoiceRecommendationFeedbackDraft } from '../types/voiceFeedback';
 type AssistAction = ConsultationAssistAction;
 type ReferenceAction = 'diagnosis' | 'medication' | 'examination' | 'lab_test' | 'procedure' | 'batch';
 type ReferenceLifecycleStatus = 'pending' | 'success' | 'failed';
@@ -1276,6 +1291,8 @@ const treatmentError = ref<string | null>(null);
 const treatmentRecommendations = ref<TreatmentRecommendation[]>([]);
 
 // 手动匹配候选弹窗状态（药品/检查/检验/处置 共用）
+const activeReasonTooltipKey = ref<string | null>(null);
+const activeFeedbackPopoverKey = ref<string | null>(null);
 const activeManualMatchKey = ref<string | null>(null);
 const manualMatchKeywords = ref<Record<string, string>>({});
 
@@ -1322,6 +1339,200 @@ const treatmentHydration = useTreatmentHydration({
 });
 function normalizeTreatmentRecommendation(rec: Partial<TreatmentRecommendation>): TreatmentRecommendation {
   return treatmentNormalization.normalize(rec);
+}
+
+function buildMedicineMatchedItem(item: MedicineItem): TreatmentRecommendation['matchedItem'] {
+  return {
+    id: item.id,
+    name: item.name,
+    spec: item.spec,
+    storeIds: Array.isArray(item.storeIds)
+      ? Array.from(new Set(item.storeIds.map((value) => (typeof value === 'string' ? value.trim() : '')).filter(Boolean)))
+      : [],
+    idSrv: item.idSrv,
+    naSrv: item.naSrv,
+    sdSrv: item.sdSrv,
+    idDeptExec: item.idDeptExec,
+    fgCheckOrd: item.fgCheckOrd,
+    fgSkintest: item.fgSkintest,
+    raw: item.raw,
+  };
+}
+
+function buildMedicalItemMatchedItem(item: MedicalItem): TreatmentRecommendation['matchedItem'] {
+  return {
+    id: item.id,
+    name: item.name,
+    code: item.code,
+    idSrv: item.idSrv,
+    naSrv: item.naSrv,
+    sdSrv: item.sdSrv,
+    idDeptExec: item.idDeptExec,
+    idPart: item.idPart,
+    jsonField: item.jsonField,
+    fgCheckOrd: item.fgCheckOrd,
+    raw: item.raw,
+  };
+}
+
+function assessTreatmentCatalogMatch(
+  type: TreatmentRecommendation['type'],
+  name: string,
+  aliases?: string[],
+  spec?: string,
+): Pick<TreatmentRecommendation, 'matchedItem' | 'suggestedMatchItem' | 'matchStatus'> {
+  switch (type) {
+    case 'medicine': {
+      const result = medicalDataService.assessMedicineMatch(name, aliases, spec);
+      return {
+        matchedItem: result.status === 'exact' && result.candidate ? buildMedicineMatchedItem(result.candidate) : undefined,
+        suggestedMatchItem: result.status === 'probable' && result.candidate ? buildMedicineMatchedItem(result.candidate) : undefined,
+        matchStatus: result.status,
+      };
+    }
+    case 'exam': {
+      const result = medicalDataService.assessExamItemMatch(name, aliases);
+      return {
+        matchedItem: result.status === 'exact' && result.candidate ? buildMedicalItemMatchedItem(result.candidate) : undefined,
+        suggestedMatchItem: result.status === 'probable' && result.candidate ? buildMedicalItemMatchedItem(result.candidate) : undefined,
+        matchStatus: result.status,
+      };
+    }
+    case 'lab_test': {
+      const result = medicalDataService.assessLabTestItemMatch(name, aliases);
+      return {
+        matchedItem: result.status === 'exact' && result.candidate ? buildMedicalItemMatchedItem(result.candidate) : undefined,
+        suggestedMatchItem: result.status === 'probable' && result.candidate ? buildMedicalItemMatchedItem(result.candidate) : undefined,
+        matchStatus: result.status,
+      };
+    }
+    case 'procedure': {
+      const result = medicalDataService.assessProcedureItemMatch(name, aliases);
+      return {
+        matchedItem: result.status === 'exact' && result.candidate ? buildMedicalItemMatchedItem(result.candidate) : undefined,
+        suggestedMatchItem: result.status === 'probable' && result.candidate ? buildMedicalItemMatchedItem(result.candidate) : undefined,
+        matchStatus: result.status,
+      };
+    }
+    default:
+      return {
+        matchedItem: undefined,
+        suggestedMatchItem: undefined,
+        matchStatus: 'unmatched',
+      };
+  }
+}
+
+function hasProbableMatch(rec: TreatmentRecommendation): boolean {
+  return rec.matchStatus === 'probable' && !!rec.suggestedMatchItem;
+}
+
+function getSuggestedMatchName(rec: TreatmentRecommendation): string {
+  return (rec.suggestedMatchItem?.name || '').trim();
+}
+
+function getTreatmentMatchLabel(rec: TreatmentRecommendation): string {
+  if (rec.matchStatus === 'manual') return '已匹配';
+  if (rec.matchStatus === 'confirmed') return '已匹配';
+  if (rec.matchStatus === 'exact') return '已匹配';
+  if (rec.matchStatus === 'probable') return '待确认';
+  if (rec.matchedItem) return '已匹配';
+  return '未匹配';
+}
+
+function getTreatmentOriginalName(rec: TreatmentRecommendation): string {
+  if (rec.matchStatus !== 'manual' && rec.matchStatus !== 'confirmed') {
+    return '';
+  }
+
+  const originalName = (rec.originalName || '').trim();
+  if (!originalName || originalName === rec.name) {
+    return '';
+  }
+
+  return originalName;
+}
+
+function confirmSuggestedMatch(rec: TreatmentRecommendation, event?: Event): void {
+  event?.stopPropagation();
+  if (!rec.suggestedMatchItem) {
+    return;
+  }
+
+  rec.originalName = rec.originalName || rec.name;
+  rec.matchedItem = { ...rec.suggestedMatchItem };
+  rec.name = rec.suggestedMatchItem.name || rec.name;
+  rec.matchStatus = 'confirmed';
+  rec.manualMatched = false;
+  rec.selected = false;
+  rec.suggestedMatchItem = undefined;
+  Object.assign(rec, normalizeTreatmentRecommendation(rec));
+  showToast(`${rec.name} 已确认标准库匹配`, 'success');
+}
+
+function getAllRecommendationItems(): TreatmentRecommendation[] {
+  return [
+    ...treatmentRecommendations.value,
+    ...examRecommendations.value,
+    ...labTestRecommendations.value,
+    ...procedureRecommendations.value,
+  ];
+}
+
+async function syncTreatmentPharmacyScope(): Promise<void> {
+  const his = getHisAdapter();
+  if (!his) {
+    medicalDataService.setActivePharmacyStoreIds(null);
+    return;
+  }
+
+  const activeStoreIds = hisPharmacyOptions.value
+    .map((option) => (option.idSto || '').trim())
+    .filter((value): value is string => Boolean(value));
+
+  if (activeStoreIds.length === 0) {
+    medicalDataService.setActivePharmacyStoreIds(null);
+    return;
+  }
+
+  try {
+    await medicalDataService.ensureMedicineCatalogForStoreIds(activeStoreIds, his);
+  } catch (error) {
+    console.error('[ConsultationPage] ensureMedicineCatalogForStoreIds failed', error);
+  }
+}
+
+function syncTreatmentExecDeptSelections(): void {
+  if (hisExecDeptOptions.value.length === 0) {
+    return;
+  }
+
+  const keyByText = new Map(hisExecDeptOptions.value.map((option) => [option.text, option.key]));
+  getAllRecommendationItems().forEach((rec) => {
+    if (rec.type === 'medicine') {
+      return;
+    }
+
+    const currentValue = (rec.execDept || '').trim();
+    if (!currentValue) {
+      return;
+    }
+
+    if (hisExecDeptOptions.value.some((option) => option.key === currentValue)) {
+      return;
+    }
+
+    const normalized = keyByText.get(currentValue);
+    if (normalized) {
+      rec.execDept = normalized;
+    }
+  });
+}
+
+async function ensureTreatmentDictionaryStateReady(): Promise<void> {
+  await loadAllHisDictionaries();
+  await syncTreatmentPharmacyScope();
+  syncTreatmentExecDeptSelections();
 }
 
 const finalRecord = ref<FinalRecord | null>(null);
@@ -1631,6 +1842,22 @@ const resolvePastMedicalHistory = (): string =>
     ['pastMedicalHistory', 'past_medical_history', 'pastMedicalHistoryText']
   ) ||
   '未提供既往病史。';
+
+const {
+  recommendationSubmittingKey,
+  recommendationSubmittedMap,
+  ensureRecommendationDraft,
+  updateRecommendationDraft,
+  submitRecommendationFeedback,
+  registerExternalRecommendationTarget,
+} = useVoiceFeedback({
+  consultationId: computed(() => resolveConsultationId()),
+  patientId: computed(() => getPatientAnchorId(patientInfo.value)),
+  patientName: computed(() => patientInfo.value.naPi || ''),
+  chiefComplaint: computed(() => generatedRecord.value.chiefComplaint || ''),
+  historyOfPresentIllness: computed(() => generatedRecord.value.historyOfPresentIllness || ''),
+  pastMedicalHistory: computed(() => resolvePastMedicalHistory()),
+});
 
 const buildReferenceKey = (
   action: ReferenceAction,
@@ -2283,6 +2510,133 @@ const getTreatmentTagLabel = (type: TreatmentRecommendation['type']): string => 
   }
 };
 
+const getTreatmentSpec = (rec: TreatmentRecommendation): string => {
+  return rec.type === 'medicine' ? (rec.spec || rec.matchedItem?.spec || '') : '';
+};
+
+const getMedicineInlineSummary = (rec: TreatmentRecommendation): string => {
+  const normalized = normalizeTreatmentRecommendation(rec);
+  const parts = [
+    normalized.dosage || normalized.dosageUnit ? `一次剂量 ${[normalized.dosage, normalized.dosageUnit].filter(Boolean).join(' ')}` : '',
+    normalized.frequency ? `频次 ${normalized.frequency}` : '',
+    normalized.route ? `用法 ${normalized.route}` : '',
+    normalized.days ? `天数 ${normalized.days}天` : '',
+    normalized.totalQty || normalized.totalUnit ? `总量 ${[normalized.totalQty, normalized.totalUnit].filter(Boolean).join(' ')}` : '',
+  ].filter(Boolean);
+
+  return parts.join(' / ');
+};
+
+function getReasonTooltipKey(kind: 'diagnosis' | 'treatment', primary: string, secondary = ''): string {
+  return `${kind}:${primary}:${secondary}`;
+}
+
+function toggleReasonTooltip(key: string, event?: Event): void {
+  event?.stopPropagation();
+  activeReasonTooltipKey.value = activeReasonTooltipKey.value === key ? null : key;
+}
+
+function getDiagnosisFeedbackKey(diag: Diagnosis): string {
+  return getVoiceDiagnosisFeedbackKey(diag);
+}
+
+function getTreatmentFeedbackKey(rec: TreatmentRecommendation): string {
+  return getVoiceTreatmentFeedbackKey(rec);
+}
+
+function getRecommendationDraft(recommendationKey: string): VoiceRecommendationFeedbackDraft {
+  return ensureRecommendationDraft(recommendationKey);
+}
+
+function getRecommendationSubmittedLabel(recommendationKey: string): string {
+  return recommendationSubmittedMap.value[recommendationKey]?.actionLabel || '';
+}
+
+function isRecommendationFeedbackOpen(recommendationKey: string): boolean {
+  return activeFeedbackPopoverKey.value === recommendationKey;
+}
+
+function toggleRecommendationFeedback(recommendationKey: string, event?: Event): void {
+  event?.stopPropagation();
+  activeFeedbackPopoverKey.value = activeFeedbackPopoverKey.value === recommendationKey ? null : recommendationKey;
+}
+
+function buildDiagnosisFeedbackSnapshot(diag: Diagnosis): Record<string, unknown> {
+  const isSelected =
+    (selectedDiagnosis.value?.id && diag.id && selectedDiagnosis.value.id === diag.id)
+    || (selectedDiagnosis.value?.name === diag.name && selectedDiagnosis.value?.code === diag.code);
+
+  return {
+    id: diag.id || '',
+    code: diag.code || '',
+    name: diag.name || '',
+    rationale: diag.rationale || '',
+    selected: isSelected,
+    primary: isSelected,
+  };
+}
+
+function buildTreatmentFeedbackSnapshot(rec: TreatmentRecommendation): Record<string, unknown> {
+  return {
+    type: rec.type,
+    name: rec.name,
+    originalName: rec.originalName || '',
+    reason: rec.reason || '',
+    selected: !!rec.selected,
+    matchedItem: rec.matchedItem || null,
+    matchStatus: rec.matchStatus || 'unmatched',
+    dosage: rec.dosage || '',
+    dosageUnit: rec.dosageUnit || '',
+    frequency: rec.frequency || '',
+    route: rec.route || '',
+    totalQty: rec.totalQty || '',
+    totalUnit: rec.totalUnit || '',
+    pharmacy: rec.pharmacy || '',
+    execDept: rec.execDept || '',
+    insuranceType: rec.insuranceType || '',
+    bodySite: rec.bodySite || '',
+    bodySiteId: rec.bodySiteId || '',
+  };
+}
+
+async function handleDiagnosisFeedbackSubmit(diag: Diagnosis, draft: VoiceRecommendationFeedbackDraft): Promise<void> {
+  const recommendationKey = getDiagnosisFeedbackKey(diag);
+  try {
+    await submitRecommendationFeedback({
+      recommendationKey,
+      recommendationTitle: diag.name,
+      draft,
+      snapshot: buildDiagnosisFeedbackSnapshot(diag),
+      fallbackTargetType: 'diagnosis',
+      fallbackRecommendationType: 'diagnosis',
+    });
+    activeFeedbackPopoverKey.value = null;
+    showToast?.('诊断反馈已记录', 'success');
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    showToast?.(`提交反馈失败: ${message}`, 'error');
+  }
+}
+
+async function handleTreatmentFeedbackSubmit(rec: TreatmentRecommendation, draft: VoiceRecommendationFeedbackDraft): Promise<void> {
+  const recommendationKey = getTreatmentFeedbackKey(rec);
+  try {
+    await submitRecommendationFeedback({
+      recommendationKey,
+      recommendationTitle: rec.name,
+      draft,
+      snapshot: buildTreatmentFeedbackSnapshot(rec),
+      fallbackTargetType: mapTreatmentTypeToTargetType(rec.type),
+      fallbackRecommendationType: mapTreatmentTypeToRecommendationType(rec.type),
+    });
+    activeFeedbackPopoverKey.value = null;
+    showToast?.('推荐反馈已记录', 'success');
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    showToast?.(`提交反馈失败: ${message}`, 'error');
+  }
+}
+
 const buildSelectedTreatmentReferenceItemsByType = (
   type: ReferenceableTreatmentType
 ): ReferenceItemPayload[] => {
@@ -2510,7 +2864,7 @@ const referenceDiagnosisItemToPHIS = async (diagnosis: Diagnosis) => {
 
 /* referenceSelectedTreatmentsToPHIS removed - per-section reference replaced by batch 一键回写 */
 
-const canBatchWriteBack = computed(() => {
+const canBatchReferenceToPHIS = computed(() => {
   if (hasPendingReferenceRequest.value) return false;
   if (!selectedDiagnosis.value) return false;
   const hasSelectedTreatments = visibleTreatmentReferenceSections.value.some(
@@ -2519,7 +2873,13 @@ const canBatchWriteBack = computed(() => {
   return hasSelectedTreatments;
 });
 
-const handleBatchWriteBack = async () => {
+const canSubmitToHIS = computed(() => {
+  if (!selectedDiagnosis.value) return false;
+  return generatedRecord.value.chiefComplaint.trim().length > 0
+    && generatedRecord.value.historyOfPresentIllness.trim().length > 0;
+});
+
+const handleBatchReferenceToPHIS = async () => {
   if (!selectedDiagnosis.value) {
     showToast('请先选择一个诊断结果', 'info');
     return;
@@ -2579,17 +2939,62 @@ const symptomOrderResolvers: OrderItemResolvers = {
   getJsonField: (rec) => (rec.matchedItem?.jsonField || readFirstString(getMatchedItemRaw(rec), ['jsonField']) || '').trim(),
 };
 
+const getSelectedTreatments = (): TreatmentRecommendation[] => [
+  ...treatmentRecommendations.value,
+  ...examRecommendations.value,
+  ...labTestRecommendations.value,
+  ...procedureRecommendations.value,
+].filter((item) => item.selected);
+
+const ensureSelectedTreatmentsReadyForSubmit = async (selectedTreatments: TreatmentRecommendation[]): Promise<boolean> => {
+  const missingPharmacy = selectedTreatments.find((item) => !treatmentGates.hasRequiredPharmacy(item));
+  if (missingPharmacy) {
+    showToast(`${missingPharmacy.name} 当前发药药房不可用，请选择实际拥有该药品的药房后再提交`, 'info');
+    return false;
+  }
+
+  const missingExecDept = selectedTreatments.find((item) => !treatmentGates.hasRequiredExecDept(item));
+  if (missingExecDept) {
+    showToast(`${missingExecDept.name} 未设置执行科室，请先设置后再提交`, 'info');
+    return false;
+  }
+
+  const medicinesReady = await Promise.all(selectedTreatments
+    .filter((item) => item.type === 'medicine')
+    .map((item) => treatmentHydration.ensureMedicineSelectable(item, true)));
+  if (medicinesReady.some((ready) => !ready)) {
+    showToast('存在当前药房无有效详情的药品，请取消选择后再提交', 'info');
+    return false;
+  }
+
+  const medicineInventoriesReady = await Promise.all(selectedTreatments
+    .filter((item) => item.type === 'medicine')
+    .map((item) => treatmentHydration.checkMedicineInventoryEnough(item, true)));
+  if (medicineInventoriesReady.some((ready) => !ready)) {
+    showToast('存在库存不足的药品，请调整用药数量或药房后再提交', 'info');
+    return false;
+  }
+
+  return true;
+};
+
 const submitToHIS = async () => {
-  if (!finalRecord.value) return;
+  if (!canSubmitToHIS.value) {
+    if (!selectedDiagnosis.value) {
+      showToast('请先选择一个诊断结果', 'info');
+      return;
+    }
+    showToast('请先完善主诉和现病史后再提交', 'info');
+    return;
+  }
 
   const requestId = `record-confirmed-${Date.now()}`;
   const consultationId = resolveConsultationId();
-  const selectedTreatments: TreatmentRecommendation[] = [
-    ...treatmentRecommendations.value,
-    ...examRecommendations.value,
-    ...labTestRecommendations.value,
-    ...procedureRecommendations.value,
-  ].filter((item) => item.selected);
+  const selectedTreatments = getSelectedTreatments();
+
+  if (!(await ensureSelectedTreatmentsReadyForSubmit(selectedTreatments))) {
+    return;
+  }
 
   const diagList = buildSharedDiagList({
     selectedDiagnoses: selectedDiagnosis.value ? [selectedDiagnosis.value] : [],
@@ -2677,6 +3082,16 @@ const categoryButtonText = computed(() => {
 });
 
 const handleClickOutside = (event: MouseEvent) => {
+  const target = event.target as HTMLElement | null;
+
+  if (activeReasonTooltipKey.value && !target?.closest('.reason-tooltip-trigger')) {
+    activeReasonTooltipKey.value = null;
+  }
+
+  if (activeFeedbackPopoverKey.value && !target?.closest('.voice-feedback-anchor')) {
+    activeFeedbackPopoverKey.value = null;
+  }
+
   if (categoryFilterRef.value && !categoryFilterRef.value.contains(event.target as Node)) {
     isCategoryDropdownOpen.value = false;
   }
@@ -2699,9 +3114,9 @@ onMounted(() => {
   prefillGeneratedRecordFromPatient(false);
 
   // 预热 HIS 频次/用法/药房/执行科室字典，让后续 normalizeTreatmentRecommendation
-  // 能命中 dftFreq/dftUsage 等默认值。失败时静默降级，仍可走基于关键字的推断。
-  void loadAllHisDictionaries().catch((error) => {
-    console.warn('[ConsultationPage] Failed to preload HIS dictionaries:', error);
+  // 能命中 dftFreq/dftUsage 等默认值，并同步预热当前药房 scope 对应的药品目录。
+  void ensureTreatmentDictionaryStateReady().catch((error) => {
+    console.warn('[ConsultationPage] Failed to preload treatment dictionaries:', error);
   });
 
   void listen<ReferenceFeedbackPayload>('consultation-reference-feedback', (event) => {
@@ -3386,12 +3801,18 @@ const fetchAIDiagnosis = async () => {
     // Save diagnosis recommendations to database
     try {
       for (const diagnosis of diagnoses) {
-        await feedbackService.saveRecommendation({
+        const recommendationId = await feedbackService.saveRecommendation({
           recType: 'diagnosis',
           content: JSON.stringify(diagnosis),
           matched: !!diagnosis.id,
           matchConfidence: diagnosis.id ? 1.0 : 0.0,
           latencyMs,
+        });
+        registerExternalRecommendationTarget({
+          recommendationKey: getDiagnosisFeedbackKey(diagnosis),
+          targetId: recommendationId,
+          targetType: 'diagnosis',
+          recommendationType: 'diagnosis',
         });
       }
 
@@ -3752,23 +4173,34 @@ const fetchTreatmentRecommendation = async () => {
 
     const processedRecs: TreatmentRecommendation[] = rawRecommendations
       .filter(rec => !rec.type || rec.type === 'medicine')
-      .map(rec => normalizeTreatmentRecommendation({
-        ...rec,
-        type: 'medicine' as const,
-        matchedItem: medicalDataService.matchMedicine(rec.name, Array.isArray(rec.aliases) ? rec.aliases : undefined),
-        selected: false,
-      }));
+      .map((rec) => {
+        const assessment = assessTreatmentCatalogMatch('medicine', rec.name, Array.isArray(rec.aliases) ? rec.aliases : undefined, rec.spec);
+        return normalizeTreatmentRecommendation({
+          ...rec,
+          type: 'medicine' as const,
+          matchedItem: assessment.matchedItem,
+          suggestedMatchItem: assessment.suggestedMatchItem,
+          matchStatus: assessment.matchStatus,
+          selected: false,
+        });
+      });
 
     treatmentRecommendations.value = processedRecs;
 
     try {
       for (const rec of processedRecs) {
-        await feedbackService.saveRecommendation({
+        const recommendationId = await feedbackService.saveRecommendation({
           recType: 'medication',
           content: JSON.stringify(rec),
           matched: !!rec.matchedItem,
           matchConfidence: rec.matchedItem ? 1.0 : 0.0,
           latencyMs,
+        });
+        registerExternalRecommendationTarget({
+          recommendationKey: getTreatmentFeedbackKey(rec),
+          targetId: recommendationId,
+          targetType: 'medication',
+          recommendationType: 'medication',
         });
       }
       await feedbackService.recordMetric({
@@ -3821,23 +4253,34 @@ const fetchExamRecommendation = async () => {
 
     const processedRecs: TreatmentRecommendation[] = rawRecommendations
       .filter(rec => !rec.type || rec.type === 'exam')
-      .map(rec => normalizeTreatmentRecommendation({
-        ...rec,
-        type: 'exam' as const,
-        matchedItem: medicalDataService.matchExamItem(rec.name, Array.isArray(rec.aliases) ? rec.aliases : undefined),
-        selected: false,
-      }));
+      .map((rec) => {
+        const assessment = assessTreatmentCatalogMatch('exam', rec.name, Array.isArray(rec.aliases) ? rec.aliases : undefined);
+        return normalizeTreatmentRecommendation({
+          ...rec,
+          type: 'exam' as const,
+          matchedItem: assessment.matchedItem,
+          suggestedMatchItem: assessment.suggestedMatchItem,
+          matchStatus: assessment.matchStatus,
+          selected: false,
+        });
+      });
 
     examRecommendations.value = processedRecs;
 
     try {
       for (const rec of processedRecs) {
-        await feedbackService.saveRecommendation({
+        const recommendationId = await feedbackService.saveRecommendation({
           recType: 'examination',
           content: JSON.stringify(rec),
           matched: !!rec.matchedItem,
           matchConfidence: rec.matchedItem ? 1.0 : 0.0,
           latencyMs,
+        });
+        registerExternalRecommendationTarget({
+          recommendationKey: getTreatmentFeedbackKey(rec),
+          targetId: recommendationId,
+          targetType: 'examination',
+          recommendationType: 'examination',
         });
       }
     } catch (err) {
@@ -3879,23 +4322,34 @@ const fetchLabTestRecommendation = async () => {
 
     const processedRecs: TreatmentRecommendation[] = rawRecommendations
       .filter(rec => !rec.type || rec.type === 'lab_test')
-      .map(rec => normalizeTreatmentRecommendation({
-        ...rec,
-        type: 'lab_test' as const,
-        matchedItem: medicalDataService.matchLabTestItem(rec.name, Array.isArray(rec.aliases) ? rec.aliases : undefined),
-        selected: false,
-      }));
+      .map((rec) => {
+        const assessment = assessTreatmentCatalogMatch('lab_test', rec.name, Array.isArray(rec.aliases) ? rec.aliases : undefined);
+        return normalizeTreatmentRecommendation({
+          ...rec,
+          type: 'lab_test' as const,
+          matchedItem: assessment.matchedItem,
+          suggestedMatchItem: assessment.suggestedMatchItem,
+          matchStatus: assessment.matchStatus,
+          selected: false,
+        });
+      });
 
     labTestRecommendations.value = processedRecs;
 
     try {
       for (const rec of processedRecs) {
-        await feedbackService.saveRecommendation({
+        const recommendationId = await feedbackService.saveRecommendation({
           recType: 'lab_test',
           content: JSON.stringify(rec),
           matched: !!rec.matchedItem,
           matchConfidence: rec.matchedItem ? 1.0 : 0.0,
           latencyMs,
+        });
+        registerExternalRecommendationTarget({
+          recommendationKey: getTreatmentFeedbackKey(rec),
+          targetId: recommendationId,
+          targetType: 'lab_test',
+          recommendationType: 'lab_test',
         });
       }
     } catch (err) {
@@ -3940,23 +4394,34 @@ const fetchProcedureRecommendation = async () => {
 
     const processedRecs: TreatmentRecommendation[] = rawRecommendations
       .filter(rec => !rec.type || rec.type === 'procedure')
-      .map(rec => normalizeTreatmentRecommendation({
-        ...rec,
-        type: 'procedure' as const,
-        matchedItem: medicalDataService.matchProcedureItem(rec.name, Array.isArray(rec.aliases) ? rec.aliases : undefined),
-        selected: false,
-      }));
+      .map((rec) => {
+        const assessment = assessTreatmentCatalogMatch('procedure', rec.name, Array.isArray(rec.aliases) ? rec.aliases : undefined);
+        return normalizeTreatmentRecommendation({
+          ...rec,
+          type: 'procedure' as const,
+          matchedItem: assessment.matchedItem,
+          suggestedMatchItem: assessment.suggestedMatchItem,
+          matchStatus: assessment.matchStatus,
+          selected: false,
+        });
+      });
 
     procedureRecommendations.value = processedRecs;
 
     try {
       for (const rec of processedRecs) {
-        await feedbackService.saveRecommendation({
+        const recommendationId = await feedbackService.saveRecommendation({
           recType: 'procedure',
           content: JSON.stringify(rec),
           matched: !!rec.matchedItem,
           matchConfidence: rec.matchedItem ? 1.0 : 0.0,
           latencyMs,
+        });
+        registerExternalRecommendationTarget({
+          recommendationKey: getTreatmentFeedbackKey(rec),
+          targetId: recommendationId,
+          targetType: 'procedure',
+          recommendationType: 'procedure',
         });
       }
     } catch (err) {
@@ -3972,12 +4437,14 @@ const fetchProcedureRecommendation = async () => {
 
 /** 并行触发所有四路推荐 */
 const fetchAllRecommendations = async () => {
+  await ensureTreatmentDictionaryStateReady();
   await Promise.all([
     fetchTreatmentRecommendation(),
     fetchExamRecommendation(),
     fetchLabTestRecommendation(),
     fetchProcedureRecommendation(),
   ]);
+  syncTreatmentExecDeptSelections();
   submitSmartGeneratedUserLog();
 };
 
@@ -4156,12 +4623,17 @@ function applyManualMatchSelection(rec: TreatmentRecommendation, candidate: Manu
 
   rec.originalName = rec.originalName || rec.name;
   rec.name = pickedRaw.name;
-  rec.matchedItem = pickedRaw;
+  rec.matchedItem = rec.type === 'medicine'
+    ? buildMedicineMatchedItem(pickedRaw as MedicineItem)
+    : buildMedicalItemMatchedItem(pickedRaw as MedicalItem);
   if (rec.type === 'medicine' && pickedRaw.spec) {
     rec.spec = pickedRaw.spec;
   }
   rec.manualMatched = true;
   rec.matchStatus = 'manual';
+  rec.selected = false;
+  rec.suggestedMatchItem = undefined;
+  Object.assign(rec, normalizeTreatmentRecommendation(rec));
   activeManualMatchKey.value = null;
   showToast(`${pickedRaw.name} 已完成标准库匹配`, 'success');
 }
@@ -5445,6 +5917,31 @@ const copyToClipboard = () => {
   cursor: not-allowed;
 }
 
+.reference-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 36px;
+  padding: 0 var(--space-lg);
+  background: rgba(229, 113, 11, 0.08);
+  color: #b45309;
+  border: 1px solid rgba(229, 113, 11, 0.24);
+  border-radius: var(--radius-sm);
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-medium);
+  cursor: pointer;
+  transition: all var(--duration-normal) var(--ease-out);
+}
+
+.reference-btn:hover {
+  background: rgba(229, 113, 11, 0.14);
+}
+
+.reference-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
 .back-btn {
   display: inline-flex;
   align-items: center;
@@ -5634,6 +6131,7 @@ const copyToClipboard = () => {
   padding: 12px; /* Compact */
   overflow-y: auto;
   position: relative;
+  min-height: 0;
 }
 
 .loading-overlay {
@@ -5813,9 +6311,8 @@ const copyToClipboard = () => {
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
   border: 1px solid rgba(226, 232, 240, 0.8);
   position: relative;
-  overflow: hidden;
-  min-height: 200px;
-  overflow-y: auto;
+  overflow: visible;
+  min-height: 0;
 }
 
 .category-filter {
@@ -6348,7 +6845,7 @@ const copyToClipboard = () => {
 .treatment-groups {
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 12px;
 }
 
 .treatment-section {
@@ -6356,20 +6853,16 @@ const copyToClipboard = () => {
   flex-direction: column;
   gap: 0;
   padding: 0;
-  border-radius: 0;
-  border: none;
-  border-bottom: 1px solid var(--color-border-light);
-  background: transparent;
-  border-radius: 0px 0px 16px 16px;
-}
-
-.treatment-section:last-child {
-  border-bottom: none;
+  border-radius: 16px;
+  border: 1px solid #DBDBDB;
+  background: #FFFFFF;
+  overflow: visible;
+  box-shadow: 0 1px 3px rgba(15, 23, 42, 0.03);
 }
 
 .treatment-section-muted {
-  border-color: var(--color-border-light);
-  background: transparent;
+  border-color: #D8E0E8;
+  background: #FCFDFE;
 }
 
 .treatment-section-header {
@@ -6378,10 +6871,10 @@ const copyToClipboard = () => {
   justify-content: space-between;
   gap: 12px;
   padding: 14px 16px 8px;
-  /*border-bottom: 1px solid var(--color-border-light);*/
   background: #F2F5F7;
-  border-radius: 16px 16px 0px 0px;
-  border: 1px solid #DBDBDB;
+  border-radius: 16px 16px 0 0;
+  border: none;
+  border-bottom: 1px solid #E6EBF1;
 }
 
 .treatment-section-header h5 {
@@ -6465,7 +6958,24 @@ const copyToClipboard = () => {
 .treatment-list {
   display: flex;
   flex-direction: column;
-  gap: 0;
+  gap: 10px;
+  padding: 12px 14px 14px;
+  background: inherit;
+}
+
+.treatment-list > * {
+  position: relative;
+}
+
+.treatment-list > * + *::before {
+  content: '';
+  position: absolute;
+  left: 16px;
+  right: 16px;
+  top: -6px;
+  height: 1px;
+  background: linear-gradient(90deg, rgba(219, 219, 219, 0) 0%, rgba(219, 219, 219, 0.92) 16%, rgba(219, 219, 219, 0.92) 84%, rgba(219, 219, 219, 0) 100%);
+  pointer-events: none;
 }
 
 .treatment-item {
@@ -6582,6 +7092,36 @@ const copyToClipboard = () => {
 .rec-tag.acupuncture {
   background: rgba(245, 158, 11, 0.1);
   color: #b45309;
+}
+
+.treatment-detail-panel {
+  margin-top: 10px;
+  padding: 12px 14px;
+  border: 1px solid var(--voice-border, #dbe4ef);
+  border-radius: 12px;
+  background: var(--voice-surface-soft, #f8fafc);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.42);
+}
+
+.treatment-detail-panel + .treatment-detail-panel {
+  margin-top: 8px;
+}
+
+.treatment-body-panel .diag-rationale {
+  padding-left: 0;
+}
+
+.treatment-body-panel .rec-ingredients-edit {
+  margin-top: 0;
+  background: rgba(255, 255, 255, 0.78);
+}
+
+.treatment-body-panel .diag-rationale + .rec-ingredients-edit {
+  margin-top: 8px;
+}
+
+.treatment-editor-panel {
+  padding: 10px 12px;
 }
 
 .rec-name {

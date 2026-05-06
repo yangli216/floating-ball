@@ -434,6 +434,7 @@ await navigation.openConsultation();
 
 **核心功能**:
 - ✅ 登记语音结果页诊断 / 治疗推荐快照，便于后续反馈引用稳定 targetId
+- ✅ 支持把页面已落库的 recommendationId 反注册回反馈编排层，供症状问诊等非语音页面复用同一套推荐反馈弹窗与提交链路
 - ✅ 管理单条推荐反馈、病例字段反馈草稿与整页评分草稿
 - ✅ 调用 `feedback.ts` 完成本地推荐反馈与整页反馈落库
 - ✅ 调用 `voiceFeedback.ts` 生成后续可直推后台的标准 payload，并为病例字段反馈补齐 AI 原文 / 医生现值 / 差异摘要
@@ -443,6 +444,7 @@ await navigation.openConsultation();
 ```typescript
 {
   registerRecommendations: () => Promise<void>,
+  registerExternalRecommendationTarget: () => void,
   submitRecommendationFeedback: () => Promise<void>,
   submitSessionFeedback: () => Promise<void>,
   restoreVoiceFeedbackDraft: () => void,
@@ -609,13 +611,16 @@ eventListeners.unregisterAllListeners();
 |------|------|------|
 | `ChatPanel.vue` | LLM 对话界面 | [src/components/ChatPanel.vue](src/components/ChatPanel.vue) |
 | `SettingsPanel.vue` | 系统设置（含通用设置、紧凑界面主题选择、区域化接入、关于版本、音频输入设备选择；本地模式下额外显示文本/音频模型配置，区域化模式下隐藏“模型配置”页签；通用设置页提供基础数据缓存管理和 HIS 联调日志独立入口） | [src/components/SettingsPanel.vue](src/components/SettingsPanel.vue) |
-| `ConsultationPage.vue` | 完整症状问诊主链路，同时承接新的“内嵌灵活模式”；支持根据 `/assist` 上下文直接跳过症状采集进入病历详情页，继续复用现有推荐诊断、诊断鉴别、推荐用药、推荐检查与诊断路径能力，并负责处理 PHIS 引用闭环的页面状态；诊断保持单选引用，推荐方案支持多选后分组批量引入 | [src/components/ConsultationPage.vue](src/components/ConsultationPage.vue) |
+| `ConsultationPage.vue` | 完整症状问诊主链路，同时承接新的“内嵌灵活模式”；支持根据 `/assist` 上下文直接跳过症状采集进入病历详情页，继续复用现有推荐诊断、诊断鉴别、推荐用药、推荐检查与诊断路径能力，并负责处理 PHIS 引用闭环的页面状态；诊断保持单选引用，推荐方案支持多选后分组批量引入；记录页底部固定操作区中，“一键回写”现与语音问诊保持同一语义，直接触发最终 `complete_consultation` 提交，而 PHIS 批量引用改为单独命名入口；症状侧推荐卡现复用 `useVoiceFeedback` 的推荐反馈草稿/提交链路，但 recommendationId 仍沿用本页既有 `feedbackService.saveRecommendation` 落库结果注册回反馈层 | [src/components/ConsultationPage.vue](src/components/ConsultationPage.vue) |
 | `DiagnosisPathWindow.vue` | 独立诊断推理路径窗口，使用 ECharts Sankey 展示患者事实、章节归类、证据汇聚与诊断去向；默认提供更宽画布，并按容器尺寸动态计算 Sankey 的布局盒子，用对称留白实现“适应屏幕并居中”的默认视图，再开放滚轮缩放、平移与节点拖动；点击入口后窗口先显示 loading 动画，并按“检查缓存 -> 生成推理链 -> 渲染图表”的阶段更新提示，若生成超时或渲染失败会切换到明确错误态；正文容器在收到 payload 后保持挂载，loading 改为遮罩层，避免 `chartEl` 尚未挂载时误判渲染成功；开窗后的 `show/focus` 调用采用 best-effort 非阻塞方式，避免 Tauri 原生命令卡住整个推理链；右侧说明面板采用“支持证据 / 反证提醒 / 鉴别要点”三段式，未返回结构化分段时回退显示整体 rationale | [src/components/DiagnosisPathWindow.vue](src/components/DiagnosisPathWindow.vue) |
 | `VoiceCapsule.vue` | 语音录制胶囊 | [src/components/VoiceCapsule.vue](src/components/VoiceCapsule.vue) |
 | `VoiceConsultationNew.vue` | 当前语音问诊主结果页：左侧聚焦病例正文编辑，右侧展示 AI 诊断/治疗推荐与一键回写；整体采用“双栏正文 + 右侧决策卡片”结构，名称/规格/匹配状态按“单行优先”压缩展示；消费 `useVoiceIntentRecognition` 产出的“病例草稿 + 带 explicit/inferred 来源标记的诊断/处方/检查提示”，优先直接填充主诉、现病史、既往史和可映射的处方核心字段，减少医生二次录入；其中“条件成立后再考虑”的药物与“患者已自行服用”的药物不作为当前处方候选，前者降级到处理意见，后者保留在用药史语义中；首次缺少治疗项时仍可按当前主诊断拉取默认治疗推荐，但医生手动切换诊断后不再自动重拉治疗方案，而是保留现有列表，仅通过标题区的“刷新方案”按钮由医生主动重新请求；手动刷新的药品推荐仍要求尽量返回结构化的剂量、频次、用法、疗程天数和总量，前端再结合 HIS 字典与药品明细做归一和兜底补全；推荐依据不再以单独文本块展开，而是以名称后的悬停图标提示完整内容，避免右栏信息过载；病例详情标题侧提供字段级反馈入口，页面本身只负责维护当前值与初始快照，AI 原文 / 医生现值 / 差异对比的展示与提交由独立反馈子组件承接；诊断区保持单选切换且不允许取消为空，当前页不再承载诊断鉴别排查弹窗；药品项默认只展开“一次剂量、频次、用法、总量”四类核心字段，其余字段由头部箭头按需展开，检查/检验/处置编辑项默认收起；药品和诊疗项目的标准库匹配在本页按“完全匹配 / 候选待确认 / 未匹配需手动匹配”三档执行，其中候选待确认的确认按钮应紧贴候选标准项展示，只有医生确认后的标准项才能进入回写；顶部患者信息栏右侧固定承载“放弃”和“一键回写”操作，其中“放弃”必须先经过二次确认，再清空当前患者的语音缓存并退回小球状态；组件自身负责纵向滚动与右侧列圆角裁切，以适应固定窗口高度并隔离全局面板样式；视觉层面统一遵守最小 13px、正文 14px、重点 14px 加粗的字号基线，并仅用贴左上角边框的淡底勾选标记表达选中态；颜色与表面层级优先复用 `themeService` 下发的全局主题变量，确保语音结果页与系统风格设置保持同步；新增反馈能力需通过独立反馈子组件和 composable 接入，避免继续把项级反馈与整页评分逻辑堆积到页面主文件中 | [src/components/VoiceConsultationNew.vue](src/components/VoiceConsultationNew.vue) |
+| `DiagnosisRecommendationCard.vue` | 单条诊断推荐卡片：现同时服务语音问诊与症状问诊。组件负责统一渲染名称、编码、主诊断/已纳入状态、推荐依据 tooltip 和同类诊断切换；反馈按钮通过 `showFeedback` 控制是否启用，额外动作区与正文细节区通过插槽让不同页面注入各自能力（如症状侧的文献搜索 / PHIS 引用 / checklist，以及语音/症状两侧共用的项级反馈 popover） | [src/components/DiagnosisRecommendationCard.vue](src/components/DiagnosisRecommendationCard.vue) |
+| `TreatmentRecommendationCard.vue` | 单条治疗推荐卡片壳：现同时服务语音问诊与症状问诊。组件负责渲染名称/规格、匹配状态、执行科室/发药药房 chip、候选标准项确认、AI 原建议、摘要文案，以及反馈 / 手动匹配 / 展开更多编辑等头部动作；反馈按钮可关闭，标题前缀/标题补充/额外动作/正文细节通过插槽注入，父级继续把手动匹配面板与 editor 区域留在插槽中；其中症状侧可通过 worklist 布局变体把同一份数据骨架渲染成更接近医嘱清单的列表结构，而无需维护第二套治疗项组件 | [src/components/TreatmentRecommendationCard.vue](src/components/TreatmentRecommendationCard.vue) |
 | `VoiceRecommendationFeedbackPopover.vue` | 语音结果页单条推荐反馈弹层：收集问题标签、反馈原因、是否已修正采用以及修正结果摘要 | [src/components/VoiceRecommendationFeedbackPopover.vue](src/components/VoiceRecommendationFeedbackPopover.vue) |
 | `VoiceRecordFeedbackPopover.vue` | 语音结果页病例字段反馈弹层：展示主诉 / 现病史 / 既往史的 AI 原文、当前内容与差异摘要，并提交字段级反馈 | [src/components/VoiceRecordFeedbackPopover.vue](src/components/VoiceRecordFeedbackPopover.vue) |
 | `VoiceSessionFeedbackBar.vue` | 语音结果页整页反馈浮层主体：在一键回写成功后弹出，收集 1-5 分评分、整体问题标签和点评 | [src/components/VoiceSessionFeedbackBar.vue](src/components/VoiceSessionFeedbackBar.vue) |
+| `TreatmentItemEditor.vue` | 治疗项编辑子组件：默认提供症状问诊使用的紧凑编辑模式（药品频次/用法/剂量/总量/天数/备注；检查/检验/处置数量/备注），并额外暴露 `inline` 模式，把语音侧“药品主编辑区”四个核心字段收敛到同一组件中；`inline` 既支持语音侧父组件注入字段激活状态、focusout 收口、总量输入回调等受控交互，也支持症状侧在未注入控制器时使用组件内部的自管展开/收起逻辑。组件本身只负责 UI 与事件分发，不承接归一化、库存校验或 HIS 回流逻辑 | [src/components/TreatmentItemEditor.vue](src/components/TreatmentItemEditor.vue) |
 | `VoiceResultHeader.vue` | 语音结果页患者信息与确认/放弃操作头部；只负责展示和发出 `confirm/cancel` 事件，不承接结果记录、复核或回写逻辑 | [src/components/VoiceResultHeader.vue](src/components/VoiceResultHeader.vue) |
 | `VoiceSafetyReviewPanel.vue` | 语音安全复核员提示面板（L2 柔性提醒）：展示异步 LLM 复核状态和非干扰提醒，支持展开详情、知晓和忽略；当父组件提供 `getActionLabel` 时额外显示"采纳建议"按钮（移除冲突药 / 补充化验），按钮触发 `apply` 事件；面板自身不感知 record，只负责 UI 与事件 | [src/components/VoiceSafetyReviewPanel.vue](src/components/VoiceSafetyReviewPanel.vue) |
 | `VoiceRigidBlockBanner.vue` | 语音刚性阻断条（L1 硬规则）：与 `VoiceSafetyReviewPanel` 并列展示，置于安全复核面板上方；仅渲染由 `useVoiceRigidBlock` 同步评估出的确定性告警，要求医生对每条 `block` 项二次确认；不调用 LLM、不发起网络请求 | [src/components/VoiceRigidBlockBanner.vue](src/components/VoiceRigidBlockBanner.vue) |

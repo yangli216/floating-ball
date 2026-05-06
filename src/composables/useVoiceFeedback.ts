@@ -242,6 +242,22 @@ export function useVoiceFeedback(input: UseVoiceFeedbackInput) {
     recommendationTargets.value = nextTargets;
   }
 
+  function registerExternalRecommendationTarget(payload: {
+    recommendationKey: string;
+    targetId: string;
+    targetType: TargetType;
+    recommendationType: RecommendationType;
+  }): void {
+    recommendationTargets.value = {
+      ...recommendationTargets.value,
+      [payload.recommendationKey]: {
+        targetId: payload.targetId,
+        targetType: payload.targetType,
+        recommendationType: payload.recommendationType,
+      },
+    };
+  }
+
   async function submitRecommendationFeedback(payload: {
     recommendationKey: string;
     recommendationTitle: string;
@@ -451,6 +467,7 @@ export function useVoiceFeedback(input: UseVoiceFeedbackInput) {
     updateRecordFieldDraft,
     updateSessionDraft,
     registerRecommendations,
+    registerExternalRecommendationTarget,
     submitRecommendationFeedback,
     submitRecordFieldFeedback,
     submitSessionFeedback,
