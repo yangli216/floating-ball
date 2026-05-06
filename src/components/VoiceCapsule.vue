@@ -108,6 +108,7 @@ import { saveVoiceRecording } from '../services/voiceRecordingStorage';
 import { trackClick, trackError } from '../services/operationTracker';
 import { getCurrentWindow } from '@tauri-apps/api/window';
 import { LogicalSize } from '@tauri-apps/api/dpi';
+import { getVoiceInteractionWindowSize } from '../constants/windowSizes';
 
 // 获取当前主题的主色调
 const getPrimaryColor = () => {
@@ -140,17 +141,11 @@ const isExpanded = ref(false);
 const editableText = ref('');
 let stoppedBlob: Blob | null = null;
 
-// Compact window dimensions
-const CAPSULE_W = 360;
-const CAPSULE_H_RECORDING = 80;
-const CAPSULE_H_PROCESSING = 96;    // processing state height
-const CAPSULE_H_STOPPED = 140;      // collapsed preview + action buttons
-const CAPSULE_H_EXPANDED = 248;     // expanded editor + action buttons
-
-const resizeWindow = async (w: number, h: number) => {
+const resizeWindow = async (stage: 'recording' | 'processing' | 'stopped' | 'expanded') => {
   try {
     const win = getCurrentWindow();
-    await win.setSize(new LogicalSize(w, h));
+    const targetSize = getVoiceInteractionWindowSize(stage);
+    await win.setSize(new LogicalSize(targetSize.width, targetSize.height));
   } catch (e) {
     console.warn('[VoiceCapsule] Window resize failed:', e);
   }
@@ -159,20 +154,20 @@ const resizeWindow = async (w: number, h: number) => {
 // Resize window when entering stopped state
 watch(isStopped, (stopped) => {
   if (stopped) {
-    resizeWindow(CAPSULE_W, CAPSULE_H_STOPPED);
+    resizeWindow('stopped');
   }
 });
 
 // Resize window when entering processing state
 watch(() => props.processing, (isProcessing) => {
   if (isProcessing) {
-    resizeWindow(CAPSULE_W, CAPSULE_H_PROCESSING);
+    resizeWindow('processing');
   }
 });
 
 // Resize window when expanding/collapsing text editor
 watch(isExpanded, (expanded) => {
-  resizeWindow(CAPSULE_W, expanded ? CAPSULE_H_EXPANDED : CAPSULE_H_STOPPED);
+  resizeWindow(expanded ? 'expanded' : 'stopped');
 });
 
 // Auto-scroll transcription text horizontally to always show the latest
@@ -476,7 +471,7 @@ const handleCancel = async () => {
   trackClick('voice_transcription_cancel');
   await cleanupRecordingResources();
   resetRecordingState();
-  resizeWindow(CAPSULE_W, CAPSULE_H_RECORDING);
+  resizeWindow('recording');
   await startRecording();
 };
 

@@ -17,6 +17,14 @@ export interface WindowSize {
   height: number;
 }
 
+export type VoiceInteractionWindowStage = 'recording' | 'processing' | 'stopped' | 'expanded';
+
+export interface WindowSizeOptions {
+  expanded?: boolean;
+  riskCount?: number;
+  voiceStage?: VoiceInteractionWindowStage;
+}
+
 /**
  * 视图类型定义
  * 对应 App.vue 中的 currentView 状态
@@ -54,8 +62,17 @@ export const WINDOW_SIZES = {
   /** 问诊页面：1080×720px 大面板 */
   CONSULTATION: { width: 1080, height: 720 } as WindowSize,
 
-  /** 语音胶囊：360×80px 千千静听歌词风格紧凑条 */
+  /** 语音胶囊录音态：360×80px 千千静听歌词风格紧凑条 */
   CAPSULE: { width: 360, height: 80 } as WindowSize,
+
+  /** 语音胶囊处理中：360×96px */
+  CAPSULE_PROCESSING: { width: 360, height: 96 } as WindowSize,
+
+  /** 语音胶囊停录预览：360×140px */
+  CAPSULE_STOPPED: { width: 360, height: 140 } as WindowSize,
+
+  /** 语音胶囊展开编辑：360×248px */
+  CAPSULE_EXPANDED: { width: 360, height: 248 } as WindowSize,
 
   /** 风险评估卡片：340×92px，仅展示头部（头像+姓名+状态徽章） */
   RISK_CARD: { width: 280, height: 92 } as WindowSize,
@@ -88,16 +105,49 @@ export const WINDOW_SIZES = {
  * // => { width: 1080, height: 720 }
  * ```
  */
-export function getWindowSizeForView(view: ViewType): WindowSize {
+export function getReceptionCapsuleSize(options?: Pick<WindowSizeOptions, 'expanded' | 'riskCount'>): WindowSize {
+  const expanded = options?.expanded ?? false;
+  if (!expanded) {
+    return WINDOW_SIZES.RISK_CARD;
+  }
+
+  const riskCount = Math.max(options?.riskCount ?? 0, 1);
+  const visibleRiskRows = Math.min(riskCount, 6);
+  const estimatedHeight = 108 + visibleRiskRows * 52;
+
+  return {
+    width: WINDOW_SIZES.RISK_CARD.width,
+    height: Math.min(
+      Math.max(estimatedHeight, WINDOW_SIZES.RISK_CARD_EXPANDED.height),
+      520,
+    ),
+  };
+}
+
+export function getVoiceInteractionWindowSize(stage: VoiceInteractionWindowStage = 'recording'): WindowSize {
+  switch (stage) {
+    case 'processing':
+      return WINDOW_SIZES.CAPSULE_PROCESSING;
+    case 'stopped':
+      return WINDOW_SIZES.CAPSULE_STOPPED;
+    case 'expanded':
+      return WINDOW_SIZES.CAPSULE_EXPANDED;
+    case 'recording':
+    default:
+      return WINDOW_SIZES.CAPSULE;
+  }
+}
+
+export function getWindowSizeForView(view: ViewType, options?: WindowSizeOptions): WindowSize {
   switch (view) {
     case 'consultation':
       return WINDOW_SIZES.CONSULTATION;
 
     case 'voice-interaction':
-      return WINDOW_SIZES.CAPSULE;
+      return getVoiceInteractionWindowSize(options?.voiceStage);
 
     case 'reception-capsule':
-      return WINDOW_SIZES.RISK_CARD;
+      return getReceptionCapsuleSize(options);
 
     case 'symptom-manage':
       return WINDOW_SIZES.SYMPTOM_MANAGE;
@@ -140,7 +190,7 @@ export function supportsPersistentWindowSize(view: ViewType): boolean {
  * @returns 是否为胶囊形态
  */
 export function isCapsuleView(view: ViewType): boolean {
-  return view === 'voice-interaction';
+  return view === 'voice-interaction' || view === 'reception-capsule';
 }
 
 /**

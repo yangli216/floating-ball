@@ -16,7 +16,7 @@ import type { Window as TauriWindow } from '@tauri-apps/api/window';
 import { PhysicalPosition } from '@tauri-apps/api/window';
 import { LogicalSize } from '@tauri-apps/api/dpi';
 import { invoke } from '@tauri-apps/api/core';
-import { WINDOW_SIZES, type ViewType } from '../constants/windowSizes';
+import { getWindowSizeForView, type WindowSize, WINDOW_SIZES, type ViewType } from '../constants/windowSizes';
 import { ANIMATION, MORPH_ORIGIN_DEFAULT } from '../constants/animation';
 import { feedbackService } from '../services/feedback';
 import { trackClick } from '../services/operationTracker';
@@ -51,6 +51,8 @@ export interface WorkModeOptions {
   currentPatient: Ref<AppPatient | null>;
   /** 风险提示状态更新回调（用于 handleCollapse 中同步患者信息到风险提示） */
   syncRiskPatientInfo?: (patient: AppPatient) => void;
+  /** 返回接待胶囊时当前应使用的窗口尺寸 */
+  getReceptionWindowSize?: () => WindowSize;
   /** Tauri Store 实例（用于 exitWork 中读取保存的位置） */
   store: Ref<AppStore | null>;
 }
@@ -91,6 +93,7 @@ export function useWorkMode(options: WorkModeOptions) {
     isHovered,
     currentPatient,
     syncRiskPatientInfo,
+    getReceptionWindowSize,
     store,
   } = options;
 
@@ -448,7 +451,8 @@ export function useWorkMode(options: WorkModeOptions) {
       // 发现该坐标容不下问诊尺寸，从而跨显示器复位，产生一闪。
       // 改为先 resize 到胶囊尺寸，再 setPosition 就不会被夹跨屏。
       try {
-        await resizeWorkWindow(WINDOW_SIZES.RISK_CARD.width, WINDOW_SIZES.RISK_CARD.height);
+        const receptionSize = getReceptionWindowSize?.() ?? getWindowSizeForView('reception-capsule');
+        await resizeWorkWindow(receptionSize.width, receptionSize.height);
 
         if (lastBallPos.value && appWindow.value) {
           try {

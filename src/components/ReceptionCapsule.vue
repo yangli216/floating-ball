@@ -315,13 +315,15 @@ function tagLabel(cat: string) { return CATEGORY_LABELS[cat] || '其他'; }
   display: flex;
   flex-direction: column;
   gap: 10px;
+  min-height: 0;
+  padding-right: 4px;
   overflow-y: auto;
   flex: 1;
 }
 
 .rc-risk-row {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   gap: 12px;
 }
 
@@ -336,7 +338,9 @@ function tagLabel(cat: string) { return CATEGORY_LABELS[cat] || '其他'; }
 }
 
 .rc-risk-text {
+  flex: 1;
   font-size: 15px;
+  line-height: 1.45;
   color: #1e293b;
 }
 </style>

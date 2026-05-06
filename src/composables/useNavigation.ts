@@ -11,7 +11,7 @@
 
 import { type Ref } from 'vue';
 import type { Window as TauriWindow } from '@tauri-apps/api/window';
-import { WINDOW_SIZES, type ViewType } from '../constants/windowSizes';
+import { getWindowSizeForView, type ViewType } from '../constants/windowSizes';
 import { trackViewChange } from '../services/operationTracker';
 import type { AppPatient } from '../types/appState';
 
@@ -206,11 +206,12 @@ export function useNavigation(options: NavigationOptions) {
       patientId: currentPatient.value?.patientId,
     });
     currentView.value = 'voice-interaction';
+    const targetSize = getWindowSizeForView('voice-interaction');
     if (!isWorking.value) {
-      await enterWorkMode(WINDOW_SIZES.CAPSULE.width, WINDOW_SIZES.CAPSULE.height);
+      await enterWorkMode(targetSize.width, targetSize.height);
     } else {
       // If already working (e.g. from Chat), resize to capsule
-      enterWorkMode(WINDOW_SIZES.CAPSULE.width, WINDOW_SIZES.CAPSULE.height);
+      enterWorkMode(targetSize.width, targetSize.height);
     }
   }
 

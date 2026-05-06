@@ -15,7 +15,7 @@ import type { Window as TauriWindow } from '@tauri-apps/api/window';
 import type { UnlistenFn } from '@tauri-apps/api/event';
 import { listen } from '@tauri-apps/api/event';
 import { onOpenUrl } from '@tauri-apps/plugin-deep-link';
-import { WINDOW_SIZES, supportsPersistentWindowSize, type ViewType } from '../constants/windowSizes';
+import { getWindowSizeForView, supportsPersistentWindowSize, type ViewType } from '../constants/windowSizes';
 import { analyzePatientRisks } from '../services/llm';
 import { trackApiCall, trackError, startTimedOperation } from '../services/operationTracker';
 import type { RiskItem } from '../components/RiskAlertPanel.vue';
@@ -628,11 +628,15 @@ export function useEventListeners(options: EventListenersOptions) {
 
       // Switch to Reception Capsule View
       currentView.value = 'reception-capsule';
+      const receptionSize = getWindowSizeForView('reception-capsule', {
+        expanded: !!data.risks?.length,
+        riskCount: data.risks?.length ?? 0,
+      });
       if (!isWorking.value) {
-        await workMode.enterWorkMode(WINDOW_SIZES.CAPSULE.width, WINDOW_SIZES.CAPSULE.height);
+        await workMode.enterWorkMode(receptionSize.width, receptionSize.height);
       } else {
         // Resize if already open
-        workMode.enterWorkMode(WINDOW_SIZES.CAPSULE.width, WINDOW_SIZES.CAPSULE.height);
+        workMode.enterWorkMode(receptionSize.width, receptionSize.height);
       }
 
       // If backend provided pre-calculated risks, use them immediately
@@ -656,10 +660,6 @@ export function useEventListeners(options: EventListenersOptions) {
       } finally {
         isRiskAnalyzing.value = false;
 
-        // If risks exist, show toast as well
-        if (riskItems.value.length > 0) {
-          showToast(`发现 ${riskItems.value.length} 项健康风险`, 'info');
-        }
       }
     });
   }
@@ -731,10 +731,11 @@ export function useEventListeners(options: EventListenersOptions) {
 
         // 2. 切换 UI 为胶囊态
         currentView.value = 'reception-capsule';
+        const receptionSize = getWindowSizeForView('reception-capsule');
         if (!isWorking.value) {
-          await workMode.enterWorkMode(WINDOW_SIZES.CAPSULE.width, WINDOW_SIZES.CAPSULE.height);
+          await workMode.enterWorkMode(receptionSize.width, receptionSize.height);
         } else {
-          workMode.enterWorkMode(WINDOW_SIZES.CAPSULE.width, WINDOW_SIZES.CAPSULE.height);
+          workMode.enterWorkMode(receptionSize.width, receptionSize.height);
         }
 
         // 重置并显示加载状态
@@ -764,9 +765,6 @@ export function useEventListeners(options: EventListenersOptions) {
         riskItems.value = risks || [];
         finishRiskAnalysis(true, { riskCount: riskItems.value.length });
 
-        if (riskItems.value.length > 0) {
-          showToast(`发现 ${riskItems.value.length} 项健康风险`, 'info');
-        }
       } catch (e) {
         console.error('Patient reception failed:', e);
         trackError('receive_patient_failed', e);

@@ -22,7 +22,7 @@ import MedicalCatalogCachePanel from "./components/MedicalCatalogCachePanel.vue"
 import Icon from "./components/Icon.vue";
 import { trackClick } from "./services/operationTracker";
 import { LogicalSize } from "@tauri-apps/api/dpi";
-import { WINDOW_SIZES, type ViewType } from "./constants/windowSizes";
+import { getWindowSizeForView, WINDOW_SIZES, type ViewType } from "./constants/windowSizes";
 import { useWindowManagement } from "./composables/useWindowManagement";
 import { useWorkMode } from "./composables/useWorkMode";
 import { useNavigation } from "./composables/useNavigation";
@@ -241,6 +241,11 @@ const syncRiskPatientInfo = (patient: AppPatient) => {
   riskPatientAge.value = Number.isFinite(age) ? age : 0;
 };
 
+const getCurrentReceptionWindowSize = () => getWindowSizeForView('reception-capsule', {
+  expanded: !isRiskAnalyzing.value && riskItems.value.length > 0,
+  riskCount: riskItems.value.length,
+});
+
 // 初始化工作模式 composable
 const workMode = useWorkMode({
   appWindow,
@@ -251,6 +256,7 @@ const workMode = useWorkMode({
   isHovered,
   currentPatient,
   syncRiskPatientInfo,
+  getReceptionWindowSize: getCurrentReceptionWindowSize,
   store: storeRef,
 });
 
@@ -320,6 +326,17 @@ const hasResumableConsultation = computed(() =>
   currentPatient.value !== null && minimizedSessions.latestType.value !== null
 );
 
+const resumableConsultationIcon = computed(() => {
+  return minimizedSessions.latestType.value === 'voice' ? 'lucide:mic' : 'lucide:stethoscope';
+});
+
+const resumableConsultationTitle = computed(() => {
+  if (!hasResumableConsultation.value) {
+    return '暂无未结束的问诊';
+  }
+  return minimizedSessions.latestType.value === 'voice' ? '恢复语音问诊' : '恢复问诊界面';
+});
+
 /**
  * 用户主动收起的统一入口：
  *  - 如果当前在症状问诊 / 语音问诊未结束的视图，记录最小化；
@@ -350,8 +367,9 @@ async function handleUserCollapse(): Promise<void> {
     // 返回接诊胶囊态，而不是一路退出到小球，避免医生丢失当前患者上下文。
     resetVoiceSessionState();
     currentView.value = 'reception-capsule';
+    const receptionSize = getCurrentReceptionWindowSize();
     try {
-      await enterWorkMode(WINDOW_SIZES.RISK_CARD.width, WINDOW_SIZES.RISK_CARD.height);
+      await enterWorkMode(receptionSize.width, receptionSize.height);
     } catch (e) {
       console.warn('[App] Failed to switch back to reception capsule on voice cancel:', e);
     }
@@ -419,19 +437,20 @@ const closeRiskAlert = async () => {
 };
 
 const handleRiskExpand = async (expanded: boolean) => {
-    console.log('[App] handleRiskExpand:', expanded);
-    const h = expanded ? WINDOW_SIZES.RISK_CARD_EXPANDED.height : WINDOW_SIZES.RISK_CARD.height;
+  console.log('[App] handleRiskExpand:', expanded);
+  const targetSize = getWindowSizeForView('reception-capsule', {
+    expanded,
+    riskCount: riskItems.value.length,
+  });
 
-    // We reuse enterWorkMode to resize window smoothly
-    // Since we are already in work mode, it should just trigger resize
-    try {
-        if (appWindow.value) {
-            await smartExpand(WINDOW_SIZES.RISK_CARD.width, h);
-            await appWindow.value.setSize(new LogicalSize(WINDOW_SIZES.RISK_CARD.width, h));
-        }
-    } catch (e) {
-        console.error('Failed to resize for risk details:', e);
+  try {
+    if (appWindow.value) {
+      await smartExpand(targetSize.width, targetSize.height);
+      await appWindow.value.setSize(new LogicalSize(targetSize.width, targetSize.height));
     }
+  } catch (e) {
+    console.error('Failed to resize for risk details:', e);
+  }
 };
 
 // 初始化事件监听管理 composable
@@ -689,10 +708,10 @@ const openInsideCloudHome = async () => {
 	              :class="{ 'manual-hover': hoveredBtnIndex === 3, 'is-disabled': !hasResumableConsultation }"
 	              :disabled="!hasResumableConsultation"
 	              @click.stop="handleConsultationRingClick"
-	              aria-label="恢复问诊界面"
-	              :title="hasResumableConsultation ? '恢复问诊界面' : '暂无未结束的问诊'"
+                :aria-label="resumableConsultationTitle"
+                :title="resumableConsultationTitle"
 	            >
-                 <Icon icon="lucide:app-window" :size="18" class="ring-btn-icon" aria-hidden="true" />
+                <Icon :icon="resumableConsultationIcon" :size="18" class="ring-btn-icon" aria-hidden="true" />
             </button>
           </div>
           
