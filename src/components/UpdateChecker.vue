@@ -1,12 +1,17 @@
 <template>
-  <div class="update-checker">
-    <div class="header">
+  <div class="update-checker" :class="{ 'is-forced': forced }">
+    <div class="header" v-if="!forced">
       <span class="title">版本更新</span>
       <span class="current-version">v{{ currentVersion }}</span>
     </div>
     
-    <div class="content">
-      <div class="config-panel">
+    <div class="content" :class="{ 'forced-content': forced }">
+      <div class="advanced-toggle" @click="showAdvancedConfig = !showAdvancedConfig">
+        <span>高级更新配置</span>
+        <Icon :icon="showAdvancedConfig ? 'lucide:chevron-up' : 'lucide:chevron-down'" size="14" />
+      </div>
+
+      <div class="config-panel" v-show="showAdvancedConfig">
         <div class="config-title">更新源配置</div>
 
         <div class="form-group">
@@ -80,6 +85,7 @@
 
 <script setup lang="ts">
 import { computed, inject, onMounted, onUnmounted, ref } from 'vue';
+import Icon from './Icon.vue';
 import { getVersion } from '@tauri-apps/api/app';
 import { listen, type UnlistenFn } from '@tauri-apps/api/event';
 import { invoke } from '@tauri-apps/api/core';
@@ -120,6 +126,7 @@ const error = ref('');
 const updateEnvironment = ref<UpdateEnvironment>('production');
 const productionUrl = ref('');
 const testingUrl = ref('');
+const showAdvancedConfig = ref(false);
 const showToast = inject('showToast', null) as ((msg: string, type: 'success' | 'error' | 'info') => void) | null;
 const props = defineProps<{
   forced?: boolean;
@@ -254,6 +261,32 @@ const installUpdate = async () => {
   overflow: hidden;
   background: var(--color-background-white, #fff);
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+}
+
+.update-checker.is-forced {
+  border: none;
+  box-shadow: none;
+  background: transparent;
+}
+
+.advanced-toggle {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  color: var(--color-text-muted, #64748b);
+  cursor: pointer;
+  margin-bottom: 12px;
+  user-select: none;
+  transition: color 0.2s;
+}
+
+.advanced-toggle:hover {
+  color: var(--color-primary, #0891B2);
+}
+
+.content.forced-content {
+  padding: 0;
 }
 
 .header {
