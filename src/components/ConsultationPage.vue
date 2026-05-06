@@ -566,7 +566,7 @@ import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 import { feedbackService } from '../services/feedback';
 import { getHisAdapter } from '../services/his';
-import { trackViewChange, trackClick, trackError, trackFormSubmit, trackRecommendationAction, startTimedOperation } from '../services/operationTracker';
+import { trackViewChange, trackClick, trackError, trackFormSubmit, trackRecommendationAction } from '../services/operationTracker';
 import BodyPartSelector from './BodyPartSelector.vue';
 import SystemCategorySelector from './SystemCategorySelector.vue';
 import { PROMPTS, DynamicSymptomTemplatePrompt } from '../prompts';
@@ -1885,7 +1885,21 @@ const handleGenerateDynamicSymptom = async (name: string) => {
     showToast(`正在由 AI 分析【${name}】的临床属性...`, 'info');
 
     const messages = DynamicSymptomTemplatePrompt.buildMessage(name);
-    let resultJsonStr = await chat(messages);
+    let resultJsonStr = await chat(
+      messages,
+      undefined,
+      undefined,
+      undefined,
+      {
+        traceContext: {
+          scene: 'consultation-dynamic-symptom',
+          sourceModule: 'consultation_dynamic_symptom',
+          operationModule: 'consultation',
+          operationAction: 'generate_dynamic_symptom_template',
+          title: '生成动态症状模板',
+        },
+      }
+    );
 
     // 解析格式
     if (resultJsonStr.includes('```json')) {
@@ -1969,6 +1983,11 @@ const applyReferenceFeedback = (payload: ReferenceFeedbackPayload) => {
   }
 
   feedbackService.logOperation({
+    module: 'consultation',
+    action: `reference_feedback_${safePayload.action}`,
+    title: '接收 PHIS 引用回执',
+    sourceModule: 'consultation_reference',
+    scene: 'consultation-reference',
     operationType: 'api_call',
     operationName: `reference_feedback:${safePayload.action}`,
     details: safePayload,
@@ -2301,6 +2320,11 @@ const requestReferenceToPHIS = async (
       timestamp: Date.now(),
     };
     feedbackService.logOperation({
+      module: 'consultation',
+      action: `request_phis_reference_${action}`,
+      title: '发起 PHIS 引用请求',
+      sourceModule: 'consultation_reference',
+      scene: 'consultation-reference',
       operationType: 'form_submit',
       operationName: `request_reference:${action}`,
       details: activeReferenceRequest.value,
@@ -3022,13 +3046,26 @@ const parseLLMJson = (text: string): any => {
   }
 };
 
+const buildConsultationTraceConfig = (
+  operationAction: string,
+  title: string,
+  scene: string,
+  sourceModule = 'consultation_ai',
+) => ({
+  traceContext: {
+    scene,
+    sourceModule,
+    operationModule: 'consultation',
+    operationAction,
+    title,
+  },
+});
+
 const fetchAIDiagnosis = async () => {
   aiLoading.value = true;
   aiError.value = null;
   aiDiagnoses.value = [];
   selectedDiagnosis.value = null;
-  const finishDiagnosisLlm = startTimedOperation('fetch_ai_diagnosis');
-
   try {
     const startTime = Date.now();
     console.log('========== AI 辅助诊断开始 ==========');
@@ -3088,7 +3125,11 @@ const fetchAIDiagnosis = async () => {
           role: 'user',
           content: userPrompt
         }
-      ]);
+      ], undefined, undefined, undefined, buildConsultationTraceConfig(
+        'generate_tcm_diagnosis_recommendation',
+        '生成中医诊断推荐',
+        'consultation-diagnosis-tcm'
+      ));
 
       console.log('[TCM Debug] LLM Response:', fullResponse);
       console.timeEnd('[AI分析] 2. LLM 请求 (中医)');
@@ -3114,7 +3155,11 @@ const fetchAIDiagnosis = async () => {
           role: 'user',
           content: userPrompt
         }
-      ]);
+      ], undefined, undefined, undefined, buildConsultationTraceConfig(
+        'generate_diagnosis_recommendation',
+        '生成西医诊断推荐',
+        'consultation-diagnosis'
+      ));
       console.timeEnd('[AI分析] 2. LLM 请求 (西医)');
     }
     const latencyMs = Date.now() - startTime;
@@ -3272,14 +3317,12 @@ const fetchAIDiagnosis = async () => {
 
     // Perform automatic fact checking on all diagnoses
     performDiagnosisFactCheck(diagnoses);
-    finishDiagnosisLlm(true, { diagnosisCount: diagnoses.length, mode: consultationMode.value });
     
     console.timeEnd('[AI分析] 4. 分支逻辑 (文献检索、持久化和事实核查)');
     console.log(`========== AI 辅助诊断完成，总耗时: ${Date.now() - startTime}ms ==========`);
   } catch (e) {
     console.error("Failed to fetch AI diagnosis", e);
     trackError('ai_diagnosis_failed', e);
-    finishDiagnosisLlm(false);
     aiError.value = "无法获取诊断建议，请稍后重试或检查网络。";
   } finally {
     aiLoading.value = false;
@@ -3503,7 +3546,11 @@ const fetchDiagnosisChecklist = async (diag: Diagnosis) => {
     const response = await chat([
       { role: 'system', content: PROMPTS.consultation.diagnosisChecklist.system },
       { role: 'user', content: userPrompt }
-    ]);
+    ], undefined, undefined, undefined, buildConsultationTraceConfig(
+      'generate_diagnosis_checklist',
+      '生成鉴别排查建议',
+      'consultation-diagnosis-checklist'
+    ));
 
     const result = parseLLMJson(response);
     
@@ -3534,6 +3581,11 @@ const _handleChecklistConfirm = () => {
   }
 
   feedbackService.logOperation({
+    module: 'consultation',
+    action: 'confirm_differential_checklist',
+    title: '确认鉴别排查',
+    sourceModule: 'consultation_checklist',
+    scene: 'consultation-diagnosis-checklist',
     operationType: 'form_submit',
     operationName: 'confirm_differential_checklist',
     details: {
@@ -3578,8 +3630,6 @@ const fetchTreatmentRecommendation = async () => {
   treatmentLoading.value = true;
   treatmentError.value = null;
   treatmentRecommendations.value = [];
-  const finishTreatmentLlm = startTimedOperation('fetch_treatment_recommendation');
-
   try {
     const startTime = Date.now();
     let fullResponse = "";
@@ -3596,7 +3646,11 @@ const fetchTreatmentRecommendation = async () => {
       fullResponse = await chat([
         { role: 'system', content: PROMPTS.consultation.tcmTreatmentRecommendation.system },
         { role: 'user', content: userPrompt }
-      ]);
+      ], undefined, undefined, undefined, buildConsultationTraceConfig(
+        'generate_tcm_treatment_recommendation',
+        '生成中医治疗推荐',
+        'consultation-treatment-tcm'
+      ));
     } else {
       const userPrompt = PROMPTS.consultation.treatmentRecommendation.buildUserPrompt({
         patientName: patientInfo.value.naPi,
@@ -3610,7 +3664,11 @@ const fetchTreatmentRecommendation = async () => {
       fullResponse = await chat([
         { role: 'system', content: PROMPTS.consultation.treatmentRecommendation.system },
         { role: 'user', content: userPrompt }
-      ]);
+      ], undefined, undefined, undefined, buildConsultationTraceConfig(
+        'generate_treatment_recommendation',
+        '生成用药推荐',
+        'consultation-treatment-medication'
+      ));
     }
     const latencyMs = Date.now() - startTime;
     const rawRecommendations: any[] = parseLLMJson(fullResponse);
@@ -3658,11 +3716,9 @@ const fetchTreatmentRecommendation = async () => {
     }
 
     performTreatmentFactCheck(processedRecs);
-    finishTreatmentLlm(true, { treatmentCount: processedRecs.length, mode: consultationMode.value });
   } catch (e) {
     console.error("Failed to fetch medication recommendations", e);
     trackError('treatment_recommendation_failed', e);
-    finishTreatmentLlm(false);
     treatmentError.value = "无法获取用药方案建议。";
   } finally {
     treatmentLoading.value = false;
@@ -3690,7 +3746,11 @@ const fetchExamRecommendation = async () => {
     const fullResponse = await chat([
       { role: 'system', content: PROMPTS.consultation.examinationRecommendation.system },
       { role: 'user', content: userPrompt }
-    ]);
+    ], undefined, undefined, undefined, buildConsultationTraceConfig(
+      'generate_examination_recommendation',
+      '生成检查推荐',
+      'consultation-treatment-examination'
+    ));
     const latencyMs = Date.now() - startTime;
     const rawRecommendations: any[] = parseLLMJson(fullResponse);
     console.log('[检查推荐] LLM raw count:', rawRecommendations.length, rawRecommendations.map(r => ({ name: r.name, type: r.type })));
@@ -3759,7 +3819,11 @@ const fetchLabTestRecommendation = async () => {
     const fullResponse = await chat([
       { role: 'system', content: PROMPTS.consultation.labTestRecommendation.system },
       { role: 'user', content: userPrompt }
-    ]);
+    ], undefined, undefined, undefined, buildConsultationTraceConfig(
+      'generate_lab_test_recommendation',
+      '生成检验推荐',
+      'consultation-treatment-lab-test'
+    ));
     const latencyMs = Date.now() - startTime;
     const rawRecommendations: any[] = parseLLMJson(fullResponse);
     console.log('[检验推荐] LLM raw count:', rawRecommendations.length, rawRecommendations.map(r => ({ name: r.name, type: r.type })));
@@ -3828,7 +3892,11 @@ const fetchProcedureRecommendation = async () => {
     const fullResponse = await chat([
       { role: 'system', content: PROMPTS.consultation.procedureRecommendation.system },
       { role: 'user', content: userPrompt }
-    ]);
+    ], undefined, undefined, undefined, buildConsultationTraceConfig(
+      'generate_procedure_recommendation',
+      '生成处置推荐',
+      'consultation-treatment-procedure'
+    ));
     const latencyMs = Date.now() - startTime;
     const rawRecommendations: any[] = parseLLMJson(fullResponse);
     console.log('[处置推荐] LLM raw count:', rawRecommendations.length, rawRecommendations.map(r => ({ name: r.name, type: r.type })));

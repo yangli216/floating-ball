@@ -544,7 +544,15 @@ async function fetchDiagnosisPathFromLLM(
   ];
 
   try {
-    const response = await chat(messages);
+    const response = await chat(messages, undefined, undefined, undefined, {
+      traceContext: {
+        scene: 'diagnosis-path-reasoning',
+        sourceModule: 'diagnosis_path',
+        operationModule: 'diagnosis_path',
+        operationAction: 'build_reasoning_path',
+        title: '生成诊断路径说明',
+      },
+    });
     const parsed = extractJsonObject<DiagnosisPathLLMResponse>(response);
     return sanitizeLLMResponse(parsed, fallback);
   } catch (error) {

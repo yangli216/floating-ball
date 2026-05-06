@@ -68,6 +68,11 @@ export interface OperationLog {
   sessionId?: string;
   operationType: OperationType;
   operationName: string;
+  module?: string;
+  action?: string;
+  title?: string;
+  sourceModule?: string;
+  scene?: string;
   details?: Record<string, any>;
   success?: boolean;
   durationMs?: number;

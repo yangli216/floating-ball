@@ -1513,7 +1513,15 @@ async function fetchAIDiagnosis(): Promise<void> {
       },
     ];
 
-    const response = await chat(messages);
+    const response = await chat(messages, undefined, undefined, undefined, {
+      traceContext: {
+        scene: 'voice-consultation-diagnosis',
+        sourceModule: 'voice_consultation_ai',
+        operationModule: 'voice_consultation',
+        operationAction: 'generate_diagnosis_recommendation',
+        title: '语音问诊生成诊断推荐',
+      },
+    });
     const cleanJson = response.replace(/```json\n?|\n?```/g, '').trim();
     const jsonMatch = cleanJson.match(/\[[\s\S]*\]/);
     const parsed: Diagnosis[] = JSON.parse(jsonMatch ? jsonMatch[0] : cleanJson);
@@ -1571,19 +1579,51 @@ async function fetchAITreatment(): Promise<void> {
       chat([
         { role: 'system', content: PROMPTS.consultation.treatmentRecommendation.system },
         { role: 'user', content: PROMPTS.consultation.treatmentRecommendation.buildUserPrompt(baseParams) },
-      ]),
+      ], undefined, undefined, undefined, {
+        traceContext: {
+          scene: 'voice-consultation-treatment-medication',
+          sourceModule: 'voice_consultation_ai',
+          operationModule: 'voice_consultation',
+          operationAction: 'generate_treatment_recommendation',
+          title: '语音问诊生成用药推荐',
+        },
+      }),
       chat([
         { role: 'system', content: PROMPTS.consultation.examinationRecommendation.system },
         { role: 'user', content: PROMPTS.consultation.examinationRecommendation.buildUserPrompt(baseParams) },
-      ]),
+      ], undefined, undefined, undefined, {
+        traceContext: {
+          scene: 'voice-consultation-treatment-examination',
+          sourceModule: 'voice_consultation_ai',
+          operationModule: 'voice_consultation',
+          operationAction: 'generate_examination_recommendation',
+          title: '语音问诊生成检查推荐',
+        },
+      }),
       chat([
         { role: 'system', content: PROMPTS.consultation.labTestRecommendation.system },
         { role: 'user', content: PROMPTS.consultation.labTestRecommendation.buildUserPrompt(baseParams) },
-      ]),
+      ], undefined, undefined, undefined, {
+        traceContext: {
+          scene: 'voice-consultation-treatment-lab-test',
+          sourceModule: 'voice_consultation_ai',
+          operationModule: 'voice_consultation',
+          operationAction: 'generate_lab_test_recommendation',
+          title: '语音问诊生成检验推荐',
+        },
+      }),
       chat([
         { role: 'system', content: PROMPTS.consultation.procedureRecommendation.system },
         { role: 'user', content: PROMPTS.consultation.procedureRecommendation.buildUserPrompt(baseParams) },
-      ]),
+      ], undefined, undefined, undefined, {
+        traceContext: {
+          scene: 'voice-consultation-treatment-procedure',
+          sourceModule: 'voice_consultation_ai',
+          operationModule: 'voice_consultation',
+          operationAction: 'generate_procedure_recommendation',
+          title: '语音问诊生成处置推荐',
+        },
+      }),
     ]);
 
     const parseAndMatch = (

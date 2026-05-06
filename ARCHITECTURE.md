@@ -138,7 +138,8 @@
 4. 区域化模式下，工作区共用顶栏的"问题反馈"入口与一键回写后弹出的整页反馈，统一使用同一份 `FeedbackSubmissionPanel`（紧凑星级 + 预置问题标签 + 选填截图 + 选填补充说明）；语音问诊的推荐项 / 病例字段 / 整页反馈则通过 `voiceFeedback.ts` 映射到同一 `/v1/client/feedbacks` 接口，所有反馈都会附带最近一次 AI 调用的 `traceId`、`sessionId`、`chainContext` 与握手阶段缓存的医生 / 机构 / 科室身份（`feedbackContext.ts`），由 `floating-ball-server` 端按 `kind`（`general | recommendation | record_field | session`）+ `severity` 分类落库。
 5. 区域化模式下，每个 `/v1/*` 业务请求会附带 `X-Client-Version` 与 `X-Update-Channel`，服务端返回 `426 / UPDATE-REQUIRED` 时，客户端立即切换到强制更新门禁，禁止继续使用问诊、语音、知识库、AI 代理、模板同步、反馈等业务能力。
 6. 区域化模式下，智能问诊和语音问诊会通过 `consultationUserLog.ts` 向 `floating-ball-server` 的 `/v1/client/user-logs/consultations` 上报运维用户日志快照：首版 AI 生成内容与医生最终提交/回写内容分别落到同一条问诊记录中，不记录中间每一次编辑；语音问诊停止录音后会额外上报本次录音和 ASR 识别文字，供后台用户日志详情播放与复盘。
-7. 登录态设计在当前版本不是前置依赖，不能假定仓库内已有 `auth store` 或受保护 API 基座。
+7. 区域化模式下，原始操作日志只保留能定位业务路径的结构化事件：`operationTracker.ts` 负责把高噪声 UI 事件白名单化过滤，并把保留事件统一上报为 `{ module, action, title, sourceModule, scene }`；`aiTrace.ts` 则为 AI 代理补齐“哪个业务发起了这次调用”的上下文，避免后台只看到泛化的 `ai/chat`。
+8. 登录态设计在当前版本不是前置依赖，不能假定仓库内已有 `auth store` 或受保护 API 基座。
 
 ---
 
@@ -811,10 +812,10 @@ src/styles/
 | `services/his/registry.ts` | 适配器注册表与选择器：`getHisAdapter()` 是业务方唯一入口；选择优先级 `setActiveHisVendor` > `VITE_HIS_VENDOR` > `localStorage.HIS_VENDOR` > 默认 `phis`；handshake 时由 `useEventListeners` 调用 `resetHisAdapter` 清缓存 | [src/services/his/registry.ts](src/services/his/registry.ts) / [src/services/his/index.ts](src/services/his/index.ts) |
 | `hisIntegrationLog.ts` | HIS 联调调用日志客户端：为 PHIS 出站请求生成 / 记录结构化日志，提供查询、清空和导出 Tauri 命令封装 | [src/services/hisIntegrationLog.ts](src/services/hisIntegrationLog.ts) |
 | `diagnosisPath.ts` | 诊断路径数据构建与独立窗口事件载荷封装；优先通过 LLM 生成结构化推理链，再在前端校验并映射为 Sankey 节点、连线和说明文案，失败时回退本地兜底链路；载荷中补充 `supportingEvidence`、`counterEvidence`、`differentialPoints` 三段式解释字段，供窗口右侧说明面板直接渲染 | [src/services/diagnosisPath.ts](src/services/diagnosisPath.ts) |
-| `feedback.ts` | 会话反馈服务；负责会话、推荐、反馈、性能指标的本地落库与区域化双写 | [src/services/feedback.ts](src/services/feedback.ts) |
+| `feedback.ts` | 会话反馈服务；负责会话、推荐、反馈、性能指标的本地落库与区域化双写，同时把结构化操作日志转成区域化审计接口可消费的 `{ module, action, result, ... }` 载荷 | [src/services/feedback.ts](src/services/feedback.ts) |
 | `voiceFeedback.ts` | 语音反馈服务；负责推荐项 / 病例字段 / 整页反馈 payload 组装、本地草稿恢复、病例字段差异摘要与待同步队列 | [src/services/voiceFeedback.ts](src/services/voiceFeedback.ts) |
-| `aiTrace.ts` | 最近一次区域化 AI 调用链路上下文缓存；向反馈面板暴露 `traceId`、模型、场景、输入/输出摘要与耗时 | [src/services/aiTrace.ts](src/services/aiTrace.ts) |
-| `operationTracker.ts` | 操作追踪和分析 | [src/services/operationTracker.ts](src/services/operationTracker.ts) |
+| `aiTrace.ts` | 最近一次区域化 AI 调用链路上下文缓存；向反馈面板暴露 `traceId`、模型、场景、输入/输出摘要与耗时，并把 AI 代理调用按业务模块/动作回写到操作日志 | [src/services/aiTrace.ts](src/services/aiTrace.ts) |
+| `operationTracker.ts` | 结构化操作日志入口：白名单保留高价值业务事件，统一生成 `module/action/title/sourceModule/scene`，过滤 `collapse`、壳层导航等低价值噪声 | [src/services/operationTracker.ts](src/services/operationTracker.ts) |
 | `themeService.ts` | 主题管理 | [src/services/themeService.ts](src/services/themeService.ts) |
 | `pmphai.ts` | PMPHAI 集成 | [src/services/pmphai.ts](src/services/pmphai.ts) |
 | `knowledgeBase.ts` | 知识库检索 | [src/services/knowledgeBase.ts](src/services/knowledgeBase.ts) |

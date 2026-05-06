@@ -145,6 +145,13 @@ export interface LLMConfigOverride {
   fastModel?: string;
   audioModel?: string;
   configProfile?: 'default' | 'reviewer';
+  traceContext?: {
+    scene?: string;
+    sourceModule?: string;
+    operationModule?: string;
+    operationAction?: string;
+    title?: string;
+  };
 }
 
 export function getReviewerLLMConfig(): LLMConfigOverride {
@@ -156,7 +163,12 @@ export function getReviewerLLMConfig(): LLMConfigOverride {
   const apiKey = localStorage.getItem("REVIEWER_API_KEY") || undefined;
   const baseUrl = localStorage.getItem("REVIEWER_BASE_URL") || undefined;
   const model = localStorage.getItem("REVIEWER_MODEL") || undefined;
-  return { apiKey, baseUrl, model };
+  return {
+    apiKey,
+    baseUrl,
+    model,
+    configProfile: 'reviewer',
+  };
 }
 
 function getConfigAndKey(explicitKey?: string, customConfig?: LLMConfigOverride) {
@@ -241,10 +253,15 @@ export async function chatStream(
   // 区域化模式：通过后端 AI 代理
   if (isRegionalMode() && !customConfig?.apiKey) {
     const payloadMessages = createPayloadMessages(messages);
+    const traceScene = customConfig?.traceContext?.scene || 'chat';
+    const traceSourceModule = customConfig?.traceContext?.sourceModule || 'llm';
     const trace = beginAiTrace({
       channel: 'chat',
-      scene: 'chat',
-      sourceModule: 'llm',
+      scene: traceScene,
+      sourceModule: traceSourceModule,
+      operationModule: customConfig?.traceContext?.operationModule,
+      operationAction: customConfig?.traceContext?.operationAction,
+      title: customConfig?.traceContext?.title,
       configProfile: customConfig?.configProfile || 'default',
       model: getCachedBootstrap()?.llm?.model,
       requestSummary: buildChatRequestSummary(messages),
@@ -257,8 +274,8 @@ export async function chatStream(
           messages: payloadMessages,
           stream: true,
           traceId: trace.traceId,
-          scene: 'chat',
-          sourceModule: 'llm',
+          scene: traceScene,
+          sourceModule: traceSourceModule,
           sessionId: trace.sessionId,
         }, (chunk) => {
           responseText += chunk;
@@ -386,10 +403,15 @@ export async function chat(
   // 区域化模式：通过后端 AI 代理
   if (isRegionalMode() && !customConfig?.apiKey) {
     const payloadMessages = createPayloadMessages(messages);
+    const traceScene = customConfig?.traceContext?.scene || 'chat';
+    const traceSourceModule = customConfig?.traceContext?.sourceModule || 'llm';
     const trace = beginAiTrace({
       channel: 'chat',
-      scene: 'chat',
-      sourceModule: 'llm',
+      scene: traceScene,
+      sourceModule: traceSourceModule,
+      operationModule: customConfig?.traceContext?.operationModule,
+      operationAction: customConfig?.traceContext?.operationAction,
+      title: customConfig?.traceContext?.title,
       configProfile: customConfig?.configProfile || 'default',
       model: getCachedBootstrap()?.llm?.model,
       requestSummary: buildChatRequestSummary(messages),
@@ -401,8 +423,8 @@ export async function chat(
           messages: payloadMessages,
           stream: false,
           traceId: trace.traceId,
-          scene: 'chat',
-          sourceModule: 'llm',
+          scene: traceScene,
+          sourceModule: traceSourceModule,
           sessionId: trace.sessionId,
         });
         return resp.content;
@@ -603,7 +625,15 @@ export async function analyzePatientRisks(patientData: any, apiKey?: string): Pr
   ];
 
   try {
-    const response = await chat(messages, apiKey);
+    const response = await chat(messages, apiKey, undefined, undefined, {
+      traceContext: {
+        scene: 'reception-risk-analysis',
+        sourceModule: 'reception_risk_analysis',
+        operationModule: 'reception',
+        operationAction: 'analyze_patient_risk',
+        title: '接待风险评估',
+      },
+    });
     const cleanJson = response.replace(/```json\n?|\n?```/g, '').trim();
     // Keep only the array part if surrounded by text
     const jsonMatch = cleanJson.match(/\[[\s\S]*\]/);

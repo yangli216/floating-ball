@@ -17,7 +17,7 @@ import { listen } from '@tauri-apps/api/event';
 import { onOpenUrl } from '@tauri-apps/plugin-deep-link';
 import { getWindowSizeForView, supportsPersistentWindowSize, type ViewType } from '../constants/windowSizes';
 import { analyzePatientRisks } from '../services/llm';
-import { trackApiCall, trackError, startTimedOperation } from '../services/operationTracker';
+import { trackApiCall, trackError } from '../services/operationTracker';
 import type { RiskItem } from '../components/RiskAlertPanel.vue';
 import type { AppPatient } from '../types/appState';
 import type { ConsultationAssistAction } from '../types/consultationAssist';
@@ -432,37 +432,7 @@ function buildAllergyHistorySummary(
   return uniqHistoryTexts(hisHistory?.allergyHistory || []).join('；');
 }
 
-/**
- * 校验是否已经走过接诊流程，并且 payload 与当前上下文是否为同一个患者。
- *
- * 设计意图：
- * - `receivePatient` 是建立患者上下文的唯一前置入口，会拉取 HIS 详情、风险、记忆系统；
- * - `startVoice` / `startConsultation` / `startConsultationSession` 仅启动具体问诊形态，
- *   不再承担"建立上下文"的责任，否则会绕过风险评估和患者记忆系统。
- *
- * 因此这里要求：
- * 1. `currentPatient._receptionEnsured === true`（即来自接诊流程，而不是残留状态）；
- * 2. 若 payload 携带 `idPi / patientId`，必须与当前上下文的 `idPi` 完全一致。
- *
- * 返回 null 表示通过；返回字符串表示拒绝原因（用于 toast 提示）。
- */
-function ensureReceptionContext(
-  current: AppPatient | null,
-  payload: StartConsultationPayload | SessionAssistPayload | null | undefined
-): string | null {
-  if (!current || !current.idPi || !current._receptionEnsured) {
-    return '请先接诊患者';
-  }
-
-  if (payload) {
-    const incomingId = (payload.idPi || payload.patientId || '').toString().trim();
-    if (incomingId && incomingId !== String(current.idPi).trim()) {
-      return '当前已接诊其他患者，请先结束当前就诊';
-    }
-  }
-
-  return null;
-}
+// ensureReceptionContext removed, replaced by async ensureAndPrepareReceptionContext inside useEventListeners
 
 /**
  * 事件监听管理 Composable
@@ -515,6 +485,142 @@ export function useEventListeners(options: EventListenersOptions) {
   let unlistenResize: UnlistenFn | null = null;
   let unlistenSdkHandshake: UnlistenFn | null = null;
   let unlistenReceivePatient: UnlistenFn | null = null;
+
+  // ========== 状态 & Promise ==========
+  let activeReceptionPromise: Promise<boolean> | null = null;
+  let activeReceptionPatientId: string | null = null;
+
+  async function executeReceptionFlow(payload: StartConsultationPayload, quietMode = false): Promise<boolean> {
+    const patientId = (payload.idPi || payload.patientId) as string;
+    if (!patientId) {
+      showToast('接诊失败：未提供患者ID', 'error');
+      return false;
+    }
+
+    if (activeReceptionPromise) {
+      if (activeReceptionPatientId === patientId) {
+        console.log('[EventListeners] Waiting for existing reception flow for patient:', patientId);
+        return activeReceptionPromise;
+      } else {
+        showToast('系统正在接诊其他患者，请稍候再试', 'error');
+        return false;
+      }
+    }
+
+    activeReceptionPatientId = patientId;
+
+    activeReceptionPromise = (async () => {
+      trackApiCall('his_receive_patient', true, undefined, { patientId, auto: quietMode });
+      try {
+        const adapter = getHisAdapter();
+        if (!adapter) {
+          showToast('接诊失败：HIS 适配器未初始化', 'error');
+          return false;
+        }
+
+        // 1. 获取患者基本信息并合并上下文
+        const hisInfo = await adapter.fetchPatientInfo(patientId);
+        
+        const mergedPayload = hisInfo ? {
+          ...payload,
+          naPi: hisInfo.name,
+          sdSexText: hisInfo.gender === 'M' ? '男性' : (hisInfo.gender === 'F' ? '女性' : '未知'),
+          ageText: hisInfo.ageText || (hisInfo.age ? `${hisInfo.age}岁` : undefined),
+        } : payload;
+
+        currentPatient.value = {
+          ...(mergePatientContext(currentPatient.value, mergedPayload) || {}),
+          _receptionEnsured: true,
+        };
+
+        if (!quietMode) {
+          // 2. 切换 UI 为胶囊态
+          currentView.value = 'reception-capsule';
+          const receptionSize = getWindowSizeForView('reception-capsule');
+          if (!isWorking.value) {
+            await workMode.enterWorkMode(receptionSize.width, receptionSize.height);
+          } else {
+            workMode.enterWorkMode(receptionSize.width, receptionSize.height);
+          }
+        } else {
+          // 如果是自动静默触发，且不在工作模式，需先进入工作模式，但不要强切视图
+          // 风险评估需要显示，所以暂时强切到 reception-capsule
+          currentView.value = 'reception-capsule';
+          const receptionSize = getWindowSizeForView('reception-capsule');
+          if (!isWorking.value) {
+            await workMode.enterWorkMode(receptionSize.width, receptionSize.height);
+          } else {
+            workMode.enterWorkMode(receptionSize.width, receptionSize.height);
+          }
+        }
+
+        // 重置并显示加载状态
+        riskPatientName.value = currentPatient.value.naPi || '未知患者';
+        riskPatientGender.value = currentPatient.value.sdSexText?.includes('女') ? 'F' : 'M';
+        riskPatientAge.value = parseInt(currentPatient.value.ageText || '') || 0;
+        riskItems.value = [];
+        isRiskAnalyzing.value = true;
+
+        try {
+          // 3. 异步拉取历史记录并提炼记忆
+          const hisHistory = await adapter.fetchPatientHistory(patientId);
+          if (hisHistory) {
+            currentPatient.value = {
+              ...(currentPatient.value || {}),
+              patientHistory: hisHistory,
+              pastMedicalHistory: buildPastMedicalHistorySummary(currentPatient.value, hisHistory),
+              allergyHistory: buildAllergyHistorySummary(currentPatient.value, hisHistory),
+            };
+            await syncPatientMemoryFromHis(patientId, hisHistory);
+          }
+
+          // 4. 触发风险评估
+          const risks = await analyzePatientRisks(currentPatient.value);
+          console.log('LLM Risk Analysis Result after reception:', risks);
+          riskItems.value = risks || [];
+        } finally {
+          isRiskAnalyzing.value = false;
+        }
+
+        return true;
+      } catch (e) {
+        console.error('Patient reception failed:', e);
+        trackError('receive_patient_failed', e);
+        showToast('接诊处理异常', 'error');
+        return false;
+      }
+    })();
+
+    try {
+      return await activeReceptionPromise;
+    } finally {
+      activeReceptionPromise = null;
+      activeReceptionPatientId = null;
+    }
+  }
+
+  async function ensureAndPrepareReceptionContext(
+    current: AppPatient | null,
+    payload: StartConsultationPayload | SessionAssistPayload | null | undefined
+  ): Promise<boolean> {
+    const incomingId = payload ? (payload.idPi || payload.patientId || '').toString().trim() : '';
+
+    if (current && current.idPi && current._receptionEnsured) {
+      if (incomingId && incomingId !== String(current.idPi).trim()) {
+        showToast('当前已接诊其他患者，请先结束当前就诊', 'error');
+        return false;
+      }
+      return true;
+    }
+
+    if (!incomingId) {
+      showToast('请先接诊患者', 'error');
+      return false;
+    }
+
+    console.log('[EventListeners] Auto-triggering patient reception from context check');
+    return await executeReceptionFlow(payload as StartConsultationPayload, true);
+  }
 
   // ========== Deep Link 监听 ==========
 
@@ -648,11 +754,9 @@ export function useEventListeners(options: EventListenersOptions) {
 
       // Otherwise, trigger LLM analysis
       try {
-        const finishRiskAnalysis = startTimedOperation('risk_analysis_llm');
         const risks = await analyzePatientRisks(data);
         console.log('LLM Risk Analysis Result:', risks);
         riskItems.value = risks || [];
-        finishRiskAnalysis(true, { riskCount: riskItems.value.length });
       } catch (e) {
         console.error('Risk analysis error:', e);
         trackError('risk_analysis_failed', e);
@@ -675,10 +779,9 @@ export function useEventListeners(options: EventListenersOptions) {
         patientId: payload.idPi || payload.patientId,
       });
 
-      // 入口拦截：必须先走过接诊流程，且当前上下文与 payload 为同一患者
-      const guardError = ensureReceptionContext(currentPatient.value, payload);
-      if (guardError) {
-        showToast(guardError, 'error');
+      // 入口拦截：必须先走过接诊流程，如果未接诊且带有 patientId，会自动补齐接诊流程
+      const success = await ensureAndPrepareReceptionContext(currentPatient.value, payload);
+      if (!success) {
         return;
       }
 
@@ -699,79 +802,7 @@ export function useEventListeners(options: EventListenersOptions) {
     unlistenReceivePatient = await listen<StartConsultationPayload>('receive-patient', async (event) => {
       console.log('Received patient reception request:', event.payload);
       const payload = event.payload || {};
-      const patientId = (payload.idPi || payload.patientId) as string;
-      if (!patientId) {
-        showToast('接诊失败：未提供患者ID', 'error');
-        return;
-      }
-
-      trackApiCall('his_receive_patient', true, undefined, { patientId });
-
-      try {
-        const adapter = getHisAdapter();
-        if (!adapter) {
-          showToast('接诊失败：HIS 适配器未初始化', 'error');
-          return;
-        }
-
-        // 1. 获取患者基本信息并合并上下文
-        const hisInfo = await adapter.fetchPatientInfo(patientId);
-        
-        const mergedPayload = hisInfo ? {
-          ...payload,
-          naPi: hisInfo.name,
-          sdSexText: hisInfo.gender === 'M' ? '男性' : (hisInfo.gender === 'F' ? '女性' : '未知'),
-          ageText: hisInfo.ageText || (hisInfo.age ? `${hisInfo.age}岁` : undefined),
-        } : payload;
-
-        currentPatient.value = {
-          ...(mergePatientContext(currentPatient.value, mergedPayload) || {}),
-          _receptionEnsured: true,
-        };
-
-        // 2. 切换 UI 为胶囊态
-        currentView.value = 'reception-capsule';
-        const receptionSize = getWindowSizeForView('reception-capsule');
-        if (!isWorking.value) {
-          await workMode.enterWorkMode(receptionSize.width, receptionSize.height);
-        } else {
-          workMode.enterWorkMode(receptionSize.width, receptionSize.height);
-        }
-
-        // 重置并显示加载状态
-        riskPatientName.value = currentPatient.value.naPi || '未知患者';
-        riskPatientGender.value = currentPatient.value.sdSexText?.includes('女') ? 'F' : 'M';
-        riskPatientAge.value = parseInt(currentPatient.value.ageText || '') || 0;
-        riskItems.value = [];
-        isRiskAnalyzing.value = true;
-
-        // 3. 异步拉取历史记录并提炼记忆
-        const hisHistory = await adapter.fetchPatientHistory(patientId);
-        if (hisHistory) {
-          currentPatient.value = {
-            ...(currentPatient.value || {}),
-            patientHistory: hisHistory,
-            pastMedicalHistory: buildPastMedicalHistorySummary(currentPatient.value, hisHistory),
-            allergyHistory: buildAllergyHistorySummary(currentPatient.value, hisHistory),
-          };
-          await syncPatientMemoryFromHis(patientId, hisHistory);
-        }
-
-        // 4. 触发风险评估
-        const finishRiskAnalysis = startTimedOperation('risk_analysis_llm');
-        // 将合并后的患者信息与更新后的记忆传给评估模型
-        const risks = await analyzePatientRisks(currentPatient.value);
-        console.log('LLM Risk Analysis Result after reception:', risks);
-        riskItems.value = risks || [];
-        finishRiskAnalysis(true, { riskCount: riskItems.value.length });
-
-      } catch (e) {
-        console.error('Patient reception failed:', e);
-        trackError('receive_patient_failed', e);
-        showToast('接诊处理异常', 'error');
-      } finally {
-        isRiskAnalyzing.value = false;
-      }
+      await executeReceptionFlow(payload, false);
     });
   }
 
@@ -800,9 +831,8 @@ export function useEventListeners(options: EventListenersOptions) {
           action: payload.action,
         });
 
-        const guardError = ensureReceptionContext(currentPatient.value, payload);
-        if (guardError) {
-          showToast(guardError, 'error');
+        const success = await ensureAndPrepareReceptionContext(currentPatient.value, payload);
+        if (!success) {
           return;
         }
 
@@ -847,9 +877,8 @@ export function useEventListeners(options: EventListenersOptions) {
       console.log('Received start voice consultation command');
       trackApiCall('his_start_voice', true);
 
-      const guardError = ensureReceptionContext(currentPatient.value, event.payload);
-      if (guardError) {
-        showToast(guardError, 'error');
+      const success = await ensureAndPrepareReceptionContext(currentPatient.value, event.payload);
+      if (!success) {
         return;
       }
 

@@ -16,7 +16,7 @@ import {
   type TreatmentHint,
   type DiagnosisHint,
 } from '../prompts';
-import { trackError, startTimedOperation } from '../services/operationTracker';
+import { trackError } from '../services/operationTracker';
 
 /** Mock 模式下缓存的意图识别结果，避免重复调用 LLM */
 let cachedTestModeTranscript = '';
@@ -553,7 +553,15 @@ async function repairVoiceExtractionPayload(
         issues,
       }),
     },
-  ]);
+  ], undefined, undefined, undefined, {
+    traceContext: {
+      scene: 'voice-intent-repair',
+      sourceModule: 'voice_intent',
+      operationModule: 'voice_consultation',
+      operationAction: 'repair_voice_extraction',
+      title: '修复语音结构化结果',
+    },
+  });
 
   const repairedParseResult = parseVoiceExtractionPayload(repairedOutput);
   if (!repairedParseResult.payload || repairedParseResult.issues.length > 0) {
@@ -645,7 +653,6 @@ export function useVoiceIntentRecognition() {
 
     isProcessing.value = true;
     processingError.value = null;
-    const finishTimer = startTimedOperation('voice_intent_recognition');
     let rawOutput = '';
 
     try {
@@ -682,13 +689,20 @@ export function useVoiceIntentRecognition() {
         { role: 'user', content: userContent },
       ];
 
-      rawOutput = await chat(messages);
+      rawOutput = await chat(messages, undefined, undefined, undefined, {
+        traceContext: {
+          scene: 'voice-intent-recognition',
+          sourceModule: 'voice_intent',
+          operationModule: 'voice_consultation',
+          operationAction: 'extract_voice_record',
+          title: '语音记录结构化抽取',
+        },
+      });
       const { payload: parsed, repairUsed } = await parseOrRepairVoiceExtraction(normalizedText, rawOutput);
       const normalizedExtraction = normalizeVoiceExtraction(parsed);
 
       if (normalizedExtraction.error) {
         processingError.value = normalizedExtraction.message || '无法识别有效的医疗内容';
-        finishTimer(false, { errorMessage: normalizedExtraction.message });
         return null;
       }
 
@@ -752,17 +766,6 @@ export function useVoiceIntentRecognition() {
         console.log('[VoiceIntent] Test mode: cached LLM result for current transcript');
       }
 
-      finishTimer(true, {
-        transcriptionLength: text.length,
-        symptomCount: intentResult.symptoms.length,
-        negativeSymptomCount: intentResult.negativeSymptoms.length,
-        diagnosisHintCount: matchedDiagnoses.length,
-        diagnosisMatchedCount: matchedDiagnoses.filter((d) => d.matchedItem).length,
-        treatmentHintCount: matchedTreatments.length,
-        matchedCount: matchedTreatments.filter((t) => t.matchedItem).length,
-        repairUsed,
-      });
-
       return intentResult;
     } catch (err: unknown) {
       trackError('voice_intent_recognition_failed', err);
@@ -773,7 +776,6 @@ export function useVoiceIntentRecognition() {
         rawOutput,
         errorMessage: errMessage,
       });
-      finishTimer(false, { errorMessage: errMessage });
       return null;
     } finally {
       isProcessing.value = false;

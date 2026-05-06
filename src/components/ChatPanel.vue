@@ -139,6 +139,14 @@ async function handleSend() {
         scrollToBottom();
         trackClick('chat_leakage_blocked');
       }
+    }, undefined, undefined, undefined, {
+      traceContext: {
+        scene: 'chat-stream',
+        sourceModule: 'chat_panel',
+        operationModule: 'chat',
+        operationAction: 'stream_reply',
+        title: '聊天助手回复',
+      },
     });
 
     // 8.5 最终检查（如果流式过程中被拦截）

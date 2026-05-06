@@ -178,9 +178,9 @@ useEventListeners (全局事件) -> 触发 useNavigation & useWorkMode
 | **his/index.ts** | ~30 | 公开入口：重出 adapter / 注册 API / 类型 |
 | **medical_catalog.rs** | -- | 医学目录 SQLite 持久化命令：诊断全局缓存、诊疗项目/药品按机构缓存与同步状态管理，并提供调试态查看/清理命令 | 供 `medicalData.ts` 调用 |
 | **factChecker.ts** | ~399 | AI 输出验证（医学指南核查） |
-| **feedback.ts** | ~312 | 操作追踪与反馈 |
+| **feedback.ts** | ~312 | 反馈与结构化操作日志落库/双写：把前端事件转换为区域化审计需要的 `module/action/result/details` 载荷 |
 | **voiceFeedback.ts** | -- | 语音反馈 payload 组装、本地草稿、病例字段差异摘要与待同步队列；通过 `submitVoicePendingPayloadToBackend` 映射到统一 `/v1/client/feedbacks` |
-| **aiTrace.ts** | ~200 | 最近一次 AI 调用链路上下文缓存 |
+| **aiTrace.ts** | ~200 | AI 调用链路缓存 + AI 代理结构化日志桥：补齐 traceId、scene、sourceModule 以及业务发起方 |
 | **knowledgeBase.ts** | ~213 | 通用知识库 CRUD |
 | **regionalClient.ts** | ~400 | 区域化核心客户端：设备 MAC 解析/设备编码持久化、终端注册、bootstrap 拉取、心跳、鉴权、SSE 代理；MAC 读取由 Tauri `device.rs` 提供，Windows 使用系统网卡 API，避免外部命令窗口闪烁 |
 | **regionalRuntime.ts** | ~50 | 区域化运行时编排：统一初始化、重连、远程数据同步、审计上传启停 |
@@ -190,7 +190,7 @@ useEventListeners (全局事件) -> 触发 useNavigation & useWorkMode
 | **themeService.ts** | ~209 | 主题管理（深色/浅色模式） |
 | **reportGenerator.ts** | ~152 | 最终报告生成 |
 | **promptGuard.ts** | ~138 | 提示词注入防护 |
-| **operationTracker.ts** | ~105 | 事件分析追踪 |
+| **operationTracker.ts** | ~105 | 结构化操作日志白名单入口：过滤低价值 UI 噪声，只保留能定位业务路径的导航、提交、接诊、风险、反馈等事件 |
 | **templateService.ts** | ~65 | 症状模板加载 |
 
 **服务依赖**：

@@ -38,6 +38,11 @@ export async function initializeRegionalRuntime(options?: {
   startAuditUploader();
   await syncRegionalRuntimeData();
   await feedbackService.logOperation({
+    module: 'regional_runtime',
+    action: 'initialize_runtime',
+    title: '初始化区域化运行时',
+    sourceModule: 'regional_runtime',
+    scene: 'regional-runtime',
     operationType: 'api_call',
     operationName: 'regional_runtime_initialized',
     details: {

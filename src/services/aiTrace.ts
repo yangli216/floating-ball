@@ -1,4 +1,5 @@
 import { feedbackService } from './feedback';
+import { trackBusinessOperation } from './operationTracker';
 
 export type AiTraceChannel = 'chat' | 'speech_transcribe' | 'speech_realtime';
 
@@ -7,6 +8,9 @@ export interface AiTraceContext {
   channel: AiTraceChannel;
   scene?: string;
   sourceModule?: string;
+  operationModule?: string;
+  operationAction?: string;
+  title?: string;
   sessionId?: string | null;
   configProfile?: string;
   model?: string;
@@ -24,6 +28,9 @@ interface BeginAiTraceInput {
   channel: AiTraceChannel;
   scene?: string;
   sourceModule?: string;
+  operationModule?: string;
+  operationAction?: string;
+  title?: string;
   configProfile?: string;
   model?: string;
   requestSummary?: string;
@@ -83,6 +90,9 @@ export function beginAiTrace(input: BeginAiTraceInput): AiTraceContext {
     channel: input.channel,
     scene: input.scene,
     sourceModule: input.sourceModule,
+    operationModule: input.operationModule,
+    operationAction: input.operationAction,
+    title: input.title,
     sessionId: feedbackService.getCurrentSessionId(),
     configProfile: input.configProfile,
     model: input.model,
@@ -110,7 +120,30 @@ export function finishAiTrace(traceId: string, input: FinishAiTraceInput): AiTra
     durationMs: finishedAt - matched.startedAt,
     updatedAt: finishedAt,
   };
-  return upsertTrace(next);
+  const stored = upsertTrace(next);
+  trackBusinessOperation({
+    module: stored.operationModule || 'ai_proxy',
+    action: stored.operationAction || stored.channel,
+    title: stored.title || `AI 调用：${stored.operationAction || stored.channel}`,
+    sourceModule: stored.sourceModule || 'llm',
+    scene: stored.scene,
+    operationType: 'api_call',
+    operationName: stored.operationAction || stored.channel,
+    success: stored.success !== false,
+    durationMs: stored.durationMs,
+    details: {
+      traceId: stored.traceId,
+      channel: stored.channel,
+      scene: stored.scene,
+      sourceModule: stored.sourceModule,
+      model: stored.model,
+      configProfile: stored.configProfile,
+      requestSummary: stored.requestSummary,
+      responseSummary: stored.responseSummary,
+      errorMessage: stored.errorMessage,
+    },
+  });
+  return stored;
 }
 
 export function failAiTrace(traceId: string, errorMessage: string): AiTraceContext | null {

@@ -77,7 +77,7 @@
 <script setup lang="ts">
 import { ref, computed, watch } from 'vue';
 import Icon from './Icon.vue';
-import { trackClick, startTimedOperation } from '../services/operationTracker';
+import { trackClick } from '../services/operationTracker';
 import { resolvePatientAvatar, PATIENT_AVATAR_FALLBACK } from '../utils/patientAvatar';
 
 export interface RiskItem {
@@ -100,7 +100,6 @@ const emit = defineEmits<{
 }>();
 
 const expanded = ref(false);
-let endTimer: ((s?: boolean, d?: Record<string, any>) => void) | null = null;
 
 const stateClass = computed(() => {
   if (props.analyzing) return 'rc-state-analyzing';
@@ -124,14 +123,6 @@ function onAvatarError() {
     avatarSrc.value = PATIENT_AVATAR_FALLBACK;
   }
 }
-
-watch(() => props.analyzing, (now, was) => {
-  if (now && !was) endTimer = startTimedOperation('reception_risk_analysis');
-  else if (!now && was && endTimer) {
-    endTimer(true, { riskCount: props.risks.length, patientName: props.patientName });
-    endTimer = null;
-  }
-});
 
 watch(() => props.risks, (r) => {
   const open = r.length > 0;

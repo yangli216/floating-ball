@@ -32,10 +32,36 @@ function normalizeRecommendationType(recType: RecommendationExtended['recType'])
 }
 
 function resolveOperationModule(log: Omit<OperationLog, 'logId' | 'createdAt'>): string {
+  if (typeof log.module === 'string' && log.module.trim()) {
+    return log.module.trim();
+  }
   const candidate = log.details?.module;
   return typeof candidate === 'string' && candidate.trim()
     ? candidate.trim()
     : log.operationType;
+}
+
+function resolveOperationAction(log: Omit<OperationLog, 'logId' | 'createdAt'>): string {
+  if (typeof log.action === 'string' && log.action.trim()) {
+    return log.action.trim();
+  }
+  return log.operationName;
+}
+
+function resolveOperationSourceModule(log: Omit<OperationLog, 'logId' | 'createdAt'>): string | undefined {
+  if (typeof log.sourceModule === 'string' && log.sourceModule.trim()) {
+    return log.sourceModule.trim();
+  }
+  const candidate = log.details?.sourceModule;
+  return typeof candidate === 'string' && candidate.trim() ? candidate.trim() : undefined;
+}
+
+function resolveOperationScene(log: Omit<OperationLog, 'logId' | 'createdAt'>): string | undefined {
+  if (typeof log.scene === 'string' && log.scene.trim()) {
+    return log.scene.trim();
+  }
+  const candidate = log.details?.scene;
+  return typeof candidate === 'string' && candidate.trim() ? candidate.trim() : undefined;
 }
 
 function buildOperationAuditPayload(
@@ -45,13 +71,20 @@ function buildOperationAuditPayload(
   const success = log.success !== false;
 
   const consultationId = log.details?.consultationId as string | undefined;
+  const module = resolveOperationModule(log);
+  const action = resolveOperationAction(log);
+  const sourceModule = resolveOperationSourceModule(log);
+  const scene = resolveOperationScene(log);
 
   return {
     sessionId,
     consultationId: consultationId || undefined,
-    module: resolveOperationModule(log),
-    action: log.operationName,
+    module,
+    action,
     result: success ? 'success' : 'failure',
+    title: log.title,
+    sourceModule,
+    scene,
     operationType: log.operationType,
     operationName: log.operationName,
     success,
