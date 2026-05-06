@@ -271,6 +271,19 @@ function resolveHandshakeUserRoleDeptIds(ctx: SdkHandshakePayload): string[] {
   ));
 }
 
+/**
+ * 将各种来源的性别值统一转换为中文文本（"男性" / "女性"）。
+ * 支持：PHIS 代码 '1'='男' / '2'='女'，英文 'M'/'F'/'male'/'female'，中文 "男"/"女"。
+ * 未知时返回空字符串，**不做默认兜底**，由调用方决定如何处理缺失。
+ */
+function resolveSdSexText(raw: unknown): string {
+  if (typeof raw !== 'string' || !raw.trim()) return '';
+  const v = raw.trim();
+  if (v === '1' || /^M$/i.test(v) || /^male$/i.test(v) || v.startsWith('男')) return '男性';
+  if (v === '2' || /^F$/i.test(v) || /^female$/i.test(v) || v.startsWith('女')) return '女性';
+  return v; // 透传原始文本（如已是"男性"/"女性"）
+}
+
 function mergePatientContext(
   currentPatient: AppPatient | null,
   payload: StartConsultationPayload | SessionAssistPayload | null | undefined
@@ -292,7 +305,7 @@ function mergePatientContext(
       if (typeof rawAge === 'string' && rawAge.trim() !== '') return rawAge;
       return '';
     })(),
-    sdSexText: payload.sdSexText || (currentPatient?.gender === 'M' ? '男性' : '女性'),
+    sdSexText: payload.sdSexText || resolveSdSexText(payload.gender ?? currentPatient?.gender ?? currentPatient?.sdSex),
   };
 }
 
