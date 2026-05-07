@@ -35,12 +35,23 @@ export function useBodySiteOptions() {
     };
   }
 
+  function markMedicalItemPartOptionsLoaded(rec: TreatmentRecommendation): void {
+    rec.matchedItem = {
+      ...(rec.matchedItem || {}),
+      raw: {
+        ...(getMatchedItemRaw(rec) || {}),
+        __partOptionsLoaded: true,
+      },
+    };
+  }
+
   function applyMedicalItemPartOptions(rec: TreatmentRecommendation, options: MedicalItemPartOption[]): void {
     if (rec.type !== 'exam') {
       return;
     }
 
     rec.bodySiteOptions = options;
+    markMedicalItemPartOptionsLoaded(rec);
     if (options.length === 0) {
       return;
     }

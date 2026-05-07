@@ -1286,6 +1286,12 @@ async function confirmSuggestedMatch(rec: TreatmentRecommendation, event?: Event
     return;
   }
 
+  if (!hasRequiredBodySite(rec)) {
+    openBodySiteQuickSelector(rec);
+    showToast?.(`${rec.name} 未设置检查部位，请先设置后再选中`, 'warning');
+    return;
+  }
+
   if (rec.type === 'medicine') {
     Object.assign(rec, normalizeTreatmentRecommendation(rec));
     if (!(await checkMedicineInventoryEnough(rec, true))) {
@@ -1344,6 +1350,12 @@ async function applyManualMatch(rec: TreatmentRecommendation, candidate: Medicin
     return;
   }
 
+  if (!hasRequiredBodySite(rec)) {
+    openBodySiteQuickSelector(rec);
+    showToast?.(`${candidate.name} 未设置检查部位，请先设置后再选中`, 'warning');
+    return;
+  }
+
   if (rec.type === 'medicine') {
     Object.assign(rec, normalizeTreatmentRecommendation(rec));
     if (!(await checkMedicineInventoryEnough(rec, true))) {
@@ -1371,6 +1383,10 @@ async function toggleTreatment(item: TreatmentRecommendation): Promise<void> {
   }
   const nextSelected = !item.selected;
 
+  if (nextSelected && item.type === 'exam') {
+    await hydrateMatchedMedicalItemDetail(item);
+  }
+
   if (nextSelected && item.type === 'medicine' && !(await ensureMedicineSelectable(item, true))) {
     return;
   }
@@ -1385,6 +1401,12 @@ async function toggleTreatment(item: TreatmentRecommendation): Promise<void> {
     expandTreatmentEditor(item);
     openSecondarySelector(item, 'execDept');
     showToast?.('请先设置执行科室后再选中该项目', 'warning');
+    return;
+  }
+
+  if (nextSelected && !hasRequiredBodySite(item)) {
+    openBodySiteQuickSelector(item);
+    showToast?.('请先设置检查部位后再选中该项目', 'warning');
     return;
   }
 
@@ -1991,12 +2013,31 @@ function hasRequiredExecDept(rec: TreatmentRecommendation): boolean {
   return treatmentGates.hasRequiredExecDept(rec);
 }
 
+function isBodySiteRequired(rec: TreatmentRecommendation): boolean {
+  return treatmentGates.isBodySiteRequired(rec);
+}
+
+function hasRequiredBodySite(rec: TreatmentRecommendation): boolean {
+  return treatmentGates.hasRequiredBodySite(rec);
+}
+
 function openExecDeptQuickSelector(rec: TreatmentRecommendation, event?: Event): void {
   event?.stopPropagation();
   expandTreatmentEditor(rec);
   openSecondarySelector(rec, 'execDept');
   void nextTick(() => {
     const selector = document.querySelector<HTMLInputElement>(`[data-exec-dept-input="${getTreatmentEditorKey(rec)}"]`);
+    selector?.focus();
+    selector?.select();
+  });
+}
+
+function openBodySiteQuickSelector(rec: TreatmentRecommendation, event?: Event): void {
+  event?.stopPropagation();
+  expandTreatmentEditor(rec);
+  openSecondarySelector(rec, 'bodySite');
+  void nextTick(() => {
+    const selector = document.querySelector<HTMLInputElement>(`[data-body-site-input="${getTreatmentEditorKey(rec)}"]`);
     selector?.focus();
     selector?.select();
   });
@@ -2662,6 +2703,11 @@ function clearBodySiteSelection(rec: TreatmentRecommendation): void {
       },
     };
   }
+
+  if (isBodySiteRequired(rec) && rec.selected) {
+    rec.selected = false;
+    showToast?.('检查部位已清空，请重新设置后再选中该项目', 'warning');
+  }
 }
 
 // === 医保 ===
@@ -2778,6 +2824,18 @@ async function handleBatchWriteBack(): Promise<void> {
       expandTreatmentEditor(missingExecDept);
       openSecondarySelector(missingExecDept, 'execDept');
       showToast?.(`${missingExecDept.name} 未设置执行科室，请先设置后再提交`, 'warning');
+      return;
+    }
+
+    const examItems = selected.filter((item) => item.type === 'exam');
+    if (examItems.length > 0) {
+      await Promise.all(examItems.map((item) => hydrateMatchedMedicalItemDetail(item)));
+    }
+
+    const missingBodySite = selected.find((item) => !hasRequiredBodySite(item));
+    if (missingBodySite) {
+      openBodySiteQuickSelector(missingBodySite);
+      showToast?.(`${missingBodySite.name} 未设置检查部位，请先设置后再提交`, 'warning');
       return;
     }
 
@@ -3356,6 +3414,7 @@ watch(
                             <label>检查部位</label>
                             <div class="field-editor route-field-editor" @focusout="closeSecondarySelector(rec, 'bodySite', $event)">
                               <input
+                                :data-body-site-input="getTreatmentEditorKey(rec)"
                                 :value="getBodySiteSearchKeyword(rec)"
                                 type="text"
                                 placeholder="输入名称筛选部位"
