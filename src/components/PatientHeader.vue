@@ -38,6 +38,7 @@
 <script setup lang="ts">
 import { computed } from 'vue';
 import { resolvePatientAvatar, PATIENT_AVATAR_FALLBACK } from '../utils/patientAvatar';
+import { getPatientContextAgeText, getPatientContextGenderText, getPatientContextName } from '../utils/patientContext';
 
 interface PatientLike {
   naPi?: string;
@@ -77,16 +78,22 @@ const props = withDefaults(defineProps<{
 const s = (v: unknown): string => (typeof v === 'string' ? v : '');
 
 const displayName = computed((): string => {
-  const p = props.patient || {};
-  return s(p.naPi) || s(p.na_pi) || s(p.name) || s(p.patientName) || s(p.patient_name) || '未知患者';
+  return getPatientContextName(props.patient as any) || (() => {
+    const p = props.patient || {};
+    return s(p.naPi) || s(p.na_pi) || s(p.name) || s(p.patientName) || s(p.patient_name) || '未知患者';
+  })();
 });
 
 const gender = computed((): string => {
-  const p = props.patient || {};
-  return s(p.sdSexText) || s(p.sdSex);
+  return getPatientContextGenderText(props.patient as any) || (() => {
+    const p = props.patient || {};
+    return s(p.sdSexText) || s(p.sdSex);
+  })();
 });
 
 const age = computed((): string => {
+  const contextAge = getPatientContextAgeText(props.patient as any);
+  if (contextAge) return contextAge;
   const p = props.patient || {};
   if (s(p.ageText)) return s(p.ageText);
   if (p.ageNum != null && p.ageNum !== '') {

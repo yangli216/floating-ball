@@ -14,6 +14,11 @@
  */
 
 import type { GeneratedRecord, MedicationEntry, PatientInfo } from '../types/voiceResult';
+import {
+  getPatientContextAgeText,
+  getPatientContextAllergyHistory,
+  getPatientContextGenderText,
+} from '../utils/patientContext';
 
 export type RigidBlockSeverity = 'block' | 'warn';
 
@@ -129,7 +134,7 @@ function contains(haystack: string, needles: string[]): string | null {
 
 function parseAgeYears(patient?: PatientInfo | null): number | null {
   if (!patient) return null;
-  const raw = patient.ageText ?? patient.age;
+  const raw = getPatientContextAgeText(patient);
   if (raw == null) return null;
   if (typeof raw === 'number' && Number.isFinite(raw)) return raw;
   const text = normalizeText(raw);
@@ -147,7 +152,7 @@ function parseAgeYears(patient?: PatientInfo | null): number | null {
 
 function normalizeSex(patient?: PatientInfo | null): '男' | '女' | null {
   if (!patient) return null;
-  const raw = normalizeText(patient.sdSexText ?? patient.sex).trim();
+  const raw = normalizeText(getPatientContextGenderText(patient)).trim();
   if (!raw) return null;
   if (raw.includes('男') || raw.toLowerCase() === 'm' || raw.toLowerCase() === 'male') return '男';
   if (raw.includes('女') || raw.toLowerCase() === 'f' || raw.toLowerCase() === 'female') return '女';
@@ -161,7 +166,7 @@ function describeMedication(med: MedicationEntry): string {
 // ---------- 规则实现 ----------
 
 function ruleAllergyCrossClass(record: GeneratedRecord, patient: PatientInfo | null | undefined, alerts: RigidBlockAlert[]): void {
-  const allergyText = normalizeText(patient?.allergyHistory).trim();
+  const allergyText = normalizeText(getPatientContextAllergyHistory(patient)).trim();
   if (!allergyText) return;
   // 排除"无过敏史"等否定描述
   if (/^(无|否认|未发现|无过敏|无明显|none|nkda)/i.test(allergyText)) return;

@@ -104,6 +104,7 @@ import {
   buildRegionalSpeechUploadPayload,
 } from './regionalClient';
 import { beginAiTrace, failAiTrace, finishAiTrace } from './aiTrace';
+import { normalizeRiskAnalysisPatientContext } from '../utils/patientProfile';
 
 // 获取配置信息
 export function getLLMConfig() {
@@ -619,10 +620,20 @@ export interface RiskAnalysisItem {
 }
 
 export async function analyzePatientRisks(patientData: any, apiKey?: string): Promise<RiskAnalysisItem[]> {
+  const normalizedPatientData = normalizeRiskAnalysisPatientContext(patientData);
   const messages: ChatMessage[] = [
     { role: 'system', content: PROMPTS.consultation.patientRiskAnalysis.system },
-    { role: 'user', content: PROMPTS.consultation.patientRiskAnalysis.buildUserPrompt(patientData) }
+    { role: 'user', content: PROMPTS.consultation.patientRiskAnalysis.buildUserPrompt(normalizedPatientData) }
   ];
+
+  if (!normalizedPatientData.patientName || !normalizedPatientData.gender || !normalizedPatientData.age) {
+    console.warn('[RiskAnalysis] Incomplete patient identity in prompt context', {
+      patientName: normalizedPatientData.patientName,
+      gender: normalizedPatientData.gender,
+      age: normalizedPatientData.age,
+      rawKeys: patientData && typeof patientData === 'object' ? Object.keys(patientData) : [],
+    });
+  }
 
   try {
     const response = await chat(messages, apiKey, undefined, undefined, {

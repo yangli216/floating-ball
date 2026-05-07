@@ -234,7 +234,7 @@ const hoveredBtnIndex = ref(-1);            // 悬停的按钮索引
 const consultationAssistTrigger = ref(...);  // 灵活模式自动触发请求
 
 // 业务状态
-const currentPatient = ref<AppPatient | null>(null);      // 当前患者
+const currentPatient = ref<PatientContext | null>(null);  // 当前患者统一上下文
 const generatedRecord = ref<GeneratedRecord | null>(null); // 生成的病历
 
 // 风险提示状态
@@ -254,6 +254,16 @@ const isRiskAnalyzing = ref(false);
 | `navigation` | 导航管理 | 打开各视图、视图切换追踪 |
 | `voiceConsultation` | 语音问诊 | 语音处理、病历生成、结果提交 |
 | `eventListeners` | 事件监听 | HIS 集成、Deep Link、鼠标/窗口事件 |
+
+### 患者上下文基线
+
+`currentPatient` 是应用级唯一患者上下文。约束如下：
+
+1. 外部事件只提供患者主键 / 就诊主键和少量当前场景字段。
+2. `useEventListeners.ts` 的接诊流程负责调用 `HisAdapter.fetchPatientInfo()` 与 `HisAdapter.fetchPatientHistory()` 补全完整信息。
+3. 统一上下文同时保存身份信息、展示信息、结构化 `hisHistory`、历史摘要与接诊状态。
+4. UI、AI prompt、日志、缓存等模块不得再各自维护 `naPi/name`、`sdSexText/gender`、`ageText/age` 的读取分支；统一通过患者上下文 helper / selector 读取。
+5. `show-patient-risks`、`start-consultation`、`start-consultation-session`、`start-voice-consultation` 都必须复用同一套上下文构建逻辑，不能绕过 HIS 补全直接写全局状态。
 
 ---
 
@@ -552,8 +562,8 @@ await voiceConsultation.handleResultConfirm(record);
 **核心功能**:
 - ✅ Deep Link 单点监听（仅在 `useEventListeners` 注册）
 - ✅ HIS 集成事件监听
-  - `receive-patient` - 接诊入口；拉取 HIS 患者基本信息、过敏史与历史就诊记录，并将可直接消费的 `pastMedicalHistory` / `allergyHistory` 摘要合并到 `currentPatient`
-  - `show-patient-risks` - 患者风险提示
+  - `receive-patient` - 接诊入口；拉取 HIS 患者基本信息、过敏史与历史就诊记录，并构建统一 `PatientContext`
+  - `show-patient-risks` - 风险提示入口；必须先复用接诊补全，再把风险结果叠加到已有 `PatientContext`
   - `start-consultation` - 开始问诊
   - `start-consultation-session` - HIS 灵活模式 / assist 兼容事件（当前默认打开 `ConsultationPage` 并写入自动触发上下文）
   - `stop-consultation` - 停止问诊

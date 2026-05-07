@@ -16,6 +16,13 @@ import type {
   VoiceSafetyReviewContext,
   VoiceSafetyReviewResult,
 } from '../types/voiceResult';
+import {
+  getPatientContextAgeText,
+  getPatientContextAllergyHistory,
+  getPatientContextGenderText,
+  getPatientContextName,
+  getPatientContextPastMedicalHistory,
+} from '../utils/patientContext';
 
 /**
  * 检查独立审查 AI 是否已启用
@@ -176,9 +183,9 @@ function buildPatientSummary(context: VoiceSafetyReviewContext): string {
   if (!patient) return '未提供';
 
   const parts = [
-    patient.naPi || patient.name,
-    patient.sdSexText || patient.sex,
-    patient.ageText || patient.age,
+    getPatientContextName(patient),
+    getPatientContextGenderText(patient),
+    getPatientContextAgeText(patient),
   ]
     .filter(value => value !== undefined && value !== null && String(value).trim().length > 0)
     .map(String);
@@ -225,13 +232,13 @@ function extractAllergySnippets(text?: string | null): string[] {
 }
 
 function buildSafetyAllergyContext(context: VoiceSafetyReviewContext): string | undefined {
-  const patientAllergy = typeof context.patientInfo?.allergyHistory === 'string' ? context.patientInfo.allergyHistory : undefined;
+  const patientAllergy = getPatientContextAllergyHistory(context.patientInfo);
   const direct = context.allergyHistory || patientAllergy;
   const snippets: string[] = [];
   if (direct && !isPlaceholderHistory(direct)) snippets.push(direct.trim());
   // 兜底：从 record / patientInfo 的 pastMedicalHistory 中抽取"X过敏"关键片段
   const recordPmh = typeof context.record.pastMedicalHistory === 'string' ? context.record.pastMedicalHistory : undefined;
-  const patientPmh = typeof context.patientInfo?.pastMedicalHistory === 'string' ? context.patientInfo.pastMedicalHistory : undefined;
+  const patientPmh = getPatientContextPastMedicalHistory(context.patientInfo);
   for (const candidate of [recordPmh, patientPmh]) {
     snippets.push(...extractAllergySnippets(candidate));
   }
@@ -242,7 +249,7 @@ function buildSafetyAllergyContext(context: VoiceSafetyReviewContext): string | 
 function buildSafetyPastMedicalHistory(context: VoiceSafetyReviewContext): string | undefined {
   const recordHistory = typeof context.record.pastMedicalHistory === 'string' ? context.record.pastMedicalHistory : undefined;
   if (recordHistory && !isPlaceholderHistory(recordHistory)) return recordHistory;
-  const patientHistory = typeof context.patientInfo?.pastMedicalHistory === 'string' ? context.patientInfo.pastMedicalHistory : undefined;
+  const patientHistory = getPatientContextPastMedicalHistory(context.patientInfo);
   if (patientHistory && !isPlaceholderHistory(patientHistory)) return patientHistory;
   return recordHistory || patientHistory || undefined;
 }

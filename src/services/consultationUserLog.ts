@@ -2,6 +2,12 @@ import { getFeedbackActor } from './feedbackContext';
 import { buildRegionalSpeechUploadPayload, isRegionalMode, regionalPost } from './regionalClient';
 import type { Diagnosis, Patient, TreatmentRecommendation } from '../types/consultation';
 import type { AppPatient } from '../types/appState';
+import {
+  getPatientContextAgeText,
+  getPatientContextGenderText,
+  getPatientContextId,
+  getPatientContextName,
+} from '../utils/patientContext';
 
 export type ConsultationUserLogType = 'voice' | 'smart';
 
@@ -236,10 +242,10 @@ export async function submitConsultationUserLog(input: SubmitConsultationUserLog
       consultationId: input.consultationId,
       consultationType: input.consultationType,
       consultationTime: Date.now(),
-      patientId: patientValue(patient, ['idPi', 'patientId', 'id', 'idTet', 'idMpi']),
-      patientName: patientValue(patient, ['naPi', 'patientName', 'name']),
-      patientGender: patientValue(patient, ['sdSexText', 'gender', 'sdSex']),
-      patientAge: patientValue(patient, ['ageText', 'age', 'ageNum']),
+      patientId: getPatientContextId(patient as AppPatient) || patientValue(patient, ['idPi', 'patientId', 'id', 'idTet', 'idMpi']),
+      patientName: getPatientContextName(patient as AppPatient) || patientValue(patient, ['naPi', 'patientName', 'name']),
+      patientGender: getPatientContextGenderText(patient as AppPatient) || patientValue(patient, ['sdSexText', 'gender', 'sdSex']),
+      patientAge: getPatientContextAgeText(patient as AppPatient) || patientValue(patient, ['ageText', 'age', 'ageNum']),
       doctorId: actor.doctorId,
       doctorName: actor.doctorName,
       orgCode: actor.orgCode,

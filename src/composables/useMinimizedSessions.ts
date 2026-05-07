@@ -19,6 +19,7 @@
 
 import { computed, ref } from 'vue';
 import type { AppPatient } from '../types/appState';
+import { getPatientContextAnchorId, getPatientContextId, getPatientContextName } from '../utils/patientContext';
 
 export type MinimizedSessionType = 'symptom' | 'voice';
 
@@ -49,13 +50,7 @@ function isSameLocalDay(a: number, b: number): boolean {
 }
 
 function resolveAnchorId(patient: AppPatient | null | undefined): string {
-  return String(
-    patient?.idVis
-      || patient?.idPi
-      || patient?.patientId
-      || patient?.id
-      || '',
-  );
+  return getPatientContextAnchorId(patient);
 }
 
 function loadPersisted(): PersistedShape {
@@ -138,8 +133,8 @@ export function useMinimizedSessions() {
     const entry: MinimizedSessionRecord = {
       type,
       anchorId,
-      patientId: String(patient?.idPi || patient?.patientId || '') || undefined,
-      patientName: String(patient?.name || patient?.naPi || '') || undefined,
+      patientId: getPatientContextId(patient) || undefined,
+      patientName: getPatientContextName(patient) || undefined,
       recordedAt: Date.now(),
     };
     if (type === 'symptom') {

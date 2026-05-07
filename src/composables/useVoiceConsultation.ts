@@ -22,6 +22,12 @@ import {
   getPatientMemory,
 } from '../services/patientMemoryStore';
 import { submitConsultationUserLog } from '../services/consultationUserLog';
+import {
+  getPatientContextAllergyHistory,
+  getPatientContextAnchorId,
+  getPatientContextCurrentMedicationHistory,
+  getPatientContextPastMedicalHistory,
+} from '../utils/patientContext';
 
 interface VoiceConsultationCacheEntry {
   consultationId: string;
@@ -62,14 +68,7 @@ export interface VoiceEditorSnapshot {
 const VOICE_CONSULTATION_CACHE_PREFIX = 'VOICE_CONSULTATION_CACHE_V1';
 
 function resolveVoiceConsultationId(patient: AppPatient | null | undefined): string {
-  // 优先使用就诊 ID（idVis），保证同一患者不同就诊互不串扰
-  return String(
-    patient?.idVis
-      || patient?.idPi
-      || patient?.patientId
-      || patient?.id
-      || 'unknown'
-  );
+  return getPatientContextAnchorId(patient) || 'unknown';
 }
 
 function getVoiceConsultationCacheKey(consultationId: string): string {
@@ -280,7 +279,16 @@ export function useVoiceConsultation(options: VoiceConsultationOptions) {
   }
 
   function clearCache(consultationId?: string): void {
-    clearVoiceConsultationCache(consultationId ? ({ idPi: consultationId } as AppPatient) : null);
+    if (!consultationId) {
+      clearVoiceConsultationCache(null);
+      return;
+    }
+    try {
+      localStorage.removeItem(getVoiceConsultationCacheKey(consultationId));
+      console.log('[VoiceConsultation] Cache cleared', { consultationId });
+    } catch (error) {
+      console.warn('[VoiceConsultation] Failed to clear cache:', consultationId, error);
+    }
   }
 
   async function showIntentResult(result: VoiceIntentResult, source: 'llm' | 'cache'): Promise<void> {
@@ -396,19 +404,12 @@ export function useVoiceConsultation(options: VoiceConsultationOptions) {
       intentRecognition.addTranscript(transcribedText);
       const memory = await getPatientMemory(consultationId);
       const memoryContext = formatPatientMemoryForPrompt(memory);
-      const patientCtxRaw = currentPatient.value as
-        | {
-            allergyHistory?: string;
-            pastMedicalHistory?: string;
-            currentMedicationHistory?: string;
-          }
-        | null;
       const result = await intentRecognition.processTranscript(transcribedText, {
         memoryContext,
         patientContext: {
-          pastMedicalHistory: patientCtxRaw?.pastMedicalHistory ?? null,
-          allergyHistory: patientCtxRaw?.allergyHistory ?? null,
-          currentMedicationHistory: patientCtxRaw?.currentMedicationHistory ?? null,
+          pastMedicalHistory: getPatientContextPastMedicalHistory(currentPatient.value) || null,
+          allergyHistory: getPatientContextAllergyHistory(currentPatient.value) || null,
+          currentMedicationHistory: getPatientContextCurrentMedicationHistory(currentPatient.value) || null,
         },
       });
 

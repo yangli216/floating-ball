@@ -8,6 +8,7 @@ import type {
   VoiceSafetyIssue,
   VoiceSafetyReviewResult,
 } from '../types/voiceResult';
+import { getPatientContextAllergyHistory, getPatientContextId } from '../utils/patientContext';
 
 export type VoiceSafetyReviewStatus = 'idle' | 'checking' | 'completed' | 'failed';
 
@@ -33,14 +34,11 @@ export function useVoiceSafetyReview() {
     checkedAt.value = null;
 
     try {
-      const patientId = String((patientInfo as { idPi?: string; patientId?: string; id?: string } | null | undefined)?.idPi
-        || (patientInfo as { patientId?: string } | null | undefined)?.patientId
-        || (patientInfo as { id?: string } | null | undefined)?.id
-        || '');
+      const patientId = getPatientContextId(patientInfo);
       const memory = patientId ? await getPatientMemory(patientId) : null;
       const recentMedications = extractRecentMedications(memory);
       // 累积过敏史：如果粘贴中不含某些上次上传的过敏项，仍以累计值为准补足
-      const baseAllergy = patientInfo?.allergyHistory || '';
+      const baseAllergy = getPatientContextAllergyHistory(patientInfo);
       const memoryAllergies = memory?.allergyHistory || [];
       const mergedAllergy = memoryAllergies.length
         ? [baseAllergy, memoryAllergies.filter(a => !baseAllergy.includes(a)).join('、')]

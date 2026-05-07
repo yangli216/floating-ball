@@ -22,6 +22,7 @@ import { feedbackService } from '../services/feedback';
 import { trackClick } from '../services/operationTracker';
 import type { useWindowManagement } from './useWindowManagement';
 import type { AppPatient, AppStore } from '../types/appState';
+import { getPatientContextId, getPatientContextName } from '../utils/patientContext';
 
 /**
  * 位置坐标类型
@@ -252,8 +253,8 @@ export function useWorkMode(options: WorkModeOptions) {
     try {
       await feedbackService.startSession(
         getSessionType(),
-        currentPatient.value?.patientId || currentPatient.value?.piOi,
-        currentPatient.value?.name || currentPatient.value?.naPi
+        getPatientContextId(currentPatient.value) || currentPatient.value?.piOi,
+        getPatientContextName(currentPatient.value)
       );
       console.log(`[WorkMode] Session started for ${getSessionType()}`);
     } catch (error) {

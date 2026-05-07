@@ -361,9 +361,9 @@
          <h1 class="hospital-title">{{ consultationMode === 'tcm' ? '中医门诊病历' : '门诊病历' }}</h1>
          <div class="report-header">
            <div class="info-row">
-             <span>姓名：{{ patientInfo.naPi }}</span>
-             <span>性别：{{ patientInfo.sdSexText }}</span>
-             <span>年龄：{{ patientInfo.ageText }}</span>
+              <span>姓名：{{ patientPromptProfile.patientName }}</span>
+              <span>性别：{{ patientPromptProfile.gender }}</span>
+              <span>年龄：{{ patientPromptProfile.age }}</span>
            </div>
            <div class="info-row">
              <span>科室：{{ consultationMode === 'tcm' ? '中医科' : '全科医学科' }}</span>
@@ -606,11 +606,20 @@ import {
 import type {
   ConsultationAssistAction,
 } from '../types/consultationAssist';
+import type { AppPatient } from '../types/appState';
+import {
+  getPatientContextAgeText,
+  getPatientContextAnchorId as resolvePatientContextAnchorId,
+  getPatientContextGenderCode,
+  getPatientContextGenderText,
+  getPatientContextName,
+  toConsultationPatient,
+} from '../utils/patientContext';
 
 const showToast = inject('showToast') as (msg: string, type: 'success' | 'error' | 'info') => void;
 
 const props = defineProps<{
-  initialPatientData?: any;
+  initialPatientData?: AppPatient;
   assistTrigger?: {
     kind: ConsultationAssistAction;
     token: number;
@@ -706,18 +715,19 @@ const patientInfo = ref<Patient>({
 const avatarSrc = computed(() => {
   const info = patientInfo.value;
   return resolvePatientAvatar({
-    sdSex: info.sdSex,
-    sdSexText: info.sdSexText,
+    gender: getPatientContextGenderCode(info as any),
+    sdSexText: getPatientContextGenderText(info as any),
     age: (info as any).ageNum,
     ageUnit: (info as any).ageUnit,
-    ageText: info.ageText,
+    ageText: getPatientContextAgeText(info as any),
   });
 });
 
 // 患者性别（用于 BodyPartSelector）
 const patientGender = computed<'male' | 'female'>(() => {
-  const info = patientInfo.value;
-  const isMale = info.sdSex === '1' || info.sdSexText === '男性' || info.sdSexText === '男';
+  const genderCode = getPatientContextGenderCode(patientInfo.value as any);
+  const genderText = getPatientContextGenderText(patientInfo.value as any);
+  const isMale = genderCode === 'M' || genderCode === '1' || genderText === '男性' || genderText === '男';
   return isMale ? 'male' : 'female';
 });
 
@@ -1290,7 +1300,7 @@ const getPatientAnchorId = (patient?: {
   idPi?: string | number;
   patientId?: string | number;
   id?: string | number;
-} | null) => String(patient?.idPi || patient?.patientId || patient?.id || '');
+} | null) => resolvePatientContextAnchorId(patient as any);
 
 const readPatientText = (
   source: Record<string, unknown> | null | undefined,
@@ -1324,6 +1334,12 @@ const resolvePastMedicalHistory = (): string =>
   ) ||
   '未提供既往病史。';
 
+const patientPromptProfile = computed(() => ({
+  patientName: getPatientContextName(patientInfo.value as any) || '',
+  gender: getPatientContextGenderText(patientInfo.value as any) || '',
+  age: getPatientContextAgeText(patientInfo.value as any) || '',
+}));
+
 const {
   recommendationSubmittingKey,
   recommendationSubmittedMap,
@@ -1334,7 +1350,7 @@ const {
 } = useVoiceFeedback({
   consultationId: computed(() => resolveConsultationId()),
   patientId: computed(() => getPatientAnchorId(patientInfo.value)),
-  patientName: computed(() => patientInfo.value.naPi || ''),
+  patientName: computed(() => patientPromptProfile.value.patientName),
   chiefComplaint: computed(() => generatedRecord.value.chiefComplaint || ''),
   historyOfPresentIllness: computed(() => generatedRecord.value.historyOfPresentIllness || ''),
   pastMedicalHistory: computed(() => resolvePastMedicalHistory()),
@@ -2360,7 +2376,7 @@ const canSubmitToHIS = computed(() => {
 
 watch(() => props.initialPatientData, (newData) => {
   if (newData) {
-    const nextPatientId = String(newData.idPi || newData.patientId || newData.id || '');
+    const nextPatientId = resolvePatientContextAnchorId(newData);
     const shouldReset = activePatientAnchorId.value !== '' && nextPatientId !== '' && activePatientAnchorId.value !== nextPatientId;
 
     if (shouldReset) {
@@ -2369,14 +2385,9 @@ watch(() => props.initialPatientData, (newData) => {
 
     patientInfo.value = {
       ...patientInfo.value,
-      ...newData, // Merge directly as keys now match (naPi, idPi, etc.)
-      // Map old fields if they still come in via alias
-      naPi: newData.naPi || newData.name || patientInfo.value.naPi,
-      idPi: newData.idPi || newData.patientId || patientInfo.value.idPi,
+      ...toConsultationPatient(newData),
     };
-    activePatientAnchorId.value = String(
-      patientInfo.value.idPi || patientInfo.value.patientId || patientInfo.value.id || ''
-    );
+    activePatientAnchorId.value = resolvePatientContextAnchorId(patientInfo.value as any);
 
     prefillGeneratedRecordFromPatient(shouldReset);
   }
@@ -2636,14 +2647,19 @@ const filteredSymptoms = computed(() => {
   }
 
   // 2. Filter by Gender (Always Execute)
-  const currentGender = patientInfo.value?.sdSex;
+  const currentGender = getPatientContextGenderCode(patientInfo.value as any);
   if (currentGender) {
+    const compatibleGenders = currentGender === 'M'
+      ? ['M', '1']
+      : currentGender === 'F'
+        ? ['F', '2']
+        : [currentGender];
     result = result.filter((s: any) => {
       // Assuming 's.applicablePopulation' structure is now standardized
       if (!s.applicablePopulation?.genders || s.applicablePopulation.genders.length === 0) {
         return true;
       }
-      return s.applicablePopulation.genders.includes(currentGender);
+      return compatibleGenders.some((gender) => s.applicablePopulation.genders.includes(gender));
     });
   }
 
@@ -3103,9 +3119,9 @@ const fetchAIDiagnosis = async () => {
       console.log('[TCM Debug] Collected TCM Signs:', tcmSignsText);
 
       const userPrompt = PROMPTS.consultation.tcmDiagnosisRecommendation.buildUserPrompt({
-        patientName: patientInfo.value.naPi,
-        gender: patientInfo.value.sdSexText || '',
-        age: patientInfo.value.ageText || '',
+        patientName: patientPromptProfile.value.patientName,
+        gender: patientPromptProfile.value.gender,
+        age: patientPromptProfile.value.age,
         chiefComplaint: generatedRecord.value.chiefComplaint,
         historyOfPresentIllness: generatedRecord.value.historyOfPresentIllness,
         tcmSigns: tcmSignsText
@@ -3136,9 +3152,9 @@ const fetchAIDiagnosis = async () => {
     } else {
       // Western Medicine Logic (Existing)
       const userPrompt = PROMPTS.consultation.diagnosisRecommendation.buildUserPrompt({
-        patientName: patientInfo.value.naPi,
-        gender: patientInfo.value.sdSexText || '',
-        age: patientInfo.value.ageText || '',
+        patientName: patientPromptProfile.value.patientName,
+        gender: patientPromptProfile.value.gender,
+        age: patientPromptProfile.value.age,
         chiefComplaint: generatedRecord.value.chiefComplaint,
         historyOfPresentIllness: generatedRecord.value.historyOfPresentIllness
       });
@@ -3636,9 +3652,9 @@ const fetchTreatmentRecommendation = async () => {
 
     if (consultationMode.value === 'tcm') {
       const userPrompt = PROMPTS.consultation.tcmTreatmentRecommendation.buildUserPrompt({
-        patientName: patientInfo.value.naPi,
-        gender: patientInfo.value.sdSexText || '',
-        age: patientInfo.value.ageText || '',
+        patientName: patientPromptProfile.value.patientName,
+        gender: patientPromptProfile.value.gender,
+        age: patientPromptProfile.value.age,
         diagnosisName: selectedDiagnosis.value.name,
         chiefComplaint: generatedRecord.value.chiefComplaint
       });
@@ -3653,9 +3669,9 @@ const fetchTreatmentRecommendation = async () => {
       ));
     } else {
       const userPrompt = PROMPTS.consultation.treatmentRecommendation.buildUserPrompt({
-        patientName: patientInfo.value.naPi,
-        gender: patientInfo.value.sdSexText || '',
-        age: patientInfo.value.ageText || '',
+        patientName: patientPromptProfile.value.patientName,
+        gender: patientPromptProfile.value.gender,
+        age: patientPromptProfile.value.age,
         diagnosisName: selectedDiagnosis.value.name,
         diagnosisCode: selectedDiagnosis.value.code || '',
         chiefComplaint: generatedRecord.value.chiefComplaint
@@ -3735,9 +3751,9 @@ const fetchExamRecommendation = async () => {
   try {
     const startTime = Date.now();
     const userPrompt = PROMPTS.consultation.examinationRecommendation.buildUserPrompt({
-      patientName: patientInfo.value.naPi,
-      gender: patientInfo.value.sdSexText || '',
-      age: patientInfo.value.ageText || '',
+      patientName: patientPromptProfile.value.patientName,
+      gender: patientPromptProfile.value.gender,
+      age: patientPromptProfile.value.age,
       diagnosisName: selectedDiagnosis.value.name,
       diagnosisCode: selectedDiagnosis.value.code || '',
       chiefComplaint: generatedRecord.value.chiefComplaint
@@ -3808,9 +3824,9 @@ const fetchLabTestRecommendation = async () => {
   try {
     const startTime = Date.now();
     const userPrompt = PROMPTS.consultation.labTestRecommendation.buildUserPrompt({
-      patientName: patientInfo.value.naPi,
-      gender: patientInfo.value.sdSexText || '',
-      age: patientInfo.value.ageText || '',
+      patientName: patientPromptProfile.value.patientName,
+      gender: patientPromptProfile.value.gender,
+      age: patientPromptProfile.value.age,
       diagnosisName: selectedDiagnosis.value.name,
       diagnosisCode: selectedDiagnosis.value.code || '',
       chiefComplaint: generatedRecord.value.chiefComplaint
@@ -3881,9 +3897,9 @@ const fetchProcedureRecommendation = async () => {
   try {
     const startTime = Date.now();
     const userPrompt = PROMPTS.consultation.procedureRecommendation.buildUserPrompt({
-      patientName: patientInfo.value.naPi,
-      gender: patientInfo.value.sdSexText || '',
-      age: patientInfo.value.ageText || '',
+      patientName: patientPromptProfile.value.patientName,
+      gender: patientPromptProfile.value.gender,
+      age: patientPromptProfile.value.age,
       diagnosisName: selectedDiagnosis.value.name,
       diagnosisCode: selectedDiagnosis.value.code || '',
       chiefComplaint: generatedRecord.value.chiefComplaint

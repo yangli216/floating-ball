@@ -26,6 +26,15 @@ import type { HisPatientHistory, HisVisitRecord } from '../services/his/types';
 import { medicalDataService } from '../services/medicalData';
 import { resolveFeedbackActorFromUrt, setFeedbackActor } from '../services/feedbackContext';
 import { syncPatientMemoryFromHis } from '../services/patientMemoryStore';
+import {
+  buildPatientContext,
+  getPatientContextAgeText,
+  getPatientContextGenderCode,
+  getPatientContextGenderText,
+  getPatientContextHistory,
+  getPatientContextId,
+  getPatientContextName,
+} from '../utils/patientContext';
 
 /**
  * 事件监听配置参数
@@ -86,9 +95,15 @@ export interface EventListenersOptions {
 
 interface PatientRisksPayload {
   idPi?: string;
+  idVis?: string;
+  patientId?: string;
+  visitId?: string;
   naPi?: string;
+  name?: string;
   sdSexText?: string;
+  gender?: string;
   ageText?: string;
+  age?: string;
   chiefComplaint?: string;
   historyOfPresentIllness?: string;
   pastMedicalHistory?: string;
@@ -271,42 +286,16 @@ function resolveHandshakeUserRoleDeptIds(ctx: SdkHandshakePayload): string[] {
   ));
 }
 
-/**
- * 将各种来源的性别值统一转换为中文文本（"男性" / "女性"）。
- * 支持：PHIS 代码 '1'='男' / '2'='女'，英文 'M'/'F'/'male'/'female'，中文 "男"/"女"。
- * 未知时返回空字符串，**不做默认兜底**，由调用方决定如何处理缺失。
- */
-function resolveSdSexText(raw: unknown): string {
-  if (typeof raw !== 'string' || !raw.trim()) return '';
-  const v = raw.trim();
-  if (v === '1' || /^M$/i.test(v) || /^male$/i.test(v) || v.startsWith('男')) return '男性';
-  if (v === '2' || /^F$/i.test(v) || /^female$/i.test(v) || v.startsWith('女')) return '女性';
-  return v; // 透传原始文本（如已是"男性"/"女性"）
-}
-
 function mergePatientContext(
   currentPatient: AppPatient | null,
   payload: StartConsultationPayload | SessionAssistPayload | null | undefined
 ): AppPatient | null {
-  if (!payload) {
-    return currentPatient;
-  }
-
-  return {
-    ...(currentPatient || {}),
-    ...payload,
-    naPi: payload.naPi || payload.name || currentPatient?.patientName || currentPatient?.naPi || '未知',
-    idPi: payload.idPi || payload.patientId || currentPatient?.patientId || currentPatient?.idPi,
-    idVis: payload.idVis || payload.visitId || currentPatient?.idVis,
-    ageText: (() => {
-      if (payload.ageText) return payload.ageText;
-      const rawAge = currentPatient?.age;
-      if (typeof rawAge === 'number') return `${rawAge}岁`;
-      if (typeof rawAge === 'string' && rawAge.trim() !== '') return rawAge;
-      return '';
-    })(),
-    sdSexText: payload.sdSexText || resolveSdSexText(payload.gender ?? currentPatient?.gender ?? currentPatient?.sdSex),
-  };
+  return buildPatientContext({
+    existing: currentPatient,
+    payload: payload as Record<string, unknown> | null | undefined,
+    source: currentPatient?.source || 'event-payload',
+    receptionEnsured: currentPatient?.receptionEnsured ?? currentPatient?._receptionEnsured,
+  });
 }
 
 function readPatientFieldText(
@@ -432,6 +421,103 @@ function buildAllergyHistorySummary(
   return uniqHistoryTexts(hisHistory?.allergyHistory || []).join('；');
 }
 
+function applyClinicalHistorySummaries(
+  patient: AppPatient | null,
+  hisHistory: HisPatientHistory | null,
+): AppPatient | null {
+  if (!patient) {
+    return patient;
+  }
+
+  const pastMedicalHistory = buildPastMedicalHistorySummary(patient, hisHistory);
+  const allergyHistory = buildAllergyHistorySummary(patient, hisHistory);
+
+  return {
+    ...patient,
+    clinical: {
+      ...patient.clinical,
+      pastMedicalHistory: pastMedicalHistory || undefined,
+      allergyHistory: allergyHistory || undefined,
+      hisHistory,
+    },
+    hisHistory,
+    patientHistory: hisHistory,
+    pastMedicalHistory: pastMedicalHistory || undefined,
+    allergyHistory: allergyHistory || undefined,
+  };
+}
+
+function syncRiskStateFromPatient(patient: AppPatient | null): {
+  patientName: string;
+  patientGender: 'M' | 'F';
+  patientAge: number;
+} {
+  const patientName = getPatientContextName(patient) || '未知患者';
+  const genderCode = getPatientContextGenderCode(patient);
+  const genderText = getPatientContextGenderText(patient);
+  const patientGender: 'M' | 'F' = genderCode === 'F' || genderText.includes('女') ? 'F' : 'M';
+  const ageSource = getPatientContextAgeText(patient);
+  const patientAge = Number.parseInt(ageSource, 10) || 0;
+
+  return { patientName, patientGender, patientAge };
+}
+
+function buildIncomingPatientDraft(
+  payload: Record<string, unknown> | null | undefined,
+): AppPatient | null {
+  return buildPatientContext({ payload });
+}
+
+async function hydratePatientContextFromHis(
+  currentPatient: AppPatient | null,
+  payload: StartConsultationPayload | SessionAssistPayload | PatientRisksPayload | null | undefined,
+  source: string,
+): Promise<AppPatient | null> {
+  const nextDraft = buildPatientContext({
+    existing: currentPatient,
+    payload: payload as Record<string, unknown> | null | undefined,
+    source,
+    receptionEnsured: true,
+  });
+  const patientId = getPatientContextId(nextDraft);
+  if (!patientId) {
+    return nextDraft;
+  }
+
+  const existingHistory = getPatientContextHistory(nextDraft);
+  const samePatientLoaded = currentPatient
+    && getPatientContextId(currentPatient) === patientId
+    && (currentPatient.receptionEnsured || currentPatient._receptionEnsured)
+    && existingHistory;
+  if (samePatientLoaded) {
+    return nextDraft;
+  }
+
+  const adapter = getHisAdapter();
+  if (!adapter) {
+    return nextDraft;
+  }
+
+  const hisInfo = await adapter.fetchPatientInfo(patientId);
+  const hisHistory = await adapter.fetchPatientHistory(patientId);
+  let hydrated = buildPatientContext({
+    existing: nextDraft,
+    payload: payload as Record<string, unknown> | null | undefined,
+    hisInfo,
+    hisHistory,
+    source,
+    receptionEnsured: true,
+  });
+
+  hydrated = applyClinicalHistorySummaries(hydrated, hisHistory);
+
+  if (hisHistory) {
+    await syncPatientMemoryFromHis(patientId, hisHistory);
+  }
+
+  return hydrated;
+}
+
 // ensureReceptionContext removed, replaced by async ensureAndPrepareReceptionContext inside useEventListeners
 
 /**
@@ -491,7 +577,7 @@ export function useEventListeners(options: EventListenersOptions) {
   let activeReceptionPatientId: string | null = null;
 
   async function executeReceptionFlow(payload: StartConsultationPayload, quietMode = false): Promise<boolean> {
-    const patientId = (payload.idPi || payload.patientId) as string;
+    const patientId = getPatientContextId(buildIncomingPatientDraft(payload as Record<string, unknown> | null | undefined));
     if (!patientId) {
       showToast('接诊失败：未提供患者ID', 'error');
       return false;
@@ -512,26 +598,12 @@ export function useEventListeners(options: EventListenersOptions) {
     activeReceptionPromise = (async () => {
       trackApiCall('his_receive_patient', true, undefined, { patientId, auto: quietMode });
       try {
-        const adapter = getHisAdapter();
-        if (!adapter) {
-          showToast('接诊失败：HIS 适配器未初始化', 'error');
+        const nextPatient = await hydratePatientContextFromHis(currentPatient.value, payload, quietMode ? 'reception-auto' : 'receive-patient');
+        if (!nextPatient) {
+          showToast('接诊失败：患者上下文初始化失败', 'error');
           return false;
         }
-
-        // 1. 获取患者基本信息并合并上下文
-        const hisInfo = await adapter.fetchPatientInfo(patientId);
-        
-        const mergedPayload = hisInfo ? {
-          ...payload,
-          naPi: hisInfo.name,
-          sdSexText: hisInfo.gender === 'M' ? '男性' : (hisInfo.gender === 'F' ? '女性' : '未知'),
-          ageText: hisInfo.ageText || (hisInfo.age ? `${hisInfo.age}岁` : undefined),
-        } : payload;
-
-        currentPatient.value = {
-          ...(mergePatientContext(currentPatient.value, mergedPayload) || {}),
-          _receptionEnsured: true,
-        };
+        currentPatient.value = nextPatient;
 
         if (!quietMode) {
           // 2. 切换 UI 为胶囊态
@@ -555,26 +627,15 @@ export function useEventListeners(options: EventListenersOptions) {
         }
 
         // 重置并显示加载状态
-        riskPatientName.value = currentPatient.value.naPi || '未知患者';
-        riskPatientGender.value = currentPatient.value.sdSexText?.includes('女') ? 'F' : 'M';
-        riskPatientAge.value = parseInt(currentPatient.value.ageText || '') || 0;
+        const riskStateSnapshot = syncRiskStateFromPatient(currentPatient.value);
+        riskPatientName.value = riskStateSnapshot.patientName;
+        riskPatientGender.value = riskStateSnapshot.patientGender;
+        riskPatientAge.value = riskStateSnapshot.patientAge;
         riskItems.value = [];
         isRiskAnalyzing.value = true;
 
         try {
-          // 3. 异步拉取历史记录并提炼记忆
-          const hisHistory = await adapter.fetchPatientHistory(patientId);
-          if (hisHistory) {
-            currentPatient.value = {
-              ...(currentPatient.value || {}),
-              patientHistory: hisHistory,
-              pastMedicalHistory: buildPastMedicalHistorySummary(currentPatient.value, hisHistory),
-              allergyHistory: buildAllergyHistorySummary(currentPatient.value, hisHistory),
-            };
-            await syncPatientMemoryFromHis(patientId, hisHistory);
-          }
-
-          // 4. 触发风险评估
+          // 3. 触发风险评估
           const risks = await analyzePatientRisks(currentPatient.value);
           console.log('LLM Risk Analysis Result after reception:', risks);
           riskItems.value = risks || [];
@@ -603,10 +664,12 @@ export function useEventListeners(options: EventListenersOptions) {
     current: AppPatient | null,
     payload: StartConsultationPayload | SessionAssistPayload | null | undefined
   ): Promise<boolean> {
-    const incomingId = payload ? (payload.idPi || payload.patientId || '').toString().trim() : '';
+    const incomingId = getPatientContextId(buildIncomingPatientDraft(payload as Record<string, unknown> | null | undefined));
+    const currentId = getPatientContextId(current);
+    const currentReceptionEnsured = Boolean(current?.receptionEnsured || current?._receptionEnsured);
 
-    if (current && current.idPi && current._receptionEnsured) {
-      if (incomingId && incomingId !== String(current.idPi).trim()) {
+    if (current && currentId && currentReceptionEnsured) {
+      if (incomingId && incomingId !== currentId) {
         showToast('当前已接诊其他患者，请先结束当前就诊', 'error');
         return false;
       }
@@ -708,29 +771,20 @@ export function useEventListeners(options: EventListenersOptions) {
     unlistenPatientRisks = await listen<PatientRisksPayload>('show-patient-risks', async (event) => {
       console.log('Received patient risks request:', event.payload);
       const data = event.payload;
+      const incomingPatient = buildIncomingPatientDraft(data as Record<string, unknown> | null | undefined);
       trackApiCall('his_patient_risks', true, undefined, {
-        patientName: data.naPi,
+        patientId: getPatientContextId(incomingPatient) || undefined,
+        patientName: getPatientContextName(incomingPatient) || undefined,
         riskCount: data.risks?.length,
       });
 
-      // Update basic info immediately
-      riskPatientName.value = data.naPi || '未知患者';
-      riskPatientGender.value = data.sdSexText?.includes('女') ? 'F' : 'M';
-      riskPatientAge.value = parseInt(data.ageText || '') || 0;
+      currentPatient.value = await hydratePatientContextFromHis(currentPatient.value, data, 'show-patient-risks');
+      const riskStateSnapshot = syncRiskStateFromPatient(currentPatient.value);
+      riskPatientName.value = riskStateSnapshot.patientName;
+      riskPatientGender.value = riskStateSnapshot.patientGender;
+      riskPatientAge.value = riskStateSnapshot.patientAge;
       riskItems.value = [];
       isRiskAnalyzing.value = true;
-
-      // GLOBAL STATE: Set current patient context
-      currentPatient.value = {
-        ...data,
-        idPi: data.idPi,
-        name: data.naPi,
-        naPi: data.naPi,
-        sdSexText: data.sdSexText,
-        ageText: data.ageText,
-        // 接诊入口标记：后续 startVoice / startConsultation / assist 仅在该标记存在时放行
-        _receptionEnsured: true,
-      };
 
       // Switch to Reception Capsule View
       currentView.value = 'reception-capsule';
@@ -754,7 +808,7 @@ export function useEventListeners(options: EventListenersOptions) {
 
       // Otherwise, trigger LLM analysis
       try {
-        const risks = await analyzePatientRisks(data);
+        const risks = await analyzePatientRisks(currentPatient.value);
         console.log('LLM Risk Analysis Result:', risks);
         riskItems.value = risks || [];
       } catch (e) {
@@ -775,8 +829,9 @@ export function useEventListeners(options: EventListenersOptions) {
     unlistenStartConsultation = await listen<StartConsultationPayload>('start-consultation', async (event) => {
       console.log('Received consultation request:', event.payload);
       const payload = event.payload || {};
+      const incomingPatient = buildIncomingPatientDraft(payload as Record<string, unknown> | null | undefined);
       trackApiCall('his_start_consultation', true, undefined, {
-        patientId: payload.idPi || payload.patientId,
+        patientId: getPatientContextId(incomingPatient) || undefined,
       });
 
       // 入口拦截：必须先走过接诊流程，如果未接诊且带有 patientId，会自动补齐接诊流程
@@ -787,9 +842,7 @@ export function useEventListeners(options: EventListenersOptions) {
 
       // Update/Merge Global Patient Context
       // This ensures we have the correct keys (naPi, sdSexText) for ConsultationPage
-      currentPatient.value = {
-        ...(mergePatientContext(currentPatient.value, payload) || {}),
-      };
+      currentPatient.value = mergePatientContext(currentPatient.value, payload);
 
       await navigation.openConsultation();
     });
@@ -826,8 +879,9 @@ export function useEventListeners(options: EventListenersOptions) {
       async (event) => {
         console.log('Received consultation session request:', event.payload);
         const payload = event.payload || {};
+        const incomingPatient = buildIncomingPatientDraft(payload as Record<string, unknown> | null | undefined);
         trackApiCall('his_start_consultation_session', true, undefined, {
-          patientId: payload.idPi || payload.patientId,
+          patientId: getPatientContextId(incomingPatient) || undefined,
           action: payload.action,
         });
 
@@ -836,9 +890,7 @@ export function useEventListeners(options: EventListenersOptions) {
           return;
         }
 
-        currentPatient.value = {
-          ...(mergePatientContext(currentPatient.value, payload) || {}),
-        };
+        currentPatient.value = mergePatientContext(currentPatient.value, payload);
 
         const triggerKind = normalizeSessionTriggerKind(payload.action);
         if (triggerKind) {
@@ -875,7 +927,10 @@ export function useEventListeners(options: EventListenersOptions) {
   async function registerVoiceConsultationListener(): Promise<void> {
     unlistenStartVoiceConsultation = await listen<SessionAssistPayload | null>('start-voice-consultation', async (event) => {
       console.log('Received start voice consultation command');
-      trackApiCall('his_start_voice', true);
+      const incomingPatient = buildIncomingPatientDraft(event.payload as Record<string, unknown> | null | undefined);
+      trackApiCall('his_start_voice', true, undefined, {
+        patientId: getPatientContextId(incomingPatient) || undefined,
+      });
 
       const success = await ensureAndPrepareReceptionContext(currentPatient.value, event.payload);
       if (!success) {

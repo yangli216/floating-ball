@@ -1,3 +1,5 @@
+import type { AppPatient } from './appState';
+
 export interface DiagnosisEntry {
   name: string;
   code?: string;
@@ -42,18 +44,7 @@ export interface GeneratedRecord {
   healthEducation?: string;
 }
 
-export interface PatientInfo {
-  naPi?: string;
-  name?: string;
-  sdSexText?: string;
-  sex?: string;
-  ageText?: string;
-  age?: string | number;
-  idCard?: string;
-  mobilePhone?: string;
-  allergyHistory?: string;
-  [key: string]: unknown;
-}
+export type PatientInfo = AppPatient;
 
 export type VoiceSafetyIssueSeverity = 'high' | 'medium' | 'low';
 

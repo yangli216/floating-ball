@@ -57,6 +57,8 @@ import {
   inferFrequencyFromText as inferFrequencyFromTextPure,
   inferRouteFromText as inferRouteFromTextPure,
 } from '../utils/treatmentInference';
+import { resolvePatientAge, resolvePatientGender, resolvePatientName } from '../utils/patientProfile';
+import { getPatientContextAnchorId } from '../utils/patientContext';
 import { useMedicalDictionaries } from '../composables/useMedicalDictionaries';
 import { useTreatmentNormalization } from '../composables/useTreatmentNormalization';
 import { useTreatmentGates } from '../composables/useTreatmentGates';
@@ -130,9 +132,9 @@ const cancelDialogText = computed(() => consultationChannel.value === 'voice'
   : '放弃后将清空当前未提交的问诊结果，并退回小球状态。');
 
 const s = (value: unknown): string => (typeof value === 'string' ? value : '');
-const patientName = computed((): string => s(props.initialPatientData?.naPi) || s(props.initialPatientData?.['na_pi']) || s(props.initialPatientData?.name) || s(props.initialPatientData?.patientName) || s(props.initialPatientData?.['patient_name']));
-const patientGender = computed((): string => s(props.initialPatientData?.sdSexText) || s(props.initialPatientData?.sdSex));
-const patientAge = computed((): string => s(props.initialPatientData?.ageText) || (props.initialPatientData?.ageNum != null ? `${props.initialPatientData.ageNum}${s(props.initialPatientData.ageUnit) || '岁'}` : ''));
+const patientName = computed((): string => resolvePatientName(props.initialPatientData));
+const patientGender = computed((): string => resolvePatientGender(props.initialPatientData));
+const patientAge = computed((): string => resolvePatientAge(props.initialPatientData));
 const patientTetId = computed((): string => s(props.initialPatientData?.idTet));
 const consultationId = computed((): string => resolveConsultationId());
 
@@ -197,16 +199,7 @@ function ensureMedicineDefaultPharmacy(rec: TreatmentRecommendation): void {
 // 这里仅保留对外暴露的解构变量名（hydration.* -> 同名函数），call site 不变。
 
 const getPatientAnchorId = (): string => {
-  const patient = props.initialPatientData;
-  // 与 useVoiceConsultation.resolveVoiceConsultationId 一致：优先就诊 ID（idVis）
-  return String(
-    patient?.idVis
-      || patient?.idPi
-      || patient?.idTet
-      || patient?.idMpi
-      || (patient as { patientId?: string } | undefined)?.patientId
-      || ''
-  );
+  return getPatientContextAnchorId(props.initialPatientData);
 };
 
 const resolveConsultationId = (): string => getPatientAnchorId() || 'unknown';

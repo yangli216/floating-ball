@@ -5,12 +5,12 @@
         <Icon icon="mdi:account-circle" color="#ff9a9e" size="48" />
       </div>
 
-      <div class="patient-name">{{ patientInfo?.naPi || patientInfo?.name || '未知患者' }}</div>
+      <div class="patient-name">{{ displayName }}</div>
 
       <div class="patient-basic" v-if="patientInfo">
-        <span>{{ patientInfo.sdSexText || patientInfo.sex || '' }}</span>
-        <span class="divider" v-if="patientInfo.ageText || patientInfo.age"></span>
-        <span>{{ patientInfo.ageText || patientInfo.age || '' }}</span>
+        <span>{{ gender }}</span>
+        <span class="divider" v-if="gender && age"></span>
+        <span>{{ age }}</span>
       </div>
 
       <div class="tag-ai">🤖 AI 生成</div>
@@ -31,10 +31,12 @@
 </template>
 
 <script setup lang="ts">
+import { computed } from 'vue';
 import Icon from './Icon.vue';
 import type { PatientInfo } from '../types/voiceResult';
+import { getPatientContextAgeText, getPatientContextGenderText, getPatientContextName } from '../utils/patientContext';
 
-defineProps<{
+const props = defineProps<{
   patientInfo?: PatientInfo | null;
   confirmDisabled?: boolean;
 }>();
@@ -43,6 +45,10 @@ const emit = defineEmits<{
   confirm: [];
   cancel: [];
 }>();
+
+const displayName = computed(() => getPatientContextName(props.patientInfo as any) || '未知患者');
+const gender = computed(() => getPatientContextGenderText(props.patientInfo as any) || '');
+const age = computed(() => getPatientContextAgeText(props.patientInfo as any) || '');
 </script>
 
 <style scoped>

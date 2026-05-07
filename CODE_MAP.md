@@ -226,9 +226,16 @@ Pinia 跨组件共享状态（仅两个，新增需人工审批）。
 | 文件 | 职责 | 关键接口 |
 |------|------|---------|
 | **consultation.ts** | 问诊域类型 | `Diagnosis`, `Patient`, `TreatmentRecommendation`, `FinalRecord` |
-| **appState.ts** | 应用级状态类型 | `AppPatient`, `AppStore`, `ViewType` |
+| **appState.ts** | 应用级状态类型 | `PatientContext`, `AppPatient`, `AppStore`, `ViewType` |
+| **patientContext.ts** | 统一患者上下文类型 | `PatientContext` 及 identity / demographics / clinical 子结构 |
 | **consultationAssist.ts** | 灵活模式类型 | `ConsultationAssistRequest`, `DiagnosisPathOption` |
 | **feedback.ts** | 操作追踪类型 | `FeedbackEvent`, `SessionMetrics` |
+
+## 患者上下文约束
+
+1. `src/composables/useEventListeners.ts` 是唯一允许补全/写入全局患者上下文的地方。
+2. 外部事件（接诊、风险、问诊、语音）只允许提供患者主键和场景字段；标准患者基本信息与就诊历史必须通过 `HisAdapter.fetchPatientInfo/fetchPatientHistory` 获取。
+3. UI / AI prompt / 日志 / 缓存读取患者信息时，统一走 `PatientContext` 或对应 helper，不再各自做别名兼容。
 
 ---
 

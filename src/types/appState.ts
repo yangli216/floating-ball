@@ -1,31 +1,10 @@
+import type { PatientContext } from './patientContext';
+
 /**
  * 应用级患者上下文（跨 composable 共享）
  */
-export interface AppPatient {
-  id?: string;
-  idTet?: string;
-  idPi?: string;
-  idMpi?: string;
-  /** 就诊 ID（visit id），用于区分同一患者的多次就诊；缓存恢复以此为主键 */
-  idVis?: string;
-  patientId?: string;
-  patientName?: string;
-  piOi?: string;
-  name?: string;
-  naPi?: string;
-  gender?: 'M' | 'F' | string;
-  sdSexText?: string;
-  age?: number | string;
-  ageText?: string;
-  /**
-   * 是否已经走过 `receivePatient` 接诊流程（拉取过 HIS 详情/历史并完成风险评估）。
-   * 仅 `useEventListeners` 中的接诊处理器会置位；`stop-consultation` 会随 `currentPatient = null`
-   * 一并清空。其它问诊入口（startVoice / startConsultation / startConsultationSession）以此
-   * 作为强制门禁，不允许绕过接诊直接启动问诊。
-   */
-  _receptionEnsured?: boolean;
-  [key: string]: unknown;
-}
+export type AppPatient = PatientContext;
+export type { PatientContext } from './patientContext';
 
 /**
  * Tauri Store 最小能力接口（结构化类型，避免名义类型不兼容）

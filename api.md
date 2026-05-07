@@ -82,9 +82,10 @@
 | 字段名 | 类型 | 必填 | 说明 |
 | :--- | :--- | :--- | :--- |
 | `idPi` | String | 是 | 患者唯一标识 |
-| `naPi` | String | 是 | 患者姓名 |
-| `sdSexText` | String | 是 | 性别文本，如 `男性` / `女性` |
-| `ageText` | String | 是 | 年龄文本，如 `19岁` |
+| `idVis` | String | 否 | 当前就诊唯一标识；同一患者多次就诊时强烈建议传入 |
+| `naPi` | String | 否 | 患者姓名 |
+| `sdSexText` | String | 否 | 性别文本，如 `男性` / `女性` |
+| `ageText` | String | 否 | 年龄文本，如 `19岁` |
 | `department` | String | 否 | 当前科室 |
 | `idCard` | String | 否 | 身份证号 |
 | `mobilePhone` | String | 否 | 联系电话 |
@@ -110,9 +111,11 @@
 建议：
 
 1. 新接入项目统一使用标准字段名，不要长期依赖别名。
-2. `consultationId` 当前仍回传 `idPi / patientId`，不是独立的就诊流水号。
-3. 推荐在 `start-consultation` / `start-voice-consultation` 等入口同时下发 `idVis`（或别名 `visitId`）。桌面端会优先使用 `idVis` 作为语音问诊缓存与最小化会话的就诊锚点；缺失时回退到 `idPi / patientId`，但同一患者多次就诊会共享同一缓存条目，存在被旧就诊数据污染的风险。
-4. 如果你们 HIS 还没有就诊流水号，可暂时不传 `idVis`，但建议尽快补充。
+2. 接诊、完整问诊、灵活问诊、语音问诊、风险提醒这几类入口当前只强制要求 `idPi`；`naPi / sdSexText / ageText` 建议一并传入用于兜底展示，但桌面端在 HIS adapter 可用时会再按患者主键拉取标准化上下文。
+3. `consultationId` 当前仍回传 `idPi / patientId`，不是独立的就诊流水号。
+4. 推荐在 `start-consultation` / `assist` / `start-voice` / `patient-risks` 等入口同时下发 `idVis`（或别名 `visitId`）。桌面端会优先使用 `idVis` 作为语音问诊缓存与最小化会话的就诊锚点；缺失时回退到 `idPi / patientId`，但同一患者多次就诊会共享同一缓存条目，存在被旧就诊数据污染的风险。
+5. 如果你们 HIS 还没有就诊流水号，可暂时不传 `idVis`，但建议尽快补充。
+6. Bridge 对未显式建模的患者扩展字段采用“保留并透传”策略。也就是说，像 `idCard`、`mobilePhone`、`idTet`、`idMpi`、`vitals`、`currentMedicationHistory` 等字段，即使本文档未逐一列为固定入参，也会原样传递到前端患者上下文的 `raw` 区域，供后续标准化构建使用。
 
 ## 5. 典型业务时序
 
@@ -275,16 +278,18 @@ http://127.0.0.1:8081/api/consultation/start
 ```json
 {
   "idPi": "766842939207974912",
-  "naPi": "张虎",
-  "sdSexText": "男性",
-  "ageText": "19岁",
-  "department": "呼吸内科",
-  "idCard": "360731200607117442",
-  "mobilePhone": "13800138000",
-  "allergyHistory": "青霉素过敏",
+  "idVis": "VIS-20260507-001",
   "chiefComplaint": "咳嗽三天"
 }
 ```
+
+补充说明：
+
+1. `idPi` 是唯一硬要求字段。
+2. `idVis` 强烈建议传入，用于区分同一患者的不同就诊。
+3. `naPi / sdSexText / ageText`、病历草稿字段、联系方式等都属于可选增强字段；如果 HIS adapter 已正常握手，桌面端会优先按 `idPi` 拉取完整标准化患者上下文。
+4. 如果当前没有可用的 HIS adapter，桌面端会直接使用请求体中已有字段，因此建议至少补齐 `naPi / sdSexText / ageText` 作为兜底展示。
+5. 未显式列在表格中的患者扩展字段不会被 Bridge 丢弃，会继续透传到前端患者上下文中。
 
 成功响应：
 
@@ -317,9 +322,10 @@ http://127.0.0.1:8081/api/consultation/assist
 | :--- | :--- | :--- | :--- |
 | `action` | String | 是 | 支持 `record`(病历记录) / `diagnosis`(诊断推荐) / `differential`(鉴别诊断) / `medication`(用药方案) / `examination`(检查推荐) / `lab_test`(检验推荐) / `procedure`(处置推荐) / `reminder`(智能提醒) |
 | `idPi` | String | 是 | 患者唯一标识 |
-| `naPi` | String | 是 | 患者姓名 |
-| `sdSexText` | String | 是 | 性别文本 |
-| `ageText` | String | 是 | 年龄文本 |
+| `idVis` | String | 否 | 当前就诊唯一标识，强烈建议传入 |
+| `naPi` | String | 否 | 患者姓名 |
+| `sdSexText` | String | 否 | 性别文本 |
+| `ageText` | String | 否 | 年龄文本 |
 | 其他患者上下文字段 | Mixed | 否 | 参考第 4 节 |
 
 请求示例：
@@ -328,16 +334,9 @@ http://127.0.0.1:8081/api/consultation/assist
 {
   "action": "diagnosis",
   "idPi": "766842939207974912",
-  "naPi": "张虎",
-  "sdSexText": "男性",
-  "ageText": "19岁",
-  "department": "呼吸内科",
+  "idVis": "VIS-20260507-001",
   "chiefComplaint": "咳嗽三天",
-  "historyOfPresentIllness": "受凉后出现咳嗽、咳痰",
-  "pastMedicalHistory": "高血压10年",
-  "diagnosis": "急性支气管炎",
-  "vitals": "T 37.8℃，P 92次/分",
-  "allergyHistory": "青霉素过敏"
+  "historyOfPresentIllness": "受凉后出现咳嗽、咳痰"
 }
 ```
 
@@ -373,21 +372,18 @@ http://127.0.0.1:8081/api/consultation/start-voice
 请求说明：
 
 1. 请求体可以为空。
-2. 如果请求体不为空，字段结构与 `/start` 基本一致，推荐至少传入患者基础信息。
+2. 如果请求体不为空，`idPi` 是唯一硬要求字段。
+3. 推荐同时传 `idVis`；`naPi / sdSexText / ageText` 为可选兜底展示字段。
+4. 如果 HIS adapter 已正常握手，桌面端会优先按患者主键补齐标准化上下文。
 
 请求示例：
 
 ```json
 {
   "idPi": "766842939207974912",
-  "naPi": "张虎",
-  "sdSexText": "男性",
-  "ageText": "19岁",
-  "department": "呼吸内科",
+  "idVis": "VIS-20260507-001",
   "chiefComplaint": "咳嗽三天",
-  "historyOfPresentIllness": "受凉后出现咳嗽、咳痰",
-  "pastMedicalHistory": "高血压10年",
-  "diagnosis": "急性支气管炎"
+  "historyOfPresentIllness": "受凉后出现咳嗽、咳痰"
 }
 ```
 
@@ -927,9 +923,10 @@ http://127.0.0.1:8081/api/patient/risks
 | 字段名 | 类型 | 必填 | 说明 |
 | :--- | :--- | :--- | :--- |
 | `idPi` | String | 是 | 患者唯一标识 |
-| `naPi` | String | 是 | 患者姓名 |
-| `sdSexText` | String | 是 | 性别文本，如 `男性` / `女性` |
-| `ageText` | String | 是 | 年龄文本，如 `65岁` |
+| `idVis` | String | 否 | 当前就诊唯一标识，强烈建议传入 |
+| `naPi` | String | 否 | 患者姓名 |
+| `sdSexText` | String | 否 | 性别文本，如 `男性` / `女性` |
+| `ageText` | String | 否 | 年龄文本，如 `65岁` |
 | `chiefComplaint` | String | 否 | 主诉 |
 | `historyOfPresentIllness` | String | 否 | 现病史 |
 | `pastMedicalHistory` | String | 否 | 既往史 |
@@ -956,9 +953,7 @@ http://127.0.0.1:8081/api/patient/risks
 ```json
 {
   "idPi": "766842939207974912",
-  "naPi": "张虎",
-  "sdSexText": "男性",
-  "ageText": "65岁",
+  "idVis": "VIS-20260507-001",
   "chiefComplaint": "咳嗽三天",
   "historyOfPresentIllness": "受凉后出现咳嗽、咳痰",
   "pastMedicalHistory": "高血压10年，糖尿病5年",
@@ -975,9 +970,7 @@ http://127.0.0.1:8081/api/patient/risks
 ```json
 {
   "idPi": "766842939207974912",
-  "naPi": "张虎",
-  "sdSexText": "男性",
-  "ageText": "65岁",
+  "idVis": "VIS-20260507-001",
   "allergyHistory": "青霉素过敏",
   "risks": [
     {
@@ -998,6 +991,14 @@ http://127.0.0.1:8081/api/patient/risks
   ]
 }
 ```
+
+补充说明：
+
+1. `idPi` 是唯一硬要求字段。
+2. `idVis` 强烈建议传入，用于让风险提醒、语音缓存、最小化会话都能锚定到当前就诊。
+3. `naPi / sdSexText / ageText` 和各类病历上下文字段都属于可选增强字段；如果 HIS adapter 已正常握手，桌面端会优先按患者主键拉取标准化上下文。
+4. 如果请求里已经带了 `risks` 且非空，前端会直接展示这些预计算风险项，不再调用 LLM。
+5. 其他患者扩展字段也会被 Bridge 原样透传到前端，后续可参与患者上下文标准化和提示词构建。
 
 成功响应：
 

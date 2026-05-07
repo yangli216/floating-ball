@@ -134,9 +134,15 @@ pub struct RiskItem {
 #[derive(Debug, Serialize, Deserialize, Clone)]
 #[serde(rename_all = "camelCase")]
 pub struct PatientRiskData {
+    #[serde(alias = "patientId")]
     pub id_pi: String,
+    #[serde(default, alias = "visitId")]
+    pub id_vis: Option<String>,
+    #[serde(default, alias = "name")]
     pub na_pi: String,
+    #[serde(default, alias = "gender")]
     pub sd_sex_text: String,
+    #[serde(default, alias = "age")]
     pub age_text: String,
 
     pub chief_complaint: Option<String>,
@@ -147,6 +153,10 @@ pub struct PatientRiskData {
 
     #[serde(default)]
     pub risks: Vec<RiskItem>,
+
+    /// 保留未显式建模的患者扩展字段，继续透传给前端标准化层。
+    #[serde(default, flatten)]
+    pub extra: serde_json::Map<String, serde_json::Value>,
 }
 
 async fn receive_patient(
@@ -216,9 +226,14 @@ async fn start_consultation(
 
     let patient = data.into_inner();
     let request_summary = summarize_for_his_log(&patient);
+    let patient_label = if patient.na_pi.trim().is_empty() {
+        patient.id_pi.as_str()
+    } else {
+        patient.na_pi.as_str()
+    };
     println!(
         "Received consultation request for patient: {}",
-        patient.na_pi
+        patient_label
     );
 
     // 1. Update State
@@ -384,9 +399,14 @@ async fn start_consultation_assist(
 
     let request = data.into_inner();
     let request_summary = summarize_for_his_log(&request);
+    let patient_label = if request.patient.na_pi.trim().is_empty() {
+        request.patient.id_pi.as_str()
+    } else {
+        request.patient.na_pi.as_str()
+    };
     println!(
         "Received consultation session assist request for patient: {}, action: {}",
-        request.patient.na_pi, request.action
+        patient_label, request.action
     );
 
     {
@@ -1034,9 +1054,14 @@ async fn show_patient_risks(
 
     let risk_data = data.into_inner();
     let request_summary = summarize_for_his_log(&risk_data);
+    let patient_label = if risk_data.na_pi.trim().is_empty() {
+        risk_data.id_pi.as_str()
+    } else {
+        risk_data.na_pi.as_str()
+    };
     println!(
         "Received patient risk analysis request for: {}",
-        risk_data.na_pi
+        patient_label
     );
 
     // Emit event to Frontend

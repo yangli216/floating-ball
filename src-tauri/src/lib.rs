@@ -46,11 +46,11 @@ impl BrowserContext {
 pub struct PatientInfo {
     #[serde(alias = "patientId")]
     pub id_pi: String,          // 对应 idPi
-    #[serde(alias = "name")]
+    #[serde(default, alias = "name")]
     pub na_pi: String,          // 对应 naPi
-    #[serde(alias = "gender")]
+    #[serde(default, alias = "gender")]
     pub sd_sex_text: String,    // 对应 sdSexText
-    #[serde(alias = "age")]
+    #[serde(default, alias = "age")]
     pub age_text: String,       // 对应 ageText
 
     /// 就诊 ID（visit id）；同一患者多次就诊时用于区分缓存
@@ -63,6 +63,10 @@ pub struct PatientInfo {
     pub history_of_present_illness: Option<String>,
     pub past_medical_history: Option<String>,
     pub allergy_history: Option<String>,
+
+    /// 保留未显式建模的患者扩展字段，继续透传给前端标准化层。
+    #[serde(default, flatten)]
+    pub extra: serde_json::Map<String, serde_json::Value>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]

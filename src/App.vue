@@ -29,6 +29,12 @@ import { useNavigation } from "./composables/useNavigation";
 import { useVoiceConsultation } from "./composables/useVoiceConsultation";
 import { useEventListeners } from "./composables/useEventListeners";
 import { useMinimizedSessions } from "./composables/useMinimizedSessions";
+import {
+  getPatientContextAgeText,
+  getPatientContextGenderCode,
+  getPatientContextGenderText,
+  getPatientContextName,
+} from "./utils/patientContext";
 import { pmphaiService, isPMPHAIConfigured } from './services/pmphai';
 import { medicalDataService, type MedicalCatalogClearOptions, type MedicalCatalogClearResult, type MedicalCatalogDebugState } from "./services/medicalData";
 import {
@@ -93,7 +99,7 @@ const riskItems = ref<RiskItem[]>([]);
 const voiceInteractionSessionKey = ref(0);
 const consultationAssistTrigger = ref<{ kind: ConsultationAssistAction; token: number } | null>(null);
 const patientDisplayName = computed(
-  () => currentPatient.value?.name || currentPatient.value?.naPi || '未知患者'
+  () => getPatientContextName(currentPatient.value) || '未知患者'
 );
 const assistantTitle = computed(() => {
   switch (currentView.value) {
@@ -234,10 +240,9 @@ const {
 
 // 风险提示患者信息同步函数
 const syncRiskPatientInfo = (patient: AppPatient) => {
-  riskPatientName.value = patient.name || patient.naPi || '未知';
-  riskPatientGender.value = (patient.gender === 'F' || patient.sdSexText === '女性') ? 'F' : 'M';
-  const ageSource = patient.age ?? patient.ageText ?? '0';
-  const age = typeof ageSource === 'number' ? ageSource : Number.parseInt(String(ageSource), 10);
+  riskPatientName.value = getPatientContextName(patient) || '未知';
+  riskPatientGender.value = (getPatientContextGenderCode(patient) === 'F' || getPatientContextGenderText(patient) === '女性') ? 'F' : 'M';
+  const age = Number.parseInt(getPatientContextAgeText(patient), 10);
   riskPatientAge.value = Number.isFinite(age) ? age : 0;
 };
 
@@ -780,7 +785,7 @@ const openInsideCloudHome = async () => {
             ref="consultationPageRef"
             v-show="currentView === 'consultation'"
             @close="handleUserCollapse"
-            :initialPatientData="currentPatient"
+            :initialPatientData="currentPatient ?? undefined"
             :assistTrigger="consultationAssistTrigger"
             @consume-auto-trigger="clearConsultationAssistTrigger"
           />
