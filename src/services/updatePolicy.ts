@@ -59,10 +59,20 @@ export async function getCurrentClientVersion(): Promise<string> {
 
 export function notifyForceUpdateRequired(partial: Partial<ForceUpdateState> = {}): ForceUpdateState {
   const channel = partial.channel || getActiveUpdateChannel();
-  const minSupportedVersion = partial.minSupportedVersion || currentState.minSupportedVersion || partial.latestVersion;
+  const inferredMinSupportedVersion = partial.minSupportedVersion
+    || extractRequiredVersionFromMessage(partial.message)
+    || currentState.minSupportedVersion
+    || partial.latestVersion
+    || currentState.latestVersion
+    || null;
+  const latestVersion = pickHigherVersion(
+    partial.latestVersion,
+    currentState.latestVersion,
+    inferredMinSupportedVersion
+  );
   const message = partial.message
-    || (minSupportedVersion
-      ? `当前客户端版本过低，请升级到 ${minSupportedVersion} 或更高版本后继续使用`
+    || (inferredMinSupportedVersion
+      ? `当前客户端版本过低，请升级到 ${inferredMinSupportedVersion} 或更高版本后继续使用`
       : '当前客户端版本过低，请升级后继续使用');
 
   currentState = {
@@ -71,7 +81,8 @@ export function notifyForceUpdateRequired(partial: Partial<ForceUpdateState> = {
     required: true,
     channel,
     channelLabel: getUpdateEnvironmentLabel(channel),
-    minSupportedVersion,
+    minSupportedVersion: inferredMinSupportedVersion,
+    latestVersion,
     message,
   };
   listeners.forEach(listener => listener(currentState));
@@ -151,6 +162,42 @@ function normalizeVersion(value?: string | null): string {
     return '';
   }
   return text.replace(/^v/i, '');
+}
+
+function extractRequiredVersionFromMessage(message?: string | null): string | null {
+  const text = String(message || '').trim();
+  if (!text) {
+    return null;
+  }
+
+  const patterns = [
+    /升级到\s*([0-9A-Za-z._-]+)\s*或更高版本后继续使用/i,
+    /最低(?:可用)?版本\s*([0-9A-Za-z._-]+)/i,
+  ];
+
+  for (const pattern of patterns) {
+    const matched = text.match(pattern);
+    const version = normalizeVersion(matched?.[1]);
+    if (version) {
+      return version;
+    }
+  }
+
+  return null;
+}
+
+function pickHigherVersion(...candidates: Array<string | null | undefined>): string | null {
+  let best: string | null = null;
+  for (const candidate of candidates) {
+    const normalized = normalizeVersion(candidate);
+    if (!normalized) {
+      continue;
+    }
+    if (!best || compareVersions(normalized, best) > 0) {
+      best = normalized;
+    }
+  }
+  return best;
 }
 
 function compareVersions(currentVersion?: string | null, requiredVersion?: string | null): number {

@@ -98,7 +98,7 @@ import {
   saveUpdateConfig,
   type UpdateEnvironment,
 } from '../services/updateConfig';
-import { checkForceUpdateRequired } from '../services/updatePolicy';
+import { checkForceUpdateRequired, notifyForceUpdateRequired } from '../services/updatePolicy';
 
 interface UpdateInfo {
   version: string;
@@ -210,6 +210,12 @@ async function checkAndStore() {
     if (update) {
       updateAvailable.value = true;
       updateInfo.value = update;
+      if (props.forced) {
+        notifyForceUpdateRequired({
+          currentVersion: currentVersion.value,
+          latestVersion: update.version,
+        });
+      }
     }
   } catch (e: any) {
     console.error(e);
