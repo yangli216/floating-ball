@@ -18,6 +18,14 @@ import hljs from 'highlight.js';
 import 'highlight.js/styles/github-dark.css'; // 引入代码高亮样式
 import Icon from "./Icon.vue";
 
+// 定义事件
+const emit = defineEmits<{
+  (e: 'open-consultation-assist'): void;
+  (e: 'open-inside-cloud-home'): void;
+  (e: 'open-feedback-dialog'): void;
+  (e: 'handle-user-collapse'): void;
+}>();
+
 // 注入 showToast 方法
 const showToast = inject<(message: string) => void>('showToast');
 
@@ -44,7 +52,7 @@ const renderMarkdown = (content: string) => {
 
 const messages = ref<ChatMessage[]>([
   { role: "system", content: PROMPTS.chat.defaultSystem },
-  { role: "assistant", content: PROMPTS.chat.welcomeMessage }
+  { role: "assistant", content: PROMPTS.chat.welcomeMessage, isDefault: true }
 ]);
 
 const visibleMessages = computed(() => messages.value.filter(m => m.role !== 'system'));
@@ -274,12 +282,42 @@ async function handleFeedback(messageId: string, feedbackType: 'positive' | 'neg
 
 <template>
   <div class="chat-panel">
+   <div class="chat-panel-header" data-tauri-drag-region>
+      <div class="toolbar-left" data-tauri-drag-region>
+        <span class="assistant-title" data-tauri-drag-region>智医助理</span>
+      </div>
+      <div class="toolbar-right" style="display: flex; gap: 8px;">
+        <!-- <button class="icon-btn" aria-label="灵活触发" title="灵活触发" @click="emit('open-consultation-assist')">
+          <Icon icon="lucide:sparkles" class="toolbar-icon" size="20" />
+        </button> -->
+        <button class="icon-btn" aria-label="知识库" title="知识库" @click="emit('open-inside-cloud-home')">
+          <Icon icon="lucide:book-open" class="toolbar-icon" size="20" />
+        </button>
+        <button class="icon-btn feedback-entry-btn" aria-label="问题反馈" title="问题反馈" @click="emit('open-feedback-dialog')">
+          <Icon icon="lucide:message-square-warning" class="toolbar-icon" size="20" />
+        </button>
+        <button class="icon-btn" aria-label="收起" title="收起" @click="emit('handle-user-collapse')">
+          <Icon icon="lucide:chevron-down" class="toolbar-icon" size="20" />
+        </button>
+      </div>
+    </div>
     <div id="chat-scroll" class="chat-body">
       <div v-for="(m, idx) in visibleMessages" :key="idx" class="msg" :class="m.role">
-        <div class="msg-container">
-          <div class="bubble">
-            <div v-if="m.role === 'assistant'" class="markdown-body" v-html="renderMarkdown(m.content)"></div>
-            <div v-else class="user-text">{{ m.content }}</div>
+        <div v-if="m.isDefault" class="default-msg">
+          <img class="default-msg-icon" src="/loading.png" alt="AI Agent" />
+          <div class="default-msg-content">
+            <div class="default-msg-title">Hi，我是智医助理</div>
+            <div class="markdown-body" v-html="renderMarkdown(m.content)"></div>
+          </div>
+        </div>
+        <div v-else class="msg-container">
+          <div class="msg-container-item">
+            <img v-if="m.role === 'assistant'" class="avatar" style="margin-right: 10px;" src="/robot-avatar.png" alt="">
+            <div class="bubble">
+              <div v-if="m.role === 'assistant'" class="markdown-body" v-html="renderMarkdown(m.content)"></div>
+              <div v-else class="user-text">{{ m.content }}</div>
+            </div>
+            <img v-if="m.role !== 'assistant'" class="avatar" style="margin-left: 10px;" src="/avatar/oldman.png" alt="">
           </div>
           <!-- 反馈按钮（仅助手消息） -->
           <div v-if="m.role === 'assistant' && m.messageId" class="feedback-buttons">
@@ -309,7 +347,7 @@ async function handleFeedback(messageId: string, feedbackType: 'positive' | 'neg
 
     <div class="chat-footer">
       <div class="input-wrapper">
-        <label for="chat-input" class="sr-only">输入消息</label>
+        <!-- <label for="chat-input" class="sr-only">输入消息</label> -->
         <input
           id="chat-input"
           class="text-input"
@@ -320,31 +358,29 @@ async function handleFeedback(messageId: string, feedbackType: 'positive' | 'neg
           @compositionstart="onCompositionStart"
           @compositionend="onCompositionEnd"
           @keydown.enter="handleEnter"
+          style="height: calc(100% - 32px)"
         />
-        <label class="action-btn" title="选择图片" aria-label="选择图片">
-          <Icon icon="lucide:image" class="icon" size="18" aria-hidden="true" />
-          <input type="file" accept="image/*" @change="handleFileChange" hidden />
-        </label>
-        <button
-          class="action-btn"
-          :class="{ recording }"
-          @click="recording ? stopRecording() : startRecording()"
-          :aria-label="recording ? '停止录音' : '开始语音输入'"
-          :title="recording ? '停止录音' : '语音输入'"
-        >
-          <Icon :icon="recording ? 'lucide:mic-off' : 'lucide:mic'" class="icon" size="18" aria-hidden="true" />
-        </button>
+       <div class="chat-footer-tools">
+          <div class="chat-footer-tools-left">
+            <!-- <label class="action-btn" title="选择图片" aria-label="选择图片">
+              <Icon icon="lucide:image" class="icon" size="16" aria-hidden="true" />
+              <input type="file" accept="image/*" @change="handleFileChange" hidden />
+            </label> -->
+            <button class="action-btn" :class="{ recording }" @click="recording ? stopRecording() : startRecording()"
+              :aria-label="recording ? '停止录音' : '开始语音输入'" :title="recording ? '停止录音' : '语音输入'">
+              <Icon :icon="recording ? 'lucide:mic-off' : 'lucide:mic'" class="icon" size="16" aria-hidden="true" />
+            </button>
+          </div>
+          <div class="chat-footer-tools-right">
+            <button :class="{'send-btn': true, 'disabled': !input.trim() && !imageDataUrl}" :disabled="sending" :aria-busy="sending" :aria-label="sending ? '发送中...' : '发送消息'"
+              @click="handleSend">
+              <Icon v-if="sending" icon="lucide:loader-2" class="animate-spin" size="14" aria-hidden="true" />
+              <Icon v-else icon="lucide:send" size="14" aria-hidden="true" />
+              <span>发送</span>
+            </button>
+          </div>
+        </div>
       </div>
-      <button
-        class="send-btn"
-        :disabled="sending"
-        :aria-busy="sending"
-        :aria-label="sending ? '发送中...' : '发送消息'"
-        @click="handleSend"
-      >
-        <Icon v-if="sending" icon="lucide:loader-2" class="animate-spin" size="18" aria-hidden="true" />
-        <Icon v-else icon="lucide:send" size="18" aria-hidden="true" />
-      </button>
     </div>
   </div>
 
@@ -358,6 +394,26 @@ async function handleFeedback(messageId: string, feedbackType: 'positive' | 'neg
   flex-direction: column;
   background: transparent; /* 让父容器背景透过来 */
   color: var(--color-text-strong);
+  box-shadow: -4px 0px 12px 0px rgba(21,61,140,0.16);
+}
+
+.chat-panel-header {
+  width: 100%;
+  height: 48px;
+  padding: 12px 16px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.toolbar-left {
+}
+
+.assistant-title {
+  font-family: Microsoft YaHei, Microsoft YaHei;
+  font-weight: 700;
+  font-size: 16px;
+  color: #2469F2;
 }
 
 .chat-body {
@@ -383,6 +439,38 @@ async function handleFeedback(messageId: string, feedbackType: 'positive' | 'neg
 }
 .chat-body::-webkit-scrollbar-thumb:hover {
   background: var(--color-border-strong);
+}
+
+.default-msg {
+  padding: 0 14px;
+  position: relative;
+  margin: 0 auto;
+}
+
+.default-msg-icon {
+  position: absolute;
+  top: 48px;
+  left: 50%;
+  width: 84px;
+  height: 121px;
+  transform: translateX(-50%);
+  z-index: -1;
+}
+
+.default-msg-content {
+  margin-top: calc(121px / 2 + 60px);
+  background: #F2F8FF;
+  border-radius: 16px;
+  padding: 23px 32px;
+}
+
+.default-msg-title {
+  font-family: Microsoft YaHei, Microsoft YaHei;
+  font-weight: 700;
+  font-size: 20px;
+  color: #2469F2;
+  text-align: center;
+  margin-bottom: 10px;
 }
 
 /* 消息入场动画 */
@@ -411,9 +499,19 @@ async function handleFeedback(messageId: string, feedbackType: 'positive' | 'neg
   align-items: flex-end;
 }
 
+.msg-container-item {
+  display: flex;
+  align-items: flex-start;
+}
+
+.avatar {
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+}
+
 .bubble {
   padding: 10px 14px;
-  border-radius: 18px;
   line-height: 1.5;
   font-size: 14px;
   box-shadow: var(--shadow-sm);
@@ -423,9 +521,10 @@ async function handleFeedback(messageId: string, feedbackType: 'positive' | 'neg
 
 .msg.assistant .bubble {
   background: var(--surface-glass);
-  border-top-left-radius: 4px;
   color: var(--color-text-strong);
   border: 1px solid var(--color-border-light);
+  border-radius: 1px 8px 8px 16px;
+  border: 1px solid #CED3DB;
 }
 
 .msg.user .bubble {
@@ -433,12 +532,17 @@ async function handleFeedback(messageId: string, feedbackType: 'positive' | 'neg
   color: white;
   border-bottom-right-radius: 4px;
   box-shadow: 0 4px 12px var(--color-primary-200);
+  border-radius: 8px 0px 16px 8px;
 }
 
 /* Markdown 样式 */
 .markdown-body {
   font-size: 14px;
   line-height: 1.6;
+  font-family: Microsoft YaHei, Microsoft YaHei;
+  font-weight: 400;
+  font-size: 16px;
+  color: #262626;
 }
 .markdown-body :deep(p) { margin: 0 0 10px 0; }
 .markdown-body :deep(p:last-child) { margin-bottom: 0; }
@@ -478,6 +582,10 @@ async function handleFeedback(messageId: string, feedbackType: 'positive' | 'neg
 .user-text {
   white-space: pre-wrap;
   word-break: break-word;
+  font-family: Microsoft YaHei, Microsoft YaHei;
+  font-weight: 400;
+  font-size: 16px;
+  color: #FFFFFF;
 }
 
 .bubble pre {
@@ -503,28 +611,28 @@ async function handleFeedback(messageId: string, feedbackType: 'positive' | 'neg
 
 .chat-footer {
   flex-shrink: 0;
-  padding: 12px 16px 20px 16px; /* 底部稍微留多一点 */
-  background: var(--surface-glass);
-  backdrop-filter: blur(12px);
-  border-top: 1px solid var(--color-border-light);
+  height: 140px;
+  padding: 16px; /* 底部稍微留多一点 */
   display: flex;
   gap: 10px;
-  align-items: center;
-  flex-wrap: wrap;
+  align-items: stretch;
   position: relative;
+  box-sizing: border-box;
 }
 
 /* 输入框容器化，包含文件和语音按钮 */
 .input-wrapper {
   flex: 1;
-  height: 44px;
+  height: calc(100% - 4px);
   background: var(--color-background-white);
-  border-radius: 22px;
   display: flex;
-  align-items: center;
-  padding: 0 4px 0 16px;
-  border: 1px solid transparent;
+  flex-direction: column;
   transition: all var(--duration-normal) var(--ease-out);
+  border-radius: 12px;
+  border: 2px solid #CED3DB;
+  padding: 16px;
+  box-sizing: border-box;
+  overflow: hidden;
 }
 .input-wrapper:hover {
   border-color: var(--color-border-light);
@@ -537,13 +645,18 @@ async function handleFeedback(messageId: string, feedbackType: 'positive' | 'neg
 
 .text-input {
   flex: 1;
-  height: 100%;
-  border: none;
+  border: none !important;
   background: transparent;
   width: 100%;
   outline: none;
   font-size: 14px;
   color: var(--color-text-strong);
+  padding: 0;
+  box-sizing: border-box;
+  line-height: 1.5;
+  resize: none;
+  min-height: calc(100% - 32px);
+  max-height: 150px;
 }
 .text-input::placeholder { color: var(--color-text-muted); }
 
@@ -555,9 +668,21 @@ async function handleFeedback(messageId: string, feedbackType: 'positive' | 'neg
   border: none !important;
 }
 
+.chat-footer-tools {
+  width: 100%;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.chat-footer-tools-left {
+  display: flex;
+  align-items: center;
+}
+
 .action-btn {
-  width: 34px;
-  height: 34px;
+  width: 16px;
+  height: 16px;
   border: none;
   background: transparent;
   border-radius: 50%;
@@ -567,7 +692,7 @@ async function handleFeedback(messageId: string, feedbackType: 'positive' | 'neg
   justify-content: center;
   color: var(--color-text-muted);
   transition: all var(--duration-normal) var(--ease-out);
-  margin-left: 2px;
+  color: #262626;
 }
 .action-btn:hover {
   background: var(--color-primary-50);
@@ -588,9 +713,11 @@ async function handleFeedback(messageId: string, feedbackType: 'positive' | 'neg
 .action-btn .icon { width: 20px; height: 20px; }
 
 .send-btn {
-  height: 44px;
-  width: 44px; /* 圆形发送按钮 */
-  border-radius: 50%;
+  width: 80px;
+  min-height: 32px;
+  height: 32px;
+  max-height: 32px;
+  border-radius: 16px;
   border: none;
   background: linear-gradient(135deg, var(--color-cta) 0%, var(--color-cta-dark) 100%);
   color: white;
@@ -601,9 +728,19 @@ async function handleFeedback(messageId: string, feedbackType: 'positive' | 'neg
   justify-content: center;
   box-shadow: 0 4px 12px var(--color-cta-200);
   transition: all var(--duration-normal) cubic-bezier(0.34, 1.56, 0.64, 1);
+  font-family: Microsoft YaHei, Microsoft YaHei;
+  font-weight: 400;
+  font-size: 14px;
+}
+.send-btn.disabled {
+  background: #DBDBDB;
+  color: #999999;
+}
+.send-btn svg {
+  margin-right: 4px;
 }
 .send-btn:hover:not(:disabled) {
-  transform: scale(1.05) rotate(-10deg);
+  /* transform: scale(1.05) rotate(-10deg); */
   box-shadow: 0 6px 16px var(--color-cta-200);
 }
 .send-btn:active:not(:disabled) {
@@ -622,6 +759,7 @@ async function handleFeedback(messageId: string, feedbackType: 'positive' | 'neg
   display: flex;
   gap: 8px;
   margin-top: 8px;
+  margin-left: 50px;
   opacity: 0;
   transition: opacity var(--duration-normal) var(--ease-out);
 }

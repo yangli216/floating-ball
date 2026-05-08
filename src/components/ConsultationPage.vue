@@ -282,7 +282,13 @@
               <div v-if="item.key !== 'general' && item.key !== 'tcm_signs' && getSymptomRecommendations(item.key).length > 0" class="recommendation-panel">
                 <div class="recommendation-header">
                   <div class="recommendation-title">
-                    <Icon icon="lucide:sparkles" size="14" />
+                    <!-- <Icon icon="lucide:sparkles" size="14" /> -->
+                    <svg t="1778204819275" viewBox="0 0 1024 1024" version="1.1" xmlns="http://www.w3.org/2000/svg" p-id="7240" width="14" height="14">
+                      <!-- 右上角小圆形 - 颜色 #0CC3FB -->
+                      <path d="M636.864 213.568l18.496 8.64a192 192 0 0 1 102.656 119.616l4.16 14.08 16.192 55.04c1.792 6.08 10.496 6.08 12.288 0l16.192-55.04 4.16-14.08a192 192 0 0 1 102.656-119.68l18.496-8.576a6.4 6.4 0 0 0 0-11.648l-18.496-8.64a192 192 0 0 1-102.656-119.616l-4.16-14.08-16.192-55.04c-1.792-6.08-10.496-6.08-12.288 0l-16.192 55.04-4.16 14.08a192.064 192.064 0 0 1-102.656 119.68l-18.496 8.576a6.4 6.4 0 0 0 0 11.648z" fill="#0CC3FB" stroke="#0CC3FB" stroke-width="1"/>
+                      <!-- 左下角大圆形 - 颜色 #2469F2 -->
+                      <path d="M70.464 517.76a10.944 10.944 0 0 0 0 19.968 547.648 547.648 0 0 1 293.184 326.528l3.2 9.536 5.568 17.024 15.936 48.128a12.8 12.8 0 0 0 24.32 0l15.872-48.128 5.632-17.024 3.2-9.536a547.456 547.456 0 0 1 293.184-326.528 10.944 10.944 0 0 0 0-19.968 547.648 547.648 0 0 1-293.248-326.528l-3.136-9.536-21.504-65.152a12.8 12.8 0 0 0-24.32 0l-15.936 48.128-5.632 17.024-3.136 9.536A547.456 547.456 0 0 1 70.4 517.76z" fill="#2469F2" stroke="#2469F2" stroke-width="1"/>
+                    </svg>
                     <span class="recommendation-title-word">伴随症状推荐</span>
                   </div>
                 </div>
@@ -4855,7 +4861,7 @@ void removedSymptomRecordViewSymbols;
   padding: 0;
   gap: 0;
   border-bottom: 1px solid #EEF2F6;
-  background: #FAFBFD;
+  /* background: #FAFBFD; */
   flex-shrink: 0;
 }
 
@@ -4873,6 +4879,7 @@ void removedSymptomRecordViewSymbols;
   font-weight: 500;
   white-space: nowrap;
   text-align: center;
+  font-family: Microsoft YaHei, Microsoft YaHei;
 }
 
 .tab-btn:hover {
@@ -5268,7 +5275,7 @@ void removedSymptomRecordViewSymbols;
   align-items: center;
 }
 
-.form-header h2::before {
+/* .form-header h2::before {
   content: '';
   display: inline-block;
   width: 3px;
@@ -5276,7 +5283,7 @@ void removedSymptomRecordViewSymbols;
   background: #2B7FE3;
   margin-right: 10px;
   border-radius: 2px;
-}
+} */
 
 .section-title {
   margin: 16px 0 10px 0;
@@ -5378,7 +5385,7 @@ void removedSymptomRecordViewSymbols;
   outline: none;
   transition: all 0.2s ease;
   color: #1E293B;
-  font-size: 13px;
+  font-size: 14px;
   background: #fff;
 }
 
@@ -6870,8 +6877,8 @@ void removedSymptomRecordViewSymbols;
   gap: 16px;
   background: rgba(255, 255, 255, 0.4);
   border-radius: 12px;
-  margin: 8px 24px 24px 24px;
-  border: 2px dashed var(--color-info-bg);
+  margin: 0 8px 8px;
+  /* border: 2px dashed var(--color-info-bg); */
 }
 
 /* Final Report Styles */

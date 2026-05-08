@@ -268,10 +268,10 @@ const filteredSymptoms = computed(() => {
 
 /* -- Category Symptoms Area -- */
 .category-symptoms {
-  background: #FAFBFD;
-  border: 1px solid #EEF2F6;
-  border-radius: 8px;
-  padding: 10px;
+  /* background: #FAFBFD; */
+  /* border: 1px solid #EEF2F6; */
+  /* border-radius: 8px; */
+  /* padding: 10px; */
   flex: 1;
   min-height: 0;
   overflow-y: auto;

@@ -747,12 +747,12 @@ const openInsideCloudHome = async () => {
         <div 
           class="assistant-container" 
           :class="{ 'no-toolbar': isForceUpdateRequired || currentView === 'risk-alert' || currentView === 'voice-interaction' || currentView === 'reception-capsule', 'is-content-hidden': !contentVisible }"
-          :style="currentView === 'reception-capsule' ? { borderRadius: '16px', background: 'transparent', backdropFilter: 'none', WebkitBackdropFilter: 'none', border: 'none', boxShadow: 'none' } : { borderRadius: '20px' }"
+          :style="currentView === 'reception-capsule' ? { borderRadius: '16px', background: 'transparent', backdropFilter: 'none', WebkitBackdropFilter: 'none', border: 'none', boxShadow: 'none' } : currentView === 'chat' ? { borderRadius: '8px', paddingTop: '0' } : { borderRadius: '20px' }"
         >
           <ForceUpdateGate v-if="isForceUpdateRequired" :state="forceUpdateState" />
           <template v-else>
           <!-- 工具栏 (risk-alert, voice-interaction, reception-capsule 视图不显示) -->
-          <div v-if="currentView !== 'risk-alert' && currentView !== 'voice-interaction' && currentView !== 'reception-capsule'" class="assistant-toolbar" data-tauri-drag-region>
+          <div v-if="currentView !== 'risk-alert' && currentView !== 'voice-interaction' && currentView !== 'reception-capsule' && currentView !== 'chat'" class="assistant-toolbar" data-tauri-drag-region>
             <div class="toolbar-left" data-tauri-drag-region>
 	              <button v-if="currentView === 'settings' || currentView === 'analytics' || currentView === 'symptom-manage' || currentView === 'his-log' || currentView === 'medical-cache' || currentView === 'knowledge-base'" class="icon-btn back-btn" @click="currentView === 'analytics' ? openChat() : handleUserCollapse()" title="返回">
 	                 <Icon icon="lucide:arrow-left" class="toolbar-icon" size="20" />
@@ -789,7 +789,13 @@ const openInsideCloudHome = async () => {
             :assistTrigger="consultationAssistTrigger"
             @consume-auto-trigger="clearConsultationAssistTrigger"
           />
-          <ChatPanel v-if="currentView === 'chat'" />
+          <ChatPanel
+            v-if="currentView === 'chat'"
+            @open-consultation-assist="openConsultationAssist"
+            @open-inside-cloud-home="openInsideCloudHome"
+            @open-feedback-dialog="openFeedbackDialog"
+            @handle-user-collapse="handleUserCollapse"
+          />
           <RiskAlertPanel
             v-if="currentView === 'risk-alert'"
             :patientName="riskPatientName"
@@ -895,8 +901,8 @@ const openInsideCloudHome = async () => {
 }
 
 .floating-ball {
-  width: 52px;
-  height: 52px;
+  width: 56px;
+  height: 56px;
   border-radius: 50%;
   background: linear-gradient(135deg, #4DA2FF 0%, #2B7FE3 50%, #1A6FD5 100%);
   display: flex;
@@ -941,7 +947,7 @@ const openInsideCloudHome = async () => {
 }
 
 /* 展开时的柔和光晕背景 */
-.ring-menu::before {
+/* .ring-menu::before {
   content: '';
   position: absolute;
   top: 50%;
@@ -962,7 +968,7 @@ const openInsideCloudHome = async () => {
   transform: scale(0.5);
   transition: all 0.35s cubic-bezier(0.34, 1.56, 0.64, 1);
   z-index: -1;
-}
+} */
 
 .ring-menu.is-active::before {
   opacity: 1;
@@ -974,7 +980,7 @@ const openInsideCloudHome = async () => {
   pointer-events: auto;
 }
 
-.floating-ball:hover,
+/* .floating-ball:hover,
 .floating-ball.is-hovered {
   transform: scale(1.08);
   box-shadow:
@@ -987,13 +993,13 @@ const openInsideCloudHome = async () => {
   animation-play-state: paused;
   opacity: 0.8;
   transform: scale(1.2);
-}
+} */
 
 /* 环绕菜单按钮 */
 .ring-btn {
   position: absolute;
-  width: 34px;
-  height: 34px;
+  width: 40px;
+  height: 40px;
   border-radius: 50%;
   border: 1px solid rgba(43, 127, 227, 0.08);
   background: rgba(255, 255, 255, 0.92);
@@ -1042,7 +1048,7 @@ const openInsideCloudHome = async () => {
 .ring-btn.is-disabled,
 .ring-btn:disabled {
   cursor: not-allowed;
-  opacity: 0.4;
+  /* opacity: 0.4; */
   filter: grayscale(0.6);
 }
 
@@ -1069,10 +1075,10 @@ const openInsideCloudHome = async () => {
 .ring-icon { width: 16px; height: 16px; stroke-width: 1.8; }
 
 /* 按钮分布位置 */
-.ring-btn.top { top: 16px; left: 47%; margin-left: -17px; }
-.ring-btn.right { top: 50%; right: 16px; margin-top: -17px; }
-.ring-btn.bottom { bottom: 16px; left: 47%; margin-left: -17px; }
-.ring-btn.left { top: 50%; left: 16px; margin-top: -17px; }
+.ring-btn.top { top: 4px; left: 47%; margin-left: -17px; }
+.ring-btn.right { top: 50%; right: 4px; margin-top: -17px; }
+.ring-btn.bottom { bottom: 4px; left: 47%; margin-left: -17px; }
+.ring-btn.left { top: 50%; left: 4px; margin-top: -17px; }
 
 /* 未激活时的收缩动画 */
 .ring-menu:not(.is-active):not(div:hover > *) .ring-btn.top { transform: translateY(12px) scale(0.1); }
@@ -1092,8 +1098,8 @@ const openInsideCloudHome = async () => {
 }
 
 .robot-avatar {
-  width: 48px;
-  height: 48px;
+  width: 56x;
+  height: 56px;
   border-radius: 50%;
   object-fit: cover;
   transition: transform 0.35s cubic-bezier(0.34, 1.56, 0.64, 1);

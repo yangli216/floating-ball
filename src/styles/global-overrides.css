@@ -2887,7 +2887,7 @@ html.dark .analytics-panel .range-btn.active {
   border-bottom: 2px solid transparent !important;
   border-radius: 0 !important;
   background: transparent !important;
-  color: #999999 !important;
+  color: #262626 !important;
   font-size: 14px !important;
   padding: 10px 16px !important;
   font-weight: 400 !important;
@@ -2986,7 +2986,7 @@ html.dark .analytics-panel .range-btn.active {
   font-weight: 600 !important;
 }
 
-[data-theme="consultation-blue"] .form-header h2::before {
+/* [data-theme="consultation-blue"] .form-header h2::before {
   content: '' !important;
   display: inline-block !important;
   width: 3px !important;
@@ -2995,12 +2995,12 @@ html.dark .analytics-panel .range-btn.active {
   border-radius: 2px !important;
   margin-right: 8px !important;
   vertical-align: middle !important;
-}
+} */
 
 /* --- 问诊蓝: 表单字段 --- */
 [data-theme="consultation-blue"] .field-label {
   color: #262626 !important;
-  font-size: 12px !important;
+  font-size: 14px !important;
   font-weight: 500 !important;
 }
 
@@ -3011,7 +3011,7 @@ html.dark .analytics-panel .range-btn.active {
   background: transparent !important;
   padding: 4px 8px !important;
   border-radius: 4px !important;
-  font-size: 12px !important;
+  font-size: 14px !important;
   color: #262626 !important;
   box-shadow: none !important;
   backdrop-filter: none !important;
@@ -3163,7 +3163,7 @@ input[type="checkbox"]:checked {
 
 [data-theme="consultation-blue"] .recommendation-chip:hover {
   color: #1A5CD4 !important;
-  text-decoration: underline !important;
+  /* text-decoration: underline !important; */
   transform: none !important;
   box-shadow: none !important;
 }
@@ -3262,13 +3262,13 @@ input[type="checkbox"]:checked {
 /* --- 问诊蓝: 空状态 --- */
 [data-theme="consultation-blue"] .empty-state {
   background: #FFFFFF !important;
-  border: 2px dashed #E8E8E8 !important;
+  border: none !important;
   color: #999999 !important;
 }
 
 /* --- 问诊蓝: 聊天面板 --- */
 [data-theme="consultation-blue"] .chat-panel {
-  background: #F5F7FA !important;
+  background: linear-gradient(180deg, #E7F4FF 0%, #FFFFFF 100%) top/100% 30% no-repeat, #FFFFFF !important;
 }
 
 [data-theme="consultation-blue"] .chat-message.assistant {
@@ -3341,9 +3341,9 @@ input[type="checkbox"]:checked {
 }
 
 [data-theme="consultation-blue"] .body-part-selector .body-diagram {
-  background: #F5F7FA !important;
-  border: 1px solid #E8E8E8 !important;
-  border-radius: 8px !important;
+  /* background: #F5F7FA !important; */
+  /* border: 1px solid #E8E8E8 !important; */
+  /* border-radius: 8px !important; */
   backdrop-filter: none !important;
   -webkit-backdrop-filter: none !important;
 }

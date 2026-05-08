@@ -3751,14 +3751,14 @@ watch(
   min-height: 0;
   overflow-y: auto;
   overflow-x: hidden;
-  padding: 16px 20px;
+  padding: 16px;
   scrollbar-gutter: stable;
 }
 
 .pane-card {
   background: var(--voice-surface-glass);
   border: 1px solid var(--voice-border);
-  border-radius: 18px;
+  border-radius: 8px;
   box-shadow:
     0 1px 0 rgba(255, 255, 255, 0.72) inset,
     0 10px 24px rgba(15, 23, 42, 0.035),
@@ -4019,7 +4019,7 @@ watch(
   padding: 10px 16px;
   background: linear-gradient(90deg, #DCECFF 0%, rgba(189, 220, 255, 0) 100%);
   border-bottom: 1px solid #EEF2F6;
-  border-radius: 18px 18px 0 0;
+  border-radius: 8px 8px 0 0;
 }
 
 .vcn-left-panel > .section-heading {
@@ -4068,7 +4068,7 @@ watch(
   align-items: center;
 }
 
-.section-title::before {
+/* .section-title::before {
   content: '';
   display: inline-block;
   width: 3px;
@@ -4076,7 +4076,7 @@ watch(
   background: #2B7FE3;
   margin-right: 10px;
   border-radius: 2px;
-}
+} */
 
 .section-meta {
   flex-shrink: 0;
@@ -5081,7 +5081,7 @@ watch(
 
 @media (max-width: 900px) {
   .voice-content {
-    padding: 12px 16px;
+    padding: 16px;
   }
 
   .record-content {

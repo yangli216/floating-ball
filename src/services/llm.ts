@@ -11,6 +11,7 @@ export interface ChatMessage {
   llmModel?: string;
   latencyMs?: number;
   createdAt?: number;
+  isDefault?: boolean; // 是否为默认消息
 }
 
 export const DEFAULT_LLM_CONFIG = {

@@ -151,7 +151,7 @@ const avatarSrc = computed(() => {
   justify-content: space-between;
   flex-wrap: nowrap;
   background: linear-gradient(135deg, #1A6FD5 0%, #2B7FE3 50%, #4A9BF5 100%);
-  padding: 10px 16px;
+  padding: 12px 16px;
   box-shadow: 0 1px 6px rgba(43, 127, 227, 0.2);
   z-index: 10;
   flex-shrink: 0;
@@ -169,8 +169,8 @@ const avatarSrc = computed(() => {
 }
 
 .avatar-img {
-  width: 36px;
-  height: 36px;
+  width: 24px;
+  height: 24px;
 }
 
 .patient-name {
@@ -209,7 +209,7 @@ const avatarSrc = computed(() => {
   background: #E03134;
   color: #fff;
   padding: 2px 8px;
-  border-radius: 10px;
+  border-radius: 16px;
   font-size: 12px;
   font-weight: 400;
   border: 1px solid #FFFFFF;
@@ -222,7 +222,6 @@ const avatarSrc = computed(() => {
   gap: 16px;
   font-size: 13px;
   color: rgba(255, 255, 255, 0.85);
-  margin-left: auto;
 }
 
 @media (max-width: 800px) {
