@@ -215,17 +215,17 @@ function handleEnter(e: KeyboardEvent) {
   handleSend();
 }
 
-function handleFileChange(e: Event) {
-  const files = (e.target as HTMLInputElement).files;
-  if (!files || files.length === 0) return;
-  const file = files[0];
-  const reader = new FileReader();
-  reader.onload = () => {
-    imageDataUrl.value = reader.result as string;
-    trackClick('chat_image_upload');
-  };
-  reader.readAsDataURL(file);
-}
+// function handleFileChange(e: Event) {
+//   const files = (e.target as HTMLInputElement).files;
+//   if (!files || files.length === 0) return;
+//   const file = files[0];
+//   const reader = new FileReader();
+//   reader.onload = () => {
+//     imageDataUrl.value = reader.result as string;
+//     trackClick('chat_image_upload');
+//   };
+//   reader.readAsDataURL(file);
+// }
 
 async function startRecording() {
   try {
