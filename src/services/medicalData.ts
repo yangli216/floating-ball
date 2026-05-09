@@ -94,6 +94,7 @@ export interface Icd10CategoryInfo {
 
 export interface MedicalCatalogContext {
   orgCode?: string | null;
+  tenantId?: string | null;
 }
 
 interface MedicalCatalogSnapshot {
@@ -113,6 +114,8 @@ export interface MedicalCatalogDebugState {
   syncStates: Array<{
     catalogType: string;
     orgCode: string;
+    tenantId?: string | null;
+    storeId?: string | null;
     lastSyncAt: number;
     syncDate?: string | null;
     rowCount: number;
@@ -122,6 +125,12 @@ export interface MedicalCatalogDebugState {
 export interface MedicalCatalogClearOptions {
   catalogType?: 'all' | 'diagnoses' | 'items' | 'medicines';
   orgCode?: string;
+  tenantId?: string;
+  storeId?: string;
+}
+
+interface MedicalCatalogSyncOptions {
+  force?: boolean;
 }
 
 export interface MedicalCatalogClearResult {
@@ -224,6 +233,7 @@ class MedicalDataService {
 
   private catalog: MedicalCatalog;
   private currentOrgCode: string | null = null;
+  private currentTenantId: string | null = null;
   private localSyncPromise: Promise<void> | null = null;
   /** 仅匹配这些发药药房（idSto）下的药品；null 表示尚未获得药房上下文，空集合表示无可用药房 */
   private activeMedicineStoreIds: Set<string> | null = null;
@@ -352,9 +362,35 @@ class MedicalDataService {
     return result;
   }
 
-  private normalizeOrgCode(orgCode?: string | null): string | null {
-    const normalized = orgCode?.trim();
+  private normalizeScopeValue(value?: string | null): string | null {
+    const normalized = value?.trim();
     return normalized ? normalized : null;
+  }
+
+  private buildCatalogScopePayload(storeIds?: string[] | null): {
+    orgCode?: string;
+    tenantId?: string;
+    storeIds?: string[];
+  } {
+    const payload: {
+      orgCode?: string;
+      tenantId?: string;
+      storeIds?: string[];
+    } = {};
+
+    if (this.currentOrgCode) {
+      payload.orgCode = this.currentOrgCode;
+    }
+    if (this.currentTenantId) {
+      payload.tenantId = this.currentTenantId;
+    }
+
+    const normalizedStoreIds = this.normalizeStoreIds(storeIds);
+    if (normalizedStoreIds.length > 0) {
+      payload.storeIds = normalizedStoreIds;
+    }
+
+    return payload;
   }
 
   private getTodayTag(): string {
@@ -372,9 +408,7 @@ class MedicalDataService {
 
   private async loadPersistedCatalogSnapshot(): Promise<MedicalCatalogSnapshot | null> {
     try {
-      return await invoke<MedicalCatalogSnapshot>('load_medical_catalog_snapshot', {
-        orgCode: this.currentOrgCode,
-      });
+      return await invoke<MedicalCatalogSnapshot>('load_medical_catalog_snapshot', this.buildCatalogScopePayload());
     } catch (error) {
       console.warn('[MedicalData] Failed to load SQLite catalog snapshot:', error);
       return null;
@@ -403,6 +437,7 @@ class MedicalDataService {
       this.catalog.items = this.normalizeMedicalItems(snapshot.items);
       console.log('[MedicalData] Item cache restored from SQLite', {
         orgCode: this.currentOrgCode,
+        tenantId: this.currentTenantId,
         itemCount: snapshot.items.length,
         syncDate: snapshot.itemSyncDate,
       });
@@ -412,6 +447,7 @@ class MedicalDataService {
       this.catalog.medicines = this.normalizeMedicineItems(snapshot.medicines);
       console.log('[MedicalData] Medicine cache restored from SQLite', {
         orgCode: this.currentOrgCode,
+        tenantId: this.currentTenantId,
         itemCount: snapshot.medicines.length,
         syncDate: snapshot.medicineSyncDate,
       });
@@ -425,20 +461,33 @@ class MedicalDataService {
     });
   }
 
-  private async persistMedicalItemCatalog(orgCode: string, items: MedicalItem[], syncDate: string): Promise<void> {
+  private async persistMedicalItemCatalog(
+    orgCode: string,
+    tenantId: string | null,
+    items: MedicalItem[],
+    syncDate: string
+  ): Promise<void> {
     await invoke('replace_org_medical_item_catalog', {
       orgCode,
+      tenantId,
       items,
       syncDate,
     });
     console.log('[MedicalData] Medical items catalog persisted to SQLite', {
       orgCode,
+      tenantId,
       itemCount: items.length,
       syncDate,
     });
   }
 
-  private async persistMedicineCatalog(orgCode: string, items: MedicineItem[], syncDate: string): Promise<void> {
+  private async persistMedicineCatalog(
+    orgCode: string,
+    tenantId: string | null,
+    storeIds: string[] | null | undefined,
+    items: MedicineItem[],
+    syncDate: string
+  ): Promise<void> {
     // 后端仅读 id/code/name/spec/storeIds，显式裁剪减小 IPC payload
     const payload = items.map((item) => ({
       id: item.id,
@@ -449,11 +498,15 @@ class MedicalDataService {
     }));
     await invoke('replace_org_medicine_catalog', {
       orgCode,
+      tenantId,
+      storeIds: this.normalizeStoreIds(storeIds),
       items: payload,
       syncDate,
     });
     console.log('[MedicalData] Medicine catalog persisted to SQLite', {
       orgCode,
+      tenantId,
+      storeIds: this.normalizeStoreIds(storeIds),
       itemCount: items.length,
       syncDate,
     });
@@ -487,26 +540,37 @@ class MedicalDataService {
     return [...ICD10_CATEGORY_GROUPS];
   }
 
-  public async setCatalogContext(context: MedicalCatalogContext): Promise<void> {
-    const nextOrgCode = this.normalizeOrgCode(context.orgCode);
+  public async setCatalogContext(
+    context: MedicalCatalogContext,
+    options: MedicalCatalogSyncOptions = {}
+  ): Promise<void> {
+    const nextOrgCode = this.normalizeScopeValue(context.orgCode);
+    const nextTenantId = this.normalizeScopeValue(context.tenantId);
     const orgChanged = nextOrgCode !== this.currentOrgCode;
+    const tenantChanged = nextTenantId !== this.currentTenantId;
     console.log('[MedicalData] setCatalogContext', {
       currentOrgCode: this.currentOrgCode,
+      currentTenantId: this.currentTenantId,
       nextOrgCode,
+      nextTenantId,
       orgChanged,
+      tenantChanged,
     });
 
     this.currentOrgCode = nextOrgCode;
+    this.currentTenantId = nextTenantId;
 
-    if (orgChanged) {
+    if (orgChanged || tenantChanged) {
       this.resetOrgScopedCatalogs();
     }
 
-    await this.ensureLocalCatalogsSynced();
+    await this.ensureLocalCatalogsSynced(options);
   }
 
-  public async ensureLocalCatalogsSynced(): Promise<void> {
-    if (isRegionalMode()) {
+  public async ensureLocalCatalogsSynced(options: MedicalCatalogSyncOptions = {}): Promise<void> {
+    const forceSync = options.force === true;
+
+    if (isRegionalMode() && !forceSync) {
       console.log('[MedicalData] Local HIS catalog sync skipped in regional mode');
       return;
     }
@@ -516,23 +580,36 @@ class MedicalDataService {
 
     const hisService = getHisAdapter();
     if (!hisService) {
+      if (forceSync) {
+        throw new Error('未检测到有效的 HIS 握手上下文，请先从 HIS 页面发起一次有效握手后再强制同步');
+      }
       console.warn('[MedicalData] HisAdapter not ready, skip local catalog sync');
       return;
+    }
+
+    if (forceSync && !this.currentOrgCode) {
+      throw new Error('缺少有效的握手机构上下文，请先完成 HIS 握手后再强制同步');
     }
 
     if (!this.localSyncPromise) {
       console.log('[MedicalData] Start local catalog sync', {
         orgCode: this.currentOrgCode,
+        tenantId: this.currentTenantId,
+        forceSync,
       });
-      this.localSyncPromise = this.syncLocalCatalogs(hisService, snapshot).finally(() => {
+      this.localSyncPromise = this.syncLocalCatalogs(hisService, snapshot, options).finally(() => {
         console.log('[MedicalData] Local catalog sync finished', {
           orgCode: this.currentOrgCode,
+          tenantId: this.currentTenantId,
+          forceSync,
         });
         this.localSyncPromise = null;
       });
     } else {
       console.log('[MedicalData] Reuse in-flight local catalog sync', {
         orgCode: this.currentOrgCode,
+        tenantId: this.currentTenantId,
+        forceSync,
       });
     }
 
@@ -544,9 +621,14 @@ class MedicalDataService {
   }
 
   public async clearDebugCache(options: MedicalCatalogClearOptions = {}): Promise<MedicalCatalogClearResult> {
+    const normalizedOrgCode = this.normalizeScopeValue(options.orgCode ?? this.currentOrgCode);
+    const normalizedTenantId = this.normalizeScopeValue(options.tenantId ?? this.currentTenantId);
+    const normalizedStoreId = this.normalizeScopeValue(options.storeId);
     const result = await invoke<MedicalCatalogClearResult>('clear_medical_catalog_cache', {
       catalogType: options.catalogType ?? 'all',
-      orgCode: options.orgCode ?? this.currentOrgCode ?? '',
+      orgCode: normalizedOrgCode ?? undefined,
+      tenantId: normalizedTenantId ?? undefined,
+      storeId: normalizedStoreId ?? undefined,
     });
 
     if (!options.catalogType || options.catalogType === 'all' || options.catalogType === 'diagnoses') {
@@ -746,21 +828,23 @@ class MedicalDataService {
       return;
     }
 
-    const cacheKey = normalizedStoreIds.slice().sort().join(',');
     const today = this.getTodayTag();
     let snapshot: MedicalCatalogSnapshot | null = null;
 
     console.log('[MedicalData] Ensure medicine catalog for active pharmacy storeIds', {
-      cacheKey,
+      orgCode: this.currentOrgCode,
+      tenantId: this.currentTenantId,
       storeIds: normalizedStoreIds,
       regionalMode: isRegionalMode(),
     });
 
     try {
-      snapshot = await invoke<MedicalCatalogSnapshot>('load_medical_catalog_snapshot', { orgCode: cacheKey });
+      snapshot = await invoke<MedicalCatalogSnapshot>('load_medical_catalog_snapshot', this.buildCatalogScopePayload(normalizedStoreIds));
     } catch (error) {
       console.warn('[MedicalData] Failed to load pharmacy-scoped medicine cache', {
-        cacheKey,
+        orgCode: this.currentOrgCode,
+        tenantId: this.currentTenantId,
+        storeIds: normalizedStoreIds,
         error: error instanceof Error ? error.message : String(error),
       });
     }
@@ -768,7 +852,9 @@ class MedicalDataService {
     if (snapshot?.medicines.length) {
       this.catalog.medicines = this.normalizeMedicineItems(snapshot.medicines);
       console.log('[MedicalData] Medicine cache restored by active pharmacy storeIds', {
-        cacheKey,
+        orgCode: this.currentOrgCode,
+        tenantId: this.currentTenantId,
+        storeIds: normalizedStoreIds,
         itemCount: snapshot.medicines.length,
         syncDate: snapshot.medicineSyncDate,
       });
@@ -780,7 +866,8 @@ class MedicalDataService {
 
     if (!snapshot?.medicines.length) {
       console.warn('[MedicalData] Pharmacy-scoped medicine cache is empty, refreshing from HIS', {
-        cacheKey,
+        orgCode: this.currentOrgCode,
+        tenantId: this.currentTenantId,
         activeStoreIds: normalizedStoreIds,
       });
     }
@@ -794,21 +881,26 @@ class MedicalDataService {
       const medicines = this.normalizeMedicineItems(await adapter.fetchInstitutionMedicineCatalog(this.currentOrgCode || ''));
       if (!medicines.length) {
         console.warn('[MedicalData] Medicine catalog refresh returned empty result for active pharmacies', {
-          cacheKey,
+          orgCode: this.currentOrgCode,
+          tenantId: this.currentTenantId,
           activeStoreIds: normalizedStoreIds,
         });
         return;
       }
 
       this.catalog.medicines = medicines;
-      await this.persistMedicineCatalog(cacheKey, medicines, today);
+      await this.persistMedicineCatalog(this.currentOrgCode || '', this.currentTenantId, normalizedStoreIds, medicines, today);
       console.log('[MedicalData] Medicine catalog refreshed by active pharmacy storeIds', {
-        cacheKey,
+        orgCode: this.currentOrgCode,
+        tenantId: this.currentTenantId,
+        storeIds: normalizedStoreIds,
         itemCount: medicines.length,
       });
     } catch (error) {
       console.warn('[MedicalData] Failed to refresh medicine catalog for active pharmacies; cached catalog remains in use', {
-        cacheKey,
+        orgCode: this.currentOrgCode,
+        tenantId: this.currentTenantId,
+        storeIds: normalizedStoreIds,
         error: error instanceof Error ? error.message : String(error),
       });
     }
@@ -1552,9 +1644,11 @@ class MedicalDataService {
 
   private async syncLocalCatalogs(
     hisService: HisAdapter,
-    snapshot: MedicalCatalogSnapshot | null
+    snapshot: MedicalCatalogSnapshot | null,
+    options: MedicalCatalogSyncOptions = {}
   ): Promise<void> {
-    await this.syncGlobalDiagnosesIfNeeded(hisService, snapshot);
+    const forceSync = options.force === true;
+    await this.syncGlobalDiagnosesIfNeeded(hisService, snapshot, forceSync);
 
     if (!this.currentOrgCode) {
       console.warn('[MedicalData] Skip org-scoped catalog sync because orgCode is missing');
@@ -1563,8 +1657,8 @@ class MedicalDataService {
 
     const orgCode = this.currentOrgCode;
     await Promise.allSettled([
-      this.syncInstitutionItemsIfNeeded(hisService, orgCode, snapshot),
-      this.syncInstitutionMedicinesIfNeeded(hisService, orgCode, snapshot),
+      this.syncInstitutionItemsIfNeeded(hisService, orgCode, snapshot, forceSync),
+      this.syncInstitutionMedicinesIfNeeded(hisService, orgCode, snapshot, forceSync),
       this.syncActivePharmacyStoreIds(hisService),
     ]);
   }
@@ -1584,6 +1678,8 @@ class MedicalDataService {
         : await hisService.fetchMedicineStoreIds(this.currentOrgCode || '');
       this.setActivePharmacyStoreIds(storeIds);
       console.log('[MedicalData] Active pharmacy storeIds synced for matching', {
+        orgCode: this.currentOrgCode,
+        tenantId: this.currentTenantId,
         storeIds,
         pharmacyCount: pharmacies.length,
       });
@@ -1597,9 +1693,10 @@ class MedicalDataService {
 
   private async syncGlobalDiagnosesIfNeeded(
     hisService: HisAdapter,
-    snapshot: MedicalCatalogSnapshot | null
+    snapshot: MedicalCatalogSnapshot | null,
+    forceSync = false
   ): Promise<void> {
-    if (snapshot?.diagnoses.length) {
+    if (!forceSync && snapshot?.diagnoses.length) {
       console.log('[MedicalData] Skip diagnosis sync, cache hit', {
         itemCount: snapshot.diagnoses.length,
         syncedAt: snapshot.diagnosisSyncedAt,
@@ -1628,12 +1725,14 @@ class MedicalDataService {
   private async syncInstitutionItemsIfNeeded(
     hisService: HisAdapter,
     orgCode: string,
-    snapshot: MedicalCatalogSnapshot | null
+    snapshot: MedicalCatalogSnapshot | null,
+    forceSync = false
   ): Promise<void> {
     const today = this.getTodayTag();
-    if (snapshot?.items.length && snapshot.itemSyncDate === today) {
+    if (!forceSync && snapshot?.items.length && snapshot.itemSyncDate === today) {
       console.log('[MedicalData] Skip medical items sync, same-day SQLite cache hit', {
         orgCode,
+        tenantId: this.currentTenantId,
         itemCount: snapshot.items.length,
         syncDate: snapshot.itemSyncDate,
       });
@@ -1643,6 +1742,7 @@ class MedicalDataService {
     try {
       console.log('[MedicalData] Fetch medical items catalog from HIS', {
         orgCode,
+        tenantId: this.currentTenantId,
         hasCache: Boolean(snapshot?.items.length),
         cacheDate: snapshot?.itemSyncDate,
         today,
@@ -1656,9 +1756,10 @@ class MedicalDataService {
       }
 
       this.catalog.items = items;
-      await this.persistMedicalItemCatalog(orgCode, items, today);
+      await this.persistMedicalItemCatalog(orgCode, this.currentTenantId, items, today);
       console.log('[MedicalData] Medical items catalog synced', {
         orgCode,
+        tenantId: this.currentTenantId,
         itemCount: items.length,
       });
     } catch (error) {
@@ -1669,7 +1770,8 @@ class MedicalDataService {
   private async syncInstitutionMedicinesIfNeeded(
     hisService: HisAdapter,
     orgCode: string,
-    snapshot: MedicalCatalogSnapshot | null
+    snapshot: MedicalCatalogSnapshot | null,
+    forceSync = false
   ): Promise<void> {
     const today = this.getTodayTag();
 
@@ -1678,17 +1780,20 @@ class MedicalDataService {
     try {
       storeIds = await hisService.fetchMedicineStoreIds(orgCode);
     } catch (error) {
-      console.warn('[MedicalData] Failed to fetch medicine store IDs, fallback to org-scoped cache', { orgCode, error });
+      console.warn('[MedicalData] Failed to fetch medicine store IDs, fallback to org-tenant-scoped cache', {
+        orgCode,
+        tenantId: this.currentTenantId,
+        error,
+      });
       storeIds = [];
     }
 
-    const cacheKey = storeIds.length > 0 ? storeIds.slice().sort().join(',') : orgCode;
+    const normalizedStoreIds = this.normalizeStoreIds(storeIds);
 
-    // 用药房维度的 cacheKey 加载 SQLite 快照（与 items 使用的 orgCode 快照分开）
     let pharmacySnapshot: MedicalCatalogSnapshot | null = null;
-    if (cacheKey !== orgCode) {
+    if (normalizedStoreIds.length > 0) {
       try {
-        pharmacySnapshot = await invoke<MedicalCatalogSnapshot>('load_medical_catalog_snapshot', { orgCode: cacheKey });
+        pharmacySnapshot = await invoke<MedicalCatalogSnapshot>('load_medical_catalog_snapshot', this.buildCatalogScopePayload(normalizedStoreIds));
       } catch {
         pharmacySnapshot = null;
       }
@@ -1701,9 +1806,11 @@ class MedicalDataService {
       this.catalog.medicines = this.normalizeMedicineItems(pharmacySnapshot.medicines);
     }
 
-    if (pharmacySnapshot?.medicines.length && pharmacySnapshot.medicineSyncDate === today) {
+    if (!forceSync && pharmacySnapshot?.medicines.length && pharmacySnapshot.medicineSyncDate === today) {
       console.log('[MedicalData] Skip medicine sync, same-day pharmacy-scoped SQLite cache hit', {
-        cacheKey,
+        orgCode,
+        tenantId: this.currentTenantId,
+        storeIds: normalizedStoreIds,
         itemCount: pharmacySnapshot.medicines.length,
         syncDate: pharmacySnapshot.medicineSyncDate,
       });
@@ -1713,22 +1820,28 @@ class MedicalDataService {
     try {
       console.log('[MedicalData] Fetch medicine catalog from HIS', {
         orgCode,
-        cacheKey,
+        tenantId: this.currentTenantId,
+        storeIds: normalizedStoreIds,
         hasCache: Boolean(pharmacySnapshot?.medicines.length),
         cacheDate: pharmacySnapshot?.medicineSyncDate,
         today,
       });
       const medicines = this.normalizeMedicineItems(await hisService.fetchInstitutionMedicineCatalog(orgCode));
       if (!medicines.length) {
-        console.warn('[MedicalData] Medicine catalog returned empty result', { orgCode, cacheKey });
+        console.warn('[MedicalData] Medicine catalog returned empty result', {
+          orgCode,
+          tenantId: this.currentTenantId,
+          storeIds: normalizedStoreIds,
+        });
         return;
       }
 
       this.catalog.medicines = medicines;
-      await this.persistMedicineCatalog(cacheKey, medicines, today);
+      await this.persistMedicineCatalog(orgCode, this.currentTenantId, normalizedStoreIds, medicines, today);
       console.log('[MedicalData] Medicine catalog synced', {
         orgCode,
-        cacheKey,
+        tenantId: this.currentTenantId,
+        storeIds: normalizedStoreIds,
         itemCount: medicines.length,
       });
     } catch (error) {

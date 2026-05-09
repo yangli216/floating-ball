@@ -36,7 +36,13 @@ import {
   getPatientContextName,
 } from "./utils/patientContext";
 import { pmphaiService, isPMPHAIConfigured } from './services/pmphai';
-import { medicalDataService, type MedicalCatalogClearOptions, type MedicalCatalogClearResult, type MedicalCatalogDebugState } from "./services/medicalData";
+import {
+  medicalDataService,
+  type MedicalCatalogClearOptions,
+  type MedicalCatalogClearResult,
+  type MedicalCatalogContext,
+  type MedicalCatalogDebugState,
+} from "./services/medicalData";
 import {
   checkForceUpdateRequired,
   getCurrentForceUpdateState,
@@ -51,7 +57,7 @@ const ForceUpdateGate = defineAsyncComponent(() => import("./components/ForceUpd
 type MedicalCatalogDebugApi = {
   help: () => string[];
   state: () => Promise<MedicalCatalogDebugState>;
-  sync: (orgCode?: string | null) => Promise<MedicalCatalogDebugState>;
+  sync: (context?: string | MedicalCatalogContext | null) => Promise<MedicalCatalogDebugState>;
   clear: (options?: MedicalCatalogClearOptions) => Promise<MedicalCatalogClearResult>;
   sample: (limit?: number) => {
     diagnoses: ReturnType<typeof medicalDataService.getAllDiagnoses>;
@@ -166,9 +172,11 @@ function createMedicalCatalogDebugApi(): MedicalCatalogDebugApi {
       const messages = [
         'window.__medicalCatalogDebug__.state()  // 查看 SQLite 缓存状态',
         'window.__medicalCatalogDebug__.sync()  // 按当前机构上下文触发同步',
-        "window.__medicalCatalogDebug__.sync('机构ID')  // 切换机构并同步",
+        "window.__medicalCatalogDebug__.sync('机构ID')  // 仅切换机构并同步",
+        "window.__medicalCatalogDebug__.sync({ orgCode: '机构ID', tenantId: '租户ID' })  // 切换机构/租户并同步",
         'window.__medicalCatalogDebug__.clear()  // 清空全部目录缓存',
-        "window.__medicalCatalogDebug__.clear({ catalogType: 'items', orgCode: '机构ID' })  // 清理指定机构诊疗项目",
+        "window.__medicalCatalogDebug__.clear({ catalogType: 'items', orgCode: '机构ID', tenantId: '租户ID' })  // 清理指定机构/租户诊疗项目",
+        "window.__medicalCatalogDebug__.clear({ catalogType: 'medicines', orgCode: '机构ID', tenantId: '租户ID', storeId: '药房ID' })  // 清理指定药房药品缓存",
         'window.__medicalCatalogDebug__.sample(5)  // 查看当前内存目录前几条'
       ];
       messages.forEach((message) => console.info(message));
@@ -177,9 +185,12 @@ function createMedicalCatalogDebugApi(): MedicalCatalogDebugApi {
     async state() {
       return printState(await medicalDataService.getDebugState());
     },
-    async sync(orgCode?: string | null) {
-      if (typeof orgCode !== 'undefined') {
-        await medicalDataService.setCatalogContext({ orgCode });
+    async sync(context?: string | MedicalCatalogContext | null) {
+      if (typeof context !== 'undefined') {
+        const nextContext = typeof context === 'string'
+          ? { orgCode: context }
+          : (context || {});
+        await medicalDataService.setCatalogContext(nextContext);
       } else {
         await medicalDataService.ensureLocalCatalogsSynced();
       }

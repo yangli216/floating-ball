@@ -152,9 +152,15 @@ const HANDSHAKE_ORG_CODE_FIELDS = [
   'institutionId',
   'hospitalCode',
   'hospitalId',
-  'tenantId',
   'organizationCode',
   'medicalInstitutionCode'
+] as const;
+
+const HANDSHAKE_TENANT_ID_FIELDS = [
+  'idTet',
+  'tenantId',
+  'tenantCode',
+  'tetId'
 ] as const;
 
 function readHandshakeStringField(
@@ -220,6 +226,29 @@ function resolveHandshakeOrgCode(ctx: SdkHandshakePayload): string | null {
 
   for (const source of nestedSources) {
     for (const field of HANDSHAKE_ORG_CODE_FIELDS) {
+      const value = readHandshakeStringField(source, field);
+      if (value) {
+        return value;
+      }
+    }
+  }
+
+  return null;
+}
+
+function resolveHandshakeTenantId(ctx: SdkHandshakePayload): string | null {
+  const extra = (ctx.extra && typeof ctx.extra === 'object') ? ctx.extra as Record<string, unknown> : undefined;
+  const urt = resolveUrtPayload(extra?.urt);
+  const nestedSources: Array<Record<string, unknown> | undefined> = [
+    urt,
+    ctx as Record<string, unknown>,
+    extra,
+    (extra?.tenant && typeof extra.tenant === 'object') ? extra.tenant as Record<string, unknown> : undefined,
+    (extra?.org && typeof extra.org === 'object') ? extra.org as Record<string, unknown> : undefined,
+  ];
+
+  for (const source of nestedSources) {
+    for (const field of HANDSHAKE_TENANT_ID_FIELDS) {
       const value = readHandshakeStringField(source, field);
       if (value) {
         return value;
@@ -727,6 +756,7 @@ export function useEventListeners(options: EventListenersOptions) {
       const baseUrl = ctx.origin;
       const token = ctx.extra?.emrAccessToken;
       const orgCode = resolveHandshakeOrgCode(ctx);
+      const tenantId = resolveHandshakeTenantId(ctx);
       const userRoleDeptIds = resolveHandshakeUserRoleDeptIds(ctx);
 
       // 缓存反馈 actor（医生/机构/科室），供 userFeedback / voiceFeedback 提交时使用
@@ -741,6 +771,7 @@ export function useEventListeners(options: EventListenersOptions) {
         console.log('[EventListeners] HisService initialized with origin:', baseUrl, {
           hasToken: Boolean(token),
           orgCode,
+          tenantId,
           userRoleDeptIds,
         });
       } else {
@@ -750,6 +781,7 @@ export function useEventListeners(options: EventListenersOptions) {
           hasBaseUrl: Boolean(baseUrl),
           hasToken: Boolean(token),
           orgCode,
+          tenantId,
           userRoleDeptIds,
         });
       }
@@ -758,7 +790,7 @@ export function useEventListeners(options: EventListenersOptions) {
         console.warn('[EventListeners] Handshake did not resolve orgCode, org-scoped medical catalogs will be skipped');
       }
 
-      await medicalDataService.setCatalogContext({ orgCode });
+      await medicalDataService.setCatalogContext({ orgCode, tenantId });
     });
   }
 

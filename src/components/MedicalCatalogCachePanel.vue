@@ -15,8 +15,11 @@ const loading = ref(false);
 const syncing = ref(false);
 const clearing = ref(false);
 const message = ref('');
+const messageTone = ref<'neutral' | 'success' | 'error'>('neutral');
 const catalogType = ref<CatalogType>('all');
 const orgCode = ref('');
+const tenantId = ref('');
+const storeId = ref('');
 
 const totalRows = computed(() => {
   if (!state.value) return 0;
@@ -32,10 +35,12 @@ const latestSyncTime = computed(() => {
 async function refreshState(): Promise<void> {
   loading.value = true;
   message.value = '';
+  messageTone.value = 'neutral';
   try {
     state.value = await medicalDataService.getDebugState();
   } catch (error) {
     message.value = `加载缓存状态失败：${formatError(error)}`;
+    messageTone.value = 'error';
   } finally {
     loading.value = false;
   }
@@ -44,17 +49,24 @@ async function refreshState(): Promise<void> {
 async function syncCatalogs(): Promise<void> {
   syncing.value = true;
   message.value = '';
+  messageTone.value = 'neutral';
   try {
     const nextOrgCode = orgCode.value.trim();
-    if (nextOrgCode) {
-      await medicalDataService.setCatalogContext({ orgCode: nextOrgCode });
+    const nextTenantId = tenantId.value.trim();
+    if (nextOrgCode || nextTenantId) {
+      await medicalDataService.setCatalogContext({
+        orgCode: nextOrgCode || null,
+        tenantId: nextTenantId || null,
+      }, { force: true });
     } else {
-      await medicalDataService.ensureLocalCatalogsSynced();
+      await medicalDataService.ensureLocalCatalogsSynced({ force: true });
     }
     await refreshState();
-    message.value = '基础数据同步已完成';
+    message.value = '基础数据已强制同步完成';
+    messageTone.value = 'success';
   } catch (error) {
     message.value = `同步失败：${formatError(error)}`;
+    messageTone.value = 'error';
   } finally {
     syncing.value = false;
   }
@@ -63,22 +75,38 @@ async function syncCatalogs(): Promise<void> {
 async function clearCache(): Promise<void> {
   const selectedType = catalogType.value;
   const selectedOrg = orgCode.value.trim();
+  const selectedTenant = tenantId.value.trim();
+  const selectedStore = storeId.value.trim();
   const scopeText = selectedType === 'all' ? '全部基础数据缓存' : getCatalogLabel(selectedType);
-  const orgText = selectedOrg ? `（机构/缓存键：${selectedOrg}）` : '';
-  if (!window.confirm(`确认清理${scopeText}${orgText}？清理后可重新同步。`)) return;
+  const parts = [
+    selectedOrg ? `机构：${selectedOrg}` : '',
+    selectedTenant ? `租户：${selectedTenant}` : '',
+    selectedStore ? `药房：${selectedStore}` : '',
+  ].filter(Boolean);
+  const scopeSuffix = parts.length > 0 ? `（${parts.join('，')}）` : '';
+  if (!window.confirm(`确认清理${scopeText}${scopeSuffix}？清理后可重新同步。`)) return;
 
   clearing.value = true;
   message.value = '';
+  messageTone.value = 'neutral';
   try {
     const options: MedicalCatalogClearOptions = { catalogType: selectedType };
     if (selectedOrg) {
       options.orgCode = selectedOrg;
     }
+    if (selectedTenant) {
+      options.tenantId = selectedTenant;
+    }
+    if (selectedStore) {
+      options.storeId = selectedStore;
+    }
     const result = await medicalDataService.clearDebugCache(options);
     await refreshState();
     message.value = formatClearResult(result);
+    messageTone.value = 'success';
   } catch (error) {
     message.value = `清理失败：${formatError(error)}`;
+    messageTone.value = 'error';
   } finally {
     clearing.value = false;
   }
@@ -119,7 +147,7 @@ onMounted(refreshState);
           <Icon icon="lucide:database" :size="20" />
           <h2>基础数据缓存管理</h2>
         </div>
-        <p>查看诊断、诊疗项目、药品目录的本地 SQLite 缓存状态，支持手动同步和定向清理。</p>
+        <p>查看诊断、诊疗项目、药品目录的本地 SQLite 缓存状态，支持强制同步和定向清理。</p>
       </div>
       <div class="header-actions">
         <button type="button" class="secondary-btn" @click="refreshState" :disabled="loading">
@@ -128,7 +156,7 @@ onMounted(refreshState);
         </button>
         <button type="button" class="primary-btn" @click="syncCatalogs" :disabled="syncing || loading">
           <Icon :icon="syncing ? 'lucide:loader-2' : 'lucide:cloud-download'" :size="15" :class="{ spin: syncing }" />
-          同步基础数据
+          强制同步基础数据
         </button>
       </div>
     </div>
@@ -175,18 +203,26 @@ onMounted(refreshState);
           </select>
         </label>
         <label>
-          机构 / 缓存键（可选）
+          机构（可选）
           <input v-model="orgCode" placeholder="留空表示当前机构或全部" />
+        </label>
+        <label>
+          租户（可选）
+          <input v-model="tenantId" placeholder="例如 idTet" />
+        </label>
+        <label>
+          药房（可选，仅药品）
+          <input v-model="storeId" placeholder="例如 idSto" />
         </label>
         <button type="button" class="danger-btn" @click="clearCache" :disabled="clearing || loading">
           <Icon :icon="clearing ? 'lucide:loader-2' : 'lucide:trash-2'" :size="15" :class="{ spin: clearing }" />
           清理缓存
         </button>
       </div>
-      <p class="hint">诊疗项目和药品支持按机构 / 药房缓存键定向清理；诊断目录为全局缓存。</p>
+      <p class="hint">诊疗项目按机构 + 租户缓存；药品按机构 + 租户 + 药房缓存；强制同步会忽略当日缓存，但要求已建立有效的 HIS 握手上下文。</p>
     </div>
 
-    <p v-if="message" class="message">{{ message }}</p>
+    <p v-if="message" :class="['message', `message-${messageTone}`]">{{ message }}</p>
 
     <div class="sync-state-card">
       <div class="table-title">
@@ -198,16 +234,20 @@ onMounted(refreshState);
           <thead>
             <tr>
               <th>类型</th>
-              <th>机构 / 缓存键</th>
+              <th>机构</th>
+              <th>租户</th>
+              <th>药房</th>
               <th>行数</th>
               <th>同步日期</th>
               <th>最后同步时间</th>
             </tr>
           </thead>
           <tbody>
-            <tr v-for="item in state.syncStates" :key="`${item.catalogType}-${item.orgCode}`">
+            <tr v-for="item in state.syncStates" :key="`${item.catalogType}-${item.orgCode}-${item.tenantId || ''}-${item.storeId || ''}`">
               <td>{{ getCatalogLabel(item.catalogType) }}</td>
               <td><code>{{ item.orgCode || '-' }}</code></td>
+              <td><code>{{ item.tenantId || '-' }}</code></td>
+              <td><code>{{ item.storeId || '-' }}</code></td>
               <td>{{ item.rowCount }}</td>
               <td>{{ item.syncDate || '-' }}</td>
               <td>{{ formatTimestamp(item.lastSyncAt) }}</td>
@@ -391,6 +431,21 @@ button:disabled {
 
 .message {
   margin-bottom: 12px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  border: 1px solid transparent;
+}
+
+.message-success {
+  color: #166534;
+  background: #f0fdf4;
+  border-color: #bbf7d0;
+}
+
+.message-error {
+  color: #b91c1c;
+  background: #fef2f2;
+  border-color: #fecaca;
 }
 
 .table-title {

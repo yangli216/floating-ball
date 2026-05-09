@@ -26,7 +26,7 @@
 | 修改客户端更新源 | [UpdateChecker.vue](src/components/UpdateChecker.vue) + [updateConfig.ts](src/services/updateConfig.ts) + [lib.rs](src-tauri/src/lib.rs)；内网发布端见 `../floating-ball-server/modules/release` |
 | 修改窗口尺寸记忆 | [useWindowManagement.ts](src/composables/useWindowManagement.ts) + [useNavigation.ts](src/composables/useNavigation.ts) + [useEventListeners.ts](src/composables/useEventListeners.ts) + [windowSizes.ts](src/constants/windowSizes.ts) |
 | 修改最小化/恢复语义 | [useMinimizedSessions.ts](src/composables/useMinimizedSessions.ts) + [App.vue](src/App.vue) + [useVoiceConsultation.ts](src/composables/useVoiceConsultation.ts)；按 `idVis` 锚定，跨自然日过期；语音问诊整张病历快照走 `editorSnapshot` |
-| 修改医学数据匹配 | [medicalData.ts](src/services/medicalData.ts) + [his/HisAdapter.ts](src/services/his/HisAdapter.ts) + [his/PhisHisAdapter.ts](src/services/his/PhisHisAdapter.ts) + [his/registry.ts](src/services/his/registry.ts) + [hisService.ts](src/services/hisService.ts) + [medical_catalog.rs](src-tauri/src/commands/medical_catalog.rs) + [src/assets/*.csv](src/assets/) |
+| 修改医学数据匹配 | [medicalData.ts](src/services/medicalData.ts) + [his/HisAdapter.ts](src/services/his/HisAdapter.ts) + [his/PhisHisAdapter.ts](src/services/his/PhisHisAdapter.ts) + [his/registry.ts](src/services/his/registry.ts) + [hisService.ts](src/services/hisService.ts) + [medical_catalog.rs](src-tauri/src/commands/medical_catalog.rs) + [src/assets/*.csv](src/assets/)；重点核对 SDK handshake 传入的 `orgCode / idTet` 是否进入缓存上下文，诊疗项目是否按机构+租户隔离，药品是否按机构+租户+药房 `storeId` 隔离 |
 | 测试 HIS 集成 | [mock_his.html](./docs/mock_his.html) |
 
 ---
@@ -151,7 +151,7 @@ useEventListeners (全局事件) -> 触发 useNavigation & useWorkMode
 | 服务 | 行数 | 职责 | 关键接口 |
 |------|------|------|---------|
 | **llm.ts** | ~444 | LLM API（OpenAI 兼容） | `chatStream()`, `chat()`, `analyzePatientRisks()`, `getLLMConfig()` |
-| **medicalData.ts** | ~600 | 医学数据目录加载、SQLite 缓存与匹配（ICD-10 诊断/药品/检查项）；本地模式优先走 HISService，同步结果写入本地 SQLite，CSV 作为兜底数据源；同时暴露调试态查询/清理能力 | 模糊匹配 + 拼音支持 |
+| **medicalData.ts** | ~600 | 医学数据目录加载、SQLite 缓存与匹配（ICD-10 诊断/药品/检查项）；本地模式优先走 HISService，同步结果写入本地 SQLite，CSV 作为兜底数据源；诊疗项目缓存按机构+租户隔离，药品缓存按机构+租户+药房 `storeId` 隔离，并保留 `storeIds` 用于当前药房集合并集匹配；同时暴露调试态查询/清理能力 | 模糊匹配 + 拼音支持 |
 | **diagnosisPath.ts** | ~568 | 诊断推理路径生成 | ECharts 节点/连线数据，ICD-10 匹配 |
 | **pmphai.ts** | ~806 | PMPHAI 医学知识库（主通道） | 向量搜索、列表搜索、文档检索、OAuth 令牌管理 |
 | **textGeneration.ts** | ~281 | 主诉/现病史文本生成 | 症状数据 -> LLM -> 医学叙事文本 |
@@ -176,7 +176,7 @@ useEventListeners (全局事件) -> 触发 useNavigation & useWorkMode
 | **his/MockHisAdapter.ts** | ~150 | 内置 mock 实现：不连接任何后端，返回固定样本数据。主要用于反向验证抽象是否充分 + 本地 demo / E2E；已在 registry 中预注册（vendor='mock'） |
 | **his/registry.ts** | ~100 | 适配器注册表与选择器；`getHisAdapter()` 是业务方唯一入口；选择优先级 setActiveHisVendor > VITE_HIS_VENDOR > localStorage.HIS_VENDOR > 默认 phis |
 | **his/index.ts** | ~30 | 公开入口：重出 adapter / 注册 API / 类型 |
-| **medical_catalog.rs** | -- | 医学目录 SQLite 持久化命令：诊断全局缓存、诊疗项目/药品按机构缓存与同步状态管理，并提供调试态查看/清理命令 | 供 `medicalData.ts` 调用 |
+| **medical_catalog.rs** | -- | 医学目录 SQLite 持久化命令：诊断全局缓存、诊疗项目按机构+租户缓存、药品按机构+租户+药房缓存与同步状态管理，并提供调试态查看/清理命令 | 供 `medicalData.ts` 调用 |
 | **factChecker.ts** | ~399 | AI 输出验证（医学指南核查） |
 | **feedback.ts** | ~312 | 反馈与结构化操作日志落库/双写：把前端事件转换为区域化审计需要的 `module/action/result/details` 载荷 |
 | **voiceFeedback.ts** | -- | 语音反馈 payload 组装、本地草稿、病例字段差异摘要与待同步队列；通过 `submitVoicePendingPayloadToBackend` 映射到统一 `/v1/client/feedbacks` |

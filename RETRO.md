@@ -132,6 +132,13 @@
 - **解决方案**: `fetchMedicineStoreIds()` 改为先复用 `fetchAvailablePharmacies()` 的有效药房；若该列表为空，再从药房目录取 `idSto` 作为下拉和目录同步兜底。药品标准库匹配只使用带 `storeIds` 的 HIS 药品目录，并按 active store scope 过滤；`VoiceConsultationNew` 拿到药房列表后调用 `ensureMedicineCatalogForStoreIds()`，先按 active `idSto` 读取 SQLite 聚合缓存，必要时再刷新 HIS 目录，治疗推荐解析和语音意图药品初始化都等待该加载完成；`PhisHisAdapter` 必须透传 `storeIds`，`normalizeMedicineItems()` 还要从 `raw.storeIds/raw.storeId/raw.idSto` 做兼容提取；匹配结果保留 `storeIds`，药房候选严格按 `matchedItem.storeIds ∩ pharmacyOptions` 收窄，不再回退到 CSV 或不限 scope 药品。
 - **后续防护**: UI 选项、目录同步、缓存 key、匹配过滤必须共用同一组 scope 解析函数；不要为同一业务维度维护两套过滤逻辑。看到 `activeStoreIds` 非空但 `medicineCount: 0` 时，优先检查是否已按 active storeIds 加载药品目录，而不是先查匹配算法。
 
+### RETRO-016: 基础数据缓存缺少租户维度且药品表复用 org_code 承载药房 scope [已解决]
+
+- **现象**: 同一机构下多药房、多租户场景中，诊疗项目和药品缓存会出现命中不稳定；调试面板只能看到一个 `org_code`，无法判断当前缓存到底属于机构、租户还是药房。
+- **根因**: SDK handshake 只把 `orgCode` 传给 `medicalDataService.setCatalogContext()`，`idTet` 没进入缓存上下文；Rust SQLite 表又把药房 scope 继续复用在 `org_code` 单字段上，导致“机构实体”和“药房 scope”语义混在一起，跨租户缓存也无法隔离。
+- **解决方案**: 握手阶段单独解析 `tenantId(idTet)`，基础数据上下文改为显式传递 `orgCode + tenantId`；Rust 侧将 `medical_item_catalog` 升级为 `org_code + tenant_id` 主键，将 `medicine_catalog` / `catalog_sync_state` 升级为 `org_code + tenant_id + store_id` 复合主键；调试与清理面板同步展示机构/租户/药房三列。旧药品缓存因历史上无法可靠还原机构维度，迁移时不再保留，按新 schema 重新同步。
+- **后续防护**: 之后凡是基础数据、字典或缓存表里同时存在“机构实体”和“scope 集合”两种概念时，必须显式建列，不允许再把 scope 借道 `org_code`、`dept_id` 之类的单实体字段落库；若握手里还有 `idTet`、`idOrg` 等上下文字段，先做维度建模再决定哪些字段进入缓存 key。
+
 
 ---
 

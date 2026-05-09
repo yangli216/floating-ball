@@ -1,6 +1,6 @@
 # 架构文档 (ARCHITECTURE.md)
 
-> **最后更新**: 2026-04-27
+> **最后更新**: 2026-05-09
 >
 > **重要**: 此文档是项目架构的唯一真实来源。任何架构级别的代码修改都必须同步更新此文档。
 
@@ -568,6 +568,7 @@ await voiceConsultation.handleResultConfirm(record);
   - `start-consultation-session` - HIS 灵活模式 / assist 兼容事件（当前默认打开 `ConsultationPage` 并写入自动触发上下文）
   - `stop-consultation` - 停止问诊
   - `start-voice-consultation` - 语音问诊；来自 HIS / HTTP Bridge 的显式开始语音请求会先按目标患者 `idPi / patientId` 判断是否存在未提交缓存：同患者且存在缓存时直接恢复到语音结果页，否则开启新语音会话；仅在已处于录音胶囊页时对重复请求做幂等忽略
+  - `sdk-handshake` - 解析 HIS 握手上下文，初始化 `HisService`，并把 `orgCode / tenantId(idTet)` 与后续药房 scope 关联到基础数据缓存层
 - ✅ 鼠标事件监听
   - `hover-change` - 小球交互范围悬停状态，作为环绕菜单唯一展开条件
   - `mouse-pos` - 鼠标位置（环绕菜单高亮）
@@ -814,7 +815,7 @@ src/styles/
 | `llm.ts` | LLM API 通信（OpenAI 兼容） | [src/services/llm.ts](src/services/llm.ts) |
 | `aliyunSpeech.ts` | 语音转写编排（DashScope + OpenAI 兼容降级） | [src/services/aliyunSpeech.ts](src/services/aliyunSpeech.ts) |
 | `audioRecorder.ts` | Web Audio API 录音、音频输入设备枚举与首选设备回退 | [src/services/audioRecorder.ts](src/services/audioRecorder.ts) |
-| `medicalData.ts` | 医疗数据目录加载、SQLite 缓存与匹配（诊断、药品、检查项）；本地模式优先通过 `hisService.ts` 同步目录数据并落本地 SQLite，诊断与检查/检验仍可保留 CSV 基础兜底，药品目录只使用 HIS/SQLite 中带 `storeIds` 的药房 scoped 数据，不再使用 CSV 药品兜底；其中机构级检查/检验项目仍按 `orgCode` 存储，药品目录则按独立药房 `storeId` 分 scope 落库，多药房场景读取时对多个 scope 做并集聚合，避免把多个药房 ID 误写成一个 `org_code`。语音问诊结果页拿到有效药房后，会显式按 active `idSto` 加载药品目录，再执行药品匹配。同时负责根据 ICD-10 前三位类目码（如 `J06`）解析章节分组，用于推荐诊断分组展示。针对语音问诊结果页，还提供药品 / 诊疗项目的严格分档匹配能力：完全匹配直接确认，高相似候选只作为“待确认”建议，未命中则进入手动匹配。 | [src/services/medicalData.ts](src/services/medicalData.ts) |
+| `medicalData.ts` | 医疗数据目录加载、SQLite 缓存与匹配（诊断、药品、检查项）；运行期优先通过 `hisService.ts` 在有效 HIS 握手上下文下同步目录数据并落本地 SQLite，诊断与检查/检验仍可保留 CSV 基础兜底，药品目录只使用 HIS/SQLite 中带 `storeIds` 的药房 scoped 数据，不再使用 CSV 药品兜底；机构级检查/检验项目按 `orgCode + tenantId` 存储，药品目录按 `orgCode + tenantId + storeId` 分 scope 落库，多药房场景读取时对多个药房 scope 做并集聚合，避免再把药房主键误写成机构主键。语音问诊结果页拿到有效药房后，会显式按 active `idSto` 加载药品目录，再执行药品匹配；缓存管理面板支持在有效 HIS 握手上下文下触发一次忽略当日缓存的强制同步，不受区域化开关限制。同时负责根据 ICD-10 前三位类目码（如 `J06`）解析章节分组，用于推荐诊断分组展示。针对语音问诊结果页，还提供药品 / 诊疗项目的严格分档匹配能力：完全匹配直接确认，高相似候选只作为“待确认”建议，未命中则进入手动匹配。 | [src/services/medicalData.ts](src/services/medicalData.ts) |
 | `hisService.ts` | HIS HTTP 调用封装（PHIS 形态默认实现）：统一处理鉴权头、POST/GET 请求，以及诊断/药品/诊疗项目目录与药品频次、用法等字典读取，供主问诊和语音问诊复用；语音结果页药房列表也通过该服务调用 `api/phis.orgMedStoManageService/queryOrgSto`，并按 SDK 握手 `extra.urt.userRoleDepts` 中的 `deptId` 过滤可见范围；药品详情按候选发药药房轮询 `loadMedicinePro`，只有命中有效详情的药房才能作为药品默认药房并允许选中；检查项目详情匹配后通过 `api/phis.hiBdCliPacsPartService/queryExaPartAndWayList` 获取检查部位 / 方式候选，单候选自动回填；用药总量变更后通过 `api/phis.medicineInventoryService/checkInvEnough` 校验库存，库存不足时阻止药品回写。**业务方不应直接 import 本文件**：所有出站调用应通过 `services/his` 适配器层 | [src/services/hisService.ts](src/services/hisService.ts) |
 | `services/his/HisAdapter.ts` | 厂商无关的 HIS 适配器接口契约：14 个方法覆盖目录同步 / 字典 / 详情 / 检查部位 / 库存校验五组场景。详情类已使用中性 DTO（`MedicineDetail` / `MedicalItemDetail`）。新厂商只需实现该接口并通过 `registerHisAdapterFactory(vendor, factory)` 注入，业务层无需改动 | [src/services/his/HisAdapter.ts](src/services/his/HisAdapter.ts) |
 | `services/his/types.ts` | vendor-neutral DTO 定义：详情（`MedicineDetail` / `MedicalItemDetail`）+ 检查部位（`MedicalItemPartOption`）+ 目录（`DiagnosisCatalogEntry` / `MedicineCatalogEntry` / `MedicalItemCatalogEntry`）+ 字典（`DictionaryEntry`）+ 库存校验（`InventoryCheckRequest` / `InventoryCheckResult`）。业务方只读语义化字段（`productId` / `quantity` / `businessType` 等），不再泄漏 PHIS 命名（`idMedPro` / `amount` / `sdFrzBiz`）；厂商私有字段保留在 `raw` / `properties` 透传 | [src/services/his/types.ts](src/services/his/types.ts) |
@@ -852,7 +853,7 @@ src/styles/
 1. `templateService.ts` 以本地 JSON 模板为主；区域化模式下优先从远程缓存读取，本地仍作为兜底。
 2. `medicalData.ts` 的目录数据分两条链路：
    - 区域化模式下继续通过 `syncRemoteData()` 增量同步区域服务数据。
-   - 本地模式下优先通过 `hisService.ts` 同步 HIS 目录，并通过 Rust 侧 SQLite 持久化：诊断全局只同步一次，诊疗项目按机构每天同步一次，药品按机构每天同步一次；机构标识来自 `sdk-handshake` 的握手上下文；若握手缺少 `tk` 则禁止发起目录请求；若 HIS 目录不可用则回退本地 CSV。
+  - 本地模式下优先通过 `hisService.ts` 同步 HIS 目录，并通过 Rust 侧 SQLite 持久化：诊断全局只同步一次，诊疗项目按 `orgCode + tenantId` 每天同步一次，药品按 `orgCode + tenantId + storeId` 每天同步一次；机构与租户标识来自 `sdk-handshake` 的握手上下文，药房 scope 来自当前可见药房集合；若握手缺少 `tk` 则禁止发起目录请求；若 HIS 目录不可用则回退本地 CSV。
    - 运行期可通过 `window.__medicalCatalogDebug__` 查看 SQLite 路径、同步状态、清理指定目录缓存并手动触发重同步，用于日常联调排查。
 3. `catalog` 匹配归一化规则固定为：小写后去除空格、连字符、下划线（`/[\s_-]/g`），用于兼容 `tcm_diagnoses/tcm-diagnoses/tcm diagnoses` 等格式。
 4. 西医推荐诊断的 UI 分组固定按 ICD-10 类目码前三位做章节归类；当编码无法解析到标准章节时，前端回退到"未分类/待确认"分组，避免丢失候选项。

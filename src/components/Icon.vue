@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { Icon as IconifyIcon } from '@iconify/vue/offline';
-import { computed } from 'vue';
+import { computed, useAttrs } from 'vue';
 
 interface Props {
   /** Iconify 图标名称，格式为 'collection:icon-name'
@@ -31,6 +31,12 @@ const props = withDefaults(defineProps<Props>(), {
   rotate: 0,
 });
 
+defineOptions({
+  inheritAttrs: false,
+});
+
+const attrs = useAttrs();
+
 // 计算样式
 const iconStyle = computed(() => ({
   width: typeof props.size === 'number' ? `${props.size}px` : props.size,
@@ -40,17 +46,26 @@ const iconStyle = computed(() => ({
 </script>
 
 <template>
-  <IconifyIcon
-    :icon="icon"
-    :style="iconStyle"
-    :inline="inline"
-    :horizontalFlip="hFlip"
-    :verticalFlip="vFlip"
-    :rotate="rotate"
-  />
+  <span v-bind="attrs" class="icon-root">
+    <IconifyIcon
+      :icon="icon"
+      :style="iconStyle"
+      :inline="inline"
+      :horizontalFlip="hFlip"
+      :verticalFlip="vFlip"
+      :rotate="rotate"
+    />
+  </span>
 </template>
 
 <style scoped>
+.icon-root {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 1;
+}
+
 /* 确保图标与文本对齐 */
 :deep(svg) {
   display: block;
