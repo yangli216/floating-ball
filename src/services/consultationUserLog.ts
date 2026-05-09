@@ -174,25 +174,27 @@ function countItemListChanges(
   for (const item of firstList) firstMap.set(snapshotItemKey(item), item);
 
   const visited = new Set<string>();
-  let changes = 0;
+  let modifications = 0;
+  let additions = 0;
 
   for (const item of finalList) {
     const key = snapshotItemKey(item);
     const original = firstMap.get(key);
     if (!original) {
-      changes++;
+      additions++;
     } else {
       visited.add(key);
       const modified = fields.some(f => (original[f] ?? '') !== (item[f] ?? ''));
-      if (modified) changes++;
+      if (modified) modifications++;
     }
   }
 
+  let removals = 0;
   for (const key of firstMap.keys()) {
-    if (!visited.has(key)) changes++;
+    if (!visited.has(key)) removals++;
   }
 
-  return changes;
+  return modifications + Math.max(removals, additions);
 }
 
 export function computeChangeSummary(
