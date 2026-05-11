@@ -1,17 +1,30 @@
 <script setup lang="ts">
-import { computed, inject, nextTick, ref } from 'vue';
+import { computed, inject, nextTick, onMounted, ref, watch } from 'vue';
 import Icon from './Icon.vue';
 import { getLatestAiTrace } from '../services/aiTrace';
 import { submitUserFeedback, type UserFeedbackScreenshot, type FeedbackSeverity } from '../services/userFeedback';
 import { isRegionalMode } from '../services/regionalClient';
 import { trackClick, trackError, trackFormSubmit } from '../services/operationTracker';
 
+interface GeneralFeedbackDraftRecord {
+  score: number;
+  comment: string;
+  selectedTags: string[];
+  feedbackId?: string;
+  submittedAt?: number;
+  revision?: number;
+}
+
+const GENERAL_FEEDBACK_STORAGE_PREFIX = 'GENERAL_FEEDBACK_DRAFT_V1';
+
 const props = withDefaults(defineProps<{
   variant?: 'embedded' | 'dialog';
   sourceModule?: string;
+  consultationId?: string | null;
 }>(), {
   variant: 'embedded',
   sourceModule: 'feedback',
+  consultationId: null,
 });
 
 const emit = defineEmits<{
@@ -39,6 +52,30 @@ const screenshot = ref<UserFeedbackScreenshot | null>(null);
 const capturingScreenshot = ref(false);
 const selectedTags = ref<string[]>([]);
 const showScreenshotPanel = ref(false);
+const submittedFeedbackId = ref<string | null>(null);
+const submittedAt = ref<number | null>(null);
+const feedbackRevision = ref(0);
+
+const feedbackScopeKey = computed(() => {
+  const sourceModule = props.sourceModule || 'feedback';
+  const consultationId = props.consultationId?.trim() || 'sessionless';
+  return `${consultationId}::${sourceModule}`;
+});
+
+const hasExistingFeedback = computed(() => Boolean(submittedFeedbackId.value));
+
+const existingFeedbackHint = computed(() => {
+  if (!hasExistingFeedback.value) {
+    return '';
+  }
+
+  const timeText = submittedAt.value
+    ? new Date(submittedAt.value).toLocaleString('zh-CN', { hour12: false })
+    : '';
+  return timeText
+    ? `已加载当前问诊该模块在 ${timeText} 提交的反馈，可直接修改后重新提交。`
+    : '已加载当前问诊该模块的反馈，可直接修改后重新提交。';
+});
 
 const canSubmit = computed(() => {
   if (!isRegionalMode() || submitting.value) return false;
@@ -62,6 +99,56 @@ function deriveSeverity(rating: number): FeedbackSeverity {
   if (rating <= 2) return 'high';
   if (rating === 3) return 'medium';
   return 'low';
+}
+
+function getDraftStorageKey(): string {
+  return `${GENERAL_FEEDBACK_STORAGE_PREFIX}:${feedbackScopeKey.value}`;
+}
+
+function applyDraftRecord(record: GeneralFeedbackDraftRecord | null): void {
+  score.value = record?.score ?? 5;
+  comment.value = record?.comment ?? '';
+  selectedTags.value = Array.isArray(record?.selectedTags) ? [...record.selectedTags] : [];
+  screenshot.value = null;
+  showScreenshotPanel.value = false;
+  submittedFeedbackId.value = record?.feedbackId || null;
+  submittedAt.value = typeof record?.submittedAt === 'number' ? record.submittedAt : null;
+  feedbackRevision.value = typeof record?.revision === 'number' ? record.revision : 0;
+}
+
+function loadDraftRecord(): void {
+  try {
+    const raw = localStorage.getItem(getDraftStorageKey());
+    if (!raw) {
+      applyDraftRecord(null);
+      return;
+    }
+
+    const parsed = JSON.parse(raw) as Partial<GeneralFeedbackDraftRecord>;
+    applyDraftRecord({
+      score: Number.isInteger(parsed.score) ? Number(parsed.score) : 5,
+      comment: typeof parsed.comment === 'string' ? parsed.comment : '',
+      selectedTags: Array.isArray(parsed.selectedTags)
+        ? parsed.selectedTags.filter((tag): tag is string => typeof tag === 'string' && tag.trim().length > 0)
+        : [],
+      feedbackId: typeof parsed.feedbackId === 'string' && parsed.feedbackId.trim() ? parsed.feedbackId.trim() : undefined,
+      submittedAt: typeof parsed.submittedAt === 'number' ? parsed.submittedAt : undefined,
+      revision: typeof parsed.revision === 'number' ? parsed.revision : undefined,
+    });
+  } catch {
+    applyDraftRecord(null);
+  }
+}
+
+function saveDraftRecord(record: GeneralFeedbackDraftRecord): void {
+  localStorage.setItem(getDraftStorageKey(), JSON.stringify({
+    score: record.score,
+    comment: record.comment,
+    selectedTags: [...record.selectedTags],
+    feedbackId: record.feedbackId,
+    submittedAt: record.submittedAt,
+    revision: record.revision,
+  } satisfies GeneralFeedbackDraftRecord));
 }
 
 async function readFileAsDataUrl(file: File): Promise<string> {
@@ -209,11 +296,15 @@ async function handleSubmit(): Promise<void> {
   submitting.value = true;
   const startedAt = Date.now();
   const trace = getLatestAiTrace();
+  const previousFeedbackId = submittedFeedbackId.value;
+  const nextRevision = feedbackRevision.value + 1;
   trackClick('feedback_submit_clicked', {
     hasScreenshot: !!screenshot.value,
     hasTrace: !!trace,
     score: score.value,
     tags: selectedTags.value,
+    feedbackScopeKey: feedbackScopeKey.value,
+    hasExistingFeedback: hasExistingFeedback.value,
   });
 
   try {
@@ -225,22 +316,40 @@ async function handleSubmit(): Promise<void> {
       kind: 'general',
       severity: deriveSeverity(score.value),
       tags: selectedTags.value.length > 0 ? selectedTags.value : undefined,
+      chainContextOverride: {
+        consultationId: props.consultationId || null,
+        feedbackScopeKey: feedbackScopeKey.value,
+        feedbackRevision: nextRevision,
+        previousFeedbackId,
+      },
     });
 
     trackFormSubmit('feedback_submit', {
       feedbackId: response.feedbackId,
+      previousFeedbackId,
+      feedbackScopeKey: feedbackScopeKey.value,
+      feedbackRevision: nextRevision,
       hasTrace: !!trace?.traceId,
       traceId: trace?.traceId,
       score: score.value,
       tags: selectedTags.value,
     }, Date.now() - startedAt);
 
-    comment.value = '';
-    score.value = 5;
+    const now = Date.now();
+    saveDraftRecord({
+      score: score.value,
+      comment: comment.value,
+      selectedTags: selectedTags.value,
+      feedbackId: response.feedbackId,
+      submittedAt: now,
+      revision: nextRevision,
+    });
+    submittedFeedbackId.value = response.feedbackId;
+    submittedAt.value = now;
+    feedbackRevision.value = nextRevision;
     screenshot.value = null;
-    selectedTags.value = [];
     showScreenshotPanel.value = false;
-    showToast?.('反馈已提交到后台', 'success');
+    showToast?.(previousFeedbackId ? '反馈已更新' : '反馈已提交到后台', 'success');
     emit('submitted');
   } catch (error) {
     trackError('feedback_submit_failed', error, {
@@ -252,6 +361,14 @@ async function handleSubmit(): Promise<void> {
     submitting.value = false;
   }
 }
+
+watch(() => feedbackScopeKey.value, () => {
+  loadDraftRecord();
+});
+
+onMounted(() => {
+  loadDraftRecord();
+});
 </script>
 
 <template>
@@ -273,6 +390,9 @@ async function handleSubmit(): Promise<void> {
     </div>
     <p class="section-desc">
       给本次体验打分、勾选问题类型，并在需要时附上简短说明，我们会自动关联最近的 AI 调用记录。
+    </p>
+    <p v-if="existingFeedbackHint" class="section-desc section-desc--highlight">
+      {{ existingFeedbackHint }}
     </p>
 
     <div class="form-group score-group">
@@ -375,6 +495,14 @@ async function handleSubmit(): Promise<void> {
   </div>
 </template>
 <style scoped>
+.section-desc--highlight {
+  margin-top: 10px;
+  padding: 10px 12px;
+  border-radius: 12px;
+  background: rgba(14, 116, 144, 0.09);
+  color: #0f5f75;
+}
+
 .feedback-dialog-panel {
   padding: 22px 24px;
   border-radius: 22px;

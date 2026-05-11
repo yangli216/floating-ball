@@ -1,7 +1,12 @@
 export type VoiceFeedbackAction = 'useful' | 'dissatisfied' | 'corrected';
 export type VoiceRecordFieldKey = 'chiefComplaint' | 'historyOfPresentIllness' | 'pastMedicalHistory';
 
-export interface VoiceRecommendationFeedbackDraft {
+export interface VoiceFeedbackDraftMeta {
+  submittedAt?: number;
+  revision?: number;
+}
+
+export interface VoiceRecommendationFeedbackDraft extends VoiceFeedbackDraftMeta {
   action: VoiceFeedbackAction | '';
   issueTags: string[];
   comment: string;
@@ -10,7 +15,7 @@ export interface VoiceRecommendationFeedbackDraft {
 
 export type VoiceRecordFieldFeedbackDraft = VoiceRecommendationFeedbackDraft;
 
-export interface VoiceSessionFeedbackDraft {
+export interface VoiceSessionFeedbackDraft extends VoiceFeedbackDraftMeta {
   rating: number;
   issueTags: string[];
   comment: string;

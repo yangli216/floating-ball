@@ -19,7 +19,8 @@ export const DEFAULT_LLM_CONFIG = {
   audioBaseUrl: "https://api.openai.com/v1",
   model: "gpt-4o-mini",
   fastModel: "gpt-4o-mini",
-  audioModel: "whisper-1"
+  audioModel: "whisper-1",
+  enableThinking: false,
 };
 
 // 重试配置
@@ -120,6 +121,7 @@ export function getLLMConfig() {
         model: bootstrap.llm.model,
         fastModel: bootstrap.llm.fastModel || bootstrap.llm.model,
         audioModel: bootstrap.llm.audioModel || DEFAULT_LLM_CONFIG.audioModel,
+        enableThinking: bootstrap.llm.enableThinking ?? false,
       };
     }
   }
@@ -135,8 +137,13 @@ export function getLLMConfig() {
   const model = localStorage.getItem("LLM_MODEL") || import.meta.env.VITE_LLM_MODEL || DEFAULT_LLM_CONFIG.model;
   const fastModel = localStorage.getItem("LLM_FAST_MODEL") || import.meta.env.VITE_LLM_FAST_MODEL || model || DEFAULT_LLM_CONFIG.fastModel;
   const audioModel = localStorage.getItem("LLM_AUDIO_MODEL") || import.meta.env.VITE_LLM_AUDIO_MODEL || DEFAULT_LLM_CONFIG.audioModel;
+  const enableThinking = ["true", "1", "on"].includes(
+    String(localStorage.getItem("LLM_ENABLE_THINKING") || import.meta.env.VITE_LLM_ENABLE_THINKING || DEFAULT_LLM_CONFIG.enableThinking)
+      .trim()
+      .toLowerCase()
+  );
 
-  return { apiKey, baseUrl, audioBaseUrl, model, fastModel, audioModel };
+  return { apiKey, baseUrl, audioBaseUrl, model, fastModel, audioModel, enableThinking };
 }
 
 export interface LLMConfigOverride {
@@ -146,7 +153,8 @@ export interface LLMConfigOverride {
   model?: string;
   fastModel?: string;
   audioModel?: string;
-  configProfile?: 'default' | 'reviewer';
+  enableThinking?: boolean;
+  configProfile?: 'default' | 'fast' | 'reviewer';
   traceContext?: {
     scene?: string;
     sourceModule?: string;
@@ -181,10 +189,11 @@ function getConfigAndKey(explicitKey?: string, customConfig?: LLMConfigOverride)
   const model = customConfig?.model || baseConfig.model;
   const fastModel = customConfig?.fastModel || baseConfig.fastModel;
   const audioModel = customConfig?.audioModel || baseConfig.audioModel;
+  const enableThinking = customConfig?.enableThinking ?? baseConfig.enableThinking;
 
   // 区域化模式下 apiKey 是占位符，不校验
   if (!apiKey && !isRegionalMode()) throw new Error("缺少 API Key。请在 .env 设置 VITE_OPENAI_API_KEY 或在 localStorage 设置 OPENAI_API_KEY（以及独立审查AI的配置）。");
-  return { key: apiKey, baseUrl, audioBaseUrl, model, fastModel, audioModel };
+  return { key: apiKey, baseUrl, audioBaseUrl, model, fastModel, audioModel, enableThinking };
 }
 
 function createPayloadMessages(messages: ChatMessage[]) {
@@ -226,6 +235,20 @@ function buildSpeechRequestSummary(fileName: string, scene: string, mimeType?: s
   return [`场景 ${scene}`, `文件 ${fileName}`, mimeType ? `格式 ${mimeType}` : ''].filter(Boolean).join('，');
 }
 
+function resolveRegionalTraceModel(customConfig?: LLMConfigOverride): string | undefined {
+  const bootstrap = getCachedBootstrap();
+  if (!bootstrap) {
+    return undefined;
+  }
+  if (customConfig?.configProfile === 'reviewer') {
+    return bootstrap.reviewer?.model || bootstrap.llm?.model;
+  }
+  if (customConfig?.configProfile === 'fast') {
+    return bootstrap.llm?.fastModel || bootstrap.llm?.model;
+  }
+  return bootstrap.llm?.model;
+}
+
 function extractSseDataPayload(line: string): string | null {
   if (!line.startsWith("data:")) {
     return null;
@@ -265,7 +288,7 @@ export async function chatStream(
       operationAction: customConfig?.traceContext?.operationAction,
       title: customConfig?.traceContext?.title,
       configProfile: customConfig?.configProfile || 'default',
-      model: getCachedBootstrap()?.llm?.model,
+      model: resolveRegionalTraceModel(customConfig),
       requestSummary: buildChatRequestSummary(messages),
     });
     let responseText = '';
@@ -295,7 +318,7 @@ export async function chatStream(
     return;
   }
 
-  const { key, baseUrl, model } = getConfigAndKey(apiKey, customConfig);
+  const { key, baseUrl, model, enableThinking } = getConfigAndKey(apiKey, customConfig);
   const payloadMessages = createPayloadMessages(messages);
 
   // 使用重试机制包装整个流式请求
@@ -308,6 +331,7 @@ export async function chatStream(
       },
       body: JSON.stringify({
         model: model,
+        "enable_thinking": enableThinking,
         messages: payloadMessages,
         stream: true,
       }),
@@ -415,7 +439,7 @@ export async function chat(
       operationAction: customConfig?.traceContext?.operationAction,
       title: customConfig?.traceContext?.title,
       configProfile: customConfig?.configProfile || 'default',
-      model: getCachedBootstrap()?.llm?.model,
+      model: resolveRegionalTraceModel(customConfig),
       requestSummary: buildChatRequestSummary(messages),
     });
     try {
@@ -442,7 +466,7 @@ export async function chat(
     }
   }
 
-  const { key, baseUrl, model } = getConfigAndKey(apiKey, customConfig);
+  const { key, baseUrl, model, enableThinking } = getConfigAndKey(apiKey, customConfig);
   const payloadMessages = createPayloadMessages(messages);
 
   return await retryWithBackoff(async () => {
@@ -454,7 +478,7 @@ export async function chat(
       },
       body: JSON.stringify({
         model: model,
-        "enable_thinking": false,
+        "enable_thinking": enableThinking,
         messages: payloadMessages,
       }),
     });
@@ -477,6 +501,10 @@ export async function chatFast(
   onRetry?: (attempt: number, error: any) => void,
   customConfig?: LLMConfigOverride
 ): Promise<string> {
+  if (isRegionalMode() && !customConfig?.apiKey) {
+    return chat(messages, apiKey, retryConfig, onRetry, { ...customConfig, configProfile: 'fast' });
+  }
+
   const { fastModel } = getConfigAndKey(apiKey, customConfig);
   // 复用 chat 逻辑，强制覆盖 model 为 fastModel
   return chat(messages, apiKey, retryConfig, onRetry, { ...customConfig, model: fastModel });

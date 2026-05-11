@@ -50,6 +50,7 @@ export interface BootstrapConfig {
     baseUrl: string;
     model: string;
     fastModel?: string;
+    enableThinking?: boolean;
     audioBaseUrl?: string;
     audioModel?: string;
   };
@@ -71,6 +72,7 @@ export interface BootstrapConfig {
   reviewer?: {
     enabled: boolean;
     model?: string;
+    checkExaminationEnabled?: boolean;
   };
   /** Feature flags */
   features: Record<string, boolean>;

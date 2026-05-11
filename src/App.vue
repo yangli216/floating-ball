@@ -31,6 +31,7 @@ import { useEventListeners } from "./composables/useEventListeners";
 import { useMinimizedSessions } from "./composables/useMinimizedSessions";
 import {
   getPatientContextAgeText,
+  getPatientContextAnchorId,
   getPatientContextGenderCode,
   getPatientContextGenderText,
   getPatientContextName,
@@ -137,6 +138,7 @@ const showSessionEntry = computed(
 const feedbackDialogVisible = ref(false);
 const feedbackDialogSuspended = ref(false);
 const feedbackSourceModule = computed(() => `view:${currentView.value}`);
+const feedbackConsultationId = computed(() => getPatientContextAnchorId(currentPatient.value) || '');
 
 function openFeedbackDialog(): void {
   trackClick('open_global_feedback_dialog', { currentView: currentView.value });
@@ -875,6 +877,7 @@ const openInsideCloudHome = async () => {
       <div class="feedback-dialog">
         <FeedbackSubmissionPanel
           variant="dialog"
+          :consultation-id="feedbackConsultationId || undefined"
           :source-module="feedbackSourceModule"
           @close="closeFeedbackDialog"
           @submitted="closeFeedbackDialog"

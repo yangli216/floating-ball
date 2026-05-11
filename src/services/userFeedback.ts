@@ -79,6 +79,21 @@ function buildDefaultChainContext(latestTrace: AiTraceContext | null | undefined
   };
 }
 
+function mergeChainContext(
+  latestTrace: AiTraceContext | null | undefined,
+  override?: Record<string, unknown>
+): Record<string, unknown> | undefined {
+  const base = buildDefaultChainContext(latestTrace);
+  if (!base && !override) {
+    return undefined;
+  }
+
+  return {
+    ...(base || {}),
+    ...(override || {}),
+  };
+}
+
 export async function submitUserFeedback(
   payload: SubmitUserFeedbackPayload
 ): Promise<SubmitUserFeedbackResponse> {
@@ -114,9 +129,7 @@ export async function submitUserFeedback(
     score: payload.score,
     comment,
     screenshot: payload.screenshot || null,
-    chainContext: payload.chainContextOverride
-      ? payload.chainContextOverride
-      : buildDefaultChainContext(latestTrace),
+    chainContext: mergeChainContext(latestTrace, payload.chainContextOverride),
   };
 
   return regionalPost<SubmitUserFeedbackResponse>('/v1/client/feedbacks', request);

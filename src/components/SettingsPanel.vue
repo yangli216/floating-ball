@@ -86,6 +86,8 @@ const applyPreset = (preset: typeof PROVIDER_PRESETS[0]) => {
 const apiKey = ref('');
 const baseUrl = ref('');
 const model = ref('');
+const fastModel = ref('');
+const enableThinking = ref(false);
 const alwaysOnTop = ref(true);
 const regionalBaseUrl = ref('');
 const regionalOrgCode = ref('');
@@ -102,6 +104,7 @@ const reviewerEnabled = ref(true);
 const reviewerApiKey = ref('');
 const reviewerBaseUrl = ref('');
 const reviewerModel = ref('');
+const reviewerCheckExaminationEnabled = ref(true);
 
 const reviewerTesting = ref(false);
 const reviewerTestResult = ref<{ success: boolean; message: string } | null>(null);
@@ -342,6 +345,8 @@ function loadModeDependentSettings(): void {
     apiKey.value = '';
     baseUrl.value = bootstrap?.llm?.baseUrl || '';
     model.value = bootstrap?.llm?.model || '';
+    fastModel.value = bootstrap?.llm?.fastModel || bootstrap?.llm?.model || '';
+    enableThinking.value = bootstrap?.llm?.enableThinking ?? false;
 
     const speechConfig = getSpeechConfig();
     speechProvider.value = speechConfig.provider;
@@ -353,6 +358,7 @@ function loadModeDependentSettings(): void {
     reviewerApiKey.value = '';
     reviewerBaseUrl.value = '';
     reviewerModel.value = bootstrap?.reviewer?.model || '';
+    reviewerCheckExaminationEnabled.value = bootstrap?.reviewer?.checkExaminationEnabled ?? (bootstrap?.reviewer?.enabled ?? false);
 
     pmphaiAppKey.value = '';
     pmphaiAppSecret.value = '';
@@ -365,6 +371,8 @@ function loadModeDependentSettings(): void {
   apiKey.value = config.apiKey;
   baseUrl.value = config.baseUrl;
   model.value = config.model;
+  fastModel.value = localStorage.getItem('LLM_FAST_MODEL') || import.meta.env.VITE_LLM_FAST_MODEL || '';
+  enableThinking.value = config.enableThinking;
   speechProvider.value = speechConfig.provider;
   speechApiKey.value = speechConfig.apiKey === '__REGIONAL_PROXY__' ? '' : speechConfig.apiKey;
   speechBaseUrl.value = speechConfig.baseUrl;
@@ -375,6 +383,8 @@ function loadModeDependentSettings(): void {
   reviewerApiKey.value = localStorage.getItem('REVIEWER_API_KEY') || '';
   reviewerBaseUrl.value = localStorage.getItem('REVIEWER_BASE_URL') || '';
   reviewerModel.value = localStorage.getItem('REVIEWER_MODEL') || '';
+  const reviewerCheckExaminationEnabledSaved = localStorage.getItem('REVIEWER_CHECK_EXAMINATION_ENABLED');
+  reviewerCheckExaminationEnabled.value = reviewerCheckExaminationEnabledSaved === null ? true : reviewerCheckExaminationEnabledSaved === 'true';
 
   pmphaiAppKey.value = pmphaiConfig.appKey;
   pmphaiAppSecret.value = pmphaiConfig.appSecret;
@@ -400,6 +410,8 @@ const currentSettingsSnapshot = computed(() => JSON.stringify({
   apiKey: apiKey.value,
   baseUrl: baseUrl.value,
   model: model.value,
+  fastModel: fastModel.value,
+  enableThinking: enableThinking.value,
   speechProvider: speechProvider.value,
   speechApiKey: speechApiKey.value,
   speechBaseUrl: speechBaseUrl.value,
@@ -408,6 +420,7 @@ const currentSettingsSnapshot = computed(() => JSON.stringify({
   reviewerApiKey: reviewerApiKey.value,
   reviewerBaseUrl: reviewerBaseUrl.value,
   reviewerModel: reviewerModel.value,
+  reviewerCheckExaminationEnabled: reviewerCheckExaminationEnabled.value,
   pmphaiEnabled: pmphaiEnabled.value,
   pmphaiAppKey: pmphaiAppKey.value,
   pmphaiAppSecret: pmphaiAppSecret.value,
@@ -510,9 +523,16 @@ const saveSettings = async () => {
     localStorage.setItem('PMPHAI_SEARCH_MODE', pmphaiSearchMode.value);
 
     if (!regionalMode.value) {
+      const nextFastModel = fastModel.value.trim();
       localStorage.setItem('OPENAI_API_KEY', apiKey.value);
       localStorage.setItem('LLM_BASE_URL', baseUrl.value);
       localStorage.setItem('LLM_MODEL', model.value);
+      if (nextFastModel) {
+        localStorage.setItem('LLM_FAST_MODEL', nextFastModel);
+      } else {
+        localStorage.removeItem('LLM_FAST_MODEL');
+      }
+      localStorage.setItem('LLM_ENABLE_THINKING', String(enableThinking.value));
       localStorage.setItem(speechConfigStorageKeys.provider, speechProvider.value);
       localStorage.setItem(speechConfigStorageKeys.apiKey, speechApiKey.value);
       localStorage.setItem(speechConfigStorageKeys.baseUrl, speechBaseUrl.value);
@@ -531,6 +551,7 @@ const saveSettings = async () => {
       localStorage.setItem('REVIEWER_API_KEY', reviewerApiKey.value);
       localStorage.setItem('REVIEWER_BASE_URL', reviewerBaseUrl.value);
       localStorage.setItem('REVIEWER_MODEL', reviewerModel.value);
+      localStorage.setItem('REVIEWER_CHECK_EXAMINATION_ENABLED', String(reviewerCheckExaminationEnabled.value));
 
       localStorage.setItem('PMPHAI_APP_KEY', pmphaiAppKey.value);
       localStorage.setItem('PMPHAI_APP_SECRET', pmphaiAppSecret.value);
@@ -556,6 +577,9 @@ const saveSettings = async () => {
       hasApiKey: !!apiKey.value,
       hasBaseUrl: !!baseUrl.value,
       model: model.value,
+      fastModel: fastModel.value || model.value,
+      enableThinking: enableThinking.value,
+      reviewerCheckExaminationEnabled: reviewerCheckExaminationEnabled.value,
       speechProvider: speechProvider.value,
       hasSpeechApiKey: !!speechApiKey.value,
       hasSpeechBaseUrl: !!speechBaseUrl.value,
@@ -712,6 +736,7 @@ const testModelConnection = async () => {
         apiKey: apiKey.value,
         baseUrl: baseUrl.value,
         model: model.value,
+        enableThinking: enableThinking.value,
       });
     modelTestResult.value = result;
     trackClick('settings_model_test', { success: result.success });
@@ -1080,6 +1105,26 @@ watch([regionalBaseUrl, regionalOrgCode], () => {
             <p class="form-hint">{{ regionalMode ? '当前生效模型由服务端统一维护' : '如 `gpt-4o-mini`、`deepseek-chat`、`qwen-plus`。' }}</p>
           </div>
 
+          <div class="form-group">
+            <label for="fast-model-name">chatFast Model</label>
+            <div class="input-with-icon">
+              <Icon icon="lucide:gauge" :size="16" class="input-icon" />
+              <input id="fast-model-name" v-model="fastModel" type="text" :placeholder="model || DEFAULT_LLM_CONFIG.fastModel" />
+            </div>
+            <p class="form-hint">用于 `chatFast()` 的独立模型；留空时自动回退上方主模型。</p>
+          </div>
+
+          <div class="toggle-row">
+            <div class="toggle-label-group">
+              <label for="enable-thinking" class="toggle-label">启用思考模式</label>
+              <span class="toggle-hint">仅本地直连 OpenAI 兼容接口时生效，区域化模式暂不支持。</span>
+            </div>
+            <div class="switch-wrapper">
+              <input type="checkbox" id="enable-thinking" v-model="enableThinking">
+              <label for="enable-thinking" class="toggle-switch"></label>
+            </div>
+          </div>
+
           <div class="test-connection-row" style="margin-top: 16px;">
             <button class="test-btn" @click="testModelConnection" :disabled="modelTesting || (!regionalMode && !apiKey)">
               <Icon :icon="modelTesting ? 'lucide:loader-2' : 'lucide:wifi'" :size="16" :class="{ spin: modelTesting }" />
@@ -1204,6 +1249,17 @@ watch([regionalBaseUrl, regionalOrgCode], () => {
           </div>
 
           <template v-if="reviewerEnabled">
+            <div class="toggle-row">
+              <div class="toggle-label-group">
+                <label for="reviewer-check-examination-enabled" class="toggle-label">启用检查项目独立审查</label>
+                <span class="toggle-hint">关闭后将跳过 check_examination，诊断、用药和病历一致性审查不受影响</span>
+              </div>
+              <div class="switch-wrapper">
+                <input type="checkbox" id="reviewer-check-examination-enabled" v-model="reviewerCheckExaminationEnabled" :disabled="regionalMode">
+                <label for="reviewer-check-examination-enabled" class="toggle-switch"></label>
+              </div>
+            </div>
+
             <div v-if="!regionalMode" class="form-group">
               <label for="reviewer-api-key">API Key</label>
               <div class="input-with-icon">

@@ -38,6 +38,20 @@ export function isReviewerEnabled(): boolean {
   return saved === null || saved === 'true';
 }
 
+export function isReviewerCheckExaminationEnabled(): boolean {
+  if (!isReviewerEnabled()) {
+    return false;
+  }
+
+  if (isRegionalMode()) {
+    const bootstrap = getCachedBootstrap();
+    return bootstrap?.reviewer?.checkExaminationEnabled ?? bootstrap?.reviewer?.enabled ?? false;
+  }
+
+  const saved = localStorage.getItem('REVIEWER_CHECK_EXAMINATION_ENABLED');
+  return saved === null || saved === 'true';
+}
+
 export type FactCheckType = 'diagnosis' | 'medicine' | 'examination' | 'medical_record';
 
 export interface FactCheckIssue {
@@ -414,7 +428,7 @@ export async function checkMedicine(context: MedicineCheckContext): Promise<Fact
  * 检查检查项目是否合理
  */
 export async function checkExamination(context: ExaminationCheckContext): Promise<FactCheckResult> {
-  if (!isReviewerEnabled()) {
+  if (!isReviewerCheckExaminationEnabled()) {
     return { hasIssues: false, issues: [], checkedAt: Date.now() };
   }
   const messages: ChatMessage[] = [

@@ -101,6 +101,8 @@ function normalizeRecommendationDraft(input: Partial<VoiceRecommendationFeedback
     issueTags: Array.isArray(input?.issueTags) ? input!.issueTags.filter((item): item is string => typeof item === 'string' && item.trim().length > 0) : [],
     comment: typeof input?.comment === 'string' ? input.comment : '',
     correctedValue: typeof input?.correctedValue === 'string' ? input.correctedValue : '',
+    submittedAt: typeof input?.submittedAt === 'number' && Number.isFinite(input.submittedAt) ? input.submittedAt : undefined,
+    revision: typeof input?.revision === 'number' && Number.isFinite(input.revision) ? Math.max(0, Math.floor(input.revision)) : undefined,
   };
 }
 
@@ -109,6 +111,8 @@ function normalizeSessionDraft(input: Partial<VoiceSessionFeedbackDraft> | null 
     rating: typeof input?.rating === 'number' ? Math.max(0, Math.min(5, Math.floor(input.rating))) : 0,
     issueTags: Array.isArray(input?.issueTags) ? input!.issueTags.filter((item): item is string => typeof item === 'string' && item.trim().length > 0) : [],
     comment: typeof input?.comment === 'string' ? input.comment : '',
+    submittedAt: typeof input?.submittedAt === 'number' && Number.isFinite(input.submittedAt) ? input.submittedAt : undefined,
+    revision: typeof input?.revision === 'number' && Number.isFinite(input.revision) ? Math.max(0, Math.floor(input.revision)) : undefined,
   };
 }
 
@@ -328,6 +332,7 @@ function buildVoiceChainContext(payload: VoicePendingFeedbackPayload): Record<st
     sessionId: payload.sessionId,
     patientId: payload.patientId,
     patientName: payload.patientName,
+    feedbackScopeKey: buildVoiceFeedbackScopeKey(payload),
     aiTrace: trace ? {
       channel: trace.channel,
       scene: trace.scene,
@@ -380,6 +385,18 @@ function buildVoiceChainContext(payload: VoicePendingFeedbackPayload): Record<st
   }
 
   return base;
+}
+
+function buildVoiceFeedbackScopeKey(payload: VoicePendingFeedbackPayload): string {
+  if (payload.kind === 'recommendation') {
+    const recommendation = payload as VoiceRecommendationFeedbackPayload;
+    return `${payload.consultationId || 'unknown'}::voice_recommendation::${recommendation.recommendationKey || recommendation.targetId || 'unknown'}`;
+  }
+  if (payload.kind === 'record_field') {
+    const recordField = payload as VoiceRecordFieldFeedbackPayload;
+    return `${payload.consultationId || 'unknown'}::voice_record_field::${recordField.fieldKey}`;
+  }
+  return `${payload.consultationId || 'unknown'}::voice_session`;
 }
 
 export function buildVoiceRecommendationFeedbackPayload(input: {

@@ -86,14 +86,36 @@ export function useVoiceFeedback(input: UseVoiceFeedbackInput) {
     sessionDraft: sessionDraft.value,
   }));
 
+  function rebuildSubmissionState(): void {
+    recommendationSubmittedMap.value = Object.entries(recommendationDrafts.value).reduce<Record<string, VoiceFeedbackSubmissionSummary>>((acc, [key, draft]) => {
+      if (draft.action && draft.submittedAt) {
+        acc[key] = {
+          actionLabel: getVoiceFeedbackActionLabel(draft.action),
+          submittedAt: draft.submittedAt,
+        };
+      }
+      return acc;
+    }, {});
+
+    recordFieldSubmittedMap.value = Object.entries(recordFieldDrafts.value).reduce<Record<string, VoiceFeedbackSubmissionSummary>>((acc, [key, draft]) => {
+      if (draft.action && draft.submittedAt) {
+        acc[key] = {
+          actionLabel: getVoiceFeedbackActionLabel(draft.action),
+          submittedAt: draft.submittedAt,
+        };
+      }
+      return acc;
+    }, {});
+
+    sessionSubmittedAt.value = sessionDraft.value.submittedAt || null;
+  }
+
   function restoreVoiceFeedbackDraft(): void {
     const restored = loadVoiceFeedbackDraft(input.consultationId.value);
     recommendationDrafts.value = restored.recommendationDrafts;
     recordFieldDrafts.value = restored.recordFieldDrafts;
     sessionDraft.value = restored.sessionDraft;
-    recommendationSubmittedMap.value = {};
-    recordFieldSubmittedMap.value = {};
-    sessionSubmittedAt.value = null;
+    rebuildSubmissionState();
   }
 
   function persistDraft(): void {
@@ -138,29 +160,6 @@ export function useVoiceFeedback(input: UseVoiceFeedbackInput) {
         ...draft,
       },
     };
-    persistDraft();
-  }
-
-  function clearRecommendationDraft(recommendationKey: string): void {
-    if (!recommendationDrafts.value[recommendationKey]) {
-      return;
-    }
-
-    const next = { ...recommendationDrafts.value };
-    delete next[recommendationKey];
-    recommendationDrafts.value = next;
-    persistDraft();
-  }
-
-  function clearRecordFieldDraft(fieldKey: VoiceRecordFieldKey): void {
-    const recordFieldKey = getVoiceRecordFieldFeedbackKey(fieldKey);
-    if (!recordFieldDrafts.value[recordFieldKey]) {
-      return;
-    }
-
-    const next = { ...recordFieldDrafts.value };
-    delete next[recordFieldKey];
-    recordFieldDrafts.value = next;
     persistDraft();
   }
 
@@ -313,12 +312,18 @@ export function useVoiceFeedback(input: UseVoiceFeedbackInput) {
 
       enqueueVoiceFeedbackPayload(pendingPayload);
       void submitVoicePendingPayloadToBackend(pendingPayload);
-      clearRecommendationDraft(payload.recommendationKey);
+      const submittedAt = Date.now();
+      const nextRevision = (payload.draft.revision || 0) + 1;
+      updateRecommendationDraft(payload.recommendationKey, {
+        ...payload.draft,
+        submittedAt,
+        revision: nextRevision,
+      });
       recommendationSubmittedMap.value = {
         ...recommendationSubmittedMap.value,
         [payload.recommendationKey]: {
           actionLabel: getVoiceFeedbackActionLabel(payload.draft.action),
-          submittedAt: Date.now(),
+          submittedAt,
         },
       };
     } finally {
@@ -388,12 +393,18 @@ export function useVoiceFeedback(input: UseVoiceFeedbackInput) {
 
       enqueueVoiceFeedbackPayload(pendingPayload);
       void submitVoicePendingPayloadToBackend(pendingPayload);
-      clearRecordFieldDraft(payload.fieldKey);
+      const submittedAt = Date.now();
+      const nextRevision = (payload.draft.revision || 0) + 1;
+      updateRecordFieldDraft(payload.fieldKey, {
+        ...payload.draft,
+        submittedAt,
+        revision: nextRevision,
+      });
       recordFieldSubmittedMap.value = {
         ...recordFieldSubmittedMap.value,
         [recordFieldKey]: {
           actionLabel: getVoiceFeedbackActionLabel(payload.draft.action),
-          submittedAt: Date.now(),
+          submittedAt,
         },
       };
     } finally {
@@ -439,9 +450,13 @@ export function useVoiceFeedback(input: UseVoiceFeedbackInput) {
 
       enqueueVoiceFeedbackPayload(pendingPayload);
       void submitVoicePendingPayloadToBackend(pendingPayload);
-      sessionDraft.value = createEmptySessionDraft();
+      sessionDraft.value = {
+        ...sessionDraft.value,
+        submittedAt: Date.now(),
+        revision: (sessionDraft.value.revision || 0) + 1,
+      };
       persistDraft();
-      sessionSubmittedAt.value = Date.now();
+      sessionSubmittedAt.value = sessionDraft.value.submittedAt || null;
     } finally {
       sessionSubmitting.value = false;
     }

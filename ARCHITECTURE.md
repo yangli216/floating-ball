@@ -122,7 +122,7 @@
 
 ### 前端分层设计
 
-1. 当前设置与凭据状态通过 `localStorage`、`consultationConfig` store、本地 Tauri Store 管理，其中“通用 LLM”和“语音转写”配置分域存储，避免同一组 Audio 字段误导到不同 provider。
+1. 当前设置与凭据状态通过 `localStorage`、`consultationConfig` store、本地 Tauri Store 管理，其中“通用 LLM”和“语音转写”配置分域存储，避免同一组 Audio 字段误导到不同 provider。本地模式下，“模型配置”页同时维护主模型、`chatFast` 独立模型和 `enable_thinking` 开关；区域化模式下继续隐藏该页签，并以 `bootstrap` 下发的主模型 / `chatFast` 模型和 `enableThinking` 开关为准，由 `floating-ball-server` 统一托管是否向上游传递 `enable_thinking`。
 2. 本地 HIS 对接入口由 `src-tauri/src/http_server.rs` 提供。
 3. 若未来引入真实登录态，应新增专用文档章节并在 `AGENTS.md` / `api.md` 中同步说明。
 4. Windows 内网更新源采用本地配置驱动：测试环境地址、正式环境地址和当前生效环境保存在 `localStorage`，前端只负责展示与选择，真正的 updater endpoint 在 Rust 侧通过 `updater_builder()` 运行时注入。区域化模式下，客户端会按当前更新通道访问 `floating-ball-server` 的 `/v1/client/releases/{channel}/policy.json`；若服务端发布策略要求强制更新且当前版本低于 `minSupportedVersion`，应用进入强制更新门禁，只保留更新源配置、检查更新、下载安装并重启能力。
@@ -135,7 +135,7 @@
 1. 现阶段所有问诊、语音、session 回写能力都必须兼容本地模式。
 2. 区域化模式下，`LLM`、独立审查 AI、PMPHAI 知识库等上游能力默认走 `floating-ball-server` 的 `/v1/*` 代理或服务端签名接口，桌面端不直接保存或下发这些密钥。
 3. 本地模式仍保留直连 OpenAI 兼容接口、DashScope 与本地 PMPHAI 代理的兜底路径。
-4. 区域化模式下，工作区共用顶栏的"问题反馈"入口与一键回写后弹出的整页反馈，统一使用同一份 `FeedbackSubmissionPanel`（紧凑星级 + 预置问题标签 + 选填截图 + 选填补充说明）；语音问诊的推荐项 / 病例字段 / 整页反馈则通过 `voiceFeedback.ts` 映射到同一 `/v1/client/feedbacks` 接口，所有反馈都会附带最近一次 AI 调用的 `traceId`、`sessionId`、`chainContext` 与握手阶段缓存的医生 / 机构 / 科室身份（`feedbackContext.ts`），由 `floating-ball-server` 端按 `kind`（`general | recommendation | record_field | session`）+ `severity` 分类落库。
+4. 区域化模式下，工作区共用顶栏的"问题反馈"入口与一键回写后弹出的整页反馈，统一使用同一份 `FeedbackSubmissionPanel`（紧凑星级 + 预置问题标签 + 选填截图 + 选填补充说明）；通用反馈面板会按“当前问诊锚点 + 模块”回填上次已提交内容，医生再次进入时默认编辑同一份反馈而不是新建一条；语音问诊的推荐项 / 病例字段 / 整页反馈则通过 `voiceFeedback.ts` 映射到同一 `/v1/client/feedbacks` 接口，所有反馈都会附带最近一次 AI 调用的 `traceId`、`sessionId`、`chainContext` 与握手阶段缓存的医生 / 机构 / 科室身份（`feedbackContext.ts`），由 `floating-ball-server` 端按 `kind`（`general | recommendation | record_field | session`）+ `severity` 分类落库。
 5. 区域化模式下，每个 `/v1/*` 业务请求会附带 `X-Client-Version` 与 `X-Update-Channel`，服务端返回 `426 / UPDATE-REQUIRED` 时，客户端立即切换到强制更新门禁，禁止继续使用问诊、语音、知识库、AI 代理、模板同步、反馈等业务能力。
 6. 区域化模式下，智能问诊和语音问诊会通过 `consultationUserLog.ts` 向 `floating-ball-server` 的 `/v1/client/user-logs/consultations` 上报运维用户日志快照：首版 AI 生成内容与医生最终提交/回写内容分别落到同一条问诊记录中，不记录中间每一次编辑；语音问诊停止录音后会额外上报本次录音和 ASR 识别文字，供后台用户日志详情播放与复盘。
 7. 区域化模式下，原始操作日志只保留能定位业务路径的结构化事件：`operationTracker.ts` 负责把高噪声 UI 事件白名单化过滤，并把保留事件统一上报为 `{ module, action, title, sourceModule, scene }`；`aiTrace.ts` 则为 AI 代理补齐“哪个业务发起了这次调用”的上下文，避免后台只看到泛化的 `ai/chat`。
@@ -812,7 +812,7 @@ src/styles/
 
 | 服务 | 职责 | 文件 |
 |------|------|------|
-| `llm.ts` | LLM API 通信（OpenAI 兼容） | [src/services/llm.ts](src/services/llm.ts) |
+| `llm.ts` | LLM API 通信（OpenAI 兼容）；本地模式负责解析主模型 / `chatFast` / 语音模型与 `enable_thinking` 设置，区域化模式下则消费 `bootstrap.llm` 的主模型 / fast 模型 / `enableThinking`，并把 `chatFast` 请求映射到服务端独立 fast profile | [src/services/llm.ts](src/services/llm.ts) |
 | `aliyunSpeech.ts` | 语音转写编排（DashScope + OpenAI 兼容降级） | [src/services/aliyunSpeech.ts](src/services/aliyunSpeech.ts) |
 | `audioRecorder.ts` | Web Audio API 录音、音频输入设备枚举与首选设备回退 | [src/services/audioRecorder.ts](src/services/audioRecorder.ts) |
 | `medicalData.ts` | 医疗数据目录加载、SQLite 缓存与匹配（诊断、药品、检查项）；运行期优先通过 `hisService.ts` 在有效 HIS 握手上下文下同步目录数据并落本地 SQLite，诊断与检查/检验仍可保留 CSV 基础兜底，药品目录只使用 HIS/SQLite 中带 `storeIds` 的药房 scoped 数据，不再使用 CSV 药品兜底；机构级检查/检验项目按 `orgCode + tenantId` 存储，药品目录按 `orgCode + tenantId + storeId` 分 scope 落库，多药房场景读取时对多个药房 scope 做并集聚合，避免再把药房主键误写成机构主键。语音问诊结果页拿到有效药房后，会显式按 active `idSto` 加载药品目录，再执行药品匹配；缓存管理面板支持在有效 HIS 握手上下文下触发一次忽略当日缓存的强制同步，不受区域化开关限制。同时负责根据 ICD-10 前三位类目码（如 `J06`）解析章节分组，用于推荐诊断分组展示。针对语音问诊结果页，还提供药品 / 诊疗项目的严格分档匹配能力：完全匹配直接确认，高相似候选只作为“待确认”建议，未命中则进入手动匹配。 | [src/services/medicalData.ts](src/services/medicalData.ts) |
@@ -843,7 +843,7 @@ src/styles/
 | `reportGenerator.ts` | 使用报告导出 | [src/services/reportGenerator.ts](src/services/reportGenerator.ts) |
 | `regionalClient.ts` | 区域化核心客户端：终端注册、bootstrap 配置拉取、心跳、JWT 鉴权、SSE 流式代理 | [src/services/regionalClient.ts](src/services/regionalClient.ts) |
 | `regionalRuntime.ts` | 区域化运行时编排：统一初始化、重连、远程 Prompt/模板/映射同步和审计上传启动/关闭；初始化成功后额外发送 `regional_runtime_initialized` 审计事件，方便直接在后台确认链路打通 | [src/services/regionalRuntime.ts](src/services/regionalRuntime.ts) |
-| `userFeedback.ts` | 区域化问题反馈服务；负责图片编码、评分/说明校验和调用远端 `/v1/client/feedbacks` 接口 | [src/services/userFeedback.ts](src/services/userFeedback.ts) |
+| `userFeedback.ts` | 区域化问题反馈服务；负责图片编码、评分/说明校验、反馈 scope 元数据合并和调用远端 `/v1/client/feedbacks` 接口 | [src/services/userFeedback.ts](src/services/userFeedback.ts) |
 | `consultationUserLog.ts` | 区域化运维用户日志服务；负责组装智能问诊/语音问诊首版与最终快照，语音问诊额外编码录音和 ASR 文本，并调用远端 `/v1/client/user-logs/consultations` 聚合到同一条问诊日志 | [src/services/consultationUserLog.ts](src/services/consultationUserLog.ts) |
 | `promptOverride.ts` | 远程 Prompt 覆盖层：管理端发布的自定义 prompt 替换本地默认值 | [src/services/promptOverride.ts](src/services/promptOverride.ts) |
 | `auditUploader.ts` | 审计事件批量上报：区域化模式下直接调用远端 `/v1/client/audit/events/batch`，本地只保留轻量离线队列用于失败重试；恢复遗留队列后立即补传，新事件入队后也会异步触发一次立即上报尝试；`operation` 事件会保留 `operationType/operationName/details`，并补齐 `module/action/result` 供服务端日志表查询 | [src/services/auditUploader.ts](src/services/auditUploader.ts) |
@@ -941,8 +941,9 @@ startAuditUploader() (startup flush + enqueue flush + 30s retry)
   - 文本模型使用 `OPENAI_API_KEY` / `LLM_BASE_URL` / `LLM_MODEL`
   - 语音转写使用独立的 speech provider / key / baseUrl / model；其中 OpenAI 兼容 speech provider 未填写 key 时可回退复用通用 LLM API Key
 - 审查 AI（`factChecker.ts` -> `llm.ts/chat`）走独立的 `/chat/completions` 文本链路：
-  - 配置项为 `REVIEWER_ENABLED`、`REVIEWER_API_KEY`、`REVIEWER_BASE_URL`、`REVIEWER_MODEL`
+  - 配置项为 `REVIEWER_ENABLED`、`REVIEWER_API_KEY`、`REVIEWER_BASE_URL`、`REVIEWER_MODEL`、`REVIEWER_CHECK_EXAMINATION_ENABLED`
   - 若独立审查配置缺省，则回退到主模型配置
+  - `checkExamination` 场景支持单独开关：区域化模式读取 `bootstrap.reviewer.checkExaminationEnabled`，本地模式读取 `REVIEWER_CHECK_EXAMINATION_ENABLED`；缺省时默认开启以兼容旧行为
   - 请求体仅发送 OpenAI 兼容标准字段（`model`、`messages`、`stream`），不在通用链路携带供应商私有字段，避免兼容网关返回 `400 Bad Request`
 - 该策略主要用于解决 macOS 下 WebView 报错 `Load failed` 的语音转写失败场景
 
