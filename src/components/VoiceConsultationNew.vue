@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { ref, computed, watch, inject, onMounted, onBeforeUnmount, nextTick } from 'vue';
 import { invoke } from '@tauri-apps/api/core';
+import { listen } from '@tauri-apps/api/event';
 import VoiceRecordFeedbackPopover from './VoiceRecordFeedbackPopover.vue';
 import VoiceSessionFeedbackBar from './VoiceSessionFeedbackBar.vue';
 import PatientHeader from './PatientHeader.vue';
@@ -76,6 +77,18 @@ import type {
   VoiceSessionFeedbackDraft,
 } from '../types/voiceFeedback';
 
+type ReferenceLifecycleStatus = 'pending' | 'success' | 'failed';
+
+interface ReferenceFeedbackPayload {
+  consultationId?: string;
+  requestId: string;
+  referenceType?: 'diagnosis' | 'medication' | 'examination' | 'lab_test' | 'procedure' | 'batch';
+  action?: 'diagnosis' | 'medication' | 'examination' | 'lab_test' | 'procedure' | 'batch';
+  status: ReferenceLifecycleStatus;
+  message?: string;
+  timestamp?: number;
+}
+
 const props = withDefaults(defineProps<{
   initialPatientData?: AppPatient;
   intentResult: VoiceIntentResult | null;
@@ -120,6 +133,11 @@ const treatments = ref<TreatmentRecommendation[]>([]);
 const treatmentLoading = ref(false);
 
 const submitting = ref(false);
+const waitingWritebackFeedback = ref(false);
+const pendingWritebackRequestId = ref('');
+const pendingWritebackMessage = ref('');
+const lastWritebackFeedback = ref<ReferenceFeedbackPayload | null>(null);
+let unlistenReferenceFeedback: (() => void) | null = null;
 const consultationChannel = computed<'voice' | 'symptom'>(() => props.channel === 'symptom' ? 'symptom' : 'voice');
 const consultationUserLogType = computed(() => consultationChannel.value === 'voice' ? 'voice' as const : 'smart' as const);
 const shouldUseVoiceCache = computed(() => consultationChannel.value === 'voice');
@@ -137,6 +155,26 @@ const patientGender = computed((): string => resolvePatientGender(props.initialP
 const patientAge = computed((): string => resolvePatientAge(props.initialPatientData));
 const patientTetId = computed((): string => s(props.initialPatientData?.idTet));
 const consultationId = computed((): string => resolveConsultationId());
+const isWritebackBusy = computed(() => submitting.value || waitingWritebackFeedback.value);
+const submitButtonText = computed(() => {
+  if (submitting.value) return '提交中...';
+  if (waitingWritebackFeedback.value) return '等待 HIS 回执...';
+  return '一键回写';
+});
+const writebackBannerTone = computed<'info' | 'error'>(() => {
+  if (waitingWritebackFeedback.value) return 'info';
+  if (lastWritebackFeedback.value?.status === 'failed') return 'error';
+  return 'info';
+});
+const writebackBannerText = computed(() => {
+  if (waitingWritebackFeedback.value) {
+    return pendingWritebackMessage.value || '病历已发送至 HIS，等待处理结果回执。';
+  }
+  if (lastWritebackFeedback.value?.status === 'failed') {
+    return lastWritebackFeedback.value.message || 'HIS 回写失败，请根据提示修改后重试。';
+  }
+  return '';
+});
 
 function getDiagnosisKey(diag: Diagnosis | null | undefined): string {
   if (!diag) return '';
@@ -306,10 +344,16 @@ function truncateAnalysisText(text: string, maxLength: number): string {
   return `${text.slice(0, maxLength)}...`;
 }
 
-const canSubmit = computed(() => chiefComplaint.value.trim().length > 0 && selectedDiagnosis.value !== null && selectedDiagnoses.value.length > 0 && !submitting.value);
+const canSubmit = computed(() => chiefComplaint.value.trim().length > 0 && selectedDiagnosis.value !== null && selectedDiagnoses.value.length > 0 && !isWritebackBusy.value);
 
 function handleCancelClick(): void {
   if (submitting.value) {
+    showToast?.('正在提交中，请稍候', 'info');
+    return;
+  }
+
+  if (waitingWritebackFeedback.value) {
+    showToast?.('正在等待 HIS 回执，请先等待处理结果。', 'info');
     return;
   }
 
@@ -597,7 +641,44 @@ async function handleSessionFeedbackSubmit(): Promise<void> {
 function completeVoiceConsultationFlow(): void {
   showSessionFeedbackDialog.value = false;
   clearVoiceFeedbackDraft();
+  lastWritebackFeedback.value = null;
   emit('close');
+}
+
+function resetWritebackState(): void {
+  waitingWritebackFeedback.value = false;
+  pendingWritebackRequestId.value = '';
+  pendingWritebackMessage.value = '';
+  lastWritebackFeedback.value = null;
+}
+
+function applyWritebackFeedback(payload: ReferenceFeedbackPayload): void {
+  if (!pendingWritebackRequestId.value || payload.requestId !== pendingWritebackRequestId.value) {
+    return;
+  }
+
+  const safePayload: ReferenceFeedbackPayload = {
+    ...payload,
+    action: payload.referenceType || payload.action || 'batch',
+    referenceType: payload.referenceType || payload.action || 'batch',
+    timestamp: payload.timestamp || Date.now(),
+  };
+  lastWritebackFeedback.value = safePayload;
+  waitingWritebackFeedback.value = false;
+  pendingWritebackRequestId.value = '';
+  pendingWritebackMessage.value = '';
+
+  if (safePayload.status === 'success') {
+    submitVoiceFinalUserLog();
+    if (shouldUseVoiceCache.value) {
+      clearVoiceConsultationCache(props.initialPatientData);
+    }
+    showToast?.(safePayload.message || 'HIS 已完成回写。', 'success');
+    showSessionFeedbackDialog.value = true;
+    return;
+  }
+
+  showToast?.(safePayload.message || 'HIS 回写失败，请根据提示修改后重试。', 'error');
 }
 
 type MedicinePrimaryField = 'dosage' | 'frequency' | 'route' | 'total';
@@ -2070,10 +2151,27 @@ function openPharmacyQuickSelector(rec: TreatmentRecommendation, event?: Event):
 onMounted(() => {
   document.addEventListener('pointerdown', handleGlobalPointerDown);
   void Promise.all([fetchFrequencyOptions(), fetchRouteOptions(), fetchPharmacyOptions(), fetchExecDeptOptions()]);
+  void listen<ReferenceFeedbackPayload>('consultation-reference-feedback', (event) => {
+    const payload = event.payload;
+    if (payload.consultationId && payload.consultationId !== resolveConsultationId()) {
+      return;
+    }
+    applyWritebackFeedback(payload);
+  })
+    .then((unlisten) => {
+      unlistenReferenceFeedback = unlisten;
+    })
+    .catch((error) => {
+      console.error('[VoiceConsultationNew] Failed to subscribe reference feedback:', error);
+    });
 });
 
 onBeforeUnmount(() => {
   document.removeEventListener('pointerdown', handleGlobalPointerDown);
+  if (unlistenReferenceFeedback) {
+    unlistenReferenceFeedback();
+    unlistenReferenceFeedback = null;
+  }
 });
 const insuranceOptions = ['医保使用', '自费'];
 
@@ -2792,6 +2890,7 @@ async function reconcileAutoSelectedMedicineInventory(items: TreatmentRecommenda
 async function handleBatchWriteBack(): Promise<void> {
   if (!canSubmit.value) return;
   submitting.value = true;
+  lastWritebackFeedback.value = null;
 
   try {
     const selected = treatments.value.filter((item) => item.selected);
@@ -2853,11 +2952,16 @@ async function handleBatchWriteBack(): Promise<void> {
       procs.length ? `处置：${procs.map((item) => item.name).join('；')}` : '',
     ].filter(Boolean).join('。');
 
+    const requestId = `record-confirmed-${Date.now()}`;
     const result = {
       consultationId: resolveConsultationId(),
       timestamp: Date.now(),
       resultType: 'record-confirmed',
-      requestId: `record-confirmed-${Date.now()}`,
+      requestId,
+      referenceType: 'batch',
+      action: 'batch',
+      referenceStatus: 'pending',
+      referenceMessage: '等待 HIS 完成最终回写并回执。',
       chiefComplaint: chiefComplaint.value,
       historyOfPresentIllness: historyOfPresentIllness.value,
       pastMedicalHistory: pastMedicalHistory.value,
@@ -2867,12 +2971,10 @@ async function handleBatchWriteBack(): Promise<void> {
     };
 
     await invoke('complete_consultation', { result });
-    submitVoiceFinalUserLog();
-    if (shouldUseVoiceCache.value) {
-      clearVoiceConsultationCache(props.initialPatientData);
-    }
-    showToast?.('病历已提交', 'success');
-    showSessionFeedbackDialog.value = true;
+    pendingWritebackRequestId.value = requestId;
+    pendingWritebackMessage.value = '病历已发送至 HIS，等待处理结果回执。';
+    waitingWritebackFeedback.value = true;
+    showToast?.('病历已发送至 HIS，等待处理结果回执。', 'info');
   } catch (error: unknown) {
     const msg = error instanceof Error ? error.message : String(error);
     showToast?.(`提交失败: ${msg}`, 'error');
@@ -2895,6 +2997,7 @@ watch(
     activeManualMatchKey.value = null;
     activeFeedbackPopoverKey.value = null;
     showSessionFeedbackDialog.value = false;
+    resetWritebackState();
     aiDiagnoses.value = [];
     selectedDiagnosisKeys.value = new Set();
     selectedDiagnosis.value = null;
@@ -3002,6 +3105,9 @@ watch(
     </div>
 
     <div v-else class="medical-record-page">
+      <div v-if="writebackBannerText" :class="['writeback-status-banner', `writeback-status-banner-${writebackBannerTone}`]">
+        {{ writebackBannerText }}
+      </div>
       <div class="record-content">
         <section class="vcn-panel pane-card vcn-left-panel">
           <div class="section-heading">
@@ -3673,7 +3779,7 @@ watch(
         v-if="secondaryFooterActionText"
         class="footer-secondary-btn"
         type="button"
-        :disabled="secondaryFooterActionDisabled || submitting"
+        :disabled="secondaryFooterActionDisabled || isWritebackBusy"
         @click="emit('secondary-footer-action')"
       >
         {{ secondaryFooterActionText }}
@@ -3682,13 +3788,12 @@ watch(
         class="footer-submit-btn"
         type="button"
         :disabled="!canSubmit"
-        :aria-busy="submitting"
+        :aria-busy="isWritebackBusy"
         @click="handleBatchWriteBack"
       >
-        <template v-if="submitting">提交中...</template>
-        <template v-else>一键回写</template>
+        {{ submitButtonText }}
       </button>
-      <button class="footer-cancel-btn" type="button" @click="handleCancelClick">放弃</button>
+      <button class="footer-cancel-btn" type="button" :disabled="isWritebackBusy" @click="handleCancelClick">放弃</button>
     </div>
 
     <div v-if="showCancelConfirm" class="confirm-overlay" @click.self="closeCancelConfirm">
@@ -3796,6 +3901,13 @@ watch(
   border-color: #CBD5E1;
 }
 
+.voice-footer .footer-cancel-btn:disabled {
+  color: #94A3B8;
+  background: #F8FAFC;
+  border-color: #E2E8F0;
+  cursor: not-allowed;
+}
+
 .voice-footer .footer-secondary-btn {
   min-width: 112px;
   height: 32px;
@@ -3849,6 +3961,26 @@ watch(
   background: rgba(43, 127, 227, 0.45);
   cursor: not-allowed;
   box-shadow: none;
+}
+
+.writeback-status-banner {
+  margin: 0 16px 10px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.writeback-status-banner-info {
+  background: rgba(59, 130, 246, 0.1);
+  border: 1px solid rgba(59, 130, 246, 0.2);
+  color: #1d4ed8;
+}
+
+.writeback-status-banner-error {
+  background: rgba(239, 68, 68, 0.1);
+  border: 1px solid rgba(239, 68, 68, 0.2);
+  color: #b91c1c;
 }
 
 .confirm-overlay {

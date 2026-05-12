@@ -125,7 +125,7 @@
 2. `MedHermes` 置顶并进入完整问诊主流程
 3. HIS 轮询 `GET /api/consultation/result`
 4. 医生在 `MedHermes` 中完成问诊或草稿回写
-5. HIS 收到 `draft` 或 `record-confirmed` 后更新医生站
+5. HIS 收到 `draft` 或 `record-confirmed` 后更新医生站；其中 `record-confirmed` 在 HIS 完成最终调入确认后，仍需继续调用 `POST /api/consultation/reference-feedback` 回执成功或失败
 
 ### 5.2 灵活模式时序
 
@@ -507,7 +507,7 @@ http://127.0.0.1:8081/api/consultation/result
 
 #### 成功响应: 问诊一键确认回写（record-confirmed）
 
-`record-confirmed` 类型来自问诊最终确认提交。**症状问诊（`ConsultationPage` 完成问诊）和语音问诊（`VoiceConsultationNew` 提交病历）共用此契约**，由 `src/utils/recordConfirmedPayload.ts` 作为唯一构造点产出，字段结构、默认值、PHIS 中性化策略两边完全一致。与 `reference-request` 不同，这是医生在结果页直接确认后一次性提交的完整数据，不走引用闭环，PHIS 可直接用于调入确认。
+`record-confirmed` 类型来自问诊最终确认提交。**症状问诊（`ConsultationPage` 完成问诊）和语音问诊（`VoiceConsultationNew` 提交病历）共用此契约**，由 `src/utils/recordConfirmedPayload.ts` 作为唯一构造点产出，字段结构、默认值、PHIS 中性化策略两边完全一致。与 `reference-request` 不同，这是医生在结果页直接确认后一次性提交的完整数据，不再拆成逐项引用请求；但 PHIS 在完成最终调入确认后，仍必须调用 `POST /api/consultation/reference-feedback` 回执成功或失败，桌面端会在收到回执前保持结果页处于等待态。
 
 ```json
 {
@@ -515,6 +515,10 @@ http://127.0.0.1:8081/api/consultation/result
   "timestamp": 1704355201000,
   "resultType": "record-confirmed",
   "requestId": "record-confirmed-1704355201000",
+  "referenceType": "batch",
+  "action": "batch",
+  "referenceStatus": "pending",
+  "referenceMessage": "等待 HIS 完成最终回写并回执",
   "chiefComplaint": "咳嗽三天",
   "historyOfPresentIllness": "受凉后出现咳嗽、咳痰，无明显呼吸困难。",
   "pastMedicalHistory": "否认高血压、糖尿病病史。",
@@ -570,6 +574,12 @@ http://127.0.0.1:8081/api/consultation/result
 ##### record-confirmed 字段说明
 
 `record-confirmed` 现在将诊断收敛到 `diagList`，将药品、检查、检验、处置统一收敛到 `orderList`。PHIS 不再按 `diagnosisList / medications / examinations / labTests / procedures` 这套旧结构解析。
+
+补充说明：
+
+1. `requestId` 是最终回写闭环的唯一请求标识，PHIS 在完成处理后必须带着同一个 `requestId` 调用 `POST /api/consultation/reference-feedback`。
+2. `referenceType/action` 在 `record-confirmed` 场景下固定按 `batch` 语义理解，表示一次性处理整张病历对应的诊断和全部医嘱。
+3. `referenceStatus = pending` 仅表示桌面端已发起最终回写请求，并不代表 HIS 已处理成功；真正成功/失败以后续 `reference-feedback` 回执为准。
 
 **diagList 字段：**
 
@@ -770,7 +780,7 @@ HTTP 状态码：`404`
 | `timestamp` | 本条结果生成时间戳 |
 | `resultType` | 当前可能为 `draft` / `record-confirmed` / `reference-request` / `reference-feedback`（`final-report` 已废弃） |
 | `requestId` | 请求 ID，`draft` 类型格式为 `draft-record-{timestamp}`，引用闭环类型格式为 `ref-{action}-{timestamp}` |
-| `referenceType` | 当前引用对象类型，支持 `diagnosis` / `medication` / `examination` / `lab_test` / `procedure` / `batch`；一键回写场景下为 `batch`，此时 `referenceItems` 包含所有类型的项目，每项通过 `type` 字段区分 |
+| `referenceType` | 当前引用对象类型，支持 `diagnosis` / `medication` / `examination` / `lab_test` / `procedure` / `batch`；`reference-request` 批量引用和 `record-confirmed` 最终回写这两类闭环场景都使用 `batch` 语义 |
 | `action` | 兼容旧版联调字段，语义与 `referenceType` 相同，建议新接入只把它当兼容字段使用 |
 | `referenceStatus` | 引用状态，常见值 `pending` / `success` / `failed` |
 | `referenceMessage` | 当前状态说明或失败原因 |
@@ -789,13 +799,13 @@ HIS 处理建议：
    - `reference-feedback + examination` = 检查保存回执
    - `reference-feedback + lab_test` = 检验保存回执
    - `reference-feedback + procedure` = 处置保存回执
-4. 收到 `reference-request` 后**必须尽快调用 `/reference-feedback` 回执**。回执完成后继续轮询可取到 `reference-feedback` 确认状态。
+4. 收到 `reference-request` 或 `record-confirmed` 后**必须尽快调用 `/reference-feedback` 回执**。回执完成后继续轮询可取到 `reference-feedback` 确认状态。
 
 ### 6.5 `POST /api/consultation/reference-feedback`（必须）
 
 用途：PHIS 在保存推荐诊断 / 用药 / 检查后，**必须**将成功或失败结果回执给 `MedHermes`。
 
-**强制要求：** 每收到一条 `reference-request`，PHIS 都必须调用本接口回执。一键回写场景下只有一条 `batch` 类型请求，PHIS 处理完全部项目后回执一次即可。
+**强制要求：** 每收到一条 `reference-request` 或 `record-confirmed`，PHIS 都必须调用本接口回执。一键回写场景下只回执一次即可；`reference-request` 走批量引用语义，`record-confirmed` 走最终调入确认语义，但两者都通过同一个接口回传成功或失败。
 
 完整地址：
 
@@ -809,8 +819,8 @@ http://127.0.0.1:8081/api/consultation/reference-feedback
 | :--- | :--- | :--- | :--- |
 | `consultationId` | String | 是 | 当前患者 / 当前问诊标识 |
 | `requestId` | String | 是 | 对应 `reference-request` 中的请求 ID |
-| `referenceType` | String | 否 | 建议新接入显式传入的引用对象类型，支持 `diagnosis` / `medication` / `examination` / `lab_test` / `procedure` / `batch` |
-| `action` | String | 否 | 兼容旧版字段，语义与 `referenceType` 相同；`referenceType` 与 `action` 至少要传一个 |
+| `referenceType` | String | 否 | 建议新接入显式传入的引用对象类型，支持 `diagnosis` / `medication` / `examination` / `lab_test` / `procedure` / `batch`；若回执的是 `record-confirmed`，留空时默认按 `batch` 处理 |
+| `action` | String | 否 | 兼容旧版字段，语义与 `referenceType` 相同；`reference-request` 场景下 `referenceType` 与 `action` 至少要传一个；回执 `record-confirmed` 时两者可同时省略 |
 | `status` | String | 是 | `success` / `failed` |
 | `message` | String | 否 | 成功说明或失败原因 |
 | `items` | Array | 否 | 本次实际保存的项目列表 |
@@ -871,9 +881,9 @@ HTTP 状态码：`409`
 
 实现说明：
 
-1. 当前回执必须匹配“最新一条结果”里的 `requestId` 且其 `resultType` 必须还是 `reference-request`。
+1. 当前回执必须匹配“最新一条结果”里的 `requestId`，且其 `resultType` 必须还是 `reference-request` 或 `record-confirmed`。
 2. 如果 HIS 传错 `consultationId` 或 `requestId`，会返回 `409 REFERENCE_REQUEST_MISMATCH`。
-3. `referenceType` 与 `action` 如果同时传入，语义必须一致；不一致时接口会返回 `400 INVALID_REFERENCE_TYPE`。
+3. `referenceType` 与 `action` 如果同时传入，语义必须一致；不一致时接口会返回 `400 INVALID_REFERENCE_TYPE`。若当前待确认结果是 `record-confirmed` 且两者都未传，服务端会默认按 `batch` 处理。
 4. 建议 `status = failed` 时，把失败原因写进 `message`，便于医生在 `MedHermes` 里理解失败原因。
 5. 如果想让页面上的逐项“已引用/引用失败”状态更准确，建议原样回传本次成功或失败的 `items`。
 

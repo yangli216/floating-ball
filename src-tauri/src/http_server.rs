@@ -715,82 +715,12 @@ async fn reference_feedback(
 
     let request = data.into_inner();
     let request_summary = summarize_for_his_log(&request);
-    let resolved_reference_type = match (&request.reference_type, &request.action) {
-        (Some(reference_type), Some(action)) if reference_type != action => {
-            let response_body = serde_json::json!({
-                "status": "error",
-                "code": "INVALID_REFERENCE_TYPE",
-                "message": "referenceType and action must match when both are provided",
-                "traceId": trace_id
-            });
-            record_bridge_log(
-                &app_handle,
-                response_body["traceId"].as_str().unwrap_or_default(),
-                "consultation.referenceFeedback",
-                "POST",
-                "/api/consultation/reference-feedback",
-                "error",
-                400,
-                started_at,
-                Some(request_summary),
-                Some(response_body.clone()),
-                None,
-                Some(request.consultation_id.clone()),
-                Some(request.request_id.clone()),
-                Some("referenceType and action must match when both are provided".to_string()),
-            );
-            return HttpResponse::BadRequest().json(response_body);
-        }
-        (Some(reference_type), _) => reference_type.clone(),
-        (_, Some(action)) => action.clone(),
-        _ => {
-            let response_body = serde_json::json!({
-                "status": "error",
-                "code": "INVALID_REFERENCE_TYPE",
-                "message": "referenceType or action is required",
-                "traceId": trace_id
-            });
-            record_bridge_log(
-                &app_handle,
-                response_body["traceId"].as_str().unwrap_or_default(),
-                "consultation.referenceFeedback",
-                "POST",
-                "/api/consultation/reference-feedback",
-                "error",
-                400,
-                started_at,
-                Some(request_summary),
-                Some(response_body.clone()),
-                None,
-                Some(request.consultation_id.clone()),
-                Some(request.request_id.clone()),
-                Some("referenceType or action is required".to_string()),
-            );
-            return HttpResponse::BadRequest().json(response_body);
-        }
-    };
-    println!(
-        "Received consultation reference feedback: consultation={}, request={}, referenceType={}, status={}",
-        request.consultation_id, request.request_id, resolved_reference_type, request.status
-    );
-
     let timestamp = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .unwrap()
         .as_millis() as u64;
 
-    let feedback_payload = serde_json::json!({
-        "consultationId": request.consultation_id.clone(),
-        "requestId": request.request_id.clone(),
-        "referenceType": resolved_reference_type.clone(),
-        "action": resolved_reference_type.clone(),
-        "status": request.status.clone(),
-        "message": request.message.clone(),
-        "items": request.items.clone(),
-        "timestamp": timestamp
-    });
-
-    let base_record_map = {
+    let (base_record_map, existing_result_type, existing_reference_type) = {
         let last_result = state.last_result.lock().unwrap();
         let Some(existing_result) = last_result.as_ref() else {
             let response_body = serde_json::json!({
@@ -882,23 +812,22 @@ async fn reference_feedback(
         let existing_request_id = record_map
             .get("requestId")
             .and_then(|value| value.as_str())
-            .unwrap_or_default();
+            .unwrap_or_default()
+            .to_string();
         let existing_result_type = record_map
             .get("resultType")
             .and_then(|value| value.as_str())
-            .unwrap_or_default();
+            .unwrap_or_default()
+            .to_string();
         let existing_reference_type = record_map
             .get("referenceType")
             .or_else(|| record_map.get("action"))
             .and_then(|value| value.as_str())
-            .unwrap_or_default();
+            .unwrap_or_default()
+            .to_string();
 
         if existing_request_id != request.request_id
-            || existing_result_type != "reference-request"
-            || existing_reference_type
-                != feedback_payload["referenceType"]
-                    .as_str()
-                    .unwrap_or_default()
+            || (existing_result_type != "reference-request" && existing_result_type != "record-confirmed")
         {
             let response_body = serde_json::json!({
                 "status": "error",
@@ -928,8 +857,136 @@ async fn reference_feedback(
             return HttpResponse::Conflict().json(response_body);
         }
 
-        record_map
+        (
+            record_map.clone(),
+            existing_result_type,
+            existing_reference_type,
+        )
     };
+
+    let resolved_reference_type = match (&request.reference_type, &request.action) {
+        (Some(reference_type), Some(action)) if reference_type != action => {
+            let response_body = serde_json::json!({
+                "status": "error",
+                "code": "INVALID_REFERENCE_TYPE",
+                "message": "referenceType and action must match when both are provided",
+                "traceId": trace_id
+            });
+            record_bridge_log(
+                &app_handle,
+                response_body["traceId"].as_str().unwrap_or_default(),
+                "consultation.referenceFeedback",
+                "POST",
+                "/api/consultation/reference-feedback",
+                "error",
+                400,
+                started_at,
+                Some(request_summary.clone()),
+                Some(response_body.clone()),
+                None,
+                Some(request.consultation_id.clone()),
+                Some(request.request_id.clone()),
+                Some("referenceType and action must match when both are provided".to_string()),
+            );
+            return HttpResponse::BadRequest().json(response_body);
+        }
+        (Some(reference_type), _) => reference_type.clone(),
+        (_, Some(action)) => action.clone(),
+        _ if existing_result_type == "record-confirmed" => "batch".to_string(),
+        _ => {
+            let response_body = serde_json::json!({
+                "status": "error",
+                "code": "INVALID_REFERENCE_TYPE",
+                "message": "referenceType or action is required",
+                "traceId": trace_id
+            });
+            record_bridge_log(
+                &app_handle,
+                response_body["traceId"].as_str().unwrap_or_default(),
+                "consultation.referenceFeedback",
+                "POST",
+                "/api/consultation/reference-feedback",
+                "error",
+                400,
+                started_at,
+                Some(request_summary.clone()),
+                Some(response_body.clone()),
+                None,
+                Some(request.consultation_id.clone()),
+                Some(request.request_id.clone()),
+                Some("referenceType or action is required".to_string()),
+            );
+            return HttpResponse::BadRequest().json(response_body);
+        }
+    };
+
+    if existing_result_type == "record-confirmed" && resolved_reference_type != "batch" {
+        let response_body = serde_json::json!({
+            "status": "error",
+            "code": "INVALID_REFERENCE_TYPE",
+            "message": "record-confirmed feedback only supports batch referenceType",
+            "traceId": trace_id
+        });
+        record_bridge_log(
+            &app_handle,
+            response_body["traceId"].as_str().unwrap_or_default(),
+            "consultation.referenceFeedback",
+            "POST",
+            "/api/consultation/reference-feedback",
+            "error",
+            400,
+            started_at,
+            Some(request_summary.clone()),
+            Some(response_body.clone()),
+            None,
+            Some(request.consultation_id.clone()),
+            Some(request.request_id.clone()),
+            Some("record-confirmed feedback only supports batch referenceType".to_string()),
+        );
+        return HttpResponse::BadRequest().json(response_body);
+    }
+
+    if existing_result_type == "reference-request" && existing_reference_type != resolved_reference_type {
+        let response_body = serde_json::json!({
+            "status": "error",
+            "code": "REFERENCE_REQUEST_MISMATCH",
+            "message": "No matching pending reference request for current consultation result",
+            "traceId": trace_id
+        });
+        record_bridge_log(
+            &app_handle,
+            response_body["traceId"].as_str().unwrap_or_default(),
+            "consultation.referenceFeedback",
+            "POST",
+            "/api/consultation/reference-feedback",
+            "error",
+            409,
+            started_at,
+            Some(request_summary.clone()),
+            Some(response_body.clone()),
+            None,
+            Some(request.consultation_id.clone()),
+            Some(request.request_id.clone()),
+            Some("No matching pending reference request for current consultation result".to_string()),
+        );
+        return HttpResponse::Conflict().json(response_body);
+    }
+
+    println!(
+        "Received consultation reference feedback: consultation={}, request={}, resultType={}, referenceType={}, status={}",
+        request.consultation_id, request.request_id, existing_result_type, resolved_reference_type, request.status
+    );
+
+    let feedback_payload = serde_json::json!({
+        "consultationId": request.consultation_id.clone(),
+        "requestId": request.request_id.clone(),
+        "referenceType": resolved_reference_type.clone(),
+        "action": resolved_reference_type.clone(),
+        "status": request.status.clone(),
+        "message": request.message.clone(),
+        "items": request.items.clone(),
+        "timestamp": timestamp
+    });
 
     let merged_result = {
         let mut last_result = state.last_result.lock().unwrap();
