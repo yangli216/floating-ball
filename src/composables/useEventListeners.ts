@@ -25,7 +25,7 @@ import { getHisService, resetHisService, getHisAdapter, resetHisAdapter } from '
 import type { HisPatientHistory, HisVisitRecord } from '../services/his/types';
 import { medicalDataService } from '../services/medicalData';
 import { resolveFeedbackActorFromUrt, setFeedbackActor } from '../services/feedbackContext';
-import { syncPatientMemoryFromHis } from '../services/patientMemoryStore';
+import { mapHisPatientInfoToPatientProfile, syncPatientMemoryFromHis } from '../services/patientMemoryStore';
 import {
   buildPatientContext,
   getPatientContextAgeText,
@@ -541,7 +541,9 @@ async function hydratePatientContextFromHis(
   hydrated = applyClinicalHistorySummaries(hydrated, hisHistory);
 
   if (hisHistory) {
-    await syncPatientMemoryFromHis(patientId, hisHistory);
+    await syncPatientMemoryFromHis(patientId, hisHistory, {
+      patientProfile: mapHisPatientInfoToPatientProfile(hisInfo),
+    });
   }
 
   return hydrated;

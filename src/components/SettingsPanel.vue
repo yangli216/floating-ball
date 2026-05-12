@@ -1035,13 +1035,13 @@ watch([regionalBaseUrl, regionalOrgCode], () => {
             style="display: flex; align-items: center; justify-content: space-between;">
             <div class="header-left" style="display: flex; align-items: center; gap: 12px;">
               <Icon icon="lucide:database" :size="20" />
-              <h3 style="margin: 0;">基础数据缓存管理</h3>
+              <h3 style="margin: 0;">缓存管理</h3>
             </div>
             <div class="arrow-icon">
               <Icon icon="lucide:chevron-right" :size="20" />
             </div>
           </div>
-          <p class="section-desc" style="margin-top: 4px;">查看诊断、诊疗项目、药品目录缓存状态，并支持手动同步或清理</p>
+          <p class="section-desc" style="margin-top: 4px;">查看基础数据缓存与患者记忆缓存，两类缓存分面板管理，避免操作歧义</p>
         </div>
 
         <div class="settings-section clickable-section"

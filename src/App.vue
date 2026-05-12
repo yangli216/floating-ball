@@ -123,7 +123,7 @@ const assistantTitle = computed(() => {
     case 'his-log':
       return 'HIS 联调日志';
     case 'medical-cache':
-      return '基础数据缓存管理';
+      return '缓存管理';
     case 'knowledge-base':
       return '知识库检索';
     default:

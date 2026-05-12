@@ -853,9 +853,12 @@ pub fn run() {
             commands::medical_catalog::get_medical_catalog_debug_state,
             commands::medical_catalog::clear_medical_catalog_cache,
             // Patient long-term memory commands
+            commands::patient_memory::patient_memory_get_debug_state,
             commands::patient_memory::patient_memory_get,
             commands::patient_memory::patient_memory_append_visit,
-            commands::patient_memory::patient_memory_clear
+            commands::patient_memory::patient_memory_replace_snapshot,
+            commands::patient_memory::patient_memory_clear,
+            commands::patient_memory::patient_memory_clear_all
         ])
         .setup(move |app| {
             // Initialize feedback database

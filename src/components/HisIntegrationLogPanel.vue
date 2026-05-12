@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue';
+import { confirm } from '@tauri-apps/plugin-dialog';
 import Icon from './Icon.vue';
 import {
   clearHisIntegrationLogs,
@@ -60,7 +61,8 @@ async function exportLogs(): Promise<void> {
 }
 
 async function clearLogs(): Promise<void> {
-  if (!window.confirm('确认清空本机 HIS 联调日志？此操作不可撤销。')) return;
+  const confirmed = await confirm('确认清空本机 HIS 联调日志？此操作不可撤销。');
+  if (!confirmed) return;
   clearing.value = true;
   message.value = '';
   try {

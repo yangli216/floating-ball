@@ -5,6 +5,7 @@
 
 CREATE TABLE IF NOT EXISTS patient_memory (
     patient_id TEXT PRIMARY KEY,
+    patient_profile_json TEXT,
     allergy_history TEXT NOT NULL DEFAULT '[]',
     chronic_diagnoses TEXT NOT NULL DEFAULT '[]',
     updated_at INTEGER NOT NULL

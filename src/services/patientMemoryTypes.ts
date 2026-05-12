@@ -3,6 +3,17 @@
  * 与 Rust 端 `commands/patient_memory.rs` 的 PatientMemoryDto / PatientVisitSummaryDto 结构对齐。
  */
 
+export interface PatientProfile {
+  patientId: string;
+  name?: string;
+  gender?: 'M' | 'F' | 'O';
+  age?: number;
+  ageText?: string;
+  idNo?: string;
+  mobilePhone?: string;
+  insuranceType?: string;
+}
+
 export interface PatientVisitSummary {
   /** 完成时间戳（ms） */
   completedAt: number;
@@ -20,6 +31,8 @@ export interface PatientVisitSummary {
 
 export interface PatientMemory {
   patientId: string;
+  /** 患者基本信息快照，优先来自 HIS 患者详情 */
+  patientProfile?: PatientProfile | null;
   /** 历次累积过敏史（去重，已剔除"无/否认/未发现"等无意义值） */
   allergyHistory: string[];
   /** 反复出现 ≥2 次的诊断升级为慢病候选 */

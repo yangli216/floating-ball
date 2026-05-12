@@ -22,119 +22,164 @@
 
 import type { GeneratedRecord } from '../types/voiceResult';
 import { getMemoryBackend } from './patientMemoryBackend';
-import type { PatientMemory, PatientVisitSummary } from './patientMemoryTypes';
+import type { HisPatientInfo, HisPatientHistory } from './his/types';
+import type { PatientMemory, PatientProfile, PatientVisitSummary } from './patientMemoryTypes';
 
 export type { PatientMemory, PatientVisitSummary } from './patientMemoryTypes';
+
+export interface SyncPatientMemoryFromHisOptions {
+  force?: boolean;
+  patientProfile?: PatientProfile | null;
+}
+
+function sanitizePatientMemory(memory: PatientMemory | null): PatientMemory | null {
+  if (!memory) return null;
+  return {
+    ...memory,
+    chronicDiagnosisCandidates: (memory.chronicDiagnosisCandidates || []).filter(isLikelyChronicDiagnosis),
+    recentVisits: [...(memory.recentVisits || [])].sort((left, right) => right.completedAt - left.completedAt),
+  };
+}
 
 export async function getPatientMemory(patientId: string | null | undefined): Promise<PatientMemory | null> {
   if (!patientId || patientId === 'unknown') return null;
   try {
-    return await getMemoryBackend().get(patientId);
+    return sanitizePatientMemory(await getMemoryBackend().get(patientId));
   } catch (err) {
     console.warn('[patientMemory] getPatientMemory failed:', patientId, err);
     return null;
   }
 }
 
-import { chatFast } from './llm';
-import type { HisPatientHistory } from './his/types';
+const ACUTE_DIAGNOSIS_KEYWORDS = [
+  '急性',
+  '上呼吸道感染',
+  '呼吸道感染',
+  '感染',
+  '感冒',
+  '肺炎',
+  '支气管炎',
+  '咽炎',
+  '扁桃体炎',
+  '发热',
+  '腹泻',
+  '胃肠炎',
+  '外伤',
+  '挫伤',
+  '术后',
+  '复查',
+];
+
+function normalizeTimestamp(value: number | null | undefined): number {
+  if (typeof value !== 'number' || !Number.isFinite(value) || value <= 0) {
+    return Date.now();
+  }
+  if (value > 10_000_000_000) {
+    return value;
+  }
+  return value * 1000;
+}
+
+function splitHistoryTerms(values: string[] | undefined): string[] {
+  const result: string[] = [];
+  for (const value of values || []) {
+    const parts = String(value || '')
+      .split(/[、,，;；\n]/)
+      .map(item => item.trim())
+      .filter(Boolean);
+    result.push(...parts);
+  }
+  return unique(result);
+}
+
+function isLikelyChronicDiagnosis(value: string): boolean {
+  const normalized = value.trim();
+  if (!normalized) return false;
+  return !ACUTE_DIAGNOSIS_KEYWORDS.some(keyword => normalized.includes(keyword));
+}
+
+function deriveChronicCandidatesFromHis(history: HisPatientHistory): string[] {
+  const fromPastHistory = splitHistoryTerms(history.pastMedicalHistory).filter(isLikelyChronicDiagnosis);
+  if (fromPastHistory.length > 0) {
+    return fromPastHistory.slice(0, 8);
+  }
+
+  const counts = new Map<string, number>();
+  for (const visit of history.visits || []) {
+    for (const diagnosis of new Set(visit.diagnoses || [])) {
+      const normalized = diagnosis.trim();
+      if (!normalized || !isLikelyChronicDiagnosis(normalized)) continue;
+      counts.set(normalized, (counts.get(normalized) || 0) + 1);
+    }
+  }
+
+  return Array.from(counts.entries())
+    .filter(([, count]) => count >= 2)
+    .sort((left, right) => right[1] - left[1])
+    .slice(0, 8)
+    .map(([name]) => name);
+}
+
+function normalizeAllergyHistory(values: string[] | undefined): string[] {
+  return splitHistoryTerms(values).filter(item => !/^(无|否认|未发现|none|nkda)$/i.test(item));
+}
+
+function normalizeHisVisits(history: HisPatientHistory): PatientVisitSummary[] {
+  return [...(history.visits || [])]
+    .map((visit) => ({
+      completedAt: normalizeTimestamp(visit.visitTime),
+      chiefComplaint: (visit.chiefComplaint || '').trim(),
+      primaryDiagnosis: visit.diagnoses?.[0]?.trim() || null,
+      diagnoses: (visit.diagnoses || []).map(item => item.trim()).filter(Boolean),
+      medications: (visit.medications || []).map(item => item.trim()).filter(Boolean),
+      labTests: [],
+    }))
+    .sort((left, right) => right.completedAt - left.completedAt)
+    .slice(0, 5);
+}
+
+export function mapHisPatientInfoToPatientProfile(info: HisPatientInfo | null | undefined): PatientProfile | null {
+  if (!info?.patientId) return null;
+  return {
+    patientId: info.patientId,
+    name: info.name || undefined,
+    gender: info.gender,
+    age: info.age,
+    ageText: info.ageText || undefined,
+    idNo: info.idNo || undefined,
+    mobilePhone: info.mobilePhone || undefined,
+    insuranceType: info.insuranceType || undefined,
+  };
+}
 
 /**
- * 异步同步 HIS 就诊历史到本地记忆系统
+ * 异步同步 HIS 就诊历史到本地记忆系统。
  * 如果本地缓存未过期（如24小时内有更新），则跳过以提升性能。
- * 否则通过轻量级 LLM 将无结构的 HIS 数据提取为标准化记忆并落盘。
+ * HIS 已返回结构化历史时，直接整包覆盖本地快照，避免 LLM 回填时间导致历史时间失真。
  */
-export async function syncPatientMemoryFromHis(patientId: string, hisHistory: HisPatientHistory): Promise<void> {
+export async function syncPatientMemoryFromHis(
+  patientId: string,
+  hisHistory: HisPatientHistory,
+  options?: SyncPatientMemoryFromHisOptions,
+): Promise<void> {
   if (!patientId || !hisHistory) return;
 
   const memory = await getPatientMemory(patientId);
   const ONE_DAY = 24 * 3600 * 1000;
-  if (memory && memory.updatedAt && (Date.now() - memory.updatedAt < ONE_DAY)) {
+  if (!options?.force && memory && memory.updatedAt && (Date.now() - memory.updatedAt < ONE_DAY)) {
     console.log('[patientMemory] memory is fresh, skip sync from HIS');
     return;
   }
 
-  // 即使 HIS 返回的数据是结构化的，也可能不够简洁，统一用轻量级模型清洗
-  const promptText = `
-请将以下患者历史就诊记录提取为标准化的 JSON 结构：
-【过敏史】：${(hisHistory.allergyHistory || []).join('、') || '无'}
-【既往史/慢病史】：${(hisHistory.pastMedicalHistory || []).join('、') || '无'}
-【历次就诊记录】：
-${(hisHistory.visits || []).map(v => 
-  `时间: ${new Date(v.visitTime).toISOString().slice(0, 10)}
-  主诉: ${v.chiefComplaint || '无'}
-  现病史: ${v.presentIllness || '无'}
-  诊断: ${(v.diagnoses || []).join('、') || '无'}
-  用药: ${(v.medications || []).join('、') || '无'}`
-).join('\n\n')}
-
-要求输出 JSON 格式，严格包含以下三个字段：
-- allergyHistory: 字符串数组，提取所有明确的过敏史（排除"无"等无意义描述）。
-- chronicDiagnosisCandidates: 字符串数组，提取既往史中明确的慢性疾病名称。
-- visits: 对象数组，每个对象包含 chiefComplaint, diagnoses, medications，以及 visitTime(时间戳数值)，按时间从老到新排序（最新的在最后），最多包含最近 5 次的就诊。
-直接返回纯 JSON 数据，不要任何 markdown 标记（不要写 \`\`\`json ）。
-`;
-
   try {
-    const responseText = await chatFast([
-      { role: 'system', content: '你是一个医疗数据结构化助手，仅输出合法的 JSON 文本，没有任何额外字符。' },
-      { role: 'user', content: promptText }
-    ]);
-    
-    let cleanJson = responseText.replace(/```json\n?|\n?```/g, '').trim();
-    const jsonStart = cleanJson.indexOf('{');
-    const jsonEnd = cleanJson.lastIndexOf('}');
-    if (jsonStart !== -1 && jsonEnd !== -1) {
-      cleanJson = cleanJson.slice(jsonStart, jsonEnd + 1);
-    }
-
-    const parsed = JSON.parse(cleanJson);
-    const allergyHistoryText = (parsed.allergyHistory || []).join('、');
-    
-    // 清空现有历史
-    await clearPatientMemory(patientId);
-    
-    // 按时间顺序（从老到新）重新 append，以便重算慢病候选和保留最新记录
-    const visits = Array.isArray(parsed.visits) ? parsed.visits : [];
-    // 确保按时间顺序，避免乱序导致裁切错误的 5 条
-    visits.sort((a: any, b: any) => (a.visitTime || 0) - (b.visitTime || 0));
-    
-    if (visits.length === 0 && allergyHistoryText) {
-       // 如果只有过敏史没有就诊记录，插入一条空记录携带过敏史
-       await appendPatientVisit({
-         patientId,
-         record: {
-           chiefComplaint: '',
-           historyOfPresentIllness: '',
-           pastMedicalHistory: '',
-           diagnosisList: [],
-           medications: [],
-           examinations: [],
-           labTests: [],
-           procedures: []
-         },
-         allergyHistoryText,
-         completedAt: Date.now()
-       });
-    } else {
-       for (const v of visits) {
-         await appendPatientVisit({
-           patientId,
-           record: {
-             chiefComplaint: v.chiefComplaint || '',
-             historyOfPresentIllness: v.presentIllness || '',
-             pastMedicalHistory: '',
-             diagnosisList: Array.isArray(v.diagnoses) ? v.diagnoses.map((d: string) => ({ name: d })) : [],
-             medications: Array.isArray(v.medications) ? v.medications.map((m: string) => ({ name: m })) : [],
-             examinations: [],
-             labTests: [],
-             procedures: [],
-           },
-           allergyHistoryText,
-           completedAt: v.visitTime || Date.now()
-         });
-       }
-    }
+    await getMemoryBackend().replaceSnapshot({
+      patientId,
+      patientProfile: options?.patientProfile ?? memory?.patientProfile ?? null,
+      allergyHistory: normalizeAllergyHistory(hisHistory.allergyHistory),
+      chronicDiagnosisCandidates: deriveChronicCandidatesFromHis(hisHistory),
+      recentVisits: normalizeHisVisits(hisHistory),
+      updatedAt: Date.now(),
+    });
     console.log('[patientMemory] synced from HIS successfully');
   } catch (err) {
     console.warn('[patientMemory] sync from HIS failed, error:', err);
@@ -146,6 +191,7 @@ export interface AppendVisitInput {
   record: GeneratedRecord;
   /** 当前 patientInfo.allergyHistory 原值，可选 */
   allergyHistoryText?: string | null;
+  patientProfile?: PatientProfile | null;
   completedAt?: number;
 }
 
@@ -153,7 +199,7 @@ export interface AppendVisitInput {
  * 在医生确认提交后，把本次就诊摘要落入患者长期记忆。
  */
 export async function appendPatientVisit(input: AppendVisitInput): Promise<PatientMemory | null> {
-  const { patientId, record, allergyHistoryText, completedAt } = input;
+  const { patientId, record, allergyHistoryText, patientProfile, completedAt } = input;
   if (!patientId || patientId === 'unknown') return null;
 
   const visit: PatientVisitSummary = {
@@ -166,11 +212,12 @@ export async function appendPatientVisit(input: AppendVisitInput): Promise<Patie
   };
 
   try {
-    return await getMemoryBackend().appendVisit({
+    return sanitizePatientMemory(await getMemoryBackend().appendVisit({
       patientId,
       visit,
       allergyHistoryText: allergyHistoryText ?? null,
-    });
+      patientProfile: patientProfile ?? null,
+    }));
   } catch (err) {
     console.warn('[patientMemory] appendPatientVisit failed:', patientId, err);
     return null;
@@ -183,6 +230,14 @@ export async function clearPatientMemory(patientId: string | null | undefined): 
     await getMemoryBackend().clear(patientId);
   } catch (err) {
     console.warn('[patientMemory] clearPatientMemory failed:', patientId, err);
+  }
+}
+
+export async function clearAllPatientMemory(): Promise<void> {
+  try {
+    await getMemoryBackend().clearAll();
+  } catch (err) {
+    console.warn('[patientMemory] clearAllPatientMemory failed:', err);
   }
 }
 

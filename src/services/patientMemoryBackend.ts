@@ -16,7 +16,7 @@
  */
 
 import { invoke } from '@tauri-apps/api/core';
-import type { PatientMemory, PatientVisitSummary } from './patientMemoryTypes';
+import type { PatientMemory, PatientProfile, PatientVisitSummary } from './patientMemoryTypes';
 
 const STORAGE_PREFIX = 'PATIENT_MEMORY_V1';
 const MAX_VISITS = 5;
@@ -27,14 +27,45 @@ export interface AppendVisitArgs {
   patientId: string;
   visit: PatientVisitSummary;
   allergyHistoryText: string | null;
+  patientProfile?: PatientProfile | null;
+}
+
+export interface ReplaceMemorySnapshotArgs {
+  patientId: string;
+  patientProfile?: PatientProfile | null;
+  allergyHistory: string[];
+  chronicDiagnosisCandidates: string[];
+  recentVisits: PatientVisitSummary[];
+  updatedAt?: number | null;
 }
 
 export interface MemoryBackend {
   readonly mode: 'local-sqlite' | 'regional-http' | 'local-storage';
   get(patientId: string): Promise<PatientMemory | null>;
   appendVisit(args: AppendVisitArgs): Promise<PatientMemory | null>;
+  replaceSnapshot(args: ReplaceMemorySnapshotArgs): Promise<PatientMemory | null>;
   clear(patientId: string): Promise<void>;
+  clearAll(): Promise<void>;
 }
+
+const ACUTE_DIAGNOSIS_KEYWORDS = [
+  '急性',
+  '上呼吸道感染',
+  '呼吸道感染',
+  '感染',
+  '感冒',
+  '肺炎',
+  '支气管炎',
+  '咽炎',
+  '扁桃体炎',
+  '发热',
+  '腹泻',
+  '胃肠炎',
+  '外伤',
+  '挫伤',
+  '术后',
+  '复查',
+];
 
 // ---- Tauri SQLite backend ----
 
@@ -51,12 +82,30 @@ class TauriSqliteBackend implements MemoryBackend {
         patientId: args.patientId,
         visit: args.visit,
         allergyHistoryText: args.allergyHistoryText,
+        patientProfile: args.patientProfile ?? null,
+      },
+    })) as PatientMemory | null) ?? null;
+  }
+
+  async replaceSnapshot(args: ReplaceMemorySnapshotArgs): Promise<PatientMemory | null> {
+    return ((await invoke('patient_memory_replace_snapshot', {
+      input: {
+        patientId: args.patientId,
+        patientProfile: args.patientProfile ?? null,
+        allergyHistory: args.allergyHistory,
+        chronicDiagnosisCandidates: args.chronicDiagnosisCandidates,
+        recentVisits: args.recentVisits,
+        updatedAt: args.updatedAt ?? null,
       },
     })) as PatientMemory | null) ?? null;
   }
 
   async clear(patientId: string): Promise<void> {
     await invoke('patient_memory_clear', { patientId });
+  }
+
+  async clearAll(): Promise<void> {
+    await invoke('patient_memory_clear_all');
   }
 }
 
@@ -87,6 +136,7 @@ function deriveChronicCandidates(visits: PatientVisitSummary[]): string[] {
     new Set(v.diagnoses || []).forEach(d => {
       const t = d.trim();
       if (!t) return;
+      if (ACUTE_DIAGNOSIS_KEYWORDS.some(keyword => t.includes(keyword))) return;
       counts.set(t, (counts.get(t) || 0) + 1);
     });
   });
@@ -112,6 +162,9 @@ class LocalStorageBackend implements MemoryBackend {
       if (!parsed || parsed.patientId !== patientId) return null;
       return {
         patientId,
+        patientProfile: parsed.patientProfile && typeof parsed.patientProfile === 'object'
+          ? parsed.patientProfile as PatientProfile
+          : null,
         allergyHistory: Array.isArray(parsed.allergyHistory) ? parsed.allergyHistory.filter((s: unknown) => typeof s === 'string') : [],
         chronicDiagnosisCandidates: Array.isArray(parsed.chronicDiagnosisCandidates)
           ? parsed.chronicDiagnosisCandidates.filter((s: unknown) => typeof s === 'string')
@@ -135,6 +188,7 @@ class LocalStorageBackend implements MemoryBackend {
     const allergyHistory = unique([...(previous?.allergyHistory || []), ...incomingAllergy]).slice(0, MAX_ALLERGY_ITEMS);
     const next: PatientMemory = {
       patientId: args.patientId,
+      patientProfile: args.patientProfile ?? previous?.patientProfile ?? null,
       allergyHistory,
       chronicDiagnosisCandidates: deriveChronicCandidates(visits),
       recentVisits: visits,
@@ -148,11 +202,47 @@ class LocalStorageBackend implements MemoryBackend {
     return next;
   }
 
+  async replaceSnapshot(args: ReplaceMemorySnapshotArgs): Promise<PatientMemory | null> {
+    const recentVisits = [...args.recentVisits]
+      .filter(visit => Number.isFinite(visit.completedAt))
+      .sort((left, right) => right.completedAt - left.completedAt)
+      .slice(0, MAX_VISITS);
+    const next: PatientMemory = {
+      patientId: args.patientId,
+      patientProfile: args.patientProfile ?? null,
+      allergyHistory: unique(args.allergyHistory).filter(item => !isMeaninglessAllergy(item)).slice(0, MAX_ALLERGY_ITEMS),
+      chronicDiagnosisCandidates: unique(args.chronicDiagnosisCandidates).slice(0, MAX_CHRONIC),
+      recentVisits,
+      updatedAt: typeof args.updatedAt === 'number' && Number.isFinite(args.updatedAt) ? args.updatedAt : Date.now(),
+    };
+    try {
+      localStorage.setItem(storageKeyOf(args.patientId), JSON.stringify(next));
+    } catch (err) {
+      console.warn('[patientMemory] ls replaceSnapshot failed:', args.patientId, err);
+    }
+    return next;
+  }
+
   async clear(patientId: string): Promise<void> {
     try {
       localStorage.removeItem(storageKeyOf(patientId));
     } catch (err) {
       console.warn('[patientMemory] ls clear failed:', patientId, err);
+    }
+  }
+
+  async clearAll(): Promise<void> {
+    try {
+      const keys: string[] = [];
+      for (let index = 0; index < localStorage.length; index += 1) {
+        const key = localStorage.key(index);
+        if (key?.startsWith(`${STORAGE_PREFIX}:`)) {
+          keys.push(key);
+        }
+      }
+      keys.forEach(key => localStorage.removeItem(key));
+    } catch (err) {
+      console.warn('[patientMemory] ls clearAll failed:', err);
     }
   }
 }
@@ -169,8 +259,14 @@ class RegionalHttpBackend implements MemoryBackend {
   async appendVisit(_args: AppendVisitArgs): Promise<PatientMemory | null> {
     throw new Error('[patientMemory] regional-http appendVisit not implemented');
   }
+  async replaceSnapshot(_args: ReplaceMemorySnapshotArgs): Promise<PatientMemory | null> {
+    throw new Error('[patientMemory] regional-http replaceSnapshot not implemented');
+  }
   async clear(_patientId: string): Promise<void> {
     throw new Error('[patientMemory] regional-http clear not implemented');
+  }
+  async clearAll(): Promise<void> {
+    throw new Error('[patientMemory] regional-http clearAll not implemented');
   }
 }
 
@@ -232,12 +328,28 @@ class SafeBackendWrapper implements MemoryBackend {
       return this.fallback.appendVisit(args);
     }
   }
+  async replaceSnapshot(args: ReplaceMemorySnapshotArgs): Promise<PatientMemory | null> {
+    try {
+      return await this.primary.replaceSnapshot(args);
+    } catch (err) {
+      console.warn('[patientMemory] primary replaceSnapshot failed, fallback:', err);
+      return this.fallback.replaceSnapshot(args);
+    }
+  }
   async clear(patientId: string): Promise<void> {
     try {
       await this.primary.clear(patientId);
     } catch (err) {
       console.warn('[patientMemory] primary clear failed, fallback:', err);
       await this.fallback.clear(patientId);
+    }
+  }
+  async clearAll(): Promise<void> {
+    try {
+      await this.primary.clearAll();
+    } catch (err) {
+      console.warn('[patientMemory] primary clearAll failed, fallback:', err);
+      await this.fallback.clearAll();
     }
   }
 }

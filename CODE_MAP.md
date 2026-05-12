@@ -88,9 +88,9 @@ floating-ball/
 
 | 组件 | 行数 | 职责 |
 |------|------|------|
-| **SettingsPanel.vue** | ~2100 | 通用设置、紧凑主题选择、基础数据缓存管理入口、HIS 联调日志独立入口、区域化后端接入、语音 provider / 音频输入设备、自动更新；本地模式显示 LLM 配置，区域化模式隐藏模型配置页签 |
+| **SettingsPanel.vue** | ~2100 | 通用设置、缓存管理入口、HIS 联调日志独立入口、区域化后端接入、语音 provider / 音频输入设备、自动更新；本地模式显示 LLM 配置，区域化模式隐藏模型配置页签 |
 | **HisIntegrationLogPanel.vue** | -- | HIS 联调日志独立视图面板：筛选、查看详情、复制、导出、清空本地 JSONL 日志 |
-| **MedicalCatalogCachePanel.vue** | -- | 基础数据缓存管理独立视图：查看 SQLite 缓存状态、同步状态、手动同步和清理 |
+| **MedicalCatalogCachePanel.vue** | -- | 缓存管理独立视图：内部按“基础数据缓存”和“患者记忆缓存”两个面板分区；前者负责基础目录缓存状态、同步和清理，后者负责按患者查询本地记忆、查看最近摘要、手动清空并触发从 HIS 重同步；未输入患者 ID 时支持在确认后清空全部患者记忆 |
 | **FeedbackSubmissionPanel.vue** | ~560 | 统一问题反馈面板（一键回写 + 右上角入口共用），紧凑星级 + 问题标签 + 选填截图 |
 | **AnalyticsPanel.vue** | ~1200 | 数据分析看板（ECharts） |
 | **KnowledgePanel.vue** | ~850 | PMPHAI 医学知识检索 |
