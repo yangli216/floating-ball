@@ -1,6 +1,6 @@
 # 架构文档 (ARCHITECTURE.md)
 
-> **最后更新**: 2026-05-09
+> **最后更新**: 2026-05-12
 >
 > **重要**: 此文档是项目架构的唯一真实来源。任何架构级别的代码修改都必须同步更新此文档。
 
@@ -159,9 +159,9 @@
 4. 灵活模式下的推荐诊断 / 诊断鉴别 / 推荐用药 / 推荐检查 / 推荐检验 / 推荐处置，必须继续复用 `ConsultationPage.vue` 现有的诊断生成、标准库匹配、诊断路径与方案联动逻辑，不允许维护第二套轻量推荐口径。
 5. 各模块的“确认”和“引用”语义必须拆分：主诉/现病史回写可以直接更新医生站草稿；诊断鉴别确认只记日志，不修改病历；推荐诊断、推荐用药、推荐检查等的“引用”才真正进入 PHIS 保存闭环。
 6. 灵活模式必须实现前置门禁：`diagnosis` 入口要求已有主诉和现病史；`differential` / `medication` / `examination` / `lab_test` / `procedure` 入口要求已有主诉、现病史和当前诊断；若条件不足，页面需要给出明确提示并停留在可继续补全信息的位置。
-7. `mock_his.html` 作为联调页时，除继续轮询 `/api/consultation/result` 获取草稿外，还必须支持“引用请求 -> PHIS 保存成功/失败 -> 回执 floating-ball”的完整闭环。
+7. `mock_his.html` / `docs/sdk_test.html` 作为联调页时，应优先通过 SDK WebSocket 事件订阅获取 `/api/consultation/events/ws` 推送；`/api/consultation/events/poll` 仅作为 WebSocket 不可用时的兜底，并且仍必须支持“引用请求 -> PHIS 保存成功/失败 -> 回执 floating-ball”的完整闭环。
 8. `POST /api/consultation/reference-feedback` 成为 PHIS 引用回执入口。floating-ball 发起引用后应继续停留在当前 `ConsultationPage`，医生可继续完成本次问诊；收到回执后，必须更新当前问诊页状态、记录日志、标注已引用或失败原因。当前实现仍以内存状态为主，而不是落盘恢复。
-9. `/api/consultation/result` 需要兼容返回“病历草稿写回”、“引用请求发起”、“PHIS 引用回执”三类结果；联调页或 HIS 轮询时仍需校验 `consultationId` 与当前患者一致，避免旧结果提前命中。
+9. `/api/consultation/events/ws` 与 `/api/consultation/events/poll` 需要统一返回“病历草稿写回”、“引用请求发起”、“PHIS 引用回执”等事件 envelope；联调页或 HIS 侧仍需校验 `event.id`、`consultationId` 与当前患者一致，避免旧结果提前命中。
 10. 针对推荐诊断的重复引用，需要区分“同一诊断重复点击”和“更换为新诊断引用”；前者应提示已成功引用，后者应允许 PHIS 进入诊断修改流程并通过回执反馈最终结果。
 11. 后端内部仍沿用 `start-consultation-session` 这个 Tauri 事件名承接 `/api/consultation/assist` 的兼容分发，但前端唯一落点已经是 `navigation.openConsultation()` + `ConsultationPage` 灵活模式，不再存在独立 session 小窗视图。
 12. `ConsultationPage.vue` 里的推荐诊断必须保持单选，并以当前选中诊断作为引用对象；推荐用药、检查、检验、处置则保留多选，并在各自分组级提供一次引入所选项的入口。对暂不支持 PHIS 引用的推荐项，应作为只读处置建议单独展示，避免被误当作检查项提交。
@@ -991,7 +991,7 @@ ConsultationPage.vue 根据上下文决定：
     ↓
 Tauri Command: complete_consultation 写入当前草稿或引用请求
     ↓
-HIS 通过 GET /api/consultation/result 拉取草稿或引用请求
+HIS 通过 WebSocket /api/consultation/events/ws 接收事件；必要时 fallback 到 GET /api/consultation/events/poll
     ↓
 PHIS 保存成功 / 失败后调用 POST /api/consultation/reference-feedback
     ↓
@@ -1039,7 +1039,7 @@ buildRecordConfirmedPayload (src/utils/recordConfirmedPayload.ts)
     ↓
 Tauri Command: complete_consultation（resultType=record-confirmed）
     ↓
-HIS 系统 (通过 HTTP GET /api/consultation/result 获取)
+HIS 系统 (通过 HTTP GET /api/consultation/events/poll 获取)
 ```
 
 ---

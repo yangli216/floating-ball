@@ -357,7 +357,9 @@
       if (payload !== undefined) {
         try {
           line += '\n  ' + (typeof payload === 'string' ? payload : JSON.stringify(payload, null, 2).replace(/\n/g, '\n  '));
-        } catch (e) { line += '\n  [unstringifiable]'; }
+        } catch (e) {
+          line += '\n  [unstringifiable]';
+        }
       }
       row.innerHTML = line;
       logEl.appendChild(row);
@@ -376,7 +378,6 @@
       };
     }
 
-    // ─── 初始化 SDK ───
     if (typeof window.MedHermes !== 'function') {
       log('error', '[FATAL] 未能加载 MedHermes SDK。请确认桌面端正在 8081 端口运行。');
       connBadge.textContent = 'SDK 未加载';
@@ -385,53 +386,47 @@
     }
 
     var sdk = new window.MedHermes({
-      autoPoll: false, // 由本页显式控制轮询
+      autoPoll: false,
       pollInterval: 2000,
     });
+    var unsubscribeStream = null;
     sdkVersionEl.textContent = (window.MedHermes.VERSION || sdk._opts && sdk._opts.sdkVersion || '1.x');
 
-    // ─── SDK 事件订阅 ───
     sdk.on('connected', function (info) {
       connBadge.textContent = '已连接';
       connBadge.className = 'badge ok';
       log('success', '[SDK] connected', info);
     });
 
-    sdk.on('result', function (result) {
-      log('recv', '[SDK ← 桌面端] result', result);
-      renderLatestResult(result);
-      autoFillRequestId(result);
-    });
-
     sdk.on('launching', function () { log('event', '[SDK] launching desktop via deep link...'); });
     sdk.on('launch-failed', function () { log('error', '[SDK] launch failed - 桌面端未启动'); });
 
-    function renderLatestResult(result) {
+    function renderLatestResult(envelope) {
       latestCard.style.display = '';
       latestPills.innerHTML = '';
 
-      var record = (result && result.record) || result || {};
+      var event = envelope && envelope.event || {};
+      var record = event.payload || {};
       var pills = [];
-      pills.push('<span class="pill primary">consultationId: ' + (result.consultationId || result.consultation_id || '-') + '</span>');
-      pills.push('<span class="pill">resultType: ' + (record.resultType || 'final-report') + '</span>');
-      if (record.requestId) pills.push('<span class="pill warn">reqId: ' + record.requestId + '</span>');
+      pills.push('<span class="pill primary">consultationId: ' + (event.consultationId || '-') + '</span>');
+      pills.push('<span class="pill">eventType: ' + (event.type || 'unknown') + '</span>');
+      if (event.requestId) pills.push('<span class="pill warn">reqId: ' + event.requestId + '</span>');
       if (record.referenceStatus) {
         var cls = record.referenceStatus === 'success' ? 'success' : (record.referenceStatus === 'failed' ? 'error' : 'muted');
         pills.push('<span class="pill ' + cls + '">refStatus: ' + record.referenceStatus + '</span>');
       }
       latestPills.innerHTML = pills.join('');
-      latestJson.textContent = JSON.stringify(result, null, 2);
+      latestJson.textContent = JSON.stringify(envelope, null, 2);
     }
 
-    function autoFillRequestId(result) {
-      var record = (result && result.record) || {};
+    function autoFillRequestId(envelope) {
+      var record = envelope && envelope.event && envelope.event.payload || {};
       if (record.requestId && !$('fb-request-id').value.trim()) {
         $('fb-request-id').value = record.requestId;
         log('event', '[页面] 已自动填入 requestId：' + record.requestId);
       }
     }
 
-    // ─── 按钮绑定 ───
     function withBusy(btn, fn) {
       return function () {
         var orig = btn.textContent;
@@ -467,7 +462,6 @@
 
     $('btn-voice-empty').addEventListener('click', withBusy($('btn-voice-empty'), function () {
       log('event', '[→ /consultation/start-voice] (no patient)');
-      // SDK startVoice 默认要求 patient；这里直接走底层 http
       return sdk._http.post('/consultation/start-voice', {});
     }));
 
@@ -496,7 +490,6 @@
       var message = $('fb-message').value;
       var refType = $('fb-ref-type').value;
 
-      // sendFeedback 签名：(requestId, status, message, items)
       var items = [];
       if (refType === 'diagnosis') items = [{ name: '急性支气管炎', code: 'J20.9', type: 'diagnosis' }];
       else if (refType === 'medicine') items = [{ name: '阿莫西林胶囊 0.25g x 24', code: 'M001', type: 'medicine' }];
@@ -507,10 +500,10 @@
     }));
 
     $('btn-fill-from-result').addEventListener('click', withBusy($('btn-fill-from-result'), function () {
-      return sdk.fetchResult().then(function (result) {
-        autoFillRequestId(result);
-        renderLatestResult(result);
-        return result;
+      return sdk.pollEvent().then(function (envelope) {
+        autoFillRequestId(envelope);
+        renderLatestResult(envelope);
+        return envelope;
       });
     }));
 
@@ -525,26 +518,32 @@
       return sdk.sendRisks(p, risks);
     }));
 
-    // ─── 轮询切换 ───
     var polling = false;
     $('btn-toggle-poll').addEventListener('click', function () {
       var btn = $('btn-toggle-poll');
       if (!polling) {
-        sdk.startPolling();
+        unsubscribeStream = sdk.subscribe(function (envelope) {
+          log('recv', '[SDK ← 桌面端] event', envelope);
+          renderLatestResult(envelope);
+          autoFillRequestId(envelope);
+        });
         polling = true;
         btn.textContent = '停止轮询';
         btn.classList.add('danger');
         pollBadge.textContent = '轮询：开';
         pollBadge.className = 'badge ok';
-        log('event', '[轮询] 已开启');
+        log('event', '[订阅] 已开启');
       } else {
-        sdk.stopPolling && sdk.stopPolling();
+        if (unsubscribeStream) {
+          unsubscribeStream();
+          unsubscribeStream = null;
+        }
         polling = false;
         btn.textContent = '开始轮询结果';
         btn.classList.remove('danger');
         pollBadge.textContent = '轮询：关';
         pollBadge.className = 'badge';
-        log('event', '[轮询] 已关闭');
+        log('event', '[订阅] 已关闭');
       }
     });
 

@@ -56,9 +56,9 @@
 
 ### RETRO-005: consultationId 与旧结果污染 [已解决]
 
-- **现象**: HIS 轮询 `/api/consultation/result` 时读到上一位患者的结果。
+- **现象**: HIS 轮询 `/api/consultation/events/poll` 时读到上一位患者的结果。
 - **根因**: `consultationId` 未在每次新接诊时正确重置，或前端页面状态残留。
-- **解决方案**: 严格在 `start-consultation` 事件处理中重置所有关联状态；`/api/consultation/result` 返回时校验 `consultationId` 一致性。
+- **解决方案**: 严格在 `start-consultation` 事件处理中重置所有关联状态；`/api/consultation/events/poll` 返回时校验 `consultationId` 一致性。
 - **后续防护**: 已升级为规则 -> `AGENTS.md` Review 门禁第 2 条。
 
 ### RETRO-006: 内存保活误当作持久化恢复 [已解决]

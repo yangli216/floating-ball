@@ -606,6 +606,13 @@ export function useEventListeners(options: EventListenersOptions) {
   // ========== 状态 & Promise ==========
   let activeReceptionPromise: Promise<boolean> | null = null;
   let activeReceptionPatientId: string | null = null;
+  let receptionFlowVersion = 0;
+
+  function invalidateActiveReceptionFlow(): void {
+    receptionFlowVersion += 1;
+    activeReceptionPromise = null;
+    activeReceptionPatientId = null;
+  }
 
   async function executeReceptionFlow(payload: StartConsultationPayload, quietMode = false): Promise<boolean> {
     const patientId = getPatientContextId(buildIncomingPatientDraft(payload as Record<string, unknown> | null | undefined));
@@ -624,12 +631,18 @@ export function useEventListeners(options: EventListenersOptions) {
       }
     }
 
+    const flowVersion = receptionFlowVersion + 1;
+    receptionFlowVersion = flowVersion;
     activeReceptionPatientId = patientId;
 
     activeReceptionPromise = (async () => {
       trackApiCall('his_receive_patient', true, undefined, { patientId, auto: quietMode });
       try {
         const nextPatient = await hydratePatientContextFromHis(currentPatient.value, payload, quietMode ? 'reception-auto' : 'receive-patient');
+        if (flowVersion !== receptionFlowVersion) {
+          console.info('[EventListeners] Ignore stale reception result after flow invalidation:', patientId);
+          return false;
+        }
         if (!nextPatient) {
           showToast('接诊失败：患者上下文初始化失败', 'error');
           return false;
@@ -668,14 +681,24 @@ export function useEventListeners(options: EventListenersOptions) {
         try {
           // 3. 触发风险评估
           const risks = await analyzePatientRisks(currentPatient.value);
+          if (flowVersion !== receptionFlowVersion) {
+            console.info('[EventListeners] Ignore stale risk analysis result after flow invalidation:', patientId);
+            return false;
+          }
           console.log('LLM Risk Analysis Result after reception:', risks);
           riskItems.value = risks || [];
         } finally {
-          isRiskAnalyzing.value = false;
+          if (flowVersion === receptionFlowVersion) {
+            isRiskAnalyzing.value = false;
+          }
         }
 
         return true;
       } catch (e) {
+        if (flowVersion !== receptionFlowVersion) {
+          console.info('[EventListeners] Ignore stale reception error after flow invalidation:', patientId, e);
+          return false;
+        }
         console.error('Patient reception failed:', e);
         trackError('receive_patient_failed', e);
         showToast('接诊处理异常', 'error');
@@ -686,8 +709,10 @@ export function useEventListeners(options: EventListenersOptions) {
     try {
       return await activeReceptionPromise;
     } finally {
-      activeReceptionPromise = null;
-      activeReceptionPatientId = null;
+      if (flowVersion === receptionFlowVersion) {
+        activeReceptionPromise = null;
+        activeReceptionPatientId = null;
+      }
     }
   }
 
@@ -942,6 +967,7 @@ export function useEventListeners(options: EventListenersOptions) {
   async function registerStopConsultationListener(): Promise<void> {
     unlistenStopConsultation = await listen('stop-consultation', async () => {
       console.log('Received stop consultation request');
+      invalidateActiveReceptionFlow();
       resetVoiceSessionState();
       // 清理患者上下文，保证"结束就诊后必须重新接诊"的机制生效：
       // 如果不清，后续不带 payload 的 startVoice / startConsultation 会

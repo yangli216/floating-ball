@@ -29,6 +29,7 @@ tauri-plugin-dialog = "2"
 tauri-plugin-fs = "2"
 actix-web = "4.12.1"
 actix-cors = "0.7.1"
+actix-ws = "0.3.0"
 tokio = { version = "1.49.0", features = ["full"] }
 uuid = { version = "1.19.0", features = ["v4", "serde"] }
 tauri-plugin-updater = "2"

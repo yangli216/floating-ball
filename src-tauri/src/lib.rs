@@ -1,3 +1,4 @@
+use std::collections::VecDeque;
 use std::sync::{Arc, Mutex};
 use tauri::{Emitter, Manager};
 use tauri_plugin_updater::UpdaterExt;
@@ -79,6 +80,8 @@ pub struct ConsultationResult {
     pub record: serde_json::Value,
 }
 
+const CONSULTATION_EVENT_QUEUE_LIMIT: usize = 100;
+
 mod aliyun_speech;
 use aliyun_speech::{
     transcribe_realtime_aliyun, start_realtime_speech, send_speech_chunk, stop_realtime_speech,
@@ -91,11 +94,45 @@ mod db;
 pub struct AppState {
     pub current_consultation: Mutex<Option<PatientInfo>>,
     pub last_result: Mutex<Option<ConsultationResult>>,
+    pub event_queue: Mutex<VecDeque<ConsultationResult>>,
     pub browser_context: Mutex<Option<BrowserContext>>,
     pub result_tx: tokio::sync::broadcast::Sender<()>,
 }
 
 pub type SharedAppState = Arc<AppState>;
+
+pub fn append_consultation_event(
+    state: &SharedAppState,
+    result: ConsultationResult,
+) -> Result<(), String> {
+    {
+        let mut last_result = state.last_result.lock().map_err(|error| error.to_string())?;
+        *last_result = Some(result.clone());
+    }
+
+    {
+        let mut event_queue = state.event_queue.lock().map_err(|error| error.to_string())?;
+        event_queue.push_back(result);
+        while event_queue.len() > CONSULTATION_EVENT_QUEUE_LIMIT {
+            event_queue.pop_front();
+        }
+    }
+
+    let _ = state.result_tx.send(());
+    Ok(())
+}
+
+pub fn clear_consultation_events(state: &SharedAppState) -> Result<(), String> {
+    {
+        let mut last_result = state.last_result.lock().map_err(|error| error.to_string())?;
+        *last_result = None;
+    }
+    {
+        let mut event_queue = state.event_queue.lock().map_err(|error| error.to_string())?;
+        event_queue.clear();
+    }
+    Ok(())
+}
 
 pub fn validate_browser_context(ctx: &BrowserContext) -> Result<(), String> {
     if ctx.emr_access_token().is_none() {
@@ -425,11 +462,7 @@ async fn complete_consultation(
     state: tauri::State<'_, SharedAppState>,
     result: ConsultationResult,
 ) -> Result<(), String> {
-    {
-        let mut last_result = state.last_result.lock().map_err(|e| e.to_string())?;
-        *last_result = Some(result);
-    }
-    let _ = state.result_tx.send(());
+    append_consultation_event(state.inner(), result)?;
     println!("Consultation completed, result saved and notified.");
     Ok(())
 }
@@ -446,11 +479,13 @@ async fn cancel_consultation_if_pending(
         current.as_ref().map(|p| p.id_pi.clone()).unwrap_or_default()
     };
 
-    let mut last_result = state.last_result.lock().map_err(|e| e.to_string())?;
-    if last_result.is_some() {
-        // 已有结果（正常完成或已取消），不覆盖
-        println!("cancel_consultation_if_pending: result already exists, skip.");
-        return Ok(false);
+    {
+        let last_result = state.last_result.lock().map_err(|e| e.to_string())?;
+        if last_result.is_some() {
+            // 已有结果（正常完成或已取消），不覆盖
+            println!("cancel_consultation_if_pending: result already exists, skip.");
+            return Ok(false);
+        }
     }
 
     // 没有结果 → 写入取消
@@ -458,7 +493,7 @@ async fn cancel_consultation_if_pending(
         .duration_since(std::time::UNIX_EPOCH)
         .unwrap()
         .as_millis() as u64;
-    *last_result = Some(ConsultationResult {
+    append_consultation_event(state.inner(), ConsultationResult {
         status: Some("cancelled".to_string()),
         consultation_id,
         timestamp,
@@ -466,9 +501,7 @@ async fn cancel_consultation_if_pending(
             "resultType": "cancelled",
             "reason": "User closed the consultation window"
         }),
-    });
-    drop(last_result); // release lock before send
-    let _ = state.result_tx.send(());
+    })?;
     println!("cancel_consultation_if_pending: wrote cancelled result and notified.");
     Ok(true)
 }
@@ -786,6 +819,7 @@ pub fn run() {
     let state = Arc::new(AppState {
         current_consultation: Mutex::new(None),
         last_result: Mutex::new(None),
+        event_queue: Mutex::new(VecDeque::new()),
         browser_context: Mutex::new(None),
         result_tx,
     });

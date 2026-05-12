@@ -64,7 +64,7 @@ The app operates in two primary modes managed in [App.vue](src/App.vue):
   - `POST /api/patient/risks`: Receives patient risk data, triggers LLM risk analysis, emits `show-patient-risks` event
   - `POST /api/consultation/voice`: Triggers voice consultation mode via `start-voice-consultation` event
   - `POST /api/consultation/stop`: Stops active consultation
-  - `GET /api/consultation/result`: Returns last consultation result
+   - `GET /api/consultation/events/poll`: Returns the latest consultation event envelope
 
 **Event Flow:**
 ```
@@ -91,7 +91,7 @@ HIS System (HTTP) → Rust HTTP Server → Tauri Events → Vue Components
 4. **Result Review:** [VoiceConsultationNew.vue](src/components/VoiceConsultationNew.vue)
    - User edits/confirms structured data
    - Local medical data matching (diagnoses, medicines, items)
-5. **Submission:** Calls `complete_consultation` command (resultType=`record-confirmed`, payload built via [src/utils/recordConfirmedPayload.ts](src/utils/recordConfirmedPayload.ts)) → saves to `AppState` → HIS can fetch via `/api/consultation/result`
+5. **Submission:** Calls `complete_consultation` command (resultType=`record-confirmed`, payload built via [src/utils/recordConfirmedPayload.ts](src/utils/recordConfirmedPayload.ts)) → saves to `AppState` → HIS can fetch via `/api/consultation/events/poll`
 
 ### Medical Data Matching System
 

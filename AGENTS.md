@@ -98,7 +98,7 @@
 1. `start-consultation` 能正确唤起完整问诊主流程
 2. `/api/consultation/assist`（内部仍复用 `start-consultation-session` 事件名）会打开 `ConsultationPage` 灵活模式，并且每次只消费一个目标动作
 3. 病历详情里的“回写病历”会写入 `draft` 结果；“引用诊断/用药/检查”会写入 `reference-request`
-4. `POST /api/consultation/reference-feedback` 返回后，当前页面和 `/api/consultation/result` 都能看到最新 `referenceStatus`
+4. `POST /api/consultation/reference-feedback` 返回后，当前页面和 `/api/consultation/events/poll` 都能看到最新 `referenceStatus`
 5. `consultationId` 与当前患者/当前就诊上下文匹配，不读到旧结果
 6. 诊断保持单选并引用当前选中项；推荐用药、检查检验支持多选后按分组一次引入所选项
 7. 点击“引用诊断/用药/检查”后窗口不会自动收起，医生仍可继续当前问诊；PHIS 回执返回后当前页面状态会即时更新

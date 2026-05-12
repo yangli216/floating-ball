@@ -59,11 +59,15 @@ export type FeedbackStatus = 'success' | 'failed';
 /** 结果类型 */
 export type ResultType =
   | 'draft'
+  | 'record-confirmed'
   | 'final-report'
   | 'batch'
   | 'reference-request'
   | 'reference-feedback'
   | 'cancelled';
+
+/** 结果状态 */
+export type ConsultationResultState = 'pending' | 'ready' | 'cancelled';
 
 /** 诊断项 */
 export interface DiagnosisItem {
@@ -112,12 +116,9 @@ export interface ReferenceItem {
   isTCM?: boolean;
 }
 
-/** 问诊结果 */
-export interface ConsultationResult {
-  status?: string;
-  consultationId: string;
-  timestamp: number;
-  resultType: ResultType;
+/** 问诊结果 payload */
+export interface ConsultationResultPayload {
+  resultType?: ResultType;
   requestId?: string;
   chiefComplaint?: string;
   historyOfPresentIllness?: string;
@@ -134,6 +135,27 @@ export interface ConsultationResult {
   referenceStatus?: string;
   referenceMessage?: string;
   referenceItems?: ReferenceItem[];
+}
+
+/** 单条问诊事件 */
+export interface ConsultationEvent {
+  id: string;
+  type: ResultType | null;
+  consultationId: string;
+  requestId?: string | null;
+  timestamp: number;
+  terminal: boolean;
+  payload: ConsultationResultPayload;
+}
+
+/** consultation/events/poll 返回的事件 envelope */
+export interface ConsultationEventEnvelope {
+  state: ConsultationResultState;
+  event: ConsultationEvent | null;
+  traceId?: string;
+  timestamp?: number;
+  code?: string;
+  message?: string;
 }
 
 /** 浏览器上下文 */
@@ -153,6 +175,10 @@ export interface MedHermesOptions {
   baseUrl?: string;
   /** 轮询间隔（毫秒），默认 2000 */
   pollInterval?: number;
+  /** 事件通道策略，默认 auto：优先 WebSocket，失败回退长轮询 */
+  eventTransport?: 'auto' | 'websocket' | 'polling';
+  /** WebSocket 断线重连间隔（毫秒），默认 1000 */
+  wsReconnectMs?: number;
   /** 业务调用后是否自动轮询，默认 true */
   autoPoll?: boolean;
   /** 深度链接协议名，默认 med-hermes */
@@ -167,19 +193,22 @@ export interface MedHermesOptions {
 
 /** 事件类型映射 */
 export interface MedHermesEvents {
-  'draft': (result: ConsultationResult) => void;
-  'final-report': (result: ConsultationResult) => void;
-  'batch': (result: ConsultationResult) => void;
-  'reference-request': (result: ConsultationResult) => void;
-  'reference-feedback': (result: ConsultationResult) => void;
-  'cancelled': (result: ConsultationResult) => void;
+  'event': (event: ConsultationEventEnvelope) => void;
+  'draft': (result: ConsultationResultPayload) => void;
+  'final-report': (result: ConsultationResultPayload) => void;
+  'batch': (result: ConsultationResultPayload) => void;
+  'record-confirmed': (result: ConsultationResultPayload) => void;
+  'reference-request': (result: ConsultationResultPayload) => void;
+  'reference-feedback': (result: ConsultationResultPayload) => void;
+  'cancelled': (event: ConsultationEventEnvelope) => void;
   'connected': (info: any) => void;
   'disconnected': () => void;
   'launching': () => void;
   'launch-failed': () => void;
   'error': (err: Error) => void;
-  'polling-start': () => void;
-  'polling-stop': () => void;
+  'subscription-start': () => void;
+  'subscription-stop': () => void;
+  'subscription-transport': (info: { transport: 'websocket' | 'polling'; state: 'connected' | 'closed' | 'error' }) => void;
 }
 
 /** 握手响应 */
@@ -248,13 +277,16 @@ export declare class MedHermes {
     items?: ReferenceItem[]
   ): Promise<ApiResponse>;
 
-  /** 手动拉取一次结果 */
-  fetchResult(): Promise<ConsultationResult | null>;
+  /** 手动长轮询一次事件 */
+  pollEvent(): Promise<ConsultationEventEnvelope | null>;
 
-  /** 启动自动轮询 */
+  /** 订阅事件流，返回取消订阅函数 */
+  subscribe(listener: (event: ConsultationEventEnvelope) => void): () => void;
+
+  /** 启动事件消费；若 init/debugHandshake 已成功，底层 WebSocket 交互通道会常驻并被业务复用 */
   startPolling(): void;
 
-  /** 停止自动轮询 */
+  /** 停止事件消费；不会主动关闭已建立的持久 WebSocket 通道 */
   stopPolling(): void;
 
   /** 销毁实例 */

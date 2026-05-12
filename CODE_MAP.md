@@ -254,7 +254,7 @@ Pinia 跨组件共享状态（仅两个，新增需人工审批）。
 | 文件 | 行数 | 职责 |
 |------|------|------|
 | **lib.rs** | ~390 | Tauri 初始化、窗口命令（拖拽/位置/毛玻璃）、AppState 共享状态 |
-| **http_server.rs** | ~831 | HIS HTTP Bridge（Actix-web, `127.0.0.1:8081`）：问诊启动/结果/引用回执/语音触发，并为入站联调请求生成 `traceId` 与结构化日志 |
+| **http_server.rs** | ~831 | HIS Bridge（Actix-web, `127.0.0.1:8081`）：REST 命令、WebSocket 事件订阅、长轮询兜底、引用回执、语音触发，并为入站联调请求生成 `traceId` 与结构化日志 |
 | **aliyun_speech.rs** | ~326 | 阿里云语音 WebSocket + Token 刷新 |
 | **main.rs** | ~6 | 入口，调用 `floating_ball_lib::run()` |
 | **commands/** | -- | 扩展 Tauri 命令（反馈、医学目录、设备 MAC 读取等） |
@@ -266,7 +266,8 @@ Pinia 跨组件共享状态（仅两个，新增需人工审批）。
 |------|------|------|
 | POST | `/api/consultation/start` | 启动完整问诊 |
 | POST | `/api/consultation/assist` | 进入灵活模式 |
-| GET | `/api/consultation/result` | 获取最新问诊结果 |
+| GET | `/api/consultation/events/ws` | WebSocket 实时订阅问诊事件 envelope，支持 `after` 补发 |
+| GET | `/api/consultation/events/poll` | 长轮询兜底获取问诊事件 envelope，支持 `after` 游标 |
 | POST | `/api/consultation/reference-feedback` | PHIS 引用回执 |
 | POST | `/api/consultation/start-voice` | 触发语音问诊 |
 | POST | `/api/patient/risks` | 患者风险数据 |
@@ -303,7 +304,7 @@ HIS POST /api/consultation/start
   -> LLM 推荐诊断 -> medicalData.ts 匹配 ICD-10
   -> 医生确认 -> complete_consultation 命令
   -> lib.rs 存入 AppState
-  -> HIS GET /api/consultation/result 轮询取结果
+  -> HIS WebSocket /api/consultation/events/ws 订阅事件，失败时 GET /api/consultation/events/poll 兜底
 ```
 
 ### 灵活模式流

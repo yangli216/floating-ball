@@ -1,9 +1,9 @@
 /**
- * MedHermes JS SDK v1.0.0
+ * MedHermes JS SDK v2.0.0
  * 智医助理 (MedHermes) 第三方 HIS 集成 SDK
  *
  * 零依赖、单文件，通过 <script> 标签或 ES Module 引入即可使用。
- * 封装全部本地 HTTP Bridge 接口 + 智能轮询 + 去重 + 协议拉起 + 浏览器上下文同步。
+ * 封装全部本地 HTTP Bridge 接口 + 事件长轮询 + 订阅分发 + 协议拉起 + 浏览器上下文同步。
  *
  * @license MIT
  * @see https://github.com/yangli216/floating-ball
@@ -19,7 +19,7 @@
 })(typeof globalThis !== 'undefined' ? globalThis : typeof self !== 'undefined' ? self : this, function () {
   'use strict';
 
-  var SDK_VERSION = '1.0.0';
+  var SDK_VERSION = '2.0.0';
 
   // ─── 工具函数 ───
 
@@ -37,15 +37,84 @@
     return target;
   }
 
-  function buildResultKey(result) {
-    var record = result.record || result;
+  var STREAM_EVENT_NAMES = {
+    event: true,
+    draft: true,
+    'final-report': true,
+    batch: true,
+    'record-confirmed': true,
+    'reference-request': true,
+    'reference-feedback': true,
+    cancelled: true
+  };
+
+  function buildEventKey(result) {
+    var envelope = normalizeEventEnvelope(result);
+    var event = envelope && envelope.event ? envelope.event : {};
+    var payload = event.payload || {};
     return JSON.stringify({
-      consultationId: result.consultationId || result.consultation_id || '',
-      resultType: record.resultType || 'final-report',
-      requestId: record.requestId || '',
-      referenceStatus: record.referenceStatus || '',
-      timestamp: result.timestamp || record.timestamp || 0
+      id: event.id || '',
+      consultationId: event.consultationId || '',
+      eventType: event.type || payload.resultType || '',
+      requestId: event.requestId || payload.requestId || '',
+      referenceStatus: payload.referenceStatus || '',
+      timestamp: event.timestamp || 0
     });
+  }
+
+  function isPlainObject(value) {
+    return !!value && typeof value === 'object' && !Array.isArray(value);
+  }
+
+  function normalizeEventPayload(payload) {
+    return isPlainObject(payload) ? assign({}, payload) : {};
+  }
+
+  function normalizeConsultationEvent(event) {
+    if (!isPlainObject(event)) return null;
+
+    var payload = normalizeEventPayload(event.payload);
+    var consultationId = event.consultationId || payload.consultationId || payload.consultation_id || '';
+    var requestId = event.requestId || payload.requestId || '';
+    var type = event.type || payload.resultType || null;
+    var timestamp = event.timestamp || payload.timestamp || Date.now();
+
+    return {
+      id: event.id || [consultationId || '-', requestId || '-', type || '-', timestamp].join(':'),
+      type: type,
+      consultationId: consultationId,
+      requestId: requestId || null,
+      timestamp: timestamp,
+      terminal: event.terminal !== false,
+      payload: payload
+    };
+  }
+
+  function normalizeEventEnvelope(result) {
+    if (!isPlainObject(result)) return null;
+
+    var event = normalizeConsultationEvent(result.event);
+    var state = typeof result.state === 'string' && result.state
+      ? result.state
+      : (event && event.type === 'cancelled' ? 'cancelled' : event ? 'ready' : 'pending');
+
+    return {
+      state: state,
+      traceId: typeof result.traceId === 'string' ? result.traceId : '',
+      code: typeof result.code === 'string' ? result.code : '',
+      message: typeof result.message === 'string' ? result.message : '',
+      event: event
+    };
+  }
+
+  function buildEventWebSocketUrl(baseUrl, lastEventId) {
+    var url = String(baseUrl || 'http://127.0.0.1:8081/api').replace(/\/+$/, '');
+    url = url.replace(/^https:/i, 'wss:').replace(/^http:/i, 'ws:');
+    url += '/consultation/events/ws';
+    if (lastEventId) {
+      url += '?after=' + encodeURIComponent(lastEventId);
+    }
+    return url;
   }
 
   // ─── 事件发射器 ───
@@ -79,6 +148,14 @@
       }
     }
     return this;
+  };
+
+  EventEmitter.prototype.hasAnyListeners = function (eventMap) {
+    for (var event in eventMap) {
+      if (!Object.prototype.hasOwnProperty.call(eventMap, event)) continue;
+      if (this._listeners[event] && this._listeners[event].length > 0) return true;
+    }
+    return false;
   };
 
   // ─── HTTP 客户端 ───
@@ -235,6 +312,8 @@
    * @param {Object} [options]
    * @param {string} [options.baseUrl='http://127.0.0.1:8081/api'] 本地桥接地址
    * @param {number} [options.pollInterval=2000] 轮询间隔（毫秒）
+  * @param {'auto'|'websocket'|'polling'} [options.eventTransport='auto'] 事件通道策略
+  * @param {number} [options.wsReconnectMs=1000] WebSocket 断线重连间隔
    * @param {boolean} [options.autoPoll=true] 业务调用后是否自动轮询
    * @param {string} [options.scheme='med-hermes'] 深度链接协议名
    * @param {number} [options.launchRetryMs=3000] 协议拉起后等待重连时间
@@ -245,6 +324,8 @@
     var opts = assign({
       baseUrl: 'http://127.0.0.1:8081/api',
       pollInterval: 2000,
+      eventTransport: 'auto',
+      wsReconnectMs: 1000,
       autoPoll: true,
       scheme: 'med-hermes',
       launchRetryMs: 3000,
@@ -257,7 +338,14 @@
     this._launcher = new Launcher(opts.scheme);
     this._emitter = new EventEmitter();
     this._pollTimer = null;
+    this._ws = null;
+    this._wsReconnectTimer = null;
+    this._isPolling = false;
+    this._isChannelPersistent = false;
+    this._isWsConnecting = false;
+    this._transport = 'idle';
     this._lastResultKey = '';
+    this._lastEventId = '';
     this._connected = false;
     this._destroyed = false;
     this._browserCtx = null;
@@ -285,6 +373,8 @@
       })
       .then(function (result) {
         self._connected = true;
+        self._isChannelPersistent = true;
+        self._ensureInteractionChannel();
         self._emitter.emit('connected', result);
         return result;
       })
@@ -303,6 +393,8 @@
             self._handshake()
               .then(function (result) {
                 self._connected = true;
+                self._isChannelPersistent = true;
+                self._ensureInteractionChannel();
                 self._emitter.emit('connected', result);
                 resolve(result);
               })
@@ -386,9 +478,31 @@
     var self = this;
     return this._handshake().then(function (result) {
       self._connected = true;
+      self._isChannelPersistent = true;
+      self._ensureInteractionChannel();
       self._emitter.emit('connected', result);
       return result;
     });
+  };
+
+  MedHermes.prototype._resumePollingIfNeeded = function () {
+    this._ensureInteractionChannel();
+    if (this._opts.autoPoll || this._emitter.hasAnyListeners(STREAM_EVENT_NAMES)) {
+      this.startPolling();
+    }
+  };
+
+  MedHermes.prototype._ensureInteractionChannel = function () {
+    if (this._destroyed || !this._connected) return;
+
+    if (this._shouldUseWebSocket()) {
+      this._openPersistentWebSocket();
+      return;
+    }
+
+    if (this._isPolling) {
+      this._startLongPollingEvents();
+    }
   };
 
   /**
@@ -408,13 +522,14 @@
     var self = this;
     this._currentPatientId = patient.idPi || patient.patientId || '';
     this._lastResultKey = '';
+    this._lastEventId = '';
 
     return this._callWithFallback(
       function () { return self._http.post('/consultation/start', patient); },
       'start-consultation',
       patient
     ).then(function (result) {
-      if (self._opts.autoPoll) self.startPolling();
+      self._resumePollingIfNeeded();
       return result;
     });
   };
@@ -430,13 +545,14 @@
     var payload = assign({}, patient, { action: action });
     this._currentPatientId = patient.idPi || patient.patientId || '';
     this._lastResultKey = '';
+    this._lastEventId = '';
 
     return this._callWithFallback(
       function () { return self._http.post('/consultation/assist', payload); },
       'assist',
       payload
     ).then(function (result) {
-      if (self._opts.autoPoll) self.startPolling();
+      self._resumePollingIfNeeded();
       return result;
     });
   };
@@ -452,13 +568,14 @@
       this._currentPatientId = patient.idPi || patient.patientId || '';
     }
     this._lastResultKey = '';
+    this._lastEventId = '';
 
     return this._callWithFallback(
       function () { return self._http.post('/consultation/start-voice', patient || {}); },
       'voice-consultation',
       patient
     ).then(function (result) {
-      if (self._opts.autoPoll) self.startPolling();
+      self._resumePollingIfNeeded();
       return result;
     });
   };
@@ -484,13 +601,14 @@
     var payload = assign({ idPi: patientId }, optionalInfo || {});
     this._currentPatientId = patientId || '';
     this._lastResultKey = '';
+    this._lastEventId = '';
 
     return this._callWithFallback(
       function () { return self._http.post('/consultation/receive', payload); },
       'receive-patient',
       payload
     ).then(function (result) {
-      if (self._opts.autoPoll) self.startPolling();
+      self._resumePollingIfNeeded();
       return result;
     });
   };
@@ -529,66 +647,201 @@
 
     return this._http.post('/consultation/reference-feedback', payload)
       .then(function (result) {
-        if (self._opts.autoPoll) self.startPolling();
+        self._resumePollingIfNeeded();
         return result;
       });
   };
 
   /**
-   * 手动拉取一次结果
-   * @returns {Promise<Object|null>} 结果对象，或 null（无结果）
+   * 手动长轮询一次事件
+   * @returns {Promise<Object|null>} 事件 envelope，或 null（当前无事件）
    */
-  MedHermes.prototype.fetchResult = function () {
+  MedHermes.prototype.pollEvent = function () {
     var self = this;
-    return this._http.get('/consultation/result')
+    var path = '/consultation/events/poll';
+    if (this._lastEventId) {
+      path += '?after=' + encodeURIComponent(this._lastEventId);
+    }
+
+    return this._http.get(path)
       .then(function (result) {
-        if (result && result.status === 'pending') {
+        var normalized = normalizeEventEnvelope(result);
+
+        if (!normalized || normalized.state === 'pending' || !normalized.event) {
           return null; // 尚未就绪
         }
+
         // 检测 cancelled 状态：桌面端已经终止了接诊
-        var record = result && (result.record || result);
-        var resultType = record && record.resultType;
-        if (result && (result.status === 'cancelled' || resultType === 'cancelled')) {
-          self.stopPolling();
+        var event = normalized.event;
+        var record = event.payload || {};
+        if (normalized.state === 'cancelled' || event.type === 'cancelled') {
+          self._lastEventId = event.id || self._lastEventId;
           var cancelErr = new Error(record.reason || 'Consultation cancelled by user');
           cancelErr.code = 'CANCELLED';
-          cancelErr.result = result;
-          self._emitter.emit('cancelled', result);
+          cancelErr.result = normalized;
+          self._emitter.emit('cancelled', normalized);
           self._emitter.emit('error', cancelErr);
           throw cancelErr;
         }
-        self._processResult(result);
-        return result;
+        self._dispatchEnvelope(normalized);
+        return normalized;
       })
       .catch(function (err) {
         if (err.code === 'CANCELLED') throw err; // 不吞掉 cancelled 异常
-        if (err.status === 404) return null; // 兼容旧版
         self._emitter.emit('error', err);
         throw err;
       });
   };
 
-  /** 启动自动轮询（长轮询模式） */
+  /**
+   * 订阅事件流；返回取消订阅函数
+   * @param {Function} listener
+   * @returns {Function}
+   */
+  MedHermes.prototype.subscribe = function (listener) {
+    var self = this;
+    if (typeof listener !== 'function') {
+      throw new TypeError('subscribe requires a function listener');
+    }
+
+    this.on('event', listener);
+    this.startPolling();
+
+    return function unsubscribe() {
+      self.off('event', listener);
+      if (!self._emitter.hasAnyListeners(STREAM_EVENT_NAMES)) {
+        self.stopPolling();
+      }
+    };
+  };
+
+  /** 启动事件消费；WebSocket 通道本身由 init/handshake 维持常驻 */
   MedHermes.prototype.startPolling = function () {
     if (this._destroyed || this._isPolling) return;
-    var self = this;
     this._isPolling = true;
-    this._emitter.emit('polling-start');
+    this._emitter.emit('subscription-start');
+
+    this._ensureInteractionChannel();
+    if (!this._shouldUseWebSocket()) {
+      this._startLongPollingEvents();
+    }
+  };
+
+  MedHermes.prototype._shouldUseWebSocket = function () {
+    return this._opts.eventTransport !== 'polling'
+      && typeof WebSocket !== 'undefined';
+  };
+
+  MedHermes.prototype._openPersistentWebSocket = function () {
+    if (this._destroyed || !this._connected || !this._isChannelPersistent) return;
+    if (this._ws || this._isWsConnecting) return;
+
+    var self = this;
+    var opened = false;
+    this._isWsConnecting = true;
+    this._transport = 'websocket';
+
+    try {
+      var ws = new WebSocket(buildEventWebSocketUrl(this._opts.baseUrl, this._lastEventId));
+      this._ws = ws;
+
+      ws.onopen = function () {
+        opened = true;
+        self._isWsConnecting = false;
+        self._emitter.emit('subscription-transport', { transport: 'websocket', state: 'connected' });
+      };
+
+      ws.onmessage = function (message) {
+        if (!message || typeof message.data !== 'string' || message.data === 'pong') return;
+
+        var parsed;
+        try {
+          parsed = JSON.parse(message.data);
+        } catch (e) {
+          console.warn('[MedHermes] Invalid WebSocket event payload:', message.data);
+          return;
+        }
+
+        var envelope = normalizeEventEnvelope(parsed);
+        if (!envelope || envelope.state === 'pending' || !envelope.event) return;
+
+        var event = envelope.event;
+        var record = event.payload || {};
+        if (envelope.state === 'cancelled' || event.type === 'cancelled') {
+          self._lastEventId = event.id || self._lastEventId;
+          var cancelErr = new Error(record.reason || 'Consultation cancelled by user');
+          cancelErr.code = 'CANCELLED';
+          cancelErr.result = envelope;
+          self._emitter.emit('cancelled', envelope);
+          self._emitter.emit('error', cancelErr);
+          return;
+        }
+
+        self._dispatchEnvelope(envelope);
+      };
+
+      ws.onerror = function () {
+        self._isWsConnecting = false;
+        self._emitter.emit('subscription-transport', { transport: 'websocket', state: 'error' });
+      };
+
+      ws.onclose = function () {
+        self._isWsConnecting = false;
+        if (self._ws === ws) self._ws = null;
+        if (self._destroyed || !self._connected || !self._isChannelPersistent) return;
+
+        self._emitter.emit('subscription-transport', { transport: 'websocket', state: 'closed' });
+        if (!opened && self._opts.eventTransport !== 'websocket') {
+          if (self._isPolling) {
+            self._startLongPollingEvents();
+          }
+          return;
+        }
+
+        self._wsReconnectTimer = setTimeout(function () {
+          self._openPersistentWebSocket();
+        }, self._opts.wsReconnectMs || 1000);
+      };
+    } catch (err) {
+      this._isWsConnecting = false;
+      this._emitter.emit('error', err);
+      if (this._opts.eventTransport === 'websocket') {
+        this._wsReconnectTimer = setTimeout(function () {
+          self._openPersistentWebSocket();
+        }, this._opts.wsReconnectMs || 1000);
+      } else {
+        if (this._isPolling) {
+          this._startLongPollingEvents();
+        }
+      }
+    }
+  };
+
+  MedHermes.prototype._startLongPollingEvents = function () {
+    if (!this._isPolling || this._destroyed) return;
+    if (this._shouldUseWebSocket() && this._ws) return;
+    var self = this;
+    this._transport = 'polling';
+    this._emitter.emit('subscription-transport', { transport: 'polling', state: 'connected' });
 
     function poll() {
       if (!self._isPolling || self._destroyed) return;
 
-      self.fetchResult()
+      self.pollEvent()
         .then(function (result) {
-          // 如果拿到了结果（非 reference-request），fetchResult 内部会停止轮询
-          // 如果是 reference-request，继续下一次长轮询
+          // 如果拿到了非终态结果，继续下一次长轮询；终态在 _processResult 中会停止。
           if (self._isPolling) {
             setTimeout(poll, 100); // 稍微延迟，避免极端情况下的死循环
           }
         })
         .catch(function (err) {
-          // cancelled 异常：立即停止，不再重试
-          if (err.code === 'CANCELLED') return;
+          // cancelled 只代表某次业务流结束，不影响长寿命交互通道
+          if (err.code === 'CANCELLED') {
+            if (self._isPolling && !self._ws) {
+              setTimeout(poll, self._opts.pollInterval || 2000);
+            }
+            return;
+          }
           // 404 或超时都继续轮询
           if (self._isPolling) {
             setTimeout(poll, self._opts.pollInterval || 2000);
@@ -599,22 +852,35 @@
     poll();
   };
 
-  /** 停止自动轮询 */
+  /** 停止事件消费；不会关闭已建立的持久 WebSocket 通道 */
   MedHermes.prototype.stopPolling = function () {
     this._isPolling = false;
     if (this._pollTimer) {
       clearInterval(this._pollTimer);
       this._pollTimer = null;
     }
-    this._emitter.emit('polling-stop');
+    if (!this._ws) {
+      this._transport = 'idle';
+    }
+    this._emitter.emit('subscription-stop');
   };
 
   /** 销毁实例，清理全部资源 */
   MedHermes.prototype.destroy = function () {
     this._destroyed = true;
+    this._isChannelPersistent = false;
     this.stopPolling();
+    if (this._wsReconnectTimer) {
+      clearTimeout(this._wsReconnectTimer);
+      this._wsReconnectTimer = null;
+    }
+    if (this._ws) {
+      try { this._ws.close(); } catch (e) {}
+      this._ws = null;
+    }
     this._emitter = new EventEmitter(); // 清空所有监听
     this._connected = false;
+    this._transport = 'idle';
   };
 
   // ─── 内部方法 ───
@@ -625,7 +891,12 @@
     
     // 静默执行一次握手，确保小球端上下文（如 Token）是最新的，以应对小球可能刚刚重启的情况。
     // 如果握手失败，我们忽略异常（catch），继续走后面的请求和兜底逻辑。
-    var ensureHandshake = this._handshake().catch(function() {});
+    var ensureHandshake = this._handshake().then(function(result) {
+      self._connected = true;
+      self._isChannelPersistent = true;
+      self._ensureInteractionChannel();
+      return result;
+    }).catch(function() {});
 
     return ensureHandshake.then(function() {
       return httpCall().catch(function (err) {
@@ -637,7 +908,12 @@
           return new Promise(function (resolve, reject) {
             setTimeout(function () {
               // 拉起后重试前，同样先做一次静默握手
-              self._handshake().catch(function() {}).then(function() {
+              self._handshake().then(function(result) {
+                self._connected = true;
+                self._isChannelPersistent = true;
+                self._ensureInteractionChannel();
+                return result;
+              }).catch(function() {}).then(function() {
                 httpCall()
                   .then(resolve)
                   .catch(function () {
@@ -658,32 +934,30 @@
     });
   };
 
-  /** 处理轮询到的结果：去重 + 分发事件 */
-  MedHermes.prototype._processResult = function (result) {
-    if (!result) return;
+  /** 处理轮询到的事件：去重 + 分发事件 */
+  MedHermes.prototype._dispatchEnvelope = function (envelope) {
+    if (!envelope || !envelope.event) return;
 
     // 患者校验
-    var consultationId = String(result.consultationId || result.consultation_id || '');
+    var consultationId = String(envelope.event.consultationId || '');
     if (this._currentPatientId && consultationId && consultationId !== String(this._currentPatientId)) {
       return; // 忽略非当前患者的结果
     }
 
     // 去重
-    var key = buildResultKey(result);
+    var key = buildEventKey(envelope);
     if (key === this._lastResultKey) return;
     this._lastResultKey = key;
 
-    // 提取 record
-    var record = result.record || result;
-    var resultType = record.resultType || 'final-report';
+    var event = envelope.event;
+    var record = event.payload || {};
+    var resultType = event.type || record.resultType || 'final-report';
 
-    // 分发事件
+    // 分发通用 envelope 事件 + 按业务类型分发 payload
+    this._lastEventId = event.id || '';
+    this._emitter.emit('event', envelope);
     this._emitter.emit(resultType, record);
 
-    // 自动停止轮询（除非是 reference-request，需要继续等待回执）
-    if (resultType !== 'reference-request') {
-      this.stopPolling();
-    }
   };
 
   // 暴露版本号

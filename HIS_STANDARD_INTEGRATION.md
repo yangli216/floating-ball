@@ -38,7 +38,7 @@
 
 建议按以下 3 步推进：
 
-1. 先接 `POST /api/consultation/start` + `GET /api/consultation/result`
+1. 先接 `POST /api/consultation/start` + `GET /api/consultation/events/poll`
 2. 再接 `POST /api/consultation/assist`，打通灵活模式
 3. 最后接 `POST /api/consultation/reference-feedback`，完成 PHIS 引用闭环
 
@@ -84,7 +84,7 @@
 ### 4.1 基础接诊流程
 
 1. HIS 选中患者后调用 `POST /api/consultation/start`
-2. 调用成功后立即轮询 `GET /api/consultation/result`
+2. 调用成功后立即轮询 `GET /api/consultation/events/poll`
 3. 收到 `draft` 或 `final-report` 后回填医生站草稿
 
 适用场景：
@@ -96,7 +96,7 @@
 
 1. HIS 在当前患者上下文下调用 `POST /api/consultation/assist`
 2. 传入 `action`
-3. 继续轮询 `GET /api/consultation/result`
+3. 继续轮询 `GET /api/consultation/events/poll`
 4. 如收到 `reference-request`，说明医生在 `med-hermes` 中发起了引用
 
 `action` 支持：
@@ -120,7 +120,7 @@
 3. 在 HIS / PHIS 内完成保存
 4. 保存成功或失败后调用 `POST /api/consultation/reference-feedback`
 5. `med-hermes` 收到回执后更新页面状态
-6. HIS 继续轮询 `GET /api/consultation/result`，直到读到 `reference-feedback`
+6. HIS 继续轮询 `GET /api/consultation/events/poll`，直到读到 `reference-feedback`
 
 这是当前推荐诊断 / 用药 / 检查真正写入业务系统的闭环。
 
@@ -232,16 +232,16 @@ http://127.0.0.1:8081/api/consultation/start-voice
 
 1. 请求体可以为空。
 2. 若不为空，字段结构与 `/start` 基本一致。
-3. 语音接诊结果最终仍通过 `GET /api/consultation/result` 返回。
+3. 语音接诊结果最终仍通过 `GET /api/consultation/events/poll` 返回。
 
-### 5.4 `GET /api/consultation/result`
+### 5.4 `GET /api/consultation/events/poll`
 
 用途：获取当前最新一条问诊结果。
 
 完整地址：
 
 ```text
-http://127.0.0.1:8081/api/consultation/result
+http://127.0.0.1:8081/api/consultation/events/poll
 ```
 
 结果说明：
@@ -435,7 +435,7 @@ curl -X POST 'http://127.0.0.1:8081/api/consultation/start' \
 ### 8.2 轮询结果
 
 ```bash
-curl 'http://127.0.0.1:8081/api/consultation/result'
+curl 'http://127.0.0.1:8081/api/consultation/events/poll'
 ```
 
 ### 8.3 回执引用结果
@@ -466,9 +466,9 @@ curl -X POST 'http://127.0.0.1:8081/api/consultation/reference-feedback' \
 
 1. `POST /api/consultation/start` 能唤起完整问诊
 2. `POST /api/consultation/assist` 能进入对应灵活模式阶段
-3. `GET /api/consultation/result` 能回收到当前患者的 `draft` 或 `final-report`
+3. `GET /api/consultation/events/poll` 能回收到当前患者的 `draft` 或 `record-confirmed`
 4. 发起推荐诊断 / 用药 / 检查引用时能先收到 `reference-request`
-5. PHIS 调用 `POST /api/consultation/reference-feedback` 后，`GET /api/consultation/result` 能继续返回 `reference-feedback`
+5. PHIS 调用 `POST /api/consultation/reference-feedback` 后，`GET /api/consultation/events/poll` 能继续返回 `reference-feedback`
 6. 切换患者后不会把上一位患者的结果误回填到当前医生站
 7. 语音接诊结果也能走同一条 `/result` 通道回写
 
@@ -553,7 +553,7 @@ setActiveHisVendor('myHis');
   * 库存校验：`InventoryCheckRequest` / `InventoryCheckResult`
   原始 PHIS 字段仅通过返回值的 `raw` / `properties` 透传下游使用，业务通用代码不依赖。
 - `PharmacyOption` 仍保留 `idDept` / `idSto` PHIS 字段。药房体系本身是双层标识（部门与库房），其他厂商接入时可再考虑抽象。
-- 写回 HIS 暂不在适配器范围内：当前所有结果回写都走"前端经 invoke → Tauri → HTTP `/api/consultation/result`
+- 写回 HIS 暂不在适配器范围内：当前所有结果回写都走"前端经 invoke → Tauri → HTTP `/api/consultation/events/poll`
   → HIS 长轮询拉取"模式（详见第 5-7 节），无 `writeBack(record)` 类的同步出站调用。
   若未来某厂商需要主动 PUSH 回 HIS，可作为 `HisAdapter` 的 optional 方法扩展。
 

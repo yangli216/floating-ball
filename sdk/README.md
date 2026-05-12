@@ -7,7 +7,7 @@
 | 文件 | 部署方式 | 说明 |
 |------|----------|------|
 | `med-hermes-loader.js` | **HIS 本地部署** | 引导加载器，负责检测在线、协议拉起、CDN 加载。功能纯粹，极少更新 |
-| `med-hermes-sdk.js` | **CDN 托管** | 完整 SDK，封装全部 API + 轮询 + 去重 + 事件系统 |
+| `med-hermes-sdk.js` | **CDN 托管** | 完整 SDK，封装全部 API + WebSocket 事件订阅 + 长轮询兜底 + 去重 |
 | `med-hermes-sdk.d.ts` | 随 SDK 分发 | TypeScript 类型声明（可选） |
 
 **推荐架构：** HIS 本地只部署 `loader.js`，SDK 从 CDN 加载。这样 loader 几乎不需要更新，SDK 通过 CDN 自动获取最新版本。
@@ -136,9 +136,14 @@ await mh.debugHandshake({
 });
 ```
 
-### 3. 启动问诊并监听结果
+### 3. 启动问诊并订阅事件
 
 ```js
+// 订阅统一事件流
+const unsubscribe = mh.subscribe((envelope) => {
+  console.log('event:', envelope.event && envelope.event.type, envelope);
+});
+
 // 监听病历草稿回写
 mh.on('draft', (result) => {
   console.log('主诉:', result.chiefComplaint);
@@ -166,7 +171,7 @@ mh.startConsultation({
 });
 ```
 
-完成！SDK 会自动处理轮询、去重和停止。
+完成！SDK 会在 `init()` / `debugHandshake()` 成功后尽量维持一条长寿命 WebSocket 交互通道，并自动处理断线重连、`event.id` 补发和去重；WebSocket 不可用时才回退到长轮询。
 
 ---
 
@@ -319,15 +324,43 @@ await mh.startConsultation({
 
 #### `sendFeedback(requestId, status, message?, items?): Promise`
 
-发送 PHIS 引用回执。每收到一条 `reference-request`，必须调用此方法回执。
+发送 PHIS 引用回执。每收到一条 `reference-request` 或等待闭环中的 `record-confirmed`，都应调用此方法回执。
+
+#### `pollEvent(): Promise`
+
+手动长轮询一次事件 envelope。通常只用于调试或 WebSocket 不可用时的兜底验证。
+
+返回值是统一 envelope：
+
+- `state`: `pending / ready / cancelled`
+- `event`: 当前事件对象
+- `event.type`: 事件类型，对应 `draft / record-confirmed / reference-request / reference-feedback ...`
+- `event.terminal`: 当前事件是否已到终态
+- `event.payload`: 规范化业务 payload
+
+当 `state = pending` 时，返回 `null`。
 
 #### `ping(): Promise`
 
 检测桌面端桥接服务是否在线，不会执行授权握手。
 
+#### `subscribe(listener): () => void`
+
+订阅统一事件流。底层 WebSocket 交互通道在 `init()` / `debugHandshake()` 成功后会尽量常驻，`subscribe()` 只是声明当前页面开始消费该通道上的事件；WebSocket 不可用时自动回退长轮询。返回取消订阅函数。
+
+```js
+const unsubscribe = mh.subscribe((envelope) => {
+  if (envelope.event?.type === 'reference-request') {
+    console.log('收到引用请求');
+  }
+});
+
+unsubscribe();
+```
+
 #### `startPolling() / stopPolling()`
 
-手动控制轮询（通常不需要，`autoPoll=true` 时自动管理）。
+手动控制当前页面是否消费事件。它不会主动关闭已经建立的持久 WebSocket 通道；该通道仍会保持连接，供后续业务继续复用。
 
 #### `destroy()`
 
@@ -337,7 +370,9 @@ await mh.startConsultation({
 
 | 事件名 | 回调参数 | 说明 |
 |--------|----------|------|
+| `event` | `envelope` | 收到最新事件快照 envelope，适合统一分发处理 |
 | `draft` | `result` | 收到病历草稿回写 |
+| `record-confirmed` | `result` | 收到最终确认回写事件 payload |
 | `final-report` | `result` | 收到完整问诊报告 |
 | `batch` | `result` | 收到语音问诊批量回写 |
 | `reference-request` | `result` | 收到引用请求，需 PHIS 保存并回执 |
@@ -347,8 +382,8 @@ await mh.startConsultation({
 | `launching` | - | 正在通过协议拉起桌面端 |
 | `launch-failed` | - | 协议拉起失败 |
 | `error` | `err` | 通信异常 |
-| `polling-start` | - | 开始轮询 |
-| `polling-stop` | - | 停止轮询 |
+| `subscription-start` | - | 开始事件订阅循环 |
+| `subscription-stop` | - | 停止事件订阅循环 |
 
 ---
 
@@ -399,7 +434,11 @@ SDK 通过 `fetch` 调用本地 `127.0.0.1:8081`，MedHermes 桌面端已配置 
 
 ### Q: 轮询什么时候自动停止？
 
-收到 `draft`、`final-report`、`batch`、`reference-feedback` 时自动停止。收到 `reference-request` 时会继续轮询，等待 PHIS 回执后的 `reference-feedback`。
+SDK 会根据事件 envelope 里的 `event.terminal` 自动决定是否停止轮询。
+
+- `draft`、`final-report`、`batch`、`reference-feedback`、`cancelled` 默认都会停止
+- `reference-request` 会继续轮询，等待 PHIS 回执
+- `record-confirmed` 在 `referenceStatus = pending` 时也会继续轮询，直到收到最终 `reference-feedback`
 
 ### Q: 如何在 Vue/React 中使用？
 

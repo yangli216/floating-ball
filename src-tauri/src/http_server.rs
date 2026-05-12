@@ -1,5 +1,6 @@
 use actix_cors::Cors;
-use actix_web::{web, App, HttpResponse, HttpServer, Responder};
+use actix_web::{web, App, HttpRequest, HttpResponse, HttpServer, Responder};
+use futures_util::StreamExt;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::Mutex;
@@ -7,6 +8,7 @@ use std::time::Instant;
 use tauri::{Emitter, Manager};
 
 use crate::{
+    append_consultation_event, clear_consultation_events,
     commands::his_integration_log::{self, HisIntegrationLogInput},
     validate_browser_context, BrowserContext, ConsultationResult, PatientInfo, SharedAppState,
 };
@@ -75,6 +77,179 @@ fn ensure_http_service_access(state: &web::Data<SharedAppState>) -> Result<(), H
     }
 
     Ok(())
+}
+
+fn derive_result_state(
+    result: &ConsultationResult,
+    payload: &serde_json::Map<String, serde_json::Value>,
+) -> &'static str {
+    let result_type = payload
+        .get("resultType")
+        .and_then(|value| value.as_str())
+        .unwrap_or_default();
+
+    if result.status.as_deref() == Some("cancelled") || result_type == "cancelled" {
+        return "cancelled";
+    }
+
+    "ready"
+}
+
+fn is_terminal_result(
+    result_type: &str,
+    reference_status: Option<&str>,
+    state: &str,
+) -> bool {
+    if state == "pending" {
+        return false;
+    }
+
+    if state == "cancelled" {
+        return true;
+    }
+
+    match result_type {
+        "reference-request" => false,
+        "record-confirmed" => reference_status != Some("pending"),
+        _ => true,
+    }
+}
+
+fn build_consultation_event(result: &ConsultationResult) -> serde_json::Value {
+    let payload_map = match &result.record {
+        serde_json::Value::Object(map) => map.clone(),
+        other => {
+            let mut fallback = serde_json::Map::new();
+            fallback.insert("value".to_string(), other.clone());
+            fallback
+        }
+    };
+
+    let result_type = payload_map
+        .get("resultType")
+        .and_then(|value| value.as_str())
+        .unwrap_or_default()
+        .to_string();
+    let reference_status = payload_map
+        .get("referenceStatus")
+        .and_then(|value| value.as_str());
+    let state = derive_result_state(result, &payload_map);
+    let terminal = is_terminal_result(&result_type, reference_status, state);
+    let request_id = payload_map
+        .get("requestId")
+        .and_then(|value| value.as_str())
+        .unwrap_or_default();
+    let event_id = format!(
+        "{}:{}:{}:{}",
+        result.consultation_id,
+        if request_id.is_empty() { "-" } else { request_id },
+        if result_type.is_empty() { "-" } else { &result_type },
+        result.timestamp
+    );
+
+    serde_json::json!({
+        "id": event_id,
+        "type": if result_type.is_empty() { serde_json::Value::Null } else { serde_json::Value::String(result_type) },
+        "consultationId": result.consultation_id,
+        "requestId": if request_id.is_empty() { serde_json::Value::Null } else { serde_json::Value::String(request_id.to_string()) },
+        "timestamp": result.timestamp,
+        "terminal": terminal,
+        "payload": payload_map,
+    })
+}
+
+fn current_event_id(result: &ConsultationResult) -> String {
+    let payload_map = match &result.record {
+        serde_json::Value::Object(map) => map,
+        _ => return format!("{}:-:-:{}", result.consultation_id, result.timestamp),
+    };
+
+    let result_type = payload_map
+        .get("resultType")
+        .and_then(|value| value.as_str())
+        .unwrap_or_default();
+    let request_id = payload_map
+        .get("requestId")
+        .and_then(|value| value.as_str())
+        .unwrap_or_default();
+
+    format!(
+        "{}:{}:{}:{}",
+        result.consultation_id,
+        if request_id.is_empty() { "-" } else { request_id },
+        if result_type.is_empty() { "-" } else { result_type },
+        result.timestamp
+    )
+}
+
+fn parse_after_event_id(req: &HttpRequest) -> Option<String> {
+    web::Query::<HashMap<String, String>>::from_query(req.query_string())
+        .ok()
+        .and_then(|query| query.get("after").cloned())
+        .filter(|value| !value.trim().is_empty())
+}
+
+fn queued_events_after(
+    state: &SharedAppState,
+    after_event_id: Option<&str>,
+    include_latest_without_cursor: bool,
+) -> Vec<ConsultationResult> {
+    let Ok(event_queue) = state.event_queue.lock() else {
+        return Vec::new();
+    };
+
+    if event_queue.is_empty() {
+        return Vec::new();
+    }
+
+    if let Some(after_event_id) = after_event_id.filter(|value| !value.trim().is_empty()) {
+        if let Some(index) = event_queue
+            .iter()
+            .position(|result| current_event_id(result) == after_event_id)
+        {
+            return event_queue.iter().skip(index + 1).cloned().collect();
+        }
+
+        return event_queue.iter().cloned().collect();
+    }
+
+    if include_latest_without_cursor {
+        return event_queue
+            .back()
+            .cloned()
+            .into_iter()
+            .collect::<Vec<_>>();
+    }
+
+    Vec::new()
+}
+
+fn next_queued_event_after(
+    state: &SharedAppState,
+    after_event_id: Option<&str>,
+) -> Option<ConsultationResult> {
+    queued_events_after(state, after_event_id, true)
+        .into_iter()
+        .next()
+}
+
+fn build_event_poll_response(
+    result: &ConsultationResult,
+    trace_id: &str,
+) -> serde_json::Value {
+    let event = build_consultation_event(result);
+    let payload = event
+        .get("payload")
+        .and_then(|value| value.as_object())
+        .cloned()
+        .unwrap_or_default();
+    let state = derive_result_state(result, &payload);
+
+    serde_json::json!({
+        "state": state,
+        "traceId": trace_id,
+        "event": event,
+    })
 }
 
 // PMPHAI Token Cache
@@ -177,6 +352,14 @@ async fn receive_patient(
         patient.id_pi
     );
 
+    {
+        let mut current = state.current_consultation.lock().unwrap();
+        *current = Some(patient.clone());
+    }
+    if let Err(error) = clear_consultation_events(state.get_ref()) {
+        eprintln!("Failed to clear consultation events: {}", error);
+    }
+
     // Emit event to Frontend
     if let Some(window) = app_handle.get_webview_window("main") {
         if let Err(e) = window.emit("receive-patient", &patient) {
@@ -240,9 +423,9 @@ async fn start_consultation(
     {
         let mut current = state.current_consultation.lock().unwrap();
         *current = Some(patient.clone());
-        // Reset result
-        let mut result = state.last_result.lock().unwrap();
-        *result = None;
+    }
+    if let Err(error) = clear_consultation_events(state.get_ref()) {
+        eprintln!("Failed to clear consultation events: {}", error);
     }
 
     // 2. Emit event to Frontend
@@ -302,11 +485,13 @@ async fn start_voice_consultation(
     let patient = data.map(|payload| payload.into_inner());
     let request_summary = summarize_for_his_log(&patient);
 
+    if let Err(error) = clear_consultation_events(state.get_ref()) {
+        eprintln!("Failed to clear consultation events: {}", error);
+    }
+
     if let Some(patient) = patient.as_ref() {
         let mut current = state.current_consultation.lock().unwrap();
         *current = Some(patient.clone());
-        let mut result = state.last_result.lock().unwrap();
-        *result = None;
     }
 
     // Emit event to Frontend
@@ -412,8 +597,9 @@ async fn start_consultation_assist(
     {
         let mut current = state.current_consultation.lock().unwrap();
         *current = Some(request.patient.clone());
-        let mut result = state.last_result.lock().unwrap();
-        *result = None;
+    }
+    if let Err(error) = clear_consultation_events(state.get_ref()) {
+        eprintln!("Failed to clear consultation events: {}", error);
     }
 
     if let Some(window) = app_handle.get_webview_window("main") {
@@ -525,8 +711,7 @@ async fn stop_consultation(
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap()
             .as_millis() as u64;
-        let mut last_result = state.last_result.lock().unwrap();
-        *last_result = Some(ConsultationResult {
+        if let Err(error) = append_consultation_event(state.get_ref(), ConsultationResult {
             status: Some("cancelled".to_string()),
             consultation_id: consultation_id.clone(),
             timestamp,
@@ -534,10 +719,10 @@ async fn stop_consultation(
                 "resultType": "cancelled",
                 "reason": "Consultation stopped by user"
             }),
-        });
+        }) {
+            eprintln!("Failed to append cancelled consultation event: {}", error);
+        }
     }
-    // Notify any waiting long-poll requests
-    let _ = state.result_tx.send(());
 
     // 2. Emit event to Frontend
     if let Some(window) = app_handle.get_webview_window("main") {
@@ -575,7 +760,8 @@ async fn stop_consultation(
     HttpResponse::Ok().json(response_body)
 }
 
-async fn get_result(
+async fn poll_consultation_event(
+    req: HttpRequest,
     app_handle: web::Data<tauri::AppHandle>,
     state: web::Data<SharedAppState>,
 ) -> impl Responder {
@@ -585,22 +771,19 @@ async fn get_result(
         return response;
     }
 
-    // 1. Check if result exists immediately
-    {
-        let result = state.last_result.lock().unwrap();
-        if let Some(res) = &*result {
-            let mut response_body = serde_json::to_value(res).unwrap();
-            if let Some(obj) = response_body.as_object_mut() {
-                obj.insert("traceId".to_string(), serde_json::json!(trace_id));
-            }
+    let after_event_id = parse_after_event_id(&req);
+
+    // 1. Check if a queued event exists immediately
+    if let Some(res) = next_queued_event_after(state.get_ref(), after_event_id.as_deref()) {
+            let response_body = build_event_poll_response(&res, &trace_id);
             let is_cancelled = res.status.as_deref() == Some("cancelled");
             if !is_cancelled {
                 record_bridge_log(
                     &app_handle,
                     response_body["traceId"].as_str().unwrap_or_default(),
-                    "consultation.result",
+                    "consultation.eventPoll",
                     "GET",
-                    "/api/consultation/result",
+                    "/api/consultation/events/poll",
                     "success",
                     200,
                     started_at,
@@ -616,47 +799,46 @@ async fn get_result(
                 );
             }
             return HttpResponse::Ok().json(response_body);
-        }
     }
 
     // 2. Long polling: wait for notification or timeout
     let mut rx = state.result_tx.subscribe();
-    let timeout = tokio::time::sleep(std::time::Duration::from_secs(10));
+    let deadline = tokio::time::Instant::now() + std::time::Duration::from_secs(10);
 
-    let final_result = tokio::select! {
-        recv_res = rx.recv() => {
-            match recv_res {
-                Ok(_) => {
-                    let result = state.last_result.lock().unwrap();
-                    result.clone()
-                },
-                Err(_) => None,
+    let final_result = loop {
+        let sleep = tokio::time::sleep_until(deadline);
+        tokio::pin!(sleep);
+
+        let maybe_result = tokio::select! {
+            recv_res = rx.recv() => {
+                match recv_res {
+                    Ok(_) => next_queued_event_after(state.get_ref(), after_event_id.as_deref()),
+                    Err(_) => None,
+                }
             }
-        }
-        _ = timeout => {
-            None
-        }
+            _ = &mut sleep => {
+                None
+            }
+        };
+
+        let Some(result) = maybe_result else {
+            break None;
+        };
+
+        break Some(result);
     };
 
     if let Some(res) = final_result {
-        let mut val = serde_json::to_value(&res).unwrap();
-        if let Some(obj) = val.as_object_mut() {
-            if obj.get("status").is_none() {
-                obj.insert("status".to_string(), serde_json::json!("success"));
-            }
-        }
-        if let Some(obj) = val.as_object_mut() {
-            obj.insert("traceId".to_string(), serde_json::json!(trace_id));
-        }
+        let val = build_event_poll_response(&res, &trace_id);
         
         let is_cancelled = res.status.as_deref() == Some("cancelled");
         if !is_cancelled {
             record_bridge_log(
                 &app_handle,
                 val["traceId"].as_str().unwrap_or_default(),
-                "consultation.result",
+                "consultation.eventPoll",
                 "GET",
-                "/api/consultation/result",
+                "/api/consultation/events/poll",
                 "success",
                 200,
                 started_at,
@@ -674,8 +856,10 @@ async fn get_result(
         HttpResponse::Ok().json(val)
     } else {
         let response_body = serde_json::json!({
-            "status": "pending",
-            "message": "Consultation result not available",
+            "state": "pending",
+            "event": null,
+            "message": "Consultation event not available",
+            "code": "EVENT_NOT_READY",
             "timestamp": std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)
                 .unwrap()
@@ -685,9 +869,9 @@ async fn get_result(
         record_bridge_log(
             &app_handle,
             response_body["traceId"].as_str().unwrap_or_default(),
-            "consultation.result",
+            "consultation.eventPoll",
             "GET",
-            "/api/consultation/result",
+            "/api/consultation/events/poll",
             "pending",
             200,
             started_at,
@@ -700,6 +884,104 @@ async fn get_result(
         );
         HttpResponse::Ok().json(response_body)
     }
+}
+
+async fn consultation_events_ws(
+    req: HttpRequest,
+    stream: web::Payload,
+    state: web::Data<SharedAppState>,
+) -> Result<HttpResponse, actix_web::Error> {
+    if let Err(response) = ensure_http_service_access(&state) {
+        return Ok(response);
+    }
+
+    let after_event_id = parse_after_event_id(&req).unwrap_or_default();
+    let (response, mut session, mut msg_stream) = actix_ws::handle(&req, stream)?;
+    let state = state.get_ref().clone();
+
+    actix_web::rt::spawn(async move {
+        let mut last_event_id = after_event_id;
+
+        let replay_events = if last_event_id.is_empty() {
+            queued_events_after(&state, None, true)
+        } else {
+            queued_events_after(&state, Some(&last_event_id), false)
+        };
+        for result in replay_events {
+            let trace_id = his_integration_log::new_trace_id();
+            let envelope = build_event_poll_response(&result, &trace_id);
+            let Ok(payload) = serde_json::to_string(&envelope) else {
+                continue;
+            };
+            if session.text(payload).await.is_err() {
+                return;
+            }
+            last_event_id = current_event_id(&result);
+        }
+
+        let mut rx = state.result_tx.subscribe();
+        let mut heartbeat = tokio::time::interval(std::time::Duration::from_secs(30));
+
+        'ws: loop {
+            tokio::select! {
+                message = msg_stream.next() => {
+                    match message {
+                        Some(Ok(actix_ws::Message::Ping(bytes))) => {
+                            if session.pong(&bytes).await.is_err() {
+                                break 'ws;
+                            }
+                        }
+                        Some(Ok(actix_ws::Message::Text(text))) => {
+                            if text.trim().eq_ignore_ascii_case("ping") && session.text("pong").await.is_err() {
+                                break 'ws;
+                            }
+                        }
+                        Some(Ok(actix_ws::Message::Close(reason))) => {
+                            let _ = session.close(reason).await;
+                            break 'ws;
+                        }
+                        Some(Ok(_)) => {}
+                        Some(Err(error)) => {
+                            eprintln!("Consultation WebSocket receive error: {}", error);
+                            break 'ws;
+                        }
+                        None => break 'ws,
+                    }
+                }
+                _ = heartbeat.tick() => {
+                    if session.ping(b"heartbeat").await.is_err() {
+                        break 'ws;
+                    }
+                }
+                recv_result = rx.recv() => {
+                    match recv_result {
+                        Ok(_) | Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => {
+                            let events = if last_event_id.is_empty() {
+                                queued_events_after(&state, None, true)
+                            } else {
+                                queued_events_after(&state, Some(&last_event_id), false)
+                            };
+
+                            for result in events {
+                                let trace_id = his_integration_log::new_trace_id();
+                                let envelope = build_event_poll_response(&result, &trace_id);
+                                let Ok(payload) = serde_json::to_string(&envelope) else {
+                                    continue;
+                                };
+                                if session.text(payload).await.is_err() {
+                                    break 'ws;
+                                }
+                                last_event_id = current_event_id(&result);
+                            }
+                        }
+                        Err(tokio::sync::broadcast::error::RecvError::Closed) => break 'ws,
+                    }
+                }
+            }
+        }
+    });
+
+    Ok(response)
 }
 
 async fn reference_feedback(
@@ -989,7 +1271,6 @@ async fn reference_feedback(
     });
 
     let merged_result = {
-        let mut last_result = state.last_result.lock().unwrap();
         let mut record_map = base_record_map;
 
         record_map.insert(
@@ -1056,10 +1337,11 @@ async fn reference_feedback(
             timestamp,
             record: serde_json::Value::Object(record_map),
         };
-        *last_result = Some(result.clone());
         result
     };
-    let _ = state.result_tx.send(());
+    if let Err(error) = append_consultation_event(state.get_ref(), merged_result.clone()) {
+        eprintln!("Failed to append reference feedback event: {}", error);
+    }
 
     if let Some(window) = app_handle.get_webview_window("main") {
         if let Err(e) = window.emit("consultation-reference-feedback", &feedback_payload) {
@@ -1698,7 +1980,14 @@ pub fn run_server(app_handle: tauri::AppHandle, state: SharedAppState) {
                         "/api/consultation/reference-feedback",
                         web::post().to(reference_feedback),
                     )
-                    .route("/api/consultation/result", web::get().to(get_result))
+                    .route(
+                        "/api/consultation/events/poll",
+                        web::get().to(poll_consultation_event),
+                    )
+                    .route(
+                        "/api/consultation/events/ws",
+                        web::get().to(consultation_events_ws),
+                    )
                     .route("/api/patient/risks", web::post().to(show_patient_risks))
                     // PMPHAI API Proxy
                     .route("/api/pmphai/token", web::post().to(pmphai_get_token))
