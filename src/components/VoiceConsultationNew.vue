@@ -46,6 +46,8 @@ import type { VoiceIntentResult, MatchedTreatment, MatchedDiagnosis } from '../c
 import {
   buildDiagList as buildSharedDiagList,
   buildOrderListItem as buildSharedOrderListItem,
+  getMatchedMedicalItemClientId,
+  getMatchedOrderServiceId,
 } from '../utils/recordConfirmedPayload';
 import {
   normalizeUsageKeyword,
@@ -1206,7 +1208,7 @@ async function hydrateMatchedMedicalItemDetail(rec: TreatmentRecommendation): Pr
     return;
   }
 
-  const idCli = (rec.matchedItem.code || readFirstString(getMatchedItemRaw(rec), ['idCli']) || '').trim();
+  const idCli = getMatchedMedicalItemClientId(rec);
   if (!idCli) {
     return;
   }
@@ -2221,8 +2223,7 @@ function getOrderServiceCode(rec: TreatmentRecommendation): string {
 }
 
 function getOrderServiceId(rec: TreatmentRecommendation): string {
-  const raw = getMatchedItemRaw(rec);
-  return (rec.matchedItem?.idSrv || readFirstString(raw, ['idSrv', 'idCli', 'idMedPro', 'idMed', 'id']) || rec.matchedItem?.id || '').trim();
+  return getMatchedOrderServiceId(rec);
 }
 
 function getOrderServiceName(rec: TreatmentRecommendation): string {

@@ -640,6 +640,8 @@ import {
   buildDiagList as buildSharedDiagList,
   buildOrderListItem as buildSharedOrderListItem,
   buildRecordConfirmedPayload,
+  getMatchedMedicalItemClientId,
+  getMatchedOrderServiceId,
   getMatchedItemRaw,
   readFirstString,
   type OrderItemResolvers,
@@ -1437,7 +1439,7 @@ const buildCurrentMedicalPayload = (
         .filter((item) => item.selected)
         .map((item) => ({
           name: item.name,
-          idCli: item.matchedItem?.id,
+          idCli: getMatchedMedicalItemClientId(item),
         }))
     : [];
   const labTests = includeTreatments && (!includedTreatmentTypes || includedTreatmentTypes.includes('lab_test'))
@@ -1445,7 +1447,7 @@ const buildCurrentMedicalPayload = (
         .filter((item) => item.selected)
         .map((item) => ({
           name: item.name,
-          idCli: item.matchedItem?.id,
+          idCli: getMatchedMedicalItemClientId(item),
         }))
     : [];
   const procedures = includeTreatments && (!includedTreatmentTypes || includedTreatmentTypes.includes('procedure'))
@@ -1453,7 +1455,7 @@ const buildCurrentMedicalPayload = (
         .filter((item) => item.selected)
         .map((item) => ({
           name: item.name,
-          idCli: item.matchedItem?.id,
+          idCli: getMatchedMedicalItemClientId(item),
         }))
     : [];
 
@@ -2401,7 +2403,7 @@ watch(() => props.initialPatientData, (newData) => {
 
 const symptomOrderResolvers: OrderItemResolvers = {
   getServiceCode: (rec) => (rec.matchedItem?.sdSrv || readFirstString(getMatchedItemRaw(rec), ['sdSrv']) || '').trim(),
-  getServiceId: (rec) => (rec.matchedItem?.idSrv || readFirstString(getMatchedItemRaw(rec), ['idSrv', 'idCli', 'idMedPro', 'idMed', 'id']) || rec.matchedItem?.id || '').trim(),
+  getServiceId: (rec) => getMatchedOrderServiceId(rec),
   getServiceName: (rec) => (rec.matchedItem?.naSrv || readFirstString(getMatchedItemRaw(rec), ['naSrv', 'naCli', 'naMedPro', 'naMed']) || rec.matchedItem?.name || rec.name || '').trim(),
   getExecDeptId: (rec) => (rec.matchedItem?.idDeptExec || readFirstString(getMatchedItemRaw(rec), ['idDeptExec', 'idDept']) || '').trim(),
   getPartId: (rec) => (rec.matchedItem?.idPart || readFirstString(getMatchedItemRaw(rec), ['idPart']) || '').trim(),

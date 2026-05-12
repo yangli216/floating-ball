@@ -45,6 +45,39 @@ export function getMatchedItemRaw(
   return raw && typeof raw === 'object' ? (raw as Record<string, unknown>) : undefined;
 }
 
+export function getMatchedMedicalItemClientId(
+  rec: TreatmentRecommendation,
+): string {
+  const raw = getMatchedItemRaw(rec);
+  const matchedItem = rec.matchedItem as { idCli?: unknown; code?: unknown } | undefined;
+
+  return (
+    readFirstString(raw, ['idCli'])
+    || readFirstString(matchedItem as Record<string, unknown> | undefined, ['idCli', 'code'])
+  ).trim();
+}
+
+export function getMatchedOrderServiceId(
+  rec: TreatmentRecommendation,
+): string {
+  const raw = getMatchedItemRaw(rec);
+  const matchedItem = rec.matchedItem as {
+    id?: unknown;
+    idMedPro?: unknown;
+    idCli?: unknown;
+    code?: unknown;
+  } | undefined;
+
+  if (rec.type === 'medicine') {
+    return (
+      readFirstString(raw, ['idMedPro', 'idMed'])
+      || readFirstString(matchedItem as Record<string, unknown> | undefined, ['idMedPro', 'id'])
+    ).trim();
+  }
+
+  return getMatchedMedicalItemClientId(rec);
+}
+
 // ===== diagList =====
 
 export interface BuildDiagListInput {
@@ -100,7 +133,7 @@ export function buildDiagList(input: BuildDiagListInput): Array<Record<string, s
 export interface OrderItemResolvers {
   /** PHIS 服务分类 sdSrv：药=11 检=31 验=41 处=21 */
   getServiceCode: (rec: TreatmentRecommendation) => string;
-  /** PHIS 标准服务 ID */
+  /** PHIS 标准服务 ID：药品取 idMedPro，非药品取 idCli */
   getServiceId: (rec: TreatmentRecommendation) => string;
   /** PHIS 标准服务名 */
   getServiceName: (rec: TreatmentRecommendation) => string;
