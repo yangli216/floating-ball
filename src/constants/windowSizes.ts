@@ -56,6 +56,9 @@ export const WINDOW_SIZES = {
   /** 标准工作面板：378×449px（聊天、设置等） */
   WORK: { width: 378, height: 449 } as WindowSize,
 
+  /** 聊天窗口：920×360px */
+  CHAT: { width: 920, height: 360 } as WindowSize,
+
   /** 诊断路径：972×608px 独立 Sankey 说明窗口 */
   DIAGNOSIS_PATH: { width: 972, height: 608 } as WindowSize,
 
@@ -162,6 +165,8 @@ export function getWindowSizeForView(view: ViewType, options?: WindowSizeOptions
       return WINDOW_SIZES.MEDICAL_CACHE;
 
     case 'chat':
+      return WINDOW_SIZES.CHAT;
+      
     case 'settings':
     case 'analytics':
     case 'risk-alert':

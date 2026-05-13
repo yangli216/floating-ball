@@ -35,6 +35,7 @@ export interface GeneratedRecord {
   chiefComplaint: string;
   historyOfPresentIllness: string;
   pastMedicalHistory: string;
+  familyHistory?: string;
   diagnosisList: DiagnosisEntry[];
   medications: MedicationEntry[];
   examinations: ExamEntry[];

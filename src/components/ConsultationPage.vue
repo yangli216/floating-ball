@@ -806,7 +806,7 @@ const currentTemplatesData = computed(() => {
 // All symptoms for body part and system selectors
 const allSymptoms = computed(() => symptoms.value);
 const currentView = ref<'consultation' | 'record' | 'final_report'>('consultation');
-const generatedRecord = ref({ chiefComplaint: '', historyOfPresentIllness: '', tcmFourExaminations: '' });
+const generatedRecord = ref({ chiefComplaint: '', historyOfPresentIllness: '', tcmFourExaminations: '', familyHistory: '' });
 const activePatientAnchorId = ref('');
 const assistFocus = ref<AssistAction | null>(null);
 const activeReferenceRequest = ref<ReferenceFeedbackPayload | null>(null);
@@ -1362,6 +1362,7 @@ const {
   chiefComplaint: computed(() => generatedRecord.value.chiefComplaint || ''),
   historyOfPresentIllness: computed(() => generatedRecord.value.historyOfPresentIllness || ''),
   pastMedicalHistory: computed(() => resolvePastMedicalHistory()),
+  familyHistory: computed(() => generatedRecord.value.familyHistory || ''),
 });
 
 const buildReferenceKey = (
@@ -1578,7 +1579,7 @@ const resetWorkflowState = () => {
   searchQuery.value = '';
   selectedCategories.value = [];
   isCategoryDropdownOpen.value = false;
-  generatedRecord.value = { chiefComplaint: '', historyOfPresentIllness: '', tcmFourExaminations: '' };
+  generatedRecord.value = { chiefComplaint: '', historyOfPresentIllness: '', tcmFourExaminations: '', familyHistory: '' };
   finalRecord.value = null;
   aiDiagnoses.value = [];
   selectedDiagnosis.value = null;
@@ -4578,7 +4579,8 @@ const generateMedicalRecord = () => {
   generatedRecord.value = {
     chiefComplaint,
     historyOfPresentIllness: hpiParts.join("\n"),
-    tcmFourExaminations: tcmFourExamStr.trim()
+    tcmFourExaminations: tcmFourExamStr.trim(),
+    familyHistory: ''
   };
 };
 

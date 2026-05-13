@@ -97,6 +97,7 @@ export interface VoiceRecordDraft {
   pastMedicalHistory: string;
   allergyHistory?: string;
   currentMedicationHistory?: string;
+  familyHistory?: string;
   symptoms: string[];
   negativeSymptoms?: string[];
   treatmentPlan?: string;
@@ -182,6 +183,8 @@ export interface VoiceExtractionResult {
   allergyHistory?: string;
   /** 长期/当前用药史 */
   currentMedicationHistory?: string;
+  /** 家族史 */
+  familyHistory?: string;
   /** 其他处理意见 */
   treatmentPlan?: string;
   /** 健康宣教 */
@@ -203,6 +206,7 @@ export const VoiceIntentRecognitionPrompt = {
     "pastMedicalHistory": "既往史，如无则写无特殊",
     "allergyHistory": "过敏史，如无则写无特殊",
     "currentMedicationHistory": "长期或当前用药史，如无则写无特殊",
+    "familyHistory": "家族史，如无则写无特殊",
     "symptoms": ["症状1", "症状2"],
     "negativeSymptoms": ["症状1", "症状2"],
     "treatmentPlan": "其他处理意见，没有则空字符串",
@@ -272,7 +276,10 @@ export const VoiceIntentRecognitionPrompt = {
 3. chiefComplaint 尽量写成“主要症状 + 持续时间”；不要把诊断写进主诉。
 4. historyOfPresentIllness 必须按“起病时间/诱因 -> 核心症状 -> 伴随症状与重要阴性 -> 已做处理/关键查体或检查”整理成 2-4 句紧凑表述；不要重复医生问话、缴费复诊流程、泛化宣教、明显重复的阴性信息。
 5. negativeSymptoms 只填写阴性症状名称本身，例如“咳痰”“胸痛”；不要携带“否认”“无”“未见”“不伴”等否定前缀。
-6. pastMedicalHistory、allergyHistory、currentMedicationHistory 要分别整理；若对话未提及，写“无特殊”或空字符串，不要编造。
+6. pastMedicalHistory、allergyHistory、currentMedicationHistory、familyHistory 要分别整理；若对话未提及，写"无特殊"或空字符串，不要编造。
+6.1 pastMedicalHistory 只记录与本次就诊可能相关的既往疾病、手术史、外伤史等，不要把家族成员的疾病写入既往史。与本次主诉/现病史无明显关联的既往疾病（如本次看皮肤问题、既往有阑尾炎手术史）不要写入，避免干扰医生判断。
+6.2 pastMedicalHistory 中引用既往门诊记录时，必须严格保持原始日期与诊断的对应关系，不得将某次就诊的日期与另一次就诊的诊断拼接在一起。若无法确认某条既往记录的准确日期，只写疾病名称，不编造时间。
+6.3 familyHistory 记录直系亲属（父母、兄弟姐妹、子女）的遗传性、过敏性或慢性疾病；如"父亲有皮肤过敏史""母亲有高血压"。若对话未提及家族成员健康状况，写"无特殊"。不要把患者本人的既往史、过敏史混入家族史。
 7. diagnosisHints 和 treatmentHints 允许在病例事实基础上做合理补全，但所有推断项必须把 sourceType 标记为 inferred，对话明确提到的内容标记为 explicit；信息不足但仍给出谨慎提示时标记为 uncertain。
 7.1 diagnosisHints 允许返回多条诊断，但前提必须是病例中存在明确的并存诊断或需要同时成立的诊断；如果只是鉴别诊断、待排除方向或可能性排序，不要直接并列写进 diagnosisHints。
 7.2 diagnosisHints 如返回多条，第一条必须是主诊断，后续条目才是伴随诊断或并存诊断。
@@ -312,6 +319,7 @@ export const VoiceIntentRepairPrompt = {
     "pastMedicalHistory": "无特殊",
     "allergyHistory": "无特殊",
     "currentMedicationHistory": "无特殊",
+    "familyHistory": "无特殊",
     "symptoms": [],
     "negativeSymptoms": [],
     "treatmentPlan": "",
@@ -376,7 +384,7 @@ export const PatientRiskAnalysisPrompt = {
 - 每个风险项包含：
     - \`level\`: 风险等级 (1=高风险/红色, 2=中风险/橙色, 3=低风险/黄色)。
     - \`category\`: 风险类别 (allergy, chronic, medication, population, vital, other)。
-    - \`content\`: 简短明确的风险提示内容（不超过20字）。
+    - \`content\`: 简短明确的风险提示内容。
 - 如果没有符合上述定义的显著风险，请返回空数组 []。
 - 不要包含 markdown 标记 (如 \`\`\`json)，直接返回 JSON 字符串。`,
 

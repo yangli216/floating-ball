@@ -53,6 +53,7 @@ export interface VoiceEditorSnapshot {
   chiefComplaint?: string;
   historyOfPresentIllness?: string;
   pastMedicalHistory?: string;
+  familyHistory?: string;
   /** TreatmentRecommendation[] 形态 */
   treatments?: unknown[];
   /** Diagnosis[] 形态 */

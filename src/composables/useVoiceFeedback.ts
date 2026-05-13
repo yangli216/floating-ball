@@ -40,6 +40,7 @@ interface UseVoiceFeedbackInput {
   chiefComplaint: Ref<string>;
   historyOfPresentIllness: Ref<string>;
   pastMedicalHistory: Ref<string>;
+  familyHistory: Ref<string>;
 }
 
 interface RegisteredRecommendationTarget {
@@ -388,6 +389,7 @@ export function useVoiceFeedback(input: UseVoiceFeedbackInput) {
         chiefComplaint: input.chiefComplaint.value,
         historyOfPresentIllness: input.historyOfPresentIllness.value,
         pastMedicalHistory: input.pastMedicalHistory.value,
+        familyHistory: input.familyHistory.value,
         aiTrace: getLatestAiTrace(),
       });
 

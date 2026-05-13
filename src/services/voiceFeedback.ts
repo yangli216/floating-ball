@@ -48,6 +48,7 @@ export const VOICE_RECORD_FIELD_LABELS: Record<VoiceRecordFieldKey, string> = {
   chiefComplaint: '主诉',
   historyOfPresentIllness: '现病史',
   pastMedicalHistory: '既往史',
+  familyHistory: '家族史',
 };
 
 export function createEmptyRecommendationDraft(): VoiceRecommendationFeedbackDraft {
@@ -528,6 +529,7 @@ export function buildVoiceRecordFieldFeedbackPayload(input: {
   chiefComplaint: string;
   historyOfPresentIllness: string;
   pastMedicalHistory: string;
+  familyHistory: string;
   aiTrace: AiTraceContext | null;
 }): VoiceRecordFieldFeedbackPayload {
   const createdAt = Date.now();
@@ -554,6 +556,7 @@ export function buildVoiceRecordFieldFeedbackPayload(input: {
       chiefComplaint: input.chiefComplaint,
       historyOfPresentIllness: input.historyOfPresentIllness,
       pastMedicalHistory: input.pastMedicalHistory,
+      familyHistory: input.familyHistory,
     },
     aiTrace: input.aiTrace ? { ...input.aiTrace } : null,
     createdAt,

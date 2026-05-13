@@ -293,14 +293,14 @@ export function formatPatientMemoryForPrompt(memory: PatientMemory | null | unde
     lines.push(`- 反复出现的诊断（候选慢病）：${memory.chronicDiagnosisCandidates.join('、')}`);
   }
   if (visits.length) {
-    lines.push(`- 最近 ${Math.min(visits.length, 3)} 次就诊摘要：`);
+    lines.push(`- 最近 ${Math.min(visits.length, 3)} 次就诊摘要（每条记录的日期、诊断、用药必须整体引用，不得拆分重组）：`);
     visits.slice(0, 3).forEach(v => {
       const date = new Date(v.completedAt).toISOString().slice(0, 10);
       const diag = v.primaryDiagnosis || (v.diagnoses[0] ?? '未明确');
       const meds = v.medications.length ? v.medications.slice(0, 4).join('、') : '无处方';
-      lines.push(`  · ${date}｜主诉：${v.chiefComplaint || '未记录'}｜主诊断：${diag}｜用药：${meds}`);
+      lines.push(`  · ${date}：主诉「${v.chiefComplaint || '未记录'}」、主诊断「${diag}」、用药「${meds}」`);
     });
   }
-  lines.push('请仅在与本次新对话内容一致时引用上述既往信息，不一致时以新对话为准，不得伪造未提及的内容。');
+  lines.push('请仅在与本次新对话内容一致时引用上述既往信息，不一致时以新对话为准，不得伪造未提及的内容。引用既往门诊记录时，日期和诊断必须严格对应同一条记录，不得将不同日期的记录拆分重组。');
   return lines.join('\n');
 }

@@ -52,6 +52,7 @@ export interface VoiceIntentResult {
   pastMedicalHistory: string;
   allergyHistory: string;
   currentMedicationHistory: string;
+  familyHistory: string;
   symptoms: string[];
   negativeSymptoms: string[];
   diagnoses: MatchedDiagnosis[];
@@ -224,29 +225,10 @@ function appendNegativeSymptoms(historyOfPresentIllness: string, negativeSymptom
 
 function composePastMedicalHistory(recordDraft: VoiceRecordDraft): string {
   const pastMedicalHistory = getText(recordDraft.pastMedicalHistory);
-  const allergyHistory = getText(recordDraft.allergyHistory);
-  const currentMedicationHistory = getText(recordDraft.currentMedicationHistory);
-  const sections: string[] = [];
-
-  if (pastMedicalHistory) {
-    sections.push(/^既往史[:：]/u.test(pastMedicalHistory) ? pastMedicalHistory : `既往史：${pastMedicalHistory}`);
-  }
-
-  if (allergyHistory) {
-    sections.push(/^过敏史[:：]/u.test(allergyHistory) ? allergyHistory : `过敏史：${allergyHistory}`);
-  }
-
-  if (currentMedicationHistory) {
-    sections.push(/^(长期用药|现用药|当前用药)[:：]/u.test(currentMedicationHistory)
-      ? currentMedicationHistory
-      : `长期用药：${currentMedicationHistory}`);
-  }
-
-  if (sections.length === 0) {
+  if (!pastMedicalHistory || pastMedicalHistory === '无特殊') {
     return '无特殊';
   }
-
-  return sections.join('；');
+  return /^既往史[:：]/u.test(pastMedicalHistory) ? pastMedicalHistory : `既往史：${pastMedicalHistory}`;
 }
 
 function normalizeDiagnosisHints(hints: DiagnosisHint[] | undefined): DiagnosisHint[] {
@@ -401,6 +383,7 @@ function normalizeVoiceExtraction(parsed: VoiceExtractionResult): NormalizedVoic
     pastMedicalHistory: getText(parsed.recordDraft?.pastMedicalHistory || parsed.pastMedicalHistory) || '无特殊',
     allergyHistory: getText(parsed.recordDraft?.allergyHistory || parsed.allergyHistory) || '无特殊',
     currentMedicationHistory: getText(parsed.recordDraft?.currentMedicationHistory || parsed.currentMedicationHistory) || '无特殊',
+    familyHistory: getText(parsed.recordDraft?.familyHistory || parsed.familyHistory) || '无特殊',
     symptoms: getTextList(parsed.recordDraft?.symptoms || parsed.symptoms),
     negativeSymptoms: getTextList(parsed.recordDraft?.negativeSymptoms || parsed.negativeSymptoms),
     treatmentPlan: getText(parsed.recordDraft?.treatmentPlan || parsed.treatmentPlan),
@@ -677,7 +660,7 @@ export function useVoiceIntentRecognition() {
         if (ctxPmh) patientContextLines.push(`既往史：${ctxPmh}`);
         if (ctxMed) patientContextLines.push(`长期用药：${ctxMed}`);
         patientContextLines.push(
-          '请在 recordDraft 中保留以上档案信息：若对话未明确撤销或修订，必须原样保留对应字段，不要因为对话未提及就改写为"无特殊"。'
+          '请在 recordDraft 中保留以上档案信息：若对话未明确撤销或修订，必须原样保留对应字段，不要因为对话未提及就改写为"无特殊"。既往史中仅保留与本次就诊可能相关的疾病，无关既往疾病不要写入。'
         );
       }
       const patientContextBlock = patientContextLines.length ? `\n${patientContextLines.join('\n')}` : '';
@@ -732,6 +715,7 @@ export function useVoiceIntentRecognition() {
           normalizedExtraction.recordDraft.currentMedicationHistory || '无特殊',
           segregatedTreatments.historicalMedicationNotes,
         ),
+        familyHistory: normalizedExtraction.recordDraft.familyHistory || '无特殊',
         symptoms: normalizedExtraction.recordDraft.symptoms || [],
         negativeSymptoms: normalizedExtraction.recordDraft.negativeSymptoms || [],
         diagnoses: matchedDiagnoses,

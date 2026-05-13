@@ -229,6 +229,7 @@ export interface BuildRecordConfirmedPayloadInput {
   chiefComplaint: string;
   historyOfPresentIllness: string;
   pastMedicalHistory: string;
+  familyHistory?: string;
   /** 已构造好的 diagList（调用 buildDiagList 得到） */
   diagList: Array<Record<string, string>>;
   /** 已构造好的 orderList（调用 buildOrderListItem 得到） */
@@ -250,6 +251,7 @@ export function buildRecordConfirmedPayload(
     chiefComplaint,
     historyOfPresentIllness,
     pastMedicalHistory,
+    familyHistory,
     diagList,
     orderList,
     treatmentPlan,
@@ -264,6 +266,7 @@ export function buildRecordConfirmedPayload(
     chiefComplaint,
     historyOfPresentIllness,
     pastMedicalHistory,
+    ...(familyHistory ? { familyHistory } : {}),
     diagList,
     orderList,
     ...(treatmentPlan ? { treatmentPlan } : {}),

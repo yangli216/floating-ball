@@ -130,6 +130,7 @@ const symptomIntentResult = computed<VoiceIntentResult>(() => ({
   pastMedicalHistory: resolvedPastMedicalHistory.value,
   allergyHistory: typeof props.initialPatientData?.allergyHistory === 'string' ? props.initialPatientData.allergyHistory : '',
   currentMedicationHistory: '',
+  familyHistory: '',
   symptoms: [],
   negativeSymptoms: [],
   diagnoses: orderedDiagnoses.value,

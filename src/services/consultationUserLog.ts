@@ -200,12 +200,13 @@ function countItemListChanges(
 export function computeChangeSummary(
   first: ConsultationUserLogSnapshot,
   final: ConsultationUserLogSnapshot,
-  extra?: { pastMedicalHistoryChanged?: boolean },
+  extra?: { pastMedicalHistoryChanged?: boolean; familyHistoryChanged?: boolean },
 ): ConsultationChangeSummary {
   let recordFieldChanges = 0;
   if (first.chiefComplaint.trim() !== final.chiefComplaint.trim()) recordFieldChanges++;
   if (first.historyOfPresentIllness.trim() !== final.historyOfPresentIllness.trim()) recordFieldChanges++;
   if (extra?.pastMedicalHistoryChanged) recordFieldChanges++;
+  if (extra?.familyHistoryChanged) recordFieldChanges++;
 
   const diagnosisFields: (keyof ConsultationSnapshotItem)[] = ['selected', 'primary'];
   const diagnosisChanges = countItemListChanges(first.diagnoses, final.diagnoses, diagnosisFields);

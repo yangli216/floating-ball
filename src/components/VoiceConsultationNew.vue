@@ -120,10 +120,12 @@ const showToast = inject<(msg: string, type?: string) => void>('showToast');
 const chiefComplaint = ref('');
 const historyOfPresentIllness = ref('');
 const pastMedicalHistory = ref('');
+const familyHistory = ref('');
 const initialRecordSnapshot = ref<Record<VoiceRecordFieldKey, string>>({
   chiefComplaint: '',
   historyOfPresentIllness: '',
   pastMedicalHistory: '',
+  familyHistory: '',
 });
 
 const aiDiagnoses = ref<Diagnosis[]>([]);
@@ -262,6 +264,7 @@ function schedulePersistEditorSnapshot(): void {
       chiefComplaint: chiefComplaint.value,
       historyOfPresentIllness: historyOfPresentIllness.value,
       pastMedicalHistory: pastMedicalHistory.value,
+      familyHistory: familyHistory.value,
       treatments: treatments.value as unknown[],
       diagnoses: aiDiagnoses.value as unknown[],
       selectedDiagnosisIdentity: getDiagnosisIdentity(selectedDiagnosis.value),
@@ -285,6 +288,7 @@ function persistEditorSnapshotImmediate(): void {
     chiefComplaint: chiefComplaint.value,
     historyOfPresentIllness: historyOfPresentIllness.value,
     pastMedicalHistory: pastMedicalHistory.value,
+    familyHistory: familyHistory.value,
     treatments: treatments.value as unknown[],
     diagnoses: aiDiagnoses.value as unknown[],
     selectedDiagnosisIdentity: getDiagnosisIdentity(selectedDiagnosis.value),
@@ -307,6 +311,9 @@ async function applyEditorSnapshot(snapshot: VoiceEditorSnapshot): Promise<void>
   }
   if (typeof snapshot.pastMedicalHistory === 'string') {
     pastMedicalHistory.value = snapshot.pastMedicalHistory;
+  }
+  if (typeof snapshot.familyHistory === 'string') {
+    familyHistory.value = snapshot.familyHistory;
   }
   if (Array.isArray(snapshot.diagnoses) && snapshot.diagnoses.length > 0) {
     aiDiagnoses.value = snapshot.diagnoses as Diagnosis[];
@@ -410,6 +417,7 @@ const {
   chiefComplaint,
   historyOfPresentIllness,
   pastMedicalHistory,
+  familyHistory,
 });
 
 async function registerCurrentRecommendations(): Promise<void> {
@@ -452,6 +460,8 @@ function getRecordFieldValue(fieldKey: VoiceRecordFieldKey): string {
       return historyOfPresentIllness.value;
     case 'pastMedicalHistory':
       return pastMedicalHistory.value;
+    case 'familyHistory':
+      return familyHistory.value;
     default:
       return '';
   }
@@ -542,6 +552,7 @@ function submitVoiceFinalUserLog(): void {
   const changeSummary = firstUserLogSnapshot.value
     ? computeChangeSummary(firstUserLogSnapshot.value, finalSnapshot, {
         pastMedicalHistoryChanged: isRecordFieldModified('pastMedicalHistory'),
+        familyHistoryChanged: isRecordFieldModified('familyHistory'),
       })
     : undefined;
   void submitConsultationUserLog({
@@ -559,6 +570,7 @@ function submitVoiceAbandonedUserLog(): void {
   const changeSummary = firstUserLogSnapshot.value
     ? computeChangeSummary(firstUserLogSnapshot.value, finalSnapshot, {
         pastMedicalHistoryChanged: isRecordFieldModified('pastMedicalHistory'),
+        familyHistoryChanged: isRecordFieldModified('familyHistory'),
       })
     : undefined;
   void submitConsultationUserLog({
@@ -2966,6 +2978,7 @@ async function handleBatchWriteBack(): Promise<void> {
       chiefComplaint: chiefComplaint.value,
       historyOfPresentIllness: historyOfPresentIllness.value,
       pastMedicalHistory: pastMedicalHistory.value,
+      familyHistory: familyHistory.value,
       diagList,
       orderList,
       treatmentPlan,
@@ -3009,10 +3022,12 @@ watch(
       chiefComplaint: result.chiefComplaint || '',
       historyOfPresentIllness: result.historyOfPresentIllness || '',
       pastMedicalHistory: result.pastMedicalHistory || '',
+      familyHistory: result.familyHistory || '',
     };
     chiefComplaint.value = result.chiefComplaint;
     historyOfPresentIllness.value = result.historyOfPresentIllness;
     pastMedicalHistory.value = result.pastMedicalHistory;
+    familyHistory.value = result.familyHistory || '';
 
     if (result.diagnoses?.length) {
       aiDiagnoses.value = initDiagnosesFromIntent(result.diagnoses);
@@ -3231,6 +3246,37 @@ watch(
               </div>
               <textarea v-model="pastMedicalHistory" rows="4" placeholder="请输入既往史..."></textarea>
             </div>
+            <!-- <div class="record-field">
+              <div class="record-field-head">
+                <label>家族史</label>
+                <div class="record-field-actions">
+                  <span v-if="isRecordFieldModified('familyHistory')" class="record-field-status-chip">已人工修改</span>
+                  <div class="voice-feedback-anchor" @click.stop>
+                    <button
+                      class="voice-feedback-trigger"
+                      :class="{ submitted: !!getRecordFieldSubmittedLabel('familyHistory') }"
+                      type="button"
+                      @click.stop="toggleRecommendationFeedback(getRecordFieldFeedbackKey('familyHistory'), $event)"
+                    >反馈</button>
+                    <div v-if="isRecommendationFeedbackOpen(getRecordFieldFeedbackKey('familyHistory'))" class="voice-feedback-panel">
+                      <VoiceRecordFeedbackPopover
+                        :visible="true"
+                        title="家族史"
+                        :original-value="initialRecordSnapshot.familyHistory"
+                        :current-value="familyHistory"
+                        :draft="getRecordFieldDraft('familyHistory')"
+                        :submitting="recordFieldSubmittingKey === getRecordFieldFeedbackKey('familyHistory')"
+                        :submitted-label="getRecordFieldSubmittedLabel('familyHistory')"
+                        @close="toggleRecommendationFeedback(getRecordFieldFeedbackKey('familyHistory'))"
+                        @update:draft="updateRecordFieldDraft('familyHistory', $event)"
+                        @submit="handleRecordFieldFeedbackSubmit('familyHistory', $event)"
+                      />
+                    </div>
+                  </div>
+                </div>
+              </div>
+              <textarea v-model="familyHistory" rows="3" placeholder="请输入家族史..."></textarea>
+            </div> -->
           </div>
         </section>
 

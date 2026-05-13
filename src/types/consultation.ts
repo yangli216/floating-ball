@@ -99,6 +99,7 @@ export interface FinalRecord {
         tcmFourExaminations?: string;
         pastMedicalHistory?: string;
         allergyHistory?: string;
+        familyHistory?: string;
     };
     diagnosis: Diagnosis;
     treatments: TreatmentRecommendation[];
