@@ -158,7 +158,7 @@ function mapDictionaryItems(items: HisDictionaryItem[]): DictionaryEntry[] {
 /**
  * 把 PHIS 单次就诊详情映射为中性 HisVisitRecord。
  *
- * 时间字段在 queryVisitHistory 列表项中可能位于 dtVis / dtVisit / visitTime；详情接口
+ * 时间字段在 queryVisitHistory 列表项中可能位于 dtReg / dtVisit / dtBgn；详情接口
  * 当前响应未提供时间，因此优先取列表项里的时间，缺失时回退到 Date.now()，避免上层
  * 排序/落地时丢失整条记录。
  */
@@ -166,7 +166,7 @@ function mapVisitDetail(
   visit: HisVisitHistoryItem,
   detail: HisVisitDetailBody,
 ): HisVisitRecord {
-  const visitTimeRaw = visit.visitTime ?? visit.dtVis ?? visit.dtVisit;
+  const visitTimeRaw = visit.visitTime ?? visit.dtReg ?? visit.dtBgn;
   let visitTime: number;
   if (typeof visitTimeRaw === 'number' && Number.isFinite(visitTimeRaw)) {
     visitTime = visitTimeRaw;

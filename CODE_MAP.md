@@ -26,7 +26,7 @@
 | 修改客户端更新源 | [UpdateChecker.vue](src/components/UpdateChecker.vue) + [updateConfig.ts](src/services/updateConfig.ts) + [lib.rs](src-tauri/src/lib.rs)；内网发布端见 `../floating-ball-server/modules/release` |
 | 修改窗口尺寸记忆 | [useWindowManagement.ts](src/composables/useWindowManagement.ts) + [useNavigation.ts](src/composables/useNavigation.ts) + [useEventListeners.ts](src/composables/useEventListeners.ts) + [windowSizes.ts](src/constants/windowSizes.ts) |
 | 修改最小化/恢复语义 | [useMinimizedSessions.ts](src/composables/useMinimizedSessions.ts) + [App.vue](src/App.vue) + [useVoiceConsultation.ts](src/composables/useVoiceConsultation.ts)；按 `idVis` 锚定，跨自然日过期；语音问诊整张病历快照走 `editorSnapshot` |
-| 修改医学数据匹配 | [medicalData.ts](src/services/medicalData.ts) + [his/HisAdapter.ts](src/services/his/HisAdapter.ts) + [his/PhisHisAdapter.ts](src/services/his/PhisHisAdapter.ts) + [his/registry.ts](src/services/his/registry.ts) + [hisService.ts](src/services/hisService.ts) + [medical_catalog.rs](src-tauri/src/commands/medical_catalog.rs) + [src/assets/*.csv](src/assets/)；重点核对 SDK handshake 传入的 `orgCode / idTet` 是否进入缓存上下文，诊疗项目是否按机构+租户隔离，药品是否按机构+租户+药房 `storeId` 隔离 |
+| 修改医学数据匹配 | [medicalData.ts](src/services/medicalData.ts) + [his/HisAdapter.ts](src/services/his/HisAdapter.ts) + [his/PhisHisAdapter.ts](src/services/his/PhisHisAdapter.ts) + [his/registry.ts](src/services/his/registry.ts) + [hisService.ts](src/services/hisService.ts) + [medical_catalog.rs](src-tauri/src/commands/medical_catalog.rs)；重点核对 SDK handshake 传入的 `orgCode / idTet` 是否进入缓存上下文，诊疗项目是否按机构+租户隔离，药品是否按机构+租户+药房 `storeId` 隔离，以及区域化开关不会阻断既有缓存恢复 |
 | 测试 HIS 集成 | [mock_his.html](./docs/mock_his.html) |
 
 ---
@@ -151,7 +151,7 @@ useEventListeners (全局事件) -> 触发 useNavigation & useWorkMode
 | 服务 | 行数 | 职责 | 关键接口 |
 |------|------|------|---------|
 | **llm.ts** | ~444 | LLM API（OpenAI 兼容） | `chatStream()`, `chat()`, `analyzePatientRisks()`, `getLLMConfig()` |
-| **medicalData.ts** | ~600 | 医学数据目录加载、SQLite 缓存与匹配（ICD-10 诊断/药品/检查项）；本地模式优先走 HISService，同步结果写入本地 SQLite，CSV 作为兜底数据源；诊疗项目缓存按机构+租户隔离，药品缓存按机构+租户+药房 `storeId` 隔离，并保留 `storeIds` 用于当前药房集合并集匹配；同时暴露调试态查询/清理能力 | 模糊匹配 + 拼音支持 |
+| **medicalData.ts** | ~600 | 医学数据目录加载、缓存恢复与匹配（ICD-10 诊断/药品/检查项）；运行期不再依赖本地 CSV 作为数据来源，而是优先恢复已有 SQLite / localStorage 缓存，再按模式补同步：本地模式优先走 HISService 并把结果写入本地 SQLite，区域化模式继续走远端 delta；诊疗项目缓存按机构+租户隔离，药品缓存按机构+租户+药房 `storeId` 隔离，并保留 `storeIds` 用于当前药房集合并集匹配；同时暴露调试态查询/清理能力 | 模糊匹配 + 拼音支持 |
 | **diagnosisPath.ts** | ~568 | 诊断推理路径生成 | ECharts 节点/连线数据，ICD-10 匹配 |
 | **pmphai.ts** | ~806 | PMPHAI 医学知识库（主通道） | 向量搜索、列表搜索、文档检索、OAuth 令牌管理 |
 | **textGeneration.ts** | ~281 | 主诉/现病史文本生成 | 症状数据 -> LLM -> 医学叙事文本 |
@@ -278,11 +278,11 @@ Pinia 跨组件共享状态（仅两个，新增需人工审批）。
 
 | 文件 | 大小 | 用途 |
 |------|------|------|
-| **diagnoses.csv** | 2.2 MB | 西医诊断库（ICD-10, 2万+条） |
-| **tcm-diagnoses.csv** | 46 KB | 中医诊断 |
-| **tcm-syndromes.csv** | 107 KB | 中医证型 |
-| **medicines.csv** | 137 KB | 历史药品文件；当前药品匹配不再使用 CSV，改用 HIS/SQLite 药房 scoped 目录 |
-| **items.csv** | 6.5 KB | 检查检验项目 |
+| **diagnoses.csv** | 2.2 MB | 历史诊断资产；基础数据运行时不再直接从该 CSV 加载 |
+| **tcm-diagnoses.csv** | 46 KB | 历史中医诊断资产；基础数据运行时不再直接从该 CSV 加载 |
+| **tcm-syndromes.csv** | 107 KB | 历史中医证型资产；基础数据运行时不再直接从该 CSV 加载 |
+| **medicines.csv** | 137 KB | 历史药品资产；基础数据运行时不再直接从该 CSV 加载 |
+| **items.csv** | 6.5 KB | 历史诊疗项目资产；基础数据运行时不再直接从该 CSV 加载 |
 | **templates.json** | 731 KB | 西医症状表单模板（动态字段） |
 | **tcm-templates.json** | 187 KB | 中医症状模板 |
 | **symptom-associations.json** | 23 KB | 症状关联推荐数据 |

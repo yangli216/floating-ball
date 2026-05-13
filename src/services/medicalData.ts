@@ -1,13 +1,3 @@
-// @ts-ignore
-import diagnosesRaw from '../assets/diagnoses.csv?raw';
-// @ts-ignore
-import itemsRaw from '../assets/items.csv?raw';
-// @ts-ignore
-import tcmDiagnosesRaw from '../assets/tcm-diagnoses.csv?raw';
-// @ts-ignore
-import tcmSyndromesRaw from '../assets/tcm-syndromes.csv?raw';
-// @ts-ignore
-import tcmTreatmentsRaw from '../assets/tcm-treatments.csv?raw';
 import { invoke } from '@tauri-apps/api/core';
 import { getHisAdapter, type HisAdapter } from './his';
 import type {
@@ -240,64 +230,17 @@ class MedicalDataService {
 
   constructor() {
     this.catalog = {
-      diagnoses: this.loadDiagnoses(),
-      tcmDiagnoses: this.loadTCMDiagnoses(),
-      tcmSyndromes: this.loadTCMSyndromes(),
-      tcmTreatments: this.loadTCMTreatments(),
+      diagnoses: [],
+      tcmDiagnoses: [],
+      tcmSyndromes: [],
+      tcmTreatments: [],
       medicines: [],
-      items: this.loadItems()
+      items: []
     };
-  }
 
-  private loadDiagnoses(): DiagnosisItem[] {
-    const records = this.parseCSV(diagnosesRaw);
-    return records.map(r => ({
-      id: r.id,
-      code: r.code,
-      name: r.name,
-      keywords: this.parseKeywords(r.keywords)
-    }));
-  }
-
-  private loadTCMDiagnoses(): TCMDiagnosisItem[] {
-    const records = this.parseCSV(tcmDiagnosesRaw);
-    return records.map(r => ({
-      id: r.id,
-      code: r.code,
-      name: r.name,
-      keywords: this.parseKeywords(r.keywords)
-    }));
-  }
-
-  private loadTCMSyndromes(): TCMSyndromeItem[] {
-    const records = this.parseCSV(tcmSyndromesRaw);
-    return records.map(r => ({
-      id: r.id,
-      code: r.code,
-      name: r.name,
-      keywords: this.parseKeywords(r.keywords)
-    }));
-  }
-
-  private loadTCMTreatments(): TCMTreatmentItem[] {
-    const records = this.parseCSV(tcmTreatmentsRaw);
-    return records.map(r => ({
-      id: r.id,
-      code: r.code,
-      name: r.name,
-      keywords: this.parseKeywords(r.keywords)
-    }));
-  }
-
-  private loadItems(): MedicalItem[] {
-    const records = this.parseCSV(itemsRaw);
-    return records.map(r => ({
-      id: r.id,
-      code: r.code || r.id || r.name,
-      name: r.name,
-      category: r.category,
-      keywords: this.parseKeywords(r.keywords)
-    }));
+    if (isRegionalMode()) {
+      this.restoreFromCache();
+    }
   }
 
   private parseKeywords(str?: string): string[] | undefined {
@@ -402,7 +345,7 @@ class MedicalDataService {
   }
 
   private resetOrgScopedCatalogs(): void {
-    this.catalog.items = this.loadItems();
+    this.catalog.items = [];
     this.catalog.medicines = [];
   }
 
@@ -570,13 +513,13 @@ class MedicalDataService {
   public async ensureLocalCatalogsSynced(options: MedicalCatalogSyncOptions = {}): Promise<void> {
     const forceSync = options.force === true;
 
+    const snapshot = await this.loadPersistedCatalogSnapshot();
+    this.applyPersistedCatalogSnapshot(snapshot);
+
     if (isRegionalMode() && !forceSync) {
       console.log('[MedicalData] Local HIS catalog sync skipped in regional mode');
       return;
     }
-
-    const snapshot = await this.loadPersistedCatalogSnapshot();
-    this.applyPersistedCatalogSnapshot(snapshot);
 
     const hisService = getHisAdapter();
     if (!hisService) {
@@ -632,10 +575,10 @@ class MedicalDataService {
     });
 
     if (!options.catalogType || options.catalogType === 'all' || options.catalogType === 'diagnoses') {
-      this.catalog.diagnoses = this.loadDiagnoses();
+      this.catalog.diagnoses = [];
     }
     if (!options.catalogType || options.catalogType === 'all' || options.catalogType === 'items') {
-      this.catalog.items = this.loadItems();
+      this.catalog.items = [];
     }
     if (!options.catalogType || options.catalogType === 'all' || options.catalogType === 'medicines') {
       this.catalog.medicines = [];
@@ -1540,6 +1483,28 @@ class MedicalDataService {
     return normalized;
   }
 
+  private normalizeTCMItems(
+    items: Array<Partial<TCMDiagnosisItem> | Partial<TCMSyndromeItem> | Partial<TCMTreatmentItem>>
+  ): TCMDiagnosisItem[] {
+    const normalized: TCMDiagnosisItem[] = [];
+
+    items.forEach((item, index) => {
+      const name = item.name?.trim();
+      if (!name) {
+        return;
+      }
+
+      normalized.push({
+        id: item.id?.toString().trim() || item.code?.toString().trim() || `${index + 1}`,
+        code: item.code?.toString().trim() || '',
+        name,
+        keywords: this.normalizeKeywords(item.keywords),
+      });
+    });
+
+    return normalized;
+  }
+
   private normalizeMedicineItems(items: Array<Partial<MedicineItem> | MedicineCatalogEntry>): MedicineItem[] {
     const normalized: MedicineItem[] = [];
 
@@ -1549,10 +1514,9 @@ class MedicalDataService {
         return;
       }
 
-      // 兼容三种来源：
+      // 兼容两种来源：
       // 1. 持久化 snapshot（带 idSrv/naSrv 的 partial MedicineItem）
-      // 2. CSV（只有 id/name/spec/keywords）
-      // 3. HIS adapter（中性 entry，PHIS 字段透传在 raw）
+      // 2. HIS adapter / 区域化映射（中性 entry，厂商字段透传在 raw）
       const partial = item as Partial<MedicineItem>;
       const entry = item as MedicineCatalogEntry;
       const raw = (item.raw && typeof item.raw === 'object' ? item.raw : {}) as Record<string, unknown>;
@@ -1718,7 +1682,7 @@ class MedicalDataService {
         itemCount: diagnoses.length,
       });
     } catch (error) {
-      console.warn('[MedicalData] Failed to sync diagnosis catalog from HIS, fallback to CSV:', error);
+      console.warn('[MedicalData] Failed to sync diagnosis catalog from HIS, keep current cache:', error);
     }
   }
 
@@ -1763,7 +1727,7 @@ class MedicalDataService {
         itemCount: items.length,
       });
     } catch (error) {
-      console.warn(`[MedicalData] Failed to sync medical items for org ${orgCode}, fallback to CSV:`, error);
+      console.warn(`[MedicalData] Failed to sync medical items for org ${orgCode}, keep current cache:`, error);
     }
   }
 
@@ -1915,8 +1879,25 @@ class MedicalDataService {
       const cached = localStorage.getItem(MedicalDataService.DATA_CACHE_KEY);
       if (cached) {
         const data = JSON.parse(cached) as MedicalCatalog;
-        if (data.diagnoses?.length > 0) this.catalog = data;
-        console.log('[MedicalData] Restored from cache');
+        const hasCatalogData = Boolean(
+          data.diagnoses?.length
+          || data.tcmDiagnoses?.length
+          || data.tcmSyndromes?.length
+          || data.tcmTreatments?.length
+          || data.items?.length
+          || data.medicines?.length
+        );
+        if (hasCatalogData) {
+          this.catalog = {
+            diagnoses: this.normalizeDiagnosisItems(data.diagnoses || []),
+            tcmDiagnoses: this.normalizeTCMItems(data.tcmDiagnoses || []),
+            tcmSyndromes: this.normalizeTCMItems(data.tcmSyndromes || []),
+            tcmTreatments: this.normalizeTCMItems(data.tcmTreatments || []),
+            items: this.normalizeMedicalItems(data.items || []),
+            medicines: this.normalizeMedicineItems(data.medicines || []),
+          };
+          console.log('[MedicalData] Restored from cache');
+        }
       }
     } catch { /* ignore */ }
   }
