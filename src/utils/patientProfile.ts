@@ -115,6 +115,13 @@ export interface RiskAnalysisPatientContext {
   diagnosis?: string;
 }
 
+function filterVisitHistorySummary(value: string | undefined): string | undefined {
+  if (!value) return undefined;
+  const trimmed = value.trim();
+  if (/^既往门诊记录[：:]/.test(trimmed)) return undefined;
+  return trimmed || undefined;
+}
+
 export function normalizeRiskAnalysisPatientContext(
   patient: PatientLike | null | undefined,
 ): RiskAnalysisPatientContext {
@@ -124,7 +131,7 @@ export function normalizeRiskAnalysisPatientContext(
     age: resolvePatientAge(patient),
     chiefComplaint: readFirstText(patient, ['chiefComplaint']),
     historyOfPresentIllness: readFirstText(patient, ['historyOfPresentIllness']),
-    pastMedicalHistory: getPatientContextPastMedicalHistory(patient as any) || readFirstText(patient, ['pastMedicalHistory']),
+    pastMedicalHistory: filterVisitHistorySummary(getPatientContextPastMedicalHistory(patient as any) || readFirstText(patient, ['pastMedicalHistory'])),
     allergyHistory: getPatientContextAllergyHistory(patient as any) || readFirstText(patient, ['allergyHistory']),
     diagnosis: readFirstText(patient, ['diagnosis']),
   };

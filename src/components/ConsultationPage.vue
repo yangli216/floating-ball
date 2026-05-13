@@ -1334,13 +1334,19 @@ const readPatientText = (
 const resolveConsultationId = (): string =>
   getPatientAnchorId(finalRecord.value?.patient || patientInfo.value) || 'unknown';
 
-const resolvePastMedicalHistory = (): string =>
-  readPatientText(finalRecord.value?.record as unknown as Record<string, unknown>, ['pastMedicalHistory']) ||
-  readPatientText(
+const resolvePastMedicalHistory = (): string => {
+  const fromRecord = readPatientText(finalRecord.value?.record as unknown as Record<string, unknown>, ['pastMedicalHistory']);
+  const fromPatient = readPatientText(
     patientInfo.value as unknown as Record<string, unknown>,
     ['pastMedicalHistory', 'past_medical_history', 'pastMedicalHistoryText']
-  ) ||
-  '未提供既往病史。';
+  );
+  const filterVisitSummary = (v: string | undefined): string | undefined => {
+    if (!v) return undefined;
+    if (/^既往门诊记录[：:]/.test(v.trim())) return undefined;
+    return v;
+  };
+  return filterVisitSummary(fromRecord) || filterVisitSummary(fromPatient) || '未提供既往病史。';
+};
 
 const patientPromptProfile = computed(() => ({
   patientName: getPatientContextName(patientInfo.value as any) || '',

@@ -230,6 +230,7 @@ function isPlaceholderHistory(value?: string | null): boolean {
   if (!value) return true;
   const trimmed = value.trim();
   if (!trimmed) return true;
+  if (/^既往门诊记录[：:]/.test(trimmed)) return true;
   return /^(无|无特殊|否认|未提供|未述及|未见特殊|无异常)$/.test(trimmed);
 }
 
