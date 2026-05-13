@@ -649,6 +649,7 @@ export function useVoiceIntentRecognition() {
         const trimmed = (value ?? '').trim();
         if (!trimmed) return '';
         if (/^(无|无特殊|否认|未述及|未提供)$/.test(trimmed)) return '';
+        if (/^既往门诊记录[：:]/.test(trimmed)) return '';
         return trimmed;
       };
       const ctxAllergy = cleanCtx(patientCtx?.allergyHistory);
@@ -660,7 +661,7 @@ export function useVoiceIntentRecognition() {
         if (ctxPmh) patientContextLines.push(`既往史：${ctxPmh}`);
         if (ctxMed) patientContextLines.push(`长期用药：${ctxMed}`);
         patientContextLines.push(
-          '请在 recordDraft 中保留以上档案信息：若对话未明确撤销或修订，必须原样保留对应字段，不要因为对话未提及就改写为"无特殊"。既往史中仅保留与本次就诊可能相关的疾病，无关既往疾病不要写入。'
+          '请在 recordDraft 中保留以上档案信息：若对话未明确撤销或修订，必须原样保留对应字段，不要因为对话未提及就改写为"无特殊"。既往史仅记录慢性病、手术史、外伤史等长期健康信息，不要将门诊就诊流水写入既往史。'
         );
       }
       const patientContextBlock = patientContextLines.length ? `\n${patientContextLines.join('\n')}` : '';

@@ -301,6 +301,6 @@ export function formatPatientMemoryForPrompt(memory: PatientMemory | null | unde
       lines.push(`  · ${date}：主诉「${v.chiefComplaint || '未记录'}」、主诊断「${diag}」、用药「${meds}」`);
     });
   }
-  lines.push('请仅在与本次新对话内容一致时引用上述既往信息，不一致时以新对话为准，不得伪造未提及的内容。引用既往门诊记录时，日期和诊断必须严格对应同一条记录，不得将不同日期的记录拆分重组。');
+  lines.push('请仅在与本次新对话内容一致时引用上述既往信息，不一致时以新对话为准，不得伪造未提及的内容。上述门诊记录仅供理解患者就诊背景，不要将门诊就诊流水写入 recordDraft.pastMedicalHistory。既往史只记录慢性病、手术史、外伤史等长期健康信息，门诊就诊记录应提炼为疾病名称+病程（如"高血压3年"），而非按就诊日期逐条罗列。');
   return lines.join('\n');
 }
