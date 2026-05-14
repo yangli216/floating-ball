@@ -591,45 +591,57 @@ class MedicalDataService {
    * Find best matching diagnosis
    * @param query AI output string
    */
-  public matchDiagnosis(query: string): DiagnosisItem | null {
+  public matchDiagnosis(query: string, context?: { icdCode?: string }): DiagnosisItem | null {
     if (!query) return null;
     const normalizedQuery = query.trim().toLowerCase();
-    
-    // 1. Exact match (name or code)
-    const exact = this.catalog.diagnoses.find(d => 
+
+    const exact = this.catalog.diagnoses.find(d =>
       d.name.toLowerCase() === normalizedQuery || d.code.toLowerCase() === normalizedQuery
     );
     if (exact) return exact;
 
-    // 2. Code prefix match (New)
-    // If the query looks like a code (alphanumeric, maybe dot), try to find best code match
-    // E.g. query "R50.9" matches "R50.900"
-    // We want the shortest matching code that starts with query
-    const codeMatches = this.catalog.diagnoses.filter(d => 
+    const codeMatches = this.catalog.diagnoses.filter(d =>
       d.code.toLowerCase().startsWith(normalizedQuery)
     );
-    
+
     if (codeMatches.length > 0) {
-      // Sort by code length (ascending) to get "R50.900" before "R50.900x001" if such hierarchy exists
-      // Or just return the first one if length is same.
       codeMatches.sort((a, b) => a.code.length - b.code.length || a.code.localeCompare(b.code));
       return codeMatches[0];
     }
 
-    // 3. Best fuzzy match
-    let bestMatch: DiagnosisItem | null = null;
-    let maxScore = 0;
-
+    const candidates: Array<{ item: DiagnosisItem; rawScore: number }> = [];
     for (const item of this.catalog.diagnoses) {
       const score = this.calculateScore(normalizedQuery, item.name, item.keywords);
-      if (score > maxScore) {
-        maxScore = score;
-        bestMatch = item;
+      if (score > 0.3) {
+        candidates.push({ item, rawScore: score });
       }
     }
 
-    // Threshold for acceptance
-    return maxScore > 0.3 ? bestMatch : null;
+    if (candidates.length === 0) return null;
+
+    if (context?.icdCode) {
+      const preferredCategory = this.extractIcd10CategoryCode(context.icdCode);
+      const preferredChapter = this.getIcd10CategoryInfo(context.icdCode)?.key;
+
+      for (const c of candidates) {
+        const itemCategory = this.extractIcd10CategoryCode(c.item.code);
+        const itemChapter = this.getIcd10CategoryInfo(c.item.code)?.key;
+
+        if (preferredCategory && itemCategory && preferredCategory === itemCategory) {
+          continue;
+        }
+
+        if (preferredChapter && itemChapter && preferredChapter === itemChapter) {
+          c.rawScore *= 0.7;
+          continue;
+        }
+
+        c.rawScore *= 0.4;
+      }
+    }
+
+    candidates.sort((a, b) => b.rawScore - a.rawScore);
+    return candidates[0].rawScore > 0.3 ? candidates[0].item : null;
   }
 
   /**
@@ -1410,28 +1422,45 @@ class MedicalDataService {
   private calculateScore(query: string, target: string, keywords?: string[]): number {
     const q = query.toLowerCase();
     const t = target.toLowerCase();
-    
-    // Direct inclusion
-    if (t.includes(q)) return 0.9; // Target contains query (e.g. "Amoxicillin Capsules" contains "Amoxicillin")
-    if (q.includes(t)) return 0.8; // Query contains target
 
-    // Keyword match
-    if (keywords) {
-      for (const k of keywords) {
-        if (q.includes(k.toLowerCase())) return 0.85;
-      }
+    if (t.includes(q)) {
+      const ratio = q.length / t.length;
+      return ratio >= 0.4 ? 0.9 : 0.9 * ratio;
     }
 
-    // Character overlap (Jaccard Index)
+    if (q.includes(t)) {
+      const ratio = t.length / q.length;
+      if (ratio >= 0.5) return 0.8;
+      if (ratio >= 0.33) return 0.65;
+      return ratio * 1.5;
+    }
+
+    if (keywords) {
+      let bestKeywordScore = 0;
+      for (const k of keywords) {
+        if (k.length < 2) continue;
+        const kl = k.toLowerCase();
+        if (q.includes(kl)) {
+          const ratio = kl.length / q.length;
+          const score = ratio >= 0.4 ? 0.85 : 0.85 * ratio;
+          bestKeywordScore = Math.max(bestKeywordScore, score);
+        }
+      }
+      if (bestKeywordScore > 0) return bestKeywordScore;
+    }
+
     const qSet = new Set(q.split(''));
     const tSet = new Set(t.split(''));
     let intersection = 0;
     for (const char of qSet) {
       if (tSet.has(char)) intersection++;
     }
-    
+
     const union = qSet.size + tSet.size - intersection;
-    return union === 0 ? 0 : intersection / union;
+    const rawJaccard = union === 0 ? 0 : intersection / union;
+    const lengthRatio = tSet.size / qSet.size;
+    const penalty = lengthRatio < 0.4 ? lengthRatio : 1;
+    return rawJaccard * penalty;
   }
 
   private isIcd10CategoryInRange(categoryCode: string, start: string, end: string): boolean {
@@ -1468,15 +1497,18 @@ class MedicalDataService {
     items.forEach((item, index) => {
       const name = item.name?.trim();
       const code = item.code?.trim() || '';
-      if (!name) {
+      if (!name || name.length < 2) {
         return;
       }
+
+      const rawKeywords = this.normalizeKeywords(item.keywords);
+      const keywords = rawKeywords?.filter(k => k.length >= 2);
 
       normalized.push({
         id: item.id?.toString().trim() || code || `${index + 1}`,
         code,
         name,
-        keywords: this.normalizeKeywords(item.keywords)
+        keywords: keywords?.length ? keywords : undefined
       });
     });
 

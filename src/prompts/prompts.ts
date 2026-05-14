@@ -283,6 +283,7 @@ export const VoiceIntentRecognitionPrompt = {
 7. diagnosisHints 和 treatmentHints 允许在病例事实基础上做合理补全，但所有推断项必须把 sourceType 标记为 inferred，对话明确提到的内容标记为 explicit；信息不足但仍给出谨慎提示时标记为 uncertain。
 7.1 diagnosisHints 允许返回多条诊断，但前提必须是病例中存在明确的并存诊断或需要同时成立的诊断；如果只是鉴别诊断、待排除方向或可能性排序，不要直接并列写进 diagnosisHints。
 7.2 diagnosisHints 如返回多条，第一条必须是主诊断，后续条目才是伴随诊断或并存诊断。
+7.3 diagnosisHints 的 name 必须是标准疾病诊断名称，严禁使用症状名称。症状是患者主观感受（如"反酸""咳嗽""头痛""腹痛""乏力"），诊断是疾病分类学名称（如"胃食管反流病""急性支气管炎""偏头痛""慢性胃炎"）。当患者描述的是症状时，必须推断到最可能的疾病诊断再输出，不得把症状原样写入 name 字段。
 8. 对于药品，必须严格区分三类信息：
   - 患者已自行服用、既往长期服用、院外先行处理过的药，默认写入 currentMedicationHistory，不要直接作为当前 treatmentHints 输出；
   - 只有医生在当前计划中明确建议继续、调整、补开、开立的药，才能进入当前 treatmentHints；
@@ -565,6 +566,7 @@ export const DiagnosisRecommendationPrompt = {
 - 不要把纯鉴别诊断、待排除诊断直接与已成立诊断并列输出
 - 符合率应真实（60-90%区间，不要都很高）
 - 每个诊断的rationale必须说明支持和不支持的证据
+- **诊断名称必须是标准疾病名称，严禁使用症状名称**：症状（如"反酸""咳嗽""头痛""腹痛""乏力"）不是诊断，必须推断到具体疾病（如"胃食管反流病""急性支气管炎""偏头痛""慢性胃炎"）再输出
 
 **输出要求：**
 严格返回JSON数组格式，不包含markdown标记或其他文本`,

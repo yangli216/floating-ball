@@ -72,8 +72,19 @@ export function useVoiceCatalogMatching() {
             diagnosis.matched = true;
             diagnosis.isTCM = true;
           }
-        } else if (diagnosis.code && /^A\d{2}\./.test(diagnosis.code)) {
-          diagnosis.isTCM = true;
+        } else {
+          if (/^A\d{2}\./.test(diagnosis.code)) {
+            diagnosis.isTCM = true;
+          } else {
+            const matchContext = { icdCode: diagnosis.code };
+            const nameMatch = medicalDataService.matchDiagnosis(diagnosis.name, matchContext);
+            if (nameMatch && nameMatch.code !== diagnosis.code) {
+              diagnosis.name = nameMatch.name;
+              diagnosis.code = nameMatch.code;
+              diagnosis.matched = true;
+              diagnosis.isTCM = false;
+            }
+          }
         }
 
         if (diagnosis.isTCM && diagnosis.syndrome && !diagnosis.syndromeCode) {

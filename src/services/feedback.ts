@@ -1,5 +1,5 @@
 import { invoke } from '@tauri-apps/api/core';
-import { enqueueAuditEvent, flushAuditEvents } from './auditUploader';
+import { enqueueAuditEvent } from './auditUploader';
 import { isRegionalMode } from './regionalClient';
 import type {
   SessionType,
@@ -280,7 +280,6 @@ class FeedbackService {
 
     if (isRegionalMode()) {
       enqueueAuditEvent('operation', auditPayload);
-      void flushAuditEvents();
       console.log(`[FeedbackService] Operation forwarded to regional audit: ${log.operationType} - ${log.operationName}`);
       return;
     }

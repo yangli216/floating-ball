@@ -769,8 +769,8 @@ export function useVoiceIntentRecognition() {
 
   function matchDiagnosisHint(hint: DiagnosisHint): MatchedDiagnosis {
     let matchedItem: MatchedDiagnosis['matchedItem'] = null;
-    // Try matching by name first, then by code
-    const matched = medicalDataService.matchDiagnosis(hint.name)
+    const matchContext = hint.code ? { icdCode: hint.code } : undefined;
+    const matched = medicalDataService.matchDiagnosis(hint.name, matchContext)
       || (hint.code ? medicalDataService.matchDiagnosis(hint.code) : null);
     if (matched) {
       matchedItem = { id: matched.id, code: matched.code, name: matched.name };

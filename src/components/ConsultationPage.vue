@@ -3205,12 +3205,12 @@ const fetchAIDiagnosis = async () => {
     if (consultationMode.value !== 'tcm') {
       // Western medicine diagnosis matching
       diagnoses = diagnoses.map(d => {
-        // 1. Try matching by code first (Highest priority)
+        const matchContext = d.code ? { icdCode: d.code } : undefined;
+
         let matched = medicalDataService.matchDiagnosis(d.code);
 
-        // 2. If no code match, try matching by name
         if (!matched) {
-          matched = medicalDataService.matchDiagnosis(d.name);
+          matched = medicalDataService.matchDiagnosis(d.name, matchContext);
         }
 
         if (matched) {

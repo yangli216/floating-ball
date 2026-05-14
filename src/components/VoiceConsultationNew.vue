@@ -1637,7 +1637,8 @@ async function fetchAIDiagnosis(): Promise<void> {
     const parsed: Diagnosis[] = JSON.parse(jsonMatch ? jsonMatch[0] : cleanJson);
 
     aiDiagnoses.value = parsed.map((diag) => {
-      const matched = medicalDataService.matchDiagnosis(diag.name) || medicalDataService.matchDiagnosis(diag.code);
+      const matchContext = diag.code ? { icdCode: diag.code } : undefined;
+      const matched = medicalDataService.matchDiagnosis(diag.name, matchContext) || medicalDataService.matchDiagnosis(diag.code);
       if (matched) {
         return { ...diag, code: matched.code, name: matched.name, id: matched.id };
       }
