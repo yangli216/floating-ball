@@ -17,10 +17,12 @@ import { listen } from '@tauri-apps/api/event';
 import { onOpenUrl } from '@tauri-apps/plugin-deep-link';
 import { getWindowSizeForView, supportsPersistentWindowSize, type ViewType } from '../constants/windowSizes';
 import { analyzePatientRisks } from '../services/llm';
+import { openReportInterpretationWindow } from '../services/reportInterpretation';
 import { trackApiCall, trackError } from '../services/operationTracker';
 import type { RiskItem } from '../components/RiskAlertPanel.vue';
 import type { AppPatient } from '../types/appState';
 import type { ConsultationAssistAction } from '../types/consultationAssist';
+import type { ReportInterpretationRequestPayload } from '../types/reportInterpretation';
 import { getHisService, resetHisService, getHisAdapter, resetHisAdapter } from '../services/his';
 import type { HisPatientHistory } from '../services/his/types';
 import { medicalDataService } from '../services/medicalData';
@@ -132,6 +134,10 @@ interface SessionAssistPayload extends StartConsultationPayload {
   diagnosis?: string;
   vitals?: string;
   allergyHistory?: string;
+}
+
+interface ReportInterpretationEventPayload extends ReportInterpretationRequestPayload {
+  patient?: ReportInterpretationRequestPayload['patient'];
 }
 
 interface SdkHandshakePayload {
@@ -550,6 +556,7 @@ export function useEventListeners(options: EventListenersOptions) {
   let unlistenConsultationAssist: UnlistenFn | null = null;
   let unlistenStopConsultation: UnlistenFn | null = null;
   let unlistenStartVoiceConsultation: UnlistenFn | null = null;
+  let unlistenReportInterpretation: UnlistenFn | null = null;
   let unlistenHover: UnlistenFn | null = null;
   let unlistenMousePos: UnlistenFn | null = null;
   let unlistenMoved: UnlistenFn | null = null;
@@ -965,6 +972,27 @@ export function useEventListeners(options: EventListenersOptions) {
     });
   }
 
+  async function registerReportInterpretationListener(): Promise<void> {
+    unlistenReportInterpretation = await listen<ReportInterpretationEventPayload>('start-report-interpretation', async (event) => {
+      const payload = event.payload;
+
+      trackApiCall('his_start_report_interpretation', true, undefined, {
+        taskId: payload?.taskId,
+        patientId: getPatientContextId(currentPatient.value) || undefined,
+      });
+
+      try {
+        await openReportInterpretationWindow(payload, currentPatient.value);
+      } catch (error) {
+        console.error('[EventListeners] Failed to open report interpretation window:', error);
+        trackError('report_interpretation_failed', error, {
+          taskId: payload?.taskId,
+        });
+        showToast(error instanceof Error ? error.message : '报告解读打开失败', 'error');
+      }
+    });
+  }
+
   // ========== 鼠标事件监听 ==========
 
   /**
@@ -1066,6 +1094,7 @@ export function useEventListeners(options: EventListenersOptions) {
       await registerConsultationAssistListener();
       await registerStopConsultationListener();
       await registerVoiceConsultationListener();
+      await registerReportInterpretationListener();
       await registerReceivePatientListener();
 
       // SDK 握手监听
@@ -1108,6 +1137,10 @@ export function useEventListeners(options: EventListenersOptions) {
     if (unlistenStartVoiceConsultation) {
       unlistenStartVoiceConsultation();
       unlistenStartVoiceConsultation = null;
+    }
+    if (unlistenReportInterpretation) {
+      unlistenReportInterpretation();
+      unlistenReportInterpretation = null;
     }
     if (unlistenHover) {
       unlistenHover();

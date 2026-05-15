@@ -35,7 +35,7 @@
 
 ## 3. 推荐接入顺序
 
-建议分 3 步完成接入。
+建议分 4 步完成接入。
 
 ### 第一步: 打通基础接诊
 
@@ -59,6 +59,18 @@
 
 - 医生已经在 HIS 里录入了部分病历，只想快速拿 AI 推荐
 - 不希望再开第二套独立问诊窗口
+
+### 第二点五步: 打通检验检查报告解读
+
+1. HIS 在需要解读报告时调用 `POST /api/report/interpret`
+2. 传入 `taskId + query`，`query` 直接承载报告日期、检查项目、检查结果、阴阳性或影像诊断等原始文本
+3. 若当前桌面端已有接诊患者，MedHermes 会自动补入该患者的性别、年龄、既往史、过敏史等上下文；若当前无接诊患者，可在 `patient` 字段显式传入患者基础信息
+4. MedHermes 打开独立“报告解读”窗口并输出摘要结论、关键异常、临床意义、建议动作与风险提示
+
+适用场景：
+
+- HIS 已经拿到了检验或影像原始文本，只需要 AI 辅助解释
+- 医生当前可能仍停留在问诊或其它页面，不希望被强制跳转
 
 ### 第三步: 打通 PHIS 引用闭环
 
@@ -156,7 +168,7 @@ PHIS                                MedHermes
 
 ### 5.4 联调日志与 traceId
 
-1. `POST /api/handshake`、`POST /api/consultation/start`、`POST /api/consultation/assist`、`POST /api/consultation/start-voice`、`POST /api/consultation/stop`、`GET /api/consultation/events/poll`、`POST /api/consultation/reference-feedback`、`POST /api/patient/risks` 会写入本地 HIS 集成日志。
+1. `POST /api/handshake`、`POST /api/consultation/start`、`POST /api/consultation/assist`、`POST /api/consultation/start-voice`、`POST /api/consultation/stop`、`GET /api/consultation/events/poll`、`POST /api/consultation/reference-feedback`、`POST /api/patient/risks`、`POST /api/report/interpret` 会写入本地 HIS 集成日志。
 2. 上述业务响应会额外返回 `traceId` 字段。三方联调时请把该值提供给桌面端开发或从“设置 -> HIS 联调日志”入口中筛选查看。
 3. 日志会记录接口方向、路径、请求摘要、响应摘要、HTTP 状态、业务 `code/msg`、耗时、患者 / 问诊 / 回执标识和错误摘要；`Cookie`、`Authorization`、`token`、手机号、身份证号等敏感字段会默认脱敏。
 4. 桌面端主动调用 PHIS 的字典、药品详情、库存校验等出站接口也写入同一日志文件，便于用一次 `traceId` 串联 Bridge 入站与 PHIS 出站排查。
@@ -400,6 +412,79 @@ http://127.0.0.1:8081/api/consultation/start-voice
 1. 如果请求体为空，则沿用桌面端当前内存中的患者上下文。
 2. 如果当前桌面端没有患者上下文，前端会提示先接诊患者。
 3. 语音结果最终仍通过 `GET /api/consultation/events/poll` 返回。
+
+### 6.3A `POST /api/report/interpret`
+
+用途：触发检验检查报告解读。该接口不会写入问诊事件通道，也不会修改当前问诊页面，而是以独立窗口展示 AI 解读结果。
+
+完整地址：
+
+```text
+http://127.0.0.1:8081/api/report/interpret
+```
+
+请求字段：
+
+| 字段名 | 类型 | 必填 | 说明 |
+| :--- | :--- | :--- | :--- |
+| `taskId` | String | 是 | 报告任务类型，当前建议使用 `inspectReport` 或 `checkReport` |
+| `query` | String | 是 | 报告原始文本，直接拼接“报告日期 / 检查项目 / 阴阳性 / 检查结果 / 影像诊断”等内容 |
+| `patient` | Object | 否 | 可选患者上下文；当前无接诊患者时建议传入 |
+
+`patient` 支持的推荐字段：
+
+| 字段名 | 类型 | 必填 | 说明 |
+| :--- | :--- | :--- | :--- |
+| `idPi` | String | 否 | 患者标识；仅用于日志和窗口标题，不参与事件通道 |
+| `idVis` | String | 否 | 当前就诊标识 |
+| `naPi` | String | 否 | 患者姓名 |
+| `sdSexText` | String | 否 | 性别文本 |
+| `ageText` | String | 否 | 年龄文本 |
+| `chiefComplaint` | String | 否 | 主诉 |
+| `historyOfPresentIllness` | String | 否 | 现病史 |
+| `pastMedicalHistory` | String | 否 | 既往史 |
+| `allergyHistory` | String | 否 | 过敏史 |
+
+请求示例（检验）：
+
+```json
+{
+  "taskId": "inspectReport",
+  "query": "报告日期：2026-05-15\n检查项目：血常规\n检查结果：\nWBC 12.5×10^9/L，NEUT% 82%，CRP 36mg/L",
+  "patient": {
+    "naPi": "张三",
+    "sdSexText": "男性",
+    "ageText": "34岁"
+  }
+}
+```
+
+请求示例（影像/检查）：
+
+```json
+{
+  "taskId": "checkReport",
+  "query": "报告日期：2026-05-15\n检查项目：胸部CT\n阴阳性：阳性\n检查结果：\n双肺纹理增粗，右下肺见斑片状高密度影。\n影像诊断：\n考虑右下肺感染。"
+}
+```
+
+成功响应：
+
+```json
+{
+  "status": "success",
+  "taskId": "checkReport",
+  "traceId": "his-xxxxxxxx",
+  "timestamp": 1704355200100
+}
+```
+
+说明：
+
+1. 若当前桌面端存在接诊患者，且请求未显式传入 `patient`，则默认使用当前患者上下文补强 prompt。
+2. 若当前桌面端存在接诊患者，且请求同时传入 `patient`，桌面端会以当前患者为主、用显式入参补齐缺失字段；调用方不应借此切换当前接诊患者。
+3. 报告解读结果不进入 `/api/consultation/events/ws` 或 `/api/consultation/events/poll`，调用方应把它视为桌面端即时展示能力，而不是回写事件。
+4. `taskId` 当前仅用于提示词和窗口标题分流：`inspectReport` 偏实验室检验解释，`checkReport` 偏影像/器械检查解释。
 
 ### 6.4 `GET /api/consultation/events/poll`
 

@@ -165,6 +165,8 @@
 10. 针对推荐诊断的重复引用，需要区分“同一诊断重复点击”和“更换为新诊断引用”；前者应提示已成功引用，后者应允许 PHIS 进入诊断修改流程并通过回执反馈最终结果。
 11. 后端内部仍沿用 `start-consultation-session` 这个 Tauri 事件名承接 `/api/consultation/assist` 的兼容分发，但前端唯一落点已经是 `navigation.openConsultation()` + `ConsultationPage` 灵活模式，不再存在独立 session 小窗视图。
 12. `ConsultationPage.vue` 里的推荐诊断必须保持单选，并以当前选中诊断作为引用对象；推荐用药、检查、检验、处置则保留多选，并在各自分组级提供一次引入所选项的入口。对暂不支持 PHIS 引用的推荐项，应作为只读处置建议单独展示，避免被误当作检查项提交。
+13. 检验检查报告解读不进入 `ConsultationPage.vue`。该能力通过 `POST /api/report/interpret` -> `useEventListeners.ts` -> 独立报告解读窗口链路完成，避免打断当前问诊主页面。
+14. 报告解读独立窗口默认隐藏原生标题栏，窗口移动依赖页面头部拖拽区，关闭动作统一走页面内虚拟按钮；正文超出高度时由窗口自身滚动容器承接，不能裁切内容。
 13. HIS 联调相关的调用必须进入本地 HIS 集成日志：HTTP Bridge 入站接口由 Rust 侧直接记录，前端 `hisService.ts` 出站请求通过 `hisIntegrationLog.ts` 写入同一 JSONL 日志，并在日志面板中按 `traceId`、接口、方向、状态筛选和导出。
 
 ### 代码结构
@@ -254,6 +256,7 @@ const isRiskAnalyzing = ref(false);
 | `navigation` | 导航管理 | 打开各视图、视图切换追踪 |
 | `voiceConsultation` | 语音问诊 | 语音处理、病历生成、结果提交 |
 | `eventListeners` | 事件监听 | HIS 集成、Deep Link、鼠标/窗口事件 |
+| `reportInterpretation` | 报告解读服务 | 报告原文解析、LLM 解读、独立窗口事件投递 |
 
 ### 患者上下文基线
 
@@ -628,6 +631,7 @@ eventListeners.unregisterAllListeners();
 | `ConsultationPage.vue` | 完整症状问诊主链路，同时承接新的“内嵌灵活模式”；支持根据 `/assist` 上下文直接跳过症状采集进入病历详情页，继续复用现有推荐诊断、诊断鉴别、推荐用药、推荐检查与诊断路径能力；进入 `record` 阶段后不再继续内嵌维护旧结果页，而是把当前病历、诊断、治疗快照切换到独立的症状结果页包装组件，由后者复用共享结果页主体；PHIS 引用闭环状态仍由症状包装层承接 | [src/components/ConsultationPage.vue](src/components/ConsultationPage.vue) |
 | `SymptomConsultationResultPage.vue` | 症状问诊结果页新包装组件：接收 `ConsultationPage.vue` 产出的记录快照、推荐诊断和治疗方案，转换为共享结果页需要的标准输入；症状渠道专属的初始快照适配、入口语义和附加动作由该组件负责，结果页结构与编辑标准以语音侧为准 | [src/components/SymptomConsultationResultPage.vue](src/components/SymptomConsultationResultPage.vue) |
 | `DiagnosisPathWindow.vue` | 独立诊断推理路径窗口，使用 ECharts Sankey 展示患者事实、章节归类、证据汇聚与诊断去向；默认提供更宽画布，并按容器尺寸动态计算 Sankey 的布局盒子，用对称留白实现“适应屏幕并居中”的默认视图，再开放滚轮缩放、平移与节点拖动；点击入口后窗口先显示 loading 动画，并按“检查缓存 -> 生成推理链 -> 渲染图表”的阶段更新提示，若生成超时或渲染失败会切换到明确错误态；正文容器在收到 payload 后保持挂载，loading 改为遮罩层，避免 `chartEl` 尚未挂载时误判渲染成功；开窗后的 `show/focus` 调用采用 best-effort 非阻塞方式，避免 Tauri 原生命令卡住整个推理链；右侧说明面板采用“支持证据 / 反证提醒 / 鉴别要点”三段式，未返回结构化分段时回退显示整体 rationale | [src/components/DiagnosisPathWindow.vue](src/components/DiagnosisPathWindow.vue) |
+| `ReportInterpretationWindow.vue` | 独立检验检查报告解读窗口：展示报告概览、AI 摘要结论、关键异常、临床意义、建议动作、风险提示与解读局限；窗口以只读结果为主，不进入 PHIS 回写；支持在未接诊时使用显式 `patient` 入参，在已接诊时自动补齐当前患者上下文 | [src/components/ReportInterpretationWindow.vue](src/components/ReportInterpretationWindow.vue) |
 | `VoiceCapsule.vue` | 语音录制胶囊 | [src/components/VoiceCapsule.vue](src/components/VoiceCapsule.vue) |
 | `VoiceConsultationNew.vue` | 语音问诊结果页包装组件：消费 `useVoiceIntentRecognition` 的输出与语音缓存恢复语义，把结果适配到共享结果页主体；语音专属的缓存读写、放弃语音会话、语音用户日志与整页反馈触发留在此包装层，结果页结构和字段标准与症状问诊共用同一主体。一键回写后不会立即结束页面，而是等待 HIS 通过 `consultation-reference-feedback` 回执最终状态，成功后再进入整页反馈收口 | [src/components/VoiceConsultationNew.vue](src/components/VoiceConsultationNew.vue) |
 | `ConsultationResultPage.vue` | 问诊共享结果页主体：承载语音标准的左侧病例正文编辑、右侧诊断/治疗推荐、反馈、刷新方案与最终回写 UI。语音问诊和症状问诊都通过各自包装组件把初始快照、渠道语义与额外动作适配到这里；最终回写请求会进入“等待 HIS 回执”状态，失败时保留当前页面供医生修正并重试 | [src/components/ConsultationResultPage.vue](src/components/ConsultationResultPage.vue) |
@@ -823,6 +827,7 @@ src/styles/
 | `services/his/registry.ts` | 适配器注册表与选择器：`getHisAdapter()` 是业务方唯一入口；选择优先级 `setActiveHisVendor` > `VITE_HIS_VENDOR` > `localStorage.HIS_VENDOR` > 默认 `phis`；handshake 时由 `useEventListeners` 调用 `resetHisAdapter` 清缓存 | [src/services/his/registry.ts](src/services/his/registry.ts) / [src/services/his/index.ts](src/services/his/index.ts) |
 | `hisIntegrationLog.ts` | HIS 联调调用日志客户端：为 PHIS 出站请求生成 / 记录结构化日志，提供查询、清空和导出 Tauri 命令封装 | [src/services/hisIntegrationLog.ts](src/services/hisIntegrationLog.ts) |
 | `diagnosisPath.ts` | 诊断路径数据构建与独立窗口事件载荷封装；优先通过 LLM 生成结构化推理链，再在前端校验并映射为 Sankey 节点、连线和说明文案，失败时回退本地兜底链路；载荷中补充 `supportingEvidence`、`counterEvidence`、`differentialPoints` 三段式解释字段，供窗口右侧说明面板直接渲染 | [src/services/diagnosisPath.ts](src/services/diagnosisPath.ts) |
+| `reportInterpretation.ts` | 检验检查报告解读服务：接收 `taskId + query + patientContext`，构建检验/影像两类 prompt，调用 `llm.ts` 返回结构化解读结果，并封装为独立窗口消费的 payload；若 LLM 返回结构不完整，回退到可读的摘要型结构 | [src/services/reportInterpretation.ts](src/services/reportInterpretation.ts) |
 | `feedback.ts` | 会话反馈服务；负责会话、推荐、反馈、性能指标的本地落库与区域化双写，同时把结构化操作日志转成区域化审计接口可消费的 `{ module, action, result, ... }` 载荷 | [src/services/feedback.ts](src/services/feedback.ts) |
 | `voiceFeedback.ts` | 语音反馈服务；负责推荐项 / 病例字段 / 整页反馈 payload 组装、本地草稿恢复、病例字段差异摘要与待同步队列 | [src/services/voiceFeedback.ts](src/services/voiceFeedback.ts) |
 | `aiTrace.ts` | 最近一次区域化 AI 调用链路上下文缓存；向反馈面板暴露 `traceId`、模型、场景、输入/输出摘要与耗时，并把 AI 代理调用按业务模块/动作回写到操作日志 | [src/services/aiTrace.ts](src/services/aiTrace.ts) |
@@ -831,6 +836,7 @@ src/styles/
 | `pmphai.ts` | PMPHAI 集成 | [src/services/pmphai.ts](src/services/pmphai.ts) |
 | `knowledgeBase.ts` | 知识库检索 | [src/services/knowledgeBase.ts](src/services/knowledgeBase.ts) |
 | `types/consultationAssist.ts` | 主问诊灵活模式的动作类型、诊断路径候选类型与上下文结构定义，避免继续依赖历史 session 命名 | [src/types/consultationAssist.ts](src/types/consultationAssist.ts) |
+| `types/reportInterpretation.ts` | 报告解读域类型：定义 `taskId/query/patient` 请求结构，以及独立窗口消费的结构化摘要、异常项、风险提示与患者上下文快照 | [src/types/reportInterpretation.ts](src/types/reportInterpretation.ts) |
 | `templateService.ts` | 症状模板管理 | [src/services/templateService.ts](src/services/templateService.ts) |
 | `factChecker.ts` | AI 防误防漏 / 审查能力；语音结果页只通过 `useVoiceResultFactCheck.ts` 和 `useVoiceSafetyReview.ts` 编排调用，不在组件内直接维护复核进度和 issue map | [src/services/factChecker.ts](src/services/factChecker.ts) |
 | `safetyRules.ts` | L1 刚性安全复核规则引擎：纯本地、确定性、无网络的硬规则集合（抗生素过敏交叉、诊断-性别冲突、儿童禁用药、重复用药）；输入 `GeneratedRecord + PatientInfo`，输出 `RigidBlockAlert[]`；只暴露 `evaluateRigidSafetyRules`，不直接持有 UI 状态，由 `useVoiceRigidBlock` 包装为响应式 composable 后供 `VoiceRigidBlockBanner.vue` 渲染 | [src/services/safetyRules.ts](src/services/safetyRules.ts) |
@@ -996,6 +1002,22 @@ HIS 通过 WebSocket /api/consultation/events/ws 接收事件；必要时 fallba
 PHIS 保存成功 / 失败后调用 POST /api/consultation/reference-feedback
     ↓
 floating-ball 保持当前问诊页面展开，并在同一运行期内更新页面状态与日志
+```
+
+### 1.3 检验检查报告解读流
+
+```
+HIS POST /api/report/interpret { taskId, query, patient? }
+  ↓
+Rust HTTP Server 记录 traceId 并发出 start-report-interpretation 事件
+  ↓
+useEventListeners.ts 合并当前接诊患者与显式 patient 入参
+  ↓
+reportInterpretation.ts 调用 LLM 生成结构化报告解读 payload
+  ↓
+App.vue / 独立窗口创建 report-interpretation-window
+  ↓
+ReportInterpretationWindow.vue 渲染摘要、异常、临床意义、建议与风险提示
 ```
 
 ---

@@ -53,6 +53,37 @@ export type AssistAction =
   | 'procedure'
   | 'reminder';
 
+/** 报告解读任务类型 */
+export type ReportInterpretationTaskId = 'inspectReport' | 'checkReport';
+
+/** 报告解读患者上下文 */
+export interface ReportInterpretationPatientInfo {
+  idPi?: string;
+  patientId?: string;
+  idVis?: string;
+  visitId?: string;
+  naPi?: string;
+  name?: string;
+  sdSexText?: string;
+  gender?: string;
+  ageText?: string;
+  age?: string;
+  chiefComplaint?: string;
+  historyOfPresentIllness?: string;
+  pastMedicalHistory?: string;
+  allergyHistory?: string;
+  diagnosis?: string;
+  [key: string]: any;
+}
+
+/** 报告解读请求 */
+export interface ReportInterpretationRequest {
+  taskId: ReportInterpretationTaskId;
+  query: string;
+  requestId?: string;
+  patient?: ReportInterpretationPatientInfo;
+}
+
 /** 引用回执状态 */
 export type FeedbackStatus = 'success' | 'failed';
 
@@ -234,6 +265,7 @@ export interface ApiResponse {
   status: string;
   consultationId?: string;
   action?: string;
+  taskId?: ReportInterpretationTaskId;
   message?: string;
   requestId?: string;
   referenceType?: string;
@@ -262,6 +294,14 @@ export declare class MedHermes {
 
   /** 启动语音问诊 */
   startVoice(patient?: PatientInfo): Promise<ApiResponse>;
+
+  /** 触发报告解读 */
+  interpretReport(request: ReportInterpretationRequest): Promise<ApiResponse>;
+  interpretReport(
+    taskId: ReportInterpretationTaskId,
+    query: string,
+    patient?: ReportInterpretationPatientInfo
+  ): Promise<ApiResponse>;
 
   /** 结束当前接诊 */
   stop(): Promise<ApiResponse>;

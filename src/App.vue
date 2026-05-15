@@ -8,6 +8,7 @@ import SettingsPanel from "./components/SettingsPanel.vue";
 import AnalyticsPanel from "./components/AnalyticsPanel.vue";
 import ConsultationPage from "./components/ConsultationPage.vue";
 import DiagnosisPathWindow from "./components/DiagnosisPathWindow.vue";
+import ReportInterpretationWindow from "./components/ReportInterpretationWindow.vue";
 import Toast from "./components/Toast.vue";
 import RiskAlertPanel, { type RiskItem } from "./components/RiskAlertPanel.vue";
 import VoiceCapsule from "./components/VoiceCapsule.vue";
@@ -74,11 +75,15 @@ declare global {
 }
 
 const appWindow = shallowRef<TauriWindow | null>(null);
-const standaloneWindowKind =
-  typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('window') === 'diagnosis-path'
-    ? 'diagnosis-path'
-    : 'main';
+const standaloneWindowParam = typeof window !== 'undefined'
+  ? new URLSearchParams(window.location.search).get('window')
+  : null;
+const standaloneWindowKind = standaloneWindowParam === 'diagnosis-path' || standaloneWindowParam === 'report-interpretation'
+  ? standaloneWindowParam
+  : 'main';
+const isStandaloneWindow = standaloneWindowKind !== 'main';
 const isDiagnosisPathWindow = standaloneWindowKind === 'diagnosis-path';
+const isReportInterpretationWindow = standaloneWindowKind === 'report-interpretation';
 const toastRef = ref<InstanceType<typeof Toast> | null>(null);
 const showToast = (msg: string, type: 'success' | 'error' | 'info' = 'info', duration = 3000) => {
   toastRef.value?.show(msg, type, duration);
@@ -503,7 +508,7 @@ const eventListeners = useEventListeners({
 async function applyForceUpdateWindowState(state: ForceUpdateState): Promise<void> {
   const wasRequired = forceUpdateState.value.required;
   forceUpdateState.value = state;
-  if (isDiagnosisPathWindow) {
+  if (isStandaloneWindow) {
     return;
   }
   if (!state.required) {
@@ -536,7 +541,7 @@ async function applyForceUpdateWindowState(state: ForceUpdateState): Promise<voi
 
 // 监听状态变化并持久化
 watch([isWorking, currentView], async () => {
-  if (isDiagnosisPathWindow) return;
+  if (isStandaloneWindow) return;
   if (!store) return;
   try {
     await store.set('app_state', {
@@ -553,7 +558,7 @@ onMounted(async () => {
   try {
     appWindow.value = getCurrentWindow();
 
-    if (isDiagnosisPathWindow) {
+    if (isStandaloneWindow) {
       await appWindow.value.show();
       await appWindow.value.setFocus();
       return;
@@ -617,7 +622,7 @@ onUnmounted(() => {
     unsubscribeForceUpdate();
     unsubscribeForceUpdate = null;
   }
-  if (!isDiagnosisPathWindow) {
+  if (!isStandaloneWindow) {
     eventListeners.unregisterAllListeners();
   }
 });
@@ -681,6 +686,7 @@ const openInsideCloudHome = async () => {
 
 <template>
   <DiagnosisPathWindow v-if="isDiagnosisPathWindow" />
+  <ReportInterpretationWindow v-else-if="isReportInterpretationWindow" />
   <template v-else>
   <a href="#main-content" class="skip-link">跳转到主要内容</a>
 

@@ -276,6 +276,44 @@ pub struct ConsultationAssistRequest {
     pub patient: PatientInfo,
 }
 
+#[derive(Debug, Deserialize, Serialize, Clone, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct ReportInterpretationPatientInput {
+    #[serde(default, alias = "patientId")]
+    pub id_pi: Option<String>,
+    #[serde(default, alias = "visitId")]
+    pub id_vis: Option<String>,
+    #[serde(default, alias = "name")]
+    pub na_pi: Option<String>,
+    #[serde(default, alias = "gender")]
+    pub sd_sex_text: Option<String>,
+    #[serde(default, alias = "age")]
+    pub age_text: Option<String>,
+    #[serde(default)]
+    pub chief_complaint: Option<String>,
+    #[serde(default)]
+    pub history_of_present_illness: Option<String>,
+    #[serde(default)]
+    pub past_medical_history: Option<String>,
+    #[serde(default)]
+    pub allergy_history: Option<String>,
+    #[serde(default)]
+    pub diagnosis: Option<String>,
+    #[serde(default, flatten)]
+    pub extra: serde_json::Map<String, serde_json::Value>,
+}
+
+#[derive(Debug, Deserialize, Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct ReportInterpretationRequest {
+    pub task_id: String,
+    pub query: String,
+    #[serde(default)]
+    pub request_id: Option<String>,
+    #[serde(default)]
+    pub patient: Option<ReportInterpretationPatientInput>,
+}
+
 #[derive(Debug, Deserialize, Serialize, Clone)]
 #[serde(rename_all = "camelCase")]
 pub struct ConsultationReferenceItem {
@@ -677,6 +715,154 @@ async fn start_consultation_assist(
         Some(request.patient.id_pi.clone()),
         Some(request.patient.id_pi.clone()),
         None,
+        None,
+    );
+    HttpResponse::Ok().json(response_body)
+}
+
+async fn start_report_interpretation(
+    data: web::Json<ReportInterpretationRequest>,
+    app_handle: web::Data<tauri::AppHandle>,
+    state: web::Data<SharedAppState>,
+) -> impl Responder {
+    let started_at = Instant::now();
+    let trace_id = his_integration_log::new_trace_id();
+    if let Err(response) = ensure_http_service_access(&state) {
+        return response;
+    }
+
+    let request = data.into_inner();
+    let request_summary = summarize_for_his_log(&request);
+    let task_id = request.task_id.trim().to_string();
+    let query = request.query.trim().to_string();
+
+    if task_id != "inspectReport" && task_id != "checkReport" {
+        let response_body = serde_json::json!({
+            "status": "error",
+            "message": "taskId 仅支持 inspectReport 或 checkReport",
+            "traceId": trace_id
+        });
+        record_bridge_log(
+            &app_handle,
+            response_body["traceId"].as_str().unwrap_or_default(),
+            "report.interpret",
+            "POST",
+            "/api/report/interpret",
+            "error",
+            400,
+            started_at,
+            Some(request_summary),
+            Some(response_body.clone()),
+            request.patient.as_ref().and_then(|item| item.id_pi.clone()),
+            None,
+            request.request_id.clone(),
+            Some("taskId 仅支持 inspectReport 或 checkReport".to_string()),
+        );
+        return HttpResponse::BadRequest().json(response_body);
+    }
+
+    if query.is_empty() {
+        let response_body = serde_json::json!({
+            "status": "error",
+            "message": "query 不能为空",
+            "traceId": trace_id
+        });
+        record_bridge_log(
+            &app_handle,
+            response_body["traceId"].as_str().unwrap_or_default(),
+            "report.interpret",
+            "POST",
+            "/api/report/interpret",
+            "error",
+            400,
+            started_at,
+            Some(request_summary),
+            Some(response_body.clone()),
+            request.patient.as_ref().and_then(|item| item.id_pi.clone()),
+            None,
+            request.request_id.clone(),
+            Some("query 不能为空".to_string()),
+        );
+        return HttpResponse::BadRequest().json(response_body);
+    }
+
+    if let Some(window) = app_handle.get_webview_window("main") {
+        if let Err(error) = window.emit("start-report-interpretation", &request) {
+            let response_body = serde_json::json!({
+                "status": "error",
+                "message": format!("Failed to emit event: {}", error),
+                "traceId": trace_id
+            });
+            record_bridge_log(
+                &app_handle,
+                response_body["traceId"].as_str().unwrap_or_default(),
+                "report.interpret",
+                "POST",
+                "/api/report/interpret",
+                "error",
+                500,
+                started_at,
+                Some(request_summary),
+                Some(response_body.clone()),
+                request.patient.as_ref().and_then(|item| item.id_pi.clone()),
+                None,
+                request.request_id.clone(),
+                Some(error.to_string()),
+            );
+            return HttpResponse::InternalServerError().json(response_body);
+        }
+
+        let _ = window.set_focus();
+        let _ = window.unminimize();
+        let _ = window.show();
+    } else {
+        let response_body = serde_json::json!({
+            "status": "error",
+            "message": "Main window not found",
+            "traceId": trace_id
+        });
+        record_bridge_log(
+            &app_handle,
+            response_body["traceId"].as_str().unwrap_or_default(),
+            "report.interpret",
+            "POST",
+            "/api/report/interpret",
+            "error",
+            500,
+            started_at,
+            Some(request_summary),
+            Some(response_body.clone()),
+            request.patient.as_ref().and_then(|item| item.id_pi.clone()),
+            None,
+            request.request_id.clone(),
+            Some("Main window not found".to_string()),
+        );
+        return HttpResponse::InternalServerError().json(response_body);
+    }
+
+    let response_body = serde_json::json!({
+        "status": "success",
+        "taskId": task_id,
+        "traceId": trace_id,
+        "timestamp": std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_millis() as u64,
+    });
+    record_bridge_log(
+        &app_handle,
+        response_body["traceId"].as_str().unwrap_or_default(),
+        "report.interpret",
+        "POST",
+        "/api/report/interpret",
+        "success",
+        200,
+        started_at,
+        Some(request_summary),
+        Some(response_body.clone()),
+        request.patient.as_ref().and_then(|item| item.id_pi.clone()),
+        None,
+        request.request_id.clone(),
         None,
     );
     HttpResponse::Ok().json(response_body)
@@ -1970,6 +2156,10 @@ pub fn run_server(app_handle: tauri::AppHandle, state: SharedAppState) {
                     .route(
                         "/api/consultation/assist",
                         web::post().to(start_consultation_assist),
+                    )
+                    .route(
+                        "/api/report/interpret",
+                        web::post().to(start_report_interpretation),
                     )
                     .route(
                         "/api/consultation/start-voice",

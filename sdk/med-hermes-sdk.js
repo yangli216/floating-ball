@@ -581,6 +581,34 @@
   };
 
   /**
+   * 触发检验/检查报告解读
+   * @param {Object|string} request 报告解读请求对象，或 taskId
+   * @param {string} [query] 报告原文（仅当第一个参数是 taskId 时使用）
+   * @param {Object} [patient] 可选患者信息
+   * @returns {Promise<Object>}
+   */
+  MedHermes.prototype.interpretReport = function (request, query, patient) {
+    var self = this;
+    var payload = (request && typeof request === 'object' && !Array.isArray(request))
+      ? assign({}, request)
+      : {
+          taskId: request,
+          query: query,
+          patient: patient
+        };
+
+    if (!payload || !payload.taskId || !payload.query) {
+      return Promise.reject(new Error('interpretReport 缺少 taskId 或 query'));
+    }
+
+    return this._callWithFallback(
+      function () { return self._http.post('/report/interpret', payload); },
+      'report-interpret',
+      payload
+    );
+  };
+
+  /**
    * 结束当前接诊
    * @returns {Promise<Object>}
    */

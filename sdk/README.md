@@ -215,6 +215,19 @@ function startVoice(patient) {
   mh.startVoice(patient);
 }
 
+// 检验/检查报告解读
+function interpretReport() {
+  mh.interpretReport({
+    taskId: 'inspectReport',
+    query: '报告日期：2026-05-15\n检查项目：血常规\n检查结果：WBC 12.5×10^9/L，NEUT% 82%，CRP 36mg/L',
+    patient: {
+      naPi: '张三',
+      sdSexText: '男性',
+      ageText: '34岁'
+    }
+  });
+}
+
 // 语音批量回写（含完整 PHIS 字段）
 mh.on('batch', (result) => {
   // result.medications 包含 dosage, frequency, route 等
@@ -313,6 +326,29 @@ await mh.startConsultation({
 #### `startVoice(patient?): Promise`
 
 启动语音问诊。`patient` 可选，不传则沿用桌面端当前上下文。
+
+#### `interpretReport(request): Promise`
+
+触发检验/检查报告解读，结果以独立窗口展示，不进入问诊事件流。
+
+```js
+await mh.interpretReport({
+  taskId: 'checkReport',
+  query: '报告日期：2026-05-15\n检查项目：胸部CT\n阴阳性：阳性\n检查结果：双肺纹理增粗，右下肺见斑片状高密度影。\n影像诊断：考虑右下肺感染。',
+  patient: {
+    naPi: '张三',
+    sdSexText: '男性',
+    ageText: '34岁',
+    chiefComplaint: '咳嗽发热3天'
+  }
+});
+```
+
+请求字段：
+
+- `taskId`: `inspectReport` 或 `checkReport`
+- `query`: 报告原始文本
+- `patient`: 可选患者背景；若桌面端当前已有接诊患者，可不传，由桌面端自动补齐
 
 #### `stop(): Promise`
 

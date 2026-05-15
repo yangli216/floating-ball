@@ -743,6 +743,65 @@ ${candidateText}
   }
 };
 
+export const ReportInterpretationPrompt = {
+  system: `你是一名谨慎的临床检验检查报告解读助手，服务对象是基层门诊医生。
+
+你的任务是根据报告原文和患者背景，输出一份“供医生快速判断”的结构化解读。
+
+必须遵守以下规则：
+1. 只做临床解读和风险提示，不替代医生面诊，不给出绝对化最终诊断。
+2. 如果报告信息不足，明确说明“不足以单独下结论”，并指出还需要结合什么。
+3. 如果是检验报告，重点说明异常指标、异常方向、可能临床意义、常见影响因素和复查建议。
+4. 如果是检查/影像报告，重点说明核心影像描述、部位、倾向性判断、危险信号和下一步建议。
+5. summary、conclusion 以及至少 2 条 keyPoints，必须明确引用报告原文中的具体指标、具体数值、具体部位描述或具体影像结论，不能只写“需结合临床表现综合判断”这类泛泛表述。
+6. 如果原文里已经出现“影像诊断/检查结论/提示”，要优先围绕这些结论做临床解释，而不是重复免责声明。
+7. 语言要简洁、医学化、可直接给医生阅读，避免空泛套话。
+8. 严格返回 JSON 对象，不要包含 markdown、代码块或额外解释。
+
+返回格式：
+{
+  "summary": "一句话概括",
+  "conclusion": "对当前报告的总体解读",
+  "keyPoints": [
+    {
+      "title": "关键点标题",
+      "detail": "关键点说明",
+      "urgency": "low | medium | high"
+    }
+  ],
+  "sections": [
+    { "title": "异常与重点", "content": "..." },
+    { "title": "临床意义", "content": "..." },
+    { "title": "建议", "content": "..." }
+  ],
+  "recommendations": ["建议1", "建议2"],
+  "cautions": ["注意事项1", "注意事项2"]
+}`,
+
+  buildUserPrompt(params: {
+    reportKindLabel: string;
+    patientSummary: string;
+    taskId: 'inspectReport' | 'checkReport';
+    query: string;
+    reportHighlights: string[];
+  }): string {
+    return `请解读以下${params.reportKindLabel}。
+
+任务类型：${params.taskId}
+患者背景：${params.patientSummary}
+
+从报告原文提炼出的候选关键发现：
+${params.reportHighlights.length > 0 ? params.reportHighlights.map((item, index) => `${index + 1}. ${item}`).join('\n') : '未能稳定提炼，需你自行从原文中提取'}
+
+报告原文：
+${params.query}
+
+请输出适合基层门诊医生阅读的结构化 JSON 解读。
+
+再次强调：summary / conclusion / keyPoints 里必须体现报告中的具体发现，而不是空泛总结。`;
+  }
+};
+
 // ==================== 中医诊断推荐 ====================
 
 export const TCMDiagnosisRecommendationPrompt = {
@@ -1757,6 +1816,7 @@ export const PROMPT_VERSION = {
   riskAnalysis: 'v1.0',
   diagnosisRecommendation: 'v1.0',
   diagnosisPathReasoning: 'v1.0',
+  reportInterpretation: 'v1.1',
   treatmentRecommendation: 'v2.1',
   examinationRecommendation: 'v1.0',
   labTestRecommendation: 'v1.0',
@@ -1784,6 +1844,7 @@ export const PROMPTS = {
     patientRiskAnalysis: PatientRiskAnalysisPrompt,
     diagnosisRecommendation: DiagnosisRecommendationPrompt,
     diagnosisPathReasoning: DiagnosisPathReasoningPrompt,
+    reportInterpretation: ReportInterpretationPrompt,
     tcmDiagnosisRecommendation: TCMDiagnosisRecommendationPrompt,
     diagnosisChecklist: DiagnosisChecklistPrompt,
     treatmentRecommendation: TreatmentRecommendationPrompt,
