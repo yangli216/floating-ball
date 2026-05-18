@@ -1512,14 +1512,6 @@ const resetWorkflowState = () => {
   showKnowledgePanel.value = false;
 };
 
-const resetToConsultationView = () => {
-  currentView.value = 'consultation';
-};
-
-defineExpose({
-  resetToConsultationView,
-});
-
 /* canOpenDiagnosisPath / openDiagnosisPathWindow removed - template usage commented out */
 
 watch(diagnosisGroups, (groups) => {

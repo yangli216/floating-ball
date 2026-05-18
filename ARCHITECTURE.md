@@ -536,6 +536,7 @@ await voiceConsultation.handleResultConfirm(record);
 - ✅ 跨自然日自动失效，并在 init 时一次性清理
 - ✅ 持久化到 `localStorage` (`MINIMIZED_SESSIONS_V1`)，仅存元数据（patientId/Name、anchorId、recordedAt），不存业务状态
 - ✅ `latestType` 计算属性供"双击悬浮球恢复最近一个最小化会话"使用
+- ✅ 症状问诊数据和内部页签由 `ConsultationPage.vue` 常驻 `v-show` 实例保留；收起到接待胶囊或从小球恢复时不得调用内部复位方法
 
 **导出 API**:
 ```typescript
@@ -550,7 +551,7 @@ await voiceConsultation.handleResultConfirm(record);
 ```
 
 **约束**:
-- 业务状态（语音病历快照）必须由 `useVoiceConsultation.editorSnapshot` 承接；本模块只负责"是否最小化、何时、对应哪个就诊"三件事
+- 业务状态必须由各问诊链路自己承接：症状问诊依赖 `ConsultationPage.vue` 内存保活，语音问诊病历快照由 `useVoiceConsultation.editorSnapshot` 承接；本模块只负责"是否最小化、何时、对应哪个就诊"三件事
 
 ---
 
