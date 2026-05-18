@@ -253,6 +253,51 @@ function ensureMedicineDefaultPharmacy(rec: TreatmentRecommendation): void {
   }
 }
 
+function findMatchedPharmacyOption(rec: TreatmentRecommendation, currentValue?: string): PharmacyOption | undefined {
+  const normalizedValue = (currentValue || '').trim();
+  if (!normalizedValue) {
+    return undefined;
+  }
+
+  const allowed = rec.type === 'medicine'
+    ? getCandidatePharmaciesForMedicine(rec)
+    : pharmacyOptions.value;
+
+  return allowed.find((option) => option.name === normalizedValue || option.idSto === normalizedValue)
+    || pharmacyOptions.value.find((option) => option.name === normalizedValue || option.idSto === normalizedValue);
+}
+
+function getNormalizedPharmacyValue(rec: TreatmentRecommendation): string {
+  const currentValue = (rec.pharmacy || '').trim();
+  if (!currentValue) {
+    return '';
+  }
+
+  return findMatchedPharmacyOption(rec, currentValue)?.name || currentValue;
+}
+
+function normalizeMedicinePharmacyValue(rec: TreatmentRecommendation): void {
+  if (rec.type !== 'medicine') {
+    return;
+  }
+
+  const currentValue = (rec.pharmacy || '').trim();
+  if (!currentValue) {
+    return;
+  }
+
+  const normalizedValue = getNormalizedPharmacyValue(rec);
+  if (normalizedValue && normalizedValue !== currentValue) {
+    rec.pharmacy = normalizedValue;
+  }
+}
+
+function normalizeMedicinePharmacyValues(items: TreatmentRecommendation[]): void {
+  items.forEach((item) => {
+    normalizeMedicinePharmacyValue(item);
+  });
+}
+
 // 库存校验状态 / 药品详情 hydrate / 库存检查均迁移到共享 `useTreatmentHydration`，
 // 实例化在 `treatmentNormalization` 之后（依赖 pharmacyOptions / treatmentGates / 字典查找函数）。
 // 这里仅保留对外暴露的解构变量名（hydration.* -> 同名函数），call site 不变。
@@ -345,6 +390,7 @@ async function applyEditorSnapshot(snapshot: VoiceEditorSnapshot): Promise<void>
   if (Array.isArray(snapshot.treatments) && snapshot.treatments.length > 0) {
     await fetchPharmacyOptions();
     treatments.value = snapshot.treatments as TreatmentRecommendation[];
+    normalizeMedicinePharmacyValues(treatments.value);
     lastTreatmentDiagnosisKey.value =
       snapshot.treatmentDiagnosisKey || getDiagnosisIdentity(selectedDiagnosis.value);
     await reconcileAutoSelectedMedicineInventory(treatments.value);
@@ -1776,7 +1822,7 @@ const treatmentNormalization = useTreatmentNormalization({
 const secondarySelector = useSecondarySelector({
   getEditorKey: (rec) => getTreatmentEditorKey(rec),
   fields: {
-    pharmacy: { getCurrentValue: (rec) => rec.pharmacy || '' },
+    pharmacy: { getCurrentValue: (rec) => getNormalizedPharmacyValue(rec) },
     execDept: {
       getCurrentValue: (rec) => {
         const currentValue = (rec.execDept || '').trim();
@@ -2022,12 +2068,12 @@ function getOrderServiceName(rec: TreatmentRecommendation): string {
 }
 
 function getSelectedPharmacyOption(rec: TreatmentRecommendation): PharmacyOption | undefined {
-  const pharmacyName = (rec.pharmacy || '').trim();
-  if (!pharmacyName) {
+  const pharmacyValue = (rec.pharmacy || '').trim();
+  if (!pharmacyValue) {
     return getDefaultPharmacyOption(rec);
   }
 
-  return pharmacyOptions.value.find((option) => option.name === pharmacyName) || getDefaultPharmacyOption(rec);
+  return findMatchedPharmacyOption(rec, pharmacyValue) || getDefaultPharmacyOption(rec);
 }
 
 function getOrderExecDeptId(rec: TreatmentRecommendation): string {
@@ -2410,7 +2456,7 @@ function handlePharmacySearchInput(rec: TreatmentRecommendation, event: Event): 
 }
 
 function getFilteredPharmacyOptionsForRecord(rec: TreatmentRecommendation): UsageOption[] {
-  const currentValue = (rec.pharmacy || '').trim();
+  const currentValue = getNormalizedPharmacyValue(rec);
   const query = secondarySelector.resolveFilterKeyword(getPharmacySearchKeyword(rec), currentValue);
   // 仅保留当前药品实际存在的药房（matchedItem.storeIds ∩ 有效发药药房）
   const allowedPharmacies = rec.type === 'medicine' && rec.matchedItem
@@ -2795,6 +2841,7 @@ watch(
     if (result.treatments.length > 0) {
       await fetchPharmacyOptions();
       treatments.value = initTreatmentsFromIntent(result.treatments);
+      normalizeMedicinePharmacyValues(treatments.value);
       lastTreatmentDiagnosisKey.value = getDiagnosisIdentity(selectedDiagnosis.value);
       await reconcileAutoSelectedMedicineInventory(treatments.value);
       void registerCurrentRecommendations();
