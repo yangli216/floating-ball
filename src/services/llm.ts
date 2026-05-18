@@ -403,7 +403,7 @@ export async function chatStreamWithFallback(
 
     try {
       // 降级到普通请求
-      const response = await chat(messages, apiKey, retryConfig, onRetry);
+      const response = await chat(messages, apiKey, retryConfig, onRetry, customConfig);
       // 模拟流式输出（按字符或按词输出）
       const chunkSize = 10; // 每次发送10个字符
       for (let i = 0; i < response.length; i += chunkSize) {

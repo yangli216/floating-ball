@@ -346,6 +346,12 @@ function generateFallbackDeviceCode(): string {
   return `FB-${Date.now().toString(36)}-${Math.random().toString(36).substring(2, 8)}`.toUpperCase();
 }
 
+function rotateFallbackDeviceCode(): string {
+  macLookupUnavailable = true;
+  deviceCodeLoadPromise = null;
+  return persistDeviceCode(generateFallbackDeviceCode());
+}
+
 function persistDeviceCode(nextCode: string): string {
   const normalizedCode = normalizeDeviceCode(nextCode);
   if (!normalizedCode) {
@@ -441,12 +447,8 @@ async function regionalFetch<T>(
 
   let signatureHeaders: SignatureHeaders = {} as SignatureHeaders;
   if (path !== '/v1/client/register') {
-    try {
-      const body = options.body ? String(options.body) : undefined;
-      signatureHeaders = await signRequest(options.method || 'GET', path, body);
-    } catch (e) {
-      console.warn('[RegionalClient] Failed to sign request:', e);
-    }
+    const body = options.body ? String(options.body) : undefined;
+    signatureHeaders = await signRequest(options.method || 'GET', path, body);
   }
 
   const headers: Record<string, string> = {
@@ -509,6 +511,11 @@ export async function registerDevice(): Promise<RegisterResponse> {
     throw new Error('区域化机构编码未配置');
   }
   const cdDevice = await getDeviceCode();
+  return registerDeviceWithCode(cdDevice, true);
+}
+
+async function registerDeviceWithCode(cdDevice: string, allowFallbackDeviceCodeRetry: boolean): Promise<RegisterResponse> {
+  const orgCode = getOrgCode();
   let naDevice = 'FloatingBall';
   let osInfo = 'unknown';
   const clientVersion = await getCurrentClientVersion();
@@ -521,18 +528,29 @@ export async function registerDevice(): Promise<RegisterResponse> {
 
   const { publicKeyBase64 } = await loadOrGenerateKeyPair();
 
-  const resp = await regionalFetch<RegisterResponse>('/v1/client/register', {
-    method: 'POST',
-    body: JSON.stringify({
-      cdDevice,
-      naDevice,
-      cdOrg: orgCode,
-      clientVersion,
-      updateChannel,
-      osInfo,
-      publicKey: publicKeyBase64,
-    } satisfies RegisterRequest),
-  });
+  let resp: RegisterResponse;
+  try {
+    resp = await regionalFetch<RegisterResponse>('/v1/client/register', {
+      method: 'POST',
+      body: JSON.stringify({
+        cdDevice,
+        naDevice,
+        cdOrg: orgCode,
+        clientVersion,
+        updateChannel,
+        osInfo,
+        publicKey: publicKeyBase64,
+      } satisfies RegisterRequest),
+    });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    if (allowFallbackDeviceCodeRetry && message.includes('设备已注册')) {
+      const fallbackCode = rotateFallbackDeviceCode();
+      console.warn('[RegionalClient] Device code already registered, retrying with fallback device code.');
+      return registerDeviceWithCode(fallbackCode, false);
+    }
+    throw error;
+  }
 
   setDeviceToken(resp.deviceToken);
   localStorage.setItem(STORAGE_KEYS.DEVICE_ID, resp.idDevice);
@@ -712,14 +730,10 @@ export async function createRegionalWebSocketUrl(path: string): Promise<string> 
   url.searchParams.set('clientVersion', await getCurrentClientVersion());
   url.searchParams.set('updateChannel', getActiveUpdateChannel());
 
-  try {
-    const sigParams = await signWebSocketParams(path);
-    url.searchParams.set('ts', sigParams.ts);
-    url.searchParams.set('nonce', sigParams.nonce);
-    url.searchParams.set('sig', sigParams.sig);
-  } catch (e) {
-    console.warn('[RegionalClient] Failed to sign WebSocket URL:', e);
-  }
+  const sigParams = await signWebSocketParams(path);
+  url.searchParams.set('ts', sigParams.ts);
+  url.searchParams.set('nonce', sigParams.nonce);
+  url.searchParams.set('sig', sigParams.sig);
 
   return url.toString();
 }
@@ -777,105 +791,122 @@ export function createRegionalSSE(
   onChunk: (chunk: string) => void,
   signal?: AbortSignal
 ): Promise<void> {
-  const baseUrl = getRegionalBaseUrl();
-  const token = getDeviceToken();
+  const run = async (allowAuthRetry: boolean): Promise<void> => {
+    const baseUrl = getRegionalBaseUrl();
+    if (!baseUrl) throw new Error('区域化服务地址未配置');
+    await getDeviceCode();
+    let token = getDeviceToken();
+    if (!token) {
+      await registerDevice();
+      token = getDeviceToken();
+    }
 
-  return new Promise(async (resolve, reject) => {
-    try {
-      const clientVersion = await getCurrentClientVersion();
-      const updateChannel = getActiveUpdateChannel();
-
-      const bodyStr = JSON.stringify(body);
-      let signatureHeaders: SignatureHeaders = {} as SignatureHeaders;
+    return new Promise(async (resolve, reject) => {
       try {
-        signatureHeaders = await signRequest('POST', path, bodyStr);
-      } catch (e) {
-        console.warn('[RegionalClient] Failed to sign SSE request:', e);
-      }
+        const clientVersion = await getCurrentClientVersion();
+        const updateChannel = getActiveUpdateChannel();
 
-      const res = await fetch(`${baseUrl}${path}`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'X-Tenant-Id': getOrgCode(),
-          'X-Request-Id': crypto.randomUUID(),
-          'X-Client-Version': clientVersion,
-          'X-Update-Channel': updateChannel,
-          ...(token ? { Authorization: `Bearer ${token}` } : {}),
-          ...signatureHeaders,
-        },
-        body: bodyStr,
-        signal,
-      });
+        const bodyStr = JSON.stringify(body);
+        const signatureHeaders = await signRequest('POST', path, bodyStr);
 
-      if (!res.ok) {
-        const text = await res.text().catch(() => '');
-        const errorInfo = parseRegionalError(text, `区域化流式请求失败（${res.status}）`);
-        if (res.status === 426 || isUpdateRequiredCode(errorInfo.code)) {
-          notifyForceUpdateRequired({
-            channel: updateChannel,
-            currentVersion: clientVersion,
-            message: errorInfo.message,
-          });
-        }
-        reject(new Error(errorInfo.message));
-        return;
-      }
+        const res = await fetch(`${baseUrl}${path}`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'X-Tenant-Id': getOrgCode(),
+            'X-Request-Id': crypto.randomUUID(),
+            'X-Client-Version': clientVersion,
+            'X-Update-Channel': updateChannel,
+            ...(token ? { Authorization: `Bearer ${token}` } : {}),
+            ...signatureHeaders,
+          },
+          body: bodyStr,
+          signal,
+        });
 
-      const contentType = res.headers.get('content-type') || '';
-      if (!contentType.includes('text/event-stream')) {
-        const text = await res.text().catch(() => '');
-        reject(new Error(parseUnexpectedSseBody(text, '区域化服务返回了非流式响应')));
-        return;
-      }
-
-      const reader = res.body?.getReader();
-      if (!reader) {
-        reject(new Error('无法获取流式响应'));
-        return;
-      }
-
-      const decoder = new TextDecoder('utf-8');
-      let buffer = '';
-      let receivedDone = false;
-
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-
-        buffer += decoder.decode(value, { stream: true });
-        const lines = buffer.split('\n');
-        buffer = lines.pop() || '';
-
-        for (const line of lines) {
-          const trimmed = line.trim();
-          if (!trimmed) continue;
-          const dataStr = extractSseDataPayload(trimmed);
-          if (dataStr == null) continue;
-          if (dataStr === '[DONE]') {
-            receivedDone = true;
-            resolve();
+        if (!res.ok) {
+          if (res.status === 401 && allowAuthRetry) {
+            clearDeviceRegistration();
+            initialized = false;
+            await registerDevice();
+            try {
+              await run(false);
+              resolve();
+            } catch (retryError) {
+              reject(retryError);
+            }
             return;
           }
-          try {
-            const json = JSON.parse(dataStr);
-            const errorMessage = json?.error?.message || json?.message;
-            if (typeof errorMessage === 'string' && errorMessage.trim()) {
-              reject(new Error(errorMessage.trim()));
+          const text = await res.text().catch(() => '');
+          const errorInfo = parseRegionalError(text, `区域化流式请求失败（${res.status}）`);
+          if (res.status === 426 || isUpdateRequiredCode(errorInfo.code)) {
+            notifyForceUpdateRequired({
+              channel: updateChannel,
+              currentVersion: clientVersion,
+              message: errorInfo.message,
+            });
+          }
+          reject(new Error(errorInfo.message));
+          return;
+        }
+
+        const contentType = res.headers.get('content-type') || '';
+        if (!contentType.includes('text/event-stream')) {
+          const text = await res.text().catch(() => '');
+          reject(new Error(parseUnexpectedSseBody(text, '区域化服务返回了非流式响应')));
+          return;
+        }
+
+        const reader = res.body?.getReader();
+        if (!reader) {
+          reject(new Error('无法获取流式响应'));
+          return;
+        }
+
+        const decoder = new TextDecoder('utf-8');
+        let buffer = '';
+        let receivedDone = false;
+
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+
+          buffer += decoder.decode(value, { stream: true });
+          const lines = buffer.split('\n');
+          buffer = lines.pop() || '';
+
+          for (const line of lines) {
+            const trimmed = line.trim();
+            if (!trimmed) continue;
+            const dataStr = extractSseDataPayload(trimmed);
+            if (dataStr == null) continue;
+            if (dataStr === '[DONE]') {
+              receivedDone = true;
+              resolve();
               return;
             }
-            const content = json.choices?.[0]?.delta?.content || '';
-            if (content) onChunk(content);
-          } catch { /* skip malformed SSE */ }
+            try {
+              const json = JSON.parse(dataStr);
+              const errorMessage = json?.error?.message || json?.message;
+              if (typeof errorMessage === 'string' && errorMessage.trim()) {
+                reject(new Error(errorMessage.trim()));
+                return;
+              }
+              const content = json.choices?.[0]?.delta?.content || '';
+              if (content) onChunk(content);
+            } catch { /* skip malformed SSE */ }
+          }
         }
+        if (receivedDone) {
+          resolve();
+          return;
+        }
+        reject(new Error(parseUnexpectedSseBody(buffer, 'AI 服务响应已中断，请检查后台 AI 配置后重试')));
+      } catch (err) {
+        reject(err);
       }
-      if (receivedDone) {
-        resolve();
-        return;
-      }
-      reject(new Error(parseUnexpectedSseBody(buffer, 'AI 服务响应已中断，请检查后台 AI 配置后重试')));
-    } catch (err) {
-      reject(err);
-    }
-  });
+    });
+  };
+
+  return run(true);
 }
