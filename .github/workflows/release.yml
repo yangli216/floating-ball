@@ -55,7 +55,9 @@ jobs:
         uses: mozilla-actions/sccache-action@v0.0.9
 
       - name: Rust cache
-        uses: swatinem/rust-cache@v2
+        # v2 currently resolves to a Node 24 build that emits DEP0040
+        # (`punycode`) noise during the post-job cache save hook.
+        uses: swatinem/rust-cache@v2.8.2
         with:
           workspaces: './src-tauri -> target'
 
