@@ -26,7 +26,7 @@
 | 修改设置面板 | [SettingsPanel.vue](src/components/SettingsPanel.vue) + [llm.ts](src/services/llm.ts) + [speechConfig.ts](src/services/speechConfig.ts) + [regionalClient.ts](src/services/regionalClient.ts)；注意区域化模式下设置页隐藏“模型配置”页签 |
 | 修改客户端更新源 | [UpdateChecker.vue](src/components/UpdateChecker.vue) + [updateConfig.ts](src/services/updateConfig.ts) + [lib.rs](src-tauri/src/lib.rs)；内网发布端见 `../floating-ball-server/modules/release` |
 | 修改窗口尺寸记忆 | [useWindowManagement.ts](src/composables/useWindowManagement.ts) + [useNavigation.ts](src/composables/useNavigation.ts) + [useEventListeners.ts](src/composables/useEventListeners.ts) + [windowSizes.ts](src/constants/windowSizes.ts) |
-| 修改最小化/恢复语义 | [useMinimizedSessions.ts](src/composables/useMinimizedSessions.ts) + [App.vue](src/App.vue) + [useVoiceConsultation.ts](src/composables/useVoiceConsultation.ts)；按 `idVis` 锚定，跨自然日过期；症状问诊状态由 `ConsultationPage.vue` 常驻 `v-show` 实例保留，收起/恢复不得复位内部页签；语音问诊整张病历快照走 `editorSnapshot` |
+| 修改最小化/恢复语义 | [useMinimizedSessions.ts](src/composables/useMinimizedSessions.ts) + [App.vue](src/App.vue) + [useSymptomConsultationCache.ts](src/composables/useSymptomConsultationCache.ts) + [useVoiceConsultation.ts](src/composables/useVoiceConsultation.ts)；按 `idVis` 锚定，跨自然日过期；症状问诊状态由 `ConsultationPage.vue` 常驻 `v-show` 实例和症状问诊快照保留，收起/恢复/再次点击智能问诊不得复位内部页签；语音问诊整张病历快照走 `editorSnapshot` |
 | 修改医学数据匹配 | [medicalData.ts](src/services/medicalData.ts) + [his/HisAdapter.ts](src/services/his/HisAdapter.ts) + [his/PhisHisAdapter.ts](src/services/his/PhisHisAdapter.ts) + [his/registry.ts](src/services/his/registry.ts) + [hisService.ts](src/services/hisService.ts) + [medical_catalog.rs](src-tauri/src/commands/medical_catalog.rs)；重点核对 SDK handshake 传入的 `orgCode / idTet` 是否进入缓存上下文，诊疗项目是否按机构+租户隔离，药品是否按机构+租户+药房 `storeId` 隔离，以及区域化开关不会阻断既有缓存恢复 |
 | 测试 HIS 集成 | [mock_his.html](./docs/mock_his.html) |
 
@@ -125,6 +125,7 @@ floating-ball/
 | **useEventListeners.ts** | ~475 | 全局事件枢纽：HIS HTTP 事件、深链接、鼠标/窗口事件、Tauri 事件监听；`start-voice-consultation` 会按目标患者判断是否恢复未提交语音缓存，同患者有缓存则恢复结果页，否则开启新语音会话；仅在已处于录音胶囊页时对重复请求做幂等处理 | HIS 事件绑定、deep link 处理 |
 | **useWindowManagement.ts** | ~422 | 窗口位置/尺寸/显示器管理 | `saveWindowPosition()`, `restoreWindowPosition()`, `smartExpand()`, `resizeWorkWindow()` |
 | **useWorkMode.ts** | ~422 | 球体 <-> 工作面板的切换 | `enterWorkMode()`, `exitWork()`, `handleCollapse()` |
+| **useSymptomConsultationCache.ts** | -- | 智能问诊未结束现场缓存；按就诊锚点保存内部页面、症状/表单、病历草稿、诊断/推荐和引用状态；诊毕/放弃清理，跨自然日失效 | `read/write/clear` 快照 |
 | **useVoiceConsultation.ts** | -- | 语音录制 -> 转写 -> 病历生成；按 `consultationId` 缓存语音病例解析结果并支持重启后恢复未提交结果 | 录制控制、转写回调、结果提交 |
 | **useVoiceIntentRecognition.ts** | -- | 语音结构化抽取：把医患对话整理成病例草稿、诊断/检查/药品提示，并保留 explicit/inferred 来源标记与处方核心字段，供 `VoiceConsultationNew.vue` 直接落地到可编辑结果页；同时在抽取后分流“条件性用药”和“患者已自行服用药”，避免误入当前处方候选 | LLM 抽取、结果结构校验、一次修复重试、目录匹配、结构归一、治疗项后处理 |
 | **useMedicalDictionaries.ts** | ~145 | HIS 字典统一加载：频次 / 用法 / 发药药房 / 执行科室；只负责数据加载，不携带页面特有副作用，调用方需在 `loadPharmacyOptions/loadAllDictionaries` 之后自行补药品目录预热、执行科室 key 同步等后置动作。语音问诊与症状问诊共用 | `frequencyOptions/routeOptions/pharmacyOptions/execDeptOptions` refs、`loadXxxOptions()` |

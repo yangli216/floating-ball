@@ -167,7 +167,8 @@
 12. `ConsultationPage.vue` 里的推荐诊断必须保持单选，并以当前选中诊断作为引用对象；推荐用药、检查、检验、处置则保留多选，并在各自分组级提供一次引入所选项的入口。对暂不支持 PHIS 引用的推荐项，应作为只读处置建议单独展示，避免被误当作检查项提交。
 13. 检验检查报告解读不进入 `ConsultationPage.vue`。该能力通过 `POST /api/report/interpret` -> `useEventListeners.ts` -> 独立报告解读窗口链路完成，避免打断当前问诊主页面。
 14. 报告解读独立窗口默认隐藏原生标题栏，窗口移动依赖页面头部拖拽区，关闭动作统一走页面内虚拟按钮；正文超出高度时由窗口自身滚动容器承接，不能裁切内容。
-13. HIS 联调相关的调用必须进入本地 HIS 集成日志：HTTP Bridge 入站接口由 Rust 侧直接记录，前端 `hisService.ts` 出站请求通过 `hisIntegrationLog.ts` 写入同一 JSONL 日志，并在日志面板中按 `traceId`、接口、方向、状态筛选和导出。
+15. 智能问诊的页面留存与语音问诊一致：未诊毕、未确认放弃时，再次点击“智能问诊”或最小化后再次打开，必须恢复 `ConsultationPage` 上次内部页面（症状采集、病历详情或最终报告）及数据快照；只有诊毕回写成功、确认放弃或跨自然日失效时才清理。
+16. HIS 联调相关的调用必须进入本地 HIS 集成日志：HTTP Bridge 入站接口由 Rust 侧直接记录，前端 `hisService.ts` 出站请求通过 `hisIntegrationLog.ts` 写入同一 JSONL 日志，并在日志面板中按 `traceId`、接口、方向、状态筛选和导出。
 
 ### 代码结构
 
@@ -536,7 +537,7 @@ await voiceConsultation.handleResultConfirm(record);
 - ✅ 跨自然日自动失效，并在 init 时一次性清理
 - ✅ 持久化到 `localStorage` (`MINIMIZED_SESSIONS_V1`)，仅存元数据（patientId/Name、anchorId、recordedAt），不存业务状态
 - ✅ `latestType` 计算属性供"双击悬浮球恢复最近一个最小化会话"使用
-- ✅ 症状问诊数据和内部页签由 `ConsultationPage.vue` 常驻 `v-show` 实例保留；收起到接待胶囊或从小球恢复时不得调用内部复位方法
+- ✅ 症状问诊数据和内部页签由 `ConsultationPage.vue` 常驻 `v-show` 实例 + `useSymptomConsultationCache` 快照保留；收起到接待胶囊或从小球恢复时不得调用内部复位方法
 
 **导出 API**:
 ```typescript
@@ -551,7 +552,19 @@ await voiceConsultation.handleResultConfirm(record);
 ```
 
 **约束**:
-- 业务状态必须由各问诊链路自己承接：症状问诊依赖 `ConsultationPage.vue` 内存保活，语音问诊病历快照由 `useVoiceConsultation.editorSnapshot` 承接；本模块只负责"是否最小化、何时、对应哪个就诊"三件事
+- 业务状态必须由各问诊链路自己承接：症状问诊由 `useSymptomConsultationCache` 按就诊锚点保存内部页面、症状、表单、病历、推荐和引用回执快照，语音问诊病历快照由 `useVoiceConsultation.editorSnapshot` 承接；本模块只负责"是否最小化、何时、对应哪个就诊"三件事
+
+### `useSymptomConsultationCache.ts` ✅
+
+**文件**: [src/composables/useSymptomConsultationCache.ts](src/composables/useSymptomConsultationCache.ts)
+
+**职责**: 为智能问诊保存与恢复未结束现场，语义对齐语音问诊缓存
+
+**核心功能**:
+- ✅ 以就诊锚点为 key 写入 `localStorage` (`SYMPTOM_CONSULTATION_CACHE_V1:{consultationId}`)
+- ✅ 保存内部页面、问诊模式、症状选择、动态表单、病历草稿、诊断、治疗推荐、引用回执和知识面板基础状态
+- ✅ 跨自然日自动失效；诊毕回写成功或确认放弃时显式清除
+- ✅ 恢复时只作用于同一就诊，避免切换患者污染
 
 ---
 

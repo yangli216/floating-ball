@@ -24,7 +24,7 @@
           >西医</button>
           <button
             :class="['sidebar-switch-btn', { active: consultationMode === 'tcm' }]"
-            @click="consultationMode = 'tcm'"
+            @click="showToast('中医模块开发中', 'info')"
           >中医</button>
         </div>
         <!-- Symptom content area -->
@@ -608,6 +608,12 @@ import {
   buildConsultationUserLogSnapshot,
   submitConsultationUserLog,
 } from '../services/consultationUserLog';
+import {
+  clearSymptomConsultationCache,
+  readSymptomConsultationCache,
+  writeSymptomConsultationCache,
+  type SymptomConsultationSnapshot,
+} from '../composables/useSymptomConsultationCache';
 /* WINDOW_SIZES / diagnosisPath imports removed - feature commented out */
 import type {
   ConsultationAssistAction,
@@ -737,6 +743,14 @@ const patientInfo = ref<Patient>({
   "allergyHistory": ""
 });
 
+function clonePlain<T>(value: T): T {
+  try {
+    return JSON.parse(JSON.stringify(value)) as T;
+  } catch {
+    return value;
+  }
+}
+
 const avatarSrc = computed(() => {
   const info = patientInfo.value;
   return resolvePatientAvatar({
@@ -831,6 +845,9 @@ const lastReferenceFeedback = ref<ReferenceFeedbackPayload | null>(null);
 const referenceStatusMap = ref<Record<string, ReferenceStatusEntry>>({});
 const isWritingRecord = ref(false);
 let unlistenReferenceFeedback: (() => void) | null = null;
+let isRestoringSymptomSnapshot = false;
+let symptomSnapshotTimer: ReturnType<typeof setTimeout> | null = null;
+let lastRestoredSymptomSnapshotId = '';
 
 const systemCategories: Record<string, string> = {
   respiratory: '呼吸系统',
@@ -1510,6 +1527,118 @@ const resetWorkflowState = () => {
   knowledgeLoading.value = false;
   hasKnowledgeResults.value = false;
   showKnowledgePanel.value = false;
+};
+
+const hasRecoverableSymptomState = (): boolean => {
+  return currentView.value !== 'consultation'
+    || selectedSymptoms.value.length > 0
+    || generatedRecord.value.chiefComplaint.trim() !== ''
+    || generatedRecord.value.historyOfPresentIllness.trim() !== ''
+    || aiDiagnoses.value.length > 0
+    || treatmentRecommendations.value.length > 0
+    || examRecommendations.value.length > 0
+    || labTestRecommendations.value.length > 0
+    || procedureRecommendations.value.length > 0
+    || selectedDiagnosis.value !== null;
+};
+
+const buildSymptomSnapshot = (): SymptomConsultationSnapshot | null => {
+  const consultationId = resolveConsultationId();
+  if (!consultationId || consultationId === 'unknown' || !hasRecoverableSymptomState()) {
+    return null;
+  }
+
+  return {
+    consultationId,
+    currentView: currentView.value,
+    consultationMode: consultationMode.value,
+    selectionMode: selectionMode.value,
+    patientInfo: clonePlain(patientInfo.value),
+    selectedSymptoms: clonePlain(selectedSymptoms.value),
+    formData: clonePlain(formData.value),
+    searchQuery: searchQuery.value,
+    selectedCategories: clonePlain(selectedCategories.value),
+    companionSymptoms: Array.from(companionSymptoms.value),
+    generatedRecord: clonePlain(generatedRecord.value),
+    finalRecord: clonePlain(finalRecord.value),
+    aiDiagnoses: clonePlain(aiDiagnoses.value),
+    selectedDiagnosis: clonePlain(selectedDiagnosis.value),
+    relatedDiagnoses: clonePlain(relatedDiagnoses.value),
+    treatmentRecommendations: clonePlain(treatmentRecommendations.value),
+    examRecommendations: clonePlain(examRecommendations.value),
+    labTestRecommendations: clonePlain(labTestRecommendations.value),
+    procedureRecommendations: clonePlain(procedureRecommendations.value),
+    referenceStatusMap: clonePlain(referenceStatusMap.value),
+    activeReferenceRequest: clonePlain(activeReferenceRequest.value),
+    lastReferenceFeedback: clonePlain(lastReferenceFeedback.value),
+    knowledgeSearchKeyword: knowledgeSearchKeyword.value,
+    knowledgeSearchType: knowledgeSearchType.value,
+    hasKnowledgeResults: hasKnowledgeResults.value,
+    showKnowledgePanel: showKnowledgePanel.value,
+    savedAt: Date.now(),
+  };
+};
+
+const persistSymptomSnapshot = () => {
+  if (isRestoringSymptomSnapshot) return;
+  const snapshot = buildSymptomSnapshot();
+  if (!snapshot) return;
+  writeSymptomConsultationCache(snapshot);
+};
+
+const schedulePersistSymptomSnapshot = () => {
+  if (isRestoringSymptomSnapshot) return;
+  if (symptomSnapshotTimer) {
+    clearTimeout(symptomSnapshotTimer);
+  }
+  symptomSnapshotTimer = setTimeout(() => {
+    symptomSnapshotTimer = null;
+    persistSymptomSnapshot();
+  }, 300);
+};
+
+const restoreSymptomSnapshot = (snapshot: SymptomConsultationSnapshot): void => {
+  isRestoringSymptomSnapshot = true;
+  try {
+    consultationMode.value = snapshot.consultationMode || 'western';
+    selectionMode.value = snapshot.selectionMode || 'common';
+    symptoms.value = snapshot.consultationMode === 'tcm' ? getTCMTemplates() : getWesternTemplates();
+    patientInfo.value = {
+      ...patientInfo.value,
+      ...clonePlain(snapshot.patientInfo),
+    };
+    selectedSymptoms.value = clonePlain(snapshot.selectedSymptoms || []);
+    formData.value = clonePlain(snapshot.formData || {});
+    searchQuery.value = snapshot.searchQuery || '';
+    selectedCategories.value = clonePlain(snapshot.selectedCategories || []);
+    companionSymptoms.value = new Set(snapshot.companionSymptoms || []);
+    generatedRecord.value = clonePlain(snapshot.generatedRecord || {
+      chiefComplaint: '',
+      historyOfPresentIllness: '',
+      tcmFourExaminations: '',
+      familyHistory: '',
+    });
+    finalRecord.value = clonePlain(snapshot.finalRecord || null);
+    aiDiagnoses.value = clonePlain(snapshot.aiDiagnoses || []);
+    selectedDiagnosis.value = clonePlain(snapshot.selectedDiagnosis || null);
+    relatedDiagnoses.value = clonePlain(snapshot.relatedDiagnoses || []);
+    treatmentRecommendations.value = clonePlain(snapshot.treatmentRecommendations || []);
+    examRecommendations.value = clonePlain(snapshot.examRecommendations || []);
+    labTestRecommendations.value = clonePlain(snapshot.labTestRecommendations || []);
+    procedureRecommendations.value = clonePlain(snapshot.procedureRecommendations || []);
+    referenceStatusMap.value = clonePlain(snapshot.referenceStatusMap || {});
+    activeReferenceRequest.value = clonePlain(snapshot.activeReferenceRequest || null) as ReferenceFeedbackPayload | null;
+    lastReferenceFeedback.value = clonePlain(snapshot.lastReferenceFeedback || null) as ReferenceFeedbackPayload | null;
+    knowledgeSearchKeyword.value = snapshot.knowledgeSearchKeyword || '';
+    knowledgeSearchType.value = (snapshot.knowledgeSearchType || 'diagnosis') as 'diagnosis' | 'medication' | 'examination';
+    hasKnowledgeResults.value = Boolean(snapshot.hasKnowledgeResults);
+    showKnowledgePanel.value = Boolean(snapshot.showKnowledgePanel);
+    currentView.value = snapshot.currentView || 'consultation';
+  } finally {
+    nextTick(() => {
+      isRestoringSymptomSnapshot = false;
+    });
+  }
 };
 
 /* canOpenDiagnosisPath / openDiagnosisPathWindow removed - template usage commented out */
