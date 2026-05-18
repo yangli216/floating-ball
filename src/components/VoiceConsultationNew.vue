@@ -9,7 +9,7 @@ import { chat, type ChatMessage } from '../services/llm';
 import { PROMPTS } from '../prompts';
 import { getHisAdapter } from '../services/his';
 import type { PharmacyOption } from '../services/his';
-import { medicalDataService, type DiagnosisItem, type MedicalItem, type MedicineItem } from '../services/medicalData';
+import { medicalDataService, type DiagnosisItem } from '../services/medicalData';
 import {
   clearVoiceConsultationCache,
   updateVoiceConsultationCache,
@@ -46,7 +46,6 @@ import type { VoiceIntentResult, MatchedTreatment, MatchedDiagnosis } from '../c
 import {
   buildDiagList as buildSharedDiagList,
   buildOrderListItem as buildSharedOrderListItem,
-  getMatchedMedicalItemClientId,
   getMatchedOrderServiceId,
 } from '../utils/recordConfirmedPayload';
 import {
@@ -72,6 +71,24 @@ import ManualMatchPicker, { type ManualMatchCandidate } from './ManualMatchPicke
 import DiagnosisRecommendationCard from './DiagnosisRecommendationCard.vue';
 import TreatmentRecommendationCard from './TreatmentRecommendationCard.vue';
 import TreatmentItemEditor from './TreatmentItemEditor.vue';
+import {
+  assessTreatmentCatalogMatch,
+  buildDiagnosisFeedbackSnapshot as buildSharedDiagnosisFeedbackSnapshot,
+  buildTreatmentFeedbackSnapshot,
+  getReasonTooltipKey,
+  getSuggestedMatchName,
+  getTreatmentMatchLabel as getSharedTreatmentMatchLabel,
+  getTreatmentOriginalName,
+  getTreatmentSpec,
+  hasProbableMatch,
+} from '../features/clinical-result/recommendationHelpers';
+import {
+  applyManualMatchCandidate,
+  findManualMatchCandidates,
+  getManualMatchKey,
+  type ManualMatchRawCandidate,
+  toManualMatchCandidateView,
+} from '../features/clinical-result/manualMatch';
 import type {
   VoiceRecordFieldFeedbackDraft,
   VoiceRecordFieldKey,
@@ -493,37 +510,10 @@ function toggleRecommendationFeedback(recommendationKey: string, event?: Event):
 }
 
 function buildDiagnosisFeedbackSnapshot(diag: Diagnosis): Record<string, unknown> {
-  return {
-    id: diag.id || '',
-    code: diag.code || '',
-    name: diag.name || '',
-    rationale: diag.rationale || '',
+  return buildSharedDiagnosisFeedbackSnapshot(diag, {
     selected: isDiagnosisSelected(diag),
     primary: isPrimaryDiagnosis(diag),
-  };
-}
-
-function buildTreatmentFeedbackSnapshot(rec: TreatmentRecommendation): Record<string, unknown> {
-  return {
-    type: rec.type,
-    name: rec.name,
-    originalName: rec.originalName || '',
-    reason: rec.reason || '',
-    selected: !!rec.selected,
-    matchedItem: rec.matchedItem || null,
-    matchStatus: rec.matchStatus || 'unmatched',
-    dosage: rec.dosage || '',
-    dosageUnit: rec.dosageUnit || '',
-    frequency: rec.frequency || '',
-    route: rec.route || '',
-    totalQty: rec.totalQty || '',
-    totalUnit: rec.totalUnit || '',
-    pharmacy: rec.pharmacy || '',
-    execDept: rec.execDept || '',
-    insuranceType: rec.insuranceType || '',
-    bodySite: rec.bodySite || '',
-    bodySiteId: rec.bodySiteId || '',
-  };
+  });
 }
 
 function buildVoiceUserLogSnapshot() {
@@ -1061,10 +1051,6 @@ const treatmentSections = computed<TreatmentSection[]>(() => {
 
 const hasTreatments = computed(() => treatments.value.length > 0);
 
-function getManualMatchKey(rec: TreatmentRecommendation): string {
-  return `manual-match:${rec.type}:${rec.name}`;
-}
-
 function getManualMatchSearchKey(rec: TreatmentRecommendation): string {
   return `${getManualMatchKey(rec)}:search`;
 }
@@ -1082,13 +1068,7 @@ function setManualMatchKeyword(rec: TreatmentRecommendation, value: string): voi
 }
 
 function getManualMatchPickerCandidates(rec: TreatmentRecommendation): ManualMatchCandidate[] {
-  return getManualMatchCandidates(rec).map((candidate) => ({
-    id: candidate.id,
-    name: candidate.name,
-    meta: isMedicineSearchCandidate(candidate)
-      ? candidate.spec || ''
-      : candidate.code || '',
-  }));
+  return getManualMatchCandidates(rec).map(toManualMatchCandidateView);
 }
 
 function handleManualMatchPickerSelect(rec: TreatmentRecommendation, candidate: ManualMatchCandidate): void {
@@ -1118,64 +1098,9 @@ function toggleManualMatch(rec: TreatmentRecommendation, event?: Event): void {
   }
 }
 
-function isMedicineSearchCandidate(candidate: MedicineItem | MedicalItem): candidate is MedicineItem {
-  return 'spec' in candidate;
+function getManualMatchCandidates(rec: TreatmentRecommendation): ManualMatchRawCandidate[] {
+  return findManualMatchCandidates(rec, getManualMatchKeyword(rec));
 }
-
-function getManualMatchCandidates(rec: TreatmentRecommendation): Array<MedicineItem | MedicalItem> {
-  const query = getManualMatchKeyword(rec).trim();
-  if (!query) {
-    return [];
-  }
-
-  switch (rec.type) {
-    case 'medicine':
-      return medicalDataService.searchMedicines(query, undefined, 8);
-    case 'exam':
-      return medicalDataService.searchExamItems(query, undefined, 8);
-    case 'lab_test':
-      return medicalDataService.searchLabTestItems(query, undefined, 8);
-    case 'procedure':
-      return medicalDataService.searchProcedureItems(query, undefined, 8);
-    default:
-      return [];
-  }
-}
-
-function buildMedicineMatchedItem(item: MedicineItem): TreatmentRecommendation['matchedItem'] {
-  return {
-    id: item.id,
-    name: item.name,
-    spec: item.spec,
-    storeIds: Array.isArray(item.storeIds)
-      ? Array.from(new Set(item.storeIds.map((value) => (typeof value === 'string' ? value.trim() : '')).filter(Boolean)))
-      : [],
-    idSrv: item.idSrv,
-    naSrv: item.naSrv,
-    sdSrv: item.sdSrv,
-    idDeptExec: item.idDeptExec,
-    fgCheckOrd: item.fgCheckOrd,
-    fgSkintest: item.fgSkintest,
-    raw: item.raw,
-  };
-}
-
-function buildMedicalItemMatchedItem(item: MedicalItem): TreatmentRecommendation['matchedItem'] {
-  return {
-    id: item.id,
-    name: item.name,
-    code: item.code,
-    idSrv: item.idSrv,
-    naSrv: item.naSrv,
-    sdSrv: item.sdSrv,
-    idDeptExec: item.idDeptExec,
-    idPart: item.idPart,
-    jsonField: item.jsonField,
-    fgCheckOrd: item.fgCheckOrd,
-    raw: item.raw,
-  };
-}
-
 
 // 部位选项落地：来自 HIS `fetchMedicalItemPartOptions(idCli)`，统一在 useBodySiteOptions 内处理。
 const { applyMedicalItemPartOption, applyMedicalItemPartOptions } = useBodySiteOptions();
@@ -1202,144 +1127,8 @@ function getCandidatePharmaciesForMedicine(rec?: TreatmentRecommendation): Pharm
   return scoped;
 }
 
-// hydrateMatchedMedicineDetail / ensureMedicineSelectable / checkMedicineInventoryEnough /
-// isMedicineDetailLoadedForSelectedPharmacy 等已抽到 useTreatmentHydration（详见 treatmentNormalization 之后的实例化）。
-
-async function hydrateMatchedMedicalItemDetail(rec: TreatmentRecommendation): Promise<void> {
-  if (!rec.matchedItem) {
-    return;
-  }
-
-  if (rec.type === 'medicine') {
-    await hydrateMatchedMedicineDetail(rec);
-    return;
-  }
-
-  const his = getHisAdapter();
-  if (!his) {
-    return;
-  }
-
-  const idCli = getMatchedMedicalItemClientId(rec);
-  if (!idCli) {
-    return;
-  }
-
-  try {
-    const detail = await his.fetchMedicalItemDetail(idCli);
-    if (!detail) {
-      if (rec.type === 'exam') {
-        const partOptions = await his.fetchMedicalItemPartOptions(idCli);
-        applyMedicalItemPartOptions(rec, partOptions);
-      }
-      return;
-    }
-
-    const mergedRaw = {
-      ...(getMatchedItemRaw(rec) || {}),
-      ...detail.raw,
-      __detailLoaded: true,
-    };
-
-    rec.matchedItem = {
-      ...rec.matchedItem,
-      name: detail.itemName?.trim() || rec.matchedItem.name || rec.name,
-      code: detail.itemId?.trim() || rec.matchedItem.code || idCli,
-      idDeptExec: detail.executingDeptId || rec.matchedItem.idDeptExec || '',
-      raw: mergedRaw,
-    };
-
-    if (!rec.execDept && detail.executingDeptId) {
-      rec.execDept = detail.executingDeptId;
-    }
-
-    if (!rec.totalUnit && detail.unit) {
-      rec.totalUnit = detail.unit;
-    }
-
-    if (rec.type === 'exam') {
-      try {
-        const partOptions = await his.fetchMedicalItemPartOptions(detail.itemId || idCli);
-        applyMedicalItemPartOptions(rec, partOptions);
-      } catch (partError) {
-        console.error('[VoiceConsultationNew] Failed to hydrate medical item part options', {
-          idCli: detail.itemId || idCli,
-          name: rec.name,
-          error: partError,
-        });
-      }
-    }
-
-    syncTreatmentExecDeptSelections();
-  } catch (error) {
-    console.error('[VoiceConsultationNew] Failed to hydrate medical item detail', {
-      idCli,
-      name: rec.name,
-      error,
-    });
-  }
-}
-
-async function hydrateMatchedMedicalItemDetails(items: TreatmentRecommendation[]): Promise<void> {
-  const candidates = items.filter((item) => !!item.matchedItem);
-  await Promise.all(candidates.map((item) => hydrateMatchedMedicalItemDetail(item)));
-}
-
-function assessTreatmentCatalogMatch(
-  type: TreatmentRecommendation['type'],
-  name: string,
-  aliases?: string[],
-  spec?: string,
-): Pick<TreatmentRecommendation, 'matchedItem' | 'suggestedMatchItem' | 'matchStatus'> {
-  switch (type) {
-    case 'medicine': {
-      const result = medicalDataService.assessMedicineMatch(name, aliases, spec);
-      return {
-        matchedItem: result.status === 'exact' && result.candidate ? buildMedicineMatchedItem(result.candidate) : undefined,
-        suggestedMatchItem: result.status === 'probable' && result.candidate ? buildMedicineMatchedItem(result.candidate) : undefined,
-        matchStatus: result.status,
-      };
-    }
-    case 'exam': {
-      const result = medicalDataService.assessExamItemMatch(name, aliases);
-      return {
-        matchedItem: result.status === 'exact' && result.candidate ? buildMedicalItemMatchedItem(result.candidate) : undefined,
-        suggestedMatchItem: result.status === 'probable' && result.candidate ? buildMedicalItemMatchedItem(result.candidate) : undefined,
-        matchStatus: result.status,
-      };
-    }
-    case 'lab_test': {
-      const result = medicalDataService.assessLabTestItemMatch(name, aliases);
-      return {
-        matchedItem: result.status === 'exact' && result.candidate ? buildMedicalItemMatchedItem(result.candidate) : undefined,
-        suggestedMatchItem: result.status === 'probable' && result.candidate ? buildMedicalItemMatchedItem(result.candidate) : undefined,
-        matchStatus: result.status,
-      };
-    }
-    case 'procedure': {
-      const result = medicalDataService.assessProcedureItemMatch(name, aliases);
-      return {
-        matchedItem: result.status === 'exact' && result.candidate ? buildMedicalItemMatchedItem(result.candidate) : undefined,
-        suggestedMatchItem: result.status === 'probable' && result.candidate ? buildMedicalItemMatchedItem(result.candidate) : undefined,
-        matchStatus: result.status,
-      };
-    }
-    default:
-      return {
-        matchedItem: undefined,
-        suggestedMatchItem: undefined,
-        matchStatus: 'unmatched',
-      };
-  }
-}
-
-function hasProbableMatch(rec: TreatmentRecommendation): boolean {
-  return rec.matchStatus === 'probable' && !!rec.suggestedMatchItem;
-}
-
-function getSuggestedMatchName(rec: TreatmentRecommendation): string {
-  return (rec.suggestedMatchItem?.name || '').trim();
-}
+// 药品 / 非药品明细 hydrate 已抽到 useTreatmentHydration；
+// 语音侧通过 applyMedicalItemPartOptions / afterMedicalItemHydrated 注入检查部位与执行科室同步副作用。
 
 async function confirmSuggestedMatch(rec: TreatmentRecommendation, event?: Event): Promise<void> {
   event?.stopPropagation();
@@ -1400,24 +1189,12 @@ async function confirmSuggestedMatch(rec: TreatmentRecommendation, event?: Event
   showToast?.(`${rec.name} 已确认匹配`, 'success');
 }
 
-async function applyManualMatch(rec: TreatmentRecommendation, candidate: MedicineItem | MedicalItem, event?: Event): Promise<void> {
+async function applyManualMatch(rec: TreatmentRecommendation, candidate: ManualMatchRawCandidate, event?: Event): Promise<void> {
   event?.stopPropagation();
 
-  if (rec.type === 'medicine' && isMedicineSearchCandidate(candidate)) {
-    rec.matchedItem = buildMedicineMatchedItem(candidate);
-    rec.spec = candidate.spec || rec.spec || '';
-  } else if (rec.type !== 'medicine' && !isMedicineSearchCandidate(candidate)) {
-    rec.matchedItem = buildMedicalItemMatchedItem(candidate);
-  } else {
+  if (!applyManualMatchCandidate(rec, candidate)) {
     return;
   }
-
-  rec.originalName = rec.originalName || rec.name;
-  rec.name = candidate.name;
-  rec.manualMatched = true;
-  rec.matchStatus = 'manual';
-  rec.selected = false;
-  rec.suggestedMatchItem = undefined;
 
   if (rec.type === 'medicine') {
     Object.assign(rec, normalizeTreatmentRecommendation(rec));
@@ -1573,10 +1350,6 @@ function removeDiagnosis(diag: Diagnosis, event?: Event): void {
   if (isPrimaryDiagnosis(diag)) {
     syncPrimaryDiagnosis();
   }
-}
-
-function getReasonTooltipKey(kind: 'diagnosis' | 'treatment', primary: string, secondary = ''): string {
-  return `${kind}:${primary}:${secondary}`;
 }
 
 function toggleReasonTooltip(key: string, event?: Event): void {
@@ -2020,7 +1793,8 @@ const secondarySelector = useSecondarySelector({
 // 药品详情 hydrate / 库存校验：与症状问诊共享同一份口径（useTreatmentHydration）。
 // 注入：候选药房收窄、字典查找；toast 通过 notify 回调走 voice 侧的 'warning' 级别。
 const {
-  hydrateMatchedMedicineDetail,
+  hydrateMatchedMedicalItemDetail,
+  hydrateMatchedMedicalItemDetails,
   ensureMedicineSelectable,
   checkMedicineInventoryEnough,
   getMedicineInventoryWarning,
@@ -2032,6 +1806,9 @@ const {
   findFrequencyOptionByValue,
   findRouteOptionByValue,
   getInventoryKey: (rec) => getTreatmentEditorKey(rec),
+  applyMedicalItemPartOptions,
+  afterMedicalItemHydrated: syncTreatmentExecDeptSelections,
+  logContext: 'VoiceConsultationNew',
   notify: (message) => {
     showToast?.(message, 'warning');
   },
@@ -2327,30 +2104,8 @@ function buildDiagList(): Array<Record<string, string>> {
   });
 }
 
-function getTreatmentSpec(rec: TreatmentRecommendation): string {
-  return rec.type === 'medicine' ? rec.spec || rec.matchedItem?.spec || '' : '';
-}
-
 function getTreatmentMatchLabel(rec: TreatmentRecommendation): string {
-  if (rec.matchStatus === 'manual') return '已手动匹配';
-  if (rec.matchStatus === 'confirmed') return '已确认匹配';
-  if (rec.matchStatus === 'exact') return '匹配成功';
-  if (rec.matchStatus === 'probable') return '待确认';
-  if (!rec.matchedItem) return '';
-  return '匹配成功';
-}
-
-function getTreatmentOriginalName(rec: TreatmentRecommendation): string {
-  if (rec.matchStatus !== 'manual' && rec.matchStatus !== 'confirmed') {
-    return '';
-  }
-
-  const originalName = (rec.originalName || '').trim();
-  if (!originalName || originalName === rec.name) {
-    return '';
-  }
-
-  return originalName;
+  return getSharedTreatmentMatchLabel(rec, 'detailed');
 }
 
 function formatOptionLabel(option: UsageOption): string {

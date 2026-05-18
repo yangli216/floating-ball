@@ -1,5 +1,5 @@
 /**
- * useTreatmentHydration: 把语音问诊的"药品详情轮询 + 库存校验"核心逻辑抽出，供症状问诊复用。
+ * useTreatmentHydration: 把语音问诊的"药品详情轮询 + 非药品详情补全 + 库存校验"核心逻辑抽出，供症状问诊复用。
  *
  * 职责：
  * - 调用 HIS 在候选药房中依次拉取 `fetchMedicineProDetail`，遇到第一个有效详情即应用到 `rec`
@@ -9,7 +9,7 @@
  *
  * 与语音侧差异：
  * - 不持有 UI 状态（如 quick selector、editor expansion）；调用方在 toggle 处自行处理拒绝路径。
- * - 不做检查/检验项目的 part options 拉取（语音侧专属）；非药品 hydrate 只回填 execDept / unit。
+ * - 非药品 hydrate 只回填 execDept / unit；检查项目 part options 可由调用方注入落地函数。
  */
 
 import { ref, type Ref } from 'vue';
@@ -17,6 +17,7 @@ import type { TreatmentRecommendation } from '../types/consultation';
 import type {
   HisAdapter,
   InventoryCheckRequest,
+  MedicalItemPartOption,
   MedicineDetail,
   PharmacyOption,
 } from '../services/his';
@@ -27,7 +28,11 @@ import {
   formatMedicineSpec,
 } from '../utils/treatmentInference';
 import { parsePositiveNumber } from '../utils/medicalDictionaryHelpers';
-import { readFirstString, getMatchedItemRaw } from '../utils/recordConfirmedPayload';
+import {
+  getMatchedMedicalItemClientId,
+  readFirstString,
+  getMatchedItemRaw,
+} from '../utils/recordConfirmedPayload';
 import type { UsageOption } from '../utils/medicalDictionaryHelpers';
 
 interface Deps {
@@ -39,6 +44,9 @@ interface Deps {
   findRouteOptionByValue: (value?: string) => UsageOption | undefined;
   /** 用于库存状态映射的 key：默认按 type+matchedItemId+name 拼接。 */
   getInventoryKey?: (rec: TreatmentRecommendation) => string;
+  applyMedicalItemPartOptions?: (rec: TreatmentRecommendation, options: MedicalItemPartOption[]) => void;
+  afterMedicalItemHydrated?: () => void;
+  logContext?: string;
   /** 注入的 toast；symptom 侧只支持 'info'|'success'|'error'，所以默认级别为 'info'。 */
   notify?: (message: string, level?: 'info' | 'success' | 'error') => void;
 }
@@ -78,6 +86,9 @@ export function useTreatmentHydration(deps: Deps) {
     findFrequencyOptionByValue,
     findRouteOptionByValue,
     getInventoryKey: getKeyOverride,
+    applyMedicalItemPartOptions,
+    afterMedicalItemHydrated,
+    logContext = 'useTreatmentHydration',
     notify,
   } = deps;
 
@@ -286,6 +297,74 @@ export function useTreatmentHydration(deps: Deps) {
     }
   }
 
+  async function hydrateMedicalItemPartOptions(rec: TreatmentRecommendation, itemId: string, his: HisAdapter): Promise<void> {
+    if (rec.type !== 'exam' || !applyMedicalItemPartOptions) {
+      return;
+    }
+
+    const partOptions = await his.fetchMedicalItemPartOptions(itemId);
+    applyMedicalItemPartOptions(rec, partOptions);
+  }
+
+  async function hydrateMatchedMedicalItemDetail(rec: TreatmentRecommendation): Promise<boolean> {
+    if (!rec.matchedItem) return false;
+    if (rec.type === 'medicine') {
+      return hydrateMatchedMedicineDetail(rec);
+    }
+
+    const his = getHisAdapter();
+    if (!his) return false;
+
+    const idCli = getMatchedMedicalItemClientId(rec);
+    if (!idCli) return false;
+
+    try {
+      const detail = await his.fetchMedicalItemDetail(idCli);
+      if (!detail) {
+        await hydrateMedicalItemPartOptions(rec, idCli, his);
+        return false;
+      }
+
+      const mergedRaw = {
+        ...(getMatchedItemRaw(rec) || {}),
+        ...detail.raw,
+        __detailLoaded: true,
+      };
+
+      rec.matchedItem = {
+        ...rec.matchedItem,
+        name: detail.itemName?.trim() || rec.matchedItem.name || rec.name,
+        code: detail.itemId?.trim() || rec.matchedItem.code || idCli,
+        idDeptExec: detail.executingDeptId || rec.matchedItem.idDeptExec || '',
+        raw: mergedRaw,
+      };
+
+      if (!rec.execDept && detail.executingDeptId) {
+        rec.execDept = detail.executingDeptId;
+      }
+
+      if (!rec.totalUnit && detail.unit) {
+        rec.totalUnit = detail.unit;
+      }
+
+      await hydrateMedicalItemPartOptions(rec, detail.itemId || idCli, his);
+      afterMedicalItemHydrated?.();
+      return true;
+    } catch (error) {
+      console.error(`[${logContext}] Failed to hydrate medical item detail`, {
+        idCli,
+        name: rec.name,
+        error,
+      });
+      return false;
+    }
+  }
+
+  async function hydrateMatchedMedicalItemDetails(items: TreatmentRecommendation[]): Promise<void> {
+    const candidates = items.filter((item) => !!item.matchedItem);
+    await Promise.all(candidates.map((item) => hydrateMatchedMedicalItemDetail(item)));
+  }
+
   async function ensureMedicineSelectable(
     rec: TreatmentRecommendation,
     showNotify = false,
@@ -357,6 +436,8 @@ export function useTreatmentHydration(deps: Deps) {
 
   return {
     hydrateMatchedMedicineDetail,
+    hydrateMatchedMedicalItemDetail,
+    hydrateMatchedMedicalItemDetails,
     ensureMedicineSelectable,
     isMedicineDetailLoadedForSelectedPharmacy,
     checkMedicineInventoryEnough,

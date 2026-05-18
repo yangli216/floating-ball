@@ -30,6 +30,17 @@ const props = withDefaults(defineProps<{
 
 const emit = defineEmits(['close', 'cancel', 'secondary-footer-action']);
 
+const resolvedSecondaryFooterActionText = computed(() => props.secondaryFooterActionText || '返回');
+
+function handleSecondaryFooterAction(): void {
+  if (props.secondaryFooterActionText) {
+    emit('secondary-footer-action');
+    return;
+  }
+
+  emit('cancel');
+}
+
 function cloneValue<T>(value: T): T {
   // structuredClone 无法处理 Vue 响应式 Proxy 及其内部的 matchedItem 等字段。
   // 先用 toRaw 剥离 Proxy，再用 JSON 序列化做深克隆，确保安全。
@@ -145,10 +156,10 @@ const symptomIntentResult = computed<VoiceIntentResult>(() => ({
     :initial-patient-data="props.initialPatientData"
     :intent-result="symptomIntentResult"
     channel="symptom"
-    :secondary-footer-action-text="props.secondaryFooterActionText"
+    :secondary-footer-action-text="resolvedSecondaryFooterActionText"
     :secondary-footer-action-disabled="props.secondaryFooterActionDisabled"
     @close="emit('close')"
     @cancel="emit('cancel')"
-    @secondary-footer-action="emit('secondary-footer-action')"
+    @secondary-footer-action="handleSecondaryFooterAction"
   />
 </template>

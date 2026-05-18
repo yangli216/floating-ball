@@ -1,102 +1,3 @@
-export type ChatRole = "system" | "user" | "assistant";
-
-export interface ChatMessage {
-  role: ChatRole;
-  content: string;
-  images?: string[]; // data URLs or public URLs
-  // Feedback tracking fields (optional, backward compatible)
-  messageId?: string;
-  sessionId?: string;
-  tokenCount?: number;
-  llmModel?: string;
-  latencyMs?: number;
-  createdAt?: number;
-  isDefault?: boolean; // 是否为默认消息
-}
-
-export const DEFAULT_LLM_CONFIG = {
-  baseUrl: "https://api.openai.com/v1",
-  audioBaseUrl: "https://api.openai.com/v1",
-  model: "gpt-4o-mini",
-  fastModel: "gpt-4o-mini",
-  audioModel: "whisper-1",
-  enableThinking: false,
-};
-
-// 重试配置
-export interface RetryConfig {
-  maxRetries: number;        // 最大重试次数
-  initialDelay: number;      // 初始延迟（毫秒）
-  maxDelay: number;          // 最大延迟（毫秒）
-  backoffMultiplier: number; // 退避倍数
-}
-
-export const DEFAULT_RETRY_CONFIG: RetryConfig = {
-  maxRetries: 3,
-  initialDelay: 1000,
-  maxDelay: 10000,
-  backoffMultiplier: 2
-};
-
-// 判断错误是否可重试
-function isRetryableError(error: any): boolean {
-  // 网络错误
-  if (error instanceof TypeError && error.message.includes('fetch')) {
-    return true;
-  }
-
-  // HTTP 状态码：429 (速率限制), 500, 502, 503, 504 (服务器错误)
-  if (error.status) {
-    return [429, 500, 502, 503, 504].includes(error.status);
-  }
-
-  // 错误消息中包含速率限制或服务器错误关键词
-  const errorMessage = error.message?.toLowerCase() || '';
-  const retryableKeywords = ['rate limit', 'timeout', 'overloaded', 'unavailable', 'server error'];
-  return retryableKeywords.some(keyword => errorMessage.includes(keyword));
-}
-
-// 通用重试函数（指数退避）
-async function retryWithBackoff<T>(
-  fn: () => Promise<T>,
-  config: RetryConfig = DEFAULT_RETRY_CONFIG,
-  onRetry?: (attempt: number, error: any) => void
-): Promise<T> {
-  let lastError: any;
-
-  for (let attempt = 0; attempt <= config.maxRetries; attempt++) {
-    try {
-      return await fn();
-    } catch (error: any) {
-      lastError = error;
-
-      // 如果是最后一次尝试或错误不可重试，直接抛出
-      if (attempt === config.maxRetries || !isRetryableError(error)) {
-        throw error;
-      }
-
-      // 计算延迟时间（指数退避）
-      const delay = Math.min(
-        config.initialDelay * Math.pow(config.backoffMultiplier, attempt),
-        config.maxDelay
-      );
-
-      // 回调通知重试
-      if (onRetry) {
-        onRetry(attempt + 1, error);
-      }
-
-      console.warn(`API 调用失败，${delay}ms 后进行第 ${attempt + 1} 次重试:`, error.message || error);
-
-      // 等待后重试
-      await new Promise(resolve => setTimeout(resolve, delay));
-    }
-  }
-
-  throw lastError;
-}
-
-import { invoke } from '@tauri-apps/api/core';
 import { PROMPTS } from '../prompts';
 import {
   isRegionalMode,
@@ -107,133 +8,34 @@ import {
 } from './regionalClient';
 import { beginAiTrace, failAiTrace, finishAiTrace } from './aiTrace';
 import { normalizeRiskAnalysisPatientContext } from '../utils/patientProfile';
+import {
+  DEFAULT_LLM_CONFIG,
+  DEFAULT_RETRY_CONFIG,
+  type ChatMessage,
+  type ChatRole,
+  type LLMConfigOverride,
+  type RetryConfig,
+} from './llm/types';
+import {
+  getConfigAndKey,
+  getLLMConfig,
+  getReviewerLLMConfig,
+} from './llm/config';
+import { retryWithBackoff } from './llm/retry';
+import {
+  buildChatRequestSummary,
+  buildSpeechRequestSummary,
+  createPayloadMessages,
+  summarizeText,
+} from './llm/payload';
+import {
+  requestLocalChatCompletion,
+  streamLocalChatCompletion,
+  transcribeLocalAudio,
+} from './llm/localOpenAiClient';
 
-// 获取配置信息
-export function getLLMConfig() {
-  // 区域化模式：从 bootstrap 配置获取（密钥不下发到端，由后端代理处理）
-  if (isRegionalMode()) {
-    const bootstrap = getCachedBootstrap();
-    if (bootstrap?.llm) {
-      return {
-        apiKey: '__REGIONAL_PROXY__', // 占位符，实际请求走后端代理
-        baseUrl: bootstrap.llm.baseUrl,
-        audioBaseUrl: bootstrap.llm.audioBaseUrl || bootstrap.llm.baseUrl,
-        model: bootstrap.llm.model,
-        fastModel: bootstrap.llm.fastModel || bootstrap.llm.model,
-        audioModel: bootstrap.llm.audioModel || DEFAULT_LLM_CONFIG.audioModel,
-        enableThinking: bootstrap.llm.enableThinking ?? false,
-      };
-    }
-  }
-
-  const apiKey = localStorage.getItem("OPENAI_API_KEY") || import.meta.env.VITE_OPENAI_API_KEY || "";
-  // 默认为 OpenAI 官方地址和模型
-  const baseUrl = (localStorage.getItem("LLM_BASE_URL") || import.meta.env.VITE_LLM_BASE_URL || DEFAULT_LLM_CONFIG.baseUrl).replace(/\/+$/, "");
-  const audioBaseUrl = (
-    localStorage.getItem("LLM_AUDIO_BASE_URL")
-    || import.meta.env.VITE_LLM_AUDIO_BASE_URL
-    || baseUrl
-  ).replace(/\/+$/, "");
-  const model = localStorage.getItem("LLM_MODEL") || import.meta.env.VITE_LLM_MODEL || DEFAULT_LLM_CONFIG.model;
-  const fastModel = localStorage.getItem("LLM_FAST_MODEL") || import.meta.env.VITE_LLM_FAST_MODEL || model || DEFAULT_LLM_CONFIG.fastModel;
-  const audioModel = localStorage.getItem("LLM_AUDIO_MODEL") || import.meta.env.VITE_LLM_AUDIO_MODEL || DEFAULT_LLM_CONFIG.audioModel;
-  const enableThinking = ["true", "1", "on"].includes(
-    String(localStorage.getItem("LLM_ENABLE_THINKING") || import.meta.env.VITE_LLM_ENABLE_THINKING || DEFAULT_LLM_CONFIG.enableThinking)
-      .trim()
-      .toLowerCase()
-  );
-
-  return { apiKey, baseUrl, audioBaseUrl, model, fastModel, audioModel, enableThinking };
-}
-
-export interface LLMConfigOverride {
-  apiKey?: string;
-  baseUrl?: string;
-  audioBaseUrl?: string;
-  model?: string;
-  fastModel?: string;
-  audioModel?: string;
-  enableThinking?: boolean;
-  configProfile?: 'default' | 'fast' | 'reviewer';
-  traceContext?: {
-    scene?: string;
-    sourceModule?: string;
-    operationModule?: string;
-    operationAction?: string;
-    title?: string;
-  };
-}
-
-export function getReviewerLLMConfig(): LLMConfigOverride {
-  if (isRegionalMode()) {
-    return {
-      configProfile: 'reviewer',
-    };
-  }
-  const apiKey = localStorage.getItem("REVIEWER_API_KEY") || undefined;
-  const baseUrl = localStorage.getItem("REVIEWER_BASE_URL") || undefined;
-  const model = localStorage.getItem("REVIEWER_MODEL") || undefined;
-  return {
-    apiKey,
-    baseUrl,
-    model,
-    configProfile: 'reviewer',
-  };
-}
-
-function getConfigAndKey(explicitKey?: string, customConfig?: LLMConfigOverride) {
-  const baseConfig = getLLMConfig();
-  const apiKey = customConfig?.apiKey || explicitKey || baseConfig.apiKey;
-  const baseUrl = customConfig?.baseUrl || baseConfig.baseUrl;
-  const audioBaseUrl = customConfig?.audioBaseUrl || baseConfig.audioBaseUrl;
-  const model = customConfig?.model || baseConfig.model;
-  const fastModel = customConfig?.fastModel || baseConfig.fastModel;
-  const audioModel = customConfig?.audioModel || baseConfig.audioModel;
-  const enableThinking = customConfig?.enableThinking ?? baseConfig.enableThinking;
-
-  // 区域化模式下 apiKey 是占位符，不校验
-  if (!apiKey && !isRegionalMode()) throw new Error("缺少 API Key。请在 .env 设置 VITE_OPENAI_API_KEY 或在 localStorage 设置 OPENAI_API_KEY（以及独立审查AI的配置）。");
-  return { key: apiKey, baseUrl, audioBaseUrl, model, fastModel, audioModel, enableThinking };
-}
-
-function createPayloadMessages(messages: ChatMessage[]) {
-  return messages.map((m) => {
-    if (m.images && m.images.length > 0) {
-      return {
-        role: m.role,
-        content: [
-          { type: "text", text: m.content },
-          ...m.images.map((url) => ({ type: "image_url", image_url: { url } })),
-        ],
-      };
-    }
-    return { role: m.role, content: m.content };
-  });
-}
-
-function summarizeText(value: string, limit = 120): string {
-  const normalized = value.replace(/\s+/g, ' ').trim();
-  if (!normalized) {
-    return '';
-  }
-  return normalized.length > limit ? `${normalized.slice(0, limit)}...` : normalized;
-}
-
-function buildChatRequestSummary(messages: ChatMessage[]): string {
-  const userMessages = messages.filter(item => item.role === 'user');
-  const lastUserMessage = [...userMessages].reverse().find(item => item.content.trim());
-  const imageCount = messages.reduce((total, item) => total + (item.images?.length || 0), 0);
-  return [
-    `${messages.length} 条消息`,
-    `${userMessages.length} 条用户输入`,
-    imageCount > 0 ? `${imageCount} 张图片` : '',
-    lastUserMessage?.content ? `最新输入：${summarizeText(lastUserMessage.content, 80)}` : '',
-  ].filter(Boolean).join('，');
-}
-
-function buildSpeechRequestSummary(fileName: string, scene: string, mimeType?: string): string {
-  return [`场景 ${scene}`, `文件 ${fileName}`, mimeType ? `格式 ${mimeType}` : ''].filter(Boolean).join('，');
-}
+export type { ChatMessage, ChatRole, LLMConfigOverride, RetryConfig };
+export { DEFAULT_LLM_CONFIG, DEFAULT_RETRY_CONFIG, getLLMConfig, getReviewerLLMConfig };
 
 function resolveRegionalTraceModel(customConfig?: LLMConfigOverride): string | undefined {
   const bootstrap = getCachedBootstrap();
@@ -247,24 +49,6 @@ function resolveRegionalTraceModel(customConfig?: LLMConfigOverride): string | u
     return bootstrap.llm?.fastModel || bootstrap.llm?.model;
   }
   return bootstrap.llm?.model;
-}
-
-function extractSseDataPayload(line: string): string | null {
-  if (!line.startsWith("data:")) {
-    return null;
-  }
-  return line.slice(5).trimStart();
-}
-
-async function readErrorPayload(res: Response): Promise<any> {
-  const rawText = await res.text();
-  if (!rawText) return {};
-
-  try {
-    return JSON.parse(rawText);
-  } catch {
-    return { error: { message: rawText } };
-  }
 }
 
 export async function chatStream(
@@ -318,71 +102,11 @@ export async function chatStream(
     return;
   }
 
-  const { key, baseUrl, model, enableThinking } = getConfigAndKey(apiKey, customConfig);
+  const config = getConfigAndKey(apiKey, customConfig);
   const payloadMessages = createPayloadMessages(messages);
 
-  // 使用重试机制包装整个流式请求
   await retryWithBackoff(async () => {
-    const res = await fetch(`${baseUrl}/chat/completions`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${key}`,
-      },
-      body: JSON.stringify({
-        model: model,
-        "enable_thinking": enableThinking,
-        messages: payloadMessages,
-        stream: true,
-      }),
-    });
-
-    if (!res.ok) {
-      const data = await readErrorPayload(res);
-      const error: any = new Error(data?.error?.message || res.statusText);
-      error.status = res.status;
-      throw error;
-    }
-
-    const reader = res.body?.getReader();
-    if (!reader) throw new Error("无法获取流式响应");
-
-    const decoder = new TextDecoder("utf-8");
-    let buffer = "";
-
-    try {
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-
-        buffer += decoder.decode(value, { stream: true });
-
-        // 处理多行数据
-        const lines = buffer.split('\n');
-        buffer = lines.pop() || ""; // 保留未完整的最后一行
-
-        for (const line of lines) {
-          const trimmed = line.trim();
-          if (!trimmed) continue;
-
-          const dataStr = extractSseDataPayload(trimmed);
-          if (dataStr == null) continue;
-          if (dataStr === "[DONE]") return;
-
-          try {
-            const json = JSON.parse(dataStr);
-            const content = json.choices?.[0]?.delta?.content || "";
-            if (content) onChunk(content);
-          } catch (e) {
-            console.warn("解析流式数据失败:", e);
-          }
-        }
-      }
-    } catch (error) {
-      // 流式读取过程中的错误也应该可重试
-      reader.cancel();
-      throw error;
-    }
+    await streamLocalChatCompletion(config, payloadMessages, onChunk);
   }, retryConfig || DEFAULT_RETRY_CONFIG, onRetry);
 }
 
@@ -466,30 +190,11 @@ export async function chat(
     }
   }
 
-  const { key, baseUrl, model, enableThinking } = getConfigAndKey(apiKey, customConfig);
+  const config = getConfigAndKey(apiKey, customConfig);
   const payloadMessages = createPayloadMessages(messages);
 
   return await retryWithBackoff(async () => {
-    const res = await fetch(`${baseUrl}/chat/completions`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${key}`,
-      },
-      body: JSON.stringify({
-        model: model,
-        "enable_thinking": enableThinking,
-        messages: payloadMessages,
-      }),
-    });
-
-    const data = await readErrorPayload(res);
-    if (!res.ok) {
-      const error: any = new Error(data?.error?.message || res.statusText);
-      error.status = res.status;
-      throw error;
-    }
-    return data?.choices?.[0]?.message?.content ?? "";
+    return requestLocalChatCompletion(config, payloadMessages);
   }, retryConfig || DEFAULT_RETRY_CONFIG, onRetry);
 }
 
@@ -508,52 +213,6 @@ export async function chatFast(
   const { fastModel } = getConfigAndKey(apiKey, customConfig);
   // 复用 chat 逻辑，强制覆盖 model 为 fastModel
   return chat(messages, apiKey, retryConfig, onRetry, { ...customConfig, model: fastModel });
-}
-
-// 语音转文字（Whisper）
-function canFallbackToFrontendTranscription(error: unknown): boolean {
-  const message = error instanceof Error ? error.message : String(error);
-  const fallbackSignals = [
-    '__TAURI_INTERNALS__',
-    'window.__TAURI_INTERNALS__',
-    'Command transcribe_audio not found',
-    'unknown IPC command',
-    'not running in Tauri',
-  ];
-  return fallbackSignals.some((signal) => message.includes(signal));
-}
-
-function mapTranscriptionNetworkError(error: unknown, endpoint: string): Error {
-  const message = error instanceof Error ? error.message : String(error);
-  const lowered = message.toLowerCase();
-  if (
-    lowered.includes('load failed')
-    || lowered.includes('failed to fetch')
-    || lowered.includes('networkerror')
-  ) {
-    return new Error(
-      `语音转写网络请求失败（${endpoint}）。请检查 Base URL 是否可访问，并优先使用 HTTPS。`
-    );
-  }
-  return error instanceof Error ? error : new Error(message);
-}
-
-async function transcribeAudioViaTauri(
-  blob: Blob,
-  key: string,
-  audioBaseUrl: string,
-  audioModel: string
-): Promise<string> {
-  const arrayBuffer = await blob.arrayBuffer();
-  const audioData = Array.from(new Uint8Array(arrayBuffer));
-
-  return invoke<string>('transcribe_audio', {
-    apiKey: key,
-    baseUrl: audioBaseUrl,
-    audioModel,
-    audioData,
-    mimeType: blob.type || 'audio/webm',
-  });
 }
 
 export async function transcribeAudio(
@@ -603,42 +262,10 @@ export async function transcribeAudio(
     }
   }
 
-  const { key, audioBaseUrl, audioModel } = getConfigAndKey(apiKey, customConfig);
-  const file = new File([blob], "audio.webm", { type: blob.type || "audio/webm" });
-  const endpoint = `${audioBaseUrl}/audio/transcriptions`;
+  const config = getConfigAndKey(apiKey, customConfig);
 
   return await retryWithBackoff(async () => {
-    try {
-      return await transcribeAudioViaTauri(file, key, audioBaseUrl, audioModel);
-    } catch (tauriError) {
-      if (!canFallbackToFrontendTranscription(tauriError)) {
-        throw tauriError;
-      }
-      console.warn('[LLM] Tauri transcription unavailable, fallback to frontend fetch:', tauriError);
-    }
-
-    const form = new FormData();
-    form.append("file", file);
-    form.append("model", audioModel);
-
-    let res: Response;
-    try {
-      res = await fetch(endpoint, {
-        method: "POST",
-        headers: { Authorization: `Bearer ${key}` },
-        body: form,
-      });
-    } catch (networkError) {
-      throw mapTranscriptionNetworkError(networkError, endpoint);
-    }
-
-    const data = await res.json();
-    if (!res.ok) {
-      const error: any = new Error(data?.error?.message || res.statusText);
-      error.status = res.status;
-      throw error;
-    }
-    return data?.text ?? "";
+    return transcribeLocalAudio(blob, config);
   }, retryConfig || DEFAULT_RETRY_CONFIG, onRetry);
 }
 
