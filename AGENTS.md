@@ -36,6 +36,7 @@
 4. **单边契约变更禁止**：修改 `http_server.rs` 接口定义而不同步更新 `api.md`，视为无效交付。修改前端调用而不同步更新后端实现和文档，同理。
 5. **盲目新增全局状态禁止**：不得为临时 UI 状态新增 Pinia store；新增 store 必须先说明为什么 ref/reactive 不够用。
 6. **锁文件混用禁止**：除非任务明确是"统一包管理器"，否则不得混用 npm/yarn/pnpm 安装或刷新锁文件。
+7. **区域化请求签名禁止绕过**：所有 `regionalFetch`、`createRegionalSSE`、`createRegionalWebSocketUrl` 出口必须经过 `requestSigner.ts` 签名；新增区域化请求出口必须集成签名，不得直接 fetch 调用 `/v1/*` 接口。
 
 ## 棘轮式治理
 

@@ -5,6 +5,7 @@ import {
   isUpdateRequiredCode,
   notifyForceUpdateRequired,
 } from './updatePolicy';
+import { loadOrGenerateKeyPair, signRequest, signWebSocketParams, type SignatureHeaders } from './requestSigner';
 
 /**
  * 区域化客户端服务
@@ -36,12 +37,14 @@ export interface RegisterRequest {
   clientVersion: string;
   updateChannel: string;
   osInfo: string;
+  publicKey: string;
 }
 
 export interface RegisterResponse {
   idDevice: string;
   deviceToken: string;
-  heartbeatInterval: number; // 秒
+  heartbeatInterval: number;
+  hasPublicKey?: boolean;
 }
 
 export interface BootstrapConfig {
@@ -436,6 +439,16 @@ async function regionalFetch<T>(
   const clientVersion = await getCurrentClientVersion();
   const updateChannel = getActiveUpdateChannel();
 
+  let signatureHeaders: SignatureHeaders = {} as SignatureHeaders;
+  if (path !== '/v1/client/register') {
+    try {
+      const body = options.body ? String(options.body) : undefined;
+      signatureHeaders = await signRequest(options.method || 'GET', path, body);
+    } catch (e) {
+      console.warn('[RegionalClient] Failed to sign request:', e);
+    }
+  }
+
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',
     'X-Tenant-Id': getOrgCode(),
@@ -443,6 +456,7 @@ async function regionalFetch<T>(
     'X-Client-Version': clientVersion,
     'X-Update-Channel': updateChannel,
     ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    ...signatureHeaders,
     ...(options.headers as Record<string, string> || {}),
   };
 
@@ -505,6 +519,8 @@ export async function registerDevice(): Promise<RegisterResponse> {
     naDevice = `FloatingBall-${navigator.platform}`;
   } catch { /* ignore */ }
 
+  const { publicKeyBase64 } = await loadOrGenerateKeyPair();
+
   const resp = await regionalFetch<RegisterResponse>('/v1/client/register', {
     method: 'POST',
     body: JSON.stringify({
@@ -514,6 +530,7 @@ export async function registerDevice(): Promise<RegisterResponse> {
       clientVersion,
       updateChannel,
       osInfo,
+      publicKey: publicKeyBase64,
     } satisfies RegisterRequest),
   });
 
@@ -616,6 +633,7 @@ export async function initializeRegionalClient(options?: {
   const allowCachedFallback = options?.allowCachedFallback !== false;
 
   try {
+    await loadOrGenerateKeyPair();
     await getDeviceCode();
     const existingToken = getDeviceToken();
     if (!existingToken) {
@@ -693,6 +711,16 @@ export async function createRegionalWebSocketUrl(path: string): Promise<string> 
   url.searchParams.set('token', token);
   url.searchParams.set('clientVersion', await getCurrentClientVersion());
   url.searchParams.set('updateChannel', getActiveUpdateChannel());
+
+  try {
+    const sigParams = await signWebSocketParams(path);
+    url.searchParams.set('ts', sigParams.ts);
+    url.searchParams.set('nonce', sigParams.nonce);
+    url.searchParams.set('sig', sigParams.sig);
+  } catch (e) {
+    console.warn('[RegionalClient] Failed to sign WebSocket URL:', e);
+  }
+
   return url.toString();
 }
 
@@ -756,6 +784,15 @@ export function createRegionalSSE(
     try {
       const clientVersion = await getCurrentClientVersion();
       const updateChannel = getActiveUpdateChannel();
+
+      const bodyStr = JSON.stringify(body);
+      let signatureHeaders: SignatureHeaders = {} as SignatureHeaders;
+      try {
+        signatureHeaders = await signRequest('POST', path, bodyStr);
+      } catch (e) {
+        console.warn('[RegionalClient] Failed to sign SSE request:', e);
+      }
+
       const res = await fetch(`${baseUrl}${path}`, {
         method: 'POST',
         headers: {
@@ -765,8 +802,9 @@ export function createRegionalSSE(
           'X-Client-Version': clientVersion,
           'X-Update-Channel': updateChannel,
           ...(token ? { Authorization: `Bearer ${token}` } : {}),
+          ...signatureHeaders,
         },
-        body: JSON.stringify(body),
+        body: bodyStr,
         signal,
       });
 

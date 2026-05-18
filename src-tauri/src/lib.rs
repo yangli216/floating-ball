@@ -885,14 +885,7 @@ pub fn run() {
             commands::medical_catalog::replace_org_medical_item_catalog,
             commands::medical_catalog::replace_org_medicine_catalog,
             commands::medical_catalog::get_medical_catalog_debug_state,
-            commands::medical_catalog::clear_medical_catalog_cache,
-            // Patient long-term memory commands
-            commands::patient_memory::patient_memory_get_debug_state,
-            commands::patient_memory::patient_memory_get,
-            commands::patient_memory::patient_memory_append_visit,
-            commands::patient_memory::patient_memory_replace_snapshot,
-            commands::patient_memory::patient_memory_clear,
-            commands::patient_memory::patient_memory_clear_all
+            commands::medical_catalog::clear_medical_catalog_cache
         ])
         .setup(move |app| {
             // Initialize feedback database
@@ -911,14 +904,6 @@ pub fn run() {
                 Err(e) => {
                     eprintln!("[MedicalCatalog] Failed to initialize database: {}", e);
                     eprintln!("[MedicalCatalog] Error details: {:?}", e);
-                }
-            }
-
-            println!("[PatientMemory] Initializing patient memory database...");
-            match commands::patient_memory::init_database(app.handle()) {
-                Ok(_) => println!("[PatientMemory] Database initialized successfully"),
-                Err(e) => {
-                    eprintln!("[PatientMemory] Failed to initialize database: {}", e);
                 }
             }
 

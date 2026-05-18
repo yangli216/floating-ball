@@ -17,10 +17,6 @@ import type { ViewType } from '../constants/windowSizes';
 import { trackClick, trackError, trackRecommendationAction } from '../services/operationTracker';
 import type { AppPatient } from '../types/appState';
 import { useVoiceIntentRecognition, type VoiceIntentResult } from './useVoiceIntentRecognition';
-import {
-  formatPatientMemoryForPrompt,
-  getPatientMemory,
-} from '../services/patientMemoryStore';
 import { submitConsultationUserLog } from '../services/consultationUserLog';
 import {
   getPatientContextAllergyHistory,
@@ -403,10 +399,8 @@ export function useVoiceConsultation(options: VoiceConsultationOptions) {
 
       intentRecognition.clearTranscripts();
       intentRecognition.addTranscript(transcribedText);
-      const memory = await getPatientMemory(consultationId);
-      const memoryContext = formatPatientMemoryForPrompt(memory);
       const result = await intentRecognition.processTranscript(transcribedText, {
-        memoryContext,
+        memoryContext: '',
         patientContext: {
           pastMedicalHistory: getPatientContextPastMedicalHistory(currentPatient.value) || null,
           allergyHistory: getPatientContextAllergyHistory(currentPatient.value) || null,

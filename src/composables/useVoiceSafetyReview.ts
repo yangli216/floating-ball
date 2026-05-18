@@ -1,14 +1,13 @@
 import { computed, ref } from 'vue';
 import { trackClick, trackError } from '../services/operationTracker';
 import { checkVoiceSafetyReview } from '../services/factChecker';
-import { extractRecentMedications, getPatientMemory } from '../services/patientMemoryStore';
 import type {
   GeneratedRecord,
   PatientInfo,
   VoiceSafetyIssue,
   VoiceSafetyReviewResult,
 } from '../types/voiceResult';
-import { getPatientContextAllergyHistory, getPatientContextId } from '../utils/patientContext';
+import { getPatientContextAllergyHistory, getPatientContextCurrentMedicationHistory } from '../utils/patientContext';
 
 export type VoiceSafetyReviewStatus = 'idle' | 'checking' | 'completed' | 'failed';
 
@@ -34,22 +33,16 @@ export function useVoiceSafetyReview() {
     checkedAt.value = null;
 
     try {
-      const patientId = getPatientContextId(patientInfo);
-      const memory = patientId ? await getPatientMemory(patientId) : null;
-      const recentMedications = extractRecentMedications(memory);
-      // 累积过敏史：如果粘贴中不含某些上次上传的过敏项，仍以累计值为准补足
       const baseAllergy = getPatientContextAllergyHistory(patientInfo);
-      const memoryAllergies = memory?.allergyHistory || [];
-      const mergedAllergy = memoryAllergies.length
-        ? [baseAllergy, memoryAllergies.filter(a => !baseAllergy.includes(a)).join('、')]
-            .filter(Boolean)
-            .join('、')
-        : baseAllergy;
+      const medicationText = getPatientContextCurrentMedicationHistory(patientInfo);
+      const recentMedications = medicationText
+        ? medicationText.split(/[、,，;；\n]/).map((s: string) => s.trim()).filter(Boolean)
+        : [];
 
       const result = await checkVoiceSafetyReview({
         record,
         patientInfo,
-        allergyHistory: mergedAllergy || undefined,
+        allergyHistory: baseAllergy || undefined,
         recentMedications,
       });
 

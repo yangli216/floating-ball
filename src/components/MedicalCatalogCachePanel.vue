@@ -8,20 +8,10 @@ import {
   type MedicalCatalogClearResult,
   type MedicalCatalogDebugState,
 } from '../services/medicalData';
-import {
-  clearPatientMemoryByPatientId,
-  getPatientMemoryAdminState,
-  queryPatientMemoryByPatientId,
-  resyncPatientMemoryByPatientId,
-  type PatientMemoryAdminState,
-} from '../services/patientMemoryAdmin';
-import type { PatientMemory } from '../services/patientMemoryStore';
-import type { PatientProfile } from '../services/patientMemoryTypes';
 
 type CatalogType = 'all' | 'diagnoses' | 'items' | 'medicines';
 
 const state = ref<MedicalCatalogDebugState | null>(null);
-const memoryState = ref<PatientMemoryAdminState | null>(null);
 
 const loading = ref(false);
 const syncing = ref(false);
@@ -29,22 +19,10 @@ const clearing = ref(false);
 const message = ref('');
 const messageTone = ref<'neutral' | 'success' | 'error'>('neutral');
 
-const memoryStateLoading = ref(false);
-const memoryQueryLoading = ref(false);
-const memorySyncing = ref(false);
-const memoryClearing = ref(false);
-const memoryMessage = ref('');
-const memoryMessageTone = ref<'neutral' | 'success' | 'error'>('neutral');
-
 const catalogType = ref<CatalogType>('all');
 const orgCode = ref('');
 const tenantId = ref('');
 const storeId = ref('');
-
-const patientId = ref('');
-const queriedPatientId = ref('');
-const memoryRecord = ref<PatientMemory | null>(null);
-const patientProfile = ref<PatientProfile | null>(null);
 
 const totalRows = computed(() => {
   if (!state.value) return 0;
@@ -55,16 +33,6 @@ const latestSyncTime = computed(() => {
   const states = state.value?.syncStates ?? [];
   const latest = states.reduce<number>((max, item) => Math.max(max, item.lastSyncAt || 0), 0);
   return latest > 0 ? formatTimestamp(latest) : '暂无';
-});
-
-const patientQueryId = computed(() => patientId.value.trim());
-const recentVisitCount = computed(() => memoryRecord.value?.recentVisits.length ?? 0);
-const memoryUpdatedAtText = computed(() => {
-  const updatedAt = memoryRecord.value?.updatedAt ?? 0;
-  return updatedAt > 0 ? formatTimestamp(updatedAt) : '暂无';
-});
-const memoryClearButtonText = computed(() => {
-  return queriedPatientId.value || patientQueryId.value ? '清空患者记忆' : '清空全部患者记忆';
 });
 
 async function refreshState(): Promise<void> {
@@ -81,20 +49,8 @@ async function refreshState(): Promise<void> {
   }
 }
 
-async function refreshPatientMemoryState(): Promise<void> {
-  memoryStateLoading.value = true;
-  try {
-    memoryState.value = await getPatientMemoryAdminState();
-  } catch (error) {
-    memoryMessage.value = `加载患者记忆状态失败：${formatError(error)}`;
-    memoryMessageTone.value = 'error';
-  } finally {
-    memoryStateLoading.value = false;
-  }
-}
-
 async function refreshAll(): Promise<void> {
-  await Promise.allSettled([refreshState(), refreshPatientMemoryState()]);
+  await refreshState();
 }
 
 async function syncCatalogs(): Promise<void> {
@@ -164,102 +120,6 @@ async function clearCache(): Promise<void> {
   }
 }
 
-async function queryPatientMemory(): Promise<void> {
-  const nextPatientId = patientQueryId.value;
-  if (!nextPatientId) {
-    memoryMessage.value = '请先输入患者 ID';
-    memoryMessageTone.value = 'error';
-    return;
-  }
-
-  memoryQueryLoading.value = true;
-  memoryMessage.value = '';
-  memoryMessageTone.value = 'neutral';
-  try {
-    const result = await queryPatientMemoryByPatientId(nextPatientId);
-    memoryRecord.value = result.memory;
-    patientProfile.value = result.patientProfile;
-    queriedPatientId.value = nextPatientId;
-    if (memoryRecord.value) {
-      memoryMessage.value = '患者记忆已加载';
-      memoryMessageTone.value = 'success';
-    } else if (patientProfile.value) {
-      memoryMessage.value = '未查到本地记忆，已补充当前患者基本信息';
-      memoryMessageTone.value = 'neutral';
-    } else {
-      memoryMessage.value = '当前患者暂无本地记忆';
-      memoryMessageTone.value = 'neutral';
-    }
-  } catch (error) {
-    memoryMessage.value = `查询患者记忆失败：${formatError(error)}`;
-    memoryMessageTone.value = 'error';
-  } finally {
-    memoryQueryLoading.value = false;
-  }
-}
-
-async function clearMemoryRecord(): Promise<void> {
-  const targetPatientId = queriedPatientId.value || patientQueryId.value;
-  const clearAll = !targetPatientId;
-  const confirmText = clearAll
-    ? '当前未输入患者 ID，将清空全部患者记忆缓存。该操作不可撤销，确认继续？'
-    : `确认清空患者 ${targetPatientId} 的本地记忆？`;
-  const confirmed = await confirm(confirmText);
-  if (!confirmed) return;
-
-  memoryClearing.value = true;
-  memoryMessage.value = '';
-  memoryMessageTone.value = 'neutral';
-  try {
-    await clearPatientMemoryByPatientId(targetPatientId);
-    if (clearAll || queriedPatientId.value === targetPatientId) {
-      memoryRecord.value = null;
-    }
-    patientProfile.value = null;
-    queriedPatientId.value = clearAll ? '' : targetPatientId;
-    if (clearAll) {
-      patientId.value = '';
-    }
-    await refreshPatientMemoryState();
-    memoryMessage.value = clearAll ? '全部患者记忆已清空' : '患者记忆已清空';
-    memoryMessageTone.value = 'success';
-  } catch (error) {
-    memoryMessage.value = `清空患者记忆失败：${formatError(error)}`;
-    memoryMessageTone.value = 'error';
-  } finally {
-    memoryClearing.value = false;
-  }
-}
-
-async function resyncPatientMemory(): Promise<void> {
-  const targetPatientId = patientQueryId.value;
-  if (!targetPatientId) {
-    memoryMessage.value = '请先输入患者 ID';
-    memoryMessageTone.value = 'error';
-    return;
-  }
-
-  memorySyncing.value = true;
-  memoryMessage.value = '';
-  memoryMessageTone.value = 'neutral';
-  try {
-    const result = await resyncPatientMemoryByPatientId(targetPatientId);
-    memoryRecord.value = result.memory;
-    patientProfile.value = result.patientProfile;
-    queriedPatientId.value = targetPatientId;
-    await refreshPatientMemoryState();
-    memoryMessage.value = memoryRecord.value
-      ? '已从 HIS 重新同步患者记忆'
-      : '已触发 HIS 重同步，但当前暂无本地记忆可展示';
-    memoryMessageTone.value = 'success';
-  } catch (error) {
-    memoryMessage.value = `从 HIS 重同步失败：${formatError(error)}`;
-    memoryMessageTone.value = 'error';
-  } finally {
-    memorySyncing.value = false;
-  }
-}
-
 function getCatalogLabel(type: string): string {
   const labels: Record<string, string> = {
     all: '全部',
@@ -282,43 +142,6 @@ function formatTimestamp(timestamp: number): string {
 
 function formatError(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
-}
-
-function formatBackendMode(mode: PatientMemoryAdminState['mode'] | undefined): string {
-  switch (mode) {
-    case 'local-sqlite':
-      return '本地 SQLite';
-    case 'regional-http':
-      return '区域 HTTP';
-    case 'local-storage':
-      return '浏览器 localStorage';
-    default:
-      return '未知';
-  }
-}
-
-function formatVisitDiagnosis(visit: PatientMemory['recentVisits'][number]): string {
-  if (visit.primaryDiagnosis?.trim()) return visit.primaryDiagnosis.trim();
-  return visit.diagnoses[0] || '未明确';
-}
-
-function formatMedicationList(items: string[]): string {
-  if (!items.length) return '无处方';
-  return items.slice(0, 4).join('、');
-}
-
-function formatGender(value: PatientProfile['gender'] | undefined): string {
-  if (value === 'M') return '男';
-  if (value === 'F') return '女';
-  if (value === 'O') return '其他';
-  return '未记录';
-}
-
-function formatAge(profile: PatientProfile | null): string {
-  if (!profile) return '未记录';
-  if (profile.ageText?.trim()) return profile.ageText.trim();
-  if (typeof profile.age === 'number') return `${profile.age}岁`;
-  return '未记录';
 }
 
 onMounted(refreshAll);
@@ -452,133 +275,6 @@ onMounted(refreshAll);
       </div>
     </div>
 
-    <div class="section-block">
-      <div class="section-heading">
-        <div class="section-heading-main">
-          <strong>患者记忆缓存</strong>
-          <span>按患者查看本地长期记忆并从 HIS 重同步</span>
-        </div>
-        <div class="section-actions">
-          <button type="button" class="secondary-btn" @click="refreshPatientMemoryState" :disabled="memoryStateLoading || memoryQueryLoading || memorySyncing || memoryClearing">
-            <Icon :icon="memoryStateLoading ? 'lucide:loader-2' : 'lucide:refresh-cw'" :size="15" :class="{ spin: memoryStateLoading }" />
-            刷新状态
-          </button>
-        </div>
-      </div>
-
-      <div class="summary-grid summary-grid-memory">
-        <div class="summary-card">
-          <span>存储后端</span>
-          <strong class="summary-text">{{ formatBackendMode(memoryState?.mode) }}</strong>
-        </div>
-        <div class="summary-card">
-          <span>患者数</span>
-          <strong>{{ memoryState?.patientCount ?? '-' }}</strong>
-        </div>
-        <div class="summary-card">
-          <span>摘要数</span>
-          <strong>{{ memoryState?.visitCount ?? '-' }}</strong>
-        </div>
-        <div class="summary-card">
-          <span>最近加载患者</span>
-          <strong class="summary-text">{{ queriedPatientId || '暂无' }}</strong>
-        </div>
-      </div>
-
-      <div class="status-card">
-        <div>
-          <span>数据库位置</span>
-          <code>{{ memoryState?.dbPath || '当前后端不暴露路径' }}</code>
-        </div>
-        <div>
-          <span>最近更新时间</span>
-          <strong>{{ memoryUpdatedAtText }}</strong>
-        </div>
-      </div>
-
-      <div class="controls-card">
-        <div class="field-row memory-field-row">
-          <label class="patient-id-field">
-            患者 ID
-            <input v-model="patientId" placeholder="输入 patientId / idPi" @keyup.enter="queryPatientMemory" />
-          </label>
-          <button type="button" class="secondary-btn" @click="queryPatientMemory" :disabled="memoryQueryLoading || memorySyncing || memoryClearing">
-            <Icon :icon="memoryQueryLoading ? 'lucide:loader-2' : 'lucide:search'" :size="15" :class="{ spin: memoryQueryLoading }" />
-            查询患者记忆
-          </button>
-          <button type="button" class="primary-btn" @click="resyncPatientMemory" :disabled="memorySyncing || memoryQueryLoading || memoryClearing">
-            <Icon :icon="memorySyncing ? 'lucide:loader-2' : 'lucide:refresh-cw'" :size="15" :class="{ spin: memorySyncing }" />
-            从 HIS 重同步
-          </button>
-          <button type="button" class="danger-btn" @click="clearMemoryRecord" :disabled="memoryClearing || memoryQueryLoading || memorySyncing || memoryStateLoading">
-            <Icon :icon="memoryClearing ? 'lucide:loader-2' : 'lucide:trash-2'" :size="15" :class="{ spin: memoryClearing }" />
-            {{ memoryClearButtonText }}
-          </button>
-        </div>
-        <p class="hint">查询和清空直接作用于本地患者记忆；“从 HIS 重同步”会忽略 24 小时 freshness 门禁，用 HIS 当前历史覆盖本地聚合结果。未输入患者 ID 时，点击清空会改为清空全部患者记忆，并要求二次确认。</p>
-      </div>
-
-      <p v-if="memoryMessage" :class="['message', `message-${memoryMessageTone}`]">{{ memoryMessage }}</p>
-
-      <div class="memory-result-card">
-        <div class="table-title">
-          <strong>最近摘要</strong>
-          <span>{{ recentVisitCount }} 条</span>
-        </div>
-
-        <div v-if="patientProfile" class="patient-profile-card">
-          <div class="patient-profile-header">
-            <strong>{{ patientProfile.name || queriedPatientId || '未命名患者' }}</strong>
-            <span>{{ formatGender(patientProfile.gender) }} / {{ formatAge(patientProfile) }}</span>
-          </div>
-          <div class="patient-profile-grid">
-            <p><span>患者 ID</span>{{ patientProfile.patientId }}</p>
-            <p><span>手机号</span>{{ patientProfile.mobilePhone || '未记录' }}</p>
-            <p><span>证件号</span>{{ patientProfile.idNo || '未记录' }}</p>
-            <p><span>医保类型</span>{{ patientProfile.insuranceType || '未记录' }}</p>
-          </div>
-        </div>
-
-        <template v-if="memoryRecord">
-          <div class="memory-meta-grid">
-            <div>
-              <span>累积过敏史</span>
-              <div class="tag-list">
-                <span v-for="item in memoryRecord.allergyHistory" :key="`allergy-${item}`" class="tag tag-danger">{{ item }}</span>
-                <span v-if="memoryRecord.allergyHistory.length === 0" class="empty-inline">暂无</span>
-              </div>
-            </div>
-            <div>
-              <span>候选慢病</span>
-              <div class="tag-list">
-                <span v-for="item in memoryRecord.chronicDiagnosisCandidates" :key="`chronic-${item}`" class="tag tag-accent">{{ item }}</span>
-                <span v-if="memoryRecord.chronicDiagnosisCandidates.length === 0" class="empty-inline">暂无</span>
-              </div>
-            </div>
-          </div>
-
-          <div v-if="memoryRecord.recentVisits.length > 0" class="visit-list">
-            <article v-for="visit in memoryRecord.recentVisits" :key="`${visit.completedAt}-${visit.chiefComplaint}`" class="visit-card">
-              <div class="visit-card-header">
-                <strong>{{ formatTimestamp(visit.completedAt) }}</strong>
-                <span>{{ formatVisitDiagnosis(visit) }}</span>
-              </div>
-              <div class="visit-card-body">
-                <p><span>主诉</span>{{ visit.chiefComplaint || '未记录' }}</p>
-                <p><span>诊断</span>{{ visit.diagnoses.length ? visit.diagnoses.join('、') : '未记录' }}</p>
-                <p><span>用药</span>{{ formatMedicationList(visit.medications) }}</p>
-                <p><span>化验</span>{{ visit.labTests.length ? visit.labTests.join('、') : '未记录' }}</p>
-              </div>
-            </article>
-          </div>
-          <div v-else class="empty-state compact-empty">该患者当前没有最近摘要。</div>
-        </template>
-
-        <div v-else class="empty-state compact-empty">
-          输入患者 ID 后可查看本地患者记忆；如果没有本地记录，可直接尝试从 HIS 重同步。
-        </div>
-      </div>
-    </div>
   </section>
 </template>
 
@@ -595,10 +291,6 @@ onMounted(refreshAll);
 .field-row,
 .table-title,
 .section-heading,
-.visit-card-header {
-  display: flex;
-  align-items: center;
-}
 
 .panel-header {
   justify-content: space-between;
@@ -620,8 +312,7 @@ onMounted(refreshAll);
 .panel-header p,
 .hint,
 .message,
-.section-heading span,
-.empty-inline {
+.section-heading span {
   margin: 6px 0 0;
   color: var(--color-text-muted, #64748b);
   font-size: 13px;
@@ -673,12 +364,6 @@ onMounted(refreshAll);
 .status-card,
 .controls-card,
 .sync-state-card,
-.memory-result-card {
-  border: 1px solid var(--color-border-light, #e2e8f0);
-  border-radius: 14px;
-  background: var(--color-bg-primary, #fff);
-  box-shadow: 0 1px 3px rgba(15, 23, 42, 0.05);
-}
 
 .summary-card {
   padding: 14px 16px;
@@ -686,23 +371,12 @@ onMounted(refreshAll);
 
 .summary-card span,
 .status-card span,
-.memory-meta-grid span,
-.visit-card-body span {
-  display: block;
-  color: var(--color-text-muted, #64748b);
-  font-size: 12px;
-}
 
 .summary-card strong {
   display: block;
   margin-top: 6px;
   color: var(--color-text-primary, #164e63);
   font-size: 24px;
-}
-
-.summary-card .summary-text {
-  font-size: 15px;
-  line-height: 1.35;
 }
 
 .status-card {
@@ -724,18 +398,9 @@ onMounted(refreshAll);
 
 .controls-card,
 .sync-state-card,
-.memory-result-card,
-.patient-profile-card {
-  padding: 14px 16px;
-  margin-bottom: 12px;
-}
 
 .field-row {
   align-items: flex-end;
-}
-
-.memory-field-row {
-  flex-wrap: wrap;
 }
 
 .field-row label {
@@ -746,10 +411,6 @@ onMounted(refreshAll);
   color: var(--color-text-primary, #164e63);
   font-size: 13px;
   font-weight: 600;
-}
-
-.patient-id-field {
-  min-width: 240px;
 }
 
 select,
@@ -871,159 +532,15 @@ code {
   font-size: 13px;
 }
 
-.compact-empty {
-  padding: 22px 12px;
-}
-
-.memory-meta-grid {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 12px;
-  margin-bottom: 14px;
-}
-
-.tag-list {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  margin-top: 8px;
-}
-
-.tag {
-  display: inline-flex;
-  align-items: center;
-  min-height: 28px;
-  padding: 0 10px;
-  border-radius: 999px;
-  background: #f1f5f9;
-  color: #0f172a;
-  font-size: 12px;
-}
-
-.tag-accent {
-  background: #ecfeff;
-  color: #155e75;
-}
-
-.tag-danger {
-  background: #fef2f2;
-  color: #b91c1c;
-  border: 1px solid #fecaca;
-}
-
-.patient-profile-card {
-  margin-bottom: 12px;
-  border: 1px solid var(--color-border-light, #e2e8f0);
-  border-radius: 12px;
-  background: linear-gradient(180deg, #ffffff 0%, #f8fafc 100%);
-}
-
-.patient-profile-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  margin-bottom: 10px;
-  color: var(--color-text-primary, #164e63);
-}
-
-.patient-profile-header strong {
-  font-size: 15px;
-}
-
-.patient-profile-header span {
-  color: #475569;
-  font-size: 13px;
-}
-
-.patient-profile-grid {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 10px 14px;
-}
-
-.patient-profile-grid p {
-  margin: 0;
-  color: var(--color-text-secondary, #0f172a);
-  font-size: 13px;
-  line-height: 1.5;
-}
-
-.patient-profile-grid span {
-  display: block;
-  margin-bottom: 2px;
-  color: var(--color-text-muted, #64748b);
-  font-size: 12px;
-}
-
-.visit-list {
-  display: grid;
-  gap: 10px;
-}
-
-.visit-card {
-  border: 1px solid var(--color-border-light, #e2e8f0);
-  border-radius: 12px;
-  padding: 12px;
-  background: linear-gradient(180deg, #ffffff 0%, #f8fafc 100%);
-}
-
-.visit-card-header {
-  justify-content: space-between;
-  gap: 12px;
-  margin-bottom: 10px;
-  color: var(--color-text-primary, #164e63);
-}
-
-.visit-card-header strong {
-  font-size: 14px;
-}
-
-.visit-card-header span {
-  color: #0f766e;
-  font-size: 13px;
-  font-weight: 600;
-}
-
-.visit-card-body {
-  display: grid;
-  gap: 8px;
-}
-
-.visit-card-body p {
-  margin: 0;
-  color: var(--color-text-secondary, #0f172a);
-  font-size: 13px;
-  line-height: 1.5;
-}
-
-.visit-card-body span {
-  margin-bottom: 2px;
-}
-
 .spin {
   animation: spin 1s linear infinite;
 }
 
-@media (max-width: 900px) {
-  .panel-header,
-  .section-heading,
-  .field-row,
-  .memory-field-row,
-  .section-actions {
-    flex-direction: column;
-    align-items: stretch;
-  }
-
+@media (max-width: 640px) {
   .summary-grid,
   .status-card,
-  .memory-meta-grid,
-  .patient-profile-grid {
-    grid-template-columns: 1fr;
-  }
 
-  .section-actions button,
-  .memory-field-row button {
+  .section-actions button {
     width: 100%;
   }
 }

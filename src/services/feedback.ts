@@ -103,6 +103,19 @@ class FeedbackService {
     patientId?: string,
     patientName?: string
   ): Promise<string> {
+    if (isRegionalMode()) {
+      const sessionId = crypto.randomUUID();
+      this.currentSessionId = sessionId;
+      enqueueAuditEvent('session', {
+        sessionId,
+        sessionType,
+        patientId,
+        action: 'start',
+      });
+      console.log(`[FeedbackService] Session started (regional): ${sessionId} (${sessionType})`);
+      return sessionId;
+    }
+
     try {
       const sessionId = await invoke<string>('create_session', {
         sessionType,
@@ -111,15 +124,6 @@ class FeedbackService {
       });
       this.currentSessionId = sessionId;
       console.log(`[FeedbackService] Session started: ${sessionId} (${sessionType})`);
-
-      // 区域化双写
-      enqueueAuditEvent('session', {
-        sessionId,
-        sessionType,
-        patientId,
-        action: 'start',
-      });
-
       return sessionId;
     } catch (error) {
       console.error('[FeedbackService] Failed to start session:', error);
@@ -131,23 +135,33 @@ class FeedbackService {
     sessionId?: string,
     status: SessionStatus = 'completed'
   ): Promise<void> {
-    try {
-      const targetSessionId = sessionId || this.currentSessionId;
-      if (!targetSessionId) {
-        console.warn('[FeedbackService] No active session to end');
-        return;
-      }
+    const targetSessionId = sessionId || this.currentSessionId;
+    if (!targetSessionId) {
+      console.warn('[FeedbackService] No active session to end');
+      return;
+    }
 
-      const endTime = Math.floor(Date.now() / 1000); // Convert to Unix timestamp in seconds
+    if (targetSessionId === this.currentSessionId) {
+      this.currentSessionId = null;
+    }
+
+    if (isRegionalMode()) {
+      enqueueAuditEvent('session', {
+        sessionId: targetSessionId,
+        action: 'end',
+        status,
+      });
+      console.log(`[FeedbackService] Session ended (regional): ${targetSessionId} (${status})`);
+      return;
+    }
+
+    try {
+      const endTime = Math.floor(Date.now() / 1000);
       await invoke('update_session_status', {
         sessionId: targetSessionId,
         status,
         endTime
       });
-
-      if (targetSessionId === this.currentSessionId) {
-        this.currentSessionId = null;
-      }
 
       console.log(`[FeedbackService] Session ended: ${targetSessionId} (${status})`);
     } catch (error) {
@@ -163,12 +177,27 @@ class FeedbackService {
   // Message Management
 
   async saveMessage(message: Partial<MessageExtended>): Promise<string> {
-    try {
-      const sessionId = message.sessionId || this.currentSessionId;
-      if (!sessionId) {
-        throw new Error('No active session');
-      }
+    const sessionId = message.sessionId || this.currentSessionId;
+    if (!sessionId) {
+      throw new Error('No active session');
+    }
 
+    if (isRegionalMode()) {
+      const messageId = crypto.randomUUID();
+      enqueueAuditEvent('session', {
+        sessionId,
+        action: 'message',
+        messageId,
+        role: message.role || 'user',
+        tokenCount: message.tokenCount || null,
+        llmModel: message.llmModel || null,
+        latencyMs: message.latencyMs || null,
+      });
+      console.log(`[FeedbackService] Message saved (regional): ${messageId}`);
+      return messageId;
+    }
+
+    try {
       const messageId = await invoke<string>('save_message', {
         sessionId,
         role: message.role || 'user',
@@ -190,13 +219,30 @@ class FeedbackService {
   // Feedback Management
 
   async saveFeedback(feedback: Omit<FeedbackInfo, 'feedbackId' | 'createdAt'>): Promise<string> {
-    try {
-      const sessionId = feedback.sessionId || this.currentSessionId;
-      if (!sessionId) {
-        throw new Error('No active session');
-      }
-      const normalizedTargetType = normalizeFeedbackTargetType(feedback.targetType);
+    const sessionId = feedback.sessionId || this.currentSessionId;
+    if (!sessionId) {
+      throw new Error('No active session');
+    }
+    const normalizedTargetType = normalizeFeedbackTargetType(feedback.targetType);
 
+    if (isRegionalMode()) {
+      const feedbackId = crypto.randomUUID();
+      enqueueAuditEvent('feedback', {
+        feedbackId,
+        sessionId,
+        targetType: feedback.targetType,
+        targetId: feedback.targetId,
+        feedbackType: feedback.feedbackType,
+        rating: feedback.rating,
+        reason: feedback.reason,
+        originalValue: feedback.originalValue,
+        modifiedValue: feedback.modifiedValue,
+      });
+      console.log(`[FeedbackService] Feedback saved (regional): ${feedbackId} (${feedback.feedbackType} on ${normalizedTargetType})`);
+      return feedbackId;
+    }
+
+    try {
       const feedbackId = await invoke<string>('save_feedback', {
         sessionId,
         targetType: normalizedTargetType,
@@ -209,18 +255,6 @@ class FeedbackService {
       });
 
       console.log(`[FeedbackService] Feedback saved: ${feedbackId} (${feedback.feedbackType} on ${normalizedTargetType})`);
-
-      // 区域化双写
-      enqueueAuditEvent('feedback', {
-        feedbackId,
-        sessionId,
-        targetType: feedback.targetType,
-        targetId: feedback.targetId,
-        feedbackType: feedback.feedbackType,
-        rating: feedback.rating,
-        reason: feedback.reason,
-      });
-
       return feedbackId;
     } catch (error) {
       console.error('[FeedbackService] Failed to save feedback:', error);
@@ -231,13 +265,27 @@ class FeedbackService {
   // Recommendation Management
 
   async saveRecommendation(rec: Partial<RecommendationExtended>): Promise<string> {
-    try {
-      const sessionId = rec.sessionId || this.currentSessionId;
-      if (!sessionId) {
-        throw new Error('No active session');
-      }
-      const normalizedRecType = normalizeRecommendationType((rec.recType || 'diagnosis') as RecommendationExtended['recType']);
+    const sessionId = rec.sessionId || this.currentSessionId;
+    if (!sessionId) {
+      throw new Error('No active session');
+    }
+    const normalizedRecType = normalizeRecommendationType((rec.recType || 'diagnosis') as RecommendationExtended['recType']);
 
+    if (isRegionalMode()) {
+      const recId = crypto.randomUUID();
+      enqueueAuditEvent('feedback', {
+        recommendationId: recId,
+        sessionId,
+        recType: rec.recType,
+        matched: rec.matched,
+        matchConfidence: rec.matchConfidence,
+        latencyMs: rec.latencyMs,
+      });
+      console.log(`[FeedbackService] Recommendation saved (regional): ${recId} (${normalizedRecType})`);
+      return recId;
+    }
+
+    try {
       const content = typeof rec.content === 'string'
         ? rec.content
         : JSON.stringify(rec.content);
@@ -254,17 +302,6 @@ class FeedbackService {
       });
 
       console.log(`[FeedbackService] Recommendation saved: ${recId} (${normalizedRecType})`);
-
-      // 区域化双写
-      enqueueAuditEvent('feedback', {
-        recommendationId: recId,
-        sessionId,
-        recType: rec.recType,
-        matched: rec.matched,
-        matchConfidence: rec.matchConfidence,
-        latencyMs: rec.latencyMs,
-      });
-
       return recId;
     } catch (error) {
       console.error('[FeedbackService] Failed to save recommendation:', error);
@@ -304,9 +341,21 @@ class FeedbackService {
   // Performance Metrics
 
   async recordMetric(metric: Omit<PerformanceMetric, 'metricId' | 'createdAt'>): Promise<void> {
-    try {
-      const sessionId = metric.sessionId || this.currentSessionId;
+    const sessionId = metric.sessionId || this.currentSessionId;
 
+    if (isRegionalMode()) {
+      enqueueAuditEvent('metric', {
+        sessionId,
+        metricType: metric.metricType,
+        metricValue: metric.metricValue,
+        unit: metric.unit,
+        context: metric.context,
+      });
+      console.log(`[FeedbackService] Metric recorded (regional): ${metric.metricType} = ${metric.metricValue} ${metric.unit}`);
+      return;
+    }
+
+    try {
       await invoke('record_performance_metric', {
         sessionId: sessionId || null,
         metricType: metric.metricType,
@@ -316,18 +365,8 @@ class FeedbackService {
       });
 
       console.log(`[FeedbackService] Metric recorded: ${metric.metricType} = ${metric.metricValue} ${metric.unit}`);
-
-      // 区域化双写
-      enqueueAuditEvent('metric', {
-        sessionId,
-        metricType: metric.metricType,
-        metricValue: metric.metricValue,
-        unit: metric.unit,
-        context: metric.context,
-      });
     } catch (error) {
       console.error('[FeedbackService] Failed to record metric:', error);
-      // Don't throw - metric recording failures shouldn't break the app
     }
   }
 
@@ -337,12 +376,17 @@ class FeedbackService {
     startDate?: number,
     endDate?: number
   ): Promise<SessionStatistics> {
+    if (isRegionalMode()) {
+      return {
+        totalSessions: 0, activeSessions: 0, completedSessions: 0,
+        cancelledSessions: 0, errorSessions: 0, totalMessages: 0,
+        sessionsByType: {} as Record<SessionType, number>, sessionsByDate: [],
+      };
+    }
     try {
-      const stats = await invoke<SessionStatistics>('get_session_statistics', {
-        startDate: startDate || null,
-        endDate: endDate || null
+      return await invoke<SessionStatistics>('get_session_statistics', {
+        startDate: startDate || null, endDate: endDate || null
       });
-      return stats;
     } catch (error) {
       console.error('[FeedbackService] Failed to get session statistics:', error);
       throw error;
@@ -353,12 +397,18 @@ class FeedbackService {
     startDate?: number,
     endDate?: number
   ): Promise<FeedbackStatistics> {
+    if (isRegionalMode()) {
+      return {
+        totalFeedbacks: 0, positiveCount: 0, negativeCount: 0,
+        adoptedCount: 0, rejectedCount: 0, modifiedCount: 0,
+        feedbacksByTargetType: {} as Record<string, number>,
+        positiveRate: 0, adoptionRate: 0,
+      };
+    }
     try {
-      const stats = await invoke<FeedbackStatistics>('get_feedback_statistics', {
-        startDate: startDate || null,
-        endDate: endDate || null
+      return await invoke<FeedbackStatistics>('get_feedback_statistics', {
+        startDate: startDate || null, endDate: endDate || null
       });
-      return stats;
     } catch (error) {
       console.error('[FeedbackService] Failed to get feedback statistics:', error);
       throw error;
@@ -369,12 +419,15 @@ class FeedbackService {
     startDate?: number,
     endDate?: number
   ): Promise<PerformanceStatistics> {
+    if (isRegionalMode()) {
+      return {
+        totalTokenCount: 0, metricsByType: {} as Record<string, { avg: number; min: number; max: number; count: number }>,
+      };
+    }
     try {
-      const stats = await invoke<PerformanceStatistics>('get_performance_statistics', {
-        startDate: startDate || null,
-        endDate: endDate || null
+      return await invoke<PerformanceStatistics>('get_performance_statistics', {
+        startDate: startDate || null, endDate: endDate || null
       });
-      return stats;
     } catch (error) {
       console.error('[FeedbackService] Failed to get performance statistics:', error);
       throw error;
@@ -385,12 +438,17 @@ class FeedbackService {
     startDate?: number,
     endDate?: number
   ): Promise<RecommendationStatistics> {
+    if (isRegionalMode()) {
+      return {
+        totalRecommendations: 0, matchedCount: 0, unmatchedCount: 0,
+        matchRate: 0, totalPromptTokens: 0, totalCompletionTokens: 0,
+        recommendationsByType: {} as Record<string, { total: number; matched: number }>,
+      };
+    }
     try {
-      const stats = await invoke<RecommendationStatistics>('get_recommendation_statistics', {
-        startDate: startDate || null,
-        endDate: endDate || null
+      return await invoke<RecommendationStatistics>('get_recommendation_statistics', {
+        startDate: startDate || null, endDate: endDate || null
       });
-      return stats;
     } catch (error) {
       console.error('[FeedbackService] Failed to get recommendation statistics:', error);
       throw error;
@@ -401,12 +459,16 @@ class FeedbackService {
     startDate?: number,
     endDate?: number
   ): Promise<OperationStatistics> {
+    if (isRegionalMode()) {
+      return {
+        totalOperations: 0, successCount: 0, failureCount: 0,
+        successRate: 0, operationsByType: {}, topOperations: [], errorOperations: [],
+      };
+    }
     try {
-      const stats = await invoke<OperationStatistics>('get_operation_statistics', {
-        startDate: startDate || null,
-        endDate: endDate || null
+      return await invoke<OperationStatistics>('get_operation_statistics', {
+        startDate: startDate || null, endDate: endDate || null
       });
-      return stats;
     } catch (error) {
       console.error('[FeedbackService] Failed to get operation statistics:', error);
       throw error;
@@ -420,11 +482,12 @@ class FeedbackService {
     startDate?: number,
     endDate?: number
   ): Promise<string> {
+    if (isRegionalMode()) {
+      return '{}';
+    }
     try {
       const data = await invoke<string>('export_data', {
-        format,
-        startDate: startDate || null,
-        endDate: endDate || null
+        format, startDate: startDate || null, endDate: endDate || null
       });
       console.log(`[FeedbackService] Data exported as ${format}`);
       return data;
