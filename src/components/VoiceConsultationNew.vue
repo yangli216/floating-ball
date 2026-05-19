@@ -11,7 +11,6 @@ import { getHisAdapter } from '../services/his';
 import type { PharmacyOption } from '../services/his';
 import { medicalDataService, type DiagnosisItem } from '../services/medicalData';
 import {
-  clearVoiceConsultationCache,
   updateVoiceConsultationCache,
   getVoiceConsultationEditorSnapshot,
   type VoiceEditorSnapshot,
@@ -719,10 +718,8 @@ function applyWritebackFeedback(payload: ReferenceFeedbackPayload): void {
   pendingWritebackMessage.value = '';
 
   if (safePayload.status === 'success') {
+    persistEditorSnapshotImmediate();
     submitVoiceFinalUserLog();
-    if (shouldUseVoiceCache.value) {
-      clearVoiceConsultationCache(props.initialPatientData);
-    }
     showToast?.(safePayload.message || 'HIS 已完成回写。', 'success');
     showSessionFeedbackDialog.value = true;
     return;
@@ -2704,6 +2701,7 @@ async function reconcileAutoSelectedMedicineInventory(items: TreatmentRecommenda
 
 async function handleBatchWriteBack(): Promise<void> {
   if (!canSubmit.value) return;
+  persistEditorSnapshotImmediate();
   submitting.value = true;
   lastWritebackFeedback.value = null;
 
@@ -3126,7 +3124,11 @@ watch(
                 @toggle-feedback="toggleRecommendationFeedback(getDiagnosisFeedbackKey(diag), $event)"
                 @update:feedback-draft="updateRecommendationDraft(getDiagnosisFeedbackKey(diag), $event)"
                 @submit-feedback="handleDiagnosisFeedbackSubmit(diag, $event)"
-              />
+              >
+                <template #actions>
+                  <slot name="diagnosis-actions" :diag="diag" />
+                </template>
+              </DiagnosisRecommendationCard>
             </ul>
 
             <div v-else class="empty-text">暂无诊断建议</div>

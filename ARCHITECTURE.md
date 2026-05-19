@@ -168,8 +168,9 @@
 12. `ConsultationPage.vue` 里的推荐诊断必须保持单选，并以当前选中诊断作为引用对象；推荐用药、检查、检验、处置则保留多选，并在各自分组级提供一次引入所选项的入口。对暂不支持 PHIS 引用的推荐项，应作为只读处置建议单独展示，避免被误当作检查项提交。
 13. 检验检查报告解读不进入 `ConsultationPage.vue`。该能力通过 `POST /api/report/interpret` -> `useEventListeners.ts` -> 独立报告解读窗口链路完成，避免打断当前问诊主页面。
 14. 报告解读独立窗口默认隐藏原生标题栏，窗口移动依赖页面头部拖拽区，关闭动作统一走页面内虚拟按钮；正文超出高度时由窗口自身滚动容器承接，不能裁切内容。
-15. 智能问诊的页面留存与语音问诊一致：未诊毕、未确认放弃时，再次点击“智能问诊”或最小化后再次打开，必须恢复 `ConsultationPage` 上次内部页面（症状采集、病历详情或最终报告）及数据快照；只有诊毕回写成功、确认放弃或跨自然日失效时才清理。
-16. HIS 联调相关的调用必须进入本地 HIS 集成日志：HTTP Bridge 入站接口由 Rust 侧直接记录，前端 `hisService.ts` 出站请求通过 `hisIntegrationLog.ts` 写入同一 JSONL 日志，并在日志面板中按 `traceId`、接口、方向、状态筛选和导出。
+15. 智能问诊的页面留存与语音问诊一致：未诊毕、未确认放弃时，再次点击“智能问诊”或最小化后再次打开，必须恢复 `ConsultationPage` 上次内部页面（症状采集、病历详情或最终报告）及数据快照；症状问诊结果页“返回”只回编辑页，“放弃”确认后必须清空当前快照和页面内勾选/推荐状态并直接退回悬浮球；语音问诊一键回写成功只代表本次回写闭环成功，不代表诊毕，同一接诊上下文内再次触发 `start-voice-consultation` 时必须恢复上一张语音结果页；但当前接诊从患者 A 切换到患者 B 时，患者 A 的语音缓存和最小化入口必须同步失效，之后再切回患者 A 也重新开始语音问诊；只有诊毕、确认放弃、患者切换或跨自然日失效时才清理。
+16. 智能问诊 AI 调用不得在请求发起时清空已有诊断或推荐结果；新结果只有在 LLM 响应解析成功且仍匹配当前诊断上下文时才提交到页面状态。结构化 JSON 解析统一允许代码块和少量前后说明，从响应中抽取 JSON 对象/数组后再解析；各路推荐独立失败时保留上一版数据，并只更新对应错误态，避免单次解析或网络抖动造成整页丢结果。
+17. HIS 联调相关的调用必须进入本地 HIS 集成日志：HTTP Bridge 入站接口由 Rust 侧直接记录，前端 `hisService.ts` 出站请求通过 `hisIntegrationLog.ts` 写入同一 JSONL 日志，并在日志面板中按 `traceId`、接口、方向、状态筛选和导出。
 
 ### 代码结构
 
@@ -482,7 +483,7 @@ await navigation.openConsultation();
 **核心功能**:
 - ✅ 处理语音停止事件（转录 + LLM 生成）
 - ✅ 命中本地缓存时跳过重复 LLM 解析，应用重启后可恢复未提交结果
-- ✅ 缓存 key 优先使用 `idVis`（就诊 ID），同患者多就诊互不串扰；缓存跨自然日自动失效
+- ✅ 缓存 key 优先使用 `idVis`（就诊 ID），同患者多就诊互不串扰；缓存跨自然日自动失效，且当前接诊切换到其他患者时会清理上一患者语音缓存
 - ✅ 通过 `editorSnapshot` 持久化整张语音病历快照（治疗方案、诊断、病历文本、当前选中诊断），下次同就诊恢复时直接复用，跳过 `fetchAITreatment`
 - ✅ 当实时转写为空时，自动使用音频文件兜底转写
 - ✅ LLM 病历生成（结构化 JSON，包含病例草稿、诊断/项目/药品提示与来源标记）
@@ -564,7 +565,7 @@ await voiceConsultation.handleResultConfirm(record);
 **核心功能**:
 - ✅ 以就诊锚点为 key 写入 `localStorage` (`SYMPTOM_CONSULTATION_CACHE_V1:{consultationId}`)
 - ✅ 保存内部页面、问诊模式、症状选择、动态表单、病历草稿、诊断、治疗推荐、引用回执和知识面板基础状态
-- ✅ 跨自然日自动失效；诊毕回写成功或确认放弃时显式清除
+- ✅ 跨自然日自动失效；诊毕回写成功或确认放弃时显式清除，其中结果页“放弃”会清空页面内状态并直接退回悬浮球
 - ✅ 恢复时只作用于同一就诊，避免切换患者污染
 
 ---
@@ -584,7 +585,7 @@ await voiceConsultation.handleResultConfirm(record);
   - `show-patient-risks` - 风险提示入口；必须先复用接诊补全，再把风险结果叠加到已有 `PatientContext`
   - `start-consultation` - 开始问诊
   - `start-consultation-session` - HIS 灵活模式 / assist 兼容事件（当前默认打开 `ConsultationPage` 并写入自动触发上下文）
-  - `stop-consultation` - 停止问诊
+  - `stop-consultation` - 停止问诊；视为诊毕/结束接诊，会清空当前患者上下文、当前就诊的语音缓存和问诊最小化恢复入口
   - `start-voice-consultation` - 语音问诊；来自 HIS / HTTP Bridge 的显式开始语音请求会先按目标患者 `idPi / patientId` 判断是否存在未提交缓存：同患者且存在缓存时直接恢复到语音结果页，否则开启新语音会话；仅在已处于录音胶囊页时对重复请求做幂等忽略
   - `sdk-handshake` - 解析 HIS 握手上下文，初始化 `HisService`，并把 `orgCode / tenantId(idTet)` 与后续药房 scope 关联到基础数据缓存层
 - ✅ 鼠标事件监听
@@ -643,15 +644,15 @@ eventListeners.unregisterAllListeners();
 |------|------|------|
 | `ChatPanel.vue` | LLM 对话界面 | [src/components/ChatPanel.vue](src/components/ChatPanel.vue) |
 | `SettingsPanel.vue` | 系统设置（含通用设置、紧凑界面主题选择、区域化接入、关于版本、音频输入设备选择；本地模式下额外显示文本/音频模型配置，区域化模式下隐藏“模型配置”页签；通用设置页提供基础数据缓存/患者记忆管理和 HIS 联调日志独立入口） | [src/components/SettingsPanel.vue](src/components/SettingsPanel.vue) |
-| `ConsultationPage.vue` | 完整症状问诊主链路，同时承接新的“内嵌灵活模式”；支持根据 `/assist` 上下文直接跳过症状采集进入病历详情页，继续复用现有推荐诊断、诊断鉴别、推荐用药、推荐检查与诊断路径能力；进入 `record` 阶段后不再继续内嵌维护旧结果页，而是把当前病历、诊断、治疗快照切换到独立的症状结果页包装组件，由后者复用共享结果页主体；PHIS 引用闭环状态仍由症状包装层承接 | [src/components/ConsultationPage.vue](src/components/ConsultationPage.vue) |
+| `ConsultationPage.vue` | 完整症状问诊主链路，同时承接新的“内嵌灵活模式”；支持根据 `/assist` 上下文直接跳过症状采集进入病历详情页，继续复用现有推荐诊断、诊断鉴别、推荐用药、推荐检查与诊断路径能力；进入 `record` 阶段后不再继续内嵌维护旧结果页，而是把当前病历、诊断、治疗快照切换到独立的症状结果页包装组件，由后者复用共享结果页主体；PHIS 引用闭环状态仍由症状包装层承接；AI 推荐链路采用成功后覆盖与当前诊断上下文校验，解析失败或慢请求过期时保留上一版结果 | [src/components/ConsultationPage.vue](src/components/ConsultationPage.vue) |
 | `SymptomConsultationResultPage.vue` | 症状问诊结果页新包装组件：接收 `ConsultationPage.vue` 产出的记录快照、推荐诊断和治疗方案，转换为共享结果页需要的标准输入；症状渠道专属的初始快照适配、入口语义和附加动作由该组件负责，结果页结构与编辑标准以语音侧为准 | [src/components/SymptomConsultationResultPage.vue](src/components/SymptomConsultationResultPage.vue) |
 | `DiagnosisPathWindow.vue` | 独立诊断推理路径窗口，使用 ECharts Sankey 展示患者事实、章节归类、证据汇聚与诊断去向；默认提供更宽画布，并按容器尺寸动态计算 Sankey 的布局盒子，用对称留白实现“适应屏幕并居中”的默认视图，再开放滚轮缩放、平移与节点拖动；点击入口后窗口先显示 loading 动画，并按“检查缓存 -> 生成推理链 -> 渲染图表”的阶段更新提示，若生成超时或渲染失败会切换到明确错误态；正文容器在收到 payload 后保持挂载，loading 改为遮罩层，避免 `chartEl` 尚未挂载时误判渲染成功；开窗后的 `show/focus` 调用采用 best-effort 非阻塞方式，避免 Tauri 原生命令卡住整个推理链；右侧说明面板采用“支持证据 / 反证提醒 / 鉴别要点”三段式，未返回结构化分段时回退显示整体 rationale | [src/components/DiagnosisPathWindow.vue](src/components/DiagnosisPathWindow.vue) |
 | `ReportInterpretationWindow.vue` | 独立检验检查报告解读窗口：展示报告概览、AI 摘要结论、关键异常、临床意义、建议动作、风险提示与解读局限；窗口以只读结果为主，不进入 PHIS 回写；支持在未接诊时使用显式 `patient` 入参，在已接诊时自动补齐当前患者上下文 | [src/components/ReportInterpretationWindow.vue](src/components/ReportInterpretationWindow.vue) |
 | `VoiceCapsule.vue` | 语音录制胶囊 | [src/components/VoiceCapsule.vue](src/components/VoiceCapsule.vue) |
-| `VoiceConsultationNew.vue` | 语音问诊结果页包装组件：消费 `useVoiceIntentRecognition` 的输出与语音缓存恢复语义，把结果适配到共享结果页主体；语音专属的缓存读写、放弃语音会话、语音用户日志与整页反馈触发留在此包装层，结果页结构和字段标准与症状问诊共用同一主体。一键回写后不会立即结束页面，而是等待 HIS 通过 `consultation-reference-feedback` 回执最终状态，成功后再进入整页反馈收口 | [src/components/VoiceConsultationNew.vue](src/components/VoiceConsultationNew.vue) |
+| `VoiceConsultationNew.vue` | 语音问诊结果页包装组件：消费 `useVoiceIntentRecognition` 的输出与语音缓存恢复语义，把结果适配到共享结果页主体；语音专属的缓存读写、放弃语音会话、语音用户日志与整页反馈触发留在此包装层，结果页结构和字段标准与症状问诊共用同一主体。一键回写后不会立即结束页面，而是等待 HIS 通过 `consultation-reference-feedback` 回执最终状态，成功后进入整页反馈收口但保留语音结果缓存；只有放弃或 `stop-consultation` 诊毕才清理同就诊语音缓存 | [src/components/VoiceConsultationNew.vue](src/components/VoiceConsultationNew.vue) |
 | `ConsultationResultPage.vue` | 问诊共享结果页主体：承载语音标准的左侧病例正文编辑、右侧诊断/治疗推荐、反馈、刷新方案与最终回写 UI。语音问诊和症状问诊都通过各自包装组件把初始快照、渠道语义与额外动作适配到这里；最终回写请求会进入“等待 HIS 回执”状态，失败时保留当前页面供医生修正并重试 | [src/components/ConsultationResultPage.vue](src/components/ConsultationResultPage.vue) |
 | `features/clinical-result/*` | 问诊结果页共享业务 helper：诊断 / 治疗推荐反馈快照、治疗标准库匹配展示、标准库候选搜索、手动匹配写入、推荐依据 tooltip key、疑似匹配名称等无 UI 副作用 helper。症状问诊和语音问诊必须优先复用这里，避免在 `ConsultationPage.vue` 与 `VoiceConsultationNew.vue` 中继续复制同一套推荐卡片辅助逻辑；页面层只保留选中门禁、toast、弹层开合和渠道专属编排 | [src/features/clinical-result/recommendationHelpers.ts](src/features/clinical-result/recommendationHelpers.ts) |
-| `DiagnosisRecommendationCard.vue` | 单条诊断推荐卡片：现同时服务语音问诊与症状问诊。组件负责统一渲染名称、编码、主诊断/已纳入状态、推荐依据 tooltip 和同类诊断切换；反馈按钮通过 `showFeedback` 控制是否启用，额外动作区与正文细节区通过插槽让不同页面注入各自能力（如症状侧的文献搜索 / PHIS 引用 / checklist，以及语音/症状两侧共用的项级反馈 popover） | [src/components/DiagnosisRecommendationCard.vue](src/components/DiagnosisRecommendationCard.vue) |
+| `DiagnosisRecommendationCard.vue` | 单条诊断推荐卡片：现同时服务语音问诊与症状问诊。组件负责统一渲染名称、编码、置信度/匹配度、主诊断/已纳入状态、推荐依据 tooltip 和同类诊断切换；反馈按钮通过 `showFeedback` 控制是否启用，额外动作区与正文细节区通过插槽让不同页面注入各自能力（如症状侧的文献搜索 / PHIS 引用 / 诊断鉴别 checklist，以及语音/症状两侧共用的项级反馈 popover） | [src/components/DiagnosisRecommendationCard.vue](src/components/DiagnosisRecommendationCard.vue) |
 | `TreatmentRecommendationCard.vue` | 单条治疗推荐卡片壳：现同时服务语音问诊与症状问诊。组件负责渲染名称/规格、匹配状态、执行科室/发药药房 chip、候选标准项确认、AI 原建议、摘要文案，以及反馈 / 手动匹配 / 展开更多编辑等头部动作；反馈按钮可关闭，标题前缀/标题补充/额外动作/正文细节通过插槽注入，父级继续把手动匹配面板与 editor 区域留在插槽中；其中症状侧可通过 worklist 布局变体把同一份数据骨架渲染成更接近医嘱清单的列表结构，而无需维护第二套治疗项组件 | [src/components/TreatmentRecommendationCard.vue](src/components/TreatmentRecommendationCard.vue) |
 | `VoiceRecommendationFeedbackPopover.vue` | 语音结果页单条推荐反馈弹层：收集问题标签、反馈原因、是否已修正采用以及修正结果摘要 | [src/components/VoiceRecommendationFeedbackPopover.vue](src/components/VoiceRecommendationFeedbackPopover.vue) |
 | `VoiceRecordFeedbackPopover.vue` | 语音结果页病例字段反馈弹层：展示主诉 / 现病史 / 既往史的 AI 原文、当前内容与差异摘要，并提交字段级反馈 | [src/components/VoiceRecordFeedbackPopover.vue](src/components/VoiceRecordFeedbackPopover.vue) |

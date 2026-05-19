@@ -33,6 +33,7 @@ import {
   getPatientContextGenderCode,
   getPatientContextGenderText,
   getPatientContextHistory,
+  getPatientContextAnchorId,
   getPatientContextId,
   getPatientContextName,
 } from '../utils/patientContext';
@@ -84,6 +85,10 @@ export interface EventListenersOptions {
   };
   /** 重置语音会话状态 */
   resetVoiceSessionState: () => void;
+  /** 清理指定患者/就诊的语音缓存 */
+  clearVoiceConsultationCache: (patient?: AppPatient | null) => void;
+  /** 清理问诊最小化恢复入口 */
+  clearMinimizedConsultationSessions: () => void;
   /** 检查指定患者是否存在未提交语音缓存 */
   hasCachedVoiceResult: (patient?: AppPatient | null) => boolean;
   /** 队列化快进模式自动触发请求 */
@@ -527,6 +532,8 @@ export function useEventListeners(options: EventListenersOptions) {
     workMode,
     navigation,
     resetVoiceSessionState,
+    clearVoiceConsultationCache,
+    clearMinimizedConsultationSessions,
     hasCachedVoiceResult,
     queueConsultationAssistTrigger,
     exiting,
@@ -568,6 +575,26 @@ export function useEventListeners(options: EventListenersOptions) {
     activeReceptionPatientId = null;
   }
 
+  function clearVoiceStateWhenPatientSwitches(
+    previousPatient: AppPatient | null,
+    nextPatient: AppPatient | null
+  ): void {
+    const previousAnchorId = getPatientContextAnchorId(previousPatient);
+    const nextAnchorId = getPatientContextAnchorId(nextPatient);
+    if (!previousAnchorId || !nextAnchorId || previousAnchorId === nextAnchorId) {
+      return;
+    }
+
+    clearVoiceConsultationCache(previousPatient);
+    resetVoiceSessionState();
+    // 恢复入口要和患者上下文绑定：切换到其他患者后旧患者现场失效。
+    clearMinimizedConsultationSessions();
+    console.info('[EventListeners] Cleared voice cache after patient switch', {
+      previousAnchorId,
+      nextAnchorId,
+    });
+  }
+
   async function executeReceptionFlow(payload: StartConsultationPayload, quietMode = false): Promise<boolean> {
     const patientId = getPatientContextId(buildIncomingPatientDraft(payload as Record<string, unknown> | null | undefined));
     if (!patientId) {
@@ -601,6 +628,7 @@ export function useEventListeners(options: EventListenersOptions) {
           showToast('接诊失败：患者上下文初始化失败', 'error');
           return false;
         }
+        clearVoiceStateWhenPatientSwitches(currentPatient.value, nextPatient);
         currentPatient.value = nextPatient;
 
         if (!quietMode) {
@@ -791,7 +819,9 @@ export function useEventListeners(options: EventListenersOptions) {
         riskCount: data.risks?.length,
       });
 
-      currentPatient.value = await hydratePatientContextFromHis(currentPatient.value, data, 'show-patient-risks');
+      const nextPatient = await hydratePatientContextFromHis(currentPatient.value, data, 'show-patient-risks');
+      clearVoiceStateWhenPatientSwitches(currentPatient.value, nextPatient);
+      currentPatient.value = nextPatient;
       const riskStateSnapshot = syncRiskStateFromPatient(currentPatient.value);
       riskPatientName.value = riskStateSnapshot.patientName;
       riskPatientGender.value = riskStateSnapshot.patientGender;
@@ -921,8 +951,11 @@ export function useEventListeners(options: EventListenersOptions) {
   async function registerStopConsultationListener(): Promise<void> {
     unlistenStopConsultation = await listen('stop-consultation', async () => {
       console.log('Received stop consultation request');
+      const patientToClear = currentPatient.value;
       invalidateActiveReceptionFlow();
       resetVoiceSessionState();
+      clearVoiceConsultationCache(patientToClear);
+      clearMinimizedConsultationSessions();
       // 清理患者上下文，保证"结束就诊后必须重新接诊"的机制生效：
       // 如果不清，后续不带 payload 的 startVoice / startConsultation 会
       // 被 mergePatientContext 用残留的 patient 填充，绕过几个入口的

@@ -355,7 +355,9 @@
         :examinations="examRecommendations"
         :lab-tests="labTestRecommendations"
         :procedures="procedureRecommendations"
-        @cancel="currentView = 'consultation'"
+        @cancel="handleAbandonConsultation"
+        @secondary-footer-action="currentView = 'consultation'"
+        @diagnosis-differential="handleDiagnosisDifferential"
         @close="$emit('close')"
       />
     </div>
@@ -636,7 +638,7 @@ const props = defineProps<{
   } | null;
 }>();
 
-const emit = defineEmits(['close', 'consume-auto-trigger']);
+const emit = defineEmits(['close', 'cancel', 'consume-auto-trigger']);
 
 // --- Interfaces & State Definitions ---
 import type { Diagnosis, Patient, TreatmentRecommendation, FinalRecord } from '../types/consultation';
@@ -878,6 +880,7 @@ const selectedDiagnosis = ref<Diagnosis | null>(null);
 const relatedDiagnoses = ref<DiagnosisItem[]>([]);
 const isRelatedOpen = ref(false);
 const collapsedDiagnosisGroups = ref<Record<string, boolean>>({});
+let aiDiagnosisRequestSeq = 0;
 
 const treatmentLoading = ref(false);
 const treatmentError = ref<string | null>(null);
@@ -903,6 +906,10 @@ const labTestError = ref<string | null>(null);
 const procedureRecommendations = ref<TreatmentRecommendation[]>([]);
 const procedureLoading = ref(false);
 const procedureError = ref<string | null>(null);
+let treatmentRecommendationRequestSeq = 0;
+let examRecommendationRequestSeq = 0;
+let labTestRecommendationRequestSeq = 0;
+let procedureRecommendationRequestSeq = 0;
 
 // HIS 字典 + 治疗项归一化（与语音问诊共用同一份基础设施）
 // 症状侧现已接入“发药药房 / 执行科室”门禁：未设置不允许勾选，不允许参与回写。
@@ -1519,6 +1526,15 @@ const prefillDiagnosisFromPatient = (force = false): boolean => {
     rationale: '来自 PHIS 当前诊断草稿',
   } as Diagnosis;
   return true;
+};
+
+const getDiagnosisIdentity = (diag: Diagnosis | null | undefined): string => {
+  if (!diag) return '';
+  return `${diag.code || ''}:${diag.name || ''}`;
+};
+
+const isCurrentDiagnosisContext = (identity: string): boolean => {
+  return identity !== '' && identity === getDiagnosisIdentity(selectedDiagnosis.value);
 };
 
 const resetWorkflowState = () => {
@@ -2474,6 +2490,34 @@ const handleEndSession = () => {
   emit('close');
 };
 
+const handleAbandonConsultation = () => {
+  trackClick('abandon_symptom_consultation', { consultationId: resolveConsultationId() });
+  symptomCacheSession.clearSnapshot();
+  resetWorkflowState();
+  initFormData(generalConditionConfig);
+  emit('cancel');
+};
+
+const handleDiagnosisDifferential = async (diag: Diagnosis) => {
+  selectedDiagnosis.value = diag;
+  trackClick('diagnosis_differential_open', {
+    diagnosisName: diag.name,
+    diagnosisCode: diag.code,
+    consultationId: resolveConsultationId(),
+  });
+  await fetchDiagnosisChecklist(diag);
+  if (checklistItems.value.length > 0) {
+    trackAssistFeatureUsage('differential', {
+      diagnosisName: diag.name,
+      diagnosisCode: diag.code,
+      itemCount: checklistItems.value.length,
+    });
+    showChecklistModal.value = true;
+    return;
+  }
+  showToast('当前诊断暂无待确认的鉴别排查项。', 'info');
+};
+
 const removeSymptom = (symptom: any) => {
   trackClick('symptom_remove', { symptomKey: symptom.key, symptomName: symptom.name });
   const index = selectedSymptoms.value.findIndex(s => s.key === symptom.key);
@@ -3005,12 +3049,7 @@ const handleEndConsultation = async () => {
 
 const parseLLMJson = (text: string): any => {
   try {
-    let jsonStr = text.trim();
-    if (jsonStr.startsWith('```json')) {
-      jsonStr = jsonStr.replace(/^```json\s*/, '').replace(/\s*```$/, '');
-    } else if (jsonStr.startsWith('```')) {
-      jsonStr = jsonStr.replace(/^```\s*/, '').replace(/\s*```$/, '');
-    }
+    const jsonStr = extractLLMJsonCandidate(text);
     const parsed = JSON.parse(jsonStr);
     console.log('[parseLLMJson] Successfully parsed:', parsed);
     return parsed;
@@ -3018,6 +3057,77 @@ const parseLLMJson = (text: string): any => {
     console.error('[parseLLMJson] Failed to parse JSON:', text, err);
     throw new Error(`JSON解析失败: ${err instanceof Error ? err.message : String(err)}`);
   }
+};
+
+const cleanLLMJsonEnvelope = (text: string): string => text
+  .replace(/^\uFEFF/, '')
+  .replace(/```json\s*/gi, '```')
+  .replace(/```/g, '')
+  .trim();
+
+const findBalancedJsonCandidate = (text: string, start: number, openChar: '{' | '[', closeChar: '}' | ']'): string | null => {
+  let depth = 0;
+  let inString = false;
+  let escaped = false;
+
+  for (let i = start; i < text.length; i += 1) {
+    const char = text[i];
+
+    if (inString) {
+      if (escaped) {
+        escaped = false;
+      } else if (char === '\\') {
+        escaped = true;
+      } else if (char === '"') {
+        inString = false;
+      }
+      continue;
+    }
+
+    if (char === '"') {
+      inString = true;
+      continue;
+    }
+
+    if (char === openChar) {
+      depth += 1;
+    } else if (char === closeChar) {
+      depth -= 1;
+      if (depth === 0) {
+        return text.slice(start, i + 1);
+      }
+    }
+  }
+
+  return null;
+};
+
+const extractLLMJsonCandidate = (text: string): string => {
+  const cleaned = cleanLLMJsonEnvelope(text);
+  const candidates: Array<{ start: number; json: string }> = [];
+
+  for (let i = 0; i < cleaned.length; i += 1) {
+    const char = cleaned[i];
+    if (char === '[') {
+      const json = findBalancedJsonCandidate(cleaned, i, '[', ']');
+      if (json) candidates.push({ start: i, json });
+    } else if (char === '{') {
+      const json = findBalancedJsonCandidate(cleaned, i, '{', '}');
+      if (json) candidates.push({ start: i, json });
+    }
+  }
+
+  candidates.sort((a, b) => a.start - b.start);
+  for (const candidate of candidates) {
+    try {
+      JSON.parse(candidate.json);
+      return candidate.json;
+    } catch {
+      // Try the next balanced block; explanatory text may contain brackets.
+    }
+  }
+
+  return candidates[0]?.json || cleaned;
 };
 
 const buildConsultationTraceConfig = (
@@ -3036,10 +3146,9 @@ const buildConsultationTraceConfig = (
 });
 
 const fetchAIDiagnosis = async (options?: { trackSmartConsultation?: boolean }) => {
+  const requestSeq = ++aiDiagnosisRequestSeq;
   aiLoading.value = true;
   aiError.value = null;
-  aiDiagnoses.value = [];
-  selectedDiagnosis.value = null;
   try {
     const startTime = Date.now();
     console.log('========== AI 辅助诊断开始 ==========');
@@ -3252,7 +3361,13 @@ const fetchAIDiagnosis = async (options?: { trackSmartConsultation?: boolean }) 
       };
     });
 
+    if (requestSeq !== aiDiagnosisRequestSeq) {
+      console.info('[ConsultationPage] Ignore stale diagnosis response', { requestSeq, latest: aiDiagnosisRequestSeq });
+      return;
+    }
+
     aiDiagnoses.value = diagnoses;
+    selectedDiagnosis.value = null;
 
     console.timeEnd('[AI分析] 3. 解析数据和匹配标准词典');
     console.time('[AI分析] 4. 分支逻辑 (文献检索、持久化和事实核查)');
@@ -3301,8 +3416,13 @@ const fetchAIDiagnosis = async (options?: { trackSmartConsultation?: boolean }) 
     console.error("Failed to fetch AI diagnosis", e);
     trackError('ai_diagnosis_failed', e);
     aiError.value = "无法获取诊断建议，请稍后重试或检查网络。";
+    if (aiDiagnoses.value.length > 0) {
+      showToast('AI 诊断刷新失败，已保留上一版诊断建议。', 'info');
+    }
   } finally {
-    aiLoading.value = false;
+    if (requestSeq === aiDiagnosisRequestSeq) {
+      aiLoading.value = false;
+    }
   }
 };
 
@@ -3604,9 +3724,10 @@ const handleDiagnosisSelect = (diag: Diagnosis) => {
 const fetchTreatmentRecommendation = async () => {
   if (!selectedDiagnosis.value) return;
 
+  const requestSeq = ++treatmentRecommendationRequestSeq;
+  const diagnosisIdentity = getDiagnosisIdentity(selectedDiagnosis.value);
   treatmentLoading.value = true;
   treatmentError.value = null;
-  treatmentRecommendations.value = [];
   try {
     const startTime = Date.now();
     let fullResponse = "";
@@ -3664,6 +3785,16 @@ const fetchTreatmentRecommendation = async () => {
         });
       });
 
+    if (requestSeq !== treatmentRecommendationRequestSeq || !isCurrentDiagnosisContext(diagnosisIdentity)) {
+      console.info('[ConsultationPage] Ignore stale medication response', {
+        requestSeq,
+        latest: treatmentRecommendationRequestSeq,
+        diagnosisIdentity,
+        currentDiagnosisIdentity: getDiagnosisIdentity(selectedDiagnosis.value),
+      });
+      return;
+    }
+
     treatmentRecommendations.value = processedRecs;
 
     try {
@@ -3697,17 +3828,23 @@ const fetchTreatmentRecommendation = async () => {
     console.error("Failed to fetch medication recommendations", e);
     trackError('treatment_recommendation_failed', e);
     treatmentError.value = "无法获取用药方案建议。";
+    if (treatmentRecommendations.value.length > 0) {
+      showToast('用药方案刷新失败，已保留上一版建议。', 'info');
+    }
   } finally {
-    treatmentLoading.value = false;
+    if (requestSeq === treatmentRecommendationRequestSeq) {
+      treatmentLoading.value = false;
+    }
   }
 };
 
 const fetchExamRecommendation = async () => {
   if (!selectedDiagnosis.value || consultationMode.value === 'tcm') return;
 
+  const requestSeq = ++examRecommendationRequestSeq;
+  const diagnosisIdentity = getDiagnosisIdentity(selectedDiagnosis.value);
   examLoading.value = true;
   examError.value = null;
-  examRecommendations.value = [];
 
   try {
     const startTime = Date.now();
@@ -3746,6 +3883,16 @@ const fetchExamRecommendation = async () => {
         });
       });
 
+    if (requestSeq !== examRecommendationRequestSeq || !isCurrentDiagnosisContext(diagnosisIdentity)) {
+      console.info('[ConsultationPage] Ignore stale examination response', {
+        requestSeq,
+        latest: examRecommendationRequestSeq,
+        diagnosisIdentity,
+        currentDiagnosisIdentity: getDiagnosisIdentity(selectedDiagnosis.value),
+      });
+      return;
+    }
+
     examRecommendations.value = processedRecs;
 
     try {
@@ -3770,17 +3917,23 @@ const fetchExamRecommendation = async () => {
   } catch (e) {
     console.error("Failed to fetch exam recommendations", e);
     examError.value = "无法获取检查推荐。";
+    if (examRecommendations.value.length > 0) {
+      showToast('检查推荐刷新失败，已保留上一版建议。', 'info');
+    }
   } finally {
-    examLoading.value = false;
+    if (requestSeq === examRecommendationRequestSeq) {
+      examLoading.value = false;
+    }
   }
 };
 
 const fetchLabTestRecommendation = async () => {
   if (!selectedDiagnosis.value || consultationMode.value === 'tcm') return;
 
+  const requestSeq = ++labTestRecommendationRequestSeq;
+  const diagnosisIdentity = getDiagnosisIdentity(selectedDiagnosis.value);
   labTestLoading.value = true;
   labTestError.value = null;
-  labTestRecommendations.value = [];
 
   try {
     const startTime = Date.now();
@@ -3819,6 +3972,16 @@ const fetchLabTestRecommendation = async () => {
         });
       });
 
+    if (requestSeq !== labTestRecommendationRequestSeq || !isCurrentDiagnosisContext(diagnosisIdentity)) {
+      console.info('[ConsultationPage] Ignore stale lab test response', {
+        requestSeq,
+        latest: labTestRecommendationRequestSeq,
+        diagnosisIdentity,
+        currentDiagnosisIdentity: getDiagnosisIdentity(selectedDiagnosis.value),
+      });
+      return;
+    }
+
     labTestRecommendations.value = processedRecs;
 
     try {
@@ -3843,17 +4006,23 @@ const fetchLabTestRecommendation = async () => {
   } catch (e) {
     console.error("Failed to fetch lab test recommendations", e);
     labTestError.value = "无法获取检验推荐。";
+    if (labTestRecommendations.value.length > 0) {
+      showToast('检验推荐刷新失败，已保留上一版建议。', 'info');
+    }
   } finally {
-    labTestLoading.value = false;
+    if (requestSeq === labTestRecommendationRequestSeq) {
+      labTestLoading.value = false;
+    }
   }
 };
 
 const fetchProcedureRecommendation = async () => {
   if (!selectedDiagnosis.value || consultationMode.value === 'tcm') return;
 
+  const requestSeq = ++procedureRecommendationRequestSeq;
+  const diagnosisIdentity = getDiagnosisIdentity(selectedDiagnosis.value);
   procedureLoading.value = true;
   procedureError.value = null;
-  procedureRecommendations.value = [];
 
   try {
     const startTime = Date.now();
@@ -3895,6 +4064,16 @@ const fetchProcedureRecommendation = async () => {
         });
       });
 
+    if (requestSeq !== procedureRecommendationRequestSeq || !isCurrentDiagnosisContext(diagnosisIdentity)) {
+      console.info('[ConsultationPage] Ignore stale procedure response', {
+        requestSeq,
+        latest: procedureRecommendationRequestSeq,
+        diagnosisIdentity,
+        currentDiagnosisIdentity: getDiagnosisIdentity(selectedDiagnosis.value),
+      });
+      return;
+    }
+
     procedureRecommendations.value = processedRecs;
 
     try {
@@ -3919,8 +4098,13 @@ const fetchProcedureRecommendation = async () => {
   } catch (e) {
     console.error("Failed to fetch procedure recommendations", e);
     procedureError.value = "无法获取处置推荐。";
+    if (procedureRecommendations.value.length > 0) {
+      showToast('处置推荐刷新失败，已保留上一版建议。', 'info');
+    }
   } finally {
-    procedureLoading.value = false;
+    if (requestSeq === procedureRecommendationRequestSeq) {
+      procedureLoading.value = false;
+    }
   }
 };
 

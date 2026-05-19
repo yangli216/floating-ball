@@ -30,6 +30,7 @@
               <span class="hover-reason-tooltip">{{ diag.rationale }}</span>
             </span>
           </div>
+          <span v-if="diag.rate" class="diag-rate-token" :class="rateToneClass">{{ diag.rate }}</span>
           <span v-if="diag.code" class="meta-token">编码 {{ diag.code }}</span>
           <span v-if="isPrimary" class="meta-token diag-role-token">主诊断</span>
           <span v-else-if="selected" class="meta-token diag-role-token">已纳入</span>
@@ -96,7 +97,7 @@
 </template>
 
 <script setup lang="ts">
-import type { PropType } from 'vue';
+import { computed, type PropType } from 'vue';
 import Icon from './Icon.vue';
 import FactCheckHighlight from './FactCheckHighlight.vue';
 import VoiceRecommendationFeedbackPopover from './VoiceRecommendationFeedbackPopover.vue';
@@ -110,7 +111,7 @@ interface RelatedDiagnosisCandidate {
   name: string;
 }
 
-defineProps({
+const props = defineProps({
   diag: {
     type: Object as PropType<Diagnosis>,
     required: true,
@@ -172,6 +173,14 @@ defineProps({
     type: String,
     default: '',
   },
+});
+
+const rateToneClass = computed(() => {
+  const numericRate = Number.parseInt(props.diag.rate || '', 10);
+  if (Number.isNaN(numericRate)) return '';
+  if (numericRate >= 70) return 'rate-high';
+  if (numericRate >= 60) return 'rate-medium';
+  return 'rate-low';
 });
 
 const emit = defineEmits<{
@@ -348,6 +357,35 @@ const emit = defineEmits<{
   font-size: var(--voice-font-min);
   color: var(--voice-text-muted);
   white-space: nowrap;
+}
+
+.diag-rate-token {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  min-height: 22px;
+  padding: 0 8px;
+  border-radius: 999px;
+  background: rgba(100, 116, 139, 0.09);
+  color: var(--voice-text-muted);
+  font-size: var(--voice-font-min);
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.diag-rate-token.rate-high {
+  background: rgba(31, 138, 91, 0.1);
+  color: var(--voice-success);
+}
+
+.diag-rate-token.rate-medium {
+  background: rgba(245, 158, 11, 0.12);
+  color: #b45309;
+}
+
+.diag-rate-token.rate-low {
+  background: rgba(239, 68, 68, 0.1);
+  color: var(--voice-danger);
 }
 
 .diag-role-token {

@@ -19,7 +19,7 @@ const props = withDefaults(defineProps<{
   secondaryFooterActionDisabled: false,
 });
 
-const emit = defineEmits(['close', 'cancel', 'secondary-footer-action']);
+const emit = defineEmits(['close', 'cancel', 'secondary-footer-action', 'diagnosis-differential']);
 </script>
 
 <template>
@@ -34,5 +34,9 @@ const emit = defineEmits(['close', 'cancel', 'secondary-footer-action']);
     @close="emit('close')"
     @cancel="emit('cancel')"
     @secondary-footer-action="emit('secondary-footer-action')"
-  />
+  >
+    <template #diagnosis-actions="slotProps">
+      <slot name="diagnosis-actions" v-bind="slotProps" />
+    </template>
+  </VoiceConsultationNew>
 </template>

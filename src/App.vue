@@ -27,7 +27,7 @@ import { getWindowSizeForView, WINDOW_SIZES, type ViewType } from "./constants/w
 import { useWindowManagement } from "./composables/useWindowManagement";
 import { useWorkMode } from "./composables/useWorkMode";
 import { useNavigation } from "./composables/useNavigation";
-import { useVoiceConsultation } from "./composables/useVoiceConsultation";
+import { clearVoiceConsultationCache, useVoiceConsultation } from "./composables/useVoiceConsultation";
 import { useEventListeners } from "./composables/useEventListeners";
 import { useMinimizedSessions } from "./composables/useMinimizedSessions";
 import {
@@ -341,6 +341,11 @@ async function cancelVoiceResult(): Promise<void> {
   minimizedSessions.clear('voice');
 }
 
+async function cancelSymptomConsultation(): Promise<void> {
+  minimizedSessions.clear('symptom');
+  await exitWork('cancelled');
+}
+
 // 可见性/可点击门禁：
 // 问诊按钮始终可见；仅在当前患者存在未结束的问诊（最小化会话）时才可点击，
 // 作为“恢复问诊界面”的入口；否则置灰禁用。
@@ -492,6 +497,8 @@ const eventListeners = useEventListeners({
   workMode: { enterWorkMode, exitWork },
   navigation: { openConsultation, openVoiceConsultation, startVoiceInteraction },
   resetVoiceSessionState,
+  clearVoiceConsultationCache,
+  clearMinimizedConsultationSessions: minimizedSessions.clearAll,
   hasCachedVoiceResult,
   queueConsultationAssistTrigger,
   exiting,
@@ -796,6 +803,7 @@ const openInsideCloudHome = async () => {
           <ConsultationPage
             v-show="currentView === 'consultation'"
             @close="handleUserCollapse"
+            @cancel="cancelSymptomConsultation"
             :initialPatientData="currentPatient ?? undefined"
             :assistTrigger="consultationAssistTrigger"
             @consume-auto-trigger="clearConsultationAssistTrigger"

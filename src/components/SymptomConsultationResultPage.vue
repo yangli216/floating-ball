@@ -28,17 +28,12 @@ const props = withDefaults(defineProps<{
   secondaryFooterActionDisabled: false,
 });
 
-const emit = defineEmits(['close', 'cancel', 'secondary-footer-action']);
+const emit = defineEmits(['close', 'cancel', 'secondary-footer-action', 'diagnosis-differential']);
 
 const resolvedSecondaryFooterActionText = computed(() => props.secondaryFooterActionText || '返回');
 
 function handleSecondaryFooterAction(): void {
-  if (props.secondaryFooterActionText) {
-    emit('secondary-footer-action');
-    return;
-  }
-
-  emit('cancel');
+  emit('secondary-footer-action');
 }
 
 function cloneValue<T>(value: T): T {
@@ -149,6 +144,10 @@ const symptomIntentResult = computed<VoiceIntentResult>(() => ({
   treatmentPlan: '',
   healthEducation: '',
 }));
+
+function handleDifferentialClick(diag: Diagnosis): void {
+  emit('diagnosis-differential', diag);
+}
 </script>
 
 <template>
@@ -161,5 +160,34 @@ const symptomIntentResult = computed<VoiceIntentResult>(() => ({
     @close="emit('close')"
     @cancel="emit('cancel')"
     @secondary-footer-action="handleSecondaryFooterAction"
-  />
+  >
+    <template #diagnosis-actions="{ diag }">
+      <button
+        class="symptom-differential-btn"
+        type="button"
+        @click.stop="handleDifferentialClick(diag)"
+      >
+        诊断鉴别
+      </button>
+    </template>
+  </ConsultationResultPage>
 </template>
+
+<style scoped>
+.symptom-differential-btn {
+  min-height: 28px;
+  padding: 0 10px;
+  border: 1px solid var(--voice-border);
+  border-radius: 999px;
+  background: var(--voice-surface);
+  color: var(--voice-text-muted);
+  font-size: var(--voice-font-min);
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.symptom-differential-btn:hover {
+  border-color: var(--voice-accent);
+  color: var(--voice-accent);
+}
+</style>
