@@ -4,6 +4,7 @@
  * 区域化模式下凭证由后端管理
  */
 import { isRegionalMode, getCachedBootstrap, regionalGet, regionalPost } from './regionalClient';
+import { trackFeatureUsage } from './featureUsageTracker';
 
 // 配置常量
 const DEFAULT_CONFIG = {
@@ -28,6 +29,7 @@ export interface SearchParams {
   limit?: number;
   score?: number;
   enableAbstract?: boolean;
+  trackUsage?: boolean;
 }
 
 // 搜索结果来源信息
@@ -127,6 +129,23 @@ interface SearchCache {
 
 // 缓存过期时间（5分钟）
 const CACHE_TTL = 5 * 60 * 1000;
+let knowledgeUsageSequence = 0;
+
+function nextKnowledgeUsageKey(action: string, target?: string): string {
+  knowledgeUsageSequence += 1;
+  return `knowledge:${action}:${Date.now()}:${knowledgeUsageSequence}:${target || 'na'}`;
+}
+
+function trackKnowledgeUsage(eventAction: string, payload?: Record<string, unknown>): void {
+  trackFeatureUsage({
+    featureCode: 'knowledge_usage',
+    eventAction,
+    idempotencyKey: nextKnowledgeUsageKey(eventAction, typeof payload?.query === 'string' ? payload.query : undefined),
+    sourceModule: 'pmphai',
+    scene: 'knowledge-base',
+    payload,
+  });
+}
 
 /**
  * 获取知识库配置
@@ -472,6 +491,13 @@ class PMPHAIService {
           results,
           timestamp: Date.now(),
         });
+        if (params.trackUsage) {
+          trackKnowledgeUsage('knowledge_search', {
+            query: params.query,
+            type: params.type ?? SearchType.Knowledge,
+            resultCount: results.length,
+          });
+        }
         return results;
       }
 
@@ -502,6 +528,13 @@ class PMPHAIService {
         results,
         timestamp: Date.now(),
       });
+      if (params.trackUsage) {
+        trackKnowledgeUsage('knowledge_search', {
+          query: params.query,
+          type: params.type ?? SearchType.Knowledge,
+          resultCount: results.length,
+        });
+      }
 
       return results;
     } catch (error) {
@@ -521,7 +554,11 @@ class PMPHAIService {
 
     try {
       if (isRegionalMode()) {
-        return await regionalKnowledgePost<ClipData>('/clip', { id });
+        const clip = await regionalKnowledgePost<ClipData>('/clip', { id });
+        if (clip) {
+          trackKnowledgeUsage('knowledge_clip', { id });
+        }
+        return clip;
       }
 
       const token = await this.getAccessToken();
@@ -536,7 +573,11 @@ class PMPHAIService {
       });
 
       const result = await response.json();
-      return result?.data || null;
+      const clip = result?.data || null;
+      if (clip) {
+        trackKnowledgeUsage('knowledge_clip', { id });
+      }
+      return clip;
     } catch (error) {
       console.error('获取文档内容失败:', error);
       return null;
@@ -550,6 +591,14 @@ class PMPHAIService {
     queries: string[],
     options?: Partial<SearchParams>
   ): Promise<Map<string, SearchResult[]>> {
+    return this.batchSearchInternal(queries, options, Boolean(options?.trackUsage));
+  }
+
+  private async batchSearchInternal(
+    queries: string[],
+    options: Partial<SearchParams> | undefined,
+    shouldTrack: boolean
+  ): Promise<Map<string, SearchResult[]>> {
     if (!isPMPHAIConfigured()) {
       console.warn('知识库未配置，跳过批量搜索');
       return new Map();
@@ -558,12 +607,17 @@ class PMPHAIService {
     // 去重并过滤空查询
     const uniqueQueries = [...new Set(queries.filter(q => q && q.trim()))];
 
-    // 并行执行搜索
+    const searchOptions: Partial<SearchParams> = {
+      ...options,
+      trackUsage: false,
+    };
+
+    // 并行执行搜索；批量入口只在下方按一次用户动作统计，避免内部 query 重复计数。
     const results = await Promise.all(
       uniqueQueries.map(async query => {
         const searchResults = await this.search({
           query,
-          ...options,
+          ...searchOptions,
         });
         return { query, results: searchResults };
       })
@@ -575,6 +629,13 @@ class PMPHAIService {
       resultMap.set(query, searchResults);
     }
 
+    if (shouldTrack && uniqueQueries.length > 0) {
+      trackKnowledgeUsage('knowledge_batch_search', {
+        queryCount: uniqueQueries.length,
+        resultCount: Array.from(resultMap.values()).flat().length,
+      });
+    }
+
     return resultMap;
   }
 
@@ -584,7 +645,8 @@ class PMPHAIService {
   async searchByCategories(
     diagnoses: string[],
     medications: string[],
-    examinations: string[]
+    examinations: string[],
+    options?: { trackUsage?: boolean }
   ): Promise<BatchSearchResults> {
     if (!isPMPHAIConfigured()) {
       return {
@@ -596,10 +658,27 @@ class PMPHAIService {
 
     // 并行搜索三个类别
     const [diagnosisResults, medicationResults, examinationResults] = await Promise.all([
-      this.batchSearch(diagnoses, { limit: 3, enableAbstract: true }),
-      this.batchSearch(medications, { limit: 3, enableAbstract: true }),
-      this.batchSearch(examinations, { limit: 3, enableAbstract: true }),
+      this.batchSearchInternal(diagnoses, { limit: 3, enableAbstract: true }, false),
+      this.batchSearchInternal(medications, { limit: 3, enableAbstract: true }, false),
+      this.batchSearchInternal(examinations, { limit: 3, enableAbstract: true }, false),
     ]);
+
+    const totalQueryCount =
+      diagnoses.filter(Boolean).length +
+      medications.filter(Boolean).length +
+      examinations.filter(Boolean).length;
+
+    if (options?.trackUsage && totalQueryCount > 0) {
+      trackKnowledgeUsage('knowledge_category_search', {
+        diagnosisQueryCount: diagnoses.filter(Boolean).length,
+        medicationQueryCount: medications.filter(Boolean).length,
+        examinationQueryCount: examinations.filter(Boolean).length,
+        resultCount:
+          Array.from(diagnosisResults.values()).flat().length +
+          Array.from(medicationResults.values()).flat().length +
+          Array.from(examinationResults.values()).flat().length,
+      });
+    }
 
     return {
       diagnoses: diagnosisResults,
@@ -639,7 +718,15 @@ class PMPHAIService {
           catalogueId: params.catalogueId,
           originUrl: params.originUrl,
         });
-        return result?.url || null;
+        const url = result?.url || null;
+        if (url) {
+          trackKnowledgeUsage('knowledge_page_url', {
+            pageName: params.pageName,
+            id: params.id,
+            kgBaseId: params.kgBaseId,
+          });
+        }
+        return url;
       }
 
       const { appKey, appSecret } = getPMPHAIConfig();
@@ -667,7 +754,15 @@ class PMPHAIService {
       }
 
       const result = await response.json();
-      return result?.data?.url || null;
+      const url = result?.data?.url || null;
+      if (url) {
+        trackKnowledgeUsage('knowledge_page_url', {
+          pageName: params.pageName,
+          id: params.id,
+          kgBaseId: params.kgBaseId,
+        });
+      }
+      return url;
     } catch (error) {
       console.error('获取页面URL失败:', error);
       return null;
@@ -733,7 +828,7 @@ class PMPHAIService {
 
     try {
       if (isRegionalMode()) {
-        return await regionalKnowledgePost<ListSearchResponse>('/list', {
+        const response = await regionalKnowledgePost<ListSearchResponse>('/list', {
           key: params.key,
           kgBaseId: params.kgBaseId,
           kgBaseName: params.kgBaseName,
@@ -744,6 +839,14 @@ class PMPHAIService {
           sortField: params.sortField,
           sortRule: params.sortRule,
         });
+        if (response) {
+          trackKnowledgeUsage('knowledge_list_search', {
+            query: params.key,
+            kgBaseId: params.kgBaseId,
+            resultCount: response.rows?.length || 0,
+          });
+        }
+        return response;
       }
 
       const token = await this.getAccessToken();
@@ -772,7 +875,15 @@ class PMPHAIService {
       });
 
       const result = await response.json();
-      return result?.data || null;
+      const listResponse = result?.data || null;
+      if (listResponse) {
+        trackKnowledgeUsage('knowledge_list_search', {
+          query: params.key,
+          kgBaseId: params.kgBaseId,
+          resultCount: listResponse.rows?.length || 0,
+        });
+      }
+      return listResponse;
     } catch (error) {
       console.error('列表搜索失败:', error);
       return null;

@@ -31,7 +31,9 @@ export function useVoiceKnowledgeSearch() {
       const diagnoses = rec.diagnosisList?.map(diagnosis => diagnosis.name).filter(Boolean) || [];
       const medications = rec.medications?.map(medicine => medicine.name).filter(Boolean) || [];
       const examinations = rec.examinations?.map(examination => examination.name).filter(Boolean) || [];
-      const results = await pmphaiService.searchByCategories(diagnoses, medications, examinations);
+      const results = await pmphaiService.searchByCategories(diagnoses, medications, examinations, {
+        trackUsage: true,
+      });
 
       knowledgeResults.value = results;
       hasKnowledgeResults.value = totalKnowledgeResults.value > 0;

@@ -573,6 +573,7 @@ import { listen } from '@tauri-apps/api/event';
 import { feedbackService } from '../services/feedback';
 import { getHisAdapter } from '../services/his';
 import { trackViewChange, trackClick, trackError, trackFormSubmit, trackRecommendationAction } from '../services/operationTracker';
+import { trackFeatureUsage } from '../services/featureUsageTracker';
 import BodyPartSelector from './BodyPartSelector.vue';
 import SystemCategorySelector from './SystemCategorySelector.vue';
 import { PROMPTS, DynamicSymptomTemplatePrompt } from '../prompts';
@@ -609,10 +610,7 @@ import {
   submitConsultationUserLog,
 } from '../services/consultationUserLog';
 import {
-  clearSymptomConsultationCache,
-  readSymptomConsultationCache,
-  writeSymptomConsultationCache,
-  type SymptomConsultationSnapshot,
+  useSymptomConsultationCacheSession,
 } from '../composables/useSymptomConsultationCache';
 /* WINDOW_SIZES / diagnosisPath imports removed - feature commented out */
 import type {
@@ -682,8 +680,18 @@ import {
   toManualMatchCandidateView,
 } from '../features/clinical-result/manualMatch';
 type AssistAction = ConsultationAssistAction;
+type AssistFeatureCode = Parameters<typeof trackFeatureUsage>[0]['featureCode'];
 type ReferenceAction = 'diagnosis' | 'medication' | 'examination' | 'lab_test' | 'procedure' | 'batch';
 type ReferenceLifecycleStatus = 'pending' | 'success' | 'failed';
+
+const ASSIST_FEATURE_CODE_BY_KIND: Partial<Record<AssistAction, AssistFeatureCode>> = {
+  diagnosis: 'diagnosis_recommendation',
+  differential: 'diagnosis_checklist',
+  medication: 'medication_recommendation',
+  examination: 'examination_recommendation',
+  lab_test: 'lab_test_recommendation',
+  procedure: 'procedure_recommendation',
+};
 
 interface ReferenceItemPayload {
   name: string;
@@ -742,14 +750,6 @@ const patientInfo = ref<Patient>({
   "sdCardText": "",
   "allergyHistory": ""
 });
-
-function clonePlain<T>(value: T): T {
-  try {
-    return JSON.parse(JSON.stringify(value)) as T;
-  } catch {
-    return value;
-  }
-}
 
 const avatarSrc = computed(() => {
   const info = patientInfo.value;
@@ -837,6 +837,12 @@ const currentTemplatesData = computed(() => {
 // All symptoms for body part and system selectors
 const allSymptoms = computed(() => symptoms.value);
 const currentView = ref<'consultation' | 'record' | 'final_report'>('consultation');
+const createEmptyGeneratedRecord = () => ({
+  chiefComplaint: '',
+  historyOfPresentIllness: '',
+  tcmFourExaminations: '',
+  familyHistory: '',
+});
 const generatedRecord = ref({ chiefComplaint: '', historyOfPresentIllness: '', tcmFourExaminations: '', familyHistory: '' });
 const activePatientAnchorId = ref('');
 const assistFocus = ref<AssistAction | null>(null);
@@ -845,9 +851,6 @@ const lastReferenceFeedback = ref<ReferenceFeedbackPayload | null>(null);
 const referenceStatusMap = ref<Record<string, ReferenceStatusEntry>>({});
 const isWritingRecord = ref(false);
 let unlistenReferenceFeedback: (() => void) | null = null;
-let isRestoringSymptomSnapshot = false;
-let symptomSnapshotTimer: ReturnType<typeof setTimeout> | null = null;
-let lastRestoredSymptomSnapshotId = '';
 
 const systemCategories: Record<string, string> = {
   respiratory: '呼吸系统',
@@ -1256,6 +1259,25 @@ const readPatientText = (
 const resolveConsultationId = (): string =>
   getPatientAnchorId(finalRecord.value?.patient || patientInfo.value) || 'unknown';
 
+const trackAssistFeatureUsage = (
+  kind: AssistAction,
+  payload?: Record<string, unknown>,
+): void => {
+  const featureCode = ASSIST_FEATURE_CODE_BY_KIND[kind];
+  if (!featureCode) return;
+
+  const consultationId = resolveConsultationId();
+  trackFeatureUsage({
+    featureCode,
+    eventAction: `open_${kind}_assist`,
+    idempotencyKey: `assist:${kind}:${consultationId}:${Date.now()}`,
+    consultationId,
+    sourceModule: 'consultation_assist',
+    scene: `consultation-assist-${kind}`,
+    payload,
+  });
+};
+
 const resolvePastMedicalHistory = (): string => {
   const fromRecord = readPatientText(finalRecord.value?.record as unknown as Record<string, unknown>, ['pastMedicalHistory']);
   const fromPatient = readPatientText(
@@ -1507,7 +1529,7 @@ const resetWorkflowState = () => {
   searchQuery.value = '';
   selectedCategories.value = [];
   isCategoryDropdownOpen.value = false;
-  generatedRecord.value = { chiefComplaint: '', historyOfPresentIllness: '', tcmFourExaminations: '', familyHistory: '' };
+  generatedRecord.value = createEmptyGeneratedRecord();
   finalRecord.value = null;
   aiDiagnoses.value = [];
   selectedDiagnosis.value = null;
@@ -1527,118 +1549,6 @@ const resetWorkflowState = () => {
   knowledgeLoading.value = false;
   hasKnowledgeResults.value = false;
   showKnowledgePanel.value = false;
-};
-
-const hasRecoverableSymptomState = (): boolean => {
-  return currentView.value !== 'consultation'
-    || selectedSymptoms.value.length > 0
-    || generatedRecord.value.chiefComplaint.trim() !== ''
-    || generatedRecord.value.historyOfPresentIllness.trim() !== ''
-    || aiDiagnoses.value.length > 0
-    || treatmentRecommendations.value.length > 0
-    || examRecommendations.value.length > 0
-    || labTestRecommendations.value.length > 0
-    || procedureRecommendations.value.length > 0
-    || selectedDiagnosis.value !== null;
-};
-
-const buildSymptomSnapshot = (): SymptomConsultationSnapshot | null => {
-  const consultationId = resolveConsultationId();
-  if (!consultationId || consultationId === 'unknown' || !hasRecoverableSymptomState()) {
-    return null;
-  }
-
-  return {
-    consultationId,
-    currentView: currentView.value,
-    consultationMode: consultationMode.value,
-    selectionMode: selectionMode.value,
-    patientInfo: clonePlain(patientInfo.value),
-    selectedSymptoms: clonePlain(selectedSymptoms.value),
-    formData: clonePlain(formData.value),
-    searchQuery: searchQuery.value,
-    selectedCategories: clonePlain(selectedCategories.value),
-    companionSymptoms: Array.from(companionSymptoms.value),
-    generatedRecord: clonePlain(generatedRecord.value),
-    finalRecord: clonePlain(finalRecord.value),
-    aiDiagnoses: clonePlain(aiDiagnoses.value),
-    selectedDiagnosis: clonePlain(selectedDiagnosis.value),
-    relatedDiagnoses: clonePlain(relatedDiagnoses.value),
-    treatmentRecommendations: clonePlain(treatmentRecommendations.value),
-    examRecommendations: clonePlain(examRecommendations.value),
-    labTestRecommendations: clonePlain(labTestRecommendations.value),
-    procedureRecommendations: clonePlain(procedureRecommendations.value),
-    referenceStatusMap: clonePlain(referenceStatusMap.value),
-    activeReferenceRequest: clonePlain(activeReferenceRequest.value),
-    lastReferenceFeedback: clonePlain(lastReferenceFeedback.value),
-    knowledgeSearchKeyword: knowledgeSearchKeyword.value,
-    knowledgeSearchType: knowledgeSearchType.value,
-    hasKnowledgeResults: hasKnowledgeResults.value,
-    showKnowledgePanel: showKnowledgePanel.value,
-    savedAt: Date.now(),
-  };
-};
-
-const persistSymptomSnapshot = () => {
-  if (isRestoringSymptomSnapshot) return;
-  const snapshot = buildSymptomSnapshot();
-  if (!snapshot) return;
-  writeSymptomConsultationCache(snapshot);
-};
-
-const schedulePersistSymptomSnapshot = () => {
-  if (isRestoringSymptomSnapshot) return;
-  if (symptomSnapshotTimer) {
-    clearTimeout(symptomSnapshotTimer);
-  }
-  symptomSnapshotTimer = setTimeout(() => {
-    symptomSnapshotTimer = null;
-    persistSymptomSnapshot();
-  }, 300);
-};
-
-const restoreSymptomSnapshot = (snapshot: SymptomConsultationSnapshot): void => {
-  isRestoringSymptomSnapshot = true;
-  try {
-    consultationMode.value = snapshot.consultationMode || 'western';
-    selectionMode.value = snapshot.selectionMode || 'common';
-    symptoms.value = snapshot.consultationMode === 'tcm' ? getTCMTemplates() : getWesternTemplates();
-    patientInfo.value = {
-      ...patientInfo.value,
-      ...clonePlain(snapshot.patientInfo),
-    };
-    selectedSymptoms.value = clonePlain(snapshot.selectedSymptoms || []);
-    formData.value = clonePlain(snapshot.formData || {});
-    searchQuery.value = snapshot.searchQuery || '';
-    selectedCategories.value = clonePlain(snapshot.selectedCategories || []);
-    companionSymptoms.value = new Set(snapshot.companionSymptoms || []);
-    generatedRecord.value = clonePlain(snapshot.generatedRecord || {
-      chiefComplaint: '',
-      historyOfPresentIllness: '',
-      tcmFourExaminations: '',
-      familyHistory: '',
-    });
-    finalRecord.value = clonePlain(snapshot.finalRecord || null);
-    aiDiagnoses.value = clonePlain(snapshot.aiDiagnoses || []);
-    selectedDiagnosis.value = clonePlain(snapshot.selectedDiagnosis || null);
-    relatedDiagnoses.value = clonePlain(snapshot.relatedDiagnoses || []);
-    treatmentRecommendations.value = clonePlain(snapshot.treatmentRecommendations || []);
-    examRecommendations.value = clonePlain(snapshot.examRecommendations || []);
-    labTestRecommendations.value = clonePlain(snapshot.labTestRecommendations || []);
-    procedureRecommendations.value = clonePlain(snapshot.procedureRecommendations || []);
-    referenceStatusMap.value = clonePlain(snapshot.referenceStatusMap || {});
-    activeReferenceRequest.value = clonePlain(snapshot.activeReferenceRequest || null) as ReferenceFeedbackPayload | null;
-    lastReferenceFeedback.value = clonePlain(snapshot.lastReferenceFeedback || null) as ReferenceFeedbackPayload | null;
-    knowledgeSearchKeyword.value = snapshot.knowledgeSearchKeyword || '';
-    knowledgeSearchType.value = (snapshot.knowledgeSearchType || 'diagnosis') as 'diagnosis' | 'medication' | 'examination';
-    hasKnowledgeResults.value = Boolean(snapshot.hasKnowledgeResults);
-    showKnowledgePanel.value = Boolean(snapshot.showKnowledgePanel);
-    currentView.value = snapshot.currentView || 'consultation';
-  } finally {
-    nextTick(() => {
-      isRestoringSymptomSnapshot = false;
-    });
-  }
 };
 
 /* canOpenDiagnosisPath / openDiagnosisPathWindow removed - template usage commented out */
@@ -1695,6 +1605,38 @@ const knowledgeResults = ref<BatchSearchResults>({
   examinations: new Map(),
 });
 const hasKnowledgeResults = ref(false);
+
+const symptomCacheSession = useSymptomConsultationCacheSession({
+  consultationId: resolveConsultationId,
+  currentView,
+  consultationMode,
+  selectionMode,
+  symptoms,
+  patientInfo,
+  selectedSymptoms,
+  formData,
+  searchQuery,
+  selectedCategories,
+  companionSymptoms,
+  generatedRecord,
+  finalRecord,
+  aiDiagnoses,
+  selectedDiagnosis,
+  relatedDiagnoses,
+  treatmentRecommendations,
+  examRecommendations,
+  labTestRecommendations,
+  procedureRecommendations,
+  referenceStatusMap,
+  activeReferenceRequest,
+  lastReferenceFeedback,
+  knowledgeSearchKeyword,
+  knowledgeSearchType,
+  hasKnowledgeResults,
+  showKnowledgePanel,
+  createEmptyGeneratedRecord,
+  getTemplates: (mode) => (mode === 'tcm' ? getTCMTemplates() : getWesternTemplates()),
+});
 
 // General Condition Configuration
 const generalConditionConfig = {
@@ -2526,6 +2468,7 @@ const printReport = () => {
 
 const handleEndSession = () => {
   trackClick('end_consultation_session');
+  symptomCacheSession.clearSnapshot();
   resetWorkflowState();
   initFormData(generalConditionConfig);
   emit('close');
@@ -2583,19 +2526,24 @@ const handleClickOutside = (event: MouseEvent) => {
 
 onMounted(() => {
   document.addEventListener('click', handleClickOutside);
-  symptoms.value = currentTemplatesData.value;
+  const restoredSnapshot = symptomCacheSession.restoreCachedSnapshot();
+  if (!restoredSnapshot) {
+    symptoms.value = currentTemplatesData.value;
+  }
   void syncRemoteTemplates()
     .then(() => {
-      if (selectedSymptoms.value.length === 0) {
+      if (!restoredSnapshot && selectedSymptoms.value.length === 0) {
         symptoms.value = currentTemplatesData.value;
       }
     })
     .catch((error) => {
       console.warn('[ConsultationPage] Template sync on mount failed:', error);
     });
-  // Initialize General Condition data
-  initFormData(generalConditionConfig);
-  prefillGeneratedRecordFromPatient(false);
+  if (!restoredSnapshot) {
+    // Initialize General Condition data
+    initFormData(generalConditionConfig);
+    prefillGeneratedRecordFromPatient(false);
+  }
 
   // 预热 HIS 频次/用法/药房/执行科室字典，让后续 normalizeTreatmentRecommendation
   // 能命中 dftFreq/dftUsage 等默认值，并同步预热当前药房 scope 对应的药品目录。
@@ -2631,6 +2579,8 @@ watch(consultationMode, () => {
 });
 
 onUnmounted(() => {
+  symptomCacheSession.persistSnapshot();
+  symptomCacheSession.stop();
   document.removeEventListener('click', handleClickOutside);
   if (unlistenReferenceFeedback) {
     unlistenReferenceFeedback();
@@ -2905,7 +2855,9 @@ const searchKnowledgeForRecommendations = async () => {
     });
 
     // Search knowledge base by categories
-    const results = await pmphaiService.searchByCategories(diagnoses, medications, examinations);
+    const results = await pmphaiService.searchByCategories(diagnoses, medications, examinations, {
+      trackUsage: true,
+    });
     knowledgeResults.value = results;
 
     // Check if we have any results
@@ -3040,7 +2992,7 @@ const handleEndConsultation = async () => {
     trackFormSubmit('generate_medical_record', { symptomCount: selectedSymptoms.value.length, mode: consultationMode.value });
 
     // 5. Trigger AI Diagnosis
-    await fetchAIDiagnosis();
+    await fetchAIDiagnosis({ trackSmartConsultation: true });
   } catch (error) {
     console.error('Failed to generate medical record:', error);
     trackError('generate_medical_record_failed', error);
@@ -3083,7 +3035,7 @@ const buildConsultationTraceConfig = (
   },
 });
 
-const fetchAIDiagnosis = async () => {
+const fetchAIDiagnosis = async (options?: { trackSmartConsultation?: boolean }) => {
   aiLoading.value = true;
   aiError.value = null;
   aiDiagnoses.value = [];
@@ -3339,6 +3291,9 @@ const fetchAIDiagnosis = async () => {
 
     // Perform automatic fact checking on all diagnoses
     performDiagnosisFactCheck(diagnoses);
+    if (options?.trackSmartConsultation) {
+      submitSmartGeneratedUserLog();
+    }
     
     console.timeEnd('[AI分析] 4. 分支逻辑 (文献检索、持久化和事实核查)');
     console.log(`========== AI 辅助诊断完成，总耗时: ${Date.now() - startTime}ms ==========`);
@@ -3979,7 +3934,6 @@ const fetchAllRecommendations = async () => {
     fetchProcedureRecommendation(),
   ]);
   syncTreatmentExecDeptSelections();
-  submitSmartGeneratedUserLog();
 };
 
 const toggleTreatmentSelection = async (item: TreatmentRecommendation) => {
@@ -4170,6 +4124,11 @@ const handleAssistTrigger = async (kind: AssistAction): Promise<void> => {
         if (aiDiagnoses.value.length === 0 && !aiLoading.value) {
           await fetchAIDiagnosis();
         }
+        if (aiDiagnoses.value.length > 0) {
+          trackAssistFeatureUsage('diagnosis', {
+            diagnosisCount: aiDiagnoses.value.length,
+          });
+        }
         return;
       }
       case 'medication': {
@@ -4178,6 +4137,12 @@ const handleAssistTrigger = async (kind: AssistAction): Promise<void> => {
         await nextTick();
         if (!treatmentLoading.value && treatmentRecommendations.value.length === 0) {
           await fetchTreatmentRecommendation();
+        }
+        if (treatmentRecommendations.value.length > 0) {
+          trackAssistFeatureUsage('medication', {
+            diagnosisName: selectedDiagnosis.value?.name,
+            itemCount: treatmentRecommendations.value.length,
+          });
         }
         return;
       }
@@ -4188,6 +4153,12 @@ const handleAssistTrigger = async (kind: AssistAction): Promise<void> => {
         if (!examLoading.value && examRecommendations.value.length === 0) {
           await fetchExamRecommendation();
         }
+        if (examRecommendations.value.length > 0) {
+          trackAssistFeatureUsage('examination', {
+            diagnosisName: selectedDiagnosis.value?.name,
+            itemCount: examRecommendations.value.length,
+          });
+        }
         return;
       }
       case 'lab_test': {
@@ -4196,6 +4167,12 @@ const handleAssistTrigger = async (kind: AssistAction): Promise<void> => {
         await nextTick();
         if (!labTestLoading.value && labTestRecommendations.value.length === 0) {
           await fetchLabTestRecommendation();
+        }
+        if (labTestRecommendations.value.length > 0) {
+          trackAssistFeatureUsage('lab_test', {
+            diagnosisName: selectedDiagnosis.value?.name,
+            itemCount: labTestRecommendations.value.length,
+          });
         }
         return;
       }
@@ -4206,6 +4183,12 @@ const handleAssistTrigger = async (kind: AssistAction): Promise<void> => {
         if (!procedureLoading.value && procedureRecommendations.value.length === 0) {
           await fetchProcedureRecommendation();
         }
+        if (procedureRecommendations.value.length > 0) {
+          trackAssistFeatureUsage('procedure', {
+            diagnosisName: selectedDiagnosis.value?.name,
+            itemCount: procedureRecommendations.value.length,
+          });
+        }
         return;
       }
       case 'differential': {
@@ -4215,6 +4198,11 @@ const handleAssistTrigger = async (kind: AssistAction): Promise<void> => {
         }
         await fetchDiagnosisChecklist(selectedDiagnosis.value);
         if (checklistItems.value.length > 0) {
+          trackAssistFeatureUsage('differential', {
+            diagnosisName: selectedDiagnosis.value.name,
+            diagnosisCode: selectedDiagnosis.value.code,
+            itemCount: checklistItems.value.length,
+          });
           showChecklistModal.value = true;
         } else {
           showToast('当前诊断暂无待确认的鉴别排查项。', 'info');

@@ -139,7 +139,8 @@
 5. 区域化模式下，每个 `/v1/*` 业务请求会附带 `X-Client-Version` 与 `X-Update-Channel`，服务端返回 `426 / UPDATE-REQUIRED` 时，客户端立即切换到强制更新门禁，禁止继续使用问诊、语音、知识库、AI 代理、模板同步、反馈等业务能力。
 6. 区域化模式下，智能问诊和语音问诊会通过 `consultationUserLog.ts` 向 `floating-ball-server` 的 `/v1/client/user-logs/consultations` 上报运维用户日志快照：首版 AI 生成内容与医生最终提交/回写内容分别落到同一条问诊记录中，不记录中间每一次编辑；语音问诊停止录音后会额外上报本次录音和 ASR 识别文字，供后台用户日志详情播放与复盘。
 7. 区域化模式下，原始操作日志只保留能定位业务路径的结构化事件：`operationTracker.ts` 负责把高噪声 UI 事件白名单化过滤，并把保留事件统一上报为 `{ module, action, title, sourceModule, scene }`；`aiTrace.ts` 则为 AI 代理补齐“哪个业务发起了这次调用”的上下文，避免后台只看到泛化的 `ai/chat`。
-8. 登录态设计在当前版本不是前置依赖，不能假定仓库内已有 `auth store` 或受保护 API 基座。
+8. 区域化模式下，辅诊功能统计不再从原始操作日志推断。`featureUsageTracker.ts` 负责在用户真实触发功能时向 `/v1/client/feature-events/batch` 上报业务事件；一次明确功能调用只写一条，并通过 `idempotencyKey` 支持离线重试去重。审计日志继续用于排障，功能事件才是后台“辅诊功能”统计事实源。智能问诊、语音问诊、报告单解读、聊天、知识库使用按用户进入/提交的主功能计数；知识库批量检索只按一次用户检索动作计数，不按内部拆开的多个查询词累加；诊断鉴别和推荐诊断/用药/检查/检验/处置只在医生显式触发独立辅助入口时计数，智能问诊或语音问诊主流程内部自动生成的 AI trace 不再拆成子功能调用次数。
+9. 登录态设计在当前版本不是前置依赖，不能假定仓库内已有 `auth store` 或受保护 API 基座。
 
 ---
 
@@ -847,6 +848,7 @@ src/styles/
 | `voiceFeedback.ts` | 语音反馈服务；负责推荐项 / 病例字段 / 整页反馈 payload 组装、本地草稿恢复、病例字段差异摘要与待同步队列 | [src/services/voiceFeedback.ts](src/services/voiceFeedback.ts) |
 | `aiTrace.ts` | 最近一次区域化 AI 调用链路上下文缓存；向反馈面板暴露 `traceId`、模型、场景、输入/输出摘要与耗时，并把 AI 代理调用按业务模块/动作回写到操作日志 | [src/services/aiTrace.ts](src/services/aiTrace.ts) |
 | `operationTracker.ts` | 结构化操作日志入口：白名单保留高价值业务事件，统一生成 `module/action/title/sourceModule/scene`，过滤 `collapse`、壳层导航等低价值噪声 | [src/services/operationTracker.ts](src/services/operationTracker.ts) |
+| `featureUsageTracker.ts` | 区域化功能调用事件上报入口：按产品功能维度记录一次用户真实调用，批量写入远端 `/v1/client/feature-events/batch`，并用 `idempotencyKey` 保证重试不重复计数 | [src/services/featureUsageTracker.ts](src/services/featureUsageTracker.ts) |
 | `themeService.ts` | 主题管理 | [src/services/themeService.ts](src/services/themeService.ts) |
 | `pmphai.ts` | PMPHAI 集成 | [src/services/pmphai.ts](src/services/pmphai.ts) |
 | `knowledgeBase.ts` | 知识库检索 | [src/services/knowledgeBase.ts](src/services/knowledgeBase.ts) |
@@ -867,7 +869,7 @@ src/styles/
 | `userFeedback.ts` | 区域化问题反馈服务；负责图片编码、评分/说明校验、反馈 scope 元数据合并和调用远端 `/v1/client/feedbacks` 接口 | [src/services/userFeedback.ts](src/services/userFeedback.ts) |
 | `consultationUserLog.ts` | 区域化运维用户日志服务；负责组装智能问诊/语音问诊首版与最终快照，语音问诊额外编码录音和 ASR 文本，并调用远端 `/v1/client/user-logs/consultations` 聚合到同一条问诊日志 | [src/services/consultationUserLog.ts](src/services/consultationUserLog.ts) |
 | `promptOverride.ts` | 远程 Prompt 覆盖层：管理端发布的自定义 prompt 替换本地默认值 | [src/services/promptOverride.ts](src/services/promptOverride.ts) |
-| `auditUploader.ts` | 审计事件批量上报：区域化模式下直接调用远端 `/v1/client/audit/events/batch`，本地只保留轻量离线队列用于失败重试；恢复遗留队列后立即补传，新事件入队后也会异步触发一次立即上报尝试；`operation` 事件会保留 `operationType/operationName/details`，并补齐 `module/action/result` 供服务端日志表查询 | [src/services/auditUploader.ts](src/services/auditUploader.ts) |
+| `auditUploader.ts` | 审计事件批量上报：区域化模式下直接调用远端 `/v1/client/audit/events/batch`，本地只保留轻量离线队列用于失败重试；恢复遗留队列后立即补传，新事件入队后也会异步触发一次立即上报尝试；`operation` 事件会保留 `operationType/operationName/details`，并补齐 `module/action/result` 供服务端日志表查询；不承担功能调用统计 | [src/services/auditUploader.ts](src/services/auditUploader.ts) |
 
 ### 当前模板/映射读取策略
 
@@ -936,6 +938,7 @@ startAuditUploader() (startup flush + enqueue flush + 30s retry)
 ### 当前本地桥接与知识库链路
 
 1. `operationTracker.ts` 与 `feedback.ts` 负责本地操作追踪、会话统计和回溯；本地模式下 `logOperation()` 写入本地 SQLite。区域化模式下，`logOperation()` 不再落本地 SQLite，而是把操作日志规范化为 `{ module, action, result, operationType, operationName, details }` 后直接进入远端审计上传链路。
+1.1 `featureUsageTracker.ts` 负责辅诊功能统计事件；它与审计日志分离，只在真实用户功能调用时写一条业务事件，后台统计按该事件计数，不按 `operationTracker` 或 AI 代理日志行数计数。
 2. `src-tauri/src/http_server.rs` 提供 `/api/consultation/*` 与 `/api/pmphai/*` 本地桥接能力。
 3. `pmphai.ts` 优先经本地代理访问 PMPHAI，规避 WebView 跨域问题。
 4. `AnalyticsPanel.vue` 当前读取本地统计与本地数据库查询结果。

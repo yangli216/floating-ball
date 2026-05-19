@@ -1,5 +1,6 @@
 import { getFeedbackActor } from './feedbackContext';
 import { buildRegionalSpeechUploadPayload, isRegionalMode, regionalPost } from './regionalClient';
+import { trackFeatureUsage } from './featureUsageTracker';
 import type { Diagnosis, Patient, TreatmentRecommendation } from '../types/consultation';
 import type { AppPatient } from '../types/appState';
 import {
@@ -230,6 +231,30 @@ export async function submitConsultationUserLog(input: SubmitConsultationUserLog
 
   const actor = getFeedbackActor();
   const patient = input.patient;
+  const featureCode = input.consultationType === 'voice' ? 'voice_consultation' : 'smart_consultation';
+  const scene = input.consultationType === 'voice' ? 'voice-consultation' : 'consultation';
+  const sourceModule = input.consultationType === 'voice' ? 'voice_consultation' : 'consultation_page';
+  const eventAction = input.consultationType === 'voice' ? 'submit_voice_consultation' : 'submit_smart_consultation';
+
+  if (input.firstSnapshot) {
+    trackFeatureUsage({
+      featureCode,
+      eventAction,
+      idempotencyKey: `consultation:${input.consultationType}:${input.consultationId}`,
+      consultationId: input.consultationId,
+      sourceModule,
+      scene,
+      doctorId: actor.doctorId,
+      doctorName: actor.doctorName,
+      deptId: actor.deptId,
+      deptName: actor.deptName,
+      payload: {
+        patientId: getPatientContextId(patient as AppPatient) || patientValue(patient, ['idPi', 'patientId', 'id', 'idTet', 'idMpi']),
+        abandoned: input.abandoned || undefined,
+      },
+      timestamp: Date.now(),
+    });
+  }
 
   try {
     const speechPayload = input.speech?.audioBlob

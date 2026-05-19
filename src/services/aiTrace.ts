@@ -1,5 +1,6 @@
 import { feedbackService } from './feedback';
 import { trackBusinessOperation } from './operationTracker';
+import { trackFeatureUsage, type FeatureCode } from './featureUsageTracker';
 
 export type AiTraceChannel = 'chat' | 'speech_transcribe' | 'speech_realtime';
 
@@ -143,6 +144,7 @@ export function finishAiTrace(traceId: string, input: FinishAiTraceInput): AiTra
       errorMessage: stored.errorMessage,
     },
   });
+  trackFeatureUsageFromAiTrace(stored);
   return stored;
 }
 
@@ -161,4 +163,41 @@ export function getLatestAiTrace(): AiTraceContext | null {
 
 export function getRecentAiTraces(): AiTraceContext[] {
   return [...ensureHistoryLoaded()];
+}
+
+function featureCodeForTrace(context: AiTraceContext): FeatureCode | null {
+  switch (context.operationAction) {
+    case 'stream_reply':
+      return context.scene === 'chat-stream' ? 'chat' : null;
+    case 'build_report_interpretation':
+      return 'report_interpretation';
+    default:
+      return null;
+  }
+}
+
+function trackFeatureUsageFromAiTrace(context: AiTraceContext): void {
+  if (context.success === false) return;
+
+  const featureCode = featureCodeForTrace(context);
+  if (!featureCode) return;
+
+  trackFeatureUsage({
+    featureCode,
+    eventAction: context.operationAction || context.channel,
+    idempotencyKey: `ai:${context.traceId}`,
+    traceId: context.traceId,
+    sessionId: context.sessionId,
+    sourceModule: context.sourceModule,
+    scene: context.scene,
+    status: 'success',
+    payload: {
+      channel: context.channel,
+      operationModule: context.operationModule,
+      configProfile: context.configProfile,
+      model: context.model,
+      durationMs: context.durationMs,
+    },
+    timestamp: context.finishedAt || context.updatedAt,
+  });
 }

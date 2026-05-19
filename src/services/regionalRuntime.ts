@@ -5,6 +5,7 @@ import {
   isRegionalMode,
 } from './regionalClient';
 import { startAuditUploader, stopAuditUploader } from './auditUploader';
+import { startFeatureUsageUploader, stopFeatureUsageUploader } from './featureUsageTracker';
 import { syncRemotePrompts } from './promptOverride';
 import { syncRemoteTemplates } from './templateService';
 import { medicalDataService } from './medicalData';
@@ -36,6 +37,7 @@ export async function initializeRegionalRuntime(options?: {
   }
 
   startAuditUploader();
+  startFeatureUsageUploader();
   await syncRegionalRuntimeData();
   await feedbackService.logOperation({
     module: 'regional_runtime',
@@ -64,5 +66,6 @@ export async function reinitializeRegionalRuntime(): Promise<BootstrapConfig | n
 
 export function shutdownRegionalRuntime(): void {
   stopAuditUploader();
+  stopFeatureUsageUploader();
   shutdownRegionalClient();
 }
