@@ -646,6 +646,7 @@ import {
   buildDiagList as buildSharedDiagList,
   buildOrderListItem as buildSharedOrderListItem,
   buildRecordConfirmedPayload,
+  getStandardDiagnosisId,
   getMatchedMedicalItemClientId,
   getMatchedOrderServiceId,
   getMatchedItemRaw,
@@ -1518,12 +1519,15 @@ const prefillDiagnosisFromPatient = (force = false): boolean => {
     return true;
   }
 
+  const matched = medicalDataService.matchDiagnosis(diagnosisName);
   selectedDiagnosis.value = {
-    id: `phis-diagnosis-${resolveConsultationId()}`,
-    code: '',
-    name: diagnosisName,
+    id: matched?.id,
+    code: matched?.code || '',
+    name: matched?.name || diagnosisName,
     rate: 'PHIS 当前诊断',
-    rationale: '来自 PHIS 当前诊断草稿',
+    rationale: matched
+      ? '来自 PHIS 当前诊断草稿，已匹配标准诊断库'
+      : '来自 PHIS 当前诊断草稿，未匹配标准诊断库，回写前需切换为标准诊断',
   } as Diagnosis;
   return true;
 };
@@ -2434,6 +2438,11 @@ const submitToHIS = async () => {
   const consultationId = resolveConsultationId();
   const selectedTreatments = getSelectedTreatments();
 
+  if (selectedDiagnosis.value && !getStandardDiagnosisId(selectedDiagnosis.value)) {
+    showToast(`${selectedDiagnosis.value.name} 未匹配标准诊断库，请先切换为标准诊断后再提交`, 'info');
+    return;
+  }
+
   if (!(await ensureSelectedTreatmentsReadyForSubmit(selectedTreatments))) {
     return;
   }
@@ -3342,25 +3351,6 @@ const fetchAIDiagnosis = async (options?: { trackSmartConsultation?: boolean }) 
       return rateB - rateA;
     });
 
-    // Generate unique IDs for each diagnosis (to handle duplicates with same code but different syndromes)
-    // For TCM: Even if matched to same disease, different syndromes should have unique IDs
-    const timestamp = Date.now();
-    diagnoses = diagnoses.map((d, index) => {
-      // For TCM diagnoses with same disease but different syndrome/treatment, generate unique composite ID
-      if (d.isTCM && d.id) {
-        const syndromeCode = d.syndromeCode || d.syndrome || '';
-        const treatmentCode = d.treatmentCode || d.treatment || '';
-        return {
-          ...d,
-          id: `${d.id}_${syndromeCode}_${treatmentCode}_${index}`.replace(/\s+/g, '_')
-        };
-      }
-      return {
-        ...d,
-        id: d.id || `diag_${timestamp}_${index}`
-      };
-    });
-
     if (requestSeq !== aiDiagnosisRequestSeq) {
       console.info('[ConsultationPage] Ignore stale diagnosis response', { requestSeq, latest: aiDiagnosisRequestSeq });
       return;
@@ -3579,12 +3569,12 @@ const inlineRelatedDiagnoses = ref<DiagnosisItem[]>([]);
 const toggleRelatedDropdown = (diag: Diagnosis, event?: Event) => {
   if (!event) return;
   event.stopPropagation();
+  const targetId = diag.id || diag.code;
 
-  if (openRelatedId.value === diag.id) {
+  if (openRelatedId.value === targetId) {
     openRelatedId.value = null;
   } else {
-    // Fallback to code if id is undefined to satisfy string | null type
-    openRelatedId.value = diag.id || diag.code;
+    openRelatedId.value = targetId;
     // 根据诊断类型选择合适的方法
     const related = diag.isTCM
       ? medicalDataService.getRelatedTCMDiagnoses(diag.code)
@@ -3599,7 +3589,8 @@ const swapDiagnosis = (originalDiag: Diagnosis, newItem: { id?: string; code: st
     modifiedValue: newItem.name,
   });
   // Update aiDiagnoses list
-  const index = aiDiagnoses.value.findIndex(d => d.id === originalDiag.id);
+  const originalIdentity = getDiagnosisIdentity(originalDiag);
+  const index = aiDiagnoses.value.findIndex(d => getDiagnosisIdentity(d) === originalIdentity);
   if (index !== -1) {
     const updatedDiag: Diagnosis = {
       ...aiDiagnoses.value[index],
@@ -3610,7 +3601,7 @@ const swapDiagnosis = (originalDiag: Diagnosis, newItem: { id?: string; code: st
     aiDiagnoses.value[index] = updatedDiag;
 
     // If this was the selected diagnosis, update selection too
-    if (selectedDiagnosis.value?.id === originalDiag.id) {
+    if (getDiagnosisIdentity(selectedDiagnosis.value) === originalIdentity) {
       selectedDiagnosis.value = updatedDiag;
       // We don't automatically trigger treatment fetch here to avoid "unnecessary triggering" as requested.
       // User can click the row again if they want to refresh treatments.
@@ -4437,8 +4428,9 @@ const _handleComplete = () => {
   trackRecommendationAction('diagnosis', selectedDiagnosis.value.id || selectedDiagnosis.value.code, 'adopted', {
     originalValue: selectedDiagnosis.value.name,
   });
+  const selectedDiagnosisIdentity = getDiagnosisIdentity(selectedDiagnosis.value);
   aiDiagnoses.value
-    .filter(d => d.id !== selectedDiagnosis.value?.id)
+    .filter(d => getDiagnosisIdentity(d) !== selectedDiagnosisIdentity)
     .forEach(d => {
       trackRecommendationAction('diagnosis', d.id || d.code, 'rejected', { originalValue: d.name });
     });

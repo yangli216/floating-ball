@@ -4,6 +4,7 @@ import ConsultationResultPage from './ConsultationResultPage.vue';
 import type { AppPatient } from '../types/appState';
 import type { Diagnosis, TreatmentRecommendation } from '../types/consultation';
 import type { MatchedTreatment, VoiceIntentResult } from '../composables/useVoiceIntentRecognition';
+import { getStandardDiagnosisId } from '../utils/recordConfirmedPayload';
 
 interface SymptomGeneratedRecord {
   chiefComplaint: string;
@@ -83,14 +84,28 @@ const mergedHistoryOfPresentIllness = computed(() => {
   return history ? `${history}\n\n中医四诊：${tcmFourExaminations}` : `中医四诊：${tcmFourExaminations}`;
 });
 
-const orderedDiagnoses = computed<Diagnosis[]>(() => {
+function mapDiagnosisToIntentDiagnosis(diag: Diagnosis) {
+  const standardId = getStandardDiagnosisId(diag);
+  return {
+    ...diag,
+    matchedItem: standardId
+      ? {
+          id: standardId,
+          code: diag.code || '',
+          name: diag.name,
+        }
+      : undefined,
+  };
+}
+
+const orderedDiagnoses = computed(() => {
   const seen = new Set<string>();
-  const ordered: Diagnosis[] = [];
+  const ordered: ReturnType<typeof mapDiagnosisToIntentDiagnosis>[] = [];
   for (const diag of [props.selectedDiagnosis, ...props.diagnoses]) {
     const key = getDiagnosisKey(diag);
     if (!diag || !key || seen.has(key)) continue;
     seen.add(key);
-    ordered.push(cloneValue(diag));
+    ordered.push(mapDiagnosisToIntentDiagnosis(cloneValue(diag)));
   }
   return ordered;
 });

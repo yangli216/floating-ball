@@ -102,6 +102,16 @@ function getDiagnosisCategoryText(diag: Diagnosis): string {
   return diag.isTCM ? '中医诊断' : '西医诊断';
 }
 
+export function isFrontendDiagnosisId(id: string | null | undefined): boolean {
+  const normalized = (id || '').trim();
+  return normalized.startsWith('diag_') || normalized.startsWith('phis-diagnosis-');
+}
+
+export function getStandardDiagnosisId(diag: Diagnosis | null | undefined): string {
+  const id = (diag?.id || '').trim();
+  return id && !isFrontendDiagnosisId(id) ? id : '';
+}
+
 export function buildDiagList(input: BuildDiagListInput): Array<Record<string, string>> {
   const primaryKey = getDiagnosisKey(input.primaryDiagnosis);
   const ordered = [...input.selectedDiagnoses].sort((left, right) => {
@@ -112,7 +122,7 @@ export function buildDiagList(input: BuildDiagListInput): Array<Record<string, s
 
   return ordered.map((diag) => ({
     idTet: input.patientTetId || '',
-    idDiag: diag.id || '',
+    idDiag: getStandardDiagnosisId(diag),
     naDiag: diag.name,
     sdDiag: getDiagnosisCategoryCode(diag),
     cdIcd10: diag.code || '',

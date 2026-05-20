@@ -45,6 +45,7 @@ import type { VoiceIntentResult, MatchedTreatment, MatchedDiagnosis } from '../c
 import {
   buildDiagList as buildSharedDiagList,
   buildOrderListItem as buildSharedOrderListItem,
+  getStandardDiagnosisId,
   getMatchedOrderServiceId,
 } from '../utils/recordConfirmedPayload';
 import {
@@ -1016,13 +1017,22 @@ function normalizeTreatmentRecommendation(rec: Partial<TreatmentRecommendation>)
 
 function initDiagnosesFromIntent(matched: MatchedDiagnosis[]): Diagnosis[] {
   return matched.map((item) => {
+    const inheritedDiagnosis = item as MatchedDiagnosis & Partial<Diagnosis>;
     const name = item.matchedItem?.name || item.name;
+    const standardId = item.matchedItem?.id || getStandardDiagnosisId(inheritedDiagnosis as Diagnosis);
     return {
-      id: item.matchedItem?.id,
+      id: standardId || undefined,
       name,
       code: item.matchedItem?.code || item.code || '',
-      rate: 'AI分析',
+      rate: inheritedDiagnosis.rate || 'AI分析',
       rationale: buildDiagnosisRationale(item, name),
+      isTCM: inheritedDiagnosis.isTCM,
+      syndrome: inheritedDiagnosis.syndrome,
+      syndromeCode: inheritedDiagnosis.syndromeCode,
+      syndromeMatched: inheritedDiagnosis.syndromeMatched,
+      treatment: inheritedDiagnosis.treatment,
+      treatmentCode: inheritedDiagnosis.treatmentCode,
+      treatmentMatched: inheritedDiagnosis.treatmentMatched,
     };
   });
 }
@@ -2706,6 +2716,12 @@ async function handleBatchWriteBack(): Promise<void> {
   lastWritebackFeedback.value = null;
 
   try {
+    const invalidDiagnosis = selectedDiagnoses.value.find((item) => !getStandardDiagnosisId(item));
+    if (invalidDiagnosis) {
+      showToast?.(`${invalidDiagnosis.name} 未匹配标准诊断库，请先切换为标准诊断后再回写`, 'warning');
+      return;
+    }
+
     const selected = treatments.value.filter((item) => item.selected);
     const medicinesReady = await Promise.all(selected
       .filter((item) => item.type === 'medicine')

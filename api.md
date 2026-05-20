@@ -725,13 +725,14 @@ ws://127.0.0.1:8081/api/consultation/events/ws
 1. `requestId` 是最终回写闭环的唯一请求标识，PHIS 在完成处理后必须带着同一个 `requestId` 调用 `POST /api/consultation/reference-feedback`。
 2. `referenceType/action` 在 `record-confirmed` 场景下固定按 `batch` 语义理解，表示一次性处理整张病历对应的诊断和全部医嘱。
 3. `referenceStatus = pending` 仅表示桌面端已发起最终回写请求，并不代表 HIS 已处理成功；真正成功/失败以后续 `reference-feedback` 回执为准。
+4. `diagList.idDiag` 必须是 PHIS 标准诊断目录主键（`ID_DIE`）。桌面端不得把 AI 自由文本、前端临时 key 或 PHIS 草稿文本生成的占位 ID 写入该字段；若当前诊断未匹配标准诊断库，应在提交前拦截并提示医生先切换或重新匹配标准诊断。
 
 **diagList 字段：**
 
 | 字段名 | 类型 | 说明 |
 | :--- | :--- | :--- |
 | `idTet` | String | 透传当前患者上下文中的 `idTet`；若当前上下文缺失则为空字符串 |
-| `idDiag` | String | 诊断目录 ID |
+| `idDiag` | String | PHIS 标准诊断目录 ID，对应 PHIS `ID_DIE`，不得使用前端临时 ID |
 | `naDiag` | String | 诊断名称 |
 | `sdDiag` | String | 诊断类型编码，当前西医诊断为 `1`，中医诊断为 `2` |
 | `cdIcd10` | String | ICD-10 或诊断编码 |
