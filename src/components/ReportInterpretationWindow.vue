@@ -109,76 +109,131 @@ onUnmounted(() => {
 
     <div class="window-stage">
       <div v-if="payload" class="window-body" :class="{ 'window-body--loading': isLoading }">
-        <section class="summary-panel hero-panel">
-          <p class="section-tag">快速概览</p>
-          <h2>{{ payload.summary }}</h2>
-          <p>{{ payload.conclusion }}</p>
-          <div class="meta-row">
-            <span>{{ payload.reportKindLabel }}</span>
-            <span>{{ payload.generatedAt }}</span>
-          </div>
-        </section>
-
-        <section class="key-points-panel card-panel">
-          <div class="panel-head">
-            <h3>关键判断点</h3>
-            <span>{{ payload.keyPoints.length }} 条</span>
-          </div>
-          <ul class="key-point-list">
-            <li v-for="item in payload.keyPoints" :key="`${item.title}-${item.detail}`" class="key-point-item" :class="`key-point-item--${urgencyToneMap[item.urgency || 'medium']}`">
-              <div class="key-point-header">
-                <strong>{{ item.title }}</strong>
-                <span class="urgency-chip">{{ item.urgency === 'high' ? '高关注' : item.urgency === 'low' ? '低关注' : '中关注' }}</span>
-              </div>
-              <p>{{ item.detail }}</p>
-            </li>
-          </ul>
-        </section>
-
-        <section class="section-panel card-panel">
-          <div class="panel-head">
-            <h3>结构化说明</h3>
-            <span>结合患者背景阅读</span>
-          </div>
-          <div class="section-list">
-            <article v-for="item in payload.sections" :key="`${item.title}-${item.content}`" class="text-block">
-              <span class="block-title">{{ item.title }}</span>
-              <p>{{ item.content }}</p>
-            </article>
-          </div>
-        </section>
-
-        <aside class="side-panel">
-          <section class="card-panel patient-panel">
+        <!-- 1. 左侧栏: 患者背景 & 原始报告 -->
+        <aside class="facts-panel">
+          <!-- 患者画像 -->
+          <section class="card-panel patient-card">
             <div class="panel-head">
-              <h3>患者背景</h3>
+              <h3>患者画像</h3>
             </div>
-            <p>{{ payload.patientSummary }}</p>
+            
+            <div v-if="payload.patient" class="patient-profile">
+              <div class="patient-base-info">
+                <span class="patient-tag name-tag">{{ payload.patient.patientName || '无名氏' }}</span>
+                <span class="patient-tag sex-tag" v-if="payload.patient.genderText">{{ payload.patient.genderText }}</span>
+                <span class="patient-tag age-tag" v-if="payload.patient.ageText">{{ payload.patient.ageText }}</span>
+              </div>
+              <div class="patient-details">
+                <div class="detail-item" v-if="payload.patient.chiefComplaint">
+                  <span class="detail-label">主诉</span>
+                  <span class="detail-val">{{ payload.patient.chiefComplaint }}</span>
+                </div>
+                <div class="detail-item" v-if="payload.patient.historyOfPresentIllness">
+                  <span class="detail-label">现病史</span>
+                  <span class="detail-val">{{ payload.patient.historyOfPresentIllness }}</span>
+                </div>
+                <div class="detail-item" v-if="payload.patient.pastMedicalHistory">
+                  <span class="detail-label">既往史</span>
+                  <span class="detail-val">{{ payload.patient.pastMedicalHistory }}</span>
+                </div>
+                <div class="detail-item text-allergy" v-if="payload.patient.allergyHistory">
+                  <span class="detail-label">过敏史</span>
+                  <span class="detail-val">{{ payload.patient.allergyHistory }}</span>
+                </div>
+                <div class="detail-item" v-if="payload.patient.diagnosis">
+                  <span class="detail-label">当前诊断</span>
+                  <span class="detail-val">{{ payload.patient.diagnosis }}</span>
+                </div>
+              </div>
+            </div>
+            <p v-else class="patient-summary-text">{{ payload.patientSummary }}</p>
           </section>
 
-          <section class="card-panel list-panel">
+          <!-- 原始报告 -->
+          <section class="card-panel raw-report-card">
             <div class="panel-head">
-              <h3>建议</h3>
+              <h3>原始报告原文</h3>
+              <span class="report-kind-tag">{{ payload.reportKindLabel }}</span>
             </div>
-            <ul>
+            <div class="raw-content-wrapper">
+              <pre>{{ payload.sourceQuery }}</pre>
+            </div>
+          </section>
+        </aside>
+
+        <!-- 2. 中间栏: AI 智能解读 -->
+        <main class="interpretation-panel">
+          <!-- 快速概览 -->
+          <section class="summary-panel hero-panel">
+            <p class="section-tag">快速概览</p>
+            <h2>{{ payload.summary }}</h2>
+            <p class="conclusion-text">{{ payload.conclusion }}</p>
+            <div class="meta-row">
+              <span class="generated-time">解读时间: {{ payload.generatedAt }}</span>
+            </div>
+          </section>
+
+          <!-- 关键判断点 -->
+          <section class="key-points-panel card-panel">
+            <div class="panel-head">
+              <h3>核心异常指标</h3>
+              <span class="badge">{{ payload.keyPoints.length }} 条异常</span>
+            </div>
+            <ul class="key-point-list">
+              <li v-for="item in payload.keyPoints" :key="`${item.title}-${item.detail}`" class="key-point-item" :class="`key-point-item--${urgencyToneMap[item.urgency || 'medium']}`">
+                <div class="key-point-header">
+                  <span class="urgency-indicator" :class="`urgency-indicator--${item.urgency || 'medium'}`"></span>
+                  <strong>{{ item.title }}</strong>
+                  <span class="urgency-chip" :class="`urgency-chip--${item.urgency || 'medium'}`">
+                    {{ item.urgency === 'high' ? '危急' : item.urgency === 'low' ? '提示' : '警示' }}
+                  </span>
+                </div>
+                <p class="key-point-detail">{{ item.detail }}</p>
+              </li>
+            </ul>
+          </section>
+
+          <!-- 结构化分析说明 -->
+          <section class="section-panel card-panel" v-if="payload.sections && payload.sections.length > 0">
+            <div class="panel-head">
+              <h3>结构化分析说明</h3>
+              <span>结合背景阅读</span>
+            </div>
+            <div class="section-list">
+              <article v-for="item in payload.sections" :key="`${item.title}-${item.content}`" class="text-block">
+                <span class="block-title">{{ item.title }}</span>
+                <p>{{ item.content }}</p>
+              </article>
+            </div>
+          </section>
+        </main>
+
+        <!-- 3. 右侧栏: 建议行动与处置指南 -->
+        <aside class="decision-panel">
+          <!-- 下一步行动建议 -->
+          <section class="card-panel list-panel action-card">
+            <div class="panel-head">
+              <div class="head-title">
+                <Icon icon="lucide:check-circle" size="16" class="icon-accent" />
+                <h3>建议下一步行动</h3>
+              </div>
+            </div>
+            <ul class="action-list">
               <li v-for="item in payload.recommendations" :key="item">{{ item }}</li>
             </ul>
           </section>
 
-          <section class="card-panel list-panel caution-panel">
+          <!-- 注意事项 -->
+          <section class="card-panel list-panel caution-card">
             <div class="panel-head">
-              <h3>注意事项</h3>
+              <div class="head-title">
+                <Icon icon="lucide:alert-circle" size="16" class="icon-caution" />
+                <h3>注意事项</h3>
+              </div>
             </div>
-            <ul>
+            <ul class="caution-list">
               <li v-for="item in payload.cautions" :key="item">{{ item }}</li>
             </ul>
-          </section>
-
-          <section class="card-panel raw-panel">
-            <div class="panel-head">
-              <h3>原始报告</h3>
-            </div>
-            <pre>{{ payload.sourceQuery }}</pre>
           </section>
         </aside>
       </div>
@@ -209,172 +264,124 @@ onUnmounted(() => {
   grid-template-rows: auto 1fr;
   overflow: hidden;
   background:
-    radial-gradient(circle at top left, rgba(255, 230, 196, 0.34), transparent 28%),
-    radial-gradient(circle at right center, rgba(120, 185, 255, 0.18), transparent 26%),
-    linear-gradient(180deg, #fbfcff 0%, #eef4fb 100%);
-  color: #213149;
+    radial-gradient(circle at top left, rgba(230, 240, 255, 0.35), transparent 30%),
+    radial-gradient(circle at right center, rgba(120, 185, 255, 0.15), transparent 28%),
+    linear-gradient(180deg, #f4f7fc 0%, #e8eff9 100%);
+  color: #1e293b;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
 }
 
 .window-header {
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   justify-content: space-between;
   gap: 12px;
-  padding: 18px 20px 14px;
-  border-bottom: 1px solid rgba(104, 132, 170, 0.18);
-  background: rgba(255, 255, 255, 0.86);
-  backdrop-filter: blur(12px);
+  padding: 14px 20px;
+  border-bottom: 1px solid rgba(104, 132, 170, 0.12);
+  background: rgba(255, 255, 255, 0.85);
+  backdrop-filter: blur(16px);
   cursor: grab;
-}
-
-.header-copy {
-  flex: 1;
-  min-width: 0;
+  z-index: 10;
 }
 
 .window-header:active {
   cursor: grabbing;
 }
 
-.header-copy h1,
-.loading-state h2,
-.empty-state h2 {
-  margin: 0;
-}
-
 .header-copy h1 {
-  font-size: 26px;
-  line-height: 1.12;
-}
-
-.subtitle {
-  margin: 8px 0 0;
-  color: #7184a3;
-  font-size: 13px;
-  font-weight: 600;
+  margin: 0;
+  font-size: 20px;
+  font-weight: 700;
+  color: #0f172a;
+  letter-spacing: -0.01em;
 }
 
 .close-btn {
-  width: 38px;
-  height: 38px;
+  width: 32px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   border: none;
-  border-radius: 12px;
-  background: rgba(255, 255, 255, 0.96);
-  color: #6b86b5;
+  border-radius: 8px;
+  background: transparent;
+  color: #64748b;
   cursor: pointer;
-  flex: 0 0 auto;
-  transition: transform 0.16s ease, box-shadow 0.16s ease, background 0.16s ease;
+  transition: all 0.2s ease;
 }
 
 .close-btn:hover {
-  background: rgba(255, 255, 255, 1);
-  box-shadow: 0 10px 18px rgba(89, 118, 169, 0.14);
-  transform: translateY(-1px);
+  background: rgba(0, 0, 0, 0.05);
+  color: #0f172a;
 }
 
 .window-stage {
   position: relative;
+  height: 100%;
   min-height: 0;
-  overflow-y: auto;
-  overflow-x: hidden;
-}
-
-.window-stage::-webkit-scrollbar {
-  width: 10px;
-}
-
-.window-stage::-webkit-scrollbar-thumb {
-  border-radius: 999px;
-  background: rgba(107, 134, 181, 0.34);
-}
-
-.window-stage::-webkit-scrollbar-track {
-  background: transparent;
+  overflow: hidden;
 }
 
 .window-body {
+  height: 100%;
   min-height: 0;
   display: grid;
-  grid-template-columns: minmax(0, 1.4fr) minmax(320px, 0.86fr);
-  grid-template-areas:
-    'hero side'
-    'points side'
-    'sections side';
-  gap: 14px;
-  padding: 14px 14px 24px;
+  grid-template-columns: minmax(280px, 0.95fr) minmax(0, 1.3fr) minmax(280px, 0.95fr);
+  gap: 16px;
+  padding: 16px 16px 20px;
+  overflow: hidden;
 }
 
 .window-body--loading {
-  filter: saturate(0.94);
+  filter: saturate(0.92) contrast(0.98);
+  pointer-events: none;
 }
 
+/* 三栏布局面板独立滚动 */
+.facts-panel,
+.interpretation-panel,
+.decision-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  height: 100%;
+  overflow-y: auto;
+  min-height: 0;
+  padding-right: 4px;
+}
+
+/* 自定义面板滚动条 */
+.facts-panel::-webkit-scrollbar,
+.interpretation-panel::-webkit-scrollbar,
+.decision-panel::-webkit-scrollbar {
+  width: 6px;
+}
+.facts-panel::-webkit-scrollbar-thumb,
+.interpretation-panel::-webkit-scrollbar-thumb,
+.decision-panel::-webkit-scrollbar-thumb {
+  border-radius: 999px;
+  background: rgba(107, 134, 181, 0.15);
+}
+.facts-panel::-webkit-scrollbar-thumb:hover,
+.interpretation-panel::-webkit-scrollbar-thumb:hover,
+.decision-panel::-webkit-scrollbar-thumb:hover {
+  background: rgba(107, 134, 181, 0.3);
+}
+
+/* 卡片基础设计 - 极致磨砂质感 */
 .summary-panel,
 .card-panel {
-  border-radius: 24px;
-  border: 1px solid rgba(110, 140, 183, 0.16);
-  background: rgba(255, 255, 255, 0.88);
-  box-shadow: 0 18px 34px rgba(52, 94, 156, 0.08);
+  border-radius: 16px;
+  border: 1px solid rgba(255, 255, 255, 0.6);
+  background: rgba(255, 255, 255, 0.82);
+  box-shadow: 0 4px 20px rgba(52, 94, 156, 0.04);
+  transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
-.hero-panel {
-  grid-area: hero;
-  padding: 22px 24px;
-  background:
-    linear-gradient(135deg, rgba(255, 244, 224, 0.96), rgba(239, 248, 255, 0.92)),
-    rgba(255, 255, 255, 0.92);
-}
-
-.hero-panel h2 {
-  margin: 6px 0 10px;
-  font-size: 30px;
-  line-height: 1.15;
-}
-
-.hero-panel p {
-  margin: 0;
-  line-height: 1.7;
-}
-
-.section-tag {
-  margin: 0;
-  color: #7d6b3f;
-  font-size: 12px;
-  font-weight: 800;
-  letter-spacing: 0.08em;
-}
-
-.meta-row {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 10px;
-  margin-top: 14px;
-  color: #5d6f8c;
-  font-size: 12px;
-  font-weight: 700;
-}
-
-.key-points-panel {
-  grid-area: points;
-  padding: 18px;
-}
-
-.section-panel {
-  grid-area: sections;
-  padding: 18px;
-}
-
-.side-panel {
-  grid-area: side;
-  min-height: 0;
-  display: grid;
-  align-content: start;
-  gap: 14px;
-}
-
-.patient-panel,
-.list-panel,
-.raw-panel {
-  padding: 18px;
+.summary-panel:hover,
+.card-panel:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 10px 24px rgba(52, 94, 156, 0.08);
 }
 
 .panel-head {
@@ -382,149 +389,407 @@ onUnmounted(() => {
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  margin-bottom: 12px;
+  margin-bottom: 14px;
+  border-bottom: 1px solid rgba(107, 134, 181, 0.08);
+  padding-bottom: 10px;
 }
 
 .panel-head h3 {
   margin: 0;
-  font-size: 17px;
+  font-size: 16px;
+  font-weight: 700;
+  color: #0f172a;
 }
 
 .panel-head span {
-  color: #7890b2;
+  color: #64748b;
   font-size: 12px;
+  font-weight: 600;
+}
+
+/* 1. 左侧栏样式 */
+.patient-card {
+  padding: 16px;
+  flex: 0 0 auto;
+}
+
+.patient-profile {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.patient-base-info {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.patient-tag {
+  display: inline-flex;
+  align-items: center;
+  font-size: 12px;
+  font-weight: 700;
+  padding: 4px 10px;
+  border-radius: 8px;
+}
+
+.name-tag {
+  font-size: 13px;
+  background: rgba(74, 144, 226, 0.12);
+  color: #1d4ed8;
+}
+
+.sex-tag,
+.age-tag {
+  background: rgba(107, 134, 181, 0.08);
+  color: #475569;
+}
+
+.patient-details {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.detail-item {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 8px 10px;
+  background: rgba(107, 134, 181, 0.03);
+  border-radius: 10px;
+  border: 1px solid rgba(107, 134, 181, 0.05);
+}
+
+.detail-label {
+  font-size: 12px;
+  font-weight: 800;
+  color: #64748b;
+  letter-spacing: 0.02em;
+}
+
+.detail-val {
+  font-size: 13px;
+  line-height: 1.5;
+  color: #334155;
+}
+
+.text-allergy {
+  border-left: 3px solid #ef4444;
+}
+
+.text-allergy .detail-val {
+  color: #ef4444;
+  font-weight: 600;
+}
+
+.patient-summary-text {
+  margin: 0;
+  font-size: 14px;
+  line-height: 1.6;
+  color: #475569;
+}
+
+/* 原始报告卡片 */
+.raw-report-card {
+  padding: 16px;
+  flex: 1 1 0%;
+  min-height: 200px;
+  display: flex;
+  flex-direction: column;
+}
+
+.report-kind-tag {
+  font-size: 12px;
+  padding: 2px 8px;
+  background: rgba(107, 134, 181, 0.1);
+  color: #475569;
+  border-radius: 6px;
   font-weight: 700;
 }
 
-.key-point-list,
-.list-panel ul {
+.raw-content-wrapper {
+  flex: 1;
+  overflow-y: auto;
+  margin-top: 10px;
+  padding: 12px;
+  background: #f8fafc;
+  border-radius: 10px;
+  border: 1px solid rgba(107, 134, 181, 0.08);
+}
+
+.raw-content-wrapper::-webkit-scrollbar {
+  width: 5px;
+}
+.raw-content-wrapper::-webkit-scrollbar-thumb {
+  border-radius: 999px;
+  background: rgba(107, 134, 181, 0.15);
+}
+
+.raw-content-wrapper pre {
   margin: 0;
-  padding: 0;
-  list-style: none;
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-family: "SFMono-Regular", Monaco, Consolas, "Liberation Mono", Courier, monospace;
+  font-size: 13px;
+  line-height: 1.6;
+  color: #334155;
+}
+
+/* 2. 中间栏样式 */
+.hero-panel {
+  padding: 20px;
+  background:
+    linear-gradient(135deg, rgba(239, 246, 255, 0.95), rgba(255, 255, 255, 0.95));
+  flex: 0 0 auto;
+}
+
+.section-tag {
+  margin: 0;
+  color: #b45309;
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+}
+
+.hero-panel h2 {
+  margin: 6px 0 10px;
+  font-size: 22px;
+  font-weight: 800;
+  line-height: 1.4;
+  color: #0f172a;
+}
+
+.conclusion-text {
+  margin: 0;
+  font-size: 15px;
+  line-height: 1.7;
+  color: #334155;
+}
+
+.meta-row {
+  margin-top: 12px;
+  font-size: 12px;
+  color: #64748b;
+  font-weight: 600;
+}
+
+/* 关键判断点 */
+.key-points-panel {
+  padding: 16px;
+  flex: 0 0 auto;
+}
+
+.badge {
+  display: inline-flex;
+  align-items: center;
+  font-size: 12px;
+  font-weight: 800;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: rgba(239, 68, 68, 0.08);
+  color: #dc2626;
 }
 
 .key-point-list {
   display: grid;
   gap: 12px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
 }
 
 .key-point-item {
-  padding: 14px;
-  border-radius: 18px;
-  border: 1px solid rgba(110, 140, 183, 0.12);
-  background: #f7fbff;
+  padding: 12px 14px;
+  border-radius: 12px;
+  transition: all 0.2s ease;
 }
 
+/* 高危 */
 .key-point-item--high {
-  background: rgba(255, 239, 229, 0.88);
+  background: hsl(4, 90%, 97%);
+  border: 1px solid hsl(4, 75%, 92%);
+}
+.key-point-item--high strong {
+  color: hsl(4, 70%, 36%);
+}
+.key-point-item--high .urgency-chip {
+  background: hsl(4, 85%, 90%);
+  color: hsl(4, 70%, 36%);
 }
 
+/* 中危 */
 .key-point-item--medium {
-  background: rgba(246, 248, 255, 0.96);
+  background: hsl(38, 100%, 97%);
+  border: 1px solid hsl(38, 85%, 92%);
+}
+.key-point-item--medium strong {
+  color: hsl(35, 75%, 32%);
+}
+.key-point-item--medium .urgency-chip {
+  background: hsl(38, 90%, 90%);
+  color: hsl(35, 75%, 32%);
 }
 
+/* 低危 */
 .key-point-item--low {
-  background: rgba(241, 249, 243, 0.96);
+  background: hsl(205, 100%, 98%);
+  border: 1px solid hsl(205, 80%, 94%);
+}
+.key-point-item--low strong {
+  color: hsl(205, 75%, 32%);
+}
+.key-point-item--low .urgency-chip {
+  background: hsl(205, 80%, 92%);
+  color: hsl(205, 75%, 32%);
 }
 
 .key-point-header {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 10px;
+  gap: 8px;
 }
 
-.key-point-item p,
-.text-block p,
-.patient-panel p,
-.list-panel li,
-.empty-state p,
-.loading-state p {
-  margin: 0;
-  line-height: 1.65;
+.urgency-indicator {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  flex-shrink: 0;
 }
+.key-point-item--high .urgency-indicator { background: #ef4444; }
+.key-point-item--medium .urgency-indicator { background: #f59e0b; }
+.key-point-item--low .urgency-indicator { background: #3b82f6; }
 
-.key-point-item p {
-  margin-top: 8px;
+.key-point-header strong {
+  flex: 1;
+  font-size: 15px;
 }
 
 .urgency-chip {
   display: inline-flex;
   align-items: center;
-  min-height: 28px;
-  padding: 0 10px;
+  padding: 1px 8px;
   border-radius: 999px;
-  background: rgba(255, 255, 255, 0.82);
-  color: #5b6f92;
-  font-size: 12px;
+  font-size: 11px;
   font-weight: 800;
+}
+
+.key-point-detail {
+  margin: 6px 0 0;
+  font-size: 14px;
+  line-height: 1.6;
+  color: #475569;
+}
+
+/* 结构化说明 */
+.section-panel {
+  padding: 16px;
+  flex: 1 1 auto;
 }
 
 .section-list {
   display: grid;
-  gap: 14px;
+  gap: 12px;
 }
 
 .text-block {
-  padding: 14px 16px;
-  border-radius: 18px;
-  background: #f8fbff;
+  padding: 12px;
+  border-radius: 12px;
+  background: rgba(107, 134, 181, 0.03);
+  border: 1px solid rgba(107, 134, 181, 0.06);
 }
 
 .block-title {
   display: inline-flex;
-  margin-bottom: 8px;
-  color: #48648f;
+  margin-bottom: 6px;
+  color: #1e3a8a;
   font-size: 12px;
   font-weight: 800;
   letter-spacing: 0.04em;
 }
 
-.list-panel ul {
+.text-block p {
+  margin: 0;
+  font-size: 14px;
+  line-height: 1.6;
+  color: #475569;
+}
+
+/* 3. 右侧栏样式 */
+.head-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.icon-accent {
+  color: #2563eb;
+}
+.icon-caution {
+  color: #d97706;
+}
+
+.list-panel {
+  padding: 16px;
+  flex: 0 0 auto;
+}
+
+.action-card {
+  border-top: 4px solid #2563eb;
+}
+.caution-card {
+  border-top: 4px solid #d97706;
+}
+
+.action-list,
+.caution-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
   display: grid;
-  gap: 10px;
+  gap: 12px;
 }
 
-.list-panel li {
-  padding-left: 16px;
+.action-list li,
+.caution-list li {
   position: relative;
+  padding-left: 20px;
+  font-size: 14px;
+  line-height: 1.65;
+  color: #334155;
 }
 
-.list-panel li::before {
-  content: '';
+.action-list li::before {
+  content: '✓';
   position: absolute;
   left: 0;
-  top: 10px;
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: #6e8fd8;
+  top: 0px;
+  color: #2563eb;
+  font-weight: 900;
+  font-size: 14px;
 }
 
-.caution-panel li::before {
-  background: #df855e;
+.caution-list li::before {
+  content: '⚠';
+  position: absolute;
+  left: 0;
+  top: 0px;
+  color: #d97706;
+  font-weight: 900;
+  font-size: 13px;
 }
 
-.raw-panel pre {
-  margin: 0;
-  white-space: pre-wrap;
-  word-break: break-word;
-  font-family: 'SFMono-Regular', 'Monaco', 'Consolas', monospace;
-  font-size: 12px;
-  line-height: 1.6;
-  color: #41536d;
-}
-
+/* 4. 加载、空状态 */
 .loading-state,
 .empty-state {
   place-self: center;
   display: grid;
   justify-items: center;
-  gap: 10px;
-  max-width: 480px;
-  padding: 24px;
+  gap: 12px;
+  max-width: 440px;
+  padding: 30px;
   text-align: center;
-  color: #5e7195;
+  color: #64748b;
 }
 
 .loading-state {
@@ -539,33 +804,34 @@ onUnmounted(() => {
   justify-items: center;
   max-width: none;
   padding: 24px;
-  background: rgba(247, 250, 255, 0.78);
-  backdrop-filter: blur(6px);
+  background: rgba(244, 247, 252, 0.85);
+  backdrop-filter: blur(8px);
+  z-index: 100;
 }
 
 .empty-state--error {
-  color: #b25e4f;
+  color: #ef4444;
 }
 
 .status-detail {
-  max-width: 540px;
-  color: #7486a7;
-  font-size: 13px;
+  max-width: 500px;
+  color: #64748b;
+  font-size: 12px;
 }
 
 .loading-hint {
-  max-width: 360px;
-  color: #8a99b2;
-  font-size: 13px;
+  max-width: 320px;
+  color: #94a3b8;
+  font-size: 12px;
 }
 
 .loading-spinner {
-  width: 32px;
-  height: 32px;
+  width: 28px;
+  height: 28px;
   border-radius: 50%;
-  border: 3px solid rgba(105, 134, 183, 0.2);
-  border-top-color: #6a8bd4;
-  animation: report-interpretation-spin 0.9s linear infinite;
+  border: 3px solid rgba(105, 134, 183, 0.15);
+  border-top-color: #2563eb;
+  animation: report-interpretation-spin 0.8s linear infinite;
 }
 
 @keyframes report-interpretation-spin {

@@ -66,6 +66,7 @@ export interface ReportInterpretationWindowPayload {
   taskId: ReportInterpretationTaskId;
   reportKindLabel: string;
   patientSummary: string;
+  patient?: ReportInterpretationPatientProfile | null;
   sourceQuery: string;
   summary: string;
   conclusion: string;
