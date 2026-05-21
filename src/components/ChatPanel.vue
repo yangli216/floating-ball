@@ -16,7 +16,7 @@ import {
 import MarkdownIt from 'markdown-it';
 import hljs from 'highlight.js';
 import 'highlight.js/styles/github-dark.css'; // 引入代码高亮样式
-import Icon from "./Icon.vue";
+import Icon from "@shared/ui/Icon.vue";
 
 // 定义事件
 const emit = defineEmits<{

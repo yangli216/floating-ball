@@ -1,5 +1,4 @@
 import type { AiTraceContext } from './aiTrace';
-import type { Diagnosis, TreatmentRecommendation } from '../types/consultation';
 import type { RecommendationType, TargetType } from '../types/feedback';
 import { isRegionalMode } from './regionalClient';
 import { submitUserFeedback, type FeedbackKind, type FeedbackSeverity } from './userFeedback';
@@ -164,52 +163,12 @@ export function clearVoiceFeedbackDraftStorage(consultationId: string): void {
   localStorage.removeItem(getDraftStorageKey(consultationId));
 }
 
-export function getVoiceDiagnosisFeedbackKey(diag: Pick<Diagnosis, 'id' | 'code' | 'name'>): string {
-  return [diag.id || '', diag.code || '', diag.name || ''].join('|');
-}
-
-export function getVoiceTreatmentFeedbackKey(rec: Pick<TreatmentRecommendation, 'type' | 'name' | 'originalName' | 'matchedItem'>): string {
-  return [rec.type || '', rec.originalName || rec.name || ''].join('|');
-}
-
 export function getVoiceRecordFieldFeedbackKey(fieldKey: VoiceRecordFieldKey): string {
   return `record:${fieldKey}`;
 }
 
 export function getVoiceRecordFieldLabel(fieldKey: VoiceRecordFieldKey): string {
   return VOICE_RECORD_FIELD_LABELS[fieldKey];
-}
-
-export function mapTreatmentTypeToRecommendationType(type: TreatmentRecommendation['type']): RecommendationType {
-  switch (type) {
-    case 'medicine':
-      return 'medication';
-    case 'exam':
-      return 'examination';
-    case 'lab_test':
-      return 'lab_test';
-    case 'procedure':
-    case 'acupuncture':
-      return 'procedure';
-    default:
-      return 'procedure';
-  }
-}
-
-export function mapTreatmentTypeToTargetType(type: TreatmentRecommendation['type']): TargetType {
-  switch (type) {
-    case 'medicine':
-      return 'medication';
-    case 'exam':
-      return 'examination';
-    case 'lab_test':
-      return 'lab_test';
-    case 'procedure':
-    case 'acupuncture':
-      return 'procedure';
-    default:
-      return 'procedure';
-  }
 }
 
 function getPendingQueue(): VoicePendingFeedbackPayload[] {

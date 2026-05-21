@@ -5,29 +5,32 @@ import { exit } from '@tauri-apps/plugin-process';
 import { load, Store } from '@tauri-apps/plugin-store';
 import ChatPanel from "./components/ChatPanel.vue";
 import SettingsPanel from "./components/SettingsPanel.vue";
-import AnalyticsPanel from "./components/AnalyticsPanel.vue";
+import { AnalyticsPanel } from "@features/analytics";
 import ConsultationPage from "./components/ConsultationPage.vue";
-import DiagnosisPathWindow from "./components/DiagnosisPathWindow.vue";
-import ReportInterpretationWindow from "./components/ReportInterpretationWindow.vue";
-import Toast from "./components/Toast.vue";
-import RiskAlertPanel, { type RiskItem } from "./components/RiskAlertPanel.vue";
-import VoiceCapsule from "./components/VoiceCapsule.vue";
-import ReceptionCapsule from "./components/ReceptionCapsule.vue";
-import SymptomManagement from "./components/SymptomManagement.vue";
+import { DiagnosisPathWindow } from "@features/diagnosis-path";
+import { ReportInterpretationWindow } from "@features/report-interpretation";
+import Toast from "@shared/ui/Toast.vue";
+import {
+  ReceptionCapsule,
+  RiskAlertPanel,
+  type RiskItem,
+} from "@features/reception-risk";
+import { VoiceCapsule, clearVoiceConsultationCache } from "@features/voice-consultation";
+import { SymptomManagement } from "@features/symptom-consultation";
 import SvgIcon from "./components/svgIcon.vue";
-import KnowledgeBasePanel from "./components/KnowledgeBasePanel.vue";
+import { KnowledgeBasePanel } from "@features/knowledge";
 import VoiceConsultationNew from "./components/VoiceConsultationNew.vue";
-import FeedbackSubmissionPanel from "./components/FeedbackSubmissionPanel.vue";
-import HisIntegrationLogPanel from "./components/HisIntegrationLogPanel.vue";
-import MedicalCatalogCachePanel from "./components/MedicalCatalogCachePanel.vue";
-import Icon from "./components/Icon.vue";
+import { FeedbackSubmissionPanel } from "@features/feedback";
+import { HisIntegrationLogPanel } from "@features/settings";
+import { MedicalCatalogCachePanel } from "@features/medical-catalog";
+import Icon from "@shared/ui/Icon.vue";
 import { trackClick } from "./services/operationTracker";
 import { LogicalSize } from "@tauri-apps/api/dpi";
 import { getWindowSizeForView, WINDOW_SIZES, type ViewType } from "./constants/windowSizes";
-import { useWindowManagement } from "./composables/useWindowManagement";
-import { useWorkMode } from "./composables/useWorkMode";
-import { useNavigation } from "./composables/useNavigation";
-import { clearVoiceConsultationCache, useVoiceConsultation } from "./composables/useVoiceConsultation";
+import { useNavigation } from "@app/navigation/useNavigation";
+import { useWindowManagement } from "@app/shell/useWindowManagement";
+import { useWorkMode } from "@app/shell/useWorkMode";
+import { useVoiceConsultation } from "./composables/useVoiceConsultation";
 import { useEventListeners } from "./composables/useEventListeners";
 import { useMinimizedSessions } from "./composables/useMinimizedSessions";
 import {
@@ -54,7 +57,7 @@ import {
 import type { AppPatient, AppStore } from "./types/appState";
 import type { ConsultationAssistAction } from "./types/consultationAssist";
 
-const ForceUpdateGate = defineAsyncComponent(() => import("./components/ForceUpdateGate.vue"));
+const ForceUpdateGate = defineAsyncComponent(() => import("@features/settings").then((module) => module.ForceUpdateGate));
 
 type MedicalCatalogDebugApi = {
   help: () => string[];

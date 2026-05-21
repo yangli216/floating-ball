@@ -14,10 +14,12 @@
 
 1. 先读 [CODE_MAP.md](./CODE_MAP.md) 快速定位要改的模块，按需深入
 2. 再读 [ARCHITECTURE.md](./ARCHITECTURE.md) 理解整体架构
-3. 涉及本地 HIS 联调时再读 [api.md](./api.md)
-4. 涉及交互、产品约束时再读 [PRODUCT.md](./PRODUCT.md)
-5. 遇到疑似踩过的坑时，先查 [RETRO.md](./RETRO.md) 已有经验
-6. 只有在做未来区域化改造时，才读取 `docs/regionalization/*.md`
+3. 涉及前端重构、复用、拆分或路径迁移时，先读 [frontend-reuse-architecture.md](./docs/frontend-reuse-architecture.md)，再读 [frontend-file-structure-plan.md](./docs/frontend-file-structure-plan.md)
+4. 涉及本地 HIS 联调时再读 [api.md](./api.md)
+5. 涉及交互、产品约束时再读 [PRODUCT.md](./PRODUCT.md)
+6. 遇到疑似踩过的坑时，先查 [RETRO.md](./RETRO.md) 已有经验
+7. 涉及历史上反复摇摆的设计决策时，先查 [DECISION_DRIFT.md](./DECISION_DRIFT.md)
+8. 只有在做未来区域化改造时，才读取 `docs/regionalization/*.md`
 
 ## 强制流程
 
@@ -45,7 +47,7 @@
 | 文件/模块 | 当前风险 | 约束 |
 | --- | --- | --- |
 | `ConsultationPage.vue` | 1300+ 行，职责过重 | 只允许拆分和缩减，不允许净增行数 |
-| `useEventListeners.ts` | 475 行，监听器集中 | 新增监听器必须说明为什么不能放在更局部的 composable |
+| `useEventListeners.ts` | 约 575 行，仍集中 App 级事件入口 | 新增 App 级 Tauri `listen` 默认复用 `shared/composables/useTauriEventListener.ts`；接诊 / 患者补全 / 风险胶囊状态机默认进入 `app/events/useReceptionController.ts`；SDK handshake 初始化默认进入 `app/events/useSdkHandshakeController.ts`；并说明为什么不能放在更局部的 composable |
 | `useWindowManagement.ts` | 422 行 | 窗口尺寸/位置改动必须同步校验多显示器边界 |
 | `http_server.rs` 接口定义 | 共享契约 | 任何字段变更必须同步 api.md + 前端调用方 |
 
@@ -60,14 +62,19 @@
 1. `ConsultationPage.vue` 是完整问诊 + 灵活模式的唯一落点，不允许维护第二套推荐口径。
 2. Pinia 当前只有 `consultationConfig` 和 `diagnosisPath` 两个权威 store，新增需人工审批。
 3. 知识库入口主次关系：`pmphai.ts` 为主，`KnowledgeBasePanel.vue` 为保留备选。
+4. 前端复用治理以 `docs/frontend-reuse-architecture.md` 为准，文件结构迁移以 `docs/frontend-file-structure-plan.md` 为目标路线图；新增业务组件 / composable / mapper 默认进入对应 `features/<feature>/ui|model|api|lib`，通用 UI / 工具进入 `shared/*`，稳定实体进入 `entities/*`，根级 `components/`、`composables/`、`services/` 不再作为新增默认落点，只保留历史入口或兼容 facade。
+5. 后续重构不能只追求大文件行数下降；必须说明沉淀了哪类能力（Adapter / Builder / Strategy / Composable Controller / Headless UI / domain lib），以及是否减少重复规则或可删除旧入口。
 
-## 工程复盘
+## 工程复盘与决策摇摆
 
 -> 见 [RETRO.md](./RETRO.md)，记录开发过程中反复出现的错误和 vibe coding 典型困难。
+-> 见 [DECISION_DRIFT.md](./DECISION_DRIFT.md)，记录历史上反复变更、撤回、合并、拆分或默认值来回调整的设计决策。
 
 1. 遇到似曾相识的问题时，先查 RETRO.md 是否已有记录和解决方案。
 2. 新发现的典型错误或反复踩坑，必须追加到 RETRO.md（使用文件末尾的模板）。
-3. 如果某条经验足够通用且反复触发，应升级为本文件的硬约束或棘轮条目。
+3. 遇到同一设计点被反复推翻、重做、拆分又合并、默认值来回切换时，必须追加到 DECISION_DRIFT.md。
+4. 如果某条经验足够通用且反复触发，应升级为本文件的硬约束或棘轮条目。
+5. 如果某个摇摆决策已经收敛为产品或架构立场，必须同步更新 PRODUCT.md / ARCHITECTURE.md / AGENTS.md，并在 DECISION_DRIFT.md 标注收敛位置。
 
 ## 文档更新矩阵
 
@@ -76,23 +83,29 @@
 3. 医生交互约束、灵活模式门禁、引用闭环变化：更新 `PRODUCT.md`
 4. 协作流程、验证命令、Review 热点变化：更新 `AGENTS.md`
 5. 开发错误、踩坑经验、反复出现的困难：更新 `RETRO.md`
-6. 模块新增/删除/重命名、文件职责迁移、依赖关系/数据流变更：更新 `CODE_MAP.md`
+6. 设计决策反复推翻、拆分合并、默认值来回切换或当前立场不稳定：更新 `DECISION_DRIFT.md`
+7. 模块新增/删除/重命名、文件职责迁移、依赖关系/数据流变更：更新 `CODE_MAP.md`
 
 ## 包管理与命令约束
 
 1. 默认使用 `yarn`：
    - `yarn install`
+   - `yarn type-check`
    - `yarn build`
    - `yarn tauri dev`
-2. 仓库当前同时存在 `yarn.lock`、`package-lock.json`、`pnpm-lock.yaml` 的历史痕迹。
-3. 除非任务明确是“统一包管理器”，否则不要顺手刷新或新增另一套锁文件。
-4. 遇到依赖损坏时，先在交付说明中记录现状；不要无理由混用 `npm`/`yarn`/`pnpm` 重新安装。
+2. `package.json` 通过 `packageManager` 固定到 `yarn@1.22.22`，仓库根目录只保留 `yarn.lock`。
+3. 根目录不得新增或提交 `package-lock.json`、`pnpm-lock.yaml`；若误生成，必须删除后再交付。
+4. 除非任务明确是“统一包管理器”，否则不要顺手刷新或新增另一套锁文件。
+5. 遇到依赖损坏时，先在交付说明中记录现状；不要无理由混用 `npm`/`yarn`/`pnpm` 重新安装。
 
 ## 最小质量门禁
 
-1. 前端至少执行 `yarn build`
+1. 前端至少执行 `yarn type-check` 与 `yarn build`
 2. Tauri/Rust 侧至少执行 `cargo check`
-3. 若无法完成构建，必须说明阻塞原因，并补充关键路径手测或静态审查结论
+3. 新增生产代码默认同步新增或更新单元测试；确实不适合自动化覆盖时，交付说明必须写明原因和替代验证方式
+4. 引入 Vitest 后，修改已覆盖的 service/composable 必须执行 `yarn test:unit`
+5. 修改关键路径或本地/远端契约时，必须按工作区 [TESTING_STRATEGY.md](../TESTING_STRATEGY.md) 补充对应单元测试、集成测试或关键手测记录
+6. 若无法完成构建或测试，必须说明阻塞原因，并补充关键路径手测或静态审查结论
 
 ## 关键手测清单
 
@@ -125,8 +138,10 @@
 1. 先更新文档
 2. 再改代码
 3. 最后附上验证结果：
+   - `yarn type-check` / 阻塞原因
    - `yarn build` / 阻塞原因
    - `cargo check`
+   - `yarn test:unit`（引入 Vitest 且命中已覆盖模块时）
    - 必要的手测结论
 
 ## 工具使用

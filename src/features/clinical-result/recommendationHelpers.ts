@@ -7,6 +7,21 @@ import {
 
 export type TreatmentMatchLabelStyle = 'compact' | 'detailed';
 
+export function getClinicalDiagnosisIdentity(
+  diagnosis: Pick<Diagnosis, 'code' | 'name'> | null | undefined,
+): string {
+  if (!diagnosis) return '';
+  return `${diagnosis.code || ''}:${diagnosis.name || ''}`;
+}
+
+export function getTreatmentEditorKey(rec: TreatmentRecommendation): string {
+  return `editor:${rec.type}:${rec.matchedItem?.id || rec.name}`;
+}
+
+export function getTreatmentEditorFieldKey(rec: TreatmentRecommendation, field: string): string {
+  return `${getTreatmentEditorKey(rec)}:${field}`;
+}
+
 export function getReasonTooltipKey(kind: 'diagnosis' | 'treatment', primary: string, secondary = ''): string {
   return `${kind}:${primary}:${secondary}`;
 }

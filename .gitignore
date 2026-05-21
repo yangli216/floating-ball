@@ -7,6 +7,10 @@ yarn-error.log*
 pnpm-debug.log*
 lerna-debug.log*
 
+# Package manager guardrails: this app uses Yarn only.
+/package-lock.json
+/pnpm-lock.yaml
+
 node_modules
 dist
 dist-ssr
@@ -36,4 +40,8 @@ CONSULTATION_UX_IMPROVEMENTS.md
 QUICK_REFERENCE.md
 design-system/ai-medical-assistant/MASTER.md
 docs/*
+!docs/frontend-file-structure-plan.md
+!docs/frontend-reuse-architecture.md
+!docs/frontend-ui-reference.md
+!docs/knowledge-search.md
 documents/*

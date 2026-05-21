@@ -21,6 +21,10 @@ export function getManualMatchKey(rec: TreatmentRecommendation): string {
   return `manual-match:${rec.type}:${rec.name}`;
 }
 
+export function getManualMatchSearchKey(rec: TreatmentRecommendation): string {
+  return `${getManualMatchKey(rec)}:search`;
+}
+
 export function isMedicineManualMatchCandidate(candidate: ManualMatchRawCandidate): candidate is MedicineItem {
   return 'spec' in candidate;
 }

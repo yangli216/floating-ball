@@ -10,6 +10,8 @@
 
 **Spec:** `docs/superpowers/specs/2026-04-13-voice-consultation-redesign.md`
 
+> 注：本文是 2026-04-13 的历史执行计划，保留当时的路径语境；当前 `VoiceConsultationResult.vue` 已删除，语音结果入口为 `src/components/VoiceConsultationNew.vue`，共享结果能力沉淀在 `src/features/consultation-result` 与 `src/features/clinical-result`。
+
 ---
 
 ## File Structure

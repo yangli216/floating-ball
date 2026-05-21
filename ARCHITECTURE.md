@@ -1,12 +1,13 @@
 # 架构文档 (ARCHITECTURE.md)
 
-> **最后更新**: 2026-05-12
+> **最后更新**: 2026-05-21
 >
 > **重要**: 此文档是项目架构的唯一真实来源。任何架构级别的代码修改都必须同步更新此文档。
 
 ## 目录
 
 - [概述](#概述)
+- [复用架构准则](#复用架构准则)
 - [核心架构](#核心架构)
 - [用户体系 (Auth)](#用户体系-auth)
 - [应用入口 (App.vue)](#应用入口-appvue)
@@ -50,6 +51,24 @@
 - ✅ **可测试**: Composables 可独立测试
 - ✅ **高性能**: 缓存优化、防抖、GPU 加速动画
 - ✅ **可维护**: 清晰的代码结构，易于理解和修改
+
+---
+
+## 复用架构准则
+
+前端复用治理以 [docs/frontend-reuse-architecture.md](docs/frontend-reuse-architecture.md) 为准，文件迁移路线图见 [docs/frontend-file-structure-plan.md](docs/frontend-file-structure-plan.md)。两者关系是：
+
+1. `frontend-reuse-architecture.md` 回答“哪些能力值得复用、用什么模式复用、什么时候不该继续拆”。
+2. `frontend-file-structure-plan.md` 回答“稳定能力最终放在哪个路径、旧路径如何迁移”。
+
+当前治理立场：
+
+1. 不再把“拆出更多文件”视为单独成果；每次重构必须沉淀为 Adapter、Builder、Strategy、Composable Controller、Headless UI 或明确 feature/domain 能力之一。
+2. 语音问诊与智能问诊共享的结果页能力优先沉淀在 `features/clinical-result` 与 `features/consultation-result`，页面层只保留 toast、缓存、Tauri invoke 和渠道流程编排；渠道派生、放弃确认、用户日志三态这类轻状态优先进入 `consultation-result/model` 并通过 options 注入副作用。
+3. `ConsultationPage.vue` 后续优先 controller 化：症状采集、assist 快进入口、AI 推荐、PHIS 引用、完成问诊分别形成可读的流程 controller，再考虑移动入口文件；App 级事件入口优先把接诊、患者补全和风险胶囊这类跨问诊/语音的状态机沉淀到 `app/events`。
+4. `shared/*` 只接收无业务语义的基础能力；诊断、治疗、问诊、反馈等医疗语义能力不得因为“多个地方用”就提前放入 shared。
+5. 旧 `components/`、`composables/` facade 在调用方切完后应被清理；治理后只新增不删除，视为未完成收敛。
+6. 智能问诊症状采集阶段的模板表单初始化、互斥选择、必填校验、病历草稿拼装等纯规则归入 `features/symptom-consultation/lib`；页面只保留用户动作编排、toast、DOM 滚动、AI 请求和 PHIS/HIS 副作用。
 
 ---
 
@@ -160,7 +179,7 @@
 4. 灵活模式下的推荐诊断 / 诊断鉴别 / 推荐用药 / 推荐检查 / 推荐检验 / 推荐处置，必须继续复用 `ConsultationPage.vue` 现有的诊断生成、标准库匹配、诊断路径与方案联动逻辑，不允许维护第二套轻量推荐口径。
 5. 各模块的“确认”和“引用”语义必须拆分：主诉/现病史回写可以直接更新医生站草稿；诊断鉴别确认只记日志，不修改病历；推荐诊断、推荐用药、推荐检查等的“引用”才真正进入 PHIS 保存闭环。
 6. 灵活模式必须实现前置门禁：`diagnosis` 入口要求已有主诉和现病史；`differential` / `medication` / `examination` / `lab_test` / `procedure` 入口要求已有主诉、现病史和当前诊断；若条件不足，页面需要给出明确提示并停留在可继续补全信息的位置。
-7. `mock_his.html` / `docs/sdk_test.html` 作为联调页时，应优先通过 SDK WebSocket 事件订阅获取 `/api/consultation/events/ws` 推送；`/api/consultation/events/poll` 仅作为 WebSocket 不可用时的兜底，并且仍必须支持“引用请求 -> PHIS 保存成功/失败 -> 回执 floating-ball”的完整闭环。
+7. `web_project/public/mock-his.html` 作为联调页时，应优先通过 `sdk/med-hermes-sdk.js` 的 WebSocket 事件订阅获取 `/api/consultation/events/ws` 推送；`/api/consultation/events/poll` 仅作为 WebSocket 不可用时的兜底，并且仍必须支持“引用请求 -> PHIS 保存成功/失败 -> 回执 floating-ball”的完整闭环。
 8. `POST /api/consultation/reference-feedback` 成为 PHIS 引用回执入口。floating-ball 发起引用后应继续停留在当前 `ConsultationPage`，医生可继续完成本次问诊；收到回执后，必须更新当前问诊页状态、记录日志、标注已引用或失败原因。当前实现仍以内存状态为主，而不是落盘恢复。
 9. `/api/consultation/events/ws` 与 `/api/consultation/events/poll` 需要统一返回“病历草稿写回”、“引用请求发起”、“PHIS 引用回执”等事件 envelope；联调页或 HIS 侧仍需校验 `event.id`、`consultationId` 与当前患者一致，避免旧结果提前命中。
 10. 针对推荐诊断的重复引用，需要区分“同一诊断重复点击”和“更换为新诊断引用”；前者应提示已成功引用，后者应允许 PHIS 进入诊断修改流程并通过回执反馈最终结果。
@@ -178,8 +197,9 @@
 ```vue
 <script setup lang="ts">
 // 1. 导入声明 (~30 行)
-import { useWindowManagement } from "./composables/useWindowManagement";
-import { useWorkMode } from "./composables/useWorkMode";
+import { useWindowManagement } from "@app/shell/useWindowManagement";
+import { useWorkMode } from "@app/shell/useWorkMode";
+import { useNavigation } from "@app/navigation/useNavigation";
 // ...
 
 // 2. 全局状态声明 (~40 行)
@@ -267,7 +287,7 @@ const isRiskAnalyzing = ref(false);
 `currentPatient` 是应用级唯一患者上下文。约束如下：
 
 1. 外部事件只提供患者主键 / 就诊主键和少量当前场景字段。
-2. `useEventListeners.ts` 的接诊流程负责调用 `HisAdapter.fetchPatientInfo()` 与 `HisAdapter.fetchPatientHistory()` 补全完整信息。
+2. `app/events/useReceptionController.ts` 的接诊流程负责调用 `HisAdapter.fetchPatientInfo()` 与 `HisAdapter.fetchPatientHistory()` 补全完整信息；`useEventListeners.ts` 只负责把 HIS 事件分发给该 controller。
 3. 统一上下文同时保存身份信息、展示信息、结构化 `hisHistory`、历史摘要与接诊状态。
 4. UI、AI prompt、日志、缓存等模块不得再各自维护 `naPi/name`、`sdSexText/gender`、`ageText/age` 的读取分支；统一通过患者上下文 helper / selector 读取。
 5. `show-patient-risks`、`start-consultation`、`start-consultation-session`、`start-voice-consultation` 都必须复用同一套上下文构建逻辑，不能绕过 HIS 补全直接写全局状态。
@@ -280,7 +300,7 @@ Composables 是架构的核心，封装可复用的业务逻辑。
 
 ### `useWindowManagement.ts` ✅
 
-**文件**: [src/composables/useWindowManagement.ts](src/composables/useWindowManagement.ts)
+**文件**: [src/app/shell/useWindowManagement.ts](src/app/shell/useWindowManagement.ts)
 
 **行数**: 422 行
 
@@ -334,7 +354,7 @@ await windowMgmt.restoreWindowPosition();
 
 ### `useWorkMode.ts` ✅
 
-**文件**: [src/composables/useWorkMode.ts](src/composables/useWorkMode.ts)
+**文件**: [src/app/shell/useWorkMode.ts](src/app/shell/useWorkMode.ts)
 
 **行数**: 429 行
 
@@ -395,7 +415,7 @@ await workMode.handleCollapse();
 
 ### `useNavigation.ts` ✅
 
-**文件**: [src/composables/useNavigation.ts](src/composables/useNavigation.ts)
+**文件**: [src/app/navigation/useNavigation.ts](src/app/navigation/useNavigation.ts)
 
 **行数**: 194 行
 
@@ -447,9 +467,9 @@ await navigation.openConsultation();
 
 ### `useVoiceFeedback.ts` ✅
 
-**文件**: [src/composables/useVoiceFeedback.ts](src/composables/useVoiceFeedback.ts)
+**文件**: [src/features/feedback/model/useVoiceFeedback.ts](src/features/feedback/model/useVoiceFeedback.ts)
 
-**职责**: 语音结果页反馈编排
+**职责**: 结果页反馈编排（兼容历史 voice 命名）
 
 **核心功能**:
 - ✅ 登记语音结果页诊断 / 治疗推荐快照，便于后续反馈引用稳定 targetId
@@ -458,6 +478,7 @@ await navigation.openConsultation();
 - ✅ 调用 `feedback.ts` 完成本地推荐反馈与整页反馈落库
 - ✅ 调用 `voiceFeedback.ts` 生成后续可直推后台的标准 payload，并为病例字段反馈补齐 AI 原文 / 医生现值 / 差异摘要
 - ✅ 负责从本地恢复未提交的语音反馈草稿，避免医生误关窗口后丢失
+- ✅ 旧路径 [src/composables/useVoiceFeedback.ts](src/composables/useVoiceFeedback.ts) 仅保留兼容 re-export；新调用默认从 `@features/feedback` 消费
 
 **导出 API**:
 ```typescript
@@ -502,8 +523,8 @@ await navigation.openConsultation();
   handleResultConfirm: (record: GeneratedRecord) => Promise<void>,
   cancelVoiceResult: () => Promise<void>,
   // 模块级缓存接口（顶层导出）
-  // updateVoiceConsultationCache(patient, snapshot): 写回 editorSnapshot
-  // getVoiceConsultationEditorSnapshot(patient): 读取 editorSnapshot
+  // updateVoiceConsultationCache(patient, snapshot): 写回 editorSnapshot（实现位于 features/voice-consultation/model/voiceConsultationCache.ts）
+  // getVoiceConsultationEditorSnapshot(patient): 读取 editorSnapshot（实现位于 features/voice-consultation/model/voiceConsultationCache.ts）
 }
 ```
 
@@ -575,20 +596,20 @@ await voiceConsultation.handleResultConfirm(record);
 
 **文件**: [src/composables/useEventListeners.ts](src/composables/useEventListeners.ts)
 
-**行数**: 475 行
+**行数**: ~575 行
 
-**职责**: 统一管理所有 Tauri 事件监听
+**职责**: 统一管理 App 级 Tauri 事件监听、deep link、window listen 和事件到导航 / controller 的分发
 
 **核心功能**:
 - ✅ Deep Link 单点监听（仅在 `useEventListeners` 注册）
 - ✅ HIS 集成事件监听
-  - `receive-patient` - 接诊入口；拉取 HIS 患者基本信息、过敏史与历史就诊记录，并构建统一 `PatientContext`
-  - `show-patient-risks` - 风险提示入口；必须先复用接诊补全，再把风险结果叠加到已有 `PatientContext`
+  - `receive-patient` - 接诊入口；具体患者补全、并发保护和风险胶囊加载委托 `app/events/useReceptionController.ts`
+  - `show-patient-risks` - 风险提示入口；具体患者补全、风险状态和患者切换清理由 `app/events/useReceptionController.ts` 处理
   - `start-consultation` - 开始问诊
   - `start-consultation-session` - HIS 灵活模式 / assist 兼容事件（当前默认打开 `ConsultationPage` 并写入自动触发上下文）
   - `stop-consultation` - 停止问诊；视为诊毕/结束接诊，会清空当前患者上下文、当前就诊的语音缓存和问诊最小化恢复入口
   - `start-voice-consultation` - 语音问诊；来自 HIS / HTTP Bridge 的显式开始语音请求会先按目标患者 `idPi / patientId` 判断是否存在未提交缓存：同患者且存在缓存时直接恢复到语音结果页，否则开启新语音会话；仅在已处于录音胶囊页时对重复请求做幂等忽略
-  - `sdk-handshake` - 解析 HIS 握手上下文，初始化 `HisService`，并把 `orgCode / tenantId(idTet)` 与后续药房 scope 关联到基础数据缓存层
+  - `sdk-handshake` - 订阅 HIS 握手事件；payload 解析、`HisService` 初始化、反馈 actor 和基础数据上下文由 `app/events/useSdkHandshakeController.ts` 处理
 - ✅ 鼠标事件监听
   - `hover-change` - 小球交互范围悬停状态，作为环绕菜单唯一展开条件
   - `mouse-pos` - 鼠标位置（环绕菜单高亮）
@@ -644,33 +665,46 @@ eventListeners.unregisterAllListeners();
 | 组件 | 职责 | 文件 |
 |------|------|------|
 | `ChatPanel.vue` | LLM 对话界面 | [src/components/ChatPanel.vue](src/components/ChatPanel.vue) |
-| `SettingsPanel.vue` | 系统设置（含通用设置、紧凑界面主题选择、区域化接入、关于版本、音频输入设备选择；本地模式下额外显示文本/音频模型配置，区域化模式下隐藏“模型配置”页签；通用设置页提供基础数据缓存/患者记忆管理和 HIS 联调日志独立入口） | [src/components/SettingsPanel.vue](src/components/SettingsPanel.vue) |
-| `ConsultationPage.vue` | 完整症状问诊主链路，同时承接新的“内嵌灵活模式”；支持根据 `/assist` 上下文直接跳过症状采集进入病历详情页，继续复用现有推荐诊断、诊断鉴别、推荐用药、推荐检查与诊断路径能力；进入 `record` 阶段后不再继续内嵌维护旧结果页，而是把当前病历、诊断、治疗快照切换到独立的症状结果页包装组件，由后者复用共享结果页主体；PHIS 引用闭环状态仍由症状包装层承接；AI 推荐链路采用成功后覆盖与当前诊断上下文校验，解析失败或慢请求过期时保留上一版结果 | [src/components/ConsultationPage.vue](src/components/ConsultationPage.vue) |
-| `SymptomConsultationResultPage.vue` | 症状问诊结果页新包装组件：接收 `ConsultationPage.vue` 产出的记录快照、推荐诊断和治疗方案，转换为共享结果页需要的标准输入；症状渠道专属的初始快照适配、入口语义和附加动作由该组件负责，结果页结构与编辑标准以语音侧为准 | [src/components/SymptomConsultationResultPage.vue](src/components/SymptomConsultationResultPage.vue) |
-| `DiagnosisPathWindow.vue` | 独立诊断推理路径窗口，使用 ECharts Sankey 展示患者事实、章节归类、证据汇聚与诊断去向；默认提供更宽画布，并按容器尺寸动态计算 Sankey 的布局盒子，用对称留白实现“适应屏幕并居中”的默认视图，再开放滚轮缩放、平移与节点拖动；点击入口后窗口先显示 loading 动画，并按“检查缓存 -> 生成推理链 -> 渲染图表”的阶段更新提示，若生成超时或渲染失败会切换到明确错误态；正文容器在收到 payload 后保持挂载，loading 改为遮罩层，避免 `chartEl` 尚未挂载时误判渲染成功；开窗后的 `show/focus` 调用采用 best-effort 非阻塞方式，避免 Tauri 原生命令卡住整个推理链；右侧说明面板采用“支持证据 / 反证提醒 / 鉴别要点”三段式，未返回结构化分段时回退显示整体 rationale | [src/components/DiagnosisPathWindow.vue](src/components/DiagnosisPathWindow.vue) |
-| `ReportInterpretationWindow.vue` | 独立检验检查报告解读窗口：展示报告概览、AI 摘要结论、关键异常、临床意义、建议动作、风险提示与解读局限；窗口以只读结果为主，不进入 PHIS 回写；支持在未接诊时使用显式 `patient` 入参，在已接诊时自动补齐当前患者上下文 | [src/components/ReportInterpretationWindow.vue](src/components/ReportInterpretationWindow.vue) |
-| `VoiceCapsule.vue` | 语音录制胶囊 | [src/components/VoiceCapsule.vue](src/components/VoiceCapsule.vue) |
-| `VoiceConsultationNew.vue` | 语音问诊结果页包装组件：消费 `useVoiceIntentRecognition` 的输出与语音缓存恢复语义，把结果适配到共享结果页主体；语音专属的缓存读写、放弃语音会话、语音用户日志与整页反馈触发留在此包装层，结果页结构和字段标准与症状问诊共用同一主体。一键回写后不会立即结束页面，而是等待 HIS 通过 `consultation-reference-feedback` 回执最终状态，成功后进入整页反馈收口但保留语音结果缓存；只有放弃或 `stop-consultation` 诊毕才清理同就诊语音缓存 | [src/components/VoiceConsultationNew.vue](src/components/VoiceConsultationNew.vue) |
-| `ConsultationResultPage.vue` | 问诊共享结果页主体：承载语音标准的左侧病例正文编辑、右侧诊断/治疗推荐、反馈、刷新方案与最终回写 UI。语音问诊和症状问诊都通过各自包装组件把初始快照、渠道语义与额外动作适配到这里；最终回写请求会进入“等待 HIS 回执”状态，失败时保留当前页面供医生修正并重试 | [src/components/ConsultationResultPage.vue](src/components/ConsultationResultPage.vue) |
-| `features/clinical-result/*` | 问诊结果页共享业务 helper：诊断 / 治疗推荐反馈快照、治疗标准库匹配展示、标准库候选搜索、手动匹配写入、推荐依据 tooltip key、疑似匹配名称等无 UI 副作用 helper。症状问诊和语音问诊必须优先复用这里，避免在 `ConsultationPage.vue` 与 `VoiceConsultationNew.vue` 中继续复制同一套推荐卡片辅助逻辑；页面层只保留选中门禁、toast、弹层开合和渠道专属编排 | [src/features/clinical-result/recommendationHelpers.ts](src/features/clinical-result/recommendationHelpers.ts) |
-| `DiagnosisRecommendationCard.vue` | 单条诊断推荐卡片：现同时服务语音问诊与症状问诊。组件负责统一渲染名称、编码、置信度/匹配度、主诊断/已纳入状态、推荐依据 tooltip 和同类诊断切换；反馈按钮通过 `showFeedback` 控制是否启用，额外动作区与正文细节区通过插槽让不同页面注入各自能力（如症状侧的文献搜索 / PHIS 引用 / 诊断鉴别 checklist，以及语音/症状两侧共用的项级反馈 popover） | [src/components/DiagnosisRecommendationCard.vue](src/components/DiagnosisRecommendationCard.vue) |
-| `TreatmentRecommendationCard.vue` | 单条治疗推荐卡片壳：现同时服务语音问诊与症状问诊。组件负责渲染名称/规格、匹配状态、执行科室/发药药房 chip、候选标准项确认、AI 原建议、摘要文案，以及反馈 / 手动匹配 / 展开更多编辑等头部动作；反馈按钮可关闭，标题前缀/标题补充/额外动作/正文细节通过插槽注入，父级继续把手动匹配面板与 editor 区域留在插槽中；其中症状侧可通过 worklist 布局变体把同一份数据骨架渲染成更接近医嘱清单的列表结构，而无需维护第二套治疗项组件 | [src/components/TreatmentRecommendationCard.vue](src/components/TreatmentRecommendationCard.vue) |
-| `VoiceRecommendationFeedbackPopover.vue` | 语音结果页单条推荐反馈弹层：收集问题标签、反馈原因、是否已修正采用以及修正结果摘要 | [src/components/VoiceRecommendationFeedbackPopover.vue](src/components/VoiceRecommendationFeedbackPopover.vue) |
-| `VoiceRecordFeedbackPopover.vue` | 语音结果页病例字段反馈弹层：展示主诉 / 现病史 / 既往史的 AI 原文、当前内容与差异摘要，并提交字段级反馈 | [src/components/VoiceRecordFeedbackPopover.vue](src/components/VoiceRecordFeedbackPopover.vue) |
-| `VoiceSessionFeedbackBar.vue` | 语音结果页整页反馈浮层主体：在一键回写成功后弹出，收集 1-5 分评分、整体问题标签和点评 | [src/components/VoiceSessionFeedbackBar.vue](src/components/VoiceSessionFeedbackBar.vue) |
-| `TreatmentItemEditor.vue` | 治疗项编辑子组件：默认提供症状问诊使用的紧凑编辑模式（药品频次/用法/剂量/总量/天数/备注；检查/检验/处置数量/备注），并额外暴露 `inline` 模式，把语音侧“药品主编辑区”四个核心字段收敛到同一组件中；`inline` 既支持语音侧父组件注入字段激活状态、focusout 收口、总量输入回调等受控交互，也支持症状侧在未注入控制器时使用组件内部的自管展开/收起逻辑。组件本身只负责 UI 与事件分发，不承接归一化、库存校验或 HIS 回流逻辑 | [src/components/TreatmentItemEditor.vue](src/components/TreatmentItemEditor.vue) |
-| `VoiceResultHeader.vue` | 语音结果页患者信息与确认/放弃操作头部；只负责展示和发出 `confirm/cancel` 事件，不承接结果记录、复核或回写逻辑 | [src/components/VoiceResultHeader.vue](src/components/VoiceResultHeader.vue) |
-| `VoiceSafetyReviewPanel.vue` | 语音安全复核员提示面板（L2 柔性提醒）：展示异步 LLM 复核状态和非干扰提醒，支持展开详情、知晓和忽略；当父组件提供 `getActionLabel` 时额外显示"采纳建议"按钮（移除冲突药 / 补充化验），按钮触发 `apply` 事件；面板自身不感知 record，只负责 UI 与事件 | [src/components/VoiceSafetyReviewPanel.vue](src/components/VoiceSafetyReviewPanel.vue) |
-| `VoiceRigidBlockBanner.vue` | 语音刚性阻断条（L1 硬规则）：与 `VoiceSafetyReviewPanel` 并列展示，置于安全复核面板上方；仅渲染由 `useVoiceRigidBlock` 同步评估出的确定性告警，要求医生对每条 `block` 项二次确认；不调用 LLM、不发起网络请求 | [src/components/VoiceRigidBlockBanner.vue](src/components/VoiceRigidBlockBanner.vue) |
-| `ReceptionCapsule.vue` | 接待胶囊（风险提示） | [src/components/ReceptionCapsule.vue](src/components/ReceptionCapsule.vue) |
-| `RiskAlertPanel.vue` | 风险详情面板 | [src/components/RiskAlertPanel.vue](src/components/RiskAlertPanel.vue) |
-| `AnalyticsPanel.vue` | 数据分析 | [src/components/AnalyticsPanel.vue](src/components/AnalyticsPanel.vue) |
-| `SymptomManagement.vue` | 症状库维护 | [src/components/SymptomManagement.vue](src/components/SymptomManagement.vue) |
-| `MedicalCatalogCachePanel.vue` | 缓存管理独立视图：页面标题统一为“缓存管理”，内部按“基础数据缓存”和“患者记忆缓存”两个面板分区；基础数据面板负责展示诊断 / 诊疗项目 / 药品 SQLite 缓存数量、同步状态、数据库路径，并提供面板内刷新、手动同步和定向清理；患者记忆面板支持按患者 ID 查询、查看最近 N 次摘要、手动清空并重新从 HIS 同步，未输入患者 ID 时执行“清空全部患者记忆”前必须二次确认 | [src/components/MedicalCatalogCachePanel.vue](src/components/MedicalCatalogCachePanel.vue) |
-| `HisIntegrationLogPanel.vue` | HIS 联调日志独立视图面板：筛选、查看详情、复制、导出、清空本地 JSONL 日志 | [src/components/HisIntegrationLogPanel.vue](src/components/HisIntegrationLogPanel.vue) |
-| `KnowledgeBasePanel.vue` | 内置知识库检索面板；当前保留但不是默认知识入口，默认入口更偏向 `pmphai.ts` 生成的外部页面 | [src/components/KnowledgeBasePanel.vue](src/components/KnowledgeBasePanel.vue) |
-| `Toast.vue` | 消息提示 | [src/components/Toast.vue](src/components/Toast.vue) |
-| `Icon.vue` | 图标封装；离线图标由 `main.ts` 注册 `src/icons/iconifyCollections.ts` 中的精简 Iconify 集合，避免把完整 `@iconify-json/*` 图标包打进产物 | [src/components/Icon.vue](src/components/Icon.vue) |
+| `SettingsPanel.vue` | 系统设置（含通用设置、紧凑界面主题选择、区域化接入、关于版本、音频输入设备选择；本地模式下额外显示文本/音频模型配置，区域化模式下隐藏“模型配置”页签；通用设置页提供基础数据缓存和 HIS 联调日志独立入口）。当前仍作为根级历史入口保留，音频输入设备枚举 / 权限探测 / devicechange 刷新已下沉到 settings model 的 `useSettingsAudioInput.ts`，语音接诊录音目录选择状态已下沉到 `useSettingsVoiceRecordingDirectory.ts`，保存快照 / dirty 状态 / Cmd+S 监听已下沉到 `useSettingsSaveState.ts`，通用设置页签已抽为受控展示组件 `SettingsGeneralTab.vue`，模型配置页签已抽为受控展示组件 `SettingsModelTab.vue`，底部保存状态条已抽为 `SettingsSaveBar.vue`；父组件继续负责当前设置 snapshot 汇总、真实保存策略、toast、埋点、区域化重连和窗口置顶副作用 | [src/components/SettingsPanel.vue](src/components/SettingsPanel.vue) |
+| `ConsultationPage.vue` | 完整症状问诊主链路，同时承接新的“内嵌灵活模式”；支持根据 `/assist` 上下文直接跳过症状采集进入病历详情页，继续复用现有推荐诊断、诊断鉴别、推荐用药、推荐检查与诊断路径能力；进入 `record` 阶段后不再继续内嵌维护旧结果页，而是把当前病历、诊断、治疗快照切换到独立的症状结果页包装组件，由后者复用共享结果页主体；PHIS 引用闭环状态仍由症状包装层承接；页面 scoped 样式原样外置到 `features/symptom-consultation/ui/ConsultationPage.css`，SFC 继续保留模板、脚本和问诊状态机；AI 推荐链路采用成功后覆盖与当前诊断上下文校验，解析失败或慢请求过期时保留上一版结果；患者文本读取、既往史解析、患者草稿/诊断预填、诊断 identity / AI 请求防串线、同类诊断候选 / 替换列表更新、病历草稿主诉 / 现病史拼装、中医诊断证候 / 治法映射、诊断展示分组、诊断 / 治疗事实核查编排、LLM JSON 宽容解析、诊断/治疗推荐反馈目标落库 / 注册编排、完成问诊推荐采纳 / 拒绝埋点编排、医嘱文案生成、最终报告数据拼装、当前医疗 payload、智能问诊用户日志快照、PHIS 引用 key / 状态图 / 回执归一 / 引用展示判断等数据处理逐步下沉到 `features/symptom-consultation/lib|model`；western 诊断 raw 映射、western 治疗推荐 raw 映射和 PHIS 提交前治疗选择 / 库存提示 / 处理意见摘要复用 `features/clinical-result`；同类诊断卡片内联下拉开合与候选状态复用 `features/consultation-result/model/useRelatedDiagnosisDropdown.ts`，页面仅保留候选来源、诊断替换、选中同步和埋点；页面层只保留状态、副作用依赖注入和流程编排 | [src/components/ConsultationPage.vue](src/components/ConsultationPage.vue) |
+| `entities/patient/*` | 患者实体展示与后续稳定转换归属。当前 `PatientHeader.vue` 是无副作用患者头部展示组件，接收 patient/payType/avatar props 和 actions slot，复用既有 patientContext / patientAvatar 工具解析姓名、性别、年龄、过敏史和头像；不持有问诊流程状态、不调用 Tauri / HIS / toast。智能问诊和语音问诊均通过 `@entities/patient` 复用，旧 `src/components/PatientHeader.vue` 已删除 | [src/entities/patient](src/entities/patient) |
+| `features/symptom-consultation/*` | 智能问诊主流程的无 UI 辅助层：`model/useSymptomCategoryFilter.ts` 管理症状系统分类筛选下拉的已选分类、开合、按钮文案和外部点击关闭判断；`model/useCompanionSymptoms.ts` 管理伴随症状选中集合、名称派生、按关联表生成推荐和升级详细问诊后的移除；`model/useSymptomSelectionController.ts` 管理症状选中 / 取消 / 移除 / 清空和模板表单初始化，最大数量提示、埋点和伴随症状清理由页面通过 options 注入；`model/useSymptomCollectionController.ts` 组合分类筛选、伴随症状、症状选中、过滤结果、渲染计划和表单 key 同步，模板同步、动态症状 AI、缓存恢复、生成病历和 PHIS 回写仍由页面编排；`model/useConsultationAssistController.ts` 编排 assist 快进入口的病历/诊断上下文保障、按类型触发推荐/鉴别清单和成功后的埋点入口，AI 请求、toast、视图切换、预填、埋点和自动触发消费均由页面注入；`lib/symptomFiltering.ts` 负责症状列表的系统分类过滤、适用性别过滤、名称 / 拼音 / 首字母搜索纯函数；`lib/symptomFormData.ts` 负责症状模板字段默认值构造、字段 key 兼容和 checkbox mutualExclusions 数组处理；`lib/consultationRenderPlan.ts` 负责选中症状、问诊模式和当前 formData 到 renderList、需初始化 key、需清理 key 的纯计划；`lib/consultationFormConfigs.ts` 保存一般情况问诊和中医四诊的静态表单配置常量；`lib/consultationFormValidation.ts` 负责根据选中症状、formData、患者信息和注入的适用性判断生成必填错误列表、错误 key map 和首个错误 DOM id；`lib/consultationAssistPresentation.ts` 负责 assist 快进入口的展示标签、提示文案、banner tone / 样式和功能统计 featureCode 映射；`lib/consultationRecommendationPresentation.ts` 负责智能问诊推荐区的治疗推荐可见性、卡片显示、类型标签、诊断置信度 class 和药品行内摘要纯派生；`lib/consultationPatientText.ts` 负责患者/病历记录文本读取、既往门诊摘要过滤与既往史解析；`lib/consultationPayloadBuilders.ts` 根据显式入参构造当前问诊摘要、诊断列表、PHIS 引用/草稿医疗 payload 和用户日志快照；`lib/consultationPrefill.ts` 根据患者上下文和当前草稿/诊断状态推导预填动作；`lib/consultationReference.ts` 负责 PHIS 引用项类型、引用 key、状态 map 更新、回执 payload 归一、引用按钮文案和治疗类型到引用 action 的映射；`lib/consultationDiagnosisContext.ts` 负责诊断 identity 与 AI 请求防串线纯判断；`lib/consultationDiagnosisSwap.ts` 负责同类诊断候选过滤、替换时的列表更新和选中诊断同步判断，诊断 identity 与标准库候选查询函数均由页面显式注入；`lib/consultationGeneratedRecord.ts` 负责选中症状、表单数据、一般情况、四诊和伴随症状到 generatedRecord 草稿的纯拼装；`lib/consultationDiagnosisMapping.ts` 负责中医诊断项证候 / 治法匹配、伪码补齐和置信度排序，western 诊断 raw 匹配委托 `features/clinical-result/clinicalResultAiMapping.ts` 并通过策略保持 code 优先和未匹配清空临时 id；`lib/consultationTcmSigns.ts` 负责中医四诊表单到 AI prompt 文本和最终报告四诊文本的纯格式化；`lib/consultationGeneralCondition.ts` 负责一般情况表单到现病史片段的纯格式化；`lib/consultationDiagnosisGrouping.ts` 负责中医单组与西医 ICD10 展示分组、未知组兜底和分组排序，ICD10 分类查询函数由页面显式注入；AI 治疗推荐 raw 映射已收敛到 `features/clinical-result/clinicalResultAiMapping.ts`，症状域不再维护专属治疗推荐 mapper；`lib/consultationLlmJsonParser.ts` 负责去 BOM / markdown fence / 平衡括号候选扫描 / JSON parse 错误包装；`lib/consultationMedicalAdvice.ts` 负责西医 / 中医默认医嘱文案和中药煎服法追加规则；`lib/consultationFinalRecord.ts` 负责已选治疗快照、TCM 治则治法和 `FinalRecord` 对象拼装；`model/consultationFactCheck.ts` 负责诊断/治疗事实核查启用判断、逐条检查、进度回调、结果写入和 issue 合并编排，检查函数与页面状态写入均由页面注入；`model/recommendationFeedbackRegistration.ts` 负责诊断/治疗推荐反馈落库后的外部目标注册编排，并通过显式参数接收 `saveRecommendation`、`recordMetric`、`registerTarget` 和 `getRecommendationKey`；`model/consultationCompletionTracking.ts` 负责完成问诊时诊断/治疗推荐采纳或拒绝反馈和最终报告统计埋点编排，并通过显式参数接收追踪函数；`index.ts` 是对外公开入口。`lib` 不得直接访问 Vue ref、toast、Tauri invoke、PHIS 请求或页面缓存状态；`model` 可编排副作用，但不得直接 import 单例服务或读取页面 ref | [src/features/symptom-consultation](src/features/symptom-consultation) |
+| `SymptomResultEntry.vue` | 症状问诊结果页包装组件：接收 `ConsultationPage.vue` 产出的记录快照、推荐诊断和治疗方案，委托 `features/clinical-result/clinicalResultAdapter.ts` 转换为中性 `ClinicalResultInput`；症状渠道专属入口语义和“诊断鉴别”附加动作留在此层，结果页结构与编辑标准以共享结果页为准；附加动作 scoped 样式原样外置到 `features/symptom-consultation/ui/SymptomConsultationResultPage.css`。旧 `src/components/SymptomConsultationResultPage.vue` 已删除，问诊页通过 `@features/symptom-consultation` 消费 | [src/features/symptom-consultation/ui/SymptomResultEntry.vue](src/features/symptom-consultation/ui/SymptomResultEntry.vue) |
+| `DiagnosisPathWindow.vue` | 独立诊断推理路径窗口，使用 ECharts Sankey 展示患者事实、章节归类、证据汇聚与诊断去向；默认提供更宽画布，并按容器尺寸动态计算 Sankey 的布局盒子，用对称留白实现“适应屏幕并居中”的默认视图，再开放滚轮缩放、平移与节点拖动；点击入口后窗口先显示 loading 动画，并按“检查缓存 -> 生成推理链 -> 渲染图表”的阶段更新提示，若生成超时或渲染失败会切换到明确错误态；正文容器在收到 payload 后保持挂载，loading 改为遮罩层，避免 `chartEl` 尚未挂载时误判渲染成功；开窗后的 `show/focus` 调用采用 best-effort 非阻塞方式，避免 Tauri 原生命令卡住整个推理链；右侧说明面板采用“支持证据 / 反证提醒 / 鉴别要点”三段式，未返回结构化分段时回退显示整体 rationale；真实实现已迁至 diagnosis-path 功能域，旧 `src/components/DiagnosisPathWindow.vue` 已删除 | [src/features/diagnosis-path/ui/DiagnosisPathWindow.vue](src/features/diagnosis-path/ui/DiagnosisPathWindow.vue) |
+| `ReportInterpretationWindow.vue` | 独立检验检查报告解读窗口：展示报告概览、AI 摘要结论、关键异常、临床意义、建议动作、风险提示与解读局限；窗口以只读结果为主，不进入 PHIS 回写；支持在未接诊时使用显式 `patient` 入参，在已接诊时自动补齐当前患者上下文；真实实现已迁至 report-interpretation 功能域，旧 `src/components/ReportInterpretationWindow.vue` 已删除 | [src/features/report-interpretation/ui/ReportInterpretationWindow.vue](src/features/report-interpretation/ui/ReportInterpretationWindow.vue) |
+| `VoiceCapsule.vue` | 语音录制胶囊；真实实现已迁至语音问诊功能域，旧 `src/components/VoiceCapsule.vue` 兼容包装已删除 | [src/features/voice-consultation/ui/VoiceCapsule.vue](src/features/voice-consultation/ui/VoiceCapsule.vue) |
+| `VoiceConsultationNew.vue` | 当前共享结果页实现载体：消费中性 `ClinicalResultInput`（兼容旧 `VoiceIntentResult`），承载左侧病例正文编辑、右侧诊断/治疗推荐、反馈、刷新方案与最终回写 UI；语音专属的缓存恢复、放弃语音会话、语音用户日志、HIS 回执等待态与整页反馈触发仍留在此文件，editorSnapshot 的节流 / 立即持久化已下沉到 `features/voice-consultation/model/useVoiceEditorSnapshotPersistence.ts`，病例字段初始快照 / 当前值读取 / 人工修改判断 / 字段反馈展示状态已下沉到 `features/voice-consultation/model/useVoiceRecordFieldFeedbackState.ts`，诊断 / 治疗事实核查结果 Map、issue getter 和逐条核查循环已下沉到 `features/voice-consultation/model/useVoiceResultFactCheckState.ts`，推荐项 / 病例字段 / 整页反馈提交动作已下沉到 `features/voice-consultation/model/useVoiceFeedbackActions.ts`，语音知识库检索轻包装已下沉到 `features/voice-consultation/model/useVoiceKnowledgeSearch.ts`，语音意图结构化抽取已下沉到 `features/voice-consultation/model/useVoiceIntentRecognition.ts`，语音标准目录匹配、结果记录 clone / 采纳埋点、L2 安全复核状态、L1 刚性阻断、L2 issue 执行动作和旧整页 fact-check 包装已分别下沉到 `features/voice-consultation/model/useVoiceCatalogMatching.ts`、`useVoiceResultRecord.ts`、`useVoiceSafetyReview.ts`、`useVoiceRigidBlock.ts`、`useSafetyIssueResolver.ts`、`useVoiceResultFactCheck.ts`；症状问诊和语音结果页共用的反馈草稿 / target 登记 / 本地反馈提交编排已下沉到 `features/feedback/model/useVoiceFeedback.ts`；结果页 scoped 样式原样外置到 `features/consultation-result/ui/ClinicalResultEditor.css`，SFC 继续保留模板、脚本和渠道编排；最终回写 payload 必须经 `features/clinical-result/recordConfirmedPayload.ts` 生成，页面只通过 `extra` 注入 pending 回执字段，不再手拼 `record-confirmed` 顶层结构；中性结果输入到可编辑诊断 / 治疗列表的初始化委托 `features/clinical-result/clinicalResultInitialization.ts`；语音诊断 / 治疗 LLM raw 结果到页面推荐项的映射委托 `features/clinical-result/clinicalResultAiMapping.ts`，页面只注入标准库匹配、字典推断、归一化和当前病历文本 | [src/components/VoiceConsultationNew.vue](src/components/VoiceConsultationNew.vue) |
+| `ConsultationResultPage.vue` | 问诊共享结果页薄包装层：只负责把 `ClinicalResultInput`、渠道语义和 slot 附加动作转给当前共享结果页实现，不拥有业务状态机。真实实现已迁至 `features/consultation-result/ui`，旧 `src/components/ConsultationResultPage.vue` 已删除；当前仍转发到根级 `VoiceConsultationNew.vue`，等待后续抽出真正的 `ClinicalResultEditor` 主体。语音问诊和症状问诊都通过各自包装组件把初始快照适配到这里；最终回写请求会进入“等待 HIS 回执”状态，失败时保留当前页面供医生修正并重试 | [src/features/consultation-result/ui/ConsultationResultPage.vue](src/features/consultation-result/ui/ConsultationResultPage.vue) |
+| `features/clinical-result/*` | 问诊结果页共享业务 helper，对外统一通过 `@features/clinical-result` barrel 暴露，页面层不直接依赖内部深路径：`clinicalResultAdapter.ts` 定义中性 `ClinicalResultInput` 并承接症状/语音入口到共享结果页的无 UI 适配；`clinicalResultLlmJsonParser.ts` 负责 LLM 文本到 JSON 对象 / 数组的宽容纯解析，症状问诊旧解析器路径仅兼容重导出，语音结果页诊断 / 治疗推荐解析也复用此口径；`clinicalResultAiRequest.ts` 负责 diagnosis、medication、exam、lab_test、procedure 推荐的 messages 与 trace config 规格构造，支持单路和多路治疗推荐规格，prompt 资产由调用方显式注入，trace 基础字段和具体 scene/title/action 可注入且默认保持语音问诊取值，页面仍负责 `chat` 调用与并发策略；`clinicalResultAiMapping.ts` 负责语音结果页 AI raw 诊断 / 治疗项到已匹配页面推荐项的纯转换、智能问诊 western 诊断 raw 数组按策略转换、智能问诊 western 治疗推荐 raw 数组按目标类型过滤转换，以及多路治疗响应解析失败隔离和合并，标准库匹配、catalog assessment、normalize、parser 与 parse-error 回调均由调用方注入；`clinicalResultInitialization.ts` 负责中性结果输入到可编辑诊断 / 治疗列表的初始化、匹配状态继承和默认勾选纯规则，通过参数注入标准库匹配、字典推断、归一化和当前病历文本；`clinicalResultNarrative.ts` 负责推荐依据文案、条件性用药 / 患者已自行服药识别和默认勾选判断；`clinicalResultUsageFields.ts` 负责药品频次 / 用法候选过滤、关键字解析和字段展示文案，不持有搜索关键字 ref 或写回副作用；`clinicalResultAttributeOptions.ts` 负责药房、执行科室、部位、医保候选构造和过滤，不修改推荐项；`clinicalResultFeedback.ts` 负责诊断 / 治疗推荐反馈提交 payload 的标题、snapshot、targetType 和 recommendationType 纯构造；`recordConfirmedPayload.ts` 是症状问诊 / 语音问诊共用的 `record-confirmed` PHIS 回写契约唯一构造点，并承接诊断 key / 标准诊断 id 判断、orderList 原始字段读取、服务分类兜底、检验 jsonField / 皮试 / 检查标志等纯解析；`consultationSubmitPayload.ts` 负责 PHIS 提交前的已选治疗合并、库存不足提示文案和治疗方案摘要纯拼装；其余 helper 覆盖治疗标准库匹配展示、标准库候选搜索、手动匹配写入、诊断上下文 identity、治疗编辑器 key、推荐依据 tooltip key、疑似匹配名称等逻辑。症状问诊和语音问诊必须优先复用这里，页面层只保留选中门禁、toast、弹层开合和渠道专属编排 | [src/features/clinical-result](src/features/clinical-result) |
+| `features/consultation-result/model/*` | 问诊共享结果页的轻状态与治疗模型 composable：`useClinicalResultChannelStrategy.ts` 管理 `voice/symptom` 渠道到日志类型、语音缓存开关、患者头展示和取消弹窗文案的无副作用派生；`useClinicalResultCancelController.ts` 管理放弃确认弹窗开合、提交中 / 等待 HIS 回执时的拦截提示和确认入口，反馈草稿清理 / 放弃日志 / `emit('cancel')` 由页面注入；`useClinicalResultIntentReset.ts` 管理新 `intentResult` 到来时的旧现场清理、病历字段回填和初始字段快照设置；`useClinicalResultWritebackPayload.ts` 管理最终回写前 `diagList` / `orderList` 的构造 resolver 组合；`useClinicalResultWritebackPreflight.ts` 管理最终回写前标准诊断、药品详情、库存、药房、执行科室和检查部位门禁编排，页面仍负责 `complete_consultation`、PHIS payload、提交中状态、等待回执和日志；`useClinicalResultUserLogController.ts` 管理首版、最终和放弃三类用户日志的提交节奏、首版快照记忆、最终选择快照和可选变更摘要，页面仍注入快照构造、患者来源和区域化提交函数；`useWritebackFeedbackController.ts` 管理已命中 requestId 的 HIS 回执 success / failed 分发和默认提示，页面仍注入缓存持久化、最终日志、整页反馈弹窗和 toast；`useConsultationReferenceFeedbackListener.ts` 管理 `consultation-reference-feedback` 事件名、当前 `consultationId` 防串线和 Tauri listener 生命周期组合，命中后的 requestId 匹配、引用状态 map、toast、缓存和日志仍由页面 / controller 承接；`useClinicalResultPatientContext.ts` 管理患者姓名、性别、年龄、`idTet`、就诊锚点和 `consultationId` 派生；`useRecommendationFeedbackPopover.ts` 管理推荐反馈弹层当前打开 key、草稿读取、提交标签读取和关闭逻辑；`useReasonTooltipState.ts` 管理推荐依据 tooltip 当前打开 key、切换和关闭；`useDiagnosisSelection.ts` 管理诊断勾选集合、主诊断同步、诊断增删和替换后的 key 同步；`useRelatedDiagnosisDropdown.ts` 管理同类诊断下拉当前打开 key、候选列表、打开 / 关闭 / 切换和替换后收口；`useManualMatchState.ts` 管理治疗项手动匹配弹层 key 与搜索关键词缓存；`useMedicineUsageSearch.ts` 管理药品 frequency / route 搜索关键字缓存、当前值同步和重置；`useMedicineFieldEditing.ts` 管理药品字段激活、blur 收口、频次 / 用法 keyword 解析写回、总量输入和库存 warning 清理；`useTreatmentPharmacyResolution.ts` 管理药品候选药房收窄、默认药房、已选药房匹配、药房名称归一化和详情加载后的默认药房填充；`useTreatmentSelectionReadiness.ts` 管理治疗项选中前的药品详情、药房、执行科室、检查部位和库存门禁编排；`useTreatmentSections.ts` 管理治疗推荐按类型展示分组、是否存在推荐和空状态文案派生；`useTreatmentEditorState.ts` 管理治疗编辑器展开集合、当前 active 字段 key 与字段 DOM focus 注册；`useTreatmentQuickSelector.ts` 管理药房 / 执行科室 / 部位 quick selector 的编辑器展开、二级选择器打开和输入框聚焦；`useSecondarySelector.ts` 管理治疗推荐二级搜索下拉（药房 / 执行科室 / 部位 / 医保）的展开 key 与 keyword 缓存；`useTreatmentAttributeSearch.ts` 管理药房 / 执行科室 / 部位 / 医保候选构造、搜索 keyword 读写和过滤列表派生；`useBodySiteOptions.ts` 负责检查项目部位选项落地到治疗推荐项；`useTreatmentGates.ts` 负责治疗项药房 / 执行科室 / 检查部位门禁与候选派生；`useMedicalDictionaries.ts` 统一加载治疗编辑所需 HIS 字典；`useTreatmentNormalization.ts` 统一治疗项字段归一化、HIS 默认频次 / 用法匹配和药品总量估算；`useTreatmentHydration.ts` 统一药品详情轮询、非药品详情补全和库存校验状态；`useWritebackStatus.ts` 管理最终回写 requestId、等待态、最近回执与按钮 / banner 文案派生。不保存反馈、不调用 PHIS 回写 / 区域化；toast 只允许通过调用方显式注入的 `notify` 触发。症状问诊和语音问诊页面只负责把外部点击事件、提交成功关闭、字段写回、缓存读写和渠道专属反馈接入 | [src/features/consultation-result/model](src/features/consultation-result/model) |
+| `DiagnosisRecommendationCard.vue` | 单条诊断推荐卡片：现同时服务语音问诊与症状问诊。组件负责统一渲染名称、编码、置信度/匹配度、主诊断/已纳入状态、推荐依据 tooltip 和同类诊断切换；反馈按钮通过 `showFeedback` 控制是否启用，额外动作区与正文细节区通过插槽让不同页面注入各自能力；真实实现已迁至共享结果页功能域，旧 `src/components/DiagnosisRecommendationCard.vue` 兼容包装已删除 | [src/features/consultation-result/ui/DiagnosisRecommendationCard.vue](src/features/consultation-result/ui/DiagnosisRecommendationCard.vue) |
+| `TreatmentRecommendationCard.vue` | 单条治疗推荐卡片壳：现同时服务语音问诊与症状问诊。组件负责渲染名称/规格、匹配状态、执行科室/发药药房 chip、候选标准项确认、AI 原建议、摘要文案，以及反馈 / 手动匹配 / 展开更多编辑等头部动作；真实实现已迁至共享结果页功能域，旧 `src/components/TreatmentRecommendationCard.vue` 兼容包装已删除 | [src/features/consultation-result/ui/TreatmentRecommendationCard.vue](src/features/consultation-result/ui/TreatmentRecommendationCard.vue) |
+| `FactCheckHighlight.vue` | 行内事实核查标注组件，展示 factChecker 返回的 issue 风险等级、问题和建议；真实实现已迁至 feedback 功能域，旧 `src/components/FactCheckHighlight.vue` 兼容包装已删除 | [src/features/feedback/ui/FactCheckHighlight.vue](src/features/feedback/ui/FactCheckHighlight.vue) |
+| `FactCheckNotification.vue` / `FactCheckWidget.vue` | 事实核查通知和悬浮浮窗，展示 factChecker 审查开启、完成、问题数量和详情列表；真实实现已迁至 feedback 功能域，旧 `src/components/FactCheckNotification.vue` / `src/components/FactCheckWidget.vue` 兼容包装已删除 | [src/features/feedback/ui](src/features/feedback/ui) |
+| `VoiceRecommendationFeedbackPopover.vue` | 语音结果页单条推荐反馈弹层：收集问题标签、反馈原因、是否已修正采用以及修正结果摘要；真实实现已迁至语音问诊功能域，旧 `src/components/VoiceRecommendationFeedbackPopover.vue` 兼容包装已删除 | [src/features/voice-consultation/ui/VoiceRecommendationFeedbackPopover.vue](src/features/voice-consultation/ui/VoiceRecommendationFeedbackPopover.vue) |
+| `VoiceRecordFeedbackPopover.vue` | 语音结果页病例字段反馈弹层：展示主诉 / 现病史 / 既往史的 AI 原文、当前内容与差异摘要，并提交字段级反馈；真实实现已迁至语音问诊功能域，旧 `src/components/VoiceRecordFeedbackPopover.vue` 兼容包装已删除 | [src/features/voice-consultation/ui/VoiceRecordFeedbackPopover.vue](src/features/voice-consultation/ui/VoiceRecordFeedbackPopover.vue) |
+| `VoiceRecordFieldEditor.vue` | 语音结果页病例字段受控编辑器：展示单个字段的标题、人工修改标记、反馈按钮、字段反馈弹层和 textarea；父页负责字段值、初始快照、反馈 key、草稿更新、提交、toast、日志和 PHIS 回写 | [src/features/voice-consultation/ui/VoiceRecordFieldEditor.vue](src/features/voice-consultation/ui/VoiceRecordFieldEditor.vue) |
+| `VoiceSessionFeedbackBar.vue` | 语音结果页整页反馈浮层主体：在一键回写成功后弹出，收集 1-5 分评分、整体问题标签和点评；真实实现已迁至语音问诊功能域，旧 `src/components/VoiceSessionFeedbackBar.vue` 兼容包装已删除 | [src/features/voice-consultation/ui/VoiceSessionFeedbackBar.vue](src/features/voice-consultation/ui/VoiceSessionFeedbackBar.vue) |
+| `TreatmentItemEditor.vue` / `MedicineUsageFieldSelector.vue` / `ManualMatchPicker.vue` / `RecAttributeChip.vue` | 共享结果页治疗项编辑、药品频次/用法选择、手动匹配和必填属性 chip；真实实现已迁至共享结果页功能域，对应旧 `src/components/*` 兼容包装已删除。组件本身只负责 UI 与事件分发，不承接归一化、库存校验或 HIS 回流逻辑 | [src/features/consultation-result/ui](src/features/consultation-result/ui) |
+| `VoiceResultHeader.vue` | 语音结果页患者信息与确认/放弃操作头部；只负责展示和发出 `confirm/cancel` 事件，不承接结果记录、复核或回写逻辑；真实实现已迁至语音问诊功能域，旧 `src/components/VoiceResultHeader.vue` 兼容包装已删除 | [src/features/voice-consultation/ui/VoiceResultHeader.vue](src/features/voice-consultation/ui/VoiceResultHeader.vue) |
+| `VoiceSafetyReviewPanel.vue` | 语音安全复核员提示面板（L2 柔性提醒）：展示异步 LLM 复核状态和非干扰提醒，支持展开详情、知晓和忽略；当父组件提供 `getActionLabel` 时额外显示"采纳建议"按钮（移除冲突药 / 补充化验），按钮触发 `apply` 事件；面板自身不感知 record，只负责 UI 与事件；真实实现已迁至语音问诊功能域，旧 `src/components/VoiceSafetyReviewPanel.vue` 兼容包装已删除 | [src/features/voice-consultation/ui/VoiceSafetyReviewPanel.vue](src/features/voice-consultation/ui/VoiceSafetyReviewPanel.vue) |
+| `VoiceRigidBlockBanner.vue` | 语音刚性阻断条（L1 硬规则）：与 `VoiceSafetyReviewPanel` 并列展示，置于安全复核面板上方；仅渲染由 `useVoiceRigidBlock` 同步评估出的确定性告警，要求医生对每条 `block` 项二次确认；不调用 LLM、不发起网络请求；真实实现已迁至语音问诊功能域，旧 `src/components/VoiceRigidBlockBanner.vue` 兼容包装已删除 | [src/features/voice-consultation/ui/VoiceRigidBlockBanner.vue](src/features/voice-consultation/ui/VoiceRigidBlockBanner.vue) |
+| `shared/composables/useOutsideInteraction.ts` | 通用 document 外部点击 / pointerdown 交互 composable：统一绑定和解绑全局事件，按 selector 或 element refs 判断是否点击在浮层锚点外部并触发关闭回调；不携带推荐、症状或反馈业务语义 | [src/shared/composables/useOutsideInteraction.ts](src/shared/composables/useOutsideInteraction.ts) |
+| `shared/composables/useTauriEventListener.ts` | 通用 Tauri 事件监听生命周期 composable：统一在 mounted 阶段自动订阅 `listen`，或由调用方在需要保证时序时显式 `startListener()`；在 unmounted 阶段解绑，并集中处理订阅失败日志，可按调用方配置向外传播显式注册失败；不携带事件 payload 的业务过滤、PHIS 回执处理、下载进度处理或页面状态写入。`useEventListeners.ts` 的 App 级 Tauri 事件使用 `autoStart: false` 接入，保留原有显式 `registerAllListeners()` 时序 | [src/shared/composables/useTauriEventListener.ts](src/shared/composables/useTauriEventListener.ts) |
+| `app/events/useReceptionController.ts` | App 级接诊状态机 controller：统一处理 `receive-patient`、自动静默接诊和 `show-patient-risks` 所需的 HIS 患者补全、过敏史 / 历史就诊摘要合并、风险胶囊状态、同患者并发接诊复用、患者切换时语音缓存和最小化入口清理；不注册 Tauri 事件、不处理 SDK handshake、不打开具体结果页、不提交 PHIS 回写 | [src/app/events/useReceptionController.ts](src/app/events/useReceptionController.ts) |
+| `app/events/useSdkHandshakeController.ts` | App 级 SDK handshake controller：解析 `sdk-handshake` payload 中的 HIS origin、token、机构、租户、角色科室和 URT，初始化 / 重置 `HisService` 与 `HisAdapter`，缓存反馈 actor，并把 `orgCode / tenantId` 写入医学目录上下文；不注册 Tauri 事件、不读写患者上下文、不打开页面或提交 PHIS 回写 | [src/app/events/useSdkHandshakeController.ts](src/app/events/useSdkHandshakeController.ts) |
+| `shared/composables/useTauriWindowEventListeners.ts` | 通用独立窗口事件监听生命周期 composable：统一批量注册当前 Tauri `Window` 实例上的 `appWindow.listen`，在 unmounted 阶段解绑，并集中处理注册失败日志；独立窗口仍显式 `await registerListeners()` 后再发送 ready 事件，避免主窗口提前投递 payload；不携带窗口 payload 状态写入、图表渲染或业务状态机 | [src/shared/composables/useTauriWindowEventListeners.ts](src/shared/composables/useTauriWindowEventListeners.ts) |
+| `ReceptionCapsule.vue` | 接待胶囊（风险提示）；真实实现已迁至 reception-risk 功能域，旧 `src/components/ReceptionCapsule.vue` 已删除，App 通过 `@features/reception-risk` 公开入口消费 | [src/features/reception-risk/ui/ReceptionCapsule.vue](src/features/reception-risk/ui/ReceptionCapsule.vue) |
+| `RiskAlertPanel.vue` / `RiskAlertBubble.vue` | 风险详情面板 / 气泡；真实实现已迁至 reception-risk 功能域，旧 `src/components/RiskAlertPanel.vue` / `src/components/RiskAlertBubble.vue` 已删除，`RiskItem` 类型由 `src/features/reception-risk/types.ts` 统一导出，避免业务代码从 UI 文件借类型 | [src/features/reception-risk/ui](src/features/reception-risk/ui) |
+| `AnalyticsPanel.vue` | 数据分析看板，展示本地会话、反馈、推荐和操作统计，并导出使用报告；真实实现已迁至 analytics 功能域，旧 `src/components/AnalyticsPanel.vue` 已删除，App 通过 `@features/analytics` 公开入口消费 | [src/features/analytics/ui/AnalyticsPanel.vue](src/features/analytics/ui/AnalyticsPanel.vue) |
+| `SymptomManagement.vue` / `BodyPartSelector.vue` / `SystemCategorySelector.vue` | 症状问诊 UI 域：症状库维护、人体部位交互选症状和按系统分类选症状；真实实现已迁至 `features/symptom-consultation/ui`，旧 `src/components/*` 路径已删除，App / `ConsultationPage` 通过 `@features/symptom-consultation` 公开入口消费 | [src/features/symptom-consultation/ui](src/features/symptom-consultation/ui) |
+| `MedicalCatalogCachePanel.vue` | 缓存管理独立视图：页面标题统一为“缓存管理”，当前只展示诊断 / 诊疗项目 / 药品等基础数据 SQLite 缓存数量、同步状态、数据库路径，并提供面板内刷新、手动同步和按目录 / 机构 / 租户 / 药房定向清理；真实实现已迁至 medical-catalog 功能域，旧 `src/components/MedicalCatalogCachePanel.vue` 已删除，App 通过 `@features/medical-catalog` 公开入口消费 | [src/features/medical-catalog/ui/MedicalCatalogCachePanel.vue](src/features/medical-catalog/ui/MedicalCatalogCachePanel.vue) |
+| `HisIntegrationLogPanel.vue` | HIS 联调日志独立视图面板：筛选、查看详情、复制、导出、清空本地 JSONL 日志；真实实现已迁至 settings 功能域下的排障工具面板，旧 `src/components/HisIntegrationLogPanel.vue` 已删除，App 通过 `@features/settings` 公开入口消费 | [src/features/settings/ui/HisIntegrationLogPanel.vue](src/features/settings/ui/HisIntegrationLogPanel.vue) |
+| `UpdateChecker.vue` / `ForceUpdateGate.vue` | 客户端更新与区域化强制更新门禁 UI：`UpdateChecker` 负责更新源配置、检查按钮、下载进度和安装重启动作编排；`ForceUpdateGate` 只展示强更版本要求并复用 `UpdateChecker forced`。真实实现已迁至 settings 功能域，旧 `src/components/UpdateChecker.vue` / `src/components/ForceUpdateGate.vue` 已删除，设置页和 App 强更门禁通过 `@features/settings` 公开入口消费 | [src/features/settings/ui](src/features/settings/ui) |
+| `FeedbackSubmissionPanel.vue` | 通用问题反馈面板：区域化模式下承接工作区顶栏反馈入口，提供紧凑星级、问题标签、选填截图和补充说明；真实实现已迁至 feedback 功能域，旧 `src/components/FeedbackSubmissionPanel.vue` 已删除，App 通过 `@features/feedback` 公开入口消费 | [src/features/feedback/ui/FeedbackSubmissionPanel.vue](src/features/feedback/ui/FeedbackSubmissionPanel.vue) |
+| `KnowledgeBasePanel.vue` / `KnowledgePanel.vue` | 知识库 UI 域：内置知识库检索面板、问诊页知识检索抽屉、搜索结果行和详情弹窗；真实实现已迁至 knowledge 功能域，旧 `src/components/Knowledge*.vue` 已删除，App 与问诊页通过 `@features/knowledge` 公开入口消费。智能问诊和语音问诊的批量检索分类词提取收敛到 `features/knowledge/lib/knowledgeSearchCategories.ts`，检索 loading / results / 面板开合收敛到 `features/knowledge/model/useKnowledgeSearchController.ts`；知识服务、配置判断、toast 和埋点仍由调用方注入。当前默认知识入口仍更偏向 `pmphai.ts` 生成的外部页面，内置面板作为保留备选通道 | [src/features/knowledge/ui](src/features/knowledge/ui) / [src/features/knowledge/lib](src/features/knowledge/lib) / [src/features/knowledge/model](src/features/knowledge/model) |
+| `Toast.vue` | 消息提示；真实实现已迁至 `src/shared/ui/Toast.vue`，旧 `src/components/Toast.vue` 兼容包装已删除，全局 provider 直接使用 shared 实现 | [src/shared/ui/Toast.vue](src/shared/ui/Toast.vue) |
+| `Icon.vue` | 通用图标封装真实实现已迁至 `src/shared/ui/Icon.vue`；旧 `src/components/Icon.vue` 兼容包装已删除。离线图标由 `main.ts` 注册 `src/icons/iconifyCollections.ts` 中的精简 Iconify 集合，避免把完整 `@iconify-json/*` 图标包打进产物 | [src/shared/ui/Icon.vue](src/shared/ui/Icon.vue) |
 
 ### 组件通信模式
 
@@ -697,14 +731,20 @@ eventListeners.unregisterAllListeners();
 ```typescript
 export const WINDOW_SIZES = {
   BALL: { width: 160, height: 160 },
-  WORK: { width: 420, height: 560 },
-  SESSION: { width: 400, height: 760 },
-  DIAGNOSIS_PATH: { width: 1080, height: 760 },
-  CONSULTATION: { width: 1200, height: 900 },
+  WORK: { width: 378, height: 449 },
+  CHAT: { width: 920, height: 360 },
+  DIAGNOSIS_PATH: { width: 972, height: 608 },
+  CONSULTATION: { width: 1080, height: 720 },
   CAPSULE: { width: 360, height: 80 },
-  CAPSULE_EXPANDED: { width: 360, height: 400 },
-  RESULT: { width: 1200, height: 900 },
-  SYMPTOM_MANAGE: { width: 1200, height: 900 }
+  CAPSULE_PROCESSING: { width: 360, height: 96 },
+  CAPSULE_STOPPED: { width: 360, height: 140 },
+  CAPSULE_EXPANDED: { width: 360, height: 248 },
+  RISK_CARD: { width: 280, height: 92 },
+  RISK_CARD_EXPANDED: { width: 280, height: 360 },
+  SYMPTOM_MANAGE: { width: 1080, height: 720 },
+  VOICE_CONSULTATION: { width: 1080, height: 720 },
+  HIS_LOG: { width: 980, height: 640 },
+  MEDICAL_CACHE: { width: 980, height: 640 }
 };
 
 export type ViewType =
@@ -713,6 +753,7 @@ export type ViewType =
   | 'consultation'
   | 'risk-alert'
   | 'voice-interaction'
+  | 'voice-consultation'
   | 'reception-capsule'
   | 'analytics'
   | 'symptom-manage'
@@ -857,12 +898,10 @@ src/styles/
 | `types/consultationAssist.ts` | 主问诊灵活模式的动作类型、诊断路径候选类型与上下文结构定义，避免继续依赖历史 session 命名 | [src/types/consultationAssist.ts](src/types/consultationAssist.ts) |
 | `types/reportInterpretation.ts` | 报告解读域类型：定义 `taskId/query/patient` 请求结构，以及独立窗口消费的结构化摘要、异常项、风险提示与患者上下文快照 | [src/types/reportInterpretation.ts](src/types/reportInterpretation.ts) |
 | `templateService.ts` | 症状模板管理 | [src/services/templateService.ts](src/services/templateService.ts) |
-| `factChecker.ts` | AI 防误防漏 / 审查能力；语音结果页只通过 `useVoiceResultFactCheck.ts` 和 `useVoiceSafetyReview.ts` 编排调用，不在组件内直接维护复核进度和 issue map | [src/services/factChecker.ts](src/services/factChecker.ts) |
-| `safetyRules.ts` | L1 刚性安全复核规则引擎：纯本地、确定性、无网络的硬规则集合（抗生素过敏交叉、诊断-性别冲突、儿童禁用药、重复用药）；输入 `GeneratedRecord + PatientInfo`，输出 `RigidBlockAlert[]`；只暴露 `evaluateRigidSafetyRules`，不直接持有 UI 状态，由 `useVoiceRigidBlock` 包装为响应式 composable 后供 `VoiceRigidBlockBanner.vue` 渲染 | [src/services/safetyRules.ts](src/services/safetyRules.ts) |
-| `patientMemoryStore.ts` | 患者长期记忆 store 门面（async）：通过 `patientMemoryBackend` 抽象层路由读写；提供 `getPatientMemory` / `appendPatientVisit`（在 `complete_consultation` 成功后写入）/ `syncPatientMemoryFromHis`（用结构化 HIS 历史整包覆盖本地快照，保留原始就诊时间，不再依赖 LLM 回填时间）/ `clearPatientMemory` / `extractRecentMedications`（L2 安全复核 `recentMedications`）/ `formatPatientMemoryForPrompt`（语音意图识别 user prompt）；持久化患者基本信息、过敏史、候选慢病与最近摘要，但不存储原始转录文本以避免 PII 与体积膨胀 | [src/services/patientMemoryStore.ts](src/services/patientMemoryStore.ts) |
-| `patientMemoryBackend.ts` | 后端抽象层：`local-sqlite`（默认，调用 Tauri 命令 `patient_memory_*` → `patient_memory.db`）、`regional-http`（区域化模式占位，通过 `window.__REGIONAL_MEMORY_BACKEND__` 注入）、`local-storage`（兜底）；主后端调用失败自动降级到 localStorage，保证记忆系统故障不影响主问诊路径；区域化迁移只需替换该层实现 | [src/services/patientMemoryBackend.ts](src/services/patientMemoryBackend.ts) / [src/services/patientMemoryTypes.ts](src/services/patientMemoryTypes.ts) |
-| `commands/patient_memory.rs` | 桌面端 SQLite 持久化：单独 db 文件 `patient_memory.db`，表 `patient_memory`（患者基本信息 + 累积过敏史 + 慢病候选）+ `patient_visits`（最近 N=5 次摘要，按 completed_at desc 自动裁剪）；命令 `patient_memory_get` / `patient_memory_append_visit`（事务化写入 + 重算慢病候选）/ `patient_memory_replace_snapshot`（按 HIS 历史整包覆盖）/ `patient_memory_clear` / `patient_memory_get_debug_state`；schema 见 `migrations/002_patient_memory_schema.sql` | [src-tauri/src/commands/patient_memory.rs](src-tauri/src/commands/patient_memory.rs) |
-| `useSafetyIssueResolver.ts` | L2 柔性提醒到 record 的执行层：把 `VoiceSafetyIssue` 解析为 `remove_medications` / `add_lab_tests` / `none` 动作计划，并在医生点击"采纳建议"时直接 mutate `record.medications` / `record.labTests`；通过 `getRecord/onRecordUpdated` 注入避免循环依赖，应用后自动重跑 L1 与 L2 复核 | [src/composables/useSafetyIssueResolver.ts](src/composables/useSafetyIssueResolver.ts) |
+| `factChecker.ts` | AI 防误防漏 / 审查能力；语音结果页只通过 `features/voice-consultation/model/useVoiceResultFactCheckState.ts`、`features/voice-consultation/model/useVoiceResultFactCheck.ts` 和 `features/voice-consultation/model/useVoiceSafetyReview.ts` 编排调用，不在组件内直接维护复核进度和 issue map | [src/services/factChecker.ts](src/services/factChecker.ts) |
+| `safetyRules.ts` | L1 刚性安全复核规则引擎：纯本地、确定性、无网络的硬规则集合（抗生素过敏交叉、诊断-性别冲突、儿童禁用药、重复用药）；输入 `GeneratedRecord + PatientInfo`，输出 `RigidBlockAlert[]`；只暴露 `evaluateRigidSafetyRules`，不直接持有 UI 状态，由 `features/voice-consultation/model/useVoiceRigidBlock.ts` 包装为响应式 composable 后供 `VoiceRigidBlockBanner.vue` 渲染 | [src/services/safetyRules.ts](src/services/safetyRules.ts) |
+| 患者长期记忆 | 当前仓库仅保留 `docs/patient-memory-*.drawio/png` 等历史规划图，未落地 `patientMemoryStore.ts`、`patientMemoryBackend.ts`、`patient_memory.rs` 或专用 SQLite migration。任何恢复该能力的工作必须先补架构 / API / 数据迁移文档，再实现前端 service、Rust command 和缓存管理 UI | `docs/patient-memory-architecture.drawio` / `docs/patient-memory-call-paths.png` |
+| `useSafetyIssueResolver.ts` | L2 柔性提醒到 record 的执行层：把 `VoiceSafetyIssue` 解析为 `remove_medications` / `add_lab_tests` / `none` 动作计划，并在医生点击"采纳建议"时直接 mutate `record.medications` / `record.labTests`；通过 `getRecord/onRecordUpdated` 注入避免循环依赖，应用后自动重跑 L1 与 L2 复核；真实实现已迁至语音问诊功能域，旧路径只保留兼容 re-export | [src/features/voice-consultation/model/useSafetyIssueResolver.ts](src/features/voice-consultation/model/useSafetyIssueResolver.ts) |
 | `promptGuard.ts` | Prompt 注入与泄漏保护 | [src/services/promptGuard.ts](src/services/promptGuard.ts) |
 | `textGeneration.ts` | 主诉/现病史等文本生成辅助 | [src/services/textGeneration.ts](src/services/textGeneration.ts) |
 | `reportGenerator.ts` | 使用报告导出 | [src/services/reportGenerator.ts](src/services/reportGenerator.ts) |
@@ -930,7 +969,7 @@ startAuditUploader() (startup flush + enqueue flush + 30s retry)
 | 操作日志 | 仅本地 SQLite | 本地写入 + auditUploader 批量上报 |
 | Reviewer/PMPHAI/KB 配置 | localStorage | bootstrap 下发 |
 
-客户端版本更新链路仍由 Tauri updater 执行安装与签名校验，`UpdateChecker.vue` 只负责更新源配置、检查按钮、进度与安装动作编排。区域化模式下若用户未手工配置内网更新源，`updateConfig.ts` 会从当前后端地址推导出：
+客户端版本更新链路仍由 Tauri updater 执行安装与签名校验，settings 功能域下的 `UpdateChecker.vue` 只负责更新源配置、检查按钮、进度与安装动作编排，`ForceUpdateGate.vue` 只在强制更新时承接门禁展示并复用同一检查/安装 UI。区域化模式下若用户未手工配置内网更新源，`updateConfig.ts` 会从当前后端地址推导出：
 
 - 正式内网：`{REGIONAL_BASE_URL}/v1/client/releases/production/latest.json`
 - 测试内网：`{REGIONAL_BASE_URL}/v1/client/releases/testing/latest.json`
@@ -1031,7 +1070,7 @@ HIS POST /api/report/interpret { taskId, query, patient? }
   ↓
 Rust HTTP Server 记录 traceId 并发出 start-report-interpretation 事件
   ↓
-useEventListeners.ts 合并当前接诊患者与显式 patient 入参
+useEventListeners.ts 读取当前接诊患者并转交显式 patient 入参
   ↓
 reportInterpretation.ts 调用 LLM 生成结构化报告解读 payload
   ↓
@@ -1077,7 +1116,7 @@ JSON 解析验证 (useVoiceConsultation.ts)
     ↓
 VoiceConsultationNew.vue (右栏诊断/治疗 + 一键回写)
     ↓
-buildRecordConfirmedPayload (src/utils/recordConfirmedPayload.ts)
+buildRecordConfirmedPayload (src/features/clinical-result/recordConfirmedPayload.ts)
     ↓
 Tauri Command: complete_consultation（resultType=record-confirmed）
     ↓
@@ -1136,17 +1175,28 @@ eventListeners.unregisterAllListeners()
 
 ## 维护指南
 
+### 前端文件结构规划
+
+前端路径治理以 [docs/frontend-file-structure-plan.md](docs/frontend-file-structure-plan.md) 为迁移路线图，复用边界和设计模式以 [docs/frontend-reuse-architecture.md](docs/frontend-reuse-architecture.md) 为准。当前 `src/components`、`src/composables`、`src/services` 仍保留历史扁平结构，但新增业务代码应优先进入规划中的 `features/<feature>/ui|model|api|lib`、`entities/*`、`shared/*` 或 `services/<integration>`。
+
+路径迁移遵循三条原则：
+
+1. 先判断能力归属和复用模式，再建立公开入口和兼容 facade。
+2. 高风险入口（`ConsultationPage.vue`、`VoiceConsultationNew.vue`、`useEventListeners.ts`）先收敛 controller / strategy / builder，再迁移入口路径；避免只把大文件切成更多无边界 helper。`useEventListeners.ts` 的接诊状态机归入 `app/events/useReceptionController.ts`，SDK handshake 初始化归入 `app/events/useSdkHandshakeController.ts`，事件文件继续作为 Tauri event hub。
+3. 每次迁移必须同步更新 `CODE_MAP.md` 和规划文档中的映射关系，并至少执行前端构建验证。
+4. 如果拆分后不能删除旧逻辑、减少重复规则或形成稳定复用接口，应暂停继续拆分，先回到复用架构规划重划边界。
+
 ### 添加新 Composable
 
-1. 在 `src/composables/` 创建文件（使用 TypeScript）
+1. 新业务 composable 默认放入 `src/features/<feature>/model/`；只有跨业务且不依赖 feature 的通用 composable 才放入 `src/shared/composables/`；历史 `src/composables/` 仅保留旧入口或兼容 facade。
 2. 遵循命名规范：`use[功能名].ts`
 3. 导出明确的接口：
    ```typescript
-   export interface [功能名]Options {
+   export interface UseFeatureOptions {
      // 参数定义
    }
 
-   export function use[功能名](options: [功能名]Options) {
+   export function useFeature(options: UseFeatureOptions) {
      // 实现
      return {
        // 导出 API
@@ -1154,14 +1204,14 @@ eventListeners.unregisterAllListeners()
    }
    ```
 4. 添加 JSDoc 文档注释
-5. 更新本文档的 [组合式函数](#组合式函数-composables) 章节
+5. 更新本文档的 [组合式函数](#组合式函数-composables) 章节或 [docs/frontend-file-structure-plan.md](docs/frontend-file-structure-plan.md) 对应功能域映射
 
 ### 添加新组件
 
-1. 在 `src/components/` 创建 Vue 单文件组件
+1. 新业务组件默认放入 `src/features/<feature>/ui/`；只有真正跨业务、无领域语义的基础组件才放入 `src/shared/ui/`；历史 `src/components/` 仅保留旧入口或兼容 facade。
 2. 明确定义 Props 和 Emits（使用 TypeScript）
 3. 组件职责单一，避免过大
-4. 更新本文档的 [组件](#组件-components) 章节
+4. 更新本文档的 [组件](#组件-components) 章节或 [docs/frontend-file-structure-plan.md](docs/frontend-file-structure-plan.md) 对应功能域映射
 5. 若组件会修改本地桥接行为、回写结构或窗口形态，再同步更新 `api.md` / `PRODUCT.md`
 
 ### 添加新常量
@@ -1245,12 +1295,14 @@ App.vue (425 行)
 ├── 模板 (~115 行)
 └── 样式 (~30 行)
 
-Composables (5 个)
-├── useWindowManagement.ts (430 行)
-├── useWorkMode.ts (428 行)
-├── useEventListeners.ts (415 行)
-├── useVoiceConsultation.ts (220 行)
-└── useNavigation.ts (180 行)
+Composables / App controllers
+├── app/shell/useWindowManagement.ts (~422 行)
+├── app/shell/useWorkMode.ts (~422 行)
+├── composables/useEventListeners.ts (~575 行)
+├── app/events/useReceptionController.ts (~505 行)
+├── app/events/useSdkHandshakeController.ts (~240 行)
+├── composables/useVoiceConsultation.ts
+└── app/navigation/useNavigation.ts
 
 Constants (2 个)
 ├── windowSizes.ts
@@ -1320,7 +1372,7 @@ await newFeature.doSomething();
 **Composables 可独立测试**:
 ```typescript
 // 测试窗口管理
-import { useWindowManagement } from '@/composables/useWindowManagement';
+import { useWindowManagement } from '@app/shell/useWindowManagement';
 
 describe('useWindowManagement', () => {
   it('should save window position', async () => {

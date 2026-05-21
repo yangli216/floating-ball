@@ -1,0 +1,148 @@
+import { toRaw } from 'vue';
+import type { AppPatient } from '@/types/appState';
+import type { Diagnosis, TreatmentRecommendation } from '@/types/consultation';
+import type { MatchedDiagnosis, MatchedTreatment, VoiceIntentResult } from '@features/voice-consultation';
+import {
+  getPatientContextAllergyHistory,
+  getPatientContextPastMedicalHistory,
+} from '@/utils/patientContext';
+import { getDiagnosisKey, getStandardDiagnosisId } from './recordConfirmedPayload';
+
+export interface ClinicalResultRecordInput {
+  chiefComplaint: string;
+  historyOfPresentIllness: string;
+  pastMedicalHistory?: string;
+  allergyHistory?: string;
+  currentMedicationHistory?: string;
+  familyHistory?: string;
+}
+
+export interface SymptomClinicalResultInput {
+  patient?: AppPatient;
+  record: {
+    chiefComplaint: string;
+    historyOfPresentIllness: string;
+    tcmFourExaminations?: string;
+    pastMedicalHistory?: string;
+    allergyHistory?: string;
+    currentMedicationHistory?: string;
+    familyHistory?: string;
+  };
+  diagnoses: Diagnosis[];
+  selectedDiagnosis?: Diagnosis | null;
+  treatments: TreatmentRecommendation[];
+}
+
+export type ClinicalResultDiagnosis = MatchedDiagnosis & Partial<Diagnosis>;
+export type ClinicalResultTreatment = Omit<MatchedTreatment, 'matchedItem'> & Omit<Partial<TreatmentRecommendation>, 'type' | 'matchedItem'> & {
+  matchedItem?: TreatmentRecommendation['matchedItem'] | MatchedTreatment['matchedItem'] | null;
+};
+export type ClinicalResultInput = Omit<VoiceIntentResult, 'diagnoses' | 'treatments'> & {
+  diagnoses: ClinicalResultDiagnosis[];
+  treatments: ClinicalResultTreatment[];
+};
+
+function cloneValue<T>(value: T): T {
+  if (value === null || value === undefined) {
+    return value;
+  }
+  try {
+    return JSON.parse(JSON.stringify(toRaw(value))) as T;
+  } catch {
+    return value;
+  }
+}
+
+function mergeHistoryOfPresentIllness(history: string, tcmFourExaminations?: string): string {
+  const normalizedHistory = (history || '').trim();
+  const normalizedTcm = (tcmFourExaminations || '').trim();
+  if (!normalizedTcm) {
+    return normalizedHistory;
+  }
+  return normalizedHistory
+    ? `${normalizedHistory}\n\n中医四诊：${normalizedTcm}`
+    : `中医四诊：${normalizedTcm}`;
+}
+
+function mapDiagnosisToClinicalInput(diag: Diagnosis): ClinicalResultDiagnosis {
+  const copied = cloneValue(diag);
+  const standardId = getStandardDiagnosisId(copied);
+  return {
+    ...copied,
+    matchedItem: standardId
+      ? {
+          id: standardId,
+          code: copied.code || '',
+          name: copied.name,
+        }
+      : undefined,
+  };
+}
+
+function mapTreatmentType(type: TreatmentRecommendation['type']): MatchedTreatment['type'] {
+  if (type === 'exam') return 'examination';
+  if (type === 'lab_test') return 'labTest';
+  if (type === 'acupuncture') return 'procedure';
+  return type;
+}
+
+function mapTreatmentToClinicalInput(item: TreatmentRecommendation): ClinicalResultTreatment {
+  const copied = cloneValue(item);
+  return {
+    ...copied,
+    type: mapTreatmentType(copied.type),
+    name: copied.name,
+    text: copied.reason || copied.evidenceText || '',
+    evidenceText: copied.evidenceText || copied.reason || '',
+    usage: copied.route || copied.usage || '',
+    usageKey: copied.routeKey || '',
+    sourceType: copied.sourceType || 'explicit',
+    matchStatus: copied.matchStatus || (copied.matchedItem ? 'exact' : copied.suggestedMatchItem ? 'probable' : 'unmatched'),
+    matchedItem: copied.matchedItem ? cloneValue(copied.matchedItem) : undefined,
+    suggestedMatchItem: copied.suggestedMatchItem ? cloneValue(copied.suggestedMatchItem) : undefined,
+  };
+}
+
+export function buildSymptomClinicalResultInput(input: SymptomClinicalResultInput): ClinicalResultInput {
+  const seen = new Set<string>();
+  const diagnoses: ClinicalResultDiagnosis[] = [];
+  for (const diag of [input.selectedDiagnosis, ...input.diagnoses]) {
+    const key = getDiagnosisKey(diag);
+    if (!diag || !key || seen.has(key)) continue;
+    seen.add(key);
+    diagnoses.push(mapDiagnosisToClinicalInput(diag));
+  }
+
+  const record = input.record;
+  return {
+    chiefComplaint: record.chiefComplaint || '',
+    historyOfPresentIllness: mergeHistoryOfPresentIllness(
+      record.historyOfPresentIllness || '',
+      record.tcmFourExaminations,
+    ),
+    pastMedicalHistory:
+      record.pastMedicalHistory
+      || getPatientContextPastMedicalHistory(input.patient)
+      || '',
+    allergyHistory:
+      record.allergyHistory
+      || getPatientContextAllergyHistory(input.patient)
+      || '',
+    currentMedicationHistory: record.currentMedicationHistory || '',
+    familyHistory: record.familyHistory || '',
+    symptoms: [],
+    negativeSymptoms: [],
+    diagnoses,
+    treatments: input.treatments.map(mapTreatmentToClinicalInput),
+    treatmentPlan: '',
+    healthEducation: '',
+  };
+}
+
+export function buildVoiceClinicalResultInput(result: VoiceIntentResult): ClinicalResultInput {
+  return {
+    ...result,
+    diagnoses: result.diagnoses.map((item) => cloneValue(item) as ClinicalResultDiagnosis),
+    treatments: result.treatments.map((item) => cloneValue(item) as ClinicalResultTreatment),
+  };
+}

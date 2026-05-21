@@ -652,7 +652,7 @@ ws://127.0.0.1:8081/api/consultation/events/ws
 
 #### 成功响应: 问诊一键确认回写（record-confirmed）
 
-`record-confirmed` 类型来自问诊最终确认提交。**症状问诊（`ConsultationPage` 完成问诊）和语音问诊（`VoiceConsultationNew` 提交病历）共用此契约**，由 `src/utils/recordConfirmedPayload.ts` 作为唯一构造点产出，字段结构、默认值、PHIS 中性化策略两边完全一致。与 `reference-request` 不同，这是医生在结果页直接确认后一次性提交的完整数据，不再拆成逐项引用请求；但 PHIS 在完成最终调入确认后，仍必须调用 `POST /api/consultation/reference-feedback` 回执成功或失败，桌面端会在收到回执前保持结果页处于等待态。
+`record-confirmed` 类型来自问诊最终确认提交。**症状问诊（`ConsultationPage` 完成问诊）和语音问诊（`VoiceConsultationNew` 提交病历）共用此契约**，由 `src/features/clinical-result/recordConfirmedPayload.ts` 作为唯一构造点产出，字段结构、默认值、PHIS 中性化策略两边完全一致。与 `reference-request` 不同，这是医生在结果页直接确认后一次性提交的完整数据，不再拆成逐项引用请求；但 PHIS 在完成最终调入确认后，仍必须调用 `POST /api/consultation/reference-feedback` 回执成功或失败，桌面端会在收到回执前保持结果页处于等待态。
 
 ```json
 {
@@ -1220,7 +1220,7 @@ consultationId + resultType + requestId + timestamp
 
 ## 9. 联调注意事项
 
-1. 当前真实联调参考页是 `MedHermes/mock_his.html`。
+1. 当前真实联调参考页是 `web_project/public/mock-his.html`，SDK 位于 `sdk/med-hermes-sdk.js`。
 2. `consultationId` 当前不是独立就诊流水，因此 HIS 侧必须防止“同患者旧结果误命中当前就诊”。
 3. `/assist` 每次调用都会清空上一次结果通道；不要在旧轮询结果未消费完成时复用旧状态。
 4. `reference-feedback` 只接受与“当前最新待处理引用请求”匹配的回执。

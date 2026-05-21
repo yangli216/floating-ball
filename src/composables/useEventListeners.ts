@@ -12,31 +12,28 @@
 
 import { type Ref } from 'vue';
 import type { Window as TauriWindow } from '@tauri-apps/api/window';
-import type { UnlistenFn } from '@tauri-apps/api/event';
-import { listen } from '@tauri-apps/api/event';
+import type { Event as TauriEvent, UnlistenFn } from '@tauri-apps/api/event';
 import { onOpenUrl } from '@tauri-apps/plugin-deep-link';
-import { getWindowSizeForView, supportsPersistentWindowSize, type ViewType } from '../constants/windowSizes';
-import { analyzePatientRisks } from '../services/llm';
+import { supportsPersistentWindowSize, type ViewType } from '../constants/windowSizes';
 import { openReportInterpretationWindow } from '../services/reportInterpretation';
 import { trackApiCall, trackError } from '../services/operationTracker';
-import type { RiskItem } from '../components/RiskAlertPanel.vue';
+import type { RiskItem } from '@features/reception-risk';
 import type { AppPatient } from '../types/appState';
 import type { ConsultationAssistAction } from '../types/consultationAssist';
 import type { ReportInterpretationRequestPayload } from '../types/reportInterpretation';
-import { getHisService, resetHisService, getHisAdapter, resetHisAdapter } from '../services/his';
-import type { HisPatientHistory } from '../services/his/types';
-import { medicalDataService } from '../services/medicalData';
-import { resolveFeedbackActorFromUrt, setFeedbackActor } from '../services/feedbackContext';
+import { getPatientContextId } from '../utils/patientContext';
+import { useTauriEventListener } from '@shared/composables/useTauriEventListener';
 import {
-  buildPatientContext,
-  getPatientContextAgeText,
-  getPatientContextGenderCode,
-  getPatientContextGenderText,
-  getPatientContextHistory,
-  getPatientContextAnchorId,
-  getPatientContextId,
-  getPatientContextName,
-} from '../utils/patientContext';
+  resolveIncomingPatientTracking,
+  useReceptionController,
+  type PatientRisksPayload,
+  type SessionAssistPayload,
+  type StartConsultationPayload,
+} from '@app/events/useReceptionController';
+import {
+  useSdkHandshakeController,
+  type SdkHandshakePayload,
+} from '@app/events/useSdkHandshakeController';
 
 /**
  * 事件监听配置参数
@@ -99,415 +96,9 @@ export interface EventListenersOptions {
   resizeTimeoutRef: Ref<ReturnType<typeof setTimeout> | null>;
 }
 
-interface PatientRisksPayload {
-  idPi?: string;
-  idVis?: string;
-  patientId?: string;
-  visitId?: string;
-  naPi?: string;
-  name?: string;
-  sdSexText?: string;
-  gender?: string;
-  ageText?: string;
-  age?: string;
-  chiefComplaint?: string;
-  historyOfPresentIllness?: string;
-  pastMedicalHistory?: string;
-  diagnosis?: string;
-  allergyHistory?: string;
-  risks?: RiskItem[];
-  [key: string]: unknown;
-}
-
-interface StartConsultationPayload {
-  idPi?: string;
-  idVis?: string;
-  patientId?: string;
-  visitId?: string;
-  naPi?: string;
-  name?: string;
-  ageText?: string;
-  sdSexText?: string;
-  [key: string]: unknown;
-}
-
-interface SessionAssistPayload extends StartConsultationPayload {
-  action?: string;
-  historyOfPresentIllness?: string;
-  pastMedicalHistory?: string;
-  diagnosis?: string;
-  vitals?: string;
-  allergyHistory?: string;
-}
-
 interface ReportInterpretationEventPayload extends ReportInterpretationRequestPayload {
   patient?: ReportInterpretationRequestPayload['patient'];
 }
-
-interface SdkHandshakePayload {
-  origin: string;
-  href: string;
-  extra?: {
-    emrAccessToken?: string;
-    urt?: unknown;
-    [key: string]: any;
-  };
-  [key: string]: any;
-}
-
-const HANDSHAKE_ORG_CODE_FIELDS = [
-  'orgCode',
-  'cdOrg',
-  'institutionCode',
-  'institutionId',
-  'hospitalCode',
-  'hospitalId',
-  'organizationCode',
-  'medicalInstitutionCode'
-] as const;
-
-const HANDSHAKE_TENANT_ID_FIELDS = [
-  'idTet',
-  'tenantId',
-  'tenantCode',
-  'tetId'
-] as const;
-
-function readHandshakeStringField(
-  payload: Record<string, unknown> | undefined,
-  field: string
-): string | null {
-  if (!payload) {
-    return null;
-  }
-
-  const value = payload[field];
-  if (typeof value === 'string' && value.trim()) {
-    return value.trim();
-  }
-
-  if (typeof value === 'number' && Number.isFinite(value)) {
-    return String(value);
-  }
-
-  return null;
-}
-
-function resolveUrtPayload(raw: unknown): Record<string, unknown> | undefined {
-  if (!raw) {
-    return undefined;
-  }
-
-  if (typeof raw === 'object') {
-    return raw as Record<string, unknown>;
-  }
-
-  if (typeof raw === 'string') {
-    try {
-      const parsed = JSON.parse(raw);
-      if (parsed && typeof parsed === 'object') {
-        return parsed as Record<string, unknown>;
-      }
-    } catch {
-      return undefined;
-    }
-  }
-
-  return undefined;
-}
-
-function resolveHandshakeOrgCode(ctx: SdkHandshakePayload): string | null {
-  const extra = (ctx.extra && typeof ctx.extra === 'object') ? ctx.extra as Record<string, unknown> : undefined;
-  const urt = resolveUrtPayload(extra?.urt);
-  const nestedSources: Array<Record<string, unknown> | undefined> = [
-    urt,
-    ctx as Record<string, unknown>,
-    extra,
-    (extra?.org && typeof extra.org === 'object') ? extra.org as Record<string, unknown> : undefined,
-    (extra?.institution && typeof extra.institution === 'object') ? extra.institution as Record<string, unknown> : undefined,
-    (extra?.hospital && typeof extra.hospital === 'object') ? extra.hospital as Record<string, unknown> : undefined,
-    (extra?.tenant && typeof extra.tenant === 'object') ? extra.tenant as Record<string, unknown> : undefined,
-  ];
-
-  const orgId = readHandshakeStringField(urt, 'orgId');
-  if (orgId) {
-    return orgId;
-  }
-
-  for (const source of nestedSources) {
-    for (const field of HANDSHAKE_ORG_CODE_FIELDS) {
-      const value = readHandshakeStringField(source, field);
-      if (value) {
-        return value;
-      }
-    }
-  }
-
-  return null;
-}
-
-function resolveHandshakeTenantId(ctx: SdkHandshakePayload): string | null {
-  const extra = (ctx.extra && typeof ctx.extra === 'object') ? ctx.extra as Record<string, unknown> : undefined;
-  const urt = resolveUrtPayload(extra?.urt);
-  const nestedSources: Array<Record<string, unknown> | undefined> = [
-    urt,
-    ctx as Record<string, unknown>,
-    extra,
-    (extra?.tenant && typeof extra.tenant === 'object') ? extra.tenant as Record<string, unknown> : undefined,
-    (extra?.org && typeof extra.org === 'object') ? extra.org as Record<string, unknown> : undefined,
-  ];
-
-  for (const source of nestedSources) {
-    for (const field of HANDSHAKE_TENANT_ID_FIELDS) {
-      const value = readHandshakeStringField(source, field);
-      if (value) {
-        return value;
-      }
-    }
-  }
-
-  return null;
-}
-
-function resolveHandshakeUserRoleDeptIds(ctx: SdkHandshakePayload): string[] {
-  const extra = (ctx.extra && typeof ctx.extra === 'object') ? ctx.extra as Record<string, unknown> : undefined;
-  const urt = resolveUrtPayload(extra?.urt);
-  const rawUserRoleDepts = urt?.userRoleDepts;
-
-  const parsedUserRoleDepts = (() => {
-    if (typeof rawUserRoleDepts === 'string') {
-      try {
-        return JSON.parse(rawUserRoleDepts);
-      } catch {
-        return undefined;
-      }
-    }
-
-    return rawUserRoleDepts;
-  })();
-
-  const collectDeptIds = (value: unknown): string[] => {
-    if (!value) {
-      return [];
-    }
-
-    if (typeof value === 'string') {
-      return value.trim() ? [value.trim()] : [];
-    }
-
-    if (typeof value === 'number' && Number.isFinite(value)) {
-      return [String(value)];
-    }
-
-    if (Array.isArray(value)) {
-      return value.flatMap((item) => collectDeptIds(item));
-    }
-
-    if (typeof value === 'object') {
-      const record = value as Record<string, unknown>;
-      const directDeptId = record.deptId;
-      if (typeof directDeptId === 'string' && directDeptId.trim()) {
-        return [directDeptId.trim()];
-      }
-      if (typeof directDeptId === 'number' && Number.isFinite(directDeptId)) {
-        return [String(directDeptId)];
-      }
-
-      return Object.values(record).flatMap((item) => collectDeptIds(item));
-    }
-
-    return [];
-  };
-
-  return Array.from(new Set(
-    collectDeptIds(parsedUserRoleDepts)
-      .filter(Boolean)
-  ));
-}
-
-function mergePatientContext(
-  currentPatient: AppPatient | null,
-  payload: StartConsultationPayload | SessionAssistPayload | null | undefined
-): AppPatient | null {
-  return buildPatientContext({
-    existing: currentPatient,
-    payload: payload as Record<string, unknown> | null | undefined,
-    source: currentPatient?.source || 'event-payload',
-    receptionEnsured: currentPatient?.receptionEnsured ?? currentPatient?._receptionEnsured,
-  });
-}
-
-function readPatientFieldText(
-  source: Record<string, unknown> | null | undefined,
-  keys: string[]
-): string {
-  if (!source) {
-    return '';
-  }
-
-  for (const key of keys) {
-    const value = source[key];
-    if (typeof value === 'string' && value.trim() !== '') {
-      return value.trim();
-    }
-    if (typeof value === 'number' && Number.isFinite(value)) {
-      return String(value);
-    }
-  }
-
-  return '';
-}
-
-function uniqHistoryTexts(values: Array<string | null | undefined>): string[] {
-  return Array.from(new Set(
-    values
-      .map((value) => (typeof value === 'string' ? value.trim() : ''))
-      .filter(Boolean)
-  ));
-}
-
-function isAutoGeneratedPastHistoryPlaceholder(value: string): boolean {
-  const normalized = value.replace(/\s+/g, '');
-  return normalized === '未提供既往病史。'
-    || normalized === '未提供既往史。'
-    || normalized === '未见明确既往史记录。';
-}
-
-function isVisitHistorySummary(value: string): boolean {
-  return value.startsWith('既往门诊记录：');
-}
-
-function buildPastMedicalHistorySummary(
-  patient: AppPatient | null,
-  hisHistory: HisPatientHistory | null
-): string {
-  const directHistory = readPatientFieldText(patient as Record<string, unknown>, [
-    'pastMedicalHistory',
-    'past_medical_history',
-    'pastMedicalHistoryText',
-  ]);
-  if (directHistory && !isAutoGeneratedPastHistoryPlaceholder(directHistory) && !isVisitHistorySummary(directHistory)) {
-    return directHistory;
-  }
-
-  const structuredHistory = uniqHistoryTexts(hisHistory?.pastMedicalHistory || []);
-  if (structuredHistory.length > 0) {
-    return structuredHistory.join('；');
-  }
-
-  return '';
-}
-
-function buildAllergyHistorySummary(
-  patient: AppPatient | null,
-  hisHistory: HisPatientHistory | null
-): string {
-  const directHistory = readPatientFieldText(patient as Record<string, unknown>, [
-    'allergyHistory',
-    'allergy_history',
-    'allergyHistoryText',
-  ]);
-  if (directHistory) {
-    return directHistory;
-  }
-
-  return uniqHistoryTexts(hisHistory?.allergyHistory || []).join('；');
-}
-
-function applyClinicalHistorySummaries(
-  patient: AppPatient | null,
-  hisHistory: HisPatientHistory | null,
-): AppPatient | null {
-  if (!patient) {
-    return patient;
-  }
-
-  const pastMedicalHistory = buildPastMedicalHistorySummary(patient, hisHistory);
-  const allergyHistory = buildAllergyHistorySummary(patient, hisHistory);
-
-  return {
-    ...patient,
-    clinical: {
-      ...patient.clinical,
-      pastMedicalHistory: pastMedicalHistory || undefined,
-      allergyHistory: allergyHistory || undefined,
-      hisHistory,
-    },
-    hisHistory,
-    patientHistory: hisHistory,
-    pastMedicalHistory: pastMedicalHistory || undefined,
-    allergyHistory: allergyHistory || undefined,
-  };
-}
-
-function syncRiskStateFromPatient(patient: AppPatient | null): {
-  patientName: string;
-  patientGender: 'M' | 'F';
-  patientAge: number;
-} {
-  const patientName = getPatientContextName(patient) || '未知患者';
-  const genderCode = getPatientContextGenderCode(patient);
-  const genderText = getPatientContextGenderText(patient);
-  const patientGender: 'M' | 'F' = genderCode === 'F' || genderText.includes('女') ? 'F' : 'M';
-  const ageSource = getPatientContextAgeText(patient);
-  const patientAge = Number.parseInt(ageSource, 10) || 0;
-
-  return { patientName, patientGender, patientAge };
-}
-
-function buildIncomingPatientDraft(
-  payload: Record<string, unknown> | null | undefined,
-): AppPatient | null {
-  return buildPatientContext({ payload });
-}
-
-async function hydratePatientContextFromHis(
-  currentPatient: AppPatient | null,
-  payload: StartConsultationPayload | SessionAssistPayload | PatientRisksPayload | null | undefined,
-  source: string,
-): Promise<AppPatient | null> {
-  const nextDraft = buildPatientContext({
-    existing: currentPatient,
-    payload: payload as Record<string, unknown> | null | undefined,
-    source,
-    receptionEnsured: true,
-  });
-  const patientId = getPatientContextId(nextDraft);
-  if (!patientId) {
-    return nextDraft;
-  }
-
-  const existingHistory = getPatientContextHistory(nextDraft);
-  const samePatientLoaded = currentPatient
-    && getPatientContextId(currentPatient) === patientId
-    && (currentPatient.receptionEnsured || currentPatient._receptionEnsured)
-    && existingHistory;
-  if (samePatientLoaded) {
-    return nextDraft;
-  }
-
-  const adapter = getHisAdapter();
-  if (!adapter) {
-    return nextDraft;
-  }
-
-  const hisInfo = await adapter.fetchPatientInfo(patientId);
-  const hisHistory = await adapter.fetchPatientHistory(patientId);
-  let hydrated = buildPatientContext({
-    existing: nextDraft,
-    payload: payload as Record<string, unknown> | null | undefined,
-    hisInfo,
-    hisHistory,
-    source,
-    receptionEnsured: true,
-  });
-
-  hydrated = applyClinicalHistorySummaries(hydrated, hisHistory);
-
-  return hydrated;
-}
-
-// ensureReceptionContext removed, replaced by async ensureAndPrepareReceptionContext inside useEventListeners
 
 /**
  * 事件监听管理 Composable
@@ -541,187 +132,29 @@ export function useEventListeners(options: EventListenersOptions) {
   } = options;
 
   const {
-    riskPatientName,
-    riskPatientGender,
-    riskPatientAge,
-    riskItems,
-    isRiskAnalyzing,
-  } = riskState;
+    executeReceptionFlow,
+    ensureReceptionContext,
+    invalidateReceptionFlow,
+    mergeCurrentPatient,
+    showPatientRisks,
+  } = useReceptionController({
+    currentView,
+    isWorking,
+    currentPatient,
+    riskState,
+    showToast,
+    workMode,
+    resetVoiceSessionState,
+    clearVoiceConsultationCache,
+    clearMinimizedConsultationSessions,
+  });
+  const { handleSdkHandshake } = useSdkHandshakeController();
 
   // ========== 事件监听句柄 ==========
 
   let unlistenDeepLink: UnlistenFn | null = null;
-  let unlistenPatientRisks: UnlistenFn | null = null;
-  let unlistenStartConsultation: UnlistenFn | null = null;
-  let unlistenConsultationAssist: UnlistenFn | null = null;
-  let unlistenStopConsultation: UnlistenFn | null = null;
-  let unlistenStartVoiceConsultation: UnlistenFn | null = null;
-  let unlistenReportInterpretation: UnlistenFn | null = null;
-  let unlistenHover: UnlistenFn | null = null;
-  let unlistenMousePos: UnlistenFn | null = null;
   let unlistenMoved: UnlistenFn | null = null;
   let unlistenResize: UnlistenFn | null = null;
-  let unlistenSdkHandshake: UnlistenFn | null = null;
-  let unlistenReceivePatient: UnlistenFn | null = null;
-
-  // ========== 状态 & Promise ==========
-  let activeReceptionPromise: Promise<boolean> | null = null;
-  let activeReceptionPatientId: string | null = null;
-  let receptionFlowVersion = 0;
-
-  function invalidateActiveReceptionFlow(): void {
-    receptionFlowVersion += 1;
-    activeReceptionPromise = null;
-    activeReceptionPatientId = null;
-  }
-
-  function clearVoiceStateWhenPatientSwitches(
-    previousPatient: AppPatient | null,
-    nextPatient: AppPatient | null
-  ): void {
-    const previousAnchorId = getPatientContextAnchorId(previousPatient);
-    const nextAnchorId = getPatientContextAnchorId(nextPatient);
-    if (!previousAnchorId || !nextAnchorId || previousAnchorId === nextAnchorId) {
-      return;
-    }
-
-    clearVoiceConsultationCache(previousPatient);
-    resetVoiceSessionState();
-    // 恢复入口要和患者上下文绑定：切换到其他患者后旧患者现场失效。
-    clearMinimizedConsultationSessions();
-    console.info('[EventListeners] Cleared voice cache after patient switch', {
-      previousAnchorId,
-      nextAnchorId,
-    });
-  }
-
-  async function executeReceptionFlow(payload: StartConsultationPayload, quietMode = false): Promise<boolean> {
-    const patientId = getPatientContextId(buildIncomingPatientDraft(payload as Record<string, unknown> | null | undefined));
-    if (!patientId) {
-      showToast('接诊失败：未提供患者ID', 'error');
-      return false;
-    }
-
-    if (activeReceptionPromise) {
-      if (activeReceptionPatientId === patientId) {
-        console.log('[EventListeners] Waiting for existing reception flow for patient:', patientId);
-        return activeReceptionPromise;
-      } else {
-        showToast('系统正在接诊其他患者，请稍候再试', 'error');
-        return false;
-      }
-    }
-
-    const flowVersion = receptionFlowVersion + 1;
-    receptionFlowVersion = flowVersion;
-    activeReceptionPatientId = patientId;
-
-    activeReceptionPromise = (async () => {
-      trackApiCall('his_receive_patient', true, undefined, { patientId, auto: quietMode });
-      try {
-        const nextPatient = await hydratePatientContextFromHis(currentPatient.value, payload, quietMode ? 'reception-auto' : 'receive-patient');
-        if (flowVersion !== receptionFlowVersion) {
-          console.info('[EventListeners] Ignore stale reception result after flow invalidation:', patientId);
-          return false;
-        }
-        if (!nextPatient) {
-          showToast('接诊失败：患者上下文初始化失败', 'error');
-          return false;
-        }
-        clearVoiceStateWhenPatientSwitches(currentPatient.value, nextPatient);
-        currentPatient.value = nextPatient;
-
-        if (!quietMode) {
-          // 2. 切换 UI 为胶囊态
-          currentView.value = 'reception-capsule';
-          const receptionSize = getWindowSizeForView('reception-capsule');
-          if (!isWorking.value) {
-            await workMode.enterWorkMode(receptionSize.width, receptionSize.height);
-          } else {
-            workMode.enterWorkMode(receptionSize.width, receptionSize.height);
-          }
-        } else {
-          // 如果是自动静默触发，且不在工作模式，需先进入工作模式，但不要强切视图
-          // 风险评估需要显示，所以暂时强切到 reception-capsule
-          currentView.value = 'reception-capsule';
-          const receptionSize = getWindowSizeForView('reception-capsule');
-          if (!isWorking.value) {
-            await workMode.enterWorkMode(receptionSize.width, receptionSize.height);
-          } else {
-            workMode.enterWorkMode(receptionSize.width, receptionSize.height);
-          }
-        }
-
-        // 重置并显示加载状态
-        const riskStateSnapshot = syncRiskStateFromPatient(currentPatient.value);
-        riskPatientName.value = riskStateSnapshot.patientName;
-        riskPatientGender.value = riskStateSnapshot.patientGender;
-        riskPatientAge.value = riskStateSnapshot.patientAge;
-        riskItems.value = [];
-        isRiskAnalyzing.value = true;
-
-        try {
-          // 3. 触发风险评估
-          const risks = await analyzePatientRisks(currentPatient.value);
-          if (flowVersion !== receptionFlowVersion) {
-            console.info('[EventListeners] Ignore stale risk analysis result after flow invalidation:', patientId);
-            return false;
-          }
-          console.log('LLM Risk Analysis Result after reception:', risks);
-          riskItems.value = risks || [];
-        } finally {
-          if (flowVersion === receptionFlowVersion) {
-            isRiskAnalyzing.value = false;
-          }
-        }
-
-        return true;
-      } catch (e) {
-        if (flowVersion !== receptionFlowVersion) {
-          console.info('[EventListeners] Ignore stale reception error after flow invalidation:', patientId, e);
-          return false;
-        }
-        console.error('Patient reception failed:', e);
-        trackError('receive_patient_failed', e);
-        showToast('接诊处理异常', 'error');
-        return false;
-      }
-    })();
-
-    try {
-      return await activeReceptionPromise;
-    } finally {
-      if (flowVersion === receptionFlowVersion) {
-        activeReceptionPromise = null;
-        activeReceptionPatientId = null;
-      }
-    }
-  }
-
-  async function ensureAndPrepareReceptionContext(
-    current: AppPatient | null,
-    payload: StartConsultationPayload | SessionAssistPayload | null | undefined
-  ): Promise<boolean> {
-    const incomingId = getPatientContextId(buildIncomingPatientDraft(payload as Record<string, unknown> | null | undefined));
-    const currentId = getPatientContextId(current);
-    const currentReceptionEnsured = Boolean(current?.receptionEnsured || current?._receptionEnsured);
-
-    if (current && currentId && currentReceptionEnsured) {
-      if (incomingId && incomingId !== currentId) {
-        showToast('当前已接诊其他患者，请先结束当前就诊', 'error');
-        return false;
-      }
-      return true;
-    }
-
-    if (!incomingId) {
-      showToast('请先接诊患者', 'error');
-      return false;
-    }
-
-    console.log('[EventListeners] Auto-triggering patient reception from context check');
-    return await executeReceptionFlow(payload as StartConsultationPayload, true);
-  }
 
   // ========== Deep Link 监听 ==========
 
@@ -757,50 +190,8 @@ export function useEventListeners(options: EventListenersOptions) {
    * 注册 SDK 握手完成监听
    * 用于初始化 HIS 服务工具类
    */
-  async function registerHandshakeListener(): Promise<void> {
-    unlistenSdkHandshake = await listen<SdkHandshakePayload>('sdk-handshake', async (event) => {
-      const ctx = event.payload;
-      console.log('[EventListeners] SDK Handshake received:', ctx);
-
-      const baseUrl = ctx.origin;
-      const token = ctx.extra?.emrAccessToken;
-      const orgCode = resolveHandshakeOrgCode(ctx);
-      const tenantId = resolveHandshakeTenantId(ctx);
-      const userRoleDeptIds = resolveHandshakeUserRoleDeptIds(ctx);
-
-      // 缓存反馈 actor（医生/机构/科室），供 userFeedback / voiceFeedback 提交时使用
-      const urtForActor = resolveUrtPayload(ctx.extra?.urt);
-      setFeedbackActor(resolveFeedbackActorFromUrt(urtForActor, orgCode));
-
-      if (baseUrl && token) {
-        // 初始化 HIS 服务单例
-        getHisService(baseUrl, { token, userRoleDeptIds });
-        // adapter 是基于 HisService 的 wrapper，token 变化后必须清缓存
-        resetHisAdapter();
-        console.log('[EventListeners] HisService initialized with origin:', baseUrl, {
-          hasToken: Boolean(token),
-          orgCode,
-          tenantId,
-          userRoleDeptIds,
-        });
-      } else {
-        resetHisService();
-        resetHisAdapter();
-        console.warn('[EventListeners] Handshake missing baseUrl or tk token, medical catalog sync skipped', {
-          hasBaseUrl: Boolean(baseUrl),
-          hasToken: Boolean(token),
-          orgCode,
-          tenantId,
-          userRoleDeptIds,
-        });
-      }
-
-      if (!orgCode) {
-        console.warn('[EventListeners] Handshake did not resolve orgCode, org-scoped medical catalogs will be skipped');
-      }
-
-      await medicalDataService.setCatalogContext({ orgCode, tenantId });
-    });
+  async function handleSdkHandshakeEvent(event: TauriEvent<SdkHandshakePayload>): Promise<void> {
+    await handleSdkHandshake(event.payload);
   }
 
   // ========== HIS 集成事件监听 ==========
@@ -808,98 +199,42 @@ export function useEventListeners(options: EventListenersOptions) {
   /**
    * 注册患者风险提示事件监听
    */
-  async function registerPatientRisksListener(): Promise<void> {
-    unlistenPatientRisks = await listen<PatientRisksPayload>('show-patient-risks', async (event) => {
-      console.log('Received patient risks request:', event.payload);
-      const data = event.payload;
-      const incomingPatient = buildIncomingPatientDraft(data as Record<string, unknown> | null | undefined);
-      trackApiCall('his_patient_risks', true, undefined, {
-        patientId: getPatientContextId(incomingPatient) || undefined,
-        patientName: getPatientContextName(incomingPatient) || undefined,
-        riskCount: data.risks?.length,
-      });
-
-      const nextPatient = await hydratePatientContextFromHis(currentPatient.value, data, 'show-patient-risks');
-      clearVoiceStateWhenPatientSwitches(currentPatient.value, nextPatient);
-      currentPatient.value = nextPatient;
-      const riskStateSnapshot = syncRiskStateFromPatient(currentPatient.value);
-      riskPatientName.value = riskStateSnapshot.patientName;
-      riskPatientGender.value = riskStateSnapshot.patientGender;
-      riskPatientAge.value = riskStateSnapshot.patientAge;
-      riskItems.value = [];
-      isRiskAnalyzing.value = true;
-
-      // Switch to Reception Capsule View
-      currentView.value = 'reception-capsule';
-      const receptionSize = getWindowSizeForView('reception-capsule', {
-        expanded: !!data.risks?.length,
-        riskCount: data.risks?.length ?? 0,
-      });
-      if (!isWorking.value) {
-        await workMode.enterWorkMode(receptionSize.width, receptionSize.height);
-      } else {
-        // Resize if already open
-        workMode.enterWorkMode(receptionSize.width, receptionSize.height);
-      }
-
-      // If backend provided pre-calculated risks, use them immediately
-      if (data.risks && data.risks.length > 0) {
-        riskItems.value = data.risks;
-        isRiskAnalyzing.value = false;
-        return;
-      }
-
-      // Otherwise, trigger LLM analysis
-      try {
-        const risks = await analyzePatientRisks(currentPatient.value);
-        console.log('LLM Risk Analysis Result:', risks);
-        riskItems.value = risks || [];
-      } catch (e) {
-        console.error('Risk analysis error:', e);
-        trackError('risk_analysis_failed', e);
-        showToast('风险评估失败', 'error');
-      } finally {
-        isRiskAnalyzing.value = false;
-
-      }
-    });
+  async function handlePatientRisksEvent(event: TauriEvent<PatientRisksPayload>): Promise<void> {
+    console.log('Received patient risks request:', event.payload);
+    await showPatientRisks(event.payload);
   }
 
   /**
    * 注册开始问诊事件监听
    */
-  async function registerStartConsultationListener(): Promise<void> {
-    unlistenStartConsultation = await listen<StartConsultationPayload>('start-consultation', async (event) => {
-      console.log('Received consultation request:', event.payload);
-      const payload = event.payload || {};
-      const incomingPatient = buildIncomingPatientDraft(payload as Record<string, unknown> | null | undefined);
-      trackApiCall('his_start_consultation', true, undefined, {
-        patientId: getPatientContextId(incomingPatient) || undefined,
-      });
-
-      // 入口拦截：必须先走过接诊流程，如果未接诊且带有 patientId，会自动补齐接诊流程
-      const success = await ensureAndPrepareReceptionContext(currentPatient.value, payload);
-      if (!success) {
-        return;
-      }
-
-      // Update/Merge Global Patient Context
-      // This ensures we have the correct keys (naPi, sdSexText) for ConsultationPage
-      currentPatient.value = mergePatientContext(currentPatient.value, payload);
-
-      await navigation.openConsultation();
+  async function handleStartConsultationEvent(event: TauriEvent<StartConsultationPayload>): Promise<void> {
+    console.log('Received consultation request:', event.payload);
+    const payload = event.payload || {};
+    const incomingPatient = resolveIncomingPatientTracking(payload as Record<string, unknown> | null | undefined);
+    trackApiCall('his_start_consultation', true, undefined, {
+      patientId: incomingPatient.patientId,
     });
+
+    // 入口拦截：必须先走过接诊流程，如果未接诊且带有 patientId，会自动补齐接诊流程
+    const success = await ensureReceptionContext(payload);
+    if (!success) {
+      return;
+    }
+
+    // Update/Merge Global Patient Context
+    // This ensures we have the correct keys (naPi, sdSexText) for ConsultationPage
+    mergeCurrentPatient(payload);
+
+    await navigation.openConsultation();
   }
 
   /**
    * 注册接诊患者事件监听
    */
-  async function registerReceivePatientListener(): Promise<void> {
-    unlistenReceivePatient = await listen<StartConsultationPayload>('receive-patient', async (event) => {
-      console.log('Received patient reception request:', event.payload);
-      const payload = event.payload || {};
-      await executeReceptionFlow(payload, false);
-    });
+  async function handleReceivePatientEvent(event: TauriEvent<StartConsultationPayload>): Promise<void> {
+    console.log('Received patient reception request:', event.payload);
+    const payload = event.payload || {};
+    await executeReceptionFlow(payload, false);
   }
 
   function normalizeSessionTriggerKind(action?: string): ConsultationAssistAction | null {
@@ -916,107 +251,100 @@ export function useEventListeners(options: EventListenersOptions) {
     }
   }
 
-  async function registerConsultationAssistListener(): Promise<void> {
-    unlistenConsultationAssist = await listen<SessionAssistPayload>(
-      'start-consultation-session',
-      async (event) => {
-        console.log('Received consultation session request:', event.payload);
-        const payload = event.payload || {};
-        const incomingPatient = buildIncomingPatientDraft(payload as Record<string, unknown> | null | undefined);
-        trackApiCall('his_start_consultation_session', true, undefined, {
-          patientId: getPatientContextId(incomingPatient) || undefined,
-          action: payload.action,
-        });
+  async function handleConsultationAssistEvent(event: TauriEvent<SessionAssistPayload>): Promise<void> {
+    console.log('Received consultation session request:', event.payload);
+    const payload = event.payload || {};
+    const incomingPatient = resolveIncomingPatientTracking(payload as Record<string, unknown> | null | undefined);
+    trackApiCall('his_start_consultation_session', true, undefined, {
+      patientId: incomingPatient.patientId,
+      action: payload.action,
+    });
 
-        const success = await ensureAndPrepareReceptionContext(currentPatient.value, payload);
-        if (!success) {
-          return;
-        }
+    const success = await ensureReceptionContext(payload);
+    if (!success) {
+      return;
+    }
 
-        currentPatient.value = mergePatientContext(currentPatient.value, payload);
+    mergeCurrentPatient(payload);
 
-        const triggerKind = normalizeSessionTriggerKind(payload.action);
-        if (triggerKind) {
-          queueConsultationAssistTrigger(triggerKind);
-        }
+    const triggerKind = normalizeSessionTriggerKind(payload.action);
+    if (triggerKind) {
+      queueConsultationAssistTrigger(triggerKind);
+    }
 
-        await navigation.openConsultation();
-      }
-    );
+    await navigation.openConsultation();
   }
 
   /**
    * 注册停止问诊事件监听
    */
-  async function registerStopConsultationListener(): Promise<void> {
-    unlistenStopConsultation = await listen('stop-consultation', async () => {
-      console.log('Received stop consultation request');
-      const patientToClear = currentPatient.value;
-      invalidateActiveReceptionFlow();
-      resetVoiceSessionState();
-      clearVoiceConsultationCache(patientToClear);
-      clearMinimizedConsultationSessions();
-      // 清理患者上下文，保证"结束就诊后必须重新接诊"的机制生效：
-      // 如果不清，后续不带 payload 的 startVoice / startConsultation 会
-      // 被 mergePatientContext 用残留的 patient 填充，绕过几个入口的
-      // "请先接诊患者" guard。
-      currentPatient.value = null;
-      // Force exit work mode regardless of current view
-      if (isWorking.value) {
-        await workMode.exitWork();
-      }
-    });
+  async function handleStopConsultationEvent(): Promise<void> {
+    console.log('Received stop consultation request');
+    const patientToClear = currentPatient.value;
+    invalidateReceptionFlow();
+    resetVoiceSessionState();
+    clearVoiceConsultationCache(patientToClear);
+    clearMinimizedConsultationSessions();
+    // 清理患者上下文，保证"结束就诊后必须重新接诊"的机制生效：
+    // 如果不清，后续不带 payload 的 startVoice / startConsultation 会
+    // 被 mergeCurrentPatient 用残留的 patient 填充，绕过几个入口的
+    // "请先接诊患者" guard。
+    currentPatient.value = null;
+    // Force exit work mode regardless of current view
+    if (isWorking.value) {
+      await workMode.exitWork();
+    }
   }
 
   /**
    * 注册语音问诊事件监听
    */
-  async function registerVoiceConsultationListener(): Promise<void> {
-    unlistenStartVoiceConsultation = await listen<SessionAssistPayload | null>('start-voice-consultation', async (event) => {
-      console.log('Received start voice consultation command');
-      const incomingPatient = buildIncomingPatientDraft(event.payload as Record<string, unknown> | null | undefined);
-      trackApiCall('his_start_voice', true, undefined, {
-        patientId: getPatientContextId(incomingPatient) || undefined,
-      });
-
-      const success = await ensureAndPrepareReceptionContext(currentPatient.value, event.payload);
-      if (!success) {
-        return;
-      }
-
-      // 走到这里说明接诊上下文已存在且身份一致，payload 可能带额外字段需要合并
-      currentPatient.value = mergePatientContext(currentPatient.value, event.payload);
-
-      if (isWorking.value && currentView.value === 'voice-interaction') {
-        console.info('[EventListeners] Duplicate start voice request ignored while voice interaction is already active');
-        return;
-      }
-
-      const shouldRestoreCache = hasCachedVoiceResult(currentPatient.value);
-      resetVoiceSessionState();
-      await navigation.startVoiceInteraction({ skipCacheRestore: !shouldRestoreCache });
+  async function handleVoiceConsultationEvent(
+    event: TauriEvent<SessionAssistPayload | null>
+  ): Promise<void> {
+    console.log('Received start voice consultation command');
+    const incomingPatient = resolveIncomingPatientTracking(event.payload as Record<string, unknown> | null | undefined);
+    trackApiCall('his_start_voice', true, undefined, {
+      patientId: incomingPatient.patientId,
     });
+
+    const success = await ensureReceptionContext(event.payload);
+    if (!success) {
+      return;
+    }
+
+    // 走到这里说明接诊上下文已存在且身份一致，payload 可能带额外字段需要合并
+    mergeCurrentPatient(event.payload);
+
+    if (isWorking.value && currentView.value === 'voice-interaction') {
+      console.info('[EventListeners] Duplicate start voice request ignored while voice interaction is already active');
+      return;
+    }
+
+    const shouldRestoreCache = hasCachedVoiceResult(currentPatient.value);
+    resetVoiceSessionState();
+    await navigation.startVoiceInteraction({ skipCacheRestore: !shouldRestoreCache });
   }
 
-  async function registerReportInterpretationListener(): Promise<void> {
-    unlistenReportInterpretation = await listen<ReportInterpretationEventPayload>('start-report-interpretation', async (event) => {
-      const payload = event.payload;
+  async function handleReportInterpretationEvent(
+    event: TauriEvent<ReportInterpretationEventPayload>
+  ): Promise<void> {
+    const payload = event.payload;
 
-      trackApiCall('his_start_report_interpretation', true, undefined, {
-        taskId: payload?.taskId,
-        patientId: getPatientContextId(currentPatient.value) || undefined,
-      });
-
-      try {
-        await openReportInterpretationWindow(payload, currentPatient.value);
-      } catch (error) {
-        console.error('[EventListeners] Failed to open report interpretation window:', error);
-        trackError('report_interpretation_failed', error, {
-          taskId: payload?.taskId,
-        });
-        showToast(error instanceof Error ? error.message : '报告解读打开失败', 'error');
-      }
+    trackApiCall('his_start_report_interpretation', true, undefined, {
+      taskId: payload?.taskId,
+      patientId: getPatientContextId(currentPatient.value) || undefined,
     });
+
+    try {
+      await openReportInterpretationWindow(payload, currentPatient.value);
+    } catch (error) {
+      console.error('[EventListeners] Failed to open report interpretation window:', error);
+      trackError('report_interpretation_failed', error, {
+        taskId: payload?.taskId,
+      });
+      showToast(error instanceof Error ? error.message : '报告解读打开失败', 'error');
+    }
   }
 
   // ========== 鼠标事件监听 ==========
@@ -1024,47 +352,136 @@ export function useEventListeners(options: EventListenersOptions) {
   /**
    * 注册鼠标悬停事件监听
    */
-  async function registerHoverListener(): Promise<void> {
-    unlistenHover = await listen<boolean>('hover-change', (event) => {
-      // 仅在非工作模式下响应
-      if (!isWorking.value) {
-        isHovered.value = event.payload;
-        if (!event.payload) {
-          hoveredBtnIndex.value = -1; // 移出窗口时重置按钮 hover 状态
-        }
+  function handleHoverEvent(event: TauriEvent<boolean>): void {
+    // 仅在非工作模式下响应
+    if (!isWorking.value) {
+      isHovered.value = event.payload;
+      if (!event.payload) {
+        hoveredBtnIndex.value = -1; // 移出窗口时重置按钮 hover 状态
       }
-    });
+    }
   }
 
   /**
    * 注册鼠标位置事件监听
    */
-  async function registerMousePosListener(): Promise<void> {
-    unlistenMousePos = await listen<{ x: number; y: number }>('mouse-pos', async (event) => {
-      if (!isWorking.value && isHovered.value && ringMenuRef.value) {
-        // Rust 发送的是物理坐标，需要转换为 CSS 像素
-        const dpr = window.devicePixelRatio || 1;
-        const logicalX = event.payload.x / dpr;
-        const logicalY = event.payload.y / dpr;
+  function handleMousePosEvent(event: TauriEvent<{ x: number; y: number }>): void {
+    if (!isWorking.value && isHovered.value && ringMenuRef.value) {
+      // Rust 发送的是物理坐标，需要转换为 CSS 像素
+      const dpr = window.devicePixelRatio || 1;
+      const logicalX = event.payload.x / dpr;
+      const logicalY = event.payload.y / dpr;
 
-        // 查找鼠标下的元素
-        const el = document.elementFromPoint(logicalX, logicalY);
-        if (el) {
-          const btn = el.closest('.ring-btn');
-          if (btn) {
-            // 根据类名判断是哪个按钮
-            if (btn.classList.contains('top')) hoveredBtnIndex.value = 0;
-            else if (btn.classList.contains('right')) hoveredBtnIndex.value = 1;
-            else if (btn.classList.contains('bottom')) hoveredBtnIndex.value = 2;
-            else if (btn.classList.contains('left')) hoveredBtnIndex.value = 3;
-            else hoveredBtnIndex.value = -1;
-            return;
-          }
+      // 查找鼠标下的元素
+      const el = document.elementFromPoint(logicalX, logicalY);
+      if (el) {
+        const btn = el.closest('.ring-btn');
+        if (btn) {
+          // 根据类名判断是哪个按钮
+          if (btn.classList.contains('top')) hoveredBtnIndex.value = 0;
+          else if (btn.classList.contains('right')) hoveredBtnIndex.value = 1;
+          else if (btn.classList.contains('bottom')) hoveredBtnIndex.value = 2;
+          else if (btn.classList.contains('left')) hoveredBtnIndex.value = 3;
+          else hoveredBtnIndex.value = -1;
+          return;
         }
-        hoveredBtnIndex.value = -1;
       }
-    });
+      hoveredBtnIndex.value = -1;
+    }
   }
+
+  const sdkHandshakeListener = useTauriEventListener<SdkHandshakePayload>({
+    eventName: 'sdk-handshake',
+    handler: (event) => { void handleSdkHandshakeEvent(event); },
+    logContext: 'EventListeners',
+    autoStart: false,
+    throwOnError: true,
+  });
+
+  const patientRisksListener = useTauriEventListener<PatientRisksPayload>({
+    eventName: 'show-patient-risks',
+    handler: (event) => { void handlePatientRisksEvent(event); },
+    logContext: 'EventListeners',
+    autoStart: false,
+    throwOnError: true,
+  });
+
+  const startConsultationListener = useTauriEventListener<StartConsultationPayload>({
+    eventName: 'start-consultation',
+    handler: (event) => { void handleStartConsultationEvent(event); },
+    logContext: 'EventListeners',
+    autoStart: false,
+    throwOnError: true,
+  });
+
+  const receivePatientListener = useTauriEventListener<StartConsultationPayload>({
+    eventName: 'receive-patient',
+    handler: (event) => { void handleReceivePatientEvent(event); },
+    logContext: 'EventListeners',
+    autoStart: false,
+    throwOnError: true,
+  });
+
+  const consultationAssistListener = useTauriEventListener<SessionAssistPayload>({
+    eventName: 'start-consultation-session',
+    handler: (event) => { void handleConsultationAssistEvent(event); },
+    logContext: 'EventListeners',
+    autoStart: false,
+    throwOnError: true,
+  });
+
+  const stopConsultationListener = useTauriEventListener<void>({
+    eventName: 'stop-consultation',
+    handler: () => { void handleStopConsultationEvent(); },
+    logContext: 'EventListeners',
+    autoStart: false,
+    throwOnError: true,
+  });
+
+  const voiceConsultationListener = useTauriEventListener<SessionAssistPayload | null>({
+    eventName: 'start-voice-consultation',
+    handler: (event) => { void handleVoiceConsultationEvent(event); },
+    logContext: 'EventListeners',
+    autoStart: false,
+    throwOnError: true,
+  });
+
+  const reportInterpretationListener = useTauriEventListener<ReportInterpretationEventPayload>({
+    eventName: 'start-report-interpretation',
+    handler: (event) => { void handleReportInterpretationEvent(event); },
+    logContext: 'EventListeners',
+    autoStart: false,
+    throwOnError: true,
+  });
+
+  const hoverListener = useTauriEventListener<boolean>({
+    eventName: 'hover-change',
+    handler: handleHoverEvent,
+    logContext: 'EventListeners',
+    autoStart: false,
+    throwOnError: true,
+  });
+
+  const mousePosListener = useTauriEventListener<{ x: number; y: number }>({
+    eventName: 'mouse-pos',
+    handler: handleMousePosEvent,
+    logContext: 'EventListeners',
+    autoStart: false,
+    throwOnError: true,
+  });
+
+  const appEventListeners = [
+    patientRisksListener,
+    startConsultationListener,
+    consultationAssistListener,
+    stopConsultationListener,
+    voiceConsultationListener,
+    reportInterpretationListener,
+    receivePatientListener,
+    sdkHandshakeListener,
+    hoverListener,
+    mousePosListener,
+  ];
 
   // ========== 窗口事件监听 ==========
 
@@ -1114,21 +531,10 @@ export function useEventListeners(options: EventListenersOptions) {
       await registerWindowMoveListener();
       await registerWindowResizeListener();
 
-      // HIS 集成事件监听
-      await registerPatientRisksListener();
-      await registerStartConsultationListener();
-      await registerConsultationAssistListener();
-      await registerStopConsultationListener();
-      await registerVoiceConsultationListener();
-      await registerReportInterpretationListener();
-      await registerReceivePatientListener();
-
-      // SDK 握手监听
-      await registerHandshakeListener();
-
-      // 鼠标事件监听
-      await registerHoverListener();
-      await registerMousePosListener();
+      // App 级 Tauri 事件监听，顺序沿用原显式注册链路
+      for (const listener of appEventListeners) {
+        await listener.startListener();
+      }
 
       console.log('[EventListeners] All event listeners registered');
     } catch (e) {
@@ -1144,38 +550,7 @@ export function useEventListeners(options: EventListenersOptions) {
       unlistenDeepLink();
       unlistenDeepLink = null;
     }
-    if (unlistenPatientRisks) {
-      unlistenPatientRisks();
-      unlistenPatientRisks = null;
-    }
-    if (unlistenStartConsultation) {
-      unlistenStartConsultation();
-      unlistenStartConsultation = null;
-    }
-    if (unlistenConsultationAssist) {
-      unlistenConsultationAssist();
-      unlistenConsultationAssist = null;
-    }
-    if (unlistenStopConsultation) {
-      unlistenStopConsultation();
-      unlistenStopConsultation = null;
-    }
-    if (unlistenStartVoiceConsultation) {
-      unlistenStartVoiceConsultation();
-      unlistenStartVoiceConsultation = null;
-    }
-    if (unlistenReportInterpretation) {
-      unlistenReportInterpretation();
-      unlistenReportInterpretation = null;
-    }
-    if (unlistenHover) {
-      unlistenHover();
-      unlistenHover = null;
-    }
-    if (unlistenMousePos) {
-      unlistenMousePos();
-      unlistenMousePos = null;
-    }
+    appEventListeners.forEach((listener) => listener.clearListener());
     if (unlistenMoved) {
       unlistenMoved();
       unlistenMoved = null;
@@ -1183,14 +558,6 @@ export function useEventListeners(options: EventListenersOptions) {
     if (unlistenResize) {
       unlistenResize();
       unlistenResize = null;
-    }
-    if (unlistenSdkHandshake) {
-      unlistenSdkHandshake();
-      unlistenSdkHandshake = null;
-    }
-    if (unlistenReceivePatient) {
-      unlistenReceivePatient();
-      unlistenReceivePatient = null;
     }
     if (resizeTimeoutRef.value) {
       clearTimeout(resizeTimeoutRef.value);

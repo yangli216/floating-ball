@@ -79,12 +79,12 @@
 
 ## 包管理与构建
 
-### RETRO-007: 多锁文件共存导致依赖混乱 [未解决]
+### RETRO-007: 多锁文件共存导致依赖混乱 [已解决]
 
 - **现象**: 仓库中同时存在 `yarn.lock`、`package-lock.json`、`pnpm-lock.yaml`，不同 session 的 AI 用不同包管理器安装依赖，导致 node_modules 状态不一致。
 - **根因**: 早期未约定唯一包管理器，多次 vibe coding session 各自选用了不同工具。
-- **当前状态**: 已在 AGENTS.md 硬约束中禁止混用，但历史锁文件尚未清理。
-- **待办**: 需要一次专项清理，确认 yarn 为唯一包管理器后删除多余锁文件。
+- **解决方案**: 2026-05-20 专项清理确认 `yarn` 为唯一包管理器；`package.json` 增加 `packageManager: yarn@1.22.22`，根目录仅保留 `yarn.lock`，删除历史 `package-lock.json` 与 `pnpm-lock.yaml`。
+- **后续防护**: 已升级为规则 -> `AGENTS.md` 硬约束第 6 条与“包管理与命令约束”；`.gitignore` 忽略根目录 `package-lock.json` / `pnpm-lock.yaml`，避免后续误生成并提交。
 
 ---
 

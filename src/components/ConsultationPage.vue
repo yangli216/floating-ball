@@ -346,7 +346,7 @@
 
     <!-- Medical Record View -->
     <div v-else-if="currentView === 'record'" class="medical-record-page">
-      <SymptomConsultationResultPage
+      <SymptomResultEntry
         :initial-patient-data="props.initialPatientData"
         :generated-record="generatedRecord"
         :diagnoses="aiDiagnoses"
@@ -567,30 +567,49 @@
 <script setup lang="ts">
 import { ref, shallowRef, computed, onMounted, watch, onUnmounted, inject, nextTick } from 'vue';
 import symptomAssociations from '../assets/symptom-associations.json';
-import { medicalDataService, type DiagnosisItem, type Icd10CategoryInfo } from '../services/medicalData';
-import Pinyin from 'tiny-pinyin';
+import { medicalDataService, type DiagnosisItem } from '../services/medicalData';
 import { chat } from '../services/llm';
 import { invoke } from '@tauri-apps/api/core';
-import { listen } from '@tauri-apps/api/event';
 import { feedbackService } from '../services/feedback';
 import { getHisAdapter } from '../services/his';
 import { trackViewChange, trackClick, trackError, trackFormSubmit, trackRecommendationAction } from '../services/operationTracker';
 import { trackFeatureUsage } from '../services/featureUsageTracker';
-import BodyPartSelector from './BodyPartSelector.vue';
-import SystemCategorySelector from './SystemCategorySelector.vue';
+import {
+  BodyPartSelector,
+  SystemCategorySelector,
+} from '@features/symptom-consultation';
 import { PROMPTS, DynamicSymptomTemplatePrompt } from '../prompts';
-import Icon from './Icon.vue';
-import FactCheckNotification from './FactCheckNotification.vue';
-import FactCheckHighlight from './FactCheckHighlight.vue';
-import DiagnosisRecommendationCard from './DiagnosisRecommendationCard.vue';
-import SymptomConsultationResultPage from './SymptomConsultationResultPage.vue';
-import TreatmentRecommendationCard from './TreatmentRecommendationCard.vue';
-import TreatmentItemEditor from './TreatmentItemEditor.vue';
-import ManualMatchPicker, { type ManualMatchCandidate } from './ManualMatchPicker.vue';
-import RecAttributeChip, { type AttrOption } from './RecAttributeChip.vue';
-import FactCheckWidget from './FactCheckWidget.vue';
-import KnowledgePanel from './KnowledgePanel.vue';
-import PatientHeader from './PatientHeader.vue';
+import Icon from '@shared/ui/Icon.vue';
+import {
+  FactCheckHighlight,
+  FactCheckNotification,
+  FactCheckWidget,
+} from '@features/feedback';
+import {
+  DiagnosisRecommendationCard,
+  ManualMatchPicker,
+  RecAttributeChip,
+  TreatmentItemEditor,
+  TreatmentRecommendationCard,
+  useClinicalResultUserLogController,
+  useConsultationReferenceFeedbackListener,
+  useManualMatchState,
+  useMedicalDictionaries,
+  useReasonTooltipState,
+  useRecommendationFeedbackPopover,
+  useRelatedDiagnosisDropdown,
+  useTreatmentGates,
+  useTreatmentHydration,
+  useTreatmentNormalization,
+  type AttrOption,
+  type ManualMatchCandidate,
+} from '@features/consultation-result';
+import { SymptomResultEntry } from '@features/symptom-consultation';
+import {
+  KnowledgePanel,
+  useKnowledgeSearchController,
+} from '@features/knowledge';
+import { PatientHeader } from '@entities/patient';
 import { resolvePatientAvatar } from '../utils/patientAvatar';
 import {
   checkDiagnosis,
@@ -603,17 +622,111 @@ import {
   type FactCheckResult,
 } from '../services/factChecker';
 import { isFieldApplicable, generateTextsForSymptom } from '../services/textGeneration';
-import { pmphaiService, isPMPHAIConfigured, type BatchSearchResults } from '../services/pmphai';
-import { CONSULTATION_CONFIG, isSymptomSelectionFull } from '../constants/consultationConfig';
+import { pmphaiService, isPMPHAIConfigured } from '../services/pmphai';
+import { CONSULTATION_CONFIG } from '../constants/consultationConfig';
 import { getTCMTemplates, getWesternTemplates, syncRemoteTemplates } from '../services/templateService';
+import { submitConsultationUserLog } from '../services/consultationUserLog';
 import {
-  buildConsultationSelectionSnapshot,
-  buildConsultationUserLogSnapshot,
-  submitConsultationUserLog,
-} from '../services/consultationUserLog';
+  areAllReferenceItemsSuccessful,
+  buildConsultationAssistBannerStyle,
+  buildConsultationAssistBannerText,
+  applyCheckboxFieldChange,
+  buildConsultationFormValidationResult,
+  buildConsultationGeneratedRecord,
+  buildDiagnosisDisplayGroups,
+  buildDiagnosisRecommendationsFromRaw,
+  buildDiagnosisPrefill,
+  buildMedicineInlineSummary,
+  buildVisibleTreatmentRecommendations,
+  buildCurrentMedicalPayload as buildSymptomCurrentMedicalPayload,
+  buildFinalRecord,
+  buildGeneratedRecordPrefillPatch,
+  buildDiagnosisSwap,
+  buildGeneralConditionHistoryText,
+  buildMedicalAdvice,
+  buildSelectedTreatmentSnapshots,
+  buildTcmSignsPromptText,
+  buildTcmSignsReportText,
+  buildPendingReferenceStatusEntry,
+  buildReferenceRequestPayload,
+  buildReferenceStatusEntryFromFeedback,
+  buildSmartUserLogSnapshot as buildSymptomSmartUserLogSnapshot,
+  filterOtherTreatmentRecommendations,
+  generalConditionConfig,
+  getConsultationAssistBannerTone,
+  getConsultationAssistFeatureCode,
+  getConsultationAssistLabel,
+  getDiagnosisReferenceButtonLabel as getSymptomDiagnosisReferenceButtonLabel,
+  getDiagnosisRateClass,
+  getDiagnosisIdentity,
+  getReferenceStatusFromMap,
+  getReferenceStatusLabel as getSymptomReferenceStatusLabel,
+  getSymptomFieldKey,
+  getTreatmentTagLabel,
+  isDiagnosisReferenceDisabled as isSymptomDiagnosisReferenceDisabled,
+  isPendingReferenceItem as isPendingReferenceItemInRequest,
+  isStaleRecommendationContext,
+  mapTreatmentTypeToReferenceAction,
+  normalizeReferenceFeedbackPayload,
+  parseLLMJson as parseSymptomLLMJson,
+  readPatientText,
+  registerDiagnosisRecommendationFeedbackTargets,
+  registerTreatmentRecommendationFeedbackTargets,
+  runDiagnosisFactCheck,
+  runTreatmentFactCheck,
+  resolveRelatedDiagnosisCandidates,
+  resolveReferenceFeedbackItems,
+  resolvePastMedicalHistoryFromSources,
+  setReferenceStatusesInMap,
+  shouldShowDiagnosisCard,
+  shouldShowTreatmentCard,
+  tcmInquiryConfig,
+  trackConsultationCompletion,
+  useConsultationAssistController,
+  useSymptomCollectionController,
+  type BuildCurrentMedicalPayloadOptions,
+  type DiagnosisDisplayGroup,
+  type ReferenceAction,
+  type ReferenceFeedbackPayload,
+  type ReferenceItemPayload,
+  type ReferenceLifecycleStatus,
+  type ReferenceStatusEntry,
+} from '@features/symptom-consultation';
+import {
+  applyManualMatchCandidate,
+  assessTreatmentCatalogMatch,
+  buildClinicalResultDiagnosisRequestSpec,
+  buildClinicalResultTreatmentRecommendationsFromRaw,
+  buildClinicalResultTreatmentRequestSpec,
+  buildDiagList as buildSharedDiagList,
+  buildDiagnosisRecommendationFeedbackSubmitPayload,
+  buildInventoryBlockedSubmitMessage,
+  buildOrderListItem as buildSharedOrderListItem,
+  buildRecordConfirmedPayload,
+  buildSelectedTreatments,
+  buildTreatmentPlanSummary,
+  buildTreatmentRecommendationFeedbackSubmitPayload,
+  findManualMatchCandidates,
+  getDiagnosisRecommendationFeedbackKey,
+  getMatchedItemRaw,
+  getMatchedMedicalItemClientId,
+  getMatchedOrderServiceId,
+  getReasonTooltipKey,
+  getStandardDiagnosisId,
+  getSuggestedMatchName,
+  getTreatmentMatchLabel,
+  getTreatmentOriginalName,
+  getTreatmentRecommendationFeedbackKey,
+  getTreatmentSpec,
+  hasProbableMatch,
+  readFirstString,
+  toManualMatchCandidateView,
+  type OrderItemResolvers,
+} from '@features/clinical-result';
 import {
   useSymptomConsultationCacheSession,
 } from '../composables/useSymptomConsultationCache';
+import { useOutsideInteraction } from '@shared/composables/useOutsideInteraction';
 /* WINDOW_SIZES / diagnosisPath imports removed - feature commented out */
 import type {
   ConsultationAssistAction,
@@ -642,85 +755,9 @@ const emit = defineEmits(['close', 'cancel', 'consume-auto-trigger']);
 
 // --- Interfaces & State Definitions ---
 import type { Diagnosis, Patient, TreatmentRecommendation, FinalRecord } from '../types/consultation';
-import {
-  buildDiagList as buildSharedDiagList,
-  buildOrderListItem as buildSharedOrderListItem,
-  buildRecordConfirmedPayload,
-  getStandardDiagnosisId,
-  getMatchedMedicalItemClientId,
-  getMatchedOrderServiceId,
-  getMatchedItemRaw,
-  readFirstString,
-  type OrderItemResolvers,
-} from '../utils/recordConfirmedPayload';
-import { useMedicalDictionaries } from '../composables/useMedicalDictionaries';
-import { useTreatmentNormalization } from '../composables/useTreatmentNormalization';
-import { useTreatmentGates } from '../composables/useTreatmentGates';
-import { useTreatmentHydration } from '../composables/useTreatmentHydration';
-import { useVoiceFeedback } from '../composables/useVoiceFeedback';
-import {
-  getVoiceDiagnosisFeedbackKey,
-  getVoiceTreatmentFeedbackKey,
-  mapTreatmentTypeToRecommendationType,
-  mapTreatmentTypeToTargetType,
-} from '../services/voiceFeedback';
+import { useVoiceFeedback } from '@features/feedback';
 import type { VoiceRecommendationFeedbackDraft } from '../types/voiceFeedback';
-import {
-  assessTreatmentCatalogMatch,
-  buildDiagnosisFeedbackSnapshot as buildSharedDiagnosisFeedbackSnapshot,
-  buildTreatmentFeedbackSnapshot,
-  getReasonTooltipKey,
-  getSuggestedMatchName,
-  getTreatmentMatchLabel,
-  getTreatmentOriginalName,
-  getTreatmentSpec,
-  hasProbableMatch,
-} from '../features/clinical-result/recommendationHelpers';
-import {
-  applyManualMatchCandidate,
-  findManualMatchCandidates,
-  getManualMatchKey,
-  toManualMatchCandidateView,
-} from '../features/clinical-result/manualMatch';
 type AssistAction = ConsultationAssistAction;
-type AssistFeatureCode = Parameters<typeof trackFeatureUsage>[0]['featureCode'];
-type ReferenceAction = 'diagnosis' | 'medication' | 'examination' | 'lab_test' | 'procedure' | 'batch';
-type ReferenceLifecycleStatus = 'pending' | 'success' | 'failed';
-
-const ASSIST_FEATURE_CODE_BY_KIND: Partial<Record<AssistAction, AssistFeatureCode>> = {
-  diagnosis: 'diagnosis_recommendation',
-  differential: 'diagnosis_checklist',
-  medication: 'medication_recommendation',
-  examination: 'examination_recommendation',
-  lab_test: 'lab_test_recommendation',
-  procedure: 'procedure_recommendation',
-};
-
-interface ReferenceItemPayload {
-  name: string;
-  code?: string;
-  type: 'diagnosis' | 'medication' | 'examination' | 'lab_test' | 'procedure';
-  isTCM?: boolean;
-  idCli?: string;
-}
-
-interface ReferenceFeedbackPayload {
-  consultationId?: string;
-  requestId: string;
-  referenceType?: ReferenceAction;
-  action: ReferenceAction;
-  status: ReferenceLifecycleStatus;
-  message?: string;
-  items?: ReferenceItemPayload[];
-  timestamp?: number;
-}
-
-interface ReferenceStatusEntry {
-  status: ReferenceLifecycleStatus;
-  requestId: string;
-  message?: string;
-  updatedAt: number;
-}
 
 // Patient info: empty defaults; real data flows in via `initialPatientData` watch.
 // 不再预填演示数据，避免在真实就诊场景中显示其他患者的字段（如身份证、电话、民族、婚姻）。
@@ -778,56 +815,11 @@ const selectedSymptoms = ref<any[]>([]);
 const formData = ref<Record<string, any>>({});
 const searchQuery = ref('');
 const isGeneratingSymptom = ref(false);
-const selectedCategories = ref<string[]>([]);
-const isCategoryDropdownOpen = ref(false);
-const categoryFilterRef = ref<HTMLElement | null>(null);
 const medRecordDetails = ref<string[]>([]);
 
 // Selection mode for sidebar tabs
 const selectionMode = ref<'common' | 'bodyPart' | 'system'>('common');
 const consultationMode = ref<'western' | 'tcm'>('western');
-
-// 伴随症状：仅勾选标记，不展开详细问诊表单
-const companionSymptoms = ref<Set<string>>(new Set());
-
-const toggleCompanionSymptom = (symptomKey: string) => {
-  const newSet = new Set(companionSymptoms.value);
-  if (newSet.has(symptomKey)) {
-    newSet.delete(symptomKey);
-  } else {
-    newSet.add(symptomKey);
-  }
-  companionSymptoms.value = newSet;
-};
-
-const isCompanionSelected = (symptomKey: string) => {
-  return companionSymptoms.value.has(symptomKey);
-};
-
-// 获取所有伴随症状名称列表（用于病历生成）
-const companionSymptomNames = computed(() => {
-  return Array.from(companionSymptoms.value)
-    .map(key => {
-      const s = symptoms.value.find((item: any) => item.key === key);
-      return s ? s.name : key;
-    });
-});
-
-// 伴随症状推荐：per-symptom recommendations
-const getSymptomRecommendations = (symptomKey: string) => {
-  const associations = symptomAssociations as Record<string, string[]>;
-  const related = associations[symptomKey];
-  if (!related) return [];
-  
-  const selectedKeys = new Set(selectedSymptoms.value.map((s: any) => s.key));
-  const allTemplates = symptoms.value;
-  
-  return related
-    .filter(key => !selectedKeys.has(key))
-    .slice(0, 10)
-    .map(key => allTemplates.find((s: any) => s.key === key))
-    .filter(Boolean);
-};
 
 // 根据问诊模式动态获取模板数据
 const currentTemplatesData = computed(() => {
@@ -837,8 +829,53 @@ const currentTemplatesData = computed(() => {
   return getWesternTemplates();
 });
 
-// All symptoms for body part and system selectors
-const allSymptoms = computed(() => symptoms.value);
+const symptomCollectionController = useSymptomCollectionController({
+  symptoms,
+  selectedSymptoms,
+  formData,
+  searchQuery,
+  mode: consultationMode,
+  generalConfig: generalConditionConfig as any,
+  tcmConfig: tcmInquiryConfig as any,
+  associations: symptomAssociations as Record<string, string[]>,
+  maxSymptoms: CONSULTATION_CONFIG.MAX_SYMPTOMS,
+  getPatientGenderCode: () => getPatientContextGenderCode(patientInfo.value as any),
+  notifyMaxReached: (maxSymptoms) => {
+    showToast(`最多只能选择 ${maxSymptoms} 个症状`, 'info');
+  },
+  onSelected: ({ symptomKey, symptomName, totalSelected }) => {
+    trackClick('symptom_select', { symptomKey, symptomName, totalSelected });
+  },
+  onDeselected: ({ symptomKey, symptomName }) => {
+    trackClick('symptom_deselect', { symptomKey, symptomName });
+  },
+  onRemoved: ({ symptomKey, symptomName }) => {
+    trackClick('symptom_remove', { symptomKey, symptomName });
+  },
+});
+const {
+  allSymptoms,
+  categoryButtonText,
+  categoryFilterRef,
+  clearCollection: clearSymptomCollection,
+  clearSelection: clearSymptomSelection,
+  closeCategoryDropdown,
+  companionSymptomNames,
+  companionSymptoms,
+  filteredSymptoms,
+  getSymptomRecommendations,
+  initFormData,
+  isCategoryDropdownOpen,
+  isCompanionSelected,
+  removeSymptom,
+  renderList,
+  selectSymptom,
+  selectedCategories,
+  toggleCategory,
+  toggleCategoryDropdown,
+  toggleCompanionSymptom,
+  uniqueCategories,
+} = symptomCollectionController;
 const currentView = ref<'consultation' | 'record' | 'final_report'>('consultation');
 const createEmptyGeneratedRecord = () => ({
   chiefComplaint: '',
@@ -853,26 +890,6 @@ const activeReferenceRequest = ref<ReferenceFeedbackPayload | null>(null);
 const lastReferenceFeedback = ref<ReferenceFeedbackPayload | null>(null);
 const referenceStatusMap = ref<Record<string, ReferenceStatusEntry>>({});
 const isWritingRecord = ref(false);
-let unlistenReferenceFeedback: (() => void) | null = null;
-
-const systemCategories: Record<string, string> = {
-  respiratory: '呼吸系统',
-  circulatory: '循环系统',
-  endocrine: '内分泌系统',
-  digestive: '消化系统',
-  urinary: '泌尿系统',
-  reproductive: '生殖系统',
-  nervous: '神经系统',
-  motor: '运动系统',
-  other: '其他'
-};
-
-const uniqueCategories = computed(() => {
-  return Object.keys(systemCategories).map(key => ({
-    key,
-    label: systemCategories[key] || key
-  }));
-});
 
 const aiLoading = ref(false);
 const aiError = ref<string | null>(null);
@@ -887,11 +904,13 @@ const treatmentLoading = ref(false);
 const treatmentError = ref<string | null>(null);
 const treatmentRecommendations = ref<TreatmentRecommendation[]>([]);
 
-// 手动匹配候选弹窗状态（药品/检查/检验/处置 共用）
-const activeReasonTooltipKey = ref<string | null>(null);
-const activeFeedbackPopoverKey = ref<string | null>(null);
-const activeManualMatchKey = ref<string | null>(null);
-const manualMatchKeywords = ref<Record<string, string>>({});
+const reasonTooltipState = useReasonTooltipState();
+const {
+  activeReasonTooltipKey,
+  closeReasonTooltip,
+  closeReasonTooltipIfOpen,
+  toggleReasonTooltip,
+} = reasonTooltipState;
 
 // 检查推荐（影像/器械）
 const examRecommendations = ref<TreatmentRecommendation[]>([]);
@@ -938,6 +957,13 @@ const treatmentHydration = useTreatmentHydration({
   findRouteOptionByValue: treatmentNormalization.findRouteOptionByValue,
   notify: (message, level) => showToast(message, level || 'info'),
 });
+const manualMatchState = useManualMatchState();
+const {
+  getManualMatchKeyword,
+  isManualMatchOpen,
+  closeManualMatch,
+  toggleManualMatch: toggleManualMatchState,
+} = manualMatchState;
 function normalizeTreatmentRecommendation(rec: Partial<TreatmentRecommendation>): TreatmentRecommendation {
   return treatmentNormalization.normalize(rec);
 }
@@ -1030,34 +1056,26 @@ const hasRecordDraft = computed(
     generatedRecord.value.chiefComplaint.trim() !== '' &&
     generatedRecord.value.historyOfPresentIllness.trim() !== ''
 );
-// 当前聚焦的 assistFocus 过滤：各路独立
-const visibleTreatmentRecommendations = computed(() => {
-  const focus = assistFocus.value;
-  if (focus === 'medication') return treatmentRecommendations.value;
-  if (focus === 'examination') return examRecommendations.value;
-  if (focus === 'lab_test') return labTestRecommendations.value;
-  if (focus === 'procedure') return procedureRecommendations.value;
-  // 未聚焦时合并所有
-  return [
-    ...treatmentRecommendations.value,
-    ...examRecommendations.value,
-    ...labTestRecommendations.value,
-    ...procedureRecommendations.value,
-  ];
-});
+const visibleTreatmentRecommendations = computed(() =>
+  buildVisibleTreatmentRecommendations({
+    assistFocus: assistFocus.value,
+    medicines: treatmentRecommendations.value,
+    examinations: examRecommendations.value,
+    labTests: labTestRecommendations.value,
+    procedures: procedureRecommendations.value,
+  })
+);
 const visibleOtherTreatmentRecommendations = computed(() =>
-  visibleTreatmentRecommendations.value.filter(
-    (item) => item.type !== 'medicine' && item.type !== 'exam' && item.type !== 'lab_test' && item.type !== 'procedure'
-  )
+  filterOtherTreatmentRecommendations(visibleTreatmentRecommendations.value)
 );
 const anyRecommendationLoading = computed(
   () => treatmentLoading.value || examLoading.value || labTestLoading.value || procedureLoading.value
 );
 const showDiagnosisCard = computed(
-  () => currentView.value === 'record' && assistFocus.value !== 'medication' && assistFocus.value !== 'examination' && assistFocus.value !== 'lab_test' && assistFocus.value !== 'procedure'
+  () => shouldShowDiagnosisCard(currentView.value, assistFocus.value)
 );
 const showTreatmentCard = computed(
-  () => currentView.value === 'record' && assistFocus.value !== 'differential'
+  () => shouldShowTreatmentCard(currentView.value, assistFocus.value)
 );
 const hasPendingReferenceRequest = computed(
   () => activeReferenceRequest.value?.status === 'pending'
@@ -1068,165 +1086,30 @@ const currentDiagnosisSummary = computed(
     readPatientText(patientInfo.value as unknown as Record<string, unknown>, ['diagnosis']) ||
     ''
 );
-const assistFocusLabel = computed(() => {
-  switch (assistFocus.value) {
-    case 'record':
-      return '病历快进';
-    case 'diagnosis':
-      return '诊断快进';
-    case 'medication':
-      return '用药快进';
-    case 'examination':
-      return '检查快进';
-    case 'lab_test':
-      return '检验快进';
-    case 'procedure':
-      return '处置快进';
-    case 'differential':
-      return '鉴别排查';
-    case 'reminder':
-      return '风险提醒';
-    default:
-      return '';
-  }
-});
-const workflowBannerTone = computed<'info' | 'success' | 'error'>(() => {
-  if (activeReferenceRequest.value?.status === 'pending') {
-    return 'info';
-  }
-  if (lastReferenceFeedback.value?.status === 'success') {
-    return 'success';
-  }
-  if (lastReferenceFeedback.value?.status === 'failed') {
-    return 'error';
-  }
-  return 'info';
-});
-const workflowBannerText = computed(() => {
-  if (activeReferenceRequest.value?.status === 'pending') {
-    return activeReferenceRequest.value.message || '已发起引用请求，等待 PHIS 保存并回执。';
-  }
-  if (lastReferenceFeedback.value) {
-    return lastReferenceFeedback.value.message ||
-      (lastReferenceFeedback.value.status === 'success'
-        ? 'PHIS 已完成引用保存。'
-        : 'PHIS 引用保存失败。');
-  }
+const assistFocusLabel = computed(() => getConsultationAssistLabel(assistFocus.value));
+const workflowBannerTone = computed(() =>
+  getConsultationAssistBannerTone(activeReferenceRequest.value, lastReferenceFeedback.value)
+);
+const workflowBannerText = computed(() =>
+  buildConsultationAssistBannerText({
+    assistFocus: assistFocus.value,
+    activeReferenceRequest: activeReferenceRequest.value,
+    lastReferenceFeedback: lastReferenceFeedback.value,
+  })
+);
+const workflowBannerStyle = computed(() => buildConsultationAssistBannerStyle(workflowBannerTone.value));
 
-  switch (assistFocus.value) {
-    case 'record':
-      return '检测到 HIS 已有主诉与现病史，已直接进入病历详情页。';
-    case 'diagnosis':
-      return '请确认诊断；点击“确认诊断”只记录日志，点击“引用诊断”才会写回 PHIS。';
-    case 'medication':
-      return '请勾选要引用的用药方案，发起引用后会等待 PHIS 回执。';
-    case 'examination':
-      return '请勾选要引用的检查项目，发起引用后会等待 PHIS 回执。';
-    case 'lab_test':
-      return '请勾选要引用的检验项目，发起引用后会等待 PHIS 回执。';
-    case 'procedure':
-      return '请勾选要引用的处置项目，发起引用后会等待 PHIS 回执。';
-    case 'differential':
-      return '鉴别排查的确认结果只记录日志，不会改写现病史。';
-    case 'reminder':
-      return '风险提醒已同步，可结合当前病历继续处理。';
-    default:
-      return '';
-  }
-});
-const workflowBannerStyle = computed(() => {
-  const palette =
-    workflowBannerTone.value === 'success'
-      ? {
-          background: 'rgba(34, 197, 94, 0.12)',
-          border: '1px solid rgba(34, 197, 94, 0.28)',
-          color: '#166534',
-        }
-      : workflowBannerTone.value === 'error'
-        ? {
-            background: 'rgba(239, 68, 68, 0.12)',
-            border: '1px solid rgba(239, 68, 68, 0.28)',
-            color: '#991b1b',
-          }
-        : {
-            background: 'rgba(59, 130, 246, 0.1)',
-            border: '1px solid rgba(59, 130, 246, 0.22)',
-            color: '#1d4ed8',
-          };
-
-  return {
-    display: 'flex',
-    gap: '8px',
-    alignItems: 'center',
-    padding: '12px 14px',
-    marginBottom: '14px',
-    borderRadius: '12px',
-    fontSize: '13px',
-    lineHeight: '1.5',
-    ...palette,
-  };
-});
-
-type DiagnosisDisplayGroup = {
-  key: string;
-  title: string;
-  rangeLabel?: string;
-  diagnoses: Diagnosis[];
-  order: number;
-  showHeader: boolean;
-};
 /* DiagnosisPathWindowPhase type removed - feature commented out */
 
 /* DIAGNOSIS_PATH timeouts removed - feature commented out */
 
-const buildDiagnosisGroupKey = (category: Icd10CategoryInfo | null) => {
-  return category ? `icd10-${category.key}` : 'icd10-unknown';
-};
-
-const diagnosisGroups = computed<DiagnosisDisplayGroup[]>(() => {
-  if (aiDiagnoses.value.length === 0) {
-    return [];
-  }
-
-  if (consultationMode.value === 'tcm') {
-    return [
-      {
-        key: 'tcm',
-        title: '中医辨证',
-        diagnoses: aiDiagnoses.value,
-        order: 0,
-        showHeader: false
-      }
-    ];
-  }
-
-  const groupMap = new Map<string, DiagnosisDisplayGroup>();
-
-  aiDiagnoses.value.forEach((diagnosis) => {
-    const category = medicalDataService.getIcd10CategoryInfo(diagnosis.code);
-    const groupKey = buildDiagnosisGroupKey(category);
-
-    if (!groupMap.has(groupKey)) {
-      groupMap.set(groupKey, {
-        key: groupKey,
-        title: category?.title || '未分类/待确认',
-        rangeLabel: category?.range,
-        diagnoses: [],
-        order: category?.order ?? Number.MAX_SAFE_INTEGER,
-        showHeader: true
-      });
-    }
-
-    groupMap.get(groupKey)?.diagnoses.push(diagnosis);
-  });
-
-  return Array.from(groupMap.values()).sort((a, b) => {
-    if (a.order !== b.order) {
-      return a.order - b.order;
-    }
-    return a.title.localeCompare(b.title, 'zh-CN');
-  });
-});
+const diagnosisGroups = computed<DiagnosisDisplayGroup[]>(() =>
+  buildDiagnosisDisplayGroups({
+    diagnoses: aiDiagnoses.value,
+    mode: consultationMode.value === 'tcm' ? 'tcm' : 'western',
+    getCategoryInfo: (code) => medicalDataService.getIcd10CategoryInfo(code),
+  })
+);
 
 const isDiagnosisGroupCollapsed = (groupKey: string) => {
   return collapsedDiagnosisGroups.value[groupKey] ?? false;
@@ -1243,27 +1126,6 @@ const getPatientAnchorId = (patient?: {
   id?: string | number;
 } | null) => resolvePatientContextAnchorId(patient as any);
 
-const readPatientText = (
-  source: Record<string, unknown> | null | undefined,
-  keys: string[]
-): string => {
-  if (!source) {
-    return '';
-  }
-
-  for (const key of keys) {
-    const value = source[key];
-    if (typeof value === 'string' && value.trim() !== '') {
-      return value.trim();
-    }
-    if (typeof value === 'number') {
-      return String(value);
-    }
-  }
-
-  return '';
-};
-
 const resolveConsultationId = (): string =>
   getPatientAnchorId(finalRecord.value?.patient || patientInfo.value) || 'unknown';
 
@@ -1271,7 +1133,7 @@ const trackAssistFeatureUsage = (
   kind: AssistAction,
   payload?: Record<string, unknown>,
 ): void => {
-  const featureCode = ASSIST_FEATURE_CODE_BY_KIND[kind];
+  const featureCode = getConsultationAssistFeatureCode(kind);
   if (!featureCode) return;
 
   const consultationId = resolveConsultationId();
@@ -1286,19 +1148,10 @@ const trackAssistFeatureUsage = (
   });
 };
 
-const resolvePastMedicalHistory = (): string => {
-  const fromRecord = readPatientText(finalRecord.value?.record as unknown as Record<string, unknown>, ['pastMedicalHistory']);
-  const fromPatient = readPatientText(
-    patientInfo.value as unknown as Record<string, unknown>,
-    ['pastMedicalHistory', 'past_medical_history', 'pastMedicalHistoryText']
-  );
-  const filterVisitSummary = (v: string | undefined): string | undefined => {
-    if (!v) return undefined;
-    if (/^既往门诊记录[：:]/.test(v.trim())) return undefined;
-    return v;
-  };
-  return filterVisitSummary(fromRecord) || filterVisitSummary(fromPatient) || '未提供既往病史。';
-};
+const resolvePastMedicalHistory = (): string => resolvePastMedicalHistoryFromSources({
+  record: finalRecord.value?.record as unknown as Record<string, unknown> | undefined,
+  patient: patientInfo.value as unknown as Record<string, unknown>,
+});
 
 const patientPromptProfile = computed(() => ({
   patientName: getPatientContextName(patientInfo.value as any) || '',
@@ -1322,134 +1175,44 @@ const {
   pastMedicalHistory: computed(() => resolvePastMedicalHistory()),
   familyHistory: computed(() => generatedRecord.value.familyHistory || ''),
 });
-
-const buildReferenceKey = (
-  action: ReferenceAction,
-  item: { name: string; code?: string }
-): string => `${action}:${item.code || item.name}`;
+const recommendationFeedbackPopover = useRecommendationFeedbackPopover({
+  ensureDraft: ensureRecommendationDraft,
+  submittedMap: recommendationSubmittedMap,
+});
 
 const setReferenceStatuses = (
   action: ReferenceAction,
   items: ReferenceItemPayload[],
   entry: ReferenceStatusEntry
 ): void => {
-  const nextMap = { ...referenceStatusMap.value };
-  items.forEach((item) => {
-    nextMap[buildReferenceKey(action, item)] = entry;
-  });
-  referenceStatusMap.value = nextMap;
-};
-
-const buildCurrentSummary = (
-  chiefComplaint: string,
-  historyOfPresentIllness: string,
-  diagnoses: Array<{ name: string }>
-): string => {
-  const lines = [
-    chiefComplaint ? `主诉：${chiefComplaint}` : '',
-    historyOfPresentIllness ? `现病史：${historyOfPresentIllness}` : '',
-    diagnoses.length ? `诊断：${diagnoses.map((item) => item.name).join('；')}` : '',
-  ].filter(Boolean);
-  return lines.join('\n');
-};
-
-const buildCurrentDiagnosisList = (): Array<{ name: string; code?: string; isTCM?: boolean }> => {
-  if (selectedDiagnosis.value) {
-    return [
-      {
-        name: selectedDiagnosis.value.name,
-        code: selectedDiagnosis.value.code,
-        isTCM: selectedDiagnosis.value.isTCM,
-      },
-    ];
-  }
-
-  const diagnosisName = readPatientText(
-    patientInfo.value as unknown as Record<string, unknown>,
-    ['diagnosis']
+  referenceStatusMap.value = setReferenceStatusesInMap(
+    referenceStatusMap.value,
+    action,
+    items,
+    entry,
   );
-  return diagnosisName ? [{ name: diagnosisName }] : [];
 };
 
 const buildCurrentMedicalPayload = (
   extra: Record<string, unknown> = {},
-  options: {
-    includeDiagnosis?: boolean;
-    includeTreatments?: boolean;
-    includedTreatmentTypes?: Array<'medicine' | 'exam' | 'lab_test' | 'procedure'>;
-  } = {}
-) => {
-  const includeDiagnosis = options.includeDiagnosis ?? true;
-  const includeTreatments = options.includeTreatments ?? true;
-  const includedTreatmentTypes = options.includedTreatmentTypes;
-  const diagnosisList = includeDiagnosis ? buildCurrentDiagnosisList() : [];
-  const medications = includeTreatments && (!includedTreatmentTypes || includedTreatmentTypes.includes('medicine'))
-    ? treatmentRecommendations.value
-        .filter((item) => item.selected)
-        .map((item) => ({
-          name: item.name,
-          spec: item.matchedItem?.spec,
-          usage: item.usage,
-          idMedPro: item.matchedItem?.id,
-        }))
-    : [];
-  const examinations = includeTreatments && (!includedTreatmentTypes || includedTreatmentTypes.includes('exam'))
-    ? examRecommendations.value
-        .filter((item) => item.selected)
-        .map((item) => ({
-          name: item.name,
-          idCli: getMatchedMedicalItemClientId(item),
-        }))
-    : [];
-  const labTests = includeTreatments && (!includedTreatmentTypes || includedTreatmentTypes.includes('lab_test'))
-    ? labTestRecommendations.value
-        .filter((item) => item.selected)
-        .map((item) => ({
-          name: item.name,
-          idCli: getMatchedMedicalItemClientId(item),
-        }))
-    : [];
-  const procedures = includeTreatments && (!includedTreatmentTypes || includedTreatmentTypes.includes('procedure'))
-    ? procedureRecommendations.value
-        .filter((item) => item.selected)
-        .map((item) => ({
-          name: item.name,
-          idCli: getMatchedMedicalItemClientId(item),
-        }))
-    : [];
-
-  const treatmentPlanParts = [
-    medications.length ? `建议用药：${medications.map((item) => item.name).join('；')}` : '',
-    examinations.length ? `建议检查：${examinations.map((item) => item.name).join('；')}` : '',
-    labTests.length ? `建议检验：${labTests.map((item) => item.name).join('；')}` : '',
-    procedures.length ? `建议处置：${procedures.map((item) => item.name).join('；')}` : '',
-  ].filter(Boolean);
-
-  return {
+  options: BuildCurrentMedicalPayloadOptions = {}
+) => buildSymptomCurrentMedicalPayload({
     consultationId: resolveConsultationId(),
-    timestamp: Date.now(),
-    resultType: 'draft',
     chiefComplaint: generatedRecord.value.chiefComplaint,
     historyOfPresentIllness: generatedRecord.value.historyOfPresentIllness,
     pastMedicalHistory: resolvePastMedicalHistory(),
-    diagnosisList,
-    medications,
-    examinations,
-    labTests,
-    procedures,
-    treatmentPlan: treatmentPlanParts.length > 0
-      ? treatmentPlanParts.join('；')
-      : '建议结合医生站规则完成最终确认。',
-    medicalSummary: buildCurrentSummary(
-      generatedRecord.value.chiefComplaint,
-      generatedRecord.value.historyOfPresentIllness,
-      diagnosisList
-    ),
-    ...extra,
-  };
-};
+    selectedDiagnosis: selectedDiagnosis.value,
+    patient: patientInfo.value,
+    medicines: treatmentRecommendations.value,
+    examinations: examRecommendations.value,
+    labTests: labTestRecommendations.value,
+    procedures: procedureRecommendations.value,
+    resolveMedicalItemClientId: getMatchedMedicalItemClientId,
+    extra,
+    options,
+  });
 
-const buildSmartUserLogSnapshot = () => buildConsultationUserLogSnapshot({
+const buildSmartUserLogSnapshot = () => buildSymptomSmartUserLogSnapshot({
   chiefComplaint: generatedRecord.value.chiefComplaint,
   historyOfPresentIllness: generatedRecord.value.historyOfPresentIllness,
   diagnoses: aiDiagnoses.value,
@@ -1459,96 +1222,71 @@ const buildSmartUserLogSnapshot = () => buildConsultationUserLogSnapshot({
   labTests: labTestRecommendations.value,
 });
 
-const submitSmartGeneratedUserLog = () => {
-  void submitConsultationUserLog({
-    consultationId: resolveConsultationId(),
-    consultationType: 'smart',
-    patient: patientInfo.value,
-    firstSnapshot: buildSmartUserLogSnapshot(),
-  });
-};
-
-const submitSmartFinalUserLog = () => {
-  const finalSnapshot = buildSmartUserLogSnapshot();
-  void submitConsultationUserLog({
-    consultationId: resolveConsultationId(),
-    consultationType: 'smart',
-    patient: patientInfo.value,
-    finalSnapshot,
-    selectionSnapshot: buildConsultationSelectionSnapshot(finalSnapshot),
-  });
-};
+const smartUserLogController = useClinicalResultUserLogController({
+  consultationId: () => resolveConsultationId(),
+  consultationType: 'smart',
+  patient: () => patientInfo.value,
+  buildSnapshot: buildSmartUserLogSnapshot,
+  submit: submitConsultationUserLog,
+});
+const {
+  submitGeneratedUserLog: submitSmartGeneratedUserLog,
+  submitFinalUserLog: submitSmartFinalUserLog,
+} = smartUserLogController;
 
 const prefillGeneratedRecordFromPatient = (force = false): boolean => {
-  const chiefComplaint = readPatientText(
-    patientInfo.value as unknown as Record<string, unknown>,
-    ['chiefComplaint', 'chief_complaint']
-  );
-  const historyOfPresentIllness = readPatientText(
-    patientInfo.value as unknown as Record<string, unknown>,
-    ['historyOfPresentIllness', 'history_of_present_illness']
-  );
-
-  if (!chiefComplaint || !historyOfPresentIllness) {
+  const patch = buildGeneratedRecordPrefillPatch({
+    patient: patientInfo.value as unknown as Record<string, unknown>,
+    currentRecord: generatedRecord.value,
+    force,
+  });
+  if (!patch) {
     return false;
   }
 
-  if (force || !generatedRecord.value.chiefComplaint.trim()) {
-    generatedRecord.value.chiefComplaint = chiefComplaint;
+  if (patch.chiefComplaint !== undefined) {
+    generatedRecord.value.chiefComplaint = patch.chiefComplaint;
   }
-  if (force || !generatedRecord.value.historyOfPresentIllness.trim()) {
-    generatedRecord.value.historyOfPresentIllness = historyOfPresentIllness;
+  if (patch.historyOfPresentIllness !== undefined) {
+    generatedRecord.value.historyOfPresentIllness = patch.historyOfPresentIllness;
   }
   return true;
 };
 
 const prefillDiagnosisFromPatient = (force = false): boolean => {
+  const patientRecord = patientInfo.value as unknown as Record<string, unknown>;
   const diagnosisName = readPatientText(
-    patientInfo.value as unknown as Record<string, unknown>,
+    patientRecord,
     ['diagnosis']
   );
-  if (!diagnosisName) {
-    return false;
-  }
-
   if (
-    !force &&
-    selectedDiagnosis.value &&
-    selectedDiagnosis.value.name.trim() !== ''
+    !diagnosisName
+    || (!force && selectedDiagnosis.value && selectedDiagnosis.value.name.trim() !== '')
   ) {
-    return true;
+    return buildDiagnosisPrefill({
+      patient: patientRecord,
+      currentDiagnosis: selectedDiagnosis.value,
+      force,
+    }).shouldApply;
   }
 
-  const matched = medicalDataService.matchDiagnosis(diagnosisName);
-  selectedDiagnosis.value = {
-    id: matched?.id,
-    code: matched?.code || '',
-    name: matched?.name || diagnosisName,
-    rate: 'PHIS 当前诊断',
-    rationale: matched
-      ? '来自 PHIS 当前诊断草稿，已匹配标准诊断库'
-      : '来自 PHIS 当前诊断草稿，未匹配标准诊断库，回写前需切换为标准诊断',
-  } as Diagnosis;
-  return true;
-};
-
-const getDiagnosisIdentity = (diag: Diagnosis | null | undefined): string => {
-  if (!diag) return '';
-  return `${diag.code || ''}:${diag.name || ''}`;
-};
-
-const isCurrentDiagnosisContext = (identity: string): boolean => {
-  return identity !== '' && identity === getDiagnosisIdentity(selectedDiagnosis.value);
+  const prefill = buildDiagnosisPrefill({
+    patient: patientRecord,
+    currentDiagnosis: selectedDiagnosis.value,
+    matchedDiagnosis: medicalDataService.matchDiagnosis(diagnosisName),
+    force,
+  });
+  if (prefill.diagnosis) {
+    selectedDiagnosis.value = prefill.diagnosis;
+  }
+  return prefill.shouldApply;
 };
 
 const resetWorkflowState = () => {
   currentView.value = 'consultation';
   assistFocus.value = null;
-  selectedSymptoms.value = [];
-  formData.value = {};
+  clearSymptomCollection();
   searchQuery.value = '';
-  selectedCategories.value = [];
-  isCategoryDropdownOpen.value = false;
   generatedRecord.value = createEmptyGeneratedRecord();
   finalRecord.value = null;
   aiDiagnoses.value = [];
@@ -1614,17 +1352,30 @@ const checklistItems = ref<{ question: string, recordText: string, checked: bool
 const checklistNotes = ref('');
 const activeChecklistDiagnosis = ref<Diagnosis | null>(null);
 
-// Knowledge Panel State
-const showKnowledgePanel = ref(false);
-const knowledgeLoading = ref(false);
-const knowledgeSearchKeyword = ref('');  // 当前搜索关键词
-const knowledgeSearchType = ref<'diagnosis' | 'medication' | 'examination'>('diagnosis');  // 搜索类型
-const knowledgeResults = ref<BatchSearchResults>({
-  diagnoses: new Map(),
-  medications: new Map(),
-  examinations: new Map(),
+const {
+  showKnowledgePanel,
+  knowledgeLoading,
+  knowledgeSearchKeyword,
+  knowledgeSearchType,
+  knowledgeResults,
+  hasKnowledgeResults,
+  toggleKnowledgePanel,
+  searchKnowledgeByDiagnoses,
+  searchKnowledgeByTreatment,
+  searchKnowledgeFromItems,
+  searchKnowledgeForItem,
+} = useKnowledgeSearchController({
+  isConfigured: isPMPHAIConfigured,
+  searchByCategories: (diagnoses, medications, examinations, options) =>
+    pmphaiService.searchByCategories(diagnoses, medications, examinations, options),
+  batchSearch: (queries, options) => pmphaiService.batchSearch(queries, options),
+  onTrack: (action, details) => trackClick(action, details),
+  onError: (error) => {
+    console.error('Knowledge base search failed:', error);
+    trackError('knowledge_search_failed', error);
+  },
+  onNotConfigured: () => showToast('请先在设置中配置知识库', 'error'),
 });
-const hasKnowledgeResults = ref(false);
 
 const symptomCacheSession = useSymptomConsultationCacheSession({
   consultationId: resolveConsultationId,
@@ -1657,242 +1408,6 @@ const symptomCacheSession = useSymptomConsultationCacheSession({
   createEmptyGeneratedRecord,
   getTemplates: (mode) => (mode === 'tcm' ? getTCMTemplates() : getWesternTemplates()),
 });
-
-// General Condition Configuration
-const generalConditionConfig = {
-  key: 'general',
-  name: '一般情况问诊',
-  config: {
-    sections: [
-      {
-        id: 'general_section',
-        title: '一般情况问诊',
-        fields: [
-          { id: 'spirit', key: 'spirit', label: '精神', type: 'radio', props: { options: ['精神尚可', '精神疲惫', '精神亢奋', '服药后', '其他'] }, storageKey: 'spirit' },
-          { id: 'sleep', key: 'sleep', label: '睡眠', type: 'radio', props: { options: ['睡眠正常', '睡眠一般', '睡眠欠佳', '睡眠差', '其他'] }, storageKey: 'sleep' },
-          { id: 'appetite', key: 'appetite', label: '食欲', type: 'radio', props: { options: ['食欲正常', '食欲增加', '食欲减退', '其他'] }, storageKey: 'appetite' },
-          { id: 'urination', key: 'urination', label: '小便', type: 'radio', props: { options: ['小便正常', '小便增多', '小便减少', '其他'] }, storageKey: 'urination' },
-          { id: 'stool', key: 'stool', label: '大便', type: 'radio', props: { options: ['大便正常', '大便增多', '大便减少', '其他'] }, storageKey: 'stool' },
-          { id: 'weight', key: 'weight', label: '体重', type: 'radio', props: { options: ['体重无变化', '体重增加', '体重减轻', '其他'] }, storageKey: 'weight' }
-        ]
-      }
-    ]
-  }
-};
-
-// TCM Inquiry Configuration - 中医四诊
-const tcmInquiryConfig = {
-  key: 'tcm_signs',
-  name: '中医四诊信息',
-  config: {
-    sections: [
-      // 望诊 (Inspection)
-      {
-        id: 'inspection',
-        title: '望诊',
-        fields: [
-          {
-            id: 'spirit',
-            key: 'spirit',
-            label: '望神',
-            type: 'radio',
-            props: { options: ['得神', '少神', '失神', '假神'] },
-            storageKey: 'tcm_spirit'
-          },
-          {
-            id: 'face_color',
-            key: 'face_color',
-            label: '望面色',
-            type: 'radio',
-            props: { options: ['红黄隐隐、明润含蓄', '色青', '色赤', '色黄', '色白', '色黑', '两颧潮红', '颧红如妆'] },
-            storageKey: 'tcm_face_color'
-          },
-          {
-            id: 'body_shape',
-            key: 'body_shape',
-            label: '望形态',
-            type: 'input',
-            props: { placeholder: '强弱胖瘦、肢体、体型' },
-            storageKey: 'tcm_body_shape'
-          },
-          {
-            id: 'tongue_body',
-            key: 'tongue_body',
-            label: '舌质',
-            type: 'radio',
-            props: { options: ['淡红(正常)', '红', '淡白', '绛舌', '淡紫', '绛紫', '红绛', '青紫'] },
-            storageKey: 'tongue_body'
-          },
-          {
-            id: 'tongue_shape',
-            key: 'tongue_shape',
-            label: '舌形',
-            type: 'checkbox',
-            props: { options: ['胖大', '肿胀', '瘦薄', '点刺', '裂纹', '光滑', '齿痕'] },
-            storageKey: 'tcm_tongue_shape'
-          },
-          {
-            id: 'tongue_coating',
-            key: 'tongue_coating',
-            label: '苔色',
-            type: 'radio',
-            props: { options: ['白', '黄', '灰', '黑', '绿'] },
-            storageKey: 'tongue_coating'
-          },
-          {
-            id: 'coating_quality',
-            key: 'coating_quality',
-            label: '苔质',
-            type: 'checkbox',
-            props: { options: ['厚', '薄', '剥落', '无根', '润泽', '滑利', '干燥', '燥裂', '腐苔', '腻苔'] },
-            storageKey: 'tcm_coating_quality'
-          }
-        ]
-      },
-      // 闻诊 (Auscultation and Olfaction)
-      {
-        id: 'auscultation',
-        title: '闻诊',
-        fields: [
-          {
-            id: 'voice',
-            key: 'voice',
-            label: '听声音',
-            type: 'checkbox',
-            props: { options: ['音哑/失音', '声亢有力', '声音重浊', '语声低微', '呻吟不止', '沉默寡言', '烦躁多言', '咳嗽', '呼吸如常', '气喘', '喉间痰鸣'] },
-            storageKey: 'tcm_voice'
-          },
-          {
-            id: 'smell',
-            key: 'smell',
-            label: '嗅气味',
-            type: 'checkbox',
-            props: { options: ['口气', '汗气', '鼻臭', '身臭', '病室气味'] },
-            storageKey: 'tcm_smell'
-          }
-        ]
-      },
-      // 问诊 (Inquiry)
-      {
-        id: 'inquiry',
-        title: '问诊',
-        fields: [
-          {
-            id: 'cold_heat',
-            key: 'cold_heat',
-            label: '寒热',
-            type: 'radio',
-            props: { options: ['无异常', '恶寒发热', '但热不寒', '但寒不热', '寒热往来', '恶寒重发热轻', '发热重恶寒轻', '壮热', '潮热', '微热'] },
-            storageKey: 'tcm_cold_heat'
-          },
-          {
-            id: 'sweating',
-            key: 'sweating',
-            label: '出汗',
-            type: 'checkbox',
-            props: { options: ['自汗', '盗汗', '大汗', '战汗', '头汗', '半身汗', '手足心汗'] },
-            storageKey: 'tcm_sweating'
-          },
-          {
-            id: 'head_body',
-            key: 'head_body',
-            label: '头身',
-            type: 'input',
-            props: { placeholder: '头痛部位、头晕、身痛、身重、四肢痛、腰痛等' },
-            storageKey: 'tcm_head_body'
-          },
-          {
-            id: 'chest_abdomen',
-            key: 'chest_abdomen',
-            label: '胸胁脘腹',
-            type: 'input',
-            props: { placeholder: '疼痛部位、性质、伴随症状' },
-            storageKey: 'tcm_chest_abdomen'
-          },
-          {
-            id: 'ears_eyes',
-            key: 'ears_eyes',
-            label: '耳目',
-            type: 'checkbox',
-            props: { options: ['耳鸣', '耳聋', '重听', '目痛', '目眩', '目昏', '雀目'] },
-            storageKey: 'tcm_ears_eyes'
-          },
-          {
-            id: 'appetite',
-            key: 'appetite',
-            label: '饮食与口味',
-            type: 'radio',
-            props: { options: ['胃纳可', '纳呆', '多食易饥', '饥不欲食', '口不渴', '口渴多饮', '渴不多饮', '口淡乏味', '口甜粘腻', '口中泛酸', '口苦', '口咸'] },
-            storageKey: 'tcm_appetite'
-          },
-          {
-            id: 'sleep',
-            key: 'sleep',
-            label: '睡眠',
-            type: 'radio',
-            props: { options: ['睡眠安', '失眠', '不易入睡', '睡后易醒', '时时惊醒', '夜卧不安', '嗜睡'] },
-            storageKey: 'tcm_sleep'
-          },
-          {
-            id: 'stool',
-            key: 'stool',
-            label: '大便',
-            type: 'radio',
-            props: { options: ['大便调', '便秘', '泄泻', '完谷不化', '溏结不调', '肛门灼热', '排便不爽', '里急后重'] },
-            storageKey: 'tcm_stool'
-          },
-          {
-            id: 'urination',
-            key: 'urination',
-            label: '小便',
-            type: 'radio',
-            props: { options: ['小便可', '尿量增多', '尿量减少', '小便频数', '癃闭', '涩痛', '失禁', '遗尿'] },
-            storageKey: 'tcm_urination'
-          },
-          {
-            id: 'gynecology',
-            key: 'gynecology',
-            label: '妇女(经/带/胎/产)',
-            type: 'input',
-            props: { placeholder: '如为女性，请填写月经、带下、胎孕、产育情况' },
-            storageKey: 'tcm_gynecology'
-          }
-        ]
-      },
-      // 切诊 (Palpation)
-      {
-        id: 'palpation',
-        title: '切诊',
-        fields: [
-          {
-            id: 'pulse',
-            key: 'pulse',
-            label: '脉诊',
-            type: 'checkbox',
-            props: { options: ['浮', '沉', '迟', '数', '洪', '微', '细', '散', '虚', '实', '滑', '涩', '长', '短', '弦', '芤', '紧', '缓', '革', '劳', '弱', '濡', '伏', '动', '促', '结', '代', '疾脉'] },
-            storageKey: 'pulse'
-          },
-          {
-            id: 'palpation',
-            key: 'palpation',
-            label: '按诊',
-            type: 'input',
-            props: { placeholder: '肌肤、手足、胸腹、俞穴' },
-            storageKey: 'tcm_palpation'
-          },
-          {
-            id: 'other_signs',
-            key: 'other_signs',
-            label: '其他',
-            type: 'input',
-            props: { placeholder: '其他中医体征描述' },
-            storageKey: 'other_signs'
-          }
-        ]
-      }
-    ]
-  }
-};
 
 // --- Logic ---
 
@@ -1966,39 +1481,20 @@ const handleGenerateDynamicSymptom = async (name: string) => {
 };
 
 const applyReferenceFeedback = (payload: ReferenceFeedbackPayload) => {
-  const resolvedAction = payload.referenceType || payload.action;
-  const safePayload: ReferenceFeedbackPayload = {
-    ...payload,
-    action: resolvedAction,
-    referenceType: resolvedAction,
-    timestamp: payload.timestamp || Date.now(),
-  };
+  const safePayload = normalizeReferenceFeedbackPayload(payload);
   lastReferenceFeedback.value = safePayload;
   activeReferenceRequest.value =
     activeReferenceRequest.value?.requestId === safePayload.requestId
       ? { ...activeReferenceRequest.value, ...safePayload }
       : activeReferenceRequest.value;
 
-  const items =
-    (safePayload.items && safePayload.items.length > 0
-      ? safePayload.items
-      : activeReferenceRequest.value?.items) || [];
+  const items = resolveReferenceFeedbackItems(safePayload, activeReferenceRequest.value);
   if (items.length > 0) {
-    const feedbackEntry: ReferenceStatusEntry = {
-      status: safePayload.status,
-      requestId: safePayload.requestId,
-      message: safePayload.message,
-      updatedAt: safePayload.timestamp || Date.now(),
-    };
-    if (safePayload.action === 'batch') {
-      const nextMap = { ...referenceStatusMap.value };
-      items.forEach((item: ReferenceItemPayload) => {
-        nextMap[buildReferenceKey(item.type as ReferenceAction, item)] = feedbackEntry;
-      });
-      referenceStatusMap.value = nextMap;
-    } else {
-      setReferenceStatuses(safePayload.action, items, feedbackEntry);
-    }
+    setReferenceStatuses(
+      safePayload.action,
+      items,
+      buildReferenceStatusEntryFromFeedback(safePayload),
+    );
   }
 
   feedbackService.logOperation({
@@ -2022,87 +1518,51 @@ const applyReferenceFeedback = (payload: ReferenceFeedbackPayload) => {
 
 /* writeRecordToHIS / confirmDiagnosisSelection removed - template usage commented out */
 
-const getTreatmentTagLabel = (type: TreatmentRecommendation['type']): string => {
-  switch (type) {
-    case 'medicine':
-      return '药';
-    case 'exam':
-      return '查';
-    case 'lab_test':
-      return '验';
-    case 'procedure':
-      return '处';
-    default:
-      return '治';
-  }
-};
-
-const getMedicineInlineSummary = (rec: TreatmentRecommendation): string => {
-  const normalized = normalizeTreatmentRecommendation(rec);
-  const parts = [
-    normalized.dosage || normalized.dosageUnit ? `一次剂量 ${[normalized.dosage, normalized.dosageUnit].filter(Boolean).join(' ')}` : '',
-    normalized.frequency ? `频次 ${normalized.frequency}` : '',
-    normalized.route ? `用法 ${normalized.route}` : '',
-    normalized.days ? `天数 ${normalized.days}天` : '',
-    normalized.totalQty || normalized.totalUnit ? `总量 ${[normalized.totalQty, normalized.totalUnit].filter(Boolean).join(' ')}` : '',
-  ].filter(Boolean);
-
-  return parts.join(' / ');
-};
-
-function toggleReasonTooltip(key: string, event?: Event): void {
-  event?.stopPropagation();
-  activeReasonTooltipKey.value = activeReasonTooltipKey.value === key ? null : key;
-}
+const getMedicineInlineSummary = (rec: TreatmentRecommendation): string =>
+  buildMedicineInlineSummary({
+    recommendation: rec,
+    normalize: normalizeTreatmentRecommendation,
+  });
 
 function getDiagnosisFeedbackKey(diag: Diagnosis): string {
-  return getVoiceDiagnosisFeedbackKey(diag);
+  return getDiagnosisRecommendationFeedbackKey(diag);
 }
 
 function getTreatmentFeedbackKey(rec: TreatmentRecommendation): string {
-  return getVoiceTreatmentFeedbackKey(rec);
+  return getTreatmentRecommendationFeedbackKey(rec);
 }
 
 function getRecommendationDraft(recommendationKey: string): VoiceRecommendationFeedbackDraft {
-  return ensureRecommendationDraft(recommendationKey);
+  return recommendationFeedbackPopover.getDraft(recommendationKey);
 }
 
 function getRecommendationSubmittedLabel(recommendationKey: string): string {
-  return recommendationSubmittedMap.value[recommendationKey]?.actionLabel || '';
+  return recommendationFeedbackPopover.getSubmittedLabel(recommendationKey);
 }
 
 function isRecommendationFeedbackOpen(recommendationKey: string): boolean {
-  return activeFeedbackPopoverKey.value === recommendationKey;
+  return recommendationFeedbackPopover.isOpen(recommendationKey);
 }
 
 function toggleRecommendationFeedback(recommendationKey: string, event?: Event): void {
-  event?.stopPropagation();
-  activeFeedbackPopoverKey.value = activeFeedbackPopoverKey.value === recommendationKey ? null : recommendationKey;
+  recommendationFeedbackPopover.toggle(recommendationKey, event);
 }
 
-function buildDiagnosisFeedbackSnapshot(diag: Diagnosis): Record<string, unknown> {
+function isDiagnosisFeedbackSelected(diag: Diagnosis): boolean {
   const isSelected =
     (selectedDiagnosis.value?.id && diag.id && selectedDiagnosis.value.id === diag.id)
     || (selectedDiagnosis.value?.name === diag.name && selectedDiagnosis.value?.code === diag.code);
-
-  return buildSharedDiagnosisFeedbackSnapshot(diag, {
-    selected: isSelected,
-    primary: isSelected,
-  });
+  return isSelected;
 }
 
 async function handleDiagnosisFeedbackSubmit(diag: Diagnosis, draft: VoiceRecommendationFeedbackDraft): Promise<void> {
-  const recommendationKey = getDiagnosisFeedbackKey(diag);
+  const isSelected = isDiagnosisFeedbackSelected(diag);
   try {
-    await submitRecommendationFeedback({
-      recommendationKey,
-      recommendationTitle: diag.name,
-      draft,
-      snapshot: buildDiagnosisFeedbackSnapshot(diag),
-      fallbackTargetType: 'diagnosis',
-      fallbackRecommendationType: 'diagnosis',
-    });
-    activeFeedbackPopoverKey.value = null;
+    await submitRecommendationFeedback(buildDiagnosisRecommendationFeedbackSubmitPayload(diag, draft, {
+      selected: isSelected,
+      primary: isSelected,
+    }));
+    recommendationFeedbackPopover.close();
     showToast?.('诊断反馈已记录', 'success');
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
@@ -2111,17 +1571,9 @@ async function handleDiagnosisFeedbackSubmit(diag: Diagnosis, draft: VoiceRecomm
 }
 
 async function handleTreatmentFeedbackSubmit(rec: TreatmentRecommendation, draft: VoiceRecommendationFeedbackDraft): Promise<void> {
-  const recommendationKey = getTreatmentFeedbackKey(rec);
   try {
-    await submitRecommendationFeedback({
-      recommendationKey,
-      recommendationTitle: rec.name,
-      draft,
-      snapshot: buildTreatmentFeedbackSnapshot(rec),
-      fallbackTargetType: mapTreatmentTypeToTargetType(rec.type),
-      fallbackRecommendationType: mapTreatmentTypeToRecommendationType(rec.type),
-    });
-    activeFeedbackPopoverKey.value = null;
+    await submitRecommendationFeedback(buildTreatmentRecommendationFeedbackSubmitPayload(rec, draft));
+    recommendationFeedbackPopover.close();
     showToast?.('推荐反馈已记录', 'success');
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
@@ -2132,82 +1584,41 @@ async function handleTreatmentFeedbackSubmit(rec: TreatmentRecommendation, draft
 const isPendingReferenceItem = (
   action: ReferenceAction,
   item: { name: string; code?: string }
-): boolean => {
-  if (activeReferenceRequest.value?.status !== 'pending' || activeReferenceRequest.value.action !== action) {
-    return false;
-  }
-
-  return (activeReferenceRequest.value.items || []).some((pendingItem) =>
-    buildReferenceKey(action, pendingItem) === buildReferenceKey(action, item)
-  );
-};
+): boolean => isPendingReferenceItemInRequest(activeReferenceRequest.value, action, item);
 
 const getDiagnosisReferenceButtonLabel = (diagnosis: Diagnosis): string => {
   const status = getDiagnosisReferenceStatus(diagnosis)?.status;
-  if (status === 'success') {
-    return '已引用';
-  }
-  if (isPendingReferenceItem('diagnosis', { name: diagnosis.name, code: diagnosis.code })) {
-    return '等待回执...';
-  }
-  if (status === 'failed') {
-    return '重试引用';
-  }
-  return '引用诊断';
+  return getSymptomDiagnosisReferenceButtonLabel({
+    status,
+    pending: isPendingReferenceItem('diagnosis', { name: diagnosis.name, code: diagnosis.code }),
+  });
 };
 
-const getDiagRateClass = (rate: string | undefined): string => {
-  if (!rate) return '';
-  const num = parseInt(rate);
-  if (isNaN(num)) return '';
-  if (num >= 70) return 'rate-high';
-  if (num >= 60) return 'rate-medium';
-  return 'rate-low';
-};
+const getDiagRateClass = getDiagnosisRateClass;
 
 const isDiagnosisReferenceDisabled = (diagnosis: Diagnosis): boolean => {
   const status = getDiagnosisReferenceStatus(diagnosis)?.status;
-  return status === 'success' || hasPendingReferenceRequest.value;
+  return isSymptomDiagnosisReferenceDisabled({
+    status,
+    hasPendingReferenceRequest: hasPendingReferenceRequest.value,
+  });
 };
 
 const getTreatmentReferenceAction = (
   recommendation: TreatmentRecommendation
-): Exclude<ReferenceAction, 'diagnosis'> | null => {
-  if (recommendation.type === 'medicine') {
-    return 'medication';
-  }
-  if (recommendation.type === 'exam') {
-    return 'examination';
-  }
-  if (recommendation.type === 'lab_test') {
-    return 'lab_test';
-  }
-  if (recommendation.type === 'procedure') {
-    return 'procedure';
-  }
-  return null;
-};
+): Exclude<ReferenceAction, 'diagnosis'> | null =>
+  mapTreatmentTypeToReferenceAction(recommendation.type);
 
 /* getTreatmentReferenceButtonLabel removed - per-section reference replaced by batch 一键回写 */
 
-const getReferenceStatusLabel = (status: ReferenceLifecycleStatus): string => {
-  switch (status) {
-    case 'success':
-      return '已引用';
-    case 'failed':
-      return '引用失败';
-    default:
-      return '等待回执';
-  }
-};
+const getReferenceStatusLabel = (status: ReferenceLifecycleStatus): string =>
+  getSymptomReferenceStatusLabel(status);
 
 const getDiagnosisReferenceStatus = (diagnosis: Diagnosis): ReferenceStatusEntry | null =>
-  referenceStatusMap.value[
-    buildReferenceKey('diagnosis', {
-      name: diagnosis.name,
-      code: diagnosis.code,
-    })
-  ] || null;
+  getReferenceStatusFromMap(referenceStatusMap.value, 'diagnosis', {
+    name: diagnosis.name,
+    code: diagnosis.code,
+  });
 
 const getTreatmentReferenceStatus = (
   recommendation: TreatmentRecommendation
@@ -2217,12 +1628,10 @@ const getTreatmentReferenceStatus = (
     return null;
   }
 
-  return referenceStatusMap.value[
-    buildReferenceKey(action, {
-      name: recommendation.name,
-      code: recommendation.matchedItem?.code,
-    })
-  ] || null;
+  return getReferenceStatusFromMap(referenceStatusMap.value, action, {
+    name: recommendation.name,
+    code: recommendation.matchedItem?.code,
+  });
 };
 
 const requestReferenceToPHIS = async (
@@ -2234,10 +1643,10 @@ const requestReferenceToPHIS = async (
     return;
   }
 
-  const resolveItemAction = (item: ReferenceItemPayload): ReferenceAction =>
-    action === 'batch' ? (item.type as ReferenceAction) : action;
-  const existingSuccess = items.every(
-    (item) => referenceStatusMap.value[buildReferenceKey(resolveItemAction(item), item)]?.status === 'success'
+  const existingSuccess = areAllReferenceItemsSuccessful(
+    referenceStatusMap.value,
+    action,
+    items,
   );
   if (existingSuccess) {
     showToast('这些项目已经成功引用到 PHIS，无需重复操作。', 'info');
@@ -2274,35 +1683,13 @@ const requestReferenceToPHIS = async (
 
   try {
     await invoke('complete_consultation', { result: payload });
-    if (action === 'batch') {
-      const pendingEntry: ReferenceStatusEntry = {
-        status: 'pending',
-        requestId,
-        message: '等待 PHIS 保存引用结果',
-        updatedAt: Date.now(),
-      };
-      const nextMap = { ...referenceStatusMap.value };
-      items.forEach((item) => {
-        nextMap[buildReferenceKey(item.type as ReferenceAction, item)] = pendingEntry;
-      });
-      referenceStatusMap.value = nextMap;
-    } else {
-      setReferenceStatuses(action, items, {
-        status: 'pending',
-        requestId,
-        message: '等待 PHIS 保存引用结果',
-        updatedAt: Date.now(),
-      });
-    }
-    activeReferenceRequest.value = {
+    setReferenceStatuses(action, items, buildPendingReferenceStatusEntry(requestId));
+    activeReferenceRequest.value = buildReferenceRequestPayload({
       consultationId: resolveConsultationId(),
       requestId,
       action,
-      status: 'pending',
-      message: '等待 PHIS 保存引用结果',
       items,
-      timestamp: Date.now(),
-    };
+    });
     feedbackService.logOperation({
       module: 'consultation',
       action: `request_phis_reference_${action}`,
@@ -2370,26 +1757,13 @@ const symptomOrderResolvers: OrderItemResolvers = {
   getJsonField: (rec) => (rec.matchedItem?.jsonField || readFirstString(getMatchedItemRaw(rec), ['jsonField']) || '').trim(),
 };
 
-const getSelectedTreatments = (): TreatmentRecommendation[] => [
-  ...treatmentRecommendations.value,
-  ...examRecommendations.value,
-  ...labTestRecommendations.value,
-  ...procedureRecommendations.value,
-].filter((item) => item.selected);
-
-const getInventoryBlockedSubmitMessage = (items: TreatmentRecommendation[]): string => {
-  if (items.length === 0) {
-    return '存在库存不足的药品，请调整用药数量或药房后再提交';
-  }
-
-  const names = Array.from(new Set(items.map((item) => item.name).filter(Boolean)));
-  if (names.length === 1) {
-    return `${names[0]} 库存不足，请调整用药数量或药房后再提交`;
-  }
-
-  const preview = names.slice(0, 3).join('、');
-  return `${preview}${names.length > 3 ? ` 等${names.length}种药品` : ''}库存不足，请调整用药数量或药房后再提交`;
-};
+const getSelectedTreatments = (): TreatmentRecommendation[] =>
+  buildSelectedTreatments({
+    medicines: treatmentRecommendations.value,
+    examinations: examRecommendations.value,
+    labTests: labTestRecommendations.value,
+    procedures: procedureRecommendations.value,
+  });
 
 const ensureSelectedTreatmentsReadyForSubmit = async (selectedTreatments: TreatmentRecommendation[]): Promise<boolean> => {
   const missingPharmacy = selectedTreatments.find((item) => !treatmentGates.hasRequiredPharmacy(item));
@@ -2417,7 +1791,7 @@ const ensureSelectedTreatmentsReadyForSubmit = async (selectedTreatments: Treatm
     .map((item) => treatmentHydration.checkMedicineInventoryEnough(item, false)));
   const inventoryBlockedItems = selectedMedicines.filter((_, index) => !medicineInventoriesReady[index]);
   if (inventoryBlockedItems.length > 0) {
-    showToast(getInventoryBlockedSubmitMessage(inventoryBlockedItems), 'info');
+    showToast(buildInventoryBlockedSubmitMessage(inventoryBlockedItems), 'info');
     return false;
   }
 
@@ -2453,14 +1827,7 @@ const submitToHIS = async () => {
     patientTetId: (patientInfo.value as unknown as { idTet?: string }).idTet || '',
   });
   const orderList = selectedTreatments.map((item) => buildSharedOrderListItem(item, symptomOrderResolvers));
-  const groupNames = (type: TreatmentRecommendation['type']) =>
-    selectedTreatments.filter((item) => item.type === type).map((item) => item.name);
-  const treatmentPlan = [
-    groupNames('medicine').length ? `用药：${groupNames('medicine').join('；')}` : '',
-    groupNames('exam').length ? `检查：${groupNames('exam').join('；')}` : '',
-    groupNames('lab_test').length ? `检验：${groupNames('lab_test').join('；')}` : '',
-    groupNames('procedure').length ? `处置：${groupNames('procedure').join('；')}` : '',
-  ].filter(Boolean).join('。');
+  const treatmentPlan = buildTreatmentPlanSummary(selectedTreatments);
 
   const result = buildRecordConfirmedPayload({
     consultationId,
@@ -2527,58 +1894,35 @@ const handleDiagnosisDifferential = async (diag: Diagnosis) => {
   showToast('当前诊断暂无待确认的鉴别排查项。', 'info');
 };
 
-const removeSymptom = (symptom: any) => {
-  trackClick('symptom_remove', { symptomKey: symptom.key, symptomName: symptom.name });
-  const index = selectedSymptoms.value.findIndex(s => s.key === symptom.key);
-  if (index !== -1) {
-    selectedSymptoms.value.splice(index, 1);
-  }
-};
-
-const toggleCategoryDropdown = () => {
-  isCategoryDropdownOpen.value = !isCategoryDropdownOpen.value;
-};
-
-const toggleCategory = (key: string) => {
-  if (key === 'all') {
-    selectedCategories.value = [];
-  } else {
-    const index = selectedCategories.value.indexOf(key);
-    if (index !== -1) {
-      selectedCategories.value.splice(index, 1);
-    } else {
-      selectedCategories.value.push(key);
-    }
-  }
-};
-
-const categoryButtonText = computed(() => {
-  if (selectedCategories.value.length === 0) return '全部系统';
-  if (selectedCategories.value.length === 1) {
-    const cat = uniqueCategories.value.find(c => c.key === selectedCategories.value[0]);
-    return cat ? cat.label : selectedCategories.value[0];
-  }
-  return `已选 ${selectedCategories.value.length} 项`;
+useOutsideInteraction({
+  targets: [
+    {
+      isActive: activeReasonTooltipKey,
+      selectors: ['.reason-tooltip-trigger'],
+      onOutside: closeReasonTooltip,
+    },
+    {
+      isActive: () => Boolean(recommendationFeedbackPopover.activeKey.value),
+      selectors: ['.voice-feedback-anchor'],
+      onOutside: recommendationFeedbackPopover.close,
+    },
+    {
+      isActive: isCategoryDropdownOpen,
+      elements: [categoryFilterRef],
+      onOutside: closeCategoryDropdown,
+    },
+  ],
 });
 
-const handleClickOutside = (event: MouseEvent) => {
-  const target = event.target as HTMLElement | null;
-
-  if (activeReasonTooltipKey.value && !target?.closest('.reason-tooltip-trigger')) {
-    activeReasonTooltipKey.value = null;
-  }
-
-  if (activeFeedbackPopoverKey.value && !target?.closest('.voice-feedback-anchor')) {
-    activeFeedbackPopoverKey.value = null;
-  }
-
-  if (categoryFilterRef.value && !categoryFilterRef.value.contains(event.target as Node)) {
-    isCategoryDropdownOpen.value = false;
-  }
-};
+useConsultationReferenceFeedbackListener<ReferenceFeedbackPayload>({
+  resolveConsultationId,
+  logContext: 'ConsultationPage',
+  onFeedback: (payload) => {
+    applyReferenceFeedback(payload);
+  },
+});
 
 onMounted(() => {
-  document.addEventListener('click', handleClickOutside);
   const restoredSnapshot = symptomCacheSession.restoreCachedSnapshot();
   if (!restoredSnapshot) {
     symptoms.value = currentTemplatesData.value;
@@ -2603,367 +1947,70 @@ onMounted(() => {
   void ensureTreatmentDictionaryStateReady().catch((error) => {
     console.warn('[ConsultationPage] Failed to preload treatment dictionaries:', error);
   });
-
-  void listen<ReferenceFeedbackPayload>('consultation-reference-feedback', (event) => {
-    const payload = event.payload;
-    if (
-      payload.consultationId &&
-      payload.consultationId !== resolveConsultationId()
-    ) {
-      return;
-    }
-    applyReferenceFeedback(payload);
-  })
-    .then((unlisten) => {
-      unlistenReferenceFeedback = unlisten;
-    })
-    .catch((error) => {
-      console.error('[ConsultationPage] Failed to subscribe reference feedback:', error);
-    });
 });
 
 // 监听问诊模式变化，切换模板
 watch(consultationMode, () => {
   symptoms.value = currentTemplatesData.value;
   // 清空已选症状，因为不同模板的症状可能不兼容
-  selectedSymptoms.value = [];
-  formData.value = {};
+  clearSymptomSelection();
   initFormData(generalConditionConfig);
 });
 
 onUnmounted(() => {
   symptomCacheSession.persistSnapshot();
   symptomCacheSession.stop();
-  document.removeEventListener('click', handleClickOutside);
-  if (unlistenReferenceFeedback) {
-    unlistenReferenceFeedback();
-    unlistenReferenceFeedback = null;
-  }
 });
 
 // Removed the automatic selectionMode switch watcher since we use v-if="!searchQuery.trim()" to hide tabs
 
-const filteredSymptoms = computed(() => {
-  let result = symptoms.value;
-
-  // 1. Filter by Category (Only if NOT searching globally)
-  if (!searchQuery.value && selectedCategories.value.length > 0) {
-    result = result.filter((s: any) => 
-      s.systemCategory && 
-      Array.isArray(s.systemCategory) && 
-      s.systemCategory.some((c: string) => selectedCategories.value.includes(c))
-    );
-  }
-
-  // 2. Filter by Gender (Always Execute)
-  const currentGender = getPatientContextGenderCode(patientInfo.value as any);
-  if (currentGender) {
-    const compatibleGenders = currentGender === 'M'
-      ? ['M', '1']
-      : currentGender === 'F'
-        ? ['F', '2']
-        : [currentGender];
-    result = result.filter((s: any) => {
-      // Assuming 's.applicablePopulation' structure is now standardized
-      if (!s.applicablePopulation?.genders || s.applicablePopulation.genders.length === 0) {
-        return true;
-      }
-      return compatibleGenders.some((gender) => s.applicablePopulation.genders.includes(gender));
-    });
-  }
-
-  // 3. Filter by Search Query
-  if (!searchQuery.value) return result;
-  
-  const query = searchQuery.value.toLowerCase();
-  return result.filter((s: any) => {
-    const name = s.name.toLowerCase();
-    if (name.includes(query)) return true;
-    
-    // Pinyin support
-    if (Pinyin.isSupported()) {
-       const pinyinFull = Pinyin.convertToPinyin(s.name, '', true); // "fare"
-       if (pinyinFull.includes(query)) return true;
-       
-       const pinyinInitials = Pinyin.convertToPinyin(s.name, ' ', true).split(' ').map((char: string) => char[0]).join(''); // "fr"
-       if (pinyinInitials.includes(query)) return true;
-    }
-    
-    return false;
-  });
-});
-
-// Computed list of all items to render (Selected Symptoms + TCM Inquiry / General Condition)
-const renderList = computed(() => {
-  if (selectedSymptoms.value.length === 0) return [];
-  const list = [...selectedSymptoms.value];
-  if (consultationMode.value === 'tcm') {
-    // Initialize TCM data if needed
-    if (!formData.value[tcmInquiryConfig.key]) {
-      initFormData(tcmInquiryConfig);
-    }
-    // Clear general condition data when in TCM mode
-    if (formData.value['general']) {
-      delete formData.value['general'];
-    }
-    list.push(tcmInquiryConfig);
-  } else {
-    // For western medicine, add general condition inquiry
-    // Initialize general condition data if needed
-    if (!formData.value[generalConditionConfig.key]) {
-      initFormData(generalConditionConfig);
-    }
-    // Clear TCM signs data when in Western mode
-    if (formData.value['tcm_signs']) {
-      delete formData.value['tcm_signs'];
-    }
-    list.push(generalConditionConfig);
-  }
-  return list;
-});
-
-const selectSymptom = (symptom: any) => {
-  const index = selectedSymptoms.value.findIndex(s => s.key === symptom.key);
-  if (index !== -1) {
-    // Deselect
-    trackClick('symptom_deselect', { symptomKey: symptom.key, symptomName: symptom.name });
-    selectedSymptoms.value.splice(index, 1);
-  } else {
-    // Select
-    if (isSymptomSelectionFull(selectedSymptoms.value.length)) {
-      showToast(`最多只能选择 ${CONSULTATION_CONFIG.MAX_SYMPTOMS} 个症状`, 'info');
-      return;
-    }
-    trackClick('symptom_select', { symptomKey: symptom.key, symptomName: symptom.name, totalSelected: selectedSymptoms.value.length + 1 });
-    selectedSymptoms.value.push(symptom);
-    // 从伴随症状中移除（已升级为详细问诊）
-    if (companionSymptoms.value.has(symptom.key)) {
-      const newSet = new Set(companionSymptoms.value);
-      newSet.delete(symptom.key);
-      companionSymptoms.value = newSet;
-    }
-    // Initialize form data if not exists
-    if (!formData.value[symptom.key]) {
-      initFormData(symptom);
-    }
-  }
-};
-
-const initFormData = (configItem: any) => {
-  const data: Record<string, any> = {};
-  if (configItem && configItem.config && configItem.config.sections) {
-      configItem.config.sections.forEach((section: any) => {
-        section.fields.forEach((field: any) => {
-          // 兼容中医和西医模板：优先使用 storageKey，回退到 key
-          const fieldKey = field.storageKey || field.key;
-          if (!fieldKey) return;
-
-          if (field.type === 'input_radio') {
-            data[fieldKey] = { inputValue: '', radioValue: '' };
-          } else if (field.type === 'checkbox') {
-            data[fieldKey] = [];
-          } else {
-            // Set default value for General Condition or if explicitly requested
-            if (configItem.key === 'general' && field.props?.options?.length > 0) {
-              data[fieldKey] = field.props.options[0];
-            } else {
-              data[fieldKey] = '';
-            }
-          }
-        });
-      });
-      // Use reactive set
-      formData.value[configItem.key] = data;
-  }
-};
-
 const handleCheckboxChange = (event: Event, field: any, symptomKey: string) => {
   const target = event.target as HTMLInputElement;
-  const value = target.value;
   // 兼容中医和西医模板
-  const fieldKey = field.storageKey || field.key;
+  const fieldKey = getSymptomFieldKey(field);
   const currentValues = formData.value[symptomKey][fieldKey] || [];
-  
-  if (target.checked) {
-    let newValues = [...currentValues, value];
-    
-    if (field.props.mutualExclusions) {
-      const myGroup = field.props.mutualExclusions.find((g: string[]) => g.includes(value));
-      if (myGroup) {
-           const otherGroups = field.props.mutualExclusions.filter((g: string[]) => g !== myGroup);
-           const allOtherValues = otherGroups.flat();
-           newValues = newValues.filter((v: string) => !allOtherValues.includes(v));
-      }
-    }
-    
-    formData.value[symptomKey][field.storageKey] = newValues;
-  } else {
-    formData.value[symptomKey][field.storageKey] = currentValues.filter((v: string) => v !== value);
-  }
+
+  formData.value[symptomKey][fieldKey] = applyCheckboxFieldChange({
+    currentValues,
+    value: target.value,
+    checked: target.checked,
+    mutualExclusions: field.props?.mutualExclusions,
+  });
 };
 
 const validationErrors = ref<Record<string, boolean>>({});
 
 // Knowledge Base Search Functions
 const searchKnowledgeBaseForDiagnoses = async (diagnoses: Diagnosis[]) => {
-  if (!isPMPHAIConfigured() || diagnoses.length === 0) {
-    return;
-  }
-
-  knowledgeLoading.value = true;
-  hasKnowledgeResults.value = false;
-
-  try {
-    const diagnosisNames = diagnoses.map(d => d.name).filter(Boolean);
-    const results = await pmphaiService.batchSearch(diagnosisNames, { limit: 3, enableAbstract: true });
-
-    knowledgeResults.value = {
-      diagnoses: results,
-      medications: new Map(),
-      examinations: new Map(),
-    };
-
-    const totalResults = Array.from(results.values()).flat().length;
-    hasKnowledgeResults.value = totalResults > 0;
-
-    if (hasKnowledgeResults.value) {
-      showKnowledgePanel.value = true;
-      trackClick('knowledge_search_diagnoses', { totalResults });
-    }
-  } catch (error) {
-    console.error('Knowledge base search failed:', error);
-    trackError('knowledge_search_failed', error);
-  } finally {
-    knowledgeLoading.value = false;
-  }
+  await searchKnowledgeByDiagnoses({
+    diagnoses,
+    action: 'knowledge_search_diagnoses',
+  });
 };
 
 // (Unused warning suppressed: this function is prepared for future manual triggering)
 // (Unused warning suppressed: this function is prepared for future manual triggering)
 // @ts-ignore
 const searchKnowledgeBaseForTreatment = async (medications: string[], examinations: string[]) => {
-  if (!isPMPHAIConfigured()) {
-    return;
-  }
-
-  knowledgeLoading.value = true;
-
-  try {
-    const [medResults, examResults] = await Promise.all([
-      pmphaiService.batchSearch(medications, { limit: 3, enableAbstract: true }),
-      pmphaiService.batchSearch(examinations, { limit: 3, enableAbstract: true }),
-    ]);
-
-    // Merge with existing diagnosis results
-    knowledgeResults.value = {
-      ...knowledgeResults.value,
-      medications: medResults,
-      examinations: examResults,
-    };
-
-    const totalResults =
-      Array.from(knowledgeResults.value.diagnoses.values()).flat().length +
-      Array.from(medResults.values()).flat().length +
-      Array.from(examResults.values()).flat().length;
-
-    hasKnowledgeResults.value = totalResults > 0;
-
-    if (hasKnowledgeResults.value && !showKnowledgePanel.value) {
-      trackClick('knowledge_search_treatment', { totalResults });
-    }
-  } catch (error) {
-    console.error('Knowledge base search failed:', error);
-    trackError('knowledge_search_failed', error);
-  } finally {
-    knowledgeLoading.value = false;
-  }
-};
-
-const toggleKnowledgePanel = () => {
-  showKnowledgePanel.value = !showKnowledgePanel.value;
-  trackClick('knowledge_panel_toggle', { visible: showKnowledgePanel.value });
+  await searchKnowledgeByTreatment({
+    medications,
+    examinations,
+    action: 'knowledge_search_treatment',
+  });
 };
 
 // @ts-ignore
 const searchKnowledgeForRecommendations = async () => {
-  if (!isPMPHAIConfigured()) {
-    return;
-  }
-
-  knowledgeLoading.value = true;
-  hasKnowledgeResults.value = false;
-
-  try {
-    // Extract search queries from current AI recommendations
-    const diagnoses = aiDiagnoses.value.map(d => d.name).filter(Boolean);
-    const medications: string[] = [];
-    const examinations: string[] = [];
-
-    treatmentRecommendations.value.forEach(rec => {
-      if (rec.type === 'medicine' && rec.name) {
-        medications.push(rec.name);
-      } else if (rec.type === 'exam' && rec.name) {
-        examinations.push(rec.name);
-      }
-    });
-
-    // Search knowledge base by categories
-    const results = await pmphaiService.searchByCategories(diagnoses, medications, examinations, {
-      trackUsage: true,
-    });
-    knowledgeResults.value = results;
-
-    // Check if we have any results
-    const totalResults =
-      Array.from(results.diagnoses.values()).flat().length +
-      Array.from(results.medications.values()).flat().length +
-      Array.from(results.examinations.values()).flat().length;
-
-    hasKnowledgeResults.value = totalResults > 0;
-
-    if (hasKnowledgeResults.value && !showKnowledgePanel.value) {
-      trackClick('knowledge_search_all', { totalResults });
-      showKnowledgePanel.value = true;
-    }
-  } catch (error) {
-    console.error('Knowledge base search failed:', error);
-    trackError('knowledge_search_failed', error);
-  } finally {
-    knowledgeLoading.value = false;
-  }
+  await searchKnowledgeFromItems({
+    diagnoses: aiDiagnoses.value,
+    treatments: treatmentRecommendations.value,
+    action: 'knowledge_search_all',
+  });
 };
 
 // Search literature for a specific item (diagnosis or treatment)
 const searchLiterature = (item: any) => {
-  const itemName = item.name || '';
-  if (!itemName) {
-    return;
-  }
-
-  if (!isPMPHAIConfigured()) {
-    showToast('请先在设置中配置知识库', 'error');
-    return;
-  }
-
-  // 设置搜索关键词和类型
-  knowledgeSearchKeyword.value = itemName;
-
-  // 根据条目类型确定搜索类型
-  if (item.type === 'medicine') {
-    knowledgeSearchType.value = 'medication';
-  } else if (item.type === 'exam') {
-    knowledgeSearchType.value = 'examination';
-  } else {
-    knowledgeSearchType.value = 'diagnosis';
-  }
-
-  // 打开知识面板
-  showKnowledgePanel.value = true;
-
-  trackClick('knowledge_search_item', {
-    itemName,
-    type: knowledgeSearchType.value
-  });
+  searchKnowledgeForItem({ item });
 };
 
 const handleEndConsultation = async () => {
@@ -2972,60 +2019,21 @@ const handleEndConsultation = async () => {
   assistFocus.value = null;
 
   // 1. Validation
-  const errors: string[] = [];
-  validationErrors.value = {}; // Reset errors
-  let firstErrorFieldId = '';
-
-  selectedSymptoms.value.forEach(s => {
-    const data = formData.value[s.key];
-    
-    // Generic Validation based on 'required' config
-    if (s.config && s.config.sections) {
-      s.config.sections.forEach((section: any) => {
-        // Check section applicability (optional, simplified to field check)
-        section.fields.forEach((field: any) => {
-          // Only validate applicable fields
-          if (isFieldApplicable(field, patientInfo.value) && field.required) {
-            const val = data[field.storageKey];
-            let isEmpty = false;
-
-            if (val === undefined || val === null || val === '') {
-              isEmpty = true;
-            } else if (Array.isArray(val)) {
-              isEmpty = val.length === 0;
-            } else if (typeof val === 'object') {
-              // input_radio or specialized objects
-               if ('inputValue' in val || 'radioValue' in val) {
-                 // For input_radio, usually both needed? Or at least one?
-                 // Typically input_radio logic is combined. Let's strict check if partial emptiness is allowed.
-                 // If "required", usually implies complete.
-                 if (!val.inputValue && !val.radioValue) isEmpty = true; 
-                 // If only one part is present? 
-                 // Let's assume if it has inputValue but no unit (radioValue), it's incomplete if required?
-                 // Previous hardcode was (!inputValue || !radioValue).
-                 else if (field.type === 'input_radio' && (!val.inputValue || !val.radioValue)) isEmpty = true;
-               } 
-            }
-
-            if (isEmpty) {
-              errors.push(`${s.name}: ${field.label} 为必填项`);
-              const errorId = `${s.key}_${field.storageKey}`;
-              validationErrors.value[errorId] = true;
-              if (!firstErrorFieldId) firstErrorFieldId = `field-${s.key}-${field.storageKey}`;
-            }
-          }
-        });
-      });
-    }
+  const validationResult = buildConsultationFormValidationResult({
+    selectedSymptoms: selectedSymptoms.value,
+    formData: formData.value,
+    patientInfo: patientInfo.value,
+    isFieldApplicable: (field, currentPatientInfo) => isFieldApplicable(field, currentPatientInfo as any),
   });
+  validationErrors.value = validationResult.validationErrors;
 
-  if (errors.length > 0) {
-    trackError('record_validation_failed', new Error(errors.join('; ')));
-    showToast("请完善以下信息：" + errors.join("; "), "error");
+  if (validationResult.errors.length > 0) {
+    trackError('record_validation_failed', new Error(validationResult.errors.join('; ')));
+    showToast("请完善以下信息：" + validationResult.errors.join("; "), "error");
 
     // Scroll to first error
-    if (firstErrorFieldId) {
-      const element = document.getElementById(firstErrorFieldId);
+    if (validationResult.firstErrorFieldId) {
+      const element = document.getElementById(validationResult.firstErrorFieldId);
       if (element) {
         element.scrollIntoView({ behavior: 'smooth', block: 'center' });
       }
@@ -3058,85 +2066,13 @@ const handleEndConsultation = async () => {
 
 const parseLLMJson = (text: string): any => {
   try {
-    const jsonStr = extractLLMJsonCandidate(text);
-    const parsed = JSON.parse(jsonStr);
+    const parsed = parseSymptomLLMJson(text);
     console.log('[parseLLMJson] Successfully parsed:', parsed);
     return parsed;
   } catch (err) {
     console.error('[parseLLMJson] Failed to parse JSON:', text, err);
-    throw new Error(`JSON解析失败: ${err instanceof Error ? err.message : String(err)}`);
+    throw err;
   }
-};
-
-const cleanLLMJsonEnvelope = (text: string): string => text
-  .replace(/^\uFEFF/, '')
-  .replace(/```json\s*/gi, '```')
-  .replace(/```/g, '')
-  .trim();
-
-const findBalancedJsonCandidate = (text: string, start: number, openChar: '{' | '[', closeChar: '}' | ']'): string | null => {
-  let depth = 0;
-  let inString = false;
-  let escaped = false;
-
-  for (let i = start; i < text.length; i += 1) {
-    const char = text[i];
-
-    if (inString) {
-      if (escaped) {
-        escaped = false;
-      } else if (char === '\\') {
-        escaped = true;
-      } else if (char === '"') {
-        inString = false;
-      }
-      continue;
-    }
-
-    if (char === '"') {
-      inString = true;
-      continue;
-    }
-
-    if (char === openChar) {
-      depth += 1;
-    } else if (char === closeChar) {
-      depth -= 1;
-      if (depth === 0) {
-        return text.slice(start, i + 1);
-      }
-    }
-  }
-
-  return null;
-};
-
-const extractLLMJsonCandidate = (text: string): string => {
-  const cleaned = cleanLLMJsonEnvelope(text);
-  const candidates: Array<{ start: number; json: string }> = [];
-
-  for (let i = 0; i < cleaned.length; i += 1) {
-    const char = cleaned[i];
-    if (char === '[') {
-      const json = findBalancedJsonCandidate(cleaned, i, '[', ']');
-      if (json) candidates.push({ start: i, json });
-    } else if (char === '{') {
-      const json = findBalancedJsonCandidate(cleaned, i, '{', '}');
-      if (json) candidates.push({ start: i, json });
-    }
-  }
-
-  candidates.sort((a, b) => a.start - b.start);
-  for (const candidate of candidates) {
-    try {
-      JSON.parse(candidate.json);
-      return candidate.json;
-    } catch {
-      // Try the next balanced block; explanatory text may contain brackets.
-    }
-  }
-
-  return candidates[0]?.json || cleaned;
 };
 
 const buildConsultationTraceConfig = (
@@ -3166,32 +2102,7 @@ const fetchAIDiagnosis = async (options?: { trackSmartConsultation?: boolean }) 
 
     if (consultationMode.value === 'tcm') {
       // TCM Diagnosis Logic
-      // Collect TCM signs dynamically from all sections
-      const tcmData = formData.value['tcm_signs'] || {};
-      console.log('[TCM Debug] TCM formData:', tcmData);
-      const signs: string[] = [];
-
-      // Iterate through all sections and fields in tcmInquiryConfig
-      tcmInquiryConfig.config.sections.forEach(section => {
-        const sectionSigns: string[] = [];
-        section.fields.forEach(field => {
-          const value = tcmData[field.storageKey];
-          if (value) {
-            if (Array.isArray(value) && value.length > 0) {
-              // For checkbox fields
-              sectionSigns.push(`${field.label}：${value.join('、')}`);
-            } else if (typeof value === 'string' && value.trim() !== '') {
-              // For radio and input fields
-              sectionSigns.push(`${field.label}：${value}`);
-            }
-          }
-        });
-        if (sectionSigns.length > 0) {
-          signs.push(`【${section.title}】${sectionSigns.join('，')}`);
-        }
-      });
-
-      const tcmSignsText = signs.length > 0 ? signs.join('\n') : '未填写详细四诊信息';
+      const tcmSignsText = buildTcmSignsPromptText(tcmInquiryConfig, formData.value['tcm_signs']);
       console.log('[TCM Debug] Collected TCM Signs:', tcmSignsText);
 
       const userPrompt = PROMPTS.consultation.tcmDiagnosisRecommendation.buildUserPrompt({
@@ -3227,31 +2138,24 @@ const fetchAIDiagnosis = async (options?: { trackSmartConsultation?: boolean }) 
       console.timeEnd('[AI分析] 2. LLM 请求 (中医)');
     } else {
       // Western Medicine Logic (Existing)
-      const userPrompt = PROMPTS.consultation.diagnosisRecommendation.buildUserPrompt({
+      const requestSpec = buildClinicalResultDiagnosisRequestSpec({
         patientName: patientPromptProfile.value.patientName,
         gender: patientPromptProfile.value.gender,
         age: patientPromptProfile.value.age,
         chiefComplaint: generatedRecord.value.chiefComplaint,
         historyOfPresentIllness: generatedRecord.value.historyOfPresentIllness
+      }, PROMPTS.consultation.diagnosisRecommendation, {
+        sourceModule: 'consultation_ai',
+        operationModule: 'consultation',
+      }, {
+        scene: 'consultation-diagnosis',
+        title: '生成西医诊断推荐',
       });
       
       console.timeEnd('[AI分析] 1. 构建提示词');
       console.time('[AI分析] 2. LLM 请求 (西医)');
 
-      fullResponse = await chat([
-        {
-          role: 'system',
-          content: PROMPTS.consultation.diagnosisRecommendation.system
-        },
-        {
-          role: 'user',
-          content: userPrompt
-        }
-      ], undefined, undefined, undefined, buildConsultationTraceConfig(
-        'generate_diagnosis_recommendation',
-        '生成西医诊断推荐',
-        'consultation-diagnosis'
-      ));
+      fullResponse = await chat(requestSpec.messages, undefined, undefined, undefined, requestSpec.config);
       console.timeEnd('[AI分析] 2. LLM 请求 (西医)');
     }
     const latencyMs = Date.now() - startTime;
@@ -3259,96 +2163,16 @@ const fetchAIDiagnosis = async (options?: { trackSmartConsultation?: boolean }) 
     console.time('[AI分析] 3. 解析数据和匹配标准词典');
     console.log('[TCM Debug] Parsing LLM response...');
     // Clean up response if it contains markdown code blocks
-    let diagnoses: Diagnosis[] = parseLLMJson(fullResponse);
-    console.log('[TCM Debug] Parsed diagnoses:', diagnoses);
+    const rawDiagnoses: Diagnosis[] = parseLLMJson(fullResponse);
+    console.log('[TCM Debug] Parsed diagnoses:', rawDiagnoses);
 
-    // Match against local catalog to get system ID
-    if (consultationMode.value !== 'tcm') {
-      // Western medicine diagnosis matching
-      diagnoses = diagnoses.map(d => {
-        const matchContext = d.code ? { icdCode: d.code } : undefined;
-
-        let matched = medicalDataService.matchDiagnosis(d.code);
-
-        if (!matched) {
-          matched = medicalDataService.matchDiagnosis(d.name, matchContext);
-        }
-
-        if (matched) {
-          return {
-            ...d,
-            id: matched.id,
-            code: matched.code, // Use local standard code (e.g. R50.9 -> R50.900)
-            name: matched.name  // Use local standard name
-          };
-        }
-
-        return {
-          ...d,
-          id: undefined
-        };
-      });
-    } else {
-      // TCM diagnosis matching
-      diagnoses = diagnoses.map((d, index) => {
-        // Try matching disease by code first
-        let matched = medicalDataService.matchTCMDiagnosis(d.code);
-
-        // If no code match, try matching by name
-        if (!matched) {
-          matched = medicalDataService.matchTCMDiagnosis(d.name);
-        }
-
-        const result: any = {
-          ...d,
-          isTCM: true // 标记为中医诊断
-        };
-
-        if (matched) {
-          result.id = matched.id;
-          result.code = matched.code; // Use local standard code
-          result.name = matched.name; // Use local standard name
-        } else {
-          // No match found - keep original data but add pseudo-code for tracking
-          result.code = d.code || `TCM${String(index + 1).padStart(3, '0')}`;
-          result.id = undefined;
-        }
-
-        // Match TCM syndrome (证候)
-        if (d.syndrome) {
-          const syndromeMatch = medicalDataService.matchTCMSyndrome(d.syndrome);
-          if (syndromeMatch) {
-            result.syndrome = syndromeMatch.name;
-            result.syndromeCode = syndromeMatch.code;
-            result.syndromeMatched = true;
-          } else {
-            result.syndrome = d.syndrome;
-            result.syndromeMatched = false;
-          }
-        }
-
-        // Match TCM treatment (治法)
-        if (d.treatment) {
-          const treatmentMatch = medicalDataService.matchTCMTreatment(d.treatment);
-          if (treatmentMatch) {
-            result.treatment = treatmentMatch.name;
-            result.treatmentCode = treatmentMatch.code;
-            result.treatmentMatched = true;
-          } else {
-            result.treatment = d.treatment;
-            result.treatmentMatched = false;
-          }
-        }
-
-        return result;
-      });
-    }
-
-    // Sort by rate descending
-    diagnoses.sort((a, b) => {
-      const rateA = parseFloat(a.rate.replace('%', '')) || 0;
-      const rateB = parseFloat(b.rate.replace('%', '')) || 0;
-      return rateB - rateA;
+    const diagnoses = buildDiagnosisRecommendationsFromRaw({
+      rawDiagnoses,
+      mode: consultationMode.value === 'tcm' ? 'tcm' : 'western',
+      matchDiagnosis: (query, context) => medicalDataService.matchDiagnosis(query, context),
+      matchTCMDiagnosis: (query) => medicalDataService.matchTCMDiagnosis(query),
+      matchTCMSyndrome: (query) => medicalDataService.matchTCMSyndrome(query),
+      matchTCMTreatment: (query) => medicalDataService.matchTCMTreatment(query),
     });
 
     if (requestSeq !== aiDiagnosisRequestSeq) {
@@ -3367,28 +2191,14 @@ const fetchAIDiagnosis = async (options?: { trackSmartConsultation?: boolean }) 
 
     // Save diagnosis recommendations to database
     try {
-      for (const diagnosis of diagnoses) {
-        const recommendationId = await feedbackService.saveRecommendation({
-          recType: 'diagnosis',
-          content: JSON.stringify(diagnosis),
-          matched: !!diagnosis.id,
-          matchConfidence: diagnosis.id ? 1.0 : 0.0,
-          latencyMs,
-        });
-        registerExternalRecommendationTarget({
-          recommendationKey: getDiagnosisFeedbackKey(diagnosis),
-          targetId: recommendationId,
-          targetType: 'diagnosis',
-          recommendationType: 'diagnosis',
-        });
-      }
-
-      // Record performance metric
-      await feedbackService.recordMetric({
-        metricType: 'llm_latency',
-        metricValue: latencyMs,
-        unit: 'ms',
-        context: { operation: 'diagnosis_recommendation' }
+      await registerDiagnosisRecommendationFeedbackTargets({
+        recommendations: diagnoses,
+        latencyMs,
+        saveRecommendation: (rec) => feedbackService.saveRecommendation(rec),
+        registerTarget: registerExternalRecommendationTarget,
+        getRecommendationKey: getDiagnosisFeedbackKey,
+        recordMetric: (metric) => feedbackService.recordMetric(metric),
+        metricContext: { operation: 'diagnosis_recommendation' },
       });
     } catch (err) {
       console.error('[ConsultationPage] Failed to save diagnosis recommendations:', err);
@@ -3416,139 +2226,74 @@ const fetchAIDiagnosis = async (options?: { trackSmartConsultation?: boolean }) 
   }
 };
 
-// Helper function to deduplicate issues
-const deduplicateIssues = (issues: FactCheckIssue[]): FactCheckIssue[] => {
-  const seen = new Set<string>();
-  return issues.filter(issue => {
-    // Create a unique key based on content and issue description
-    const key = `${issue.content || ''}-${issue.issue}`;
-    if (seen.has(key)) {
-      return false;
-    }
-    seen.add(key);
-    return true;
+const performDiagnosisFactCheck = async (diagnoses: Diagnosis[]) => {
+  await runDiagnosisFactCheck<FactCheckResult, FactCheckIssue>({
+    diagnoses,
+    enabled: isReviewerEnabled(),
+    recordText: {
+      chiefComplaint: generatedRecord.value.chiefComplaint,
+      historyOfPresentIllness: generatedRecord.value.historyOfPresentIllness,
+      tcmFourExaminations: generatedRecord.value.tcmFourExaminations,
+    },
+    existingIssues: factCheckWidgetIssues.value,
+    checkDiagnosis,
+    checkTCMDiagnosis,
+    clearResults: () => diagnosisFactChecks.value.clear(),
+    setResult: (diagnosisCode, result) => diagnosisFactChecks.value.set(diagnosisCode, result),
+    setWidgetChecking: (totalCount) => {
+      showFactCheckWidget.value = true;
+      factCheckWidgetStatus.value = 'checking';
+      factCheckTotalCount.value = totalCount;
+      factCheckCheckedCount.value = 0;
+      factCheckProgress.value = 0;
+    },
+    setProgress: (checkedCount, progress) => {
+      factCheckCheckedCount.value = checkedCount;
+      factCheckProgress.value = progress;
+    },
+    setCompleted: (issues) => {
+      factCheckWidgetIssues.value = issues;
+      factCheckWidgetStatus.value = 'completed';
+    },
+    onError: (diagnosis, error) => {
+      console.error(`Failed to fact check diagnosis: ${diagnosis.name}`, error);
+    },
   });
 };
 
-const performDiagnosisFactCheck = async (diagnoses: Diagnosis[]) => {
-  if (!diagnoses || diagnoses.length === 0) return;
-  if (!isReviewerEnabled()) return;
-
-  showFactCheckWidget.value = true;
-  factCheckWidgetStatus.value = 'checking';
-  factCheckTotalCount.value = diagnoses.length;
-  factCheckCheckedCount.value = 0;
-  factCheckProgress.value = 0;
-
-  diagnosisFactChecks.value.clear();
-
-  const allIssues: FactCheckIssue[] = [];
-
-  for (let i = 0; i < diagnoses.length; i++) {
-    const diagnosis = diagnoses[i];
-
-    try {
-      const result = diagnosis.isTCM
-        ? await checkTCMDiagnosis({
-            diagnosis:
-              diagnosis.syndrome && diagnosis.syndrome.trim().length > 0
-                ? `${diagnosis.name}-${diagnosis.syndrome}`
-                : diagnosis.name,
-            chiefComplaint: generatedRecord.value.chiefComplaint,
-            historyOfPresentIllness: generatedRecord.value.historyOfPresentIllness,
-            tcmFourExaminations: generatedRecord.value.tcmFourExaminations,
-          })
-        : await checkDiagnosis({
-            diagnosis: diagnosis.name,
-            chiefComplaint: generatedRecord.value.chiefComplaint,
-            historyOfPresentIllness: generatedRecord.value.historyOfPresentIllness,
-          });
-
-      diagnosisFactChecks.value.set(diagnosis.code, result);
-
-      if (result.hasIssues && Array.isArray(result.issues)) {
-        allIssues.push(...result.issues);
-      }
-
-      factCheckCheckedCount.value = i + 1;
-      factCheckProgress.value = Math.round(((i + 1) / diagnoses.length) * 100);
-    } catch (e) {
-      console.error(`Failed to fact check diagnosis: ${diagnosis.name}`, e);
-    }
-  }
-
-  factCheckWidgetIssues.value = deduplicateIssues([
-    ...factCheckWidgetIssues.value,
-    ...allIssues,
-  ]);
-  factCheckWidgetStatus.value = 'completed';
-};
-
 const performTreatmentFactCheck = async (treatments: TreatmentRecommendation[]) => {
-  if (!treatments || treatments.length === 0) return;
-  if (!isReviewerEnabled()) return;
-
-  // Show widget in checking state
-  showFactCheckWidget.value = true;
-  factCheckWidgetStatus.value = 'checking';
-  factCheckTotalCount.value = treatments.length;
-  factCheckCheckedCount.value = 0;
-  factCheckProgress.value = 0;
-
-  treatmentFactChecks.value.clear();
-  factCheckWidgetIssues.value = [];
-
-  const allIssues: FactCheckIssue[] = [];
-
-  for (let i = 0; i < treatments.length; i++) {
-    const treatment = treatments[i];
-    try {
-      let result: FactCheckResult;
-
-      if (treatment.type === 'medicine') {
-        if (consultationMode.value === 'tcm') {
-          // Use TCM medicine checker
-          result = await checkTCMMedicine({
-            medicineName: treatment.name,
-            ingredients: treatment.ingredients,
-            usage: treatment.usage,
-            diagnosis: selectedDiagnosis.value?.name
-          });
-        } else {
-          // Use Western medicine checker
-          result = await checkMedicine({
-            medicineName: treatment.name,
-            dosage: treatment.usage,
-            diagnosis: selectedDiagnosis.value?.name
-          });
-        }
-      } else {
-        // For exams and other types, use examination checker
-        result = await checkExamination({
-          examinationName: treatment.name,
-          diagnosis: selectedDiagnosis.value?.name
-        });
-      }
-
-      treatmentFactChecks.value.set(treatment.name, result);
-
-      if (result.hasIssues && Array.isArray(result.issues)) {
-        allIssues.push(...result.issues);
-      }
-
-      // Update progress
-      factCheckCheckedCount.value = i + 1;
-      factCheckProgress.value = Math.round(((i + 1) / treatments.length) * 100);
-    } catch (e) {
-      console.error(`Failed to fact check treatment: ${treatment.name}`, e);
-    }
-  }
-
-  // Deduplicate and update issues
-  factCheckWidgetIssues.value = deduplicateIssues(allIssues);
-
-  // Update widget to completed state
-  factCheckWidgetStatus.value = 'completed';
+  await runTreatmentFactCheck<FactCheckResult, FactCheckIssue>({
+    treatments,
+    enabled: isReviewerEnabled(),
+    mode: consultationMode.value === 'tcm' ? 'tcm' : 'western',
+    diagnosisName: selectedDiagnosis.value?.name,
+    checkMedicine,
+    checkTCMMedicine,
+    checkExamination,
+    clearResults: () => {
+      treatmentFactChecks.value.clear();
+      factCheckWidgetIssues.value = [];
+    },
+    setResult: (treatmentName, result) => treatmentFactChecks.value.set(treatmentName, result),
+    setWidgetChecking: (totalCount) => {
+      showFactCheckWidget.value = true;
+      factCheckWidgetStatus.value = 'checking';
+      factCheckTotalCount.value = totalCount;
+      factCheckCheckedCount.value = 0;
+      factCheckProgress.value = 0;
+    },
+    setProgress: (checkedCount, progress) => {
+      factCheckCheckedCount.value = checkedCount;
+      factCheckProgress.value = progress;
+    },
+    setCompleted: (issues) => {
+      factCheckWidgetIssues.value = issues;
+      factCheckWidgetStatus.value = 'completed';
+    },
+    onError: (treatment, error) => {
+      console.error(`Failed to fact check treatment: ${treatment.name}`, error);
+    },
+  });
 };
 
 const getIssueForDiagnosis = (diagCode: string): FactCheckIssue | undefined => {
@@ -3563,58 +2308,43 @@ const getIssueForTreatment = (treatmentName: string): FactCheckIssue | undefined
   return check.issues[0]; // Return first issue
 };
 
-const openRelatedId = ref<string | null>(null);
-const inlineRelatedDiagnoses = ref<DiagnosisItem[]>([]);
+const getRelatedDiagnosisCandidates = (diag: Diagnosis): DiagnosisItem[] =>
+  resolveRelatedDiagnosisCandidates<DiagnosisItem>({
+    diagnosis: diag,
+    getRelatedDiagnoses: (code) => medicalDataService.getRelatedDiagnoses(code),
+    getRelatedTCMDiagnoses: (code) => medicalDataService.getRelatedTCMDiagnoses(code),
+  });
 
-const toggleRelatedDropdown = (diag: Diagnosis, event?: Event) => {
-  if (!event) return;
-  event.stopPropagation();
-  const targetId = diag.id || diag.code;
-
-  if (openRelatedId.value === targetId) {
-    openRelatedId.value = null;
-  } else {
-    openRelatedId.value = targetId;
-    // 根据诊断类型选择合适的方法
-    const related = diag.isTCM
-      ? medicalDataService.getRelatedTCMDiagnoses(diag.code)
-      : medicalDataService.getRelatedDiagnoses(diag.code);
-    inlineRelatedDiagnoses.value = related.filter(d => d.code !== diag.code);
-  }
-};
+const relatedDiagnosisDropdown = useRelatedDiagnosisDropdown<DiagnosisItem>({
+  getDiagnosisKey: (diag) => diag.id || diag.code,
+  getCandidates: getRelatedDiagnosisCandidates,
+});
+const {
+  completeRelatedSwap,
+  getRelatedDropdownCandidates,
+  isRelatedDropdownOpen,
+  toggleRelatedDropdown,
+} = relatedDiagnosisDropdown;
 
 const swapDiagnosis = (originalDiag: Diagnosis, newItem: { id?: string; code: string; name: string }) => {
   trackRecommendationAction('diagnosis', originalDiag.id || originalDiag.code, 'modified', {
     originalValue: originalDiag.name,
     modifiedValue: newItem.name,
   });
-  // Update aiDiagnoses list
-  const originalIdentity = getDiagnosisIdentity(originalDiag);
-  const index = aiDiagnoses.value.findIndex(d => getDiagnosisIdentity(d) === originalIdentity);
-  if (index !== -1) {
-    const updatedDiag: Diagnosis = {
-      ...aiDiagnoses.value[index],
-      id: newItem.id,
-      code: newItem.code,
-      name: newItem.name
-    };
-    aiDiagnoses.value[index] = updatedDiag;
+  const result = buildDiagnosisSwap({
+    diagnoses: aiDiagnoses.value,
+    selectedDiagnosis: selectedDiagnosis.value,
+    originalDiagnosis: originalDiag,
+    replacement: newItem,
+    getDiagnosisIdentity,
+  });
 
-    // If this was the selected diagnosis, update selection too
-    if (getDiagnosisIdentity(selectedDiagnosis.value) === originalIdentity) {
-      selectedDiagnosis.value = updatedDiag;
-      // We don't automatically trigger treatment fetch here to avoid "unnecessary triggering" as requested.
-      // User can click the row again if they want to refresh treatments.
-      // But if they just swapped it, the row is still "active" visually.
-      // If the code changed, the treatments might be invalid.
-      // Ideally, we should probably refresh treatments if it IS selected.
-      // But user said "avoid unnecessary triggering". Maybe they mean "don't trigger IF NOT selected".
-      // If it IS selected, we probably SHOULD trigger.
-      // But let's stick to minimal side effects first.
-    }
+  if (result.updated) {
+    aiDiagnoses.value = result.diagnoses;
+    selectedDiagnosis.value = result.selectedDiagnosis || null;
   }
   
-  openRelatedId.value = null;
+  completeRelatedSwap();
 };
 
 
@@ -3700,15 +2430,7 @@ const handleDiagnosisSelect = (diag: Diagnosis) => {
     fetchDiagnosisChecklist(diag);
   }
 
-  if (diag.code) {
-    // 根据诊断类型选择合适的方法
-    const related = diag.isTCM
-      ? medicalDataService.getRelatedTCMDiagnoses(diag.code)
-      : medicalDataService.getRelatedDiagnoses(diag.code);
-    relatedDiagnoses.value = related.filter(d => d.code !== diag.code);
-  } else {
-    relatedDiagnoses.value = [];
-  }
+  relatedDiagnoses.value = getRelatedDiagnosisCandidates(diag);
   isRelatedOpen.value = false;
 };
 
@@ -3741,42 +2463,39 @@ const fetchTreatmentRecommendation = async () => {
         'consultation-treatment-tcm'
       ));
     } else {
-      const userPrompt = PROMPTS.consultation.treatmentRecommendation.buildUserPrompt({
+      const requestSpec = buildClinicalResultTreatmentRequestSpec('medication', {
         patientName: patientPromptProfile.value.patientName,
         gender: patientPromptProfile.value.gender,
         age: patientPromptProfile.value.age,
         diagnosisName: selectedDiagnosis.value.name,
         diagnosisCode: selectedDiagnosis.value.code || '',
         chiefComplaint: generatedRecord.value.chiefComplaint
+      }, PROMPTS.consultation.treatmentRecommendation, {
+        sourceModule: 'consultation_ai',
+        operationModule: 'consultation',
+      }, {
+        scene: 'consultation-treatment-medication',
+        title: '生成用药推荐',
       });
 
-      fullResponse = await chat([
-        { role: 'system', content: PROMPTS.consultation.treatmentRecommendation.system },
-        { role: 'user', content: userPrompt }
-      ], undefined, undefined, undefined, buildConsultationTraceConfig(
-        'generate_treatment_recommendation',
-        '生成用药推荐',
-        'consultation-treatment-medication'
-      ));
+      fullResponse = await chat(requestSpec.messages, undefined, undefined, undefined, requestSpec.config);
     }
     const latencyMs = Date.now() - startTime;
     const rawRecommendations: any[] = parseLLMJson(fullResponse);
 
-    const processedRecs: TreatmentRecommendation[] = rawRecommendations
-      .filter(rec => !rec.type || rec.type === 'medicine')
-      .map((rec) => {
-        const assessment = assessTreatmentCatalogMatch('medicine', rec.name, Array.isArray(rec.aliases) ? rec.aliases : undefined, rec.spec);
-        return normalizeTreatmentRecommendation({
-          ...rec,
-          type: 'medicine' as const,
-          matchedItem: assessment.matchedItem,
-          suggestedMatchItem: assessment.suggestedMatchItem,
-          matchStatus: assessment.matchStatus,
-          selected: false,
-        });
-      });
+    const processedRecs = buildClinicalResultTreatmentRecommendationsFromRaw({
+      rawRecommendations,
+      type: 'medicine',
+      match: assessTreatmentCatalogMatch,
+      normalize: normalizeTreatmentRecommendation,
+    });
 
-    if (requestSeq !== treatmentRecommendationRequestSeq || !isCurrentDiagnosisContext(diagnosisIdentity)) {
+    if (isStaleRecommendationContext({
+      requestSeq,
+      latestRequestSeq: treatmentRecommendationRequestSeq,
+      expectedDiagnosisIdentity: diagnosisIdentity,
+      currentDiagnosis: selectedDiagnosis.value,
+    })) {
       console.info('[ConsultationPage] Ignore stale medication response', {
         requestSeq,
         latest: treatmentRecommendationRequestSeq,
@@ -3789,26 +2508,16 @@ const fetchTreatmentRecommendation = async () => {
     treatmentRecommendations.value = processedRecs;
 
     try {
-      for (const rec of processedRecs) {
-        const recommendationId = await feedbackService.saveRecommendation({
-          recType: 'medication',
-          content: JSON.stringify(rec),
-          matched: !!rec.matchedItem,
-          matchConfidence: rec.matchedItem ? 1.0 : 0.0,
-          latencyMs,
-        });
-        registerExternalRecommendationTarget({
-          recommendationKey: getTreatmentFeedbackKey(rec),
-          targetId: recommendationId,
-          targetType: 'medication',
-          recommendationType: 'medication',
-        });
-      }
-      await feedbackService.recordMetric({
-        metricType: 'llm_latency',
-        metricValue: latencyMs,
-        unit: 'ms',
-        context: { operation: 'treatment_recommendation' }
+      await registerTreatmentRecommendationFeedbackTargets({
+        recommendations: processedRecs,
+        recType: 'medication',
+        targetType: 'medication',
+        latencyMs,
+        saveRecommendation: (rec) => feedbackService.saveRecommendation(rec),
+        registerTarget: registerExternalRecommendationTarget,
+        getRecommendationKey: getTreatmentFeedbackKey,
+        recordMetric: (metric) => feedbackService.recordMetric(metric),
+        metricContext: { operation: 'treatment_recommendation' },
       });
     } catch (err) {
       console.error('[ConsultationPage] Failed to save medication recommendations:', err);
@@ -3839,42 +2548,39 @@ const fetchExamRecommendation = async () => {
 
   try {
     const startTime = Date.now();
-    const userPrompt = PROMPTS.consultation.examinationRecommendation.buildUserPrompt({
+    const requestSpec = buildClinicalResultTreatmentRequestSpec('exam', {
       patientName: patientPromptProfile.value.patientName,
       gender: patientPromptProfile.value.gender,
       age: patientPromptProfile.value.age,
       diagnosisName: selectedDiagnosis.value.name,
       diagnosisCode: selectedDiagnosis.value.code || '',
       chiefComplaint: generatedRecord.value.chiefComplaint
+    }, PROMPTS.consultation.examinationRecommendation, {
+      sourceModule: 'consultation_ai',
+      operationModule: 'consultation',
+    }, {
+      scene: 'consultation-treatment-examination',
+      title: '生成检查推荐',
     });
 
-    const fullResponse = await chat([
-      { role: 'system', content: PROMPTS.consultation.examinationRecommendation.system },
-      { role: 'user', content: userPrompt }
-    ], undefined, undefined, undefined, buildConsultationTraceConfig(
-      'generate_examination_recommendation',
-      '生成检查推荐',
-      'consultation-treatment-examination'
-    ));
+    const fullResponse = await chat(requestSpec.messages, undefined, undefined, undefined, requestSpec.config);
     const latencyMs = Date.now() - startTime;
     const rawRecommendations: any[] = parseLLMJson(fullResponse);
     console.log('[检查推荐] LLM raw count:', rawRecommendations.length, rawRecommendations.map(r => ({ name: r.name, type: r.type })));
 
-    const processedRecs: TreatmentRecommendation[] = rawRecommendations
-      .filter(rec => !rec.type || rec.type === 'exam')
-      .map((rec) => {
-        const assessment = assessTreatmentCatalogMatch('exam', rec.name, Array.isArray(rec.aliases) ? rec.aliases : undefined);
-        return normalizeTreatmentRecommendation({
-          ...rec,
-          type: 'exam' as const,
-          matchedItem: assessment.matchedItem,
-          suggestedMatchItem: assessment.suggestedMatchItem,
-          matchStatus: assessment.matchStatus,
-          selected: false,
-        });
-      });
+    const processedRecs = buildClinicalResultTreatmentRecommendationsFromRaw({
+      rawRecommendations,
+      type: 'exam',
+      match: assessTreatmentCatalogMatch,
+      normalize: normalizeTreatmentRecommendation,
+    });
 
-    if (requestSeq !== examRecommendationRequestSeq || !isCurrentDiagnosisContext(diagnosisIdentity)) {
+    if (isStaleRecommendationContext({
+      requestSeq,
+      latestRequestSeq: examRecommendationRequestSeq,
+      expectedDiagnosisIdentity: diagnosisIdentity,
+      currentDiagnosis: selectedDiagnosis.value,
+    })) {
       console.info('[ConsultationPage] Ignore stale examination response', {
         requestSeq,
         latest: examRecommendationRequestSeq,
@@ -3887,21 +2593,15 @@ const fetchExamRecommendation = async () => {
     examRecommendations.value = processedRecs;
 
     try {
-      for (const rec of processedRecs) {
-        const recommendationId = await feedbackService.saveRecommendation({
-          recType: 'examination',
-          content: JSON.stringify(rec),
-          matched: !!rec.matchedItem,
-          matchConfidence: rec.matchedItem ? 1.0 : 0.0,
-          latencyMs,
-        });
-        registerExternalRecommendationTarget({
-          recommendationKey: getTreatmentFeedbackKey(rec),
-          targetId: recommendationId,
-          targetType: 'examination',
-          recommendationType: 'examination',
-        });
-      }
+      await registerTreatmentRecommendationFeedbackTargets({
+        recommendations: processedRecs,
+        recType: 'examination',
+        targetType: 'examination',
+        latencyMs,
+        saveRecommendation: (rec) => feedbackService.saveRecommendation(rec),
+        registerTarget: registerExternalRecommendationTarget,
+        getRecommendationKey: getTreatmentFeedbackKey,
+      });
     } catch (err) {
       console.error('[ConsultationPage] Failed to save exam recommendations:', err);
     }
@@ -3928,42 +2628,39 @@ const fetchLabTestRecommendation = async () => {
 
   try {
     const startTime = Date.now();
-    const userPrompt = PROMPTS.consultation.labTestRecommendation.buildUserPrompt({
+    const requestSpec = buildClinicalResultTreatmentRequestSpec('lab_test', {
       patientName: patientPromptProfile.value.patientName,
       gender: patientPromptProfile.value.gender,
       age: patientPromptProfile.value.age,
       diagnosisName: selectedDiagnosis.value.name,
       diagnosisCode: selectedDiagnosis.value.code || '',
       chiefComplaint: generatedRecord.value.chiefComplaint
+    }, PROMPTS.consultation.labTestRecommendation, {
+      sourceModule: 'consultation_ai',
+      operationModule: 'consultation',
+    }, {
+      scene: 'consultation-treatment-lab-test',
+      title: '生成检验推荐',
     });
 
-    const fullResponse = await chat([
-      { role: 'system', content: PROMPTS.consultation.labTestRecommendation.system },
-      { role: 'user', content: userPrompt }
-    ], undefined, undefined, undefined, buildConsultationTraceConfig(
-      'generate_lab_test_recommendation',
-      '生成检验推荐',
-      'consultation-treatment-lab-test'
-    ));
+    const fullResponse = await chat(requestSpec.messages, undefined, undefined, undefined, requestSpec.config);
     const latencyMs = Date.now() - startTime;
     const rawRecommendations: any[] = parseLLMJson(fullResponse);
     console.log('[检验推荐] LLM raw count:', rawRecommendations.length, rawRecommendations.map(r => ({ name: r.name, type: r.type })));
 
-    const processedRecs: TreatmentRecommendation[] = rawRecommendations
-      .filter(rec => !rec.type || rec.type === 'lab_test')
-      .map((rec) => {
-        const assessment = assessTreatmentCatalogMatch('lab_test', rec.name, Array.isArray(rec.aliases) ? rec.aliases : undefined);
-        return normalizeTreatmentRecommendation({
-          ...rec,
-          type: 'lab_test' as const,
-          matchedItem: assessment.matchedItem,
-          suggestedMatchItem: assessment.suggestedMatchItem,
-          matchStatus: assessment.matchStatus,
-          selected: false,
-        });
-      });
+    const processedRecs = buildClinicalResultTreatmentRecommendationsFromRaw({
+      rawRecommendations,
+      type: 'lab_test',
+      match: assessTreatmentCatalogMatch,
+      normalize: normalizeTreatmentRecommendation,
+    });
 
-    if (requestSeq !== labTestRecommendationRequestSeq || !isCurrentDiagnosisContext(diagnosisIdentity)) {
+    if (isStaleRecommendationContext({
+      requestSeq,
+      latestRequestSeq: labTestRecommendationRequestSeq,
+      expectedDiagnosisIdentity: diagnosisIdentity,
+      currentDiagnosis: selectedDiagnosis.value,
+    })) {
       console.info('[ConsultationPage] Ignore stale lab test response', {
         requestSeq,
         latest: labTestRecommendationRequestSeq,
@@ -3976,21 +2673,15 @@ const fetchLabTestRecommendation = async () => {
     labTestRecommendations.value = processedRecs;
 
     try {
-      for (const rec of processedRecs) {
-        const recommendationId = await feedbackService.saveRecommendation({
-          recType: 'lab_test',
-          content: JSON.stringify(rec),
-          matched: !!rec.matchedItem,
-          matchConfidence: rec.matchedItem ? 1.0 : 0.0,
-          latencyMs,
-        });
-        registerExternalRecommendationTarget({
-          recommendationKey: getTreatmentFeedbackKey(rec),
-          targetId: recommendationId,
-          targetType: 'lab_test',
-          recommendationType: 'lab_test',
-        });
-      }
+      await registerTreatmentRecommendationFeedbackTargets({
+        recommendations: processedRecs,
+        recType: 'lab_test',
+        targetType: 'lab_test',
+        latencyMs,
+        saveRecommendation: (rec) => feedbackService.saveRecommendation(rec),
+        registerTarget: registerExternalRecommendationTarget,
+        getRecommendationKey: getTreatmentFeedbackKey,
+      });
     } catch (err) {
       console.error('[ConsultationPage] Failed to save lab test recommendations:', err);
     }
@@ -4017,23 +2708,22 @@ const fetchProcedureRecommendation = async () => {
 
   try {
     const startTime = Date.now();
-    const userPrompt = PROMPTS.consultation.procedureRecommendation.buildUserPrompt({
+    const requestSpec = buildClinicalResultTreatmentRequestSpec('procedure', {
       patientName: patientPromptProfile.value.patientName,
       gender: patientPromptProfile.value.gender,
       age: patientPromptProfile.value.age,
       diagnosisName: selectedDiagnosis.value.name,
       diagnosisCode: selectedDiagnosis.value.code || '',
       chiefComplaint: generatedRecord.value.chiefComplaint
+    }, PROMPTS.consultation.procedureRecommendation, {
+      sourceModule: 'consultation_ai',
+      operationModule: 'consultation',
+    }, {
+      scene: 'consultation-treatment-procedure',
+      title: '生成处置推荐',
     });
 
-    const fullResponse = await chat([
-      { role: 'system', content: PROMPTS.consultation.procedureRecommendation.system },
-      { role: 'user', content: userPrompt }
-    ], undefined, undefined, undefined, buildConsultationTraceConfig(
-      'generate_procedure_recommendation',
-      '生成处置推荐',
-      'consultation-treatment-procedure'
-    ));
+    const fullResponse = await chat(requestSpec.messages, undefined, undefined, undefined, requestSpec.config);
     const latencyMs = Date.now() - startTime;
     const rawRecommendations: any[] = parseLLMJson(fullResponse);
     console.log('[处置推荐] LLM raw count:', rawRecommendations.length, rawRecommendations.map(r => ({ name: r.name, type: r.type })));
@@ -4041,21 +2731,19 @@ const fetchProcedureRecommendation = async () => {
     // Debug toast to see exactly what came back
     showToast(`[调试-处置返回] 共 ${rawRecommendations.length} 项: ${rawRecommendations.map(r => r.name).join(', ')}`, 'info');
 
-    const processedRecs: TreatmentRecommendation[] = rawRecommendations
-      .filter(rec => !rec.type || rec.type === 'procedure')
-      .map((rec) => {
-        const assessment = assessTreatmentCatalogMatch('procedure', rec.name, Array.isArray(rec.aliases) ? rec.aliases : undefined);
-        return normalizeTreatmentRecommendation({
-          ...rec,
-          type: 'procedure' as const,
-          matchedItem: assessment.matchedItem,
-          suggestedMatchItem: assessment.suggestedMatchItem,
-          matchStatus: assessment.matchStatus,
-          selected: false,
-        });
-      });
+    const processedRecs = buildClinicalResultTreatmentRecommendationsFromRaw({
+      rawRecommendations,
+      type: 'procedure',
+      match: assessTreatmentCatalogMatch,
+      normalize: normalizeTreatmentRecommendation,
+    });
 
-    if (requestSeq !== procedureRecommendationRequestSeq || !isCurrentDiagnosisContext(diagnosisIdentity)) {
+    if (isStaleRecommendationContext({
+      requestSeq,
+      latestRequestSeq: procedureRecommendationRequestSeq,
+      expectedDiagnosisIdentity: diagnosisIdentity,
+      currentDiagnosis: selectedDiagnosis.value,
+    })) {
       console.info('[ConsultationPage] Ignore stale procedure response', {
         requestSeq,
         latest: procedureRecommendationRequestSeq,
@@ -4068,21 +2756,15 @@ const fetchProcedureRecommendation = async () => {
     procedureRecommendations.value = processedRecs;
 
     try {
-      for (const rec of processedRecs) {
-        const recommendationId = await feedbackService.saveRecommendation({
-          recType: 'procedure',
-          content: JSON.stringify(rec),
-          matched: !!rec.matchedItem,
-          matchConfidence: rec.matchedItem ? 1.0 : 0.0,
-          latencyMs,
-        });
-        registerExternalRecommendationTarget({
-          recommendationKey: getTreatmentFeedbackKey(rec),
-          targetId: recommendationId,
-          targetType: 'procedure',
-          recommendationType: 'procedure',
-        });
-      }
+      await registerTreatmentRecommendationFeedbackTargets({
+        recommendations: processedRecs,
+        recType: 'procedure',
+        targetType: 'procedure',
+        latencyMs,
+        saveRecommendation: (rec) => feedbackService.saveRecommendation(rec),
+        registerTarget: registerExternalRecommendationTarget,
+        getRecommendationKey: getTreatmentFeedbackKey,
+      });
     } catch (err) {
       console.error('[ConsultationPage] Failed to save procedure recommendations:', err);
     }
@@ -4200,30 +2882,10 @@ function getMedicineHydrationStatus(rec: TreatmentRecommendation): { kind: 'chec
   return null;
 }
 
-function getManualMatchKeyword(rec: TreatmentRecommendation): string {
-  const cached = manualMatchKeywords.value[getManualMatchKey(rec)];
-  return typeof cached === 'string' ? cached : rec.name;
-}
-
-function setManualMatchKeyword(rec: TreatmentRecommendation, value: string): void {
-  manualMatchKeywords.value = {
-    ...manualMatchKeywords.value,
-    [getManualMatchKey(rec)]: value,
-  };
-}
-
-function isManualMatchOpen(rec: TreatmentRecommendation): boolean {
-  return activeManualMatchKey.value === getManualMatchKey(rec);
-}
-
 function toggleManualMatch(rec: TreatmentRecommendation, event?: Event): void {
   event?.stopPropagation();
-  const key = getManualMatchKey(rec);
-  const isOpening = activeManualMatchKey.value !== key;
-  activeManualMatchKey.value = isOpening ? key : null;
-  if (isOpening) {
-    setManualMatchKeyword(rec, getManualMatchKeyword(rec) || rec.name);
-  }
+  closeReasonTooltipIfOpen();
+  toggleManualMatchState(rec);
 }
 
 function getManualMatchPickerCandidates(rec: TreatmentRecommendation): ManualMatchCandidate[] {
@@ -4244,160 +2906,45 @@ function applyManualMatchSelection(rec: TreatmentRecommendation, candidate: Manu
   }
 
   Object.assign(rec, normalizeTreatmentRecommendation(rec));
-  activeManualMatchKey.value = null;
+  closeManualMatch();
   showToast(`${pickedRaw.name} 已完成标准库匹配`, 'success');
 }
 
-const ensureAssistRecordContext = (): boolean => {
-  prefillGeneratedRecordFromPatient(true);
-  if (hasRecordDraft.value) {
-    currentView.value = 'record';
-    return true;
-  }
+const consultationAssistController = useConsultationAssistController({
+  assistFocus,
+  aiDiagnoses,
+  selectedDiagnosis,
+  aiLoading,
+  treatmentLoading,
+  treatmentRecommendations,
+  examLoading,
+  examRecommendations,
+  labTestLoading,
+  labTestRecommendations,
+  procedureLoading,
+  procedureRecommendations,
+  checklistItems,
+  showChecklistModal,
+  hasRecordDraft: () => hasRecordDraft.value,
+  prefillRecord: prefillGeneratedRecordFromPatient,
+  prefillDiagnosis: prefillDiagnosisFromPatient,
+  setCurrentView: (view) => {
+    currentView.value = view;
+  },
+  notify: (message, level) => showToast(message, level || 'info'),
+  afterContextReady: () => nextTick(),
+  fetchAIDiagnosis: () => fetchAIDiagnosis(),
+  fetchTreatmentRecommendation,
+  fetchExamRecommendation,
+  fetchLabTestRecommendation,
+  fetchProcedureRecommendation,
+  fetchDiagnosisChecklist,
+  trackAssistFeatureUsage,
+  consumeAutoTrigger: () => emit('consume-auto-trigger'),
+});
 
-  currentView.value = 'consultation';
-  showToast('当前患者暂无可直接复用的主诉和现病史，已进入症状选择页。', 'info');
-  return false;
-};
-
-const ensureAssistDiagnosisContext = async (): Promise<boolean> => {
-  if (!ensureAssistRecordContext()) {
-    return false;
-  }
-
-  if (selectedDiagnosis.value || prefillDiagnosisFromPatient(true)) {
-    await nextTick();
-    return true;
-  }
-
-  assistFocus.value = 'diagnosis';
-  if (aiDiagnoses.value.length === 0 && !aiLoading.value) {
-    await fetchAIDiagnosis();
-  }
-  showToast('当前缺少主诊断，请先确认诊断。', 'info');
-  return false;
-};
-
-const handleAssistTrigger = async (kind: AssistAction): Promise<void> => {
-  assistFocus.value = kind;
-
-  try {
-    switch (kind) {
-      case 'record': {
-        if (!ensureAssistRecordContext()) {
-          return;
-        }
-        if (aiDiagnoses.value.length === 0 && !aiLoading.value) {
-          await fetchAIDiagnosis();
-        }
-        return;
-      }
-      case 'diagnosis': {
-        if (!ensureAssistRecordContext()) {
-          return;
-        }
-        if (aiDiagnoses.value.length === 0 && !aiLoading.value) {
-          await fetchAIDiagnosis();
-        }
-        if (aiDiagnoses.value.length > 0) {
-          trackAssistFeatureUsage('diagnosis', {
-            diagnosisCount: aiDiagnoses.value.length,
-          });
-        }
-        return;
-      }
-      case 'medication': {
-        const hasDiagnosis = await ensureAssistDiagnosisContext();
-        if (!hasDiagnosis) return;
-        await nextTick();
-        if (!treatmentLoading.value && treatmentRecommendations.value.length === 0) {
-          await fetchTreatmentRecommendation();
-        }
-        if (treatmentRecommendations.value.length > 0) {
-          trackAssistFeatureUsage('medication', {
-            diagnosisName: selectedDiagnosis.value?.name,
-            itemCount: treatmentRecommendations.value.length,
-          });
-        }
-        return;
-      }
-      case 'examination': {
-        const hasDiagnosis = await ensureAssistDiagnosisContext();
-        if (!hasDiagnosis) return;
-        await nextTick();
-        if (!examLoading.value && examRecommendations.value.length === 0) {
-          await fetchExamRecommendation();
-        }
-        if (examRecommendations.value.length > 0) {
-          trackAssistFeatureUsage('examination', {
-            diagnosisName: selectedDiagnosis.value?.name,
-            itemCount: examRecommendations.value.length,
-          });
-        }
-        return;
-      }
-      case 'lab_test': {
-        const hasDiagnosis = await ensureAssistDiagnosisContext();
-        if (!hasDiagnosis) return;
-        await nextTick();
-        if (!labTestLoading.value && labTestRecommendations.value.length === 0) {
-          await fetchLabTestRecommendation();
-        }
-        if (labTestRecommendations.value.length > 0) {
-          trackAssistFeatureUsage('lab_test', {
-            diagnosisName: selectedDiagnosis.value?.name,
-            itemCount: labTestRecommendations.value.length,
-          });
-        }
-        return;
-      }
-      case 'procedure': {
-        const hasDiagnosis = await ensureAssistDiagnosisContext();
-        if (!hasDiagnosis) return;
-        await nextTick();
-        if (!procedureLoading.value && procedureRecommendations.value.length === 0) {
-          await fetchProcedureRecommendation();
-        }
-        if (procedureRecommendations.value.length > 0) {
-          trackAssistFeatureUsage('procedure', {
-            diagnosisName: selectedDiagnosis.value?.name,
-            itemCount: procedureRecommendations.value.length,
-          });
-        }
-        return;
-      }
-      case 'differential': {
-        const hasDiagnosis = await ensureAssistDiagnosisContext();
-        if (!hasDiagnosis || !selectedDiagnosis.value) {
-          return;
-        }
-        await fetchDiagnosisChecklist(selectedDiagnosis.value);
-        if (checklistItems.value.length > 0) {
-          trackAssistFeatureUsage('differential', {
-            diagnosisName: selectedDiagnosis.value.name,
-            diagnosisCode: selectedDiagnosis.value.code,
-            itemCount: checklistItems.value.length,
-          });
-          showChecklistModal.value = true;
-        } else {
-          showToast('当前诊断暂无待确认的鉴别排查项。', 'info');
-        }
-        return;
-      }
-      case 'reminder': {
-        if (ensureAssistRecordContext() && aiDiagnoses.value.length === 0 && !aiLoading.value) {
-          await fetchAIDiagnosis();
-        }
-        showToast('风险提醒已同步，可继续处理当前病历。', 'info');
-        return;
-      }
-      default:
-        return;
-    }
-  } finally {
-    emit('consume-auto-trigger');
-  }
-};
+const handleAssistTrigger = (kind: AssistAction): Promise<void> =>
+  consultationAssistController.triggerAssist(kind);
 
 // @ts-ignore: kept for future use (currently commented out in template)
 const _handleComplete = () => {
@@ -4406,113 +2953,45 @@ const _handleComplete = () => {
     return;
   }
 
-  // Build Final Record
-  const selectedTreatments = [
-    ...treatmentRecommendations.value,
-    ...examRecommendations.value,
-    ...labTestRecommendations.value,
-    ...procedureRecommendations.value,
-  ]
-    .filter(t => t.selected)
-    .map(t => ({
-      type: t.type,
-      name: t.name,
-      usage: t.usage,
-      ingredients: t.ingredients, // Add ingredients
-      matchedItem: t.matchedItem,
-      reason: t.reason
-    }));
+  const treatmentGroups = [
+    treatmentRecommendations.value,
+    examRecommendations.value,
+    labTestRecommendations.value,
+    procedureRecommendations.value,
+  ];
+  const selectedTreatments = buildSelectedTreatmentSnapshots(treatmentGroups);
 
-  // --- Batch acceptance/rejection tracking ---
-  // Diagnosis: selected one is adopted, rest are rejected
-  trackRecommendationAction('diagnosis', selectedDiagnosis.value.id || selectedDiagnosis.value.code, 'adopted', {
-    originalValue: selectedDiagnosis.value.name,
-  });
-  const selectedDiagnosisIdentity = getDiagnosisIdentity(selectedDiagnosis.value);
-  aiDiagnoses.value
-    .filter(d => getDiagnosisIdentity(d) !== selectedDiagnosisIdentity)
-    .forEach(d => {
-      trackRecommendationAction('diagnosis', d.id || d.code, 'rejected', { originalValue: d.name });
-    });
-
-  // Treatments: selected are adopted, unselected are rejected
-  treatmentRecommendations.value.forEach(t => {
-    const targetType =
-      t.type === 'medicine'
-        ? 'medication' as const
-        : t.type === 'exam'
-          ? 'examination' as const
-          : null;
-    if (!targetType) {
-      return;
-    }
-    if (t.selected) {
-      trackRecommendationAction(targetType, t.name, 'adopted', { originalValue: t.name });
-    } else {
-      trackRecommendationAction(targetType, t.name, 'rejected', { originalValue: t.name });
-    }
-  });
-
-  trackFormSubmit('generate_final_report', {
-    diagnosisName: selectedDiagnosis.value.name,
+  trackConsultationCompletion({
+    selectedDiagnosis: selectedDiagnosis.value,
+    diagnoses: aiDiagnoses.value,
+    medicines: treatmentRecommendations.value,
     selectedTreatmentCount: selectedTreatments.length,
-    totalTreatmentCount: treatmentRecommendations.value.length,
-    mode: consultationMode.value,
+    mode: consultationMode.value === 'tcm' ? 'tcm' : 'western',
+    getDiagnosisIdentity,
+    trackRecommendationAction: ({ targetType, targetId, action, options }) => {
+      trackRecommendationAction(targetType, targetId, action, options);
+    },
+    trackFormSubmit: ({ name, details }) => {
+      trackFormSubmit(name, details);
+    },
   });
 
-  // Prepare treatment principle for TCM (治则治法)
-  let treatmentPrinciple = '';
-  if (consultationMode.value === 'tcm' && selectedDiagnosis.value.treatment) {
-    treatmentPrinciple = selectedDiagnosis.value.treatment;
-  }
+  const medicalAdvice = buildMedicalAdvice({
+    mode: consultationMode.value === 'tcm' ? 'tcm' : 'western',
+    hasHerbalMedicine: treatmentRecommendations.value.some(t => t.selected && t.ingredients),
+  });
 
-  // Generate medical advice (医嘱)
-  const medicalAdvice = generateMedicalAdvice();
-
-  finalRecord.value = {
+  finalRecord.value = buildFinalRecord({
     patient: patientInfo.value,
-    record: {
-      ...generatedRecord.value,
-      pastMedicalHistory:
-        readPatientText(
-          patientInfo.value as unknown as Record<string, unknown>,
-          ['pastMedicalHistory', 'past_medical_history', 'pastMedicalHistoryText']
-        ) || '未提供既往病史。',
-      allergyHistory: patientInfo.value.allergyHistory || '无'
-    },
+    generatedRecord: generatedRecord.value,
     diagnosis: selectedDiagnosis.value,
-    treatments: selectedTreatments,
+    treatmentGroups,
+    mode: consultationMode.value === 'tcm' ? 'tcm' : 'western',
+    medicalAdvice,
     date: new Date().toLocaleDateString(),
-    treatmentPrinciple,
-    medicalAdvice
-  };
+  });
 
   currentView.value = 'final_report';
-};
-
-const generateMedicalAdvice = (): string => {
-  const advice: string[] = [];
-
-  if (consultationMode.value === 'tcm') {
-    // TCM medical advice
-    advice.push('1. 按时服药，遵医嘱用药。');
-    advice.push('2. 注意休息，避风寒，保持心情舒畅。');
-    advice.push('3. 饮食宜清淡，忌辛辣刺激、生冷油腻之品。');
-    advice.push('4. 如症状加重或出现新的不适，请及时复诊。');
-
-    // Check if there are Chinese medicine prescriptions (check for ingredients field)
-    const hasHerbalMedicine = treatmentRecommendations.value.some(t => t.selected && t.ingredients);
-    if (hasHerbalMedicine) {
-      advice.push('5. 中药煎服法：先煎20分钟，文火煎煮30分钟，每日1剂，分早晚两次温服。');
-    }
-  } else {
-    // Western medicine advice
-    advice.push('1. 按时服药，注意观察药物不良反应。');
-    advice.push('2. 多饮水，清淡饮食，注意休息。');
-    advice.push('3. 如症状无缓解或加重，请及时复诊。');
-  }
-
-  return advice.join('\n');
 };
 
 watch(selectedDiagnosis, (newVal) => {
@@ -4551,145 +3030,17 @@ watch(
 );
 
 const generateMedicalRecord = () => {
-  const complaints: string[] = [];
-  const hpiParts: string[] = [];
-  
-  // -- Chief Complaint --
-  // 使用 textGenConfig 生成主诉，或回退到默认逻辑
-  selectedSymptoms.value.forEach(s => {
-    const data = formData.value[s.key];
-    
-    // 从 textGenConfig (包含默认 onsetTime 逻辑) 生成主诉
-    // 即使被“跳过条件”全部过滤导致 chiefComplaintTexts 为空，也能确保仅保留症状名，而不触发错误的兜底。
-    const chiefComplaintTexts = generateTextsForSymptom(s, data, 'chiefComplaint');
-    complaints.push(`${s.name}${chiefComplaintTexts.join('')}`);
+  generatedRecord.value = buildConsultationGeneratedRecord({
+    selectedSymptoms: selectedSymptoms.value,
+    formData: formData.value,
+    mode: consultationMode.value === 'tcm' ? 'tcm' : 'western',
+    companionSymptomNames: companionSymptomNames.value,
+    buildSymptomTexts: (symptom, data, target, excludeKeys) => (
+      generateTextsForSymptom(symptom, data, target, excludeKeys)
+    ),
+    buildGeneralConditionText: buildGeneralConditionHistoryText,
+    buildTcmSignsText: (data) => buildTcmSignsReportText(tcmInquiryConfig, data),
   });
-  const chiefComplaint = complaints.join("，") + "。";
-
-  // -- History of Present Illness --
-  // Intro: Patient [duration] ago...
-  const firstSymptom = selectedSymptoms.value[0];
-  const firstData = formData.value[firstSymptom.key];
-  const duration = firstData.onsetTime ? `${firstData.onsetTime.inputValue}${firstData.onsetTime.radioValue}` : '近日';
-  
-  // Try to find precipitating factor for the first symptom
-  let precipitating = '无明显诱因';
-  if (firstData.precipitatingFactor) {
-    if (Array.isArray(firstData.precipitatingFactor)) {
-      if (firstData.precipitatingFactor.length > 0) precipitating = firstData.precipitatingFactor.join('、');
-    } else if (firstData.precipitatingFactor !== '不清楚') {
-      precipitating = firstData.precipitatingFactor;
-      if (precipitating === '没有原因') precipitating = '无明显诱因';
-    }
-  }
-
-  let intro = `患者于${duration}前，${precipitating}出现`;
-  const symptomNames = selectedSymptoms.value.map(s => s.name).join('、');
-  intro += symptomNames + "。";
-  hpiParts.push(intro);
-
-  // Symptom Details - 使用 textGenConfig 生成
-  selectedSymptoms.value.forEach(s => {
-    const data = formData.value[s.key];
-    
-    // 生成现病史文本，跳过由于首句播报而不再需要的字段
-    const excludeKeys = ['onsetTime'];
-    if (s === selectedSymptoms.value[0]) {
-      excludeKeys.push('precipitatingFactor');
-    }
-
-    const hpiTexts = generateTextsForSymptom(s, data, 'historyOfPresentIllness', excludeKeys);
-    if (hpiTexts.length > 0) {
-      hpiParts.push(`${s.name}：${hpiTexts.join('，')}。`);
-    }
-  });
-
-  // General Condition (only in Western mode, not TCM)
-  const genData = formData.value['general'];
-  let tcmFourExamStr = '';
-
-  // Only add general condition text in Western mode, not in TCM mode
-  if (genData && consultationMode.value !== 'tcm') {
-    const genParts: string[] = [];
-
-    // Process standard fields first
-    ['spirit', 'sleep', 'appetite'].forEach(k => {
-      if (genData[k] && !['其他', '不清楚', '不详'].includes(genData[k])) genParts.push(genData[k]);
-    });
-
-    // Special handling for urination and stool optimization
-    const isUrinationNormal = genData['urination'] === '小便正常';
-    const isStoolNormal = genData['stool'] === '大便正常';
-
-    if (isUrinationNormal && isStoolNormal) {
-      genParts.push('二便正常');
-    } else {
-      if (genData['urination'] && !['其他', '不清楚', '不详'].includes(genData['urination'])) genParts.push(genData['urination']);
-      if (genData['stool'] && !['其他', '不清楚', '不详'].includes(genData['stool'])) genParts.push(genData['stool']);
-    }
-
-    // Process weight
-    if (genData['weight'] && !['其他', '不清楚', '不详'].includes(genData['weight'])) genParts.push(genData['weight']);
-
-    if (genParts.length > 0) {
-      hpiParts.push(`${genParts.join('，')}。`);
-    }
-  }
-
-  // TCM Signs
-  if (consultationMode.value === 'tcm') {
-    const tcmData = formData.value['tcm_signs'];
-    if (tcmData) {
-      const clean = (str: string) => str ? str.replace(/\(.*?\)/, '') : '';
-
-      // Iterate through all sections in tcmInquiryConfig
-      tcmInquiryConfig.config.sections.forEach(section => {
-        const sectionSigns: string[] = [];
-
-        section.fields.forEach(field => {
-          const value = tcmData[field.storageKey];
-          if (value) {
-            if (Array.isArray(value) && value.length > 0) {
-              // For checkbox fields
-              const cleanedValues = value.map(v => clean(v));
-              sectionSigns.push(`${field.label}${cleanedValues.join('、')}`);
-            } else if (typeof value === 'string' && value.trim() !== '' && !['其他', '不清楚', '不详'].includes(value)) {
-              // For radio and input fields
-              const cleanedValue = clean(value);
-              // For certain fields like tongue and pulse, omit the label if it's redundant
-              if (field.key === 'tongue_body' || field.key === 'tongue_shape') {
-                sectionSigns.push(`舌${cleanedValue}`);
-              } else if (field.key === 'tongue_coating') {
-                sectionSigns.push(`苔${cleanedValue}`);
-              } else if (field.key === 'coating_quality') {
-                sectionSigns.push(`苔质${cleanedValue}`);
-              } else if (field.key === 'pulse') {
-                sectionSigns.push(`脉${cleanedValue}`);
-              } else {
-                sectionSigns.push(`${field.label}${cleanedValue}`);
-              }
-            }
-          }
-        });
-
-        if (sectionSigns.length > 0) {
-          tcmFourExamStr += `${section.title}：${sectionSigns.join('，')}。\n`;
-        }
-      });
-    }
-  }
-
-  // 伴随症状（仅勾选、未展开详细问诊的）
-  if (companionSymptomNames.value.length > 0) {
-    hpiParts.push(`伴${companionSymptomNames.value.join('、')}。`);
-  }
-
-  generatedRecord.value = {
-    chiefComplaint,
-    historyOfPresentIllness: hpiParts.join("\n"),
-    tcmFourExaminations: tcmFourExamStr.trim(),
-    familyHistory: ''
-  };
 };
 
 const copyToClipboard = () => {
@@ -4744,6 +3095,8 @@ const removedSymptomRecordViewSymbols = [
   searchLiterature,
   getIssueForDiagnosis,
   getIssueForTreatment,
+  getRelatedDropdownCandidates,
+  isRelatedDropdownOpen,
   toggleRelatedDropdown,
   swapDiagnosis,
   toggleTreatmentSelection,
@@ -4766,3154 +3119,4 @@ void removedSymptomRecordViewSymbols;
 
 </script>
 
-<style scoped>
-.consultation-page {
-  display: flex;
-  flex-direction: column;
-  height: 100%;
-  background-color: var(--color-background, #ECFEFF); /* 医疗背景色 */
-  color: var(--color-text-strong, #0F172A);
-  font-family: var(--font-body);
-  font-size: 14px; /* Base font size */
-  overflow: hidden;
-}
-
-.header-btn {
-  padding: 6px 16px;
-  border: 1px solid rgba(255, 255, 255, 0.4);
-  background: rgba(255, 255, 255, 0.15);
-  border-radius: 18px;
-  color: #fff;
-  cursor: pointer;
-  font-size: 13px;
-  transition: all var(--duration-normal) var(--ease-out);
-  font-weight: 500;
-}
-
-.header-btn:hover {
-  background: rgba(255, 255, 255, 0.25);
-  border-color: rgba(255, 255, 255, 0.6);
-  color: #fff;
-}
-
-.header-btn.primary {
-  background: #fff;
-  color: #2B7FE3;
-  border: none;
-  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.08);
-  font-weight: 600;
-}
-
-.header-btn.primary:hover {
-  background: #F0F6FF;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.12);
-}
-
-.header-btn.primary:disabled {
-  background: rgba(255, 255, 255, 0.5);
-  color: rgba(43, 127, 227, 0.5);
-  cursor: not-allowed;
-  box-shadow: none;
-}
-
-/* Sidebar Mode Switch: 西医 / 中医 - vertical tabs on left edge */
-.sidebar-mode-switch {
-  display: flex;
-  flex-direction: column;
-  width: 28px;
-  flex-shrink: 0;
-  background: #FFFFFF;
-  border-right: 1px solid #EEF2F6;
-  padding-top: 0px;
-  gap: 0;
-}
-
-.sidebar-switch-btn {
-  width: 100%;
-  height: 52px;
-  flex-shrink: 0;
-  padding: 0;
-  border: none;
-  background: transparent;
-  font-size: 13px;
-  cursor: pointer;
-  color: #262626;
-  transition: all 0.2s ease;
-  font-weight: 500;
-  writing-mode: vertical-rl;
-  text-orientation: upright;
-  letter-spacing: 2px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  border-radius: 0;
-}
-
-.sidebar-switch-btn.active {
-  background: #E0EFFF;
-  color: #2469F2;
-  font-weight: 600;
-  /*border-right: 2px solid #2B7FE3;*/
-}
-
-/* Consultation Footer */
-.consultation-footer {
-  display: flex;
-  align-items: center;
-  justify-content: flex-end;
-  gap: 10px;
-  padding: 10px 16px;
-  background: #fff;
-  border-top: 1px solid #EEF2F6;
-  flex-shrink: 0;
-  z-index: 10;
-}
-
-.footer-cancel-btn {
-  width: 64px;
-  height: 32px;
-  padding: 5px 14px;
-  border: 1px solid #DBDBDB;
-  background: #fff;
-  border-radius: 4px;
-  font-family: Microsoft YaHei, Microsoft YaHei;
-  font-weight: 400;
-  font-size: 14px;
-  color: #262626;
-  cursor: pointer;
-  transition: all 0.2s ease;
-}
-
-.footer-cancel-btn:hover {
-  background: #F8FAFC;
-  border-color: #CBD5E1;
-}
-
-.footer-submit-btn {
-  display: inline-flex;
-  align-items: center;
-  width: 88px;
-  height: 32px;
-  gap: 6px;
-  padding: 5px 16px;
-  background: #2469F2;
-  color: #fff;
-  border: none;
-  border-radius: 4px;
-  font-family: Microsoft YaHei, Microsoft YaHei;
-  font-size: 14px;
-  font-weight: 400;
-  cursor: pointer;
-  transition: all 0.2s ease;
-}
-
-.footer-submit-btn:hover:not(:disabled) {
-  background: #1A6FD5;
-  box-shadow: 0 2px 8px rgba(43, 127, 227, 0.35);
-}
-
-.footer-submit-btn:disabled {
-  background: rgba(43, 127, 227, 0.45);
-  cursor: not-allowed;
-  box-shadow: none;
-}
-
-.footer-submit-btn .animate-spin {
-  animation: spin 0.6s linear infinite;
-}
-
-/* Loading 动画样式 */
-.header-btn .animate-spin {
-  display: inline-block;
-  animation: spin 0.6s linear infinite;
-  margin-right: var(--space-xs, 4px);
-}
-
-@keyframes spin {
-  to {
-    transform: rotate(360deg);
-  }
-}
-
-/* Reduced Motion 支持 */
-@media (prefers-reduced-motion: reduce) {
-  .header-btn .animate-spin {
-    animation: none;
-  }
-}
-
-.content-container {
-  display: flex;
-  flex: 1;
-  overflow: hidden;
-  padding: 14px 0 0 14px;
-}
-
-.symptom-sidebar {
-  width: 260px;
-  background: #fff;
-  border-right: 1px solid #EEF2F6;
-  display: flex;
-  flex-direction: row;
-  flex-shrink: 0;
-  z-index: 5;
-}
-
-.sidebar-content {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  min-width: 0;
-  overflow: hidden;
-}
-
-/* Selection Mode Tabs */
-.selection-tabs {
-  display: flex;
-  padding: 0;
-  gap: 0;
-  border-bottom: 1px solid #EEF2F6;
-  /* background: #FAFBFD; */
-  flex-shrink: 0;
-}
-
-.tab-btn {
-  flex: 1;
-  padding: 9px 0;
-  font-size: 13px;
-  background: transparent;
-  border: none;
-  border-bottom: 2px solid transparent;
-  border-radius: 0;
-  color: #94A3B8;
-  cursor: pointer;
-  transition: all 0.2s ease;
-  font-weight: 500;
-  white-space: nowrap;
-  text-align: center;
-  font-family: Microsoft YaHei, Microsoft YaHei;
-}
-
-.tab-btn:hover {
-  color: #2B7FE3;
-  background: transparent;
-}
-
-.tab-btn.active {
-  background: transparent;
-  border-bottom-color: #2B7FE3;
-  color: #2B7FE3;
-  font-weight: 600;
-}
-
-/* Selection Content Area */
-.selection-content {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  min-height: 0;
-  overflow-x: hidden;
-  padding: 0;
-}
-
-.symptom-sidebar h3 {
-  padding: 12px 16px; /* Reduced padding */
-  margin: 0;
-  font-size: 14px; /* Adjusted to 14px */
-  font-weight: 600;
-  color: var(--color-text-primary); /* Dark cyan text */
-  border-bottom: 1px solid var(--color-border-light);
-  background: transparent;
-  flex-shrink: 0;
-}
-
-.search-box {
-  position: relative;
-  padding: 8px 10px;
-  border-bottom: none !important;
-  background: transparent;
-  flex-shrink: 0;
-  display: flex;
-  align-items: center;
-}
-.search-box-svg{
-  position: absolute;
-  right: 20px;
-}
-
-.common-filter-header {
-  padding: 0 10px 6px;
-  margin-bottom: 2px;
-  flex-shrink: 0;
-}
-
-.search-input {
-  width: 100%;
-  padding: 5px 7px;
-  border: 1px solid #E2E8F0;
-  border-radius: 6px;
-  font-size: 13px;
-  box-sizing: border-box;
-  outline: none;
-  background: #F8FAFC;
-  transition: all 0.2s ease;
-}
-.search-input::placeholder{
-  font-family: Microsoft YaHei, Microsoft YaHei;
-  font-weight: 400;
-  font-size: 13px;
-  color: #999999;
-  line-height: 22px;
-  text-align: left;
-  font-style: normal;
-  text-transform: none;
-}
-
-.search-input:focus {
-  border-color: #2B7FE3;
-  box-shadow: 0 0 0 2px rgba(43, 127, 227, 0.08);
-  background: #fff;
-}
-
-.symptom-list {
-  list-style: none;
-  padding: 0;
-  margin: 0;
-  overflow-y: auto;
-  flex: 1;
-  min-height: 0;
-}
-
-.symptom-list li {
-  padding: 8px 14px;
-  cursor: pointer;
-  border-bottom: 1px solid rgba(238, 242, 246, 0.6);
-  transition: all 0.15s ease;
-  color: #475569;
-  font-size: 13px;
-}
-
-.symptom-list li:last-child {
-  border-bottom: none;
-}
-
-.symptom-list li:hover {
-  background: #F0F6FF;
-  color: #2B7FE3;
-}
-
-.symptom-list li.active {
-  background: #EFF6FF;
-  color: #2B7FE3;
-  font-weight: 600;
-  border-left: 2px solid #2B7FE3;
-  padding-left: 12px;
-}
-
-.symptom-list li.active:hover {
-  background: #E0EDFF;
-  color: #1A6FD5;
-}
-
-.ai-add-symptom {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  padding: 24px;
-  background: var(--color-background-gray);
-  border-radius: 8px;
-  margin: 12px;
-  text-align: center;
-}
-
-.empty-state-icon {
-  margin-bottom: 12px;
-  color: var(--color-text-muted);
-  opacity: 0.5;
-}
-
-.empty-state-text {
-  font-size: 13px;
-  color: var(--color-text-medium);
-  margin-bottom: 20px;
-}
-
-.ai-add-btn {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 6px;
-  width: 100%;
-  padding: 12px 16px;
-  background: linear-gradient(135deg, #10b981, #059669); /* Medical green to indicate adding */
-  color: white;
-  border: none;
-  border-radius: 8px;
-  font-size: 14px;
-  font-weight: 500;
-  cursor: pointer;
-  box-shadow: 0 4px 12px rgba(16, 185, 129, 0.2);
-  transition: all 0.2s ease;
-}
-
-.ai-add-btn:hover:not(:disabled) {
-  transform: translateY(-2px);
-  box-shadow: 0 6px 16px rgba(16, 185, 129, 0.3);
-}
-
-.ai-add-btn:disabled {
-  background: #a7f3d0;
-  cursor: not-allowed;
-  transform: none;
-  box-shadow: none;
-}
-
-/* 伴随症状推荐面板 */
-.recommendation-panel {
-  margin: 0;
-  padding: 10px 16px;
-  border-top: 1px solid #EEF2F6;
-  background: #F9F9F9;
-  border-radius: 0 0 8px 8px;
-  flex-shrink: 0;
-}
-
-.recommendation-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 0 0 6px 0;
-  user-select: none;
-}
-
-.recommendation-title {
-  display: flex;
-  align-items: center;
-  gap: 5px;
-  font-size: 12px;
-  font-weight: 600;
-  color: #2B7FE3;
-}
-.recommendation-title .recommendation-title-word{
-  color: #262626!important;
-}
-
-.recommendation-title .iconify {
-  color: var(--color-warning, #f59e0b);
-}
-
-.recommendation-count {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  min-width: 18px;
-  height: 18px;
-  padding: 0 5px;
-  font-size: 10px;
-  font-weight: 700;
-  color: var(--color-background-white);
-  background: var(--color-primary);
-  border-radius: 9px;
-}
-
-.collapse-icon {
-  color: var(--color-text-muted);
-  transition: transform var(--duration-normal) var(--ease-out);
-}
-
-.collapse-icon.rotated {
-  transform: rotate(-90deg);
-}
-
-.recommendation-chips {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 4px 8px;
-  padding: 0;
-  max-height: 200px;
-  overflow-y: auto;
-}
-
-.recommendation-chip {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  padding: 8px 8px 8px 8px;
-  font-size: 14px;
-  color: #2469F2;
-  background: #FFFFFF;
-  border: none;
-  border-radius: 16px 16px 16px 16px;
-  cursor: default;
-  transition: background 0.15s ease;
-  white-space: nowrap;
-  height: 26px;
-  font-family: Microsoft YaHei, Microsoft YaHei;
-}
-
-.recommendation-chip:hover {
-  background: rgba(43, 127, 227, 0.04);
-}
-
-.recommendation-chip.checked {
-  background: rgba(43, 127, 227, 0.06);
-}
-
-.companion-checkbox {
-  appearance: none !important;
-  -webkit-appearance: auto;
-  width: 14px;
-  height: 14px;
-  margin: 0;
-  accent-color: #2B7FE3;
-  cursor: pointer;
-  flex-shrink: 0;
-  border: 1px solid #DBDBDB;
-  border-radius: 2px;
-  background: #fff;
-  display: inline-grid;
-  place-content: center;
-}
-.companion-checkbox:checked {
-  background: var(--color-info);
-  border-color: var(--color-info);
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='white' stroke-width='4' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='20 6 9 17 4 12'%3E%3C/polyline%3E%3C/svg%3E");
-  background-repeat: no-repeat;
-  background-position: center;
-  background-size: 10px;
-}
-
-.companion-name {
-  cursor: pointer;
-  user-select: none;
-  line-height: 1;
-}
-
-.companion-add-btn {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 18px;
-  height: 18px;
-  border: none;
-  border-radius: 3px;
-  background: transparent;
-  color: #2B7FE3;
-  font-size: 12px;
-  font-weight: 400;
-  cursor: pointer;
-  transition: all 0.15s ease;
-  padding: 0;
-  line-height: 1;
-}
-
-.companion-add-btn:hover {
-  background: rgba(43, 127, 227, 0.1);
-  color: #1A6FD5;
-}
-
-.recommendation-chips::-webkit-scrollbar {
-  width: 3px;
-}
-
-.recommendation-chips::-webkit-scrollbar-track {
-  background: transparent;
-}
-
-.recommendation-chips::-webkit-scrollbar-thumb {
-  background: var(--color-border-medium);
-  border-radius: 3px;
-}
-
-.form-container {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  overflow: hidden;
-  background: #F7F8FA;
-}
-
-.forms-scroll-area {
-  flex: 1;
-  overflow-y: auto;
-  padding: 0 14px 2px 8px;
-}
-
-.symptom-form-section {
-  background: #fff;
-  border-radius: 8px;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
-  padding: 0;
-  margin-bottom: 12px;
-  border: 1px solid #EEF2F6;
-  transition: none;
-}
-
-.symptom-form-section:hover {
-  box-shadow: 0 1px 6px rgba(0, 0, 0, 0.06);
-}
-
-.form-header {
-  background: linear-gradient( 90deg, #DCECFF 0%, rgba(189,220,255,0) 100%);
-  margin: 0;
-  padding: 10px 16px;
-  border-bottom: 1px solid #EEF2F6;
-  border-radius: 8px 8px 0 0;
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-}
-
-.remove-btn {
-  color: #CBD5E1;
-  padding: 4px;
-  border-radius: 4px;
-  transition: all 0.15s ease;
-}
-
-.remove-btn:hover {
-  color: var(--color-error);
-  background: var(--color-error-bg);
-}
-
-.form-header h2 {
-  margin: 0;
-  font-size: 14px;
-  font-weight: 600;
-  color: #1E293B;
-  display: flex;
-  align-items: center;
-}
-
-/* .form-header h2::before {
-  content: '';
-  display: inline-block;
-  width: 3px;
-  height: 14px;
-  background: #2B7FE3;
-  margin-right: 10px;
-  border-radius: 2px;
-} */
-
-.section-title {
-  margin: 16px 0 10px 0;
-  padding: 6px 12px;
-  font-size: 13px;
-  font-weight: 600;
-  color: #475569;
-  background: #F8FAFC;
-  border-left: 3px solid #2B7FE3;
-  border-radius: 0 4px 4px 0;
-}
-
-.section-title:first-child {
-  margin-top: 0;
-}
-
-/* Override for final report - ensure black text */
-.final-report-page .section-title {
-  margin: 0;
-  margin-bottom: 8px;
-  padding: 0;
-  font-weight: bold;
-  font-size: 16px;
-  color: #000 !important;
-  background: none;
-  border: none;
-  border-radius: 0;
-}
-
-.dynamic-form {
-  padding: 8px 16px;
-}
-
-.form-field {
-  display: flex;
-  align-items: flex-start;
-  margin-bottom: 0;
-  border-bottom: 1px solid rgba(238, 242, 246, 0.8);
-  padding: 9px 0;
-}
-
-.form-field:last-child {
-  border-bottom: none;
-  margin-bottom: 0;
-  padding-bottom: 4px;
-}
-
-.field-label {
-  flex-shrink: 0;
-  width: 72px;
-  margin-bottom: 0;
-  margin-right: 14px;
-  font-weight: 500;
-  font-size: 13px;
-  color: #64748B;
-  padding-top: 3px;
-  text-align: right;
-}
-
-/* Ensure input containers take remaining space */
-.field-input-radio,
-.radio-group,
-.checkbox-group,
-.field-number,
-.field-input {
-  flex: 1;
-}
-
-/* Input Radio Style */
-.field-input-radio {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-}
-
-.has-error .text-input {
-  border-color: var(--color-error); /* Red-500 */
-  box-shadow: 0 0 0 1px rgba(239, 68, 68, 0.2);
-  animation: shake 0.5s cubic-bezier(.36,.07,.19,.97) both;
-}
-
-.has-error .radio-label {
-  border-color: var(--color-error-border);
-  background-color: var(--color-error-bg);
-}
-
-@keyframes shake {
-  10%, 90% { transform: translate3d(-1px, 0, 0); }
-  20%, 80% { transform: translate3d(2px, 0, 0); }
-  30%, 50%, 70% { transform: translate3d(-4px, 0, 0); }
-  40%, 60% { transform: translate3d(4px, 0, 0); }
-}
-
-.text-input {
-  padding: 5px 10px;
-  border: 1px solid #E2E8F0;
-  border-radius: 4px;
-  width: 100px;
-  outline: none;
-  transition: all 0.2s ease;
-  color: #1E293B;
-  font-size: 14px;
-  background: #fff;
-}
-
-.field-input .text-input {
-  width: 100%;
-}
-
-.text-input:focus {
-  border-color: #2B7FE3;
-  box-shadow: 0 0 0 2px rgba(43, 127, 227, 0.08);
-}
-
-.radio-group, .checkbox-group {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px 14px;
-  align-items: center;
-}
-
-.radio-label, .checkbox-label {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  cursor: pointer;
-  font-size: 13px;
-  color: #64748B;
-  padding: 2px 0;
-  border-radius: 0;
-  transition: color 0.15s ease;
-  border: none;
-  background: transparent;
-  white-space: nowrap;
-}
-
-.radio-label input[type="radio"],
-.checkbox-label input[type="checkbox"] {
-  appearance: auto;
-  -webkit-appearance: auto;
-  width: 14px;
-  height: 14px;
-  margin: 0;
-  accent-color: #2B7FE3;
-  cursor: pointer;
-}
-
-.radio-label:hover, .checkbox-label:hover {
-  color: #2B7FE3;
-  background: transparent;
-}
-
-.radio-label.is-active, .checkbox-label.is-active {
-  color: #2B7FE3;
-  font-weight: 500;
-  background: transparent;
-  border: none;
-  box-shadow: none;
-}
-
-.empty-state {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  color: var(--color-text-muted);
-  font-size: 15px;
-}
-
-.empty-icon {
-  width: 87px;
-  height: 102px;
-  margin-bottom: 16px;
-  color: var(--color-border-medium);
-}
-
-.empty-icon img {
-  width: 100%;
-  height: 100%;
-}
-
-.sub-text {
-  font-size: 13px;
-  color: var(--color-border-medium);
-  margin-top: 8px;
-}
-
-.action-area {
-  padding: 20px 0;
-  display: flex;
-  justify-content: center;
-}
-
-/* Fixed Action Area */
-.fixed-action-area {
-  position: absolute;
-  bottom: 12px;
-  right: 24px;
-  z-index: 50;
-  display: flex;
-  align-items: center;
-  gap: 12px;
-}
-
-.writeback-btn {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  min-height: 36px;
-  padding: 0 var(--space-lg);
-  background: #E5710B;
-  color: white;
-  border: none;
-  border-radius: var(--radius-sm);
-  font-size: var(--font-size-sm);
-  font-weight: var(--font-weight-medium);
-  cursor: pointer;
-  transition: all var(--duration-normal) var(--ease-out);
-}
-
-.writeback-btn:hover {
-  background: var(--color-primary-dark);
-}
-
-.writeback-btn:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-}
-
-.reference-btn {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  min-height: 36px;
-  padding: 0 var(--space-lg);
-  background: rgba(229, 113, 11, 0.08);
-  color: #b45309;
-  border: 1px solid rgba(229, 113, 11, 0.24);
-  border-radius: var(--radius-sm);
-  font-size: var(--font-size-sm);
-  font-weight: var(--font-weight-medium);
-  cursor: pointer;
-  transition: all var(--duration-normal) var(--ease-out);
-}
-
-.reference-btn:hover {
-  background: rgba(229, 113, 11, 0.14);
-}
-
-.reference-btn:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-}
-
-.back-btn {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  min-height: 36px;
-  padding: 0 var(--space-lg);
-  background: var(--color-background-white);
-  color: var(--color-text-medium);
-  border: 1px solid var(--color-border-medium);
-  border-radius: var(--radius-sm);
-  font-size: var(--font-size-sm);
-  cursor: pointer;
-  transition: all var(--duration-normal) var(--ease-out);
-}
-
-.back-btn:hover {
-  border-color: var(--color-info);
-  color: var(--color-info);
-}
-
-/* Medical Record Page Styles */
-.medical-record-page {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  background: var(--color-background-gray);
-  overflow: hidden;
-  position: relative;
-  min-height: 0;
-  padding: 12px;
-}
-
-/* Footer Actions */
-.record-footer {
-  height: 60px;
-  background: var(--color-background-white);
-  border-top: 1px solid var(--color-border-light);
-  display: flex;
-  align-items: center;
-  justify-content: flex-end;
-  padding: 0 24px;
-  gap: 12px;
-  z-index: 100;
-  flex-shrink: 0;
-}
-
-.back-btn-footer {
-  padding: 8px 20px;
-  border: 1px solid var(--color-border-medium);
-  background: var(--color-background-white);
-  border-radius: 20px;
-  color: var(--color-text-weak);
-  cursor: pointer;
-  font-size: 14px;
-  transition: all var(--duration-normal) var(--ease-out);
-}
-.back-btn-footer:hover {
-  background: var(--color-background-gray);
-  border-color: var(--color-text-muted);
-}
-
-.complete-btn {
-  padding: 8px 24px;
-  background: linear-gradient(135deg, var(--color-primary) 0%, var(--color-primary-dark) 100%);
-  color: white;
-  border: none;
-  border-radius: 20px;
-  font-size: 14px;
-  font-weight: 500;
-  cursor: pointer;
-  box-shadow: 0 2px 8px rgba(37, 99, 235, 0.2);
-  transition: all var(--duration-normal) var(--ease-out);
-}
-.complete-btn:hover {
-  transform: translateY(-1px);
-  box-shadow: 0 4px 12px rgba(37, 99, 235, 0.3);
-}
-
-.record-content {
-  flex: 1;
-  display: flex;
-  gap: 0;
-  padding: 0;
-  overflow: hidden;
-  min-height: 0;
-}
-
-.record-panel {
-  flex: 1;
-  background: #fff;
-  border-radius: 0;
-  box-shadow: none;
-  display: flex;
-  flex-direction: column;
-  overflow: hidden;
-  border: none;
-  border-right: 1px solid #EEF2F6;
-}
-
-.record-panel:last-child {
-  border-right: none;
-}
-
-.left-panel {
-  flex: 0.8;
-}
-
-.right-panel {
-  flex: 1.2;
-  background: #FAFBFD;
-  border-right: none;
-  margin-left: 10px;
-}
-
-.panel-header {
-  padding: 4px 16px;
-  border-bottom: 1px solid #EEF2F6;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  background: #F2F8FF !important;
-}
-
-.right-panel .panel-header {
-  background: linear-gradient( 90deg, #DCECFF 0%, rgba(189,220,255,0) 100%) !important;
-}
-
-.panel-header h3 {
-  margin: 0;
-  font-size: 14px;
-  color: #262626 !important;
-  font-weight: 600;
-}
-
-.panel-header-actions {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-}
-
-.search-knowledge-btn {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  padding: 6px 12px;
-  border: 1px solid var(--color-primary, #3b82f6);
-  background: transparent;
-  border-radius: 6px;
-  font-size: 12px;
-  font-weight: 500;
-  color: var(--color-primary, #3b82f6);
-  cursor: pointer;
-  transition: all 0.2s ease;
-}
-
-.search-knowledge-btn:hover:not(:disabled) {
-  background: var(--color-primary, #3b82f6);
-  color: white;
-}
-
-.search-knowledge-btn.active {
-  background: var(--color-primary, #3b82f6);
-  color: white;
-}
-
-.search-knowledge-btn.loading {
-  opacity: 0.7;
-  cursor: wait;
-}
-
-.search-knowledge-btn:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-}
-
-.spinner-tiny {
-  width: 12px;
-  height: 12px;
-  border: 2px solid currentColor;
-  border-top-color: transparent;
-  border-radius: 50%;
-  animation: spin 0.8s linear infinite;
-}
-
-.panel-body {
-  flex: 1;
-  padding: 12px; /* Compact */
-  overflow-y: auto;
-  position: relative;
-  min-height: 0;
-}
-
-.loading-overlay {
-  position: absolute;
-  inset: 0;
-  background: rgba(255, 255, 255, 0.96);
-  backdrop-filter: blur(4px);
-  z-index: 20;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 16px;
-}
-
-.ai-spinner {
-  position: relative;
-  width: 44px;
-  height: 44px;
-}
-
-.spinner-ring {
-  position: absolute;
-  inset: 0;
-  border: 2.5px solid #EEF2F6;
-  border-top-color: #2B7FE3;
-  border-radius: 50%;
-  animation: spin 1s linear infinite;
-}
-
-.spinner-core {
-  position: absolute;
-  top: 50%;
-  left: 50%;
-  transform: translate(-50%, -50%);
-  width: 20px;
-  height: 20px;
-  background: radial-gradient(circle, #2B7FE3 0%, #4A9BF5 100%);
-  border-radius: 50%;
-  box-shadow: 0 0 10px rgba(43, 127, 227, 0.35);
-  animation: pulse-core 1.5s ease-in-out infinite;
-}
-
-.loading-content {
-  text-align: center;
-}
-
-.loading-title {
-  color: #1E293B;
-  font-size: 15px;
-  font-weight: 600;
-  margin: 0 0 4px 0;
-}
-
-.loading-desc {
-  color: #94A3B8;
-  font-size: 12px;
-  margin: 0;
-}
-
-@keyframes spin {
-  to { transform: rotate(360deg); }
-}
-
-@keyframes pulse-core {
-  0% { transform: translate(-50%, -50%) scale(0.8); opacity: 0.8; }
-  50% { transform: translate(-50%, -50%) scale(1.1); opacity: 1; }
-  100% { transform: translate(-50%, -50%) scale(0.8); opacity: 0.8; }
-}
-
-.fade-enter-active,
-.fade-leave-active {
-  transition: opacity var(--duration-slow) var(--ease-out);
-}
-
-.fade-enter-from,
-.fade-leave-to {
-  opacity: 0;
-}
-
-.record-field {
-  margin-bottom: 12px; /* Compact */
-}
-
-.record-field label {
-  display: block;
-  font-size: 13px; /* Smaller */
-  font-weight: 600;
-  color: var(--color-text-weak);
-  margin-bottom: 6px;
-}
-
-.record-field .record-field-checkbox{
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  color: #262626 !important;
-}
-.record-field .record-field-checkbox input[type="checkbox"] {
-  appearance: none;
-  outline: none;
-  width: 14px;
-  height: 14px;
-  border: 1px solid #DBDBDB;
-  border-radius: 2px;
-  background: #fff;
-  display: inline-grid;
-  place-content: center;
-}
-.record-field .record-field-checkbox.is-active input[type="checkbox"] {
-  background: var(--color-info);
-  border-color: var(--color-info);
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='white' stroke-width='4' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='20 6 9 17 4 12'%3E%3C/polyline%3E%3C/svg%3E");
-  background-repeat: no-repeat;
-  background-position: center;
-  background-size: 10px;
-}
-
-/*.record-field .record-field-checkbox.is-active{*/
-/*  color: #2469F2 !important;*/
-/*}*/
-
-.record-field textarea {
-  width: 100%;
-  padding: 8px 10px; /* Compact */
-  border: 1px solid var(--color-border-medium);
-  border-radius: 6px;
-  font-size: 13px;
-  line-height: 1.5;
-  color: var(--color-text-strong);
-  resize: vertical;
-  box-sizing: border-box;
-  font-family: inherit;
-  transition: border-color var(--duration-normal) var(--ease-out);
-}
-
-.record-field textarea:focus {
-  outline: none;
-  border-color: var(--color-primary);
-  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
-}
-
-.icon-btn {
-  background: transparent;
-  border: none;
-  color: var(--color-text-weak);
-  cursor: pointer;
-  padding: 4px;
-  border-radius: 4px;
-  transition: all var(--duration-normal) var(--ease-out);
-}
-
-.icon-btn:hover {
-  background: var(--color-background-gray);
-  color: var(--color-primary-dark);
-}
-
-.tag-ai {
-  background: var(--color-background-gradient)!important;
-  color: #262626!important;
-  display: inline-flex;
-  align-items: center;
-  gap: 3px;
-  padding: 2px 10px;
-  border-radius: var(--radius-sm);
-  font-size: 14px;
-  font-weight: 500;
-  border: 1px solid transparent;
-  border-image: var(--color-border-gradient);
-}
-
-.ai-card {
-  background: var(--color-background-white);
-  border-radius: 10px;
-  padding: 16px 18px;
-  margin-bottom: 12px;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
-  border: 1px solid rgba(226, 232, 240, 0.8);
-  position: relative;
-  overflow: visible;
-  min-height: 0;
-}
-
-.category-filter {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin-bottom: 8px;
-}
-
-.category-filter select {
-  flex: 1;
-  padding: 6px;
-  border: 1px solid var(--color-info-bg);
-  border-radius: 6px;
-  font-size: 13px;
-  color: var(--color-text-weak);
-  outline: none;
-  background: var(--color-background-white);
-}
-
-.clear-filter {
-  background: none;
-  border: none;
-  color: var(--color-text-muted);
-  font-size: 18px;
-  cursor: pointer;
-  padding: 0 4px;
-}
-
-.clear-filter:hover {
-  color: var(--color-error);
-}
-
-.loading-overlay.embedded {
-  border-radius: 8px;
-  position: relative;
-  background: rgba(255, 255, 255, 0.92);
-  min-height: 180px;
-  flex-direction: row;
-}
-
-.treatment-loading-icon {
-  position: relative;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-
-.treatment-loading-img{
-  height: 102px;
-  width: 87px;
-}
-
-.treatment-loading-pulse {
-  position: absolute;
-  inset: -8px;
-  border-radius: 50%;
-  background: rgba(43, 127, 227, 0.08);
-  animation: treatment-pulse 2s ease-in-out infinite;
-}
-
-@keyframes treatment-pulse {
-  0%, 100% { transform: scale(0.9); opacity: 0.5; }
-  50% { transform: scale(1.15); opacity: 1; }
-}
-
-.ai-card h4 {
-  margin: 0 0 10px 0;
-  font-size: 14px;
-  font-weight: 600;
-  color: var(--color-text-strong);
-}
-
-.ai-card-title-row {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 12px;
-  margin-bottom: 10px;
-  padding-bottom: 10px;
-  border-bottom: 1px solid var(--color-border-light);
-}
-
-.ai-card-title-row h4 {
-  margin: 0;
-}
-
-.ai-card-title-actions {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-.ai-recommend-btn {
-  position: relative;
-  display: inline-flex;
-  align-items: center;
-  gap: var(--space-xs);
-  padding: var(--space-xs) 13px;
-  border: 1px solid transparent;
-  /*border-image: var(--color-border-gradient);*/
-  border-radius: var(--radius-sm);
-  background: var(--color-background-gradient);
-  color: #262626;
-  font-size: var(--font-size-xs);
-  font-weight: var(--font-weight-medium);
-  cursor: pointer;
-  transition: all var(--duration-normal) var(--ease-out);
-  white-space: nowrap;
-}
-.ai-recommend-btn-border{
-  position: absolute;
-  width: 109px;
-  height: 28px;
-  right: 17px;
-  background: linear-gradient(
-      88deg,
-      rgba(5, 213, 255, 1),
-      rgba(88, 5, 255, 1),
-      rgba(5, 134, 255, 1)
-  );
-  border-radius: 5px;
-  overflow: hidden;
-}
-
-.ai-recommend-btn:hover {
-  background: var(--color-info-bg);
-}
-
-.ai-recommend-btn:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-}
-
-.ai-recommend-btn-img{
-  width: 16px;
-  height: 16px;
-}
-
-.treatment-card-heading {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-}
-
-.treatment-card-heading h4 {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-}
-
-.treatment-card-desc {
-  margin: 0 0 var(--space-sm);
-  font-size: var(--font-size-xs);
-  line-height: var(--line-height-normal);
-  color: var(--color-text-muted);
-}
-
-.treatment-summary-pills {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-  justify-content: flex-end;
-}
-
-.treatment-summary-pill {
-  display: inline-flex;
-  align-items: center;
-  min-height: 24px;
-  padding: 0 8px;
-  border-radius: 4px;
-  background: rgba(43, 127, 227, 0.06);
-  color: #4A7AB5;
-  font-size: 11px;
-  font-weight: 600;
-  white-space: nowrap;
-}
-
-.treatment-summary-pill.medicine {
-  background: rgba(16, 185, 129, 0.06);
-  color: #059669;
-}
-
-.treatment-summary-pill.exam {
-  background: rgba(99, 102, 241, 0.06);
-  color: #4F46E5;
-}
-
-.treatment-summary-pill.lab-test {
-  background: rgba(245, 158, 11, 0.06);
-  color: #D97706;
-}
-
-.treatment-summary-pill.procedure {
-  background: rgba(236, 72, 153, 0.06);
-  color: #DB2777;
-}
-
-.diagnosis-path-btn {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  min-height: 32px;
-  padding: 0 12px;
-  border: 1px solid rgba(84, 132, 216, 0.22);
-  border-radius: 999px;
-  background: rgba(233, 241, 255, 0.88);
-  color: #3d68b2;
-  font-size: 12px;
-  font-weight: 700;
-  cursor: pointer;
-  transition: transform var(--duration-normal) var(--ease-out), box-shadow var(--duration-normal) var(--ease-out), background var(--duration-normal) var(--ease-out);
-}
-
-.diagnosis-path-btn:hover {
-  transform: translateY(-1px);
-  background: rgba(221, 234, 255, 0.98);
-  box-shadow: 0 10px 18px rgba(84, 132, 216, 0.14);
-}
-
-.ai-placeholder {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-
-.skeleton-line {
-  height: 12px;
-  background: var(--color-background-gray);
-  border-radius: 6px;
-  animation: pulse 1.5s infinite ease-in-out;
-}
-
-@keyframes pulse {
-  0% { opacity: 0.6; }
-  50% { opacity: 0.3; }
-  100% { opacity: 0.6; }
-}
-
-/* Diagnosis List Styles */
-.diagnosis-group-list {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-}
-
-.diagnosis-group {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-
-.diagnosis-group-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  width: 100%;
-  padding: 8px 12px;
-  border: none;
-  border-radius: 0;
-  border-bottom: 1px solid #EEF2F6;
-  background: transparent;
-  color: #1E293B;
-  cursor: pointer;
-  transition: all 0.2s ease;
-}
-
-.diagnosis-group-header:hover {
-  background: rgba(43, 127, 227, 0.03);
-}
-
-.diagnosis-group-title-row {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  min-width: 0;
-}
-
-.diagnosis-group-toggle {
-  color: #2B7FE3;
-  font-size: 12px;
-  line-height: 1;
-  transition: transform 0.2s ease;
-}
-
-.diagnosis-group-toggle.collapsed {
-  transform: rotate(-90deg);
-}
-
-.diagnosis-group-title {
-  font-size: var(--font-size-sm);
-  font-weight: var(--font-weight-bold);
-  color: var(--color-text-strong);
-}
-
-/*.diagnosis-group-title::before {*/
-/*  content: '';*/
-/*  display: inline-block;*/
-/*  width: 4px;*/
-/*  height: 4px;*/
-/*  background: var(--color-info);*/
-/*  border-radius: var(--radius-full);*/
-/*  margin-right: 6px;*/
-/*  vertical-align: middle;*/
-/*}*/
-
-.diagnosis-group-range {
-  display: inline-flex;
-  align-items: center;
-  padding: 1px 6px;
-  border-radius: 3px;
-  background: rgba(43, 127, 227, 0.08);
-  color: #2B7FE3;
-  font-size: 11px;
-  font-weight: 600;
-}
-
-.diagnosis-group-count {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  min-width: 20px;
-  height: 20px;
-  padding: 0 6px;
-  border-radius: 3px;
-  background: rgba(43, 127, 227, 0.08);
-  color: #2B7FE3;
-  font-size: 11px;
-  font-weight: 600;
-}
-
-.diagnosis-list {
-  list-style: none;
-  padding: 0;
-  margin: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-}
-
-.diagnosis-item {
-  position: relative;
-  padding: 12px 16px;
-  border: 1px solid var(--color-border-light);
-  border-radius: var(--radius-md);
-  background: var(--color-background-white);
-  cursor: pointer;
-  transition: all var(--duration-normal) var(--ease-out);
-}
-
-.diagnosis-item:hover {
-  background: #F8FAFC;
-  border-color: #CBD5E1;
-}
-
-.diagnosis-item.active {
-  background: rgba(43, 127, 227, 0.04);
-  border-color: #2B7FE3;
-  box-shadow: 0 0 0 1px rgba(43, 127, 227, 0.15);
-}
-
-.diagnosis-item::before {
-  content: '';
-  display: inline-block;
-  width: 14px;
-  height: 14px;
-  border: 1px solid #DBDBDB;
-  border-radius: 2px;
-  margin-right: var(--space-sm);
-  vertical-align: middle;
-  flex-shrink: 0;
-  position: absolute;
-  left: 19px;
-  top: 19px;
-}
-
-.diagnosis-item.active::before {
-  background: var(--color-info);
-  border-color: var(--color-info);
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='white' stroke-width='4' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='20 6 9 17 4 12'%3E%3C/polyline%3E%3C/svg%3E");
-  background-repeat: no-repeat;
-  background-position: center;
-  background-size: 10px;
-}
-
-.diag-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 4px;
-  padding-left: 28px;
-}
-
-.diag-name {
-  font-weight: var(--font-weight-semibold);
-  color: var(--color-info);
-  font-size: var(--font-size-sm);
-  display: flex;
-  align-items: center;
-  gap: 6px;
-}
-
-.tcm-badge {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 18px;
-  height: 18px;
-  background: linear-gradient(135deg, #C9A063 0%, #B8860B 100%);
-  color: white;
-  font-size: 11px;
-  font-weight: 600;
-  border-radius: 50%;
-  flex-shrink: 0;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.15);
-}
-
-.diag-rate {
-  font-size: var(--font-size-xs);
-  color: var(--color-background-white);
-  background: var(--color-success);
-  padding: 2px 8px;
-  border-radius: var(--radius-full);
-  font-weight: var(--font-weight-medium);
-}
-
-.diag-rate.rate-high {
-  background: var(--color-success);
-}
-
-.diag-rate.rate-medium {
-  background: var(--color-info);
-}
-
-.diag-rate.rate-low {
-  background: var(--color-warning);
-  color: var(--color-background-white);
-}
-
-.diag-select-dot {
-  display: inline-block;
-  width: 18px;
-  height: 18px;
-  border-radius: var(--radius-full);
-  border: 2px solid var(--color-border-medium);
-  flex-shrink: 0;
-  transition: all var(--duration-normal) var(--ease-out);
-}
-
-.diag-select-dot.active {
-  background: var(--color-info);
-  border-color: var(--color-info);
-}
-
-.diag-rationale {
-  font-size: var(--font-size-xs);
-  color: var(--color-text-muted);
-  line-height: var(--line-height-normal);
-  padding-left: 28px;
-}
-
-.tcm-detail {
-  margin-top: 8px;
-  margin-left: 28px;
-  padding: 8px 12px;
-  background: linear-gradient(135deg, rgba(201, 160, 99, 0.05) 0%, rgba(184, 134, 11, 0.05) 100%);
-  border-left: 3px solid #C9A063;
-  border-radius: 4px;
-  font-size: 12px;
-}
-
-.tcm-syndrome,
-.tcm-treatment {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  margin-bottom: 4px;
-  line-height: 1.6;
-}
-
-.tcm-syndrome:last-child,
-.tcm-treatment:last-child {
-  margin-bottom: 0;
-}
-
-.tcm-label {
-  color: #B8860B;
-  font-weight: 600;
-  flex-shrink: 0;
-  min-width: 40px;
-}
-
-.tcm-value {
-  color: var(--color-text-strong);
-  font-weight: 500;
-}
-
-.tcm-code {
-  color: var(--color-text-muted);
-  font-size: 11px;
-  background: var(--color-background-gray);
-  padding: 1px 6px;
-  border-radius: 4px;
-}
-
-.match-tag {
-  color: var(--color-success);
-  font-weight: bold;
-  font-size: 11px;
-  margin-left: auto;
-}
-
-.empty-text {
-  text-align: center;
-  color: var(--color-text-muted);
-  font-size: 13px;
-  padding: 20px 0;
-}
-
-.error-text {
-  text-align: center;
-  color: var(--color-error);
-  font-size: 13px;
-  padding: 20px 0;
-  background: var(--color-error-bg);
-  border-radius: 6px;
-  border: 1px solid var(--color-error-bg);
-}
-
-.treatment-groups {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-}
-
-.treatment-section {
-  display: flex;
-  flex-direction: column;
-  gap: 0;
-  padding: 0;
-  border-radius: 16px;
-  border: 1px solid #DBDBDB;
-  background: #FFFFFF;
-  overflow: visible;
-  box-shadow: 0 1px 3px rgba(15, 23, 42, 0.03);
-}
-
-.treatment-section-muted {
-  border-color: #D8E0E8;
-  background: #FCFDFE;
-}
-
-.treatment-section-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  padding: 14px 16px 8px;
-  background: #F2F5F7;
-  border-radius: 16px 16px 0 0;
-  border: none;
-  border-bottom: 1px solid #E6EBF1;
-}
-
-.treatment-section-header h5 {
-  margin: 0;
-  font-size: var(--font-size-sm);
-  font-weight: var(--font-weight-bold);
-  color: var(--color-text-strong);
-  display: flex;
-  align-items: center;
-  gap: 6px;
-}
-
-/*.treatment-section-header h5::before {*/
-/*  content: '';*/
-/*  display: inline-block;*/
-/*  width: 3px;*/
-/*  height: 14px;*/
-/*  border-radius: 2px;*/
-/*  background: #2B7FE3;*/
-/*}*/
-
-.treatment-section-header-right {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-}
-
-.item-reference-btn {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  min-height: 28px;
-  padding: 0 14px;
-  border: 1px solid rgba(43, 127, 227, 0.18);
-  border-radius: 6px;
-  background: rgba(240, 247, 255, 0.9);
-  color: #2B7FE3;
-  font-size: 12px;
-  font-weight: 600;
-  cursor: pointer;
-  white-space: nowrap;
-  transition: all var(--duration-normal) var(--ease-out);
-}
-
-.item-reference-btn:hover {
-  background: rgba(224, 239, 255, 0.98);
-  border-color: rgba(43, 127, 227, 0.3);
-  box-shadow: 0 1px 4px rgba(43, 127, 227, 0.1);
-}
-
-.item-reference-btn:disabled {
-  cursor: not-allowed;
-  opacity: 0.45;
-}
-
-.treatment-section-pill,
-.section-readonly-badge,
-.section-readonly-inline {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--space-xs);
-  min-height: 22px;
-  padding: 0 var(--space-sm);
-  border-radius: var(--radius-sm);
-  background: transparent;
-  color: var(--color-text-muted);
-  font-size: var(--font-size-xs);
-  font-weight: var(--font-weight-normal);
-}
-
-.treatment-section-pill.strong {
-  color: var(--color-success);
-}
-
-.section-readonly-badge,
-.section-readonly-inline {
-  background: rgba(148, 163, 184, 0.1);
-  color: #7A8A9A;
-}
-
-.treatment-list {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-  padding: 12px 14px 14px;
-  background: inherit;
-}
-
-.treatment-list > * {
-  position: relative;
-}
-
-.treatment-list > * + *::before {
-  content: '';
-  position: absolute;
-  left: 16px;
-  right: 16px;
-  top: -6px;
-  height: 1px;
-  background: linear-gradient(90deg, rgba(219, 219, 219, 0) 0%, rgba(219, 219, 219, 0.92) 16%, rgba(219, 219, 219, 0.92) 84%, rgba(219, 219, 219, 0) 100%);
-  pointer-events: none;
-}
-
-.treatment-item {
-  position: relative;
-  display: flex;
-  flex-direction: column;
-  background: transparent;
-  border: none;
-  border-bottom: 1px solid rgba(226, 232, 240, 0.6);
-  border-radius: 0;
-  padding: 10px 16px;
-  gap: 4px;
-  cursor: pointer;
-  transition: background var(--duration-normal) var(--ease-out);
-  overflow: visible;
-}
-
-
-.treatment-item:last-child {
-  border-bottom: none!important;
-  border-radius: 0px 0px 16px 16px;
-}
-
-.selected-mark {
-  position: absolute;
-  top: 8px;
-  left: -2px;
-  width: 18px;
-  height: 18px;
-  background: #2B7FE3;
-  color: white;
-  border-radius: 50%;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 0;
-  box-shadow: 0 1px 3px rgba(43, 127, 227, 0.3);
-}
-
-.treatment-item:hover {
-  background: rgba(43, 127, 227, 0.03);
-}
-
-.treatment-item.active {
-  background: rgba(43, 127, 227, 0.04);
-  border-color: rgba(43, 127, 227, 0.12);
-  padding-left: 20px;
-}
-
-.rec-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  margin-bottom: 0;
-}
-
-.diag-actions,
-.rec-actions {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  justify-content: flex-end;
-  gap: 6px;
-  margin-left: auto;
-}
-
-.rec-name-group {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 6px;
-  min-width: 0;
-}
-.checkbox-label.rec-name-group-checkbox {
-  border: none!important;
-  padding: 0!important;
-}
-.checkbox-label.rec-name-group-checkbox:hover{
-  border: none!important;
-}
-.checkbox-label.rec-name-group-checkbox:has(input:checked){
-  border: none!important;
-}
-
-.rec-tag {
-  font-size: 11px;
-  padding: 1px 6px;
-  border-radius: 3px;
-  font-weight: 600;
-  line-height: 1.6;
-}
-
-.rec-tag.medicine {
-  background: rgba(16, 185, 129, 0.1);
-  color: #059669;
-}
-
-.rec-tag.exam {
-  background: rgba(99, 102, 241, 0.08);
-  color: #4F46E5;
-}
-
-.rec-tag.lab_test {
-  background: rgba(245, 158, 11, 0.1);
-  color: #D97706;
-}
-
-.rec-tag.procedure {
-  background: rgba(236, 72, 153, 0.08);
-  color: #DB2777;
-}
-
-.rec-tag.acupuncture {
-  background: rgba(245, 158, 11, 0.1);
-  color: #b45309;
-}
-
-.treatment-detail-panel {
-  margin-top: 10px;
-  padding: 12px 14px;
-  border: 1px solid var(--voice-border, #dbe4ef);
-  border-radius: 12px;
-  background: var(--voice-surface-soft, #f8fafc);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.42);
-}
-
-.treatment-detail-panel + .treatment-detail-panel {
-  margin-top: 8px;
-}
-
-.treatment-body-panel .diag-rationale {
-  padding-left: 0;
-}
-
-.treatment-body-panel .rec-ingredients-edit {
-  margin-top: 0;
-  background: rgba(255, 255, 255, 0.78);
-}
-
-.treatment-body-panel .diag-rationale + .rec-ingredients-edit {
-  margin-top: 8px;
-}
-
-.treatment-editor-panel {
-  padding: 10px 12px;
-}
-
-.rec-name {
-  font-weight: 600;
-  font-size: 13px;
-  color: var(--color-text-strong);
-}
-
-.treatment-item-muted {
-  border-style: dashed;
-  border-color: rgba(148, 163, 184, 0.3);
-}
-
-.rec-reason, .rec-usage, .rec-ingredients {
-  font-size: 12px;
-  color: var(--color-text-muted);
-  line-height: 1.5;
-}
-
-.doc-icon-btn {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 26px;
-  height: 26px;
-  border: none;
-  border-radius: 4px;
-  background: transparent;
-  color: var(--color-text-muted);
-  cursor: pointer;
-  transition: all var(--duration-normal) var(--ease-out);
-  padding: 0;
-}
-
-.doc-icon-btn:hover {
-  background: rgba(43, 127, 227, 0.08);
-  color: #2B7FE3;
-}
-
-.manual-match-toggle-btn {
-  display: inline-flex;
-  align-items: center;
-  height: 24px;
-  padding: 0 10px;
-  border: 1px solid #d1d5db;
-  border-radius: 12px;
-  background: #fff;
-  color: #2B7FE3;
-  font-size: 12px;
-  cursor: pointer;
-  transition: all var(--duration-normal) var(--ease-out);
-}
-
-.manual-match-toggle-btn:hover {
-  border-color: #2B7FE3;
-  background: rgba(43, 127, 227, 0.08);
-}
-
-.rec-ingredients {
-  color: var(--color-text-strong);
-  font-family: serif;
-  background: var(--color-background-gray);
-  padding: 4px 8px;
-  border-radius: 4px;
-  margin: 4px 0;
-}
-
-.rec-action {
-  margin-top: 4px;
-  padding-top: 8px;
-  border-top: 1px dashed var(--color-border-light);
-}
-
-.match-success {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  background: var(--color-success-bg);
-  padding: 6px 8px;
-  border-radius: 6px;
-  border: 1px solid var(--color-success-border);
-}
-
-.match-info {
-  display: flex;
-  flex-direction: column;
-  font-size: 12px;
-}
-
-.match-name {
-  font-weight: 600;
-  color: var(--color-success-text);
-}
-
-.match-spec, .match-price {
-  color: var(--color-success);
-  font-size: 11px;
-}
-
-.match-fail {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  background: var(--color-background-light);
-  padding: 6px 8px;
-  border-radius: 6px;
-  border: 1px solid var(--color-background-gray);
-}
-
-.unmatched-tip {
-  font-size: 12px;
-  color: var(--color-text-muted);
-}
-
-.btn-add {
-  background: var(--color-success);
-  color: white;
-  border: none;
-  width: 24px;
-  height: 24px;
-  border-radius: 12px;
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 16px;
-}
-
-.btn-search {
-  background: var(--color-background-white);
-  border: 1px solid var(--color-border-medium);
-  border-radius: 4px;
-  padding: 2px 8px;
-  cursor: pointer;
-  font-size: 12px;
-}
-
-.field-number {
-  display: flex;
-  align-items: center;
-  gap: 6px; /* Reduced gap */
-}
-
-.unit {
-  color: var(--color-text-weak);
-  font-size: 13px; /* Slightly smaller font */
-}
-
-.empty-state {
-  flex: 1;
-  display: flex;
-  justify-content: center;
-  align-items: center;
-  color: var(--color-primary-light); /* Blue-400 */
-  flex-direction: column;
-  gap: 16px;
-  background: rgba(255, 255, 255, 0.4);
-  border-radius: 12px;
-  margin: 0 8px 8px;
-  /* border: 2px dashed var(--color-info-bg); */
-}
-
-/* Final Report Styles */
-.final-report-page {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  background: var(--print-bg);
-  overflow: hidden;
-  position: relative;
-}
-
-.report-actions {
-  height: 60px;
-  background: var(--color-background-white);
-  display: flex;
-  align-items: center;
-  justify-content: flex-end;
-  padding: 0 24px;
-  gap: 12px;
-  border-bottom: 1px solid var(--color-border-light);
-}
-
-.report-paper {
-  margin: 24px auto;
-  width: 210mm;
-  min-height: 297mm;
-  background: var(--color-background-white);
-  padding: 40px;
-  box-shadow: 0 4px 12px rgba(0,0,0,0.15);
-  overflow-y: auto;
-  font-family: 'SimSun', 'Songti SC', serif;
-  color: #000;
-}
-
-/* 强制报告文字为黑色，覆盖主题样式 */
-.report-paper *,
-.report-paper p,
-.report-paper span,
-.report-paper div,
-.report-paper h1,
-.report-paper h2,
-.report-paper h3,
-.report-paper label,
-.final-report-page *,
-.final-report-page p,
-.final-report-page span,
-.final-report-page div,
-.final-report-page h1,
-.final-report-page h2,
-.final-report-page h3,
-.final-report-page label {
-  color: #000 !important;
-}
-
-.report-paper .tx-usage,
-.final-report-page .tx-usage {
-  color: #444 !important;
-}
-
-/* Category Filter Dropdown */
-.category-filter-container {
-  position: relative;
-  margin-bottom: 8px;
-}
-
-.category-trigger {
-  width: 100%;
-  padding: 3px 7px;
-  background: var(--color-background-white);
-  border: 1px solid var(--color-info-bg);
-  border-radius: 6px;
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  transition: all var(--duration-normal) var(--ease-out);
-}
-
-.category-trigger:hover {
-  border-color: var(--color-primary);
-}
-
-.category-trigger.active {
-  border-color: var(--color-primary);
-  box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.1);
-}
-
-.trigger-text {
-  font-size: 13px;
-  color: var(--color-text-medium);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  flex: 1;
-  font-family: Microsoft YaHei, Microsoft YaHei;
-  font-weight: 400;
-  line-height: 22px;
-  text-align: left;
-  font-style: normal;
-  text-transform: none;
-}
-
-.trigger-icon {
-  width: 14px;
-  height: 14px;
-  color: var(--color-text-muted);
-  margin-left: 8px;
-  transition: transform var(--duration-normal) var(--ease-smooth);
-}
-
-.trigger-icon.rotate {
-  transform: rotate(180deg);
-}
-
-.category-dropdown {
-  position: absolute;
-  top: 100%;
-  left: 0;
-  width: 100%;
-  max-height: 240px;
-  overflow-y: auto;
-  background: var(--color-background-white);
-  border: 1px solid var(--color-border-light);
-  border-radius: 8px;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
-  margin-top: 4px;
-  z-index: 50;
-  padding: 4px 0;
-}
-
-.category-option {
-  padding: 8px 12px;
-  display: flex;
-  align-items: center;
-  cursor: pointer;
-  transition: background var(--duration-fast) var(--ease-out);
-}
-
-.category-option:hover {
-  background: var(--color-background-gray);
-}
-
-.category-option.selected {
-  background: var(--color-primary-50);
-  color: var(--color-primary-dark);
-}
-
-.checkbox-custom {
-  width: 16px;
-  height: 16px;
-  border: 1px solid var(--color-border-medium);
-  border-radius: 4px;
-  margin-right: 8px;
-  position: relative;
-  transition: all var(--duration-normal) var(--ease-out);
-  background: var(--color-background-white);
-}
-
-.category-option:hover .checkbox-custom {
-  border-color: var(--color-text-muted);
-}
-
-.checkbox-custom.checked {
-  background: var(--color-primary);
-  border-color: var(--color-primary);
-}
-
-.checkbox-custom.checked::after {
-  content: '';
-  position: absolute;
-  left: 5px;
-  top: 2px;
-  width: 4px;
-  height: 8px;
-  border: solid white;
-  border-width: 0 2px 2px 0;
-  transform: rotate(45deg);
-}
-
-.dropdown-divider {
-  height: 1px;
-  background: #e5e7eb;
-  margin: 4px 0;
-}
-
-.hospital-title {
-  text-align: center;
-  font-size: 24px;
-  font-weight: bold;
-  margin-bottom: 30px;
-  border-bottom: 2px solid #000;
-  padding-bottom: 10px;
-  color: #000 !important;
-}
-
-.report-header {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-  margin-bottom: 20px;
-  border-bottom: 1px solid #000;
-  padding-bottom: 10px;
-  color: #000 !important;
-}
-
-.info-row {
-  display: flex;
-  justify-content: space-between;
-  color: #000 !important;
-  font-size: 14px;
-}
-
-.info-row span {
-  color: #000 !important;
-}
-
-.report-section {
-  margin-bottom: 20px;
-}
-
-.section-title {
-  font-weight: bold;
-  font-size: 16px;
-  margin-bottom: 5px;
-  color: #000 !important;
-}
-
-.section-content {
-  font-size: 15px;
-  line-height: 1.6;
-  color: #000 !important;
-  white-space: pre-wrap;
-}
-
-.tx-item {
-  margin-bottom: 4px;
-  color: #000 !important;
-}
-
-.tx-usage {
-  font-size: 14px;
-  color: #444;
-  margin-left: 1em;
-}
-
-.tx-header {
-  font-weight: 500;
-  margin-bottom: 4px;
-}
-
-.tx-reason {
-  font-size: 13px;
-  color: #666;
-  margin-left: 1em;
-  margin-top: 4px;
-}
-
-/* TCM Diagnosis Styles */
-.diagnosis-item {
-  line-height: 1.8;
-}
-
-.tcm-diagnosis-primary {
-  margin-bottom: 8px;
-}
-
-.tcm-syndrome-line {
-  margin-left: 2em;
-  color: #2c5282;
-}
-
-.diagnosis-code {
-  font-size: 0.9em;
-  color: #666;
-  margin-left: 8px;
-}
-
-.report-footer {
-  margin-top: 50px;
-  padding-right: 50px;
-  color: #000 !important;
-}
-
-.footer-row {
-  display: flex;
-  justify-content: space-between;
-  width: 100%;
-}
-
-.report-footer span {
-  color: #000 !important;
-}
-
-@media print {
-  .consultation-page > header,
-  .symptom-sidebar,
-  .report-actions,
-  .fixed-action-area {
-    display: none !important;
-  }
-  
-  .consultation-page {
-    height: auto;
-    overflow: visible;
-  }
-
-  .final-report-page {
-    background: var(--color-background-white);
-    height: auto;
-    overflow: visible;
-    position: static;
-  }
-
-  .report-paper {
-    margin: 0;
-    box-shadow: none;
-    width: 100%;
-    min-height: 0;
-    padding: 0;
-  }
-}
-
-/*.empty-state::before {*/
-/*  content: '';*/
-/*  display: block;*/
-/*  width: 120px;*/
-/*  height: 120px;*/
-/*  background: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="%23bfdbfe" stroke-width="1"><path d="M9 5H7a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-2M9 5a2 2 0 0 0 2 2h2a2 2 0 0 0 2-2M9 5a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2m-3 9h.01"/></svg>') no-repeat center/contain;*/
-/*  opacity: 0.8;*/
-/*}*/
-
-/* Final Report Styles */
-.final-report-page {
-  flex: 1;
-  background: var(--print-bg);
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  padding: 20px;
-  overflow-y: auto;
-}
-
-.report-paper {
-  background: var(--color-background-white);
-  width: 210mm;
-  min-height: 297mm;
-  padding: 20mm;
-  box-shadow: 0 4px 8px rgba(0,0,0,0.2);
-  display: flex;
-  flex-direction: column;
-  box-sizing: border-box;
-  color: #000;
-}
-
-/* 强制报告文字为黑色，覆盖主题样式 */
-.report-paper *,
-.report-paper p,
-.report-paper span,
-.report-paper div,
-.report-paper h1,
-.report-paper label {
-  color: #000 !important;
-}
-
-.paper-header {
-  text-align: center;
-  margin-bottom: 20px;
-  border-bottom: 2px solid #000;
-  padding-bottom: 10px;
-}
-
-.paper-header h1 {
-  margin: 0;
-  font-size: 24px;
-  color: #000;
-}
-
-.hospital-name {
-  font-size: 14px;
-  color: #666;
-  margin-top: 5px;
-}
-
-.paper-info {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-  margin-bottom: 20px;
-  font-size: 14px;
-  border-bottom: 1px solid #000;
-  padding-bottom: 10px;
-}
-
-.info-row {
-  display: flex;
-  justify-content: space-between;
-}
-
-.paper-body {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  gap: 20px;
-}
-
-.section-title {
-  font-weight: bold;
-  font-size: 16px;
-  margin-bottom: 8px;
-  color: #000 !important;
-}
-
-.section-content {
-  font-size: 14px;
-  line-height: 1.6;
-  color: #000 !important;
-  padding-left: 10px;
-  white-space: pre-wrap;
-}
-
-.rp-list {
-  list-style: none;
-  padding: 0;
-  margin: 0;
-}
-
-.rp-item {
-  display: flex;
-  gap: 10px;
-  margin-bottom: 5px;
-}
-
-.rp-index {
-  font-weight: bold;
-}
-
-.rp-name {
-  font-weight: 500;
-}
-
-.rp-spec {
-  color: #666;
-}
-
-.paper-footer {
-  margin-top: 40px;
-  text-align: right;
-  padding-top: 20px;
-}
-
-.doctor-sign {
-  font-size: 14px;
-}
-
-.report-actions {
-  display: flex;
-  gap: 16px;
-  margin-top: 20px;
-}
-
-.action-btn {
-  padding: 10px 24px;
-  border-radius: 4px;
-  border: none;
-  background: var(--color-background-white);
-  color: var(--color-text-medium);
-  cursor: pointer;
-  font-size: 14px;
-  box-shadow: 0 2px 4px rgba(0,0,0,0.2);
-}
-
-.action-btn.primary {
-  background: var(--color-primary);
-  color: white;
-}
-
-@media print {
-  .consultation-page {
-    height: auto;
-    overflow: visible;
-  }
-  
-  .patient-header,
-  .report-actions {
-    display: none !important;
-  }
-  
-  .final-report-page {
-    padding: 0;
-    background: var(--color-background-white);
-    height: auto;
-    overflow: visible;
-  }
-  
-  .report-paper {
-    box-shadow: none;
-    width: 100%;
-    min-height: auto;
-    padding: 0;
-    margin: 0;
-  }
-}
-/* Related Diagnoses */
-.related-section {
-  margin-top: 8px;
-  background: var(--color-background-white);
-  border-radius: 6px;
-  border: 1px solid var(--color-border-light);
-  overflow: hidden;
-  font-size: 13px;
-}
-
-.related-trigger {
-  padding: 6px 10px;
-  color: var(--color-text-muted);
-  cursor: pointer;
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  transition: background var(--duration-normal) var(--ease-out);
-  background: var(--color-background-light);
-}
-
-.related-trigger:hover {
-  background: var(--color-background-gray);
-}
-
-.arrow {
-  /*font-size: 10px;*/
-  /*transition: transform var(--duration-normal) var(--ease-smooth);*/
-  width: 14px;
-  height: 22px;
-  /*background-color: #2469F2;*/
-  /*border-radius: 50%;*/
-  /*display: flex;*/
-  /*justify-content: center;*/
-  /*align-items: center;*/
-}
-
-.arrow.open {
-  transform: rotate(180deg);
-}
-
-.related-list {
-  max-height: 200px;
-  overflow-y: auto;
-  border-top: 1px solid #e2e8f0;
-}
-
-.related-item {
-  padding: 8px 10px;
-  display: flex;
-  gap: 10px;
-  cursor: pointer;
-  transition: background var(--duration-normal) var(--ease-out);
-  align-items: center;
-}
-
-.related-item:hover {
-  background: #f0f9ff;
-}
-
-.related-code {
-  font-family: monospace;
-  color: var(--color-text-muted);
-  font-weight: 500;
-  min-width: 60px;
-}
-
-.related-name {
-  color: #334155;
-  font-weight: 500;
-}
-
-.matched-inline {
-  display: inline-flex;
-  align-items: center;
-  gap: 3px;
-  background: rgba(16, 185, 129, 0.08);
-  padding: 1px 6px;
-  border-radius: 3px;
-  border: 1px solid rgba(16, 185, 129, 0.2);
-  font-size: 11px;
-  margin-left: 4px;
-}
-
-.match-icon {
-  color: #059669;
-  font-weight: 600;
-  font-size: 10px;
-}
-
-.unmatched-icon {
-  margin-left: 4px;
-  font-size: 11px;
-  opacity: 0.5;
-}
-
-.diag-name-group {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-.inline-related-trigger {
-  cursor: pointer;
-  padding: 2px 4px;
-  border-radius: 4px;
-  color: var(--color-text-muted);
-  transition: all var(--duration-normal) var(--ease-out);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-
-.rec-ingredients-edit {
-  margin-top: 6px;
-  background: var(--color-background-gray);
-  padding: 8px;
-  border-radius: 6px;
-  border: 1px solid var(--color-border-light);
-}
-
-.rec-ingredients-edit label {
-  display: block;
-  font-size: 12px;
-  font-weight: 600;
-  color: var(--color-text-weak);
-  margin-bottom: 4px;
-}
-
-.ingredients-textarea {
-  width: 100%;
-  border: 1px solid var(--color-border-medium);
-  border-radius: 4px;
-  padding: 4px 6px;
-  font-size: 13px;
-  font-family: inherit;
-  color: var(--color-text-strong);
-  resize: vertical;
-  background: var(--color-background-white);
-  box-sizing: border-box;
-  outline: none;
-  transition: border-color 0.2s;
-}
-
-.ingredients-textarea:focus {
-  border-color: var(--color-primary);
-  box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.1);
-}
-
-.inline-related-trigger:hover {
-  background: #e2e8f0;
-  color: var(--color-text-weak);
-}
-/* Knowledge Panel Toggle Button */
-.knowledge-toggle-btn {
-  position: fixed;
-  right: 20px;
-  bottom: 80px;
-  width: 48px;
-  height: 48px;
-  border-radius: 50%;
-  border: none;
-  background: linear-gradient(135deg, #3b82f6 0%, #1d4ed8 100%);
-  color: white;
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  box-shadow: 0 4px 16px rgba(59, 130, 246, 0.4);
-  transition: all 0.3s ease;
-  z-index: 99;
-}
-
-.knowledge-toggle-btn:hover {
-  transform: scale(1.08);
-  box-shadow: 0 6px 20px rgba(59, 130, 246, 0.5);
-}
-
-.knowledge-toggle-btn.active {
-  background: linear-gradient(135deg, #1d4ed8 0%, #1e40af 100%);
-}
-
-.knowledge-toggle-btn.loading {
-  background: var(--color-background-gray);
-  cursor: wait;
-}
-
-.knowledge-icon {
-  font-size: 22px;
-}
-
-.knowledge-badge {
-  position: absolute;
-  top: -2px;
-  right: -2px;
-  width: 18px;
-  height: 18px;
-  background: var(--color-success, #10b981);
-  color: white;
-  font-size: 12px;
-  font-weight: 700;
-  border-radius: 50%;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  border: 2px solid white;
-}
-
-.spinner-small {
-  width: 20px;
-  height: 20px;
-  border: 2px solid var(--color-border-light);
-  border-top-color: var(--color-primary);
-  border-radius: 50%;
-  animation: spin 0.8s linear infinite;
-}
-.checklist-indicator {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  background-color: var(--color-warning-light, #fef3c7);
-  color: var(--color-warning-dark, #b45309);
-  padding: 4px 8px;
-  border-radius: 4px;
-  font-size: 11px;
-  font-weight: 500;
-  margin-top: 8px;
-  margin-left: 28px;
-  cursor: pointer;
-  border: 1px solid var(--color-warning-border, #fcd34d);
-  transition: all 0.2s ease;
-}
-
-.checklist-indicator:hover {
-  background-color: var(--color-warning, #fde68a);
-}
-
-.checklist-indicator.loading {
-  background-color: var(--color-background-gray);
-  color: var(--color-text-muted);
-  border-color: var(--color-border-light);
-  cursor: default;
-}
-
-.checklist-modal {
-  max-width: 520px;
-  width: 90%;
-  border-radius: 12px;
-  padding: 24px;
-  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.12);
-}
-
-.checklist-modal .modal-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 16px;
-}
-
-.checklist-modal .modal-header h3 {
-  font-size: 16px;
-  font-weight: 600;
-  color: #1E293B;
-  margin: 0;
-}
-
-.checklist-modal .close-btn {
-  background: transparent;
-  border: none;
-  color: #94A3B8;
-  cursor: pointer;
-  padding: 4px;
-  border-radius: 4px;
-  transition: all 0.15s ease;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-
-.checklist-modal .close-btn:hover {
-  background: #F1F5F9;
-  color: #475569;
-}
-
-.checklist-modal .modal-body {
-  margin-bottom: 20px;
-}
-
-.checklist-modal .modal-footer {
-  display: flex;
-  justify-content: flex-end;
-  gap: 10px;
-  padding-top: 16px;
-  border-top: 1px solid #EEF2F6;
-}
-
-.checklist-modal .modal-footer .btn.secondary {
-  background: #fff;
-  color: #64748B;
-  border: 1px solid #E2E8F0;
-  border-radius: 6px;
-  font-size: 13px;
-  padding: 7px 16px;
-}
-
-.checklist-modal .modal-footer .btn.secondary:hover {
-  background: #F8FAFC;
-  border-color: #CBD5E1;
-}
-
-.checklist-modal .modal-footer .btn.primary {
-  background: #2B7FE3;
-  color: #fff;
-  border: none;
-  border-radius: 6px;
-  font-size: 13px;
-  font-weight: 600;
-  padding: 7px 16px;
-  box-shadow: 0 1px 4px rgba(43, 127, 227, 0.25);
-}
-
-.checklist-modal .modal-footer .btn.primary:hover {
-  background: #1A6FD5;
-}
-
-.checklist-modal .modal-footer .btn.primary:disabled {
-  background: rgba(43, 127, 227, 0.4);
-  cursor: not-allowed;
-  box-shadow: none;
-}
-
-.checklist-intro {
-  font-size: 13px;
-  color: #1E293B;
-  line-height: 1.6;
-  margin-bottom: 16px;
-  background: #FEF9EC;
-  padding: 12px 14px;
-  border-radius: 8px;
-  border-left: 3px solid #F59E0B;
-}
-
-.checklist-intro strong {
-  color: #2B7FE3;
-}
-
-.checklist-items {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  margin-bottom: 16px;
-}
-
-.checklist-item-label {
-  display: flex;
-  align-items: flex-start;
-  gap: 10px;
-  cursor: pointer;
-  padding: 10px 12px;
-  border-radius: 8px;
-  border: 1px solid #EEF2F6;
-  background: #FAFBFD;
-  transition: all 0.15s ease;
-}
-
-.checklist-item-label:hover {
-  background: #F0F6FF;
-  border-color: rgba(43, 127, 227, 0.2);
-}
-
-.checklist-item-label:has(input:checked) {
-  background: rgba(43, 127, 227, 0.04);
-  border-color: #2B7FE3;
-}
-
-.checklist-item-label input[type="checkbox"] {
-  margin-top: 2px;
-  width: 16px;
-  height: 16px;
-  cursor: pointer;
-  accent-color: #2B7FE3;
-  flex-shrink: 0;
-}
-
-.checklist-text {
-  font-size: 13px;
-  color: #334155;
-  line-height: 1.5;
-}
-
-.checklist-notes-box {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-}
-
-.checklist-notes-box label {
-  font-size: 12px;
-  font-weight: 500;
-  color: #64748B;
-}
-
-.checklist-notes-box textarea {
-  width: 100%;
-  height: 76px;
-  padding: 8px 12px;
-  border: 1px solid #E2E8F0;
-  border-radius: 6px;
-  font-size: 13px;
-  resize: none;
-  font-family: inherit;
-  color: #1E293B;
-  background: #FAFBFD;
-}
-
-.checklist-notes-box textarea:focus {
-  outline: none;
-  border-color: #2B7FE3;
-  box-shadow: 0 0 0 2px rgba(43, 127, 227, 0.08);
-  background: #fff;
-}
-
-</style>
+<style scoped src="../features/symptom-consultation/ui/ConsultationPage.css"></style>
