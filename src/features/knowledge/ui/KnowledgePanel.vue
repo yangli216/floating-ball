@@ -353,7 +353,6 @@ async function performListSearch() {
       sortField = 'initials';
       sortRule = 'DESC';
     } else if(listSortOption.value === 'relevance') {
-      debugger
       sortField = "";
       // sortRule = '';
     }

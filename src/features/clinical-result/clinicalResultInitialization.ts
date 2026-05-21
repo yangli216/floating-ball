@@ -63,7 +63,7 @@ export function initClinicalDiagnoses(
       id: standardId || undefined,
       name,
       code: item.matchedItem?.code || item.code || '',
-      rate: inheritedDiagnosis.rate || 'AI分析',
+      rate: inheritedDiagnosis.rate || formatDiagnosisConfidence(item.confidence),
       rationale: options.buildRationale(item, name),
       isTCM: inheritedDiagnosis.isTCM,
       syndrome: inheritedDiagnosis.syndrome,
@@ -74,6 +74,13 @@ export function initClinicalDiagnoses(
       treatmentMatched: inheritedDiagnosis.treatmentMatched,
     };
   });
+}
+
+export function formatDiagnosisConfidence(confidence?: MatchedDiagnosis['confidence']): string {
+  if (confidence === 'high') return '高置信';
+  if (confidence === 'medium') return '中置信';
+  if (confidence === 'low') return '低置信';
+  return 'AI分析';
 }
 
 export function initClinicalTreatments(

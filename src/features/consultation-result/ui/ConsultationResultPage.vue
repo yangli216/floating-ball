@@ -19,7 +19,7 @@ const props = withDefaults(defineProps<{
   secondaryFooterActionDisabled: false,
 });
 
-const emit = defineEmits(['close', 'cancel', 'secondary-footer-action', 'diagnosis-differential']);
+const emit = defineEmits(['close', 'cancel', 'secondary-footer-action']);
 </script>
 
 <template>

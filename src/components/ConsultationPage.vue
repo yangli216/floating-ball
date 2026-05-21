@@ -357,7 +357,6 @@
         :procedures="procedureRecommendations"
         @cancel="handleAbandonConsultation"
         @secondary-footer-action="currentView = 'consultation'"
-        @diagnosis-differential="handleDiagnosisDifferential"
         @close="$emit('close')"
       />
     </div>
@@ -521,45 +520,6 @@
       :search-type="knowledgeSearchType"
       @close="showKnowledgePanel = false"
     />
-
-    <!-- Anti-Misdiagnosis Checklist Modal -->
-    <Transition name="fade">
-      <div v-if="showChecklistModal" class="modal-overlay" @click.self="showChecklistModal = false">
-        <div class="modal checklist-modal">
-          <div class="modal-header">
-            <h3>鉴别排查确认</h3>
-            <button class="close-btn" @click="showChecklistModal = false">
-              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-                <path d="M18 6L6 18M6 6l12 12" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
-              </svg>
-            </button>
-          </div>
-          <div class="modal-body">
-            <div class="checklist-intro">
-              针对诊断 <strong>{{ activeChecklistDiagnosis?.name }}</strong>，为防止与高危急症混淆或漏诊，系统建议您在进一步诊断前确认以下指征：
-            </div>
-            
-            <div class="checklist-items">
-              <label v-for="(item, index) in checklistItems" :key="index" class="checklist-item-label">
-<!--                <input type="checkbox" v-model="item.checked" />-->
-                <span class="checklist-text">{{ item.question }}</span>
-              </label>
-            </div>
-
-<!--            <div class="checklist-notes-box">-->
-<!--              <label>补充说明（如异常发现、查体记录等）</label>-->
-<!--              <textarea v-model="checklistNotes" placeholder="填写相关补充信息..."></textarea>-->
-<!--            </div>-->
-          </div>
-<!--          <div class="modal-footer">-->
-<!--            <button class="btn secondary" @click="showChecklistModal = false">暂不确认 (跳过)</button>-->
-<!--            <button class="btn primary" @click="handleChecklistConfirm" :disabled="!checklistItems.some(i => i.checked) && !checklistNotes">-->
-<!--              确认并记录-->
-<!--            </button>-->
-<!--          </div>-->
-        </div>
-      </div>
-    </Transition>
 
   </div>
 </template>
@@ -1296,10 +1256,6 @@ const resetWorkflowState = () => {
   examRecommendations.value = [];
   labTestRecommendations.value = [];
   procedureRecommendations.value = [];
-  checklistItems.value = [];
-  checklistNotes.value = '';
-  showChecklistModal.value = false;
-  activeChecklistDiagnosis.value = null;
   activeReferenceRequest.value = null;
   lastReferenceFeedback.value = null;
   referenceStatusMap.value = {};
@@ -1344,13 +1300,6 @@ const factCheckWidgetIssues = ref<FactCheckIssue[]>([]);
 const factCheckProgress = ref(0);
 const factCheckCheckedCount = ref(0);
 const factCheckTotalCount = ref(0);
-
-// Anti-Misdiagnosis Checklist State
-const isChecklistLoading = ref(false);
-const showChecklistModal = ref(false);
-const checklistItems = ref<{ question: string, recordText: string, checked: boolean }[]>([]);
-const checklistNotes = ref('');
-const activeChecklistDiagnosis = ref<Diagnosis | null>(null);
 
 const {
   showKnowledgePanel,
@@ -1874,26 +1823,6 @@ const handleAbandonConsultation = () => {
   emit('cancel');
 };
 
-const handleDiagnosisDifferential = async (diag: Diagnosis) => {
-  selectedDiagnosis.value = diag;
-  trackClick('diagnosis_differential_open', {
-    diagnosisName: diag.name,
-    diagnosisCode: diag.code,
-    consultationId: resolveConsultationId(),
-  });
-  await fetchDiagnosisChecklist(diag);
-  if (checklistItems.value.length > 0) {
-    trackAssistFeatureUsage('differential', {
-      diagnosisName: diag.name,
-      diagnosisCode: diag.code,
-      itemCount: checklistItems.value.length,
-    });
-    showChecklistModal.value = true;
-    return;
-  }
-  showToast('当前诊断暂无待确认的鉴别排查项。', 'info');
-};
-
 useOutsideInteraction({
   targets: [
     {
@@ -2347,88 +2276,9 @@ const swapDiagnosis = (originalDiag: Diagnosis, newItem: { id?: string; code: st
   completeRelatedSwap();
 };
 
-
-const fetchDiagnosisChecklist = async (diag: Diagnosis) => {
-  isChecklistLoading.value = true;
-  checklistItems.value = [];
-  checklistNotes.value = '';
-  activeChecklistDiagnosis.value = diag;
-  
-  try {
-    const userPrompt = PROMPTS.consultation.diagnosisChecklist.buildUserPrompt({
-      diagnosisName: diag.name,
-      chiefComplaint: generatedRecord.value.chiefComplaint,
-      historyOfPresentIllness: generatedRecord.value.historyOfPresentIllness
-    });
-
-    const response = await chat([
-      { role: 'system', content: PROMPTS.consultation.diagnosisChecklist.system },
-      { role: 'user', content: userPrompt }
-    ], undefined, undefined, undefined, buildConsultationTraceConfig(
-      'generate_diagnosis_checklist',
-      '生成鉴别排查建议',
-      'consultation-diagnosis-checklist'
-    ));
-
-    const result = parseLLMJson(response);
-    
-    if (result && result.isNeeded && Array.isArray(result.items) && result.items.length > 0) {
-      checklistItems.value = result.items.map((item: any) => ({ 
-        question: item.question, 
-        recordText: item.recordText, 
-        checked: false 
-      }));
-      // Do not auto-open. Show the inline '鉴别排查' button.
-    }
-  } catch (error) {
-    console.error("Failed to fetch diagnosis checklist:", error);
-  } finally {
-    isChecklistLoading.value = false;
-  }
-};
-
-// @ts-ignore: kept for future use (currently commented out in template)
-const _handleChecklistConfirm = () => {
-  const checkedQuestions = checklistItems.value
-    .filter(i => i.checked)
-    .map(i => i.question);
-
-  if (checkedQuestions.length === 0 && !checklistNotes.value) {
-    showChecklistModal.value = false;
-    return;
-  }
-
-  feedbackService.logOperation({
-    module: 'consultation',
-    action: 'confirm_differential_checklist',
-    title: '确认鉴别排查',
-    sourceModule: 'consultation_checklist',
-    scene: 'consultation-diagnosis-checklist',
-    operationType: 'form_submit',
-    operationName: 'confirm_differential_checklist',
-    details: {
-      consultationId: resolveConsultationId(),
-      diagnosisName: activeChecklistDiagnosis.value?.name,
-      checkedQuestions,
-      notes: checklistNotes.value,
-    },
-    success: true,
-  });
-  showToast("鉴别排查已记录，未改写现病史", "success");
-
-  showChecklistModal.value = false;
-  checklistItems.value = []; // Hide button after confirmation
-  checklistNotes.value = '';
-};
-
 const handleDiagnosisSelect = (diag: Diagnosis) => {
   trackClick('diagnosis_select', { diagnosisName: diag.name, diagnosisCode: diag.code, hasId: !!diag.id });
   selectedDiagnosis.value = diag;
-  
-  // Asynchronously trigger checklist generation
-  if (diag.name) {
-    fetchDiagnosisChecklist(diag);
-  }
 
   relatedDiagnoses.value = getRelatedDiagnosisCandidates(diag);
   isRelatedOpen.value = false;
@@ -2728,9 +2578,6 @@ const fetchProcedureRecommendation = async () => {
     const rawRecommendations: any[] = parseLLMJson(fullResponse);
     console.log('[处置推荐] LLM raw count:', rawRecommendations.length, rawRecommendations.map(r => ({ name: r.name, type: r.type })));
     
-    // Debug toast to see exactly what came back
-    showToast(`[调试-处置返回] 共 ${rawRecommendations.length} 项: ${rawRecommendations.map(r => r.name).join(', ')}`, 'info');
-
     const processedRecs = buildClinicalResultTreatmentRecommendationsFromRaw({
       rawRecommendations,
       type: 'procedure',
@@ -2923,8 +2770,6 @@ const consultationAssistController = useConsultationAssistController({
   labTestRecommendations,
   procedureLoading,
   procedureRecommendations,
-  checklistItems,
-  showChecklistModal,
   hasRecordDraft: () => hasRecordDraft.value,
   prefillRecord: prefillGeneratedRecordFromPatient,
   prefillDiagnosis: prefillDiagnosisFromPatient,
@@ -2938,7 +2783,6 @@ const consultationAssistController = useConsultationAssistController({
   fetchExamRecommendation,
   fetchLabTestRecommendation,
   fetchProcedureRecommendation,
-  fetchDiagnosisChecklist,
   trackAssistFeatureUsage,
   consumeAutoTrigger: () => emit('consume-auto-trigger'),
 });

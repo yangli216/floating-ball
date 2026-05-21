@@ -160,6 +160,13 @@
 - **解决方案**: WebSocket 签名模块返回原始 base64 签名，只由 `URLSearchParams` 负责 URL 编码。
 - **后续防护**: 任何传给 `URLSearchParams.set()` 的 query value 都应是未手工编码的原始值；排查 WebSocket `sig` 时优先检查是否出现 `%252B`、`%252F`、`%253D` 这类二次编码痕迹。
 
+### RETRO-021: 共享结果页 wrapper 与真实语音直挂路径混淆 [已解决]
+
+- **现象**: 在 `ConsultationResultPage.vue` 里补语音诊断鉴别按钮后，真实语音问诊结果页仍看不到入口；同时点击已选诊断或内部按钮时，可能因为父层重新传入等价 `intentResult` 而重置结果页并刷新治疗方案。
+- **根因**: 当前 `App.vue` 的语音问诊直接渲染 `VoiceConsultationNew.vue`，症状问诊才经 `SymptomResultEntry.vue -> ConsultationResultPage.vue -> VoiceConsultationNew.vue`；只改薄 wrapper 不会命中语音真实路径。共享结果页 watcher 之前只看对象引用，没有对语义相同的结果输入做去重。
+- **解决方案**: 将“诊断鉴别”入口挂到共享 `DiagnosisRecommendationCard` 的可选按钮，由共享结果页主体 `VoiceConsultationNew.vue` 统一处理语音问诊和智能问诊的 checklist 弹窗；`SymptomResultEntry.vue` 不再注入独立鉴别按钮，`ConsultationPage.vue` 不再维护旧调试弹框；`intentResult` watcher 增加语义 key，等价输入不再重复 reset；诊断选择状态对当前主诊断重复点击直接 no-op。
+- **后续防护**: 处理共享结果页问题时，先确认真实渲染链路是否经过 wrapper；涉及 `intentResult` / props watcher 的刷新问题时，优先判断是否是等价对象引用抖动，而不是直接禁止业务上的真实切换。
+
 
 ---
 

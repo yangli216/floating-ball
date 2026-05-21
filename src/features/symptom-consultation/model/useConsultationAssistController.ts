@@ -22,8 +22,6 @@ export interface UseConsultationAssistControllerInput {
   labTestRecommendations: Ref<TreatmentRecommendation[]>;
   procedureLoading: Ref<boolean>;
   procedureRecommendations: Ref<TreatmentRecommendation[]>;
-  checklistItems: Ref<Array<unknown>>;
-  showChecklistModal: Ref<boolean>;
   hasRecordDraft: () => boolean;
   prefillRecord: (force?: boolean) => boolean;
   prefillDiagnosis: (force?: boolean) => boolean;
@@ -35,7 +33,6 @@ export interface UseConsultationAssistControllerInput {
   fetchExamRecommendation: () => Promise<void>;
   fetchLabTestRecommendation: () => Promise<void>;
   fetchProcedureRecommendation: () => Promise<void>;
-  fetchDiagnosisChecklist: (diagnosis: Diagnosis) => Promise<void>;
   trackAssistFeatureUsage: (
     kind: ConsultationAssistAction,
     payload?: ConsultationAssistTrackPayload,
@@ -167,17 +164,11 @@ export function useConsultationAssistController(input: UseConsultationAssistCont
           if (!hasDiagnosis || !input.selectedDiagnosis.value) {
             return;
           }
-          await input.fetchDiagnosisChecklist(input.selectedDiagnosis.value);
-          if (input.checklistItems.value.length > 0) {
-            input.trackAssistFeatureUsage('differential', {
-              diagnosisName: input.selectedDiagnosis.value.name,
-              diagnosisCode: input.selectedDiagnosis.value.code,
-              itemCount: input.checklistItems.value.length,
-            });
-            input.showChecklistModal.value = true;
-          } else {
-            input.notify('当前诊断暂无待确认的鉴别排查项。', 'info');
-          }
+          input.trackAssistFeatureUsage('differential', {
+            diagnosisName: input.selectedDiagnosis.value.name,
+            diagnosisCode: input.selectedDiagnosis.value.code,
+          });
+          input.notify('已进入结果页，可在诊断卡片上点击“诊断鉴别”。', 'info');
           return;
         }
         case 'reminder': {

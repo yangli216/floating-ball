@@ -54,6 +54,7 @@ export {
 } from './clinicalResultLlmJsonParser';
 
 export {
+  formatDiagnosisConfidence,
   hasClinicalResultTreatmentState,
   initClinicalDiagnoses,
   initClinicalTreatments,

@@ -65,13 +65,15 @@ export function useDiagnosisSelection(options: Options) {
   }
 
   function toggleDiagnosis(diag: Diagnosis): void {
+    if (isPrimaryDiagnosis(diag)) {
+      return;
+    }
+
     if (!isDiagnosisSelected(diag)) {
       const nextKeys = new Set(selectedDiagnosisKeys.value);
       nextKeys.add(getDiagnosisKey(diag));
       setDiagnosisSelection(nextKeys);
-      if (!selectedDiagnosis.value) {
-        selectedDiagnosis.value = diag;
-      }
+      selectedDiagnosis.value = diag;
       return;
     }
 

@@ -176,6 +176,22 @@ const diagnosisLoading = ref(false);
 const treatments = ref<TreatmentRecommendation[]>([]);
 const treatmentLoading = ref(false);
 
+interface ChecklistItem {
+  question: string;
+  recordText: string;
+}
+
+interface DiagnosisChecklistResponse {
+  isNeeded?: boolean;
+  items?: ChecklistItem[];
+}
+
+const lastAppliedIntentKey = ref('');
+const showChecklistModal = ref(false);
+const isChecklistLoading = ref(false);
+const checklistItems = ref<ChecklistItem[]>([]);
+const activeChecklistDiagnosis = ref<Diagnosis | null>(null);
+
 const submitting = ref(false);
 const writebackStatus = useWritebackStatus({
   isSubmitting: () => submitting.value,
@@ -594,6 +610,76 @@ function initTreatmentsFromIntent(matched: MatchedTreatment[]): TreatmentRecomme
   });
 }
 
+function normalizeIntentKeyPart(value: unknown): string {
+  if (typeof value === 'string') return value.trim();
+  if (typeof value === 'number' || typeof value === 'boolean') return String(value);
+  return '';
+}
+
+function buildIntentDiagnosisKey(item: ClinicalResultInput['diagnoses'][number]): string {
+  const inherited = item as Partial<Diagnosis>;
+  const matched = item.matchedItem;
+  return [
+    matched?.id,
+    matched?.code,
+    matched?.name,
+    inherited.id,
+    item.code,
+    item.name,
+    inherited.rate,
+    item.confidence,
+  ].map(normalizeIntentKeyPart).join('~');
+}
+
+function buildIntentTreatmentKey(item: ClinicalResultInput['treatments'][number]): string {
+  const inherited = item as Partial<TreatmentRecommendation>;
+  const matched = inherited.matchedItem || item.matchedItem;
+  const suggested = inherited.suggestedMatchItem;
+  return [
+    item.type,
+    item.name,
+    inherited.originalName,
+    matched?.id,
+    matched?.name,
+    matched?.spec,
+    suggested?.id,
+    suggested?.name,
+    inherited.matchStatus,
+    inherited.selected,
+    inherited.manualMatched,
+    item.spec,
+    item.frequency,
+    item.frequencyKey,
+    item.usage,
+    item.usageKey,
+    item.dosage,
+    item.dosageUnit,
+    item.totalQty,
+    item.totalUnit,
+    item.days,
+    inherited.pharmacy,
+    inherited.execDept,
+    inherited.bodySite,
+    inherited.bodySiteId,
+  ].map(normalizeIntentKeyPart).join('~');
+}
+
+function buildIntentResultKey(result: ClinicalResultInput | VoiceIntentResult): string {
+  return JSON.stringify({
+    channel: props.channel,
+    source: props.intentSource || '',
+    patient: patientAnchorId.value,
+    record: {
+      chiefComplaint: normalizeIntentKeyPart(result.chiefComplaint),
+      historyOfPresentIllness: normalizeIntentKeyPart(result.historyOfPresentIllness),
+      pastMedicalHistory: normalizeIntentKeyPart(result.pastMedicalHistory),
+      familyHistory: normalizeIntentKeyPart(result.familyHistory),
+    },
+    diagnoses: result.diagnoses.map(buildIntentDiagnosisKey),
+    treatments: result.treatments.map(buildIntentTreatmentKey),
+  });
+}
+
 function getManualMatchPickerCandidates(rec: TreatmentRecommendation): ManualMatchCandidate[] {
   return getManualMatchCandidates(rec).map(toManualMatchCandidateView);
 }
@@ -703,6 +789,64 @@ async function toggleTreatment(item: TreatmentRecommendation): Promise<void> {
 function toggleDiagnosis(diag: Diagnosis): void {
   closeReasonTooltipIfOpen();
   toggleDiagnosisSelection(diag);
+}
+
+function closeChecklistModal(): void {
+  showChecklistModal.value = false;
+}
+
+function normalizeChecklistItems(result: DiagnosisChecklistResponse): ChecklistItem[] {
+  if (!result?.isNeeded || !Array.isArray(result.items)) {
+    return [];
+  }
+  return result.items
+    .map((item) => ({
+      question: normalizeIntentKeyPart(item?.question),
+      recordText: normalizeIntentKeyPart(item?.recordText),
+    }))
+    .filter((item) => item.question);
+}
+
+async function handleDiagnosisDifferential(diag: Diagnosis, event?: Event): Promise<void> {
+  event?.stopPropagation();
+  closeReasonTooltipIfOpen();
+  activeChecklistDiagnosis.value = diag;
+  checklistItems.value = [];
+  showChecklistModal.value = true;
+  isChecklistLoading.value = true;
+  const isSymptomChannel = props.channel === 'symptom';
+
+  try {
+    const userPrompt = PROMPTS.consultation.diagnosisChecklist.buildUserPrompt({
+      diagnosisName: diag.name,
+      chiefComplaint: chiefComplaint.value,
+      historyOfPresentIllness: historyOfPresentIllness.value,
+    });
+
+    const response = await chat([
+      { role: 'system', content: PROMPTS.consultation.diagnosisChecklist.system },
+      { role: 'user', content: userPrompt },
+    ], undefined, undefined, undefined, {
+      traceContext: {
+        scene: isSymptomChannel ? 'symptom-consultation-diagnosis-checklist' : 'voice-consultation-diagnosis-checklist',
+        sourceModule: isSymptomChannel ? 'symptom_consultation_result' : 'voice_consultation_result',
+        operationModule: isSymptomChannel ? 'consultation' : 'voice_consultation',
+        operationAction: 'generate_diagnosis_checklist',
+        title: isSymptomChannel ? '智能问诊生成鉴别排查建议' : '语音问诊生成鉴别排查建议',
+      },
+    });
+
+    checklistItems.value = normalizeChecklistItems(parseLLMJson<DiagnosisChecklistResponse>(response));
+    if (checklistItems.value.length === 0) {
+      showToast?.('当前诊断暂无待确认的鉴别排查项。', 'info');
+    }
+  } catch (error: unknown) {
+    const msg = error instanceof Error ? error.message : String(error);
+    checklistItems.value = [];
+    showToast?.(`诊断鉴别生成失败: ${msg}`, 'error');
+  } finally {
+    isChecklistLoading.value = false;
+  }
 }
 
 function setPrimaryDiagnosis(diag: Diagnosis, event?: Event): void {
@@ -1543,7 +1687,20 @@ async function handleBatchWriteBack(): Promise<void> {
 watch(
   () => props.intentResult,
   async (result) => {
-    if (!result) return;
+    if (!result) {
+      lastAppliedIntentKey.value = '';
+      return;
+    }
+
+    const intentKey = buildIntentResultKey(result);
+    if (intentKey === lastAppliedIntentKey.value) {
+      console.info('[VoiceConsultationNew] Skip duplicate intent result reset', {
+        diagnosisCount: result.diagnoses.length,
+        treatmentCount: result.treatments.length,
+      });
+      return;
+    }
+    lastAppliedIntentKey.value = intentKey;
 
     resetForIntent(result);
 
@@ -1791,6 +1948,7 @@ watch(
                 :related-open="isRelatedDropdownOpen(diag)"
                 :related-diagnoses="getRelatedDropdownCandidates(diag)"
                 :issue="getIssueForDiagnosis(diag.code)"
+                :show-differential="true"
                 :feedback-visible="isRecommendationFeedbackOpen(getDiagnosisFeedbackKey(diag))"
                 :feedback-draft="getRecommendationDraft(getDiagnosisFeedbackKey(diag))"
                 :feedback-submitting="recommendationSubmittingKey === getDiagnosisFeedbackKey(diag)"
@@ -1801,6 +1959,7 @@ watch(
                 @remove="removeDiagnosis(diag, $event)"
                 @toggle-related="toggleRelatedDropdown(diag, $event)"
                 @swap-related="swapDiagnosis(diag, $event)"
+                @diagnosis-differential="handleDiagnosisDifferential(diag, $event)"
                 @toggle-feedback="toggleRecommendationFeedback(getDiagnosisFeedbackKey(diag), $event)"
                 @update:feedback-draft="updateRecommendationDraft(getDiagnosisFeedbackKey(diag), $event)"
                 @submit-feedback="handleDiagnosisFeedbackSubmit(diag, $event)"
@@ -2338,6 +2497,42 @@ watch(
           <button class="confirm-btn secondary" type="button" @click="closeCancelConfirm">继续编辑</button>
           <button class="confirm-btn danger" type="button" @click="confirmCancel">确认放弃</button>
         </div>
+      </div>
+    </div>
+
+    <div v-if="showChecklistModal" class="confirm-overlay checklist-overlay" @click.self="closeChecklistModal">
+      <div class="checklist-dialog pane-card" role="dialog" aria-modal="true" aria-labelledby="voice-checklist-title">
+        <div class="checklist-dialog-head">
+          <div>
+            <p id="voice-checklist-title" class="confirm-dialog-title">鉴别排查确认</p>
+            <p class="checklist-dialog-subtitle">{{ activeChecklistDiagnosis?.name || '当前诊断' }}</p>
+          </div>
+          <button class="checklist-close-btn" type="button" aria-label="关闭" @click="closeChecklistModal">
+            <Icon icon="lucide:x" size="18" />
+          </button>
+        </div>
+
+        <div v-if="isChecklistLoading" class="loading-inline checklist-loading">
+          <div class="ai-spinner small">
+            <div class="spinner-ring"></div>
+            <div class="spinner-core"></div>
+          </div>
+          <span>正在生成鉴别排查建议...</span>
+        </div>
+
+        <div v-else-if="checklistItems.length > 0" class="checklist-dialog-body">
+          <p class="checklist-intro">
+            为防止与高危急症混淆或漏诊，系统建议进一步确认以下指征：
+          </p>
+          <div class="checklist-items">
+            <div v-for="(item, index) in checklistItems" :key="`${index}-${item.question}`" class="checklist-item-label">
+              <span class="checklist-text">{{ item.question }}</span>
+              <span v-if="item.recordText" class="checklist-record-text">{{ item.recordText }}</span>
+            </div>
+          </div>
+        </div>
+
+        <div v-else class="empty-text checklist-empty">当前诊断暂无待确认的鉴别排查项。</div>
       </div>
     </div>
   </div>

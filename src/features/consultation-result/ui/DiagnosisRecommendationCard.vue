@@ -30,7 +30,7 @@
               <span class="hover-reason-tooltip">{{ diag.rationale }}</span>
             </span>
           </div>
-          <span v-if="diag.rate" class="diag-rate-token" :class="rateToneClass">{{ diag.rate }}</span>
+          <span v-if="displayRate" class="diag-rate-token" :class="rateToneClass">{{ displayRate }}</span>
           <span v-if="diag.code" class="meta-token">编码 {{ diag.code }}</span>
           <span v-if="isPrimary" class="meta-token diag-role-token">主诊断</span>
           <span v-else-if="selected" class="meta-token diag-role-token">已纳入</span>
@@ -54,6 +54,12 @@
 
       <div class="card-actions">
         <slot name="actions" />
+        <button
+          v-if="showDifferential"
+          class="diag-action-btn"
+          type="button"
+          @click.stop="emit('diagnosis-differential', $event)"
+        >诊断鉴别</button>
         <div v-if="showFeedback" class="voice-feedback-anchor" @click.stop>
           <button
             class="voice-feedback-trigger"
@@ -152,6 +158,10 @@ const props = defineProps({
     type: Boolean,
     default: true,
   },
+  showDifferential: {
+    type: Boolean,
+    default: false,
+  },
   feedbackVisible: {
     type: Boolean,
     default: false,
@@ -176,12 +186,18 @@ const props = defineProps({
 });
 
 const rateToneClass = computed(() => {
-  const numericRate = Number.parseInt(props.diag.rate || '', 10);
-  if (Number.isNaN(numericRate)) return '';
+  const rate = displayRate.value;
+  if (rate.includes('高')) return 'rate-high';
+  if (rate.includes('中')) return 'rate-medium';
+  if (rate.includes('低')) return 'rate-low';
+  const numericRate = Number.parseInt(rate, 10);
+  if (Number.isNaN(numericRate)) return 'rate-neutral';
   if (numericRate >= 70) return 'rate-high';
   if (numericRate >= 60) return 'rate-medium';
   return 'rate-low';
 });
+
+const displayRate = computed(() => props.diag.rate || 'AI分析');
 
 const emit = defineEmits<{
   (e: 'toggle'): void;
@@ -190,6 +206,7 @@ const emit = defineEmits<{
   (e: 'remove', event?: Event): void;
   (e: 'toggle-related', event?: Event): void;
   (e: 'swap-related', diag: RelatedDiagnosisCandidate): void;
+  (e: 'diagnosis-differential', event?: Event): void;
   (e: 'toggle-feedback', event?: Event): void;
   (e: 'update:feedbackDraft', draft: VoiceRecommendationFeedbackDraft): void;
   (e: 'submit-feedback', draft: VoiceRecommendationFeedbackDraft): void;

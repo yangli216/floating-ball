@@ -28,7 +28,7 @@ const props = withDefaults(defineProps<{
   secondaryFooterActionDisabled: false,
 });
 
-const emit = defineEmits(['close', 'cancel', 'secondary-footer-action', 'diagnosis-differential']);
+const emit = defineEmits(['close', 'cancel', 'secondary-footer-action']);
 
 const resolvedSecondaryFooterActionText = computed(() => props.secondaryFooterActionText || '返回');
 
@@ -49,9 +49,6 @@ const clinicalResultInput = computed(() => buildSymptomClinicalResultInput({
   ],
 }));
 
-function handleDifferentialClick(diag: Diagnosis): void {
-  emit('diagnosis-differential', diag);
-}
 </script>
 
 <template>
@@ -64,17 +61,5 @@ function handleDifferentialClick(diag: Diagnosis): void {
     @close="emit('close')"
     @cancel="emit('cancel')"
     @secondary-footer-action="handleSecondaryFooterAction"
-  >
-    <template #diagnosis-actions="{ diag }">
-      <button
-        class="symptom-differential-btn"
-        type="button"
-        @click.stop="handleDifferentialClick(diag)"
-      >
-        诊断鉴别
-      </button>
-    </template>
-  </ConsultationResultPage>
+  />
 </template>
-
-<style scoped src="./SymptomConsultationResultPage.css"></style>
