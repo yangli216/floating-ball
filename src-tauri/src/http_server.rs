@@ -3,6 +3,7 @@ use actix_web::{web, App, HttpRequest, HttpResponse, HttpServer, Responder};
 use futures_util::StreamExt;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+use std::io;
 use std::sync::Mutex;
 use std::time::Instant;
 use tauri::{Emitter, Manager};
@@ -77,6 +78,16 @@ fn ensure_http_service_access(state: &web::Data<SharedAppState>) -> Result<(), H
     }
 
     Ok(())
+}
+
+fn is_normal_websocket_disconnect(error: &actix_ws::ProtocolError) -> bool {
+    match error {
+        actix_ws::ProtocolError::Io(err) => {
+            err.kind() == io::ErrorKind::UnexpectedEof
+                || err.to_string().contains("payload reached EOF before completing")
+        }
+        _ => false,
+    }
 }
 
 fn derive_result_state(
@@ -1128,7 +1139,11 @@ async fn consultation_events_ws(
                         }
                         Some(Ok(_)) => {}
                         Some(Err(error)) => {
-                            eprintln!("Consultation WebSocket receive error: {}", error);
+                            if is_normal_websocket_disconnect(&error) {
+                                println!("Consultation WebSocket disconnected by peer");
+                            } else {
+                                eprintln!("Consultation WebSocket receive error: {}", error);
+                            }
                             break 'ws;
                         }
                         None => break 'ws,
@@ -2199,4 +2214,25 @@ pub fn run_server(app_handle: tauri::AppHandle, state: SharedAppState) {
             .unwrap_or_else(|e| eprintln!("HTTP server error: {}", e));
         });
     });
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn normal_websocket_disconnect_detects_payload_eof() {
+        let error = actix_ws::ProtocolError::Io(io::Error::other(
+            "payload reached EOF before completing: None",
+        ));
+
+        assert!(is_normal_websocket_disconnect(&error));
+    }
+
+    #[test]
+    fn normal_websocket_disconnect_keeps_protocol_errors_visible() {
+        let error = actix_ws::ProtocolError::Overflow;
+
+        assert!(!is_normal_websocket_disconnect(&error));
+    }
 }

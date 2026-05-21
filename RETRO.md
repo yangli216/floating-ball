@@ -139,6 +139,27 @@
 - **解决方案**: 握手阶段单独解析 `tenantId(idTet)`，基础数据上下文改为显式传递 `orgCode + tenantId`；Rust 侧将 `medical_item_catalog` 升级为 `org_code + tenant_id` 主键，将 `medicine_catalog` / `catalog_sync_state` 升级为 `org_code + tenant_id + store_id` 复合主键；调试与清理面板同步展示机构/租户/药房三列。旧药品缓存因历史上无法可靠还原机构维度，迁移时不再保留，按新 schema 重新同步。
 - **后续防护**: 之后凡是基础数据、字典或缓存表里同时存在“机构实体”和“scope 集合”两种概念时，必须显式建列，不允许再把 scope 借道 `org_code`、`dept_id` 之类的单实体字段落库；若握手里还有 `idTet`、`idOrg` 等上下文字段，先做维度建模再决定哪些字段进入缓存 key。
 
+### RETRO-018: 区域化 delta 接口带 query 后稳定验签失败 [已解决]
+
+- **现象**: 后台安全拦截列表持续出现 `/v1/client/prompts/delta`、`/v1/client/templates/delta`、`/v1/client/mappings/delta` 的“签名无效”，并且记录显示请求已携带签名。
+- **根因**: 前端把带 `?version=...` 的完整 path 传入签名模块，服务端和契约文档则只使用不含 query 的 `requestURI` 作为签名 `PATH`；同一个请求实际发送成功，但签名原文两端不一致。
+- **解决方案**: `requestSigner.ts` 在生成 HTTP / WebSocket 签名前统一归一化签名路径，只保留 pathname，不把 query/hash 放进签名原文。
+- **后续防护**: 排查“签名=有但签名验证失败”时，先同时核对 `PATH` 口径、body hash、时间戳窗口和 nonce；新增带 query 的 `/v1/*` 请求不得绕过 `requestSigner.ts` 的路径归一化。
+
+### RETRO-019: HIS 事件 WebSocket 页面刷新断开被误报为 receive error [已解决]
+
+- **现象**: 问诊结果已保存、回执也成功后，日志仍出现 `Consultation WebSocket receive error: I/O error: payload reached EOF before completing: None`，容易误判为回写失败。
+- **根因**: HIS 页面刷新、关闭或重连时可能不发送标准 WebSocket Close 帧，Actix 会把底层 payload EOF 暴露为 `ProtocolError::Io`；旧代码把所有接收错误都按异常输出。
+- **解决方案**: `/api/consultation/events/ws` 读循环识别 EOF 类对端断开，将其降级为普通断连日志；真正的协议错误仍保留 `receive error`。
+- **后续防护**: 排查事件流问题时先看是否已经出现 `Consultation completed` / `reference feedback success`；如果业务结果已落队列，单独的 EOF 断连通常只是 HIS 页面生命周期噪声。
+
+### RETRO-020: 区域化实时语音 WebSocket 签名参数被二次编码 [已解决]
+
+- **现象**: 后台安全拦截列表出现 `/v1/ai/speech/realtime/ws` 的 `WS签名无效`，记录显示已携带签名参数。
+- **根因**: `signWebSocketParams()` 先对 base64 签名执行 `encodeURIComponent`，`createRegionalWebSocketUrl()` 又用 `URLSearchParams.set()` 再编码一次；服务端只解码一次，收到的 `sig` 仍含 `%2B/%2F/%3D` 片段，导致 base64 签名验不过。
+- **解决方案**: WebSocket 签名模块返回原始 base64 签名，只由 `URLSearchParams` 负责 URL 编码。
+- **后续防护**: 任何传给 `URLSearchParams.set()` 的 query value 都应是未手工编码的原始值；排查 WebSocket `sig` 时优先检查是否出现 `%252B`、`%252F`、`%253D` 这类二次编码痕迹。
+
 
 ---
 

@@ -22,6 +22,18 @@ async function sha256Hex(data: string): Promise<string> {
     .join('');
 }
 
+export function normalizeSignaturePath(path: string): string {
+  try {
+    return new URL(path, 'http://regional.local').pathname;
+  } catch {
+    const queryIndex = path.indexOf('?');
+    const hashIndex = path.indexOf('#');
+    const endIndexes = [queryIndex, hashIndex].filter(index => index >= 0);
+    const endIndex = endIndexes.length ? Math.min(...endIndexes) : path.length;
+    return path.slice(0, endIndex) || path;
+  }
+}
+
 export async function generateKeyPair(): Promise<{ publicKeyBase64: string }> {
   const keyPair = await crypto.subtle.generateKey(
     { name: 'ECDSA', namedCurve: 'P-256' },
@@ -108,10 +120,11 @@ export async function signRequest(
   const timestamp = String(Date.now());
   const nonce = crypto.randomUUID();
   const bodyHash = await sha256Hex(body ?? '');
+  const signaturePath = normalizeSignaturePath(path);
 
   const stringToSign = [
     method.toUpperCase(),
-    path,
+    signaturePath,
     timestamp,
     nonce,
     bodyHash,
@@ -149,10 +162,11 @@ export async function signWebSocketParams(
   const timestamp = String(Date.now());
   const nonce = crypto.randomUUID();
   const bodyHash = await sha256Hex('');
+  const signaturePath = normalizeSignaturePath(path);
 
   const stringToSign = [
     'GET',
-    path,
+    signaturePath,
     timestamp,
     nonce,
     bodyHash,
@@ -170,6 +184,6 @@ export async function signWebSocketParams(
   return {
     ts: timestamp,
     nonce,
-    sig: encodeURIComponent(signatureBase64),
+    sig: signatureBase64,
   };
 }
