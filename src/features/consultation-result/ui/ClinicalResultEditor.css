@@ -457,6 +457,15 @@
   flex-shrink: 0;
 }
 
+.diagnosis-heading-actions {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 8px;
+  min-width: 0;
+}
+
 .section-kicker {
   margin: 0 0 4px;
   font-size: var(--voice-font-min);
@@ -506,6 +515,7 @@
   color: var(--voice-text-muted);
 }
 
+.refresh-recommendation-btn,
 .refresh-treatment-btn {
   min-height: 28px;
   padding: 0 12px;
@@ -516,19 +526,41 @@
   font-size: var(--voice-font-min);
   font-weight: 600;
   cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  white-space: nowrap;
   transition: border-color 0.18s ease, color 0.18s ease, background-color 0.18s ease;
 }
 
+.refresh-recommendation-btn:hover:not(:disabled),
 .refresh-treatment-btn:hover:not(:disabled) {
   border-color: var(--voice-accent);
   color: var(--voice-accent);
   background: var(--voice-accent-softer);
 }
 
+.refresh-recommendation-btn:disabled,
 .refresh-treatment-btn:disabled {
   cursor: not-allowed;
   color: var(--voice-text-disabled);
   background: var(--voice-surface-soft);
+}
+
+.spin {
+  animation: spin 0.8s linear infinite;
+}
+
+.refresh-needed-note {
+  margin: -2px 0 10px;
+  padding: 8px 12px;
+  border: 1px solid var(--voice-accent-soft);
+  border-radius: 8px;
+  background: var(--voice-accent-softer);
+  color: var(--voice-accent-strong);
+  font-size: var(--voice-font-min);
+  line-height: 1.5;
 }
 
 .section-summary {

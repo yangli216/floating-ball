@@ -24,6 +24,7 @@ import { FeedbackSubmissionPanel } from "@features/feedback";
 import { HisIntegrationLogPanel } from "@features/settings";
 import { MedicalCatalogCachePanel } from "@features/medical-catalog";
 import Icon from "@shared/ui/Icon.vue";
+import { formatUserFacingError } from "@shared/lib/errorMessages";
 import { trackClick } from "./services/operationTracker";
 import { LogicalSize } from "@tauri-apps/api/dpi";
 import { getWindowSizeForView, WINDOW_SIZES, type ViewType } from "./constants/windowSizes";
@@ -89,7 +90,8 @@ const isDiagnosisPathWindow = standaloneWindowKind === 'diagnosis-path';
 const isReportInterpretationWindow = standaloneWindowKind === 'report-interpretation';
 const toastRef = ref<InstanceType<typeof Toast> | null>(null);
 const showToast = (msg: string, type: 'success' | 'error' | 'info' = 'info', duration = 3000) => {
-  toastRef.value?.show(msg, type, duration);
+  const displayMessage = type === 'error' ? formatUserFacingError(msg) : msg;
+  toastRef.value?.show(displayMessage, type, duration);
 };
 provide('showToast', showToast);
 const isFocused = ref(false);

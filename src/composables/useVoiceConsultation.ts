@@ -36,6 +36,7 @@ import {
   getPatientContextCurrentMedicationHistory,
   getPatientContextPastMedicalHistory,
 } from '@/utils/patientContext';
+import { formatUserFacingError } from '@shared/lib/errorMessages';
 
 export {
   clearVoiceConsultationCache,
@@ -298,7 +299,7 @@ export function useVoiceConsultation(options: VoiceConsultationOptions) {
       isProcessingVoice.value = false;
       console.error('[VoiceConsultation] Processing failed:', err);
       trackError('voice_processing_failed', err, withConsultationId());
-      const errMessage = err instanceof Error ? err.message : String(err);
+      const errMessage = formatUserFacingError(err, { fallback: '语音处理失败，请稍后重试。' });
       showToast(`处理失败: ${errMessage}`, 'error');
       await writeCancelledResult(`处理失败: ${errMessage}`);
       setTimeout(() => {
@@ -318,8 +319,9 @@ export function useVoiceConsultation(options: VoiceConsultationOptions) {
     resetVoiceSessionState();
     clearCache(resolveVoiceConsultationId(currentPatient.value));
     trackError('voice_recording_error', err, withConsultationId());
-    showToast('录音出错: ' + err, 'error');
-    await writeCancelledResult('录音出错: ' + err);
+    const errMessage = formatUserFacingError(err, { fallback: '录音出错，请检查麦克风权限后重试。' });
+    showToast(`录音出错: ${errMessage}`, 'error');
+    await writeCancelledResult(`录音出错: ${errMessage}`);
     exitWork('error');
   }
 

@@ -4,10 +4,10 @@ import {
   isUpdateRequiredCode,
   notifyForceUpdateRequired,
 } from '../updatePolicy';
-import { signRequest, type SignatureHeaders } from '../requestSigner';
+import { signRequest, updateSignatureClockOffset, type SignatureHeaders } from '../requestSigner';
 import { getDeviceCode } from './device';
 import { getOrgCode, getRegionalBaseUrl } from './config';
-import { parseRegionalError } from './errors';
+import { createRegionalRequestError, parseRegionalError } from './errors';
 import {
   clearDeviceRegistration,
   getDeviceToken,
@@ -33,7 +33,8 @@ async function ensureRegisteredDevice(): Promise<void> {
 export async function regionalFetch<T>(
   path: string,
   options: RequestInit = {},
-  allowAuthRetry = true
+  allowAuthRetry = true,
+  allowClockRetry = true
 ): Promise<T> {
   const baseUrl = getRegionalBaseUrl();
   if (!baseUrl) throw new Error('区域化服务地址未配置');
@@ -47,6 +48,7 @@ export async function regionalFetch<T>(
   }
   const clientVersion = await getCurrentClientVersion();
   const updateChannel = getActiveUpdateChannel();
+  const requestId = crypto.randomUUID();
 
   let signatureHeaders: SignatureHeaders = {} as SignatureHeaders;
   if (path !== '/v1/client/register') {
@@ -57,7 +59,7 @@ export async function regionalFetch<T>(
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',
     'X-Tenant-Id': getOrgCode(),
-    'X-Request-Id': crypto.randomUUID(),
+    'X-Request-Id': requestId,
     'X-Client-Version': clientVersion,
     'X-Update-Channel': updateChannel,
     ...(token ? { Authorization: `Bearer ${token}` } : {}),
@@ -65,20 +67,39 @@ export async function regionalFetch<T>(
     ...(options.headers as Record<string, string> || {}),
   };
 
-  const res = await fetch(`${baseUrl}${path}`, {
-    ...options,
-    headers,
-  });
+  let res: Response;
+  try {
+    res = await fetch(`${baseUrl}${path}`, {
+      ...options,
+      headers,
+    });
+  } catch (error) {
+    throw createRegionalRequestError(
+      { message: error instanceof Error ? error.message : String(error) },
+      '区域化服务暂时无法连接，请检查后台服务地址和网络后重试',
+      undefined,
+      requestId
+    );
+  }
 
   if (!res.ok) {
+    const text = await res.text().catch(() => '');
+    const errorInfo = parseRegionalError(text, `区域化服务请求失败（${res.status}）`);
+    if (
+      res.status === 401
+      && errorInfo.code === 'SIG-401'
+      && allowClockRetry
+      && path !== '/v1/client/register'
+      && updateSignatureClockOffset(errorInfo.timestamp)
+    ) {
+      return regionalFetch<T>(path, options, allowAuthRetry, false);
+    }
     if (res.status === 401 && allowAuthRetry && path !== '/v1/client/register') {
       clearDeviceRegistration();
       setRegionalInitialized(false);
       await ensureRegisteredDevice();
-      return regionalFetch<T>(path, options, false);
+      return regionalFetch<T>(path, options, false, allowClockRetry);
     }
-    const text = await res.text().catch(() => '');
-    const errorInfo = parseRegionalError(text, `区域化服务请求失败（${res.status}）`);
     if (res.status === 426 || isUpdateRequiredCode(errorInfo.code)) {
       notifyForceUpdateRequired({
         channel: updateChannel,
@@ -86,10 +107,21 @@ export async function regionalFetch<T>(
         message: errorInfo.message,
       });
     }
-    throw new Error(errorInfo.message);
+    throw createRegionalRequestError(errorInfo, `区域化服务请求失败（${res.status}）`, res.status, requestId);
   }
 
-  const body: ApiResponse<T> = await res.json();
+  let body: ApiResponse<T>;
+  try {
+    body = await res.json();
+  } catch (error) {
+    throw createRegionalRequestError(
+      { message: error instanceof Error ? error.message : String(error) },
+      '区域化服务返回内容格式异常',
+      res.status,
+      requestId
+    );
+  }
+  updateSignatureClockOffset(body.timestamp);
   if (body.code !== '0') {
     if (isUpdateRequiredCode(body.code)) {
       notifyForceUpdateRequired({
@@ -98,7 +130,16 @@ export async function regionalFetch<T>(
         message: body.message,
       });
     }
-    throw new Error(body.message || '区域化服务返回异常');
+    throw createRegionalRequestError(
+      {
+        code: body.code,
+        message: body.message || '区域化服务返回异常',
+        requestId: body.requestId,
+      },
+      '区域化服务返回异常',
+      res.status,
+      requestId
+    );
   }
   return body.data;
 }

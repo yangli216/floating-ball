@@ -33,6 +33,7 @@ import {
   streamLocalChatCompletion,
   transcribeLocalAudio,
 } from './llm/localOpenAiClient';
+import { formatUserFacingError } from '@shared/lib/errorMessages';
 
 export type { ChatMessage, ChatRole, LLMConfigOverride, RetryConfig };
 export { DEFAULT_LLM_CONFIG, DEFAULT_RETRY_CONFIG, getLLMConfig, getReviewerLLMConfig };
@@ -327,7 +328,10 @@ export async function testLLMConnection(customConfig?: LLMConfigOverride): Promi
     } else {
       return { success: false, message: '请求成功，但模型未返回任何内容。' };
     }
-  } catch (error: any) {
-    return { success: false, message: error.message || '连接失败或配置有误' };
+  } catch (error: unknown) {
+    return {
+      success: false,
+      message: formatUserFacingError(error, { fallback: '连接失败或配置有误' }),
+    };
   }
 }

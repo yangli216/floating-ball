@@ -17,6 +17,7 @@ import MarkdownIt from 'markdown-it';
 import hljs from 'highlight.js';
 import 'highlight.js/styles/github-dark.css'; // 引入代码高亮样式
 import Icon from "@shared/ui/Icon.vue";
+import { formatUserFacingError } from "@shared/lib/errorMessages";
 
 // 定义事件
 const emit = defineEmits<{
@@ -78,11 +79,10 @@ function removeEmptyAssistantPlaceholder() {
 }
 
 function formatChatFailureMessage(error: unknown): string {
-  const raw = error instanceof Error ? error.message : String(error);
-  if (!raw) {
-    return '抱歉，当前 AI 服务暂时不可用，请检查后台配置后重试。';
-  }
-  return `抱歉，调用模型失败：${raw}`;
+  return formatUserFacingError(error, {
+    context: '抱歉，调用模型失败',
+    fallback: '当前 AI 服务暂时不可用，请检查后台配置后重试。',
+  });
 }
 
 async function handleSend() {
@@ -248,7 +248,13 @@ async function stopRecording() {
     input.value = text;
   } catch (err) {
     trackError('chat_transcription_failed', err);
-    messages.value.push({ role: "assistant", content: `语音识别失败：${(err as Error).message}` });
+    messages.value.push({
+      role: "assistant",
+      content: formatUserFacingError(err, {
+        context: '语音识别失败',
+        fallback: '请检查语音服务配置或稍后重试。',
+      }),
+    });
     scrollToBottom();
   }
 }

@@ -80,6 +80,42 @@ fn ensure_http_service_access(state: &web::Data<SharedAppState>) -> Result<(), H
     Ok(())
 }
 
+fn bridge_user_error(message: &str, trace_id: &str) -> serde_json::Value {
+    serde_json::json!({
+        "status": "error",
+        "message": message,
+        "traceId": trace_id
+    })
+}
+
+fn bridge_dispatch_error(trace_id: &str) -> serde_json::Value {
+    bridge_user_error(
+        "桌面端暂时无法处理该请求，请确认 MedHermes 主窗口已启动后重试",
+        trace_id,
+    )
+}
+
+fn bridge_window_missing_error(trace_id: &str) -> serde_json::Value {
+    bridge_user_error(
+        "桌面端主窗口暂不可用，请确认 MedHermes 正常运行后重试",
+        trace_id,
+    )
+}
+
+fn pmphai_parse_error() -> serde_json::Value {
+    serde_json::json!({
+        "success": false,
+        "message": "知识库服务返回内容格式异常，请稍后重试"
+    })
+}
+
+fn pmphai_request_error() -> serde_json::Value {
+    serde_json::json!({
+        "success": false,
+        "message": "知识库服务暂时无法连接，请检查网络或知识库配置后重试"
+    })
+}
+
 fn is_normal_websocket_disconnect(error: &actix_ws::ProtocolError) -> bool {
     match error {
         actix_ws::ProtocolError::Io(err) => {
@@ -547,7 +583,7 @@ async fn start_voice_consultation(
     if let Some(window) = app_handle.get_webview_window("main") {
         if let Err(e) = window.emit("start-voice-consultation", &patient) {
             eprintln!("Failed to emit voice event: {}", e);
-            let response_body = serde_json::json!({ "error": e.to_string(), "traceId": trace_id });
+            let response_body = bridge_dispatch_error(&trace_id);
             record_bridge_log(
                 &app_handle,
                 response_body["traceId"].as_str().unwrap_or_default(),
@@ -571,8 +607,7 @@ async fn start_voice_consultation(
         let _ = window.unminimize();
         let _ = window.show();
     } else {
-        let response_body =
-            serde_json::json!({ "error": "Main window not found", "traceId": trace_id });
+        let response_body = bridge_window_missing_error(&trace_id);
         record_bridge_log(
             &app_handle,
             response_body["traceId"].as_str().unwrap_or_default(),
@@ -654,11 +689,7 @@ async fn start_consultation_assist(
     if let Some(window) = app_handle.get_webview_window("main") {
         if let Err(e) = window.emit("start-consultation-session", &request) {
             eprintln!("Failed to emit session event: {}", e);
-            let response_body = serde_json::json!({
-                "status": "error",
-                "message": format!("Failed to emit event: {}", e),
-                "traceId": trace_id
-            });
+            let response_body = bridge_dispatch_error(&trace_id);
             record_bridge_log(
                 &app_handle,
                 response_body["traceId"].as_str().unwrap_or_default(),
@@ -682,11 +713,7 @@ async fn start_consultation_assist(
         let _ = window.unminimize();
         let _ = window.show();
     } else {
-        let response_body = serde_json::json!({
-            "status": "error",
-            "message": "Main window not found",
-            "traceId": trace_id
-        });
+        let response_body = bridge_window_missing_error(&trace_id);
         record_bridge_log(
             &app_handle,
             response_body["traceId"].as_str().unwrap_or_default(),
@@ -799,11 +826,7 @@ async fn start_report_interpretation(
 
     if let Some(window) = app_handle.get_webview_window("main") {
         if let Err(error) = window.emit("start-report-interpretation", &request) {
-            let response_body = serde_json::json!({
-                "status": "error",
-                "message": format!("Failed to emit event: {}", error),
-                "traceId": trace_id
-            });
+            let response_body = bridge_dispatch_error(&trace_id);
             record_bridge_log(
                 &app_handle,
                 response_body["traceId"].as_str().unwrap_or_default(),
@@ -827,11 +850,7 @@ async fn start_report_interpretation(
         let _ = window.unminimize();
         let _ = window.show();
     } else {
-        let response_body = serde_json::json!({
-            "status": "error",
-            "message": "Main window not found",
-            "traceId": trace_id
-        });
+        let response_body = bridge_window_missing_error(&trace_id);
         record_bridge_log(
             &app_handle,
             response_body["traceId"].as_str().unwrap_or_default(),
@@ -1608,11 +1627,7 @@ async fn show_patient_risks(
     if let Some(window) = app_handle.get_webview_window("main") {
         if let Err(e) = window.emit("show-patient-risks", &risk_data) {
             eprintln!("Failed to emit risk event: {}", e);
-            let response_body = serde_json::json!({
-                "status": "error",
-                "message": format!("Failed to emit event: {}", e),
-                "traceId": trace_id
-            });
+            let response_body = bridge_dispatch_error(&trace_id);
             record_bridge_log(
                 &app_handle,
                 response_body["traceId"].as_str().unwrap_or_default(),
@@ -1640,11 +1655,7 @@ async fn show_patient_risks(
         let _ = window.show();
     } else {
         println!("Error: Main window not found");
-        let response_body = serde_json::json!({
-            "status": "error",
-            "message": "Main window not found",
-            "traceId": trace_id
-        });
+        let response_body = bridge_window_missing_error(&trace_id);
         record_bridge_log(
             &app_handle,
             response_body["traceId"].as_str().unwrap_or_default(),
@@ -1885,15 +1896,15 @@ async fn pmphai_get_token(
     match client.post(PMPHAI_TOKEN_URL).form(&params).send().await {
         Ok(response) => match response.json::<serde_json::Value>().await {
             Ok(json) => HttpResponse::Ok().json(json),
-            Err(e) => HttpResponse::InternalServerError().json(serde_json::json!({
-                "success": false,
-                "message": format!("Failed to parse response: {}", e)
-            })),
+            Err(e) => {
+                eprintln!("PMPHAI token response parse failed: {}", e);
+                HttpResponse::InternalServerError().json(pmphai_parse_error())
+            }
         },
-        Err(e) => HttpResponse::InternalServerError().json(serde_json::json!({
-            "success": false,
-            "message": format!("Request failed: {}", e)
-        })),
+        Err(e) => {
+            eprintln!("PMPHAI token request failed: {}", e);
+            HttpResponse::InternalServerError().json(pmphai_request_error())
+        }
     }
 }
 
@@ -1929,15 +1940,15 @@ async fn pmphai_search(
     match client.post(&url).json(&body).send().await {
         Ok(response) => match response.json::<serde_json::Value>().await {
             Ok(json) => HttpResponse::Ok().json(json),
-            Err(e) => HttpResponse::InternalServerError().json(serde_json::json!({
-                "success": false,
-                "message": format!("Failed to parse response: {}", e)
-            })),
+            Err(e) => {
+                eprintln!("PMPHAI search response parse failed: {}", e);
+                HttpResponse::InternalServerError().json(pmphai_parse_error())
+            }
         },
-        Err(e) => HttpResponse::InternalServerError().json(serde_json::json!({
-            "success": false,
-            "message": format!("Request failed: {}", e)
-        })),
+        Err(e) => {
+            eprintln!("PMPHAI search request failed: {}", e);
+            HttpResponse::InternalServerError().json(pmphai_request_error())
+        }
     }
 }
 
@@ -1960,15 +1971,15 @@ async fn pmphai_get_clip(
     match client.post(&url).json(&body).send().await {
         Ok(response) => match response.json::<serde_json::Value>().await {
             Ok(json) => HttpResponse::Ok().json(json),
-            Err(e) => HttpResponse::InternalServerError().json(serde_json::json!({
-                "success": false,
-                "message": format!("Failed to parse response: {}", e)
-            })),
+            Err(e) => {
+                eprintln!("PMPHAI clip response parse failed: {}", e);
+                HttpResponse::InternalServerError().json(pmphai_parse_error())
+            }
         },
-        Err(e) => HttpResponse::InternalServerError().json(serde_json::json!({
-            "success": false,
-            "message": format!("Request failed: {}", e)
-        })),
+        Err(e) => {
+            eprintln!("PMPHAI clip request failed: {}", e);
+            HttpResponse::InternalServerError().json(pmphai_request_error())
+        }
     }
 }
 
@@ -2108,15 +2119,15 @@ async fn pmphai_list_search(
     match client.post(&url).form(&form_params).send().await {
         Ok(response) => match response.json::<serde_json::Value>().await {
             Ok(json) => HttpResponse::Ok().json(json),
-            Err(e) => HttpResponse::InternalServerError().json(serde_json::json!({
-                "success": false,
-                "message": format!("Failed to parse response: {}", e)
-            })),
+            Err(e) => {
+                eprintln!("PMPHAI list response parse failed: {}", e);
+                HttpResponse::InternalServerError().json(pmphai_parse_error())
+            }
         },
-        Err(e) => HttpResponse::InternalServerError().json(serde_json::json!({
-            "success": false,
-            "message": format!("Request failed: {}", e)
-        })),
+        Err(e) => {
+            eprintln!("PMPHAI list request failed: {}", e);
+            HttpResponse::InternalServerError().json(pmphai_request_error())
+        }
     }
 }
 

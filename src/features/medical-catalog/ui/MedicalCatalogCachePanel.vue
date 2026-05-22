@@ -2,6 +2,7 @@
 import { computed, onMounted, ref } from 'vue';
 import { confirm } from '@tauri-apps/plugin-dialog';
 import Icon from '@shared/ui/Icon.vue';
+import { formatUserFacingError } from '@shared/lib/errorMessages';
 import {
   medicalDataService,
   type MedicalCatalogClearOptions,
@@ -141,7 +142,7 @@ function formatTimestamp(timestamp: number): string {
 }
 
 function formatError(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
+  return formatUserFacingError(error, { fallback: '请稍后重试。' });
 }
 
 onMounted(refreshAll);

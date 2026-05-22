@@ -58,6 +58,8 @@
     .panel h2 .badge.ok { background: #dcfce7; color: #15803d; }
     .panel h2 .badge.warn { background: #fee2e2; color: #b91c1c; }
     label { font-size: 12px; color: #475569; display: flex; flex-direction: column; gap: 4px; }
+    label.checkbox-label { flex-direction: row; align-items: center; gap: 6px; }
+    label.checkbox-label input { width: auto; }
     input, select, textarea {
       font: inherit;
       padding: 6px 10px;
@@ -67,6 +69,7 @@
       color: #1f2933;
     }
     textarea { resize: vertical; min-height: 60px; font-family: ui-monospace, "SF Mono", Menlo, monospace; font-size: 12px; }
+    textarea.report-query { min-height: 180px; line-height: 1.55; }
     button {
       font: inherit;
       padding: 8px 14px;
@@ -152,6 +155,16 @@
     hr { border: none; border-top: 1px solid #e2e8f0; margin: 4px 0; }
     .help { font-size: 11px; color: #64748b; line-height: 1.5; }
     .help code { background: #f1f5f9; padding: 1px 5px; border-radius: 3px; }
+    .sample-meta {
+      min-height: 34px;
+      padding: 8px 10px;
+      border-radius: 6px;
+      background: #f8fafc;
+      color: #475569;
+      font-size: 12px;
+      line-height: 1.5;
+      border: 1px solid #e2e8f0;
+    }
   </style>
 </head>
 <body>
@@ -262,6 +275,42 @@
           </select>
           <button id="btn-assist">▶ 触发 Assist</button>
         </div>
+      </fieldset>
+
+      <fieldset>
+        <legend>检验/检查报告解读</legend>
+        <div class="stack">
+          <div class="row tight">
+            <label>
+              报告样例
+              <select id="report-sample"></select>
+            </label>
+            <label>
+              taskId
+              <select id="report-task-id">
+                <option value="inspectReport">inspectReport（检验报告）</option>
+                <option value="checkReport">checkReport（检查报告）</option>
+              </select>
+            </label>
+          </div>
+          <div id="report-sample-meta" class="sample-meta"></div>
+          <label>
+            报告原文（query）
+            <textarea id="report-query" class="report-query"></textarea>
+          </label>
+          <label class="checkbox-label">
+            <input id="report-with-patient" type="checkbox" checked />
+            携带左侧患者档案作为 patient 上下文
+          </label>
+          <div class="row">
+            <button id="btn-report-fill" class="secondary">填入样例</button>
+            <button id="btn-report-interpret">生成报告解读</button>
+          </div>
+        </div>
+        <p class="help">
+          将向桌面端 <code>POST /api/report/interpret</code>。
+          报告解读会打开独立结果窗，不进入问诊事件轮询，也不会触发 PHIS 回写。
+        </p>
       </fieldset>
 
       <fieldset>
@@ -378,6 +427,150 @@
       };
     }
 
+    var REPORT_INTERPRETATION_SAMPLES = [
+      {
+        id: 'lab-infection',
+        label: '检验：血常规 + CRP（感染线索）',
+        taskId: 'inspectReport',
+        meta: '覆盖白细胞、中性粒细胞比例、CRP 升高，适合验证“炎症/感染活动”异常点提炼。',
+        query: [
+          '报告日期：2026-05-20',
+          '检验项目：血常规 + C反应蛋白',
+          '检验结果：',
+          'WBC 12.8×10^9/L ↑（参考范围 3.5-9.5）',
+          'NEUT% 84.2% ↑（参考范围 40-75）',
+          'LYM% 10.6% ↓（参考范围 20-50）',
+          'HGB 132 g/L（参考范围 130-175）',
+          'PLT 238×10^9/L（参考范围 125-350）',
+          'CRP 42.6 mg/L ↑（参考范围 0-8）',
+          'PCT 0.08 ng/mL（参考范围 <0.5）',
+          '检验结论：',
+          '白细胞、中性粒细胞比例及 CRP 升高，提示感染/炎症活动，需结合发热、咳痰及影像判断。'
+        ].join('\n')
+      },
+      {
+        id: 'lab-metabolic',
+        label: '检验：肝肾功能 + 血脂尿酸（慢病随访）',
+        taskId: 'inspectReport',
+        meta: '覆盖转氨酶、GGT、尿酸、血脂异常，适合验证多指标慢病风险解释。',
+        query: [
+          '报告日期：2026-05-21',
+          '检验项目：肝肾功能 + 血脂 + 尿酸',
+          '检验结果：',
+          'ALT 68 U/L ↑（参考范围 9-50）',
+          'AST 45 U/L ↑（参考范围 15-40）',
+          'GGT 96 U/L ↑（参考范围 10-60）',
+          'TBIL 16.4 μmol/L（参考范围 3.4-20.5）',
+          'CREA 91 μmol/L（参考范围 57-111）',
+          'eGFR 86 ml/min/1.73m²',
+          'UA 498 μmol/L ↑（参考范围 208-428）',
+          'TG 2.56 mmol/L ↑（参考范围 0.45-1.70）',
+          'LDL-C 3.85 mmol/L ↑（参考范围 <3.40）',
+          '检验结论：',
+          '肝酶轻度升高，伴尿酸及血脂升高。建议结合脂肪肝、饮酒、用药和代谢综合征风险综合评估。'
+        ].join('\n')
+      },
+      {
+        id: 'lab-urine',
+        label: '检验：尿常规（尿路感染线索）',
+        taskId: 'inspectReport',
+        meta: '覆盖尿白细胞、亚硝酸盐、潜血等阳性结果，适合验证尿检异常解释。',
+        query: [
+          '报告日期：2026-05-22',
+          '检验项目：尿常规',
+          '检验结果：',
+          '尿白细胞 3+ ↑',
+          '亚硝酸盐 阳性',
+          '尿潜血 1+',
+          '尿蛋白 弱阳性',
+          '尿糖 阴性',
+          '尿酮体 阴性',
+          '镜检白细胞 45/HP ↑',
+          '镜检红细胞 8/HP ↑',
+          '检验结论：',
+          '尿白细胞及亚硝酸盐阳性，提示泌尿系感染可能，需结合尿频、尿急、尿痛及尿培养判断。'
+        ].join('\n')
+      },
+      {
+        id: 'check-chest-ct',
+        label: '检查：胸部 CT（右下肺感染）',
+        taskId: 'checkReport',
+        meta: '覆盖斑片状高密度影、感染性病变结论，适合验证影像检查的临床意义和复查建议。',
+        query: [
+          '报告日期：2026-05-20',
+          '检查项目：胸部 CT 平扫',
+          '阴阳性：阳性',
+          '检查结果：',
+          '双肺纹理增多增粗，右下肺背段见斑片状高密度影，边界欠清。',
+          '双侧胸膜未见明显增厚，胸腔内未见明显积液。',
+          '纵隔内未见明显肿大淋巴结。',
+          '影像诊断：',
+          '右下肺感染性病变可能。建议结合血常规、CRP 及临床症状，治疗后复查。'
+        ].join('\n')
+      },
+      {
+        id: 'check-knee-xray',
+        label: '检查：左膝 X 线（骨关节退变）',
+        taskId: 'checkReport',
+        meta: '覆盖骨质增生、关节间隙变窄，适合验证慢性退变类检查报告。',
+        query: [
+          '报告日期：2026-05-18',
+          '检查项目：左膝关节正侧位 X 线',
+          '阴阳性：阳性',
+          '检查结果：',
+          '左膝关节对位尚可，未见明确骨折及脱位征象。',
+          '胫骨平台及髌骨边缘可见骨质增生，内侧关节间隙稍变窄。',
+          '周围软组织未见明显异常密度影。',
+          '检查结论：',
+          '左膝关节退行性改变。'
+        ].join('\n')
+      },
+      {
+        id: 'check-head-ct',
+        label: '检查：头颅 CT（急性梗死风险）',
+        taskId: 'checkReport',
+        meta: '覆盖急性/亚急性梗死可疑信号，适合验证高风险影像发现和急诊建议。',
+        query: [
+          '报告日期：2026-05-22',
+          '检查项目：头颅 CT 平扫',
+          '阴阳性：阳性',
+          '检查结果：',
+          '左侧基底节区见片状低密度影，边界欠清，局部脑沟稍变浅。',
+          '中线结构居中，脑室系统未见明显受压移位。',
+          '影像诊断：',
+          '左侧基底节区急性或亚急性脑梗死可能。建议结合突发肢体无力、言语不清等症状，必要时尽快完善头颅 MRI/DWI 或卒中通道评估。'
+        ].join('\n')
+      }
+    ];
+
+    function getSelectedReportSample() {
+      var id = $('report-sample').value;
+      for (var i = 0; i < REPORT_INTERPRETATION_SAMPLES.length; i += 1) {
+        if (REPORT_INTERPRETATION_SAMPLES[i].id === id) {
+          return REPORT_INTERPRETATION_SAMPLES[i];
+        }
+      }
+      return REPORT_INTERPRETATION_SAMPLES[0];
+    }
+
+    function fillReportSample(sample) {
+      $('report-task-id').value = sample.taskId;
+      $('report-query').value = sample.query;
+      $('report-sample-meta').textContent = sample.meta;
+    }
+
+    function initReportSamples() {
+      var select = $('report-sample');
+      select.innerHTML = '';
+      REPORT_INTERPRETATION_SAMPLES.forEach(function (sample) {
+        var option = document.createElement('option');
+        option.value = sample.id;
+        option.textContent = sample.label;
+        select.appendChild(option);
+      });
+      fillReportSample(REPORT_INTERPRETATION_SAMPLES[0]);
+    }
+
     if (typeof window.MedHermes !== 'function') {
       log('error', '[FATAL] 未能加载 MedHermes SDK。请确认桌面端正在 8081 端口运行。');
       connBadge.textContent = 'SDK 未加载';
@@ -391,6 +584,7 @@
     });
     var unsubscribeStream = null;
     sdkVersionEl.textContent = (window.MedHermes.VERSION || sdk._opts && sdk._opts.sdkVersion || '1.x');
+    initReportSamples();
 
     sdk.on('connected', function (info) {
       connBadge.textContent = '已连接';
@@ -481,6 +675,33 @@
       var action = $('assist-action').value;
       log('event', '[→ /consultation/assist] action=' + action, p);
       return sdk.assist(p, action);
+    }));
+
+    $('report-sample').addEventListener('change', function () {
+      fillReportSample(getSelectedReportSample());
+    });
+
+    $('btn-report-fill').addEventListener('click', function () {
+      fillReportSample(getSelectedReportSample());
+      log('event', '[页面] 已填入报告样例：' + getSelectedReportSample().label);
+    });
+
+    $('btn-report-interpret').addEventListener('click', withBusy($('btn-report-interpret'), function () {
+      var taskId = $('report-task-id').value;
+      var query = $('report-query').value.trim();
+      if (!query) throw new Error('缺少报告原文 query');
+
+      var payload = {
+        taskId: taskId,
+        query: query,
+        requestId: 'mock-report-' + Date.now()
+      };
+      if ($('report-with-patient').checked) {
+        payload.patient = buildPatient();
+      }
+
+      log('event', '[→ /report/interpret] taskId=' + taskId, payload);
+      return sdk.interpretReport(payload);
     }));
 
     $('btn-feedback').addEventListener('click', withBusy($('btn-feedback'), function () {

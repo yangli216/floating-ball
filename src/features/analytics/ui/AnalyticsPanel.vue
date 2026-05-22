@@ -309,6 +309,7 @@ import { writeTextFile } from '@tauri-apps/plugin-fs';
 import { feedbackService } from '@services/feedback';
 import type { SessionStatistics, FeedbackStatistics, PerformanceStatistics, RecommendationStatistics, OperationStatistics } from '@/types/feedback';
 import { generateUsageReport } from '@services/reportGenerator';
+import { formatUserFacingError } from '@shared/lib/errorMessages';
 
 defineEmits<{
   close: [];
@@ -412,7 +413,7 @@ async function loadStatistics() {
       stack: err instanceof Error ? err.stack : undefined,
       raw: err
     });
-    error.value = err instanceof Error ? err.message : '加载统计数据失败';
+    error.value = formatUserFacingError(err, { fallback: '加载统计数据失败，请稍后重试。' });
   } finally {
     loading.value = false;
     console.log('[AnalyticsPanel] Loading finished. loading=false');

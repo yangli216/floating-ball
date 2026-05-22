@@ -2,10 +2,12 @@ import { load } from '@tauri-apps/plugin-store';
 
 const PRIVATE_KEY_STORE_KEY = 'REGIONAL_DEVICE_PRIVATE_KEY';
 const PUBLIC_KEY_STORE_KEY = 'REGIONAL_DEVICE_PUBLIC_KEY';
+const SIGNATURE_CLOCK_OFFSET_STORE_KEY = 'REGIONAL_SIGNATURE_CLOCK_OFFSET_MS';
 
 let cachedKeyPair: { privateKey: CryptoKey; publicKey: CryptoKey } | null = null;
 let cachedPublicKeyBase64: string | null = null;
 let storeInstance: Awaited<ReturnType<typeof load>> | null = null;
+let cachedSignatureClockOffsetMs: number | null = null;
 
 async function getStore() {
   if (!storeInstance) {
@@ -92,6 +94,47 @@ export function getPublicKeyBase64(): string | null {
   return cachedPublicKeyBase64;
 }
 
+function readSignatureClockOffsetMs(): number {
+  if (cachedSignatureClockOffsetMs !== null) {
+    return cachedSignatureClockOffsetMs;
+  }
+
+  try {
+    const raw = localStorage.getItem(SIGNATURE_CLOCK_OFFSET_STORE_KEY);
+    const parsed = raw == null ? 0 : Number(raw);
+    cachedSignatureClockOffsetMs = Number.isFinite(parsed) ? Math.round(parsed) : 0;
+  } catch {
+    cachedSignatureClockOffsetMs = 0;
+  }
+
+  return cachedSignatureClockOffsetMs;
+}
+
+function writeSignatureClockOffsetMs(offsetMs: number): void {
+  cachedSignatureClockOffsetMs = Math.round(offsetMs);
+  try {
+    localStorage.setItem(SIGNATURE_CLOCK_OFFSET_STORE_KEY, String(cachedSignatureClockOffsetMs));
+  } catch {
+    // localStorage may be unavailable during isolated tests or early runtime bootstrap.
+  }
+}
+
+export function getSignatureTimestampMs(): number {
+  return Date.now() + readSignatureClockOffsetMs();
+}
+
+export function updateSignatureClockOffset(serverTime: unknown, clientNow = Date.now()): boolean {
+  const serverTimeMs = typeof serverTime === 'number' ? serverTime : Number(serverTime);
+  if (!Number.isFinite(serverTimeMs) || serverTimeMs <= 0) {
+    return false;
+  }
+
+  const nextOffset = Math.round(serverTimeMs - clientNow);
+  const previousOffset = readSignatureClockOffsetMs();
+  writeSignatureClockOffsetMs(nextOffset);
+  return Math.abs(nextOffset - previousOffset) >= 1000;
+}
+
 export async function clearKeyPair(): Promise<void> {
   cachedKeyPair = null;
   cachedPublicKeyBase64 = null;
@@ -117,7 +160,7 @@ export async function signRequest(
     throw new Error('密钥对未加载，请先调用 loadOrGenerateKeyPair');
   }
 
-  const timestamp = String(Date.now());
+  const timestamp = String(getSignatureTimestampMs());
   const nonce = crypto.randomUUID();
   const bodyHash = await sha256Hex(body ?? '');
   const signaturePath = normalizeSignaturePath(path);
@@ -159,7 +202,7 @@ export async function signWebSocketParams(
     throw new Error('密钥对未加载');
   }
 
-  const timestamp = String(Date.now());
+  const timestamp = String(getSignatureTimestampMs());
   const nonce = crypto.randomUUID();
   const bodyHash = await sha256Hex('');
   const signaturePath = normalizeSignaturePath(path);

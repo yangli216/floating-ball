@@ -21,6 +21,7 @@ import {
   getPatientContextGenderText,
   getPatientContextPastMedicalHistory,
 } from '../utils/patientContext';
+import { formatUserFacingError } from '@shared/lib/errorMessages';
 
 const REPORT_INTERPRETATION_WINDOW_LABEL = 'report-interpretation-window';
 const REPORT_INTERPRETATION_WINDOW_URL = 'index.html?window=report-interpretation';
@@ -754,7 +755,7 @@ export async function openReportInterpretationWindow(
     } satisfies ReportInterpretationWindowStateEvent);
     return result;
   } catch (error) {
-    const message = error instanceof Error ? error.message : '报告解读生成失败。';
+    const message = formatUserFacingError(error, { fallback: '报告解读生成失败，请稍后重试。' });
     console.error('[ReportInterpretation] Failed to build or deliver payload:', {
       requestId: request.requestId,
       taskId: request.taskId,

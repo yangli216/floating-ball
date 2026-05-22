@@ -1,6 +1,7 @@
 import { computed, ref } from 'vue';
 import { checkVoiceSafetyReview } from '@/services/factChecker';
 import { trackClick, trackError } from '@/services/operationTracker';
+import { formatUserFacingError } from '@/shared/lib/errorMessages';
 import type {
   GeneratedRecord,
   PatientInfo,
@@ -64,7 +65,7 @@ export function useVoiceSafetyReview() {
       }
       console.error('Voice safety review failed:', error);
       trackError('voice_safety_review_failed', error);
-      errorMessage.value = error instanceof Error ? error.message : String(error);
+      errorMessage.value = formatUserFacingError(error, { fallback: '安全审查失败，请稍后重试。' });
       status.value = 'failed';
       return null;
     }

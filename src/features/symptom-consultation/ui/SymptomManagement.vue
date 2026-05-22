@@ -5,6 +5,7 @@ import Pinyin from 'tiny-pinyin';
 import { invoke } from '@tauri-apps/api/core';
 import Icon from '@shared/ui/Icon.vue';
 import { isRegionalMode } from '@services/regionalClient';
+import { formatUserFacingError } from '@shared/lib/errorMessages';
 
 const showToast = inject('showToast') as (msg: string, type: 'success' | 'error' | 'info') => void;
 
@@ -185,7 +186,10 @@ const saveAll = async () => {
     showToast('配置已成功保存到 templates.json', 'success');
   } catch (err: any) {
     console.error('Save failed:', err);
-    showToast('保存失败: ' + err, 'error');
+    showToast(formatUserFacingError(err, {
+      context: '保存失败',
+      fallback: '请稍后重试。',
+    }), 'error');
   }
 };
 
@@ -198,7 +202,10 @@ const exportJson = async () => {
     // If needed we can update Rust to return boolean
   } catch (err: any) {
     console.error('Export failed:', err);
-    showToast('导出失败: ' + err, 'error');
+    showToast(formatUserFacingError(err, {
+      context: '导出失败',
+      fallback: '请稍后重试。',
+    }), 'error');
   }
 };
 

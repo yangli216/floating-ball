@@ -38,6 +38,7 @@ import {
   useSettingsVoiceRecordingDirectory,
 } from '@features/settings';
 import Icon from '@shared/ui/Icon.vue';
+import { formatUserFacingError } from '@shared/lib/errorMessages';
 
 const emit = defineEmits<{
   'open-symptom-manage': [];
@@ -166,14 +167,15 @@ const handleOpenHisLog = () => {
 };
 
 function formatRegionalConnectionError(baseUrlValue: string, error: unknown): string {
-  const rawMessage = error instanceof Error ? error.message : String(error || '');
-  const message = rawMessage.trim();
+  const message = formatUserFacingError(error, {
+    fallback: `无法连接 ${baseUrlValue}，请确认 floating-ball-server 已启动，且该地址可访问。`,
+  }).trim();
 
-  if (!message || message === 'Load failed' || message === 'Failed to fetch') {
+  if (!message || message.includes('服务暂时无法连接')) {
     return `接入参数已保存，但当前无法连接 ${baseUrlValue}。请确认 floating-ball-server 已启动，且该地址可访问。`;
   }
 
-  if (message.includes('AUTH-401')) {
+  if (message.includes('授权已失效') || message.includes('设备鉴权失败')) {
     return `接入参数已保存，但设备鉴权失败。请重新确认 ${baseUrlValue} 的服务状态后重试。`;
   }
 
@@ -185,14 +187,15 @@ function formatRegionalConnectionError(baseUrlValue: string, error: unknown): st
 }
 
 function formatRegionalConnectionToast(error: unknown): string {
-  const rawMessage = error instanceof Error ? error.message : String(error || '');
-  const message = rawMessage.trim();
+  const message = formatUserFacingError(error, {
+    fallback: '当前后台暂不可达',
+  }).trim();
 
-  if (!message || message === 'Load failed' || message === 'Failed to fetch') {
+  if (!message || message.includes('服务暂时无法连接')) {
     return '区域化接入参数已保存，但当前后台暂不可达';
   }
 
-  if (message.includes('AUTH-401')) {
+  if (message.includes('授权已失效') || message.includes('设备鉴权失败')) {
     return '区域化接入参数已保存，但设备鉴权失败';
   }
 
@@ -516,14 +519,15 @@ async function saveSettings() {
         showToast(regionalToastMessage || '区域化接入参数已保存，但当前连接失败，请查看下方详情', 'info');
       }
     }
-  } catch (error: any) {
+  } catch (error: unknown) {
+    const message = formatUserFacingError(error, { fallback: '保存失败，请稍后重试。' });
     regionalConnectResult.value = {
       success: false,
-      message: error.message || '保存失败',
+      message,
     };
     trackError('settings_save_failed', error);
     if (showToast) {
-      showToast(`保存失败: ${error.message || '未知错误'}`, 'error');
+      showToast(`保存失败：${message}`, 'error');
     }
   } finally {
     savingSettings.value = false;
@@ -606,8 +610,11 @@ const testModelConnection = async () => {
       });
     modelTestResult.value = result;
     trackClick('settings_model_test', { success: result.success });
-  } catch (error: any) {
-    modelTestResult.value = { success: false, message: error.message || '连接失败' };
+  } catch (error: unknown) {
+    modelTestResult.value = {
+      success: false,
+      message: formatUserFacingError(error, { fallback: '连接失败，请检查模型配置。' }),
+    };
     trackError('settings_model_test_failed', error);
   } finally {
     modelTesting.value = false;
@@ -631,8 +638,11 @@ const testReviewerConnection = async () => {
       });
     reviewerTestResult.value = result;
     trackClick('settings_reviewer_test', { success: result.success });
-  } catch (error: any) {
-    reviewerTestResult.value = { success: false, message: error.message || '连接失败' };
+  } catch (error: unknown) {
+    reviewerTestResult.value = {
+      success: false,
+      message: formatUserFacingError(error, { fallback: '连接失败，请检查独立审查 AI 配置。' }),
+    };
     trackError('settings_reviewer_test_failed', error);
   } finally {
     reviewerTesting.value = false;
@@ -654,8 +664,11 @@ const testPMPHAIConnection = async () => {
     const result = await pmphaiService.testConnection();
     pmphaiTestResult.value = result;
     trackClick('settings_pmphai_test', { success: result.success });
-  } catch (error: any) {
-    pmphaiTestResult.value = { success: false, message: error.message || '连接失败' };
+  } catch (error: unknown) {
+    pmphaiTestResult.value = {
+      success: false,
+      message: formatUserFacingError(error, { fallback: '连接失败，请检查知识库配置。' }),
+    };
     trackError('settings_pmphai_test_failed', error);
   } finally {
     pmphaiTesting.value = false;

@@ -23,6 +23,7 @@ import type { ConsultationAssistAction } from '../types/consultationAssist';
 import type { ReportInterpretationRequestPayload } from '../types/reportInterpretation';
 import { getPatientContextId } from '../utils/patientContext';
 import { useTauriEventListener } from '@shared/composables/useTauriEventListener';
+import { formatUserFacingError } from '@shared/lib/errorMessages';
 import {
   resolveIncomingPatientTracking,
   useReceptionController,
@@ -343,7 +344,9 @@ export function useEventListeners(options: EventListenersOptions) {
       trackError('report_interpretation_failed', error, {
         taskId: payload?.taskId,
       });
-      showToast(error instanceof Error ? error.message : '报告解读打开失败', 'error');
+      showToast(formatUserFacingError(error, {
+        fallback: '报告解读打开失败，请稍后重试。',
+      }), 'error');
     }
   }
 

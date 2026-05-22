@@ -69,6 +69,7 @@
 4. `shared/*` 只接收无业务语义的基础能力；诊断、治疗、问诊、反馈等医疗语义能力不得因为“多个地方用”就提前放入 shared。
 5. 旧 `components/`、`composables/` facade 在调用方切完后应被清理；治理后只新增不删除，视为未完成收敛。
 6. 智能问诊症状采集阶段的模板表单初始化、互斥选择、必填校验、病历草稿拼装等纯规则归入 `features/symptom-consultation/lib`；页面只保留用户动作编排、toast、DOM 滚动、AI 请求和 PHIS/HIS 副作用。
+7. 面向用户展示的错误文案统一经 `src/shared/lib/errorMessages.ts` 归一化。业务页面可以追加场景前缀，但不得直接把 `Error.message`、`TypeError: Failed to fetch`、`Load failed`、HTTP statusText、JSON 解析错误或后端底层异常原样展示给医生；需要排障时展示 `requestId` 或引导查看 HIS 联调日志 / 后台日志。
 
 ---
 
@@ -114,6 +115,7 @@
 | **Stores (Pinia)** | 跨组件共享状态 | `consultationConfig` 配置状态、`diagnosisPath` 诊断路径缓存 |
 | **Components** | UI 渲染、用户交互 | 聊天面板、设置面板、语音胶囊 |
 | **Services** | 外部通信、数据转换 | LLM API、语音识别、医疗数据匹配 |
+| **Shared Lib** | 跨业务基础工具 | 错误文案归一、通用纯函数 |
 | **Constants** | 配置常量、类型定义 | 窗口尺寸、动画参数 |
 | **Styles** | 样式模块化 | 全局样式、布局、动画 |
 
@@ -136,6 +138,7 @@
 2. 区域化模式下，桌面端通过 `SettingsPanel.vue` 或预置的 `REGIONAL_*` 配置项保存 `REGIONAL_ENABLED / REGIONAL_BASE_URL / REGIONAL_ORG_CODE`，再由 `regionalRuntime.ts -> regionalClient.ts` 完成设备注册、`bootstrap` 拉取和 `/v1/*` 调用；首启默认接入值中的后端地址优先取构建时注入的 `VITE_REGIONAL_BASE_URL`（CI/Release 由 GitHub Actions Repository Variables 注入），机构编码默认回退到 `ORG001`，如需覆盖仅通过本地 `.env` 或设置页手工配置；后续仍允许在设置页修改或关闭；桌面端不再编辑这些密钥类配置。
 2.1 `regionalClient.ts` 会优先通过 Tauri Rust 命令读取设备网卡 MAC 地址，并将其作为 `cdDevice` / 设备编码持久化使用；仅在当前环境无法读取 MAC 时才回退到本地生成的兜底编码。
 2.1 `SettingsPanel.vue` 需要同时提供“桌面端到 floating-ball-server”的接入测试入口，用于验证 `register -> bootstrap` 链路，并与后台“server 到 LLM”测试入口形成分层排障。
+2.2 区域化签名时间戳使用 epoch 毫秒。`requestSigner.ts` 会根据 `/v1/*` 响应体顶层 `timestamp` 维护“本机到服务端”的时钟偏移；遇到 `SIG-401` 且响应带服务端时间时，HTTP/SSE 请求会刷新偏移后重签重试一次，避免桌面端系统时间与后台服务器相差超过 5 分钟时阻断诊断推荐。
 3. HIS 联调通过本地 HTTP Bridge 完成，不依赖独立登录态。
 4. `docs/regionalization/*.md` 中关于 `auth.ts`、`AuthGate.vue` 的更完整登录态设计仍未进入当前实现。
 
@@ -905,7 +908,7 @@ src/styles/
 | `promptGuard.ts` | Prompt 注入与泄漏保护 | [src/services/promptGuard.ts](src/services/promptGuard.ts) |
 | `textGeneration.ts` | 主诉/现病史等文本生成辅助 | [src/services/textGeneration.ts](src/services/textGeneration.ts) |
 | `reportGenerator.ts` | 使用报告导出 | [src/services/reportGenerator.ts](src/services/reportGenerator.ts) |
-| `regionalClient.ts` / `services/regional/*` | 区域化核心客户端 facade 与内部模块。`regionalClient.ts` 只保留兼容导出；真实职责拆到 `services/regional/config.ts`（区域化开关与连接配置）、`device.ts`（设备编码）、`registration.ts`（终端注册与 token）、`httpClient.ts`（签名 HTTP 请求）、`bootstrap.ts`（bootstrap 缓存、初始化、心跳）、`realtime.ts`（SSE 与 WebSocket 签名 URL）、`speechUpload.ts`（语音上传 payload）。所有 `/v1/*` HTTP/SSE/WebSocket 出口仍必须经过签名模块，不允许业务代码直接 `fetch` 区域化接口 | [src/services/regionalClient.ts](src/services/regionalClient.ts) / [src/services/regional/index.ts](src/services/regional/index.ts) |
+| `regionalClient.ts` / `services/regional/*` | 区域化核心客户端 facade 与内部模块。`regionalClient.ts` 只保留兼容导出；真实职责拆到 `services/regional/config.ts`（区域化开关与连接配置）、`device.ts`（设备编码）、`registration.ts`（终端注册与 token）、`httpClient.ts`（签名 HTTP 请求、服务端时间偏移校准、`SIG-401` 重签重试）、`bootstrap.ts`（bootstrap 缓存、初始化、心跳）、`realtime.ts`（SSE 与 WebSocket 签名 URL）、`speechUpload.ts`（语音上传 payload）。所有 `/v1/*` HTTP/SSE/WebSocket 出口仍必须经过签名模块，不允许业务代码直接 `fetch` 区域化接口 | [src/services/regionalClient.ts](src/services/regionalClient.ts) / [src/services/regional/index.ts](src/services/regional/index.ts) |
 | `regionalRuntime.ts` | 区域化运行时编排：统一初始化、重连、远程 Prompt/模板/映射同步和审计上传启动/关闭；初始化成功后额外发送 `regional_runtime_initialized` 审计事件，方便直接在后台确认链路打通 | [src/services/regionalRuntime.ts](src/services/regionalRuntime.ts) |
 | `userFeedback.ts` | 区域化问题反馈服务；负责图片编码、评分/说明校验、反馈 scope 元数据合并和调用远端 `/v1/client/feedbacks` 接口 | [src/services/userFeedback.ts](src/services/userFeedback.ts) |
 | `consultationUserLog.ts` | 区域化运维用户日志服务；负责组装智能问诊/语音问诊首版与最终快照，语音问诊额外编码录音和 ASR 文本，并调用远端 `/v1/client/user-logs/consultations` 聚合到同一条问诊日志 | [src/services/consultationUserLog.ts](src/services/consultationUserLog.ts) |

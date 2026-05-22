@@ -75,6 +75,8 @@ export interface ApiResponse<T> {
 export interface RegionalErrorInfo {
   code?: string;
   message: string;
+  requestId?: string;
+  timestamp?: number;
 }
 
 export interface RegionalSpeechUploadPayload {

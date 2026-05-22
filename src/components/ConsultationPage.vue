@@ -540,6 +540,7 @@ import {
 } from '@features/symptom-consultation';
 import { PROMPTS, DynamicSymptomTemplatePrompt } from '../prompts';
 import Icon from '@shared/ui/Icon.vue';
+import { formatUserFacingError } from '@shared/lib/errorMessages';
 import {
   FactCheckHighlight,
   FactCheckNotification,
@@ -1423,7 +1424,10 @@ const handleGenerateDynamicSymptom = async (name: string) => {
     showToast('已成功添加动态生成的症状模板', 'success');
   } catch (err: any) {
     console.error('动态生成症状失败:', err);
-    showToast(`AI 生成失败: ${err.message}`, 'error');
+    showToast(formatUserFacingError(err, {
+      context: 'AI 生成失败',
+      fallback: '请稍后重试。',
+    }), 'error');
   } finally {
     isGeneratingSymptom.value = false;
   }
@@ -1514,8 +1518,10 @@ async function handleDiagnosisFeedbackSubmit(diag: Diagnosis, draft: VoiceRecomm
     recommendationFeedbackPopover.close();
     showToast?.('诊断反馈已记录', 'success');
   } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    showToast?.(`提交反馈失败: ${message}`, 'error');
+    showToast?.(formatUserFacingError(error, {
+      context: '提交反馈失败',
+      fallback: '请稍后重试。',
+    }), 'error');
   }
 }
 
@@ -1525,8 +1531,10 @@ async function handleTreatmentFeedbackSubmit(rec: TreatmentRecommendation, draft
     recommendationFeedbackPopover.close();
     showToast?.('推荐反馈已记录', 'success');
   } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    showToast?.(`提交反馈失败: ${message}`, 'error');
+    showToast?.(formatUserFacingError(error, {
+      context: '提交反馈失败',
+      fallback: '请稍后重试。',
+    }), 'error');
   }
 }
 
@@ -1654,7 +1662,10 @@ const requestReferenceToPHIS = async (
   } catch (error) {
     console.error('[ConsultationPage] Failed to request PHIS reference:', error);
     trackError('request_reference_failed', error, { action });
-    showToast(`发起引用失败：${error instanceof Error ? error.message : String(error)}`, 'error');
+    showToast(formatUserFacingError(error, {
+      context: '发起引用失败',
+      fallback: '请稍后重试。',
+    }), 'error');
   }
 };
 
@@ -1798,7 +1809,10 @@ const submitToHIS = async () => {
   } catch (e) {
     console.error("Failed to submit", e);
     trackError('submit_to_his_failed', e);
-    showToast("发送数据失败: " + e, "error");
+    showToast(formatUserFacingError(e, {
+      context: '发送数据失败',
+      fallback: '请稍后重试。',
+    }), "error");
   }
 };
 

@@ -12,6 +12,7 @@ import type { TooltipComponentOption } from 'echarts/components';
 import Icon from '@shared/ui/Icon.vue';
 import type { DiagnosisPathPayload } from '@services/diagnosisPath';
 import { useTauriWindowEventListeners } from '@shared/composables/useTauriWindowEventListeners';
+import { formatUserFacingError } from '@shared/lib/errorMessages';
 
 echarts.use([SankeyChart, TooltipComponent, CanvasRenderer]);
 
@@ -465,7 +466,7 @@ watch(payload, (nextPayload) => {
       isLoading.value = false;
       statusPhase.value = 'error';
       statusMessage.value = '诊断路径渲染失败，请稍后重试。';
-      statusDetail.value = error instanceof Error ? error.message : '图表组件未能完成渲染。';
+      statusDetail.value = formatUserFacingError(error, { fallback: '图表组件未能完成渲染。' });
       await emit('diagnosis-path:render-failed', {
         label: appWindow.label,
         message: statusMessage.value,

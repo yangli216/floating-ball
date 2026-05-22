@@ -1,4 +1,5 @@
 import type { ApiResponse, RegionalErrorInfo } from './types';
+import { formatUserFacingError } from '@shared/lib/errorMessages';
 
 export function extractSseDataPayload(line: string): string | null {
   if (!line.startsWith('data:')) {
@@ -18,6 +19,8 @@ export function parseRegionalError(rawText: string, fallback: string): RegionalE
     return {
       code: parsed.code || parsed.error?.code,
       message: parsed.message || parsed.error?.message || fallback,
+      requestId: parsed.requestId,
+      timestamp: typeof parsed.timestamp === 'number' ? parsed.timestamp : undefined,
     };
   } catch {
     return { message: text };
@@ -46,4 +49,31 @@ export function parseUnexpectedSseBody(rawText: string, fallback: string): strin
   }
 
   return parseRegionalErrorMessage(text, fallback);
+}
+
+export function createRegionalRequestError(
+  errorInfo: RegionalErrorInfo,
+  fallback: string,
+  status?: number,
+  requestId?: string
+): Error {
+  const error = new Error(formatUserFacingError(
+    {
+      message: errorInfo.message,
+      code: errorInfo.code,
+      status,
+      requestId: errorInfo.requestId || requestId,
+    },
+    { fallback }
+  )) as Error & {
+    code?: string;
+    status?: number;
+    requestId?: string;
+    rawMessage?: string;
+  };
+  error.code = errorInfo.code;
+  error.status = status;
+  error.requestId = errorInfo.requestId || requestId;
+  error.rawMessage = errorInfo.message;
+  return error;
 }

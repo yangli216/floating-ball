@@ -5,6 +5,7 @@ import { getLatestAiTrace } from '@services/aiTrace';
 import { submitUserFeedback, type UserFeedbackScreenshot, type FeedbackSeverity } from '@services/userFeedback';
 import { isRegionalMode } from '@services/regionalClient';
 import { trackClick, trackError, trackFormSubmit } from '@services/operationTracker';
+import { formatUserFacingError } from '@shared/lib/errorMessages';
 
 interface GeneralFeedbackDraftRecord {
   score: number;
@@ -263,7 +264,7 @@ async function handleFileChange(event: Event): Promise<void> {
     trackClick('feedback_screenshot_selected', { fileName: file.name, fileSize: file.size });
   } catch (error) {
     trackError('feedback_screenshot_selected_failed', error);
-    showToast?.(error instanceof Error ? error.message : '选择图片失败', 'error');
+    showToast?.(formatUserFacingError(error, { fallback: '选择图片失败，请稍后重试。' }), 'error');
   } finally {
     if (input) {
       input.value = '';
@@ -356,7 +357,7 @@ async function handleSubmit(): Promise<void> {
       hasScreenshot: !!screenshot.value,
       traceId: trace?.traceId,
     });
-    showToast?.(error instanceof Error ? error.message : '反馈提交失败', 'error');
+    showToast?.(formatUserFacingError(error, { fallback: '反馈提交失败，请稍后重试。' }), 'error');
   } finally {
     submitting.value = false;
   }

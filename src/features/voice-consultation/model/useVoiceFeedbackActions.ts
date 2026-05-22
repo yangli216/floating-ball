@@ -9,6 +9,7 @@ import {
   buildTreatmentRecommendationFeedbackSubmitPayload,
   type RecommendationFeedbackSubmitPayload,
 } from '@features/clinical-result';
+import { formatUserFacingError } from '@shared/lib/errorMessages';
 
 export type VoiceFeedbackActionsNotify = (message: string, type?: string) => void;
 
@@ -40,7 +41,7 @@ export interface VoiceFeedbackActionsOptions {
 }
 
 function getErrorMessage(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
+  return formatUserFacingError(error, { fallback: '请稍后重试。' });
 }
 
 export function useVoiceFeedbackActions(options: VoiceFeedbackActionsOptions) {

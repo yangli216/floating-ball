@@ -2,6 +2,7 @@
 import { ref, computed, watch, inject, onMounted, onUnmounted, nextTick } from 'vue';
 import { invoke } from '@tauri-apps/api/core';
 import { PatientHeader } from '@entities/patient';
+import Icon from '@shared/ui/Icon.vue';
 import { chat } from '../services/llm';
 import { PROMPTS } from '../prompts';
 import { getHisAdapter } from '../services/his';
@@ -69,6 +70,7 @@ import {
   inferRouteFromText as inferRouteFromTextPure,
 } from '../utils/treatmentInference';
 import { useOutsideInteraction } from '@shared/composables/useOutsideInteraction';
+import { formatUserFacingError } from '@shared/lib/errorMessages';
 import {
   VoiceRecordFieldEditor,
   VoiceSessionFeedbackBar,
@@ -172,6 +174,7 @@ const {
   replaceDiagnosisInSelection,
 } = diagnosisSelection;
 const diagnosisLoading = ref(false);
+const diagnosisRequestSeq = ref(0);
 
 const treatments = ref<TreatmentRecommendation[]>([]);
 const treatmentLoading = ref(false);
@@ -233,6 +236,10 @@ const {
 
 const lastTreatmentDiagnosisKey = ref('');
 const suppressDiagnosisTreatmentRefetch = ref(false);
+const canRefreshDiagnosis = computed(() => (
+  chiefComplaint.value.trim().length > 0
+  || historyOfPresentIllness.value.trim().length > 0
+));
 const selectedTreatments = computed(() => buildSelectedTreatments({ items: treatments.value }));
 const treatmentRefreshNeeded = computed(() => {
   const currentIdentity = getDiagnosisIdentity(selectedDiagnosis.value);
@@ -841,9 +848,11 @@ async function handleDiagnosisDifferential(diag: Diagnosis, event?: Event): Prom
       showToast?.('当前诊断暂无待确认的鉴别排查项。', 'info');
     }
   } catch (error: unknown) {
-    const msg = error instanceof Error ? error.message : String(error);
     checklistItems.value = [];
-    showToast?.(`诊断鉴别生成失败: ${msg}`, 'error');
+    showToast?.(formatUserFacingError(error, {
+      context: '诊断鉴别生成失败',
+      fallback: '请稍后重试。',
+    }), 'error');
   } finally {
     isChecklistLoading.value = false;
   }
@@ -885,11 +894,18 @@ useConsultationReferenceFeedbackListener<ReferenceFeedbackPayload>({
 
 async function fetchAIDiagnosis(): Promise<void> {
   if (diagnosisLoading.value) return;
-  if (!chiefComplaint.value.trim()) {
-    showToast?.('请先填写主诉', 'warning');
+  if (!canRefreshDiagnosis.value) {
+    showToast?.('请先填写主诉或现病史', 'warning');
     return;
   }
 
+  const requestSeq = diagnosisRequestSeq.value + 1;
+  diagnosisRequestSeq.value = requestSeq;
+  const requestRecordKey = [
+    patientAnchorId.value,
+    chiefComplaint.value,
+    historyOfPresentIllness.value,
+  ].join('|');
   diagnosisLoading.value = true;
   try {
     const requestSpec = buildClinicalResultDiagnosisRequestSpec({
@@ -902,6 +918,20 @@ async function fetchAIDiagnosis(): Promise<void> {
 
     const response = await chat(requestSpec.messages, undefined, undefined, undefined, requestSpec.config);
     const parsed = parseLLMJson<Diagnosis[]>(response);
+    const currentRecordKey = [
+      patientAnchorId.value,
+      chiefComplaint.value,
+      historyOfPresentIllness.value,
+    ].join('|');
+    if (requestSeq !== diagnosisRequestSeq.value || requestRecordKey !== currentRecordKey) {
+      console.info('[VoiceConsultationNew] Ignore stale diagnosis response', {
+        requestSeq,
+        latest: diagnosisRequestSeq.value,
+        requestRecordKey,
+        currentRecordKey,
+      });
+      return;
+    }
 
     aiDiagnoses.value = mapClinicalResultAiDiagnoses({
       rawDiagnoses: parsed,
@@ -918,11 +948,23 @@ async function fetchAIDiagnosis(): Promise<void> {
 
     void performDiagnosisFactCheck(aiDiagnoses.value);
   } catch (error: unknown) {
-    const msg = error instanceof Error ? error.message : String(error);
-    showToast?.(`诊断推荐失败: ${msg}`, 'error');
+    showToast?.(formatUserFacingError(error, {
+      context: '诊断推荐失败',
+      fallback: '请稍后重试。',
+    }), 'error');
   } finally {
-    diagnosisLoading.value = false;
+    if (requestSeq === diagnosisRequestSeq.value) {
+      diagnosisLoading.value = false;
+    }
   }
+}
+
+async function handleDiagnosisRefresh(event?: Event): Promise<void> {
+  event?.stopPropagation();
+  closeReasonTooltipIfOpen();
+  closeRelatedDropdown();
+  recommendationFeedbackPopover.close();
+  await fetchAIDiagnosis();
 }
 
 async function fetchAITreatment(): Promise<void> {
@@ -994,8 +1036,10 @@ async function fetchAITreatment(): Promise<void> {
     // 把 LLM 推荐的诊疗方案写回缓存，下次同就诊恢复时直接复用、跳过 fetchAITreatment
     persistEditorSnapshotImmediate();
   } catch (error: unknown) {
-    const msg = error instanceof Error ? error.message : String(error);
-    showToast?.(`方案推荐失败: ${msg}`, 'error');
+    showToast?.(formatUserFacingError(error, {
+      context: '方案推荐失败',
+      fallback: '请稍后重试。',
+    }), 'error');
   } finally {
     treatmentLoading.value = false;
   }
@@ -1677,8 +1721,10 @@ async function handleBatchWriteBack(): Promise<void> {
     markWritebackPending(requestId, '病历已发送至 HIS，等待处理结果回执。');
     showToast?.('病历已发送至 HIS，等待处理结果回执。', 'info');
   } catch (error: unknown) {
-    const msg = error instanceof Error ? error.message : String(error);
-    showToast?.(`提交失败: ${msg}`, 'error');
+    showToast?.(formatUserFacingError(error, {
+      context: '提交失败',
+      fallback: '请稍后重试。',
+    }), 'error');
   } finally {
     submitting.value = false;
   }
@@ -1740,7 +1786,7 @@ watch(
 
     if (aiDiagnoses.value.length > 0) {
       void performDiagnosisFactCheck(aiDiagnoses.value);
-    } else if (chiefComplaint.value.trim()) {
+    } else if (canRefreshDiagnosis.value) {
       void fetchAIDiagnosis();
     }
 
@@ -1921,14 +1967,33 @@ watch(
         <section class="vcn-right-panel">
           <div class="decision-card pane-card">
             <div class="section-heading">
-              <h3 class="section-title">诊断建议</h3>
-              <div v-if="selectedDiagnoses.length > 0" class="section-meta">
-                已纳入 {{ selectedDiagnoses.length }} 项
-                <span v-if="selectedDiagnosis" class="section-meta-strong">主：{{ selectedDiagnosis.name }}</span>
+              <div class="section-heading-main">
+                <h3 class="section-title">诊断建议</h3>
+              </div>
+              <div class="diagnosis-heading-actions">
+                <div v-if="selectedDiagnoses.length > 0" class="section-meta">
+                  已纳入 {{ selectedDiagnoses.length }} 项
+                  <span v-if="selectedDiagnosis" class="section-meta-strong">主：{{ selectedDiagnosis.name }}</span>
+                </div>
+                <button
+                  class="refresh-recommendation-btn"
+                  type="button"
+                  title="基于当前病历重新生成诊断建议"
+                  :disabled="diagnosisLoading || !canRefreshDiagnosis"
+                  @click="handleDiagnosisRefresh"
+                >
+                  <Icon
+                    :icon="diagnosisLoading ? 'lucide:loader-2' : 'lucide:refresh-cw'"
+                    :class="{ spin: diagnosisLoading }"
+                    size="14"
+                    aria-hidden="true"
+                  />
+                  <span>{{ diagnosisLoading ? '刷新中...' : '刷新诊断' }}</span>
+                </button>
               </div>
             </div>
 
-            <div v-if="diagnosisLoading" class="loading-inline">
+            <div v-if="diagnosisLoading && aiDiagnoses.length === 0" class="loading-inline">
               <div class="ai-spinner small">
                 <div class="spinner-ring"></div>
                 <div class="spinner-core"></div>
@@ -1980,14 +2045,25 @@ watch(
               </div>
               <div class="treatment-heading-actions">
                 <button
-                  class="refresh-treatment-btn"
+                  class="refresh-recommendation-btn"
                   type="button"
+                  title="基于当前主诊断重新生成治疗方案"
                   :disabled="!selectedDiagnosis || treatmentLoading"
                   @click="handleTreatmentRefresh"
                 >
-                  {{ treatmentLoading ? '刷新中...' : '刷新方案' }}
+                  <Icon
+                    :icon="treatmentLoading ? 'lucide:loader-2' : 'lucide:refresh-cw'"
+                    :class="{ spin: treatmentLoading }"
+                    size="14"
+                    aria-hidden="true"
+                  />
+                  <span>{{ treatmentLoading ? '刷新中...' : '刷新方案' }}</span>
                 </button>
               </div>
+            </div>
+
+            <div v-if="treatmentRefreshNeeded && !treatmentLoading" class="refresh-needed-note">
+              已切换主诊断，当前方案仍保留上一版；点击“刷新方案”获取当前诊断方案。
             </div>
 
             <div v-if="treatmentLoading" class="loading-inline">
