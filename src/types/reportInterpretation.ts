@@ -61,12 +61,37 @@ export interface ReportInterpretationKeyPoint {
   urgency?: ReportInterpretationUrgency;
 }
 
+export type ReportInterpretationAbnormalDirection = 'up' | 'down' | 'positive' | 'abnormal' | 'neutral';
+
+export interface ReportInterpretationReportMeta {
+  reportTitle?: string;
+  reportItem?: string;
+  reportDate?: string;
+  outpatientNo?: string;
+  sampleNo?: string;
+  submitDoctor?: string;
+  requestTime?: string;
+  resultTime?: string;
+  historyText?: string;
+}
+
+export interface ReportInterpretationAbnormalItem {
+  name: string;
+  result: string;
+  direction?: ReportInterpretationAbnormalDirection;
+  referenceRange?: string;
+  meaning?: string;
+  urgency?: ReportInterpretationUrgency;
+}
+
 export interface ReportInterpretationWindowPayload {
   requestId: string;
   taskId: ReportInterpretationTaskId;
   reportKindLabel: string;
   patientSummary: string;
   patient?: ReportInterpretationPatientProfile | null;
+  reportMeta: ReportInterpretationReportMeta;
+  abnormalItems: ReportInterpretationAbnormalItem[];
   sourceQuery: string;
   summary: string;
   conclusion: string;

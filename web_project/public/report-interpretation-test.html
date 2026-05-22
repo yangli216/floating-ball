@@ -1,0 +1,826 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <title>报告解读测试台 · MedHermes</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <style>
+    * { box-sizing: border-box; }
+    :root {
+      color-scheme: light;
+      --bg: #eef2f7;
+      --surface: #ffffff;
+      --surface-soft: #f8fafc;
+      --line: #d6dee9;
+      --line-strong: #b8c4d4;
+      --text: #172033;
+      --muted: #64748b;
+      --primary: #1f6feb;
+      --primary-strong: #185abc;
+      --success: #14823b;
+      --success-bg: #dcfce7;
+      --warn: #9a5b00;
+      --warn-bg: #fff7d6;
+      --error: #b42318;
+      --error-bg: #fee4e2;
+      --code: #0f172a;
+    }
+    body {
+      margin: 0;
+      min-height: 100vh;
+      font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft YaHei", sans-serif;
+      background: var(--bg);
+      color: var(--text);
+    }
+    header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+      padding: 16px 22px;
+      background: #15253d;
+      color: #fff;
+    }
+    header h1 {
+      margin: 0;
+      font-size: 18px;
+      font-weight: 650;
+      letter-spacing: 0;
+    }
+    header nav {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      font-size: 12px;
+      color: rgba(255, 255, 255, 0.82);
+      white-space: nowrap;
+    }
+    header a {
+      color: #fff;
+      font-weight: 600;
+      text-decoration: none;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.55);
+    }
+    header a:hover { border-bottom-color: #fff; }
+    main {
+      display: grid;
+      grid-template-columns: minmax(360px, 0.85fr) minmax(440px, 1.15fr);
+      gap: 16px;
+      padding: 16px;
+      max-width: 1440px;
+      margin: 0 auto;
+    }
+    section {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      min-width: 0;
+    }
+    .panel {
+      background: var(--surface);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 14px;
+      box-shadow: 0 1px 3px rgba(15, 23, 42, 0.05);
+    }
+    .panel-title {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      margin: 0 0 12px;
+      font-size: 14px;
+      font-weight: 650;
+      color: #1d3557;
+    }
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      min-height: 22px;
+      padding: 2px 8px;
+      border-radius: 999px;
+      background: #e2e8f0;
+      color: #475569;
+      font-size: 11px;
+      font-weight: 600;
+      white-space: nowrap;
+    }
+    .badge.ok { background: var(--success-bg); color: var(--success); }
+    .badge.warn { background: var(--warn-bg); color: var(--warn); }
+    .badge.error { background: var(--error-bg); color: var(--error); }
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 10px;
+    }
+    .grid.three { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+    label {
+      display: flex;
+      flex-direction: column;
+      gap: 5px;
+      min-width: 0;
+      font-size: 12px;
+      color: var(--muted);
+    }
+    .check-row {
+      flex-direction: row;
+      align-items: center;
+      gap: 8px;
+      color: var(--text);
+    }
+    input, select, textarea {
+      width: 100%;
+      min-height: 34px;
+      border: 1px solid var(--line-strong);
+      border-radius: 6px;
+      background: #fff;
+      color: var(--text);
+      font: inherit;
+      font-size: 13px;
+      padding: 7px 10px;
+      outline: none;
+    }
+    input:focus, select:focus, textarea:focus {
+      border-color: var(--primary);
+      box-shadow: 0 0 0 3px rgba(31, 111, 235, 0.12);
+    }
+    textarea {
+      resize: vertical;
+      min-height: 180px;
+      line-height: 1.55;
+      font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+      font-size: 12px;
+    }
+    textarea.report-query { min-height: 330px; }
+    .actions {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+    button {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+      min-height: 34px;
+      border: 1px solid transparent;
+      border-radius: 6px;
+      padding: 7px 12px;
+      background: var(--primary);
+      color: #fff;
+      font: inherit;
+      font-size: 13px;
+      font-weight: 650;
+      cursor: pointer;
+    }
+    button:hover:not(:disabled) { background: var(--primary-strong); }
+    button:disabled {
+      background: #94a3b8;
+      cursor: not-allowed;
+    }
+    button.secondary {
+      background: #fff;
+      border-color: var(--line-strong);
+      color: var(--text);
+    }
+    button.secondary:hover:not(:disabled) { background: var(--surface-soft); }
+    button.success {
+      background: #15803d;
+    }
+    button.success:hover:not(:disabled) { background: #166534; }
+    .sample-meta {
+      min-height: 44px;
+      padding: 9px 10px;
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      background: var(--surface-soft);
+      color: #475569;
+      font-size: 12px;
+      line-height: 1.55;
+    }
+    .request-tools {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: 8px;
+    }
+    pre {
+      margin: 0;
+      padding: 12px;
+      border-radius: 6px;
+      border: 1px solid var(--line);
+      background: var(--code);
+      color: #dbeafe;
+      font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+      font-size: 12px;
+      line-height: 1.55;
+      white-space: pre-wrap;
+      word-break: break-word;
+      overflow: auto;
+    }
+    .preview { min-height: 280px; max-height: 500px; }
+    .log { min-height: 220px; max-height: 360px; }
+    .log .ts { color: #94a3b8; }
+    .log .ok { color: #86efac; }
+    .log .warn { color: #fde68a; }
+    .log .error { color: #fca5a5; }
+    .hint {
+      margin: 8px 0 0;
+      color: var(--muted);
+      font-size: 12px;
+      line-height: 1.55;
+    }
+    code {
+      padding: 1px 5px;
+      border-radius: 4px;
+      background: rgba(15, 23, 42, 0.08);
+      font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+      font-size: 0.95em;
+    }
+    .divider {
+      height: 1px;
+      background: var(--line);
+      margin: 10px 0;
+    }
+    @media (max-width: 980px) {
+      header {
+        align-items: flex-start;
+        flex-direction: column;
+      }
+      header nav {
+        flex-wrap: wrap;
+        white-space: normal;
+      }
+      main { grid-template-columns: 1fr; }
+    }
+    @media (max-width: 640px) {
+      main { padding: 10px; }
+      .grid, .grid.three { grid-template-columns: 1fr; }
+      .actions button { width: 100%; }
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>报告解读测试台</h1>
+    <nav>
+      <span>目标接口 <code>/api/report/interpret</code></span>
+      <a href="./mock-his.html">返回 Mock HIS</a>
+    </nav>
+  </header>
+
+  <main>
+    <section>
+      <div class="panel">
+        <div class="panel-title">
+          <span>Bridge 连接</span>
+          <span id="conn-badge" class="badge warn">未连接</span>
+        </div>
+        <div class="grid">
+          <label>
+            Bridge Base URL
+            <input id="bridge-base-url" type="text" value="http://127.0.0.1:8081/api" />
+          </label>
+          <label>
+            emrAccessToken
+            <input id="emr-token" type="text" value="mock-token-for-local-debug" />
+          </label>
+        </div>
+        <div class="actions" style="margin-top: 10px;">
+          <button id="btn-handshake">连接 / 握手</button>
+          <button id="btn-ping" class="secondary">Ping</button>
+        </div>
+        <p class="hint">测试页会从 Bridge 动态加载 <code>/sdk/med-hermes-sdk.js</code>，并通过 <code>debugHandshake</code> 写入 mock token。</p>
+      </div>
+
+      <div class="panel">
+        <div class="panel-title">患者上下文</div>
+        <label class="check-row" style="margin-bottom: 10px;">
+          <input id="with-patient" type="checkbox" checked style="width: auto; min-height: auto;" />
+          携带 patient 字段
+        </label>
+        <div class="grid">
+          <label>
+            患者 ID（idPi）
+            <input id="p-id" type="text" value="MOCK-P-001" />
+          </label>
+          <label>
+            就诊 ID（idVis）
+            <input id="p-visit-id" type="text" value="MOCK-V-001" />
+          </label>
+          <label>
+            姓名（naPi）
+            <input id="p-name" type="text" value="张测试" />
+          </label>
+          <div class="grid" style="gap: 10px;">
+            <label>
+              性别
+              <select id="p-gender">
+                <option>男性</option>
+                <option>女性</option>
+              </select>
+            </label>
+            <label>
+              年龄
+              <input id="p-age" type="text" value="35岁" />
+            </label>
+          </div>
+        </div>
+        <div class="divider"></div>
+        <label>
+          主诉
+          <input id="p-chief" type="text" value="咳嗽 3 天，伴黄痰" />
+        </label>
+        <div class="grid" style="margin-top: 10px;">
+          <label>
+            现病史
+            <textarea id="p-history" style="min-height: 82px;">3 天前受凉后出现咳嗽、咳黄痰，伴低热，无明显胸痛。</textarea>
+          </label>
+          <label>
+            既往史 / 过敏史
+            <textarea id="p-background" style="min-height: 82px;">既往高血压 5 年，否认明确药物过敏史。</textarea>
+          </label>
+        </div>
+      </div>
+    </section>
+
+    <section>
+      <div class="panel">
+        <div class="panel-title">
+          <span>报告请求</span>
+          <span id="sample-badge" class="badge">inspectReport</span>
+        </div>
+        <div class="grid">
+          <label>
+            报告样例
+            <select id="report-sample"></select>
+          </label>
+          <label>
+            taskId
+            <select id="task-id">
+              <option value="inspectReport">inspectReport（检验报告）</option>
+              <option value="checkReport">checkReport（检查报告）</option>
+            </select>
+          </label>
+        </div>
+        <div id="sample-meta" class="sample-meta" style="margin-top: 10px;"></div>
+        <label style="margin-top: 10px;">
+          报告原文（query）
+          <textarea id="report-query" class="report-query"></textarea>
+        </label>
+        <div class="actions" style="margin-top: 10px;">
+          <button id="btn-fill" class="secondary">填入样例</button>
+          <button id="btn-send" class="success">生成报告解读</button>
+        </div>
+      </div>
+
+      <div class="panel">
+        <div class="request-tools">
+          <div class="panel-title" style="margin: 0;">请求预览</div>
+          <div class="actions">
+            <button id="btn-copy-json" class="secondary">复制 JSON</button>
+            <button id="btn-copy-curl" class="secondary">复制 curl</button>
+          </div>
+        </div>
+        <pre id="request-preview" class="preview"></pre>
+      </div>
+
+      <div class="panel">
+        <div class="request-tools">
+          <div class="panel-title" style="margin: 0;">响应日志</div>
+          <button id="btn-clear-log" class="secondary">清空</button>
+        </div>
+        <pre id="log" class="log"></pre>
+      </div>
+    </section>
+  </main>
+
+  <script>
+  (function () {
+    'use strict';
+
+    var $ = function (id) { return document.getElementById(id); };
+    var state = {
+      sdk: null,
+      sdkBaseUrl: '',
+      sdkLoading: null
+    };
+
+    var samples = [
+      {
+        id: 'lab-infection',
+        label: '检验：血常规 + CRP（感染线索）',
+        taskId: 'inspectReport',
+        meta: '白细胞、中性粒细胞比例、CRP 升高，用于验证炎症/感染活动异常点提炼。',
+        query: [
+          '报告日期：2026-05-20',
+          '检验项目：血常规 + C反应蛋白',
+          '门诊编号：00074561',
+          '样本编号：25052003',
+          '送检医生：王医生',
+          '申请时间：2026-05-20 10:35',
+          '检验时间：2026-05-20 10:39',
+          '病历：发热、咳嗽、咽痛 2 天，伴全身酸痛。',
+          '检验结果：',
+          'WBC 12.8×10^9/L ↑（参考范围 3.5-9.5）',
+          'NEUT% 84.2% ↑（参考范围 40-75）',
+          'LYM% 10.6% ↓（参考范围 20-50）',
+          'HGB 132 g/L（参考范围 130-175）',
+          'PLT 238×10^9/L（参考范围 125-350）',
+          'CRP 42.6 mg/L ↑（参考范围 0-8）',
+          'PCT 0.08 ng/mL（参考范围 <0.5）',
+          '检验结论：',
+          '白细胞、中性粒细胞比例及 CRP 升高，提示感染/炎症活动，需结合发热、咳痰及影像判断。'
+        ].join('\n')
+      },
+      {
+        id: 'lab-metabolic',
+        label: '检验：肝肾功能 + 血脂尿酸（慢病随访）',
+        taskId: 'inspectReport',
+        meta: '转氨酶、GGT、尿酸、血脂异常，用于验证多指标慢病风险解释。',
+        query: [
+          '报告日期：2026-05-21',
+          '检验项目：肝肾功能 + 血脂 + 尿酸',
+          '门诊编号：00074562',
+          '样本编号：25052108',
+          '送检医生：李医生',
+          '申请时间：2026-05-21 09:12',
+          '检验时间：2026-05-21 09:28',
+          '病历：高血压随访，近期体重增加，偶有乏力。',
+          '检验结果：',
+          'ALT 68 U/L ↑（参考范围 9-50）',
+          'AST 45 U/L ↑（参考范围 15-40）',
+          'GGT 96 U/L ↑（参考范围 10-60）',
+          'TBIL 16.4 μmol/L（参考范围 3.4-20.5）',
+          'CREA 91 μmol/L（参考范围 57-111）',
+          'eGFR 86 ml/min/1.73m²',
+          'UA 498 μmol/L ↑（参考范围 208-428）',
+          'TG 2.56 mmol/L ↑（参考范围 0.45-1.70）',
+          'LDL-C 3.85 mmol/L ↑（参考范围 <3.40）',
+          '检验结论：',
+          '肝酶轻度升高，伴尿酸及血脂升高。建议结合脂肪肝、饮酒、用药和代谢综合征风险综合评估。'
+        ].join('\n')
+      },
+      {
+        id: 'lab-urine',
+        label: '检验：尿常规（尿路感染线索）',
+        taskId: 'inspectReport',
+        meta: '尿白细胞、亚硝酸盐、潜血阳性，用于验证尿检异常解释。',
+        query: [
+          '报告日期：2026-05-22',
+          '检验项目：尿常规',
+          '门诊编号：00074563',
+          '样本编号：25052211',
+          '送检医生：赵医生',
+          '申请时间：2026-05-22 14:05',
+          '检验时间：2026-05-22 14:18',
+          '病历：尿频、尿急 1 天，伴下腹不适。',
+          '检验结果：',
+          '尿白细胞 3+ ↑',
+          '亚硝酸盐 阳性',
+          '尿潜血 1+',
+          '尿蛋白 弱阳性',
+          '尿糖 阴性',
+          '尿酮体 阴性',
+          '镜检白细胞 45/HP ↑',
+          '镜检红细胞 8/HP ↑',
+          '检验结论：',
+          '尿白细胞及亚硝酸盐阳性，提示泌尿系感染可能，需结合尿频、尿急、尿痛及尿培养判断。'
+        ].join('\n')
+      },
+      {
+        id: 'check-chest-ct',
+        label: '检查：胸部 CT（右下肺感染）',
+        taskId: 'checkReport',
+        meta: '斑片状高密度影、感染性病变结论，用于验证影像报告的临床意义和复查建议。',
+        query: [
+          '报告日期：2026-05-20',
+          '检查项目：胸部 CT 平扫',
+          '门诊编号：00074564',
+          '申请医生：王医生',
+          '申请时间：2026-05-20 11:02',
+          '检查时间：2026-05-20 11:36',
+          '病历：咳嗽、发热 3 天，听诊右下肺呼吸音稍粗。',
+          '阴阳性：阳性',
+          '检查结果：',
+          '双肺纹理增多增粗，右下肺背段见斑片状高密度影，边界欠清。',
+          '双侧胸膜未见明显增厚，胸腔内未见明显积液。',
+          '纵隔内未见明显肿大淋巴结。',
+          '影像诊断：',
+          '右下肺感染性病变可能。建议结合血常规、CRP 及临床症状，治疗后复查。'
+        ].join('\n')
+      },
+      {
+        id: 'check-knee-xray',
+        label: '检查：左膝 X 线（骨关节退变）',
+        taskId: 'checkReport',
+        meta: '骨质增生、关节间隙变窄，用于验证慢性退变类检查报告。',
+        query: [
+          '报告日期：2026-05-18',
+          '检查项目：左膝关节正侧位 X 线',
+          '门诊编号：00074565',
+          '申请医生：李医生',
+          '申请时间：2026-05-18 15:20',
+          '检查时间：2026-05-18 15:44',
+          '病历：左膝疼痛半年，活动后加重。',
+          '阴阳性：阳性',
+          '检查结果：',
+          '左膝关节对位尚可，未见明确骨折及脱位征象。',
+          '胫骨平台及髌骨边缘可见骨质增生，内侧关节间隙稍变窄。',
+          '周围软组织未见明显异常密度影。',
+          '检查结论：',
+          '左膝关节退行性改变。'
+        ].join('\n')
+      },
+      {
+        id: 'check-head-ct',
+        label: '检查：头颅 CT（急性梗死风险）',
+        taskId: 'checkReport',
+        meta: '急性/亚急性梗死可疑信号，用于验证高风险影像发现和急诊建议。',
+        query: [
+          '报告日期：2026-05-22',
+          '检查项目：头颅 CT 平扫',
+          '门诊编号：00074566',
+          '申请医生：赵医生',
+          '申请时间：2026-05-22 08:41',
+          '检查时间：2026-05-22 09:03',
+          '病历：突发右侧肢体乏力 2 小时，伴言语含糊。',
+          '阴阳性：阳性',
+          '检查结果：',
+          '左侧基底节区见片状低密度影，边界欠清，局部脑沟稍变浅。',
+          '中线结构居中，脑室系统未见明显受压移位。',
+          '影像诊断：',
+          '左侧基底节区急性或亚急性脑梗死可能。建议结合突发肢体无力、言语不清等症状，必要时尽快完善头颅 MRI/DWI 或卒中通道评估。'
+        ].join('\n')
+      }
+    ];
+
+    function now() {
+      var d = new Date();
+      var pad = function (n, size) { return String(n).padStart(size || 2, '0'); };
+      return pad(d.getHours()) + ':' + pad(d.getMinutes()) + ':' + pad(d.getSeconds()) + '.' + pad(d.getMilliseconds(), 3);
+    }
+
+    function appendLog(kind, label, payload) {
+      var cls = kind === 'ok' ? 'ok' : (kind === 'error' ? 'error' : 'warn');
+      var line = '[' + now() + '] ' + label;
+      if (payload !== undefined) {
+        try {
+          line += '\n' + (typeof payload === 'string' ? payload : JSON.stringify(payload, null, 2));
+        } catch (e) {
+          line += '\n[unstringifiable payload]';
+        }
+      }
+      $('log').innerHTML += '<span class="ts">' + line.slice(0, 14) + '</span><span class="' + cls + '">' + escapeHtml(line.slice(14)) + '</span>\n\n';
+      $('log').scrollTop = $('log').scrollHeight;
+    }
+
+    function escapeHtml(value) {
+      return String(value)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+    }
+
+    function setBadge(kind, text) {
+      var el = $('conn-badge');
+      el.className = 'badge ' + (kind || '');
+      el.textContent = text;
+    }
+
+    function getBaseUrl() {
+      return ($('bridge-base-url').value.trim() || 'http://127.0.0.1:8081/api').replace(/\/+$/, '');
+    }
+
+    function getBridgeRoot() {
+      return getBaseUrl().replace(/\/api$/i, '');
+    }
+
+    function loadSdk() {
+      var baseUrl = getBaseUrl();
+      if (state.sdk && state.sdkBaseUrl === baseUrl) {
+        return Promise.resolve(state.sdk);
+      }
+      if (state.sdkLoading && state.sdkBaseUrl === baseUrl) {
+        return state.sdkLoading;
+      }
+      state.sdkBaseUrl = baseUrl;
+      state.sdk = null;
+      state.sdkLoading = new Promise(function (resolve, reject) {
+        if (typeof window.MedHermes === 'function') {
+          state.sdk = new window.MedHermes({ baseUrl: baseUrl, autoPoll: false, timeout: 20000 });
+          resolve(state.sdk);
+          return;
+        }
+        var script = document.createElement('script');
+        script.src = getBridgeRoot() + '/sdk/med-hermes-sdk.js';
+        script.async = true;
+        script.onload = function () {
+          if (typeof window.MedHermes !== 'function') {
+            reject(new Error('SDK 加载完成，但 window.MedHermes 不存在'));
+            return;
+          }
+          state.sdk = new window.MedHermes({ baseUrl: baseUrl, autoPoll: false, timeout: 20000 });
+          resolve(state.sdk);
+        };
+        script.onerror = function () {
+          reject(new Error('无法加载 SDK：' + script.src));
+        };
+        document.head.appendChild(script);
+      }).finally(function () {
+        state.sdkLoading = null;
+      });
+      return state.sdkLoading;
+    }
+
+    function buildPatient() {
+      var background = $('p-background').value.trim();
+      var past = background;
+      var allergy = '';
+      if (background.indexOf('过敏') >= 0) {
+        allergy = background;
+      }
+      return {
+        idPi: $('p-id').value.trim() || 'MOCK-P-001',
+        idVis: $('p-visit-id').value.trim() || 'MOCK-V-001',
+        naPi: $('p-name').value.trim() || '张测试',
+        sdSexText: $('p-gender').value,
+        ageText: $('p-age').value.trim() || '35岁',
+        chiefComplaint: $('p-chief').value.trim() || undefined,
+        historyOfPresentIllness: $('p-history').value.trim() || undefined,
+        pastMedicalHistory: past || undefined,
+        allergyHistory: allergy || undefined
+      };
+    }
+
+    function buildPayload() {
+      var payload = {
+        taskId: $('task-id').value,
+        query: $('report-query').value.trim(),
+        requestId: 'report-test-' + Date.now()
+      };
+      if ($('with-patient').checked) {
+        payload.patient = buildPatient();
+      }
+      return payload;
+    }
+
+    function buildPreviewPayload() {
+      var payload = buildPayload();
+      payload.requestId = 'report-test-<timestamp>';
+      return payload;
+    }
+
+    function updatePreview() {
+      $('request-preview').textContent = JSON.stringify(buildPreviewPayload(), null, 2);
+      $('sample-badge').textContent = $('task-id').value;
+    }
+
+    function getSelectedSample() {
+      var id = $('report-sample').value;
+      return samples.find(function (sample) { return sample.id === id; }) || samples[0];
+    }
+
+    function fillSample(sample) {
+      $('task-id').value = sample.taskId;
+      $('report-query').value = sample.query;
+      $('sample-meta').textContent = sample.meta;
+      updatePreview();
+    }
+
+    function initSamples() {
+      samples.forEach(function (sample) {
+        var option = document.createElement('option');
+        option.value = sample.id;
+        option.textContent = sample.label;
+        $('report-sample').appendChild(option);
+      });
+      fillSample(samples[0]);
+    }
+
+    function withBusy(button, work) {
+      return function () {
+        var original = button.textContent;
+        button.disabled = true;
+        Promise.resolve()
+          .then(work)
+          .catch(function (error) {
+            setBadge('error', '失败');
+            appendLog('error', error && error.message ? error.message : String(error));
+          })
+          .then(function () {
+            button.disabled = false;
+            button.textContent = original;
+          });
+      };
+    }
+
+    function copyText(text, label) {
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        return navigator.clipboard.writeText(text).then(function () {
+          appendLog('ok', label + '已复制');
+        });
+      }
+      var box = document.createElement('textarea');
+      box.value = text;
+      document.body.appendChild(box);
+      box.select();
+      document.execCommand('copy');
+      document.body.removeChild(box);
+      appendLog('ok', label + '已复制');
+      return Promise.resolve();
+    }
+
+    function buildCurl(payload) {
+      return [
+        "curl -X POST '" + getBaseUrl() + "/report/interpret' \\",
+        "  -H 'Content-Type: application/json' \\",
+        "  -d '" + JSON.stringify(payload).replace(/'/g, "'\\''") + "'"
+      ].join('\n');
+    }
+
+    $('btn-handshake').addEventListener('click', withBusy($('btn-handshake'), function () {
+      setBadge('warn', '连接中');
+      return loadSdk().then(function (sdk) {
+        var token = $('emr-token').value.trim() || 'mock-token-for-local-debug';
+        appendLog('warn', 'POST /api/handshake', { extra: { emrAccessToken: token } });
+        return sdk.debugHandshake({ extra: { emrAccessToken: token } });
+      }).then(function (result) {
+        setBadge('ok', '已连接');
+        appendLog('ok', '握手成功', result);
+      });
+    }));
+
+    $('btn-ping').addEventListener('click', withBusy($('btn-ping'), function () {
+      return loadSdk().then(function (sdk) {
+        appendLog('warn', 'GET /api/health');
+        return sdk.ping();
+      }).then(function (result) {
+        setBadge('ok', '在线');
+        appendLog('ok', 'Ping 成功', result);
+      });
+    }));
+
+    $('btn-fill').addEventListener('click', function () {
+      fillSample(getSelectedSample());
+      appendLog('warn', '已填入样例：' + getSelectedSample().label);
+    });
+
+    $('btn-send').addEventListener('click', withBusy($('btn-send'), function () {
+      var payload = buildPayload();
+      if (!payload.query) {
+        throw new Error('报告原文 query 不能为空');
+      }
+      appendLog('warn', 'POST /api/report/interpret', payload);
+      return loadSdk().then(function (sdk) {
+        return sdk.interpretReport(payload);
+      }).then(function (result) {
+        setBadge('ok', '已触发');
+        appendLog('ok', '报告解读已触发，桌面端应打开独立结果窗口', result);
+      });
+    }));
+
+    $('btn-copy-json').addEventListener('click', function () {
+      copyText(JSON.stringify(buildPreviewPayload(), null, 2), '请求 JSON');
+    });
+
+    $('btn-copy-curl').addEventListener('click', function () {
+      copyText(buildCurl(buildPreviewPayload()), 'curl 命令');
+    });
+
+    $('btn-clear-log').addEventListener('click', function () {
+      $('log').textContent = '';
+      appendLog('warn', '日志已清空');
+    });
+
+    $('report-sample').addEventListener('change', function () {
+      fillSample(getSelectedSample());
+    });
+    $('task-id').addEventListener('change', updatePreview);
+    $('with-patient').addEventListener('change', updatePreview);
+    [
+      'bridge-base-url',
+      'report-query',
+      'p-id',
+      'p-visit-id',
+      'p-name',
+      'p-gender',
+      'p-age',
+      'p-chief',
+      'p-history',
+      'p-background'
+    ].forEach(function (id) {
+      $(id).addEventListener('input', updatePreview);
+      $(id).addEventListener('change', updatePreview);
+    });
+
+    initSamples();
+    appendLog('warn', '页面已就绪，请先连接 Bridge，再生成报告解读');
+  })();
+  </script>
+</body>
+</html>

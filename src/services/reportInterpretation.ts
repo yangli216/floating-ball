@@ -3,9 +3,12 @@ import { PROMPTS } from '../prompts';
 import { chat, type ChatMessage } from './llm';
 import type { AppPatient } from '../types/appState';
 import type {
+  ReportInterpretationAbnormalDirection,
+  ReportInterpretationAbnormalItem,
   ReportInterpretationKeyPoint,
   ReportInterpretationPatientInput,
   ReportInterpretationPatientProfile,
+  ReportInterpretationReportMeta,
   ReportInterpretationRequestPayload,
   ReportInterpretationResolvedRequest,
   ReportInterpretationTaskId,
@@ -55,6 +58,8 @@ interface ReportInterpretationFindingRule {
 interface ReportInterpretationQueryInsight {
   reportDate?: string;
   reportItem?: string;
+  reportMeta: ReportInterpretationReportMeta;
+  abnormalItems: ReportInterpretationAbnormalItem[];
   resultLines: string[];
   conclusionLines: string[];
   reportHighlights: string[];
@@ -64,9 +69,39 @@ interface ReportInterpretationQueryInsight {
 
 const REPORT_DATE_LABELS = ['报告日期', '检查日期', '检验日期'];
 const REPORT_ITEM_LABELS = ['检查项目', '检验项目', '项目'];
+const OUTPATIENT_NO_LABELS = ['门诊编号', '门诊号', '就诊号', '就诊编号'];
+const SAMPLE_NO_LABELS = ['样本编号', '样本号', '标本编号', '标本号'];
+const SUBMIT_DOCTOR_LABELS = ['送检医生', '申请医生', '开单医生', '送检医师', '申请医师'];
+const REQUEST_TIME_LABELS = ['申请时间', '送检时间', '采样时间', '采集时间'];
+const RESULT_TIME_LABELS = ['检验时间', '检查时间', '报告时间', '审核时间'];
+const HISTORY_LABELS = ['病历', '病史', '临床诊断', '临床信息', '简要病史'];
 const REPORT_RESULT_LABELS = ['检查结果', '检验结果', '检查所见', '影像表现', '结果'];
 const REPORT_CONCLUSION_LABELS = ['影像诊断', '检查结论', '检验结论', '诊断意见', '提示'];
-const REPORT_STOP_LABELS = ['建议', '备注', ...REPORT_CONCLUSION_LABELS];
+const KNOWN_REPORT_LABELS = [
+  ...REPORT_DATE_LABELS,
+  ...REPORT_ITEM_LABELS,
+  ...OUTPATIENT_NO_LABELS,
+  ...SAMPLE_NO_LABELS,
+  ...SUBMIT_DOCTOR_LABELS,
+  ...REQUEST_TIME_LABELS,
+  ...RESULT_TIME_LABELS,
+  ...HISTORY_LABELS,
+  ...REPORT_RESULT_LABELS,
+  ...REPORT_CONCLUSION_LABELS,
+];
+const REPORT_BLOCK_STOP_LABELS = [
+  ...REPORT_DATE_LABELS,
+  ...REPORT_ITEM_LABELS,
+  ...OUTPATIENT_NO_LABELS,
+  ...SAMPLE_NO_LABELS,
+  ...SUBMIT_DOCTOR_LABELS,
+  ...REQUEST_TIME_LABELS,
+  ...RESULT_TIME_LABELS,
+  ...HISTORY_LABELS,
+  ...REPORT_CONCLUSION_LABELS,
+  '建议',
+  '备注',
+];
 const GENERIC_INTERPRETATION_PHRASES = [
   '需结合临床表现综合判断',
   '不足以单独下结论',
@@ -77,8 +112,11 @@ const GENERIC_INTERPRETATION_PHRASES = [
   '优先安排复查或进一步检查',
 ];
 const HIGH_RISK_FINDING_PATTERN = /出血|梗死|梗阻|栓塞|夹层|气胸|穿孔|恶性|占位|肿块|骨折|脱位|大面积|重度|急性|坏死/i;
+const ABNORMAL_MARK_PATTERN = /↑|↓|阳性|异常|升高|降低|增高|减少|偏高|偏低|高于|低于|\(\+\)|（\+）|\+{1,3}/i;
 const LAB_ABNORMAL_PATTERN = /↑|↓|阳性|异常|升高|降低|增高|减少|偏高|偏低|高于|低于|[A-Za-z]{2,}[A-Za-z0-9%/.-]*\s*[:：]?\s*\d/i;
 const CHECK_FINDING_PATTERN = /阳性|高密度影|低密度影|斑片|结节|实变|磨玻璃|积液|增粗|阴影|占位|肿块|狭窄|扩张|骨折|脱位|出血|梗死|梗阻|钙化/i;
+const REFERENCE_RANGE_PATTERN = /(?:参考范围|参考值|正常范围|正常值)\s*[:：]?\s*([^）)\n，,；;]+)/i;
+const DATE_TIME_VALUE_PATTERN = /\d{4}[-/年]\d{1,2}(?:[-/月]\d{1,2}日?)?(?:\s+\d{1,2}:\d{2}(?::\d{2})?)?/;
 
 const LAB_FINDING_RULES: ReportInterpretationFindingRule[] = [
   {
@@ -164,6 +202,19 @@ function normalizeText(value: unknown): string {
   return '';
 }
 
+function normalizeReportQuery(value: unknown): string {
+  if (typeof value !== 'string') {
+    return normalizeText(value);
+  }
+
+  return value
+    .replace(/\r\n?/g, '\n')
+    .split('\n')
+    .map((line) => line.replace(/\s+/g, ' ').trim())
+    .filter(Boolean)
+    .join('\n');
+}
+
 function readIncomingPatientText(
   patient: ReportInterpretationPatientInput | null | undefined,
   keys: string[],
@@ -195,9 +246,29 @@ function uniqueStrings(values: string[]): string[] {
 }
 
 function splitReportLines(query: string): string[] {
-  return query
+  const normalized = query
     .split(/\n+/)
     .map((line) => line.trim())
+    .filter(Boolean);
+
+  return normalized.flatMap(splitLineByKnownLabels);
+}
+
+function splitLineByKnownLabels(line: string): string[] {
+  const normalized = normalizeText(line);
+  if (!normalized) {
+    return [];
+  }
+
+  const labelPattern = KNOWN_REPORT_LABELS
+    .map((label) => label.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'))
+    .join('|');
+  const boundaryPattern = new RegExp(`\\s+(?=(${labelPattern})\\s*[:：])`, 'g');
+
+  return normalized
+    .replace(boundaryPattern, '\n')
+    .split('\n')
+    .map((item) => item.trim())
     .filter(Boolean);
 }
 
@@ -220,6 +291,12 @@ function extractTaggedValue(lines: string[], labels: string[]): string {
   }
 
   return '';
+}
+
+function extractTaggedDateTimeValue(lines: string[], labels: string[]): string {
+  const rawValue = extractTaggedValue(lines, labels);
+  const match = rawValue.match(DATE_TIME_VALUE_PATTERN);
+  return normalizeText(match?.[0] || rawValue);
 }
 
 function startsWithAnyLabel(line: string, labels: string[]): boolean {
@@ -254,6 +331,37 @@ function collectTaggedBlock(lines: string[], startLabels: string[], stopLabels: 
   return uniqueStrings(values);
 }
 
+function buildReportMeta(
+  request: ReportInterpretationResolvedRequest,
+  lines: string[],
+  reportDate: string,
+  reportItem: string,
+): ReportInterpretationReportMeta {
+  const historyFromReport = collectTaggedBlock(lines, HISTORY_LABELS, [
+    ...REPORT_RESULT_LABELS,
+    ...REPORT_CONCLUSION_LABELS,
+    '建议',
+    '备注',
+  ]).join('；');
+  const historyFromPatient = uniqueStrings([
+    request.patient?.diagnosis ? `当前诊断：${request.patient.diagnosis}` : '',
+    request.patient?.chiefComplaint ? `主诉：${request.patient.chiefComplaint}` : '',
+    request.patient?.historyOfPresentIllness ? `现病史：${request.patient.historyOfPresentIllness}` : '',
+  ]).join('；');
+
+  return {
+    reportTitle: reportItem || request.reportKindLabel,
+    reportItem: reportItem || undefined,
+    reportDate: reportDate || undefined,
+    outpatientNo: extractTaggedValue(lines, OUTPATIENT_NO_LABELS) || request.patient?.visitId || undefined,
+    sampleNo: extractTaggedValue(lines, SAMPLE_NO_LABELS) || undefined,
+    submitDoctor: extractTaggedValue(lines, SUBMIT_DOCTOR_LABELS) || undefined,
+    requestTime: extractTaggedDateTimeValue(lines, REQUEST_TIME_LABELS) || undefined,
+    resultTime: extractTaggedDateTimeValue(lines, RESULT_TIME_LABELS) || reportDate || undefined,
+    historyText: historyFromReport || historyFromPatient || undefined,
+  };
+}
+
 function pickFindingRule(taskId: ReportInterpretationTaskId, finding: string): ReportInterpretationFindingRule {
   const rules = taskId === 'inspectReport' ? LAB_FINDING_RULES : CHECK_FINDING_RULES;
   const matched = rules.find((rule) => rule.pattern.test(finding));
@@ -276,23 +384,128 @@ function pickFindingRule(taskId: ReportInterpretationTaskId, finding: string): R
       };
 }
 
+function extractReferenceRange(line: string): string {
+  const match = line.match(REFERENCE_RANGE_PATTERN);
+  return normalizeText(match?.[1]);
+}
+
+function stripReferenceRange(line: string): string {
+  return normalizeText(
+    line
+      .replace(/[（(]\s*(?:参考范围|参考值|正常范围|正常值)\s*[:：]?\s*[^）)]*[）)]/gi, '')
+      .replace(REFERENCE_RANGE_PATTERN, '')
+  );
+}
+
+function resolveAbnormalDirection(line: string): ReportInterpretationAbnormalDirection {
+  if (/↓|降低|减少|偏低|低于/i.test(line)) {
+    return 'down';
+  }
+
+  if (/↑|升高|增高|偏高|高于/i.test(line)) {
+    return 'up';
+  }
+
+  if (/阳性|\(\+\)|（\+）|\+{1,3}/i.test(line)) {
+    return 'positive';
+  }
+
+  if (/异常/i.test(line)) {
+    return 'abnormal';
+  }
+
+  return 'neutral';
+}
+
+function parseLabAbnormalItem(line: string, taskId: ReportInterpretationTaskId): ReportInterpretationAbnormalItem | null {
+  const normalized = normalizeText(line);
+  if (!normalized || !ABNORMAL_MARK_PATTERN.test(normalized)) {
+    return null;
+  }
+
+  const referenceRange = extractReferenceRange(normalized);
+  const withoutReference = stripReferenceRange(normalized).replace(/[↑↓]/g, '').trim();
+  const firstSegment = normalizeText(withoutReference.split(/[，,；;]/)[0]);
+  const match = firstSegment.match(/^(.+?)\s+([^，,；;（(]+(?:\s*[^，,；;（(]+)?)/);
+  const direction = resolveAbnormalDirection(normalized);
+  const name = normalizeText(match?.[1] || firstSegment.replace(/(阳性|弱阳性|异常|升高|降低|增高|减少|偏高|偏低)$/i, ''));
+  const result = normalizeText(match?.[2] || (direction === 'positive' ? '阳性' : firstSegment));
+
+  if (!name || !result) {
+    return null;
+  }
+
+  const rule = pickFindingRule(taskId, `${name} ${result}`);
+  return {
+    name,
+    result,
+    direction,
+    referenceRange: referenceRange || undefined,
+    meaning: rule.meaning,
+    urgency: rule.urgency,
+  };
+}
+
+function buildCheckAbnormalItem(
+  line: string,
+  taskId: ReportInterpretationTaskId,
+  index: number,
+): ReportInterpretationAbnormalItem | null {
+  const normalized = normalizeText(line);
+  if (!normalized || !CHECK_FINDING_PATTERN.test(normalized)) {
+    return null;
+  }
+
+  const rule = pickFindingRule(taskId, normalized);
+  return {
+    name: index === 0 ? '核心影像发现' : '阳性所见',
+    result: normalized,
+    direction: rule.urgency === 'high' ? 'abnormal' : 'positive',
+    referenceRange: '影像/检查描述',
+    meaning: rule.meaning,
+    urgency: rule.urgency,
+  };
+}
+
+function buildAbnormalItems(
+  request: ReportInterpretationResolvedRequest,
+  resultLines: string[],
+  conclusionLines: string[],
+): ReportInterpretationAbnormalItem[] {
+  const candidates = request.taskId === 'inspectReport'
+    ? resultLines
+    : uniqueStrings([...conclusionLines, ...resultLines]);
+  const items = candidates
+    .map((line, index) => request.taskId === 'inspectReport'
+      ? parseLabAbnormalItem(line, request.taskId)
+      : buildCheckAbnormalItem(line, request.taskId, index)
+    )
+    .filter((item): item is ReportInterpretationAbnormalItem => Boolean(item));
+
+  return items.slice(0, 6);
+}
+
 function analyzeReportQuery(request: ReportInterpretationResolvedRequest): ReportInterpretationQueryInsight {
   const lines = splitReportLines(request.query);
   const reportDate = extractTaggedValue(lines, REPORT_DATE_LABELS);
   const reportItem = extractTaggedValue(lines, REPORT_ITEM_LABELS);
-  const resultLines = collectTaggedBlock(lines, REPORT_RESULT_LABELS, REPORT_STOP_LABELS);
+  const reportMeta = buildReportMeta(request, lines, reportDate, reportItem);
+  const resultLines = collectTaggedBlock(lines, REPORT_RESULT_LABELS, REPORT_BLOCK_STOP_LABELS);
   const conclusionLines = uniqueStrings([
     ...collectTaggedBlock(lines, REPORT_CONCLUSION_LABELS, ['建议', '备注']),
     ...lines.filter((line) => extractInlineValue(line, REPORT_CONCLUSION_LABELS)),
   ]);
+  const abnormalItems = buildAbnormalItems(request, resultLines, conclusionLines);
 
   const rawCandidates = request.taskId === 'inspectReport'
     ? uniqueStrings([
-        ...lines.filter((line) => LAB_ABNORMAL_PATTERN.test(line)),
+        ...abnormalItems.map((item) => `${item.name} ${item.result}`),
+        ...resultLines.filter((line) => LAB_ABNORMAL_PATTERN.test(line)),
         ...resultLines,
         ...conclusionLines,
       ])
     : uniqueStrings([
+        ...abnormalItems.map((item) => item.result),
         ...conclusionLines,
         ...lines.filter((line) => CHECK_FINDING_PATTERN.test(line)),
         ...resultLines,
@@ -307,6 +520,8 @@ function analyzeReportQuery(request: ReportInterpretationResolvedRequest): Repor
   return {
     reportDate: reportDate || undefined,
     reportItem: reportItem || undefined,
+    reportMeta,
+    abnormalItems,
     resultLines,
     conclusionLines,
     reportHighlights,
@@ -428,7 +643,7 @@ export function resolveReportInterpretationRequest(
   payload: ReportInterpretationRequestPayload,
   currentPatient: AppPatient | null | undefined,
 ): ReportInterpretationResolvedRequest {
-  const query = normalizeText(payload.query);
+  const query = normalizeReportQuery(payload.query);
   if (!query) {
     throw new Error('报告原文不能为空。');
   }
@@ -509,6 +724,8 @@ function buildFallbackPayload(request: ReportInterpretationResolvedRequest): Rep
     reportKindLabel: request.reportKindLabel,
     patientSummary,
     patient: request.patient,
+    reportMeta: insight.reportMeta,
+    abnormalItems: insight.abnormalItems,
     sourceQuery: request.query,
     summary: `${reportLabel}最值得关注的发现是：${headline}`,
     conclusion: `${insight.reportDate ? `${insight.reportDate} ` : ''}${reportLabel}提示：${sectionHighlights}。${contextInterpretation}`,
@@ -574,6 +791,8 @@ function sanitizeLLMResponse(
     reportKindLabel: request.reportKindLabel,
     patientSummary: formatPatientSummary(request.patient),
     patient: request.patient,
+    reportMeta: fallback.reportMeta,
+    abnormalItems: fallback.abnormalItems,
     sourceQuery: request.query,
     summary: pickMeaningfulText(response.summary, fallback.summary, clues),
     conclusion: pickMeaningfulText(response.conclusion, fallback.conclusion, clues),

@@ -430,7 +430,7 @@ http://127.0.0.1:8081/api/report/interpret
 | 字段名 | 类型 | 必填 | 说明 |
 | :--- | :--- | :--- | :--- |
 | `taskId` | String | 是 | 报告任务类型，当前建议使用 `inspectReport` 或 `checkReport` |
-| `query` | String | 是 | 报告原始文本，直接拼接“报告日期 / 检查项目 / 阴阳性 / 检查结果 / 影像诊断”等内容 |
+| `query` | String | 是 | 报告原始文本，直接拼接“报告日期 / 检查项目 / 阴阳性 / 检查结果 / 影像诊断”等内容；若原文含“门诊编号 / 样本编号 / 送检医生 / 申请时间 / 检验时间 / 检查时间 / 病历”等标签，桌面端会尽量解析到报告单式展示区 |
 | `patient` | Object | 否 | 可选患者上下文；当前无接诊患者时建议传入 |
 
 `patient` 支持的推荐字段：
@@ -452,7 +452,7 @@ http://127.0.0.1:8081/api/report/interpret
 ```json
 {
   "taskId": "inspectReport",
-  "query": "报告日期：2026-05-15\n检查项目：血常规\n检查结果：\nWBC 12.5×10^9/L，NEUT% 82%，CRP 36mg/L",
+  "query": "报告日期：2026-05-15\n检验项目：血常规\n门诊编号：00074561\n样本编号：250512003\n申请时间：2026-05-15 10:35\n检验时间：2026-05-15 10:39\n病历：发热、咳嗽 2 天。\n检验结果：\nWBC 12.5×10^9/L ↑（参考范围 3.5-9.5）\nNEUT% 82% ↑（参考范围 40-75）\nCRP 36mg/L ↑（参考范围 0-8）",
   "patient": {
     "naPi": "张三",
     "sdSexText": "男性",
@@ -466,15 +466,16 @@ http://127.0.0.1:8081/api/report/interpret
 ```json
 {
   "taskId": "checkReport",
-  "query": "报告日期：2026-05-15\n检查项目：胸部CT\n阴阳性：阳性\n检查结果：\n双肺纹理增粗，右下肺见斑片状高密度影。\n影像诊断：\n考虑右下肺感染。"
+  "query": "报告日期：2026-05-15\n检查项目：胸部CT\n门诊编号：00074562\n申请医生：王医生\n申请时间：2026-05-15 11:02\n检查时间：2026-05-15 11:36\n病历：咳嗽、发热 3 天。\n阴阳性：阳性\n检查结果：\n双肺纹理增粗，右下肺见斑片状高密度影。\n影像诊断：\n考虑右下肺感染。"
 }
 ```
 
 联调 mock 样例：
 
-1. `web_project/public/mock-his.html` 内置“检验/检查报告解读”面板，可在完成握手后选择样例并调用 `sdk.interpretReport()`。
-2. 当前样例覆盖 `inspectReport` 检验报告（血常规 + CRP、肝肾功能 + 血脂尿酸、尿常规）和 `checkReport` 检查报告（胸部 CT、膝关节 X 线、头颅 CT）。
-3. 样例文本刻意保留 `报告日期`、`检验项目/检查项目`、`检验结果/检查结果`、`影像诊断/检查结论` 等标签，用于同时验证桌面端的结构化提取、异常点提炼和独立窗口展示。
+1. `web_project/public/report-interpretation-test.html` 是专用报告解读测试页，提供 Bridge 地址、mock token、报告样例、患者上下文、请求预览和响应日志，可直接调用 `sdk.debugHandshake()` 与 `sdk.interpretReport()`。
+2. `web_project/public/mock-his.html` 仍内置“检验/检查报告解读”面板，适合在完整 HIS 联调流程里顺带验证报告解读。
+3. 当前样例覆盖 `inspectReport` 检验报告（血常规 + CRP、肝肾功能 + 血脂尿酸、尿常规）和 `checkReport` 检查报告（胸部 CT、膝关节 X 线、头颅 CT）。
+4. 样例文本刻意保留 `报告日期`、`检验项目/检查项目`、`门诊编号`、`样本编号`、`申请时间`、`检验时间/检查时间`、`病历`、`检验结果/检查结果`、`影像诊断/检查结论` 等标签，用于同时验证桌面端的结构化提取、异常点提炼和独立窗口展示。
 
 成功响应：
 
@@ -1227,7 +1228,7 @@ consultationId + resultType + requestId + timestamp
 
 ## 9. 联调注意事项
 
-1. 当前真实联调参考页是 `web_project/public/mock-his.html`，SDK 位于 `sdk/med-hermes-sdk.js`。
+1. 当前完整 HIS 联调参考页是 `web_project/public/mock-his.html`；报告解读专用测试页是 `web_project/public/report-interpretation-test.html`；SDK 位于 `sdk/med-hermes-sdk.js`。
 2. `consultationId` 当前不是独立就诊流水，因此 HIS 侧必须防止“同患者旧结果误命中当前就诊”。
 3. `/assist` 每次调用都会清空上一次结果通道；不要在旧轮询结果未消费完成时复用旧状态。
 4. `reference-feedback` 只接受与“当前最新待处理引用请求”匹配的回执。
