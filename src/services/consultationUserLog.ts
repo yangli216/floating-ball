@@ -33,6 +33,7 @@ export interface ConsultationUserLogSnapshot {
   medicines: ConsultationSnapshotItem[];
   examinations: ConsultationSnapshotItem[];
   labTests: ConsultationSnapshotItem[];
+  procedures: ConsultationSnapshotItem[];
 }
 
 export interface ConsultationSelectionSnapshot {
@@ -40,6 +41,7 @@ export interface ConsultationSelectionSnapshot {
   selectedMedicineNames: string[];
   selectedExaminationNames: string[];
   selectedLabTestNames: string[];
+  selectedProcedureNames: string[];
 }
 
 export interface ConsultationChangeSummary {
@@ -78,6 +80,7 @@ interface BuildSnapshotInput {
   medicines?: TreatmentRecommendation[];
   examinations?: TreatmentRecommendation[];
   labTests?: TreatmentRecommendation[];
+  procedures?: TreatmentRecommendation[];
 }
 
 function text(value: unknown): string {
@@ -129,11 +132,13 @@ function splitTreatmentsByType(items: TreatmentRecommendation[] = []): {
   medicines: TreatmentRecommendation[];
   examinations: TreatmentRecommendation[];
   labTests: TreatmentRecommendation[];
+  procedures: TreatmentRecommendation[];
 } {
   return {
     medicines: items.filter(item => item.type === 'medicine'),
     examinations: items.filter(item => item.type === 'exam'),
     labTests: items.filter(item => item.type === 'lab_test'),
+    procedures: items.filter(item => item.type === 'procedure'),
   };
 }
 
@@ -142,6 +147,7 @@ export function buildConsultationUserLogSnapshot(input: BuildSnapshotInput): Con
   const medicines = input.medicines || grouped.medicines;
   const examinations = input.examinations || grouped.examinations;
   const labTests = input.labTests || grouped.labTests;
+  const procedures = input.procedures || grouped.procedures;
 
   return {
     chiefComplaint: text(input.chiefComplaint),
@@ -150,6 +156,7 @@ export function buildConsultationUserLogSnapshot(input: BuildSnapshotInput): Con
     medicines: medicines.map(normalizeTreatment),
     examinations: examinations.map(normalizeTreatment),
     labTests: labTests.map(normalizeTreatment),
+    procedures: procedures.map(normalizeTreatment),
   };
 }
 
@@ -159,6 +166,7 @@ export function buildConsultationSelectionSnapshot(snapshot: ConsultationUserLog
     selectedMedicineNames: snapshot.medicines.filter(item => item.selected).map(item => item.name).filter(Boolean),
     selectedExaminationNames: snapshot.examinations.filter(item => item.selected).map(item => item.name).filter(Boolean),
     selectedLabTestNames: snapshot.labTests.filter(item => item.selected).map(item => item.name).filter(Boolean),
+    selectedProcedureNames: snapshot.procedures.filter(item => item.selected).map(item => item.name).filter(Boolean),
   };
 }
 
@@ -216,7 +224,8 @@ export function computeChangeSummary(
   const medicineChanges = countItemListChanges(first.medicines, final.medicines, treatmentFields);
   const examChanges = countItemListChanges(first.examinations, final.examinations, treatmentFields);
   const labChanges = countItemListChanges(first.labTests, final.labTests, treatmentFields);
-  const treatmentChanges = medicineChanges + examChanges + labChanges;
+  const procedureChanges = countItemListChanges(first.procedures, final.procedures, treatmentFields);
+  const treatmentChanges = medicineChanges + examChanges + labChanges + procedureChanges;
 
   return {
     totalChanges: recordFieldChanges + diagnosisChanges + treatmentChanges,
