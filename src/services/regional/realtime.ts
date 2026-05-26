@@ -14,6 +14,7 @@ import {
   extractSseDataPayload,
 } from './errors';
 import { registerDevice } from './registration';
+import { restoreCachedDeviceRegistration } from './registrationCache';
 import {
   clearDeviceRegistration,
   getDeviceToken,
@@ -24,8 +25,12 @@ export async function createRegionalWebSocketUrl(path: string): Promise<string> 
   const baseUrl = getRegionalBaseUrl();
   if (!baseUrl) throw new Error('区域化服务地址未配置');
 
-  await getDeviceCode();
+  const deviceCode = await getDeviceCode();
   let token = getDeviceToken();
+  if (!token) {
+    await restoreCachedDeviceRegistration(deviceCode);
+    token = getDeviceToken();
+  }
   if (!token) {
     await registerDevice();
     token = getDeviceToken();
@@ -57,8 +62,12 @@ export function createRegionalSSE(
   const run = async (allowAuthRetry: boolean, allowClockRetry: boolean): Promise<void> => {
     const baseUrl = getRegionalBaseUrl();
     if (!baseUrl) throw new Error('区域化服务地址未配置');
-    await getDeviceCode();
+    const deviceCode = await getDeviceCode();
     let token = getDeviceToken();
+    if (!token) {
+      await restoreCachedDeviceRegistration(deviceCode);
+      token = getDeviceToken();
+    }
     if (!token) {
       await registerDevice();
       token = getDeviceToken();

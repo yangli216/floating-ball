@@ -1,4 +1,8 @@
-import { load } from '@tauri-apps/plugin-store';
+import {
+  readPersistentString,
+  removePersistentStrings,
+  writePersistentStrings,
+} from './persistentStore';
 
 const PRIVATE_KEY_STORE_KEY = 'REGIONAL_DEVICE_PRIVATE_KEY';
 const PUBLIC_KEY_STORE_KEY = 'REGIONAL_DEVICE_PUBLIC_KEY';
@@ -6,15 +10,7 @@ const SIGNATURE_CLOCK_OFFSET_STORE_KEY = 'REGIONAL_SIGNATURE_CLOCK_OFFSET_MS';
 
 let cachedKeyPair: { privateKey: CryptoKey; publicKey: CryptoKey } | null = null;
 let cachedPublicKeyBase64: string | null = null;
-let storeInstance: Awaited<ReturnType<typeof load>> | null = null;
 let cachedSignatureClockOffsetMs: number | null = null;
-
-async function getStore() {
-  if (!storeInstance) {
-    storeInstance = await load('.settings.dat');
-  }
-  return storeInstance;
-}
 
 async function sha256Hex(data: string): Promise<string> {
   const encoded = new TextEncoder().encode(data);
@@ -48,10 +44,10 @@ export async function generateKeyPair(): Promise<{ publicKeyBase64: string }> {
 
   const privateKeyJwk = await crypto.subtle.exportKey('jwk', keyPair.privateKey);
 
-  const store = await getStore();
-  await store.set(PRIVATE_KEY_STORE_KEY, JSON.stringify(privateKeyJwk));
-  await store.set(PUBLIC_KEY_STORE_KEY, publicKeyBase64);
-  await store.save();
+  await writePersistentStrings({
+    [PRIVATE_KEY_STORE_KEY]: JSON.stringify(privateKeyJwk),
+    [PUBLIC_KEY_STORE_KEY]: publicKeyBase64,
+  });
 
   cachedKeyPair = keyPair as { privateKey: CryptoKey; publicKey: CryptoKey };
   cachedPublicKeyBase64 = publicKeyBase64;
@@ -64,23 +60,22 @@ export async function loadOrGenerateKeyPair(): Promise<{ publicKeyBase64: string
     return { publicKeyBase64: cachedPublicKeyBase64 };
   }
 
-  const store = await getStore();
-  const storedPrivateJwk = await store.get<string>(PRIVATE_KEY_STORE_KEY);
-  const storedPublicBase64 = await store.get<string>(PUBLIC_KEY_STORE_KEY);
+  const storedPrivateJwk = await readPersistentString(PRIVATE_KEY_STORE_KEY);
+  const storedPublicBase64 = await readPersistentString(PUBLIC_KEY_STORE_KEY);
 
   if (storedPrivateJwk && storedPublicBase64) {
     try {
-      const jwk = JSON.parse(storedPrivateJwk as string);
+      const jwk = JSON.parse(storedPrivateJwk);
       const privateKey = await crypto.subtle.importKey(
         'jwk', jwk, { name: 'ECDSA', namedCurve: 'P-256' }, true, ['sign']
       );
-      const publicKeyBuffer = Uint8Array.from(atob(storedPublicBase64 as string), c => c.charCodeAt(0));
+      const publicKeyBuffer = Uint8Array.from(atob(storedPublicBase64), c => c.charCodeAt(0));
       const publicKey = await crypto.subtle.importKey(
         'spki', publicKeyBuffer, { name: 'ECDSA', namedCurve: 'P-256' }, true, ['verify']
       );
 
       cachedKeyPair = { privateKey, publicKey };
-      cachedPublicKeyBase64 = storedPublicBase64 as string;
+      cachedPublicKeyBase64 = storedPublicBase64;
       return { publicKeyBase64: cachedPublicKeyBase64! };
     } catch {
       // corrupted key data, regenerate
@@ -138,10 +133,7 @@ export function updateSignatureClockOffset(serverTime: unknown, clientNow = Date
 export async function clearKeyPair(): Promise<void> {
   cachedKeyPair = null;
   cachedPublicKeyBase64 = null;
-  const store = await getStore();
-  await store.delete(PRIVATE_KEY_STORE_KEY);
-  await store.delete(PUBLIC_KEY_STORE_KEY);
-  await store.save();
+  await removePersistentStrings([PRIVATE_KEY_STORE_KEY, PUBLIC_KEY_STORE_KEY]);
 }
 
 export interface SignatureHeaders {

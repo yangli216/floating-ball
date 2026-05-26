@@ -8,6 +8,7 @@ import { signRequest, updateSignatureClockOffset, type SignatureHeaders } from '
 import { getDeviceCode } from './device';
 import { getOrgCode, getRegionalBaseUrl } from './config';
 import { createRegionalRequestError, parseRegionalError } from './errors';
+import { restoreCachedDeviceRegistration } from './registrationCache';
 import {
   clearDeviceRegistration,
   getDeviceToken,
@@ -39,9 +40,13 @@ export async function regionalFetch<T>(
   const baseUrl = getRegionalBaseUrl();
   if (!baseUrl) throw new Error('区域化服务地址未配置');
 
-  await getDeviceCode();
+  const deviceCode = await getDeviceCode();
 
   let token = getDeviceToken();
+  if (!token && path !== '/v1/client/register') {
+    await restoreCachedDeviceRegistration(deviceCode);
+    token = getDeviceToken();
+  }
   if (!token && path !== '/v1/client/register') {
     await ensureRegisteredDevice();
     token = getDeviceToken();

@@ -167,6 +167,13 @@
 - **解决方案**: 将“诊断鉴别”入口挂到共享 `DiagnosisRecommendationCard` 的可选按钮，由共享结果页主体 `VoiceConsultationNew.vue` 统一处理语音问诊和智能问诊的 checklist 弹窗；`SymptomResultEntry.vue` 不再注入独立鉴别按钮，`ConsultationPage.vue` 不再维护旧调试弹框；`intentResult` watcher 增加语义 key，等价输入不再重复 reset；诊断选择状态对当前主诊断重复点击直接 no-op。
 - **后续防护**: 处理共享结果页问题时，先确认真实渲染链路是否经过 wrapper；涉及 `intentResult` / props watcher 的刷新问题时，优先判断是否是等价对象引用抖动，而不是直接禁止业务上的真实切换。
 
+### RETRO-022: 区域化设备编码只依赖 localStorage 导致同机重复注册 [已解决]
+
+- **现象**: 同一台电脑反复出现在后台设备列表中，设备编码持续新增为不同的 `FB-*`，医生姓名、机构和区域相同，但咨询次数被拆散统计。
+- **根因**: MAC 不可读时前端使用 `Date.now + Math.random` 生成兜底设备编码，且设备编码与 `deviceToken / idDevice` 主要保存在 WebView `localStorage`。当 WebView 存储域变化、localStorage 被清理、设置页切换接入参数触发注册缓存清理，或服务端拒绝同编码匿名注册时，客户端会生成新的 `FB-*` 并注册成新设备。
+- **解决方案**: `REGIONAL_DEVICE_CODE` 同步镜像到 Tauri Store；注册成功后按 `baseUrl + orgCode + deviceCode` 缓存 `deviceToken / idDevice / heartbeatInterval`，启动、HTTP、SSE、WebSocket 出口在重新注册前先恢复同 scope 的注册缓存。切换后端地址或机构只清理当前运行态令牌，不删除其它 scope 的 Tauri Store 缓存；只有本地令牌/密钥确实不可恢复且服务端明确拒绝同编码注册时，才迁移到新的兜底设备编码。
+- **后续防护**: 设备身份、签名密钥、注册令牌这类长期身份凭据不能只依赖 WebView `localStorage`；新增区域化身份字段时，应同时评估 Tauri Store 持久化和按后端/机构/deviceCode 分 scope 的恢复路径。
+
 
 ---
 

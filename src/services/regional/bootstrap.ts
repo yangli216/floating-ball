@@ -9,6 +9,10 @@ import {
 import { regionalFetch } from './httpClient';
 import { registerDevice } from './registration';
 import {
+  cacheCurrentDeviceRegistration,
+  restoreCachedDeviceRegistration,
+} from './registrationCache';
+import {
   clearDeviceRegistration,
   getCachedBootstrapMemory,
   getDeviceId,
@@ -104,7 +108,12 @@ export async function initializeRegionalClient(options?: {
 
   try {
     await loadOrGenerateKeyPair();
-    await getDeviceCode();
+    const deviceCode = await getDeviceCode();
+    if (!getDeviceToken()) {
+      await restoreCachedDeviceRegistration(deviceCode);
+    } else {
+      await cacheCurrentDeviceRegistration(deviceCode);
+    }
     const existingToken = getDeviceToken();
     if (!existingToken) {
       await registerDevice();

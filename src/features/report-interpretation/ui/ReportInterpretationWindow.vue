@@ -839,24 +839,32 @@ onMounted(async () => {
 
 .loading-state,
 .empty-state {
-  place-self: center;
   display: grid;
+  place-self: center;
+  box-sizing: border-box;
   justify-items: center;
   gap: 10px;
+  padding: 28px;
+  text-align: center;
+  color: #5e7195;
+}
+
+.empty-state {
   width: min(460px, calc(100% - 48px));
   max-width: 460px;
-  padding: 28px;
   border: 1px solid rgba(118, 151, 206, 0.16);
   border-radius: 24px;
   background: rgba(255, 255, 255, 0.88);
   box-shadow: 0 18px 34px rgba(52, 94, 156, 0.1);
-  text-align: center;
-  color: #5e7195;
   backdrop-filter: blur(10px);
 }
 
 .loading-state {
+  width: 100%;
+  height: 100%;
+  max-width: none;
   align-content: center;
+  justify-content: center;
 }
 
 .loading-state--overlay {
@@ -866,12 +874,8 @@ onMounted(async () => {
   place-self: stretch;
   justify-items: center;
   width: auto;
-  max-width: none;
   padding: 24px;
-  border: none;
-  border-radius: 0;
   background: rgba(247, 250, 255, 0.78);
-  box-shadow: none;
   backdrop-filter: blur(6px);
   z-index: 100;
 }
@@ -898,8 +902,10 @@ onMounted(async () => {
 
 .loading-hint {
   max-width: 320px;
+  margin: 0;
   color: #94a3b8;
   font-size: 12px;
+  line-height: 1.6;
 }
 
 .loading-state p,
@@ -909,7 +915,6 @@ onMounted(async () => {
 }
 
 .loading-spinner {
-  position: relative;
   width: 56px;
   height: 56px;
   border-radius: 999px;
@@ -919,21 +924,12 @@ onMounted(async () => {
   animation: report-interpretation-spin 0.9s linear infinite;
 }
 
-.loading-spinner::after {
-  content: '';
-  position: absolute;
-  inset: 14px;
-  border-radius: 999px;
-  background: radial-gradient(circle, #4d8dff 0%, #22d3ee 100%);
-  box-shadow: 0 0 12px rgba(77, 141, 255, 0.32);
-}
-
 .status-steps {
   display: flex;
   flex-wrap: wrap;
   justify-content: center;
   gap: 10px;
-  margin-top: 8px;
+  margin-top: 10px;
 }
 
 .status-step {

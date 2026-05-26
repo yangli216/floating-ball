@@ -4,6 +4,7 @@ import { loadOrGenerateKeyPair } from '../requestSigner';
 import { getOrgCode } from './config';
 import { getDeviceCode, rotateFallbackDeviceCode } from './device';
 import { regionalFetch, setRegisterDeviceHandler } from './httpClient';
+import { cacheDeviceRegistration } from './registrationCache';
 import { setDeviceToken, STORAGE_KEYS } from './storage';
 import type { RegisterRequest, RegisterResponse } from './types';
 
@@ -47,7 +48,7 @@ async function registerDeviceWithCode(cdDevice: string, allowFallbackDeviceCodeR
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     if (allowFallbackDeviceCodeRetry && message.includes('设备已注册')) {
-      const fallbackCode = rotateFallbackDeviceCode();
+      const fallbackCode = await rotateFallbackDeviceCode();
       console.warn('[RegionalClient] Device code already registered, retrying with fallback device code.');
       return registerDeviceWithCode(fallbackCode, false);
     }
@@ -57,6 +58,12 @@ async function registerDeviceWithCode(cdDevice: string, allowFallbackDeviceCodeR
   setDeviceToken(resp.deviceToken);
   localStorage.setItem(STORAGE_KEYS.DEVICE_ID, resp.idDevice);
   localStorage.setItem(STORAGE_KEYS.HEARTBEAT_INTERVAL, String(resp.heartbeatInterval));
+  await cacheDeviceRegistration({
+    deviceCode: cdDevice,
+    deviceToken: resp.deviceToken,
+    idDevice: resp.idDevice,
+    heartbeatInterval: resp.heartbeatInterval,
+  });
 
   console.log(`[RegionalClient] Device registered: ${resp.idDevice}`);
   return resp;

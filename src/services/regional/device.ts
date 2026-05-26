@@ -1,5 +1,9 @@
 import { invoke } from '@tauri-apps/api/core';
 import {
+  readPersistentString,
+  writePersistentString,
+} from '../persistentStore';
+import {
   clearDeviceRegistration,
   readStorageValue,
   setRegionalInitialized,
@@ -30,13 +34,13 @@ function generateFallbackDeviceCode(): string {
   return `FB-${Date.now().toString(36)}-${Math.random().toString(36).substring(2, 8)}`.toUpperCase();
 }
 
-export function rotateFallbackDeviceCode(): string {
+export async function rotateFallbackDeviceCode(): Promise<string> {
   macLookupUnavailable = true;
   deviceCodeLoadPromise = null;
   return persistDeviceCode(generateFallbackDeviceCode());
 }
 
-function persistDeviceCode(nextCode: string): string {
+function persistDeviceCodeLocally(nextCode: string): string {
   const normalizedCode = normalizeDeviceCode(nextCode);
   if (!normalizedCode) {
     return '';
@@ -52,6 +56,32 @@ function persistDeviceCode(nextCode: string): string {
     }
   }
 
+  return normalizedCode;
+}
+
+async function mirrorDeviceCodeToPersistentStore(code: string): Promise<void> {
+  try {
+    await writePersistentString(STORAGE_KEYS.DEVICE_CODE, code);
+  } catch (error) {
+    console.warn('[RegionalClient] Failed to persist device code to Tauri store.', error);
+  }
+}
+
+async function readPersistentDeviceCode(): Promise<string> {
+  try {
+    const stored = await readPersistentString(STORAGE_KEYS.DEVICE_CODE);
+    return stored ? normalizeDeviceCode(stored) : '';
+  } catch (error) {
+    console.warn('[RegionalClient] Failed to read device code from Tauri store.', error);
+    return '';
+  }
+}
+
+async function persistDeviceCode(nextCode: string): Promise<string> {
+  const normalizedCode = persistDeviceCodeLocally(nextCode);
+  if (normalizedCode) {
+    await mirrorDeviceCodeToPersistentStore(normalizedCode);
+  }
   return normalizedCode;
 }
 
@@ -78,7 +108,13 @@ export async function getDeviceCode(): Promise<string> {
   deviceCodeLoadPromise = (async () => {
     const storedCode = getStoredDeviceCode();
     if (storedCode) {
+      await mirrorDeviceCodeToPersistentStore(storedCode);
       return storedCode;
+    }
+
+    const persistentCode = await readPersistentDeviceCode();
+    if (persistentCode) {
+      return persistDeviceCode(persistentCode);
     }
 
     const deviceMac = await detectDeviceMacAddress();

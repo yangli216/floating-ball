@@ -31,6 +31,7 @@ const REPORT_INTERPRETATION_WINDOW_URL = 'index.html?window=report-interpretatio
 const UPDATE_EVENT = 'report-interpretation:update';
 const STATUS_EVENT = 'report-interpretation:status';
 const WINDOW_EVENT_RETRY_DELAYS = [0, 120, 320] as const;
+const REPORT_INTERPRETATION_LLM_TIMEOUT_MS = 45_000;
 
 interface ReportInterpretationLLMResponse {
   summary?: string;
@@ -599,6 +600,21 @@ function extractJsonObject<T>(response: string): T {
   return JSON.parse(match ? match[0] : clean);
 }
 
+function withTimeout<T>(promise: Promise<T>, timeoutMs: number, message: string): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const timer = window.setTimeout(() => {
+      reject(new Error(message));
+    }, timeoutMs);
+
+    promise
+      .then(resolve)
+      .catch(reject)
+      .finally(() => {
+        window.clearTimeout(timer);
+      });
+  });
+}
+
 function buildPatientProfile(
   currentPatient: AppPatient | null | undefined,
   incomingPatient: ReportInterpretationPatientInput | null | undefined,
@@ -826,15 +842,19 @@ export async function buildReportInterpretationPayload(
   ];
 
   try {
-    const response = await chat(messages, undefined, undefined, undefined, {
-      traceContext: {
-        scene: 'report-interpretation',
-        sourceModule: 'report_interpretation',
-        operationModule: 'report_interpretation',
-        operationAction: 'build_report_interpretation',
-        title: '生成报告解读',
-      },
-    });
+    const response = await withTimeout(
+      chat(messages, undefined, undefined, undefined, {
+        traceContext: {
+          scene: 'report-interpretation',
+          sourceModule: 'report_interpretation',
+          operationModule: 'report_interpretation',
+          operationAction: 'build_report_interpretation',
+          title: '生成报告解读',
+        },
+      }),
+      REPORT_INTERPRETATION_LLM_TIMEOUT_MS,
+      `报告解读生成超时（超过 ${Math.round(REPORT_INTERPRETATION_LLM_TIMEOUT_MS / 1000)} 秒）。`,
+    );
 
     const parsed = extractJsonObject<ReportInterpretationLLMResponse>(response);
     return sanitizeLLMResponse(request, parsed, fallback);
