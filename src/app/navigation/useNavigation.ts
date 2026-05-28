@@ -199,6 +199,21 @@ export function useNavigation(options: NavigationOptions) {
   }
 
   /**
+   * 打开独立诊疗方案推荐页
+   */
+  async function openTreatmentPlan(): Promise<void> {
+    trackViewChange(currentView.value, 'treatment-plan', {
+      patientId: currentPatient.value?.patientId,
+    });
+    currentView.value = 'treatment-plan';
+    if (!isWorking.value) {
+      await enterWorkMode();
+    } else {
+      await resizeWindowForView('treatment-plan');
+    }
+  }
+
+  /**
    * 开始语音交互
    */
   async function startVoiceInteraction(): Promise<void> {
@@ -229,6 +244,7 @@ export function useNavigation(options: NavigationOptions) {
     openMedicalCatalogCache,
     openConsultation,
     openVoiceConsultation,
+    openTreatmentPlan,
     openKnowledgeBase,
     startVoiceInteraction,
   };

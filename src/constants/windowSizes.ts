@@ -36,6 +36,7 @@ export type ViewType =
   | 'risk-alert'
   | 'voice-interaction'
   | 'voice-consultation'
+  | 'treatment-plan'
   | 'reception-capsule'
   | 'analytics'
   | 'symptom-manage'
@@ -88,6 +89,9 @@ export const WINDOW_SIZES = {
 
   /** 语音问诊页面：1080×720px */
   VOICE_CONSULTATION: { width: 1080, height: 720 } as WindowSize,
+
+  /** 独立诊疗方案推荐：1080×720px */
+  TREATMENT_PLAN: { width: 1080, height: 720 } as WindowSize,
 
   /** HIS 联调日志：980×640px */
   HIS_LOG: { width: 980, height: 640 } as WindowSize,
@@ -158,6 +162,9 @@ export function getWindowSizeForView(view: ViewType, options?: WindowSizeOptions
     case 'voice-consultation':
       return WINDOW_SIZES.VOICE_CONSULTATION;
 
+    case 'treatment-plan':
+      return WINDOW_SIZES.TREATMENT_PLAN;
+
     case 'his-log':
       return WINDOW_SIZES.HIS_LOG;
 
@@ -181,6 +188,7 @@ export function supportsPersistentWindowSize(view: ViewType): boolean {
     || view === 'settings'
     || view === 'consultation'
     || view === 'voice-consultation'
+    || view === 'treatment-plan'
     || view === 'analytics'
     || view === 'symptom-manage'
     || view === 'his-log'
@@ -205,5 +213,5 @@ export function isCapsuleView(view: ViewType): boolean {
  * @returns 是否为大面板
  */
 export function isLargePanelView(view: ViewType): boolean {
-  return view === 'consultation' || view === 'symptom-manage' || view === 'his-log' || view === 'medical-cache' || view === 'voice-consultation';
+  return view === 'consultation' || view === 'symptom-manage' || view === 'his-log' || view === 'medical-cache' || view === 'voice-consultation' || view === 'treatment-plan';
 }

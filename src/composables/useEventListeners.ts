@@ -79,6 +79,7 @@ export interface EventListenersOptions {
   navigation: {
     openConsultation: () => Promise<void>;
     openVoiceConsultation: () => Promise<void>;
+    openTreatmentPlan: () => Promise<void>;
     startVoiceInteraction: (options?: { skipCacheRestore?: boolean }) => Promise<void>;
   };
   /** 重置语音会话状态 */
@@ -245,6 +246,9 @@ export function useEventListeners(options: EventListenersOptions) {
       case 'differential':
       case 'medication':
       case 'examination':
+      case 'lab_test':
+      case 'procedure':
+      case 'treatment_plan':
       case 'reminder':
         return action;
       default:
@@ -269,8 +273,13 @@ export function useEventListeners(options: EventListenersOptions) {
     mergeCurrentPatient(payload);
 
     const triggerKind = normalizeSessionTriggerKind(payload.action);
-    if (triggerKind) {
+    if (triggerKind && triggerKind !== 'treatment_plan') {
       queueConsultationAssistTrigger(triggerKind);
+    }
+
+    if (triggerKind === 'treatment_plan') {
+      await navigation.openTreatmentPlan();
+      return;
     }
 
     await navigation.openConsultation();

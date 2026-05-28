@@ -6,6 +6,10 @@
 export interface PatientInfo {
   /** 患者唯一标识 */
   idPi: string;
+  /** 当前就诊唯一标识；同一患者多次就诊时建议传入 */
+  idVis?: string;
+  /** idVis 兼容别名 */
+  visitId?: string;
   /** 患者姓名 */
   naPi: string;
   /** 性别文本，如 "男性" / "女性" */
@@ -51,6 +55,7 @@ export type AssistAction =
   | 'examination'
   | 'lab_test'
   | 'procedure'
+  | 'treatment_plan'
   | 'reminder';
 
 /** 报告解读任务类型 */
@@ -247,6 +252,7 @@ export interface HandshakeResponse {
   status: string;
   version: string;
   timestamp: number;
+  traceId?: string;
 }
 
 /** 浏览器上下文 / 调试握手参数 */
@@ -338,5 +344,41 @@ export declare class MedHermes {
   /** 取消事件监听 */
   off<E extends keyof MedHermesEvents>(event: E, handler?: MedHermesEvents[E]): this;
 }
+
+export interface MedHermesLoaderStatus {
+  online: boolean;
+  sdkLoaded: boolean;
+  instance: MedHermes | null;
+}
+
+export interface MedHermesLoaderApi {
+  ready(fn: (mh: MedHermes | null) => void): void;
+  onError(fn: (err: Error) => void): void;
+  getStatus(): MedHermesLoaderStatus;
+  ping(): Promise<HandshakeResponse>;
+  detect(): Promise<boolean>;
+  launch(): void;
+  init(extra?: Record<string, any>): Promise<MedHermes>;
+  startConsultation(patient: PatientInfo): Promise<ApiResponse>;
+  assist(patient: PatientInfo, action: AssistAction): Promise<ApiResponse>;
+  startVoice(patient?: PatientInfo): Promise<ApiResponse>;
+  interpretReport(request: ReportInterpretationRequest): Promise<ApiResponse>;
+  interpretReport(
+    taskId: ReportInterpretationTaskId,
+    query: string,
+    patient?: ReportInterpretationPatientInfo
+  ): Promise<ApiResponse>;
+  receivePatient(patientId: string, optionalInfo?: Partial<PatientInfo>): Promise<ApiResponse>;
+  sendRisks(patient: PatientInfo, risks?: RiskItem[]): Promise<ApiResponse>;
+  sendFeedback(
+    requestId: string,
+    status: FeedbackStatus,
+    message?: string,
+    items?: ReferenceItem[]
+  ): Promise<ApiResponse>;
+  stop(): Promise<ApiResponse>;
+}
+
+export declare const MedHermesLoader: MedHermesLoaderApi;
 
 export default MedHermes;

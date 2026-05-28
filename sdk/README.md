@@ -79,7 +79,15 @@ MedHermesLoader.launch();
 
 // 手动触发完整检测流程（检测 + 拉起 + 重试）
 MedHermesLoader.detect().then(function(online) { ... });
+
+// 兼容旧 HIS 工具封装：可直接通过 Loader 代理调用 SDK 方法
+MedHermesLoader.startConsultation(patient);
+MedHermesLoader.assist(patient, 'diagnosis');
+MedHermesLoader.startVoice(patient);
+MedHermesLoader.interpretReport({ taskId: 'inspectReport', query: '...' });
 ```
+
+如果 HIS 页面只加载了 `med-hermes-sdk.js`，SDK 也会兜底挂载一个轻量 `window.MedHermesLoader`，避免旧封装直接访问 `MedHermesLoader` 时抛出 `ReferenceError`。直接调用 `MedHermesLoader.startConsultation(...)` 时，门面会先懒加载初始化 SDK，再转发到内部 `MedHermes` 实例。
 
 ### Loader 内部流程
 
@@ -299,12 +307,15 @@ await mh.init({ hospitalCode: 'H001', userId: 'doc-123' });
 ```js
 await mh.startConsultation({
   idPi: '12345',
+  idVis: 'VIS-20260527-001',
   naPi: '张三',
   sdSexText: '男性',
   ageText: '30岁',
   department: '全科',
   allergyHistory: '青霉素过敏',
-  chiefComplaint: '咳嗽三天'
+  chiefComplaint: '咳嗽三天',
+  historyOfPresentIllness: '受凉后出现咳嗽、咳黄痰，无明显胸痛气促。',
+  diagnosis: '急性支气管炎'
 });
 ```
 
@@ -321,6 +332,7 @@ await mh.startConsultation({
 | `examination` | 检查推荐 |
 | `lab_test` | 检验推荐 |
 | `procedure` | 处置推荐 |
+| `treatment_plan` | 诊疗方案聚合推荐 |
 | `reminder` | 智能提醒 |
 
 #### `startVoice(patient?): Promise`
@@ -361,6 +373,7 @@ await mh.interpretReport({
 #### `sendFeedback(requestId, status, message?, items?): Promise`
 
 发送 PHIS 引用回执。每收到一条 `reference-request` 或等待闭环中的 `record-confirmed`，都应调用此方法回执。
+SDK 会优先使用最近一次事件的 `consultationId` 回执；如果当前患者传入了 `idVis / visitId`，该值会作为结果/回执锚点。
 
 #### `pollEvent(): Promise`
 
@@ -464,9 +477,9 @@ mh.on('launch-failed', () => {
 
 ## 常见问题
 
-### Q: 调用接口报 CORS 错误？
+### Q: 调用接口报 CORS 或 401 错误？
 
-SDK 通过 `fetch` 调用本地 `127.0.0.1:8081`，MedHermes 桌面端已配置 CORS 为 permissive，正常情况不会出现跨域问题。如果遇到，请确认桌面端版本是否最新。
+SDK 通过 `fetch` 调用本地 `127.0.0.1:8081`，请确认 MedHermes 桌面端已启动，并且已经成功执行 `init()` / `debugHandshake()`。如果返回 401，通常是尚未握手或握手缺少有效的 `extra.emrAccessToken`。
 
 ### Q: 轮询什么时候自动停止？
 

@@ -36,6 +36,7 @@ const ASSIST_LABEL_BY_ACTION: Record<ConsultationAssistAction, string> = {
   examination: '检查快进',
   lab_test: '检验快进',
   procedure: '处置快进',
+  treatment_plan: '诊疗方案',
   reminder: '风险提醒',
 };
 
@@ -47,6 +48,7 @@ const ASSIST_BANNER_TEXT_BY_ACTION: Record<ConsultationAssistAction, string> = {
   examination: '请勾选要引用的检查项目，发起引用后会等待 PHIS 回执。',
   lab_test: '请勾选要引用的检验项目，发起引用后会等待 PHIS 回执。',
   procedure: '请勾选要引用的处置项目，发起引用后会等待 PHIS 回执。',
+  treatment_plan: '请在独立诊疗方案页勾选项目，一键回写后等待 PHIS 回执。',
   reminder: '风险提醒已同步，可结合当前病历继续处理。',
 };
 

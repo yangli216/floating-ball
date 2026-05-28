@@ -40,19 +40,20 @@ impl BrowserContext {
             .filter(|value| !value.is_empty())
             .map(str::to_string)
     }
+
 }
 
 #[derive(Debug, Deserialize, Serialize, Clone)]
 #[serde(rename_all = "camelCase")]
 pub struct PatientInfo {
     #[serde(alias = "patientId")]
-    pub id_pi: String,          // 对应 idPi
+    pub id_pi: String, // 对应 idPi
     #[serde(default, alias = "name")]
-    pub na_pi: String,          // 对应 naPi
+    pub na_pi: String, // 对应 naPi
     #[serde(default, alias = "gender")]
-    pub sd_sex_text: String,    // 对应 sdSexText
+    pub sd_sex_text: String, // 对应 sdSexText
     #[serde(default, alias = "age")]
-    pub age_text: String,       // 对应 ageText
+    pub age_text: String, // 对应 ageText
 
     /// 就诊 ID（visit id）；同一患者多次就诊时用于区分缓存
     #[serde(default, alias = "visitId")]
@@ -84,7 +85,7 @@ const CONSULTATION_EVENT_QUEUE_LIMIT: usize = 100;
 
 mod aliyun_speech;
 use aliyun_speech::{
-    transcribe_realtime_aliyun, start_realtime_speech, send_speech_chunk, stop_realtime_speech,
+    send_speech_chunk, start_realtime_speech, stop_realtime_speech, transcribe_realtime_aliyun,
     RealtimeSpeechSessionState,
 };
 
@@ -106,12 +107,18 @@ pub fn append_consultation_event(
     result: ConsultationResult,
 ) -> Result<(), String> {
     {
-        let mut last_result = state.last_result.lock().map_err(|error| error.to_string())?;
+        let mut last_result = state
+            .last_result
+            .lock()
+            .map_err(|error| error.to_string())?;
         *last_result = Some(result.clone());
     }
 
     {
-        let mut event_queue = state.event_queue.lock().map_err(|error| error.to_string())?;
+        let mut event_queue = state
+            .event_queue
+            .lock()
+            .map_err(|error| error.to_string())?;
         event_queue.push_back(result);
         while event_queue.len() > CONSULTATION_EVENT_QUEUE_LIMIT {
             event_queue.pop_front();
@@ -124,11 +131,17 @@ pub fn append_consultation_event(
 
 pub fn clear_consultation_events(state: &SharedAppState) -> Result<(), String> {
     {
-        let mut last_result = state.last_result.lock().map_err(|error| error.to_string())?;
+        let mut last_result = state
+            .last_result
+            .lock()
+            .map_err(|error| error.to_string())?;
         *last_result = None;
     }
     {
-        let mut event_queue = state.event_queue.lock().map_err(|error| error.to_string())?;
+        let mut event_queue = state
+            .event_queue
+            .lock()
+            .map_err(|error| error.to_string())?;
         event_queue.clear();
     }
     Ok(())
@@ -136,7 +149,9 @@ pub fn clear_consultation_events(state: &SharedAppState) -> Result<(), String> {
 
 pub fn validate_browser_context(ctx: &BrowserContext) -> Result<(), String> {
     if ctx.emr_access_token().is_none() {
-        return Err("SDK 握手失败：缺少有效的 emrAccessToken，桌面应用服务调用已被拒绝".to_string());
+        return Err(
+            "SDK 握手失败：缺少有效的 emrAccessToken，桌面应用服务调用已被拒绝".to_string(),
+        );
     }
 
     Ok(())
@@ -144,7 +159,10 @@ pub fn validate_browser_context(ctx: &BrowserContext) -> Result<(), String> {
 
 pub fn ensure_desktop_service_access(app: &tauri::AppHandle) -> Result<BrowserContext, String> {
     let state = app.state::<SharedAppState>();
-    let browser_context = state.browser_context.lock().map_err(|error| error.to_string())?;
+    let browser_context = state
+        .browser_context
+        .lock()
+        .map_err(|error| error.to_string())?;
     let ctx = browser_context
         .clone()
         .ok_or_else(|| "桌面应用服务调用被拒绝：尚未完成 SDK 授权握手".to_string())?;
@@ -183,8 +201,8 @@ fn build_runtime_updater(
         .map(|value| value.trim().to_string())
         .filter(|value| !value.is_empty())
     {
-        let parsed = url::Url::parse(&endpoint_value)
-            .map_err(|error| format!("无效更新地址: {}", error))?;
+        let parsed =
+            url::Url::parse(&endpoint_value).map_err(|error| format!("无效更新地址: {}", error))?;
         builder = builder
             .endpoints(vec![parsed])
             .map_err(|error| format!("设置更新地址失败: {}", error))?;
@@ -312,12 +330,7 @@ fn active_floating_ball_monitor(window: &tauri::WebviewWindow) -> Option<tauri::
     window
         .cursor_position()
         .ok()
-        .and_then(|cursor| {
-            window
-                .monitor_from_point(cursor.x, cursor.y)
-                .ok()
-                .flatten()
-        })
+        .and_then(|cursor| window.monitor_from_point(cursor.x, cursor.y).ok().flatten())
         .or_else(|| window.primary_monitor().ok().flatten())
         .or_else(|| {
             window
@@ -475,8 +488,14 @@ async fn cancel_consultation_if_pending(
     state: tauri::State<'_, SharedAppState>,
 ) -> Result<bool, String> {
     let consultation_id = {
-        let current = state.current_consultation.lock().map_err(|e| e.to_string())?;
-        current.as_ref().map(|p| p.id_pi.clone()).unwrap_or_default()
+        let current = state
+            .current_consultation
+            .lock()
+            .map_err(|e| e.to_string())?;
+        current
+            .as_ref()
+            .map(|p| p.id_pi.clone())
+            .unwrap_or_default()
     };
 
     {
@@ -493,15 +512,18 @@ async fn cancel_consultation_if_pending(
         .duration_since(std::time::UNIX_EPOCH)
         .unwrap()
         .as_millis() as u64;
-    append_consultation_event(state.inner(), ConsultationResult {
-        status: Some("cancelled".to_string()),
-        consultation_id,
-        timestamp,
-        record: serde_json::json!({
-            "resultType": "cancelled",
-            "reason": "User closed the consultation window"
-        }),
-    })?;
+    append_consultation_event(
+        state.inner(),
+        ConsultationResult {
+            status: Some("cancelled".to_string()),
+            consultation_id,
+            timestamp,
+            record: serde_json::json!({
+                "resultType": "cancelled",
+                "reason": "User closed the consultation window"
+            }),
+        },
+    )?;
     println!("cancel_consultation_if_pending: wrote cancelled result and notified.");
     Ok(true)
 }
@@ -726,8 +748,13 @@ async fn set_vibrancy(window: tauri::Window, enabled: bool) -> Result<(), String
                 .map_err(|e| e.to_string())?;
         } else {
             // 清除 vibrancy 效果 - 设置为完全透明
-            apply_vibrancy(&window, NSVisualEffectMaterial::WindowBackground, None, None)
-                .map_err(|_| "Failed to clear vibrancy".to_string())?;
+            apply_vibrancy(
+                &window,
+                NSVisualEffectMaterial::WindowBackground,
+                None,
+                None,
+            )
+            .map_err(|_| "Failed to clear vibrancy".to_string())?;
         }
     }
     #[cfg(not(target_os = "macos"))]
@@ -797,7 +824,11 @@ async fn transcribe_audio(
             .or_else(|| data.get("message").and_then(|v| v.as_str()))
             .or_else(|| data.get("raw").and_then(|v| v.as_str()))
             .unwrap_or("未知错误");
-        return Err(format!("转写接口返回错误 ({}): {}", status.as_u16(), api_message));
+        return Err(format!(
+            "转写接口返回错误 ({}): {}",
+            status.as_u16(),
+            api_message
+        ));
     }
 
     if let Some(text) = data.get("text").and_then(|v| v.as_str()) {

@@ -6,6 +6,7 @@ export type ConsultationAssistAction =
   | 'examination'
   | 'lab_test'
   | 'procedure'
+  | 'treatment_plan'
   | 'reminder';
 
 export interface DiagnosisPathOption {

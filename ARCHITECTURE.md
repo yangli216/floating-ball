@@ -163,6 +163,7 @@
 7. 区域化模式下，原始操作日志只保留能定位业务路径的结构化事件：`operationTracker.ts` 负责把高噪声 UI 事件白名单化过滤，并把保留事件统一上报为 `{ module, action, title, sourceModule, scene }`；`aiTrace.ts` 则为 AI 代理补齐“哪个业务发起了这次调用”的上下文，避免后台只看到泛化的 `ai/chat`。
 8. 区域化模式下，辅诊功能统计不再从原始操作日志推断。`featureUsageTracker.ts` 负责在用户真实触发功能时向 `/v1/client/feature-events/batch` 上报业务事件；一次明确功能调用只写一条，并通过 `idempotencyKey` 支持离线重试去重。审计日志继续用于排障，功能事件才是后台“辅诊功能”统计事实源。智能问诊、语音问诊、报告单解读、聊天、知识库使用按用户进入/提交的主功能计数；知识库批量检索只按一次用户检索动作计数，不按内部拆开的多个查询词累加；诊断鉴别和推荐诊断/用药/检查/检验/处置只在医生显式触发独立辅助入口时计数，智能问诊或语音问诊主流程内部自动生成的 AI trace 不再拆成子功能调用次数。
 9. 登录态设计在当前版本不是前置依赖，不能假定仓库内已有 `auth store` 或受保护 API 基座。
+10. 独立诊疗方案推荐由 `features/treatment-plan` 承载，入口为 `/api/consultation/assist` 的 `action: treatment_plan`。该功能不进入 `ConsultationPage.vue` 的症状采集栈，也不维护另一套回写格式：AI 请求继续复用 `features/clinical-result` 的治疗推荐 request builder、JSON 解析、标准库匹配与治疗归一化能力；最终提交继续使用 `recordConfirmedPayload.ts` 构造 `diagList/orderList` 并等待 PHIS `reference-feedback` 回执。
 
 ---
 
@@ -185,15 +186,16 @@
 7. `web_project/public/mock-his.html` 作为联调页时，应优先通过 `sdk/med-hermes-sdk.js` 的 WebSocket 事件订阅获取 `/api/consultation/events/ws` 推送；`/api/consultation/events/poll` 仅作为 WebSocket 不可用时的兜底，并且仍必须支持“引用请求 -> PHIS 保存成功/失败 -> 回执 floating-ball”的完整闭环。
 8. `POST /api/consultation/reference-feedback` 成为 PHIS 引用回执入口。floating-ball 发起引用后应继续停留在当前 `ConsultationPage`，医生可继续完成本次问诊；收到回执后，必须更新当前问诊页状态、记录日志、标注已引用或失败原因。当前实现仍以内存状态为主，而不是落盘恢复。
 9. `/api/consultation/events/ws` 与 `/api/consultation/events/poll` 需要统一返回“病历草稿写回”、“引用请求发起”、“PHIS 引用回执”等事件 envelope；联调页或 HIS 侧仍需校验 `event.id`、`consultationId` 与当前患者一致，避免旧结果提前命中。
-10. 针对推荐诊断的重复引用，需要区分“同一诊断重复点击”和“更换为新诊断引用”；前者应提示已成功引用，后者应允许 PHIS 进入诊断修改流程并通过回执反馈最终结果。
-11. 后端内部仍沿用 `start-consultation-session` 这个 Tauri 事件名承接 `/api/consultation/assist` 的兼容分发，但前端唯一落点已经是 `navigation.openConsultation()` + `ConsultationPage` 灵活模式，不再存在独立 session 小窗视图。
-12. `ConsultationPage.vue` 里的推荐诊断必须保持单选，并以当前选中诊断作为引用对象；推荐用药、检查、检验、处置则保留多选，并在各自分组级提供一次引入所选项的入口。对暂不支持 PHIS 引用的推荐项，应作为只读处置建议单独展示，避免被误当作检查项提交。
-13. 检验检查报告解读不进入 `ConsultationPage.vue`。该能力通过 `POST /api/report/interpret` -> `useEventListeners.ts` -> 独立报告解读窗口链路完成，避免打断当前问诊主页面。
-14. 报告解读独立窗口默认隐藏原生标题栏，窗口移动依赖页面头部拖拽区，关闭动作统一走页面内虚拟按钮；窗口外壳、操作按钮、loading 与空态沿用 floating-ball 既有柔和玻璃态窗口语言；正文采用单页报告单式纵向阅读版式，窗口主体滚动容器承接溢出内容，不能裁切报告元数据、异常项目或综合判断；打印模式必须覆盖全局 `html/body/#app` 的固定高度与 `overflow: hidden`，让报告按内容自然分页。
-15. 智能问诊的页面留存与语音问诊一致：未诊毕、未确认放弃时，再次点击“智能问诊”或最小化后再次打开，必须恢复 `ConsultationPage` 上次内部页面（症状采集、病历详情或最终报告）及数据快照；症状问诊结果页“返回”只回编辑页，“放弃”确认后必须清空当前快照和页面内勾选/推荐状态并直接退回悬浮球；语音问诊一键回写成功只代表本次回写闭环成功，不代表诊毕，同一接诊上下文内再次触发 `start-voice-consultation` 时必须恢复上一张语音结果页；但当前接诊从患者 A 切换到患者 B 时，患者 A 的语音缓存和最小化入口必须同步失效，之后再切回患者 A 也重新开始语音问诊；只有诊毕、确认放弃、患者切换或跨自然日失效时才清理。
-16. 智能问诊 AI 调用不得在请求发起时清空已有诊断或推荐结果；新结果只有在 LLM 响应解析成功且仍匹配当前诊断上下文时才提交到页面状态。结构化 JSON 解析统一允许代码块和少量前后说明，从响应中抽取 JSON 对象/数组后再解析；各路推荐独立失败时保留上一版数据，并只更新对应错误态，避免单次解析或网络抖动造成整页丢结果。
-17. 症状问诊和语音问诊最终一键回写共用 `record-confirmed` 构造器；进入 `diagList.idDiag` 的值必须是标准诊断库 ID（PHIS `ID_DIE`），不得使用 `diag_*`、`phis-diagnosis-*` 等前端临时 ID。症状问诊从 `Diagnosis` 适配到共享结果页的 `VoiceIntentResult.diagnoses` 时必须把标准诊断 ID 透传为 `matchedItem.id` 或等价标准 ID 字段，避免共享结果页初始化时丢失诊断主键。
-18. HIS 联调相关的调用必须进入本地 HIS 集成日志：HTTP Bridge 入站接口由 Rust 侧直接记录，前端 `hisService.ts` 出站请求通过 `hisIntegrationLog.ts` 写入同一 JSONL 日志，并在日志面板中按 `traceId`、接口、方向、状态筛选和导出。
+10. 本地 HTTP Bridge 的业务接口不允许使用 permissive CORS 或仅依赖已保存握手上下文；`POST /api/handshake` 成功后必须发放当前 origin 绑定的本地 Bridge session，后续 REST / WebSocket 请求必须逐请求校验 session、origin、timestamp、nonce 与签名。`GET /api/health` 和 `/sdk/*` 只用于在线探测与 SDK 加载，不代表业务授权。
+11. 针对推荐诊断的重复引用，需要区分“同一诊断重复点击”和“更换为新诊断引用”；前者应提示已成功引用，后者应允许 PHIS 进入诊断修改流程并通过回执反馈最终结果。
+12. 后端内部仍沿用 `start-consultation-session` 这个 Tauri 事件名承接 `/api/consultation/assist` 的兼容分发，但前端唯一落点已经是 `navigation.openConsultation()` + `ConsultationPage` 灵活模式，不再存在独立 session 小窗视图。
+13. `ConsultationPage.vue` 里的推荐诊断必须保持单选，并以当前选中诊断作为引用对象；推荐用药、检查、检验、处置则保留多选，并在各自分组级提供一次引入所选项的入口。对暂不支持 PHIS 引用的推荐项，应作为只读处置建议单独展示，避免被误当作检查项提交。
+14. 检验检查报告解读不进入 `ConsultationPage.vue`。该能力通过 `POST /api/report/interpret` -> `useEventListeners.ts` -> 独立报告解读窗口链路完成，避免打断当前问诊主页面。
+15. 报告解读独立窗口默认隐藏原生标题栏，窗口移动依赖页面头部拖拽区，关闭动作统一走页面内虚拟按钮；窗口外壳、操作按钮、loading 与空态沿用 floating-ball 既有柔和玻璃态窗口语言；正文采用单页报告单式纵向阅读版式，窗口主体滚动容器承接溢出内容，不能裁切报告元数据、异常项目或综合判断；打印模式必须覆盖全局 `html/body/#app` 的固定高度与 `overflow: hidden`，让报告按内容自然分页。
+16. 智能问诊的页面留存与语音问诊一致：未诊毕、未确认放弃时，再次点击“智能问诊”或最小化后再次打开，必须恢复 `ConsultationPage` 上次内部页面（症状采集、病历详情或最终报告）及数据快照；症状问诊结果页“返回”只回编辑页，“放弃”确认后必须清空当前快照和页面内勾选/推荐状态并直接退回悬浮球；语音问诊一键回写成功只代表本次回写闭环成功，不代表诊毕，同一接诊上下文内再次触发 `start-voice-consultation` 时必须恢复上一张语音结果页；但当前接诊从患者 A 切换到患者 B 时，患者 A 的语音缓存和最小化入口必须同步失效，之后再切回患者 A 也重新开始语音问诊；只有诊毕、确认放弃、患者切换或跨自然日失效时才清理。
+17. 智能问诊 AI 调用不得在请求发起时清空已有诊断或推荐结果；新结果只有在 LLM 响应解析成功且仍匹配当前诊断上下文时才提交到页面状态。结构化 JSON 解析统一允许代码块和少量前后说明，从响应中抽取 JSON 对象/数组后再解析；各路推荐独立失败时保留上一版数据，并只更新对应错误态，避免单次解析或网络抖动造成整页丢结果。
+18. 症状问诊和语音问诊最终一键回写共用 `record-confirmed` 构造器；进入 `diagList.idDiag` 的值必须是标准诊断库 ID（PHIS `ID_DIE`），不得使用 `diag_*`、`phis-diagnosis-*` 等前端临时 ID。症状问诊从 `Diagnosis` 适配到共享结果页的 `VoiceIntentResult.diagnoses` 时必须把标准诊断 ID 透传为 `matchedItem.id` 或等价标准 ID 字段，避免共享结果页初始化时丢失诊断主键。
+19. HIS 联调相关的调用必须进入本地 HIS 集成日志：HTTP Bridge 入站接口由 Rust 侧直接记录，前端 `hisService.ts` 出站请求通过 `hisIntegrationLog.ts` 写入同一 JSONL 日志，并在日志面板中按 `traceId`、接口、方向、状态筛选和导出。
 
 ### 代码结构
 

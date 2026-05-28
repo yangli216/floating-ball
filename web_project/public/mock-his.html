@@ -206,6 +206,10 @@
             <input id="p-id" type="text" value="MOCK-P-001" />
           </label>
           <label>
+            就诊 ID（idVis，可选）
+            <input id="p-visit" type="text" value="MOCK-VIS-001" />
+          </label>
+          <label>
             姓名（naPi）
             <input id="p-name" type="text" value="张测试" />
           </label>
@@ -225,6 +229,14 @@
           <label>
             主诉（chiefComplaint，可选）
             <input id="p-cc" type="text" value="咳嗽 3 天，伴黄痰" />
+          </label>
+          <label>
+            现病史（historyOfPresentIllness，可选）
+            <textarea id="p-hpi">患者 3 天前受凉后出现咳嗽，咳黄痰，偶有咽痛，无明显胸痛、气促，无高热寒战。自行饮水休息后症状未明显缓解。</textarea>
+          </label>
+          <label>
+            当前诊断（diagnosis，可选）
+            <input id="p-diagnosis" type="text" value="急性支气管炎" />
           </label>
           <label>
             既往史（pastMedicalHistory，可选）
@@ -271,12 +283,31 @@
         <legend>灵活模式 Assist</legend>
         <div class="row">
           <select id="assist-action">
-            <option value="show-summary">show-summary（查看主诉/现病史）</option>
-            <option value="recommend-diagnosis">recommend-diagnosis（诊断推荐）</option>
-            <option value="recommend-medicine">recommend-medicine（用药推荐）</option>
-            <option value="recommend-examination">recommend-examination（检查推荐）</option>
+            <option value="record">record（病历记录）</option>
+            <option value="diagnosis">diagnosis（诊断推荐）</option>
+            <option value="differential">differential（鉴别诊断）</option>
+            <option value="medication">medication（用药推荐）</option>
+            <option value="examination">examination（检查推荐）</option>
+            <option value="lab_test">lab_test（检验推荐）</option>
+            <option value="procedure">procedure（处置推荐）</option>
+            <option value="treatment_plan">treatment_plan（诊疗方案推荐）</option>
           </select>
           <button id="btn-assist">▶ 触发 Assist</button>
+        </div>
+      </fieldset>
+
+      <fieldset>
+        <legend>诊疗方案推荐测试</legend>
+        <div class="stack">
+          <div class="row">
+            <button id="btn-treatment-plan-test">测试诊疗方案推荐</button>
+            <button id="btn-treatment-plan-fill" class="secondary">填入诊疗方案样例</button>
+          </div>
+          <p class="help">
+            会自动补齐主诉、现病史和当前诊断，并触发
+            <code>POST /api/consultation/assist</code>，
+            <code>action=treatment_plan</code>。
+          </p>
         </div>
       </fieldset>
 
@@ -327,9 +358,12 @@
             <label>
               referenceType
               <select id="fb-ref-type">
+                <option value="batch">batch</option>
                 <option value="diagnosis">diagnosis</option>
-                <option value="medicine">medicine</option>
+                <option value="medication">medication</option>
                 <option value="examination">examination</option>
+                <option value="lab_test">lab_test</option>
+                <option value="procedure">procedure</option>
               </select>
             </label>
           </div>
@@ -421,13 +455,34 @@
     function buildPatient() {
       return {
         idPi: $('p-id').value.trim() || 'MOCK-P-001',
+        idVis: $('p-visit').value.trim() || undefined,
         naPi: $('p-name').value.trim() || '匿名患者',
         sdSexText: $('p-gender').value,
         ageText: $('p-age').value.trim() || '0岁',
         chiefComplaint: $('p-cc').value.trim() || undefined,
+        historyOfPresentIllness: $('p-hpi').value.trim() || undefined,
+        diagnosis: $('p-diagnosis').value.trim() || undefined,
         pastMedicalHistory: $('p-pmh').value.trim() || undefined,
         allergyHistory: $('p-allergy').value.trim() || undefined,
       };
+    }
+
+    function fillTreatmentPlanSample() {
+      $('p-id').value = 'MOCK-P-TP-001';
+      $('p-visit').value = 'MOCK-VIS-TP-001';
+      $('p-name').value = '张方案';
+      $('p-gender').value = '男性';
+      $('p-age').value = '35岁';
+      $('p-cc').value = '咳嗽 3 天，伴黄痰';
+      $('p-hpi').value = '患者 3 天前受凉后出现咳嗽，咳黄痰，偶有咽痛，无明显胸痛、气促，无高热寒战。自行饮水休息后症状未明显缓解。';
+      $('p-diagnosis').value = '急性支气管炎';
+      $('p-pmh').value = '高血压 5 年';
+      $('p-allergy').value = '';
+      $('assist-action').value = 'treatment_plan';
+      $('fb-ref-type').value = 'batch';
+      $('fb-status').value = 'success';
+      $('fb-message').value = '诊疗方案已写入 HIS';
+      $('fb-request-id').value = '';
     }
 
     var REPORT_INTERPRETATION_SAMPLES = [
@@ -675,8 +730,19 @@
 
     $('btn-handshake').addEventListener('click', withBusy($('btn-handshake'), function () {
       var token = $('emr-token').value.trim() || 'mock-token-for-local-debug';
-      log('event', '[→ /handshake] debugHandshake with emrAccessToken=' + token);
-      return sdk.debugHandshake({ extra: { emrAccessToken: token } });
+      var localFileMode = window.location.protocol === 'file:';
+      var payload = {
+        extra: { emrAccessToken: token }
+      };
+      if (localFileMode) {
+        payload.origin = '';
+        payload.href = window.location.href;
+      }
+      log('event', '[→ /handshake] debugHandshake with emrAccessToken=' + token, {
+        localFileMode: localFileMode,
+        origin: payload.origin
+      });
+      return sdk.debugHandshake(payload);
     }));
 
     $('btn-ping').addEventListener('click', withBusy($('btn-ping'), function () {
@@ -711,6 +777,18 @@
       var action = $('assist-action').value;
       log('event', '[→ /consultation/assist] action=' + action, p);
       return sdk.assist(p, action);
+    }));
+
+    $('btn-treatment-plan-fill').addEventListener('click', function () {
+      fillTreatmentPlanSample();
+      log('event', '[页面] 已填入诊疗方案推荐测试样例');
+    });
+
+    $('btn-treatment-plan-test').addEventListener('click', withBusy($('btn-treatment-plan-test'), function () {
+      fillTreatmentPlanSample();
+      var p = buildPatient();
+      log('event', '[→ /consultation/assist] action=treatment_plan', p);
+      return sdk.assist(p, 'treatment_plan');
     }));
 
     $('report-sample').addEventListener('change', function () {
@@ -748,9 +826,23 @@
       var refType = $('fb-ref-type').value;
 
       var items = [];
-      if (refType === 'diagnosis') items = [{ name: '急性支气管炎', code: 'J20.9', type: 'diagnosis' }];
-      else if (refType === 'medicine') items = [{ name: '阿莫西林胶囊 0.25g x 24', code: 'M001', type: 'medicine' }];
-      else items = [{ name: '血常规', code: 'EX001', type: 'examination' }];
+      if (refType === 'batch') {
+        items = [
+          { name: '急性支气管炎', code: 'J20.9', type: 'diagnosis' },
+          { name: '阿莫西林胶囊 0.25g x 24', code: 'M001', type: 'medicine' },
+          { name: '血常规', code: 'EX001', type: 'lab_test' }
+        ];
+      } else if (refType === 'diagnosis') {
+        items = [{ name: '急性支气管炎', code: 'J20.9', type: 'diagnosis' }];
+      } else if (refType === 'medication') {
+        items = [{ name: '阿莫西林胶囊 0.25g x 24', code: 'M001', type: 'medicine' }];
+      } else if (refType === 'lab_test') {
+        items = [{ name: '血常规', code: 'EX001', type: 'lab_test' }];
+      } else if (refType === 'procedure') {
+        items = [{ name: '雾化吸入治疗', code: 'TR001', type: 'procedure' }];
+      } else {
+        items = [{ name: '胸部 DR', code: 'EX001', type: 'examination' }];
+      }
 
       log('event', '[→ /consultation/reference-feedback]', { requestId: requestId, status: status, refType: refType, items: items });
       return sdk.sendFeedback(requestId, status, message, items);

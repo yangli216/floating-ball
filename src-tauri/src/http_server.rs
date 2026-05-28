@@ -120,7 +120,9 @@ fn is_normal_websocket_disconnect(error: &actix_ws::ProtocolError) -> bool {
     match error {
         actix_ws::ProtocolError::Io(err) => {
             err.kind() == io::ErrorKind::UnexpectedEof
-                || err.to_string().contains("payload reached EOF before completing")
+                || err
+                    .to_string()
+                    .contains("payload reached EOF before completing")
         }
         _ => false,
     }
@@ -142,11 +144,7 @@ fn derive_result_state(
     "ready"
 }
 
-fn is_terminal_result(
-    result_type: &str,
-    reference_status: Option<&str>,
-    state: &str,
-) -> bool {
+fn is_terminal_result(result_type: &str, reference_status: Option<&str>, state: &str) -> bool {
     if state == "pending" {
         return false;
     }
@@ -189,8 +187,16 @@ fn build_consultation_event(result: &ConsultationResult) -> serde_json::Value {
     let event_id = format!(
         "{}:{}:{}:{}",
         result.consultation_id,
-        if request_id.is_empty() { "-" } else { request_id },
-        if result_type.is_empty() { "-" } else { &result_type },
+        if request_id.is_empty() {
+            "-"
+        } else {
+            request_id
+        },
+        if result_type.is_empty() {
+            "-"
+        } else {
+            &result_type
+        },
         result.timestamp
     );
 
@@ -223,8 +229,16 @@ fn current_event_id(result: &ConsultationResult) -> String {
     format!(
         "{}:{}:{}:{}",
         result.consultation_id,
-        if request_id.is_empty() { "-" } else { request_id },
-        if result_type.is_empty() { "-" } else { result_type },
+        if request_id.is_empty() {
+            "-"
+        } else {
+            request_id
+        },
+        if result_type.is_empty() {
+            "-"
+        } else {
+            result_type
+        },
         result.timestamp
     )
 }
@@ -261,11 +275,7 @@ fn queued_events_after(
     }
 
     if include_latest_without_cursor {
-        return event_queue
-            .back()
-            .cloned()
-            .into_iter()
-            .collect::<Vec<_>>();
+        return event_queue.back().cloned().into_iter().collect::<Vec<_>>();
     }
 
     Vec::new()
@@ -280,10 +290,7 @@ fn next_queued_event_after(
         .next()
 }
 
-fn build_event_poll_response(
-    result: &ConsultationResult,
-    trace_id: &str,
-) -> serde_json::Value {
+fn build_event_poll_response(result: &ConsultationResult, trace_id: &str) -> serde_json::Value {
     let event = build_consultation_event(result);
     let payload = event
         .get("payload")
@@ -927,15 +934,18 @@ async fn stop_consultation(
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap()
             .as_millis() as u64;
-        if let Err(error) = append_consultation_event(state.get_ref(), ConsultationResult {
-            status: Some("cancelled".to_string()),
-            consultation_id: consultation_id.clone(),
-            timestamp,
-            record: serde_json::json!({
-                "resultType": "cancelled",
-                "reason": "Consultation stopped by user"
-            }),
-        }) {
+        if let Err(error) = append_consultation_event(
+            state.get_ref(),
+            ConsultationResult {
+                status: Some("cancelled".to_string()),
+                consultation_id: consultation_id.clone(),
+                timestamp,
+                record: serde_json::json!({
+                    "resultType": "cancelled",
+                    "reason": "Consultation stopped by user"
+                }),
+            },
+        ) {
             eprintln!("Failed to append cancelled consultation event: {}", error);
         }
     }
@@ -991,30 +1001,30 @@ async fn poll_consultation_event(
 
     // 1. Check if a queued event exists immediately
     if let Some(res) = next_queued_event_after(state.get_ref(), after_event_id.as_deref()) {
-            let response_body = build_event_poll_response(&res, &trace_id);
-            let is_cancelled = res.status.as_deref() == Some("cancelled");
-            if !is_cancelled {
-                record_bridge_log(
-                    &app_handle,
-                    response_body["traceId"].as_str().unwrap_or_default(),
-                    "consultation.eventPoll",
-                    "GET",
-                    "/api/consultation/events/poll",
-                    "success",
-                    200,
-                    started_at,
-                    None,
-                    Some(response_body.clone()),
-                    None,
-                    Some(res.consultation_id.clone()),
-                    res.record
-                        .get("requestId")
-                        .and_then(|value| value.as_str())
-                        .map(str::to_string),
-                    None,
-                );
-            }
-            return HttpResponse::Ok().json(response_body);
+        let response_body = build_event_poll_response(&res, &trace_id);
+        let is_cancelled = res.status.as_deref() == Some("cancelled");
+        if !is_cancelled {
+            record_bridge_log(
+                &app_handle,
+                response_body["traceId"].as_str().unwrap_or_default(),
+                "consultation.eventPoll",
+                "GET",
+                "/api/consultation/events/poll",
+                "success",
+                200,
+                started_at,
+                None,
+                Some(response_body.clone()),
+                None,
+                Some(res.consultation_id.clone()),
+                res.record
+                    .get("requestId")
+                    .and_then(|value| value.as_str())
+                    .map(str::to_string),
+                None,
+            );
+        }
+        return HttpResponse::Ok().json(response_body);
     }
 
     // 2. Long polling: wait for notification or timeout
@@ -1046,7 +1056,7 @@ async fn poll_consultation_event(
 
     if let Some(res) = final_result {
         let val = build_event_poll_response(&res, &trace_id);
-        
+
         let is_cancelled = res.status.as_deref() == Some("cancelled");
         if !is_cancelled {
             record_bridge_log(
@@ -1329,7 +1339,8 @@ async fn reference_feedback(
             .to_string();
 
         if existing_request_id != request.request_id
-            || (existing_result_type != "reference-request" && existing_result_type != "record-confirmed")
+            || (existing_result_type != "reference-request"
+                && existing_result_type != "record-confirmed")
         {
             let response_body = serde_json::json!({
                 "status": "error",
@@ -1448,7 +1459,9 @@ async fn reference_feedback(
         return HttpResponse::BadRequest().json(response_body);
     }
 
-    if existing_result_type == "reference-request" && existing_reference_type != resolved_reference_type {
+    if existing_result_type == "reference-request"
+        && existing_reference_type != resolved_reference_type
+    {
         let response_body = serde_json::json!({
             "status": "error",
             "code": "REFERENCE_REQUEST_MISMATCH",
@@ -1469,7 +1482,9 @@ async fn reference_feedback(
             None,
             Some(request.consultation_id.clone()),
             Some(request.request_id.clone()),
-            Some("No matching pending reference request for current consultation result".to_string()),
+            Some(
+                "No matching pending reference request for current consultation result".to_string(),
+            ),
         );
         return HttpResponse::Conflict().json(response_body);
     }
@@ -2171,10 +2186,7 @@ pub fn run_server(app_handle: tauri::AppHandle, state: SharedAppState) {
                     .app_data(state.clone())
                     .route("/api/health", web::get().to(health_check))
                     .route("/api/handshake", web::post().to(handshake))
-                    .route(
-                        "/api/consultation/receive",
-                        web::post().to(receive_patient),
-                    )
+                    .route("/api/consultation/receive", web::post().to(receive_patient))
                     .route(
                         "/api/consultation/start",
                         web::post().to(start_consultation),

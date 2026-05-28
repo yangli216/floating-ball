@@ -29,8 +29,8 @@
 1. `MedHermes` 必须先在医生本机启动，否则接口不可访问。
 2. 当前服务只监听 `127.0.0.1:8081`，默认供本机 HIS / 联调页调用。
 3. 当前结果通道是内存事件队列，桌面端保留最近事件用于 WebSocket 重连补发；`GET /api/consultation/events/poll` 仍返回同一 envelope，但仅作为 WebSocket 不可用时的兜底。
-4. 当前 `consultationId` 默认直接使用 `idPi / patientId`。
-   如果 HIS 存在“同患者多次接诊”场景，必须在 HIS 自己的上下文里再绑定一次“当前就诊”。
+4. 接诊类 REST 接口的同步响应仍回传 `idPi / patientId` 作为基础 `consultationId`；进入前端结果/回执链路后，桌面端会优先使用当前就诊锚点 `idVis / visitId`，缺失时回退到 `idPi / patientId`。
+   如果 HIS 存在“同患者多次接诊”场景，必须传入 `idVis`，避免旧就诊结果或回执误命中当前就诊。
 5. 当前 Bridge 会为业务接口生成 `traceId` 并写入本地 HIS 集成日志，方便三方 HIS / PHIS 联调时按一次调用链路排查请求、响应和错误。
 6. Bridge 与 SDK 对外展示的失败信息应使用可读中文说明，并优先带出 `traceId`；底层网络异常、Rust/JavaScript 异常、PHIS 原始错误体和堆栈只进入本地 HIS 集成日志，不应作为唯一错误提示直接展示给医生或 HIS 操作员。
 
@@ -52,7 +52,7 @@
 ### 第二步: 打通灵活模式
 
 1. HIS 在当前患者上下文下调用 `POST /api/consultation/assist`
-2. 指定 `action` 为 `record / diagnosis / differential / medication / examination / reminder`
+2. 指定 `action` 为 `record / diagnosis / differential / medication / examination / lab_test / procedure / treatment_plan / reminder`
 3. 继续通过 SDK 事件订阅接收 `draft / record-confirmed / reference-request / reference-feedback` 等事件
 4. 如果收到 `reference-request`，说明医生在 `MedHermes` 内点击了“引用”
 
@@ -124,8 +124,8 @@
 
 1. 新接入项目统一使用标准字段名，不要长期依赖别名。
 2. 接诊、完整问诊、灵活问诊、语音问诊、风险提醒这几类入口当前只强制要求 `idPi`；`naPi / sdSexText / ageText` 建议一并传入用于兜底展示，但桌面端在 HIS adapter 可用时会再按患者主键拉取标准化上下文。
-3. `consultationId` 当前仍回传 `idPi / patientId`，不是独立的就诊流水号。
-4. 推荐在 `start-consultation` / `assist` / `start-voice` / `patient-risks` 等入口同时下发 `idVis`（或别名 `visitId`）。桌面端会优先使用 `idVis` 作为语音问诊缓存与最小化会话的就诊锚点；缺失时回退到 `idPi / patientId`，但同一患者多次就诊会共享同一缓存条目，存在被旧就诊数据污染的风险。
+3. 接诊类 REST 接口的同步响应仍以 `idPi / patientId` 作为基础 `consultationId`；`draft`、`record-confirmed`、`reference-request`、`reference-feedback` 等结果事件里的 `consultationId` 由前端当前患者上下文解析，优先使用 `idVis / visitId`，缺失时回退到 `idPi / patientId`，不是由 Bridge 额外生成的新流水号。
+4. 推荐在 `start-consultation` / `assist` / `start-voice` / `patient-risks` 等入口同时下发 `idVis`（或别名 `visitId`）。桌面端会优先使用 `idVis` 作为结果事件、回执匹配、语音问诊缓存与最小化会话的就诊锚点；缺失时回退到 `idPi / patientId`，但同一患者多次就诊会共享同一结果/缓存锚点，存在被旧就诊数据污染的风险。
 5. 如果你们 HIS 还没有就诊流水号，可暂时不传 `idVis`，但建议尽快补充。
 6. Bridge 对未显式建模的患者扩展字段采用“保留并透传”策略。也就是说，像 `idCard`、`mobilePhone`、`idTet`、`idMpi`、`vitals`、`currentMedicationHistory` 等字段，即使本文档未逐一列为固定入参，也会原样传递到前端患者上下文的 `raw` 区域，供后续标准化构建使用。
 
@@ -142,8 +142,8 @@
 ### 5.2 灵活模式时序
 
 1. HIS 调用 `POST /api/consultation/assist`
-2. `MedHermes` 直接进入 `ConsultationPage` 对应阶段
-3. 医生在同一问诊页面中继续补充病历、看推荐、发起引用
+2. `MedHermes` 直接进入对应辅助界面：单项推荐仍落到 `ConsultationPage` 灵活模式，`treatment_plan` 落到独立诊疗方案推荐页
+3. 医生在当前界面中继续补充病历、看推荐、勾选方案并发起回写
 4. HIS 持续轮询 `GET /api/consultation/events/poll`
 5. 如果收到 `reference-request`，进入 PHIS 引用处理
 
@@ -332,7 +332,7 @@ http://127.0.0.1:8081/api/consultation/assist
 
 | 字段名 | 类型 | 必填 | 说明 |
 | :--- | :--- | :--- | :--- |
-| `action` | String | 是 | 支持 `record`(病历记录) / `diagnosis`(诊断推荐) / `differential`(鉴别诊断) / `medication`(用药方案) / `examination`(检查推荐) / `lab_test`(检验推荐) / `procedure`(处置推荐) / `reminder`(智能提醒) |
+| `action` | String | 是 | 支持 `record`(病历记录) / `diagnosis`(诊断推荐) / `differential`(鉴别诊断) / `medication`(用药方案) / `examination`(检查推荐) / `lab_test`(检验推荐) / `procedure`(处置推荐) / `treatment_plan`(诊疗方案聚合推荐) / `reminder`(智能提醒) |
 | `idPi` | String | 是 | 患者唯一标识 |
 | `idVis` | String | 否 | 当前就诊唯一标识，强烈建议传入 |
 | `naPi` | String | 否 | 患者姓名 |
@@ -364,12 +364,13 @@ http://127.0.0.1:8081/api/consultation/assist
 
 实现说明：
 
-1. 当前接口底层仍发出历史事件名 `start-consultation-session`，但前端唯一落点已经是 `ConsultationPage` 灵活模式。
+1. 当前接口底层仍发出历史事件名 `start-consultation-session`。除 `treatment_plan` 外，前端落点仍是 `ConsultationPage` 灵活模式；`treatment_plan` 会打开独立诊疗方案推荐页。
 2. 每次 `assist` 调用都会先清空本地结果通道。
 3. 如果已经提供 `chiefComplaint + historyOfPresentIllness`，桌面端通常会直接跳过症状采集。
 4. 如果触发 `differential / medication / examination / lab_test / procedure`，但当前诊断不足，前端会提示医生先补全诊断。
-5. 当前一个 `action` 只负责自动触发一个目标模块，不代表本次问诊到此结束。
-6. `examination`、`lab_test`、`procedure` 三路推荐独立加载，各自有独立的 loading 状态和引用闭环。
+5. `treatment_plan` 要求请求体或当前接诊上下文中已存在 `chiefComplaint`、`historyOfPresentIllness` 与 `diagnosis`；诊断会先按标准诊断库匹配，若无法匹配，页面会提示医生不能一键回写诊断。
+6. 当前一个 `action` 只负责自动触发一个目标模块，不代表本次问诊到此结束。
+7. `examination`、`lab_test`、`procedure` 三路推荐独立加载，各自有独立的 loading 状态和引用闭环；`treatment_plan` 会聚合用药、检查、检验、处置四路推荐，并通过 `record-confirmed` 的 `diagList/orderList` 统一回写。
 
 ### 6.3 `POST /api/consultation/start-voice`
 
@@ -660,7 +661,7 @@ ws://127.0.0.1:8081/api/consultation/events/ws
 
 #### 成功响应: 问诊一键确认回写（record-confirmed）
 
-`record-confirmed` 类型来自问诊最终确认提交。**症状问诊（`ConsultationPage` 完成问诊）和语音问诊（`VoiceConsultationNew` 提交病历）共用此契约**，由 `src/features/clinical-result/recordConfirmedPayload.ts` 作为唯一构造点产出，字段结构、默认值、PHIS 中性化策略两边完全一致。与 `reference-request` 不同，这是医生在结果页直接确认后一次性提交的完整数据，不再拆成逐项引用请求；但 PHIS 在完成最终调入确认后，仍必须调用 `POST /api/consultation/reference-feedback` 回执成功或失败，桌面端会在收到回执前保持结果页处于等待态。
+`record-confirmed` 类型来自问诊最终确认提交。**症状问诊（`ConsultationPage` 完成问诊）、语音问诊（`VoiceConsultationNew` 提交病历）和独立诊疗方案推荐页（`treatment_plan` 聚合推荐后“一键回写”）共用此契约**，由 `src/features/clinical-result/recordConfirmedPayload.ts` 作为唯一构造点产出，字段结构、默认值、PHIS 中性化策略完全一致。与 `reference-request` 不同，这是医生在结果页直接确认后一次性提交的完整数据，不再拆成逐项引用请求；但 PHIS 在完成最终调入确认后，仍必须调用 `POST /api/consultation/reference-feedback` 回执成功或失败，桌面端会在收到回执前保持结果页处于等待态。
 
 ```json
 {
@@ -936,7 +937,7 @@ HTTP 状态码：`200`
 | `event` | 当前事件对象；待处理时为 `null` |
 | `event.id` | 事件唯一标识，建议 HIS 用它做幂等去重 |
 | `event.type` | 当前事件类型，通常与 `event.payload.resultType` 一致 |
-| `event.consultationId` | 当前患者标识，现阶段默认等于 `idPi / patientId` |
+| `event.consultationId` | 当前结果/回执锚点，优先等于 `idVis / visitId`，缺失时回退到 `idPi / patientId` |
 | `event.requestId` | 请求 ID；草稿和引用闭环都通过该字段关联后续处理 |
 | `event.timestamp` | 本条事件生成时间戳 |
 | `event.terminal` | 当前事件是否已到终态；`reference-request` 和 `referenceStatus = pending` 的 `record-confirmed` 都会返回 `false` |
@@ -977,7 +978,7 @@ http://127.0.0.1:8081/api/consultation/reference-feedback
 
 | 字段名 | 类型 | 必填 | 说明 |
 | :--- | :--- | :--- | :--- |
-| `consultationId` | String | 是 | 当前患者 / 当前问诊标识 |
+| `consultationId` | String | 是 | 当前结果/回执锚点，必须与收到的 `reference-request` 或 `record-confirmed` 保持一致 |
 | `requestId` | String | 是 | 对应 `reference-request` 中的请求 ID |
 | `referenceType` | String | 否 | 建议新接入显式传入的引用对象类型，支持 `diagnosis` / `medication` / `examination` / `lab_test` / `procedure` / `batch`；若回执的是 `record-confirmed`，留空时默认按 `batch` 处理 |
 | `action` | String | 否 | 兼容旧版字段，语义与 `referenceType` 相同；`reference-request` 场景下 `referenceType` 与 `action` 至少要传一个；回执 `record-confirmed` 时两者可同时省略 |
@@ -1204,7 +1205,7 @@ HIS 侧至少要识别以下 5 类结果：
 补充说明：
 
 1. `draft` 仅携带主诉 / 现病史等早期字段；`record-confirmed` 才携带完整的 `diagList` / `orderList`。`final-report` 仅作历史兼容保留，新代码不再产生。
-2. `record-confirmed` 来自问诊结果确认提交，其 `diagList` 和 `orderList` 已转换成 PHIS 可直接消费的结构。PHIS 收到后可直接按 `fgMain` 识别主诊断，再按 `sdSrv`、`idSrv`、`idDeptExec`、`doseOnce`、`idFreq`、`idUsge`、`jsonField`、`idPart` 等字段填充调入确认弹窗，无需二次补录。
+2. `record-confirmed` 来自问诊结果确认提交或独立诊疗方案推荐提交，其 `diagList` 和 `orderList` 已转换成 PHIS 可直接消费的结构。PHIS 收到后可直接按 `fgMain` 识别主诊断，再按 `sdSrv`、`idSrv`、`idDeptExec`、`doseOnce`、`idFreq`、`idUsge`、`jsonField`、`idPart` 等字段填充调入确认弹窗，无需二次补录。
 3. `reference-request` 和 `reference-feedback` 都可能附带同一份病历上下文，便于 HIS 在当前界面直接处理。
 4. 对引用闭环结果，HIS 应继续结合 `referenceType` 判断具体业务对象，不建议只看 `resultType`。
 5. 一键回写场景下，`referenceType` 为 `batch`，`referenceItems` 包含诊断和所有选中治疗项目，每项通过 `type` 字段区分业务类型。单项引用场景下 `referenceType` 仍为具体类型（如 `diagnosis`）。
@@ -1229,7 +1230,7 @@ consultationId + resultType + requestId + timestamp
 ## 9. 联调注意事项
 
 1. 当前完整 HIS 联调参考页是 `web_project/public/mock-his.html`；报告解读专用测试页是 `web_project/public/report-interpretation-test.html`；SDK 位于 `sdk/med-hermes-sdk.js`。
-2. `consultationId` 当前不是独立就诊流水，因此 HIS 侧必须防止“同患者旧结果误命中当前就诊”。
+2. `consultationId` 当前来自 HIS 下发的就诊锚点或患者标识；HIS 侧应尽量传入 `idVis / visitId`，并防止缺失就诊锚点时“同患者旧结果误命中当前就诊”。
 3. `/assist` 每次调用都会清空上一次结果通道；不要在旧轮询结果未消费完成时复用旧状态。
 4. `reference-feedback` 只接受与“当前最新待处理引用请求”匹配的回执。
 5. 当前页面恢复依赖同一运行期内的前端内存状态；如果 `MedHermes` 进程已经退出或重启，不保证还能恢复到回执前页面。
@@ -1297,5 +1298,6 @@ HIS 接入完成后，至少验证以下场景：
 6. 一键回写场景：PHIS 收到一条 `batch` 类型 `reference-request`，遍历 `referenceItems` 按 `type` 分类处理，回执后页面显示"一键回写完成"
 7. 切换患者后不会把上一位患者的结果误回填到当前医生站
 8. 问诊一键确认回写：PHIS 收到 `resultType: "record-confirmed"` 结果后，读取 `orderList` 即可。药品、检查、检验、处置已经统一转换成 PHIS 调入确认格式，可直接用于回填弹窗
+9. 独立诊疗方案推荐：`POST /assist` 使用 `action: "treatment_plan"` 可打开聚合方案页；医生勾选后同样产生 `record-confirmed + referenceType: "batch"`，PHIS 按第 8 条处理并回执
 
 如果你们 HIS 需要，我建议下一步可以再按这份文档继续拆一版“给后端开发直接对接的字段清单”和“一版给联调测试直接执行的验收用例”。

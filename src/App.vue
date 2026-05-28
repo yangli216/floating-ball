@@ -23,6 +23,7 @@ import VoiceConsultationNew from "./components/VoiceConsultationNew.vue";
 import { FeedbackSubmissionPanel } from "@features/feedback";
 import { HisIntegrationLogPanel } from "@features/settings";
 import { MedicalCatalogCachePanel } from "@features/medical-catalog";
+import { TreatmentPlanPage } from "@features/treatment-plan";
 import Icon from "@shared/ui/Icon.vue";
 import { formatUserFacingError } from "@shared/lib/errorMessages";
 import { trackClick } from "./services/operationTracker";
@@ -125,6 +126,8 @@ const assistantTitle = computed(() => {
       return currentPatient.value ? `智能问诊 - ${patientDisplayName.value}` : '智能问诊';
     case 'voice-consultation':
       return currentPatient.value ? `语音问诊 - ${patientDisplayName.value}` : '语音问诊';
+    case 'treatment-plan':
+      return currentPatient.value ? `诊疗方案 - ${patientDisplayName.value}` : '诊疗方案';
     case 'analytics':
       return '数据分析';
     case 'symptom-manage':
@@ -310,6 +313,7 @@ const {
   openMedicalCatalogCache,
   openConsultation,
   openVoiceConsultation,
+  openTreatmentPlan,
   startVoiceInteraction: startVoiceInteractionBase,
 } = navigation;
 
@@ -500,7 +504,7 @@ const eventListeners = useEventListeners({
   handleWindowMove,
   persistCurrentWindowSize,
   workMode: { enterWorkMode, exitWork },
-  navigation: { openConsultation, openVoiceConsultation, startVoiceInteraction },
+  navigation: { openConsultation, openVoiceConsultation, openTreatmentPlan, startVoiceInteraction },
   resetVoiceSessionState,
   clearVoiceConsultationCache,
   clearMinimizedConsultationSessions: minimizedSessions.clearAll,
@@ -778,7 +782,7 @@ const openInsideCloudHome = async () => {
           <!-- 工具栏 (risk-alert, voice-interaction, reception-capsule 视图不显示) -->
           <div v-if="currentView !== 'risk-alert' && currentView !== 'voice-interaction' && currentView !== 'reception-capsule' && currentView !== 'chat'" class="assistant-toolbar" data-tauri-drag-region>
             <div class="toolbar-left" data-tauri-drag-region>
-	              <button v-if="currentView === 'settings' || currentView === 'analytics' || currentView === 'symptom-manage' || currentView === 'his-log' || currentView === 'medical-cache' || currentView === 'knowledge-base'" class="icon-btn back-btn" @click="currentView === 'analytics' ? openChat() : handleUserCollapse()" title="返回">
+	              <button v-if="currentView === 'settings' || currentView === 'analytics' || currentView === 'symptom-manage' || currentView === 'his-log' || currentView === 'medical-cache' || currentView === 'knowledge-base' || currentView === 'treatment-plan'" class="icon-btn back-btn" @click="currentView === 'analytics' ? openChat() : handleUserCollapse()" title="返回">
 	                 <Icon icon="lucide:arrow-left" class="toolbar-icon" size="20" />
 	              </button>
 	              <span class="assistant-title" data-tauri-drag-region>{{ assistantTitle }}</span>
@@ -865,6 +869,11 @@ const openInsideCloudHome = async () => {
             :intentSource="intentSource"
             @close="handleUserCollapse"
             @cancel="cancelVoiceResult"
+          />
+          <TreatmentPlanPage
+            v-if="currentView === 'treatment-plan'"
+            :patient="currentPatient"
+            @close="handleUserCollapse"
           />
           <KnowledgeBasePanel v-if="currentView === 'knowledge-base'" @close="handleUserCollapse" />
           <SettingsPanel

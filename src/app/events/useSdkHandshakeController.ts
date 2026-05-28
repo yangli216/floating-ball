@@ -192,11 +192,25 @@ function resolveHandshakeUserRoleDeptIds(ctx: SdkHandshakePayload): string[] {
   ));
 }
 
+function resolveHandshakeBaseUrl(ctx: SdkHandshakePayload): string | null {
+  const origin = String(ctx.origin || '').trim();
+  if (!origin) {
+    return null;
+  }
+
+  if (!/^https?:\/\//i.test(origin)) {
+    console.warn('[SdkHandshakeController] Ignored unsupported HIS origin from handshake:', origin);
+    return null;
+  }
+
+  return origin;
+}
+
 export function useSdkHandshakeController() {
   async function handleSdkHandshake(ctx: SdkHandshakePayload): Promise<void> {
     console.log('[SdkHandshakeController] SDK Handshake received:', ctx);
 
-    const baseUrl = ctx.origin;
+    const baseUrl = resolveHandshakeBaseUrl(ctx);
     const token = ctx.extra?.emrAccessToken;
     const orgCode = resolveHandshakeOrgCode(ctx);
     const tenantId = resolveHandshakeTenantId(ctx);

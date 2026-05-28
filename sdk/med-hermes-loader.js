@@ -237,6 +237,32 @@
 
   // ─── 公共 API ───
 
+  function ensureInstance() {
+    if (state.instance) {
+      return Promise.resolve(state.instance);
+    }
+
+    return new Promise(function (resolve, reject) {
+      MedHermesLoader.ready(function (instance) {
+        if (instance) {
+          resolve(instance);
+        } else {
+          reject(new Error('MedHermes SDK 尚未初始化'));
+        }
+      });
+      MedHermesLoader.onError(reject);
+    });
+  }
+
+  function callInstance(method, args) {
+    return ensureInstance().then(function (instance) {
+      if (!instance || typeof instance[method] !== 'function') {
+        throw new Error('MedHermes method not found: ' + method);
+      }
+      return instance[method].apply(instance, args || []);
+    });
+  }
+
   var MedHermesLoader = {
 
     /**
@@ -289,6 +315,41 @@
      */
     ping: function () {
       return ping(bridgeUrl);
+    },
+
+    /**
+     * 代理常用 SDK 方法，兼容 HIS 侧直接调用 MedHermesLoader.startConsultation(...)
+     */
+    startConsultation: function (patient) {
+      return callInstance('startConsultation', [patient]);
+    },
+
+    assist: function (patient, action) {
+      return callInstance('assist', [patient, action]);
+    },
+
+    startVoice: function (patient) {
+      return callInstance('startVoice', [patient]);
+    },
+
+    interpretReport: function () {
+      return callInstance('interpretReport', Array.prototype.slice.call(arguments));
+    },
+
+    receivePatient: function (patientId, optionalInfo) {
+      return callInstance('receivePatient', [patientId, optionalInfo]);
+    },
+
+    sendRisks: function (patient, risks) {
+      return callInstance('sendRisks', [patient, risks]);
+    },
+
+    sendFeedback: function (requestId, status, message, items) {
+      return callInstance('sendFeedback', [requestId, status, message, items]);
+    },
+
+    stop: function () {
+      return callInstance('stop', []);
     }
   };
 

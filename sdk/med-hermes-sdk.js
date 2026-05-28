@@ -117,6 +117,14 @@
     return url;
   }
 
+  function getPatientId(patient) {
+    return patient && (patient.idPi || patient.patientId) || '';
+  }
+
+  function getPatientAnchorId(patient) {
+    return patient && (patient.idVis || patient.visitId || patient.idPi || patient.patientId) || '';
+  }
+
   // ─── 事件发射器 ───
 
   function EventEmitter() {
@@ -350,6 +358,8 @@
     this._destroyed = false;
     this._browserCtx = null;
     this._currentPatientId = null;
+    this._currentConsultationId = null;
+    this._lastEventConsultationId = null;
   }
 
   // 代理事件方法
@@ -520,9 +530,11 @@
    */
   MedHermes.prototype.startConsultation = function (patient) {
     var self = this;
-    this._currentPatientId = patient.idPi || patient.patientId || '';
+    this._currentPatientId = getPatientId(patient);
+    this._currentConsultationId = getPatientAnchorId(patient);
     this._lastResultKey = '';
     this._lastEventId = '';
+    this._lastEventConsultationId = null;
 
     return this._callWithFallback(
       function () { return self._http.post('/consultation/start', patient); },
@@ -537,15 +549,17 @@
   /**
    * 灵活模式：直接进入指定 AI 模块
    * @param {Object} patient 患者信息
-   * @param {string} action 动作类型: record/diagnosis/differential/medication/examination/lab_test/procedure/reminder
+   * @param {string} action 动作类型: record/diagnosis/differential/medication/examination/lab_test/procedure/treatment_plan/reminder
    * @returns {Promise<Object>}
    */
   MedHermes.prototype.assist = function (patient, action) {
     var self = this;
     var payload = assign({}, patient, { action: action });
-    this._currentPatientId = patient.idPi || patient.patientId || '';
+    this._currentPatientId = getPatientId(patient);
+    this._currentConsultationId = getPatientAnchorId(patient);
     this._lastResultKey = '';
     this._lastEventId = '';
+    this._lastEventConsultationId = null;
 
     return this._callWithFallback(
       function () { return self._http.post('/consultation/assist', payload); },
@@ -565,10 +579,12 @@
   MedHermes.prototype.startVoice = function (patient) {
     var self = this;
     if (patient) {
-      this._currentPatientId = patient.idPi || patient.patientId || '';
+      this._currentPatientId = getPatientId(patient);
+      this._currentConsultationId = getPatientAnchorId(patient);
     }
     this._lastResultKey = '';
     this._lastEventId = '';
+    this._lastEventConsultationId = null;
 
     return this._callWithFallback(
       function () { return self._http.post('/consultation/start-voice', patient || {}); },
@@ -613,9 +629,20 @@
    * @returns {Promise<Object>}
    */
   MedHermes.prototype.stop = function () {
+    var self = this;
     this.stopPolling();
     this._currentPatientId = null;
-    return this._http.post('/consultation/stop', {});
+    this._currentConsultationId = null;
+    this._lastEventConsultationId = null;
+    return this._callWithFallback(
+      function () { return self._http.post('/consultation/stop', {}); },
+      'stop-consultation',
+      {}
+    )
+      .then(function (result) {
+        self._resumePollingIfNeeded();
+        return result;
+      });
   };
 
   /**
@@ -627,9 +654,11 @@
   MedHermes.prototype.receivePatient = function (patientId, optionalInfo) {
     var self = this;
     var payload = assign({ idPi: patientId }, optionalInfo || {});
-    this._currentPatientId = patientId || '';
+    this._currentPatientId = getPatientId(payload);
+    this._currentConsultationId = getPatientAnchorId(payload);
     this._lastResultKey = '';
     this._lastEventId = '';
+    this._lastEventConsultationId = null;
 
     return this._callWithFallback(
       function () { return self._http.post('/consultation/receive', payload); },
@@ -648,9 +677,14 @@
    * @returns {Promise<Object>}
    */
   MedHermes.prototype.sendRisks = function (patient, risks) {
+    var self = this;
     var payload = assign({}, patient);
     if (risks) payload.risks = risks;
-    return this._http.post('/patient/risks', payload);
+    return this._callWithFallback(
+      function () { return self._http.post('/patient/risks', payload); },
+      'patient-risks',
+      payload
+    );
   };
 
   /**
@@ -664,7 +698,7 @@
   MedHermes.prototype.sendFeedback = function (requestId, status, message, items) {
     var self = this;
     var payload = {
-      consultationId: this._currentPatientId || '',
+      consultationId: this._lastEventConsultationId || this._currentConsultationId || this._currentPatientId || '',
       requestId: requestId,
       referenceType: 'batch',
       action: 'batch',
@@ -673,7 +707,11 @@
       items: items || []
     };
 
-    return this._http.post('/consultation/reference-feedback', payload)
+    return this._callWithFallback(
+      function () { return self._http.post('/consultation/reference-feedback', payload); },
+      'reference-feedback',
+      payload
+    )
       .then(function (result) {
         self._resumePollingIfNeeded();
         return result;
@@ -955,6 +993,17 @@
             }, self._opts.launchRetryMs);
           });
         }
+        if (err.status === 401) {
+          return self._handshake().then(function(result) {
+            self._connected = true;
+            self._isChannelPersistent = true;
+            self._ensureInteractionChannel();
+            return httpCall();
+          }).catch(function(refreshErr) {
+            self._emitter.emit('error', refreshErr);
+            throw err;
+          });
+        }
         // 其他 HTTP 错误直接抛出
         self._emitter.emit('error', err);
         throw err;
@@ -968,7 +1017,23 @@
 
     // 患者校验
     var consultationId = String(envelope.event.consultationId || '');
-    if (this._currentPatientId && consultationId && consultationId !== String(this._currentPatientId)) {
+    var currentPatientId = String(this._currentPatientId || '');
+    var currentConsultationId = String(this._currentConsultationId || '');
+    if (
+      consultationId
+      && currentPatientId
+      && currentConsultationId
+      && consultationId !== currentPatientId
+      && consultationId !== currentConsultationId
+    ) {
+      return; // 忽略非当前患者/就诊的结果
+    }
+    if (
+      consultationId
+      && currentPatientId
+      && !currentConsultationId
+      && consultationId !== currentPatientId
+    ) {
       return; // 忽略非当前患者的结果
     }
 
@@ -983,6 +1048,7 @@
 
     // 分发通用 envelope 事件 + 按业务类型分发 payload
     this._lastEventId = event.id || '';
+    this._lastEventConsultationId = consultationId || this._lastEventConsultationId;
     this._emitter.emit('event', envelope);
     this._emitter.emit(resultType, record);
 
@@ -990,6 +1056,130 @@
 
   // 暴露版本号
   MedHermes.VERSION = SDK_VERSION;
+
+  function ensureFallbackLoader() {
+    var host = typeof globalThis !== 'undefined'
+      ? globalThis
+      : (typeof window !== 'undefined' ? window : null);
+    if (!host || host.MedHermesLoader) return;
+
+    var loaderState = {
+      instance: null,
+      initPromise: null,
+      readyCallbacks: [],
+      errorCallbacks: []
+    };
+
+    function getInstance() {
+      if (!loaderState.instance) {
+        loaderState.instance = new MedHermes();
+      }
+      return loaderState.instance;
+    }
+
+    function fireReady(instance) {
+      var callbacks = loaderState.readyCallbacks.slice();
+      loaderState.readyCallbacks.length = 0;
+      for (var i = 0; i < callbacks.length; i++) {
+        try { callbacks[i](instance); } catch (e) { console.error(e); }
+      }
+    }
+
+    function fireError(err) {
+      for (var i = 0; i < loaderState.errorCallbacks.length; i++) {
+        try { loaderState.errorCallbacks[i](err); } catch (e) { console.error(e); }
+      }
+    }
+
+    function ensureReady(extra) {
+      var instance = getInstance();
+      if (loaderState.initPromise) return loaderState.initPromise;
+
+      loaderState.initPromise = instance.init(extra)
+        .catch(function (err) {
+          fireError(err);
+          return instance;
+        })
+        .then(function () {
+          fireReady(instance);
+          return instance;
+        });
+      return loaderState.initPromise;
+    }
+
+    function call(method, args) {
+      return ensureReady().then(function (instance) {
+        if (!instance || typeof instance[method] !== 'function') {
+          throw new Error('MedHermes method not found: ' + method);
+        }
+        return instance[method].apply(instance, args || []);
+      });
+    }
+
+    host.MedHermesLoader = {
+      ready: function (fn) {
+        if (loaderState.instance && loaderState.initPromise) {
+          loaderState.initPromise.then(function (instance) {
+            try { fn(instance); } catch (e) { console.error(e); }
+          });
+          return;
+        }
+        loaderState.readyCallbacks.push(fn);
+        ensureReady();
+      },
+      onError: function (fn) {
+        loaderState.errorCallbacks.push(fn);
+      },
+      getStatus: function () {
+        return {
+          online: !!(loaderState.instance && loaderState.instance._connected),
+          sdkLoaded: true,
+          instance: loaderState.instance
+        };
+      },
+      ping: function () {
+        return getInstance().ping();
+      },
+      detect: function () {
+        return getInstance().ping()
+          .then(function () { return true; })
+          .catch(function () { return false; });
+      },
+      launch: function () {
+        return getInstance()._launcher.launch('launch');
+      },
+      init: function (extra) {
+        loaderState.initPromise = null;
+        return ensureReady(extra);
+      },
+      startConsultation: function (patient) {
+        return call('startConsultation', [patient]);
+      },
+      assist: function (patient, action) {
+        return call('assist', [patient, action]);
+      },
+      startVoice: function (patient) {
+        return call('startVoice', [patient]);
+      },
+      interpretReport: function () {
+        return call('interpretReport', Array.prototype.slice.call(arguments));
+      },
+      receivePatient: function (patientId, optionalInfo) {
+        return call('receivePatient', [patientId, optionalInfo]);
+      },
+      sendRisks: function (patient, risks) {
+        return call('sendRisks', [patient, risks]);
+      },
+      sendFeedback: function (requestId, status, message, items) {
+        return call('sendFeedback', [requestId, status, message, items]);
+      },
+      stop: function () {
+        return call('stop', []);
+      }
+    };
+  }
+
+  ensureFallbackLoader();
 
   return MedHermes;
 });
