@@ -549,7 +549,7 @@
   /**
    * 灵活模式：直接进入指定 AI 模块
    * @param {Object} patient 患者信息
-   * @param {string} action 动作类型: record/diagnosis/differential/medication/examination/lab_test/procedure/treatment_plan/reminder
+   * @param {string} action 动作类型: record/suggestedDx/diffDx/diagnosis/differential/medication/examination/lab_test/procedure/treatment_plan/reminder
    * @returns {Promise<Object>}
    */
   MedHermes.prototype.assist = function (patient, action) {

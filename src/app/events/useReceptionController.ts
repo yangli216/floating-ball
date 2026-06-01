@@ -438,13 +438,15 @@ export function useReceptionController(options: ReceptionControllerOptions) {
   }
 
   function mergeCurrentPatient(
-    payload: StartConsultationPayload | SessionAssistPayload | null | undefined
+    payload: StartConsultationPayload | SessionAssistPayload | null | undefined,
+    overrides?: Partial<AppPatient>,
   ): void {
     currentPatient.value = buildPatientContext({
       existing: currentPatient.value,
       payload: payload as Record<string, unknown> | null | undefined,
       source: currentPatient.value?.source || 'event-payload',
       receptionEnsured: currentPatient.value?.receptionEnsured ?? currentPatient.value?._receptionEnsured,
+      overrides,
     });
   }
 

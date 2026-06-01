@@ -217,7 +217,7 @@ export function buildPatientContext(input: BuildPatientContextInput): AppPatient
     || text(existing?.diagnosis || existing?.clinical?.diagnosis);
   const receptionEnsured = input.receptionEnsured ?? existing?.receptionEnsured ?? existing?._receptionEnsured ?? false;
 
-  const context: PatientContext = {
+  const baseContext: PatientContext = {
     identity: {
       patientId,
       visitId: visitId || undefined,
@@ -282,7 +282,16 @@ export function buildPatientContext(input: BuildPatientContextInput): AppPatient
     age: ageYears ?? (ageText || undefined),
     patientHistory: hisHistory,
     _receptionEnsured: receptionEnsured,
-    ...(input.overrides || {}),
+  };
+
+  const overrides = input.overrides || {};
+  const context: PatientContext = {
+    ...baseContext,
+    ...overrides,
+    clinical: {
+      ...baseContext.clinical,
+      ...(overrides.clinical || {}),
+    },
   };
 
   return context;
@@ -305,5 +314,10 @@ export function toConsultationPatient(context: AppPatient | null | undefined): P
     ageText: ageText || undefined,
     sdSexText: getPatientContextGenderText(context) || undefined,
     allergyHistory: getPatientContextAllergyHistory(context) || undefined,
+    chiefComplaint: context?.chiefComplaint || context?.clinical?.chiefComplaint,
+    historyOfPresentIllness: context?.historyOfPresentIllness || context?.clinical?.historyOfPresentIllness,
+    pastMedicalHistory: context?.pastMedicalHistory || context?.clinical?.pastMedicalHistory,
+    currentMedicationHistory: context?.currentMedicationHistory || context?.clinical?.currentMedicationHistory,
+    diagnosis: context?.diagnosis || context?.clinical?.diagnosis,
   };
 }

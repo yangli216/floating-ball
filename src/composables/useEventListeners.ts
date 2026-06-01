@@ -19,7 +19,10 @@ import { openReportInterpretationWindow } from '../services/reportInterpretation
 import { trackApiCall, trackError } from '../services/operationTracker';
 import type { RiskItem } from '@features/reception-risk';
 import type { AppPatient } from '../types/appState';
-import type { ConsultationAssistAction } from '../types/consultationAssist';
+import {
+  normalizeConsultationAssistAction,
+  type ConsultationAssistAction,
+} from '../types/consultationAssist';
 import type { ReportInterpretationRequestPayload } from '../types/reportInterpretation';
 import { getPatientContextId } from '../utils/patientContext';
 import { useTauriEventListener } from '@shared/composables/useTauriEventListener';
@@ -80,6 +83,7 @@ export interface EventListenersOptions {
     openConsultation: () => Promise<void>;
     openVoiceConsultation: () => Promise<void>;
     openTreatmentPlan: () => Promise<void>;
+    openDifferentialDiagnosis: () => Promise<void>;
     startVoiceInteraction: (options?: { skipCacheRestore?: boolean }) => Promise<void>;
   };
   /** 重置语音会话状态 */
@@ -239,47 +243,43 @@ export function useEventListeners(options: EventListenersOptions) {
     await executeReceptionFlow(payload, false);
   }
 
-  function normalizeSessionTriggerKind(action?: string): ConsultationAssistAction | null {
-    switch (action) {
-      case 'record':
-      case 'diagnosis':
-      case 'differential':
-      case 'medication':
-      case 'examination':
-      case 'lab_test':
-      case 'procedure':
-      case 'treatment_plan':
-      case 'reminder':
-        return action;
-      default:
-        return null;
-    }
-  }
-
   async function handleConsultationAssistEvent(event: TauriEvent<SessionAssistPayload>): Promise<void> {
     console.log('Received consultation session request:', event.payload);
     const payload = event.payload || {};
+    const isSuggestedDx = payload.action === 'suggestedDx';
+    const normalizedPayload = isSuggestedDx ? { ...payload, diagnosis: '' } : payload;
+    const patientOverrides = isSuggestedDx
+      ? {
+          diagnosis: undefined,
+          clinical: { diagnosis: undefined },
+        }
+      : undefined;
     const incomingPatient = resolveIncomingPatientTracking(payload as Record<string, unknown> | null | undefined);
     trackApiCall('his_start_consultation_session', true, undefined, {
       patientId: incomingPatient.patientId,
       action: payload.action,
     });
 
-    const success = await ensureReceptionContext(payload);
+    const success = await ensureReceptionContext(normalizedPayload);
     if (!success) {
       return;
     }
 
-    mergeCurrentPatient(payload);
+    mergeCurrentPatient(normalizedPayload, patientOverrides);
 
-    const triggerKind = normalizeSessionTriggerKind(payload.action);
-    if (triggerKind && triggerKind !== 'treatment_plan') {
-      queueConsultationAssistTrigger(triggerKind);
-    }
-
+    const triggerKind = normalizeConsultationAssistAction(normalizedPayload.action);
     if (triggerKind === 'treatment_plan') {
       await navigation.openTreatmentPlan();
       return;
+    }
+
+    if (triggerKind === 'differential') {
+      await navigation.openDifferentialDiagnosis();
+      return;
+    }
+
+    if (triggerKind) {
+      queueConsultationAssistTrigger(triggerKind);
     }
 
     await navigation.openConsultation();

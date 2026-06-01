@@ -24,6 +24,7 @@ import { FeedbackSubmissionPanel } from "@features/feedback";
 import { HisIntegrationLogPanel } from "@features/settings";
 import { MedicalCatalogCachePanel } from "@features/medical-catalog";
 import { TreatmentPlanPage } from "@features/treatment-plan";
+import { DifferentialDiagnosisModalPage } from "@features/differential-diagnosis";
 import Icon from "@shared/ui/Icon.vue";
 import { formatUserFacingError } from "@shared/lib/errorMessages";
 import { trackClick } from "./services/operationTracker";
@@ -128,6 +129,8 @@ const assistantTitle = computed(() => {
       return currentPatient.value ? `语音问诊 - ${patientDisplayName.value}` : '语音问诊';
     case 'treatment-plan':
       return currentPatient.value ? `诊疗方案 - ${patientDisplayName.value}` : '诊疗方案';
+    case 'differential-diagnosis':
+      return currentPatient.value ? `鉴别诊断 - ${patientDisplayName.value}` : '鉴别诊断';
     case 'analytics':
       return '数据分析';
     case 'symptom-manage':
@@ -314,6 +317,7 @@ const {
   openConsultation,
   openVoiceConsultation,
   openTreatmentPlan,
+  openDifferentialDiagnosis,
   startVoiceInteraction: startVoiceInteractionBase,
 } = navigation;
 
@@ -504,7 +508,7 @@ const eventListeners = useEventListeners({
   handleWindowMove,
   persistCurrentWindowSize,
   workMode: { enterWorkMode, exitWork },
-  navigation: { openConsultation, openVoiceConsultation, openTreatmentPlan, startVoiceInteraction },
+  navigation: { openConsultation, openVoiceConsultation, openTreatmentPlan, openDifferentialDiagnosis, startVoiceInteraction },
   resetVoiceSessionState,
   clearVoiceConsultationCache,
   clearMinimizedConsultationSessions: minimizedSessions.clearAll,
@@ -774,13 +778,13 @@ const openInsideCloudHome = async () => {
       <div v-show="isWorking" class="assistant-layer" :style="containerStyle">
         <div 
           class="assistant-container" 
-          :class="{ 'no-toolbar': isForceUpdateRequired || currentView === 'risk-alert' || currentView === 'voice-interaction' || currentView === 'reception-capsule', 'is-content-hidden': !contentVisible }"
-          :style="currentView === 'reception-capsule' ? { borderRadius: '16px', background: 'transparent', backdropFilter: 'none', WebkitBackdropFilter: 'none', border: 'none', boxShadow: 'none' } : currentView === 'chat' ? { borderRadius: '8px', paddingTop: '0' } : { borderRadius: '20px' }"
+          :class="{ 'no-toolbar': isForceUpdateRequired || currentView === 'risk-alert' || currentView === 'voice-interaction' || currentView === 'reception-capsule' || currentView === 'differential-diagnosis', 'is-content-hidden': !contentVisible }"
+          :style="currentView === 'reception-capsule' || currentView === 'differential-diagnosis' ? { borderRadius: '16px', background: 'transparent', backdropFilter: 'none', WebkitBackdropFilter: 'none', border: 'none', boxShadow: 'none' } : currentView === 'chat' ? { borderRadius: '8px', paddingTop: '0' } : { borderRadius: '20px' }"
         >
           <ForceUpdateGate v-if="isForceUpdateRequired" :state="forceUpdateState" />
           <template v-else>
           <!-- 工具栏 (risk-alert, voice-interaction, reception-capsule 视图不显示) -->
-          <div v-if="currentView !== 'risk-alert' && currentView !== 'voice-interaction' && currentView !== 'reception-capsule' && currentView !== 'chat'" class="assistant-toolbar" data-tauri-drag-region>
+          <div v-if="currentView !== 'risk-alert' && currentView !== 'voice-interaction' && currentView !== 'reception-capsule' && currentView !== 'differential-diagnosis' && currentView !== 'chat'" class="assistant-toolbar" data-tauri-drag-region>
             <div class="toolbar-left" data-tauri-drag-region>
 	              <button v-if="currentView === 'settings' || currentView === 'analytics' || currentView === 'symptom-manage' || currentView === 'his-log' || currentView === 'medical-cache' || currentView === 'knowledge-base' || currentView === 'treatment-plan'" class="icon-btn back-btn" @click="currentView === 'analytics' ? openChat() : handleUserCollapse()" title="返回">
 	                 <Icon icon="lucide:arrow-left" class="toolbar-icon" size="20" />
@@ -872,6 +876,11 @@ const openInsideCloudHome = async () => {
           />
           <TreatmentPlanPage
             v-if="currentView === 'treatment-plan'"
+            :patient="currentPatient"
+            @close="handleUserCollapse"
+          />
+          <DifferentialDiagnosisModalPage
+            v-if="currentView === 'differential-diagnosis'"
             :patient="currentPatient"
             @close="handleUserCollapse"
           />

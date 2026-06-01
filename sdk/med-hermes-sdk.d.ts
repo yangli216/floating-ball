@@ -49,6 +49,8 @@ export interface RiskItem {
 /** 灵活模式动作类型 */
 export type AssistAction =
   | 'record'
+  | 'suggestedDx'
+  | 'diffDx'
   | 'diagnosis'
   | 'differential'
   | 'medication'
@@ -271,6 +273,7 @@ export interface ApiResponse {
   status: string;
   consultationId?: string;
   action?: string;
+  traceId?: string;
   taskId?: ReportInterpretationTaskId;
   message?: string;
   requestId?: string;

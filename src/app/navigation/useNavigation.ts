@@ -213,6 +213,18 @@ export function useNavigation(options: NavigationOptions) {
     }
   }
 
+  async function openDifferentialDiagnosis(): Promise<void> {
+    trackViewChange(currentView.value, 'differential-diagnosis', {
+      patientId: currentPatient.value?.patientId,
+    });
+    currentView.value = 'differential-diagnosis';
+    if (!isWorking.value) {
+      await enterWorkMode();
+    } else {
+      await resizeWindowForView('differential-diagnosis');
+    }
+  }
+
   /**
    * 开始语音交互
    */
@@ -245,6 +257,7 @@ export function useNavigation(options: NavigationOptions) {
     openConsultation,
     openVoiceConsultation,
     openTreatmentPlan,
+    openDifferentialDiagnosis,
     openKnowledgeBase,
     startVoiceInteraction,
   };

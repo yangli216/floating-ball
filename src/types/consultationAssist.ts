@@ -9,6 +9,34 @@ export type ConsultationAssistAction =
   | 'treatment_plan'
   | 'reminder';
 
+export type ConsultationAssistExternalAction =
+  | ConsultationAssistAction
+  | 'suggestedDx'
+  | 'diffDx';
+
+export function normalizeConsultationAssistAction(
+  action?: string,
+): ConsultationAssistAction | null {
+  switch (action) {
+    case 'record':
+    case 'diagnosis':
+    case 'medication':
+    case 'examination':
+    case 'lab_test':
+    case 'procedure':
+    case 'treatment_plan':
+    case 'reminder':
+      return action;
+    case 'suggestedDx':
+      return 'diagnosis';
+    case 'diffDx':
+    case 'differential':
+      return 'differential';
+    default:
+      return null;
+  }
+}
+
 export interface DiagnosisPathOption {
   id: string;
   title: string;

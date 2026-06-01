@@ -82,7 +82,7 @@ MedHermesLoader.detect().then(function(online) { ... });
 
 // 兼容旧 HIS 工具封装：可直接通过 Loader 代理调用 SDK 方法
 MedHermesLoader.startConsultation(patient);
-MedHermesLoader.assist(patient, 'diagnosis');
+MedHermesLoader.assist(patient, 'suggestedDx');
 MedHermesLoader.startVoice(patient);
 MedHermesLoader.interpretReport({ taskId: 'inspectReport', query: '...' });
 ```
@@ -210,7 +210,7 @@ function onPatientSelected(patient) {
 ```js
 // 医生已录入部分病历，需要 AI 推荐诊断
 function requestDiagnosis(patient) {
-  mh.assist(patient, 'diagnosis');
+  mh.assist(patient, 'suggestedDx');
 }
 
 // 需要 AI 推荐用药
@@ -326,8 +326,10 @@ await mh.startConsultation({
 | action 值 | 说明 |
 |-----------|------|
 | `record` | 病历记录（生成主诉+现病史） |
-| `diagnosis` | 诊断推荐 |
-| `differential` | 鉴别诊断 |
+| `suggestedDx` | 诊断推荐（新接入推荐使用；不要传 `diagnosis` 字段） |
+| `diffDx` | 鉴别诊断（新接入推荐使用；直接打开“鉴别排查确认”小窗，需传当前 `diagnosis`） |
+| `diagnosis` | 诊断推荐（历史兼容） |
+| `differential` | 鉴别诊断（历史兼容） |
 | `medication` | 用药方案 |
 | `examination` | 检查推荐 |
 | `lab_test` | 检验推荐 |

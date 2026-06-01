@@ -1,6 +1,6 @@
 # MedHermes HIS 接入指南 / 接口说明
 
-> 最后更新: 2026-05-12
+> 最后更新: 2026-06-01
 >
 > 本文档面向准备接入 `MedHermes` 的 HIS / 医生站 / PHIS 项目。
 > 当前真实运行契约以 `src-tauri/src/http_server.rs` 与当前前端实现为准；`docs/regionalization/*.md` 仍属于规划文档，不能替代本文档。
@@ -12,7 +12,7 @@
 1. HIS 应该按什么顺序接入 `MedHermes`
 2. 当前本地 HTTP Bridge 暴露了哪些接口
 3. 各接口的请求字段、响应字段、异常场景是什么
-4. 推荐诊断 / 用药 / 检查的“引用请求 -> PHIS 保存 -> 回执 MedHermes”闭环应该怎么做
+4. 推荐诊断 / 用药 / 检查 / 独立诊疗方案的“引用请求 -> PHIS 保存 -> 回执 MedHermes”闭环应该怎么做
 
 ## 2. 当前接入形态
 
@@ -52,7 +52,7 @@
 ### 第二步: 打通灵活模式
 
 1. HIS 在当前患者上下文下调用 `POST /api/consultation/assist`
-2. 指定 `action` 为 `record / diagnosis / differential / medication / examination / lab_test / procedure / treatment_plan / reminder`
+2. 指定 `action` 为 `record / suggestedDx / diffDx / medication / examination / lab_test / procedure / treatment_plan / reminder`；历史 `diagnosis / differential` 继续兼容
 3. 继续通过 SDK 事件订阅接收 `draft / record-confirmed / reference-request / reference-feedback` 等事件
 4. 如果收到 `reference-request`，说明医生在 `MedHermes` 内点击了“引用”
 
@@ -81,7 +81,7 @@
 4. 保存成功或失败后，**必须**调用 `POST /api/consultation/reference-feedback`
 5. `MedHermes` 收到回执后会更新当前页面状态，并通过 WebSocket 事件流推送 `reference-feedback`；长轮询接口同步保留兜底读取能力
 
-这是当前联调最关键的一步，也是推荐诊断 / 用药 / 检查真正写入 HIS 的闭环。
+这是当前联调最关键的一步，也是推荐诊断 / 用药 / 检查 / 独立诊疗方案真正写入 HIS 的闭环。
 
 **重要：回执是强制要求的。** 当医生点击"一键回写"时，`MedHermes` 会发出**一条** `reference-request`（`referenceType` 为 `batch`），其 `referenceItems` 包含诊断、药品、检查、检验、处置等所有选中项目。PHIS 收到后应一次性处理全部项目，处理完成后**必须**调用回执接口。
 
@@ -332,7 +332,7 @@ http://127.0.0.1:8081/api/consultation/assist
 
 | 字段名 | 类型 | 必填 | 说明 |
 | :--- | :--- | :--- | :--- |
-| `action` | String | 是 | 支持 `record`(病历记录) / `diagnosis`(诊断推荐) / `differential`(鉴别诊断) / `medication`(用药方案) / `examination`(检查推荐) / `lab_test`(检验推荐) / `procedure`(处置推荐) / `treatment_plan`(诊疗方案聚合推荐) / `reminder`(智能提醒) |
+| `action` | String | 是 | 支持 `record`(病历记录) / `suggestedDx`(诊断推荐) / `diffDx`(鉴别诊断) / `medication`(用药方案) / `examination`(检查推荐) / `lab_test`(检验推荐) / `procedure`(处置推荐) / `treatment_plan`(诊疗方案聚合推荐) / `reminder`(智能提醒)；历史 `diagnosis / differential` 继续兼容 |
 | `idPi` | String | 是 | 患者唯一标识 |
 | `idVis` | String | 否 | 当前就诊唯一标识，强烈建议传入 |
 | `naPi` | String | 否 | 患者姓名 |
@@ -344,7 +344,7 @@ http://127.0.0.1:8081/api/consultation/assist
 
 ```json
 {
-  "action": "diagnosis",
+  "action": "suggestedDx",
   "idPi": "766842939207974912",
   "idVis": "VIS-20260507-001",
   "chiefComplaint": "咳嗽三天",
@@ -358,19 +358,239 @@ http://127.0.0.1:8081/api/consultation/assist
 {
   "status": "success",
   "consultationId": "766842939207974912",
-  "action": "diagnosis"
+  "action": "suggestedDx",
+  "traceId": "his-20260601-101500-abc123"
 }
 ```
 
 实现说明：
 
-1. 当前接口底层仍发出历史事件名 `start-consultation-session`。除 `treatment_plan` 外，前端落点仍是 `ConsultationPage` 灵活模式；`treatment_plan` 会打开独立诊疗方案推荐页。
+1. 当前接口底层仍发出历史事件名 `start-consultation-session`。除 `treatment_plan` / `diffDx` 外，前端落点仍是 `ConsultationPage` 灵活模式；`treatment_plan` 会打开独立诊疗方案推荐页，`diffDx` 会直接打开独立“鉴别排查确认”小窗。
 2. 每次 `assist` 调用都会先清空本地结果通道。
 3. 如果已经提供 `chiefComplaint + historyOfPresentIllness`，桌面端通常会直接跳过症状采集。
-4. 如果触发 `differential / medication / examination / lab_test / procedure`，但当前诊断不足，前端会提示医生先补全诊断。
-5. `treatment_plan` 要求请求体或当前接诊上下文中已存在 `chiefComplaint`、`historyOfPresentIllness` 与 `diagnosis`；诊断会先按标准诊断库匹配，若无法匹配，页面会提示医生不能一键回写诊断。
-6. 当前一个 `action` 只负责自动触发一个目标模块，不代表本次问诊到此结束。
-7. `examination`、`lab_test`、`procedure` 三路推荐独立加载，各自有独立的 loading 状态和引用闭环；`treatment_plan` 会聚合用药、检查、检验、处置四路推荐，并通过 `record-confirmed` 的 `diagList/orderList` 统一回写。
+4. `suggestedDx` 是诊断推荐的新接入 action 名，内部复用历史 `diagnosis` 诊断推荐流程；`diffDx` 是鉴别诊断的新接入 action 名，会直接打开独立“鉴别排查确认”弹窗，不进入问诊结果页。
+5. 如果触发 `diffDx / differential / medication / examination / lab_test / procedure`，但当前诊断不足，前端会提示医生先补全诊断。
+6. `diffDx` 与 `treatment_plan` 要求请求体或当前接诊上下文中已存在 `chiefComplaint`、`historyOfPresentIllness` 与 `diagnosis`；诊断会先按标准诊断库匹配。`treatment_plan` 若无法匹配标准诊断，页面会提示医生不能一键回写诊断。
+7. `suggestedDx` 要求已有 `chiefComplaint` 与 `historyOfPresentIllness`，**不要传 `diagnosis`**；如果 HIS 已有当前诊断并希望基于它做鉴别，请使用 `diffDx`。
+8. 当前一个 `action` 只负责自动触发一个目标模块，不代表本次问诊到此结束。
+9. `examination`、`lab_test`、`procedure` 三路推荐独立加载，各自有独立的 loading 状态和引用闭环；`treatment_plan` 会聚合用药、检查、检验、处置四路推荐，并通过 `record-confirmed` 的 `diagList/orderList` 统一回写。
+
+#### 单独诊断推荐调用 `action: "suggestedDx"`
+
+用途：HIS 已经有当前患者主诉、现病史等病历上下文，只希望单独打开“诊断推荐”能力，由 `MedHermes` 基于病历生成 AI 诊断建议。此调用不需要、也不建议传入 `diagnosis` 字段。
+
+完整地址：
+
+```text
+http://127.0.0.1:8081/api/consultation/assist
+```
+
+请求字段：
+
+| 字段名 | 类型 | 必填 | 说明 |
+| :--- | :--- | :--- | :--- |
+| `action` | String | 是 | 固定传 `suggestedDx` |
+| `idPi` | String | 是 | 患者唯一标识 |
+| `idVis` | String | 否 | 当前就诊唯一标识，强烈建议传入；后续结果事件与回执都优先以该值作为 `consultationId` |
+| `chiefComplaint` | String | 是 | 主诉；也可来自当前已接诊上下文，但推荐本次调用显式传入 |
+| `historyOfPresentIllness` | String | 是 | 现病史；也可来自当前已接诊上下文，但推荐本次调用显式传入 |
+| `pastMedicalHistory` | String | 否 | 既往史 |
+| `allergyHistory` | String | 否 | 过敏史 |
+| `naPi` | String | 否 | 患者姓名 |
+| `sdSexText` | String | 否 | 性别文本 |
+| `ageText` | String | 否 | 年龄文本 |
+| `diagnosis` | String | 否 | **不要传入**；诊断推荐会由 AI 基于病历上下文生成 |
+| 其他患者上下文字段 | Mixed | 否 | 参考第 4 节，会继续透传到前端患者上下文 |
+
+请求示例：
+
+```json
+{
+  "action": "suggestedDx",
+  "idPi": "766842939207974912",
+  "idVis": "VIS-20260601-001",
+  "naPi": "张三",
+  "sdSexText": "男性",
+  "ageText": "38岁",
+  "chiefComplaint": "咳嗽三天",
+  "historyOfPresentIllness": "受凉后出现咳嗽、咳痰，无明显呼吸困难。",
+  "pastMedicalHistory": "否认高血压、糖尿病病史。",
+  "allergyHistory": "否认药物过敏史。"
+}
+```
+
+成功响应：
+
+```json
+{
+  "status": "success",
+  "consultationId": "766842939207974912",
+  "action": "suggestedDx",
+  "traceId": "his-20260601-101500-abc123"
+}
+```
+
+后续事件：
+
+1. 接口成功只表示桌面端已接收指令并进入诊断推荐流程，不表示 AI 诊断已生成或 PHIS 已保存。
+2. 医生在 `MedHermes` 中确认诊断只记录当前页面状态；只有点击“引用诊断”才会产生 `reference-request + referenceType: "diagnosis"`。
+3. PHIS 收到诊断引用请求并保存后，必须调用 `POST /api/consultation/reference-feedback` 回执同一个 `consultationId` 与 `requestId`。
+
+#### 单独鉴别诊断调用 `action: "diffDx"`
+
+用途：HIS 已经有当前患者主诉、现病史和诊断草稿，只希望单独打开“鉴别诊断”能力，由 `MedHermes` 基于当前诊断与病历上下文辅助医生做鉴别排查。入参字段与 `treatment_plan` 基本一致。
+
+完整地址：
+
+```text
+http://127.0.0.1:8081/api/consultation/assist
+```
+
+请求字段：
+
+| 字段名 | 类型 | 必填 | 说明 |
+| :--- | :--- | :--- | :--- |
+| `action` | String | 是 | 固定传 `diffDx` |
+| `idPi` | String | 是 | 患者唯一标识 |
+| `idVis` | String | 否 | 当前就诊唯一标识，强烈建议传入 |
+| `chiefComplaint` | String | 是 | 主诉；也可来自当前已接诊上下文，但推荐本次调用显式传入 |
+| `historyOfPresentIllness` | String | 是 | 现病史；也可来自当前已接诊上下文，但推荐本次调用显式传入 |
+| `diagnosis` | String | 是 | 当前 HIS 诊断草稿，鉴别诊断会围绕该诊断展开 |
+| `pastMedicalHistory` | String | 否 | 既往史 |
+| `allergyHistory` | String | 否 | 过敏史 |
+| `naPi` | String | 否 | 患者姓名 |
+| `sdSexText` | String | 否 | 性别文本 |
+| `ageText` | String | 否 | 年龄文本 |
+| 其他患者上下文字段 | Mixed | 否 | 参考第 4 节，会继续透传到前端患者上下文 |
+
+请求示例：
+
+```json
+{
+  "action": "diffDx",
+  "idPi": "766842939207974912",
+  "idVis": "VIS-20260601-001",
+  "naPi": "张三",
+  "sdSexText": "男性",
+  "ageText": "38岁",
+  "chiefComplaint": "咳嗽三天",
+  "historyOfPresentIllness": "受凉后出现咳嗽、咳痰，无明显呼吸困难。",
+  "pastMedicalHistory": "否认高血压、糖尿病病史。",
+  "allergyHistory": "否认药物过敏史。",
+  "diagnosis": "急性上呼吸道感染"
+}
+```
+
+成功响应：
+
+```json
+{
+  "status": "success",
+  "consultationId": "766842939207974912",
+  "action": "diffDx",
+  "traceId": "his-20260601-101501-abc124"
+}
+```
+
+后续事件：
+
+1. 接口成功只表示桌面端已接收指令并进入鉴别诊断流程，不表示 PHIS 已保存。
+2. 桌面端会打开独立小窗弹出“鉴别排查确认”，并基于当前诊断、主诉和现病史开始生成鉴别排查建议；不会进入后面的问诊结果页 / 工作站页面。
+3. 鉴别诊断本身是医生辅助判断，不直接产生 PHIS 回写；确认结果只记录在 `MedHermes` 页面状态和日志中。
+4. 如果医生在诊断推荐卡片上另行点击“引用诊断”，仍按 `reference-request + referenceType: "diagnosis"` 的单项引用闭环处理。
+
+#### 单独诊疗方案推荐调用 `action: "treatment_plan"`
+
+用途：HIS 已经有当前患者主诉、现病史和诊断草稿，只希望单独打开“诊疗方案推荐”页，由 `MedHermes` 基于当前诊断生成用药、检查、检验、处置四类建议，医生勾选后一次性回写给 PHIS。
+
+完整地址：
+
+```text
+http://127.0.0.1:8081/api/consultation/assist
+```
+
+请求字段：
+
+| 字段名 | 类型 | 必填 | 说明 |
+| :--- | :--- | :--- | :--- |
+| `action` | String | 是 | 固定传 `treatment_plan` |
+| `idPi` | String | 是 | 患者唯一标识 |
+| `idVis` | String | 否 | 当前就诊唯一标识，强烈建议传入；后续 `record-confirmed` 与回执都优先以该值作为 `consultationId` |
+| `chiefComplaint` | String | 是 | 主诉；也可来自当前已接诊上下文，但推荐本次调用显式传入 |
+| `historyOfPresentIllness` | String | 是 | 现病史；也可来自当前已接诊上下文，但推荐本次调用显式传入 |
+| `diagnosis` | String | 是 | 当前 HIS 诊断草稿；桌面端会尝试匹配标准诊断库，无法匹配时会阻止一键回写诊断 |
+| `pastMedicalHistory` | String | 否 | 既往史 |
+| `allergyHistory` | String | 否 | 过敏史 |
+| `naPi` | String | 否 | 患者姓名 |
+| `sdSexText` | String | 否 | 性别文本 |
+| `ageText` | String | 否 | 年龄文本 |
+| 其他患者上下文字段 | Mixed | 否 | 参考第 4 节，会继续透传到前端患者上下文 |
+
+请求示例：
+
+```json
+{
+  "action": "treatment_plan",
+  "idPi": "766842939207974912",
+  "idVis": "VIS-20260528-001",
+  "naPi": "张三",
+  "sdSexText": "男性",
+  "ageText": "38岁",
+  "chiefComplaint": "咳嗽三天",
+  "historyOfPresentIllness": "受凉后出现咳嗽、咳痰，无明显呼吸困难。",
+  "pastMedicalHistory": "否认高血压、糖尿病病史。",
+  "allergyHistory": "否认药物过敏史。",
+  "diagnosis": "急性上呼吸道感染"
+}
+```
+
+成功响应：
+
+```json
+{
+  "status": "success",
+  "consultationId": "766842939207974912",
+  "action": "treatment_plan",
+  "traceId": "his-20260528-101500-abc123"
+}
+```
+
+后续事件：
+
+1. 接口成功只表示桌面端已接收指令并打开独立诊疗方案页，不表示 AI 推荐已生成或 PHIS 已保存。
+2. 页面会基于 `chiefComplaint + historyOfPresentIllness + diagnosis` 并行生成用药、检查、检验、处置四路推荐；任一路失败时只影响该路建议，其它已生成建议仍可勾选回写。
+3. 医生点击“一键回写”后，事件流会产生 `record-confirmed`，其中 `requestId` 形如 `record-confirmed-1704355201000`，`referenceType/action` 按 `batch` 语义处理。
+4. `record-confirmed.diagList` 承载标准诊断，`record-confirmed.orderList` 承载药品、检查、检验、处置医嘱；PHIS 不再按旧的 `medications / examinations / labTests / procedures` 分组解析一键回写结果。
+5. PHIS 完成最终调入确认后，必须调用 `POST /api/consultation/reference-feedback`，并带回同一个 `consultationId` 和 `requestId`。回执 `record-confirmed` 时 `referenceType` 可传 `batch`，也可留空由 Bridge 按 `batch` 处理。
+
+诊疗方案回执示例：
+
+```json
+{
+  "consultationId": "VIS-20260528-001",
+  "requestId": "record-confirmed-1704355201000",
+  "referenceType": "batch",
+  "status": "success",
+  "message": "PHIS 已完成诊疗方案调入确认",
+  "items": [
+    {
+      "name": "急性上呼吸道感染",
+      "code": "J06.900",
+      "type": "diagnosis"
+    },
+    {
+      "name": "感冒灵颗粒",
+      "type": "medication",
+      "idCli": "65b8a81c3c6f492a8908d8d2"
+    },
+    {
+      "name": "血常规",
+      "type": "lab_test",
+      "idCli": "642546e0fc69e81ae058f3ad"
+    }
+  ]
+}
+```
 
 ### 6.3 `POST /api/consultation/start-voice`
 
@@ -964,7 +1184,7 @@ HIS 处理建议：
 
 ### 6.5 `POST /api/consultation/reference-feedback`（必须）
 
-用途：PHIS 在保存推荐诊断 / 用药 / 检查后，**必须**将成功或失败结果回执给 `MedHermes`。
+用途：PHIS 在保存推荐诊断 / 用药 / 检查 / 独立诊疗方案后，**必须**将成功或失败结果回执给 `MedHermes`。
 
 **强制要求：** 每收到一条 `reference-request` 或 `record-confirmed`，PHIS 都必须调用本接口回执。一键回写场景下只回执一次即可；`reference-request` 走批量引用语义，`record-confirmed` 走最终调入确认语义，但两者都通过同一个接口回传成功或失败。
 
@@ -1292,12 +1512,13 @@ HIS 接入完成后，至少验证以下场景：
 
 1. `POST /start` 能唤起完整问诊
 2. `POST /assist` 能进入对应灵活模式阶段
-3. `/result` 能回收到当前患者的 `draft` 或 `record-confirmed`
-4. 推荐诊断引用时能先收到 `reference-request`
-5. PHIS 调用 `/reference-feedback` 后，`/result` 能继续返回 `reference-feedback`
-6. 一键回写场景：PHIS 收到一条 `batch` 类型 `reference-request`，遍历 `referenceItems` 按 `type` 分类处理，回执后页面显示"一键回写完成"
-7. 切换患者后不会把上一位患者的结果误回填到当前医生站
-8. 问诊一键确认回写：PHIS 收到 `resultType: "record-confirmed"` 结果后，读取 `orderList` 即可。药品、检查、检验、处置已经统一转换成 PHIS 调入确认格式，可直接用于回填弹窗
-9. 独立诊疗方案推荐：`POST /assist` 使用 `action: "treatment_plan"` 可打开聚合方案页；医生勾选后同样产生 `record-confirmed + referenceType: "batch"`，PHIS 按第 8 条处理并回执
+3. 单独诊断推荐：`POST /assist` 使用 `action: "suggestedDx"` 且不传 `diagnosis`，可打开诊断推荐流程；医生点击“引用诊断”后能先收到 `reference-request + referenceType: "diagnosis"`
+4. 单独鉴别诊断：`POST /assist` 使用 `action: "diffDx"` 并传入 `diagnosis`，可直接打开独立“鉴别排查确认”弹窗；确认鉴别不直接产生 PHIS 回写
+5. `/result` 能回收到当前患者的 `draft` 或 `record-confirmed`
+6. PHIS 调用 `/reference-feedback` 后，`/result` 能继续返回 `reference-feedback`
+7. 一键回写场景：PHIS 收到一条 `batch` 类型 `reference-request`，遍历 `referenceItems` 按 `type` 分类处理，回执后页面显示"一键回写完成"
+8. 切换患者后不会把上一位患者的结果误回填到当前医生站
+9. 问诊一键确认回写：PHIS 收到 `resultType: "record-confirmed"` 结果后，读取 `orderList` 即可。药品、检查、检验、处置已经统一转换成 PHIS 调入确认格式，可直接用于回填弹窗
+10. 独立诊疗方案推荐：`POST /assist` 使用 `action: "treatment_plan"` 可打开聚合方案页；医生勾选后同样产生 `record-confirmed + referenceType: "batch"`，PHIS 按第 9 条处理并回执
 
 如果你们 HIS 需要，我建议下一步可以再按这份文档继续拆一版“给后端开发直接对接的字段清单”和“一版给联调测试直接执行的验收用例”。

@@ -284,8 +284,10 @@
         <div class="row">
           <select id="assist-action">
             <option value="record">record（病历记录）</option>
-            <option value="diagnosis">diagnosis（诊断推荐）</option>
-            <option value="differential">differential（鉴别诊断）</option>
+            <option value="suggestedDx">suggestedDx（诊断推荐）</option>
+            <option value="diffDx">diffDx（鉴别诊断）</option>
+            <option value="diagnosis">diagnosis（诊断推荐-兼容）</option>
+            <option value="differential">differential（鉴别诊断-兼容）</option>
             <option value="medication">medication（用药推荐）</option>
             <option value="examination">examination（检查推荐）</option>
             <option value="lab_test">lab_test（检验推荐）</option>
@@ -775,6 +777,9 @@
     $('btn-assist').addEventListener('click', withBusy($('btn-assist'), function () {
       var p = buildPatient();
       var action = $('assist-action').value;
+      if (action === 'suggestedDx') {
+        delete p.diagnosis;
+      }
       log('event', '[→ /consultation/assist] action=' + action, p);
       return sdk.assist(p, action);
     }));
