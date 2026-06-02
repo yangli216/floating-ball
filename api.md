@@ -317,6 +317,7 @@ http://127.0.0.1:8081/api/consultation/start
 1. 此接口会刷新当前患者上下文。
 2. 此接口会清空上一条本地结果，避免直接读到旧结果。
 3. `MedHermes` 收到后会尝试置顶主窗口并进入完整问诊。
+4. 区域化模式下，桌面端在接诊上下文校验通过并准备打开完整问诊页时，上报一次 `smart_consultation` 功能调用事件；同一就诊再次显式触发完整问诊入口按新调用计数，统计分析以该事件为事实源，不再从本地 Bridge 日志、问诊用户日志或 AI 代理日志推断。
 
 ### 6.2 `POST /api/consultation/assist`
 
@@ -374,6 +375,7 @@ http://127.0.0.1:8081/api/consultation/assist
 7. `suggestedDx` 要求已有 `chiefComplaint` 与 `historyOfPresentIllness`，**不要传 `diagnosis`**；如果 HIS 已有当前诊断并希望基于它做鉴别，请使用 `diffDx`。
 8. 当前一个 `action` 只负责自动触发一个目标模块，不代表本次问诊到此结束。
 9. `examination`、`lab_test`、`procedure` 三路推荐独立加载，各自有独立的 loading 状态和引用闭环；`treatment_plan` 会聚合用药、检查、检验、处置四路推荐，并通过 `record-confirmed` 的 `diagList/orderList` 统一回写。
+10. 区域化模式下，桌面端在接诊上下文校验通过并准备打开目标辅助界面时即上报一次功能调用事件：`suggestedDx/diagnosis` 计入 AI推荐诊断，`diffDx/differential` 计入 AI诊断鉴别，`medication` 计入 AI推荐用药，`examination` 计入 AI推荐检查，`lab_test` 计入 AI推荐检验，`procedure` 计入 AI推荐处置，`treatment_plan` 计入 AI推荐治疗方案。同一就诊再次显式触发同一辅助入口按新调用计数；统计分析以 `/v1/client/feature-events/batch` 入库事件为事实源，后续 AI 生成和回写只用于审计、日志或结果闭环，不重复拆分计数。
 
 #### 单独诊断推荐调用 `action: "suggestedDx"`
 
@@ -635,6 +637,7 @@ http://127.0.0.1:8081/api/consultation/start-voice
 2. 如果当前桌面端没有患者上下文，前端会提示先接诊患者。
 3. 语音结果最终仍通过 `GET /api/consultation/events/poll` 返回。
 4. 未诊毕且未放弃时，同一接诊上下文内再次调用会恢复上一张语音结果页；但桌面端当前接诊切换到其他患者后，上一患者的语音缓存会失效，之后再切回该患者也会重新开始语音问诊。
+5. 区域化模式下，桌面端在接诊上下文校验通过并准备打开语音问诊页时，上报一次 `voice_consultation` 功能调用事件；同一就诊再次显式触发语音问诊入口按新调用计数，后续提交语音日志不再补记功能统计。
 
 ### 6.3A `POST /api/report/interpret`
 

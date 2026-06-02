@@ -207,7 +207,7 @@ features/<name>/
 | `ConsultationPage.vue` 内 AI 治疗推荐原始结果映射 | `src/features/clinical-result/clinicalResultAiMapping.ts` | 已从症状私有 helper 收敛为结果页共享 mapper：只抽 LLM 原始推荐项到 `TreatmentRecommendation[]` 的过滤、标准库匹配注入和归一化注入；页面仍负责 LLM 请求、错误态、反馈落库和事实核查 |
 | `ConsultationPage.vue` 内推荐反馈目标落库 / 注册 | `src/features/symptom-consultation/model/recommendationFeedbackRegistration.ts` | 高风险治理第七/八刀：抽诊断推荐与四路治疗推荐的 `feedbackService.saveRecommendation` 与 `registerExternalRecommendationTarget` 编排；副作用通过参数显式注入，不进入纯 `lib` |
 | `ConsultationPage.vue` 内 LLM JSON 宽容解析 | `src/features/symptom-consultation/lib/consultationLlmJsonParser.ts` | 高风险治理第九刀：抽去 BOM / markdown fence / 平衡括号候选扫描 / JSON parse 错误包装；保持纯函数，页面继续负责日志和错误态 |
-| `src/components/SymptomManagement.vue` | `src/features/symptom-consultation/ui/SymptomManagement.vue` | 已迁移并删除旧路径；App 通过 `@features/symptom-consultation` 公开入口消费 |
+| `src/components/SymptomManagement.vue` | - | 本地症状库维护入口已下线，模板维护由后台承接；旧路径与迁移后的 `features/symptom-consultation/ui/SymptomManagement.vue` 均不再保留 |
 | `src/components/BodyPartSelector.vue` | `src/features/symptom-consultation/ui/BodyPartSelector.vue` | 已迁移并删除旧路径；`ConsultationPage` 通过 `@features/symptom-consultation` 公开入口消费 |
 | `src/components/SystemCategorySelector.vue` | `src/features/symptom-consultation/ui/SystemCategorySelector.vue` | 已迁移并删除旧路径；`ConsultationPage` 通过 `@features/symptom-consultation` 公开入口消费 |
 | `src/composables/useSymptomConsultationCache.ts` | `src/features/symptom-consultation/model/useSymptomConsultationCache.ts` | 先 re-export，避免 App/页面双改 |

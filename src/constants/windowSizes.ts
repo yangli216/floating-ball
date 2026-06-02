@@ -40,7 +40,6 @@ export type ViewType =
   | 'differential-diagnosis'
   | 'reception-capsule'
   | 'analytics'
-  | 'symptom-manage'
   | 'his-log'
   | 'medical-cache'
   | 'knowledge-base';
@@ -84,9 +83,6 @@ export const WINDOW_SIZES = {
 
   /** 风险评估卡片展开：340×360px */
   RISK_CARD_EXPANDED: { width: 280, height: 360 } as WindowSize,
-
-  /** 症状库管理：1080×720px */
-  SYMPTOM_MANAGE: { width: 1080, height: 720 } as WindowSize,
 
   /** 语音问诊页面：1080×720px */
   VOICE_CONSULTATION: { width: 1080, height: 720 } as WindowSize,
@@ -160,9 +156,6 @@ export function getWindowSizeForView(view: ViewType, options?: WindowSizeOptions
     case 'reception-capsule':
       return getReceptionCapsuleSize(options);
 
-    case 'symptom-manage':
-      return WINDOW_SIZES.SYMPTOM_MANAGE;
-
     case 'voice-consultation':
       return WINDOW_SIZES.VOICE_CONSULTATION;
 
@@ -198,7 +191,6 @@ export function supportsPersistentWindowSize(view: ViewType): boolean {
     || view === 'treatment-plan'
     || view === 'differential-diagnosis'
     || view === 'analytics'
-    || view === 'symptom-manage'
     || view === 'his-log'
     || view === 'medical-cache'
     || view === 'knowledge-base';
@@ -221,5 +213,5 @@ export function isCapsuleView(view: ViewType): boolean {
  * @returns 是否为大面板
  */
 export function isLargePanelView(view: ViewType): boolean {
-  return view === 'consultation' || view === 'symptom-manage' || view === 'his-log' || view === 'medical-cache' || view === 'voice-consultation' || view === 'treatment-plan';
+  return view === 'consultation' || view === 'his-log' || view === 'medical-cache' || view === 'voice-consultation' || view === 'treatment-plan';
 }

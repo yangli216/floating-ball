@@ -1,6 +1,5 @@
 export { default as BodyPartSelector } from './ui/BodyPartSelector.vue';
 export { default as SymptomResultEntry } from './ui/SymptomResultEntry.vue';
-export { default as SymptomManagement } from './ui/SymptomManagement.vue';
 export { default as SystemCategorySelector } from './ui/SystemCategorySelector.vue';
 
 export {

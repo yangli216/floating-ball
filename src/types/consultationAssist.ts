@@ -12,7 +12,9 @@ export type ConsultationAssistAction =
 export type ConsultationAssistExternalAction =
   | ConsultationAssistAction
   | 'suggestedDx'
-  | 'diffDx';
+  | 'diffDx'
+  | 'treatmentPlan'
+  | 'treatment_plan_recommendation';
 
 export function normalizeConsultationAssistAction(
   action?: string,
@@ -27,6 +29,9 @@ export function normalizeConsultationAssistAction(
     case 'treatment_plan':
     case 'reminder':
       return action;
+    case 'treatmentPlan':
+    case 'treatment_plan_recommendation':
+      return 'treatment_plan';
     case 'suggestedDx':
       return 'diagnosis';
     case 'diffDx':

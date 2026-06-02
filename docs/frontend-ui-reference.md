@@ -24,7 +24,6 @@
 | `risk-alert` | `src/features/reception-risk/ui/RiskAlertPanel.vue` | 378 x 449 |
 | `consultation` | `src/components/ConsultationPage.vue` | 1080 x 720 |
 | `voice-consultation` | `src/components/VoiceConsultationNew.vue` | 1080 x 720 |
-| `symptom-manage` | `src/features/symptom-consultation/ui/SymptomManagement.vue` | 1080 x 720 |
 | `voice-interaction` | `src/features/voice-consultation/ui/VoiceCapsule.vue` | 360 x 80 / 96 / 140 / 248 |
 | `reception-capsule` | `src/features/reception-risk/ui/ReceptionCapsule.vue` | 280 x 92，展开最高 520 |
 | `his-log` | `src/features/settings/ui/HisIntegrationLogPanel.vue` | 980 x 640 |
@@ -109,7 +108,6 @@
 ### 工具页
 
 - 数据分析：`src/features/analytics/ui/AnalyticsPanel.vue`
-- 症状库维护：`src/features/symptom-consultation/ui/SymptomManagement.vue`
 - HIS 联调日志：`src/features/settings/ui/HisIntegrationLogPanel.vue`
 - 缓存管理：`src/features/medical-catalog/ui/MedicalCatalogCachePanel.vue`
 - 诊断路径独立窗口：`src/features/diagnosis-path/ui/DiagnosisPathWindow.vue`

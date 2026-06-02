@@ -118,19 +118,6 @@ export function useNavigation(options: NavigationOptions) {
   // ========== 业务导航 ==========
 
   /**
-   * 打开症状库管理页
-   */
-  async function openSymptomManagement(): Promise<void> {
-    currentView.value = 'symptom-manage';
-    if (!isWorking.value) {
-      await enterWorkMode();
-    } else {
-      await resizeWindowForView('symptom-manage');
-    }
-  }
-
-
-  /**
    * 打开 HIS 联调日志页
    */
   async function openHisIntegrationLog(): Promise<void> {
@@ -251,7 +238,6 @@ export function useNavigation(options: NavigationOptions) {
     openAnalytics,
 
     // 业务导航
-    openSymptomManagement,
     openHisIntegrationLog,
     openMedicalCatalogCache,
     openConsultation,

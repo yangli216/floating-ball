@@ -18,6 +18,7 @@ export type FeatureCode =
   | 'examination_recommendation'
   | 'lab_test_recommendation'
   | 'procedure_recommendation'
+  | 'treatment_plan_recommendation'
   | 'knowledge_usage';
 
 export interface FeatureUsageDraft {
@@ -120,10 +121,6 @@ function randomId(): string {
 }
 
 function buildIdempotencyKey(draft: FeatureUsageDraft, eventId: string): string {
-  const stableTarget = normalizeText(draft.consultationId) || normalizeText(draft.sessionId);
-  if (stableTarget) {
-    return `${draft.featureCode}:${draft.eventAction || 'invoke'}:${stableTarget}`;
-  }
   return `${draft.featureCode}:${draft.eventAction || 'invoke'}:${draft.traceId || eventId}`;
 }
 

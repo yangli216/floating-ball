@@ -43,7 +43,6 @@ const emit = defineEmits<{
   'refresh-audio-input-devices': [];
   'pick-voice-recording-dir': [];
   'clear-voice-recording-dir': [];
-  'open-symptom-manage': [];
   'open-medical-cache': [];
   'open-his-log': [];
 }>();
@@ -299,19 +298,6 @@ function readSelectValue(event: Event): string {
           </button>
         </div>
       </div>
-    </div>
-
-    <div class="settings-section clickable-section" @click="emit('open-symptom-manage')">
-      <div class="section-header no-border settings-link-header">
-        <div class="header-left">
-          <Icon icon="lucide:file-edit" :size="20" />
-          <h3>症状库管理</h3>
-        </div>
-        <div class="arrow-icon">
-          <Icon icon="lucide:chevron-right" :size="20" />
-        </div>
-      </div>
-      <p class="section-desc settings-link-desc">配置和维护用于问诊的症状模板库</p>
     </div>
 
     <div class="settings-section clickable-section" @click="emit('open-medical-cache')">

@@ -11,20 +11,26 @@ import {
   useBodySiteOptions,
   useManualMatchState,
   useMedicalDictionaries,
+  useSecondarySelector,
+  useTreatmentAttributeSearch,
   useTreatmentGates,
   useTreatmentHydration,
   useTreatmentNormalization,
   useTreatmentPharmacyResolution,
   useTreatmentSelectionReadiness,
+  type SecondarySelectorField,
   type ManualMatchCandidate,
 } from '@features/consultation-result';
 import {
   applyManualMatchCandidate,
   findManualMatchCandidates,
+  getMatchedItemRaw,
+  getTreatmentEditorKey,
   hasProbableMatch,
   toManualMatchCandidateView,
   type ManualMatchRawCandidate,
 } from '@features/clinical-result';
+import type { UsageOption } from '@/utils/medicalDictionaryHelpers';
 import {
   useTreatmentPlanRecommendations,
 } from '../model/useTreatmentPlanRecommendations';
@@ -32,6 +38,8 @@ import {
   useTreatmentPlanWriteback,
 } from '../model/useTreatmentPlanWriteback';
 import TreatmentPlanGroup from './TreatmentPlanGroup.vue';
+
+type TreatmentPlanAttributeOption = { key: string; text: string; mcode?: string };
 
 const props = defineProps<{
   patient?: AppPatient | null;
@@ -64,6 +72,7 @@ const {
   getDefaultPharmacyOption,
   ensureMedicineDefaultPharmacy,
   findMatchedPharmacyOption,
+  getNormalizedPharmacyValue,
 } = useTreatmentPharmacyResolution({
   pharmacyOptions: () => pharmacyOptions.value,
   treatmentGates,
@@ -81,7 +90,7 @@ function normalizeTreatment(rec: Partial<TreatmentRecommendation>): TreatmentRec
   return treatmentNormalization.normalize(rec);
 }
 
-const { applyMedicalItemPartOptions } = useBodySiteOptions();
+const { applyMedicalItemPartOption, applyMedicalItemPartOptions } = useBodySiteOptions();
 const treatmentHydration = useTreatmentHydration({
   pharmacyOptions,
   getCandidatePharmaciesForMedicine,
@@ -93,6 +102,24 @@ const treatmentHydration = useTreatmentHydration({
   notify: (message) => showToast?.(message, 'info'),
 });
 
+const secondarySelector = useSecondarySelector({
+  getEditorKey: getTreatmentEditorKey,
+  fields: {
+    pharmacy: { getCurrentValue: (rec) => getNormalizedPharmacyValue(rec) },
+    execDept: { getCurrentValue: (rec) => treatmentGates.getExecDeptDisplay(rec) },
+    bodySite: { getCurrentValue: (rec) => treatmentGates.getBodySiteDisplay(rec) },
+    insurance: { getCurrentValue: (rec) => rec.insuranceType || '' },
+  },
+});
+
+const treatmentAttributeSearch = useTreatmentAttributeSearch({
+  secondarySelector,
+  pharmacyOptions: () => pharmacyOptions.value,
+  execDeptOptions: () => execDeptOptions.value,
+  getCandidatePharmaciesForMedicine,
+  getNormalizedPharmacyValue,
+});
+
 const treatmentSelectionReadiness = useTreatmentSelectionReadiness({
   ensureMedicineSelectable: treatmentHydration.ensureMedicineSelectable,
   hydrateMedicalItemDetail: treatmentHydration.hydrateMatchedMedicalItemDetail,
@@ -101,9 +128,9 @@ const treatmentSelectionReadiness = useTreatmentSelectionReadiness({
   hasRequiredPharmacy: treatmentGates.hasRequiredPharmacy,
   hasRequiredExecDept: treatmentGates.hasRequiredExecDept,
   hasRequiredBodySite: treatmentGates.hasRequiredBodySite,
-  openPharmacySelector: () => {},
-  openExecDeptSelector: () => {},
-  openBodySiteSelector: () => {},
+  openPharmacySelector: openPharmacyQuickSelector,
+  openExecDeptSelector: openExecDeptQuickSelector,
+  openBodySiteSelector: openBodySiteQuickSelector,
   expandTreatmentEditor: () => {},
   notify: (message, type) => showToast?.(message, type === 'error' ? 'error' : 'info'),
 });
@@ -236,6 +263,152 @@ function findManualMatchRawCandidate(
     .find((raw) => raw.id === candidate.id);
 }
 
+function isSecondarySelectorOpen(item: TreatmentRecommendation, field: SecondarySelectorField): boolean {
+  return secondarySelector.isOpen(item, field);
+}
+
+function openSecondarySelector(item: TreatmentRecommendation, field: SecondarySelectorField): void {
+  secondarySelector.open(item, field);
+}
+
+function closeSecondarySelector(
+  item: TreatmentRecommendation,
+  field: SecondarySelectorField,
+  event: FocusEvent,
+): void {
+  secondarySelector.close(item, field, event);
+}
+
+function openPharmacyQuickSelector(item: TreatmentRecommendation, event?: Event): void {
+  event?.stopPropagation();
+  openSecondarySelector(item, 'pharmacy');
+}
+
+function openExecDeptQuickSelector(item: TreatmentRecommendation, event?: Event): void {
+  event?.stopPropagation();
+  if (item.type !== 'medicine' && item.matchedItem) {
+    void treatmentHydration.hydrateMatchedMedicalItemDetail(item);
+  }
+  openSecondarySelector(item, 'execDept');
+}
+
+function openBodySiteQuickSelector(item: TreatmentRecommendation, event?: Event): void {
+  event?.stopPropagation();
+  if (item.type === 'exam' && item.matchedItem) {
+    void treatmentHydration.hydrateMatchedMedicalItemDetail(item);
+  }
+  openSecondarySelector(item, 'bodySite');
+}
+
+function getPharmacySearchKeyword(item: TreatmentRecommendation): string {
+  return treatmentAttributeSearch.getSearchKeyword(item, 'pharmacy');
+}
+
+function handlePharmacySearchInput(item: TreatmentRecommendation, event: Event): void {
+  treatmentAttributeSearch.handleSearchInput(item, 'pharmacy', event);
+}
+
+function getFilteredPharmacyOptions(item: TreatmentRecommendation): UsageOption[] {
+  return treatmentAttributeSearch.getPharmacyOptionsForRecord(item);
+}
+
+function selectPharmacyOption(item: TreatmentRecommendation, option: TreatmentPlanAttributeOption): void {
+  item.pharmacy = option.text;
+  treatmentAttributeSearch.setSearchKeyword(item, 'pharmacy', option.text);
+  treatmentHydration.clearMedicineInventoryWarning(item);
+  if (item.selected) {
+    item.selected = false;
+    showToast?.('发药药房已调整，请重新选中该药品。', 'info');
+  }
+  secondarySelector.closeAll();
+}
+
+function clearPharmacySelection(item: TreatmentRecommendation): void {
+  item.pharmacy = '';
+  treatmentAttributeSearch.setSearchKeyword(item, 'pharmacy', '');
+  treatmentHydration.clearMedicineInventoryWarning(item);
+  if (item.selected) {
+    item.selected = false;
+    showToast?.('发药药房已清空，请重新设置后再选中该药品。', 'info');
+  }
+  secondarySelector.closeAll();
+}
+
+function getExecDeptSearchKeyword(item: TreatmentRecommendation): string {
+  return treatmentAttributeSearch.getSearchKeyword(item, 'execDept');
+}
+
+function handleExecDeptSearchInput(item: TreatmentRecommendation, event: Event): void {
+  treatmentAttributeSearch.handleSearchInput(item, 'execDept', event);
+}
+
+function getFilteredExecDeptOptions(item: TreatmentRecommendation): UsageOption[] {
+  return treatmentAttributeSearch.getExecDeptOptionsForRecord(item);
+}
+
+function selectExecDeptOption(item: TreatmentRecommendation, option: TreatmentPlanAttributeOption): void {
+  item.execDept = option.key || option.text;
+  treatmentAttributeSearch.setSearchKeyword(item, 'execDept', option.text);
+  secondarySelector.closeAll();
+}
+
+function clearExecDeptSelection(item: TreatmentRecommendation): void {
+  item.execDept = '';
+  treatmentAttributeSearch.setSearchKeyword(item, 'execDept', '');
+  if (item.selected && treatmentGates.isExecDeptRequired(item)) {
+    item.selected = false;
+    showToast?.('执行科室已清空，请重新设置后再选中该项目。', 'info');
+  }
+  secondarySelector.closeAll();
+}
+
+function getBodySiteSearchKeyword(item: TreatmentRecommendation): string {
+  return treatmentAttributeSearch.getSearchKeyword(item, 'bodySite');
+}
+
+function handleBodySiteSearchInput(item: TreatmentRecommendation, event: Event): void {
+  treatmentAttributeSearch.handleSearchInput(item, 'bodySite', event);
+}
+
+function getFilteredBodySiteOptions(item: TreatmentRecommendation): UsageOption[] {
+  return treatmentAttributeSearch.getBodySiteOptionsForRecord(item);
+}
+
+function selectBodySiteOption(item: TreatmentRecommendation, option: TreatmentPlanAttributeOption): void {
+  const matched = (item.bodySiteOptions || []).find((candidate) => (
+    candidate.partId === option.key || candidate.name === option.text
+  ));
+  if (matched) {
+    applyMedicalItemPartOption(item, matched);
+  } else {
+    item.bodySiteId = option.key;
+    item.bodySite = option.text;
+  }
+  treatmentAttributeSearch.setSearchKeyword(item, 'bodySite', option.text);
+  secondarySelector.closeAll();
+}
+
+function clearBodySiteSelection(item: TreatmentRecommendation): void {
+  item.bodySite = '';
+  item.bodySiteId = '';
+  treatmentAttributeSearch.setSearchKeyword(item, 'bodySite', '');
+  if (item.matchedItem) {
+    item.matchedItem = {
+      ...item.matchedItem,
+      idPart: '',
+      raw: {
+        ...(getMatchedItemRaw(item) || {}),
+        idPart: '',
+      },
+    };
+  }
+  if (item.selected && !treatmentGates.hasRequiredBodySite(item)) {
+    item.selected = false;
+    showToast?.('检查部位已清空，请重新设置后再选中该项目。', 'info');
+  }
+  secondarySelector.closeAll();
+}
+
 async function ensureMatchedTreatmentSelectable(
   item: TreatmentRecommendation,
   labelName?: string,
@@ -256,19 +429,28 @@ async function confirmSuggestedMatch(item: TreatmentRecommendation): Promise<voi
     return;
   }
 
-  item.originalName = item.originalName || item.name;
-  item.matchedItem = { ...item.suggestedMatchItem };
-  item.name = item.suggestedMatchItem.name || item.name;
-  item.matchStatus = 'confirmed';
-  item.manualMatched = false;
-  item.selected = false;
-  item.suggestedMatchItem = undefined;
-  Object.assign(item, normalizeTreatment(item));
+  const originalName = item.originalName || item.name;
+  const candidateName = item.suggestedMatchItem.name || item.name;
+  const candidate: TreatmentRecommendation = normalizeTreatment({
+    ...item,
+    originalName,
+    matchedItem: { ...item.suggestedMatchItem },
+    name: candidateName,
+    matchStatus: 'confirmed',
+    manualMatched: false,
+    selected: false,
+    suggestedMatchItem: undefined,
+  });
 
-  if (!(await ensureMatchedTreatmentSelectable(item))) {
+  if (!(await ensureMatchedTreatmentSelectable(candidate))) {
+    Object.assign(item, candidate);
+    item.suggestedMatchItem = undefined;
+    item.selected = false;
     return;
   }
 
+  Object.assign(item, candidate);
+  item.suggestedMatchItem = undefined;
   item.selected = true;
   closeManualMatch();
   showToast?.(`${item.name} 已确认匹配`, 'success');
@@ -281,17 +463,22 @@ async function applyManualMatch(item: TreatmentRecommendation, candidate: Manual
     return;
   }
 
-  if (!applyManualMatchCandidate(item, raw)) {
+  const candidateItem: TreatmentRecommendation = { ...item, selected: false };
+  if (!applyManualMatchCandidate(candidateItem, raw)) {
     showToast?.('该标准库候选类型与当前推荐项不匹配。', 'info');
     return;
   }
 
-  Object.assign(item, normalizeTreatment(item));
+  Object.assign(candidateItem, normalizeTreatment(candidateItem));
 
-  if (!(await ensureMatchedTreatmentSelectable(item, candidate.name))) {
+  if (!(await ensureMatchedTreatmentSelectable(candidateItem, candidate.name))) {
+    Object.assign(item, candidateItem);
+    item.selected = false;
+    closeManualMatch();
     return;
   }
 
+  Object.assign(item, candidateItem);
   item.selected = true;
   closeManualMatch();
   showToast?.(`${candidate.name} 已完成标准库匹配`, 'success');
@@ -368,11 +555,39 @@ onMounted(() => {
             :section="section"
             :selected-count="getGroupSelectedCount(section.itemType)"
             :total-count="section.items.length"
+            :is-pharmacy-required="treatmentGates.isPharmacyRequired"
+            :get-pharmacy-display="treatmentGates.getPharmacyDisplay"
+            :has-required-pharmacy="treatmentGates.hasRequiredPharmacy"
+            :is-exec-dept-required="treatmentGates.isExecDeptRequired"
+            :get-exec-dept-display="treatmentGates.getExecDeptDisplay"
+            :has-required-exec-dept="treatmentGates.hasRequiredExecDept"
+            :get-body-site-display="treatmentGates.getBodySiteDisplay"
+            :has-required-body-site="treatmentGates.hasRequiredBodySite"
+            :is-secondary-selector-open="isSecondarySelectorOpen"
+            :get-pharmacy-search-keyword="getPharmacySearchKeyword"
+            :get-filtered-pharmacy-options="getFilteredPharmacyOptions"
+            :get-exec-dept-search-keyword="getExecDeptSearchKeyword"
+            :get-filtered-exec-dept-options="getFilteredExecDeptOptions"
+            :get-body-site-search-keyword="getBodySiteSearchKeyword"
+            :get-filtered-body-site-options="getFilteredBodySiteOptions"
             :is-manual-match-open="isManualMatchOpen"
             :get-manual-match-keyword="getManualMatchKeyword"
             :get-manual-match-candidates="getManualMatchPickerCandidates"
             @toggle="toggleTreatment"
             @confirm-match="confirmSuggestedMatch"
+            @open-pharmacy="openPharmacyQuickSelector"
+            @open-exec-dept="openExecDeptQuickSelector"
+            @open-body-site="openBodySiteQuickSelector"
+            @close-secondary-selector="closeSecondarySelector"
+            @update-pharmacy-keyword="handlePharmacySearchInput"
+            @select-pharmacy="selectPharmacyOption"
+            @clear-pharmacy="clearPharmacySelection"
+            @update-exec-dept-keyword="handleExecDeptSearchInput"
+            @select-exec-dept="selectExecDeptOption"
+            @clear-exec-dept="clearExecDeptSelection"
+            @update-body-site-keyword="handleBodySiteSearchInput"
+            @select-body-site="selectBodySiteOption"
+            @clear-body-site="clearBodySiteSelection"
             @toggle-manual-match="toggleManualMatchState"
             @update-manual-match-keyword="setManualMatchKeyword"
             @select-manual-match-candidate="applyManualMatch"
@@ -387,7 +602,7 @@ onMounted(() => {
         <span>{{ selectedCount }} 项已选</span>
       </div>
       <div class="footer-actions">
-        <button class="secondary-btn" @click="emit('close')">返回</button>
+        <button class="secondary-btn" @click="emit('close')">放弃</button>
         <button
           class="primary-btn"
           :disabled="!canSubmit"

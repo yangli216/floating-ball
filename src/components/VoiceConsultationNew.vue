@@ -1993,7 +1993,7 @@ watch(
               </div>
             </div>
 
-            <div v-if="diagnosisLoading && aiDiagnoses.length === 0" class="loading-inline">
+            <div v-if="diagnosisLoading" class="loading-inline">
               <div class="ai-spinner small">
                 <div class="spinner-ring"></div>
                 <div class="spinner-core"></div>

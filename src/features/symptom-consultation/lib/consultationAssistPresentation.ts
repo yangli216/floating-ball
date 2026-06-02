@@ -1,5 +1,8 @@
 import type { FeatureCode } from '../../../services/featureUsageTracker';
-import type { ConsultationAssistAction } from '../../../types/consultationAssist';
+import type {
+  ConsultationAssistAction,
+  ConsultationAssistExternalAction,
+} from '../../../types/consultationAssist';
 
 export type ConsultationAssistBannerTone = 'info' | 'success' | 'error';
 
@@ -52,13 +55,16 @@ const ASSIST_BANNER_TEXT_BY_ACTION: Record<ConsultationAssistAction, string> = {
   reminder: '风险提醒已同步，可结合当前病历继续处理。',
 };
 
-const ASSIST_FEATURE_CODE_BY_ACTION: Partial<Record<ConsultationAssistAction, FeatureCode>> = {
+const ASSIST_FEATURE_CODE_BY_ACTION: Partial<Record<ConsultationAssistExternalAction, FeatureCode>> = {
   diagnosis: 'diagnosis_recommendation',
+  suggestedDx: 'diagnosis_recommendation',
   differential: 'diagnosis_checklist',
+  diffDx: 'diagnosis_checklist',
   medication: 'medication_recommendation',
   examination: 'examination_recommendation',
   lab_test: 'lab_test_recommendation',
   procedure: 'procedure_recommendation',
+  treatment_plan: 'treatment_plan_recommendation',
 };
 
 const BANNER_PALETTE_BY_TONE: Record<ConsultationAssistBannerTone, Pick<ConsultationAssistBannerStyle, 'background' | 'border' | 'color'>> = {
@@ -84,7 +90,7 @@ export function getConsultationAssistLabel(action: ConsultationAssistAction | nu
 }
 
 export function getConsultationAssistFeatureCode(
-  action: ConsultationAssistAction,
+  action: ConsultationAssistExternalAction,
 ): FeatureCode | undefined {
   return ASSIST_FEATURE_CODE_BY_ACTION[action];
 }

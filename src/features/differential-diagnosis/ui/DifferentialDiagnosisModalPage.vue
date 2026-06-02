@@ -3,14 +3,9 @@ import { computed, inject, onMounted, ref, watch } from 'vue';
 import Icon from '@shared/ui/Icon.vue';
 import { PROMPTS } from '@/prompts';
 import { chat } from '@/services/llm';
-import { trackFeatureUsage } from '@/services/featureUsageTracker';
 import { medicalDataService } from '@/services/medicalData';
 import { parseLLMJson } from '@features/clinical-result';
 import type { AppPatient } from '@/types/appState';
-import {
-  getPatientContextAnchorId,
-  getPatientContextName,
-} from '@/utils/patientContext';
 import { formatUserFacingError } from '@shared/lib/errorMessages';
 
 interface ChecklistItem {
@@ -51,7 +46,6 @@ const historyOfPresentIllness = computed(() => (
   || props.patient?.clinical?.historyOfPresentIllness
   || ''
 ).trim());
-const consultationId = computed(() => getPatientContextAnchorId(props.patient) || 'unknown');
 const matchedDiagnosis = computed(() => medicalDataService.matchDiagnosis(diagnosisName.value));
 const displayDiagnosisName = computed(() => matchedDiagnosis.value?.name || diagnosisName.value || '当前诊断');
 
@@ -73,22 +67,6 @@ function normalizeChecklistItems(result: DiagnosisChecklistResponse): ChecklistI
     .filter((item) => item.question);
 }
 
-function trackDifferentialUsage(): void {
-  trackFeatureUsage({
-    featureCode: 'diagnosis_checklist',
-    eventAction: 'open_differential_assist',
-    idempotencyKey: `assist:differential:${consultationId.value}:${Date.now()}`,
-    consultationId: consultationId.value,
-    sourceModule: 'differential_diagnosis_modal',
-    scene: 'consultation-assist-differential',
-    payload: {
-      diagnosisName: diagnosisName.value,
-      diagnosisCode: matchedDiagnosis.value?.code,
-      patientName: getPatientContextName(props.patient),
-    },
-  });
-}
-
 async function generateChecklist(): Promise<void> {
   if (isChecklistLoading.value) {
     return;
@@ -104,7 +82,6 @@ async function generateChecklist(): Promise<void> {
   generationError.value = '';
   checklistItems.value = [];
   hasRequested.value = true;
-  trackDifferentialUsage();
 
   try {
     const userPrompt = PROMPTS.consultation.diagnosisChecklist.buildUserPrompt({

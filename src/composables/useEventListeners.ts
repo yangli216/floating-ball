@@ -17,6 +17,11 @@ import { onOpenUrl } from '@tauri-apps/plugin-deep-link';
 import { supportsPersistentWindowSize, type ViewType } from '../constants/windowSizes';
 import { openReportInterpretationWindow } from '../services/reportInterpretation';
 import { trackApiCall, trackError } from '../services/operationTracker';
+import {
+  trackConsultationAssistEntry,
+  trackSmartConsultationEntry,
+  trackVoiceConsultationEntry,
+} from '../services/featureUsageEntryTracker';
 import type { RiskItem } from '@features/reception-risk';
 import type { AppPatient } from '../types/appState';
 import {
@@ -230,6 +235,10 @@ export function useEventListeners(options: EventListenersOptions) {
     // Update/Merge Global Patient Context
     // This ensures we have the correct keys (naPi, sdSexText) for ConsultationPage
     mergeCurrentPatient(payload);
+    trackSmartConsultationEntry({
+      patient: currentPatient.value,
+      payload: payload as Record<string, unknown>,
+    });
 
     await navigation.openConsultation();
   }
@@ -266,6 +275,10 @@ export function useEventListeners(options: EventListenersOptions) {
     }
 
     mergeCurrentPatient(normalizedPayload, patientOverrides);
+    trackConsultationAssistEntry(normalizedPayload.action, {
+      patient: currentPatient.value,
+      payload: normalizedPayload as Record<string, unknown>,
+    });
 
     const triggerKind = normalizeConsultationAssistAction(normalizedPayload.action);
     if (triggerKind === 'treatment_plan') {
@@ -330,6 +343,11 @@ export function useEventListeners(options: EventListenersOptions) {
       console.info('[EventListeners] Duplicate start voice request ignored while voice interaction is already active');
       return;
     }
+
+    trackVoiceConsultationEntry({
+      patient: currentPatient.value,
+      payload: event.payload as Record<string, unknown> | null | undefined,
+    });
 
     const shouldRestoreCache = hasCachedVoiceResult(currentPatient.value);
     resetVoiceSessionState();

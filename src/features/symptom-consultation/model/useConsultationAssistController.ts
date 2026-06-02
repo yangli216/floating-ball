@@ -33,7 +33,7 @@ export interface UseConsultationAssistControllerInput {
   fetchExamRecommendation: () => Promise<void>;
   fetchLabTestRecommendation: () => Promise<void>;
   fetchProcedureRecommendation: () => Promise<void>;
-  trackAssistFeatureUsage: (
+  trackAssistFeatureUsage?: (
     kind: ConsultationAssistAction,
     payload?: ConsultationAssistTrackPayload,
   ) => void;
@@ -93,7 +93,7 @@ export function useConsultationAssistController(input: UseConsultationAssistCont
             await input.fetchAIDiagnosis();
           }
           if (input.aiDiagnoses.value.length > 0) {
-            input.trackAssistFeatureUsage('diagnosis', {
+            input.trackAssistFeatureUsage?.('diagnosis', {
               diagnosisCount: input.aiDiagnoses.value.length,
             });
           }
@@ -107,7 +107,7 @@ export function useConsultationAssistController(input: UseConsultationAssistCont
             await input.fetchTreatmentRecommendation();
           }
           if (input.treatmentRecommendations.value.length > 0) {
-            input.trackAssistFeatureUsage('medication', {
+            input.trackAssistFeatureUsage?.('medication', {
               diagnosisName: input.selectedDiagnosis.value?.name,
               itemCount: input.treatmentRecommendations.value.length,
             });
@@ -122,7 +122,7 @@ export function useConsultationAssistController(input: UseConsultationAssistCont
             await input.fetchExamRecommendation();
           }
           if (input.examRecommendations.value.length > 0) {
-            input.trackAssistFeatureUsage('examination', {
+            input.trackAssistFeatureUsage?.('examination', {
               diagnosisName: input.selectedDiagnosis.value?.name,
               itemCount: input.examRecommendations.value.length,
             });
@@ -137,7 +137,7 @@ export function useConsultationAssistController(input: UseConsultationAssistCont
             await input.fetchLabTestRecommendation();
           }
           if (input.labTestRecommendations.value.length > 0) {
-            input.trackAssistFeatureUsage('lab_test', {
+            input.trackAssistFeatureUsage?.('lab_test', {
               diagnosisName: input.selectedDiagnosis.value?.name,
               itemCount: input.labTestRecommendations.value.length,
             });
@@ -152,7 +152,7 @@ export function useConsultationAssistController(input: UseConsultationAssistCont
             await input.fetchProcedureRecommendation();
           }
           if (input.procedureRecommendations.value.length > 0) {
-            input.trackAssistFeatureUsage('procedure', {
+            input.trackAssistFeatureUsage?.('procedure', {
               diagnosisName: input.selectedDiagnosis.value?.name,
               itemCount: input.procedureRecommendations.value.length,
             });
@@ -164,7 +164,7 @@ export function useConsultationAssistController(input: UseConsultationAssistCont
           if (!hasDiagnosis || !input.selectedDiagnosis.value) {
             return;
           }
-          input.trackAssistFeatureUsage('differential', {
+          input.trackAssistFeatureUsage?.('differential', {
             diagnosisName: input.selectedDiagnosis.value.name,
             diagnosisCode: input.selectedDiagnosis.value.code,
           });

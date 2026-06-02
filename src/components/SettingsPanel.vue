@@ -41,7 +41,6 @@ import Icon from '@shared/ui/Icon.vue';
 import { formatUserFacingError } from '@shared/lib/errorMessages';
 
 const emit = defineEmits<{
-  'open-symptom-manage': [];
   'open-his-log': [];
   'open-medical-cache': [];
 }>();
@@ -149,11 +148,6 @@ const {
 const handleSelectTheme = (theme: (typeof themes)[number]) => {
   trackClick('settings_theme_change', { themeId: theme.id });
   void setTheme(theme);
-};
-
-const handleOpenSymptomManage = () => {
-  trackClick('settings_open_symptom_manage');
-  emit('open-symptom-manage');
 };
 
 const handleOpenMedicalCache = () => {
@@ -730,7 +724,6 @@ watch([regionalBaseUrl, regionalOrgCode], () => {
         @clear-voice-recording-dir="handleClearVoiceRecordingDir"
         @open-his-log="handleOpenHisLog"
         @open-medical-cache="handleOpenMedicalCache"
-        @open-symptom-manage="handleOpenSymptomManage"
         @pick-voice-recording-dir="handlePickVoiceRecordingDir"
         @refresh-audio-input-devices="refreshAudioInputDevices"
         @select-theme="handleSelectTheme"

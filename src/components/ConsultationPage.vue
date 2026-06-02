@@ -533,7 +533,6 @@ import { invoke } from '@tauri-apps/api/core';
 import { feedbackService } from '../services/feedback';
 import { getHisAdapter } from '../services/his';
 import { trackViewChange, trackClick, trackError, trackFormSubmit, trackRecommendationAction } from '../services/operationTracker';
-import { trackFeatureUsage } from '../services/featureUsageTracker';
 import {
   BodyPartSelector,
   SystemCategorySelector,
@@ -615,7 +614,6 @@ import {
   filterOtherTreatmentRecommendations,
   generalConditionConfig,
   getConsultationAssistBannerTone,
-  getConsultationAssistFeatureCode,
   getConsultationAssistLabel,
   getDiagnosisReferenceButtonLabel as getSymptomDiagnosisReferenceButtonLabel,
   getDiagnosisRateClass,
@@ -1089,25 +1087,6 @@ const getPatientAnchorId = (patient?: {
 
 const resolveConsultationId = (): string =>
   getPatientAnchorId(finalRecord.value?.patient || patientInfo.value) || 'unknown';
-
-const trackAssistFeatureUsage = (
-  kind: AssistAction,
-  payload?: Record<string, unknown>,
-): void => {
-  const featureCode = getConsultationAssistFeatureCode(kind);
-  if (!featureCode) return;
-
-  const consultationId = resolveConsultationId();
-  trackFeatureUsage({
-    featureCode,
-    eventAction: `open_${kind}_assist`,
-    idempotencyKey: `assist:${kind}:${consultationId}:${Date.now()}`,
-    consultationId,
-    sourceModule: 'consultation_assist',
-    scene: `consultation-assist-${kind}`,
-    payload,
-  });
-};
 
 const resolvePastMedicalHistory = (): string => resolvePastMedicalHistoryFromSources({
   record: finalRecord.value?.record as unknown as Record<string, unknown> | undefined,
@@ -2797,7 +2776,6 @@ const consultationAssistController = useConsultationAssistController({
   fetchExamRecommendation,
   fetchLabTestRecommendation,
   fetchProcedureRecommendation,
-  trackAssistFeatureUsage,
   consumeAutoTrigger: () => emit('consume-auto-trigger'),
 });
 
