@@ -141,6 +141,7 @@ export interface HisServiceContext {
 interface HiBdDieListBody {
   start?: number;
   limit?: number;
+  total?: number;
   items?: Array<{
     idDie?: string;
     cd?: string;
@@ -593,15 +594,48 @@ export class HisService {
    * 真实 HIS 服务：api/base.hiBdDieService/queryList
    */
   async fetchDiagnosisCatalog(): Promise<HisDiagnosisCatalogItem[]> {
-    const response = await this.post<HiBdDieListBody>(
-      HIS_CATALOG_ENDPOINTS.diagnoses,
-      [{ start: 0, limit: -1 }]
-    );
-    this.assertBusinessSuccess(HIS_CATALOG_ENDPOINTS.diagnoses, response);
+    const pageSize = 1000;
+    let start = 0;
+    let total: number | null = null;
+    const items: NonNullable<HiBdDieListBody['items']> = [];
+    const pageSummaries: Array<{ start: number; rawCount: number; total: number | null }> = [];
 
-    const items = response.body?.items ?? [];
-    return items
-      .filter((item) => item.fgActive !== '0')
+    while (true) {
+      const response = await this.post<HiBdDieListBody>(
+        HIS_CATALOG_ENDPOINTS.diagnoses,
+        [{ start, limit: pageSize }]
+      );
+      this.assertBusinessSuccess(HIS_CATALOG_ENDPOINTS.diagnoses, response);
+
+      const pageItems = response.body?.items ?? response.data?.items ?? [];
+      const rawTotal = response.body?.total ?? response.data?.total;
+      const parsedTotal = Number(rawTotal);
+      if (Number.isFinite(parsedTotal) && parsedTotal >= 0) {
+        total = parsedTotal;
+      }
+
+      items.push(...pageItems);
+      pageSummaries.push({
+        start,
+        rawCount: pageItems.length,
+        total,
+      });
+
+      if (pageItems.length === 0) {
+        break;
+      }
+      if (total !== null && items.length >= total) {
+        break;
+      }
+      if (pageItems.length < pageSize) {
+        break;
+      }
+
+      start += pageSize;
+    }
+
+    const activeItems = items.filter((item) => item.fgActive !== '0');
+    const normalizedItems = activeItems
       .map((item) => {
         const code = item.cdIcd?.trim() || item.cd?.trim() || '';
         const name = item.naIcd?.trim() || item.na?.trim() || '';
@@ -623,6 +657,17 @@ export class HisService {
         };
       })
       .filter(item => item.code || item.name);
+
+    console.log('[HisService] Diagnosis catalog summary', {
+      total,
+      pages: pageSummaries,
+      rawCount: items.length,
+      inactiveFiltered: items.length - activeItems.length,
+      normalizedCount: normalizedItems.length,
+      sample: normalizedItems[0] ?? null,
+    });
+
+    return normalizedItems;
   }
 
   /**
