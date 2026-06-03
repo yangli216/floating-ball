@@ -162,7 +162,9 @@ jobs:
           }
 
       - name: Build the app
-        uses: tauri-apps/tauri-action@v0
+        # Keep this pinned: the floating v0 tag moved to node24 and can fail on
+        # runners that do not provide that action runtime yet.
+        uses: tauri-apps/tauri-action@v0.5.22
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}

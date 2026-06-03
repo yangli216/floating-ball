@@ -181,6 +181,13 @@
 - **解决方案**: 拖拽排除判断改为基于 `Element.closest()`，覆盖 SVG 子节点；右上角操作区在 `mousedown` 阶段停止冒泡，避免窗口控制按钮触发标题栏拖拽。
 - **后续防护**: 自定义标题栏中判断点击目标时不能只检查 `HTMLElement`；涉及 icon/svg 的按钮应按 `Element.closest()` 或容器级 `mousedown.stop` 排除拖拽区域，并优先在 Windows WebView2 下回归。
 
+### RETRO-024: Release workflow 使用浮动 action tag 被上游 Node runtime 升级影响 [已解决]
+
+- **现象**: GitHub Actions 发布任务在 macOS / Windows 矩阵中报 `Unable to locate executable file: undefined`，任务尚未进入应用构建逻辑就失败。
+- **根因**: `.github/workflows/release.yml` 使用 `tauri-apps/tauri-action@v0` 浮动 tag；上游 `v0` 已解析到 `runs.using: node24`，部分 runner 尚未提供该 action runtime，导致 runner 启动 action 时找不到可执行文件。
+- **解决方案**: 将 Tauri 发布 action 固定到 `tauri-apps/tauri-action@v0.5.22`，该版本仍使用 `node20` 且与现有 `tagName/releaseName/args` 输入兼容。
+- **后续防护**: Release / CI 中对关键构建 action 尽量固定到具体版本；升级 action runtime 前先确认 GitHub runner 支持矩阵，避免浮动 tag 在无代码改动时改变发布行为。
+
 
 ---
 
