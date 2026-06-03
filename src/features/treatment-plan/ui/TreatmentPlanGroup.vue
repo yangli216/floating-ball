@@ -2,19 +2,24 @@
 import Icon from '@shared/ui/Icon.vue';
 import type { TreatmentRecommendation } from '@/types/consultation';
 import {
-  getMedicineCollapsedSummary,
   getSuggestedMatchName,
   getTreatmentMatchLabel,
   getTreatmentOriginalName,
   getTreatmentSpec,
   hasProbableMatch,
+  type MedicinePrimaryField,
 } from '@features/clinical-result';
 import {
   ManualMatchPicker,
+  TreatmentItemEditor,
   TreatmentRecommendationCard,
   type ManualMatchCandidate,
 } from '@features/consultation-result';
+import type { UsageOption } from '@/utils/medicalDictionaryHelpers';
 import type { TreatmentPlanRecommendationSection } from '../model/useTreatmentPlanRecommendations';
+
+type TreatmentPlanAttributeField = 'pharmacy' | 'execDept' | 'bodySite' | 'insurance';
+type TreatmentPlanAttributeOption = { key: string; text: string; mcode?: string };
 
 const props = defineProps<{
   section: TreatmentPlanRecommendationSection;
@@ -28,13 +33,25 @@ const props = defineProps<{
   hasRequiredExecDept: (item: TreatmentRecommendation) => boolean;
   getBodySiteDisplay: (item: TreatmentRecommendation) => string;
   hasRequiredBodySite: (item: TreatmentRecommendation) => boolean;
-  isSecondarySelectorOpen: (item: TreatmentRecommendation, field: 'pharmacy' | 'execDept' | 'bodySite') => boolean;
+  frequencyOptions: UsageOption[];
+  routeOptions: UsageOption[];
+  shouldShowTreatmentEditor: (item: TreatmentRecommendation) => boolean;
+  isTreatmentEditorExpanded: (item: TreatmentRecommendation) => boolean;
+  isEditableFieldActive: (item: TreatmentRecommendation, field: MedicinePrimaryField) => boolean;
+  getEditableFieldKey: (item: TreatmentRecommendation, field: MedicinePrimaryField) => string;
+  getMedicineFieldDisplay: (item: TreatmentRecommendation, field: MedicinePrimaryField) => string;
+  getMedicineInlineSummary: (item: TreatmentRecommendation) => string;
+  isMedicineInventoryChecking: (item: TreatmentRecommendation) => boolean;
+  getMedicineInventoryWarning: (item: TreatmentRecommendation) => string;
+  isSecondarySelectorOpen: (item: TreatmentRecommendation, field: TreatmentPlanAttributeField) => boolean;
   getPharmacySearchKeyword: (item: TreatmentRecommendation) => string;
-  getFilteredPharmacyOptions: (item: TreatmentRecommendation) => Array<{ key: string; text: string; mcode?: string }>;
+  getFilteredPharmacyOptions: (item: TreatmentRecommendation) => TreatmentPlanAttributeOption[];
   getExecDeptSearchKeyword: (item: TreatmentRecommendation) => string;
-  getFilteredExecDeptOptions: (item: TreatmentRecommendation) => Array<{ key: string; text: string; mcode?: string }>;
+  getFilteredExecDeptOptions: (item: TreatmentRecommendation) => TreatmentPlanAttributeOption[];
   getBodySiteSearchKeyword: (item: TreatmentRecommendation) => string;
-  getFilteredBodySiteOptions: (item: TreatmentRecommendation) => Array<{ key: string; text: string; mcode?: string }>;
+  getFilteredBodySiteOptions: (item: TreatmentRecommendation) => TreatmentPlanAttributeOption[];
+  getInsuranceSearchKeyword: (item: TreatmentRecommendation) => string;
+  getFilteredInsuranceOptions: (item: TreatmentRecommendation) => TreatmentPlanAttributeOption[];
   isManualMatchOpen: (item: TreatmentRecommendation) => boolean;
   getManualMatchKeyword: (item: TreatmentRecommendation) => string;
   getManualMatchCandidates: (item: TreatmentRecommendation) => ManualMatchCandidate[];
@@ -43,19 +60,30 @@ const props = defineProps<{
 const emit = defineEmits<{
   toggle: [item: TreatmentRecommendation];
   confirmMatch: [item: TreatmentRecommendation];
+  toggleTreatmentEditor: [item: TreatmentRecommendation, event?: Event];
+  activateEditableField: [item: TreatmentRecommendation, field: MedicinePrimaryField, event?: Event];
+  editableFieldBlur: [item: TreatmentRecommendation, field: MedicinePrimaryField, event: FocusEvent];
+  registerEditableFieldElement: [key: string, element: unknown];
+  totalQtyInput: [item: TreatmentRecommendation, event: Event];
+  frequencyOpenChange: [item: TreatmentRecommendation, open: boolean];
+  routeOpenChange: [item: TreatmentRecommendation, open: boolean];
   openPharmacy: [item: TreatmentRecommendation, event?: Event];
   openExecDept: [item: TreatmentRecommendation, event?: Event];
   openBodySite: [item: TreatmentRecommendation, event?: Event];
-  closeSecondarySelector: [item: TreatmentRecommendation, field: 'pharmacy' | 'execDept' | 'bodySite', event: FocusEvent];
+  openInsurance: [item: TreatmentRecommendation, event?: Event];
+  closeSecondarySelector: [item: TreatmentRecommendation, field: TreatmentPlanAttributeField, event: FocusEvent];
   updatePharmacyKeyword: [item: TreatmentRecommendation, event: Event];
-  selectPharmacy: [item: TreatmentRecommendation, option: { key: string; text: string; mcode?: string }];
+  selectPharmacy: [item: TreatmentRecommendation, option: TreatmentPlanAttributeOption];
   clearPharmacy: [item: TreatmentRecommendation];
   updateExecDeptKeyword: [item: TreatmentRecommendation, event: Event];
-  selectExecDept: [item: TreatmentRecommendation, option: { key: string; text: string; mcode?: string }];
+  selectExecDept: [item: TreatmentRecommendation, option: TreatmentPlanAttributeOption];
   clearExecDept: [item: TreatmentRecommendation];
   updateBodySiteKeyword: [item: TreatmentRecommendation, event: Event];
-  selectBodySite: [item: TreatmentRecommendation, option: { key: string; text: string; mcode?: string }];
+  selectBodySite: [item: TreatmentRecommendation, option: TreatmentPlanAttributeOption];
   clearBodySite: [item: TreatmentRecommendation];
+  updateInsuranceKeyword: [item: TreatmentRecommendation, event: Event];
+  selectInsurance: [item: TreatmentRecommendation, option: TreatmentPlanAttributeOption];
+  clearInsurance: [item: TreatmentRecommendation];
   toggleManualMatch: [item: TreatmentRecommendation];
   updateManualMatchKeyword: [item: TreatmentRecommendation, value: string];
   selectManualMatchCandidate: [item: TreatmentRecommendation, candidate: ManualMatchCandidate];
@@ -102,10 +130,160 @@ function getUsageToken(item: TreatmentRecommendation): string {
 }
 
 function getInlineSummary(item: TreatmentRecommendation): string {
-  if (item.type === 'medicine') {
-    return getMedicineCollapsedSummary(item, []);
+  return item.type === 'medicine' && !props.isTreatmentEditorExpanded(item)
+    ? props.getMedicineInlineSummary(item)
+    : '';
+}
+
+function shouldShowEditorToggle(item: TreatmentRecommendation): boolean {
+  return !!item.selected || props.isTreatmentEditorExpanded(item);
+}
+
+function shouldShowExecDeptField(item: TreatmentRecommendation): boolean {
+  return item.type !== 'medicine';
+}
+
+function isExecDeptChipMissing(item: TreatmentRecommendation): boolean {
+  return props.isExecDeptRequired(item) && !props.hasRequiredExecDept(item);
+}
+
+function getExecDeptChipTitle(item: TreatmentRecommendation): string {
+  if (props.hasRequiredExecDept(item) && props.getExecDeptDisplay(item)) {
+    return '点击调整执行科室';
   }
-  return '';
+  if (props.isExecDeptRequired(item)) {
+    return '执行科室为空，点击设置后才能选中';
+  }
+  return '点击设置执行科室';
+}
+
+function getAttributeOptions(item: TreatmentRecommendation, field: TreatmentPlanAttributeField): TreatmentPlanAttributeOption[] {
+  switch (field) {
+    case 'pharmacy':
+      return props.getFilteredPharmacyOptions(item);
+    case 'execDept':
+      return props.getFilteredExecDeptOptions(item);
+    case 'bodySite':
+      return props.getFilteredBodySiteOptions(item);
+    case 'insurance':
+      return props.getFilteredInsuranceOptions(item);
+  }
+}
+
+function getAttributeKeyword(item: TreatmentRecommendation, field: TreatmentPlanAttributeField): string {
+  switch (field) {
+    case 'pharmacy':
+      return props.getPharmacySearchKeyword(item);
+    case 'execDept':
+      return props.getExecDeptSearchKeyword(item);
+    case 'bodySite':
+      return props.getBodySiteSearchKeyword(item);
+    case 'insurance':
+      return props.getInsuranceSearchKeyword(item);
+  }
+}
+
+function getAttributePlaceholder(field: TreatmentPlanAttributeField): string {
+  switch (field) {
+    case 'pharmacy':
+      return '输入名称筛选药房';
+    case 'execDept':
+      return '输入名称筛选科室';
+    case 'bodySite':
+      return '输入名称筛选部位';
+    case 'insurance':
+      return '输入名称筛选医保类型';
+  }
+}
+
+function getAttributeEmptyText(field: TreatmentPlanAttributeField): string {
+  switch (field) {
+    case 'pharmacy':
+      return '未找到匹配药房';
+    case 'execDept':
+      return '未找到匹配科室';
+    case 'bodySite':
+      return '暂无可选部位';
+    case 'insurance':
+      return '未找到匹配医保类型';
+  }
+}
+
+function hasAttributeValue(item: TreatmentRecommendation, field: TreatmentPlanAttributeField): boolean {
+  switch (field) {
+    case 'pharmacy':
+      return Boolean(item.pharmacy);
+    case 'execDept':
+      return Boolean(item.execDept);
+    case 'bodySite':
+      return Boolean(item.bodySite);
+    case 'insurance':
+      return Boolean(item.insuranceType);
+  }
+}
+
+function updateAttributeKeyword(item: TreatmentRecommendation, field: TreatmentPlanAttributeField, event: Event): void {
+  switch (field) {
+    case 'pharmacy':
+      emit('updatePharmacyKeyword', item, event);
+      return;
+    case 'execDept':
+      emit('updateExecDeptKeyword', item, event);
+      return;
+    case 'bodySite':
+      emit('updateBodySiteKeyword', item, event);
+      return;
+    case 'insurance':
+      emit('updateInsuranceKeyword', item, event);
+      return;
+  }
+}
+
+function selectAttributeOption(item: TreatmentRecommendation, field: TreatmentPlanAttributeField, option: TreatmentPlanAttributeOption): void {
+  switch (field) {
+    case 'pharmacy':
+      emit('selectPharmacy', item, option);
+      return;
+    case 'execDept':
+      emit('selectExecDept', item, option);
+      return;
+    case 'bodySite':
+      emit('selectBodySite', item, option);
+      return;
+    case 'insurance':
+      emit('selectInsurance', item, option);
+      return;
+  }
+}
+
+function clearAttribute(item: TreatmentRecommendation, field: TreatmentPlanAttributeField): void {
+  switch (field) {
+    case 'pharmacy':
+      emit('clearPharmacy', item);
+      return;
+    case 'execDept':
+      emit('clearExecDept', item);
+      return;
+    case 'bodySite':
+      emit('clearBodySite', item);
+      return;
+    case 'insurance':
+      emit('clearInsurance', item);
+      return;
+  }
+}
+
+function getAttributeAriaLabel(field: TreatmentPlanAttributeField): string {
+  switch (field) {
+    case 'pharmacy':
+      return '药房候选项';
+    case 'execDept':
+      return '执行科室候选项';
+    case 'bodySite':
+      return '检查部位候选项';
+    case 'insurance':
+      return '医保限用候选项';
+  }
 }
 </script>
 
@@ -146,10 +324,10 @@ function getInlineSummary(item: TreatmentRecommendation): string {
         :spec="getTreatmentSpec(item)"
         :match-label="getDisplayMatchLabel(item)"
         :match-tone="getMatchTone(item)"
-        :show-exec-dept-chip="props.isExecDeptRequired(item)"
+        :show-exec-dept-chip="shouldShowExecDeptField(item)"
         :exec-dept-display="props.getExecDeptDisplay(item)"
-        :exec-dept-missing="!props.hasRequiredExecDept(item)"
-        :exec-dept-title="props.hasRequiredExecDept(item) ? '点击调整执行科室' : '执行科室为空，点击设置后才能选中'"
+        :exec-dept-missing="isExecDeptChipMissing(item)"
+        :exec-dept-title="getExecDeptChipTitle(item)"
         :show-pharmacy-chip="props.isPharmacyRequired(item)"
         :pharmacy-display="props.getPharmacyDisplay(item)"
         :pharmacy-missing="!props.hasRequiredPharmacy(item)"
@@ -162,11 +340,15 @@ function getInlineSummary(item: TreatmentRecommendation): string {
         :show-manual-match-button="!item.matchedItem"
         :manual-match-title="props.isManualMatchOpen(item) ? '收起手动匹配' : '手动匹配标准库项目'"
         :manual-match-button-text="props.isManualMatchOpen(item) ? '收起匹配' : '手动匹配'"
+        :show-editor-toggle="shouldShowEditorToggle(item)"
+        :editor-expanded="props.isTreatmentEditorExpanded(item)"
+        layout-variant="worklist"
         @toggle="emit('toggle', item)"
         @open-pharmacy="emit('openPharmacy', item, $event)"
         @open-exec-dept="emit('openExecDept', item, $event)"
         @confirm-probable-match="emit('confirmMatch', item)"
         @toggle-manual-match="emit('toggleManualMatch', item)"
+        @toggle-editor="emit('toggleTreatmentEditor', item, $event)"
       >
         <template #title-prefix>
           <span class="type-badge">{{ getTypeBadge(item) }}</span>
@@ -186,119 +368,6 @@ function getInlineSummary(item: TreatmentRecommendation): string {
           </button>
         </template>
 
-        <template #body>
-          <div
-            v-if="props.isSecondarySelectorOpen(item, 'pharmacy') || props.isSecondarySelectorOpen(item, 'execDept') || props.isSecondarySelectorOpen(item, 'bodySite')"
-            class="plan-attribute-editors"
-            @click.stop
-          >
-            <div
-              v-if="props.isPharmacyRequired(item) && props.isSecondarySelectorOpen(item, 'pharmacy')"
-              class="field-editor route-field-editor"
-              @focusout="emit('closeSecondarySelector', item, 'pharmacy', $event)"
-            >
-              <input
-                :value="props.getPharmacySearchKeyword(item)"
-                type="text"
-                placeholder="输入名称筛选药房"
-                class="edit-input"
-                @input="emit('updatePharmacyKeyword', item, $event)"
-              />
-              <div class="route-option-list" role="listbox" aria-label="药房候选项">
-                <button
-                  v-if="item.pharmacy"
-                  class="route-option-item route-option-clear"
-                  type="button"
-                  @mousedown.prevent.stop="emit('clearPharmacy', item)"
-                >
-                  <span class="route-option-text">清空当前值</span>
-                </button>
-                <button
-                  v-for="option in props.getFilteredPharmacyOptions(item).slice(0, 8)"
-                  :key="option.key"
-                  class="route-option-item"
-                  type="button"
-                  @mousedown.prevent.stop="emit('selectPharmacy', item, option)"
-                >
-                  <span class="route-option-text">{{ option.text }}</span>
-                  <span v-if="option.mcode" class="route-option-meta">{{ option.mcode }}</span>
-                </button>
-                <div v-if="props.getFilteredPharmacyOptions(item).length === 0" class="route-option-empty">未找到匹配药房</div>
-              </div>
-            </div>
-
-            <div
-              v-if="props.isExecDeptRequired(item) && props.isSecondarySelectorOpen(item, 'execDept')"
-              class="field-editor route-field-editor"
-              @focusout="emit('closeSecondarySelector', item, 'execDept', $event)"
-            >
-              <input
-                :value="props.getExecDeptSearchKeyword(item)"
-                type="text"
-                placeholder="输入名称筛选科室"
-                class="edit-input"
-                @input="emit('updateExecDeptKeyword', item, $event)"
-              />
-              <div class="route-option-list" role="listbox" aria-label="执行科室候选项">
-                <button
-                  v-if="item.execDept"
-                  class="route-option-item route-option-clear"
-                  type="button"
-                  @mousedown.prevent.stop="emit('clearExecDept', item)"
-                >
-                  <span class="route-option-text">清空当前值</span>
-                </button>
-                <button
-                  v-for="option in props.getFilteredExecDeptOptions(item).slice(0, 8)"
-                  :key="option.key"
-                  class="route-option-item"
-                  type="button"
-                  @mousedown.prevent.stop="emit('selectExecDept', item, option)"
-                >
-                  <span class="route-option-text">{{ option.text }}</span>
-                  <span v-if="option.key !== option.text" class="route-option-meta">{{ option.key }}</span>
-                </button>
-                <div v-if="props.getFilteredExecDeptOptions(item).length === 0" class="route-option-empty">未找到匹配科室</div>
-              </div>
-            </div>
-
-            <div
-              v-if="item.type === 'exam' && props.isSecondarySelectorOpen(item, 'bodySite')"
-              class="field-editor route-field-editor"
-              @focusout="emit('closeSecondarySelector', item, 'bodySite', $event)"
-            >
-              <input
-                :value="props.getBodySiteSearchKeyword(item)"
-                type="text"
-                placeholder="输入名称筛选部位"
-                class="edit-input"
-                @input="emit('updateBodySiteKeyword', item, $event)"
-              />
-              <div class="route-option-list" role="listbox" aria-label="检查部位候选项">
-                <button
-                  v-if="item.bodySite"
-                  class="route-option-item route-option-clear"
-                  type="button"
-                  @mousedown.prevent.stop="emit('clearBodySite', item)"
-                >
-                  <span class="route-option-text">清空当前值</span>
-                </button>
-                <button
-                  v-for="option in props.getFilteredBodySiteOptions(item).slice(0, 8)"
-                  :key="option.key"
-                  class="route-option-item"
-                  type="button"
-                  @mousedown.prevent.stop="emit('selectBodySite', item, option)"
-                >
-                  <span class="route-option-text">{{ option.text }}</span>
-                  <span v-if="option.mcode" class="route-option-meta">{{ option.mcode }}</span>
-                </button>
-                <div v-if="props.getFilteredBodySiteOptions(item).length === 0" class="route-option-empty">暂无可选部位</div>
-              </div>
-            </div>
-          </div>
-        </template>
-
         <template #manual-match>
           <ManualMatchPicker
             v-if="!item.matchedItem && props.isManualMatchOpen(item)"
@@ -308,6 +377,233 @@ function getInlineSummary(item: TreatmentRecommendation): string {
             @update:keyword="emit('updateManualMatchKeyword', item, $event)"
             @select="emit('selectManualMatchCandidate', item, $event)"
           />
+        </template>
+
+        <template #editor>
+          <div v-if="props.shouldShowTreatmentEditor(item)" class="editor-shell" @click.stop>
+            <template v-if="item.type === 'medicine'">
+              <TreatmentItemEditor
+                :rec="item"
+                mode="inline"
+                :frequency-options="props.frequencyOptions"
+                :route-options="props.routeOptions"
+                :is-field-active="(field) => props.isEditableFieldActive(item, field)"
+                :activate-field="(field, event) => emit('activateEditableField', item, field, event)"
+                :on-field-blur="(field, event) => emit('editableFieldBlur', item, field, event)"
+                :register-field-element="(field, element) => emit('registerEditableFieldElement', props.getEditableFieldKey(item, field), element)"
+                :on-total-qty-input="(event) => emit('totalQtyInput', item, event)"
+                :on-field-open-change="(field, open) => field === 'frequency' ? emit('frequencyOpenChange', item, open) : emit('routeOpenChange', item, open)"
+                :get-display-value="(field) => props.getMedicineFieldDisplay(item, field)"
+              />
+
+              <div v-if="props.isMedicineInventoryChecking(item)" class="medicine-inventory-note checking">
+                正在校验库存...
+              </div>
+              <div v-else-if="props.getMedicineInventoryWarning(item)" class="medicine-inventory-note warning">
+                {{ props.getMedicineInventoryWarning(item) }}
+              </div>
+
+              <div v-if="props.isTreatmentEditorExpanded(item)" class="secondary-field-grid">
+                <div class="secondary-field">
+                  <label>规定病</label>
+                  <input v-model="item.regulatedDisease" type="text" placeholder="规定病" class="edit-input" />
+                </div>
+                <div class="secondary-field">
+                  <label>天数</label>
+                  <input v-model="item.days" type="text" placeholder="天" class="edit-input mini" />
+                </div>
+                <div class="secondary-field">
+                  <label>药房</label>
+                  <div class="field-editor route-field-editor" @focusout="emit('closeSecondarySelector', item, 'pharmacy', $event)">
+                    <input
+                      :value="getAttributeKeyword(item, 'pharmacy')"
+                      type="text"
+                      :placeholder="getAttributePlaceholder('pharmacy')"
+                      class="edit-input"
+                      @focus="emit('openPharmacy', item, $event)"
+                      @input="updateAttributeKeyword(item, 'pharmacy', $event)"
+                    />
+                    <div v-if="props.isSecondarySelectorOpen(item, 'pharmacy')" class="route-option-list" role="listbox" :aria-label="getAttributeAriaLabel('pharmacy')">
+                      <button
+                        v-if="hasAttributeValue(item, 'pharmacy')"
+                        class="route-option-item route-option-clear"
+                        type="button"
+                        @mousedown.prevent.stop="clearAttribute(item, 'pharmacy')"
+                      >
+                        <span class="route-option-text">清空当前值</span>
+                      </button>
+                      <button
+                        v-for="option in getAttributeOptions(item, 'pharmacy').slice(0, 8)"
+                        :key="option.key"
+                        class="route-option-item"
+                        type="button"
+                        @mousedown.prevent.stop="selectAttributeOption(item, 'pharmacy', option)"
+                      >
+                        <span class="route-option-text">{{ option.text }}</span>
+                        <span v-if="option.mcode" class="route-option-meta">{{ option.mcode }}</span>
+                      </button>
+                      <div v-if="getAttributeOptions(item, 'pharmacy').length === 0" class="route-option-empty">{{ getAttributeEmptyText('pharmacy') }}</div>
+                    </div>
+                  </div>
+                </div>
+                <div class="secondary-field">
+                  <label>备注</label>
+                  <input v-model="item.remark" type="text" placeholder="备注" class="edit-input" />
+                </div>
+                <div class="secondary-field">
+                  <label>医保限用</label>
+                  <div class="field-editor route-field-editor" @focusout="emit('closeSecondarySelector', item, 'insurance', $event)">
+                    <input
+                      :value="getAttributeKeyword(item, 'insurance')"
+                      type="text"
+                      :placeholder="getAttributePlaceholder('insurance')"
+                      class="edit-input"
+                      @focus="emit('openInsurance', item, $event)"
+                      @input="updateAttributeKeyword(item, 'insurance', $event)"
+                    />
+                    <div v-if="props.isSecondarySelectorOpen(item, 'insurance')" class="route-option-list" role="listbox" :aria-label="getAttributeAriaLabel('insurance')">
+                      <button
+                        v-if="hasAttributeValue(item, 'insurance')"
+                        class="route-option-item route-option-clear"
+                        type="button"
+                        @mousedown.prevent.stop="clearAttribute(item, 'insurance')"
+                      >
+                        <span class="route-option-text">清空当前值</span>
+                      </button>
+                      <button
+                        v-for="option in getAttributeOptions(item, 'insurance').slice(0, 8)"
+                        :key="option.key"
+                        class="route-option-item"
+                        type="button"
+                        @mousedown.prevent.stop="selectAttributeOption(item, 'insurance', option)"
+                      >
+                        <span class="route-option-text">{{ option.text }}</span>
+                      </button>
+                      <div v-if="getAttributeOptions(item, 'insurance').length === 0" class="route-option-empty">{{ getAttributeEmptyText('insurance') }}</div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </template>
+
+            <template v-else>
+              <TreatmentItemEditor
+                :rec="item"
+                :frequency-options="props.frequencyOptions"
+                :route-options="props.routeOptions"
+                :show-exec-dept-readonly="false"
+                :show-body-site-readonly="false"
+              />
+
+              <div v-if="props.isTreatmentEditorExpanded(item)" class="secondary-field-grid">
+                <div v-if="shouldShowExecDeptField(item)" class="secondary-field">
+                  <label>执行科室</label>
+                  <div class="field-editor route-field-editor" @focusout="emit('closeSecondarySelector', item, 'execDept', $event)">
+                    <input
+                      :value="getAttributeKeyword(item, 'execDept')"
+                      type="text"
+                      :placeholder="getAttributePlaceholder('execDept')"
+                      class="edit-input"
+                      @focus="emit('openExecDept', item, $event)"
+                      @input="updateAttributeKeyword(item, 'execDept', $event)"
+                    />
+                    <div v-if="props.isSecondarySelectorOpen(item, 'execDept')" class="route-option-list" role="listbox" :aria-label="getAttributeAriaLabel('execDept')">
+                      <button
+                        v-if="hasAttributeValue(item, 'execDept')"
+                        class="route-option-item route-option-clear"
+                        type="button"
+                        @mousedown.prevent.stop="clearAttribute(item, 'execDept')"
+                      >
+                        <span class="route-option-text">清空当前值</span>
+                      </button>
+                      <button
+                        v-for="option in getAttributeOptions(item, 'execDept').slice(0, 8)"
+                        :key="option.key"
+                        class="route-option-item"
+                        type="button"
+                        @mousedown.prevent.stop="selectAttributeOption(item, 'execDept', option)"
+                      >
+                        <span class="route-option-text">{{ option.text }}</span>
+                        <span v-if="option.key !== option.text" class="route-option-meta">{{ option.key }}</span>
+                      </button>
+                      <div v-if="getAttributeOptions(item, 'execDept').length === 0" class="route-option-empty">{{ getAttributeEmptyText('execDept') }}</div>
+                    </div>
+                  </div>
+                </div>
+                <div v-if="item.type === 'exam'" class="secondary-field">
+                  <label>检查部位</label>
+                  <div class="field-editor route-field-editor" @focusout="emit('closeSecondarySelector', item, 'bodySite', $event)">
+                    <input
+                      :value="getAttributeKeyword(item, 'bodySite')"
+                      type="text"
+                      :placeholder="getAttributePlaceholder('bodySite')"
+                      class="edit-input"
+                      @focus="emit('openBodySite', item, $event)"
+                      @input="updateAttributeKeyword(item, 'bodySite', $event)"
+                    />
+                    <div v-if="props.isSecondarySelectorOpen(item, 'bodySite')" class="route-option-list" role="listbox" :aria-label="getAttributeAriaLabel('bodySite')">
+                      <button
+                        v-if="hasAttributeValue(item, 'bodySite')"
+                        class="route-option-item route-option-clear"
+                        type="button"
+                        @mousedown.prevent.stop="clearAttribute(item, 'bodySite')"
+                      >
+                        <span class="route-option-text">清空当前值</span>
+                      </button>
+                      <button
+                        v-for="option in getAttributeOptions(item, 'bodySite').slice(0, 8)"
+                        :key="option.key"
+                        class="route-option-item"
+                        type="button"
+                        @mousedown.prevent.stop="selectAttributeOption(item, 'bodySite', option)"
+                      >
+                        <span class="route-option-text">{{ option.text }}</span>
+                        <span v-if="option.mcode" class="route-option-meta">{{ option.mcode }}</span>
+                      </button>
+                      <div v-if="getAttributeOptions(item, 'bodySite').length === 0" class="route-option-empty">{{ getAttributeEmptyText('bodySite') }}</div>
+                    </div>
+                  </div>
+                </div>
+                <div class="secondary-field">
+                  <label>医保限用</label>
+                  <div class="field-editor route-field-editor" @focusout="emit('closeSecondarySelector', item, 'insurance', $event)">
+                    <input
+                      :value="getAttributeKeyword(item, 'insurance')"
+                      type="text"
+                      :placeholder="getAttributePlaceholder('insurance')"
+                      class="edit-input"
+                      @focus="emit('openInsurance', item, $event)"
+                      @input="updateAttributeKeyword(item, 'insurance', $event)"
+                    />
+                    <div v-if="props.isSecondarySelectorOpen(item, 'insurance')" class="route-option-list" role="listbox" :aria-label="getAttributeAriaLabel('insurance')">
+                      <button
+                        v-if="hasAttributeValue(item, 'insurance')"
+                        class="route-option-item route-option-clear"
+                        type="button"
+                        @mousedown.prevent.stop="clearAttribute(item, 'insurance')"
+                      >
+                        <span class="route-option-text">清空当前值</span>
+                      </button>
+                      <button
+                        v-for="option in getAttributeOptions(item, 'insurance').slice(0, 8)"
+                        :key="option.key"
+                        class="route-option-item"
+                        type="button"
+                        @mousedown.prevent.stop="selectAttributeOption(item, 'insurance', option)"
+                      >
+                        <span class="route-option-text">{{ option.text }}</span>
+                      </button>
+                      <div v-if="getAttributeOptions(item, 'insurance').length === 0" class="route-option-empty">{{ getAttributeEmptyText('insurance') }}</div>
+                    </div>
+                  </div>
+                </div>
+                <div class="secondary-field">
+                  <label>规定病</label>
+                  <input v-model="item.regulatedDisease" type="text" placeholder="规定病" class="edit-input" />
+                </div>
+              </div>
+            </template>
+          </div>
         </template>
       </TreatmentRecommendationCard>
     </div>
@@ -416,14 +712,59 @@ function getInlineSummary(item: TreatmentRecommendation): string {
   background: #f1f6ff;
 }
 
-.plan-attribute-editors {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
-  gap: 10px;
+.field-editor {
+  flex: 1;
+  min-width: 0;
+  position: relative;
 }
 
-.field-editor {
-  position: relative;
+.editor-shell {
+  margin-top: 8px;
+  padding-top: 10px;
+  border-top: 1px solid var(--voice-border);
+}
+
+.medicine-inventory-note {
+  margin-top: 8px;
+  padding: 7px 10px;
+  border-radius: 8px;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.medicine-inventory-note.checking {
+  color: #2469f2;
+  background: rgba(36, 105, 242, 0.08);
+}
+
+.medicine-inventory-note.warning {
+  color: #b45309;
+  background: rgba(245, 158, 11, 0.12);
+}
+
+.secondary-field-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.secondary-field {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  padding: 8px 10px;
+  border: 1px solid var(--voice-border);
+  border-radius: 10px;
+  background: var(--voice-surface-soft);
+}
+
+.secondary-field label {
+  flex-shrink: 0;
+  color: var(--voice-text-muted);
+  font-size: 12px;
+  white-space: nowrap;
 }
 
 .edit-input {
@@ -435,6 +776,10 @@ function getInlineSummary(item: TreatmentRecommendation): string {
   color: #1f2937;
   font-size: 13px;
   background: #fff;
+}
+
+.edit-input.mini {
+  max-width: 74px;
 }
 
 .edit-input:focus {
@@ -500,6 +845,18 @@ function getInlineSummary(item: TreatmentRecommendation): string {
   padding: 9px 8px;
   color: #94a3b8;
   font-size: 13px;
+}
+
+.edit-field-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.edit-unit {
+  color: var(--voice-text-muted);
+  font-size: 12px;
+  white-space: nowrap;
 }
 
 .body-site-chip {

@@ -9,10 +9,13 @@ import { medicalDataService } from '@/services/medicalData';
 import { formatUserFacingError } from '@shared/lib/errorMessages';
 import {
   useBodySiteOptions,
+  useMedicineFieldEditing,
+  useMedicineUsageSearch,
   useManualMatchState,
   useMedicalDictionaries,
   useSecondarySelector,
   useTreatmentAttributeSearch,
+  useTreatmentEditorState,
   useTreatmentGates,
   useTreatmentHydration,
   useTreatmentNormalization,
@@ -25,9 +28,13 @@ import {
   applyManualMatchCandidate,
   findManualMatchCandidates,
   getMatchedItemRaw,
+  getMedicineCollapsedSummary,
+  getMedicineFieldDisplay as getSharedMedicineFieldDisplay,
   getTreatmentEditorKey,
+  getTreatmentEditorFieldKey,
   hasProbableMatch,
   toManualMatchCandidateView,
+  type MedicinePrimaryField,
   type ManualMatchRawCandidate,
 } from '@features/clinical-result';
 import type { UsageOption } from '@/utils/medicalDictionaryHelpers';
@@ -120,6 +127,56 @@ const treatmentAttributeSearch = useTreatmentAttributeSearch({
   getNormalizedPharmacyValue,
 });
 
+const medicineUsageSearch = useMedicineUsageSearch({
+  getEditorKey: getTreatmentEditorKey,
+  getCurrentValue: (rec, field) => {
+    const normalized = normalizeTreatment(rec);
+    return field === 'frequency' ? normalized.frequency || '' : normalized.route || '';
+  },
+  getCurrentKey: (rec, field) => {
+    const normalized = normalizeTreatment(rec);
+    return field === 'frequency' ? normalized.frequencyKey || '' : normalized.routeKey || '';
+  },
+  getOptions: (field) => field === 'frequency' ? frequencyOptions.value : routeOptions.value,
+});
+
+function getEditableFieldKey(item: TreatmentRecommendation, field: MedicinePrimaryField): string {
+  return getTreatmentEditorFieldKey(item, field);
+}
+
+const treatmentEditorState = useTreatmentEditorState({
+  getEditorKey: getTreatmentEditorKey,
+  getFieldKey: (rec, field) => getEditableFieldKey(rec, field as MedicinePrimaryField),
+  resetDependents: () => {
+    medicineUsageSearch.resetAll();
+    secondarySelector.resetAll();
+  },
+});
+const {
+  isTreatmentEditorExpanded,
+  toggleTreatmentEditor,
+  expandTreatmentEditor,
+  shouldShowTreatmentEditor,
+  registerEditableFieldElement,
+  isEditableFieldActive,
+  setActiveEditableField,
+  clearActiveEditableField,
+  focusActiveEditableField,
+} = treatmentEditorState;
+
+const medicineFieldEditing = useMedicineFieldEditing({
+  normalize: normalizeTreatment,
+  syncUsageKeyword: (rec, field) => medicineUsageSearch.syncKeyword(rec, field),
+  resolveUsageValue: (rec, field) => medicineUsageSearch.resolveValue(rec, field),
+  resolveUsageKey: (rec, field) => medicineUsageSearch.resolveKey(rec, field),
+  setActiveField: setActiveEditableField,
+  isFieldActive: isEditableFieldActive,
+  clearActiveField: clearActiveEditableField,
+  focusActiveField: focusActiveEditableField,
+  clearInventoryWarning: (rec) => treatmentHydration.clearMedicineInventoryWarning(rec),
+  checkInventoryEnough: (rec, showWarning) => treatmentHydration.checkMedicineInventoryEnough(rec, showWarning),
+});
+
 const treatmentSelectionReadiness = useTreatmentSelectionReadiness({
   ensureMedicineSelectable: treatmentHydration.ensureMedicineSelectable,
   hydrateMedicalItemDetail: treatmentHydration.hydrateMatchedMedicalItemDetail,
@@ -131,7 +188,7 @@ const treatmentSelectionReadiness = useTreatmentSelectionReadiness({
   openPharmacySelector: openPharmacyQuickSelector,
   openExecDeptSelector: openExecDeptQuickSelector,
   openBodySiteSelector: openBodySiteQuickSelector,
-  expandTreatmentEditor: () => {},
+  expandTreatmentEditor,
   notify: (message, type) => showToast?.(message, type === 'error' ? 'error' : 'info'),
 });
 
@@ -281,11 +338,13 @@ function closeSecondarySelector(
 
 function openPharmacyQuickSelector(item: TreatmentRecommendation, event?: Event): void {
   event?.stopPropagation();
+  expandTreatmentEditor(item);
   openSecondarySelector(item, 'pharmacy');
 }
 
 function openExecDeptQuickSelector(item: TreatmentRecommendation, event?: Event): void {
   event?.stopPropagation();
+  expandTreatmentEditor(item);
   if (item.type !== 'medicine' && item.matchedItem) {
     void treatmentHydration.hydrateMatchedMedicalItemDetail(item);
   }
@@ -294,10 +353,17 @@ function openExecDeptQuickSelector(item: TreatmentRecommendation, event?: Event)
 
 function openBodySiteQuickSelector(item: TreatmentRecommendation, event?: Event): void {
   event?.stopPropagation();
+  expandTreatmentEditor(item);
   if (item.type === 'exam' && item.matchedItem) {
     void treatmentHydration.hydrateMatchedMedicalItemDetail(item);
   }
   openSecondarySelector(item, 'bodySite');
+}
+
+function openInsuranceQuickSelector(item: TreatmentRecommendation, event?: Event): void {
+  event?.stopPropagation();
+  expandTreatmentEditor(item);
+  openSecondarySelector(item, 'insurance');
 }
 
 function getPharmacySearchKeyword(item: TreatmentRecommendation): string {
@@ -407,6 +473,74 @@ function clearBodySiteSelection(item: TreatmentRecommendation): void {
     showToast?.('检查部位已清空，请重新设置后再选中该项目。', 'info');
   }
   secondarySelector.closeAll();
+}
+
+function getInsuranceSearchKeyword(item: TreatmentRecommendation): string {
+  return treatmentAttributeSearch.getSearchKeyword(item, 'insurance');
+}
+
+function handleInsuranceSearchInput(item: TreatmentRecommendation, event: Event): void {
+  treatmentAttributeSearch.handleSearchInput(item, 'insurance', event);
+}
+
+function getFilteredInsuranceOptions(item: TreatmentRecommendation): UsageOption[] {
+  return treatmentAttributeSearch.getInsuranceOptionsForRecord(item);
+}
+
+function selectInsuranceOption(item: TreatmentRecommendation, option: TreatmentPlanAttributeOption): void {
+  item.insuranceType = option.text;
+  treatmentAttributeSearch.setSearchKeyword(item, 'insurance', option.text);
+  secondarySelector.closeAll();
+}
+
+function clearInsuranceSelection(item: TreatmentRecommendation): void {
+  item.insuranceType = '';
+  treatmentAttributeSearch.setSearchKeyword(item, 'insurance', '');
+  secondarySelector.closeAll();
+}
+
+function activateEditableField(
+  item: TreatmentRecommendation,
+  field: MedicinePrimaryField,
+  event?: Event,
+): void {
+  medicineFieldEditing.activateField(item, field, event);
+}
+
+function handleEditableFieldBlur(
+  item: TreatmentRecommendation,
+  field: MedicinePrimaryField,
+  event: FocusEvent,
+): void {
+  medicineFieldEditing.handleFieldBlur(item, field, event);
+}
+
+function handleTotalQtyInput(item: TreatmentRecommendation, event: Event): void {
+  medicineFieldEditing.handleTotalQtyInput(item, event);
+}
+
+function handleFrequencyOpenChange(item: TreatmentRecommendation, open: boolean): void {
+  medicineFieldEditing.handleUsageOpenChange(item, 'frequency', open);
+}
+
+function handleRouteOpenChange(item: TreatmentRecommendation, open: boolean): void {
+  medicineFieldEditing.handleUsageOpenChange(item, 'route', open);
+}
+
+function getMedicineFieldDisplay(item: TreatmentRecommendation, field: MedicinePrimaryField): string {
+  return getSharedMedicineFieldDisplay(normalizeTreatment(item), field, frequencyOptions.value);
+}
+
+function getMedicineInlineSummary(item: TreatmentRecommendation): string {
+  return getMedicineCollapsedSummary(normalizeTreatment(item), frequencyOptions.value);
+}
+
+function getMedicineInventoryWarning(item: TreatmentRecommendation): string {
+  return treatmentHydration.getMedicineInventoryWarning(item);
+}
+
+function isMedicineInventoryChecking(item: TreatmentRecommendation): boolean {
+  return treatmentHydration.isMedicineInventoryChecking(item);
 }
 
 async function ensureMatchedTreatmentSelectable(
@@ -563,6 +697,16 @@ onMounted(() => {
             :has-required-exec-dept="treatmentGates.hasRequiredExecDept"
             :get-body-site-display="treatmentGates.getBodySiteDisplay"
             :has-required-body-site="treatmentGates.hasRequiredBodySite"
+            :frequency-options="frequencyOptions"
+            :route-options="routeOptions"
+            :should-show-treatment-editor="shouldShowTreatmentEditor"
+            :is-treatment-editor-expanded="isTreatmentEditorExpanded"
+            :is-editable-field-active="isEditableFieldActive"
+            :get-editable-field-key="getEditableFieldKey"
+            :get-medicine-field-display="getMedicineFieldDisplay"
+            :get-medicine-inline-summary="getMedicineInlineSummary"
+            :is-medicine-inventory-checking="isMedicineInventoryChecking"
+            :get-medicine-inventory-warning="getMedicineInventoryWarning"
             :is-secondary-selector-open="isSecondarySelectorOpen"
             :get-pharmacy-search-keyword="getPharmacySearchKeyword"
             :get-filtered-pharmacy-options="getFilteredPharmacyOptions"
@@ -570,14 +714,24 @@ onMounted(() => {
             :get-filtered-exec-dept-options="getFilteredExecDeptOptions"
             :get-body-site-search-keyword="getBodySiteSearchKeyword"
             :get-filtered-body-site-options="getFilteredBodySiteOptions"
+            :get-insurance-search-keyword="getInsuranceSearchKeyword"
+            :get-filtered-insurance-options="getFilteredInsuranceOptions"
             :is-manual-match-open="isManualMatchOpen"
             :get-manual-match-keyword="getManualMatchKeyword"
             :get-manual-match-candidates="getManualMatchPickerCandidates"
             @toggle="toggleTreatment"
             @confirm-match="confirmSuggestedMatch"
+            @toggle-treatment-editor="toggleTreatmentEditor"
+            @activate-editable-field="activateEditableField"
+            @editable-field-blur="handleEditableFieldBlur"
+            @register-editable-field-element="registerEditableFieldElement"
+            @total-qty-input="handleTotalQtyInput"
+            @frequency-open-change="handleFrequencyOpenChange"
+            @route-open-change="handleRouteOpenChange"
             @open-pharmacy="openPharmacyQuickSelector"
             @open-exec-dept="openExecDeptQuickSelector"
             @open-body-site="openBodySiteQuickSelector"
+            @open-insurance="openInsuranceQuickSelector"
             @close-secondary-selector="closeSecondarySelector"
             @update-pharmacy-keyword="handlePharmacySearchInput"
             @select-pharmacy="selectPharmacyOption"
@@ -588,6 +742,9 @@ onMounted(() => {
             @update-body-site-keyword="handleBodySiteSearchInput"
             @select-body-site="selectBodySiteOption"
             @clear-body-site="clearBodySiteSelection"
+            @update-insurance-keyword="handleInsuranceSearchInput"
+            @select-insurance="selectInsuranceOption"
+            @clear-insurance="clearInsuranceSelection"
             @toggle-manual-match="toggleManualMatchState"
             @update-manual-match-keyword="setManualMatchKeyword"
             @select-manual-match-candidate="applyManualMatch"

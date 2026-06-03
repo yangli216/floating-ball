@@ -119,7 +119,7 @@
         <label class="te-label">执行科室</label>
         <span class="te-readonly">{{ rec.execDept }}</span>
       </div>
-      <div v-if="rec.bodySite" class="te-row">
+      <div v-if="showBodySiteReadonly && rec.bodySite" class="te-row">
         <label class="te-label">部位方式</label>
         <span class="te-readonly">{{ rec.bodySite }}</span>
       </div>
@@ -165,6 +165,10 @@ const props = defineProps({
     default: () => [],
   },
   showExecDeptReadonly: {
+    type: Boolean,
+    default: true,
+  },
+  showBodySiteReadonly: {
     type: Boolean,
     default: true,
   },

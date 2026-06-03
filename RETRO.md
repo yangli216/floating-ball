@@ -174,6 +174,13 @@
 - **解决方案**: `REGIONAL_DEVICE_CODE` 同步镜像到 Tauri Store；注册成功后按 `baseUrl + orgCode + deviceCode` 缓存 `deviceToken / idDevice / heartbeatInterval`，启动、HTTP、SSE、WebSocket 出口在重新注册前先恢复同 scope 的注册缓存。切换后端地址或机构只清理当前运行态令牌，不删除其它 scope 的 Tauri Store 缓存；只有本地令牌/密钥确实不可恢复且服务端明确拒绝同编码注册时，才迁移到新的兜底设备编码。
 - **后续防护**: 设备身份、签名密钥、注册令牌这类长期身份凭据不能只依赖 WebView `localStorage`；新增区域化身份字段时，应同时评估 Tauri Store 持久化和按后端/机构/deviceCode 分 scope 的恢复路径。
 
+### RETRO-023: Windows 无边框窗口按钮点击被标题栏拖拽抢占 [已解决]
+
+- **现象**: Windows 版检验检查报告解读窗口点击右上角关闭按钮中心无法关闭，只有把鼠标放到按钮边缘才会触发关闭；macOS 下表现正常。
+- **根因**: 报告解读窗口使用 `decorations: false` 自定义标题栏，标题栏 `mousedown` 会调用 `appWindow.startDragging()`。旧判断只在 `event.target instanceof HTMLElement` 时排除 `.window-action-btn`，点击按钮中心时 target 可能是 Iconify 生成的 `svg/path`，属于 `SVGElement`，没有被识别为按钮区域，Windows WebView2 随即进入窗口拖拽并抢占后续 click。
+- **解决方案**: 拖拽排除判断改为基于 `Element.closest()`，覆盖 SVG 子节点；右上角操作区在 `mousedown` 阶段停止冒泡，避免窗口控制按钮触发标题栏拖拽。
+- **后续防护**: 自定义标题栏中判断点击目标时不能只检查 `HTMLElement`；涉及 icon/svg 的按钮应按 `Element.closest()` 或容器级 `mousedown.stop` 排除拖拽区域，并优先在 Windows WebView2 下回归。
+
 
 ---
 

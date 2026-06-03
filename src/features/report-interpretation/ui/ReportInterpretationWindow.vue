@@ -152,7 +152,7 @@ async function closeWindow(): Promise<void> {
 
 async function handleHeaderMouseDown(event: MouseEvent): Promise<void> {
   const target = event.target;
-  if (target instanceof HTMLElement && target.closest('.window-action-btn')) {
+  if (target instanceof Element && target.closest('.window-action-btn')) {
     return;
   }
 
@@ -249,7 +249,7 @@ onMounted(async () => {
         <h1>AI 报告解读</h1>
         <span>{{ payload ? reportSubtitle : '检验/检查报告辅助解读' }}</span>
       </div>
-      <div class="window-actions">
+      <div class="window-actions" @mousedown.stop>
         <button class="window-action-btn" type="button" title="打印/导出" :disabled="!payload" @click.stop="printReport">
           <Icon icon="lucide:download" size="18" />
         </button>
