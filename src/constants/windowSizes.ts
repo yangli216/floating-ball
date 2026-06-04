@@ -91,7 +91,7 @@ export const WINDOW_SIZES = {
   TREATMENT_PLAN: { width: 1080, height: 720 } as WindowSize,
 
   /** 独立鉴别诊断小窗：仅承载鉴别排查确认弹窗 */
-  DIFFERENTIAL_DIAGNOSIS: { width: 620, height: 360 } as WindowSize,
+  DIFFERENTIAL_DIAGNOSIS: { width: 360, height: 640 } as WindowSize,
 
   /** HIS 联调日志：980×640px */
   HIS_LOG: { width: 980, height: 640 } as WindowSize,
