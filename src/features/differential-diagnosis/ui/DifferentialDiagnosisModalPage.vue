@@ -16,7 +16,13 @@ interface ChecklistItem {
 
 interface DiagnosisChecklistResponse {
   isNeeded?: boolean;
+  severity?: string;
   items?: ChecklistItem[];
+}
+
+interface DifferentialRiskIssue {
+  issue: string;
+  target: string;
 }
 
 const props = defineProps<{
@@ -29,6 +35,7 @@ const showToast = inject<(msg: string, type?: string) => void>('showToast');
 
 const isChecklistLoading = ref(false);
 const checklistItems = ref<ChecklistItem[]>([]);
+const riskIssues = ref<DifferentialRiskIssue[]>([]);
 const hasRequested = ref(false);
 const generationError = ref('');
 const isCollapsed = ref(false);
@@ -69,6 +76,35 @@ function normalizeChecklistItems(result: DiagnosisChecklistResponse): ChecklistI
     .filter((item) => item.question);
 }
 
+function buildDiagnosisMismatchError(result: DiagnosisChecklistResponse): string {
+  if (!result?.isNeeded) {
+    return '';
+  }
+
+  const items = normalizeChecklistItems(result);
+  const combinedText = items
+    .map((item) => `${item.question} ${item.recordText}`)
+    .join(' ');
+  const isCritical = result.severity === 'critical'
+    || /不匹配|不相符|明显不符|不能解释|无法解释|复核诊断方向|诊断方向.*错误|诊断.*错误/.test(combinedText);
+
+  if (!isCritical) {
+    return '';
+  }
+
+  const primary = items[0];
+  return primary?.question || '当前诊断与主诉、现病史明显不符，请先复核诊断方向。';
+}
+
+function buildRiskIssues(result: DiagnosisChecklistResponse): DifferentialRiskIssue[] {
+  return normalizeChecklistItems(result)
+    .map((item) => ({
+      issue: item.question,
+      target: item.recordText || displayDiagnosisName.value,
+    }))
+    .filter((item) => item.issue);
+}
+
 async function generateChecklist(): Promise<void> {
   if (isChecklistLoading.value) {
     return;
@@ -79,6 +115,7 @@ async function generateChecklist(): Promise<void> {
   if (!diagnosisName.value || !chiefComplaint.value || !historyOfPresentIllness.value) {
     generationError.value = '当前缺少诊断、主诉或现病史，无法生成鉴别排查建议。';
     checklistItems.value = [];
+    riskIssues.value = [];
     isCollapsed.value = true;
     return;
   }
@@ -86,6 +123,7 @@ async function generateChecklist(): Promise<void> {
   isChecklistLoading.value = true;
   generationError.value = '';
   checklistItems.value = [];
+  riskIssues.value = [];
   hasRequested.value = true;
 
   try {
@@ -108,12 +146,24 @@ async function generateChecklist(): Promise<void> {
       },
     });
 
-    checklistItems.value = normalizeChecklistItems(parseLLMJson<DiagnosisChecklistResponse>(response));
+    const parsed = parseLLMJson<DiagnosisChecklistResponse>(response);
+    const mismatchError = buildDiagnosisMismatchError(parsed);
+    if (mismatchError) {
+      generationError.value = mismatchError;
+      checklistItems.value = [];
+      riskIssues.value = buildRiskIssues(parsed);
+      isCollapsed.value = false;
+      showToast?.(mismatchError, 'error');
+      return;
+    }
+
+    checklistItems.value = normalizeChecklistItems(parsed);
     if (checklistItems.value.length === 0) {
-      showToast?.('当前诊断暂无待确认的鉴别排查项。', 'info');
+      showToast?.('当前诊断暂无需要复核或鉴别排查的提示。', 'info');
     }
   } catch (error: unknown) {
     checklistItems.value = [];
+    riskIssues.value = [];
     generationError.value = formatUserFacingError(error, {
       context: '诊断鉴别生成失败',
       fallback: '请稍后重试。',
@@ -149,7 +199,9 @@ onMounted(() => {
             <img class="checklist-dialog-icon" :src="generationError ? '/error.png' : '/normal.png'" alt="">
           </div>
           <div>
-            <p id="standalone-checklist-title" class="confirm-dialog-title">诊断鉴别</p>
+            <p id="standalone-checklist-title" class="confirm-dialog-title">
+              {{ generationError ? `发现${Math.max(riskIssues.length, 1)}个问题` : '诊断鉴别' }}
+            </p>
             <p v-if="isCollapsed" class="checklist-dialog-subtitle">点击展开查看详情</p>
           </div>
           <div v-if="generationError" class="checklist-dialog-down" @click="isCollapsed = !isCollapsed">
@@ -166,8 +218,18 @@ onMounted(() => {
             <span>正在生成鉴别排查建议...</span>
           </div>
 
-          <div v-else-if="generationError" class="standalone-checklist-error">
-            {{ generationError }}
+          <div v-else-if="generationError" class="risk-issue-list">
+            <div
+              v-for="(issue, index) in riskIssues.length > 0 ? riskIssues : [{ issue: generationError, target: displayDiagnosisName }]"
+              :key="`${index}-${issue.issue}`"
+              class="risk-issue-item"
+            >
+              <span class="risk-issue-badge">高风险</span>
+              <div class="risk-issue-content">
+                <div class="risk-issue-text">{{ issue.issue }}</div>
+                <div v-if="issue.target" class="risk-issue-target">{{ issue.target }}</div>
+              </div>
+            </div>
           </div>
 
           <div v-else-if="checklistItems.length > 0" class="checklist-dialog-body">
@@ -175,7 +237,7 @@ onMounted(() => {
               <div>
                 <svgIcon file="/ico_alert_warn.svg" :color="'#E5710B'" :hoverColor="'#E5710B'" :fontSize="'15px'"></svgIcon>
               </div>
-              <div>为防止诊断与病历不匹配或高危疾病漏诊，系统建议进一步确认以下指征：</div>
+              <div>为防止诊断与病历不匹配或高危疾病漏诊，系统建议进一步复核以下要点：</div>
             </div>
             <div class="checklist-items">
               <div v-for="(item, index) in checklistItems" :key="`${index}-${item.question}`" class="checklist-item-label">
@@ -185,7 +247,7 @@ onMounted(() => {
             </div>
           </div>
 
-          <div v-else class="empty-text checklist-empty">当前诊断暂无待确认的鉴别排查项。</div>
+          <div v-else class="empty-text checklist-empty">当前诊断暂无需要复核或鉴别排查的提示。</div>
         </div>
       </div>
       <button class="checklist-close-btn" type="button" aria-label="关闭" @click="emit('close')">
@@ -212,15 +274,6 @@ onMounted(() => {
   position: relative;
   padding: 0;
   background: transparent;
-}
-
-.standalone-checklist-error {
-  padding: 12px 14px;
-  border: 1px solid rgba(207, 74, 60, 0.24);
-  border-radius: 12px;
-  background: var(--voice-danger-soft);
-  color: var(--voice-danger);
-  line-height: 1.6;
 }
 
 .checklist-dialog {
@@ -251,6 +304,10 @@ onMounted(() => {
   border-bottom: 1px solid #DBDBDB;
   margin-bottom: 16px;
   flex-shrink: 0;
+}
+
+.checklist-dialog.error-dialog .checklist-dialog-head {
+  border-bottom-style: dashed;
 }
 
 .checklist-dialog-icon {
@@ -321,6 +378,59 @@ onMounted(() => {
   flex: 1;
   min-height: 0;
   overflow-y: auto;
+}
+
+.risk-issue-list {
+  display: flex;
+  flex-direction: column;
+}
+
+.risk-issue-item {
+  padding: 16px 0 18px;
+  border-bottom: 1px dashed rgba(224, 83, 84, 0.24);
+}
+
+.risk-issue-item:first-child {
+  padding-top: 0;
+}
+
+.risk-issue-item:last-child {
+  border-bottom: 0;
+  padding-bottom: 0;
+}
+
+.risk-issue-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 28px;
+  padding: 2px 12px;
+  border: 1px solid #E16A76;
+  border-radius: 999px;
+  color: #E16A76;
+  background: rgba(255, 245, 246, 0.8);
+  font-size: 15px;
+  font-weight: 700;
+  line-height: 1.2;
+}
+
+.risk-issue-content {
+  margin-top: 14px;
+}
+
+.risk-issue-text {
+  color: #404040;
+  font-size: 18px;
+  font-weight: 700;
+  line-height: 1.65;
+}
+
+.risk-issue-target {
+  margin-top: 10px;
+  color: #8C8C8C;
+  font-size: 16px;
+  font-weight: 700;
+  line-height: 1.55;
 }
 
 .checklist-dialog-content::-webkit-scrollbar {

@@ -186,6 +186,7 @@ interface ChecklistItem {
 
 interface DiagnosisChecklistResponse {
   isNeeded?: boolean;
+  severity?: string;
   items?: ChecklistItem[];
 }
 
@@ -193,6 +194,7 @@ const lastAppliedIntentKey = ref('');
 const showChecklistModal = ref(false);
 const isChecklistLoading = ref(false);
 const checklistItems = ref<ChecklistItem[]>([]);
+const checklistGenerationError = ref('');
 const activeChecklistDiagnosis = ref<Diagnosis | null>(null);
 
 const submitting = ref(false);
@@ -800,6 +802,7 @@ function toggleDiagnosis(diag: Diagnosis): void {
 
 function closeChecklistModal(): void {
   showChecklistModal.value = false;
+  checklistGenerationError.value = '';
 }
 
 function normalizeChecklistItems(result: DiagnosisChecklistResponse): ChecklistItem[] {
@@ -814,11 +817,32 @@ function normalizeChecklistItems(result: DiagnosisChecklistResponse): ChecklistI
     .filter((item) => item.question);
 }
 
+function buildDiagnosisMismatchError(result: DiagnosisChecklistResponse): string {
+  if (!result?.isNeeded) {
+    return '';
+  }
+
+  const items = normalizeChecklistItems(result);
+  const combinedText = items
+    .map((item) => `${item.question} ${item.recordText}`)
+    .join(' ');
+  const isCritical = result.severity === 'critical'
+    || /不匹配|不相符|明显不符|不能解释|无法解释|复核诊断方向|诊断方向.*错误|诊断.*错误/.test(combinedText);
+
+  if (!isCritical) {
+    return '';
+  }
+
+  const primary = items[0];
+  return primary?.question || '当前诊断与主诉、现病史明显不符，请先复核诊断方向。';
+}
+
 async function handleDiagnosisDifferential(diag: Diagnosis, event?: Event): Promise<void> {
   event?.stopPropagation();
   closeReasonTooltipIfOpen();
   activeChecklistDiagnosis.value = diag;
   checklistItems.value = [];
+  checklistGenerationError.value = '';
   showChecklistModal.value = true;
   isChecklistLoading.value = true;
   const isSymptomChannel = props.channel === 'symptom';
@@ -843,16 +867,26 @@ async function handleDiagnosisDifferential(diag: Diagnosis, event?: Event): Prom
       },
     });
 
-    checklistItems.value = normalizeChecklistItems(parseLLMJson<DiagnosisChecklistResponse>(response));
+    const parsed = parseLLMJson<DiagnosisChecklistResponse>(response);
+    const mismatchError = buildDiagnosisMismatchError(parsed);
+    if (mismatchError) {
+      checklistItems.value = [];
+      checklistGenerationError.value = mismatchError;
+      showToast?.(mismatchError, 'error');
+      return;
+    }
+
+    checklistItems.value = normalizeChecklistItems(parsed);
     if (checklistItems.value.length === 0) {
       showToast?.('当前诊断暂无需要复核或鉴别排查的提示。', 'info');
     }
   } catch (error: unknown) {
     checklistItems.value = [];
-    showToast?.(formatUserFacingError(error, {
+    checklistGenerationError.value = formatUserFacingError(error, {
       context: '诊断鉴别生成失败',
       fallback: '请稍后重试。',
-    }), 'error');
+    });
+    showToast?.(checklistGenerationError.value, 'error');
   } finally {
     isChecklistLoading.value = false;
   }
@@ -2596,6 +2630,10 @@ watch(
           <span>正在生成鉴别排查建议...</span>
         </div>
 
+        <div v-else-if="checklistGenerationError" class="checklist-critical-error">
+          {{ checklistGenerationError }}
+        </div>
+
         <div v-else-if="checklistItems.length > 0" class="checklist-dialog-body">
           <p class="checklist-intro">
             为防止诊断与病历不匹配或高危疾病漏诊，系统建议进一步复核以下要点：
@@ -2615,3 +2653,14 @@ watch(
 </template>
 
 <style scoped src="../features/consultation-result/ui/ClinicalResultEditor.css"></style>
+
+<style scoped>
+.checklist-critical-error {
+  padding: 12px 14px;
+  border: 1px solid rgba(207, 74, 60, 0.24);
+  border-radius: 12px;
+  background: var(--voice-danger-soft);
+  color: var(--voice-danger);
+  line-height: 1.6;
+}
+</style>

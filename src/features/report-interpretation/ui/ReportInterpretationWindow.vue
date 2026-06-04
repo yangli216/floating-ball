@@ -159,38 +159,6 @@ async function handleHeaderMouseDown(event: MouseEvent): Promise<void> {
   await appWindow.startDragging();
 }
 
-function buildShareText(): string {
-  const current = payload.value;
-  if (!current) {
-    return '';
-  }
-
-  return [
-    'AI 报告解读',
-    reportSubtitle.value,
-    `患者：${patientDisplay.value}`,
-    `摘要：${current.summary}`,
-    `结论：${current.conclusion}`,
-    '',
-    '异常项目：',
-    ...abnormalItemsForDisplay.value.map((item) => `- ${item.name} ${item.result}${item.referenceRange ? `（${item.referenceRange}）` : ''}`),
-    '',
-    '综合判断：',
-    ...current.keyPoints.map((item, index) => `${index + 1}. ${item.title}：${item.detail}`),
-    '',
-    '建议：',
-    ...current.recommendations.map((item) => `- ${item}`),
-  ].filter(Boolean).join('\n');
-}
-
-async function copyReportText(): Promise<void> {
-  try {
-    await navigator.clipboard.writeText(buildShareText());
-  } catch (error) {
-    console.warn('[ReportInterpretationWindow] copy report text failed:', error);
-  }
-}
-
 function printReport(): void {
   window.print();
 }
@@ -252,9 +220,6 @@ onMounted(async () => {
       <div class="window-actions" @mousedown.stop>
         <button class="window-action-btn" type="button" title="打印/导出" :disabled="!payload" @click.stop="printReport">
           <Icon icon="lucide:download" size="18" />
-        </button>
-        <button class="window-action-btn" type="button" title="复制解读文本" :disabled="!payload" @click.stop="copyReportText">
-          <Icon icon="lucide:copy" size="18" />
         </button>
         <button class="window-action-btn close-btn" type="button" title="关闭" @click.stop="closeWindow">
           <Icon icon="lucide:x" size="18" />
