@@ -175,7 +175,7 @@ onMounted(() => {
               <div>
                 <svgIcon file="/ico_alert_warn.svg" :color="'#E5710B'" :hoverColor="'#E5710B'" :fontSize="'15px'"></svgIcon>
               </div>
-              <div>为防止与高危急症混淆或漏诊，系统建议进一步确认以下指征：</div>
+              <div>为防止诊断与病历不匹配或高危疾病漏诊，系统建议进一步确认以下指征：</div>
             </div>
             <div class="checklist-items">
               <div v-for="(item, index) in checklistItems" :key="`${index}-${item.question}`" class="checklist-item-label">

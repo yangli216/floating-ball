@@ -845,7 +845,7 @@ async function handleDiagnosisDifferential(diag: Diagnosis, event?: Event): Prom
 
     checklistItems.value = normalizeChecklistItems(parseLLMJson<DiagnosisChecklistResponse>(response));
     if (checklistItems.value.length === 0) {
-      showToast?.('当前诊断暂无待确认的鉴别排查项。', 'info');
+      showToast?.('当前诊断暂无需要复核或鉴别排查的提示。', 'info');
     }
   } catch (error: unknown) {
     checklistItems.value = [];
@@ -2598,7 +2598,7 @@ watch(
 
         <div v-else-if="checklistItems.length > 0" class="checklist-dialog-body">
           <p class="checklist-intro">
-            为防止与高危急症混淆或漏诊，系统建议进一步确认以下指征：
+            为防止诊断与病历不匹配或高危疾病漏诊，系统建议进一步复核以下要点：
           </p>
           <div class="checklist-items">
             <div v-for="(item, index) in checklistItems" :key="`${index}-${item.question}`" class="checklist-item-label">
@@ -2608,7 +2608,7 @@ watch(
           </div>
         </div>
 
-        <div v-else class="empty-text checklist-empty">当前诊断暂无待确认的鉴别排查项。</div>
+        <div v-else class="empty-text checklist-empty">当前诊断暂无需要复核或鉴别排查的提示。</div>
       </div>
     </div>
   </div>
