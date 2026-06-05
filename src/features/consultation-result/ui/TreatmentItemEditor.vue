@@ -302,12 +302,12 @@ function getDisplayValue(field: 'dosage' | 'total'): string {
 .treatment-item-editor {
   margin-top: 8px;
   padding: 8px 10px;
-  background: rgba(0, 122, 255, 0.04);
-  border: 1px solid rgba(0, 122, 255, 0.15);
-  border-radius: 6px;
+  border-radius: 12px;
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 6px 12px;
+  border: 1px solid var(--voice-border);
+  background: var(--voice-surface-soft);
 }
 
 .treatment-item-editor.mode-inline {
@@ -332,8 +332,9 @@ function getDisplayValue(field: 'dosage' | 'total'): string {
 }
 
 .primary-field > label {
-  font-size: var(--voice-font-min, 12px);
-  color: var(--voice-text-muted, #64748b);
+  font-size: 13px;
+  color: #334155;
+  font-weight: 600;
 }
 
 .field-editor {
@@ -410,8 +411,9 @@ function getDisplayValue(field: 'dosage' | 'total'): string {
 
 .te-label {
   flex: 0 0 64px;
-  color: #666;
-  font-weight: 500;
+  font-size: 13px;
+  color: #334155;
+  font-weight: 600;
 }
 
 .te-input {

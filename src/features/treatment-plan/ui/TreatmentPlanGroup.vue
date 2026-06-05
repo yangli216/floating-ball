@@ -612,20 +612,20 @@ function getAttributeAriaLabel(field: TreatmentPlanAttributeField): string {
 
 <style scoped>
 .plan-group {
-  --voice-border: #dbe3ee;
-  --voice-border-strong: #cbd5e1;
-  --voice-surface: #fff;
-  --voice-surface-soft: #f8fafc;
-  --voice-accent: #2469f2;
-  --voice-accent-soft: rgba(36, 105, 242, 0.18);
-  --voice-accent-softer: rgba(36, 105, 242, 0.08);
-  --voice-accent-strong: #1d4ed8;
-  --voice-warning: #b45309;
-  --voice-success: #15803d;
-  --voice-text: #111827;
-  --voice-text-muted: #64748b;
-  --voice-font-min: 12px;
-  --voice-font-strong: 15px;
+  --voice-border: var(--color-border-light, #dbe4ef);
+  --voice-border-strong: var(--color-border-medium, #cbd7e6);
+  --voice-surface: var(--color-background-white, #ffffff);
+  --voice-surface-soft: var(--color-background-light, #f7f9fc);
+  --voice-accent: var(--color-cta, #2b7fe3);
+  --voice-accent-soft: var(--color-cta-100, rgba(43, 127, 227, 0.12));
+  --voice-accent-softer: var(--color-cta-50, rgba(43, 127, 227, 0.06));
+  --voice-accent-strong: var(--color-cta-dark, #1f6fd0);
+  --voice-warning: var(--color-warning-text, #c97a11);
+  --voice-success: var(--color-success, #1f8a5b);
+  --voice-text: var(--color-text-strong, #0f172a);
+  --voice-text-muted: var(--color-text-muted, #475569);
+  --voice-font-min: 13px;
+  --voice-font-strong: 14px;
   overflow: visible;
 }
 
@@ -660,8 +660,8 @@ function getAttributeAriaLabel(field: TreatmentPlanAttributeField): string {
   align-items: center;
   gap: 10px;
   flex-shrink: 0;
-  color: var(--voice-text-muted);
   font-size: var(--voice-font-min);
+  color: var(--voice-text-muted);
 }
 
 .plan-group-state {
@@ -755,16 +755,17 @@ function getAttributeAriaLabel(field: TreatmentPlanAttributeField): string {
   gap: 8px;
   min-width: 0;
   padding: 8px 10px;
+  border-radius: 12px;
   border: 1px solid var(--voice-border);
-  border-radius: 10px;
   background: var(--voice-surface-soft);
 }
 
 .secondary-field label {
   flex-shrink: 0;
-  color: var(--voice-text-muted);
-  font-size: 12px;
   white-space: nowrap;
+  font-size: 13px;
+  color: #334155;
+  font-weight: 600;
 }
 
 .edit-input {
