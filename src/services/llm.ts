@@ -6,7 +6,7 @@ import {
   regionalPost,
   buildRegionalSpeechUploadPayload,
 } from './regionalClient';
-import { beginAiTrace, failAiTrace, finishAiTrace } from './aiTrace';
+import { beginAiTrace, failAiTrace, finishAiTrace, updateAiTraceRequestPayload } from './aiTrace';
 import { normalizeRiskAnalysisPatientContext } from '../utils/patientProfile';
 import {
   DEFAULT_LLM_CONFIG,
@@ -52,6 +52,25 @@ function resolveRegionalTraceModel(customConfig?: LLMConfigOverride): string | u
   return bootstrap.llm?.model;
 }
 
+function buildRegionalChatRequestPayload(
+  customConfig: LLMConfigOverride | undefined,
+  payloadMessages: ReturnType<typeof createPayloadMessages>,
+  trace: ReturnType<typeof beginAiTrace>,
+  traceScene: string,
+  traceSourceModule: string,
+  stream: boolean
+) {
+  return {
+    configProfile: customConfig?.configProfile || 'default',
+    messages: payloadMessages,
+    stream,
+    traceId: trace.traceId,
+    scene: traceScene,
+    sourceModule: traceSourceModule,
+    sessionId: trace.sessionId,
+  };
+}
+
 export async function chatStream(
   messages: ChatMessage[],
   onChunk: (chunk: string) => void,
@@ -65,6 +84,7 @@ export async function chatStream(
     const payloadMessages = createPayloadMessages(messages);
     const traceScene = customConfig?.traceContext?.scene || 'chat';
     const traceSourceModule = customConfig?.traceContext?.sourceModule || 'llm';
+    const requestSummary = buildChatRequestSummary(messages);
     const trace = beginAiTrace({
       channel: 'chat',
       scene: traceScene,
@@ -74,20 +94,14 @@ export async function chatStream(
       title: customConfig?.traceContext?.title,
       configProfile: customConfig?.configProfile || 'default',
       model: resolveRegionalTraceModel(customConfig),
-      requestSummary: buildChatRequestSummary(messages),
+      requestSummary,
     });
+    const requestPayload = buildRegionalChatRequestPayload(customConfig, payloadMessages, trace, traceScene, traceSourceModule, true);
+    updateAiTraceRequestPayload(trace.traceId, requestPayload, requestSummary);
     let responseText = '';
     try {
       await retryWithBackoff(async () => {
-        await createRegionalSSE('/v1/ai/chat', {
-          configProfile: customConfig?.configProfile || 'default',
-          messages: payloadMessages,
-          stream: true,
-          traceId: trace.traceId,
-          scene: traceScene,
-          sourceModule: traceSourceModule,
-          sessionId: trace.sessionId,
-        }, (chunk) => {
+        await createRegionalSSE('/v1/ai/chat', requestPayload, (chunk) => {
           responseText += chunk;
           onChunk(chunk);
         });
@@ -95,6 +109,7 @@ export async function chatStream(
       finishAiTrace(trace.traceId, {
         success: true,
         responseSummary: summarizeText(responseText, 160) || '流式响应已完成',
+        responsePayload: { content: responseText },
       });
     } catch (error) {
       failAiTrace(trace.traceId, error instanceof Error ? error.message : String(error));
@@ -156,6 +171,7 @@ export async function chat(
     const payloadMessages = createPayloadMessages(messages);
     const traceScene = customConfig?.traceContext?.scene || 'chat';
     const traceSourceModule = customConfig?.traceContext?.sourceModule || 'llm';
+    const requestSummary = buildChatRequestSummary(messages);
     const trace = beginAiTrace({
       channel: 'chat',
       scene: traceScene,
@@ -165,24 +181,19 @@ export async function chat(
       title: customConfig?.traceContext?.title,
       configProfile: customConfig?.configProfile || 'default',
       model: resolveRegionalTraceModel(customConfig),
-      requestSummary: buildChatRequestSummary(messages),
+      requestSummary,
     });
+    const requestPayload = buildRegionalChatRequestPayload(customConfig, payloadMessages, trace, traceScene, traceSourceModule, false);
+    updateAiTraceRequestPayload(trace.traceId, requestPayload, requestSummary);
     try {
       const content = await retryWithBackoff(async () => {
-        const resp = await regionalPost<{ content: string }>('/v1/ai/chat', {
-          configProfile: customConfig?.configProfile || 'default',
-          messages: payloadMessages,
-          stream: false,
-          traceId: trace.traceId,
-          scene: traceScene,
-          sourceModule: traceSourceModule,
-          sessionId: trace.sessionId,
-        });
+        const resp = await regionalPost<{ content: string }>('/v1/ai/chat', requestPayload);
         return resp.content;
       }, retryConfig || DEFAULT_RETRY_CONFIG, onRetry);
       finishAiTrace(trace.traceId, {
         success: true,
         responseSummary: summarizeText(content, 160) || '非流式响应为空',
+        responsePayload: { content },
       });
       return content;
     } catch (error) {
@@ -227,12 +238,13 @@ export async function transcribeAudio(
   if (isRegionalMode() && !customConfig?.apiKey) {
     const scene = 'chat-input';
     const fileName = `${scene}-${Date.now()}.webm`;
+    const requestSummary = buildSpeechRequestSummary(fileName, scene, blob.type || 'audio/webm');
     const trace = beginAiTrace({
       channel: 'speech_transcribe',
       scene,
       sourceModule: 'llm',
       model: getCachedBootstrap()?.llm?.audioModel,
-      requestSummary: buildSpeechRequestSummary(fileName, scene, blob.type || 'audio/webm'),
+      requestSummary,
     });
     try {
       const text = await retryWithBackoff(async () => {
@@ -241,20 +253,29 @@ export async function transcribeAudio(
           scene,
           fileName,
         });
-        const resp = await regionalPost<{ text: string }>(
-          '/v1/ai/speech/transcribe',
-          {
-            ...payload,
-            traceId: trace.traceId,
-            sourceModule: 'llm',
-            sessionId: trace.sessionId,
-          }
-        );
+        const requestPayload = {
+          mimeType: payload.mimeType,
+          format: payload.format,
+          fileName: payload.fileName,
+          scene: payload.scene,
+          traceId: trace.traceId,
+          sourceModule: 'llm',
+          sessionId: trace.sessionId,
+          audioSize: blob.size,
+        };
+        updateAiTraceRequestPayload(trace.traceId, requestPayload, requestSummary);
+        const resp = await regionalPost<{ text: string }>('/v1/ai/speech/transcribe', {
+          ...payload,
+          traceId: trace.traceId,
+          sourceModule: 'llm',
+          sessionId: trace.sessionId,
+        });
         return resp.text;
       }, retryConfig || DEFAULT_RETRY_CONFIG, onRetry);
       finishAiTrace(trace.traceId, {
         success: true,
         responseSummary: summarizeText(text, 160) || '转写结果为空',
+        responsePayload: { text },
       });
       return text;
     } catch (error) {

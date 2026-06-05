@@ -16,7 +16,9 @@ export interface AiTraceContext {
   configProfile?: string;
   model?: string;
   requestSummary?: string;
+  requestPayload?: unknown;
   responseSummary?: string;
+  responsePayload?: unknown;
   success?: boolean;
   errorMessage?: string;
   startedAt: number;
@@ -35,10 +37,12 @@ interface BeginAiTraceInput {
   configProfile?: string;
   model?: string;
   requestSummary?: string;
+  requestPayload?: unknown;
 }
 
 interface FinishAiTraceInput {
   responseSummary?: string;
+  responsePayload?: unknown;
   success?: boolean;
   errorMessage?: string;
   finishedAt?: number;
@@ -98,10 +102,30 @@ export function beginAiTrace(input: BeginAiTraceInput): AiTraceContext {
     configProfile: input.configProfile,
     model: input.model,
     requestSummary: input.requestSummary,
+    requestPayload: input.requestPayload,
     startedAt,
     updatedAt: startedAt,
   };
   return upsertTrace(context);
+}
+
+export function updateAiTraceRequestPayload(
+  traceId: string,
+  requestPayload: unknown,
+  requestSummary?: string
+): AiTraceContext | null {
+  const history = ensureHistoryLoaded();
+  const matched = history.find(item => item.traceId === traceId);
+  if (!matched) {
+    return null;
+  }
+  const updatedAt = Date.now();
+  return upsertTrace({
+    ...matched,
+    requestSummary: requestSummary ?? matched.requestSummary,
+    requestPayload,
+    updatedAt,
+  });
 }
 
 export function finishAiTrace(traceId: string, input: FinishAiTraceInput): AiTraceContext | null {
@@ -115,6 +139,7 @@ export function finishAiTrace(traceId: string, input: FinishAiTraceInput): AiTra
   const next: AiTraceContext = {
     ...matched,
     responseSummary: input.responseSummary ?? matched.responseSummary,
+    responsePayload: input.responsePayload ?? matched.responsePayload,
     success: input.success,
     errorMessage: input.errorMessage,
     finishedAt,
@@ -140,7 +165,9 @@ export function finishAiTrace(traceId: string, input: FinishAiTraceInput): AiTra
       model: stored.model,
       configProfile: stored.configProfile,
       requestSummary: stored.requestSummary,
+      requestPayload: stored.requestPayload,
       responseSummary: stored.responseSummary,
+      responsePayload: stored.responsePayload,
       errorMessage: stored.errorMessage,
     },
   });
@@ -153,6 +180,7 @@ export function failAiTrace(traceId: string, errorMessage: string): AiTraceConte
     success: false,
     errorMessage,
     responseSummary: errorMessage,
+    responsePayload: { errorMessage },
   });
 }
 

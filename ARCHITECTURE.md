@@ -892,7 +892,7 @@ src/styles/
 | `reportInterpretation.ts` | 检验检查报告解读服务：接收 `taskId + query + patientContext`，在不扩展 HIS 入参的前提下从报告原文解析报告项目、日期/时间、门诊号、样本号、申请/检验时间与异常指标，构建检验/影像两类 prompt，调用 `llm.ts` 返回结构化解读结果，并封装为独立窗口消费的报告单式 payload；若 LLM 返回结构不完整，回退到可读的摘要型结构 | [src/services/reportInterpretation.ts](src/services/reportInterpretation.ts) |
 | `feedback.ts` | 会话反馈服务；负责会话、推荐、反馈、性能指标的本地落库与区域化双写，同时把结构化操作日志转成区域化审计接口可消费的 `{ module, action, result, ... }` 载荷 | [src/services/feedback.ts](src/services/feedback.ts) |
 | `voiceFeedback.ts` | 语音反馈服务；负责推荐项 / 病例字段 / 整页反馈 payload 组装、本地草稿恢复、病例字段差异摘要与待同步队列 | [src/services/voiceFeedback.ts](src/services/voiceFeedback.ts) |
-| `aiTrace.ts` | 最近一次区域化 AI 调用链路上下文缓存；向反馈面板暴露 `traceId`、模型、场景、输入/输出摘要与耗时，并把 AI 代理调用按业务模块/动作回写到操作日志 | [src/services/aiTrace.ts](src/services/aiTrace.ts) |
+| `aiTrace.ts` | 最近一次区域化 AI 调用链路上下文缓存；向反馈面板暴露 `traceId`、模型、场景、输入/输出摘要与耗时，并把 AI 代理调用按业务模块/动作回写到操作日志；区域化 AI trace 必须同时保留 `requestPayload/responsePayload` 完整业务出入参，供后台日志详情排障，凭据和语音原始音频不得进入 payload | [src/services/aiTrace.ts](src/services/aiTrace.ts) |
 | `operationTracker.ts` | 结构化操作日志入口：白名单保留高价值业务事件，统一生成 `module/action/title/sourceModule/scene`，过滤 `collapse`、壳层导航等低价值噪声 | [src/services/operationTracker.ts](src/services/operationTracker.ts) |
 | `featureUsageTracker.ts` | 区域化功能调用事件上报入口：按产品功能维度记录一次用户真实调用，批量写入远端 `/v1/client/feature-events/batch`；默认以本地队列事件自身生成 `idempotencyKey`，只对离线重试 / 接口重试去重，不把同一就诊的再次显式入口合并掉 | [src/services/featureUsageTracker.ts](src/services/featureUsageTracker.ts) |
 | `themeService.ts` | 主题管理 | [src/services/themeService.ts](src/services/themeService.ts) |
@@ -913,7 +913,7 @@ src/styles/
 | `userFeedback.ts` | 区域化问题反馈服务；负责图片编码、评分/说明校验、反馈 scope 元数据合并和调用远端 `/v1/client/feedbacks` 接口 | [src/services/userFeedback.ts](src/services/userFeedback.ts) |
 | `consultationUserLog.ts` | 区域化运维用户日志服务；负责组装智能问诊/语音问诊首版与最终快照，语音问诊额外编码录音和 ASR 文本，并调用远端 `/v1/client/user-logs/consultations` 聚合到同一条问诊日志 | [src/services/consultationUserLog.ts](src/services/consultationUserLog.ts) |
 | `promptOverride.ts` | 远程 Prompt 覆盖层：管理端发布的自定义 prompt 替换本地默认值 | [src/services/promptOverride.ts](src/services/promptOverride.ts) |
-| `auditUploader.ts` | 审计事件批量上报：区域化模式下直接调用远端 `/v1/client/audit/events/batch`，本地只保留轻量离线队列用于失败重试；恢复遗留队列后立即补传，新事件入队后也会异步触发一次立即上报尝试；`operation` 事件会保留 `operationType/operationName/details`，并补齐 `module/action/result` 供服务端日志表查询；不承担功能调用统计 | [src/services/auditUploader.ts](src/services/auditUploader.ts) |
+| `auditUploader.ts` | 审计事件批量上报：区域化模式下直接调用远端 `/v1/client/audit/events/batch`，本地只保留轻量离线队列用于失败重试；恢复遗留队列后立即补传，新事件入队后也会异步触发一次立即上报尝试；`operation` 事件会保留 `operationType/operationName/details`，并补齐 `module/action/result` 供服务端日志表查询；AI 调用类事件的 `details` 必须同时包含摘要与完整业务出入参，避免后台只能看到截断文本；不承担功能调用统计 | [src/services/auditUploader.ts](src/services/auditUploader.ts) |
 
 ### 当前模板/映射读取策略
 
@@ -981,7 +981,7 @@ startAuditUploader() (startup flush + enqueue flush + 30s retry)
 
 ### 当前本地桥接与知识库链路
 
-1. `operationTracker.ts` 与 `feedback.ts` 负责本地操作追踪、会话统计和回溯；本地模式下 `logOperation()` 写入本地 SQLite。区域化模式下，`logOperation()` 不再落本地 SQLite，而是把操作日志规范化为 `{ module, action, result, operationType, operationName, details }` 后直接进入远端审计上传链路。
+1. `operationTracker.ts` 与 `feedback.ts` 负责本地操作追踪、会话统计和回溯；本地模式下 `logOperation()` 写入本地 SQLite。区域化模式下，`logOperation()` 不再落本地 SQLite，而是把操作日志规范化为 `{ module, action, result, operationType, operationName, details }` 后直接进入远端审计上传链路。AI 调用类 `details` 中的 `requestSummary/responseSummary` 仅用于摘要展示，完整排障必须读取 `requestPayload/responsePayload`。
 1.1 `featureUsageTracker.ts` 负责辅诊功能统计事件；它与审计日志分离，只在真实用户功能调用时写一条业务事件，后台统计按该事件计数，不按 `operationTracker` 或 AI 代理日志行数计数。
 2. `src-tauri/src/http_server.rs` 提供 `/api/consultation/*` 与 `/api/pmphai/*` 本地桥接能力。
 3. `pmphai.ts` 优先经本地代理访问 PMPHAI，规避 WebView 跨域问题。
