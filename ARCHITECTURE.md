@@ -889,7 +889,7 @@ src/styles/
 | `services/his/registry.ts` | 适配器注册表与选择器：`getHisAdapter()` 是业务方唯一入口；选择优先级 `setActiveHisVendor` > `VITE_HIS_VENDOR` > `localStorage.HIS_VENDOR` > 默认 `phis`；handshake 时由 `useEventListeners` 调用 `resetHisAdapter` 清缓存 | [src/services/his/registry.ts](src/services/his/registry.ts) / [src/services/his/index.ts](src/services/his/index.ts) |
 | `hisIntegrationLog.ts` | HIS 联调调用日志客户端：为 PHIS 出站请求生成 / 记录结构化日志，提供查询、清空和导出 Tauri 命令封装 | [src/services/hisIntegrationLog.ts](src/services/hisIntegrationLog.ts) |
 | `diagnosisPath.ts` | 诊断路径数据构建与独立窗口事件载荷封装；优先通过 LLM 生成结构化推理链，再在前端校验并映射为 Sankey 节点、连线和说明文案，失败时回退本地兜底链路；载荷中补充 `supportingEvidence`、`counterEvidence`、`differentialPoints` 三段式解释字段，供窗口右侧说明面板直接渲染 | [src/services/diagnosisPath.ts](src/services/diagnosisPath.ts) |
-| `reportInterpretation.ts` | 检验检查报告解读服务：接收 `taskId + query + patientContext`，在不扩展 HIS 入参的前提下从报告原文解析报告项目、日期/时间、门诊号、样本号、申请/检验时间与异常指标，构建检验/影像两类 prompt，调用 `llm.ts` 返回结构化解读结果，并封装为独立窗口消费的报告单式 payload；若 LLM 返回结构不完整，回退到可读的摘要型结构 | [src/services/reportInterpretation.ts](src/services/reportInterpretation.ts) |
+| `reportInterpretation.ts` | 检验检查报告解读服务：接收 `taskId + query + patientContext`，在不扩展 HIS 入参的前提下从报告原文解析报告项目、日期/时间、门诊号、样本号、申请/检验时间与异常指标，创建独立窗口并等待 `report-interpretation:ready` 后投递 status/update 事件，构建检验/影像两类 prompt，调用 `llm.ts` 返回结构化解读结果，并封装为独立窗口消费的报告单式 payload；若 LLM 返回结构不完整，回退到可读的摘要型结构 | [src/services/reportInterpretation.ts](src/services/reportInterpretation.ts) |
 | `feedback.ts` | 会话反馈服务；负责会话、推荐、反馈、性能指标的本地落库与区域化双写，同时把结构化操作日志转成区域化审计接口可消费的 `{ module, action, result, ... }` 载荷 | [src/services/feedback.ts](src/services/feedback.ts) |
 | `voiceFeedback.ts` | 语音反馈服务；负责推荐项 / 病例字段 / 整页反馈 payload 组装、本地草稿恢复、病例字段差异摘要与待同步队列 | [src/services/voiceFeedback.ts](src/services/voiceFeedback.ts) |
 | `aiTrace.ts` | 最近一次区域化 AI 调用链路上下文缓存；向反馈面板暴露 `traceId`、模型、场景、输入/输出摘要与耗时，并把 AI 代理调用按业务模块/动作回写到操作日志；区域化 AI trace 必须同时保留 `requestPayload/responsePayload` 完整业务出入参，供后台日志详情排障，凭据和语音原始音频不得进入 payload | [src/services/aiTrace.ts](src/services/aiTrace.ts) |
@@ -1075,9 +1075,11 @@ Rust HTTP Server 记录 traceId 并发出 start-report-interpretation 事件
   ↓
 useEventListeners.ts 读取当前接诊患者并转交显式 patient 入参
   ↓
-reportInterpretation.ts 调用 LLM 生成结构化报告解读 payload
+App.vue / reportInterpretation.ts 创建 report-interpretation-window
   ↓
-App.vue / 独立窗口创建 report-interpretation-window
+ReportInterpretationWindow.vue 注册 status/update listener 并向 main 发出 report-interpretation:ready
+  ↓
+reportInterpretation.ts 确认 ready 后投递生成中状态，并调用 LLM 生成结构化报告解读 payload
   ↓
 ReportInterpretationWindow.vue 按报告单版式渲染报告元数据、异常项目、综合判断、建议与风险提示
 ```

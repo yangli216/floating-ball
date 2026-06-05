@@ -1,4 +1,5 @@
 import { WebviewWindow } from '@tauri-apps/api/webviewWindow';
+import { listen } from '@tauri-apps/api/event';
 import { PROMPTS } from '../prompts';
 import { chat, type ChatMessage } from './llm';
 import type { AppPatient } from '../types/appState';
@@ -30,8 +31,19 @@ const REPORT_INTERPRETATION_WINDOW_LABEL = 'report-interpretation-window';
 const REPORT_INTERPRETATION_WINDOW_URL = 'index.html?window=report-interpretation';
 const UPDATE_EVENT = 'report-interpretation:update';
 const STATUS_EVENT = 'report-interpretation:status';
+const READY_EVENT = 'report-interpretation:ready';
 const WINDOW_EVENT_RETRY_DELAYS = [0, 120, 320] as const;
 const REPORT_INTERPRETATION_LLM_TIMEOUT_MS = 45_000;
+const REPORT_INTERPRETATION_WINDOW_READY_TIMEOUT_MS = 8_000;
+
+interface ReportInterpretationWindowReadyEvent {
+  label?: string;
+}
+
+interface ReportInterpretationWindowReadyWaiter {
+  wait: () => Promise<void>;
+  cancel: () => void;
+}
 
 interface ReportInterpretationLLMResponse {
   summary?: string;
@@ -615,6 +627,49 @@ function withTimeout<T>(promise: Promise<T>, timeoutMs: number, message: string)
   });
 }
 
+async function createReportInterpretationWindowReadyWaiter(
+  expectedLabel: string,
+): Promise<ReportInterpretationWindowReadyWaiter> {
+  let settled = false;
+  let resolveReady: () => void = () => {};
+
+  const readyPromise = new Promise<void>((resolve) => {
+    resolveReady = resolve;
+  });
+
+  const unlisten = await listen<ReportInterpretationWindowReadyEvent>(READY_EVENT, (event) => {
+    if (event.payload?.label !== expectedLabel) {
+      return;
+    }
+
+    settled = true;
+    resolveReady();
+  });
+
+  const cleanup = (): void => {
+    unlisten();
+    if (!settled) {
+      settled = true;
+      resolveReady();
+    }
+  };
+
+  return {
+    wait: async () => {
+      try {
+        await withTimeout(
+          readyPromise,
+          REPORT_INTERPRETATION_WINDOW_READY_TIMEOUT_MS,
+          '报告解读窗口初始化超时，请关闭后重试。',
+        );
+      } finally {
+        cleanup();
+      }
+    },
+    cancel: cleanup,
+  };
+}
+
 function buildPatientProfile(
   currentPatient: AppPatient | null | undefined,
   incomingPatient: ReportInterpretationPatientInput | null | undefined,
@@ -871,6 +926,7 @@ async function ensureReportInterpretationWindow(): Promise<{ window: WebviewWind
     return { window: existingWindow, isNewWindow: false };
   }
 
+  const readyWaiter = await createReportInterpretationWindowReadyWaiter(REPORT_INTERPRETATION_WINDOW_LABEL);
   const createdWindow = new WebviewWindow(REPORT_INTERPRETATION_WINDOW_LABEL, {
     url: REPORT_INTERPRETATION_WINDOW_URL,
     title: '报告解读',
@@ -884,23 +940,29 @@ async function ensureReportInterpretationWindow(): Promise<{ window: WebviewWind
     focus: true,
   });
 
-  await new Promise<void>((resolve, reject) => {
-    let settled = false;
+  try {
+    await new Promise<void>((resolve, reject) => {
+      let settled = false;
 
-    const finalize = (callback: () => void): void => {
-      if (settled) {
-        return;
-      }
-      settled = true;
-      callback();
-    };
+      const finalize = (callback: () => void): void => {
+        if (settled) {
+          return;
+        }
+        settled = true;
+        callback();
+      };
 
-    void createdWindow.once('tauri://created', () => finalize(resolve));
-    void createdWindow.once('tauri://error', (event) => {
-      const message = normalizeText(event.payload) || '报告解读窗口创建失败。';
-      finalize(() => reject(new Error(message)));
+      void createdWindow.once('tauri://created', () => finalize(resolve));
+      void createdWindow.once('tauri://error', (event) => {
+        const message = normalizeText(event.payload) || '报告解读窗口创建失败。';
+        finalize(() => reject(new Error(message)));
+      });
     });
-  });
+    await readyWaiter.wait();
+  } catch (error) {
+    readyWaiter.cancel();
+    throw error;
+  }
 
   console.info('[ReportInterpretation] Created window:', createdWindow.label);
 

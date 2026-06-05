@@ -188,6 +188,13 @@
 - **解决方案**: 将 Tauri 发布 action 固定到 `tauri-apps/tauri-action@v0.5.22`，该版本仍使用 `node20` 且与现有 `tagName/releaseName/args` 输入兼容。
 - **后续防护**: Release / CI 中对关键构建 action 尽量固定到具体版本；升级 action runtime 前先确认 GitHub runner 支持矩阵，避免浮动 tag 在无代码改动时改变发布行为。
 
+### RETRO-025: 报告解读独立窗口未等待 ready 导致卡在准备态 [已解决]
+
+- **现象**: 触发检验/检查报告解读时窗口先白屏，随后 DevTools 出现 `css2 ERR_CONNECTION_REFUSED`，页面停在“正在准备报告解读 / 正在连接主窗口与独立结果页”不再进入生成中或结果页。
+- **根因**: `tauri://created` 只表示 WebView 容器创建成功，不代表 Vue 组件已经完成挂载和 `report-interpretation:status/update` listener 注册。主窗口在 `tauri://created` 后立即投递 status，遇到 WebView2 加载慢、外部字体请求失败或机器较慢时，事件可能早于 listener 注册而丢失；子窗口虽然随后发出 `report-interpretation:ready`，但主窗口此前没有等待该握手。
+- **解决方案**: 创建报告解读窗口前先注册 main 侧 ready 监听，子窗口 listener 注册完成后发出 `report-interpretation:ready`，主窗口确认 ready 后再投递 status/update 事件；同时移除桌面端对 Google Fonts `css2` 的运行期依赖，避免内网环境持续报字体连接失败。
+- **后续防护**: 新建独立窗口时不能把 `tauri://created` 当成业务 listener 就绪信号；跨窗口首包事件必须有显式 ready/ack 或可补发的状态源。
+
 
 ---
 
