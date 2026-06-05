@@ -350,9 +350,9 @@ function getAttributeAriaLabel(field: TreatmentPlanAttributeField): string {
         @toggle-manual-match="emit('toggleManualMatch', item)"
         @toggle-editor="emit('toggleTreatmentEditor', item, $event)"
       >
-        <template #title-prefix>
+        <!-- <template #title-prefix>
           <span class="type-badge">{{ getTypeBadge(item) }}</span>
-        </template>
+        </template> -->
 
         <template #actions>
           <button
