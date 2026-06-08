@@ -18,6 +18,7 @@
  * - 字典：`DictionaryEntry`
  * - 库存校验：`InventoryCheckRequest` / `InventoryCheckResult`
  * - 目录条目：`DiagnosisCatalogEntry` / `MedicineCatalogEntry` / `MedicalItemCatalogEntry`
+ * - 患者与住院上下文：`HisPatientInfo` / `HisPatientHistory` / `HisInpatient*`
  *
  * 仍 PHIS 化（adapter 内部使用，不对外）：
  * - `PharmacyOption`（`idDept` / `idSto`）— 药房列表本身依赖 PHIS 双层标识
@@ -301,3 +302,161 @@ export interface HisPatientHistory {
   raw?: Record<string, unknown>;
 }
 
+// ============================================================================
+// 住院上下文
+// ============================================================================
+
+/**
+ * 住院上下文查询入参（中性）
+ *
+ * 调用方至少提供 `patientId` 或一个住院锚点；PHIS 住院诊断接口使用
+ * `admissionId` 映射 `idAdsn`（患者单次住院主键）。
+ */
+export interface HisInpatientQuery {
+  patientId?: string;
+  /** 住院就诊/住院流水主键 */
+  inpatientVisitId?: string;
+  /** 入院登记/单次住院主键（PHIS: idAdsn） */
+  admissionId?: string;
+  /** 通用 encounter/visit 锚点 */
+  encounterId?: string;
+  /** 住院号 */
+  inpatientNo?: string;
+  /** 病区/护理单元 ID */
+  wardId?: string;
+  /** 分页起点；默认由厂商 adapter 决定 */
+  start?: number;
+  /** 分页大小；默认由厂商 adapter 决定 */
+  limit?: number;
+  /** 厂商透传的查询扩展字段 */
+  raw?: Record<string, unknown>;
+}
+
+/**
+ * 指定患者住院诊断
+ */
+export interface HisInpatientDiagnosis {
+  id: string;
+  code?: string;
+  name: string;
+  /** 入院诊断 / 出院诊断 / 主要诊断等 */
+  diagnosisType?: string;
+  diagnosedAt?: string;
+  isPrimary?: boolean;
+  doctorName?: string;
+  deptName?: string;
+  raw?: Record<string, unknown>;
+}
+
+/**
+ * 指定患者住院医嘱
+ */
+export interface HisInpatientOrder {
+  orderId: string;
+  groupId?: string;
+  name: string;
+  /** 药品 / 检查 / 检验 / 处置 / 护理等 */
+  orderType?: string;
+  status?: string;
+  startTime?: string;
+  stopTime?: string;
+  dose?: string;
+  frequency?: string;
+  route?: string;
+  quantity?: number;
+  unit?: string;
+  doctorName?: string;
+  deptName?: string;
+  raw?: Record<string, unknown>;
+}
+
+/**
+ * 指定患者住院体温单单次记录
+ */
+export interface HisInpatientTemperatureRecord {
+  recordTime: string;
+  dtSurvey?: string;
+  /** HIS 原始日期文本，如 06.05 */
+  dateText?: string;
+  /** HIS 原始时点文本，如 14:00 */
+  timeText?: string;
+  /** 测量等级 / 时点级别 */
+  level?: string;
+  /** 体温，单位摄氏度 */
+  temperature?: number;
+  /** 腋温 / 口温 / 肛温等 */
+  temperatureType?: string;
+  /** 是否复测 */
+  isRetest?: boolean;
+  /** 复测体温，单位摄氏度 */
+  retestTemperature?: number;
+  pulse?: number;
+  heartRate?: number;
+  respiration?: number;
+  bloodPressureSystolic?: number;
+  bloodPressureDiastolic?: number;
+  spo2?: number;
+  painScore?: number;
+  intake?: number;
+  output?: number;
+  stoolCount?: number;
+  urineVolume?: number;
+  weight?: number;
+  /** HIS detail 原文，保留未结构化生命体征 */
+  detailText?: string;
+  raw?: Record<string, unknown>;
+}
+
+/**
+ * 指定患者住院体温单
+ */
+export interface HisInpatientTemperatureChart {
+  patientId: string;
+  inpatientVisitId?: string;
+  records: HisInpatientTemperatureRecord[];
+  todayRecords?: HisInpatientTemperatureRecord[];
+  historyRecords?: HisInpatientTemperatureRecord[];
+  raw?: Record<string, unknown>;
+}
+
+/**
+ * 指定患者住院登记信息
+ */
+export interface HisInpatientRegistrationInfo {
+  patientId: string;
+  name?: string;
+  gender?: string;
+  birthday?: string;
+  ageText?: string;
+  inHospitalAgeText?: string;
+  inpatientVisitId?: string;
+  inpatientNo?: string;
+  medicalRecordNo?: string;
+  admissionNo?: string;
+  admissionTime?: string;
+  clinicalTime?: string;
+  dischargeTime?: string;
+  deptId?: string;
+  deptName?: string;
+  wardId?: string;
+  wardName?: string;
+  bedNo?: string;
+  attendingDoctorName?: string;
+  residentDoctorId?: string;
+  attendingDoctorId?: string;
+  chiefDoctorId?: string;
+  admittingDoctorId?: string;
+  nursingLevel?: string;
+  admissionDiagnosis?: string;
+  admissionDiagnosisCode?: string;
+  dischargeDiagnosis?: string;
+  dischargeDiagnosisCode?: string;
+  allergyText?: string;
+  allergyItems?: unknown[];
+  isSevere?: boolean;
+  isTransfer?: boolean;
+  isGestation?: boolean;
+  status?: string;
+  diagnoses?: HisInpatientDiagnosis[];
+  raw?: Record<string, unknown>;
+}

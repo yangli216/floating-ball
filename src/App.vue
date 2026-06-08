@@ -23,6 +23,7 @@ import { FeedbackSubmissionPanel } from "@features/feedback";
 import { HisIntegrationLogPanel } from "@features/settings";
 import { MedicalCatalogCachePanel } from "@features/medical-catalog";
 import { TreatmentPlanPage } from "@features/treatment-plan";
+import { InpatientEmrPage, type InpatientEmrGenerationRequest } from "@features/inpatient-emr";
 import { DifferentialDiagnosisModalPage } from "@features/differential-diagnosis";
 import Icon from "@shared/ui/Icon.vue";
 import { formatUserFacingError } from "@shared/lib/errorMessages";
@@ -115,6 +116,7 @@ const riskItems = ref<RiskItem[]>([]);
 // 语音问诊状态
 const voiceInteractionSessionKey = ref(0);
 const consultationAssistTrigger = ref<{ kind: ConsultationAssistAction; token: number } | null>(null);
+const inpatientEmrRequest = ref<InpatientEmrGenerationRequest | null>(null);
 const patientDisplayName = computed(
   () => getPatientContextName(currentPatient.value) || '未知患者'
 );
@@ -128,6 +130,8 @@ const assistantTitle = computed(() => {
       return currentPatient.value ? `语音问诊 - ${patientDisplayName.value}` : '语音问诊';
     case 'treatment-plan':
       return currentPatient.value ? `诊疗方案 - ${patientDisplayName.value}` : '诊疗方案';
+    case 'inpatient-emr':
+      return '住院病历生成';
     case 'differential-diagnosis':
       return currentPatient.value ? `鉴别诊断 - ${patientDisplayName.value}` : '鉴别诊断';
     case 'analytics':
@@ -313,6 +317,7 @@ const {
   openConsultation,
   openVoiceConsultation,
   openTreatmentPlan,
+  openInpatientEmr,
   openDifferentialDiagnosis,
   startVoiceInteraction: startVoiceInteractionBase,
 } = navigation;
@@ -493,6 +498,7 @@ const eventListeners = useEventListeners({
   hoveredBtnIndex,
   ringMenuRef,
   currentPatient,
+  inpatientEmrRequest,
   riskState: {
     riskPatientName,
     riskPatientGender,
@@ -504,7 +510,7 @@ const eventListeners = useEventListeners({
   handleWindowMove,
   persistCurrentWindowSize,
   workMode: { enterWorkMode, exitWork },
-  navigation: { openConsultation, openVoiceConsultation, openTreatmentPlan, openDifferentialDiagnosis, startVoiceInteraction },
+  navigation: { openConsultation, openVoiceConsultation, openTreatmentPlan, openInpatientEmr, openDifferentialDiagnosis, startVoiceInteraction },
   resetVoiceSessionState,
   clearVoiceConsultationCache,
   clearMinimizedConsultationSessions: minimizedSessions.clearAll,
@@ -782,7 +788,7 @@ const openInsideCloudHome = async () => {
           <!-- 工具栏 (risk-alert, voice-interaction, reception-capsule 视图不显示) -->
           <div v-if="currentView !== 'risk-alert' && currentView !== 'voice-interaction' && currentView !== 'reception-capsule' && currentView !== 'differential-diagnosis' && currentView !== 'chat'" class="assistant-toolbar" data-tauri-drag-region>
             <div class="toolbar-left" data-tauri-drag-region>
-	              <button v-if="currentView === 'settings' || currentView === 'analytics' || currentView === 'his-log' || currentView === 'medical-cache' || currentView === 'knowledge-base' || currentView === 'treatment-plan'" class="icon-btn back-btn" @click="currentView === 'analytics' ? openChat() : handleUserCollapse()" title="返回">
+	              <button v-if="currentView === 'settings' || currentView === 'analytics' || currentView === 'his-log' || currentView === 'medical-cache' || currentView === 'knowledge-base' || currentView === 'treatment-plan' || currentView === 'inpatient-emr'" class="icon-btn back-btn" @click="currentView === 'analytics' ? openChat() : handleUserCollapse()" title="返回">
 	                 <Icon icon="lucide:arrow-left" class="toolbar-icon" size="20" />
 	              </button>
 	              <span class="assistant-title" data-tauri-drag-region>{{ assistantTitle }}</span>
@@ -872,6 +878,11 @@ const openInsideCloudHome = async () => {
           <TreatmentPlanPage
             v-if="currentView === 'treatment-plan'"
             :patient="currentPatient"
+            @close="handleUserCollapse"
+          />
+          <InpatientEmrPage
+            v-if="currentView === 'inpatient-emr'"
+            :request="inpatientEmrRequest"
             @close="handleUserCollapse"
           />
           <DifferentialDiagnosisModalPage

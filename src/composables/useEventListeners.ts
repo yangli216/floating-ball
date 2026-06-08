@@ -29,6 +29,7 @@ import {
   type ConsultationAssistAction,
 } from '../types/consultationAssist';
 import type { ReportInterpretationRequestPayload } from '../types/reportInterpretation';
+import type { InpatientEmrGenerationRequest } from '@features/inpatient-emr';
 import { getPatientContextId } from '../utils/patientContext';
 import { useTauriEventListener } from '@shared/composables/useTauriEventListener';
 import { formatUserFacingError } from '@shared/lib/errorMessages';
@@ -64,6 +65,8 @@ export interface EventListenersOptions {
   ringMenuRef: Ref<HTMLElement | null>;
   /** 当前患者信息 */
   currentPatient: Ref<AppPatient | null>;
+  /** 住院病历生成请求 */
+  inpatientEmrRequest: Ref<InpatientEmrGenerationRequest | null>;
   /** 风险提示状态 */
   riskState: {
     riskPatientName: Ref<string>;
@@ -88,6 +91,7 @@ export interface EventListenersOptions {
     openConsultation: () => Promise<void>;
     openVoiceConsultation: () => Promise<void>;
     openTreatmentPlan: () => Promise<void>;
+    openInpatientEmr: () => Promise<void>;
     openDifferentialDiagnosis: () => Promise<void>;
     startVoiceInteraction: (options?: { skipCacheRestore?: boolean }) => Promise<void>;
   };
@@ -127,6 +131,7 @@ export function useEventListeners(options: EventListenersOptions) {
     hoveredBtnIndex,
     ringMenuRef,
     currentPatient,
+    inpatientEmrRequest,
     riskState,
     showToast,
     handleWindowMove,
@@ -377,6 +382,24 @@ export function useEventListeners(options: EventListenersOptions) {
     }
   }
 
+  async function handleInpatientEmrGenerationEvent(
+    event: TauriEvent<InpatientEmrGenerationRequest>
+  ): Promise<void> {
+    const payload = event.payload;
+    trackApiCall('his_start_inpatient_emr_generation', true, undefined, {
+      admissionId: payload?.admissionId,
+      requestId: payload?.requestId,
+    });
+
+    if (!payload?.admissionId || !payload?.templateName || !payload?.htmlContent) {
+      showToast('住院病历生成请求缺少 admissionId、templateName 或 htmlContent', 'error');
+      return;
+    }
+
+    inpatientEmrRequest.value = payload;
+    await navigation.openInpatientEmr();
+  }
+
   // ========== 鼠标事件监听 ==========
 
   /**
@@ -484,6 +507,14 @@ export function useEventListeners(options: EventListenersOptions) {
     throwOnError: true,
   });
 
+  const inpatientEmrGenerationListener = useTauriEventListener<InpatientEmrGenerationRequest>({
+    eventName: 'start-inpatient-emr-generation',
+    handler: (event) => { void handleInpatientEmrGenerationEvent(event); },
+    logContext: 'EventListeners',
+    autoStart: false,
+    throwOnError: true,
+  });
+
   const hoverListener = useTauriEventListener<boolean>({
     eventName: 'hover-change',
     handler: handleHoverEvent,
@@ -507,6 +538,7 @@ export function useEventListeners(options: EventListenersOptions) {
     stopConsultationListener,
     voiceConsultationListener,
     reportInterpretationListener,
+    inpatientEmrGenerationListener,
     receivePatientListener,
     sdkHandshakeListener,
     hoverListener,

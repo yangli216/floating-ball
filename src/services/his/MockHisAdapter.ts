@@ -35,6 +35,11 @@ import type {
   MedicineDetail,
   HisPatientInfo,
   HisPatientHistory,
+  HisInpatientDiagnosis,
+  HisInpatientOrder,
+  HisInpatientQuery,
+  HisInpatientRegistrationInfo,
+  HisInpatientTemperatureChart,
 } from './types';
 
 const MOCK_DIAGNOSES: DiagnosisCatalogEntry[] = [
@@ -84,6 +89,10 @@ export class MockHisAdapter implements HisAdapter {
   readonly vendor = 'mock';
 
   private execDeptId = 'dept-001';
+
+  private resolveMockInpatientPatientId(query: HisInpatientQuery): string {
+    return query.patientId ?? query.admissionId ?? query.inpatientVisitId ?? query.encounterId ?? 'mock-patient';
+  }
 
   updateContext(context: HisServiceContext): void {
     // mock 仅记录第一个角色科室，作为默认执行科室
@@ -217,6 +226,108 @@ export class MockHisAdapter implements HisAdapter {
           medications: ['阿莫西林胶囊', '复方鲜竹沥液'],
         }
       ],
+      raw: { mock: true },
+    };
+  }
+
+  // ---- 住院上下文 ----
+
+  async fetchInpatientDiagnoses(query: HisInpatientQuery): Promise<HisInpatientDiagnosis[]> {
+    const registration = await this.fetchInpatientRegistration(query);
+    return registration?.diagnoses ?? [];
+  }
+
+  async fetchInpatientOrders(query: HisInpatientQuery): Promise<HisInpatientOrder[]> {
+    const patientId = this.resolveMockInpatientPatientId(query);
+    return [
+      {
+        orderId: 'mock-inp-ord-1',
+        groupId: 'mock-inp-group-1',
+        name: '阿莫西林胶囊',
+        orderType: '药品',
+        status: '执行中',
+        startTime: '2026-06-01 10:00:00',
+        dose: '0.5g',
+        frequency: '每日三次',
+        route: '口服',
+        quantity: 1,
+        unit: '盒',
+        doctorName: 'Mock医生',
+        deptName: '全科病区',
+        raw: { mock: true, patientId, idAdsn: query.admissionId },
+      },
+    ];
+  }
+
+  async fetchInpatientTemperatureChart(query: HisInpatientQuery): Promise<HisInpatientTemperatureChart | null> {
+    const patientId = this.resolveMockInpatientPatientId(query);
+    const records = [
+      {
+        recordTime: '2026-06-01 14:00:00',
+        dtSurvey: '2026-06-01 00:00:00',
+        temperature: 38.2,
+        temperatureType: '腋温',
+        pulse: 92,
+        heartRate: 92,
+        respiration: 20,
+        bloodPressureSystolic: 126,
+        bloodPressureDiastolic: 78,
+        spo2: 98,
+        raw: { mock: true },
+      },
+    ];
+    return {
+      patientId,
+      inpatientVisitId: query.inpatientVisitId,
+      records,
+      todayRecords: records,
+      historyRecords: [],
+      raw: { mock: true },
+    };
+  }
+
+  async fetchInpatientRegistration(query: HisInpatientQuery): Promise<HisInpatientRegistrationInfo | null> {
+    const patientId = this.resolveMockInpatientPatientId(query);
+    const diagnoses: HisInpatientDiagnosis[] = [
+      {
+        id: 'mock-inp-dx-1',
+        code: 'J20.9',
+        name: '急性支气管炎',
+        diagnosisType: '入院诊断',
+        diagnosedAt: '2026-06-01 09:30:00',
+        isPrimary: true,
+        doctorName: 'Mock医生',
+        deptName: '全科病区',
+        raw: { mock: true, patientId, idAdsn: query.admissionId },
+      },
+    ];
+    return {
+      patientId,
+      name: '测试住院患者(Mock)',
+      gender: '男性',
+      ageText: '35岁',
+      inHospitalAgeText: '35岁',
+      inpatientVisitId: query.admissionId ?? query.inpatientVisitId ?? 'mock-inp-vis-1',
+      inpatientNo: query.inpatientNo ?? 'ZY000001',
+      medicalRecordNo: 'MR000001',
+      admissionNo: 'ADM000001',
+      admissionTime: '2026-06-01 08:30:00',
+      clinicalTime: '2026-06-01 09:30:00',
+      deptId: 'dept-001',
+      deptName: '全科病区',
+      wardId: query.wardId ?? 'ward-001',
+      wardName: '综合病区',
+      bedNo: '12床',
+      attendingDoctorName: 'Mock医生',
+      nursingLevel: '二级护理',
+      admissionDiagnosis: '急性支气管炎',
+      admissionDiagnosisCode: 'J20.9',
+      allergyText: '青霉素过敏',
+      isSevere: false,
+      isTransfer: false,
+      isGestation: false,
+      status: '在院',
+      diagnoses,
       raw: { mock: true },
     };
   }

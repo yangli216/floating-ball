@@ -505,14 +505,16 @@ curl -X POST 'http://127.0.0.1:8081/api/consultation/reference-feedback' \
 
 ### 11.2 接口契约
 
-定义见 [src/services/his/HisAdapter.ts](src/services/his/HisAdapter.ts)。共 13 个方法，分 4 组：
+定义见 [src/services/his/HisAdapter.ts](src/services/his/HisAdapter.ts)。共 20 个方法，分 6 组：
 
 | 组 | 方法 | 用途 |
 | :--- | :--- | :--- |
 | 会话 | `updateContext(ctx)` / `getDefaultExecDeptId()` | 刷新角色科室上下文，提供默认执行科室 |
 | 目录 | `fetchDiagnosisCatalog()` / `fetchInstitutionMedicalItemsCatalog(orgCode)` / `fetchInstitutionMedicineCatalog(orgCode)` / `fetchMedicineStoreIds(orgCode)` | 同步标准库与机构目录 |
 | 字典 | `fetchFrequencyDictionary()` / `fetchMedicineUsageDictionary()` / `fetchExecutionDepartments()` / `fetchAvailablePharmacies()` | 提供编辑器可选项 |
-| 详情 | `fetchMedicalItemDetail(idCli)` / `fetchMedicineProDetail(id, idSto)` / `checkMedicineInventoryEnough(items)` | 用户编辑/下达时按需调用 |
+| 详情 | `fetchMedicalItemDetail(idCli)` / `fetchMedicalItemPartOptions(idCli)` / `fetchMedicineProDetail(id, idSto)` / `checkMedicineInventoryEnough(items)` | 用户编辑/下达时按需调用 |
+| 患者 | `fetchPatientInfo(patientId)` / `fetchPatientHistory(patientId)` | 接诊时补齐患者基础信息、过敏史与就诊历史 |
+| 住院上下文 | `fetchInpatientDiagnoses(query)` / `fetchInpatientOrders(query)` / `fetchInpatientTemperatureChart(query)` / `fetchInpatientRegistration(query)` | 按指定患者和住院就诊锚点拉取住院诊断、医嘱、体温单和登记信息 |
 
 ### 11.3 默认实现：PhisHisAdapter
 
@@ -551,6 +553,7 @@ setActiveHisVendor('myHis');
   * 目录：`DiagnosisCatalogEntry` / `MedicineCatalogEntry` / `MedicalItemCatalogEntry`
   * 字典：`DictionaryEntry`
   * 库存校验：`InventoryCheckRequest` / `InventoryCheckResult`
+  * 患者与住院上下文：`HisPatientInfo` / `HisPatientHistory` / `HisInpatientDiagnosis` / `HisInpatientOrder` / `HisInpatientTemperatureChart` / `HisInpatientRegistrationInfo`
   原始 PHIS 字段仅通过返回值的 `raw` / `properties` 透传下游使用，业务通用代码不依赖。
 - `PharmacyOption` 仍保留 `idDept` / `idSto` PHIS 字段。药房体系本身是双层标识（部门与库房），其他厂商接入时可再考虑抽象。
 - 写回 HIS 暂不在适配器范围内：当前所有结果回写都走"前端经 invoke → Tauri → HTTP `/api/consultation/events/poll`
@@ -615,3 +618,112 @@ setActiveHisVendor('myHis');
 | `id` / `code` / `name` / `keywords` / `spec` / `category` | 全厂商通用语义字段 |
 | `raw` | PHIS 私有字段 `idSrv` / `naSrv` / `sdSrv` / `idDeptExec` / `fgCheckOrd` / `fgSkintest` / `idPart` / `jsonField` 透传 |
 
+#### 住院上下文 DTO
+
+| DTO | 核心字段 | 说明 |
+| :--- | :--- | :--- |
+| `HisInpatientQuery` | 可选 `patientId` + `admissionId / inpatientVisitId / encounterId / inpatientNo / wardId` | 所有住院上下文查询的标准入参；`admissionId` 对应 PHIS `idAdsn`，表示患者单次住院主键；调用方至少提供 `patientId` 或一个住院锚点 |
+| `HisInpatientDiagnosis` | `id / code / name / diagnosisType / diagnosedAt / isPrimary / doctorName / deptName / raw` | 指定患者住院诊断；PHIS 诊断从住院登记信息 `diagList` 派生，`idDie` 为空表示该诊断类型尚未录入具体诊断信息，此时仍保留诊断类型行 |
+| `HisInpatientOrder` | `orderId / groupId / name / orderType / status / startTime / stopTime / dose / frequency / route / quantity / unit / doctorName / deptName / raw` | 指定患者住院医嘱；PHIS 组内 `ords[]` 会展平成多条医嘱，并通过 `groupId/raw.rawGroup` 保留同组开立关系 |
+| `HisInpatientTemperatureChart` | `patientId / inpatientVisitId / records / raw` | 指定患者住院体温单；单条 `records` 包含体温、脉搏、心率、呼吸、血压、血氧、出入量、体重等可选生命体征字段 |
+| `HisInpatientRegistrationInfo` | `patientId / name / gender / ageText / inpatientVisitId / inpatientNo / admissionTime / clinicalTime / admissionDiagnosis / dischargeDiagnosis / allergyText / diagnoses / raw` | 指定患者住院登记信息；同时承载 PHIS `diagList` 映射后的诊断列表 |
+
+#### PHIS：住院登记信息获取
+
+| 项 | 内容 |
+| :--- | :--- |
+| 服务地址 | `api/phis.hiHosAdsnService/getPatientByIdAdsn` |
+| 标准方法 | `HisAdapter.fetchInpatientRegistration({ admissionId })` |
+| 关键入参 | `admissionId` 映射为 PHIS `idAdsn`，请求体直接传 `[idAdsn]` |
+| 诊断来源 | `HisAdapter.fetchInpatientDiagnoses({ admissionId })` 不再调用独立 PHIS 诊断服务，而是复用本接口返回的 `diagList` |
+| 后续用途 | 作为住院电子病历生成主上下文，提供患者基础信息、住院号、入院时间、入院/出院诊断、过敏史和住院诊断列表 |
+
+请求示例：
+
+```json
+["69660377a5e9230bbcdc850f"]
+```
+
+返回映射：
+
+| 中性字段 | PHIS 字段 |
+| :--- | :--- |
+| `patientId` | `idPi` |
+| `name` / `gender` / `birthday` / `ageText` | `naPi` / `sdSexText` / `birthday` / `age` |
+| `inpatientVisitId` / `inpatientNo` / `medicalRecordNo` | `idAdsn` / `cdHos` / `cdFile` |
+| `admissionTime` / `clinicalTime` | `dtInHos` / `dtClinical` |
+| `admissionDiagnosis` / `admissionDiagnosisCode` | `hosDiag` / `sdHosDiag` |
+| `dischargeDiagnosis` / `dischargeDiagnosisCode` | `odsDiag` / `sdOdsDiag` |
+| `allergyText` / `allergyItems` | `sdAllergyText` / `sdAllergyList` |
+| `isSevere` / `isTransfer` / `isGestation` | `fgSevere` / `isTransfer` / `fgGestation` |
+| `diagnoses` | `diagList[]` 映射为 `HisInpatientDiagnosis[]` |
+| `raw` | 整个 PHIS 登记 body |
+
+#### PHIS：住院医嘱获取
+
+| 项 | 内容 |
+| :--- | :--- |
+| 服务地址 | `api/phis.hiHosOrderService/queryOrdGroupList` |
+| 标准方法 | `HisAdapter.fetchInpatientOrders({ admissionId })` |
+| 关键入参 | `admissionId` 映射为 PHIS `idAdsn`；`sdType`、`sdClassify`、`hiHosOrderStatus`、`fgNurse`、`authority` 由 adapter 固定封装 |
+| 后续用途 | 作为住院电子病历生成上下文，结合大模型和 HIS 业务数据生成出入院记录 / 病程记录 |
+
+请求示例：
+
+```json
+[{
+  "start": 0,
+  "limit": 100,
+  "params": {
+    "idAdsn": "69660377a5e9230bbcdc850f",
+    "sdType": "",
+    "sdClassify": "99",
+    "hiHosOrderStatus": "today",
+    "fgNurse": "1",
+    "authority": "1"
+  }
+}]
+```
+
+返回映射：
+
+| 中性字段 | PHIS 字段 |
+| :--- | :--- |
+| `name` | `ords[].naOrd`，即开立的医嘱内容 |
+| `groupId` | 同一 `items[]` 分组生成稳定组号；同组 `ords` 表示同一组开立 |
+| `status` | 优先取组级 `hiHosOrderStatusText`，缺失时取 `hiHosOrderStatus` |
+| `raw` | 单条 `ord` + 组级状态 / 组序号；保留原始组信息供后续住院病历生成使用 |
+
+#### PHIS：住院体温单数据获取
+
+| 项 | 内容 |
+| :--- | :--- |
+| 服务地址 | `api/phis.hiHosSurveyService/getSurveyTestTimeLine` |
+| 标准方法 | `HisAdapter.fetchInpatientTemperatureChart({ admissionId })` |
+| 关键入参 | `admissionId` 映射为 PHIS `idAdsn` |
+| 后续用途 | 提取体温、血压、呼吸、血氧等生命体征，作为出入院记录 / 病程记录中的客观病情依据 |
+
+请求示例：
+
+```json
+[{
+  "params": {
+    "idAdsn": "69660377a5e9230bbcdc850f"
+  }
+}]
+```
+
+返回映射：
+
+| 中性字段 | PHIS 字段 / 提取规则 |
+| :--- | :--- |
+| `recordTime` | `dtSurvey` 日期 + `dtSdStr` 时间；缺失时回退 `dtSurvey / recordTime / dtRecord` |
+| `temperature` | `temp`，转为数值，单位摄氏度 |
+| `temperatureType` | `tempType` |
+| `dateText` / `timeText` | `dateStr` / `dtSdStr` |
+| `level` | `level` |
+| `isRetest` / `retestTemperature` | `fgRetest === '1'` / `tempRetest` |
+| `bloodPressureSystolic` / `bloodPressureDiastolic` | 从 `detail` 中提取“收缩压(mmHg)” / “舒张压(mmHg)” |
+| `respiration` | 从 `detail` 中提取“呼吸(次/分)” |
+| `spo2` | 从 `detail` 中提取“血氧饱和度(%)” |
+| `detailText` | `detail` 原文，保留给大模型理解其它未结构化生命体征 |

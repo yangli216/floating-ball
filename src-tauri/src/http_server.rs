@@ -370,6 +370,21 @@ pub struct ReportInterpretationRequest {
 
 #[derive(Debug, Deserialize, Serialize, Clone)]
 #[serde(rename_all = "camelCase")]
+pub struct InpatientEmrGenerationRequest {
+    pub admission_id: String,
+    pub html_content: String,
+    #[serde(default)]
+    pub template_name: Option<String>,
+    #[serde(default)]
+    pub request_id: Option<String>,
+    #[serde(default)]
+    pub patient: Option<ReportInterpretationPatientInput>,
+    #[serde(default, flatten)]
+    pub extra: serde_json::Map<String, serde_json::Value>,
+}
+
+#[derive(Debug, Deserialize, Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
 pub struct ConsultationReferenceItem {
     pub name: String,
     pub code: Option<String>,
@@ -899,6 +914,183 @@ async fn start_report_interpretation(
         Some(response_body.clone()),
         request.patient.as_ref().and_then(|item| item.id_pi.clone()),
         None,
+        request.request_id.clone(),
+        None,
+    );
+    HttpResponse::Ok().json(response_body)
+}
+
+async fn start_inpatient_emr_generation(
+    data: web::Json<InpatientEmrGenerationRequest>,
+    app_handle: web::Data<tauri::AppHandle>,
+    state: web::Data<SharedAppState>,
+) -> impl Responder {
+    let started_at = Instant::now();
+    let trace_id = his_integration_log::new_trace_id();
+    if let Err(response) = ensure_http_service_access(&state) {
+        return response;
+    }
+
+    let mut request = data.into_inner();
+    let request_summary = summarize_for_his_log(&request);
+    request.admission_id = request.admission_id.trim().to_string();
+    request.html_content = request.html_content.trim().to_string();
+    request.template_name = request
+        .template_name
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty());
+    if request.request_id.as_deref().unwrap_or_default().trim().is_empty() {
+        let timestamp = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_millis();
+        request.request_id = Some(format!("inpatient-emr-{}", timestamp));
+    }
+
+    if request.admission_id.is_empty() {
+        let response_body = serde_json::json!({
+            "status": "error",
+            "message": "admissionId 不能为空",
+            "traceId": trace_id
+        });
+        record_bridge_log(
+            &app_handle,
+            response_body["traceId"].as_str().unwrap_or_default(),
+            "inpatientEmr.generate",
+            "POST",
+            "/api/inpatient/emr/generate",
+            "error",
+            400,
+            started_at,
+            Some(request_summary),
+            Some(response_body.clone()),
+            request.patient.as_ref().and_then(|item| item.id_pi.clone()),
+            Some(request.admission_id.clone()),
+            request.request_id.clone(),
+            Some("admissionId 不能为空".to_string()),
+        );
+        return HttpResponse::BadRequest().json(response_body);
+    }
+
+    if request.template_name.is_none() {
+        let response_body = serde_json::json!({
+            "status": "error",
+            "message": "templateName 不能为空",
+            "traceId": trace_id
+        });
+        record_bridge_log(
+            &app_handle,
+            response_body["traceId"].as_str().unwrap_or_default(),
+            "inpatientEmr.generate",
+            "POST",
+            "/api/inpatient/emr/generate",
+            "error",
+            400,
+            started_at,
+            Some(request_summary),
+            Some(response_body.clone()),
+            request.patient.as_ref().and_then(|item| item.id_pi.clone()),
+            Some(request.admission_id.clone()),
+            request.request_id.clone(),
+            Some("templateName 不能为空".to_string()),
+        );
+        return HttpResponse::BadRequest().json(response_body);
+    }
+
+    if request.html_content.is_empty() {
+        let response_body = serde_json::json!({
+            "status": "error",
+            "message": "htmlContent 不能为空",
+            "traceId": trace_id
+        });
+        record_bridge_log(
+            &app_handle,
+            response_body["traceId"].as_str().unwrap_or_default(),
+            "inpatientEmr.generate",
+            "POST",
+            "/api/inpatient/emr/generate",
+            "error",
+            400,
+            started_at,
+            Some(request_summary),
+            Some(response_body.clone()),
+            request.patient.as_ref().and_then(|item| item.id_pi.clone()),
+            Some(request.admission_id.clone()),
+            request.request_id.clone(),
+            Some("htmlContent 不能为空".to_string()),
+        );
+        return HttpResponse::BadRequest().json(response_body);
+    }
+
+    if let Some(window) = app_handle.get_webview_window("main") {
+        if let Err(error) = window.emit("start-inpatient-emr-generation", &request) {
+            let response_body = bridge_dispatch_error(&trace_id);
+            record_bridge_log(
+                &app_handle,
+                response_body["traceId"].as_str().unwrap_or_default(),
+                "inpatientEmr.generate",
+                "POST",
+                "/api/inpatient/emr/generate",
+                "error",
+                500,
+                started_at,
+                Some(request_summary),
+                Some(response_body.clone()),
+                request.patient.as_ref().and_then(|item| item.id_pi.clone()),
+                Some(request.admission_id.clone()),
+                request.request_id.clone(),
+                Some(error.to_string()),
+            );
+            return HttpResponse::InternalServerError().json(response_body);
+        }
+
+        let _ = window.set_focus();
+        let _ = window.unminimize();
+        let _ = window.show();
+    } else {
+        let response_body = bridge_window_missing_error(&trace_id);
+        record_bridge_log(
+            &app_handle,
+            response_body["traceId"].as_str().unwrap_or_default(),
+            "inpatientEmr.generate",
+            "POST",
+            "/api/inpatient/emr/generate",
+            "error",
+            500,
+            started_at,
+            Some(request_summary),
+            Some(response_body.clone()),
+            request.patient.as_ref().and_then(|item| item.id_pi.clone()),
+            Some(request.admission_id.clone()),
+            request.request_id.clone(),
+            Some("Main window not found".to_string()),
+        );
+        return HttpResponse::InternalServerError().json(response_body);
+    }
+
+    let response_body = serde_json::json!({
+        "status": "success",
+        "admissionId": request.admission_id,
+        "requestId": request.request_id,
+        "traceId": trace_id,
+        "timestamp": std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_millis() as u64,
+    });
+    record_bridge_log(
+        &app_handle,
+        response_body["traceId"].as_str().unwrap_or_default(),
+        "inpatientEmr.generate",
+        "POST",
+        "/api/inpatient/emr/generate",
+        "success",
+        200,
+        started_at,
+        Some(request_summary),
+        Some(response_body.clone()),
+        request.patient.as_ref().and_then(|item| item.id_pi.clone()),
+        Some(request.admission_id.clone()),
         request.request_id.clone(),
         None,
     );
@@ -2198,6 +2390,10 @@ pub fn run_server(app_handle: tauri::AppHandle, state: SharedAppState) {
                     .route(
                         "/api/report/interpret",
                         web::post().to(start_report_interpretation),
+                    )
+                    .route(
+                        "/api/inpatient/emr/generate",
+                        web::post().to(start_inpatient_emr_generation),
                     )
                     .route(
                         "/api/consultation/start-voice",

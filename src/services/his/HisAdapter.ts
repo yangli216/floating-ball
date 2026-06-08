@@ -32,6 +32,11 @@ import type {
   MedicineDetail,
   HisPatientInfo,
   HisPatientHistory,
+  HisInpatientDiagnosis,
+  HisInpatientOrder,
+  HisInpatientQuery,
+  HisInpatientRegistrationInfo,
+  HisInpatientTemperatureChart,
 } from './types';
 
 export type { HisServiceContext, PharmacyOption };
@@ -47,6 +52,11 @@ export type {
   MedicineDetail,
   HisPatientInfo,
   HisPatientHistory,
+  HisInpatientDiagnosis,
+  HisInpatientOrder,
+  HisInpatientQuery,
+  HisInpatientRegistrationInfo,
+  HisInpatientTemperatureChart,
 } from './types';
 
 /**
@@ -127,4 +137,18 @@ export interface HisAdapter {
    * @returns 就诊历史，若无历史或不支持则返回 null，调用方按无记录处理
    */
   fetchPatientHistory(patientId: string): Promise<HisPatientHistory | null>;
+
+  // ---- 住院上下文 ----
+
+  /** 指定患者住院诊断；具体厂商可来自独立诊断服务，也可从住院登记信息中派生 */
+  fetchInpatientDiagnoses(query: HisInpatientQuery): Promise<HisInpatientDiagnosis[]>;
+
+  /** 指定患者住院医嘱 */
+  fetchInpatientOrders(query: HisInpatientQuery): Promise<HisInpatientOrder[]>;
+
+  /** 指定患者住院体温单数据 */
+  fetchInpatientTemperatureChart(query: HisInpatientQuery): Promise<HisInpatientTemperatureChart | null>;
+
+  /** 指定患者住院登记信息 */
+  fetchInpatientRegistration(query: HisInpatientQuery): Promise<HisInpatientRegistrationInfo | null>;
 }

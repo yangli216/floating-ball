@@ -34,6 +34,14 @@ export type {
   MedicalItemPartOption,
   MedicineCatalogEntry,
   MedicineDetail,
+  HisPatientInfo,
+  HisPatientHistory,
+  HisInpatientDiagnosis,
+  HisInpatientOrder,
+  HisInpatientQuery,
+  HisInpatientRegistrationInfo,
+  HisInpatientTemperatureChart,
+  HisInpatientTemperatureRecord,
 } from './types';
 export { PhisHisAdapter } from './PhisHisAdapter';
 export { MockHisAdapter } from './MockHisAdapter';

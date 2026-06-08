@@ -625,6 +625,42 @@
   };
 
   /**
+   * 触发住院病历辅助生成
+   * @param {Object|string} request 住院病历生成请求对象，或 admissionId
+   * @param {string} [htmlContent] EMR 模板 htmlContent（仅当第一个参数是 admissionId 时使用）
+   * @param {Object} [options] 可选扩展，如 templateName/requestId/patient
+   * @returns {Promise<Object>}
+   */
+  MedHermes.prototype.generateInpatientEmr = function (request, htmlContent, options) {
+    var self = this;
+    var payload = (request && typeof request === 'object' && !Array.isArray(request))
+      ? assign({}, request)
+      : assign({}, options || {}, {
+          admissionId: request,
+          htmlContent: htmlContent
+        });
+
+    if (!payload || !payload.admissionId || !payload.templateName || !payload.htmlContent) {
+      return Promise.reject(new Error('generateInpatientEmr 缺少 admissionId、templateName 或 htmlContent'));
+    }
+
+    this._currentPatientId = payload.admissionId;
+    this._currentConsultationId = payload.admissionId;
+    this._lastResultKey = '';
+    this._lastEventId = '';
+    this._lastEventConsultationId = null;
+
+    return this._callWithFallback(
+      function () { return self._http.post('/inpatient/emr/generate', payload); },
+      'inpatient-emr-generate',
+      payload
+    ).then(function (result) {
+      self._resumePollingIfNeeded();
+      return result;
+    });
+  };
+
+  /**
    * 结束当前接诊
    * @returns {Promise<Object>}
    */

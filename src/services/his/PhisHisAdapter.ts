@@ -23,6 +23,11 @@ import type {
   HisMedicineCatalogItem,
   HisVisitHistoryItem,
   HisVisitDetailBody,
+  HisInpatientDiagnosisBody,
+  HisInpatientOrderBody,
+  HisInpatientRegistrationBody,
+  HisInpatientTemperatureChartBody,
+  HisInpatientTemperatureRecordBody,
 } from '../hisService';
 import type { HisAdapter, HisServiceContext } from './HisAdapter';
 import type { HisVisitRecord } from './types';
@@ -38,12 +43,56 @@ import type {
   MedicineDetail,
   HisPatientInfo,
   HisPatientHistory,
+  HisInpatientDiagnosis,
+  HisInpatientOrder,
+  HisInpatientQuery,
+  HisInpatientRegistrationInfo,
+  HisInpatientTemperatureChart,
+  HisInpatientTemperatureRecord,
 } from './types';
 
 const trim = (value: unknown): string | undefined => {
   if (typeof value !== 'string') return undefined;
   const t = value.trim();
   return t.length > 0 ? t : undefined;
+};
+
+const firstTrim = (record: Record<string, unknown>, keys: string[]): string | undefined => {
+  for (const key of keys) {
+    const value = trim(record[key]);
+    if (value) return value;
+  }
+  return undefined;
+};
+
+const firstNumber = (record: Record<string, unknown>, keys: string[]): number | undefined => {
+  for (const key of keys) {
+    const value = record[key];
+    if (typeof value === 'number' && Number.isFinite(value)) {
+      return value;
+    }
+    if (typeof value === 'string' && value.trim()) {
+      const parsed = Number(value.trim());
+      if (Number.isFinite(parsed)) {
+        return parsed;
+      }
+    }
+  }
+  return undefined;
+};
+
+const firstBool = (record: Record<string, unknown>, keys: string[]): boolean | undefined => {
+  for (const key of keys) {
+    const value = record[key];
+    if (typeof value === 'boolean') return value;
+    if (typeof value === 'number') return value === 1;
+    if (typeof value === 'string') {
+      const normalized = value.trim().toLowerCase();
+      if (['1', 'true', 'y', 'yes', 'main', 'primary'].includes(normalized)) return true;
+      if (['0', 'false', 'n', 'no'].includes(normalized)) return false;
+    }
+  }
+  return undefined;
 };
 
 /** PHIS 业务类型编码 ↔ 中性枚举 */
@@ -205,6 +254,246 @@ function mapVisitDetail(
     presentIllness,
     diagnoses: diagnoses.length > 0 ? diagnoses : undefined,
     medications: medications.length > 0 ? medications : undefined,
+  };
+}
+
+function mapInpatientDiagnosis(item: HisInpatientDiagnosisBody): HisInpatientDiagnosis | null {
+  const raw = item as unknown as Record<string, unknown>;
+  const diagnosisType = firstTrim(raw, ['sdDiagText', 'diagnosisType', 'sdDiag']);
+  const name = firstTrim(raw, ['naDiag', 'naIcd10', 'name']) ?? diagnosisType;
+  if (!name) return null;
+
+  return {
+    id: firstTrim(raw, ['idDiag', 'id', 'idDie', 'cdIcd', 'cdIcd10', 'cdDiag']) ?? name,
+    code: firstTrim(raw, ['cdIcd', 'cdIcd10', 'cdDiag', 'code']),
+    name,
+    diagnosisType,
+    diagnosedAt: firstTrim(raw, ['dtDiag', 'diagnosedAt']),
+    isPrimary: firstBool(raw, ['fgMain', 'isPrimary']),
+    doctorName: firstTrim(raw, ['idDiagUserText', 'doctorName', 'naDoctor', 'insertUserText']),
+    deptName: firstTrim(raw, ['deptName', 'naDept']),
+    raw,
+  };
+}
+
+function mapInpatientOrder(item: HisInpatientOrderBody): HisInpatientOrder | null {
+  const raw = item as unknown as Record<string, unknown>;
+  const name = firstTrim(raw, ['naOrd', 'name']);
+  if (!name) return null;
+
+  return {
+    orderId: firstTrim(raw, ['idOrd', 'idOrder', 'orderId'])
+      ?? [
+        firstTrim(raw, ['groupId']),
+        firstTrim(raw, ['orderIndex']),
+        name,
+      ].filter(Boolean).join('-'),
+    groupId: firstTrim(raw, ['idGrp', 'groupId']),
+    name,
+    orderType: firstTrim(raw, ['sdSrvText', 'orderType', 'sdSrv']),
+    status: firstTrim(raw, ['hiHosOrderStatusText', 'sdStatus', 'status', 'hiHosOrderStatus']),
+    startTime: firstTrim(raw, ['dtBgn', 'startTime']),
+    stopTime: firstTrim(raw, ['dtEnd', 'stopTime']),
+    dose: firstTrim(raw, ['doseOnce', 'dose']),
+    frequency: firstTrim(raw, ['idFreqText', 'frequency']),
+    route: firstTrim(raw, ['idUsgeText', 'route']),
+    quantity: firstNumber(raw, ['amount', 'quantity']),
+    unit: firstTrim(raw, ['unitOrd', 'unit']),
+    doctorName: firstTrim(raw, ['doctorName', 'naDoctor']),
+    deptName: firstTrim(raw, ['deptName', 'naDept']),
+    raw,
+  };
+}
+
+function readDetailNumber(detail: string | undefined, labels: string[]): number | undefined {
+  if (!detail) return undefined;
+
+  const segments = detail
+    .split(/[;；]/)
+    .map((part) => part.trim())
+    .filter(Boolean);
+
+  for (const segment of segments) {
+    const [labelPart, valuePart] = segment.split(/[:：]/);
+    if (!labelPart || valuePart === undefined) continue;
+    if (!labels.some((label) => labelPart.includes(label))) continue;
+
+    const matched = valuePart.match(/-?\d+(?:\.\d+)?/);
+    if (!matched) continue;
+    const value = Number(matched[0]);
+    if (Number.isFinite(value)) {
+      return value;
+    }
+  }
+
+  return undefined;
+}
+
+function buildTemperatureRecordTime(raw: Record<string, unknown>): string | undefined {
+  const explicit = firstTrim(raw, ['recordTime', 'dtRecord']);
+  if (explicit) return explicit;
+
+  const surveyedAt = firstTrim(raw, ['dtSurvey']);
+  const timeText = firstTrim(raw, ['dtSdStr']);
+  if (!surveyedAt) return firstTrim(raw, ['dateStr']);
+
+  if (!timeText) return surveyedAt;
+
+  const datePart = surveyedAt.split(/\s+/)[0];
+  return datePart ? `${datePart} ${timeText}` : `${surveyedAt} ${timeText}`;
+}
+
+function mapInpatientTemperatureRecord(item: HisInpatientTemperatureRecordBody): HisInpatientTemperatureRecord | null {
+  const raw = item as unknown as Record<string, unknown>;
+  const recordTime = buildTemperatureRecordTime(raw);
+  if (!recordTime) return null;
+  const detailText = firstTrim(raw, ['detail']);
+
+  return {
+    recordTime,
+    dtSurvey: firstTrim(raw, ['dtSurvey']),
+    dateText: firstTrim(raw, ['dateStr']),
+    timeText: firstTrim(raw, ['dtSdStr']),
+    level: firstTrim(raw, ['level']),
+    temperature: firstNumber(raw, ['temperature', 'temp']),
+    temperatureType: firstTrim(raw, ['temperatureType', 'tempType']),
+    isRetest: firstBool(raw, ['fgRetest']),
+    retestTemperature: firstNumber(raw, ['tempRetest']),
+    pulse: firstNumber(raw, ['pulse']),
+    heartRate: firstNumber(raw, ['heartRate']),
+    respiration: firstNumber(raw, ['respiration']) ?? readDetailNumber(detailText, ['呼吸']),
+    bloodPressureSystolic: firstNumber(raw, ['bloodPressureSystolic', 'systolicPressure'])
+      ?? readDetailNumber(detailText, ['收缩压']),
+    bloodPressureDiastolic: firstNumber(raw, ['bloodPressureDiastolic', 'diastolicPressure'])
+      ?? readDetailNumber(detailText, ['舒张压']),
+    spo2: firstNumber(raw, ['spo2']) ?? readDetailNumber(detailText, ['血氧饱和度', '血氧']),
+    painScore: firstNumber(raw, ['painScore']),
+    intake: firstNumber(raw, ['intake']),
+    output: firstNumber(raw, ['output']),
+    stoolCount: firstNumber(raw, ['stoolCount']),
+    urineVolume: firstNumber(raw, ['urineVolume']),
+    weight: firstNumber(raw, ['weight']),
+    detailText,
+    raw,
+  };
+}
+
+function mapInpatientTemperatureChart(
+  query: HisInpatientQuery,
+  chart: HisInpatientTemperatureChartBody,
+): HisInpatientTemperatureChart {
+  const raw = chart as unknown as Record<string, unknown>;
+  const sourceRecords = Array.isArray(chart.records)
+    ? chart.records
+    : Array.isArray(chart.items)
+      ? chart.items
+      : [];
+  const records = sourceRecords
+    .map(mapInpatientTemperatureRecord)
+    .filter((item): item is HisInpatientTemperatureRecord => Boolean(item));
+
+  let todayRecords: HisInpatientTemperatureRecord[] = [];
+  let historyRecords: HisInpatientTemperatureRecord[] = [];
+
+  if (records.length > 0) {
+    const getLocalDateString = (rec: HisInpatientTemperatureRecord): string => {
+      const dateStr = rec.dtSurvey || rec.recordTime;
+      if (!dateStr) return '';
+      return dateStr.split(/\s+/)[0] || '';
+    };
+
+    let latestDate = '';
+    records.forEach((rec) => {
+      const d = getLocalDateString(rec);
+      if (d && (!latestDate || d > latestDate)) {
+        latestDate = d;
+      }
+    });
+
+    if (latestDate) {
+      records.forEach((rec) => {
+        const d = getLocalDateString(rec);
+        if (d === latestDate) {
+          todayRecords.push(rec);
+        } else {
+          historyRecords.push(rec);
+        }
+      });
+    } else {
+      todayRecords = [records[0]];
+      historyRecords = records.slice(1);
+    }
+  }
+
+  return {
+    patientId: firstTrim(raw, ['patientId', 'idPi'])
+      ?? query.patientId
+      ?? query.admissionId
+      ?? query.inpatientVisitId
+      ?? query.encounterId
+      ?? '',
+    inpatientVisitId: firstTrim(raw, ['inpatientVisitId', 'idVis']) ?? query.inpatientVisitId,
+    records,
+    todayRecords,
+    historyRecords,
+    raw,
+  };
+}
+
+function mapInpatientRegistration(
+  query: HisInpatientQuery,
+  item: HisInpatientRegistrationBody,
+): HisInpatientRegistrationInfo {
+  const raw = item as unknown as Record<string, unknown>;
+  const diagnoses = Array.isArray(item.diagList)
+    ? item.diagList
+      .map(mapInpatientDiagnosis)
+      .filter((diagnosis): diagnosis is HisInpatientDiagnosis => Boolean(diagnosis))
+    : [];
+  return {
+    patientId: firstTrim(raw, ['patientId', 'idPi'])
+      ?? query.patientId
+      ?? query.admissionId
+      ?? query.inpatientVisitId
+      ?? query.encounterId
+      ?? '',
+    name: firstTrim(raw, ['naPi', 'name']),
+    gender: firstTrim(raw, ['sdSexText', 'gender', 'sdSex']),
+    birthday: firstTrim(raw, ['birthday']),
+    ageText: firstTrim(raw, ['age', 'ageText']),
+    inHospitalAgeText: firstTrim(raw, ['inHosAge']),
+    inpatientVisitId: firstTrim(raw, ['idAdsn', 'inpatientVisitId', 'idVis'])
+      ?? query.admissionId
+      ?? query.inpatientVisitId,
+    inpatientNo: firstTrim(raw, ['cdHos', 'inpatientNo']),
+    medicalRecordNo: firstTrim(raw, ['cdFile']),
+    admissionNo: firstTrim(raw, ['admissionNo']),
+    admissionTime: firstTrim(raw, ['dtInHos', 'admissionTime', 'dtAdmission']),
+    clinicalTime: firstTrim(raw, ['dtClinical']),
+    dischargeTime: firstTrim(raw, ['dischargeTime', 'dtDischarge']),
+    deptId: firstTrim(raw, ['deptId', 'idDept']),
+    deptName: firstTrim(raw, ['deptName', 'naDept']),
+    wardId: firstTrim(raw, ['wardId', 'idWard']),
+    wardName: firstTrim(raw, ['wardName', 'naWard']),
+    bedNo: firstTrim(raw, ['bedNo', 'bedName']),
+    attendingDoctorName: firstTrim(raw, ['attendingDoctorName', 'naDoctor']),
+    residentDoctorId: firstTrim(raw, ['idHosUser']),
+    attendingDoctorId: firstTrim(raw, ['idAttendUser']),
+    chiefDoctorId: firstTrim(raw, ['idChiefUser']),
+    admittingDoctorId: firstTrim(raw, ['idOdsUser']),
+    nursingLevel: firstTrim(raw, ['nursingLevel']),
+    admissionDiagnosis: firstTrim(raw, ['hosDiag', 'admissionDiagnosis']),
+    admissionDiagnosisCode: firstTrim(raw, ['sdHosDiag']),
+    dischargeDiagnosis: firstTrim(raw, ['odsDiag']),
+    dischargeDiagnosisCode: firstTrim(raw, ['sdOdsDiag']),
+    allergyText: firstTrim(raw, ['sdAllergyText', 'sdAllergy']),
+    allergyItems: Array.isArray(item.sdAllergyList) ? item.sdAllergyList : undefined,
+    isSevere: firstBool(raw, ['fgSevere']),
+    isTransfer: firstBool(raw, ['isTransfer']),
+    isGestation: firstBool(raw, ['fgGestation']),
+    status: firstTrim(raw, ['status']),
+    diagnoses: diagnoses.length > 0 ? diagnoses : undefined,
+    raw,
   };
 }
 
@@ -410,5 +699,31 @@ export class PhisHisAdapter implements HisAdapter {
         visitItems,
       },
     };
+  }
+
+  // ---- 住院上下文 ----
+
+  async fetchInpatientDiagnoses(query: HisInpatientQuery): Promise<HisInpatientDiagnosis[]> {
+    const items = await this.service.queryInpatientDiagnoses(query);
+    return items
+      .map(mapInpatientDiagnosis)
+      .filter((item): item is HisInpatientDiagnosis => Boolean(item));
+  }
+
+  async fetchInpatientOrders(query: HisInpatientQuery): Promise<HisInpatientOrder[]> {
+    const items = await this.service.queryInpatientOrders(query);
+    return items
+      .map(mapInpatientOrder)
+      .filter((item): item is HisInpatientOrder => Boolean(item));
+  }
+
+  async fetchInpatientTemperatureChart(query: HisInpatientQuery): Promise<HisInpatientTemperatureChart | null> {
+    const chart = await this.service.queryInpatientTemperatureChart(query);
+    return chart ? mapInpatientTemperatureChart(query, chart) : null;
+  }
+
+  async fetchInpatientRegistration(query: HisInpatientQuery): Promise<HisInpatientRegistrationInfo | null> {
+    const registration = await this.service.loadInpatientRegistration(query);
+    return registration ? mapInpatientRegistration(query, registration) : null;
   }
 }

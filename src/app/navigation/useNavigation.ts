@@ -200,6 +200,21 @@ export function useNavigation(options: NavigationOptions) {
     }
   }
 
+  /**
+   * 打开住院病历辅助生成页
+   */
+  async function openInpatientEmr(): Promise<void> {
+    trackViewChange(currentView.value, 'inpatient-emr', {
+      patientId: currentPatient.value?.patientId,
+    });
+    currentView.value = 'inpatient-emr';
+    if (!isWorking.value) {
+      await enterWorkMode();
+    } else {
+      await resizeWindowForView('inpatient-emr');
+    }
+  }
+
   async function openDifferentialDiagnosis(): Promise<void> {
     trackViewChange(currentView.value, 'differential-diagnosis', {
       patientId: currentPatient.value?.patientId,
@@ -243,6 +258,7 @@ export function useNavigation(options: NavigationOptions) {
     openConsultation,
     openVoiceConsultation,
     openTreatmentPlan,
+    openInpatientEmr,
     openDifferentialDiagnosis,
     openKnowledgeBase,
     startVoiceInteraction,

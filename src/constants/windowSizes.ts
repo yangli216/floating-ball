@@ -37,6 +37,7 @@ export type ViewType =
   | 'voice-interaction'
   | 'voice-consultation'
   | 'treatment-plan'
+  | 'inpatient-emr'
   | 'differential-diagnosis'
   | 'reception-capsule'
   | 'analytics'
@@ -89,6 +90,9 @@ export const WINDOW_SIZES = {
 
   /** 独立诊疗方案推荐：1080×720px */
   TREATMENT_PLAN: { width: 1080, height: 720 } as WindowSize,
+
+  /** 住院病历辅助生成：1120×760px */
+  INPATIENT_EMR: { width: 1120, height: 760 } as WindowSize,
 
   /** 独立鉴别诊断小窗：仅承载鉴别排查确认弹窗 */
   DIFFERENTIAL_DIAGNOSIS: { width: 360, height: 640 } as WindowSize,
@@ -162,6 +166,9 @@ export function getWindowSizeForView(view: ViewType, options?: WindowSizeOptions
     case 'treatment-plan':
       return WINDOW_SIZES.TREATMENT_PLAN;
 
+    case 'inpatient-emr':
+      return WINDOW_SIZES.INPATIENT_EMR;
+
     case 'differential-diagnosis':
       return WINDOW_SIZES.DIFFERENTIAL_DIAGNOSIS;
 
@@ -189,6 +196,7 @@ export function supportsPersistentWindowSize(view: ViewType): boolean {
     || view === 'consultation'
     || view === 'voice-consultation'
     || view === 'treatment-plan'
+    || view === 'inpatient-emr'
     || view === 'differential-diagnosis'
     || view === 'analytics'
     || view === 'his-log'
@@ -213,5 +221,10 @@ export function isCapsuleView(view: ViewType): boolean {
  * @returns 是否为大面板
  */
 export function isLargePanelView(view: ViewType): boolean {
-  return view === 'consultation' || view === 'his-log' || view === 'medical-cache' || view === 'voice-consultation' || view === 'treatment-plan';
+  return view === 'consultation'
+    || view === 'his-log'
+    || view === 'medical-cache'
+    || view === 'voice-consultation'
+    || view === 'treatment-plan'
+    || view === 'inpatient-emr';
 }

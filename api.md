@@ -73,6 +73,20 @@
 - HIS 已经拿到了检验或影像原始文本，只需要 AI 辅助解释
 - 医生当前可能仍停留在问诊或其它页面，不希望被强制跳转
 
+### 第二点六步: 打通住院病历辅助生成
+
+1. HIS 在住院电子病历书写页调用 `POST /api/inpatient/emr/generate`
+2. 传入 `admissionId + htmlContent`，`admissionId` 对应 PHIS `idAdsn`，`htmlContent` 是当前病历模板 HTML
+3. `MedHermes` 从悬浮球切换到“住院病历生成”界面，按步骤展示“患者信息 -> 医嘱 -> 体温单 -> 模板解析 -> AI 生成”
+4. 医生审核预览内容后点击“一键回写”
+5. HIS 通过 SDK 事件流收到 `record-confirmed`，读取其中的 `fieldValues`（`{ [data-id]: 文本 }`）回填当前住院病历编辑器
+6. HIS 完成回填后，仍建议调用 `POST /api/consultation/reference-feedback` 回执成功或失败，桌面端会更新页面状态
+
+适用场景：
+
+- 住院出入院记录、病程记录等病历模板已有 HTML 结构
+- HIS 希望 `MedHermes` 利用 PHIS 住院登记、诊断、医嘱、体温单等业务数据生成可审核草稿
+
 ### 第三步: 打通 PHIS 引用闭环
 
 1. HIS / PHIS 轮询到 `reference-request`
@@ -718,6 +732,70 @@ http://127.0.0.1:8081/api/report/interpret
 2. 若当前桌面端存在接诊患者，且请求同时传入 `patient`，桌面端会以当前患者为主、用显式入参补齐缺失字段；调用方不应借此切换当前接诊患者。
 3. 报告解读结果不进入 `/api/consultation/events/ws` 或 `/api/consultation/events/poll`，调用方应把它视为桌面端即时展示能力，而不是回写事件。
 4. `taskId` 当前仅用于提示词和窗口标题分流：`inspectReport` 偏实验室检验解释，`checkReport` 偏影像/器械检查解释。
+
+### 6.3B `POST /api/inpatient/emr/generate`
+
+用途：触发住院病历辅助生成。该接口只负责把病历生成请求投递到桌面端并打开预览界面；AI 生成和医生审核在前端异步完成，最终结果通过既有事件流返回给 HIS。
+
+完整地址：
+
+```text
+http://127.0.0.1:8081/api/inpatient/emr/generate
+```
+
+SDK 调用：`sdk.generateInpatientEmr({ admissionId, htmlContent, templateName, requestId, patient })`。
+
+请求字段：
+
+| 字段名 | 类型 | 必填 | 说明 |
+| :--- | :--- | :--- | :--- |
+| `admissionId` | String | 是 | 患者单次住院登记主键，PHIS 对应 `idAdsn` |
+| `templateName` | String | 是 | 模板名称，如 `日常病程记录`；区域化模式下会随模板解析结果保存到后端模板缓存 |
+| `htmlContent` | String | 是 | 当前病历模板 HTML，桌面端会解析其中带 `data-id` 的模板字段；区域化模式下会作为原生模板内容保存到后端，供管理端查看源码和 HTML 预览 |
+| `requestId` | String | 否 | HIS 侧请求 ID；未传时桌面端会生成 |
+| `patient` | Object | 否 | 可选患者兜底信息；住院数据仍优先通过 `admissionId` 走 HIS adapter 获取 |
+
+请求示例：
+
+```json
+{
+  "admissionId": "69660377a5e9230bbcdc850f",
+  "templateName": "日常病程记录",
+  "htmlContent": "<p data-id=\"病程记录\" data-name=\"病程记录\"><span data-id=\"病程记录文本\" data-type=\"text\" data-name=\"病程记录文本\">病程记录</span></p>",
+  "patient": {
+    "idPi": "6829c705ef56b10001b6f0b1",
+    "naPi": "林娜",
+    "sdSexText": "女性",
+    "ageText": "35岁"
+  }
+}
+```
+
+成功响应：
+
+```json
+{
+  "status": "success",
+  "admissionId": "69660377a5e9230bbcdc850f",
+  "requestId": "inpatient-emr-1704355201000",
+  "traceId": "his-xxxxxxxx",
+  "timestamp": 1704355200100
+}
+```
+
+后续事件：
+
+1. 桌面端打开“住院病历生成”界面，医生可看到“获取患者基本信息 / 获取医嘱信息 / 获取体温单数据 / 解析病历 / 病历生成中”的步骤状态。
+2. 医生点击“一键回写”后，事件流会产生 `record-confirmed`。其中 `resultType` 固定为 `record-confirmed`，`referenceType/action` 固定为 `batch`，`emrType` 为 `inpatient-emr`。
+3. `record-confirmed.payload.fieldValues` 为 `{ [data-id]: value }` 的结构化字段取值；仅包含本次传入 `htmlContent` 中真实存在、且模板解析结果标记为适合 AI 生成的字段，若医生在预览中编辑过 AI 字段，以编辑后的文本为准。
+4. 住院病历回写事件不返回 `htmlContent`；HIS 侧按当前编辑器模板自行用 `data-id` 定位并回填文本。
+5. HIS 完成回填后，建议调用 `POST /api/consultation/reference-feedback`，带回相同 `consultationId` 与 `requestId`。回执时 `referenceType` 可传 `batch`，也可留空由 Bridge 按 `batch` 处理；桌面端收到成功回执后会从病历生成界面收起回小球状态。
+
+说明：
+
+1. 区域化模式下，模板解析结果按 `htmlContent` hash 上传到后端 `/v1/client/inpatient-emr/templates/resolve` 缓存；后端命中时返回缓存字段和管理端维护过的字段提示词。非区域化或后端不可用时，桌面端使用本地解析兜底。
+2. AI 仅适合生成“病程记录正文”等叙述性字段；患者姓名、住院号、床号、记录时间、医师签名等字段按 HIS / 系统 / 医生签名流程填充。
+3. 生成内容是医生审核草稿，不替代医生签署。
 
 ### 6.4 `GET /api/consultation/events/poll`
 
