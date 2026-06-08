@@ -1293,6 +1293,15 @@ function handleRouteOpenChange(rec: TreatmentRecommendation, open: boolean): voi
   medicineFieldEditing.handleUsageOpenChange(rec, 'route', open);
 }
 
+function handleUsageFieldChange(
+  rec: TreatmentRecommendation,
+  field: Extract<MedicinePrimaryField, 'frequency' | 'route'>,
+  value: string,
+  key: string,
+): void {
+  medicineFieldEditing.handleUsageFieldChange(rec, field, value, key);
+}
+
 // 二级搜索下拉（药房 / 执行科室 / 部位 / 医保）的统一状态：activeKey + 每条 rec×field 的 keyword 缓存。
 const secondarySelector = useSecondarySelector({
   getEditorKey: (rec) => getTreatmentEditorKey(rec),
@@ -2185,6 +2194,7 @@ watch(
                           :register-field-element="(field, element) => registerEditableFieldElement(getEditableFieldKey(rec, field), element)"
                           :on-total-qty-input="(event) => handleTotalQtyInput(rec, event)"
                           :on-field-open-change="(field, open) => field === 'frequency' ? handleFrequencyOpenChange(rec, open) : handleRouteOpenChange(rec, open)"
+                          :on-usage-field-change="(field, value, key) => handleUsageFieldChange(rec, field, value, key)"
                           :get-display-value="(field) => getMedicineFieldDisplay(rec, field)"
                         />
 

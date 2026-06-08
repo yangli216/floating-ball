@@ -241,6 +241,13 @@ export interface OrderItemResolvers {
 const DEFAULT_FG_CHECK_ORD = '1';
 const DEFAULT_FG_SKINTEST = '0';
 
+function resolveOrderAmount(rec: TreatmentRecommendation, normalized: TreatmentRecommendation): number {
+  if (rec.type === 'exam' || rec.type === 'lab_test') {
+    return 1;
+  }
+  return toPositiveNumber(normalized.totalQty, 1);
+}
+
 export function buildOrderListItem(
   rec: TreatmentRecommendation,
   resolvers: OrderItemResolvers,
@@ -254,7 +261,7 @@ export function buildOrderListItem(
     resolvers.getServiceName(rec).trim() || rec.matchedItem?.name || rec.name || '';
 
   const base: Record<string, string | number> = {
-    amount: toPositiveNumber(normalized.totalQty, 1),
+    amount: resolveOrderAmount(rec, normalized),
     fgCheckOrd:
       (resolvers.getFgCheckOrd?.(rec).trim() || '') || DEFAULT_FG_CHECK_ORD,
     sdSrv: serviceCode,

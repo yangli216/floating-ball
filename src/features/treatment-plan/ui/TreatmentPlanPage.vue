@@ -527,6 +527,15 @@ function handleRouteOpenChange(item: TreatmentRecommendation, open: boolean): vo
   medicineFieldEditing.handleUsageOpenChange(item, 'route', open);
 }
 
+function handleUsageFieldChange(
+  item: TreatmentRecommendation,
+  field: Extract<MedicinePrimaryField, 'frequency' | 'route'>,
+  value: string,
+  key: string,
+): void {
+  medicineFieldEditing.handleUsageFieldChange(item, field, value, key);
+}
+
 function getMedicineFieldDisplay(item: TreatmentRecommendation, field: MedicinePrimaryField): string {
   return getSharedMedicineFieldDisplay(normalizeTreatment(item), field, frequencyOptions.value);
 }
@@ -728,6 +737,7 @@ onMounted(() => {
             @total-qty-input="handleTotalQtyInput"
             @frequency-open-change="handleFrequencyOpenChange"
             @route-open-change="handleRouteOpenChange"
+            @usage-field-change="handleUsageFieldChange"
             @open-pharmacy="openPharmacyQuickSelector"
             @open-exec-dept="openExecDeptQuickSelector"
             @open-body-site="openBodySiteQuickSelector"

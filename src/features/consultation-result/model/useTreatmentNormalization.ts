@@ -229,12 +229,17 @@ export function useTreatmentNormalization(deps: TreatmentNormalizationDeps): Tre
     return { totalQty: String(totalQty), totalUnit };
   }
 
+  function isFixedSingleQuantityType(type: TreatmentRecommendation['type']): boolean {
+    return type === 'exam' || type === 'lab_test';
+  }
+
   function normalize(rec: Partial<TreatmentRecommendation>): TreatmentRecommendation {
+    const type = rec.type || 'medicine';
     const matchedRaw = rec.matchedItem?.raw && typeof rec.matchedItem.raw === 'object'
       ? rec.matchedItem.raw as Record<string, unknown>
       : undefined;
     const base: TreatmentRecommendation = {
-      type: rec.type || 'medicine',
+      type,
       name: rec.name || '',
       originalName: rec.originalName || '',
       reason: rec.reason || '',
@@ -249,9 +254,9 @@ export function useTreatmentNormalization(deps: TreatmentNormalizationDeps): Tre
       selected: !!rec.selected,
       dosage: rec.dosage || '',
       dosageUnit: rec.dosageUnit || '',
-      totalQty: rec.totalQty || (((rec.type || 'medicine') === 'exam' || (rec.type || 'medicine') === 'lab_test') ? '1' : ''),
+      totalQty: isFixedSingleQuantityType(type) ? '1' : (rec.totalQty || ''),
       totalUnit: rec.totalUnit || '',
-      totalManualEdited: !!rec.totalManualEdited,
+      totalManualEdited: isFixedSingleQuantityType(type) ? false : !!rec.totalManualEdited,
       frequency: rec.frequency || '',
       frequencyKey: rec.frequencyKey || '',
       route: rec.route || '',

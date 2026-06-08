@@ -31,6 +31,7 @@
             placeholder="请选择频次"
             :open="getSelectorOpen('frequency')"
             @update:open="(v) => handleFieldOpenChange('frequency', v)"
+            @change="(field, value, key) => handleUsageFieldChange(field, value, key)"
           />
         </div>
 
@@ -44,6 +45,7 @@
             placeholder="请选择用法"
             :open="getSelectorOpen('route')"
             @update:open="(v) => handleFieldOpenChange('route', v)"
+            @change="(field, value, key) => handleUsageFieldChange(field, value, key)"
           />
         </div>
 
@@ -76,6 +78,7 @@
           :options="routeOptions"
           :show-meta="true"
           placeholder="请选择用法"
+          @change="(field, value, key) => handleUsageFieldChange(field, value, key)"
         />
       </div>
       <div class="te-row">
@@ -85,6 +88,7 @@
           field="frequency"
           :options="frequencyOptions"
           placeholder="请选择频次"
+          @change="(field, value, key) => handleUsageFieldChange(field, value, key)"
         />
       </div>
       <div class="te-row">
@@ -110,7 +114,7 @@
     </template>
 
     <template v-else>
-      <div class="te-row">
+      <div v-if="shouldShowQuantityEditor" class="te-row">
         <label class="te-label">数量</label>
         <input class="te-input te-input-num" type="text" :value="rec.totalQty || '1'" @input="(e) => rec.totalQty = (e.target as HTMLInputElement).value" />
         <span class="te-suffix">{{ rec.totalUnit || '次' }}</span>
@@ -146,6 +150,7 @@ type ActivateField = (field: InlineEditableField, event?: Event) => void;
 type HandleFieldBlur = (field: InlineEditableField, event: FocusEvent) => void;
 type RegisterFieldElement = (field: InlineEditableField, element: Element | null) => void;
 type HandleFieldOpenChange = (field: 'frequency' | 'route', open: boolean) => void;
+type HandleUsageFieldChange = (field: 'frequency' | 'route', value: string, key: string) => void;
 
 const props = defineProps({
   rec: {
@@ -196,6 +201,10 @@ const props = defineProps({
     type: Function as PropType<HandleFieldOpenChange>,
     default: undefined,
   },
+  onUsageFieldChange: {
+    type: Function as PropType<HandleUsageFieldChange>,
+    default: undefined,
+  },
   getDisplayValue: {
     type: Function as PropType<(field: 'dosage' | 'total') => string>,
     default: undefined,
@@ -203,6 +212,10 @@ const props = defineProps({
 });
 
 const isMedicine = computed(() => (props.rec.type || 'medicine') === 'medicine');
+const shouldShowQuantityEditor = computed(() => {
+  const type = props.rec.type || 'medicine';
+  return type !== 'exam' && type !== 'lab_test';
+});
 const internalActiveField = ref<InlineEditableField | null>(null);
 const internalFieldElements = new Map<InlineEditableField, Element | null>();
 const isControlledInline = computed(
@@ -281,6 +294,10 @@ function handleFieldOpenChange(field: 'frequency' | 'route', open: boolean): voi
   } else if (internalActiveField.value === field) {
     internalActiveField.value = null;
   }
+}
+
+function handleUsageFieldChange(field: 'frequency' | 'route', value: string, key: string): void {
+  props.onUsageFieldChange?.(field, value, key);
 }
 
 function getSelectorOpen(field: 'frequency' | 'route'): boolean | undefined {

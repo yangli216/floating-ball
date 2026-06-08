@@ -97,10 +97,42 @@ export function useMedicineFieldEditing(options: MedicineFieldEditingOptions) {
     }
   }
 
+  function handleUsageFieldChange(
+    rec: TreatmentRecommendation,
+    field: Extract<MedicinePrimaryField, 'frequency' | 'route'>,
+    value: string,
+    key: string,
+  ): void {
+    if (field === 'frequency') {
+      rec.frequency = value;
+      rec.frequencyKey = key;
+    } else {
+      rec.route = value;
+      rec.routeKey = key;
+    }
+
+    if (rec.type === 'medicine') {
+      const normalized = options.normalize({
+        ...rec,
+        totalManualEdited: rec.totalManualEdited,
+      });
+      if (!rec.totalManualEdited && normalized.totalQty) {
+        rec.totalQty = normalized.totalQty;
+      }
+      if (normalized.totalUnit) {
+        rec.totalUnit = normalized.totalUnit;
+      }
+    }
+
+    options.syncUsageKeyword(rec, field);
+    options.clearInventoryWarning(rec);
+  }
+
   return {
     activateField,
     handleFieldBlur,
     handleTotalQtyInput,
+    handleUsageFieldChange,
     handleUsageOpenChange,
   };
 }

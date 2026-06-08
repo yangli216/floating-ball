@@ -67,6 +67,7 @@ const emit = defineEmits<{
   totalQtyInput: [item: TreatmentRecommendation, event: Event];
   frequencyOpenChange: [item: TreatmentRecommendation, open: boolean];
   routeOpenChange: [item: TreatmentRecommendation, open: boolean];
+  usageFieldChange: [item: TreatmentRecommendation, field: Extract<MedicinePrimaryField, 'frequency' | 'route'>, value: string, key: string];
   openPharmacy: [item: TreatmentRecommendation, event?: Event];
   openExecDept: [item: TreatmentRecommendation, event?: Event];
   openBodySite: [item: TreatmentRecommendation, event?: Event];
@@ -88,21 +89,6 @@ const emit = defineEmits<{
   updateManualMatchKeyword: [item: TreatmentRecommendation, value: string];
   selectManualMatchCandidate: [item: TreatmentRecommendation, candidate: ManualMatchCandidate];
 }>();
-
-function getTypeBadge(item: TreatmentRecommendation): string {
-  switch (item.type) {
-    case 'medicine':
-      return '药';
-    case 'exam':
-      return '查';
-    case 'lab_test':
-      return '验';
-    case 'procedure':
-      return '处';
-    default:
-      return '项';
-  }
-}
 
 function getMatchTone(item: TreatmentRecommendation): 'default' | 'warning' | 'success' {
   if (item.matchStatus === 'probable' || item.matchStatus === 'unmatched' || !item.matchedItem) {
@@ -350,10 +336,6 @@ function getAttributeAriaLabel(field: TreatmentPlanAttributeField): string {
         @toggle-manual-match="emit('toggleManualMatch', item)"
         @toggle-editor="emit('toggleTreatmentEditor', item, $event)"
       >
-        <!-- <template #title-prefix>
-          <span class="type-badge">{{ getTypeBadge(item) }}</span>
-        </template> -->
-
         <template #actions>
           <button
             v-if="item.type === 'exam'"
@@ -393,6 +375,7 @@ function getAttributeAriaLabel(field: TreatmentPlanAttributeField): string {
                 :register-field-element="(field, element) => emit('registerEditableFieldElement', props.getEditableFieldKey(item, field), element)"
                 :on-total-qty-input="(event) => emit('totalQtyInput', item, event)"
                 :on-field-open-change="(field, open) => field === 'frequency' ? emit('frequencyOpenChange', item, open) : emit('routeOpenChange', item, open)"
+                :on-usage-field-change="(field, value, key) => emit('usageFieldChange', item, field, value, key)"
                 :get-display-value="(field) => props.getMedicineFieldDisplay(item, field)"
               />
 
@@ -694,22 +677,6 @@ function getAttributeAriaLabel(field: TreatmentPlanAttributeField): string {
   min-height: 28px;
   border-radius: 999px;
   white-space: nowrap;
-}
-
-.type-badge {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  min-width: 22px;
-  height: 22px;
-  padding: 0 5px;
-  border: 1px solid #8bb7ff;
-  border-radius: 5px;
-  color: #2469f2;
-  font-weight: 700;
-  font-size: 13px;
-  line-height: 1;
-  background: #f1f6ff;
 }
 
 .field-editor {

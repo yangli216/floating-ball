@@ -16,8 +16,8 @@
     <button
       v-if="!open"
       type="button"
-      class="muf-readonly"
-      :title="placeholder"
+      class="muf-trigger"
+      :title="field === 'frequency' ? '点击修改频次' : '点击修改用法'"
       @click="activate"
     >
       <span v-if="currentText" class="muf-value">{{ currentText }}</span>
@@ -106,6 +106,7 @@ const props = defineProps({
 
 const emit = defineEmits<{
   (e: 'update:open', value: boolean): void;
+  (e: 'change', field: 'frequency' | 'route', value: string, key: string): void;
 }>();
 
 const internalOpen = ref(false);
@@ -124,6 +125,18 @@ const searchKeyword = ref<string>('');
 
 const currentText = computed(() => (props.field === 'frequency' ? props.rec.frequency : props.rec.route) || '');
 const currentKey = computed(() => (props.field === 'frequency' ? props.rec.frequencyKey : props.rec.routeKey) || '');
+
+function commitFieldValue(value: string, key: string): void {
+  if (props.field === 'frequency') {
+    props.rec.frequency = value;
+    props.rec.frequencyKey = key;
+  } else {
+    props.rec.route = value;
+    props.rec.routeKey = key;
+  }
+  searchKeyword.value = value;
+  emit('change', props.field, value, key);
+}
 
 const filteredOptions = computed<UsageOption[]>(() => {
   const all = props.options;
@@ -169,26 +182,12 @@ function onSearchInput(value: string) {
 }
 
 function selectOption(option: UsageOption) {
-  if (props.field === 'frequency') {
-    props.rec.frequency = option.text;
-    props.rec.frequencyKey = option.key;
-  } else {
-    props.rec.route = option.text;
-    props.rec.routeKey = option.key;
-  }
-  searchKeyword.value = option.text;
+  commitFieldValue(option.text, option.key);
   close();
 }
 
 function clearSelection() {
-  if (props.field === 'frequency') {
-    props.rec.frequency = '';
-    props.rec.frequencyKey = '';
-  } else {
-    props.rec.route = '';
-    props.rec.routeKey = '';
-  }
-  searchKeyword.value = '';
+  commitFieldValue('', '');
 }
 
 // 失焦时若关键字已经精确匹配某候选则确认；否则保留为自定义值
@@ -221,13 +220,7 @@ function handleFocusOut(event: FocusEvent) {
   }
 
   // 其余作为自定义文本保留
-  if (props.field === 'frequency') {
-    props.rec.frequency = keyword;
-    props.rec.frequencyKey = '';
-  } else {
-    props.rec.route = keyword;
-    props.rec.routeKey = '';
-  }
+  commitFieldValue(keyword, '');
   close();
 }
 
@@ -249,7 +242,7 @@ watch(
   min-width: 0;
 }
 
-.muf-readonly {
+.muf-trigger {
   width: 100%;
   display: flex;
   align-items: center;
@@ -257,8 +250,8 @@ watch(
   gap: 6px;
   min-height: 34px;
   padding: 0 10px;
-  background: var(--voice-surface-soft, #f8fafc);
-  border: 1px solid var(--voice-border, #dbe3ee);
+  background: #fff;
+  border: 1px solid var(--voice-border-strong, #cbd5e1);
   border-radius: 10px;
   font-size: var(--voice-font-main, 14px);
   cursor: pointer;
@@ -267,8 +260,12 @@ watch(
   transition: border-color 0.16s ease, box-shadow 0.16s ease, background-color 0.16s ease;
 }
 
-.muf-readonly:hover {
+.muf-trigger:hover,
+.muf-trigger:focus-visible {
   border-color: var(--voice-accent, #2563eb);
+  background: #fff;
+  box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.12);
+  outline: none;
 }
 
 .muf-value {
@@ -287,7 +284,7 @@ watch(
 
 .muf-caret {
   flex-shrink: 0;
-  color: var(--voice-text-muted, #64748b);
+  color: var(--voice-accent, #2563eb);
 }
 
 .muf-input {

@@ -350,10 +350,11 @@ const emit = defineEmits<{
   border: 1px solid var(--voice-border);
   background: var(--voice-surface-glass);
   box-shadow: 0 14px 28px rgba(15, 23, 42, 0.14);
-  color: var(--voice-text-muted);
+  color: #334155;
   font-size: var(--voice-font-min);
   line-height: 1.6;
   white-space: normal;
+  word-break: break-word;
   opacity: 0;
   visibility: hidden;
   transform: translateY(-4px);
