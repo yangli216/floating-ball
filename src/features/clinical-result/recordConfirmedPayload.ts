@@ -7,7 +7,7 @@
  * 设计原则：
  * 1. 纯函数 + 显式注入依赖，不直接读取任何组件状态；
  * 2. 当上游 UI 还未采集某些字段时，使用与语音侧一致的合理默认值（takeDays=1、fgSkintest=0、
- *    fgCheckOrd=1、sdSrv 按 type 兜底等），保证 PHIS 接口能解析；
+ *    医保限用按医保使用、sdSrv 按 type 兜底等），保证 PHIS 接口能解析；
  * 3. 中性 DTO，不携带 PHIS 私有字段；PHIS 私有字段通过 `rec.matchedItem.raw` 透传。
  */
 
@@ -136,6 +136,13 @@ export function getOrderJsonField(rec: TreatmentRecommendation): string {
 }
 
 export function getOrderFgCheckOrd(rec: TreatmentRecommendation): string {
+  const insuranceType = (rec.insuranceType || '').trim();
+  if (insuranceType === '自费' || insuranceType === '自费使用') {
+    return '2';
+  }
+  if (insuranceType === '医保使用' || insuranceType === '医保' || insuranceType === '医保限用') {
+    return '1';
+  }
   const raw = getMatchedItemRaw(rec);
   return (rec.matchedItem?.fgCheckOrd || readFirstString(raw, ['fgCheckOrd']) || '1').trim() || '1';
 }
@@ -263,10 +270,11 @@ export function buildOrderListItem(
   const base: Record<string, string | number> = {
     amount: resolveOrderAmount(rec, normalized),
     fgCheckOrd:
-      (resolvers.getFgCheckOrd?.(rec).trim() || '') || DEFAULT_FG_CHECK_ORD,
+      (resolvers.getFgCheckOrd?.(rec).trim() || '') || getOrderFgCheckOrd(rec) || DEFAULT_FG_CHECK_ORD,
     sdSrv: serviceCode,
     naSrv: serviceName,
     idDeptExec: execDeptId,
+    memo: normalized.remark || '',
     ...(orderServiceId ? { idSrv: orderServiceId } : {}),
   };
 
