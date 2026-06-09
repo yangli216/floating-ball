@@ -85,6 +85,7 @@ MedHermesLoader.startConsultation(patient);
 MedHermesLoader.assist(patient, 'suggestedDx');
 MedHermesLoader.startVoice(patient);
 MedHermesLoader.interpretReport({ taskId: 'inspectReport', query: '...' });
+MedHermesLoader.generateInpatientEmr({ admissionId, templateId, templateName, htmlContent });
 ```
 
 如果 HIS 页面只加载了 `med-hermes-sdk.js`，SDK 也会兜底挂载一个轻量 `window.MedHermesLoader`，避免旧封装直接访问 `MedHermesLoader` 时抛出 `ReferenceError`。直接调用 `MedHermesLoader.startConsultation(...)` 时，门面会先懒加载初始化 SDK，再转发到内部 `MedHermes` 实例。
@@ -363,6 +364,38 @@ await mh.interpretReport({
 - `taskId`: `inspectReport` 或 `checkReport`
 - `query`: 报告原始文本
 - `patient`: 可选患者背景；若桌面端当前已有接诊患者，可不传，由桌面端自动补齐
+
+#### `generateInpatientEmr(request): Promise`
+
+触发住院病历辅助生成。桌面端会从悬浮球切换到住院病历生成界面；Promise 会在医生点击“一键回写”并产生 `record-confirmed` 时 resolve，返回值与 `record-confirmed` 事件 payload 一致。原有事件订阅模式仍可继续使用。
+
+```js
+const record = await mh.generateInpatientEmr({
+  admissionId: '69660377a5e9230bbcdc850f',
+  templateId: 'emr_tpl_daily_course',
+  templateName: '日常病程记录',
+  htmlContent: '<p data-id="病程记录"><span data-id="病程记录文本"></span></p>',
+  patient: {
+    idPi: '6829c705ef56b10001b6f0b1',
+    naPi: '林娜',
+    sdSexText: '女性',
+    ageText: '35岁'
+  }
+});
+
+// record.fieldValues 仅包含适合 AI 生成的 data-id 字段
+await writeBackToHis(record.fieldValues || {});
+await mh.sendFeedback(record.requestId, 'success', 'HIS 已成功回填住院病历');
+```
+
+请求字段：
+
+- `admissionId`: 患者单次住院登记主键，PHIS 对应 `idAdsn`
+- `templateId`: 病历模板主键，后端模板缓存按该字段命中
+- `templateName`: 模板名称
+- `htmlContent`: 当前病历模板 HTML
+- `requestId`: 可选；传入后也会作为一键回写的 `requestId`
+- `patient`: 可选患者兜底信息
 
 #### `stop(): Promise`
 

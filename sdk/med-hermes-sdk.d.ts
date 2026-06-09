@@ -91,6 +91,37 @@ export interface ReportInterpretationRequest {
   patient?: ReportInterpretationPatientInfo;
 }
 
+/** 住院病历生成患者上下文 */
+export interface InpatientEmrPatientInfo {
+  idPi?: string;
+  patientId?: string;
+  idVis?: string;
+  visitId?: string;
+  naPi?: string;
+  name?: string;
+  sdSexText?: string;
+  gender?: string;
+  ageText?: string;
+  age?: string;
+  [key: string]: any;
+}
+
+/** 住院病历生成请求 */
+export interface InpatientEmrGenerationRequest {
+  /** 患者单次住院登记主键，PHIS 对应 idAdsn */
+  admissionId: string;
+  /** 病历模板主键，后端模板缓存按该字段命中 */
+  templateId: string;
+  /** 模板名称，如日常病程记录 */
+  templateName: string;
+  /** 当前病历模板 HTML */
+  htmlContent: string;
+  /** HIS 侧请求 ID；传入后也会作为一键回写 requestId */
+  requestId?: string;
+  /** 可选患者兜底信息 */
+  patient?: InpatientEmrPatientInfo;
+}
+
 /** 引用回执状态 */
 export type FeedbackStatus = 'success' | 'failed';
 
@@ -158,6 +189,10 @@ export interface ReferenceItem {
 export interface ConsultationResultPayload {
   resultType?: ResultType;
   requestId?: string;
+  emrType?: string;
+  admissionId?: string;
+  templateName?: string;
+  fieldValues?: Record<string, string>;
   chiefComplaint?: string;
   historyOfPresentIllness?: string;
   pastMedicalHistory?: string;
@@ -173,6 +208,19 @@ export interface ConsultationResultPayload {
   referenceStatus?: string;
   referenceMessage?: string;
   referenceItems?: ReferenceItem[];
+}
+
+/** 住院病历一键回写 payload */
+export interface InpatientEmrWritebackPayload extends ConsultationResultPayload {
+  resultType: 'record-confirmed';
+  requestId: string;
+  referenceType: 'batch';
+  action: 'batch';
+  referenceStatus: string;
+  emrType: 'inpatient-emr';
+  admissionId: string;
+  templateName?: string;
+  fieldValues: Record<string, string>;
 }
 
 /** 单条问诊事件 */
@@ -312,6 +360,14 @@ export declare class MedHermes {
     patient?: ReportInterpretationPatientInfo
   ): Promise<ApiResponse>;
 
+  /** 触发住院病历辅助生成；Promise 在医生点击一键回写并产生 record-confirmed 时 resolve */
+  generateInpatientEmr(request: InpatientEmrGenerationRequest): Promise<InpatientEmrWritebackPayload>;
+  generateInpatientEmr(
+    admissionId: string,
+    htmlContent: string,
+    options: Omit<InpatientEmrGenerationRequest, 'admissionId' | 'htmlContent'>
+  ): Promise<InpatientEmrWritebackPayload>;
+
   /** 结束当前接诊 */
   stop(): Promise<ApiResponse>;
 
@@ -371,6 +427,12 @@ export interface MedHermesLoaderApi {
     query: string,
     patient?: ReportInterpretationPatientInfo
   ): Promise<ApiResponse>;
+  generateInpatientEmr(request: InpatientEmrGenerationRequest): Promise<InpatientEmrWritebackPayload>;
+  generateInpatientEmr(
+    admissionId: string,
+    htmlContent: string,
+    options: Omit<InpatientEmrGenerationRequest, 'admissionId' | 'htmlContent'>
+  ): Promise<InpatientEmrWritebackPayload>;
   receivePatient(patientId: string, optionalInfo?: Partial<PatientInfo>): Promise<ApiResponse>;
   sendRisks(patient: PatientInfo, risks?: RiskItem[]): Promise<ApiResponse>;
   sendFeedback(

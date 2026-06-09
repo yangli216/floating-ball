@@ -125,6 +125,28 @@
     return patient && (patient.idVis || patient.visitId || patient.idPi || patient.patientId) || '';
   }
 
+  function stringValue(value) {
+    return value === undefined || value === null ? '' : String(value);
+  }
+
+  function isInpatientEmrConfirmedRecord(record) {
+    return !!record
+      && (record.resultType === 'record-confirmed' || !record.resultType)
+      && record.emrType === 'inpatient-emr';
+  }
+
+  function matchesInpatientEmrPending(pending, record, event) {
+    if (!pending || !record) return false;
+    var recordAdmissionId = stringValue(record.admissionId || (event && event.consultationId));
+    if (pending.admissionId && recordAdmissionId && pending.admissionId !== recordAdmissionId) {
+      return false;
+    }
+    if (pending.requestId) {
+      return pending.requestId === stringValue(record.requestId);
+    }
+    return true;
+  }
+
   // ─── 事件发射器 ───
 
   function EventEmitter() {
@@ -360,6 +382,7 @@
     this._currentPatientId = null;
     this._currentConsultationId = null;
     this._lastEventConsultationId = null;
+    this._pendingInpatientEmrRequests = [];
   }
 
   // 代理事件方法
@@ -656,7 +679,7 @@
       payload
     ).then(function (result) {
       self._resumePollingIfNeeded();
-      return result;
+      return self._waitForInpatientEmrWriteback(payload, result);
     });
   };
 
@@ -981,11 +1004,47 @@
       this._ws = null;
     }
     this._emitter = new EventEmitter(); // 清空所有监听
+    this._rejectPendingInpatientEmrRequests(new Error('MedHermes SDK 已销毁'));
     this._connected = false;
     this._transport = 'idle';
   };
 
   // ─── 内部方法 ───
+
+  MedHermes.prototype._waitForInpatientEmrWriteback = function (payload, acceptedResponse) {
+    var self = this;
+    return new Promise(function (resolve, reject) {
+      self._pendingInpatientEmrRequests.push({
+        admissionId: stringValue(payload.admissionId),
+        requestId: stringValue(payload.requestId),
+        acceptedResponse: acceptedResponse,
+        resolve: resolve,
+        reject: reject
+      });
+    });
+  };
+
+  MedHermes.prototype._resolvePendingInpatientEmrRequests = function (record, event) {
+    if (!this._pendingInpatientEmrRequests.length || !isInpatientEmrConfirmedRecord(record)) return;
+    var remaining = [];
+    for (var i = 0; i < this._pendingInpatientEmrRequests.length; i++) {
+      var pending = this._pendingInpatientEmrRequests[i];
+      if (matchesInpatientEmrPending(pending, record, event)) {
+        pending.resolve(record);
+      } else {
+        remaining.push(pending);
+      }
+    }
+    this._pendingInpatientEmrRequests = remaining;
+  };
+
+  MedHermes.prototype._rejectPendingInpatientEmrRequests = function (error) {
+    var pending = this._pendingInpatientEmrRequests || [];
+    this._pendingInpatientEmrRequests = [];
+    for (var i = 0; i < pending.length; i++) {
+      pending[i].reject(error);
+    }
+  };
 
   /** HTTP 调用 + 离线协议拉起兜底 */
   MedHermes.prototype._callWithFallback = function (httpCall, protocolPath, params) {
@@ -1087,6 +1146,7 @@
     this._lastEventConsultationId = consultationId || this._lastEventConsultationId;
     this._emitter.emit('event', envelope);
     this._emitter.emit(resultType, record);
+    this._resolvePendingInpatientEmrRequests(record, event);
 
   };
 
@@ -1199,6 +1259,9 @@
       },
       interpretReport: function () {
         return call('interpretReport', Array.prototype.slice.call(arguments));
+      },
+      generateInpatientEmr: function () {
+        return call('generateInpatientEmr', Array.prototype.slice.call(arguments));
       },
       receivePatient: function (patientId, optionalInfo) {
         return call('receivePatient', [patientId, optionalInfo]);

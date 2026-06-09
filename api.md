@@ -79,7 +79,7 @@
 2. 传入 `admissionId + templateId + templateName + htmlContent`，`admissionId` 对应 PHIS `idAdsn`，`templateId` 是病历模板主键，`htmlContent` 是当前病历模板 HTML
 3. `MedHermes` 从悬浮球切换到“住院病历生成”界面，按步骤展示“患者信息 -> 医嘱 -> 体温单 -> 模板解析 -> AI 生成”
 4. 医生审核预览内容后点击“一键回写”
-5. HIS 通过 SDK 事件流收到 `record-confirmed`，读取其中的 `fieldValues`（`{ [data-id]: 文本 }`）回填当前住院病历编辑器
+5. HIS 可继续通过 SDK 事件流收到 `record-confirmed`，也可直接等待 `sdk.generateInpatientEmr(...).then(record => ...)`；两种方式返回同一份回写 payload，读取其中的 `fieldValues`（`{ [data-id]: 文本 }`）回填当前住院病历编辑器
 6. HIS 完成回填后，仍建议调用 `POST /api/consultation/reference-feedback` 回执成功或失败，桌面端会更新页面状态
 
 适用场景：
@@ -743,7 +743,7 @@ http://127.0.0.1:8081/api/report/interpret
 http://127.0.0.1:8081/api/inpatient/emr/generate
 ```
 
-SDK 调用：`sdk.generateInpatientEmr({ admissionId, templateId, templateName, htmlContent, requestId, patient })`。
+SDK 调用：`sdk.generateInpatientEmr({ admissionId, templateId, templateName, htmlContent, requestId, patient })`。该 Promise 会在医生点击“一键回写”并产生 `record-confirmed` 时 resolve，返回值与 `record-confirmed` 事件 payload 一致；原有 `mh.on('record-confirmed', ...)` 订阅模式仍保留。
 
 请求字段：
 
@@ -773,7 +773,7 @@ SDK 调用：`sdk.generateInpatientEmr({ admissionId, templateId, templateName, 
 }
 ```
 
-成功响应：
+HTTP Bridge 受理响应：
 
 ```json
 {
@@ -788,7 +788,7 @@ SDK 调用：`sdk.generateInpatientEmr({ admissionId, templateId, templateName, 
 后续事件：
 
 1. 桌面端打开“住院病历生成”界面，医生可看到“获取患者基本信息 / 获取医嘱信息 / 获取体温单数据 / 解析病历 / 病历生成中”的步骤状态。
-2. 医生点击“一键回写”后，事件流会产生 `record-confirmed`。其中 `resultType` 固定为 `record-confirmed`，`referenceType/action` 固定为 `batch`，`emrType` 为 `inpatient-emr`。
+2. 医生点击“一键回写”后，事件流会产生 `record-confirmed`，同时 `sdk.generateInpatientEmr(...)` 返回的 Promise 会 resolve 这份 payload。其中 `resultType` 固定为 `record-confirmed`，`referenceType/action` 固定为 `batch`，`emrType` 为 `inpatient-emr`。
 3. `record-confirmed.payload.fieldValues` 为 `{ [data-id]: value }` 的结构化字段取值；仅包含本次传入 `htmlContent` 中真实存在、且模板解析结果标记为适合 AI 生成的字段，若医生在预览中编辑过 AI 字段，以编辑后的文本为准。
 4. 住院病历回写事件不返回 `htmlContent`；HIS 侧按当前编辑器模板自行用 `data-id` 定位并回填文本。
 5. HIS 完成回填后，建议调用 `POST /api/consultation/reference-feedback`，带回相同 `consultationId` 与 `requestId`。回执时 `referenceType` 可传 `batch`，也可留空由 Bridge 按 `batch` 处理；桌面端收到成功回执后会从病历生成界面收起回小球状态。

@@ -336,6 +336,10 @@
       return callInstance('interpretReport', Array.prototype.slice.call(arguments));
     },
 
+    generateInpatientEmr: function () {
+      return callInstance('generateInpatientEmr', Array.prototype.slice.call(arguments));
+    },
+
     receivePatient: function (patientId, optionalInfo) {
       return callInstance('receivePatient', [patientId, optionalInfo]);
     },
