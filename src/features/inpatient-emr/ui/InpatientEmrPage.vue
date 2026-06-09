@@ -165,6 +165,7 @@
             </div>
             <div
               class="html-preview"
+              :class="{ 'is-generating': isGenerating }"
               v-html="previewHtml"
               @input="handlePreviewInput"
             ></div>
@@ -750,6 +751,14 @@ dd {
   animation: pulse 1.7s ease-in-out infinite;
 }
 
+.html-preview.is-generating :deep(.inpatient-emr-field--ai) {
+  pointer-events: none;
+  user-select: none;
+  opacity: 0.88;
+  background: #fff8e5;
+  animation: pulseBg 1.5s infinite ease-in-out;
+}
+
 @keyframes spin {
   to { transform: rotate(360deg); }
 }
@@ -757,5 +766,10 @@ dd {
 @keyframes pulse {
   0%, 100% { transform: scale(1); opacity: 0.76; }
   50% { transform: scale(1.08); opacity: 1; }
+}
+
+@keyframes pulseBg {
+  0%, 100% { background-color: #fff8e5; }
+  50% { background-color: #ffeebf; }
 }
 </style>

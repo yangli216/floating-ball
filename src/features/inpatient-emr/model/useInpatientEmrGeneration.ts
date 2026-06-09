@@ -1,6 +1,6 @@
 import { computed, ref } from 'vue';
 import { invoke } from '@tauri-apps/api/core';
-import { generateInpatientEmrPreview } from '../api/inpatientEmrService';
+import { generateInpatientEmrPreviewStream } from '../api/inpatientEmrService';
 import type {
   InpatientEmrGenerationProgress,
   InpatientEmrGenerationRequest,
@@ -101,7 +101,9 @@ export function useInpatientEmrGeneration() {
     resetSteps();
 
     try {
-      result.value = await generateInpatientEmrPreview(request, updateStep);
+      result.value = await generateInpatientEmrPreviewStream(request, updateStep, (partial) => {
+        result.value = partial;
+      });
     } catch (error) {
       errorMessage.value = error instanceof Error ? error.message : String(error);
       const runningStep = steps.value.find((step) => step.status === 'running');

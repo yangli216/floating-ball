@@ -1,4 +1,4 @@
-import { chatFast } from '@/services/llm';
+import { chatFast, chatStreamWithFallback } from '@/services/llm';
 import { getHisAdapter } from '@/services/his';
 import { isRegionalMode, regionalPost } from '@/services/regionalClient';
 import type {
@@ -275,6 +275,198 @@ export async function generateInpatientEmrPreview(
     template,
     generatedAt: Date.now(),
   };
+}
+
+/**
+ * 简易的流式不完整 JSON 提取器。
+ * 能够从正在生成的 JSON 字符串片段中，流式解析提取出 fieldKeys 对应字段当前累加的值。
+ */
+export function parsePartialJson(jsonStr: string, fieldKeys: string[]): Record<string, string> {
+  const result: Record<string, string> = {};
+  fieldKeys.forEach((key) => {
+    // 匹配: "key"\s*:\s*"
+    const escapedKey = key.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const prefixRegex = new RegExp(`"${escapedKey}"\\s*:\\s*"`);
+    const match = jsonStr.match(prefixRegex);
+    if (match && match.index !== undefined) {
+      const startIdx = match.index + match[0].length;
+      let val = '';
+      let i = startIdx;
+      let escaped = false;
+      while (i < jsonStr.length) {
+        const char = jsonStr[i];
+        if (escaped) {
+          if (char === 'n') val += '\n';
+          else if (char === 't') val += '\t';
+          else if (char === 'r') val += '\r';
+          else val += char;
+          escaped = false;
+        } else if (char === '\\') {
+          escaped = true;
+        } else if (char === '"') {
+          // 遇到合法的非转义闭合引号，表明该字段已全部生成完
+          break;
+        } else {
+          val += char;
+        }
+        i++;
+      }
+      result[key] = val;
+    }
+  });
+  return result;
+}
+
+/**
+ * 流式住院病历生成服务。
+ * 解析病历后，先通过 onStreamResult 返回一个包含默认值的空白模板，然后流式读取 AI 生成的段落并同步推送到前端中。
+ */
+export async function generateInpatientEmrPreviewStream(
+  request: InpatientEmrGenerationRequest,
+  onProgress?: InpatientEmrProgressHandler,
+  onStreamResult?: (partialResult: InpatientEmrGenerationResult) => void,
+): Promise<InpatientEmrGenerationResult> {
+  const adapter = getHisAdapter();
+  if (!adapter) {
+    throw new Error('HIS 适配器未就绪，请先完成 SDK 握手后再生成住院病历');
+  }
+
+  const query = { admissionId: request.admissionId };
+
+  report(onProgress, { key: 'patient', status: 'running', detail: '正在读取住院登记与诊断' });
+  const registration = await adapter.fetchInpatientRegistration(query);
+  report(onProgress, {
+    key: 'patient',
+    status: 'done',
+    detail: registration?.name ? `${registration.name} / ${registration.inpatientNo || request.admissionId}` : '已读取住院登记',
+  });
+
+  report(onProgress, { key: 'orders', status: 'running', detail: '正在读取住院医嘱' });
+  const orders = await adapter.fetchInpatientOrders(query);
+  report(onProgress, { key: 'orders', status: 'done', detail: `医嘱 ${orders.length} 条` });
+
+  report(onProgress, { key: 'temperature', status: 'running', detail: '正在读取体温单数据' });
+  const temperatureChart = await adapter.fetchInpatientTemperatureChart(query);
+  report(onProgress, {
+    key: 'temperature',
+    status: 'done',
+    detail: `体温单 ${temperatureChart?.records.length || 0} 条`,
+  });
+
+  report(onProgress, { key: 'template', status: 'running', detail: '正在解析病历模板字段' });
+  const template = await resolveInpatientEmrTemplate(request);
+  report(onProgress, {
+    key: 'template',
+    status: 'done',
+    detail: `${template.cacheHit ? '服务端缓存命中' : '模板已解析'}，字段 ${template.fields.length} 个`,
+  });
+
+  const context: InpatientEmrContext = { registration, orders, temperatureChart };
+
+  // 1. 在 AI 生成前，先渲染出病历框架和基础信息，实现“秒开”预览模板的效果
+  const initialFieldValues = buildDefaultFieldValues(template.fields, context);
+  const initialHtml = fillInpatientEmrTemplateHtml(request.htmlContent, initialFieldValues);
+  const initialResult: InpatientEmrGenerationResult = {
+    emrContent: buildGeneratedEmrText(template.fields, initialFieldValues, context),
+    htmlContent: initialHtml,
+    fieldValues: initialFieldValues,
+    request,
+    context,
+    template,
+    generatedAt: Date.now(),
+  };
+  onStreamResult?.(initialResult);
+
+  // 2. 启动 AI 生成，采用流式调用并在每次 chunk 到达时，提取局部 JSON 键值注入
+  report(onProgress, { key: 'generate', status: 'running', detail: '正在生成病历草稿' });
+  
+  let accumulatedResponse = '';
+  const aiFieldKeys = template.fields.filter((field) => field.aiSuitable).map((field) => field.id);
+
+  try {
+    const prompt = buildInpatientEmrGeneratePrompt(template.fields, context);
+    await chatStreamWithFallback(
+      [
+        { role: 'system', content: '你是严谨的住院病历辅助书写助手，只输出 JSON。' },
+        { role: 'user', content: `${INPATIENT_EMR_TEMPLATE_PARSE_PROMPT}\n\n${prompt}` },
+      ],
+      (chunk) => {
+        accumulatedResponse += chunk;
+        const partialValues = parsePartialJson(accumulatedResponse, aiFieldKeys);
+        const currentFieldValues = mergeGeneratedValues(template.fields, context, partialValues);
+        const currentHtml = fillInpatientEmrTemplateHtml(request.htmlContent, currentFieldValues);
+        const partialResult: InpatientEmrGenerationResult = {
+          emrContent: buildGeneratedEmrText(template.fields, currentFieldValues, context),
+          htmlContent: currentHtml,
+          fieldValues: currentFieldValues,
+          request,
+          context,
+          template,
+          generatedAt: Date.now(),
+        };
+        onStreamResult?.(partialResult);
+      },
+      undefined,
+      undefined,
+      undefined,
+      {
+        configProfile: 'fast',
+        traceContext: {
+          scene: 'inpatient-emr-generate',
+          sourceModule: 'inpatient-emr',
+          operationModule: 'inpatient-emr',
+          operationAction: 'generate_record_stream',
+          title: '住院病历流式辅助生成',
+        },
+      }
+    );
+  } catch (error) {
+    console.warn('[InpatientEmr] AI generation stream failed, using fallback draft', error);
+    const fallbackValues = { 病程记录文本: buildFallbackEmrContent(context) };
+    const currentFieldValues = mergeGeneratedValues(template.fields, context, fallbackValues);
+    const currentHtml = fillInpatientEmrTemplateHtml(request.htmlContent, currentFieldValues);
+    const partialResult: InpatientEmrGenerationResult = {
+      emrContent: buildGeneratedEmrText(template.fields, currentFieldValues, context),
+      htmlContent: currentHtml,
+      fieldValues: currentFieldValues,
+      request,
+      context,
+      template,
+      generatedAt: Date.now(),
+    };
+    onStreamResult?.(partialResult);
+    accumulatedResponse = JSON.stringify(fallbackValues);
+  }
+
+  // 3. 流式结束后做一次最终校验与状态确认
+  let finalGeneratedValues: Record<string, unknown>;
+  try {
+    finalGeneratedValues = parseLLMJson<Record<string, unknown>>(accumulatedResponse);
+  } catch (error) {
+    console.warn('[InpatientEmr] Final JSON parse failed, using partial values', error);
+    finalGeneratedValues = parsePartialJson(accumulatedResponse, aiFieldKeys);
+  }
+
+  const finalFieldValues = mergeGeneratedValues(template.fields, context, finalGeneratedValues);
+  const finalHtml = fillInpatientEmrTemplateHtml(request.htmlContent, finalFieldValues);
+  const finalPreview: InpatientEmrGeneratedPreview = {
+    emrContent: buildGeneratedEmrText(template.fields, finalFieldValues, context),
+    htmlContent: finalHtml,
+    fieldValues: finalFieldValues,
+  };
+
+  report(onProgress, { key: 'generate', status: 'done', detail: '病历草稿已生成' });
+
+  const finalResult: InpatientEmrGenerationResult = {
+    ...finalPreview,
+    request,
+    context,
+    template,
+    generatedAt: Date.now(),
+  };
+
+  onStreamResult?.(finalResult);
+  return finalResult;
 }
 
 export function getLatestTemperatureRecord(
