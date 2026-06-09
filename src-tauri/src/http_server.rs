@@ -372,6 +372,7 @@ pub struct ReportInterpretationRequest {
 #[serde(rename_all = "camelCase")]
 pub struct InpatientEmrGenerationRequest {
     pub admission_id: String,
+    pub template_id: String,
     pub html_content: String,
     #[serde(default)]
     pub template_name: Option<String>,
@@ -934,6 +935,7 @@ async fn start_inpatient_emr_generation(
     let mut request = data.into_inner();
     let request_summary = summarize_for_his_log(&request);
     request.admission_id = request.admission_id.trim().to_string();
+    request.template_id = request.template_id.trim().to_string();
     request.html_content = request.html_content.trim().to_string();
     request.template_name = request
         .template_name
@@ -968,6 +970,31 @@ async fn start_inpatient_emr_generation(
             Some(request.admission_id.clone()),
             request.request_id.clone(),
             Some("admissionId 不能为空".to_string()),
+        );
+        return HttpResponse::BadRequest().json(response_body);
+    }
+
+    if request.template_id.is_empty() {
+        let response_body = serde_json::json!({
+            "status": "error",
+            "message": "templateId 不能为空",
+            "traceId": trace_id
+        });
+        record_bridge_log(
+            &app_handle,
+            response_body["traceId"].as_str().unwrap_or_default(),
+            "inpatientEmr.generate",
+            "POST",
+            "/api/inpatient/emr/generate",
+            "error",
+            400,
+            started_at,
+            Some(request_summary),
+            Some(response_body.clone()),
+            request.patient.as_ref().and_then(|item| item.id_pi.clone()),
+            Some(request.admission_id.clone()),
+            request.request_id.clone(),
+            Some("templateId 不能为空".to_string()),
         );
         return HttpResponse::BadRequest().json(response_body);
     }

@@ -164,7 +164,7 @@
 8. 区域化模式下，辅诊功能统计不再从原始操作日志推断。`featureUsageTracker.ts` 负责在用户真实触发功能时向 `/v1/client/feature-events/batch` 上报业务事件；一次明确功能调用只写一条，默认以本地队列事件自身作为幂等键，保证离线重试或接口重试不重复入库。`featureUsageEntryTracker.ts` 负责把 HIS Bridge 入口归一到产品功能维度：`start-consultation`、`start-voice`、`assist` 在接诊上下文校验通过并准备打开目标界面时即记一次成功调用；同一就诊再次显式触发入口按新调用计数，后续 AI 生成、问诊提交或结果页自动触发不再额外补一条功能统计。审计日志继续用于排障，功能事件才是后台“辅诊功能”统计事实源。智能问诊、语音问诊、报告单解读、聊天、知识库使用按用户进入/提交的主功能计数；知识库批量检索只按一次用户检索动作计数，不按内部拆开的多个查询词累加；诊断鉴别和推荐诊断/用药/检查/检验/处置/诊疗方案推荐只在医生显式触发独立辅助入口时计数，智能问诊或语音问诊主流程内部自动生成的 AI trace 不再拆成子功能调用次数。
 9. 登录态设计在当前版本不是前置依赖，不能假定仓库内已有 `auth store` 或受保护 API 基座。
 10. 独立诊疗方案推荐由 `features/treatment-plan` 承载，入口为 `/api/consultation/assist` 的 `action: treatment_plan`。该功能不进入 `ConsultationPage.vue` 的症状采集栈，也不维护另一套回写格式：AI 请求继续复用 `features/clinical-result` 的治疗推荐 request builder、JSON 解析、标准库匹配与治疗归一化能力；推荐项二次编辑继续复用 `features/consultation-result` 的 `TreatmentRecommendationCard`、`TreatmentItemEditor`、手动匹配、二级属性搜索、药品字段编辑、药品详情和库存校验能力；最终提交继续使用 `recordConfirmedPayload.ts` 构造 `diagList/orderList` 并等待 PHIS `reference-feedback` 回执。独立鉴别诊断由 `features/differential-diagnosis` 承载，入口为 `action: diffDx`，只打开“鉴别排查确认”小窗并生成 checklist，不进入后续问诊结果页。
-11. 住院病历辅助生成由 `features/inpatient-emr` 承载，入口为 `POST /api/inpatient/emr/generate`。该功能不进入 `ConsultationPage.vue` 或语音问诊结果页，而是作为独立工作视图展示模板解析、住院 HIS 数据拉取、AI 生成步骤和病历预览；模板字段侧栏只展示适合 AI 生成的字段，字段提示词默认折叠在详情中。区域化模式下模板解析结果通过后端 `/v1/client/inpatient-emr/templates/resolve` 缓存并接收管理端维护的字段提示词，非区域化或后端不可用时本地解析兜底。病历预览中非 AI 字段保持只读，AI 字段高亮并允许医生直接修改。最终医生点击“一键回写”后仍复用本地结果事件通道，产出 `record-confirmed`，其中 `fieldValues` 只包含本次模板内标记为适合 AI 生成的 `{ [data-id]: 文本 }` 字段级结果，供 HIS 按当前模板回填；PHIS/HIS 后续通过 `reference-feedback` 回执更新页面状态，成功回执会让病历生成界面收起回小球状态。
+11. 住院病历辅助生成由 `features/inpatient-emr` 承载，入口为 `POST /api/inpatient/emr/generate`。该功能不进入 `ConsultationPage.vue` 或语音问诊结果页，而是作为独立工作视图展示模板解析、住院 HIS 数据拉取、AI 生成步骤和病历预览；模板字段侧栏只展示适合 AI 生成的字段，字段提示词默认折叠在详情中。入口必须传入 `templateId + templateName + htmlContent`，区域化模式下模板解析结果通过后端 `/v1/client/inpatient-emr/templates/resolve` 按 `templateId` 缓存并接收管理端维护的字段提示词，非区域化或后端不可用时本地解析兜底。病历预览中非 AI 字段保持只读，AI 字段高亮并允许医生直接修改。最终医生点击“一键回写”后仍复用本地结果事件通道，产出 `record-confirmed`，其中 `fieldValues` 只包含本次模板内标记为适合 AI 生成的 `{ [data-id]: 文本 }` 字段级结果，供 HIS 按当前模板回填；PHIS/HIS 后续通过 `reference-feedback` 回执更新页面状态，成功回执会让病历生成界面收起回小球状态。
 
 ---
 
@@ -616,7 +616,7 @@ await voiceConsultation.handleResultConfirm(record);
   - `start-consultation-session` - HIS 灵活模式 / assist 兼容事件（普通推荐打开 `ConsultationPage` 并写入自动触发上下文；`treatment_plan` / `diffDx` 分别打开独立诊疗方案页和独立鉴别诊断小窗）
   - `stop-consultation` - 停止问诊；视为诊毕/结束接诊，会清空当前患者上下文、当前就诊的语音缓存和问诊最小化恢复入口
   - `start-voice-consultation` - 语音问诊；来自 HIS / HTTP Bridge 的显式开始语音请求会先按目标患者 `idPi / patientId` 判断是否存在未提交缓存：同患者且存在缓存时直接恢复到语音结果页，否则开启新语音会话；仅在已处于录音胶囊页时对重复请求做幂等忽略
-  - `start-inpatient-emr-generation` - 住院病历辅助生成；来自 `/api/inpatient/emr/generate`，打开 `features/inpatient-emr` 独立工作视图并按 `admissionId + htmlContent` 生成可回写预览
+  - `start-inpatient-emr-generation` - 住院病历辅助生成；来自 `/api/inpatient/emr/generate`，打开 `features/inpatient-emr` 独立工作视图并按 `admissionId + templateId + templateName + htmlContent` 生成可回写预览
   - `sdk-handshake` - 订阅 HIS 握手事件；payload 解析、`HisService` 初始化、反馈 actor 和基础数据上下文由 `app/events/useSdkHandshakeController.ts` 处理
 - ✅ 鼠标事件监听
   - `hover-change` - 小球交互范围悬停状态，作为环绕菜单唯一展开条件

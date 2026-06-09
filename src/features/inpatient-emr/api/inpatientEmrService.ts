@@ -166,6 +166,7 @@ async function resolveInpatientEmrTemplate(
     const remote = await regionalPost<RemoteInpatientEmrTemplateCache>(
       '/v1/client/inpatient-emr/templates/resolve',
       {
+        templateId: request.templateId,
         templateHash: localTemplate.cacheKey,
         templateName: request.templateName || '',
         htmlContent: request.htmlContent,

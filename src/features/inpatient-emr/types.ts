@@ -19,6 +19,7 @@ export interface InpatientEmrPatientInput {
 
 export interface InpatientEmrGenerationRequest {
   admissionId: string;
+  templateId: string;
   htmlContent: string;
   templateName?: string;
   requestId?: string;

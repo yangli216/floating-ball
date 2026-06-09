@@ -391,8 +391,8 @@ export function useEventListeners(options: EventListenersOptions) {
       requestId: payload?.requestId,
     });
 
-    if (!payload?.admissionId || !payload?.templateName || !payload?.htmlContent) {
-      showToast('住院病历生成请求缺少 admissionId、templateName 或 htmlContent', 'error');
+    if (!payload?.admissionId || !payload?.templateId || !payload?.templateName || !payload?.htmlContent) {
+      showToast('住院病历生成请求缺少 admissionId、templateId、templateName 或 htmlContent', 'error');
       return;
     }
 

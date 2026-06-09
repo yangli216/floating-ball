@@ -76,7 +76,7 @@
 ### 第二点六步: 打通住院病历辅助生成
 
 1. HIS 在住院电子病历书写页调用 `POST /api/inpatient/emr/generate`
-2. 传入 `admissionId + htmlContent`，`admissionId` 对应 PHIS `idAdsn`，`htmlContent` 是当前病历模板 HTML
+2. 传入 `admissionId + templateId + templateName + htmlContent`，`admissionId` 对应 PHIS `idAdsn`，`templateId` 是病历模板主键，`htmlContent` 是当前病历模板 HTML
 3. `MedHermes` 从悬浮球切换到“住院病历生成”界面，按步骤展示“患者信息 -> 医嘱 -> 体温单 -> 模板解析 -> AI 生成”
 4. 医生审核预览内容后点击“一键回写”
 5. HIS 通过 SDK 事件流收到 `record-confirmed`，读取其中的 `fieldValues`（`{ [data-id]: 文本 }`）回填当前住院病历编辑器
@@ -743,13 +743,14 @@ http://127.0.0.1:8081/api/report/interpret
 http://127.0.0.1:8081/api/inpatient/emr/generate
 ```
 
-SDK 调用：`sdk.generateInpatientEmr({ admissionId, htmlContent, templateName, requestId, patient })`。
+SDK 调用：`sdk.generateInpatientEmr({ admissionId, templateId, templateName, htmlContent, requestId, patient })`。
 
 请求字段：
 
 | 字段名 | 类型 | 必填 | 说明 |
 | :--- | :--- | :--- | :--- |
 | `admissionId` | String | 是 | 患者单次住院登记主键，PHIS 对应 `idAdsn` |
+| `templateId` | String | 是 | 病历模板主键；区域化模式下后端模板解析缓存以该字段作为唯一缓存依据 |
 | `templateName` | String | 是 | 模板名称，如 `日常病程记录`；区域化模式下会随模板解析结果保存到后端模板缓存 |
 | `htmlContent` | String | 是 | 当前病历模板 HTML，桌面端会解析其中带 `data-id` 的模板字段；区域化模式下会作为原生模板内容保存到后端，供管理端查看源码和 HTML 预览 |
 | `requestId` | String | 否 | HIS 侧请求 ID；未传时桌面端会生成 |
@@ -760,6 +761,7 @@ SDK 调用：`sdk.generateInpatientEmr({ admissionId, htmlContent, templateName,
 ```json
 {
   "admissionId": "69660377a5e9230bbcdc850f",
+  "templateId": "emr_tpl_daily_course",
   "templateName": "日常病程记录",
   "htmlContent": "<p data-id=\"病程记录\" data-name=\"病程记录\"><span data-id=\"病程记录文本\" data-type=\"text\" data-name=\"病程记录文本\">病程记录</span></p>",
   "patient": {
@@ -793,7 +795,7 @@ SDK 调用：`sdk.generateInpatientEmr({ admissionId, htmlContent, templateName,
 
 说明：
 
-1. 区域化模式下，模板解析结果按 `htmlContent` hash 上传到后端 `/v1/client/inpatient-emr/templates/resolve` 缓存；后端命中时返回缓存字段和管理端维护过的字段提示词。非区域化或后端不可用时，桌面端使用本地解析兜底。
+1. 区域化模式下，模板解析结果按 `templateId` 上传到后端 `/v1/client/inpatient-emr/templates/resolve` 缓存；后端命中时返回缓存字段和管理端维护过的字段提示词。非区域化或后端不可用时，桌面端使用本地解析兜底。
 2. AI 仅适合生成“病程记录正文”等叙述性字段；患者姓名、住院号、床号、记录时间、医师签名等字段按 HIS / 系统 / 医生签名流程填充。
 3. 生成内容是医生审核草稿，不替代医生签署。
 

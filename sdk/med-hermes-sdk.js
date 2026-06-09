@@ -640,8 +640,8 @@
           htmlContent: htmlContent
         });
 
-    if (!payload || !payload.admissionId || !payload.templateName || !payload.htmlContent) {
-      return Promise.reject(new Error('generateInpatientEmr 缺少 admissionId、templateName 或 htmlContent'));
+    if (!payload || !payload.admissionId || !payload.templateId || !payload.templateName || !payload.htmlContent) {
+      return Promise.reject(new Error('generateInpatientEmr 缺少 admissionId、templateId、templateName 或 htmlContent'));
     }
 
     this._currentPatientId = payload.admissionId;
