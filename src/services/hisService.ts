@@ -1347,13 +1347,37 @@ export class HisService {
       || (query.raw && typeof query.raw === 'object' ? String(query.raw.idAdsn ?? '').trim() : '');
     if (!idAdsn) return null;
 
-    const response = await this.post<HisInpatientRegistrationBody>(
-      HIS_CATALOG_ENDPOINTS.inpatientRegistration,
-      [idAdsn]
-    );
-    this.assertBusinessSuccess(HIS_CATALOG_ENDPOINTS.inpatientRegistration, response);
-
-    return response.body ?? response.data ?? null;
+    try {
+      // 尝试第一种入参格式：['idAdsn']
+      const response = await this.post<HisInpatientRegistrationBody>(
+        HIS_CATALOG_ENDPOINTS.inpatientRegistration,
+        [idAdsn]
+      );
+      this.assertBusinessSuccess(HIS_CATALOG_ENDPOINTS.inpatientRegistration, response);
+      return response.body ?? response.data ?? null;
+    } catch (firstError) {
+      console.warn(
+        `[HisService] loadInpatientRegistration failed with [idAdsn] format, trying fallback [{ idAdsn }] format. Error:`,
+        firstError
+      );
+      try {
+        // 尝试第二种入参格式：[{ idAdsn }]
+        const response = await this.post<HisInpatientRegistrationBody>(
+          HIS_CATALOG_ENDPOINTS.inpatientRegistration,
+          [{ idAdsn }]
+        );
+        this.assertBusinessSuccess(HIS_CATALOG_ENDPOINTS.inpatientRegistration, response);
+        return response.body ?? response.data ?? null;
+      } catch (secondError) {
+        console.error(
+          `[HisService] loadInpatientRegistration failed with both formats. Primary error:`,
+          firstError,
+          `Fallback error:`,
+          secondError
+        );
+        throw secondError;
+      }
+    }
   }
 
   /**
