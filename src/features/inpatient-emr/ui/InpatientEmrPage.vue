@@ -71,35 +71,6 @@
           </ol>
         </section>
 
-        <section class="summary-panel" v-if="result">
-          <div class="section-heading">
-            <Icon icon="lucide:user-round" :size="17" />
-            <span>患者信息</span>
-          </div>
-          <dl class="summary-list">
-            <div>
-              <dt>姓名</dt>
-              <dd>{{ patientName }}</dd>
-            </div>
-            <div>
-              <dt>住院号</dt>
-              <dd>{{ inpatientNo }}</dd>
-            </div>
-            <div>
-              <dt>诊断</dt>
-              <dd>{{ diagnosisText }}</dd>
-            </div>
-            <div>
-              <dt>医嘱</dt>
-              <dd>{{ orderCount }} 条</dd>
-            </div>
-            <div>
-              <dt>体温单</dt>
-              <dd>{{ temperatureCount }} 条</dd>
-            </div>
-          </dl>
-        </section>
-
         <section class="field-panel" v-if="result">
           <div class="section-heading">
             <Icon icon="lucide:braces" :size="17" />
@@ -220,22 +191,6 @@ const activeStepLabel = computed(() => activeStep.value?.title || '准备生成'
 const activeStepDetail = computed(() => activeStep.value?.detail || '正在整理住院病历上下文');
 const aiFields = computed(() => result.value?.template.fields.filter((field) => field.aiSuitable) || []);
 
-const patientName = computed(() => result.value?.context.registration?.name || '-');
-const inpatientNo = computed(() => (
-  result.value?.context.registration?.inpatientNo
-  || result.value?.context.registration?.admissionNo
-  || result.value?.request.admissionId
-  || '-'
-));
-const diagnosisText = computed(() => {
-  const registration = result.value?.context.registration;
-  const diagnosis = registration?.diagnoses?.find((item) => item.isPrimary && item.name)
-    || registration?.diagnoses?.find((item) => item.name);
-  return diagnosis?.name || registration?.admissionDiagnosis || '-';
-});
-const orderCount = computed(() => result.value?.context.orders.length || 0);
-const temperatureCount = computed(() => result.value?.context.temperatureChart?.records.length || 0);
-
 watch(
   () => props.request,
   (request) => {
@@ -304,31 +259,34 @@ function handlePreviewInput(event: Event): void {
 }
 
 .emr-header {
-  min-height: 74px;
+  min-height: 52px;
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 16px 22px;
+  padding: 8px 18px;
   border-bottom: 1px solid rgba(116, 136, 145, 0.22);
   background: rgba(255, 255, 255, 0.78);
 }
 
 .title-block {
   display: flex;
-  flex-direction: column;
-  gap: 3px;
+  flex-direction: row;
+  align-items: baseline;
+  gap: 9px;
+  min-width: 0;
 }
 
 .eyebrow {
-  font-size: 12px;
+  font-size: 11px;
   font-weight: 700;
   color: #0d8b77;
+  white-space: nowrap;
 }
 
 h1 {
   margin: 0;
-  font-size: 22px;
-  line-height: 1.2;
+  font-size: 18px;
+  line-height: 1.15;
   letter-spacing: 0;
 }
 
@@ -342,7 +300,7 @@ h1 {
 }
 
 .header-actions {
-  gap: 10px;
+  gap: 8px;
 }
 
 button {
@@ -352,11 +310,11 @@ button {
 
 .ghost-btn,
 .primary-btn {
-  height: 34px;
+  height: 30px;
   display: inline-flex;
   align-items: center;
-  gap: 7px;
-  padding: 0 13px;
+  gap: 6px;
+  padding: 0 11px;
   border-radius: 7px;
   cursor: pointer;
   transition: transform 0.15s ease, box-shadow 0.15s ease, background 0.15s ease;
@@ -412,7 +370,6 @@ button {
 }
 
 .process-panel,
-.summary-panel,
 .field-panel,
 .html-preview-card,
 .empty-panel {
@@ -423,7 +380,6 @@ button {
 }
 
 .process-panel,
-.summary-panel,
 .field-panel,
 .empty-panel {
   padding: 14px;
@@ -499,32 +455,6 @@ button {
 .step-copy small {
   color: #65777f;
   line-height: 1.35;
-}
-
-.summary-list {
-  margin: 10px 0 0;
-}
-
-.summary-list div {
-  display: grid;
-  grid-template-columns: 64px minmax(0, 1fr);
-  gap: 8px;
-  padding: 7px 0;
-  border-bottom: 1px solid rgba(119, 135, 143, 0.1);
-}
-
-.summary-list div:last-child {
-  border-bottom: 0;
-}
-
-dt {
-  color: #6a7a80;
-}
-
-dd {
-  margin: 0;
-  color: #1d2b32;
-  overflow-wrap: anywhere;
 }
 
 .field-list {
