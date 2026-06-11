@@ -5,6 +5,7 @@ export { default as MedicineUsageFieldSelector } from './ui/MedicineUsageFieldSe
 export { default as RecAttributeChip } from './ui/RecAttributeChip.vue';
 export { default as TreatmentItemEditor } from './ui/TreatmentItemEditor.vue';
 export { default as TreatmentRecommendationCard } from './ui/TreatmentRecommendationCard.vue';
+export { default as TreatmentRecommendationSection } from './ui/TreatmentRecommendationSection.vue';
 export { useBodySiteOptions } from './model/useBodySiteOptions';
 export { useClinicalResultCancelController } from './model/useClinicalResultCancelController';
 export { useClinicalResultIntentReset } from './model/useClinicalResultIntentReset';

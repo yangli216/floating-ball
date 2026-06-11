@@ -8,8 +8,8 @@ import {
 export type ClinicalResultWritebackPreflightNotify = (message: string, type?: string) => void;
 
 export interface ClinicalResultWritebackPreflightOptions {
-  selectedDiagnoses: Ref<Diagnosis[]>;
-  treatments: Ref<TreatmentRecommendation[]>;
+  selectedDiagnoses: Readonly<Ref<readonly Diagnosis[]>>;
+  treatments: Readonly<Ref<readonly TreatmentRecommendation[]>>;
   ensureMedicineSelectable: (rec: TreatmentRecommendation, showWarning?: boolean) => Promise<boolean>;
   checkMedicineInventoryEnough: (rec: TreatmentRecommendation, showWarning?: boolean) => Promise<boolean>;
   hydrateMedicalItemDetail: (rec: TreatmentRecommendation) => Promise<unknown>;

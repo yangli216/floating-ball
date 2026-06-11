@@ -93,7 +93,7 @@ export function useTreatmentPlanWriteback(options: TreatmentPlanWritebackOptions
   });
 
   const { run: runWritebackPreflight } = useClinicalResultWritebackPreflight({
-    selectedDiagnoses: selectedDiagnoses as unknown as Ref<Diagnosis[]>,
+    selectedDiagnoses,
     treatments: options.treatments,
     ensureMedicineSelectable: options.ensureMedicineSelectable,
     checkMedicineInventoryEnough: options.checkMedicineInventoryEnough,

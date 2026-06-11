@@ -141,7 +141,7 @@
 | LLM JSON 宽容解析 | `features/clinical-result/clinicalResultLlmJsonParser.ts` | 症状问诊、语音结果页等 LLM 文本响应到 JSON 对象 / 数组的纯解析 | LLM 请求、错误 toast、日志、页面状态覆盖 |
 | AI 推荐请求规格 | `features/clinical-result/clinicalResultAiRequest.ts` | 语音 / 症状诊断推荐和 medication / exam / lab / procedure 治疗推荐的 prompt messages 与 trace config 纯构造；支持单路和多路治疗推荐规格，trace 基础字段和具体 scene/title/action 可由调用方注入，默认保持语音问诊取值 | `chat()` 调用、并发策略、loading、错误处理、状态覆盖、日志、缓存、PHIS 回写 |
 | AI 推荐 raw 映射 | `features/clinical-result/clinicalResultAiMapping.ts` | 语音结果页诊断 / 治疗 LLM raw 结果到标准诊断和治疗推荐的纯转换；智能问诊 western 诊断 raw 数组复用同一 mapper，并通过 lookup/未匹配 ID 策略保持原行为；智能问诊 western 治疗推荐 raw 数组按目标类型过滤并转换为治疗推荐项；治疗多路响应按 allSettled 结果解析、单路失败隔离并合并，标准库匹配与归一化由调用方注入 | LLM 请求、loading、当前诊断防串线、toast、事实核查、日志、缓存、PHIS 回写 |
-| 诊断/治疗推荐卡片 | `features/consultation-result` | 卡片 UI、推荐依据、反馈入口、手动匹配入口 | LLM 请求、推荐刷新、toast、PHIS 提交 |
+| 诊断/治疗推荐卡片与分组 | `features/consultation-result` | 单条卡片 UI、用药/检查/检验/处置推荐分组、推荐依据、反馈入口、手动匹配入口、治疗项主字段与二级属性编辑模板 | LLM 请求、推荐刷新、toast、PHIS 提交 |
 | 结果页渠道策略 | `features/consultation-result/model/useClinicalResultChannelStrategy.ts` | `voice/symptom` 渠道到日志类型、语音缓存开关、患者头展示和取消文案的派生 | 缓存读写、日志提交、取消事件、诊毕清理 |
 | 结果页取消流程 | `features/consultation-result/model/useClinicalResultCancelController.ts` | 放弃确认弹窗开合、提交中 / 等待回执时的拦截提示、确认动作编排入口 | 清理反馈草稿、提交放弃日志、`emit('cancel')` |
 | 结果页用户日志三态 | `features/consultation-result/model/useClinicalResultUserLogController.ts` | 首版 / 诊毕 / 放弃日志提交节奏、首版快照记忆、最终选择快照、语音可选变更摘要 | 病历字段读取、患者来源解析、区域化提交实现、反馈草稿清理 |
@@ -152,7 +152,7 @@
 | 结果页患者上下文派生 | `features/consultation-result/model/useClinicalResultPatientContext.ts` | 患者姓名、性别、年龄、`idTet`、就诊锚点和 `consultationId` 派生 | HIS 患者补全、患者切换、缓存、日志、PHIS payload 拼装、导航 |
 | 结果页 intent 初始化重置 | `features/consultation-result/model/useClinicalResultIntentReset.ts` | 新 `intentResult` 进入时的旧现场清理、病历字段回填和初始字段快照设置 | AI 请求、缓存 overlay、事实核查、推荐注册、PHIS 回写 |
 | 同类诊断下拉状态 | `features/consultation-result/model/useRelatedDiagnosisDropdown.ts` | 当前打开诊断 key、同类候选列表、打开 / 关闭 / 切换和替换后的收口 | 候选来源、诊断列表写回、选择状态同步、埋点、治疗刷新、反馈注册 |
-| 治疗推荐展示分组 | `features/consultation-result/model/useTreatmentSections.ts` | 按类型生成治疗推荐展示分组、是否存在推荐、空状态文案 | AI 请求、刷新方案、治疗项选中、库存校验、toast、PHIS 回写 |
+| 治疗推荐展示分组 | `features/consultation-result/model/useTreatmentSections.ts` + `features/consultation-result/ui/TreatmentRecommendationSection.vue` | 按类型生成治疗推荐展示分组、是否存在推荐、空状态文案，并用同一分组组件承载用药/检查/检验/处置的卡片、编辑器、手动匹配和二级属性选择器 | AI 请求、刷新方案、治疗项选中、库存校验、toast、PHIS 回写 |
 | 药品编辑字段事件 | `features/consultation-result/model/useMedicineFieldEditing.ts` | 用法用量字段激活、blur 收口、频次 / 用法 keyword 解析写回和总量输入事件 | 治疗项选中、打开二级属性、AI 请求、toast、PHIS 回写 |
 | 治疗药房解析 | `features/consultation-result/model/useTreatmentPharmacyResolution.ts` | 药品候选药房收窄、默认药房、已选药房匹配和药房名称归一化 | 库存校验、选中门禁、toast、PHIS orderList 拼装、药品详情拉取 |
 | 治疗选中前置校验 | `features/consultation-result/model/useTreatmentSelectionReadiness.ts` | 选中前的药品可用性、药房、执行科室、检查部位和库存门禁编排 | 修改 `selected`、手动匹配写入、推荐刷新、PHIS 回写 |

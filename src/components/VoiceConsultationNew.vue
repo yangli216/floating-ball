@@ -84,9 +84,7 @@ import {
 } from '@features/voice-consultation';
 import {
   DiagnosisRecommendationCard,
-  ManualMatchPicker,
-  TreatmentItemEditor,
-  TreatmentRecommendationCard,
+  TreatmentRecommendationSection,
   useBodySiteOptions,
   useClinicalResultCancelController,
   useClinicalResultChannelStrategy,
@@ -126,6 +124,7 @@ import type {
 } from '../types/voiceFeedback';
 
 type ReferenceFeedbackPayload = WritebackFeedbackPayload;
+type TreatmentAttributeOption = Pick<UsageOption, 'key' | 'text'> & Partial<Pick<UsageOption, 'mcode'>>;
 
 const props = withDefaults(defineProps<{
   initialPatientData?: AppPatient;
@@ -473,6 +472,34 @@ function getDiagnosisFeedbackKey(diag: Diagnosis): string {
 
 function getTreatmentFeedbackKey(rec: TreatmentRecommendation): string {
   return getTreatmentRecommendationFeedbackKey(rec);
+}
+
+function getTreatmentReasonKey(rec: TreatmentRecommendation): string {
+  return getReasonTooltipKey('treatment', rec.type, rec.name);
+}
+
+function getTreatmentFeedbackDraft(rec: TreatmentRecommendation): VoiceRecommendationFeedbackDraft {
+  return getRecommendationDraft(getTreatmentFeedbackKey(rec));
+}
+
+function isTreatmentFeedbackOpen(rec: TreatmentRecommendation): boolean {
+  return isRecommendationFeedbackOpen(getTreatmentFeedbackKey(rec));
+}
+
+function isTreatmentFeedbackSubmitting(rec: TreatmentRecommendation): boolean {
+  return recommendationSubmittingKey.value === getTreatmentFeedbackKey(rec);
+}
+
+function getTreatmentFeedbackSubmittedLabel(rec: TreatmentRecommendation): string {
+  return getRecommendationSubmittedLabel(getTreatmentFeedbackKey(rec));
+}
+
+function getTreatmentIssue(rec: TreatmentRecommendation) {
+  return getIssueForTreatment(rec.name);
+}
+
+function shouldShowTreatmentEditorToggle(rec: TreatmentRecommendation): boolean {
+  return !!rec.selected;
 }
 
 function getRecommendationDraft(recommendationKey: string): VoiceRecommendationFeedbackDraft {
@@ -1476,6 +1503,12 @@ function openPharmacyQuickSelector(rec: TreatmentRecommendation, event?: Event):
   openQuickSelector(rec, 'pharmacy', event);
 }
 
+function openInsuranceQuickSelector(rec: TreatmentRecommendation, event?: Event): void {
+  event?.stopPropagation();
+  expandTreatmentEditor(rec);
+  openSecondarySelector(rec, 'insurance');
+}
+
 onMounted(() => {
   void Promise.all([fetchFrequencyOptions(), fetchRouteOptions(), fetchPharmacyOptions(), fetchExecDeptOptions()]);
 });
@@ -1572,7 +1605,7 @@ function getFilteredPharmacyOptionsForRecord(rec: TreatmentRecommendation): Usag
   return treatmentAttributeSearch.getPharmacyOptionsForRecord(rec);
 }
 
-function selectPharmacyOption(rec: TreatmentRecommendation, option: UsageOption): void {
+function selectPharmacyOption(rec: TreatmentRecommendation, option: TreatmentAttributeOption): void {
   rec.pharmacy = option.text;
   setPharmacySearchKeyword(rec, option.text);
   clearMedicineInventoryWarning(rec);
@@ -1609,7 +1642,7 @@ function getFilteredExecDeptOptionsForRecord(rec: TreatmentRecommendation): Usag
   return treatmentAttributeSearch.getExecDeptOptionsForRecord(rec);
 }
 
-function selectExecDeptOption(rec: TreatmentRecommendation, option: UsageOption): void {
+function selectExecDeptOption(rec: TreatmentRecommendation, option: TreatmentAttributeOption): void {
   rec.execDept = option.key || option.text;
   setExecDeptSearchKeyword(rec, option.text);
   secondarySelector.closeAll();
@@ -1642,7 +1675,7 @@ function getFilteredBodySiteOptionsForRecord(rec: TreatmentRecommendation): Usag
   return treatmentAttributeSearch.getBodySiteOptionsForRecord(rec);
 }
 
-function selectBodySiteOption(rec: TreatmentRecommendation, option: UsageOption): void {
+function selectBodySiteOption(rec: TreatmentRecommendation, option: TreatmentAttributeOption): void {
   const matched = (rec.bodySiteOptions || []).find((candidate) => candidate.partId === option.key || candidate.name === option.text);
   if (matched) {
     applyMedicalItemPartOption(rec, matched);
@@ -1692,7 +1725,7 @@ function getFilteredInsuranceOptionsForRecord(rec: TreatmentRecommendation): Usa
   return treatmentAttributeSearch.getInsuranceOptionsForRecord(rec);
 }
 
-function selectInsuranceOption(rec: TreatmentRecommendation, option: UsageOption): void {
+function selectInsuranceOption(rec: TreatmentRecommendation, option: TreatmentAttributeOption): void {
   rec.insuranceType = option.text;
   setInsuranceSearchKeyword(rec, option.text);
   secondarySelector.closeAll();
@@ -2118,463 +2151,92 @@ watch(
             </div>
 
             <template v-else-if="hasTreatments">
-              <section v-for="section in treatmentSections" :key="section.type" class="treatment-section">
-                <div class="treatment-section-header">
-                  <h5>{{ section.title }}</h5>
-                  <span class="treatment-section-summary">{{ section.items.length }} 项推荐 / {{ section.items.filter((item) => item.selected).length }} 项已选</span>
-                </div>
-
-                <div class="vcn-treatment-list">
-                  <TreatmentRecommendationCard
-                    v-for="rec in section.items"
-                    :key="`${rec.type}-${rec.name}`"
-                    :rec="rec"
-                    :selected="!!rec.selected"
-                    :locked="requiresManualMatchBeforeSelect(rec)"
-                    :matching="isManualMatchOpen(rec)"
-                    :issue="getIssueForTreatment(rec.name)"
-                    :spec="getTreatmentSpec(rec)"
-                    :reason-open="activeReasonTooltipKey === getReasonTooltipKey('treatment', rec.type, rec.name)"
-                    :match-label="rec.matchedItem || rec.matchStatus === 'probable' ? getTreatmentMatchLabel(rec) : '未匹配标准库'"
-                    :match-tone="rec.matchStatus === 'probable' || rec.matchStatus === 'unmatched' ? 'warning' : (rec.matchStatus === 'manual' || rec.matchStatus === 'confirmed' ? 'success' : 'default')"
-                    :show-exec-dept-chip="isExecDeptRequired(rec)"
-                    :exec-dept-display="getExecDeptDisplay(rec)"
-                    :exec-dept-missing="!hasRequiredExecDept(rec)"
-                    :exec-dept-title="hasRequiredExecDept(rec) ? '点击调整执行科室' : '执行科室为空，点击设置后才能选中'"
-                    :show-pharmacy-chip="isPharmacyRequired(rec)"
-                    :pharmacy-display="getPharmacyDisplay(rec)"
-                    :pharmacy-missing="!hasRequiredPharmacy(rec)"
-                    :pharmacy-title="hasRequiredPharmacy(rec) ? '点击调整发药药房' : '发药药房未设置或不在当前药品可用药房列表，点击选择'"
-                    :usage-token="rec.type !== 'medicine' ? (rec.usage || '') : ''"
-                    :probable-match-name="hasProbableMatch(rec) ? getSuggestedMatchName(rec) : ''"
-                    :original-name="getTreatmentOriginalName(rec)"
-                    :inline-summary="rec.type === 'medicine' && !isTreatmentEditorExpanded(rec) ? getMedicineCollapsedSummary(rec) : ''"
-                    :feedback-visible="isRecommendationFeedbackOpen(getTreatmentFeedbackKey(rec))"
-                    :feedback-draft="getRecommendationDraft(getTreatmentFeedbackKey(rec))"
-                    :feedback-submitting="recommendationSubmittingKey === getTreatmentFeedbackKey(rec)"
-                    :feedback-submitted-label="getRecommendationSubmittedLabel(getTreatmentFeedbackKey(rec))"
-                    :show-manual-match-button="!rec.matchedItem"
-                    :manual-match-title="isManualMatchOpen(rec) ? '收起手动匹配' : '手动匹配标准库项目'"
-                    :manual-match-button-text="isManualMatchOpen(rec) ? '收起匹配' : '手动匹配'"
-                    :show-editor-toggle="!!rec.selected"
-                    :editor-expanded="isTreatmentEditorExpanded(rec)"
-                    @toggle="toggleTreatment(rec)"
-                    @toggle-reason="toggleReasonTooltip(getReasonTooltipKey('treatment', rec.type, rec.name), $event)"
-                    @open-exec-dept="openExecDeptQuickSelector(rec, $event)"
-                    @open-pharmacy="openPharmacyQuickSelector(rec, $event)"
-                    @confirm-probable-match="confirmSuggestedMatch(rec, $event)"
-                    @toggle-feedback="toggleRecommendationFeedback(getTreatmentFeedbackKey(rec), $event)"
-                    @update:feedback-draft="updateRecommendationDraft(getTreatmentFeedbackKey(rec), $event)"
-                    @submit-feedback="handleTreatmentFeedbackSubmit(rec, $event)"
-                    @toggle-manual-match="toggleManualMatch(rec, $event)"
-                    @toggle-editor="toggleTreatmentEditor(rec, $event)"
-                  >
-                    <template #manual-match>
-                      <ManualMatchPicker
-                        v-if="!rec.matchedItem && isManualMatchOpen(rec)"
-                        :title="`从标准库选择${section.title.replace('项目', '')}`"
-                        :keyword="getManualMatchKeyword(rec)"
-                        :candidates="getManualMatchPickerCandidates(rec)"
-                        @update:keyword="setManualMatchKeyword(rec, $event)"
-                        @select="handleManualMatchPickerSelect(rec, $event)"
-                      />
-                    </template>
-
-                    <template #editor>
-                      <div v-if="shouldShowTreatmentEditor(rec)" class="editor-shell" @click.stop>
-                      <template v-if="rec.type === 'medicine'">
-                        <TreatmentItemEditor
-                          :rec="rec"
-                          mode="inline"
-                          :frequency-options="frequencyOptions"
-                          :route-options="routeOptions"
-                          :is-field-active="(field) => isEditableFieldActive(rec, field)"
-                          :activate-field="(field, event) => activateEditableField(rec, field, event)"
-                          :on-field-blur="(field, event) => handleEditableFieldBlur(rec, field, event)"
-                          :register-field-element="(field, element) => registerEditableFieldElement(getEditableFieldKey(rec, field), element)"
-                          :on-total-qty-input="(event) => handleTotalQtyInput(rec, event)"
-                          :on-field-open-change="(field, open) => field === 'frequency' ? handleFrequencyOpenChange(rec, open) : handleRouteOpenChange(rec, open)"
-                          :on-usage-field-change="(field, value, key) => handleUsageFieldChange(rec, field, value, key)"
-                          :get-display-value="(field) => getMedicineFieldDisplay(rec, field)"
-                        />
-
-                        <div v-if="isMedicineInventoryChecking(rec)" class="medicine-inventory-note checking">
-                          正在校验库存...
-                        </div>
-                        <div v-else-if="getMedicineInventoryWarning(rec)" class="medicine-inventory-note warning">
-                          {{ getMedicineInventoryWarning(rec) }}
-                        </div>
-
-                        <div v-if="isTreatmentEditorExpanded(rec)" class="secondary-field-grid">
-                          <div class="secondary-field">
-                            <label>规定病</label>
-                            <input v-model="rec.regulatedDisease" type="text" placeholder="规定病" class="edit-input" />
-                          </div>
-                          <div class="secondary-field">
-                            <label>天数</label>
-                            <input v-model="rec.days" type="text" placeholder="天" class="edit-input mini" />
-                          </div>
-                          <div class="secondary-field">
-                            <label>药房</label>
-                            <div class="field-editor route-field-editor" @focusout="closeSecondarySelector(rec, 'pharmacy', $event)">
-                              <input
-                                :data-pharmacy-input="getTreatmentEditorKey(rec)"
-                                :value="getPharmacySearchKeyword(rec)"
-                                type="text"
-                                placeholder="输入名称筛选药房"
-                                class="edit-input"
-                                @focus="openSecondarySelector(rec, 'pharmacy')"
-                                @input="handlePharmacySearchInput(rec, $event)"
-                              />
-                              <div v-if="isSecondarySelectorOpen(rec, 'pharmacy')" class="route-option-list" role="listbox" aria-label="药房候选项">
-                                <button
-                                  v-if="rec.pharmacy"
-                                  class="route-option-item route-option-clear"
-                                  type="button"
-                                  @mousedown.prevent.stop="clearPharmacySelection(rec)"
-                                >
-                                  <span class="route-option-text">清空当前值</span>
-                                </button>
-                                <button
-                                  v-for="option in getFilteredPharmacyOptionsForRecord(rec).slice(0, 8)"
-                                  :key="option.key"
-                                  class="route-option-item"
-                                  type="button"
-                                  @mousedown.prevent.stop="selectPharmacyOption(rec, option)"
-                                >
-                                  <span class="route-option-text">{{ option.text }}</span>
-                                  <span v-if="option.mcode" class="route-option-meta">{{ option.mcode }}</span>
-                                </button>
-                                <div v-if="getFilteredPharmacyOptionsForRecord(rec).length === 0" class="route-option-empty">未找到匹配药房</div>
-                              </div>
-                            </div>
-                          </div>
-                          <div class="secondary-field">
-                            <label>备注</label>
-                            <input v-model="rec.remark" type="text" placeholder="备注" class="edit-input" />
-                          </div>
-                          <div class="secondary-field">
-                            <label>医保限用</label>
-                            <div class="field-editor route-field-editor" @focusout="closeSecondarySelector(rec, 'insurance', $event)">
-                              <input
-                                :value="getInsuranceSearchKeyword(rec)"
-                                type="text"
-                                placeholder="输入名称筛选医保类型"
-                                class="edit-input"
-                                @focus="openSecondarySelector(rec, 'insurance')"
-                                @input="handleInsuranceSearchInput(rec, $event)"
-                              />
-                              <div v-if="isSecondarySelectorOpen(rec, 'insurance')" class="route-option-list" role="listbox" aria-label="医保限用候选项">
-                                <button
-                                  v-if="rec.insuranceType"
-                                  class="route-option-item route-option-clear"
-                                  type="button"
-                                  @mousedown.prevent.stop="clearInsuranceSelection(rec)"
-                                >
-                                  <span class="route-option-text">清空当前值</span>
-                                </button>
-                                <button
-                                  v-for="option in getFilteredInsuranceOptionsForRecord(rec).slice(0, 8)"
-                                  :key="option.key"
-                                  class="route-option-item"
-                                  type="button"
-                                  @mousedown.prevent.stop="selectInsuranceOption(rec, option)"
-                                >
-                                  <span class="route-option-text">{{ option.text }}</span>
-                                </button>
-                                <div v-if="getFilteredInsuranceOptionsForRecord(rec).length === 0" class="route-option-empty">未找到匹配医保类型</div>
-                              </div>
-                            </div>
-                          </div>
-
-                        </div>
-                      </template>
-
-                      <template v-if="rec.type === 'exam' && isTreatmentEditorExpanded(rec)">
-                        <div class="secondary-field-grid">
-                          <div class="secondary-field">
-                            <label>执行科室</label>
-                            <div class="field-editor route-field-editor" @focusout="closeSecondarySelector(rec, 'execDept', $event)">
-                              <input
-                                :value="getExecDeptSearchKeyword(rec)"
-                                type="text"
-                                placeholder="输入名称筛选科室"
-                                class="edit-input"
-                                :data-exec-dept-input="getTreatmentEditorKey(rec)"
-                                @focus="openSecondarySelector(rec, 'execDept')"
-                                @input="handleExecDeptSearchInput(rec, $event)"
-                              />
-                              <div v-if="isSecondarySelectorOpen(rec, 'execDept')" class="route-option-list" role="listbox" aria-label="执行科室候选项">
-                                <button
-                                  v-if="rec.execDept"
-                                  class="route-option-item route-option-clear"
-                                  type="button"
-                                  @mousedown.prevent.stop="clearExecDeptSelection(rec)"
-                                >
-                                  <span class="route-option-text">清空当前值</span>
-                                </button>
-                                <button
-                                  v-for="option in getFilteredExecDeptOptionsForRecord(rec).slice(0, 8)"
-                                  :key="option.key"
-                                  class="route-option-item"
-                                  type="button"
-                                  @mousedown.prevent.stop="selectExecDeptOption(rec, option)"
-                                >
-                                  <span class="route-option-text">{{ option.text }}</span>
-                                  <span v-if="option.key !== option.text" class="route-option-meta">{{ option.key }}</span>
-                                </button>
-                                <div v-if="getFilteredExecDeptOptionsForRecord(rec).length === 0" class="route-option-empty">未找到匹配科室</div>
-                              </div>
-                            </div>
-                          </div>
-                          <div class="secondary-field">
-                            <label>检查部位</label>
-                            <div class="field-editor route-field-editor" @focusout="closeSecondarySelector(rec, 'bodySite', $event)">
-                              <input
-                                :data-body-site-input="getTreatmentEditorKey(rec)"
-                                :value="getBodySiteSearchKeyword(rec)"
-                                type="text"
-                                placeholder="输入名称筛选部位"
-                                class="edit-input"
-                                @focus="openSecondarySelector(rec, 'bodySite')"
-                                @input="handleBodySiteSearchInput(rec, $event)"
-                              />
-                              <div v-if="isSecondarySelectorOpen(rec, 'bodySite')" class="route-option-list" role="listbox" aria-label="检查部位候选项">
-                                <button
-                                  v-if="rec.bodySite"
-                                  class="route-option-item route-option-clear"
-                                  type="button"
-                                  @mousedown.prevent.stop="clearBodySiteSelection(rec)"
-                                >
-                                  <span class="route-option-text">清空当前值</span>
-                                </button>
-                                <button
-                                  v-for="option in getFilteredBodySiteOptionsForRecord(rec).slice(0, 8)"
-                                  :key="option.key"
-                                  class="route-option-item"
-                                  type="button"
-                                  @mousedown.prevent.stop="selectBodySiteOption(rec, option)"
-                                >
-                                  <span class="route-option-text">{{ option.text }}</span>
-                                  <span v-if="option.mcode" class="route-option-meta">{{ option.mcode }}</span>
-                                </button>
-                                <div v-if="getFilteredBodySiteOptionsForRecord(rec).length === 0" class="route-option-empty">暂无可选部位</div>
-                              </div>
-                            </div>
-                          </div>
-                          <div class="secondary-field">
-                            <label>医保限用</label>
-                            <div class="field-editor route-field-editor" @focusout="closeSecondarySelector(rec, 'insurance', $event)">
-                              <input
-                                :value="getInsuranceSearchKeyword(rec)"
-                                type="text"
-                                placeholder="输入名称筛选医保类型"
-                                class="edit-input"
-                                @focus="openSecondarySelector(rec, 'insurance')"
-                                @input="handleInsuranceSearchInput(rec, $event)"
-                              />
-                              <div v-if="isSecondarySelectorOpen(rec, 'insurance')" class="route-option-list" role="listbox" aria-label="医保限用候选项">
-                                <button
-                                  v-if="rec.insuranceType"
-                                  class="route-option-item route-option-clear"
-                                  type="button"
-                                  @mousedown.prevent.stop="clearInsuranceSelection(rec)"
-                                >
-                                  <span class="route-option-text">清空当前值</span>
-                                </button>
-                                <button
-                                  v-for="option in getFilteredInsuranceOptionsForRecord(rec).slice(0, 8)"
-                                  :key="option.key"
-                                  class="route-option-item"
-                                  type="button"
-                                  @mousedown.prevent.stop="selectInsuranceOption(rec, option)"
-                                >
-                                  <span class="route-option-text">{{ option.text }}</span>
-                                </button>
-                                <div v-if="getFilteredInsuranceOptionsForRecord(rec).length === 0" class="route-option-empty">未找到匹配医保类型</div>
-                              </div>
-                            </div>
-                          </div>
-                          <div class="secondary-field">
-                            <label>规定病</label>
-                            <input v-model="rec.regulatedDisease" type="text" placeholder="规定病" class="edit-input" />
-                          </div>
-                          <div class="secondary-field">
-                            <label>备注</label>
-                            <input v-model="rec.remark" type="text" placeholder="备注" class="edit-input" />
-                          </div>
-                        </div>
-                      </template>
-
-                      <template v-if="rec.type === 'lab_test' && isTreatmentEditorExpanded(rec)">
-                        <div class="secondary-field-grid">
-                          <div class="secondary-field">
-                            <label>执行科室</label>
-                            <div class="field-editor route-field-editor" @focusout="closeSecondarySelector(rec, 'execDept', $event)">
-                              <input
-                                :value="getExecDeptSearchKeyword(rec)"
-                                type="text"
-                                placeholder="输入名称筛选科室"
-                                class="edit-input"
-                                :data-exec-dept-input="getTreatmentEditorKey(rec)"
-                                @focus="openSecondarySelector(rec, 'execDept')"
-                                @input="handleExecDeptSearchInput(rec, $event)"
-                              />
-                              <div v-if="isSecondarySelectorOpen(rec, 'execDept')" class="route-option-list" role="listbox" aria-label="执行科室候选项">
-                                <button
-                                  v-if="rec.execDept"
-                                  class="route-option-item route-option-clear"
-                                  type="button"
-                                  @mousedown.prevent.stop="clearExecDeptSelection(rec)"
-                                >
-                                  <span class="route-option-text">清空当前值</span>
-                                </button>
-                                <button
-                                  v-for="option in getFilteredExecDeptOptionsForRecord(rec).slice(0, 8)"
-                                  :key="option.key"
-                                  class="route-option-item"
-                                  type="button"
-                                  @mousedown.prevent.stop="selectExecDeptOption(rec, option)"
-                                >
-                                  <span class="route-option-text">{{ option.text }}</span>
-                                  <span v-if="option.key !== option.text" class="route-option-meta">{{ option.key }}</span>
-                                </button>
-                                <div v-if="getFilteredExecDeptOptionsForRecord(rec).length === 0" class="route-option-empty">未找到匹配科室</div>
-                              </div>
-                            </div>
-                          </div>
-                          <div class="secondary-field">
-                            <label>医保限用</label>
-                            <div class="field-editor route-field-editor" @focusout="closeSecondarySelector(rec, 'insurance', $event)">
-                              <input
-                                :value="getInsuranceSearchKeyword(rec)"
-                                type="text"
-                                placeholder="输入名称筛选医保类型"
-                                class="edit-input"
-                                @focus="openSecondarySelector(rec, 'insurance')"
-                                @input="handleInsuranceSearchInput(rec, $event)"
-                              />
-                              <div v-if="isSecondarySelectorOpen(rec, 'insurance')" class="route-option-list" role="listbox" aria-label="医保限用候选项">
-                                <button
-                                  v-if="rec.insuranceType"
-                                  class="route-option-item route-option-clear"
-                                  type="button"
-                                  @mousedown.prevent.stop="clearInsuranceSelection(rec)"
-                                >
-                                  <span class="route-option-text">清空当前值</span>
-                                </button>
-                                <button
-                                  v-for="option in getFilteredInsuranceOptionsForRecord(rec).slice(0, 8)"
-                                  :key="option.key"
-                                  class="route-option-item"
-                                  type="button"
-                                  @mousedown.prevent.stop="selectInsuranceOption(rec, option)"
-                                >
-                                  <span class="route-option-text">{{ option.text }}</span>
-                                </button>
-                                <div v-if="getFilteredInsuranceOptionsForRecord(rec).length === 0" class="route-option-empty">未找到匹配医保类型</div>
-                              </div>
-                            </div>
-                          </div>
-                          <div class="secondary-field">
-                            <label>规定病</label>
-                            <input v-model="rec.regulatedDisease" type="text" placeholder="规定病" class="edit-input" />
-                          </div>
-                          <div class="secondary-field">
-                            <label>备注</label>
-                            <input v-model="rec.remark" type="text" placeholder="备注" class="edit-input" />
-                          </div>
-                        </div>
-                      </template>
-
-                      <template v-if="rec.type === 'procedure' && isTreatmentEditorExpanded(rec)">
-                        <div class="secondary-field-grid">
-                          <div class="secondary-field">
-                            <label>规定病</label>
-                            <input v-model="rec.regulatedDisease" type="text" placeholder="规定病" class="edit-input" />
-                          </div>
-                          <div class="secondary-field">
-                            <label>总量</label>
-                            <div class="edit-field-row">
-                              <input v-model="rec.totalQty" type="text" placeholder="数量" class="edit-input small" />
-                              <span class="edit-unit">次</span>
-                            </div>
-                          </div>
-                          <div class="secondary-field">
-                            <label>执行科室</label>
-                            <div class="field-editor route-field-editor" @focusout="closeSecondarySelector(rec, 'execDept', $event)">
-                              <input
-                                :value="getExecDeptSearchKeyword(rec)"
-                                type="text"
-                                placeholder="输入名称筛选科室"
-                                class="edit-input"
-                                :data-exec-dept-input="getTreatmentEditorKey(rec)"
-                                @focus="openSecondarySelector(rec, 'execDept')"
-                                @input="handleExecDeptSearchInput(rec, $event)"
-                              />
-                              <div v-if="isSecondarySelectorOpen(rec, 'execDept')" class="route-option-list" role="listbox" aria-label="执行科室候选项">
-                                <button
-                                  v-if="rec.execDept"
-                                  class="route-option-item route-option-clear"
-                                  type="button"
-                                  @mousedown.prevent.stop="clearExecDeptSelection(rec)"
-                                >
-                                  <span class="route-option-text">清空当前值</span>
-                                </button>
-                                <button
-                                  v-for="option in getFilteredExecDeptOptionsForRecord(rec).slice(0, 8)"
-                                  :key="option.key"
-                                  class="route-option-item"
-                                  type="button"
-                                  @mousedown.prevent.stop="selectExecDeptOption(rec, option)"
-                                >
-                                  <span class="route-option-text">{{ option.text }}</span>
-                                  <span v-if="option.key !== option.text" class="route-option-meta">{{ option.key }}</span>
-                                </button>
-                                <div v-if="getFilteredExecDeptOptionsForRecord(rec).length === 0" class="route-option-empty">未找到匹配科室</div>
-                              </div>
-                            </div>
-                          </div>
-                          <div class="secondary-field">
-                            <label>医保限用</label>
-                            <div class="field-editor route-field-editor" @focusout="closeSecondarySelector(rec, 'insurance', $event)">
-                              <input
-                                :value="getInsuranceSearchKeyword(rec)"
-                                type="text"
-                                placeholder="输入名称筛选医保类型"
-                                class="edit-input"
-                                @focus="openSecondarySelector(rec, 'insurance')"
-                                @input="handleInsuranceSearchInput(rec, $event)"
-                              />
-                              <div v-if="isSecondarySelectorOpen(rec, 'insurance')" class="route-option-list" role="listbox" aria-label="医保限用候选项">
-                                <button
-                                  v-if="rec.insuranceType"
-                                  class="route-option-item route-option-clear"
-                                  type="button"
-                                  @mousedown.prevent.stop="clearInsuranceSelection(rec)"
-                                >
-                                  <span class="route-option-text">清空当前值</span>
-                                </button>
-                                <button
-                                  v-for="option in getFilteredInsuranceOptionsForRecord(rec).slice(0, 8)"
-                                  :key="option.key"
-                                  class="route-option-item"
-                                  type="button"
-                                  @mousedown.prevent.stop="selectInsuranceOption(rec, option)"
-                                >
-                                  <span class="route-option-text">{{ option.text }}</span>
-                                </button>
-                                <div v-if="getFilteredInsuranceOptionsForRecord(rec).length === 0" class="route-option-empty">未找到匹配医保类型</div>
-                              </div>
-                            </div>
-                          </div>
-                        </div>
-                      </template>
-                      </div>
-                    </template>
-                  </TreatmentRecommendationCard>
-                </div>
-              </section>
+              <TreatmentRecommendationSection
+                v-for="section in treatmentSections"
+                :key="section.type"
+                :section="section"
+                :selected-count="section.items.filter((item) => item.selected).length"
+                :total-count="section.items.length"
+                :requires-manual-match-before-select="requiresManualMatchBeforeSelect"
+                :get-issue="getTreatmentIssue"
+                :get-reason-key="getTreatmentReasonKey"
+                :active-reason-key="activeReasonTooltipKey || ''"
+                :get-treatment-spec="getTreatmentSpec"
+                :get-treatment-match-label="getTreatmentMatchLabel"
+                :has-probable-match="hasProbableMatch"
+                :get-suggested-match-name="getSuggestedMatchName"
+                :get-treatment-original-name="getTreatmentOriginalName"
+                :get-editor-key="getTreatmentEditorKey"
+                :is-pharmacy-required="isPharmacyRequired"
+                :get-pharmacy-display="getPharmacyDisplay"
+                :has-required-pharmacy="hasRequiredPharmacy"
+                :is-exec-dept-required="isExecDeptRequired"
+                :get-exec-dept-display="getExecDeptDisplay"
+                :has-required-exec-dept="hasRequiredExecDept"
+                :get-body-site-display="treatmentGates.getBodySiteDisplay"
+                :has-required-body-site="hasRequiredBodySite"
+                :frequency-options="frequencyOptions"
+                :route-options="routeOptions"
+                :should-show-treatment-editor="shouldShowTreatmentEditor"
+                :should-show-editor-toggle="shouldShowTreatmentEditorToggle"
+                :is-treatment-editor-expanded="isTreatmentEditorExpanded"
+                :is-editable-field-active="isEditableFieldActive"
+                :get-editable-field-key="getEditableFieldKey"
+                :get-medicine-field-display="getMedicineFieldDisplay"
+                :get-medicine-inline-summary="getMedicineCollapsedSummary"
+                :is-medicine-inventory-checking="isMedicineInventoryChecking"
+                :get-medicine-inventory-warning="getMedicineInventoryWarning"
+                :is-secondary-selector-open="isSecondarySelectorOpen"
+                :get-pharmacy-search-keyword="getPharmacySearchKeyword"
+                :get-filtered-pharmacy-options="getFilteredPharmacyOptionsForRecord"
+                :get-exec-dept-search-keyword="getExecDeptSearchKeyword"
+                :get-filtered-exec-dept-options="getFilteredExecDeptOptionsForRecord"
+                :get-body-site-search-keyword="getBodySiteSearchKeyword"
+                :get-filtered-body-site-options="getFilteredBodySiteOptionsForRecord"
+                :get-insurance-search-keyword="getInsuranceSearchKeyword"
+                :get-filtered-insurance-options="getFilteredInsuranceOptionsForRecord"
+                :is-manual-match-open="isManualMatchOpen"
+                :get-manual-match-keyword="getManualMatchKeyword"
+                :get-manual-match-candidates="getManualMatchPickerCandidates"
+                :is-feedback-open="isTreatmentFeedbackOpen"
+                :get-feedback-draft="getTreatmentFeedbackDraft"
+                :is-feedback-submitting="isTreatmentFeedbackSubmitting"
+                :get-feedback-submitted-label="getTreatmentFeedbackSubmittedLabel"
+                @toggle="toggleTreatment"
+                @toggle-reason="(rec, event) => toggleReasonTooltip(getTreatmentReasonKey(rec), event)"
+                @confirm-match="confirmSuggestedMatch"
+                @toggle-feedback="(rec, event) => toggleRecommendationFeedback(getTreatmentFeedbackKey(rec), event)"
+                @update-feedback-draft="(rec, draft) => updateRecommendationDraft(getTreatmentFeedbackKey(rec), draft)"
+                @submit-feedback="handleTreatmentFeedbackSubmit"
+                @toggle-treatment-editor="toggleTreatmentEditor"
+                @activate-editable-field="activateEditableField"
+                @editable-field-blur="handleEditableFieldBlur"
+                @register-editable-field-element="registerEditableFieldElement"
+                @total-qty-input="handleTotalQtyInput"
+                @frequency-open-change="handleFrequencyOpenChange"
+                @route-open-change="handleRouteOpenChange"
+                @usage-field-change="handleUsageFieldChange"
+                @open-pharmacy="openPharmacyQuickSelector"
+                @open-exec-dept="openExecDeptQuickSelector"
+                @open-body-site="openBodySiteQuickSelector"
+                @open-insurance="openInsuranceQuickSelector"
+                @close-secondary-selector="closeSecondarySelector"
+                @update-pharmacy-keyword="handlePharmacySearchInput"
+                @select-pharmacy="selectPharmacyOption"
+                @clear-pharmacy="clearPharmacySelection"
+                @update-exec-dept-keyword="handleExecDeptSearchInput"
+                @select-exec-dept="selectExecDeptOption"
+                @clear-exec-dept="clearExecDeptSelection"
+                @update-body-site-keyword="handleBodySiteSearchInput"
+                @select-body-site="selectBodySiteOption"
+                @clear-body-site="clearBodySiteSelection"
+                @update-insurance-keyword="handleInsuranceSearchInput"
+                @select-insurance="selectInsuranceOption"
+                @clear-insurance="clearInsuranceSelection"
+                @toggle-manual-match="toggleManualMatch"
+                @update-manual-match-keyword="setManualMatchKeyword"
+                @select-manual-match-candidate="handleManualMatchPickerSelect"
+              />
             </template>
 
             <div v-else class="empty-text">{{ treatmentEmptyText }}</div>

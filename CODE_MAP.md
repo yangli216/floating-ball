@@ -353,7 +353,8 @@ HIS POST /api/consultation/start
 ```
 HIS POST /api/consultation/assist {action: "suggestedDx", chiefComplaint: "..."}
   -> 跳过症状采集 -> 直达诊断推荐页
-  -> 医生点"引用诊断" -> reference-request 写入结果通道
+  -> 进入共享结果页 -> 医生确认诊断 / 勾选治疗项
+  -> 点击一键回写 -> record-confirmed 写入结果通道
   -> HIS 处理后调 reference-feedback -> 页面即时更新
 ```
 

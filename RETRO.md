@@ -195,6 +195,13 @@
 - **解决方案**: 创建报告解读窗口前先注册 main 侧 ready 监听，子窗口 listener 注册完成后发出 `report-interpretation:ready`，主窗口确认 ready 后再投递 status/update 事件；同时移除桌面端对 Google Fonts `css2` 的运行期依赖，避免内网环境持续报字体连接失败。
 - **后续防护**: 新建独立窗口时不能把 `tauri://created` 当成业务 listener 就绪信号；跨窗口首包事件必须有显式 ready/ack 或可补发的状态源。
 
+### RETRO-026: 完整问诊遗留回写路径漏接检查部位门禁 [已解决]
+
+- **现象**: 检查推荐在共享结果页和独立诊疗方案页会校验检查部位，但 `ConsultationPage.vue` 遗留的勾选 / `submitToHIS` 路径只校验发药药房、执行科室、药品详情和库存，检查项目缺少部位时仍可能被选中或提交。
+- **根因**: 2026-05-21 结果页重构后，症状问诊主路径迁到 `SymptomResultEntry -> ConsultationResultPage -> VoiceConsultationNew`，新的共享 preflight 已包含 `hasRequiredBodySite`；但 `ConsultationPage.vue` 为兼容旧 `final_report` / 直接回写仍保留一套旧门禁，未同步接入 `useBodySiteOptions` 和检查部位校验。
+- **解决方案**: `ConsultationPage.vue` 复用共享 `useBodySiteOptions`，在旧路径 hydrate 检查项目明细时落地部位候选；勾选检查项和旧提交前均先 hydrate 检查明细，再用 `hasRequiredBodySite` 阻止缺少部位的检查项目。
+- **后续防护**: 治疗推荐门禁新增字段时，必须同时核对共享结果页、完整问诊遗留路径和独立诊疗方案页；不能只在当前主入口补 preflight。
+
 
 ---
 

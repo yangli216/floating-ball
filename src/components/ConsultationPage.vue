@@ -541,28 +541,18 @@ import { PROMPTS, DynamicSymptomTemplatePrompt } from '../prompts';
 import Icon from '@shared/ui/Icon.vue';
 import { formatUserFacingError } from '@shared/lib/errorMessages';
 import {
-  FactCheckHighlight,
   FactCheckNotification,
   FactCheckWidget,
 } from '@features/feedback';
 import {
-  DiagnosisRecommendationCard,
-  ManualMatchPicker,
-  RecAttributeChip,
-  TreatmentItemEditor,
-  TreatmentRecommendationCard,
   useClinicalResultUserLogController,
+  useClinicalResultWritebackPreflight,
   useConsultationReferenceFeedbackListener,
-  useManualMatchState,
   useMedicalDictionaries,
-  useReasonTooltipState,
-  useRecommendationFeedbackPopover,
-  useRelatedDiagnosisDropdown,
+  useBodySiteOptions,
   useTreatmentGates,
   useTreatmentHydration,
   useTreatmentNormalization,
-  type AttrOption,
-  type ManualMatchCandidate,
 } from '@features/consultation-result';
 import { SymptomResultEntry } from '@features/symptom-consultation';
 import {
@@ -587,45 +577,25 @@ import { CONSULTATION_CONFIG } from '../constants/consultationConfig';
 import { getTCMTemplates, getWesternTemplates, syncRemoteTemplates } from '../services/templateService';
 import { submitConsultationUserLog } from '../services/consultationUserLog';
 import {
-  areAllReferenceItemsSuccessful,
-  buildConsultationAssistBannerStyle,
-  buildConsultationAssistBannerText,
   applyCheckboxFieldChange,
   buildConsultationFormValidationResult,
   buildConsultationGeneratedRecord,
   buildDiagnosisDisplayGroups,
   buildDiagnosisRecommendationsFromRaw,
   buildDiagnosisPrefill,
-  buildMedicineInlineSummary,
-  buildVisibleTreatmentRecommendations,
-  buildCurrentMedicalPayload as buildSymptomCurrentMedicalPayload,
   buildFinalRecord,
   buildGeneratedRecordPrefillPatch,
-  buildDiagnosisSwap,
   buildGeneralConditionHistoryText,
   buildMedicalAdvice,
   buildSelectedTreatmentSnapshots,
   buildTcmSignsPromptText,
   buildTcmSignsReportText,
-  buildPendingReferenceStatusEntry,
-  buildReferenceRequestPayload,
   buildReferenceStatusEntryFromFeedback,
   buildSmartUserLogSnapshot as buildSymptomSmartUserLogSnapshot,
-  filterOtherTreatmentRecommendations,
   generalConditionConfig,
-  getConsultationAssistBannerTone,
-  getConsultationAssistLabel,
-  getDiagnosisReferenceButtonLabel as getSymptomDiagnosisReferenceButtonLabel,
-  getDiagnosisRateClass,
   getDiagnosisIdentity,
-  getReferenceStatusFromMap,
-  getReferenceStatusLabel as getSymptomReferenceStatusLabel,
   getSymptomFieldKey,
-  getTreatmentTagLabel,
-  isDiagnosisReferenceDisabled as isSymptomDiagnosisReferenceDisabled,
-  isPendingReferenceItem as isPendingReferenceItemInRequest,
   isStaleRecommendationContext,
-  mapTreatmentTypeToReferenceAction,
   normalizeReferenceFeedbackPayload,
   parseLLMJson as parseSymptomLLMJson,
   readPatientText,
@@ -633,53 +603,34 @@ import {
   registerTreatmentRecommendationFeedbackTargets,
   runDiagnosisFactCheck,
   runTreatmentFactCheck,
-  resolveRelatedDiagnosisCandidates,
   resolveReferenceFeedbackItems,
   resolvePastMedicalHistoryFromSources,
   setReferenceStatusesInMap,
-  shouldShowDiagnosisCard,
-  shouldShowTreatmentCard,
   tcmInquiryConfig,
   trackConsultationCompletion,
   useConsultationAssistController,
   useSymptomCollectionController,
-  type BuildCurrentMedicalPayloadOptions,
   type DiagnosisDisplayGroup,
   type ReferenceAction,
   type ReferenceFeedbackPayload,
   type ReferenceItemPayload,
-  type ReferenceLifecycleStatus,
   type ReferenceStatusEntry,
 } from '@features/symptom-consultation';
 import {
-  applyManualMatchCandidate,
   assessTreatmentCatalogMatch,
   buildClinicalResultDiagnosisRequestSpec,
   buildClinicalResultTreatmentRecommendationsFromRaw,
   buildClinicalResultTreatmentRequestSpec,
   buildDiagList as buildSharedDiagList,
-  buildDiagnosisRecommendationFeedbackSubmitPayload,
-  buildInventoryBlockedSubmitMessage,
   buildOrderListItem as buildSharedOrderListItem,
   buildRecordConfirmedPayload,
   buildSelectedTreatments,
   buildTreatmentPlanSummary,
-  buildTreatmentRecommendationFeedbackSubmitPayload,
-  findManualMatchCandidates,
   getDiagnosisRecommendationFeedbackKey,
   getMatchedItemRaw,
-  getMatchedMedicalItemClientId,
   getMatchedOrderServiceId,
-  getReasonTooltipKey,
-  getStandardDiagnosisId,
-  getSuggestedMatchName,
-  getTreatmentMatchLabel,
-  getTreatmentOriginalName,
   getTreatmentRecommendationFeedbackKey,
-  getTreatmentSpec,
-  hasProbableMatch,
   readFirstString,
-  toManualMatchCandidateView,
   type OrderItemResolvers,
 } from '@features/clinical-result';
 import {
@@ -715,7 +666,6 @@ const emit = defineEmits(['close', 'cancel', 'consume-auto-trigger']);
 // --- Interfaces & State Definitions ---
 import type { Diagnosis, Patient, TreatmentRecommendation, FinalRecord } from '../types/consultation';
 import { useVoiceFeedback } from '@features/feedback';
-import type { VoiceRecommendationFeedbackDraft } from '../types/voiceFeedback';
 type AssistAction = ConsultationAssistAction;
 
 // Patient info: empty defaults; real data flows in via `initialPatientData` watch.
@@ -774,7 +724,6 @@ const selectedSymptoms = ref<any[]>([]);
 const formData = ref<Record<string, any>>({});
 const searchQuery = ref('');
 const isGeneratingSymptom = ref(false);
-const medRecordDetails = ref<string[]>([]);
 
 // Selection mode for sidebar tabs
 const selectionMode = ref<'common' | 'bodyPart' | 'system'>('common');
@@ -855,21 +804,12 @@ const aiError = ref<string | null>(null);
 const aiDiagnoses = ref<Diagnosis[]>([]);
 const selectedDiagnosis = ref<Diagnosis | null>(null);
 const relatedDiagnoses = ref<DiagnosisItem[]>([]);
-const isRelatedOpen = ref(false);
 const collapsedDiagnosisGroups = ref<Record<string, boolean>>({});
 let aiDiagnosisRequestSeq = 0;
 
 const treatmentLoading = ref(false);
 const treatmentError = ref<string | null>(null);
 const treatmentRecommendations = ref<TreatmentRecommendation[]>([]);
-
-const reasonTooltipState = useReasonTooltipState();
-const {
-  activeReasonTooltipKey,
-  closeReasonTooltip,
-  closeReasonTooltipIfOpen,
-  toggleReasonTooltip,
-} = reasonTooltipState;
 
 // 检查推荐（影像/器械）
 const examRecommendations = ref<TreatmentRecommendation[]>([]);
@@ -885,6 +825,12 @@ const labTestError = ref<string | null>(null);
 const procedureRecommendations = ref<TreatmentRecommendation[]>([]);
 const procedureLoading = ref(false);
 const procedureError = ref<string | null>(null);
+const selectedTreatments = computed(() => buildSelectedTreatments({
+  medicines: treatmentRecommendations.value,
+  examinations: examRecommendations.value,
+  labTests: labTestRecommendations.value,
+  procedures: procedureRecommendations.value,
+}));
 let treatmentRecommendationRequestSeq = 0;
 let examRecommendationRequestSeq = 0;
 let labTestRecommendationRequestSeq = 0;
@@ -909,39 +855,34 @@ const treatmentNormalization = useTreatmentNormalization({
   ensurePharmacy: treatmentGates.ensurePharmacy,
   isExecDeptSatisfied: treatmentGates.isExecDeptSatisfied,
 });
+const { applyMedicalItemPartOptions } = useBodySiteOptions();
 const treatmentHydration = useTreatmentHydration({
   pharmacyOptions: hisPharmacyOptions,
   getCandidatePharmaciesForMedicine: treatmentGates.pharmacyCandidatesFor,
   findFrequencyOptionByValue: treatmentNormalization.findFrequencyOptionByValue,
   findRouteOptionByValue: treatmentNormalization.findRouteOptionByValue,
+  applyMedicalItemPartOptions,
+  afterMedicalItemHydrated: syncTreatmentExecDeptSelections,
+  logContext: 'ConsultationPage',
   notify: (message, level) => showToast(message, level || 'info'),
 });
-const manualMatchState = useManualMatchState();
-const {
-  getManualMatchKeyword,
-  isManualMatchOpen,
-  closeManualMatch,
-  toggleManualMatch: toggleManualMatchState,
-} = manualMatchState;
+const noopTreatmentSelector = () => {};
+const { run: runWritebackPreflight } = useClinicalResultWritebackPreflight({
+  selectedDiagnoses: computed(() => (selectedDiagnosis.value ? [selectedDiagnosis.value] : [])),
+  treatments: selectedTreatments,
+  ensureMedicineSelectable: treatmentHydration.ensureMedicineSelectable,
+  checkMedicineInventoryEnough: treatmentHydration.checkMedicineInventoryEnough,
+  hydrateMedicalItemDetail: treatmentHydration.hydrateMatchedMedicalItemDetail,
+  hasRequiredPharmacy: treatmentGates.hasRequiredPharmacy,
+  hasRequiredExecDept: treatmentGates.hasRequiredExecDept,
+  hasRequiredBodySite: treatmentGates.hasRequiredBodySite,
+  openPharmacySelector: noopTreatmentSelector,
+  openExecDeptSelector: noopTreatmentSelector,
+  openBodySiteSelector: noopTreatmentSelector,
+  notify: (message) => showToast(message, 'info'),
+});
 function normalizeTreatmentRecommendation(rec: Partial<TreatmentRecommendation>): TreatmentRecommendation {
   return treatmentNormalization.normalize(rec);
-}
-
-function confirmSuggestedMatch(rec: TreatmentRecommendation, event?: Event): void {
-  event?.stopPropagation();
-  if (!rec.suggestedMatchItem) {
-    return;
-  }
-
-  rec.originalName = rec.originalName || rec.name;
-  rec.matchedItem = { ...rec.suggestedMatchItem };
-  rec.name = rec.suggestedMatchItem.name || rec.name;
-  rec.matchStatus = 'confirmed';
-  rec.manualMatched = false;
-  rec.selected = false;
-  rec.suggestedMatchItem = undefined;
-  Object.assign(rec, normalizeTreatmentRecommendation(rec));
-  showToast(`${rec.name} 已确认标准库匹配`, 'success');
 }
 
 function getAllRecommendationItems(): TreatmentRecommendation[] {
@@ -1015,48 +956,6 @@ const hasRecordDraft = computed(
     generatedRecord.value.chiefComplaint.trim() !== '' &&
     generatedRecord.value.historyOfPresentIllness.trim() !== ''
 );
-const visibleTreatmentRecommendations = computed(() =>
-  buildVisibleTreatmentRecommendations({
-    assistFocus: assistFocus.value,
-    medicines: treatmentRecommendations.value,
-    examinations: examRecommendations.value,
-    labTests: labTestRecommendations.value,
-    procedures: procedureRecommendations.value,
-  })
-);
-const visibleOtherTreatmentRecommendations = computed(() =>
-  filterOtherTreatmentRecommendations(visibleTreatmentRecommendations.value)
-);
-const anyRecommendationLoading = computed(
-  () => treatmentLoading.value || examLoading.value || labTestLoading.value || procedureLoading.value
-);
-const showDiagnosisCard = computed(
-  () => shouldShowDiagnosisCard(currentView.value, assistFocus.value)
-);
-const showTreatmentCard = computed(
-  () => shouldShowTreatmentCard(currentView.value, assistFocus.value)
-);
-const hasPendingReferenceRequest = computed(
-  () => activeReferenceRequest.value?.status === 'pending'
-);
-const currentDiagnosisSummary = computed(
-  () =>
-    selectedDiagnosis.value?.name ||
-    readPatientText(patientInfo.value as unknown as Record<string, unknown>, ['diagnosis']) ||
-    ''
-);
-const assistFocusLabel = computed(() => getConsultationAssistLabel(assistFocus.value));
-const workflowBannerTone = computed(() =>
-  getConsultationAssistBannerTone(activeReferenceRequest.value, lastReferenceFeedback.value)
-);
-const workflowBannerText = computed(() =>
-  buildConsultationAssistBannerText({
-    assistFocus: assistFocus.value,
-    activeReferenceRequest: activeReferenceRequest.value,
-    lastReferenceFeedback: lastReferenceFeedback.value,
-  })
-);
-const workflowBannerStyle = computed(() => buildConsultationAssistBannerStyle(workflowBannerTone.value));
 
 /* DiagnosisPathWindowPhase type removed - feature commented out */
 
@@ -1069,14 +968,6 @@ const diagnosisGroups = computed<DiagnosisDisplayGroup[]>(() =>
     getCategoryInfo: (code) => medicalDataService.getIcd10CategoryInfo(code),
   })
 );
-
-const isDiagnosisGroupCollapsed = (groupKey: string) => {
-  return collapsedDiagnosisGroups.value[groupKey] ?? false;
-};
-
-const toggleDiagnosisGroup = (groupKey: string) => {
-  collapsedDiagnosisGroups.value[groupKey] = !isDiagnosisGroupCollapsed(groupKey);
-};
 
 /* emitDiagnosisPathStatus / diagnosisPathOptions removed - feature commented out */
 const getPatientAnchorId = (patient?: {
@@ -1100,11 +991,6 @@ const patientPromptProfile = computed(() => ({
 }));
 
 const {
-  recommendationSubmittingKey,
-  recommendationSubmittedMap,
-  ensureRecommendationDraft,
-  updateRecommendationDraft,
-  submitRecommendationFeedback,
   registerExternalRecommendationTarget,
 } = useVoiceFeedback({
   consultationId: computed(() => resolveConsultationId()),
@@ -1114,10 +1000,6 @@ const {
   historyOfPresentIllness: computed(() => generatedRecord.value.historyOfPresentIllness || ''),
   pastMedicalHistory: computed(() => resolvePastMedicalHistory()),
   familyHistory: computed(() => generatedRecord.value.familyHistory || ''),
-});
-const recommendationFeedbackPopover = useRecommendationFeedbackPopover({
-  ensureDraft: ensureRecommendationDraft,
-  submittedMap: recommendationSubmittedMap,
 });
 
 const setReferenceStatuses = (
@@ -1132,25 +1014,6 @@ const setReferenceStatuses = (
     entry,
   );
 };
-
-const buildCurrentMedicalPayload = (
-  extra: Record<string, unknown> = {},
-  options: BuildCurrentMedicalPayloadOptions = {}
-) => buildSymptomCurrentMedicalPayload({
-    consultationId: resolveConsultationId(),
-    chiefComplaint: generatedRecord.value.chiefComplaint,
-    historyOfPresentIllness: generatedRecord.value.historyOfPresentIllness,
-    pastMedicalHistory: resolvePastMedicalHistory(),
-    selectedDiagnosis: selectedDiagnosis.value,
-    patient: patientInfo.value,
-    medicines: treatmentRecommendations.value,
-    examinations: examRecommendations.value,
-    labTests: labTestRecommendations.value,
-    procedures: procedureRecommendations.value,
-    resolveMedicalItemClientId: getMatchedMedicalItemClientId,
-    extra,
-    options,
-  });
 
 const buildSmartUserLogSnapshot = () => buildSymptomSmartUserLogSnapshot({
   chiefComplaint: generatedRecord.value.chiefComplaint,
@@ -1292,7 +1155,6 @@ const {
   searchKnowledgeByDiagnoses,
   searchKnowledgeByTreatment,
   searchKnowledgeFromItems,
-  searchKnowledgeForItem,
 } = useKnowledgeSearchController({
   isConfigured: isPMPHAIConfigured,
   searchByCategories: (diagnoses, medications, examinations, options) =>
@@ -1450,12 +1312,6 @@ const applyReferenceFeedback = (payload: ReferenceFeedbackPayload) => {
 
 /* writeRecordToHIS / confirmDiagnosisSelection removed - template usage commented out */
 
-const getMedicineInlineSummary = (rec: TreatmentRecommendation): string =>
-  buildMedicineInlineSummary({
-    recommendation: rec,
-    normalize: normalizeTreatmentRecommendation,
-  });
-
 function getDiagnosisFeedbackKey(diag: Diagnosis): string {
   return getDiagnosisRecommendationFeedbackKey(diag);
 }
@@ -1464,201 +1320,7 @@ function getTreatmentFeedbackKey(rec: TreatmentRecommendation): string {
   return getTreatmentRecommendationFeedbackKey(rec);
 }
 
-function getRecommendationDraft(recommendationKey: string): VoiceRecommendationFeedbackDraft {
-  return recommendationFeedbackPopover.getDraft(recommendationKey);
-}
-
-function getRecommendationSubmittedLabel(recommendationKey: string): string {
-  return recommendationFeedbackPopover.getSubmittedLabel(recommendationKey);
-}
-
-function isRecommendationFeedbackOpen(recommendationKey: string): boolean {
-  return recommendationFeedbackPopover.isOpen(recommendationKey);
-}
-
-function toggleRecommendationFeedback(recommendationKey: string, event?: Event): void {
-  recommendationFeedbackPopover.toggle(recommendationKey, event);
-}
-
-function isDiagnosisFeedbackSelected(diag: Diagnosis): boolean {
-  const isSelected =
-    (selectedDiagnosis.value?.id && diag.id && selectedDiagnosis.value.id === diag.id)
-    || (selectedDiagnosis.value?.name === diag.name && selectedDiagnosis.value?.code === diag.code);
-  return isSelected;
-}
-
-async function handleDiagnosisFeedbackSubmit(diag: Diagnosis, draft: VoiceRecommendationFeedbackDraft): Promise<void> {
-  const isSelected = isDiagnosisFeedbackSelected(diag);
-  try {
-    await submitRecommendationFeedback(buildDiagnosisRecommendationFeedbackSubmitPayload(diag, draft, {
-      selected: isSelected,
-      primary: isSelected,
-    }));
-    recommendationFeedbackPopover.close();
-    showToast?.('诊断反馈已记录', 'success');
-  } catch (error) {
-    showToast?.(formatUserFacingError(error, {
-      context: '提交反馈失败',
-      fallback: '请稍后重试。',
-    }), 'error');
-  }
-}
-
-async function handleTreatmentFeedbackSubmit(rec: TreatmentRecommendation, draft: VoiceRecommendationFeedbackDraft): Promise<void> {
-  try {
-    await submitRecommendationFeedback(buildTreatmentRecommendationFeedbackSubmitPayload(rec, draft));
-    recommendationFeedbackPopover.close();
-    showToast?.('推荐反馈已记录', 'success');
-  } catch (error) {
-    showToast?.(formatUserFacingError(error, {
-      context: '提交反馈失败',
-      fallback: '请稍后重试。',
-    }), 'error');
-  }
-}
-
-const isPendingReferenceItem = (
-  action: ReferenceAction,
-  item: { name: string; code?: string }
-): boolean => isPendingReferenceItemInRequest(activeReferenceRequest.value, action, item);
-
-const getDiagnosisReferenceButtonLabel = (diagnosis: Diagnosis): string => {
-  const status = getDiagnosisReferenceStatus(diagnosis)?.status;
-  return getSymptomDiagnosisReferenceButtonLabel({
-    status,
-    pending: isPendingReferenceItem('diagnosis', { name: diagnosis.name, code: diagnosis.code }),
-  });
-};
-
-const getDiagRateClass = getDiagnosisRateClass;
-
-const isDiagnosisReferenceDisabled = (diagnosis: Diagnosis): boolean => {
-  const status = getDiagnosisReferenceStatus(diagnosis)?.status;
-  return isSymptomDiagnosisReferenceDisabled({
-    status,
-    hasPendingReferenceRequest: hasPendingReferenceRequest.value,
-  });
-};
-
-const getTreatmentReferenceAction = (
-  recommendation: TreatmentRecommendation
-): Exclude<ReferenceAction, 'diagnosis'> | null =>
-  mapTreatmentTypeToReferenceAction(recommendation.type);
-
 /* getTreatmentReferenceButtonLabel removed - per-section reference replaced by batch 一键回写 */
-
-const getReferenceStatusLabel = (status: ReferenceLifecycleStatus): string =>
-  getSymptomReferenceStatusLabel(status);
-
-const getDiagnosisReferenceStatus = (diagnosis: Diagnosis): ReferenceStatusEntry | null =>
-  getReferenceStatusFromMap(referenceStatusMap.value, 'diagnosis', {
-    name: diagnosis.name,
-    code: diagnosis.code,
-  });
-
-const getTreatmentReferenceStatus = (
-  recommendation: TreatmentRecommendation
-): ReferenceStatusEntry | null => {
-  const action = getTreatmentReferenceAction(recommendation);
-  if (!action) {
-    return null;
-  }
-
-  return getReferenceStatusFromMap(referenceStatusMap.value, action, {
-    name: recommendation.name,
-    code: recommendation.matchedItem?.code,
-  });
-};
-
-const requestReferenceToPHIS = async (
-  action: ReferenceAction,
-  items: ReferenceItemPayload[]
-) => {
-  if (items.length === 0) {
-    showToast('当前没有可引用的项目。', 'info');
-    return;
-  }
-
-  const existingSuccess = areAllReferenceItemsSuccessful(
-    referenceStatusMap.value,
-    action,
-    items,
-  );
-  if (existingSuccess) {
-    showToast('这些项目已经成功引用到 PHIS，无需重复操作。', 'info');
-    return;
-  }
-
-  const requestId = `ref-${action}-${Date.now()}`;
-  const payload = buildCurrentMedicalPayload(
-    {
-      resultType: 'reference-request',
-      requestId,
-      referenceType: action,
-      action,
-      referenceStatus: 'pending',
-      referenceMessage: '等待 PHIS 保存引用结果',
-      referenceItems: items,
-    },
-    {
-      includeTreatments: action === 'batch' || action !== 'diagnosis',
-      includedTreatmentTypes:
-        action === 'batch'
-          ? undefined
-          : action === 'medication'
-            ? ['medicine']
-            : action === 'examination'
-              ? ['exam']
-              : action === 'lab_test'
-                ? ['lab_test']
-                : action === 'procedure'
-                  ? ['procedure']
-                  : undefined,
-    }
-  );
-
-  try {
-    await invoke('complete_consultation', { result: payload });
-    setReferenceStatuses(action, items, buildPendingReferenceStatusEntry(requestId));
-    activeReferenceRequest.value = buildReferenceRequestPayload({
-      consultationId: resolveConsultationId(),
-      requestId,
-      action,
-      items,
-    });
-    feedbackService.logOperation({
-      module: 'consultation',
-      action: `request_phis_reference_${action}`,
-      title: '发起 PHIS 引用请求',
-      sourceModule: 'consultation_reference',
-      scene: 'consultation-reference',
-      operationType: 'form_submit',
-      operationName: `request_reference:${action}`,
-      details: activeReferenceRequest.value,
-      success: true,
-    });
-    showToast('已发起引用请求，等待 PHIS 回执。', 'info');
-  } catch (error) {
-    console.error('[ConsultationPage] Failed to request PHIS reference:', error);
-    trackError('request_reference_failed', error, { action });
-    showToast(formatUserFacingError(error, {
-      context: '发起引用失败',
-      fallback: '请稍后重试。',
-    }), 'error');
-  }
-};
-
-const referenceDiagnosisItemToPHIS = async (diagnosis: Diagnosis) => {
-  handleDiagnosisSelect(diagnosis);
-  await requestReferenceToPHIS('diagnosis', [
-    {
-      name: diagnosis.name,
-      code: diagnosis.code,
-      type: 'diagnosis',
-      isTCM: diagnosis.isTCM,
-    },
-  ]);
-};
 
 /* referenceSelectedTreatmentsToPHIS removed - per-section reference replaced by batch 一键回写 */
 
@@ -1691,50 +1353,9 @@ const symptomOrderResolvers: OrderItemResolvers = {
   getServiceCode: (rec) => (rec.matchedItem?.sdSrv || readFirstString(getMatchedItemRaw(rec), ['sdSrv']) || '').trim(),
   getServiceId: (rec) => getMatchedOrderServiceId(rec),
   getServiceName: (rec) => (rec.matchedItem?.naSrv || readFirstString(getMatchedItemRaw(rec), ['naSrv', 'naCli', 'naMedPro', 'naMed']) || rec.matchedItem?.name || rec.name || '').trim(),
-  getExecDeptId: (rec) => (rec.matchedItem?.idDeptExec || readFirstString(getMatchedItemRaw(rec), ['idDeptExec', 'idDept']) || '').trim(),
-  getPartId: (rec) => (rec.matchedItem?.idPart || readFirstString(getMatchedItemRaw(rec), ['idPart']) || '').trim(),
+  getExecDeptId: (rec) => (rec.execDept || rec.matchedItem?.idDeptExec || readFirstString(getMatchedItemRaw(rec), ['idDeptExec', 'idDept']) || '').trim(),
+  getPartId: (rec) => (rec.bodySiteId || rec.matchedItem?.idPart || readFirstString(getMatchedItemRaw(rec), ['idPart']) || '').trim(),
   getJsonField: (rec) => (rec.matchedItem?.jsonField || readFirstString(getMatchedItemRaw(rec), ['jsonField']) || '').trim(),
-};
-
-const getSelectedTreatments = (): TreatmentRecommendation[] =>
-  buildSelectedTreatments({
-    medicines: treatmentRecommendations.value,
-    examinations: examRecommendations.value,
-    labTests: labTestRecommendations.value,
-    procedures: procedureRecommendations.value,
-  });
-
-const ensureSelectedTreatmentsReadyForSubmit = async (selectedTreatments: TreatmentRecommendation[]): Promise<boolean> => {
-  const missingPharmacy = selectedTreatments.find((item) => !treatmentGates.hasRequiredPharmacy(item));
-  if (missingPharmacy) {
-    showToast(`${missingPharmacy.name} 当前发药药房不可用，请选择实际拥有该药品的药房后再提交`, 'info');
-    return false;
-  }
-
-  const missingExecDept = selectedTreatments.find((item) => !treatmentGates.hasRequiredExecDept(item));
-  if (missingExecDept) {
-    showToast(`${missingExecDept.name} 未设置执行科室，请先设置后再提交`, 'info');
-    return false;
-  }
-
-  const medicinesReady = await Promise.all(selectedTreatments
-    .filter((item) => item.type === 'medicine')
-    .map((item) => treatmentHydration.ensureMedicineSelectable(item, true)));
-  if (medicinesReady.some((ready) => !ready)) {
-    showToast('存在当前药房无有效详情的药品，请取消选择后再提交', 'info');
-    return false;
-  }
-
-  const selectedMedicines = selectedTreatments.filter((item) => item.type === 'medicine');
-  const medicineInventoriesReady = await Promise.all(selectedMedicines
-    .map((item) => treatmentHydration.checkMedicineInventoryEnough(item, false)));
-  const inventoryBlockedItems = selectedMedicines.filter((_, index) => !medicineInventoriesReady[index]);
-  if (inventoryBlockedItems.length > 0) {
-    showToast(buildInventoryBlockedSubmitMessage(inventoryBlockedItems), 'info');
-    return false;
-  }
-
-  return true;
 };
 
 const submitToHIS = async () => {
@@ -1749,24 +1370,20 @@ const submitToHIS = async () => {
 
   const requestId = `record-confirmed-${Date.now()}`;
   const consultationId = resolveConsultationId();
-  const selectedTreatments = getSelectedTreatments();
+  const treatmentPreflight = await runWritebackPreflight();
 
-  if (selectedDiagnosis.value && !getStandardDiagnosisId(selectedDiagnosis.value)) {
-    showToast(`${selectedDiagnosis.value.name} 未匹配标准诊断库，请先切换为标准诊断后再提交`, 'info');
+  if (!treatmentPreflight.ready) {
     return;
   }
 
-  if (!(await ensureSelectedTreatmentsReadyForSubmit(selectedTreatments))) {
-    return;
-  }
-
+  const selectedTreatmentsForSubmit = treatmentPreflight.selected;
   const diagList = buildSharedDiagList({
     selectedDiagnoses: selectedDiagnosis.value ? [selectedDiagnosis.value] : [],
     primaryDiagnosis: selectedDiagnosis.value,
     patientTetId: (patientInfo.value as unknown as { idTet?: string }).idTet || '',
   });
-  const orderList = selectedTreatments.map((item) => buildSharedOrderListItem(item, symptomOrderResolvers));
-  const treatmentPlan = buildTreatmentPlanSummary(selectedTreatments);
+  const orderList = selectedTreatmentsForSubmit.map((item) => buildSharedOrderListItem(item, symptomOrderResolvers));
+  const treatmentPlan = buildTreatmentPlanSummary(selectedTreatmentsForSubmit);
 
   const result = buildRecordConfirmedPayload({
     consultationId,
@@ -1818,16 +1435,6 @@ const handleAbandonConsultation = () => {
 
 useOutsideInteraction({
   targets: [
-    {
-      isActive: activeReasonTooltipKey,
-      selectors: ['.reason-tooltip-trigger'],
-      onOutside: closeReasonTooltip,
-    },
-    {
-      isActive: () => Boolean(recommendationFeedbackPopover.activeKey.value),
-      selectors: ['.voice-feedback-anchor'],
-      onOutside: recommendationFeedbackPopover.close,
-    },
     {
       isActive: isCategoryDropdownOpen,
       elements: [categoryFilterRef],
@@ -1928,11 +1535,6 @@ const searchKnowledgeForRecommendations = async () => {
     treatments: treatmentRecommendations.value,
     action: 'knowledge_search_all',
   });
-};
-
-// Search literature for a specific item (diagnosis or treatment)
-const searchLiterature = (item: any) => {
-  searchKnowledgeForItem({ item });
 };
 
 const handleEndConsultation = async () => {
@@ -2216,65 +1818,6 @@ const performTreatmentFactCheck = async (treatments: TreatmentRecommendation[]) 
       console.error(`Failed to fact check treatment: ${treatment.name}`, error);
     },
   });
-};
-
-const getIssueForDiagnosis = (diagCode: string): FactCheckIssue | undefined => {
-  const check = diagnosisFactChecks.value.get(diagCode);
-  if (!check || !check.hasIssues || check.issues.length === 0) return undefined;
-  return check.issues[0]; // Return first issue
-};
-
-const getIssueForTreatment = (treatmentName: string): FactCheckIssue | undefined => {
-  const check = treatmentFactChecks.value.get(treatmentName);
-  if (!check || !check.hasIssues || check.issues.length === 0) return undefined;
-  return check.issues[0]; // Return first issue
-};
-
-const getRelatedDiagnosisCandidates = (diag: Diagnosis): DiagnosisItem[] =>
-  resolveRelatedDiagnosisCandidates<DiagnosisItem>({
-    diagnosis: diag,
-    getRelatedDiagnoses: (code) => medicalDataService.getRelatedDiagnoses(code),
-    getRelatedTCMDiagnoses: (code) => medicalDataService.getRelatedTCMDiagnoses(code),
-  });
-
-const relatedDiagnosisDropdown = useRelatedDiagnosisDropdown<DiagnosisItem>({
-  getDiagnosisKey: (diag) => diag.id || diag.code,
-  getCandidates: getRelatedDiagnosisCandidates,
-});
-const {
-  completeRelatedSwap,
-  getRelatedDropdownCandidates,
-  isRelatedDropdownOpen,
-  toggleRelatedDropdown,
-} = relatedDiagnosisDropdown;
-
-const swapDiagnosis = (originalDiag: Diagnosis, newItem: { id?: string; code: string; name: string }) => {
-  trackRecommendationAction('diagnosis', originalDiag.id || originalDiag.code, 'modified', {
-    originalValue: originalDiag.name,
-    modifiedValue: newItem.name,
-  });
-  const result = buildDiagnosisSwap({
-    diagnoses: aiDiagnoses.value,
-    selectedDiagnosis: selectedDiagnosis.value,
-    originalDiagnosis: originalDiag,
-    replacement: newItem,
-    getDiagnosisIdentity,
-  });
-
-  if (result.updated) {
-    aiDiagnoses.value = result.diagnoses;
-    selectedDiagnosis.value = result.selectedDiagnosis || null;
-  }
-  
-  completeRelatedSwap();
-};
-
-const handleDiagnosisSelect = (diag: Diagnosis) => {
-  trackClick('diagnosis_select', { diagnosisName: diag.name, diagnosisCode: diag.code, hasId: !!diag.id });
-  selectedDiagnosis.value = diag;
-
-  relatedDiagnoses.value = getRelatedDiagnosisCandidates(diag);
-  isRelatedOpen.value = false;
 };
 
 const fetchTreatmentRecommendation = async () => {
@@ -2633,123 +2176,6 @@ const fetchAllRecommendations = async () => {
   syncTreatmentExecDeptSelections();
 };
 
-const toggleTreatmentSelection = async (item: TreatmentRecommendation) => {
-  if (!item) return;
-
-  const nextSelected = !item.selected;
-  if (nextSelected) {
-    if (!treatmentGates.hasRequiredPharmacy(item)) {
-      showToast('请先选择发药药房后再勾选该药品', 'info');
-      return;
-    }
-    if (!treatmentGates.hasRequiredExecDept(item)) {
-      showToast('请先设置执行科室后再勾选该项目', 'info');
-      return;
-    }
-    // 药品：先在候选药房中轮询拉取详情；任一药房返回有效详情即应用并通过
-    if (item.type === 'medicine' && !(await treatmentHydration.ensureMedicineSelectable(item, true))) {
-      return;
-    }
-    // 药品：库存校验失败则保留 warning 并阻止勾选
-    if (item.type === 'medicine' && !(await treatmentHydration.checkMedicineInventoryEnough(item, true))) {
-      return;
-    }
-  } else {
-    treatmentHydration.clearMedicineInventoryWarning(item);
-  }
-
-  item.selected = nextSelected;
-
-  // 勾选后按 HIS 默认值重新归一化（用法/频次/总量等可能因详情拉取而更新）
-  if (item.selected && item.type === 'medicine') {
-    Object.assign(item, normalizeTreatmentRecommendation(item));
-  }
-
-  trackClick('treatment_toggle', {
-    treatmentName: item.name,
-    type: item.type,
-    selected: item.selected,
-  });
-};
-
-// === 发药药房 / 执行科室 chip 选择器 ===
-function getPharmacyChipOptions(rec: TreatmentRecommendation): AttrOption[] {
-  return treatmentGates.pharmacyCandidatesFor(rec).map((pharmacy) => ({
-    key: (pharmacy.idSto || '').trim(),
-    text: pharmacy.name || pharmacy.idSto || '',
-    meta: pharmacy.idSto || '',
-  }));
-}
-
-function getExecDeptChipOptions(): AttrOption[] {
-  return treatmentGates.execDeptCandidates.value.map((option) => ({
-    key: option.key,
-    text: option.text,
-    meta: option.key !== option.text ? option.key : '',
-  }));
-}
-
-function onPharmacySelect(rec: TreatmentRecommendation, option: AttrOption): void {
-  if ((rec.pharmacy || '').trim() === option.text) return;
-  rec.pharmacy = option.text;
-  // 切换药房后既有的库存告警与详情缓存已失效；强制下次 toggle 时重新轮询。
-  treatmentHydration.clearMedicineInventoryWarning(rec);
-  const raw = getMatchedItemRaw(rec);
-  if (raw && (raw as Record<string, unknown>).__medicineDetailLoaded === true) {
-    rec.matchedItem = {
-      ...(rec.matchedItem as any),
-      raw: { ...raw, __medicineDetailLoaded: false },
-    };
-  }
-  // 已勾选药品改了药房，需要先取消勾选避免 stale 状态
-  if (rec.selected) rec.selected = false;
-  showToast(`${rec.name} 发药药房已设置为 ${option.text}`, 'success');
-}
-
-function onExecDeptSelect(rec: TreatmentRecommendation, option: AttrOption): void {
-  rec.execDept = option.key;
-  showToast(`${rec.name} 执行科室已设置为 ${option.text}`, 'success');
-}
-
-// 药品 hydration / 库存状态：在 chip 上展示"检测中"或"库存不足"标签（持久化，便于医生定位）
-function getMedicineHydrationStatus(rec: TreatmentRecommendation): { kind: 'checking' | 'warning'; message?: string } | null {
-  if (rec.type !== 'medicine') return null;
-  if (treatmentHydration.isMedicineInventoryChecking(rec)) {
-    return { kind: 'checking', message: '正在校验药品详情与库存…' };
-  }
-  const warning = treatmentHydration.getMedicineInventoryWarning(rec);
-  if (warning) return { kind: 'warning', message: warning };
-  return null;
-}
-
-function toggleManualMatch(rec: TreatmentRecommendation, event?: Event): void {
-  event?.stopPropagation();
-  closeReasonTooltipIfOpen();
-  toggleManualMatchState(rec);
-}
-
-function getManualMatchPickerCandidates(rec: TreatmentRecommendation): ManualMatchCandidate[] {
-  return findManualMatchCandidates(rec, getManualMatchKeyword(rec))
-    .map(toManualMatchCandidateView);
-}
-
-function applyManualMatchSelection(rec: TreatmentRecommendation, candidate: ManualMatchCandidate): void {
-  const pickedRaw = findManualMatchCandidates(rec, getManualMatchKeyword(rec))
-    .find((item) => item.id === candidate.id);
-
-  if (!pickedRaw) {
-    return;
-  }
-
-  if (!applyManualMatchCandidate(rec, pickedRaw)) {
-    return;
-  }
-
-  Object.assign(rec, normalizeTreatmentRecommendation(rec));
-  closeManualMatch();
-  showToast(`${pickedRaw.name} 已完成标准库匹配`, 'success');
-}
-
 const consultationAssistController = useConsultationAssistController({
   assistFocus,
   aiDiagnoses,
@@ -2879,77 +2305,6 @@ const generateMedicalRecord = () => {
   });
 };
 
-const copyToClipboard = () => {
-  trackClick('copy_to_clipboard');
-  const text = `主诉：${generatedRecord.value.chiefComplaint}\n现病史：\n${generatedRecord.value.historyOfPresentIllness}`;
-  navigator.clipboard.writeText(text).then(() => {
-    showToast('已复制到剪贴板', 'success');
-  });
-};
-
-const removedSymptomRecordViewSymbols = [
-  FactCheckHighlight,
-  DiagnosisRecommendationCard,
-  TreatmentRecommendationCard,
-  TreatmentItemEditor,
-  ManualMatchPicker,
-  RecAttributeChip,
-  medRecordDetails,
-  hasProbableMatch,
-  getSuggestedMatchName,
-  getTreatmentMatchLabel,
-  getTreatmentOriginalName,
-  confirmSuggestedMatch,
-  visibleOtherTreatmentRecommendations,
-  anyRecommendationLoading,
-  showDiagnosisCard,
-  showTreatmentCard,
-  currentDiagnosisSummary,
-  assistFocusLabel,
-  workflowBannerText,
-  workflowBannerStyle,
-  toggleDiagnosisGroup,
-  recommendationSubmittingKey,
-  updateRecommendationDraft,
-  getTreatmentTagLabel,
-  getTreatmentSpec,
-  getMedicineInlineSummary,
-  getReasonTooltipKey,
-  toggleReasonTooltip,
-  getRecommendationDraft,
-  getRecommendationSubmittedLabel,
-  isRecommendationFeedbackOpen,
-  toggleRecommendationFeedback,
-  handleDiagnosisFeedbackSubmit,
-  handleTreatmentFeedbackSubmit,
-  getDiagnosisReferenceButtonLabel,
-  getDiagRateClass,
-  isDiagnosisReferenceDisabled,
-  getReferenceStatusLabel,
-  getTreatmentReferenceStatus,
-  referenceDiagnosisItemToPHIS,
-  searchLiterature,
-  getIssueForDiagnosis,
-  getIssueForTreatment,
-  getRelatedDropdownCandidates,
-  isRelatedDropdownOpen,
-  toggleRelatedDropdown,
-  swapDiagnosis,
-  toggleTreatmentSelection,
-  getMedicineHydrationStatus,
-  isManualMatchOpen,
-  toggleManualMatch,
-  getManualMatchPickerCandidates,
-  applyManualMatchSelection,
-  getPharmacyChipOptions,
-  getExecDeptChipOptions,
-  onPharmacySelect,
-  onExecDeptSelect,
-  canSubmitToHIS,
-  copyToClipboard,
-];
-
-void removedSymptomRecordViewSymbols;
 
 
 

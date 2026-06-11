@@ -45,12 +45,12 @@ const ASSIST_LABEL_BY_ACTION: Record<ConsultationAssistAction, string> = {
 
 const ASSIST_BANNER_TEXT_BY_ACTION: Record<ConsultationAssistAction, string> = {
   record: '检测到 HIS 已有主诉与现病史，已直接进入病历详情页。',
-  diagnosis: '请确认诊断；点击“确认诊断”只记录日志，点击“引用诊断”才会写回 PHIS。',
+  diagnosis: '请确认诊断；最终提交请使用结果页底部的一键回写，并等待 PHIS 回执。',
   differential: '鉴别排查的确认结果只记录日志，不会改写现病史。',
-  medication: '请勾选要引用的用药方案，发起引用后会等待 PHIS 回执。',
-  examination: '请勾选要引用的检查项目，发起引用后会等待 PHIS 回执。',
-  lab_test: '请勾选要引用的检验项目，发起引用后会等待 PHIS 回执。',
-  procedure: '请勾选要引用的处置项目，发起引用后会等待 PHIS 回执。',
+  medication: '请勾选要回写的用药方案，点击一键回写后等待 PHIS 回执。',
+  examination: '请勾选要回写的检查项目，点击一键回写后等待 PHIS 回执。',
+  lab_test: '请勾选要回写的检验项目，点击一键回写后等待 PHIS 回执。',
+  procedure: '请勾选要回写的处置项目，点击一键回写后等待 PHIS 回执。',
   treatment_plan: '请在独立诊疗方案页勾选项目，一键回写后等待 PHIS 回执。',
   reminder: '风险提醒已同步，可结合当前病历继续处理。',
 };

@@ -1,6 +1,6 @@
 # MedHermes HIS 接入指南 / 接口说明
 
-> 最后更新: 2026-06-01
+> 最后更新: 2026-06-09
 >
 > 本文档面向准备接入 `MedHermes` 的 HIS / 医生站 / PHIS 项目。
 > 当前真实运行契约以 `src-tauri/src/http_server.rs` 与当前前端实现为准；`docs/regionalization/*.md` 仍属于规划文档，不能替代本文档。
@@ -12,7 +12,7 @@
 1. HIS 应该按什么顺序接入 `MedHermes`
 2. 当前本地 HTTP Bridge 暴露了哪些接口
 3. 各接口的请求字段、响应字段、异常场景是什么
-4. 推荐诊断 / 用药 / 检查 / 独立诊疗方案的“引用请求 -> PHIS 保存 -> 回执 MedHermes”闭环应该怎么做
+4. 推荐诊断 / 用药 / 检查 / 独立诊疗方案的最终回写、历史/单项引用与 PHIS 回执闭环应该怎么做
 
 ## 2. 当前接入形态
 
@@ -54,7 +54,7 @@
 1. HIS 在当前患者上下文下调用 `POST /api/consultation/assist`
 2. 指定 `action` 为 `record / suggestedDx / diffDx / medication / examination / lab_test / procedure / treatment_plan / reminder`；历史 `diagnosis / differential` 继续兼容
 3. 继续通过 SDK 事件订阅接收 `draft / record-confirmed / reference-request / reference-feedback` 等事件
-4. 如果收到 `reference-request`，说明医生在 `MedHermes` 内点击了“引用”
+4. 如果收到 `record-confirmed`，说明医生发起了最终一键回写；如果收到 `reference-request`，说明医生在历史或单项入口发起了引用；两者处理完成后都需要通过 `reference-feedback` 回执
 
 适用场景：
 
@@ -87,17 +87,17 @@
 - 住院出入院记录、病程记录等病历模板已有 HTML 结构
 - HIS 希望 `MedHermes` 利用 PHIS 住院登记、诊断、医嘱、体温单等业务数据生成可审核草稿
 
-### 第三步: 打通 PHIS 引用闭环
+### 第三步: 打通 PHIS 回写与引用回执闭环
 
-1. HIS / PHIS 轮询到 `reference-request`
-2. 读取其中的 `requestId`、`action`、`referenceItems`
-3. 在 HIS / PHIS 内完成保存
-4. 保存成功或失败后，**必须**调用 `POST /api/consultation/reference-feedback`
+1. HIS / PHIS 轮询到 `record-confirmed` 或 `reference-request`
+2. 收到 `record-confirmed` 时，读取 `requestId`、`diagList`、`orderList` 与 `referenceType/action = batch`，按 PHIS 调入确认格式一次性处理整张病历
+3. 收到 `reference-request` 时，读取 `requestId`、`action/referenceType`、`referenceItems`，按引用对象类型处理历史或单项引用
+4. 处理成功或失败后，**必须**调用 `POST /api/consultation/reference-feedback`
 5. `MedHermes` 收到回执后会更新当前页面状态，并通过 WebSocket 事件流推送 `reference-feedback`；长轮询接口同步保留兜底读取能力
 
 这是当前联调最关键的一步，也是推荐诊断 / 用药 / 检查 / 独立诊疗方案真正写入 HIS 的闭环。
 
-**重要：回执是强制要求的。** 当医生点击"一键回写"时，`MedHermes` 会发出**一条** `reference-request`（`referenceType` 为 `batch`），其 `referenceItems` 包含诊断、药品、检查、检验、处置等所有选中项目。PHIS 收到后应一次性处理全部项目，处理完成后**必须**调用回执接口。
+**重要：回执是强制要求的。** 当前医生点击“一键回写”时，`MedHermes` 会发出**一条** `record-confirmed`（`referenceType/action` 为 `batch`），其中 `diagList` 承载标准诊断，`orderList` 承载药品、检查、检验、处置等全部选中医嘱。PHIS 收到后应一次性处理整张病历，处理完成后**必须**调用回执接口。`reference-request` 仅保留给历史引用或单项引用场景，不再作为当前一键回写的主契约。
 
 ## 4. 标准字段与映射规则
 
@@ -159,27 +159,27 @@
 2. `MedHermes` 直接进入对应辅助界面：单项推荐仍落到 `ConsultationPage` 灵活模式，`treatment_plan` 落到独立诊疗方案推荐页
 3. 医生在当前界面中继续补充病历、看推荐、勾选方案并发起回写
 4. HIS 持续轮询 `GET /api/consultation/events/poll`
-5. 如果收到 `reference-request`，进入 PHIS 引用处理
+5. 如果收到 `record-confirmed`，进入 PHIS 最终调入确认；如果收到 `reference-request`，进入历史/单项 PHIS 引用处理
 
-### 5.3 引用闭环时序（一键回写）
+### 5.3 最终回写闭环时序（一键回写）
 
-医生点击”一键回写”后，`MedHermes` 会发出**一条** `reference-request`，`referenceType` 为 `batch`，`referenceItems` 包含所有选中项目（诊断 + 药品 + 检查 + 检验 + 处置）：
+医生点击“一键回写”后，`MedHermes` 会发出**一条** `record-confirmed`，`referenceType/action` 为 `batch`，`diagList` 包含标准诊断，`orderList` 包含所有选中医嘱（药品 + 检查 + 检验 + 处置）：
 
-1. `MedHermes` 发出 `reference-request`（`referenceType: “batch”`），`referenceItems` 包含全部选中项
-2. PHIS 轮询到该请求，遍历 `referenceItems`，按每项的 `type` 字段分类处理并保存
+1. `MedHermes` 发出 `record-confirmed`（`referenceType/action: "batch"`），`diagList/orderList` 包含全部可回写内容
+2. PHIS 轮询到该结果，按 `diagList` 处理诊断，按 `orderList` 的 `sdSrv/idSrv/idDeptExec/idPart/jsonField` 等字段填充调入确认
 3. PHIS **必须**调用 `POST /api/consultation/reference-feedback` 回执
-4. `MedHermes` 收到回执，页面更新全部项目状态
-
-每个 `referenceItems` 条目自带 `type` 字段（`diagnosis` / `medication` / `examination` / `lab_test` / `procedure`），PHIS 据此判断每项应写入哪个业务模块。
+4. `MedHermes` 收到回执，页面更新最终回写状态
 
 ```text
 PHIS                                MedHermes
  |                                       |
- |  <-- GET /api/consultation/events/poll (reference-request, batch)
- |  遍历 referenceItems 按 type 分类保存   |
+ |  <-- GET /api/consultation/events/poll (record-confirmed, batch)
+ |  读取 diagList/orderList 完成调入确认   |
  |  POST /reference-feedback (success) -->|
  |                                       |  回写完成
 ```
+
+`reference-request` 仍可能出现在历史兼容或单项引用场景，例如 `referenceType: "diagnosis"` 的诊断引用；它不再是当前一键回写主链路。
 
 ### 5.4 联调日志与 traceId
 
@@ -388,7 +388,7 @@ http://127.0.0.1:8081/api/consultation/assist
 6. `diffDx` 与 `treatment_plan` 要求请求体或当前接诊上下文中已存在 `chiefComplaint`、`historyOfPresentIllness` 与 `diagnosis`；诊断会先按标准诊断库匹配。`treatment_plan` 若无法匹配标准诊断，页面会提示医生不能一键回写诊断。
 7. `suggestedDx` 要求已有 `chiefComplaint` 与 `historyOfPresentIllness`，**不要传 `diagnosis`**；如果 HIS 已有当前诊断并希望基于它做鉴别，请使用 `diffDx`。
 8. 当前一个 `action` 只负责自动触发一个目标模块，不代表本次问诊到此结束。
-9. `examination`、`lab_test`、`procedure` 三路推荐独立加载，各自有独立的 loading 状态和引用闭环；`treatment_plan` 会聚合用药、检查、检验、处置四路推荐，并通过 `record-confirmed` 的 `diagList/orderList` 统一回写。
+9. `examination`、`lab_test`、`procedure` 三路推荐独立加载，各自有独立的 loading 状态和回写 / 引用闭环；`treatment_plan` 会聚合用药、检查、检验、处置四路推荐，并通过 `record-confirmed` 的 `diagList/orderList` 统一回写。
 10. 区域化模式下，桌面端在接诊上下文校验通过并准备打开目标辅助界面时即上报一次功能调用事件：`suggestedDx/diagnosis` 计入 AI推荐诊断，`diffDx/differential` 计入 AI诊断鉴别，`medication` 计入 AI推荐用药，`examination` 计入 AI推荐检查，`lab_test` 计入 AI推荐检验，`procedure` 计入 AI推荐处置，`treatment_plan` 计入 AI推荐治疗方案。同一就诊再次显式触发同一辅助入口按新调用计数；统计分析以 `/v1/client/feature-events/batch` 入库事件为事实源，后续 AI 生成和回写只用于审计、日志或结果闭环，不重复拆分计数。
 
 #### 单独诊断推荐调用 `action: "suggestedDx"`
@@ -1082,7 +1082,9 @@ ws://127.0.0.1:8081/api/consultation/events/ws
 | `idPart` | String | 部位 ID，仅目录有该元数据时返回 |
 | `jsonField` | String | 检验附加 JSON，常见为 `idLisCategory`、`fgCombination` 等组合信息 |
 
-#### 成功响应: 引用请求（一键回写 batch）
+#### 成功响应: 引用请求（历史/单项引用）
+
+> 当前一键回写主链路使用上方 `record-confirmed` 契约；`reference-request` 仅保留给历史兼容或单项引用场景。若 `referenceType` 为 `batch`，仍按旧批量引用结构处理，但新接入不应再把它作为一键回写主路径。
 
 ```json
 {
@@ -1242,7 +1244,7 @@ HTTP 状态码：`200`
 | `event.id` | 事件唯一标识，建议 HIS 用它做幂等去重 |
 | `event.type` | 当前事件类型，通常与 `event.payload.resultType` 一致 |
 | `event.consultationId` | 当前结果/回执锚点，优先等于 `idVis / visitId`，缺失时回退到 `idPi / patientId` |
-| `event.requestId` | 请求 ID；草稿和引用闭环都通过该字段关联后续处理 |
+| `event.requestId` | 请求 ID；草稿、最终回写和引用闭环都通过该字段关联后续处理 |
 | `event.timestamp` | 本条事件生成时间戳 |
 | `event.terminal` | 当前事件是否已到终态；`reference-request` 和 `referenceStatus = pending` 的 `record-confirmed` 都会返回 `false` |
 | `event.payload` | 当前事件的规范化业务 payload |
@@ -1256,9 +1258,10 @@ HIS 处理建议：
 1. 必须先校验 `event.consultationId` 是否匹配当前患者。
 2. 建议优先按 `event.id` 做去重；如果 HIS 需要自定义幂等键，可退化到 `event.consultationId + event.requestId + event.type + event.timestamp`。
 3. 判断“这是一条什么回执”时，建议优先看 `event.type + event.payload.referenceType`：
-   - `reference-request + batch` = 一键回写请求，`referenceItems` 包含所有类型项目，按每项 `type` 分类处理
+   - `record-confirmed + batch` = 当前一键回写请求，读取 `diagList/orderList` 完成 PHIS 调入确认
+   - `reference-request + batch` = 旧批量引用请求，`referenceItems` 包含所有类型项目，按每项 `type` 分类处理
    - `reference-request + diagnosis` = 请求 PHIS 保存诊断（单项引用场景）
-   - `reference-feedback + batch` = 一键回写回执
+   - `reference-feedback + batch` = 一键回写或旧批量引用回执；需结合此前的 `requestId` 对应的是 `record-confirmed` 还是 `reference-request`
    - `reference-feedback + diagnosis` = 诊断保存回执
    - `reference-feedback + medication` = 用药保存回执
    - `reference-feedback + examination` = 检查保存回执
@@ -1268,7 +1271,7 @@ HIS 处理建议：
 
 ### 6.5 `POST /api/consultation/reference-feedback`（必须）
 
-用途：PHIS 在保存推荐诊断 / 用药 / 检查 / 独立诊疗方案后，**必须**将成功或失败结果回执给 `MedHermes`。
+用途：PHIS 在处理最终一键回写、历史引用、单项推荐诊断 / 用药 / 检查 / 独立诊疗方案后，**必须**将成功或失败结果回执给 `MedHermes`。
 
 **强制要求：** 每收到一条 `reference-request` 或 `record-confirmed`，PHIS 都必须调用本接口回执。一键回写场景下只回执一次即可；`reference-request` 走批量引用语义，`record-confirmed` 走最终调入确认语义，但两者都通过同一个接口回传成功或失败。
 
@@ -1283,23 +1286,23 @@ http://127.0.0.1:8081/api/consultation/reference-feedback
 | 字段名 | 类型 | 必填 | 说明 |
 | :--- | :--- | :--- | :--- |
 | `consultationId` | String | 是 | 当前结果/回执锚点，必须与收到的 `reference-request` 或 `record-confirmed` 保持一致 |
-| `requestId` | String | 是 | 对应 `reference-request` 中的请求 ID |
+| `requestId` | String | 是 | 对应 `record-confirmed` 或 `reference-request` 中的请求 ID |
 | `referenceType` | String | 否 | 建议新接入显式传入的引用对象类型，支持 `diagnosis` / `medication` / `examination` / `lab_test` / `procedure` / `batch`；若回执的是 `record-confirmed`，留空时默认按 `batch` 处理 |
 | `action` | String | 否 | 兼容旧版字段，语义与 `referenceType` 相同；`reference-request` 场景下 `referenceType` 与 `action` 至少要传一个；回执 `record-confirmed` 时两者可同时省略 |
 | `status` | String | 是 | `success` / `failed` |
 | `message` | String | 否 | 成功说明或失败原因 |
 | `items` | Array | 否 | 本次实际保存的项目列表 |
 
-请求示例（一键回写 batch 回执）：
+请求示例（record-confirmed batch 回执）：
 
 ```json
 {
   "consultationId": "766842939207974912",
-  "requestId": "ref-batch-1704355203000",
+  "requestId": "record-confirmed-1704355201000",
   "referenceType": "batch",
   "action": "batch",
   "status": "success",
-  "message": "PHIS 已成功保存全部引用项目",
+  "message": "PHIS 已完成最终调入确认",
   "items": [
     {
       "name": "急性支气管炎",
@@ -1326,13 +1329,13 @@ http://127.0.0.1:8081/api/consultation/reference-feedback
 {
   "status": "success",
   "consultationId": "766842939207974912",
-  "requestId": "ref-batch-1704355203000",
+  "requestId": "record-confirmed-1704355201000",
   "referenceType": "batch",
   "timestamp": 1704355205000
 }
 ```
 
-异常响应：没有匹配到待处理引用请求
+异常响应：没有匹配到待处理回写或引用请求
 
 HTTP 状态码：`409`
 
@@ -1502,7 +1505,7 @@ HIS 侧至少要识别以下 5 类结果：
 | :--- | :--- | :--- |
 | `draft` | 病历草稿回写（仅主诉+现病史） | 回填主诉和现病史到医生站草稿 |
 | `final-report` | 【已废弃】完整问诊最终报告（含诊断、治疗方案） | 仅作历史兼容，新链路不产生此类型，统一使用 `record-confirmed` |
-| `record-confirmed` | 问诊一键确认回写（`orderList` 统一格式） | 直接用于 PHIS 调入确认弹窗，不走引用闭环 |
+| `record-confirmed` | 问诊一键确认回写（`orderList` 统一格式） | 直接用于 PHIS 调入确认弹窗，不走 `reference-request` 引用请求 |
 | `reference-request` | `MedHermes` 请求 PHIS 保存引用 | 调用 PHIS 保存，并准备回执 |
 | `reference-feedback` | PHIS 回执后的最新状态 | 更新医生站状态，提示成功或失败 |
 
@@ -1511,8 +1514,8 @@ HIS 侧至少要识别以下 5 类结果：
 1. `draft` 仅携带主诉 / 现病史等早期字段；`record-confirmed` 才携带完整的 `diagList` / `orderList`。`final-report` 仅作历史兼容保留，新代码不再产生。
 2. `record-confirmed` 来自问诊结果确认提交或独立诊疗方案推荐提交，其 `diagList` 和 `orderList` 已转换成 PHIS 可直接消费的结构。PHIS 收到后可直接按 `fgMain` 识别主诊断，再按 `sdSrv`、`idSrv`、`idDeptExec`、`doseOnce`、`idFreq`、`idUsge`、`jsonField`、`idPart` 等字段填充调入确认弹窗，无需二次补录。
 3. `reference-request` 和 `reference-feedback` 都可能附带同一份病历上下文，便于 HIS 在当前界面直接处理。
-4. 对引用闭环结果，HIS 应继续结合 `referenceType` 判断具体业务对象，不建议只看 `resultType`。
-5. 一键回写场景下，`referenceType` 为 `batch`，`referenceItems` 包含诊断和所有选中治疗项目，每项通过 `type` 字段区分业务类型。单项引用场景下 `referenceType` 仍为具体类型（如 `diagnosis`）。
+4. 对回写 / 引用闭环结果，HIS 应继续结合 `resultType + referenceType` 判断具体业务对象，不建议只看 `referenceType`。
+5. 当前一键回写场景下，`record-confirmed.referenceType/action` 为 `batch`，`diagList/orderList` 包含诊断和所有选中治疗项目；旧 `reference-request + batch` 才使用 `referenceItems` 按 `type` 区分业务类型。单项引用场景下 `referenceType` 仍为具体类型（如 `diagnosis`）。
 
 ## 8. WebSocket 订阅与去重策略
 
@@ -1536,7 +1539,7 @@ consultationId + resultType + requestId + timestamp
 1. 当前完整 HIS 联调参考页是 `web_project/public/mock-his.html`；报告解读专用测试页是 `web_project/public/report-interpretation-test.html`；SDK 位于 `sdk/med-hermes-sdk.js`。
 2. `consultationId` 当前来自 HIS 下发的就诊锚点或患者标识；HIS 侧应尽量传入 `idVis / visitId`，并防止缺失就诊锚点时“同患者旧结果误命中当前就诊”。
 3. `/assist` 每次调用都会清空上一次结果通道；不要在旧轮询结果未消费完成时复用旧状态。
-4. `reference-feedback` 只接受与“当前最新待处理引用请求”匹配的回执。
+4. `reference-feedback` 只接受与“当前最新待处理回写或引用请求”匹配的回执。
 5. 当前页面恢复依赖同一运行期内的前端内存状态；如果 `MedHermes` 进程已经退出或重启，不保证还能恢复到回执前页面。
 6. `MedHermes` 内所有推荐结果本质上都是医生确认前的草稿，HIS / PHIS 仍应保留最终校验与保存逻辑。
 
@@ -1563,18 +1566,18 @@ curl -X POST 'http://127.0.0.1:8081/api/consultation/start' \
 curl 'http://127.0.0.1:8081/api/consultation/events/poll'
 ```
 
-### 10.3 回执引用结果（一键回写 batch）
+### 10.3 回执最终一键回写结果（record-confirmed batch）
 
 ```bash
 curl -X POST 'http://127.0.0.1:8081/api/consultation/reference-feedback' \
   -H 'Content-Type: application/json' \
   -d '{
     "consultationId": "766842939207974912",
-    "requestId": "ref-batch-1704355203000",
+    "requestId": "record-confirmed-1704355201000",
     "referenceType": "batch",
     "action": "batch",
     "status": "success",
-    "message": "PHIS 已成功保存全部引用项目",
+    "message": "PHIS 已完成最终调入确认",
     "items": [
       {
         "name": "急性支气管炎",
@@ -1600,7 +1603,7 @@ HIS 接入完成后，至少验证以下场景：
 4. 单独鉴别诊断：`POST /assist` 使用 `action: "diffDx"` 并传入 `diagnosis`，可直接打开独立“鉴别排查确认”弹窗；确认鉴别不直接产生 PHIS 回写
 5. `/result` 能回收到当前患者的 `draft` 或 `record-confirmed`
 6. PHIS 调用 `/reference-feedback` 后，`/result` 能继续返回 `reference-feedback`
-7. 一键回写场景：PHIS 收到一条 `batch` 类型 `reference-request`，遍历 `referenceItems` 按 `type` 分类处理，回执后页面显示"一键回写完成"
+7. 一键回写场景：PHIS 收到一条 `record-confirmed + referenceType/action: "batch"`，读取 `diagList/orderList` 完成调入确认，回执后页面显示“一键回写完成”
 8. 切换患者后不会把上一位患者的结果误回填到当前医生站
 9. 问诊一键确认回写：PHIS 收到 `resultType: "record-confirmed"` 结果后，读取 `orderList` 即可。药品、检查、检验、处置已经统一转换成 PHIS 调入确认格式，可直接用于回填弹窗
 10. 独立诊疗方案推荐：`POST /assist` 使用 `action: "treatment_plan"` 可打开聚合方案页；医生勾选后同样产生 `record-confirmed + referenceType: "batch"`，PHIS 按第 9 条处理并回执
