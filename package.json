@@ -1,7 +1,7 @@
 {
   "name": "med-hermes",
   "private": true,
-  "version": "1.2.61",
+  "version": "1.2.62",
   "packageManager": "yarn@1.22.22",
   "type": "module",
   "scripts": {
