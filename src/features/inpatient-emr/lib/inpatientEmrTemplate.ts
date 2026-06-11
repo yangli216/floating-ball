@@ -5,8 +5,37 @@ import type {
   InpatientEmrTemplateParseResult,
 } from '../types';
 
-function normalizeText(value: string | null | undefined): string {
+function normalizeText(value: unknown): string {
   return String(value || '').replace(/\s+/g, ' ').trim();
+}
+
+function isCodeLikeDisplayValue(value: unknown): boolean {
+  const text = normalizeText(value);
+  if (!text) return false;
+  if (/^[0-9a-f]{16,}$/i.test(text)) return true;
+  if (/^\d{2,}$/.test(text)) return true;
+  if (/^[A-Za-z]{1,8}\d{2,}$/.test(text)) return true;
+  if (/^[A-Za-z0-9_.-]+$/.test(text) && !/[\u4e00-\u9fa5]/.test(text)) return true;
+  return false;
+}
+
+function readableDisplayText(value: unknown): string {
+  const text = normalizeText(value);
+  return isCodeLikeDisplayValue(text) ? '' : text;
+}
+
+function firstReadableDisplayText(...values: unknown[]): string {
+  for (const value of values) {
+    const text = readableDisplayText(value);
+    if (text) return text;
+  }
+  return '';
+}
+
+function objectRecord(value: unknown): Record<string, unknown> {
+  return value && typeof value === 'object' && !Array.isArray(value)
+    ? value as Record<string, unknown>
+    : {};
 }
 
 function hashText(value: string): string {
@@ -157,7 +186,7 @@ export function parseInpatientEmrTemplate(htmlContent: string): InpatientEmrTemp
   return { cacheKey, cacheHit: false, fields };
 }
 
-function formatDateMinute(value: Date = new Date()): string {
+export function formatInpatientEmrDateMinute(value: Date = new Date()): string {
   const pad = (num: number) => String(num).padStart(2, '0');
   return `${value.getFullYear()}-${pad(value.getMonth() + 1)}-${pad(value.getDate())} ${pad(value.getHours())}:${pad(value.getMinutes())}`;
 }
@@ -213,9 +242,30 @@ export function buildDefaultFieldValues(
   context: InpatientEmrContext,
 ): Record<string, string> {
   const registration = context.registration;
+  const documentContext = context.documentContext;
+  const raw = objectRecord(registration?.raw);
+  const rawAdmission = objectRecord(raw.admission);
   const firstDiagnosis = registration?.diagnoses?.find((item) => item.isPrimary) || registration?.diagnoses?.[0];
   const diagnosisText = firstDiagnosis?.name || registration?.admissionDiagnosis || '';
-  const doctorName = registration?.attendingDoctorName || '';
+  const doctorName = firstReadableDisplayText(
+    registration?.attendingDoctorName,
+    rawAdmission.attendingDoctorName,
+    rawAdmission.attendingDoctorText,
+    rawAdmission.attendingDoctor,
+    rawAdmission.chiefDoctorName,
+    rawAdmission.chiefDoctorText,
+    rawAdmission.chiefDoctor,
+  );
+  const departmentName = firstReadableDisplayText(
+    registration?.deptName,
+    rawAdmission.departmentName,
+    rawAdmission.departmentText,
+    rawAdmission.department,
+    registration?.wardName,
+    rawAdmission.wardName,
+    rawAdmission.wardText,
+    rawAdmission.ward,
+  );
   const fieldIds = new Set(fields.map((field) => field.id));
   const values: Record<string, string> = {};
   const setIfPresent = (id: string, value: string): void => {
@@ -227,12 +277,12 @@ export function buildDefaultFieldValues(
   setIfPresent('页眉医疗机构名称', String(registration?.raw?.idOrgText || registration?.raw?.naOrg || '医疗机构'));
   setIfPresent('页眉病历标题', '病 程 记 录');
   setIfPresent('页眉姓名', registration?.name || '');
-  setIfPresent('页眉科室名称', registration?.deptName || registration?.wardName || '');
+  setIfPresent('页眉科室名称', departmentName);
   setIfPresent('页眉床位号', registration?.bedNo || '');
   setIfPresent('页眉住院号', registration?.inpatientNo || registration?.admissionNo || '');
-  setIfPresent('病程记录操作时间', formatDateMinute());
+  setIfPresent('病程记录操作时间', documentContext.recordTime || formatInpatientEmrDateMinute());
   setIfPresent('病程记录操作人员', doctorName);
-  setIfPresent('病程记录操作名称文本', '日常病程记录');
+  setIfPresent('病程记录操作名称文本', documentContext.recordType || '日常病程记录');
   setIfPresent('病程记录文本', diagnosisText ? `患者目前入院诊断为${diagnosisText}，请结合查房情况审核补充。` : '');
   setIfPresent('医师签名', doctorName);
 

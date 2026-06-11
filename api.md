@@ -76,8 +76,8 @@
 ### 第二点六步: 打通住院病历辅助生成
 
 1. HIS 在住院电子病历书写页调用 `POST /api/inpatient/emr/generate`
-2. 传入 `admissionId + templateId + templateName + htmlContent`，`admissionId` 对应 PHIS `idAdsn`，`templateId` 是病历模板主键，`htmlContent` 是当前病历模板 HTML
-3. `MedHermes` 从悬浮球切换到“住院病历生成”界面，按步骤展示“患者信息 -> 医嘱 -> 体温单 -> 模板解析 -> AI 生成”
+2. 传入 `admissionId + templateId + templateName + htmlContent`，可选传入 `recordTime` 指定本次病程记录书写时间；`admissionId` 对应 PHIS `idAdsn`，`templateId` 是病历模板主键，`htmlContent` 是当前病历模板 HTML
+3. `MedHermes` 从悬浮球切换到“住院病历生成”界面，按步骤展示“住院上下文 -> 医嘱整理 -> 体温单整理 -> 模板解析 -> AI 生成”
 4. 医生审核预览内容后点击“一键回写”
 5. HIS 可继续通过 SDK 事件流收到 `record-confirmed`，也可直接等待 `sdk.generateInpatientEmr(...).then(record => ...)`；两种方式返回同一份回写 payload，读取其中的 `fieldValues`（`{ [data-id]: 文本 }`）回填当前住院病历编辑器
 6. HIS 完成回填后，仍建议调用 `POST /api/consultation/reference-feedback` 回执成功或失败，桌面端会更新页面状态
@@ -743,7 +743,7 @@ http://127.0.0.1:8081/api/report/interpret
 http://127.0.0.1:8081/api/inpatient/emr/generate
 ```
 
-SDK 调用：`sdk.generateInpatientEmr({ admissionId, templateId, templateName, htmlContent, requestId, patient })`。该 Promise 会在医生点击“一键回写”并产生 `record-confirmed` 时 resolve，返回值与 `record-confirmed` 事件 payload 一致；原有 `mh.on('record-confirmed', ...)` 订阅模式仍保留。
+SDK 调用：`sdk.generateInpatientEmr({ admissionId, templateId, templateName, htmlContent, recordTime, contextPolicy, hisContext, requestId, patient })`。该 Promise 会在医生点击“一键回写”并产生 `record-confirmed` 时 resolve，返回值与 `record-confirmed` 事件 payload 一致；原有 `mh.on('record-confirmed', ...)` 订阅模式仍保留。三方 HIS 推荐按 [住院电子病历 AI 辅助书写 HIS 对接手册](./docs/his-inpatient-emr-ai-context-integration.md) 组织 `hisContext`。
 
 请求字段：
 
@@ -753,6 +753,9 @@ SDK 调用：`sdk.generateInpatientEmr({ admissionId, templateId, templateName, 
 | `templateId` | String | 是 | 病历模板主键；区域化模式下后端模板解析缓存以该字段作为唯一缓存依据 |
 | `templateName` | String | 是 | 模板名称，如 `日常病程记录`；区域化模式下会随模板解析结果保存到后端模板缓存 |
 | `htmlContent` | String | 是 | 当前病历模板 HTML，桌面端会解析其中带 `data-id` 的模板字段；区域化模式下会作为原生模板内容保存到后端，供管理端查看源码和 HTML 预览 |
+| `recordTime` | String | 否 | 本次病程记录书写时间，如 `2026-06-10 15:25`；未传时桌面端使用当前系统时间。生成正文会以该日期作为“今日 / 本次查房日期”，避免把历史体温单日期误写成今日 |
+| `contextPolicy` | Object | 否 | 住院上下文裁剪策略，如 `maxDays`、`previousNoteLimit`、`labLookbackDays`、`orderLookbackDays`；用于避免长住院全量数据进入 AI 上下文 |
+| `hisContext` | Object | 否 | HIS 直接传入的 AI 上下文包；存在时桌面端优先使用该包中的登记、诊断、体温单、医嘱、检验检查、历史病程摘要等数据，不再强依赖分散住院接口 |
 | `requestId` | String | 否 | HIS 侧请求 ID；未传时桌面端会生成 |
 | `patient` | Object | 否 | 可选患者兜底信息；住院数据仍优先通过 `admissionId` 走 HIS adapter 获取 |
 
@@ -763,6 +766,70 @@ SDK 调用：`sdk.generateInpatientEmr({ admissionId, templateId, templateName, 
   "admissionId": "69660377a5e9230bbcdc850f",
   "templateId": "emr_tpl_daily_course",
   "templateName": "日常病程记录",
+  "recordTime": "2026-06-10 15:25",
+  "contextPolicy": {
+    "maxDays": 7,
+    "previousNoteLimit": 3,
+    "includePreviousNotes": true,
+    "includeLongStaySummary": true,
+    "labLookbackDays": 14,
+    "orderLookbackDays": 7
+  },
+  "hisContext": {
+    "vitals": {
+      "recordDateItems": [],
+      "latestBeforeRecordDate": {
+        "recordTime": "2026-06-08 14:00",
+        "temperature": 39.0,
+        "temperatureType": "口温",
+        "bloodPressureSystolic": 154,
+        "bloodPressureDiastolic": 96
+      },
+      "summary": "本日体温单暂无记录；最近一次体温单记录为2026-06-08 14:00，体温39.0℃，血压154/96mmHg。"
+    },
+    "orders": {
+      "active": [
+        {
+          "orderId": "ord-001",
+          "name": "安博维",
+          "fullText": "安博维 150 mg 雾化吸入 每天两次(BID)",
+          "displayText": "安博维 150 mg 雾化吸入 每天两次(BID)",
+          "orderType": "药品",
+          "status": "护士复核完成",
+          "dose": "150",
+          "frequency": "每天两次",
+          "route": "雾化吸入"
+        }
+      ],
+      "summary": "目前予降压等治疗，长期医嘱执行中。医嘱条目生成时优先使用 displayText；若 displayText/fullText 已包含剂量、用法、频次，不要再重复拼接 dose、route、frequency；不建议返回 frequencyCode、routeCode、orderTypeCode 等字典编码字段。"
+    },
+    "previousRecords": {
+      "recentNotes": [
+        {
+          "recordTime": "2026-01-13 16:40",
+          "recordType": "入院记录",
+          "recordName": "入院记录",
+          "medType": "0",
+          "recordCategory": "入院记录",
+          "chiefComplaint": "体检发现血压升高1月",
+          "presentIllness": "患者1月前体检发现血压升高，未诉明显头晕头痛、胸闷心悸等不适。",
+          "structuredSections": {
+            "chiefComplaint": "体检发现血压升高1月",
+            "presentIllness": "患者1月前体检发现血压升高，未诉明显头晕头痛、胸闷心悸等不适。",
+            "pastMedicalHistory": "既往高血压病史，否认糖尿病史。"
+          },
+          "summary": "入院记录；主诉：体检发现血压升高1月；现病史：患者1月前体检发现血压升高，未诉明显头晕头痛、胸闷心悸等不适。"
+        },
+        {
+          "recordTime": "2026-06-09 16:00",
+          "recordType": "日常病程记录",
+          "medType": "1",
+          "recordCategory": "病程记录",
+          "summary": "患者病情总体平稳，继续原治疗方案。"
+        }
+      ]
+    }
+  },
   "htmlContent": "<p data-id=\"病程记录\" data-name=\"病程记录\"><span data-id=\"病程记录文本\" data-type=\"text\" data-name=\"病程记录文本\">病程记录</span></p>",
   "patient": {
     "idPi": "6829c705ef56b10001b6f0b1",
@@ -787,17 +854,20 @@ HTTP Bridge 受理响应：
 
 后续事件：
 
-1. 桌面端打开“住院病历生成”界面，医生可看到“获取患者基本信息 / 获取医嘱信息 / 获取体温单数据 / 解析病历 / 病历生成中”的步骤状态。
+1. 桌面端打开“住院病历生成”界面，医生可看到“获取住院上下文 / 整理诊疗摘要 / 整理病历依据 / 解析病历 / AI 生成”的步骤状态。PHIS 通过 `api/phis.aiInpatientEmrContextService/buildContext` 一次性返回上下文，桌面端调用该 PHIS RPC 时使用数组入参 `[requestMap]`，界面上仅拆分展示处理阶段。
 2. 医生点击“一键回写”后，事件流会产生 `record-confirmed`，同时 `sdk.generateInpatientEmr(...)` 返回的 Promise 会 resolve 这份 payload。其中 `resultType` 固定为 `record-confirmed`，`referenceType/action` 固定为 `batch`，`emrType` 为 `inpatient-emr`。
 3. `record-confirmed.payload.fieldValues` 为 `{ [data-id]: value }` 的结构化字段取值；仅包含本次传入 `htmlContent` 中真实存在、且模板解析结果标记为适合 AI 生成的字段，若医生在预览中编辑过 AI 字段，以编辑后的文本为准。
 4. 住院病历回写事件不返回 `htmlContent`；HIS 侧按当前编辑器模板自行用 `data-id` 定位并回填文本。
 5. HIS 完成回填后，建议调用 `POST /api/consultation/reference-feedback`，带回相同 `consultationId` 与 `requestId`。回执时 `referenceType` 可传 `batch`，也可留空由 Bridge 按 `batch` 处理；桌面端收到成功回执后会从病历生成界面收起回小球状态。
+6. 病程正文生成时，`recordTime` 的日期是“今日 / 本次查房日期”的唯一依据；若体温单最新记录早于该日期，只能表述为“最近一次体温单记录（YYYY-MM-DD）”，不得写成“今日（历史日期）查房”。
+7. 历史病历中 `medType=2` 的病案首页不进入 AI 上下文；`medType=0` 入院记录建议提取 `chiefComplaint`、`presentIllness` 和 `structuredSections`，不要只传整篇 HTML 文本。
 
 说明：
 
 1. 区域化模式下，模板解析结果按 `templateId` 上传到后端 `/v1/client/inpatient-emr/templates/resolve` 缓存；后端命中时返回缓存字段和管理端维护过的字段提示词。非区域化或后端不可用时，桌面端使用本地解析兜底。
-2. AI 仅适合生成“病程记录正文”等叙述性字段；患者姓名、住院号、床号、记录时间、医师签名等字段按 HIS / 系统 / 医生签名流程填充。
-3. 生成内容是医生审核草稿，不替代医生签署。
+2. 若请求携带 `hisContext`，桌面端优先使用该上下文包；否则必须调用 HIS Adapter 的聚合上下文能力。当前 PHIS Adapter 已直连 `api/phis.aiInpatientEmrContextService/buildContext`；不再回退到既有住院登记、医嘱、体温单分散接口。
+3. AI 仅适合生成“病程记录正文”等叙述性字段；患者姓名、住院号、床号、记录时间、医师签名等字段按 HIS / 系统 / 医生签名流程填充。
+4. 生成内容是医生审核草稿，不替代医生签署。
 
 ### 6.4 `GET /api/consultation/events/poll`
 

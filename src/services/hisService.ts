@@ -19,6 +19,10 @@ import {
   resolveHisLogStatus,
   summarizeHisPayload,
 } from './hisIntegrationLog';
+import type {
+  HisInpatientEmrContextPackage,
+  HisInpatientEmrContextQuery,
+} from './his/types';
 
 /**
  * HIS 服务响应基础结构
@@ -338,9 +342,15 @@ export interface HisInpatientOrderBody {
   groupId?: string;
   naOrd?: string;
   name?: string;
+  fullText?: string;
+  displayText?: string;
+  naSrv?: string;
   sdSrv?: string;
+  sdOrd?: string;
+  sdOrdText?: string;
   sdSrvText?: string;
   orderType?: string;
+  orderTypeCode?: string;
   sdStatus?: string;
   status?: string;
   dtBgn?: string;
@@ -349,9 +359,14 @@ export interface HisInpatientOrderBody {
   stopTime?: string;
   doseOnce?: string;
   dose?: string;
+  doseUnit?: string;
   idFreqText?: string;
+  frequencyText?: string;
+  frequencyCode?: string;
   frequency?: string;
   idUsgeText?: string;
+  sdUsageText?: string;
+  routeCode?: string;
   route?: string;
   amount?: number;
   quantity?: number;
@@ -578,6 +593,7 @@ const HIS_CATALOG_ENDPOINTS = {
   patientAllergy: 'api/phis.clinicPatientService/queryHisAllergy',
   patientVisitHistory: 'api/phis.clinicPatientService/queryVisitHistory',
   patientVisitDetail: 'api/phis.clinicDoctorCoreService/loadClinicMedicalRecord',
+  inpatientEmrContext: 'api/phis.aiInpatientEmrContextService/buildContext',
   inpatientOrders: 'api/phis.hiHosOrderService/queryOrdGroupList',
   inpatientTemperatureChart: 'api/phis.hiHosSurveyService/getSurveyTestTimeLine',
   inpatientRegistration: 'api/phis.hiHosAdsnService/getPatientByIdAdsn',
@@ -1259,8 +1275,7 @@ export class HisService {
   /**
    * 查询指定患者住院诊断。
    *
-   * 这里仅封装 PHIS 形态出站调用和宽松 body/items 解析；业务层统一通过
-   * `HisAdapter.fetchInpatientDiagnoses` 获取中性 DTO。
+   * 历史明细能力：住院病历 AI 生成已改为 buildContext 聚合上下文，不再调用该接口。
    */
   async queryInpatientDiagnoses(query: HisInpatientServiceQuery): Promise<HisInpatientDiagnosisBody[]> {
     const registration = await this.loadInpatientRegistration(query);
@@ -1378,6 +1393,41 @@ export class HisService {
         throw secondError;
       }
     }
+  }
+
+  /**
+   * 构建住院病历 AI 上下文。
+   * PHIS 接口：api/phis.aiInpatientEmrContextService/buildContext
+   * PHIS RPC 网关按方法参数数组传参，HTTP body 必须是 `[requestMap]`。
+   *
+   * 该接口一次性返回登记、诊断、医嘱、体温单、检验检查、历史病历等裁剪后的 AI 上下文；
+   * 住院病历生成应优先使用它，旧的登记/医嘱/体温单接口只作为兼容回退。
+   */
+  async buildInpatientEmrContext(
+    query: HisInpatientEmrContextQuery,
+  ): Promise<HisInpatientEmrContextPackage | null> {
+    const admissionId = query.admissionId?.trim()
+      || query.inpatientVisitId?.trim()
+      || query.encounterId?.trim()
+      || (query.raw && typeof query.raw === 'object' ? String(query.raw.idAdsn ?? '').trim() : '');
+    if (!admissionId) return null;
+
+    const payload: Record<string, unknown> = {
+      admissionId,
+      templateId: query.templateId,
+      templateName: query.templateName,
+      recordTime: query.recordTime,
+      recordDate: query.recordDate,
+      contextPolicy: query.contextPolicy,
+    };
+
+    const response = await this.post<HisInpatientEmrContextPackage>(
+      HIS_CATALOG_ENDPOINTS.inpatientEmrContext,
+      [payload]
+    );
+    this.assertBusinessSuccess(HIS_CATALOG_ENDPOINTS.inpatientEmrContext, response);
+
+    return response.body ?? response.data ?? null;
   }
 
   /**

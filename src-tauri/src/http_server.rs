@@ -377,6 +377,8 @@ pub struct InpatientEmrGenerationRequest {
     #[serde(default)]
     pub template_name: Option<String>,
     #[serde(default)]
+    pub record_time: Option<String>,
+    #[serde(default)]
     pub request_id: Option<String>,
     #[serde(default)]
     pub patient: Option<ReportInterpretationPatientInput>,
@@ -939,6 +941,10 @@ async fn start_inpatient_emr_generation(
     request.html_content = request.html_content.trim().to_string();
     request.template_name = request
         .template_name
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty());
+    request.record_time = request
+        .record_time
         .map(|value| value.trim().to_string())
         .filter(|value| !value.is_empty());
     if request.request_id.as_deref().unwrap_or_default().trim().is_empty() {

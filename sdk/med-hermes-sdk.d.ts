@@ -106,6 +106,44 @@ export interface InpatientEmrPatientInfo {
   [key: string]: any;
 }
 
+/** 住院病历 AI 上下文裁剪策略 */
+export interface InpatientEmrContextPolicy {
+  maxDays?: number;
+  includePreviousNotes?: boolean;
+  previousNoteLimit?: number;
+  includeLongStaySummary?: boolean;
+  labLookbackDays?: number;
+  orderLookbackDays?: number;
+  onlyAbnormalLabs?: boolean;
+}
+
+/** HIS 可直接传入的住院病历 AI 上下文包；详见 docs/his-inpatient-emr-ai-context-integration.md */
+export interface InpatientEmrHisContext {
+  documentContext?: Record<string, any>;
+  patient?: Record<string, any>;
+  admission?: Record<string, any>;
+  diagnoses?: Array<Record<string, any>>;
+  vitals?: {
+    recordDateItems?: Array<Record<string, any>>;
+    latestBeforeRecordDate?: Record<string, any> | null;
+    summary?: string;
+    [key: string]: any;
+  };
+  orders?: {
+    active?: Array<Record<string, any>>;
+    changedNearRecordDate?: Array<Record<string, any>>;
+    summary?: string;
+    [key: string]: any;
+  };
+  labs?: Record<string, any>;
+  exams?: Array<Record<string, any>>;
+  previousRecords?: Record<string, any>;
+  consultations?: Array<Record<string, any>>;
+  operations?: Array<Record<string, any>>;
+  dataQuality?: Record<string, any>;
+  [key: string]: any;
+}
+
 /** 住院病历生成请求 */
 export interface InpatientEmrGenerationRequest {
   /** 患者单次住院登记主键，PHIS 对应 idAdsn */
@@ -116,6 +154,12 @@ export interface InpatientEmrGenerationRequest {
   templateName: string;
   /** 当前病历模板 HTML */
   htmlContent: string;
+  /** 本次病程记录书写时间，如 2026-06-10 15:25；未传时桌面端使用当前系统时间 */
+  recordTime?: string;
+  /** HIS 侧上下文裁剪策略；当未直接传 hisContext 时，适配器可按此策略拉取上下文 */
+  contextPolicy?: InpatientEmrContextPolicy;
+  /** HIS 直接传入的 AI 上下文包；存在时桌面端优先使用该数据，避免重复拉取全量住院数据 */
+  hisContext?: InpatientEmrHisContext;
   /** HIS 侧请求 ID；传入后也会作为一键回写 requestId */
   requestId?: string;
   /** 可选患者兜底信息 */

@@ -34,6 +34,8 @@ import type {
   HisPatientHistory,
   HisInpatientDiagnosis,
   HisInpatientOrder,
+  HisInpatientEmrContextPackage,
+  HisInpatientEmrContextQuery,
   HisInpatientQuery,
   HisInpatientRegistrationInfo,
   HisInpatientTemperatureChart,
@@ -54,6 +56,9 @@ export type {
   HisPatientHistory,
   HisInpatientDiagnosis,
   HisInpatientOrder,
+  HisInpatientEmrContextPackage,
+  HisInpatientEmrContextPolicy,
+  HisInpatientEmrContextQuery,
   HisInpatientQuery,
   HisInpatientRegistrationInfo,
   HisInpatientTemperatureChart,
@@ -140,15 +145,22 @@ export interface HisAdapter {
 
   // ---- 住院上下文 ----
 
-  /** 指定患者住院诊断；具体厂商可来自独立诊断服务，也可从住院登记信息中派生 */
-  fetchInpatientDiagnoses(query: HisInpatientQuery): Promise<HisInpatientDiagnosis[]>;
+  /** @deprecated 住院病历 AI 生成已改为 fetchInpatientEmrContext 聚合上下文，不再依赖该明细接口 */
+  fetchInpatientDiagnoses?(query: HisInpatientQuery): Promise<HisInpatientDiagnosis[]>;
 
-  /** 指定患者住院医嘱 */
-  fetchInpatientOrders(query: HisInpatientQuery): Promise<HisInpatientOrder[]>;
+  /** @deprecated 住院病历 AI 生成已改为 fetchInpatientEmrContext 聚合上下文，不再依赖该明细接口 */
+  fetchInpatientOrders?(query: HisInpatientQuery): Promise<HisInpatientOrder[]>;
 
-  /** 指定患者住院体温单数据 */
-  fetchInpatientTemperatureChart(query: HisInpatientQuery): Promise<HisInpatientTemperatureChart | null>;
+  /** @deprecated 住院病历 AI 生成已改为 fetchInpatientEmrContext 聚合上下文，不再依赖该明细接口 */
+  fetchInpatientTemperatureChart?(query: HisInpatientQuery): Promise<HisInpatientTemperatureChart | null>;
 
-  /** 指定患者住院登记信息 */
-  fetchInpatientRegistration(query: HisInpatientQuery): Promise<HisInpatientRegistrationInfo | null>;
+  /** @deprecated 住院病历 AI 生成已改为 fetchInpatientEmrContext 聚合上下文，不再依赖该明细接口 */
+  fetchInpatientRegistration?(query: HisInpatientQuery): Promise<HisInpatientRegistrationInfo | null>;
+
+  /**
+   * 住院病历 AI 生成唯一上下文入口：按本次病历书写场景返回已裁剪、已摘要的 AI 上下文包。
+   *
+   * 新 HIS 厂商必须实现本方法；业务层不再回退到登记/医嘱/体温单等旧粒度接口。
+   */
+  fetchInpatientEmrContext(query: HisInpatientEmrContextQuery): Promise<HisInpatientEmrContextPackage | null>;
 }

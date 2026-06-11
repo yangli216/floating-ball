@@ -374,7 +374,41 @@ const record = await mh.generateInpatientEmr({
   admissionId: '69660377a5e9230bbcdc850f',
   templateId: 'emr_tpl_daily_course',
   templateName: '日常病程记录',
+  recordTime: '2026-06-10 15:25',
   htmlContent: '<p data-id="病程记录"><span data-id="病程记录文本"></span></p>',
+  contextPolicy: {
+    maxDays: 7,
+    previousNoteLimit: 3,
+    includePreviousNotes: true,
+    includeLongStaySummary: true,
+    labLookbackDays: 14,
+    orderLookbackDays: 7
+  },
+  hisContext: {
+    vitals: {
+      recordDateItems: [],
+      latestBeforeRecordDate: {
+        recordTime: '2026-06-08 14:00',
+        temperature: 39.0,
+        temperatureType: '口温',
+        bloodPressureSystolic: 154,
+        bloodPressureDiastolic: 96
+      },
+      summary: '本日体温单暂无记录；最近一次体温单记录为2026-06-08 14:00，体温39.0℃，血压154/96mmHg。'
+    },
+    orders: {
+      summary: '目前予降压等治疗，长期医嘱执行中。'
+    },
+    previousRecords: {
+      recentNotes: [
+        {
+          recordTime: '2026-06-09 16:00',
+          recordType: '日常病程记录',
+          summary: '患者病情总体平稳，继续原治疗方案。'
+        }
+      ]
+    }
+  },
   patient: {
     idPi: '6829c705ef56b10001b6f0b1',
     naPi: '林娜',
@@ -394,6 +428,9 @@ await mh.sendFeedback(record.requestId, 'success', 'HIS 已成功回填住院病
 - `templateId`: 病历模板主键，后端模板缓存按该字段命中
 - `templateName`: 模板名称
 - `htmlContent`: 当前病历模板 HTML
+- `recordTime`: 可选，本次病程记录书写时间；生成正文会以该日期作为“今日 / 本次查房日期”
+- `contextPolicy`: 可选，住院上下文裁剪策略，避免长住院全量数据进入 AI 上下文
+- `hisContext`: 可选，HIS 直接传入的 AI 上下文包；存在时桌面端优先使用，字段规范见 `docs/his-inpatient-emr-ai-context-integration.md`
 - `requestId`: 可选；传入后也会作为一键回写的 `requestId`
 - `patient`: 可选患者兜底信息
 

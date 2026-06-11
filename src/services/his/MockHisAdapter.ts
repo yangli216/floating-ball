@@ -36,6 +36,8 @@ import type {
   HisPatientInfo,
   HisPatientHistory,
   HisInpatientDiagnosis,
+  HisInpatientEmrContextPackage,
+  HisInpatientEmrContextQuery,
   HisInpatientOrder,
   HisInpatientQuery,
   HisInpatientRegistrationInfo,
@@ -244,6 +246,8 @@ export class MockHisAdapter implements HisAdapter {
         orderId: 'mock-inp-ord-1',
         groupId: 'mock-inp-group-1',
         name: '阿莫西林胶囊',
+        fullText: '阿莫西林胶囊 0.5g 口服 每日三次',
+        displayText: '阿莫西林胶囊 0.5g 口服 每日三次',
         orderType: '药品',
         status: '执行中',
         startTime: '2026-06-01 10:00:00',
@@ -329,6 +333,87 @@ export class MockHisAdapter implements HisAdapter {
       status: '在院',
       diagnoses,
       raw: { mock: true },
+    };
+  }
+
+  async fetchInpatientEmrContext(query: HisInpatientEmrContextQuery): Promise<HisInpatientEmrContextPackage | null> {
+    const registration = await this.fetchInpatientRegistration(query);
+    const orders = await this.fetchInpatientOrders(query);
+    const temperatureChart = await this.fetchInpatientTemperatureChart(query);
+    const recordDate = query.recordDate || (query.recordTime || '').split(/\s+/)[0] || '2026-06-01';
+    const recordDateItems = temperatureChart?.todayRecords || [];
+    const latestBeforeRecordDate = temperatureChart?.historyRecords?.[0] || temperatureChart?.records?.[0] || null;
+
+    return {
+      documentContext: {
+        admissionId: query.admissionId,
+        templateId: query.templateId,
+        templateName: query.templateName,
+        recordType: query.templateName || '日常病程记录',
+        recordTime: query.recordTime,
+        recordDate,
+      },
+      patient: registration ? {
+        patientId: registration.patientId,
+        name: registration.name,
+        sex: registration.gender,
+        age: registration.ageText,
+        inpatientNo: registration.inpatientNo,
+        medicalRecordNo: registration.medicalRecordNo,
+      } : undefined,
+      admission: registration ? {
+        admissionTime: registration.admissionTime,
+        department: registration.deptName,
+        ward: registration.wardName,
+        bedNo: registration.bedNo,
+        attendingDoctor: registration.attendingDoctorName,
+        allergyText: registration.allergyText,
+        chiefComplaint: '咳嗽、咳痰3天',
+        admissionCondition: '神志清，精神可，步入病房',
+        severeFlag: false,
+      } : undefined,
+      diagnoses: registration?.diagnoses,
+      vitals: {
+        recordDateItems,
+        latestBeforeRecordDate,
+        summary: recordDateItems.length > 0
+          ? '本日体温单显示体温38.2℃，血压126/78mmHg。'
+          : '本日体温单暂无记录；最近一次体温单显示体温38.2℃，血压126/78mmHg。',
+      },
+      orders: {
+        active: orders,
+        changedNearRecordDate: [],
+        summary: '目前予抗感染、止咳化痰等治疗，长期医嘱执行中。',
+      },
+      labs: {
+        abnormal: [],
+        recentKeyResults: [],
+        summary: '',
+      },
+      exams: [],
+      previousRecords: {
+        recentNotes: [
+          {
+            recordTime: '2026-06-01 10:00',
+            recordType: '入院记录',
+            recordName: '入院记录',
+            medType: '0',
+            recordCategory: '入院记录',
+            chiefComplaint: '咳嗽、咳痰3天',
+            presentIllness: '患者3天前受凉后出现咳嗽，咳少量白痰，无明显发热、胸闷气促。',
+            summary: '入院记录；主诉：咳嗽、咳痰3天；现病史：患者3天前受凉后出现咳嗽，咳少量白痰。',
+          },
+        ],
+        longStaySummary: '',
+      },
+      consultations: [],
+      operations: [],
+      dataQuality: {
+        hasRecordDateVitals: recordDateItems.length > 0,
+        latestVitalsDate: latestBeforeRecordDate?.recordTime?.split(/\s+/)[0] || '',
+        truncated: true,
+        truncatedReason: 'Mock 上下文仅返回演示数据。',
+      },
     };
   }
 }

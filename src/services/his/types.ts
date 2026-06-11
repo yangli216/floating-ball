@@ -333,6 +333,203 @@ export interface HisInpatientQuery {
 }
 
 /**
+ * 住院病历 AI 上下文裁剪策略。
+ *
+ * HIS 可按本策略只返回与本次文书生成相关的数据，避免住院周期过长时把全量医嘱、
+ * 体温单、检验检查和历史病程一次性塞给模型。
+ */
+export interface HisInpatientEmrContextPolicy {
+  /** 默认 7：围绕 recordDate 返回近 N 天重点数据 */
+  maxDays?: number;
+  includePreviousNotes?: boolean;
+  /** 默认 3：最近病程摘要条数 */
+  previousNoteLimit?: number;
+  includeLongStaySummary?: boolean;
+  /** 默认 14：检验回看天数 */
+  labLookbackDays?: number;
+  /** 默认 7：医嘱变更回看天数 */
+  orderLookbackDays?: number;
+  onlyAbnormalLabs?: boolean;
+}
+
+export interface HisInpatientEmrContextQuery extends HisInpatientQuery {
+  templateId?: string;
+  templateName?: string;
+  recordTime?: string;
+  recordDate?: string;
+  contextPolicy?: HisInpatientEmrContextPolicy;
+}
+
+export interface HisInpatientEmrDocumentContext {
+  admissionId?: string;
+  templateId?: string;
+  templateName?: string;
+  recordType?: string;
+  recordTime?: string;
+  recordDate?: string;
+}
+
+export interface HisInpatientEmrPatientSummary {
+  patientId?: string;
+  name?: string;
+  sex?: string;
+  age?: string;
+  birthDate?: string;
+  inpatientNo?: string;
+  medicalRecordNo?: string;
+}
+
+export interface HisInpatientEmrAdmissionSummary {
+  admissionTime?: string;
+  department?: string;
+  ward?: string;
+  bedNo?: string;
+  attendingDoctor?: string;
+  chiefDoctor?: string;
+  allergyText?: string;
+  chiefComplaint?: string;
+  admissionCondition?: string;
+  severeFlag?: boolean;
+  raw?: Record<string, unknown>;
+}
+
+export interface HisInpatientEmrVitalsContext {
+  /** recordDate 当日生命体征 */
+  recordDateItems?: HisInpatientTemperatureRecord[];
+  /** recordDate 之前最近一次生命体征 */
+  latestBeforeRecordDate?: HisInpatientTemperatureRecord | null;
+  /** 给 AI 使用的简短摘要，推荐 HIS 侧生成 */
+  summary?: string;
+  raw?: Record<string, unknown>;
+}
+
+export interface HisInpatientEmrOrdersContext {
+  active?: HisInpatientOrder[];
+  changedNearRecordDate?: HisInpatientOrder[];
+  summary?: string;
+  raw?: Record<string, unknown>;
+}
+
+export interface HisInpatientLabResult {
+  reportTime?: string;
+  groupName?: string;
+  itemName?: string;
+  result?: string;
+  unit?: string;
+  referenceRange?: string;
+  abnormalFlag?: string;
+  clinicalHint?: string;
+  summary?: string;
+  raw?: Record<string, unknown>;
+}
+
+export interface HisInpatientExamReport {
+  examTime?: string;
+  examName?: string;
+  finding?: string;
+  conclusion?: string;
+  important?: boolean;
+  summary?: string;
+  raw?: Record<string, unknown>;
+}
+
+export interface HisInpatientPreviousRecordSummary {
+  recordId?: string;
+  templateId?: string;
+  recordTime?: string;
+  createTime?: string;
+  updateTime?: string;
+  createUser?: string;
+  recordType?: string;
+  recordName?: string;
+  /** 0 入院记录，1 病程，2 病案首页；病案首页不建议进入 AI 上下文 */
+  medType?: string;
+  /** 入院记录 / 病程记录等医生可读分类 */
+  recordCategory?: string;
+  status?: string;
+  statusText?: string;
+  signed?: boolean;
+  contentAvailable?: boolean;
+  /** 去除 HTML 标签和页眉后的病历正文摘录，按上下文策略截断 */
+  content?: string;
+  /** 入院记录等结构化病历的章节抽取结果 */
+  structuredSections?: {
+    chiefComplaint?: string;
+    presentIllness?: string;
+    pastMedicalHistory?: string;
+    personalHistory?: string;
+    familyHistory?: string;
+    physicalExam?: string;
+    specialistExam?: string;
+    auxiliaryExam?: string;
+    admissionDiagnosis?: string;
+    treatmentPlan?: string;
+  };
+  /** 入院记录核心字段，供 AI 生成后续病程时优先引用 */
+  chiefComplaint?: string;
+  presentIllness?: string;
+  title?: string;
+  summary?: string;
+}
+
+export interface HisInpatientEmrPreviousRecordsContext {
+  recentNotes?: HisInpatientPreviousRecordSummary[];
+  longStaySummary?: string;
+}
+
+export interface HisInpatientConsultationSummary {
+  consultationTime?: string;
+  department?: string;
+  opinion?: string;
+  suggestion?: string;
+  summary?: string;
+  raw?: Record<string, unknown>;
+}
+
+export interface HisInpatientOperationSummary {
+  operationTime?: string;
+  operationName?: string;
+  anesthesia?: string;
+  finding?: string;
+  postoperativeDiagnosis?: string;
+  summary?: string;
+  raw?: Record<string, unknown>;
+}
+
+export interface HisInpatientEmrDataQuality {
+  hasRecordDateVitals?: boolean;
+  latestVitalsDate?: string;
+  truncated?: boolean;
+  truncatedReason?: string;
+}
+
+/**
+ * 推荐给 AI 使用的住院病历上下文包。
+ *
+ * 该结构是 HIS 三方对接的住院病历 AI 上下文目标：摘要优先、明细适量、日期关系明确。
+ * 住院病历生成只消费该聚合上下文，不再由桌面端分别拉取登记、医嘱和体温单后归一。
+ */
+export interface HisInpatientEmrContextPackage {
+  documentContext?: HisInpatientEmrDocumentContext;
+  patient?: HisInpatientEmrPatientSummary;
+  admission?: HisInpatientEmrAdmissionSummary;
+  diagnoses?: HisInpatientDiagnosis[];
+  vitals?: HisInpatientEmrVitalsContext;
+  orders?: HisInpatientEmrOrdersContext;
+  labs?: {
+    abnormal?: HisInpatientLabResult[];
+    recentKeyResults?: HisInpatientLabResult[];
+    summary?: string;
+  };
+  exams?: HisInpatientExamReport[];
+  previousRecords?: HisInpatientEmrPreviousRecordsContext;
+  consultations?: HisInpatientConsultationSummary[];
+  operations?: HisInpatientOperationSummary[];
+  dataQuality?: HisInpatientEmrDataQuality;
+  raw?: Record<string, unknown>;
+}
+
+/**
  * 指定患者住院诊断
  */
 export interface HisInpatientDiagnosis {
@@ -354,7 +551,12 @@ export interface HisInpatientDiagnosis {
 export interface HisInpatientOrder {
   orderId: string;
   groupId?: string;
+  /** 医嘱基础名称，尽量不包含剂量、用法、频次等执行信息 */
   name: string;
+  /** HIS 原始完整医嘱文本，可能已包含剂量、用法、频次 */
+  fullText?: string;
+  /** 推荐给 AI 摘要和病历生成使用的医嘱展示文本，避免再次拼接结构化字段造成重复 */
+  displayText?: string;
   /** 药品 / 检查 / 检验 / 处置 / 护理等 */
   orderType?: string;
   status?: string;

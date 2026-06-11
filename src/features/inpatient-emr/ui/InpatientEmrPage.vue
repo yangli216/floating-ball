@@ -233,7 +233,7 @@ function restart(): void {
 }
 
 function getFieldPrompt(field: InpatientEmrTemplateField): string {
-  return buildInpatientEmrFieldPrompt(field);
+  return buildInpatientEmrFieldPrompt(field, result.value?.context);
 }
 
 function handlePreviewInput(event: Event): void {

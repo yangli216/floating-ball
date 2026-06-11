@@ -45,6 +45,8 @@ import type {
   HisPatientHistory,
   HisInpatientDiagnosis,
   HisInpatientOrder,
+  HisInpatientEmrContextPackage,
+  HisInpatientEmrContextQuery,
   HisInpatientQuery,
   HisInpatientRegistrationInfo,
   HisInpatientTemperatureChart,
@@ -278,31 +280,66 @@ function mapInpatientDiagnosis(item: HisInpatientDiagnosisBody): HisInpatientDia
 
 function mapInpatientOrder(item: HisInpatientOrderBody): HisInpatientOrder | null {
   const raw = item as unknown as Record<string, unknown>;
-  const name = firstTrim(raw, ['naOrd', 'name']);
-  if (!name) return null;
+  const sourceName = firstTrim(raw, ['fullText', 'naOrd', 'displayText', 'name', 'naSrv']);
+  const name = firstTrim(raw, ['name', 'naSrv']) ?? sourceName;
+  if (!name && !sourceName) return null;
+  const frequency = firstTrim(raw, ['frequencyText', 'idFreqText', 'frequency']);
+  const route = firstTrim(raw, ['sdUsageText', 'idUsgeText', 'route']);
+  const dose = firstTrim(raw, ['doseOnce', 'dose']);
 
   return {
     orderId: firstTrim(raw, ['idOrd', 'idOrder', 'orderId'])
       ?? [
         firstTrim(raw, ['groupId']),
         firstTrim(raw, ['orderIndex']),
-        name,
+        name ?? sourceName,
       ].filter(Boolean).join('-'),
     groupId: firstTrim(raw, ['idGrp', 'groupId']),
-    name,
-    orderType: firstTrim(raw, ['sdSrvText', 'orderType', 'sdSrv']),
+    name: name ?? sourceName ?? '',
+    fullText: sourceName,
+    displayText: firstTrim(raw, ['displayText']) ?? buildInpatientOrderDisplayText(sourceName, name, dose, firstTrim(raw, ['doseUnit']), frequency, route),
+    orderType: firstTrim(raw, ['sdOrdText', 'sdSrvText', 'orderType', 'sdOrd', 'sdSrv']),
     status: firstTrim(raw, ['hiHosOrderStatusText', 'sdStatus', 'status', 'hiHosOrderStatus']),
     startTime: firstTrim(raw, ['dtBgn', 'startTime']),
     stopTime: firstTrim(raw, ['dtEnd', 'stopTime']),
-    dose: firstTrim(raw, ['doseOnce', 'dose']),
-    frequency: firstTrim(raw, ['idFreqText', 'frequency']),
-    route: firstTrim(raw, ['idUsgeText', 'route']),
+    dose,
+    frequency,
+    route,
     quantity: firstNumber(raw, ['amount', 'quantity']),
     unit: firstTrim(raw, ['unitOrd', 'unit']),
     doctorName: firstTrim(raw, ['doctorName', 'naDoctor']),
     deptName: firstTrim(raw, ['deptName', 'naDept']),
     raw,
   };
+}
+
+function buildInpatientOrderDisplayText(
+  sourceName: string | undefined,
+  baseName: string | undefined,
+  dose: string | undefined,
+  doseUnit: string | undefined,
+  frequency: string | undefined,
+  route: string | undefined,
+): string | undefined {
+  if (sourceName && sourceName !== baseName) {
+    return sourceName;
+  }
+  let text = baseName ?? sourceName ?? '';
+  const doseText = dose && doseUnit ? `${dose}${doseUnit}` : undefined;
+  text = appendOrderFragmentIfMissing(text, doseText);
+  text = appendOrderFragmentIfMissing(text, route);
+  text = appendOrderFragmentIfMissing(text, frequency);
+  return text || undefined;
+}
+
+function appendOrderFragmentIfMissing(text: string, fragment: string | undefined): string {
+  if (!fragment) return text;
+  if (containsIgnoreSpaces(text, fragment)) return text;
+  return text ? `${text} ${fragment}` : fragment;
+}
+
+function containsIgnoreSpaces(text: string, fragment: string): boolean {
+  return text.replace(/\s+/g, '').toLowerCase().includes(fragment.replace(/\s+/g, '').toLowerCase());
 }
 
 function readDetailNumber(detail: string | undefined, labels: string[]): number | undefined {
@@ -725,5 +762,9 @@ export class PhisHisAdapter implements HisAdapter {
   async fetchInpatientRegistration(query: HisInpatientQuery): Promise<HisInpatientRegistrationInfo | null> {
     const registration = await this.service.loadInpatientRegistration(query);
     return registration ? mapInpatientRegistration(query, registration) : null;
+  }
+
+  async fetchInpatientEmrContext(query: HisInpatientEmrContextQuery): Promise<HisInpatientEmrContextPackage | null> {
+    return this.service.buildInpatientEmrContext(query);
   }
 }

@@ -43,5 +43,6 @@ docs/*
 !docs/frontend-file-structure-plan.md
 !docs/frontend-reuse-architecture.md
 !docs/frontend-ui-reference.md
+!docs/his-inpatient-emr-ai-context-integration.md
 !docs/knowledge-search.md
 documents/*

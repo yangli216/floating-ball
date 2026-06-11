@@ -1,5 +1,7 @@
 import type {
   HisInpatientOrder,
+  HisInpatientEmrContextPackage,
+  HisInpatientEmrContextPolicy,
   HisInpatientRegistrationInfo,
   HisInpatientTemperatureChart,
 } from '@/services/his';
@@ -22,6 +24,9 @@ export interface InpatientEmrGenerationRequest {
   templateId: string;
   htmlContent: string;
   templateName?: string;
+  recordTime?: string;
+  contextPolicy?: HisInpatientEmrContextPolicy;
+  hisContext?: HisInpatientEmrContextPackage;
   requestId?: string;
   patient?: InpatientEmrPatientInput;
 }
@@ -61,7 +66,17 @@ export interface InpatientEmrTemplateParseResult {
   fields: InpatientEmrTemplateField[];
 }
 
+export interface InpatientEmrDocumentContext {
+  templateId: string;
+  templateName: string;
+  recordType: string;
+  recordTime: string;
+  recordDate: string;
+}
+
 export interface InpatientEmrContext {
+  documentContext: InpatientEmrDocumentContext;
+  aiContext?: HisInpatientEmrContextPackage;
   registration: HisInpatientRegistrationInfo | null;
   orders: HisInpatientOrder[];
   temperatureChart: HisInpatientTemperatureChart | null;

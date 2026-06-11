@@ -17,11 +17,11 @@ export interface InpatientEmrReferenceFeedbackPayload {
 }
 
 const STEP_DEFINITIONS: Array<Pick<InpatientEmrGenerationStep, 'key' | 'title' | 'description'>> = [
-  { key: 'patient', title: '获取患者基本信息', description: '住院登记、诊断和患者基础信息' },
-  { key: 'orders', title: '获取医嘱信息', description: '当日住院医嘱与同组开立内容' },
-  { key: 'temperature', title: '获取体温单数据', description: '体温、血压、呼吸、血氧等生命体征' },
+  { key: 'patient', title: '获取住院上下文', description: '调用 buildContext 获取本次文书所需 HIS 数据' },
+  { key: 'orders', title: '整理诊疗摘要', description: '汇总诊断、医嘱、检验检查和治疗信息' },
+  { key: 'temperature', title: '整理病历依据', description: '核对生命体征、历史病历、会诊和手术资料' },
   { key: 'template', title: '解析病历', description: '识别 data-id 字段和生成规则' },
-  { key: 'generate', title: '病历生成中', description: '按字段规则生成医生审核草稿' },
+  { key: 'generate', title: 'AI 生成', description: '按字段规则生成医生审核草稿' },
 ];
 
 function createInitialSteps(): InpatientEmrGenerationStep[] {
