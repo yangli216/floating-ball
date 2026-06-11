@@ -76,6 +76,7 @@ export interface TreatmentRecommendation {
     routeKey?: string;      // 用法编码 (medicine)
     days?: string;          // 天数 (medicine)
     pharmacy?: string;      // 药房 (medicine)
+    pharmacyCleared?: boolean; // 医生已手动清空药房，禁止自动选默认药房
     regulatedDisease?: string; // 规定病 (all types)
     bodySite?: string;      // 部位方式 (exam)
     bodySiteId?: string;    // 部位方式 ID，PHIS 回写 idPart
@@ -87,8 +88,10 @@ export interface TreatmentRecommendation {
         raw: Record<string, unknown>;
     }>; // 检查项目部位候选
     execDept?: string;      // 执行科室 (exam/lab_test/procedure)
+    execDeptCleared?: boolean; // 医生已手动清空执行科室，禁止用匹配元数据自动补回
     remark?: string;        // 备注
     insuranceType?: string; // 医保限用 (all types)
+    insuranceCleared?: boolean; // 医生已手动清空医保限用，禁止用默认医保类型自动补回
 }
 
 export interface FinalRecord {

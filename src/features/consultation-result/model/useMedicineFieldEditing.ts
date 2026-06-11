@@ -1,4 +1,5 @@
 import type { TreatmentRecommendation } from '@/types/consultation';
+import { parsePositiveNumber } from '@/utils/medicalDictionaryHelpers';
 import type { MedicinePrimaryField } from '@features/clinical-result';
 
 export interface MedicineFieldEditingOptions {
@@ -75,9 +76,12 @@ export function useMedicineFieldEditing(options: MedicineFieldEditingOptions) {
   function handleTotalQtyInput(rec: TreatmentRecommendation, event: Event): void {
     const target = event.target as HTMLInputElement | null;
     rec.totalQty = target?.value || '';
-    rec.totalManualEdited = rec.totalQty.trim().length > 0;
+    rec.totalManualEdited = true;
     if (!rec.totalUnit) {
       rec.totalUnit = options.normalize(rec).totalUnit || '';
+    }
+    if (parsePositiveNumber(rec.totalQty) === null) {
+      rec.selected = false;
     }
     options.clearInventoryWarning(rec);
   }
@@ -109,6 +113,10 @@ export function useMedicineFieldEditing(options: MedicineFieldEditingOptions) {
     } else {
       rec.route = value;
       rec.routeKey = key;
+    }
+
+    if (!value.trim() || !key.trim()) {
+      rec.selected = false;
     }
 
     if (rec.type === 'medicine') {

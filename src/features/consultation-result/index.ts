@@ -9,7 +9,10 @@ export { default as TreatmentRecommendationSection } from './ui/TreatmentRecomme
 export { useBodySiteOptions } from './model/useBodySiteOptions';
 export { useClinicalResultCancelController } from './model/useClinicalResultCancelController';
 export { useClinicalResultIntentReset } from './model/useClinicalResultIntentReset';
-export { useClinicalResultWritebackPayload } from './model/useClinicalResultWritebackPayload';
+export {
+  createClinicalResultOrderItemResolvers,
+  useClinicalResultWritebackPayload,
+} from './model/useClinicalResultWritebackPayload';
 export { useClinicalResultWritebackPreflight } from './model/useClinicalResultWritebackPreflight';
 export {
   CONSULTATION_REFERENCE_FEEDBACK_EVENT,

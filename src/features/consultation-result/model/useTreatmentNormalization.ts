@@ -262,16 +262,19 @@ export function useTreatmentNormalization(deps: TreatmentNormalizationDeps): Tre
       route: rec.route || '',
       routeKey: rec.routeKey || '',
       days: rec.days || '',
+      pharmacyCleared: !!rec.pharmacyCleared,
       pharmacy: rec.pharmacy || '',
       remark: rec.remark || '',
       regulatedDisease: rec.regulatedDisease || '',
       bodySite: rec.bodySite || '',
       bodySiteId: rec.bodySiteId || rec.matchedItem?.idPart || readFirstString(matchedRaw, ['idPart']),
       bodySiteOptions: rec.bodySiteOptions || [],
-      execDept: rec.execDept || (rec.type && rec.type !== 'medicine'
+      execDeptCleared: !!rec.execDeptCleared,
+      execDept: rec.execDept || (rec.type && rec.type !== 'medicine' && !rec.execDeptCleared
         ? (rec.matchedItem?.idDeptExec || readFirstString(matchedRaw, ['idDeptExec', 'idDept']))
         : '') || '',
-      insuranceType: rec.insuranceType || '医保使用',
+      insuranceCleared: !!rec.insuranceCleared,
+      insuranceType: rec.insuranceCleared ? '' : (rec.insuranceType || '医保使用'),
     };
 
     if (!isExecDeptSatisfied(base)) {
@@ -296,6 +299,7 @@ export function useTreatmentNormalization(deps: TreatmentNormalizationDeps): Tre
           route: base.route || defaults.route,
           routeKey: base.routeKey || findRouteOptionByValue(base.route || defaults.route)?.key || '',
         };
+    const preferManualTotal = !!rec.totalManualEdited;
     const normalizedMedicine = {
       ...base,
       dosage: base.matchedItem
@@ -308,26 +312,27 @@ export function useTreatmentNormalization(deps: TreatmentNormalizationDeps): Tre
       frequencyKey: frequencySelection.frequencyKey,
       route: routeSelection.route,
       routeKey: routeSelection.routeKey,
-      totalQty: base.totalQty || defaults.totalQty,
+      totalQty: preferManualTotal ? (base.totalQty || '') : (base.totalQty || defaults.totalQty),
       totalUnit: base.matchedItem
         ? (readFirstString(hisRaw, ['unitSale']) || base.totalUnit || defaults.totalUnit)
         : (base.totalUnit || defaults.totalUnit),
       days: base.days || defaults.days,
     };
     const autoTotal = resolveMedicineAutoTotal(normalizedMedicine);
-    const preferManualTotal = !!rec.totalManualEdited;
 
     const normalizedResult = {
       ...normalizedMedicine,
       totalQty: preferManualTotal
-        ? (normalizedMedicine.totalQty || autoTotal.totalQty)
+        ? normalizedMedicine.totalQty
         : (autoTotal.totalQty || normalizedMedicine.totalQty),
       totalUnit: preferManualTotal
         ? (normalizedMedicine.totalUnit || autoTotal.totalUnit)
         : (autoTotal.totalUnit || normalizedMedicine.totalUnit),
     };
 
-    ensurePharmacy(normalizedResult);
+    if (!rec.pharmacyCleared) {
+      ensurePharmacy(normalizedResult);
+    }
     return normalizedResult;
   }
 

@@ -867,20 +867,6 @@ const treatmentHydration = useTreatmentHydration({
   notify: (message, level) => showToast(message, level || 'info'),
 });
 const noopTreatmentSelector = () => {};
-const { run: runWritebackPreflight } = useClinicalResultWritebackPreflight({
-  selectedDiagnoses: computed(() => (selectedDiagnosis.value ? [selectedDiagnosis.value] : [])),
-  treatments: selectedTreatments,
-  ensureMedicineSelectable: treatmentHydration.ensureMedicineSelectable,
-  checkMedicineInventoryEnough: treatmentHydration.checkMedicineInventoryEnough,
-  hydrateMedicalItemDetail: treatmentHydration.hydrateMatchedMedicalItemDetail,
-  hasRequiredPharmacy: treatmentGates.hasRequiredPharmacy,
-  hasRequiredExecDept: treatmentGates.hasRequiredExecDept,
-  hasRequiredBodySite: treatmentGates.hasRequiredBodySite,
-  openPharmacySelector: noopTreatmentSelector,
-  openExecDeptSelector: noopTreatmentSelector,
-  openBodySiteSelector: noopTreatmentSelector,
-  notify: (message) => showToast(message, 'info'),
-});
 function normalizeTreatmentRecommendation(rec: Partial<TreatmentRecommendation>): TreatmentRecommendation {
   return treatmentNormalization.normalize(rec);
 }
@@ -925,6 +911,10 @@ function syncTreatmentExecDeptSelections(): void {
   const keyByText = new Map(hisExecDeptOptions.value.map((option) => [option.text, option.key]));
   getAllRecommendationItems().forEach((rec) => {
     if (rec.type === 'medicine') {
+      return;
+    }
+
+    if (rec.execDeptCleared) {
       return;
     }
 
@@ -1353,10 +1343,32 @@ const symptomOrderResolvers: OrderItemResolvers = {
   getServiceCode: (rec) => (rec.matchedItem?.sdSrv || readFirstString(getMatchedItemRaw(rec), ['sdSrv']) || '').trim(),
   getServiceId: (rec) => getMatchedOrderServiceId(rec),
   getServiceName: (rec) => (rec.matchedItem?.naSrv || readFirstString(getMatchedItemRaw(rec), ['naSrv', 'naCli', 'naMedPro', 'naMed']) || rec.matchedItem?.name || rec.name || '').trim(),
-  getExecDeptId: (rec) => (rec.execDept || rec.matchedItem?.idDeptExec || readFirstString(getMatchedItemRaw(rec), ['idDeptExec', 'idDept']) || '').trim(),
+  getExecDeptId: (rec) => (rec.type === 'medicine'
+    ? (rec.execDept || rec.matchedItem?.idDeptExec || readFirstString(getMatchedItemRaw(rec), ['idDeptExec', 'idDept']) || '')
+    : (rec.execDept || '')).trim(),
   getPartId: (rec) => (rec.bodySiteId || rec.matchedItem?.idPart || readFirstString(getMatchedItemRaw(rec), ['idPart']) || '').trim(),
   getJsonField: (rec) => (rec.matchedItem?.jsonField || readFirstString(getMatchedItemRaw(rec), ['jsonField']) || '').trim(),
+  normalize: normalizeTreatmentRecommendation,
 };
+
+const { run: runWritebackPreflight } = useClinicalResultWritebackPreflight({
+  selectedDiagnoses: computed(() => (selectedDiagnosis.value ? [selectedDiagnosis.value] : [])),
+  treatments: selectedTreatments,
+  ensureMedicineSelectable: treatmentHydration.ensureMedicineSelectable,
+  checkMedicineInventoryEnough: treatmentHydration.checkMedicineInventoryEnough,
+  hydrateMedicalItemDetail: treatmentHydration.hydrateMatchedMedicalItemDetail,
+  hasRequiredPharmacy: treatmentGates.hasRequiredPharmacy,
+  hasRequiredExecDept: treatmentGates.hasRequiredExecDept,
+  hasRequiredBodySite: treatmentGates.hasRequiredBodySite,
+  openPharmacySelector: noopTreatmentSelector,
+  openExecDeptSelector: noopTreatmentSelector,
+  openBodySiteSelector: noopTreatmentSelector,
+  requiredFieldOptions: {
+    resolvers: symptomOrderResolvers,
+    normalize: normalizeTreatmentRecommendation,
+  },
+  notify: (message) => showToast(message, 'info'),
+});
 
 const submitToHIS = async () => {
   if (!canSubmitToHIS.value) {

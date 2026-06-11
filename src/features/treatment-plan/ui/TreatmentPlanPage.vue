@@ -254,6 +254,7 @@ function syncTreatmentExecDeptSelections(): void {
   const keyByText = new Map(execDeptOptions.value.map((option) => [option.text, option.key]));
   treatments.value.forEach((item) => {
     if (item.type === 'medicine') return;
+    if (item.execDeptCleared) return;
 
     const currentValue = (item.execDept || '').trim();
     if (!currentValue || execDeptOptions.value.some((option) => option.key === currentValue)) {
@@ -372,6 +373,16 @@ function getPharmacySearchKeyword(item: TreatmentRecommendation): string {
 
 function handlePharmacySearchInput(item: TreatmentRecommendation, event: Event): void {
   treatmentAttributeSearch.handleSearchInput(item, 'pharmacy', event);
+  const target = event.target as HTMLInputElement | null;
+  if ((target?.value || '').trim()) {
+    return;
+  }
+  item.pharmacy = '';
+  item.pharmacyCleared = true;
+  treatmentHydration.clearMedicineInventoryWarning(item);
+  if (treatmentGates.isPharmacyRequired(item)) {
+    item.selected = false;
+  }
 }
 
 function getFilteredPharmacyOptions(item: TreatmentRecommendation): UsageOption[] {
@@ -380,6 +391,7 @@ function getFilteredPharmacyOptions(item: TreatmentRecommendation): UsageOption[
 
 function selectPharmacyOption(item: TreatmentRecommendation, option: TreatmentPlanAttributeOption): void {
   item.pharmacy = option.text;
+  item.pharmacyCleared = false;
   treatmentAttributeSearch.setSearchKeyword(item, 'pharmacy', option.text);
   treatmentHydration.clearMedicineInventoryWarning(item);
   if (item.selected) {
@@ -391,6 +403,7 @@ function selectPharmacyOption(item: TreatmentRecommendation, option: TreatmentPl
 
 function clearPharmacySelection(item: TreatmentRecommendation): void {
   item.pharmacy = '';
+  item.pharmacyCleared = true;
   treatmentAttributeSearch.setSearchKeyword(item, 'pharmacy', '');
   treatmentHydration.clearMedicineInventoryWarning(item);
   if (item.selected) {
@@ -406,6 +419,15 @@ function getExecDeptSearchKeyword(item: TreatmentRecommendation): string {
 
 function handleExecDeptSearchInput(item: TreatmentRecommendation, event: Event): void {
   treatmentAttributeSearch.handleSearchInput(item, 'execDept', event);
+  const target = event.target as HTMLInputElement | null;
+  if ((target?.value || '').trim()) {
+    return;
+  }
+  item.execDept = '';
+  item.execDeptCleared = true;
+  if (treatmentGates.isExecDeptRequired(item)) {
+    item.selected = false;
+  }
 }
 
 function getFilteredExecDeptOptions(item: TreatmentRecommendation): UsageOption[] {
@@ -414,12 +436,14 @@ function getFilteredExecDeptOptions(item: TreatmentRecommendation): UsageOption[
 
 function selectExecDeptOption(item: TreatmentRecommendation, option: TreatmentPlanAttributeOption): void {
   item.execDept = option.key || option.text;
+  item.execDeptCleared = false;
   treatmentAttributeSearch.setSearchKeyword(item, 'execDept', option.text);
   secondarySelector.closeAll();
 }
 
 function clearExecDeptSelection(item: TreatmentRecommendation): void {
   item.execDept = '';
+  item.execDeptCleared = true;
   treatmentAttributeSearch.setSearchKeyword(item, 'execDept', '');
   if (item.selected && treatmentGates.isExecDeptRequired(item)) {
     item.selected = false;
@@ -434,6 +458,15 @@ function getBodySiteSearchKeyword(item: TreatmentRecommendation): string {
 
 function handleBodySiteSearchInput(item: TreatmentRecommendation, event: Event): void {
   treatmentAttributeSearch.handleSearchInput(item, 'bodySite', event);
+  const target = event.target as HTMLInputElement | null;
+  if ((target?.value || '').trim()) {
+    return;
+  }
+  item.bodySite = '';
+  item.bodySiteId = '';
+  if (item.type === 'exam') {
+    item.selected = false;
+  }
 }
 
 function getFilteredBodySiteOptions(item: TreatmentRecommendation): UsageOption[] {
@@ -481,6 +514,13 @@ function getInsuranceSearchKeyword(item: TreatmentRecommendation): string {
 
 function handleInsuranceSearchInput(item: TreatmentRecommendation, event: Event): void {
   treatmentAttributeSearch.handleSearchInput(item, 'insurance', event);
+  const target = event.target as HTMLInputElement | null;
+  if ((target?.value || '').trim()) {
+    return;
+  }
+  item.insuranceType = '';
+  item.insuranceCleared = true;
+  item.selected = false;
 }
 
 function getFilteredInsuranceOptions(item: TreatmentRecommendation): UsageOption[] {
@@ -489,13 +529,19 @@ function getFilteredInsuranceOptions(item: TreatmentRecommendation): UsageOption
 
 function selectInsuranceOption(item: TreatmentRecommendation, option: TreatmentPlanAttributeOption): void {
   item.insuranceType = option.text;
+  item.insuranceCleared = false;
   treatmentAttributeSearch.setSearchKeyword(item, 'insurance', option.text);
   secondarySelector.closeAll();
 }
 
 function clearInsuranceSelection(item: TreatmentRecommendation): void {
   item.insuranceType = '';
+  item.insuranceCleared = true;
   treatmentAttributeSearch.setSearchKeyword(item, 'insurance', '');
+  if (item.selected) {
+    item.selected = false;
+    showToast?.('医保限用已清空，请重新设置后再选中该项目。', 'info');
+  }
   secondarySelector.closeAll();
 }
 
@@ -582,6 +628,10 @@ async function confirmSuggestedMatch(item: TreatmentRecommendation): Promise<voi
     matchStatus: 'confirmed',
     manualMatched: false,
     selected: false,
+    execDept: '',
+    pharmacyCleared: false,
+    execDeptCleared: false,
+    insuranceCleared: false,
     suggestedMatchItem: undefined,
   });
 
@@ -611,6 +661,10 @@ async function applyManualMatch(item: TreatmentRecommendation, candidate: Manual
     showToast?.('该标准库候选类型与当前推荐项不匹配。', 'info');
     return;
   }
+  candidateItem.execDept = '';
+  candidateItem.pharmacyCleared = false;
+  candidateItem.execDeptCleared = false;
+  candidateItem.insuranceCleared = false;
 
   Object.assign(candidateItem, normalizeTreatment(candidateItem));
 

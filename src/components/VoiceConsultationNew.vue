@@ -694,7 +694,11 @@ function buildIntentTreatmentKey(item: ClinicalResultInput['treatments'][number]
     item.totalUnit,
     item.days,
     inherited.pharmacy,
+    inherited.pharmacyCleared,
     inherited.execDept,
+    inherited.execDeptCleared,
+    inherited.insuranceType,
+    inherited.insuranceCleared,
     inherited.bodySite,
     inherited.bodySiteId,
   ].map(normalizeIntentKeyPart).join('~');
@@ -760,6 +764,10 @@ async function confirmSuggestedMatch(rec: TreatmentRecommendation, event?: Event
   rec.matchStatus = 'confirmed';
   rec.manualMatched = false;
   rec.selected = false;
+  rec.execDept = '';
+  rec.pharmacyCleared = false;
+  rec.execDeptCleared = false;
+  rec.insuranceCleared = false;
   rec.suggestedMatchItem = undefined;
 
   if (!(await ensureTreatmentSelectable(rec, {
@@ -779,6 +787,10 @@ async function applyManualMatch(rec: TreatmentRecommendation, candidate: ManualM
   if (!applyManualMatchCandidate(rec, candidate)) {
     return;
   }
+  rec.execDept = '';
+  rec.pharmacyCleared = false;
+  rec.execDeptCleared = false;
+  rec.insuranceCleared = false;
 
   if (!(await ensureTreatmentSelectable(rec, {
     labelName: candidate.name,
@@ -810,7 +822,7 @@ async function toggleTreatment(item: TreatmentRecommendation): Promise<void> {
     pharmacyMissingMessage: '当前发药药房不可用，请选择实际拥有该药品的药房后再选中',
     execDeptMissingMessage: '请先设置执行科室后再选中该项目',
     bodySiteMissingMessage: '请先设置检查部位后再选中该项目',
-    hydrateNonMedicine: item.type === 'exam',
+    hydrateNonMedicine: item.type !== 'medicine',
   }))) {
     return;
   }
@@ -1440,6 +1452,10 @@ function syncTreatmentExecDeptSelections(): void {
       return;
     }
 
+    if (rec.execDeptCleared) {
+      return;
+    }
+
     const currentValue = (rec.execDept || '').trim();
     if (!currentValue) {
       return;
@@ -1520,6 +1536,7 @@ onUnmounted(() => {
 const {
   buildDiagList,
   buildOrderList,
+  orderItemResolvers,
 } = useClinicalResultWritebackPayload({
   selectedDiagnoses,
   primaryDiagnosis: selectedDiagnosis,
@@ -1549,6 +1566,10 @@ const {
     openSecondarySelector(rec, 'execDept');
   },
   openBodySiteSelector: openBodySiteQuickSelector,
+  requiredFieldOptions: {
+    resolvers: orderItemResolvers,
+    normalize: normalizeTreatmentRecommendation,
+  },
   notify: showToast,
 });
 
@@ -1599,6 +1620,16 @@ function setPharmacySearchKeyword(rec: TreatmentRecommendation, value: string): 
 
 function handlePharmacySearchInput(rec: TreatmentRecommendation, event: Event): void {
   treatmentAttributeSearch.handleSearchInput(rec, 'pharmacy', event);
+  const target = event.target as HTMLInputElement | null;
+  if ((target?.value || '').trim()) {
+    return;
+  }
+  rec.pharmacy = '';
+  rec.pharmacyCleared = true;
+  clearMedicineInventoryWarning(rec);
+  if (isPharmacyRequired(rec)) {
+    rec.selected = false;
+  }
 }
 
 function getFilteredPharmacyOptionsForRecord(rec: TreatmentRecommendation): UsageOption[] {
@@ -1607,6 +1638,7 @@ function getFilteredPharmacyOptionsForRecord(rec: TreatmentRecommendation): Usag
 
 function selectPharmacyOption(rec: TreatmentRecommendation, option: TreatmentAttributeOption): void {
   rec.pharmacy = option.text;
+  rec.pharmacyCleared = false;
   setPharmacySearchKeyword(rec, option.text);
   clearMedicineInventoryWarning(rec);
   if (rec.type === 'medicine' && (rec.totalQty || '').trim()) {
@@ -1617,6 +1649,7 @@ function selectPharmacyOption(rec: TreatmentRecommendation, option: TreatmentAtt
 
 function clearPharmacySelection(rec: TreatmentRecommendation): void {
   rec.pharmacy = '';
+  rec.pharmacyCleared = true;
   setPharmacySearchKeyword(rec, '');
   clearMedicineInventoryWarning(rec);
   if (isPharmacyRequired(rec) && rec.selected) {
@@ -1636,6 +1669,15 @@ function setExecDeptSearchKeyword(rec: TreatmentRecommendation, value: string): 
 
 function handleExecDeptSearchInput(rec: TreatmentRecommendation, event: Event): void {
   treatmentAttributeSearch.handleSearchInput(rec, 'execDept', event);
+  const target = event.target as HTMLInputElement | null;
+  if ((target?.value || '').trim()) {
+    return;
+  }
+  rec.execDept = '';
+  rec.execDeptCleared = true;
+  if (isExecDeptRequired(rec)) {
+    rec.selected = false;
+  }
 }
 
 function getFilteredExecDeptOptionsForRecord(rec: TreatmentRecommendation): UsageOption[] {
@@ -1644,12 +1686,14 @@ function getFilteredExecDeptOptionsForRecord(rec: TreatmentRecommendation): Usag
 
 function selectExecDeptOption(rec: TreatmentRecommendation, option: TreatmentAttributeOption): void {
   rec.execDept = option.key || option.text;
+  rec.execDeptCleared = false;
   setExecDeptSearchKeyword(rec, option.text);
   secondarySelector.closeAll();
 }
 
 function clearExecDeptSelection(rec: TreatmentRecommendation): void {
   rec.execDept = '';
+  rec.execDeptCleared = true;
   setExecDeptSearchKeyword(rec, '');
   if (isExecDeptRequired(rec)) {
     rec.selected = false;
@@ -1669,6 +1713,15 @@ function setBodySiteSearchKeyword(rec: TreatmentRecommendation, value: string): 
 
 function handleBodySiteSearchInput(rec: TreatmentRecommendation, event: Event): void {
   treatmentAttributeSearch.handleSearchInput(rec, 'bodySite', event);
+  const target = event.target as HTMLInputElement | null;
+  if ((target?.value || '').trim()) {
+    return;
+  }
+  rec.bodySite = '';
+  rec.bodySiteId = '';
+  if (isBodySiteRequired(rec)) {
+    rec.selected = false;
+  }
 }
 
 function getFilteredBodySiteOptionsForRecord(rec: TreatmentRecommendation): UsageOption[] {
@@ -1719,6 +1772,13 @@ function setInsuranceSearchKeyword(rec: TreatmentRecommendation, value: string):
 
 function handleInsuranceSearchInput(rec: TreatmentRecommendation, event: Event): void {
   treatmentAttributeSearch.handleSearchInput(rec, 'insurance', event);
+  const target = event.target as HTMLInputElement | null;
+  if ((target?.value || '').trim()) {
+    return;
+  }
+  rec.insuranceType = '';
+  rec.insuranceCleared = true;
+  rec.selected = false;
 }
 
 function getFilteredInsuranceOptionsForRecord(rec: TreatmentRecommendation): UsageOption[] {
@@ -1727,13 +1787,19 @@ function getFilteredInsuranceOptionsForRecord(rec: TreatmentRecommendation): Usa
 
 function selectInsuranceOption(rec: TreatmentRecommendation, option: TreatmentAttributeOption): void {
   rec.insuranceType = option.text;
+  rec.insuranceCleared = false;
   setInsuranceSearchKeyword(rec, option.text);
   secondarySelector.closeAll();
 }
 
 function clearInsuranceSelection(rec: TreatmentRecommendation): void {
   rec.insuranceType = '';
+  rec.insuranceCleared = true;
   setInsuranceSearchKeyword(rec, '');
+  if (rec.selected) {
+    rec.selected = false;
+    showToast?.('医保限用已清空，请重新设置后再选中该项目', 'warning');
+  }
 }
 
 async function reconcileAutoSelectedMedicineInventory(items: TreatmentRecommendation[]): Promise<void> {

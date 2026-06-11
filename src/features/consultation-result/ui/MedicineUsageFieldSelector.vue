@@ -25,23 +25,31 @@
       <svg class="muf-caret" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg>
     </button>
     <template v-else>
-      <input
-        ref="inputRef"
-        type="text"
-        class="muf-input"
-        :value="searchKeyword"
-        :placeholder="placeholder"
-        @input="onSearchInput(($event.target as HTMLInputElement).value)"
-        @keydown.esc.prevent="close"
-      />
+      <div class="muf-input-wrap">
+        <input
+          ref="inputRef"
+          type="text"
+          class="muf-input"
+          :value="searchKeyword"
+          :placeholder="placeholder"
+          @input="onSearchInput(($event.target as HTMLInputElement).value)"
+          @keydown.esc.prevent="close"
+        />
+        <button
+          v-if="currentText"
+          type="button"
+          class="muf-clear-icon"
+          :aria-label="field === 'frequency' ? '清空频次' : '清空用法'"
+          :title="field === 'frequency' ? '清空频次' : '清空用法'"
+          @mousedown.prevent.stop="clearSelection"
+        >
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <line x1="18" y1="6" x2="6" y2="18"></line>
+            <line x1="6" y1="6" x2="18" y2="18"></line>
+          </svg>
+        </button>
+      </div>
       <div class="muf-popover" @mousedown.prevent>
-        <div class="muf-popover-toolbar">
-          <button
-            type="button"
-            class="muf-clear-btn"
-            @mousedown.prevent.stop="clearSelection"
-          >清空当前值</button>
-        </div>
         <button
           v-for="option in filteredOptions"
           :key="option.key"
@@ -287,10 +295,14 @@ watch(
   color: var(--voice-accent, #2563eb);
 }
 
+.muf-input-wrap {
+  position: relative;
+}
+
 .muf-input {
   width: 100%;
   min-height: 34px;
-  padding: 0 10px;
+  padding: 0 34px 0 10px;
   border: 1px solid var(--voice-accent, #2563eb);
   border-radius: 10px;
   font-size: var(--voice-font-main, 14px);
@@ -299,6 +311,35 @@ watch(
   background: #fff;
   box-sizing: border-box;
   box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.12);
+}
+
+.muf-clear-icon {
+  position: absolute;
+  top: 50%;
+  right: 8px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  border: none;
+  border-radius: 50%;
+  color: #94a3b8;
+  background: transparent;
+  cursor: pointer;
+  transform: translateY(-50%);
+  transition: color 0.16s ease, background-color 0.16s ease;
+}
+
+.muf-clear-icon:hover {
+  color: #475569;
+  background: rgba(148, 163, 184, 0.16);
+}
+
+.muf-clear-icon:focus-visible {
+  outline: 2px solid var(--voice-accent, #2563eb);
+  outline-offset: 2px;
 }
 
 .muf-popover {
@@ -318,27 +359,6 @@ watch(
   flex-direction: column;
   gap: 4px;
   min-width: 240px;
-}
-
-.muf-popover-toolbar {
-  display: flex;
-  justify-content: flex-end;
-  padding: 2px 4px 4px;
-  border-bottom: 1px dashed #eef2f7;
-  margin-bottom: 4px;
-}
-
-.muf-clear-btn {
-  font-size: 12px;
-  color: var(--voice-text-muted, #64748b);
-  background: transparent;
-  border: none;
-  cursor: pointer;
-  padding: 2px 6px;
-}
-
-.muf-clear-btn:hover {
-  color: var(--voice-accent, #2563eb);
 }
 
 .muf-option {

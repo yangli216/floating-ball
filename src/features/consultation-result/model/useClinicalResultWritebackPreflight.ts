@@ -3,6 +3,8 @@ import type { Diagnosis, TreatmentRecommendation } from '@/types/consultation';
 import {
   buildInventoryBlockedSubmitMessage,
   getStandardDiagnosisId,
+  validateTreatmentRequiredFields,
+  type TreatmentRequiredFieldResolverOptions,
 } from '@features/clinical-result';
 
 export type ClinicalResultWritebackPreflightNotify = (message: string, type?: string) => void;
@@ -19,6 +21,7 @@ export interface ClinicalResultWritebackPreflightOptions {
   openPharmacySelector: (rec: TreatmentRecommendation) => void;
   openExecDeptSelector: (rec: TreatmentRecommendation) => void;
   openBodySiteSelector: (rec: TreatmentRecommendation) => void;
+  requiredFieldOptions?: TreatmentRequiredFieldResolverOptions;
   notify?: ClinicalResultWritebackPreflightNotify;
 }
 
@@ -60,6 +63,11 @@ export function useClinicalResultWritebackPreflight(options: ClinicalResultWrite
       return block(selected);
     }
 
+    const selectedNonMedicines = selected.filter((item) => item.type !== 'medicine');
+    if (selectedNonMedicines.length > 0) {
+      await Promise.all(selectedNonMedicines.map((item) => options.hydrateMedicalItemDetail(item)));
+    }
+
     const missingPharmacy = selected.find((item) => !options.hasRequiredPharmacy(item));
     if (missingPharmacy) {
       options.openPharmacySelector(missingPharmacy);
@@ -74,15 +82,24 @@ export function useClinicalResultWritebackPreflight(options: ClinicalResultWrite
       return block(selected);
     }
 
-    const examItems = selected.filter((item) => item.type === 'exam');
-    if (examItems.length > 0) {
-      await Promise.all(examItems.map((item) => options.hydrateMedicalItemDetail(item)));
-    }
-
     const missingBodySite = selected.find((item) => !options.hasRequiredBodySite(item));
     if (missingBodySite) {
       options.openBodySiteSelector(missingBodySite);
       options.notify?.(`${missingBodySite.name} 未设置检查部位，请先设置后再提交`, 'warning');
+      return block(selected);
+    }
+
+    const invalidRequiredFields = selected
+      .map((item) => ({
+        item,
+        result: validateTreatmentRequiredFields(item, options.requiredFieldOptions || {}),
+      }))
+      .find(({ result }) => !result.ready);
+    if (invalidRequiredFields) {
+      if (invalidRequiredFields.result.issues[0]?.field === 'idPart') {
+        options.openBodySiteSelector(invalidRequiredFields.item);
+      }
+      options.notify?.(invalidRequiredFields.result.issues[0]?.message || `${invalidRequiredFields.item.name} 缺少必要字段，请补齐后再提交`, 'warning');
       return block(selected);
     }
 

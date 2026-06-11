@@ -6,8 +6,8 @@
  *
  * 设计原则：
  * 1. 纯函数 + 显式注入依赖，不直接读取任何组件状态；
- * 2. 当上游 UI 还未采集某些字段时，使用与语音侧一致的合理默认值（takeDays=1、fgSkintest=0、
- *    医保限用按医保使用、sdSrv 按 type 兜底等），保证 PHIS 接口能解析；
+ * 2. 当上游 UI 还未采集某些字段时，仅保留接口级安全默认（fgSkintest=0、sdSrv 按 type 兜底等）；
+ *    执行位置、医保限用、药品/处置数量等医生必填字段必须由共享前置校验先拦截；
  * 3. 中性 DTO，不携带 PHIS 私有字段；PHIS 私有字段通过 `rec.matchedItem.raw` 透传。
  */
 
@@ -136,11 +136,17 @@ export function getOrderJsonField(rec: TreatmentRecommendation): string {
 }
 
 export function getOrderFgCheckOrd(rec: TreatmentRecommendation): string {
+  if (rec.insuranceCleared) {
+    return '';
+  }
   const insuranceType = (rec.insuranceType || '').trim();
   if (insuranceType === '自费' || insuranceType === '自费使用') {
     return '2';
   }
   if (insuranceType === '医保使用' || insuranceType === '医保' || insuranceType === '医保限用') {
+    return '1';
+  }
+  if (!insuranceType) {
     return '1';
   }
   const raw = getMatchedItemRaw(rec);
@@ -218,7 +224,7 @@ export function buildDiagList(input: BuildDiagListInput): Array<Record<string, s
  * 构造单个 orderList 元素时所需的解析器。
  * 调用方按各自数据源（语音侧/症状侧）实现这些解析器后注入。
  *
- * 所有解析器返回值都允许为空字符串：当字段缺失时由 `buildOrderListItem` 用默认值兜底。
+ * 所有解析器返回值都允许为空字符串；提交前应由共享必要字段校验拦截缺失字段。
  */
 export interface OrderItemResolvers {
   /** PHIS 服务分类 sdSrv：药=11 检=31 验=41 处=21 */
@@ -227,7 +233,7 @@ export interface OrderItemResolvers {
   getServiceId: (rec: TreatmentRecommendation) => string;
   /** PHIS 标准服务名 */
   getServiceName: (rec: TreatmentRecommendation) => string;
-  /** 执行科室 ID（药品取药房 idSto，其他取 idDeptExec，回退到握手默认） */
+  /** 执行位置 ID（药品取药房 idSto，非药品只取当前已选 idDeptExec） */
   getExecDeptId: (rec: TreatmentRecommendation) => string;
   /** 检查部位 ID */
   getPartId: (rec: TreatmentRecommendation) => string;
@@ -245,14 +251,13 @@ export interface OrderItemResolvers {
   normalize?: (rec: TreatmentRecommendation) => TreatmentRecommendation;
 }
 
-const DEFAULT_FG_CHECK_ORD = '1';
 const DEFAULT_FG_SKINTEST = '0';
 
 function resolveOrderAmount(rec: TreatmentRecommendation, normalized: TreatmentRecommendation): number {
   if (rec.type === 'exam' || rec.type === 'lab_test') {
     return 1;
   }
-  return toPositiveNumber(normalized.totalQty, 1);
+  return toPositiveNumber(normalized.totalQty, 0);
 }
 
 export function buildOrderListItem(
@@ -270,7 +275,7 @@ export function buildOrderListItem(
   const base: Record<string, string | number> = {
     amount: resolveOrderAmount(rec, normalized),
     fgCheckOrd:
-      (resolvers.getFgCheckOrd?.(rec).trim() || '') || getOrderFgCheckOrd(rec) || DEFAULT_FG_CHECK_ORD,
+      (resolvers.getFgCheckOrd?.(rec).trim() || '') || getOrderFgCheckOrd(rec),
     sdSrv: serviceCode,
     naSrv: serviceName,
     idDeptExec: execDeptId,

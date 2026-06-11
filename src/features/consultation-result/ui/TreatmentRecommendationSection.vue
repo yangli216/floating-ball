@@ -198,9 +198,20 @@ function shouldShowExecDeptField(item: TreatmentRecommendation): boolean {
 function handleNonMedicineTotalQtyInput(item: TreatmentRecommendation, event: Event): void {
   const target = event.target as HTMLInputElement | null;
   item.totalQty = target?.value || '';
-  item.totalManualEdited = item.totalQty.trim().length > 0;
+  item.totalManualEdited = true;
   if (!item.totalUnit) {
     item.totalUnit = '次';
+  }
+  if (isProcedureTotalQtyMissing(item)) {
+    item.selected = false;
+  }
+}
+
+function handleMedicineDaysInput(item: TreatmentRecommendation, event: Event): void {
+  const target = event.target as HTMLInputElement | null;
+  item.days = target?.value || '';
+  if (isMedicineDaysMissing(item)) {
+    item.selected = false;
   }
 }
 
@@ -212,6 +223,43 @@ function shouldShowExecDeptChip(item: TreatmentRecommendation): boolean {
 
 function isExecDeptChipMissing(item: TreatmentRecommendation): boolean {
   return props.isExecDeptRequired(item) && !props.hasRequiredExecDept(item);
+}
+
+function isExecDeptInputMissing(item: TreatmentRecommendation): boolean {
+  return shouldShowExecDeptField(item) && isExecDeptChipMissing(item);
+}
+
+function hasPositiveNumber(value: unknown): boolean {
+  const parsed = Number(typeof value === 'string' ? value.trim() : String(value ?? '').trim());
+  return Number.isFinite(parsed) && parsed > 0;
+}
+
+function isInsuranceRequired(_item: TreatmentRecommendation): boolean {
+  return true;
+}
+
+function hasRequiredInsurance(item: TreatmentRecommendation): boolean {
+  return !isInsuranceRequired(item) || Boolean((item.insuranceType || '').trim());
+}
+
+function isInsuranceInputMissing(item: TreatmentRecommendation): boolean {
+  return isInsuranceRequired(item) && !hasRequiredInsurance(item);
+}
+
+function isMedicineDaysMissing(item: TreatmentRecommendation): boolean {
+  return item.type === 'medicine' && !hasPositiveNumber(item.days);
+}
+
+function isMedicinePharmacyMissing(item: TreatmentRecommendation): boolean {
+  return item.type === 'medicine' && !props.hasRequiredPharmacy(item);
+}
+
+function isBodySiteInputMissing(item: TreatmentRecommendation): boolean {
+  return item.type === 'exam' && !props.hasRequiredBodySite(item);
+}
+
+function isProcedureTotalQtyMissing(item: TreatmentRecommendation): boolean {
+  return item.type === 'procedure' && !hasPositiveNumber(item.totalQty);
 }
 
 function getExecDeptChipTitle(item: TreatmentRecommendation): string {
@@ -286,6 +334,19 @@ function hasAttributeValue(item: TreatmentRecommendation, field: SecondarySelect
       return Boolean(item.bodySite);
     case 'insurance':
       return Boolean(item.insuranceType);
+  }
+}
+
+function getAttributeClearLabel(field: SecondarySelectorField): string {
+  switch (field) {
+    case 'pharmacy':
+      return '清空药房';
+    case 'execDept':
+      return '清空执行科室';
+    case 'bodySite':
+      return '清空检查部位';
+    case 'insurance':
+      return '清空医保限用';
   }
 }
 
@@ -527,31 +588,41 @@ function getFeedbackSubmittedLabel(item: TreatmentRecommendation): string {
                   <label>规定病</label>
                   <input v-model="item.regulatedDisease" type="text" placeholder="规定病" class="edit-input" />
                 </div>
-                <div class="secondary-field">
+                <div class="secondary-field required" :class="{ missing: isMedicineDaysMissing(item) }">
                   <label>天数</label>
-                  <input v-model="item.days" type="text" placeholder="天" class="edit-input mini" />
+                  <input
+                    :value="item.days || ''"
+                    type="text"
+                    placeholder="天"
+                    class="edit-input mini"
+                    :aria-invalid="isMedicineDaysMissing(item) ? 'true' : undefined"
+                    @input="handleMedicineDaysInput(item, $event)"
+                  />
                 </div>
-                <div class="secondary-field">
+                <div class="secondary-field required" :class="{ missing: isMedicinePharmacyMissing(item) }">
                   <label>药房</label>
-                  <div class="field-editor route-field-editor" @focusout="emit('closeSecondarySelector', item, 'pharmacy', $event)">
+                  <div class="field-editor route-field-editor" :class="{ missing: isMedicinePharmacyMissing(item) }" @focusout="emit('closeSecondarySelector', item, 'pharmacy', $event)">
                     <input
                       v-bind="getInputDataAttrs(item, 'pharmacy')"
                       :value="getAttributeKeyword(item, 'pharmacy')"
                       type="text"
                       :placeholder="getAttributePlaceholder('pharmacy')"
                       class="edit-input"
+                      :aria-invalid="isMedicinePharmacyMissing(item) ? 'true' : undefined"
                       @focus="openAttribute(item, 'pharmacy', $event)"
                       @input="updateAttributeKeyword(item, 'pharmacy', $event)"
                     />
+                    <button
+                      v-if="hasAttributeValue(item, 'pharmacy')"
+                      class="field-clear-button"
+                      type="button"
+                      :aria-label="getAttributeClearLabel('pharmacy')"
+                      :title="getAttributeClearLabel('pharmacy')"
+                      @mousedown.prevent.stop="clearAttribute(item, 'pharmacy')"
+                    >
+                      <Icon icon="lucide:x" :size="14" aria-hidden="true" />
+                    </button>
                     <div v-if="isSecondarySelectorOpen(item, 'pharmacy')" class="route-option-list" role="listbox" :aria-label="getAttributeAriaLabel('pharmacy')">
-                      <button
-                        v-if="hasAttributeValue(item, 'pharmacy')"
-                        class="route-option-item route-option-clear"
-                        type="button"
-                        @mousedown.prevent.stop="clearAttribute(item, 'pharmacy')"
-                      >
-                        <span class="route-option-text">清空当前值</span>
-                      </button>
                       <button
                         v-for="option in getAttributeOptions(item, 'pharmacy').slice(0, 8)"
                         :key="option.key"
@@ -570,26 +641,29 @@ function getFeedbackSubmittedLabel(item: TreatmentRecommendation): string {
                   <label>备注</label>
                   <input v-model="item.remark" type="text" placeholder="备注" class="edit-input" />
                 </div>
-                <div class="secondary-field">
+                <div class="secondary-field required" :class="{ missing: isInsuranceInputMissing(item) }">
                   <label>医保限用</label>
-                  <div class="field-editor route-field-editor" @focusout="emit('closeSecondarySelector', item, 'insurance', $event)">
+                  <div class="field-editor route-field-editor" :class="{ missing: isInsuranceInputMissing(item) }" @focusout="emit('closeSecondarySelector', item, 'insurance', $event)">
                     <input
                       :value="getAttributeKeyword(item, 'insurance')"
                       type="text"
                       :placeholder="getAttributePlaceholder('insurance')"
                       class="edit-input"
+                      :aria-invalid="isInsuranceInputMissing(item) ? 'true' : undefined"
                       @focus="openAttribute(item, 'insurance', $event)"
                       @input="updateAttributeKeyword(item, 'insurance', $event)"
                     />
+                    <button
+                      v-if="hasAttributeValue(item, 'insurance')"
+                      class="field-clear-button"
+                      type="button"
+                      :aria-label="getAttributeClearLabel('insurance')"
+                      :title="getAttributeClearLabel('insurance')"
+                      @mousedown.prevent.stop="clearAttribute(item, 'insurance')"
+                    >
+                      <Icon icon="lucide:x" :size="14" aria-hidden="true" />
+                    </button>
                     <div v-if="isSecondarySelectorOpen(item, 'insurance')" class="route-option-list" role="listbox" :aria-label="getAttributeAriaLabel('insurance')">
-                      <button
-                        v-if="hasAttributeValue(item, 'insurance')"
-                        class="route-option-item route-option-clear"
-                        type="button"
-                        @mousedown.prevent.stop="clearAttribute(item, 'insurance')"
-                      >
-                        <span class="route-option-text">清空当前值</span>
-                      </button>
                       <button
                         v-for="option in getAttributeOptions(item, 'insurance').slice(0, 8)"
                         :key="option.key"
@@ -608,27 +682,34 @@ function getFeedbackSubmittedLabel(item: TreatmentRecommendation): string {
 
             <template v-else>
               <div v-if="isTreatmentEditorExpanded(item)" class="secondary-field-grid">
-                <div v-if="shouldShowExecDeptField(item)" class="secondary-field">
+                <div v-if="shouldShowExecDeptField(item)" class="secondary-field" :class="{ required: isExecDeptRequired(item), missing: isExecDeptInputMissing(item) }">
                   <label>执行科室</label>
-                  <div class="field-editor route-field-editor" @focusout="emit('closeSecondarySelector', item, 'execDept', $event)">
+                  <div
+                    class="field-editor route-field-editor"
+                    :class="{ missing: isExecDeptInputMissing(item) }"
+                    @focusout="emit('closeSecondarySelector', item, 'execDept', $event)"
+                  >
                     <input
                       v-bind="getInputDataAttrs(item, 'execDept')"
                       :value="getAttributeKeyword(item, 'execDept')"
                       type="text"
                       :placeholder="getAttributePlaceholder('execDept')"
                       class="edit-input"
+                      :aria-invalid="isExecDeptInputMissing(item) ? 'true' : undefined"
                       @focus="openAttribute(item, 'execDept', $event)"
                       @input="updateAttributeKeyword(item, 'execDept', $event)"
                     />
+                    <button
+                      v-if="hasAttributeValue(item, 'execDept')"
+                      class="field-clear-button"
+                      type="button"
+                      :aria-label="getAttributeClearLabel('execDept')"
+                      :title="getAttributeClearLabel('execDept')"
+                      @mousedown.prevent.stop="clearAttribute(item, 'execDept')"
+                    >
+                      <Icon icon="lucide:x" :size="14" aria-hidden="true" />
+                    </button>
                     <div v-if="isSecondarySelectorOpen(item, 'execDept')" class="route-option-list" role="listbox" :aria-label="getAttributeAriaLabel('execDept')">
-                      <button
-                        v-if="hasAttributeValue(item, 'execDept')"
-                        class="route-option-item route-option-clear"
-                        type="button"
-                        @mousedown.prevent.stop="clearAttribute(item, 'execDept')"
-                      >
-                        <span class="route-option-text">清空当前值</span>
-                      </button>
                       <button
                         v-for="option in getAttributeOptions(item, 'execDept').slice(0, 8)"
                         :key="option.key"
@@ -643,27 +724,30 @@ function getFeedbackSubmittedLabel(item: TreatmentRecommendation): string {
                     </div>
                   </div>
                 </div>
-                <div v-if="item.type === 'exam'" class="secondary-field">
+                <div v-if="item.type === 'exam'" class="secondary-field required" :class="{ missing: isBodySiteInputMissing(item) }">
                   <label>检查部位</label>
-                  <div class="field-editor route-field-editor" @focusout="emit('closeSecondarySelector', item, 'bodySite', $event)">
+                  <div class="field-editor route-field-editor" :class="{ missing: isBodySiteInputMissing(item) }" @focusout="emit('closeSecondarySelector', item, 'bodySite', $event)">
                     <input
                       v-bind="getInputDataAttrs(item, 'bodySite')"
                       :value="getAttributeKeyword(item, 'bodySite')"
                       type="text"
                       :placeholder="getAttributePlaceholder('bodySite')"
                       class="edit-input"
+                      :aria-invalid="isBodySiteInputMissing(item) ? 'true' : undefined"
                       @focus="openAttribute(item, 'bodySite', $event)"
                       @input="updateAttributeKeyword(item, 'bodySite', $event)"
                     />
+                    <button
+                      v-if="hasAttributeValue(item, 'bodySite')"
+                      class="field-clear-button"
+                      type="button"
+                      :aria-label="getAttributeClearLabel('bodySite')"
+                      :title="getAttributeClearLabel('bodySite')"
+                      @mousedown.prevent.stop="clearAttribute(item, 'bodySite')"
+                    >
+                      <Icon icon="lucide:x" :size="14" aria-hidden="true" />
+                    </button>
                     <div v-if="isSecondarySelectorOpen(item, 'bodySite')" class="route-option-list" role="listbox" :aria-label="getAttributeAriaLabel('bodySite')">
-                      <button
-                        v-if="hasAttributeValue(item, 'bodySite')"
-                        class="route-option-item route-option-clear"
-                        type="button"
-                        @mousedown.prevent.stop="clearAttribute(item, 'bodySite')"
-                      >
-                        <span class="route-option-text">清空当前值</span>
-                      </button>
                       <button
                         v-for="option in getAttributeOptions(item, 'bodySite').slice(0, 8)"
                         :key="option.key"
@@ -678,39 +762,43 @@ function getFeedbackSubmittedLabel(item: TreatmentRecommendation): string {
                     </div>
                   </div>
                 </div>
-                <div v-if="item.type === 'procedure'" class="secondary-field">
+                <div v-if="item.type === 'procedure'" class="secondary-field required" :class="{ missing: isProcedureTotalQtyMissing(item) }">
                   <label>总量</label>
                   <div class="edit-field-row">
                     <input
-                      :value="item.totalQty || '1'"
+                      :value="item.totalQty || ''"
                       type="text"
                       placeholder="数量"
                       class="edit-input mini"
+                      :aria-invalid="isProcedureTotalQtyMissing(item) ? 'true' : undefined"
                       @input="handleNonMedicineTotalQtyInput(item, $event)"
                     />
                     <span class="edit-unit static-unit" :class="{ placeholder: !item.totalUnit }">{{ item.totalUnit || '次' }}</span>
                   </div>
                 </div>
-                <div class="secondary-field">
+                <div class="secondary-field required" :class="{ missing: isInsuranceInputMissing(item) }">
                   <label>医保限用</label>
-                  <div class="field-editor route-field-editor" @focusout="emit('closeSecondarySelector', item, 'insurance', $event)">
+                  <div class="field-editor route-field-editor" :class="{ missing: isInsuranceInputMissing(item) }" @focusout="emit('closeSecondarySelector', item, 'insurance', $event)">
                     <input
                       :value="getAttributeKeyword(item, 'insurance')"
                       type="text"
                       :placeholder="getAttributePlaceholder('insurance')"
                       class="edit-input"
+                      :aria-invalid="isInsuranceInputMissing(item) ? 'true' : undefined"
                       @focus="openAttribute(item, 'insurance', $event)"
                       @input="updateAttributeKeyword(item, 'insurance', $event)"
                     />
+                    <button
+                      v-if="hasAttributeValue(item, 'insurance')"
+                      class="field-clear-button"
+                      type="button"
+                      :aria-label="getAttributeClearLabel('insurance')"
+                      :title="getAttributeClearLabel('insurance')"
+                      @mousedown.prevent.stop="clearAttribute(item, 'insurance')"
+                    >
+                      <Icon icon="lucide:x" :size="14" aria-hidden="true" />
+                    </button>
                     <div v-if="isSecondarySelectorOpen(item, 'insurance')" class="route-option-list" role="listbox" :aria-label="getAttributeAriaLabel('insurance')">
-                      <button
-                        v-if="hasAttributeValue(item, 'insurance')"
-                        class="route-option-item route-option-clear"
-                        type="button"
-                        @mousedown.prevent.stop="clearAttribute(item, 'insurance')"
-                      >
-                        <span class="route-option-text">清空当前值</span>
-                      </button>
                       <button
                         v-for="option in getAttributeOptions(item, 'insurance').slice(0, 8)"
                         :key="option.key"
@@ -874,6 +962,12 @@ function getFeedbackSubmittedLabel(item: TreatmentRecommendation): string {
   white-space: nowrap;
 }
 
+.secondary-field.required label::after {
+  content: "*";
+  margin-left: 2px;
+  color: #dc2626;
+}
+
 .secondary-field-wide {
   grid-column: 1 / -1;
 }
@@ -906,6 +1000,10 @@ function getFeedbackSubmittedLabel(item: TreatmentRecommendation): string {
   position: relative;
 }
 
+.route-field-editor .edit-input {
+  padding-right: 34px;
+}
+
 .edit-input {
   width: 100%;
   min-height: 38px;
@@ -928,6 +1026,58 @@ function getFeedbackSubmittedLabel(item: TreatmentRecommendation): string {
   border-color: var(--voice-accent);
   box-shadow: 0 0 0 3px var(--voice-accent-soft);
   background: rgba(255, 255, 255, 0.98);
+}
+
+.field-editor.missing .edit-input {
+  border-color: rgba(220, 38, 38, 0.72);
+  background: rgba(254, 242, 242, 0.94);
+  box-shadow: 0 0 0 3px rgba(248, 113, 113, 0.18);
+}
+
+.secondary-field.missing .edit-input {
+  border-color: rgba(220, 38, 38, 0.72);
+  background: rgba(254, 242, 242, 0.94);
+  box-shadow: 0 0 0 3px rgba(248, 113, 113, 0.18);
+}
+
+.field-editor.missing .edit-input:focus {
+  border-color: #dc2626;
+  box-shadow: 0 0 0 3px rgba(248, 113, 113, 0.26);
+}
+
+.secondary-field.missing .edit-input:focus {
+  border-color: #dc2626;
+  box-shadow: 0 0 0 3px rgba(248, 113, 113, 0.26);
+}
+
+.field-clear-button {
+  position: absolute;
+  top: 50%;
+  right: 8px;
+  z-index: 2;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: none;
+  border-radius: 50%;
+  color: #94a3b8;
+  background: transparent;
+  cursor: pointer;
+  transform: translateY(-50%);
+  transition: color 0.16s ease, background-color 0.16s ease;
+}
+
+.field-clear-button:hover {
+  color: #475569;
+  background: rgba(148, 163, 184, 0.16);
+}
+
+.field-clear-button:focus-visible {
+  outline: 2px solid var(--voice-accent);
+  outline-offset: 2px;
 }
 
 .route-option-list {
@@ -970,12 +1120,6 @@ function getFeedbackSubmittedLabel(item: TreatmentRecommendation): string {
 
 .route-option-item:hover {
   background: var(--voice-surface-hover);
-}
-
-.route-option-clear {
-  border-bottom: 1px solid var(--voice-border);
-  border-radius: 10px 10px 8px 8px;
-  color: var(--voice-text-muted);
 }
 
 .route-option-text {

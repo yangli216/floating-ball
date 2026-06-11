@@ -185,3 +185,13 @@ export type {
   OrderItemResolvers,
   RecordConfirmedResultType,
 } from './recordConfirmedPayload';
+
+export {
+  getFirstTreatmentRequiredFieldMessage,
+  validateTreatmentRequiredFields,
+} from './treatmentRequiredFields';
+export type {
+  TreatmentRequiredFieldIssue,
+  TreatmentRequiredFieldResolverOptions,
+  TreatmentRequiredFieldValidationResult,
+} from './treatmentRequiredFields';

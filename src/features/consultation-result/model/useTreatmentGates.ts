@@ -38,7 +38,7 @@ export function useTreatmentGates(deps: Deps) {
   }
 
   function isExecDeptRequired(rec: TreatmentRecommendation): boolean {
-    return rec.type === 'exam' || rec.type === 'lab_test';
+    return rec.type === 'exam' || rec.type === 'lab_test' || rec.type === 'procedure';
   }
 
   function getBodySiteDisplay(rec: TreatmentRecommendation): string {
@@ -96,9 +96,7 @@ export function useTreatmentGates(deps: Deps) {
   }
 
   function getExecDeptDisplay(rec: TreatmentRecommendation): string {
-    const currentValue = (rec.execDept || '').trim()
-      || (rec.matchedItem?.idDeptExec || '').trim()
-      || readFirstString(rec.matchedItem?.raw as Record<string, unknown> | undefined, ['idDeptExec', 'idDept']);
+    const currentValue = (rec.execDept || '').trim();
     if (!currentValue) return '';
 
     const matched = execDeptOptions.value.find((option) => option.key === currentValue || option.text === currentValue);

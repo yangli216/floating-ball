@@ -79,7 +79,7 @@ export function useTreatmentPlanWriteback(options: TreatmentPlanWritebackOptions
     applyWritebackFeedback: applyWritebackFeedbackStatus,
   } = writebackStatus;
 
-  const { buildDiagList, buildOrderList } = useClinicalResultWritebackPayload({
+  const { buildDiagList, buildOrderList, orderItemResolvers } = useClinicalResultWritebackPayload({
     selectedDiagnoses: selectedDiagnoses as unknown as Ref<Diagnosis[]>,
     primaryDiagnosis: options.diagnosis,
     patientTetId: computed(() => options.patient.value?.idTet || '') as unknown as Ref<string>,
@@ -104,6 +104,10 @@ export function useTreatmentPlanWriteback(options: TreatmentPlanWritebackOptions
     openPharmacySelector: () => {},
     openExecDeptSelector: () => {},
     openBodySiteSelector: () => {},
+    requiredFieldOptions: {
+      resolvers: orderItemResolvers,
+      normalize: (item) => options.normalizeTreatment(item),
+    },
     notify,
   });
 

@@ -10,6 +10,7 @@
  * 与语音侧差异：
  * - 不持有 UI 状态（如 quick selector、editor expansion）；调用方在 toggle 处自行处理拒绝路径。
  * - 非药品 hydrate 只回填 execDept / unit；检查项目 part options 可由调用方注入落地函数。
+ * - 医生已手动清空 pharmacy / execDept 时不再用详情返回值自动补回。
  */
 
 import { ref, type Ref } from 'vue';
@@ -185,6 +186,7 @@ export function useTreatmentHydration(deps: Deps) {
 
   async function hydrateMatchedMedicineDetail(rec: TreatmentRecommendation): Promise<boolean> {
     if (rec.type !== 'medicine' || !rec.matchedItem) return false;
+    if (rec.pharmacyCleared) return false;
     const id = getMedicineDetailId(rec);
     if (!id) return false;
 
@@ -339,7 +341,7 @@ export function useTreatmentHydration(deps: Deps) {
         raw: mergedRaw,
       };
 
-      if (!rec.execDept && detail.executingDeptId) {
+      if (!rec.execDept && !rec.execDeptCleared && detail.executingDeptId) {
         rec.execDept = detail.executingDeptId;
       }
 
@@ -370,6 +372,12 @@ export function useTreatmentHydration(deps: Deps) {
     showNotify = false,
   ): Promise<boolean> {
     if (rec.type !== 'medicine') return true;
+    if (rec.pharmacyCleared) {
+      if (showNotify) {
+        notify?.(`${rec.name} 未设置发药药房，请先设置后再选中`, 'info');
+      }
+      return false;
+    }
     if (isMedicineDetailLoadedForSelectedPharmacy(rec)) return true;
     const ok = await hydrateMatchedMedicineDetail(rec);
     if (!ok && showNotify) {

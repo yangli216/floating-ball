@@ -16,6 +16,7 @@ import {
   getOrderServiceCode,
   getOrderServiceName,
   readFirstString,
+  type OrderItemResolvers,
 } from '@features/clinical-result';
 
 export interface ClinicalResultWritebackPharmacyOption {
@@ -38,7 +39,9 @@ export interface ClinicalResultWritebackPayloadOptions {
   getDefaultExecDeptId: () => string;
 }
 
-export function useClinicalResultWritebackPayload(options: ClinicalResultWritebackPayloadOptions) {
+export function createClinicalResultOrderItemResolvers(
+  options: ClinicalResultWritebackPayloadOptions,
+): OrderItemResolvers {
   function getSelectedPharmacyOption(rec: TreatmentRecommendation): ClinicalResultWritebackPharmacyOption | undefined {
     const pharmacyValue = (rec.pharmacy || '').trim();
     if (!pharmacyValue) {
@@ -53,12 +56,15 @@ export function useClinicalResultWritebackPayload(options: ClinicalResultWriteba
     const raw = getMatchedItemRaw(rec);
     const pharmacyOption = rec.type === 'medicine' ? getSelectedPharmacyOption(rec) : undefined;
     const execDeptValue = (rec.execDept || '').trim();
-    const selectedExecDeptKey = (rec.type !== 'medicine'
-      ? (options.execDeptOptions.value.find((option) => option.key === execDeptValue || option.text === execDeptValue)?.key || rec.execDept || '')
-      : '').trim();
+    const selectedExecDeptKey = rec.type !== 'medicine'
+      ? (options.execDeptOptions.value.find((option) => option.key === execDeptValue || option.text === execDeptValue)?.key || execDeptValue)
+      : '';
+
+    if (rec.type !== 'medicine') {
+      return selectedExecDeptKey.trim();
+    }
 
     return (
-      selectedExecDeptKey ||
       pharmacyOption?.idSto ||
       rec.matchedItem?.idDeptExec ||
       readFirstString(raw, ['idDeptExec', 'idDept']) ||
@@ -77,20 +83,26 @@ export function useClinicalResultWritebackPayload(options: ClinicalResultWriteba
     return normalized.routeKey || options.findRouteOptionByValue(normalized.route)?.key || '';
   }
 
+  return {
+    getServiceCode: getOrderServiceCode,
+    getServiceId: getMatchedOrderServiceId,
+    getServiceName: getOrderServiceName,
+    getExecDeptId: getOrderExecDeptId,
+    getPartId: getOrderPartId,
+    getJsonField: getOrderJsonField,
+    getFgCheckOrd: getOrderFgCheckOrd,
+    getFgSkintest: getOrderFgSkintest,
+    getFrequencyKey: getResolvedFrequencyKey,
+    getRouteKey: getResolvedRouteKey,
+    normalize: options.normalizeTreatment,
+  };
+}
+
+export function useClinicalResultWritebackPayload(options: ClinicalResultWritebackPayloadOptions) {
+  const orderItemResolvers = createClinicalResultOrderItemResolvers(options);
+
   function buildOrderListItem(rec: TreatmentRecommendation): Record<string, string | number> {
-    return buildClinicalOrderListItem(rec, {
-      getServiceCode: getOrderServiceCode,
-      getServiceId: getMatchedOrderServiceId,
-      getServiceName: getOrderServiceName,
-      getExecDeptId: getOrderExecDeptId,
-      getPartId: getOrderPartId,
-      getJsonField: getOrderJsonField,
-      getFgCheckOrd: getOrderFgCheckOrd,
-      getFgSkintest: getOrderFgSkintest,
-      getFrequencyKey: getResolvedFrequencyKey,
-      getRouteKey: getResolvedRouteKey,
-      normalize: options.normalizeTreatment,
-    });
+    return buildClinicalOrderListItem(rec, orderItemResolvers);
   }
 
   function buildOrderList(items: TreatmentRecommendation[]): Array<Record<string, string | number>> {
@@ -108,6 +120,7 @@ export function useClinicalResultWritebackPayload(options: ClinicalResultWriteba
   return {
     buildDiagList,
     buildOrderList,
+    orderItemResolvers,
   };
 }
 

@@ -45,7 +45,11 @@ export function hasClinicalResultTreatmentState(item: MatchedTreatment): boolean
     || candidate.route
     || candidate.routeKey
     || candidate.pharmacy
+    || candidate.pharmacyCleared
     || candidate.execDept
+    || candidate.execDeptCleared
+    || candidate.insuranceType
+    || candidate.insuranceCleared
     || candidate.bodySite
     || candidate.bodySiteId
   );

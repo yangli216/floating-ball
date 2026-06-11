@@ -1,4 +1,8 @@
 import type { TreatmentRecommendation } from '@/types/consultation';
+import {
+  validateTreatmentRequiredFields,
+  type TreatmentRequiredFieldResolverOptions,
+} from '@features/clinical-result';
 
 export interface TreatmentSelectionReadinessOptions {
   ensureMedicineSelectable: (rec: TreatmentRecommendation, showWarning?: boolean) => Promise<boolean>;
@@ -12,6 +16,7 @@ export interface TreatmentSelectionReadinessOptions {
   openExecDeptSelector: (rec: TreatmentRecommendation) => void;
   openBodySiteSelector: (rec: TreatmentRecommendation) => void;
   expandTreatmentEditor: (rec: TreatmentRecommendation) => void;
+  requiredFieldOptions?: TreatmentRequiredFieldResolverOptions;
   notify?: (message: string, type?: string) => void;
 }
 
@@ -71,6 +76,16 @@ export function useTreatmentSelectionReadiness(options: TreatmentSelectionReadin
         input.bodySiteMissingMessage || `${labelName} 未设置检查部位，请先设置后再选中`,
         'warning',
       );
+      return false;
+    }
+
+    const requiredFields = validateTreatmentRequiredFields(rec, {
+      ...options.requiredFieldOptions,
+      normalize: (item) => options.normalize(item),
+    });
+    if (!requiredFields.ready) {
+      options.expandTreatmentEditor(rec);
+      options.notify?.(requiredFields.issues[0].message, 'warning');
       return false;
     }
 

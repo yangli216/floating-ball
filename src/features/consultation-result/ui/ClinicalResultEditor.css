@@ -1354,12 +1354,6 @@
   background: var(--voice-surface-hover);
 }
 
-.route-option-clear {
-  border-bottom: 1px solid var(--voice-border);
-  border-radius: 10px 10px 8px 8px;
-  color: var(--voice-text-muted);
-}
-
 .route-option-text,
 .route-option-meta {
   min-width: 0;

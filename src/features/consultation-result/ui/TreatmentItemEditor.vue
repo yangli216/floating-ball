@@ -5,15 +5,17 @@
   <div class="treatment-item-editor" :class="[`mode-${mode}`]" @click.stop>
     <template v-if="mode === 'inline' && isMedicine">
       <div class="medicine-primary-fields">
-        <div class="primary-field" :class="{ editing: isActive('dosage') }">
+        <div class="primary-field" :class="{ editing: isActive('dosage'), required: isPrimaryFieldRequired('dosage'), missing: isPrimaryFieldMissing('dosage') }">
           <label>一次剂量</label>
           <div v-if="isActive('dosage')" class="field-editor edit-field-row" @focusout="handleFieldBlur('dosage', $event)">
             <input
               :ref="(el) => registerFieldElement('dosage', el as Element | null)"
-              v-model="rec.dosage"
+              :value="rec.dosage || ''"
               type="text"
               placeholder="剂量"
               class="edit-input small"
+              :aria-invalid="isPrimaryFieldMissing('dosage') ? 'true' : undefined"
+              @input="handleDosageInput"
             />
             <span class="edit-unit static-unit" :class="{ placeholder: !rec.dosageUnit }">{{ rec.dosageUnit || '单位待识别' }}</span>
           </div>
@@ -22,7 +24,7 @@
           </button>
         </div>
 
-        <div class="primary-field" :class="{ editing: isActive('frequency') }">
+        <div class="primary-field" :class="{ editing: isActive('frequency'), required: isPrimaryFieldRequired('frequency'), missing: isPrimaryFieldMissing('frequency') }">
           <label>频次</label>
           <MedicineUsageFieldSelector
             :rec="rec"
@@ -35,7 +37,7 @@
           />
         </div>
 
-        <div class="primary-field" :class="{ editing: isActive('route') }">
+        <div class="primary-field" :class="{ editing: isActive('route'), required: isPrimaryFieldRequired('route'), missing: isPrimaryFieldMissing('route') }">
           <label>用法</label>
           <MedicineUsageFieldSelector
             :rec="rec"
@@ -49,7 +51,7 @@
           />
         </div>
 
-        <div class="primary-field" :class="{ editing: isActive('total') }">
+        <div class="primary-field" :class="{ editing: isActive('total'), required: isPrimaryFieldRequired('total'), missing: isPrimaryFieldMissing('total') }">
           <label>总量</label>
           <div v-if="isActive('total')" class="field-editor edit-field-row" @focusout="handleFieldBlur('total', $event)">
             <input
@@ -58,6 +60,7 @@
               type="text"
               placeholder="数量"
               class="edit-input small"
+              :aria-invalid="isPrimaryFieldMissing('total') ? 'true' : undefined"
               @input="handleTotalQtyInput"
             />
             <span class="edit-unit static-unit" :class="{ placeholder: !rec.totalUnit }">{{ rec.totalUnit || '单位待识别' }}</span>
@@ -70,7 +73,7 @@
     </template>
 
     <template v-else-if="isMedicine">
-      <div class="te-row">
+      <div class="te-row required" :class="{ missing: isPrimaryFieldMissing('route') }">
         <label class="te-label">用法</label>
         <MedicineUsageFieldSelector
           :rec="rec"
@@ -81,7 +84,7 @@
           @change="(field, value, key) => handleUsageFieldChange(field, value, key)"
         />
       </div>
-      <div class="te-row">
+      <div class="te-row required" :class="{ missing: isPrimaryFieldMissing('frequency') }">
         <label class="te-label">频次</label>
         <MedicineUsageFieldSelector
           :rec="rec"
@@ -91,17 +94,18 @@
           @change="(field, value, key) => handleUsageFieldChange(field, value, key)"
         />
       </div>
-      <div class="te-row">
+      <div class="te-row required" :class="{ missing: isPrimaryFieldMissing('dosage') }">
         <label class="te-label">单次剂量</label>
-        <input class="te-input te-input-num" type="text" :value="rec.dosage || ''" @input="(e) => rec.dosage = (e.target as HTMLInputElement).value" />
+        <input class="te-input te-input-num" type="text" :value="rec.dosage || ''" :aria-invalid="isPrimaryFieldMissing('dosage') ? 'true' : undefined" @input="handleDosageInput" />
         <span class="te-suffix">{{ rec.dosageUnit || '' }}</span>
       </div>
-      <div class="te-row">
+      <div class="te-row required" :class="{ missing: isPrimaryFieldMissing('total') }">
         <label class="te-label">总量</label>
         <input
           class="te-input te-input-num"
           type="text"
           :value="rec.totalQty || ''"
+          :aria-invalid="isPrimaryFieldMissing('total') ? 'true' : undefined"
           @input="(e) => { rec.totalQty = (e.target as HTMLInputElement).value; rec.totalManualEdited = true; }"
         />
         <span class="te-suffix">{{ rec.totalUnit || '' }}</span>
@@ -114,9 +118,9 @@
     </template>
 
     <template v-else>
-      <div v-if="shouldShowQuantityEditor" class="te-row">
+      <div v-if="shouldShowQuantityEditor" class="te-row required" :class="{ missing: isQuantityMissing }">
         <label class="te-label">数量</label>
-        <input class="te-input te-input-num" type="text" :value="rec.totalQty || '1'" @input="(e) => rec.totalQty = (e.target as HTMLInputElement).value" />
+        <input class="te-input te-input-num" type="text" :value="rec.totalQty || ''" :aria-invalid="isQuantityMissing ? 'true' : undefined" @input="(e) => rec.totalQty = (e.target as HTMLInputElement).value" />
         <span class="te-suffix">{{ rec.totalUnit || '次' }}</span>
       </div>
       <div v-if="showExecDeptReadonly && rec.execDept" class="te-row">
@@ -216,6 +220,7 @@ const shouldShowQuantityEditor = computed(() => {
   const type = props.rec.type || 'medicine';
   return type !== 'exam' && type !== 'lab_test';
 });
+const isQuantityMissing = computed(() => shouldShowQuantityEditor.value && !hasPositiveNumber(props.rec.totalQty));
 const internalActiveField = ref<InlineEditableField | null>(null);
 const internalFieldElements = new Map<InlineEditableField, Element | null>();
 const isControlledInline = computed(
@@ -278,10 +283,16 @@ function registerFieldElement(field: InlineEditableField, element: Element | nul
 function handleTotalQtyInput(event: Event): void {
   if (props.onTotalQtyInput) {
     props.onTotalQtyInput(event);
+    if (!hasPositiveNumber(props.rec.totalQty)) {
+      props.rec.selected = false;
+    }
     return;
   }
   props.rec.totalQty = (event.target as HTMLInputElement).value;
   props.rec.totalManualEdited = true;
+  if (!hasPositiveNumber(props.rec.totalQty)) {
+    props.rec.selected = false;
+  }
 }
 
 function handleFieldOpenChange(field: 'frequency' | 'route', open: boolean): void {
@@ -298,6 +309,9 @@ function handleFieldOpenChange(field: 'frequency' | 'route', open: boolean): voi
 
 function handleUsageFieldChange(field: 'frequency' | 'route', value: string, key: string): void {
   props.onUsageFieldChange?.(field, value, key);
+  if (!value.trim() || !key.trim()) {
+    props.rec.selected = false;
+  }
 }
 
 function getSelectorOpen(field: 'frequency' | 'route'): boolean | undefined {
@@ -312,6 +326,45 @@ function getDisplayValue(field: 'dosage' | 'total'): string {
     return props.rec.dosage ? `${props.rec.dosage}${props.rec.dosageUnit || ''}` : '点击输入剂量';
   }
   return props.rec.totalQty ? `${props.rec.totalQty}${props.rec.totalUnit || ''}` : '点击输入总量';
+}
+
+function hasPositiveNumber(value: unknown): boolean {
+  const parsed = Number(typeof value === 'string' ? value.trim() : String(value ?? '').trim());
+  return Number.isFinite(parsed) && parsed > 0;
+}
+
+function resolveUsageKey(field: Extract<InlineEditableField, 'frequency' | 'route'>): string {
+  const value = field === 'frequency' ? props.rec.frequency : props.rec.route;
+  const directKey = field === 'frequency' ? props.rec.frequencyKey : props.rec.routeKey;
+  if ((directKey || '').trim()) {
+    return directKey || '';
+  }
+  const options = field === 'frequency' ? props.frequencyOptions : props.routeOptions;
+  return options.find((option) => option.key === value || option.text === value)?.key || '';
+}
+
+function isPrimaryFieldRequired(field: InlineEditableField): boolean {
+  return isMedicine.value && (field === 'dosage' || field === 'frequency' || field === 'route' || field === 'total');
+}
+
+function isPrimaryFieldMissing(field: InlineEditableField): boolean {
+  if (!isPrimaryFieldRequired(field)) {
+    return false;
+  }
+  if (field === 'dosage') {
+    return !(props.rec.dosage || '').trim() || !(props.rec.dosageUnit || '').trim();
+  }
+  if (field === 'frequency' || field === 'route') {
+    return !resolveUsageKey(field);
+  }
+  return !hasPositiveNumber(props.rec.totalQty);
+}
+
+function handleDosageInput(event: Event): void {
+  props.rec.dosage = (event.target as HTMLInputElement).value;
+  if (!(props.rec.dosage || '').trim() || !(props.rec.dosageUnit || '').trim()) {
+    props.rec.selected = false;
+  }
 }
 </script>
 
@@ -352,6 +405,13 @@ function getDisplayValue(field: 'dosage' | 'total'): string {
   font-size: 13px;
   color: #334155;
   font-weight: 600;
+}
+
+.primary-field.required > label::after,
+.te-row.required .te-label::after {
+  content: "*";
+  margin-left: 2px;
+  color: #dc2626;
 }
 
 .field-editor {
@@ -402,6 +462,30 @@ function getDisplayValue(field: 'dosage' | 'total'): string {
 
 .field-read-btn.placeholder {
   color: var(--voice-text-muted, #64748b);
+}
+
+.primary-field.missing .edit-input,
+.primary-field.missing .field-read-btn,
+.te-row.missing .te-input,
+.te-row.missing :deep(.muf-trigger),
+.te-row.missing :deep(.muf-input),
+.primary-field.missing :deep(.muf-trigger),
+.primary-field.missing :deep(.muf-input) {
+  border-color: rgba(220, 38, 38, 0.72);
+  background: rgba(254, 242, 242, 0.94);
+  box-shadow: 0 0 0 3px rgba(248, 113, 113, 0.18);
+}
+
+.primary-field.missing .edit-input:focus,
+.te-row.missing .te-input:focus,
+.te-row.missing :deep(.muf-trigger:hover),
+.te-row.missing :deep(.muf-trigger:focus-visible),
+.te-row.missing :deep(.muf-input:focus),
+.primary-field.missing :deep(.muf-trigger:hover),
+.primary-field.missing :deep(.muf-trigger:focus-visible),
+.primary-field.missing :deep(.muf-input:focus) {
+  border-color: #dc2626;
+  box-shadow: 0 0 0 3px rgba(248, 113, 113, 0.26);
 }
 
 .static-unit {

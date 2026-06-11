@@ -1038,6 +1038,7 @@ ws://127.0.0.1:8081/api/consultation/events/ws
 2. `referenceType/action` 在 `record-confirmed` 场景下固定按 `batch` 语义理解，表示一次性处理整张病历对应的诊断和全部医嘱。
 3. `referenceStatus = pending` 仅表示桌面端已发起最终回写请求，并不代表 HIS 已处理成功；真正成功/失败以后续 `reference-feedback` 回执为准。
 4. `diagList.idDiag` 必须是 PHIS 标准诊断目录主键（`ID_DIE`）。桌面端不得把 AI 自由文本、前端临时 key 或 PHIS 草稿文本生成的占位 ID 写入该字段；若当前诊断未匹配标准诊断库，应在提交前拦截并提示医生先切换或重新匹配标准诊断。
+5. `orderList` 必须来自已匹配标准库且通过前置非空校验的用药、检查、检验、处置推荐项。桌面端提交前必须拦截缺少标准服务 ID、服务名称、服务分类编码、执行位置 ID 或医保限用标识的医嘱；药品还必须具备一次剂量、剂量单位、频次 key、用法 key、总量、用药天数和发药药房；检查还必须具备检查部位；检验还必须具备非空检验附加 `jsonField`；处置还必须具备大于 0 的数量。医生手动清空检查 / 检验 / 处置的执行科室，或清空任一医嘱的医保限用后，桌面端必须按当前空输入拦截选中和提交，不得从 `matchedItem.idDeptExec`、`raw.idDeptExec/idDept`、详情 hydrate、默认执行科室或默认医保类型兜底生成必填字段。
 
 **diagList 字段：**
 
@@ -1056,31 +1057,31 @@ ws://127.0.0.1:8081/api/consultation/events/ws
 
 | 字段名 | 类型 | 说明 |
 | :--- | :--- | :--- |
-| `amount` | Number | 开立数量；药品 / 处置默认取推荐项总量并在缺省时为 `1`，检查 / 检验固定按 `1` 回写 |
-| `fgCheckOrd` | String | 医保限用标识；`1` 表示医保使用，`2` 表示自费使用，来自医生在药品 / 检查 / 检验 / 处置推荐项中选择的“医保限用” |
-| `sdSrv` | String | 服务分类编码；药品默认 `11`，检查默认 `31`，检验默认 `41`，处置默认 `21` |
-| `naSrv` | String | 标准服务名称 |
-| `idSrv` | String | 服务主键；药品固定使用 `idMedPro`，检查 / 检验 / 处置固定使用 `idCli` |
-| `idDeptExec` | String | 执行位置 ID；药品默认取发药药房查询返回的药房 `idSto`，其他项目优先取目录元数据，其次回退握手科室默认值 |
+| `amount` | Number | 开立数量；药品 / 处置取推荐项总量，提交前必须为大于 0 的数值；检查 / 检验固定按 `1` 回写 |
+| `fgCheckOrd` | String | 医保限用标识，必填；`1` 表示医保使用，`2` 表示自费使用，来自医生在药品 / 检查 / 检验 / 处置推荐项中选择的“医保限用” |
+| `sdSrv` | String | 服务分类编码，必填；药品默认 `11`，检查默认 `31`，检验默认 `41`，处置默认 `21` |
+| `naSrv` | String | 标准服务名称，必填 |
+| `idSrv` | String | 服务主键，必填；药品固定使用 `idMedPro`，检查 / 检验 / 处置固定使用 `idCli` |
+| `idDeptExec` | String | 执行位置 ID，必填；药品取当前发药药房查询返回的药房 `idSto`，检查 / 检验 / 处置只取医生当前已选执行科室 |
 | `memo` | String | 备注；来自医生在药品 / 检查 / 检验 / 处置推荐项中填写的“备注” |
 
 **药品附加字段：**
 
 | 字段名 | 类型 | 说明 |
 | :--- | :--- | :--- |
-| `doseOnce` | String | 一次剂量 |
-| `unitDose` | String | 剂量单位 |
-| `idFreq` | String | 频次 key |
-| `idUsge` | String | 用法 key |
-| `takeDays` | Number | 用药天数，缺省时为 `1` |
+| `doseOnce` | String | 一次剂量，必填 |
+| `unitDose` | String | 剂量单位，必填 |
+| `idFreq` | String | 频次 key，必填 |
+| `idUsge` | String | 用法 key，必填 |
+| `takeDays` | Number | 用药天数，必填且大于 0，缺省时为 `1` |
 | `fgSkintest` | String | 皮试标志，默认 `0` |
 
 **检查 / 检验 / 处置附加字段：**
 
 | 字段名 | 类型 | 说明 |
 | :--- | :--- | :--- |
-| `idPart` | String | 部位 ID，仅目录有该元数据时返回 |
-| `jsonField` | String | 检验附加 JSON，常见为 `idLisCategory`、`fgCombination` 等组合信息 |
+| `idPart` | String | 检查部位 ID，检查项目必填 |
+| `jsonField` | String | 检验附加 JSON，检验项目必填且不能是空对象，常见为 `idLisCategory`、`fgCombination` 等组合信息 |
 
 #### 成功响应: 引用请求（历史/单项引用）
 
