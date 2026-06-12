@@ -743,7 +743,7 @@ http://127.0.0.1:8081/api/report/interpret
 http://127.0.0.1:8081/api/inpatient/emr/generate
 ```
 
-SDK 调用：`sdk.generateInpatientEmr({ admissionId, templateId, templateName, htmlContent, recordTime, contextPolicy, hisContext, requestId, patient })`。该 Promise 会在医生点击“一键回写”并产生 `record-confirmed` 时 resolve，返回值与 `record-confirmed` 事件 payload 一致；原有 `mh.on('record-confirmed', ...)` 订阅模式仍保留。三方 HIS 推荐按 [住院电子病历 AI 辅助书写 HIS 对接手册](./docs/his-inpatient-emr-ai-context-integration.md) 组织 `hisContext`。
+SDK 调用：`sdk.generateInpatientEmr({ admissionId, templateId, templateName, htmlContent, recordTime, doctorSupplement, contextPolicy, hisContext, requestId, patient })`。该 Promise 会在医生点击“一键回写”并产生 `record-confirmed` 时 resolve，返回值与 `record-confirmed` 事件 payload 一致；原有 `mh.on('record-confirmed', ...)` 订阅模式仍保留。三方 HIS 推荐按 [住院电子病历 AI 辅助书写 HIS 对接手册](./docs/his-inpatient-emr-ai-context-integration.md) 组织 `hisContext`。
 
 请求字段：
 
@@ -754,6 +754,7 @@ SDK 调用：`sdk.generateInpatientEmr({ admissionId, templateId, templateName, 
 | `templateName` | String | 是 | 模板名称，如 `日常病程记录`；区域化模式下会随模板解析结果保存到后端模板缓存 |
 | `htmlContent` | String | 是 | 当前病历模板 HTML，桌面端会解析其中带 `data-id` 的模板字段；区域化模式下会作为原生模板内容保存到后端，供管理端查看源码和 HTML 预览 |
 | `recordTime` | String | 否 | 本次病程记录书写时间，如 `2026-06-10 15:25`；未传时桌面端使用当前系统时间。生成正文会以该日期作为“今日 / 本次查房日期”，避免把历史体温单日期误写成今日 |
+| `doctorSupplement` | String | 否 | 医生补充的本次病历书写要点，通常由桌面端“重新生成”弹窗录入或语音转写得到；AI 生成时作为高优先级补充上下文，但仍不得扩展为未提供事实 |
 | `contextPolicy` | Object | 否 | 住院上下文裁剪策略，如 `maxDays`、`previousNoteLimit`、`labLookbackDays`、`orderLookbackDays`；用于避免长住院全量数据进入 AI 上下文 |
 | `hisContext` | Object | 否 | HIS 直接传入的 AI 上下文包；存在时桌面端优先使用该包中的登记、诊断、体温单、医嘱、检验检查、历史病程摘要等数据，不再强依赖分散住院接口 |
 | `requestId` | String | 否 | HIS 侧请求 ID；未传时桌面端会生成 |
@@ -767,6 +768,7 @@ SDK 调用：`sdk.generateInpatientEmr({ admissionId, templateId, templateName, 
   "templateId": "emr_tpl_daily_course",
   "templateName": "日常病程记录",
   "recordTime": "2026-06-10 15:25",
+  "doctorSupplement": "今日患者咳嗽较前减轻，无胸闷气促；查体双肺呼吸音稍粗，继续当前治疗并复查血常规。",
   "contextPolicy": {
     "maxDays": 7,
     "previousNoteLimit": 3,
@@ -855,12 +857,13 @@ HTTP Bridge 受理响应：
 后续事件：
 
 1. 桌面端打开“住院病历生成”界面，医生可看到“获取住院上下文 / 整理诊疗摘要 / 整理病历依据 / 解析病历 / AI 生成”的步骤状态。PHIS 通过 `api/phis.aiInpatientEmrContextService/buildContext` 一次性返回上下文，桌面端调用该 PHIS RPC 时使用数组入参 `[requestMap]`，界面上仅拆分展示处理阶段。
-2. 医生点击“一键回写”后，事件流会产生 `record-confirmed`，同时 `sdk.generateInpatientEmr(...)` 返回的 Promise 会 resolve 这份 payload。其中 `resultType` 固定为 `record-confirmed`，`referenceType/action` 固定为 `batch`，`emrType` 为 `inpatient-emr`。
-3. `record-confirmed.payload.fieldValues` 为 `{ [data-id]: value }` 的结构化字段取值；仅包含本次传入 `htmlContent` 中真实存在、且模板解析结果标记为适合 AI 生成的字段，若医生在预览中编辑过 AI 字段，以编辑后的文本为准。
-4. 住院病历回写事件不返回 `htmlContent`；HIS 侧按当前编辑器模板自行用 `data-id` 定位并回填文本。
-5. HIS 完成回填后，建议调用 `POST /api/consultation/reference-feedback`，带回相同 `consultationId` 与 `requestId`。回执时 `referenceType` 可传 `batch`，也可留空由 Bridge 按 `batch` 处理；桌面端收到成功回执后会从病历生成界面收起回小球状态。
-6. 病程正文生成时，`recordTime` 的日期是“今日 / 本次查房日期”的唯一依据；若体温单最新记录早于该日期，只能表述为“最近一次体温单记录（YYYY-MM-DD）”，不得写成“今日（历史日期）查房”。
-7. 历史病历中 `medType=2` 的病案首页不进入 AI 上下文；`medType=0` 入院记录建议提取 `chiefComplaint`、`presentIllness` 和 `structuredSections`，不要只传整篇 HTML 文本。
+2. 若医生对生成结果不满意，可点击“重新生成”，在桌面端弹窗中手动输入或语音转写补充本次查房要点；桌面端会把补充内容作为 `doctorSupplement` 重新进入 AI 生成，不改变 HIS 原始上下文。
+3. 医生点击“一键回写”后，事件流会产生 `record-confirmed`，同时 `sdk.generateInpatientEmr(...)` 返回的 Promise 会 resolve 这份 payload。其中 `resultType` 固定为 `record-confirmed`，`referenceType/action` 固定为 `batch`，`emrType` 为 `inpatient-emr`。
+4. `record-confirmed.payload.fieldValues` 为 `{ [data-id]: value }` 的结构化字段取值；仅包含本次传入 `htmlContent` 中真实存在、且模板解析结果标记为适合 AI 生成的字段，若医生在预览中编辑过 AI 字段，以编辑后的文本为准。
+5. 住院病历回写事件不返回 `htmlContent`；HIS 侧按当前编辑器模板自行用 `data-id` 定位并回填文本。
+6. HIS 完成回填后，建议调用 `POST /api/consultation/reference-feedback`，带回相同 `consultationId` 与 `requestId`。回执时 `referenceType` 可传 `batch`，也可留空由 Bridge 按 `batch` 处理；桌面端收到成功回执后会从病历生成界面收起回小球状态。
+7. 病程正文生成时，`recordTime` 的日期是“今日 / 本次查房日期”的唯一依据；若体温单最新记录早于该日期，只能表述为“最近一次体温单记录（YYYY-MM-DD）”，不得写成“今日（历史日期）查房”。
+8. 历史病历中 `medType=2` 的病案首页不进入 AI 上下文；`medType=0` 入院记录建议提取 `chiefComplaint`、`presentIllness` 和 `structuredSections`，不要只传整篇 HTML 文本。
 
 说明：
 

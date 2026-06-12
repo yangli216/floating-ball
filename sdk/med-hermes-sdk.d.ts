@@ -156,6 +156,8 @@ export interface InpatientEmrGenerationRequest {
   htmlContent: string;
   /** 本次病程记录书写时间，如 2026-06-10 15:25；未传时桌面端使用当前系统时间 */
   recordTime?: string;
+  /** 医生补充的本次病历书写要点，可由重新生成时输入或语音转写得到 */
+  doctorSupplement?: string;
   /** HIS 侧上下文裁剪策略；当未直接传 hisContext 时，适配器可按此策略拉取上下文 */
   contextPolicy?: InpatientEmrContextPolicy;
   /** HIS 直接传入的 AI 上下文包；存在时桌面端优先使用该数据，避免重复拉取全量住院数据 */

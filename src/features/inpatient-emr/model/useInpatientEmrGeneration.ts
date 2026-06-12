@@ -17,7 +17,7 @@ export interface InpatientEmrReferenceFeedbackPayload {
 }
 
 const STEP_DEFINITIONS: Array<Pick<InpatientEmrGenerationStep, 'key' | 'title' | 'description'>> = [
-  { key: 'patient', title: '获取住院上下文', description: '调用 buildContext 获取本次文书所需 HIS 数据' },
+  { key: 'patient', title: '获取住院上下文', description: '获取本次文书所需 HIS 数据' },
   { key: 'orders', title: '整理诊疗摘要', description: '汇总诊断、医嘱、检验检查和治疗信息' },
   { key: 'temperature', title: '整理病历依据', description: '核对生命体征、历史病历、会诊和手术资料' },
   { key: 'template', title: '解析病历', description: '识别 data-id 字段和生成规则' },

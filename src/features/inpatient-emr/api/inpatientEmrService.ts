@@ -247,6 +247,7 @@ function formatOrderSummary(orders: HisInpatientOrder[]): string {
 function buildFallbackEmrContent(context: InpatientEmrContext): string {
   const registration = context.registration;
   const documentContext = context.documentContext;
+  const doctorSupplement = context.doctorSupplement?.trim();
   const patientLine = [
     registration?.name || '患者',
     registration?.gender,
@@ -272,7 +273,10 @@ function buildFallbackEmrContent(context: InpatientEmrContext): string {
     `当前医嘱/检查信息包括：${orderText}。`,
     labText ? `近期检验检查摘要：${labText}。` : '',
     previousRecordText ? `前序病程摘要：${previousRecordText}。` : '',
-    '综合现有住院登记、诊断、医嘱及生命体征资料，建议继续观察病情变化，关注体温、呼吸、血氧及血压趋势，按医嘱完善相关检查并根据结果调整诊疗计划。本段为 AI 辅助草稿，需主管医生结合查体和病情实际审核后签署。',
+    doctorSupplement ? `医生补充要点：${doctorSupplement}。` : '',
+    doctorSupplement
+      ? '综合 HIS 资料与医生补充要点，建议主管医生结合本次查体进一步审核病情判断和诊疗计划。本段为 AI 辅助草稿，需主管医生审核后签署。'
+      : '综合现有住院登记、诊断、医嘱及生命体征资料，建议继续观察病情变化，关注体温、呼吸、血氧及血压趋势，按医嘱完善相关检查并根据结果调整诊疗计划。本段为 AI 辅助草稿，需主管医生结合查体和病情实际审核后签署。',
   ].filter(Boolean).join('\n');
 }
 
@@ -500,7 +504,7 @@ async function loadInpatientEmrHisContext(
     throw new Error('HIS 适配器未就绪，请先完成 SDK 握手后再生成住院病历');
   }
 
-  report(onProgress, { key: 'patient', status: 'running', detail: '正在调用 HIS buildContext 聚合服务' });
+  report(onProgress, { key: 'patient', status: 'running', detail: '正在获取 HIS 住院上下文' });
   const packageContext = await adapter.fetchInpatientEmrContext({
     ...query,
     templateId: request.templateId,
@@ -511,7 +515,7 @@ async function loadInpatientEmrHisContext(
   });
   const aiContext = mergeDocumentContextIntoHisContext(packageContext || undefined, documentContext, request.admissionId);
   if (!aiContext) {
-    throw new Error('HIS buildContext 未返回有效住院病历上下文');
+    throw new Error('HIS 聚合服务未返回有效住院病历上下文');
   }
   const registration = buildRegistrationFromAiContext(aiContext, query);
   const orders = buildOrdersFromAiContext(aiContext);
@@ -523,7 +527,7 @@ async function loadInpatientEmrHisContext(
     orders,
     temperatureChart,
     request.admissionId,
-    'buildContext',
+    '患者信息',
   );
   return {
     registration,
@@ -555,6 +559,7 @@ export async function generateInpatientEmrPreview(
 
   const context: InpatientEmrContext = {
     documentContext,
+    doctorSupplement: request.doctorSupplement?.trim() || undefined,
     aiContext,
     registration,
     orders,
@@ -655,6 +660,7 @@ export async function generateInpatientEmrPreviewStream(
 
   const context: InpatientEmrContext = {
     documentContext,
+    doctorSupplement: request.doctorSupplement?.trim() || undefined,
     aiContext,
     registration,
     orders,

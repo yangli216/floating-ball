@@ -25,6 +25,7 @@ export interface InpatientEmrGenerationRequest {
   htmlContent: string;
   templateName?: string;
   recordTime?: string;
+  doctorSupplement?: string;
   contextPolicy?: HisInpatientEmrContextPolicy;
   hisContext?: HisInpatientEmrContextPackage;
   requestId?: string;
@@ -76,6 +77,7 @@ export interface InpatientEmrDocumentContext {
 
 export interface InpatientEmrContext {
   documentContext: InpatientEmrDocumentContext;
+  doctorSupplement?: string;
   aiContext?: HisInpatientEmrContextPackage;
   registration: HisInpatientRegistrationInfo | null;
   orders: HisInpatientOrder[];

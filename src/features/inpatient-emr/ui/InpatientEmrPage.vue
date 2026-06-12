@@ -11,7 +11,7 @@
           type="button"
           :disabled="!request || isGenerating"
           title="重新生成"
-          @click="restart"
+          @click="openRegenerateDialog"
         >
           <Icon icon="lucide:refresh-cw" :size="16" />
           <span>重新生成</span>
@@ -144,12 +144,125 @@
         </template>
       </section>
     </main>
+
+    <div
+      v-if="showRegenerateDialog"
+      class="regenerate-overlay"
+      role="dialog"
+      aria-modal="true"
+      aria-label="补充病历要点"
+    >
+      <section class="regenerate-dialog">
+        <header class="regenerate-head">
+          <div>
+            <span>重新生成</span>
+            <strong>补充病历要点</strong>
+          </div>
+          <button
+            class="icon-btn"
+            type="button"
+            title="关闭"
+            @click="closeRegenerateDialog"
+          >
+            <Icon icon="lucide:x" :size="18" />
+          </button>
+        </header>
+
+        <div class="supplement-presets">
+          <button
+            v-for="preset in supplementPresets"
+            :key="preset"
+            type="button"
+            @click="appendSupplementPreset(preset)"
+          >
+            {{ preset }}
+          </button>
+        </div>
+
+        <textarea
+          v-model="supplementText"
+          class="supplement-input"
+          rows="8"
+          placeholder="例如：今日患者咳嗽较前减轻，无胸闷气促；查体双肺呼吸音稍粗，未闻及明显湿啰音；继续当前抗感染及雾化治疗，复查血常规。"
+        ></textarea>
+
+        <div class="voice-row">
+          <button
+            class="voice-btn"
+            type="button"
+            :class="{ 'is-recording': isRecordingSupplement }"
+            :disabled="isTranscribingSupplement || isGenerating"
+            @click="toggleSupplementRecording"
+          >
+            <Icon
+              :icon="isRecordingSupplement ? 'lucide:square' : 'lucide:mic'"
+              :size="16"
+            />
+            <span>{{ supplementVoiceButtonText }}</span>
+          </button>
+          <button
+            class="clear-supplement-btn"
+            type="button"
+            :disabled="!supplementText.trim() || isRecordingSupplement || isTranscribingSupplement"
+            @click="clearSupplementText"
+          >
+            清空补充
+          </button>
+          <span v-if="supplementVoiceStatus" class="voice-status">
+            {{ supplementVoiceStatus }}
+          </span>
+        </div>
+
+        <div
+          v-if="isRecordingSupplement || isTranscribingSupplement"
+          class="capture-visualizer"
+          :class="{ 'is-transcribing': isTranscribingSupplement }"
+        >
+          <div class="recording-dot"></div>
+          <div class="meter-bars" aria-hidden="true">
+            <span
+              v-for="(level, index) in supplementAudioLevels"
+              :key="index"
+              :style="{ height: `${level}px`, opacity: String(0.36 + (level / 34) * 0.64) }"
+            ></span>
+          </div>
+          <strong>{{ isRecordingSupplement ? formattedSupplementDuration : '识别中' }}</strong>
+        </div>
+
+        <div v-if="supplementError" class="supplement-error">
+          <Icon icon="lucide:triangle-alert" :size="15" />
+          <span>{{ supplementError }}</span>
+        </div>
+
+        <footer class="regenerate-footer">
+          <button
+            class="ghost-btn"
+            type="button"
+            :disabled="isRecordingSupplement || isTranscribingSupplement"
+            @click="closeRegenerateDialog"
+          >
+            取消
+          </button>
+          <button
+            class="primary-btn"
+            type="button"
+            :disabled="isRecordingSupplement || isTranscribingSupplement || isGenerating"
+            @click="confirmRegenerate"
+          >
+            <Icon icon="lucide:sparkles" :size="16" />
+            <span>{{ supplementText.trim() ? '带补充重新生成' : '直接重新生成' }}</span>
+          </button>
+        </footer>
+      </section>
+    </div>
   </section>
 </template>
 
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue';
+import { computed, onBeforeUnmount, ref, watch } from 'vue';
 import Icon from '@shared/ui/Icon.vue';
+import { audioRecorder, getMicrophoneErrorMessage } from '@/services/audioRecorder';
+import { transcribeSpeech } from '@/services/aliyunSpeech';
 import { useConsultationReferenceFeedbackListener } from '@features/consultation-result';
 import {
   type InpatientEmrReferenceFeedbackPayload,
@@ -186,10 +299,41 @@ const {
 } = useInpatientEmrGeneration();
 
 const previewHtml = ref('');
+const showRegenerateDialog = ref(false);
+const supplementText = ref('');
+const supplementError = ref('');
+const isRecordingSupplement = ref(false);
+const isTranscribingSupplement = ref(false);
+const supplementRecordingSeconds = ref(0);
+const supplementAudioLevels = ref<number[]>(Array.from({ length: 18 }, () => 6));
+let supplementTimerId: number | null = null;
+let supplementAnimationFrameId: number | null = null;
+const supplementPresets = [
+  '主诉变化',
+  '查体发现',
+  '检验检查结果',
+  '治疗调整',
+  '病情评估',
+  '后续计划',
+];
 const activeStep = computed(() => steps.value.find((step) => step.key === activeStepKey.value));
 const activeStepLabel = computed(() => activeStep.value?.title || '准备生成');
 const activeStepDetail = computed(() => activeStep.value?.detail || '正在整理住院病历上下文');
 const aiFields = computed(() => result.value?.template.fields.filter((field) => field.aiSuitable) || []);
+const supplementVoiceButtonText = computed(() => {
+  if (isTranscribingSupplement.value) return '识别中';
+  return isRecordingSupplement.value ? '停止并识别' : '开始录音';
+});
+const supplementVoiceStatus = computed(() => {
+  if (isTranscribingSupplement.value) return '正在识别，结果将追加到补充要点';
+  if (isRecordingSupplement.value) return '正在采集音频';
+  return '';
+});
+const formattedSupplementDuration = computed(() => {
+  const minutes = Math.floor(supplementRecordingSeconds.value / 60);
+  const seconds = supplementRecordingSeconds.value % 60;
+  return `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
+});
 
 watch(
   () => props.request,
@@ -227,9 +371,150 @@ watch(
   },
 );
 
-function restart(): void {
-  if (!props.request) return;
-  void start(props.request);
+function getCurrentGenerationRequest(): InpatientEmrGenerationRequest | null {
+  return result.value?.request || props.request;
+}
+
+function openRegenerateDialog(): void {
+  const current = getCurrentGenerationRequest();
+  if (!current || isGenerating.value) return;
+  supplementText.value = current.doctorSupplement || '';
+  supplementError.value = '';
+  showRegenerateDialog.value = true;
+}
+
+function closeRegenerateDialog(): void {
+  if (isRecordingSupplement.value || isTranscribingSupplement.value) return;
+  showRegenerateDialog.value = false;
+  supplementError.value = '';
+}
+
+function appendSupplementPreset(preset: string): void {
+  const text = supplementText.value.trim();
+  const prefix = text ? '\n' : '';
+  supplementText.value = `${text}${prefix}${preset}：`;
+}
+
+function appendSupplementText(text: string): void {
+  const cleanText = text.trim();
+  if (!cleanText) return;
+  supplementText.value = supplementText.value.trim()
+    ? `${supplementText.value.trim()}\n${cleanText}`
+    : cleanText;
+}
+
+function clearSupplementText(): void {
+  supplementText.value = '';
+  supplementError.value = '';
+}
+
+function startSupplementTimer(): void {
+  clearSupplementTimer();
+  supplementRecordingSeconds.value = 0;
+  const startedAt = Date.now();
+  supplementTimerId = window.setInterval(() => {
+    supplementRecordingSeconds.value = Math.floor((Date.now() - startedAt) / 1000);
+  }, 250);
+}
+
+function clearSupplementTimer(): void {
+  if (supplementTimerId != null) {
+    window.clearInterval(supplementTimerId);
+    supplementTimerId = null;
+  }
+}
+
+function resetSupplementAudioLevels(): void {
+  supplementAudioLevels.value = supplementAudioLevels.value.map(() => 6);
+}
+
+function startSupplementVisualizer(): void {
+  clearSupplementVisualizer();
+  const draw = (): void => {
+    const data = audioRecorder.getByteFrequencyData();
+    if (data) {
+      const barCount = supplementAudioLevels.value.length;
+      const step = Math.max(1, Math.floor(data.length / barCount));
+      supplementAudioLevels.value = supplementAudioLevels.value.map((_, index) => {
+        const value = data[index * step] || 0;
+        return Math.max(6, Math.round((value / 255) * 34));
+      });
+    }
+    supplementAnimationFrameId = window.requestAnimationFrame(draw);
+  };
+  draw();
+}
+
+function clearSupplementVisualizer(): void {
+  if (supplementAnimationFrameId != null) {
+    window.cancelAnimationFrame(supplementAnimationFrameId);
+    supplementAnimationFrameId = null;
+  }
+  resetSupplementAudioLevels();
+}
+
+async function toggleSupplementRecording(): Promise<void> {
+  supplementError.value = '';
+  if (isRecordingSupplement.value) {
+    await stopSupplementRecording();
+    return;
+  }
+  try {
+    await audioRecorder.start();
+    isRecordingSupplement.value = true;
+    startSupplementTimer();
+    startSupplementVisualizer();
+  } catch (error) {
+    supplementError.value = `无法开始录音：${getMicrophoneErrorMessage(error)}`;
+    clearSupplementTimer();
+    clearSupplementVisualizer();
+  }
+}
+
+async function stopSupplementRecording(): Promise<void> {
+  try {
+    clearSupplementTimer();
+    clearSupplementVisualizer();
+    const blob = await audioRecorder.stop();
+    isRecordingSupplement.value = false;
+    isTranscribingSupplement.value = true;
+    const text = await transcribeSpeech(blob);
+    if (!text.trim()) {
+      supplementError.value = '未识别到有效语音内容，请重新录制或手动输入';
+      return;
+    }
+    appendSupplementText(text);
+  } catch (error) {
+    supplementError.value = error instanceof Error ? error.message : String(error);
+  } finally {
+    isRecordingSupplement.value = false;
+    isTranscribingSupplement.value = false;
+  }
+}
+
+async function discardSupplementRecording(): Promise<void> {
+  if (!isRecordingSupplement.value) return;
+  try {
+    clearSupplementTimer();
+    clearSupplementVisualizer();
+    await audioRecorder.stop();
+  } catch (error) {
+    console.warn('[InpatientEmrPage] discard supplement recording failed', error);
+  } finally {
+    isRecordingSupplement.value = false;
+    isTranscribingSupplement.value = false;
+  }
+}
+
+function confirmRegenerate(): void {
+  const current = getCurrentGenerationRequest();
+  if (!current) return;
+  const doctorSupplement = supplementText.value.trim();
+  showRegenerateDialog.value = false;
+  void start({
+    ...current,
+    doctorSupplement: doctorSupplement || undefined,
+  });
 }
 
 function getFieldPrompt(field: InpatientEmrTemplateField): string {
@@ -243,10 +528,15 @@ function handlePreviewInput(event: Event): void {
   if (!fieldId) return;
   updateFieldValue(fieldId, editable.textContent || '');
 }
+
+onBeforeUnmount(() => {
+  void discardSupplementRecording();
+});
 </script>
 
 <style scoped>
 .inpatient-emr-page {
+  position: relative;
   width: 100%;
   height: 100%;
   display: flex;
@@ -672,6 +962,238 @@ button {
   background: #e8f4ff;
 }
 
+.regenerate-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 20;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: rgba(15, 31, 37, 0.28);
+  backdrop-filter: blur(7px);
+}
+
+.regenerate-dialog {
+  width: min(640px, 100%);
+  display: grid;
+  gap: 14px;
+  border-radius: 8px;
+  padding: 16px;
+  background: rgba(255, 255, 255, 0.98);
+  border: 1px solid rgba(101, 125, 134, 0.22);
+  box-shadow: 0 26px 70px rgba(12, 28, 34, 0.22);
+}
+
+.regenerate-head,
+.voice-row,
+.regenerate-footer,
+.supplement-error {
+  display: flex;
+  align-items: center;
+}
+
+.regenerate-head {
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.regenerate-head div {
+  min-width: 0;
+  display: grid;
+  gap: 3px;
+}
+
+.regenerate-head span {
+  color: #0d8b77;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.regenerate-head strong {
+  color: #1c3138;
+  font-size: 18px;
+}
+
+.icon-btn {
+  width: 32px;
+  height: 32px;
+  display: grid;
+  place-items: center;
+  border-radius: 7px;
+  color: #52666e;
+  background: #f2f6f7;
+  cursor: pointer;
+}
+
+.icon-btn:hover {
+  background: #e8eef0;
+}
+
+.supplement-presets {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+}
+
+.supplement-presets button {
+  height: 28px;
+  padding: 0 10px;
+  border-radius: 999px;
+  color: #176f62;
+  background: #edf8f5;
+  border: 1px solid rgba(15, 143, 123, 0.18);
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.supplement-presets button:hover {
+  background: #e0f3ee;
+}
+
+.supplement-input {
+  width: 100%;
+  min-height: 168px;
+  resize: vertical;
+  padding: 12px;
+  border-radius: 8px;
+  border: 1px solid rgba(102, 124, 133, 0.28);
+  background: #fbfcfc;
+  color: #1d2b32;
+  font: inherit;
+  line-height: 1.6;
+  outline: none;
+}
+
+.supplement-input:focus {
+  border-color: rgba(15, 143, 123, 0.62);
+  box-shadow: 0 0 0 4px rgba(15, 143, 123, 0.11);
+}
+
+.voice-row {
+  gap: 10px;
+  min-height: 32px;
+  flex-wrap: wrap;
+}
+
+.voice-btn,
+.clear-supplement-btn {
+  height: 30px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 11px;
+  border-radius: 7px;
+  color: #27515c;
+  background: #ffffff;
+  border: 1px solid rgba(99, 121, 129, 0.24);
+  cursor: pointer;
+}
+
+.voice-btn.is-recording {
+  color: #b43d2e;
+  background: #fff1ee;
+  border-color: rgba(180, 61, 46, 0.26);
+}
+
+.voice-btn:disabled {
+  opacity: 0.52;
+  cursor: not-allowed;
+}
+
+.clear-supplement-btn {
+  color: #52666e;
+  background: #f5f8f9;
+}
+
+.clear-supplement-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.voice-status {
+  color: #65777f;
+  font-size: 12px;
+}
+
+.capture-visualizer {
+  display: grid;
+  grid-template-columns: 10px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  min-height: 42px;
+  padding: 9px 11px;
+  border-radius: 8px;
+  background: #f3fbf8;
+  border: 1px solid rgba(15, 143, 123, 0.16);
+}
+
+.recording-dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: #e24b3b;
+  box-shadow: 0 0 0 0 rgba(226, 75, 59, 0.34);
+  animation: recordPulse 1.2s ease-in-out infinite;
+}
+
+.capture-visualizer.is-transcribing .recording-dot {
+  background: #1976c9;
+  animation: pulse 1.4s ease-in-out infinite;
+}
+
+.meter-bars {
+  height: 34px;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  overflow: hidden;
+}
+
+.meter-bars span {
+  width: 4px;
+  min-width: 4px;
+  border-radius: 999px;
+  background: linear-gradient(180deg, #16a084, #57c7b1);
+  transition: height 0.08s ease, opacity 0.08s ease;
+}
+
+.capture-visualizer.is-transcribing .meter-bars span {
+  height: 12px !important;
+  opacity: 0.4 !important;
+  animation: transcribingBars 1s ease-in-out infinite;
+}
+
+.capture-visualizer.is-transcribing .meter-bars span:nth-child(2n) {
+  animation-delay: 0.12s;
+}
+
+.capture-visualizer.is-transcribing .meter-bars span:nth-child(3n) {
+  animation-delay: 0.24s;
+}
+
+.capture-visualizer strong {
+  color: #24454d;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+
+.supplement-error {
+  gap: 7px;
+  padding: 9px 10px;
+  border-radius: 7px;
+  color: #a94d22;
+  background: #fff3ed;
+  border: 1px solid rgba(217, 118, 67, 0.24);
+  font-size: 12px;
+}
+
+.regenerate-footer {
+  justify-content: flex-end;
+  gap: 8px;
+}
+
 .spinning {
   animation: spin 1s linear infinite;
 }
@@ -701,5 +1223,21 @@ button {
 @keyframes pulseBg {
   0%, 100% { background-color: #fff8e5; }
   50% { background-color: #ffeebf; }
+}
+
+@keyframes recordPulse {
+  0%, 100% {
+    transform: scale(0.92);
+    box-shadow: 0 0 0 0 rgba(226, 75, 59, 0.34);
+  }
+  50% {
+    transform: scale(1.08);
+    box-shadow: 0 0 0 6px rgba(226, 75, 59, 0);
+  }
+}
+
+@keyframes transcribingBars {
+  0%, 100% { transform: scaleY(0.7); }
+  50% { transform: scaleY(1.35); }
 }
 </style>

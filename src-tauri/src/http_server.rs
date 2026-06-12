@@ -379,6 +379,8 @@ pub struct InpatientEmrGenerationRequest {
     #[serde(default)]
     pub record_time: Option<String>,
     #[serde(default)]
+    pub doctor_supplement: Option<String>,
+    #[serde(default)]
     pub request_id: Option<String>,
     #[serde(default)]
     pub patient: Option<ReportInterpretationPatientInput>,

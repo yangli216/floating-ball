@@ -36,6 +36,7 @@ export function buildInpatientEmrGeneratePrompt(
   context: InpatientEmrContext,
 ): string {
   const aiFields = fields.filter((field) => field.aiSuitable);
+  const doctorSupplement = context.doctorSupplement?.trim();
   return [
     '你是一名住院电子病历辅助书写助手。',
     '任务：根据 AI 生成字段、HIS 住院数据和字段规则，生成字段取值 JSON。',
@@ -56,6 +57,10 @@ export function buildInpatientEmrGeneratePrompt(
     '9. 既往病程用于保持连续性，不要把前序记录的日期、体征或治疗效果误写成本次 recordDate 当天事实。',
     '10. 医嘱描述优先使用 orders.summary 或医嘱条目的 displayText；fullText 是 HIS 原始完整医嘱，name 通常是基础项目名。若 displayText/fullText 已包含剂量、用法、频次，不得再把 dose、route、frequency 重复拼接。',
     '11. previousRecords 中 medType=0 表示入院记录，已结构化抽取 chiefComplaint、presentIllness 和 structuredSections；生成病程时优先把主诉、现病史作为病史背景，不要复述整篇入院记录。medType=2 病案首页不应作为生成依据。',
+    doctorSupplement
+      ? '12. 医生补充要点优先级高于 HIS 摘要中的模糊信息；可作为本次查房主观症状、查体发现、诊疗判断或计划的依据，但不得扩展成补充要点之外的事实。'
+      : '',
+    doctorSupplement ? `DOCTOR_SUPPLEMENT=${doctorSupplement}` : '',
     `AI_FIELDS=${JSON.stringify(aiFields, null, 2)}`,
     `FIELD_PROMPTS=${aiFields.map((field) => buildInpatientEmrFieldPrompt(field, context)).join('\n\n---\n\n')}`,
     `HIS_AI_CONTEXT=${JSON.stringify(context.aiContext || null, null, 2)}`,

@@ -651,7 +651,7 @@
    * 触发住院病历辅助生成
    * @param {Object|string} request 住院病历生成请求对象，或 admissionId
    * @param {string} [htmlContent] EMR 模板 htmlContent（仅当第一个参数是 admissionId 时使用）
-   * @param {Object} [options] 可选扩展，如 templateName/recordTime/contextPolicy/hisContext/requestId/patient
+   * @param {Object} [options] 可选扩展，如 templateName/recordTime/doctorSupplement/contextPolicy/hisContext/requestId/patient
    * @returns {Promise<Object>}
    */
   MedHermes.prototype.generateInpatientEmr = function (request, htmlContent, options) {

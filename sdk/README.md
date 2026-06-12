@@ -375,6 +375,7 @@ const record = await mh.generateInpatientEmr({
   templateId: 'emr_tpl_daily_course',
   templateName: '日常病程记录',
   recordTime: '2026-06-10 15:25',
+  doctorSupplement: '今日患者咳嗽较前减轻，无胸闷气促；继续当前治疗并复查血常规。',
   htmlContent: '<p data-id="病程记录"><span data-id="病程记录文本"></span></p>',
   contextPolicy: {
     maxDays: 7,
