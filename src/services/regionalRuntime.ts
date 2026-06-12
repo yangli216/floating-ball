@@ -22,6 +22,8 @@ async function syncRegionalRuntimeData(): Promise<void> {
 
 export async function initializeRegionalRuntime(options?: {
   allowCachedFallback?: boolean;
+  skipDataSync?: boolean;
+  skipAuditLog?: boolean;
 }): Promise<BootstrapConfig | null> {
   if (!isRegionalMode()) return null;
   const updateState = await checkForceUpdateRequired();
@@ -38,30 +40,41 @@ export async function initializeRegionalRuntime(options?: {
 
   startAuditUploader();
   startFeatureUsageUploader();
-  await syncRegionalRuntimeData();
-  await feedbackService.logOperation({
-    module: 'regional_runtime',
-    action: 'initialize_runtime',
-    title: '初始化区域化运行时',
-    sourceModule: 'regional_runtime',
-    scene: 'regional-runtime',
-    operationType: 'api_call',
-    operationName: 'regional_runtime_initialized',
-    details: {
-      baseUrl: config.llm.baseUrl,
-      model: config.llm.model,
-      promptVersion: config.promptVersion,
-      templateVersion: config.templateVersion,
-      dataPackageVersion: config.dataPackageVersion,
-    },
-    success: true,
-  });
+  if (!options?.skipDataSync) {
+    await syncRegionalRuntimeData();
+  }
+  if (!options?.skipAuditLog) {
+    await feedbackService.logOperation({
+      module: 'regional_runtime',
+      action: 'initialize_runtime',
+      title: '初始化区域化运行时',
+      sourceModule: 'regional_runtime',
+      scene: 'regional-runtime',
+      operationType: 'api_call',
+      operationName: 'regional_runtime_initialized',
+      details: {
+        baseUrl: config.llm.baseUrl,
+        model: config.llm.model,
+        promptVersion: config.promptVersion,
+        templateVersion: config.templateVersion,
+        dataPackageVersion: config.dataPackageVersion,
+      },
+      success: true,
+    });
+  }
   return config;
 }
 
-export async function reinitializeRegionalRuntime(): Promise<BootstrapConfig | null> {
+export async function reinitializeRegionalRuntime(options?: {
+  skipDataSync?: boolean;
+  skipAuditLog?: boolean;
+}): Promise<BootstrapConfig | null> {
   shutdownRegionalRuntime();
-  return initializeRegionalRuntime({ allowCachedFallback: false });
+  return initializeRegionalRuntime({
+    allowCachedFallback: false,
+    skipDataSync: options?.skipDataSync,
+    skipAuditLog: options?.skipAuditLog,
+  });
 }
 
 export function shutdownRegionalRuntime(): void {

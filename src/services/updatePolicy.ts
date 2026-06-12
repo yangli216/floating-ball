@@ -5,6 +5,7 @@ import {
   getUpdateEnvironmentLabel,
   type UpdateEnvironment,
 } from './updateConfig';
+import { fetchWithTimeout } from '@shared/lib/fetchTimeout';
 
 export interface UpdatePolicy {
   channel: UpdateEnvironment | string;
@@ -40,6 +41,8 @@ let currentState: ForceUpdateState = {
 };
 
 let versionPromise: Promise<string> | null = null;
+
+const UPDATE_POLICY_TIMEOUT_MS = 8_000;
 
 export function subscribeForceUpdateRequired(listener: ForceUpdateListener): () => void {
   listeners.add(listener);
@@ -94,12 +97,19 @@ export async function fetchUpdatePolicy(): Promise<UpdatePolicy | null> {
   if (!endpoint) {
     return null;
   }
-  const response = await fetch(endpoint, {
-    headers: {
-      'Accept': 'application/json',
-      'Cache-Control': 'no-cache',
+  const response = await fetchWithTimeout(
+    endpoint,
+    {
+      headers: {
+        'Accept': 'application/json',
+        'Cache-Control': 'no-cache',
+      },
     },
-  });
+    {
+      timeoutMs: UPDATE_POLICY_TIMEOUT_MS,
+      timeoutMessage: `更新策略获取超时（超过 ${Math.round(UPDATE_POLICY_TIMEOUT_MS / 1000)} 秒）`,
+    }
+  );
   if (!response.ok) {
     throw new Error(`更新策略获取失败（${response.status}）`);
   }

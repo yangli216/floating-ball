@@ -202,6 +202,13 @@
 - **解决方案**: `ConsultationPage.vue` 复用共享 `useBodySiteOptions`，在旧路径 hydrate 检查项目明细时落地部位候选；勾选检查项和旧提交前均先 hydrate 检查明细，再用 `hasRequiredBodySite` 阻止缺少部位的检查项目。
 - **后续防护**: 治疗推荐门禁新增字段时，必须同时核对共享结果页、完整问诊遗留路径和独立诊疗方案页；不能只在当前主入口补 preflight。
 
+### RETRO-027: Windows WebView2 自绘下拉点击后立即失焦关闭 [已解决]
+
+- **现象**: 药品核心字段里的“频次 / 用法”自绘搜索下拉在 macOS 正常，Windows 下点击后看起来没有反应，控制台也没有报错。
+- **根因**: 触发按钮点击后会被 `v-if` 替换成输入框，Windows WebView2 在按钮被移除时可能先触发 `focusout` 且 `relatedTarget` 为空；旧实现立即按失焦收口，导致刚打开的下拉被同步关闭。
+- **解决方案**: 下拉触发改在 `mousedown` 阶段打开并阻止按钮抢焦点；失焦处理延后一拍，再用 `document.activeElement` 判断焦点是否实际留在组件内，避免按钮替换造成的误关闭。
+- **后续防护**: Windows 桌面端自绘下拉、popover、图标按钮不要只依赖 `click` 后的同步 `focusout.relatedTarget`；涉及按钮替换输入框或 SVG/icon 子节点时，应优先用早期鼠标事件和延迟后的真实焦点状态做收口判断。
+
 
 ---
 

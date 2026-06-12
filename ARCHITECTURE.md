@@ -1,6 +1,6 @@
 # 架构文档 (ARCHITECTURE.md)
 
-> **最后更新**: 2026-05-21
+> **最后更新**: 2026-06-11
 >
 > **重要**: 此文档是项目架构的唯一真实来源。任何架构级别的代码修改都必须同步更新此文档。
 
@@ -137,8 +137,9 @@
 1. 本地模式下，LLM / 审查模型 / PMPHAI 等凭据仍通过设置页、`localStorage` 与 `.env` 兜底管理。
 2. 区域化模式下，桌面端通过 `SettingsPanel.vue` 或预置的 `REGIONAL_*` 配置项保存 `REGIONAL_ENABLED / REGIONAL_BASE_URL / REGIONAL_ORG_CODE`，再由 `regionalRuntime.ts -> regionalClient.ts` 完成设备注册、`bootstrap` 拉取和 `/v1/*` 调用；首启默认接入值中的后端地址优先取构建时注入的 `VITE_REGIONAL_BASE_URL`（CI/Release 由 GitHub Actions Repository Variables 注入），机构编码默认回退到 `ORG001`，如需覆盖仅通过本地 `.env` 或设置页手工配置；后续仍允许在设置页修改或关闭；桌面端不再编辑这些密钥类配置。
 2.1 `regionalClient.ts` 会优先通过 Tauri Rust 命令读取设备网卡 MAC 地址，并将其作为 `cdDevice` / 设备编码持久化使用；仅在当前环境无法读取 MAC 时才回退到本地生成的兜底编码。
-2.1 `SettingsPanel.vue` 需要同时提供“桌面端到 floating-ball-server”的接入测试入口，用于验证 `register -> bootstrap` 链路，并与后台“server 到 LLM”测试入口形成分层排障。
-2.2 区域化签名时间戳使用 epoch 毫秒。`requestSigner.ts` 会根据 `/v1/*` 响应体顶层 `timestamp` 维护“本机到服务端”的时钟偏移；遇到 `SIG-401` 且响应带服务端时间时，HTTP/SSE 请求会刷新偏移后重签重试一次，避免桌面端系统时间与后台服务器相差超过 5 分钟时阻断诊断推荐。
+2.2 `SettingsPanel.vue` 需要同时提供“桌面端到 floating-ball-server”的接入测试入口，用于验证 `register -> bootstrap` 链路，并与后台“server 到 LLM”测试入口形成分层排障。
+2.3 设置页“测试 server 连通性”只等待更新策略检查、设备注册和 `bootstrap` 获取，不再同步等待 prompt / template / mapping 数据包等运行时后置同步；区域化 HTTP 请求与更新策略检查必须设置有限超时，失败时结束按钮等待态并展示可操作错误信息。
+2.4 区域化签名时间戳使用 epoch 毫秒。`requestSigner.ts` 会根据 `/v1/*` 响应体顶层 `timestamp` 维护“本机到服务端”的时钟偏移；遇到 `SIG-401` 且响应带服务端时间时，HTTP/SSE 请求会刷新偏移后重签重试一次，避免桌面端系统时间与后台服务器相差超过 5 分钟时阻断诊断推荐。
 3. HIS 联调通过本地 HTTP Bridge 完成，不依赖独立登录态。
 4. `docs/regionalization/*.md` 中关于 `auth.ts`、`AuthGate.vue` 的更完整登录态设计仍未进入当前实现。
 

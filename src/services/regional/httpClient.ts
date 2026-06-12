@@ -9,6 +9,7 @@ import { getDeviceCode } from './device';
 import { getOrgCode, getRegionalBaseUrl } from './config';
 import { createRegionalRequestError, parseRegionalError } from './errors';
 import { restoreCachedDeviceRegistration } from './registrationCache';
+import { fetchWithTimeout } from '@shared/lib/fetchTimeout';
 import {
   clearDeviceRegistration,
   getDeviceToken,
@@ -20,6 +21,12 @@ type RegisterDeviceFn = () => Promise<unknown>;
 
 let registerDeviceHandler: RegisterDeviceFn | null = null;
 
+const REGIONAL_CONTROL_TIMEOUT_MS = 15_000;
+const REGIONAL_DEFAULT_TIMEOUT_MS = 30_000;
+const REGIONAL_KNOWLEDGE_TIMEOUT_MS = 60_000;
+const REGIONAL_AI_TIMEOUT_MS = 180_000;
+const REGIONAL_SPEECH_TIMEOUT_MS = 120_000;
+
 export function setRegisterDeviceHandler(handler: RegisterDeviceFn): void {
   registerDeviceHandler = handler;
 }
@@ -29,6 +36,26 @@ async function ensureRegisteredDevice(): Promise<void> {
     throw new Error('区域化注册服务未初始化');
   }
   await registerDeviceHandler();
+}
+
+function resolveRegionalRequestTimeout(path: string): number {
+  if (path.startsWith('/v1/ai/chat')) {
+    return REGIONAL_AI_TIMEOUT_MS;
+  }
+  if (path.startsWith('/v1/ai/speech')) {
+    return REGIONAL_SPEECH_TIMEOUT_MS;
+  }
+  if (path.startsWith('/v1/knowledge/')) {
+    return REGIONAL_KNOWLEDGE_TIMEOUT_MS;
+  }
+  if (
+    path === '/v1/client/register'
+    || path === '/v1/client/bootstrap'
+    || path === '/v1/client/heartbeat'
+  ) {
+    return REGIONAL_CONTROL_TIMEOUT_MS;
+  }
+  return REGIONAL_DEFAULT_TIMEOUT_MS;
 }
 
 export async function regionalFetch<T>(
@@ -74,10 +101,18 @@ export async function regionalFetch<T>(
 
   let res: Response;
   try {
-    res = await fetch(`${baseUrl}${path}`, {
-      ...options,
-      headers,
-    });
+    const timeoutMs = resolveRegionalRequestTimeout(path);
+    res = await fetchWithTimeout(
+      `${baseUrl}${path}`,
+      {
+        ...options,
+        headers,
+      },
+      {
+        timeoutMs,
+        timeoutMessage: `区域化服务请求超时（超过 ${Math.round(timeoutMs / 1000)} 秒），请检查后台服务地址和网络后重试`,
+      }
+    );
   } catch (error) {
     throw createRegionalRequestError(
       { message: error instanceof Error ? error.message : String(error) },

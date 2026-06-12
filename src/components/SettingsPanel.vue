@@ -542,7 +542,10 @@ const testRegionalConnection = async () => {
       baseUrl: nextRegionalBaseUrl,
       orgCode: nextRegionalOrgCode,
     });
-    await reinitializeRegionalRuntime();
+    await reinitializeRegionalRuntime({
+      skipDataSync: true,
+      skipAuditLog: true,
+    });
     await loadRegionalDraftSettings();
     loadModeDependentSettings();
     regionalConnectResult.value = {
@@ -573,7 +576,10 @@ const testRegionalConnection = async () => {
 
     if (previousConfig.enabled) {
       try {
-        await reinitializeRegionalRuntime();
+        await reinitializeRegionalRuntime({
+          skipDataSync: true,
+          skipAuditLog: true,
+        });
       } catch {
         // Ignore rollback reinitialize errors; keep the surfaced test failure.
       }

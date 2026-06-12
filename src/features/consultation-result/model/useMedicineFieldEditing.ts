@@ -45,7 +45,9 @@ export function useMedicineFieldEditing(options: MedicineFieldEditingOptions) {
     }
 
     options.setActiveField(rec, field);
-    options.focusActiveField();
+    if (!isUsageField(field)) {
+      options.focusActiveField();
+    }
   }
 
   function handleFieldBlur(rec: TreatmentRecommendation, field: MedicinePrimaryField, event: FocusEvent): void {

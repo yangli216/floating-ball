@@ -3,7 +3,7 @@
     - 单一字段编辑入口：点击只读按钮展开 -> 输入关键字过滤 -> 选中候选写回 rec
     - 候选项最多展示 8 条；当前值若不在过滤结果中会自动作为首条
     - 关键字匹配走 normalizeUsageKeyword（小写去空格 + 拼音/五笔/医保码 token）
-    - 失焦自动关闭：使用 @focusout + relatedTarget.closest 容忍点击候选项
+    - 失焦自动关闭：使用 @focusout + 延迟后的真实焦点状态容忍点击候选项
     - 直接 mutate 传入的 rec.frequency/frequencyKey 或 rec.route/routeKey
     - 可选 v-model:open 让父组件在多卡片场景下做"互斥展开"协调；不绑定时由组件自管
   -->
@@ -18,11 +18,12 @@
       type="button"
       class="muf-trigger"
       :title="field === 'frequency' ? '点击修改频次' : '点击修改用法'"
-      @click="activate"
+      @mousedown.prevent.stop="activate"
+      @click.stop="activate"
     >
       <span v-if="currentText" class="muf-value">{{ currentText }}</span>
       <span v-else class="muf-placeholder">{{ placeholder }}</span>
-      <svg class="muf-caret" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg>
+      <svg class="muf-caret" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="6 9 12 15 18 9"></polyline></svg>
     </button>
     <template v-else>
       <div class="muf-input-wrap">
@@ -71,7 +72,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, nextTick, ref, watch, type PropType } from 'vue';
+import { computed, nextTick, onUnmounted, ref, watch, type PropType } from 'vue';
 import type { TreatmentRecommendation } from '@/types/consultation';
 import {
   normalizeUsageKeyword,
@@ -130,6 +131,7 @@ function setOpen(value: boolean) {
 const containerRef = ref<HTMLElement | null>(null);
 const inputRef = ref<HTMLInputElement | null>(null);
 const searchKeyword = ref<string>('');
+let pendingFocusOutTimer: number | null = null;
 
 const currentText = computed(() => (props.field === 'frequency' ? props.rec.frequency : props.rec.route) || '');
 const currentKey = computed(() => (props.field === 'frequency' ? props.rec.frequencyKey : props.rec.routeKey) || '');
@@ -171,8 +173,21 @@ const filteredOptions = computed<UsageOption[]>(() => {
   return result.slice(0, props.maxVisible);
 });
 
+function clearPendingFocusOut(): void {
+  if (pendingFocusOutTimer === null) {
+    return;
+  }
+  window.clearTimeout(pendingFocusOutTimer);
+  pendingFocusOutTimer = null;
+}
+
+function isInsideContainer(element: Element | null): boolean {
+  return Boolean(element && containerRef.value?.contains(element));
+}
+
 function activate() {
   if (open.value) return;
+  clearPendingFocusOut();
   searchKeyword.value = currentText.value || '';
   setOpen(true);
   void nextTick(() => {
@@ -182,6 +197,7 @@ function activate() {
 }
 
 function close() {
+  clearPendingFocusOut();
   setOpen(false);
 }
 
@@ -198,13 +214,7 @@ function clearSelection() {
   commitFieldValue('', '');
 }
 
-// 失焦时若关键字已经精确匹配某候选则确认；否则保留为自定义值
-function handleFocusOut(event: FocusEvent) {
-  const next = event.relatedTarget as HTMLElement | null;
-  if (next && containerRef.value && containerRef.value.contains(next)) {
-    return;
-  }
-
+function commitSearchKeyword(): void {
   const keyword = (searchKeyword.value || '').trim();
   if (!keyword) {
     clearSelection();
@@ -232,6 +242,33 @@ function handleFocusOut(event: FocusEvent) {
   close();
 }
 
+// 失焦时若关键字已经精确匹配某候选则确认；否则保留为自定义值。
+// Windows WebView2 在按钮被 v-if 替换成输入框时可能同步派发 relatedTarget 为空的 focusout，
+// 延后一拍读取真实 activeElement，可避免刚打开就被误判为离开组件。
+function handleFocusOut(event: FocusEvent) {
+  if (!open.value) {
+    return;
+  }
+
+  const next = event.relatedTarget instanceof Element ? event.relatedTarget : null;
+  if (isInsideContainer(next)) {
+    return;
+  }
+
+  clearPendingFocusOut();
+  pendingFocusOutTimer = window.setTimeout(() => {
+    pendingFocusOutTimer = null;
+    if (!open.value) {
+      return;
+    }
+    const activeElement = document.activeElement instanceof Element ? document.activeElement : null;
+    if (isInsideContainer(activeElement)) {
+      return;
+    }
+    commitSearchKeyword();
+  }, 0);
+}
+
 // rec 切换时同步搜索框为当前值
 watch(
   () => [props.rec, props.field, currentText.value],
@@ -241,6 +278,10 @@ watch(
     }
   },
 );
+
+onUnmounted(() => {
+  clearPendingFocusOut();
+});
 </script>
 
 <style scoped>
