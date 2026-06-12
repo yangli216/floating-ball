@@ -423,11 +423,21 @@ export interface HisInpatientLabResult {
   raw?: Record<string, unknown>;
 }
 
+export interface HisInpatientLabReportSummary {
+  reportTime?: string;
+  groupName?: string;
+  abnormal?: boolean;
+  summary?: string;
+  keyItems?: HisInpatientLabResult[];
+}
+
 export interface HisInpatientExamReport {
   examTime?: string;
   examName?: string;
+  part?: string;
   finding?: string;
   conclusion?: string;
+  negativePositive?: string;
   important?: boolean;
   summary?: string;
   raw?: Record<string, unknown>;
@@ -518,7 +528,7 @@ export interface HisInpatientEmrContextPackage {
   orders?: HisInpatientEmrOrdersContext;
   labs?: {
     abnormal?: HisInpatientLabResult[];
-    recentKeyResults?: HisInpatientLabResult[];
+    recentKeyResults?: HisInpatientLabReportSummary[];
     summary?: string;
   };
   exams?: HisInpatientExamReport[];

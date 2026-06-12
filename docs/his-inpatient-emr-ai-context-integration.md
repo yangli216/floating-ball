@@ -133,7 +133,20 @@ await mh.generateInpatientEmr({
         {
           reportTime: '2026-06-09 08:30',
           groupName: '血常规',
-          summary: '白细胞12.8×10^9/L升高，中性粒细胞比例升高。'
+          abnormal: true,
+          summary: '白细胞12.8×10^9/L升高，中性粒细胞比例升高。',
+          keyItems: [
+            {
+              reportTime: '2026-06-09 08:30',
+              groupName: '血常规',
+              itemName: '白细胞计数',
+              result: '12.8',
+              unit: '10^9/L',
+              referenceRange: '3.5-9.5',
+              abnormalFlag: 'H',
+              clinicalHint: '白细胞计数结果12.8 10^9/L，异常标记：H'
+            }
+          ]
         }
       ],
       summary: '近14天主要异常为白细胞升高。'
@@ -311,16 +324,18 @@ api/phis.aiInpatientEmrContextService/buildContext
 | 字段 | 说明 |
 | --- | --- |
 | `abnormal` | 异常检验结果 |
-| `recentKeyResults` | 近期关键检验摘要 |
+| `recentKeyResults` | 近期关键检验摘要，按报告 / 组合项目聚合 |
 | `summary` | 检验整体摘要 |
 
 检验条目建议字段：`reportTime`、`groupName`、`itemName`、`result`、`unit`、`referenceRange`、`abnormalFlag`、`clinicalHint`、`summary`。
+
+`recentKeyResults` 不建议直接重复返回全量检验明细。推荐每份报告返回 `reportTime`、`groupName`、`abnormal`、`summary` 和少量 `keyItems`。`keyItems` 只保留异常项或最关键项目，字段同检验条目。面向 AI 生成时不建议返回 `applyId`、`reportId`、`reportGroupId`、`referenceLow`、`referenceHigh`、`raw` 等定位或底层字段。
 
 ### 4.8 `exams`
 
 检查报告建议字段：`examTime`、`examName`、`finding`、`conclusion`、`important`、`summary`。
 
-如果报告正文较长，优先返回 `conclusion` 和 `summary`，`finding` 可截断。
+如果报告正文较长，优先返回 `conclusion` 和 `summary`，`finding` 可截断。面向 AI 生成时不建议返回申请 ID、报告 ID、报告医生、审核医生、科室、原始 raw 等对书写病历无直接帮助的字段。
 
 ### 4.9 `previousRecords`
 

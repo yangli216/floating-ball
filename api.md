@@ -805,6 +805,51 @@ SDK 调用：`sdk.generateInpatientEmr({ admissionId, templateId, templateName, 
       ],
       "summary": "目前予降压等治疗，长期医嘱执行中。医嘱条目生成时优先使用 displayText；若 displayText/fullText 已包含剂量、用法、频次，不要再重复拼接 dose、route、frequency；不建议返回 frequencyCode、routeCode、orderTypeCode 等字典编码字段。"
     },
+    "labs": {
+      "abnormal": [
+        {
+          "reportTime": "2026-06-09 08:30",
+          "groupName": "血常规",
+          "itemName": "白细胞计数",
+          "result": "12.8",
+          "unit": "10^9/L",
+          "referenceRange": "3.5-9.5",
+          "abnormalFlag": "H",
+          "clinicalHint": "白细胞计数结果12.8 10^9/L，异常标记：H"
+        }
+      ],
+      "recentKeyResults": [
+        {
+          "reportTime": "2026-06-09 08:30",
+          "groupName": "血常规",
+          "abnormal": true,
+          "summary": "白细胞计数12.8 10^9/L(H)。",
+          "keyItems": [
+            {
+              "reportTime": "2026-06-09 08:30",
+              "groupName": "血常规",
+              "itemName": "白细胞计数",
+              "result": "12.8",
+              "unit": "10^9/L",
+              "referenceRange": "3.5-9.5",
+              "abnormalFlag": "H"
+            }
+          ]
+        }
+      ],
+      "summary": "近期待关注检验异常：白细胞计数12.8 10^9/L(H)。"
+    },
+    "exams": [
+      {
+        "examTime": "2026-06-09 15:10",
+        "examName": "胸部CT",
+        "part": "胸部",
+        "finding": "双肺纹理增多",
+        "conclusion": "考虑支气管炎改变",
+        "important": true,
+        "summary": "胸部CT(胸部)结论：考虑支气管炎改变；所见：双肺纹理增多"
+      }
+    ],
     "previousRecords": {
       "recentNotes": [
         {
