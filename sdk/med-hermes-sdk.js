@@ -845,16 +845,11 @@
     if (this._destroyed || this._isPolling) return;
     this._isPolling = true;
     this._emitter.emit('subscription-start');
-
     this._ensureInteractionChannel();
-    if (!this._shouldUseWebSocket()) {
-      this._startLongPollingEvents();
-    }
   };
 
   MedHermes.prototype._shouldUseWebSocket = function () {
-    return this._opts.eventTransport !== 'polling'
-      && typeof WebSocket !== 'undefined';
+    return typeof WebSocket !== 'undefined';
   };
 
   MedHermes.prototype._openPersistentWebSocket = function () {
@@ -862,9 +857,33 @@
     if (this._ws || this._isWsConnecting) return;
 
     var self = this;
-    var opened = false;
     this._isWsConnecting = true;
     this._transport = 'websocket';
+
+    // 重新连接时，先尝试进行握手授权。握手成功后（确保后端获得浏览器上下文且通过安全校验）再建立 WebSocket 连接，避免 401 Unauthorized 升级拦截。
+    this._handshake()
+      .then(function (result) {
+        self._connected = true;
+        console.log('[MedHermes] Re-handshake succeeded, establishing WebSocket connection');
+        self._establishWebSocket();
+      })
+      .catch(function (err) {
+        console.warn('[MedHermes] Re-handshake failed, retrying in background:', err && err.message || err);
+        self._isWsConnecting = false;
+        self._wsReconnectTimer = setTimeout(function () {
+          self._openPersistentWebSocket();
+        }, self._opts.wsReconnectMs || 1000);
+      });
+  };
+
+  MedHermes.prototype._establishWebSocket = function () {
+    if (this._destroyed || this._ws) {
+      this._isWsConnecting = false;
+      return;
+    }
+
+    var self = this;
+    var opened = false;
 
     try {
       var ws = new WebSocket(buildEventWebSocketUrl(this._opts.baseUrl, this._lastEventId));
@@ -874,6 +893,9 @@
         opened = true;
         self._isWsConnecting = false;
         self._emitter.emit('subscription-transport', { transport: 'websocket', state: 'connected' });
+        console.log('[MedHermes] WebSocket connected successfully');
+        // 连接成功后，恢复先前中断的接诊状态
+        self._restoreActiveSessionIfNeeded();
       };
 
       ws.onmessage = function (message) {
@@ -916,12 +938,6 @@
         if (self._destroyed || !self._connected || !self._isChannelPersistent) return;
 
         self._emitter.emit('subscription-transport', { transport: 'websocket', state: 'closed' });
-        if (!opened && self._opts.eventTransport !== 'websocket') {
-          if (self._isPolling) {
-            self._startLongPollingEvents();
-          }
-          return;
-        }
 
         self._wsReconnectTimer = setTimeout(function () {
           self._openPersistentWebSocket();
@@ -930,60 +946,59 @@
     } catch (err) {
       this._isWsConnecting = false;
       this._emitter.emit('error', err);
-      if (this._opts.eventTransport === 'websocket') {
-        this._wsReconnectTimer = setTimeout(function () {
-          self._openPersistentWebSocket();
-        }, this._opts.wsReconnectMs || 1000);
-      } else {
-        if (this._isPolling) {
-          this._startLongPollingEvents();
-        }
-      }
+      this._wsReconnectTimer = setTimeout(function () {
+        self._openPersistentWebSocket();
+      }, this._opts.wsReconnectMs || 1000);
     }
   };
 
-  MedHermes.prototype._startLongPollingEvents = function () {
-    if (!this._isPolling || this._destroyed) return;
-    if (this._shouldUseWebSocket() && this._ws) return;
+  MedHermes.prototype._restoreActiveSessionIfNeeded = function () {
+    if (!this._activeSession) return;
+
     var self = this;
-    this._transport = 'polling';
-    this._emitter.emit('subscription-transport', { transport: 'polling', state: 'connected' });
+    var session = this._activeSession;
+    console.log('[MedHermes] Restoring active consultation session:', session);
 
-    function poll() {
-      if (!self._isPolling || self._destroyed) return;
-
-      self.pollEvent()
-        .then(function (result) {
-          // 如果拿到了非终态结果，继续下一次长轮询；终态在 _processResult 中会停止。
-          if (self._isPolling) {
-            setTimeout(poll, 100); // 稍微延迟，避免极端情况下的死循环
-          }
+    if (session.type === 'consultation') {
+      this._http.post('/consultation/start', session.patient)
+        .then(function () {
+          console.log('[MedHermes] Consultation session auto-restored successfully');
         })
-        .catch(function (err) {
-          // cancelled 只代表某次业务流结束，不影响长寿命交互通道
-          if (err.code === 'CANCELLED') {
-            if (self._isPolling && !self._ws) {
-              setTimeout(poll, self._opts.pollInterval || 2000);
-            }
-            return;
-          }
-          // 404 或超时都继续轮询
-          if (self._isPolling) {
-            setTimeout(poll, self._opts.pollInterval || 2000);
-          }
+        .catch(function (e) {
+          console.error('[MedHermes] Auto-restore consultation failed:', e);
+        });
+    } else if (session.type === 'assist') {
+      var payload = assign({}, session.patient, { action: session.action });
+      this._http.post('/consultation/assist', payload)
+        .then(function () {
+          console.log('[MedHermes] Assist session auto-restored successfully');
+        })
+        .catch(function (e) {
+          console.error('[MedHermes] Auto-restore assist failed:', e);
+        });
+    } else if (session.type === 'voice') {
+      this._http.post('/consultation/start-voice', session.patient || {})
+        .then(function () {
+          console.log('[MedHermes] Voice session auto-restored successfully');
+        })
+        .catch(function (e) {
+          console.error('[MedHermes] Auto-restore voice failed:', e);
+        });
+    } else if (session.type === 'receive') {
+      var payload = assign({ idPi: session.patientId }, session.optionalInfo || {});
+      this._http.post('/consultation/receive', payload)
+        .then(function () {
+          console.log('[MedHermes] Receive session auto-restored successfully');
+        })
+        .catch(function (e) {
+          console.error('[MedHermes] Auto-restore receive failed:', e);
         });
     }
-
-    poll();
   };
 
   /** 停止事件消费；不会关闭已建立的持久 WebSocket 通道 */
   MedHermes.prototype.stopPolling = function () {
     this._isPolling = false;
-    if (this._pollTimer) {
-      clearInterval(this._pollTimer);
-      this._pollTimer = null;
-    }
     if (!this._ws) {
       this._transport = 'idle';
     }
@@ -1144,6 +1159,7 @@
     // 分发通用 envelope 事件 + 按业务类型分发 payload
     this._lastEventId = event.id || '';
     this._lastEventConsultationId = consultationId || this._lastEventConsultationId;
+    this._lastEnvelope = envelope; // 缓存最新事件用于 pollEvent 兼容
     this._emitter.emit('event', envelope);
     this._emitter.emit(resultType, record);
     this._resolvePendingInpatientEmrRequests(record, event);

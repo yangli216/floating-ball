@@ -281,14 +281,7 @@ fn queued_events_after(
     Vec::new()
 }
 
-fn next_queued_event_after(
-    state: &SharedAppState,
-    after_event_id: Option<&str>,
-) -> Option<ConsultationResult> {
-    queued_events_after(state, after_event_id, true)
-        .into_iter()
-        .next()
-}
+
 
 fn build_event_poll_response(result: &ConsultationResult, trace_id: &str) -> serde_json::Value {
     let event = build_consultation_event(result);
@@ -1213,131 +1206,7 @@ async fn stop_consultation(
     HttpResponse::Ok().json(response_body)
 }
 
-async fn poll_consultation_event(
-    req: HttpRequest,
-    app_handle: web::Data<tauri::AppHandle>,
-    state: web::Data<SharedAppState>,
-) -> impl Responder {
-    let started_at = Instant::now();
-    let trace_id = his_integration_log::new_trace_id();
-    if let Err(response) = ensure_http_service_access(&state) {
-        return response;
-    }
 
-    let after_event_id = parse_after_event_id(&req);
-
-    // 1. Check if a queued event exists immediately
-    if let Some(res) = next_queued_event_after(state.get_ref(), after_event_id.as_deref()) {
-        let response_body = build_event_poll_response(&res, &trace_id);
-        let is_cancelled = res.status.as_deref() == Some("cancelled");
-        if !is_cancelled {
-            record_bridge_log(
-                &app_handle,
-                response_body["traceId"].as_str().unwrap_or_default(),
-                "consultation.eventPoll",
-                "GET",
-                "/api/consultation/events/poll",
-                "success",
-                200,
-                started_at,
-                None,
-                Some(response_body.clone()),
-                None,
-                Some(res.consultation_id.clone()),
-                res.record
-                    .get("requestId")
-                    .and_then(|value| value.as_str())
-                    .map(str::to_string),
-                None,
-            );
-        }
-        return HttpResponse::Ok().json(response_body);
-    }
-
-    // 2. Long polling: wait for notification or timeout
-    let mut rx = state.result_tx.subscribe();
-    let deadline = tokio::time::Instant::now() + std::time::Duration::from_secs(10);
-
-    let final_result = loop {
-        let sleep = tokio::time::sleep_until(deadline);
-        tokio::pin!(sleep);
-
-        let maybe_result = tokio::select! {
-            recv_res = rx.recv() => {
-                match recv_res {
-                    Ok(_) => next_queued_event_after(state.get_ref(), after_event_id.as_deref()),
-                    Err(_) => None,
-                }
-            }
-            _ = &mut sleep => {
-                None
-            }
-        };
-
-        let Some(result) = maybe_result else {
-            break None;
-        };
-
-        break Some(result);
-    };
-
-    if let Some(res) = final_result {
-        let val = build_event_poll_response(&res, &trace_id);
-
-        let is_cancelled = res.status.as_deref() == Some("cancelled");
-        if !is_cancelled {
-            record_bridge_log(
-                &app_handle,
-                val["traceId"].as_str().unwrap_or_default(),
-                "consultation.eventPoll",
-                "GET",
-                "/api/consultation/events/poll",
-                "success",
-                200,
-                started_at,
-                None,
-                Some(val.clone()),
-                None,
-                Some(res.consultation_id.clone()),
-                res.record
-                    .get("requestId")
-                    .and_then(|value| value.as_str())
-                    .map(str::to_string),
-                None,
-            );
-        }
-        HttpResponse::Ok().json(val)
-    } else {
-        let response_body = serde_json::json!({
-            "state": "pending",
-            "event": null,
-            "message": "Consultation event not available",
-            "code": "EVENT_NOT_READY",
-            "timestamp": std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .unwrap()
-                .as_millis() as u64,
-            "traceId": trace_id
-        });
-        record_bridge_log(
-            &app_handle,
-            response_body["traceId"].as_str().unwrap_or_default(),
-            "consultation.eventPoll",
-            "GET",
-            "/api/consultation/events/poll",
-            "pending",
-            200,
-            started_at,
-            None,
-            Some(response_body.clone()),
-            None,
-            None,
-            None,
-            None,
-        );
-        HttpResponse::Ok().json(response_body)
-    }
-}
 
 async fn consultation_events_ws(
     req: HttpRequest,
@@ -2439,10 +2308,7 @@ pub fn run_server(app_handle: tauri::AppHandle, state: SharedAppState) {
                         "/api/consultation/reference-feedback",
                         web::post().to(reference_feedback),
                     )
-                    .route(
-                        "/api/consultation/events/poll",
-                        web::get().to(poll_consultation_event),
-                    )
+
                     .route(
                         "/api/consultation/events/ws",
                         web::get().to(consultation_events_ws),
