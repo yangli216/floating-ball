@@ -59,6 +59,7 @@ export interface InpatientEmrTemplateField {
   meaning: string;
   aiSuitable: boolean;
   rule: InpatientEmrFieldRule;
+  presetStatus?: 'exclude' | 'ai' | 'unknown';
 }
 
 export interface InpatientEmrTemplateParseResult {

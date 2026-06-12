@@ -357,7 +357,7 @@ useConsultationReferenceFeedbackListener<InpatientEmrReferenceFeedbackPayload>({
 });
 
 watch(
-  () => result.value?.generatedAt,
+  [() => result.value?.generatedAt, isGenerating],
   () => {
     if (!result.value) {
       previewHtml.value = '';
@@ -367,6 +367,7 @@ watch(
       result.value.request.htmlContent,
       result.value.fieldValues,
       result.value.template.fields,
+      !isGenerating.value,
     );
   },
 );
@@ -1209,6 +1210,11 @@ button {
   opacity: 0.88;
   background: #fff8e5;
   animation: pulseBg 1.5s infinite ease-in-out;
+}
+
+.html-preview :deep(.inpatient-emr-field--generating) {
+  cursor: wait !important;
+  border-bottom: 1px dashed rgba(214, 151, 25, 0.6);
 }
 
 @keyframes spin {

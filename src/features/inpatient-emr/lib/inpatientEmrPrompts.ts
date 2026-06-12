@@ -7,6 +7,32 @@ export const INPATIENT_EMR_TEMPLATE_PARSE_PROMPT = [
   '判定规则：患者身份、页眉、住院号、床号、记录时间、医生签名不得由 AI 自由生成；病程记录正文可由 AI 基于 HIS 住院数据生成。',
 ].join('\n');
 
+export function inferPromptIntentByRecordType(recordType: string, baseIntent: string): string {
+  const type = (recordType || '').trim();
+  if (type.includes('出院') || type.includes('cy')) {
+    return 'inpatientDischargeRecordSection';
+  }
+  if (type.includes('交接') || type.includes('交班') || type.includes('接班')) {
+    return 'inpatientHandoverRecordSection';
+  }
+  if (type.includes('转科') || type.includes('转入') || type.includes('转出')) {
+    return 'inpatientTransferRecordSection';
+  }
+  if (type.includes('抢救') || type.includes('qj')) {
+    return 'inpatientRescueRecordSection';
+  }
+  if (type.includes('术前') || type.includes('sq')) {
+    return 'inpatientPreoperativeRecordSection';
+  }
+  if (type.includes('术后') || type.includes('sh')) {
+    return 'inpatientPostoperativeRecordSection';
+  }
+  if (type.includes('阶段小结') || type.includes('小结')) {
+    return 'inpatientStageSummarySection';
+  }
+  return baseIntent || 'inpatientRecordSection';
+}
+
 export function buildInpatientEmrFieldPrompt(
   field: InpatientEmrTemplateField,
   context?: InpatientEmrContext,
@@ -15,19 +41,20 @@ export function buildInpatientEmrFieldPrompt(
     return field.rule.prompt.trim();
   }
   const documentContext = context?.documentContext;
+  const rawIntent = field.rule.promptIntent || 'inpatientRecordSection';
+  const inferredIntent = inferPromptIntentByRecordType(documentContext?.recordType || '', rawIntent);
+
   return [
     `模板名称：${documentContext?.templateName || '住院病历模板'}`,
     `记录类型：${documentContext?.recordType || '住院病程记录'}`,
     `目标书写时间：${documentContext?.recordTime || '当前业务时间'}`,
     `目标书写日期：${documentContext?.recordDate || '当前业务日期'}`,
-    `字段 data-id：${field.id}`,
     `字段名称：${field.name || field.id}`,
-    `字段所属段落：${field.article || '未标注段落'}`,
     `字段含义：${field.meaning}`,
-    `生成意图：${field.rule.promptIntent || 'inpatientRecordSection'}`,
+    `生成意图：${inferredIntent}`,
     `依赖数据：${(field.rule.dependencies || []).join('、') || '住院上下文'}`,
     `约束：${field.rule.constraints.join('；')}`,
-    '输出要求：只生成该字段应回填的正文，不输出字段名、JSON、解释或免责声明。',
+    `请为字段标识为“${field.id}”的项仅生成应回填的正文内容，切勿输出字段名、JSON 结构、任何说明或免责声明。`,
   ].join('\n');
 }
 
@@ -55,15 +82,27 @@ export function buildInpatientEmrGeneratePrompt(
     '7. 优先使用 HIS_AI_CONTEXT 中的 summary、recentNotes、longStaySummary 等摘要；明细仅用于必要事实补充，避免把长住院全量历史逐条复述。',
     '8. 检验检查结果必须区分“异常结果/阳性结论/历史摘要”，没有提供结果时不要编造检查发现。',
     '9. 既往病程用于保持连续性，不要把前序记录的日期、体征或治疗效果误写成本次 recordDate 当天事实。',
-    '10. 医嘱描述优先使用 orders.summary 或医嘱条目的 displayText；fullText 是 HIS 原始完整医嘱，name 通常是基础项目名。若 displayText/fullText 已包含剂量、用法、频次，不得再把 dose、route、frequency 重复拼接。',
-    '11. previousRecords 中 medType=0 表示入院记录，已结构化抽取 chiefComplaint、presentIllness 和 structuredSections；生成病程时优先把主诉、现病史作为病史背景，不要复述整篇入院记录。medType=2 病案首页不应作为生成依据。',
+    '10. 医嘱描述直接使用 HIS 提供的已规范格式化文本，无需自行重复拼接剂量、频次与用法。',
+    '11. previousRecords 中 medType=0 表示入院记录，已结构化抽取 chiefComplaint、presentIllness 和 structuredSections；生成病程时优先把主诉、现病史作为病史背景，不要复述整篇入院记录。',
+    '12. 针对长期住院且病情平稳无明显变化的患者，病程记录应重点概括今日生命体征与继续原治疗方案，行文保持精炼，避免无意义地机械重复既往病理事实。',
+    '13. 书写逻辑链指引（隐式CoT思维）：在生成日常病程内容时，按照以下思维顺序逐步组织：① 概括今日患者的主观自觉症状与生命体征趋势；② 引用并分析最新检验检查数据（如有新出阳性/异常结果）与目前已执行的核心医嘱；③ 评估病情演变并给出后续明确的诊疗与随访计划。',
+    '14. 严格保证各 AI 字段生成的正文边界独立。例如生成“诊疗经过”时切勿混写“入院情况”或“诊疗计划”等其他字段的内容，各字段应根据其特定的含义 and 约束精准独立作答，禁止内容交叉粘连。',
+    '15. 若 HIS 诊疗数据中缺少本次记录日期当天的某些关键客观体征、检验检查数据，且医生未在补充要点中提及，AI 应当在对应字段正文中如实说明“本日体温单暂无记录”或“近期未做此项检查”，严禁以“患者病情好转/无异常”等主观臆断进行粉饰或忽略。',
     doctorSupplement
-      ? '12. 医生补充要点优先级高于 HIS 摘要中的模糊信息；可作为本次查房主观症状、查体发现、诊疗判断或计划的依据，但不得扩展成补充要点之外的事实。'
+      ? '16. 医生补充要点优先级高于 HIS 摘要中的模糊信息；可作为本次查房主观症状、查体发现、诊疗判断或计划的依据，但不得扩展成补充要点之外的事实。'
       : '',
     doctorSupplement ? `DOCTOR_SUPPLEMENT=${doctorSupplement}` : '',
     `AI_FIELDS=${JSON.stringify(aiFields, null, 2)}`,
     `FIELD_PROMPTS=${aiFields.map((field) => buildInpatientEmrFieldPrompt(field, context)).join('\n\n---\n\n')}`,
     `HIS_AI_CONTEXT=${JSON.stringify(context.aiContext || null, null, 2)}`,
-    `INPATIENT_CONTEXT=${JSON.stringify(context, null, 2)}`,
+    `PATIENT_INFO=${JSON.stringify({
+      name: context.registration?.name || '',
+      gender: context.registration?.gender || '',
+      age: context.registration?.ageText || context.registration?.inHospitalAgeText || '',
+      inpatientNo: context.registration?.inpatientNo || '',
+      bedNo: context.registration?.bedNo || '',
+      admissionTime: context.registration?.admissionTime || '',
+      allergyText: context.registration?.allergyText || '',
+    }, null, 2)}`,
   ].join('\n');
 }

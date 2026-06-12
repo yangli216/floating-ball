@@ -73,45 +73,69 @@ function inferFieldMeaning(id: string, name: string, defaultValue?: string): str
   return '模板字段，需结合模板上下文和 HIS 字段映射确认含义';
 }
 
-function isAiSuitableField(id: string, name: string): boolean {
-  const text = `${id} ${name}`;
-  if (
-    text.includes('页眉')
-    || text.includes('姓名')
-    || text.includes('科室')
-    || text.includes('床')
-    || text.includes('住院号')
-    || text.includes('日期')
-    || text.includes('时间')
-    || text.includes('天数')
-    || text.includes('签名')
-    || text.includes('操作人员')
-    || text.includes('操作名称')
-    || text.includes('诊断')
-  ) {
-    return false;
+export interface InpatientEmrMatcherConfig {
+  excludeKeywords: string[];
+  aiSuitableKeywords: string[];
+}
+
+export const defaultMatcherConfig: InpatientEmrMatcherConfig = {
+  excludeKeywords: [
+    '页眉', '姓名', '科室', '床', '住院号', '日期', '时间', '天数',
+    '签名', '操作人员', '操作名称', '诊断', 'idadsn', 'patientid', 'inpatientno'
+  ],
+  aiSuitableKeywords: [
+    // 中文标准字段名称
+    '病程记录文本', '记录正文', '入院情况', '诊疗经过', '出院情况',
+    '治疗结果', '出院医嘱', '病情分析', '诊疗计划', '处理意见', '病程记录', '病程正文',
+    // 拼音缩写
+    'bcjl', 'bczw', 'ryqk', 'zlgj', 'cyqk', 'zljg', 'cyyz', 'bqfx', 'zljh', 'clyj',
+    // 常见英文/混合命名前缀后缀
+    'progress_note', 'course_record', 'chief_complaint', 'present_illness'
+  ]
+};
+
+let currentMatcherConfig = { ...defaultMatcherConfig };
+
+export function getInpatientEmrMatcherConfig(): InpatientEmrMatcherConfig {
+  return currentMatcherConfig;
+}
+
+export function setInpatientEmrMatcherConfig(config: Partial<InpatientEmrMatcherConfig>): void {
+  currentMatcherConfig = {
+    excludeKeywords: config.excludeKeywords ? [...config.excludeKeywords] : currentMatcherConfig.excludeKeywords,
+    aiSuitableKeywords: config.aiSuitableKeywords ? [...config.aiSuitableKeywords] : currentMatcherConfig.aiSuitableKeywords,
+  };
+}
+
+export function getPresetFieldStatus(id: string, name: string): 'exclude' | 'ai' | 'unknown' {
+  const text = `${id} ${name}`.toLowerCase();
+  const config = getInpatientEmrMatcherConfig();
+
+  if (config.excludeKeywords.some((keyword) => text.includes(keyword.toLowerCase()))) {
+    return 'exclude';
   }
 
-  return [
-    '病程记录文本',
-    '记录正文',
-    '入院情况',
-    '诊疗经过',
-    '出院情况',
-    '治疗结果',
-    '出院医嘱',
-    '病情分析',
-    '诊疗计划',
-    '处理意见',
-  ].some((keyword) => text.includes(keyword));
+  if (config.aiSuitableKeywords.some((keyword) => text.includes(keyword.toLowerCase()))) {
+    return 'ai';
+  }
+
+  return 'unknown';
+}
+
+export function isAiSuitableField(id: string, name: string): boolean {
+  return getPresetFieldStatus(id, name) === 'ai';
 }
 
 function buildFieldRule(field: Pick<InpatientEmrTemplateField, 'id' | 'name'>): InpatientEmrFieldRule {
-  if (isAiSuitableField(field.id, field.name)) {
+  const idLower = field.id.toLowerCase();
+  const nameLower = (field.name || '').toLowerCase();
+  const isAi = isAiSuitableField(field.id, field.name);
+  if (isAi) {
+    const isDischarge = idLower.includes('出院') || idLower.includes('cy') || nameLower.includes('出院') || nameLower.includes('cy');
     return {
       source: 'ai',
       dependencies: ['registration', 'registration.diagnoses', 'orders', 'temperatureChart'],
-      promptIntent: field.id.includes('出院') ? 'inpatientDischargeRecordSection' : 'inpatientRecordSection',
+      promptIntent: isDischarge ? 'inpatientDischargeRecordSection' : 'inpatientRecordSection',
       constraints: [
         '仅依据已提供 HIS 数据生成，不补充未出现的检查结果或症状',
         '围绕字段含义生成对应段落，不跨字段混写其他模板项',
@@ -161,6 +185,7 @@ export function parseInpatientEmrTemplate(htmlContent: string): InpatientEmrTemp
       const id = node.getAttribute('data-id') || '';
       const name = node.getAttribute('data-name') || node.getAttribute('title') || id;
       const defaultValue = node.getAttribute('data-default') || normalizeText(node.textContent);
+      const presetStatus = getPresetFieldStatus(id, name);
       const base = {
         id,
         name,
@@ -170,7 +195,8 @@ export function parseInpatientEmrTemplate(htmlContent: string): InpatientEmrTemp
         key: node.getAttribute('data-key') === 'true',
         defaultValue,
         meaning: inferFieldMeaning(id, name, defaultValue),
-        aiSuitable: isAiSuitableField(id, name),
+        aiSuitable: presetStatus === 'ai',
+        presetStatus,
       };
       return {
         ...base,
@@ -206,6 +232,7 @@ export function buildEditableInpatientEmrPreviewHtml(
   htmlContent: string,
   values: Record<string, string>,
   fields: InpatientEmrTemplateField[],
+  editable: boolean = true,
 ): string {
   const doc = new DOMParser().parseFromString(htmlContent, 'text/html');
   const aiFieldIds = new Set(fields.filter((field) => field.aiSuitable).map((field) => field.id));
@@ -223,11 +250,14 @@ export function buildEditableInpatientEmrPreviewHtml(
     valueNode.classList.add('inpatient-emr-field');
 
     if (aiFieldIds.has(id)) {
-      valueNode.setAttribute('contenteditable', 'true');
+      valueNode.setAttribute('contenteditable', editable ? 'true' : 'false');
       valueNode.setAttribute('role', 'textbox');
       valueNode.setAttribute('aria-label', `${fieldNameMap.get(id) || id} AI 生成内容`);
       valueNode.setAttribute('spellcheck', 'false');
       valueNode.classList.add('inpatient-emr-field--ai');
+      if (!editable) {
+        valueNode.classList.add('inpatient-emr-field--generating');
+      }
     } else {
       valueNode.setAttribute('contenteditable', 'false');
       valueNode.classList.add('inpatient-emr-field--readonly');

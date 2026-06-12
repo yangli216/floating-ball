@@ -202,7 +202,31 @@ function uniqueOrders(orders: HisInpatientOrder[]): HisInpatientOrder[] {
 }
 
 function formatOrderDisplayText(order: HisInpatientOrder): string {
-  return order.displayText || order.fullText || order.name;
+  if (order.displayText?.trim()) {
+    return order.displayText.trim();
+  }
+  const text = (order.fullText || order.name || '').trim();
+  if (!text) return '';
+
+  const hasDose = order.dose && text.includes(order.dose);
+  const hasRoute = order.route && text.includes(order.route);
+  const hasFreq = order.frequency && text.includes(order.frequency);
+
+  const suffixParts: string[] = [];
+  if (order.dose && !hasDose) {
+    suffixParts.push(order.dose);
+  }
+  if (order.route && !hasRoute) {
+    suffixParts.push(order.route);
+  }
+  if (order.frequency && !hasFreq) {
+    suffixParts.push(order.frequency);
+  }
+
+  if (suffixParts.length > 0) {
+    return `${text} ${suffixParts.join(' ')}`.trim();
+  }
+  return text;
 }
 
 function buildOrdersFromAiContext(
@@ -338,10 +362,90 @@ function normalizeTemplateField(field: InpatientEmrTemplateField): InpatientEmrT
   };
 }
 
+const defaultAiConstraints = [
+  '仅依据已提供 HIS 数据生成，不补充未出现的检查结果或症状',
+  '围绕字段含义生成对应段落，不跨字段混写其他模板项',
+  '合理引用住院登记、诊断、医嘱和体温单中的客观信息',
+  '保留医生最终审核空间，避免给出绝对疗效判断',
+];
+
+async function classifyUnknownFieldsWithLLM(
+  unknownFields: InpatientEmrTemplateField[],
+  recordType?: string,
+  deptName?: string,
+): Promise<Array<{ id: string; aiSuitable: boolean; meaning: string; source: string }>> {
+  const prompt = [
+    '你是一名严谨的住院电子病历模板字段分析专家。',
+    '任务：分析以下未确定规则的病历字段，判断其是否适合由 AI 生成，并进行分类。',
+    deptName ? `当前病区专科：${deptName}` : '',
+    recordType ? `当前病历文书类型：${recordType}` : '',
+    '判定标准：',
+    '1. 适合由 AI 依据 HIS 住院诊疗数据书写大段正文、病程分析、诊疗经过或诊疗计划的，判定 aiSuitable 为 true，source 为 "ai"。',
+    '2. 页眉、页脚、签名、纯客观系统/HIS 字段（如住院号、日期、时间等），判定 aiSuitable 为 false，source 为 "his_or_system"。',
+    '3. 其他纯手动输入或带入不确定字段判定 aiSuitable 为 false，source 为 "manual_or_his"。',
+    '输出格式：必须是严格的 JSON 数组，每一项结构如下：',
+    '[{ "id": "字段ID", "aiSuitable": true, "meaning": "医疗含义详细说明", "source": "ai" }]',
+    '请勿输出任何 Markdown 标记、JSON 外的解释说明或免责申明。',
+    `待分析字段列表：\n${JSON.stringify(unknownFields.map(f => ({ id: f.id, name: f.name, defaultValue: f.defaultValue || '' })), null, 2)}`
+  ].filter(Boolean).join('\n');
+
+  try {
+    const response = await chatFast([
+      { role: 'system', content: '你只输出 JSON 数组，不包含 markdown 格式标记。' },
+      { role: 'user', content: prompt }
+    ], undefined, undefined, undefined, {
+      configProfile: 'fast',
+      traceContext: {
+        scene: 'inpatient-emr-template-resolve',
+        sourceModule: 'inpatient-emr',
+        operationModule: 'inpatient-emr',
+        operationAction: 'classify_unknown_fields',
+        title: '分析病历模板未知字段',
+      }
+    });
+    return parseLLMJson<any[]>(response);
+  } catch (error) {
+    console.warn('[InpatientEmr] LLM failed to classify unknown fields, using default manual fallback', error);
+    return [];
+  }
+}
+
 async function resolveInpatientEmrTemplate(
   request: InpatientEmrGenerationRequest,
+  registration?: HisInpatientRegistrationInfo | null,
 ): Promise<InpatientEmrTemplateParseResult> {
   const localTemplate = parseInpatientEmrTemplate(request.htmlContent);
+
+  const unknownFields = localTemplate.fields.filter((field) => field.presetStatus === 'unknown');
+  if (unknownFields.length > 0) {
+    console.log(`[InpatientEmr] 发现 ${unknownFields.length} 个未匹配预设字段，正在调用 LLM 进行智能特征分析...`);
+    const classified = await classifyUnknownFieldsWithLLM(
+      unknownFields,
+      request.templateName,
+      registration?.deptName || registration?.wardName,
+    );
+    const classifiedMap = new Map(classified.map((item) => [item.id, item]));
+
+    localTemplate.fields = localTemplate.fields.map((field) => {
+      if (field.presetStatus === 'unknown' && classifiedMap.has(field.id)) {
+        const aiInfo = classifiedMap.get(field.id)!;
+        const aiSuitable = Boolean(aiInfo.aiSuitable);
+        return {
+          ...field,
+          aiSuitable,
+          meaning: aiInfo.meaning || field.meaning,
+          rule: {
+            source: (aiInfo.source || (aiSuitable ? 'ai' : 'manual_or_his')) as any,
+            dependencies: aiSuitable ? ['registration', 'registration.diagnoses', 'orders', 'temperatureChart'] : field.rule.dependencies,
+            promptIntent: aiSuitable ? (field.id.toLowerCase().includes('cy') ? 'inpatientDischargeRecordSection' : 'inpatientRecordSection') : undefined,
+            constraints: aiSuitable ? defaultAiConstraints : ['按系统事实填充或手工录入，AI不自由改写'],
+          }
+        };
+      }
+      return field;
+    });
+  }
+
   if (!isRegionalMode()) {
     return localTemplate;
   }
@@ -366,7 +470,7 @@ async function resolveInpatientEmrTemplate(
       };
     }
   } catch (error) {
-    console.warn('[InpatientEmr] remote template cache unavailable, using local parse result', error);
+    console.warn('[InpatientEmr] remote template cache unavailable, using local parse result (LLM-enhanced)', error);
   }
 
   return localTemplate;
@@ -550,7 +654,7 @@ export async function generateInpatientEmrPreview(
   } = await loadInpatientEmrHisContext(request, documentContext, onProgress);
 
   report(onProgress, { key: 'template', status: 'running', detail: '正在解析病历模板字段' });
-  const template = await resolveInpatientEmrTemplate(request);
+  const template = await resolveInpatientEmrTemplate(request, registration);
   report(onProgress, {
     key: 'template',
     status: 'done',
@@ -651,7 +755,7 @@ export async function generateInpatientEmrPreviewStream(
   } = await loadInpatientEmrHisContext(request, documentContext, onProgress);
 
   report(onProgress, { key: 'template', status: 'running', detail: '正在解析病历模板字段' });
-  const template = await resolveInpatientEmrTemplate(request);
+  const template = await resolveInpatientEmrTemplate(request, registration);
   report(onProgress, {
     key: 'template',
     status: 'done',
