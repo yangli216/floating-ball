@@ -3,18 +3,18 @@
     <header class="emr-header" data-tauri-drag-region>
       <div class="title-block" data-tauri-drag-region>
         <span class="eyebrow">住院病历</span>
-        <h1>AI 病程录生成</h1>
+        <h1>AI 住院病历生成</h1>
       </div>
       <div class="header-actions">
         <button
           class="ghost-btn"
           type="button"
           :disabled="!request || isGenerating"
-          title="重新生成"
+          title="补充要点并重新生成"
           @click="openRegenerateDialog"
         >
           <Icon icon="lucide:refresh-cw" :size="16" />
-          <span>重新生成</span>
+          <span>补充要点并重新生成</span>
         </button>
         <button
           class="primary-btn"
@@ -155,7 +155,7 @@
       <section class="regenerate-dialog">
         <header class="regenerate-head">
           <div>
-            <span>重新生成</span>
+            <span>补充要点并重新生成</span>
             <strong>补充病历要点</strong>
           </div>
           <button
@@ -270,6 +270,7 @@ import {
 } from '../model/useInpatientEmrGeneration';
 import {
   buildEditableInpatientEmrPreviewHtml,
+  isAdmissionTemplate,
 } from '../lib/inpatientEmrTemplate';
 import { buildInpatientEmrFieldPrompt } from '../lib/inpatientEmrPrompts';
 import type { InpatientEmrGenerationRequest, InpatientEmrTemplateField } from '../types';
@@ -322,7 +323,7 @@ const activeStepDetail = computed(() => activeStep.value?.detail || '正在整�
 const aiFields = computed(() => result.value?.template.fields.filter((field) => field.aiSuitable) || []);
 const supplementVoiceButtonText = computed(() => {
   if (isTranscribingSupplement.value) return '识别中';
-  return isRecordingSupplement.value ? '停止并识别' : '开始录音';
+  return isRecordingSupplement.value ? '停止并识别' : '语音录入';
 });
 const supplementVoiceStatus = computed(() => {
   if (isTranscribingSupplement.value) return '正在识别，结果将追加到补充要点';
@@ -339,7 +340,13 @@ watch(
   () => props.request,
   (request) => {
     if (request) {
-      void start(request);
+      void start(request).then(() => {
+        const isAdmission = isAdmissionTemplate(request.templateName || '');
+        const hasSupplement = Boolean(request.doctorSupplement?.trim());
+        if (isAdmission && !hasSupplement) {
+          openRegenerateDialog();
+        }
+      });
     }
   },
   { immediate: true },

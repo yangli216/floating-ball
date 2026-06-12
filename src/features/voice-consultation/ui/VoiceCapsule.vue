@@ -433,10 +433,7 @@ const handleStop = async () => {
       speechService = null;
     }
 
-    let finalTranscription = transcription || realtimeText.value;
-    if (!finalTranscription || !finalTranscription.trim()) {
-      finalTranscription = '【测试Mock数据】患者发热两天，伴有咳嗽、咳痰，最高体温39度，既往体健。';
-    }
+    let finalTranscription = (transcription || realtimeText.value || '').trim();
 
     // 与音频成对落盘到本地（音频 + 转写文本）
     try {
@@ -455,7 +452,7 @@ const handleStop = async () => {
     trackError('voice_recording_stop_failed', err);
     
     stoppedBlob = new Blob([], { type: 'audio/webm' });
-    editableText.value = '【测试Mock数据】患者发热两天，伴有咳嗽、咳痰，最高体温39度，既往体健。';
+    editableText.value = '';
     isStopped.value = true;
   }
 };

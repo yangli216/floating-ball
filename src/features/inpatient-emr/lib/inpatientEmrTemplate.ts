@@ -81,16 +81,21 @@ export interface InpatientEmrMatcherConfig {
 export const defaultMatcherConfig: InpatientEmrMatcherConfig = {
   excludeKeywords: [
     '页眉', '姓名', '科室', '床', '住院号', '日期', '时间', '天数',
-    '签名', '操作人员', '操作名称', '诊断', 'idadsn', 'patientid', 'inpatientno'
+    '签名', '操作人员', '操作名称', '诊断', 'idadsn', 'patientid', 'inpatientno',
+    '出生地', '籍贯', '职业', '民族', '婚姻', '陈述', '供史', '可靠', '住址', '地址',
+    '身份证', '联系人', '电话', '手机', '入院', '业务', '工作',
+    'csd', 'jg', 'zy', 'mz', 'hy', 'csz', 'gsz', 'kg', 'zz', 'dz', 'sfz', 'lxr', 'dh', 'sj', 'ry', 'yw', 'gz'
   ],
   aiSuitableKeywords: [
     // 中文标准字段名称
     '病程记录文本', '记录正文', '入院情况', '诊疗经过', '出院情况',
     '治疗结果', '出院医嘱', '病情分析', '诊疗计划', '处理意见', '病程记录', '病程正文',
+    '主诉', '现病史', '既往史',
     // 拼音缩写
     'bcjl', 'bczw', 'ryqk', 'zlgj', 'cyqk', 'zljg', 'cyyz', 'bqfx', 'zljh', 'clyj',
+    'zs', 'xbs', 'jws',
     // 常见英文/混合命名前缀后缀
-    'progress_note', 'course_record', 'chief_complaint', 'present_illness'
+    'progress_note', 'course_record', 'chief_complaint', 'present_illness', 'past_history'
   ]
 };
 
@@ -174,6 +179,11 @@ function buildFieldRule(field: Pick<InpatientEmrTemplateField, 'id' | 'name'>): 
     dependencies: ['registration'],
     constraints: ['未知字段先保守映射，必要时由医生确认'],
   };
+}
+
+export function isAdmissionTemplate(templateName: string): boolean {
+  const name = (templateName || '').toLowerCase();
+  return name.includes('入院') || name.includes('ry') || name.includes('首次');
 }
 
 export function parseInpatientEmrTemplate(htmlContent: string): InpatientEmrTemplateParseResult {

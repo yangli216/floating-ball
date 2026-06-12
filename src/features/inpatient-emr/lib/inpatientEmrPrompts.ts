@@ -4,7 +4,7 @@ export const INPATIENT_EMR_TEMPLATE_PARSE_PROMPT = [
   '你是一名住院电子病历模板解析助手。',
   '任务：解析输入的 EMR HTML 模板，提取可由 AI 生成或应由 HIS/系统填充的字段。',
   '输出 JSON 数组，每项包含 dataId、meaning、aiSuitable、source、dependencies、constraints。',
-  '判定规则：患者身份、页眉、住院号、床号、记录时间、医生签名不得由 AI 自由生成；病程记录正文可由 AI 基于 HIS 住院数据生成。',
+  '判定规则：患者身份、页眉、住院号、床号、记录时间、医生签名不得由 AI 自由生成；病历正文（如主诉、现病史、病程记录正文、诊疗计划等）可由 AI 基于 HIS 住院数据生成。',
 ].join('\n');
 
 export function inferPromptIntentByRecordType(recordType: string, baseIntent: string): string {
@@ -69,9 +69,9 @@ export function buildInpatientEmrGeneratePrompt(
     '任务：根据 AI 生成字段、HIS 住院数据和字段规则，生成字段取值 JSON。',
     '输出必须是 JSON 对象，key 为 AI 字段 data-id，value 为该字段应回填的文本。',
     `当前模板：${context.documentContext.templateName || '住院病历模板'}`,
-    `当前记录类型：${context.documentContext.recordType || '住院病程记录'}`,
-    `本次病程记录书写时间：${context.documentContext.recordTime}`,
-    `本次病程记录书写日期：${context.documentContext.recordDate}`,
+    `当前记录类型：${context.documentContext.recordType || '日常病历记录'}`,
+    `本次病历记录书写时间：${context.documentContext.recordTime}`,
+    `本次病历记录书写日期：${context.documentContext.recordDate}`,
     '生成约束：',
     '1. 只能使用输入数据，不编造未提供的症状、查体、检查结果或治疗效果。',
     '2. 严格围绕字段含义生成，不跨字段混写其他模板项。',

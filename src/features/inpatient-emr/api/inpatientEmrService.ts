@@ -19,6 +19,7 @@ import {
   fillInpatientEmrTemplateHtml,
   formatInpatientEmrDateMinute,
   parseInpatientEmrTemplate,
+  isAdmissionTemplate,
 } from '../lib/inpatientEmrTemplate';
 import type {
   InpatientEmrContext,
@@ -403,7 +404,27 @@ async function classifyUnknownFieldsWithLLM(
         title: '分析病历模板未知字段',
       }
     });
-    return parseLLMJson<any[]>(response);
+
+    const parsed = parseLLMJson<any>(response);
+
+    // 强力校验与解构防护
+    let classifiedList: any[] = [];
+    if (Array.isArray(parsed)) {
+      classifiedList = parsed;
+    } else if (parsed && typeof parsed === 'object') {
+      // 若大模型误将数组包装在某个 Key 中（如 { fields: [...] }），自动提取第一个数组成员
+      const possibleArray = Object.values(parsed).find(Array.isArray);
+      if (possibleArray) {
+        classifiedList = possibleArray as any[];
+      }
+    }
+
+    return classifiedList.map((item) => ({
+      id: String(item?.id || item?.dataId || ''),
+      aiSuitable: Boolean(item?.aiSuitable),
+      meaning: String(item?.meaning || ''),
+      source: String(item?.source || 'manual_or_his'),
+    })).filter((item) => item.id);
   } catch (error) {
     console.warn('[InpatientEmr] LLM failed to classify unknown fields, using default manual fallback', error);
     return [];
@@ -670,6 +691,27 @@ export async function generateInpatientEmrPreview(
     temperatureChart,
   };
 
+  const isAdmission = isAdmissionTemplate(request.templateName || '');
+  const hasSupplement = Boolean(request.doctorSupplement?.trim());
+  if (isAdmission && !hasSupplement) {
+    const fieldValues = buildDefaultFieldValues(template.fields, context);
+    const htmlContent = fillInpatientEmrTemplateHtml(request.htmlContent, fieldValues);
+    report(onProgress, {
+      key: 'generate',
+      status: 'pending',
+      detail: '等待输入补充要点（主诉、现病史）以启动生成'
+    });
+    return {
+      emrContent: buildGeneratedEmrText(template.fields, fieldValues, context),
+      htmlContent,
+      fieldValues,
+      request,
+      context,
+      template,
+      generatedAt: Date.now(),
+    };
+  }
+
   report(onProgress, { key: 'generate', status: 'running', detail: '正在生成病历草稿' });
   let generatedValues: Record<string, unknown>;
   try {
@@ -784,6 +826,18 @@ export async function generateInpatientEmrPreviewStream(
     generatedAt: Date.now(),
   };
   onStreamResult?.(initialResult);
+
+  // 1.5 智能拦截逻辑：若是入院模板且没有提供医生补充要点，则在预览渲染后停止，不调用 LLM。
+  const isAdmission = isAdmissionTemplate(request.templateName || '');
+  const hasSupplement = Boolean(request.doctorSupplement?.trim());
+  if (isAdmission && !hasSupplement) {
+    report(onProgress, {
+      key: 'generate',
+      status: 'pending',
+      detail: '等待输入补充要点（主诉、现病史）以启动生成'
+    });
+    return initialResult;
+  }
 
   // 2. 启动 AI 生成，采用流式调用并在每次 chunk 到达时，提取局部 JSON 键值注入
   report(onProgress, { key: 'generate', status: 'running', detail: '正在生成病历草稿' });

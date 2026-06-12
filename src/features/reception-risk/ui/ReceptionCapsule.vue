@@ -164,14 +164,14 @@ function tagLabel(cat: string) { return CATEGORY_LABELS[cat] || '其他'; }
 <style scoped>
 .rc-root {
   position: absolute;
-  inset: 0;
-  border-radius: 14px;
+  inset: 1px;
+  border-radius: 15px;
   display: flex;
   flex-direction: column;
   padding: 12px 14px;
   box-sizing: border-box;
   overflow: hidden;
-  border: 1.5px solid transparent;
+  border: 1px solid transparent;
   background: #ffffff;
   box-shadow: 0 4px 14px rgba(15, 23, 42, 0.06);
   backdrop-filter: none !important;
