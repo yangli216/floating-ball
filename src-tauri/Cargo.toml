@@ -1,6 +1,6 @@
 [package]
 name = "med-hermes"
-version = "1.2.63"
+version = "1.2.64"
 description = "A Desktop Floating Ball Application"
 authors = ["you"]
 edition = "2021"
