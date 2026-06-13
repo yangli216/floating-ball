@@ -1,4 +1,5 @@
 import type { InpatientEmrContext, InpatientEmrTemplateField } from '../types';
+import type { HisOutpatientMedicalRecord } from '@/services/his';
 
 export const INPATIENT_EMR_TEMPLATE_PARSE_PROMPT = [
   '你是一名住院电子病历模板解析助手。',
@@ -6,6 +7,19 @@ export const INPATIENT_EMR_TEMPLATE_PARSE_PROMPT = [
   '输出 JSON 数组，每项包含 dataId、meaning、aiSuitable、source、dependencies、constraints。',
   '判定规则：患者身份、页眉、住院号、床号、记录时间、医生签名不得由 AI 自由生成；病历正文（如主诉、现病史、病程记录正文、诊疗计划等）可由 AI 基于 HIS 住院数据生成。',
 ].join('\n');
+
+export function formatOutpatientRecordForAi(record: HisOutpatientMedicalRecord | null | undefined): string {
+  if (!record) return '';
+  const parts: string[] = [];
+  if (record.chiefComplaint) parts.push(`【门诊主诉】${record.chiefComplaint}`);
+  if (record.historyOfPresentIllness) parts.push(`【门诊现病史】${record.historyOfPresentIllness}`);
+  if (record.pastHistory) parts.push(`【门诊既往史】${record.pastHistory}`);
+  if (record.physicalExamination) parts.push(`【门诊体格检查】${record.physicalExamination}`);
+  if (record.auxiliaryExamination) parts.push(`【门诊辅助检查】${record.auxiliaryExamination}`);
+  if (record.diagnosis) parts.push(`【门诊诊断】${record.diagnosis}`);
+  if (record.treatmentPlan) parts.push(`【门诊处置/医嘱】${record.treatmentPlan}`);
+  return parts.join('\n');
+}
 
 export function inferPromptIntentByRecordType(recordType: string, baseIntent: string): string {
   const type = (recordType || '').trim();
@@ -91,7 +105,11 @@ export function buildInpatientEmrGeneratePrompt(
     doctorSupplement
       ? '16. 医生补充要点优先级高于 HIS 摘要中的模糊信息；可作为本次查房主观症状、查体发现、诊疗判断或计划的依据，但不得扩展成补充要点之外的事实。'
       : '',
+    context.outpatientRecord
+      ? '17. 检测到医生引用了门诊病历（OUTPATIENT_RECORD_REFERENCE）。在生成入院记录的主诉、现病史等字段时，必须深度参考门诊病历的诊断、主诉和现病史信息，结合“医生补充要点”进行合理提炼与住院首发病史派生。保证主诉时间与入院时间逻辑自洽。'
+      : '',
     doctorSupplement ? `DOCTOR_SUPPLEMENT=${doctorSupplement}` : '',
+    context.outpatientRecord ? `OUTPATIENT_RECORD_REFERENCE=${formatOutpatientRecordForAi(context.outpatientRecord)}` : '',
     `AI_FIELDS=${JSON.stringify(aiFields, null, 2)}`,
     `FIELD_PROMPTS=${aiFields.map((field) => buildInpatientEmrFieldPrompt(field, context)).join('\n\n---\n\n')}`,
     `HIS_AI_CONTEXT=${JSON.stringify(context.aiContext || null, null, 2)}`,

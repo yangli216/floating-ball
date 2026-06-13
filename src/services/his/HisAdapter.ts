@@ -32,6 +32,8 @@ import type {
   MedicineDetail,
   HisPatientInfo,
   HisPatientHistory,
+  HisOutpatientVisit,
+  HisOutpatientMedicalRecord,
   HisInpatientDiagnosis,
   HisInpatientOrder,
   HisInpatientEmrContextPackage,
@@ -54,6 +56,8 @@ export type {
   MedicineDetail,
   HisPatientInfo,
   HisPatientHistory,
+  HisOutpatientVisit,
+  HisOutpatientMedicalRecord,
   HisInpatientDiagnosis,
   HisInpatientOrder,
   HisInpatientEmrContextPackage,
@@ -163,4 +167,14 @@ export interface HisAdapter {
    * 新 HIS 厂商必须实现本方法；业务层不再回退到登记/医嘱/体温单等旧粒度接口。
    */
   fetchInpatientEmrContext(query: HisInpatientEmrContextQuery): Promise<HisInpatientEmrContextPackage | null>;
+
+  /**
+   * 根据患者 ID 获取门诊就诊历史列表（仅限门急诊，暂定最近3次）
+   */
+  fetchOutpatientVisitHistory(patientId: string, limit?: number): Promise<HisOutpatientVisit[]>;
+
+  /**
+   * 根据就诊 ID 获取门急诊病历 HTML 内容
+   */
+  fetchOutpatientMedicalRecord(visitId: string): Promise<HisOutpatientMedicalRecord | null>;
 }

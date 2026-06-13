@@ -51,6 +51,8 @@ import type {
   HisInpatientRegistrationInfo,
   HisInpatientTemperatureChart,
   HisInpatientTemperatureRecord,
+  HisOutpatientVisit,
+  HisOutpatientMedicalRecord,
 } from './types';
 
 const trim = (value: unknown): string | undefined => {
@@ -536,6 +538,8 @@ function mapInpatientRegistration(
 
 export class PhisHisAdapter implements HisAdapter {
   readonly vendor = 'phis';
+  private visitPatientMap = new Map<string, string>();
+  private lastPatientId?: string;
 
   constructor(private readonly service: HisService) {}
 
@@ -766,5 +770,204 @@ export class PhisHisAdapter implements HisAdapter {
 
   async fetchInpatientEmrContext(query: HisInpatientEmrContextQuery): Promise<HisInpatientEmrContextPackage | null> {
     return this.service.buildInpatientEmrContext(query);
+  }
+
+  async fetchOutpatientVisitHistory(patientId: string, limit = 3): Promise<HisOutpatientVisit[]> {
+    const idPi = trim(patientId);
+    if (!idPi) return [];
+    this.lastPatientId = idPi;
+
+    try {
+      const visitItems = await this.service.queryPatientVisitHistory(idPi, limit);
+      if (!Array.isArray(visitItems) || visitItems.length === 0) {
+        return [];
+      }
+
+      // 并发拉取明细以填充主诉和诊断
+      const detailEntries = await Promise.all(
+        visitItems.map(async (visit) => {
+          const idVis = trim(visit.idVis);
+          if (!idVis) return null;
+          const visitIdPi = trim(visit.idPi) ?? idPi;
+          
+          // 填充 Map
+          this.visitPatientMap.set(idVis, visitIdPi);
+
+          try {
+            const detail = await this.service.loadClinicMedicalRecord(idVis, visitIdPi);
+            return detail ? { visit, detail } : { visit, detail: null };
+          } catch (error) {
+            console.warn('[PhisHisAdapter] loadClinicMedicalRecord failed in fetchOutpatientVisitHistory', { idVis, error });
+            return { visit, detail: null };
+          }
+        })
+      );
+
+      return detailEntries
+        .filter((entry): entry is { visit: HisVisitHistoryItem; detail: HisVisitDetailBody | null } => Boolean(entry))
+        .map(({ visit, detail }) => {
+          const visitId = trim(visit.idVis) ?? '';
+          const visitDate = firstTrim(visit, ['dtVis', 'dtVisit', 'visitTime']) ?? new Date().toISOString();
+          const deptName = firstTrim(visit, ['deptName', 'naDept', 'naDeptExec']);
+
+          let diagnoses: string[] = [];
+          let chiefComplaint: string | undefined;
+
+          if (detail) {
+            diagnoses = (detail.diagList ?? [])
+              .map((d) => trim(d.naDiag) ?? trim(d.naIcd10))
+              .filter((v): v is string => Boolean(v));
+            const soap = detail.soapData ?? {};
+            chiefComplaint = trim((soap as Record<string, unknown>)['chiefComplaint'] as string | undefined);
+          } else {
+            const rawDiag = firstTrim(visit, ['naDiag', 'diagnoses', 'diagnosis']);
+            if (rawDiag) {
+              diagnoses = [rawDiag];
+            }
+            chiefComplaint = firstTrim(visit, ['chiefComplaint', 'complaint']);
+          }
+
+          return {
+            visitId,
+            visitDate,
+            deptName,
+            diagnoses: diagnoses.length > 0 ? diagnoses : undefined,
+            chiefComplaint,
+            raw: {
+              ...visit,
+              detail,
+            },
+          };
+        });
+    } catch (error) {
+      console.error('[PhisHisAdapter] fetchOutpatientVisitHistory failed', error);
+      return [];
+    }
+  }
+
+  async fetchOutpatientMedicalRecord(visitId: string): Promise<HisOutpatientMedicalRecord | null> {
+    const idVis = trim(visitId);
+    if (!idVis) return null;
+
+    const idPi = this.visitPatientMap.get(idVis) ?? this.lastPatientId;
+    if (!idPi) {
+      console.warn('[PhisHisAdapter] Cannot resolve patientId for visitId', idVis);
+      return null;
+    }
+
+    try {
+      const detail = await this.service.loadClinicMedicalRecord(idVis, idPi);
+      if (!detail) return null;
+
+      const soapRaw = (detail.soapData ?? {}) as Record<string, unknown>;
+      const chiefComplaint = trim(soapRaw.chiefComplaint as string);
+      const historyOfPresentIllness = trim(soapRaw.presentIllness as string) ?? trim(soapRaw.historyOfPresentIllness as string);
+      const pastHistory = trim(soapRaw.pastHistory as string) ?? trim(soapRaw.pastMedicalHistory as string);
+      const physicalExamination = trim(soapRaw.physicalExam as string) ?? trim(soapRaw.physicalExamination as string);
+      const auxiliaryExamination = trim(soapRaw.auxiliaryExam as string) ?? trim(soapRaw.auxiliaryExamination as string);
+
+      const diagnoses = (detail.diagList ?? [])
+        .map((d) => trim(d.naDiag) ?? trim(d.naIcd10))
+        .filter((value): value is string => Boolean(value));
+      const diagnosis = diagnoses.join(', ') || undefined;
+
+      const treatmentPlan = (detail.orderList ?? [])
+        .map((o) => {
+          const name = trim(o.naOrd) ?? '';
+          const des = trim(o.desOrd) ? `（${trim(o.desOrd)}）` : '';
+          return `${name}${des}`;
+        })
+        .filter(Boolean)
+        .join('; ') || undefined;
+
+      const deptName = trim(detail.deptName as string) ?? trim(detail.naDept as string) ?? '未知科室';
+      const visitDate = trim(detail.visitTime as string) ?? trim(detail.dtVis as string) ?? new Date().toISOString().split('T')[0];
+
+      // 生成精美的 HTML 病历
+      const htmlContent = `
+        <div class="outpatient-record-preview" style="font-family: Inter, system-ui, -apple-system, sans-serif; padding: 20px; color: #1e293b; background: #ffffff; border-radius: 8px; max-width: 680px; margin: 0 auto; line-height: 1.6;">
+          <h2 style="text-align: center; margin: 0 0 20px 0; color: #0f172a; font-size: 18px; font-weight: 700; border-bottom: 2px solid #0f8f7b; padding-bottom: 12px; letter-spacing: 0.5px;">门急诊病历记录</h2>
+          
+          <div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px; margin-bottom: 20px; padding: 12px 16px; background: #f8fafc; border-radius: 6px; border: 1px solid #e2e8f0; font-size: 13px;">
+            <div><span style="color: #64748b; font-weight: 500;">就诊科室：</span><span style="color: #334155; font-weight: 600;">${deptName}</span></div>
+            <div><span style="color: #64748b; font-weight: 500;">就诊日期：</span><span style="color: #334155;">${visitDate}</span></div>
+          </div>
+
+          <div style="display: flex; flex-direction: column; gap: 16px; font-size: 14px;">
+            ${chiefComplaint ? `
+            <div>
+              <div style="font-weight: 700; color: #0f8f7b; margin-bottom: 4px; display: flex; align-items: center; gap: 6px;">
+                <span style="width: 3px; height: 12px; background: #0f8f7b; display: inline-block; border-radius: 2px;"></span>主诉
+              </div>
+              <div style="padding-left: 9px; color: #334155;">${chiefComplaint}</div>
+            </div>` : ''}
+
+            ${historyOfPresentIllness ? `
+            <div>
+              <div style="font-weight: 700; color: #0f8f7b; margin-bottom: 4px; display: flex; align-items: center; gap: 6px;">
+                <span style="width: 3px; height: 12px; background: #0f8f7b; display: inline-block; border-radius: 2px;"></span>现病史
+              </div>
+              <div style="padding-left: 9px; color: #334155;">${historyOfPresentIllness}</div>
+            </div>` : ''}
+
+            ${pastHistory ? `
+            <div>
+              <div style="font-weight: 700; color: #0f8f7b; margin-bottom: 4px; display: flex; align-items: center; gap: 6px;">
+                <span style="width: 3px; height: 12px; background: #0f8f7b; display: inline-block; border-radius: 2px;"></span>既往史
+              </div>
+              <div style="padding-left: 9px; color: #334155;">${pastHistory}</div>
+            </div>` : ''}
+
+            ${physicalExamination ? `
+            <div>
+              <div style="font-weight: 700; color: #0f8f7b; margin-bottom: 4px; display: flex; align-items: center; gap: 6px;">
+                <span style="width: 3px; height: 12px; background: #0f8f7b; display: inline-block; border-radius: 2px;"></span>体格检查
+              </div>
+              <div style="padding-left: 9px; color: #334155;">${physicalExamination}</div>
+            </div>` : ''}
+
+            ${auxiliaryExamination ? `
+            <div>
+              <div style="font-weight: 700; color: #0f8f7b; margin-bottom: 4px; display: flex; align-items: center; gap: 6px;">
+                <span style="width: 3px; height: 12px; background: #0f8f7b; display: inline-block; border-radius: 2px;"></span>辅助检查
+              </div>
+              <div style="padding-left: 9px; color: #334155;">${auxiliaryExamination}</div>
+            </div>` : ''}
+
+            ${diagnosis ? `
+            <div>
+              <div style="font-weight: 700; color: #0f8f7b; margin-bottom: 4px; display: flex; align-items: center; gap: 6px;">
+                <span style="width: 3px; height: 12px; background: #0f8f7b; display: inline-block; border-radius: 2px;"></span>初步诊断
+              </div>
+              <div style="padding-left: 9px; color: #0f172a; font-weight: 600;">${diagnosis}</div>
+            </div>` : ''}
+
+            ${treatmentPlan ? `
+            <div>
+              <div style="font-weight: 700; color: #0f8f7b; margin-bottom: 4px; display: flex; align-items: center; gap: 6px;">
+                <span style="width: 3px; height: 12px; background: #0f8f7b; display: inline-block; border-radius: 2px;"></span>治疗意见/处置
+              </div>
+              <div style="padding-left: 9px; color: #334155;">${treatmentPlan}</div>
+            </div>` : ''}
+          </div>
+        </div>
+      `;
+
+      return {
+        visitId,
+        chiefComplaint,
+        historyOfPresentIllness,
+        pastHistory,
+        physicalExamination,
+        auxiliaryExamination,
+        diagnosis,
+        treatmentPlan,
+        htmlContent,
+        raw: detail as unknown as Record<string, unknown>,
+      };
+    } catch (error) {
+      console.error('[PhisHisAdapter] fetchOutpatientMedicalRecord failed', error);
+      return null;
+    }
   }
 }

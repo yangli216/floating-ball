@@ -8,6 +8,7 @@ import type {
   HisInpatientTemperatureChart,
   HisInpatientQuery,
   HisInpatientTemperatureRecord,
+  HisOutpatientMedicalRecord,
 } from '@/services/his';
 import { parseLLMJson } from '@features/clinical-result/clinicalResultLlmJsonParser';
 import {
@@ -39,6 +40,19 @@ function report(
   progress: InpatientEmrGenerationProgress,
 ): void {
   onProgress?.(progress);
+}
+
+export function formatOutpatientRecordForAi(record: HisOutpatientMedicalRecord | null | undefined): string {
+  if (!record) return '';
+  const parts: string[] = [];
+  if (record.chiefComplaint) parts.push(`【门诊主诉】${record.chiefComplaint}`);
+  if (record.historyOfPresentIllness) parts.push(`【门诊现病史】${record.historyOfPresentIllness}`);
+  if (record.pastHistory) parts.push(`【门诊既往史】${record.pastHistory}`);
+  if (record.physicalExamination) parts.push(`【门诊体格检查】${record.physicalExamination}`);
+  if (record.auxiliaryExamination) parts.push(`【门诊辅助检查】${record.auxiliaryExamination}`);
+  if (record.diagnosis) parts.push(`【门诊诊断】${record.diagnosis}`);
+  if (record.treatmentPlan) parts.push(`【门诊处置/医嘱】${record.treatmentPlan}`);
+  return parts.join('\n');
 }
 
 function formatDiagnosis(registration: HisInpatientRegistrationInfo | null): string {
@@ -523,6 +537,7 @@ interface LoadedInpatientHisContext {
   orders: HisInpatientOrder[];
   temperatureChart: HisInpatientTemperatureChart | null;
   aiContext: HisInpatientEmrContextPackage;
+  outpatientRecord?: HisOutpatientMedicalRecord | null;
 }
 
 function getArrayCount(value: unknown): number {
@@ -622,6 +637,7 @@ async function loadInpatientEmrHisContext(
       orders,
       temperatureChart,
       aiContext: requestContext,
+      outpatientRecord: null,
     };
   }
 
@@ -629,15 +645,27 @@ async function loadInpatientEmrHisContext(
     throw new Error('HIS 适配器未就绪，请先完成 SDK 握手后再生成住院病历');
   }
 
+  // 并发拉取门诊病历（如果有 outpatientVisitId）
+  const outpatientPromise = request.outpatientVisitId
+    ? adapter.fetchOutpatientMedicalRecord(request.outpatientVisitId).catch((err) => {
+        console.warn('[InpatientEmr] Failed to fetch outpatient medical record', err);
+        return null;
+      })
+    : Promise.resolve(null);
+
   report(onProgress, { key: 'patient', status: 'running', detail: '正在获取 HIS 住院上下文' });
-  const packageContext = await adapter.fetchInpatientEmrContext({
-    ...query,
-    templateId: request.templateId,
-    templateName: request.templateName,
-    recordTime: documentContext.recordTime,
-    recordDate: documentContext.recordDate,
-    contextPolicy: request.contextPolicy,
-  });
+  const [packageContext, outpatientRecord] = await Promise.all([
+    adapter.fetchInpatientEmrContext({
+      ...query,
+      templateId: request.templateId,
+      templateName: request.templateName,
+      recordTime: documentContext.recordTime,
+      recordDate: documentContext.recordDate,
+      contextPolicy: request.contextPolicy,
+    }),
+    outpatientPromise,
+  ]);
+
   const aiContext = mergeDocumentContextIntoHisContext(packageContext || undefined, documentContext, request.admissionId);
   if (!aiContext) {
     throw new Error('HIS 聚合服务未返回有效住院病历上下文');
@@ -659,6 +687,7 @@ async function loadInpatientEmrHisContext(
     orders,
     temperatureChart,
     aiContext,
+    outpatientRecord,
   };
 }
 
@@ -672,6 +701,7 @@ export async function generateInpatientEmrPreview(
     orders,
     temperatureChart,
     aiContext,
+    outpatientRecord,
   } = await loadInpatientEmrHisContext(request, documentContext, onProgress);
 
   report(onProgress, { key: 'template', status: 'running', detail: '正在解析病历模板字段' });
@@ -689,6 +719,7 @@ export async function generateInpatientEmrPreview(
     registration,
     orders,
     temperatureChart,
+    outpatientRecord,
   };
 
   const isAdmission = isAdmissionTemplate(request.templateName || '');
@@ -794,6 +825,7 @@ export async function generateInpatientEmrPreviewStream(
     orders,
     temperatureChart,
     aiContext,
+    outpatientRecord,
   } = await loadInpatientEmrHisContext(request, documentContext, onProgress);
 
   report(onProgress, { key: 'template', status: 'running', detail: '正在解析病历模板字段' });
@@ -811,6 +843,7 @@ export async function generateInpatientEmrPreviewStream(
     registration,
     orders,
     temperatureChart,
+    outpatientRecord,
   };
 
   // 1. 在 AI 生成前，先渲染出病历框架和基础信息，实现“秒开”预览模板的效果

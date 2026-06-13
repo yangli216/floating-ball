@@ -302,6 +302,49 @@ export interface HisPatientHistory {
   raw?: Record<string, unknown>;
 }
 
+/**
+ * 门诊就诊历史（用于入院记录的基础选择）
+ */
+export interface HisOutpatientVisit {
+  /** 就诊 ID */
+  visitId: string;
+  /** 就诊日期，例如 2026-06-12 10:00:00 */
+  visitDate: string;
+  /** 就诊科室名称 */
+  deptName?: string;
+  /** 诊断列表文本 */
+  diagnoses?: string[];
+  /** 主诉摘要 */
+  chiefComplaint?: string;
+  /** 厂商透传 */
+  raw?: Record<string, unknown>;
+}
+
+/**
+ * 门急诊病历详情
+ */
+export interface HisOutpatientMedicalRecord {
+  visitId: string;
+  /** HTML 格式的完整病历，可直接用于 iframe/v-html 预览 */
+  htmlContent: string;
+  /** 主诉 */
+  chiefComplaint?: string;
+  /** 现病史 */
+  historyOfPresentIllness?: string;
+  /** 既往史 */
+  pastHistory?: string;
+  /** 查体/体格检查 */
+  physicalExamination?: string;
+  /** 辅助检查 */
+  auxiliaryExamination?: string;
+  /** 初步诊断/诊断 */
+  diagnosis?: string;
+  /** 治疗意见/处置 */
+  treatmentPlan?: string;
+  /** 厂商透传 */
+  raw?: Record<string, unknown>;
+}
+
 // ============================================================================
 // 住院上下文
 // ============================================================================

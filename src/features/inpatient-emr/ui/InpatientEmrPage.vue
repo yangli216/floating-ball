@@ -168,6 +168,63 @@
           </button>
         </header>
 
+        <!-- 门诊历史引用区域 -->
+        <div v-if="isAdmission" class="outpatient-reference-section">
+          <div class="section-title-row">
+            <Icon icon="lucide:history" :size="15" />
+            <span>引用历史门诊病历（推荐选择一次门诊就诊作为入院记录基础）</span>
+            <span v-if="isLoadingVisits" class="loading-visits-text">
+              <Icon icon="lucide:loader-2" :size="12" class="spinning" />
+              加载中...
+            </span>
+          </div>
+
+          <div class="visits-card-list" v-if="outpatientVisits.length > 0">
+            <div
+              v-for="visit in outpatientVisits"
+              :key="visit.visitId"
+              class="visit-ref-card"
+              :class="{ 'is-selected': selectedVisitId === visit.visitId }"
+            >
+              <div class="visit-card-main" @click="selectVisit(visit.visitId)">
+                <div class="visit-meta">
+                  <span class="dept-badge">{{ visit.deptName || '门诊' }}</span>
+                  <span class="visit-date">{{ visit.visitDate.split(' ')[0] }}</span>
+                </div>
+                <div class="visit-diagnoses" :title="visit.diagnoses?.join(', ')">
+                  主诊断：{{ visit.diagnoses?.join(', ') || '无明确诊断' }}
+                </div>
+                <div class="visit-complaint" :title="visit.chiefComplaint">
+                  主诉：{{ visit.chiefComplaint || '无主诉记录' }}
+                </div>
+              </div>
+              <div class="visit-card-actions">
+                <button
+                  type="button"
+                  class="action-btn view-btn"
+                  @click="viewOutpatientDetail(visit.visitId)"
+                >
+                  <Icon icon="lucide:eye" :size="13" />
+                  <span>查看</span>
+                </button>
+                <button
+                  type="button"
+                  class="action-btn select-btn"
+                  :class="{ 'is-active': selectedVisitId === visit.visitId }"
+                  @click="selectVisit(visit.visitId)"
+                >
+                  <Icon :icon="selectedVisitId === visit.visitId ? 'lucide:check-circle-2' : 'lucide:plus-circle'" :size="13" />
+                  <span>{{ selectedVisitId === visit.visitId ? '已引用' : '以此为基准' }}</span>
+                </button>
+              </div>
+            </div>
+          </div>
+          <div class="no-visits-placeholder" v-else-if="!isLoadingVisits">
+            <Icon icon="lucide:info" :size="13" />
+            <span>暂未发现该患者的近期门诊就诊记录</span>
+          </div>
+        </div>
+
         <div class="supplement-presets">
           <button
             v-for="preset in supplementPresets"
@@ -255,6 +312,63 @@
         </footer>
       </section>
     </div>
+
+    <!-- 门诊病历详情预览模态框 -->
+    <div
+      v-if="showOutpatientPreview"
+      class="outpatient-preview-overlay"
+      role="dialog"
+      aria-modal="true"
+      aria-label="门诊病历预览"
+    >
+      <section class="outpatient-preview-dialog">
+        <header class="preview-head">
+          <span>门诊病历详情预览</span>
+          <button
+            class="icon-btn"
+            type="button"
+            title="关闭"
+            @click="showOutpatientPreview = false"
+          >
+            <Icon icon="lucide:x" :size="18" />
+          </button>
+        </header>
+        <div class="preview-content">
+          <div v-if="isDetailLoading" class="preview-loading">
+            <Icon icon="lucide:loader-2" :size="24" class="spinning" />
+            <span>正在拉取门诊病历...</span>
+          </div>
+          <div
+            v-else-if="previewVisitRecord"
+            class="preview-html-container"
+            v-html="previewVisitRecord.htmlContent"
+          ></div>
+          <div v-else class="preview-error">
+            <Icon icon="lucide:triangle-alert" :size="20" />
+            <span>拉取门诊病历失败</span>
+          </div>
+        </div>
+        <footer class="preview-footer">
+          <button
+            class="ghost-btn"
+            type="button"
+            @click="showOutpatientPreview = false"
+          >
+            关闭预览
+          </button>
+          <button
+            v-if="previewVisitRecord"
+            class="primary-btn"
+            type="button"
+            :disabled="selectedVisitId === previewVisitRecord.visitId"
+            @click="selectVisitAndClosePreview(previewVisitRecord.visitId)"
+          >
+            <Icon icon="lucide:check" :size="16" />
+            <span>引用此病历为基准</span>
+          </button>
+        </footer>
+      </section>
+    </div>
   </section>
 </template>
 
@@ -274,6 +388,8 @@ import {
 } from '../lib/inpatientEmrTemplate';
 import { buildInpatientEmrFieldPrompt } from '../lib/inpatientEmrPrompts';
 import type { InpatientEmrGenerationRequest, InpatientEmrTemplateField } from '../types';
+import { getHisAdapter } from '@/services/his';
+import type { HisOutpatientVisit, HisOutpatientMedicalRecord } from '@/services/his';
 
 const props = defineProps<{
   request: InpatientEmrGenerationRequest | null;
@@ -301,6 +417,63 @@ const {
 
 const previewHtml = ref('');
 const showRegenerateDialog = ref(false);
+
+const outpatientVisits = ref<HisOutpatientVisit[]>([]);
+const isLoadingVisits = ref(false);
+const selectedVisitId = ref<string | null>(null);
+
+const showOutpatientPreview = ref(false);
+const isDetailLoading = ref(false);
+const previewVisitRecord = ref<HisOutpatientMedicalRecord | null>(null);
+
+const isAdmission = computed(() => {
+  return isAdmissionTemplate(props.request?.templateName || '');
+});
+
+async function loadOutpatientVisits() {
+  const patientId = props.request?.patient?.patientId || props.request?.patient?.idPi;
+  if (!patientId) return;
+  isLoadingVisits.value = true;
+  try {
+    const adapter = getHisAdapter();
+    if (adapter) {
+      outpatientVisits.value = await adapter.fetchOutpatientVisitHistory(patientId, 3);
+    }
+  } catch (error) {
+    console.error('[InpatientEmrPage] Failed to fetch outpatient visits', error);
+  } finally {
+    isLoadingVisits.value = false;
+  }
+}
+
+function selectVisit(visitId: string) {
+  if (selectedVisitId.value === visitId) {
+    selectedVisitId.value = null;
+  } else {
+    selectedVisitId.value = visitId;
+  }
+}
+
+async function viewOutpatientDetail(visitId: string) {
+  isDetailLoading.value = true;
+  showOutpatientPreview.value = true;
+  previewVisitRecord.value = null;
+  try {
+    const adapter = getHisAdapter();
+    if (adapter) {
+      previewVisitRecord.value = await adapter.fetchOutpatientMedicalRecord(visitId);
+    }
+  } catch (error) {
+    console.error('[InpatientEmrPage] Failed to fetch outpatient detail', error);
+  } finally {
+    isDetailLoading.value = false;
+  }
+}
+
+function selectVisitAndClosePreview(visitId: string) {
+  selectedVisitId.value = visitId;
+  showOutpatientPreview.value = false;
+}
 const supplementText = ref('');
 const supplementError = ref('');
 const isRecordingSupplement = ref(false);
@@ -340,8 +513,12 @@ watch(
   () => props.request,
   (request) => {
     if (request) {
+      selectedVisitId.value = null;
+      const isAdmission = isAdmissionTemplate(request.templateName || '');
+      if (isAdmission) {
+        void loadOutpatientVisits();
+      }
       void start(request).then(() => {
-        const isAdmission = isAdmissionTemplate(request.templateName || '');
         const hasSupplement = Boolean(request.doctorSupplement?.trim());
         if (isAdmission && !hasSupplement) {
           openRegenerateDialog();
@@ -522,6 +699,7 @@ function confirmRegenerate(): void {
   void start({
     ...current,
     doctorSupplement: doctorSupplement || undefined,
+    outpatientVisitId: selectedVisitId.value || undefined,
   });
 }
 
@@ -1252,5 +1430,268 @@ button {
 @keyframes transcribingBars {
   0%, 100% { transform: scaleY(0.7); }
   50% { transform: scaleY(1.35); }
+}
+
+/* 门诊历史引用区域样式 */
+.outpatient-reference-section {
+  margin-bottom: 16px;
+  padding: 14px;
+  background: rgba(240, 246, 246, 0.6);
+  border: 1px dashed rgba(15, 143, 123, 0.3);
+  border-radius: 8px;
+}
+
+.section-title-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 12px;
+  font-size: 13px;
+  font-weight: 700;
+  color: #173b35;
+}
+
+.loading-visits-text {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+  color: #0f8f7b;
+  font-weight: normal;
+}
+
+.visits-card-list {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 10px;
+}
+
+.visit-ref-card {
+  display: flex;
+  flex-direction: column;
+  background: #ffffff;
+  border: 1px solid rgba(121, 145, 153, 0.2);
+  border-radius: 7px;
+  overflow: hidden;
+  cursor: pointer;
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.02);
+}
+
+.visit-ref-card:hover {
+  transform: translateY(-2px);
+  border-color: rgba(15, 143, 123, 0.5);
+  box-shadow: 0 6px 14px rgba(15, 143, 123, 0.08);
+}
+
+.visit-ref-card.is-selected {
+  border-color: #0f8f7b;
+  background: linear-gradient(145deg, #f0fdf9, #e6fcf5);
+  box-shadow: 0 8px 20px rgba(15, 143, 123, 0.12);
+}
+
+.visit-card-main {
+  flex: 1;
+  padding: 10px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.visit-meta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 2px;
+}
+
+.dept-badge {
+  padding: 2px 6px;
+  border-radius: 4px;
+  background: #e6f4f1;
+  color: #0d8b77;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.visit-date {
+  font-size: 11px;
+  color: #8a9ba3;
+}
+
+.visit-diagnoses {
+  font-size: 12px;
+  font-weight: 700;
+  color: #2c3e50;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.visit-complaint {
+  font-size: 11px;
+  color: #64748b;
+  line-height: 1.4;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.visit-card-actions {
+  display: grid;
+  grid-template-columns: 1fr 1.2fr;
+  border-top: 1px solid rgba(121, 145, 153, 0.12);
+  background: #fafbfc;
+}
+
+.visit-ref-card.is-selected .visit-card-actions {
+  background: rgba(15, 143, 123, 0.03);
+}
+
+.action-btn {
+  height: 28px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+  background: transparent;
+  transition: background 0.15s ease, color 0.15s ease;
+  border: none;
+}
+
+.view-btn {
+  color: #475569;
+  border-right: 1px solid rgba(121, 145, 153, 0.12);
+}
+
+.view-btn:hover {
+  background: rgba(0, 0, 0, 0.03);
+  color: #0f172a;
+}
+
+.select-btn {
+  color: #0f8f7b;
+}
+
+.select-btn:hover {
+  background: rgba(15, 143, 123, 0.06);
+}
+
+.select-btn.is-active {
+  background: #0f8f7b;
+  color: #ffffff;
+  font-weight: bold;
+}
+
+.no-visits-placeholder {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 16px;
+  font-size: 12px;
+  color: #64748b;
+}
+
+/* 门诊预览弹层样式 */
+.outpatient-preview-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: rgba(15, 23, 42, 0.45);
+  backdrop-filter: blur(8px);
+  animation: fadeIn 0.22s ease-out;
+}
+
+.outpatient-preview-dialog {
+  width: 100%;
+  max-width: 720px;
+  max-height: 85vh;
+  display: flex;
+  flex-direction: column;
+  background: #ffffff;
+  border-radius: 12px;
+  box-shadow: 0 20px 40px rgba(0, 0, 0, 0.2);
+  border: 1px solid rgba(255, 255, 255, 0.85);
+  overflow: hidden;
+  animation: slideUp 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.preview-head {
+  padding: 16px 20px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  border-bottom: 1px solid #e2e8f0;
+  background: #f8fafc;
+}
+
+.preview-head span {
+  font-size: 15px;
+  font-weight: 800;
+  color: #0f172a;
+}
+
+.preview-content {
+  flex: 1;
+  overflow-y: auto;
+  padding: 20px;
+  background: #f1f5f9;
+}
+
+.preview-loading {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  min-height: 260px;
+  color: #64748b;
+}
+
+.preview-html-container {
+  background: #ffffff;
+  border-radius: 8px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.03);
+  border: 1px solid #e2e8f0;
+  padding: 10px;
+}
+
+.preview-error {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  min-height: 260px;
+  color: #ef4444;
+}
+
+.preview-footer {
+  padding: 14px 20px;
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  border-top: 1px solid #e2e8f0;
+  background: #f8fafc;
+}
+
+/* 动画定义 */
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes slideUp {
+  from { transform: translateY(16px); opacity: 0; }
+  to { transform: translateY(0); opacity: 1; }
 }
 </style>

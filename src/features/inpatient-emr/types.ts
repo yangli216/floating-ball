@@ -4,6 +4,7 @@ import type {
   HisInpatientEmrContextPolicy,
   HisInpatientRegistrationInfo,
   HisInpatientTemperatureChart,
+  HisOutpatientMedicalRecord,
 } from '@/services/his';
 
 export interface InpatientEmrPatientInput {
@@ -30,6 +31,7 @@ export interface InpatientEmrGenerationRequest {
   hisContext?: HisInpatientEmrContextPackage;
   requestId?: string;
   patient?: InpatientEmrPatientInput;
+  outpatientVisitId?: string;
 }
 
 export type InpatientEmrFieldSource =
@@ -83,6 +85,7 @@ export interface InpatientEmrContext {
   registration: HisInpatientRegistrationInfo | null;
   orders: HisInpatientOrder[];
   temperatureChart: HisInpatientTemperatureChart | null;
+  outpatientRecord?: HisOutpatientMedicalRecord | null;
 }
 
 export interface InpatientEmrGeneratedPreview {

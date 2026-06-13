@@ -35,6 +35,8 @@ import type {
   MedicineDetail,
   HisPatientInfo,
   HisPatientHistory,
+  HisOutpatientVisit,
+  HisOutpatientMedicalRecord,
   HisInpatientDiagnosis,
   HisInpatientEmrContextPackage,
   HisInpatientEmrContextQuery,
@@ -415,5 +417,130 @@ export class MockHisAdapter implements HisAdapter {
         truncatedReason: 'Mock 上下文仅返回演示数据。',
       },
     };
+  }
+
+  async fetchOutpatientVisitHistory(_patientId: string, _limit = 3): Promise<HisOutpatientVisit[]> {
+    return [
+      {
+        visitId: 'mock-vis-1',
+        visitDate: '2026-06-10 09:30:15',
+        deptName: '呼吸内科',
+        diagnoses: ['急性支气管炎'],
+        chiefComplaint: '咳嗽、咳黄痰 3 天，伴咽痛。',
+        raw: { mock: true },
+      },
+      {
+        visitId: 'mock-vis-2',
+        visitDate: '2026-05-24 14:15:22',
+        deptName: '耳鼻喉科',
+        diagnoses: ['急性鼻咽炎', '过敏性鼻炎'],
+        chiefComplaint: '鼻塞、流涕、咽痛 2 天，偶有发热。',
+        raw: { mock: true },
+      },
+      {
+        visitId: 'mock-vis-3',
+        visitDate: '2026-04-12 10:45:00',
+        deptName: '全科医学科',
+        diagnoses: ['原发性高血压'],
+        chiefComplaint: '头晕、头痛 1 周，伴颈部紧箍感。',
+        raw: { mock: true },
+      },
+    ];
+  }
+
+  async fetchOutpatientMedicalRecord(visitId: string): Promise<HisOutpatientMedicalRecord | null> {
+    if (visitId === 'mock-vis-1') {
+      return {
+        visitId: 'mock-vis-1',
+        chiefComplaint: '咳嗽、咳黄痰 3 天，伴咽痛。',
+        historyOfPresentIllness: '患者 3 天前受凉后出现咳嗽，咳少量黄脓痰，伴咽痛，无高热、寒战，无胸痛、呼吸困难。自行服用感冒药效果不佳，今日来诊。',
+        pastHistory: '否认传染病史，青霉素过敏史。',
+        physicalExamination: '体温：37.2℃，双肺呼吸音粗，未闻及明显干湿啰音。',
+        auxiliaryExamination: '血常规：白细胞 10.5x10^9/L，中性粒细胞百分比 78.5%。',
+        diagnosis: '急性支气管炎',
+        treatmentPlan: '1. 阿莫西林胶囊 0.5g p.o. tid * 3天; 2. 氨溴索口服溶液 10ml p.o. tid * 3天; 3. 嘱多饮水，注意休息。',
+        htmlContent: `
+          <div style="font-family: sans-serif; padding: 15px; color: #334155; line-height: 1.6;">
+            <h3 style="text-align: center; margin-bottom: 20px; color: #1e3a8a; border-bottom: 2px solid #3b82f6; padding-bottom: 10px;">门急诊病历记录</h3>
+            <table style="width: 100%; border-collapse: collapse; margin-bottom: 15px; font-size: 13px;">
+              <tr>
+                <td style="padding: 6px; border: 1px solid #cbd5e1; font-weight: bold; background: #f8fafc; width: 80px;">就诊日期</td>
+                <td style="padding: 6px; border: 1px solid #cbd5e1;">2026-06-10</td>
+                <td style="padding: 6px; border: 1px solid #cbd5e1; font-weight: bold; background: #f8fafc; width: 80px;">就诊科室</td>
+                <td style="padding: 6px; border: 1px solid #cbd5e1;">呼吸内科</td>
+              </tr>
+            </table>
+            <div style="margin-bottom: 12px;"><strong style="color: #1e40af;">主诉：</strong>咳嗽、咳黄痰 3 天，伴咽痛。</div>
+            <div style="margin-bottom: 12px;"><strong style="color: #1e40af;">现病史：</strong>患者 3 天前受凉后出现咳嗽，咳少量黄脓痰，伴咽痛，无高热、寒战，无胸痛、呼吸困难。</div>
+            <div style="margin-bottom: 12px;"><strong style="color: #1e40af;">既往史：</strong>否认传染病史，青霉素过敏。</div>
+            <div style="margin-bottom: 12px;"><strong style="color: #1e40af;">体格检查：</strong>体温：37.2℃，双肺呼吸音粗。</div>
+            <div style="margin-bottom: 12px;"><strong style="color: #1e40af;">辅助检查：</strong>血常规：WBC 10.5x10^9/L，N 78.5%。</div>
+            <div style="margin-bottom: 12px;"><strong style="color: #1e40af;">初步诊断：</strong>急性支气管炎</div>
+            <div style="margin-bottom: 12px;"><strong style="color: #1e40af;">治疗意见：</strong>阿莫西林胶囊 0.5g p.o. tid * 3天; 氨溴索口服溶液 10ml p.o. tid * 3天。</div>
+          </div>
+        `,
+      };
+    } else if (visitId === 'mock-vis-2') {
+      return {
+        visitId: 'mock-vis-2',
+        chiefComplaint: '鼻塞、流涕、咽痛 2 天，偶有发热。',
+        historyOfPresentIllness: '患者 2 天前受凉后出现明显鼻塞、流清水样涕，伴咽痛、吞咽阻碍感，偶有低热，无咳嗽咳痰。',
+        pastHistory: '有过敏性鼻炎史5年。',
+        physicalExamination: '咽部红肿，双侧扁桃体Ⅰ度肿大，未见脓性分泌物。',
+        auxiliaryExamination: '血常规：WBC 6.2x10^9/L，L 35.0%。',
+        diagnosis: '急性鼻咽炎、过敏性鼻炎',
+        treatmentPlan: '1. 氯雷他定片 10mg p.o. qd * 5天; 2. 蓝芩口服液 20ml p.o. tid * 3天; 3. 多饮水，清淡饮食。',
+        htmlContent: `
+          <div style="font-family: sans-serif; padding: 15px; color: #334155; line-height: 1.6;">
+            <h3 style="text-align: center; margin-bottom: 20px; color: #1e3a8a; border-bottom: 2px solid #3b82f6; padding-bottom: 10px;">门急诊病历记录</h3>
+            <table style="width: 100%; border-collapse: collapse; margin-bottom: 15px; font-size: 13px;">
+              <tr>
+                <td style="padding: 6px; border: 1px solid #cbd5e1; font-weight: bold; background: #f8fafc; width: 80px;">就诊日期</td>
+                <td style="padding: 6px; border: 1px solid #cbd5e1;">2026-05-24</td>
+                <td style="padding: 6px; border: 1px solid #cbd5e1; font-weight: bold; background: #f8fafc; width: 80px;">就诊科室</td>
+                <td style="padding: 6px; border: 1px solid #cbd5e1;">耳鼻喉科</td>
+              </tr>
+            </table>
+            <div style="margin-bottom: 12px;"><strong style="color: #1e40af;">主诉：</strong>鼻塞、流涕、咽痛 2 天。</div>
+            <div style="margin-bottom: 12px;"><strong style="color: #1e40af;">现病史：</strong>受凉后出现鼻塞、流涕，伴扁桃体红肿。</div>
+            <div style="margin-bottom: 12px;"><strong style="color: #1e40af;">既往史：</strong>过敏性鼻炎5年。</div>
+            <div style="margin-bottom: 12px;"><strong style="color: #1e40af;">体格检查：</strong>咽部充血红肿。</div>
+            <div style="margin-bottom: 12px;"><strong style="color: #1e40af;">初步诊断：</strong>急性鼻咽炎、过敏性鼻炎</div>
+            <div style="margin-bottom: 12px;"><strong style="color: #1e40af;">治疗意见：</strong>氯雷他定片 10mg p.o. qd; 蓝芩口服液 20ml p.o. tid。</div>
+          </div>
+        `,
+      };
+    } else if (visitId === 'mock-vis-3') {
+      return {
+        visitId: 'mock-vis-3',
+        chiefComplaint: '头晕、头痛 1 周，伴颈部紧箍感。',
+        historyOfPresentIllness: '患者 1 周前无明显诱因下出现头晕、轻度胀痛，活动后明显，伴颈部紧箍酸胀感，无视物旋转、恶心呕吐，无肢体麻木木僵。',
+        pastHistory: '否认心脑血管疾病史，否认过敏史。',
+        physicalExamination: '血压：152/96 mmHg，心率 72次/分，神经系统检查生理反射存在，病理征未引出。',
+        auxiliaryExamination: '急诊肾功能、电解质未见明显异常。',
+        diagnosis: '原发性高血压',
+        treatmentPlan: '1. 硝苯地平控释片 30mg p.o. qd * 7天; 2. 每日监测血压并记录; 3. 低盐低脂饮食，避免情绪波动。',
+        htmlContent: `
+          <div style="font-family: sans-serif; padding: 15px; color: #334155; line-height: 1.6;">
+            <h3 style="text-align: center; margin-bottom: 20px; color: #1e3a8a; border-bottom: 2px solid #3b82f6; padding-bottom: 10px;">门急诊病历记录</h3>
+            <table style="width: 100%; border-collapse: collapse; margin-bottom: 15px; font-size: 13px;">
+              <tr>
+                <td style="padding: 6px; border: 1px solid #cbd5e1; font-weight: bold; background: #f8fafc; width: 80px;">就诊日期</td>
+                <td style="padding: 6px; border: 1px solid #cbd5e1;">2026-04-12</td>
+                <td style="padding: 6px; border: 1px solid #cbd5e1; font-weight: bold; background: #f8fafc; width: 80px;">就诊科室</td>
+                <td style="padding: 6px; border: 1px solid #cbd5e1;">全科医学科</td>
+              </tr>
+            </table>
+            <div style="margin-bottom: 12px;"><strong style="color: #1e40af;">主诉：</strong>头晕、头痛 1 周。</div>
+            <div style="margin-bottom: 12px;"><strong style="color: #1e40af;">现病史：</strong>头晕轻度胀痛，BP升高。</div>
+            <div style="margin-bottom: 12px;"><strong style="color: #1e40af;">既往史：</strong>无特殊。</div>
+            <div style="margin-bottom: 12px;"><strong style="color: #1e40af;">体格检查：</strong>BP 152/96 mmHg。</div>
+            <div style="margin-bottom: 12px;"><strong style="color: #1e40af;">初步诊断：</strong>原发性高血压</div>
+            <div style="margin-bottom: 12px;"><strong style="color: #1e40af;">治疗意见：</strong>硝苯地平控释片 30mg p.o. qd。</div>
+          </div>
+        `,
+      };
+    }
+    return null;
   }
 }
