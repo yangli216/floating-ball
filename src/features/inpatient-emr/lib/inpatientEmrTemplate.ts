@@ -315,7 +315,6 @@ export function buildDefaultFieldValues(
   };
 
   setIfPresent('页眉医疗机构名称', String(registration?.raw?.idOrgText || registration?.raw?.naOrg || '医疗机构'));
-  setIfPresent('页眉病历标题', '病 程 记 录');
   setIfPresent('页眉姓名', registration?.name || '');
   setIfPresent('页眉科室名称', departmentName);
   setIfPresent('页眉床位号', registration?.bedNo || '');

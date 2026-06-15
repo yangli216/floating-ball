@@ -6,3 +6,25 @@ content-type: application/json
     "name": "sample",
     "time": "Wed, 21 Oct 2015 18:27:50 GMT"
 }
+
+### AI住院信息上下文获取
+POST http://192.168.201.140:5680/rbmh-phis/api/phis.aiInpatientEmrContextService/buildContext
+Content-Type: application/json
+cookie: tk=66c59a8aea39de0001b56d61
+
+[{"idAdsn":"660a056d9cd436215897f489"}]
+
+
+### 根据就诊记录获取病历列表
+POST http://192.168.201.140:5680/rbmh-phis/api/otms.rpcEmrEditorLookService/getLookMedList
+Content-Type: application/json
+cookie: tk=66c59a8aea39de0001b56d61
+
+[{"idApp": "42","idTet":"xswjj","idHospital":"6a2d5b06a5e9237869002f7d"}]
+
+### 根据病历信息获取病历内容
+POST http://192.168.201.140:5680/rbmh-phis/api/otms.rpcEmrEditorLookService/getMedContentLook
+Content-Type: application/json
+cookie: tk=66c59a8aea39de0001b56d61
+
+[{"idApp": "42","idTet":"xswjj","idMedrecdoc":"6a2d5b3aa5e923322e5528bb", "courseShow": 0}]

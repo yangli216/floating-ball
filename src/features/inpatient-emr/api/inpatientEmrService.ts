@@ -45,6 +45,7 @@ function report(
 export function formatOutpatientRecordForAi(record: HisOutpatientMedicalRecord | null | undefined): string {
   if (!record) return '';
   const parts: string[] = [];
+  if (record.documentTitle) parts.push(`【门诊病历标题】${record.documentTitle}`);
   if (record.chiefComplaint) parts.push(`【门诊主诉】${record.chiefComplaint}`);
   if (record.historyOfPresentIllness) parts.push(`【门诊现病史】${record.historyOfPresentIllness}`);
   if (record.pastHistory) parts.push(`【门诊既往史】${record.pastHistory}`);
@@ -52,7 +53,43 @@ export function formatOutpatientRecordForAi(record: HisOutpatientMedicalRecord |
   if (record.auxiliaryExamination) parts.push(`【门诊辅助检查】${record.auxiliaryExamination}`);
   if (record.diagnosis) parts.push(`【门诊诊断】${record.diagnosis}`);
   if (record.treatmentPlan) parts.push(`【门诊处置/医嘱】${record.treatmentPlan}`);
+  if (record.plainText) parts.push(`【门诊病历正文】${record.plainText}`);
+  if (record.documents?.length) {
+    parts.push(`【门诊病历文书列表】${record.documents.map((doc) => [
+      doc.title,
+      doc.titleTime || doc.createdAt,
+      doc.documentId,
+    ].filter(Boolean).join(' / ')).join('；')}`);
+  }
+  if (record.contentPending) {
+    parts.push('【门诊病历正文状态】已获取文书列表，但正文内容暂不可用；禁止仅根据文书标题推断主诉、现病史、查体或诊疗事实。');
+  }
   return parts.join('\n');
+}
+
+function hasUsableOutpatientRecordReference(record: HisOutpatientMedicalRecord | null | undefined): boolean {
+  if (!record) return false;
+  const hasStructuredHistory = [
+    record.chiefComplaint,
+    record.historyOfPresentIllness,
+    record.pastHistory,
+    record.physicalExamination,
+    record.auxiliaryExamination,
+    record.diagnosis,
+    record.treatmentPlan,
+  ].some((value) => Boolean(value?.trim()));
+  if (hasStructuredHistory) return true;
+  if (record.contentPending) return false;
+  return Boolean(record.plainText?.trim() || record.htmlContent?.trim());
+}
+
+function shouldWaitForAdmissionGeneration(
+  request: InpatientEmrGenerationRequest,
+  outpatientRecord: HisOutpatientMedicalRecord | null | undefined,
+): boolean {
+  if (!isAdmissionTemplate(request.templateName || '')) return false;
+  if (request.doctorSupplement?.trim()) return false;
+  return !hasUsableOutpatientRecordReference(outpatientRecord);
 }
 
 function formatDiagnosis(registration: HisInpatientRegistrationInfo | null): string {
@@ -445,69 +482,74 @@ async function classifyUnknownFieldsWithLLM(
   }
 }
 
+async function enrichUnknownFieldsWithLocalLLM(
+  template: InpatientEmrTemplateParseResult,
+  request: InpatientEmrGenerationRequest,
+  registration?: HisInpatientRegistrationInfo | null,
+): Promise<void> {
+  const unknownFields = template.fields.filter((field) => field.presetStatus === 'unknown');
+  if (unknownFields.length === 0) return;
+
+  console.log(`[InpatientEmr] 发现 ${unknownFields.length} 个未匹配预设字段，正在调用 LLM 进行智能特征分析...`);
+  const classified = await classifyUnknownFieldsWithLLM(
+    unknownFields,
+    request.templateName,
+    registration?.deptName || registration?.wardName,
+  );
+  const classifiedMap = new Map(classified.map((item) => [item.id, item]));
+
+  template.fields = template.fields.map((field) => {
+    if (field.presetStatus === 'unknown' && classifiedMap.has(field.id)) {
+      const aiInfo = classifiedMap.get(field.id)!;
+      const aiSuitable = Boolean(aiInfo.aiSuitable);
+      return {
+        ...field,
+        aiSuitable,
+        meaning: aiInfo.meaning || field.meaning,
+        rule: {
+          source: (aiInfo.source || (aiSuitable ? 'ai' : 'manual_or_his')) as any,
+          dependencies: aiSuitable ? ['registration', 'registration.diagnoses', 'orders', 'temperatureChart'] : field.rule.dependencies,
+          promptIntent: aiSuitable ? (field.id.toLowerCase().includes('cy') ? 'inpatientDischargeRecordSection' : 'inpatientRecordSection') : undefined,
+          constraints: aiSuitable ? defaultAiConstraints : ['按系统事实填充或手工录入，AI不自由改写'],
+        }
+      };
+    }
+    return field;
+  });
+}
+
 async function resolveInpatientEmrTemplate(
   request: InpatientEmrGenerationRequest,
   registration?: HisInpatientRegistrationInfo | null,
 ): Promise<InpatientEmrTemplateParseResult> {
   const localTemplate = parseInpatientEmrTemplate(request.htmlContent);
 
-  const unknownFields = localTemplate.fields.filter((field) => field.presetStatus === 'unknown');
-  if (unknownFields.length > 0) {
-    console.log(`[InpatientEmr] 发现 ${unknownFields.length} 个未匹配预设字段，正在调用 LLM 进行智能特征分析...`);
-    const classified = await classifyUnknownFieldsWithLLM(
-      unknownFields,
-      request.templateName,
-      registration?.deptName || registration?.wardName,
-    );
-    const classifiedMap = new Map(classified.map((item) => [item.id, item]));
-
-    localTemplate.fields = localTemplate.fields.map((field) => {
-      if (field.presetStatus === 'unknown' && classifiedMap.has(field.id)) {
-        const aiInfo = classifiedMap.get(field.id)!;
-        const aiSuitable = Boolean(aiInfo.aiSuitable);
+  if (isRegionalMode()) {
+    try {
+      const remote = await regionalPost<RemoteInpatientEmrTemplateCache>(
+        '/v1/client/inpatient-emr/templates/resolve',
+        {
+          templateId: request.templateId,
+          templateHash: localTemplate.cacheKey,
+          templateName: request.templateName || '',
+          htmlContent: request.htmlContent,
+          fields: localTemplate.fields,
+        },
+      );
+      const remoteFields = Array.isArray(remote.fields) ? remote.fields : [];
+      if (remoteFields.length > 0) {
         return {
-          ...field,
-          aiSuitable,
-          meaning: aiInfo.meaning || field.meaning,
-          rule: {
-            source: (aiInfo.source || (aiSuitable ? 'ai' : 'manual_or_his')) as any,
-            dependencies: aiSuitable ? ['registration', 'registration.diagnoses', 'orders', 'temperatureChart'] : field.rule.dependencies,
-            promptIntent: aiSuitable ? (field.id.toLowerCase().includes('cy') ? 'inpatientDischargeRecordSection' : 'inpatientRecordSection') : undefined,
-            constraints: aiSuitable ? defaultAiConstraints : ['按系统事实填充或手工录入，AI不自由改写'],
-          }
+          cacheKey: remote.templateHash || localTemplate.cacheKey,
+          cacheHit: Boolean(remote.cacheHit),
+          fields: remoteFields.map(normalizeTemplateField),
         };
       }
-      return field;
-    });
-  }
-
-  if (!isRegionalMode()) {
-    return localTemplate;
-  }
-
-  try {
-    const remote = await regionalPost<RemoteInpatientEmrTemplateCache>(
-      '/v1/client/inpatient-emr/templates/resolve',
-      {
-        templateId: request.templateId,
-        templateHash: localTemplate.cacheKey,
-        templateName: request.templateName || '',
-        htmlContent: request.htmlContent,
-        fields: localTemplate.fields,
-      },
-    );
-    const remoteFields = Array.isArray(remote.fields) ? remote.fields : [];
-    if (remoteFields.length > 0) {
-      return {
-        cacheKey: remote.templateHash || localTemplate.cacheKey,
-        cacheHit: Boolean(remote.cacheHit),
-        fields: remoteFields.map(normalizeTemplateField),
-      };
+    } catch (error) {
+      console.warn('[InpatientEmr] remote template cache unavailable, using local parse result', error);
     }
-  } catch (error) {
-    console.warn('[InpatientEmr] remote template cache unavailable, using local parse result (LLM-enhanced)', error);
   }
 
+  await enrichUnknownFieldsWithLocalLLM(localTemplate, request, registration);
   return localTemplate;
 }
 
@@ -538,6 +580,19 @@ interface LoadedInpatientHisContext {
   temperatureChart: HisInpatientTemperatureChart | null;
   aiContext: HisInpatientEmrContextPackage;
   outpatientRecord?: HisOutpatientMedicalRecord | null;
+}
+
+async function fetchSelectedOutpatientRecord(
+  adapter: ReturnType<typeof getHisAdapter>,
+  visitId?: string,
+): Promise<HisOutpatientMedicalRecord | null> {
+  if (!adapter || !visitId) return null;
+  try {
+    return await adapter.fetchOutpatientMedicalRecord(visitId);
+  } catch (error) {
+    console.warn('[InpatientEmr] Failed to fetch outpatient medical record', error);
+    return null;
+  }
 }
 
 function getArrayCount(value: unknown): number {
@@ -619,6 +674,7 @@ async function loadInpatientEmrHisContext(
 
   const requestContext = mergeDocumentContextIntoHisContext(request.hisContext, documentContext, request.admissionId);
   if (requestContext) {
+    const outpatientRecord = await fetchSelectedOutpatientRecord(adapter, request.outpatientVisitId);
     const registration = buildRegistrationFromAiContext(requestContext, query);
     const orders = buildOrdersFromAiContext(requestContext);
     const temperatureChart = buildTemperatureChartFromAiContext(requestContext, query);
@@ -637,7 +693,7 @@ async function loadInpatientEmrHisContext(
       orders,
       temperatureChart,
       aiContext: requestContext,
-      outpatientRecord: null,
+      outpatientRecord,
     };
   }
 
@@ -646,12 +702,7 @@ async function loadInpatientEmrHisContext(
   }
 
   // 并发拉取门诊病历（如果有 outpatientVisitId）
-  const outpatientPromise = request.outpatientVisitId
-    ? adapter.fetchOutpatientMedicalRecord(request.outpatientVisitId).catch((err) => {
-        console.warn('[InpatientEmr] Failed to fetch outpatient medical record', err);
-        return null;
-      })
-    : Promise.resolve(null);
+  const outpatientPromise = fetchSelectedOutpatientRecord(adapter, request.outpatientVisitId);
 
   report(onProgress, { key: 'patient', status: 'running', detail: '正在获取 HIS 住院上下文' });
   const [packageContext, outpatientRecord] = await Promise.all([
@@ -722,15 +773,13 @@ export async function generateInpatientEmrPreview(
     outpatientRecord,
   };
 
-  const isAdmission = isAdmissionTemplate(request.templateName || '');
-  const hasSupplement = Boolean(request.doctorSupplement?.trim());
-  if (isAdmission && !hasSupplement) {
+  if (shouldWaitForAdmissionGeneration(request, outpatientRecord)) {
     const fieldValues = buildDefaultFieldValues(template.fields, context);
     const htmlContent = fillInpatientEmrTemplateHtml(request.htmlContent, fieldValues);
     report(onProgress, {
       key: 'generate',
       status: 'pending',
-      detail: '等待输入补充要点（主诉、现病史）以启动生成'
+      detail: '等待补充要点或门诊病历依据（主诉、现病史）以启动生成'
     });
     return {
       emrContent: buildGeneratedEmrText(template.fields, fieldValues, context),
@@ -860,14 +909,12 @@ export async function generateInpatientEmrPreviewStream(
   };
   onStreamResult?.(initialResult);
 
-  // 1.5 智能拦截逻辑：若是入院模板且没有提供医生补充要点，则在预览渲染后停止，不调用 LLM。
-  const isAdmission = isAdmissionTemplate(request.templateName || '');
-  const hasSupplement = Boolean(request.doctorSupplement?.trim());
-  if (isAdmission && !hasSupplement) {
+  // 1.5 智能拦截逻辑：入院模板需要医生补充要点或可用门诊病历正文，避免空上下文生成。
+  if (shouldWaitForAdmissionGeneration(request, outpatientRecord)) {
     report(onProgress, {
       key: 'generate',
       status: 'pending',
-      detail: '等待输入补充要点（主诉、现病史）以启动生成'
+      detail: '等待补充要点或门诊病历依据（主诉、现病史）以启动生成'
     });
     return initialResult;
   }

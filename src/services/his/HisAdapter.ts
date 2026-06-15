@@ -33,6 +33,7 @@ import type {
   HisPatientInfo,
   HisPatientHistory,
   HisOutpatientVisit,
+  HisOutpatientMedicalRecordDocument,
   HisOutpatientMedicalRecord,
   HisInpatientDiagnosis,
   HisInpatientOrder,
@@ -57,6 +58,7 @@ export type {
   HisPatientInfo,
   HisPatientHistory,
   HisOutpatientVisit,
+  HisOutpatientMedicalRecordDocument,
   HisOutpatientMedicalRecord,
   HisInpatientDiagnosis,
   HisInpatientOrder,
@@ -172,6 +174,13 @@ export interface HisAdapter {
    * 根据患者 ID 获取门诊就诊历史列表（仅限门急诊，暂定最近3次）
    */
   fetchOutpatientVisitHistory(patientId: string, limit?: number): Promise<HisOutpatientVisit[]>;
+
+  /**
+   * 根据门诊就诊 ID 获取该次门急诊病历文书列表。
+   *
+   * PHIS 当前只提供文书列表；正文内容接口后续补充后再映射为完整病历详情。
+   */
+  fetchOutpatientMedicalRecordDocuments(visitId: string): Promise<HisOutpatientMedicalRecordDocument[]>;
 
   /**
    * 根据就诊 ID 获取门急诊病历 HTML 内容

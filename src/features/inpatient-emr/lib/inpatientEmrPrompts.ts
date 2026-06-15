@@ -1,5 +1,6 @@
 import type { InpatientEmrContext, InpatientEmrTemplateField } from '../types';
 import type { HisOutpatientMedicalRecord } from '@/services/his';
+import { isAdmissionTemplate } from './inpatientEmrTemplate';
 
 export const INPATIENT_EMR_TEMPLATE_PARSE_PROMPT = [
   '你是一名住院电子病历模板解析助手。',
@@ -11,6 +12,7 @@ export const INPATIENT_EMR_TEMPLATE_PARSE_PROMPT = [
 export function formatOutpatientRecordForAi(record: HisOutpatientMedicalRecord | null | undefined): string {
   if (!record) return '';
   const parts: string[] = [];
+  if (record.documentTitle) parts.push(`【门诊病历标题】${record.documentTitle}`);
   if (record.chiefComplaint) parts.push(`【门诊主诉】${record.chiefComplaint}`);
   if (record.historyOfPresentIllness) parts.push(`【门诊现病史】${record.historyOfPresentIllness}`);
   if (record.pastHistory) parts.push(`【门诊既往史】${record.pastHistory}`);
@@ -18,6 +20,17 @@ export function formatOutpatientRecordForAi(record: HisOutpatientMedicalRecord |
   if (record.auxiliaryExamination) parts.push(`【门诊辅助检查】${record.auxiliaryExamination}`);
   if (record.diagnosis) parts.push(`【门诊诊断】${record.diagnosis}`);
   if (record.treatmentPlan) parts.push(`【门诊处置/医嘱】${record.treatmentPlan}`);
+  if (record.plainText) parts.push(`【门诊病历正文】${record.plainText}`);
+  if (record.documents?.length) {
+    parts.push(`【门诊病历文书列表】${record.documents.map((doc) => [
+      doc.title,
+      doc.titleTime || doc.createdAt,
+      doc.documentId,
+    ].filter(Boolean).join(' / ')).join('；')}`);
+  }
+  if (record.contentPending) {
+    parts.push('【门诊病历正文状态】已获取文书列表，但正文内容暂不可用；禁止仅根据文书标题推断主诉、现病史、查体或诊疗事实。');
+  }
   return parts.join('\n');
 }
 
@@ -57,6 +70,20 @@ export function buildInpatientEmrFieldPrompt(
   const documentContext = context?.documentContext;
   const rawIntent = field.rule.promptIntent || 'inpatientRecordSection';
   const inferredIntent = inferPromptIntentByRecordType(documentContext?.recordType || '', rawIntent);
+  const fieldText = `${field.id} ${field.name} ${field.meaning}`.toLowerCase();
+  const isAdmissionRecord = isAdmissionTemplate(documentContext?.templateName || '')
+    || isAdmissionTemplate(documentContext?.recordType || '');
+  const admissionFieldGuidance = isAdmissionRecord
+    ? [
+        '入院记录书写要求：门诊病历和医生补充要点都是来源材料，必须从本次入院记录角度综合重写，不得把门诊病历原文直接粘贴为本字段内容。',
+        fieldText.includes('主诉')
+          ? '主诉字段：围绕本次入院原因，归纳主要症状/体征及持续时间；可参考门诊主诉和补充要点，但需按入院记录主诉格式重新表述。'
+          : '',
+        fieldText.includes('现病史') || fieldText.includes('xbs')
+          ? '现病史字段：按入院记录现病史逻辑组织起病、演变、门诊诊疗经过、入院原因及当前情况；门诊病历仅作为病史来源，需结合医生补充信息重写。'
+          : '',
+      ].filter(Boolean)
+    : [];
 
   return [
     `模板名称：${documentContext?.templateName || '住院病历模板'}`,
@@ -68,6 +95,7 @@ export function buildInpatientEmrFieldPrompt(
     `生成意图：${inferredIntent}`,
     `依赖数据：${(field.rule.dependencies || []).join('、') || '住院上下文'}`,
     `约束：${field.rule.constraints.join('；')}`,
+    ...admissionFieldGuidance,
     `请为字段标识为“${field.id}”的项仅生成应回填的正文内容，切勿输出字段名、JSON 结构、任何说明或免责声明。`,
   ].join('\n');
 }
@@ -78,6 +106,9 @@ export function buildInpatientEmrGeneratePrompt(
 ): string {
   const aiFields = fields.filter((field) => field.aiSuitable);
   const doctorSupplement = context.doctorSupplement?.trim();
+  const outpatientReferenceText = formatOutpatientRecordForAi(context.outpatientRecord);
+  const isAdmissionRecord = isAdmissionTemplate(context.documentContext.templateName || '')
+    || isAdmissionTemplate(context.documentContext.recordType || '');
   return [
     '你是一名住院电子病历辅助书写助手。',
     '任务：根据 AI 生成字段、HIS 住院数据和字段规则，生成字段取值 JSON。',
@@ -102,14 +133,20 @@ export function buildInpatientEmrGeneratePrompt(
     '13. 书写逻辑链指引（隐式CoT思维）：在生成日常病程内容时，按照以下思维顺序逐步组织：① 概括今日患者的主观自觉症状与生命体征趋势；② 引用并分析最新检验检查数据（如有新出阳性/异常结果）与目前已执行的核心医嘱；③ 评估病情演变并给出后续明确的诊疗与随访计划。',
     '14. 严格保证各 AI 字段生成的正文边界独立。例如生成“诊疗经过”时切勿混写“入院情况”或“诊疗计划”等其他字段的内容，各字段应根据其特定的含义 and 约束精准独立作答，禁止内容交叉粘连。',
     '15. 若 HIS 诊疗数据中缺少本次记录日期当天的某些关键客观体征、检验检查数据，且医生未在补充要点中提及，AI 应当在对应字段正文中如实说明“本日体温单暂无记录”或“近期未做此项检查”，严禁以“患者病情好转/无异常”等主观臆断进行粉饰或忽略。',
-    doctorSupplement
-      ? '16. 医生补充要点优先级高于 HIS 摘要中的模糊信息；可作为本次查房主观症状、查体发现、诊疗判断或计划的依据，但不得扩展成补充要点之外的事实。'
+    isAdmissionRecord
+      ? '16. 当前为入院记录/首次记录时，必须以“本次入院病历书写”为目标重组材料：门诊病历用于提供入院前病史、门诊诊疗经过和初步诊断，医生补充要点用于补充或校正最新事实；两者可以同时引用并综合判断，不是互斥来源。'
       : '',
-    context.outpatientRecord
-      ? '17. 检测到医生引用了门诊病历（OUTPATIENT_RECORD_REFERENCE）。在生成入院记录的主诉、现病史等字段时，必须深度参考门诊病历的诊断、主诉和现病史信息，结合“医生补充要点”进行合理提炼与住院首发病史派生。保证主诉时间与入院时间逻辑自洽。'
+    isAdmissionRecord
+      ? '17. 严禁把门诊主诉、门诊现病史或门诊病历正文原样复制到入院记录字段。应结合住院登记、门诊病历和医生补充要点，按入院记录的主诉、现病史、入院情况等字段要求重新组织语言。'
+      : '',
+    doctorSupplement
+      ? '18. 医生补充要点优先级高于 HIS 摘要和门诊病历中的模糊或较旧信息；可作为本次入院/查房的主观症状、查体发现、诊疗判断或计划依据，但不得扩展成补充要点之外的事实。'
+      : '',
+    outpatientReferenceText
+      ? '19. 检测到医生引用了门诊病历（OUTPATIENT_RECORD_REFERENCE）。若引用中包含门诊主诉、现病史、诊断或“门诊病历正文”等事实，只能作为入院记录病史来源参考；若引用只包含文书列表且标记正文暂不可用，禁止根据文书标题扩展病史事实。'
       : '',
     doctorSupplement ? `DOCTOR_SUPPLEMENT=${doctorSupplement}` : '',
-    context.outpatientRecord ? `OUTPATIENT_RECORD_REFERENCE=${formatOutpatientRecordForAi(context.outpatientRecord)}` : '',
+    outpatientReferenceText ? `OUTPATIENT_RECORD_REFERENCE=${outpatientReferenceText}` : '',
     `AI_FIELDS=${JSON.stringify(aiFields, null, 2)}`,
     `FIELD_PROMPTS=${aiFields.map((field) => buildInpatientEmrFieldPrompt(field, context)).join('\n\n---\n\n')}`,
     `HIS_AI_CONTEXT=${JSON.stringify(context.aiContext || null, null, 2)}`,

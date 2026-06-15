@@ -140,6 +140,7 @@ export interface HisDictionaryResponse {
 
 export interface HisServiceContext {
   userRoleDeptIds?: string[];
+  tenantId?: string | null;
 }
 
 interface HiBdDieListBody {
@@ -292,6 +293,63 @@ export interface HisVisitDetailBody {
   diagList?: HisVisitDetailDiag[];
   orderList?: HisVisitDetailOrder[];
   [key: string]: unknown;
+}
+
+/**
+ * PHIS 门诊病历文书列表项（getLookMedList 返回 body.data）
+ */
+export interface HisOutpatientMedicalRecordDocumentBody {
+  idMedrecdoc?: string;
+  idApp?: string;
+  createTime?: string;
+  insertTime?: string;
+  insertUser?: string;
+  naMed?: string;
+  idPatient?: string;
+  idHospital?: string;
+  idOrg?: string;
+  idTet?: string;
+  idBdmd?: string;
+  idMeca?: string;
+  idMedi?: string;
+  idTep?: string;
+  fgCheck?: string;
+  insertDept?: string;
+  fgCommit?: string;
+  fgClose?: string;
+  fgSeal?: string;
+  fgNote?: string;
+  fgPrint?: string;
+  medType?: string;
+  titleTime?: string;
+  idDs?: string;
+  autoRefresh?: string;
+  countPrint?: string;
+  [key: string]: unknown;
+}
+
+interface HisOutpatientMedicalRecordDocumentListBody {
+  code?: number | string;
+  count?: number;
+  message?: string;
+  data?: HisOutpatientMedicalRecordDocumentBody[];
+  items?: HisOutpatientMedicalRecordDocumentBody[];
+}
+
+/**
+ * PHIS 门诊病历正文（getMedContentLook 返回 body.data）
+ */
+export interface HisOutpatientMedicalRecordContentBody {
+  idMedrecdoc?: string;
+  htmlContent?: string;
+  [key: string]: unknown;
+}
+
+interface HisOutpatientMedicalRecordContentResponseBody {
+  code?: number | string;
+  count?: number;
+  message?: string;
+  data?: HisOutpatientMedicalRecordContentBody;
 }
 
 export interface HisInpatientServiceQuery {
@@ -593,6 +651,8 @@ const HIS_CATALOG_ENDPOINTS = {
   patientAllergy: 'api/phis.clinicPatientService/queryHisAllergy',
   patientVisitHistory: 'api/phis.clinicPatientService/queryVisitHistory',
   patientVisitDetail: 'api/phis.clinicDoctorCoreService/loadClinicMedicalRecord',
+  outpatientMedicalRecordDocuments: 'api/otms.rpcEmrEditorLookService/getLookMedList',
+  outpatientMedicalRecordContent: 'api/otms.rpcEmrEditorLookService/getMedContentLook',
   inpatientEmrContext: 'api/phis.aiInpatientEmrContextService/buildContext',
   inpatientOrders: 'api/phis.hiHosOrderService/queryOrdGroupList',
   inpatientTemperatureChart: 'api/phis.hiHosSurveyService/getSurveyTestTimeLine',
@@ -607,6 +667,7 @@ export class HisService {
   private baseUrl: string;
   private token: string;
   private userRoleDeptIds: string[];
+  private tenantId: string;
 
   /**
    * @param baseUrl HIS 服务的基地址 (例如: http://192.168.1.100:8080/his/)
@@ -616,6 +677,7 @@ export class HisService {
     this.baseUrl = baseUrl.endsWith('/') ? baseUrl : `${baseUrl}/`;
     this.token = token;
     this.userRoleDeptIds = this.normalizeDeptIds(context?.userRoleDeptIds);
+    this.tenantId = this.normalizeContextValue(context?.tenantId);
   }
 
   /**
@@ -1273,6 +1335,86 @@ export class HisService {
   }
 
   /**
+   * 获取门诊病历文书列表。
+   * PHIS 接口：api/otms.rpcEmrEditorLookService/getLookMedList
+   * 入参：[{"idApp":"42","idTet":"租户ID","idHospital":"门诊idVis"}]
+   */
+  async queryOutpatientMedicalRecordDocuments(
+    idHospital: string,
+    options: { idTet?: string | null; idApp?: string } = {},
+  ): Promise<HisOutpatientMedicalRecordDocumentBody[]> {
+    const normalizedIdHospital = idHospital.trim();
+    const normalizedIdTet = this.normalizeContextValue(options.idTet) || this.tenantId;
+    const idApp = (options.idApp || '42').trim() || '42';
+    if (!normalizedIdHospital) return [];
+    if (!normalizedIdTet) {
+      throw new Error('[HisService] Missing idTet for getLookMedList');
+    }
+
+    const response = await this.post<HisOutpatientMedicalRecordDocumentListBody>(
+      HIS_CATALOG_ENDPOINTS.outpatientMedicalRecordDocuments,
+      [{
+        idApp,
+        idTet: normalizedIdTet,
+        idHospital: normalizedIdHospital,
+      }]
+    );
+    this.assertBusinessSuccess(HIS_CATALOG_ENDPOINTS.outpatientMedicalRecordDocuments, response);
+
+    const body = response.body ?? response.data ?? null;
+    if (!body) return [];
+
+    const innerCode = body.code;
+    if (innerCode != null && innerCode !== 200 && innerCode !== '200') {
+      const message = body.message?.trim() || `HIS business error: ${String(innerCode)}`;
+      throw new Error(`[HisService] ${HIS_CATALOG_ENDPOINTS.outpatientMedicalRecordDocuments} failed: ${message} (code=${String(innerCode)})`);
+    }
+
+    const items = body.data ?? body.items ?? [];
+    return Array.isArray(items) ? items : [];
+  }
+
+  /**
+   * 获取门诊病历正文。
+   * PHIS 接口：api/otms.rpcEmrEditorLookService/getMedContentLook
+   * 入参：[{"idApp":"42","idTet":"租户ID","idMedrecdoc":"文书ID","courseShow":0}]
+   */
+  async queryOutpatientMedicalRecordContent(
+    idMedrecdoc: string,
+    options: { idTet?: string | null; idApp?: string; courseShow?: number } = {},
+  ): Promise<HisOutpatientMedicalRecordContentBody | null> {
+    const normalizedIdMedrecdoc = idMedrecdoc.trim();
+    const normalizedIdTet = this.normalizeContextValue(options.idTet) || this.tenantId;
+    const idApp = (options.idApp || '42').trim() || '42';
+    if (!normalizedIdMedrecdoc) return null;
+    if (!normalizedIdTet) {
+      throw new Error('[HisService] Missing idTet for getMedContentLook');
+    }
+
+    const response = await this.post<HisOutpatientMedicalRecordContentResponseBody>(
+      HIS_CATALOG_ENDPOINTS.outpatientMedicalRecordContent,
+      [{
+        idApp,
+        idTet: normalizedIdTet,
+        idMedrecdoc: normalizedIdMedrecdoc,
+        courseShow: Number.isFinite(options.courseShow) ? options.courseShow : 0,
+      }]
+    );
+    this.assertBusinessSuccess(HIS_CATALOG_ENDPOINTS.outpatientMedicalRecordContent, response);
+
+    const body = response.body ?? response.data ?? null;
+    if (!body) return null;
+
+    const innerCode = body.code;
+    if (innerCode != null && innerCode !== 200 && innerCode !== '200') {
+      const message = body.message?.trim() || `HIS business error: ${String(innerCode)}`;
+      throw new Error(`[HisService] ${HIS_CATALOG_ENDPOINTS.outpatientMedicalRecordContent} failed: ${message} (code=${String(innerCode)})`);
+    }
+
+    return body.data ?? null;
+  }
+
+  /**
    * 查询指定患者住院诊断。
    *
    * 历史明细能力：住院病历 AI 生成已改为 buildContext 聚合上下文，不再调用该接口。
@@ -1518,11 +1660,20 @@ export class HisService {
   }
 
   updateContext(context: HisServiceContext): void {
-    this.userRoleDeptIds = this.normalizeDeptIds(context.userRoleDeptIds);
+    if ('userRoleDeptIds' in context) {
+      this.userRoleDeptIds = this.normalizeDeptIds(context.userRoleDeptIds);
+    }
+    if ('tenantId' in context) {
+      this.tenantId = this.normalizeContextValue(context.tenantId);
+    }
   }
 
   getDefaultExecDeptId(): string {
     return this.userRoleDeptIds[0] || '';
+  }
+
+  getTenantId(): string {
+    return this.tenantId;
   }
 
   private buildInpatientQueryParams(query: HisInpatientServiceQuery): Record<string, unknown> | null {
@@ -1746,6 +1897,16 @@ export class HisService {
         .filter(Boolean)
     ));
   }
+
+  private normalizeContextValue(value: string | number | null | undefined): string {
+    if (typeof value === 'string') {
+      return value.trim();
+    }
+    if (typeof value === 'number' && Number.isFinite(value)) {
+      return String(value);
+    }
+    return '';
+  }
 }
 
 let instance: HisService | null = null;
@@ -1760,16 +1921,24 @@ export const getHisService = (
   auth?: {
     token?: string;
     userRoleDeptIds?: string[];
+    tenantId?: string | null;
   }
 ): HisService | null => {
   if (baseUrl && auth?.token) {
     if (instance) {
-      instance = new HisService(baseUrl, auth.token, { userRoleDeptIds: auth.userRoleDeptIds });
+      instance = new HisService(baseUrl, auth.token, { userRoleDeptIds: auth.userRoleDeptIds, tenantId: auth.tenantId });
     } else {
-      instance = new HisService(baseUrl, auth.token, { userRoleDeptIds: auth.userRoleDeptIds });
+      instance = new HisService(baseUrl, auth.token, { userRoleDeptIds: auth.userRoleDeptIds, tenantId: auth.tenantId });
     }
-  } else if (instance && auth?.userRoleDeptIds) {
-    instance.updateContext({ userRoleDeptIds: auth.userRoleDeptIds });
+  } else if (instance && auth && ('userRoleDeptIds' in auth || 'tenantId' in auth)) {
+    const context: HisServiceContext = {};
+    if ('userRoleDeptIds' in auth) {
+      context.userRoleDeptIds = auth.userRoleDeptIds;
+    }
+    if ('tenantId' in auth) {
+      context.tenantId = auth.tenantId;
+    }
+    instance.updateContext(context);
   }
   return instance;
 };

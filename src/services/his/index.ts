@@ -37,6 +37,7 @@ export type {
   HisPatientInfo,
   HisPatientHistory,
   HisOutpatientVisit,
+  HisOutpatientMedicalRecordDocument,
   HisOutpatientMedicalRecord,
   HisInpatientDiagnosis,
   HisInpatientEmrContextPackage,

@@ -1,6 +1,6 @@
 # MedHermes HIS 接入指南 / 接口说明
 
-> 最后更新: 2026-06-09
+> 最后更新: 2026-06-15
 >
 > 本文档面向准备接入 `MedHermes` 的 HIS / 医生站 / PHIS 项目。
 > 当前真实运行契约以 `src-tauri/src/http_server.rs` 与当前前端实现为准；`docs/regionalization/*.md` 仍属于规划文档，不能替代本文档。
@@ -78,7 +78,7 @@
 1. HIS 在住院电子病历书写页调用 `POST /api/inpatient/emr/generate`
 2. 传入 `admissionId + templateId + templateName + htmlContent`，可选传入 `recordTime` 指定本次病程记录书写时间；`admissionId` 对应 PHIS `idAdsn`，`templateId` 是病历模板主键，`htmlContent` 是当前病历模板 HTML
 3. `MedHermes` 从悬浮球切换到“住院病历生成”界面，按步骤展示“住院上下文 -> 医嘱整理 -> 体温单整理 -> 模板解析 -> AI 生成”
-4. 如果当前模板是入院记录，`MedHermes` 会按患者 `idPi` 通过 HIS Adapter 查询最近门诊就诊历史；若入口请求未直接携带 `patient.idPi / patient.patientId`，则要求 `api/phis.aiInpatientEmrContextService/buildContext` 返回的 `hisContext.patient.patientId` 保留患者主键。当前 PHIS 实现调用 `api/phis.clinicPatientService/queryVisitHistory`，入参形如 `[{"limit":3,"params":{"idPi":"患者ID"}}]`，并把 `idVis / idReg / cdClinic / dtBgn / idDeptText / idDocText / idOrgText / fgStatusText / visiting` 等字段映射为中性门诊就诊列表。医生选定一次门诊就诊后，单次病历详情再按就诊 ID 拉取。
+4. 如果当前模板是入院记录，`MedHermes` 会按患者 `idPi` 通过 HIS Adapter 查询最近门诊就诊历史；若入口请求未直接携带 `patient.idPi / patient.patientId`，则要求 `api/phis.aiInpatientEmrContextService/buildContext` 返回的 `hisContext.patient.patientId` 保留患者主键。当前 PHIS 实现先调用 `api/phis.clinicPatientService/queryVisitHistory`，入参形如 `[{"limit":3,"params":{"idPi":"患者ID"}}]`，并把 `idVis / idReg / cdClinic / dtBgn / idDeptText / idDocText / idOrgText / fgStatusText / visiting` 等字段映射为中性门诊就诊列表。医生选定一次门诊就诊后，再调用 `api/otms.rpcEmrEditorLookService/getLookMedList` 获取该就诊下的门诊病历文书列表；入参形如 `[{"idApp":"42","idTet":"xswjj","idHospital":"门诊idVis"}]`。其中 `idApp` 固定为 `42`，`idHospital` 取门诊就诊记录 `idVis`，`idTet` 优先取门诊记录原始字段，其次取 SDK 握手解析出的租户。随后按列表返回的 `idMedrecdoc` 调用 `api/otms.rpcEmrEditorLookService/getMedContentLook` 获取 HTML 正文；入参形如 `[{"idApp":"42","idTet":"xswjj","idMedrecdoc":"文书ID","courseShow":0}]`。门诊病历正文会进入预览和 AI 参考上下文；若正文接口失败，桌面端才退回只展示文书列表。
 5. 医生审核预览内容后点击“一键回写”
 6. HIS 可继续通过 SDK 事件流收到 `record-confirmed`，也可直接等待 `sdk.generateInpatientEmr(...).then(record => ...)`；两种方式返回同一份回写 payload，读取其中的 `fieldValues`（`{ [data-id]: 文本 }`）回填当前住院病历编辑器
 7. HIS 完成回填后，仍建议调用 `POST /api/consultation/reference-feedback` 回执成功或失败，桌面端会更新页面状态
@@ -904,12 +904,13 @@ HTTP Bridge 受理响应：
 
 1. 桌面端打开“住院病历生成”界面，医生可看到“获取住院上下文 / 整理诊疗摘要 / 整理病历依据 / 解析病历 / AI 生成”的步骤状态。PHIS 通过 `api/phis.aiInpatientEmrContextService/buildContext` 一次性返回上下文，桌面端调用该 PHIS RPC 时使用数组入参 `[requestMap]`，界面上仅拆分展示处理阶段。
 2. 若医生对生成结果不满意，可点击“重新生成”，在桌面端弹窗中手动输入或语音转写补充本次查房要点；桌面端会把补充内容作为 `doctorSupplement` 重新进入 AI 生成，不改变 HIS 原始上下文。
-3. 医生点击“一键回写”后，事件流会产生 `record-confirmed`，同时 `sdk.generateInpatientEmr(...)` 返回的 Promise 会 resolve 这份 payload。其中 `resultType` 固定为 `record-confirmed`，`referenceType/action` 固定为 `batch`，`emrType` 为 `inpatient-emr`。
-4. `record-confirmed.payload.fieldValues` 为 `{ [data-id]: value }` 的结构化字段取值；仅包含本次传入 `htmlContent` 中真实存在、且模板解析结果标记为适合 AI 生成的字段，若医生在预览中编辑过 AI 字段，以编辑后的文本为准。
-5. 住院病历回写事件不返回 `htmlContent`；HIS 侧按当前编辑器模板自行用 `data-id` 定位并回填文本。
-6. HIS 完成回填后，建议调用 `POST /api/consultation/reference-feedback`，带回相同 `consultationId` 与 `requestId`。回执时 `referenceType` 可传 `batch`，也可留空由 Bridge 按 `batch` 处理；桌面端收到成功回执后会从病历生成界面收起回小球状态。
-7. 病程正文生成时，`recordTime` 的日期是“今日 / 本次查房日期”的唯一依据；若体温单最新记录早于该日期，只能表述为“最近一次体温单记录（YYYY-MM-DD）”，不得写成“今日（历史日期）查房”。
-8. 历史病历中 `medType=2` 的病案首页不进入 AI 上下文；`medType=0` 入院记录建议提取 `chiefComplaint`、`presentIllness` 和 `structuredSections`，不要只传整篇 HTML 文本。
+3. 入院记录场景下，医生可在“重新生成”弹窗里选择一次门诊就诊作为基础资料。当前 PHIS Adapter 会先根据门诊 `idVis` 调用 `api/otms.rpcEmrEditorLookService/getLookMedList`，入参为 `[{"idApp":"42","idTet":"租户ID","idHospital":"门诊idVis"}]`，并把返回的 `idMedrecdoc / naMed / titleTime / medType / fgCommit` 等映射为门诊病历文书列表；随后按 `idMedrecdoc` 调用 `api/otms.rpcEmrEditorLookService/getMedContentLook`，入参为 `[{"idApp":"42","idTet":"租户ID","idMedrecdoc":"文书ID","courseShow":0}]`，读取 `body.data.htmlContent` 作为门诊病历正文。正文会用于门诊病历预览，并转换为纯文本作为 AI 参考上下文；若正文接口失败，桌面端才退回只展示文书列表和正文不可用提示。
+4. 医生点击“一键回写”后，事件流会产生 `record-confirmed`，同时 `sdk.generateInpatientEmr(...)` 返回的 Promise 会 resolve 这份 payload。其中 `resultType` 固定为 `record-confirmed`，`referenceType/action` 固定为 `batch`，`emrType` 为 `inpatient-emr`。
+5. `record-confirmed.payload.fieldValues` 为 `{ [data-id]: value }` 的结构化字段取值；仅包含本次传入 `htmlContent` 中真实存在、且模板解析结果标记为适合 AI 生成的字段，若医生在预览中编辑过 AI 字段，以编辑后的文本为准。
+6. 住院病历回写事件不返回 `htmlContent`；HIS 侧按当前编辑器模板自行用 `data-id` 定位并回填文本。
+7. HIS 完成回填后，建议调用 `POST /api/consultation/reference-feedback`，带回相同 `consultationId` 与 `requestId`。回执时 `referenceType` 可传 `batch`，也可留空由 Bridge 按 `batch` 处理；桌面端收到成功回执后会从病历生成界面收起回小球状态。
+8. 病程正文生成时，`recordTime` 的日期是“今日 / 本次查房日期”的唯一依据；若体温单最新记录早于该日期，只能表述为“最近一次体温单记录（YYYY-MM-DD）”，不得写成“今日（历史日期）查房”。
+9. 历史病历中 `medType=2` 的病案首页不进入 AI 上下文；`medType=0` 入院记录建议提取 `chiefComplaint`、`presentIllness` 和 `structuredSections`，不要只传整篇 HTML 文本。
 
 说明：
 

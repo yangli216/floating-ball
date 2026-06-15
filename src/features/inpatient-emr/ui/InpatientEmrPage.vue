@@ -194,9 +194,6 @@
                 <div class="visit-diagnoses" :title="visit.diagnoses?.join(', ')">
                   主诊断：{{ visit.diagnoses?.join(', ') || '无明确诊断' }}
                 </div>
-                <div class="visit-complaint" :title="visit.chiefComplaint">
-                  主诉：{{ visit.chiefComplaint || '无主诉记录' }}
-                </div>
               </div>
               <div class="visit-card-actions">
                 <button
@@ -839,6 +836,7 @@ button {
   height: 30px;
   display: inline-flex;
   align-items: center;
+  justify-content: center;
   gap: 6px;
   padding: 0 11px;
   border-radius: 7px;
@@ -860,9 +858,30 @@ button {
 
 .ghost-btn:disabled,
 .primary-btn:disabled {
-  opacity: 0.48;
+  opacity: 1 !important;
   cursor: not-allowed;
-  box-shadow: none;
+  box-shadow: none !important;
+  transform: none !important;
+}
+
+.ghost-btn:disabled {
+  color: #334650 !important;
+  background: #e8eef0 !important;
+  border-color: rgba(72, 91, 99, 0.28) !important;
+}
+
+.primary-btn:disabled {
+  color: #2d3f48 !important;
+  background: #d9e2e5 !important;
+  border: 1px solid rgba(72, 91, 99, 0.26) !important;
+}
+
+.ghost-btn:disabled span,
+.ghost-btn:disabled svg,
+.primary-btn:disabled span,
+.primary-btn:disabled svg {
+  color: currentColor !important;
+  opacity: 1 !important;
 }
 
 .ghost-btn:not(:disabled):hover,
@@ -1333,7 +1352,10 @@ button {
 }
 
 .voice-btn:disabled {
-  opacity: 0.52;
+  opacity: 1 !important;
+  color: #334650 !important;
+  background: #e8eef0 !important;
+  border-color: rgba(72, 91, 99, 0.28) !important;
   cursor: not-allowed;
 }
 
@@ -1343,7 +1365,9 @@ button {
 }
 
 .clear-supplement-btn:disabled {
-  opacity: 0.5;
+  opacity: 1 !important;
+  color: #3e5058 !important;
+  background: #e8eef0 !important;
   cursor: not-allowed;
 }
 
@@ -1579,16 +1603,6 @@ button {
   white-space: nowrap;
 }
 
-.visit-complaint {
-  font-size: 11px;
-  color: #64748b;
-  line-height: 1.4;
-  display: -webkit-box;
-  -webkit-line-clamp: 2;
-  -webkit-box-orient: vertical;
-  overflow: hidden;
-}
-
 .visit-card-actions {
   display: grid;
   grid-template-columns: 1fr 1.2fr;
@@ -1612,6 +1626,13 @@ button {
   background: transparent;
   transition: background 0.15s ease, color 0.15s ease;
   border: none;
+}
+
+.action-btn:disabled {
+  opacity: 1 !important;
+  color: #334650 !important;
+  background: #e8eef0 !important;
+  cursor: not-allowed;
 }
 
 .view-btn {
@@ -1662,8 +1683,8 @@ button {
 }
 
 .outpatient-preview-dialog {
-  width: 100%;
-  max-width: 720px;
+  width: min(920px, calc(100vw - 48px));
+  max-width: 920px;
   max-height: 85vh;
   display: flex;
   flex-direction: column;
@@ -1693,6 +1714,7 @@ button {
 .preview-content {
   flex: 1;
   overflow-y: auto;
+  overflow-x: hidden;
   padding: 20px;
   background: #f1f5f9;
 }
@@ -1708,11 +1730,33 @@ button {
 }
 
 .preview-html-container {
+  min-width: 0;
+  max-width: 100%;
+  overflow-x: hidden;
   background: #ffffff;
   border-radius: 8px;
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.03);
   border: 1px solid #e2e8f0;
   padding: 10px;
+}
+
+.preview-html-container :deep(*) {
+  max-width: 100% !important;
+  box-sizing: border-box;
+}
+
+.preview-html-container :deep(table) {
+  width: 100% !important;
+  table-layout: fixed;
+}
+
+.preview-html-container :deep(td),
+.preview-html-container :deep(th),
+.preview-html-container :deep(div),
+.preview-html-container :deep(p),
+.preview-html-container :deep(span) {
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }
 
 .preview-error {

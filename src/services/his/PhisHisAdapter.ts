@@ -26,6 +26,8 @@ import type {
   HisInpatientDiagnosisBody,
   HisInpatientOrderBody,
   HisInpatientRegistrationBody,
+  HisOutpatientMedicalRecordContentBody,
+  HisOutpatientMedicalRecordDocumentBody,
   HisInpatientTemperatureChartBody,
   HisInpatientTemperatureRecordBody,
 } from '../hisService';
@@ -52,6 +54,7 @@ import type {
   HisInpatientTemperatureChart,
   HisInpatientTemperatureRecord,
   HisOutpatientVisit,
+  HisOutpatientMedicalRecordDocument,
   HisOutpatientMedicalRecord,
 } from './types';
 
@@ -98,6 +101,29 @@ const firstBool = (record: Record<string, unknown>, keys: string[]): boolean | u
   }
   return undefined;
 };
+
+const escapeHtml = (value: unknown): string => String(value ?? '')
+  .replace(/&/g, '&amp;')
+  .replace(/</g, '&lt;')
+  .replace(/>/g, '&gt;')
+  .replace(/"/g, '&quot;')
+  .replace(/'/g, '&#39;');
+
+const stripHtmlToText = (html: string): string => html
+  .replace(/<script[\s\S]*?<\/script>/gi, ' ')
+  .replace(/<style[\s\S]*?<\/style>/gi, ' ')
+  .replace(/<\/(p|div|section|article|br|tr|li|h[1-6])>/gi, '\n')
+  .replace(/<[^>]+>/g, ' ')
+  .replace(/&nbsp;/gi, ' ')
+  .replace(/&lt;/gi, '<')
+  .replace(/&gt;/gi, '>')
+  .replace(/&amp;/gi, '&')
+  .replace(/&quot;/gi, '"')
+  .replace(/&#39;/g, "'")
+  .replace(/[ \t\f\v]+/g, ' ')
+  .replace(/\n\s+/g, '\n')
+  .replace(/\n{3,}/g, '\n\n')
+  .trim();
 
 /** PHIS 业务类型编码 ↔ 中性枚举 */
 const PHIS_BUSINESS_TYPE_MAP: Record<InventoryCheckRequest['businessType'], '1' | '2' | '3'> = {
@@ -571,9 +597,105 @@ function mapOutpatientVisitHistoryItem(
   };
 }
 
+function mapOutpatientMedicalRecordDocument(
+  item: HisOutpatientMedicalRecordDocumentBody,
+  fallbackVisitId: string,
+): HisOutpatientMedicalRecordDocument | null {
+  const raw = item as Record<string, unknown>;
+  const documentId = firstTrim(raw, ['idMedrecdoc', 'documentId', 'id']);
+  const title = firstTrim(raw, ['naMed', 'title', 'name']) ?? '未命名门诊病历';
+  const visitId = firstTrim(raw, ['idHospital', 'visitId', 'idVis']) ?? fallbackVisitId;
+  if (!documentId || !visitId) return null;
+
+  return {
+    documentId,
+    visitId,
+    appId: firstTrim(raw, ['idApp']),
+    tenantId: firstTrim(raw, ['idTet']),
+    title,
+    createdAt: firstTrim(raw, ['createTime']),
+    insertedAt: firstTrim(raw, ['insertTime']),
+    titleTime: firstTrim(raw, ['titleTime']),
+    medType: firstTrim(raw, ['medType']),
+    committed: firstBool(raw, ['fgCommit']),
+    closed: firstBool(raw, ['fgClose']),
+    sealed: firstBool(raw, ['fgSeal']),
+    raw,
+  };
+}
+
+function buildOutpatientDocumentListHtml(
+  visitId: string,
+  documents: HisOutpatientMedicalRecordDocument[],
+): string {
+  const rows = documents.map((doc) => `
+    <tr>
+      <td style="padding: 8px 10px; border-bottom: 1px solid #e2e8f0; color: #0f172a; font-weight: 600;">${escapeHtml(doc.title)}</td>
+      <td style="padding: 8px 10px; border-bottom: 1px solid #e2e8f0; color: #475569;">${escapeHtml(doc.titleTime || doc.createdAt || doc.insertedAt || '-')}</td>
+      <td style="padding: 8px 10px; border-bottom: 1px solid #e2e8f0; color: #475569;">${escapeHtml(doc.committed ? '已提交' : '未提交')}</td>
+      <td style="padding: 8px 10px; border-bottom: 1px solid #e2e8f0; color: #64748b; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px;">${escapeHtml(doc.documentId)}</td>
+    </tr>
+  `).join('');
+
+  return `
+    <div class="outpatient-record-preview" style="font-family: Inter, system-ui, -apple-system, sans-serif; padding: 20px; color: #1e293b; background: #ffffff; border-radius: 8px; max-width: 760px; margin: 0 auto; line-height: 1.6;">
+      <h2 style="text-align: center; margin: 0 0 16px 0; color: #0f172a; font-size: 18px; font-weight: 700; border-bottom: 2px solid #0f8f7b; padding-bottom: 12px;">门急诊病历文书列表</h2>
+      <div style="margin-bottom: 14px; padding: 10px 12px; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 6px; color: #475569; font-size: 13px;">
+        已根据门诊就诊 <strong style="color:#0f172a;">${escapeHtml(visitId)}</strong> 获取到 ${documents.length} 份病历文书，但正文内容暂不可用，因此 AI 不会把文书标题当作主诉或现病史事实使用。
+      </div>
+      <table style="width: 100%; border-collapse: collapse; font-size: 13px; border: 1px solid #e2e8f0; border-radius: 6px; overflow: hidden;">
+        <thead>
+          <tr style="background: #f1f5f9; color: #334155;">
+            <th style="text-align: left; padding: 8px 10px; border-bottom: 1px solid #e2e8f0;">文书名称</th>
+            <th style="text-align: left; padding: 8px 10px; border-bottom: 1px solid #e2e8f0;">标题时间</th>
+            <th style="text-align: left; padding: 8px 10px; border-bottom: 1px solid #e2e8f0;">状态</th>
+            <th style="text-align: left; padding: 8px 10px; border-bottom: 1px solid #e2e8f0;">文书ID</th>
+          </tr>
+        </thead>
+        <tbody>${rows}</tbody>
+      </table>
+    </div>
+  `;
+}
+
+function chooseOutpatientRecordDocument(
+  documents: HisOutpatientMedicalRecordDocument[],
+): HisOutpatientMedicalRecordDocument | null {
+  if (documents.length === 0) return null;
+  return documents.find((doc) => doc.medType === '0')
+    ?? documents.find((doc) => /门急诊病历|门诊病历|病历首页|首页/.test(doc.title))
+    ?? documents[0];
+}
+
+function mapOutpatientMedicalRecordContent(
+  visitId: string,
+  document: HisOutpatientMedicalRecordDocument,
+  documents: HisOutpatientMedicalRecordDocument[],
+  content: HisOutpatientMedicalRecordContentBody,
+): HisOutpatientMedicalRecord | null {
+  const htmlContent = trim(content.htmlContent);
+  if (!htmlContent) return null;
+
+  return {
+    visitId,
+    documentId: document.documentId,
+    documentTitle: document.title,
+    htmlContent,
+    plainText: stripHtmlToText(htmlContent),
+    documents,
+    raw: {
+      source: 'getMedContentLook',
+      document: document.raw || document,
+      content: content as unknown as Record<string, unknown>,
+      documents: documents.map((doc) => doc.raw || doc),
+    },
+  };
+}
+
 export class PhisHisAdapter implements HisAdapter {
   readonly vendor = 'phis';
   private visitPatientMap = new Map<string, string>();
+  private visitTenantMap = new Map<string, string>();
   private lastPatientId?: string;
 
   constructor(private readonly service: HisService) {}
@@ -824,6 +946,10 @@ export class PhisHisAdapter implements HisAdapter {
 
       visits.forEach((visit) => {
         this.visitPatientMap.set(visit.visitId, visit.patientId || idPi);
+        const tenantId = firstTrim((visit.raw || {}) as Record<string, unknown>, ['idTet', 'tenantId']);
+        if (tenantId) {
+          this.visitTenantMap.set(visit.visitId, tenantId);
+        }
       });
 
       return visits;
@@ -833,9 +959,70 @@ export class PhisHisAdapter implements HisAdapter {
     }
   }
 
+  async fetchOutpatientMedicalRecordDocuments(visitId: string): Promise<HisOutpatientMedicalRecordDocument[]> {
+    const idVis = trim(visitId);
+    if (!idVis) return [];
+
+    const idTet = this.visitTenantMap.get(idVis) || this.service.getTenantId();
+    try {
+      const documents = await this.service.queryOutpatientMedicalRecordDocuments(idVis, {
+        idTet,
+        idApp: '42',
+      });
+      return documents
+        .map((item) => mapOutpatientMedicalRecordDocument(item, idVis))
+        .filter((item): item is HisOutpatientMedicalRecordDocument => Boolean(item));
+    } catch (error) {
+      console.error('[PhisHisAdapter] fetchOutpatientMedicalRecordDocuments failed', {
+        visitId: idVis,
+        hasTenant: Boolean(idTet),
+        error,
+      });
+      return [];
+    }
+  }
+
   async fetchOutpatientMedicalRecord(visitId: string): Promise<HisOutpatientMedicalRecord | null> {
     const idVis = trim(visitId);
     if (!idVis) return null;
+
+    const documents = await this.fetchOutpatientMedicalRecordDocuments(idVis);
+    if (documents.length > 0) {
+      const document = chooseOutpatientRecordDocument(documents);
+      const idTet = (document?.tenantId || this.visitTenantMap.get(idVis) || this.service.getTenantId()).trim();
+      if (document) {
+        try {
+          const content = await this.service.queryOutpatientMedicalRecordContent(document.documentId, {
+            idTet,
+            idApp: document.appId || '42',
+            courseShow: 0,
+          });
+          const record = content ? mapOutpatientMedicalRecordContent(idVis, document, documents, content) : null;
+          if (record) {
+            return record;
+          }
+        } catch (error) {
+          console.error('[PhisHisAdapter] fetchOutpatientMedicalRecord content failed', {
+            visitId: idVis,
+            documentId: document.documentId,
+            hasTenant: Boolean(idTet),
+            error,
+          });
+        }
+      }
+
+      return {
+        visitId: idVis,
+        documents,
+        contentPending: true,
+        htmlContent: buildOutpatientDocumentListHtml(idVis, documents),
+        plainText: documents.map((doc) => [doc.title, doc.titleTime || doc.createdAt].filter(Boolean).join(' / ')).join('\n'),
+        raw: {
+          source: 'getLookMedList',
+          documents: documents.map((doc) => doc.raw || doc),
+        },
+      };
+    }
 
     const idPi = this.visitPatientMap.get(idVis) ?? this.lastPatientId;
     if (!idPi) {

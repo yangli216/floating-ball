@@ -335,12 +335,57 @@ export interface HisOutpatientVisit {
 }
 
 /**
+ * 门急诊病历文书列表项。
+ *
+ * 当前 PHIS 首步只返回文书元数据；正文内容接口后续补充后，应继续映射到
+ * HisOutpatientMedicalRecord 的结构化字段 / htmlContent。
+ */
+export interface HisOutpatientMedicalRecordDocument {
+  /** 门诊病历文书 ID（PHIS: idMedrecdoc） */
+  documentId: string;
+  /** 归属门诊就诊 ID（PHIS: idHospital，对应门诊 idVis） */
+  visitId: string;
+  /** 应用 ID，PHIS 当前固定 42 */
+  appId?: string;
+  /** 租户 ID */
+  tenantId?: string;
+  /** 文书名称 */
+  title: string;
+  /** 文书创建时间 */
+  createdAt?: string;
+  /** 文书插入/保存时间 */
+  insertedAt?: string;
+  /** 书写标题时间 */
+  titleTime?: string;
+  /** 文书类型编码 */
+  medType?: string;
+  /** 是否已提交 */
+  committed?: boolean;
+  /** 是否已关闭 */
+  closed?: boolean;
+  /** 是否已签章 */
+  sealed?: boolean;
+  /** 厂商透传 */
+  raw?: Record<string, unknown>;
+}
+
+/**
  * 门急诊病历详情
  */
 export interface HisOutpatientMedicalRecord {
   visitId: string;
+  /** 当前用于预览 / AI 参考的文书 ID */
+  documentId?: string;
+  /** 当前用于预览 / AI 参考的文书标题 */
+  documentTitle?: string;
   /** HTML 格式的完整病历，可直接用于 iframe/v-html 预览 */
   htmlContent: string;
+  /** 从 HTML 正文中提取的纯文本，供 AI 参考 */
+  plainText?: string;
+  /** 当前已获取的文书列表 */
+  documents?: HisOutpatientMedicalRecordDocument[];
+  /** true 表示已拿到文书列表，但正文暂不可用 */
+  contentPending?: boolean;
   /** 主诉 */
   chiefComplaint?: string;
   /** 现病史 */

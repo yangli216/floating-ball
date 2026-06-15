@@ -36,6 +36,7 @@ import type {
   HisPatientInfo,
   HisPatientHistory,
   HisOutpatientVisit,
+  HisOutpatientMedicalRecordDocument,
   HisOutpatientMedicalRecord,
   HisInpatientDiagnosis,
   HisInpatientEmrContextPackage,
@@ -469,10 +470,32 @@ export class MockHisAdapter implements HisAdapter {
     ];
   }
 
+  async fetchOutpatientMedicalRecordDocuments(visitId: string): Promise<HisOutpatientMedicalRecordDocument[]> {
+    return [
+      {
+        documentId: `${visitId}-doc-1`,
+        visitId,
+        appId: '42',
+        tenantId: 'mock',
+        title: 'Mock 门急诊病历首页',
+        createdAt: '2026-06-10 09:35:00',
+        insertedAt: '2026-06-10 09:36:00',
+        titleTime: '2026-06-10 09:35:00',
+        medType: '0',
+        committed: false,
+        closed: false,
+        sealed: false,
+        raw: { mock: true },
+      },
+    ];
+  }
+
   async fetchOutpatientMedicalRecord(visitId: string): Promise<HisOutpatientMedicalRecord | null> {
     if (visitId === 'mock-vis-1') {
       return {
         visitId: 'mock-vis-1',
+        documentId: 'mock-vis-1-doc-1',
+        documentTitle: 'Mock 门急诊病历首页',
         chiefComplaint: '咳嗽、咳黄痰 3 天，伴咽痛。',
         historyOfPresentIllness: '患者 3 天前受凉后出现咳嗽，咳少量黄脓痰，伴咽痛，无高热、寒战，无胸痛、呼吸困难。自行服用感冒药效果不佳，今日来诊。',
         pastHistory: '否认传染病史，青霉素过敏史。',
@@ -480,6 +503,8 @@ export class MockHisAdapter implements HisAdapter {
         auxiliaryExamination: '血常规：白细胞 10.5x10^9/L，中性粒细胞百分比 78.5%。',
         diagnosis: '急性支气管炎',
         treatmentPlan: '1. 阿莫西林胶囊 0.5g p.o. tid * 3天; 2. 氨溴索口服溶液 10ml p.o. tid * 3天; 3. 嘱多饮水，注意休息。',
+        plainText: '主诉：咳嗽、咳黄痰 3 天，伴咽痛。\n现病史：患者 3 天前受凉后出现咳嗽，咳少量黄脓痰，伴咽痛，无高热、寒战，无胸痛、呼吸困难。\n初步诊断：急性支气管炎。',
+        documents: await this.fetchOutpatientMedicalRecordDocuments(visitId),
         htmlContent: `
           <div style="font-family: sans-serif; padding: 15px; color: #334155; line-height: 1.6;">
             <h3 style="text-align: center; margin-bottom: 20px; color: #1e3a8a; border-bottom: 2px solid #3b82f6; padding-bottom: 10px;">门急诊病历记录</h3>
@@ -504,6 +529,8 @@ export class MockHisAdapter implements HisAdapter {
     } else if (visitId === 'mock-vis-2') {
       return {
         visitId: 'mock-vis-2',
+        documentId: 'mock-vis-2-doc-1',
+        documentTitle: 'Mock 门急诊病历首页',
         chiefComplaint: '鼻塞、流涕、咽痛 2 天，偶有发热。',
         historyOfPresentIllness: '患者 2 天前受凉后出现明显鼻塞、流清水样涕，伴咽痛、吞咽阻碍感，偶有低热，无咳嗽咳痰。',
         pastHistory: '有过敏性鼻炎史5年。',
@@ -511,6 +538,8 @@ export class MockHisAdapter implements HisAdapter {
         auxiliaryExamination: '血常规：WBC 6.2x10^9/L，L 35.0%。',
         diagnosis: '急性鼻咽炎、过敏性鼻炎',
         treatmentPlan: '1. 氯雷他定片 10mg p.o. qd * 5天; 2. 蓝芩口服液 20ml p.o. tid * 3天; 3. 多饮水，清淡饮食。',
+        plainText: '主诉：鼻塞、流涕、咽痛 2 天，偶有发热。\n现病史：患者 2 天前受凉后出现明显鼻塞、流清水样涕，伴咽痛、吞咽阻碍感。\n诊断：急性鼻咽炎、过敏性鼻炎。',
+        documents: await this.fetchOutpatientMedicalRecordDocuments(visitId),
         htmlContent: `
           <div style="font-family: sans-serif; padding: 15px; color: #334155; line-height: 1.6;">
             <h3 style="text-align: center; margin-bottom: 20px; color: #1e3a8a; border-bottom: 2px solid #3b82f6; padding-bottom: 10px;">门急诊病历记录</h3>
