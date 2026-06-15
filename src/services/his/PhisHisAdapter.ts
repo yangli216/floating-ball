@@ -536,6 +536,41 @@ function mapInpatientRegistration(
   };
 }
 
+function splitTextList(value: string | undefined): string[] | undefined {
+  if (!value) return undefined;
+  const items = value
+    .split(/[、,，;；]/)
+    .map((item) => item.trim())
+    .filter(Boolean);
+  return items.length > 0 ? Array.from(new Set(items)) : undefined;
+}
+
+function mapOutpatientVisitHistoryItem(
+  item: HisVisitHistoryItem,
+  fallbackPatientId: string,
+): HisOutpatientVisit | null {
+  const raw = item as Record<string, unknown>;
+  const visitId = firstTrim(raw, ['idVis', 'visitId']);
+  if (!visitId) return null;
+
+  return {
+    visitId,
+    patientId: firstTrim(raw, ['idPi', 'patientId']) ?? fallbackPatientId,
+    registrationId: firstTrim(raw, ['idReg', 'registrationId']),
+    clinicNo: firstTrim(raw, ['cdClinic', 'clinicNo']),
+    visitDate: firstTrim(raw, ['dtBgn', 'dtReg', 'dtVis', 'dtVisit', 'visitTime', 'insertTime'])
+      ?? new Date().toISOString(),
+    deptName: firstTrim(raw, ['idDeptText', 'deptName', 'naDept', 'naDeptExec']),
+    doctorName: firstTrim(raw, ['idDocText', 'naDoc', 'doctorName']),
+    orgName: firstTrim(raw, ['idOrgText', 'orgName', 'naOrg']),
+    statusText: firstTrim(raw, ['fgStatusText', 'statusText']),
+    visiting: firstBool(raw, ['visiting']),
+    diagnoses: splitTextList(firstTrim(raw, ['naDiag', 'diagnoses', 'diagnosis'])),
+    chiefComplaint: firstTrim(raw, ['chiefComplaint', 'complaint']),
+    raw,
+  };
+}
+
 export class PhisHisAdapter implements HisAdapter {
   readonly vendor = 'phis';
   private visitPatientMap = new Map<string, string>();
@@ -783,62 +818,15 @@ export class PhisHisAdapter implements HisAdapter {
         return [];
       }
 
-      // 并发拉取明细以填充主诉和诊断
-      const detailEntries = await Promise.all(
-        visitItems.map(async (visit) => {
-          const idVis = trim(visit.idVis);
-          if (!idVis) return null;
-          const visitIdPi = trim(visit.idPi) ?? idPi;
-          
-          // 填充 Map
-          this.visitPatientMap.set(idVis, visitIdPi);
+      const visits = visitItems
+        .map((visit) => mapOutpatientVisitHistoryItem(visit, idPi))
+        .filter((visit): visit is HisOutpatientVisit => Boolean(visit));
 
-          try {
-            const detail = await this.service.loadClinicMedicalRecord(idVis, visitIdPi);
-            return detail ? { visit, detail } : { visit, detail: null };
-          } catch (error) {
-            console.warn('[PhisHisAdapter] loadClinicMedicalRecord failed in fetchOutpatientVisitHistory', { idVis, error });
-            return { visit, detail: null };
-          }
-        })
-      );
+      visits.forEach((visit) => {
+        this.visitPatientMap.set(visit.visitId, visit.patientId || idPi);
+      });
 
-      return detailEntries
-        .filter((entry): entry is { visit: HisVisitHistoryItem; detail: HisVisitDetailBody | null } => Boolean(entry))
-        .map(({ visit, detail }) => {
-          const visitId = trim(visit.idVis) ?? '';
-          const visitDate = firstTrim(visit, ['dtVis', 'dtVisit', 'visitTime']) ?? new Date().toISOString();
-          const deptName = firstTrim(visit, ['deptName', 'naDept', 'naDeptExec']);
-
-          let diagnoses: string[] = [];
-          let chiefComplaint: string | undefined;
-
-          if (detail) {
-            diagnoses = (detail.diagList ?? [])
-              .map((d) => trim(d.naDiag) ?? trim(d.naIcd10))
-              .filter((v): v is string => Boolean(v));
-            const soap = detail.soapData ?? {};
-            chiefComplaint = trim((soap as Record<string, unknown>)['chiefComplaint'] as string | undefined);
-          } else {
-            const rawDiag = firstTrim(visit, ['naDiag', 'diagnoses', 'diagnosis']);
-            if (rawDiag) {
-              diagnoses = [rawDiag];
-            }
-            chiefComplaint = firstTrim(visit, ['chiefComplaint', 'complaint']);
-          }
-
-          return {
-            visitId,
-            visitDate,
-            deptName,
-            diagnoses: diagnoses.length > 0 ? diagnoses : undefined,
-            chiefComplaint,
-            raw: {
-              ...visit,
-              detail,
-            },
-          };
-        });
+      return visits;
     } catch (error) {
       console.error('[PhisHisAdapter] fetchOutpatientVisitHistory failed', error);
       return [];

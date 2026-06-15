@@ -266,7 +266,7 @@ api/phis.aiInpatientEmrContextService/buildContext
 
 ### 4.2 `patient`
 
-建议提供：`patientId`、`name`、`sex`、`age`、`birthDate`、`inpatientNo`、`medicalRecordNo`。
+必须提供：`patientId`。建议同时提供 `name`、`sex`、`age`、`birthDate`、`inpatientNo`、`medicalRecordNo`。`patientId` 用于桌面端在入院记录生成时继续查询患者近期门诊就诊历史，不能在上下文裁剪或字段瘦身时移除。
 
 ### 4.3 `admission`
 

@@ -308,10 +308,24 @@ export interface HisPatientHistory {
 export interface HisOutpatientVisit {
   /** 就诊 ID */
   visitId: string;
+  /** 患者 ID */
+  patientId?: string;
+  /** 挂号 ID */
+  registrationId?: string;
+  /** 门诊号 / 诊疗序号 */
+  clinicNo?: string;
   /** 就诊日期，例如 2026-06-12 10:00:00 */
   visitDate: string;
   /** 就诊科室名称 */
   deptName?: string;
+  /** 接诊医生 */
+  doctorName?: string;
+  /** 机构名称 */
+  orgName?: string;
+  /** 就诊状态文本，例如 诊中 / 已诊毕 */
+  statusText?: string;
+  /** 是否当前诊中 */
+  visiting?: boolean;
   /** 诊断列表文本 */
   diagnoses?: string[];
   /** 主诉摘要 */
@@ -413,7 +427,7 @@ export interface HisInpatientEmrDocumentContext {
 }
 
 export interface HisInpatientEmrPatientSummary {
-  patientId?: string;
+  patientId: string;
   name?: string;
   sex?: string;
   age?: string;

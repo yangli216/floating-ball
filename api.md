@@ -78,9 +78,10 @@
 1. HIS 在住院电子病历书写页调用 `POST /api/inpatient/emr/generate`
 2. 传入 `admissionId + templateId + templateName + htmlContent`，可选传入 `recordTime` 指定本次病程记录书写时间；`admissionId` 对应 PHIS `idAdsn`，`templateId` 是病历模板主键，`htmlContent` 是当前病历模板 HTML
 3. `MedHermes` 从悬浮球切换到“住院病历生成”界面，按步骤展示“住院上下文 -> 医嘱整理 -> 体温单整理 -> 模板解析 -> AI 生成”
-4. 医生审核预览内容后点击“一键回写”
-5. HIS 可继续通过 SDK 事件流收到 `record-confirmed`，也可直接等待 `sdk.generateInpatientEmr(...).then(record => ...)`；两种方式返回同一份回写 payload，读取其中的 `fieldValues`（`{ [data-id]: 文本 }`）回填当前住院病历编辑器
-6. HIS 完成回填后，仍建议调用 `POST /api/consultation/reference-feedback` 回执成功或失败，桌面端会更新页面状态
+4. 如果当前模板是入院记录，`MedHermes` 会按患者 `idPi` 通过 HIS Adapter 查询最近门诊就诊历史；若入口请求未直接携带 `patient.idPi / patient.patientId`，则要求 `api/phis.aiInpatientEmrContextService/buildContext` 返回的 `hisContext.patient.patientId` 保留患者主键。当前 PHIS 实现调用 `api/phis.clinicPatientService/queryVisitHistory`，入参形如 `[{"limit":3,"params":{"idPi":"患者ID"}}]`，并把 `idVis / idReg / cdClinic / dtBgn / idDeptText / idDocText / idOrgText / fgStatusText / visiting` 等字段映射为中性门诊就诊列表。医生选定一次门诊就诊后，单次病历详情再按就诊 ID 拉取。
+5. 医生审核预览内容后点击“一键回写”
+6. HIS 可继续通过 SDK 事件流收到 `record-confirmed`，也可直接等待 `sdk.generateInpatientEmr(...).then(record => ...)`；两种方式返回同一份回写 payload，读取其中的 `fieldValues`（`{ [data-id]: 文本 }`）回填当前住院病历编辑器
+7. HIS 完成回填后，仍建议调用 `POST /api/consultation/reference-feedback` 回执成功或失败，桌面端会更新页面状态
 
 适用场景：
 

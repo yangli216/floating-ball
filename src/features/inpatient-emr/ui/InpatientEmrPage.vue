@@ -421,6 +421,7 @@ const showRegenerateDialog = ref(false);
 const outpatientVisits = ref<HisOutpatientVisit[]>([]);
 const isLoadingVisits = ref(false);
 const selectedVisitId = ref<string | null>(null);
+const lastOutpatientVisitPatientId = ref('');
 
 const showOutpatientPreview = ref(false);
 const isDetailLoading = ref(false);
@@ -430,15 +431,59 @@ const isAdmission = computed(() => {
   return isAdmissionTemplate(props.request?.templateName || '');
 });
 
-async function loadOutpatientVisits() {
-  const patientId = props.request?.patient?.patientId || props.request?.patient?.idPi;
-  if (!patientId) return;
+function trimUnknown(value: unknown): string {
+  return typeof value === 'string' ? value.trim() : '';
+}
+
+function resolveOutpatientHistoryPatientId(request: InpatientEmrGenerationRequest | null): string {
+  if (!request) return '';
+
+  const requestPatient = request.patient;
+  const aiContextPatient = request.hisContext?.patient as Record<string, unknown> | undefined;
+  const loadedContextPatient = result.value?.context.aiContext?.patient as Record<string, unknown> | undefined;
+  const loadedRegistration = result.value?.context.registration;
+
+  return trimUnknown(requestPatient?.patientId)
+    || trimUnknown(requestPatient?.idPi)
+    || trimUnknown(aiContextPatient?.patientId)
+    || trimUnknown(aiContextPatient?.idPi)
+    || trimUnknown(aiContextPatient?.id_pi)
+    || trimUnknown(loadedContextPatient?.patientId)
+    || trimUnknown(loadedContextPatient?.idPi)
+    || trimUnknown(loadedContextPatient?.id_pi)
+    || trimUnknown(loadedRegistration?.patientId);
+}
+
+async function loadOutpatientVisits(options: { warnWhenMissingPatient?: boolean; force?: boolean } = {}) {
+  const patientId = resolveOutpatientHistoryPatientId(props.request);
+  if (!patientId) {
+    if (options.warnWhenMissingPatient) {
+      console.warn('[InpatientEmrPage] Skip outpatient visit history because patient idPi/patientId is missing', {
+        admissionId: props.request?.admissionId,
+        hasPatient: Boolean(props.request?.patient),
+        hasRequestHisContextPatient: Boolean(props.request?.hisContext?.patient),
+        hasLoadedHisContextPatient: Boolean(result.value?.context.aiContext?.patient),
+        hasLoadedRegistration: Boolean(result.value?.context.registration),
+      });
+    }
+    outpatientVisits.value = [];
+    return;
+  }
+  if (!options.force && lastOutpatientVisitPatientId.value === patientId) {
+    return;
+  }
   isLoadingVisits.value = true;
   try {
     const adapter = getHisAdapter();
-    if (adapter) {
-      outpatientVisits.value = await adapter.fetchOutpatientVisitHistory(patientId, 3);
+    if (!adapter) {
+      console.warn('[InpatientEmrPage] Skip outpatient visit history because HIS adapter is not ready', {
+        patientId,
+      });
+      outpatientVisits.value = [];
+      return;
     }
+    outpatientVisits.value = await adapter.fetchOutpatientVisitHistory(patientId, 3);
+    lastOutpatientVisitPatientId.value = patientId;
   } catch (error) {
     console.error('[InpatientEmrPage] Failed to fetch outpatient visits', error);
   } finally {
@@ -514,11 +559,16 @@ watch(
   (request) => {
     if (request) {
       selectedVisitId.value = null;
+      outpatientVisits.value = [];
+      lastOutpatientVisitPatientId.value = '';
       const isAdmission = isAdmissionTemplate(request.templateName || '');
       if (isAdmission) {
-        void loadOutpatientVisits();
+        void loadOutpatientVisits({ warnWhenMissingPatient: false });
       }
       void start(request).then(() => {
+        if (isAdmission) {
+          void loadOutpatientVisits({ warnWhenMissingPatient: true });
+        }
         const hasSupplement = Boolean(request.doctorSupplement?.trim());
         if (isAdmission && !hasSupplement) {
           openRegenerateDialog();
