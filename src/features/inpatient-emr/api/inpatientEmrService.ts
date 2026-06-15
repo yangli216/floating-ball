@@ -22,10 +22,18 @@ import {
   parseInpatientEmrTemplate,
   isAdmissionTemplate,
 } from '../lib/inpatientEmrTemplate';
+import {
+  cloneInpatientEmrTrace,
+  createInpatientEmrTrace,
+  finishInpatientEmrTrace,
+  finishInpatientEmrTraceStage,
+  startInpatientEmrTraceStage,
+} from '../lib/inpatientEmrObservability';
 import type {
   InpatientEmrContext,
   InpatientEmrDocumentContext,
-  InpatientEmrGeneratedPreview,
+  InpatientEmrEvidenceSummary,
+  InpatientEmrGenerationTrace,
   InpatientEmrGenerationProgress,
   InpatientEmrGenerationRequest,
   InpatientEmrGenerationResult,
@@ -40,31 +48,6 @@ function report(
   progress: InpatientEmrGenerationProgress,
 ): void {
   onProgress?.(progress);
-}
-
-export function formatOutpatientRecordForAi(record: HisOutpatientMedicalRecord | null | undefined): string {
-  if (!record) return '';
-  const parts: string[] = [];
-  if (record.documentTitle) parts.push(`【门诊病历标题】${record.documentTitle}`);
-  if (record.chiefComplaint) parts.push(`【门诊主诉】${record.chiefComplaint}`);
-  if (record.historyOfPresentIllness) parts.push(`【门诊现病史】${record.historyOfPresentIllness}`);
-  if (record.pastHistory) parts.push(`【门诊既往史】${record.pastHistory}`);
-  if (record.physicalExamination) parts.push(`【门诊体格检查】${record.physicalExamination}`);
-  if (record.auxiliaryExamination) parts.push(`【门诊辅助检查】${record.auxiliaryExamination}`);
-  if (record.diagnosis) parts.push(`【门诊诊断】${record.diagnosis}`);
-  if (record.treatmentPlan) parts.push(`【门诊处置/医嘱】${record.treatmentPlan}`);
-  if (record.plainText) parts.push(`【门诊病历正文】${record.plainText}`);
-  if (record.documents?.length) {
-    parts.push(`【门诊病历文书列表】${record.documents.map((doc) => [
-      doc.title,
-      doc.titleTime || doc.createdAt,
-      doc.documentId,
-    ].filter(Boolean).join(' / ')).join('；')}`);
-  }
-  if (record.contentPending) {
-    parts.push('【门诊病历正文状态】已获取文书列表，但正文内容暂不可用；禁止仅根据文书标题推断主诉、现病史、查体或诊疗事实。');
-  }
-  return parts.join('\n');
 }
 
 function hasUsableOutpatientRecordReference(record: HisOutpatientMedicalRecord | null | undefined): boolean {
@@ -553,27 +536,6 @@ async function resolveInpatientEmrTemplate(
   return localTemplate;
 }
 
-async function generateFieldValuesWithAi(
-  fields: InpatientEmrTemplateField[],
-  context: InpatientEmrContext,
-): Promise<Record<string, unknown>> {
-  const prompt = buildInpatientEmrGeneratePrompt(fields, context);
-  const response = await chatFast([
-    { role: 'system', content: '你是严谨的住院病历辅助书写助手，只输出 JSON。' },
-    { role: 'user', content: `${INPATIENT_EMR_TEMPLATE_PARSE_PROMPT}\n\n${prompt}` },
-  ], undefined, undefined, undefined, {
-    configProfile: 'fast',
-    traceContext: {
-      scene: 'inpatient-emr-generate',
-      sourceModule: 'inpatient-emr',
-      operationModule: 'inpatient-emr',
-      operationAction: 'generate_record',
-      title: '住院病历辅助生成',
-    },
-  });
-  return parseLLMJson<Record<string, unknown>>(response);
-}
-
 interface LoadedInpatientHisContext {
   registration: HisInpatientRegistrationInfo | null;
   orders: HisInpatientOrder[];
@@ -585,18 +547,164 @@ interface LoadedInpatientHisContext {
 async function fetchSelectedOutpatientRecord(
   adapter: ReturnType<typeof getHisAdapter>,
   visitId?: string,
+  trace?: InpatientEmrGenerationTrace,
 ): Promise<HisOutpatientMedicalRecord | null> {
-  if (!adapter || !visitId) return null;
+  if (!visitId) {
+    if (trace) {
+      finishInpatientEmrTraceStage(trace, 'outpatientRecord', 'skipped', '未选择门诊就诊');
+    }
+    return null;
+  }
+  if (!adapter) {
+    if (trace) {
+      finishInpatientEmrTraceStage(trace, 'outpatientRecord', 'skipped', 'HIS 适配器未就绪，未拉取门诊正文', { visitId });
+    }
+    return null;
+  }
+
+  if (trace) {
+    startInpatientEmrTraceStage(trace, 'outpatientRecord', '正在拉取门诊病历正文', { visitId });
+  }
   try {
-    return await adapter.fetchOutpatientMedicalRecord(visitId);
+    const record = await adapter.fetchOutpatientMedicalRecord(visitId);
+    if (trace) {
+      finishInpatientEmrTraceStage(
+        trace,
+        'outpatientRecord',
+        record ? 'success' : 'skipped',
+        record?.contentPending
+          ? '已获取文书列表，正文暂不可用'
+          : record
+            ? `已获取门诊正文${record.plainText ? `，${record.plainText.length} 字` : ''}`
+            : '未返回门诊病历正文',
+        {
+          visitId,
+          documentId: record?.documentId,
+          plainTextLength: record?.plainText?.length || 0,
+          contentPending: Boolean(record?.contentPending),
+        },
+      );
+    }
+    return record;
   } catch (error) {
     console.warn('[InpatientEmr] Failed to fetch outpatient medical record', error);
+    if (trace) {
+      finishInpatientEmrTraceStage(
+        trace,
+        'outpatientRecord',
+        'error',
+        error instanceof Error ? error.message : String(error),
+        { visitId },
+      );
+    }
     return null;
   }
 }
 
 function getArrayCount(value: unknown): number {
   return Array.isArray(value) ? value.length : 0;
+}
+
+function truncateText(value: string | undefined, maxLength = 48): string {
+  const text = (value || '').replace(/\s+/g, ' ').trim();
+  if (text.length <= maxLength) return text;
+  return `${text.slice(0, maxLength)}...`;
+}
+
+function buildEvidenceSummary(
+  context: InpatientEmrContext,
+  template: InpatientEmrTemplateParseResult,
+  options: {
+    aiStatus: InpatientEmrEvidenceSummary['aiGeneration']['status'];
+    aiDetail: string;
+    fallbackUsed?: boolean;
+    waitingForInput?: boolean;
+  },
+): InpatientEmrEvidenceSummary {
+  const aiContext = context.aiContext;
+  const outpatientRecord = context.outpatientRecord;
+  const doctorSupplement = context.doctorSupplement?.trim();
+  const diagnosisCount = aiContext?.diagnoses?.length || 0;
+  const orderCount = context.orders.length;
+  const labCount = getArrayCount(aiContext?.labs?.abnormal) + getArrayCount(aiContext?.labs?.recentKeyResults);
+  const examCount = getArrayCount(aiContext?.exams);
+  const previousRecordCount = getArrayCount(aiContext?.previousRecords?.recentNotes);
+  const vitalCount = context.temperatureChart?.records.length || 0;
+  const outpatientHasContent = hasUsableOutpatientRecordReference(outpatientRecord);
+  const outpatientTitle = outpatientRecord?.documentTitle || outpatientRecord?.documents?.[0]?.title;
+  const aiFieldCount = template.fields.filter((field) => field.aiSuitable).length;
+
+  return {
+    hisContext: {
+      title: '住院上下文',
+      status: aiContext ? 'used' : 'missing',
+      detail: aiContext
+        ? [
+            context.registration?.name ? `${context.registration.name}` : '已获取',
+            diagnosisCount > 0 ? `诊断 ${diagnosisCount}` : '',
+            orderCount > 0 ? `医嘱 ${orderCount}` : '',
+            labCount > 0 ? `检验 ${labCount}` : '',
+            examCount > 0 ? `检查 ${examCount}` : '',
+            previousRecordCount > 0 ? `历史病历 ${previousRecordCount}` : '',
+          ].filter(Boolean).join(' / ')
+        : '未获取到住院聚合上下文',
+      count: diagnosisCount + orderCount + labCount + examCount + previousRecordCount + vitalCount,
+      meta: {
+        diagnosisCount,
+        orderCount,
+        labCount,
+        examCount,
+        previousRecordCount,
+        vitalCount,
+      },
+    },
+    outpatientRecord: {
+      title: '门诊病历',
+      status: outpatientHasContent ? 'used' : outpatientRecord?.contentPending ? 'waiting' : 'skipped',
+      detail: outpatientHasContent
+        ? [
+            outpatientTitle || '已引用正文',
+            outpatientRecord?.plainText ? `正文 ${outpatientRecord.plainText.length} 字` : '',
+          ].filter(Boolean).join(' / ')
+        : outpatientRecord?.contentPending
+          ? '已获取文书列表，正文暂不可用'
+          : '未引用门诊正文',
+      count: outpatientRecord?.plainText?.length,
+      meta: {
+        visitId: outpatientRecord?.visitId,
+        documentId: outpatientRecord?.documentId,
+        hasContent: outpatientHasContent,
+        contentPending: Boolean(outpatientRecord?.contentPending),
+      },
+    },
+    doctorSupplement: {
+      title: '补充要点',
+      status: doctorSupplement ? 'used' : 'missing',
+      detail: doctorSupplement ? truncateText(doctorSupplement, 64) : '未输入补充要点',
+      count: doctorSupplement?.length,
+    },
+    template: {
+      title: '模板解析',
+      status: template.fields.length > 0 ? 'used' : 'missing',
+      detail: `${template.cacheHit ? '服务端缓存命中' : '本地/兜底解析'} / AI 字段 ${aiFieldCount} / 总字段 ${template.fields.length}`,
+      count: template.fields.length,
+      meta: {
+        cacheHit: template.cacheHit,
+        fieldCount: template.fields.length,
+        aiFieldCount,
+      },
+    },
+    aiGeneration: {
+      title: 'AI 生成',
+      status: options.aiStatus,
+      detail: options.aiDetail,
+      count: aiFieldCount,
+      meta: {
+        fallbackUsed: Boolean(options.fallbackUsed),
+        waitingForInput: Boolean(options.waitingForInput),
+      },
+    },
+  };
 }
 
 function buildClinicalSummaryProgressDetail(
@@ -667,6 +775,7 @@ function reportLoadedContextProgress(
 async function loadInpatientEmrHisContext(
   request: InpatientEmrGenerationRequest,
   documentContext: InpatientEmrDocumentContext,
+  trace: InpatientEmrGenerationTrace,
   onProgress?: InpatientEmrProgressHandler,
 ): Promise<LoadedInpatientHisContext> {
   const adapter = getHisAdapter();
@@ -674,10 +783,22 @@ async function loadInpatientEmrHisContext(
 
   const requestContext = mergeDocumentContextIntoHisContext(request.hisContext, documentContext, request.admissionId);
   if (requestContext) {
-    const outpatientRecord = await fetchSelectedOutpatientRecord(adapter, request.outpatientVisitId);
+    startInpatientEmrTraceStage(trace, 'hisContext', '使用入口已携带 HIS 上下文包');
+    const outpatientRecord = await fetchSelectedOutpatientRecord(adapter, request.outpatientVisitId, trace);
     const registration = buildRegistrationFromAiContext(requestContext, query);
     const orders = buildOrdersFromAiContext(requestContext);
     const temperatureChart = buildTemperatureChartFromAiContext(requestContext, query);
+    finishInpatientEmrTraceStage(
+      trace,
+      'hisContext',
+      'success',
+      '已使用入口 HIS 上下文包',
+      {
+        source: 'request.hisContext',
+        diagnosisCount: requestContext.diagnoses?.length || 0,
+        orderCount: orders.length,
+      },
+    );
     report(onProgress, { key: 'patient', status: 'running', detail: '正在读取 HIS 住院上下文包' });
     reportLoadedContextProgress(
       onProgress,
@@ -698,13 +819,18 @@ async function loadInpatientEmrHisContext(
   }
 
   if (!adapter) {
+    finishInpatientEmrTraceStage(trace, 'hisContext', 'error', 'HIS 适配器未就绪');
     throw new Error('HIS 适配器未就绪，请先完成 SDK 握手后再生成住院病历');
   }
 
   // 并发拉取门诊病历（如果有 outpatientVisitId）
-  const outpatientPromise = fetchSelectedOutpatientRecord(adapter, request.outpatientVisitId);
+  const outpatientPromise = fetchSelectedOutpatientRecord(adapter, request.outpatientVisitId, trace);
 
   report(onProgress, { key: 'patient', status: 'running', detail: '正在获取 HIS 住院上下文' });
+  startInpatientEmrTraceStage(trace, 'hisContext', '正在调用 HIS 聚合上下文服务', {
+    admissionId: request.admissionId,
+    templateId: request.templateId,
+  });
   const [packageContext, outpatientRecord] = await Promise.all([
     adapter.fetchInpatientEmrContext({
       ...query,
@@ -713,6 +839,29 @@ async function loadInpatientEmrHisContext(
       recordTime: documentContext.recordTime,
       recordDate: documentContext.recordDate,
       contextPolicy: request.contextPolicy,
+    }).then((context) => {
+      finishInpatientEmrTraceStage(
+        trace,
+        'hisContext',
+        context ? 'success' : 'error',
+        context ? 'HIS 聚合上下文已返回' : 'HIS 聚合服务未返回有效上下文',
+        {
+          admissionId: request.admissionId,
+          diagnosisCount: context?.diagnoses?.length || 0,
+          activeOrderCount: context?.orders?.active?.length || 0,
+          previousRecordCount: context?.previousRecords?.recentNotes?.length || 0,
+        },
+      );
+      return context;
+    }).catch((error) => {
+      finishInpatientEmrTraceStage(
+        trace,
+        'hisContext',
+        'error',
+        error instanceof Error ? error.message : String(error),
+        { admissionId: request.admissionId },
+      );
+      throw error;
     }),
     outpatientPromise,
   ]);
@@ -739,83 +888,6 @@ async function loadInpatientEmrHisContext(
     temperatureChart,
     aiContext,
     outpatientRecord,
-  };
-}
-
-export async function generateInpatientEmrPreview(
-  request: InpatientEmrGenerationRequest,
-  onProgress?: InpatientEmrProgressHandler,
-): Promise<InpatientEmrGenerationResult> {
-  const documentContext = buildDocumentContext(request);
-  const {
-    registration,
-    orders,
-    temperatureChart,
-    aiContext,
-    outpatientRecord,
-  } = await loadInpatientEmrHisContext(request, documentContext, onProgress);
-
-  report(onProgress, { key: 'template', status: 'running', detail: '正在解析病历模板字段' });
-  const template = await resolveInpatientEmrTemplate(request, registration);
-  report(onProgress, {
-    key: 'template',
-    status: 'done',
-    detail: `${template.cacheHit ? '服务端缓存命中' : '模板已解析'}，字段 ${template.fields.length} 个`,
-  });
-
-  const context: InpatientEmrContext = {
-    documentContext,
-    doctorSupplement: request.doctorSupplement?.trim() || undefined,
-    aiContext,
-    registration,
-    orders,
-    temperatureChart,
-    outpatientRecord,
-  };
-
-  if (shouldWaitForAdmissionGeneration(request, outpatientRecord)) {
-    const fieldValues = buildDefaultFieldValues(template.fields, context);
-    const htmlContent = fillInpatientEmrTemplateHtml(request.htmlContent, fieldValues);
-    report(onProgress, {
-      key: 'generate',
-      status: 'pending',
-      detail: '等待补充要点或门诊病历依据（主诉、现病史）以启动生成'
-    });
-    return {
-      emrContent: buildGeneratedEmrText(template.fields, fieldValues, context),
-      htmlContent,
-      fieldValues,
-      request,
-      context,
-      template,
-      generatedAt: Date.now(),
-    };
-  }
-
-  report(onProgress, { key: 'generate', status: 'running', detail: '正在生成病历草稿' });
-  let generatedValues: Record<string, unknown>;
-  try {
-    generatedValues = await generateFieldValuesWithAi(template.fields, context);
-  } catch (error) {
-    console.warn('[InpatientEmr] AI generation failed, using fallback draft', error);
-    generatedValues = { 病程记录文本: buildFallbackEmrContent(context) };
-  }
-
-  const fieldValues = mergeGeneratedValues(template.fields, context, generatedValues);
-  const htmlContent = fillInpatientEmrTemplateHtml(request.htmlContent, fieldValues);
-  const preview: InpatientEmrGeneratedPreview = {
-    emrContent: buildGeneratedEmrText(template.fields, fieldValues, context),
-    htmlContent,
-    fieldValues,
-  };
-  report(onProgress, { key: 'generate', status: 'done', detail: '病历草稿已生成' });
-
-  return {
-    ...preview,
-    request,
-    context,
-    template,
-    generatedAt: Date.now(),
   };
 }
 
@@ -859,6 +931,30 @@ export function parsePartialJson(jsonStr: string, fieldKeys: string[]): Record<s
   return result;
 }
 
+function buildGenerationResult(
+  request: InpatientEmrGenerationRequest,
+  context: InpatientEmrContext,
+  template: InpatientEmrTemplateParseResult,
+  fieldValues: Record<string, string>,
+  initialFieldValues: Record<string, string>,
+  trace: InpatientEmrGenerationTrace,
+  evidenceSummary: InpatientEmrEvidenceSummary,
+): InpatientEmrGenerationResult {
+  const htmlContent = fillInpatientEmrTemplateHtml(request.htmlContent, fieldValues);
+  return {
+    emrContent: buildGeneratedEmrText(template.fields, fieldValues, context),
+    htmlContent,
+    fieldValues,
+    initialFieldValues,
+    trace: cloneInpatientEmrTrace(trace),
+    evidenceSummary,
+    request,
+    context,
+    template,
+    generatedAt: Date.now(),
+  };
+}
+
 /**
  * 流式住院病历生成服务。
  * 解析病历后，先通过 onStreamResult 返回一个包含默认值的空白模板，然后流式读取 AI 生成的段落并同步推送到前端中。
@@ -867,7 +963,9 @@ export async function generateInpatientEmrPreviewStream(
   request: InpatientEmrGenerationRequest,
   onProgress?: InpatientEmrProgressHandler,
   onStreamResult?: (partialResult: InpatientEmrGenerationResult) => void,
+  activeTrace?: InpatientEmrGenerationTrace,
 ): Promise<InpatientEmrGenerationResult> {
+  const trace = activeTrace || createInpatientEmrTrace(request.requestId);
   const documentContext = buildDocumentContext(request);
   const {
     registration,
@@ -875,10 +973,40 @@ export async function generateInpatientEmrPreviewStream(
     temperatureChart,
     aiContext,
     outpatientRecord,
-  } = await loadInpatientEmrHisContext(request, documentContext, onProgress);
+  } = await loadInpatientEmrHisContext(request, documentContext, trace, onProgress);
 
   report(onProgress, { key: 'template', status: 'running', detail: '正在解析病历模板字段' });
-  const template = await resolveInpatientEmrTemplate(request, registration);
+  startInpatientEmrTraceStage(trace, 'templateResolve', '正在解析模板字段', {
+    templateId: request.templateId,
+    templateName: request.templateName || '',
+  });
+  let template: InpatientEmrTemplateParseResult;
+  try {
+    template = await resolveInpatientEmrTemplate(request, registration);
+  } catch (error) {
+    finishInpatientEmrTraceStage(
+      trace,
+      'templateResolve',
+      'error',
+      error instanceof Error ? error.message : String(error),
+      {
+        templateId: request.templateId,
+        templateName: request.templateName || '',
+      },
+    );
+    throw error;
+  }
+  finishInpatientEmrTraceStage(
+    trace,
+    'templateResolve',
+    'success',
+    `${template.cacheHit ? '服务端缓存命中' : '模板已解析'}，字段 ${template.fields.length} 个`,
+    {
+      cacheHit: template.cacheHit,
+      fieldCount: template.fields.length,
+      aiFieldCount: template.fields.filter((field) => field.aiSuitable).length,
+    },
+  );
   report(onProgress, {
     key: 'template',
     status: 'done',
@@ -897,33 +1025,58 @@ export async function generateInpatientEmrPreviewStream(
 
   // 1. 在 AI 生成前，先渲染出病历框架和基础信息，实现“秒开”预览模板的效果
   const initialFieldValues = buildDefaultFieldValues(template.fields, context);
-  const initialHtml = fillInpatientEmrTemplateHtml(request.htmlContent, initialFieldValues);
-  const initialResult: InpatientEmrGenerationResult = {
-    emrContent: buildGeneratedEmrText(template.fields, initialFieldValues, context),
-    htmlContent: initialHtml,
-    fieldValues: initialFieldValues,
+  const initialEvidenceSummary = buildEvidenceSummary(context, template, {
+    aiStatus: 'waiting',
+    aiDetail: '等待 AI 生成',
+  });
+  const initialResult = buildGenerationResult(
     request,
     context,
     template,
-    generatedAt: Date.now(),
-  };
+    initialFieldValues,
+    initialFieldValues,
+    trace,
+    initialEvidenceSummary,
+  );
   onStreamResult?.(initialResult);
 
   // 1.5 智能拦截逻辑：入院模板需要医生补充要点或可用门诊病历正文，避免空上下文生成。
   if (shouldWaitForAdmissionGeneration(request, outpatientRecord)) {
+    finishInpatientEmrTraceStage(trace, 'aiFirstToken', 'skipped', '等待补充要点或门诊病历依据');
+    finishInpatientEmrTraceStage(trace, 'aiGenerate', 'skipped', '等待补充要点或门诊病历依据');
+    finishInpatientEmrTrace(trace);
+    const waitingEvidenceSummary = buildEvidenceSummary(context, template, {
+      aiStatus: 'waiting',
+      aiDetail: '等待补充要点或门诊病历依据后启动生成',
+      waitingForInput: true,
+    });
     report(onProgress, {
       key: 'generate',
       status: 'pending',
       detail: '等待补充要点或门诊病历依据（主诉、现病史）以启动生成'
     });
-    return initialResult;
+    const waitingResult = buildGenerationResult(
+      request,
+      context,
+      template,
+      initialFieldValues,
+      initialFieldValues,
+      trace,
+      waitingEvidenceSummary,
+    );
+    onStreamResult?.(waitingResult);
+    return waitingResult;
   }
 
   // 2. 启动 AI 生成，采用流式调用并在每次 chunk 到达时，提取局部 JSON 键值注入
   report(onProgress, { key: 'generate', status: 'running', detail: '正在生成病历草稿' });
+  startInpatientEmrTraceStage(trace, 'aiFirstToken', '等待 AI 首段返回');
+  startInpatientEmrTraceStage(trace, 'aiGenerate', '正在流式生成病历草稿');
   
   let accumulatedResponse = '';
   const aiFieldKeys = template.fields.filter((field) => field.aiSuitable).map((field) => field.id);
+  let hasFirstToken = false;
+  let fallbackUsed = false;
 
   try {
     const prompt = buildInpatientEmrGeneratePrompt(template.fields, context);
@@ -934,18 +1087,27 @@ export async function generateInpatientEmrPreviewStream(
       ],
       (chunk) => {
         accumulatedResponse += chunk;
+        if (!hasFirstToken && chunk) {
+          hasFirstToken = true;
+          finishInpatientEmrTraceStage(trace, 'aiFirstToken', 'success', 'AI 首段已返回', {
+            firstChunkLength: chunk.length,
+          });
+        }
         const partialValues = parsePartialJson(accumulatedResponse, aiFieldKeys);
         const currentFieldValues = mergeGeneratedValues(template.fields, context, partialValues);
-        const currentHtml = fillInpatientEmrTemplateHtml(request.htmlContent, currentFieldValues);
-        const partialResult: InpatientEmrGenerationResult = {
-          emrContent: buildGeneratedEmrText(template.fields, currentFieldValues, context),
-          htmlContent: currentHtml,
-          fieldValues: currentFieldValues,
+        const partialEvidenceSummary = buildEvidenceSummary(context, template, {
+          aiStatus: 'waiting',
+          aiDetail: 'AI 正在生成草稿',
+        });
+        const partialResult = buildGenerationResult(
           request,
           context,
           template,
-          generatedAt: Date.now(),
-        };
+          currentFieldValues,
+          currentFieldValues,
+          trace,
+          partialEvidenceSummary,
+        );
         onStreamResult?.(partialResult);
       },
       undefined,
@@ -962,20 +1124,40 @@ export async function generateInpatientEmrPreviewStream(
         },
       }
     );
+    finishInpatientEmrTraceStage(trace, 'aiGenerate', 'success', 'AI 流式生成完成', {
+      responseLength: accumulatedResponse.length,
+    });
   } catch (error) {
     console.warn('[InpatientEmr] AI generation stream failed, using fallback draft', error);
+    fallbackUsed = true;
+    finishInpatientEmrTraceStage(
+      trace,
+      'aiFirstToken',
+      hasFirstToken ? 'success' : 'error',
+      hasFirstToken ? 'AI 首段已返回' : 'AI 首段未返回，已使用 fallback',
+    );
+    finishInpatientEmrTraceStage(
+      trace,
+      'aiGenerate',
+      'error',
+      error instanceof Error ? error.message : String(error),
+    );
     const fallbackValues = { 病程记录文本: buildFallbackEmrContent(context) };
     const currentFieldValues = mergeGeneratedValues(template.fields, context, fallbackValues);
-    const currentHtml = fillInpatientEmrTemplateHtml(request.htmlContent, currentFieldValues);
-    const partialResult: InpatientEmrGenerationResult = {
-      emrContent: buildGeneratedEmrText(template.fields, currentFieldValues, context),
-      htmlContent: currentHtml,
-      fieldValues: currentFieldValues,
+    const fallbackEvidenceSummary = buildEvidenceSummary(context, template, {
+      aiStatus: 'failed',
+      aiDetail: 'AI 生成失败，已使用本地 fallback 草稿',
+      fallbackUsed: true,
+    });
+    const partialResult = buildGenerationResult(
       request,
       context,
       template,
-      generatedAt: Date.now(),
-    };
+      currentFieldValues,
+      currentFieldValues,
+      trace,
+      fallbackEvidenceSummary,
+    );
     onStreamResult?.(partialResult);
     accumulatedResponse = JSON.stringify(fallbackValues);
   }
@@ -990,29 +1172,24 @@ export async function generateInpatientEmrPreviewStream(
   }
 
   const finalFieldValues = mergeGeneratedValues(template.fields, context, finalGeneratedValues);
-  const finalHtml = fillInpatientEmrTemplateHtml(request.htmlContent, finalFieldValues);
-  const finalPreview: InpatientEmrGeneratedPreview = {
-    emrContent: buildGeneratedEmrText(template.fields, finalFieldValues, context),
-    htmlContent: finalHtml,
-    fieldValues: finalFieldValues,
-  };
-
+  finishInpatientEmrTrace(trace);
+  const finalEvidenceSummary = buildEvidenceSummary(context, template, {
+    aiStatus: fallbackUsed ? 'failed' : 'used',
+    aiDetail: fallbackUsed ? 'AI 失败后已使用 fallback 草稿' : '病历草稿已生成',
+    fallbackUsed,
+  });
   report(onProgress, { key: 'generate', status: 'done', detail: '病历草稿已生成' });
 
-  const finalResult: InpatientEmrGenerationResult = {
-    ...finalPreview,
+  const finalResult = buildGenerationResult(
     request,
     context,
     template,
-    generatedAt: Date.now(),
-  };
+    finalFieldValues,
+    finalFieldValues,
+    trace,
+    finalEvidenceSummary,
+  );
 
   onStreamResult?.(finalResult);
   return finalResult;
-}
-
-export function getLatestTemperatureRecord(
-  chart: HisInpatientTemperatureChart | null,
-): HisInpatientTemperatureRecord | null {
-  return chart?.records?.[0] || null;
 }

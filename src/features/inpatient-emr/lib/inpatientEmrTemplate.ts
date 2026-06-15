@@ -69,6 +69,7 @@ function inferFieldMeaning(id: string, name: string, defaultValue?: string): str
   if (text.includes('操作人员') || text.includes('查房医师')) return '查房或书写医生姓名，来自登录医生或住院登记医生信息';
   if (text.includes('操作名称') || text.includes('病程记录名称')) return '病程记录类型名称，通常跟随模板文书类型';
   if (id === '病程记录文本' || text.includes('记录文本')) return '病程记录正文，适合结合住院登记、诊断、医嘱和体温单生成';
+  if (id.includes('查房') || text.includes('查房')) return '查房记录正文，适合结合住院登记、诊断、医嘱和体温单生成';
   if (text.includes('医师签名')) return '医师签名字段，应由医生确认或电子签名流程完成';
   return '模板字段，需结合模板上下文和 HIS 字段映射确认含义';
 }
@@ -90,10 +91,11 @@ export const defaultMatcherConfig: InpatientEmrMatcherConfig = {
     // 中文标准字段名称
     '病程记录文本', '记录正文', '入院情况', '诊疗经过', '出院情况',
     '治疗结果', '出院医嘱', '病情分析', '诊疗计划', '处理意见', '病程记录', '病程正文',
+    '查房记录', '查房正文', '查房',
     '主诉', '现病史', '既往史',
     // 拼音缩写
     'bcjl', 'bczw', 'ryqk', 'zlgj', 'cyqk', 'zljg', 'cyyz', 'bqfx', 'zljh', 'clyj',
-    'zs', 'xbs', 'jws',
+    'zs', 'xbs', 'jws', 'cf', 'cfjl',
     // 常见英文/混合命名前缀后缀
     'progress_note', 'course_record', 'chief_complaint', 'present_illness', 'past_history'
   ]

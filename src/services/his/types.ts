@@ -330,10 +330,23 @@ export interface HisOutpatientVisit {
   visiting?: boolean;
   /** 诊断列表文本 */
   diagnoses?: string[];
+  /** 是否存在可引用的门急诊病历文书 */
+  hasMedicalRecord?: boolean;
+  /** 可引用门急诊病历文书数量 */
+  medicalRecordDocumentCount?: number;
   /** 主诉摘要 */
   chiefComplaint?: string;
   /** 厂商透传 */
   raw?: Record<string, unknown>;
+}
+
+export interface HisOutpatientVisitHistoryQuery {
+  /** 最大返回条数；PHIS 支持 -1 表示按时间范围返回全部 */
+  limit?: number;
+  /** 就诊时间范围，例如 ["2026-06-08 00:00:00", "2026-06-15 23:59:59"] */
+  dateRange?: [string, string];
+  /** true 时仅返回同时具备诊断和病历文书的就诊 */
+  requireDiagnosisAndRecord?: boolean;
 }
 
 /**

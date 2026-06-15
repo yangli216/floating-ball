@@ -251,10 +251,17 @@ export interface HisAllergyItem {
 export interface HisVisitHistoryItem {
   idVis?: string;
   idPi?: string;
+  dtBgn?: string;
+  dtReg?: string;
   dtVis?: string;
   dtVisit?: string;
   visitTime?: string | number;
   [key: string]: unknown;
+}
+
+export interface HisPatientVisitHistoryQuery {
+  limit?: number;
+  dtBgn?: [string, string];
 }
 
 interface HisVisitHistoryListBody {
@@ -350,196 +357,6 @@ interface HisOutpatientMedicalRecordContentResponseBody {
   count?: number;
   message?: string;
   data?: HisOutpatientMedicalRecordContentBody;
-}
-
-export interface HisInpatientServiceQuery {
-  patientId?: string;
-  inpatientVisitId?: string;
-  admissionId?: string;
-  encounterId?: string;
-  inpatientNo?: string;
-  wardId?: string;
-  start?: number;
-  limit?: number;
-  raw?: Record<string, unknown>;
-}
-
-export interface HisInpatientDiagnosisBody {
-  idDiag?: string;
-  idDie?: string;
-  id?: string;
-  cdDiag?: string;
-  cdIcd?: string;
-  cdIcd10?: string;
-  code?: string;
-  naDiag?: string;
-  naIcd10?: string;
-  name?: string;
-  sdDiag?: string;
-  sdDiagText?: string;
-  diagnosisType?: string;
-  dtDiag?: string;
-  diagnosedAt?: string;
-  fgMain?: string;
-  fgActive?: string;
-  idDiagUser?: string;
-  idDiagUserText?: string;
-  doctorName?: string;
-  naDoctor?: string;
-  insertUserText?: string;
-  deptName?: string;
-  naDept?: string;
-  [key: string]: unknown;
-}
-
-export interface HisInpatientOrderBody {
-  idOrd?: string;
-  idOrder?: string;
-  orderId?: string;
-  idGrp?: string;
-  groupId?: string;
-  naOrd?: string;
-  name?: string;
-  fullText?: string;
-  displayText?: string;
-  naSrv?: string;
-  sdSrv?: string;
-  sdOrd?: string;
-  sdOrdText?: string;
-  sdSrvText?: string;
-  orderType?: string;
-  orderTypeCode?: string;
-  sdStatus?: string;
-  status?: string;
-  dtBgn?: string;
-  startTime?: string;
-  dtEnd?: string;
-  stopTime?: string;
-  doseOnce?: string;
-  dose?: string;
-  doseUnit?: string;
-  idFreqText?: string;
-  frequencyText?: string;
-  frequencyCode?: string;
-  frequency?: string;
-  idUsgeText?: string;
-  sdUsageText?: string;
-  routeCode?: string;
-  route?: string;
-  amount?: number;
-  quantity?: number;
-  unitOrd?: string;
-  unit?: string;
-  doctorName?: string;
-  naDoctor?: string;
-  deptName?: string;
-  naDept?: string;
-  [key: string]: unknown;
-}
-
-export interface HisInpatientOrderGroupBody {
-  hiHosOrderStatus?: string;
-  hiHosOrderStatusText?: string;
-  ords?: HisInpatientOrderBody[];
-  [key: string]: unknown;
-}
-
-export interface HisInpatientTemperatureRecordBody {
-  recordTime?: string;
-  dtRecord?: string;
-  dtSurvey?: string;
-  dtSdStr?: string;
-  dateStr?: string;
-  level?: string;
-  idSurvey?: string;
-  temperature?: number | string;
-  temp?: number | string;
-  temperatureType?: string;
-  tempType?: string;
-  fgRetest?: string;
-  tempRetest?: number | string;
-  dtSd?: string;
-  detail?: string;
-  pulse?: number | string;
-  heartRate?: number | string;
-  respiration?: number | string;
-  bloodPressureSystolic?: number | string;
-  systolicPressure?: number | string;
-  bloodPressureDiastolic?: number | string;
-  diastolicPressure?: number | string;
-  spo2?: number | string;
-  painScore?: number | string;
-  intake?: number | string;
-  output?: number | string;
-  stoolCount?: number | string;
-  urineVolume?: number | string;
-  weight?: number | string;
-  [key: string]: unknown;
-}
-
-export interface HisInpatientTemperatureChartBody {
-  patientId?: string;
-  idPi?: string;
-  inpatientVisitId?: string;
-  idVis?: string;
-  records?: HisInpatientTemperatureRecordBody[];
-  items?: HisInpatientTemperatureRecordBody[];
-  [key: string]: unknown;
-}
-
-export interface HisInpatientRegistrationBody {
-  idAdsn?: string;
-  patientId?: string;
-  idPi?: string;
-  naPi?: string;
-  sdSex?: string;
-  sdSexText?: string;
-  birthday?: string;
-  age?: string;
-  inHosAge?: string;
-  inpatientVisitId?: string;
-  idVis?: string;
-  inpatientNo?: string;
-  cdHos?: string;
-  cdFile?: string;
-  admissionNo?: string;
-  admissionTime?: string;
-  dtAdmission?: string;
-  dtInHos?: string;
-  dtClinical?: string;
-  dischargeTime?: string;
-  dtDischarge?: string;
-  deptId?: string;
-  idDept?: string;
-  deptName?: string;
-  naDept?: string;
-  wardId?: string;
-  idWard?: string;
-  wardName?: string;
-  naWard?: string;
-  bedNo?: string;
-  bedName?: string;
-  idOdsUser?: string;
-  idHosUser?: string;
-  idChiefUser?: string;
-  idAttendUser?: string;
-  attendingDoctorName?: string;
-  naDoctor?: string;
-  nursingLevel?: string;
-  admissionDiagnosis?: string;
-  hosDiag?: string;
-  sdHosDiag?: string;
-  odsDiag?: string;
-  sdOdsDiag?: string;
-  sdAllergy?: string;
-  sdAllergyText?: string;
-  sdAllergyList?: unknown[];
-  fgSevere?: string;
-  isTransfer?: string;
-  fgGestation?: string;
-  diagList?: HisInpatientDiagnosisBody[];
-  status?: string;
-  [key: string]: unknown;
 }
 
 interface HiBdCliPacsPartAndWayListBody {
@@ -656,9 +473,6 @@ const HIS_CATALOG_ENDPOINTS = {
   outpatientMedicalRecordDocuments: 'api/otms.rpcEmrEditorLookService/getLookMedList',
   outpatientMedicalRecordContent: 'api/otms.rpcEmrEditorLookService/getMedContentLook',
   inpatientEmrContext: 'api/phis.aiInpatientEmrContextService/buildContext',
-  inpatientOrders: 'api/phis.hiHosOrderService/queryOrdGroupList',
-  inpatientTemperatureChart: 'api/phis.hiHosSurveyService/getSurveyTestTimeLine',
-  inpatientRegistration: 'api/phis.hiHosAdsnService/getPatientByIdAdsn',
 } as const;
 
 /**
@@ -1296,13 +1110,21 @@ export class HisService {
    * 查询患者就诊历史列表
    * PHIS 接口：api/phis.clinicPatientService/queryVisitHistory
    */
-  async queryPatientVisitHistory(idPi: string, limit = 5): Promise<HisVisitHistoryItem[]> {
+  async queryPatientVisitHistory(
+    idPi: string,
+    query: number | HisPatientVisitHistoryQuery = 5,
+  ): Promise<HisVisitHistoryItem[]> {
     const normalizedIdPi = idPi.trim();
     if (!normalizedIdPi) return [];
+    const normalizedQuery = typeof query === 'number' ? { limit: query } : query;
+    const params: Record<string, unknown> = { idPi: normalizedIdPi };
+    if (Array.isArray(normalizedQuery.dtBgn) && normalizedQuery.dtBgn.length === 2) {
+      params.dtBgn = normalizedQuery.dtBgn;
+    }
 
     const response = await this.post<HisVisitHistoryListBody>(
       HIS_CATALOG_ENDPOINTS.patientVisitHistory,
-      [{ limit, params: { idPi: normalizedIdPi } }]
+      [{ limit: normalizedQuery.limit ?? 5, params }]
     );
     this.assertBusinessSuccess(HIS_CATALOG_ENDPOINTS.patientVisitHistory, response);
 
@@ -1417,135 +1239,12 @@ export class HisService {
   }
 
   /**
-   * 查询指定患者住院诊断。
-   *
-   * 历史明细能力：住院病历 AI 生成已改为 buildContext 聚合上下文，不再调用该接口。
-   */
-  async queryInpatientDiagnoses(query: HisInpatientServiceQuery): Promise<HisInpatientDiagnosisBody[]> {
-    const registration = await this.loadInpatientRegistration(query);
-    return Array.isArray(registration?.diagList) ? registration.diagList : [];
-  }
-
-  /**
-   * 查询指定患者住院医嘱。
-   */
-  async queryInpatientOrders(query: HisInpatientServiceQuery): Promise<HisInpatientOrderBody[]> {
-    const params = this.buildInpatientQueryParams(query);
-    if (!params) return [];
-
-    const response = await this.post<{ items?: HisInpatientOrderGroupBody[] } | HisInpatientOrderGroupBody[]>(
-      HIS_CATALOG_ENDPOINTS.inpatientOrders,
-      [{
-        start: Number.isFinite(query.start) ? query.start : 0,
-        limit: Number.isFinite(query.limit) ? query.limit : 100,
-        params: {
-          ...params,
-          sdType: '',
-          sdClassify: '99',
-          hiHosOrderStatus: 'today',
-          fgNurse: '1',
-          authority: '1',
-        },
-      }]
-    );
-    this.assertBusinessSuccess(HIS_CATALOG_ENDPOINTS.inpatientOrders, response);
-
-    const groups = this.extractListBody<HisInpatientOrderGroupBody>(response);
-    const orders: HisInpatientOrderBody[] = [];
-    groups.forEach((group, groupIndex) => {
-      const ords = Array.isArray(group.ords) ? group.ords : [];
-      ords.forEach((order, orderIndex) => {
-        orders.push({
-          ...order,
-          orderId: order.orderId
-            ?? order.idOrder
-            ?? order.idOrd
-            ?? `inpatient-order-${groupIndex + 1}-${orderIndex + 1}`,
-          groupId: String(groupIndex + 1),
-          hiHosOrderStatus: group.hiHosOrderStatus,
-          hiHosOrderStatusText: group.hiHosOrderStatusText,
-          groupIndex,
-          orderIndex,
-          rawGroup: group as unknown as Record<string, unknown>,
-        });
-      });
-    });
-
-    return orders;
-  }
-
-  /**
-   * 查询指定患者住院体温单数据。
-   */
-  async queryInpatientTemperatureChart(query: HisInpatientServiceQuery): Promise<HisInpatientTemperatureChartBody | null> {
-    const params = this.buildInpatientQueryParams(query);
-    if (!params) return null;
-
-    const response = await this.post<HisInpatientTemperatureChartBody>(
-      HIS_CATALOG_ENDPOINTS.inpatientTemperatureChart,
-      [{ params }]
-    );
-    this.assertBusinessSuccess(HIS_CATALOG_ENDPOINTS.inpatientTemperatureChart, response);
-
-    const body = response.body ?? response.data ?? null;
-    const records = this.extractListBody<HisInpatientTemperatureRecordBody>(response);
-    if (Array.isArray(body)) {
-      return { patientId: query.patientId, inpatientVisitId: query.inpatientVisitId, records };
-    }
-    if (!body) return null;
-    return records.length > 0 ? { ...body, records } : body;
-  }
-
-  /**
-   * 查询指定患者住院登记信息。
-   */
-  async loadInpatientRegistration(query: HisInpatientServiceQuery): Promise<HisInpatientRegistrationBody | null> {
-    const idAdsn = query.admissionId?.trim()
-      || query.inpatientVisitId?.trim()
-      || query.encounterId?.trim()
-      || (query.raw && typeof query.raw === 'object' ? String(query.raw.idAdsn ?? '').trim() : '');
-    if (!idAdsn) return null;
-
-    try {
-      // 尝试第一种入参格式：['idAdsn']
-      const response = await this.post<HisInpatientRegistrationBody>(
-        HIS_CATALOG_ENDPOINTS.inpatientRegistration,
-        [idAdsn]
-      );
-      this.assertBusinessSuccess(HIS_CATALOG_ENDPOINTS.inpatientRegistration, response);
-      return response.body ?? response.data ?? null;
-    } catch (firstError) {
-      console.warn(
-        `[HisService] loadInpatientRegistration failed with [idAdsn] format, trying fallback [{ idAdsn }] format. Error:`,
-        firstError
-      );
-      try {
-        // 尝试第二种入参格式：[{ idAdsn }]
-        const response = await this.post<HisInpatientRegistrationBody>(
-          HIS_CATALOG_ENDPOINTS.inpatientRegistration,
-          [{ idAdsn }]
-        );
-        this.assertBusinessSuccess(HIS_CATALOG_ENDPOINTS.inpatientRegistration, response);
-        return response.body ?? response.data ?? null;
-      } catch (secondError) {
-        console.error(
-          `[HisService] loadInpatientRegistration failed with both formats. Primary error:`,
-          firstError,
-          `Fallback error:`,
-          secondError
-        );
-        throw secondError;
-      }
-    }
-  }
-
-  /**
    * 构建住院病历 AI 上下文。
    * PHIS 接口：api/phis.aiInpatientEmrContextService/buildContext
    * PHIS RPC 网关按方法参数数组传参，HTTP body 必须是 `[requestMap]`。
    *
    * 该接口一次性返回登记、诊断、医嘱、体温单、检验检查、历史病历等裁剪后的 AI 上下文；
-   * 住院病历生成应优先使用它，旧的登记/医嘱/体温单接口只作为兼容回退。
+   * 住院病历生成统一使用它，不再维护登记/医嘱/体温单分散接口回退。
    */
   async buildInpatientEmrContext(
     query: HisInpatientEmrContextQuery,
@@ -1676,49 +1375,6 @@ export class HisService {
 
   getTenantId(): string {
     return this.tenantId;
-  }
-
-  private buildInpatientQueryParams(query: HisInpatientServiceQuery): Record<string, unknown> | null {
-    const patientId = query.patientId?.trim();
-    const inpatientVisitId = query.inpatientVisitId?.trim();
-    const admissionId = query.admissionId?.trim();
-    const encounterId = query.encounterId?.trim();
-    const inpatientNo = query.inpatientNo?.trim();
-    const wardId = query.wardId?.trim();
-    const visitAnchor = inpatientVisitId || encounterId;
-    const rawIdAdsn = query.raw && typeof query.raw === 'object' ? String(query.raw.idAdsn ?? '').trim() : '';
-
-    if (!patientId && !inpatientVisitId && !admissionId && !encounterId && !inpatientNo && !wardId && !rawIdAdsn) {
-      return null;
-    }
-
-    return {
-      ...(query.raw && typeof query.raw === 'object' ? query.raw : {}),
-      ...(patientId ? { patientId, idPi: patientId } : {}),
-      ...(inpatientVisitId ? { inpatientVisitId, idVis: inpatientVisitId } : {}),
-      ...(admissionId ? { admissionId, idAdsn: admissionId } : {}),
-      ...(encounterId ? { encounterId } : {}),
-      ...(visitAnchor ? { visitId: visitAnchor } : {}),
-      ...(inpatientNo ? { inpatientNo } : {}),
-      ...(wardId ? { wardId, idWard: wardId } : {}),
-    };
-  }
-
-  private extractListBody<T>(response: HisResponse<unknown>): T[] {
-    const body = response.body ?? response.data;
-    if (Array.isArray(body)) {
-      return body as T[];
-    }
-    if (body && typeof body === 'object') {
-      const record = body as Record<string, unknown>;
-      if (Array.isArray(record.items)) {
-        return record.items as T[];
-      }
-      if (Array.isArray(record.records)) {
-        return record.records as T[];
-      }
-    }
-    return [];
   }
 
   private mapCliCategory(sdCliText?: string, sdCli?: string): string {

@@ -21,7 +21,7 @@
           type="button"
           :disabled="!result || isGenerating || isWritingBack"
           title="一键回写"
-          @click="writeBack"
+          @click="handleWritebackClick"
         >
           <Icon icon="lucide:send-horizontal" :size="16" />
           <span>{{ isWritingBack ? '回写中' : '一键回写' }}</span>
@@ -31,45 +31,12 @@
 
     <main class="emr-main">
       <aside class="left-pane">
-        <section class="process-panel">
-          <div class="section-heading">
-            <Icon icon="lucide:workflow" :size="17" />
-            <span>生成进度</span>
-            <strong>{{ completedStepCount }}/{{ steps.length }}</strong>
-          </div>
-          <ol class="step-list">
-            <li
-              v-for="step in steps"
-              :key="step.key"
-              class="step-item"
-              :class="`is-${step.status}`"
-            >
-              <span class="step-icon">
-                <Icon
-                  v-if="step.status === 'done'"
-                  icon="lucide:check"
-                  :size="15"
-                />
-                <Icon
-                  v-else-if="step.status === 'error'"
-                  icon="lucide:triangle-alert"
-                  :size="15"
-                />
-                <Icon
-                  v-else-if="step.status === 'running'"
-                  icon="lucide:loader-circle"
-                  :size="15"
-                  class="spinning"
-                />
-                <Icon v-else icon="lucide:circle" :size="12" />
-              </span>
-              <span class="step-copy">
-                <strong>{{ step.title }}</strong>
-                <small>{{ step.detail }}</small>
-              </span>
-            </li>
-          </ol>
-        </section>
+        <InpatientEmrProcessPanel
+          :steps="steps"
+          :completed-step-count="completedStepCount"
+          :summary="result?.evidenceSummary"
+          :trace="result?.trace"
+        />
 
         <section class="field-panel" v-if="result">
           <div class="section-heading">
@@ -178,6 +145,20 @@
               加载中...
             </span>
           </div>
+          <div class="history-range-row" aria-label="门诊就诊时间范围">
+            <button
+              v-for="option in outpatientHistoryRangeOptions"
+              :key="option.key"
+              type="button"
+              class="range-option-btn"
+              :class="{ 'is-active': outpatientHistoryRangeKey === option.key }"
+              :disabled="isLoadingVisits"
+              @click="setOutpatientHistoryRange(option.key)"
+            >
+              {{ option.label }}
+            </button>
+            <span class="range-text">{{ outpatientHistoryRangeText }}</span>
+          </div>
 
           <div class="visits-card-list" v-if="outpatientVisits.length > 0">
             <div
@@ -193,6 +174,9 @@
                 </div>
                 <div class="visit-diagnoses" :title="visit.diagnoses?.join(', ')">
                   主诊断：{{ visit.diagnoses?.join(', ') || '无明确诊断' }}
+                </div>
+                <div class="visit-record-meta">
+                  病历文书 {{ visit.medicalRecordDocumentCount || 1 }} 份
                 </div>
               </div>
               <div class="visit-card-actions">
@@ -218,7 +202,7 @@
           </div>
           <div class="no-visits-placeholder" v-else-if="!isLoadingVisits">
             <Icon icon="lucide:info" :size="13" />
-            <span>暂未发现该患者的近期门诊就诊记录</span>
+            <span>{{ outpatientVisitEmptyText }}</span>
           </div>
         </div>
 
@@ -366,6 +350,16 @@
         </footer>
       </section>
     </div>
+
+    <InpatientEmrWritebackQualityDialog
+      v-if="showWritebackQualityDialog && pendingQualityIssues.length > 0"
+      :issues="pendingQualityIssues"
+      :is-writing-back="isWritingBack"
+      :writeback-status="writebackStatus"
+      :writeback-message="writebackMessage"
+      @cancel="showWritebackQualityDialog = false"
+      @confirm="confirmWritebackAfterQuality"
+    />
   </section>
 </template>
 
@@ -384,7 +378,14 @@ import {
   isAdmissionTemplate,
 } from '../lib/inpatientEmrTemplate';
 import { buildInpatientEmrFieldPrompt } from '../lib/inpatientEmrPrompts';
-import type { InpatientEmrGenerationRequest, InpatientEmrTemplateField } from '../types';
+// import { buildInpatientEmrQualityIssues } from '../lib/inpatientEmrQuality';
+import InpatientEmrProcessPanel from './InpatientEmrProcessPanel.vue';
+import InpatientEmrWritebackQualityDialog from './InpatientEmrWritebackQualityDialog.vue';
+import type {
+  InpatientEmrGenerationRequest,
+  InpatientEmrQualityIssue,
+  InpatientEmrTemplateField,
+} from '../types';
 import { getHisAdapter } from '@/services/his';
 import type { HisOutpatientVisit, HisOutpatientMedicalRecord } from '@/services/his';
 
@@ -414,15 +415,25 @@ const {
 
 const previewHtml = ref('');
 const showRegenerateDialog = ref(false);
+const showWritebackQualityDialog = ref(false);
+const pendingQualityIssues = ref<InpatientEmrQualityIssue[]>([]);
 
 const outpatientVisits = ref<HisOutpatientVisit[]>([]);
 const isLoadingVisits = ref(false);
 const selectedVisitId = ref<string | null>(null);
-const lastOutpatientVisitPatientId = ref('');
+const lastOutpatientVisitQueryKey = ref('');
+type OutpatientHistoryRangeKey = '7d' | '1m' | '3m';
+const outpatientHistoryRangeKey = ref<OutpatientHistoryRangeKey>('7d');
+const outpatientHistoryRangeOptions: Array<{ key: OutpatientHistoryRangeKey; label: string; days?: number; months?: number }> = [
+  { key: '7d', label: '近7天', days: 7 },
+  { key: '1m', label: '近1月', months: 1 },
+  { key: '3m', label: '近3月', months: 3 },
+];
 
 const showOutpatientPreview = ref(false);
 const isDetailLoading = ref(false);
 const previewVisitRecord = ref<HisOutpatientMedicalRecord | null>(null);
+let outpatientVisitsLoadSeq = 0;
 
 const isAdmission = computed(() => {
   return isAdmissionTemplate(props.request?.templateName || '');
@@ -431,6 +442,40 @@ const isAdmission = computed(() => {
 function trimUnknown(value: unknown): string {
   return typeof value === 'string' ? value.trim() : '';
 }
+
+function padDatePart(value: number): string {
+  return String(value).padStart(2, '0');
+}
+
+function formatDateTimeForHis(date: Date, endOfDay = false): string {
+  const hours = endOfDay ? 23 : 0;
+  const minutes = endOfDay ? 59 : 0;
+  const seconds = endOfDay ? 59 : 0;
+  return [
+    date.getFullYear(),
+    padDatePart(date.getMonth() + 1),
+    padDatePart(date.getDate()),
+  ].join('-') + ` ${padDatePart(hours)}:${padDatePart(minutes)}:${padDatePart(seconds)}`;
+}
+
+function buildOutpatientHistoryDateRange(rangeKey: OutpatientHistoryRangeKey): [string, string] {
+  const end = new Date();
+  const start = new Date(end);
+  const option = outpatientHistoryRangeOptions.find((item) => item.key === rangeKey);
+  if (option?.months) {
+    start.setMonth(start.getMonth() - option.months);
+  } else {
+    start.setDate(start.getDate() - (option?.days ?? 7));
+  }
+  return [formatDateTimeForHis(start), formatDateTimeForHis(end, true)];
+}
+
+const outpatientHistoryDateRange = computed(() => buildOutpatientHistoryDateRange(outpatientHistoryRangeKey.value));
+const outpatientHistoryRangeText = computed(() => outpatientHistoryDateRange.value.join(' 至 '));
+const outpatientVisitEmptyText = computed(() => {
+  const option = outpatientHistoryRangeOptions.find((item) => item.key === outpatientHistoryRangeKey.value);
+  return `${option?.label || '当前范围'}内暂无同时包含诊断和门诊病历的就诊记录`;
+});
 
 function resolveOutpatientHistoryPatientId(request: InpatientEmrGenerationRequest | null): string {
   if (!request) return '';
@@ -466,9 +511,11 @@ async function loadOutpatientVisits(options: { warnWhenMissingPatient?: boolean;
     outpatientVisits.value = [];
     return;
   }
-  if (!options.force && lastOutpatientVisitPatientId.value === patientId) {
+  const queryKey = `${patientId}|${outpatientHistoryRangeKey.value}|${outpatientHistoryDateRange.value.join('|')}`;
+  if (!options.force && lastOutpatientVisitQueryKey.value === queryKey) {
     return;
   }
+  const loadSeq = ++outpatientVisitsLoadSeq;
   isLoadingVisits.value = true;
   try {
     const adapter = getHisAdapter();
@@ -479,13 +526,32 @@ async function loadOutpatientVisits(options: { warnWhenMissingPatient?: boolean;
       outpatientVisits.value = [];
       return;
     }
-    outpatientVisits.value = await adapter.fetchOutpatientVisitHistory(patientId, 3);
-    lastOutpatientVisitPatientId.value = patientId;
+    const visits = await adapter.fetchOutpatientVisitHistory(patientId, {
+      limit: -1,
+      dateRange: outpatientHistoryDateRange.value,
+      requireDiagnosisAndRecord: true,
+    });
+    if (loadSeq !== outpatientVisitsLoadSeq) return;
+    outpatientVisits.value = visits;
+    if (selectedVisitId.value && !outpatientVisits.value.some((visit) => visit.visitId === selectedVisitId.value)) {
+      selectedVisitId.value = null;
+    }
+    lastOutpatientVisitQueryKey.value = queryKey;
   } catch (error) {
     console.error('[InpatientEmrPage] Failed to fetch outpatient visits', error);
   } finally {
-    isLoadingVisits.value = false;
+    if (loadSeq === outpatientVisitsLoadSeq) {
+      isLoadingVisits.value = false;
+    }
   }
+}
+
+function setOutpatientHistoryRange(rangeKey: OutpatientHistoryRangeKey): void {
+  if (outpatientHistoryRangeKey.value === rangeKey) return;
+  outpatientHistoryRangeKey.value = rangeKey;
+  selectedVisitId.value = null;
+  lastOutpatientVisitQueryKey.value = '';
+  void loadOutpatientVisits({ warnWhenMissingPatient: true, force: true });
 }
 
 function selectVisit(visitId: string) {
@@ -555,9 +621,13 @@ watch(
   () => props.request,
   (request) => {
     if (request) {
+      outpatientVisitsLoadSeq += 1;
       selectedVisitId.value = null;
+      showWritebackQualityDialog.value = false;
+      pendingQualityIssues.value = [];
       outpatientVisits.value = [];
-      lastOutpatientVisitPatientId.value = '';
+      outpatientHistoryRangeKey.value = '7d';
+      lastOutpatientVisitQueryKey.value = '';
       const isAdmission = isAdmissionTemplate(request.templateName || '');
       if (isAdmission) {
         void loadOutpatientVisits({ warnWhenMissingPatient: false });
@@ -754,6 +824,24 @@ function getFieldPrompt(field: InpatientEmrTemplateField): string {
   return buildInpatientEmrFieldPrompt(field, result.value?.context);
 }
 
+function handleWritebackClick(): void {
+  if (!result.value || isGenerating.value || isWritingBack.value) return;
+  // 暂时取消病历回写前的质控，直接回写
+  void submitWriteback();
+}
+
+async function submitWriteback(): Promise<void> {
+  const sent = await writeBack();
+  if (sent) {
+    showWritebackQualityDialog.value = false;
+    pendingQualityIssues.value = [];
+  }
+}
+
+async function confirmWritebackAfterQuality(): Promise<void> {
+  await submitWriteback();
+}
+
 function handlePreviewInput(event: Event): void {
   const target = event.target as HTMLElement | null;
   const editable = target?.closest?.('[data-inpatient-emr-field-id][contenteditable="true"]') as HTMLElement | null;
@@ -815,7 +903,6 @@ h1 {
 
 .header-actions,
 .section-heading,
-.step-item,
 .field-prompt-head,
 .no-ai-fields {
   display: flex;
@@ -914,7 +1001,6 @@ button {
   overflow: hidden;
 }
 
-.process-panel,
 .field-panel,
 .html-preview-card,
 .empty-panel {
@@ -924,7 +1010,6 @@ button {
   box-shadow: 0 12px 28px rgba(23, 42, 49, 0.07);
 }
 
-.process-panel,
 .field-panel,
 .empty-panel {
   padding: 14px;
@@ -941,65 +1026,6 @@ button {
 .section-heading strong {
   margin-left: auto;
   color: #0e7d6d;
-}
-
-.step-list {
-  list-style: none;
-  padding: 4px 0 0;
-  margin: 0;
-}
-
-.step-item {
-  gap: 10px;
-  padding: 10px 0;
-  border-bottom: 1px solid rgba(119, 135, 143, 0.12);
-}
-
-.step-item:last-child {
-  border-bottom: 0;
-}
-
-.step-icon {
-  width: 28px;
-  height: 28px;
-  flex: 0 0 28px;
-  display: grid;
-  place-items: center;
-  border-radius: 50%;
-  background: #eef3f4;
-  color: #7a8a90;
-}
-
-.step-item.is-running .step-icon {
-  background: #e8f4ff;
-  color: #1976c9;
-}
-
-.step-item.is-done .step-icon {
-  background: #e5f7ef;
-  color: #0f8f5f;
-}
-
-.step-item.is-error .step-icon {
-  background: #fff0ea;
-  color: #c05621;
-}
-
-.step-copy {
-  min-width: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 3px;
-}
-
-.step-copy strong {
-  font-size: 13px;
-  color: #223740;
-}
-
-.step-copy small {
-  color: #65777f;
-  line-height: 1.35;
 }
 
 .field-list {
@@ -1535,6 +1561,53 @@ button {
   font-weight: normal;
 }
 
+.history-range-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: -2px 0 10px;
+  min-height: 28px;
+}
+
+.range-option-btn {
+  height: 26px;
+  padding: 0 10px;
+  border-radius: 999px;
+  border: 1px solid rgba(119, 135, 143, 0.22);
+  background: rgba(255, 255, 255, 0.82);
+  color: #48606a;
+  font-size: 11px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease, border-color 0.15s ease;
+}
+
+.range-option-btn:hover:not(:disabled) {
+  border-color: rgba(15, 143, 123, 0.44);
+  color: #0f7c6d;
+  background: #f3fbf8;
+}
+
+.range-option-btn.is-active {
+  color: #ffffff;
+  border-color: #0f8f7b;
+  background: #0f8f7b;
+}
+
+.range-option-btn:disabled {
+  cursor: not-allowed;
+  color: #526871;
+  background: #e8eef0;
+  border-color: rgba(72, 91, 99, 0.2);
+}
+
+.range-text {
+  margin-left: auto;
+  color: #7b8f97;
+  font-size: 11px;
+  white-space: nowrap;
+}
+
 .visits-card-list {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
@@ -1601,6 +1674,11 @@ button {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.visit-record-meta {
+  color: #71838b;
+  font-size: 11px;
 }
 
 .visit-card-actions {

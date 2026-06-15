@@ -78,7 +78,7 @@
 1. HIS 在住院电子病历书写页调用 `POST /api/inpatient/emr/generate`
 2. 传入 `admissionId + templateId + templateName + htmlContent`，可选传入 `recordTime` 指定本次病程记录书写时间；`admissionId` 对应 PHIS `idAdsn`，`templateId` 是病历模板主键，`htmlContent` 是当前病历模板 HTML
 3. `MedHermes` 从悬浮球切换到“住院病历生成”界面，按步骤展示“住院上下文 -> 医嘱整理 -> 体温单整理 -> 模板解析 -> AI 生成”
-4. 如果当前模板是入院记录，`MedHermes` 会按患者 `idPi` 通过 HIS Adapter 查询最近门诊就诊历史；若入口请求未直接携带 `patient.idPi / patient.patientId`，则要求 `api/phis.aiInpatientEmrContextService/buildContext` 返回的 `hisContext.patient.patientId` 保留患者主键。当前 PHIS 实现先调用 `api/phis.clinicPatientService/queryVisitHistory`，入参形如 `[{"limit":3,"params":{"idPi":"患者ID"}}]`，并把 `idVis / idReg / cdClinic / dtBgn / idDeptText / idDocText / idOrgText / fgStatusText / visiting` 等字段映射为中性门诊就诊列表。医生选定一次门诊就诊后，再调用 `api/otms.rpcEmrEditorLookService/getLookMedList` 获取该就诊下的门诊病历文书列表；入参形如 `[{"idApp":"42","idTet":"xswjj","idHospital":"门诊idVis"}]`。其中 `idApp` 固定为 `42`，`idHospital` 取门诊就诊记录 `idVis`，`idTet` 优先取门诊记录原始字段，其次取 SDK 握手解析出的租户。随后按列表返回的 `idMedrecdoc` 调用 `api/otms.rpcEmrEditorLookService/getMedContentLook` 获取 HTML 正文；入参形如 `[{"idApp":"42","idTet":"xswjj","idMedrecdoc":"文书ID","courseShow":0}]`。门诊病历正文会进入预览和 AI 参考上下文；若正文接口失败，桌面端才退回只展示文书列表。
+4. 如果当前模板是入院记录，`MedHermes` 会按患者 `idPi` 通过 HIS Adapter 查询门诊就诊历史；若入口请求未直接携带 `patient.idPi / patient.patientId`，则要求 `api/phis.aiInpatientEmrContextService/buildContext` 返回的 `hisContext.patient.patientId` 保留患者主键。当前 PHIS 实现先调用 `api/phis.clinicPatientService/queryVisitHistory`，默认查询近 7 天，医生可切换近 1 月 / 近 3 月；时间范围入参放在 `params.dtBgn`，形如 `[{"limit":-1,"params":{"idPi":"患者ID","dtBgn":["2026-06-08 00:00:00","2026-06-15 23:59:59"]}}]`，并把 `idVis / idReg / cdClinic / dtBgn / idDeptText / idDocText / idOrgText / fgStatusText / visiting / naDiag` 等字段映射为中性门诊就诊列表。桌面端只展示“有有效诊断且存在门诊病历文书”的就诊记录：无诊断或 `getLookMedList` 无文书的就诊会被过滤。医生选定一次门诊就诊后，再调用 `api/otms.rpcEmrEditorLookService/getLookMedList` 获取该就诊下的门诊病历文书列表；入参形如 `[{"idApp":"42","idTet":"xswjj","idHospital":"门诊idVis"}]`。其中 `idApp` 固定为 `42`，`idHospital` 取门诊就诊记录 `idVis`，`idTet` 优先取门诊记录原始字段，其次取 SDK 握手解析出的租户。随后按列表返回的 `idMedrecdoc` 调用 `api/otms.rpcEmrEditorLookService/getMedContentLook` 获取 HTML 正文；入参形如 `[{"idApp":"42","idTet":"xswjj","idMedrecdoc":"文书ID","courseShow":0}]`。门诊病历正文会进入预览和 AI 参考上下文；若正文接口失败，桌面端才退回只展示文书列表。
 5. 医生审核预览内容后点击“一键回写”
 6. HIS 可继续通过 SDK 事件流收到 `record-confirmed`，也可直接等待 `sdk.generateInpatientEmr(...).then(record => ...)`；两种方式返回同一份回写 payload，读取其中的 `fieldValues`（`{ [data-id]: 文本 }`）回填当前住院病历编辑器
 7. HIS 完成回填后，仍建议调用 `POST /api/consultation/reference-feedback` 回执成功或失败，桌面端会更新页面状态
@@ -736,7 +736,7 @@ http://127.0.0.1:8081/api/report/interpret
 
 ### 6.3B `POST /api/inpatient/emr/generate`
 
-用途：触发住院病历辅助生成。该接口只负责把病历生成请求投递到桌面端并打开预览界面；AI 生成和医生审核在前端异步完成，最终结果通过既有事件流返回给 HIS。
+用途：触发住院病历辅助生成。该接口只负责把病历生成请求投递到桌面端并打开预览界面；AI 生成、预览编辑和必要的回写前质控确认在前端异步完成，最终结果通过既有事件流返回给 HIS。
 
 完整地址：
 
@@ -904,8 +904,8 @@ HTTP Bridge 受理响应：
 
 1. 桌面端打开“住院病历生成”界面，医生可看到“获取住院上下文 / 整理诊疗摘要 / 整理病历依据 / 解析病历 / AI 生成”的步骤状态。PHIS 通过 `api/phis.aiInpatientEmrContextService/buildContext` 一次性返回上下文，桌面端调用该 PHIS RPC 时使用数组入参 `[requestMap]`，界面上仅拆分展示处理阶段。
 2. 若医生对生成结果不满意，可点击“重新生成”，在桌面端弹窗中手动输入或语音转写补充本次查房要点；桌面端会把补充内容作为 `doctorSupplement` 重新进入 AI 生成，不改变 HIS 原始上下文。
-3. 入院记录场景下，医生可在“重新生成”弹窗里选择一次门诊就诊作为基础资料。当前 PHIS Adapter 会先根据门诊 `idVis` 调用 `api/otms.rpcEmrEditorLookService/getLookMedList`，入参为 `[{"idApp":"42","idTet":"租户ID","idHospital":"门诊idVis"}]`，并把返回的 `idMedrecdoc / naMed / titleTime / medType / fgCommit` 等映射为门诊病历文书列表；随后按 `idMedrecdoc` 调用 `api/otms.rpcEmrEditorLookService/getMedContentLook`，入参为 `[{"idApp":"42","idTet":"租户ID","idMedrecdoc":"文书ID","courseShow":0}]`，读取 `body.data.htmlContent` 作为门诊病历正文。正文会用于门诊病历预览，并转换为纯文本作为 AI 参考上下文；若正文接口失败，桌面端才退回只展示文书列表和正文不可用提示。
-4. 医生点击“一键回写”后，事件流会产生 `record-confirmed`，同时 `sdk.generateInpatientEmr(...)` 返回的 Promise 会 resolve 这份 payload。其中 `resultType` 固定为 `record-confirmed`，`referenceType/action` 固定为 `batch`，`emrType` 为 `inpatient-emr`。
+3. 入院记录场景下，医生可在“重新生成”弹窗里选择一次门诊就诊作为基础资料。门诊历史默认查询近 7 天，并提供近 1 月、近 3 月切换；PHIS `queryVisitHistory` 入参在 `params.dtBgn` 中传时间范围，例如 `[{"limit":-1,"params":{"idPi":"患者ID","dtBgn":["2026-06-08 00:00:00","2026-06-15 23:59:59"]}}]`。桌面端只展示同时有有效诊断和门诊病历文书的就诊记录，无诊断或无文书记录会被过滤。当前 PHIS Adapter 会先根据门诊 `idVis` 调用 `api/otms.rpcEmrEditorLookService/getLookMedList`，入参为 `[{"idApp":"42","idTet":"租户ID","idHospital":"门诊idVis"}]`，并把返回的 `idMedrecdoc / naMed / titleTime / medType / fgCommit` 等映射为门诊病历文书列表；随后按 `idMedrecdoc` 调用 `api/otms.rpcEmrEditorLookService/getMedContentLook`，入参为 `[{"idApp":"42","idTet":"租户ID","idMedrecdoc":"文书ID","courseShow":0}]`，读取 `body.data.htmlContent` 作为门诊病历正文。正文会用于门诊病历预览，并转换为纯文本作为 AI 参考上下文；若正文接口失败，桌面端才退回只展示文书列表和正文不可用提示。
+4. 医生在预览界面确认后点击“一键回写”。桌面端会先执行一轮本地轻量病历质控；无风险项时直接产生 `record-confirmed`，存在风险项时只弹出质控提醒，医生确认继续后再产生 `record-confirmed`。同时 `sdk.generateInpatientEmr(...)` 返回的 Promise 会 resolve 这份 payload。其中 `resultType` 固定为 `record-confirmed`，`referenceType/action` 固定为 `batch`，`emrType` 为 `inpatient-emr`。
 5. `record-confirmed.payload.fieldValues` 为 `{ [data-id]: value }` 的结构化字段取值；仅包含本次传入 `htmlContent` 中真实存在、且模板解析结果标记为适合 AI 生成的字段，若医生在预览中编辑过 AI 字段，以编辑后的文本为准。
 6. 住院病历回写事件不返回 `htmlContent`；HIS 侧按当前编辑器模板自行用 `data-id` 定位并回填文本。
 7. HIS 完成回填后，建议调用 `POST /api/consultation/reference-feedback`，带回相同 `consultationId` 与 `requestId`。回执时 `referenceType` 可传 `batch`，也可留空由 Bridge 按 `batch` 处理；桌面端收到成功回执后会从病历生成界面收起回小球状态。
@@ -918,6 +918,7 @@ HTTP Bridge 受理响应：
 2. 若请求携带 `hisContext`，桌面端优先使用该上下文包；否则必须调用 HIS Adapter 的聚合上下文能力。当前 PHIS Adapter 已直连 `api/phis.aiInpatientEmrContextService/buildContext`；不再回退到既有住院登记、医嘱、体温单分散接口。
 3. AI 仅适合生成“病程记录正文”等叙述性字段；患者姓名、住院号、床号、记录时间、医师签名等字段按 HIS / 系统 / 医生签名流程填充。
 4. 生成内容是医生审核草稿，不替代医生签署。
+5. 轻量质控只影响桌面端是否弹出确认提醒，不改变 `record-confirmed` payload 字段结构；HIS 侧仍按 `fieldValues` 回填当前模板。
 
 ### 6.4 `GET /api/consultation/events/poll`
 

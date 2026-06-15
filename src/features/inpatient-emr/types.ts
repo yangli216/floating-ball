@@ -92,6 +92,9 @@ export interface InpatientEmrGeneratedPreview {
   emrContent: string;
   htmlContent: string;
   fieldValues: Record<string, string>;
+  initialFieldValues: Record<string, string>;
+  trace: InpatientEmrGenerationTrace;
+  evidenceSummary: InpatientEmrEvidenceSummary;
 }
 
 export interface InpatientEmrGenerationResult extends InpatientEmrGeneratedPreview {
@@ -99,6 +102,53 @@ export interface InpatientEmrGenerationResult extends InpatientEmrGeneratedPrevi
   context: InpatientEmrContext;
   template: InpatientEmrTemplateParseResult;
   generatedAt: number;
+}
+
+export type InpatientEmrTraceStageKey =
+  | 'hisContext'
+  | 'outpatientRecord'
+  | 'templateResolve'
+  | 'aiFirstToken'
+  | 'aiGenerate'
+  | 'writebackDispatch'
+  | 'writebackFeedback';
+
+export type InpatientEmrTraceStageStatus = 'pending' | 'running' | 'success' | 'error' | 'skipped';
+
+export interface InpatientEmrTraceStage {
+  key: InpatientEmrTraceStageKey;
+  title: string;
+  status: InpatientEmrTraceStageStatus;
+  startedAt?: number;
+  endedAt?: number;
+  durationMs?: number;
+  detail?: string;
+  meta?: Record<string, string | number | boolean | null | undefined>;
+}
+
+export interface InpatientEmrGenerationTrace {
+  traceId: string;
+  startedAt: number;
+  endedAt?: number;
+  stages: InpatientEmrTraceStage[];
+}
+
+export type InpatientEmrEvidenceStatus = 'used' | 'available' | 'missing' | 'waiting' | 'failed' | 'skipped';
+
+export interface InpatientEmrEvidenceSourceSummary {
+  title: string;
+  status: InpatientEmrEvidenceStatus;
+  detail: string;
+  count?: number;
+  meta?: Record<string, string | number | boolean | null | undefined>;
+}
+
+export interface InpatientEmrEvidenceSummary {
+  hisContext: InpatientEmrEvidenceSourceSummary;
+  outpatientRecord: InpatientEmrEvidenceSourceSummary;
+  doctorSupplement: InpatientEmrEvidenceSourceSummary;
+  template: InpatientEmrEvidenceSourceSummary;
+  aiGeneration: InpatientEmrEvidenceSourceSummary;
 }
 
 export type InpatientEmrStepKey = 'patient' | 'orders' | 'temperature' | 'template' | 'generate';
@@ -116,4 +166,14 @@ export interface InpatientEmrGenerationProgress {
   key: InpatientEmrStepKey;
   status: InpatientEmrStepStatus;
   detail?: string;
+}
+
+export type InpatientEmrQualityIssueSeverity = 'high' | 'medium';
+
+export interface InpatientEmrQualityIssue {
+  id: string;
+  severity: InpatientEmrQualityIssueSeverity;
+  title: string;
+  description: string;
+  fieldId?: string;
 }

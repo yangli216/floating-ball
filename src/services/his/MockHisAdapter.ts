@@ -36,6 +36,7 @@ import type {
   HisPatientInfo,
   HisPatientHistory,
   HisOutpatientVisit,
+  HisOutpatientVisitHistoryQuery,
   HisOutpatientMedicalRecordDocument,
   HisOutpatientMedicalRecord,
   HisInpatientDiagnosis,
@@ -238,12 +239,7 @@ export class MockHisAdapter implements HisAdapter {
 
   // ---- 住院上下文 ----
 
-  async fetchInpatientDiagnoses(query: HisInpatientQuery): Promise<HisInpatientDiagnosis[]> {
-    const registration = await this.fetchInpatientRegistration(query);
-    return registration?.diagnoses ?? [];
-  }
-
-  async fetchInpatientOrders(query: HisInpatientQuery): Promise<HisInpatientOrder[]> {
+  private async fetchInpatientOrders(query: HisInpatientQuery): Promise<HisInpatientOrder[]> {
     const patientId = this.resolveMockInpatientPatientId(query);
     return [
       {
@@ -267,7 +263,7 @@ export class MockHisAdapter implements HisAdapter {
     ];
   }
 
-  async fetchInpatientTemperatureChart(query: HisInpatientQuery): Promise<HisInpatientTemperatureChart | null> {
+  private async fetchInpatientTemperatureChart(query: HisInpatientQuery): Promise<HisInpatientTemperatureChart | null> {
     const patientId = this.resolveMockInpatientPatientId(query);
     const records = [
       {
@@ -294,7 +290,7 @@ export class MockHisAdapter implements HisAdapter {
     };
   }
 
-  async fetchInpatientRegistration(query: HisInpatientQuery): Promise<HisInpatientRegistrationInfo | null> {
+  private async fetchInpatientRegistration(query: HisInpatientQuery): Promise<HisInpatientRegistrationInfo | null> {
     const patientId = this.resolveMockInpatientPatientId(query);
     const diagnoses: HisInpatientDiagnosis[] = [
       {
@@ -421,8 +417,13 @@ export class MockHisAdapter implements HisAdapter {
     };
   }
 
-  async fetchOutpatientVisitHistory(_patientId: string, _limit = 3): Promise<HisOutpatientVisit[]> {
-    return [
+  async fetchOutpatientVisitHistory(
+    _patientId: string,
+    query?: number | HisOutpatientVisitHistoryQuery,
+  ): Promise<HisOutpatientVisit[]> {
+    const normalizedQuery = typeof query === 'number' ? { limit: query } : query;
+    const [startTime, endTime] = normalizedQuery?.dateRange?.map((item) => Date.parse(item.replace(/-/g, '/'))) || [];
+    const visits: HisOutpatientVisit[] = [
       {
         visitId: 'mock-vis-1',
         patientId: 'mock-patient',
@@ -435,6 +436,8 @@ export class MockHisAdapter implements HisAdapter {
         statusText: '已诊毕',
         visiting: false,
         diagnoses: ['急性支气管炎'],
+        hasMedicalRecord: true,
+        medicalRecordDocumentCount: 1,
         chiefComplaint: '咳嗽、咳黄痰 3 天，伴咽痛。',
         raw: { mock: true },
       },
@@ -450,6 +453,8 @@ export class MockHisAdapter implements HisAdapter {
         statusText: '已诊毕',
         visiting: false,
         diagnoses: ['急性鼻咽炎', '过敏性鼻炎'],
+        hasMedicalRecord: true,
+        medicalRecordDocumentCount: 1,
         chiefComplaint: '鼻塞、流涕、咽痛 2 天，偶有发热。',
         raw: { mock: true },
       },
@@ -465,10 +470,23 @@ export class MockHisAdapter implements HisAdapter {
         statusText: '已诊毕',
         visiting: false,
         diagnoses: ['原发性高血压'],
+        hasMedicalRecord: true,
+        medicalRecordDocumentCount: 1,
         chiefComplaint: '头晕、头痛 1 周，伴颈部紧箍感。',
         raw: { mock: true },
       },
     ];
+    const filtered = visits.filter((visit) => {
+      const visitTime = Date.parse(visit.visitDate.replace(/-/g, '/'));
+      if (Number.isFinite(startTime) && visitTime < startTime) return false;
+      if (Number.isFinite(endTime) && visitTime > endTime) return false;
+      if (normalizedQuery?.requireDiagnosisAndRecord) {
+        return Boolean(visit.diagnoses?.length && visit.hasMedicalRecord);
+      }
+      return true;
+    });
+    const limit = normalizedQuery?.limit ?? filtered.length;
+    return limit > 0 ? filtered.slice(0, limit) : filtered;
   }
 
   async fetchOutpatientMedicalRecordDocuments(visitId: string): Promise<HisOutpatientMedicalRecordDocument[]> {

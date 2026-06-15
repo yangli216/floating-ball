@@ -231,6 +231,21 @@
 - **解决方案**: 症状问诊适配共享结果页时显式透传标准诊断 ID；最终回写前统一校验 `diagList.idDiag` 来源，未匹配标准诊断库时拦截提交；智能问诊不再为未匹配诊断生成可混淆的临时主键。
 - **后续防护**: 任何进入 `record-confirmed.diagList.idDiag` 的值都必须来自 PHIS 标准诊断库，展示 key 和保存主键不得复用同一字段语义。
 
+---
+
+### RETRO-028: 住院病历生成中“查房记录”字段未被识别为 AI 自动生成，且正文包含重复基本信息 [已解决]
+
+- **现象**: 
+  1. 查房记录模板中的“查房记录文本”未能被前端识别为 AI 自动生成字段，无法进行高亮和生成；
+  2. 生成的主诉、既往史、查房记录等描述文本中，经常会冗余地包含患者的姓名、年龄、住院号等基本身份信息描述。
+- **根因**: 
+  1. `inpatientEmrTemplate.ts` 的默认匹配配置 `defaultMatcherConfig.aiSuitableKeywords` 缺少 “查房” 和 “查房记录” 相关识别词；
+  2. 尽管大模型理解上下文需要 `PATIENT_INFO` 数据，但 Prompt 的 Constraints 约束中没有明确禁止在正文中重复输出这部分页眉已有的患者身份信息。
+- **解决方案**: 
+  1. 在 `defaultMatcherConfig.aiSuitableKeywords` 中添加了 `"查房"`、`"查房记录"`、`"查房正文"` 和拼音缩写 `'cf'`, `'cfjl'`，并在 `inferFieldMeaning` 补充其字段含义；
+  2. 在 `buildInpatientEmrGeneratePrompt` 的 Constraints 约束中，新增第 16 条约束，明确要求在生成主诉、现病史、既往史、查房记录等正文时，禁止输出姓名、性别、年龄、住院号等已在病历页眉展示的基本信息。
+- **后续防护**: 后续新增/解析病历文书字段或有新文书类型加入时，必须同步核对 `inpatientEmrTemplate.ts` 中的匹配词以及 `inpatientEmrPrompts.ts` 的负向约束描述。
+
 > 新增条目请复制以下模板：
 
 ```markdown

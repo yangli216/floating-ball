@@ -33,15 +33,11 @@ import type {
   HisPatientInfo,
   HisPatientHistory,
   HisOutpatientVisit,
+  HisOutpatientVisitHistoryQuery,
   HisOutpatientMedicalRecordDocument,
   HisOutpatientMedicalRecord,
-  HisInpatientDiagnosis,
-  HisInpatientOrder,
   HisInpatientEmrContextPackage,
   HisInpatientEmrContextQuery,
-  HisInpatientQuery,
-  HisInpatientRegistrationInfo,
-  HisInpatientTemperatureChart,
 } from './types';
 
 export type { HisServiceContext, PharmacyOption };
@@ -58,6 +54,7 @@ export type {
   HisPatientInfo,
   HisPatientHistory,
   HisOutpatientVisit,
+  HisOutpatientVisitHistoryQuery,
   HisOutpatientMedicalRecordDocument,
   HisOutpatientMedicalRecord,
   HisInpatientDiagnosis,
@@ -151,18 +148,6 @@ export interface HisAdapter {
 
   // ---- 住院上下文 ----
 
-  /** @deprecated 住院病历 AI 生成已改为 fetchInpatientEmrContext 聚合上下文，不再依赖该明细接口 */
-  fetchInpatientDiagnoses?(query: HisInpatientQuery): Promise<HisInpatientDiagnosis[]>;
-
-  /** @deprecated 住院病历 AI 生成已改为 fetchInpatientEmrContext 聚合上下文，不再依赖该明细接口 */
-  fetchInpatientOrders?(query: HisInpatientQuery): Promise<HisInpatientOrder[]>;
-
-  /** @deprecated 住院病历 AI 生成已改为 fetchInpatientEmrContext 聚合上下文，不再依赖该明细接口 */
-  fetchInpatientTemperatureChart?(query: HisInpatientQuery): Promise<HisInpatientTemperatureChart | null>;
-
-  /** @deprecated 住院病历 AI 生成已改为 fetchInpatientEmrContext 聚合上下文，不再依赖该明细接口 */
-  fetchInpatientRegistration?(query: HisInpatientQuery): Promise<HisInpatientRegistrationInfo | null>;
-
   /**
    * 住院病历 AI 生成唯一上下文入口：按本次病历书写场景返回已裁剪、已摘要的 AI 上下文包。
    *
@@ -171,9 +156,14 @@ export interface HisAdapter {
   fetchInpatientEmrContext(query: HisInpatientEmrContextQuery): Promise<HisInpatientEmrContextPackage | null>;
 
   /**
-   * 根据患者 ID 获取门诊就诊历史列表（仅限门急诊，暂定最近3次）
+   * 根据患者 ID 获取门诊就诊历史列表（仅限门急诊）。
+   *
+   * 入院记录引用场景默认按时间范围查询并过滤为“有诊断 + 有病历文书”的可用就诊。
    */
-  fetchOutpatientVisitHistory(patientId: string, limit?: number): Promise<HisOutpatientVisit[]>;
+  fetchOutpatientVisitHistory(
+    patientId: string,
+    query?: number | HisOutpatientVisitHistoryQuery,
+  ): Promise<HisOutpatientVisit[]>;
 
   /**
    * 根据门诊就诊 ID 获取该次门急诊病历文书列表。

@@ -34,6 +34,7 @@ dist-ssr
 .claude/
 .shared/
 .agent/
+outputs/
 
 *.key
 CONSULTATION_UX_IMPROVEMENTS.md
@@ -44,5 +45,6 @@ docs/*
 !docs/frontend-reuse-architecture.md
 !docs/frontend-ui-reference.md
 !docs/his-inpatient-emr-ai-context-integration.md
+!docs/inpatient-emr-next-milestone.md
 !docs/knowledge-search.md
 documents/*
