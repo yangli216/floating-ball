@@ -2,6 +2,7 @@ import type { MatchedDiagnosis, MatchedTreatment } from '@features/voice-consult
 import type { Diagnosis, TreatmentRecommendation } from '@/types/consultation';
 import { splitDosageAndUnit } from '@/utils/treatmentInference';
 import type { ClinicalResultTreatment } from './clinicalResultAdapter';
+import { normalizeRawTreatmentRecommendationFields } from './clinicalResultTreatmentFields';
 import { getStandardDiagnosisId } from './recordConfirmedPayload';
 
 type TreatmentMatchState = Pick<
@@ -92,8 +93,12 @@ export function initClinicalTreatments(
   options: InitClinicalTreatmentsOptions,
 ): TreatmentRecommendation[] {
   return matched.map((item) => {
-    const inherited = item as ClinicalResultTreatment;
     const type = mapClinicalTreatmentType(item.type);
+    const normalizedRaw = normalizeRawTreatmentRecommendationFields(
+      item as ClinicalResultTreatment & Record<string, unknown>,
+      type,
+    );
+    const inherited = normalizedRaw as ClinicalResultTreatment;
     const suggestedName = item.name;
     const hasExistingMatch = hasClinicalResultTreatmentState(item);
     const assessment = hasExistingMatch
@@ -126,8 +131,8 @@ export function initClinicalTreatments(
       frequencyKey: item.frequencyKey || '',
       route: inherited.route || item.usage || options.inferRoute([item.usage, item.evidenceText, item.text].filter(Boolean).join(' ')),
       routeKey: inherited.routeKey || item.usageKey || '',
-      totalQty: item.totalQty || '',
-      totalUnit: item.totalUnit || '',
+      totalQty: inherited.totalQty || item.totalQty || '',
+      totalUnit: inherited.totalUnit || item.totalUnit || '',
       days: item.days || '',
       sourceType: item.sourceType,
       evidenceText: item.evidenceText || item.text || '',

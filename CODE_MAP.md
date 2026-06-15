@@ -138,11 +138,13 @@ floating-ball/
 | **useWindowManagement.ts** | ~422 | 窗口位置/尺寸/显示器管理；真实实现已迁至 `src/app/shell/useWindowManagement.ts`，旧 `src/composables/useWindowManagement.ts` 兼容 re-export 已删除 | `saveWindowPosition()`, `restoreWindowPosition()`, `smartExpand()`, `resizeWorkWindow()` |
 | **useWorkMode.ts** | ~422 | 球体 <-> 工作面板的切换；真实实现已迁至 `src/app/shell/useWorkMode.ts`，旧 `src/composables/useWorkMode.ts` 兼容 re-export 已删除 | `enterWorkMode()`, `exitWork()`, `handleCollapse()` |
 | **useSymptomConsultationCache.ts** | -- | 智能问诊未结束现场缓存；按就诊锚点保存内部页面、症状/表单、病历草稿、诊断/推荐和引用状态；诊毕/放弃清理，跨自然日失效 | `read/write/clear` 快照 |
+| **useConsultationRecordDraftGeneration.ts** | -- | 智能问诊病历草稿生成 controller：先用 `consultationRecordAiDraft.ts` 构造基层全科模板风格的 LLM 请求并解析 JSON 主诉/现病史，失败时退回 `consultationGeneratedRecord.ts` 本地规则草稿 | `generateRecordDraft()`, `buildLocalDraft()` |
 | **useVoiceConsultation.ts** | -- | 语音录制 -> 转写 -> 病历生成；按 `consultationId` 缓存语音病例解析结果并支持重启后恢复未提交结果；缓存 key、跨自然日失效、base entry 读写 / 清理和 editorSnapshot 增量合并已抽到 `src/features/voice-consultation/model/voiceConsultationCache.ts` | 录制控制、转写回调、结果提交、窗口切换、toast、取消/错误结果写回 |
 | **useVoiceIntentRecognition.ts** | -- | 语音结构化抽取：真实实现位于 `src/features/voice-consultation/model/useVoiceIntentRecognition.ts`，旧 `src/composables/useVoiceIntentRecognition.ts` 仅保留兼容 re-export；把医患对话整理成病例草稿、诊断/检查/药品提示，并保留 explicit/inferred 来源标记与处方核心字段，供 `VoiceConsultationNew.vue` 直接落地到可编辑结果页；同时在抽取后分流“条件性用药”和“患者已自行服用药”，避免误入当前处方候选；LLM JSON 候选抽取复用 `features/clinical-result/clinicalResultLlmJsonParser.ts`，结构校验与一次修复流程留在语音域 model | LLM 抽取、结果结构校验、一次修复重试、目录匹配、结构归一、治疗项后处理；不处理缓存恢复、PHIS 回写、窗口切换或诊毕 / 放弃 |
 | **clinicalResultLlmJsonParser.ts** | -- | 问诊结果共享 LLM JSON 宽容解析器：真实实现位于 `src/features/clinical-result/clinicalResultLlmJsonParser.ts`；症状问诊旧 `consultationLlmJsonParser.ts` 仅兼容重导出，语音结果页诊断 / 治疗推荐解析复用同一套去 BOM、markdown fence、平衡括号候选扫描和错误包装 | 不调用 LLM、不弹 toast、不写日志、不读写 Vue ref 或页面状态 |
 | **clinicalResultAiRequest.ts** | -- | 问诊结果共享 AI 请求规格 helper：真实实现位于 `src/features/clinical-result/clinicalResultAiRequest.ts`；构造 diagnosis、medication、exam、lab_test、procedure 推荐的 chat messages 与 trace config，支持单路和多路治疗推荐规格；prompt 资产由调用方注入，trace 基础字段和具体 scene/title/action 可注入且默认保持语音问诊取值 | 不调用 `chat`、不改 loading、不处理错误、不写日志、不读写 Vue ref / 缓存 / PHIS |
 | **clinicalResultAiMapping.ts** | -- | 问诊结果共享 AI raw 映射 helper：真实实现位于 `src/features/clinical-result/clinicalResultAiMapping.ts`；把语音结果页诊断 raw 标准库匹配、治疗 raw catalog assessment / normalize 组合、多路治疗响应解析失败隔离和合并，以及智能问诊 western 诊断 raw 策略化匹配、western 治疗 raw 数组按目标类型过滤转换从页面中抽离，匹配 / normalize / parser / parse-error 回调由页面注入 | 不调用 LLM、不弹 toast、不写日志、不读写 Vue ref、不触发事实核查 / 缓存 / PHIS |
+| **clinicalResultTreatmentFields.ts** | -- | 问诊结果共享治疗字段归一 helper：真实实现位于 `src/features/clinical-result/clinicalResultTreatmentFields.ts`；把 AI raw 中的 `quantity/count/amount` 等数量别名归一到 `totalQty/totalUnit`，并提供执行科室当前值到标准 key 的同步函数，供语音问诊、智能问诊和独立诊疗方案复用；执行科室本身必须来自医生选择或 HIS 项目详情 hydrate，不从 AI raw 反填 | 纯函数，不调用 HIS、不改选中态、不弹 toast、不触发 hydrate / 库存 / PHIS |
 | **treatmentRequiredFields.ts** | -- | 问诊结果共享治疗项必要字段校验 helper：真实实现位于 `src/features/clinical-result/treatmentRequiredFields.ts`；按用药、检查、检验、处置分别校验 `record-confirmed.orderList` 必需字段，并可复用 `useClinicalResultWritebackPayload` 暴露的 order resolver 保持校验口径与最终 payload 一致；执行科室、医保限用、药品总量等被医生清空时只认当前控件空值，不从匹配元数据或默认值补回 | 纯函数，不调用 HIS、不 hydrate、不弹 toast、不打开编辑器、不修改治疗项 |
 | **useMedicalDictionaries.ts** | ~145 | HIS 字典统一加载：真实实现已迁至 `src/features/consultation-result/model/useMedicalDictionaries.ts`，旧 `src/composables/useMedicalDictionaries.ts` 兼容 re-export 已删除；负责频次 / 用法 / 发药药房 / 执行科室数据加载，不携带页面特有副作用，调用方需在 `loadPharmacyOptions/loadAllDictionaries` 之后自行补药品目录预热、执行科室 key 同步等后置动作。语音问诊与症状问诊共用 | `frequencyOptions/routeOptions/pharmacyOptions/execDeptOptions` refs、`loadXxxOptions()` |
 | **useTreatmentNormalization.ts** | ~290 | 治疗项归一化：真实实现已迁至 `src/features/consultation-result/model/useTreatmentNormalization.ts`，旧 `src/composables/useTreatmentNormalization.ts` 兼容 re-export 已删除；把部分字段补齐为完整 `TreatmentRecommendation`，沿用 HIS 默认值（频次 / 用法 / 剂量 / 总量）+ 自动估算总量；通过 `ensurePharmacy`/`isExecDeptSatisfied` 回调向调用方注入业务侧副作用 | `normalize()`、`findFrequencyOptionByValue/findRouteOptionByValue`、`getFrequencyExecCount` |
@@ -193,7 +195,7 @@ useEventListeners (全局事件) -> 触发 useNavigation & useWorkMode
 | **medicalData.ts** | ~600 | 医学数据目录加载、缓存恢复与匹配（ICD-10 诊断/药品/检查项）；运行期不再依赖本地 CSV 作为数据来源，而是优先恢复已有 SQLite / localStorage 缓存，再按模式补同步：本地模式优先走 HISService 并把结果写入本地 SQLite，区域化模式继续走远端 delta；诊疗项目缓存按机构+租户隔离，药品缓存按机构+租户+药房 `storeId` 隔离，并保留 `storeIds` 用于当前药房集合并集匹配；同时暴露调试态查询/清理能力 | 模糊匹配 + 拼音支持 |
 | **diagnosisPath.ts** | ~568 | 诊断推理路径生成 | ECharts 节点/连线数据，ICD-10 匹配 |
 | **pmphai.ts** | ~806 | PMPHAI 医学知识库（主通道） | 向量搜索、列表搜索、文档检索、OAuth 令牌管理 |
-| **textGeneration.ts** | ~281 | 主诉/现病史文本生成 | 症状数据 -> LLM -> 医学叙事文本 |
+| **textGeneration.ts** | ~281 | 症状字段文本规则兜底 | 症状字段 -> 本地主诉/现病史片段；当前作为 AI 病历草稿失败时的兜底，不直接调用 LLM |
 
 ### 语音服务
 
@@ -342,7 +344,7 @@ HIS POST /api/consultation/start
   -> useEventListeners.ts 接收
   -> App.vue enterWorkMode() -> 打开 ConsultationPage
   -> 医生选症状(3种模式) -> 填表单(templates.json)
-  -> LLM 生成主诉+现病史
+  -> LLM 按基层全科模板风格生成主诉+现病史（失败退回本地规则草稿）
   -> LLM 推荐诊断 -> medicalData.ts 匹配 ICD-10
   -> 医生确认 -> complete_consultation 命令
   -> lib.rs 存入 AppState

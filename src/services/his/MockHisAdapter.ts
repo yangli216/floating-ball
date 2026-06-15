@@ -157,6 +157,7 @@ export class MockHisAdapter implements HisAdapter {
       itemName: cat.name,
       unit: '次',
       executingDeptId: this.execDeptId,
+      defaultQuantity: 1,
       raw: { mock: true },
     };
   }

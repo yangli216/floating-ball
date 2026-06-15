@@ -263,7 +263,9 @@ export const VoiceIntentRecognitionPrompt = {
       "aliases": ["医院常用简称1", "常见别名2"],
       "evidenceText": "对话证据片段",
       "sourceType": "explicit",
-      "goal": "处置目的"
+      "goal": "处置目的",
+      "totalQty": "对话中明确提到的数量值；未明确时留空",
+      "totalUnit": "对话中明确提到的数量单位；未明确时留空"
     }
   ],
   "error": false,
@@ -1168,6 +1170,8 @@ export const ProcedureRecommendationPrompt = {
 3. 避免推荐需要上级医院才能完成的高风险操作
 4. 处置名称尽量贴近基层医疗机构标准名称（如：针刺、拔罐、推拿治疗、微波治疗、红外线治疗等）
 5. 如果门诊日常存在稳定简称或别名，可补充 1-3 个 aliases 便于院内目录匹配
+6. 只有病例或医生要求中明确提到处置次数 / 数量时，才返回 totalQty / totalUnit；未明确时留空，后续由 HIS 标准项目详情反填或医生补齐
+7. 不要输出执行科室，执行科室必须由标准项目详情或医生选择决定
 
 **输出要求：**
 严格返回JSON数组格式，不包含markdown标记`,
@@ -1197,6 +1201,8 @@ ${params.chiefComplaint}
 2. 仅推荐基层可执行的操作
 3. 如当前诊断无需处置，返回空数组 []
 4. 不要推荐药品、检查或检验项目
+5. 只有主诉、现病史或已选诊断明确要求处置次数 / 数量时，才补充 totalQty、totalUnit；未明确时留空
+6. 不要根据处置类别推断执行科室
 
 **返回格式：**
 [
@@ -1827,7 +1833,7 @@ export const MedicalRecordCheckPrompt = {
  */
 export const PROMPT_VERSION = {
   medicalRecordGeneration: 'v1.0',
-  voiceIntentRecognition: 'v2.0',
+  voiceIntentRecognition: 'v2.1',
   voiceIntentRepair: 'v1.0',
   riskAnalysis: 'v1.0',
   diagnosisRecommendation: 'v1.0',
@@ -1836,7 +1842,7 @@ export const PROMPT_VERSION = {
   treatmentRecommendation: 'v2.1',
   examinationRecommendation: 'v1.0',
   labTestRecommendation: 'v1.0',
-  procedureRecommendation: 'v1.0',
+  procedureRecommendation: 'v1.1',
   chatAssistant: 'v1.0',
   diagnosisCheck: 'v1.0',
   medicineCheck: 'v1.0',

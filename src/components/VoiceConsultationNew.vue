@@ -56,6 +56,7 @@ import {
   mergeClinicalResultAiTreatmentResponses,
   parseLLMJson,
   shouldAutoSelectTreatment,
+  syncTreatmentExecDeptSelections as syncSharedTreatmentExecDeptSelections,
   toManualMatchCandidateView,
   type ClinicalResultInput,
   type ClinicalResultRecordSummaryInput,
@@ -764,7 +765,6 @@ async function confirmSuggestedMatch(rec: TreatmentRecommendation, event?: Event
   rec.matchStatus = 'confirmed';
   rec.manualMatched = false;
   rec.selected = false;
-  rec.execDept = '';
   rec.pharmacyCleared = false;
   rec.execDeptCleared = false;
   rec.insuranceCleared = false;
@@ -787,7 +787,6 @@ async function applyManualMatch(rec: TreatmentRecommendation, candidate: ManualM
   if (!applyManualMatchCandidate(rec, candidate)) {
     return;
   }
-  rec.execDept = '';
   rec.pharmacyCleared = false;
   rec.execDeptCleared = false;
   rec.insuranceCleared = false;
@@ -1442,31 +1441,7 @@ async function fetchPharmacyOptions(): Promise<void> {
 }
 
 function syncTreatmentExecDeptSelections(): void {
-  if (execDeptOptions.value.length === 0) {
-    return;
-  }
-
-  const keyByText = new Map(execDeptOptions.value.map((option) => [option.text, option.key]));
-  treatments.value.forEach((rec) => {
-    if (rec.type === 'medicine') {
-      return;
-    }
-
-    if (rec.execDeptCleared) {
-      return;
-    }
-
-    const currentValue = (rec.execDept || '').trim();
-    if (!currentValue) {
-      return;
-    }
-
-    if (execDeptOptions.value.some((option) => option.key === currentValue)) {
-      return;
-    }
-
-    rec.execDept = keyByText.get(currentValue) || rec.execDept;
-  });
+  syncSharedTreatmentExecDeptSelections(treatments.value, execDeptOptions.value);
 }
 
 async function fetchExecDeptOptions(): Promise<void> {

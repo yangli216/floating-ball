@@ -65,6 +65,16 @@ export {
   type ConsultationGeneratedRecordTarget,
 } from './lib/consultationGeneratedRecord';
 export {
+  buildConsultationRecordAiDraftMessages,
+  normalizeConsultationRecordAiDraftOutput,
+  type BuildConsultationRecordAiDraftMessagesInput,
+  type ConsultationRecordAiDraftMode,
+  type ConsultationRecordAiDraftOutput,
+  type ConsultationRecordAiDraftPatientProfile,
+  type ConsultationRecordAiDraftRequestSpec,
+  type ConsultationRecordAiDraftSymptom,
+} from './lib/consultationRecordAiDraft';
+export {
   buildConsultationFormValidationResult,
   type BuildConsultationValidationInput,
   type ConsultationValidationField,
@@ -215,6 +225,10 @@ export {
   type ConsultationAssistTrackPayload,
   type UseConsultationAssistControllerInput,
 } from './model/useConsultationAssistController';
+export {
+  useConsultationRecordDraftGeneration,
+  type UseConsultationRecordDraftGenerationInput,
+} from './model/useConsultationRecordDraftGeneration';
 export {
   areAllReferenceItemsSuccessful,
   buildPendingReferenceStatusEntry,

@@ -570,6 +570,8 @@ export interface HiBdCliDetailBody {
   insertUser?: string;
   id?: string;
   count?: number;
+  amount?: number;
+  quantity?: number;
   sdSpecimenText?: string;
   naCstmg?: string;
   idDeptExec?: string;

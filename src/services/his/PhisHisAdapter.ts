@@ -753,12 +753,14 @@ export class PhisHisAdapter implements HisAdapter {
     const detail = await this.service.fetchMedicalItemDetail(itemId);
     if (!detail) return null;
 
+    const raw = detail as unknown as Record<string, unknown>;
     return {
       itemId: trim(detail.idCli) ?? itemId,
       itemName: trim(detail.naCli) ?? '',
       unit: trim(detail.unit),
       executingDeptId: trim(detail.idDeptExec),
-      raw: detail as unknown as Record<string, unknown>,
+      defaultQuantity: firstNumber(raw, ['count', 'amount', 'quantity']),
+      raw,
     };
   }
 

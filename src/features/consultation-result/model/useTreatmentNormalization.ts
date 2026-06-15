@@ -270,9 +270,7 @@ export function useTreatmentNormalization(deps: TreatmentNormalizationDeps): Tre
       bodySiteId: rec.bodySiteId || rec.matchedItem?.idPart || readFirstString(matchedRaw, ['idPart']),
       bodySiteOptions: rec.bodySiteOptions || [],
       execDeptCleared: !!rec.execDeptCleared,
-      execDept: rec.execDept || (rec.type && rec.type !== 'medicine' && !rec.execDeptCleared
-        ? (rec.matchedItem?.idDeptExec || readFirstString(matchedRaw, ['idDeptExec', 'idDept']))
-        : '') || '',
+      execDept: rec.execDept || '',
       insuranceCleared: !!rec.insuranceCleared,
       insuranceType: rec.insuranceCleared ? '' : (rec.insuranceType || '医保使用'),
     };

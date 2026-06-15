@@ -33,6 +33,7 @@ import {
   getTreatmentEditorKey,
   getTreatmentEditorFieldKey,
   hasProbableMatch,
+  syncTreatmentExecDeptSelections as syncSharedTreatmentExecDeptSelections,
   toManualMatchCandidateView,
   type MedicinePrimaryField,
   type ManualMatchRawCandidate,
@@ -249,20 +250,7 @@ const {
 } = manualMatchState;
 
 function syncTreatmentExecDeptSelections(): void {
-  if (execDeptOptions.value.length === 0) return;
-
-  const keyByText = new Map(execDeptOptions.value.map((option) => [option.text, option.key]));
-  treatments.value.forEach((item) => {
-    if (item.type === 'medicine') return;
-    if (item.execDeptCleared) return;
-
-    const currentValue = (item.execDept || '').trim();
-    if (!currentValue || execDeptOptions.value.some((option) => option.key === currentValue)) {
-      return;
-    }
-
-    item.execDept = keyByText.get(currentValue) || item.execDept;
-  });
+  syncSharedTreatmentExecDeptSelections(treatments.value, execDeptOptions.value);
 }
 
 async function loadDictionaries(): Promise<void> {
@@ -628,7 +616,6 @@ async function confirmSuggestedMatch(item: TreatmentRecommendation): Promise<voi
     matchStatus: 'confirmed',
     manualMatched: false,
     selected: false,
-    execDept: '',
     pharmacyCleared: false,
     execDeptCleared: false,
     insuranceCleared: false,
@@ -661,7 +648,6 @@ async function applyManualMatch(item: TreatmentRecommendation, candidate: Manual
     showToast?.('该标准库候选类型与当前推荐项不匹配。', 'info');
     return;
   }
-  candidateItem.execDept = '';
   candidateItem.pharmacyCleared = false;
   candidateItem.execDeptCleared = false;
   candidateItem.insuranceCleared = false;

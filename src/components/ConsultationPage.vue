@@ -528,7 +528,7 @@
 import { ref, shallowRef, computed, onMounted, watch, onUnmounted, inject, nextTick } from 'vue';
 import symptomAssociations from '../assets/symptom-associations.json';
 import { medicalDataService, type DiagnosisItem } from '../services/medicalData';
-import { chat } from '../services/llm';
+import { chat, chatFast } from '../services/llm';
 import { invoke } from '@tauri-apps/api/core';
 import { feedbackService } from '../services/feedback';
 import { getHisAdapter } from '../services/his';
@@ -579,17 +579,14 @@ import { submitConsultationUserLog } from '../services/consultationUserLog';
 import {
   applyCheckboxFieldChange,
   buildConsultationFormValidationResult,
-  buildConsultationGeneratedRecord,
   buildDiagnosisDisplayGroups,
   buildDiagnosisRecommendationsFromRaw,
   buildDiagnosisPrefill,
   buildFinalRecord,
   buildGeneratedRecordPrefillPatch,
-  buildGeneralConditionHistoryText,
   buildMedicalAdvice,
   buildSelectedTreatmentSnapshots,
   buildTcmSignsPromptText,
-  buildTcmSignsReportText,
   buildReferenceStatusEntryFromFeedback,
   buildSmartUserLogSnapshot as buildSymptomSmartUserLogSnapshot,
   generalConditionConfig,
@@ -609,6 +606,7 @@ import {
   tcmInquiryConfig,
   trackConsultationCompletion,
   useConsultationAssistController,
+  useConsultationRecordDraftGeneration,
   useSymptomCollectionController,
   type DiagnosisDisplayGroup,
   type ReferenceAction,
@@ -631,6 +629,7 @@ import {
   getMatchedOrderServiceId,
   getTreatmentRecommendationFeedbackKey,
   readFirstString,
+  syncTreatmentExecDeptSelections as syncSharedTreatmentExecDeptSelections,
   type OrderItemResolvers,
 } from '@features/clinical-result';
 import {
@@ -904,34 +903,7 @@ async function syncTreatmentPharmacyScope(): Promise<void> {
 }
 
 function syncTreatmentExecDeptSelections(): void {
-  if (hisExecDeptOptions.value.length === 0) {
-    return;
-  }
-
-  const keyByText = new Map(hisExecDeptOptions.value.map((option) => [option.text, option.key]));
-  getAllRecommendationItems().forEach((rec) => {
-    if (rec.type === 'medicine') {
-      return;
-    }
-
-    if (rec.execDeptCleared) {
-      return;
-    }
-
-    const currentValue = (rec.execDept || '').trim();
-    if (!currentValue) {
-      return;
-    }
-
-    if (hisExecDeptOptions.value.some((option) => option.key === currentValue)) {
-      return;
-    }
-
-    const normalized = keyByText.get(currentValue);
-    if (normalized) {
-      rec.execDept = normalized;
-    }
-  });
+  syncSharedTreatmentExecDeptSelections(getAllRecommendationItems(), hisExecDeptOptions.value);
 }
 
 async function ensureTreatmentDictionaryStateReady(): Promise<void> {
@@ -979,6 +951,24 @@ const patientPromptProfile = computed(() => ({
   gender: getPatientContextGenderText(patientInfo.value as any) || '',
   age: getPatientContextAgeText(patientInfo.value as any) || '',
 }));
+
+const recordDraftGeneration = useConsultationRecordDraftGeneration({
+  selectedSymptoms,
+  formData,
+  mode: computed(() => consultationMode.value === 'tcm' ? 'tcm' : 'western'),
+  companionSymptomNames,
+  patientProfile: patientPromptProfile,
+  tcmConfig: tcmInquiryConfig,
+  chatFast,
+  buildSymptomTexts: (symptom, data, target, excludeKeys) => (
+    generateTextsForSymptom(symptom, data, target, excludeKeys)
+  ),
+  onAiFallback: (error) => {
+    console.warn('[ConsultationPage] AI record draft failed, using local fallback', error);
+    trackError('ai_record_draft_failed', error);
+    showToast('AI 病历草稿生成失败，已使用本地规则草稿。', 'info');
+  },
+});
 
 const {
   registerExternalRecommendationTarget,
@@ -1582,7 +1572,7 @@ const handleEndConsultation = async () => {
 
   try {
     // 3. Generation Logic
-    generateMedicalRecord();
+    await generateMedicalRecord();
 
     // 4. Switch View
     currentView.value = 'record';
@@ -1989,6 +1979,7 @@ const fetchExamRecommendation = async () => {
     }
 
     examRecommendations.value = processedRecs;
+    void treatmentHydration.hydrateMatchedMedicalItemDetails(processedRecs);
 
     try {
       await registerTreatmentRecommendationFeedbackTargets({
@@ -2069,6 +2060,7 @@ const fetchLabTestRecommendation = async () => {
     }
 
     labTestRecommendations.value = processedRecs;
+    void treatmentHydration.hydrateMatchedMedicalItemDetails(processedRecs);
 
     try {
       await registerTreatmentRecommendationFeedbackTargets({
@@ -2149,6 +2141,7 @@ const fetchProcedureRecommendation = async () => {
     }
 
     procedureRecommendations.value = processedRecs;
+    void treatmentHydration.hydrateMatchedMedicalItemDetails(processedRecs);
 
     try {
       await registerTreatmentRecommendationFeedbackTargets({
@@ -2303,22 +2296,9 @@ watch(
   { immediate: true }
 );
 
-const generateMedicalRecord = () => {
-  generatedRecord.value = buildConsultationGeneratedRecord({
-    selectedSymptoms: selectedSymptoms.value,
-    formData: formData.value,
-    mode: consultationMode.value === 'tcm' ? 'tcm' : 'western',
-    companionSymptomNames: companionSymptomNames.value,
-    buildSymptomTexts: (symptom, data, target, excludeKeys) => (
-      generateTextsForSymptom(symptom, data, target, excludeKeys)
-    ),
-    buildGeneralConditionText: buildGeneralConditionHistoryText,
-    buildTcmSignsText: (data) => buildTcmSignsReportText(tcmInquiryConfig, data),
-  });
+const generateMedicalRecord = async () => {
+  generatedRecord.value = await recordDraftGeneration.generateRecordDraft();
 };
-
-
-
 
 </script>
 

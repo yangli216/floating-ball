@@ -1,4 +1,5 @@
 import type { Diagnosis, TreatmentRecommendation } from '@/types/consultation';
+import { normalizeRawTreatmentRecommendationFields } from './clinicalResultTreatmentFields';
 
 export interface ClinicalResultDiagnosisCatalogMatch {
   id: string;
@@ -101,10 +102,11 @@ export function buildClinicalResultTreatmentRecommendationsFromRaw(
   return input.rawRecommendations
     .filter((rec) => !rec.type || rec.type === input.type)
     .map((rec) => {
-      const aliases = Array.isArray(rec.aliases) ? (rec.aliases as string[]) : undefined;
-      const assessment = input.match(input.type, rec.name || '', aliases, rec.spec);
+      const normalizedRaw = normalizeRawTreatmentRecommendationFields(rec, input.type);
+      const aliases = Array.isArray(normalizedRaw.aliases) ? (normalizedRaw.aliases as string[]) : undefined;
+      const assessment = input.match(input.type, normalizedRaw.name || '', aliases, normalizedRaw.spec);
       return input.normalize({
-        ...(rec as Partial<TreatmentRecommendation>),
+        ...(normalizedRaw as Partial<TreatmentRecommendation>),
         aliases,
         type: input.type,
         matchedItem: assessment.matchedItem,
@@ -117,17 +119,19 @@ export function buildClinicalResultTreatmentRecommendationsFromRaw(
 
 export function mapClinicalResultAiTreatments(input: MapClinicalResultAiTreatmentsInput): TreatmentRecommendation[] {
   return input.rawTreatments.map((rec) => {
-    const aliases = Array.isArray(rec.aliases) ? rec.aliases : undefined;
+    const normalizedRaw = normalizeRawTreatmentRecommendationFields(rec, rec.type);
+    const type = normalizedRaw.type || rec.type;
+    const aliases = Array.isArray(normalizedRaw.aliases) ? normalizedRaw.aliases : undefined;
     const assessment = input.assessCatalogMatch(
-      rec.type,
-      rec.name,
+      type,
+      normalizedRaw.name,
       aliases,
-      rec.type === 'medicine' ? rec.spec : undefined,
+      type === 'medicine' ? normalizedRaw.spec : undefined,
     );
     return input.normalize({
-      ...rec,
+      ...normalizedRaw,
       aliases,
-      originalName: rec.originalName || rec.name,
+      originalName: normalizedRaw.originalName || normalizedRaw.name,
       matchedItem: assessment.matchedItem,
       suggestedMatchItem: assessment.suggestedMatchItem,
       matchStatus: assessment.matchStatus,

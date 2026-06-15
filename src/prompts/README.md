@@ -181,15 +181,15 @@ const messages = ref<ChatMessage[]>([
 
 ## Prompt 版本管理
 
-每个 Prompt 都有版本号，便于追踪和 A/B 测试：
+每个 Prompt 都有版本号，便于追踪和 A/B 测试；完整版本表以 `src/prompts/prompts.ts` 里的 `PROMPT_VERSION` 为准：
 
 ```typescript
 export const PROMPT_VERSION = {
-  medicalRecordGeneration: 'v1.0',
-  riskAnalysis: 'v1.0',
-  diagnosisRecommendation: 'v1.0',
-  treatmentRecommendation: 'v1.0',
-  chatAssistant: 'v1.0'
+  voiceIntentRecognition: 'v2.1',
+  treatmentRecommendation: 'v2.1',
+  procedureRecommendation: 'v1.1',
+  chatAssistant: 'v1.0',
+  // ...
 };
 ```
 

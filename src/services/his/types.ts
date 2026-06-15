@@ -87,7 +87,7 @@ export interface MedicineDetail {
 /**
  * 检查/检验/处置项详情
  *
- * 业务层用途：拉到当前选中项的执行科室、单位等信息回填到处方/医嘱编辑器。
+ * 业务层用途：拉到当前选中项的执行科室、单位、默认数量等信息回填到处方/医嘱编辑器。
  */
 export interface MedicalItemDetail {
   /** 项目 ID（中央 / 机构维度的项目主键） */
@@ -98,6 +98,8 @@ export interface MedicalItemDetail {
   unit?: string;
   /** 默认执行科室 ID */
   executingDeptId?: string;
+  /** HIS 项目详情返回的默认数量（如处置次数），用于非药品项目真实反填 */
+  defaultQuantity?: number;
 
   /** 厂商透传 */
   raw: Record<string, unknown>;

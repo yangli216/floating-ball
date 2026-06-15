@@ -126,6 +126,12 @@ export type {
 } from './consultationSubmitPayload';
 
 export {
+  normalizeExecDeptSelectionValue,
+  normalizeRawTreatmentRecommendationFields,
+  syncTreatmentExecDeptSelections,
+} from './clinicalResultTreatmentFields';
+
+export {
   applyManualMatchCandidate,
   findManualMatchCandidates,
   getManualMatchKey,

@@ -26,7 +26,7 @@
         v-if="allergyDisplay"
         class="tag-allergy"
         :title="`过敏史：${allergyDisplay}`"
-      >过敏史</div>
+      >{{ allergyLabel }}</div>
     </div>
 
     <div v-if="$slots.actions" class="header-actions">
@@ -126,9 +126,14 @@ const mobile = computed((): string => {
 const allergyDisplay = computed((): string => {
   const p = props.patient || {};
   const raw = (s(p.allergyHistory) || s(p.allergy_history) || s(p.allergy)).trim();
-  if (!raw) return '';
-  if (/^(无|否认|否|none|n\/a|未知|不详)/i.test(raw)) return '';
-  return raw;
+  const content = raw.replace(/^过敏史\s*[:：]\s*/, '').trim();
+  if (!content) return '';
+  if (/^(无|否认|否|none|n\/a|未知|不详)/i.test(content)) return '';
+  return content;
+});
+
+const allergyLabel = computed((): string => {
+  return allergyDisplay.value ? `过敏史：${allergyDisplay.value}` : '';
 });
 
 const avatarSrc = computed(() => {
@@ -206,14 +211,19 @@ const avatarSrc = computed(() => {
 }
 
 .tag-allergy {
+  max-width: min(280px, 100%);
   background: #E03134;
   color: #fff;
   padding: 2px 8px;
   border-radius: 16px;
   font-size: 12px;
   font-weight: 400;
+  line-height: 16px;
   border: 1px solid #FFFFFF;
   cursor: default;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .contact-info {

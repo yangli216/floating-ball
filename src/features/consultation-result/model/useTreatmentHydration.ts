@@ -9,8 +9,8 @@
  *
  * 与语音侧差异：
  * - 不持有 UI 状态（如 quick selector、editor expansion）；调用方在 toggle 处自行处理拒绝路径。
- * - 非药品 hydrate 只回填 execDept / unit；检查项目 part options 可由调用方注入落地函数。
- * - 医生已手动清空 pharmacy / execDept 时不再用详情返回值自动补回。
+ * - 非药品 hydrate 从 HIS 项目详情真实回填 execDept / unit / defaultQuantity；检查项目 part options 可由调用方注入落地函数。
+ * - 医生已手动清空 pharmacy / execDept，或手动编辑数量时，不再用详情返回值自动补回。
  */
 
 import { ref, type Ref } from 'vue';
@@ -78,6 +78,13 @@ function isValidMedicineProDetail(detail: MedicineDetail | null): detail is Medi
     detail.dose,
     detail.defaultSingleDose,
   ].some((value) => typeof value === 'string' && value.trim().length > 0);
+}
+
+function formatDetailQuantity(value: number | undefined): string {
+  if (typeof value !== 'number' || !Number.isFinite(value) || value <= 0) {
+    return '';
+  }
+  return Number.isInteger(value) ? String(value) : String(value);
 }
 
 export function useTreatmentHydration(deps: Deps) {
@@ -347,6 +354,11 @@ export function useTreatmentHydration(deps: Deps) {
 
       if (!rec.totalUnit && detail.unit) {
         rec.totalUnit = detail.unit;
+      }
+
+      const detailQuantity = formatDetailQuantity(detail.defaultQuantity);
+      if (!rec.totalQty && !rec.totalManualEdited && detailQuantity) {
+        rec.totalQty = detailQuantity;
       }
 
       await hydrateMedicalItemPartOptions(rec, detail.itemId || idCli, his);
