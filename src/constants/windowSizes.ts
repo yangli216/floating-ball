@@ -64,8 +64,8 @@ export const WINDOW_SIZES = {
   /** 诊断路径：972×608px 独立 Sankey 说明窗口 */
   DIAGNOSIS_PATH: { width: 972, height: 608 } as WindowSize,
 
-  /** 问诊页面：960×680px 紧凑双栏工作台 */
-  CONSULTATION: { width: 960, height: 680 } as WindowSize,
+  /** 问诊页面：1120×760px 双栏工作台，给结果编辑和底部操作保留初始空间 */
+  CONSULTATION: { width: 1120, height: 760 } as WindowSize,
 
   /** 语音胶囊录音态：360×80px 千千静听歌词风格紧凑条 */
   CAPSULE: { width: 360, height: 80 } as WindowSize,
@@ -113,7 +113,7 @@ export const WINDOW_SIZES = {
  * @example
  * ```typescript
  * const size = getWindowSizeForView('consultation');
- * // => { width: 960, height: 680 }
+ * // => { width: 1120, height: 760 }
  * ```
  */
 export function getReceptionCapsuleSize(options?: Pick<WindowSizeOptions, 'expanded' | 'riskCount'>): WindowSize {

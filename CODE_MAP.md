@@ -286,7 +286,7 @@ Pinia 跨组件共享状态（仅两个，新增需人工审批）。
 
 | 文件 | 职责 |
 |------|------|
-| **windowSizes.ts** | 各视图窗口尺寸（chat: 420x620, consultation: 960x680, voice: 360x80 等） |
+| **windowSizes.ts** | 各视图窗口尺寸（chat: 420x620, consultation: 1120x760, voice: 360x80 等） |
 | **animation.ts** | 动画时长、缓动、窗口尺寸容差阈值 |
 | **consultationConfig.ts** | 问诊 UI 配置 |
 

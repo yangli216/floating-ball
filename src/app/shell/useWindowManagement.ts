@@ -104,9 +104,7 @@ export function useWindowManagement(options: WindowManagementOptions) {
     }
 
     if (view === 'consultation') {
-      const isLegacyDefaultSize = Math.round(size.width) === 1080 && Math.round(size.height) === 720;
-      return !isLegacyDefaultSize
-        && size.width >= WINDOW_SIZES.CONSULTATION.width
+      return size.width >= WINDOW_SIZES.CONSULTATION.width
         && size.height >= WINDOW_SIZES.CONSULTATION.height;
     }
 
