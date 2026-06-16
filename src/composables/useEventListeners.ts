@@ -67,6 +67,10 @@ export interface EventListenersOptions {
   currentPatient: Ref<AppPatient | null>;
   /** 住院病历生成请求 */
   inpatientEmrRequest: Ref<InpatientEmrGenerationRequest | null>;
+  /** 是否应复用当前最小化的住院病历生成现场 */
+  shouldRestoreInpatientEmrRequest?: (request: InpatientEmrGenerationRequest) => boolean;
+  /** 清理住院病历最小化恢复入口 */
+  clearMinimizedInpatientEmrSession?: () => void;
   /** 风险提示状态 */
   riskState: {
     riskPatientName: Ref<string>;
@@ -132,6 +136,8 @@ export function useEventListeners(options: EventListenersOptions) {
     ringMenuRef,
     currentPatient,
     inpatientEmrRequest,
+    shouldRestoreInpatientEmrRequest,
+    clearMinimizedInpatientEmrSession,
     riskState,
     showToast,
     handleWindowMove,
@@ -396,6 +402,12 @@ export function useEventListeners(options: EventListenersOptions) {
       return;
     }
 
+    if (shouldRestoreInpatientEmrRequest?.(payload)) {
+      await navigation.openInpatientEmr();
+      return;
+    }
+
+    clearMinimizedInpatientEmrSession?.();
     inpatientEmrRequest.value = payload;
     await navigation.openInpatientEmr();
   }

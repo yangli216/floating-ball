@@ -392,6 +392,15 @@ function recordInpatientEmrMinimizedSession(): void {
   });
 }
 
+function shouldRestoreInpatientEmrRequest(request: InpatientEmrGenerationRequest): boolean {
+  const activeInpatientEmrSession = minimizedSessions.getActive('inpatient-emr');
+  return Boolean(
+    activeInpatientEmrSession
+    && activeInpatientEmrSession.anchorId === request.admissionId
+    && inpatientEmrRequest.value?.admissionId === request.admissionId,
+  );
+}
+
 /**
  * 用户主动收起的统一入口：
  *  - 如果当前在症状问诊 / 语音问诊未结束的视图，记录最小化；
@@ -535,6 +544,8 @@ const eventListeners = useEventListeners({
   ringMenuRef,
   currentPatient,
   inpatientEmrRequest,
+  shouldRestoreInpatientEmrRequest,
+  clearMinimizedInpatientEmrSession: () => minimizedSessions.clear('inpatient-emr'),
   riskState: {
     riskPatientName,
     riskPatientGender,
