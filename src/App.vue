@@ -361,22 +361,36 @@ async function cancelSymptomConsultation(): Promise<void> {
 }
 
 // 可见性/可点击门禁：
-// 问诊按钮始终可见；仅在当前患者存在未结束的问诊（最小化会话）时才可点击，
-// 作为“恢复问诊界面”的入口；否则置灰禁用。
+// 问诊按钮始终可见；仅在存在未结束的问诊或住院病历生成（最小化会话）时才可点击，
+// 作为“恢复工作界面”的入口；否则置灰禁用。
 const hasResumableConsultation = computed(() =>
-  currentPatient.value !== null && minimizedSessions.latestType.value !== null
+  minimizedSessions.latestType.value === 'inpatient-emr'
+    ? inpatientEmrRequest.value !== null
+    : currentPatient.value !== null && minimizedSessions.latestType.value !== null
 );
 
 const resumableConsultationIcon = computed(() => {
-  return minimizedSessions.latestType.value === 'voice' ? 'lucide:mic' : 'lucide:stethoscope';
+  if (minimizedSessions.latestType.value === 'voice') return 'lucide:mic';
+  if (minimizedSessions.latestType.value === 'inpatient-emr') return 'lucide:file-pen';
+  return 'lucide:stethoscope';
 });
 
 const resumableConsultationTitle = computed(() => {
   if (!hasResumableConsultation.value) {
-    return '暂无未结束的问诊';
+    return '暂无未结束的问诊或病历生成';
   }
+  if (minimizedSessions.latestType.value === 'inpatient-emr') return '恢复住院病历生成';
   return minimizedSessions.latestType.value === 'voice' ? '恢复语音问诊' : '恢复问诊界面';
 });
+
+function recordInpatientEmrMinimizedSession(): void {
+  const request = inpatientEmrRequest.value;
+  if (!request?.admissionId) return;
+  minimizedSessions.recordByAnchor('inpatient-emr', request.admissionId, {
+    patientId: request.patient?.patientId || request.patient?.idPi,
+    patientName: request.patient?.name || request.admissionId,
+  });
+}
 
 /**
  * 用户主动收起的统一入口：
@@ -393,6 +407,8 @@ async function handleUserCollapse(): Promise<void> {
     return;
   } else if (currentView.value === 'voice-consultation' && currentPatient.value) {
     minimizedSessions.record('voice', currentPatient.value);
+  } else if (currentView.value === 'inpatient-emr' && inpatientEmrRequest.value) {
+    recordInpatientEmrMinimizedSession();
   } else if (
     currentView.value === 'voice-interaction' &&
     currentPatient.value &&
@@ -429,6 +445,10 @@ async function handleConsultationRingClick(): Promise<void> {
     await enterWorkMode();
     return;
   }
+  if (latest === 'inpatient-emr' && inpatientEmrRequest.value) {
+    await openInpatientEmr();
+    return;
+  }
   await openConsultation();
 }
 
@@ -451,7 +471,23 @@ async function handleBallDblClick(): Promise<void> {
     await openConsultation();
     return;
   }
+  if (latest === 'inpatient-emr' && inpatientEmrRequest.value) {
+    await openInpatientEmr();
+    return;
+  }
   await openChat();
+}
+
+async function cancelInpatientEmrGeneration(): Promise<void> {
+  minimizedSessions.clear('inpatient-emr');
+  inpatientEmrRequest.value = null;
+  await exitWork('cancelled');
+}
+
+async function completeInpatientEmrGeneration(): Promise<void> {
+  minimizedSessions.clear('inpatient-emr');
+  inpatientEmrRequest.value = null;
+  await exitWork('completed');
 }
 
 async function startVoiceInteraction(options?: { skipCacheRestore?: boolean }): Promise<void> {
@@ -881,9 +917,11 @@ const openInsideCloudHome = async () => {
             @close="handleUserCollapse"
           />
           <InpatientEmrPage
-            v-if="currentView === 'inpatient-emr'"
+            v-show="currentView === 'inpatient-emr'"
             :request="inpatientEmrRequest"
             @close="handleUserCollapse"
+            @cancel="cancelInpatientEmrGeneration"
+            @completed="completeInpatientEmrGeneration"
           />
           <DifferentialDiagnosisModalPage
             v-if="currentView === 'differential-diagnosis'"

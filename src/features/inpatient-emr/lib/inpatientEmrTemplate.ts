@@ -102,6 +102,7 @@ export const defaultMatcherConfig: InpatientEmrMatcherConfig = {
 };
 
 let currentMatcherConfig = { ...defaultMatcherConfig };
+const documentTypeExcludeKeywords = new Set(['入院', 'ry']);
 
 export function getInpatientEmrMatcherConfig(): InpatientEmrMatcherConfig {
   return currentMatcherConfig;
@@ -118,12 +119,19 @@ export function getPresetFieldStatus(id: string, name: string): 'exclude' | 'ai'
   const text = `${id} ${name}`.toLowerCase();
   const config = getInpatientEmrMatcherConfig();
 
-  if (config.excludeKeywords.some((keyword) => text.includes(keyword.toLowerCase()))) {
+  if (config.excludeKeywords.some((keyword) => {
+    const normalizedKeyword = keyword.toLowerCase();
+    return !documentTypeExcludeKeywords.has(normalizedKeyword) && text.includes(normalizedKeyword);
+  })) {
     return 'exclude';
   }
 
   if (config.aiSuitableKeywords.some((keyword) => text.includes(keyword.toLowerCase()))) {
     return 'ai';
+  }
+
+  if (config.excludeKeywords.some((keyword) => text.includes(keyword.toLowerCase()))) {
+    return 'exclude';
   }
 
   return 'unknown';

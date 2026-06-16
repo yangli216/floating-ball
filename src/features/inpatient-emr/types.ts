@@ -27,6 +27,7 @@ export interface InpatientEmrGenerationRequest {
   templateName?: string;
   recordTime?: string;
   doctorSupplement?: string;
+  allowGenerateWithoutExternalBasis?: boolean;
   contextPolicy?: HisInpatientEmrContextPolicy;
   hisContext?: HisInpatientEmrContextPackage;
   requestId?: string;

@@ -7,6 +7,16 @@
       </div>
       <div class="header-actions">
         <button
+          class="danger-ghost-btn"
+          type="button"
+          :disabled="!request || isGenerating || isWritingBack"
+          title="放弃本次生成"
+          @click="handleCancelClick"
+        >
+          <Icon icon="lucide:trash-2" :size="16" />
+          <span>放弃</span>
+        </button>
+        <button
           class="ghost-btn"
           type="button"
           :disabled="!request || isGenerating"
@@ -294,6 +304,30 @@
       </section>
     </div>
 
+    <div
+      v-if="showCancelConfirm"
+      class="regenerate-overlay cancel-overlay"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="inpatient-emr-cancel-title"
+    >
+      <section class="cancel-dialog">
+        <div class="cancel-dialog-body">
+          <div class="cancel-icon">
+            <Icon icon="lucide:triangle-alert" :size="20" />
+          </div>
+          <div>
+            <strong id="inpatient-emr-cancel-title">确认放弃本次住院病历生成？</strong>
+            <p>放弃后将清空当前未回写的病历草稿、编辑内容和生成过程，窗口会退回小球状态。</p>
+          </div>
+        </div>
+        <footer class="cancel-dialog-actions">
+          <button class="ghost-btn" type="button" @click="closeCancelConfirm">继续编辑</button>
+          <button class="danger-btn" type="button" @click="confirmCancel">确认放弃</button>
+        </footer>
+      </section>
+    </div>
+
     <!-- 门诊病历详情预览模态框 -->
     <div
       v-if="showOutpatientPreview"
@@ -395,6 +429,8 @@ const props = defineProps<{
 
 const emit = defineEmits<{
   close: [];
+  cancel: [];
+  completed: [];
 }>();
 
 const {
@@ -411,10 +447,12 @@ const {
   updateFieldValue,
   writeBack,
   applyReferenceFeedback,
+  reset,
 } = useInpatientEmrGeneration();
 
 const previewHtml = ref('');
 const showRegenerateDialog = ref(false);
+const showCancelConfirm = ref(false);
 const showWritebackQualityDialog = ref(false);
 const pendingQualityIssues = ref<InpatientEmrQualityIssue[]>([]);
 
@@ -641,6 +679,12 @@ watch(
           openRegenerateDialog();
         }
       });
+    } else {
+      reset();
+      previewHtml.value = '';
+      showRegenerateDialog.value = false;
+      showCancelConfirm.value = false;
+      showWritebackQualityDialog.value = false;
     }
   },
   { immediate: true },
@@ -652,7 +696,7 @@ useConsultationReferenceFeedbackListener<InpatientEmrReferenceFeedbackPayload>({
   onFeedback: (payload) => {
     const status = applyReferenceFeedback(payload);
     if (status === 'success') {
-      emit('close');
+      emit('completed');
     }
   },
 });
@@ -689,6 +733,24 @@ function closeRegenerateDialog(): void {
   if (isRecordingSupplement.value || isTranscribingSupplement.value) return;
   showRegenerateDialog.value = false;
   supplementError.value = '';
+}
+
+function handleCancelClick(): void {
+  if (isGenerating.value || isWritingBack.value) return;
+  showCancelConfirm.value = true;
+}
+
+function closeCancelConfirm(): void {
+  showCancelConfirm.value = false;
+}
+
+function confirmCancel(): void {
+  if (isGenerating.value || isWritingBack.value) return;
+  showCancelConfirm.value = false;
+  showRegenerateDialog.value = false;
+  showOutpatientPreview.value = false;
+  showWritebackQualityDialog.value = false;
+  emit('cancel');
 }
 
 function appendSupplementPreset(preset: string): void {
@@ -816,6 +878,7 @@ function confirmRegenerate(): void {
   void start({
     ...current,
     doctorSupplement: doctorSupplement || undefined,
+    allowGenerateWithoutExternalBasis: !doctorSupplement,
     outpatientVisitId: selectedVisitId.value || undefined,
   });
 }
@@ -919,6 +982,7 @@ button {
 }
 
 .ghost-btn,
+.danger-ghost-btn,
 .primary-btn {
   height: 30px;
   display: inline-flex;
@@ -937,6 +1001,12 @@ button {
   border: 1px solid rgba(99, 121, 129, 0.24);
 }
 
+.danger-ghost-btn {
+  color: #9f3428;
+  background: #fff7f5;
+  border: 1px solid rgba(180, 61, 46, 0.24);
+}
+
 .primary-btn {
   background: #0f8f7b;
   color: #ffffff;
@@ -944,6 +1014,7 @@ button {
 }
 
 .ghost-btn:disabled,
+.danger-ghost-btn:disabled,
 .primary-btn:disabled {
   opacity: 1 !important;
   cursor: not-allowed;
@@ -957,6 +1028,12 @@ button {
   border-color: rgba(72, 91, 99, 0.28) !important;
 }
 
+.danger-ghost-btn:disabled {
+  color: #5c4a45 !important;
+  background: #ece7e5 !important;
+  border-color: rgba(92, 74, 69, 0.22) !important;
+}
+
 .primary-btn:disabled {
   color: #2d3f48 !important;
   background: #d9e2e5 !important;
@@ -965,6 +1042,8 @@ button {
 
 .ghost-btn:disabled span,
 .ghost-btn:disabled svg,
+.danger-ghost-btn:disabled span,
+.danger-ghost-btn:disabled svg,
 .primary-btn:disabled span,
 .primary-btn:disabled svg {
   color: currentColor !important;
@@ -972,6 +1051,7 @@ button {
 }
 
 .ghost-btn:not(:disabled):hover,
+.danger-ghost-btn:not(:disabled):hover,
 .primary-btn:not(:disabled):hover {
   transform: translateY(-1px);
 }
@@ -1263,6 +1343,76 @@ button {
   background: rgba(255, 255, 255, 0.98);
   border: 1px solid rgba(101, 125, 134, 0.22);
   box-shadow: 0 26px 70px rgba(12, 28, 34, 0.22);
+}
+
+.cancel-overlay {
+  z-index: 26;
+}
+
+.cancel-dialog {
+  width: min(420px, 100%);
+  display: grid;
+  gap: 18px;
+  border-radius: 8px;
+  padding: 18px;
+  background: rgba(255, 255, 255, 0.98);
+  border: 1px solid rgba(180, 61, 46, 0.18);
+  box-shadow: 0 26px 70px rgba(12, 28, 34, 0.22);
+}
+
+.cancel-dialog-body {
+  display: grid;
+  grid-template-columns: 38px minmax(0, 1fr);
+  gap: 12px;
+  align-items: start;
+}
+
+.cancel-icon {
+  width: 38px;
+  height: 38px;
+  display: grid;
+  place-items: center;
+  border-radius: 8px;
+  color: #b43d2e;
+  background: #fff1ee;
+}
+
+.cancel-dialog-body strong {
+  display: block;
+  color: #1c3138;
+  font-size: 16px;
+  line-height: 1.4;
+}
+
+.cancel-dialog-body p {
+  margin: 6px 0 0;
+  color: #52666e;
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+.cancel-dialog-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.danger-btn {
+  height: 30px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 12px;
+  border-radius: 7px;
+  color: #ffffff;
+  background: #b43d2e;
+  cursor: pointer;
+  transition: transform 0.15s ease, background 0.15s ease;
+}
+
+.danger-btn:hover {
+  transform: translateY(-1px);
+  background: #9f3428;
 }
 
 .regenerate-head,

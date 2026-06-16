@@ -756,6 +756,7 @@ SDK 调用：`sdk.generateInpatientEmr({ admissionId, templateId, templateName, 
 | `htmlContent` | String | 是 | 当前病历模板 HTML，桌面端会解析其中带 `data-id` 的模板字段；区域化模式下会作为原生模板内容保存到后端，供管理端查看源码和 HTML 预览 |
 | `recordTime` | String | 否 | 本次病程记录书写时间，如 `2026-06-10 15:25`；未传时桌面端使用当前系统时间。生成正文会以该日期作为“今日 / 本次查房日期”，避免把历史体温单日期误写成今日 |
 | `doctorSupplement` | String | 否 | 医生补充的本次病历书写要点，通常由桌面端“重新生成”弹窗录入或语音转写得到；AI 生成时作为高优先级补充上下文，但仍不得扩展为未提供事实 |
+| `allowGenerateWithoutExternalBasis` | Boolean | 否 | 桌面端内部重生成控制字段。入院类模板初次自动生成时若缺少补充要点和门诊正文会等待补充；医生点击“直接重新生成”时置为 `true`，表示已确认仅基于住院聚合上下文继续生成 |
 | `contextPolicy` | Object | 否 | 住院上下文裁剪策略，如 `maxDays`、`previousNoteLimit`、`labLookbackDays`、`orderLookbackDays`；用于避免长住院全量数据进入 AI 上下文 |
 | `hisContext` | Object | 否 | HIS 直接传入的 AI 上下文包；存在时桌面端优先使用该包中的登记、诊断、体温单、医嘱、检验检查、历史病程摘要等数据，不再强依赖分散住院接口 |
 | `requestId` | String | 否 | HIS 侧请求 ID；未传时桌面端会生成 |
@@ -903,7 +904,7 @@ HTTP Bridge 受理响应：
 后续事件：
 
 1. 桌面端打开“住院病历生成”界面，医生可看到“获取住院上下文 / 整理诊疗摘要 / 整理病历依据 / 解析病历 / AI 生成”的步骤状态。PHIS 通过 `api/phis.aiInpatientEmrContextService/buildContext` 一次性返回上下文，桌面端调用该 PHIS RPC 时使用数组入参 `[requestMap]`，界面上仅拆分展示处理阶段。
-2. 若医生对生成结果不满意，可点击“重新生成”，在桌面端弹窗中手动输入或语音转写补充本次查房要点；桌面端会把补充内容作为 `doctorSupplement` 重新进入 AI 生成，不改变 HIS 原始上下文。
+2. 若医生对生成结果不满意，可点击“重新生成”，在桌面端弹窗中手动输入或语音转写补充本次查房要点；桌面端会把补充内容作为 `doctorSupplement` 重新进入 AI 生成，不改变 HIS 原始上下文。若医生未补充要点且点击“直接重新生成”，桌面端会设置 `allowGenerateWithoutExternalBasis = true`，AI 继续基于住院聚合上下文生成，不再停留在“等待补充要点或门诊病历依据”状态。
 3. 入院记录场景下，医生可在“重新生成”弹窗里选择一次门诊就诊作为基础资料。门诊历史默认查询近 7 天，并提供近 1 月、近 3 月切换；PHIS `queryVisitHistory` 入参在 `params.dtBgn` 中传时间范围，例如 `[{"limit":-1,"params":{"idPi":"患者ID","dtBgn":["2026-06-08 00:00:00","2026-06-15 23:59:59"]}}]`。桌面端只展示同时有有效诊断和门诊病历文书的就诊记录，无诊断或无文书记录会被过滤。当前 PHIS Adapter 会先根据门诊 `idVis` 调用 `api/otms.rpcEmrEditorLookService/getLookMedList`，入参为 `[{"idApp":"42","idTet":"租户ID","idHospital":"门诊idVis"}]`，并把返回的 `idMedrecdoc / naMed / titleTime / medType / fgCommit` 等映射为门诊病历文书列表；随后按 `idMedrecdoc` 调用 `api/otms.rpcEmrEditorLookService/getMedContentLook`，入参为 `[{"idApp":"42","idTet":"租户ID","idMedrecdoc":"文书ID","courseShow":0}]`，读取 `body.data.htmlContent` 作为门诊病历正文。正文会用于门诊病历预览，并转换为纯文本作为 AI 参考上下文；若正文接口失败，桌面端才退回只展示文书列表和正文不可用提示。
 4. 医生在预览界面确认后点击“一键回写”。桌面端会先执行一轮本地轻量病历质控；无风险项时直接产生 `record-confirmed`，存在风险项时只弹出质控提醒，医生确认继续后再产生 `record-confirmed`。同时 `sdk.generateInpatientEmr(...)` 返回的 Promise 会 resolve 这份 payload。其中 `resultType` 固定为 `record-confirmed`，`referenceType/action` 固定为 `batch`，`emrType` 为 `inpatient-emr`。
 5. `record-confirmed.payload.fieldValues` 为 `{ [data-id]: value }` 的结构化字段取值；仅包含本次传入 `htmlContent` 中真实存在、且模板解析结果标记为适合 AI 生成的字段，若医生在预览中编辑过 AI 字段，以编辑后的文本为准。

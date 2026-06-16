@@ -71,6 +71,7 @@ function shouldWaitForAdmissionGeneration(
   outpatientRecord: HisOutpatientMedicalRecord | null | undefined,
 ): boolean {
   if (!isAdmissionTemplate(request.templateName || '')) return false;
+  if (request.allowGenerateWithoutExternalBasis) return false;
   if (request.doctorSupplement?.trim()) return false;
   return !hasUsableOutpatientRecordReference(outpatientRecord);
 }

@@ -93,6 +93,18 @@ export function useInpatientEmrGeneration() {
     steps.value = createInitialSteps();
   }
 
+  function reset(): void {
+    currentRequest.value = null;
+    result.value = null;
+    errorMessage.value = '';
+    writebackMessage.value = '';
+    writebackStatus.value = 'idle';
+    pendingWritebackRequestId.value = '';
+    isGenerating.value = false;
+    isWritingBack.value = false;
+    resetSteps();
+  }
+
   function updateStep(progress: InpatientEmrGenerationProgress): void {
     steps.value = steps.value.map((step) => (
       step.key === progress.key
@@ -279,5 +291,6 @@ export function useInpatientEmrGeneration() {
     updateFieldValue,
     writeBack,
     applyReferenceFeedback,
+    reset,
   };
 }

@@ -108,6 +108,7 @@ function buildRequestSummaryFromRequest(
     outpatientVisitId: request.outpatientVisitId,
     hasDoctorSupplement: Boolean(request.doctorSupplement?.trim()),
     doctorSupplementLength: request.doctorSupplement?.trim().length || 0,
+    allowGenerateWithoutExternalBasis: Boolean(request.allowGenerateWithoutExternalBasis),
     hasRequestHisContext: Boolean(request.hisContext),
   });
 }
