@@ -711,10 +711,7 @@ onMounted(() => {
       <section class="plan-card">
         <header class="plan-card-header">
           <div>
-            <h2>
-              推荐方案
-              <span v-if="currentDiagnosis">（基于【{{ currentDiagnosis.name }}】）</span>
-            </h2>
+            <h2>推荐方案</h2>
             <p v-if="canRecommend" class="plan-subtitle">
               勾选需要同步到 PHIS 的处置项目，一键回写会按所选项生成诊断和医嘱清单。
             </p>
