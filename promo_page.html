@@ -1,0 +1,744 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>智医助理 MedHermes - 基层医疗 AI 辅助工作站</title>
+  <!-- 引入现代字体 -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;600;800&family=Noto+Sans+SC:wght@400;500;700;900&display=swap" rel="stylesheet">
+  
+  <style>
+    /* 全局 CSS 变量定义 - 采用极高品质的青色与暗黑色彩体系 */
+    :root {
+      --primary: #0f8f7b;
+      --primary-glow: rgba(15, 143, 123, 0.3);
+      --primary-light: #e6f4f2;
+      --dark-bg: #091316;
+      --dark-card: rgba(20, 35, 40, 0.72);
+      --dark-card-border: rgba(15, 143, 123, 0.24);
+      --text-main: #ecf3f5;
+      --text-muted: #8ca3aa;
+      --accent: #d69719;
+      --accent-glow: rgba(214, 151, 25, 0.2);
+      --danger: #e24b3b;
+      --radius: 16px;
+      --font-outfit: 'Outfit', 'Noto Sans SC', sans-serif;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      -webkit-tap-highlight-color: transparent;
+    }
+
+    body {
+      font-family: var(--font-outfit);
+      background-color: var(--dark-bg);
+      color: var(--text-main);
+      line-height: 1.6;
+      overflow-x: hidden;
+      padding-bottom: 80px;
+    }
+
+    /* 背景装饰光晕 */
+    .bg-glow-1 {
+      position: absolute;
+      top: -10%;
+      left: -20%;
+      width: 60%;
+      height: 60%;
+      background: radial-gradient(circle, rgba(15, 143, 123, 0.15) 0%, transparent 70%);
+      pointer-events: none;
+      z-index: -1;
+    }
+
+    .bg-glow-2 {
+      position: absolute;
+      top: 50%;
+      right: -20%;
+      width: 70%;
+      height: 70%;
+      background: radial-gradient(circle, rgba(214, 151, 25, 0.06) 0%, transparent 70%);
+      pointer-events: none;
+      z-index: -1;
+    }
+
+    /* 顶部 Hero 区域 */
+    header {
+      position: relative;
+      padding: 60px 24px 40px;
+      text-align: center;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 16px;
+    }
+
+    .brand-eyebrow {
+      font-size: 13px;
+      font-weight: 700;
+      color: var(--primary);
+      text-transform: uppercase;
+      letter-spacing: 2px;
+      padding: 6px 16px;
+      border-radius: 999px;
+      background: rgba(15, 143, 123, 0.12);
+      border: 1px solid rgba(15, 143, 123, 0.24);
+      display: inline-block;
+      animation: fadeInDown 0.8s ease;
+    }
+
+    h1 {
+      font-size: 38px;
+      font-weight: 900;
+      line-height: 1.2;
+      background: linear-gradient(135deg, #ffffff 30%, #aee3db 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      margin-top: 10px;
+      letter-spacing: -0.5px;
+    }
+
+    .subtitle {
+      font-size: 16px;
+      color: var(--text-muted);
+      max-width: 480px;
+      margin: 8px auto 0;
+      line-height: 1.5;
+    }
+
+    /* 仿真悬浮小球展示区 */
+    .ball-container {
+      position: relative;
+      margin: 32px auto;
+      width: 120px;
+      height: 120px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .simulated-ball {
+      width: 72px;
+      height: 72px;
+      border-radius: 50%;
+      background: radial-gradient(circle at 30% 30%, rgba(255, 255, 255, 0.24) 0%, rgba(15, 143, 123, 0.72) 40%, rgba(5, 40, 34, 0.98) 100%);
+      box-shadow: 
+        0 0 20px 2px var(--primary-glow),
+        0 12px 30px rgba(9, 19, 22, 0.6),
+        inset 0 2px 4px rgba(255, 255, 255, 0.3),
+        inset 0 -2px 10px rgba(0, 0, 0, 0.6);
+      border: 1px solid rgba(255, 255, 255, 0.15);
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      animation: floatBall 3.6s ease-in-out infinite;
+      position: relative;
+      z-index: 2;
+      transition: transform 0.3s ease;
+    }
+
+    .simulated-ball:active {
+      transform: scale(0.92);
+    }
+
+    /* 小球中心的心跳微光 */
+    .simulated-ball::after {
+      content: '';
+      width: 14px;
+      height: 14px;
+      background-color: #ffffff;
+      border-radius: 50%;
+      filter: blur(1px);
+      opacity: 0.9;
+      box-shadow: 0 0 12px 4px #ffffff;
+      animation: pulseLight 1.8s infinite ease-in-out;
+    }
+
+    /* 环绕星轨动画 */
+    .ball-orbit {
+      position: absolute;
+      width: 108px;
+      height: 108px;
+      border: 1px dashed rgba(15, 143, 123, 0.36);
+      border-radius: 50%;
+      animation: rotateOrbit 12s linear infinite;
+      pointer-events: none;
+      z-index: 1;
+    }
+
+    .ball-satellite {
+      position: absolute;
+      top: -4px;
+      left: 50%;
+      transform: translateX(-50%);
+      width: 8px;
+      height: 8px;
+      background-color: #57c7b1;
+      border-radius: 50%;
+      box-shadow: 0 0 8px 2px #57c7b1;
+    }
+
+    /* 痛点卡片区 */
+    .pain-points-section {
+      padding: 0 20px;
+      max-width: 600px;
+      margin: 0 auto 40px;
+    }
+
+    .pain-title {
+      font-size: 15px;
+      color: var(--accent);
+      font-weight: 700;
+      text-align: center;
+      margin-bottom: 20px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+    }
+
+    .pain-grid {
+      display: grid;
+      gap: 12px;
+    }
+
+    .pain-card {
+      background: rgba(226, 75, 59, 0.05);
+      border: 1px solid rgba(226, 75, 59, 0.16);
+      border-radius: 12px;
+      padding: 16px;
+      display: flex;
+      gap: 12px;
+      align-items: flex-start;
+    }
+
+    .pain-card svg {
+      flex-shrink: 0;
+      color: var(--danger);
+      margin-top: 2px;
+    }
+
+    .pain-card strong {
+      display: block;
+      color: #ffffff;
+      font-size: 14px;
+      margin-bottom: 4px;
+    }
+
+    .pain-card p {
+      color: var(--text-muted);
+      font-size: 12px;
+      line-height: 1.45;
+    }
+
+    /* 场景大区 */
+    .scenarios-container {
+      padding: 0 20px;
+      max-width: 600px;
+      margin: 0 auto;
+      display: flex;
+      flex-direction: column;
+      gap: 36px;
+    }
+
+    .section-divider {
+      text-align: center;
+      margin: 20px 0;
+      position: relative;
+    }
+
+    .section-divider span {
+      background: var(--dark-bg);
+      padding: 0 16px;
+      color: var(--primary);
+      font-weight: 700;
+      font-size: 14px;
+      letter-spacing: 1px;
+      position: relative;
+      z-index: 1;
+    }
+
+    .section-divider::after {
+      content: '';
+      position: absolute;
+      left: 0;
+      top: 50%;
+      width: 100%;
+      height: 1px;
+      background: linear-gradient(90deg, transparent, rgba(15, 143, 123, 0.24), transparent);
+      z-index: 0;
+    }
+
+    /* 场景卡片 */
+    .scenario-card {
+      background: var(--dark-card);
+      border: 1px solid var(--dark-card-border);
+      border-radius: var(--radius);
+      overflow: hidden;
+      box-shadow: 0 16px 36px rgba(0, 0, 0, 0.5);
+      backdrop-filter: blur(10px);
+      transition: border-color 0.3s ease;
+    }
+
+    .scenario-card:hover {
+      border-color: rgba(15, 143, 123, 0.48);
+    }
+
+    .scenario-header {
+      padding: 20px;
+      border-bottom: 1px solid rgba(15, 143, 123, 0.12);
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .scenario-num {
+      width: 28px;
+      height: 28px;
+      border-radius: 8px;
+      background: rgba(15, 143, 123, 0.16);
+      border: 1px solid rgba(15, 143, 123, 0.32);
+      color: #ffffff;
+      font-family: var(--font-outfit);
+      font-weight: 800;
+      font-size: 14px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .scenario-header h3 {
+      font-size: 16px;
+      font-weight: 700;
+      color: #ffffff;
+    }
+
+    /* 截图占位区域 */
+    .screenshot-placeholder {
+      width: 100%;
+      height: 220px;
+      background: linear-gradient(135deg, #0d1e21 0%, #081214 100%);
+      position: relative;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      padding: 24px;
+      text-align: center;
+      border-bottom: 1px solid rgba(15, 143, 123, 0.1);
+      overflow: hidden;
+    }
+
+    /* 占位图内部的仿真线框装饰 */
+    .screenshot-wireframe {
+      position: absolute;
+      inset: 12px;
+      border: 1px dashed rgba(15, 143, 123, 0.15);
+      border-radius: 8px;
+      pointer-events: none;
+    }
+
+    .screenshot-placeholder svg {
+      color: var(--primary);
+      opacity: 0.6;
+      margin-bottom: 12px;
+    }
+
+    .screenshot-placeholder h4 {
+      font-size: 13px;
+      color: #ffffff;
+      font-weight: 700;
+      margin-bottom: 6px;
+      z-index: 1;
+    }
+
+    .screenshot-placeholder p {
+      font-size: 11px;
+      color: var(--text-muted);
+      max-width: 300px;
+      line-height: 1.5;
+      z-index: 1;
+    }
+
+    .edit-tag {
+      position: absolute;
+      top: 18px;
+      right: 18px;
+      font-size: 10px;
+      color: var(--accent);
+      background: rgba(214, 151, 25, 0.12);
+      border: 1px solid rgba(214, 151, 25, 0.28);
+      padding: 3px 8px;
+      border-radius: 999px;
+      font-weight: 700;
+    }
+
+    /* 场景优势细节描述 */
+    .scenario-body {
+      padding: 20px;
+    }
+
+    .scenario-body ul {
+      list-style-type: none;
+      display: grid;
+      gap: 10px;
+    }
+
+    .scenario-body li {
+      position: relative;
+      padding-left: 20px;
+      font-size: 13px;
+      color: var(--text-muted);
+      line-height: 1.5;
+    }
+
+    .scenario-body li::before {
+      content: "✦";
+      position: absolute;
+      left: 0;
+      top: 0;
+      color: var(--primary);
+      font-weight: bold;
+    }
+
+    .scenario-body li strong {
+      color: #ffffff;
+      font-weight: 500;
+    }
+
+    /* 技术融合板块 */
+    .tech-specs {
+      background: radial-gradient(circle at top right, rgba(15, 143, 123, 0.08) 0%, transparent 60%);
+      border: 1px solid var(--dark-card-border);
+      border-radius: var(--radius);
+      padding: 24px;
+      margin: 40px auto 0;
+      max-width: 600px;
+      width: calc(100% - 40px);
+    }
+
+    .tech-title {
+      font-size: 16px;
+      color: #ffffff;
+      font-weight: 700;
+      margin-bottom: 16px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .tech-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 16px;
+    }
+
+    .tech-item {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+
+    .tech-item strong {
+      font-size: 13px;
+      color: var(--primary);
+    }
+
+    .tech-item span {
+      font-size: 11px;
+      color: var(--text-muted);
+      line-height: 1.4;
+    }
+
+    /* 尾部行动呼吁 */
+    .footer-cta {
+      margin: 50px auto 20px;
+      text-align: center;
+      padding: 0 24px;
+    }
+
+    .cta-button {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      background: var(--primary);
+      color: #ffffff;
+      padding: 12px 28px;
+      border-radius: 999px;
+      font-size: 14px;
+      font-weight: 700;
+      text-decoration: none;
+      box-shadow: 0 8px 24px var(--primary-glow);
+      transition: transform 0.2s ease, box-shadow 0.2s ease;
+      animation: pulseButton 2s infinite ease-in-out;
+    }
+
+    .cta-button:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 12px 30px rgba(15, 143, 123, 0.5);
+    }
+
+    .cta-hint {
+      font-size: 11px;
+      color: var(--text-muted);
+      margin-top: 12px;
+    }
+
+    /* 关键帧动画定义 */
+    @keyframes floatBall {
+      0%, 100% { transform: translateY(0); }
+      50% { transform: translateY(-8px); }
+    }
+
+    @keyframes rotateOrbit {
+      from { transform: rotate(0deg); }
+      to { transform: rotate(360deg); }
+    }
+
+    @keyframes pulseLight {
+      0%, 100% { transform: scale(1); opacity: 0.8; }
+      50% { transform: scale(1.3); opacity: 1; }
+    }
+
+    @keyframes pulseButton {
+      0%, 100% { box-shadow: 0 8px 24px rgba(15, 143, 123, 0.4); }
+      50% { box-shadow: 0 8px 32px rgba(15, 143, 123, 0.7); }
+    }
+
+    @keyframes fadeInDown {
+      from {
+        opacity: 0;
+        transform: translateY(-12px);
+      }
+      to {
+        opacity: 1;
+        transform: translateY(0);
+      }
+    }
+  </style>
+</head>
+<body>
+
+  <!-- 光晕修饰 -->
+  <div class="bg-glow-1"></div>
+  <div class="bg-glow-2"></div>
+
+  <!-- Hero 区 -->
+  <header>
+    <div class="brand-eyebrow">智医助理 MEDHERMES</div>
+    <h1>基层医生自己的 AI 合伙人</h1>
+    <p class="subtitle">桌面端无缝悬浮工作站 —— 告别打字泥潭，回归临床关怀</p>
+  </header>
+
+  <!-- 动态模拟悬浮小球 -->
+  <div class="ball-container" title="点击试试看小球响应">
+    <div class="ball-orbit">
+      <div class="ball-satellite"></div>
+    </div>
+    <div class="simulated-ball"></div>
+  </div>
+
+  <!-- 痛点对齐 -->
+  <section class="pain-points-section">
+    <div class="pain-title">
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+      <span>基层医生的日常接诊三大痛点</span>
+    </div>
+    <div class="pain-grid">
+      <div class="pain-card">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+        <div>
+          <strong>病历书写繁琐耗时</strong>
+          <p>每天被大量重复录入占用，打字书写病历时间占接诊大半，留给倾听患者的时间屈指可数。</p>
+        </div>
+      </div>
+      <div class="pain-card">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+        <div>
+          <strong>AI 平台与生产系统（HIS）脱节</strong>
+          <p>市面上大部分 AI 只能“给出一段话文本”，医生需要手动录入、复制，根本无法形成规范处方。</p>
+        </div>
+      </div>
+      <div class="pain-card">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+        <div>
+          <strong>非全科常见症状容易遗漏方向</strong>
+          <p>基层医生需面临跨科室排查挑战，不典型症状与高危混淆点容易出现临床排查隐患。</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 场景规划大区 -->
+  <div class="section-divider">
+    <span>五大核心临床场景演示</span>
+  </div>
+
+  <section class="scenarios-container">
+
+    <!-- 场景 1 -->
+    <article class="scenario-card">
+      <header class="scenario-header">
+        <span class="scenario-num">01</span>
+        <h3>极速症状问诊与 AI 病历拼装</h3>
+      </header>
+      
+      <!-- 截图占位 1 -->
+      <div class="screenshot-placeholder">
+        <span class="edit-tag">待您补充截图</span>
+        <div class="screenshot-wireframe"></div>
+        <svg width="34" height="34" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>
+        <h4>门诊接诊与病历自动拼装面板</h4>
+        <p>【建议截图内容】：主屏展示 HIS 界面，右侧贴边浮现智能问诊主窗口。左边有属性问诊表单，勾画少许伴随症状后，AI 框内流式生成格式规范的主诉、现病史文本。</p>
+      </div>
+
+      <div class="scenario-body">
+        <ul>
+          <li><strong>智能病历引擎</strong>：AI 引导式症状网络，支持医生轻松勾选“伴随症状”，告别纯手工打字。</li>
+          <li><strong>格式规范自动拼装</strong>：自动区分急性病、慢病复诊及检查异常，生成符合质控要求、逻辑线清晰的临床病历文本草稿。</li>
+        </ul>
+      </div>
+    </article>
+
+    <!-- 场景 2 -->
+    <article class="scenario-card">
+      <header class="scenario-header">
+        <span class="scenario-num">02</span>
+        <h3>HIS 标准字典映射与一键回写闭环</h3>
+      </header>
+      
+      <!-- 截图占位 2 -->
+      <div class="screenshot-placeholder">
+        <span class="edit-tag">待您补充截图</span>
+        <div class="screenshot-wireframe"></div>
+        <svg width="34" height="34" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
+        <h4>标准药房映射与一键回写提示界面</h4>
+        <p>【建议截图内容】：展示 AI 推荐处方区域，其中“阿莫西林”和“复方甘草”卡片上均反填了发药药房（如“西药房”）、剂量、频次，鼠标点击“一键回写”按钮，HIS 电子处方单中批量填入匹配好的标准药品行。</p>
+      </div>
+
+      <div class="scenario-body">
+        <ul>
+          <li><strong>标准词林映射</strong>：毫秒级提取 AI 诊断，匹配标准 ICD-10；药品自动绑定 HIS 真实药房库存目录，禁止“空头开药”。</li>
+          <li><strong>数据安全闭环</strong>：一键点击批量引用标准项目，非空及部位校验层层把关，不写无用空字段，不破坏 HIS 原有模板结构。</li>
+        </ul>
+      </div>
+    </article>
+
+    <!-- 场景 3 -->
+    <article class="scenario-card">
+      <header class="scenario-header">
+        <span class="scenario-num">03</span>
+        <h3>住院病历要素重组与行内预览编辑</h3>
+      </header>
+      
+      <!-- 截图占位 3 -->
+      <div class="screenshot-placeholder">
+        <span class="edit-tag">待您补充截图</span>
+        <div class="screenshot-wireframe"></div>
+        <svg width="34" height="34" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="9" y1="15" x2="15" y2="15"/><line x1="9" y1="19" x2="13" y2="19"/></svg>
+        <h4>住院病历生成面板与高亮编辑预览</h4>
+        <p>【建议截图内容】：左侧点亮“整理病历依据”、“AI生成”等步骤面板，右侧以高亮淡黄色块形式呈现 AI 生成好的主诉、既往史，页眉等非 AI 字段只读且保留默认值，光标正在双击黄色高亮段落进行行内直接修改。</p>
+      </div>
+
+      <div class="scenario-body">
+        <ul>
+          <li><strong>进度与依据完全透明</strong>：左侧分步进度指示器清晰记录了体温单体征、住院医嘱等依据及生成耗时，让医生深度知晓“AI 结论从何而来”。</li>
+          <li><strong>跨文书重组防复制</strong>：支持一键交叉引用近期门诊就诊文书，结合医生手写补充要点重新梳理，绝不将门诊主诉、现病史原样生硬粘贴。</li>
+          <li><strong>行内受控修改</strong>：预览中非 AI 模板字段绝对只读，AI 字段高亮警示并支持直接双击修改，仅回写修改后的字段键值，保证文书排版不变。</li>
+        </ul>
+      </div>
+    </article>
+
+    <!-- 场景 4 -->
+    <article class="scenario-card">
+      <header class="scenario-header">
+        <span class="scenario-num">04</span>
+        <h3>只读报告解读大图独立窗口</h3>
+      </header>
+      
+      <!-- 截图占位 4 -->
+      <div class="screenshot-placeholder">
+        <span class="edit-tag">待您补充截图</span>
+        <div class="screenshot-wireframe"></div>
+        <svg width="34" height="34" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><line x1="9" y1="9" x2="15" y2="9"/><line x1="9" y1="13" x2="15" y2="13"/><line x1="9" y1="17" x2="11" y2="17"/></svg>
+        <h4>检验检查报告单页式独立解读大窗</h4>
+        <p>【建议截图内容】：展示独立弹出的检验/检查报告单只读窗口。左上角清晰展示“报告解读分析”，纵向依次排布“综合判断”、“异常项目”、“检查建议”，不遮挡正在书写的门诊编辑器。</p>
+      </div>
+
+      <div class="scenario-body">
+        <ul>
+          <li><strong>不打断门诊主链路</strong>：当接收到报告解读指令时，弹出独立大窗。解读以只读模式供医生参考，不破坏当前主问诊或语音病历编辑状态。</li>
+          <li><strong>上下文增强解析</strong>：自动读取或输入当前的患者性别、年龄、既往过敏史作为背景；解析不到报告项目等细节时优雅占位，杜绝强硬报错。</li>
+        </ul>
+      </div>
+    </article>
+
+    <!-- 场景 5 -->
+    <article class="scenario-card">
+      <header class="scenario-header">
+        <span class="scenario-num">05</span>
+        <h3>静默伴随的异步临床安全复核</h3>
+      </header>
+      
+      <!-- 截图占位 5 -->
+      <div class="screenshot-placeholder">
+        <span class="edit-tag">待您补充截图</span>
+        <div class="screenshot-wireframe"></div>
+        <svg width="34" height="34" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+        <h4>非侵入式后台安全卫士提醒栏</h4>
+        <p>【建议截图内容】：问诊主结果页的左下角平滑浮现一栏精致的安全复核卡片，黄色高亮标记提醒：“阿莫西林与患者青霉素过敏史冲突，建议更换罗红霉素，或复查皮试结果。”</p>
+      </div>
+
+      <div class="scenario-body">
+        <ul>
+          <li><strong>异步非侵入设计</strong>：不在开药时弹窗强行阻断医生操作，而是通过静默后台扫描进行伴随提醒，最大程度降低临床决策干扰。</li>
+          <li><strong>临床动作指向性</strong>：提醒绝非泛泛的风险说明，而是准确指导“复查心电图/补充问诊/考虑用药替代”，为基层诊疗保驾护航。</li>
+        </ul>
+      </div>
+    </article>
+
+  </section>
+
+  <!-- 技术融合板块 -->
+  <section class="tech-specs">
+    <div class="tech-title">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><rect x="2" y="2" width="20" height="8" rx="2" ry="2"/><rect x="2" y="14" width="20" height="8" rx="2" ry="2"/><line x1="6" y1="6" x2="6.01" y2="6"/><line x1="6" y1="18" x2="6.01" y2="18"/></svg>
+      <span>MedHermes 技术底座特征</span>
+    </div>
+    <div class="tech-grid">
+      <div class="tech-item">
+        <strong>轻量与兼容性</strong>
+        <span>Tauri 2.0 驱动，打包体积小，完美适配低配基层医生工作站。</span>
+      </div>
+      <div class="tech-item">
+        <strong>统一结果适配</strong>
+        <span>通过中性 ClinicalResultInput 转换器，让智能问诊与语音问诊高度共享交互。</span>
+      </div>
+      <div class="tech-item">
+        <strong>独立 Bridge 模块</strong>
+        <span>支持 Websocket/Deep Link 极速通信，HIS 研发只需 1 天即可完成极简联调。</span>
+      </div>
+      <div class="tech-item">
+        <strong>端侧数据隔离</strong>
+        <span>本地 SQLite 缓存基本字典与多药房目录信息，机构级隔离，保障弱网顺利使用。</span>
+      </div>
+    </div>
+  </section>
+
+  <!-- 行动呼吁 -->
+  <footer class="footer-cta">
+    <a href="#" class="cta-button">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
+      <span>申请试用 / 了解联调方案</span>
+    </a>
+    <div class="cta-hint">已有 200+ 基层门诊医生参与临床协作验证</div>
+  </footer>
+
+</body>
+</html>
