@@ -13,7 +13,7 @@ import {
   parseUnexpectedSseBody,
   extractSseDataPayload,
 } from './errors';
-import { registerDevice } from './registration';
+import { refreshDeviceRegistrationWithToken, registerDevice } from './registration';
 import { restoreCachedDeviceRegistration } from './registrationCache';
 import {
   clearDeviceRegistration,
@@ -38,6 +38,9 @@ export async function createRegionalWebSocketUrl(path: string): Promise<string> 
   if (!token) {
     throw new Error('区域化设备令牌未初始化');
   }
+
+  await refreshDeviceRegistrationWithToken(token);
+  token = getDeviceToken() || token;
 
   const url = new URL(path, `${baseUrl}/`);
   url.protocol = baseUrl.startsWith('https://') ? 'wss:' : 'ws:';
@@ -119,6 +122,17 @@ export function createRegionalSSE(
           ) {
             try {
               await run(allowAuthRetry, false);
+              resolve();
+            } catch (retryError) {
+              reject(retryError);
+            }
+            return;
+          }
+          if (res.status === 401 && errorInfo.code === 'SIG-401' && allowAuthRetry && token) {
+            setRegionalInitialized(false);
+            await refreshDeviceRegistrationWithToken(token);
+            try {
+              await run(false, allowClockRetry);
               resolve();
             } catch (retryError) {
               reject(retryError);

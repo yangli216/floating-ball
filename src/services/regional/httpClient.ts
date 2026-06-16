@@ -17,7 +17,7 @@ import {
 } from './storage';
 import type { ApiResponse } from './types';
 
-type RegisterDeviceFn = () => Promise<unknown>;
+type RegisterDeviceFn = (deviceTokenProof?: string) => Promise<unknown>;
 
 let registerDeviceHandler: RegisterDeviceFn | null = null;
 
@@ -36,6 +36,13 @@ async function ensureRegisteredDevice(): Promise<void> {
     throw new Error('区域化注册服务未初始化');
   }
   await registerDeviceHandler();
+}
+
+async function refreshRegisteredDevice(deviceTokenProof: string): Promise<void> {
+  if (!registerDeviceHandler) {
+    throw new Error('区域化注册服务未初始化');
+  }
+  await registerDeviceHandler(deviceTokenProof);
 }
 
 function resolveRegionalRequestTimeout(path: string): number {
@@ -133,6 +140,17 @@ export async function regionalFetch<T>(
       && updateSignatureClockOffset(errorInfo.timestamp)
     ) {
       return regionalFetch<T>(path, options, allowAuthRetry, false);
+    }
+    if (
+      res.status === 401
+      && errorInfo.code === 'SIG-401'
+      && allowAuthRetry
+      && path !== '/v1/client/register'
+      && token
+    ) {
+      setRegionalInitialized(false);
+      await refreshRegisteredDevice(token);
+      return regionalFetch<T>(path, options, false, allowClockRetry);
     }
     if (res.status === 401 && allowAuthRetry && path !== '/v1/client/register') {
       clearDeviceRegistration();

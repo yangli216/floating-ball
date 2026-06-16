@@ -9,15 +9,27 @@ import { setDeviceToken, STORAGE_KEYS } from './storage';
 import type { RegisterRequest, RegisterResponse } from './types';
 
 export async function registerDevice(): Promise<RegisterResponse> {
+  return registerDeviceInternal(undefined);
+}
+
+export async function refreshDeviceRegistrationWithToken(deviceToken: string | undefined): Promise<RegisterResponse> {
+  return registerDeviceInternal(deviceToken);
+}
+
+async function registerDeviceInternal(deviceToken: string | undefined): Promise<RegisterResponse> {
   const orgCode = getOrgCode();
   if (!orgCode) {
     throw new Error('区域化机构编码未配置');
   }
   const cdDevice = await getDeviceCode();
-  return registerDeviceWithCode(cdDevice, true);
+  return registerDeviceWithCode(cdDevice, !deviceToken, deviceToken);
 }
 
-async function registerDeviceWithCode(cdDevice: string, allowFallbackDeviceCodeRetry: boolean): Promise<RegisterResponse> {
+async function registerDeviceWithCode(
+  cdDevice: string,
+  allowFallbackDeviceCodeRetry: boolean,
+  deviceTokenProof: string | undefined
+): Promise<RegisterResponse> {
   const orgCode = getOrgCode();
   let naDevice = 'FloatingBall';
   let osInfo = 'unknown';
@@ -44,13 +56,23 @@ async function registerDeviceWithCode(cdDevice: string, allowFallbackDeviceCodeR
         osInfo,
         publicKey: publicKeyBase64,
       } satisfies RegisterRequest),
+      ...(deviceTokenProof
+        ? { headers: { Authorization: `Bearer ${deviceTokenProof}` } }
+        : {}),
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
-    if (allowFallbackDeviceCodeRetry && message.includes('设备已注册')) {
+    const errorCode = error && typeof error === 'object' && 'code' in error
+      ? String((error as { code?: unknown }).code || '')
+      : '';
+    if (
+      allowFallbackDeviceCodeRetry
+      && errorCode !== 'DEVICE-KEY-ROTATION-UNAUTHORIZED'
+      && message.includes('设备已注册')
+    ) {
       const fallbackCode = await rotateFallbackDeviceCode();
       console.warn('[RegionalClient] Device code already registered, retrying with fallback device code.');
-      return registerDeviceWithCode(fallbackCode, false);
+      return registerDeviceWithCode(fallbackCode, false, undefined);
     }
     throw error;
   }
@@ -69,4 +91,4 @@ async function registerDeviceWithCode(cdDevice: string, allowFallbackDeviceCodeR
   return resp;
 }
 
-setRegisterDeviceHandler(registerDevice);
+setRegisterDeviceHandler(registerDeviceInternal);

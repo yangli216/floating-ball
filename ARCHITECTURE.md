@@ -140,6 +140,7 @@
 2.2 `SettingsPanel.vue` 需要同时提供“桌面端到 floating-ball-server”的接入测试入口，用于验证 `register -> bootstrap` 链路，并与后台“server 到 LLM”测试入口形成分层排障。
 2.3 设置页“测试 server 连通性”只等待更新策略检查、设备注册和 `bootstrap` 获取，不再同步等待 prompt / template / mapping 数据包等运行时后置同步；区域化 HTTP 请求与更新策略检查必须设置有限超时，失败时结束按钮等待态并展示可操作错误信息。
 2.4 区域化签名时间戳使用 epoch 毫秒。`requestSigner.ts` 会根据 `/v1/*` 响应体顶层 `timestamp` 维护“本机到服务端”的时钟偏移；遇到 `SIG-401` 且响应带服务端时间时，HTTP/SSE 请求会刷新偏移后重签重试一次，避免桌面端系统时间与后台服务器相差超过 5 分钟时阻断诊断推荐。
+2.5 区域化客户端版本升级、WebView 存储域变化或本地签名密钥重建时，桌面端仍以同机构同 `cdDevice` 调用 `POST /v1/client/register`；若本地仍持有旧 `deviceToken`，注册请求会携带该令牌作为同终端证明，后台负责更新设备公钥并返回设备令牌，桌面端不应因同设备码已存在而提示医生手工更新密钥。
 3. HIS 联调通过本地 HTTP Bridge 完成，不依赖独立登录态。
 4. `docs/regionalization/*.md` 中关于 `auth.ts`、`AuthGate.vue` 的更完整登录态设计仍未进入当前实现。
 
