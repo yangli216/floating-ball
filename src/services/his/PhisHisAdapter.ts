@@ -62,6 +62,20 @@ const firstTrim = (record: Record<string, unknown>, keys: string[]): string | un
   return undefined;
 };
 
+const firstNumber = (record: Record<string, unknown>, keys: string[]): number | undefined => {
+  for (const key of keys) {
+    const value = record[key];
+    if (typeof value === 'number' && Number.isFinite(value)) return value;
+    if (typeof value === 'string') {
+      const normalized = value.trim();
+      if (!normalized) continue;
+      const parsed = Number(normalized);
+      if (Number.isFinite(parsed)) return parsed;
+    }
+  }
+  return undefined;
+};
+
 const firstBool = (record: Record<string, unknown>, keys: string[]): boolean | undefined => {
   for (const key of keys) {
     const value = record[key];
