@@ -405,11 +405,12 @@ async function handleFeedback(messageId: string, feedbackType: 'positive' | 'neg
 
 .chat-panel-header {
   width: 100%;
-  height: 48px;
-  padding: 12px 16px;
+  height: 44px;
+  padding: 10px 16px;
   display: flex;
   justify-content: space-between;
   align-items: center;
+  flex-shrink: 0;
 }
 
 .toolbar-left {
@@ -424,12 +425,13 @@ async function handleFeedback(messageId: string, feedbackType: 'positive' | 'neg
 
 .chat-body {
   flex: 1;
-  padding: 12px 16px;
+  min-height: 0;
+  padding: 12px 16px 8px;
   overflow-y: auto;
   overflow-x: hidden; /* 防止横向滚动 */
   display: flex;
   flex-direction: column;
-  gap: 16px;
+  gap: 12px;
 }
 
 /* Custom Scrollbar */
@@ -448,35 +450,38 @@ async function handleFeedback(messageId: string, feedbackType: 'positive' | 'neg
 }
 
 .default-msg {
-  padding: 0 14px;
+  width: min(100%, 360px);
+  padding: 0 8px;
   position: relative;
   margin: 0 auto;
 }
 
 .default-msg-icon {
   position: absolute;
-  top: 48px;
+  top: 18px;
   left: 50%;
-  width: 84px;
-  height: 121px;
+  width: 72px;
+  height: 104px;
   transform: translateX(-50%);
-  z-index: -1;
+  z-index: 0;
 }
 
 .default-msg-content {
-  margin-top: calc(121px / 2 + 60px);
+  position: relative;
+  z-index: 1;
+  margin-top: 92px;
   background: #F2F8FF;
-  border-radius: 16px;
-  padding: 23px 32px;
+  border-radius: 12px;
+  padding: 18px 20px;
 }
 
 .default-msg-title {
   font-family: Microsoft YaHei, Microsoft YaHei;
   font-weight: 700;
-  font-size: 20px;
+  font-size: 18px;
   color: #2469F2;
   text-align: center;
-  margin-bottom: 10px;
+  margin-bottom: 8px;
 }
 
 /* 消息入场动画 */
@@ -498,7 +503,7 @@ async function handleFeedback(messageId: string, feedbackType: 'positive' | 'neg
   display: flex;
   flex-direction: column;
   align-items: flex-start;
-  max-width: 85%;
+  max-width: min(85%, 340px);
 }
 
 .msg.user .msg-container {
@@ -617,8 +622,8 @@ async function handleFeedback(messageId: string, feedbackType: 'positive' | 'neg
 
 .chat-footer {
   flex-shrink: 0;
-  height: 140px;
-  padding: 16px; /* 底部稍微留多一点 */
+  height: 112px;
+  padding: 8px 16px 14px;
   display: flex;
   gap: 10px;
   align-items: stretch;
@@ -629,14 +634,14 @@ async function handleFeedback(messageId: string, feedbackType: 'positive' | 'neg
 /* 输入框容器化，包含文件和语音按钮 */
 .input-wrapper {
   flex: 1;
-  height: calc(100% - 4px);
+  height: 100%;
   background: var(--color-background-white);
   display: flex;
   flex-direction: column;
   transition: all var(--duration-normal) var(--ease-out);
   border-radius: 12px;
   border: 2px solid #CED3DB;
-  padding: 16px;
+  padding: 14px 16px 12px;
   box-sizing: border-box;
   overflow: hidden;
 }

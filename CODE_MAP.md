@@ -106,7 +106,7 @@ floating-ball/
 | **AnalyticsPanel.vue** | ~1200 | 数据分析看板（ECharts）；真实实现已迁至 `src/features/analytics/ui/AnalyticsPanel.vue`，旧 `src/components/AnalyticsPanel.vue` 已删除，App 通过 `@features/analytics` 公开入口消费 |
 | **KnowledgePanel.vue** | ~850 | PMPHAI 医学知识检索；真实实现已迁至 `src/features/knowledge/ui/KnowledgePanel.vue`，旧 `src/components/KnowledgePanel.vue` 已删除 |
 | **BodyPartSelector.vue** | ~830 | 人体部位交互选症状（分性别）；真实实现已迁至 `src/features/symptom-consultation/ui/BodyPartSelector.vue`，旧 `src/components/BodyPartSelector.vue` 已删除 |
-| **ChatPanel.vue** | ~670 | LLM 聊天界面（流式 + Markdown） |
+| **ChatPanel.vue** | ~670 | LLM 聊天界面（流式 + Markdown），默认按窄高聊天面板比例展示 |
 | **KnowledgeBasePanel.vue** | ~560 | 内置知识库搜索（备选通道）；真实实现已迁至 `src/features/knowledge/ui/KnowledgeBasePanel.vue`，旧 `src/components/KnowledgeBasePanel.vue` 已删除 |
 | **FactCheckWidget.vue** | ~470 | AI 回答事实核查浮窗；真实实现已迁至 `src/features/feedback/ui/FactCheckWidget.vue`，旧 `src/components/FactCheckWidget.vue` 兼容包装已删除 |
 | **ReceptionCapsule.vue** | ~370 | 患者接诊胶囊（快速信息展示）；真实实现已迁至 `src/features/reception-risk/ui/ReceptionCapsule.vue`，旧 `src/components/ReceptionCapsule.vue` 已删除 |
@@ -286,7 +286,7 @@ Pinia 跨组件共享状态（仅两个，新增需人工审批）。
 
 | 文件 | 职责 |
 |------|------|
-| **windowSizes.ts** | 各视图窗口尺寸（chat: 900x600, consultation: 1200x900, voice: 360x80 等） |
+| **windowSizes.ts** | 各视图窗口尺寸（chat: 420x620, consultation: 960x680, voice: 360x80 等） |
 | **animation.ts** | 动画时长、缓动、窗口尺寸容差阈值 |
 | **consultationConfig.ts** | 问诊 UI 配置 |
 

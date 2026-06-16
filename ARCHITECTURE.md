@@ -149,7 +149,7 @@
 2. 本地 HIS 对接入口由 `src-tauri/src/http_server.rs` 提供。
 3. 若未来引入真实登录态，应新增专用文档章节并在 `AGENTS.md` / `api.md` 中同步说明。
 4. Windows 内网更新源采用本地配置驱动：测试环境地址、正式环境地址和当前生效环境保存在 `localStorage`，前端只负责展示与选择，真正的 updater endpoint 在 Rust 侧通过 `updater_builder()` 运行时注入。区域化模式下，客户端会按当前更新通道访问 `floating-ball-server` 的 `/v1/client/releases/{channel}/policy.json`；若服务端发布策略要求强制更新且当前版本低于 `minSupportedVersion`，应用进入强制更新门禁，只保留更新源配置、检查更新、下载安装并重启能力。
-5. 主窗口的聊天、设置、问诊等可调整工作视图会将用户最后一次手动调整后的窗口尺寸写入 `.settings.dat`，再次打开对应视图时优先恢复该尺寸；悬浮球启动阶段在 Rust 层读取 `.settings.dat` 的历史位置，并按当前显示器 `workArea`、实际窗口物理尺寸和最近边缘吸附策略夹回可见安全区域，若历史位置已不属于当前工作区则回落到主屏右侧居中位置。
+5. 主窗口的聊天、设置、问诊等可调整工作视图会将用户最后一次手动调整后的窗口尺寸写入 `.settings.dat`，再次打开对应视图时优先恢复该尺寸；聊天视图会丢弃低于标准工作面板高度的历史扁窗尺寸并回到默认窄高比例，智能问诊视图会丢弃旧版 `1080×720` 默认大窗记录并回到紧凑双栏比例，避免欢迎区、病历编辑区或推荐清单被不合适的历史尺寸继续影响；悬浮球启动阶段在 Rust 层读取 `.settings.dat` 的历史位置，并按当前显示器 `workArea`、实际窗口物理尺寸和最近边缘吸附策略夹回可见安全区域，若历史位置已不属于当前工作区则回落到主屏右侧居中位置。
 6. 通用设置页新增音频输入设备配置，首选麦克风 `deviceId` 保存在 `localStorage`；聊天录音和语音接诊共用同一配置，若指定设备不存在则自动回退到系统默认输入设备。设置页首次进入时会按权限状态自动补做一次设备列表预热，尽量避免初次枚举不完整、必须手动刷新后才看到全部麦克风。
 7. 语音转写配置与通用 LLM 配置分离：本地模式下默认 provider 为阿里云 DashScope，`VoiceCapsule.vue` 实时语音和 `ChatPanel.vue` 录音转写共用同一套 speech config；若切换到 OpenAI 兼容 provider，则统一降级为批量转写链路。
 
@@ -743,9 +743,9 @@ eventListeners.unregisterAllListeners();
 export const WINDOW_SIZES = {
   BALL: { width: 160, height: 160 },
   WORK: { width: 378, height: 449 },
-  CHAT: { width: 920, height: 360 },
+  CHAT: { width: 420, height: 620 },
   DIAGNOSIS_PATH: { width: 972, height: 608 },
-  CONSULTATION: { width: 1080, height: 720 },
+  CONSULTATION: { width: 960, height: 680 },
   CAPSULE: { width: 360, height: 80 },
   CAPSULE_PROCESSING: { width: 360, height: 96 },
   CAPSULE_STOPPED: { width: 360, height: 140 },

@@ -98,6 +98,18 @@ export function useWindowManagement(options: WindowManagementOptions) {
       return false;
     }
 
+    // 旧版聊天窗口曾保存过 920x360 一类横向扁窗，恢复后会挤压欢迎区和输入区。
+    if (view === 'chat') {
+      return size.width >= WINDOW_SIZES.WORK.width && size.height >= WINDOW_SIZES.WORK.height;
+    }
+
+    if (view === 'consultation') {
+      const isLegacyDefaultSize = Math.round(size.width) === 1080 && Math.round(size.height) === 720;
+      return !isLegacyDefaultSize
+        && size.width >= WINDOW_SIZES.CONSULTATION.width
+        && size.height >= WINDOW_SIZES.CONSULTATION.height;
+    }
+
     // 大面板视图不应回退到聊天面板/胶囊这类明显错误的小尺寸。
     if (isLargePanelView(view)) {
       return size.width > WINDOW_SIZES.WORK.width && size.height > WINDOW_SIZES.WORK.height;
