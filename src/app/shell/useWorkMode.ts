@@ -328,9 +328,6 @@ export function useWorkMode(options: WorkModeOptions) {
       }
     }
 
-    // 2. 触发收缩动画
-    isWorking.value = false;
-
     // 结束会话
     try {
       await feedbackService.endSession(undefined, sessionStatus);
@@ -400,6 +397,9 @@ export function useWorkMode(options: WorkModeOptions) {
 
     // 5. 等待窗口尺寸响应
     await waitForWindowSize(WINDOW_SIZES.BALL.width, WINDOW_SIZES.BALL.height);
+
+    // 2. 触发收缩动画
+    isWorking.value = false;
 
     // 6. 重置状态
     exiting.value = false;
