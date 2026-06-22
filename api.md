@@ -578,7 +578,7 @@ http://127.0.0.1:8081/api/consultation/assist
 2. 页面会基于 `chiefComplaint + historyOfPresentIllness + diagnosis` 并行生成用药、检查、检验、处置四路推荐；任一路失败时只影响该路建议，其它已生成建议仍可勾选回写。
 3. 医生点击“一键回写”后，事件流会产生 `record-confirmed`，其中 `requestId` 形如 `record-confirmed-1704355201000`，`referenceType/action` 按 `batch` 语义处理。
 4. `record-confirmed.diagList` 承载标准诊断，`record-confirmed.orderList` 承载药品、检查、检验、处置医嘱；PHIS 不再按旧的 `medications / examinations / labTests / procedures` 分组解析一键回写结果。
-5. PHIS 完成最终调入确认后，必须调用 `POST /api/consultation/reference-feedback`，并带回同一个 `consultationId` 和 `requestId`。回执 `record-confirmed` 时 `referenceType` 可传 `batch`，也可留空由 Bridge 按 `batch` 处理。
+5. PHIS 完成最终调入确认后，必须调用 `POST /api/consultation/reference-feedback`，并带回同一个 `consultationId` 和 `requestId`。回执 `record-confirmed` 时 `referenceType` 可传 `batch`，也可留空由 Bridge 按 `batch` 处理。桌面端收到成功回执后会收起独立诊疗方案页；失败回执会保留当前页面和错误提示，方便医生调整后重试。
 
 诊疗方案回执示例：
 
@@ -1086,7 +1086,7 @@ ws://127.0.0.1:8081/api/consultation/events/ws
 
 #### 成功响应: 问诊一键确认回写（record-confirmed）
 
-`record-confirmed` 类型来自问诊最终确认提交。**症状问诊（`ConsultationPage` 完成问诊）、语音问诊（`VoiceConsultationNew` 提交病历）和独立诊疗方案推荐页（`treatment_plan` 聚合推荐后“一键回写”）共用此契约**，由 `src/features/clinical-result/recordConfirmedPayload.ts` 作为唯一构造点产出，字段结构、默认值、PHIS 中性化策略完全一致。与 `reference-request` 不同，这是医生在结果页直接确认后一次性提交的完整数据，不再拆成逐项引用请求；但 PHIS 在完成最终调入确认后，仍必须调用 `POST /api/consultation/reference-feedback` 回执成功或失败，桌面端会在收到回执前保持结果页处于等待态。
+`record-confirmed` 类型来自问诊最终确认提交。**症状问诊（`ConsultationPage` 完成问诊）、语音问诊（`VoiceConsultationNew` 提交病历）和独立诊疗方案推荐页（`treatment_plan` 聚合推荐后“一键回写”）共用此契约**，由 `src/features/clinical-result/recordConfirmedPayload.ts` 作为唯一构造点产出，字段结构、默认值、PHIS 中性化策略完全一致。与 `reference-request` 不同，这是医生在结果页直接确认后一次性提交的完整数据，不再拆成逐项引用请求；但 PHIS 在完成最终调入确认后，仍必须调用 `POST /api/consultation/reference-feedback` 回执成功或失败，桌面端会在收到回执前保持结果页处于等待态；成功回执后再进入对应页面的收口动作，失败回执保留当前编辑现场。
 
 ```json
 {
@@ -1185,7 +1185,7 @@ ws://127.0.0.1:8081/api/consultation/events/ws
 | `naSrv` | String | 标准服务名称，必填 |
 | `idSrv` | String | 服务主键，必填；药品固定使用 `idMedPro`，检查 / 检验 / 处置固定使用 `idCli` |
 | `idDeptExec` | String | 执行位置 ID，必填；药品取当前发药药房查询返回的药房 `idSto`，检查 / 检验 / 处置只取医生当前已选执行科室 |
-| `memo` | String | 备注；来自医生在药品 / 检查 / 检验 / 处置推荐项中填写的“备注” |
+| `memo` | String | 备注；来自医生在药品 / 检查 / 检验 / 处置推荐项中填写的“备注”，桌面端在输入、勾选和提交前校验不超过 200 字符，超限时展示提示并拦截，不在 payload 构造时自动裁剪 |
 
 **药品附加字段：**
 

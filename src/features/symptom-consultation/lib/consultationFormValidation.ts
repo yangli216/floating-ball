@@ -11,6 +11,10 @@ export interface ConsultationValidationField {
   required?: boolean;
   storageKey?: string;
   type?: string;
+  props?: {
+    otherOptionLabel?: string;
+    otherDetailKey?: string;
+  };
 }
 
 export interface ConsultationValidationSection {
@@ -63,6 +67,24 @@ function isRequiredFieldEmpty(field: ConsultationValidationField, value: unknown
   return false;
 }
 
+function isOtherDetailMissing(
+  field: ConsultationValidationField,
+  data: Record<string, any> | undefined,
+): boolean {
+  const otherOptionLabel = field.props?.otherOptionLabel;
+  const otherDetailKey = field.props?.otherDetailKey;
+  if (!field.storageKey || !otherOptionLabel || !otherDetailKey) {
+    return false;
+  }
+
+  if (data?.[field.storageKey] !== otherOptionLabel) {
+    return false;
+  }
+
+  const detailValue = data?.[otherDetailKey];
+  return typeof detailValue !== 'string' || detailValue.trim() === '';
+}
+
 export function buildConsultationFormValidationResult<TSymptom extends ConsultationValidationSymptom>({
   selectedSymptoms,
   formData,
@@ -87,6 +109,17 @@ export function buildConsultationFormValidationResult<TSymptom extends Consultat
         }
 
         if (!isRequiredFieldEmpty(field, data?.[field.storageKey])) {
+          if (!isOtherDetailMissing(field, data)) {
+            return;
+          }
+
+          errors.push(`${symptom.name}: ${field.label} 选择“其他”后需填写详情`);
+          const detailKey = field.props?.otherDetailKey || field.storageKey;
+          const errorId = `${symptom.key}_${detailKey}`;
+          validationErrors[errorId] = true;
+          if (!firstErrorFieldId) {
+            firstErrorFieldId = `field-${symptom.key}-${detailKey}`;
+          }
           return;
         }
 

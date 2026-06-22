@@ -181,7 +181,7 @@
                       v-if="isFieldApplicable(field, patientInfo)"
                       class="form-field"
                       :id="'field-' + item.key + '-' + field.storageKey"
-                      :class="{ 'has-error': validationErrors[item.key + '_' + field.storageKey] }"
+                      :class="{ 'has-error': hasFieldValidationError(item.key, field) }"
                     >
                     <label class="field-label">{{ field.label }}</label>
                     
@@ -212,7 +212,11 @@
                     </div>
       
                     <!-- Field Type: radio -->
-                    <div v-else-if="field.type === 'radio'" class="field-radio">
+                    <div
+                      v-else-if="field.type === 'radio'"
+                      class="field-radio"
+                      :id="resolveOtherDetailFieldId(item.key, field)"
+                    >
                       <div class="radio-group">
                         <label
                           v-for="opt in field.props.options"
@@ -229,6 +233,13 @@
                           {{ opt }}
                         </label>
                       </div>
+                      <input
+                        v-if="shouldShowRadioOtherInput(item.key, field)"
+                        v-model="formData[item.key][field.props.otherDetailKey]"
+                        type="text"
+                        :placeholder="field.props.otherPlaceholder || '请输入详情'"
+                        class="text-input radio-other-input"
+                      />
                     </div>
 
                     <!-- Field Type: checkbox -->
@@ -338,8 +349,8 @@
           :aria-busy="isGenerating"
           @click="handleEndConsultation"
       >
-        <Icon v-if="isGenerating" icon="lucide:loader-2" class="animate-spin" size="14" aria-hidden="true" />
-        <span>{{ isGenerating ? '生成中...' : '生成病历' }}</span>
+        <Icon v-if="isGenerating" icon="lucide:loader-2" class="animate-spin" size="8" aria-hidden="true" />
+        <span>{{ isGenerating ? '生成中' : '生成病历' }}</span>
       </button>
       <button class="footer-cancel-btn" @click="$emit('close')">取消</button>
     </div>
@@ -576,6 +587,12 @@ import { pmphaiService, isPMPHAIConfigured } from '../services/pmphai';
 import { CONSULTATION_CONFIG } from '../constants/consultationConfig';
 import { getTCMTemplates, getWesternTemplates, syncRemoteTemplates } from '../services/templateService';
 import { submitConsultationUserLog } from '../services/consultationUserLog';
+import {
+  applyRecommendationPreferenceRanking,
+  buildDiagnosisPreferenceCandidate,
+  buildTreatmentPreferenceCandidate,
+  trackFinalRecommendationPreferences,
+} from '../services/recommendationPreferenceTracker';
 import {
   applyCheckboxFieldChange,
   buildConsultationFormValidationResult,
@@ -870,6 +887,21 @@ function normalizeTreatmentRecommendation(rec: Partial<TreatmentRecommendation>)
   return treatmentNormalization.normalize(rec);
 }
 
+async function applyTreatmentPreferenceRanking(
+  items: TreatmentRecommendation[],
+  scene: string,
+): Promise<TreatmentRecommendation[]> {
+  return applyRecommendationPreferenceRanking(
+    items,
+    buildTreatmentPreferenceCandidate,
+    {
+      consultationId: resolveConsultationId(),
+      sourceModule: 'consultation_ai',
+      scene,
+    },
+  );
+}
+
 function getAllRecommendationItems(): TreatmentRecommendation[] {
   return [
     ...treatmentRecommendations.value,
@@ -1065,20 +1097,45 @@ const prefillDiagnosisFromPatient = (force = false): boolean => {
   return prefill.shouldApply;
 };
 
+const invalidateRecommendationRequests = () => {
+  aiDiagnosisRequestSeq += 1;
+  treatmentRecommendationRequestSeq += 1;
+  examRecommendationRequestSeq += 1;
+  labTestRecommendationRequestSeq += 1;
+  procedureRecommendationRequestSeq += 1;
+};
+
+const resetTreatmentRecommendationState = () => {
+  treatmentLoading.value = false;
+  treatmentError.value = null;
+  treatmentRecommendations.value = [];
+  examLoading.value = false;
+  examError.value = null;
+  examRecommendations.value = [];
+  labTestLoading.value = false;
+  labTestError.value = null;
+  labTestRecommendations.value = [];
+  procedureLoading.value = false;
+  procedureError.value = null;
+  procedureRecommendations.value = [];
+  treatmentFactChecks.value.clear();
+};
+
 const resetWorkflowState = () => {
+  invalidateRecommendationRequests();
   currentView.value = 'consultation';
   assistFocus.value = null;
   clearSymptomCollection();
   searchQuery.value = '';
   generatedRecord.value = createEmptyGeneratedRecord();
   finalRecord.value = null;
+  aiLoading.value = false;
+  aiError.value = null;
   aiDiagnoses.value = [];
   selectedDiagnosis.value = null;
   relatedDiagnoses.value = [];
-  treatmentRecommendations.value = [];
-  examRecommendations.value = [];
-  labTestRecommendations.value = [];
-  procedureRecommendations.value = [];
+  collapsedDiagnosisGroups.value = {};
+  resetTreatmentRecommendationState();
   activeReferenceRequest.value = null;
   lastReferenceFeedback.value = null;
   referenceStatusMap.value = {};
@@ -1086,6 +1143,15 @@ const resetWorkflowState = () => {
   knowledgeLoading.value = false;
   hasKnowledgeResults.value = false;
   showKnowledgePanel.value = false;
+  factCheckResult.value = null;
+  diagnosisFactChecks.value.clear();
+  factCheckWidgetStatus.value = 'idle';
+  factCheckWidgetIssues.value = [];
+  factCheckProgress.value = 0;
+  factCheckCheckedCount.value = 0;
+  factCheckTotalCount.value = 0;
+  showFactCheckWidget.value = false;
+  showFactCheckNotification.value = false;
 };
 
 /* canOpenDiagnosisPath / openDiagnosisPathWindow removed - template usage commented out */
@@ -1316,7 +1382,9 @@ watch(() => props.initialPatientData, (newData) => {
     const shouldReset = activePatientAnchorId.value !== '' && nextPatientId !== '' && activePatientAnchorId.value !== nextPatientId;
 
     if (shouldReset) {
+      symptomCacheSession.clearSnapshot();
       resetWorkflowState();
+      initFormData(generalConditionConfig);
     }
 
     patientInfo.value = {
@@ -1399,6 +1467,16 @@ const submitToHIS = async () => {
   });
 
   try {
+    trackFinalRecommendationPreferences({
+      diagnoses: selectedDiagnosis.value ? [selectedDiagnosis.value] : [],
+      primaryDiagnosis: selectedDiagnosis.value,
+      treatments: selectedTreatmentsForSubmit,
+      context: {
+        consultationId,
+        sourceModule: 'consultation',
+        scene: 'smart-consultation-writeback',
+      },
+    });
     await invoke('complete_consultation', { result });
     submitSmartFinalUserLog();
     trackFormSubmit('submit_to_his', { patientId: consultationId });
@@ -1510,6 +1588,39 @@ const handleCheckboxChange = (event: Event, field: any, symptomKey: string) => {
 };
 
 const validationErrors = ref<Record<string, boolean>>({});
+
+const hasFieldValidationError = (symptomKey: string, field: any): boolean => {
+  const storageKey = field?.storageKey;
+  const otherDetailKey = field?.props?.otherDetailKey;
+  return Boolean(
+    (storageKey && validationErrors.value[`${symptomKey}_${storageKey}`])
+    || (otherDetailKey && validationErrors.value[`${symptomKey}_${otherDetailKey}`]),
+  );
+};
+
+const shouldShowRadioOtherInput = (symptomKey: string, field: any): boolean => {
+  const otherOptionLabel = field?.props?.otherOptionLabel;
+  const otherDetailKey = field?.props?.otherDetailKey;
+  if (!otherOptionLabel || !otherDetailKey) {
+    return false;
+  }
+
+  return formData.value[symptomKey]?.[field.storageKey] === otherOptionLabel;
+};
+
+const resolveOtherDetailFieldId = (symptomKey: string, field: any): string | undefined => {
+  const otherDetailKey = field?.props?.otherDetailKey;
+  if (!otherDetailKey) {
+    return undefined;
+  }
+
+  const hasError = validationErrors.value[`${symptomKey}_${otherDetailKey}`];
+  if (!hasError) {
+    return undefined;
+  }
+
+  return `field-${symptomKey}-${otherDetailKey}`;
+};
 
 // Knowledge Base Search Functions
 const searchKnowledgeBaseForDiagnoses = async (diagnoses: Diagnosis[]) => {
@@ -1692,14 +1803,22 @@ const fetchAIDiagnosis = async (options?: { trackSmartConsultation?: boolean }) 
     const rawDiagnoses: Diagnosis[] = parseLLMJson(fullResponse);
     console.log('[TCM Debug] Parsed diagnoses:', rawDiagnoses);
 
-    const diagnoses = buildDiagnosisRecommendationsFromRaw({
-      rawDiagnoses,
-      mode: consultationMode.value === 'tcm' ? 'tcm' : 'western',
-      matchDiagnosis: (query, context) => medicalDataService.matchDiagnosis(query, context),
-      matchTCMDiagnosis: (query) => medicalDataService.matchTCMDiagnosis(query),
-      matchTCMSyndrome: (query) => medicalDataService.matchTCMSyndrome(query),
-      matchTCMTreatment: (query) => medicalDataService.matchTCMTreatment(query),
-    });
+    const diagnoses = await applyRecommendationPreferenceRanking(
+      buildDiagnosisRecommendationsFromRaw({
+        rawDiagnoses,
+        mode: consultationMode.value === 'tcm' ? 'tcm' : 'western',
+        matchDiagnosis: (query, context) => medicalDataService.matchDiagnosis(query, context),
+        matchTCMDiagnosis: (query) => medicalDataService.matchTCMDiagnosis(query),
+        matchTCMSyndrome: (query) => medicalDataService.matchTCMSyndrome(query),
+        matchTCMTreatment: (query) => medicalDataService.matchTCMTreatment(query),
+      }),
+      buildDiagnosisPreferenceCandidate,
+      {
+        consultationId: resolveConsultationId(),
+        sourceModule: 'consultation_ai',
+        scene: consultationMode.value === 'tcm' ? 'consultation-diagnosis-tcm' : 'consultation-diagnosis',
+      },
+    );
 
     if (requestSeq !== aiDiagnosisRequestSeq) {
       console.info('[ConsultationPage] Ignore stale diagnosis response', { requestSeq, latest: aiDiagnosisRequestSeq });
@@ -1871,12 +1990,13 @@ const fetchTreatmentRecommendation = async () => {
     const latencyMs = Date.now() - startTime;
     const rawRecommendations: any[] = parseLLMJson(fullResponse);
 
-    const processedRecs = buildClinicalResultTreatmentRecommendationsFromRaw({
+    let processedRecs = buildClinicalResultTreatmentRecommendationsFromRaw({
       rawRecommendations,
       type: 'medicine',
       match: assessTreatmentCatalogMatch,
       normalize: normalizeTreatmentRecommendation,
     });
+    processedRecs = await applyTreatmentPreferenceRanking(processedRecs, 'consultation-treatment-medication');
 
     if (isStaleRecommendationContext({
       requestSeq,
@@ -1956,12 +2076,13 @@ const fetchExamRecommendation = async () => {
     const rawRecommendations: any[] = parseLLMJson(fullResponse);
     console.log('[检查推荐] LLM raw count:', rawRecommendations.length, rawRecommendations.map(r => ({ name: r.name, type: r.type })));
 
-    const processedRecs = buildClinicalResultTreatmentRecommendationsFromRaw({
+    let processedRecs = buildClinicalResultTreatmentRecommendationsFromRaw({
       rawRecommendations,
       type: 'exam',
       match: assessTreatmentCatalogMatch,
       normalize: normalizeTreatmentRecommendation,
     });
+    processedRecs = await applyTreatmentPreferenceRanking(processedRecs, 'consultation-treatment-examination');
 
     if (isStaleRecommendationContext({
       requestSeq,
@@ -2037,12 +2158,13 @@ const fetchLabTestRecommendation = async () => {
     const rawRecommendations: any[] = parseLLMJson(fullResponse);
     console.log('[检验推荐] LLM raw count:', rawRecommendations.length, rawRecommendations.map(r => ({ name: r.name, type: r.type })));
 
-    const processedRecs = buildClinicalResultTreatmentRecommendationsFromRaw({
+    let processedRecs = buildClinicalResultTreatmentRecommendationsFromRaw({
       rawRecommendations,
       type: 'lab_test',
       match: assessTreatmentCatalogMatch,
       normalize: normalizeTreatmentRecommendation,
     });
+    processedRecs = await applyTreatmentPreferenceRanking(processedRecs, 'consultation-treatment-lab-test');
 
     if (isStaleRecommendationContext({
       requestSeq,
@@ -2118,12 +2240,13 @@ const fetchProcedureRecommendation = async () => {
     const rawRecommendations: any[] = parseLLMJson(fullResponse);
     console.log('[处置推荐] LLM raw count:', rawRecommendations.length, rawRecommendations.map(r => ({ name: r.name, type: r.type })));
     
-    const processedRecs = buildClinicalResultTreatmentRecommendationsFromRaw({
+    let processedRecs = buildClinicalResultTreatmentRecommendationsFromRaw({
       rawRecommendations,
       type: 'procedure',
       match: assessTreatmentCatalogMatch,
       normalize: normalizeTreatmentRecommendation,
     });
+    processedRecs = await applyTreatmentPreferenceRanking(processedRecs, 'consultation-treatment-procedure');
 
     if (isStaleRecommendationContext({
       requestSeq,
@@ -2265,10 +2388,8 @@ watch(selectedDiagnosis, (newVal) => {
   if (newVal) {
     fetchAllRecommendations();
   } else {
-    treatmentRecommendations.value = [];
-    examRecommendations.value = [];
-    labTestRecommendations.value = [];
-    procedureRecommendations.value = [];
+    invalidateRecommendationRequests();
+    resetTreatmentRecommendationState();
   }
 });
 

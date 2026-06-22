@@ -15,6 +15,8 @@ import type { Diagnosis, TreatmentRecommendation } from '@/types/consultation';
 
 // ===== 通用小工具（与语音侧 readFirstString / toPositiveNumber 同源） =====
 
+export const TREATMENT_REMARK_MAX_LENGTH = 200;
+
 export function readFirstString(
   source: Record<string, unknown> | undefined,
   keys: string[],
@@ -36,6 +38,15 @@ export function toPositiveNumber(value: unknown, fallback = 1): number {
   const text = typeof value === 'string' ? value.trim() : String(value ?? '').trim();
   const parsed = Number(text);
   return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
+}
+
+export function getTreatmentRemarkLength(value: unknown): number {
+  const text = typeof value === 'string' ? value : String(value ?? '');
+  return Array.from(text).length;
+}
+
+export function isTreatmentRemarkOverLimit(value: unknown): boolean {
+  return getTreatmentRemarkLength(value) > TREATMENT_REMARK_MAX_LENGTH;
 }
 
 export function getMatchedItemRaw(

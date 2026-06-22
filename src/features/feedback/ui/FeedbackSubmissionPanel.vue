@@ -505,9 +505,14 @@ onMounted(() => {
 }
 
 .feedback-dialog-panel {
+  position: relative;
   padding: 22px 24px;
   border-radius: 22px;
   background: linear-gradient(180deg, rgba(255, 255, 255, 0.98), rgba(247, 250, 252, 0.98));
+}
+
+.feedback-dialog-panel .section-header {
+  padding-right: 46px;
 }
 
 .section-header__title {
@@ -522,6 +527,9 @@ onMounted(() => {
   display: inline-flex;
   align-items: center;
   justify-content: center;
+  position: absolute;
+  top: 18px;
+  right: 18px;
   border: 1px solid var(--medical-border-light);
   border-radius: 12px;
   background: var(--medical-bg-primary);

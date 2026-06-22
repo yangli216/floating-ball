@@ -132,6 +132,17 @@ export {
 } from './clinicalResultTreatmentFields';
 
 export {
+  getTreatmentNumericFieldConstraintText,
+  getTreatmentNumericFieldIssue,
+  getTreatmentNumericFieldRule,
+  isTreatmentNumericFieldInvalid,
+  isTreatmentNumericInputAllowed,
+} from './clinicalResultNumericFields';
+export type {
+  TreatmentNumericField,
+} from './clinicalResultNumericFields';
+
+export {
   applyManualMatchCandidate,
   findManualMatchCandidates,
   getManualMatchKey,
@@ -181,8 +192,11 @@ export {
   getOrderServiceName,
   getStandardDiagnosisId,
   getStandardDiagnosisKey,
+  getTreatmentRemarkLength,
   isFrontendDiagnosisId,
+  isTreatmentRemarkOverLimit,
   readFirstString,
+  TREATMENT_REMARK_MAX_LENGTH,
   toPositiveNumber,
 } from './recordConfirmedPayload';
 export type {

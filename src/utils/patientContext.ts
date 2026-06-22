@@ -118,7 +118,15 @@ export function getPatientContextName(patient: AppPatient | null | undefined): s
 }
 
 export function getPatientContextGenderCode(patient: AppPatient | null | undefined): string {
-  return String(patient?.genderCode || patient?.demographics?.genderCode || patient?.gender || '');
+  return normalizePatientGenderCode(
+    patient?.genderCode
+      || patient?.demographics?.genderCode
+      || patient?.gender
+      || patient?.sdSex
+      || patient?.sdSexText
+      || patient?.genderText
+      || patient?.demographics?.genderText,
+  ) || '';
 }
 
 export function getPatientContextGenderText(patient: AppPatient | null | undefined): string {
@@ -174,48 +182,62 @@ interface BuildPatientContextInput {
 export function buildPatientContext(input: BuildPatientContextInput): AppPatient | null {
   const existing = input.existing || null;
   const payload = toRecord(input.payload);
+  const incomingPatientId = input.hisInfo?.patientId
+    || pickFirstText(payload, ['patientId', 'idPi', 'id']);
+  const incomingVisitId = pickFirstText(payload, ['visitId', 'idVis']);
+  const existingPatientId = getPatientContextId(existing);
+  const existingVisitId = getPatientContextVisitId(existing);
+  const canInheritExistingPatient = !incomingPatientId
+    || !existingPatientId
+    || incomingPatientId === existingPatientId;
+  const canInheritExistingEncounter = canInheritExistingPatient
+    && (!incomingVisitId || !existingVisitId || incomingVisitId === existingVisitId);
+  const patientFallback = canInheritExistingPatient ? existing : null;
+  const encounterFallback = canInheritExistingEncounter ? existing : null;
+  const rawFallback = canInheritExistingEncounter ? existing?.raw : undefined;
 
-  const patientId = input.hisInfo?.patientId
-    || pickFirstText(payload, ['patientId', 'idPi', 'id'])
-    || getPatientContextId(existing);
+  const patientId = incomingPatientId || getPatientContextId(patientFallback);
 
   if (!patientId) {
     return existing;
   }
 
-  const visitId = pickFirstText(payload, ['visitId', 'idVis']) || getPatientContextVisitId(existing);
-  const mpiId = pickFirstText(payload, ['idMpi']) || text(existing?.identity?.mpiId || existing?.idMpi);
-  const tetId = pickFirstText(payload, ['idTet']) || text(existing?.identity?.tetId || existing?.idTet);
+  const visitId = incomingVisitId || getPatientContextVisitId(encounterFallback);
+  const mpiId = pickFirstText(payload, ['idMpi']) || text(patientFallback?.identity?.mpiId || patientFallback?.idMpi);
+  const tetId = pickFirstText(payload, ['idTet']) || text(patientFallback?.identity?.tetId || patientFallback?.idTet);
   const patientName = input.hisInfo?.name
     || pickFirstText(payload, ['patientName', 'naPi', 'name'])
-    || getPatientContextName(existing);
+    || getPatientContextName(patientFallback);
 
   const genderCode = input.hisInfo?.gender
     || normalizePatientGenderCode(pickFirstText(payload, ['gender', 'sdSexText', 'sdSex']))
-    || normalizePatientGenderCode(existing?.genderCode || existing?.gender || existing?.sdSexText);
+    || normalizePatientGenderCode(patientFallback?.genderCode || patientFallback?.gender || patientFallback?.sdSexText);
   const genderText = normalizePatientGenderText(
-    pickFirstText(payload, ['sdSexText', 'gender', 'sdSex']) || input.hisInfo?.gender || existing?.genderText || existing?.sdSexText,
+    pickFirstText(payload, ['sdSexText', 'gender', 'sdSex']) || input.hisInfo?.gender || patientFallback?.genderText || patientFallback?.sdSexText,
   );
-  const ageText = buildAgeText(payload, input.hisInfo) || getPatientContextAgeText(existing);
+  const ageText = buildAgeText(payload, input.hisInfo) || getPatientContextAgeText(patientFallback);
   const ageYears = parseAgeYears(ageText, input.hisInfo?.age);
-  const idCard = pickFirstText(payload, ['idCard', 'idNo']) || input.hisInfo?.idNo || text(existing?.idCard);
-  const mobilePhone = pickFirstText(payload, ['mobilePhone', 'phone']) || input.hisInfo?.mobilePhone || text(existing?.mobilePhone);
-  const insuranceType = pickFirstText(payload, ['insuranceType']) || input.hisInfo?.insuranceType || text(existing?.insuranceType);
+  const idCard = pickFirstText(payload, ['idCard', 'idNo']) || input.hisInfo?.idNo || text(patientFallback?.idCard);
+  const mobilePhone = pickFirstText(payload, ['mobilePhone', 'phone']) || input.hisInfo?.mobilePhone || text(patientFallback?.mobilePhone);
+  const insuranceType = pickFirstText(payload, ['insuranceType']) || input.hisInfo?.insuranceType || text(patientFallback?.insuranceType);
 
-  const hisHistory = input.hisHistory ?? getPatientContextHistory(existing);
+  const hisHistory = input.hisHistory ?? getPatientContextHistory(patientFallback);
   const pastMedicalHistory = pickFirstText(payload, ['pastMedicalHistory', 'past_medical_history', 'pastMedicalHistoryText'])
-    || getPatientContextPastMedicalHistory(existing);
+    || getPatientContextPastMedicalHistory(patientFallback);
   const allergyHistory = pickFirstText(payload, ['allergyHistory', 'allergy_history', 'allergyHistoryText'])
-    || getPatientContextAllergyHistory(existing);
+    || getPatientContextAllergyHistory(patientFallback);
   const currentMedicationHistory = pickFirstText(payload, ['currentMedicationHistory'])
-    || text(existing?.currentMedicationHistory || existing?.clinical?.currentMedicationHistory);
+    || text(encounterFallback?.currentMedicationHistory || encounterFallback?.clinical?.currentMedicationHistory);
   const chiefComplaint = pickFirstText(payload, ['chiefComplaint'])
-    || text(existing?.chiefComplaint || existing?.clinical?.chiefComplaint);
+    || text(encounterFallback?.chiefComplaint || encounterFallback?.clinical?.chiefComplaint);
   const historyOfPresentIllness = pickFirstText(payload, ['historyOfPresentIllness'])
-    || text(existing?.historyOfPresentIllness || existing?.clinical?.historyOfPresentIllness);
+    || text(encounterFallback?.historyOfPresentIllness || encounterFallback?.clinical?.historyOfPresentIllness);
   const diagnosis = pickFirstText(payload, ['diagnosis'])
-    || text(existing?.diagnosis || existing?.clinical?.diagnosis);
-  const receptionEnsured = input.receptionEnsured ?? existing?.receptionEnsured ?? existing?._receptionEnsured ?? false;
+    || text(encounterFallback?.diagnosis || encounterFallback?.clinical?.diagnosis);
+  const receptionEnsured = input.receptionEnsured
+    ?? patientFallback?.receptionEnsured
+    ?? patientFallback?._receptionEnsured
+    ?? false;
 
   const baseContext: PatientContext = {
     identity: {
@@ -244,9 +266,9 @@ export function buildPatientContext(input: BuildPatientContextInput): AppPatient
       hisHistory,
     },
     receptionEnsured,
-    source: input.source || existing?.source,
+    source: input.source || patientFallback?.source,
     raw: {
-      ...(existing?.raw || {}),
+      ...(rawFallback || {}),
       ...(payload || {}),
       ...(input.hisInfo?.raw || {}),
     },
@@ -269,12 +291,12 @@ export function buildPatientContext(input: BuildPatientContextInput): AppPatient
     diagnosis: diagnosis || undefined,
     hisHistory,
 
-    id: text(existing?.id),
+    id: text(patientFallback?.id) || patientId,
     idTet: tetId || undefined,
     idPi: patientId,
     idMpi: mpiId || undefined,
     idVis: visitId || undefined,
-    piOi: text(existing?.piOi),
+    piOi: text(patientFallback?.piOi),
     name: patientName || '未知患者',
     naPi: patientName || '未知患者',
     gender: genderCode,

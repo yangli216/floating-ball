@@ -19,6 +19,13 @@ import {
   buildConsultationUserLogSnapshot,
   submitConsultationUserLog,
 } from '../services/consultationUserLog';
+import {
+  applyRecommendationPreferenceRanking,
+  buildDiagnosisPreferenceCandidate,
+  buildTreatmentPreferenceCandidate,
+  trackFinalRecommendationPreferences,
+  trackTreatmentMatchPreference,
+} from '../services/recommendationPreferenceTracker';
 import type { TreatmentRecommendation, Diagnosis } from '../types/consultation';
 import type { AppPatient } from '../types/appState';
 import type { VoiceIntentResult, MatchedTreatment, MatchedDiagnosis } from '@features/voice-consultation';
@@ -268,6 +275,15 @@ const {
 
 const getPatientAnchorId = (): string => patientAnchorId.value;
 const resolveConsultationId = (): string => consultationId.value;
+
+function buildPreferenceContext(sceneSuffix: string) {
+  const isSymptomChannel = props.channel === 'symptom';
+  return {
+    consultationId: resolveConsultationId(),
+    sourceModule: isSymptomChannel ? 'consultation' : 'voice_consultation',
+    scene: `${isSymptomChannel ? 'smart-consultation' : 'voice-consultation'}-${sceneSuffix}`,
+  };
+}
 
 // ---- 编辑器快照（用于跨会话恢复全部病历，避免重新调 fetchAITreatment） ----
 
@@ -777,6 +793,7 @@ async function confirmSuggestedMatch(rec: TreatmentRecommendation, event?: Event
   }
 
   rec.selected = true;
+  trackTreatmentMatchPreference(rec, 'confirm_match', buildPreferenceContext('treatment'));
 
   showToast?.(`${rec.name} 已确认匹配`, 'success');
 }
@@ -799,6 +816,7 @@ async function applyManualMatch(rec: TreatmentRecommendation, candidate: ManualM
   }
 
   rec.selected = true;
+  trackTreatmentMatchPreference(rec, 'manual_match', buildPreferenceContext('treatment'));
   closeManualMatch();
   showToast?.(`${candidate.name} 已完成标准库匹配`, 'success');
 }
@@ -910,7 +928,6 @@ async function handleDiagnosisDifferential(diag: Diagnosis, event?: Event): Prom
     if (mismatchError) {
       checklistItems.value = [];
       checklistGenerationError.value = mismatchError;
-      showToast?.(mismatchError, 'error');
       return;
     }
 
@@ -1005,10 +1022,14 @@ async function fetchAIDiagnosis(): Promise<void> {
       return;
     }
 
-    aiDiagnoses.value = mapClinicalResultAiDiagnoses({
-      rawDiagnoses: parsed,
-      matchDiagnosis: (query, context) => medicalDataService.matchDiagnosis(query, context),
-    });
+    aiDiagnoses.value = await applyRecommendationPreferenceRanking(
+      mapClinicalResultAiDiagnoses({
+        rawDiagnoses: parsed,
+        matchDiagnosis: (query, context) => medicalDataService.matchDiagnosis(query, context),
+      }),
+      buildDiagnosisPreferenceCandidate,
+      buildPreferenceContext('diagnosis'),
+    );
 
     if (aiDiagnoses.value.length > 0) {
       replaceDiagnosisSelection([aiDiagnoses.value[0]], aiDiagnoses.value[0]);
@@ -1098,12 +1119,16 @@ async function fetchAITreatment(): Promise<void> {
       return;
     }
 
-    treatments.value = nextTreatments;
+    treatments.value = await applyRecommendationPreferenceRanking(
+      nextTreatments,
+      buildTreatmentPreferenceCandidate,
+      buildPreferenceContext('treatment'),
+    );
     lastTreatmentDiagnosisKey.value = diagnosisIdentity;
-    await reconcileAutoSelectedMedicineInventory(nextTreatments);
+    await reconcileAutoSelectedMedicineInventory(treatments.value);
     void registerCurrentRecommendations();
-    void hydrateMatchedMedicalItemDetails(nextTreatments);
-    void performTreatmentFactCheck(nextTreatments);
+    void hydrateMatchedMedicalItemDetails(treatments.value);
+    void performTreatmentFactCheck(treatments.value);
     submitVoiceGeneratedUserLog();
     // 把 LLM 推荐的诊疗方案写回缓存，下次同就诊恢复时直接复用、跳过 fetchAITreatment
     persistEditorSnapshotImmediate();
@@ -1834,6 +1859,12 @@ async function handleBatchWriteBack(): Promise<void> {
       },
     });
 
+    trackFinalRecommendationPreferences({
+      diagnoses: selectedDiagnoses.value,
+      primaryDiagnosis: selectedDiagnosis.value,
+      treatments: selected,
+      context: buildPreferenceContext('writeback'),
+    });
     await invoke('complete_consultation', { result });
     markWritebackPending(requestId, '病历已发送至 HIS，等待处理结果回执。');
     showToast?.('病历已发送至 HIS，等待处理结果回执。', 'info');
@@ -1846,6 +1877,26 @@ async function handleBatchWriteBack(): Promise<void> {
     submitting.value = false;
   }
 }
+
+watch(
+  patientAnchorId,
+  async (currentAnchorId, previousAnchorId) => {
+    if (!previousAnchorId || currentAnchorId === previousAnchorId) {
+      return;
+    }
+
+    console.info('[VoiceConsultationNew] Patient context changed, reset clinical result state', {
+      channel: props.channel,
+      previousAnchorId,
+      currentAnchorId,
+    });
+    clearPendingSnapshotPersist();
+    lastAppliedIntentKey.value = '';
+    resetForIntent({});
+    await nextTick();
+    suppressDiagnosisTreatmentRefetch.value = false;
+  },
+);
 
 watch(
   () => props.intentResult,

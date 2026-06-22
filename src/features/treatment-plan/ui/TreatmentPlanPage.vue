@@ -6,6 +6,8 @@ import type { AppPatient } from '@/types/appState';
 import type { Diagnosis, TreatmentRecommendation } from '@/types/consultation';
 import { getHisAdapter } from '@/services/his';
 import { medicalDataService } from '@/services/medicalData';
+import { trackTreatmentMatchPreference } from '@/services/recommendationPreferenceTracker';
+import { getPatientContextAnchorId } from '@/utils/patientContext';
 import { formatUserFacingError } from '@shared/lib/errorMessages';
 import {
   useBodySiteOptions,
@@ -217,6 +219,7 @@ const writeback = useTreatmentPlanWriteback({
   hasRequiredPharmacy: treatmentGates.hasRequiredPharmacy,
   hasRequiredExecDept: treatmentGates.hasRequiredExecDept,
   hasRequiredBodySite: treatmentGates.hasRequiredBodySite,
+  onWritebackSuccess: () => emit('close'),
   notify: (message, type) => showToast?.(message, type),
 });
 
@@ -632,6 +635,11 @@ async function confirmSuggestedMatch(item: TreatmentRecommendation): Promise<voi
   Object.assign(item, candidate);
   item.suggestedMatchItem = undefined;
   item.selected = true;
+  trackTreatmentMatchPreference(item, 'confirm_match', {
+    consultationId: getPatientContextAnchorId(props.patient || null) || '',
+    sourceModule: 'treatment_plan',
+    scene: 'treatment-plan',
+  });
   closeManualMatch();
   showToast?.(`${item.name} 已确认匹配`, 'success');
 }
@@ -663,6 +671,11 @@ async function applyManualMatch(item: TreatmentRecommendation, candidate: Manual
 
   Object.assign(item, candidateItem);
   item.selected = true;
+  trackTreatmentMatchPreference(item, 'manual_match', {
+    consultationId: getPatientContextAnchorId(props.patient || null) || '',
+    sourceModule: 'treatment_plan',
+    scene: 'treatment-plan',
+  });
   closeManualMatch();
   showToast?.(`${candidate.name} 已完成标准库匹配`, 'success');
 }

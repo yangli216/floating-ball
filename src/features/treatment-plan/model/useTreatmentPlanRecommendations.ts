@@ -1,6 +1,10 @@
 import { computed, ref, type Ref } from 'vue';
 import { chat } from '@/services/llm';
 import { medicalDataService } from '@/services/medicalData';
+import {
+  applyRecommendationPreferenceRanking,
+  buildTreatmentPreferenceCandidate,
+} from '@/services/recommendationPreferenceTracker';
 import { PROMPTS } from '@/prompts';
 import type { AppPatient } from '@/types/appState';
 import type { Diagnosis, TreatmentRecommendation } from '@/types/consultation';
@@ -229,12 +233,21 @@ export function useTreatmentPlanRecommendations(options: TreatmentPlanRecommenda
       if (runKey !== lastRunKey.value) return;
 
       const rawRecommendations = parseLLMJson<RawClinicalResultTreatmentRecommendationInput[]>(response);
-      const mapped = buildClinicalResultTreatmentRecommendationsFromRaw({
+      let mapped = buildClinicalResultTreatmentRecommendationsFromRaw({
         rawRecommendations,
         type: config.itemType,
         match: assessTreatmentCatalogMatch,
         normalize: options.normalizeTreatment,
       });
+      mapped = await applyRecommendationPreferenceRanking(
+        mapped,
+        buildTreatmentPreferenceCandidate,
+        {
+          consultationId: getPatientContextId(options.patient.value) || '',
+          sourceModule: 'treatment_plan',
+          scene: `treatment-plan-${config.key}`,
+        },
+      );
       replaceTreatmentsByType(config.itemType, mapped);
     } catch (error) {
       console.error('[TreatmentPlan] Failed to fetch treatment recommendation', {

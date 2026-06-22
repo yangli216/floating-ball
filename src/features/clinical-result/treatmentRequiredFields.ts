@@ -1,10 +1,15 @@
 import type { TreatmentRecommendation } from '@/types/consultation';
 import {
+  getTreatmentNumericFieldIssue,
+} from './clinicalResultNumericFields';
+import {
+  getTreatmentRemarkLength,
   getMatchedOrderServiceId,
   getOrderJsonField,
   getOrderPartId,
   getOrderServiceCode,
   getOrderServiceName,
+  TREATMENT_REMARK_MAX_LENGTH,
   toPositiveNumber,
   type OrderItemResolvers,
 } from './recordConfirmedPayload';
@@ -133,6 +138,11 @@ export function validateTreatmentRequiredFields(
   if (rec.type === 'medicine') {
     if (!trim(normalized.dosage)) {
       pushIssue(issues, 'doseOnce', `${label} 缺少一次剂量，请先补齐`);
+    } else {
+      const dosageIssue = getTreatmentNumericFieldIssue('dosage', normalized.dosage);
+      if (dosageIssue) {
+        pushIssue(issues, 'doseOnce', `${label} ${dosageIssue}`);
+      }
     }
     if (!trim(normalized.dosageUnit)) {
       pushIssue(issues, 'unitDose', `${label} 缺少剂量单位，请先补齐`);
@@ -145,9 +155,19 @@ export function validateTreatmentRequiredFields(
     }
     if (toPositiveNumber(normalized.totalQty, 0) <= 0) {
       pushIssue(issues, 'amount', `${label} 缺少用药总量，请先补齐`);
+    } else {
+      const totalQtyIssue = getTreatmentNumericFieldIssue('totalQty', normalized.totalQty);
+      if (totalQtyIssue) {
+        pushIssue(issues, 'amount', `${label} ${totalQtyIssue}`);
+      }
     }
     if (toPositiveNumber(normalized.days, 0) <= 0) {
       pushIssue(issues, 'takeDays', `${label} 缺少用药天数，请先补齐`);
+    } else {
+      const daysIssue = getTreatmentNumericFieldIssue('days', normalized.days);
+      if (daysIssue) {
+        pushIssue(issues, 'takeDays', `${label} ${daysIssue}`);
+      }
     }
     if (!trim(normalized.pharmacy)) {
       pushIssue(issues, 'pharmacy', `${label} 缺少发药药房，请先设置`);
@@ -164,6 +184,15 @@ export function validateTreatmentRequiredFields(
 
   if (rec.type === 'procedure' && toPositiveNumber(normalized.totalQty, 0) <= 0) {
     pushIssue(issues, 'amount', `${label} 缺少处置数量，请先补齐`);
+  } else if (rec.type === 'procedure') {
+    const totalQtyIssue = getTreatmentNumericFieldIssue('totalQty', normalized.totalQty);
+    if (totalQtyIssue) {
+      pushIssue(issues, 'amount', `${label} ${totalQtyIssue}`);
+    }
+  }
+
+  if (getTreatmentRemarkLength(rec.remark || '') > TREATMENT_REMARK_MAX_LENGTH) {
+    pushIssue(issues, 'memo', `${label} 备注超过 ${TREATMENT_REMARK_MAX_LENGTH} 字，请删减后再提交`);
   }
 
   return {

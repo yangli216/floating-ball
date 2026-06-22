@@ -4,6 +4,9 @@ export interface SymptomFormFieldLike {
   type?: string;
   props?: {
     options?: string[];
+    otherOptionLabel?: string;
+    otherDetailKey?: string;
+    otherPlaceholder?: string;
     mutualExclusions?: string[][];
   };
 }
@@ -46,6 +49,10 @@ export function buildInitialSymptomFormData(configItem: SymptomFormConfigLike): 
         data[fieldKey] = field.props.options[0];
       } else {
         data[fieldKey] = '';
+      }
+
+      if (field.props?.otherDetailKey) {
+        data[field.props.otherDetailKey] = '';
       }
     });
   });

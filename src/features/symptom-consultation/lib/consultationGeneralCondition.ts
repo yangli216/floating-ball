@@ -3,10 +3,33 @@ export type GeneralConditionData = Record<string, GeneralConditionValue>;
 
 const IGNORED_GENERAL_CONDITION_VALUES = new Set(['其他', '不清楚', '不详']);
 
+const GENERAL_CONDITION_OTHER_DETAIL_KEY_MAP: Record<string, string> = {
+  spirit: 'spiritOtherDetail',
+  sleep: 'sleepOtherDetail',
+  appetite: 'appetiteOtherDetail',
+  urination: 'urinationOtherDetail',
+  stool: 'stoolOtherDetail',
+  weight: 'weightOtherDetail',
+};
+
 function isValidGeneralConditionValue(value: GeneralConditionValue): value is string {
   return typeof value === 'string'
     && value.trim() !== ''
     && !IGNORED_GENERAL_CONDITION_VALUES.has(value);
+}
+
+function resolveGeneralConditionText(
+  data: GeneralConditionData,
+  key: string,
+): string {
+  const value = data[key];
+  if (value === '其他') {
+    const detailKey = GENERAL_CONDITION_OTHER_DETAIL_KEY_MAP[key];
+    const detailValue = detailKey ? data[detailKey] : '';
+    return typeof detailValue === 'string' ? detailValue.trim() : '';
+  }
+
+  return isValidGeneralConditionValue(value) ? value : '';
 }
 
 export function buildGeneralConditionHistoryText(data: GeneralConditionData | undefined): string {
@@ -17,8 +40,8 @@ export function buildGeneralConditionHistoryText(data: GeneralConditionData | un
   const parts: string[] = [];
 
   ['spirit', 'sleep', 'appetite'].forEach((key) => {
-    const value = data[key];
-    if (isValidGeneralConditionValue(value)) {
+    const value = resolveGeneralConditionText(data, key);
+    if (value) {
       parts.push(value);
     }
   });
@@ -29,16 +52,19 @@ export function buildGeneralConditionHistoryText(data: GeneralConditionData | un
   if (isUrinationNormal && isStoolNormal) {
     parts.push('二便正常');
   } else {
-    if (isValidGeneralConditionValue(data.urination)) {
-      parts.push(data.urination);
+    const urinationValue = resolveGeneralConditionText(data, 'urination');
+    const stoolValue = resolveGeneralConditionText(data, 'stool');
+    if (urinationValue) {
+      parts.push(urinationValue);
     }
-    if (isValidGeneralConditionValue(data.stool)) {
-      parts.push(data.stool);
+    if (stoolValue) {
+      parts.push(stoolValue);
     }
   }
 
-  if (isValidGeneralConditionValue(data.weight)) {
-    parts.push(data.weight);
+  const weightValue = resolveGeneralConditionText(data, 'weight');
+  if (weightValue) {
+    parts.push(weightValue);
   }
 
   return parts.length > 0 ? `${parts.join('，')}。` : '';

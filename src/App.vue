@@ -360,6 +360,11 @@ async function cancelSymptomConsultation(): Promise<void> {
   await exitWork('cancelled');
 }
 
+async function closeTreatmentPlan(): Promise<void> {
+  await handleUserCollapse();
+  currentView.value = 'chat';
+}
+
 // 可见性/可点击门禁：
 // 问诊按钮始终可见；仅在存在未结束的问诊或住院病历生成（最小化会话）时才可点击，
 // 作为“恢复工作界面”的入口；否则置灰禁用。
@@ -925,7 +930,7 @@ const openInsideCloudHome = async () => {
           <TreatmentPlanPage
             v-if="currentView === 'treatment-plan'"
             :patient="currentPatient"
-            @close="handleUserCollapse"
+            @close="closeTreatmentPlan"
           />
           <InpatientEmrPage
             v-show="currentView === 'inpatient-emr'"

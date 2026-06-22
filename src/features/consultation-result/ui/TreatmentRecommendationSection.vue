@@ -1,10 +1,19 @@
 <script setup lang="ts">
-import { computed } from 'vue';
+import { computed, ref, useId } from 'vue';
 import Icon from '@shared/ui/Icon.vue';
 import type { TreatmentRecommendation } from '@/types/consultation';
 import type { UsageOption } from '@/utils/medicalDictionaryHelpers';
 import type { VoiceRecommendationFeedbackDraft } from '@/types/voiceFeedback';
 import type { FactCheckIssue } from '@services/factChecker';
+import {
+  getTreatmentNumericFieldConstraintText,
+  getTreatmentNumericFieldIssue,
+  getTreatmentRemarkLength,
+  isTreatmentNumericInputAllowed,
+  isTreatmentRemarkOverLimit,
+  TREATMENT_REMARK_MAX_LENGTH,
+  type TreatmentNumericField,
+} from '@features/clinical-result';
 import type { SecondarySelectorField } from '../model/useSecondarySelector';
 import ManualMatchPicker, { type ManualMatchCandidate } from './ManualMatchPicker.vue';
 import TreatmentItemEditor from './TreatmentItemEditor.vue';
@@ -148,6 +157,10 @@ const resolvedTotalCount = computed(() => (
     : props.section.items.length
 ));
 const resolvedLoadingText = computed(() => props.loadingText || `正在生成${props.section.title}...`);
+const remarkInputBlockedByKey = ref<Record<string, boolean>>({});
+const remarkMetaIdPrefix = useId();
+const numericInputBlockedByKey = ref<Record<string, TreatmentNumericField | undefined>>({});
+const numericMetaIdPrefix = useId();
 
 function getItemKey(item: TreatmentRecommendation, index: number): string {
   return `${item.type}:${item.matchedItem?.id || item.name}:${index}`;
@@ -196,8 +209,11 @@ function shouldShowExecDeptField(item: TreatmentRecommendation): boolean {
 }
 
 function handleNonMedicineTotalQtyInput(item: TreatmentRecommendation, event: Event): void {
-  const target = event.target as HTMLInputElement | null;
-  item.totalQty = target?.value || '';
+  if (!handleNumericInput(item, 'totalQty', event, (value) => {
+    item.totalQty = value;
+  })) {
+    return;
+  }
   item.totalManualEdited = true;
   if (!item.totalUnit) {
     item.totalUnit = '次';
@@ -208,10 +224,248 @@ function handleNonMedicineTotalQtyInput(item: TreatmentRecommendation, event: Ev
 }
 
 function handleMedicineDaysInput(item: TreatmentRecommendation, event: Event): void {
-  const target = event.target as HTMLInputElement | null;
-  item.days = target?.value || '';
+  if (!handleNumericInput(item, 'days', event, (value) => {
+    item.days = value;
+  })) {
+    return;
+  }
   if (isMedicineDaysMissing(item)) {
     item.selected = false;
+  }
+}
+
+function sanitizeDomId(value: string): string {
+  return value.replace(/[^a-zA-Z0-9_-]/g, '_');
+}
+
+function getRemarkInputKey(item: TreatmentRecommendation): string {
+  return props.getEditorKey(item) || `${item.type}:${item.matchedItem?.id || item.name}`;
+}
+
+function getRemarkMetaId(item: TreatmentRecommendation): string {
+  return `${remarkMetaIdPrefix}-remark-${sanitizeDomId(getRemarkInputKey(item))}`;
+}
+
+function getNumericInputKey(item: TreatmentRecommendation): string {
+  return props.getEditorKey(item) || `${item.type}:${item.matchedItem?.id || item.name}`;
+}
+
+function getNumericMetaId(item: TreatmentRecommendation, field: TreatmentNumericField): string {
+  return `${numericMetaIdPrefix}-${field}-${sanitizeDomId(getNumericInputKey(item))}`;
+}
+
+function getNumericValue(item: TreatmentRecommendation, field: TreatmentNumericField): string {
+  if (field === 'dosage') {
+    return item.dosage || '';
+  }
+  if (field === 'days') {
+    return item.days || '';
+  }
+  return item.totalQty || '';
+}
+
+function isNumericFieldInvalid(item: TreatmentRecommendation, field: TreatmentNumericField): boolean {
+  return Boolean(getTreatmentNumericFieldIssue(field, getNumericValue(item, field)));
+}
+
+function getNumericFieldMessage(item: TreatmentRecommendation, field: TreatmentNumericField): string {
+  const issue = getTreatmentNumericFieldIssue(field, getNumericValue(item, field));
+  if (issue) {
+    return issue;
+  }
+  if (numericInputBlockedByKey.value[getNumericInputKey(item)] === field) {
+    return `仅允许${getTreatmentNumericFieldConstraintText(field)}`;
+  }
+  return '';
+}
+
+function setNumericInputBlocked(item: TreatmentRecommendation, field: TreatmentNumericField | null): void {
+  const key = getNumericInputKey(item);
+  if (field) {
+    numericInputBlockedByKey.value = {
+      ...numericInputBlockedByKey.value,
+      [key]: field,
+    };
+    return;
+  }
+  if (!numericInputBlockedByKey.value[key]) {
+    return;
+  }
+  const next = { ...numericInputBlockedByKey.value };
+  delete next[key];
+  numericInputBlockedByKey.value = next;
+}
+
+function isRemarkInputBlocked(item: TreatmentRecommendation): boolean {
+  return Boolean(remarkInputBlockedByKey.value[getRemarkInputKey(item)]);
+}
+
+function setRemarkInputBlocked(item: TreatmentRecommendation, blocked: boolean): void {
+  const key = getRemarkInputKey(item);
+  if (blocked) {
+    remarkInputBlockedByKey.value = {
+      ...remarkInputBlockedByKey.value,
+      [key]: true,
+    };
+    return;
+  }
+  if (!remarkInputBlockedByKey.value[key]) {
+    return;
+  }
+  const next = { ...remarkInputBlockedByKey.value };
+  delete next[key];
+  remarkInputBlockedByKey.value = next;
+}
+
+function getRemarkLength(item: TreatmentRecommendation): number {
+  return getTreatmentRemarkLength(item.remark || '');
+}
+
+function isRemarkOverLimit(item: TreatmentRecommendation): boolean {
+  return getRemarkLength(item) > TREATMENT_REMARK_MAX_LENGTH;
+}
+
+function isRemarkAtLimit(item: TreatmentRecommendation): boolean {
+  return getRemarkLength(item) === TREATMENT_REMARK_MAX_LENGTH;
+}
+
+function getRemarkLimitMessage(item: TreatmentRecommendation): string {
+  const length = getRemarkLength(item);
+  if (length > TREATMENT_REMARK_MAX_LENGTH) {
+    return `已超出 ${length - TREATMENT_REMARK_MAX_LENGTH} 字，请删减后再提交`;
+  }
+  if (isRemarkInputBlocked(item)) {
+    return `最多 ${TREATMENT_REMARK_MAX_LENGTH} 字，已阻止超长输入`;
+  }
+  if (length === TREATMENT_REMARK_MAX_LENGTH) {
+    return '已达上限';
+  }
+  return '';
+}
+
+function getProjectedInputValue(input: HTMLInputElement, insertedText: string): string {
+  const start = input.selectionStart ?? input.value.length;
+  const end = input.selectionEnd ?? start;
+  return `${input.value.slice(0, start)}${insertedText}${input.value.slice(end)}`;
+}
+
+function shouldBlockNumericValue(field: TreatmentNumericField, input: HTMLInputElement, insertedText: string): boolean {
+  const projected = getProjectedInputValue(input, insertedText);
+  return !isTreatmentNumericInputAllowed(field, projected);
+}
+
+function blockNumericInput(item: TreatmentRecommendation, field: TreatmentNumericField, event: Event): void {
+  event.preventDefault();
+  setNumericInputBlocked(item, field);
+}
+
+function handleNumericBeforeInput(item: TreatmentRecommendation, field: TreatmentNumericField, event: Event): void {
+  const inputEvent = event as InputEvent;
+  if (inputEvent.isComposing || inputEvent.inputType.startsWith('delete')) {
+    return;
+  }
+  const input = event.target as HTMLInputElement | null;
+  const insertedText = inputEvent.data || '';
+  if (!input || !insertedText) {
+    return;
+  }
+  if (shouldBlockNumericValue(field, input, insertedText)) {
+    blockNumericInput(item, field, event);
+  }
+}
+
+function handleNumericPaste(item: TreatmentRecommendation, field: TreatmentNumericField, event: ClipboardEvent): void {
+  const input = event.target as HTMLInputElement | null;
+  const pastedText = event.clipboardData?.getData('text') || '';
+  if (!input || !pastedText) {
+    return;
+  }
+  if (shouldBlockNumericValue(field, input, pastedText)) {
+    blockNumericInput(item, field, event);
+  }
+}
+
+function handleNumericInput(
+  item: TreatmentRecommendation,
+  field: TreatmentNumericField,
+  event: Event,
+  assign: (value: string) => void,
+): boolean {
+  const input = event.target as HTMLInputElement | null;
+  if (!input) {
+    return false;
+  }
+  const nextValue = input.value;
+  if (!isTreatmentNumericInputAllowed(field, nextValue)) {
+    input.value = getNumericValue(item, field);
+    setNumericInputBlocked(item, field);
+    return false;
+  }
+  assign(nextValue);
+  if (!getTreatmentNumericFieldIssue(field, nextValue)) {
+    setNumericInputBlocked(item, null);
+  }
+  return true;
+}
+
+function shouldBlockRemarkValue(input: HTMLInputElement, insertedText: string): boolean {
+  const projected = getProjectedInputValue(input, insertedText);
+  const currentLength = getTreatmentRemarkLength(input.value);
+  const projectedLength = getTreatmentRemarkLength(projected);
+  return projectedLength > TREATMENT_REMARK_MAX_LENGTH && projectedLength > currentLength;
+}
+
+function blockRemarkInput(item: TreatmentRecommendation, event: Event): void {
+  event.preventDefault();
+  setRemarkInputBlocked(item, true);
+}
+
+function handleRemarkBeforeInput(item: TreatmentRecommendation, event: Event): void {
+  const inputEvent = event as InputEvent;
+  if (inputEvent.isComposing || inputEvent.inputType.startsWith('delete')) {
+    return;
+  }
+  const input = event.target as HTMLInputElement | null;
+  const insertedText = inputEvent.data || '';
+  if (!input || !insertedText) {
+    return;
+  }
+  if (shouldBlockRemarkValue(input, insertedText)) {
+    blockRemarkInput(item, event);
+  }
+}
+
+function handleRemarkPaste(item: TreatmentRecommendation, event: ClipboardEvent): void {
+  const input = event.target as HTMLInputElement | null;
+  const pastedText = event.clipboardData?.getData('text') || '';
+  if (!input || !pastedText) {
+    return;
+  }
+  if (shouldBlockRemarkValue(input, pastedText)) {
+    blockRemarkInput(item, event);
+  }
+}
+
+function handleRemarkInput(item: TreatmentRecommendation, event: Event): void {
+  const input = event.target as HTMLInputElement | null;
+  if (!input) {
+    return;
+  }
+
+  const nextValue = input.value;
+  const currentValue = item.remark || '';
+  const nextLength = getTreatmentRemarkLength(nextValue);
+  const currentLength = getTreatmentRemarkLength(currentValue);
+
+  if (nextLength > TREATMENT_REMARK_MAX_LENGTH && nextLength > currentLength) {
+    input.value = currentValue;
+    setRemarkInputBlocked(item, true);
+    return;
+  }
+
+  item.remark = nextValue;
+  if (!isTreatmentRemarkOverLimit(nextValue)) {
+    setRemarkInputBlocked(item, false);
   }
 }
 
@@ -588,16 +842,30 @@ function getFeedbackSubmittedLabel(item: TreatmentRecommendation): string {
                   <label>规定病</label>
                   <input v-model="item.regulatedDisease" type="text" placeholder="规定病" class="edit-input" />
                 </div>
-                <div class="secondary-field required" :class="{ missing: isMedicineDaysMissing(item) }">
+                <div class="secondary-field required numeric-secondary-field" :class="{ missing: isMedicineDaysMissing(item) || isNumericFieldInvalid(item, 'days') }">
                   <label>天数</label>
-                  <input
-                    :value="item.days || ''"
-                    type="text"
-                    placeholder="天"
-                    class="edit-input mini"
-                    :aria-invalid="isMedicineDaysMissing(item) ? 'true' : undefined"
-                    @input="handleMedicineDaysInput(item, $event)"
-                  />
+                  <div class="numeric-field">
+                    <input
+                      :value="item.days || ''"
+                      type="text"
+                      inputmode="numeric"
+                      placeholder="天"
+                      class="edit-input mini"
+                      :aria-invalid="isMedicineDaysMissing(item) || isNumericFieldInvalid(item, 'days') ? 'true' : undefined"
+                      :aria-describedby="getNumericMetaId(item, 'days')"
+                      @beforeinput="handleNumericBeforeInput(item, 'days', $event)"
+                      @paste="handleNumericPaste(item, 'days', $event)"
+                      @input="handleMedicineDaysInput(item, $event)"
+                    />
+                    <div
+                      v-if="getNumericFieldMessage(item, 'days')"
+                      :id="getNumericMetaId(item, 'days')"
+                      class="numeric-field-message"
+                      :class="{ 'is-error': isNumericFieldInvalid(item, 'days') }"
+                    >
+                      {{ getNumericFieldMessage(item, 'days') }}
+                    </div>
+                  </div>
                 </div>
                 <div class="secondary-field required" :class="{ missing: isMedicinePharmacyMissing(item) }">
                   <label>药房</label>
@@ -637,9 +905,32 @@ function getFeedbackSubmittedLabel(item: TreatmentRecommendation): string {
                     </div>
                   </div>
                 </div>
-                <div class="secondary-field">
+                <div class="secondary-field remark-secondary-field" :class="{ 'is-over-limit': isRemarkOverLimit(item) }">
                   <label>备注</label>
-                  <input v-model="item.remark" type="text" placeholder="备注" class="edit-input" />
+                  <div class="remark-field">
+                    <input
+                      :value="item.remark || ''"
+                      type="text"
+                      placeholder="备注"
+                      class="edit-input"
+                      :aria-invalid="isRemarkOverLimit(item) ? 'true' : undefined"
+                      :aria-describedby="getRemarkMetaId(item)"
+                      @beforeinput="handleRemarkBeforeInput(item, $event)"
+                      @paste="handleRemarkPaste(item, $event)"
+                      @input="handleRemarkInput(item, $event)"
+                    />
+                    <div
+                      :id="getRemarkMetaId(item)"
+                      class="remark-field-meta"
+                      :class="{
+                        'is-warning': isRemarkAtLimit(item) || isRemarkInputBlocked(item),
+                        'is-error': isRemarkOverLimit(item),
+                      }"
+                    >
+                      <span>{{ getRemarkLength(item) }}/{{ TREATMENT_REMARK_MAX_LENGTH }}</span>
+                      <span v-if="getRemarkLimitMessage(item)" class="remark-field-message">{{ getRemarkLimitMessage(item) }}</span>
+                    </div>
+                  </div>
                 </div>
                 <div class="secondary-field required" :class="{ missing: isInsuranceInputMissing(item) }">
                   <label>医保限用</label>
@@ -762,17 +1053,31 @@ function getFeedbackSubmittedLabel(item: TreatmentRecommendation): string {
                     </div>
                   </div>
                 </div>
-                <div v-if="item.type === 'procedure'" class="secondary-field required" :class="{ missing: isProcedureTotalQtyMissing(item) }">
+                <div v-if="item.type === 'procedure'" class="secondary-field required numeric-secondary-field" :class="{ missing: isProcedureTotalQtyMissing(item) || isNumericFieldInvalid(item, 'totalQty') }">
                   <label>总量</label>
                   <div class="edit-field-row">
-                    <input
-                      :value="item.totalQty || ''"
-                      type="text"
-                      placeholder="数量"
-                      class="edit-input mini"
-                      :aria-invalid="isProcedureTotalQtyMissing(item) ? 'true' : undefined"
-                      @input="handleNonMedicineTotalQtyInput(item, $event)"
-                    />
+                    <div class="numeric-field">
+                      <input
+                        :value="item.totalQty || ''"
+                        type="text"
+                        inputmode="decimal"
+                        placeholder="数量"
+                        class="edit-input mini"
+                        :aria-invalid="isProcedureTotalQtyMissing(item) || isNumericFieldInvalid(item, 'totalQty') ? 'true' : undefined"
+                        :aria-describedby="getNumericMetaId(item, 'totalQty')"
+                        @beforeinput="handleNumericBeforeInput(item, 'totalQty', $event)"
+                        @paste="handleNumericPaste(item, 'totalQty', $event)"
+                        @input="handleNonMedicineTotalQtyInput(item, $event)"
+                      />
+                      <div
+                        v-if="getNumericFieldMessage(item, 'totalQty')"
+                        :id="getNumericMetaId(item, 'totalQty')"
+                        class="numeric-field-message"
+                        :class="{ 'is-error': isNumericFieldInvalid(item, 'totalQty') }"
+                      >
+                        {{ getNumericFieldMessage(item, 'totalQty') }}
+                      </div>
+                    </div>
                     <span class="edit-unit static-unit" :class="{ placeholder: !item.totalUnit }">{{ item.totalUnit || '次' }}</span>
                   </div>
                 </div>
@@ -816,9 +1121,32 @@ function getFeedbackSubmittedLabel(item: TreatmentRecommendation): string {
                   <label>规定病</label>
                   <input v-model="item.regulatedDisease" type="text" placeholder="规定病" class="edit-input" />
                 </div>
-                <div class="secondary-field secondary-field-wide">
+                <div class="secondary-field secondary-field-wide remark-secondary-field" :class="{ 'is-over-limit': isRemarkOverLimit(item) }">
                   <label>备注</label>
-                  <input v-model="item.remark" type="text" placeholder="可选" class="edit-input" />
+                  <div class="remark-field">
+                    <input
+                      :value="item.remark || ''"
+                      type="text"
+                      placeholder="可选"
+                      class="edit-input"
+                      :aria-invalid="isRemarkOverLimit(item) ? 'true' : undefined"
+                      :aria-describedby="getRemarkMetaId(item)"
+                      @beforeinput="handleRemarkBeforeInput(item, $event)"
+                      @paste="handleRemarkPaste(item, $event)"
+                      @input="handleRemarkInput(item, $event)"
+                    />
+                    <div
+                      :id="getRemarkMetaId(item)"
+                      class="remark-field-meta"
+                      :class="{
+                        'is-warning': isRemarkAtLimit(item) || isRemarkInputBlocked(item),
+                        'is-error': isRemarkOverLimit(item),
+                      }"
+                    >
+                      <span>{{ getRemarkLength(item) }}/{{ TREATMENT_REMARK_MAX_LENGTH }}</span>
+                      <span v-if="getRemarkLimitMessage(item)" class="remark-field-message">{{ getRemarkLimitMessage(item) }}</span>
+                    </div>
+                  </div>
                 </div>
               </div>
             </template>
@@ -954,6 +1282,14 @@ function getFeedbackSubmittedLabel(item: TreatmentRecommendation): string {
   background: var(--voice-surface-soft);
 }
 
+.remark-secondary-field {
+  align-items: flex-start;
+}
+
+.numeric-secondary-field {
+  align-items: flex-start;
+}
+
 .secondary-field label {
   flex-shrink: 0;
   color: #334155;
@@ -970,6 +1306,57 @@ function getFeedbackSubmittedLabel(item: TreatmentRecommendation): string {
 
 .secondary-field-wide {
   grid-column: 1 / -1;
+}
+
+.remark-field {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.numeric-field {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.numeric-field-message {
+  color: var(--voice-warning);
+  font-size: 12px;
+  line-height: 1.35;
+}
+
+.numeric-field-message.is-error {
+  color: #dc2626;
+  font-weight: 600;
+}
+
+.remark-field-meta {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px;
+  min-height: 17px;
+  color: var(--voice-text-muted);
+  font-size: 12px;
+  line-height: 1.35;
+}
+
+.remark-field-meta.is-warning {
+  color: var(--voice-warning);
+}
+
+.remark-field-meta.is-error {
+  color: #dc2626;
+  font-weight: 600;
+}
+
+.remark-field-message {
+  text-align: right;
 }
 
 .field-editor {
@@ -1040,12 +1427,34 @@ function getFeedbackSubmittedLabel(item: TreatmentRecommendation): string {
   box-shadow: 0 0 0 3px rgba(248, 113, 113, 0.18);
 }
 
+.numeric-field .edit-input[aria-invalid="true"] {
+  border-color: rgba(220, 38, 38, 0.72);
+  background: rgba(254, 242, 242, 0.94);
+  box-shadow: 0 0 0 3px rgba(248, 113, 113, 0.18);
+}
+
+.remark-secondary-field.is-over-limit .edit-input {
+  border-color: rgba(220, 38, 38, 0.72);
+  background: rgba(254, 242, 242, 0.94);
+  box-shadow: 0 0 0 3px rgba(248, 113, 113, 0.18);
+}
+
 .field-editor.missing .edit-input:focus {
   border-color: #dc2626;
   box-shadow: 0 0 0 3px rgba(248, 113, 113, 0.26);
 }
 
 .secondary-field.missing .edit-input:focus {
+  border-color: #dc2626;
+  box-shadow: 0 0 0 3px rgba(248, 113, 113, 0.26);
+}
+
+.numeric-field .edit-input[aria-invalid="true"]:focus {
+  border-color: #dc2626;
+  box-shadow: 0 0 0 3px rgba(248, 113, 113, 0.26);
+}
+
+.remark-secondary-field.is-over-limit .edit-input:focus {
   border-color: #dc2626;
   box-shadow: 0 0 0 3px rgba(248, 113, 113, 0.26);
 }

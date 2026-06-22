@@ -6,6 +6,7 @@ import {
 } from './regionalClient';
 import { startAuditUploader, stopAuditUploader } from './auditUploader';
 import { startFeatureUsageUploader, stopFeatureUsageUploader } from './featureUsageTracker';
+import { startRecommendationPreferenceUploader, stopRecommendationPreferenceUploader } from './recommendationPreferenceTracker';
 import { syncRemotePrompts } from './promptOverride';
 import { syncRemoteTemplates } from './templateService';
 import { medicalDataService } from './medicalData';
@@ -40,6 +41,7 @@ export async function initializeRegionalRuntime(options?: {
 
   startAuditUploader();
   startFeatureUsageUploader();
+  startRecommendationPreferenceUploader();
   if (!options?.skipDataSync) {
     await syncRegionalRuntimeData();
   }
@@ -80,5 +82,6 @@ export async function reinitializeRegionalRuntime(options?: {
 export function shutdownRegionalRuntime(): void {
   stopAuditUploader();
   stopFeatureUsageUploader();
+  stopRecommendationPreferenceUploader();
   shutdownRegionalClient();
 }

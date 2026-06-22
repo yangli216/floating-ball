@@ -48,7 +48,7 @@ function submit(): void {
   <section class="voice-session-feedback pane-card">
     <div class="voice-session-feedback-main">
       <div>
-        <div class="voice-session-feedback-title">本次语音问诊结果怎么样</div>
+        <div class="voice-session-feedback-title">本次问诊结果怎么样</div>
         <div class="voice-session-feedback-subtitle">支持整页评分和点评，便于后续优化推荐质量</div>
       </div>
 

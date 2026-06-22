@@ -3,6 +3,7 @@ import { invoke } from '@tauri-apps/api/core';
 import type { AppPatient } from '@/types/appState';
 import type { Diagnosis, TreatmentRecommendation } from '@/types/consultation';
 import { getPatientContextAnchorId } from '@/utils/patientContext';
+import { trackFinalRecommendationPreferences } from '@/services/recommendationPreferenceTracker';
 import type { ExecDeptOption, UsageOption } from '@/utils/medicalDictionaryHelpers';
 import { getHisAdapter } from '@/services/his';
 import {
@@ -43,6 +44,7 @@ export interface TreatmentPlanWritebackOptions {
   hasRequiredPharmacy: (rec: TreatmentRecommendation) => boolean;
   hasRequiredExecDept: (rec: TreatmentRecommendation) => boolean;
   hasRequiredBodySite: (rec: TreatmentRecommendation) => boolean;
+  onWritebackSuccess?: (payload: WritebackFeedbackPayload) => void;
   notify?: TreatmentPlanNotify;
 }
 
@@ -114,6 +116,9 @@ export function useTreatmentPlanWriteback(options: TreatmentPlanWritebackOptions
   const writebackFeedbackController = useWritebackFeedbackController({
     applyFeedback: applyWritebackFeedbackStatus,
     notify,
+    onSuccess: (payload) => {
+      options.onWritebackSuccess?.(payload);
+    },
     successMessage: '诊疗方案已完成回写。',
     failedMessage: '诊疗方案回写失败，请根据提示修改后重试。',
   });
@@ -171,6 +176,16 @@ export function useTreatmentPlanWriteback(options: TreatmentPlanWritebackOptions
         },
       });
 
+      trackFinalRecommendationPreferences({
+        diagnoses: selectedDiagnoses.value,
+        primaryDiagnosis: options.diagnosis.value,
+        treatments: selected,
+        context: {
+          consultationId: resolveConsultationId(),
+          sourceModule: 'treatment_plan',
+          scene: 'treatment-plan-writeback',
+        },
+      });
       await invoke('complete_consultation', { result });
       markWritebackPending(requestId, '诊疗方案已发送至 HIS，等待处理结果回执。');
       notify('诊疗方案已发送至 HIS，等待处理结果回执。');
