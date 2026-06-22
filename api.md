@@ -951,9 +951,13 @@ http://127.0.0.1:8081/api/consultation/events/poll
 3. 事件队列仅保留最近一小段运行期事件，用于 SDK 断线重连补发；HIS 仍必须按 `event.id / consultationId / requestId` 做幂等处理。
 4. 从语义上看，`/api/consultation/events/poll` 返回的不是“最终结果”，而是“当前事件”；新接入应只读取通用 envelope 字段 `state / event`，并从 `event.type / event.terminal / event.payload` 消费业务内容。
 
+### 6.4.0 SDK 静态文件缓存策略
+
+`/sdk/med-hermes-sdk.js` 与 `/sdk/med-hermes-loader.js` 由本地 Bridge 按当前安装包内置文件直接返回，并带 `Cache-Control: no-store, no-cache, must-revalidate, max-age=0`。Loader 在探测到桌面端版本后，会给本地 SDK URL 追加 `?v=<version>`，避免 HIS 内嵌浏览器在升级安装包后继续执行旧版 SDK。
+
 ### 6.4.1 `GET /api/consultation/events/ws`
 
-用途：订阅当前问诊流程的实时事件流。SDK 默认优先使用此通道，失败时再自动回退到 `GET /api/consultation/events/poll`。
+用途：订阅当前问诊流程的实时事件流。SDK 默认 `eventTransport: "auto"` 会优先使用此通道，失败时立即启动 `GET /api/consultation/events/poll` 兜底，并在后台继续尝试恢复 WebSocket。若 HIS 内嵌浏览器或网关环境明确不支持 WebSocket，可初始化 SDK 时指定 `eventTransport: "polling"`。
 
 完整地址：
 
@@ -972,7 +976,7 @@ ws://127.0.0.1:8081/api/consultation/events/ws
 1. 每条业务消息都是与 `/events/poll` 一致的事件 envelope。
 2. 服务端支持浏览器标准 `ping/pong/close` 交互。
 3. 客户端重连时应带上最后处理过的 `event.id`，避免漏事件或重复消费。
-4. SDK 在 `init()` / `debugHandshake()` 成功后会尽量维持这条 WebSocket 为长寿命交互通道；具体业务只复用该通道消费事件，而不是按单次业务临时建链。
+4. SDK 在 `init()` / `debugHandshake()` 成功后会尽量维持这条 WebSocket 为长寿命交互通道；具体业务只复用该通道消费事件，而不是按单次业务临时建链。`auto` 模式下 WebSocket 失败不会阻断一键回写事件消费，SDK 会使用长轮询继续接收同一套 envelope。
 5. SDK 会对 `event.id` 做本地去重，业务方监听 `subscribe()` 即可。
 
 #### 通用响应 envelope
@@ -1644,10 +1648,10 @@ HIS 侧至少要识别以下 5 类结果：
 
 推荐策略：
 
-1. HIS 页面初始化后调用 SDK `init()` 或 `debugHandshake()`，SDK 会优先建立 `/api/consultation/events/ws` 长寿命交互通道。
+1. HIS 页面初始化后调用 SDK `init()` 或 `debugHandshake()`，SDK 默认会优先建立 `/api/consultation/events/ws` 长寿命交互通道；如所在容器无法建立 WebSocket，可显式配置 `eventTransport: "polling"` 只使用长轮询。
 2. `subscribe()` 只负责声明“当前页面要消费哪些事件”，不再等同于“临时创建一条新的业务专用 WebSocket”。
 3. 调用 `/start`、`/assist` 或 `/start-voice` 成功后，继续复用同一条通道接收事件。
-4. WebSocket 断开时，SDK 会携带最后处理过的 `event.id` 自动重连；若 WebSocket 不可用，则回退到 `/events/poll?after=...`。
+4. WebSocket 断开时，SDK 会携带最后处理过的 `event.id` 自动重连；`auto` 模式下若 WebSocket 不可用，会立即回退到 `/events/poll?after=...` 继续消费事件，避免医生点击“一键回写”后 HIS 侧漏收 `record-confirmed`。
 5. 收到 `reference-request` 或 `record-confirmed` 后，PHIS 必须调用 `/reference-feedback` 回执；回执会继续通过同一事件流推送。
 6. SDK 内部已封装连接、重连、补发和去重逻辑，HIS 接入建议直接使用 SDK 的事件监听。
 

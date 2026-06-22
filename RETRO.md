@@ -260,6 +260,13 @@
 - **解决方案**: `getPresetFieldStatus` 改为日期、时间、诊断、操作人员等强排除词仍优先，仅让“入院 / ry”这类文书类型宽泛排除词排在明确 AI 字段关键词之后；“入院情况 / ryqk”可识别为 AI 字段，“入院日期 / 入院诊断 / 病程记录操作时间”仍会被排除。
 - **后续防护**: 调整住院病历模板字段关键词时，必须同时验证“宽泛排除词”和“明确 AI 字段词”的优先级，尤其关注入院、首次、ry 等会同时出现在文书类型和正文字段名中的词。
 
+### RETRO-031: 一键回写被非关键埋点和 WebSocket 兜底缺口阻断 [已解决]
+
+- **现象**: 打包安装包中医生点击“一键回写”后，HIS 页面控制台反复出现 `WebSocket connection to ws://127.0.0.1:8081/api/consultation/events/ws failed`，并且 HIS 侧收不到 `record-confirmed`。
+- **根因**: SDK 声明了 `auto/websocket/polling` 事件通道策略，但实现未真正按 `eventTransport` 切换，且 `_startLongPollingEvents()` 缺失，WebSocket 失败后没有可靠进入 `/events/poll` 兜底。同时新增推荐偏好记录在回写前同步调用 `crypto.randomUUID()`，旧版 HIS 内嵌浏览器不支持时会在 `complete_consultation` 之前抛错，导致回写事件根本没有写入 Bridge。
+- **解决方案**: SDK 补齐 `eventTransport` 行为与长轮询循环，`auto` 模式下 WebSocket 失败立即启用 poll 兜底并后台继续重连；推荐偏好记录改为兼容 ID 生成，并把所有偏好埋点调用包进非阻断保护，确保 `complete_consultation` 是一键回写主链路的优先动作。
+- **后续防护**: 一键回写路径上的日志、偏好学习、用户行为追踪等非关键副作用必须 `try/catch` 隔离，不允许阻断 `complete_consultation`；SDK 文档声明的 fallback 行为必须有真实实现。
+
 > 新增条目请复制以下模板：
 
 ```markdown

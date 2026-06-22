@@ -98,6 +98,11 @@
     });
   }
 
+  function appendQueryParam(url, key, value) {
+    if (!value || url.indexOf(key + '=') !== -1) return url;
+    return url + (url.indexOf('?') === -1 ? '?' : '&') + encodeURIComponent(key) + '=' + encodeURIComponent(value);
+  }
+
   function launchViaProtocol(schemeName) {
     var url = schemeName + '://launch';
     log('尝试通过协议拉起: ' + url);
@@ -162,6 +167,7 @@
       .then(function (info) {
         state.online = true;
         log('桌面端在线, version=' + (info.version || 'unknown'));
+        sdkUrl = appendQueryParam(sdkUrl, 'v', info.version || '');
         return true;
       })
       .catch(function () {

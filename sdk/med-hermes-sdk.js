@@ -371,6 +371,7 @@
     this._ws = null;
     this._wsReconnectTimer = null;
     this._isPolling = false;
+    this._isLongPolling = false;
     this._isChannelPersistent = false;
     this._isWsConnecting = false;
     this._transport = 'idle';
@@ -849,7 +850,79 @@
   };
 
   MedHermes.prototype._shouldUseWebSocket = function () {
+    if (this._opts.eventTransport === 'polling') return false;
     return typeof WebSocket !== 'undefined';
+  };
+
+  MedHermes.prototype._shouldFallbackToLongPolling = function () {
+    return this._opts.eventTransport !== 'websocket';
+  };
+
+  MedHermes.prototype._startLongPollingEvents = function () {
+    if (this._destroyed || !this._connected || !this._isPolling) return;
+    if (this._isLongPolling) return;
+
+    var self = this;
+    this._isLongPolling = true;
+    this._transport = 'polling';
+    this._emitter.emit('subscription-transport', { transport: 'polling', state: 'connected' });
+
+    function stopLoop() {
+      var wasLongPolling = self._isLongPolling || self._pollTimer;
+      self._isLongPolling = false;
+      if (self._pollTimer) {
+        clearTimeout(self._pollTimer);
+        self._pollTimer = null;
+      }
+      if (!self._ws && self._transport === 'polling') {
+        self._transport = 'idle';
+      }
+      if (wasLongPolling) {
+        self._emitter.emit('subscription-transport', { transport: 'polling', state: 'closed' });
+      }
+    }
+
+    function scheduleNext(delay) {
+      if (self._destroyed || !self._connected || !self._isPolling || !self._isLongPolling) {
+        stopLoop();
+        return;
+      }
+      self._pollTimer = setTimeout(pollOnce, delay);
+    }
+
+    function pollOnce() {
+      self._pollTimer = null;
+      if (self._destroyed || !self._connected || !self._isPolling || !self._isLongPolling) {
+        stopLoop();
+        return;
+      }
+
+      self.pollEvent()
+        .catch(function (err) {
+          if (!err || err.code !== 'CANCELLED') {
+            console.warn('[MedHermes] Long polling event fetch failed:', err && err.message || err);
+          }
+        })
+        .then(function () {
+          scheduleNext(self._opts.pollInterval || 2000);
+        });
+    }
+
+    pollOnce();
+  };
+
+  MedHermes.prototype._stopLongPollingEvents = function () {
+    if (this._pollTimer) {
+      clearTimeout(this._pollTimer);
+      this._pollTimer = null;
+    }
+    if (this._isLongPolling) {
+      this._isLongPolling = false;
+      this._emitter.emit('subscription-transport', { transport: 'polling', state: 'closed' });
+    }
+    if (!this._ws && this._transport === 'polling') {
+      this._transport = 'idle';
+    }
   };
 
   MedHermes.prototype._openPersistentWebSocket = function () {
@@ -892,6 +965,9 @@
       ws.onopen = function () {
         opened = true;
         self._isWsConnecting = false;
+        if (self._opts.eventTransport !== 'polling') {
+          self._stopLongPollingEvents();
+        }
         self._emitter.emit('subscription-transport', { transport: 'websocket', state: 'connected' });
         console.log('[MedHermes] WebSocket connected successfully');
         // 连接成功后，恢复先前中断的接诊状态
@@ -930,6 +1006,9 @@
       ws.onerror = function () {
         self._isWsConnecting = false;
         self._emitter.emit('subscription-transport', { transport: 'websocket', state: 'error' });
+        if (!opened && self._shouldFallbackToLongPolling()) {
+          self._startLongPollingEvents();
+        }
       };
 
       ws.onclose = function () {
@@ -938,6 +1017,9 @@
         if (self._destroyed || !self._connected || !self._isChannelPersistent) return;
 
         self._emitter.emit('subscription-transport', { transport: 'websocket', state: 'closed' });
+        if (self._shouldFallbackToLongPolling()) {
+          self._startLongPollingEvents();
+        }
 
         self._wsReconnectTimer = setTimeout(function () {
           self._openPersistentWebSocket();
@@ -946,6 +1028,9 @@
     } catch (err) {
       this._isWsConnecting = false;
       this._emitter.emit('error', err);
+      if (this._shouldFallbackToLongPolling()) {
+        this._startLongPollingEvents();
+      }
       this._wsReconnectTimer = setTimeout(function () {
         self._openPersistentWebSocket();
       }, this._opts.wsReconnectMs || 1000);
@@ -999,6 +1084,7 @@
   /** 停止事件消费；不会关闭已建立的持久 WebSocket 通道 */
   MedHermes.prototype.stopPolling = function () {
     this._isPolling = false;
+    this._stopLongPollingEvents();
     if (!this._ws) {
       this._transport = 'idle';
     }

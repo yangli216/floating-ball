@@ -84,6 +84,17 @@ let queueLoaded = false;
 let uploadTimer: ReturnType<typeof setInterval> | null = null;
 let flushSoonTimer: ReturnType<typeof setTimeout> | null = null;
 let flushInFlight: Promise<number> | null = null;
+let fallbackEventSeq = 0;
+
+function createPreferenceEventId(): string {
+  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+    return crypto.randomUUID();
+  }
+
+  fallbackEventSeq += 1;
+  const randomPart = Math.random().toString(36).slice(2, 10);
+  return `pref-${Date.now().toString(36)}-${fallbackEventSeq.toString(36)}-${randomPart}`;
+}
 
 function loadQueue(): void {
   try {
@@ -175,7 +186,7 @@ function enrichEvent(draft: RecommendationPreferenceDraft, context: Recommendati
   const actor = getFeedbackActor();
   const trace = getLatestAiTrace();
   const bootstrap = getCachedBootstrap();
-  const eventId = crypto.randomUUID();
+  const eventId = createPreferenceEventId();
   const event: RecommendationPreferenceEvent = {
     ...draft,
     eventId,
@@ -199,11 +210,15 @@ function enrichEvent(draft: RecommendationPreferenceDraft, context: Recommendati
 }
 
 function enqueuePreferenceEvent(draft: RecommendationPreferenceDraft, context: RecommendationPreferenceContext): void {
-  if (!isCollectionEnabled() || !draft.itemKey) return;
-  ensureQueueLoaded();
-  eventQueue.push(enrichEvent(draft, context));
-  saveQueue();
-  scheduleFlushSoon();
+  try {
+    if (!isCollectionEnabled() || !draft.itemKey) return;
+    ensureQueueLoaded();
+    eventQueue.push(enrichEvent(draft, context));
+    saveQueue();
+    scheduleFlushSoon();
+  } catch (error) {
+    console.warn('[RecommendationPreferenceTracker] Failed to enqueue preference event', error);
+  }
 }
 
 function toRequestEvent(event: RecommendationPreferenceEvent) {
@@ -330,33 +345,37 @@ export function trackFinalRecommendationPreferences(options: {
   treatments?: TreatmentRecommendation[];
   context: RecommendationPreferenceContext;
 }): void {
-  const primaryKey = options.primaryDiagnosis ? buildDiagnosisPreferenceCandidate(options.primaryDiagnosis)?.itemKey : '';
-  options.diagnoses?.forEach((diagnosis, index) => {
-    const candidate = buildDiagnosisPreferenceCandidate(diagnosis, index);
-    if (!candidate) return;
-    enqueuePreferenceEvent({
-      ...candidate,
-      action: 'final_select',
-      selected: true,
-      primary: candidate.itemKey === primaryKey,
-      payload: { rate: diagnosis.rate, isTCM: diagnosis.isTCM },
-    }, options.context);
-  });
+  try {
+    const primaryKey = options.primaryDiagnosis ? buildDiagnosisPreferenceCandidate(options.primaryDiagnosis)?.itemKey : '';
+    options.diagnoses?.forEach((diagnosis, index) => {
+      const candidate = buildDiagnosisPreferenceCandidate(diagnosis, index);
+      if (!candidate) return;
+      enqueuePreferenceEvent({
+        ...candidate,
+        action: 'final_select',
+        selected: true,
+        primary: candidate.itemKey === primaryKey,
+        payload: { rate: diagnosis.rate, isTCM: diagnosis.isTCM },
+      }, options.context);
+    });
 
-  options.treatments?.filter(treatment => treatment.selected).forEach((treatment, index) => {
-    const candidate = buildTreatmentPreferenceCandidate(treatment, index);
-    if (!candidate) return;
-    enqueuePreferenceEvent({
-      ...candidate,
-      action: 'final_select',
-      selected: !!treatment.selected,
-      payload: {
-        matchStatus: treatment.matchStatus,
-        manualMatched: treatment.manualMatched,
-        originalName: treatment.originalName,
-      },
-    }, options.context);
-  });
+    options.treatments?.filter(treatment => treatment.selected).forEach((treatment, index) => {
+      const candidate = buildTreatmentPreferenceCandidate(treatment, index);
+      if (!candidate) return;
+      enqueuePreferenceEvent({
+        ...candidate,
+        action: 'final_select',
+        selected: !!treatment.selected,
+        payload: {
+          matchStatus: treatment.matchStatus,
+          manualMatched: treatment.manualMatched,
+          originalName: treatment.originalName,
+        },
+      }, options.context);
+    });
+  } catch (error) {
+    console.warn('[RecommendationPreferenceTracker] Failed to track final preferences', error);
+  }
 }
 
 export function trackTreatmentMatchPreference(
@@ -364,18 +383,22 @@ export function trackTreatmentMatchPreference(
   action: Extract<RecommendationPreferenceAction, 'manual_match' | 'confirm_match'>,
   context: RecommendationPreferenceContext,
 ): void {
-  const candidate = buildTreatmentPreferenceCandidate(treatment);
-  if (!candidate) return;
-  enqueuePreferenceEvent({
-    ...candidate,
-    action,
-    selected: !!treatment.selected,
-    payload: {
-      matchStatus: treatment.matchStatus,
-      manualMatched: treatment.manualMatched,
-      originalName: treatment.originalName,
-    },
-  }, context);
+  try {
+    const candidate = buildTreatmentPreferenceCandidate(treatment);
+    if (!candidate) return;
+    enqueuePreferenceEvent({
+      ...candidate,
+      action,
+      selected: !!treatment.selected,
+      payload: {
+        matchStatus: treatment.matchStatus,
+        manualMatched: treatment.manualMatched,
+        originalName: treatment.originalName,
+      },
+    }, context);
+  } catch (error) {
+    console.warn('[RecommendationPreferenceTracker] Failed to track treatment match preference', error);
+  }
 }
 
 export async function applyRecommendationPreferenceRanking<T>(

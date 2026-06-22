@@ -12,6 +12,8 @@
 
 **推荐架构：** HIS 本地只部署 `loader.js`，SDK 从 CDN 加载。这样 loader 几乎不需要更新，SDK 通过 CDN 自动获取最新版本。
 
+如果直接从桌面端本地 Bridge 加载 `/sdk/med-hermes-loader.js` 或 `/sdk/med-hermes-sdk.js`，Bridge 会返回 `no-store` 缓存头；Loader 自动推导本地 SDK 地址时，也会在 URL 后追加 `?v=<桌面端版本>`，避免升级安装包后 HIS 内嵌浏览器继续执行旧 SDK。
+
 ---
 
 ## 方式一：使用 Loader（推荐）
@@ -285,6 +287,8 @@ const mh = new MedHermes(options?)
 |------|------|--------|------|
 | `baseUrl` | string | `http://127.0.0.1:8081/api` | 本地桥接地址 |
 | `pollInterval` | number | `2000` | 轮询间隔（毫秒） |
+| `eventTransport` | `'auto' \| 'websocket' \| 'polling'` | `'auto'` | 事件通道策略；`auto` 优先 WebSocket，失败时用长轮询兜底 |
+| `wsReconnectMs` | number | `1000` | WebSocket 断线后后台重连间隔 |
 | `autoPoll` | boolean | `true` | 业务调用后自动轮询 |
 | `scheme` | string | `med-hermes` | 深度链接协议名 |
 | `launchRetryMs` | number | `3000` | 协议拉起后等待重连时间 |
@@ -468,7 +472,7 @@ SDK 会优先使用最近一次事件的 `consultationId` 回执；如果当前�
 
 #### `subscribe(listener): () => void`
 
-订阅统一事件流。底层 WebSocket 交互通道在 `init()` / `debugHandshake()` 成功后会尽量常驻，`subscribe()` 只是声明当前页面开始消费该通道上的事件；WebSocket 不可用时自动回退长轮询。返回取消订阅函数。
+订阅统一事件流。底层 WebSocket 交互通道在 `init()` / `debugHandshake()` 成功后会尽量常驻，`subscribe()` 只是声明当前页面开始消费该通道上的事件；默认 `eventTransport: 'auto'` 会在 WebSocket 不可用时自动回退长轮询，并在后台继续重试 WebSocket。返回取消订阅函数。
 
 ```js
 const unsubscribe = mh.subscribe((envelope) => {
@@ -482,7 +486,7 @@ unsubscribe();
 
 #### `startPolling() / stopPolling()`
 
-手动控制当前页面是否消费事件。它不会主动关闭已经建立的持久 WebSocket 通道；该通道仍会保持连接，供后续业务继续复用。
+手动控制当前页面是否消费事件。它不会主动关闭已经建立的持久 WebSocket 通道；该通道仍会保持连接，供后续业务继续复用。若初始化时指定 `eventTransport: 'polling'`，则只启动 `/consultation/events/poll` 长轮询，不建立 WebSocket。
 
 #### `destroy()`
 

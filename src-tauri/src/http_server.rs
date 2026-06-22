@@ -2249,7 +2249,10 @@ async fn serve_sdk_js() -> impl Responder {
     const SDK_JS: &str = include_str!("../../sdk/med-hermes-sdk.js");
     HttpResponse::Ok()
         .content_type("application/javascript; charset=utf-8")
-        .insert_header(("Cache-Control", "public, max-age=3600"))
+        .insert_header(("Cache-Control", "no-store, no-cache, must-revalidate, max-age=0"))
+        .insert_header(("Pragma", "no-cache"))
+        .insert_header(("Expires", "0"))
+        .insert_header(("X-MedHermes-Version", env!("CARGO_PKG_VERSION")))
         .insert_header(("Access-Control-Allow-Origin", "*"))
         .body(SDK_JS)
 }
@@ -2259,7 +2262,10 @@ async fn serve_loader_js() -> impl Responder {
     const LOADER_JS: &str = include_str!("../../sdk/med-hermes-loader.js");
     HttpResponse::Ok()
         .content_type("application/javascript; charset=utf-8")
-        .insert_header(("Cache-Control", "public, max-age=86400"))
+        .insert_header(("Cache-Control", "no-store, no-cache, must-revalidate, max-age=0"))
+        .insert_header(("Pragma", "no-cache"))
+        .insert_header(("Expires", "0"))
+        .insert_header(("X-MedHermes-Version", env!("CARGO_PKG_VERSION")))
         .insert_header(("Access-Control-Allow-Origin", "*"))
         .body(LOADER_JS)
 }
