@@ -201,7 +201,7 @@ jobs:
 
           VERSION="${RELEASE_TAG#v}"
           node scripts/package-windows-internal-update.mjs \
-            --artifacts-dir src-tauri/target/release/bundle/nsis \
+            --artifacts-dir src-tauri/target/release/bundle/msi \
             --output-dir dist/intranet-update \
             --base-url "$PUBLISH_BASE_URL" \
             --version "$VERSION" \

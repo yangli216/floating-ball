@@ -50,15 +50,7 @@
       "entitlements": "./Entitlements.plist",
       "infoPlist": "./Info.plist"
     },
-    "windows": {
-      "nsis": {
-        "languages": [
-          "English",
-          "SimpChinese",
-          "TradChinese"
-        ]
-      }
-    }
+    "windows": {}
   },
   "plugins": {
     "deep-link": {

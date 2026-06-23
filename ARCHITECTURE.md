@@ -987,7 +987,7 @@ startAuditUploader() (startup flush + enqueue flush + 30s retry)
 
 `floating-ball-server` 后台上传版本后生成 Tauri 兼容 `latest.json` 和公开下载地址；这些公开地址不携带设备令牌，避免 updater 下载阶段无法附带自定义鉴权头。内网部署允许使用 `http://` 更新源，`tauri.conf.json` 已通过 updater 的 `dangerous-insecure-transport-protocol` 开启非安全传输协议，运行时注入的 updater endpoint 同样继承该配置；安装包签名校验仍由 Tauri updater 强制执行。
 
-Windows 安装包使用 Tauri NSIS bundler，并在 `tauri.conf.json` 的 `bundle.windows.nsis.languages` 中内置 `English`、`SimpChinese` 与 `TradChinese`。NSIS 会优先选择当前系统语言；如果系统语言不在内置列表中，则回退到列表首位的英文。安装、卸载、占用进程确认与按钮文案应由安装器语言包提供，不在应用运行时代码中二次翻译。
+Windows 安装包只发布 Tauri WiX MSI，不再同时生成 NSIS `.exe`，避免同一版本出现两个可安装产物导致桌面图标重复。Windows 专用配置位于 `src-tauri/tauri.windows.conf.json`，其中 `bundle.targets = "msi"` 且 `bundle.windows.wix.language = "zh-CN"`；因此 Windows release 产物文件名与安装器 UI 使用中文语言包。
 
 ### 当前本地桥接与知识库链路
 

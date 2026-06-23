@@ -43,17 +43,12 @@ function normalizeBaseUrl(baseUrl) {
 function findInstaller(artifactsDir) {
   const entries = fs.readdirSync(artifactsDir, { withFileTypes: true });
   const files = entries.filter((entry) => entry.isFile()).map((entry) => entry.name);
-  const preferred = files.find((file) => file.endsWith('-setup.exe'));
-  if (preferred) {
-    return preferred;
+  const msiInstaller = files.find((file) => file.endsWith('.msi') && !file.endsWith('.msi.sig'));
+  if (msiInstaller) {
+    return msiInstaller;
   }
 
-  const fallback = files.find((file) => file.endsWith('.exe') && !file.endsWith('.exe.sig'));
-  if (fallback) {
-    return fallback;
-  }
-
-  throw new Error(`No Windows installer found in ${artifactsDir}`);
+  throw new Error(`No Windows MSI installer found in ${artifactsDir}`);
 }
 
 function copyFile(source, target) {
