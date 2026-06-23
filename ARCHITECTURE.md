@@ -987,6 +987,8 @@ startAuditUploader() (startup flush + enqueue flush + 30s retry)
 
 `floating-ball-server` 后台上传版本后生成 Tauri 兼容 `latest.json` 和公开下载地址；这些公开地址不携带设备令牌，避免 updater 下载阶段无法附带自定义鉴权头。内网部署允许使用 `http://` 更新源，`tauri.conf.json` 已通过 updater 的 `dangerous-insecure-transport-protocol` 开启非安全传输协议，运行时注入的 updater endpoint 同样继承该配置；安装包签名校验仍由 Tauri updater 强制执行。
 
+Windows 安装包使用 Tauri NSIS bundler，并在 `tauri.conf.json` 的 `bundle.windows.nsis.languages` 中内置 `English`、`SimpChinese` 与 `TradChinese`。NSIS 会优先选择当前系统语言；如果系统语言不在内置列表中，则回退到列表首位的英文。安装、卸载、占用进程确认与按钮文案应由安装器语言包提供，不在应用运行时代码中二次翻译。
+
 ### 当前本地桥接与知识库链路
 
 1. `operationTracker.ts` 与 `feedback.ts` 负责本地操作追踪、会话统计和回溯；本地模式下 `logOperation()` 写入本地 SQLite。区域化模式下，`logOperation()` 不再落本地 SQLite，而是把操作日志规范化为 `{ module, action, result, operationType, operationName, details }` 后直接进入远端审计上传链路。AI 调用类 `details` 中的 `requestSummary/responseSummary` 仅用于摘要展示，完整排障必须读取 `requestPayload/responsePayload`。
