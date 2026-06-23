@@ -62,7 +62,9 @@
           <span class="muf-option-text">{{ option.text }}</span>
           <span v-if="showMeta && (option.py || option.mcode)" class="muf-option-meta">
             <span v-if="option.py">{{ option.py }}</span>
-            <span v-if="option.mcode">·{{ option.mcode }}</span>
+            <span v-if="option.mcode && (!option.py || option.py.toLowerCase() !== option.mcode.toLowerCase())">
+              <template v-if="option.py">·</template>{{ option.mcode }}
+            </span>
           </span>
         </button>
         <div v-if="filteredOptions.length === 0" class="muf-empty">无匹配项，按当前输入保留为自定义值</div>
@@ -104,7 +106,7 @@ const props = defineProps({
   /** 最多展示多少条候选 */
   maxVisible: {
     type: Number,
-    default: 8,
+    default: 100,
   },
   /** 父组件可通过 v-model:open 强制控制展开态（多卡片互斥场景） */
   open: {

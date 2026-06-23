@@ -44,6 +44,7 @@
             :rec="rec"
             field="frequency"
             :options="frequencyOptions"
+            :show-meta="true"
             placeholder="请选择频次"
             :open="getSelectorOpen('frequency')"
             @update:open="(v) => handleFieldOpenChange('frequency', v)"
@@ -118,6 +119,7 @@
           :rec="rec"
           field="frequency"
           :options="frequencyOptions"
+          :show-meta="true"
           placeholder="请选择频次"
           @change="(field, value, key) => handleUsageFieldChange(field, value, key)"
         />
