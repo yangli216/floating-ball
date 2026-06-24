@@ -12,6 +12,7 @@ import { medicalDataService } from '@/services/medicalData';
 import { extractLLMJsonCandidate } from '@features/clinical-result';
 import {
   PROMPTS,
+  withOverride,
   type VoiceExtractionResult,
   type VoiceRecordDraft,
   type TreatmentHint,
@@ -520,12 +521,17 @@ async function repairVoiceExtractionPayload(
   transcribedText: string,
   rawOutput: string,
   issues: string[],
+  consultationId?: string,
 ): Promise<VoiceExtractionResult> {
+  const repairPrompt = withOverride(
+    'voiceIntentRepair',
+    PROMPTS.consultation.voiceIntentRepair,
+  ) as typeof PROMPTS.consultation.voiceIntentRepair;
   const repairedOutput = await chat([
-    { role: 'system', content: PROMPTS.consultation.voiceIntentRepair.system },
+    { role: 'system', content: repairPrompt.system },
     {
       role: 'user',
-      content: PROMPTS.consultation.voiceIntentRepair.buildUserPrompt({
+      content: repairPrompt.buildUserPrompt({
         transcribedText,
         rawOutput,
         issues,
@@ -538,6 +544,7 @@ async function repairVoiceExtractionPayload(
       operationModule: 'voice_consultation',
       operationAction: 'repair_voice_extraction',
       title: '修复语音结构化结果',
+      consultationId,
     },
   });
 
@@ -552,6 +559,7 @@ async function repairVoiceExtractionPayload(
 async function parseOrRepairVoiceExtraction(
   transcribedText: string,
   rawOutput: string,
+  consultationId?: string,
 ): Promise<{ payload: VoiceExtractionResult; repairUsed: boolean }> {
   const firstPass = parseVoiceExtractionPayload(rawOutput);
   if (firstPass.payload && firstPass.issues.length === 0) {
@@ -566,6 +574,7 @@ async function parseOrRepairVoiceExtraction(
     transcribedText,
     rawOutput,
     firstPass.issues,
+    consultationId,
   );
 
   return { payload: repairedPayload, repairUsed: true };
@@ -602,6 +611,7 @@ export function useVoiceIntentRecognition() {
         allergyHistory?: string | null;
         currentMedicationHistory?: string | null;
       };
+      consultationId?: string;
     },
   ): Promise<VoiceIntentResult | null> {
     const text = transcribedText || getFullTranscript();
@@ -661,10 +671,14 @@ export function useVoiceIntentRecognition() {
       }
       const patientContextBlock = patientContextLines.length ? `\n${patientContextLines.join('\n')}` : '';
 
-      const baseUserPrompt = PROMPTS.consultation.voiceIntentRecognition.buildUserPrompt(text);
+      const recognitionPrompt = withOverride(
+        'voiceIntentRecognition',
+        PROMPTS.consultation.voiceIntentRecognition,
+      ) as typeof PROMPTS.consultation.voiceIntentRecognition;
+      const baseUserPrompt = recognitionPrompt.buildUserPrompt(text);
       const userContent = `${baseUserPrompt}${patientContextBlock}${memoryBlock ? `\n${memoryBlock}` : ''}`;
       const messages: ChatMessage[] = [
-        { role: 'system', content: PROMPTS.consultation.voiceIntentRecognition.system },
+        { role: 'system', content: recognitionPrompt.system },
         { role: 'user', content: userContent },
       ];
 
@@ -675,9 +689,10 @@ export function useVoiceIntentRecognition() {
           operationModule: 'voice_consultation',
           operationAction: 'extract_voice_record',
           title: '语音记录结构化抽取',
+          consultationId: options?.consultationId,
         },
       });
-      const { payload: parsed, repairUsed } = await parseOrRepairVoiceExtraction(normalizedText, rawOutput);
+      const { payload: parsed, repairUsed } = await parseOrRepairVoiceExtraction(normalizedText, rawOutput, options?.consultationId);
       const normalizedExtraction = normalizeVoiceExtraction(parsed);
 
       if (normalizedExtraction.error) {

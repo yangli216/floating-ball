@@ -920,6 +920,7 @@ async function handleDiagnosisDifferential(diag: Diagnosis, event?: Event): Prom
         operationModule: isSymptomChannel ? 'consultation' : 'voice_consultation',
         operationAction: 'generate_diagnosis_checklist',
         title: isSymptomChannel ? '智能问诊生成鉴别排查建议' : '语音问诊生成鉴别排查建议',
+        consultationId: resolveConsultationId(),
       },
     });
 
@@ -1003,7 +1004,9 @@ async function fetchAIDiagnosis(): Promise<void> {
       age: patientAge.value,
       chiefComplaint: chiefComplaint.value,
       historyOfPresentIllness: historyOfPresentIllness.value,
-    }, PROMPTS.consultation.diagnosisRecommendation);
+    }, PROMPTS.consultation.diagnosisRecommendation, {
+      consultationId: resolveConsultationId(),
+    });
 
     const response = await chat(requestSpec.messages, undefined, undefined, undefined, requestSpec.config);
     const parsed = parseLLMJson<Diagnosis[]>(response);
@@ -1088,6 +1091,8 @@ async function fetchAITreatment(): Promise<void> {
       exam: PROMPTS.consultation.examinationRecommendation,
       lab_test: PROMPTS.consultation.labTestRecommendation,
       procedure: PROMPTS.consultation.procedureRecommendation,
+    }, {
+      consultationId: resolveConsultationId(),
     });
     const [medResponse, examResponse, labResponse, procResponse] = await Promise.allSettled(
       treatmentRequestSpecs.map((spec) => chat(spec.messages, undefined, undefined, undefined, spec.config)),

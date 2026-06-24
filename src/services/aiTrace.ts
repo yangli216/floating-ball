@@ -12,6 +12,7 @@ export interface AiTraceContext {
   operationModule?: string;
   operationAction?: string;
   title?: string;
+  consultationId?: string;
   sessionId?: string | null;
   configProfile?: string;
   model?: string;
@@ -34,6 +35,7 @@ interface BeginAiTraceInput {
   operationModule?: string;
   operationAction?: string;
   title?: string;
+  consultationId?: string;
   configProfile?: string;
   model?: string;
   requestSummary?: string;
@@ -98,6 +100,7 @@ export function beginAiTrace(input: BeginAiTraceInput): AiTraceContext {
     operationModule: input.operationModule,
     operationAction: input.operationAction,
     title: input.title,
+    consultationId: input.consultationId,
     sessionId: feedbackService.getCurrentSessionId(),
     configProfile: input.configProfile,
     model: input.model,
@@ -159,6 +162,7 @@ export function finishAiTrace(traceId: string, input: FinishAiTraceInput): AiTra
     durationMs: stored.durationMs,
     details: {
       traceId: stored.traceId,
+      consultationId: stored.consultationId,
       channel: stored.channel,
       scene: stored.scene,
       sourceModule: stored.sourceModule,

@@ -256,6 +256,7 @@ export function useVoiceConsultation(options: VoiceConsultationOptions) {
       intentRecognition.clearTranscripts();
       intentRecognition.addTranscript(transcribedText);
       const result = await intentRecognition.processTranscript(transcribedText, {
+        consultationId,
         memoryContext: '',
         patientContext: {
           pastMedicalHistory: getPatientContextPastMedicalHistory(currentPatient.value) || null,

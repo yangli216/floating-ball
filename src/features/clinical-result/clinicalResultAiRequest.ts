@@ -46,6 +46,7 @@ export type ClinicalResultDiagnosisRequestSpec = ClinicalResultAiRequestSpec;
 export interface ClinicalResultAiTraceBase {
   sourceModule?: string;
   operationModule?: string;
+  consultationId?: string;
 }
 
 export interface ClinicalResultAiTraceOverride {
@@ -74,6 +75,7 @@ interface TreatmentTraceSpec {
 const DEFAULT_TRACE_BASE: Required<ClinicalResultAiTraceBase> = {
   sourceModule: 'voice_consultation_ai',
   operationModule: 'voice_consultation',
+  consultationId: '',
 };
 
 const TREATMENT_TRACE_BY_KIND: Record<ClinicalResultTreatmentRequestKind, TreatmentTraceSpec> = {
@@ -103,6 +105,7 @@ function resolveTraceBase(traceBase?: ClinicalResultAiTraceBase): Required<Clini
   return {
     sourceModule: traceBase?.sourceModule || DEFAULT_TRACE_BASE.sourceModule,
     operationModule: traceBase?.operationModule || DEFAULT_TRACE_BASE.operationModule,
+    consultationId: traceBase?.consultationId || '',
   };
 }
 
@@ -125,6 +128,7 @@ export function buildClinicalResultDiagnosisRequestSpec(
         operationModule: resolvedTrace.operationModule,
         operationAction: traceOverride?.operationAction || 'generate_diagnosis_recommendation',
         title: traceOverride?.title || '语音问诊生成诊断推荐',
+        consultationId: resolvedTrace.consultationId,
       },
     },
   };
@@ -169,6 +173,7 @@ export function buildClinicalResultTreatmentRequestSpec(
         operationModule: resolvedTrace.operationModule,
         operationAction: traceOverride?.operationAction || trace.operationAction,
         title: traceOverride?.title || trace.title,
+        consultationId: resolvedTrace.consultationId,
       },
     },
   };

@@ -62,6 +62,7 @@ function buildRegionalChatRequestPayload(
 ) {
   return {
     configProfile: customConfig?.configProfile || 'default',
+    consultationId: customConfig?.traceContext?.consultationId,
     messages: payloadMessages,
     stream,
     traceId: trace.traceId,
@@ -92,6 +93,7 @@ export async function chatStream(
       operationModule: customConfig?.traceContext?.operationModule,
       operationAction: customConfig?.traceContext?.operationAction,
       title: customConfig?.traceContext?.title,
+      consultationId: customConfig?.traceContext?.consultationId,
       configProfile: customConfig?.configProfile || 'default',
       model: resolveRegionalTraceModel(customConfig),
       requestSummary,
@@ -179,6 +181,7 @@ export async function chat(
       operationModule: customConfig?.traceContext?.operationModule,
       operationAction: customConfig?.traceContext?.operationAction,
       title: customConfig?.traceContext?.title,
+      consultationId: customConfig?.traceContext?.consultationId,
       configProfile: customConfig?.configProfile || 'default',
       model: resolveRegionalTraceModel(customConfig),
       requestSummary,

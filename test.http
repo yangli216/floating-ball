@@ -12,7 +12,7 @@ POST http://192.168.201.140:5680/rbmh-phis/api/phis.aiInpatientEmrContextService
 Content-Type: application/json
 cookie: tk=66c59a8aea39de0001b56d61
 
-[{"idAdsn":"660a056d9cd436215897f489"}]
+[{"idAdsn":"6a33538aa5e923243665cf0a"}]
 
 
 ### 根据就诊记录获取病历列表

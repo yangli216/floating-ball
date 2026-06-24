@@ -46,6 +46,7 @@ export interface LLMConfigOverride {
   enableThinking?: boolean;
   configProfile?: 'default' | 'fast' | 'reviewer';
   traceContext?: {
+    consultationId?: string;
     scene?: string;
     sourceModule?: string;
     operationModule?: string;
