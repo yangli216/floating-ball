@@ -862,7 +862,7 @@ class MedicalDataService {
   }
 
   /** 当前匹配可见的药品列表：按 activeMedicineStoreIds 与 item.storeIds 取交集；item.storeIds 为空不参与药品匹配 */
-  private getMatchableMedicines(): MedicineItem[] {
+  public getMatchableMedicines(): MedicineItem[] {
     const scopedMedicines = this.catalog.medicines.filter((item) => Array.isArray(item.storeIds) && item.storeIds.length > 0);
     const active = this.activeMedicineStoreIds;
     if (active === null) {

@@ -24,10 +24,9 @@ import {
   resolveVoiceConsultationId,
   useVoiceIntentRecognition,
   type VoiceConsultationCacheEntry,
-  type VoiceIntentResult,
 } from '@features/voice-consultation';
 import {
-  buildVoiceClinicalResultInput,
+  cloneClinicalResultInput,
   type ClinicalResultInput,
 } from '@features/clinical-result';
 import { submitConsultationUserLog } from '@services/consultationUserLog';
@@ -152,9 +151,9 @@ export function useVoiceConsultation(options: VoiceConsultationOptions) {
     clearVoiceConsultationCacheById(consultationId);
   }
 
-  async function showIntentResult(result: VoiceIntentResult, source: 'llm' | 'cache'): Promise<void> {
+  async function showClinicalResult(result: ClinicalResultInput, source: 'llm' | 'cache'): Promise<void> {
     intentSource.value = source;
-    intentResult.value = buildVoiceClinicalResultInput(result);
+    intentResult.value = cloneClinicalResultInput(result);
     currentView.value = 'voice-consultation';
 
     try {
@@ -164,6 +163,11 @@ export function useVoiceConsultation(options: VoiceConsultationOptions) {
     }
 
     console.log('[VoiceConsultation] Intent result applied', { source });
+  }
+
+  async function showGeneratedClinicalResult(result: ClinicalResultInput): Promise<void> {
+    resetVoiceSessionState();
+    await showClinicalResult(result, 'llm');
   }
 
   // ========== 语音处理 ==========
@@ -217,7 +221,7 @@ export function useVoiceConsultation(options: VoiceConsultationOptions) {
       return false;
     }
 
-    await showIntentResult(cached.intentResult, 'cache');
+    await showClinicalResult(cached.intentResult, 'cache');
     showToast('已恢复上次未提交的语音病例解析结果', 'info');
     console.log('[VoiceConsultation] Restored cached voice result', {
       consultationId,
@@ -261,7 +265,7 @@ export function useVoiceConsultation(options: VoiceConsultationOptions) {
           transcriptionLength: normalizedText.length,
         });
         isProcessingVoice.value = false;
-        await showIntentResult(cached.intentResult, 'cache');
+        await showClinicalResult(cached.intentResult, 'cache');
         return;
       }
 
@@ -301,7 +305,7 @@ export function useVoiceConsultation(options: VoiceConsultationOptions) {
         intentResult: result,
         savedAt: Date.now(),
       });
-      await showIntentResult(result, 'llm');
+      await showClinicalResult(result, 'llm');
 
       console.log('[VoiceConsultation] Intent recognition completed successfully');
     } catch (err: unknown) {
@@ -360,6 +364,7 @@ export function useVoiceConsultation(options: VoiceConsultationOptions) {
     isProcessingVoice,
     consultationRoundId,
     resetVoiceSessionState,
+    showGeneratedClinicalResult,
     resumeCachedVoiceResult,
     hasCachedVoiceResult: (patient?: AppPatient | null) => hasVoiceConsultationCache(patient ?? currentPatient.value),
     handleVoiceStop,

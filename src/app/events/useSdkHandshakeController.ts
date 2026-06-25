@@ -220,7 +220,7 @@ export function useSdkHandshakeController() {
     setFeedbackActor(resolveFeedbackActorFromUrt(urtForActor, orgCode));
 
     if (baseUrl && token) {
-      getHisService(baseUrl, { token, userRoleDeptIds, tenantId });
+      getHisService(baseUrl, { token, userRoleDeptIds, orgCode, tenantId });
       resetHisAdapter();
       console.log('[SdkHandshakeController] HisService initialized with origin:', baseUrl, {
         hasToken: Boolean(token),

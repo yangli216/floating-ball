@@ -20,6 +20,8 @@ export interface ClinicalResultTreatmentPromptParams {
   diagnosisName: string;
   diagnosisCode: string;
   chiefComplaint: string;
+  clinicalContext?: string;
+  availableMedicineInventory?: string;
 }
 
 export interface ClinicalResultPromptAsset<TParams> {

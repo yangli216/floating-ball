@@ -632,7 +632,7 @@ import {
   type ReferenceStatusEntry,
 } from '@features/symptom-consultation';
 import {
-  assessTreatmentCatalogMatch,
+  alignMedicineRecommendationsToInventory, assessTreatmentCatalogMatch,
   buildClinicalResultDiagnosisRequestSpec,
   buildClinicalResultTreatmentRecommendationsFromRaw,
   buildClinicalResultTreatmentRequestSpec,
@@ -645,6 +645,7 @@ import {
   getMatchedItemRaw,
   getMatchedOrderServiceId,
   getTreatmentRecommendationFeedbackKey,
+  loadAvailableMedicineInventoryContext,
   readFirstString,
   syncTreatmentExecDeptSelections as syncSharedTreatmentExecDeptSelections,
   type OrderItemResolvers,
@@ -1952,22 +1953,20 @@ const performTreatmentFactCheck = async (treatments: TreatmentRecommendation[]) 
 
 const fetchTreatmentRecommendation = async () => {
   if (!selectedDiagnosis.value) return;
-
   const requestSeq = ++treatmentRecommendationRequestSeq;
   const diagnosisIdentity = getDiagnosisIdentity(selectedDiagnosis.value);
   treatmentLoading.value = true;
   treatmentError.value = null;
   try {
-    const startTime = Date.now();
+    const startTime = Date.now(), inventoryContext = await loadAvailableMedicineInventoryContext({ pharmacies: hisPharmacyOptions.value });
     let fullResponse = "";
-
     if (consultationMode.value === 'tcm') {
       const userPrompt = PROMPTS.consultation.tcmTreatmentRecommendation.buildUserPrompt({
         patientName: patientPromptProfile.value.patientName,
         gender: patientPromptProfile.value.gender,
         age: patientPromptProfile.value.age,
         diagnosisName: selectedDiagnosis.value.name,
-        chiefComplaint: generatedRecord.value.chiefComplaint
+        chiefComplaint: generatedRecord.value.chiefComplaint, availableMedicineInventory: inventoryContext.promptContext,
       });
 
       fullResponse = await chat([
@@ -1985,10 +1984,10 @@ const fetchTreatmentRecommendation = async () => {
         age: patientPromptProfile.value.age,
         diagnosisName: selectedDiagnosis.value.name,
         diagnosisCode: selectedDiagnosis.value.code || '',
-        chiefComplaint: generatedRecord.value.chiefComplaint
+        chiefComplaint: generatedRecord.value.chiefComplaint,
+        availableMedicineInventory: inventoryContext.promptContext,
       }, PROMPTS.consultation.treatmentRecommendation, {
-        sourceModule: 'consultation_ai',
-        operationModule: 'consultation',
+        sourceModule: 'consultation_ai', operationModule: 'consultation',
       }, {
         scene: 'consultation-treatment-medication',
         title: '生成用药推荐',
@@ -1997,7 +1996,7 @@ const fetchTreatmentRecommendation = async () => {
       fullResponse = await chat(requestSpec.messages, undefined, undefined, undefined, requestSpec.config);
     }
     const latencyMs = Date.now() - startTime;
-    const rawRecommendations: any[] = parseLLMJson(fullResponse);
+    const rawRecommendations: any[] = alignMedicineRecommendationsToInventory(parseLLMJson(fullResponse), inventoryContext.items);
 
     let processedRecs = buildClinicalResultTreatmentRecommendationsFromRaw({
       rawRecommendations,

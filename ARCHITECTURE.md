@@ -200,6 +200,7 @@
 16. 智能问诊的页面留存与语音问诊一致：未诊毕、未确认放弃时，再次点击“智能问诊”或最小化后再次打开，必须恢复 `ConsultationPage` 上次内部页面（症状采集、病历详情或最终报告）及数据快照；症状问诊结果页“返回”只回编辑页，“放弃”确认后必须清空当前快照和页面内勾选/推荐状态并直接退回悬浮球；语音问诊一键回写成功只代表本次回写闭环成功，不代表诊毕，同一接诊上下文内再次触发 `start-voice-consultation` 时必须恢复上一张语音结果页；但当前接诊从患者 A 切换到患者 B 时，患者 A 的语音缓存和最小化入口必须同步失效，之后再切回患者 A 也重新开始语音问诊；只有诊毕、确认放弃、患者切换或跨自然日失效时才清理。
 17. 智能问诊 AI 调用不得在请求发起时清空已有诊断或推荐结果；新结果只有在 LLM 响应解析成功且仍匹配当前诊断上下文时才提交到页面状态。结构化 JSON 解析统一允许代码块和少量前后说明，从响应中抽取 JSON 对象/数组后再解析；各路推荐独立失败时保留上一版数据，并只更新对应错误态，避免单次解析或网络抖动造成整页丢结果。
 17.1 智能问诊症状采集后的主诉 / 现病史草稿优先由 LLM 生成：`ConsultationPage.vue` 收集症状表单、患者基础信息和一般情况，交给 `features/symptom-consultation/lib/consultationRecordAiDraft.ts` 组装基层全科模板风格的 JSON 请求；模型输出必须包含 `chiefComplaint` 与 `historyOfPresentIllness`，解析或内容校验失败时退回 `consultationGeneratedRecord.ts` 的本地规则草稿，避免阻断后续诊断推荐。AI 草稿只写入当前可编辑结果页，不直接回写 HIS。
+17.2 所有可能产出药品建议的 AI 调用都必须在请求前通过 HIS Adapter 获取当前可用发药药房的有效库存目录，包括语音结构化抽取、共享结果页用药刷新、智能问诊、独立诊疗方案、复诊配药及仍可运行的中医药品分支。PHIS 实现调用 `api/phis.medicineDrpQueryService/queryInvSubList`，使用 `idSto + amountType=1 + fgActiveType=1` 查询，过滤无可用数量或已失效批次后按 `idMedPro` 合并多批次，并以紧凑格式加入 Prompt。统一策略为“库存内同品同规格优先，其次库存内临床等效药；两者均不存在时返回规范通用名作为无库存参考”。目录为空或暂不可用时也必须注入策略，不得退回无约束推荐；库存命中项由共享 inventory helper 对齐院内名称和规格。目录按机构、租户、药房作用域持久化缓存，并以短 TTL 判断新鲜度；缓存刷新失败时允许使用最近一次非空缓存，但处方提交前仍必须执行实时库存校验。库存接口依赖本机 HIS 登录态，不得迁移到 `floating-ball-server`。
 18. 症状问诊和语音问诊最终一键回写共用 `record-confirmed` 构造器；进入 `diagList.idDiag` 的值必须是标准诊断库 ID（PHIS `ID_DIE`），不得使用 `diag_*`、`phis-diagnosis-*` 等前端临时 ID。症状问诊从 `Diagnosis` 适配到共享结果页的 `VoiceIntentResult.diagnoses` 时必须把标准诊断 ID 透传为 `matchedItem.id` 或等价标准 ID 字段，避免共享结果页初始化时丢失诊断主键。
 19. HIS 联调相关的调用必须进入本地 HIS 集成日志：HTTP Bridge 入站接口由 Rust 侧直接记录，前端 `hisService.ts` 出站请求通过 `hisIntegrationLog.ts` 写入同一 JSONL 日志，并在日志面板中按 `traceId`、接口、方向、状态筛选和导出。
 
@@ -300,9 +301,15 @@ const isRiskAnalyzing = ref(false);
 
 1. 外部事件只提供患者主键 / 就诊主键和少量当前场景字段。
 2. `app/events/useReceptionController.ts` 的接诊流程负责调用 `HisAdapter.fetchPatientInfo()` 与 `HisAdapter.fetchPatientHistory()` 补全完整信息；`useEventListeners.ts` 只负责把 HIS 事件分发给该 controller。
-3. 统一上下文同时保存身份信息、展示信息、结构化 `hisHistory`、历史摘要与接诊状态。
-4. UI、AI prompt、日志、缓存等模块不得再各自维护 `naPi/name`、`sdSexText/gender`、`ageText/age` 的读取分支；统一通过患者上下文 helper / selector 读取。
-5. `show-patient-risks`、`start-consultation`、`start-consultation-session`、`start-voice-consultation` 都必须复用同一套上下文构建逻辑，不能绕过 HIS 补全直接写全局状态。
+3. 风险评估完成后，`features/reception-risk` 基于 `HisPatientHistory.visits` 按时间取最近 3 次历史就诊，再提取其中含慢病诊断的就诊记录及其配药信息。`useReceptionController.ts` 调用 `HisAdapter.fetchPatientHistory(patientId, { currentVisitId })`，PHIS 实现把当前 `idVis` 传入 `queryVisitHistory`，由院端排除本次就诊。候选不要求诊断或药品重复，但必须至少存在一条慢病诊断和一条来自对应慢病就诊的配药；当前主诉、现病史或诊断命中携报告/检查结果回诊语义时，报告回诊优先并抑制复诊配药候选。命中结果由接诊 controller 写入胶囊状态，胶囊只展示慢病诊断与历史用药依据，不展示有限历史窗口内的具体就诊次数。医生确认后，`chronicRefillRecord.ts` 以历史病历生成权威 `ClinicalResultInput`：库存内同品或经模型确认的库存内等效药进入初始治疗项；既无同品也无等效药时返回规范通用名并保持未选中。复诊配药结果通过 `recommendationPolicy` 明确禁止共享结果页自动补拉通用治疗方案，默认不生成检查、检验和处置；复诊功能不得依赖语音渠道私有结果类型。
+4. 统一上下文同时保存身份信息、展示信息、结构化 `hisHistory`、历史摘要与接诊状态。
+5. UI、AI prompt、日志、缓存等模块不得再各自维护 `naPi/name`、`sdSexText/gender`、`ageText/age` 的读取分支；统一通过患者上下文 helper / selector 读取。
+6. `show-patient-risks`、`start-consultation`、`start-consultation-session`、`start-voice-consultation` 都必须复用同一套上下文构建逻辑，不能绕过 HIS 补全直接写全局状态。
+7. 所有会异步写入患者上下文、风险列表、风险 loading 或复诊候选的接诊入口必须绑定同一个 reception flow token。新接诊、显式风险事件或结束就诊会使旧 token 失效；旧 HIS / LLM 响应不得覆盖新患者或新就诊状态。
+8. 患者身份与 HIS 上下文补全成功即表示接诊成功；健康风险评估属于可降级的后置能力。风险模型失败时保留已接诊患者和胶囊入口，单独展示风险评估失败，不得回退成“接诊处理异常”。
+9. `features/reception/model/useReceptionSessionController.ts` 是接诊胶囊局部状态的唯一所有者，保存 `status / risks / opportunities / executing` 等接诊阶段状态，并只通过显式 action 修改。患者姓名、性别和年龄必须从应用级 `currentPatient` 派生，不再维护可漂移的第二份患者展示状态；该 controller 是 App 生命周期内的局部 composable，不新增 Pinia store。
+10. 门诊接诊后的业务分流统一由 `features/reception/model/useOutpatientScenarioRouter.ts` 承担。候选统一建模为 `ReceptionOpportunity` 判别联合类型；复诊配药确认和语音入口的报告复诊 / 缓存恢复 / 普通录音决策都从该路由进入。`useEventListeners.ts` 只转交入口事件，`useReceptionController.ts` 只产出机会，不直接打开具体结果页。
+11. 报告回诊聚合上下文属于当前接诊 session 的 `report-follow-up` opportunity，不得写入 `PatientContext.raw`。报告回诊与慢病复诊配药互斥，当前就诊文本出现携报告、查看检验检查结果或报告解读语义时，`report-follow-up` 的分流优先级高于 `chronic-refill`。App 必须把上下文作为显式 prop 传给 `OutpatientFollowUpPage`，页面再显式传给治疗推荐 controller；患者上下文只保存患者与就诊事实，`raw` 继续只承载厂商原始字段。
 
 ---
 
@@ -409,7 +416,7 @@ const workMode = useWorkMode({
   transitioning,
   isHovered,
   currentPatient,
-  syncRiskPatientInfo,
+  getReceptionWindowSize,
   store: storeRef,
 });
 
@@ -650,7 +657,7 @@ const eventListeners = useEventListeners({
   hoveredBtnIndex,
   ringMenuRef,
   currentPatient,
-  riskState,
+  receptionSession,
   showToast,
   handleWindowMove,
   workMode,
@@ -704,10 +711,11 @@ eventListeners.unregisterAllListeners();
 | `VoiceRigidBlockBanner.vue` | 语音刚性阻断条（L1 硬规则）：与 `VoiceSafetyReviewPanel` 并列展示，置于安全复核面板上方；仅渲染由 `useVoiceRigidBlock` 同步评估出的确定性告警，要求医生对每条 `block` 项二次确认；不调用 LLM、不发起网络请求；真实实现已迁至语音问诊功能域，旧 `src/components/VoiceRigidBlockBanner.vue` 兼容包装已删除 | [src/features/voice-consultation/ui/VoiceRigidBlockBanner.vue](src/features/voice-consultation/ui/VoiceRigidBlockBanner.vue) |
 | `shared/composables/useOutsideInteraction.ts` | 通用 document 外部点击 / pointerdown 交互 composable：统一绑定和解绑全局事件，按 selector 或 element refs 判断是否点击在浮层锚点外部并触发关闭回调；不携带推荐、症状或反馈业务语义 | [src/shared/composables/useOutsideInteraction.ts](src/shared/composables/useOutsideInteraction.ts) |
 | `shared/composables/useTauriEventListener.ts` | 通用 Tauri 事件监听生命周期 composable：统一在 mounted 阶段自动订阅 `listen`，或由调用方在需要保证时序时显式 `startListener()`；在 unmounted 阶段解绑，并集中处理订阅失败日志，可按调用方配置向外传播显式注册失败；不携带事件 payload 的业务过滤、PHIS 回执处理、下载进度处理或页面状态写入。`useEventListeners.ts` 的 App 级 Tauri 事件使用 `autoStart: false` 接入，保留原有显式 `registerAllListeners()` 时序 | [src/shared/composables/useTauriEventListener.ts](src/shared/composables/useTauriEventListener.ts) |
-| `app/events/useReceptionController.ts` | App 级接诊状态机 controller：统一处理 `receive-patient`、自动静默接诊和 `show-patient-risks` 所需的 HIS 患者补全、过敏史 / 历史就诊摘要合并、风险胶囊状态、同患者并发接诊复用、患者切换时语音缓存和最小化入口清理；不注册 Tauri 事件、不处理 SDK handshake、不打开具体结果页、不提交 PHIS 回写 | [src/app/events/useReceptionController.ts](src/app/events/useReceptionController.ts) |
+| `app/events/useReceptionController.ts` | App 级接诊状态机 controller：统一处理 `receive-patient`、自动静默接诊和 `show-patient-risks` 所需的 HIS 患者补全、过敏史 / 历史就诊摘要合并、统一 flow token、风险降级、同患者并发接诊复用、患者切换时语音缓存和最小化入口清理；风险和机会状态写入 `ReceptionSessionController`，不注册 Tauri 事件、不处理 SDK handshake、不打开具体结果页、不提交 PHIS 回写 | [src/app/events/useReceptionController.ts](src/app/events/useReceptionController.ts) |
+| `features/reception/model` | 接诊 session 与门诊场景 Strategy：`useReceptionSessionController` 持有局部状态并从 `currentPatient` 派生患者摘要，`useOutpatientScenarioRouter` 统一复诊配药、报告复诊、语音缓存恢复和普通录音分流 | [src/features/reception/model](src/features/reception/model) |
 | `app/events/useSdkHandshakeController.ts` | App 级 SDK handshake controller：解析 `sdk-handshake` payload 中的 HIS origin、token、机构、租户、角色科室和 URT，初始化 / 重置 `HisService` 与 `HisAdapter`，缓存反馈 actor，并把 `orgCode / tenantId` 写入医学目录上下文；不注册 Tauri 事件、不读写患者上下文、不打开页面或提交 PHIS 回写 | [src/app/events/useSdkHandshakeController.ts](src/app/events/useSdkHandshakeController.ts) |
 | `shared/composables/useTauriWindowEventListeners.ts` | 通用独立窗口事件监听生命周期 composable：统一批量注册当前 Tauri `Window` 实例上的 `appWindow.listen`，在 unmounted 阶段解绑，并集中处理注册失败日志；独立窗口仍显式 `await registerListeners()` 后再发送 ready 事件，避免主窗口提前投递 payload；不携带窗口 payload 状态写入、图表渲染或业务状态机 | [src/shared/composables/useTauriWindowEventListeners.ts](src/shared/composables/useTauriWindowEventListeners.ts) |
-| `ReceptionCapsule.vue` | 接待胶囊（风险提示）；真实实现已迁至 reception-risk 功能域，旧 `src/components/ReceptionCapsule.vue` 已删除，App 通过 `@features/reception-risk` 公开入口消费 | [src/features/reception-risk/ui/ReceptionCapsule.vue](src/features/reception-risk/ui/ReceptionCapsule.vue) |
+| `ReceptionCapsule.vue` | 接待胶囊（患者摘要、风险和门诊机会操作）；真实实现位于 reception 功能域，风险规则和风险详情组件仍由 reception-risk 提供，App 通过 `@features/reception` 公开入口消费 | [src/features/reception/ui/ReceptionCapsule.vue](src/features/reception/ui/ReceptionCapsule.vue) |
 | `RiskAlertPanel.vue` / `RiskAlertBubble.vue` | 风险详情面板 / 气泡；真实实现已迁至 reception-risk 功能域，旧 `src/components/RiskAlertPanel.vue` / `src/components/RiskAlertBubble.vue` 已删除，`RiskItem` 类型由 `src/features/reception-risk/types.ts` 统一导出，避免业务代码从 UI 文件借类型 | [src/features/reception-risk/ui](src/features/reception-risk/ui) |
 | `AnalyticsPanel.vue` | 数据分析看板，展示本地会话、反馈、推荐和操作统计，并导出使用报告；真实实现已迁至 analytics 功能域，旧 `src/components/AnalyticsPanel.vue` 已删除，App 通过 `@features/analytics` 公开入口消费 | [src/features/analytics/ui/AnalyticsPanel.vue](src/features/analytics/ui/AnalyticsPanel.vue) |
 | `BodyPartSelector.vue` / `SystemCategorySelector.vue` | 症状问诊 UI 域：人体部位交互选症状和按系统分类选症状；真实实现已迁至 `features/symptom-consultation/ui`，旧 `src/components/*` 路径已删除，`ConsultationPage` 通过 `@features/symptom-consultation` 公开入口消费；本地症状库维护页已下线，模板维护改由 `floating-ball-server` 后台承接 | [src/features/symptom-consultation/ui](src/features/symptom-consultation/ui) |
@@ -891,7 +899,8 @@ src/styles/
 | `audioRecorder.ts` | Web Audio API 录音、音频输入设备枚举与首选设备回退 | [src/services/audioRecorder.ts](src/services/audioRecorder.ts) |
 | `medicalData.ts` | 医疗数据目录加载、缓存恢复与匹配（诊断、药品、检查项）；运行期不再依赖本地 CSV 作为基础数据来源，而是优先恢复已有缓存，再按当前模式补同步：区域化模式恢复 `localStorage`/SQLite 中已有目录后继续走 mappings delta，本地模式恢复 SQLite 目录后再按有效 HIS 握手上下文增量同步。机构级检查/检验项目按 `orgCode + tenantId` 存储，药品目录按 `orgCode + tenantId + storeId` 分 scope 落库，多药房场景读取时对多个药房 scope 做并集聚合，避免再把药房主键误写成机构主键。语音问诊结果页拿到有效药房后，会显式按 active `idSto` 加载药品目录，再执行药品匹配；缓存管理页中的“基础数据缓存”面板支持在有效 HIS 握手上下文下触发一次忽略当日缓存的强制同步，不受区域化开关限制。同时负责根据 ICD-10 前三位类目码（如 `J06`）解析章节分组，用于推荐诊断分组展示。针对语音问诊结果页，还提供药品 / 诊疗项目的严格分档匹配能力：完全匹配直接确认，高相似候选只作为“待确认”建议，未命中则进入手动匹配。 | [src/services/medicalData.ts](src/services/medicalData.ts) |
 | `hisService.ts` | HIS HTTP 调用封装（PHIS 形态默认实现）：统一处理鉴权头、POST/GET 请求，以及诊断/药品/诊疗项目目录与药品频次、用法等字典读取，供主问诊和语音问诊复用；诊断目录通过 `api/base.hiBdDieService/queryList` 按 1000 条/页循环同步，避免数万条诊断一次性拉取导致弱网超时；语音结果页药房列表也通过该服务调用 `api/phis.orgMedStoManageService/queryOrgSto`，并按 SDK 握手 `extra.urt.userRoleDepts` 中的 `deptId` 过滤可见范围；药品详情按候选发药药房轮询 `loadMedicinePro`，只有命中有效详情的药房才能作为药品默认药房并允许选中；检查项目详情匹配后通过 `api/phis.hiBdCliPacsPartService/queryExaPartAndWayList` 获取检查部位 / 方式候选，单候选自动回填；用药总量变更后通过 `api/phis.medicineInventoryService/checkInvEnough` 校验库存，库存不足时阻止药品回写；住院病历 AI 上下文只保留 PHIS `api/phis.aiInpatientEmrContextService/buildContext` 聚合接口，登记 / 诊断 / 医嘱 / 体温单等明细由后端裁剪后一次性返回，不再维护桌面端分散 RPC 回退。**业务方不应直接 import 本文件**：所有出站调用应通过 `services/his` 适配器层 | [src/services/hisService.ts](src/services/hisService.ts) |
-| `services/his/HisAdapter.ts` | 厂商无关的 HIS 适配器接口契约：覆盖目录同步 / 字典 / 详情 / 检查部位 / 库存校验 / 患者信息 / 门诊病历引用 / 住院上下文场景。详情类和住院上下文均使用中性 DTO（`MedicineDetail` / `MedicalItemDetail` / `HisInpatient*`）。新厂商只需实现该接口并通过 `registerHisAdapterFactory(vendor, factory)` 注入，业务层无需改动 | [src/services/his/HisAdapter.ts](src/services/his/HisAdapter.ts) |
+| `hisService.ts` 门诊回诊聚合 | 门诊语音入口通过 `HisAdapter.fetchOutpatientFollowUpContext` 调用 PHIS `api/phis.aiInpatientEmrContextService/buildOutpatientFollowUpContext`。接口采用最小契约，只返回 `followUpEligible / source / medicalRecordText / labReports / examReports / ineligibleReason`；不得返回患者资料、当前就诊摘要、候选筛选明细、重复摘要或 raw。聚合服务先检查历史就诊是否存在已出 LIS/PACS 结果，再对可能命中的来源读取 `getLookMedList -> getMedContentLook` 病历正文，避免对每次历史就诊无条件读取病历全文；检验报告保留报告内完整项目，页面层只消费中性 DTO | [src/services/hisService.ts](src/services/hisService.ts) / [src/services/his](src/services/his) |
+| `services/his/HisAdapter.ts` | 厂商无关的 HIS 适配器接口契约：覆盖目录同步 / 字典 / 详情 / 有效库存目录 / 处方库存校验 / 患者信息 / 门诊病历引用 / 门诊复诊聚合 / 住院上下文场景。详情类和聚合上下文均使用中性 DTO（`MedicineDetail` / `AvailableMedicineInventoryItem` / `MedicalItemDetail` / `HisOutpatientFollowUpContext` / `HisInpatient*`）。PHIS Adapter 调用 `queryInvSubList` 后过滤停用、零库存和失效批次，并按 `idMedPro` 合并；`features/clinical-result/api/availableMedicineInventory.ts` 再负责按机构、租户、药房持久化短缓存、并发去重和 AI 上下文格式化。新厂商只需实现该接口并通过 `registerHisAdapterFactory(vendor, factory)` 注入，业务层无需改动 | [src/services/his/HisAdapter.ts](src/services/his/HisAdapter.ts) |
 | `services/his/types.ts` | vendor-neutral DTO 定义：详情（`MedicineDetail` / `MedicalItemDetail`，诊疗项目详情包含 `defaultQuantity` 用于真实反填处置数量）+ 检查部位（`MedicalItemPartOption`）+ 目录（`DiagnosisCatalogEntry` / `MedicineCatalogEntry` / `MedicalItemCatalogEntry`）+ 字典（`DictionaryEntry`）+ 库存校验（`InventoryCheckRequest` / `InventoryCheckResult`）+ 患者信息与住院上下文（`HisPatientInfo` / `HisPatientHistory` / `HisInpatient*`）。业务方只读语义化字段（`productId` / `quantity` / `businessType` / `patientId` 等），不再泄漏 PHIS 命名（`idMedPro` / `amount` / `sdFrzBiz` / `idPi`）；厂商私有字段保留在 `raw` / `properties` 透传 | [src/services/his/types.ts](src/services/his/types.ts) |
 | `services/his/PhisHisAdapter.ts` | 默认厂商实现：thin wrapper，把 `HisService` 类（PHIS 形态）暴露为 `HisAdapter` 接口；详情、检查部位、患者信息与门诊病历引用在此处把 PHIS 字段映射为中性 DTO，诊疗项目详情会把 `idDeptExec` 映射为 `executingDeptId`、`count/amount/quantity` 映射为 `defaultQuantity`，其中体温单会从 `detail` 半结构化文本提取血压、呼吸、血氧等生命体征，目录与字典方法仍直接透传，住院病历上下文直接通过 `buildContext` 聚合包进入业务层 | [src/services/his/PhisHisAdapter.ts](src/services/his/PhisHisAdapter.ts) |
 | `services/his/registry.ts` | 适配器注册表与选择器：`getHisAdapter()` 是业务方唯一入口；选择优先级 `setActiveHisVendor` > `VITE_HIS_VENDOR` > `localStorage.HIS_VENDOR` > 默认 `phis`；handshake 时由 `useEventListeners` 调用 `resetHisAdapter` 清缓存 | [src/services/his/registry.ts](src/services/his/registry.ts) / [src/services/his/index.ts](src/services/his/index.ts) |
@@ -1113,6 +1122,18 @@ docs/regionalization/*.md
 
 ```
 用户点击语音按钮
+    ↓
+useOutpatientScenarioRouter.resolveVoiceEntry()
+    ↓
+语音缓存是否存在
+    ├── 是：恢复既有语音结果页
+    └── 否：读取当前接诊上下文有效诊断
+    ↓
+HisAdapter.fetchOutpatientFollowUpContext(patientId, currentVisitId, currentDiagnosis)
+    ↓
+当前诊断有效，且历史病历纯文本关联到已出具的检验/检查报告
+    ├── 是：进入独立门诊复诊工作台，左侧预览依据，右侧生成后续诊疗方案
+    └── 否：继续原语音录音问诊流程
     ↓
 navigation.startVoiceInteraction()
     ↓

@@ -197,6 +197,32 @@ export interface InventoryCheckResult {
   message: string;
 }
 
+/**
+ * 当前 HIS 登录上下文的缓存隔离标识。
+ */
+export interface HisContextScope {
+  orgCode: string;
+  tenantId: string;
+}
+
+/**
+ * 当前发药药房中可用于 AI 推荐约束的有效库存药品。
+ *
+ * 同一 `productId` 的多个批次已由 adapter 合并；业务层不接触批次级 PHIS 字段。
+ */
+export interface AvailableMedicineInventoryItem {
+  productId: string;
+  productName: string;
+  spec?: string;
+  unit?: string;
+  manufacturer?: string;
+  storeId: string;
+  storeName?: string;
+  availableQuantity: number;
+  nearestExpiryDate?: string;
+  raw?: Record<string, unknown>;
+}
+
 // ============================================================================
 // 目录条目
 // ============================================================================
@@ -302,6 +328,13 @@ export interface HisPatientHistory {
   visits?: HisVisitRecord[];
   /** 厂商透传 */
   raw?: Record<string, unknown>;
+}
+
+export interface HisPatientHistoryQuery {
+  /** 当前门诊就诊 ID；HIS 历史查询应排除本次诊中记录。 */
+  currentVisitId?: string;
+  /** 最大返回历史就诊数。 */
+  limit?: number;
 }
 
 /**
@@ -417,6 +450,53 @@ export interface HisOutpatientMedicalRecord {
   treatmentPlan?: string;
   /** 厂商透传 */
   raw?: Record<string, unknown>;
+}
+
+export interface HisOutpatientFollowUpContextQuery {
+  patientId: string;
+  currentVisitId: string;
+  currentDiagnosis: string;
+  sourceVisitId?: string;
+  contextPolicy?: {
+    historyLimit?: number;
+    maxLabReports?: number;
+    maxExamReports?: number;
+    outpatientRecordContentLimit?: number;
+  };
+}
+
+export interface HisOutpatientFollowUpLabItem {
+  itemName?: string;
+  result?: string;
+  unit?: string;
+  referenceRange?: string;
+  abnormalFlag?: string;
+}
+
+export interface HisOutpatientFollowUpLabReport {
+  reportTime?: string;
+  reportName?: string;
+  items?: HisOutpatientFollowUpLabItem[];
+}
+
+export interface HisOutpatientFollowUpExam {
+  reportTime?: string;
+  examName?: string;
+  finding?: string;
+  conclusion?: string;
+}
+
+export interface HisOutpatientFollowUpContext {
+  followUpEligible: boolean;
+  source?: {
+    visitId?: string;
+    visitTime?: string;
+    documentTitle?: string;
+  };
+  medicalRecordText?: string;
+  labReports?: HisOutpatientFollowUpLabReport[];
+  examReports?: HisOutpatientFollowUpExam[];
+  ineligibleReason?: string | null;
 }
 
 // ============================================================================

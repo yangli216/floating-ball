@@ -57,6 +57,43 @@
       </div>
     </div>
 
+    <!-- 报告回诊机会确认 -->
+    <button
+      v-if="!analyzing && outpatientFollowUpContext"
+      class="rc-followup-action"
+      type="button"
+      :disabled="followUpGenerating"
+      @click="confirmFollowUp"
+    >
+      <span class="rc-followup-icon">
+        <Icon :icon="followUpGenerating ? 'lucide:loader-2' : 'lucide:circle-check'" size="15" />
+      </span>
+      <span class="rc-followup-copy">
+        <strong>{{ followUpGenerating ? '正在进入报告回诊' : '报告回诊' }}</strong>
+        <span>历史检查检验结果已出 · 请确认解读</span>
+      </span>
+      <Icon v-if="!followUpGenerating" icon="lucide:chevron-right" size="15" />
+    </button>
+
+    <!-- 复诊配药机会确认 -->
+    <button
+      v-else-if="!analyzing && chronicRefillCandidate"
+      class="rc-refill-action"
+      type="button"
+      :disabled="chronicRefillGenerating"
+      :title="chronicRefillCandidate.evidenceText"
+      @click="confirmChronicRefill"
+    >
+      <span class="rc-refill-icon">
+        <Icon :icon="chronicRefillGenerating ? 'lucide:loader-2' : 'mdi:pill'" size="15" />
+      </span>
+      <span class="rc-refill-copy">
+        <strong>{{ chronicRefillGenerating ? '正在生成配药病历' : '复诊配药' }}</strong>
+        <span>{{ chronicRefillCandidate.diagnoses.join('、') }} · 历史慢病用药记录</span>
+      </span>
+      <Icon v-if="!chronicRefillGenerating" icon="lucide:chevron-right" size="15" />
+    </button>
+
     <!-- Risk items -->
     <div v-if="expanded && risks.length > 0" class="rc-risks">
       <div v-for="(r, i) in risks" :key="i" class="rc-risk-row">
@@ -79,7 +116,8 @@ import { ref, computed, watch } from 'vue';
 import Icon from '@shared/ui/Icon.vue';
 import { trackClick } from '@services/operationTracker';
 import { resolvePatientAvatar, PATIENT_AVATAR_FALLBACK } from '@/utils/patientAvatar';
-import type { RiskItem } from '../types';
+import type { ChronicRefillCandidate, RiskItem } from '@features/reception-risk';
+import type { HisOutpatientFollowUpContext } from '@/services/his/types';
 
 const props = defineProps<{
   patientName: string;
@@ -87,11 +125,17 @@ const props = defineProps<{
   age: number;
   risks: RiskItem[];
   analyzing?: boolean;
+  chronicRefillCandidate?: ChronicRefillCandidate | null;
+  chronicRefillGenerating?: boolean;
+  outpatientFollowUpContext?: HisOutpatientFollowUpContext | null;
+  followUpGenerating?: boolean;
 }>();
 
 const emit = defineEmits<{
   (e: 'close'): void;
   (e: 'toggle-expand', expanded: boolean): void;
+  (e: 'confirm-chronic-refill'): void;
+  (e: 'confirm-follow-up'): void;
 }>();
 
 const expanded = ref(false);
@@ -129,6 +173,23 @@ function toggle() {
   expanded.value = !expanded.value;
   trackClick('reception_toggle_risk_detail', { expanded: expanded.value, riskCount: props.risks.length });
   emit('toggle-expand', expanded.value);
+}
+
+function confirmChronicRefill() {
+  trackClick('reception_chronic_refill_confirm', {
+    diagnosis: props.chronicRefillCandidate?.diagnosis,
+    medicationCount: props.chronicRefillCandidate?.medications.length,
+  });
+  emit('confirm-chronic-refill');
+}
+
+function confirmFollowUp() {
+  trackClick('reception_follow_up_confirm', {
+    sourceVisitId: props.outpatientFollowUpContext?.source?.visitId,
+    labReportCount: props.outpatientFollowUpContext?.labReports?.length,
+    examReportCount: props.outpatientFollowUpContext?.examReports?.length,
+  });
+  emit('confirm-follow-up');
 }
 
 const CATEGORY_COLORS: Record<string, string> = {
@@ -292,6 +353,126 @@ function tagLabel(cat: string) { return CATEGORY_LABELS[cat] || '其他'; }
   width: 6px; height: 6px; border-radius: 50%;
   background: #3b82f6;
   animation: rc-pulse 1s infinite alternate;
+}
+
+.rc-followup-action {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  width: 100%;
+  min-height: 42px;
+  margin-top: 10px;
+  padding: 6px 9px;
+  border: 1px solid #ddd6fe;
+  border-radius: 8px;
+  color: #5b21b6;
+  background: #f5f3ff;
+  text-align: left;
+  cursor: pointer;
+  -webkit-app-region: no-drag;
+}
+
+.rc-followup-action:hover:not(:disabled) {
+  border-color: #c4b5fd;
+  background: #ede9fe;
+}
+
+.rc-followup-action:disabled {
+  cursor: wait;
+  opacity: 0.72;
+}
+
+.rc-followup-icon {
+  display: inline-flex;
+  flex: none;
+}
+
+.rc-followup-action:disabled .rc-followup-icon {
+  animation: rc-spin 0.9s linear infinite;
+}
+
+.rc-followup-copy {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.rc-followup-copy strong {
+  font-size: 12.5px;
+  line-height: 1.3;
+}
+
+.rc-followup-copy span {
+  overflow: hidden;
+  color: #64748b;
+  font-size: 11px;
+  line-height: 1.3;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.rc-refill-action {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  width: 100%;
+  min-height: 42px;
+  margin-top: 10px;
+  padding: 6px 9px;
+  border: 1px solid #bfdbfe;
+  border-radius: 8px;
+  color: #1e40af;
+  background: #eff6ff;
+  text-align: left;
+  cursor: pointer;
+  -webkit-app-region: no-drag;
+}
+
+.rc-refill-action:hover:not(:disabled) {
+  border-color: #93c5fd;
+  background: #dbeafe;
+}
+
+.rc-refill-action:disabled {
+  cursor: wait;
+  opacity: 0.72;
+}
+
+.rc-refill-icon {
+  display: inline-flex;
+  flex: none;
+}
+
+.rc-refill-action:disabled .rc-refill-icon {
+  animation: rc-spin 0.9s linear infinite;
+}
+
+.rc-refill-copy {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.rc-refill-copy strong {
+  font-size: 12.5px;
+  line-height: 1.3;
+}
+
+.rc-refill-copy span {
+  overflow: hidden;
+  color: #64748b;
+  font-size: 11px;
+  line-height: 1.3;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+@keyframes rc-spin {
+  to { transform: rotate(360deg); }
 }
 @keyframes rc-pulse { 0%{opacity:1} 100%{opacity:.3} }
 

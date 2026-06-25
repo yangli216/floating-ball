@@ -30,6 +30,7 @@ import type { TreatmentRecommendation, Diagnosis } from '../types/consultation';
 import type { AppPatient } from '../types/appState';
 import type { VoiceIntentResult, MatchedTreatment, MatchedDiagnosis } from '@features/voice-consultation';
 import {
+  alignMedicineRecommendationsToInventory,
   applyManualMatchCandidate,
   assessTreatmentCatalogMatch,
   buildClinicalResultDiagnosisRequestSpec,
@@ -58,6 +59,7 @@ import {
   getTreatmentSpec,
   hasProbableMatch,
   initClinicalDiagnoses,
+  loadAvailableMedicineInventoryContext,
   initClinicalTreatments,
   mapClinicalResultAiDiagnoses,
   mergeClinicalResultAiTreatmentResponses,
@@ -166,6 +168,9 @@ const props = withDefaults(defineProps<{
 const emit = defineEmits(['close', 'cancel', 'secondary-footer-action']);
 
 const showToast = inject<(msg: string, type?: string) => void>('showToast');
+const recommendationPolicy = computed(() => props.intentResult?.recommendationPolicy);
+const allowTreatmentRefresh = computed(() => recommendationPolicy.value?.allowTreatmentRefresh !== false);
+const autoFetchTreatments = computed(() => recommendationPolicy.value?.autoFetchTreatments !== false);
 
 const chiefComplaint = ref('');
 const historyOfPresentIllness = ref('');
@@ -275,6 +280,11 @@ const {
   treatmentEmptyText,
   treatmentSections,
 } = treatmentSectionState;
+const displayedTreatmentEmptyText = computed(() => (
+  allowTreatmentRefresh.value
+    ? treatmentEmptyText.value
+    : (props.intentResult?.treatmentPlan || '当前有效库存中没有可直接续方的历史药品，请医生核实后手工调整。')
+));
 
 // 库存校验状态 / 药品详情 hydrate / 库存检查均迁移到共享 `useTreatmentHydration`，
 // 实例化在 `treatmentNormalization` 之后（依赖 pharmacyOptions / treatmentGates / 字典查找函数）。
@@ -742,7 +752,14 @@ function buildIntentResultKey(result: ClinicalResultInput | VoiceIntentResult): 
     },
     diagnoses: result.diagnoses.map(buildIntentDiagnosisKey),
     treatments: result.treatments.map(buildIntentTreatmentKey),
+    recommendationPolicy: result.recommendationPolicy,
   });
+}
+
+function getAllowedIntentTreatments(result: ClinicalResultInput): ClinicalResultInput['treatments'] {
+  const allowed = result.recommendationPolicy?.allowedTreatmentTypes;
+  if (!allowed?.length) return result.treatments;
+  return result.treatments.filter((item) => allowed.includes(item.type));
 }
 
 function getManualMatchPickerCandidates(rec: TreatmentRecommendation): ManualMatchCandidate[] {
@@ -1072,7 +1089,7 @@ async function handleDiagnosisRefresh(event?: Event): Promise<void> {
 }
 
 async function fetchAITreatment(): Promise<void> {
-  if (treatmentLoading.value || !selectedDiagnosis.value) return;
+  if (treatmentLoading.value || !selectedDiagnosis.value || !allowTreatmentRefresh.value) return;
   treatmentLoading.value = true;
 
   const diagnosisIdentity = getDiagnosisIdentity(selectedDiagnosis.value);
@@ -1093,8 +1110,14 @@ async function fetchAITreatment(): Promise<void> {
 
   try {
     await fetchPharmacyOptions();
+    const inventoryContext = await loadAvailableMedicineInventoryContext({
+      pharmacies: pharmacyOptions.value,
+    });
 
-    const treatmentRequestSpecs = buildClinicalResultTreatmentRequestSpecs(baseParams, {
+    const treatmentRequestSpecs = buildClinicalResultTreatmentRequestSpecs({
+      ...baseParams,
+      availableMedicineInventory: inventoryContext.promptContext,
+    }, {
       medication: PROMPTS.consultation.treatmentRecommendation,
       exam: PROMPTS.consultation.examinationRecommendation,
       lab_test: PROMPTS.consultation.labTestRecommendation,
@@ -1108,7 +1131,10 @@ async function fetchAITreatment(): Promise<void> {
 
     const nextTreatments = mergeClinicalResultAiTreatmentResponses({
       responses: [medResponse, examResponse, labResponse, procResponse],
-      parse: (value) => parseLLMJson<TreatmentRecommendation[]>(value),
+      parse: (value) => alignMedicineRecommendationsToInventory(
+        parseLLMJson<TreatmentRecommendation[]>(value),
+        inventoryContext.items,
+      ),
       assessCatalogMatch: assessTreatmentCatalogMatch,
       normalize: normalizeTreatmentRecommendation,
       onParseFailure: ({ error, responsePreview }) => {
@@ -1248,7 +1274,7 @@ watch(
       && !lastTreatmentDiagnosisKey.value
       && treatments.value.length === 0;
 
-    if (shouldAutoFetchInitialTreatment) {
+    if (shouldAutoFetchInitialTreatment && autoFetchTreatments.value) {
       console.info('[VoiceConsultationNew] Auto fetching initial treatment recommendations', {
         currentIdentity,
       });
@@ -1939,9 +1965,10 @@ watch(
       void registerCurrentRecommendations();
     }
 
-    if (result.treatments.length > 0) {
+    const allowedIntentTreatments = getAllowedIntentTreatments(result);
+    if (allowedIntentTreatments.length > 0) {
       await fetchPharmacyOptions();
-      treatments.value = initTreatmentsFromIntent(result.treatments);
+      treatments.value = initTreatmentsFromIntent(allowedIntentTreatments);
       normalizeMedicinePharmacyValues(treatments.value);
       lastTreatmentDiagnosisKey.value = getDiagnosisIdentity(selectedDiagnosis.value);
       await reconcileAutoSelectedMedicineInventory(treatments.value);
@@ -1983,7 +2010,7 @@ watch(
     const primaryDiagnosisName = primaryDiagnosis && typeof primaryDiagnosis.name === 'string'
       ? primaryDiagnosis.name
       : '';
-    if (treatments.value.length === 0 && primaryDiagnosis) {
+    if (treatments.value.length === 0 && primaryDiagnosis && autoFetchTreatments.value) {
       console.info('[VoiceConsultationNew] No voice intent treatments found, fetching default recommendations for selected diagnosis', {
         diagnosisIdentity: getDiagnosisIdentity(primaryDiagnosis),
         diagnosisName: primaryDiagnosisName,
@@ -2224,7 +2251,7 @@ watch(
               <div class="section-heading-main">
                 <h3 class="section-title">治疗方案</h3>
               </div>
-              <div class="treatment-heading-actions">
+              <div v-if="allowTreatmentRefresh" class="treatment-heading-actions">
                 <button
                   class="refresh-recommendation-btn"
                   type="button"
@@ -2243,7 +2270,7 @@ watch(
               </div>
             </div>
 
-            <div v-if="treatmentRefreshNeeded && !treatmentLoading" class="refresh-needed-note">
+            <div v-if="allowTreatmentRefresh && treatmentRefreshNeeded && !treatmentLoading" class="refresh-needed-note">
               已切换主诊断，当前方案仍保留上一版；点击“刷新方案”获取当前诊断方案。
             </div>
 
@@ -2344,7 +2371,7 @@ watch(
               />
             </template>
 
-            <div v-else class="empty-text">{{ treatmentEmptyText }}</div>
+            <div v-else class="empty-text">{{ displayedTreatmentEmptyText }}</div>
           </div>
         </section>
       </div>

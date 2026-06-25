@@ -24,6 +24,7 @@
 
 import type { HisAdapter, HisServiceContext, PharmacyOption } from './HisAdapter';
 import type {
+  AvailableMedicineInventoryItem,
   DiagnosisCatalogEntry,
   DictionaryEntry,
   InventoryCheckRequest,
@@ -35,10 +36,13 @@ import type {
   MedicineDetail,
   HisPatientInfo,
   HisPatientHistory,
+  HisPatientHistoryQuery,
   HisOutpatientVisit,
   HisOutpatientVisitHistoryQuery,
   HisOutpatientMedicalRecordDocument,
   HisOutpatientMedicalRecord,
+  HisOutpatientFollowUpContext,
+  HisOutpatientFollowUpContextQuery,
   HisInpatientDiagnosis,
   HisInpatientEmrContextPackage,
   HisInpatientEmrContextQuery,
@@ -112,6 +116,13 @@ export class MockHisAdapter implements HisAdapter {
     return this.execDeptId;
   }
 
+  getContextScope() {
+    return {
+      orgCode: 'mock-org',
+      tenantId: 'mock-tenant',
+    };
+  }
+
   // ---- 目录 ----
 
   async fetchDiagnosisCatalog(): Promise<DiagnosisCatalogEntry[]> {
@@ -146,6 +157,21 @@ export class MockHisAdapter implements HisAdapter {
 
   async fetchAvailablePharmacies(): Promise<PharmacyOption[]> {
     return MOCK_PHARMACIES.map((p) => ({ ...p }));
+  }
+
+  async fetchAvailableMedicineInventory(storeId: string): Promise<AvailableMedicineInventoryItem[]> {
+    return MOCK_MEDICINES.map((medicine, index) => ({
+      productId: medicine.id,
+      productName: medicine.name,
+      spec: medicine.spec,
+      unit: '盒',
+      manufacturer: 'Mock 制药',
+      storeId,
+      storeName: MOCK_PHARMACIES.find((item) => item.idSto === storeId)?.name,
+      availableQuantity: 20 + index,
+      nearestExpiryDate: '2027-12-31',
+      raw: { mock: true, batchCount: 1 },
+    }));
   }
 
   // ---- 详情 ----
@@ -219,7 +245,10 @@ export class MockHisAdapter implements HisAdapter {
     };
   }
 
-  async fetchPatientHistory(patientId: string): Promise<HisPatientHistory | null> {
+  async fetchPatientHistory(
+    patientId: string,
+    _query: HisPatientHistoryQuery = {},
+  ): Promise<HisPatientHistory | null> {
     return {
       patientId,
       allergyHistory: ['青霉素过敏'],
@@ -227,13 +256,56 @@ export class MockHisAdapter implements HisAdapter {
       visits: [
         {
           visitTime: Date.now() - 7 * 24 * 3600 * 1000,
+          chiefComplaint: '高血压复诊配药',
+          presentIllness: '既往高血压病史，按既往方案规律服药。',
+          diagnoses: ['高血压'],
+          medications: ['苯磺酸氨氯地平片（5mg*28片）'],
+        },
+        {
+          visitTime: Date.now() - 45 * 24 * 3600 * 1000,
+          chiefComplaint: '高血压复诊',
+          presentIllness: '高血压定期随诊，继续既往降压治疗。',
+          diagnoses: ['高血压病'],
+          medications: ['苯磺酸氨氯地平片（5mg*28片）'],
+        },
+        {
+          visitTime: Date.now() - 90 * 24 * 3600 * 1000,
           chiefComplaint: '咳嗽、咳痰3天',
           presentIllness: '患者3天前受凉后出现咳嗽，咳少量白痰，无发热。',
           diagnoses: ['急性支气管炎'],
           medications: ['阿莫西林胶囊', '复方鲜竹沥液'],
-        }
+        },
       ],
       raw: { mock: true },
+    };
+  }
+
+  async fetchOutpatientFollowUpContext(query: HisOutpatientFollowUpContextQuery): Promise<HisOutpatientFollowUpContext | null> {
+    return {
+      followUpEligible: true,
+      source: {
+        visitId: query.sourceVisitId || 'mock-source-visit',
+        visitTime: '2026-06-20 09:30:00',
+        documentTitle: '门急诊病历',
+      },
+      medicalRecordText: '患者3天前受凉后出现咳嗽、咳黄痰，无胸闷气促。既往体健，否认药物过敏史。上次就诊完善血常规及胸部CT，现携报告复诊。',
+      labReports: [{
+        reportTime: '2026-06-21 10:00:00',
+        reportName: '血常规',
+        items: [{
+          itemName: '白细胞计数',
+          result: '12.8',
+          unit: '10^9/L',
+          referenceRange: '3.5-9.5',
+          abnormalFlag: 'H',
+        }],
+      }],
+      examReports: [{
+        reportTime: '2026-06-21 11:00:00',
+        examName: '胸部CT',
+        conclusion: '右下肺感染性病变。',
+      }],
+      ineligibleReason: null,
     };
   }
 

@@ -138,6 +138,7 @@
 | 能力 | 权威归属 | 可复用对象 | 不应复用的部分 |
 | --- | --- | --- | --- |
 | 问诊结果中性输入 | `features/clinical-result` | 语音结果、症状结果到 `ClinicalResultInput` 的 Adapter | 具体页面缓存、取消/诊毕语义 |
+| 临床结果基础契约 | `features/clinical-result/clinicalResultContract.ts` | `ClinicalResultInput`、诊断和治疗中性结构；语音、症状、复诊配药等渠道共同依赖 | ASR、语音缓存、具体页面状态、渠道命名 |
 | LLM JSON 宽容解析 | `features/clinical-result/clinicalResultLlmJsonParser.ts` | 症状问诊、语音结果页等 LLM 文本响应到 JSON 对象 / 数组的纯解析 | LLM 请求、错误 toast、日志、页面状态覆盖 |
 | AI 推荐请求规格 | `features/clinical-result/clinicalResultAiRequest.ts` | 语音 / 症状诊断推荐和 medication / exam / lab / procedure 治疗推荐的 prompt messages 与 trace config 纯构造；支持单路和多路治疗推荐规格，trace 基础字段和具体 scene/title/action 可由调用方注入，默认保持语音问诊取值 | `chat()` 调用、并发策略、loading、错误处理、状态覆盖、日志、缓存、PHIS 回写 |
 | AI 推荐 raw 映射 | `features/clinical-result/clinicalResultAiMapping.ts` | 语音结果页诊断 / 治疗 LLM raw 结果到标准诊断和治疗推荐的纯转换；智能问诊 western 诊断 raw 数组复用同一 mapper，并通过 lookup/未匹配 ID 策略保持原行为；智能问诊 western 治疗推荐 raw 数组按目标类型过滤并转换为治疗推荐项；治疗多路响应按 allSettled 结果解析、单路失败隔离并合并，标准库匹配与归一化由调用方注入 | LLM 请求、loading、当前诊断防串线、toast、事实核查、日志、缓存、PHIS 回写 |
@@ -173,7 +174,9 @@
 | document 外部点击关闭 | `shared/composables/useOutsideInteraction.ts` | 推荐依据 tooltip、推荐反馈弹层、症状分类下拉等无业务 DOM 外部点击关闭规则 | 具体业务状态、文案、推荐/症状数据结构 |
 | Tauri 事件监听生命周期 | `shared/composables/useTauriEventListener.ts` | `listen` 自动 / 显式订阅、解绑、订阅失败日志、显式注册失败传播 | 事件 payload 业务过滤、页面状态写入、PHIS 回执处理 |
 | Tauri Window 事件监听生命周期 | `shared/composables/useTauriWindowEventListeners.ts` | 独立窗口 `appWindow.listen` 批量注册、解绑、注册失败日志 | ready 事件发送、payload 状态写入、图表渲染、窗口业务状态 |
-| App 接诊状态机 | `app/events/useReceptionController.ts` | `receive-patient` / 自动静默接诊 / `show-patient-risks` 的患者补全、风险胶囊状态、并发接诊防抖、患者切换清理 | Tauri 事件注册、SDK handshake、问诊 / 语音结果页导航、PHIS 回写 |
+| App 接诊状态机 | `app/events/useReceptionController.ts` | `receive-patient` / 自动静默接诊 / `show-patient-risks` 的患者补全、统一 flow token、风险能力降级、风险胶囊状态、并发接诊防抖、患者切换清理 | Tauri 事件注册、SDK handshake、问诊 / 语音结果页导航、PHIS 回写 |
+| 接诊 session 状态 | `features/reception/model/useReceptionSessionController.ts` | App 生命周期内的局部 `status / risks / opportunities / executing` 状态、患者展示信息派生、报告复诊上下文派生和显式状态 action | HIS / LLM 请求、窗口调整、导航、toast、第二份患者资料、把流程上下文写入 `patient.raw`、Pinia 全局状态 |
+| 门诊场景路由 | `features/reception/model/useOutpatientScenarioRouter.ts` | `ReceptionOpportunity` 执行、语音缓存优先、报告复诊和普通录音的统一 Strategy；生成、上下文查询、导航和提示均通过 options 注入 | Tauri 事件注册、患者补全、风险评估、直接 import HIS / LLM 单例、PHIS 回写 |
 | SDK handshake 初始化 | `app/events/useSdkHandshakeController.ts` | HIS origin/token、机构/租户、角色科室和 URT 解析，HIS 服务 / adapter / feedback actor / 医学目录上下文初始化 | Tauri 事件注册、患者上下文、页面导航、PHIS 回写 |
 | 结果页反馈编排 | `features/feedback/model/useVoiceFeedback.ts` | 症状问诊和语音结果页共用的推荐 target 登记、推荐反馈 / 病例字段反馈 / 整页评分草稿状态、提交到本地反馈服务和 voice feedback backend payload 队列 | 弹层 UI、toast、PHIS 回写、用户日志、AI 请求、结果页关闭 |
 | 语音意图结构化抽取 | `features/voice-consultation/model/useVoiceIntentRecognition.ts` | 录音文本到病例草稿、诊断提示和治疗提示的 LLM 抽取、JSON 结构校验 / 一次修复、标准目录匹配、条件性用药和患者自服药分流 | 录音控制、语音缓存恢复、结果页 UI、PHIS 回写、窗口切换、诊毕 / 放弃语义 |

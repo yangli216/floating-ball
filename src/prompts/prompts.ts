@@ -903,6 +903,7 @@ export const TreatmentRecommendationPrompt = {
 3. **合理经济**：考虑患者经济负担，优先基本药物
 4. **个体化**：考虑患者年龄、性别、过敏史、合并症
 5. **抗菌药慎用**：严格掌握抗生素使用指征，避免滥用
+6. **库存顺序**：先选有效库存内同品，再选库存内临床等效药；均无合适选择时才返回规范通用名作为无库存参考
 
 **输出要求：**
 只返回用药推荐，不要包含检查、检验或处置项目。
@@ -924,6 +925,8 @@ export const TreatmentRecommendationPrompt = {
     diagnosisName: string;
     diagnosisCode: string;
     chiefComplaint: string;
+    clinicalContext?: string;
+    availableMedicineInventory?: string;
   }): string {
     return `
 请基于基层诊疗指南和基本药物目录，为以下患者推荐用药方案：
@@ -937,9 +940,16 @@ ${params.diagnosisName} (ICD10: ${params.diagnosisCode})
 **主诉：**
 ${params.chiefComplaint}
 
+${params.clinicalContext ? `**复诊依据：**
+${params.clinicalContext}
+
+` : ''}
+${params.availableMedicineInventory ? `${params.availableMedicineInventory}
+
+` : ''}
 **任务要求：**
-1. 推荐3-5个药品（优先基本药物目录）
-2. 药品必须是通用名（非商品名），符合基本药物目录
+1. 推荐3-5个药品，严格按“库存同品 → 库存等效药 → 规范通用名兜底”的顺序选择
+2. 库存命中药品的名称和规格必须与目录保持一致；只有无同品且无等效药时才返回规范通用名，不得使用商品名
 3. 用法用量必须规范，符合说明书和指南要求
 4. 如需抗生素，说明使用指征和注意事项
 5. 避免过度用药
@@ -1014,6 +1024,7 @@ export const TCMTreatmentRecommendationPrompt = {
     age: string;
     diagnosisName: string; // 病名+证型
     chiefComplaint: string;
+    availableMedicineInventory?: string;
   }): string {
     return `
 请为以下患者开具中医治疗方案：
@@ -1027,9 +1038,12 @@ ${params.diagnosisName}
 **主诉：**
 ${params.chiefComplaint}
 
+${params.availableMedicineInventory ? `${params.availableMedicineInventory}
+
+` : ''}
 **任务：**
 1. 确定治法（Treatment Principle）。
-2. 推荐首选方剂（包含具体药味和剂量）或中成药。
+2. 推荐首选方剂或中成药；涉及院内药品/中成药时严格遵循有效库存的同品、等效药、规范通用名兜底顺序。
 3. 可辅以针灸等其他疗法。
 
 严格返回JSON数组格式。`;
@@ -1062,6 +1076,7 @@ export const ExaminationRecommendationPrompt = {
     diagnosisName: string;
     diagnosisCode: string;
     chiefComplaint: string;
+    clinicalContext?: string;
   }): string {
     return `
 请为以下患者推荐必要的检查项目（仅限影像/器械类）：
@@ -1075,6 +1090,10 @@ ${params.diagnosisName} (ICD10: ${params.diagnosisCode})
 **主诉：**
 ${params.chiefComplaint}
 
+${params.clinicalContext ? `**复诊依据：**
+${params.clinicalContext}
+
+` : ''}
 **任务要求：**
 1. 推荐1-3个必要的影像或器械类检查项目（X线、CT、B超、心电图等）
 2. 仅推荐基层可开展的检查
@@ -1121,6 +1140,7 @@ export const LabTestRecommendationPrompt = {
     diagnosisName: string;
     diagnosisCode: string;
     chiefComplaint: string;
+    clinicalContext?: string;
   }): string {
     return `
 请为以下患者推荐必要的实验室检验项目：
@@ -1134,6 +1154,10 @@ ${params.diagnosisName} (ICD10: ${params.diagnosisCode})
 **主诉：**
 ${params.chiefComplaint}
 
+${params.clinicalContext ? `**复诊依据：**
+${params.clinicalContext}
+
+` : ''}
 **任务要求：**
 1. 推荐1-3个必要的实验室检验项目（血常规、尿常规、生化等）
 2. 重点推荐对诊断和治疗有直接指导意义的检验
@@ -1183,6 +1207,7 @@ export const ProcedureRecommendationPrompt = {
     diagnosisName: string;
     diagnosisCode: string;
     chiefComplaint: string;
+    clinicalContext?: string;
   }): string {
     return `
 请为以下患者推荐必要的处置操作：
@@ -1196,6 +1221,10 @@ ${params.diagnosisName} (ICD10: ${params.diagnosisCode})
 **主诉：**
 ${params.chiefComplaint}
 
+${params.clinicalContext ? `**复诊依据：**
+${params.clinicalContext}
+
+` : ''}
 **任务要求：**
 1. 推荐0-2个必要的处置操作
 2. 仅推荐基层可执行的操作

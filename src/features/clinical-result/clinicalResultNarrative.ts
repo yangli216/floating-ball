@@ -1,4 +1,7 @@
-import type { MatchedDiagnosis, MatchedTreatment } from '@features/voice-consultation';
+import type {
+  ClinicalResultMatchedDiagnosis as MatchedDiagnosis,
+  ClinicalResultMatchedTreatment as MatchedTreatment,
+} from './clinicalResultContract';
 
 export interface ClinicalResultRecordSummaryInput {
   chiefComplaint?: string;

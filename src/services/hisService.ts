@@ -22,6 +22,8 @@ import {
 import type {
   HisInpatientEmrContextPackage,
   HisInpatientEmrContextQuery,
+  HisOutpatientFollowUpContext,
+  HisOutpatientFollowUpContextQuery,
 } from './his/types';
 
 /**
@@ -102,6 +104,35 @@ export interface HisMedicineInventoryCheckResult {
   msg: string;
 }
 
+export interface HisAvailableMedicineInventoryBatch {
+  idOrg?: string;
+  idStoInv?: string;
+  idMedPro?: string;
+  amount?: number | string;
+  amountCur?: number | string;
+  priceSale?: number | string;
+  cdBatch?: string;
+  dtEffect?: string;
+  fgActive?: string;
+  idSto?: string;
+  naMedPro?: string;
+  idFac?: string;
+  naFac?: string;
+  specSale?: string;
+  unitSale?: string;
+  amtFrz?: number | string;
+  unitPre?: string;
+  idStoText?: string;
+  [key: string]: unknown;
+}
+
+interface HisAvailableMedicineInventoryBody {
+  start?: number;
+  limit?: number;
+  total?: number;
+  items?: HisAvailableMedicineInventoryBatch[];
+}
+
 export interface HisMedicalItemCatalogItem {
   id?: string;
   code?: string;
@@ -140,6 +171,7 @@ export interface HisDictionaryResponse {
 
 export interface HisServiceContext {
   userRoleDeptIds?: string[];
+  orgCode?: string | null;
   tenantId?: string | null;
 }
 
@@ -262,6 +294,7 @@ export interface HisVisitHistoryItem {
 export interface HisPatientVisitHistoryQuery {
   limit?: number;
   dtBgn?: [string, string];
+  idVis?: string;
 }
 
 interface HisVisitHistoryListBody {
@@ -465,6 +498,7 @@ const HIS_CATALOG_ENDPOINTS = {
   execDepartments: 'api/base.organDicService/deptListByTec',
   medicines: 'api/phis.orgMedicineConfig/queryList',
   medicineDetail: 'api/phis.orgMedicineConfig/loadMedicinePro',
+  availableMedicineInventory: 'api/phis.medicineDrpQueryService/queryInvSubList',
   medicineInventoryCheck: 'api/phis.medicineInventoryService/checkInvEnough',
   patientSearchByIdPi: 'api/phis.patientService/searchByIdPi',
   patientAllergy: 'api/phis.clinicPatientService/queryHisAllergy',
@@ -473,6 +507,7 @@ const HIS_CATALOG_ENDPOINTS = {
   outpatientMedicalRecordDocuments: 'api/otms.rpcEmrEditorLookService/getLookMedList',
   outpatientMedicalRecordContent: 'api/otms.rpcEmrEditorLookService/getMedContentLook',
   inpatientEmrContext: 'api/phis.aiInpatientEmrContextService/buildContext',
+  outpatientFollowUpContext: 'api/phis.aiInpatientEmrContextService/buildOutpatientFollowUpContext',
 } as const;
 
 /**
@@ -483,6 +518,7 @@ export class HisService {
   private baseUrl: string;
   private token: string;
   private userRoleDeptIds: string[];
+  private orgCode: string;
   private tenantId: string;
 
   /**
@@ -493,6 +529,7 @@ export class HisService {
     this.baseUrl = baseUrl.endsWith('/') ? baseUrl : `${baseUrl}/`;
     this.token = token;
     this.userRoleDeptIds = this.normalizeDeptIds(context?.userRoleDeptIds);
+    this.orgCode = this.normalizeContextValue(context?.orgCode);
     this.tenantId = this.normalizeContextValue(context?.tenantId);
   }
 
@@ -1068,6 +1105,64 @@ export class HisService {
     };
   }
 
+  async fetchAvailableMedicineInventory(idSto: string): Promise<HisAvailableMedicineInventoryBatch[]> {
+    const normalizedIdSto = idSto.trim();
+    if (!normalizedIdSto) return [];
+
+    const buildRequest = (start: number, limit: number) => [{
+      start,
+      limit,
+      sort: null,
+      params: {
+        idSto: normalizedIdSto,
+        naMedPro: null,
+        sdBasMed: null,
+        amountType: '1',
+        fgActiveType: '1',
+        sdMed: null,
+        sdMedType: null,
+      },
+    }];
+    const fetchPage = async (start: number, limit: number): Promise<HisAvailableMedicineInventoryBody> => {
+      const response = await this.post<HisAvailableMedicineInventoryBody>(
+        HIS_CATALOG_ENDPOINTS.availableMedicineInventory,
+        buildRequest(start, limit),
+      );
+      this.assertBusinessSuccess(HIS_CATALOG_ENDPOINTS.availableMedicineInventory, response);
+      return response.body ?? response.data ?? {};
+    };
+
+    const firstPage = await fetchPage(0, -1);
+    const total = typeof firstPage.total === 'number' ? firstPage.total : 0;
+    const allItems = Array.isArray(firstPage.items) ? [...firstPage.items] : [];
+    let start = allItems.length;
+
+    while (total > allItems.length && start < total) {
+      const page = await fetchPage(start, 200);
+      const pageItems = Array.isArray(page.items) ? page.items : [];
+      if (pageItems.length === 0) break;
+      allItems.push(...pageItems);
+      start += pageItems.length;
+    }
+
+    const unique = new Map<string, HisAvailableMedicineInventoryBatch>();
+    allItems.forEach((item, index) => {
+      const fallbackKey = [
+        item.idMedPro,
+        item.cdBatch,
+        item.dtEffect,
+        item.amountCur,
+        item.amount,
+      ].filter((value) => value != null && String(value).trim()).join('|');
+      const key = item.idStoInv?.trim()
+        || fallbackKey
+        || `row-${index}`;
+      unique.set(key, item);
+    });
+
+    return Array.from(unique.values());
+  }
+
   /**
    * 根据 idPi 查询患者基本信息
    * PHIS 接口：api/phis.patientService/searchByIdPi
@@ -1118,6 +1213,9 @@ export class HisService {
     if (!normalizedIdPi) return [];
     const normalizedQuery = typeof query === 'number' ? { limit: query } : query;
     const params: Record<string, unknown> = { idPi: normalizedIdPi };
+    if (normalizedQuery.idVis?.trim()) {
+      params.idVis = normalizedQuery.idVis.trim();
+    }
     if (Array.isArray(normalizedQuery.dtBgn) && normalizedQuery.dtBgn.length === 2) {
       params.dtBgn = normalizedQuery.dtBgn;
     }
@@ -1273,6 +1371,28 @@ export class HisService {
     return response.body ?? response.data ?? null;
   }
 
+  async buildOutpatientFollowUpContext(
+    query: HisOutpatientFollowUpContextQuery,
+  ): Promise<HisOutpatientFollowUpContext | null> {
+    const patientId = query.patientId?.trim();
+    const currentVisitId = query.currentVisitId?.trim();
+    const currentDiagnosis = query.currentDiagnosis?.trim();
+    if (!patientId || !currentVisitId || !currentDiagnosis) return null;
+
+    const response = await this.post<HisOutpatientFollowUpContext>(
+      HIS_CATALOG_ENDPOINTS.outpatientFollowUpContext,
+      [{
+        patientId,
+        currentVisitId,
+        currentDiagnosis,
+        sourceVisitId: query.sourceVisitId?.trim() || undefined,
+        contextPolicy: query.contextPolicy,
+      }],
+    );
+    this.assertBusinessSuccess(HIS_CATALOG_ENDPOINTS.outpatientFollowUpContext, response);
+    return response.body ?? response.data ?? null;
+  }
+
   /**
    * 获取当前用户可见药房列表（仅西药房，且限定当前角色科室）
    */
@@ -1364,6 +1484,9 @@ export class HisService {
     if ('userRoleDeptIds' in context) {
       this.userRoleDeptIds = this.normalizeDeptIds(context.userRoleDeptIds);
     }
+    if ('orgCode' in context) {
+      this.orgCode = this.normalizeContextValue(context.orgCode);
+    }
     if ('tenantId' in context) {
       this.tenantId = this.normalizeContextValue(context.tenantId);
     }
@@ -1375,6 +1498,10 @@ export class HisService {
 
   getTenantId(): string {
     return this.tenantId;
+  }
+
+  getOrgCode(): string {
+    return this.orgCode;
   }
 
   private mapCliCategory(sdCliText?: string, sdCli?: string): string {
@@ -1579,19 +1706,23 @@ export const getHisService = (
   auth?: {
     token?: string;
     userRoleDeptIds?: string[];
+    orgCode?: string | null;
     tenantId?: string | null;
   }
 ): HisService | null => {
   if (baseUrl && auth?.token) {
     if (instance) {
-      instance = new HisService(baseUrl, auth.token, { userRoleDeptIds: auth.userRoleDeptIds, tenantId: auth.tenantId });
+      instance = new HisService(baseUrl, auth.token, { userRoleDeptIds: auth.userRoleDeptIds, orgCode: auth.orgCode, tenantId: auth.tenantId });
     } else {
-      instance = new HisService(baseUrl, auth.token, { userRoleDeptIds: auth.userRoleDeptIds, tenantId: auth.tenantId });
+      instance = new HisService(baseUrl, auth.token, { userRoleDeptIds: auth.userRoleDeptIds, orgCode: auth.orgCode, tenantId: auth.tenantId });
     }
-  } else if (instance && auth && ('userRoleDeptIds' in auth || 'tenantId' in auth)) {
+  } else if (instance && auth && ('userRoleDeptIds' in auth || 'orgCode' in auth || 'tenantId' in auth)) {
     const context: HisServiceContext = {};
     if ('userRoleDeptIds' in auth) {
       context.userRoleDeptIds = auth.userRoleDeptIds;
+    }
+    if ('orgCode' in auth) {
+      context.orgCode = auth.orgCode;
     }
     if ('tenantId' in auth) {
       context.tenantId = auth.tenantId;

@@ -22,6 +22,8 @@ export type VoiceInteractionWindowStage = 'recording' | 'processing' | 'stopped'
 export interface WindowSizeOptions {
   expanded?: boolean;
   riskCount?: number;
+  hasChronicRefill?: boolean;
+  hasFollowUp?: boolean;
   voiceStage?: VoiceInteractionWindowStage;
 }
 
@@ -37,6 +39,7 @@ export type ViewType =
   | 'voice-interaction'
   | 'voice-consultation'
   | 'treatment-plan'
+  | 'outpatient-follow-up'
   | 'inpatient-emr'
   | 'differential-diagnosis'
   | 'reception-capsule'
@@ -91,6 +94,9 @@ export const WINDOW_SIZES = {
   /** 独立诊疗方案推荐：1080×720px */
   TREATMENT_PLAN: { width: 1080, height: 720 } as WindowSize,
 
+  /** 门诊复诊工作台：1280×760px，左侧依据预览，右侧诊疗方案 */
+  OUTPATIENT_FOLLOW_UP: { width: 1280, height: 760 } as WindowSize,
+
   /** 住院病历辅助生成：1120×760px */
   INPATIENT_EMR: { width: 1120, height: 760 } as WindowSize,
 
@@ -116,15 +122,19 @@ export const WINDOW_SIZES = {
  * // => { width: 1120, height: 760 }
  * ```
  */
-export function getReceptionCapsuleSize(options?: Pick<WindowSizeOptions, 'expanded' | 'riskCount'>): WindowSize {
+export function getReceptionCapsuleSize(options?: Pick<WindowSizeOptions, 'expanded' | 'riskCount' | 'hasChronicRefill' | 'hasFollowUp'>): WindowSize {
   const expanded = options?.expanded ?? false;
+  const refillHeight = (options?.hasChronicRefill || options?.hasFollowUp) ? 54 : 0;
   if (!expanded) {
-    return WINDOW_SIZES.RISK_CARD;
+    return {
+      width: WINDOW_SIZES.RISK_CARD.width,
+      height: WINDOW_SIZES.RISK_CARD.height + refillHeight,
+    };
   }
 
   const riskCount = Math.max(options?.riskCount ?? 0, 1);
   const visibleRiskRows = Math.min(riskCount, 6);
-  const estimatedHeight = 108 + visibleRiskRows * 52;
+  const estimatedHeight = 108 + visibleRiskRows * 52 + refillHeight;
 
   return {
     width: WINDOW_SIZES.RISK_CARD.width,
@@ -166,6 +176,9 @@ export function getWindowSizeForView(view: ViewType, options?: WindowSizeOptions
     case 'treatment-plan':
       return WINDOW_SIZES.TREATMENT_PLAN;
 
+    case 'outpatient-follow-up':
+      return WINDOW_SIZES.OUTPATIENT_FOLLOW_UP;
+
     case 'inpatient-emr':
       return WINDOW_SIZES.INPATIENT_EMR;
 
@@ -196,6 +209,7 @@ export function supportsPersistentWindowSize(view: ViewType): boolean {
     || view === 'consultation'
     || view === 'voice-consultation'
     || view === 'treatment-plan'
+    || view === 'outpatient-follow-up'
     || view === 'inpatient-emr'
     || view === 'differential-diagnosis'
     || view === 'analytics'
@@ -226,5 +240,6 @@ export function isLargePanelView(view: ViewType): boolean {
     || view === 'medical-cache'
     || view === 'voice-consultation'
     || view === 'treatment-plan'
+    || view === 'outpatient-follow-up'
     || view === 'inpatient-emr';
 }

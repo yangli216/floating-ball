@@ -1,14 +1,20 @@
 export {
   buildSymptomClinicalResultInput,
-  buildVoiceClinicalResultInput,
+  cloneClinicalResultInput,
+} from './clinicalResultAdapter';
+export type {
+  ClinicalResultRecordInput,
+  SymptomClinicalResultInput,
 } from './clinicalResultAdapter';
 export type {
   ClinicalResultDiagnosis,
   ClinicalResultInput,
-  ClinicalResultRecordInput,
+  ClinicalResultMatchedDiagnosis,
+  ClinicalResultMatchedItem,
+  ClinicalResultMatchedTreatment,
+  ClinicalResultRecommendationPolicy,
   ClinicalResultTreatment,
-  SymptomClinicalResultInput,
-} from './clinicalResultAdapter';
+} from './clinicalResultContract';
 
 export {
   buildBodySiteUsageOptions,
@@ -174,6 +180,19 @@ export {
 export type {
   TreatmentMatchLabelStyle,
 } from './recommendationHelpers';
+
+export {
+  alignMedicineRecommendationsToInventory,
+  formatAvailableMedicineInventoryPrompt,
+  loadAvailableMedicineInventoryContext,
+  mergeAvailableMedicineInventoryCatalog,
+} from './api/availableMedicineInventory';
+export type {
+  AvailableMedicineInventoryCatalogItem,
+  AvailableMedicineInventoryContext,
+  LoadAvailableMedicineInventoryOptions,
+  MedicineRecommendationLike,
+} from './api/availableMedicineInventory';
 
 export {
   buildDiagList,

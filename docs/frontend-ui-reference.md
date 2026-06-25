@@ -25,7 +25,7 @@
 | `consultation` | `src/components/ConsultationPage.vue` | 1080 x 720 |
 | `voice-consultation` | `src/components/VoiceConsultationNew.vue` | 1080 x 720 |
 | `voice-interaction` | `src/features/voice-consultation/ui/VoiceCapsule.vue` | 360 x 80 / 96 / 140 / 248 |
-| `reception-capsule` | `src/features/reception-risk/ui/ReceptionCapsule.vue` | 280 x 92，展开最高 520 |
+| `reception-capsule` | `src/features/reception/ui/ReceptionCapsule.vue` | 280 x 92，展开最高 520 |
 | `his-log` | `src/features/settings/ui/HisIntegrationLogPanel.vue` | 980 x 640 |
 | `medical-cache` | `src/features/medical-catalog/ui/MedicalCatalogCachePanel.vue` | 980 x 640 |
 
@@ -91,7 +91,7 @@
 
 ### 接诊风险
 
-- 接诊胶囊：`src/features/reception-risk/ui/ReceptionCapsule.vue`
+- 接诊胶囊：`src/features/reception/ui/ReceptionCapsule.vue`
 - 风险面板：`src/features/reception-risk/ui/RiskAlertPanel.vue`
 - 风险气泡：`src/features/reception-risk/ui/RiskAlertBubble.vue`
 - 类型：`src/features/reception-risk/types.ts`

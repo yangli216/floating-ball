@@ -22,7 +22,13 @@ import {
   trackSmartConsultationEntry,
   trackVoiceConsultationEntry,
 } from '../services/featureUsageEntryTracker';
-import type { RiskItem } from '@features/reception-risk';
+import { generateChronicRefillRecord } from '@features/reception-risk';
+import type { ClinicalResultInput } from '@features/clinical-result';
+import {
+  resolveIncomingPatientTracking,
+  useOutpatientScenarioRouter,
+  type ReceptionSessionController,
+} from '@features/reception';
 import type { AppPatient } from '../types/appState';
 import {
   normalizeConsultationAssistAction,
@@ -30,11 +36,14 @@ import {
 } from '../types/consultationAssist';
 import type { ReportInterpretationRequestPayload } from '../types/reportInterpretation';
 import type { InpatientEmrGenerationRequest } from '@features/inpatient-emr';
+import {
+  buildOutpatientFollowUpPatientOverrides,
+  fetchOutpatientFollowUpContext,
+} from '@features/outpatient-follow-up/api/outpatientFollowUpContext';
 import { getPatientContextId } from '../utils/patientContext';
 import { useTauriEventListener } from '@shared/composables/useTauriEventListener';
 import { formatUserFacingError } from '@shared/lib/errorMessages';
 import {
-  resolveIncomingPatientTracking,
   useReceptionController,
   type PatientRisksPayload,
   type SessionAssistPayload,
@@ -71,14 +80,8 @@ export interface EventListenersOptions {
   shouldRestoreInpatientEmrRequest?: (request: InpatientEmrGenerationRequest) => boolean;
   /** 清理住院病历最小化恢复入口 */
   clearMinimizedInpatientEmrSession?: () => void;
-  /** 风险提示状态 */
-  riskState: {
-    riskPatientName: Ref<string>;
-    riskPatientGender: Ref<'M' | 'F'>;
-    riskPatientAge: Ref<number>;
-    riskItems: Ref<RiskItem[]>;
-    isRiskAnalyzing: Ref<boolean>;
-  };
+  /** 接诊胶囊局部状态 */
+  receptionSession: ReceptionSessionController;
   /** Toast 提示函数 */
   showToast: (msg: string, type?: 'success' | 'error' | 'info', duration?: number) => void;
   /** 窗口移动处理函数 */
@@ -95,6 +98,7 @@ export interface EventListenersOptions {
     openConsultation: () => Promise<void>;
     openVoiceConsultation: () => Promise<void>;
     openTreatmentPlan: () => Promise<void>;
+    openOutpatientFollowUp: () => Promise<void>;
     openInpatientEmr: () => Promise<void>;
     openDifferentialDiagnosis: () => Promise<void>;
     startVoiceInteraction: (options?: { skipCacheRestore?: boolean }) => Promise<void>;
@@ -105,6 +109,7 @@ export interface EventListenersOptions {
   clearVoiceConsultationCache: (patient?: AppPatient | null) => void;
   /** 清理问诊最小化恢复入口 */
   clearMinimizedConsultationSessions: () => void;
+  showGeneratedClinicalResult: (result: ClinicalResultInput) => Promise<void>;
   /** 检查指定患者是否存在未提交语音缓存 */
   hasCachedVoiceResult: (patient?: AppPatient | null) => boolean;
   /** 队列化快进模式自动触发请求 */
@@ -138,7 +143,7 @@ export function useEventListeners(options: EventListenersOptions) {
     inpatientEmrRequest,
     shouldRestoreInpatientEmrRequest,
     clearMinimizedInpatientEmrSession,
-    riskState,
+    receptionSession,
     showToast,
     handleWindowMove,
     persistCurrentWindowSize,
@@ -147,6 +152,7 @@ export function useEventListeners(options: EventListenersOptions) {
     resetVoiceSessionState,
     clearVoiceConsultationCache,
     clearMinimizedConsultationSessions,
+    showGeneratedClinicalResult,
     hasCachedVoiceResult,
     queueConsultationAssistTrigger,
     exiting,
@@ -163,12 +169,31 @@ export function useEventListeners(options: EventListenersOptions) {
     currentView,
     isWorking,
     currentPatient,
-    riskState,
+    receptionSession,
     showToast,
     workMode,
     resetVoiceSessionState,
     clearVoiceConsultationCache,
     clearMinimizedConsultationSessions,
+    fetchFollowUpContext: fetchOutpatientFollowUpContext,
+  });
+  const outpatientScenarioRouter = useOutpatientScenarioRouter({
+    currentPatient,
+    session: receptionSession,
+    hasCachedVoiceResult,
+    applyFollowUpContext: (followUpContext) => {
+      mergeCurrentPatient(
+        null,
+        buildOutpatientFollowUpPatientOverrides(currentPatient.value, followUpContext),
+      );
+    },
+    generateChronicRefillRecord,
+    showGeneratedClinicalResult,
+    resetVoiceSessionState,
+    openOutpatientFollowUp: navigation.openOutpatientFollowUp,
+    startVoiceInteraction: navigation.startVoiceInteraction,
+    showToast,
+    trackError,
   });
   const { handleSdkHandshake } = useSdkHandshakeController();
 
@@ -360,9 +385,7 @@ export function useEventListeners(options: EventListenersOptions) {
       payload: event.payload as Record<string, unknown> | null | undefined,
     });
 
-    const shouldRestoreCache = hasCachedVoiceResult(currentPatient.value);
-    resetVoiceSessionState();
-    await navigation.startVoiceInteraction({ skipCacheRestore: !shouldRestoreCache });
+    await outpatientScenarioRouter.openVoiceEntry();
   }
 
   async function handleReportInterpretationEvent(
@@ -645,6 +668,8 @@ export function useEventListeners(options: EventListenersOptions) {
 
   return {
     registerAllListeners,
+    confirmChronicRefill: outpatientScenarioRouter.confirmChronicRefill,
+    confirmFollowUp: outpatientScenarioRouter.confirmFollowUp,
     unregisterAllListeners,
   };
 }

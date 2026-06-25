@@ -1,7 +1,10 @@
-import type { MatchedDiagnosis, MatchedTreatment } from '@features/voice-consultation';
+import type {
+  ClinicalResultMatchedDiagnosis as MatchedDiagnosis,
+  ClinicalResultMatchedTreatment as MatchedTreatment,
+  ClinicalResultTreatment,
+} from './clinicalResultContract';
 import type { Diagnosis, TreatmentRecommendation } from '@/types/consultation';
 import { splitDosageAndUnit } from '@/utils/treatmentInference';
-import type { ClinicalResultTreatment } from './clinicalResultAdapter';
 import { normalizeRawTreatmentRecommendationFields } from './clinicalResultTreatmentFields';
 import { getStandardDiagnosisId } from './recordConfirmedPayload';
 

@@ -368,6 +368,7 @@ features/<name>/
 11. `features/symptom-consultation/model/recommendationFeedbackRegistration.ts`：允许编排诊断 / 治疗推荐反馈落库这类副作用，但必须通过依赖注入接收 `saveRecommendation`、`recordMetric`、`registerTarget`、`getRecommendationKey`，不能直接 import 单例服务或 Vue ref。
 12. `features/clinical-result/clinicalResultLlmJsonParser.ts`：只负责 LLM 文本到 JSON 候选的纯解析；不能打印日志、弹 toast、调用 LLM、读写 Vue ref 或吞掉解析异常。`features/symptom-consultation/lib/consultationLlmJsonParser.ts` 仅保留兼容 re-export，不能继续新增实现。
 12a0. `features/clinical-result/clinicalResultAiRequest.ts`：只负责诊断 / 治疗推荐 LLM 请求的 messages 和 trace config 规格构造，包含单路和多路治疗推荐规格；prompt 资产必须由调用方显式传入，trace 基础字段和具体 scene/title/action 可由调用方注入但默认保持语音问诊取值；不能调用 `chat`、读取 Vue ref、改 loading、写日志、处理错误、覆盖页面状态、读写缓存或触发 PHIS 回写。
+12a00. `features/clinical-result/clinicalResultContract.ts`：定义渠道无关的 `ClinicalResultInput`、诊断与治疗基础契约；语音问诊可以保留兼容类型别名，但共享结果和复诊功能不得反向 import `features/voice-consultation` 的结果类型。
 12a. `features/clinical-result/clinicalResultAiMapping.ts`：只负责把语音结果页 LLM raw 诊断 / 治疗项转换为已匹配的 `Diagnosis[]` / `TreatmentRecommendation[]`，把智能问诊 western 诊断 raw 数组按策略转换为 `Diagnosis[]`，把智能问诊单路治疗 raw 数组按目标类型过滤并转换为 `TreatmentRecommendation[]`，以及把多路 `Promise.allSettled` 治疗响应解析合并为治疗推荐列表；标准库匹配、catalog assessment、normalize、JSON parser 和 parse-error 回调必须由调用方注入，不能调用 LLM、toast、日志、缓存、事实核查、PHIS 回写或读取 Vue ref。
 13. `features/symptom-consultation/lib/consultationMedicalAdvice.ts`：只负责根据显式传入的问诊模式和是否含中药处方生成默认医嘱文本；不能读取 Vue ref、治疗推荐列表或患者上下文。
 14. `features/symptom-consultation/lib/consultationFinalRecord.ts`：只负责根据显式传入的患者、病历草稿、诊断、治疗推荐和医嘱生成最终报告对象；不能触发埋点、toast、PHIS 引用或视图切换。
@@ -410,7 +411,11 @@ features/<name>/
 35i. `features/feedback/model/useVoiceFeedback.ts`：只负责症状问诊和语音结果页共用的推荐 target 登记、推荐反馈 / 病例字段反馈 / 整页评分草稿状态、提交到本地反馈服务和 voice feedback backend payload 队列；不能弹 toast、提交用户日志、调用 PHIS 回写、触发 AI、关闭结果页或处理一键回写回执。
 35j. `features/voice-consultation/model/useVoiceIntentRecognition.ts`：只负责录音文本到病例草稿、诊断提示和治疗提示的 LLM 抽取、JSON 结构校验 / 一次修复、标准目录匹配、结构归一和治疗项后处理；不能处理录音控制、语音缓存恢复、结果页 UI、PHIS 回写、窗口切换、诊毕 / 放弃语义或最终用户日志。
 35k. `features/voice-consultation/model/voiceConsultationCache.ts`：只负责语音问诊 localStorage 缓存 key、跨自然日失效、base entry 读写 / 清理和 editorSnapshot 增量合并；不能触发 LLM、toast、窗口切换、结果页恢复副作用、PHIS 回写、诊毕 / 放弃语义或最终用户日志。
-36. `src/app/events/useReceptionController.ts`：只负责 App 级接诊状态机，包括 HIS 患者补全、同患者并发接诊复用、跨患者接诊拒绝、患者切换时语音缓存 / 最小化入口清理、风险胶囊加载和自动接诊 guard；不能注册 Tauri 事件、处理 SDK handshake、打开具体问诊结果页、提交 PHIS 回写或保存问诊/语音业务缓存。
+36. `src/app/events/useReceptionController.ts`：只负责 App 级接诊状态机，包括 HIS 患者补全、统一 reception flow token、同患者并发接诊复用、跨患者接诊拒绝、风险评估失败降级、患者切换时语音缓存 / 最小化入口清理、风险胶囊加载和自动接诊 guard；所有异步状态写入必须先验证 token 仍有效；不能注册 Tauri 事件、处理 SDK handshake、打开具体问诊结果页、提交 PHIS 回写或保存问诊/语音业务缓存。
+36a. `features/reception/model/useReceptionSessionController.ts`：只负责接诊胶囊局部状态、`ReceptionOpportunity` 集合和患者展示 / 报告复诊上下文派生；必须以 `currentPatient` ref 作为唯一患者来源，通过显式 action 修改 `status / risks / opportunities / executingOpportunity`，不能调用 HIS、LLM、toast、导航、窗口 API、把流程上下文写入 `patient.raw` 或新增 Pinia store。
+36b. `features/reception/model/useOutpatientScenarioRouter.ts`：只负责 `ReceptionOpportunity` 的执行策略，以及语音入口在缓存恢复 / 报告复诊 / 普通录音之间的分流；外部查询、病历生成、患者上下文合并、导航、toast 和错误记录必须通过 options 或方法参数注入，不能注册 Tauri 事件、直接调用 HIS / LLM 单例或补全患者。
+36c. `features/reception/ui/ReceptionCapsule.vue`：只负责接诊 session 的患者摘要、风险列表和 opportunity 操作展示；风险规则与病历生成继续由 `features/reception-risk` 提供，组件不得直接调用 HIS、LLM 或导航。
+36d. `features/reception/lib/receptionPatientSummary.ts`：只负责接诊 payload 到患者草稿、埋点身份摘要，以及 HIS 过敏史 / 既往史到统一患者上下文的纯转换；不能获取 HIS adapter、读取 Vue ref、触发风险评估、toast、导航或缓存清理。
 34. `src/app/events/useSdkHandshakeController.ts`：只负责 SDK handshake payload 解析、HIS 服务单例初始化 / 重置、HisAdapter 重置、反馈 actor 缓存和 `medicalDataService.setCatalogContext`；不能注册 Tauri 事件、读写患者上下文、打开页面、提交 PHIS 回写或触发问诊 / 语音业务状态。
 35. `ConsultationPage.vue` 继续持有页面状态、toast、PHIS 引用请求、缓存清理和事件处理；不得把副作用藏进 `lib`。
 

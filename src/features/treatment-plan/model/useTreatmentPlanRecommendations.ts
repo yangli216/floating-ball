@@ -1,6 +1,8 @@
 import { computed, ref, type Ref } from 'vue';
 import { chat } from '@/services/llm';
 import { medicalDataService } from '@/services/medicalData';
+import type { HisOutpatientFollowUpContext } from '@/services/his/types';
+import type { PharmacyOption } from '@/services/his';
 import {
   applyRecommendationPreferenceRanking,
   buildTreatmentPreferenceCandidate,
@@ -17,9 +19,11 @@ import {
   getPatientContextGenderText,
 } from '@/utils/patientContext';
 import {
+  alignMedicineRecommendationsToInventory,
   assessTreatmentCatalogMatch,
   buildClinicalResultTreatmentRequestSpec,
   buildClinicalResultTreatmentRecommendationsFromRaw,
+  loadAvailableMedicineInventoryContext,
   mapClinicalResultAiDiagnoses,
   parseLLMJson,
   readFirstString,
@@ -29,6 +33,7 @@ import type {
   ClinicalResultTreatmentPromptAsset,
   ClinicalResultTreatmentRequestKind,
 } from '@features/clinical-result';
+import { buildOutpatientFollowUpEvidence } from '@features/outpatient-follow-up/api/outpatientFollowUpContext';
 
 export interface TreatmentPlanRecordContext {
   chiefComplaint: string;
@@ -36,6 +41,8 @@ export interface TreatmentPlanRecordContext {
   pastMedicalHistory: string;
   allergyHistory: string;
   diagnosisText: string;
+  followUpEvidence: string;
+  isFollowUp: boolean;
 }
 
 export interface TreatmentPlanRecommendationSection {
@@ -49,8 +56,10 @@ export interface TreatmentPlanRecommendationSection {
 
 export interface TreatmentPlanRecommendationOptions {
   patient: Ref<AppPatient | null>;
+  followUpContext: Ref<HisOutpatientFollowUpContext | null>;
   diagnosis: Ref<Diagnosis | null>;
   treatments: Ref<TreatmentRecommendation[]>;
+  pharmacies: Ref<PharmacyOption[]>;
   normalizeTreatment: (rec: Partial<TreatmentRecommendation>) => TreatmentRecommendation;
 }
 
@@ -108,13 +117,19 @@ function readPatientText(patient: AppPatient | null, keys: string[]): string {
   return '';
 }
 
-function buildRecordContext(patient: AppPatient | null): TreatmentPlanRecordContext {
+function buildRecordContext(
+  patient: AppPatient | null,
+  followUpContext: HisOutpatientFollowUpContext | null,
+): TreatmentPlanRecordContext {
+  const followUpEvidence = buildOutpatientFollowUpEvidence(followUpContext);
   return {
     chiefComplaint: readPatientText(patient, ['chiefComplaint', 'chief_complaint']),
     historyOfPresentIllness: readPatientText(patient, ['historyOfPresentIllness', 'history_of_present_illness']),
     pastMedicalHistory: getPatientContextPastMedicalHistory(patient) || readPatientText(patient, ['pastMedicalHistory', 'past_medical_history']),
     allergyHistory: getPatientContextAllergyHistory(patient) || readPatientText(patient, ['allergyHistory', 'allergy_history']),
     diagnosisText: readPatientText(patient, ['diagnosis', 'diagnosisText', 'diagnosis_text']),
+    followUpEvidence,
+    isFollowUp: Boolean(followUpEvidence),
   };
 }
 
@@ -162,16 +177,22 @@ export function useTreatmentPlanRecommendations(options: TreatmentPlanRecommenda
   const refreshing = ref(false);
   const lastRunKey = ref('');
 
-  const recordContext = computed(() => buildRecordContext(options.patient.value));
+  const recordContext = computed(() => buildRecordContext(
+    options.patient.value,
+    options.followUpContext.value,
+  ));
   const canRecommend = computed(() => Boolean(
-    recordContext.value.chiefComplaint
-    && recordContext.value.historyOfPresentIllness
-    && recordContext.value.diagnosisText,
+    recordContext.value.diagnosisText
+    && (
+      recordContext.value.isFollowUp
+      || (recordContext.value.chiefComplaint && recordContext.value.historyOfPresentIllness)
+    ),
   ));
   const missingContextTips = computed(() => {
     const tips: string[] = [];
-    if (!recordContext.value.chiefComplaint) tips.push('主诉');
-    if (!recordContext.value.historyOfPresentIllness) tips.push('现病史');
+    if (!recordContext.value.isFollowUp && !recordContext.value.chiefComplaint) tips.push('主诉');
+    if (!recordContext.value.isFollowUp && !recordContext.value.historyOfPresentIllness) tips.push('现病史');
+    if (recordContext.value.isFollowUp && !recordContext.value.followUpEvidence) tips.push('复诊病历及报告');
     if (!recordContext.value.diagnosisText) tips.push('诊断');
     return tips;
   });
@@ -193,6 +214,7 @@ export function useTreatmentPlanRecommendations(options: TreatmentPlanRecommenda
       recordContext.value.chiefComplaint,
       recordContext.value.historyOfPresentIllness,
       recordContext.value.diagnosisText,
+      recordContext.value.followUpEvidence,
     ].join('|');
   }
 
@@ -214,13 +236,18 @@ export function useTreatmentPlanRecommendations(options: TreatmentPlanRecommenda
         throw new Error('缺少当前诊断');
       }
 
+      const inventoryContext = config.key === 'medication'
+        ? await loadAvailableMedicineInventoryContext({ pharmacies: options.pharmacies.value })
+        : null;
       const requestSpec = buildClinicalResultTreatmentRequestSpec(buildTreatmentRequestKind(config.key), {
         patientName: getPatientContextName(patient) || '未知患者',
         gender: getPatientContextGenderText(patient) || '未知',
         age: getPatientContextAgeText(patient) || '',
         diagnosisName: currentDiagnosis.name,
         diagnosisCode: currentDiagnosis.code || '',
-        chiefComplaint: recordContext.value.chiefComplaint,
+        chiefComplaint: recordContext.value.chiefComplaint || '携既往病历及检验检查报告复诊',
+        clinicalContext: recordContext.value.followUpEvidence,
+        availableMedicineInventory: inventoryContext?.promptContext,
       }, config.prompt, {
         sourceModule: 'treatment_plan_ai',
         operationModule: 'treatment_plan',
@@ -232,7 +259,10 @@ export function useTreatmentPlanRecommendations(options: TreatmentPlanRecommenda
       const response = await chat(requestSpec.messages, undefined, undefined, undefined, requestSpec.config);
       if (runKey !== lastRunKey.value) return;
 
-      const rawRecommendations = parseLLMJson<RawClinicalResultTreatmentRecommendationInput[]>(response);
+      const rawRecommendations = alignMedicineRecommendationsToInventory(
+        parseLLMJson<RawClinicalResultTreatmentRecommendationInput[]>(response),
+        inventoryContext?.items || [],
+      );
       let mapped = buildClinicalResultTreatmentRecommendationsFromRaw({
         rawRecommendations,
         type: config.itemType,

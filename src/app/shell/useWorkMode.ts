@@ -50,8 +50,6 @@ export interface WorkModeOptions {
   isHovered: Ref<boolean>;
   /** 当前患者信息 */
   currentPatient: Ref<AppPatient | null>;
-  /** 风险提示状态更新回调（用于 handleCollapse 中同步患者信息到风险提示） */
-  syncRiskPatientInfo?: (patient: AppPatient) => void;
   /** 返回接待胶囊时当前应使用的窗口尺寸 */
   getReceptionWindowSize?: () => WindowSize;
   /** Tauri Store 实例（用于 exitWork 中读取保存的位置） */
@@ -93,7 +91,6 @@ export function useWorkMode(options: WorkModeOptions) {
     transitioning,
     isHovered,
     currentPatient,
-    syncRiskPatientInfo,
     getReceptionWindowSize,
     store,
   } = options;
@@ -442,7 +439,6 @@ export function useWorkMode(options: WorkModeOptions) {
       await new Promise<void>((resolve) => setTimeout(resolve, ANIMATION.CONTENT_FADE_MS));
 
       currentView.value = 'reception-capsule';
-      syncRiskPatientInfo?.(currentPatient.value);
       // 注意：不在此处 await nextTick()。nextTick 在 Vue flush 期间如有组件更新报错
       // 会导致 Promise reject 并中断后续逻辑，使 contentVisible 永远不会被还原。
       // resizeWorkWindow 首个 await setResizable IPC 调用本身已给 Vue flush 留出时机。

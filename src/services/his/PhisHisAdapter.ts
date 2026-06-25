@@ -29,6 +29,7 @@ import type {
 import type { HisAdapter, HisServiceContext } from './HisAdapter';
 import type { HisVisitRecord } from './types';
 import type {
+  AvailableMedicineInventoryItem,
   DiagnosisCatalogEntry,
   DictionaryEntry,
   InventoryCheckRequest,
@@ -40,13 +41,17 @@ import type {
   MedicineDetail,
   HisPatientInfo,
   HisPatientHistory,
+  HisPatientHistoryQuery,
   HisInpatientEmrContextPackage,
   HisInpatientEmrContextQuery,
   HisOutpatientVisit,
   HisOutpatientVisitHistoryQuery,
   HisOutpatientMedicalRecordDocument,
   HisOutpatientMedicalRecord,
+  HisOutpatientFollowUpContext,
+  HisOutpatientFollowUpContextQuery,
 } from './types';
+import { mergePhisAvailableMedicineInventory } from './phisMedicineInventory';
 
 const trim = (value: unknown): string | undefined => {
   if (typeof value !== 'string') return undefined;
@@ -442,6 +447,13 @@ export class PhisHisAdapter implements HisAdapter {
     return this.service.getDefaultExecDeptId();
   }
 
+  getContextScope() {
+    return {
+      orgCode: this.service.getOrgCode(),
+      tenantId: this.service.getTenantId(),
+    };
+  }
+
   // ---- 目录 ----
 
   async fetchDiagnosisCatalog(): Promise<DiagnosisCatalogEntry[]> {
@@ -479,6 +491,11 @@ export class PhisHisAdapter implements HisAdapter {
 
   fetchAvailablePharmacies() {
     return this.service.fetchAvailablePharmacies();
+  }
+
+  async fetchAvailableMedicineInventory(storeId: string): Promise<AvailableMedicineInventoryItem[]> {
+    const batches = await this.service.fetchAvailableMedicineInventory(storeId);
+    return mergePhisAvailableMedicineInventory(batches, storeId);
   }
 
   // ---- 详情 ----
@@ -583,7 +600,10 @@ export class PhisHisAdapter implements HisAdapter {
     };
   }
 
-  async fetchPatientHistory(patientId: string): Promise<HisPatientHistory | null> {
+  async fetchPatientHistory(
+    patientId: string,
+    query: HisPatientHistoryQuery = {},
+  ): Promise<HisPatientHistory | null> {
     const idPi = trim(patientId);
     if (!idPi) return null;
 
@@ -593,7 +613,10 @@ export class PhisHisAdapter implements HisAdapter {
         console.warn('[PhisHisAdapter] queryPatientAllergy failed', error);
         return [];
       }),
-      this.service.queryPatientVisitHistory(idPi, 5).catch((error) => {
+      this.service.queryPatientVisitHistory(idPi, {
+        limit: query.limit ?? 5,
+        idVis: query.currentVisitId,
+      }).catch((error) => {
         console.warn('[PhisHisAdapter] queryPatientVisitHistory failed', error);
         return [] as HisVisitHistoryItem[];
       }),
@@ -633,6 +656,12 @@ export class PhisHisAdapter implements HisAdapter {
         visitItems,
       },
     };
+  }
+
+  async fetchOutpatientFollowUpContext(
+    query: HisOutpatientFollowUpContextQuery,
+  ): Promise<HisOutpatientFollowUpContext | null> {
+    return this.service.buildOutpatientFollowUpContext(query);
   }
 
   // ---- 住院上下文 ----

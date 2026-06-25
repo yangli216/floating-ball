@@ -258,6 +258,13 @@
 - **现象**: 入院记录或首次病程录在无门诊病历、无补充要点时点击“直接重新生成”，左侧步骤条显示“病历草稿已生成”，但右侧病历正文没有填入新内容。
 - **根因**: 住院病历模板字段识别先匹配排除词再匹配 AI 字段词；排除词中的“入院 / ry”过于宽泛，会把“入院情况”“入院记录-主诉”“ryqk”等本应由 AI 生成的字段先判为非 AI 字段，导致生成流程完成后没有可写入的 AI 字段。
 - **解决方案**: `getPresetFieldStatus` 改为日期、时间、诊断、操作人员等强排除词仍优先，仅让“入院 / ry”这类文书类型宽泛排除词排在明确 AI 字段关键词之后；“入院情况 / ryqk”可识别为 AI 字段，“入院日期 / 入院诊断 / 病程记录操作时间”仍会被排除。
+
+### RETRO-032: 复诊配药空治疗清单触发通用四路推荐 [已解决]
+
+- **现象**: 复诊配药草稿能够打开共享临床结果页，但治疗方案仍出现无库存药品和不需要的检查、检验；主诉/现病史退化为“未提供新发不适信息”等占位表达。
+- **根因**: 复诊配药生成结果返回空 `treatments`，共享结果页按普通语音问诊语义自动补拉药品、检查、检验、处置四路推荐；历史查询也未把当前 `idVis` 传给 `queryVisitHistory`，导致本次诊中记录可能混入历史依据。
+- **解决方案**: 历史查询通过 `HisPatientHistoryQuery.currentVisitId` 下传当前 `idVis`；复诊配药按“库存同品 → 库存等效药 → 规范通用名兜底”生成药品项，其中无库存标准名保持未选中，并通过 `ClinicalResultInput.recommendationPolicy` 禁止自动生成和刷新通用治疗方案；病历兜底文案改为具体慢病复诊续方及待核实事项。
+- **后续防护**: 任何复用共享结果页的专属场景，只要“空推荐”不等于“请自动生成通用推荐”，就必须显式携带 recommendation policy；场景专属治疗范围必须在数据契约和 UI 自动行为两层同时约束。
 - **后续防护**: 调整住院病历模板字段关键词时，必须同时验证“宽泛排除词”和“明确 AI 字段词”的优先级，尤其关注入院、首次、ry 等会同时出现在文书类型和正文字段名中的词。
 
 ### RETRO-031: 一键回写被非关键埋点和 WebSocket 兜底缺口阻断 [已解决]
@@ -266,6 +273,13 @@
 - **根因**: SDK 声明了 `auto/websocket/polling` 事件通道策略，但实现未真正按 `eventTransport` 切换，且 `_startLongPollingEvents()` 缺失，WebSocket 失败后没有可靠进入 `/events/poll` 兜底。同时新增推荐偏好记录在回写前同步调用 `crypto.randomUUID()`，旧版 HIS 内嵌浏览器不支持时会在 `complete_consultation` 之前抛错，导致回写事件根本没有写入 Bridge。
 - **解决方案**: SDK 补齐 `eventTransport` 行为与长轮询循环，`auto` 模式下 WebSocket 失败立即启用 poll 兜底并后台继续重连；推荐偏好记录改为兼容 ID 生成，并把所有偏好埋点调用包进非阻断保护，确保 `complete_consultation` 是一键回写主链路的优先动作。
 - **后续防护**: 一键回写路径上的日志、偏好学习、用户行为追踪等非关键副作用必须 `try/catch` 隔离，不允许阻断 `complete_consultation`；SDK 文档声明的 fallback 行为必须有真实实现。
+
+### RETRO-032: Yarn 1 安装 Vitest 4 时子目录 Vite 链接失败 [已解决]
+
+- **现象**: 在当前 Vite 6 项目中执行 `yarn add -D vitest`，Vitest 4 包下载完成后在 Yarn 1 linking 阶段报 `could not find a copy of vite to link in node_modules/vitest/node_modules`，依赖未能写入 `package.json` 和 `yarn.lock`。
+- **根因**: Vitest 4 的依赖布局与 Yarn 1.22 的经典 node_modules 链接策略在当前依赖树下不兼容；项目本身的 Vite 6 和 Node 版本满足 Vitest 4 官方要求，但包管理器链接阶段仍失败。
+- **解决方案**: 清理本次失败安装生成的局部 `node_modules/vitest`、`node_modules/@vitest` 和 `yarn-error.log`，继续使用 Yarn 1 安装兼容 Vite 6 的 `vitest@3.2.4`，成功生成唯一的 `yarn.lock`，并新增 `yarn test:unit`。
+- **后续防护**: 本仓库引入或升级测试工具时必须继续使用 Yarn 1；先核对工具与 Vite / Node / Yarn classic 的兼容性，安装失败时不得改用 npm 或 pnpm 绕过，也不得保留部分链接产物或额外锁文件。
 
 > 新增条目请复制以下模板：
 

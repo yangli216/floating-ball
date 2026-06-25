@@ -200,6 +200,18 @@ export function useNavigation(options: NavigationOptions) {
     }
   }
 
+  async function openOutpatientFollowUp(): Promise<void> {
+    trackViewChange(currentView.value, 'outpatient-follow-up', {
+      patientId: currentPatient.value?.patientId,
+    });
+    currentView.value = 'outpatient-follow-up';
+    if (!isWorking.value) {
+      await enterWorkMode();
+    } else {
+      await resizeWindowForView('outpatient-follow-up');
+    }
+  }
+
   /**
    * 打开住院病历辅助生成页
    */
@@ -258,6 +270,7 @@ export function useNavigation(options: NavigationOptions) {
     openConsultation,
     openVoiceConsultation,
     openTreatmentPlan,
+    openOutpatientFollowUp,
     openInpatientEmr,
     openDifferentialDiagnosis,
     openKnowledgeBase,

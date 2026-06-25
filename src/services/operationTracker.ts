@@ -177,6 +177,14 @@ const CLICK_EVENT_SPECS: Record<string, OperationDescriptor> = {
     scene: 'reception-capsule',
     operationType: 'button_click',
   },
+  reception_chronic_refill_confirm: {
+    module: 'reception',
+    action: 'confirm_chronic_refill',
+    title: '确认生成复诊配药病历',
+    sourceModule: 'reception_capsule',
+    scene: 'reception-chronic-refill',
+    operationType: 'button_click',
+  },
   settings_save: {
     module: 'settings',
     action: 'save_settings',
@@ -338,6 +346,14 @@ const ERROR_SPECS: Record<string, OperationDescriptor> = {
     scene: 'consultation-record',
     operationType: 'error',
   },
+  generate_chronic_refill_record_failed: {
+    module: 'reception',
+    action: 'generate_chronic_refill_record',
+    title: '生成复诊配药病历失败',
+    sourceModule: 'reception_risk',
+    scene: 'reception-chronic-refill',
+    operationType: 'error',
+  },
 };
 
 export function trackBusinessOperation(log: OperationDraft) {
@@ -409,4 +425,3 @@ export function trackRecommendationAction(
     rating: options?.rating,
   });
 }
-

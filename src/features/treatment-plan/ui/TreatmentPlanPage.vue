@@ -1,8 +1,9 @@
 <script setup lang="ts">
-import { computed, inject, onMounted, ref } from 'vue';
+import { computed, inject, onMounted, ref, useSlots } from 'vue';
 import { PatientHeader } from '@entities/patient';
 import Icon from '@shared/ui/Icon.vue';
 import type { AppPatient } from '@/types/appState';
+import type { HisOutpatientFollowUpContext } from '@/services/his/types';
 import type { Diagnosis, TreatmentRecommendation } from '@/types/consultation';
 import { getHisAdapter } from '@/services/his';
 import { medicalDataService } from '@/services/medicalData';
@@ -53,11 +54,14 @@ type TreatmentPlanAttributeOption = { key: string; text: string; mcode?: string 
 
 const props = defineProps<{
   patient?: AppPatient | null;
+  followUpContext?: HisOutpatientFollowUpContext | null;
 }>();
 
 const emit = defineEmits<{
   close: [];
 }>();
+const slots = useSlots();
+const hasEvidencePanel = computed(() => Boolean(slots.evidence));
 
 const showToast = inject<((msg: string, type?: 'success' | 'error' | 'info') => void)>('showToast');
 
@@ -197,8 +201,10 @@ const treatmentSelectionReadiness = useTreatmentSelectionReadiness({
 
 const recommendations = useTreatmentPlanRecommendations({
   patient: computed(() => props.patient ?? null),
+  followUpContext: computed(() => props.followUpContext ?? null),
   diagnosis: currentDiagnosis,
   treatments,
+  pharmacies: pharmacyOptions,
   normalizeTreatment,
 });
 
@@ -720,7 +726,10 @@ onMounted(() => {
   <div class="treatment-plan-page">
     <PatientHeader :patient="patient ?? null" />
 
-    <main class="plan-workspace">
+    <main :class="['plan-workspace', { 'has-evidence': hasEvidencePanel }]">
+      <aside v-if="hasEvidencePanel" class="evidence-slot">
+        <slot name="evidence" />
+      </aside>
       <section class="plan-card">
         <header class="plan-card-header">
           <div>
@@ -849,6 +858,19 @@ onMounted(() => {
   padding: 24px 0 16px;
 }
 
+.plan-workspace.has-evidence {
+  display: grid;
+  grid-template-columns: minmax(320px, 0.78fr) minmax(590px, 1.45fr);
+  gap: 16px;
+  padding: 16px 20px;
+}
+
+.evidence-slot {
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+}
+
 .plan-card {
   display: flex;
   flex-direction: column;
@@ -860,6 +882,18 @@ onMounted(() => {
   border-radius: 8px;
   background: #fff;
   box-shadow: 0 12px 32px rgba(15, 23, 42, 0.08);
+}
+
+.plan-workspace.has-evidence .plan-card {
+  width: 100%;
+  margin: 0;
+}
+
+@media (max-width: 1050px) {
+  .plan-workspace.has-evidence {
+    grid-template-columns: minmax(290px, 0.72fr) minmax(540px, 1.28fr);
+    padding-inline: 14px;
+  }
 }
 
 .plan-card-header {

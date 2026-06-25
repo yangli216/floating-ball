@@ -22,7 +22,9 @@
 import type { HisServiceContext, PharmacyOption } from '../hisService';
 import type {
   DiagnosisCatalogEntry,
+  AvailableMedicineInventoryItem,
   DictionaryEntry,
+  HisContextScope,
   InventoryCheckRequest,
   InventoryCheckResult,
   MedicalItemCatalogEntry,
@@ -32,10 +34,13 @@ import type {
   MedicineDetail,
   HisPatientInfo,
   HisPatientHistory,
+  HisPatientHistoryQuery,
   HisOutpatientVisit,
   HisOutpatientVisitHistoryQuery,
   HisOutpatientMedicalRecordDocument,
   HisOutpatientMedicalRecord,
+  HisOutpatientFollowUpContext,
+  HisOutpatientFollowUpContextQuery,
   HisInpatientEmrContextPackage,
   HisInpatientEmrContextQuery,
 } from './types';
@@ -43,7 +48,9 @@ import type {
 export type { HisServiceContext, PharmacyOption };
 export type {
   DiagnosisCatalogEntry,
+  AvailableMedicineInventoryItem,
   DictionaryEntry,
+  HisContextScope,
   InventoryCheckRequest,
   InventoryCheckResult,
   MedicalItemCatalogEntry,
@@ -53,10 +60,13 @@ export type {
   MedicineDetail,
   HisPatientInfo,
   HisPatientHistory,
+  HisPatientHistoryQuery,
   HisOutpatientVisit,
   HisOutpatientVisitHistoryQuery,
   HisOutpatientMedicalRecordDocument,
   HisOutpatientMedicalRecord,
+  HisOutpatientFollowUpContext,
+  HisOutpatientFollowUpContextQuery,
   HisInpatientDiagnosis,
   HisInpatientOrder,
   HisInpatientEmrContextPackage,
@@ -85,6 +95,9 @@ export interface HisAdapter {
   /** 当前登录用户的默认执行科室 ID（用于检查/检验项默认填充） */
   getDefaultExecDeptId(): string;
 
+  /** 当前机构与租户，用于隔离持久化缓存。 */
+  getContextScope(): HisContextScope;
+
   // ---- 目录同步：用于本地标准库匹配（中央 / 机构两层） ----
 
   /** 全机构通用：标准诊断（ICD）目录 */
@@ -112,6 +125,9 @@ export interface HisAdapter {
 
   /** 当前用户可见的药房选项（含 idDept / idSto） */
   fetchAvailablePharmacies(): Promise<PharmacyOption[]>;
+
+  /** 获取指定发药药房的有效库存目录；同药品多批次由 adapter 合并。 */
+  fetchAvailableMedicineInventory(storeId: string): Promise<AvailableMedicineInventoryItem[]>;
 
   // ---- 详情按需拉取 ----
 
@@ -144,7 +160,15 @@ export interface HisAdapter {
    * @param patientId 患者ID
    * @returns 就诊历史，若无历史或不支持则返回 null，调用方按无记录处理
    */
-  fetchPatientHistory(patientId: string): Promise<HisPatientHistory | null>;
+  fetchPatientHistory(
+    patientId: string,
+    query?: HisPatientHistoryQuery,
+  ): Promise<HisPatientHistory | null>;
+
+  /** 获取门诊复诊所需的历史病历纯文本和已报告检验检查结果。 */
+  fetchOutpatientFollowUpContext(
+    query: HisOutpatientFollowUpContextQuery,
+  ): Promise<HisOutpatientFollowUpContext | null>;
 
   // ---- 住院上下文 ----
 

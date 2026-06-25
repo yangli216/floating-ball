@@ -26,7 +26,9 @@ export type {
 } from './HisAdapter';
 export type {
   DiagnosisCatalogEntry,
+  AvailableMedicineInventoryItem,
   DictionaryEntry,
+  HisContextScope,
   InventoryCheckRequest,
   InventoryCheckResult,
   MedicalItemCatalogEntry,
@@ -36,9 +38,12 @@ export type {
   MedicineDetail,
   HisPatientInfo,
   HisPatientHistory,
+  HisPatientHistoryQuery,
   HisOutpatientVisit,
   HisOutpatientMedicalRecordDocument,
   HisOutpatientMedicalRecord,
+  HisOutpatientFollowUpContext,
+  HisOutpatientFollowUpContextQuery,
   HisInpatientDiagnosis,
   HisInpatientEmrContextPackage,
   HisInpatientEmrContextPolicy,

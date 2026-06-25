@@ -1,7 +1,12 @@
 import { toRaw } from 'vue';
 import type { AppPatient } from '@/types/appState';
 import type { Diagnosis, TreatmentRecommendation } from '@/types/consultation';
-import type { MatchedDiagnosis, MatchedTreatment, VoiceIntentResult } from '@features/voice-consultation';
+import type {
+  ClinicalResultDiagnosis,
+  ClinicalResultInput,
+  ClinicalResultMatchedTreatment,
+  ClinicalResultTreatment,
+} from './clinicalResultContract';
 import {
   getPatientContextAllergyHistory,
   getPatientContextPastMedicalHistory,
@@ -32,15 +37,6 @@ export interface SymptomClinicalResultInput {
   selectedDiagnosis?: Diagnosis | null;
   treatments: TreatmentRecommendation[];
 }
-
-export type ClinicalResultDiagnosis = MatchedDiagnosis & Partial<Diagnosis>;
-export type ClinicalResultTreatment = Omit<MatchedTreatment, 'matchedItem'> & Omit<Partial<TreatmentRecommendation>, 'type' | 'matchedItem'> & {
-  matchedItem?: TreatmentRecommendation['matchedItem'] | MatchedTreatment['matchedItem'] | null;
-};
-export type ClinicalResultInput = Omit<VoiceIntentResult, 'diagnoses' | 'treatments'> & {
-  diagnoses: ClinicalResultDiagnosis[];
-  treatments: ClinicalResultTreatment[];
-};
 
 function cloneValue<T>(value: T): T {
   if (value === null || value === undefined) {
@@ -79,7 +75,7 @@ function mapDiagnosisToClinicalInput(diag: Diagnosis): ClinicalResultDiagnosis {
   };
 }
 
-function mapTreatmentType(type: TreatmentRecommendation['type']): MatchedTreatment['type'] {
+function mapTreatmentType(type: TreatmentRecommendation['type']): ClinicalResultMatchedTreatment['type'] {
   if (type === 'exam') return 'examination';
   if (type === 'lab_test') return 'labTest';
   if (type === 'acupuncture') return 'procedure';
@@ -139,7 +135,7 @@ export function buildSymptomClinicalResultInput(input: SymptomClinicalResultInpu
   };
 }
 
-export function buildVoiceClinicalResultInput(result: VoiceIntentResult): ClinicalResultInput {
+export function cloneClinicalResultInput(result: ClinicalResultInput): ClinicalResultInput {
   return {
     ...result,
     diagnoses: result.diagnoses.map((item) => cloneValue(item) as ClinicalResultDiagnosis),

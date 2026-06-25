@@ -91,6 +91,7 @@
 1. 默认使用 `yarn`：
    - `yarn install`
    - `yarn type-check`
+   - `yarn test:unit`
    - `yarn build`
    - `yarn tauri dev`
 2. `package.json` 通过 `packageManager` 固定到 `yarn@1.22.22`，仓库根目录只保留 `yarn.lock`。
@@ -103,7 +104,7 @@
 1. 前端至少执行 `yarn type-check` 与 `yarn build`
 2. Tauri/Rust 侧至少执行 `cargo check`
 3. 新增生产代码默认同步新增或更新单元测试；确实不适合自动化覆盖时，交付说明必须写明原因和替代验证方式
-4. 引入 Vitest 后，修改已覆盖的 service/composable 必须执行 `yarn test:unit`
+4. Vitest 单元测试通过 `yarn test:unit` 执行；修改已覆盖的 service/composable/lib 必须执行该命令
 5. 修改关键路径或本地/远端契约时，必须按工作区 [TESTING_STRATEGY.md](../TESTING_STRATEGY.md) 补充对应单元测试、集成测试或关键手测记录
 6. 若无法完成构建或测试，必须说明阻塞原因，并补充关键路径手测或静态审查结论
 

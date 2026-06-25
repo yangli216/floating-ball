@@ -11,10 +11,12 @@ import { DiagnosisPathWindow } from "@features/diagnosis-path";
 import { ReportInterpretationWindow } from "@features/report-interpretation";
 import Toast from "@shared/ui/Toast.vue";
 import {
-  ReceptionCapsule,
   RiskAlertPanel,
-  type RiskItem,
 } from "@features/reception-risk";
+import {
+  ReceptionCapsule,
+  useReceptionSessionController,
+} from "@features/reception";
 import { VoiceCapsule, clearVoiceConsultationCache } from "@features/voice-consultation";
 import SvgIcon from "./components/svgIcon.vue";
 import { KnowledgeBasePanel } from "@features/knowledge";
@@ -23,6 +25,7 @@ import { FeedbackSubmissionPanel } from "@features/feedback";
 import { HisIntegrationLogPanel } from "@features/settings";
 import { MedicalCatalogCachePanel } from "@features/medical-catalog";
 import { TreatmentPlanPage } from "@features/treatment-plan";
+import { OutpatientFollowUpPage } from "@features/outpatient-follow-up";
 import { InpatientEmrPage, type InpatientEmrGenerationRequest } from "@features/inpatient-emr";
 import { DifferentialDiagnosisModalPage } from "@features/differential-diagnosis";
 import Icon from "@shared/ui/Icon.vue";
@@ -37,10 +40,7 @@ import { useVoiceConsultation } from "./composables/useVoiceConsultation";
 import { useEventListeners } from "./composables/useEventListeners";
 import { useMinimizedSessions } from "./composables/useMinimizedSessions";
 import {
-  getPatientContextAgeText,
   getPatientContextAnchorId,
-  getPatientContextGenderCode,
-  getPatientContextGenderText,
   getPatientContextName,
 } from "./utils/patientContext";
 import { pmphaiService, isPMPHAIConfigured } from './services/pmphai';
@@ -106,12 +106,18 @@ const ringMenuRef = ref<HTMLElement | null>(null);
 const forceUpdateState = ref<ForceUpdateState>(getCurrentForceUpdateState());
 const isForceUpdateRequired = computed(() => forceUpdateState.value.required);
 
-// 风险提示状态
-const isRiskAnalyzing = ref(false);
-const riskPatientName = ref('');
-const riskPatientGender = ref<'M' | 'F'>('M');
-const riskPatientAge = ref(0);
-const riskItems = ref<RiskItem[]>([]);
+// 接诊胶囊状态：患者展示信息从 currentPatient 派生，其余状态只经 controller action 修改。
+const receptionSession = useReceptionSessionController(currentPatient);
+const {
+  patientName: riskPatientName,
+  patientGender: riskPatientGender,
+  patientAge: riskPatientAge,
+  risks: riskItems,
+  isAnalyzing: isRiskAnalyzing,
+  chronicRefillCandidate,
+  chronicRefillGenerating,
+  outpatientFollowUpContext,
+} = receptionSession;
 
 // 语音问诊状态
 const voiceInteractionSessionKey = ref(0);
@@ -130,6 +136,8 @@ const assistantTitle = computed(() => {
       return currentPatient.value ? `语音问诊 - ${patientDisplayName.value}` : '语音问诊';
     case 'treatment-plan':
       return currentPatient.value ? `诊疗方案 - ${patientDisplayName.value}` : '诊疗方案';
+    case 'outpatient-follow-up':
+      return currentPatient.value ? `门诊复诊 - ${patientDisplayName.value}` : '门诊复诊';
     case 'inpatient-emr':
       return '住院病历生成';
     case 'differential-diagnosis':
@@ -267,17 +275,10 @@ const {
   persistCurrentWindowSize,
 } = windowMgmt;
 
-// 风险提示患者信息同步函数
-const syncRiskPatientInfo = (patient: AppPatient) => {
-  riskPatientName.value = getPatientContextName(patient) || '未知';
-  riskPatientGender.value = (getPatientContextGenderCode(patient) === 'F' || getPatientContextGenderText(patient) === '女性') ? 'F' : 'M';
-  const age = Number.parseInt(getPatientContextAgeText(patient), 10);
-  riskPatientAge.value = Number.isFinite(age) ? age : 0;
-};
-
 const getCurrentReceptionWindowSize = () => getWindowSizeForView('reception-capsule', {
   expanded: !isRiskAnalyzing.value && riskItems.value.length > 0,
   riskCount: riskItems.value.length,
+  hasChronicRefill: Boolean(chronicRefillCandidate.value),
 });
 
 // 初始化工作模式 composable
@@ -289,7 +290,6 @@ const workMode = useWorkMode({
   transitioning,
   isHovered,
   currentPatient,
-  syncRiskPatientInfo,
   getReceptionWindowSize: getCurrentReceptionWindowSize,
   store: storeRef,
 });
@@ -317,6 +317,7 @@ const {
   openConsultation,
   openVoiceConsultation,
   openTreatmentPlan,
+  openOutpatientFollowUp,
   openInpatientEmr,
   openDifferentialDiagnosis,
   startVoiceInteraction: startVoiceInteractionBase,
@@ -339,6 +340,7 @@ const {
   isProcessingVoice,
   consultationRoundId,
   resetVoiceSessionState,
+  showGeneratedClinicalResult,
   resumeCachedVoiceResult,
   hasCachedVoiceResult,
   handleVoiceStop,
@@ -527,6 +529,7 @@ const handleRiskExpand = async (expanded: boolean) => {
   const targetSize = getWindowSizeForView('reception-capsule', {
     expanded,
     riskCount: riskItems.value.length,
+    hasChronicRefill: Boolean(chronicRefillCandidate.value),
   });
 
   try {
@@ -552,21 +555,16 @@ const eventListeners = useEventListeners({
   inpatientEmrRequest,
   shouldRestoreInpatientEmrRequest,
   clearMinimizedInpatientEmrSession: () => minimizedSessions.clear('inpatient-emr'),
-  riskState: {
-    riskPatientName,
-    riskPatientGender,
-    riskPatientAge,
-    riskItems,
-    isRiskAnalyzing,
-  },
+  receptionSession,
   showToast,
   handleWindowMove,
   persistCurrentWindowSize,
   workMode: { enterWorkMode, exitWork },
-  navigation: { openConsultation, openVoiceConsultation, openTreatmentPlan, openInpatientEmr, openDifferentialDiagnosis, startVoiceInteraction },
+  navigation: { openConsultation, openVoiceConsultation, openTreatmentPlan, openOutpatientFollowUp, openInpatientEmr, openDifferentialDiagnosis, startVoiceInteraction },
   resetVoiceSessionState,
   clearVoiceConsultationCache,
   clearMinimizedConsultationSessions: minimizedSessions.clearAll,
+  showGeneratedClinicalResult,
   hasCachedVoiceResult,
   queueConsultationAssistTrigger,
   exiting,
@@ -841,7 +839,7 @@ const openInsideCloudHome = async () => {
           <!-- 工具栏 (risk-alert, voice-interaction, reception-capsule 视图不显示) -->
           <div v-if="currentView !== 'risk-alert' && currentView !== 'voice-interaction' && currentView !== 'reception-capsule' && currentView !== 'differential-diagnosis' && currentView !== 'chat'" class="assistant-toolbar" data-tauri-drag-region>
             <div class="toolbar-left" data-tauri-drag-region>
-	              <button v-if="currentView === 'settings' || currentView === 'analytics' || currentView === 'his-log' || currentView === 'medical-cache' || currentView === 'knowledge-base' || currentView === 'treatment-plan' || currentView === 'inpatient-emr'" class="icon-btn back-btn" @click="currentView === 'analytics' ? openChat() : handleUserCollapse()" title="返回">
+	              <button v-if="currentView === 'settings' || currentView === 'analytics' || currentView === 'his-log' || currentView === 'medical-cache' || currentView === 'knowledge-base' || currentView === 'treatment-plan' || currentView === 'outpatient-follow-up' || currentView === 'inpatient-emr'" class="icon-btn back-btn" @click="currentView === 'analytics' ? openChat() : handleUserCollapse()" title="返回">
 	                 <Icon icon="lucide:arrow-left" class="toolbar-icon" size="20" />
 	              </button>
 	              <span class="assistant-title" data-tauri-drag-region>{{ assistantTitle }}</span>
@@ -910,8 +908,13 @@ const openInsideCloudHome = async () => {
             :age="riskPatientAge"
             :risks="riskItems"
             :analyzing="isRiskAnalyzing"
+            :chronic-refill-candidate="chronicRefillCandidate"
+            :chronic-refill-generating="chronicRefillGenerating"
+            :outpatient-follow-up-context="outpatientFollowUpContext"
             @close="closeRiskAlert"
             @toggle-expand="handleRiskExpand"
+            @confirm-chronic-refill="eventListeners.confirmChronicRefill"
+            @confirm-follow-up="eventListeners.confirmFollowUp"
           />
 
           <AnalyticsPanel
@@ -932,6 +935,12 @@ const openInsideCloudHome = async () => {
           <TreatmentPlanPage
             v-if="currentView === 'treatment-plan'"
             :patient="currentPatient"
+            @close="closeTreatmentPlan"
+          />
+          <OutpatientFollowUpPage
+            v-if="currentView === 'outpatient-follow-up'"
+            :patient="currentPatient"
+            :context="outpatientFollowUpContext"
             @close="closeTreatmentPlan"
           />
           <InpatientEmrPage

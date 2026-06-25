@@ -9,7 +9,14 @@ import { ref } from 'vue';
 import { chat, type ChatMessage } from '@/services/llm';
 import { isTestModeEnabled } from '@/services/aliyunSpeech';
 import { medicalDataService } from '@/services/medicalData';
-import { extractLLMJsonCandidate } from '@features/clinical-result';
+import {
+  alignMedicineRecommendationsToInventory,
+  extractLLMJsonCandidate,
+  loadAvailableMedicineInventoryContext,
+  type ClinicalResultInput,
+  type ClinicalResultMatchedDiagnosis,
+  type ClinicalResultMatchedTreatment,
+} from '@features/clinical-result';
 import {
   PROMPTS,
   withOverride,
@@ -24,44 +31,9 @@ import { trackError } from '@/services/operationTracker';
 let cachedTestModeTranscript = '';
 let cachedTestModeResult: VoiceIntentResult | null = null;
 
-export interface MatchedTreatment extends TreatmentHint {
-  /** 匹配到的标准库项目 */
-  matchedItem?: {
-    id: string;
-    name: string;
-    spec?: string;
-    code?: string;
-    idSrv?: string;
-    naSrv?: string;
-    sdSrv?: string;
-    idDeptExec?: string;
-    idPart?: string;
-    jsonField?: string;
-    fgCheckOrd?: string;
-    fgSkintest?: string;
-    raw?: Record<string, unknown>;
-  } | null;
-}
-
-export interface MatchedDiagnosis extends DiagnosisHint {
-  /** 匹配到的标准诊断库项目 */
-  matchedItem?: { id: string; code: string; name: string } | null;
-}
-
-export interface VoiceIntentResult {
-  chiefComplaint: string;
-  historyOfPresentIllness: string;
-  pastMedicalHistory: string;
-  allergyHistory: string;
-  currentMedicationHistory: string;
-  familyHistory: string;
-  symptoms: string[];
-  negativeSymptoms: string[];
-  diagnoses: MatchedDiagnosis[];
-  treatments: MatchedTreatment[];
-  treatmentPlan: string;
-  healthEducation: string;
-}
+export type MatchedTreatment = ClinicalResultMatchedTreatment;
+export type MatchedDiagnosis = ClinicalResultMatchedDiagnosis;
+export type VoiceIntentResult = ClinicalResultInput;
 
 interface NormalizedVoiceExtractionResult {
   recordDraft: VoiceRecordDraft;
@@ -671,12 +643,24 @@ export function useVoiceIntentRecognition() {
       }
       const patientContextBlock = patientContextLines.length ? `\n${patientContextLines.join('\n')}` : '';
 
+      let medicineContextBlock = '';
+      let availableMedicineInventory: Awaited<ReturnType<typeof loadAvailableMedicineInventoryContext>>['items'] = [];
+      try {
+        const inventoryContext = await loadAvailableMedicineInventoryContext();
+        availableMedicineInventory = inventoryContext.items;
+        if (inventoryContext.promptContext) {
+          medicineContextBlock = `\n${inventoryContext.promptContext}`;
+        }
+      } catch (e) {
+        console.warn('[VoiceIntent] Failed to inject available medicine inventory context:', e);
+      }
+
       const recognitionPrompt = withOverride(
         'voiceIntentRecognition',
         PROMPTS.consultation.voiceIntentRecognition,
       ) as typeof PROMPTS.consultation.voiceIntentRecognition;
       const baseUserPrompt = recognitionPrompt.buildUserPrompt(text);
-      const userContent = `${baseUserPrompt}${patientContextBlock}${memoryBlock ? `\n${memoryBlock}` : ''}`;
+      const userContent = `${baseUserPrompt}${patientContextBlock}${medicineContextBlock}${memoryBlock ? `\n${memoryBlock}` : ''}`;
       const messages: ChatMessage[] = [
         { role: 'system', content: recognitionPrompt.system },
         { role: 'user', content: userContent },
@@ -694,6 +678,10 @@ export function useVoiceIntentRecognition() {
       });
       const { payload: parsed, repairUsed } = await parseOrRepairVoiceExtraction(normalizedText, rawOutput, options?.consultationId);
       const normalizedExtraction = normalizeVoiceExtraction(parsed);
+      normalizedExtraction.treatmentHints = alignMedicineRecommendationsToInventory(
+        normalizedExtraction.treatmentHints,
+        availableMedicineInventory,
+      );
 
       if (normalizedExtraction.error) {
         processingError.value = normalizedExtraction.message || '无法识别有效的医疗内容';
