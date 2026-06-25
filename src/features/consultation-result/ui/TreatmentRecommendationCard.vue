@@ -796,9 +796,29 @@ const emit = defineEmits<{
 }
 
 .worklist .medicine-inline-summary {
+  flex: 0 0 100%;
+  max-width: 100%;
+  min-width: 100%;
+  width: 100%;
   margin-top: 0;
   white-space: normal;
   color: #475569;
+}
+
+.worklist .worklist-secondary-row {
+  display: block;
+}
+
+.worklist .worklist-secondary-row .worklist-inline-text,
+.worklist .worklist-secondary-row .worklist-usage-token {
+  display: block;
+  margin-top: 4px;
+}
+
+.worklist .worklist-secondary-row .worklist-inline-text + .worklist-inline-text,
+.worklist .worklist-secondary-row .worklist-usage-token + .worklist-inline-text,
+.worklist .worklist-secondary-row .worklist-inline-text + .worklist-usage-token {
+  margin-top: 4px;
 }
 
 .manual-match-origin-note {

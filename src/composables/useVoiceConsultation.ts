@@ -116,6 +116,14 @@ export function useVoiceConsultation(options: VoiceConsultationOptions) {
   const isProcessingVoice = ref(false);
   let processingToken = 0;
 
+  /**
+   * 当前语音问诊轮次 ID。
+   * 每次开始新一轮语音问诊（handleVoiceStop）时生成新 UUID，
+   * 贯穿该轮所有用户日志提交（speech → firstSnapshot → finalSnapshot/abandoned）。
+   * cancelVoiceResult / resetVoiceSessionState 时清空。
+   */
+  const consultationRoundId = ref<string | null>(null);
+
   function currentConsultationId(): string {
     return resolveVoiceConsultationId(currentPatient.value);
   }
@@ -197,6 +205,7 @@ export function useVoiceConsultation(options: VoiceConsultationOptions) {
     intentResult.value = null;
     intentSource.value = null;
     intentRecognition.clearTranscripts();
+    consultationRoundId.value = null;
   }
 
   async function resumeCachedVoiceResult(): Promise<boolean> {
@@ -232,8 +241,11 @@ export function useVoiceConsultation(options: VoiceConsultationOptions) {
     try {
       const normalizedText = transcribedText.trim();
       const consultationId = resolveVoiceConsultationId(currentPatient.value);
+      consultationRoundId.value = crypto.randomUUID();
+      const roundId = consultationRoundId.value;
       void submitConsultationUserLog({
         consultationId,
+        consultationRoundId: roundId,
         consultationType: 'voice',
         patient: currentPatient.value,
         speech: {
@@ -346,6 +358,7 @@ export function useVoiceConsultation(options: VoiceConsultationOptions) {
     intentResult,
     intentSource,
     isProcessingVoice,
+    consultationRoundId,
     resetVoiceSessionState,
     resumeCachedVoiceResult,
     hasCachedVoiceResult: (patient?: AppPatient | null) => hasVoiceConsultationCache(patient ?? currentPatient.value),

@@ -146,12 +146,19 @@ const props = withDefaults(defineProps<{
    * - null/undefined：未明确，默认不叠加
    */
   intentSource?: 'llm' | 'cache' | null;
+  /**
+   * 当前语音问诊轮次 ID。
+   * 由 useVoiceConsultation 在 handleVoiceStop 时生成，
+   * 贯穿该轮所有用户日志提交（speech → firstSnapshot → finalSnapshot/abandoned）。
+   */
+  consultationRoundId?: string | null;
   secondaryFooterActionText?: string;
   secondaryFooterActionDisabled?: boolean;
 }>(), {
   channel: 'voice',
   showPatientHeader: true,
   intentSource: null,
+  consultationRoundId: null,
   secondaryFooterActionText: '',
   secondaryFooterActionDisabled: false,
 });
@@ -355,9 +362,9 @@ async function applyEditorSnapshot(snapshot: VoiceEditorSnapshot): Promise<void>
 
 const canSubmit = computed(() => chiefComplaint.value.trim().length > 0 && selectedDiagnosis.value !== null && selectedDiagnoses.value.length > 0 && !isWritebackBusy.value);
 
-function handleCancelConfirmed(): void {
+async function handleCancelConfirmed(): Promise<void> {
   clearVoiceFeedbackDraft();
-  submitVoiceAbandonedUserLog();
+  await submitVoiceAbandonedUserLog();
   emit('cancel');
 }
 const cancelController = useClinicalResultCancelController({
@@ -551,6 +558,7 @@ function buildVoiceUserLogSnapshot() {
 
 const userLogController = useClinicalResultUserLogController({
   consultationId,
+  consultationRoundId: () => props.consultationRoundId,
   consultationType: consultationUserLogType,
   patient: () => props.initialPatientData || null,
   buildSnapshot: buildVoiceUserLogSnapshot,

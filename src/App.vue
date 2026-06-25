@@ -337,6 +337,7 @@ const {
   intentResult,
   intentSource,
   isProcessingVoice,
+  consultationRoundId,
   resetVoiceSessionState,
   resumeCachedVoiceResult,
   hasCachedVoiceResult,
@@ -924,6 +925,7 @@ const openInsideCloudHome = async () => {
             :initialPatientData="currentPatient ?? undefined"
             :intentResult="intentResult"
             :intentSource="intentSource"
+            :consultationRoundId="consultationRoundId"
             @close="handleUserCollapse"
             @cancel="cancelVoiceResult"
           />

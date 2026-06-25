@@ -15,6 +15,7 @@ import type {
 
 export interface ClinicalResultUserLogSubmitInput {
   consultationId: string;
+  consultationRoundId: string;
   consultationType: ConsultationUserLogType;
   patient?: Patient | AppPatient | null;
   firstSnapshot?: ConsultationUserLogSnapshot;
@@ -35,6 +36,7 @@ export type ClinicalResultUserLogSubmit = (
 
 export interface ClinicalResultUserLogControllerOptions {
   consultationId: MaybeRefOrGetter<string>;
+  consultationRoundId: MaybeRefOrGetter<string | null | undefined>;
   consultationType: MaybeRefOrGetter<ConsultationUserLogType>;
   patient?: MaybeRefOrGetter<Patient | AppPatient | null | undefined>;
   buildSnapshot: () => ConsultationUserLogSnapshot;
@@ -48,7 +50,7 @@ export interface ClinicalResultUserLogController {
   resetFirstSnapshot: () => void;
   submitGeneratedUserLog: () => void;
   submitFinalUserLog: () => void;
-  submitAbandonedUserLog: () => void;
+  submitAbandonedUserLog: () => Promise<void>;
 }
 
 function shouldBuildChangeSummary(options: ClinicalResultUserLogControllerOptions): boolean {
@@ -70,9 +72,10 @@ export function useClinicalResultUserLogController(
     return toValue(options.patient) || null;
   }
 
-  function buildBaseInput(): Pick<ClinicalResultUserLogSubmitInput, 'consultationId' | 'consultationType' | 'patient'> {
+  function buildBaseInput(): Pick<ClinicalResultUserLogSubmitInput, 'consultationId' | 'consultationRoundId' | 'consultationType' | 'patient'> {
     return {
       consultationId: toValue(options.consultationId),
+      consultationRoundId: toValue(options.consultationRoundId) || '',
       consultationType: toValue(options.consultationType),
       patient: resolvePatient(),
     };
@@ -95,23 +98,23 @@ export function useClinicalResultUserLogController(
     });
   }
 
-  function submitFinalLikeUserLog(abandoned: boolean): void {
+  function submitFinalLikeUserLog(abandoned: boolean): Promise<void> {
     const finalSnapshot = options.buildSnapshot();
-    void options.submit({
+    return Promise.resolve(options.submit({
       ...buildBaseInput(),
       finalSnapshot,
       selectionSnapshot: buildConsultationSelectionSnapshot(finalSnapshot),
       changeSummary: buildChangeSummary(finalSnapshot),
       abandoned: abandoned || undefined,
-    });
+    }));
   }
 
   function submitFinalUserLog(): void {
-    submitFinalLikeUserLog(false);
+    void submitFinalLikeUserLog(false);
   }
 
-  function submitAbandonedUserLog(): void {
-    submitFinalLikeUserLog(true);
+  function submitAbandonedUserLog(): Promise<void> {
+    return submitFinalLikeUserLog(true);
   }
 
   function resetFirstSnapshot(): void {

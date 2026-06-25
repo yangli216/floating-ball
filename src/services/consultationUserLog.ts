@@ -60,6 +60,7 @@ export interface ConsultationSpeechLogInput {
 
 interface SubmitConsultationUserLogInput {
   consultationId: string;
+  consultationRoundId: string;
   consultationType: ConsultationUserLogType;
   patient?: Patient | AppPatient | null;
   speech?: ConsultationSpeechLogInput;
@@ -235,7 +236,7 @@ export function computeChangeSummary(
 }
 
 export async function submitConsultationUserLog(input: SubmitConsultationUserLogInput): Promise<void> {
-  if (!isRegionalMode() || !input.consultationId) return;
+  if (!isRegionalMode() || !input.consultationId || !input.consultationRoundId) return;
 
   const actor = getFeedbackActor();
   const patient = input.patient;
@@ -252,6 +253,7 @@ export async function submitConsultationUserLog(input: SubmitConsultationUserLog
 
     await regionalPost('/v1/client/user-logs/consultations', {
       consultationId: input.consultationId,
+      consultationRoundId: input.consultationRoundId,
       consultationType: input.consultationType,
       consultationTime: Date.now(),
       patientId: getPatientContextId(patient as AppPatient) || patientValue(patient, ['idPi', 'patientId', 'id', 'idTet', 'idMpi']),

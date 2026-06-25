@@ -1037,8 +1037,11 @@ const buildSmartUserLogSnapshot = () => buildSymptomSmartUserLogSnapshot({
   labTests: labTestRecommendations.value,
 });
 
+const smartConsultationRoundId = ref<string | null>(null);
+
 const smartUserLogController = useClinicalResultUserLogController({
   consultationId: () => resolveConsultationId(),
+  consultationRoundId: () => smartConsultationRoundId.value,
   consultationType: 'smart',
   patient: () => patientInfo.value,
   buildSnapshot: buildSmartUserLogSnapshot,
@@ -1047,6 +1050,7 @@ const smartUserLogController = useClinicalResultUserLogController({
 const {
   submitGeneratedUserLog: submitSmartGeneratedUserLog,
   submitFinalUserLog: submitSmartFinalUserLog,
+  submitAbandonedUserLog: submitSmartAbandonedUserLog,
 } = smartUserLogController;
 
 const prefillGeneratedRecordFromPatient = (force = false): boolean => {
@@ -1152,6 +1156,7 @@ const resetWorkflowState = () => {
   factCheckTotalCount.value = 0;
   showFactCheckWidget.value = false;
   showFactCheckNotification.value = false;
+  smartConsultationRoundId.value = null;
 };
 
 /* canOpenDiagnosisPath / openDiagnosisPathWindow removed - template usage commented out */
@@ -1507,6 +1512,7 @@ const handleEndSession = () => {
 
 const handleAbandonConsultation = () => {
   trackClick('abandon_symptom_consultation', { consultationId: resolveConsultationId() });
+  submitSmartAbandonedUserLog();
   symptomCacheSession.clearSnapshot();
   resetWorkflowState();
   initFormData(generalConditionConfig);
@@ -1852,6 +1858,9 @@ const fetchAIDiagnosis = async (options?: { trackSmartConsultation?: boolean }) 
     // Perform automatic fact checking on all diagnoses
     performDiagnosisFactCheck(diagnoses);
     if (options?.trackSmartConsultation) {
+      if (!smartConsultationRoundId.value) {
+        smartConsultationRoundId.value = crypto.randomUUID();
+      }
       submitSmartGeneratedUserLog();
     }
     
