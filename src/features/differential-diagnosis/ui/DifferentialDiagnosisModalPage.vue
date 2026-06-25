@@ -153,7 +153,6 @@ async function generateChecklist(): Promise<void> {
       checklistItems.value = [];
       riskIssues.value = buildRiskIssues(parsed);
       isCollapsed.value = false;
-      showToast?.(mismatchError, 'error');
       return;
     }
 
