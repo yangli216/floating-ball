@@ -27,7 +27,10 @@ export interface ClinicalResultUserLogSubmitInput {
 
 export interface ClinicalResultUserLogChangeFlags {
   pastMedicalHistoryChanged?: boolean;
+  personalHistoryChanged?: boolean;
   familyHistoryChanged?: boolean;
+  physicalExamChanged?: boolean;
+  precautionsChanged?: boolean;
 }
 
 export type ClinicalResultUserLogSubmit = (

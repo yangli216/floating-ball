@@ -11,6 +11,7 @@ import { isTestModeEnabled } from '@/services/aliyunSpeech';
 import { medicalDataService } from '@/services/medicalData';
 import {
   alignMedicineRecommendationsToInventory,
+  buildOutpatientRecord,
   extractLLMJsonCandidate,
   loadAvailableMedicineInventoryContext,
   type ClinicalResultInput,
@@ -698,23 +699,23 @@ export function useVoiceIntentRecognition() {
         (hint) => matchTreatmentHint(hint)
       );
       const segregatedTreatments = segregateTreatmentHints(matchedTreatments);
+      const currentMedicationHistory = mergeNarrative(
+        normalizedExtraction.recordDraft.currentMedicationHistory || '无特殊',
+        segregatedTreatments.historicalMedicationNotes,
+      );
+      const pastMedicalHistory = composePastMedicalHistory({
+        ...normalizedExtraction.recordDraft,
+        currentMedicationHistory,
+      });
+      const familyHistory = normalizedExtraction.recordDraft.familyHistory || '无特殊';
 
       const intentResult: VoiceIntentResult = {
         chiefComplaint: normalizedExtraction.recordDraft.chiefComplaint,
         historyOfPresentIllness: normalizedExtraction.recordDraft.historyOfPresentIllness,
-        pastMedicalHistory: composePastMedicalHistory({
-          ...normalizedExtraction.recordDraft,
-          currentMedicationHistory: mergeNarrative(
-            normalizedExtraction.recordDraft.currentMedicationHistory || '无特殊',
-            segregatedTreatments.historicalMedicationNotes,
-          ),
-        }),
+        pastMedicalHistory,
         allergyHistory: normalizedExtraction.recordDraft.allergyHistory || '无特殊',
-        currentMedicationHistory: mergeNarrative(
-          normalizedExtraction.recordDraft.currentMedicationHistory || '无特殊',
-          segregatedTreatments.historicalMedicationNotes,
-        ),
-        familyHistory: normalizedExtraction.recordDraft.familyHistory || '无特殊',
+        currentMedicationHistory,
+        familyHistory,
         symptoms: normalizedExtraction.recordDraft.symptoms || [],
         negativeSymptoms: normalizedExtraction.recordDraft.negativeSymptoms || [],
         diagnoses: matchedDiagnoses,
@@ -724,6 +725,13 @@ export function useVoiceIntentRecognition() {
           segregatedTreatments.deferredPlanNotes,
         ),
         healthEducation: normalizedExtraction.recordDraft.healthEducation || '',
+        outpatientRecord: buildOutpatientRecord({
+          chiefComplaint: normalizedExtraction.recordDraft.chiefComplaint,
+          historyOfPresentIllness: normalizedExtraction.recordDraft.historyOfPresentIllness,
+          pastMedicalHistory,
+          familyHistory,
+          diagnosisNames: matchedDiagnoses.map((item) => item.name),
+        }),
       };
 
       result.value = intentResult;

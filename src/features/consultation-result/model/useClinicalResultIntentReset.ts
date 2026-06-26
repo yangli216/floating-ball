@@ -1,18 +1,31 @@
 import type { Ref } from 'vue';
 import type { Diagnosis, TreatmentRecommendation } from '@/types/consultation';
+import {
+  buildOutpatientRecord,
+  type OutpatientRecord,
+} from '../../clinical-result/outpatientRecord';
 
 export interface ClinicalResultIntentRecordInput {
   chiefComplaint?: string;
   historyOfPresentIllness?: string;
   pastMedicalHistory?: string;
+  personalHistory?: string;
   familyHistory?: string;
+  physicalExam?: string;
+  precautions?: string;
+  vitals?: string;
+  outpatientRecord?: Partial<OutpatientRecord>;
+  diagnoses?: Array<Pick<Diagnosis, 'name'>>;
 }
 
 export interface ClinicalResultIntentResetRecordSnapshot {
   chiefComplaint: string;
   historyOfPresentIllness: string;
   pastMedicalHistory: string;
+  personalHistory: string;
   familyHistory: string;
+  physicalExam: string;
+  precautions: string;
 }
 
 export interface ClinicalResultIntentResetOptions {
@@ -21,7 +34,10 @@ export interface ClinicalResultIntentResetOptions {
   chiefComplaint: Ref<string>;
   historyOfPresentIllness: Ref<string>;
   pastMedicalHistory: Ref<string>;
+  personalHistory: Ref<string>;
   familyHistory: Ref<string>;
+  physicalExam: Ref<string>;
+  precautions: Ref<string>;
   diagnoses: Ref<Diagnosis[]>;
   treatments: Ref<TreatmentRecommendation[]>;
   resetTreatmentEditorState: () => void;
@@ -36,12 +52,19 @@ export interface ClinicalResultIntentResetOptions {
 }
 
 function buildRecordSnapshot(input: ClinicalResultIntentRecordInput): ClinicalResultIntentResetRecordSnapshot {
-  return {
-    chiefComplaint: input.chiefComplaint || '',
-    historyOfPresentIllness: input.historyOfPresentIllness || '',
-    pastMedicalHistory: input.pastMedicalHistory || '',
-    familyHistory: input.familyHistory || '',
-  };
+  const outpatientRecord = buildOutpatientRecord({
+    chiefComplaint: input.outpatientRecord?.chiefComplaint || input.chiefComplaint || '',
+    historyOfPresentIllness: input.outpatientRecord?.historyOfPresentIllness || input.historyOfPresentIllness || '',
+    pastMedicalHistory: input.outpatientRecord?.pastMedicalHistory || input.pastMedicalHistory,
+    personalHistory: input.outpatientRecord?.personalHistory || input.personalHistory,
+    familyHistory: input.outpatientRecord?.familyHistory || input.familyHistory,
+    physicalExam: input.outpatientRecord?.physicalExam || input.physicalExam,
+    precautions: input.outpatientRecord?.precautions || input.precautions,
+    vitals: input.vitals,
+    diagnosisNames: (input.diagnoses || []).map((item) => item.name).filter(Boolean),
+  });
+
+  return outpatientRecord;
 }
 
 export function useClinicalResultIntentReset(options: ClinicalResultIntentResetOptions) {
@@ -62,10 +85,13 @@ export function useClinicalResultIntentReset(options: ClinicalResultIntentResetO
 
     const snapshot = buildRecordSnapshot(input);
     options.setInitialRecordSnapshot(snapshot);
-    options.chiefComplaint.value = input.chiefComplaint || '';
-    options.historyOfPresentIllness.value = input.historyOfPresentIllness || '';
-    options.pastMedicalHistory.value = input.pastMedicalHistory || '';
-    options.familyHistory.value = input.familyHistory || '';
+    options.chiefComplaint.value = snapshot.chiefComplaint;
+    options.historyOfPresentIllness.value = snapshot.historyOfPresentIllness;
+    options.pastMedicalHistory.value = snapshot.pastMedicalHistory;
+    options.personalHistory.value = snapshot.personalHistory;
+    options.familyHistory.value = snapshot.familyHistory;
+    options.physicalExam.value = snapshot.physicalExam;
+    options.precautions.value = snapshot.precautions;
   }
 
   return {

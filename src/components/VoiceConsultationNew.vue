@@ -175,7 +175,10 @@ const autoFetchTreatments = computed(() => recommendationPolicy.value?.autoFetch
 const chiefComplaint = ref('');
 const historyOfPresentIllness = ref('');
 const pastMedicalHistory = ref('');
+const personalHistory = ref('');
 const familyHistory = ref('');
+const physicalExam = ref('');
+const precautions = ref('');
 
 const aiDiagnoses = ref<Diagnosis[]>([]);
 const diagnosisSelection = useDiagnosisSelection({ diagnoses: aiDiagnoses });
@@ -311,7 +314,10 @@ const editorSnapshotPersistence = useVoiceEditorSnapshotPersistence({
     chiefComplaint: chiefComplaint.value,
     historyOfPresentIllness: historyOfPresentIllness.value,
     pastMedicalHistory: pastMedicalHistory.value,
+    personalHistory: personalHistory.value,
     familyHistory: familyHistory.value,
+    physicalExam: physicalExam.value,
+    precautions: precautions.value,
     treatments: treatments.value as unknown[],
     diagnoses: aiDiagnoses.value as unknown[],
     selectedDiagnosisIdentity: getDiagnosisIdentity(selectedDiagnosis.value),
@@ -341,8 +347,17 @@ async function applyEditorSnapshot(snapshot: VoiceEditorSnapshot): Promise<void>
   if (typeof snapshot.pastMedicalHistory === 'string') {
     pastMedicalHistory.value = snapshot.pastMedicalHistory;
   }
+  if (typeof snapshot.personalHistory === 'string') {
+    personalHistory.value = snapshot.personalHistory;
+  }
   if (typeof snapshot.familyHistory === 'string') {
     familyHistory.value = snapshot.familyHistory;
+  }
+  if (typeof snapshot.physicalExam === 'string') {
+    physicalExam.value = snapshot.physicalExam;
+  }
+  if (typeof snapshot.precautions === 'string') {
+    precautions.value = snapshot.precautions;
   }
   if (Array.isArray(snapshot.diagnoses) && snapshot.diagnoses.length > 0) {
     aiDiagnoses.value = snapshot.diagnoses as Diagnosis[];
@@ -461,14 +476,20 @@ const {
   chiefComplaint,
   historyOfPresentIllness,
   pastMedicalHistory,
+  personalHistory,
   familyHistory,
+  physicalExam,
+  precautions,
 });
 const recordFieldFeedbackState = useVoiceRecordFieldFeedbackState({
   fields: {
     chiefComplaint,
     historyOfPresentIllness,
     pastMedicalHistory,
+    personalHistory,
     familyHistory,
+    physicalExam,
+    precautions,
   },
   ensureDraft: ensureRecordFieldDraft,
   submittedMap: recordFieldSubmittedMap,
@@ -575,7 +596,10 @@ const userLogController = useClinicalResultUserLogController({
   submit: submitConsultationUserLog,
   getChangeFlags: () => ({
     pastMedicalHistoryChanged: isRecordFieldModified('pastMedicalHistory'),
+    personalHistoryChanged: isRecordFieldModified('personalHistory'),
     familyHistoryChanged: isRecordFieldModified('familyHistory'),
+    physicalExamChanged: isRecordFieldModified('physicalExam'),
+    precautionsChanged: isRecordFieldModified('precautions'),
   }),
 });
 const {
@@ -619,10 +643,14 @@ const {
 const writebackFeedbackController = useWritebackFeedbackController({
   applyFeedback: applyWritebackFeedbackStatus,
   notify: showToast,
-  onSuccess: () => {
+  onSuccess: (payload) => {
+    showSessionFeedbackDialog.value = true;
+    console.info('[VoiceConsultationNew] Show session feedback dialog after writeback success', {
+      requestId: payload.requestId,
+      consultationId: payload.consultationId,
+    });
     persistEditorSnapshotImmediate();
     submitVoiceFinalUserLog();
-    showSessionFeedbackDialog.value = true;
   },
 });
 const {
@@ -748,7 +776,10 @@ function buildIntentResultKey(result: ClinicalResultInput | VoiceIntentResult): 
       chiefComplaint: normalizeIntentKeyPart(result.chiefComplaint),
       historyOfPresentIllness: normalizeIntentKeyPart(result.historyOfPresentIllness),
       pastMedicalHistory: normalizeIntentKeyPart(result.pastMedicalHistory),
-      familyHistory: normalizeIntentKeyPart(result.familyHistory),
+      personalHistory: normalizeIntentKeyPart(result.outpatientRecord?.personalHistory),
+      familyHistory: normalizeIntentKeyPart(result.outpatientRecord?.familyHistory || result.familyHistory),
+      physicalExam: normalizeIntentKeyPart(result.outpatientRecord?.physicalExam),
+      precautions: normalizeIntentKeyPart(result.outpatientRecord?.precautions),
     },
     diagnoses: result.diagnoses.map(buildIntentDiagnosisKey),
     treatments: result.treatments.map(buildIntentTreatmentKey),
@@ -1003,6 +1034,13 @@ useConsultationReferenceFeedbackListener<ReferenceFeedbackPayload>({
   resolveConsultationId,
   logContext: 'VoiceConsultationNew',
   onFeedback: (payload) => {
+    console.info('[VoiceConsultationNew] Received writeback feedback', {
+      requestId: payload.requestId,
+      consultationId: payload.consultationId,
+      status: payload.status,
+      action: payload.action,
+      referenceType: payload.referenceType,
+    });
     applyWritebackFeedback(payload);
   },
 });
@@ -1207,7 +1245,10 @@ const { resetForIntent } = useClinicalResultIntentReset({
   chiefComplaint,
   historyOfPresentIllness,
   pastMedicalHistory,
+  personalHistory,
   familyHistory,
+  physicalExam,
+  precautions,
   diagnoses: aiDiagnoses,
   treatments,
   resetTreatmentEditorState,
@@ -1887,6 +1928,15 @@ async function handleBatchWriteBack(): Promise<void> {
       historyOfPresentIllness: historyOfPresentIllness.value,
       pastMedicalHistory: pastMedicalHistory.value,
       familyHistory: familyHistory.value,
+      outpatientRecord: {
+        chiefComplaint: chiefComplaint.value,
+        historyOfPresentIllness: historyOfPresentIllness.value,
+        pastMedicalHistory: pastMedicalHistory.value,
+        personalHistory: personalHistory.value,
+        familyHistory: familyHistory.value,
+        physicalExam: physicalExam.value,
+        precautions: precautions.value,
+      },
       diagList,
       orderList,
       treatmentPlan,
@@ -1904,10 +1954,15 @@ async function handleBatchWriteBack(): Promise<void> {
       treatments: selected,
       context: buildPreferenceContext('writeback'),
     });
-    await invoke('complete_consultation', { result });
     markWritebackPending(requestId, '病历已发送至 HIS，等待处理结果回执。');
-    showToast?.('病历已发送至 HIS，等待处理结果回执。', 'info');
+    await invoke('complete_consultation', { result });
+    if (waitingWritebackFeedback.value) {
+      showToast?.('病历已发送至 HIS，等待处理结果回执。', 'info');
+    }
   } catch (error: unknown) {
+    if (waitingWritebackFeedback.value) {
+      resetWritebackState();
+    }
     showToast?.(formatUserFacingError(error, {
       context: '提交失败',
       fallback: '请稍后重试。',
@@ -2028,6 +2083,10 @@ watch(
     chiefComplaint.value,
     historyOfPresentIllness.value,
     pastMedicalHistory.value,
+    personalHistory.value,
+    familyHistory.value,
+    physicalExam.value,
+    precautions.value,
     treatments.value,
     aiDiagnoses.value,
     selectedDiagnosis.value,
@@ -2062,25 +2121,6 @@ watch(
           <div class="section-heading">
             <div>
 
-            <div v-if="showSessionFeedbackDialog" class="confirm-overlay session-feedback-overlay" @click.self="completeVoiceConsultationFlow">
-              <div class="session-feedback-dialog pane-card" @click.stop>
-                <div class="session-feedback-dialog-head">
-                  <div>
-                    <h3 class="confirm-dialog-title">本次结果已回写成功</h3>
-                    <p class="confirm-dialog-text">如有时间，请将您的使用体验反馈给我们，我们会及时处理并改善！</p>
-                  </div>
-                  <button class="session-feedback-skip" type="button" @click="completeVoiceConsultationFlow">暂不反馈</button>
-                </div>
-
-                <VoiceSessionFeedbackBar
-                  :draft="getSessionFeedbackDraft()"
-                  :submitting="sessionSubmitting"
-                  :submitted-at="sessionSubmittedAt"
-                  @update:draft="updateSessionDraft($event)"
-                  @submit="handleSessionFeedbackSubmit"
-                />
-              </div>
-            </div>
               <h3 class="section-title">病历详情</h3>
             </div>
           </div>
@@ -2090,6 +2130,7 @@ watch(
               v-model="chiefComplaint"
               field-key="chiefComplaint"
               title="主诉"
+              presentation="document"
               :original-value="initialRecordSnapshot.chiefComplaint"
               :draft="getRecordFieldDraft('chiefComplaint')"
               :feedback-key="getRecordFieldFeedbackKey('chiefComplaint')"
@@ -2107,6 +2148,7 @@ watch(
               v-model="historyOfPresentIllness"
               field-key="historyOfPresentIllness"
               title="现病史"
+              presentation="document"
               :original-value="initialRecordSnapshot.historyOfPresentIllness"
               :draft="getRecordFieldDraft('historyOfPresentIllness')"
               :feedback-key="getRecordFieldFeedbackKey('historyOfPresentIllness')"
@@ -2125,6 +2167,7 @@ watch(
               v-model="pastMedicalHistory"
               field-key="pastMedicalHistory"
               title="既往史"
+              presentation="document"
               :original-value="initialRecordSnapshot.pastMedicalHistory"
               :draft="getRecordFieldDraft('pastMedicalHistory')"
               :feedback-key="getRecordFieldFeedbackKey('pastMedicalHistory')"
@@ -2138,37 +2181,78 @@ watch(
               @update:draft="updateRecordFieldDraft"
               @submit-feedback="handleRecordFieldFeedbackSubmit"
             />
-            <!-- <div class="record-field">
-              <div class="record-field-head">
-                <label>家族史</label>
-                <div class="record-field-actions">
-                  <span v-if="isRecordFieldModified('familyHistory')" class="record-field-status-chip">已人工修改</span>
-                  <div class="voice-feedback-anchor" @click.stop>
-                    <button
-                      class="voice-feedback-trigger"
-                      :class="{ submitted: !!getRecordFieldSubmittedLabel('familyHistory') }"
-                      type="button"
-                      @click.stop="toggleRecommendationFeedback(getRecordFieldFeedbackKey('familyHistory'), $event)"
-                    >反馈</button>
-                    <div v-if="isRecommendationFeedbackOpen(getRecordFieldFeedbackKey('familyHistory'))" class="voice-feedback-panel">
-                      <VoiceRecordFeedbackPopover
-                        :visible="true"
-                        title="家族史"
-                        :original-value="initialRecordSnapshot.familyHistory"
-                        :current-value="familyHistory"
-                        :draft="getRecordFieldDraft('familyHistory')"
-                        :submitting="recordFieldSubmittingKey === getRecordFieldFeedbackKey('familyHistory')"
-                        :submitted-label="getRecordFieldSubmittedLabel('familyHistory')"
-                        @close="toggleRecommendationFeedback(getRecordFieldFeedbackKey('familyHistory'))"
-                        @update:draft="updateRecordFieldDraft('familyHistory', $event)"
-                        @submit="handleRecordFieldFeedbackSubmit('familyHistory', $event)"
-                      />
-                    </div>
-                  </div>
-                </div>
-              </div>
-              <textarea v-model="familyHistory" rows="3" placeholder="请输入家族史..."></textarea>
-            </div> -->
+            <VoiceRecordFieldEditor
+              v-model="personalHistory"
+              field-key="personalHistory"
+              title="个人史"
+              presentation="document"
+              :original-value="initialRecordSnapshot.personalHistory"
+              :draft="getRecordFieldDraft('personalHistory')"
+              :feedback-key="getRecordFieldFeedbackKey('personalHistory')"
+              :feedback-open="isRecommendationFeedbackOpen(getRecordFieldFeedbackKey('personalHistory'))"
+              :modified="isRecordFieldModified('personalHistory')"
+              :rows="3"
+              placeholder="请输入个人史..."
+              :submitted-label="getRecordFieldSubmittedLabel('personalHistory')"
+              :submitting="recordFieldSubmittingKey === getRecordFieldFeedbackKey('personalHistory')"
+              @toggle-feedback="toggleRecommendationFeedback"
+              @update:draft="updateRecordFieldDraft"
+              @submit-feedback="handleRecordFieldFeedbackSubmit"
+            />
+            <VoiceRecordFieldEditor
+              v-model="familyHistory"
+              field-key="familyHistory"
+              title="家族史"
+              presentation="document"
+              :original-value="initialRecordSnapshot.familyHistory"
+              :draft="getRecordFieldDraft('familyHistory')"
+              :feedback-key="getRecordFieldFeedbackKey('familyHistory')"
+              :feedback-open="isRecommendationFeedbackOpen(getRecordFieldFeedbackKey('familyHistory'))"
+              :modified="isRecordFieldModified('familyHistory')"
+              :rows="3"
+              placeholder="请输入家族史..."
+              :submitted-label="getRecordFieldSubmittedLabel('familyHistory')"
+              :submitting="recordFieldSubmittingKey === getRecordFieldFeedbackKey('familyHistory')"
+              @toggle-feedback="toggleRecommendationFeedback"
+              @update:draft="updateRecordFieldDraft"
+              @submit-feedback="handleRecordFieldFeedbackSubmit"
+            />
+            <VoiceRecordFieldEditor
+              v-model="physicalExam"
+              field-key="physicalExam"
+              title="体格检查"
+              presentation="document"
+              :original-value="initialRecordSnapshot.physicalExam"
+              :draft="getRecordFieldDraft('physicalExam')"
+              :feedback-key="getRecordFieldFeedbackKey('physicalExam')"
+              :feedback-open="isRecommendationFeedbackOpen(getRecordFieldFeedbackKey('physicalExam'))"
+              :modified="isRecordFieldModified('physicalExam')"
+              :rows="4"
+              placeholder="请输入体格检查..."
+              :submitted-label="getRecordFieldSubmittedLabel('physicalExam')"
+              :submitting="recordFieldSubmittingKey === getRecordFieldFeedbackKey('physicalExam')"
+              @toggle-feedback="toggleRecommendationFeedback"
+              @update:draft="updateRecordFieldDraft"
+              @submit-feedback="handleRecordFieldFeedbackSubmit"
+            />
+            <VoiceRecordFieldEditor
+              v-model="precautions"
+              field-key="precautions"
+              title="注意事项"
+              presentation="document"
+              :original-value="initialRecordSnapshot.precautions"
+              :draft="getRecordFieldDraft('precautions')"
+              :feedback-key="getRecordFieldFeedbackKey('precautions')"
+              :feedback-open="isRecommendationFeedbackOpen(getRecordFieldFeedbackKey('precautions'))"
+              :modified="isRecordFieldModified('precautions')"
+              :rows="3"
+              placeholder="请输入注意事项..."
+              :submitted-label="getRecordFieldSubmittedLabel('precautions')"
+              :submitting="recordFieldSubmittingKey === getRecordFieldFeedbackKey('precautions')"
+              @toggle-feedback="toggleRecommendationFeedback"
+              @update:draft="updateRecordFieldDraft"
+              @submit-feedback="handleRecordFieldFeedbackSubmit"
+            />
           </div>
         </section>
 
@@ -2400,6 +2484,28 @@ watch(
       </button>
       <button class="footer-cancel-btn" type="button" :disabled="isWritebackBusy" @click="handleCancelClick">放弃</button>
     </div>
+
+    <Teleport to="body">
+      <div v-if="showSessionFeedbackDialog" class="confirm-overlay session-feedback-overlay" @click.self="completeVoiceConsultationFlow">
+        <div class="session-feedback-dialog pane-card" @click.stop>
+          <div class="session-feedback-dialog-head">
+            <div>
+              <h3 class="confirm-dialog-title">本次结果已回写成功</h3>
+              <p class="confirm-dialog-text">如有时间，请将您的使用体验反馈给我们，我们会及时处理并改善！</p>
+            </div>
+            <button class="session-feedback-skip" type="button" @click="completeVoiceConsultationFlow">暂不反馈</button>
+          </div>
+
+          <VoiceSessionFeedbackBar
+            :draft="getSessionFeedbackDraft()"
+            :submitting="sessionSubmitting"
+            :submitted-at="sessionSubmittedAt"
+            @update:draft="updateSessionDraft($event)"
+            @submit="handleSessionFeedbackSubmit"
+          />
+        </div>
+      </div>
+    </Teleport>
 
     <div v-if="showCancelConfirm" class="confirm-overlay" @click.self="closeCancelConfirm">
       <div class="confirm-dialog pane-card" role="dialog" aria-modal="true" aria-labelledby="voice-cancel-title">

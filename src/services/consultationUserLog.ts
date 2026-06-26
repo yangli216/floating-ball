@@ -209,13 +209,22 @@ function countItemListChanges(
 export function computeChangeSummary(
   first: ConsultationUserLogSnapshot,
   final: ConsultationUserLogSnapshot,
-  extra?: { pastMedicalHistoryChanged?: boolean; familyHistoryChanged?: boolean },
+  extra?: {
+    pastMedicalHistoryChanged?: boolean;
+    personalHistoryChanged?: boolean;
+    familyHistoryChanged?: boolean;
+    physicalExamChanged?: boolean;
+    precautionsChanged?: boolean;
+  },
 ): ConsultationChangeSummary {
   let recordFieldChanges = 0;
   if (first.chiefComplaint.trim() !== final.chiefComplaint.trim()) recordFieldChanges++;
   if (first.historyOfPresentIllness.trim() !== final.historyOfPresentIllness.trim()) recordFieldChanges++;
   if (extra?.pastMedicalHistoryChanged) recordFieldChanges++;
+  if (extra?.personalHistoryChanged) recordFieldChanges++;
   if (extra?.familyHistoryChanged) recordFieldChanges++;
+  if (extra?.physicalExamChanged) recordFieldChanges++;
+  if (extra?.precautionsChanged) recordFieldChanges++;
 
   const diagnosisFields: (keyof ConsultationSnapshotItem)[] = ['selected', 'primary'];
   const diagnosisChanges = countItemListChanges(first.diagnoses, final.diagnoses, diagnosisFields);

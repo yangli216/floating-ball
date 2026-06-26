@@ -868,6 +868,7 @@ const openInsideCloudHome = async () => {
           <!-- 问诊页面用 v-show 保持常驻，避免切换视图时组件销毁导致数据丢失 -->
           <ConsultationPage
             v-show="currentView === 'consultation'"
+            :active="currentView === 'consultation'"
             @close="handleUserCollapse"
             @cancel="cancelSymptomConsultation"
             :initialPatientData="currentPatient ?? undefined"
@@ -946,6 +947,7 @@ const openInsideCloudHome = async () => {
           <InpatientEmrPage
             v-show="currentView === 'inpatient-emr'"
             :request="inpatientEmrRequest"
+            :active="currentView === 'inpatient-emr'"
             @close="handleUserCollapse"
             @cancel="cancelInpatientEmrGeneration"
             @completed="completeInpatientEmrGeneration"

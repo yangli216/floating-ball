@@ -120,6 +120,10 @@
 | `chiefComplaint` | String | 否 | 主诉 |
 | `historyOfPresentIllness` | String | 否 | 现病史 |
 | `pastMedicalHistory` | String | 否 | 既往史 |
+| `personalHistory` | String | 否 | 个人史 |
+| `familyHistory` | String | 否 | 家族史 |
+| `physicalExam` | String | 否 | 体格检查 |
+| `precautions` | String | 否 | 注意事项 / 医嘱提示 |
 | `diagnosis` | String | 否 | 当前 HIS 诊断草稿 |
 | `vitals` | String | 否 | 体征摘要 |
 
@@ -1234,13 +1238,23 @@ ws://127.0.0.1:8081/api/consultation/events/ws
       "idDeptExec": "63e0bd493c6f495f34444b69"
     }
   ],
-  "treatmentPlan": "用药：对乙酰氨基酚缓释片。检查：深部X线照射。检验：血常规（五分类）。处置：拔罐疗法(火罐)"
+  "treatmentPlan": "用药：对乙酰氨基酚缓释片。检查：深部X线照射。检验：血常规（五分类）。处置：拔罐疗法(火罐)",
+  "outpatientRecord": {
+    "schemaVersion": "outpatient-record.v1",
+    "chiefComplaint": "咳嗽三天",
+    "historyOfPresentIllness": "患者3天前受凉后出现咳嗽、咳痰，无胸痛、无呼吸困难，今来就诊。",
+    "pastMedicalHistory": "平素体健；否认肝炎史，否认结核史，否认疟疾史，否认其他传染病史；否认肺部疾病史；否认肾脏疾病史；否认其他重大疾病史；否认手术史；否认外伤史；否认输血史；否认过敏史。",
+    "personalHistory": "否认外地久居史，否认疫水疫源接触史，否认牧区、矿山、高氟区、低碘区居住史，否认化学性物质、粉尘、放射性物质、有毒物质接触史，否认吸烟史，否认饮酒史，否认药物嗜好史。",
+    "familyHistory": "否认家族重大遗传病史，否认家族肿瘤病史，否认家族传染病史，否认家族精神病史。",
+    "physicalExam": "体温36.5℃,脉搏78次/分,呼吸20次/分,血压120/60mmHg。双肺呼吸音清，未及干湿啰音。",
+    "precautions": "注意休息，1周内复诊，必要时上级医院进一步检查治疗。"
+  }
 }
 ```
 
 ##### record-confirmed 字段说明
 
-`record-confirmed` 现在将诊断收敛到 `diagList`，将药品、检查、检验、处置统一收敛到 `orderList`。PHIS 不再按 `diagnosisList / medications / examinations / labTests / procedures` 这套旧结构解析。
+`record-confirmed` 现在将诊断收敛到 `diagList`，将药品、检查、检验、处置统一收敛到 `orderList`，并可通过 `outpatientRecord` 携带整张门诊病历字段。PHIS 不再按 `diagnosisList / medications / examinations / labTests / procedures` 这套旧结构解析。
 
 补充说明：
 
@@ -1249,6 +1263,20 @@ ws://127.0.0.1:8081/api/consultation/events/ws
 3. `referenceStatus = pending` 仅表示桌面端已发起最终回写请求，并不代表 HIS 已处理成功；真正成功/失败以后续 `reference-feedback` 回执为准。
 4. `diagList.idDiag` 必须是 PHIS 标准诊断目录主键（`ID_DIE`）。桌面端不得把 AI 自由文本、前端临时 key 或 PHIS 草稿文本生成的占位 ID 写入该字段；若当前诊断未匹配标准诊断库，应在提交前拦截并提示医生先切换或重新匹配标准诊断。
 5. `orderList` 必须来自已匹配标准库且通过前置非空校验的用药、检查、检验、处置推荐项。桌面端提交前必须拦截缺少标准服务 ID、服务名称、服务分类编码、执行位置 ID 或医保限用标识的医嘱；药品还必须具备一次剂量、剂量单位、频次 key、用法 key、总量、用药天数和发药药房；检查还必须具备检查部位；检验还必须具备非空检验附加 `jsonField`；处置还必须具备大于 0 的数量。医生手动清空检查 / 检验 / 处置的执行科室，或清空任一医嘱的医保限用后，桌面端必须按当前空输入拦截选中和提交，不得从 `matchedItem.idDeptExec`、`raw.idDeptExec/idDept`、详情 hydrate、默认执行科室或默认医保类型兜底生成必填字段。
+6. `outpatientRecord` 为完整门诊病历文书字段，包含主诉、现病史、既往史、个人史、家族史、体格检查和注意事项。该对象不包含 `diagnosisText`；HIS 应根据 `diagList` 自动生成病历诊断行，避免诊断文书来源与标准诊断回写来源分叉。
+
+**outpatientRecord 字段：**
+
+| 字段名 | 类型 | 说明 |
+| :--- | :--- | :--- |
+| `schemaVersion` | String | 当前固定为 `outpatient-record.v1` |
+| `chiefComplaint` | String | 主诉；与顶层 `chiefComplaint` 保持一致，用于整张病历字段回填 |
+| `historyOfPresentIllness` | String | 现病史；与顶层 `historyOfPresentIllness` 保持一致 |
+| `pastMedicalHistory` | String | 既往史；与顶层 `pastMedicalHistory` 保持一致 |
+| `personalHistory` | String | 个人史 |
+| `familyHistory` | String | 家族史；与顶层 `familyHistory` 保持一致 |
+| `physicalExam` | String | 体格检查；优先使用 HIS 已传入生命体征或医生确认后的模板 |
+| `precautions` | String | 注意事项 / 健康宣教 / 复诊提示；不等同于 `treatmentPlan` |
 
 **diagList 字段：**
 
@@ -1714,7 +1742,7 @@ HIS 侧至少要识别以下 5 类结果：
 
 | `resultType` | 含义 | HIS 建议动作 |
 | :--- | :--- | :--- |
-| `draft` | 病历草稿回写（仅主诉+现病史） | 回填主诉和现病史到医生站草稿 |
+| `draft` | 病历草稿回写（早期病历字段） | 回填主诉、现病史等医生站草稿字段 |
 | `final-report` | 【已废弃】完整问诊最终报告（含诊断、治疗方案） | 仅作历史兼容，新链路不产生此类型，统一使用 `record-confirmed` |
 | `record-confirmed` | 问诊一键确认回写（`orderList` 统一格式） | 直接用于 PHIS 调入确认弹窗，不走 `reference-request` 引用请求 |
 | `reference-request` | `MedHermes` 请求 PHIS 保存引用 | 调用 PHIS 保存，并准备回执 |
@@ -1722,8 +1750,8 @@ HIS 侧至少要识别以下 5 类结果：
 
 补充说明：
 
-1. `draft` 仅携带主诉 / 现病史等早期字段；`record-confirmed` 才携带完整的 `diagList` / `orderList`。`final-report` 仅作历史兼容保留，新代码不再产生。
-2. `record-confirmed` 来自问诊结果确认提交或独立诊疗方案推荐提交，其 `diagList` 和 `orderList` 已转换成 PHIS 可直接消费的结构。PHIS 收到后可直接按 `fgMain` 识别主诊断，再按 `sdSrv`、`idSrv`、`idDeptExec`、`doseOnce`、`idFreq`、`idUsge`、`jsonField`、`idPart` 等字段填充调入确认弹窗，无需二次补录。
+1. `draft` 仅携带主诉 / 现病史等早期字段；`record-confirmed` 才携带完整的 `outpatientRecord`、`diagList` 和 `orderList`。`final-report` 仅作历史兼容保留，新代码不再产生。
+2. `record-confirmed` 来自问诊结果确认提交或独立诊疗方案推荐提交，其 `diagList` 和 `orderList` 已转换成 PHIS 可直接消费的结构。PHIS 收到后可直接按 `fgMain` 识别主诊断并生成病历诊断行，再按 `sdSrv`、`idSrv`、`idDeptExec`、`doseOnce`、`idFreq`、`idUsge`、`jsonField`、`idPart` 等字段填充调入确认弹窗，无需二次补录。
 3. `reference-request` 和 `reference-feedback` 都可能附带同一份病历上下文，便于 HIS 在当前界面直接处理。
 4. 对回写 / 引用闭环结果，HIS 应继续结合 `resultType + referenceType` 判断具体业务对象，不建议只看 `referenceType`。
 5. 当前一键回写场景下，`record-confirmed.referenceType/action` 为 `batch`，`diagList/orderList` 包含诊断和所有选中治疗项目；旧 `reference-request + batch` 才使用 `referenceItems` 按 `type` 区分业务类型。单项引用场景下 `referenceType` 仍为具体类型（如 `diagnosis`）。

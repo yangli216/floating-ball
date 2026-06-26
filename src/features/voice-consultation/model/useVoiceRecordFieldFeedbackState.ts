@@ -19,7 +19,10 @@ function createEmptyVoiceRecordFieldSnapshot(): VoiceRecordFieldSnapshot {
     chiefComplaint: '',
     historyOfPresentIllness: '',
     pastMedicalHistory: '',
+    personalHistory: '',
     familyHistory: '',
+    physicalExam: '',
+    precautions: '',
   };
 }
 

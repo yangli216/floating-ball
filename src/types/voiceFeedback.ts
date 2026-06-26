@@ -1,5 +1,12 @@
 export type VoiceFeedbackAction = 'useful' | 'dissatisfied' | 'corrected';
-export type VoiceRecordFieldKey = 'chiefComplaint' | 'historyOfPresentIllness' | 'pastMedicalHistory' | 'familyHistory';
+export type VoiceRecordFieldKey =
+  | 'chiefComplaint'
+  | 'historyOfPresentIllness'
+  | 'pastMedicalHistory'
+  | 'personalHistory'
+  | 'familyHistory'
+  | 'physicalExam'
+  | 'precautions';
 
 export interface VoiceFeedbackDraftMeta {
   submittedAt?: number;
@@ -92,7 +99,10 @@ export interface VoiceRecordFieldFeedbackPayload {
     chiefComplaint: string;
     historyOfPresentIllness: string;
     pastMedicalHistory: string;
+    personalHistory: string;
     familyHistory: string;
+    physicalExam: string;
+    precautions: string;
   };
   aiTrace?: Record<string, unknown> | null;
   createdAt: number;

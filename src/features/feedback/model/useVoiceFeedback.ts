@@ -42,7 +42,10 @@ interface UseVoiceFeedbackInput {
   chiefComplaint: Ref<string>;
   historyOfPresentIllness: Ref<string>;
   pastMedicalHistory: Ref<string>;
+  personalHistory?: Ref<string>;
   familyHistory: Ref<string>;
+  physicalExam?: Ref<string>;
+  precautions?: Ref<string>;
 }
 
 interface RegisteredRecommendationTarget {
@@ -391,7 +394,10 @@ export function useVoiceFeedback(input: UseVoiceFeedbackInput) {
         chiefComplaint: input.chiefComplaint.value,
         historyOfPresentIllness: input.historyOfPresentIllness.value,
         pastMedicalHistory: input.pastMedicalHistory.value,
+        personalHistory: input.personalHistory?.value || '',
         familyHistory: input.familyHistory.value,
+        physicalExam: input.physicalExam?.value || '',
+        precautions: input.precautions?.value || '',
         aiTrace: getLatestAiTrace(),
       });
 

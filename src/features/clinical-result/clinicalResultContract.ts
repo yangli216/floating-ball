@@ -1,5 +1,6 @@
 import type { Diagnosis, TreatmentRecommendation } from '@/types/consultation';
 import type { DiagnosisHint, TreatmentHint } from '@/prompts';
+import type { OutpatientRecord } from './outpatientRecord';
 
 export interface ClinicalResultMatchedItem {
   id: string;
@@ -60,5 +61,6 @@ export interface ClinicalResultInput {
   treatments: ClinicalResultTreatment[];
   treatmentPlan: string;
   healthEducation: string;
+  outpatientRecord?: OutpatientRecord;
   recommendationPolicy?: ClinicalResultRecommendationPolicy;
 }

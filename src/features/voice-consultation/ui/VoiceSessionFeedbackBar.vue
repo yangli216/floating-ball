@@ -100,6 +100,9 @@ function submit(): void {
   flex-direction: column;
   gap: 12px;
   padding: 14px 16px;
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
+  box-shadow: none;
 }
 
 .voice-session-feedback-main,

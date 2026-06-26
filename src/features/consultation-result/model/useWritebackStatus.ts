@@ -70,7 +70,20 @@ export function useWritebackStatus(options: Options = {}) {
   }
 
   function applyWritebackFeedback(payload: WritebackFeedbackPayload): WritebackFeedbackPayload | null {
-    if (!pendingWritebackRequestId.value || payload.requestId !== pendingWritebackRequestId.value) {
+    if (!pendingWritebackRequestId.value) {
+      console.warn('[useWritebackStatus] Ignore writeback feedback because there is no pending request', {
+        requestId: payload.requestId,
+        status: payload.status,
+      });
+      return null;
+    }
+
+    if (payload.requestId !== pendingWritebackRequestId.value) {
+      console.warn('[useWritebackStatus] Ignore writeback feedback because requestId does not match pending request', {
+        expectedRequestId: pendingWritebackRequestId.value,
+        actualRequestId: payload.requestId,
+        status: payload.status,
+      });
       return null;
     }
 

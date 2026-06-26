@@ -97,7 +97,7 @@
 - `features/consultation-result/model/useClinicalResultCancelController.ts` 只管理结果页放弃确认弹窗、提交中 / 等待 HIS 回执时的拦截和提示注入；真正的反馈草稿清理、放弃日志提交和 `emit('cancel')` 通过 `onConfirm` 注入。
 - `features/consultation-result/model/useClinicalResultUserLogController.ts` 只管理首版、最终和放弃三类用户日志快照的提交节奏、首版快照记忆、最终选择快照和可选变更摘要；页面仍通过 options 注入 `buildSnapshot`、患者上下文、提交函数和语音病例字段变更判断。
 - `features/consultation-result/model/useWritebackFeedbackController.ts` 只管理一键回写回执被 `useWritebackStatus` 接受后的 success / failed 分发和默认提示；页面仍通过 options 注入成功后的缓存持久化、用户日志、整页反馈弹窗，以及失败提示展示。
-- `features/consultation-result/model/useConsultationReferenceFeedbackListener.ts` 只管理 `consultation-reference-feedback` 事件名、当前 `consultationId` 防串线和 Tauri 监听生命周期接入；页面仍通过 options 注入当前就诊 ID 解析和回执后的业务状态写入。
+- `features/consultation-result/model/useConsultationReferenceFeedbackListener.ts` 只管理 `consultation-reference-feedback` 事件名、调用方活跃门禁、当前 `consultationId` 防串线和 Tauri 监听生命周期接入；页面仍通过 options 注入当前就诊 ID 解析和回执后的业务状态写入。对 `v-show` 常驻保活页面，活跃门禁必须接入 App 外层 `currentView` 派生的 `active`，不能只看组件内部页签。
 
 ### 4. Composable Controller：组合多个轻状态
 
@@ -149,7 +149,7 @@
 | 回写回执结果分发 | `features/consultation-result/model/useWritebackFeedbackController.ts` | 已命中 requestId 的 HIS 回执 success / failed 分发、默认提示文案 | `complete_consultation` 调用、PHIS payload、缓存持久化、用户日志、整页反馈弹窗 |
 | 回写清单 resolver | `features/consultation-result/model/useClinicalResultWritebackPayload.ts` | 基于已选诊断 / 治疗推荐生成 PHIS `diagList` 和 `orderList`，统一执行科室、药房、频次和用法解析注入 | 提交门禁、`complete_consultation` 调用、toast、等待回执状态、缓存、用户日志 |
 | 回写前置门禁 | `features/consultation-result/model/useClinicalResultWritebackPreflight.ts` | 诊断标准库匹配、药品详情、库存、药房、执行科室和检查部位的一键回写前校验编排 | `complete_consultation` 调用、PHIS payload 构造、等待回执状态、缓存、用户日志、提交中状态 |
-| PHIS 回执监听入口 | `features/consultation-result/model/useConsultationReferenceFeedbackListener.ts` | `consultation-reference-feedback` 事件名、`consultationId` 防串线、Tauri listener 生命周期组合 | requestId 匹配、引用状态 map、toast、缓存、日志 |
+| PHIS 回执监听入口 | `features/consultation-result/model/useConsultationReferenceFeedbackListener.ts` | `consultation-reference-feedback` 事件名、调用方活跃门禁、`consultationId` 防串线、Tauri listener 生命周期组合 | requestId 匹配、引用状态 map、toast、缓存、日志 |
 | 结果页患者上下文派生 | `features/consultation-result/model/useClinicalResultPatientContext.ts` | 患者姓名、性别、年龄、`idTet`、就诊锚点和 `consultationId` 派生 | HIS 患者补全、患者切换、缓存、日志、PHIS payload 拼装、导航 |
 | 结果页 intent 初始化重置 | `features/consultation-result/model/useClinicalResultIntentReset.ts` | 新 `intentResult` 进入时的旧现场清理、病历字段回填和初始字段快照设置 | AI 请求、缓存 overlay、事实核查、推荐注册、PHIS 回写 |
 | 同类诊断下拉状态 | `features/consultation-result/model/useRelatedDiagnosisDropdown.ts` | 当前打开诊断 key、同类候选列表、打开 / 关闭 / 切换和替换后的收口 | 候选来源、诊断列表写回、选择状态同步、埋点、治疗刷新、反馈注册 |

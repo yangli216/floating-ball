@@ -12,6 +12,7 @@ import {
   getPatientContextPastMedicalHistory,
 } from '@/utils/patientContext';
 import { getDiagnosisKey, getStandardDiagnosisId } from './recordConfirmedPayload';
+import { buildOutpatientRecord } from './outpatientRecord';
 
 export interface ClinicalResultRecordInput {
   chiefComplaint: string;
@@ -20,6 +21,10 @@ export interface ClinicalResultRecordInput {
   allergyHistory?: string;
   currentMedicationHistory?: string;
   familyHistory?: string;
+  personalHistory?: string;
+  physicalExam?: string;
+  precautions?: string;
+  vitals?: string;
 }
 
 export interface SymptomClinicalResultInput {
@@ -32,6 +37,10 @@ export interface SymptomClinicalResultInput {
     allergyHistory?: string;
     currentMedicationHistory?: string;
     familyHistory?: string;
+    personalHistory?: string;
+    physicalExam?: string;
+    precautions?: string;
+    vitals?: string;
   };
   diagnoses: Diagnosis[];
   selectedDiagnosis?: Diagnosis | null;
@@ -110,28 +119,43 @@ export function buildSymptomClinicalResultInput(input: SymptomClinicalResultInpu
   }
 
   const record = input.record;
+  const chiefComplaint = record.chiefComplaint || '';
+  const historyOfPresentIllness = mergeHistoryOfPresentIllness(
+    record.historyOfPresentIllness || '',
+    record.tcmFourExaminations,
+  );
+  const pastMedicalHistory =
+    record.pastMedicalHistory
+    || getPatientContextPastMedicalHistory(input.patient)
+    || '';
+  const familyHistory = record.familyHistory || '';
   return {
-    chiefComplaint: record.chiefComplaint || '',
-    historyOfPresentIllness: mergeHistoryOfPresentIllness(
-      record.historyOfPresentIllness || '',
-      record.tcmFourExaminations,
-    ),
-    pastMedicalHistory:
-      record.pastMedicalHistory
-      || getPatientContextPastMedicalHistory(input.patient)
-      || '',
+    chiefComplaint,
+    historyOfPresentIllness,
+    pastMedicalHistory,
     allergyHistory:
       record.allergyHistory
       || getPatientContextAllergyHistory(input.patient)
       || '',
     currentMedicationHistory: record.currentMedicationHistory || '',
-    familyHistory: record.familyHistory || '',
+    familyHistory,
     symptoms: [],
     negativeSymptoms: [],
     diagnoses,
     treatments: input.treatments.map(mapTreatmentToClinicalInput),
     treatmentPlan: '',
     healthEducation: '',
+    outpatientRecord: buildOutpatientRecord({
+      chiefComplaint,
+      historyOfPresentIllness,
+      pastMedicalHistory,
+      personalHistory: record.personalHistory,
+      familyHistory,
+      physicalExam: record.physicalExam,
+      precautions: record.precautions,
+      vitals: record.vitals,
+      diagnosisNames: diagnoses.map((item) => item.name),
+    }),
   };
 }
 

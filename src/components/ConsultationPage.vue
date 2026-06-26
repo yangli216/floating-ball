@@ -676,8 +676,8 @@ const props = defineProps<{
     kind: ConsultationAssistAction;
     token: number;
   } | null;
+  active?: boolean;
 }>();
-
 const emit = defineEmits(['close', 'cancel', 'consume-auto-trigger']);
 
 // --- Interfaces & State Definitions ---
@@ -1531,7 +1531,7 @@ useOutsideInteraction({
 });
 
 useConsultationReferenceFeedbackListener<ReferenceFeedbackPayload>({
-  resolveConsultationId,
+  resolveConsultationId, isActive: () => props.active !== false && currentView.value !== 'record',
   logContext: 'ConsultationPage',
   onFeedback: (payload) => {
     applyReferenceFeedback(payload);

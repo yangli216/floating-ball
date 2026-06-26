@@ -17,6 +17,19 @@ export type {
 } from './clinicalResultContract';
 
 export {
+  buildOutpatientRecord,
+  detectOutpatientRecordScenario,
+  OUTPATIENT_RECORD_SCHEMA_VERSION,
+  validateOutpatientRecord,
+} from './outpatientRecord';
+export type {
+  BuildOutpatientRecordInput,
+  OutpatientRecord,
+  OutpatientRecordQualityIssue,
+  OutpatientRecordScenario,
+} from './outpatientRecord';
+
+export {
   buildBodySiteUsageOptions,
   buildExecDeptUsageOptions,
   buildInsuranceUsageOptions,

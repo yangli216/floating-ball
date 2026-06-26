@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { nextTick, onMounted, ref, watch } from 'vue';
 import VoiceRecordFeedbackPopover from './VoiceRecordFeedbackPopover.vue';
 import type {
   VoiceRecordFieldFeedbackDraft,
@@ -19,10 +20,12 @@ const props = withDefaults(defineProps<{
   submittedLabel?: string;
   submitting?: boolean;
   grow?: boolean;
+  presentation?: 'form' | 'document';
 }>(), {
   submittedLabel: '',
   submitting: false,
   grow: false,
+  presentation: 'form',
 });
 
 const emit = defineEmits<{
@@ -40,12 +43,63 @@ function handleInput(event: Event): void {
 function toggleFeedback(event?: Event): void {
   emit('toggle-feedback', props.feedbackKey, event);
 }
+
+const editableContentRef = ref<HTMLElement | null>(null);
+
+function readEditableText(element: HTMLElement): string {
+  return element.innerText.replace(/\u00a0/g, ' ').replace(/\n+$/u, '');
+}
+
+function syncEditableContent(): void {
+  const element = editableContentRef.value;
+  if (!element || document.activeElement === element) {
+    return;
+  }
+  if (element.innerText !== props.modelValue) {
+    element.textContent = props.modelValue || '';
+  }
+}
+
+function handleDocumentInput(event: Event): void {
+  const target = event.target as HTMLElement | null;
+  emit('update:modelValue', target ? readEditableText(target) : '');
+}
+
+function focusDocumentContent(): void {
+  editableContentRef.value?.focus();
+}
+
+onMounted(() => {
+  syncEditableContent();
+});
+
+watch(
+  () => props.modelValue,
+  () => {
+    void nextTick(syncEditableContent);
+  },
+);
 </script>
 
 <template>
-  <div class="record-field" :class="{ 'field-grow': grow }">
-    <div class="record-field-head">
-      <label>{{ title }}</label>
+  <div
+    class="record-field"
+    :class="{ 'field-grow': grow, 'record-field-document': presentation === 'document' }"
+    :style="{ '--record-field-rows': String(rows) }"
+  >
+    <template v-if="presentation === 'document'">
+      <p class="record-field-document-text" @click="focusDocumentContent">
+        <label>{{ title }}：</label>
+        <span
+          ref="editableContentRef"
+          class="record-field-document-content"
+          contenteditable="true"
+          role="textbox"
+          :aria-label="title"
+          :data-placeholder="placeholder"
+          @input="handleDocumentInput"
+        ></span>
+      </p>
       <div class="record-field-actions">
         <span v-if="modified" class="record-field-status-chip">已人工修改</span>
         <div class="voice-feedback-anchor" @click.stop>
@@ -71,13 +125,44 @@ function toggleFeedback(event?: Event): void {
           </div>
         </div>
       </div>
-    </div>
-    <textarea
-      :value="modelValue"
-      :rows="rows"
-      :placeholder="placeholder"
-      @input="handleInput"
-    ></textarea>
+    </template>
+
+    <template v-else>
+      <div class="record-field-head">
+        <label>{{ title }}</label>
+        <div class="record-field-actions">
+          <span v-if="modified" class="record-field-status-chip">已人工修改</span>
+          <div class="voice-feedback-anchor" @click.stop>
+            <button
+              class="voice-feedback-trigger"
+              :class="{ submitted: !!submittedLabel }"
+              type="button"
+              @click.stop="toggleFeedback($event)"
+            >反馈</button>
+            <div v-if="feedbackOpen" class="voice-feedback-panel">
+              <VoiceRecordFeedbackPopover
+                :visible="true"
+                :title="title"
+                :original-value="originalValue"
+                :current-value="modelValue"
+                :draft="draft"
+                :submitting="submitting"
+                :submitted-label="submittedLabel"
+                @close="toggleFeedback()"
+                @update:draft="emit('update:draft', fieldKey, $event)"
+                @submit="emit('submit-feedback', fieldKey, $event)"
+              />
+            </div>
+          </div>
+        </div>
+      </div>
+      <textarea
+        :value="modelValue"
+        :rows="rows"
+        :placeholder="placeholder"
+        @input="handleInput"
+      ></textarea>
+    </template>
   </div>
 </template>
 
@@ -148,6 +233,69 @@ function toggleFeedback(event?: Event): void {
   border-color: var(--voice-accent);
   box-shadow: 0 0 0 3px var(--voice-accent-soft);
   background: rgba(255, 255, 255, 0.98);
+}
+
+.record-field-document {
+  position: relative;
+  display: block;
+}
+
+.record-field-document-text {
+  margin: 0;
+  color: var(--voice-text);
+  font-size: 15px;
+  line-height: 1.68;
+  white-space: normal;
+  cursor: text;
+}
+
+.record-field-document-text label {
+  display: inline;
+  color: inherit;
+  font-size: inherit;
+  font-weight: 700;
+}
+
+.record-field-document-content {
+  display: inline;
+  min-width: 2em;
+  margin: 0 -3px;
+  padding: 1px 3px;
+  border-radius: 3px;
+  border: 0;
+  outline: none !important;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.record-field-document-content:empty::before {
+  content: attr(data-placeholder);
+  color: var(--voice-text-disabled);
+}
+
+.record-field-document-content:focus,
+.record-field-document-content:focus-visible {
+  border-radius: 3px;
+  border: 0;
+  outline: none !important;
+  background: rgba(15, 143, 123, 0.045);
+  box-shadow: inset 0 -1px 0 rgba(15, 143, 123, 0.22);
+}
+
+.record-field-document .record-field-actions {
+  position: absolute;
+  top: 0;
+  right: -42px;
+  z-index: 4;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.16s ease;
+}
+
+.record-field-document:hover .record-field-actions,
+.record-field-document:focus-within .record-field-actions {
+  opacity: 1;
+  pointer-events: auto;
 }
 
 .voice-feedback-anchor {

@@ -84,6 +84,7 @@ let queueLoaded = false;
 let uploadTimer: ReturnType<typeof setInterval> | null = null;
 let flushSoonTimer: ReturnType<typeof setTimeout> | null = null;
 let flushInFlight: Promise<number> | null = null;
+let preferenceUploadEndpointUnavailable = false;
 let fallbackEventSeq = 0;
 
 function createPreferenceEventId(): string {
@@ -126,12 +127,26 @@ function saveQueue(): void {
 
 function isCollectionEnabled(): boolean {
   if (!isRegionalMode()) return false;
-  return getCachedBootstrap()?.features?.recommendationPreferenceCollection !== false;
+  return getCachedBootstrap()?.features?.recommendationPreferenceCollection === true;
 }
 
 function isRerankEnabled(): boolean {
   if (!isRegionalMode()) return false;
   return getCachedBootstrap()?.features?.recommendationPreferenceRerank === true;
+}
+
+function isPreferenceUploadEndpointUnavailable(error: unknown): boolean {
+  if (typeof error !== 'object' || error === null) {
+    const text = String(error);
+    return text.includes('404') || text.includes('服务接口不存在');
+  }
+
+  const candidate = error as { status?: unknown; message?: unknown; rawMessage?: unknown };
+  const status = typeof candidate.status === 'number' ? candidate.status : undefined;
+  const text = [candidate.message, candidate.rawMessage]
+    .filter((value): value is string => typeof value === 'string')
+    .join(' ');
+  return status === 404 || text.includes('404') || text.includes('服务接口不存在');
 }
 
 function normalizeText(value: unknown): string | undefined {
@@ -157,7 +172,7 @@ function compactPayload(payload?: Record<string, unknown>): Record<string, unkno
 }
 
 function scheduleFlushSoon(): void {
-  if (!isCollectionEnabled() || flushSoonTimer) return;
+  if (preferenceUploadEndpointUnavailable || !isCollectionEnabled() || flushSoonTimer) return;
   flushSoonTimer = setTimeout(() => {
     flushSoonTimer = null;
     void flushRecommendationPreferenceEvents();
@@ -252,7 +267,7 @@ function toRequestEvent(event: RecommendationPreferenceEvent) {
 
 export async function flushRecommendationPreferenceEvents(): Promise<number> {
   ensureQueueLoaded();
-  if (!isCollectionEnabled() || eventQueue.length === 0) return 0;
+  if (preferenceUploadEndpointUnavailable || !isCollectionEnabled() || eventQueue.length === 0) return 0;
   if (flushInFlight) return flushInFlight;
 
   flushInFlight = (async () => {
@@ -269,6 +284,15 @@ export async function flushRecommendationPreferenceEvents(): Promise<number> {
       }
       return batch.length;
     } catch (error) {
+      if (isPreferenceUploadEndpointUnavailable(error)) {
+        preferenceUploadEndpointUnavailable = true;
+        clearScheduledFlush();
+        console.warn(
+          '[RecommendationPreferenceTracker] Upload endpoint unavailable; preference upload paused for this app session',
+          error,
+        );
+        return 0;
+      }
       console.warn('[RecommendationPreferenceTracker] Batch upload failed', error);
       return 0;
     } finally {

@@ -425,6 +425,7 @@ import type { HisOutpatientVisit, HisOutpatientMedicalRecord } from '@/services/
 
 const props = defineProps<{
   request: InpatientEmrGenerationRequest | null;
+  active?: boolean;
 }>();
 
 const emit = defineEmits<{
@@ -692,6 +693,7 @@ watch(
 
 useConsultationReferenceFeedbackListener<InpatientEmrReferenceFeedbackPayload>({
   resolveConsultationId: () => result.value?.request.admissionId || props.request?.admissionId || '',
+  isActive: () => props.active !== false,
   logContext: 'InpatientEmrPage',
   onFeedback: (payload) => {
     const status = applyReferenceFeedback(payload);

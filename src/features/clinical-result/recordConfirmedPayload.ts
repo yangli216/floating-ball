@@ -12,6 +12,10 @@
  */
 
 import type { Diagnosis, TreatmentRecommendation } from '@/types/consultation';
+import {
+  buildOutpatientRecord,
+  type OutpatientRecord,
+} from './outpatientRecord';
 
 // ===== 通用小工具（与语音侧 readFirstString / toPositiveNumber 同源） =====
 
@@ -331,6 +335,11 @@ export interface BuildRecordConfirmedPayloadInput {
   historyOfPresentIllness: string;
   pastMedicalHistory: string;
   familyHistory?: string;
+  outpatientRecord?: Partial<OutpatientRecord>;
+  personalHistory?: string;
+  physicalExam?: string;
+  precautions?: string;
+  vitals?: string;
   /** 已构造好的 diagList（调用 buildDiagList 得到） */
   diagList: Array<Record<string, string>>;
   /** 已构造好的 orderList（调用 buildOrderListItem 得到） */
@@ -353,11 +362,31 @@ export function buildRecordConfirmedPayload(
     historyOfPresentIllness,
     pastMedicalHistory,
     familyHistory,
+    outpatientRecord,
+    personalHistory,
+    physicalExam,
+    precautions,
+    vitals,
     diagList,
     orderList,
     treatmentPlan,
     extra,
   } = input;
+
+  const resolvedFamilyHistory = familyHistory || outpatientRecord?.familyHistory || '';
+  const outpatientRecordPayload = resultType === 'record-confirmed'
+    ? buildOutpatientRecord({
+        chiefComplaint: outpatientRecord?.chiefComplaint || chiefComplaint,
+        historyOfPresentIllness: outpatientRecord?.historyOfPresentIllness || historyOfPresentIllness,
+        pastMedicalHistory: outpatientRecord?.pastMedicalHistory || pastMedicalHistory,
+        personalHistory: outpatientRecord?.personalHistory || personalHistory,
+        familyHistory: resolvedFamilyHistory,
+        physicalExam: outpatientRecord?.physicalExam || physicalExam,
+        precautions: outpatientRecord?.precautions || precautions,
+        vitals,
+        diagnosisNames: diagList.map((item) => item.naDiag).filter(Boolean),
+      })
+    : undefined;
 
   return {
     consultationId,
@@ -367,10 +396,11 @@ export function buildRecordConfirmedPayload(
     chiefComplaint,
     historyOfPresentIllness,
     pastMedicalHistory,
-    ...(familyHistory ? { familyHistory } : {}),
+    ...(resolvedFamilyHistory ? { familyHistory: resolvedFamilyHistory } : {}),
     diagList,
     orderList,
     ...(treatmentPlan ? { treatmentPlan } : {}),
+    ...(outpatientRecordPayload ? { outpatientRecord: outpatientRecordPayload } : {}),
     ...(extra || {}),
   };
 }
