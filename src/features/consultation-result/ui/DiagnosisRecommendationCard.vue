@@ -8,9 +8,9 @@
       <svg xmlns="http://www.w3.org/2000/svg" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="20 6 9 17 4 12"></polyline></svg>
     </div>
 
-    <div class="card-row">
-      <div class="card-main">
-        <div class="card-title-line">
+    <div class="card-row diagnosis-card-row">
+      <div class="card-main diagnosis-card-main">
+        <div class="card-title-line diagnosis-title-line">
           <div class="card-title-wrap">
             <FactCheckHighlight :issue="issue">
               <span class="card-title">
@@ -30,25 +30,27 @@
               <span class="hover-reason-tooltip">{{ diag.rationale }}</span>
             </span>
           </div>
-          <span v-if="displayRate" class="diag-rate-token" :class="rateToneClass">{{ displayRate }}</span>
-          <span v-if="diag.code" class="meta-token">编码 {{ diag.code }}</span>
-          <span v-if="isPrimary" class="meta-token diag-role-token">主诊断</span>
-          <span v-else-if="selected" class="meta-token diag-role-token">已纳入</span>
-          <button
-            v-if="selected && !isPrimary"
-            class="diag-action-btn"
-            type="button"
-            @click.stop="emit('set-primary', $event)"
-          >设为主诊</button>
-          <button
-            v-if="selected && canRemove"
-            class="diag-action-btn subtle"
-            type="button"
-            @click.stop="emit('remove', $event)"
-          >移除</button>
-          <button class="inline-arrow-btn" type="button" title="切换同类诊断" @click.stop="emit('toggle-related', $event)">
-            <span class="inline-arrow" :class="{ open: relatedOpen }"></span>
-          </button>
+          <div class="diagnosis-meta-row">
+            <span v-if="displayRate" class="diag-rate-token" :class="rateToneClass">{{ displayRate }}</span>
+            <span v-if="diag.code" class="meta-token">编码 {{ diag.code }}</span>
+            <span v-if="isPrimary" class="meta-token diag-role-token">主诊断</span>
+            <span v-else-if="selected" class="meta-token diag-role-token">已纳入</span>
+            <button
+              v-if="selected && !isPrimary"
+              class="diag-action-btn"
+              type="button"
+              @click.stop="emit('set-primary', $event)"
+            >设为主诊</button>
+            <button
+              v-if="selected && canRemove"
+              class="diag-action-btn subtle"
+              type="button"
+              @click.stop="emit('remove', $event)"
+            >移除</button>
+            <button class="inline-arrow-btn" type="button" title="切换同类诊断" @click.stop="emit('toggle-related', $event)">
+              <span class="inline-arrow" :class="{ open: relatedOpen }"></span>
+            </button>
+          </div>
         </div>
       </div>
 
@@ -279,10 +281,18 @@ const emit = defineEmits<{
   min-width: 0;
 }
 
+.diagnosis-card-row {
+  align-items: center;
+}
+
 .card-main {
   flex: 1;
   min-width: 0;
   overflow: visible;
+}
+
+.diagnosis-card-main {
+  min-width: 0;
 }
 
 .card-title-wrap {
@@ -303,12 +313,36 @@ const emit = defineEmits<{
   overflow: visible;
 }
 
+.diagnosis-title-line {
+  display: grid;
+  grid-template-columns: minmax(180px, 1fr) auto;
+  align-items: center;
+  gap: 8px 14px;
+}
+
+.diagnosis-meta-row {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  min-width: 0;
+  max-width: 430px;
+  justify-self: end;
+}
+
 .card-title {
   display: block;
   font-size: var(--voice-font-strong);
   font-weight: 700;
   color: var(--voice-text);
   white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.diagnosis-meta-row .meta-token {
+  min-width: 0;
+  max-width: 132px;
   overflow: hidden;
   text-overflow: ellipsis;
 }
@@ -551,6 +585,17 @@ const emit = defineEmits<{
   }
 
   .card-title-line {
+    flex-wrap: wrap;
+  }
+
+  .diagnosis-title-line {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .diagnosis-meta-row {
+    max-width: none;
+    justify-self: stretch;
+    justify-content: flex-start;
     flex-wrap: wrap;
   }
 

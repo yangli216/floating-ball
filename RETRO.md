@@ -274,12 +274,19 @@
 - **解决方案**: SDK 补齐 `eventTransport` 行为与长轮询循环，`auto` 模式下 WebSocket 失败立即启用 poll 兜底并后台继续重连；推荐偏好记录改为兼容 ID 生成，并把所有偏好埋点调用包进非阻断保护，确保 `complete_consultation` 是一键回写主链路的优先动作。
 - **后续防护**: 一键回写路径上的日志、偏好学习、用户行为追踪等非关键副作用必须 `try/catch` 隔离，不允许阻断 `complete_consultation`；SDK 文档声明的 fallback 行为必须有真实实现。
 
-### RETRO-032: Yarn 1 安装 Vitest 4 时子目录 Vite 链接失败 [已解决]
+### RETRO-032: 患者切换时旧治疗推荐 loading 挡住新患者方案生成 [已解决]
 
-- **现象**: 在当前 Vite 6 项目中执行 `yarn add -D vitest`，Vitest 4 包下载完成后在 Yarn 1 linking 阶段报 `could not find a copy of vite to link in node_modules/vitest/node_modules`，依赖未能写入 `package.json` 和 `yarn.lock`。
-- **根因**: Vitest 4 的依赖布局与 Yarn 1.22 的经典 node_modules 链接策略在当前依赖树下不兼容；项目本身的 Vite 6 和 Node 版本满足 Vitest 4 官方要求，但包管理器链接阶段仍失败。
-- **解决方案**: 清理本次失败安装生成的局部 `node_modules/vitest`、`node_modules/@vitest` 和 `yarn-error.log`，继续使用 Yarn 1 安装兼容 Vite 6 的 `vitest@3.2.4`，成功生成唯一的 `yarn.lock`，并新增 `yarn test:unit`。
-- **后续防护**: 本仓库引入或升级测试工具时必须继续使用 Yarn 1；先核对工具与 Vite / Node / Yarn classic 的兼容性，安装失败时不得改用 npm 或 pnpm 绕过，也不得保留部分链接产物或额外锁文件。
+- **现象**: 第一个智能问诊未一键回写或放弃时直接调入第二个患者，第二个患者诊断建议已生成并选中主诊断，但治疗方案区域停在“当前诊断暂无已加载的治疗方案，请点击上方刷新方案”，没有自动生成有效方案。
+- **根因**: 共享结果页的 `fetchAITreatment` 只有一个全局 `treatmentLoading`。患者 / intent 重置会清空诊断和治疗方案，但没有废弃上一患者仍在途的治疗推荐请求；新患者诊断落地后的自动治疗请求因 `treatmentLoading === true` 早退，旧请求随后被诊断防串线逻辑丢弃并关闭 loading，页面不会再次补发新患者请求。
+- **解决方案**: 给共享结果页治疗推荐请求增加序号和患者锚点校验；患者 / intent 重置或诊断清空时废弃旧请求并释放 loading。旧请求返回或失败时若已过期，不再覆盖治疗方案、不关闭新请求 loading，也不弹出旧错误；新患者诊断落地后可立即自动拉取治疗方案。
+- **后续防护**: 共享结果页里“发起前用 loading 早退、返回后靠上下文防串线丢弃”的异步请求，遇到患者 / 就诊锚点硬切换时必须同步失效旧请求并释放新上下文可用的 loading，否则容易形成“旧请求被丢弃、新请求没发出”的空态。
+
+### RETRO-033: 智能问诊结果页初始化抑制吞掉治疗方案自动触发 [已解决]
+
+- **现象**: 语音问诊结果页能正常展示诊疗方案，但智能问诊在诊断建议已生成、主诊断已选中后，治疗方案仍停在“当前诊断暂无已加载的治疗方案，请点击上方刷新方案”。
+- **根因**: 智能问诊经 `SymptomResultEntry -> ConsultationResultPage -> VoiceConsultationNew` 适配后，诊断选择发生在 `intentResult` 初始化阶段。此阶段会打开 `suppressDiagnosisTreatmentRefetch`，诊断选择 watcher 被正确抑制以避免旧方案误刷新；但旧自动触发逻辑主要依赖这次诊断变化，抑制结束后没有独立状态 watcher 补发治疗方案请求。语音问诊常带有 `treatments` 或缓存快照，因此不容易暴露这个空态。
+- **解决方案**: 在共享结果页新增“当前诊断已有、治疗方案为空、无已加载诊断 key、未处于 suppress/loading”的后置自动补发守卫，按患者锚点 + 诊断 identity 只自动尝试一次；`intentResult` 初始化完成和相关状态变化后都会调用该守卫，失败时不循环重试，医生仍可手动点“刷新方案”。
+- **后续防护**: 结果页初始化若用 suppress 屏蔽 watcher 副作用，必须在 suppress 关闭后用显式状态守卫补齐应该发生的副作用；不能只依赖被 suppress 期间的那一次 ref 变化。
 
 > 新增条目请复制以下模板：
 

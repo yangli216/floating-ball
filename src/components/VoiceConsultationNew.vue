@@ -200,6 +200,8 @@ const diagnosisRequestSeq = ref(0);
 
 const treatments = ref<TreatmentRecommendation[]>([]);
 const treatmentLoading = ref(false);
+const treatmentRequestSeq = ref(0);
+const autoTreatmentFetchAttemptKey = ref('');
 
 interface ChecklistItem {
   question: string;
@@ -268,6 +270,10 @@ const selectedTreatments = computed(() => buildSelectedTreatments({ items: treat
 const treatmentRefreshNeeded = computed(() => {
   const currentIdentity = getDiagnosisIdentity(selectedDiagnosis.value);
   if (!currentIdentity || suppressDiagnosisTreatmentRefetch.value) {
+    return false;
+  }
+  // 没有已加载的治疗方案时不显示"保留上一版"提示
+  if (treatments.value.length === 0) {
     return false;
   }
   return currentIdentity !== lastTreatmentDiagnosisKey.value;
@@ -715,6 +721,15 @@ function normalizeIntentKeyPart(value: unknown): string {
   return '';
 }
 
+function invalidateTreatmentRequests(): void {
+  treatmentRequestSeq.value += 1;
+  treatmentLoading.value = false;
+}
+
+function buildTreatmentAutoFetchKey(diagnosisIdentity: string): string {
+  return `${patientAnchorId.value || 'unknown'}|${diagnosisIdentity}`;
+}
+
 function buildIntentDiagnosisKey(item: ClinicalResultInput['diagnoses'][number]): string {
   const inherited = item as Partial<Diagnosis>;
   const matched = item.matchedItem;
@@ -1128,12 +1143,28 @@ async function handleDiagnosisRefresh(event?: Event): Promise<void> {
 
 async function fetchAITreatment(): Promise<void> {
   if (treatmentLoading.value || !selectedDiagnosis.value || !allowTreatmentRefresh.value) return;
+
+  const requestSeq = treatmentRequestSeq.value + 1;
+  treatmentRequestSeq.value = requestSeq;
+  const requestPatientAnchorId = patientAnchorId.value;
+  const requestDiagnosis = selectedDiagnosis.value;
+  const diagnosisIdentity = getDiagnosisIdentity(requestDiagnosis);
+  if (!diagnosisIdentity) {
+    return;
+  }
+  const isCurrentTreatmentRequest = () => (
+    requestSeq === treatmentRequestSeq.value
+    && requestPatientAnchorId === patientAnchorId.value
+    && diagnosisIdentity === getDiagnosisIdentity(selectedDiagnosis.value)
+  );
+
   treatmentLoading.value = true;
 
-  const diagnosisIdentity = getDiagnosisIdentity(selectedDiagnosis.value);
   console.info('[VoiceConsultationNew] Fetching treatment recommendations', {
+    requestSeq,
+    patientAnchorId: requestPatientAnchorId,
     diagnosisIdentity,
-    diagnosisName: selectedDiagnosis.value.name,
+    diagnosisName: requestDiagnosis.name,
     existingTreatmentCount: treatments.value.length,
   });
 
@@ -1141,13 +1172,24 @@ async function fetchAITreatment(): Promise<void> {
     patientName: patientName.value,
     gender: patientGender.value,
     age: patientAge.value,
-    diagnosisName: selectedDiagnosis.value.name,
-    diagnosisCode: selectedDiagnosis.value.code,
+    diagnosisName: requestDiagnosis.name,
+    diagnosisCode: requestDiagnosis.code,
     chiefComplaint: chiefComplaint.value,
   };
 
   try {
     await fetchPharmacyOptions();
+    if (!isCurrentTreatmentRequest()) {
+      console.info('[VoiceConsultationNew] Stop stale treatment request before AI calls', {
+        requestSeq,
+        latest: treatmentRequestSeq.value,
+        requestPatientAnchorId,
+        currentPatientAnchorId: patientAnchorId.value,
+        diagnosisIdentity,
+        currentDiagnosisIdentity: getDiagnosisIdentity(selectedDiagnosis.value),
+      });
+      return;
+    }
     const inventoryContext = await loadAvailableMedicineInventoryContext({
       pharmacies: pharmacyOptions.value,
     });
@@ -1167,6 +1209,18 @@ async function fetchAITreatment(): Promise<void> {
       treatmentRequestSpecs.map((spec) => chat(spec.messages, undefined, undefined, undefined, spec.config)),
     );
 
+    if (!isCurrentTreatmentRequest()) {
+      console.info('[VoiceConsultationNew] Ignore stale treatment response before parsing', {
+        requestSeq,
+        latest: treatmentRequestSeq.value,
+        requestPatientAnchorId,
+        currentPatientAnchorId: patientAnchorId.value,
+        diagnosisIdentity,
+        currentDiagnosisIdentity: getDiagnosisIdentity(selectedDiagnosis.value),
+      });
+      return;
+    }
+
     const nextTreatments = mergeClinicalResultAiTreatmentResponses({
       responses: [medResponse, examResponse, labResponse, procResponse],
       parse: (value) => alignMedicineRecommendationsToInventory(
@@ -1184,6 +1238,7 @@ async function fetchAITreatment(): Promise<void> {
     });
 
     console.info('[VoiceConsultationNew] Treatment recommendations loaded', {
+      requestSeq,
       diagnosisIdentity,
       totalCount: nextTreatments.length,
       medicineCount: nextTreatments.filter((item) => item.type === 'medicine').length,
@@ -1192,7 +1247,15 @@ async function fetchAITreatment(): Promise<void> {
       medicineWithTotalQtyCount: nextTreatments.filter((item) => item.type === 'medicine' && !!item.totalQty).length,
     });
 
-    if (diagnosisIdentity !== getDiagnosisIdentity(selectedDiagnosis.value)) {
+    if (!isCurrentTreatmentRequest()) {
+      console.info('[VoiceConsultationNew] Ignore stale treatment response after parsing', {
+        requestSeq,
+        latest: treatmentRequestSeq.value,
+        requestPatientAnchorId,
+        currentPatientAnchorId: patientAnchorId.value,
+        diagnosisIdentity,
+        currentDiagnosisIdentity: getDiagnosisIdentity(selectedDiagnosis.value),
+      });
       return;
     }
 
@@ -1202,6 +1265,7 @@ async function fetchAITreatment(): Promise<void> {
       buildPreferenceContext('treatment'),
     );
     lastTreatmentDiagnosisKey.value = diagnosisIdentity;
+    autoTreatmentFetchAttemptKey.value = buildTreatmentAutoFetchKey(diagnosisIdentity);
     await reconcileAutoSelectedMedicineInventory(treatments.value);
     void registerCurrentRecommendations();
     void hydrateMatchedMedicalItemDetails(treatments.value);
@@ -1210,13 +1274,46 @@ async function fetchAITreatment(): Promise<void> {
     // 把 LLM 推荐的诊疗方案写回缓存，下次同就诊恢复时直接复用、跳过 fetchAITreatment
     persistEditorSnapshotImmediate();
   } catch (error: unknown) {
+    if (!isCurrentTreatmentRequest()) {
+      console.info('[VoiceConsultationNew] Ignore stale treatment error', {
+        requestSeq,
+        latest: treatmentRequestSeq.value,
+        requestPatientAnchorId,
+        currentPatientAnchorId: patientAnchorId.value,
+        diagnosisIdentity,
+        currentDiagnosisIdentity: getDiagnosisIdentity(selectedDiagnosis.value),
+      });
+      return;
+    }
     showToast?.(formatUserFacingError(error, {
       context: '方案推荐失败',
       fallback: '请稍后重试。',
     }), 'error');
   } finally {
-    treatmentLoading.value = false;
+    if (requestSeq === treatmentRequestSeq.value) {
+      treatmentLoading.value = false;
+    }
   }
+}
+
+function maybeAutoFetchMissingTreatment(reason: string): void {
+  if (suppressDiagnosisTreatmentRefetch.value || treatmentLoading.value) return;
+  if (treatments.value.length > 0 || lastTreatmentDiagnosisKey.value) return;
+
+  const diagnosisIdentity = getDiagnosisIdentity(selectedDiagnosis.value);
+  if (!diagnosisIdentity || !selectedDiagnosis.value) return;
+
+  const attemptKey = buildTreatmentAutoFetchKey(diagnosisIdentity);
+  if (autoTreatmentFetchAttemptKey.value === attemptKey) return;
+  autoTreatmentFetchAttemptKey.value = attemptKey;
+
+  console.info('[VoiceConsultationNew] Auto fetching missing treatment recommendations', {
+    reason,
+    attemptKey,
+    diagnosisIdentity,
+    diagnosisName: selectedDiagnosis.value.name,
+  });
+  void fetchAITreatment();
 }
 
 async function handleTreatmentRefresh(event?: Event): Promise<void> {
@@ -1292,6 +1389,7 @@ watch(
     closeRelatedDropdown();
 
     if (!currentIdentity || !selectedDiagnosis.value) {
+      invalidateTreatmentRequests();
       treatments.value = [];
       lastTreatmentDiagnosisKey.value = '';
       resetTreatmentEditorState();
@@ -1299,6 +1397,7 @@ watch(
     }
 
     if (currentIdentity !== previousIdentity) {
+      invalidateTreatmentRequests();
       resetTreatmentEditorState();
     }
 
@@ -1332,6 +1431,21 @@ watch(
       });
     }
   },
+);
+
+watch(
+  () => [
+    patientAnchorId.value,
+    getDiagnosisIdentity(selectedDiagnosis.value),
+    treatments.value.length,
+    lastTreatmentDiagnosisKey.value,
+    treatmentLoading.value,
+    suppressDiagnosisTreatmentRefetch.value,
+  ],
+  () => {
+    maybeAutoFetchMissingTreatment('stable-empty-treatment-state');
+  },
+  { flush: 'post' },
 );
 
 const resultFactCheckState = useVoiceResultFactCheckState({
@@ -1986,9 +2100,12 @@ watch(
     });
     clearPendingSnapshotPersist();
     lastAppliedIntentKey.value = '';
+    invalidateTreatmentRequests();
+    autoTreatmentFetchAttemptKey.value = '';
     resetForIntent({});
     await nextTick();
     suppressDiagnosisTreatmentRefetch.value = false;
+    maybeAutoFetchMissingTreatment('patient-context-reset');
   },
 );
 
@@ -2010,6 +2127,8 @@ watch(
     }
     lastAppliedIntentKey.value = intentKey;
 
+    invalidateTreatmentRequests();
+    autoTreatmentFetchAttemptKey.value = '';
     resetForIntent(result);
 
     if (result.diagnoses?.length) {
@@ -2060,6 +2179,7 @@ watch(
     await nextTick();
     suppressDiagnosisTreatmentRefetch.value = false;
     submitVoiceGeneratedUserLog();
+    maybeAutoFetchMissingTreatment('intent-result-applied');
 
     const primaryDiagnosis = selectedDiagnosis.value;
     const primaryDiagnosisName = primaryDiagnosis && typeof primaryDiagnosis.name === 'string'

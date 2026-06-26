@@ -16,42 +16,97 @@
           </span>
         </div>
 
-        <div class="worklist-main">
-          <div class="worklist-primary-row">
-            <div class="worklist-name-wrap">
-              <slot name="title-prefix" />
-              <FactCheckHighlight :issue="issue">
-                <span class="card-title">{{ rec.name }}</span>
-              </FactCheckHighlight>
-              <span v-if="spec" class="meta-token">{{ spec }}</span>
-              <span
-                v-if="rec.reason"
-                class="reason-tooltip-trigger"
-                :class="{ open: reasonOpen }"
-                @click.stop
-              >
-                <button class="reason-icon-btn" type="button" aria-label="查看推荐依据" title="查看推荐依据" @click.stop="emit('toggle-reason', $event)">
-                  <Icon icon="lucide:circle-help" size="14" />
-                </button>
-                <span class="hover-reason-tooltip">{{ rec.reason }}</span>
-              </span>
+        <div class="worklist-content">
+          <div class="worklist-top-row">
+            <div class="worklist-primary-row">
+              <div class="worklist-name-wrap">
+                <slot name="title-prefix" />
+                <FactCheckHighlight :issue="issue">
+                  <span class="card-title">{{ rec.name }}</span>
+                </FactCheckHighlight>
+                <span v-if="spec" class="meta-token">{{ spec }}</span>
+                <span
+                  v-if="rec.reason"
+                  class="reason-tooltip-trigger"
+                  :class="{ open: reasonOpen }"
+                  @click.stop
+                >
+                  <button class="reason-icon-btn" type="button" aria-label="查看推荐依据" title="查看推荐依据" @click.stop="emit('toggle-reason', $event)">
+                    <Icon icon="lucide:circle-help" size="14" />
+                  </button>
+                  <span class="hover-reason-tooltip">{{ rec.reason }}</span>
+                </span>
+              </div>
+            </div>
+
+            <div class="card-actions treatment-card-actions worklist-actions">
+              <button v-if="showManualMatchButton" class="manual-match-btn" type="button" :title="manualMatchTitle"
+                @click.stop="emit('toggle-manual-match', $event)">
+                {{ manualMatchButtonText }}
+              </button>
+              <div v-if="showFeedback" class="voice-feedback-anchor" @click.stop>
+                <button class="voice-feedback-trigger" :class="{ submitted: !!feedbackSubmittedLabel }" type="button"
+                  @click.stop="emit('toggle-feedback', $event)">反馈</button>
+                <div v-if="feedbackVisible" class="voice-feedback-panel">
+                  <VoiceRecommendationFeedbackPopover :visible="true" :title="rec.name" :draft="feedbackDraft"
+                    :submitting="feedbackSubmitting" :submitted-label="feedbackSubmittedLabel"
+                    @close="emit('toggle-feedback')" @update:draft="emit('update:feedbackDraft', $event)"
+                    @submit="emit('submit-feedback', $event)" />
+                </div>
+              </div>
+              <button v-if="showEditorToggle" class="inline-arrow-btn action-arrow" type="button"
+                :title="editorExpanded ? '收起更多编辑' : '展开更多编辑'" :aria-label="editorExpanded ? '收起更多编辑' : '展开更多编辑'"
+                @click.stop="emit('toggle-editor', $event)">
+                <span class="inline-arrow" :class="{ open: editorExpanded }"></span>
+              </button>
             </div>
           </div>
 
-          <div v-if="inlineSummary || originalName || usageToken" class="worklist-secondary-row">
-            <button
-              v-if="inlineSummary"
-              class="medicine-inline-summary worklist-inline-text"
-              :class="{ clickable: showEditorToggle && !editorExpanded }"
-              type="button"
-              @click.stop="showEditorToggle && !editorExpanded ? emit('toggle-editor', $event) : undefined"
-            >
-              {{ inlineSummary }}
-            </button>
-            <div v-if="originalName" class="manual-match-origin-note worklist-inline-text worklist-inline-origin">
-              AI 原建议：{{ originalName }}
+          <div class="worklist-bottom-row">
+            <div v-if="inlineSummary || originalName || usageToken" class="worklist-secondary-row">
+              <button
+                v-if="inlineSummary"
+                class="medicine-inline-summary worklist-inline-text"
+                :class="{ clickable: showEditorToggle && !editorExpanded }"
+                type="button"
+                @click.stop="showEditorToggle && !editorExpanded ? emit('toggle-editor', $event) : undefined"
+              >
+                {{ inlineSummary }}
+              </button>
+              <div v-if="originalName" class="manual-match-origin-note worklist-inline-text worklist-inline-origin">
+                AI 原建议：{{ originalName }}
+              </div>
+              <span v-if="usageToken" class="meta-token usage-summary-token worklist-usage-token">建议 {{ usageToken }}</span>
             </div>
-            <span v-if="usageToken" class="meta-token usage-summary-token worklist-usage-token">建议 {{ usageToken }}</span>
+
+            <div class="worklist-status-row">
+              <div class="worklist-status-col">
+                <span class="meta-token worklist-status"
+                  :class="{ warning: matchTone === 'warning', success: matchTone === 'success' }">
+                  {{ matchLabel }}
+                </span>
+              </div>
+
+              <div v-if="$slots['title-meta'] || showExecDeptChip || showPharmacyChip" class="worklist-attr-col">
+                <div v-if="$slots['title-meta']" class="card-title-meta worklist-title-meta">
+                  <slot name="title-meta" />
+                </div>
+                <button v-if="showExecDeptChip" class="exec-dept-chip worklist-chip" :class="{ missing: execDeptMissing }"
+                  type="button" :title="execDeptTitle" @click.stop="emit('open-exec-dept', $event)">
+                  <span v-if="execDeptMissing" class="exec-dept-chip-label">执行科室</span>
+                  <span class="exec-dept-chip-value">{{ execDeptDisplay || '待设置' }}</span>
+                </button>
+                <button v-if="showPharmacyChip" class="exec-dept-chip pharmacy-chip worklist-chip"
+                  :class="{ missing: pharmacyMissing }" type="button" :title="pharmacyTitle"
+                  @click.stop="emit('open-pharmacy', $event)">
+                  <span v-if="pharmacyMissing" class="exec-dept-chip-label">发药药房</span>
+                  <span class="exec-dept-chip-value">{{ pharmacyDisplay || '待设置' }}</span>
+                </button>
+              </div>
+              <div v-if="$slots.actions" class="worklist-extra-attr-col">
+                <slot name="actions" />
+              </div>
+            </div>
           </div>
 
           <div v-if="probableMatchName" class="manual-match-origin-note probable-match-note">
@@ -66,55 +121,6 @@
               @click.stop="emit('confirm-probable-match', $event)"
             >
               确认匹配
-            </button>
-          </div>
-        </div>
-
-        <div class="worklist-actions-col">
-          <div class="worklist-status-col">
-            <span class="meta-token worklist-status"
-              :class="{ warning: matchTone === 'warning', success: matchTone === 'success' }">
-              {{ matchLabel }}
-            </span>
-          </div>
-
-          <div v-if="$slots['title-meta'] || showExecDeptChip || showPharmacyChip" class="worklist-attr-col">
-            <div v-if="$slots['title-meta']" class="card-title-meta worklist-title-meta">
-              <slot name="title-meta" />
-            </div>
-            <button v-if="showExecDeptChip" class="exec-dept-chip worklist-chip" :class="{ missing: execDeptMissing }"
-              type="button" :title="execDeptTitle" @click.stop="emit('open-exec-dept', $event)">
-              <span v-if="execDeptMissing" class="exec-dept-chip-label">执行科室</span>
-              <span class="exec-dept-chip-value">{{ execDeptDisplay || '待设置' }}</span>
-            </button>
-            <button v-if="showPharmacyChip" class="exec-dept-chip pharmacy-chip worklist-chip"
-              :class="{ missing: pharmacyMissing }" type="button" :title="pharmacyTitle"
-              @click.stop="emit('open-pharmacy', $event)">
-              <span v-if="pharmacyMissing" class="exec-dept-chip-label">发药药房</span>
-              <span class="exec-dept-chip-value">{{ pharmacyDisplay || '待设置' }}</span>
-            </button>
-          </div>
-
-          <div class="card-actions treatment-card-actions worklist-actions">
-            <slot name="actions" />
-            <button v-if="showManualMatchButton" class="manual-match-btn" type="button" :title="manualMatchTitle"
-              @click.stop="emit('toggle-manual-match', $event)">
-              {{ manualMatchButtonText }}
-            </button>
-            <div v-if="showFeedback" class="voice-feedback-anchor" @click.stop>
-              <button class="voice-feedback-trigger" :class="{ submitted: !!feedbackSubmittedLabel }" type="button"
-                @click.stop="emit('toggle-feedback', $event)">反馈</button>
-              <div v-if="feedbackVisible" class="voice-feedback-panel">
-                <VoiceRecommendationFeedbackPopover :visible="true" :title="rec.name" :draft="feedbackDraft"
-                  :submitting="feedbackSubmitting" :submitted-label="feedbackSubmittedLabel"
-                  @close="emit('toggle-feedback')" @update:draft="emit('update:feedbackDraft', $event)"
-                  @submit="emit('submit-feedback', $event)" />
-              </div>
-            </div>
-            <button v-if="showEditorToggle" class="inline-arrow-btn action-arrow" type="button"
-              :title="editorExpanded ? '收起更多编辑' : '展开更多编辑'" :aria-label="editorExpanded ? '收起更多编辑' : '展开更多编辑'"
-              @click.stop="emit('toggle-editor', $event)">
-              <span class="inline-arrow" :class="{ open: editorExpanded }"></span>
             </button>
           </div>
         </div>
@@ -128,56 +134,121 @@
     </template>
 
     <template v-else>
-      <div class="card-row treatment-card-row">
+      <div class="card-row treatment-card-row default-treatment-card-row">
         <div class="card-main">
-          <div class="card-title-line">
-            <div class="card-title-wrap">
-              <slot name="title-prefix" />
-              <FactCheckHighlight :issue="issue">
-                <span class="card-title">{{ rec.name }}</span>
-              </FactCheckHighlight>
-              <span v-if="spec" class="meta-token">{{ spec }}</span>
-              <span
-                v-if="rec.reason"
-                class="reason-tooltip-trigger"
-                :class="{ open: reasonOpen }"
-                @click.stop
+          <div class="default-card-top-row">
+            <div class="card-title-line default-card-title-line">
+              <div class="card-title-wrap">
+                <slot name="title-prefix" />
+                <FactCheckHighlight :issue="issue">
+                  <span class="card-title">{{ rec.name }}</span>
+                </FactCheckHighlight>
+                <span v-if="spec" class="meta-token">{{ spec }}</span>
+                <span
+                  v-if="rec.reason"
+                  class="reason-tooltip-trigger"
+                  :class="{ open: reasonOpen }"
+                  @click.stop
+                >
+                  <button class="reason-icon-btn" type="button" aria-label="查看推荐依据" title="查看推荐依据" @click.stop="emit('toggle-reason', $event)">
+                    <Icon icon="lucide:circle-help" size="14" />
+                  </button>
+                  <span class="hover-reason-tooltip">{{ rec.reason }}</span>
+                </span>
+              </div>
+            </div>
+
+            <div class="card-actions treatment-card-actions default-card-actions">
+              <button
+                v-if="showManualMatchButton"
+                class="manual-match-btn"
+                type="button"
+                :title="manualMatchTitle"
+                @click.stop="emit('toggle-manual-match', $event)"
               >
-                <button class="reason-icon-btn" type="button" aria-label="查看推荐依据" title="查看推荐依据" @click.stop="emit('toggle-reason', $event)">
-                  <Icon icon="lucide:circle-help" size="14" />
-                </button>
-                <span class="hover-reason-tooltip">{{ rec.reason }}</span>
+                {{ manualMatchButtonText }}
+              </button>
+              <div v-if="showFeedback" class="voice-feedback-anchor" @click.stop>
+                <button
+                  class="voice-feedback-trigger"
+                  :class="{ submitted: !!feedbackSubmittedLabel }"
+                  type="button"
+                  @click.stop="emit('toggle-feedback', $event)"
+                >反馈</button>
+                <div v-if="feedbackVisible" class="voice-feedback-panel">
+                  <VoiceRecommendationFeedbackPopover
+                    :visible="true"
+                    :title="rec.name"
+                    :draft="feedbackDraft"
+                    :submitting="feedbackSubmitting"
+                    :submitted-label="feedbackSubmittedLabel"
+                    @close="emit('toggle-feedback')"
+                    @update:draft="emit('update:feedbackDraft', $event)"
+                    @submit="emit('submit-feedback', $event)"
+                  />
+                </div>
+              </div>
+              <button
+                v-if="showEditorToggle"
+                class="inline-arrow-btn action-arrow"
+                type="button"
+                :title="editorExpanded ? '收起更多编辑' : '展开更多编辑'"
+                :aria-label="editorExpanded ? '收起更多编辑' : '展开更多编辑'"
+                @click.stop="emit('toggle-editor', $event)"
+              >
+                <span class="inline-arrow" :class="{ open: editorExpanded }"></span>
+              </button>
+            </div>
+          </div>
+
+          <div class="default-card-bottom-row">
+            <div class="default-card-summary">
+              <button
+                v-if="inlineSummary"
+                class="medicine-inline-summary"
+                :class="{ clickable: showEditorToggle && !editorExpanded }"
+                type="button"
+                @click.stop="showEditorToggle && !editorExpanded ? emit('toggle-editor', $event) : undefined"
+              >
+                {{ inlineSummary }}
+              </button>
+              <div v-if="originalName" class="manual-match-origin-note">
+                AI 原建议：{{ originalName }}
+              </div>
+              <span v-if="usageToken && !inlineSummary" class="meta-token usage-summary-token">建议 {{ usageToken }}</span>
+            </div>
+
+            <div class="default-card-status-row">
+              <span class="meta-token match-token" :class="{ warning: matchTone === 'warning', success: matchTone === 'success' }">
+                {{ matchLabel }}
               </span>
+              <div v-if="$slots['title-meta']" class="card-title-meta">
+                <slot name="title-meta" />
+              </div>
+              <button
+                v-if="showExecDeptChip"
+                class="exec-dept-chip"
+                :class="{ missing: execDeptMissing }"
+                type="button"
+                :title="execDeptTitle"
+                @click.stop="emit('open-exec-dept', $event)"
+              >
+                <span v-if="execDeptMissing" class="exec-dept-chip-label">执行科室</span>
+                <span class="exec-dept-chip-value">{{ execDeptDisplay || '待设置' }}</span>
+              </button>
+              <button
+                v-if="showPharmacyChip"
+                class="exec-dept-chip pharmacy-chip"
+                :class="{ missing: pharmacyMissing }"
+                type="button"
+                :title="pharmacyTitle"
+                @click.stop="emit('open-pharmacy', $event)"
+              >
+                <span v-if="pharmacyMissing" class="exec-dept-chip-label">发药药房</span>
+                <span class="exec-dept-chip-value">{{ pharmacyDisplay || '待设置' }}</span>
+              </button>
+              <slot name="actions" />
             </div>
-            <span class="meta-token match-token" :class="{ warning: matchTone === 'warning', success: matchTone === 'success' }">
-              {{ matchLabel }}
-            </span>
-            <div v-if="$slots['title-meta']" class="card-title-meta">
-              <slot name="title-meta" />
-            </div>
-            <button
-              v-if="showExecDeptChip"
-              class="exec-dept-chip"
-              :class="{ missing: execDeptMissing }"
-              type="button"
-              :title="execDeptTitle"
-              @click.stop="emit('open-exec-dept', $event)"
-            >
-              <span v-if="execDeptMissing" class="exec-dept-chip-label">执行科室</span>
-              <span class="exec-dept-chip-value">{{ execDeptDisplay || '待设置' }}</span>
-            </button>
-            <button
-              v-if="showPharmacyChip"
-              class="exec-dept-chip pharmacy-chip"
-              :class="{ missing: pharmacyMissing }"
-              type="button"
-              :title="pharmacyTitle"
-              @click.stop="emit('open-pharmacy', $event)"
-            >
-              <span v-if="pharmacyMissing" class="exec-dept-chip-label">发药药房</span>
-              <span class="exec-dept-chip-value">{{ pharmacyDisplay || '待设置' }}</span>
-            </button>
-            <span v-if="usageToken" class="meta-token usage-summary-token">建议 {{ usageToken }}</span>
           </div>
 
           <div v-if="probableMatchName" class="manual-match-origin-note probable-match-note">
@@ -194,63 +265,6 @@
               确认匹配
             </button>
           </div>
-
-          <div v-if="originalName" class="manual-match-origin-note">
-            AI 原建议：{{ originalName }}
-          </div>
-
-          <button
-            v-if="inlineSummary"
-            class="medicine-inline-summary"
-            :class="{ clickable: showEditorToggle && !editorExpanded }"
-            type="button"
-            @click.stop="showEditorToggle && !editorExpanded ? emit('toggle-editor', $event) : undefined"
-          >
-            {{ inlineSummary }}
-          </button>
-        </div>
-
-        <div class="card-actions treatment-card-actions">
-          <slot name="actions" />
-          <button
-            v-if="showManualMatchButton"
-            class="manual-match-btn"
-            type="button"
-            :title="manualMatchTitle"
-            @click.stop="emit('toggle-manual-match', $event)"
-          >
-            {{ manualMatchButtonText }}
-          </button>
-          <div v-if="showFeedback" class="voice-feedback-anchor" @click.stop>
-            <button
-              class="voice-feedback-trigger"
-              :class="{ submitted: !!feedbackSubmittedLabel }"
-              type="button"
-              @click.stop="emit('toggle-feedback', $event)"
-            >反馈</button>
-            <div v-if="feedbackVisible" class="voice-feedback-panel">
-              <VoiceRecommendationFeedbackPopover
-                :visible="true"
-                :title="rec.name"
-                :draft="feedbackDraft"
-                :submitting="feedbackSubmitting"
-                :submitted-label="feedbackSubmittedLabel"
-                @close="emit('toggle-feedback')"
-                @update:draft="emit('update:feedbackDraft', $event)"
-                @submit="emit('submit-feedback', $event)"
-              />
-            </div>
-          </div>
-          <button
-            v-if="showEditorToggle"
-            class="inline-arrow-btn action-arrow"
-            type="button"
-            :title="editorExpanded ? '收起更多编辑' : '展开更多编辑'"
-            :aria-label="editorExpanded ? '收起更多编辑' : '展开更多编辑'"
-            @click.stop="emit('toggle-editor', $event)"
-          >
-            <span class="inline-arrow" :class="{ open: editorExpanded }"></span>
-          </button>
         </div>
       </div>
 
@@ -495,6 +509,10 @@ const emit = defineEmits<{
   align-items: baseline;
 }
 
+.default-treatment-card-row {
+  align-items: stretch;
+}
+
 .vcn-treatment-item.worklist {
   padding: 12px 14px;
   border-color: #e2e8f0;
@@ -526,6 +544,44 @@ const emit = defineEmits<{
   overflow: visible;
 }
 
+.default-card-top-row,
+.default-card-bottom-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(260px, auto);
+  gap: 6px 14px;
+  align-items: center;
+  min-width: 0;
+}
+
+.default-card-top-row {
+  align-items: start;
+}
+
+.default-card-bottom-row {
+  align-items: end;
+  margin-top: 4px;
+}
+
+.default-card-summary {
+  min-width: 0;
+}
+
+.default-card-status-row,
+.default-card-actions {
+  display: inline-flex;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 8px;
+  min-width: 0;
+  max-width: 440px;
+  justify-self: end;
+}
+
+.default-card-status-row,
+.default-card-actions {
+  align-items: center;
+}
+
 .card-title-wrap {
   display: inline-flex;
   align-items: center;
@@ -544,9 +600,13 @@ const emit = defineEmits<{
   overflow: visible;
 }
 
+.default-card-title-line {
+  min-width: 0;
+}
+
 .worklist-row {
   display: grid;
-  grid-template-columns: 22px minmax(0, 1fr) auto;
+  grid-template-columns: 22px minmax(0, 1fr);
   gap: 12px;
   align-items: start;
 }
@@ -578,11 +638,28 @@ const emit = defineEmits<{
   box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.12);
 }
 
-.worklist-main {
+.worklist-content {
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 7px;
   min-width: 0;
+}
+
+.worklist-top-row,
+.worklist-bottom-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(210px, auto);
+  align-items: center;
+  gap: 8px 14px;
+  min-width: 0;
+}
+
+.worklist-top-row {
+  align-items: start;
+}
+
+.worklist-bottom-row {
+  align-items: end;
 }
 
 .worklist-primary-row {
@@ -612,6 +689,7 @@ const emit = defineEmits<{
   align-items: flex-start;
   gap: 8px 12px;
   flex-wrap: wrap;
+  min-width: 0;
 }
 
 .worklist-inline-text {
@@ -624,19 +702,24 @@ const emit = defineEmits<{
   color: #94a3b8;
 }
 
-.worklist-actions-col {
+.worklist-status-row {
   display: flex;
   align-items: center;
-  gap: 12px;
+  justify-content: flex-end;
+  gap: 8px;
+  grid-column: 2;
+  min-width: 0;
+  max-width: 360px;
+  justify-self: end;
 }
 
 .worklist-status-col {
   display: flex;
-  justify-content: flex-start;
-  padding-top: 2px;
+  justify-content: flex-end;
   min-width: 0;
   color: #b45309;
   font-weight: 600;
+  flex: 0 0 auto;
 }
 
 .worklist .match-token {
@@ -647,8 +730,11 @@ const emit = defineEmits<{
   display: inline-flex;
   align-items: center;
   justify-content: flex-end;
-  min-width: 92px;
+  min-width: 86px;
+  max-width: 120px;
   white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .worklist-attr-col {
@@ -657,8 +743,15 @@ const emit = defineEmits<{
   gap: 6px;
   align-items: center;
   align-content: flex-start;
+  justify-content: flex-end;
+  flex: 1 1 auto;
   min-width: 0;
-  padding-top: 1px;
+}
+
+.worklist-extra-attr-col {
+  display: inline-flex;
+  justify-content: flex-end;
+  min-width: 0;
 }
 
 .worklist-title-meta {
@@ -745,10 +838,16 @@ const emit = defineEmits<{
 }
 
 .match-token {
-  display: inline-block;
+  display: inline-flex;
+  align-items: center;
+  min-height: 24px;
+  max-width: 120px;
   color: #64748b;
   font-weight: 600;
   letter-spacing: 0.01em;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .worklist .match-token {
@@ -774,7 +873,7 @@ const emit = defineEmits<{
 .medicine-inline-summary {
   display: block;
   width: 100%;
-  margin-top: 6px;
+  margin-top: 0;
   padding: 0;
   border: none;
   background: transparent;
@@ -803,6 +902,10 @@ const emit = defineEmits<{
   margin-top: 0;
   white-space: normal;
   color: #475569;
+}
+
+.default-card-summary .manual-match-origin-note {
+  margin-top: 0;
 }
 
 .worklist .worklist-secondary-row {
@@ -889,6 +992,10 @@ const emit = defineEmits<{
   font-weight: 700;
 }
 
+.default-card-status-row .exec-dept-chip {
+  max-width: 172px;
+}
+
 .exec-dept-chip:hover {
   border-color: var(--voice-accent);
   background: rgba(37, 99, 235, 0.1);
@@ -934,11 +1041,15 @@ const emit = defineEmits<{
   justify-content: flex-end;
   flex-wrap: wrap;
   gap: 8px;
+  grid-column: 2;
+  min-width: 0;
+  max-width: 360px;
+  justify-self: end;
 }
 
 .worklist-chip {
   min-height: 28px;
-  max-width: none;
+  max-width: 132px;
   padding: 0 8px;
   border-color: rgba(37, 99, 235, 0.18);
   background: rgba(248, 250, 252, 0.96);
@@ -1101,6 +1212,18 @@ const emit = defineEmits<{
     align-items: stretch;
   }
 
+  .default-card-top-row,
+  .default-card-bottom-row {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .default-card-status-row,
+  .default-card-actions {
+    max-width: none;
+    justify-self: stretch;
+    justify-content: flex-start;
+  }
+
   .card-title-line {
     flex-wrap: wrap;
   }
@@ -1111,7 +1234,12 @@ const emit = defineEmits<{
   }
 
   .worklist-row {
-    grid-template-columns: 22px minmax(0, 1fr) auto;
+    grid-template-columns: 22px minmax(0, 1fr);
+  }
+
+  .worklist-top-row,
+  .worklist-bottom-row {
+    grid-template-columns: minmax(0, 1fr);
   }
 
   .worklist-primary-row,
@@ -1119,14 +1247,25 @@ const emit = defineEmits<{
     flex-wrap: wrap;
   }
 
+  .worklist-status-row {
+    justify-content: flex-start;
+    flex-wrap: wrap;
+    grid-column: 1;
+    max-width: none;
+    justify-self: stretch;
+  }
+
   .worklist-status-col,
   .worklist-attr-col,
-  .worklist-actions {
-    grid-column: 2;
+  .worklist-extra-attr-col {
+    justify-content: flex-start;
   }
 
   .worklist-actions {
+    grid-column: 1;
     min-width: 0;
+    max-width: none;
+    justify-self: stretch;
     justify-content: flex-start;
   }
 
