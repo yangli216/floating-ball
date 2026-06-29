@@ -89,7 +89,7 @@
       </span>
       <span class="rc-refill-copy">
         <strong>{{ chronicRefillGenerating ? '正在生成配药病历' : '复诊配药' }}</strong>
-        <span>{{ chronicRefillCandidate.diagnoses.join('、') }} · 历史慢病用药记录</span>
+        <span>{{ chronicRefillCandidate.diagnoses.join('、') }} · {{ chronicRefillCandidate.medications.length > 0 ? '有历史用药参考' : '暂无历史用药参考' }}</span>
       </span>
       <Icon v-if="!chronicRefillGenerating" icon="lucide:chevron-right" size="15" />
     </button>

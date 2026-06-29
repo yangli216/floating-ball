@@ -15,7 +15,11 @@ import {
   type ClinicalResultInput,
 } from '@features/clinical-result';
 import type { ChronicRefillCandidate } from '../lib/chronicRefillAssessment';
-import { buildChronicRefillInventoryTreatments } from '../lib/chronicRefillInventory';
+import {
+  buildChronicRefillInventoryTreatments,
+  type ChronicRefillMedicineInput,
+  type ChronicRefillMedicineRecommendation,
+} from '../lib/chronicRefillInventory';
 
 interface ChronicRefillDraft {
   chiefComplaint?: string;
@@ -24,7 +28,7 @@ interface ChronicRefillDraft {
   currentMedicationHistory?: string;
   treatmentPlan?: string;
   healthEducation?: string;
-  recommendedMedicines?: string[];
+  recommendedMedicines?: ChronicRefillMedicineInput[];
 }
 
 function buildHistoryEvidence(candidate: ChronicRefillCandidate): string {
@@ -45,6 +49,47 @@ function buildMedicationSummary(medications: string[]): string {
   return medications.length > 0 ? medications.join('、') : '当前有效库存中未匹配到历史续方药品';
 }
 
+function isPatientFactHistory(value: string): boolean {
+  if (value.length < 30 || /未提供新发不适信息/u.test(value)) return false;
+  return !/(?:当前(?:有效)?库存|库存内|可续方药品|可参考药品|推荐药品|推荐使用|建议使用|后续治疗方案为)/u.test(value);
+}
+
+function normalizeMedicineRecommendation(value: unknown): ChronicRefillMedicineInput | null {
+  if (typeof value === 'string') {
+    return value.trim() || null;
+  }
+  if (!value || typeof value !== 'object') return null;
+  const source = value as Record<string, unknown>;
+  const name = typeof source.name === 'string' ? source.name.trim() : '';
+  if (!name) return null;
+
+  const result: ChronicRefillMedicineRecommendation = { name };
+  const textFields: Array<keyof Omit<ChronicRefillMedicineRecommendation, 'name'>> = [
+    'spec',
+    'dosage',
+    'dosageUnit',
+    'frequency',
+    'frequencyKey',
+    'route',
+    'routeKey',
+    'usage',
+    'days',
+    'totalQty',
+    'totalUnit',
+    'reason',
+  ];
+  textFields.forEach((field) => {
+    const fieldValue = source[field];
+    const normalized = typeof fieldValue === 'string'
+      ? fieldValue.trim()
+      : (typeof fieldValue === 'number' && Number.isFinite(fieldValue) ? String(fieldValue) : '');
+    if (normalized) {
+      result[field] = normalized;
+    }
+  });
+  return result;
+}
+
 function standardizeMedicineName(value: string): string {
   return medicalDataService.matchMedicine(value)?.name
     || value
@@ -60,15 +105,22 @@ function fallbackDraft(
   availableMedications: string[],
 ): Required<ChronicRefillDraft> {
   const diagnosisText = candidate.diagnoses.join('、');
-  const medicationText = buildMedicationSummary(availableMedications);
+  const medicationText = availableMedications.length > 0
+    ? availableMedications.join('、')
+    : (candidate.medications.length > 0 ? '当前库存未匹配到可直接续方的历史药品' : '暂无可直接沿用的历史药品');
+  const historicalMedicationText = candidate.medications.length > 0
+    ? `既往用药记录包括${candidate.medications.join('、')}。`
+    : '既往用药方案未获取，待医生核实。';
   return {
     chiefComplaint: `${diagnosisText}定期复诊续方`,
-    historyOfPresentIllness: `患者既往诊断${diagnosisText}，本次因慢性病长期用药续方就诊。历史慢病处方记录包括${candidate.medications.join('、')}；当前可续方药品为${medicationText}。本次病情控制情况、服药依从性及近期监测结果待医生面诊核实。`,
+    historyOfPresentIllness: `患者既往诊断${diagnosisText}，本次因慢性病复诊并评估后续用药方案。${historicalMedicationText}本次病情控制情况、服药依从性、不良反应及近期监测结果待医生面诊核实。`,
     pastMedicalHistory: getPatientContextPastMedicalHistory(patient) || `既往有${diagnosisText}病史。`,
-    currentMedicationHistory: candidate.medications.join('、'),
-    treatmentPlan: availableMedications.length > 0
+    currentMedicationHistory: candidate.medications.length > 0
+      ? candidate.medications.join('、')
+      : '历史用药方案待医生核实',
+    treatmentPlan: candidate.medications.length > 0 && availableMedications.length > 0
       ? `医生核实病情控制、依从性及禁忌证后，可从当前有效库存中的历史处方药品续方：${medicationText}。`
-      : '当前有效库存中未匹配到历史续方药品，请医生核实库存或手工调整处方。',
+      : `未取得可直接沿用的历史用药方案，请结合${diagnosisText}、当前病情及有效库存由医生确认后续治疗。`,
     healthEducation: '按医嘱规律服药并记录家庭监测结果；出现症状变化或指标异常时及时复诊。',
     recommendedMedicines: candidate.medications,
   };
@@ -83,20 +135,24 @@ function normalizeDraft(
   const fallback = fallbackDraft(patient, candidate, availableMedications);
   const chiefComplaint = value.chiefComplaint?.trim() || '';
   const historyOfPresentIllness = value.historyOfPresentIllness?.trim() || '';
+  const recommendedMedicines = Array.isArray(value.recommendedMedicines)
+    ? value.recommendedMedicines
+      .map(normalizeMedicineRecommendation)
+      .filter((item): item is ChronicRefillMedicineInput => Boolean(item))
+    : [];
   return {
     chiefComplaint: chiefComplaint.length >= 6 && /复诊|续方|配药/u.test(chiefComplaint)
       ? chiefComplaint
       : fallback.chiefComplaint,
-    historyOfPresentIllness: historyOfPresentIllness.length >= 30
-      && !/未提供新发不适信息/u.test(historyOfPresentIllness)
+    historyOfPresentIllness: isPatientFactHistory(historyOfPresentIllness)
       ? historyOfPresentIllness
       : fallback.historyOfPresentIllness,
     pastMedicalHistory: value.pastMedicalHistory?.trim() || fallback.pastMedicalHistory,
     currentMedicationHistory: value.currentMedicationHistory?.trim() || fallback.currentMedicationHistory,
     treatmentPlan: fallback.treatmentPlan,
     healthEducation: value.healthEducation?.trim() || fallback.healthEducation,
-    recommendedMedicines: Array.isArray(value.recommendedMedicines) && value.recommendedMedicines.length > 0
-      ? value.recommendedMedicines.map((item) => item.trim()).filter(Boolean)
+    recommendedMedicines: recommendedMedicines.length > 0
+      ? recommendedMedicines
       : fallback.recommendedMedicines,
   };
 }
@@ -109,10 +165,10 @@ function matchDiagnosis(
   return {
     name: diagnosis,
     code: matched?.code || '',
-    evidenceText: candidate.evidenceText,
-    rationale: candidate.evidenceText,
-    sourceType: 'inferred',
-    confidence: 'medium',
+    evidenceText: candidate.diagnosisEvidenceText,
+    rationale: '',
+    sourceType: 'explicit',
+    confidence: 'high',
     matchedItem: matched
       ? { id: matched.id, code: matched.code, name: matched.name }
       : null,
@@ -137,7 +193,9 @@ export async function generateChronicRefillRecord(
     inventoryContext.items,
     standardizeMedicineName,
   );
-  const availableMedicationNames = initialTreatments.filter((item) => item.selected).map((item) => item.name);
+  const availableMedicationNames = initialTreatments
+    .filter((item) => item.matchStatus === 'exact')
+    .map((item) => item.name);
   let draft = fallbackDraft(patient, candidate, availableMedicationNames);
   try {
     const response = await chat([
@@ -147,9 +205,16 @@ export async function generateChronicRefillRecord(
           '你是基层门诊慢性病复诊配药病历助手。',
           '根据患者最近3次就诊中的慢病就诊记录和配药信息生成本次可编辑病历草稿，不得编造当前症状、生命体征、检查结果或病情稳定程度。',
           '主诉应写明具体慢病和“复诊续方”目的；现病史应概括慢病诊断、历史用药，并说明病情控制、服药依从性及监测结果待医生核实。',
+          'historyOfPresentIllness只能记录患者事实和待核实信息，禁止写入当前库存、可续方药品、可参考药品、推荐药品或后续治疗方案；库存信息只能用于recommendedMedicines。',
           '禁止使用“未提供新发不适信息”作为主诉或现病史主体，也不要写“无不适”或“病情稳定”。',
           '药品按“库存同品 → 库存等效药 → 规范通用名兜底”选择；无库存通用名仅供医生参考。',
-          'recommendedMedicines 返回最终药品名称数组，不生成检查、检验或处置。',
+          '若未获取到可确认的历史用药，仍需根据具体慢病诊断、患者信息和当前有效库存推荐合理的候选药品，不得返回空方案。',
+          '未获取到历史用药时，currentMedicationHistory只能写“历史用药方案待医生核实”等待核实表述，不得把本次推荐药品伪装成既往用药。',
+          'recommendedMedicines 必须返回结构化药品对象，不生成检查、检验或处置。',
+          '每个药品必须结合候选慢病、历史用药和库存规格给出合理的单次剂量、剂量单位、频次、用法、天数和总量；不得把包装规格直接当成单次剂量，也不得把所有药品统一写成一次1剂量单位。',
+          '剂量应使用 PHIS 可直接回写的临床剂量表达，例如0.5g、20mg；frequencyKey优先使用QD/BID/TID/QID，routeKey口服优先使用PO。',
+          'totalQty/totalUnit应根据单次剂量、频次、天数和库存包装规格合理计算；无法确定时留空，不得编造。',
+          'reason只说明诊断、历史用药和适应证等临床推荐依据，不得复述或计算单次剂量、频次、疗程、总量和包装数量。',
           '只返回 JSON 对象。',
         ].join('\n'),
       },
@@ -158,13 +223,18 @@ export async function generateChronicRefillRecord(
         content: [
           `患者：${getPatientContextName(patient)}，${getPatientContextGenderText(patient)}，${getPatientContextAgeText(patient)}`,
           `过敏史：${getPatientContextAllergyHistory(patient) || '未记录'}`,
-          `候选慢病：${candidate.diagnoses.join('、')}`,
-          `历史慢病配药：${candidate.medications.join('、')}`,
+          `历史临床诊断：${candidate.diagnoses.join('、')}`,
+          `慢病分类（仅用于场景识别）：${candidate.diagnosisGroups.join('、')}`,
+          `历史慢病配药：${candidate.medicationEvidenceText}`,
           `当前库存内可续方药品：${buildMedicationSummary(availableMedicationNames)}`,
           inventoryContext.promptContext,
           '最近3次中的慢病就诊依据：',
           buildHistoryEvidence(candidate),
-          '请生成字段：chiefComplaint、historyOfPresentIllness、pastMedicalHistory、currentMedicationHistory、treatmentPlan、healthEducation、recommendedMedicines。',
+          [
+            '请生成字段：chiefComplaint、historyOfPresentIllness、pastMedicalHistory、currentMedicationHistory、treatmentPlan、healthEducation、recommendedMedicines。',
+            'recommendedMedicines格式：',
+            '[{"name":"库存中的完整药品名称","spec":"库存规格","dosage":"单次剂量数值","dosageUnit":"剂量单位","frequency":"频次文本","frequencyKey":"频次编码","route":"用法文本","routeKey":"用法编码","days":"用药天数","totalQty":"总量数值","totalUnit":"总量单位","reason":"推荐依据"}]',
+          ].join('\n'),
         ].join('\n'),
       },
     ], undefined, undefined, undefined, {
@@ -190,6 +260,7 @@ export async function generateChronicRefillRecord(
     draft.recommendedMedicines,
     inventoryContext.items,
     standardizeMedicineName,
+    { historicalMedications: candidate.medications },
   );
 
   return {

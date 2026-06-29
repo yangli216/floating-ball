@@ -49,7 +49,7 @@ describe('parseHistoricalMedication', () => {
 describe('buildChronicRefillInventoryTreatments', () => {
   it('keeps only historical medicines that exist in current valid inventory and attaches properties', () => {
     const treatments = buildChronicRefillInventoryTreatments([
-      '苯磺酸氨氯地平片（5mg*28片） 一次5mg 一日一次 口服 30天',
+      '苯磺酸氨氯地平片（5mg*28片） 一次5mg 一日一次 口服 30天 共2盒',
       '厄贝沙坦片 150mg',
     ], [{
       productId: 'med-1',
@@ -72,6 +72,8 @@ describe('buildChronicRefillInventoryTreatments', () => {
       frequency: '一日一次',
       route: '口服',
       days: '30',
+      totalQty: '2',
+      totalUnit: '盒',
       matchedItem: {
         id: 'med-1',
         storeIds: ['1760'],
@@ -83,6 +85,112 @@ describe('buildChronicRefillInventoryTreatments', () => {
       selected: false,
       matchStatus: 'unmatched',
       matchedItem: null,
+    });
+  });
+
+  it('uses structured AI prescription fields when historical medicine has no directions', () => {
+    const treatments = buildChronicRefillInventoryTreatments([{
+      name: '盐酸二甲双胍片',
+      spec: '0.25g*60片/瓶',
+      dosage: '0.5',
+      dosageUnit: 'g',
+      frequency: '每日3次',
+      frequencyKey: 'TID',
+      route: '口服',
+      routeKey: 'PO',
+      days: '14',
+      totalQty: '2',
+      totalUnit: '瓶',
+      reason: '糖尿病慢病续方常规方案',
+    }], [{
+      productId: 'med-metformin',
+      productName: '盐酸二甲双胍片',
+      spec: '0.25g*60片/瓶',
+      unit: '瓶',
+      availableQuantity: 20,
+      storeIds: ['1760'],
+      storeNames: ['西药房'],
+    }], undefined, {
+      historicalMedications: ['盐酸二甲双胍片（0.25g*60片/瓶）'],
+    });
+
+    expect(treatments).toHaveLength(1);
+    expect(treatments[0]).toMatchObject({
+      name: '盐酸二甲双胍片',
+      selected: true,
+      dosage: '0.5',
+      dosageUnit: 'g',
+      frequency: '每日3次',
+      frequencyKey: 'TID',
+      route: '口服',
+      routeKey: 'PO',
+      days: '14',
+      totalQty: '2',
+      totalUnit: '瓶',
+      reason: '糖尿病慢病续方常规方案',
+    });
+  });
+
+  it('replaces model arithmetic in the recommendation reason with clinical evidence', () => {
+    const treatments = buildChronicRefillInventoryTreatments([{
+      name: '盐酸二甲双胍片',
+      spec: '0.25g*60片/瓶',
+      dosage: '0.5',
+      dosageUnit: 'g',
+      frequency: '每天三次',
+      frequencyKey: 'TID',
+      route: '口服',
+      routeKey: 'PO',
+      days: '30',
+      totalQty: '3',
+      totalUnit: '瓶',
+      reason: '单次0.5g即2片，每日3次，30天共需90片',
+    }], [{
+      productId: 'med-metformin',
+      productName: '盐酸二甲双胍片',
+      spec: '0.25g*60片/瓶',
+      unit: '瓶',
+      availableQuantity: 20,
+      storeIds: ['1760'],
+      storeNames: ['西药房'],
+    }], undefined, {
+      historicalMedications: ['盐酸二甲双胍片（0.25g*60片/瓶）'],
+    });
+
+    expect(treatments[0].reason).toContain('历史处方包含盐酸二甲双胍片');
+    expect(treatments[0].reason).not.toContain('90片');
+    expect(treatments[0]).toMatchObject({
+      dosage: '0.5',
+      dosageUnit: 'g',
+      frequencyKey: 'TID',
+      days: '30',
+      totalQty: '3',
+      totalUnit: '瓶',
+    });
+  });
+
+  it('does not fabricate fixed dosage or duration when prescription fields are unavailable', () => {
+    const treatments = buildChronicRefillInventoryTreatments([
+      '达格列净片 10mg',
+    ], [{
+      productId: 'med-dapagliflozin',
+      productName: '达格列净片',
+      spec: '10mg*14片/盒',
+      unit: '盒',
+      availableQuantity: 10,
+      storeIds: ['1760'],
+      storeNames: ['西药房'],
+    }]);
+
+    expect(treatments[0]).toMatchObject({
+      selected: false,
+      dosage: '',
+      dosageUnit: '',
+      frequency: '',
+      route: '',
+      days: '',
+      totalQty: '',
+      totalUnit: '盒',
     });
   });
 });

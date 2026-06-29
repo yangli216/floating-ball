@@ -23,6 +23,7 @@ import type {
   HisMedicineCatalogItem,
   HisVisitHistoryItem,
   HisVisitDetailBody,
+  HisVisitDetailOrder,
   HisOutpatientMedicalRecordContentBody,
   HisOutpatientMedicalRecordDocumentBody,
 } from '../hisService';
@@ -229,6 +230,26 @@ function mapDictionaryItems(items: HisDictionaryItem[]): DictionaryEntry[] {
   return result;
 }
 
+function isMedicationOrder(order: HisVisitDetailOrder): boolean {
+  const raw = order as Record<string, unknown>;
+  const orderType = firstTrim(raw, ['sdOrd', 'sdSrv']);
+  if (orderType) return orderType === '11';
+  if (firstTrim(raw, ['idMedPro', 'idMed'])) return true;
+  return firstBool(raw, ['fgDrug']) === true;
+}
+
+function sanitizeOrderDescription(value: unknown): string | undefined {
+  const text = trim(value);
+  if (!text) return undefined;
+  const cleaned = text
+    .replace(/\b(?:null|undefined)\b/giu, ' ')
+    .replace(/\s+/gu, ' ')
+    .replace(/^[,，;；:：\s]+|[,，;；:：\s]+$/gu, '')
+    .trim();
+  if (!cleaned || /^\d+(?:\.\d+)?\s*次$/u.test(cleaned)) return undefined;
+  return cleaned;
+}
+
 /**
  * 把 PHIS 单次就诊详情映射为中性 HisVisitRecord。
  *
@@ -260,11 +281,12 @@ function mapVisitDetail(
     .filter((value): value is string => Boolean(value));
 
   const medications = (detail.orderList ?? [])
+    .filter(isMedicationOrder)
     .map((order) => {
       const name = trim(order.naOrd);
       if (!name) return undefined;
-      const desc = trim(order.desOrd);
-      // 数量+单位若与 desOrd 重复则不再追加；这里简单拼接，便于上层 LLM 清洗
+      const desc = sanitizeOrderDescription(order.desOrd);
+      // 保留药品医嘱描述与处方总量，供慢病续方提取剂量和包装信息。
       const amount = typeof order.amount === 'number' ? order.amount : undefined;
       const unit = trim(order.unitOrd);
       const qty = amount !== undefined ? `${amount}${unit ?? ''}` : '';

@@ -1,0 +1,97 @@
+import { describe, expect, it } from 'vitest';
+import {
+  buildMedicineQuantityExplanation,
+  calculateMedicineQuantity,
+} from './clinicalResultMedicineQuantity';
+
+describe('clinicalResultMedicineQuantity', () => {
+  it('calculates dose units and package total from the final prescription fields', () => {
+    const rec = {
+      type: 'medicine' as const,
+      name: '盐酸二甲双胍片',
+      reason: '历史处方续方',
+      spec: '0.25g*60片/瓶',
+      dosage: '0.5',
+      dosageUnit: 'g',
+      frequency: '每天三次',
+      frequencyKey: 'TID',
+      days: '30',
+      totalQty: '3',
+      totalUnit: '瓶',
+    };
+
+    expect(calculateMedicineQuantity(rec)).toMatchObject({
+      doseCountPerAdministration: 2,
+      execCountPerDay: 3,
+      requiredBaseUnitCount: 180,
+      unitSaleFactor: 60,
+      packageCount: 3,
+      dispensedBaseUnitCount: 180,
+      totalConsistent: true,
+    });
+    expect(buildMedicineQuantityExplanation(rec)).toBe(
+      '处方换算：单次0.5g（2片） × 每日3次 × 30天 = 180片；60片/瓶，共3瓶。',
+    );
+  });
+
+  it('shows the rounded dispensing amount and flags a different current package total', () => {
+    const explanation = buildMedicineQuantityExplanation({
+      type: 'medicine',
+      name: '测试药品',
+      reason: '测试',
+      spec: '10mg*14片/盒',
+      dosage: '10',
+      dosageUnit: 'mg',
+      frequencyKey: 'BID',
+      days: '10',
+      totalQty: '1',
+      totalUnit: '盒',
+    });
+
+    expect(explanation).toBe(
+      '处方换算：单次10mg（1片） × 每日2次 × 10天 = 20片；14片/盒，需2盒（实际发28片）。当前填写1盒，请医生确认。',
+    );
+  });
+
+  it('uses HIS dose and sale-unit metadata when display spec is unavailable', () => {
+    const calculation = calculateMedicineQuantity({
+      type: 'medicine',
+      name: '盐酸二甲双胍片',
+      reason: '历史处方续方',
+      dosage: '0.5',
+      dosageUnit: 'g',
+      frequencyKey: 'TID',
+      days: '30',
+      totalQty: '180',
+      totalUnit: '片',
+      matchedItem: {
+        raw: {
+          dose: '0.25',
+          unitDose: 'g',
+          unitPre: '片',
+          unitSaleFactor: '60',
+          unitSale: '瓶',
+        },
+      },
+    });
+
+    expect(calculation).toMatchObject({
+      requiredBaseUnitCount: 180,
+      packageCount: 3,
+      baseUnit: '片',
+      saleUnit: '瓶',
+      totalConsistent: null,
+    });
+  });
+
+  it('does not fabricate an explanation when core prescription fields are missing', () => {
+    expect(buildMedicineQuantityExplanation({
+      type: 'medicine',
+      name: '测试药品',
+      reason: '测试',
+      spec: '10mg*14片/盒',
+      dosage: '10',
+      dosageUnit: 'mg',
+    })).toBe('');
+  });
+});

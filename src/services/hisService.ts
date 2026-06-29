@@ -323,6 +323,12 @@ export interface HisVisitDetailOrder {
   desOrd?: string;
   amount?: number;
   unitOrd?: string;
+  /** PHIS医嘱类型：11药品、31检查、41检验。 */
+  sdOrd?: string;
+  sdSrv?: string;
+  idMed?: string;
+  idMedPro?: string;
+  fgDrug?: string;
   [key: string]: unknown;
 }
 

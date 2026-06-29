@@ -26,7 +26,7 @@
                 </FactCheckHighlight>
                 <span v-if="spec" class="meta-token">{{ spec }}</span>
                 <span
-                  v-if="rec.reason"
+                  v-if="reasonDisplay"
                   class="reason-tooltip-trigger"
                   :class="{ open: reasonOpen }"
                   @click.stop
@@ -34,7 +34,7 @@
                   <button class="reason-icon-btn" type="button" aria-label="查看推荐依据" title="查看推荐依据" @click.stop="emit('toggle-reason', $event)">
                     <Icon icon="lucide:circle-help" size="14" />
                   </button>
-                  <span class="hover-reason-tooltip">{{ rec.reason }}</span>
+                  <span class="hover-reason-tooltip">{{ reasonDisplay }}</span>
                 </span>
               </div>
             </div>
@@ -145,7 +145,7 @@
                 </FactCheckHighlight>
                 <span v-if="spec" class="meta-token">{{ spec }}</span>
                 <span
-                  v-if="rec.reason"
+                  v-if="reasonDisplay"
                   class="reason-tooltip-trigger"
                   :class="{ open: reasonOpen }"
                   @click.stop
@@ -153,7 +153,7 @@
                   <button class="reason-icon-btn" type="button" aria-label="查看推荐依据" title="查看推荐依据" @click.stop="emit('toggle-reason', $event)">
                     <Icon icon="lucide:circle-help" size="14" />
                   </button>
-                  <span class="hover-reason-tooltip">{{ rec.reason }}</span>
+                  <span class="hover-reason-tooltip">{{ reasonDisplay }}</span>
                 </span>
               </div>
             </div>
@@ -276,15 +276,16 @@
 </template>
 
 <script setup lang="ts">
-import type { PropType } from 'vue';
+import { computed, type PropType } from 'vue';
 import Icon from '@shared/ui/Icon.vue';
 import FactCheckHighlight from '@features/feedback/ui/FactCheckHighlight.vue';
 import VoiceRecommendationFeedbackPopover from '@features/voice-consultation/ui/VoiceRecommendationFeedbackPopover.vue';
 import type { TreatmentRecommendation } from '@/types/consultation';
 import type { VoiceRecommendationFeedbackDraft } from '@/types/voiceFeedback';
 import type { FactCheckIssue } from '@services/factChecker';
+import { buildMedicineQuantityExplanation } from '@features/clinical-result';
 
-defineProps({
+const props = defineProps({
   rec: {
     type: Object as PropType<TreatmentRecommendation>,
     required: true,
@@ -419,6 +420,11 @@ defineProps({
     default: 'default',
   },
 });
+
+const reasonDisplay = computed(() => [
+  (props.rec.reason || '').trim(),
+  buildMedicineQuantityExplanation(props.rec),
+].filter(Boolean).join(' '));
 
 const emit = defineEmits<{
   (e: 'toggle'): void;

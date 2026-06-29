@@ -38,13 +38,19 @@ export function buildDiagnosisRationale(
 ): string {
   const summary = buildEncounterSummary(record);
   const evidenceText = normalizeAnalysisText(matchedDiagnosis.evidenceText || '').replace(/[。；;，,]+$/u, '');
-  const rationaleText = normalizeAnalysisText(matchedDiagnosis.rationale || '').replace(/[。；;，,]+$/u, '');
+  const normalizedRationale = normalizeAnalysisText(matchedDiagnosis.rationale || '').replace(/[。；;，,]+$/u, '');
+  const rationaleText = normalizedRationale === evidenceText ? '' : normalizedRationale;
   const sourceText = matchedDiagnosis.sourceType === 'inferred'
     ? '该诊断为模型结合完整对话推断得出'
     : matchedDiagnosis.sourceType === 'uncertain'
       ? '该诊断为信息不足时的谨慎提示'
       : '该诊断在对话中有明确依据';
   const matchNote = matchedDiagnosis.matchedItem ? '' : '当前标准库中暂未匹配到完全一致的诊断条目，需人工确认。';
+  if (matchedDiagnosis.sourceType === 'explicit') {
+    const evidenceClause = evidenceText ? `，${evidenceText}` : '';
+    const rationaleClause = rationaleText ? ` ${rationaleText}。` : '';
+    return `${summary}${evidenceClause}，建议采用${displayName}；仍需结合查体及相关检查评估当前病情。${rationaleClause}${matchNote}`;
+  }
   const rationaleBody = rationaleText || `${sourceText}，建议结合查体和必要检查进一步确认。`;
   if (evidenceText) {
     return `${summary}，模型初步考虑${displayName}，依据为“${evidenceText}”。${rationaleBody}${matchNote}`;

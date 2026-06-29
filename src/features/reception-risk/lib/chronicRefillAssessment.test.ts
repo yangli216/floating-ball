@@ -33,6 +33,8 @@ describe('assessChronicRefillCandidate', () => {
     expect(result?.chronicVisitCount).toBe(1);
     expect(result?.medications).toEqual(['阿司匹林肠溶片（100mg*30片）']);
     expect(result?.evidenceText).not.toMatch(/\d+次|最近3次/u);
+    expect(result?.diagnosisEvidenceText).toBe('近期历史就诊记录有“冠心病”诊断');
+    expect(result?.medicationEvidenceText).toContain('阿司匹林肠溶片');
   });
 
   it('collects chronic visits and medications from the latest three visits without requiring repetition', () => {
@@ -57,12 +59,60 @@ describe('assessChronicRefillCandidate', () => {
 
     expect(result?.diagnosis).toBe('高血压');
     expect(result?.diagnoses).toEqual(['高血压', '糖尿病']);
+    expect(result?.diagnosisGroups).toEqual(['高血压', '糖尿病']);
     expect(result?.chronicVisitCount).toBe(2);
     expect(result?.medications).toEqual([
       '苯磺酸氨氯地平片（5mg*28片）',
       '盐酸二甲双胍片 0.5g',
     ]);
     expect(result?.chronicVisits).toHaveLength(2);
+  });
+
+  it('preserves a specific historical diagnosis instead of replacing it with the chronic group name', () => {
+    const now = new Date('2026-06-25T08:00:00+08:00').getTime();
+    const result = assessChronicRefillCandidate(history([{
+      visitTime: now - 7 * DAY,
+      diagnoses: ['2型糖尿病'],
+      medications: ['盐酸二甲双胍片 0.5g'],
+    }]));
+
+    expect(result?.diagnosis).toBe('2型糖尿病');
+    expect(result?.diagnoses).toEqual(['2型糖尿病']);
+    expect(result?.diagnosisGroups).toEqual(['糖尿病']);
+    expect(result?.evidenceText).toContain('2型糖尿病');
+  });
+
+  it('prefers a specific diagnosis over a generic name in the same chronic group', () => {
+    const now = new Date('2026-06-25T08:00:00+08:00').getTime();
+    const result = assessChronicRefillCandidate(history([
+      {
+        visitTime: now - 3 * DAY,
+        diagnoses: ['糖尿病'],
+        medications: ['盐酸二甲双胍片 0.5g'],
+      },
+      {
+        visitTime: now - 20 * DAY,
+        diagnoses: ['2型糖尿病'],
+        medications: ['盐酸二甲双胍片 0.5g'],
+      },
+    ]));
+
+    expect(result?.diagnosis).toBe('2型糖尿病');
+    expect(result?.diagnoses).toEqual(['2型糖尿病']);
+    expect(result?.diagnosisGroups).toEqual(['糖尿病']);
+  });
+
+  it('keeps a generic diagnosis when history does not provide a supported subtype', () => {
+    const now = new Date('2026-06-25T08:00:00+08:00').getTime();
+    const result = assessChronicRefillCandidate(history([{
+      visitTime: now - 7 * DAY,
+      diagnoses: ['糖尿病'],
+      medications: ['盐酸二甲双胍片 0.5g'],
+    }]));
+
+    expect(result?.diagnosis).toBe('糖尿病');
+    expect(result?.diagnoses).toEqual(['糖尿病']);
+    expect(result?.diagnosisGroups).toEqual(['糖尿病']);
   });
 
   it('ignores chronic visits outside the latest three visits', () => {
@@ -90,7 +140,7 @@ describe('assessChronicRefillCandidate', () => {
     expect(result).toBeNull();
   });
 
-  it('does not use medication from an unrelated acute visit as chronic refill evidence', () => {
+  it('keeps the chronic candidate but excludes medication from an unrelated acute visit', () => {
     const now = new Date('2026-06-25T08:00:00+08:00').getTime();
     const result = assessChronicRefillCandidate(history([
       {
@@ -104,7 +154,26 @@ describe('assessChronicRefillCandidate', () => {
       },
     ]));
 
-    expect(result).toBeNull();
+    expect(result?.diagnosis).toBe('高血压');
+    expect(result?.medications).toEqual([]);
+    expect(result?.medicationEvidenceText).toBe('未获取到可确认的历史用药记录');
+  });
+
+  it('keeps a chronic candidate when the chronic visit has no historical medication', () => {
+    const now = new Date('2026-06-25T08:00:00+08:00').getTime();
+    const result = assessChronicRefillCandidate(history([{
+      visitTime: now - 5 * DAY,
+      diagnoses: ['2型糖尿病'],
+    }]));
+
+    expect(result).toMatchObject({
+      diagnosis: '2型糖尿病',
+      diagnoses: ['2型糖尿病'],
+      diagnosisGroups: ['糖尿病'],
+      medications: [],
+      diagnosisEvidenceText: '近期历史就诊记录有“2型糖尿病”诊断',
+      medicationEvidenceText: '未获取到可确认的历史用药记录',
+    });
   });
 
   it('suppresses chronic refill when the current encounter is a report follow-up', () => {

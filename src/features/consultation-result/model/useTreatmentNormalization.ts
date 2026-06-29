@@ -13,11 +13,11 @@
 import type { Ref } from 'vue';
 import type { TreatmentRecommendation } from '@/types/consultation';
 import {
+  calculateMedicineQuantity,
   getMatchedItemRaw,
   readFirstString,
 } from '@features/clinical-result';
 import {
-  parsePositiveNumber,
   inferExecCountFromFrequencyText,
   type UsageOption,
 } from '@/utils/medicalDictionaryHelpers';
@@ -28,7 +28,6 @@ import {
   inferDaysFromText,
   inferFrequencyFromText,
   inferRouteFromText,
-  resolveDoseCountPerAdministration,
 } from '@/utils/treatmentInference';
 
 export interface TreatmentNormalizationDeps {
@@ -199,34 +198,12 @@ export function useTreatmentNormalization(deps: TreatmentNormalizationDeps): Tre
     if ((rec.type || 'medicine') !== 'medicine') {
       return { totalQty: rec.totalQty || '', totalUnit: rec.totalUnit || '' };
     }
-
-    const raw = rec.matchedItem?.raw && typeof rec.matchedItem.raw === 'object'
-      ? rec.matchedItem.raw as Record<string, unknown>
-      : undefined;
-    const totalUnit = (rec.totalUnit || readFirstString(raw, ['unitSale'])).trim();
-    const dosage = (rec.dosage || '').trim();
-    const dosageUnit = (rec.dosageUnit || '').trim();
-    const hisDose = readFirstString(raw, ['dose']);
-    const hisDoseUnit = readFirstString(raw, ['unitDose', 'unitPre']) || dosageUnit || readFirstString(raw, ['spec', 'specSale']);
-    const days = parsePositiveNumber(rec.days);
-    const unitSaleFactor = parsePositiveNumber(readFirstString(raw, ['unitSaleFactor']));
-    const execCount = getFrequencyExecCount(rec);
-
-    if (!totalUnit || !dosage || !hisDose || !days || !unitSaleFactor || !execCount) {
-      return { totalQty: rec.totalQty || '', totalUnit };
-    }
-
-    const doseCount = resolveDoseCountPerAdministration(dosage, dosageUnit, hisDose, hisDoseUnit);
-    if (doseCount === null || doseCount <= 0) {
-      return { totalQty: rec.totalQty || '', totalUnit };
-    }
-
-    const totalQty = Math.ceil((doseCount * execCount * days) / unitSaleFactor);
-    if (!Number.isFinite(totalQty) || totalQty <= 0) {
-      return { totalQty: rec.totalQty || '', totalUnit };
-    }
-
-    return { totalQty: String(totalQty), totalUnit };
+    const calculation = calculateMedicineQuantity(rec, {
+      execCount: getFrequencyExecCount(rec),
+    });
+    return calculation
+      ? { totalQty: String(calculation.packageCount), totalUnit: calculation.saleUnit }
+      : { totalQty: rec.totalQty || '', totalUnit: rec.totalUnit || '' };
   }
 
   function isFixedSingleQuantityType(type: TreatmentRecommendation['type']): boolean {

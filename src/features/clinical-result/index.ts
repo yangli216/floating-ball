@@ -115,6 +115,15 @@ export type {
 } from './clinicalResultUsageFields';
 
 export {
+  buildMedicineQuantityExplanation,
+  calculateMedicineQuantity,
+} from './clinicalResultMedicineQuantity';
+export type {
+  CalculateMedicineQuantityOptions,
+  MedicineQuantityCalculation,
+} from './clinicalResultMedicineQuantity';
+
+export {
   buildClinicalResultDiagnosisRequestSpec,
   buildClinicalResultTreatmentRequestSpec,
   buildClinicalResultTreatmentRequestSpecs,

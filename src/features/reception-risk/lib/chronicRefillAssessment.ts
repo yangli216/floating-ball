@@ -2,10 +2,15 @@ import type { HisPatientHistory, HisVisitRecord } from '@/services/his/types';
 
 export interface ChronicRefillCandidate {
   diagnosis: string;
+  /** Preserved clinical diagnosis names used by the record and writeback flow. */
   diagnoses: string[];
+  /** Normalized chronic groups used only for eligibility and routing. */
+  diagnosisGroups: string[];
   medications: string[];
   chronicVisitCount: number;
   chronicVisits: HisVisitRecord[];
+  diagnosisEvidenceText: string;
+  medicationEvidenceText: string;
   evidenceText: string;
 }
 
@@ -29,6 +34,12 @@ const CHRONIC_DIAGNOSIS_GROUPS: Array<{ name: string; keywords: string[] }> = [
   { name: '癫痫', keywords: ['癫痫'] },
   { name: '帕金森病', keywords: ['帕金森病', '帕金森综合征'] },
 ];
+
+interface ChronicDiagnosisMatch {
+  diagnosisName: string;
+  groupName: string;
+  isSpecific: boolean;
+}
 
 const ACUTE_DIAGNOSIS_KEYWORDS = [
   '急性',
@@ -67,14 +78,21 @@ export function isReportFollowUpIntent(
   return REPORT_FOLLOW_UP_PATTERNS.some((pattern) => pattern.test(encounterText));
 }
 
-function findChronicDiagnosis(value: string): string {
+function findChronicDiagnosis(value: string): ChronicDiagnosisMatch | null {
   const normalized = normalizeText(value);
   if (!normalized || ACUTE_DIAGNOSIS_KEYWORDS.some((keyword) => normalized.includes(normalizeText(keyword)))) {
-    return '';
+    return null;
   }
-  return CHRONIC_DIAGNOSIS_GROUPS.find((group) => (
-    group.keywords.some((keyword) => normalized.includes(normalizeText(keyword)))
-  ))?.name || '';
+  const group = CHRONIC_DIAGNOSIS_GROUPS.find((item) => (
+    item.keywords.some((keyword) => normalized.includes(normalizeText(keyword)))
+  ));
+  if (!group) return null;
+
+  return {
+    diagnosisName: value.trim(),
+    groupName: group.name,
+    isSpecific: !group.keywords.some((keyword) => normalized === normalizeText(keyword)),
+  };
 }
 
 function normalizeMedicationName(value: string): string {
@@ -99,19 +117,29 @@ export function assessChronicRefillCandidate(
   if (hasFollowUpReport || isReportFollowUpIntent(currentEncounter)) return null;
 
   const visits = latestVisits(history);
-  const chronicDiagnoses: string[] = [];
+  const diagnosisGroups: string[] = [];
+  const preferredDiagnosisByGroup = new Map<string, ChronicDiagnosisMatch>();
   const chronicVisits = visits.filter((visit) => {
     const visitDiagnoses = (visit.diagnoses || [])
       .map(findChronicDiagnosis)
-      .filter(Boolean);
+      .filter((item): item is ChronicDiagnosisMatch => Boolean(item));
     visitDiagnoses.forEach((diagnosis) => {
-      if (!chronicDiagnoses.includes(diagnosis)) {
-        chronicDiagnoses.push(diagnosis);
+      const current = preferredDiagnosisByGroup.get(diagnosis.groupName);
+      if (!current) {
+        diagnosisGroups.push(diagnosis.groupName);
+        preferredDiagnosisByGroup.set(diagnosis.groupName, diagnosis);
+        return;
+      }
+      if (!current.isSpecific && diagnosis.isSpecific) {
+        preferredDiagnosisByGroup.set(diagnosis.groupName, diagnosis);
       }
     });
     return visitDiagnoses.length > 0;
   });
   if (chronicVisits.length === 0) return null;
+
+  const chronicDiagnoses = diagnosisGroups
+    .map((groupName) => preferredDiagnosisByGroup.get(groupName)?.diagnosisName || groupName);
 
   const medications = new Map<string, string>();
   chronicVisits.forEach((visit) => {
@@ -124,16 +152,22 @@ export function assessChronicRefillCandidate(
     });
   });
   const chronicMedications = Array.from(medications.values()).slice(0, 8);
-  if (chronicMedications.length === 0) return null;
 
   const diagnosis = chronicDiagnoses[0];
+  const diagnosisEvidenceText = `近期历史就诊记录有“${chronicDiagnoses.join('、')}”诊断`;
+  const medicationEvidenceText = chronicMedications.length > 0
+    ? `历史用药记录：${chronicMedications.join('、')}`
+    : '未获取到可确认的历史用药记录';
 
   return {
     diagnosis,
     diagnoses: chronicDiagnoses,
+    diagnosisGroups,
     medications: chronicMedications,
     chronicVisitCount: chronicVisits.length,
     chronicVisits,
-    evidenceText: `历史就诊记录显示${chronicDiagnoses.join('、')}慢病诊断及配药记录：${chronicMedications.join('、')}`,
+    diagnosisEvidenceText,
+    medicationEvidenceText,
+    evidenceText: `${diagnosisEvidenceText}；${medicationEvidenceText}`,
   };
 }
