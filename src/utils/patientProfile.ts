@@ -2,6 +2,7 @@ import {
   getPatientContextAgeText,
   getPatientContextAllergyHistory,
   getPatientContextGenderText,
+  getPatientContextHistory,
   getPatientContextName,
   getPatientContextPastMedicalHistory,
 } from './patientContext';
@@ -113,6 +114,13 @@ export interface RiskAnalysisPatientContext {
   pastMedicalHistory?: string;
   allergyHistory?: string;
   diagnosis?: string;
+  historicalDiagnoses?: HistoricalDiagnosisSummary[];
+}
+
+export interface HistoricalDiagnosisSummary {
+  name: string;
+  visitCount: number;
+  latestVisitDate?: string;
 }
 
 function filterVisitHistorySummary(value: string | undefined): string | undefined {
@@ -120,6 +128,53 @@ function filterVisitHistorySummary(value: string | undefined): string | undefine
   const trimmed = value.trim();
   if (/^既往门诊记录[：:]/.test(trimmed)) return undefined;
   return trimmed || undefined;
+}
+
+function formatVisitDate(visitTime: number): string | undefined {
+  if (!Number.isFinite(visitTime) || visitTime <= 0) return undefined;
+  const date = new Date(visitTime);
+  if (Number.isNaN(date.getTime())) return undefined;
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
+function buildHistoricalDiagnosisSummaries(
+  patient: PatientLike | null | undefined,
+): HistoricalDiagnosisSummary[] | undefined {
+  const visits = getPatientContextHistory(patient as any)?.visits || [];
+  const diagnoses = new Map<string, HistoricalDiagnosisSummary & { latestVisitTime: number }>();
+
+  visits.forEach((visit) => {
+    const visitTime = Number.isFinite(visit.visitTime) ? visit.visitTime : 0;
+    (visit.diagnoses || []).forEach((rawName) => {
+      const name = readTextValue(rawName);
+      if (!name) return;
+      const key = name.replace(/\s+/g, '').toLocaleLowerCase();
+      const existing = diagnoses.get(key);
+      if (existing) {
+        existing.visitCount += 1;
+        if (visitTime > existing.latestVisitTime) {
+          existing.latestVisitTime = visitTime;
+          existing.latestVisitDate = formatVisitDate(visitTime);
+        }
+        return;
+      }
+
+      diagnoses.set(key, {
+        name,
+        visitCount: 1,
+        latestVisitTime: visitTime,
+        latestVisitDate: formatVisitDate(visitTime),
+      });
+    });
+  });
+
+  if (diagnoses.size === 0) return undefined;
+  return Array.from(diagnoses.values())
+    .sort((left, right) => right.latestVisitTime - left.latestVisitTime)
+    .map(({ latestVisitTime: _latestVisitTime, ...summary }) => summary);
 }
 
 export function normalizeRiskAnalysisPatientContext(
@@ -134,5 +189,6 @@ export function normalizeRiskAnalysisPatientContext(
     pastMedicalHistory: filterVisitHistorySummary(getPatientContextPastMedicalHistory(patient as any) || readFirstText(patient, ['pastMedicalHistory'])),
     allergyHistory: getPatientContextAllergyHistory(patient as any) || readFirstText(patient, ['allergyHistory']),
     diagnosis: readFirstText(patient, ['diagnosis']),
+    historicalDiagnoses: buildHistoricalDiagnosisSummaries(patient),
   };
 }

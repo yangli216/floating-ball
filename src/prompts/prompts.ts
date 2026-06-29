@@ -373,6 +373,7 @@ export const PatientRiskAnalysisPrompt = {
    - 对于 **历史记录** (既往史、上次就诊记录等)，**必须忽略** 其中描述的急性症状（如"30分钟前呼吸困难"、"昨天发热"等），除非该症状被描述为长期反复发作的慢性病。
    - **历史急症不等于当前风险**：如果患者"上次就诊"有呼吸困难，但"本次就诊"主诉为空或无相关描述，则**绝对不要**提示气道风险。
    - **排除已治愈急症**：对于既往史或上次就诊中记录的 **急性且可治愈** 的疾病（如急性荨麻疹、上呼吸道感染、急性胃肠炎等），及其伴随的症状（如呼吸不畅、发热、皮疹），只要不是慢性复发性疾病，**即使症状看起来很严重，或者使用了"曾出现"这样的描述，也绝对不要作为风险项输出**。请完全忽略它们。
+   - **结构化历史诊断**："历史诊断记录"来自患者既往门诊的诊断列表。应据此识别已经明确记录的慢性病或其他持续性风险；其中的急性疾病只代表历史诊断，不表示本次仍处于急性发作。
 
 2. **风险分类标准**：
    - **过敏风险 (allergy)**: 必须有明确的药物或食物过敏史（如青霉素、海鲜）。此项永远需要提示，无论是否当前发作。
@@ -404,7 +405,20 @@ export const PatientRiskAnalysisPrompt = {
     pastMedicalHistory?: string;
     allergyHistory?: string;
     diagnosis?: string;
+    historicalDiagnoses?: Array<{
+      name: string;
+      visitCount: number;
+      latestVisitDate?: string;
+    }>;
   }): string {
+    const historicalDiagnoses = (patientData.historicalDiagnoses || [])
+      .map((item) => {
+        const occurrence = item.visitCount > 1 ? `，共${item.visitCount}次记录` : '';
+        const latest = item.latestVisitDate ? `，最近记录于${item.latestVisitDate}` : '';
+        return `${item.name}${occurrence}${latest}`;
+      })
+      .join('；');
+
     return `患者信息：
 姓名: ${patientData.patientName}
 性别: ${patientData.gender}
@@ -412,6 +426,7 @@ export const PatientRiskAnalysisPrompt = {
 主诉: ${patientData.chiefComplaint || '无'}
 现病史: ${patientData.historyOfPresentIllness || '无'}
 既往史: ${patientData.pastMedicalHistory || '无'}
+历史诊断记录（仅用于识别持续性既往风险）: ${historicalDiagnoses || '无'}
 过敏史: ${patientData.allergyHistory || '无'}
 初步诊断: ${patientData.diagnosis || '无'}`;
   }

@@ -306,7 +306,7 @@ const isRiskAnalyzing = ref(false);
 5. UI、AI prompt、日志、缓存等模块不得再各自维护 `naPi/name`、`sdSexText/gender`、`ageText/age` 的读取分支；统一通过患者上下文 helper / selector 读取。
 6. `show-patient-risks`、`start-consultation`、`start-consultation-session`、`start-voice-consultation` 都必须复用同一套上下文构建逻辑，不能绕过 HIS 补全直接写全局状态。
 7. 所有会异步写入患者上下文、风险列表、风险 loading 或复诊候选的接诊入口必须绑定同一个 reception flow token。新接诊、显式风险事件或结束就诊会使旧 token 失效；旧 HIS / LLM 响应不得覆盖新患者或新就诊状态。
-8. 患者身份与 HIS 上下文补全成功即表示接诊成功；健康风险评估属于可降级的后置能力。风险模型失败时保留已接诊患者和胶囊入口，单独展示风险评估失败，不得回退成“接诊处理异常”。
+8. 患者身份与 HIS 上下文补全成功即表示接诊成功；健康风险评估属于可降级的后置能力。风险上下文必须分别传递显式既往史与 `HisPatientHistory.visits[].diagnoses` 形成的结构化历史诊断摘要：历史诊断用于识别持续性慢病风险，但不得把历史急性疾病或症状当成本次急症；不得为了风险分析把按日期排列的门诊流水重新写入 `pastMedicalHistory`。风险模型失败时保留已接诊患者和胶囊入口，单独展示风险评估失败，不得回退成“接诊处理异常”。
 9. `features/reception/model/useReceptionSessionController.ts` 是接诊胶囊局部状态的唯一所有者，保存 `status / risks / opportunities / executing` 等接诊阶段状态，并只通过显式 action 修改。患者姓名、性别和年龄必须从应用级 `currentPatient` 派生，不再维护可漂移的第二份患者展示状态；该 controller 是 App 生命周期内的局部 composable，不新增 Pinia store。
 10. 门诊接诊后的业务分流统一由 `features/reception/model/useOutpatientScenarioRouter.ts` 承担。候选统一建模为 `ReceptionOpportunity` 判别联合类型；复诊配药确认和语音入口的报告复诊 / 缓存恢复 / 普通录音决策都从该路由进入。`useEventListeners.ts` 只转交入口事件，`useReceptionController.ts` 只产出机会，不直接打开具体结果页。
 11. 报告回诊聚合上下文属于当前接诊 session 的 `report-follow-up` opportunity，不得写入 `PatientContext.raw`。报告回诊与慢病复诊配药互斥，当前就诊文本出现携报告、查看检验检查结果或报告解读语义时，`report-follow-up` 的分流优先级高于 `chronic-refill`。App 必须把上下文作为显式 prop 传给 `OutpatientFollowUpPage`，页面再显式传给治疗推荐 controller；患者上下文只保存患者与就诊事实，`raw` 继续只承载厂商原始字段。
