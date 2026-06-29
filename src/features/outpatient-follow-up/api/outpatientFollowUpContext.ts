@@ -41,15 +41,6 @@ function readCurrentOutpatientRecordTime(patient: AppPatient | null): string {
   return readPatientText(patient, ['currentOutpatientRecordTime']);
 }
 
-function hasReportResults(context: Pick<HisOutpatientFollowUpContext, 'labReports' | 'examReports'>): boolean {
-  const hasLab = (context.labReports || []).some((report) => (report.items || []).some((item) => (
-    Boolean(item.itemName || item.result || item.abnormalFlag)
-  )));
-  const hasExam = (context.examReports || []).some((report) => Boolean(
-    report.examName || report.finding || report.conclusion,
-  ));
-  return hasLab || hasExam;
-}
 
 export async function fetchOutpatientFollowUpContext(
   patient: AppPatient | null,
@@ -59,31 +50,56 @@ export async function fetchOutpatientFollowUpContext(
   const currentDiagnosis = readCurrentDiagnosis(patient);
   const medicalRecordText = readCurrentOutpatientRecordText(patient);
   const adapter = getHisAdapter();
-  if (!adapter || !patientId || !currentVisitId || !medicalRecordText) {
+  console.log('[outpatientFollowUpContext] fetchOutpatientFollowUpContext inputs:', {
+    hasAdapter: Boolean(adapter),
+    patientId,
+    currentVisitId,
+    currentDiagnosis,
+    medicalRecordTextLength: medicalRecordText?.length || 0,
+  });
+  if (!adapter || !patientId || !currentVisitId) {
+    console.log('[outpatientFollowUpContext] Validation failed: missing adapter, patientId or currentVisitId');
     return null;
   }
 
   try {
+    console.log('[outpatientFollowUpContext] calling fetchOutpatientFollowUpReportResults with:', { patientId, currentVisitId });
     const reportResults = await adapter.fetchOutpatientFollowUpReportResults({
       patientId,
       currentVisitId,
     });
+    console.log('[outpatientFollowUpContext] fetchOutpatientFollowUpReportResults response:', reportResults);
     if (!reportResults) {
+      console.log('[outpatientFollowUpContext] fetchOutpatientFollowUpReportResults returned null/undefined');
       return null;
     }
+    const hasLab = (reportResults.labReports || []).some((report) => (report.items || []).some((item) => (
+      Boolean(item.itemName || item.result || item.abnormalFlag)
+    )));
+    const hasExam = (reportResults.examReports || []).some((report) => Boolean(
+      report.examName || report.finding || report.conclusion,
+    ));
+    const eligible = Boolean(reportResults.followUpEligible && (hasLab || hasExam));
+    console.log('[outpatientFollowUpContext] follow-up check details:', {
+      followUpEligibleField: reportResults.followUpEligible,
+      hasLab,
+      hasExam,
+      finalEligible: eligible,
+    });
     const context: HisOutpatientFollowUpContext = {
-      followUpEligible: Boolean(reportResults.followUpEligible && hasReportResults(reportResults)),
+      followUpEligible: eligible,
       source: {
         visitId: currentVisitId,
         visitTime: readCurrentOutpatientRecordTime(patient) || undefined,
         documentTitle: readCurrentOutpatientRecordTitle(patient) || '本次门诊病历',
       },
       currentDiagnosis: currentDiagnosis || undefined,
-      medicalRecordText,
+      medicalRecordText: medicalRecordText || '',
       labReports: reportResults.labReports || [],
       examReports: reportResults.examReports || [],
       ineligibleReason: reportResults.ineligibleReason ?? null,
     };
+    console.log('[outpatientFollowUpContext] returning context, followUpEligible:', context.followUpEligible);
     return context.followUpEligible ? context : null;
   } catch (error) {
     console.warn('[VoiceFollowUp] Failed to fetch outpatient follow-up context; continuing voice flow', error);
@@ -143,7 +159,7 @@ export function buildOutpatientFollowUpEvidence(context: HisOutpatientFollowUpCo
     .slice(0, 8);
 
   const medicalRecordText = context.medicalRecordText?.trim() || '';
-  if (!medicalRecordText || (labReports.length === 0 && examReports.length === 0)) {
+  if (labReports.length === 0 && examReports.length === 0) {
     return '';
   }
 
@@ -152,7 +168,9 @@ export function buildOutpatientFollowUpEvidence(context: HisOutpatientFollowUpCo
     parts.push(`诊断参考：\n${context.currentDiagnosis}`);
   }
 
-  parts.push(`本次门诊病历全文：\n${medicalRecordText}`);
+  if (medicalRecordText) {
+    parts.push(`本次门诊病历全文：\n${medicalRecordText}`);
+  }
 
   if (labReports.length > 0) {
     parts.push(`本次检验报告：\n${labReports.join('\n')}`);

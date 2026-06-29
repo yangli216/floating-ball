@@ -117,17 +117,30 @@ describe('fetchOutpatientFollowUpContext', () => {
     });
   });
 
-  it('does not request report results when current visit record text is missing', async () => {
+  it('requests report results even when current visit record text is missing', async () => {
+    const reportResults = {
+      followUpEligible: true,
+      labReports: [],
+      examReports: [{ examName: '胸部CT', conclusion: '未见明显异常。' }],
+      ineligibleReason: null,
+    };
     const adapter = {
-      fetchOutpatientFollowUpReportResults: vi.fn(),
+      fetchOutpatientFollowUpReportResults: vi.fn(async () => reportResults),
     };
     vi.mocked(getHisAdapter).mockReturnValue(adapter as any);
 
     await expect(fetchOutpatientFollowUpContext({
       patientId: 'patient-1',
       visitId: 'visit-1',
-    } as any)).resolves.toBeNull();
+    } as any)).resolves.toMatchObject({
+      followUpEligible: true,
+      medicalRecordText: '',
+      examReports: reportResults.examReports,
+    });
 
-    expect(adapter.fetchOutpatientFollowUpReportResults).not.toHaveBeenCalled();
+    expect(adapter.fetchOutpatientFollowUpReportResults).toHaveBeenCalledWith({
+      patientId: 'patient-1',
+      currentVisitId: 'visit-1',
+    });
   });
 });

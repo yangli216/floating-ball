@@ -961,7 +961,10 @@ export class PhisHisAdapter implements HisAdapter {
         diagnosis,
         treatmentPlan,
         htmlContent,
-        raw: detail as unknown as Record<string, unknown>,
+        raw: {
+          ...(detail as unknown as Record<string, unknown>),
+          detail,
+        },
       };
     } catch (error) {
       console.error('[PhisHisAdapter] fetchOutpatientMedicalRecord failed', error);

@@ -114,6 +114,17 @@ async function hydratePatientContextFromHis(
   payload: StartConsultationPayload | SessionAssistPayload | PatientRisksPayload | null | undefined,
   source: string,
 ): Promise<AppPatient | null> {
+  console.log('[ReceptionController] hydratePatientContextFromHis entering:', {
+    source,
+    hasCurrentPatient: Boolean(currentPatient),
+    payload: payload ? {
+      keys: Object.keys(payload),
+      idPi: payload.idPi,
+      idVis: payload.idVis,
+      patientId: payload.patientId,
+      visitId: payload.visitId,
+    } : null,
+  });
   const nextDraft = buildPatientContext({
     existing: currentPatient,
     payload: payload as Record<string, unknown> | null | undefined,
@@ -121,12 +132,17 @@ async function hydratePatientContextFromHis(
     receptionEnsured: true,
   });
   const patientId = getPatientContextId(nextDraft);
+  const nextVisitId = getPatientContextVisitId(nextDraft);
+  console.log('[ReceptionController] parsed context ids:', {
+    patientId,
+    nextVisitId,
+    existingHistory: Boolean(getPatientContextHistory(nextDraft)),
+  });
   if (!patientId) {
     return nextDraft;
   }
 
   const existingHistory = getPatientContextHistory(nextDraft);
-  const nextVisitId = getPatientContextVisitId(nextDraft);
   const samePatientLoaded = currentPatient
     && getPatientContextId(currentPatient) === patientId
     && getPatientContextVisitId(currentPatient) === nextVisitId
@@ -152,11 +168,43 @@ async function hydratePatientContextFromHis(
   let currentOutpatientRecordText = '';
   let currentOutpatientRecordTitle = '';
   let currentOutpatientRecordTime = '';
-  if (nextVisitId) {
+
+  let resolvedVisitId = nextVisitId;
+  const rawHistory = hisHistory as any;
+  if (!resolvedVisitId && rawHistory?.raw?.visitItems && Array.isArray(rawHistory.raw.visitItems) && rawHistory.raw.visitItems.length > 0) {
+    resolvedVisitId = String(rawHistory.raw.visitItems[0].idVis || '').trim();
+    console.log('[ReceptionController] nextVisitId is empty, falling back to latest visitId from history:', resolvedVisitId);
+  }
+
+  if (resolvedVisitId) {
     try {
-      const record = await adapter.fetchOutpatientMedicalRecord(nextVisitId);
+      console.log('[ReceptionController] resolvedVisitId is present, loading record:', resolvedVisitId);
+      const record = await adapter.fetchOutpatientMedicalRecord(resolvedVisitId);
+      console.log('[ReceptionController] loaded record:', record ? {
+        visitId: record.visitId,
+        hasRaw: Boolean(record.raw),
+        rawKeys: record.raw ? Object.keys(record.raw) : [],
+        plainTextLength: record.plainText?.length || 0,
+      } : null);
       const detail = (record?.raw as any)?.detail;
-      hasReportedResults = hasReportedApplyResult(detail);
+      console.log('[ReceptionController] extracted detail object:', detail ? {
+        keys: Object.keys(detail),
+        applyListLength: Array.isArray(detail.applyList) ? detail.applyList.length : 'not an array',
+        orderListLength: Array.isArray(detail.orderList) ? detail.orderList.length : 'not an array',
+      } : null);
+      
+      const hasReportedApply = hasReportedApplyResult(detail);
+      const hasLabOrExamOrders = detail && Array.isArray(detail.orderList) && detail.orderList.some((order: any) => {
+        const sdOrd = String(order.sdOrd || '').trim();
+        return sdOrd === '31' || sdOrd === '41';
+      });
+      hasReportedResults = hasReportedApply || Boolean(hasLabOrExamOrders);
+      console.log('[ReceptionController] hasReportedResults evaluation:', {
+        hasReportedApply,
+        hasLabOrExamOrders,
+        finalResult: hasReportedResults,
+      });
+
       currentOutpatientRecordText = buildCurrentOutpatientRecordText(record);
       currentOutpatientRecordTitle = (record?.documentTitle || record?.documents?.[0]?.title || '').trim();
       currentOutpatientRecordTime = (
@@ -180,6 +228,13 @@ async function hydratePatientContextFromHis(
   });
 
   if (hydrated) {
+    if (!hydrated.visitId && resolvedVisitId) {
+      hydrated.visitId = resolvedVisitId;
+      hydrated.idVis = resolvedVisitId;
+      if (hydrated.identity) {
+        hydrated.identity.visitId = resolvedVisitId;
+      }
+    }
     hydrated.hasReportedLabOrExamResults = hasReportedResults;
     hydrated.currentOutpatientRecordText = currentOutpatientRecordText || undefined;
     hydrated.currentOutpatientRecordTitle = currentOutpatientRecordTitle || undefined;
@@ -281,24 +336,41 @@ export function useReceptionController(options: ReceptionControllerOptions) {
     flowVersion: number,
     patient: AppPatient | null,
   ): Promise<void> {
+    console.log('[ReceptionController] syncFollowUpState triggered:', {
+      flowVersion,
+      currentFlow: receptionFlowGuard.current(),
+      isCurrent: isReceptionFlowCurrent(flowVersion),
+      hasPatient: Boolean(patient),
+      hasReportedLabOrExamResults: patient ? hasPatientReportedLabOrExamResults(patient) : false,
+      fetchFollowUpContextAvailable: Boolean(options.fetchFollowUpContext),
+    });
     if (!isReceptionFlowCurrent(flowVersion) || !patient) {
       return;
     }
 
     if (!hasPatientReportedLabOrExamResults(patient)) {
+      console.log('[ReceptionController] Patient has no reported lab/exam results, skipping follow up opportunity');
       receptionSession.replaceOpportunity('report-follow-up', null);
       return;
     }
 
     if (!options.fetchFollowUpContext) {
+      console.log('[ReceptionController] options.fetchFollowUpContext callback is missing');
       return;
     }
 
     try {
+      console.log('[ReceptionController] invoking fetchFollowUpContext callback...');
       const context = await options.fetchFollowUpContext(patient);
       if (!isReceptionFlowCurrent(flowVersion)) {
+        console.log('[ReceptionController] flow version changed, aborting syncFollowUpState opportunity replace');
         return;
       }
+      console.log('[ReceptionController] fetchFollowUpContext result:', context ? {
+        followUpEligible: context.followUpEligible,
+        labReportsLength: context.labReports?.length,
+        examReportsLength: context.examReports?.length,
+      } : null);
       receptionSession.replaceOpportunity(
         'report-follow-up',
         context?.followUpEligible ? { type: 'report-follow-up', context } : null,

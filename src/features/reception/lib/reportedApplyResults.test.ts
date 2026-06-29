@@ -26,4 +26,5 @@ describe('hasReportedApplyResult', () => {
       }],
     })).toBe(false);
   });
+
 });
