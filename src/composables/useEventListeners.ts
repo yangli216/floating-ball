@@ -181,6 +181,7 @@ export function useEventListeners(options: EventListenersOptions) {
     currentPatient,
     session: receptionSession,
     hasCachedVoiceResult,
+    fetchFollowUpContext: fetchOutpatientFollowUpContext,
     applyFollowUpContext: (followUpContext) => {
       mergeCurrentPatient(
         null,

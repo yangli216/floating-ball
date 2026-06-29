@@ -108,4 +108,78 @@ describe('useOutpatientScenarioRouter', () => {
     expect(showGeneratedClinicalResult).not.toHaveBeenCalled();
     expect(showToast).not.toHaveBeenCalled();
   });
+
+  it('routes voice entry to report follow-up when HIS context is available', async () => {
+    const currentPatient = ref(buildPatientContext({
+      payload: {
+        patientId: 'patient-1',
+        visitId: 'visit-1',
+        name: '张建国',
+      },
+    }));
+    currentPatient.value!.hasReportedLabOrExamResults = true;
+    const session = useReceptionSessionController(currentPatient);
+    const applyFollowUpContext = vi.fn();
+    const openOutpatientFollowUp = vi.fn();
+    const startVoiceInteraction = vi.fn();
+    const router = useOutpatientScenarioRouter({
+      currentPatient,
+      session,
+      hasCachedVoiceResult: () => false,
+      fetchFollowUpContext: async () => followUpContext,
+      applyFollowUpContext,
+      generateChronicRefillRecord: vi.fn(),
+      showGeneratedClinicalResult: vi.fn(),
+      resetVoiceSessionState: vi.fn(),
+      openOutpatientFollowUp,
+      startVoiceInteraction,
+      showToast: vi.fn(),
+      trackError: vi.fn(),
+    });
+
+    await expect(router.openVoiceEntry()).resolves.toEqual({
+      type: 'report-follow-up',
+      context: followUpContext,
+    });
+
+    expect(applyFollowUpContext).toHaveBeenCalledWith(followUpContext);
+    expect(openOutpatientFollowUp).toHaveBeenCalled();
+    expect(startVoiceInteraction).not.toHaveBeenCalled();
+    expect(session.getOpportunity('report-follow-up')).toEqual({
+      type: 'report-follow-up',
+      context: followUpContext,
+    });
+  });
+
+  it('starts normal voice entry without querying follow-up context when no report is finished', async () => {
+    const currentPatient = ref(buildPatientContext({
+      payload: {
+        patientId: 'patient-1',
+        visitId: 'visit-1',
+        name: '张建国',
+      },
+    }));
+    const session = useReceptionSessionController(currentPatient);
+    const fetchFollowUpContext = vi.fn(async () => followUpContext);
+    const startVoiceInteraction = vi.fn();
+    const router = useOutpatientScenarioRouter({
+      currentPatient,
+      session,
+      hasCachedVoiceResult: () => false,
+      fetchFollowUpContext,
+      applyFollowUpContext: vi.fn(),
+      generateChronicRefillRecord: vi.fn(),
+      showGeneratedClinicalResult: vi.fn(),
+      resetVoiceSessionState: vi.fn(),
+      openOutpatientFollowUp: vi.fn(),
+      startVoiceInteraction,
+      showToast: vi.fn(),
+      trackError: vi.fn(),
+    });
+
+    await expect(router.openVoiceEntry()).resolves.toEqual({ type: 'voice-capture' });
+
+    expect(fetchFollowUpContext).not.toHaveBeenCalled();
+    expect(startVoiceInteraction).toHaveBeenCalledWith({ skipCacheRestore: true });
+  });
 });

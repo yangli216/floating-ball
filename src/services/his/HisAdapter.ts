@@ -41,6 +41,8 @@ import type {
   HisOutpatientMedicalRecord,
   HisOutpatientFollowUpContext,
   HisOutpatientFollowUpContextQuery,
+  HisOutpatientFollowUpReportResults,
+  HisOutpatientFollowUpReportResultsQuery,
   HisInpatientEmrContextPackage,
   HisInpatientEmrContextQuery,
 } from './types';
@@ -67,6 +69,8 @@ export type {
   HisOutpatientMedicalRecord,
   HisOutpatientFollowUpContext,
   HisOutpatientFollowUpContextQuery,
+  HisOutpatientFollowUpReportResults,
+  HisOutpatientFollowUpReportResultsQuery,
   HisInpatientDiagnosis,
   HisInpatientOrder,
   HisInpatientEmrContextPackage,
@@ -165,10 +169,15 @@ export interface HisAdapter {
     query?: HisPatientHistoryQuery,
   ): Promise<HisPatientHistory | null>;
 
-  /** 获取门诊复诊所需的历史病历纯文本和已报告检验检查结果。 */
+  /** 获取门诊复诊所需的历史病历纯文本和已报告检验检查结果。兼容旧 PHIS 聚合入口。 */
   fetchOutpatientFollowUpContext(
     query: HisOutpatientFollowUpContextQuery,
   ): Promise<HisOutpatientFollowUpContext | null>;
+
+  /** 获取报告回诊所需的本次已出 LIS/PACS 报告结果；本次病历文本由接诊链路提供。 */
+  fetchOutpatientFollowUpReportResults(
+    query: HisOutpatientFollowUpReportResultsQuery,
+  ): Promise<HisOutpatientFollowUpReportResults | null>;
 
   // ---- 住院上下文 ----
 

@@ -234,6 +234,12 @@ export function buildPatientContext(input: BuildPatientContextInput): AppPatient
     || text(encounterFallback?.historyOfPresentIllness || encounterFallback?.clinical?.historyOfPresentIllness);
   const diagnosis = pickFirstText(payload, ['diagnosis'])
     || text(encounterFallback?.diagnosis || encounterFallback?.clinical?.diagnosis);
+  const currentOutpatientRecordText = pickFirstText(payload, ['currentOutpatientRecordText'])
+    || text(encounterFallback?.currentOutpatientRecordText || encounterFallback?.clinical?.currentOutpatientRecordText);
+  const currentOutpatientRecordTitle = pickFirstText(payload, ['currentOutpatientRecordTitle'])
+    || text(encounterFallback?.currentOutpatientRecordTitle || encounterFallback?.clinical?.currentOutpatientRecordTitle);
+  const currentOutpatientRecordTime = pickFirstText(payload, ['currentOutpatientRecordTime'])
+    || text(encounterFallback?.currentOutpatientRecordTime || encounterFallback?.clinical?.currentOutpatientRecordTime);
   const receptionEnsured = input.receptionEnsured
     ?? patientFallback?.receptionEnsured
     ?? patientFallback?._receptionEnsured
@@ -264,6 +270,9 @@ export function buildPatientContext(input: BuildPatientContextInput): AppPatient
       currentMedicationHistory: currentMedicationHistory || undefined,
       diagnosis: diagnosis || undefined,
       hisHistory,
+      currentOutpatientRecordText: currentOutpatientRecordText || undefined,
+      currentOutpatientRecordTitle: currentOutpatientRecordTitle || undefined,
+      currentOutpatientRecordTime: currentOutpatientRecordTime || undefined,
     },
     receptionEnsured,
     source: input.source || patientFallback?.source,
@@ -290,6 +299,9 @@ export function buildPatientContext(input: BuildPatientContextInput): AppPatient
     currentMedicationHistory: currentMedicationHistory || undefined,
     diagnosis: diagnosis || undefined,
     hisHistory,
+    currentOutpatientRecordText: currentOutpatientRecordText || undefined,
+    currentOutpatientRecordTitle: currentOutpatientRecordTitle || undefined,
+    currentOutpatientRecordTime: currentOutpatientRecordTime || undefined,
 
     id: text(patientFallback?.id) || patientId,
     idTet: tetId || undefined,

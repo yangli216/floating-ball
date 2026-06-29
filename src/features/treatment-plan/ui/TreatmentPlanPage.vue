@@ -233,6 +233,21 @@ const selectedCount = computed(() => recommendations.selectedTreatments.value.le
 const totalCount = computed(() => treatments.value.length);
 const canRecommend = computed(() => recommendations.canRecommend.value);
 const missingContextTipsText = computed(() => recommendations.missingContextTips.value.join('、'));
+const isFollowUpMode = computed(() => Boolean(props.followUpContext?.followUpEligible));
+const diagnosisReferenceText = computed(() => recommendations.recordContext.value.diagnosisText);
+const planTitle = computed(() => (isFollowUpMode.value ? '后续治疗方案' : '推荐方案'));
+const planSubtitle = computed(() => {
+  if (isFollowUpMode.value) {
+    return '基于左侧本次病历和已出报告生成，勾选后可一键回写到 PHIS。';
+  }
+  return '勾选需要同步到 PHIS 的处置项目，一键回写会按所选项生成诊断和医嘱清单。';
+});
+const missingPlanContextText = computed(() => {
+  if (isFollowUpMode.value) {
+    return '缺少本次病历或已出报告，暂不能生成后续治疗方案。';
+  }
+  return `缺少${missingContextTipsText.value}，请先在 HIS 中补齐后重新触发。`;
+});
 const recommendationSections = computed(() => recommendations.sections.value);
 const recommendationsLoading = computed(() => recommendations.isLoading.value);
 const selectedCountByType = computed(() => {
@@ -733,13 +748,18 @@ onMounted(() => {
       <section class="plan-card">
         <header class="plan-card-header">
           <div>
-            <h2>推荐方案</h2>
+            <h2>{{ planTitle }}</h2>
             <p v-if="canRecommend" class="plan-subtitle">
-              勾选需要同步到 PHIS 的处置项目，一键回写会按所选项生成诊断和医嘱清单。
+              {{ planSubtitle }}
             </p>
             <p v-else class="plan-subtitle is-warning">
-              缺少{{ missingContextTipsText }}，请先在 HIS 中补齐后重新触发。
+              {{ missingPlanContextText }}
             </p>
+            <div v-if="isFollowUpMode" class="follow-up-context-strip">
+              <span>依据：本次病历 + 已出报告</span>
+              <span v-if="diagnosisReferenceText">诊断参考：{{ diagnosisReferenceText }}</span>
+              <span v-else class="muted">未读取到诊断，不阻断方案生成</span>
+            </div>
           </div>
           <button class="icon-action" title="刷新方案" :disabled="recommendationsLoading" @click="refreshRecommendations">
             <Icon icon="lucide:refresh-cw" :size="18" aria-hidden="true" />
@@ -925,6 +945,30 @@ onMounted(() => {
 
 .plan-subtitle.is-warning {
   color: #c2410c;
+}
+
+.follow-up-context-strip {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.follow-up-context-strip span {
+  max-width: 100%;
+  padding: 3px 8px;
+  border: 1px solid #dbeafe;
+  border-radius: 999px;
+  color: #1d4ed8;
+  background: #eff6ff;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.follow-up-context-strip span.muted {
+  color: #64748b;
+  border-color: #e2e8f0;
+  background: #f8fafc;
 }
 
 .icon-action {

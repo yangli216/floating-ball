@@ -12,7 +12,7 @@ import { getWindowSizeForView, type ViewType } from '@/constants/windowSizes';
 import { analyzePatientRisks } from '@/services/llm';
 import { trackApiCall, trackError } from '@/services/operationTracker';
 import { getHisAdapter } from '@/services/his';
-import type { HisOutpatientFollowUpContext } from '@/services/his/types';
+import type { HisOutpatientFollowUpContext, HisOutpatientMedicalRecord } from '@/services/his/types';
 import type { AppPatient } from '@/types/appState';
 import {
   buildPatientContext,
@@ -28,6 +28,8 @@ import {
 import {
   applyReceptionClinicalHistorySummaries,
   buildReceptionPatientDraft,
+  hasPatientReportedLabOrExamResults,
+  hasReportedApplyResult,
   resolveIncomingPatientTracking,
   type ReceptionSessionController,
 } from '@features/reception';
@@ -89,6 +91,24 @@ export interface ReceptionControllerOptions {
   fetchFollowUpContext?: (patient: AppPatient | null) => Promise<HisOutpatientFollowUpContext | null>;
 }
 
+function buildCurrentOutpatientRecordText(record: HisOutpatientMedicalRecord | null): string {
+  if (!record || record.contentPending) {
+    return '';
+  }
+  if (record.plainText?.trim()) {
+    return record.plainText.trim();
+  }
+  return [
+    record.chiefComplaint ? `主诉：${record.chiefComplaint}` : '',
+    record.historyOfPresentIllness ? `现病史：${record.historyOfPresentIllness}` : '',
+    record.pastHistory ? `既往史：${record.pastHistory}` : '',
+    record.physicalExamination ? `体格检查：${record.physicalExamination}` : '',
+    record.auxiliaryExamination ? `辅助检查：${record.auxiliaryExamination}` : '',
+    record.diagnosis ? `初步诊断：${record.diagnosis}` : '',
+    record.treatmentPlan ? `治疗意见：${record.treatmentPlan}` : '',
+  ].filter(Boolean).join('\n');
+}
+
 async function hydratePatientContextFromHis(
   currentPatient: AppPatient | null,
   payload: StartConsultationPayload | SessionAssistPayload | PatientRisksPayload | null | undefined,
@@ -127,20 +147,26 @@ async function hydratePatientContextFromHis(
     limit: 5,
   });
 
-  // 拉取本次就诊医嘱，并通过 sdOrd 进行检查（31）与检验（41）的精准分类
-  let hasLabOrExamOrders = false;
+  // 拉取本次申请单状态；applyList.items.sdApply=3 表示检验/检查已出报告。
+  let hasReportedResults = false;
+  let currentOutpatientRecordText = '';
+  let currentOutpatientRecordTitle = '';
+  let currentOutpatientRecordTime = '';
   if (nextVisitId) {
     try {
       const record = await adapter.fetchOutpatientMedicalRecord(nextVisitId);
       const detail = (record?.raw as any)?.detail;
-      if (detail && Array.isArray(detail.orderList)) {
-        hasLabOrExamOrders = detail.orderList.some((order: any) => {
-          const sdOrd = String(order.sdOrd || '').trim();
-          return sdOrd === '31' || sdOrd === '41';
-        });
-      }
+      hasReportedResults = hasReportedApplyResult(detail);
+      currentOutpatientRecordText = buildCurrentOutpatientRecordText(record);
+      currentOutpatientRecordTitle = (record?.documentTitle || record?.documents?.[0]?.title || '').trim();
+      currentOutpatientRecordTime = (
+        record?.documents?.[0]?.titleTime
+        || record?.documents?.[0]?.createdAt
+        || record?.documents?.[0]?.insertedAt
+        || ''
+      ).trim();
     } catch (error) {
-      console.warn('[ReceptionController] Failed to check outpatient medical record orders:', error);
+      console.warn('[ReceptionController] Failed to check outpatient reported apply results:', error);
     }
   }
 
@@ -154,7 +180,16 @@ async function hydratePatientContextFromHis(
   });
 
   if (hydrated) {
-    hydrated.hasLabOrExamOrders = hasLabOrExamOrders;
+    hydrated.hasReportedLabOrExamResults = hasReportedResults;
+    hydrated.currentOutpatientRecordText = currentOutpatientRecordText || undefined;
+    hydrated.currentOutpatientRecordTitle = currentOutpatientRecordTitle || undefined;
+    hydrated.currentOutpatientRecordTime = currentOutpatientRecordTime || undefined;
+    hydrated.clinical = {
+      ...hydrated.clinical,
+      currentOutpatientRecordText: currentOutpatientRecordText || undefined,
+      currentOutpatientRecordTitle: currentOutpatientRecordTitle || undefined,
+      currentOutpatientRecordTime: currentOutpatientRecordTime || undefined,
+    };
   }
   hydrated = applyReceptionClinicalHistorySummaries(hydrated, hisHistory);
 
@@ -224,7 +259,7 @@ export function useReceptionController(options: ReceptionControllerOptions) {
     }
 
     const hasFollowUpReport = Boolean(receptionSession.outpatientFollowUpContext.value?.followUpEligible)
-      || !!patient?.hasLabOrExamOrders;
+      || hasPatientReportedLabOrExamResults(patient);
 
     const candidate = assessChronicRefillCandidate(
       getPatientContextHistory(patient),
@@ -250,20 +285,8 @@ export function useReceptionController(options: ReceptionControllerOptions) {
       return;
     }
 
-    // 优先根据本次就诊已开立的检验检查医嘱来确定报告回诊
-    if (patient.hasLabOrExamOrders) {
-      receptionSession.replaceOpportunity(
-        'report-follow-up',
-        {
-          type: 'report-follow-up',
-          context: {
-            followUpEligible: true,
-            medicalRecordText: '本次就诊已开立过检验或检查医嘱项目',
-            labReports: [],
-            examReports: [],
-          },
-        },
-      );
+    if (!hasPatientReportedLabOrExamResults(patient)) {
+      receptionSession.replaceOpportunity('report-follow-up', null);
       return;
     }
 

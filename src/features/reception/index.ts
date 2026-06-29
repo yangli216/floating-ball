@@ -5,6 +5,10 @@ export {
   resolveIncomingPatientTracking,
 } from './lib/receptionPatientSummary';
 export {
+  hasPatientReportedLabOrExamResults,
+  hasReportedApplyResult,
+} from './lib/reportedApplyResults';
+export {
   useReceptionSessionController,
   type ReceptionSessionController,
   type ReceptionSessionStatus,

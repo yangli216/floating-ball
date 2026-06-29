@@ -664,14 +664,20 @@ http://127.0.0.1:8081/api/consultation/start-voice
 3. 语音结果最终仍通过 `GET /api/consultation/events/poll` 返回。
 4. 未诊毕且未放弃时，同一接诊上下文内再次调用会恢复上一张语音结果页；但桌面端当前接诊切换到其他患者后，上一患者的语音缓存会失效，之后再切回该患者也会重新开始语音问诊。
 5. 区域化模式下，桌面端在接诊上下文校验通过并准备打开语音问诊页时，上报一次 `voice_consultation` 功能调用事件；同一就诊再次显式触发语音问诊入口按新调用计数，后续提交语音日志不再补记功能统计。
-6. 桌面端进入语音流程前会通过 HIS Adapter 调用 PHIS 聚合服务 `api/phis.aiInpatientEmrContextService/buildOutpatientFollowUpContext`。若当前就诊存在有效诊断，且聚合结果包含历史病历和至少一份已报告的检验/检查结果，则按复诊场景生成治疗方案；否则继续原语音录音问诊。
+6. 桌面端进入语音流程前会先复用接诊阶段已获取的当前就诊信息和本次门诊病历文本；当 `loadClinicMedicalRecord.applyList[].items[].sdApply === "3"` 表示存在已出报告时，再通过 HIS Adapter 调用 PHIS 报告结果服务 `api/phis.aiInpatientEmrContextService/buildOutpatientFollowUpReportResults`。若本次病历文本和至少一份已报告且有实际结果内容的检验/检查结果均存在，则按报告回诊场景生成后续治疗方案；诊断只作为可选参考，不再阻断取数、推荐或回写。否则继续原语音录音问诊。
 
-#### 6.3.1 PHIS 门诊复诊上下文聚合服务
+#### 6.3.1 PHIS 门诊复诊报告结果服务
 
 RPC：
 
 ```text
-api/phis.aiInpatientEmrContextService/buildOutpatientFollowUpContext
+api/phis.aiInpatientEmrContextService/buildOutpatientFollowUpReportResults
+```
+
+PHIS 实现位置：
+
+```text
+rbmh-phis-boot/src/main/java/com/bsoft/rbmh/phis/ai/AiInpatientEmrContextService.java
 ```
 
 请求体：
@@ -680,32 +686,22 @@ api/phis.aiInpatientEmrContextService/buildOutpatientFollowUpContext
 | :--- | :--- | :--- | :--- |
 | `patientId` / `idPi` | String | 是 | 患者主键 |
 | `currentVisitId` / `idVis` | String | 是 | 当前复诊就诊主键 |
-| `sourceVisitId` | String | 否 | 明确指定历史来源就诊；不传时自动选择最近一次具备有效诊断和已出报告的历史就诊 |
-| `currentDiagnosis` | String | 是 | 当前接诊上下文中已经存在的有效诊断；服务不再从病历 HTML 中解析诊断 |
-| `contextPolicy` | Object | 否 | 裁剪策略，包括 `historyLimit`、`maxLabReports`、`maxExamReports`、`outpatientRecordContentLimit` |
+| `contextPolicy` | Object | 否 | 裁剪策略，包括 `maxLabReports`、`maxExamReports` |
 
 核心返回字段：
 
 | 字段名 | 类型 | 说明 |
 | :--- | :--- | :--- |
-| `followUpEligible` | Boolean | 是否满足回诊方案生成条件 |
-| `source` | Object | 被选中的历史来源就诊，只保留 `visitId / visitTime / documentTitle` |
-| `medicalRecordText` | String | 剔除 HTML 元素和页面噪声后的主要病历文本 |
+| `followUpEligible` | Boolean | 是否存在可用于报告回诊的已出报告结果 |
 | `labReports` | Array | 已出具的检验报告；每份报告包含时间、名称和完整检验项目结果 |
 | `examReports` | Array | 已出具的检查报告；只保留时间、项目名称、所见和结论 |
-| `ineligibleReason` | String/null | 不满足回诊条件的原因；满足条件时为 `null` |
+| `ineligibleReason` | String/null | 不满足报告结果获取条件的原因；满足条件时为 `null` |
 
 成功返回示例：
 
 ```json
 {
   "followUpEligible": true,
-  "source": {
-    "visitId": "VIS-20260620-001",
-    "visitTime": "2026-06-20 09:30:00",
-    "documentTitle": "门急诊病历"
-  },
-  "medicalRecordText": "患者因咳嗽、咳痰就诊，完善血常规及胸部CT……",
   "labReports": [
     {
       "reportTime": "2026-06-21 10:00:00",
@@ -735,12 +731,15 @@ api/phis.aiInpatientEmrContextService/buildOutpatientFollowUpContext
 
 复诊有效性规则：
 
-1. 请求必须显式传入当前接诊上下文中已有的有效诊断，聚合服务不解析病历 HTML 中的诊断章节。
-2. 来源就诊必须属于同一患者，且不能等于当前就诊。
+1. 请求必须显式传入患者主键和当前就诊主键；当前就诊信息、诊断参考和本次病历文本由桌面端接诊阶段提供，本服务不再重复返回。
+2. 来源就诊必须属于同一患者；报告回诊默认使用当前就诊，不要求排除当前就诊。
 3. 检验/检查申请单必须存在实际报告结果；仅开立、执行中或无结果内容的申请单不进入上下文。
-4. 未指定 `sourceVisitId` 时，按就诊时间倒序选择首个同时具备非空病历纯文本和已出报告的历史就诊。
-5. 除 LIS/PACS 报告外，聚合服务不得再以 SOAP、诊断表或医嘱表作为病历事实来源；统一调用 `getLookMedList` 获取门诊文书，再调用 `getMedContentLook` 读取 HTML 正文，仅剔除 HTML 标签和页面噪声，不做病历元素解析。
-6. 聚合服务不得返回患者资料、当前就诊摘要、候选筛选过程、重复摘要或原始表字段；候选筛选细节只写后端日志。检验报告必须保留报告内完整结果项目，不能仅返回异常项或前若干关键项。
+   - 桌面端本地分流判断使用 `loadClinicMedicalRecord.applyList[].items[].sdApply === "3"` 识别“已出报告”。
+   - `orderList.sdOrd` 只能表示医嘱类型，如检查/检验医嘱，不再作为报告回诊分流条件。
+4. 检验报告按 `HI_ODS_APPLY.ID_RESULT = HI_ODS_APPLY_LIS_REPORT.ID_REPORT_GROUP` 关联；检查报告按 `HI_ODS_APPLY.ID_APPLY = HI_ODS_APPLY_PACS_REPORT.ID_APPLY` 关联。
+5. 仅有检验检查医嘱但没有报告结果时不满足回诊条件。
+6. 服务不得返回患者资料、当前就诊摘要、病历正文、候选筛选过程、重复摘要或原始表字段；候选筛选细节只写后端日志。检验报告必须保留报告内完整结果项目，不能仅返回异常项或前若干关键项。
+7. PHIS 端只查询当前 `idVis`、当前 `idPi` 且 `sdApply = 3` 的检验检查申请单；无已报告申请单时返回 `ineligibleReason = noReportedApplications`，存在已报告申请单但报告表中没有可用结果内容时返回 `ineligibleReason = noReportResults`。
 
 ### 6.3A `POST /api/report/interpret`
 

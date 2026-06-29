@@ -132,11 +132,6 @@ export function useTreatmentPlanWriteback(options: TreatmentPlanWritebackOptions
   });
 
   async function submit(): Promise<boolean> {
-    if (!options.diagnosis.value) {
-      notify('缺少当前诊断，暂不能回写诊疗方案。');
-      return false;
-    }
-
     if (!resolveConsultationId()) {
       notify('缺少当前患者标识，暂不能回写诊疗方案。');
       return false;
@@ -158,11 +153,17 @@ export function useTreatmentPlanWriteback(options: TreatmentPlanWritebackOptions
 
       const requestId = `record-confirmed-${Date.now()}`;
       const selected = preflight.selected;
+      const chiefComplaint = options.recordContext.value.chiefComplaint
+        || (options.recordContext.value.isFollowUp ? '门诊复诊，查看检验检查报告结果' : '');
+      const historyOfPresentIllness = options.recordContext.value.historyOfPresentIllness
+        || (options.recordContext.value.isFollowUp
+          ? '患者本次门诊复诊，结合本次门诊病历及已出具的检验检查报告结果评估后续治疗方案。'
+          : '');
       const result = buildRecordConfirmedPayload({
         consultationId: resolveConsultationId(),
         requestId,
-        chiefComplaint: options.recordContext.value.chiefComplaint,
-        historyOfPresentIllness: options.recordContext.value.historyOfPresentIllness,
+        chiefComplaint,
+        historyOfPresentIllness,
         pastMedicalHistory: options.recordContext.value.pastMedicalHistory,
         diagList: buildDiagList(),
         orderList: buildOrderList(selected),

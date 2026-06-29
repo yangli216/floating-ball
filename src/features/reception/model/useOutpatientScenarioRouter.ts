@@ -4,6 +4,7 @@ import type { AppPatient } from '@/types/appState';
 import { getPatientContextAnchorId } from '@/utils/patientContext';
 import type { ChronicRefillCandidate } from '@features/reception-risk';
 import type { ClinicalResultInput } from '@features/clinical-result';
+import { hasPatientReportedLabOrExamResults } from '../lib/reportedApplyResults';
 import type { ReceptionSessionController } from './useReceptionSessionController';
 import type {
   OutpatientVoiceEntryDecision,
@@ -53,6 +54,7 @@ export function useOutpatientScenarioRouter(options: OutpatientScenarioRouterOpt
     currentPatient,
     session,
     hasCachedVoiceResult,
+    fetchFollowUpContext,
     applyFollowUpContext,
     generateChronicRefillRecord,
     showGeneratedClinicalResult,
@@ -142,14 +144,41 @@ export function useOutpatientScenarioRouter(options: OutpatientScenarioRouterOpt
     const patientAnchorId = getPatientContextAnchorId(patient);
     const hasCache = hasCachedVoiceResult(patient);
 
+    if (hasCache) {
+      await startVoiceInteraction({ skipCacheRestore: false });
+      return { type: 'restore-voice-result' };
+    }
+
+    const opportunity = session.getOpportunity('report-follow-up');
+    if (opportunity?.type === 'report-follow-up') {
+      applyFollowUpContext(opportunity.context);
+      resetVoiceSessionState();
+      await openOutpatientFollowUp();
+      return { type: 'report-follow-up', context: opportunity.context };
+    }
+
+    if (fetchFollowUpContext && patient && hasPatientReportedLabOrExamResults(patient)) {
+      const context = await fetchFollowUpContext(patient);
+      if (
+        context?.followUpEligible
+        && getPatientContextAnchorId(currentPatient.value) === patientAnchorId
+      ) {
+        session.replaceOpportunity('report-follow-up', { type: 'report-follow-up', context });
+        applyFollowUpContext(context);
+        resetVoiceSessionState();
+        await openOutpatientFollowUp();
+        return { type: 'report-follow-up', context };
+      }
+    }
+
     if (getPatientContextAnchorId(currentPatient.value) !== patientAnchorId) {
       return { type: 'voice-capture' };
     }
 
     await startVoiceInteraction({
-      skipCacheRestore: !hasCache,
+      skipCacheRestore: true,
     });
-    return hasCache ? { type: 'restore-voice-result' } : { type: 'voice-capture' };
+    return { type: 'voice-capture' };
   }
 
   return {

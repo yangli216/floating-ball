@@ -14,12 +14,27 @@ const recordText = computed(() => props.context.medicalRecordText?.trim() || '')
 const labReports = computed(() => props.context.labReports || []);
 const examReports = computed(() => props.context.examReports || []);
 const reportCount = computed(() => labReports.value.length + examReports.value.length);
+const diagnosisText = computed(() => props.context.currentDiagnosis?.trim() || '');
+const abnormalCount = computed(() => {
+  const abnormalLabs = labReports.value.reduce((count, report) => (
+    count + (report.items || []).filter((item) => Boolean(item.abnormalFlag)).length
+  ), 0);
+  const abnormalExamPattern = /异常|阳性|感染|结节|占位|积液|狭窄|增厚|高密度|低密度/u;
+  const abnormalExams = examReports.value.filter((report) => (
+    abnormalExamPattern.test(`${report.finding || ''}${report.conclusion || ''}`)
+  )).length;
+  return abnormalLabs + abnormalExams;
+});
 const sourceMeta = computed(() => {
   return [
     props.context.source?.visitTime,
     props.context.source?.documentTitle,
   ].filter(Boolean).join(' · ');
 });
+
+function formatLabResult(item: { result?: string; unit?: string }): string {
+  return [item.result, item.unit].filter(Boolean).join(' ') || '未提供结果值';
+}
 </script>
 
 <template>
@@ -27,9 +42,13 @@ const sourceMeta = computed(() => {
     <header class="evidence-header">
       <div>
         <h2>复诊依据</h2>
-        <p>{{ sourceMeta || '历史门诊病历与已出报告' }}</p>
+        <p>{{ sourceMeta || '本次门诊病历与已出报告' }}</p>
       </div>
-      <span class="evidence-count">{{ reportCount }} 份报告</span>
+      <div class="evidence-stats" aria-label="复诊依据状态">
+        <span :class="{ ok: Boolean(recordText) }">病历{{ recordText ? '可用' : '缺失' }}</span>
+        <span>{{ reportCount }} 份报告</span>
+        <span :class="{ warning: abnormalCount > 0 }">{{ abnormalCount }} 项异常</span>
+      </div>
     </header>
 
     <div class="evidence-tabs" role="tablist" aria-label="复诊依据">
@@ -40,7 +59,7 @@ const sourceMeta = computed(() => {
         @click="activeTab = 'record'"
       >
         <Icon icon="lucide:file-text" :size="16" aria-hidden="true" />
-        病历
+        本次病历
       </button>
       <button
         :class="{ active: activeTab === 'reports' }"
@@ -49,16 +68,24 @@ const sourceMeta = computed(() => {
         @click="activeTab = 'reports'"
       >
         <Icon icon="lucide:list" :size="16" aria-hidden="true" />
-        检验检查
+        报告结果
         <span>{{ reportCount }}</span>
       </button>
     </div>
 
     <div class="evidence-body">
       <div v-if="activeTab === 'record'" class="record-view">
+        <div class="evidence-note">
+          <Icon icon="lucide:sparkles" :size="16" aria-hidden="true" />
+          <span>AI 将基于本次病历和已出报告推荐后续治疗方案。</span>
+        </div>
+        <div v-if="diagnosisText" class="diagnosis-reference">
+          <span>诊断参考</span>
+          <strong>{{ diagnosisText }}</strong>
+        </div>
         <div class="document-meta">
-          <Icon icon="lucide:file-text" :size="16" aria-hidden="true" />
-          <span>{{ context.source?.documentTitle || '门诊病历' }}</span>
+          <span>{{ context.source?.documentTitle || '本次门诊病历' }}</span>
+          <time>{{ context.source?.visitTime || '' }}</time>
         </div>
         <pre v-if="recordText">{{ recordText }}</pre>
         <div v-else class="empty-state">暂无可预览的病历正文</div>
@@ -72,12 +99,12 @@ const sourceMeta = computed(() => {
               <strong>{{ report.reportName || '检验报告' }}</strong>
               <time>{{ report.reportTime || '' }}</time>
             </div>
-            <ul v-if="report.items?.length">
+            <ul v-if="report.items?.length" class="lab-result-list">
               <li v-for="(item, itemIndex) in report.items" :key="`lab-item-${itemIndex}`">
-                <span>{{ item.itemName || '项目' }}</span>
-                <strong :class="{ abnormal: Boolean(item.abnormalFlag) }">
-                  {{ [item.result, item.unit].filter(Boolean).join(' ') || '未提供结果值' }}
-                </strong>
+                <span class="item-name">{{ item.itemName || '项目' }}</span>
+                <strong :class="{ abnormal: Boolean(item.abnormalFlag) }">{{ formatLabResult(item) }}</strong>
+                <span class="item-range">{{ item.referenceRange ? `参考 ${item.referenceRange}` : '' }}</span>
+                <span v-if="item.abnormalFlag" class="abnormal-flag">{{ item.abnormalFlag }}</span>
               </li>
             </ul>
           </article>
@@ -90,7 +117,7 @@ const sourceMeta = computed(() => {
               <strong>{{ report.examName || '检查报告' }}</strong>
               <time>{{ report.reportTime || '' }}</time>
             </div>
-            <p>{{ report.conclusion || report.finding || '报告已出具' }}</p>
+            <p class="conclusion">{{ report.conclusion || report.finding || '报告已出具' }}</p>
             <p v-if="report.finding && report.finding !== report.conclusion" class="finding">
               {{ report.finding }}
             </p>
@@ -120,7 +147,7 @@ const sourceMeta = computed(() => {
   align-items: flex-start;
   justify-content: space-between;
   gap: 12px;
-  padding: 18px 18px 14px;
+  padding: 18px 18px 12px;
   border-bottom: 1px solid #e5e7eb;
 }
 
@@ -138,11 +165,35 @@ const sourceMeta = computed(() => {
   line-height: 1.5;
 }
 
-.evidence-count {
+.evidence-stats {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 6px;
+  max-width: 190px;
+}
+
+.evidence-stats span {
   flex: none;
-  color: #0f766e;
+  padding: 3px 8px;
+  border: 1px solid #dbe3ee;
+  border-radius: 999px;
+  color: #64748b;
+  background: #f8fafc;
   font-size: 12px;
   font-weight: 600;
+}
+
+.evidence-stats span.ok {
+  color: #047857;
+  border-color: #a7f3d0;
+  background: #ecfdf5;
+}
+
+.evidence-stats span.warning {
+  color: #b45309;
+  border-color: #fed7aa;
+  background: #fffbeb;
 }
 
 .evidence-tabs {
@@ -184,14 +235,55 @@ const sourceMeta = computed(() => {
   padding: 16px 18px 22px;
 }
 
-.document-meta {
+.evidence-note {
   display: flex;
   align-items: center;
   gap: 8px;
   margin-bottom: 12px;
+  padding: 9px 10px;
+  border: 1px solid #dbeafe;
+  border-radius: 8px;
+  color: #1e40af;
+  background: #eff6ff;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.diagnosis-reference {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  margin-bottom: 12px;
+  color: #334155;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.diagnosis-reference span {
+  color: #64748b;
+  font-weight: 600;
+}
+
+.diagnosis-reference strong {
+  color: #0f172a;
+}
+
+.document-meta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
   color: #475569;
   font-size: 13px;
   font-weight: 600;
+}
+
+.document-meta time {
+  flex: none;
+  color: #94a3b8;
+  font-size: 11px;
+  font-weight: 500;
 }
 
 .record-view pre {
@@ -250,33 +342,63 @@ const sourceMeta = computed(() => {
   line-height: 1.65;
 }
 
+.report-item p.conclusion {
+  color: #1f2937;
+  font-size: 13px;
+}
+
 .report-item p.finding {
   color: #64748b;
 }
 
-.report-item ul {
+.lab-result-list {
   margin: 10px 0 0;
   padding: 0;
   list-style: none;
 }
 
-.report-item li {
-  display: flex;
-  justify-content: space-between;
-  gap: 12px;
-  padding: 6px 0;
+.lab-result-list li {
+  display: grid;
+  grid-template-columns: minmax(120px, 1fr) minmax(72px, auto) minmax(78px, auto) auto;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 0;
   border-top: 1px solid #edf2f7;
-  color: #64748b;
+  color: #475569;
   font-size: 12px;
+  line-height: 1.6;
 }
 
-.report-item li strong {
+.lab-result-list li:first-child {
+  border-top: 0;
+}
+
+.lab-result-list .item-name {
   color: #334155;
-  text-align: right;
 }
 
-.report-item li strong.abnormal {
-  color: #c2410c;
+.lab-result-list strong {
+  color: #0f172a;
+  font-weight: 600;
+}
+
+.lab-result-list strong.abnormal {
+  color: #b91c1c;
+}
+
+.item-range {
+  color: #94a3b8;
+}
+
+.abnormal-flag {
+  min-width: 22px;
+  padding: 1px 6px;
+  border-radius: 999px;
+  color: #b91c1c;
+  background: #fee2e2;
+  font-size: 11px;
+  font-weight: 700;
+  text-align: center;
 }
 
 .empty-state {

@@ -122,14 +122,16 @@ function buildRecordContext(
   followUpContext: HisOutpatientFollowUpContext | null,
 ): TreatmentPlanRecordContext {
   const followUpEvidence = buildOutpatientFollowUpEvidence(followUpContext);
+  const diagnosisText = followUpContext?.currentDiagnosis?.trim()
+    || readPatientText(patient, ['diagnosis', 'diagnosisText', 'diagnosis_text']);
   return {
     chiefComplaint: readPatientText(patient, ['chiefComplaint', 'chief_complaint']),
     historyOfPresentIllness: readPatientText(patient, ['historyOfPresentIllness', 'history_of_present_illness']),
     pastMedicalHistory: getPatientContextPastMedicalHistory(patient) || readPatientText(patient, ['pastMedicalHistory', 'past_medical_history']),
     allergyHistory: getPatientContextAllergyHistory(patient) || readPatientText(patient, ['allergyHistory', 'allergy_history']),
-    diagnosisText: readPatientText(patient, ['diagnosis', 'diagnosisText', 'diagnosis_text']),
+    diagnosisText,
     followUpEvidence,
-    isFollowUp: Boolean(followUpEvidence),
+    isFollowUp: Boolean(followUpContext?.followUpEligible),
   };
 }
 
@@ -181,18 +183,24 @@ export function useTreatmentPlanRecommendations(options: TreatmentPlanRecommenda
     options.patient.value,
     options.followUpContext.value,
   ));
-  const canRecommend = computed(() => Boolean(
-    recordContext.value.diagnosisText
-    && (
-      recordContext.value.isFollowUp
-      || (recordContext.value.chiefComplaint && recordContext.value.historyOfPresentIllness)
-    ),
-  ));
+  const canRecommend = computed(() => {
+    if (recordContext.value.isFollowUp) {
+      return Boolean(recordContext.value.followUpEvidence);
+    }
+    return Boolean(
+      recordContext.value.diagnosisText
+      && recordContext.value.chiefComplaint
+      && recordContext.value.historyOfPresentIllness,
+    );
+  });
   const missingContextTips = computed(() => {
     const tips: string[] = [];
-    if (!recordContext.value.isFollowUp && !recordContext.value.chiefComplaint) tips.push('主诉');
-    if (!recordContext.value.isFollowUp && !recordContext.value.historyOfPresentIllness) tips.push('现病史');
-    if (recordContext.value.isFollowUp && !recordContext.value.followUpEvidence) tips.push('复诊病历及报告');
+    if (recordContext.value.isFollowUp) {
+      if (!recordContext.value.followUpEvidence) tips.push('本次病历及已出报告');
+      return tips;
+    }
+    if (!recordContext.value.chiefComplaint) tips.push('主诉');
+    if (!recordContext.value.historyOfPresentIllness) tips.push('现病史');
     if (!recordContext.value.diagnosisText) tips.push('诊断');
     return tips;
   });
@@ -232,20 +240,19 @@ export function useTreatmentPlanRecommendations(options: TreatmentPlanRecommenda
     const patient = options.patient.value;
     const currentDiagnosis = options.diagnosis.value;
     try {
-      if (!currentDiagnosis) {
-        throw new Error('缺少当前诊断');
-      }
-
       const inventoryContext = config.key === 'medication'
         ? await loadAvailableMedicineInventoryContext({ pharmacies: options.pharmacies.value })
         : null;
+      const diagnosisName = currentDiagnosis?.name
+        || recordContext.value.diagnosisText
+        || '未读取到本次诊断，请基于本次病历和报告结果判断后续处理';
       const requestSpec = buildClinicalResultTreatmentRequestSpec(buildTreatmentRequestKind(config.key), {
         patientName: getPatientContextName(patient) || '未知患者',
         gender: getPatientContextGenderText(patient) || '未知',
         age: getPatientContextAgeText(patient) || '',
-        diagnosisName: currentDiagnosis.name,
-        diagnosisCode: currentDiagnosis.code || '',
-        chiefComplaint: recordContext.value.chiefComplaint || '携既往病历及检验检查报告复诊',
+        diagnosisName,
+        diagnosisCode: currentDiagnosis?.code || '',
+        chiefComplaint: recordContext.value.chiefComplaint || '携本次病历及检验检查报告复诊',
         clinicalContext: recordContext.value.followUpEvidence,
         availableMedicineInventory: inventoryContext?.promptContext,
       }, config.prompt, {

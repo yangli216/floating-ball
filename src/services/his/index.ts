@@ -44,6 +44,8 @@ export type {
   HisOutpatientMedicalRecord,
   HisOutpatientFollowUpContext,
   HisOutpatientFollowUpContextQuery,
+  HisOutpatientFollowUpReportResults,
+  HisOutpatientFollowUpReportResultsQuery,
   HisInpatientDiagnosis,
   HisInpatientEmrContextPackage,
   HisInpatientEmrContextPolicy,

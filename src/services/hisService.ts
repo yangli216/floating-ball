@@ -24,6 +24,8 @@ import type {
   HisInpatientEmrContextQuery,
   HisOutpatientFollowUpContext,
   HisOutpatientFollowUpContextQuery,
+  HisOutpatientFollowUpReportResults,
+  HisOutpatientFollowUpReportResultsQuery,
 } from './his/types';
 
 /**
@@ -508,6 +510,7 @@ const HIS_CATALOG_ENDPOINTS = {
   outpatientMedicalRecordContent: 'api/otms.rpcEmrEditorLookService/getMedContentLook',
   inpatientEmrContext: 'api/phis.aiInpatientEmrContextService/buildContext',
   outpatientFollowUpContext: 'api/phis.aiInpatientEmrContextService/buildOutpatientFollowUpContext',
+  outpatientFollowUpReportResults: 'api/phis.aiInpatientEmrContextService/buildOutpatientFollowUpReportResults',
 } as const;
 
 /**
@@ -1377,19 +1380,38 @@ export class HisService {
     const patientId = query.patientId?.trim();
     const currentVisitId = query.currentVisitId?.trim();
     const currentDiagnosis = query.currentDiagnosis?.trim();
-    if (!patientId || !currentVisitId || !currentDiagnosis) return null;
+    if (!patientId || !currentVisitId) return null;
 
     const response = await this.post<HisOutpatientFollowUpContext>(
       HIS_CATALOG_ENDPOINTS.outpatientFollowUpContext,
       [{
         patientId,
         currentVisitId,
-        currentDiagnosis,
+        currentDiagnosis: currentDiagnosis || undefined,
         sourceVisitId: query.sourceVisitId?.trim() || undefined,
         contextPolicy: query.contextPolicy,
       }],
     );
     this.assertBusinessSuccess(HIS_CATALOG_ENDPOINTS.outpatientFollowUpContext, response);
+    return response.body ?? response.data ?? null;
+  }
+
+  async buildOutpatientFollowUpReportResults(
+    query: HisOutpatientFollowUpReportResultsQuery,
+  ): Promise<HisOutpatientFollowUpReportResults | null> {
+    const patientId = query.patientId?.trim();
+    const currentVisitId = query.currentVisitId?.trim();
+    if (!patientId || !currentVisitId) return null;
+
+    const response = await this.post<HisOutpatientFollowUpReportResults>(
+      HIS_CATALOG_ENDPOINTS.outpatientFollowUpReportResults,
+      [{
+        patientId,
+        currentVisitId,
+        contextPolicy: query.contextPolicy,
+      }],
+    );
+    this.assertBusinessSuccess(HIS_CATALOG_ENDPOINTS.outpatientFollowUpReportResults, response);
     return response.body ?? response.data ?? null;
   }
 

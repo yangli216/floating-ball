@@ -455,13 +455,22 @@ export interface HisOutpatientMedicalRecord {
 export interface HisOutpatientFollowUpContextQuery {
   patientId: string;
   currentVisitId: string;
-  currentDiagnosis: string;
+  currentDiagnosis?: string;
   sourceVisitId?: string;
   contextPolicy?: {
     historyLimit?: number;
     maxLabReports?: number;
     maxExamReports?: number;
     outpatientRecordContentLimit?: number;
+  };
+}
+
+export interface HisOutpatientFollowUpReportResultsQuery {
+  patientId: string;
+  currentVisitId: string;
+  contextPolicy?: {
+    maxLabReports?: number;
+    maxExamReports?: number;
   };
 }
 
@@ -493,7 +502,15 @@ export interface HisOutpatientFollowUpContext {
     visitTime?: string;
     documentTitle?: string;
   };
+  currentDiagnosis?: string;
   medicalRecordText?: string;
+  labReports?: HisOutpatientFollowUpLabReport[];
+  examReports?: HisOutpatientFollowUpExam[];
+  ineligibleReason?: string | null;
+}
+
+export interface HisOutpatientFollowUpReportResults {
+  followUpEligible: boolean;
   labReports?: HisOutpatientFollowUpLabReport[];
   examReports?: HisOutpatientFollowUpExam[];
   ineligibleReason?: string | null;

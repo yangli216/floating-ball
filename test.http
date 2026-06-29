@@ -28,3 +28,11 @@ Content-Type: application/json
 cookie: tk=66c59a8aea39de0001b56d61
 
 [{"idApp": "42","idTet":"xswjj","idMedrecdoc":"6a2d5b3aa5e923322e5528bb", "courseShow": 0}]
+
+
+### AI门诊信息上下文获取
+POST http://192.168.201.140:5680/rbmh-phis/api/phis.aiInpatientEmrContextService/buildOutpatientFollowUpContext
+Content-Type: application/json
+cookie: tk=6a38f7abc1946b430432fa55
+
+[{"idPi":"660851762d699a12a8e7e697","idVis":"6a3ddb5fa5e9234cf95ff24e"}]

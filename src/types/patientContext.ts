@@ -27,6 +27,9 @@ export interface PatientContextClinical {
   familyHistory?: string;
   diagnosis?: string;
   hisHistory?: HisPatientHistory | null;
+  currentOutpatientRecordText?: string;
+  currentOutpatientRecordTitle?: string;
+  currentOutpatientRecordTime?: string;
 }
 
 export interface PatientContext {
@@ -56,6 +59,9 @@ export interface PatientContext {
   familyHistory?: string;
   diagnosis?: string;
   hisHistory?: HisPatientHistory | null;
+  currentOutpatientRecordText?: string;
+  currentOutpatientRecordTitle?: string;
+  currentOutpatientRecordTime?: string;
 
   // Legacy aliases to keep current call sites compiling during migration.
   id?: string;

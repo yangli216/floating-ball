@@ -50,6 +50,8 @@ import type {
   HisOutpatientMedicalRecord,
   HisOutpatientFollowUpContext,
   HisOutpatientFollowUpContextQuery,
+  HisOutpatientFollowUpReportResults,
+  HisOutpatientFollowUpReportResultsQuery,
 } from './types';
 import { mergePhisAvailableMedicineInventory } from './phisMedicineInventory';
 
@@ -576,6 +578,7 @@ export class PhisHisAdapter implements HisAdapter {
   async fetchPatientInfo(patientId: string): Promise<HisPatientInfo | null> {
     const idPi = trim(patientId);
     if (!idPi) return null;
+    this.lastPatientId = idPi;
 
     const detail = await this.service.searchPatientByIdPi(idPi);
     if (!detail) return null;
@@ -606,6 +609,13 @@ export class PhisHisAdapter implements HisAdapter {
   ): Promise<HisPatientHistory | null> {
     const idPi = trim(patientId);
     if (!idPi) return null;
+    this.lastPatientId = idPi;
+    if (query.currentVisitId) {
+      const trimmedVisitId = trim(query.currentVisitId);
+      if (trimmedVisitId) {
+        this.visitPatientMap.set(trimmedVisitId, idPi);
+      }
+    }
 
     // 1) 并发拉过敏史与就诊列表；任一失败不中断另一路
     const [allergyItems, visitItems] = await Promise.all([
@@ -662,6 +672,12 @@ export class PhisHisAdapter implements HisAdapter {
     query: HisOutpatientFollowUpContextQuery,
   ): Promise<HisOutpatientFollowUpContext | null> {
     return this.service.buildOutpatientFollowUpContext(query);
+  }
+
+  async fetchOutpatientFollowUpReportResults(
+    query: HisOutpatientFollowUpReportResultsQuery,
+  ): Promise<HisOutpatientFollowUpReportResults | null> {
+    return this.service.buildOutpatientFollowUpReportResults(query);
   }
 
   // ---- 住院上下文 ----
@@ -755,6 +771,16 @@ export class PhisHisAdapter implements HisAdapter {
     const idVis = trim(visitId);
     if (!idVis) return null;
 
+    const idPi = this.visitPatientMap.get(idVis) ?? this.lastPatientId;
+    let detail: HisVisitDetailBody | null = null;
+    if (idPi) {
+      try {
+        detail = await this.service.loadClinicMedicalRecord(idVis, idPi);
+      } catch (error) {
+        console.warn('[PhisHisAdapter] Failed to load clinic medical record for raw merge', { idVis, idPi, error });
+      }
+    }
+
     const documents = await this.fetchOutpatientMedicalRecordDocuments(idVis);
     if (documents.length > 0) {
       const document = chooseOutpatientRecordDocument(documents);
@@ -768,6 +794,10 @@ export class PhisHisAdapter implements HisAdapter {
           });
           const record = content ? mapOutpatientMedicalRecordContent(idVis, document, documents, content) : null;
           if (record) {
+            record.raw = {
+              ...(record.raw || {}),
+              detail,
+            };
             return record;
           }
         } catch (error) {
@@ -789,18 +819,20 @@ export class PhisHisAdapter implements HisAdapter {
         raw: {
           source: 'getLookMedList',
           documents: documents.map((doc) => doc.raw || doc),
+          detail,
         },
       };
     }
 
-    const idPi = this.visitPatientMap.get(idVis) ?? this.lastPatientId;
     if (!idPi) {
       console.warn('[PhisHisAdapter] Cannot resolve patientId for visitId', idVis);
       return null;
     }
 
     try {
-      const detail = await this.service.loadClinicMedicalRecord(idVis, idPi);
+      if (!detail) {
+        detail = await this.service.loadClinicMedicalRecord(idVis, idPi);
+      }
       if (!detail) return null;
 
       const soapRaw = (detail.soapData ?? {}) as Record<string, unknown>;

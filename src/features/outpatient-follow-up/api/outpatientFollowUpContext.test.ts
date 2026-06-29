@@ -1,6 +1,14 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
+import { getHisAdapter } from '@/services/his';
 import type { HisOutpatientFollowUpContext } from '@/services/his/types';
-import { buildOutpatientFollowUpEvidence } from './outpatientFollowUpContext';
+import {
+  buildOutpatientFollowUpEvidence,
+  fetchOutpatientFollowUpContext,
+} from './outpatientFollowUpContext';
+
+vi.mock('@/services/his', () => ({
+  getHisAdapter: vi.fn(),
+}));
 
 describe('buildOutpatientFollowUpEvidence', () => {
   it('includes the medical record and complete lab and exam result details', () => {
@@ -58,5 +66,68 @@ describe('buildOutpatientFollowUpEvidence', () => {
       examReports: [],
       ineligibleReason: 'noEligibleSourceVisit',
     })).toBe('');
+  });
+
+  it('does not treat diagnosis alone as report follow-up evidence', () => {
+    expect(buildOutpatientFollowUpEvidence({
+      followUpEligible: true,
+      currentDiagnosis: '高血压',
+      medicalRecordText: '',
+      labReports: [],
+      examReports: [],
+      ineligibleReason: null,
+    })).toBe('');
+  });
+});
+
+describe('fetchOutpatientFollowUpContext', () => {
+  it('combines current visit record text with report results without requiring a diagnosis', async () => {
+    const reportResults = {
+      followUpEligible: true,
+      labReports: [],
+      examReports: [{ examName: '胸部CT', conclusion: '未见明显异常。' }],
+      ineligibleReason: null,
+    };
+    const adapter = {
+      fetchOutpatientFollowUpReportResults: vi.fn(async () => reportResults),
+    };
+    vi.mocked(getHisAdapter).mockReturnValue(adapter as any);
+
+    await expect(fetchOutpatientFollowUpContext({
+      patientId: 'patient-1',
+      visitId: 'visit-1',
+      name: '张建国',
+      currentOutpatientRecordText: '本次门诊病历。',
+      currentOutpatientRecordTitle: '门急诊病历',
+      currentOutpatientRecordTime: '2026-06-26 14:30:00',
+    } as any)).resolves.toMatchObject({
+      followUpEligible: true,
+      source: {
+        visitId: 'visit-1',
+        visitTime: '2026-06-26 14:30:00',
+        documentTitle: '门急诊病历',
+      },
+      medicalRecordText: '本次门诊病历。',
+      examReports: reportResults.examReports,
+    });
+
+    expect(adapter.fetchOutpatientFollowUpReportResults).toHaveBeenCalledWith({
+      patientId: 'patient-1',
+      currentVisitId: 'visit-1',
+    });
+  });
+
+  it('does not request report results when current visit record text is missing', async () => {
+    const adapter = {
+      fetchOutpatientFollowUpReportResults: vi.fn(),
+    };
+    vi.mocked(getHisAdapter).mockReturnValue(adapter as any);
+
+    await expect(fetchOutpatientFollowUpContext({
+      patientId: 'patient-1',
+      visitId: 'visit-1',
+    } as any)).resolves.toBeNull();
+
+    expect(adapter.fetchOutpatientFollowUpReportResults).not.toHaveBeenCalled();
   });
 });
