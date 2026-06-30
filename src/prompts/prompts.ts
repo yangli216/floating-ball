@@ -1269,6 +1269,100 @@ ${params.clinicalContext}
   }
 };
 
+// ==================== 诊疗方案完整推荐（药品、检查、检验、处置合并） ====================
+
+export const UnifiedTreatmentPlanRecommendationPrompt = {
+  system: `你是一名基层全科医生，擅长根据国家基层诊疗指南、基本药物目录制定完整的诊疗与用药方案。
+
+**推荐范围及类型定义：**
+1. 药品 (type: "medicine")：口服、外用或注射用药物。优先使用《国家基本药物目录》内药品。
+2. 检查项目 (type: "exam")：如X线、CT、B超/彩超、心电图、肺功能等影像和器械类检查。
+3. 检验项目 (type: "lab_test")：如血常规、尿常规、肝肾功能、血糖血脂、C反应蛋白等实验室检验。
+4. 处置操作 (type: "procedure")：如理疗、中医适宜技术（针灸、推拿、拔罐、贴敷）、雾化吸入、换药拆线等。
+
+**重要临床与用药原则：**
+1. **复诊/报告回诊场景的重要常识**：
+   - 报告回诊中，患者已拿到先前的检验检查结果，**再次开具检验和检查 (exam / lab_test) 的概率极低**。
+   - 除非有明确复查指征（如严重异常需要复查）或出现全新病症，否则**不推荐**任何新的检查与检验项目。
+   - 应将重点放在用药方案调整及必要的物理治疗/处置上。若都不需要，相关分类返回空数组。
+2. **抗菌药物规范与剂量限制**：
+   - 必须严格掌握抗菌药物使用指征。
+   - **确保用药剂量合理与规范**：必须遵守临床药典。例如，**头孢呋辛酯片成人常规单次剂量为 0.25g 或 0.5g**（严禁推荐单次 1g 等超大剂量，临床上一天总量不超过1g，一般单次 0.25g BID，若严重感染最大为 0.5g BID）。
+   - 绝大多数口服固体制剂的单次剂量为 1-2 片/粒，如果换算出来超过 2 片/粒，请仔细核对单次剂量数值是否合理（如阿莫西林单次 0.5g 对应 0.25g 规格为 2 粒，合理；头孢呋辛酯单次 0.25g 对应 0.25g 规格为 1 片，合理）。
+3. **药品库存匹配**：
+   - 先选有效库存内同品，再选库存内临床等效药；均无合适选择时才返回规范通用名。
+   - spec 必须是**制剂规格**（每片/粒的含量，如 "0.25g"），不要写包装规格（如 "0.25g*24粒/盒"）。
+   - targetDose 填写临床标准一次剂量数值，由 dosage/dosageUnit 配合换算。
+
+**输出要求：**
+严格返回单一JSON数组格式，不要包含markdown标记。`,
+
+  buildUserPrompt(params: {
+    patientName: string;
+    gender: string;
+    age: string;
+    diagnosisName: string;
+    diagnosisCode: string;
+    chiefComplaint: string;
+    clinicalContext?: string;
+    availableMedicineInventory?: string;
+  }): string {
+    const contextPart = params.clinicalContext
+      ? `**复诊/报告回诊依据（含已出报告结果）：**\n${params.clinicalContext}\n`
+      : '';
+    const inventoryPart = params.availableMedicineInventory
+      ? `${params.availableMedicineInventory}\n`
+      : '';
+
+    return `
+请为以下患者制定后续治疗方案，推荐必要的药品、检查、检验或处置操作：
+
+**患者信息：**
+${params.patientName}，${params.gender}，${params.age}
+
+**已选诊断：**
+${params.diagnosisName} (ICD10: ${params.diagnosisCode})
+
+**主诉：**
+${params.chiefComplaint}
+
+${contextPart}
+${inventoryPart}
+**任务要求：**
+1. 推荐 3-5 个药品（type: "medicine"），并根据复诊依据判断是否需要开具检查/检验/处置。报告回诊时一般无需检查检验，若无需要相关类型返回空。
+2. 头孢呋辛酯片等二代头孢成人常规单次剂量为 0.25g-0.5g，严禁推荐 1.0g 等异常单次用量。
+3. 严格按 JSON 数组格式返回，不要包含 markdown 标记。
+
+**返回格式：**
+[
+  {
+    "type": "medicine",
+    "name": "阿莫西林胶囊",
+    "aliases": ["阿莫西林", "阿莫西林胶囊剂"],
+    "spec": "0.25g",
+    "reason": "急性支气管炎细菌感染常规治疗，符合基层临床指南",
+    "targetDose": "500",
+    "targetDoseUnit": "mg",
+    "frequency": "每日3次",
+    "frequencyKey": "tid",
+    "usage": "口服",
+    "usageKey": "po",
+    "totalQty": "14",
+    "totalUnit": "粒",
+    "days": "5"
+  },
+  {
+    "type": "procedure",
+    "name": "普通针刺",
+    "aliases": ["针灸治疗"],
+    "reason": "配合缓解局部酸胀疼痛"
+  }
+]
+
+严格按照以上JSON格式返回，不要包含\\\`\\\`\\\`json等markdown标记。`;
+  }
+};
+
 // ==================== 动态症状模板生成 ====================
 
 export const DynamicSymptomTemplatePrompt = {
@@ -1888,6 +1982,7 @@ export const PROMPT_VERSION = {
   examinationRecommendation: 'v1.0',
   labTestRecommendation: 'v1.0',
   procedureRecommendation: 'v1.1',
+  unifiedTreatmentPlanRecommendation: 'v1.0',
   chatAssistant: 'v1.0',
   diagnosisCheck: 'v1.0',
   medicineCheck: 'v1.0',
@@ -1918,7 +2013,8 @@ export const PROMPTS = {
     tcmTreatmentRecommendation: TCMTreatmentRecommendationPrompt,
     examinationRecommendation: ExaminationRecommendationPrompt,
     labTestRecommendation: LabTestRecommendationPrompt,
-    procedureRecommendation: ProcedureRecommendationPrompt
+    procedureRecommendation: ProcedureRecommendationPrompt,
+    unifiedTreatmentPlanRecommendation: UnifiedTreatmentPlanRecommendationPrompt
   },
   factCheck: {
     diagnosis: DiagnosisCheckPrompt,

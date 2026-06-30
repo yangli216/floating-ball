@@ -248,7 +248,11 @@ const missingPlanContextText = computed(() => {
   }
   return `缺少${missingContextTipsText.value}，请先在 HIS 中补齐后重新触发。`;
 });
-const recommendationSections = computed(() => recommendations.sections.value);
+const recommendationSections = computed(() => {
+  return recommendations.sections.value.filter(
+    (section) => section.items.length > 0 || section.loading || !!section.error
+  );
+});
 const recommendationsLoading = computed(() => recommendations.isLoading.value);
 const selectedCountByType = computed(() => {
   const counts = new Map<TreatmentRecommendation['type'], number>();
@@ -771,73 +775,79 @@ onMounted(() => {
         </div>
 
         <div class="plan-scroll">
-          <TreatmentPlanGroup
-            v-for="section in recommendationSections"
-            :key="section.key"
-            :section="section"
-            :selected-count="getGroupSelectedCount(section.itemType)"
-            :total-count="section.items.length"
-            :is-pharmacy-required="treatmentGates.isPharmacyRequired"
-            :get-pharmacy-display="treatmentGates.getPharmacyDisplay"
-            :has-required-pharmacy="treatmentGates.hasRequiredPharmacy"
-            :is-exec-dept-required="treatmentGates.isExecDeptRequired"
-            :get-exec-dept-display="treatmentGates.getExecDeptDisplay"
-            :has-required-exec-dept="treatmentGates.hasRequiredExecDept"
-            :get-body-site-display="treatmentGates.getBodySiteDisplay"
-            :has-required-body-site="treatmentGates.hasRequiredBodySite"
-            :frequency-options="frequencyOptions"
-            :route-options="routeOptions"
-            :should-show-treatment-editor="shouldShowTreatmentEditor"
-            :is-treatment-editor-expanded="isTreatmentEditorExpanded"
-            :is-editable-field-active="isEditableFieldActive"
-            :get-editable-field-key="getEditableFieldKey"
-            :get-medicine-field-display="getMedicineFieldDisplay"
-            :get-medicine-inline-summary="getMedicineInlineSummary"
-            :is-medicine-inventory-checking="isMedicineInventoryChecking"
-            :get-medicine-inventory-warning="getMedicineInventoryWarning"
-            :is-secondary-selector-open="isSecondarySelectorOpen"
-            :get-pharmacy-search-keyword="getPharmacySearchKeyword"
-            :get-filtered-pharmacy-options="getFilteredPharmacyOptions"
-            :get-exec-dept-search-keyword="getExecDeptSearchKeyword"
-            :get-filtered-exec-dept-options="getFilteredExecDeptOptions"
-            :get-body-site-search-keyword="getBodySiteSearchKeyword"
-            :get-filtered-body-site-options="getFilteredBodySiteOptions"
-            :get-insurance-search-keyword="getInsuranceSearchKeyword"
-            :get-filtered-insurance-options="getFilteredInsuranceOptions"
-            :is-manual-match-open="isManualMatchOpen"
-            :get-manual-match-keyword="getManualMatchKeyword"
-            :get-manual-match-candidates="getManualMatchPickerCandidates"
-            @toggle="toggleTreatment"
-            @confirm-match="confirmSuggestedMatch"
-            @toggle-treatment-editor="toggleTreatmentEditor"
-            @activate-editable-field="activateEditableField"
-            @editable-field-blur="handleEditableFieldBlur"
-            @register-editable-field-element="registerEditableFieldElement"
-            @total-qty-input="handleTotalQtyInput"
-            @frequency-open-change="handleFrequencyOpenChange"
-            @route-open-change="handleRouteOpenChange"
-            @usage-field-change="handleUsageFieldChange"
-            @open-pharmacy="openPharmacyQuickSelector"
-            @open-exec-dept="openExecDeptQuickSelector"
-            @open-body-site="openBodySiteQuickSelector"
-            @open-insurance="openInsuranceQuickSelector"
-            @close-secondary-selector="closeSecondarySelector"
-            @update-pharmacy-keyword="handlePharmacySearchInput"
-            @select-pharmacy="selectPharmacyOption"
-            @clear-pharmacy="clearPharmacySelection"
-            @update-exec-dept-keyword="handleExecDeptSearchInput"
-            @select-exec-dept="selectExecDeptOption"
-            @clear-exec-dept="clearExecDeptSelection"
-            @update-body-site-keyword="handleBodySiteSearchInput"
-            @select-body-site="selectBodySiteOption"
-            @clear-body-site="clearBodySiteSelection"
-            @update-insurance-keyword="handleInsuranceSearchInput"
-            @select-insurance="selectInsuranceOption"
-            @clear-insurance="clearInsuranceSelection"
-            @toggle-manual-match="toggleManualMatchState"
-            @update-manual-match-keyword="setManualMatchKeyword"
-            @select-manual-match-candidate="applyManualMatch"
-          />
+          <div v-if="recommendationsLoading" class="unified-plan-loading">
+            <div class="loading-spinner"></div>
+            <div class="loading-text">正在生成后续治疗方案，请稍候...</div>
+          </div>
+          <template v-else>
+            <TreatmentPlanGroup
+              v-for="section in recommendationSections"
+              :key="section.key"
+              :section="section"
+              :selected-count="getGroupSelectedCount(section.itemType)"
+              :total-count="section.items.length"
+              :is-pharmacy-required="treatmentGates.isPharmacyRequired"
+              :get-pharmacy-display="treatmentGates.getPharmacyDisplay"
+              :has-required-pharmacy="treatmentGates.hasRequiredPharmacy"
+              :is-exec-dept-required="treatmentGates.isExecDeptRequired"
+              :get-exec-dept-display="treatmentGates.getExecDeptDisplay"
+              :has-required-exec-dept="treatmentGates.hasRequiredExecDept"
+              :get-body-site-display="treatmentGates.getBodySiteDisplay"
+              :has-required-body-site="treatmentGates.hasRequiredBodySite"
+              :frequency-options="frequencyOptions"
+              :route-options="routeOptions"
+              :should-show-treatment-editor="shouldShowTreatmentEditor"
+              :is-treatment-editor-expanded="isTreatmentEditorExpanded"
+              :is-editable-field-active="isEditableFieldActive"
+              :get-editable-field-key="getEditableFieldKey"
+              :get-medicine-field-display="getMedicineFieldDisplay"
+              :get-medicine-inline-summary="getMedicineInlineSummary"
+              :is-medicine-inventory-checking="isMedicineInventoryChecking"
+              :get-medicine-inventory-warning="getMedicineInventoryWarning"
+              :is-secondary-selector-open="isSecondarySelectorOpen"
+              :get-pharmacy-search-keyword="getPharmacySearchKeyword"
+              :get-filtered-pharmacy-options="getFilteredPharmacyOptions"
+              :get-exec-dept-search-keyword="getExecDeptSearchKeyword"
+              :get-filtered-exec-dept-options="getFilteredExecDeptOptions"
+              :get-body-site-search-keyword="getBodySiteSearchKeyword"
+              :get-filtered-body-site-options="getFilteredBodySiteOptions"
+              :get-insurance-search-keyword="getInsuranceSearchKeyword"
+              :get-filtered-insurance-options="getFilteredInsuranceOptions"
+              :is-manual-match-open="isManualMatchOpen"
+              :get-manual-match-keyword="getManualMatchKeyword"
+              :get-manual-match-candidates="getManualMatchPickerCandidates"
+              @toggle="toggleTreatment"
+              @confirm-match="confirmSuggestedMatch"
+              @toggle-treatment-editor="toggleTreatmentEditor"
+              @activate-editable-field="activateEditableField"
+              @editable-field-blur="handleEditableFieldBlur"
+              @register-editable-field-element="registerEditableFieldElement"
+              @total-qty-input="handleTotalQtyInput"
+              @frequency-open-change="handleFrequencyOpenChange"
+              @route-open-change="handleRouteOpenChange"
+              @usage-field-change="handleUsageFieldChange"
+              @open-pharmacy="openPharmacyQuickSelector"
+              @open-exec-dept="openExecDeptQuickSelector"
+              @open-body-site="openBodySiteQuickSelector"
+              @open-insurance="openInsuranceQuickSelector"
+              @close-secondary-selector="closeSecondarySelector"
+              @update-pharmacy-keyword="handlePharmacySearchInput"
+              @select-pharmacy="selectPharmacyOption"
+              @clear-pharmacy="clearPharmacySelection"
+              @update-exec-dept-keyword="handleExecDeptSearchInput"
+              @select-exec-dept="selectExecDeptOption"
+              @clear-exec-dept="clearExecDeptSelection"
+              @update-body-site-keyword="handleBodySiteSearchInput"
+              @select-body-site="selectBodySiteOption"
+              @clear-body-site="clearBodySiteSelection"
+              @update-insurance-keyword="handleInsuranceSearchInput"
+              @select-insurance="selectInsuranceOption"
+              @clear-insurance="clearInsuranceSelection"
+              @toggle-manual-match="toggleManualMatchState"
+              @update-manual-match-keyword="setManualMatchKeyword"
+              @select-manual-match-candidate="applyManualMatch"
+            />
+          </template>
         </div>
       </section>
     </main>
@@ -1022,7 +1032,8 @@ onMounted(() => {
   justify-content: space-between;
   flex-shrink: 0;
   padding: 14px 22px;
-  border-top: 1px solid #dbe3ee;
+  border-top: none !important;
+  box-shadow: none !important;
   background: rgba(255, 255, 255, 0.95);
 }
 
@@ -1064,9 +1075,38 @@ onMounted(() => {
 }
 
 .primary-btn:disabled {
-  border-color: #cbd5e1;
-  color: #94a3b8;
-  background: #f1f5f9;
+  border-color: #e2e8f0 !important;
+  color: #64748b !important;
+  background: #f1f5f9 !important;
   cursor: not-allowed;
+}
+
+.unified-plan-loading {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 80px 0;
+  color: #64748b;
+  gap: 16px;
+}
+
+.unified-plan-loading .loading-spinner {
+  width: 32px;
+  height: 32px;
+  border: 3px solid #e2e8f0;
+  border-top-color: #3b82f6;
+  border-radius: 50%;
+  animation: unified-spin 1s linear infinite;
+}
+
+.unified-plan-loading .loading-text {
+  font-size: 14px;
+  font-weight: 500;
+  color: #475569;
+}
+
+@keyframes unified-spin {
+  to { transform: rotate(360deg); }
 }
 </style>

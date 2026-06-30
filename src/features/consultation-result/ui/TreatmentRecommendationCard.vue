@@ -39,46 +39,6 @@
               </div>
             </div>
 
-            <div class="card-actions treatment-card-actions worklist-actions">
-              <button v-if="showManualMatchButton" class="manual-match-btn" type="button" :title="manualMatchTitle"
-                @click.stop="emit('toggle-manual-match', $event)">
-                {{ manualMatchButtonText }}
-              </button>
-              <div v-if="showFeedback" class="voice-feedback-anchor" @click.stop>
-                <button class="voice-feedback-trigger" :class="{ submitted: !!feedbackSubmittedLabel }" type="button"
-                  @click.stop="emit('toggle-feedback', $event)">反馈</button>
-                <div v-if="feedbackVisible" class="voice-feedback-panel">
-                  <VoiceRecommendationFeedbackPopover :visible="true" :title="rec.name" :draft="feedbackDraft"
-                    :submitting="feedbackSubmitting" :submitted-label="feedbackSubmittedLabel"
-                    @close="emit('toggle-feedback')" @update:draft="emit('update:feedbackDraft', $event)"
-                    @submit="emit('submit-feedback', $event)" />
-                </div>
-              </div>
-              <button v-if="showEditorToggle" class="inline-arrow-btn action-arrow" type="button"
-                :title="editorExpanded ? '收起更多编辑' : '展开更多编辑'" :aria-label="editorExpanded ? '收起更多编辑' : '展开更多编辑'"
-                @click.stop="emit('toggle-editor', $event)">
-                <span class="inline-arrow" :class="{ open: editorExpanded }"></span>
-              </button>
-            </div>
-          </div>
-
-          <div class="worklist-bottom-row">
-            <div v-if="inlineSummary || originalName || usageToken" class="worklist-secondary-row">
-              <button
-                v-if="inlineSummary"
-                class="medicine-inline-summary worklist-inline-text"
-                :class="{ clickable: showEditorToggle && !editorExpanded }"
-                type="button"
-                @click.stop="showEditorToggle && !editorExpanded ? emit('toggle-editor', $event) : undefined"
-              >
-                {{ inlineSummary }}
-              </button>
-              <div v-if="originalName" class="manual-match-origin-note worklist-inline-text worklist-inline-origin">
-                AI 原建议：{{ originalName }}
-              </div>
-              <span v-if="usageToken" class="meta-token usage-summary-token worklist-usage-token">建议 {{ usageToken }}</span>
-            </div>
-
             <div class="worklist-status-row">
               <div class="worklist-status-col">
                 <span class="meta-token worklist-status"
@@ -106,6 +66,46 @@
               <div v-if="$slots.actions" class="worklist-extra-attr-col">
                 <slot name="actions" />
               </div>
+            </div>
+
+            <div class="card-actions treatment-card-actions worklist-actions">
+              <button v-if="showManualMatchButton" class="manual-match-btn" type="button" :title="manualMatchTitle"
+                @click.stop="emit('toggle-manual-match', $event)">
+                {{ manualMatchButtonText }}
+              </button>
+              <div v-if="showFeedback" class="voice-feedback-anchor" @click.stop>
+                <button class="voice-feedback-trigger" :class="{ submitted: !!feedbackSubmittedLabel }" type="button"
+                  @click.stop="emit('toggle-feedback', $event)">反馈</button>
+                <div v-if="feedbackVisible" class="voice-feedback-panel">
+                  <VoiceRecommendationFeedbackPopover :visible="true" :title="rec.name" :draft="feedbackDraft"
+                     :submitting="feedbackSubmitting" :submitted-label="feedbackSubmittedLabel"
+                     @close="emit('toggle-feedback')" @update:draft="emit('update:feedbackDraft', $event)"
+                     @submit="emit('submit-feedback', $event)" />
+                </div>
+              </div>
+              <button v-if="showEditorToggle" class="inline-arrow-btn action-arrow" type="button"
+                :title="editorExpanded ? '收起更多编辑' : '展开更多编辑'" :aria-label="editorExpanded ? '收起更多编辑' : '展开更多编辑'"
+                @click.stop="emit('toggle-editor', $event)">
+                <span class="inline-arrow" :class="{ open: editorExpanded }"></span>
+              </button>
+            </div>
+          </div>
+
+          <div v-if="inlineSummary || originalName || usageToken" class="worklist-bottom-row">
+            <div class="worklist-secondary-row">
+              <button
+                v-if="inlineSummary"
+                class="medicine-inline-summary worklist-inline-text"
+                :class="{ clickable: showEditorToggle && !editorExpanded }"
+                type="button"
+                @click.stop="showEditorToggle && !editorExpanded ? emit('toggle-editor', $event) : undefined"
+              >
+                {{ inlineSummary }}
+              </button>
+              <div v-if="originalName" class="manual-match-origin-note worklist-inline-text worklist-inline-origin">
+                AI 原建议：{{ originalName }}
+              </div>
+              <span v-if="usageToken" class="meta-token usage-summary-token worklist-usage-token">建议 {{ usageToken }}</span>
             </div>
           </div>
 
@@ -520,9 +520,9 @@ const emit = defineEmits<{
 }
 
 .vcn-treatment-item.worklist {
-  padding: 12px 14px;
+  padding: 8px 12px;
   border-color: #e2e8f0;
-  border-radius: 12px;
+  border-radius: 10px;
   box-shadow: none;
 }
 
@@ -613,20 +613,19 @@ const emit = defineEmits<{
 .worklist-row {
   display: grid;
   grid-template-columns: 22px minmax(0, 1fr);
-  gap: 12px;
-  align-items: start;
+  gap: 8px;
+  align-items: center;
 }
 
 .worklist-select-indicator {
   display: flex;
   justify-content: center;
-  align-items: flex-start;
-  padding-top: 2px;
+  align-items: center;
 }
 
 .worklist-select-dot {
-  width: 18px;
-  height: 18px;
+  width: 16px;
+  height: 16px;
   border-radius: 50%;
   border: 1.5px solid #cbd5e1;
   background: #ffffff;
@@ -647,25 +646,25 @@ const emit = defineEmits<{
 .worklist-content {
   display: flex;
   flex-direction: column;
-  gap: 7px;
+  gap: 4px;
   min-width: 0;
 }
 
 .worklist-top-row,
 .worklist-bottom-row {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(210px, auto);
+  display: flex;
+  justify-content: space-between;
   align-items: center;
-  gap: 8px 14px;
+  gap: 8px;
   min-width: 0;
 }
 
 .worklist-top-row {
-  align-items: start;
+  align-items: center;
 }
 
 .worklist-bottom-row {
-  align-items: end;
+  align-items: center;
 }
 
 .worklist-primary-row {
@@ -693,14 +692,14 @@ const emit = defineEmits<{
 .worklist-secondary-row {
   display: flex;
   align-items: flex-start;
-  gap: 8px 12px;
+  gap: 4px 8px;
   flex-wrap: wrap;
   min-width: 0;
 }
 
 .worklist-inline-text {
-  font-size: 12px;
-  line-height: 1.5;
+  font-size: 11.5px;
+  line-height: 1.25;
   color: #64748b;
 }
 
@@ -713,10 +712,10 @@ const emit = defineEmits<{
   align-items: center;
   justify-content: flex-end;
   gap: 8px;
-  grid-column: 2;
+  margin-left: auto;
   min-width: 0;
   max-width: 360px;
-  justify-self: end;
+  flex-shrink: 0;
 }
 
 .worklist-status-col {
@@ -777,6 +776,12 @@ const emit = defineEmits<{
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+.worklist .card-title {
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.25;
 }
 
 .reason-tooltip-trigger {
@@ -987,7 +992,7 @@ const emit = defineEmits<{
   gap: 5px;
   min-width: 0;
   max-width: 180px;
-  min-height: 24px;
+  min-height: 20px;
   padding: 0 8px;
   border: 1px solid var(--voice-accent-soft);
   border-radius: 999px;
@@ -1045,16 +1050,13 @@ const emit = defineEmits<{
 .worklist-actions {
   display: inline-flex;
   justify-content: flex-end;
-  flex-wrap: wrap;
-  gap: 8px;
-  grid-column: 2;
-  min-width: 0;
-  max-width: 360px;
-  justify-self: end;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
 }
 
 .worklist-chip {
-  min-height: 28px;
+  min-height: 20px;
   max-width: 132px;
   padding: 0 8px;
   border-color: rgba(37, 99, 235, 0.18);
@@ -1078,7 +1080,7 @@ const emit = defineEmits<{
 .worklist-actions .voice-feedback-trigger,
 .worklist-actions .manual-match-btn,
 .worklist-actions .action-arrow {
-  min-height: 24px;
+  min-height: 20px;
   border-radius: 999px;
 }
 
@@ -1134,7 +1136,7 @@ const emit = defineEmits<{
 }
 
 .manual-match-btn {
-  min-height: 24px;
+  min-height: 20px;
   padding: 0 8px;
   border: 1px solid var(--voice-accent-soft);
   border-radius: 999px;
@@ -1245,7 +1247,10 @@ const emit = defineEmits<{
 
   .worklist-top-row,
   .worklist-bottom-row {
-    grid-template-columns: minmax(0, 1fr);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 8px;
   }
 
   .worklist-primary-row,
@@ -1254,25 +1259,20 @@ const emit = defineEmits<{
   }
 
   .worklist-status-row {
-    justify-content: flex-start;
-    flex-wrap: wrap;
-    grid-column: 1;
-    max-width: none;
-    justify-self: stretch;
-  }
-
-  .worklist-status-col,
-  .worklist-attr-col,
-  .worklist-extra-attr-col {
-    justify-content: flex-start;
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 8px;
+    margin-left: auto;
+    flex-shrink: 0;
   }
 
   .worklist-actions {
-    grid-column: 1;
-    min-width: 0;
-    max-width: none;
-    justify-self: stretch;
-    justify-content: flex-start;
+    display: inline-flex;
+    justify-content: flex-end;
+    align-items: center;
+    gap: 6px;
+    flex-shrink: 0;
   }
 
   .worklist-detail-stack {

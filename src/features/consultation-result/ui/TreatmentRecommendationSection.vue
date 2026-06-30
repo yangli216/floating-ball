@@ -201,7 +201,7 @@ function shouldShowEditorToggle(item: TreatmentRecommendation): boolean {
   if (props.shouldShowEditorToggle) {
     return props.shouldShowEditorToggle(item);
   }
-  return !!item.selected || props.isTreatmentEditorExpanded(item);
+  return true;
 }
 
 function shouldShowExecDeptField(item: TreatmentRecommendation): boolean {
@@ -1230,15 +1230,15 @@ function getFeedbackSubmittedLabel(item: TreatmentRecommendation): string {
 .treatment-recommendation-list {
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 8px;
   margin: 0;
   padding: 0;
   list-style: none;
 }
 
 .editor-shell {
-  margin-top: 10px;
-  padding-top: 10px;
+  margin-top: 8px;
+  padding-top: 8px;
   border-top: 1px solid var(--voice-border);
 }
 

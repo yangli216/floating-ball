@@ -169,6 +169,7 @@ async function hydratePatientContextFromHis(
   let currentOutpatientRecordText = '';
   let currentOutpatientRecordTitle = '';
   let currentOutpatientRecordTime = '';
+  let resolvedDiagnosis = '';
 
   let resolvedVisitId = nextVisitId;
   const rawHistory = hisHistory as any;
@@ -200,6 +201,17 @@ async function hydratePatientContextFromHis(
         hasReportedApply,
         finalResult: hasReportedResults,
       });
+
+      if (detail && Array.isArray(detail.diagList)) {
+        resolvedDiagnosis = detail.diagList
+          .map((d: any) => (d.naDiag || d.naIcd10 || '').trim())
+          .filter(Boolean)
+          .join('，');
+      }
+      if (!resolvedDiagnosis && record?.diagnosis) {
+        resolvedDiagnosis = record.diagnosis;
+      }
+      console.log('[ReceptionController] resolvedDiagnosis from history record/detail:', resolvedDiagnosis);
 
       currentOutpatientRecordText = buildCurrentOutpatientRecordText(record);
       currentOutpatientRecordTitle = (record?.documentTitle || record?.documents?.[0]?.title || '').trim();
@@ -235,11 +247,15 @@ async function hydratePatientContextFromHis(
     hydrated.currentOutpatientRecordText = currentOutpatientRecordText || undefined;
     hydrated.currentOutpatientRecordTitle = currentOutpatientRecordTitle || undefined;
     hydrated.currentOutpatientRecordTime = currentOutpatientRecordTime || undefined;
+    if (resolvedDiagnosis) {
+      hydrated.diagnosis = resolvedDiagnosis;
+    }
     hydrated.clinical = {
       ...hydrated.clinical,
       currentOutpatientRecordText: currentOutpatientRecordText || undefined,
       currentOutpatientRecordTitle: currentOutpatientRecordTitle || undefined,
       currentOutpatientRecordTime: currentOutpatientRecordTime || undefined,
+      diagnosis: resolvedDiagnosis || hydrated.clinical?.diagnosis || undefined,
     };
   }
   hydrated = applyReceptionClinicalHistorySummaries(hydrated, hisHistory);

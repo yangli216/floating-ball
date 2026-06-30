@@ -30,7 +30,6 @@ import {
   type RawClinicalResultTreatmentRecommendationInput,
 } from '@features/clinical-result';
 import type {
-  ClinicalResultTreatmentPromptAsset,
   ClinicalResultTreatmentRequestKind,
 } from '@features/clinical-result';
 import { buildOutpatientFollowUpEvidence } from '@features/outpatient-follow-up/api/outpatientFollowUpContext';
@@ -63,41 +62,37 @@ export interface TreatmentPlanRecommendationOptions {
   normalizeTreatment: (rec: Partial<TreatmentRecommendation>) => TreatmentRecommendation;
 }
 
-const TREATMENT_REQUESTS: Array<{
-  key: ClinicalResultTreatmentRequestKind;
-  itemType: TreatmentRecommendation['type'];
-  title: string;
-  prompt: ClinicalResultTreatmentPromptAsset;
-  traceTitle: string;
-}> = [
+const UI_SECTIONS = [
   {
-    key: 'medication',
-    itemType: 'medicine',
+    key: 'medication' as const,
+    itemType: 'medicine' as const,
     title: '药品',
-    prompt: PROMPTS.consultation.treatmentRecommendation,
-    traceTitle: '诊疗方案推荐生成用药方案',
   },
   {
-    key: 'exam',
-    itemType: 'exam',
+    key: 'exam' as const,
+    itemType: 'exam' as const,
     title: '检查项目',
-    prompt: PROMPTS.consultation.examinationRecommendation,
-    traceTitle: '诊疗方案推荐生成检查项目',
   },
   {
-    key: 'lab_test',
-    itemType: 'lab_test',
+    key: 'lab_test' as const,
+    itemType: 'lab_test' as const,
     title: '检验项目',
-    prompt: PROMPTS.consultation.labTestRecommendation,
-    traceTitle: '诊疗方案推荐生成检验项目',
   },
   {
-    key: 'procedure',
-    itemType: 'procedure',
+    key: 'procedure' as const,
+    itemType: 'procedure' as const,
     title: '处置项目',
-    prompt: PROMPTS.consultation.procedureRecommendation,
-    traceTitle: '诊疗方案推荐生成处置项目',
   },
+];
+
+const RECOMMENDATION_TASKS = [
+  {
+    key: 'unified' as const,
+    uiKeys: ['medication' as const, 'exam' as const, 'lab_test' as const, 'procedure' as const],
+    itemTypes: ['medicine' as const, 'exam' as const, 'lab_test' as const, 'procedure' as const],
+    prompt: PROMPTS.consultation.unifiedTreatmentPlanRecommendation,
+    traceTitle: '诊疗方案推荐生成完整方案',
+  }
 ];
 
 function readPatientText(patient: AppPatient | null, keys: string[]): string {
@@ -158,10 +153,6 @@ function buildDiagnosisFromText(text: string): Diagnosis | null {
   };
 }
 
-function buildTreatmentRequestKind(kind: ClinicalResultTreatmentRequestKind): ClinicalResultTreatmentRequestKind {
-  return kind;
-}
-
 export function useTreatmentPlanRecommendations(options: TreatmentPlanRecommendationOptions) {
   const loadingByKind = ref<Record<ClinicalResultTreatmentRequestKind, boolean>>({
     medication: false,
@@ -206,7 +197,7 @@ export function useTreatmentPlanRecommendations(options: TreatmentPlanRecommenda
   });
   const isLoading = computed(() => Object.values(loadingByKind.value).some(Boolean));
   const selectedTreatments = computed(() => options.treatments.value.filter((item) => item.selected));
-  const sections = computed<TreatmentPlanRecommendationSection[]>(() => TREATMENT_REQUESTS.map((config) => ({
+  const sections = computed<TreatmentPlanRecommendationSection[]>(() => UI_SECTIONS.map((config) => ({
     key: config.key,
     title: config.title,
     itemType: config.itemType,
@@ -233,70 +224,86 @@ export function useTreatmentPlanRecommendations(options: TreatmentPlanRecommenda
     ];
   }
 
-  async function fetchSection(config: (typeof TREATMENT_REQUESTS)[number], runKey: string): Promise<void> {
-    loadingByKind.value = { ...loadingByKind.value, [config.key]: true };
-    errorByKind.value = { ...errorByKind.value, [config.key]: '' };
+  async function fetchTask(task: (typeof RECOMMENDATION_TASKS)[number], runKey: string): Promise<void> {
+    task.uiKeys.forEach((key) => {
+      loadingByKind.value = { ...loadingByKind.value, [key]: true };
+      errorByKind.value = { ...errorByKind.value, [key]: '' };
+    });
 
     const patient = options.patient.value;
     const currentDiagnosis = options.diagnosis.value;
     try {
-      const inventoryContext = config.key === 'medication'
+      const inventoryContext = ((task.key as string) === 'medication' || (task.key as string) === 'unified')
         ? await loadAvailableMedicineInventoryContext({ pharmacies: options.pharmacies.value })
         : null;
       const diagnosisName = currentDiagnosis?.name
         || recordContext.value.diagnosisText
         || '未读取到本次诊断，请基于本次病历和报告结果判断后续处理';
-      const requestSpec = buildClinicalResultTreatmentRequestSpec(buildTreatmentRequestKind(config.key), {
-        patientName: getPatientContextName(patient) || '未知患者',
-        gender: getPatientContextGenderText(patient) || '未知',
-        age: getPatientContextAgeText(patient) || '',
-        diagnosisName,
-        diagnosisCode: currentDiagnosis?.code || '',
-        chiefComplaint: recordContext.value.chiefComplaint || '携本次病历及检验检查报告复诊',
-        clinicalContext: recordContext.value.followUpEvidence,
-        availableMedicineInventory: inventoryContext?.promptContext,
-      }, config.prompt, {
-        sourceModule: 'treatment_plan_ai',
-        operationModule: 'treatment_plan',
-      }, {
-        scene: `treatment-plan-${config.key}`,
-        title: config.traceTitle,
-      });
+      const requestSpec = buildClinicalResultTreatmentRequestSpec(
+        ((task.key as string) === 'medication' || (task.key as string) === 'unified') ? 'medication' : 'exam',
+        {
+          patientName: getPatientContextName(patient) || '未知患者',
+          gender: getPatientContextGenderText(patient) || '未知',
+          age: getPatientContextAgeText(patient) || '',
+          diagnosisName,
+          diagnosisCode: currentDiagnosis?.code || '',
+          chiefComplaint: recordContext.value.chiefComplaint || '携本次病历及检验检查报告复诊',
+          clinicalContext: recordContext.value.followUpEvidence,
+          availableMedicineInventory: inventoryContext?.promptContext,
+        },
+        task.prompt,
+        {
+          sourceModule: 'treatment_plan_ai',
+          operationModule: 'treatment_plan',
+        },
+        {
+          scene: `treatment-plan-${task.key}`,
+          title: task.traceTitle,
+        }
+      );
 
       const response = await chat(requestSpec.messages, undefined, undefined, undefined, requestSpec.config);
       if (runKey !== lastRunKey.value) return;
 
-      const rawRecommendations = alignMedicineRecommendationsToInventory(
-        parseLLMJson<RawClinicalResultTreatmentRecommendationInput[]>(response),
-        inventoryContext?.items || [],
-      );
-      let mapped = buildClinicalResultTreatmentRecommendationsFromRaw({
-        rawRecommendations,
-        type: config.itemType,
-        match: assessTreatmentCatalogMatch,
-        normalize: options.normalizeTreatment,
-      });
-      mapped = await applyRecommendationPreferenceRanking(
-        mapped,
-        buildTreatmentPreferenceCandidate,
-        {
-          consultationId: getPatientContextId(options.patient.value) || '',
-          sourceModule: 'treatment_plan',
-          scene: `treatment-plan-${config.key}`,
-        },
-      );
-      replaceTreatmentsByType(config.itemType, mapped);
+      const rawResults = parseLLMJson<RawClinicalResultTreatmentRecommendationInput[]>(response);
+      const alignedResults = ((task.key as string) === 'medication' || (task.key as string) === 'unified')
+        ? alignMedicineRecommendationsToInventory(rawResults, inventoryContext?.items || [])
+        : rawResults;
+
+      for (const itemType of task.itemTypes) {
+        let mapped = buildClinicalResultTreatmentRecommendationsFromRaw({
+          rawRecommendations: alignedResults,
+          type: itemType,
+          match: assessTreatmentCatalogMatch,
+          normalize: options.normalizeTreatment,
+        });
+        mapped = await applyRecommendationPreferenceRanking(
+          mapped,
+          buildTreatmentPreferenceCandidate,
+          {
+            consultationId: getPatientContextId(options.patient.value) || '',
+            sourceModule: 'treatment_plan',
+            scene: `treatment-plan-${task.key}`,
+          },
+        );
+        replaceTreatmentsByType(itemType, mapped);
+      }
     } catch (error) {
-      console.error('[TreatmentPlan] Failed to fetch treatment recommendation', {
-        kind: config.key,
+      console.error('[TreatmentPlan] Failed to fetch task recommendation', {
+        kind: task.key,
         error,
       });
-      errorByKind.value = {
-        ...errorByKind.value,
-        [config.key]: `${config.title}生成失败，已保留其它可用建议。`,
-      };
+      task.uiKeys.forEach((key) => {
+        const title = UI_SECTIONS.find((s) => s.key === key)?.title || '';
+        errorByKind.value = {
+          ...errorByKind.value,
+          [key]: `${title}生成失败，已保留其它可用建议。`,
+        };
+      });
     } finally {
-      loadingByKind.value = { ...loadingByKind.value, [config.key]: false };
+      task.uiKeys.forEach((key) => {
+        loadingByKind.value = { ...loadingByKind.value, [key]: false };
+      });
     }
   }
 
@@ -312,7 +319,7 @@ export function useTreatmentPlanRecommendations(options: TreatmentPlanRecommenda
     options.diagnosis.value = buildDiagnosisFromText(recordContext.value.diagnosisText);
     initialized.value = true;
 
-    await Promise.all(TREATMENT_REQUESTS.map((config) => fetchSection(config, runKey)));
+    await Promise.all(RECOMMENDATION_TASKS.map((task) => fetchTask(task, runKey)));
     refreshing.value = false;
     return runKey === lastRunKey.value;
   }
