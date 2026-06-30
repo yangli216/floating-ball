@@ -92,8 +92,8 @@ describe('buildChronicRefillInventoryTreatments', () => {
     const treatments = buildChronicRefillInventoryTreatments([{
       name: '盐酸二甲双胍片',
       spec: '0.25g*60片/瓶',
-      dosage: '0.5',
-      dosageUnit: 'g',
+      targetDose: '500',
+      targetDoseUnit: 'mg',
       frequency: '每日3次',
       frequencyKey: 'TID',
       route: '口服',
@@ -117,16 +117,18 @@ describe('buildChronicRefillInventoryTreatments', () => {
     expect(treatments).toHaveLength(1);
     expect(treatments[0]).toMatchObject({
       name: '盐酸二甲双胍片',
-      selected: true,
-      dosage: '0.5',
-      dosageUnit: 'g',
+      selected: false,
+      targetDose: '500',
+      targetDoseUnit: 'mg',
+      dosage: '',
+      dosageUnit: '',
       frequency: '每日3次',
       frequencyKey: 'TID',
       route: '口服',
       routeKey: 'PO',
       days: '14',
-      totalQty: '2',
-      totalUnit: '瓶',
+      totalQty: '',
+      totalUnit: '',
       reason: '糖尿病慢病续方常规方案',
     });
   });
@@ -135,8 +137,8 @@ describe('buildChronicRefillInventoryTreatments', () => {
     const treatments = buildChronicRefillInventoryTreatments([{
       name: '盐酸二甲双胍片',
       spec: '0.25g*60片/瓶',
-      dosage: '0.5',
-      dosageUnit: 'g',
+      targetDose: '500',
+      targetDoseUnit: 'mg',
       frequency: '每天三次',
       frequencyKey: 'TID',
       route: '口服',
@@ -160,12 +162,14 @@ describe('buildChronicRefillInventoryTreatments', () => {
     expect(treatments[0].reason).toContain('历史处方包含盐酸二甲双胍片');
     expect(treatments[0].reason).not.toContain('90片');
     expect(treatments[0]).toMatchObject({
-      dosage: '0.5',
-      dosageUnit: 'g',
+      targetDose: '500',
+      targetDoseUnit: 'mg',
+      dosage: '',
+      dosageUnit: '',
       frequencyKey: 'TID',
       days: '30',
-      totalQty: '3',
-      totalUnit: '瓶',
+      totalQty: '',
+      totalUnit: '',
     });
   });
 
@@ -190,7 +194,7 @@ describe('buildChronicRefillInventoryTreatments', () => {
       route: '',
       days: '',
       totalQty: '',
-      totalUnit: '盒',
+      totalUnit: '',
     });
   });
 });

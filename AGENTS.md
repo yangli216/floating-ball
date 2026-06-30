@@ -133,6 +133,7 @@
 7. `DiagnosisPathWindow.vue`、`diagnosisPath.ts`、`stores/diagnosisPath.ts` 的改动必须同时检查窗口生命周期、渲染就绪事件和缓存 key 策略
 8. 知识库相关改动要明确是走 `pmphai.ts` 主链路，还是启用内置 `KnowledgeBasePanel.vue`，避免双轨长期漂移
 9. **HIS 调用边界**：业务代码（`components/` / `composables/` / `services/` 中除 `services/his/*` 之外）禁止直接 `import ... from 'services/hisService'`。必须经 `services/his` 入口：业务调用走 `getHisAdapter()`，仅 SDK handshake / 区域化 bootstrap 等认证场景允许使用 `services/his` 重导出的 `getHisService` / `resetHisService`。新增 PHIS 私有字段读取必须通过 `entry.raw.xxx` 透传，不允许在中性 DTO 上加 PHIS 命名字段。
+10. **药品定稿流水线**：任何 AI 或历史上下文产生的药品，在自动选中、缓存、库存校验和回写前必须调用共享 `finalizeMedicineRecommendation(s)`，依次完成当前库存对齐、药品详情、一次剂量换算、标准频次 / 用法、程序总量和最终库存校验。模型包装总量不得直接进入药品处方；只调用 hydrate、只在展示层 normalize 或只在提交 payload 时补字段均不满足门禁。
 
 ## 推荐提交流程
 

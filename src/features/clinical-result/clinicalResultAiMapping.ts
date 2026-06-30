@@ -61,6 +61,19 @@ export interface BuildClinicalResultTreatmentRecommendationsInput {
   normalize: MapClinicalResultAiTreatmentsInput['normalize'];
 }
 
+function discardAiMedicinePackageTotal(
+  rec: Partial<TreatmentRecommendation>,
+  type: TreatmentRecommendation['type'],
+): Partial<TreatmentRecommendation> {
+  if (type !== 'medicine') return rec;
+  return {
+    ...rec,
+    totalQty: '',
+    totalUnit: '',
+    totalManualEdited: false,
+  };
+}
+
 export function mapClinicalResultAiDiagnoses(input: MapClinicalResultAiDiagnosesInput): Diagnosis[] {
   const lookupOrder = input.lookupOrder || ['name', 'code'];
 
@@ -105,8 +118,12 @@ export function buildClinicalResultTreatmentRecommendationsFromRaw(
       const normalizedRaw = normalizeRawTreatmentRecommendationFields(rec, input.type);
       const aliases = Array.isArray(normalizedRaw.aliases) ? (normalizedRaw.aliases as string[]) : undefined;
       const assessment = input.match(input.type, normalizedRaw.name || '', aliases, normalizedRaw.spec);
+      const safeRaw = discardAiMedicinePackageTotal(
+        normalizedRaw as Partial<TreatmentRecommendation>,
+        input.type,
+      );
       return input.normalize({
-        ...(normalizedRaw as Partial<TreatmentRecommendation>),
+        ...safeRaw,
         aliases,
         type: input.type,
         matchedItem: assessment.matchedItem,
@@ -128,8 +145,9 @@ export function mapClinicalResultAiTreatments(input: MapClinicalResultAiTreatmen
       aliases,
       type === 'medicine' ? normalizedRaw.spec : undefined,
     );
+    const safeRaw = discardAiMedicinePackageTotal(normalizedRaw, type);
     return input.normalize({
-      ...normalizedRaw,
+      ...safeRaw,
       aliases,
       originalName: normalizedRaw.originalName || normalizedRaw.name,
       matchedItem: assessment.matchedItem,

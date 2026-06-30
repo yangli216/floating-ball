@@ -157,23 +157,26 @@ describe('generateChronicRefillRecord', () => {
 
     expect(result.treatments[0]).toMatchObject({
       name: '盐酸二甲双胍片',
-      selected: true,
-      dosage: '0.5',
-      dosageUnit: 'g',
+      selected: false,
+      targetDose: '0.5',
+      targetDoseUnit: 'g',
+      dosage: '',
+      dosageUnit: '',
       frequency: '每日3次',
       frequencyKey: 'TID',
       route: '口服',
       routeKey: 'PO',
       days: '14',
-      totalQty: '2',
-      totalUnit: '瓶',
+      totalQty: '',
+      totalUnit: '',
     });
 
     const messages = vi.mocked(chat).mock.calls[0][0];
     const prompt = messages.map((message) => message.content).join('\n');
     expect(prompt).toContain('盐酸二甲双胍片｜0.25g*60片/瓶｜可用库存20瓶');
     expect(prompt).toContain('recommendedMedicines 必须返回结构化药品对象');
-    expect(prompt).toContain('"dosage":"单次剂量数值"');
+    expect(prompt).toContain('"targetDose":"目标临床一次剂量数值"');
+    expect(prompt).toContain('totalQty/totalUnit必须留空');
     expect(prompt).toContain('reason只说明诊断、历史用药和适应证等临床推荐依据');
   });
 
@@ -287,10 +290,12 @@ describe('generateChronicRefillRecord', () => {
     expect(result.treatments[0]).toMatchObject({
       name: '盐酸二甲双胍片',
       sourceType: 'inferred',
-      selected: true,
-      dosage: '0.5',
-      totalQty: '3',
-      totalUnit: '瓶',
+      selected: false,
+      targetDose: '0.5',
+      targetDoseUnit: 'g',
+      dosage: '',
+      totalQty: '',
+      totalUnit: '',
     });
     expect(result.diagnoses[0]).toMatchObject({
       sourceType: 'explicit',

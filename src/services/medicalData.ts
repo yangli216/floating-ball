@@ -1305,21 +1305,16 @@ class MedicalDataService {
       return null;
     }
 
-    // 同名多规格时，优先返回 spec 含量匹配的
-    if (exactMatches.length > 1 && spec) {
-      const querySpecMg = extractSpecStrengthMg(spec);
-      if (querySpecMg !== null) {
-        const specMatched = exactMatches.find((item) => {
-          const itemSpecMg = extractSpecStrengthMg(item.spec);
-          return itemSpecMg !== null && Math.abs(querySpecMg - itemSpecMg) < 0.01;
-        });
-        if (specMatched) {
-          return specMatched;
-        }
-      }
+    const querySpecMg = extractSpecStrengthMg(spec);
+    if (querySpecMg !== null) {
+      const specMatched = exactMatches.find((item) => {
+        const itemSpecMg = extractSpecStrengthMg(item.spec);
+        return itemSpecMg !== null && Math.abs(querySpecMg - itemSpecMg) < 0.01;
+      });
+      return specMatched || null;
     }
 
-    return exactMatches[0];
+    return exactMatches.length === 1 ? exactMatches[0] : null;
   }
 
   private findExactMedicalItemMatch(items: MedicalItem[], query: string): MedicalItem | null {

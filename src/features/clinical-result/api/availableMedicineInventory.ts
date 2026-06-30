@@ -211,6 +211,17 @@ function normalizeMedicineLookupText(value: string): string {
     .toLowerCase();
 }
 
+function extractMedicineStrengthMg(value: string | undefined): number | null {
+  const matched = (value || '').match(/(\d+(?:\.\d+)?)\s*(g|mg|ug|μg|毫克|克|微克)/iu);
+  if (!matched) return null;
+  const amount = Number(matched[1]);
+  if (!Number.isFinite(amount) || amount <= 0) return null;
+  const unit = matched[2].toLowerCase();
+  if (unit === 'g' || unit === '克') return amount * 1000;
+  if (unit === 'mg' || unit === '毫克') return amount;
+  return amount / 1000;
+}
+
 function findInventoryMedicine(
   recommendation: MedicineRecommendationLike,
   inventory: AvailableMedicineInventoryCatalogItem[],
@@ -220,7 +231,7 @@ function findInventoryMedicine(
     .filter(Boolean);
   if (candidates.length === 0) return null;
 
-  return inventory.find((item) => {
+  const nameMatches = inventory.filter((item) => {
     const inventoryName = normalizeMedicineLookupText(item.productName);
     return candidates.some((candidate) => (
       candidate === inventoryName
@@ -230,7 +241,22 @@ function findInventoryMedicine(
         && (candidate.includes(inventoryName) || inventoryName.includes(candidate))
       )
     ));
-  }) || null;
+  });
+  if (nameMatches.length === 0) return null;
+
+  const recommendationStrength = extractMedicineStrengthMg(recommendation.spec);
+  if (recommendationStrength !== null) {
+    const strengthMatches = nameMatches.filter((item) => {
+      const inventoryStrength = extractMedicineStrengthMg(item.spec);
+      return inventoryStrength !== null
+        && Math.abs(inventoryStrength - recommendationStrength) < 0.01;
+    });
+    return strengthMatches
+      .sort((left, right) => right.availableQuantity - left.availableQuantity)[0]
+      || null;
+  }
+
+  return nameMatches.length === 1 ? nameMatches[0] : null;
 }
 
 export function alignMedicineRecommendationsToInventory<T>(

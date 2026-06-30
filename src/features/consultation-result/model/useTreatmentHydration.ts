@@ -25,11 +25,13 @@ import type {
 import { getHisAdapter } from '@/services/his';
 import {
   computeDoseCount,
+  convertClinicalDoseToUnit,
   formatDoseCount,
   formatMedicineSpec,
 } from '@/utils/treatmentInference';
 import { parsePositiveNumber } from '@/utils/medicalDictionaryHelpers';
 import {
+  calculateMedicineQuantity,
   getMatchedMedicalItemClientId,
   readFirstString,
   getMatchedItemRaw,
@@ -38,6 +40,8 @@ import type { UsageOption } from '@/utils/medicalDictionaryHelpers';
 
 interface Deps {
   pharmacyOptions: Ref<PharmacyOption[]>;
+  /** 药品详情落地后重新计算频次、用法和包装总量。 */
+  normalizeTreatment?: (rec: Partial<TreatmentRecommendation>) => TreatmentRecommendation;
   /** 由 useTreatmentGates 提供：根据 rec.matchedItem.storeIds ∩ pharmacyOptions 收窄后的候选药房。 */
   getCandidatePharmaciesForMedicine: (rec: TreatmentRecommendation) => PharmacyOption[];
   /** 由 useTreatmentNormalization 提供：HIS 默认频次 / 用法尝试匹配业务字典。 */
@@ -55,6 +59,23 @@ interface Deps {
 interface MedicineDetailLookupResult {
   detail: MedicineDetail;
   pharmacy: PharmacyOption;
+}
+
+export interface MedicineFinalizationResult {
+  item: TreatmentRecommendation;
+  ready: boolean;
+  inventoryChecked: boolean;
+  issues: string[];
+}
+
+export interface FinalizeMedicineOptions {
+  checkInventory?: boolean;
+}
+
+const FORMULATION_DOSE_UNITS = new Set(['片', '粒', '袋', '包', '支', '丸', '贴', '喷', '滴']);
+
+function isFormulationDoseUnit(value: string): boolean {
+  return FORMULATION_DOSE_UNITS.has(value.trim());
 }
 
 function getMedicineDetailId(rec: TreatmentRecommendation): string {
@@ -90,6 +111,7 @@ function formatDetailQuantity(value: number | undefined): string {
 export function useTreatmentHydration(deps: Deps) {
   const {
     pharmacyOptions,
+    normalizeTreatment = (rec) => rec as TreatmentRecommendation,
     getCandidatePharmaciesForMedicine,
     findFrequencyOptionByValue,
     findRouteOptionByValue,
@@ -229,19 +251,31 @@ export function useTreatmentHydration(deps: Deps) {
         raw: mergedRaw,
       };
 
-      // 剂量换算优先级：targetDose × HIS dose -> HIS defaultSingleDose -> 保留原值
+      // 剂量换算优先级：targetDose -> PHIS unitDose -> 制剂单位换算 -> HIS 默认值 -> 保留原值
       const doseUnit = detail.doseUnit || '';
-      const computedCount = computeDoseCount(
-        rec.targetDose,
-        rec.targetDoseUnit,
-        detail.dose,
-        detail.spec || detail.specSale,
-      );
-      if (computedCount !== null) {
-        rec.dosage = formatDoseCount(computedCount);
-        rec.dosageUnit = doseUnit || '片';
-      } else if (detail.defaultSingleDose) {
-        rec.dosage = rec.dosage || detail.defaultSingleDose;
+      if (!rec.dosageManualEdited) {
+        const clinicalDose = convertClinicalDoseToUnit(
+          rec.targetDose,
+          rec.targetDoseUnit,
+          doseUnit,
+        );
+        const computedCount = clinicalDose === null && isFormulationDoseUnit(doseUnit)
+          ? computeDoseCount(
+              rec.targetDose,
+              rec.targetDoseUnit,
+              detail.dose,
+              detail.spec || detail.specSale,
+            )
+          : null;
+        if (clinicalDose !== null) {
+          rec.dosage = clinicalDose;
+          rec.dosageUnit = doseUnit;
+        } else if (computedCount !== null) {
+          rec.dosage = formatDoseCount(computedCount);
+          rec.dosageUnit = doseUnit || '片';
+        } else if (detail.defaultSingleDose) {
+          rec.dosage = rec.dosage || detail.defaultSingleDose;
+        }
       }
       if (doseUnit) rec.dosageUnit = doseUnit;
 
@@ -454,6 +488,92 @@ export function useTreatmentHydration(deps: Deps) {
     }
   }
 
+  function getMedicineFinalizationIssues(rec: TreatmentRecommendation): string[] {
+    const issues: string[] = [];
+    if (!rec.matchedItem) issues.push('未匹配当前库存药品');
+    if (!isMedicineDetailLoadedForSelectedPharmacy(rec)) issues.push('未加载当前药房药品详情');
+    if (parsePositiveNumber(rec.dosage) === null || !(rec.dosageUnit || '').trim()) {
+      issues.push('一次剂量不完整');
+    }
+    if (!findFrequencyOptionByValue(rec.frequencyKey || rec.frequency)) {
+      issues.push('频次未匹配 HIS 字典');
+    }
+    if (!findRouteOptionByValue(rec.routeKey || rec.route)) {
+      issues.push('用法未匹配 HIS 字典');
+    }
+    if (parsePositiveNumber(rec.days) === null) issues.push('用药天数不完整');
+    const quantityCalculation = calculateMedicineQuantity(rec);
+    if (!quantityCalculation) {
+      issues.push('包装总量不可计算');
+    } else {
+      if (quantityCalculation.doseCountPerAdministration > 20) {
+        issues.push('单次制剂数量异常');
+      }
+      if (!rec.totalManualEdited
+        && parsePositiveNumber(rec.totalQty) !== quantityCalculation.packageCount) {
+        issues.push('包装总量与程序计算结果不一致');
+      }
+    }
+    if (parsePositiveNumber(rec.totalQty) === null || !(rec.totalUnit || '').trim()) {
+      issues.push('包装总量不完整');
+    }
+    if (!(rec.pharmacy || '').trim()) issues.push('未确定发药药房');
+    return issues;
+  }
+
+  async function finalizeMedicineRecommendation(
+    rec: TreatmentRecommendation,
+    options: FinalizeMedicineOptions = {},
+  ): Promise<MedicineFinalizationResult> {
+    if (rec.type !== 'medicine') {
+      return { item: rec, ready: true, inventoryChecked: false, issues: [] };
+    }
+
+    const wasSelected = !!rec.selected;
+    Object.assign(rec, normalizeTreatment(rec));
+    const hydrated = await ensureMedicineSelectable(rec, false);
+    if (!hydrated) {
+      rec.selected = false;
+      return {
+        item: rec,
+        ready: false,
+        inventoryChecked: false,
+        issues: ['当前可用药房无有效药品详情'],
+      };
+    }
+
+    Object.assign(rec, normalizeTreatment(rec));
+    const issues = getMedicineFinalizationIssues(rec);
+    if (issues.length > 0) {
+      rec.selected = false;
+      return { item: rec, ready: false, inventoryChecked: false, issues };
+    }
+
+    if (options.checkInventory && wasSelected) {
+      const inventoryReady = await checkMedicineInventoryEnough(rec, false);
+      if (!inventoryReady) {
+        rec.selected = false;
+        return {
+          item: rec,
+          ready: false,
+          inventoryChecked: true,
+          issues: [getMedicineInventoryWarning(rec) || '当前药房库存不足'],
+        };
+      }
+      return { item: rec, ready: true, inventoryChecked: true, issues: [] };
+    }
+
+    return { item: rec, ready: true, inventoryChecked: false, issues: [] };
+  }
+
+  async function finalizeMedicineRecommendations(
+    items: TreatmentRecommendation[],
+    options: FinalizeMedicineOptions = {},
+  ): Promise<MedicineFinalizationResult[]> {
+    const medicines = items.filter((item) => item.type === 'medicine');
+    return Promise.all(medicines.map((item) => finalizeMedicineRecommendation(item, options)));
+  }
+
   return {
     hydrateMatchedMedicineDetail,
     hydrateMatchedMedicalItemDetail,
@@ -461,6 +581,8 @@ export function useTreatmentHydration(deps: Deps) {
     ensureMedicineSelectable,
     isMedicineDetailLoadedForSelectedPharmacy,
     checkMedicineInventoryEnough,
+    finalizeMedicineRecommendation,
+    finalizeMedicineRecommendations,
     getMedicineInventoryWarning,
     clearMedicineInventoryWarning,
     setMedicineInventoryWarning,

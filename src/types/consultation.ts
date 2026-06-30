@@ -67,6 +67,7 @@ export interface TreatmentRecommendation {
     // Editable fields for PHIS import
     dosage?: string;        // 每次剂量 (medicine)
     dosageUnit?: string;    // 剂量单位 (medicine)
+    dosageManualEdited?: boolean; // 医生已手动修改一次剂量，后续 hydrate 不得覆盖
     totalQty?: string;      // 总量 (all types)
     totalUnit?: string;     // 总量单位
     totalManualEdited?: boolean; // 总量是否已被医生手动修改

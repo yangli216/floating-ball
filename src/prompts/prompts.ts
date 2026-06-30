@@ -231,14 +231,16 @@ export const VoiceIntentRecognitionPrompt = {
       "evidenceText": "对话证据片段",
       "sourceType": "explicit",
       "goal": "开立目的或处理目标",
-      "dosage": "单次剂量值，如0.5",
-      "dosageUnit": "剂量单位，如g、片、ml",
+      "targetDose": "临床目标一次剂量值，如500",
+      "targetDoseUnit": "目标剂量单位，如mg、g、ml",
+      "dosage": "留空，由程序结合库存药品详情换算",
+      "dosageUnit": "留空，由程序读取PHIS剂量单位",
       "frequency": "频次文本，如每天三次",
       "frequencyKey": "频次编码，如tid；不确定时留空",
       "usage": "用法文本，如口服",
       "usageKey": "用法编码；不确定时留空",
-      "totalQty": "总量值，如14",
-      "totalUnit": "总量单位，如片、盒、支",
+      "totalQty": "留空，由程序根据库存包装规格计算",
+      "totalUnit": "留空，由程序读取库存销售单位",
       "days": "疗程天数，如5"
     },
     {
@@ -290,9 +292,9 @@ export const VoiceIntentRecognitionPrompt = {
   - 患者已自行服用、既往长期服用、院外先行处理过的药，默认写入 currentMedicationHistory，不要直接作为当前 treatmentHints 输出；
   - 只有医生在当前计划中明确建议继续、调整、补开、开立的药，才能进入当前 treatmentHints；
   - “如果化验提示细菌感染再用阿奇霉素”“必要时再考虑某药”这类条件性方案，不要作为当前已确定药品输出到 treatmentHints，应写入 treatmentPlan。
-9. 对于当前已明确推荐的药品，尽量补充规格 spec；同时优先拆分出剂量值和单位，不要把“0.5g”完整塞进 dosage，也不要再使用旧的 count 字段承载总量；频次和用法优先输出文本，同时在能确定标准简码时补充 frequencyKey、usageKey，否则留空。
-10. 如果对话已明确当前要用某药，但没有给出一次剂量、频次、疗程或总量，可结合基层门诊常见方案谨慎补全这些字段，以提升可直接引用性；此时必须将该药的 sourceType 设为 inferred，并在 evidenceText 或 goal 中明确说明“处方细节为模型按常用门诊方案补全”。
-11. 如果药品本身都未被当前方案明确推荐，或处方细节无法从常规门诊方案合理补全，就不要臆造 dosage、frequency、days、totalQty、totalUnit。
+9. 对于当前已明确推荐的药品，尽量补充库存目录中的完整名称和规格 spec；临床一次剂量只写 targetDose/targetDoseUnit，dosage/dosageUnit 必须留空；频次和用法优先输出文本，同时在能确定标准简码时补充 frequencyKey、usageKey，否则留空。
+10. 药品 totalQty/totalUnit 必须留空，禁止模型计算包装总量；程序会在匹配库存药品详情后，根据最终一次剂量、频次、天数和包装因子计算并校验库存。
+11. 如果对话已明确当前要用某药，但没有给出目标剂量、频次或疗程，可结合基层门诊常见方案谨慎补全 targetDose、frequency 和 days；此时必须将该药的 sourceType 设为 inferred，并在 evidenceText 或 goal 中明确说明“处方细节为模型按常用门诊方案补全”。
 12. 如果对话中出现“A+B”“A和B”“先做A再做B”等组合表述，必须拆分为独立的诊断、药品、检查、检验、处置项目。
 13. evidenceText 要尽量保留与该项最相关的对话证据，便于结果页展示“为什么提了这条”。
 14. 对于药品、检查、检验、处置项目，name 尽量填写规范名称；如果日常医院使用中常存在 1-3 个稳定简称或别名，请同步填写 aliases，优先写门诊医生常说的简称，不要编造冷门别名。
@@ -335,7 +337,8 @@ export const VoiceIntentRepairPrompt = {
 }
 6. error 必须是 boolean；如果原始输出明确表达“非医疗内容”或“无法识别”，才设置为 true。
 7. 对 diagnosisHints 和 treatmentHints 中的每一项：
-   - 能保留的 evidenceText、sourceType、goal、dosage、dosageUnit、frequency、frequencyKey、usage、usageKey、totalQty、totalUnit、days 都尽量保留
+   - 能保留的 evidenceText、sourceType、goal、targetDose、targetDoseUnit、frequency、frequencyKey、usage、usageKey、days 都尽量保留
+   - 药品 dosage、dosageUnit、totalQty、totalUnit 必须清空，后续由程序结合库存药品详情生成
    - 如果没有足够信息，不要编造，保留空字符串或空数组
 8. 只做结构修复，不改变原始结论倾向。`,
 
@@ -929,8 +932,8 @@ export const TreatmentRecommendationPrompt = {
 - spec: 药品**制剂规格**（每片/每粒/每支的含量），如 "0.25g"、"10mg"、"5ml"。**不要写成包装规格**（如 "0.25g*24粒/盒"）。
 - targetDose: 临床标准一次剂量的数值，如 "500"（表示一次 500mg）。这是根据诊疗指南和药品说明书推荐的成人常规一次剂量。
 - targetDoseUnit: 剂量单位，如 "mg"、"g"、"ml"。
-- dosage / dosageUnit: 可以留空，系统会根据 targetDose 和匹配到的药品规格自动换算为几片几粒。
-- 其他结构化字段：frequency、frequencyKey、usage、usageKey、totalQty、totalUnit、days；其中药品项应尽量返回结构化 days，不要只把“连用5天/疗程7天”写进 usage。
+- dosage / dosageUnit: 留空。系统会根据 targetDose 和 HIS 药品详情换算为 PHIS 的临床一次剂量（如 500mg -> 0.5g）；片、粒等制剂数由程序另行计算，不写入此字段。
+- 其他结构化字段：frequency、frequencyKey、usage、usageKey、days；药品 totalQty/totalUnit 必须留空，由程序计算包装总量。药品项应尽量返回结构化 days，不要只把“连用5天/疗程7天”写进 usage。
 - 如果指南或常规门诊方案能明确疗程，days 必须填写纯数字字符串（如 "3"、"5"、"7"）。
 - 如果短期对症用药没有严格固定疗程，也要给出基层门诊最常用、最保守的疗程天数；只有确实完全无法合理判断时才允许留空。`,
 
@@ -972,10 +975,10 @@ ${params.availableMedicineInventory ? `${params.availableMedicineInventory}
 6. 不要推荐检查、检验或处置项目
 7. spec 必须是**制剂规格**（每片/粒/支的含量，如 "0.25g"），不要写包装规格（如 "0.25g*24粒/盒"）
 8. targetDose 填写临床标准一次剂量数值（如阿莫西林成人一次 500mg，则 targetDose="500"，targetDoseUnit="mg"）
-9. dosage/dosageUnit 可留空（系统会根据 targetDose 和实际规格自动换算为几片几粒）
+9. dosage/dosageUnit 必须留空（系统会根据 targetDose 和 HIS 药品详情换算为 PHIS 临床一次剂量；不要自行填写片、粒或质量剂量）
 10. 若频次/用法能明确标准表达，优先输出中文文本；frequencyKey、usageKey 能确定就补充，不能确定可留空
 11. 药品项必须优先返回结构化 days，填写纯数字字符串；不要只在 usage 或 reason 里写“连用5天”
-12. 若总量无法合理确定，可留空字符串；若疗程可由指南或常规门诊方案确定，days 不应留空
+12. totalQty/totalUnit 必须留空，由程序根据匹配到的库存药品包装规格计算；若疗程可由指南或常规门诊方案确定，days 不应留空
 13. name 优先填写规范通用名；如果门诊日常还常用 1-3 个稳定简称或别名，请补充到 aliases，便于与院内目录匹配
 
 **返回格式：**
@@ -992,8 +995,6 @@ ${params.availableMedicineInventory ? `${params.availableMedicineInventory}
     "frequencyKey": "tid",
     "usage": "口服",
     "usageKey": "po",
-    "totalQty": "14",
-    "totalUnit": "粒",
     "days": "5"
   }
 ]
@@ -1292,7 +1293,7 @@ export const UnifiedTreatmentPlanRecommendationPrompt = {
 3. **药品库存匹配**：
    - 先选有效库存内同品，再选库存内临床等效药；均无合适选择时才返回规范通用名。
    - spec 必须是**制剂规格**（每片/粒的含量，如 "0.25g"），不要写包装规格（如 "0.25g*24粒/盒"）。
-   - targetDose 填写临床标准一次剂量数值，由 dosage/dosageUnit 配合换算。
+   - targetDose 填写临床标准一次剂量数值；dosage/dosageUnit 必须留空，由程序结合 HIS 药品详情换算为 PHIS 临床一次剂量。
 
 **输出要求：**
 严格返回单一JSON数组格式，不要包含markdown标记。`,
@@ -1331,7 +1332,8 @@ ${inventoryPart}
 **任务要求：**
 1. 推荐 3-5 个药品（type: "medicine"），并根据复诊依据判断是否需要开具检查/检验/处置。报告回诊时一般无需检查检验，若无需要相关类型返回空。
 2. 头孢呋辛酯片等二代头孢成人常规单次剂量为 0.25g-0.5g，严禁推荐 1.0g 等异常单次用量。
-3. 严格按 JSON 数组格式返回，不要包含 markdown 标记。
+3. 药品必须填写 targetDose/targetDoseUnit，dosage/dosageUnit 必须留空；不要把制剂数或未经换算的质量剂量写入 dosage。
+4. 严格按 JSON 数组格式返回，不要包含 markdown 标记。
 
 **返回格式：**
 [
@@ -1347,8 +1349,6 @@ ${inventoryPart}
     "frequencyKey": "tid",
     "usage": "口服",
     "usageKey": "po",
-    "totalQty": "14",
-    "totalUnit": "粒",
     "days": "5"
   },
   {
@@ -1972,17 +1972,17 @@ export const MedicalRecordCheckPrompt = {
  */
 export const PROMPT_VERSION = {
   medicalRecordGeneration: 'v1.0',
-  voiceIntentRecognition: 'v2.1',
+  voiceIntentRecognition: 'v2.2',
   voiceIntentRepair: 'v1.0',
   riskAnalysis: 'v1.0',
   diagnosisRecommendation: 'v1.0',
   diagnosisPathReasoning: 'v1.0',
   reportInterpretation: 'v1.2',
-  treatmentRecommendation: 'v2.1',
+  treatmentRecommendation: 'v2.3',
   examinationRecommendation: 'v1.0',
   labTestRecommendation: 'v1.0',
   procedureRecommendation: 'v1.1',
-  unifiedTreatmentPlanRecommendation: 'v1.0',
+  unifiedTreatmentPlanRecommendation: 'v1.2',
   chatAssistant: 'v1.0',
   diagnosisCheck: 'v1.0',
   medicineCheck: 'v1.0',

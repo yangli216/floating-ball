@@ -231,6 +231,7 @@ export function useTreatmentNormalization(deps: TreatmentNormalizationDeps): Tre
       selected: !!rec.selected,
       dosage: rec.dosage || '',
       dosageUnit: rec.dosageUnit || '',
+      dosageManualEdited: !!rec.dosageManualEdited,
       totalQty: isFixedSingleQuantityType(type) ? '1' : (rec.totalQty || ''),
       totalUnit: rec.totalUnit || '',
       totalManualEdited: isFixedSingleQuantityType(type) ? false : !!rec.totalManualEdited,

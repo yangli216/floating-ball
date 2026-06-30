@@ -383,7 +383,6 @@ async function applyEditorSnapshot(snapshot: VoiceEditorSnapshot): Promise<void>
       snapshot.treatmentDiagnosisKey || getDiagnosisIdentity(selectedDiagnosis.value);
     await reconcileAutoSelectedMedicineInventory(treatments.value);
     void registerCurrentRecommendations();
-    void hydrateMatchedMedicalItemDetails(treatments.value);
     console.info('[VoiceConsultationNew] Applied editor snapshot from cache', {
       treatmentCount: treatments.value.length,
       diagnosisIdentity: lastTreatmentDiagnosisKey.value,
@@ -1268,7 +1267,6 @@ async function fetchAITreatment(): Promise<void> {
     autoTreatmentFetchAttemptKey.value = buildTreatmentAutoFetchKey(diagnosisIdentity);
     await reconcileAutoSelectedMedicineInventory(treatments.value);
     void registerCurrentRecommendations();
-    void hydrateMatchedMedicalItemDetails(treatments.value);
     void performTreatmentFactCheck(treatments.value);
     submitVoiceGeneratedUserLog();
     // 把 LLM 推荐的诊疗方案写回缓存，下次同就诊恢复时直接复用、跳过 fetchAITreatment
@@ -1588,7 +1586,7 @@ const treatmentAttributeSearch = useTreatmentAttributeSearch({
 // 注入：候选药房收窄、字典查找；toast 通过 notify 回调走 voice 侧的 'warning' 级别。
 const {
   hydrateMatchedMedicalItemDetail,
-  hydrateMatchedMedicalItemDetails,
+  finalizeMedicineRecommendations,
   ensureMedicineSelectable,
   checkMedicineInventoryEnough,
   getMedicineInventoryWarning,
@@ -1596,6 +1594,7 @@ const {
   isMedicineInventoryChecking,
 } = useTreatmentHydration({
   pharmacyOptions,
+  normalizeTreatment: normalizeTreatmentRecommendation,
   getCandidatePharmaciesForMedicine,
   findFrequencyOptionByValue,
   findRouteOptionByValue,
@@ -1653,7 +1652,9 @@ async function fetchPharmacyOptions(): Promise<void> {
   }
   try {
     await medicalDataService.ensureMedicineCatalogForStoreIds(activeStoreIds, his);
-    void hydrateMatchedMedicalItemDetails(treatments.value);
+    await finalizeMedicineRecommendations(treatments.value, {
+      checkInventory: treatments.value.some((item) => item.type === 'medicine' && item.selected),
+    });
   } catch (error) {
     console.error('[VoiceConsultationNew] ensureMedicineCatalogForStoreIds failed', error);
   }
@@ -1998,13 +1999,15 @@ function clearInsuranceSelection(rec: TreatmentRecommendation): void {
 
 async function reconcileAutoSelectedMedicineInventory(items: TreatmentRecommendation[]): Promise<void> {
   const autoSelectedMedicines = items.filter((item) => item.type === 'medicine' && item.selected);
-  if (autoSelectedMedicines.length === 0) {
-    return;
-  }
-
-  const inventoryReady = await Promise.all(autoSelectedMedicines
-    .map((item) => checkMedicineInventoryEnough(item, false)));
-  const blockedItems = autoSelectedMedicines.filter((_, index) => !inventoryReady[index]);
+  const results = await finalizeMedicineRecommendations(items, {
+    checkInventory: autoSelectedMedicines.length > 0,
+  });
+  const blockedSet = new Set(
+    results
+      .filter((result) => !result.ready)
+      .map((result) => result.item),
+  );
+  const blockedItems = autoSelectedMedicines.filter((item) => blockedSet.has(item));
   if (blockedItems.length === 0) {
     return;
   }
@@ -2147,7 +2150,6 @@ watch(
       lastTreatmentDiagnosisKey.value = getDiagnosisIdentity(selectedDiagnosis.value);
       await reconcileAutoSelectedMedicineInventory(treatments.value);
       void registerCurrentRecommendations();
-      void hydrateMatchedMedicalItemDetails(treatments.value);
       console.info('[VoiceConsultationNew] Applied voice intent treatments', {
         diagnosisIdentity: lastTreatmentDiagnosisKey.value,
         treatmentCount: treatments.value.length,

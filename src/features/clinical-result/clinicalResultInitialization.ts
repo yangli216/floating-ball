@@ -4,7 +4,6 @@ import type {
   ClinicalResultTreatment,
 } from './clinicalResultContract';
 import type { Diagnosis, TreatmentRecommendation } from '@/types/consultation';
-import { splitDosageAndUnit } from '@/utils/treatmentInference';
 import { normalizeRawTreatmentRecommendationFields } from './clinicalResultTreatmentFields';
 import { getStandardDiagnosisId } from './recordConfirmedPayload';
 
@@ -112,7 +111,6 @@ export function initClinicalTreatments(
         }
       : options.assessCatalogMatch(type, suggestedName, item.aliases, item.spec);
     const name = assessment.matchedItem?.name || inherited.name || suggestedName;
-    const dosagePair = splitDosageAndUnit(item.dosage);
     const selectionBasis = {
       ...item,
       matchedItem: assessment.matchedItem,
@@ -125,11 +123,11 @@ export function initClinicalTreatments(
       originalName: inherited.originalName || (name !== suggestedName ? suggestedName : ''),
       reason: inherited.reason || options.buildReason(item, name),
       spec: inherited.spec || assessment.matchedItem?.spec || '',
-      targetDose: item.targetDose || '',
-      targetDoseUnit: item.targetDoseUnit || '',
+      targetDose: inherited.targetDose || '',
+      targetDoseUnit: inherited.targetDoseUnit || '',
       usage: inherited.usage || [item.usage, item.frequency, item.dosage, item.dosageUnit].filter(Boolean).join('，'),
-      dosage: item.dosage || dosagePair.dosage,
-      dosageUnit: item.dosageUnit || dosagePair.dosageUnit,
+      dosage: inherited.dosage || '',
+      dosageUnit: inherited.dosageUnit || '',
       frequency: item.frequency || options.inferFrequency([item.frequency, item.evidenceText, item.text].filter(Boolean).join(' ')),
       frequencyKey: item.frequencyKey || '',
       route: inherited.route || item.usage || options.inferRoute([item.usage, item.evidenceText, item.text].filter(Boolean).join(' ')),

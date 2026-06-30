@@ -18,6 +18,8 @@ export interface ParsedMedication {
 export interface ChronicRefillMedicineRecommendation {
   name: string;
   spec?: string;
+  targetDose?: string;
+  targetDoseUnit?: string;
   dosage?: string;
   dosageUnit?: string;
   frequency?: string;
@@ -217,13 +219,11 @@ export function buildChronicRefillInventoryTreatments(
     const dictMatch = medicalDataService.matchMedicine(matched.productName);
     const parsed = parseHistoricalMedication(historicalMedication);
 
-    // 明确历史处方优先；缺失时采用模型结构化建议，再回退 HIS 药品默认值。
-    const dosage = parsed.dosage
-      || readText(recommendation?.dosage)
-      || readFirstString(dictMatch?.raw, ['dftDoseOnce']);
-    const dosageUnit = parsed.dosageUnit
-      || readText(recommendation?.dosageUnit)
-      || readFirstString(dictMatch?.raw, ['unitDose', 'unitPre']);
+    // 历史明确处方保留为事实；模型只提供目标临床剂量，PHIS 一次剂量由统一定稿流水线换算。
+    const targetDose = parsed.dosage ? '' : readText(recommendation?.targetDose);
+    const targetDoseUnit = parsed.dosage ? '' : readText(recommendation?.targetDoseUnit);
+    const dosage = parsed.dosage || '';
+    const dosageUnit = parsed.dosageUnit || '';
 
     const frequency = parsed.frequency
       || readText(recommendation?.frequency)
@@ -236,11 +236,8 @@ export function buildChronicRefillInventoryTreatments(
     const routeKey = parsed.route ? '' : readText(recommendation?.routeKey);
 
     const days = parsed.days || readText(recommendation?.days);
-    const totalQty = parsed.totalQty || readText(recommendation?.totalQty);
+    const totalQty = parsed.totalQty || '';
     const totalUnit = parsed.totalUnit
-      || readText(recommendation?.totalUnit)
-      || readFirstString(dictMatch?.raw, ['unitSale'])
-      || matched.unit
       || '';
     const hasCompletePrescription = Boolean(
       dosage && dosageUnit && frequency && route && days && totalQty && totalUnit,
@@ -260,9 +257,9 @@ export function buildChronicRefillInventoryTreatments(
       sourceType: historicalMedication ? 'explicit' : 'inferred',
       matchStatus: 'exact',
       selected: hasCompletePrescription,
-      reason: hasCompletePrescription
-        ? clinicalReason
-        : '已匹配当前有效库存，但剂量、频次、用法、天数或总量不完整，请医生确认后选择',
+      reason: clinicalReason,
+      targetDose,
+      targetDoseUnit,
       dosage,
       dosageUnit,
       frequency,

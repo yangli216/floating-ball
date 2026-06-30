@@ -244,6 +244,7 @@ function normalizeTreatmentHints(hints: TreatmentHint[] | undefined): TreatmentH
       const totalParts = rawTotalUnit
         ? { value: rawTotalQty, unit: rawTotalUnit }
         : splitValueAndUnit(rawTotalQty, ['盒', '瓶', '袋', '支', '片', '粒', '次', 'ml', 'mg', 'g']);
+      const isMedicine = hint?.type === 'medicine';
 
       return {
         ...hint,
@@ -266,8 +267,8 @@ function normalizeTreatmentHints(hints: TreatmentHint[] | undefined): TreatmentH
         frequencyKey: getText(hint?.frequencyKey),
         usage: getText(hint?.usage),
         usageKey: getText(hint?.usageKey),
-        totalQty: totalParts.value,
-        totalUnit: totalParts.unit,
+        totalQty: isMedicine ? '' : totalParts.value,
+        totalUnit: isMedicine ? '' : totalParts.unit,
         count: getText(legacyHint.count),
         days: getText(hint?.days),
       };

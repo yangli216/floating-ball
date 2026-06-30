@@ -69,6 +69,39 @@ describe('available medicine inventory AI context', () => {
     expect(aligned[1].name).toBe('厄贝沙坦片');
   });
 
+  it('requires a compatible strength when the same medicine has multiple inventory specs', () => {
+    const inventory = [
+      {
+        productId: 'med-5',
+        productName: '测试药品片',
+        spec: '5mg*14片/盒',
+        unit: '盒',
+        availableQuantity: 10,
+        storeIds: ['1760'],
+        storeNames: ['西药房'],
+      },
+      {
+        productId: 'med-10',
+        productName: '测试药品片',
+        spec: '10mg*14片/盒',
+        unit: '盒',
+        availableQuantity: 20,
+        storeIds: ['1760'],
+        storeNames: ['西药房'],
+      },
+    ];
+
+    const aligned = alignMedicineRecommendationsToInventory([
+      { type: 'medicine', name: '测试药品片', spec: '5mg' },
+      { type: 'medicine', name: '测试药品片', spec: '20mg' },
+      { type: 'medicine', name: '测试药品片' },
+    ], inventory);
+
+    expect(aligned[0].spec).toBe('5mg*14片/盒');
+    expect(aligned[1].spec).toBe('20mg');
+    expect(aligned[2].spec).toBeUndefined();
+  });
+
   it('still returns the fallback policy when inventory is empty', () => {
     const prompt = formatAvailableMedicineInventoryPrompt([]);
     expect(prompt).toContain('当前未取得可用库存药品');

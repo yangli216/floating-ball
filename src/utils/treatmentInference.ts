@@ -106,7 +106,7 @@ export function computeDoseCount(
   const targetMg = extractStrengthMg(targetDose, targetUnit);
   if (targetMg === null) return null;
 
-  let unitMg = extractStrengthMg(unitDose, unitSpec ? undefined : undefined);
+  let unitMg = extractStrengthMg(unitDose);
   if (unitMg === null && unitSpec) {
     const specMatch = unitSpec.match(/(\d+(?:\.\d+)?)\s*(g|mg|ug|μg)/i);
     if (specMatch) {
@@ -123,6 +123,48 @@ export function computeDoseCount(
   if (Math.abs(rounded - count) > 0.05) return null;
 
   return rounded;
+}
+
+/**
+ * 把模型目标剂量换算到 PHIS 的一次剂量单位，例如 250mg -> 0.25g。
+ * 返回的是临床剂量，不是片、粒等制剂个数。
+ */
+export function convertClinicalDoseToUnit(
+  targetDose: string | undefined,
+  targetUnit: string | undefined,
+  outputUnit: string | undefined,
+): string | null {
+  const normalizedOutputUnit = (outputUnit || '').trim().toLowerCase();
+  if (!targetDose || !normalizedOutputUnit) return null;
+
+  const targetMg = extractStrengthMg(targetDose, targetUnit);
+  if (targetMg !== null) {
+    const factorByUnit: Record<string, number> = {
+      g: 1000,
+      克: 1000,
+      mg: 1,
+      毫克: 1,
+      ug: 0.001,
+      'μg': 0.001,
+      mcg: 0.001,
+      微克: 0.001,
+    };
+    const factor = factorByUnit[normalizedOutputUnit];
+    if (factor) {
+      const converted = targetMg / factor;
+      return Number(converted.toFixed(4)).toString();
+    }
+  }
+
+  const targetText = targetDose.trim();
+  const embedded = targetText.match(/^([0-9]+(?:\.[0-9]+)?)\s*(ml|毫升)$/iu);
+  const normalizedTargetUnit = (embedded?.[2] || targetUnit || '').trim().toLowerCase();
+  if ((normalizedOutputUnit === 'ml' || normalizedOutputUnit === '毫升')
+    && (normalizedTargetUnit === 'ml' || normalizedTargetUnit === '毫升')) {
+    return Number(embedded?.[1] || targetText).toString();
+  }
+
+  return null;
 }
 
 /**

@@ -107,6 +107,7 @@ function normalizeTreatment(rec: Partial<TreatmentRecommendation>): TreatmentRec
 const { applyMedicalItemPartOption, applyMedicalItemPartOptions } = useBodySiteOptions();
 const treatmentHydration = useTreatmentHydration({
   pharmacyOptions,
+  normalizeTreatment,
   getCandidatePharmaciesForMedicine,
   findFrequencyOptionByValue: treatmentNormalization.findFrequencyOptionByValue,
   findRouteOptionByValue: treatmentNormalization.findRouteOptionByValue,
@@ -310,7 +311,12 @@ async function refreshRecommendations(): Promise<void> {
   try {
     await loadDictionaries();
     await recommendations.refresh();
-    await treatmentHydration.hydrateMatchedMedicalItemDetails(treatments.value);
+    await treatmentHydration.finalizeMedicineRecommendations(treatments.value, {
+      checkInventory: true,
+    });
+    await treatmentHydration.hydrateMatchedMedicalItemDetails(
+      treatments.value.filter((item) => item.type !== 'medicine'),
+    );
   } catch (error) {
     console.error('[TreatmentPlan] refresh failed', error);
     showToast?.(formatUserFacingError(error, {

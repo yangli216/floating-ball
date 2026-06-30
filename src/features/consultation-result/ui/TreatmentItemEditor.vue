@@ -543,6 +543,7 @@ function isPrimaryFieldMissing(field: InlineEditableField): boolean {
 function handleDosageInput(event: Event): void {
   handleNumericInput('dosage', event, (value) => {
     props.rec.dosage = value;
+    props.rec.dosageManualEdited = true;
   });
   if (!(props.rec.dosage || '').trim() || !(props.rec.dosageUnit || '').trim() || isNumericFieldInvalid('dosage')) {
     props.rec.selected = false;

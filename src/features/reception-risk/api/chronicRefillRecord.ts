@@ -66,16 +66,14 @@ function normalizeMedicineRecommendation(value: unknown): ChronicRefillMedicineI
   const result: ChronicRefillMedicineRecommendation = { name };
   const textFields: Array<keyof Omit<ChronicRefillMedicineRecommendation, 'name'>> = [
     'spec',
-    'dosage',
-    'dosageUnit',
+    'targetDose',
+    'targetDoseUnit',
     'frequency',
     'frequencyKey',
     'route',
     'routeKey',
     'usage',
     'days',
-    'totalQty',
-    'totalUnit',
     'reason',
   ];
   textFields.forEach((field) => {
@@ -87,6 +85,16 @@ function normalizeMedicineRecommendation(value: unknown): ChronicRefillMedicineI
       result[field] = normalized;
     }
   });
+  if (!result.targetDose) {
+    const legacyDosage = source.dosage;
+    result.targetDose = typeof legacyDosage === 'string'
+      ? legacyDosage.trim()
+      : (typeof legacyDosage === 'number' && Number.isFinite(legacyDosage) ? String(legacyDosage) : '');
+  }
+  if (!result.targetDoseUnit) {
+    const legacyDosageUnit = source.dosageUnit;
+    result.targetDoseUnit = typeof legacyDosageUnit === 'string' ? legacyDosageUnit.trim() : '';
+  }
   return result;
 }
 
@@ -211,9 +219,9 @@ export async function generateChronicRefillRecord(
           '若未获取到可确认的历史用药，仍需根据具体慢病诊断、患者信息和当前有效库存推荐合理的候选药品，不得返回空方案。',
           '未获取到历史用药时，currentMedicationHistory只能写“历史用药方案待医生核实”等待核实表述，不得把本次推荐药品伪装成既往用药。',
           'recommendedMedicines 必须返回结构化药品对象，不生成检查、检验或处置。',
-          '每个药品必须结合候选慢病、历史用药和库存规格给出合理的单次剂量、剂量单位、频次、用法、天数和总量；不得把包装规格直接当成单次剂量，也不得把所有药品统一写成一次1剂量单位。',
-          '剂量应使用 PHIS 可直接回写的临床剂量表达，例如0.5g、20mg；frequencyKey优先使用QD/BID/TID/QID，routeKey口服优先使用PO。',
-          'totalQty/totalUnit应根据单次剂量、频次、天数和库存包装规格合理计算；无法确定时留空，不得编造。',
+          '每个药品必须结合候选慢病、历史用药和库存规格给出合理的目标临床一次剂量、频次、用法和天数；不得把包装规格直接当成一次剂量，也不得把所有药品统一写成一次1剂量单位。',
+          '目标剂量只写targetDose/targetDoseUnit，例如500mg写为targetDose="500"、targetDoseUnit="mg"；dosage/dosageUnit必须留空，由程序结合PHIS药品详情换算。frequencyKey优先使用QD/BID/TID/QID，routeKey口服优先使用PO。',
+          'totalQty/totalUnit必须留空，包装总量由程序根据最终一次剂量、频次、天数和库存包装规格计算并校验库存。',
           'reason只说明诊断、历史用药和适应证等临床推荐依据，不得复述或计算单次剂量、频次、疗程、总量和包装数量。',
           '只返回 JSON 对象。',
         ].join('\n'),
@@ -233,7 +241,7 @@ export async function generateChronicRefillRecord(
           [
             '请生成字段：chiefComplaint、historyOfPresentIllness、pastMedicalHistory、currentMedicationHistory、treatmentPlan、healthEducation、recommendedMedicines。',
             'recommendedMedicines格式：',
-            '[{"name":"库存中的完整药品名称","spec":"库存规格","dosage":"单次剂量数值","dosageUnit":"剂量单位","frequency":"频次文本","frequencyKey":"频次编码","route":"用法文本","routeKey":"用法编码","days":"用药天数","totalQty":"总量数值","totalUnit":"总量单位","reason":"推荐依据"}]',
+            '[{"name":"库存中的完整药品名称","spec":"库存规格","targetDose":"目标临床一次剂量数值","targetDoseUnit":"mg/g/ml","frequency":"频次文本","frequencyKey":"频次编码","route":"用法文本","routeKey":"用法编码","days":"用药天数","reason":"推荐依据"}]',
           ].join('\n'),
         ].join('\n'),
       },
