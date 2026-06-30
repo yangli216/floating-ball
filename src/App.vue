@@ -372,36 +372,39 @@ async function cancelSymptomConsultation(): Promise<void> {
 
 async function closeTreatmentPlan(): Promise<void> {
   await handleUserCollapse();
-  currentView.value = 'chat';
 }
 
 async function closeReportInterpretationWorkspace(): Promise<void> {
-  currentView.value = 'reception-capsule';
-  const targetSize = getCurrentReceptionWindowSize();
-  await enterWorkMode(targetSize.width, targetSize.height);
+  await handleUserCollapse();
 }
 
 // 可见性/可点击门禁：
-// 问诊按钮始终可见；仅在存在未结束的问诊或住院病历生成（最小化会话）时才可点击，
+// 问诊按钮始终可见；在有活跃接诊患者或有未结束的最小化会话时可点击，
 // 作为“恢复工作界面”的入口；否则置灰禁用。
-const hasResumableConsultation = computed(() =>
-  minimizedSessions.latestType.value === 'inpatient-emr'
-    ? inpatientEmrRequest.value !== null
-    : currentPatient.value !== null && minimizedSessions.latestType.value !== null
-);
+const hasResumableConsultation = computed(() => {
+  if (minimizedSessions.latestType.value === 'inpatient-emr') {
+    return inpatientEmrRequest.value !== null;
+  }
+  return currentPatient.value !== null;
+});
 
 const resumableConsultationIcon = computed(() => {
-  if (minimizedSessions.latestType.value === 'voice') return 'lucide:mic';
-  if (minimizedSessions.latestType.value === 'inpatient-emr') return 'lucide:file-pen';
-  return 'lucide:stethoscope';
+  const latest = minimizedSessions.latestType.value;
+  if (latest === 'voice') return 'lucide:mic';
+  if (latest === 'inpatient-emr') return 'lucide:file-pen';
+  if (latest === 'symptom') return 'lucide:stethoscope';
+  return 'lucide:user';
 });
 
 const resumableConsultationTitle = computed(() => {
   if (!hasResumableConsultation.value) {
     return '暂无未结束的问诊或病历生成';
   }
-  if (minimizedSessions.latestType.value === 'inpatient-emr') return '恢复住院病历生成';
-  return minimizedSessions.latestType.value === 'voice' ? '恢复语音问诊' : '恢复问诊界面';
+  const latest = minimizedSessions.latestType.value;
+  if (latest === 'inpatient-emr') return '恢复住院病历生成';
+  if (latest === 'voice') return '恢复语音问诊';
+  if (latest === 'symptom') return '恢复问诊界面';
+  return '恢复患者接诊信息';
 });
 
 function recordInpatientEmrMinimizedSession(): void {
@@ -479,6 +482,16 @@ async function handleConsultationRingClick(): Promise<void> {
     await openInpatientEmr();
     return;
   }
+  if (latest === 'symptom' && currentPatient.value) {
+    await openConsultation();
+    return;
+  }
+  if (currentPatient.value) {
+    currentView.value = 'reception-capsule';
+    const targetSize = getCurrentReceptionWindowSize();
+    await enterWorkMode(targetSize.width, targetSize.height);
+    return;
+  }
   await openConsultation();
 }
 
@@ -503,6 +516,12 @@ async function handleBallDblClick(): Promise<void> {
   }
   if (latest === 'inpatient-emr' && inpatientEmrRequest.value) {
     await openInpatientEmr();
+    return;
+  }
+  if (currentPatient.value) {
+    currentView.value = 'reception-capsule';
+    const targetSize = getCurrentReceptionWindowSize();
+    await enterWorkMode(targetSize.width, targetSize.height);
     return;
   }
   await openChat();

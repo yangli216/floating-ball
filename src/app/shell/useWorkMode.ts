@@ -425,7 +425,12 @@ export function useWorkMode(options: WorkModeOptions) {
    */
   const handleCollapse = async (): Promise<void> => {
     const shouldReturnToReception =
-      (currentView.value === 'consultation' || currentView.value === 'voice-consultation') &&
+      (currentView.value === 'consultation' ||
+       currentView.value === 'voice-consultation' ||
+       currentView.value === 'treatment-plan' ||
+       currentView.value === 'outpatient-follow-up' ||
+       currentView.value === 'report-interpretation' ||
+       currentView.value === 'differential-diagnosis') &&
       !!currentPatient.value;
 
     trackClick('collapse', {
