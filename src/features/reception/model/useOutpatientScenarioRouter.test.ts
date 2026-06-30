@@ -98,6 +98,7 @@ describe('useOutpatientScenarioRouter', () => {
       showGeneratedClinicalResult,
       resetVoiceSessionState: vi.fn(),
       openOutpatientFollowUp: vi.fn(),
+      openReportInterpretation: vi.fn(),
       startVoiceInteraction: vi.fn(),
       showToast,
       trackError: vi.fn(),
@@ -135,6 +136,7 @@ describe('useOutpatientScenarioRouter', () => {
       showGeneratedClinicalResult: vi.fn(),
       resetVoiceSessionState: vi.fn(),
       openOutpatientFollowUp,
+      openReportInterpretation: vi.fn(),
       startVoiceInteraction,
       showToast: vi.fn(),
       trackError: vi.fn(),
@@ -175,6 +177,7 @@ describe('useOutpatientScenarioRouter', () => {
       showGeneratedClinicalResult: vi.fn(),
       resetVoiceSessionState: vi.fn(),
       openOutpatientFollowUp: vi.fn(),
+      openReportInterpretation: vi.fn(),
       startVoiceInteraction,
       showToast: vi.fn(),
       trackError: vi.fn(),
@@ -184,5 +187,45 @@ describe('useOutpatientScenarioRouter', () => {
 
     expect(fetchFollowUpContext).not.toHaveBeenCalled();
     expect(startVoiceInteraction).toHaveBeenCalledWith({ skipCacheRestore: true });
+  });
+
+  it('opens the report workspace for a historical report opportunity', async () => {
+    const currentPatient = ref(buildPatientContext({
+      payload: { patientId: 'patient-1', visitId: 'visit-1', name: '张建国' },
+    }));
+    const session = useReceptionSessionController(currentPatient);
+    session.replaceOpportunity('report-interpretation', {
+      type: 'report-interpretation',
+      visits: [{
+        visitId: 'history-1',
+        visitTime: Date.now(),
+        reportedApplications: [{
+          applicationId: 'apply-1',
+          name: '血常规',
+          type: 'lab',
+          status: 'reported',
+        }],
+      }],
+    });
+    const openReportInterpretation = vi.fn();
+    const router = useOutpatientScenarioRouter({
+      currentPatient,
+      session,
+      hasCachedVoiceResult: () => false,
+      applyFollowUpContext: vi.fn(),
+      generateChronicRefillRecord: vi.fn(),
+      showGeneratedClinicalResult: vi.fn(),
+      resetVoiceSessionState: vi.fn(),
+      openOutpatientFollowUp: vi.fn(),
+      openReportInterpretation,
+      startVoiceInteraction: vi.fn(),
+      showToast: vi.fn(),
+      trackError: vi.fn(),
+    });
+
+    await router.confirmReportAssistant();
+
+    expect(openReportInterpretation).toHaveBeenCalledOnce();
+    expect(session.executingOpportunity.value).toBeNull();
   });
 });

@@ -99,6 +99,7 @@ export interface EventListenersOptions {
     openVoiceConsultation: () => Promise<void>;
     openTreatmentPlan: () => Promise<void>;
     openOutpatientFollowUp: () => Promise<void>;
+    openReportInterpretation: () => Promise<void>;
     openInpatientEmr: () => Promise<void>;
     openDifferentialDiagnosis: () => Promise<void>;
     startVoiceInteraction: (options?: { skipCacheRestore?: boolean }) => Promise<void>;
@@ -192,6 +193,7 @@ export function useEventListeners(options: EventListenersOptions) {
     showGeneratedClinicalResult,
     resetVoiceSessionState,
     openOutpatientFollowUp: navigation.openOutpatientFollowUp,
+    openReportInterpretation: navigation.openReportInterpretation,
     startVoiceInteraction: navigation.startVoiceInteraction,
     showToast,
     trackError,
@@ -671,6 +673,7 @@ export function useEventListeners(options: EventListenersOptions) {
     registerAllListeners,
     confirmChronicRefill: outpatientScenarioRouter.confirmChronicRefill,
     confirmFollowUp: outpatientScenarioRouter.confirmFollowUp,
+    confirmReportAssistant: outpatientScenarioRouter.confirmReportAssistant,
     unregisterAllListeners,
   };
 }

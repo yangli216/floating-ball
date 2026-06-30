@@ -28,6 +28,7 @@ import {
 import {
   applyReceptionClinicalHistorySummaries,
   buildReceptionPatientDraft,
+  getRecentReportedVisits,
   hasPatientReportedLabOrExamResults,
   hasReportedApplyResult,
   resolveIncomingPatientTracking,
@@ -194,14 +195,9 @@ async function hydratePatientContextFromHis(
       } : null);
       
       const hasReportedApply = hasReportedApplyResult(detail);
-      const hasLabOrExamOrders = detail && Array.isArray(detail.orderList) && detail.orderList.some((order: any) => {
-        const sdOrd = String(order.sdOrd || '').trim();
-        return sdOrd === '31' || sdOrd === '41';
-      });
-      hasReportedResults = hasReportedApply || Boolean(hasLabOrExamOrders);
+      hasReportedResults = hasReportedApply;
       console.log('[ReceptionController] hasReportedResults evaluation:', {
         hasReportedApply,
-        hasLabOrExamOrders,
         finalResult: hasReportedResults,
       });
 
@@ -381,6 +377,20 @@ export function useReceptionController(options: ReceptionControllerOptions) {
     }
   }
 
+  function syncReportInterpretationState(
+    flowVersion: number,
+    patient: AppPatient | null,
+  ): void {
+    if (!isReceptionFlowCurrent(flowVersion)) {
+      return;
+    }
+    const visits = getRecentReportedVisits(getPatientContextHistory(patient));
+    receptionSession.replaceOpportunity(
+      'report-interpretation',
+      visits.length > 0 ? { type: 'report-interpretation', visits } : null,
+    );
+  }
+
   async function resolveRiskItems(
     patient: AppPatient | null,
     flowVersion: number,
@@ -471,16 +481,19 @@ export function useReceptionController(options: ReceptionControllerOptions) {
         } finally {
           if (isReceptionFlowCurrent(flowVersion) && receptionSession.status.value === 'assessing') {
             await syncFollowUpState(flowVersion, currentPatient.value);
+            syncReportInterpretationState(flowVersion, currentPatient.value);
             await syncChronicRefillState(flowVersion, currentPatient.value);
             receptionSession.finishAssessment();
 
             const hasFollowUp = Boolean(receptionSession.outpatientFollowUpContext.value);
             const hasChronicRefill = Boolean(receptionSession.chronicRefillCandidate.value);
+            const hasReportInterpretation = receptionSession.reportInterpretationVisits.value.length > 0;
             const receptionSize = getWindowSizeForView('reception-capsule', {
               expanded: receptionSession.risks.value.length > 0,
               riskCount: receptionSession.risks.value.length,
               hasChronicRefill,
               hasFollowUp,
+              hasReportInterpretation,
             });
             try {
               await workMode.enterWorkMode(receptionSize.width, receptionSize.height);
@@ -615,8 +628,18 @@ export function useReceptionController(options: ReceptionControllerOptions) {
       receptionSession.fail();
     } finally {
       if (isReceptionFlowCurrent(flowVersion) && receptionSession.status.value === 'assessing') {
+        await syncFollowUpState(flowVersion, currentPatient.value);
+        syncReportInterpretationState(flowVersion, currentPatient.value);
         await syncChronicRefillState(flowVersion, currentPatient.value);
         receptionSession.finishAssessment();
+        const receptionSize = getWindowSizeForView('reception-capsule', {
+          expanded: receptionSession.risks.value.length > 0,
+          riskCount: receptionSession.risks.value.length,
+          hasChronicRefill: Boolean(receptionSession.chronicRefillCandidate.value),
+          hasFollowUp: Boolean(receptionSession.outpatientFollowUpContext.value),
+          hasReportInterpretation: receptionSession.reportInterpretationVisits.value.length > 0,
+        });
+        void workMode.enterWorkMode(receptionSize.width, receptionSize.height);
       }
     }
   }

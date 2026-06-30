@@ -212,6 +212,18 @@ export function useNavigation(options: NavigationOptions) {
     }
   }
 
+  async function openReportInterpretation(): Promise<void> {
+    trackViewChange(currentView.value, 'report-interpretation', {
+      patientId: currentPatient.value?.patientId,
+    });
+    currentView.value = 'report-interpretation';
+    if (!isWorking.value) {
+      await enterWorkMode();
+    } else {
+      await resizeWindowForView('report-interpretation');
+    }
+  }
+
   /**
    * 打开住院病历辅助生成页
    */
@@ -271,6 +283,7 @@ export function useNavigation(options: NavigationOptions) {
     openVoiceConsultation,
     openTreatmentPlan,
     openOutpatientFollowUp,
+    openReportInterpretation,
     openInpatientEmr,
     openDifferentialDiagnosis,
     openKnowledgeBase,

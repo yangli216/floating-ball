@@ -789,7 +789,8 @@ export const ReportInterpretationPrompt = {
 5. summary、conclusion 以及至少 2 条 keyPoints，必须明确引用报告原文中的具体指标、具体数值、具体部位描述或具体影像结论，不能只写“需结合临床表现综合判断”这类泛泛表述。
 6. 如果原文里已经出现“影像诊断/检查结论/提示”，要优先围绕这些结论做临床解释，而不是重复免责声明。
 7. 语言要简洁、医学化、可直接给医生阅读，避免空泛套话。
-8. 严格返回 JSON 对象，不要包含 markdown、代码块或额外解释。
+8. summary 和 conclusion 必须直接从报告发现或总体判断开始，不要重复患者姓名、性别、年龄等已经在报告头部展示的基本信息；患者背景仅在确实影响临床解释时写入 keyPoints 或 sections。
+9. 严格返回 JSON 对象，不要包含 markdown、代码块或额外解释。
 
 返回格式：
 {
@@ -831,7 +832,7 @@ ${params.query}
 
 请输出适合基层门诊医生阅读的结构化 JSON 解读。
 
-再次强调：summary / conclusion / keyPoints 里必须体现报告中的具体发现，而不是空泛总结。`;
+再次强调：summary / conclusion / keyPoints 里必须体现报告中的具体发现，而不是空泛总结；summary 和 conclusion 不要以患者姓名、性别或年龄开头。`;
   }
 };
 
@@ -1882,7 +1883,7 @@ export const PROMPT_VERSION = {
   riskAnalysis: 'v1.0',
   diagnosisRecommendation: 'v1.0',
   diagnosisPathReasoning: 'v1.0',
-  reportInterpretation: 'v1.1',
+  reportInterpretation: 'v1.2',
   treatmentRecommendation: 'v2.1',
   examinationRecommendation: 'v1.0',
   labTestRecommendation: 'v1.0',

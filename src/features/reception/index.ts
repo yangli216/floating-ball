@@ -5,6 +5,7 @@ export {
   resolveIncomingPatientTracking,
 } from './lib/receptionPatientSummary';
 export {
+  getRecentReportedVisits,
   hasPatientReportedLabOrExamResults,
   hasReportedApplyResult,
 } from './lib/reportedApplyResults';

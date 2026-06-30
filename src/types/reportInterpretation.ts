@@ -26,6 +26,7 @@ export interface ReportInterpretationRequestPayload {
   query: string;
   requestId?: string;
   patient?: ReportInterpretationPatientInput | null;
+  abnormalItems?: ReportInterpretationAbnormalItem[];
 }
 
 export interface ReportInterpretationPatientProfile {
@@ -48,6 +49,7 @@ export interface ReportInterpretationResolvedRequest {
   reportKindLabel: string;
   query: string;
   patient: ReportInterpretationPatientProfile | null;
+  abnormalItems?: ReportInterpretationAbnormalItem[];
 }
 
 export interface ReportInterpretationSection {
@@ -92,6 +94,8 @@ export interface ReportInterpretationWindowPayload {
   patient?: ReportInterpretationPatientProfile | null;
   reportMeta: ReportInterpretationReportMeta;
   abnormalItems: ReportInterpretationAbnormalItem[];
+  /** true 表示异常项来自完整结构化报告，可据此安全展示“总体正常”。 */
+  abnormalAssessmentComplete?: boolean;
   sourceQuery: string;
   summary: string;
   conclusion: string;

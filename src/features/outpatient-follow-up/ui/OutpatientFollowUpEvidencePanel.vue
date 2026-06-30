@@ -15,9 +15,21 @@ const labReports = computed(() => props.context.labReports || []);
 const examReports = computed(() => props.context.examReports || []);
 const reportCount = computed(() => labReports.value.length + examReports.value.length);
 const diagnosisText = computed(() => props.context.currentDiagnosis?.trim() || '');
+function isLabItemAbnormal(item: { abnormal?: boolean; abnormalFlag?: string }): boolean {
+  if (typeof item.abnormal === 'boolean') {
+    return item.abnormal;
+  }
+  const flag = item.abnormalFlag?.trim().toUpperCase() || '';
+  if (!flag) return false;
+  if (/正常|NORMAL|阴性|NEGATIVE/i.test(flag) || flag === 'N' || flag === '0') {
+    return false;
+  }
+  return true;
+}
+
 const abnormalCount = computed(() => {
   const abnormalLabs = labReports.value.reduce((count, report) => (
-    count + (report.items || []).filter((item) => Boolean(item.abnormalFlag)).length
+    count + (report.items || []).filter(isLabItemAbnormal).length
   ), 0);
   const abnormalExamPattern = /异常|阳性|感染|结节|占位|积液|狭窄|增厚|高密度|低密度/u;
   const abnormalExams = examReports.value.filter((report) => (
@@ -102,9 +114,9 @@ function formatLabResult(item: { result?: string; unit?: string }): string {
             <ul v-if="report.items?.length" class="lab-result-list">
               <li v-for="(item, itemIndex) in report.items" :key="`lab-item-${itemIndex}`">
                 <span class="item-name">{{ item.itemName || '项目' }}</span>
-                <strong :class="{ abnormal: Boolean(item.abnormalFlag) }">{{ formatLabResult(item) }}</strong>
+                <strong :class="{ abnormal: isLabItemAbnormal(item) }">{{ formatLabResult(item) }}</strong>
                 <span class="item-range">{{ item.referenceRange ? `参考 ${item.referenceRange}` : '' }}</span>
-                <span v-if="item.abnormalFlag" class="abnormal-flag">{{ item.abnormalFlag }}</span>
+                <span v-if="isLabItemAbnormal(item) && item.abnormalFlag" class="abnormal-flag">{{ item.abnormalFlag }}</span>
               </li>
             </ul>
           </article>

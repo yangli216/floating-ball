@@ -50,34 +50,34 @@
             />
           </span>
           <span v-else class="rc-badge rc-badge--green">
-            <Icon icon="lucide:thumbs-up" size="14" />
-            健康状态良好
+            <Icon icon="lucide:circle-check" size="14" />
+            暂无已识别风险
           </span>
         </div>
       </div>
     </div>
 
-    <!-- 报告回诊机会确认 -->
+    <!-- 统一报告助手入口：历史报告解读可从当前报告升级为回诊方案 -->
     <button
-      v-if="!analyzing && outpatientFollowUpContext"
+      v-if="!analyzing && hasReportAssistant"
       class="rc-followup-action"
       type="button"
-      :disabled="followUpGenerating"
-      @click="confirmFollowUp"
+      :disabled="reportAssistantOpening"
+      @click="confirmReportAssistant"
     >
       <span class="rc-followup-icon">
-        <Icon :icon="followUpGenerating ? 'lucide:loader-2' : 'lucide:circle-check'" size="15" />
+        <Icon :icon="reportAssistantOpening ? 'lucide:loader-2' : 'lucide:file-search'" size="15" />
       </span>
       <span class="rc-followup-copy">
-        <strong>{{ followUpGenerating ? '正在进入报告回诊' : '报告回诊' }}</strong>
-        <span>历史检查检验结果已出 · 请确认解读</span>
+        <strong>{{ reportAssistantOpening ? '正在进入报告助手' : reportAssistantTitle }}</strong>
+        <span>{{ reportAssistantSubtitle }}</span>
       </span>
-      <Icon v-if="!followUpGenerating" icon="lucide:chevron-right" size="15" />
+      <Icon v-if="!reportAssistantOpening" icon="lucide:chevron-right" size="15" />
     </button>
 
     <!-- 复诊配药机会确认 -->
     <button
-      v-else-if="!analyzing && chronicRefillCandidate"
+      v-if="!analyzing && chronicRefillCandidate"
       class="rc-refill-action"
       type="button"
       :disabled="chronicRefillGenerating"
@@ -117,7 +117,7 @@ import Icon from '@shared/ui/Icon.vue';
 import { trackClick } from '@services/operationTracker';
 import { resolvePatientAvatar, PATIENT_AVATAR_FALLBACK } from '@/utils/patientAvatar';
 import type { ChronicRefillCandidate, RiskItem } from '@features/reception-risk';
-import type { HisOutpatientFollowUpContext } from '@/services/his/types';
+import type { HisOutpatientFollowUpContext, HisVisitRecord } from '@/services/his/types';
 
 const props = defineProps<{
   patientName: string;
@@ -128,17 +128,37 @@ const props = defineProps<{
   chronicRefillCandidate?: ChronicRefillCandidate | null;
   chronicRefillGenerating?: boolean;
   outpatientFollowUpContext?: HisOutpatientFollowUpContext | null;
-  followUpGenerating?: boolean;
+  reportInterpretationVisits?: HisVisitRecord[];
+  reportAssistantOpening?: boolean;
 }>();
 
 const emit = defineEmits<{
   (e: 'close'): void;
   (e: 'toggle-expand', expanded: boolean): void;
   (e: 'confirm-chronic-refill'): void;
-  (e: 'confirm-follow-up'): void;
+  (e: 'confirm-report-assistant'): void;
 }>();
 
 const expanded = ref(false);
+
+const historicalReportCount = computed(() => (props.reportInterpretationVisits || [])
+  .reduce((total, visit) => total + (visit.reportedApplications?.length || 0), 0));
+const followUpReportCount = computed(() => (
+  (props.outpatientFollowUpContext?.labReports?.length || 0)
+  + (props.outpatientFollowUpContext?.examReports?.length || 0)
+));
+const reportCount = computed(() => historicalReportCount.value + followUpReportCount.value);
+const hasReportAssistant = computed(() => Boolean(
+  props.outpatientFollowUpContext || historicalReportCount.value > 0,
+));
+const reportAssistantTitle = computed(() => (
+  props.outpatientFollowUpContext ? '报告回诊' : '报告解读'
+));
+const reportAssistantSubtitle = computed(() => (
+  props.outpatientFollowUpContext
+    ? '本次报告已出 · 可生成后续方案'
+    : `近7天 ${reportCount.value} 份已出报告`
+));
 
 const stateClass = computed(() => {
   if (props.analyzing) return 'rc-state-analyzing';
@@ -183,13 +203,12 @@ function confirmChronicRefill() {
   emit('confirm-chronic-refill');
 }
 
-function confirmFollowUp() {
-  trackClick('reception_follow_up_confirm', {
+function confirmReportAssistant() {
+  trackClick('reception_report_assistant_confirm', {
     sourceVisitId: props.outpatientFollowUpContext?.source?.visitId,
-    labReportCount: props.outpatientFollowUpContext?.labReports?.length,
-    examReportCount: props.outpatientFollowUpContext?.examReports?.length,
+    reportCount: reportCount.value,
   });
-  emit('confirm-follow-up');
+  emit('confirm-report-assistant');
 }
 
 const CATEGORY_COLORS: Record<string, string> = {

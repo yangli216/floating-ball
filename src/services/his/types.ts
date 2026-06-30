@@ -303,8 +303,12 @@ export interface HisPatientInfo {
  * 历史就诊记录单次摘要
  */
 export interface HisVisitRecord {
+  /** 历史门诊就诊 ID，供后续按就诊加载报告正文。 */
+  visitId?: string;
   /** 就诊时间戳 */
   visitTime: number;
+  /** 就诊科室名称。 */
+  deptName?: string;
   /** 主诉文本 */
   chiefComplaint?: string;
   /** 现病史 */
@@ -313,6 +317,23 @@ export interface HisVisitRecord {
   diagnoses?: string[];
   /** 处方药品列表文本 */
   medications?: string[];
+  /** 本次历史就诊中已出结果的检验检查申请摘要。 */
+  reportedApplications?: HisReportedApplication[];
+}
+
+export type HisReportedApplicationType = 'lab' | 'exam' | 'unknown';
+
+export interface HisReportedApplication {
+  /** 检验检查申请明细 ID。 */
+  applicationId: string;
+  /** 组合申请 ID，可用于同组项目聚合。 */
+  applicationGroupId?: string;
+  /** HIS 中的申请项目名称。 */
+  name: string;
+  type: HisReportedApplicationType;
+  /** 当前中性契约只保存已出报告的记录。 */
+  status: 'reported';
+  requestedAt?: string;
 }
 
 /**
@@ -475,20 +496,30 @@ export interface HisOutpatientFollowUpReportResultsQuery {
 }
 
 export interface HisOutpatientFollowUpLabItem {
+  itemId?: string;
   itemName?: string;
   result?: string;
   unit?: string;
+  referenceLow?: string;
+  referenceHigh?: string;
   referenceRange?: string;
   abnormalFlag?: string;
+  direction?: 'normal' | 'up' | 'down' | 'positive' | 'abnormal';
+  abnormal?: boolean;
 }
 
 export interface HisOutpatientFollowUpLabReport {
+  reportId?: string;
+  reportGroupId?: string;
+  applicationId?: string;
   reportTime?: string;
   reportName?: string;
   items?: HisOutpatientFollowUpLabItem[];
 }
 
 export interface HisOutpatientFollowUpExam {
+  reportId?: string;
+  applicationId?: string;
   reportTime?: string;
   examName?: string;
   finding?: string;

@@ -44,7 +44,12 @@ export function useReceptionSessionController(currentPatient: Ref<AppPatient | n
     const opportunity = opportunities.value.find((item) => item.type === 'report-follow-up');
     return opportunity?.type === 'report-follow-up' ? opportunity.context : null;
   });
+  const reportInterpretationVisits = computed(() => {
+    const opportunity = opportunities.value.find((item) => item.type === 'report-interpretation');
+    return opportunity?.type === 'report-interpretation' ? opportunity.visits : [];
+  });
   const chronicRefillGenerating = computed(() => executingOpportunity.value === 'chronic-refill');
+  const reportAssistantOpening = computed(() => executingOpportunity.value === 'report-interpretation');
 
   function clearAssessment(): void {
     risks.value = [];
@@ -108,7 +113,9 @@ export function useReceptionSessionController(currentPatient: Ref<AppPatient | n
     executingOpportunity: shallowReadonly(executingOpportunity),
     chronicRefillCandidate: shallowReadonly(chronicRefillCandidate),
     outpatientFollowUpContext: shallowReadonly(outpatientFollowUpContext),
+    reportInterpretationVisits: shallowReadonly(reportInterpretationVisits),
     chronicRefillGenerating: shallowReadonly(chronicRefillGenerating),
+    reportAssistantOpening: shallowReadonly(reportAssistantOpening),
     patientName,
     patientGender,
     patientAge,

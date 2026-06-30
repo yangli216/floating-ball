@@ -1,4 +1,5 @@
 import type { AppPatient } from '@/types/appState';
+import type { HisPatientHistory, HisVisitRecord } from '@/services/his/types';
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value && typeof value === 'object');
@@ -34,4 +35,24 @@ export function hasReportedApplyResult(detail: unknown): boolean {
 
 export function hasPatientReportedLabOrExamResults(patient: AppPatient | null): boolean {
   return Boolean(patient?.hasReportedLabOrExamResults);
+}
+
+export function getRecentReportedVisits(
+  history: HisPatientHistory | null | undefined,
+  now = new Date(),
+): HisVisitRecord[] {
+  const start = new Date(now);
+  start.setHours(0, 0, 0, 0);
+  start.setDate(start.getDate() - 6);
+  const end = new Date(now);
+  end.setHours(23, 59, 59, 999);
+
+  return (history?.visits || [])
+    .filter((visit) => Boolean(
+      visit.visitId
+      && visit.visitTime >= start.getTime()
+      && visit.visitTime <= end.getTime()
+      && visit.reportedApplications?.length,
+    ))
+    .sort((left, right) => right.visitTime - left.visitTime);
 }

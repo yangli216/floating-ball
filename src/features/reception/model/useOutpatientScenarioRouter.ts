@@ -44,6 +44,7 @@ export interface OutpatientScenarioRouterOptions {
   showGeneratedClinicalResult: (result: ClinicalResultInput) => Promise<void>;
   resetVoiceSessionState: () => void;
   openOutpatientFollowUp: () => Promise<void>;
+  openReportInterpretation: () => Promise<void>;
   startVoiceInteraction: (options?: { skipCacheRestore?: boolean }) => Promise<void>;
   showToast: (message: string, type?: 'success' | 'error' | 'info') => void;
   trackError: (name: string, error: unknown) => void;
@@ -60,6 +61,7 @@ export function useOutpatientScenarioRouter(options: OutpatientScenarioRouterOpt
     showGeneratedClinicalResult,
     resetVoiceSessionState,
     openOutpatientFollowUp,
+    openReportInterpretation,
     startVoiceInteraction,
     showToast,
     trackError,
@@ -139,6 +141,36 @@ export function useOutpatientScenarioRouter(options: OutpatientScenarioRouterOpt
     }
   }
 
+  async function confirmReportAssistant(): Promise<void> {
+    const patient = currentPatient.value;
+    const reportOpportunity = session.getOpportunity('report-interpretation');
+    const followUpOpportunity = session.getOpportunity('report-follow-up');
+    if (
+      !patient
+      || (!reportOpportunity && !followUpOpportunity)
+      || session.executingOpportunity.value
+    ) {
+      return;
+    }
+
+    const patientAnchorId = getPatientContextAnchorId(patient);
+    session.setExecutingOpportunity('report-interpretation');
+    try {
+      await openReportInterpretation();
+    } catch (error) {
+      if (getPatientContextAnchorId(currentPatient.value) !== patientAnchorId) return;
+      trackError('confirm_report_assistant_failed', error);
+      showToast('进入报告助手失败，请稍后重试', 'error');
+    } finally {
+      if (
+        getPatientContextAnchorId(currentPatient.value) === patientAnchorId
+        && session.executingOpportunity.value === 'report-interpretation'
+      ) {
+        session.setExecutingOpportunity(null);
+      }
+    }
+  }
+
   async function openVoiceEntry(): Promise<OutpatientVoiceEntryDecision> {
     const patient = currentPatient.value;
     const patientAnchorId = getPatientContextAnchorId(patient);
@@ -184,6 +216,7 @@ export function useOutpatientScenarioRouter(options: OutpatientScenarioRouterOpt
   return {
     confirmChronicRefill,
     confirmFollowUp,
+    confirmReportAssistant,
     openVoiceEntry,
   };
 }

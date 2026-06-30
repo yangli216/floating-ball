@@ -8,7 +8,7 @@ import SettingsPanel from "./components/SettingsPanel.vue";
 import { AnalyticsPanel } from "@features/analytics";
 import ConsultationPage from "./components/ConsultationPage.vue";
 import { DiagnosisPathWindow } from "@features/diagnosis-path";
-import { ReportInterpretationWindow } from "@features/report-interpretation";
+import { ReportInterpretationWindow, ReportInterpretationWorkspace } from "@features/report-interpretation";
 import Toast from "@shared/ui/Toast.vue";
 import {
   RiskAlertPanel,
@@ -117,6 +117,8 @@ const {
   chronicRefillCandidate,
   chronicRefillGenerating,
   outpatientFollowUpContext,
+  reportInterpretationVisits,
+  reportAssistantOpening,
 } = receptionSession;
 
 // 语音问诊状态
@@ -138,6 +140,8 @@ const assistantTitle = computed(() => {
       return currentPatient.value ? `诊疗方案 - ${patientDisplayName.value}` : '诊疗方案';
     case 'outpatient-follow-up':
       return currentPatient.value ? `门诊复诊 - ${patientDisplayName.value}` : '门诊复诊';
+    case 'report-interpretation':
+      return currentPatient.value ? `报告助手 - ${patientDisplayName.value}` : '报告助手';
     case 'inpatient-emr':
       return '住院病历生成';
     case 'differential-diagnosis':
@@ -279,6 +283,8 @@ const getCurrentReceptionWindowSize = () => getWindowSizeForView('reception-caps
   expanded: !isRiskAnalyzing.value && riskItems.value.length > 0,
   riskCount: riskItems.value.length,
   hasChronicRefill: Boolean(chronicRefillCandidate.value),
+  hasFollowUp: Boolean(outpatientFollowUpContext.value),
+  hasReportInterpretation: reportInterpretationVisits.value.length > 0,
 });
 
 // 初始化工作模式 composable
@@ -318,6 +324,7 @@ const {
   openVoiceConsultation,
   openTreatmentPlan,
   openOutpatientFollowUp,
+  openReportInterpretation,
   openInpatientEmr,
   openDifferentialDiagnosis,
   startVoiceInteraction: startVoiceInteractionBase,
@@ -366,6 +373,12 @@ async function cancelSymptomConsultation(): Promise<void> {
 async function closeTreatmentPlan(): Promise<void> {
   await handleUserCollapse();
   currentView.value = 'chat';
+}
+
+async function closeReportInterpretationWorkspace(): Promise<void> {
+  currentView.value = 'reception-capsule';
+  const targetSize = getCurrentReceptionWindowSize();
+  await enterWorkMode(targetSize.width, targetSize.height);
 }
 
 // 可见性/可点击门禁：
@@ -530,6 +543,8 @@ const handleRiskExpand = async (expanded: boolean) => {
     expanded,
     riskCount: riskItems.value.length,
     hasChronicRefill: Boolean(chronicRefillCandidate.value),
+    hasFollowUp: Boolean(outpatientFollowUpContext.value),
+    hasReportInterpretation: reportInterpretationVisits.value.length > 0,
   });
 
   try {
@@ -560,7 +575,7 @@ const eventListeners = useEventListeners({
   handleWindowMove,
   persistCurrentWindowSize,
   workMode: { enterWorkMode, exitWork },
-  navigation: { openConsultation, openVoiceConsultation, openTreatmentPlan, openOutpatientFollowUp, openInpatientEmr, openDifferentialDiagnosis, startVoiceInteraction },
+  navigation: { openConsultation, openVoiceConsultation, openTreatmentPlan, openOutpatientFollowUp, openReportInterpretation, openInpatientEmr, openDifferentialDiagnosis, startVoiceInteraction },
   resetVoiceSessionState,
   clearVoiceConsultationCache,
   clearMinimizedConsultationSessions: minimizedSessions.clearAll,
@@ -839,7 +854,7 @@ const openInsideCloudHome = async () => {
           <!-- 工具栏 (risk-alert, voice-interaction, reception-capsule 视图不显示) -->
           <div v-if="currentView !== 'risk-alert' && currentView !== 'voice-interaction' && currentView !== 'reception-capsule' && currentView !== 'differential-diagnosis' && currentView !== 'chat'" class="assistant-toolbar" data-tauri-drag-region>
             <div class="toolbar-left" data-tauri-drag-region>
-	              <button v-if="currentView === 'settings' || currentView === 'analytics' || currentView === 'his-log' || currentView === 'medical-cache' || currentView === 'knowledge-base' || currentView === 'treatment-plan' || currentView === 'outpatient-follow-up' || currentView === 'inpatient-emr'" class="icon-btn back-btn" @click="currentView === 'analytics' ? openChat() : handleUserCollapse()" title="返回">
+	              <button v-if="currentView === 'settings' || currentView === 'analytics' || currentView === 'his-log' || currentView === 'medical-cache' || currentView === 'knowledge-base' || currentView === 'treatment-plan' || currentView === 'outpatient-follow-up' || currentView === 'report-interpretation' || currentView === 'inpatient-emr'" class="icon-btn back-btn" @click="currentView === 'analytics' ? openChat() : currentView === 'report-interpretation' ? closeReportInterpretationWorkspace() : handleUserCollapse()" title="返回">
 	                 <Icon icon="lucide:arrow-left" class="toolbar-icon" size="20" />
 	              </button>
 	              <span class="assistant-title" data-tauri-drag-region>{{ assistantTitle }}</span>
@@ -912,10 +927,12 @@ const openInsideCloudHome = async () => {
             :chronic-refill-candidate="chronicRefillCandidate"
             :chronic-refill-generating="chronicRefillGenerating"
             :outpatient-follow-up-context="outpatientFollowUpContext"
+            :report-interpretation-visits="reportInterpretationVisits"
+            :report-assistant-opening="reportAssistantOpening"
             @close="closeRiskAlert"
             @toggle-expand="handleRiskExpand"
             @confirm-chronic-refill="eventListeners.confirmChronicRefill"
-            @confirm-follow-up="eventListeners.confirmFollowUp"
+            @confirm-report-assistant="eventListeners.confirmReportAssistant"
           />
 
           <AnalyticsPanel
@@ -943,6 +960,13 @@ const openInsideCloudHome = async () => {
             :patient="currentPatient"
             :context="outpatientFollowUpContext"
             @close="closeTreatmentPlan"
+          />
+          <ReportInterpretationWorkspace
+            v-if="currentView === 'report-interpretation'"
+            :patient="currentPatient"
+            :visits="reportInterpretationVisits"
+            :follow-up-context="outpatientFollowUpContext"
+            @open-follow-up="eventListeners.confirmFollowUp"
           />
           <InpatientEmrPage
             v-show="currentView === 'inpatient-emr'"

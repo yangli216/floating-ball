@@ -1,4 +1,4 @@
-import type { HisOutpatientFollowUpContext } from '@/services/his/types';
+import type { HisOutpatientFollowUpContext, HisVisitRecord } from '@/services/his/types';
 import type { ChronicRefillCandidate } from '@features/reception-risk';
 
 export type ReceptionOpportunity =
@@ -9,6 +9,10 @@ export type ReceptionOpportunity =
   | {
       type: 'report-follow-up';
       context: HisOutpatientFollowUpContext;
+    }
+  | {
+      type: 'report-interpretation';
+      visits: HisVisitRecord[];
     };
 
 export type ReceptionOpportunityType = ReceptionOpportunity['type'];

@@ -329,6 +329,29 @@ export interface HisVisitDetailOrder {
   idMed?: string;
   idMedPro?: string;
   fgDrug?: string;
+  idApplySim?: string;
+  idOrdComb?: string;
+  [key: string]: unknown;
+}
+
+export interface HisVisitDetailApplyItem {
+  idApply?: string;
+  idApplySim?: string;
+  naApply?: string;
+  sdApply?: string;
+  naSpecimen?: string;
+  sdSpecimen?: string;
+  insertTime?: string;
+  [key: string]: unknown;
+}
+
+export interface HisVisitDetailApplyGroup {
+  idApplySim?: string;
+  naApplySim?: string;
+  naDeptExec?: string;
+  sdBusiness?: string;
+  insertTime?: string;
+  items?: HisVisitDetailApplyItem[];
   [key: string]: unknown;
 }
 
@@ -340,6 +363,7 @@ export interface HisVisitDetailBody {
   };
   diagList?: HisVisitDetailDiag[];
   orderList?: HisVisitDetailOrder[];
+  applyList?: HisVisitDetailApplyGroup[];
   [key: string]: unknown;
 }
 

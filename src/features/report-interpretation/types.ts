@@ -1,0 +1,23 @@
+import type { ReportInterpretationTaskId } from '@/types/reportInterpretation';
+import type { HisOutpatientFollowUpLabItem } from '@/services/his/types';
+
+export interface ReportHistoryEntry {
+  id: string;
+  visitId: string;
+  visitTime: number;
+  deptName?: string;
+  diagnosisNames: string[];
+  taskId: ReportInterpretationTaskId;
+  title: string;
+  reportTime?: string;
+  reportId?: string;
+  applicationId?: string;
+  labItems?: HisOutpatientFollowUpLabItem[];
+  examFinding?: string;
+  examConclusion?: string;
+  sourceQuery: string;
+  available: boolean;
+  isFollowUpSource: boolean;
+}
+
+export type ReportHistoryFilter = 'all' | 'lab' | 'exam';

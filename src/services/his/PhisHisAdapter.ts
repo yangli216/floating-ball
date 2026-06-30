@@ -28,7 +28,11 @@ import type {
   HisOutpatientMedicalRecordDocumentBody,
 } from '../hisService';
 import type { HisAdapter, HisServiceContext } from './HisAdapter';
-import type { HisVisitRecord } from './types';
+import type {
+  HisReportedApplication,
+  HisReportedApplicationType,
+  HisVisitRecord,
+} from './types';
 import type {
   AvailableMedicineInventoryItem,
   DiagnosisCatalogEntry,
@@ -250,6 +254,58 @@ function sanitizeOrderDescription(value: unknown): string | undefined {
   return cleaned;
 }
 
+function resolveReportedApplicationType(
+  group: NonNullable<HisVisitDetailBody['applyList']>[number],
+  item: NonNullable<NonNullable<HisVisitDetailBody['applyList']>[number]['items']>[number],
+  orders: HisVisitDetailOrder[],
+): HisReportedApplicationType {
+  const groupId = trim(group.idApplySim);
+  const applicationId = trim(item.idApply);
+  const relatedOrder = orders.find((order) => {
+    const orderGroupId = trim(order.idApplySim);
+    const orderCombinationId = trim(order.idOrdComb);
+    return Boolean(
+      (groupId && orderGroupId === groupId)
+      || (applicationId && orderCombinationId === applicationId),
+    );
+  });
+  const orderType = trim(relatedOrder?.sdOrd) ?? trim(relatedOrder?.sdSrv);
+  if (orderType === '41') return 'lab';
+  if (orderType === '31') return 'exam';
+
+  if (trim(item.naSpecimen) || trim(item.sdSpecimen)) return 'lab';
+  const department = trim(group.naDeptExec) || '';
+  if (/检验|化验/u.test(department)) return 'lab';
+  if (/检查|影像|放射|超声|心电|内镜/u.test(department)) return 'exam';
+  return 'unknown';
+}
+
+function mapReportedApplications(detail: HisVisitDetailBody): HisReportedApplication[] {
+  const orders = detail.orderList ?? [];
+  const applications = (detail.applyList ?? []).flatMap((group) => (
+    (group.items ?? [])
+      .filter((item) => trim(item.sdApply) === '3')
+      .map((item): HisReportedApplication | null => {
+        const applicationId = trim(item.idApply);
+        const name = trim(item.naApply) ?? trim(group.naApplySim);
+        if (!applicationId || !name) return null;
+        return {
+          applicationId,
+          applicationGroupId: trim(item.idApplySim) ?? trim(group.idApplySim),
+          name,
+          type: resolveReportedApplicationType(group, item, orders),
+          status: 'reported' as const,
+          requestedAt: trim(item.insertTime) ?? trim(group.insertTime),
+        };
+      })
+      .filter((item): item is HisReportedApplication => Boolean(item))
+  ));
+
+  return Array.from(new Map(
+    applications.map((item) => [item.applicationId, item]),
+  ).values());
+}
+
 /**
  * 把 PHIS 单次就诊详情映射为中性 HisVisitRecord。
  *
@@ -294,13 +350,28 @@ function mapVisitDetail(
       return tail ? `${name}（${tail}）` : name;
     })
     .filter((value): value is string => Boolean(value));
+  const reportedApplications = mapReportedApplications(detail);
+  const deptName = firstTrim(visit as Record<string, unknown>, [
+    'idDeptText',
+    'deptName',
+    'naDept',
+    'naDeptExec',
+  ]) ?? firstTrim(detail as Record<string, unknown>, [
+    'idDeptText',
+    'deptName',
+    'naDept',
+    'naDeptExec',
+  ]);
 
   return {
+    visitId: trim(visit.idVis),
     visitTime,
+    deptName,
     chiefComplaint,
     presentIllness,
     diagnoses: diagnoses.length > 0 ? diagnoses : undefined,
     medications: medications.length > 0 ? medications : undefined,
+    reportedApplications: reportedApplications.length > 0 ? reportedApplications : undefined,
   };
 }
 

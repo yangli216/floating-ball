@@ -24,6 +24,7 @@ export interface WindowSizeOptions {
   riskCount?: number;
   hasChronicRefill?: boolean;
   hasFollowUp?: boolean;
+  hasReportInterpretation?: boolean;
   voiceStage?: VoiceInteractionWindowStage;
 }
 
@@ -40,6 +41,7 @@ export type ViewType =
   | 'voice-consultation'
   | 'treatment-plan'
   | 'outpatient-follow-up'
+  | 'report-interpretation'
   | 'inpatient-emr'
   | 'differential-diagnosis'
   | 'reception-capsule'
@@ -97,6 +99,9 @@ export const WINDOW_SIZES = {
   /** 门诊复诊工作台：1280×760px，左侧依据预览，右侧诊疗方案 */
   OUTPATIENT_FOLLOW_UP: { width: 1280, height: 760 } as WindowSize,
 
+  /** 报告助手工作台：左侧报告时间轴，右侧报告单式解读 */
+  REPORT_INTERPRETATION: { width: 1280, height: 760 } as WindowSize,
+
   /** 住院病历辅助生成：1120×760px */
   INPATIENT_EMR: { width: 1120, height: 760 } as WindowSize,
 
@@ -122,19 +127,20 @@ export const WINDOW_SIZES = {
  * // => { width: 1120, height: 760 }
  * ```
  */
-export function getReceptionCapsuleSize(options?: Pick<WindowSizeOptions, 'expanded' | 'riskCount' | 'hasChronicRefill' | 'hasFollowUp'>): WindowSize {
+export function getReceptionCapsuleSize(options?: Pick<WindowSizeOptions, 'expanded' | 'riskCount' | 'hasChronicRefill' | 'hasFollowUp' | 'hasReportInterpretation'>): WindowSize {
   const expanded = options?.expanded ?? false;
-  const refillHeight = (options?.hasChronicRefill || options?.hasFollowUp) ? 54 : 0;
+  const hasReportAction = Boolean(options?.hasFollowUp || options?.hasReportInterpretation);
+  const actionHeight = (Number(Boolean(options?.hasChronicRefill)) + Number(hasReportAction)) * 54;
   if (!expanded) {
     return {
       width: WINDOW_SIZES.RISK_CARD.width,
-      height: WINDOW_SIZES.RISK_CARD.height + refillHeight,
+      height: WINDOW_SIZES.RISK_CARD.height + actionHeight,
     };
   }
 
   const riskCount = Math.max(options?.riskCount ?? 0, 1);
   const visibleRiskRows = Math.min(riskCount, 6);
-  const estimatedHeight = 108 + visibleRiskRows * 52 + refillHeight;
+  const estimatedHeight = 108 + visibleRiskRows * 52 + actionHeight;
 
   return {
     width: WINDOW_SIZES.RISK_CARD.width,
@@ -179,6 +185,9 @@ export function getWindowSizeForView(view: ViewType, options?: WindowSizeOptions
     case 'outpatient-follow-up':
       return WINDOW_SIZES.OUTPATIENT_FOLLOW_UP;
 
+    case 'report-interpretation':
+      return WINDOW_SIZES.REPORT_INTERPRETATION;
+
     case 'inpatient-emr':
       return WINDOW_SIZES.INPATIENT_EMR;
 
@@ -210,6 +219,7 @@ export function supportsPersistentWindowSize(view: ViewType): boolean {
     || view === 'voice-consultation'
     || view === 'treatment-plan'
     || view === 'outpatient-follow-up'
+    || view === 'report-interpretation'
     || view === 'inpatient-emr'
     || view === 'differential-diagnosis'
     || view === 'analytics'
@@ -241,5 +251,6 @@ export function isLargePanelView(view: ViewType): boolean {
     || view === 'voice-consultation'
     || view === 'treatment-plan'
     || view === 'outpatient-follow-up'
+    || view === 'report-interpretation'
     || view === 'inpatient-emr';
 }

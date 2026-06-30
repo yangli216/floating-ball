@@ -257,11 +257,18 @@ export class MockHisAdapter implements HisAdapter {
       pastMedicalHistory: ['高血压史3年'],
       visits: [
         {
-          visitTime: Date.now() - 7 * 24 * 3600 * 1000,
+          visitId: 'mock-visit-reported',
+          visitTime: Date.now() - 2 * 24 * 3600 * 1000,
           chiefComplaint: '高血压复诊配药',
           presentIllness: '既往高血压病史，按既往方案规律服药。',
           diagnoses: ['高血压'],
           medications: ['苯磺酸氨氯地平片（5mg*28片）'],
+          reportedApplications: [{
+            applicationId: 'mock-apply-lab-1',
+            name: '血常规',
+            type: 'lab',
+            status: 'reported',
+          }],
         },
         {
           visitTime: Date.now() - 45 * 24 * 3600 * 1000,

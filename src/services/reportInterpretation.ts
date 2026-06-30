@@ -508,7 +508,8 @@ function analyzeReportQuery(request: ReportInterpretationResolvedRequest): Repor
     ...collectTaggedBlock(lines, REPORT_CONCLUSION_LABELS, ['建议', '备注']),
     ...lines.filter((line) => extractInlineValue(line, REPORT_CONCLUSION_LABELS)),
   ]);
-  const abnormalItems = buildAbnormalItems(request, resultLines, conclusionLines);
+  const abnormalItems = request.abnormalItems?.slice(0, 6)
+    || buildAbnormalItems(request, resultLines, conclusionLines);
 
   const rawCandidates = request.taskId === 'inspectReport'
     ? uniqueStrings([
@@ -725,6 +726,7 @@ export function resolveReportInterpretationRequest(
     reportKindLabel: taskLabel(payload.taskId),
     query,
     patient: buildPatientProfile(currentPatient, payload.patient),
+    abnormalItems: payload.abnormalItems,
   };
 }
 
@@ -797,6 +799,7 @@ function buildFallbackPayload(request: ReportInterpretationResolvedRequest): Rep
     patient: request.patient,
     reportMeta: insight.reportMeta,
     abnormalItems: insight.abnormalItems,
+    abnormalAssessmentComplete: request.abnormalItems !== undefined,
     sourceQuery: request.query,
     summary: `${reportLabel}最值得关注的发现是：${headline}`,
     conclusion: `${insight.reportDate ? `${insight.reportDate} ` : ''}${reportLabel}提示：${sectionHighlights}。${contextInterpretation}`,
