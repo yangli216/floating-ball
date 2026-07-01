@@ -95,6 +95,7 @@ describe('buildRecordConfirmedPayload outpatientRecord', () => {
     expect(outpatientRecord.personalHistory).toBe('否认吸烟史，否认饮酒史。');
     expect(outpatientRecord.physicalExam).toBe('双肺呼吸音清，未闻及干湿啰音。');
     expect(outpatientRecord.precautions).toBe('注意休息，必要时复诊。');
+    expect(payload.precautions).toBe('注意休息，必要时复诊。');
     expect(outpatientRecord).not.toHaveProperty('diagnosisText');
     expect(payload.diagList).toEqual([
       expect.objectContaining({
@@ -102,5 +103,21 @@ describe('buildRecordConfirmedPayload outpatientRecord', () => {
         naDiag: '急性上呼吸道感染',
       }),
     ]);
+  });
+
+  it('keeps generated precautions in both the PHIS compatibility field and outpatientRecord', () => {
+    const payload = buildRecordConfirmedPayload({
+      consultationId: 'consultation-2',
+      chiefComplaint: '咳嗽3天',
+      historyOfPresentIllness: '患者受凉后出现咳嗽。',
+      pastMedicalHistory: '平素体健',
+      diagList: [],
+      orderList: [],
+    });
+
+    const outpatientRecord = payload.outpatientRecord as OutpatientRecord;
+
+    expect(outpatientRecord.precautions).toBeTruthy();
+    expect(payload.precautions).toBe(outpatientRecord.precautions);
   });
 });

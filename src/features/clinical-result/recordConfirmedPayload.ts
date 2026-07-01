@@ -387,6 +387,7 @@ export function buildRecordConfirmedPayload(
         diagnosisNames: diagList.map((item) => item.naDiag).filter(Boolean),
       })
     : undefined;
+  const resolvedPrecautions = outpatientRecordPayload?.precautions || precautions || '';
 
   return {
     consultationId,
@@ -397,6 +398,7 @@ export function buildRecordConfirmedPayload(
     historyOfPresentIllness,
     pastMedicalHistory,
     ...(resolvedFamilyHistory ? { familyHistory: resolvedFamilyHistory } : {}),
+    ...(resultType === 'record-confirmed' ? { precautions: resolvedPrecautions } : {}),
     diagList,
     orderList,
     ...(treatmentPlan ? { treatmentPlan } : {}),

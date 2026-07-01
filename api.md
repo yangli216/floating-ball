@@ -1192,6 +1192,7 @@ ws://127.0.0.1:8081/api/consultation/events/ws
   "chiefComplaint": "咳嗽三天",
   "historyOfPresentIllness": "受凉后出现咳嗽、咳痰，无明显呼吸困难。",
   "pastMedicalHistory": "否认高血压、糖尿病病史。",
+  "precautions": "注意休息，1周内复诊，必要时上级医院进一步检查治疗。",
   "diagList": [
     {
       "idTet": "test",
@@ -1263,6 +1264,7 @@ ws://127.0.0.1:8081/api/consultation/events/ws
 4. `diagList.idDiag` 必须是 PHIS 标准诊断目录主键（`ID_DIE`）。桌面端不得把 AI 自由文本、前端临时 key 或 PHIS 草稿文本生成的占位 ID 写入该字段；若当前诊断未匹配标准诊断库，应在提交前拦截并提示医生先切换或重新匹配标准诊断。
 5. `orderList` 必须来自已匹配标准库且通过前置非空校验的用药、检查、检验、处置推荐项。桌面端提交前必须拦截缺少标准服务 ID、服务名称、服务分类编码、执行位置 ID 或医保限用标识的医嘱；药品还必须具备一次剂量、剂量单位、频次 key、用法 key、总量、用药天数和发药药房；检查还必须具备检查部位；检验还必须具备非空检验附加 `jsonField`；处置还必须具备大于 0 的数量。医生手动清空检查 / 检验 / 处置的执行科室，或清空任一医嘱的医保限用后，桌面端必须按当前空输入拦截选中和提交，不得从 `matchedItem.idDeptExec`、`raw.idDeptExec/idDept`、详情 hydrate、默认执行科室或默认医保类型兜底生成必填字段。
 6. `outpatientRecord` 为完整门诊病历文书字段，包含主诉、现病史、既往史、个人史、家族史、体格检查和注意事项。该对象不包含 `diagnosisText`；HIS 应根据 `diagList` 自动生成病历诊断行，避免诊断文书来源与标准诊断回写来源分叉。
+7. 为兼容 PHIS 既有的顶层病历字段读取方式，`record-confirmed` 同时返回顶层 `precautions`，其值与 `outpatientRecord.precautions` 完全一致。新接入优先读取 `outpatientRecord.precautions`，旧接入可继续读取顶层 `precautions`；两者不得表达不同内容。
 
 **outpatientRecord 字段：**
 
