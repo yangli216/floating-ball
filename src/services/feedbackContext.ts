@@ -54,11 +54,11 @@ export function getFeedbackActor(): FeedbackActor {
  *
  * urt 常见结构：
  * {
- *   orgId, orgCode, orgPureName, orgName, hospitalName,
+ *   orgCode, orgPureName, orgName, hospitalName,
  *   userId / idEmp / idDoctor / idUser,
  *   userName / naDoctor / naEmp,
  *   deptId / deptName,
- *   userRoleDepts: [{ deptId, naDept, deptName, ... }] | string(JSON)
+ *   userRoleDepts: { orgId, orgCd, orgName, deptId, deptName, ... } | [{ ... }] | string(JSON)
  * }
  */
 export function resolveFeedbackActorFromUrt(
@@ -85,35 +85,11 @@ export function resolveFeedbackActorFromUrt(
 
   const orgCode = trim(urt.orgCode)
     ?? trim(urt.cdOrg)
-    ?? trim(urt.orgId)
     ?? trim(fallbackOrgCode);
 
-  const hisOrgId = trim(urt.orgId);
+  const deptName = trim(urt.deptName);
 
-  const orgName = trim(urt.orgPureName)
-    ?? trim(urt.orgName)
-    ?? trim(urt.naOrg)
-    ?? trim(urt.hospitalName);
-
-  // PHIS 顶层 deptId 是当前登录/接诊科室的优先来源；userRoleDepts 仅作兼容兜底。
-  let deptId = trim((urt as any).deptId)
-    ?? trim((urt as any).idDept)
-    ?? trim((urt as any).id_dept)
-    ?? null;
-  let deptName = trim((urt as any).deptName)
-    ?? trim((urt as any).naDept)
-    ?? trim((urt as any).na_dept)
-    ?? trim((urt as any).deptShortName)
-    ?? trim((urt as any).naDeptShort)
-    ?? null;
-
-  // 尝试从 userRoleDepts 任一层级里取首个 (deptId, deptName) 对作为兜底
-  // PHIS 实际结构存在多种可能：
-  //   1) [{ deptId, deptName | naDept }]
-  //   2) "[{...}]" JSON 字符串
-  //   3) { "<deptId>": [{ deptId | idDept, deptName | naDept }, ...] }
-  //   4) { "<roleKey>": { deptId, deptName } }
-  // 这里做深度遍历，找到第一个含科室名称的对象即可
+  // id_his_org / id_dept 只来自 urt.userRoleDepts 对象的同名字段，不从数组或其他字段兜底。
   const rawDepts = urt.userRoleDepts;
   const parsedDepts = (() => {
     if (typeof rawDepts === 'string') {
@@ -126,57 +102,14 @@ export function resolveFeedbackActorFromUrt(
     return rawDepts;
   })();
 
-  type DeptCandidate = { id?: string | null; name?: string | null };
-  const visited = new WeakSet<object>();
-  const queue: Array<{ value: unknown; outerKey?: string }> = [{ value: parsedDepts }];
+  const hisOrgId = parsedDepts && !Array.isArray(parsedDepts) && typeof parsedDepts === 'object'
+    ? trim((parsedDepts as Record<string, unknown>).orgId)
+    : null;
+  const deptId = parsedDepts && !Array.isArray(parsedDepts) && typeof parsedDepts === 'object'
+    ? trim((parsedDepts as Record<string, unknown>).deptId)
+    : null;
 
-  let bestDept: DeptCandidate | null = null;
-
-  while (queue.length > 0 && !bestDept) {
-    const { value, outerKey } = queue.shift()!;
-
-    if (Array.isArray(value)) {
-      for (const item of value) {
-        queue.push({ value: item, outerKey });
-      }
-      continue;
-    }
-
-    if (value && typeof value === 'object') {
-      if (visited.has(value as object)) continue;
-      visited.add(value as object);
-
-      const record = value as Record<string, unknown>;
-
-      const candidateId = trim(record.deptId)
-        ?? trim(record.idDept)
-        ?? trim(record['id_dept'])
-        ?? trim(outerKey);
-
-      const candidateName = trim(record.deptName)
-        ?? trim(record.naDept)
-        ?? trim(record['na_dept'])
-        ?? trim(record.deptShortName)
-        ?? trim(record.naDeptShort);
-
-      if (candidateName) {
-        bestDept = { id: candidateId, name: candidateName };
-        break;
-      }
-
-      // 没找到名称，但若顶层是 map：把每个 entry 推入队列，并把 key 作为兜底 deptId
-      for (const [k, v] of Object.entries(record)) {
-        queue.push({ value: v, outerKey: k });
-      }
-    }
-  }
-
-  if (bestDept && !deptId) {
-    deptId = bestDept.id ?? null;
-  }
-  if (bestDept && !deptName) {
-    deptName = bestDept.name ?? null;
-  }
+  const orgName = trim(urt.orgPureName);
 
   return {
     doctorId,
