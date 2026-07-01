@@ -95,14 +95,6 @@ export function useNavigation(options: NavigationOptions) {
     await openView('chat');
   }
 
-  /**
-   * 打开分析页
-   */
-  async function openAnalytics(): Promise<void> {
-    trackViewChange(currentView.value, 'analytics');
-    await openView('analytics');
-  }
-
   // ========== 业务导航 ==========
 
   /**
@@ -221,7 +213,6 @@ export function useNavigation(options: NavigationOptions) {
     // 基础导航
     openSettings,
     openChat,
-    openAnalytics,
 
     // 业务导航
     openHisIntegrationLog,

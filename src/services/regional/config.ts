@@ -19,9 +19,32 @@ export const DEFAULT_REGIONAL_ORG_CODE = (
   || 'ORG001'
 ).trim();
 
-export const DEFAULT_REGIONAL_ENABLED = !['false', '0', 'off'].includes(
-  String(import.meta.env.VITE_REGIONAL_ENABLED ?? 'true').trim().toLowerCase()
-);
+const LEGACY_LOCAL_MODE_STORAGE_KEYS = [
+  'REGIONAL_ENABLED',
+  'OPENAI_API_KEY',
+  'LLM_BASE_URL',
+  'LLM_MODEL',
+  'LLM_FAST_MODEL',
+  'LLM_AUDIO_BASE_URL',
+  'LLM_AUDIO_MODEL',
+  'LLM_ENABLE_THINKING',
+  'REVIEWER_ENABLED',
+  'REVIEWER_API_KEY',
+  'REVIEWER_BASE_URL',
+  'REVIEWER_MODEL',
+  'REVIEWER_CHECK_EXAMINATION_ENABLED',
+  'SPEECH_PROVIDER',
+  'SPEECH_API_KEY',
+  'SPEECH_BASE_URL',
+  'SPEECH_MODEL',
+  'DASHSCOPE_API_KEY',
+  'PMPHAI_APP_KEY',
+  'PMPHAI_APP_SECRET',
+  'PMPHAI_ENABLED',
+  'KB_APP_KEY',
+  'KB_APP_SECRET',
+  'KB_BASE_URL',
+] as const;
 
 let heartbeatStopper: (() => void) | null = null;
 
@@ -38,20 +61,6 @@ export function resetRegionalRuntime(clearRegistration = false): void {
   }
 }
 
-export function isRegionalMode(): boolean {
-  const stored = localStorage.getItem(STORAGE_KEYS.REGIONAL_ENABLED);
-  if (stored === 'true') return true;
-  if (stored === 'false') return false;
-  return DEFAULT_REGIONAL_ENABLED;
-}
-
-export function setRegionalMode(enabled: boolean): void {
-  localStorage.setItem(STORAGE_KEYS.REGIONAL_ENABLED, enabled ? 'true' : 'false');
-  if (!enabled) {
-    resetRegionalRuntime(false);
-  }
-}
-
 export function getRegionalBaseUrl(): string {
   return (
     readStorageValue(STORAGE_KEYS.REGIONAL_BASE_URL)
@@ -64,30 +73,27 @@ export function getOrgCode(): string {
     || DEFAULT_REGIONAL_ORG_CODE;
 }
 
-export function getRegionalConnectionDefaults(): Pick<RegionalConnectionConfig, 'enabled' | 'baseUrl' | 'orgCode'> {
+export function getRegionalConnectionDefaults(): Pick<RegionalConnectionConfig, 'baseUrl' | 'orgCode'> {
   return {
-    enabled: DEFAULT_REGIONAL_ENABLED,
     baseUrl: DEFAULT_REGIONAL_BASE_URL,
     orgCode: DEFAULT_REGIONAL_ORG_CODE,
   };
 }
 
 export function ensureRegionalConnectionDefaults(): void {
+  for (const key of LEGACY_LOCAL_MODE_STORAGE_KEYS) {
+    localStorage.removeItem(key);
+  }
   if (!readStorageValue(STORAGE_KEYS.REGIONAL_BASE_URL)) {
     localStorage.setItem(STORAGE_KEYS.REGIONAL_BASE_URL, DEFAULT_REGIONAL_BASE_URL);
   }
   if (!readStorageValue(STORAGE_KEYS.REGIONAL_ORG_CODE)) {
     localStorage.setItem(STORAGE_KEYS.REGIONAL_ORG_CODE, DEFAULT_REGIONAL_ORG_CODE);
   }
-  const enabledValue = localStorage.getItem(STORAGE_KEYS.REGIONAL_ENABLED);
-  if (enabledValue !== 'true' && enabledValue !== 'false') {
-    localStorage.setItem(STORAGE_KEYS.REGIONAL_ENABLED, DEFAULT_REGIONAL_ENABLED ? 'true' : 'false');
-  }
 }
 
 export function getRegionalConnectionConfig(): RegionalConnectionConfig {
   return {
-    enabled: isRegionalMode(),
     baseUrl: getRegionalBaseUrl(),
     orgCode: getOrgCode(),
     deviceCode: getStoredDeviceCode(),
@@ -100,7 +106,6 @@ export function hasRegionalConnectionConfig(): boolean {
 }
 
 export function saveRegionalConnectionConfig(config: {
-  enabled: boolean;
   baseUrl: string;
   orgCode: string;
 }): void {
@@ -112,9 +117,5 @@ export function saveRegionalConnectionConfig(config: {
 
   localStorage.setItem(STORAGE_KEYS.REGIONAL_BASE_URL, nextBaseUrl);
   localStorage.setItem(STORAGE_KEYS.REGIONAL_ORG_CODE, nextOrgCode);
-  setRegionalMode(config.enabled);
-
-  if (config.enabled) {
-    resetRegionalRuntime(endpointChanged);
-  }
+  resetRegionalRuntime(endpointChanged);
 }

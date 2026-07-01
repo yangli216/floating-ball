@@ -1,5 +1,5 @@
 import { getFeedbackActor } from './feedbackContext';
-import { buildRegionalSpeechUploadPayload, isRegionalMode, regionalPost } from './regionalClient';
+import { buildRegionalSpeechUploadPayload, regionalPost } from './regionalClient';
 import type { Diagnosis, Patient, TreatmentRecommendation } from '../types/consultation';
 import type { AppPatient } from '../types/appState';
 import {
@@ -245,7 +245,7 @@ export function computeChangeSummary(
 }
 
 export async function submitConsultationUserLog(input: SubmitConsultationUserLogInput): Promise<void> {
-  if (!isRegionalMode() || !input.consultationId || !input.consultationRoundId) return;
+  if (!input.consultationId || !input.consultationRoundId) return;
 
   const actor = getFeedbackActor();
   const patient = input.patient;

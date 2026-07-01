@@ -1,10 +1,10 @@
 /**
  * Prompt 远程覆盖层
  *
- * 区域化模式下，管理端可以发布自定义 prompt 覆盖本地默认值。
+ * 管理端可以发布自定义 prompt 覆盖内置默认值。
  * 通过 bootstrap/delta 机制拉取，本地缓存在 localStorage。
  */
-import { isRegionalMode, regionalGet } from './regionalClient';
+import { regionalGet } from './regionalClient';
 
 // ─── 类型定义 ─────────────────────────────────────────────────────────────
 
@@ -61,8 +61,6 @@ function saveCacheOverrides(prompts: RemotePrompt[]): void {
  * 从 core-service 拉取 prompt 增量更新
  */
 export async function syncRemotePrompts(): Promise<void> {
-  if (!isRegionalMode()) return;
-
   try {
     const currentVersion = localStorage.getItem(CACHE_VERSION_KEY) || '0';
     const resp = await regionalGet<PromptDeltaResponse>(
@@ -92,7 +90,6 @@ export async function syncRemotePrompts(): Promise<void> {
  * @param cdPrompt 场景编码，如 "medicalRecordGeneration"
  */
 export function getPromptOverride(cdPrompt: string): RemotePrompt | null {
-  if (!isRegionalMode()) return null;
   const overrides = loadCachedOverrides();
   return overrides.get(cdPrompt) || null;
 }

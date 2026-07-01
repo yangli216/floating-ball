@@ -132,10 +132,11 @@
 
 ### 当前状态
 
-当前代码库**尚未落地独立医生登录态**，运行态分为本地模式与区域化模式两条链路：
+当前代码库**尚未落地独立医生登录态**，桌面端只保留区域后台托管运行形态：
 
-1. 本地模式下，LLM / 审查模型 / PMPHAI 等凭据仍通过设置页、`localStorage` 与 `.env` 兜底管理。
-2. 区域化模式下，桌面端通过 `SettingsPanel.vue` 或预置的 `REGIONAL_*` 配置项保存 `REGIONAL_ENABLED / REGIONAL_BASE_URL / REGIONAL_ORG_CODE`，再由 `regionalRuntime.ts -> regionalClient.ts` 完成设备注册、`bootstrap` 拉取和 `/v1/*` 调用；首启默认接入值中的后端地址优先取构建时注入的 `VITE_REGIONAL_BASE_URL`（CI/Release 由 GitHub Actions Repository Variables 注入），机构编码默认回退到 `ORG001`，如需覆盖仅通过本地 `.env` 或设置页手工配置；后续仍允许在设置页修改或关闭；桌面端不再编辑这些密钥类配置。
+1. 桌面端通过 `SettingsPanel.vue` 或预置配置保存 `REGIONAL_BASE_URL / REGIONAL_ORG_CODE`，再由 `regionalRuntime.ts -> regionalClient.ts` 完成设备注册、`bootstrap` 拉取和 `/v1/*` 调用；后端地址优先取构建时注入的 `VITE_REGIONAL_BASE_URL`，机构编码默认回退到 `ORG001`。历史 `REGIONAL_ENABLED=false` 与本地 AI/语音/知识库密钥在升级时清理，不再影响运行形态。
+2. 模型、独立审查 AI、语音、PMPHAI 和内置知识库的上游地址与密钥只在 `floating-ball-server` 管理，桌面端不再提供模型配置页或第三方直连实现。
+3. 后台不可达时不切换为本地直连：桌面壳、HIS Bridge、PHIS 回写、本地缓存和确定性规则仍可运行，依赖 `/v1/*` 的能力返回可理解错误并等待后台恢复。
 2.1 `regionalClient.ts` 会优先通过 Tauri Rust 命令读取设备网卡 MAC 地址，并将其作为 `cdDevice` / 设备编码持久化使用；仅在当前环境无法读取 MAC 时才回退到本地生成的兜底编码。
 2.2 `SettingsPanel.vue` 需要同时提供“桌面端到 floating-ball-server”的接入测试入口，用于验证 `register -> bootstrap` 链路，并与后台“server 到 LLM”测试入口形成分层排障。
 2.3 设置页“测试 server 连通性”只等待更新策略检查、设备注册和 `bootstrap` 获取，不再同步等待 prompt / template / mapping 数据包等运行时后置同步；区域化 HTTP 请求与更新策略检查必须设置有限超时，失败时结束按钮等待态并展示可操作错误信息。
@@ -146,28 +147,27 @@
 
 ### 前端分层设计
 
-1. 当前设置与凭据状态通过 `localStorage`、`consultationConfig` store、本地 Tauri Store 管理，其中“通用 LLM”和“语音转写”配置分域存储，避免同一组 Audio 字段误导到不同 provider。本地模式下，“模型配置”页同时维护主模型、`chatFast` 独立模型和 `enable_thinking` 开关；区域化模式下继续隐藏该页签，并以 `bootstrap` 下发的主模型 / `chatFast` 模型和 `enableThinking` 开关为准，由 `floating-ball-server` 统一托管是否向上游传递 `enable_thinking`。
+1. 设置页只管理桌面通用偏好、后台地址、机构编码、音频输入设备与更新源；主模型、`chatFast`、`enable_thinking`、语音 provider、独立审查 AI 与知识库配置全部由 `floating-ball-server` 管理，桌面端只读消费 bootstrap 的非敏感视图。
 2. 本地 HIS 对接入口由 `src-tauri/src/http_server.rs` 提供。
 3. 若未来引入真实登录态，应新增专用文档章节并在 `AGENTS.md` / `api.md` 中同步说明。
-4. Windows 内网更新源采用本地配置驱动：测试环境地址、正式环境地址和当前生效环境保存在 `localStorage`，前端只负责展示与选择，真正的 updater endpoint 在 Rust 侧通过 `updater_builder()` 运行时注入。区域化模式下，客户端会按当前更新通道访问 `floating-ball-server` 的 `/v1/client/releases/{channel}/policy.json`；若服务端发布策略要求强制更新且当前版本低于 `minSupportedVersion`，应用进入强制更新门禁，只保留更新源配置、检查更新、下载安装并重启能力。
+4. Windows 内网更新源采用本地配置驱动：测试环境地址、正式环境地址和当前生效环境保存在 `localStorage`，前端只负责展示与选择，真正的 updater endpoint 在 Rust 侧通过 `updater_builder()` 运行时注入。客户端会按当前更新通道访问 `floating-ball-server` 的 `/v1/client/releases/{channel}/policy.json`；若服务端发布策略要求强制更新且当前版本低于 `minSupportedVersion`，应用进入强制更新门禁，只保留更新源配置、检查更新、下载安装并重启能力。
 5. 主窗口的聊天、设置、问诊等可调整工作视图会将用户最后一次手动调整后的窗口尺寸写入 `.settings.dat`，再次打开对应视图时优先恢复该尺寸；聊天视图会丢弃低于标准工作面板高度的历史扁窗尺寸并回到默认窄高比例，智能问诊视图会丢弃低于当前默认尺寸的历史记录并回到适度放大的双栏比例，避免欢迎区、病历编辑区、推荐清单或底部操作区被不合适的历史尺寸继续影响；悬浮球启动阶段在 Rust 层读取 `.settings.dat` 的历史位置，并按当前显示器 `workArea`、实际窗口物理尺寸和最近边缘吸附策略夹回可见安全区域，若历史位置已不属于当前工作区则回落到主屏右侧居中位置。
 6. 通用设置页新增音频输入设备配置，首选麦克风 `deviceId` 保存在 `localStorage`；聊天录音和语音接诊共用同一配置，若指定设备不存在则自动回退到系统默认输入设备。设置页首次进入时会按权限状态自动补做一次设备列表预热，尽量避免初次枚举不完整、必须手动刷新后才看到全部麦克风。
-7. 语音转写配置与通用 LLM 配置分离：本地模式下默认 provider 为阿里云 DashScope，`VoiceCapsule.vue` 实时语音和 `ChatPanel.vue` 录音转写共用同一套 speech config；若切换到 OpenAI 兼容 provider，则统一降级为批量转写链路。
+7. `VoiceCapsule.vue` 实时语音和 `ChatPanel.vue` 录音转写共用 bootstrap 下发的 speech config；`aliyun-dashscope` 优先使用区域 WebSocket，`openai-compatible` 与实时失败场景统一使用区域批量转写接口。
 
 ### 与主流程关系
 
-1. 现阶段所有问诊、语音、session 回写能力都必须兼容本地模式。
-2. 区域化模式下，`LLM`、独立审查 AI、PMPHAI 知识库等上游能力默认走 `floating-ball-server` 的 `/v1/*` 代理或服务端签名接口，桌面端不直接保存或下发这些密钥。
-3. 区域化模式下，诊断和医嘱推荐在完成本地/HIS 目录匹配后，可在后台 `features.recommendationPreferenceCollection` 显式开启时通过 `recommendationPreferenceTracker` 上报医生最终选择、手动匹配和候选确认事件；若后台灰度开启重排，客户端只对已存在候选应用服务端返回的轻量 boost，不新增候选、不替换未匹配项、不把偏好数据写入 Prompt。
-3. 本地模式仍保留直连 OpenAI 兼容接口、DashScope 与本地 PMPHAI 代理的兜底路径。
-4. 区域化模式下，工作区共用顶栏的"问题反馈"入口与一键回写成功后的整页反馈，统一使用同一份 `FeedbackSubmissionPanel`（紧凑星级 + 预置问题标签 + 选填截图 + 选填补充说明）；通用反馈面板会按“当前问诊锚点 + 模块”回填上次已提交内容，医生再次进入时默认编辑同一份反馈而不是新建一条；语音问诊的推荐项 / 病例字段 / 整页反馈则通过 `voiceFeedback.ts` 映射到同一 `/v1/client/feedbacks` 接口，所有反馈都会附带最近一次 AI 调用的 `traceId`、`sessionId`、`chainContext` 与握手阶段缓存的医生 / 机构 / 科室身份（`feedbackContext.ts`），由 `floating-ball-server` 端按 `kind`（`general | recommendation | record_field | session`）+ `severity` 分类落库。
-5. 区域化模式下，每个 `/v1/*` 业务请求会附带 `X-Client-Version` 与 `X-Update-Channel`，服务端返回 `426 / UPDATE-REQUIRED` 时，客户端立即切换到强制更新门禁，禁止继续使用问诊、语音、知识库、AI 代理、模板同步、反馈等业务能力。
-6. 区域化模式下，智能问诊和语音问诊会通过 `consultationUserLog.ts` 向 `floating-ball-server` 的 `/v1/client/user-logs/consultations` 上报运维用户日志快照：首版 AI 生成内容与医生最终提交/回写内容分别落到同一条问诊记录中，不记录中间每一次编辑；语音问诊停止录音后会额外上报本次录音和 ASR 识别文字，供后台用户日志详情播放与复盘。用户日志身份字段来自 SDK handshake：`hisOrgId` 只取 `urt.userRoleDepts.orgId`，`orgName` 取 `urt.orgPureName`，`deptId` 取 `urt.userRoleDepts.deptId`。
-7. 区域化模式下，原始操作日志只保留能定位业务路径的结构化事件：`operationTracker.ts` 负责把高噪声 UI 事件白名单化过滤，并把保留事件统一上报为 `{ module, action, title, sourceModule, scene }`；`aiTrace.ts` 则为 AI 代理补齐“哪个业务发起了这次调用”的上下文，避免后台只看到泛化的 `ai/chat`。
-8. 区域化模式下，辅诊功能统计不再从原始操作日志推断。`featureUsageTracker.ts` 负责在用户真实触发功能时向 `/v1/client/feature-events/batch` 上报业务事件；一次明确功能调用只写一条，默认以本地队列事件自身作为幂等键，保证离线重试或接口重试不重复入库。`featureUsageEntryTracker.ts` 负责把 HIS Bridge 入口归一到产品功能维度：`start-consultation`、`start-voice`、`assist` 在接诊上下文校验通过并准备打开目标界面时即记一次成功调用；同一就诊再次显式触发入口按新调用计数，后续 AI 生成、问诊提交或结果页自动触发不再额外补一条功能统计。审计日志继续用于排障，功能事件才是后台“辅诊功能”统计事实源。智能问诊、语音问诊、报告单解读、聊天、知识库使用按用户进入/提交的主功能计数；知识库批量检索只按一次用户检索动作计数，不按内部拆开的多个查询词累加；诊断鉴别和推荐诊断/用药/检查/检验/处置/诊疗方案推荐只在医生显式触发独立辅助入口时计数，智能问诊或语音问诊主流程内部自动生成的 AI trace 不再拆成子功能调用次数。
+1. 所有问诊、语音和知识库上游能力统一走 `floating-ball-server` 的 `/v1/*` 代理或服务端签名接口；桌面端不保存、下发或直连第三方密钥。
+2. 本地 HTTP Bridge、HIS Adapter、PHIS 回写、SQLite 医疗目录、Tauri Store、离线重传队列、问诊现场缓存和确定性模板/规则继续保留，不把这些桌面基础设施误判为本地运行模式。
+3. 诊断和医嘱推荐在完成本地/HIS 目录匹配后，可在后台 `features.recommendationPreferenceCollection` 显式开启时通过 `recommendationPreferenceTracker` 上报医生最终选择、手动匹配和候选确认事件；若后台灰度开启重排，客户端只对已存在候选应用服务端返回的轻量 boost，不新增候选、不替换未匹配项、不把偏好数据写入 Prompt。
+4. 工作区共用顶栏的"问题反馈"入口与一键回写成功后的整页反馈，统一使用同一份 `FeedbackSubmissionPanel`（紧凑星级 + 预置问题标签 + 选填截图 + 选填补充说明）；通用反馈面板会按“当前问诊锚点 + 模块”回填上次已提交内容，医生再次进入时默认编辑同一份反馈而不是新建一条；语音问诊的推荐项 / 病例字段 / 整页反馈则通过 `voiceFeedback.ts` 映射到同一 `/v1/client/feedbacks` 接口，所有反馈都会附带最近一次 AI 调用的 `traceId`、`sessionId`、`chainContext` 与握手阶段缓存的医生 / 机构 / 科室身份（`feedbackContext.ts`），由 `floating-ball-server` 端按 `kind`（`general | recommendation | record_field | session`）+ `severity` 分类落库。
+5. 每个 `/v1/*` 业务请求会附带 `X-Client-Version` 与 `X-Update-Channel`，服务端返回 `426 / UPDATE-REQUIRED` 时，客户端立即切换到强制更新门禁，禁止继续使用问诊、语音、知识库、AI 代理、模板同步、反馈等业务能力。
+6. 智能问诊和语音问诊会通过 `consultationUserLog.ts` 向 `floating-ball-server` 的 `/v1/client/user-logs/consultations` 上报运维用户日志快照：首版 AI 生成内容与医生最终提交/回写内容分别落到同一条问诊记录中，不记录中间每一次编辑；语音问诊停止录音后会额外上报本次录音和 ASR 识别文字，供后台用户日志详情播放与复盘。用户日志身份字段来自 SDK handshake：`hisOrgId` 只取 `urt.userRoleDepts.orgId`，`orgName` 取 `urt.orgPureName`，`deptId` 取 `urt.userRoleDepts.deptId`。
+7. 原始操作日志只保留能定位业务路径的结构化事件：`operationTracker.ts` 负责把高噪声 UI 事件白名单化过滤，并把保留事件统一上报为 `{ module, action, title, sourceModule, scene }`；`aiTrace.ts` 则为 AI 代理补齐“哪个业务发起了这次调用”的上下文，避免后台只看到泛化的 `ai/chat`。
+8. 辅诊功能统计不再从原始操作日志推断。`featureUsageTracker.ts` 负责在用户真实触发功能时向 `/v1/client/feature-events/batch` 上报业务事件；一次明确功能调用只写一条，默认以本地队列事件自身作为幂等键，保证离线重试或接口重试不重复入库。`featureUsageEntryTracker.ts` 负责把 HIS Bridge 入口归一到产品功能维度：`start-consultation`、`start-voice`、`assist` 在接诊上下文校验通过并准备打开目标界面时即记一次成功调用；同一就诊再次显式触发入口按新调用计数，后续 AI 生成、问诊提交或结果页自动触发不再额外补一条功能统计。审计日志继续用于排障，功能事件才是后台“辅诊功能”统计事实源。智能问诊、语音问诊、报告单解读、聊天、知识库使用按用户进入/提交的主功能计数；知识库批量检索只按一次用户检索动作计数，不按内部拆开的多个查询词累加；诊断鉴别和推荐诊断/用药/检查/检验/处置/诊疗方案推荐只在医生显式触发独立辅助入口时计数，智能问诊或语音问诊主流程内部自动生成的 AI trace 不再拆成子功能调用次数。
 9. 登录态设计在当前版本不是前置依赖，不能假定仓库内已有 `auth store` 或受保护 API 基座。
 10. 独立诊疗方案推荐由 `features/treatment-plan` 承载，入口为 `/api/consultation/assist` 的 `action: treatment_plan`。该功能不进入 `ConsultationPage.vue` 的症状采集栈，也不维护另一套回写格式：AI 请求继续复用 `features/clinical-result` 的治疗推荐 request builder、JSON 解析、标准库匹配与治疗归一化能力；推荐项二次编辑继续复用 `features/consultation-result` 的 `TreatmentRecommendationCard`、`TreatmentItemEditor`、手动匹配、二级属性搜索、药品字段编辑、药品详情和库存校验能力；药品模型字段先由 `clinicalResultTreatmentFields.ts` 区分目标临床剂量与 PHIS 一次剂量，再由 `useTreatmentHydration.ts` 的统一药品定稿流水线结合当前库存和药品详情，把 `targetDose/targetDoseUnit` 换算到 `doseOnce/unitDose`，解析标准频次 / 用法，程序化计算包装总量并以最终总量校验库存；语音问诊、智能问诊、报告回诊和慢病复诊不得各自维护剂量、包装或库存校验顺序。AI 药品 raw 中的包装总量在 mapper 层清空，仅历史明确总量或医生手工总量可保留；定稿失败的药品必须取消自动选中。选中前和最终提交前必须复用共享治疗项非空校验，确保用药、检查、检验、处置均具备 PHIS 调入确认所需的标准服务 ID、名称、分类、执行位置及各类型专属必填字段；医生手动清空执行科室后由 `TreatmentRecommendation.execDeptCleared` 标记当前输入空值，hydrate、归一化、门禁和 order resolver 都不得再用匹配元数据或默认科室补回；最终提交继续使用 `recordConfirmedPayload.ts` 构造 `outpatientRecord + diagList/orderList` 并等待 PHIS `reference-feedback` 回执，成功回执后通过 App 统一窗口管理收起并销毁本次方案页实例；医生点击放弃同样结束本次独立推荐，下次触发 `treatment_plan` 必须重新初始化并重新生成推荐；失败回执保留当前方案页和错误提示以便修改重试。独立鉴别诊断由 `features/differential-diagnosis` 承载，入口为 `action: diffDx`，只打开“鉴别排查确认”小窗并生成 checklist，不进入后续问诊结果页。
-11. 住院病历辅助生成由 `features/inpatient-emr` 承载，入口为 `POST /api/inpatient/emr/generate`。该功能不进入 `ConsultationPage.vue` 或语音问诊结果页，而是作为独立工作视图展示模板解析、住院 HIS 数据拉取、AI 生成步骤和病历预览；模板字段侧栏只展示适合 AI 生成的字段，字段提示词默认折叠在详情中。入口必须传入 `templateId + templateName + htmlContent`，可选传入 `recordTime` 作为本次病程记录书写时间，并可传 `doctorSupplement + contextPolicy + hisContext` 按 [三方对接手册](docs/his-inpatient-emr-ai-context-integration.md) 提供裁剪后的 AI 上下文包；生成上下文会形成 `documentContext` 和标准化 `aiContext`，只使用请求自带 `hisContext` 或 HIS Adapter 聚合上下文能力，PHIS 侧直连 `api/phis.aiInpatientEmrContextService/buildContext`，不再回退到住院登记、医嘱、体温单分散接口。AI 生成以 `recordTime` 的日期作为“今日 / 本次查房日期”，体温单历史记录只能按“最近一次记录日期”引用，不能替代书写日期。医生可在“重新生成”弹窗中手动输入或语音转写补充本次查房要点，也可引用已拉取正文的门诊病历作为入院记录病史来源；两类材料可以同时进入提示词并共同作为依据，至少存在一类可用依据时即可启动 AI 生成。入院记录生成必须从住院病历书写角度综合门诊病历、医生补充与住院上下文重新组织语言，不得把门诊主诉、现病史或门诊正文原样搬到入院记录字段中。区域化模式下模板解析结果优先通过后端 `/v1/client/inpatient-emr/templates/resolve` 按 `templateId` 缓存并接收管理端维护的字段提示词，命中后不得再先跑本地未知字段 LLM 分类；非区域化、后端不可用或后端未返回字段时才使用本地解析兜底。病历预览中非 AI 字段保持只读，AI 字段高亮并允许医生直接修改；页眉病历标题等模板自带非 AI 字段必须保留原模板默认值，不得被病程记录固定文案覆盖。生成结果必须携带结构化 `trace` 与 `evidenceSummary`：trace 覆盖 HIS 聚合上下文、门诊正文、模板解析、AI 首 token / 总耗时、回写发送和回执耗时，evidenceSummary 展示住院上下文、门诊病历正文、医生补充要点和模板缓存是否参与生成；生成完成、回写发送和回执到达时会把脱敏 trace 汇总写入本地 HIS 集成日志，只记录阶段状态、耗时、计数和 requestId，不记录 `htmlContent`、`fieldValues` 或门诊/住院病历正文。医生在病历预览中确认 AI 字段后点击“一键回写”，页面先执行一轮本地轻量病历质控；未发现风险项时直接复用本地结果事件通道产出 `record-confirmed`，发现风险项时只弹出质控提醒让医生返回预览修改或确认继续回写。`record-confirmed.fieldValues` 仍只包含本次模板内标记为适合 AI 生成的 `{ [data-id]: 文本 }` 字段级结果，供 HIS 按当前模板回填；PHIS/HIS 后续通过 `reference-feedback` 回执更新页面状态，成功回执会让病历生成界面收起回小球状态，失败回执保留当前编辑现场并允许重试。
+11. 住院病历辅助生成由 `features/inpatient-emr` 承载，入口为 `POST /api/inpatient/emr/generate`。该功能不进入 `ConsultationPage.vue` 或语音问诊结果页，而是作为独立工作视图展示模板解析、住院 HIS 数据拉取、AI 生成步骤和病历预览；模板字段侧栏只展示适合 AI 生成的字段，字段提示词默认折叠在详情中。入口必须传入 `templateId + templateName + htmlContent`，可选传入 `recordTime` 作为本次病程记录书写时间，并可传 `doctorSupplement + contextPolicy + hisContext` 按 [三方对接手册](docs/his-inpatient-emr-ai-context-integration.md) 提供裁剪后的 AI 上下文包；生成上下文会形成 `documentContext` 和标准化 `aiContext`，只使用请求自带 `hisContext` 或 HIS Adapter 聚合上下文能力，PHIS 侧直连 `api/phis.aiInpatientEmrContextService/buildContext`，不再回退到住院登记、医嘱、体温单分散接口。AI 生成以 `recordTime` 的日期作为“今日 / 本次查房日期”，体温单历史记录只能按“最近一次记录日期”引用，不能替代书写日期。医生可在“重新生成”弹窗中手动输入或语音转写补充本次查房要点，也可引用已拉取正文的门诊病历作为入院记录病史来源；两类材料可以同时进入提示词并共同作为依据，至少存在一类可用依据时即可启动 AI 生成。入院记录生成必须从住院病历书写角度综合门诊病历、医生补充与住院上下文重新组织语言，不得把门诊主诉、现病史或门诊正文原样搬到入院记录字段中。模板解析结果优先通过后端 `/v1/client/inpatient-emr/templates/resolve` 按 `templateId` 缓存并接收管理端维护的字段提示词，命中后不得再先跑未知字段 LLM 分类；只有后端不可用或后端未返回字段时才使用桌面端确定性模板解析及服务端 LLM 分类兜底。病历预览中非 AI 字段保持只读，AI 字段高亮并允许医生直接修改；页眉病历标题等模板自带非 AI 字段必须保留原模板默认值，不得被病程记录固定文案覆盖。生成结果必须携带结构化 `trace` 与 `evidenceSummary`：trace 覆盖 HIS 聚合上下文、门诊正文、模板解析、AI 首 token / 总耗时、回写发送和回执耗时，evidenceSummary 展示住院上下文、门诊病历正文、医生补充要点和模板缓存是否参与生成；生成完成、回写发送和回执到达时会把脱敏 trace 汇总写入本地 HIS 集成日志，只记录阶段状态、耗时、计数和 requestId，不记录 `htmlContent`、`fieldValues` 或门诊/住院病历正文。医生在病历预览中确认 AI 字段后点击“一键回写”，页面先执行一轮本地轻量病历质控；未发现风险项时直接复用本地结果事件通道产出 `record-confirmed`，发现风险项时只弹出质控提醒让医生返回预览修改或确认继续回写。`record-confirmed.fieldValues` 仍只包含本次模板内标记为适合 AI 生成的 `{ [data-id]: 文本 }` 字段级结果，供 HIS 按当前模板回填；PHIS/HIS 后续通过 `reference-feedback` 回执更新页面状态，成功回执会让病历生成界面收起回小球状态，失败回执保留当前编辑现场并允许重试。
 
 ---
 
@@ -694,7 +694,7 @@ eventListeners.unregisterAllListeners();
 | 组件 | 职责 | 文件 |
 |------|------|------|
 | `ChatPanel.vue` | LLM 对话界面 | [src/components/ChatPanel.vue](src/components/ChatPanel.vue) |
-| `SettingsPanel.vue` | 系统设置（含通用设置、紧凑界面主题选择、区域化接入、关于版本、音频输入设备选择；本地模式下额外显示文本/音频模型配置，区域化模式下隐藏“模型配置”页签；通用设置页提供基础数据缓存和 HIS 联调日志独立入口）。当前仍作为根级历史入口保留，音频输入设备枚举 / 权限探测 / devicechange 刷新已下沉到 settings model 的 `useSettingsAudioInput.ts`，语音接诊录音目录选择状态已下沉到 `useSettingsVoiceRecordingDirectory.ts`，保存快照 / dirty 状态 / Cmd+S 监听已下沉到 `useSettingsSaveState.ts`，通用设置页签已抽为受控展示组件 `SettingsGeneralTab.vue`，模型配置页签已抽为受控展示组件 `SettingsModelTab.vue`，底部保存状态条已抽为 `SettingsSaveBar.vue`；父组件继续负责当前设置 snapshot 汇总、真实保存策略、toast、埋点、区域化重连和窗口置顶副作用 | [src/components/SettingsPanel.vue](src/components/SettingsPanel.vue) |
+| `SettingsPanel.vue` | 系统设置 shell：只保留通用设置与关于版本，负责主题、窗口置顶、区域后台地址/机构编码、连接测试、音频输入设备、语音录音目录、缓存管理和 HIS 联调日志入口；不再提供模式开关或模型/语音/知识库密钥配置。音频输入设备、录音目录和保存快照分别下沉到 settings model，通用页签与保存条为受控 UI | [src/components/SettingsPanel.vue](src/components/SettingsPanel.vue) |
 | `ConsultationPage.vue` | 完整症状问诊主链路，同时承接新的“内嵌灵活模式”；支持根据 `/assist` 上下文直接跳过症状采集进入病历详情页，继续复用现有推荐诊断、诊断鉴别、推荐用药、推荐检查与诊断路径能力；进入 `record` 阶段后不再继续内嵌维护旧结果页，而是把当前病历、诊断、治疗快照切换到独立的症状结果页包装组件，由后者复用共享结果页主体；PHIS 引用闭环状态仍由症状包装层承接；患者 / 就诊锚点变化时是硬 reset 边界，必须清空上一患者的症状、诊断、治疗方案、缓存快照和事实核查状态，并递增 AI 请求序列作废慢响应；页面 scoped 样式原样外置到 `features/symptom-consultation/ui/ConsultationPage.css`，SFC 继续保留模板、脚本和问诊状态机；AI 推荐链路采用成功后覆盖与当前诊断上下文校验，解析失败或慢请求过期时保留上一版结果；患者文本读取、既往史解析、患者草稿/诊断预填、诊断 identity / AI 请求防串线、同类诊断候选 / 替换列表更新、病历草稿 AI 请求规格与本地兜底、病历草稿主诉 / 现病史本地拼装、中医诊断证候 / 治法映射、诊断展示分组、诊断 / 治疗事实核查编排、LLM JSON 宽容解析、诊断/治疗推荐反馈目标落库 / 注册编排、完成问诊推荐采纳 / 拒绝埋点编排、医嘱文案生成、最终报告数据拼装、当前医疗 payload、智能问诊用户日志快照、PHIS 引用 key / 状态图 / 回执归一 / 引用展示判断等数据处理逐步下沉到 `features/symptom-consultation/lib|model`；western 诊断 raw 映射、western 治疗推荐 raw 映射和 PHIS 提交前治疗选择 / 库存提示 / 处理意见摘要复用 `features/clinical-result`；同类诊断卡片内联下拉开合与候选状态复用 `features/consultation-result/model/useRelatedDiagnosisDropdown.ts`，页面仅保留候选来源、诊断替换、选中同步和埋点；页面层只保留状态、副作用依赖注入和流程编排 | [src/components/ConsultationPage.vue](src/components/ConsultationPage.vue) |
 | `entities/patient/*` | 患者实体展示与后续稳定转换归属。当前 `PatientHeader.vue` 是无副作用患者头部展示组件，接收 patient/payType/avatar props 和 actions slot，复用既有 patientContext / patientAvatar 工具解析姓名、性别、年龄、过敏史和头像；不持有问诊流程状态、不调用 Tauri / HIS / toast。智能问诊和语音问诊均通过 `@entities/patient` 复用，旧 `src/components/PatientHeader.vue` 已删除 | [src/entities/patient](src/entities/patient) |
 | `features/symptom-consultation/*` | 智能问诊主流程的无 UI 辅助层：`model/useSymptomCategoryFilter.ts` 管理症状系统分类筛选下拉的已选分类、开合、按钮文案和外部点击关闭判断；`model/useCompanionSymptoms.ts` 管理伴随症状选中集合、名称派生、按关联表生成推荐和升级详细问诊后的移除；`model/useSymptomSelectionController.ts` 管理症状选中 / 取消 / 移除 / 清空和模板表单初始化，最大数量提示、埋点和伴随症状清理由页面通过 options 注入；`model/useSymptomCollectionController.ts` 组合分类筛选、伴随症状、症状选中、过滤结果、渲染计划和表单 key 同步，模板同步、动态症状 AI、缓存恢复、生成病历和 PHIS 回写仍由页面编排；`model/useConsultationAssistController.ts` 编排 assist 快进入口的病历/诊断上下文保障、按类型触发推荐/鉴别清单和成功后的埋点入口，AI 请求、toast、视图切换、预填、埋点和自动触发消费均由页面注入；`lib/symptomFiltering.ts` 负责症状列表的系统分类过滤、适用性别过滤、名称 / 拼音 / 首字母搜索纯函数；`lib/symptomFormData.ts` 负责症状模板字段默认值构造、字段 key 兼容和 checkbox mutualExclusions 数组处理；`lib/consultationRenderPlan.ts` 负责选中症状、问诊模式和当前 formData 到 renderList、需初始化 key、需清理 key 的纯计划；`lib/consultationFormConfigs.ts` 保存一般情况问诊和中医四诊的静态表单配置常量；`lib/consultationFormValidation.ts` 负责根据选中症状、formData、患者信息和注入的适用性判断生成必填错误列表、错误 key map 和首个错误 DOM id；`lib/consultationAssistPresentation.ts` 负责 assist 快进入口的展示标签、提示文案、banner tone / 样式和功能统计 featureCode 映射；`lib/consultationRecommendationPresentation.ts` 负责智能问诊推荐区的治疗推荐可见性、卡片显示、类型标签、诊断置信度 class 和药品行内摘要纯派生；`lib/consultationPatientText.ts` 负责患者/病历记录文本读取、既往门诊摘要过滤与既往史解析；`lib/consultationPayloadBuilders.ts` 根据显式入参构造当前问诊摘要、诊断列表、PHIS 引用/草稿医疗 payload 和用户日志快照；`lib/consultationPrefill.ts` 根据患者上下文和当前草稿/诊断状态推导预填动作；`lib/consultationReference.ts` 负责 PHIS 引用项类型、引用 key、状态 map 更新、回执 payload 归一、引用按钮文案和治疗类型到引用 action 的映射；`lib/consultationDiagnosisContext.ts` 负责诊断 identity 与 AI 请求防串线纯判断；`lib/consultationDiagnosisSwap.ts` 负责同类诊断候选过滤、替换时的列表更新和选中诊断同步判断，诊断 identity 与标准库候选查询函数均由页面显式注入；`lib/consultationGeneratedRecord.ts` 负责选中症状、表单数据、一般情况、四诊和伴随症状到 generatedRecord 草稿的纯拼装；`lib/consultationDiagnosisMapping.ts` 负责中医诊断项证候 / 治法匹配、伪码补齐和置信度排序，western 诊断 raw 匹配委托 `features/clinical-result/clinicalResultAiMapping.ts` 并通过策略保持 code 优先和未匹配清空临时 id；`lib/consultationTcmSigns.ts` 负责中医四诊表单到 AI prompt 文本和最终报告四诊文本的纯格式化；`lib/consultationGeneralCondition.ts` 负责一般情况表单到现病史片段的纯格式化；`lib/consultationDiagnosisGrouping.ts` 负责中医单组与西医 ICD10 展示分组、未知组兜底和分组排序，ICD10 分类查询函数由页面显式注入；AI 治疗推荐 raw 映射已收敛到 `features/clinical-result/clinicalResultAiMapping.ts`，症状域不再维护专属治疗推荐 mapper；`lib/consultationLlmJsonParser.ts` 负责去 BOM / markdown fence / 平衡括号候选扫描 / JSON parse 错误包装；`lib/consultationMedicalAdvice.ts` 负责西医 / 中医默认医嘱文案和中药煎服法追加规则；`lib/consultationFinalRecord.ts` 负责已选治疗快照、TCM 治则治法和 `FinalRecord` 对象拼装；`model/consultationFactCheck.ts` 负责诊断/治疗事实核查启用判断、逐条检查、进度回调、结果写入和 issue 合并编排，检查函数与页面状态写入均由页面注入；`model/recommendationFeedbackRegistration.ts` 负责诊断/治疗推荐反馈落库后的外部目标注册编排，并通过显式参数接收 `saveRecommendation`、`recordMetric`、`registerTarget` 和 `getRecommendationKey`；`model/consultationCompletionTracking.ts` 负责完成问诊时诊断/治疗推荐采纳或拒绝反馈和最终报告统计埋点编排，并通过显式参数接收追踪函数；`index.ts` 是对外公开入口。`lib` 不得直接访问 Vue ref、toast、Tauri invoke、PHIS 请求或页面缓存状态；`model` 可编排副作用，但不得直接 import 单例服务或读取页面 ref | [src/features/symptom-consultation](src/features/symptom-consultation) |
@@ -727,12 +727,11 @@ eventListeners.unregisterAllListeners();
 | `shared/composables/useTauriWindowEventListeners.ts` | 通用独立窗口事件监听生命周期 composable：统一批量注册当前 Tauri `Window` 实例上的 `appWindow.listen`，在 unmounted 阶段解绑，并集中处理注册失败日志；独立窗口仍显式 `await registerListeners()` 后再发送 ready 事件，避免主窗口提前投递 payload；不携带窗口 payload 状态写入、图表渲染或业务状态机 | [src/shared/composables/useTauriWindowEventListeners.ts](src/shared/composables/useTauriWindowEventListeners.ts) |
 | `ReceptionCapsule.vue` | 接待胶囊（患者摘要、风险和门诊机会操作）；真实实现位于 reception 功能域，风险规则和风险详情组件仍由 reception-risk 提供，App 通过 `@features/reception` 公开入口消费 | [src/features/reception/ui/ReceptionCapsule.vue](src/features/reception/ui/ReceptionCapsule.vue) |
 | `RiskAlertPanel.vue` / `RiskAlertBubble.vue` | 风险详情面板 / 气泡；真实实现已迁至 reception-risk 功能域，旧 `src/components/RiskAlertPanel.vue` / `src/components/RiskAlertBubble.vue` 已删除，`RiskItem` 类型由 `src/features/reception-risk/types.ts` 统一导出，避免业务代码从 UI 文件借类型 | [src/features/reception-risk/ui](src/features/reception-risk/ui) |
-| `AnalyticsPanel.vue` | 数据分析看板，展示本地会话、反馈、推荐和操作统计，并导出使用报告；真实实现已迁至 analytics 功能域，旧 `src/components/AnalyticsPanel.vue` 已删除，App 通过 `@features/analytics` 公开入口消费 | [src/features/analytics/ui/AnalyticsPanel.vue](src/features/analytics/ui/AnalyticsPanel.vue) |
 | `BodyPartSelector.vue` / `SystemCategorySelector.vue` | 症状问诊 UI 域：人体部位交互选症状和按系统分类选症状；真实实现已迁至 `features/symptom-consultation/ui`，旧 `src/components/*` 路径已删除，`ConsultationPage` 通过 `@features/symptom-consultation` 公开入口消费；本地症状库维护页已下线，模板维护改由 `floating-ball-server` 后台承接 | [src/features/symptom-consultation/ui](src/features/symptom-consultation/ui) |
 | `MedicalCatalogCachePanel.vue` | 缓存管理独立视图：页面标题统一为“缓存管理”，当前只展示诊断 / 诊疗项目 / 药品等基础数据 SQLite 缓存数量、同步状态、数据库路径，并提供面板内刷新、手动同步和按目录 / 机构 / 租户 / 药房定向清理；真实实现已迁至 medical-catalog 功能域，旧 `src/components/MedicalCatalogCachePanel.vue` 已删除，App 通过 `@features/medical-catalog` 公开入口消费 | [src/features/medical-catalog/ui/MedicalCatalogCachePanel.vue](src/features/medical-catalog/ui/MedicalCatalogCachePanel.vue) |
 | `HisIntegrationLogPanel.vue` | HIS 联调日志独立视图面板：筛选、查看详情、复制、导出、清空本地 JSONL 日志；真实实现已迁至 settings 功能域下的排障工具面板，旧 `src/components/HisIntegrationLogPanel.vue` 已删除，App 通过 `@features/settings` 公开入口消费 | [src/features/settings/ui/HisIntegrationLogPanel.vue](src/features/settings/ui/HisIntegrationLogPanel.vue) |
 | `UpdateChecker.vue` / `ForceUpdateGate.vue` | 客户端更新与区域化强制更新门禁 UI：`UpdateChecker` 负责更新源配置、检查按钮、下载进度和安装重启动作编排；`ForceUpdateGate` 只展示强更版本要求并复用 `UpdateChecker forced`。真实实现已迁至 settings 功能域，旧 `src/components/UpdateChecker.vue` / `src/components/ForceUpdateGate.vue` 已删除，设置页和 App 强更门禁通过 `@features/settings` 公开入口消费 | [src/features/settings/ui](src/features/settings/ui) |
-| `FeedbackSubmissionPanel.vue` | 通用问题反馈面板：区域化模式下承接工作区顶栏反馈入口，提供紧凑星级、问题标签、选填截图和补充说明；真实实现已迁至 feedback 功能域，旧 `src/components/FeedbackSubmissionPanel.vue` 已删除，App 通过 `@features/feedback` 公开入口消费 | [src/features/feedback/ui/FeedbackSubmissionPanel.vue](src/features/feedback/ui/FeedbackSubmissionPanel.vue) |
+| `FeedbackSubmissionPanel.vue` | 通用问题反馈面板：承接工作区顶栏反馈入口，提供紧凑星级、问题标签、选填截图和补充说明，并统一提交 `/v1/client/feedbacks` | [src/features/feedback/ui/FeedbackSubmissionPanel.vue](src/features/feedback/ui/FeedbackSubmissionPanel.vue) |
 | `KnowledgeBasePanel.vue` / `KnowledgePanel.vue` | 知识库 UI 域：内置知识库检索面板、问诊页知识检索抽屉、搜索结果行和详情弹窗；真实实现已迁至 knowledge 功能域，旧 `src/components/Knowledge*.vue` 已删除，App 与问诊页通过 `@features/knowledge` 公开入口消费。智能问诊和语音问诊的批量检索分类词提取收敛到 `features/knowledge/lib/knowledgeSearchCategories.ts`，检索 loading / results / 面板开合收敛到 `features/knowledge/model/useKnowledgeSearchController.ts`；知识服务、配置判断、toast 和埋点仍由调用方注入。当前默认知识入口仍更偏向 `pmphai.ts` 生成的外部页面，内置面板作为保留备选通道 | [src/features/knowledge/ui](src/features/knowledge/ui) / [src/features/knowledge/lib](src/features/knowledge/lib) / [src/features/knowledge/model](src/features/knowledge/model) |
 | `Toast.vue` | 消息提示；真实实现已迁至 `src/shared/ui/Toast.vue`，旧 `src/components/Toast.vue` 兼容包装已删除，全局 provider 直接使用 shared 实现 | [src/shared/ui/Toast.vue](src/shared/ui/Toast.vue) |
 | `Icon.vue` | 通用图标封装真实实现已迁至 `src/shared/ui/Icon.vue`；旧 `src/components/Icon.vue` 兼容包装已删除。离线图标由 `main.ts` 注册 `src/icons/iconifyCollections.ts` 中的精简 Iconify 集合，避免把完整 `@iconify-json/*` 图标包打进产物 | [src/shared/ui/Icon.vue](src/shared/ui/Icon.vue) |
@@ -904,10 +903,10 @@ src/styles/
 
 | 服务 | 职责 | 文件 |
 |------|------|------|
-| `llm.ts` / `services/llm/*` | LLM facade 与底层客户端模块。`llm.ts` 保留 `chat/chatStream/chatFast/transcribeAudio/analyzePatientRisks/testLLMConnection` 公开 API 与区域化 trace 编排；`services/llm/types.ts` 定义消息、配置与重试类型，`config.ts` 解析本地/区域化配置，`retry.ts` 提供指数退避，`payload.ts` 负责 OpenAI 兼容 payload / 摘要工具，`localOpenAiClient.ts` 负责本地 OpenAI 兼容 chat / stream / transcription 协议细节。区域化模式仍通过 `regionalClient.ts` 签名代理，不在 LLM 模块内直接 `fetch /v1/*` | [src/services/llm.ts](src/services/llm.ts) / [src/services/llm](src/services/llm/types.ts) |
+| `llm.ts` / `services/llm/*` | LLM facade 与服务端代理编排。`chat/chatStream/chatFast/transcribeAudio` 全部通过 `regionalClient.ts` 的签名 HTTP/SSE 出口调用 `/v1/ai/*`；`config.ts` 只读取 bootstrap 非敏感视图，`retry.ts` 提供指数退避，`payload.ts` 负责消息 payload 与摘要。客户端不存在第三方 API Key、Base URL 或本地 OpenAI 兼容客户端 | [src/services/llm.ts](src/services/llm.ts) / [src/services/llm](src/services/llm/types.ts) |
 | `aliyunSpeech.ts` | 语音转写编排（DashScope + OpenAI 兼容降级） | [src/services/aliyunSpeech.ts](src/services/aliyunSpeech.ts) |
 | `audioRecorder.ts` | Web Audio API 录音、音频输入设备枚举与首选设备回退 | [src/services/audioRecorder.ts](src/services/audioRecorder.ts) |
-| `medicalData.ts` | 医疗数据目录加载、缓存恢复与匹配（诊断、药品、检查项）；运行期不再依赖本地 CSV 作为基础数据来源，而是优先恢复已有缓存，再按当前模式补同步：区域化模式恢复 `localStorage`/SQLite 中已有目录后继续走 mappings delta，本地模式恢复 SQLite 目录后再按有效 HIS 握手上下文增量同步。机构级检查/检验项目按 `orgCode + tenantId` 存储，药品目录按 `orgCode + tenantId + storeId` 分 scope 落库，多药房场景读取时对多个药房 scope 做并集聚合，避免再把药房主键误写成机构主键。语音问诊结果页拿到有效药房后，会显式按 active `idSto` 加载药品目录，再执行药品匹配；缓存管理页中的“基础数据缓存”面板支持在有效 HIS 握手上下文下触发一次忽略当日缓存的强制同步，不受区域化开关限制。同时负责根据 ICD-10 前三位类目码（如 `J06`）解析章节分组，用于推荐诊断分组展示。针对语音问诊结果页，还提供药品 / 诊疗项目的严格分档匹配能力：完全匹配直接确认，高相似候选只作为“待确认”建议，未命中则进入手动匹配。 | [src/services/medicalData.ts](src/services/medicalData.ts) |
+| `medicalData.ts` | 医疗数据目录加载、缓存恢复与匹配（诊断、药品、检查项）：先恢复 `localStorage`/SQLite 缓存，再同步服务端 mappings delta；当前药房药品目录仍可按有效 HIS 握手上下文从 HIS 刷新并按 `orgCode + tenantId + storeId` 落库，确保真实库存 scope。缓存管理页的显式强制同步继续允许刷新 HIS 目录。这些本地缓存/HIS 能力属于桌面基础设施，不是本地运行模式 | [src/services/medicalData.ts](src/services/medicalData.ts) |
 | `hisService.ts` | HIS HTTP 调用封装（PHIS 形态默认实现）：统一处理鉴权头、POST/GET 请求，以及诊断/药品/诊疗项目目录与药品频次、用法等字典读取，供主问诊和语音问诊复用；诊断目录通过 `api/base.hiBdDieService/queryList` 按 1000 条/页循环同步，避免数万条诊断一次性拉取导致弱网超时；语音结果页药房列表也通过该服务调用 `api/phis.orgMedStoManageService/queryOrgSto`，并按 SDK 握手 `extra.urt.userRoleDepts` 中的 `deptId` 过滤可见范围；药品详情按候选发药药房轮询 `loadMedicinePro`，只有命中有效详情的药房才能作为药品默认药房并允许选中；检查项目详情匹配后通过 `api/phis.hiBdCliPacsPartService/queryExaPartAndWayList` 获取检查部位 / 方式候选，单候选自动回填；用药总量变更后通过 `api/phis.medicineInventoryService/checkInvEnough` 校验库存，库存不足时阻止药品回写；住院病历 AI 上下文只保留 PHIS `api/phis.aiInpatientEmrContextService/buildContext` 聚合接口，登记 / 诊断 / 医嘱 / 体温单等明细由后端裁剪后一次性返回，不再维护桌面端分散 RPC 回退。**业务方不应直接 import 本文件**：所有出站调用应通过 `services/his` 适配器层 | [src/services/hisService.ts](src/services/hisService.ts) |
 | `hisService.ts` 门诊回诊报告结果 | 门诊语音入口先根据 PHIS `loadClinicMedicalRecord` 返回的 `applyList[].items[].sdApply === "3"` 判断本次是否存在已出报告；当前就诊信息和本次门诊病历文本沿用接诊阶段已获取的 `HisOutpatientMedicalRecord`，不再由 AI 上下文服务重复读取。随后通过 `HisAdapter.fetchOutpatientFollowUpReportResults` 调用 PHIS 新增 `api/phis.aiInpatientEmrContextService/buildOutpatientFollowUpReportResults`，只返回 `labReports / examReports / ineligibleReason` 等报告结果 DTO。PHIS 取检验报告按 `HI_ODS_APPLY.ID_RESULT = HI_ODS_APPLY_LIS_REPORT.ID_REPORT_GROUP` 关联，取检查报告按 `HI_ODS_APPLY.ID_APPLY = HI_ODS_APPLY_PACS_REPORT.ID_APPLY` 关联；桌面端再把本次病历、诊断参考和报告结果组合成 `HisOutpatientFollowUpContext` 交给页面 | [src/services/hisService.ts](src/services/hisService.ts) / [src/services/his](src/services/his) |
 | `services/his/HisAdapter.ts` | 厂商无关的 HIS 适配器接口契约：覆盖目录同步 / 字典 / 详情 / 有效库存目录 / 处方库存校验 / 患者信息 / 门诊病历引用 / 门诊复诊聚合 / 住院上下文场景。详情类和聚合上下文均使用中性 DTO（`MedicineDetail` / `AvailableMedicineInventoryItem` / `MedicalItemDetail` / `HisOutpatientFollowUpContext` / `HisInpatient*`）。PHIS Adapter 调用 `queryInvSubList` 后过滤停用、零库存和失效批次，并按 `idMedPro` 合并；`features/clinical-result/api/availableMedicineInventory.ts` 再负责按机构、租户、药房持久化短缓存、并发去重和 AI 上下文格式化。新厂商只需实现该接口并通过 `registerHisAdapterFactory(vendor, factory)` 注入，业务层无需改动 | [src/services/his/HisAdapter.ts](src/services/his/HisAdapter.ts) |
@@ -934,33 +933,28 @@ src/styles/
 | `useSafetyIssueResolver.ts` | L2 柔性提醒到 record 的执行层：把 `VoiceSafetyIssue` 解析为 `remove_medications` / `add_lab_tests` / `none` 动作计划，并在医生点击"采纳建议"时直接 mutate `record.medications` / `record.labTests`；通过 `getRecord/onRecordUpdated` 注入避免循环依赖，应用后自动重跑 L1 与 L2 复核；真实实现已迁至语音问诊功能域，旧路径只保留兼容 re-export | [src/features/voice-consultation/model/useSafetyIssueResolver.ts](src/features/voice-consultation/model/useSafetyIssueResolver.ts) |
 | `promptGuard.ts` | Prompt 注入与泄漏保护 | [src/services/promptGuard.ts](src/services/promptGuard.ts) |
 | `textGeneration.ts` | 主诉/现病史等文本生成辅助 | [src/services/textGeneration.ts](src/services/textGeneration.ts) |
-| `reportGenerator.ts` | 使用报告导出 | [src/services/reportGenerator.ts](src/services/reportGenerator.ts) |
-| `regionalClient.ts` / `services/regional/*` | 区域化核心客户端 facade 与内部模块。`regionalClient.ts` 只保留兼容导出；真实职责拆到 `services/regional/config.ts`（区域化开关与连接配置）、`device.ts`（设备编码）、`registration.ts`（终端注册与 token）、`httpClient.ts`（签名 HTTP 请求、服务端时间偏移校准、`SIG-401` 重签重试）、`bootstrap.ts`（bootstrap 缓存、初始化、心跳）、`realtime.ts`（SSE 与 WebSocket 签名 URL）、`speechUpload.ts`（语音上传 payload）。所有 `/v1/*` HTTP/SSE/WebSocket 出口仍必须经过签名模块，不允许业务代码直接 `fetch` 区域化接口 | [src/services/regionalClient.ts](src/services/regionalClient.ts) / [src/services/regional/index.ts](src/services/regional/index.ts) |
+| `regionalClient.ts` / `services/regional/*` | 服务端接入核心客户端 facade 与内部模块。`regionalClient.ts` 只保留兼容导出；真实职责拆到 `services/regional/config.ts`（连接配置与历史本地配置清理）、`device.ts`（设备编码）、`registration.ts`（终端注册与 token）、`httpClient.ts`（签名 HTTP 请求、服务端时间偏移校准、`SIG-401` 重签重试）、`bootstrap.ts`（bootstrap 缓存、初始化、心跳）、`realtime.ts`（SSE 与 WebSocket 签名 URL）、`speechUpload.ts`（语音上传 payload）。所有 `/v1/*` HTTP/SSE/WebSocket 出口必须经过签名模块，不允许业务代码直接 `fetch` 服务端接口 | [src/services/regionalClient.ts](src/services/regionalClient.ts) / [src/services/regional/index.ts](src/services/regional/index.ts) |
 | `regionalRuntime.ts` | 区域化运行时编排：统一初始化、重连、远程 Prompt/模板/映射同步和审计上传启动/关闭；初始化成功后额外发送 `regional_runtime_initialized` 审计事件，方便直接在后台确认链路打通 | [src/services/regionalRuntime.ts](src/services/regionalRuntime.ts) |
 | `userFeedback.ts` | 区域化问题反馈服务；负责图片编码、评分/说明校验、反馈 scope 元数据合并和调用远端 `/v1/client/feedbacks` 接口 | [src/services/userFeedback.ts](src/services/userFeedback.ts) |
 | `consultationUserLog.ts` | 区域化运维用户日志服务；负责组装智能问诊/语音问诊首版与最终快照，语音问诊额外编码录音和 ASR 文本，并调用远端 `/v1/client/user-logs/consultations` 聚合到同一条问诊日志 | [src/services/consultationUserLog.ts](src/services/consultationUserLog.ts) |
 | `promptOverride.ts` | 远程 Prompt 覆盖层：管理端发布的自定义 prompt 替换本地默认值 | [src/services/promptOverride.ts](src/services/promptOverride.ts) |
-| `auditUploader.ts` | 审计事件批量上报：区域化模式下直接调用远端 `/v1/client/audit/events/batch`，本地只保留轻量离线队列用于失败重试；恢复遗留队列后立即补传，新事件入队后也会异步触发一次立即上报尝试；`operation` 事件会保留 `operationType/operationName/details`，并补齐 `module/action/result` 供服务端日志表查询；AI 调用类事件的 `details` 必须同时包含摘要与完整业务出入参，避免后台只能看到截断文本；不承担功能调用统计 | [src/services/auditUploader.ts](src/services/auditUploader.ts) |
+| `auditUploader.ts` | 审计事件批量上报：调用远端 `/v1/client/audit/events/batch`，本地只保留轻量离线队列用于失败重试；恢复遗留队列后立即补传，新事件入队后也会异步触发一次立即上报尝试；`operation` 事件会保留 `operationType/operationName/details`，并补齐 `module/action/result` 供服务端日志表查询；AI 调用类事件的 `details` 必须同时包含摘要与完整业务出入参，避免后台只能看到截断文本；不承担功能调用统计 | [src/services/auditUploader.ts](src/services/auditUploader.ts) |
 
 ### 当前模板/映射读取策略
 
-1. `templateService.ts` 以本地 JSON 模板为主；区域化模式下优先从远程缓存读取，本地仍作为兜底。
-2. `medicalData.ts` 的目录数据分两条链路：
-  - 区域化模式下先恢复已存在的 `localStorage`/SQLite 缓存，再继续通过 `syncRemoteData()` 增量同步区域服务数据。
-  - 本地模式下先恢复 SQLite 目录缓存，再通过 `hisService.ts` 同步 HIS 目录并持久化：诊断全局只同步一次，诊疗项目按 `orgCode + tenantId` 每天同步一次，药品按 `orgCode + tenantId + storeId` 每天同步一次；机构与租户标识来自 `sdk-handshake` 的握手上下文，药房 scope 来自当前可见药房集合；若握手缺少 `tk` 则禁止发起目录请求；若 HIS 目录不可用则保持当前缓存，不再回退本地 CSV。
-   - 运行期可通过 `window.__medicalCatalogDebug__` 查看 SQLite 路径、同步状态、清理指定目录缓存并手动触发重同步，用于日常联调排查。
-3. `catalog` 匹配归一化规则固定为：小写后去除空格、连字符、下划线（`/[\s_-]/g`），用于兼容 `tcm_diagnoses/tcm-diagnoses/tcm diagnoses` 等格式。
-4. 西医推荐诊断的 UI 分组固定按 ICD-10 类目码前三位做章节归类；当编码无法解析到标准章节时，前端回退到"未分类/待确认"分组，避免丢失候选项。
+1. `templateService.ts` 优先读取服务端同步缓存，本地 JSON 模板仅作为内置兜底。
+2. `medicalData.ts` 启动时先恢复已有 `localStorage`/SQLite 缓存，再通过 `syncRemoteData()` 增量同步服务端目录。当前药房库存与药品详情仍由 HIS Adapter 按需读取，用于推荐定稿和库存校验；这属于 HIS 集成，不是被废弃的本地 AI 模式。
+3. 运行期可通过 `window.__medicalCatalogDebug__` 查看 SQLite 路径、同步状态、清理指定目录缓存并手动触发重同步，用于日常联调排查。
+4. `catalog` 匹配归一化规则固定为：小写后去除空格、连字符、下划线（`/[\s_-]/g`），用于兼容 `tcm_diagnoses/tcm-diagnoses/tcm diagnoses` 等格式。
+5. 西医推荐诊断的 UI 分组固定按 ICD-10 类目码前三位做章节归类；当编码无法解析到标准章节时，前端回退到"未分类/待确认"分组，避免丢失候选项。
 
-### 区域化模式运行链路
+### 服务端托管运行链路
 
-当首启默认值或设置页/环境变量使 `REGIONAL_ENABLED=true`，并且已经配置 `REGIONAL_BASE_URL / REGIONAL_ORG_CODE` 时，应用启动流程扩展为：
+应用不再提供本地/区域模式开关。配置 `REGIONAL_BASE_URL / REGIONAL_ORG_CODE` 后，启动流程固定为：
 
 ```
 main.ts mount
     ↓
-isRegionalMode() === true ?
-    ↓ Yes
 initializeRegionalRuntime()
     ├─ initializeRegionalClient()
     │   ├─ registerDevice() → POST /v1/client/register
@@ -977,7 +971,7 @@ Promise.allSettled([
 startAuditUploader() (startup flush + enqueue flush + 30s retry)
 ```
 
-设置页保存区域化接入参数时，也复用同一条 `initializeRegionalRuntime() / reinitializeRegionalRuntime()` 链路即时生效，不要求重启应用；当前首启会先把默认值 `REGIONAL_ENABLED=true / REGIONAL_BASE_URL=<VITE_REGIONAL_BASE_URL 或 http://127.0.0.1:8080> / REGIONAL_ORG_CODE=<本地 VITE_REGIONAL_ORG_CODE 或 ORG001>` 写入本地存储。设备编码则首次优先写入当前机器 MAC 地址，若 MAC 暂不可读才生成本地兜底值；一旦本地已有 `REGIONAL_DEVICE_CODE`，后续启动不再重复探测 MAC。Windows 下 MAC 探测通过 `GetAdaptersAddresses` 直接读取网卡信息，不再启动 `getmac` / `ipconfig` 子进程，避免控制台窗口闪烁。
+设置页保存服务端接入参数时，复用 `initializeRegionalRuntime() / reinitializeRegionalRuntime()` 链路即时生效，不要求重启应用；首启写入 `REGIONAL_BASE_URL=<VITE_REGIONAL_BASE_URL 或 http://127.0.0.1:8080> / REGIONAL_ORG_CODE=<VITE_REGIONAL_ORG_CODE 或 ORG001>`。升级时会删除 `REGIONAL_ENABLED` 和本地模型、语音、知识库凭据。设备编码首次优先写入当前机器 MAC 地址，若 MAC 暂不可读才生成本地兜底值；一旦已有 `REGIONAL_DEVICE_CODE`，后续启动不再重复探测 MAC。Windows 下 MAC 探测通过 `GetAdaptersAddresses` 直接读取网卡信息，不再启动 `getmac` / `ipconfig` 子进程，避免控制台窗口闪烁。
 
 保存行为约束：
 
@@ -985,21 +979,19 @@ startAuditUploader() (startup flush + enqueue flush + 30s retry)
 2. 若后台可连通，设置页显示连接成功状态，并补发 `regional_connection_saved` 操作日志。
 3. 若后台不可达或返回错误，设置页仍保留“参数已保存”的结果，但连接状态与 toast 需要尽量展示真实失败原因，如网络不可达、设备鉴权失败、机构编码未识别或服务端 500；不再把整个保存动作判成失败。
 
-区域化模式下各服务的路由变化：
+当前服务路由：
 
-| 服务 | 本地模式 | 区域化模式 |
-|------|----------|-----------|
-| LLM Chat (stream) | 直连 apiUrl + apiKey | → SSE /v1/ai/chat (后端持有 apiKey) |
-| LLM Chat (non-stream) | 直连 apiUrl + apiKey | → POST /v1/ai/chat |
-| 语音转写 | 直连 Whisper | → POST /v1/ai/speech/transcribe（上传 base64 录音 + MIME/文件名元数据） |
-| 阿里实时语音 | 直连 DashScope | → WebSocket /v1/ai/speech/realtime/ws（逐帧代理 PCM 音频，失败后降级 POST /v1/ai/speech/realtime 批量上传） |
-| Prompt 来源 | 本地 prompts/index.ts | bootstrap + delta 覆盖 → 本地兜底 |
-| 模板来源 | 本地 templates.json | delta 同步 → localStorage 缓存 → 本地兜底 |
-| 医学数据 | 已有缓存 + HIS/区域服务目录 | 区域化：恢复 `localStorage`/SQLite 后继续 delta 同步；本地模式：恢复 SQLite 后再做 HIS 目录同步，诊断全局一次、诊疗项目/药品按机构每天同步；失败时保留当前缓存 |
-| 操作日志 | 仅本地 SQLite | 本地写入 + auditUploader 批量上报 |
-| Reviewer/PMPHAI/KB 配置 | localStorage | bootstrap 下发 |
+| 服务 | 唯一运行路径 |
+|------|-------------|
+| LLM Chat | 签名 SSE/POST `/v1/ai/chat`，模型凭据由服务端持有 |
+| 批量语音转写 | 签名 POST `/v1/ai/speech/transcribe` |
+| 阿里实时语音 | 签名 WebSocket `/v1/ai/speech/realtime/ws`，失败后降级签名 POST `/v1/ai/speech/realtime` |
+| Prompt / 模板 | bootstrap + delta 覆盖，本地内置内容仅作失联兜底 |
+| 医学目录 | 恢复本地缓存后同步服务端 delta；当前药房库存由 HIS Adapter 按需校验 |
+| 操作日志 / 反馈 / 功能统计 | 本地失败重试队列 + 服务端批量接口 |
+| Reviewer / PMPHAI / KB 配置 | bootstrap 下发，客户端不保存第三方凭据 |
 
-客户端版本更新链路仍由 Tauri updater 执行安装与签名校验，settings 功能域下的 `UpdateChecker.vue` 只负责更新源配置、检查按钮、进度与安装动作编排，`ForceUpdateGate.vue` 只在强制更新时承接门禁展示并复用同一检查/安装 UI。区域化模式下若用户未手工配置内网更新源，`updateConfig.ts` 会从当前后端地址推导出：
+客户端版本更新链路仍由 Tauri updater 执行安装与签名校验，settings 功能域下的 `UpdateChecker.vue` 只负责更新源配置、检查按钮、进度与安装动作编排，`ForceUpdateGate.vue` 只在强制更新时承接门禁展示并复用同一检查/安装 UI。若用户未手工配置内网更新源，`updateConfig.ts` 会从当前服务端地址推导出：
 
 - 正式内网：`{REGIONAL_BASE_URL}/v1/client/releases/production/latest.json`
 - 测试内网：`{REGIONAL_BASE_URL}/v1/client/releases/testing/latest.json`
@@ -1008,13 +1000,12 @@ startAuditUploader() (startup flush + enqueue flush + 30s retry)
 
 Windows 安装包只发布 Tauri WiX MSI，不再同时生成 NSIS `.exe`，避免同一版本出现两个可安装产物导致桌面图标重复。Windows 专用配置位于 `src-tauri/tauri.windows.conf.json`，其中 `bundle.targets = "msi"` 且 `bundle.windows.wix.language = "zh-CN"`；因此 Windows release 产物文件名与安装器 UI 使用中文语言包。
 
-### 当前本地桥接与知识库链路
+### 当前本地基础设施边界
 
-1. `operationTracker.ts` 与 `feedback.ts` 负责本地操作追踪、会话统计和回溯；本地模式下 `logOperation()` 写入本地 SQLite。区域化模式下，`logOperation()` 不再落本地 SQLite，而是把操作日志规范化为 `{ module, action, result, operationType, operationName, details }` 后直接进入远端审计上传链路。AI 调用类 `details` 中的 `requestSummary/responseSummary` 仅用于摘要展示，完整排障必须读取 `requestPayload/responsePayload`。
-1.1 `featureUsageTracker.ts` 负责辅诊功能统计事件；它与审计日志分离，只在真实用户功能调用时写一条业务事件，后台统计按该事件计数，不按 `operationTracker` 或 AI 代理日志行数计数。
-2. `src-tauri/src/http_server.rs` 提供 `/api/consultation/*` 与 `/api/pmphai/*` 本地桥接能力。
-3. `pmphai.ts` 优先经本地代理访问 PMPHAI，规避 WebView 跨域问题。
-4. `AnalyticsPanel.vue` 当前读取本地统计与本地数据库查询结果。
+1. `src-tauri/src/http_server.rs` 仅保留 HIS/SDK 所需的本地 `/api/consultation/*`、住院病历入口和事件回执通道；已删除 `/api/pmphai/*` 第三方代理。
+2. `operationTracker.ts` 与 `feedback.ts` 把事件规范化后送入服务端审计链路；本地只保留失败重试队列和 HIS 联调 JSONL 日志，不再维护产品分析 SQLite。
+3. `pmphai.ts` 与 `knowledgeBase.ts` 只调用签名 `/v1/knowledge/pmphai/*` 和 bootstrap 配置。
+4. 窗口管理、音频采集、HIS Adapter、目录 SQLite 缓存和本地确定性安全规则仍是桌面端基础能力，不属于已废弃的本地模式。
 
 ### `audioRecorder.ts` 能力说明
 
@@ -1025,24 +1016,10 @@ Windows 安装包只发布 Tauri WiX MSI，不再同时生成 NSIS `.exe`，避�
 
 ### 语音转写网络策略
 
-- `llm.ts` 中 `transcribeAudio` 负责 OpenAI 兼容批量转写，采用“后端优先，前端回退”策略：
-  - 优先调用 Tauri Command（Rust `reqwest`）代理 `/audio/transcriptions`，规避 WebView CORS/ATS 限制
-  - 若后端通道不可用，再回退到前端 `fetch` 直连
-- `aliyunSpeech.ts` 中 `RealtimeSpeechService` 负责统一语音转写编排：
-  - 默认采集 PCM 音频块并在 `finish()` 时统一转写
-  - speech provider 为 `aliyun-dashscope` 时，优先走 Rust 后端代理的 DashScope WebSocket 实时识别
-  - 区域化模式下，`aliyun-dashscope` 优先走 `floating-ball-server` 的 `/v1/ai/speech/realtime/ws` WebSocket 代理；WebSocket 启动失败时保留停止后批量转写兜底
-  - speech provider 为 `openai-compatible` 时，不启用实时流式，统一走 `llm.ts/transcribeAudio` 的批量转写
-  - `ChatPanel.vue` 与 `VoiceCapsule.vue` 共用同一套 speech config，不再分别读取互不一致的配置项
-- 文本与语音支持独立配置域：
-  - 文本模型使用 `OPENAI_API_KEY` / `LLM_BASE_URL` / `LLM_MODEL`
-  - 语音转写使用独立的 speech provider / key / baseUrl / model；其中 OpenAI 兼容 speech provider 未填写 key 时可回退复用通用 LLM API Key
-- 审查 AI（`factChecker.ts` -> `llm.ts/chat`）走独立的 `/chat/completions` 文本链路：
-  - 配置项为 `REVIEWER_ENABLED`、`REVIEWER_API_KEY`、`REVIEWER_BASE_URL`、`REVIEWER_MODEL`、`REVIEWER_CHECK_EXAMINATION_ENABLED`
-  - 若独立审查配置缺省，则回退到主模型配置
-  - `checkExamination` 场景支持单独开关：区域化模式读取 `bootstrap.reviewer.checkExaminationEnabled`，本地模式读取 `REVIEWER_CHECK_EXAMINATION_ENABLED`；缺省时默认开启以兼容旧行为
-  - 请求体仅发送 OpenAI 兼容标准字段（`model`、`messages`、`stream`），不在通用链路携带供应商私有字段，避免兼容网关返回 `400 Bad Request`
-- 该策略主要用于解决 macOS 下 WebView 报错 `Load failed` 的语音转写失败场景
+- `llm.ts` 中 `transcribeAudio` 只调用签名 `/v1/ai/speech/transcribe`，客户端不持有语音供应商 key 或直连地址。
+- `aliyunSpeech.ts` 中 `RealtimeSpeechService` 统一采集 PCM：`aliyun-dashscope` 走签名 `/v1/ai/speech/realtime/ws`，WebSocket 启动失败时在停止后调用 `/v1/ai/speech/realtime` 批量兜底；`openai-compatible` 统一走批量转写。
+- `ChatPanel.vue` 与 `VoiceCapsule.vue` 共用 bootstrap 下发的 speech provider/model/sampleRate/format；`SPEECH_TEST_MODE` 仅用于开发测试夹具，不提供生产本地执行路径。
+- 审查 AI（`factChecker.ts` -> `llm.ts/chat`）复用签名 `/v1/ai/chat`，启用状态、模型和 `checkExaminationEnabled` 来自 bootstrap。
 
 ---
 
@@ -1154,7 +1131,7 @@ audioRecorder.ts (麦克风兼容检测 + 采集 PCM16 音频)
     ↓
 RealtimeSpeechService (优先 DashScope，可降级 OpenAI 兼容转写)
     ↓
-区域化模式：优先通过 /v1/ai/speech/realtime/ws 逐帧发送 PCM；不可用时编码整段录音并上传 /v1/ai/speech/realtime
+通过签名 /v1/ai/speech/realtime/ws 逐帧发送 PCM；不可用时编码整段录音并上传 /v1/ai/speech/realtime
     ↓
 voiceConsultation.handleVoiceStop() (停止录音)
     ↓

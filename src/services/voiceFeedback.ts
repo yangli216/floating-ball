@@ -1,6 +1,5 @@
 import type { AiTraceContext } from './aiTrace';
 import type { RecommendationType, TargetType } from '../types/feedback';
-import { isRegionalMode } from './regionalClient';
 import { submitUserFeedback, type FeedbackKind, type FeedbackSeverity } from './userFeedback';
 import type {
   VoiceFeedbackDraftState,
@@ -190,13 +189,9 @@ export function listVoiceFeedbackPayloadQueue(): VoicePendingFeedbackPayload[] {
 
 /**
  * 把语音反馈 payload 转为通用 /v1/client/feedbacks 请求并提交。
- * 仅在区域化模式下生效；失败不抛出，避免阻塞本地草稿清理。
+ * 失败不抛出，避免阻塞本地草稿清理。
  */
 export async function submitVoicePendingPayloadToBackend(payload: VoicePendingFeedbackPayload): Promise<void> {
-  if (!isRegionalMode()) {
-    return;
-  }
-
   try {
     const score = resolveVoiceScore(payload);
     const comment = resolveVoiceComment(payload);

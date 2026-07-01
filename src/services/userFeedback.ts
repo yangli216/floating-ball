@@ -1,5 +1,5 @@
 import { getLatestAiTrace, type AiTraceContext } from './aiTrace';
-import { isRegionalMode, regionalPost } from './regionalClient';
+import { regionalPost } from './regionalClient';
 import { getFeedbackActor } from './feedbackContext';
 
 export type FeedbackKind = 'general' | 'recommendation' | 'record_field' | 'session';
@@ -97,10 +97,6 @@ function mergeChainContext(
 export async function submitUserFeedback(
   payload: SubmitUserFeedbackPayload
 ): Promise<SubmitUserFeedbackResponse> {
-  if (!isRegionalMode()) {
-    throw new Error('当前仅区域化模式支持提交后台反馈');
-  }
-
   if (!Number.isInteger(payload.score) || payload.score < 1 || payload.score > 5) {
     throw new Error('评分必须在 1 到 5 分之间');
   }

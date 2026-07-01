@@ -19,7 +19,6 @@ const STORAGE_KEYS = {
 } as const;
 
 const REGIONAL_STORAGE_KEYS = {
-  enabled: 'REGIONAL_ENABLED',
   baseUrl: 'REGIONAL_BASE_URL',
 } as const;
 
@@ -27,10 +26,6 @@ const DEFAULT_REGIONAL_BASE_URL = (
   import.meta.env.VITE_REGIONAL_BASE_URL
   || 'http://127.0.0.1:8080'
 ).trim().replace(/\/+$/, '');
-
-const DEFAULT_REGIONAL_ENABLED = !['false', '0', 'off'].includes(
-  String(import.meta.env.VITE_REGIONAL_ENABLED ?? 'true').trim().toLowerCase()
-);
 
 function normalizeUrl(value: string): string {
   return value.trim().replace(/\/+$/, '');
@@ -45,16 +40,9 @@ function readStorageValue(key: string): string | null {
   return text ? text : null;
 }
 
-function isRegionalModeEnabledForUpdate(): boolean {
-  const stored = localStorage.getItem(REGIONAL_STORAGE_KEYS.enabled);
-  if (stored === 'true') return true;
-  if (stored === 'false') return false;
-  return DEFAULT_REGIONAL_ENABLED;
-}
-
 function buildRegionalReleaseEndpoint(channel: UpdateEnvironment): string {
   const baseUrl = normalizeUrl(readStorageValue(REGIONAL_STORAGE_KEYS.baseUrl) || DEFAULT_REGIONAL_BASE_URL);
-  if (!isRegionalModeEnabledForUpdate() || !baseUrl) {
+  if (!baseUrl) {
     return '';
   }
   return `${baseUrl}/v1/client/releases/${channel}/latest.json`;

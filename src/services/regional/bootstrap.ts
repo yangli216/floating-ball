@@ -2,7 +2,6 @@ import { loadOrGenerateKeyPair } from '../requestSigner';
 import { getDeviceCode, registerDeviceHeartbeatStopper } from './device';
 import {
   hasRegionalConnectionConfig,
-  isRegionalMode,
   registerRegionalHeartbeatStopper,
   resetRegionalRuntime,
 } from './config';
@@ -99,7 +98,6 @@ registerDeviceHeartbeatStopper(stopHeartbeat);
 export async function initializeRegionalClient(options?: {
   allowCachedFallback?: boolean;
 }): Promise<BootstrapConfig | null> {
-  if (!isRegionalMode()) return null;
   if (!hasRegionalConnectionConfig()) {
     throw new Error('请先配置区域化服务地址和机构编码');
   }

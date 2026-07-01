@@ -37,18 +37,16 @@ app.config.errorHandler = (err, _instance, info) => {
 
 app.mount("#app");
 
-// 区域化客户端初始化（异步，不阻塞渲染）
-import { ensureRegionalConnectionDefaults, isRegionalMode } from "./services/regionalClient";
+// 服务端客户端初始化（异步，不阻塞渲染）
+import { ensureRegionalConnectionDefaults } from "./services/regionalClient";
 import { initializeRegionalRuntime } from "./services/regionalRuntime";
 
 ensureRegionalConnectionDefaults();
 
-if (isRegionalMode()) {
-  initializeRegionalRuntime().then((config) => {
-    if (config) {
-      console.log('[App] Regional initialization complete');
-    }
-  }).catch(err => {
-    console.warn('[App] Regional init failed, running in local mode:', err);
-  });
-}
+initializeRegionalRuntime().then((config) => {
+  if (config) {
+    console.log('[App] Server runtime initialization complete');
+  }
+}).catch(err => {
+  console.warn('[App] Server runtime init failed; server-backed capabilities remain unavailable:', err);
+});

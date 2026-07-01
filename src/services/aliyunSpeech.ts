@@ -1,53 +1,18 @@
 /**
  * 阿里云 DashScope Paraformer 实时语音转写服务
- * 通过 Rust 后端代理 WebSocket 连接（绕过浏览器不能设置 WebSocket HTTP Headers 的限制）
+ * 统一通过 floating-ball-server 的签名 HTTP/WebSocket 代理。
  *
  * 官方文档: https://help.aliyun.com/zh/model-studio/websocket-for-paraformer-real-time-service
  */
 
 import { transcribeAudio } from './llm';
 import { getSpeechConfig } from './speechConfig';
-import { invoke } from '@tauri-apps/api/core';
-import { listen } from '@tauri-apps/api/event';
 import {
-    isRegionalMode,
     regionalPost,
     buildRegionalSpeechUploadPayload,
     createRegionalWebSocketUrl,
 } from './regionalClient';
 import { beginAiTrace, failAiTrace, finishAiTrace } from './aiTrace';
-
-export interface AliyunSpeechConfig {
-    apiKey: string;
-    model?: string;
-    sampleRate?: number;
-    format?: string;
-}
-
-// 重试配置
-export interface SpeechRetryConfig {
-    maxRetries: number;
-    initialDelay: number;
-    maxDelay: number;
-    backoffMultiplier: number;
-}
-
-export const DEFAULT_SPEECH_RETRY_CONFIG: SpeechRetryConfig = {
-    maxRetries: 2,  // 语音识别重试次数少一些，避免用户等待过久
-    initialDelay: 1000,
-    maxDelay: 5000,
-    backoffMultiplier: 2
-};
-
-export function getAliyunSpeechConfig(): AliyunSpeechConfig {
-    const speechConfig = getSpeechConfig();
-    return {
-        apiKey: speechConfig.apiKey,
-        model: speechConfig.model,
-        sampleRate: speechConfig.sampleRate,
-        format: speechConfig.format,
-    };
-}
 
 /**
  * 快速测试模式示例文本
@@ -83,83 +48,7 @@ export function isTestModeEnabled(): boolean {
 }
 
 /**
- * 设置测试模式
- */
-export function setTestMode(enabled: boolean): void {
-    if (enabled) {
-        localStorage.setItem('SPEECH_TEST_MODE', 'true');
-    } else {
-        localStorage.removeItem('SPEECH_TEST_MODE');
-    }
-    console.log('[AliyunSpeech] Test mode:', enabled ? 'ENABLED' : 'DISABLED');
-}
-
-/**
- * 带重试机制的实时语音识别（内部函数）
- */
-async function transcribeWithAliyunInternal(
-    audioBlob: Blob,
-    retryConfig: SpeechRetryConfig = DEFAULT_SPEECH_RETRY_CONFIG
-): Promise<string> {
-    const config = getAliyunSpeechConfig();
-
-    if (!config.apiKey) {
-        throw new Error('DashScope API Key 未配置。请在设置中添加阿里云 API Key。');
-    }
-
-    console.log('[AliyunSpeech] Transcribing via Rust backend:', audioBlob.size, 'bytes');
-
-    // 转换 Blob 为 Uint8Array
-    const arrayBuffer = await audioBlob.arrayBuffer();
-    const fullData = new Uint8Array(arrayBuffer);
-
-    // 跳过 WAV 头（44字节）如果是 WAV 格式
-    const isWav = audioBlob.type === 'audio/wav' || audioBlob.type === 'audio/wave';
-    const dataOffset = isWav ? 44 : 0;
-    const audioData = Array.from(fullData.slice(dataOffset));
-
-    console.log('[AliyunSpeech] Audio data (PCM):', audioData.length, 'bytes');
-
-    // 重试逻辑
-    let lastError: any;
-    for (let attempt = 0; attempt <= retryConfig.maxRetries; attempt++) {
-        try {
-            const startTime = Date.now();
-            const text = await invoke<string>('transcribe_realtime_aliyun', {
-                apiKey: config.apiKey,
-                model: config.model,
-                audioData: audioData
-            });
-
-            console.log(`[AliyunSpeech] Transcription complete in ${Date.now() - startTime}ms`);
-            console.log('[AliyunSpeech] Result:', text);
-            return text;
-        } catch (error: any) {
-            lastError = error;
-            console.error(`[AliyunSpeech] Attempt ${attempt + 1} failed:`, error);
-
-            // 如果是最后一次尝试，直接抛出
-            if (attempt === retryConfig.maxRetries) {
-                break;
-            }
-
-            // 计算延迟时间（指数退避）
-            const delay = Math.min(
-                retryConfig.initialDelay * Math.pow(retryConfig.backoffMultiplier, attempt),
-                retryConfig.maxDelay
-            );
-
-            console.warn(`[AliyunSpeech] 将在 ${delay}ms 后进行第 ${attempt + 2} 次重试`);
-            await new Promise(resolve => setTimeout(resolve, delay));
-        }
-    }
-
-    throw new Error(lastError?.message || lastError || '语音识别失败');
-}
-
-/**
- * 通过 Rust 后端进行实时语音识别
- * 后端会建立带认证 header 的 WebSocket 连接
+ * 通过 floating-ball-server 进行语音识别
  */
 export async function transcribeWithAliyun(
     audioBlob: Blob,
@@ -172,57 +61,45 @@ export async function transcribeWithAliyun(
         return TEST_MODE_SAMPLE_TEXT;
     }
 
-    // 区域化模式：通过后端语音代理
-    if (isRegionalMode()) {
-        const speechConfig = getSpeechConfig();
-        const scene = 'voice-consultation';
-        const fileName = `${scene}-${Date.now()}.pcm`;
-        const trace = beginAiTrace({
-            channel: 'speech_realtime',
+    const speechConfig = getSpeechConfig();
+    const scene = 'voice-consultation';
+    const fileName = `${scene}-${Date.now()}.pcm`;
+    const trace = beginAiTrace({
+        channel: 'speech_realtime',
+        scene,
+        sourceModule: 'aliyunSpeech',
+        model: speechConfig.model,
+        requestSummary: `场景 ${scene}，文件 ${fileName}，格式 ${audioBlob.type || 'audio/pcm'}`,
+    });
+    try {
+        const payload = await buildRegionalSpeechUploadPayload(audioBlob, {
+            mimeType: audioBlob.type || 'audio/pcm',
+            format: 'pcm',
             scene,
-            sourceModule: 'aliyunSpeech',
-            model: speechConfig.model,
-            requestSummary: `场景 ${scene}，文件 ${fileName}，格式 ${audioBlob.type || 'audio/pcm'}`,
+            fileName,
         });
-        try {
-            const payload = await buildRegionalSpeechUploadPayload(audioBlob, {
-                mimeType: audioBlob.type || 'audio/pcm',
-                format: 'pcm',
-                scene,
-                fileName,
-            });
-            const resp = await regionalPost<{ text: string }>(
-                '/v1/ai/speech/realtime',
-                {
-                    ...payload,
-                    traceId: trace.traceId,
-                    sourceModule: 'aliyunSpeech',
-                    sessionId: trace.sessionId,
-                }
-            );
-            finishAiTrace(trace.traceId, {
-                success: true,
-                responseSummary: resp.text ? resp.text.slice(0, 160) : '转写结果为空',
-            });
-            return resp.text;
-        } catch (error) {
-            failAiTrace(trace.traceId, error instanceof Error ? error.message : String(error));
-            throw error;
-        }
+        const resp = await regionalPost<{ text: string }>('/v1/ai/speech/realtime', {
+            ...payload,
+            traceId: trace.traceId,
+            sourceModule: 'aliyunSpeech',
+            sessionId: trace.sessionId,
+        });
+        finishAiTrace(trace.traceId, {
+            success: true,
+            responseSummary: resp.text ? resp.text.slice(0, 160) : '转写结果为空',
+        });
+        return resp.text;
+    } catch (error) {
+        failAiTrace(trace.traceId, error instanceof Error ? error.message : String(error));
+        throw error;
     }
-
-    return await transcribeWithAliyunInternal(audioBlob);
 }
 
 export async function transcribeSpeech(audioBlob: Blob): Promise<string> {
     const speechConfig = getSpeechConfig();
 
     if (speechConfig.provider === 'openai-compatible') {
-        return transcribeAudio(audioBlob, undefined, undefined, undefined, {
-            apiKey: speechConfig.apiKey || undefined,
-            audioBaseUrl: speechConfig.baseUrl,
-            audioModel: speechConfig.model,
-        });
+        return transcribeAudio(audioBlob);
     }
 
     return transcribeWithAliyun(audioBlob);
@@ -231,8 +108,8 @@ export async function transcribeSpeech(audioBlob: Blob): Promise<string> {
 
 /**
  * 实时语音识别服务类
- * 支持两种模式：
- * 1. 流式模式：通过 Rust 后端 WebSocket 实时流式识别（优先）
+ * 支持两种服务端代理方式：
+ * 1. 流式模式：通过签名 WebSocket 实时识别（优先）
  * 2. 批量模式：录音结束后批量转写（降级方案）
  */
 export class RealtimeSpeechService {
@@ -240,7 +117,6 @@ export class RealtimeSpeechService {
     private onTextCallback?: (text: string, isFinal: boolean) => void;
     private isStarted: boolean = false;
     private isStreaming: boolean = false;
-    private unlistenFn?: () => void;
     private regionalSocket: WebSocket | null = null;
     private regionalFinalPromise: Promise<string> | null = null;
     private regionalFinalResolve?: (text: string) => void;
@@ -270,65 +146,23 @@ export class RealtimeSpeechService {
             return;
         }
 
-        if (isRegionalMode()) {
-            if (getSpeechConfig().provider !== 'aliyun-dashscope') {
-                console.log('[Speech] Regional non-Aliyun provider configured, using batch mode');
-                return;
-            }
-            try {
-                await this.startRegionalStreaming();
-                console.log('[Speech] Regional streaming session started');
-            } catch (error) {
-                console.warn('[Speech] Failed to start regional streaming, falling back to batch mode:', error);
-                this.cleanupRegionalSocket();
-                this.isStreaming = false;
-            }
+        if (getSpeechConfig().provider !== 'aliyun-dashscope') {
+            console.log('[Speech] Non-Aliyun provider configured, using batch mode');
             return;
         }
-
-        // 尝试启动流式识别
         try {
-            const config = getAliyunSpeechConfig();
-
-            if (getSpeechConfig().provider !== 'aliyun-dashscope') {
-                console.log('[Speech] Non-Aliyun provider configured, using batch mode');
-                return;
-            }
-
-            if (!config.apiKey) {
-                console.log('[Speech] No API key, using batch mode');
-                return;
-            }
-
-            // 监听实时文本事件
-            this.unlistenFn = await listen<{ text: string; is_sentence_end: boolean }>(
-                'speech-realtime-text',
-                (event) => {
-                    const { text, is_sentence_end } = event.payload;
-                    if (is_sentence_end) {
-                        this.finalizedText += text;
-                        this.currentSentence = '';
-                    } else {
-                        this.currentSentence = text;
-                    }
-                    const displayText = this.finalizedText + this.currentSentence;
-                    this.onTextCallback?.(displayText, is_sentence_end);
-                }
-            );
-
-            await invoke('start_realtime_speech', { apiKey: config.apiKey, model: config.model });
-            this.isStreaming = true;
-            console.log('[Speech] Streaming session started');
-        } catch (error: any) {
+            await this.startRegionalStreaming();
+            console.log('[Speech] Regional streaming session started');
+        } catch (error) {
             console.warn('[Speech] Failed to start streaming, falling back to batch mode:', error);
-            this.cleanupListener();
+            this.cleanupRegionalSocket();
             this.isStreaming = false;
         }
     }
 
     /**
      * 接收音频数据块
-     * 流式模式：直接发送到 Rust 后端
+     * 流式模式：通过签名 WebSocket 发送到 floating-ball-server
      * 批量模式：存储到缓冲区
      */
     sendAudio(pcmData: Int16Array): void {
@@ -336,7 +170,7 @@ export class RealtimeSpeechService {
 
         if (this.isStreaming) {
             if (this.regionalSocket) {
-                // 保留区域化流式录音副本，WebSocket 中途失败时可在停止后批量兜底。
+                // 保留流式录音副本，WebSocket 中途失败时可在停止后批量兜底。
                 this.audioChunks.push(new Int16Array(pcmData));
                 const bytes = new Uint8Array(pcmData.byteLength);
                 bytes.set(new Uint8Array(pcmData.buffer, pcmData.byteOffset, pcmData.byteLength));
@@ -345,11 +179,6 @@ export class RealtimeSpeechService {
                 }
                 return;
             }
-            // 流式模式：发送到 Rust 后端
-            const bytes = Array.from(new Uint8Array(pcmData.buffer, pcmData.byteOffset, pcmData.byteLength));
-            invoke('send_speech_chunk', { audioData: bytes }).catch((e: any) => {
-                console.warn('[Speech] Send chunk failed:', e);
-            });
         } else {
             // 批量模式：收集音频
             this.audioChunks.push(new Int16Array(pcmData));
@@ -367,32 +196,7 @@ export class RealtimeSpeechService {
         this.isStarted = false;
 
         if (this.isStreaming) {
-            if (this.regionalSocket) {
-                return await this.finishRegionalStreaming();
-            }
-            // 流式模式：调用 stop 并等待最终结果
-            try {
-                const finalText = await invoke<string>('stop_realtime_speech');
-                console.log('[Speech] Streaming final text:', finalText);
-                // 防御：Rust 返回的 full_text 仅累积 sentence-end 文本，
-                // 在用户按下结束的瞬间最后一个分句可能尚未 end，会导致返回值短于本地累积。
-                // 因此与本地累积（finalizedText + currentSentence）合并，取最长者，确保不丢失任何已识别文本。
-                const accumulated = `${this.finalizedText}${this.currentSentence}`;
-                const remoteFinal = finalText || '';
-                const result =
-                    remoteFinal.length >= accumulated.length ? remoteFinal : accumulated;
-                this.onTextCallback?.(result, true);
-                return result;
-            } catch (error: any) {
-                console.error('[Speech] Stop streaming failed:', error);
-                // 返回已收集的文本
-                const collected = this.finalizedText + this.currentSentence;
-                if (collected) return collected;
-                throw error;
-            } finally {
-                this.cleanupListener();
-                this.isStreaming = false;
-            }
+            return await this.finishRegionalStreaming();
         }
 
         // 批量模式：合并音频并转写
@@ -418,16 +222,10 @@ export class RealtimeSpeechService {
         this.isStarted = false;
         this.audioChunks = [];
         if (this.isStreaming) {
-            if (this.regionalSocket) {
-                this.cleanupRegionalSocket();
-            } else {
-                this.cleanupListener();
-                invoke('stop_realtime_speech').catch(() => {});
-            }
+            this.cleanupRegionalSocket();
             this.isStreaming = false;
             return;
         }
-        this.cleanupListener();
         this.cleanupRegionalSocket();
     }
 
@@ -436,13 +234,6 @@ export class RealtimeSpeechService {
      */
     isConnected(): boolean {
         return this.isStarted;
-    }
-
-    private cleanupListener(): void {
-        if (this.unlistenFn) {
-            this.unlistenFn();
-            this.unlistenFn = undefined;
-        }
     }
 
     private async startRegionalStreaming(): Promise<void> {
@@ -469,13 +260,13 @@ export class RealtimeSpeechService {
 
         socket.onerror = () => {
             if (!this.regionalFinalSettled) {
-                this.rejectRegionalFinal(new Error('区域化实时语音 WebSocket 连接异常'));
+                this.rejectRegionalFinal(new Error('服务端实时语音 WebSocket 连接异常'));
             }
         };
 
         await new Promise<void>((resolve, reject) => {
             const timer = window.setTimeout(() => {
-                reject(new Error('区域化实时语音 WebSocket 连接超时'));
+                reject(new Error('服务端实时语音 WebSocket 连接超时'));
             }, 8000);
             socket.onopen = () => {
                 window.clearTimeout(timer);
@@ -486,7 +277,7 @@ export class RealtimeSpeechService {
             socket.onerror = (event) => {
                 window.clearTimeout(timer);
                 originalOnError?.call(socket, event);
-                reject(new Error('区域化实时语音 WebSocket 连接失败'));
+                reject(new Error('服务端实时语音 WebSocket 连接失败'));
             };
         });
     }
@@ -523,7 +314,7 @@ export class RealtimeSpeechService {
             }
 
             if (payload.type === 'error') {
-                this.rejectRegionalFinal(new Error(payload.message || '区域化实时语音识别失败'));
+                this.rejectRegionalFinal(new Error(payload.message || '服务端实时语音识别失败'));
             }
         } catch (error) {
             this.rejectRegionalFinal(error instanceof Error ? error : new Error(String(error)));

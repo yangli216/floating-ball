@@ -7,9 +7,7 @@ export interface RegionalConfig {
   deviceCode: string;
 }
 
-export interface RegionalConnectionConfig extends RegionalConfig {
-  enabled: boolean;
-}
+export type RegionalConnectionConfig = RegionalConfig;
 
 export interface RegisterRequest {
   cdDevice: string;
@@ -30,11 +28,9 @@ export interface RegisterResponse {
 
 export interface BootstrapConfig {
   llm: {
-    baseUrl: string;
     model: string;
     fastModel?: string;
     enableThinking?: boolean;
-    audioBaseUrl?: string;
     audioModel?: string;
   };
   speech?: {
@@ -43,7 +39,6 @@ export interface BootstrapConfig {
   };
   knowledgeBase?: {
     enabled: boolean;
-    baseUrl?: string;
   };
   pmphai?: {
     enabled: boolean;

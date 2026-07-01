@@ -8,7 +8,7 @@
 2. 独立诊断路径窗口（`DiagnosisPathWindow.vue`）
 3. 语音问诊与病历回写链路
 4. 本地 HTTP Bridge 与 PHIS 引用回执入口（`src-tauri/src/http_server.rs`）
-5. 本地/外部知识库能力（`pmphai.ts` 为主，`KnowledgeBasePanel.vue` 为保留内置面板）
+5. 服务端托管的外部知识库能力（`pmphai.ts` 为主，`KnowledgeBasePanel.vue` 为保留内置面板）
 
 ## 必读顺序
 
@@ -19,7 +19,7 @@
 5. 涉及交互、产品约束时再读 [PRODUCT.md](./PRODUCT.md)
 6. 遇到疑似踩过的坑时，先查 [RETRO.md](./RETRO.md) 已有经验
 7. 涉及历史上反复摇摆的设计决策时，先查 [DECISION_DRIFT.md](./DECISION_DRIFT.md)
-8. 只有在做未来区域化改造时，才读取 `docs/regionalization/*.md`
+8. 涉及服务端接入、设备签名或 `/v1/*` 契约时，再读取 `docs/regionalization/*.md`
 
 ## 强制流程
 
@@ -38,7 +38,7 @@
 4. **单边契约变更禁止**：修改 `http_server.rs` 接口定义而不同步更新 `api.md`，视为无效交付。修改前端调用而不同步更新后端实现和文档，同理。
 5. **盲目新增全局状态禁止**：不得为临时 UI 状态新增 Pinia store；新增 store 必须先说明为什么 ref/reactive 不够用。
 6. **锁文件混用禁止**：除非任务明确是"统一包管理器"，否则不得混用 npm/yarn/pnpm 安装或刷新锁文件。
-7. **区域化请求签名禁止绕过**：所有 `regionalFetch`、`createRegionalSSE`、`createRegionalWebSocketUrl` 出口必须经过 `requestSigner.ts` 签名；新增区域化请求出口必须集成签名，不得直接 fetch 调用 `/v1/*` 接口。
+7. **服务端请求签名禁止绕过**：所有 `regionalFetch`、`createRegionalSSE`、`createRegionalWebSocketUrl` 出口必须经过 `requestSigner.ts` 签名；新增 `/v1/*` 请求出口必须集成签名，不得由业务代码直接 fetch。
 8. **主窗口几何出口禁止绕过**：业务组件和 feature composable 不得直接调用 Tauri `setSize / setPosition`；主窗口尺寸与位置统一由 `app/shell/useWindowTransitionCoordinator.ts` 编排，并经 `useWindowManagement.ts` 应用，纯 `workArea` / DPI / clamp 规则归 `windowGeometry.ts`。独立原生窗口的创建尺寸仍由各自窗口 service 管理，但必须设置合理 min size 并校验当前工作区。
 
 ## 棘轮式治理
@@ -65,6 +65,7 @@
 3. 知识库入口主次关系：`pmphai.ts` 为主，`KnowledgeBasePanel.vue` 为保留备选。
 4. 前端复用治理以 `docs/frontend-reuse-architecture.md` 为准，文件结构迁移以 `docs/frontend-file-structure-plan.md` 为目标路线图；新增业务组件 / composable / mapper 默认进入对应 `features/<feature>/ui|model|api|lib`，通用 UI / 工具进入 `shared/*`，稳定实体进入 `entities/*`，根级 `components/`、`composables/`、`services/` 不再作为新增默认落点，只保留历史入口或兼容 facade。
 5. 后续重构不能只追求大文件行数下降；必须说明沉淀了哪类能力（Adapter / Builder / Strategy / Composable Controller / Headless UI / domain lib），以及是否减少重复规则或可删除旧入口。
+6. 客户端只保留服务端托管运行形态，不再提供本地/区域模式开关；LLM、语音、PMPHAI/知识库、Prompt/模板同步、反馈和审计统一经签名 `/v1/*` 接口。不得重新引入客户端第三方密钥、供应商直连或本地 Tauri AI 代理。HIS Bridge、HIS Adapter、目录缓存、窗口/音频采集和确定性规则属于桌面基础设施，不等同于本地模式。
 
 ## 工程复盘与决策摇摆
 
@@ -133,7 +134,7 @@
 6. 修改 `windowSizes.ts`、`useWorkMode.ts`、`useWindowManagement.ts` 时，必须同步校验窗口尺寸、显示器边界和动画原点
 7. `DiagnosisPathWindow.vue`、`diagnosisPath.ts`、`stores/diagnosisPath.ts` 的改动必须同时检查窗口生命周期、渲染就绪事件和缓存 key 策略
 8. 知识库相关改动要明确是走 `pmphai.ts` 主链路，还是启用内置 `KnowledgeBasePanel.vue`，避免双轨长期漂移
-9. **HIS 调用边界**：业务代码（`components/` / `composables/` / `services/` 中除 `services/his/*` 之外）禁止直接 `import ... from 'services/hisService'`。必须经 `services/his` 入口：业务调用走 `getHisAdapter()`，仅 SDK handshake / 区域化 bootstrap 等认证场景允许使用 `services/his` 重导出的 `getHisService` / `resetHisService`。新增 PHIS 私有字段读取必须通过 `entry.raw.xxx` 透传，不允许在中性 DTO 上加 PHIS 命名字段。
+9. **HIS 调用边界**：业务代码（`components/` / `composables/` / `services/` 中除 `services/his/*` 之外）禁止直接 `import ... from 'services/hisService'`。必须经 `services/his` 入口：业务调用走 `getHisAdapter()`，仅 SDK handshake / 服务端 bootstrap 等认证场景允许使用 `services/his` 重导出的 `getHisService` / `resetHisService`。新增 PHIS 私有字段读取必须通过 `entry.raw.xxx` 透传，不允许在中性 DTO 上加 PHIS 命名字段。
 10. **药品定稿流水线**：任何 AI 或历史上下文产生的药品，在自动选中、缓存、库存校验和回写前必须调用共享 `finalizeMedicineRecommendation(s)`，依次完成当前库存对齐、药品详情、一次剂量换算、标准频次 / 用法、程序总量和最终库存校验。模型包装总量不得直接进入药品处方；只调用 hydrate、只在展示层 normalize 或只在提交 payload 时补字段均不满足门禁。
 11. **Tauri capability 同步**：新增或首次调用 Tauri JS API 时，必须同时核对 `src-tauri/capabilities/*.json` 中对应的 `allow-*` 权限，并执行会真实触发该 API 的 Tauri 运行时冒烟；`type-check`、浏览器单测和 `cargo check` 不能替代 capability 验证。
 12. **复诊配药确认事实门禁**：动态确认项可以由模型生成并默认推荐，但推荐值不得在医生点击最终确认前写入现病史；文字/语音补充是医生独立补充说明，不得反向重生成或改写确认项。最终现病史只消费已确认 `recordText`、模型压缩后的医生补充和必要历史事实，禁止直接原样拼接冗余口语、库存、推荐方案或模型未确认推断；药品在正文中只保留规范名称。

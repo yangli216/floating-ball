@@ -10,42 +10,11 @@
       </button>
     </div>
 
-    <!-- 配置区域 -->
+    <!-- 服务端能力状态 -->
     <div v-if="!isConfigured" class="config-section">
-      <div v-if="regionalMode" class="config-form">
-        <h3>区域化模式下由后台统一配置</h3>
-        <p class="tip">当前机构未在后台启用可用的知识库能力，桌面端不再维护 regional 模式凭据。</p>
-      </div>
-      <div v-else class="config-form">
-        <h3>首次使用需要配置</h3>
-        <div class="form-group">
-          <label>App Key</label>
-          <input
-            v-model="config.appKey"
-            type="text"
-            placeholder="请输入App Key"
-            class="form-input"
-          />
-        </div>
-        <div class="form-group">
-          <label>App Secret</label>
-          <input
-            v-model="config.appSecret"
-            type="password"
-            placeholder="请输入App Secret"
-            class="form-input"
-          />
-        </div>
-        <div class="form-group">
-          <label>Base URL</label>
-          <input
-            v-model="config.baseUrl"
-            type="text"
-            placeholder="https://inside.pmphai.com"
-            class="form-input"
-          />
-        </div>
-        <button @click="saveConfig" class="save-btn">保存配置</button>
+      <div class="config-form">
+        <h3>知识库由后台统一配置</h3>
+        <p class="tip">当前机构未启用可用的知识库能力，请联系后台管理员配置。</p>
       </div>
     </div>
 
@@ -63,12 +32,6 @@
           @click="activeTab = 'detail'"
         >
           知识详情
-        </button>
-        <button
-          :class="['tab', { active: activeTab === 'config' }]"
-          @click="activeTab = 'config'"
-        >
-          {{ regionalMode ? '服务端配置' : '设置' }}
         </button>
       </div>
 
@@ -168,52 +131,6 @@
         <p class="tip">提示：点击后会在新窗口中打开知识详情页面</p>
       </div>
 
-      <!-- 设置 -->
-      <div v-if="activeTab === 'config'" class="tab-content">
-        <template v-if="regionalMode">
-          <div class="server-managed-card">
-            <p class="server-managed-title">知识库凭据由后台统一管理</p>
-            <p class="tip">区域化模式下，桌面端只消费服务端下发能力，不再保存 App Key / App Secret。</p>
-            <div class="form-group">
-              <label>Base URL</label>
-              <input
-                :value="config.baseUrl || 'https://inside.pmphai.com'"
-                type="text"
-                class="form-input"
-                disabled
-              />
-            </div>
-            <p class="tip">如需修改，请在后台 AI 配置中调整 PMPHAI / 知识库参数。</p>
-          </div>
-        </template>
-        <template v-else>
-          <div class="form-group">
-            <label>App Key</label>
-            <input
-              v-model="config.appKey"
-              type="text"
-              class="form-input"
-            />
-          </div>
-          <div class="form-group">
-            <label>App Secret</label>
-            <input
-              v-model="config.appSecret"
-              type="password"
-              class="form-input"
-            />
-          </div>
-          <div class="form-group">
-            <label>Base URL</label>
-            <input
-              v-model="config.baseUrl"
-              type="text"
-              class="form-input"
-            />
-          </div>
-          <button @click="saveConfig" class="save-btn">保存配置</button>
-        </template>
-      </div>
     </div>
 
     <!-- 内嵌iframe显示 -->
@@ -234,15 +151,12 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, inject, watch } from 'vue'
 import {
-  buildKnowledgeBaseUrl,
   getKnowledgeBaseConfig,
   isKnowledgeBaseConfigured,
-  saveKnowledgeBaseConfig,
   type KnowledgeBaseConfig,
   type PageParams
 } from '@services/knowledgeBase'
 import { pmphaiService, type BatchSearchResults } from '@services/pmphai'
-import { isRegionalMode } from '@services/regionalClient'
 
 const props = defineProps<{
   loading?: boolean
@@ -254,14 +168,9 @@ const props = defineProps<{
 const emit = defineEmits(['close'])
 const showToast = inject<(message: string, type?: string) => void>('showToast')
 
-const activeTab = ref<'search' | 'detail' | 'config'>('search')
-const regionalMode = ref(false)
-
+const activeTab = ref<'search' | 'detail'>('search')
 const config = ref<KnowledgeBaseConfig>({
-  appKey: '',
-  appSecret: '',
-  baseUrl: 'https://inside.pmphai.com',
-  managedByServer: false,
+  managedByServer: true,
   enabled: false
 })
 
@@ -311,30 +220,11 @@ const isConfigured = computed(() => {
 })
 
 onMounted(() => {
-  regionalMode.value = isRegionalMode()
   const savedConfig = getKnowledgeBaseConfig()
   if (savedConfig) {
     config.value = savedConfig
   }
 })
-
-function saveConfig() {
-  if (regionalMode.value) {
-    showToast?.('区域化模式下请在后台管理端修改知识库配置', 'info')
-    return
-  }
-  if (!config.value.appKey || !config.value.appSecret) {
-    showToast?.('请填写App Key和App Secret', 'error')
-    return
-  }
-
-  saveKnowledgeBaseConfig(config.value)
-  showToast?.('配置已保存', 'success')
-
-  if (activeTab.value === 'config') {
-    activeTab.value = 'search'
-  }
-}
 
 function handleSearch() {
   // 实时搜索，filteredKnowledgeList 会自动更新
@@ -358,18 +248,16 @@ async function openKnowledgeDetail(id?: string) {
   }
 
   try {
-    const url = regionalMode.value
-      ? await pmphaiService.getPageUrl({
-        pageName: pageParams.pageName,
-        id: pageParams.id,
-        kgBaseId: pageParams.kgBaseId,
-        kgFields: pageParams.kgFields,
-        contentId: pageParams.contentId,
-        muluId: pageParams.muluId,
-        catalogueId: pageParams.catalogueId,
-        originUrl: window.location.href,
-      })
-      : buildKnowledgeBaseUrl(config.value, pageParams)
+    const url = await pmphaiService.getPageUrl({
+      pageName: pageParams.pageName,
+      id: pageParams.id,
+      kgBaseId: pageParams.kgBaseId,
+      kgFields: pageParams.kgFields,
+      contentId: pageParams.contentId,
+      muluId: pageParams.muluId,
+      catalogueId: pageParams.catalogueId,
+      originUrl: window.location.href,
+    })
 
     if (!url) {
       throw new Error('未获取到知识库地址')

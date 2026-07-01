@@ -2,7 +2,6 @@ import {
   type BootstrapConfig,
   initializeRegionalClient,
   shutdownRegionalClient,
-  isRegionalMode,
 } from './regionalClient';
 import { startAuditUploader, stopAuditUploader } from './auditUploader';
 import { startFeatureUsageUploader, stopFeatureUsageUploader } from './featureUsageTracker';
@@ -26,7 +25,6 @@ export async function initializeRegionalRuntime(options?: {
   skipDataSync?: boolean;
   skipAuditLog?: boolean;
 }): Promise<BootstrapConfig | null> {
-  if (!isRegionalMode()) return null;
   const updateState = await checkForceUpdateRequired();
   if (updateState.required) {
     return null;
@@ -49,13 +47,12 @@ export async function initializeRegionalRuntime(options?: {
     await feedbackService.logOperation({
       module: 'regional_runtime',
       action: 'initialize_runtime',
-      title: '初始化区域化运行时',
+      title: '初始化服务端运行时',
       sourceModule: 'regional_runtime',
       scene: 'regional-runtime',
       operationType: 'api_call',
       operationName: 'regional_runtime_initialized',
       details: {
-        baseUrl: config.llm.baseUrl,
         model: config.llm.model,
         promptVersion: config.promptVersion,
         templateVersion: config.templateVersion,

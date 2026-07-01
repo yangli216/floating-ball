@@ -5,7 +5,7 @@ import type {
   MedicalItemCatalogEntry,
   MedicineCatalogEntry,
 } from './his';
-import { isRegionalMode, regionalGet } from './regionalClient';
+import { regionalGet } from './regionalClient';
 
 export interface DiagnosisItem {
   id: string;
@@ -238,9 +238,7 @@ class MedicalDataService {
       items: []
     };
 
-    if (isRegionalMode()) {
-      this.restoreFromCache();
-    }
+    this.restoreFromCache();
   }
 
   private parseKeywords(str?: string): string[] | undefined {
@@ -516,8 +514,8 @@ class MedicalDataService {
     const snapshot = await this.loadPersistedCatalogSnapshot();
     this.applyPersistedCatalogSnapshot(snapshot);
 
-    if (isRegionalMode() && !forceSync) {
-      console.log('[MedicalData] Local HIS catalog sync skipped in regional mode');
+    if (!forceSync) {
+      console.log('[MedicalData] Local HIS catalog sync skipped in server-managed mode');
       return;
     }
 
@@ -790,7 +788,7 @@ class MedicalDataService {
       orgCode: this.currentOrgCode,
       tenantId: this.currentTenantId,
       storeIds: normalizedStoreIds,
-      regionalMode: isRegionalMode(),
+      sourceMode: 'server-managed',
     });
 
     try {
@@ -1847,8 +1845,6 @@ class MedicalDataService {
    * 服务端按机构管理数据，返回 CSV 格式数据
    */
   async syncRemoteData(): Promise<void> {
-    if (!isRegionalMode()) return;
-
     try {
       const currentVersion = localStorage.getItem(MedicalDataService.DATA_VERSION_KEY) || '0';
       const resp = await regionalGet<{

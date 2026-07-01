@@ -252,13 +252,11 @@ features/<name>/
 | `SettingsPanel.vue` 底部保存条 | `src/features/settings/ui/SettingsSaveBar.vue` | SettingsPanel 拆分第二刀：纯展示保存状态、快捷键提示和保存按钮，只通过 `save` 事件回调父组件 |
 | `SettingsPanel.vue` 内保存快照 / dirty 状态 / Cmd/Ctrl+S 快捷保存 | `src/features/settings/model/useSettingsSaveState.ts` | SettingsPanel 拆分第三刀：父组件继续汇总当前设置 snapshot 和执行真实保存；controller 只管理已加载标记、上次保存快照、保存条文案、显示条件和快捷键监听 |
 | `SettingsPanel.vue` 通用设置页签 | `src/features/settings/ui/SettingsGeneralTab.vue` | SettingsPanel 拆分第四刀：抽界面主题、窗口置顶、区域化接入、音频设置和工具入口的受控 UI；父组件继续持有 setTheme、区域化连接测试、音频刷新、目录选择、toast、埋点和对外 emit |
-| `SettingsPanel.vue` 模型配置页签 | `src/features/settings/ui/SettingsModelTab.vue` | SettingsPanel 拆分第五刀：抽通用 LLM、语音转写、独立审查 AI 和医学知识库配置的受控 UI；父组件继续持有 preset 应用、连接测试、provider 联动、真实保存和区域化模式数据回填 |
 | `src/components/MedicalCatalogCachePanel.vue` | `src/features/medical-catalog/ui/MedicalCatalogCachePanel.vue` | 已迁移并删除旧路径；App 通过 `@features/medical-catalog` 公开入口消费 |
 | `src/components/HisIntegrationLogPanel.vue` | `src/features/settings/ui/HisIntegrationLogPanel.vue` | 已迁移并删除旧路径；作为设置/排障工具面板，App 通过 `@features/settings` 公开入口消费 |
 | `src/components/UpdateChecker.vue` | `src/features/settings/ui/UpdateChecker.vue` | 已迁移并删除旧路径；作为设置页“关于版本”和强更门禁共用的更新检查/安装 UI，服务契约仍保留在 `services/updateConfig.ts` 与 `services/updatePolicy.ts` |
 | `src/components/ForceUpdateGate.vue` | `src/features/settings/ui/ForceUpdateGate.vue` | 已迁移并删除旧路径；作为区域化强制更新门禁 UI，App 通过 `@features/settings` 公开入口异步消费 |
 | `src/components/FeedbackSubmissionPanel.vue` | `src/features/feedback/ui/FeedbackSubmissionPanel.vue` | 已迁移并删除旧路径；通用问题反馈入口归入 feedback 域，App 通过 `@features/feedback` 公开入口消费 |
-| `src/components/AnalyticsPanel.vue` | `src/features/analytics/ui/AnalyticsPanel.vue` | 已迁移并删除旧路径；App 通过 `@features/analytics` 公开入口消费 |
 | `src/components/ReceptionCapsule.vue` / `Risk*.vue` | `src/features/reception-risk/ui/*` + `types.ts` | 已迁移并删除旧路径；`RiskItem` 类型由 `features/reception-risk/types.ts` 统一导出，App / 事件监听不再从 UI 文件借类型 |
 | `src/components/FactCheckWidget.vue` / `FactCheckNotification.vue` | `src/features/feedback/ui/*` | 已迁移并删除旧路径兼容包装；事实核查反馈展示归入 feedback 域，调用方直接从 `@features/feedback` 或 feature UI 入口导入 |
 

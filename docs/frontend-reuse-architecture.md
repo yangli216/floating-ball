@@ -239,7 +239,7 @@
 
 `SettingsPanel.vue`、`medicalData.ts`、`hisService.ts` 已超过舒适区，但它们不应被拆成无边界小文件：
 
-1. 设置页按 tab/section 拆 UI，配置读写通过 settings model 汇总；音频输入设备选择和语音录音目录先抽为 `features/settings/model/useSettingsAudioInput.ts` 与 `useSettingsVoiceRecordingDirectory.ts`，分别承接设备枚举 / 权限探测 / devicechange 刷新和目录选择状态；保存快照、dirty 状态和 Cmd/Ctrl+S 监听抽为 `useSettingsSaveState.ts`，通用设置页签抽为受控 UI `features/settings/ui/SettingsGeneralTab.vue`，模型配置页签抽为受控 UI `features/settings/ui/SettingsModelTab.vue`，但当前设置 snapshot 汇总和真实保存动作仍留在父页，避免 controller 或展示组件反向持有区域化重连、toast、窗口置顶、埋点等副作用。
+1. 设置页按 tab/section 拆 UI，配置读写通过 settings model 汇总；音频输入设备选择和语音录音目录抽为 `features/settings/model/useSettingsAudioInput.ts` 与 `useSettingsVoiceRecordingDirectory.ts`，分别承接设备枚举 / 权限探测 / devicechange 刷新和目录选择状态；保存快照、dirty 状态和 Cmd/Ctrl+S 监听抽为 `useSettingsSaveState.ts`，通用设置页签抽为受控 UI `features/settings/ui/SettingsGeneralTab.vue`。本地模型配置页签已随本地模式删除，模型、语音和知识库配置归服务端 bootstrap；当前设置 snapshot 汇总和真实保存动作仍留在父页，避免 controller 或展示组件反向持有服务端重连、toast、窗口置顶、埋点等副作用。
 2. `medicalData.ts` 按 Catalog Repository、Matcher、Cache Scope 三类能力拆，而不是按函数随意拆。
 3. `hisService.ts` 继续向 `services/his/HisAdapter` 收敛，业务代码不得直接依赖 PHIS 私有实现。
 

@@ -22,11 +22,9 @@ export {
   getRegionalConnectionDefaults,
   hasRegionalConnectionConfig,
   initializeRegionalClient,
-  isRegionalMode,
   regionalGet,
   regionalPost,
   registerDevice,
   saveRegionalConnectionConfig,
-  setRegionalMode,
   shutdownRegionalClient,
 } from './regional';

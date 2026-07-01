@@ -130,10 +130,9 @@ HIS System (HTTP) → Rust HTTP Server → Tauri Events → Vue Components
 
 **Service:** [llm.ts](src/services/llm.ts)
 
-**Configuration Sources (priority order):**
-1. `localStorage` keys: `OPENAI_API_KEY`, `LLM_BASE_URL`, `LLM_MODEL`
-2. Environment variables: `VITE_OPENAI_API_KEY`, `VITE_LLM_BASE_URL`, `VITE_LLM_MODEL`
-3. Defaults: OpenAI official API
+**Configuration Source:**
+
+模型、语音和知识库配置由 `floating-ball-server` bootstrap 下发，客户端不保存第三方 API Key，也不直连 OpenAI 兼容上游。客户端构建只需预置 `VITE_REGIONAL_BASE_URL` / `VITE_REGIONAL_ORG_CODE` 等服务端接入参数。
 
 **Functions:**
 - `chatStream()`: Streaming chat (SSE parsing)

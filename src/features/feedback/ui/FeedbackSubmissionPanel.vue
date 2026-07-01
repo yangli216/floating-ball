@@ -3,7 +3,6 @@ import { computed, inject, nextTick, onMounted, ref, watch } from 'vue';
 import Icon from '@shared/ui/Icon.vue';
 import { getLatestAiTrace } from '@services/aiTrace';
 import { submitUserFeedback, type UserFeedbackScreenshot, type FeedbackSeverity } from '@services/userFeedback';
-import { isRegionalMode } from '@services/regionalClient';
 import { trackClick, trackError, trackFormSubmit } from '@services/operationTracker';
 import { formatUserFacingError } from '@shared/lib/errorMessages';
 
@@ -79,7 +78,7 @@ const existingFeedbackHint = computed(() => {
 });
 
 const canSubmit = computed(() => {
-  if (!isRegionalMode() || submitting.value) return false;
+  if (submitting.value) return false;
   return comment.value.trim().length > 0 || selectedTags.value.length > 0;
 });
 
@@ -482,11 +481,6 @@ onMounted(() => {
           <div class="helper-text">{{ screenshot.fileName }}</div>
         </div>
       </div>
-    </div>
-
-    <div v-if="!isRegionalMode()" class="info-banner warning">
-      <Icon icon="lucide:triangle-alert" :size="18" />
-      <p>当前不是区域化模式，反馈无法上传到后台。</p>
     </div>
 
     <button class="action-btn primary submit-btn" :disabled="!canSubmit" @click="handleSubmit">

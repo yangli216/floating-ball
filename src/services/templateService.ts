@@ -1,10 +1,10 @@
 /**
  * 模板服务 - 管理中医/西医模板切换
- * 区域化模式下支持从后端增量同步模板
+ * 从区域后台增量同步模板，并保留内置模板作为确定性兜底。
  */
 import westernTemplates from '../assets/templates.json';
 import tcmTemplates from '../assets/tcm-templates.json';
-import { isRegionalMode, regionalGet } from './regionalClient';
+import { regionalGet } from './regionalClient';
 
 export type MedicalMode = 'western' | 'tcm';
 
@@ -37,8 +37,6 @@ function loadRemoteTemplatesFromCache(): RemoteTemplateData | null {
  * 从 core-service 增量同步模板
  */
 export async function syncRemoteTemplates(): Promise<void> {
-  if (!isRegionalMode()) return;
-
   try {
     const currentVersion = localStorage.getItem(REMOTE_TEMPLATES_VERSION_KEY) || '0';
     let resp = await regionalGet<{
@@ -90,18 +88,15 @@ export function setMedicalMode(mode: MedicalMode): void {
 
 /**
  * 获取当前模式的症状模板数据（统一返回症状数组）
- * 区域化模式下优先使用远程模板
+ * 优先使用远程模板
  */
 export function getTemplates(): any[] {
   const mode = getMedicalMode();
 
-  // 区域化模式：优先使用远程模板
-  if (isRegionalMode()) {
-    const remote = loadRemoteTemplatesFromCache();
-    if (remote) {
-      if (mode === 'tcm') return remote.tcm;
-      if (mode === 'western') return remote.western;
-    }
+  const remote = loadRemoteTemplatesFromCache();
+  if (remote) {
+    if (mode === 'tcm') return remote.tcm;
+    if (mode === 'western') return remote.western;
   }
 
   // 本地 fallback
@@ -115,10 +110,8 @@ export function getTemplates(): any[] {
  * 获取西医模板（症状数组）
  */
 export function getWesternTemplates(): any[] {
-  if (isRegionalMode()) {
-    const remote = loadRemoteTemplatesFromCache();
-    if (remote) return remote.western;
-  }
+  const remote = loadRemoteTemplatesFromCache();
+  if (remote) return remote.western;
   return westernTemplates as any[];
 }
 
@@ -126,10 +119,8 @@ export function getWesternTemplates(): any[] {
  * 获取中医模板（症状数组）
  */
 export function getTCMTemplates(): any[] {
-  if (isRegionalMode()) {
-    const remote = loadRemoteTemplatesFromCache();
-    if (remote) return remote.tcm;
-  }
+  const remote = loadRemoteTemplatesFromCache();
+  if (remote) return remote.tcm;
   return (tcmTemplates as any).symptoms || [];
 }
 

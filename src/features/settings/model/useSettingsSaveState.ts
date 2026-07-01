@@ -1,10 +1,9 @@
 import { computed, ref, toValue, type MaybeRefOrGetter } from 'vue';
 
-export type SettingsSaveTab = 'general' | 'model' | 'about';
+export type SettingsSaveTab = 'general' | 'about';
 
 export interface SettingsSaveStateOptions {
   activeTab: MaybeRefOrGetter<SettingsSaveTab>;
-  regionalMode: MaybeRefOrGetter<boolean>;
   saving: MaybeRefOrGetter<boolean>;
   snapshot: MaybeRefOrGetter<string>;
   save: () => Promise<void> | void;
@@ -16,7 +15,7 @@ export function useSettingsSaveState(options: SettingsSaveStateOptions) {
 
   const shouldShowSaveBar = computed(() => {
     const activeTab = toValue(options.activeTab);
-    return activeTab === 'general' || (activeTab === 'model' && !toValue(options.regionalMode));
+    return activeTab === 'general';
   });
 
   const hasUnsavedChanges = computed(() => {
@@ -36,9 +35,7 @@ export function useSettingsSaveState(options: SettingsSaveStateOptions) {
       return '当前页面修改已保存';
     }
 
-    return toValue(options.activeTab) === 'general'
-      ? '通用设置有未保存变更'
-      : '模型配置有未保存变更';
+    return '通用设置有未保存变更';
   });
 
   const markSettingsLoaded = () => {

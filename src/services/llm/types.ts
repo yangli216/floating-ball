@@ -14,8 +14,6 @@ export interface ChatMessage {
 }
 
 export const DEFAULT_LLM_CONFIG = {
-  baseUrl: "https://api.openai.com/v1",
-  audioBaseUrl: "https://api.openai.com/v1",
   model: "gpt-4o-mini",
   fastModel: "gpt-4o-mini",
   audioModel: "whisper-1",
@@ -37,13 +35,6 @@ export const DEFAULT_RETRY_CONFIG: RetryConfig = {
 };
 
 export interface LLMConfigOverride {
-  apiKey?: string;
-  baseUrl?: string;
-  audioBaseUrl?: string;
-  model?: string;
-  fastModel?: string;
-  audioModel?: string;
-  enableThinking?: boolean;
   configProfile?: 'default' | 'fast' | 'reviewer';
   traceContext?: {
     consultationId?: string;
@@ -53,14 +44,4 @@ export interface LLMConfigOverride {
     operationAction?: string;
     title?: string;
   };
-}
-
-export interface ResolvedLLMConfig {
-  key: string;
-  baseUrl: string;
-  audioBaseUrl: string;
-  model: string;
-  fastModel: string;
-  audioModel: string;
-  enableThinking: boolean;
 }

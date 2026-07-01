@@ -1,6 +1,5 @@
 import { PROMPTS } from '../prompts';
 import {
-  isRegionalMode,
   getCachedBootstrap,
   createRegionalSSE,
   regionalPost,
@@ -16,11 +15,7 @@ import {
   type LLMConfigOverride,
   type RetryConfig,
 } from './llm/types';
-import {
-  getConfigAndKey,
-  getLLMConfig,
-  getReviewerLLMConfig,
-} from './llm/config';
+import { getLLMConfig, getReviewerLLMConfig } from './llm/config';
 import { retryWithBackoff } from './llm/retry';
 import {
   buildChatRequestSummary,
@@ -28,11 +23,6 @@ import {
   createPayloadMessages,
   summarizeText,
 } from './llm/payload';
-import {
-  requestLocalChatCompletion,
-  streamLocalChatCompletion,
-  transcribeLocalAudio,
-} from './llm/localOpenAiClient';
 import { formatUserFacingError } from '@shared/lib/errorMessages';
 
 export type { ChatMessage, ChatRole, LLMConfigOverride, RetryConfig };
@@ -75,13 +65,12 @@ function buildRegionalChatRequestPayload(
 export async function chatStream(
   messages: ChatMessage[],
   onChunk: (chunk: string) => void,
-  apiKey?: string,
+  _apiKey?: string,
   retryConfig?: RetryConfig,
   onRetry?: (attempt: number, error: any) => void,
   customConfig?: LLMConfigOverride
 ): Promise<void> {
-  // 区域化模式：通过后端 AI 代理
-  if (isRegionalMode() && !customConfig?.apiKey) {
+  {
     const payloadMessages = createPayloadMessages(messages);
     const traceScene = customConfig?.traceContext?.scene || 'chat';
     const traceSourceModule = customConfig?.traceContext?.sourceModule || 'llm';
@@ -119,33 +108,26 @@ export async function chatStream(
     }
     return;
   }
-
-  const config = getConfigAndKey(apiKey, customConfig);
-  const payloadMessages = createPayloadMessages(messages);
-
-  await retryWithBackoff(async () => {
-    await streamLocalChatCompletion(config, payloadMessages, onChunk);
-  }, retryConfig || DEFAULT_RETRY_CONFIG, onRetry);
 }
 
 // 带自动降级的流式对话（如果流式失败，自动回退到普通请求）
 export async function chatStreamWithFallback(
   messages: ChatMessage[],
   onChunk: (chunk: string) => void,
-  apiKey?: string,
+  _apiKey?: string,
   retryConfig?: RetryConfig,
   onRetry?: (attempt: number, error: any) => void,
   customConfig?: LLMConfigOverride
 ): Promise<void> {
   try {
     // 尝试流式请求
-    await chatStream(messages, onChunk, apiKey, retryConfig, onRetry, customConfig);
+    await chatStream(messages, onChunk, _apiKey, retryConfig, onRetry, customConfig);
   } catch (error) {
     console.warn("流式请求失败，降级到普通请求:", error);
 
     try {
       // 降级到普通请求
-      const response = await chat(messages, apiKey, retryConfig, onRetry, customConfig);
+      const response = await chat(messages, _apiKey, retryConfig, onRetry, customConfig);
       // 模拟流式输出（按字符或按词输出）
       const chunkSize = 10; // 每次发送10个字符
       for (let i = 0; i < response.length; i += chunkSize) {
@@ -163,13 +145,12 @@ export async function chatStreamWithFallback(
 // 文本与图像的对话（基于 Chat Completions）
 export async function chat(
   messages: ChatMessage[],
-  apiKey?: string,
+  _apiKey?: string,
   retryConfig?: RetryConfig,
   onRetry?: (attempt: number, error: any) => void,
   customConfig?: LLMConfigOverride
 ): Promise<string> {
-  // 区域化模式：通过后端 AI 代理
-  if (isRegionalMode() && !customConfig?.apiKey) {
+  {
     const payloadMessages = createPayloadMessages(messages);
     const traceScene = customConfig?.traceContext?.scene || 'chat';
     const traceSourceModule = customConfig?.traceContext?.sourceModule || 'llm';
@@ -204,13 +185,6 @@ export async function chat(
       throw error;
     }
   }
-
-  const config = getConfigAndKey(apiKey, customConfig);
-  const payloadMessages = createPayloadMessages(messages);
-
-  return await retryWithBackoff(async () => {
-    return requestLocalChatCompletion(config, payloadMessages);
-  }, retryConfig || DEFAULT_RETRY_CONFIG, onRetry);
 }
 
 // 快速/轻量级模型对话（适用于后台异步任务、总结等对响应时间要求高的场景）
@@ -221,24 +195,17 @@ export async function chatFast(
   onRetry?: (attempt: number, error: any) => void,
   customConfig?: LLMConfigOverride
 ): Promise<string> {
-  if (isRegionalMode() && !customConfig?.apiKey) {
-    return chat(messages, apiKey, retryConfig, onRetry, { ...customConfig, configProfile: 'fast' });
-  }
-
-  const { fastModel } = getConfigAndKey(apiKey, customConfig);
-  // 复用 chat 逻辑，强制覆盖 model 为 fastModel
-  return chat(messages, apiKey, retryConfig, onRetry, { ...customConfig, model: fastModel });
+  return chat(messages, apiKey, retryConfig, onRetry, { ...customConfig, configProfile: 'fast' });
 }
 
 export async function transcribeAudio(
   blob: Blob,
-  apiKey?: string,
+  _apiKey?: string,
   retryConfig?: RetryConfig,
   onRetry?: (attempt: number, error: any) => void,
-  customConfig?: LLMConfigOverride
+  _customConfig?: LLMConfigOverride
 ): Promise<string> {
-  // 区域化模式：通过后端语音代理
-  if (isRegionalMode() && !customConfig?.apiKey) {
+  {
     const scene = 'chat-input';
     const fileName = `${scene}-${Date.now()}.webm`;
     const requestSummary = buildSpeechRequestSummary(fileName, scene, blob.type || 'audio/webm');
@@ -286,12 +253,6 @@ export async function transcribeAudio(
       throw error;
     }
   }
-
-  const config = getConfigAndKey(apiKey, customConfig);
-
-  return await retryWithBackoff(async () => {
-    return transcribeLocalAudio(blob, config);
-  }, retryConfig || DEFAULT_RETRY_CONFIG, onRetry);
 }
 
 export interface RiskAnalysisItem {

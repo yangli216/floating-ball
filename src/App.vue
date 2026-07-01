@@ -5,7 +5,6 @@ import { exit } from '@tauri-apps/plugin-process';
 import { load, Store } from '@tauri-apps/plugin-store';
 import ChatPanel from "./components/ChatPanel.vue";
 import SettingsPanel from "./components/SettingsPanel.vue";
-import { AnalyticsPanel } from "@features/analytics";
 import ConsultationPage from "./components/ConsultationPage.vue";
 import { DiagnosisPathWindow } from "@features/diagnosis-path";
 import { ReportInterpretationWindow, ReportInterpretationWorkspace } from "@features/report-interpretation";
@@ -152,8 +151,6 @@ const assistantTitle = computed(() => {
       return '住院病历生成';
     case 'differential-diagnosis':
       return currentPatient.value ? `鉴别诊断 - ${patientDisplayName.value}` : '鉴别诊断';
-    case 'analytics':
-      return '数据分析';
     case 'his-log':
       return 'HIS 联调日志';
     case 'medical-cache':
@@ -894,7 +891,7 @@ const openInsideCloudHome = async () => {
           <!-- 工具栏 (risk-alert, voice-interaction, reception-capsule 视图不显示) -->
           <div v-if="currentView !== 'risk-alert' && currentView !== 'voice-interaction' && currentView !== 'reception-capsule' && currentView !== 'differential-diagnosis' && currentView !== 'chat'" class="assistant-toolbar" data-tauri-drag-region>
             <div class="toolbar-left" data-tauri-drag-region>
-	              <button v-if="currentView === 'settings' || currentView === 'analytics' || currentView === 'his-log' || currentView === 'medical-cache' || currentView === 'knowledge-base' || currentView === 'chronic-refill-confirmation' || currentView === 'treatment-plan' || currentView === 'outpatient-follow-up' || currentView === 'report-interpretation' || currentView === 'inpatient-emr'" class="icon-btn back-btn" @click="currentView === 'analytics' ? openChat() : currentView === 'chronic-refill-confirmation' ? closeChronicRefillConfirmation() : currentView === 'report-interpretation' ? closeReportInterpretationWorkspace() : handleUserCollapse()" title="返回">
+	              <button v-if="currentView === 'settings' || currentView === 'his-log' || currentView === 'medical-cache' || currentView === 'knowledge-base' || currentView === 'chronic-refill-confirmation' || currentView === 'treatment-plan' || currentView === 'outpatient-follow-up' || currentView === 'report-interpretation' || currentView === 'inpatient-emr'" class="icon-btn back-btn" @click="currentView === 'chronic-refill-confirmation' ? closeChronicRefillConfirmation() : currentView === 'report-interpretation' ? closeReportInterpretationWorkspace() : handleUserCollapse()" title="返回">
 	                 <Icon icon="lucide:arrow-left" class="toolbar-icon" size="20" />
 	              </button>
 	              <span class="assistant-title" data-tauri-drag-region>{{ assistantTitle }}</span>
@@ -984,10 +981,6 @@ const openInsideCloudHome = async () => {
             @generated="handleChronicRefillGenerated"
           />
 
-          <AnalyticsPanel
-            v-if="currentView === 'analytics'"
-            @close="openChat"
-          />
           <HisIntegrationLogPanel v-if="currentView === 'his-log'" />
           <MedicalCatalogCachePanel v-if="currentView === 'medical-cache'" />
           <VoiceConsultationNew

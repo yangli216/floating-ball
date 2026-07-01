@@ -5,7 +5,7 @@
  * 审计日志仍由 auditUploader / operationTracker 负责，不能反向用于功能调用次数。
  */
 import { getFeedbackActor } from './feedbackContext';
-import { isRegionalMode, regionalPost } from './regionalClient';
+import { regionalPost } from './regionalClient';
 
 export type FeatureCode =
   | 'voice_consultation'
@@ -90,7 +90,7 @@ function saveQueue(): void {
 }
 
 function scheduleFlushSoon(): void {
-  if (!isRegionalMode() || flushSoonTimer) return;
+  if (flushSoonTimer) return;
 
   flushSoonTimer = setTimeout(() => {
     flushSoonTimer = null;
@@ -161,7 +161,6 @@ function toRequestEvent(event: FeatureUsageEvent) {
 }
 
 export function trackFeatureUsage(draft: FeatureUsageDraft): void {
-  if (!isRegionalMode()) return;
   ensureQueueLoaded();
 
   const eventId = randomId();
@@ -185,7 +184,7 @@ export function trackFeatureUsage(draft: FeatureUsageDraft): void {
 
 export async function flushFeatureUsageEvents(): Promise<number> {
   ensureQueueLoaded();
-  if (!isRegionalMode() || eventQueue.length === 0) return 0;
+  if (eventQueue.length === 0) return 0;
   if (flushInFlight) return flushInFlight;
 
   flushInFlight = (async () => {

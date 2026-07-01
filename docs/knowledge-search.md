@@ -12,12 +12,12 @@
 | 智能问诊 / 语音问诊共用的批量检索状态 | `src/features/knowledge/model/useKnowledgeSearchController.ts` |
 | 诊断、药品、检查分类词提取 | `src/features/knowledge/lib/knowledgeSearchCategories.ts` |
 | 语音问诊到知识库 controller 的轻包装 | `src/features/voice-consultation/model/useVoiceKnowledgeSearch.ts` |
-| 配置入口 | `src/components/SettingsPanel.vue` + `src/features/settings/ui/SettingsModelTab.vue` |
+| 配置来源 | `floating-ball-server` bootstrap（客户端设置页仅配置服务端地址/机构/设备） |
 
 ## 运行链路
 
-1. 设置页读取并保存 `PMPHAI_APP_KEY`、`PMPHAI_APP_SECRET`、`PMPHAI_ENABLED`、`PMPHAI_SEARCH_MODE`。
-2. `pmphaiService` 负责 PMPHAI token 获取、缓存、搜索、原文片段获取和页面 URL 生成。
+1. 启动时从 bootstrap 读取 PMPHAI 启用状态和非敏感能力配置；客户端仅保留 `PMPHAI_SEARCH_MODE` 展示偏好。
+2. `pmphaiService` 通过签名服务端接口完成搜索、原文片段获取和页面 URL 生成；凭据与 token 由服务端管理。
 3. `ConsultationPage.vue` 和语音问诊分别注入 `isPMPHAIConfigured`、`pmphaiService.searchByCategories`、`pmphaiService.batchSearch` 到 `useKnowledgeSearchController`。
 4. `useKnowledgeSearchController` 只管理 loading、结果 Map、面板开合和单项定位，不直接依赖 PMPHAI 单例。
 5. `KnowledgePanel.vue` 负责结果展示；RAG 模式展示诊断 / 药品 / 检查分组，列表模式通过 `pmphaiService.listSearch` 查询。
@@ -35,8 +35,8 @@
 | `searchByCategories(diagnoses, medications, examinations, options)` | 按诊断、药品、检查三类批量检索 |
 | `getClip(id)` | 获取搜索结果原文片段 |
 | `listSearch(params)` | 传统列表搜索 |
-| `getPageUrl(params)` | 生成 PMPHAI 页面地址；区域化模式下由服务端生成 |
-| `testConnection()` | 设置页连接测试 |
+| `getPageUrl(params)` | 通过服务端生成 PMPHAI 页面地址 |
+| `testConnection()` | 调用服务端知识库连接测试 |
 
 示例：
 
@@ -58,34 +58,23 @@ const batch = await pmphaiService.searchByCategories(
 );
 ```
 
-## 区域化模式
+## 服务端托管模式
 
-区域化模式下桌面端不保存 PMPHAI 凭据，启用状态来自 bootstrap：
+桌面端不保存 PMPHAI 凭据，启用状态来自 bootstrap：
 
 - `bootstrap.pmphai.enabled`
 - `bootstrap.knowledgeBase.enabled`
-- `bootstrap.knowledgeBase.baseUrl`
 
-`pmphaiService` 会通过 `regionalPost` / `regionalGet` 调用远端 `/v1/knowledge/pmphai/*`。新增远端知识库接口时必须遵守区域化请求签名规则，不得绕过 `regionalClient`。
+`pmphaiService` 会通过 `regionalPost` / `regionalGet` 调用远端 `/v1/knowledge/pmphai/*`。新增知识库接口时必须遵守请求签名规则，不得绕过 `regionalClient`。
 
-## 本地配置
+## 本地偏好与迁移
 
-非区域化模式下当前使用这些 `localStorage` 键：
-
-| 键名 | 说明 |
-| --- | --- |
-| `PMPHAI_APP_KEY` | PMPHAI App Key |
-| `PMPHAI_APP_SECRET` | PMPHAI App Secret |
-| `PMPHAI_ENABLED` | 是否启用知识库搜索 |
-| `PMPHAI_SEARCH_MODE` | `rag` 或 `list` |
-| `KB_APP_KEY` / `KB_APP_SECRET` / `KB_BASE_URL` | 内置知识库页面入口的历史配置 |
-
-不要在文档或代码中写入真实密钥；本地默认值应来自环境变量或用户配置，区域化环境由服务端托管。
+桌面端仅保留 `PMPHAI_SEARCH_MODE` 作为展示偏好。历史 `PMPHAI_APP_KEY`、`PMPHAI_APP_SECRET`、`PMPHAI_ENABLED`、`KB_APP_KEY`、`KB_APP_SECRET`、`KB_BASE_URL` 在升级时清理，不再作为知识库配置来源。
 
 ## 维护约束
 
 1. 智能问诊和语音问诊的分类词提取统一走 `knowledgeSearchCategories.ts`。
 2. 面板开合、loading、结果 Map 和单项定位统一走 `useKnowledgeSearchController.ts`。
-3. PMPHAI 凭据、token、远端接口和 page URL 生成仍由 `pmphai.ts` / `knowledgeBase.ts` 负责。
+3. PMPHAI 凭据与 token 只由服务端管理；桌面端 `pmphai.ts` / `knowledgeBase.ts` 仅负责区域接口和 page URL 消费。
 4. 新增知识库入口时优先复用 `@features/knowledge` 公开出口，不要重新创建 `knowledgeSearch.ts` 旁路服务。
-5. 修改区域化 `/v1/knowledge/pmphai/*` 契约时，同步更新 `api.md`、后端契约和服务端实现。
+5. 修改 `/v1/knowledge/pmphai/*` 契约时，同步更新 `api.md`、后端契约和服务端实现。

@@ -1,10 +1,10 @@
 /**
  * 审计事件批量上报服务
  *
- * 区域化模式下，审计事件通过此服务直接上报到 core-service。
+ * 审计事件通过此服务直接上报到 floating-ball-server。
  * 本地只保留轻量离线队列，供失败或断网时自动重传。
  */
-import { isRegionalMode, regionalPost } from './regionalClient';
+import { regionalPost } from './regionalClient';
 
 // ─── 类型定义 ─────────────────────────────────────────────────────────────
 
@@ -62,7 +62,7 @@ function saveQueue(): void {
 }
 
 function scheduleFlushSoon(): void {
-  if (!isRegionalMode() || flushSoonTimer) return;
+  if (flushSoonTimer) return;
 
   flushSoonTimer = setTimeout(() => {
     flushSoonTimer = null;
@@ -86,7 +86,6 @@ export function enqueueAuditEvent(
   eventType: AuditEvent['eventType'],
   payload: Record<string, unknown>
 ): void {
-  if (!isRegionalMode()) return;
   ensureQueueLoaded();
 
   eventQueue.push({
@@ -107,7 +106,7 @@ export function enqueueAuditEvent(
  */
 export async function flushAuditEvents(): Promise<number> {
   ensureQueueLoaded();
-  if (!isRegionalMode() || eventQueue.length === 0) return 0;
+  if (eventQueue.length === 0) return 0;
   if (flushInFlight) return flushInFlight;
 
   flushInFlight = (async () => {

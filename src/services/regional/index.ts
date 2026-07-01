@@ -17,10 +17,8 @@ export {
   getRegionalConnectionConfig,
   getRegionalConnectionDefaults,
   hasRegionalConnectionConfig,
-  isRegionalMode,
   resetRegionalRuntime,
   saveRegionalConnectionConfig,
-  setRegionalMode,
 } from './config';
 
 export { getDeviceCode } from './device';

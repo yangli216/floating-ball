@@ -1,7 +1,7 @@
 import type { Diagnosis, TreatmentRecommendation } from '@/types/consultation';
 import { getLatestAiTrace } from './aiTrace';
 import { getFeedbackActor } from './feedbackContext';
-import { getCachedBootstrap, isRegionalMode, regionalPost } from './regionalClient';
+import { getCachedBootstrap, regionalPost } from './regionalClient';
 
 export type RecommendationPreferenceType = 'diagnosis' | 'medicine' | 'exam' | 'lab_test' | 'procedure';
 export type RecommendationPreferenceAction = 'final_select' | 'manual_match' | 'confirm_match';
@@ -126,12 +126,10 @@ function saveQueue(): void {
 }
 
 function isCollectionEnabled(): boolean {
-  if (!isRegionalMode()) return false;
   return getCachedBootstrap()?.features?.recommendationPreferenceCollection === true;
 }
 
 function isRerankEnabled(): boolean {
-  if (!isRegionalMode()) return false;
   return getCachedBootstrap()?.features?.recommendationPreferenceRerank === true;
 }
 

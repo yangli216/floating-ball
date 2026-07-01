@@ -1,6 +1,6 @@
 import { chatFast, chatStreamWithFallback } from '@/services/llm';
 import { getHisAdapter } from '@/services/his';
-import { isRegionalMode, regionalPost } from '@/services/regionalClient';
+import { regionalPost } from '@/services/regionalClient';
 import type {
   HisInpatientOrder,
   HisInpatientEmrContextPackage,
@@ -508,8 +508,7 @@ async function resolveInpatientEmrTemplate(
 ): Promise<InpatientEmrTemplateParseResult> {
   const localTemplate = parseInpatientEmrTemplate(request.htmlContent);
 
-  if (isRegionalMode()) {
-    try {
+  try {
       const remote = await regionalPost<RemoteInpatientEmrTemplateCache>(
         '/v1/client/inpatient-emr/templates/resolve',
         {
@@ -528,9 +527,8 @@ async function resolveInpatientEmrTemplate(
           fields: remoteFields.map(normalizeTemplateField),
         };
       }
-    } catch (error) {
-      console.warn('[InpatientEmr] remote template cache unavailable, using local parse result', error);
-    }
+  } catch (error) {
+    console.warn('[InpatientEmr] remote template cache unavailable, using local parse result', error);
   }
 
   await enrichUnknownFieldsWithLocalLLM(localTemplate, request, registration);

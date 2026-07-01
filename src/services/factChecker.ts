@@ -1,5 +1,5 @@
 import { chat, getReviewerLLMConfig, type ChatMessage } from './llm';
-import { isRegionalMode, getCachedBootstrap } from './regionalClient';
+import { getCachedBootstrap } from './regionalClient';
 import {
   DiagnosisCheckPrompt,
   MedicineCheckPrompt,
@@ -28,14 +28,8 @@ import {
  * 检查独立审查 AI 是否已启用
  */
 export function isReviewerEnabled(): boolean {
-  // 区域化模式下由后端控制
-  if (isRegionalMode()) {
-    const bootstrap = getCachedBootstrap();
-    return bootstrap?.reviewer?.enabled ?? false;
-  }
-  const saved = localStorage.getItem('REVIEWER_ENABLED');
-  // 默认启用；仅当明确设置为 'false' 时禁用
-  return saved === null || saved === 'true';
+  const bootstrap = getCachedBootstrap();
+  return bootstrap?.reviewer?.enabled ?? false;
 }
 
 export function isReviewerCheckExaminationEnabled(): boolean {
@@ -43,13 +37,8 @@ export function isReviewerCheckExaminationEnabled(): boolean {
     return false;
   }
 
-  if (isRegionalMode()) {
-    const bootstrap = getCachedBootstrap();
-    return bootstrap?.reviewer?.checkExaminationEnabled ?? bootstrap?.reviewer?.enabled ?? false;
-  }
-
-  const saved = localStorage.getItem('REVIEWER_CHECK_EXAMINATION_ENABLED');
-  return saved === null || saved === 'true';
+  const bootstrap = getCachedBootstrap();
+  return bootstrap?.reviewer?.checkExaminationEnabled ?? bootstrap?.reviewer?.enabled ?? false;
 }
 
 export type FactCheckType = 'diagnosis' | 'medicine' | 'examination' | 'medical_record';

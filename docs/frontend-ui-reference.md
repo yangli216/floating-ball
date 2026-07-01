@@ -19,7 +19,6 @@
 | --- | --- | --- |
 | `chat` | `src/components/ChatPanel.vue` | 920 x 360 |
 | `settings` | `src/components/SettingsPanel.vue` | 378 x 449 |
-| `analytics` | `src/features/analytics/ui/AnalyticsPanel.vue` | 378 x 449 |
 | `knowledge-base` | `src/features/knowledge/ui/KnowledgeBasePanel.vue` | 378 x 449 |
 | `risk-alert` | `src/features/reception-risk/ui/RiskAlertPanel.vue` | 378 x 449 |
 | `consultation` | `src/components/ConsultationPage.vue` | 1080 x 720 |
@@ -60,8 +59,8 @@
 ### 设置
 
 - 入口：`src/components/SettingsPanel.vue`
-- 职责：设置页 shell、tab 编排、保存策略、toast、埋点、区域化重连和窗口置顶副作用。
-- 已拆 UI：`src/features/settings/ui/SettingsGeneralTab.vue`、`SettingsModelTab.vue`、`SettingsSaveBar.vue`、`UpdateChecker.vue`、`ForceUpdateGate.vue`。
+- 职责：设置页 shell、通用/关于 tab 编排、服务端连接保存与重连、窗口/音频/缓存/HIS 联调入口和版本更新。
+- 已拆 UI：`src/features/settings/ui/SettingsGeneralTab.vue`、`SettingsSaveBar.vue`、`UpdateChecker.vue`、`ForceUpdateGate.vue`。
 - 已拆 model：`src/features/settings/model/useSettingsAudioInput.ts`、`useSettingsVoiceRecordingDirectory.ts`、`useSettingsSaveState.ts`。
 
 ### 智能问诊
@@ -107,7 +106,6 @@
 
 ### 工具页
 
-- 数据分析：`src/features/analytics/ui/AnalyticsPanel.vue`
 - HIS 联调日志：`src/features/settings/ui/HisIntegrationLogPanel.vue`
 - 缓存管理：`src/features/medical-catalog/ui/MedicalCatalogCachePanel.vue`
 - 诊断路径独立窗口：`src/features/diagnosis-path/ui/DiagnosisPathWindow.vue`

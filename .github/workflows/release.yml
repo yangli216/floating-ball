@@ -73,11 +73,7 @@ jobs:
       - name: Build frontend
         run: yarn build
         env:
-          VITE_LLM_BASE_URL: ${{ vars.VITE_LLM_BASE_URL }}
-          VITE_LLM_MODEL: ${{ vars.VITE_LLM_MODEL }}
           VITE_REGIONAL_BASE_URL: ${{ vars.VITE_REGIONAL_BASE_URL }}
-          VITE_OPENAI_API_KEY: ${{ secrets.VITE_OPENAI_API_KEY }}
-          VITE_DASHSCOPE_API_KEY: ${{ secrets.VITE_DASHSCOPE_API_KEY }}
 
       - name: Debug signing key (Unix)
         if: matrix.platform != 'windows-latest'
@@ -169,11 +165,7 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
-          VITE_LLM_BASE_URL: ${{ vars.VITE_LLM_BASE_URL }}
-          VITE_LLM_MODEL: ${{ vars.VITE_LLM_MODEL }}
           VITE_REGIONAL_BASE_URL: ${{ vars.VITE_REGIONAL_BASE_URL }}
-          VITE_OPENAI_API_KEY: ${{ secrets.VITE_OPENAI_API_KEY }}
-          VITE_DASHSCOPE_API_KEY: ${{ secrets.VITE_DASHSCOPE_API_KEY }}
           # 启用 sccache
           RUSTC_WRAPPER: sccache
           SCCACHE_GHA_ENABLED: "true"

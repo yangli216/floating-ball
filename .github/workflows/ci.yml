@@ -26,9 +26,5 @@ jobs:
 
       - name: Type check and build
         env:
-          VITE_LLM_BASE_URL: ${{ vars.VITE_LLM_BASE_URL }}
-          VITE_LLM_MODEL: ${{ vars.VITE_LLM_MODEL }}
           VITE_REGIONAL_BASE_URL: ${{ vars.VITE_REGIONAL_BASE_URL }}
-          VITE_OPENAI_API_KEY: ${{ secrets.VITE_OPENAI_API_KEY }}
-          VITE_DASHSCOPE_API_KEY: ${{ secrets.VITE_DASHSCOPE_API_KEY }}
         run: yarn build

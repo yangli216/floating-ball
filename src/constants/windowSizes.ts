@@ -51,7 +51,6 @@ export type ViewType =
   | 'inpatient-emr'
   | 'differential-diagnosis'
   | 'reception-capsule'
-  | 'analytics'
   | 'his-log'
   | 'medical-cache'
   | 'knowledge-base';
@@ -244,7 +243,6 @@ export function getWindowSizeForView(view: ViewType, options?: WindowSizeOptions
       return WINDOW_SIZES.CHAT;
       
     case 'settings':
-    case 'analytics':
     case 'risk-alert':
     case 'knowledge-base':
     default:
@@ -263,7 +261,6 @@ export function supportsPersistentWindowSize(view: ViewType): boolean {
     || view === 'report-interpretation'
     || view === 'inpatient-emr'
     || view === 'differential-diagnosis'
-    || view === 'analytics'
     || view === 'his-log'
     || view === 'medical-cache'
     || view === 'knowledge-base';

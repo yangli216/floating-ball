@@ -15,7 +15,6 @@ defineProps<{
   currentTheme: Theme;
   themes: Theme[];
   alwaysOnTop: boolean;
-  regionalMode: boolean;
   regionalBaseUrl: string;
   regionalOrgCode: string;
   regionalDeviceCode: string;
@@ -35,7 +34,6 @@ defineProps<{
 const emit = defineEmits<{
   'select-theme': [theme: Theme];
   'update:alwaysOnTop': [value: boolean];
-  'update:regionalMode': [value: boolean];
   'update:regionalBaseUrl': [value: string];
   'update:regionalOrgCode': [value: string];
   'update:selectedAudioInputDeviceId': [value: string];
@@ -120,25 +118,9 @@ function readSelectValue(event: Event): string {
     <div class="settings-section">
       <div class="section-header">
         <Icon icon="lucide:server" :size="20" />
-        <h3>区域化接入</h3>
+        <h3>服务端接入</h3>
       </div>
-      <p class="section-desc">开启后，桌面端会向 floating-ball-server 注册设备、拉取 bootstrap 配置，并统一走远端 `/v1/*` 代理。区域化模式下实际生效模型以服务端当前配置为准。</p>
-
-      <div class="toggle-row">
-        <div class="toggle-label-group">
-          <label for="regional-mode" class="toggle-label">启用区域化模式</label>
-          <span class="toggle-hint">保存后立即生效；失败时会保留当前接入参数，便于继续排查</span>
-        </div>
-        <div class="switch-wrapper">
-          <input
-            id="regional-mode"
-            type="checkbox"
-            :checked="regionalMode"
-            @change="emit('update:regionalMode', readCheckboxValue($event))"
-          >
-          <label for="regional-mode" class="toggle-switch"></label>
-        </div>
-      </div>
+      <p class="section-desc">桌面端始终向 floating-ball-server 注册设备、拉取 bootstrap 配置，并统一走签名 `/v1/*` 代理；实际生效模型和上游凭据由后台管理。</p>
 
       <div class="form-group">
         <label for="regional-base-url">后端地址</label>

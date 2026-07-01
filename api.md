@@ -1,6 +1,6 @@
 # MedHermes HIS 接入指南 / 接口说明
 
-> 最后更新: 2026-06-15
+> 最后更新: 2026-07-01
 >
 > 本文档面向准备接入 `MedHermes` 的 HIS / 医生站 / PHIS 项目。
 > 当前真实运行契约以 `src-tauri/src/http_server.rs` 与当前前端实现为准；`docs/regionalization/*.md` 仍属于规划文档，不能替代本文档。
@@ -33,6 +33,7 @@
    如果 HIS 存在“同患者多次接诊”场景，必须传入 `idVis`，避免旧就诊结果或回执误命中当前就诊。
 5. 当前 Bridge 会为业务接口生成 `traceId` 并写入本地 HIS 集成日志，方便三方 HIS / PHIS 联调时按一次调用链路排查请求、响应和错误。
 6. Bridge 与 SDK 对外展示的失败信息应使用可读中文说明，并优先带出 `traceId`；底层网络异常、Rust/JavaScript 异常、PHIS 原始错误体和堆栈只进入本地 HIS 集成日志，不应作为唯一错误提示直接展示给医生或 HIS 操作员。
+7. 本地 Bridge 只承担 HIS/SDK 接入，不提供 AI、语音或知识库第三方代理；历史 `/api/pmphai/*` 路由已删除。PMPHAI 统一通过设备签名后的 `floating-ball-server /v1/knowledge/pmphai/*` 调用。
 
 ## 3. 推荐接入顺序
 
@@ -343,7 +344,7 @@ http://127.0.0.1:8081/api/consultation/start
 1. 此接口会刷新当前患者上下文。
 2. 此接口会清空上一条本地结果，避免直接读到旧结果。
 3. `MedHermes` 收到后会尝试置顶主窗口并进入完整问诊。
-4. 区域化模式下，桌面端在接诊上下文校验通过并准备打开完整问诊页时，上报一次 `smart_consultation` 功能调用事件；同一就诊再次显式触发完整问诊入口按新调用计数，统计分析以该事件为事实源，不再从本地 Bridge 日志、问诊用户日志或 AI 代理日志推断。
+4. 桌面端在接诊上下文校验通过并准备打开完整问诊页时，上报一次 `smart_consultation` 功能调用事件；同一就诊再次显式触发完整问诊入口按新调用计数，统计分析以该事件为事实源，不再从本地 Bridge 日志、问诊用户日志或 AI 代理日志推断。
 
 ### 6.2 `POST /api/consultation/assist`
 
@@ -401,7 +402,7 @@ http://127.0.0.1:8081/api/consultation/assist
 7. `suggestedDx` 要求已有 `chiefComplaint` 与 `historyOfPresentIllness`，**不要传 `diagnosis`**；如果 HIS 已有当前诊断并希望基于它做鉴别，请使用 `diffDx`。
 8. 当前一个 `action` 只负责自动触发一个目标模块，不代表本次问诊到此结束。
 9. `examination`、`lab_test`、`procedure` 三路推荐独立加载，各自有独立的 loading 状态和回写 / 引用闭环；`treatment_plan` 会聚合用药、检查、检验、处置四路推荐，并通过 `record-confirmed` 的 `diagList/orderList` 统一回写。
-10. 区域化模式下，桌面端在接诊上下文校验通过并准备打开目标辅助界面时即上报一次功能调用事件：`suggestedDx/diagnosis` 计入 AI推荐诊断，`diffDx/differential` 计入 AI诊断鉴别，`medication` 计入 AI推荐用药，`examination` 计入 AI推荐检查，`lab_test` 计入 AI推荐检验，`procedure` 计入 AI推荐处置，`treatment_plan` 计入 AI推荐治疗方案。同一就诊再次显式触发同一辅助入口按新调用计数；统计分析以 `/v1/client/feature-events/batch` 入库事件为事实源，后续 AI 生成和回写只用于审计、日志或结果闭环，不重复拆分计数。
+10. 桌面端在接诊上下文校验通过并准备打开目标辅助界面时即上报一次功能调用事件：`suggestedDx/diagnosis` 计入 AI推荐诊断，`diffDx/differential` 计入 AI诊断鉴别，`medication` 计入 AI推荐用药，`examination` 计入 AI推荐检查，`lab_test` 计入 AI推荐检验，`procedure` 计入 AI推荐处置，`treatment_plan` 计入 AI推荐治疗方案。同一就诊再次显式触发同一辅助入口按新调用计数；统计分析以 `/v1/client/feature-events/batch` 入库事件为事实源，后续 AI 生成和回写只用于审计、日志或结果闭环，不重复拆分计数。
 
 #### 单独诊断推荐调用 `action: "suggestedDx"`
 
@@ -663,7 +664,7 @@ http://127.0.0.1:8081/api/consultation/start-voice
 2. 如果当前桌面端没有患者上下文，前端会提示先接诊患者。
 3. 语音结果最终仍通过 `GET /api/consultation/events/poll` 返回。
 4. 未诊毕且未放弃时，同一接诊上下文内再次调用会恢复上一张语音结果页；但桌面端当前接诊切换到其他患者后，上一患者的语音缓存会失效，之后再切回该患者也会重新开始语音问诊。
-5. 区域化模式下，桌面端在接诊上下文校验通过并准备打开语音问诊页时，上报一次 `voice_consultation` 功能调用事件；同一就诊再次显式触发语音问诊入口按新调用计数，后续提交语音日志不再补记功能统计。
+5. 桌面端在接诊上下文校验通过并准备打开语音问诊页时，上报一次 `voice_consultation` 功能调用事件；同一就诊再次显式触发语音问诊入口按新调用计数，后续提交语音日志不再补记功能统计。
 6. 桌面端进入语音流程前会先复用接诊阶段已获取的当前就诊信息和本次门诊病历文本；当 `loadClinicMedicalRecord.applyList[].items[].sdApply === "3"` 表示存在已出报告时，再通过 HIS Adapter 调用 PHIS 报告结果服务 `api/phis.aiInpatientEmrContextService/buildOutpatientFollowUpReportResults`。若本次病历文本和至少一份已报告且有实际结果内容的检验/检查结果均存在，则按报告回诊场景生成后续治疗方案；诊断只作为可选参考，不再阻断取数、推荐或回写。否则继续原语音录音问诊。
 
 #### 6.3.1 PHIS 门诊复诊报告结果服务
@@ -838,9 +839,9 @@ SDK 调用：`sdk.generateInpatientEmr({ admissionId, templateId, templateName, 
 | 字段名 | 类型 | 必填 | 说明 |
 | :--- | :--- | :--- | :--- |
 | `admissionId` | String | 是 | 患者单次住院登记主键，PHIS 对应 `idAdsn` |
-| `templateId` | String | 是 | 病历模板主键；区域化模式下后端模板解析缓存以该字段作为唯一缓存依据 |
-| `templateName` | String | 是 | 模板名称，如 `日常病程记录`；区域化模式下会随模板解析结果保存到后端模板缓存 |
-| `htmlContent` | String | 是 | 当前病历模板 HTML，桌面端会解析其中带 `data-id` 的模板字段；区域化模式下会作为原生模板内容保存到后端，供管理端查看源码和 HTML 预览 |
+| `templateId` | String | 是 | 病历模板主键；后端模板解析缓存以该字段作为唯一缓存依据 |
+| `templateName` | String | 是 | 模板名称，如 `日常病程记录`；会随模板解析结果保存到后端模板缓存 |
+| `htmlContent` | String | 是 | 当前病历模板 HTML，桌面端会解析其中带 `data-id` 的模板字段；会作为原生模板内容保存到后端，供管理端查看源码和 HTML 预览 |
 | `recordTime` | String | 否 | 本次病程记录书写时间，如 `2026-06-10 15:25`；未传时桌面端使用当前系统时间。生成正文会以该日期作为“今日 / 本次查房日期”，避免把历史体温单日期误写成今日 |
 | `doctorSupplement` | String | 否 | 医生补充的本次病历书写要点，通常由桌面端“重新生成”弹窗录入或语音转写得到；AI 生成时作为高优先级补充上下文，但仍不得扩展为未提供事实 |
 | `allowGenerateWithoutExternalBasis` | Boolean | 否 | 桌面端内部重生成控制字段。入院类模板初次自动生成时若缺少补充要点和门诊正文会等待补充；医生点击“直接重新生成”时置为 `true`，表示已确认仅基于住院聚合上下文继续生成 |
@@ -1002,7 +1003,7 @@ HTTP Bridge 受理响应：
 
 说明：
 
-1. 区域化模式下，模板解析结果按 `templateId` 上传到后端 `/v1/client/inpatient-emr/templates/resolve` 缓存；后端命中时返回缓存字段和管理端维护过的字段提示词。非区域化或后端不可用时，桌面端使用本地解析兜底。
+1. 模板解析结果按 `templateId` 上传到后端 `/v1/client/inpatient-emr/templates/resolve` 缓存；后端命中时返回缓存字段和管理端维护过的字段提示词。后端不可用或未返回字段时，桌面端使用确定性模板解析兜底，未知字段分类仍通过服务端 LLM 链路完成。
 2. 若请求携带 `hisContext`，桌面端优先使用该上下文包；否则必须调用 HIS Adapter 的聚合上下文能力。当前 PHIS Adapter 已直连 `api/phis.aiInpatientEmrContextService/buildContext`；不再回退到既有住院登记、医嘱、体温单分散接口。
 3. AI 仅适合生成“病程记录正文”等叙述性字段；患者姓名、住院号、床号、记录时间、医师签名等字段按 HIS / 系统 / 医生签名流程填充。
 4. 生成内容是医生审核草稿，不替代医生签署。
