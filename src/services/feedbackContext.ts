@@ -2,7 +2,7 @@
  * 反馈上下文：缓存 SDK 握手阶段解析出的医生 / 机构 / 科室信息，供 userFeedback / voiceFeedback
  * 在提交时统一带上"反馈医生 + 机构 + 科室"。
  *
- * 数据来源：useEventListeners 的 sdk-handshake 监听器在解析 urt.userRoleDepts 后写入。
+ * 数据来源：useEventListeners 的 sdk-handshake 监听器在解析 ctx.extra.urt 后写入。
  * 不依赖 Pinia / Vue 响应式（feedback payload 只在提交瞬间读取一次）。
  */
 
@@ -10,6 +10,7 @@ export interface FeedbackActor {
   doctorId?: string | null;
   doctorName?: string | null;
   orgCode?: string | null;
+  hisOrgId?: string | null;
   orgName?: string | null;
   deptId?: string | null;
   deptName?: string | null;
@@ -33,6 +34,7 @@ export function setFeedbackActor(actor: FeedbackActor): void {
     doctorId: trim(actor.doctorId),
     doctorName: trim(actor.doctorName),
     orgCode: trim(actor.orgCode),
+    hisOrgId: trim(actor.hisOrgId),
     orgName: trim(actor.orgName),
     deptId: trim(actor.deptId),
     deptName: trim(actor.deptName),
@@ -52,9 +54,10 @@ export function getFeedbackActor(): FeedbackActor {
  *
  * urt 常见结构：
  * {
- *   orgId, orgCode, orgName, hospitalName,
+ *   orgId, orgCode, orgPureName, orgName, hospitalName,
  *   userId / idEmp / idDoctor / idUser,
  *   userName / naDoctor / naEmp,
+ *   deptId / deptName,
  *   userRoleDepts: [{ deptId, naDept, deptName, ... }] | string(JSON)
  * }
  */
@@ -85,20 +88,32 @@ export function resolveFeedbackActorFromUrt(
     ?? trim(urt.orgId)
     ?? trim(fallbackOrgCode);
 
-  const orgName = trim(urt.orgName)
+  const hisOrgId = trim(urt.orgId);
+
+  const orgName = trim(urt.orgPureName)
+    ?? trim(urt.orgName)
     ?? trim(urt.naOrg)
     ?? trim(urt.hospitalName);
 
-  // 尝试从 userRoleDepts 任一层级里取首个 (deptId, deptName) 对
+  // PHIS 顶层 deptId 是当前登录/接诊科室的优先来源；userRoleDepts 仅作兼容兜底。
+  let deptId = trim((urt as any).deptId)
+    ?? trim((urt as any).idDept)
+    ?? trim((urt as any).id_dept)
+    ?? null;
+  let deptName = trim((urt as any).deptName)
+    ?? trim((urt as any).naDept)
+    ?? trim((urt as any).na_dept)
+    ?? trim((urt as any).deptShortName)
+    ?? trim((urt as any).naDeptShort)
+    ?? null;
+
+  // 尝试从 userRoleDepts 任一层级里取首个 (deptId, deptName) 对作为兜底
   // PHIS 实际结构存在多种可能：
   //   1) [{ deptId, deptName | naDept }]
   //   2) "[{...}]" JSON 字符串
   //   3) { "<deptId>": [{ deptId | idDept, deptName | naDept }, ...] }
   //   4) { "<roleKey>": { deptId, deptName } }
   // 这里做深度遍历，找到第一个含科室名称的对象即可
-  let deptId: string | null = null;
-  let deptName: string | null = null;
-
   const rawDepts = urt.userRoleDepts;
   const parsedDepts = (() => {
     if (typeof rawDepts === 'string') {
@@ -156,31 +171,18 @@ export function resolveFeedbackActorFromUrt(
     }
   }
 
-  if (bestDept) {
+  if (bestDept && !deptId) {
     deptId = bestDept.id ?? null;
+  }
+  if (bestDept && !deptName) {
     deptName = bestDept.name ?? null;
-  }
-
-  // 兜底：若 userRoleDepts 没拿到，看 urt 顶层是否直接挂了科室字段
-  if (!deptId) {
-    deptId = trim((urt as any).deptId)
-      ?? trim((urt as any).idDept)
-      ?? trim((urt as any).id_dept)
-      ?? null;
-  }
-  if (!deptName) {
-    deptName = trim((urt as any).deptName)
-      ?? trim((urt as any).naDept)
-      ?? trim((urt as any).na_dept)
-      ?? trim((urt as any).deptShortName)
-      ?? trim((urt as any).naDeptShort)
-      ?? null;
   }
 
   return {
     doctorId,
     doctorName,
     orgCode,
+    hisOrgId,
     orgName,
     deptId,
     deptName,

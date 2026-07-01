@@ -272,6 +272,7 @@ export async function submitConsultationUserLog(input: SubmitConsultationUserLog
       doctorId: actor.doctorId,
       doctorName: actor.doctorName,
       orgCode: actor.orgCode,
+      hisOrgId: actor.hisOrgId,
       orgName: actor.orgName,
       deptId: actor.deptId,
       deptName: actor.deptName,
