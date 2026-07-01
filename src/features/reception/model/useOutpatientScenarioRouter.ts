@@ -2,8 +2,6 @@ import type { Ref } from 'vue';
 import type { HisOutpatientFollowUpContext } from '@/services/his/types';
 import type { AppPatient } from '@/types/appState';
 import { getPatientContextAnchorId } from '@/utils/patientContext';
-import type { ChronicRefillCandidate } from '@features/reception-risk';
-import type { ClinicalResultInput } from '@features/clinical-result';
 import { hasPatientReportedLabOrExamResults } from '../lib/reportedApplyResults';
 import type { ReceptionSessionController } from './useReceptionSessionController';
 import type {
@@ -37,11 +35,7 @@ export interface OutpatientScenarioRouterOptions {
   hasCachedVoiceResult: (patient?: AppPatient | null) => boolean;
   fetchFollowUpContext?: (patient: AppPatient | null) => Promise<HisOutpatientFollowUpContext | null>;
   applyFollowUpContext: (context: HisOutpatientFollowUpContext) => void;
-  generateChronicRefillRecord: (
-    patient: AppPatient,
-    candidate: ChronicRefillCandidate,
-  ) => Promise<ClinicalResultInput>;
-  showGeneratedClinicalResult: (result: ClinicalResultInput) => Promise<void>;
+  openChronicRefillConfirmation: () => Promise<void>;
   resetVoiceSessionState: () => void;
   openOutpatientFollowUp: () => Promise<void>;
   openReportInterpretation: () => Promise<void>;
@@ -57,8 +51,7 @@ export function useOutpatientScenarioRouter(options: OutpatientScenarioRouterOpt
     hasCachedVoiceResult,
     fetchFollowUpContext,
     applyFollowUpContext,
-    generateChronicRefillRecord,
-    showGeneratedClinicalResult,
+    openChronicRefillConfirmation,
     resetVoiceSessionState,
     openOutpatientFollowUp,
     openReportInterpretation,
@@ -89,18 +82,16 @@ export function useOutpatientScenarioRouter(options: OutpatientScenarioRouterOpt
     const patientAnchorId = getPatientContextAnchorId(patient);
     session.setExecutingOpportunity('chronic-refill');
     try {
-      const result = await generateChronicRefillRecord(patient, opportunity.candidate);
+      await openChronicRefillConfirmation();
       if (!isCurrentOpportunity(opportunity, patientAnchorId)) {
         return;
       }
-      await showGeneratedClinicalResult(result);
-      showToast('复诊配药病历草稿已生成，请确认后回写', 'success');
     } catch (error) {
       if (!isCurrentOpportunity(opportunity, patientAnchorId)) {
         return;
       }
-      trackError('generate_chronic_refill_record_failed', error);
-      showToast('复诊配药病历生成失败，请稍后重试', 'error');
+      trackError('open_chronic_refill_confirmation_failed', error);
+      showToast('进入复诊配药确认失败，请稍后重试', 'error');
     } finally {
       if (
         isCurrentOpportunity(opportunity, patientAnchorId)

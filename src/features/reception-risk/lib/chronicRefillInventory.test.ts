@@ -88,7 +88,7 @@ describe('buildChronicRefillInventoryTreatments', () => {
     });
   });
 
-  it('uses structured AI prescription fields when historical medicine has no directions', () => {
+  it('uses AI dose and usage hints but rejects model days when history has no duration', () => {
     const treatments = buildChronicRefillInventoryTreatments([{
       name: '盐酸二甲双胍片',
       spec: '0.25g*60片/瓶',
@@ -126,7 +126,7 @@ describe('buildChronicRefillInventoryTreatments', () => {
       frequencyKey: 'TID',
       route: '口服',
       routeKey: 'PO',
-      days: '14',
+      days: '',
       totalQty: '',
       totalUnit: '',
       reason: '糖尿病慢病续方常规方案',
@@ -167,10 +167,98 @@ describe('buildChronicRefillInventoryTreatments', () => {
       dosage: '',
       dosageUnit: '',
       frequencyKey: 'TID',
-      days: '30',
+      days: '',
       totalQty: '',
       totalUnit: '',
     });
+  });
+
+  it('uses each matched presList medication duration and ignores model 90-day output', () => {
+    const treatments = buildChronicRefillInventoryTreatments([{
+      name: '阿卡波糖片',
+      targetDose: '50',
+      targetDoseUnit: 'mg',
+      frequency: '每日3次',
+      frequencyKey: 'TID',
+      route: '口服',
+      routeKey: 'PO',
+      days: '90',
+    }, {
+      name: '盐酸二甲双胍片',
+      targetDose: '0.25',
+      targetDoseUnit: 'g',
+      frequency: '每日3次',
+      frequencyKey: 'TID',
+      route: '口服',
+      routeKey: 'PO',
+      days: '90',
+    }], [{
+      productId: 'med-acarbose',
+      productName: '阿卡波糖片',
+      spec: '50mg*30片/盒',
+      unit: '盒',
+      availableQuantity: 20,
+      storeIds: ['1760'],
+      storeNames: ['西药房'],
+    }, {
+      productId: 'med-metformin',
+      productName: '盐酸二甲双胍片',
+      spec: '0.25g*60片/瓶',
+      unit: '瓶',
+      availableQuantity: 20,
+      storeIds: ['1760'],
+      storeNames: ['西药房'],
+    }], undefined, {
+      historicalMedications: ['阿卡波糖片', '盐酸二甲双胍片'],
+      historicalMedicationOrders: [{
+        orderId: 'order-acarbose',
+        productId: 'med-acarbose',
+        name: '阿卡波糖片',
+        dose: '50',
+        doseUnit: 'mg',
+        frequency: '每天三次',
+        frequencyKey: 'TID',
+        route: '口服',
+        routeKey: '100',
+        days: '14',
+        totalQty: '2',
+        totalUnit: '盒',
+      }, {
+        orderId: 'order-metformin',
+        productId: 'med-metformin',
+        name: '盐酸二甲双胍片',
+        dose: '0.25',
+        doseUnit: 'g',
+        frequency: '每天三次',
+        frequencyKey: 'TID',
+        route: '口服',
+        routeKey: '100',
+        days: '30',
+        totalQty: '2',
+        totalUnit: '瓶',
+      }],
+    });
+
+    expect(treatments).toEqual([
+      expect.objectContaining({
+        name: '阿卡波糖片',
+        dosage: '50',
+        dosageUnit: 'mg',
+        days: '14',
+        totalQty: '2',
+        totalUnit: '盒',
+        selected: true,
+      }),
+      expect.objectContaining({
+        name: '盐酸二甲双胍片',
+        dosage: '0.25',
+        dosageUnit: 'g',
+        days: '30',
+        totalQty: '2',
+        totalUnit: '瓶',
+        selected: true,
+      }),
+    ]);
   });
 
   it('does not fabricate fixed dosage or duration when prescription fields are unavailable', () => {

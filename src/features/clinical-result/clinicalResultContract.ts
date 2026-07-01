@@ -63,4 +63,5 @@ export interface ClinicalResultInput {
   healthEducation: string;
   outpatientRecord?: OutpatientRecord;
   recommendationPolicy?: ClinicalResultRecommendationPolicy;
+  channel?: 'voice' | 'symptom' | 'chronic-refill';
 }

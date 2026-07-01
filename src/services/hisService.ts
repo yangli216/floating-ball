@@ -319,6 +319,7 @@ export interface HisVisitDetailDiag {
 }
 
 export interface HisVisitDetailOrder {
+  idOrd?: string;
   naOrd?: string;
   desOrd?: string;
   amount?: number;
@@ -331,6 +332,35 @@ export interface HisVisitDetailOrder {
   fgDrug?: string;
   idApplySim?: string;
   idOrdComb?: string;
+  [key: string]: unknown;
+}
+
+export interface HisVisitDetailPrescriptionSub {
+  idPresSub?: string;
+  idPres?: string;
+  idOrd?: string;
+  idMedPro?: string;
+  naMedPro?: string;
+  specSale?: string;
+  doseOnce?: string | number;
+  dose?: string | number;
+  unitDose?: string;
+  unitPre?: string;
+  idFreq?: string;
+  idFreqText?: string;
+  execCount?: string | number;
+  idUsge?: string;
+  idUsgeText?: string;
+  takeDays?: string | number;
+  amount?: string | number;
+  unitSale?: string;
+  idSto?: string;
+  [key: string]: unknown;
+}
+
+export interface HisVisitDetailPrescription {
+  idPres?: string;
+  presSubList?: HisVisitDetailPrescriptionSub[];
   [key: string]: unknown;
 }
 
@@ -363,6 +393,7 @@ export interface HisVisitDetailBody {
   };
   diagList?: HisVisitDetailDiag[];
   orderList?: HisVisitDetailOrder[];
+  presList?: HisVisitDetailPrescription[];
   applyList?: HisVisitDetailApplyGroup[];
   [key: string]: unknown;
 }

@@ -8,7 +8,7 @@
  */
 
 import type { Ref } from 'vue';
-import { getWindowSizeForView, type ViewType } from '@/constants/windowSizes';
+import { getWindowSizeForView } from '@/constants/windowSizes';
 import { analyzePatientRisks } from '@/services/llm';
 import { trackApiCall, trackError } from '@/services/operationTracker';
 import { getHisAdapter } from '@/services/his';
@@ -78,13 +78,11 @@ export interface SessionAssistPayload extends StartConsultationPayload {
 }
 
 export interface ReceptionControllerOptions {
-  currentView: Ref<ViewType>;
-  isWorking: Ref<boolean>;
   currentPatient: Ref<AppPatient | null>;
   receptionSession: ReceptionSessionController;
   showToast: (msg: string, type?: 'success' | 'error' | 'info', duration?: number) => void;
   workMode: {
-    enterWorkMode: (customW?: number, customH?: number) => Promise<void>;
+    openReceptionCapsule: (size: { width: number; height: number }) => Promise<void>;
   };
   resetVoiceSessionState: () => void;
   clearVoiceConsultationCache: (patient?: AppPatient | null) => void;
@@ -265,8 +263,6 @@ async function hydratePatientContextFromHis(
 
 export function useReceptionController(options: ReceptionControllerOptions) {
   const {
-    currentView,
-    isWorking,
     currentPatient,
     receptionSession,
     showToast,
@@ -434,13 +430,8 @@ export function useReceptionController(options: ReceptionControllerOptions) {
   }
 
   async function openReceptionCapsule(): Promise<void> {
-    currentView.value = 'reception-capsule';
     const receptionSize = getWindowSizeForView('reception-capsule');
-    if (!isWorking.value) {
-      await workMode.enterWorkMode(receptionSize.width, receptionSize.height);
-    } else {
-      workMode.enterWorkMode(receptionSize.width, receptionSize.height);
-    }
+    await workMode.openReceptionCapsule(receptionSize);
   }
 
   async function executeReceptionFlow(payload: StartConsultationPayload, quietMode = false): Promise<boolean> {
@@ -512,7 +503,7 @@ export function useReceptionController(options: ReceptionControllerOptions) {
               hasReportInterpretation,
             });
             try {
-              await workMode.enterWorkMode(receptionSize.width, receptionSize.height);
+              await workMode.openReceptionCapsule(receptionSize);
             } catch (error) {
               console.warn('[ReceptionController] Failed to resize reception capsule after opportunity assessment', error);
             }
@@ -613,16 +604,11 @@ export function useReceptionController(options: ReceptionControllerOptions) {
       currentPatient.value = nextPatient;
       receptionSession.startAssessing();
 
-      currentView.value = 'reception-capsule';
       const receptionSize = getWindowSizeForView('reception-capsule', {
         expanded: !!data.risks?.length,
         riskCount: data.risks?.length ?? 0,
       });
-      if (!isWorking.value) {
-        await workMode.enterWorkMode(receptionSize.width, receptionSize.height);
-      } else {
-        void workMode.enterWorkMode(receptionSize.width, receptionSize.height);
-      }
+      await workMode.openReceptionCapsule(receptionSize);
       if (!isReceptionFlowCurrent(flowVersion)) {
         return;
       }
@@ -655,7 +641,7 @@ export function useReceptionController(options: ReceptionControllerOptions) {
           hasFollowUp: Boolean(receptionSession.outpatientFollowUpContext.value),
           hasReportInterpretation: receptionSession.reportInterpretationVisits.value.length > 0,
         });
-        void workMode.enterWorkMode(receptionSize.width, receptionSize.height);
+        void workMode.openReceptionCapsule(receptionSize);
       }
     }
   }

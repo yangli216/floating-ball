@@ -302,6 +302,24 @@ export interface HisPatientInfo {
 /**
  * 历史就诊记录单次摘要
  */
+export interface HisHistoricalMedication {
+  orderId?: string;
+  productId?: string;
+  name: string;
+  spec?: string;
+  dose?: string;
+  doseUnit?: string;
+  frequency?: string;
+  frequencyKey?: string;
+  route?: string;
+  routeKey?: string;
+  days?: string;
+  totalQty?: string;
+  totalUnit?: string;
+  /** 厂商原始处方子项，仅限 Adapter 与诊断排障使用。 */
+  raw?: Record<string, unknown>;
+}
+
 export interface HisVisitRecord {
   /** 历史门诊就诊 ID，供后续按就诊加载报告正文。 */
   visitId?: string;
@@ -317,6 +335,8 @@ export interface HisVisitRecord {
   diagnoses?: string[];
   /** 处方药品列表文本 */
   medications?: string[];
+  /** 历史处方中的中性结构化药品属性。 */
+  medicationOrders?: HisHistoricalMedication[];
   /** 本次历史就诊中已出结果的检验检查申请摘要。 */
   reportedApplications?: HisReportedApplication[];
 }

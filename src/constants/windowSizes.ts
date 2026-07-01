@@ -28,6 +28,11 @@ export interface WindowSizeOptions {
   voiceStage?: VoiceInteractionWindowStage;
 }
 
+export interface WindowSizeConstraints {
+  minWidth: number;
+  minHeight: number;
+}
+
 /**
  * 视图类型定义
  * 对应 App.vue 中的 currentView 状态
@@ -38,6 +43,7 @@ export type ViewType =
   | 'consultation'
   | 'risk-alert'
   | 'voice-interaction'
+  | 'chronic-refill-confirmation'
   | 'voice-consultation'
   | 'treatment-plan'
   | 'outpatient-follow-up'
@@ -84,14 +90,17 @@ export const WINDOW_SIZES = {
   /** 语音胶囊展开编辑：360×248px */
   CAPSULE_EXPANDED: { width: 360, height: 248 } as WindowSize,
 
-  /** 风险评估卡片：340×92px，仅展示头部（头像+姓名+状态徽章） */
+  /** 风险评估卡片：280×92px，仅展示头部（头像+姓名+状态徽章） */
   RISK_CARD: { width: 280, height: 92 } as WindowSize,
 
-  /** 风险评估卡片展开：340×360px */
-  RISK_CARD_EXPANDED: { width: 280, height: 360 } as WindowSize,
+  /** 风险评估卡片单条详情基线：280×196px；更多风险按行增高 */
+  RISK_CARD_EXPANDED: { width: 280, height: 196 } as WindowSize,
 
   /** 语音问诊页面：1080×720px */
   VOICE_CONSULTATION: { width: 1080, height: 720 } as WindowSize,
+
+  /** 复诊配药确认页：820×720px，容纳动态确认项与语音/文字补充区 */
+  CHRONIC_REFILL_CONFIRMATION: { width: 820, height: 720 } as WindowSize,
 
   /** 独立诊疗方案推荐：1080×720px */
   TREATMENT_PLAN: { width: 1080, height: 720 } as WindowSize,
@@ -114,6 +123,34 @@ export const WINDOW_SIZES = {
   /** 基础数据缓存管理：980×640px */
   MEDICAL_CACHE: { width: 980, height: 640 } as WindowSize,
 } as const;
+
+const WINDOW_SIZE_CONSTRAINTS: Partial<Record<ViewType, WindowSizeConstraints>> = {
+  chat: { minWidth: WINDOW_SIZES.WORK.width, minHeight: WINDOW_SIZES.WORK.height },
+  settings: { minWidth: WINDOW_SIZES.WORK.width, minHeight: WINDOW_SIZES.WORK.height },
+  consultation: { minWidth: WINDOW_SIZES.CONSULTATION.width, minHeight: WINDOW_SIZES.CONSULTATION.height },
+  'chronic-refill-confirmation': { minWidth: 720, minHeight: 620 },
+  'voice-consultation': { minWidth: 900, minHeight: 620 },
+  'treatment-plan': { minWidth: 900, minHeight: 620 },
+  'outpatient-follow-up': { minWidth: 1000, minHeight: 620 },
+  'report-interpretation': { minWidth: 1000, minHeight: 620 },
+  'inpatient-emr': { minWidth: 900, minHeight: 620 },
+  'differential-diagnosis': { minWidth: 360, minHeight: 560 },
+  'his-log': { minWidth: 760, minHeight: 520 },
+  'medical-cache': { minWidth: 760, minHeight: 520 },
+  'knowledge-base': { minWidth: WINDOW_SIZES.WORK.width, minHeight: WINDOW_SIZES.WORK.height },
+};
+
+export function getWindowSizeConstraints(view: ViewType): WindowSizeConstraints {
+  return WINDOW_SIZE_CONSTRAINTS[view] ?? {
+    minWidth: WINDOW_SIZES.BALL.width,
+    minHeight: WINDOW_SIZES.BALL.height,
+  };
+}
+
+/** 大工作台不需要在整个透明原生窗口上持续做玻璃模糊合成。 */
+export function isLargeWorkspaceView(view: ViewType): boolean {
+  return getWindowSizeForView(view).width >= 900 && !isCapsuleView(view);
+}
 
 /**
  * 根据视图类型获取对应的窗口尺寸
@@ -179,6 +216,9 @@ export function getWindowSizeForView(view: ViewType, options?: WindowSizeOptions
     case 'voice-consultation':
       return WINDOW_SIZES.VOICE_CONSULTATION;
 
+    case 'chronic-refill-confirmation':
+      return WINDOW_SIZES.CHRONIC_REFILL_CONFIRMATION;
+
     case 'treatment-plan':
       return WINDOW_SIZES.TREATMENT_PLAN;
 
@@ -216,6 +256,7 @@ export function supportsPersistentWindowSize(view: ViewType): boolean {
   return view === 'chat'
     || view === 'settings'
     || view === 'consultation'
+    || view === 'chronic-refill-confirmation'
     || view === 'voice-consultation'
     || view === 'treatment-plan'
     || view === 'outpatient-follow-up'

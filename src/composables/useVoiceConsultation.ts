@@ -11,9 +11,7 @@
  */
 
 import { ref, type Ref } from 'vue';
-import type { Window as TauriWindow } from '@tauri-apps/api/window';
 import { invoke } from '@tauri-apps/api/core';
-import type { ViewType } from '@/constants/windowSizes';
 import { trackClick, trackError, trackRecommendationAction } from '@services/operationTracker';
 import type { AppPatient } from '@/types/appState';
 import {
@@ -49,22 +47,14 @@ export type { VoiceEditorSnapshot } from '@features/voice-consultation';
  * 语音问诊配置参数
  */
 export interface VoiceConsultationOptions {
-  /** Tauri 窗口实例引用 */
-  appWindow: Ref<TauriWindow | null>;
-  /** 当前视图 */
-  currentView: Ref<ViewType>;
   /** 当前患者信息 */
   currentPatient: Ref<AppPatient | null>;
   /** Toast 提示函数 */
   showToast: (msg: string, type?: 'success' | 'error' | 'info', duration?: number) => void;
-  /** 窗口管理 API */
-  windowMgmt: {
-    smartExpand: (width: number, height: number) => Promise<void>;
-    resizeWindowForView: (view: ViewType) => Promise<void>;
-  };
+  /** 打开共享语音结果页 */
+  openVoiceConsultation: () => Promise<void>;
   /** 工作模式 API */
   workMode: {
-    enterWorkMode: (customW?: number, customH?: number) => Promise<void>;
     exitWork: (sessionStatus?: 'completed' | 'cancelled' | 'error') => Promise<void>;
   };
 }
@@ -78,11 +68,9 @@ export interface VoiceConsultationOptions {
  * @example
  * ```typescript
  * const voiceConsultation = useVoiceConsultation({
- *   appWindow,
- *   currentView,
  *   currentPatient,
  *   showToast,
- *   windowMgmt,
+ *   openVoiceConsultation,
  *   workMode,
  * });
  *
@@ -95,13 +83,13 @@ export interface VoiceConsultationOptions {
  */
 export function useVoiceConsultation(options: VoiceConsultationOptions) {
   const {
-    currentView,
     currentPatient,
     showToast,
+    openVoiceConsultation,
     workMode,
   } = options;
 
-  const { enterWorkMode, exitWork } = workMode;
+  const { exitWork } = workMode;
 
   const intentRecognition = useVoiceIntentRecognition();
   const intentResult = ref<ClinicalResultInput | null>(null);
@@ -154,10 +142,9 @@ export function useVoiceConsultation(options: VoiceConsultationOptions) {
   async function showClinicalResult(result: ClinicalResultInput, source: 'llm' | 'cache'): Promise<void> {
     intentSource.value = source;
     intentResult.value = cloneClinicalResultInput(result);
-    currentView.value = 'voice-consultation';
 
     try {
-      await enterWorkMode();
+      await openVoiceConsultation();
     } catch (e) {
       console.error('[VoiceConsultation] Failed to enter preferred voice-consultation size:', e);
     }

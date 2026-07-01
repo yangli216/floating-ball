@@ -139,7 +139,7 @@ type TreatmentAttributeOption = Pick<UsageOption, 'key' | 'text'> & Partial<Pick
 const props = withDefaults(defineProps<{
   initialPatientData?: AppPatient;
   intentResult: ClinicalResultInput | VoiceIntentResult | null;
-  channel?: 'voice' | 'symptom';
+  channel?: 'voice' | 'symptom' | 'chronic-refill';
   showPatientHeader?: boolean;
   /**
    * intentResult 的来源。

@@ -1,4 +1,8 @@
-import type { HisPatientHistory, HisVisitRecord } from '@/services/his/types';
+import type {
+  HisHistoricalMedication,
+  HisPatientHistory,
+  HisVisitRecord,
+} from '@/services/his/types';
 
 export interface ChronicRefillCandidate {
   diagnosis: string;
@@ -7,6 +11,8 @@ export interface ChronicRefillCandidate {
   /** Normalized chronic groups used only for eligibility and routing. */
   diagnosisGroups: string[];
   medications: string[];
+  /** 按最近就诊优先保留的同药结构化历史处方。 */
+  medicationOrders?: HisHistoricalMedication[];
   chronicVisitCount: number;
   chronicVisits: HisVisitRecord[];
   diagnosisEvidenceText: string;
@@ -97,6 +103,7 @@ function findChronicDiagnosis(value: string): ChronicDiagnosisMatch | null {
 
 function normalizeMedicationName(value: string): string {
   return value
+    .replace(/^[\s☆★*·•]+/u, '')
     .replace(/[（(].*?[）)]/g, '')
     .replace(/\d+(?:\.\d+)?\s*(?:mg|g|ml|片|粒|支|盒|瓶|袋)/gi, '')
     .replace(/\s+/g, '')
@@ -142,7 +149,13 @@ export function assessChronicRefillCandidate(
     .map((groupName) => preferredDiagnosisByGroup.get(groupName)?.diagnosisName || groupName);
 
   const medications = new Map<string, string>();
+  const medicationOrders = new Map<string, HisHistoricalMedication>();
   chronicVisits.forEach((visit) => {
+    (visit.medicationOrders || []).forEach((medication) => {
+      const normalized = normalizeMedicationName(medication.name);
+      if (!normalized || medicationOrders.has(normalized)) return;
+      medicationOrders.set(normalized, medication);
+    });
     (visit.medications || []).forEach((medication) => {
       const normalized = normalizeMedicationName(medication);
       if (!normalized) return;
@@ -152,6 +165,7 @@ export function assessChronicRefillCandidate(
     });
   });
   const chronicMedications = Array.from(medications.values()).slice(0, 8);
+  const chronicMedicationOrders = Array.from(medicationOrders.values()).slice(0, 8);
 
   const diagnosis = chronicDiagnoses[0];
   const diagnosisEvidenceText = `近期历史就诊记录有“${chronicDiagnoses.join('、')}”诊断`;
@@ -164,6 +178,7 @@ export function assessChronicRefillCandidate(
     diagnoses: chronicDiagnoses,
     diagnosisGroups,
     medications: chronicMedications,
+    medicationOrders: chronicMedicationOrders.length > 0 ? chronicMedicationOrders : undefined,
     chronicVisitCount: chronicVisits.length,
     chronicVisits,
     diagnosisEvidenceText,

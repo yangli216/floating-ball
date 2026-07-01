@@ -9,18 +9,21 @@
 
 import { ref, type Ref } from 'vue';
 import type { Window as TauriWindow, Monitor } from '@tauri-apps/api/window';
-import { PhysicalPosition, currentMonitor } from '@tauri-apps/api/window';
+import { PhysicalPosition, currentMonitor, monitorFromPoint } from '@tauri-apps/api/window';
 import { LogicalSize } from '@tauri-apps/api/dpi';
+import { invoke } from '@tauri-apps/api/core';
 import { ANIMATION, WINDOW_SIZE_TOLERANCE } from '@/constants/animation';
 import {
   getWindowSizeForView,
-  isLargePanelView,
+  getWindowSizeConstraints,
+  isCapsuleView,
   supportsPersistentWindowSize,
   type ViewType,
   type WindowSize,
   WINDOW_SIZES,
 } from '@/constants/windowSizes';
 import type { AppStore } from '@/types/appState';
+import { resolveWindowGeometry } from './windowGeometry';
 
 /**
  * 位置坐标类型
@@ -28,6 +31,13 @@ import type { AppStore } from '@/types/appState';
 export interface Position {
   x: number;
   y: number;
+}
+
+export interface ResizeWindowOptions {
+  preferredPosition?: Position | null;
+  resizable?: boolean;
+  minSize?: WindowSize | null;
+  targetMonitor?: Monitor | null;
 }
 
 /**
@@ -98,22 +108,8 @@ export function useWindowManagement(options: WindowManagementOptions) {
       return false;
     }
 
-    // 旧版聊天窗口曾保存过 920x360 一类横向扁窗，恢复后会挤压欢迎区和输入区。
-    if (view === 'chat') {
-      return size.width >= WINDOW_SIZES.WORK.width && size.height >= WINDOW_SIZES.WORK.height;
-    }
-
-    if (view === 'consultation') {
-      return size.width >= WINDOW_SIZES.CONSULTATION.width
-        && size.height >= WINDOW_SIZES.CONSULTATION.height;
-    }
-
-    // 大面板视图不应回退到聊天面板/胶囊这类明显错误的小尺寸。
-    if (isLargePanelView(view)) {
-      return size.width > WINDOW_SIZES.WORK.width && size.height > WINDOW_SIZES.WORK.height;
-    }
-
-    return true;
+    const constraints = getWindowSizeConstraints(view);
+    return size.width >= constraints.minWidth && size.height >= constraints.minHeight;
   };
 
   const getSavedWindowSizes = async (): Promise<Partial<Record<ViewType, WindowSize>>> => {
@@ -229,6 +225,37 @@ export function useWindowManagement(options: WindowManagementOptions) {
     }
   };
 
+  const resolveTargetMonitor = async (
+    preferredPosition?: Position | null,
+    targetMonitor?: Monitor | null,
+  ): Promise<Monitor | null> => {
+    if (targetMonitor) return targetMonitor;
+
+    if (preferredPosition) {
+      try {
+        const preferredMonitor = await monitorFromPoint(preferredPosition.x, preferredPosition.y);
+        if (preferredMonitor) {
+          cachedMonitor.value = preferredMonitor;
+          return preferredMonitor;
+        }
+      } catch (error) {
+        console.warn('[WindowMgmt] Failed to resolve monitor from preferred position:', error);
+      }
+    }
+
+    try {
+      const activeMonitor = await currentMonitor();
+      if (activeMonitor) {
+        cachedMonitor.value = activeMonitor;
+        return activeMonitor;
+      }
+    } catch (error) {
+      console.warn('[WindowMgmt] Failed to query current monitor:', error);
+    }
+
+    return cachedMonitor.value;
+  };
+
   // ========== 智能位置调整 ==========
 
   /**
@@ -256,46 +283,21 @@ export function useWindowManagement(options: WindowManagementOptions) {
     if (!appWindow.value) return;
 
     try {
-      // 显示器获取优先级：提供的 > 缓存 > 实时查询
-      const monitor = targetMonitor ?? cachedMonitor.value ?? await currentMonitor();
+      // 实时显示器优先；缓存只在系统查询失败时降级使用，避免跨屏 DPI 沿用旧边界。
+      const monitor = await resolveTargetMonitor(null, targetMonitor);
 
       if (!monitor) {
         console.warn('[WindowMgmt] smartExpand: No monitor found');
         return;
       }
 
-      const monitorSize = monitor.size;
-      const monitorPos = monitor.position;
       const windowPos = await appWindow.value.outerPosition();
-      const scaleFactor = await appWindow.value.scaleFactor();
-
-      // 转换为物理像素进行计算
-      const targetPhysicalW = Math.round(targetW * scaleFactor);
-      const targetPhysicalH = Math.round(targetH * scaleFactor);
-
-      let newX = windowPos.x;
-      let newY = windowPos.y;
-
-      // 四边界检查与调整
-      // 1. 右边界
-      if (newX + targetPhysicalW > monitorPos.x + monitorSize.width) {
-        newX = monitorPos.x + monitorSize.width - targetPhysicalW;
-      }
-
-      // 2. 下边界
-      if (newY + targetPhysicalH > monitorPos.y + monitorSize.height) {
-        newY = monitorPos.y + monitorSize.height - targetPhysicalH;
-      }
-
-      // 3. 左边界（防止调整后超出左边）
-      if (newX < monitorPos.x) {
-        newX = monitorPos.x;
-      }
-
-      // 4. 上边界
-      if (newY < monitorPos.y) {
-        newY = monitorPos.y;
-      }
+      const geometry = resolveWindowGeometry({
+        targetSize: { width: targetW, height: targetH },
+        currentPosition: windowPos,
+        monitor,
+      });
+      const { x: newX, y: newY } = geometry.physicalPosition;
 
       // 仅在需要时调整位置
       if (newX !== windowPos.x || newY !== windowPos.y) {
@@ -380,23 +382,90 @@ export function useWindowManagement(options: WindowManagementOptions) {
    * await resizeWorkWindow(1200, 900);
    * ```
    */
-  const resizeWorkWindow = async (targetW: number, targetH: number): Promise<void> => {
+  const resizeWorkWindow = async (
+    targetW: number,
+    targetH: number,
+    options: ResizeWindowOptions = {},
+  ): Promise<void> => {
     if (!appWindow.value) return;
 
     try {
       await appWindow.value.setResizable(true);
-      // 先调整位置，再设置大小（避免窗口闪动到其他显示器）
-      await smartExpand(targetW, targetH);
-      await appWindow.value.setSize(new LogicalSize(targetW, targetH));
-      await waitForWindowSize(targetW, targetH);
+      // 先清理上一视图的最小尺寸，否则大工作台约束会阻止胶囊/小球收缩。
+      await appWindow.value.setMinSize(null);
+      const [windowPos, currentSize, currentScale, monitor] = await Promise.all([
+        appWindow.value.outerPosition(),
+        appWindow.value.innerSize(),
+        appWindow.value.scaleFactor(),
+        resolveTargetMonitor(options.preferredPosition, options.targetMonitor),
+      ]);
+
+      if (!monitor) {
+        await appWindow.value.setSize(new LogicalSize(targetW, targetH));
+        await waitForWindowSize(targetW, targetH);
+        if (options.minSize) {
+          await appWindow.value.setMinSize(new LogicalSize(
+            Math.min(options.minSize.width, targetW),
+            Math.min(options.minSize.height, targetH),
+          ));
+        }
+        await appWindow.value.setResizable(options.resizable ?? true);
+        return;
+      }
+
+      const geometry = resolveWindowGeometry({
+        targetSize: { width: targetW, height: targetH },
+        currentPosition: windowPos,
+        preferredPosition: options.preferredPosition,
+        monitor,
+      });
+      const targetPhysicalSize = {
+        width: Math.round(geometry.logicalSize.width * monitor.scaleFactor),
+        height: Math.round(geometry.logicalSize.height * monitor.scaleFactor),
+      };
+      const isShrinking = targetPhysicalSize.width <= currentSize.width
+        && targetPhysicalSize.height <= currentSize.height;
+      if (geometry.wasSizeClamped) {
+        console.info('[WindowMgmt] Clamped window size to current work area:', {
+          requested: { width: targetW, height: targetH },
+          applied: geometry.logicalSize,
+          monitorScaleFactor: monitor.scaleFactor,
+        });
+      }
+
+      await invoke('apply_main_window_geometry', {
+        x: geometry.physicalPosition.x,
+        y: geometry.physicalPosition.y,
+        logicalWidth: geometry.logicalSize.width,
+        logicalHeight: geometry.logicalSize.height,
+        sizeFirst: isShrinking,
+      });
+
+      await waitForWindowSize(geometry.logicalSize.width, geometry.logicalSize.height);
+      if (options.minSize) {
+        await appWindow.value.setMinSize(new LogicalSize(
+          Math.min(options.minSize.width, geometry.logicalSize.width),
+          Math.min(options.minSize.height, geometry.logicalSize.height),
+        ));
+      }
+      await appWindow.value.setResizable(options.resizable ?? true);
+
+      if (Math.abs(currentScale - monitor.scaleFactor) > 0.01) {
+        cachedMonitor.value = monitor;
+      }
     } catch (err) {
       console.warn('[WindowMgmt] resizeWorkWindow failed:', err);
+      throw err;
     }
   };
 
   const resizeWindowForView = async (view: ViewType): Promise<void> => {
     const preferredSize = await getPreferredWindowSize(view);
-    await resizeWorkWindow(preferredSize.width, preferredSize.height);
+    const constraints = getWindowSizeConstraints(view);
+    await resizeWorkWindow(preferredSize.width, preferredSize.height, {
+      minSize: { width: constraints.minWidth, height: constraints.minHeight },
+      resizable: !isCapsuleView(view),
+    });
   };
 
   // ========== 窗口移动监听 ==========

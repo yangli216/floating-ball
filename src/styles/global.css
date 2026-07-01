@@ -52,17 +52,3 @@ body,
 .skip-link:focus {
   top: 0;
 }
-
-/* ========== 过渡遮罩 ========== */
-
-/**
- * 过渡遮罩层
- * 用于柔化窗口尺寸瞬变，提供更平滑的视觉体验
- */
-.transition-mask {
-  position: absolute;
-  inset: 0;
-  background: white;
-  opacity: 0;
-  pointer-events: none;
-}

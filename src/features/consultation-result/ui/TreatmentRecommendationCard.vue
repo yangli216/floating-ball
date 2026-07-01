@@ -24,7 +24,7 @@
                 <FactCheckHighlight :issue="issue">
                   <span class="card-title">{{ rec.name }}</span>
                 </FactCheckHighlight>
-                <span v-if="spec" class="meta-token">{{ spec }}</span>
+                <span v-if="spec" class="meta-token worklist-spec-text">{{ spec }}</span>
                 <span
                   v-if="reasonDisplay"
                   class="reason-tooltip-trigger"
@@ -143,7 +143,7 @@
                 <FactCheckHighlight :issue="issue">
                   <span class="card-title">{{ rec.name }}</span>
                 </FactCheckHighlight>
-                <span v-if="spec" class="meta-token">{{ spec }}</span>
+                <span v-if="spec" class="meta-token default-spec-text">{{ spec }}</span>
                 <span
                   v-if="reasonDisplay"
                   class="reason-tooltip-trigger"
@@ -687,6 +687,8 @@ const emit = defineEmits<{
   max-width: min(240px, 100%);
   overflow: hidden;
   text-overflow: ellipsis;
+  color: #475569;
+  font-weight: 500;
 }
 
 .worklist-secondary-row {
@@ -700,7 +702,7 @@ const emit = defineEmits<{
 .worklist-inline-text {
   font-size: 11.5px;
   line-height: 1.25;
-  color: #64748b;
+  color: #1e293b !important;
 }
 
 .worklist-inline-origin {
@@ -848,6 +850,16 @@ const emit = defineEmits<{
   white-space: nowrap;
 }
 
+.worklist-spec-text {
+  color: #334155 !important;
+  font-weight: 600 !important;
+}
+
+.default-spec-text {
+  color: #475569 !important;
+  font-weight: 500 !important;
+}
+
 .match-token {
   display: inline-flex;
   align-items: center;
@@ -890,7 +902,7 @@ const emit = defineEmits<{
   background: transparent;
   text-align: left;
   font-size: var(--voice-font-min);
-  color: var(--voice-text-muted);
+  color: #334155 !important;
   line-height: 1.5;
   white-space: nowrap;
   overflow: hidden;

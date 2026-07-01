@@ -1,0 +1,193 @@
+import { nextTick, ref, type Ref } from 'vue';
+import { ANIMATION } from '@/constants/animation';
+import {
+  getVoiceInteractionWindowSize,
+  getWindowSizeConstraints,
+  isCapsuleView,
+  WINDOW_SIZES,
+  type ViewType,
+  type VoiceInteractionWindowStage,
+  type WindowSize,
+} from '@/constants/windowSizes';
+import type { Position, ResizeWindowOptions } from './useWindowManagement';
+import type { useWindowManagement } from './useWindowManagement';
+
+export interface WindowTransitionCoordinatorOptions {
+  currentView: Ref<ViewType>;
+  isWorking: Ref<boolean>;
+  transitioning: Ref<boolean>;
+  windowMgmt: ReturnType<typeof useWindowManagement>;
+}
+
+export interface WindowViewTransitionOptions {
+  size?: WindowSize;
+  preferredPosition?: Position | null;
+  resizable?: boolean;
+  fade?: boolean;
+  commitViewState?: () => void | Promise<void>;
+}
+
+export interface WindowBallTransitionOptions {
+  preferredPosition?: Position | null;
+  commitBallState: () => void | Promise<void>;
+}
+
+function nextVisualFrame(): Promise<void> {
+  if (typeof requestAnimationFrame !== 'function') {
+    return Promise.resolve();
+  }
+
+  return new Promise((resolve) => {
+    requestAnimationFrame(() => resolve());
+  });
+}
+
+export function useWindowTransitionCoordinator(options: WindowTransitionCoordinatorOptions) {
+  const { currentView, isWorking, transitioning, windowMgmt } = options;
+  const contentVisible = ref(true);
+  let latestRequestId = 0;
+  let transitionTail: Promise<void> = Promise.resolve();
+  let terminalBallPending = false;
+
+  const getFadeDelay = (): number => {
+    if (typeof window !== 'undefined' && window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+      return 0;
+    }
+    return ANIMATION.CONTENT_FADE_MS;
+  };
+
+  const hideContent = async (): Promise<void> => {
+    if (!contentVisible.value) return;
+    contentVisible.value = false;
+    const delay = getFadeDelay();
+    if (delay > 0) {
+      await new Promise<void>((resolve) => setTimeout(resolve, delay));
+    }
+  };
+
+  const showContent = async (): Promise<void> => {
+    await nextTick().catch((error) => {
+      console.warn('[WindowTransition] Vue flush failed before showing content:', error);
+    });
+    await nextVisualFrame();
+    contentVisible.value = true;
+  };
+
+  const enqueueLatest = (task: (requestId: number) => Promise<void>): Promise<void> => {
+    const requestId = ++latestRequestId;
+    const run = transitionTail
+      .catch(() => undefined)
+      .then(async () => {
+        if (requestId !== latestRequestId) return;
+        await task(requestId);
+      });
+
+    transitionTail = run.catch((error) => {
+      console.warn('[WindowTransition] Transition failed:', error);
+    });
+    return run;
+  };
+
+  const applyGeometry = async (
+    targetSize: WindowSize,
+    resizeOptions: ResizeWindowOptions,
+  ): Promise<void> => {
+    await windowMgmt.resizeWorkWindow(targetSize.width, targetSize.height, resizeOptions);
+  };
+
+  const transitionToView = (
+    targetView: ViewType,
+    transitionOptions: WindowViewTransitionOptions = {},
+  ): Promise<void> => {
+    // 显式打开新视图可以结束球态终态；普通阶段 resize 不能。
+    terminalBallPending = false;
+    return enqueueLatest(async (requestId) => {
+      transitioning.value = true;
+      const shouldFade = transitionOptions.fade !== false;
+
+      try {
+        if (shouldFade) await hideContent();
+        if (requestId !== latestRequestId) return;
+
+        const targetSize = transitionOptions.size
+          ?? await windowMgmt.getPreferredWindowSize(targetView);
+        const constraints = getWindowSizeConstraints(targetView);
+        await applyGeometry(targetSize, {
+          minSize: { width: constraints.minWidth, height: constraints.minHeight },
+          preferredPosition: transitionOptions.preferredPosition,
+          resizable: transitionOptions.resizable ?? !isCapsuleView(targetView),
+        });
+        if (requestId !== latestRequestId) return;
+
+        currentView.value = targetView;
+        await transitionOptions.commitViewState?.();
+        await showContent();
+      } finally {
+        if (requestId === latestRequestId) {
+          contentVisible.value = true;
+          transitioning.value = false;
+        }
+      }
+    });
+  };
+
+  const transitionToBall = (
+    transitionOptions: WindowBallTransitionOptions,
+  ): Promise<void> => {
+    terminalBallPending = true;
+    return enqueueLatest(async (requestId) => {
+      transitioning.value = true;
+
+      try {
+        await hideContent();
+        if (requestId !== latestRequestId) return;
+
+        await applyGeometry(WINDOW_SIZES.BALL, {
+          minSize: WINDOW_SIZES.BALL,
+          preferredPosition: transitionOptions.preferredPosition,
+          resizable: false,
+        });
+        if (requestId !== latestRequestId) return;
+
+        await transitionOptions.commitBallState();
+        await showContent();
+      } finally {
+        if (requestId === latestRequestId) {
+          terminalBallPending = false;
+          contentVisible.value = true;
+          transitioning.value = false;
+        }
+      }
+    });
+  };
+
+  const resizeCurrentView = (
+    targetSize: WindowSize,
+    transitionOptions: Omit<WindowViewTransitionOptions, 'size'> = {},
+  ): Promise<void> => {
+    if (terminalBallPending || !isWorking.value) {
+      return Promise.resolve();
+    }
+
+    return transitionToView(currentView.value, {
+      ...transitionOptions,
+      size: targetSize,
+    });
+  };
+
+  const resizeVoiceInteractionStage = (
+    stage: VoiceInteractionWindowStage,
+  ): Promise<void> => resizeCurrentView(getVoiceInteractionWindowSize(stage), {
+    resizable: false,
+  });
+
+  return {
+    contentVisible,
+    hideContent,
+    showContent,
+    transitionToView,
+    transitionToBall,
+    resizeCurrentView,
+    resizeVoiceInteractionStage,
+  };
+}

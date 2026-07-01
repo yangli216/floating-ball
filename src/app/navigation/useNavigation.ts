@@ -10,28 +10,23 @@
  */
 
 import { type Ref } from 'vue';
-import type { Window as TauriWindow } from '@tauri-apps/api/window';
 import { getWindowSizeForView, type ViewType } from '@/constants/windowSizes';
 import { trackViewChange } from '@/services/operationTracker';
 import type { AppPatient } from '@/types/appState';
+import type { useWindowTransitionCoordinator } from '@app/shell/useWindowTransitionCoordinator';
 
 /**
  * 导航管理配置参数
  */
 export interface NavigationOptions {
-  /** Tauri 窗口实例引用 */
-  appWindow: Ref<TauriWindow | null>;
   /** 当前视图 */
   currentView: Ref<ViewType>;
   /** 是否处于工作模式 */
   isWorking: Ref<boolean>;
   /** 当前患者信息 */
   currentPatient: Ref<AppPatient | null>;
-  /** 窗口管理 API */
-  windowMgmt: {
-    smartExpand: (width: number, height: number) => Promise<void>;
-    resizeWindowForView: (view: ViewType) => Promise<void>;
-  };
+  /** 窗口内容与几何过渡协调器 */
+  windowTransition: ReturnType<typeof useWindowTransitionCoordinator>;
   /** 工作模式 API */
   workMode: {
     enterWorkMode: (customW?: number, customH?: number) => Promise<void>;
@@ -47,11 +42,10 @@ export interface NavigationOptions {
  * @example
  * ```typescript
  * const navigation = useNavigation({
- *   appWindow,
  *   currentView,
  *   isWorking,
  *   currentPatient,
- *   windowMgmt,
+ *   windowTransition,
  *   workMode,
  * });
  *
@@ -67,12 +61,21 @@ export function useNavigation(options: NavigationOptions) {
     currentView,
     isWorking,
     currentPatient,
-    windowMgmt,
+    windowTransition,
     workMode,
   } = options;
 
-  const { resizeWindowForView } = windowMgmt;
   const { enterWorkMode } = workMode;
+
+  async function openView(view: ViewType): Promise<void> {
+    if (!isWorking.value) {
+      currentView.value = view;
+      await enterWorkMode();
+      return;
+    }
+
+    await windowTransition.transitionToView(view);
+  }
 
   // ========== 基础导航 ==========
 
@@ -81,12 +84,7 @@ export function useNavigation(options: NavigationOptions) {
    */
   async function openSettings(): Promise<void> {
     trackViewChange(currentView.value, 'settings');
-    currentView.value = 'settings';
-    if (!isWorking.value) {
-      await enterWorkMode();
-    } else {
-      await resizeWindowForView('settings');
-    }
+    await openView('settings');
   }
 
   /**
@@ -94,12 +92,7 @@ export function useNavigation(options: NavigationOptions) {
    */
   async function openChat(): Promise<void> {
     trackViewChange(currentView.value, 'chat');
-    currentView.value = 'chat';
-    if (!isWorking.value) {
-      await enterWorkMode();
-    } else {
-      await resizeWindowForView('chat');
-    }
+    await openView('chat');
   }
 
   /**
@@ -107,12 +100,7 @@ export function useNavigation(options: NavigationOptions) {
    */
   async function openAnalytics(): Promise<void> {
     trackViewChange(currentView.value, 'analytics');
-    currentView.value = 'analytics';
-    if (!isWorking.value) {
-      await enterWorkMode();
-    } else {
-      await resizeWindowForView('analytics');
-    }
+    await openView('analytics');
   }
 
   // ========== 业务导航 ==========
@@ -122,12 +110,7 @@ export function useNavigation(options: NavigationOptions) {
    */
   async function openHisIntegrationLog(): Promise<void> {
     trackViewChange(currentView.value, 'his-log');
-    currentView.value = 'his-log';
-    if (!isWorking.value) {
-      await enterWorkMode();
-    } else {
-      await resizeWindowForView('his-log');
-    }
+    await openView('his-log');
   }
 
 
@@ -136,12 +119,7 @@ export function useNavigation(options: NavigationOptions) {
    */
   async function openMedicalCatalogCache(): Promise<void> {
     trackViewChange(currentView.value, 'medical-cache');
-    currentView.value = 'medical-cache';
-    if (!isWorking.value) {
-      await enterWorkMode();
-    } else {
-      await resizeWindowForView('medical-cache');
-    }
+    await openView('medical-cache');
   }
 
   /**
@@ -149,12 +127,7 @@ export function useNavigation(options: NavigationOptions) {
    */
   async function openConsultation(): Promise<void> {
     trackViewChange(currentView.value, 'consultation', { hasPatient: !!currentPatient.value });
-    currentView.value = 'consultation';
-    if (!isWorking.value) {
-      await enterWorkMode();
-    } else {
-      await resizeWindowForView('consultation');
-    }
+    await openView('consultation');
   }
 
   /**
@@ -162,12 +135,7 @@ export function useNavigation(options: NavigationOptions) {
    */
   async function openKnowledgeBase(): Promise<void> {
     trackViewChange(currentView.value, 'knowledge-base', {});
-    currentView.value = 'knowledge-base';
-    if (!isWorking.value) {
-      await enterWorkMode();
-    } else {
-      await resizeWindowForView('knowledge-base');
-    }
+    await openView('knowledge-base');
   }
 
   /**
@@ -177,12 +145,14 @@ export function useNavigation(options: NavigationOptions) {
     trackViewChange(currentView.value, 'voice-consultation', {
       patientId: currentPatient.value?.patientId,
     });
-    currentView.value = 'voice-consultation';
-    if (!isWorking.value) {
-      await enterWorkMode();
-    } else {
-      await resizeWindowForView('voice-consultation');
-    }
+    await openView('voice-consultation');
+  }
+
+  async function openChronicRefillConfirmation(): Promise<void> {
+    trackViewChange(currentView.value, 'chronic-refill-confirmation', {
+      patientId: currentPatient.value?.patientId,
+    });
+    await openView('chronic-refill-confirmation');
   }
 
   /**
@@ -192,36 +162,21 @@ export function useNavigation(options: NavigationOptions) {
     trackViewChange(currentView.value, 'treatment-plan', {
       patientId: currentPatient.value?.patientId,
     });
-    currentView.value = 'treatment-plan';
-    if (!isWorking.value) {
-      await enterWorkMode();
-    } else {
-      await resizeWindowForView('treatment-plan');
-    }
+    await openView('treatment-plan');
   }
 
   async function openOutpatientFollowUp(): Promise<void> {
     trackViewChange(currentView.value, 'outpatient-follow-up', {
       patientId: currentPatient.value?.patientId,
     });
-    currentView.value = 'outpatient-follow-up';
-    if (!isWorking.value) {
-      await enterWorkMode();
-    } else {
-      await resizeWindowForView('outpatient-follow-up');
-    }
+    await openView('outpatient-follow-up');
   }
 
   async function openReportInterpretation(): Promise<void> {
     trackViewChange(currentView.value, 'report-interpretation', {
       patientId: currentPatient.value?.patientId,
     });
-    currentView.value = 'report-interpretation';
-    if (!isWorking.value) {
-      await enterWorkMode();
-    } else {
-      await resizeWindowForView('report-interpretation');
-    }
+    await openView('report-interpretation');
   }
 
   /**
@@ -231,24 +186,14 @@ export function useNavigation(options: NavigationOptions) {
     trackViewChange(currentView.value, 'inpatient-emr', {
       patientId: currentPatient.value?.patientId,
     });
-    currentView.value = 'inpatient-emr';
-    if (!isWorking.value) {
-      await enterWorkMode();
-    } else {
-      await resizeWindowForView('inpatient-emr');
-    }
+    await openView('inpatient-emr');
   }
 
   async function openDifferentialDiagnosis(): Promise<void> {
     trackViewChange(currentView.value, 'differential-diagnosis', {
       patientId: currentPatient.value?.patientId,
     });
-    currentView.value = 'differential-diagnosis';
-    if (!isWorking.value) {
-      await enterWorkMode();
-    } else {
-      await resizeWindowForView('differential-diagnosis');
-    }
+    await openView('differential-diagnosis');
   }
 
   /**
@@ -258,13 +203,15 @@ export function useNavigation(options: NavigationOptions) {
     trackViewChange(currentView.value, 'voice-interaction', {
       patientId: currentPatient.value?.patientId,
     });
-    currentView.value = 'voice-interaction';
     const targetSize = getWindowSizeForView('voice-interaction');
     if (!isWorking.value) {
+      currentView.value = 'voice-interaction';
       await enterWorkMode(targetSize.width, targetSize.height);
     } else {
-      // If already working (e.g. from Chat), resize to capsule
-      enterWorkMode(targetSize.width, targetSize.height);
+      await windowTransition.transitionToView('voice-interaction', {
+        size: targetSize,
+        resizable: false,
+      });
     }
   }
 
@@ -280,6 +227,7 @@ export function useNavigation(options: NavigationOptions) {
     openHisIntegrationLog,
     openMedicalCatalogCache,
     openConsultation,
+    openChronicRefillConfirmation,
     openVoiceConsultation,
     openTreatmentPlan,
     openOutpatientFollowUp,

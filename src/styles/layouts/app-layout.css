@@ -38,6 +38,11 @@
 .ball-layer {
   display: block;
   z-index: 2;
+  transition: opacity 140ms cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.ball-layer.is-content-hidden {
+  opacity: 0;
 }
 
 /**
@@ -76,6 +81,13 @@
  */
 .assistant-container.is-content-hidden {
   opacity: 0;
+}
+
+/* 大工作台内部已有不透明内容层，关闭整窗玻璃模糊以降低 Windows 合成开销。 */
+.assistant-container.is-large-workspace {
+  background: var(--surface-glass-strong);
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
 }
 
 /**

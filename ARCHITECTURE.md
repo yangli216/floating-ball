@@ -301,7 +301,11 @@ const isRiskAnalyzing = ref(false);
 
 1. 外部事件只提供患者主键 / 就诊主键和少量当前场景字段。
 2. `app/events/useReceptionController.ts` 的接诊流程负责调用 `HisAdapter.fetchPatientInfo()` 与 `HisAdapter.fetchPatientHistory()` 补全完整信息；`useEventListeners.ts` 只负责把 HIS 事件分发给该 controller。
-3. 风险评估完成后，`features/reception-risk` 基于 `HisPatientHistory.visits` 按时间取最近 3 次历史就诊，再提取其中含慢病诊断的就诊记录及其药品医嘱。`useReceptionController.ts` 调用 `HisAdapter.fetchPatientHistory(patientId, { currentVisitId })`，PHIS 实现把当前 `idVis` 传入 `queryVisitHistory`，由院端排除本次就诊；`PhisHisAdapter.ts` 只把 `loadClinicMedicalRecord.orderList` 中 `sdOrd / sdSrv === "11"` 或存在药品主键的医嘱映射为历史药品，检验 `41`、检查 `31`、处置等不得进入 `HisVisitRecord.medications`，字面量 `null / undefined` 不得进入业务文本。候选只要求最近历史中存在一条受支持的慢病诊断，不要求诊断重复或存在历史药品；历史药品为空时仍进入慢病复诊，由模型基于具体诊断和当前有效库存生成用药建议。当前主诉、现病史或诊断命中携报告/检查结果回诊语义时，报告回诊优先并抑制复诊配药候选。慢病候选必须区分“慢病分类组”和“临床诊断”：分类组仅用于候选识别，不能覆盖历史病历中的原始诊断名称；同组同时存在泛化诊断和有明确分型的诊断时，临床结果优先保留有历史依据的具体诊断，同等具体程度下采用最近一次，只有历史记录本身未提供分型时才允许保留泛化名称。候选必须分别保存简洁诊断依据与历史用药依据；诊断卡不得展示处方、检验检查项目或原始医嘱列表。命中结果由接诊 controller 写入胶囊状态，胶囊只展示临床诊断和历史用药可用状态，不展示有限历史窗口内的具体就诊次数。医生确认后，`chronicRefillRecord.ts` 以历史病历生成权威 `ClinicalResultInput`：初始诊断、主诉、现病史及标准诊断库匹配统一使用保留下来的临床诊断，不得把慢病分类组名作为回写诊断；来自历史明确诊断的建议使用 `explicit / high` 语义，诊断依据只拼接一次，不得描述成模型猜测。模型接收有效库存名称与规格，并为最终药品返回结构化剂量、频次、用法、天数和总量；`chronicRefillInventory.ts` 按“历史处方明确值 → 模型结构化值 → HIS 药品默认值”合并，不得以固定 `1`、固定 `14天` 或销售包装单位补齐处方字段，核心用法不完整时保持未选中。推荐理由只承载临床与历史依据，不得采信模型生成的剂量、疗程或包装算术；结果页通过共享纯函数按最终可编辑处方字段实时生成“单次制剂数 × 每日次数 × 天数 = 总制剂数 → 包装数”的换算说明，并与自动总量共用同一计算口径。库存内同品或经模型确认的库存内等效药进入治疗项；既无同品也无等效药时返回规范通用名并保持未选中。复诊配药结果通过 `recommendationPolicy` 明确禁止共享结果页自动补拉通用治疗方案，默认不生成检查、检验和处置；复诊功能不得依赖语音渠道私有结果类型。
+3. 风险评估完成后，`features/reception-risk` 基于 `HisPatientHistory.visits` 按时间取最近 3 次历史就诊，再提取其中含慢病诊断的就诊记录及其药品医嘱。`useReceptionController.ts` 调用 `HisAdapter.fetchPatientHistory(patientId, { currentVisitId })`，PHIS 实现把当前 `idVis` 传入 `queryVisitHistory`，由院端排除本次就诊；`PhisHisAdapter.ts` 只把 `loadClinicMedicalRecord.orderList` 中 `sdOrd / sdSrv === "11"` 或存在药品主键的医嘱映射为历史药品，检验 `41`、检查 `31`、处置等不得进入 `HisVisitRecord.medications`，字面量 `null / undefined` 不得进入业务文本。候选只要求最近历史中存在一条受支持的慢病诊断，不要求诊断重复或存在历史药品；历史药品为空时仍进入慢病复诊，由模型基于具体诊断和当前有效库存生成用药建议。当前主诉、现病史或诊断命中携报告/检查结果回诊语义时，报告回诊优先并抑制复诊配药候选。慢病候选必须区分“慢病分类组”和“临床诊断”：分类组仅用于候选识别，不能覆盖历史病历中的原始诊断名称；同组同时存在泛化诊断和有明确分型的诊断时，临床结果优先保留有历史依据的具体诊断，同等具体程度下采用最近一次，只有历史记录本身未提供分型时才允许保留泛化名称。候选必须分别保存简洁诊断依据与历史用药依据；诊断卡不得展示处方、检验检查项目或原始医嘱列表。命中结果由接诊 controller 写入胶囊状态，胶囊只展示临床诊断和历史用药可用状态，不展示有限历史窗口内的具体就诊次数。医生确认后先由 `chronicRefillConfirmation.ts` 生成一次动态 `ConfirmationPlan`，`ChronicRefillConfirmationPage.vue` 通过 `useChronicRefillConfirmation.ts` 管理默认选择及文字/语音补充；补充说明不回流确认计划，语音仅转写追加，所有选项仍只有医生最终确认后才成为本次事实。随后 `chronicRefillRecord.ts` 把已确认选项、医生补充原文和历史病历交给病历模型，模型额外返回受约束的 `supplementRecordText`，再由 Builder 拼装权威 `ClinicalResultInput`：主诉固定为具体慢病复诊配药，现病史只使用确认 `recordText`、压缩后的医生补充与必要历史事实，不得使用人口学信息、库存或推荐方案；历史药品进入现病史前必须压缩为规范药名，规格、包装、剂量、频次和总量不得进入正文。初始诊断及标准诊断库匹配统一使用保留下来的临床诊断，不得把慢病分类组名作为回写诊断；来自历史明确诊断的建议使用 `explicit / high` 语义，诊断依据只拼接一次，不得描述成模型猜测。模型接收有效库存名称与规格，并为最终药品返回结构化剂量、频次、用法、天数和总量；`chronicRefillInventory.ts` 按“历史处方明确值 → 模型结构化值 → HIS 药品默认值”合并，不得以固定 `1`、固定 `14天` 或销售包装单位补齐处方字段，核心用法不完整时保持未选中。推荐理由只承载临床与历史依据，不得采信模型生成的剂量、疗程或包装算术；结果页通过共享纯函数按最终可编辑处方字段实时生成“单次制剂数 × 每日次数 × 天数 = 总制剂数 → 包装数”的换算说明，并与自动总量共用同一计算口径。库存内同品或经模型确认的库存内等效药进入治疗项；既无同品也无等效药时返回规范通用名并保持未选中。复诊配药结果通过 `recommendationPolicy` 明确禁止共享结果页自动补拉通用治疗方案，默认不生成检查、检验和处置；复诊功能不得依赖语音渠道私有结果类型。
+
+   PHIS 历史药品属性以 `loadClinicMedicalRecord.presList[].presSubList[]` 为主来源：Adapter 将 `idOrd / idMedPro / naMedPro / doseOnce / unitDose / idFreq / idFreqText / idUsge / idUsgeText / takeDays / amount / unitSale` 映射为不含厂商命名的 `HisHistoricalMedication`；原始 PHIS 对象仅保存在 `raw`。关联顺序固定为 `idOrd` 精确匹配、`idMedPro` 唯一匹配、规范药名唯一匹配，不能唯一关联时不继承处方属性。`orderList` 继续用于检验检查类型关联，并在 `presList` 缺失或单项不完整时提供药品名称、总量等兜底。复诊候选按就诊时间选择最近一次同药结构化处方；药品定稿优先消费其 `days`，无结构化或明确文本历史天数时保持为空，模型 `days` 不进入权威处方。
+
+   复诊配药 `ClinicalResultInput.healthEducation` 是门诊病历“注意事项”的场景来源。共享 `useClinicalResultIntentReset.ts` 在没有显式 `outpatientRecord.precautions` 时必须以 `healthEducation` 作为 `buildOutpatientRecord()` 的 `precautions` 输入，避免再次触发通用默认 Builder；慢病复诊 API 对明显泛化的休息、固定一周复诊或无依据上转文案执行拒收并回退到慢病安全教育。
 4. 统一上下文同时保存身份信息、展示信息、结构化 `hisHistory`、历史摘要与接诊状态。
 5. UI、AI prompt、日志、缓存等模块不得再各自维护 `naPi/name`、`sdSexText/gender`、`ageText/age` 的读取分支；统一通过患者上下文 helper / selector 读取。
 6. `show-patient-risks`、`start-consultation`、`start-consultation-session`、`start-voice-consultation` 都必须复用同一套上下文构建逻辑，不能绕过 HIS 补全直接写全局状态。
@@ -313,6 +317,7 @@ const isRiskAnalyzing = ref(false);
 11.1 接诊阶段的历史报告识别复用 `fetchPatientHistory()` 已经取得的最近几次 `loadClinicMedicalRecord` 明细。PHIS Adapter 负责把厂商 `applyList[].items[]` 映射为 `HisVisitRecord.reportedApplications` 中性摘要，并保留 `visitId`；业务层按近 7 个自然日筛选，只有 `sdApply = 3` 才进入 `report-interpretation` opportunity，不得把检查/检验医嘱当成已出报告。进入报告工作台后，`features/report-interpretation/api` 再通过 `HisAdapter.fetchOutpatientFollowUpReportResults()` 按历史 `visitId` 获取实际报告，避免接诊阶段批量加载报告正文或调用 LLM。
 11.2 风险胶囊对报告场景只提供一个“报告助手”动作：历史报告进入报告解读工作台，本次报告回诊上下文同时存在时由工作台提供“生成后续诊疗方案”升级动作。报告解读是只读认知辅助，不直接形成诊断、处方或 PHIS 回写；报告回诊继续复用 `OutpatientFollowUpPage` 和治疗推荐回写闭环。两种 opportunity 可以同时存在于 session，但 UI 不展示两个相似入口。
 12. 慢病复诊的病历事实与推荐上下文必须分层：`chronicRefillRecord.ts` 可以把有效库存名称和规格发送给模型生成治疗方案，但 `historyOfPresentIllness` 只能使用患者诊断、历史用药和本次病情等事实。规则兜底不得拼接库存摘要；模型现病史命中库存、可续方或推荐方案语义时视为不合格，回退到事实型草稿。
+13. 慢病复诊动态确认采用“LLM Confirmation Plan + Composable Controller + deterministic record Builder”：模型决定最少问题、选项和推荐值，程序只做数量、结构和证据字段校验；医生最终确认是把推荐值升级为病历事实的唯一门禁。语音转写复用 `audioRecorder + transcribeSpeech`，不新增全局 store。
 
 ---
 
@@ -766,7 +771,7 @@ export const WINDOW_SIZES = {
   CAPSULE_STOPPED: { width: 360, height: 140 },
   CAPSULE_EXPANDED: { width: 360, height: 248 },
   RISK_CARD: { width: 280, height: 92 },
-  RISK_CARD_EXPANDED: { width: 280, height: 360 },
+  RISK_CARD_EXPANDED: { width: 280, height: 196 }, // 单条风险基线，按风险行与操作入口动态增高，最高 520
   VOICE_CONSULTATION: { width: 1080, height: 720 },
   HIS_LOG: { width: 980, height: 640 },
   MEDICAL_CACHE: { width: 980, height: 640 }
@@ -1175,20 +1180,31 @@ HIS 系统 (通过 HTTP GET /api/consultation/events/poll 获取)
     ↓
 navigation.openConsultation()
     ↓
-更新 currentView.value = 'consultation'
+useWindowTransitionCoordinator.transitionToView('consultation')
     ↓
-workMode.enterWorkMode() (进入工作模式)
+旧内容淡出并锁定本轮 transition token
     ↓
-windowMgmt.resizeWorkWindow(1200×900) (调整窗口尺寸)
+windowGeometry.resolveWindowGeometry(...)（纯函数）
     ↓
-windowMgmt.smartExpand(...) (智能边界检测)
+实时 currentMonitor.workArea + DPI 换算 + 历史尺寸裁剪
     ↓
-Tauri Window API (setSize, setPosition)
+windowMgmt.resizeWorkWindow(...)
     ↓
-UI 更新 (Vue 响应式系统)
+Tauri Command: apply_main_window_geometry（单次 IPC，按扩大/缩小选择 position/size 顺序）
     ↓
-CSS Morph Animation (变形动画)
+窗口几何稳定后提交 currentView
+    ↓
+新内容淡入；胶囊恢复不可缩放，大工作台保持可缩放
 ```
+
+窗口壳职责分层：
+
+1. `app/shell/windowGeometry.ts` 是纯几何策略，只计算 `workArea` 内的安全逻辑尺寸和物理位置，不读取 Vue 状态、不调用 Tauri。
+2. `app/shell/useWindowManagement.ts` 是原生窗口适配层，负责读取实时显示器、通过 `apply_main_window_geometry` 单次 IPC 应用位置/尺寸、等待 resize 完成和持久化偏好；历史尺寸永远不能绕过实时工作区裁剪。
+3. `app/shell/useWindowTransitionCoordinator.ts` 是单主窗口过渡控制器，负责淡出/淡入、串行化过渡、延后提交 `currentView` 和胶囊 resizable 策略。
+4. `app/shell/useWorkMode.ts` 只编排悬浮球与工作模式生命周期；`app/navigation/useNavigation.ts` 只声明目标视图，不再自行决定“先换页面还是先改窗”。
+5. `VoiceCapsule.vue`、`ReceptionCapsule.vue` 等业务 UI 只能上报目标阶段或用户动作，不得直接调用 Tauri `setSize / setPosition`。
+6. 结束就诊通过 coordinator 的 terminal ball transition 与其他几何请求共用一条队列：先使旧请求失效并等待在途原生调用结束，再应用 `160×160 + minSize + resizable=false`，最后提交 `isWorking=false`。球态下 `resizeCurrentView` 必须直接忽略，防止组件卸载或异步风险评估产生迟到尺寸。
 
 ---
 
@@ -1339,6 +1355,8 @@ App.vue (425 行)
 └── 样式 (~30 行)
 
 Composables / App controllers
+├── app/shell/windowGeometry.ts (workArea / DPI 纯几何策略)
+├── app/shell/useWindowTransitionCoordinator.ts (内容与原生窗口过渡编排)
 ├── app/shell/useWindowManagement.ts (~422 行)
 ├── app/shell/useWorkMode.ts (~422 行)
 ├── composables/useEventListeners.ts (~575 行)
@@ -1359,10 +1377,11 @@ Styles (3 个)
 
 ### 性能优化
 
-- ⚡ 显示器信息缓存（避免重复查询）
+- ⚡ 窗口切换使用实时显示器 `workArea`；缓存仅用于查询失败降级，避免跨屏 DPI 使用旧边界
 - ⚡ 窗口移动防抖（500ms）
 - ⚡ 窗口大小变化防抖（200ms）
 - ⚡ GPU 加速动画（transform, opacity）
+- ⚡ 大小/位置请求在单次过渡内串行执行，过期的排队请求在应用几何前丢弃
 - ⚡ 统一事件监听管理（避免内存泄漏）
 
 ### 代码质量指标

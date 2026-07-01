@@ -72,9 +72,10 @@ describe('generateChronicRefillRecord', () => {
       evidenceText: '高血压历史处方',
     });
 
-    expect(result.chiefComplaint).toContain('高血压定期复诊续方');
+    expect(result.chiefComplaint).toBe('高血压复诊配药');
     expect(result.historyOfPresentIllness).not.toContain('未提供新发不适信息');
-    expect(result.historyOfPresentIllness).toContain('服药依从性');
+    expect(result.historyOfPresentIllness).toContain('近期门诊曾开具苯磺酸氨氯地平片');
+    expect(result.historyOfPresentIllness).toContain('今复诊配药');
     expect(result.historyOfPresentIllness).not.toMatch(/库存|可续方药品|可参考药品|推荐药品/u);
     expect(result.treatments).toHaveLength(2);
     expect(result.treatments[0].name).toBe('苯磺酸氨氯地平片');
@@ -94,6 +95,66 @@ describe('generateChronicRefillRecord', () => {
       allowTreatmentRefresh: false,
       allowedTreatmentTypes: ['medicine'],
     });
+  });
+
+  it('uses only doctor-confirmed facts in the final chief complaint and HPI', async () => {
+    vi.mocked(chat).mockResolvedValue('{}');
+    vi.mocked(parseLLMJson).mockReturnValue({
+      chiefComplaint: '糖尿病定期复诊续方',
+      historyOfPresentIllness: '患者女性，36岁，病情控制情况、服药依从性及血糖结果待医生核实。',
+      supplementRecordText: '近期无低血糖不适',
+      healthEducation: '注意休息，1周内复诊，必要时上级医院进一步治疗。',
+      recommendedMedicines: ['盐酸二甲双胍片'],
+    });
+    const patient = buildPatientContext({
+      payload: { patientId: 'patient-1', visitId: 'visit-current', name: '测试患者' },
+    })!;
+    const candidate = {
+      diagnosis: '2型糖尿病',
+      diagnoses: ['2型糖尿病'],
+      diagnosisGroups: ['糖尿病'],
+      medications: ['盐酸二甲双胍片'],
+      chronicVisitCount: 1,
+      chronicVisits: [],
+      diagnosisEvidenceText: '历史诊断为2型糖尿病',
+      medicationEvidenceText: '历史用药为盐酸二甲双胍片',
+      evidenceText: '近期慢病复诊记录',
+    };
+
+    const result = await generateChronicRefillRecord(patient, candidate, {
+      supplementText: '规律服药，血糖平稳，无低血糖不适',
+      answers: [
+        {
+          itemId: 'medication',
+          question: '目前用药情况？',
+          value: 'regular',
+          label: '规律服用原方案',
+          recordText: '规律服用盐酸二甲双胍片',
+          confidence: 'high',
+          evidence: 'current-explicit',
+          basis: '医生本次补充',
+        },
+        {
+          itemId: 'control',
+          question: '近期血糖情况？',
+          value: 'stable',
+          label: '血糖平稳',
+          recordText: '近期血糖监测平稳',
+          confidence: 'high',
+          evidence: 'current-explicit',
+          basis: '医生本次补充',
+        },
+      ],
+    });
+
+    expect(result.chiefComplaint).toBe('2型糖尿病复诊配药');
+    expect(result.historyOfPresentIllness).toBe(
+      '患者既往确诊2型糖尿病，规律服用盐酸二甲双胍片，近期血糖监测平稳，近期无低血糖不适，今复诊配药。',
+    );
+    expect(result.historyOfPresentIllness).not.toMatch(/女性|36岁|待医生核实/u);
+    expect(result.healthEducation).toBe(
+      '按医嘱规律服药并记录家庭监测结果；出现症状变化或指标异常时及时复诊。',
+    );
   });
 
   it('uses structured AI dosage, frequency and route for an inventory-matched refill medicine', async () => {
@@ -144,6 +205,14 @@ describe('generateChronicRefillRecord', () => {
       diagnoses: ['糖尿病'],
       diagnosisGroups: ['糖尿病'],
       medications: ['盐酸二甲双胍片（0.25g*60片/瓶）'],
+      medicationOrders: [{
+        orderId: 'history-order-metformin',
+        productId: 'med-metformin',
+        name: '盐酸二甲双胍片',
+        days: '30',
+        totalQty: '2',
+        totalUnit: '瓶',
+      }],
       chronicVisitCount: 1,
       chronicVisits: [{
         visitTime: Date.parse('2026-06-01T08:00:00+08:00'),
@@ -166,9 +235,9 @@ describe('generateChronicRefillRecord', () => {
       frequencyKey: 'TID',
       route: '口服',
       routeKey: 'PO',
-      days: '14',
-      totalQty: '',
-      totalUnit: '',
+      days: '30',
+      totalQty: '2',
+      totalUnit: '瓶',
     });
 
     const messages = vi.mocked(chat).mock.calls[0][0];
@@ -176,7 +245,7 @@ describe('generateChronicRefillRecord', () => {
     expect(prompt).toContain('盐酸二甲双胍片｜0.25g*60片/瓶｜可用库存20瓶');
     expect(prompt).toContain('recommendedMedicines 必须返回结构化药品对象');
     expect(prompt).toContain('"targetDose":"目标临床一次剂量数值"');
-    expect(prompt).toContain('totalQty/totalUnit必须留空');
+    expect(prompt).toContain('days、totalQty、totalUnit必须留空');
     expect(prompt).toContain('reason只说明诊断、历史用药和适应证等临床推荐依据');
   });
 
@@ -285,7 +354,7 @@ describe('generateChronicRefillRecord', () => {
     });
 
     expect(result.currentMedicationHistory).toBe('历史用药方案待医生核实');
-    expect(result.historyOfPresentIllness).toContain('既往用药方案未获取，待医生核实');
+    expect(result.historyOfPresentIllness).toBe('患者既往确诊2型糖尿病。今复诊配药。');
     expect(result.historyOfPresentIllness).not.toMatch(/库存|可参考药品|建议使用/u);
     expect(result.treatments[0]).toMatchObject({
       name: '盐酸二甲双胍片',
@@ -305,6 +374,6 @@ describe('generateChronicRefillRecord', () => {
     });
     const prompt = vi.mocked(chat).mock.calls[0][0].map((message) => message.content).join('\n');
     expect(prompt).toContain('历史慢病配药：未获取到可确认的历史用药记录');
-    expect(prompt).toContain('historyOfPresentIllness只能记录患者事实和待核实信息');
+    expect(prompt).toContain('现病史只能使用其中带有病历事实的确认项');
   });
 });

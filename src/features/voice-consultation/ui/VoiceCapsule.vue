@@ -106,9 +106,7 @@ import { ref, onMounted, onUnmounted, computed, watch, nextTick } from 'vue';
 import { audioRecorder, getMicrophoneErrorMessage } from '@/services/audioRecorder';
 import { saveVoiceRecording } from '@/services/voiceRecordingStorage';
 import { trackClick, trackError } from '@/services/operationTracker';
-import { getCurrentWindow } from '@tauri-apps/api/window';
-import { LogicalSize } from '@tauri-apps/api/dpi';
-import { getVoiceInteractionWindowSize } from '@/constants/windowSizes';
+import type { VoiceInteractionWindowStage } from '@/constants/windowSizes';
 
 // 获取当前主题的主色调
 const getPrimaryColor = () => {
@@ -127,6 +125,7 @@ const emit = defineEmits<{
   stop: [blob: Blob, transcriptionText: string];
   error: [error: any];
   close: [];
+  'window-stage-change': [stage: VoiceInteractionWindowStage];
 }>();
 
 const canvasRef = ref<HTMLCanvasElement | null>(null);
@@ -141,33 +140,23 @@ const isExpanded = ref(false);
 const editableText = ref('');
 let stoppedBlob: Blob | null = null;
 
-const resizeWindow = async (stage: 'recording' | 'processing' | 'stopped' | 'expanded') => {
-  try {
-    const win = getCurrentWindow();
-    const targetSize = getVoiceInteractionWindowSize(stage);
-    await win.setSize(new LogicalSize(targetSize.width, targetSize.height));
-  } catch (e) {
-    console.warn('[VoiceCapsule] Window resize failed:', e);
-  }
-};
-
 // Resize window when entering stopped state
 watch(isStopped, (stopped) => {
   if (stopped) {
-    resizeWindow('stopped');
+    emit('window-stage-change', 'stopped');
   }
 });
 
 // Resize window when entering processing state
 watch(() => props.processing, (isProcessing) => {
   if (isProcessing) {
-    resizeWindow('processing');
+    emit('window-stage-change', 'processing');
   }
 });
 
 // Resize window when expanding/collapsing text editor
 watch(isExpanded, (expanded) => {
-  resizeWindow(expanded ? 'expanded' : 'stopped');
+  emit('window-stage-change', expanded ? 'expanded' : 'stopped');
 });
 
 // Auto-scroll transcription text horizontally to always show the latest
@@ -468,7 +457,7 @@ const handleCancel = async () => {
   trackClick('voice_transcription_cancel');
   await cleanupRecordingResources();
   resetRecordingState();
-  resizeWindow('recording');
+  emit('window-stage-change', 'recording');
   await startRecording();
 };
 

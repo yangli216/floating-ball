@@ -39,6 +39,7 @@
 5. **盲目新增全局状态禁止**：不得为临时 UI 状态新增 Pinia store；新增 store 必须先说明为什么 ref/reactive 不够用。
 6. **锁文件混用禁止**：除非任务明确是"统一包管理器"，否则不得混用 npm/yarn/pnpm 安装或刷新锁文件。
 7. **区域化请求签名禁止绕过**：所有 `regionalFetch`、`createRegionalSSE`、`createRegionalWebSocketUrl` 出口必须经过 `requestSigner.ts` 签名；新增区域化请求出口必须集成签名，不得直接 fetch 调用 `/v1/*` 接口。
+8. **主窗口几何出口禁止绕过**：业务组件和 feature composable 不得直接调用 Tauri `setSize / setPosition`；主窗口尺寸与位置统一由 `app/shell/useWindowTransitionCoordinator.ts` 编排，并经 `useWindowManagement.ts` 应用，纯 `workArea` / DPI / clamp 规则归 `windowGeometry.ts`。独立原生窗口的创建尺寸仍由各自窗口 service 管理，但必须设置合理 min size 并校验当前工作区。
 
 ## 棘轮式治理
 
@@ -48,7 +49,7 @@
 | --- | --- | --- |
 | `ConsultationPage.vue` | 1300+ 行，职责过重 | 只允许拆分和缩减，不允许净增行数 |
 | `useEventListeners.ts` | 约 575 行，仍集中 App 级事件入口 | 新增 App 级 Tauri `listen` 默认复用 `shared/composables/useTauriEventListener.ts`；接诊 / 患者补全 / 风险胶囊状态机默认进入 `app/events/useReceptionController.ts`；SDK handshake 初始化默认进入 `app/events/useSdkHandshakeController.ts`；并说明为什么不能放在更局部的 composable |
-| `useWindowManagement.ts` | 422 行 | 窗口尺寸/位置改动必须同步校验多显示器边界 |
+| `useWindowManagement.ts` | 422 行 | 窗口尺寸/位置改动必须同步校验多显示器 `workArea` 与混合 DPI；纯计算下沉 `windowGeometry.ts`，内容/视图时序进入 `useWindowTransitionCoordinator.ts`，不得继续扩大职责 |
 | `http_server.rs` 接口定义 | 共享契约 | 任何字段变更必须同步 api.md + 前端调用方 |
 
 治理原则：每轮迭代只允许往"更好"的方向变化。如果一次改动会让上述文件变得更大或职责更模糊，必须先拆解再继续。
@@ -128,12 +129,15 @@
 2. 任何写回本地结果通道的代码都要核对 `consultationId`、`resultType`、`requestId`、`referenceStatus`、可选字段和 HIS 轮询行为
 3. `ConsultationPage` 灵活模式不能重新引入一套独立于完整问诊的诊断/用药/检查推荐规则
 4. 诊断路径缓存相关改动，必须评估“同患者重复接诊”污染风险与缓存误命中风险
-5. 涉及 `emit('minimize')`、`exitWork()`、`handleCollapse()` 的改动，必须区分“同一运行期内保留现场”和“真正持久化恢复”，不要把内存保活误写成已落盘
+5. 涉及 `emit('minimize')`、`exitWork()`、`handleCollapse()` 的改动，必须区分“同一运行期内保留现场”和“真正持久化恢复”，不要把内存保活误写成已落盘；结束就诊收球必须走统一 transition 队列并以完整 `160×160` 球态作为终态，不得被迟到的胶囊/语音 resize 覆盖
 6. 修改 `windowSizes.ts`、`useWorkMode.ts`、`useWindowManagement.ts` 时，必须同步校验窗口尺寸、显示器边界和动画原点
 7. `DiagnosisPathWindow.vue`、`diagnosisPath.ts`、`stores/diagnosisPath.ts` 的改动必须同时检查窗口生命周期、渲染就绪事件和缓存 key 策略
 8. 知识库相关改动要明确是走 `pmphai.ts` 主链路，还是启用内置 `KnowledgeBasePanel.vue`，避免双轨长期漂移
 9. **HIS 调用边界**：业务代码（`components/` / `composables/` / `services/` 中除 `services/his/*` 之外）禁止直接 `import ... from 'services/hisService'`。必须经 `services/his` 入口：业务调用走 `getHisAdapter()`，仅 SDK handshake / 区域化 bootstrap 等认证场景允许使用 `services/his` 重导出的 `getHisService` / `resetHisService`。新增 PHIS 私有字段读取必须通过 `entry.raw.xxx` 透传，不允许在中性 DTO 上加 PHIS 命名字段。
 10. **药品定稿流水线**：任何 AI 或历史上下文产生的药品，在自动选中、缓存、库存校验和回写前必须调用共享 `finalizeMedicineRecommendation(s)`，依次完成当前库存对齐、药品详情、一次剂量换算、标准频次 / 用法、程序总量和最终库存校验。模型包装总量不得直接进入药品处方；只调用 hydrate、只在展示层 normalize 或只在提交 payload 时补字段均不满足门禁。
+11. **Tauri capability 同步**：新增或首次调用 Tauri JS API 时，必须同时核对 `src-tauri/capabilities/*.json` 中对应的 `allow-*` 权限，并执行会真实触发该 API 的 Tauri 运行时冒烟；`type-check`、浏览器单测和 `cargo check` 不能替代 capability 验证。
+12. **复诊配药确认事实门禁**：动态确认项可以由模型生成并默认推荐，但推荐值不得在医生点击最终确认前写入现病史；文字/语音补充是医生独立补充说明，不得反向重生成或改写确认项。最终现病史只消费已确认 `recordText`、模型压缩后的医生补充和必要历史事实，禁止直接原样拼接冗余口语、库存、推荐方案或模型未确认推断；药品在正文中只保留规范名称。
+13. **PHIS 历史处方属性来源**：药品一次剂量、频次、用法、天数、总量和包装单位优先读取 `loadClinicMedicalRecord.presList[].presSubList[]`，在 `services/his` Adapter 内映射为中性字段；`orderList` 只作医嘱分类、检验检查关联和缺失兜底。不得把 `takeDays` 等 PHIS 命名字段加入中性 DTO，也不得在无法按 `idOrd / idMedPro / 唯一规范药名` 关联时猜测继承。
 
 ## 推荐提交流程
 

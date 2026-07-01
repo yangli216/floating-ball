@@ -2,7 +2,6 @@ import { describe, expect, it, vi } from 'vitest';
 import { ref } from 'vue';
 import type { HisOutpatientFollowUpContext } from '@/services/his/types';
 import { buildPatientContext } from '@/utils/patientContext';
-import type { ClinicalResultInput } from '@features/clinical-result';
 import {
   resolveOutpatientVoiceEntry,
   useOutpatientScenarioRouter,
@@ -17,21 +16,6 @@ const followUpContext = {
   examReports: [{ examName: '胸部CT', conclusion: '未见明显异常。' }],
   ineligibleReason: null,
 } as HisOutpatientFollowUpContext;
-
-const clinicalResult: ClinicalResultInput = {
-  chiefComplaint: '高血压复诊配药',
-  historyOfPresentIllness: '未提供新发不适信息。',
-  pastMedicalHistory: '高血压病史。',
-  allergyHistory: '未记录',
-  currentMedicationHistory: '苯磺酸氨氯地平片',
-  familyHistory: '',
-  symptoms: [],
-  negativeSymptoms: [],
-  diagnoses: [],
-  treatments: [],
-  treatmentPlan: '',
-  healthEducation: '',
-};
 
 describe('resolveOutpatientVoiceEntry', () => {
   it('prioritizes cached voice results without querying follow-up context', async () => {
@@ -58,7 +42,7 @@ describe('resolveOutpatientVoiceEntry', () => {
 });
 
 describe('useOutpatientScenarioRouter', () => {
-  it('drops a generated refill result when its opportunity was reset while awaiting AI', async () => {
+  it('opens the refill confirmation page before generating a record', async () => {
     const currentPatient = ref(buildPatientContext({
       payload: {
         patientId: 'patient-1',
@@ -82,11 +66,7 @@ describe('useOutpatientScenarioRouter', () => {
       },
     });
 
-    let resolveGeneration!: (result: ClinicalResultInput) => void;
-    const generateChronicRefillRecord = vi.fn(() => new Promise<ClinicalResultInput>((resolve) => {
-      resolveGeneration = resolve;
-    }));
-    const showGeneratedClinicalResult = vi.fn();
+    const openChronicRefillConfirmation = vi.fn();
     const showToast = vi.fn();
     const router = useOutpatientScenarioRouter({
       currentPatient,
@@ -94,8 +74,7 @@ describe('useOutpatientScenarioRouter', () => {
       hasCachedVoiceResult: () => false,
       fetchFollowUpContext: async () => null,
       applyFollowUpContext: vi.fn(),
-      generateChronicRefillRecord,
-      showGeneratedClinicalResult,
+      openChronicRefillConfirmation,
       resetVoiceSessionState: vi.fn(),
       openOutpatientFollowUp: vi.fn(),
       openReportInterpretation: vi.fn(),
@@ -104,13 +83,11 @@ describe('useOutpatientScenarioRouter', () => {
       trackError: vi.fn(),
     });
 
-    const pending = router.confirmChronicRefill();
-    session.reset();
-    resolveGeneration(clinicalResult);
-    await pending;
+    await router.confirmChronicRefill();
 
-    expect(showGeneratedClinicalResult).not.toHaveBeenCalled();
+    expect(openChronicRefillConfirmation).toHaveBeenCalledOnce();
     expect(showToast).not.toHaveBeenCalled();
+    expect(session.executingOpportunity.value).toBeNull();
   });
 
   it('routes voice entry to report follow-up when HIS context is available', async () => {
@@ -132,8 +109,7 @@ describe('useOutpatientScenarioRouter', () => {
       hasCachedVoiceResult: () => false,
       fetchFollowUpContext: async () => followUpContext,
       applyFollowUpContext,
-      generateChronicRefillRecord: vi.fn(),
-      showGeneratedClinicalResult: vi.fn(),
+      openChronicRefillConfirmation: vi.fn(),
       resetVoiceSessionState: vi.fn(),
       openOutpatientFollowUp,
       openReportInterpretation: vi.fn(),
@@ -173,8 +149,7 @@ describe('useOutpatientScenarioRouter', () => {
       hasCachedVoiceResult: () => false,
       fetchFollowUpContext,
       applyFollowUpContext: vi.fn(),
-      generateChronicRefillRecord: vi.fn(),
-      showGeneratedClinicalResult: vi.fn(),
+      openChronicRefillConfirmation: vi.fn(),
       resetVoiceSessionState: vi.fn(),
       openOutpatientFollowUp: vi.fn(),
       openReportInterpretation: vi.fn(),
@@ -213,8 +188,7 @@ describe('useOutpatientScenarioRouter', () => {
       session,
       hasCachedVoiceResult: () => false,
       applyFollowUpContext: vi.fn(),
-      generateChronicRefillRecord: vi.fn(),
-      showGeneratedClinicalResult: vi.fn(),
+      openChronicRefillConfirmation: vi.fn(),
       resetVoiceSessionState: vi.fn(),
       openOutpatientFollowUp: vi.fn(),
       openReportInterpretation,

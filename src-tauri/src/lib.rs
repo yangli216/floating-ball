@@ -470,6 +470,42 @@ async fn set_window_position(window: tauri::Window, x: i32, y: i32) -> Result<()
         .map_err(|e| e.to_string())
 }
 
+/// 在同一条 Tauri 命令中应用主窗口位置与尺寸，减少前端分两次 IPC 时
+/// Windows 桌面合成器观察到两个中间帧的概率。
+#[tauri::command]
+fn apply_main_window_geometry(
+    window: tauri::WebviewWindow,
+    x: i32,
+    y: i32,
+    logical_width: f64,
+    logical_height: f64,
+    size_first: bool,
+) -> Result<(), String> {
+    let position = tauri::Position::Physical(tauri::PhysicalPosition { x, y });
+    let size = tauri::Size::Logical(tauri::LogicalSize::new(logical_width, logical_height));
+
+    let apply_position = || {
+        window
+            .set_position(position)
+            .map_err(|error| format!("设置窗口位置失败: {error}"))
+    };
+    let apply_size = || {
+        window
+            .set_size(size)
+            .map_err(|error| format!("设置窗口尺寸失败: {error}"))
+    };
+
+    if size_first {
+        apply_size()?;
+        apply_position()?;
+    } else {
+        apply_position()?;
+        apply_size()?;
+    }
+
+    Ok(())
+}
+
 #[tauri::command]
 async fn complete_consultation(
     state: tauri::State<'_, SharedAppState>,
@@ -876,6 +912,7 @@ pub fn run() {
             start_drag,
             get_window_position,
             set_window_position,
+            apply_main_window_geometry,
             complete_consultation,
             cancel_consultation_if_pending,
             check_app_update,

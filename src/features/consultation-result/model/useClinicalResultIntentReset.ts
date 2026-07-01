@@ -13,6 +13,7 @@ export interface ClinicalResultIntentRecordInput {
   familyHistory?: string;
   physicalExam?: string;
   precautions?: string;
+  healthEducation?: string;
   vitals?: string;
   outpatientRecord?: Partial<OutpatientRecord>;
   diagnoses?: Array<Pick<Diagnosis, 'name'>>;
@@ -59,7 +60,7 @@ function buildRecordSnapshot(input: ClinicalResultIntentRecordInput): ClinicalRe
     personalHistory: input.outpatientRecord?.personalHistory || input.personalHistory,
     familyHistory: input.outpatientRecord?.familyHistory || input.familyHistory,
     physicalExam: input.outpatientRecord?.physicalExam || input.physicalExam,
-    precautions: input.outpatientRecord?.precautions || input.precautions,
+    precautions: input.outpatientRecord?.precautions || input.precautions || input.healthEducation,
     vitals: input.vitals,
     diagnosisNames: (input.diagnoses || []).map((item) => item.name).filter(Boolean),
   });

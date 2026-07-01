@@ -4,6 +4,7 @@ import {
   type ClinicalResultTreatment,
 } from '@features/clinical-result';
 import { medicalDataService } from '@/services/medicalData';
+import type { HisHistoricalMedication } from '@/services/his/types';
 
 export interface ParsedMedication {
   dosage?: string;
@@ -37,6 +38,7 @@ export type ChronicRefillMedicineInput = string | ChronicRefillMedicineRecommend
 
 export interface BuildChronicRefillTreatmentsOptions {
   historicalMedications?: string[];
+  historicalMedicationOrders?: HisHistoricalMedication[];
 }
 
 export function parseHistoricalMedication(medicationText: string): ParsedMedication {
@@ -152,6 +154,24 @@ function findHistoricalMedication(
   }) || '';
 }
 
+function findHistoricalMedicationOrder(
+  medicineName: string,
+  historicalMedicationOrders: HisHistoricalMedication[],
+  productId?: string,
+): HisHistoricalMedication | null {
+  if (productId) {
+    const productMatches = historicalMedicationOrders.filter((item) => item.productId === productId);
+    if (productMatches.length === 1) return productMatches[0];
+  }
+
+  const normalizedName = normalizeMedicineName(medicineName);
+  if (!normalizedName) return null;
+  const nameMatches = historicalMedicationOrders.filter((item) => (
+    normalizeMedicineName(item.name) === normalizedName
+  ));
+  return nameMatches.length === 1 ? nameMatches[0] : null;
+}
+
 function findInventoryMatch(
   medication: string,
   inventory: AvailableMedicineInventoryCatalogItem[],
@@ -183,28 +203,31 @@ export function buildChronicRefillInventoryTreatments(
   const treatments: ClinicalResultTreatment[] = [];
   const historicalMedications = options.historicalMedications
     || medicationInputs.filter((item): item is string => typeof item === 'string');
+  const historicalMedicationOrders = options.historicalMedicationOrders || [];
 
   medicationInputs.forEach((input) => {
     const medicineName = getMedicineInputName(input);
     if (!medicineName) return;
     const recommendation = typeof input === 'string' ? null : input;
     const historicalMedication = findHistoricalMedication(medicineName, historicalMedications);
-    const evidenceMedication = historicalMedication || medicineName;
-    const evidenceText = historicalMedication
-      ? `历史用药：${historicalMedication}；当前药房有效库存可用`
-      : `模型结合慢病诊断与当前库存推荐：${medicineName}`;
+    const historicalMedicationOrderByName = findHistoricalMedicationOrder(
+      medicineName,
+      historicalMedicationOrders,
+    );
     const matched = findInventoryMatch(medicineName, inventory);
     if (!matched) {
       const standardName = standardizeMedicineName(medicineName).trim();
       const fallbackKey = `fallback:${normalizeMedicineName(standardName)}`;
       if (!standardName || seen.has(fallbackKey)) return;
       seen.add(fallbackKey);
+      const evidenceMedication = historicalMedicationOrderByName?.name || historicalMedication || medicineName;
+      const hasHistoricalMedication = Boolean(historicalMedicationOrderByName || historicalMedication);
       treatments.push({
         type: 'medicine',
         name: standardName,
         text: '当前有效库存无同品或合适等效药，保留规范通用名供医生参考',
         evidenceText: `历史用药：${evidenceMedication}；当前有效库存未匹配`,
-        sourceType: 'explicit',
+        sourceType: hasHistoricalMedication ? 'explicit' : 'inferred',
         matchStatus: 'unmatched',
         selected: false,
         reason: '院内无库存参考，不能直接回写处方',
@@ -217,35 +240,51 @@ export function buildChronicRefillInventoryTreatments(
 
     // 对接本地院内标准药品目录数据
     const dictMatch = medicalDataService.matchMedicine(matched.productName);
+    const historicalMedicationOrder = findHistoricalMedicationOrder(
+      medicineName,
+      historicalMedicationOrders,
+      matched.productId,
+    ) || historicalMedicationOrderByName;
+    const hasHistoricalMedication = Boolean(historicalMedicationOrder || historicalMedication);
+    const evidenceMedication = historicalMedicationOrder?.name || historicalMedication || medicineName;
+    const evidenceText = hasHistoricalMedication
+      ? `历史用药：${evidenceMedication}；当前药房有效库存可用`
+      : `模型结合慢病诊断与当前库存推荐：${medicineName}`;
     const parsed = parseHistoricalMedication(historicalMedication);
 
     // 历史明确处方保留为事实；模型只提供目标临床剂量，PHIS 一次剂量由统一定稿流水线换算。
-    const targetDose = parsed.dosage ? '' : readText(recommendation?.targetDose);
-    const targetDoseUnit = parsed.dosage ? '' : readText(recommendation?.targetDoseUnit);
-    const dosage = parsed.dosage || '';
-    const dosageUnit = parsed.dosageUnit || '';
+    const historicalDose = readText(historicalMedicationOrder?.dose) || parsed.dosage || '';
+    const historicalDoseUnit = readText(historicalMedicationOrder?.doseUnit) || parsed.dosageUnit || '';
+    const targetDose = historicalDose ? '' : readText(recommendation?.targetDose);
+    const targetDoseUnit = historicalDose ? '' : readText(recommendation?.targetDoseUnit);
+    const dosage = historicalDose;
+    const dosageUnit = historicalDoseUnit;
 
-    const frequency = parsed.frequency
+    const frequency = readText(historicalMedicationOrder?.frequency)
+      || parsed.frequency
       || readText(recommendation?.frequency)
       || readFirstString(dictMatch?.raw, ['dftFreq']);
-    const frequencyKey = parsed.frequency ? '' : readText(recommendation?.frequencyKey);
-    const route = parsed.route
+    const frequencyKey = readText(historicalMedicationOrder?.frequencyKey)
+      || (parsed.frequency ? '' : readText(recommendation?.frequencyKey));
+    const route = readText(historicalMedicationOrder?.route)
+      || parsed.route
       || readText(recommendation?.route)
       || readText(recommendation?.usage)
       || readFirstString(dictMatch?.raw, ['dftUsage']);
-    const routeKey = parsed.route ? '' : readText(recommendation?.routeKey);
+    const routeKey = readText(historicalMedicationOrder?.routeKey)
+      || (parsed.route ? '' : readText(recommendation?.routeKey));
 
-    const days = parsed.days || readText(recommendation?.days);
-    const totalQty = parsed.totalQty || '';
-    const totalUnit = parsed.totalUnit
-      || '';
+    // 天数只接受可靠关联的结构化历史处方或旧文本中的明确值；模型 days 不进入权威处方。
+    const days = readText(historicalMedicationOrder?.days) || parsed.days || '';
+    const totalQty = readText(historicalMedicationOrder?.totalQty) || parsed.totalQty || '';
+    const totalUnit = readText(historicalMedicationOrder?.totalUnit) || parsed.totalUnit || '';
     const hasCompletePrescription = Boolean(
       dosage && dosageUnit && frequency && route && days && totalQty && totalUnit,
     );
     const clinicalReason = buildClinicalRecommendationReason(
       readText(recommendation?.reason),
       matched.productName,
-      Boolean(historicalMedication),
+      hasHistoricalMedication,
     );
 
     treatments.push({
@@ -254,7 +293,7 @@ export function buildChronicRefillInventoryTreatments(
       spec: matched.spec || '',
       text: `历史慢病处方药品，当前可用库存${matched.availableQuantity}${matched.unit || ''}`,
       evidenceText,
-      sourceType: historicalMedication ? 'explicit' : 'inferred',
+      sourceType: hasHistoricalMedication ? 'explicit' : 'inferred',
       matchStatus: 'exact',
       selected: hasCompletePrescription,
       reason: clinicalReason,

@@ -13,15 +13,14 @@
 
 import { ref, computed, type Ref, type ComputedRef } from 'vue';
 import type { Window as TauriWindow } from '@tauri-apps/api/window';
-import { PhysicalPosition } from '@tauri-apps/api/window';
-import { LogicalSize } from '@tauri-apps/api/dpi';
 import { invoke } from '@tauri-apps/api/core';
-import { getWindowSizeForView, type WindowSize, WINDOW_SIZES, type ViewType } from '@/constants/windowSizes';
-import { ANIMATION, MORPH_ORIGIN_DEFAULT } from '@/constants/animation';
+import { getWindowSizeForView, isCapsuleView, type WindowSize, type ViewType } from '@/constants/windowSizes';
+import { MORPH_ORIGIN_DEFAULT } from '@/constants/animation';
 import { feedbackService } from '@/services/feedback';
 import { trackClick } from '@/services/operationTracker';
 import type { useWindowManagement } from './useWindowManagement';
-import type { AppPatient, AppStore } from '@/types/appState';
+import type { useWindowTransitionCoordinator } from './useWindowTransitionCoordinator';
+import type { AppPatient } from '@/types/appState';
 import { getPatientContextId, getPatientContextName } from '@/utils/patientContext';
 
 /**
@@ -40,6 +39,8 @@ export interface WorkModeOptions {
   appWindow: Ref<TauriWindow | null>;
   /** 窗口管理 composable 实例 */
   windowMgmt: ReturnType<typeof useWindowManagement>;
+  /** 单主窗口过渡协调器 */
+  windowTransition: ReturnType<typeof useWindowTransitionCoordinator>;
   /** 当前视图 */
   currentView: Ref<ViewType>;
   /** 是否处于工作模式 */
@@ -52,8 +53,6 @@ export interface WorkModeOptions {
   currentPatient: Ref<AppPatient | null>;
   /** 返回接待胶囊时当前应使用的窗口尺寸 */
   getReceptionWindowSize?: () => WindowSize;
-  /** Tauri Store 实例（用于 exitWork 中读取保存的位置） */
-  store: Ref<AppStore | null>;
 }
 
 /**
@@ -72,7 +71,7 @@ export interface WorkModeOptions {
  *   transitioning,
  *   isHovered,
  *   currentPatient,
- *   store: storeRef,
+ *   windowTransition,
  * });
  *
  * // 展开到工作模式
@@ -86,41 +85,38 @@ export function useWorkMode(options: WorkModeOptions) {
   const {
     appWindow,
     windowMgmt,
+    windowTransition,
     currentView,
     isWorking,
     transitioning,
     isHovered,
     currentPatient,
     getReceptionWindowSize,
-    store,
   } = options;
 
   const {
     lastBallPos,
     isMoving,
     getPreferredWindowSize,
-    resizeWorkWindow,
-    waitForWindowSize,
   } = windowMgmt;
+  const {
+    contentVisible,
+    resizeCurrentView,
+    transitionToBall,
+    transitionToView,
+  } = windowTransition;
 
   // ========== 状态 ==========
 
   /** 是否正在退出工作模式 */
   const exiting = ref(false);
+  let activeExitPromise: Promise<void> | null = null;
 
   /** 小球视觉偏移量（退出动画中使用） */
   const ballOffset = ref<Position>({ x: 0, y: 0 });
 
   /** 变形动画原点（CSS transform-origin） */
   const morphOrigin = ref(MORPH_ORIGIN_DEFAULT);
-
-  /**
-   * 内容是否可见：默认 true。
-   * 在“问诊页 ↔ 胶囊 ↔ 小球”阶段切换期间临时置 false，
-   * 让 assistant-container 染色薄薄添加隐藏类，
-   * 来掩盖 OS 窗口 setSize / setPosition 期间的内容裁切咨点。
-   */
-  const contentVisible = ref(true);
 
   /** 容器样式（绑定 transform-origin） */
   const containerStyle: ComputedRef<Record<string, string>> = computed(() => ({
@@ -212,12 +208,11 @@ export function useWorkMode(options: WorkModeOptions) {
 
     // 已在工作模式：仅调整尺寸
     if (isWorking.value) {
-      await resizeWorkWindow(targetW, targetH);
+      await resizeCurrentView({ width: targetW, height: targetH }, {
+        resizable: !isCapsuleView(currentView.value),
+      });
       return;
     }
-
-    if (transitioning.value) return;
-    transitioning.value = true;
 
     // 应用 Always on Top 配置
     if (appWindow.value) {
@@ -236,32 +231,48 @@ export function useWorkMode(options: WorkModeOptions) {
       }
     }
 
-    // 调整窗口尺寸
-    await resizeWorkWindow(targetW, targetH);
+    const targetView = currentView.value;
+    let workStateCommitted = false;
+    await transitionToView(targetView, {
+      size: { width: targetW, height: targetH },
+      resizable: !isCapsuleView(targetView),
+      commitViewState: async () => {
+        await calculateMorphOrigin('expand');
+        isWorking.value = true;
+        workStateCommitted = true;
+        trackClick('enter_work_mode', { view: targetView });
+      },
+    });
 
-    // 计算展开动画原点
-    await calculateMorphOrigin('expand');
+    if (!workStateCommitted) return;
 
-    // 触发展开动画
-    isWorking.value = true;
-    trackClick('enter_work_mode', { view: currentView.value });
+    // 会话启动不阻塞窗口已经完成的视觉切换。
+    void feedbackService.startSession(
+      getSessionType(),
+      getPatientContextId(currentPatient.value) || currentPatient.value?.piOi,
+      getPatientContextName(currentPatient.value)
+    )
+      .then(() => console.log(`[WorkMode] Session started for ${getSessionType()}`))
+      .catch((error) => console.error('[WorkMode] Failed to start session:', error));
+  };
 
-    // 启动会话
-    try {
-      await feedbackService.startSession(
-        getSessionType(),
-        getPatientContextId(currentPatient.value) || currentPatient.value?.piOi,
-        getPatientContextName(currentPatient.value)
-      );
-      console.log(`[WorkMode] Session started for ${getSessionType()}`);
-    } catch (error) {
-      console.error('[WorkMode] Failed to start session:', error);
+  const openReceptionCapsule = async (size: WindowSize): Promise<void> => {
+    if (!currentPatient.value) {
+      console.info('[WorkMode] Ignore stale reception resize without an active patient');
+      return;
     }
 
-    // 等待动画结束
-    setTimeout(() => {
-      transitioning.value = false;
-    }, ANIMATION.TRANSITION_MS);
+    if (!isWorking.value) {
+      currentView.value = 'reception-capsule';
+      await enterWorkMode(size.width, size.height);
+      return;
+    }
+
+    await transitionToView('reception-capsule', {
+      size,
+      preferredPosition: lastBallPos.value,
+      resizable: false,
+    });
   };
 
   /**
@@ -278,141 +289,60 @@ export function useWorkMode(options: WorkModeOptions) {
    *
    * @param sessionStatus - 会话结束状态
    */
-  const exitWork = async (
+  const performExitWork = async (
     sessionStatus: 'completed' | 'cancelled' | 'error' = 'completed'
   ): Promise<void> => {
-    if (!isWorking.value || transitioning.value || isMoving.value) return;
-    trackClick('exit_work_mode', { view: currentView.value, sessionStatus });
-
-    // 恢复 Always on Top（小球模式始终置顶）
-    if (appWindow.value) {
-      await appWindow.value.setAlwaysOnTop(true);
+    const hadActiveWork = isWorking.value || transitioning.value || isMoving.value;
+    if (hadActiveWork) {
+      trackClick('exit_work_mode', { view: currentView.value, sessionStatus });
     }
-
-    transitioning.value = true;
     exiting.value = true;
-
-    // 兜底：如果当前会话还没有产出结果（用户直接关闭窗口），
-    // 写入 cancelled 通知 SDK 停止轮询。已有结果时不会覆盖。
     try {
-      await invoke('cancel_consultation_if_pending');
-    } catch (e) {
-      console.warn('[WorkMode] cancel_consultation_if_pending failed:', e);
-    }
-
-    // 1. 计算收缩动画参数
-    await calculateMorphOrigin('shrink');
-
-    // 1.5 从胶囊退出时预扩窗：胶囊是 320x80，小于球的 160x160 高度，
-      // 若保持胶囊尺寸进入 morph，ball-layer 会被 OS 窗口裁切，
-      // 出现“半个球”。提前把窗口扩到 BALL 尺寸且贴回小球位置，
-      // 让后续 CSS 动画始终能完整呈现小球。
-    if (currentView.value === 'reception-capsule' && appWindow.value) {
-      try {
-        // 先淑出胶囊内容，避免 setSize 瞬间看到胶囊内容被裁切。
-        contentVisible.value = false;
-        await new Promise<void>((resolve) => setTimeout(resolve, ANIMATION.CONTENT_FADE_MS));
-        if (lastBallPos.value) {
-          await appWindow.value.setPosition(
-            new PhysicalPosition(lastBallPos.value.x, lastBallPos.value.y)
-          );
-        }
-        await appWindow.value.setSize(
-          new LogicalSize(WINDOW_SIZES.BALL.width, WINDOW_SIZES.BALL.height)
-        );
-      } catch (e) {
-        console.warn('[WorkMode] Pre-resize capsule->ball failed:', e);
+      if (appWindow.value) {
+        await appWindow.value.setAlwaysOnTop(true);
       }
-    }
 
-    // 结束会话
-    try {
-      await feedbackService.endSession(undefined, sessionStatus);
-      console.log('[WorkMode] Session ended successfully');
-    } catch (error) {
-      console.error('[WorkMode] Failed to end session:', error);
-    }
+      if (hadActiveWork) {
+        // 取消与反馈属于非视觉副作用，不再阻塞窗口收口。
+        void invoke('cancel_consultation_if_pending')
+          .catch((error) => console.warn('[WorkMode] cancel_consultation_if_pending failed:', error));
+        void feedbackService.endSession(undefined, sessionStatus)
+          .then(() => console.log('[WorkMode] Session ended successfully'))
+          .catch((error) => console.error('[WorkMode] Failed to end session:', error));
+      }
 
-    // 强制关闭 hover 状态（防止收缩过程中环绕菜单闪现）
-    isHovered.value = false;
-
-    // 3. 等待动画结束
-    await new Promise<void>((resolve) => setTimeout(resolve, ANIMATION.TRANSITION_MS));
-
-    // 4. 移动窗口并重置偏移
-    if (appWindow.value) {
-      try {
-        let targetX = 0;
-        let targetY = 0;
-        let hasTarget = false;
-
-        // 确定目标位置
-        if (lastBallPos.value) {
-          targetX = lastBallPos.value.x;
-          targetY = lastBallPos.value.y;
-          hasTarget = true;
-        } else if (store.value) {
-          const savedPos = await store.value.get('window_pos') as Position | null;
-          if (savedPos) {
-            targetX = savedPos.x;
-            targetY = savedPos.y;
-            hasTarget = true;
-          }
-        }
-
-        if (hasTarget) {
-          await appWindow.value.setResizable(true);
-
-          // 并发：窗口移动 + 小球归位
-          const movePromise = appWindow.value.setPosition(new PhysicalPosition(targetX, targetY));
+      isHovered.value = false;
+      await transitionToBall({
+        preferredPosition: lastBallPos.value,
+        commitBallState: () => {
           ballOffset.value = { x: 0, y: 0 };
-          await movePromise;
+          morphOrigin.value = MORPH_ORIGIN_DEFAULT;
+          isWorking.value = false;
+        },
+      });
+      lastBallPos.value = null;
 
-          // 缩小窗口
-          await appWindow.value.setSize(new LogicalSize(WINDOW_SIZES.BALL.width, WINDOW_SIZES.BALL.height));
-          await appWindow.value.setResizable(false);
-
-          // 二次校验位置（macOS 边缘情况）
-          await new Promise<void>((resolve) => setTimeout(resolve, ANIMATION.POSITION_VERIFY_DELAY));
-          const currentPos = await appWindow.value.outerPosition();
-          if (Math.abs(currentPos.x - targetX) > 10 || Math.abs(currentPos.y - targetY) > 10) {
-            console.warn('[WorkMode] Position mismatch, retrying...', currentPos, targetX, targetY);
-            await appWindow.value.setPosition(new PhysicalPosition(targetX, targetY));
-          }
-        } else {
-          // 无目标位置，仅缩小
-          await appWindow.value.setResizable(true);
-          await appWindow.value.setSize(new LogicalSize(WINDOW_SIZES.BALL.width, WINDOW_SIZES.BALL.height));
-          await appWindow.value.setResizable(false);
-        }
-
-        lastBallPos.value = null;
-      } catch (err) {
-        console.warn('[WorkMode] Failed to restore window state:', err);
+      try {
+        const isHoveredNow = await invoke('check_mouse_hover');
+        console.log('[WorkMode] Forced hover check:', isHoveredNow);
+        isHovered.value = isHoveredNow as boolean;
+      } catch (e) {
+        console.error('[WorkMode] Failed to force hover check:', e);
       }
+    } finally {
+      exiting.value = false;
     }
+  };
 
-    // 5. 等待窗口尺寸响应
-    await waitForWindowSize(WINDOW_SIZES.BALL.width, WINDOW_SIZES.BALL.height);
+  const exitWork = (
+    sessionStatus: 'completed' | 'cancelled' | 'error' = 'completed'
+  ): Promise<void> => {
+    if (activeExitPromise) return activeExitPromise;
 
-    // 2. 触发收缩动画
-    isWorking.value = false;
-
-    // 6. 重置状态
-    exiting.value = false;
-    transitioning.value = false;
-
-    // 7. 强制刷新 hover 状态
-    try {
-      const isHoveredNow = await invoke('check_mouse_hover');
-      console.log('[WorkMode] Forced hover check:', isHoveredNow);
-      isHovered.value = isHoveredNow as boolean;
-    } catch (e) {
-      console.error('[WorkMode] Failed to force hover check:', e);
-    }
-
-    // 8. 恢复内容可见，供下一次进入工作模式使用
-    contentVisible.value = true;
+    activeExitPromise = performExitWork(sessionStatus).finally(() => {
+      activeExitPromise = null;
+    });
+    return activeExitPromise;
   };
 
   /**
@@ -426,6 +356,7 @@ export function useWorkMode(options: WorkModeOptions) {
   const handleCollapse = async (): Promise<void> => {
     const shouldReturnToReception =
       (currentView.value === 'consultation' ||
+       currentView.value === 'chronic-refill-confirmation' ||
        currentView.value === 'voice-consultation' ||
        currentView.value === 'treatment-plan' ||
        currentView.value === 'outpatient-follow-up' ||
@@ -439,36 +370,12 @@ export function useWorkMode(options: WorkModeOptions) {
     });
 
     if (shouldReturnToReception && currentPatient.value) {
-      // 淑出问诊页内容，避免 OS 窗口缩小期间看到问诊内容被裁切。
-      contentVisible.value = false;
-      await new Promise<void>((resolve) => setTimeout(resolve, ANIMATION.CONTENT_FADE_MS));
-
-      currentView.value = 'reception-capsule';
-      // 注意：不在此处 await nextTick()。nextTick 在 Vue flush 期间如有组件更新报错
-      // 会导致 Promise reject 并中断后续逻辑，使 contentVisible 永远不会被还原。
-      // resizeWorkWindow 首个 await setResizable IPC 调用本身已给 Vue flush 留出时机。
-
-      // 顺序必须是“先缩小、再移位”：
-      // 若先把 1200x900 的问诊窗口贴到小球坐标（右边缘场景），macOS 会
-      // 发现该坐标容不下问诊尺寸，从而跨显示器复位，产生一闪。
-      // 改为先 resize 到胶囊尺寸，再 setPosition 就不会被夹跨屏。
-      try {
-        const receptionSize = getReceptionWindowSize?.() ?? getWindowSizeForView('reception-capsule');
-        await resizeWorkWindow(receptionSize.width, receptionSize.height);
-
-        if (lastBallPos.value && appWindow.value) {
-          try {
-            await appWindow.value.setPosition(
-              new PhysicalPosition(lastBallPos.value.x, lastBallPos.value.y)
-            );
-          } catch (e) {
-            console.warn('[WorkMode] Failed to align capsule to ball position:', e);
-          }
-        }
-      } finally {
-        // 无论窗口调整成功与否，都必须恢复内容可见性，避免 UI 永久卡在透明状态。
-        contentVisible.value = true;
-      }
+      const receptionSize = getReceptionWindowSize?.() ?? getWindowSizeForView('reception-capsule');
+      await transitionToView('reception-capsule', {
+        size: receptionSize,
+        preferredPosition: lastBallPos.value,
+        resizable: false,
+      });
       return;
     }
 
@@ -488,6 +395,7 @@ export function useWorkMode(options: WorkModeOptions) {
 
     // 方法
     enterWorkMode,
+    openReceptionCapsule,
     exitWork,
     handleCollapse,
   };

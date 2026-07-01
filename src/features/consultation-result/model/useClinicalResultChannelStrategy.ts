@@ -1,7 +1,7 @@
 import type { ComputedRef, MaybeRefOrGetter } from 'vue';
 import { computed, toValue } from 'vue';
 
-export type ClinicalResultChannel = 'voice' | 'symptom';
+export type ClinicalResultChannel = 'voice' | 'symptom' | 'chronic-refill';
 export type ClinicalResultUserLogType = 'voice' | 'smart';
 
 export interface ClinicalResultChannelStrategyInput {
@@ -21,6 +21,7 @@ export interface ClinicalResultChannelStrategy {
 export function resolveClinicalResultChannel(
   channel: ClinicalResultChannel | undefined,
 ): ClinicalResultChannel {
+  if (channel === 'chronic-refill') return 'chronic-refill';
   return channel === 'symptom' ? 'symptom' : 'voice';
 }
 
@@ -35,9 +36,17 @@ export function useClinicalResultChannelStrategy(
     userLogType: computed(() => resolvedChannel.value === 'voice' ? 'voice' : 'smart'),
     shouldUseVoiceCache,
     shouldShowPatientHeader: computed(() => toValue(input.showPatientHeader) !== false),
-    cancelDialogTitle: computed(() => shouldUseVoiceCache.value ? '确认放弃当前语音结果？' : '确认放弃当前问诊结果？'),
-    cancelDialogText: computed(() => shouldUseVoiceCache.value
-      ? '放弃后将清空当前未提交的语音结果，并退回小球状态。'
-      : '放弃后将清空当前未提交的问诊结果，并退回小球状态。'),
+    cancelDialogTitle: computed(() => {
+      if (resolvedChannel.value === 'chronic-refill') return '确认放弃当前配药结果？';
+      return shouldUseVoiceCache.value ? '确认放弃当前语音结果？' : '确认放弃当前问诊结果？';
+    }),
+    cancelDialogText: computed(() => {
+      if (resolvedChannel.value === 'chronic-refill') {
+        return '放弃后将清空当前未提交的配药结果，并退回小球状态。';
+      }
+      return shouldUseVoiceCache.value
+        ? '放弃后将清空当前未提交的语音结果，并退回小球状态。'
+        : '放弃后将清空当前未提交的问诊结果，并退回小球状态。';
+    }),
   };
 }

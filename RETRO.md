@@ -358,6 +358,55 @@
 - **解决方案**: 在共享 `useTreatmentHydration` 中建立药品定稿流水线，药品详情成功后立即重新归一并落地一次剂量、标准频次 / 用法和程序总量，再使用最终包装总量校验库存；所有入口 await 定稿后才能自动选中或缓存，AI raw 包装总量在映射层丢弃。
 - **后续防护**: Review 必须检查所有新药品入口是否调用共享 `finalizeMedicineRecommendation(s)`；仅调用 hydrate 或仅在 payload 阶段 normalize 不视为完成药品安全闭环。
 
+### RETRO-043: 主窗口把 CSS 动画误当成原生窗口过渡且忽略 workArea [已解决]
+
+- **现象**: 接诊胶囊进入问诊/报告工作台时，Windows 容易出现窗口硬跳、短暂裁切或任务栏遮挡；语音胶囊阶段切换还可能从屏幕边缘向不可见区域扩展。10ms 几何采样只观察到 `280×360 → 1451×898` 的单次跳变，没有中间原生尺寸。
+- **根因**: 旧链路先写 `currentView`、再分别调用 `setPosition / setSize`，随后才播放 Web 内容 morph；`smartExpand` 使用整个 monitor bounds 而不是 `workArea`，历史尺寸没有当前屏幕上限，`VoiceCapsule` 又绕过窗口管理直接改窗。
+- **解决方案**: 抽出 `windowGeometry.ts` 统一按实时 `workArea + scaleFactor` 计算安全尺寸/位置；新增 `useWindowTransitionCoordinator.ts` 串行执行“旧内容淡出 → 几何 → 视图提交 → 新内容淡入”，位置与尺寸通过 Rust `apply_main_window_geometry` 单次 IPC 应用，并把语音阶段尺寸上报接入同一出口；胶囊恢复不可缩放，历史尺寸只作为偏好并在每次恢复时重新裁剪。
+- **后续防护**: 已升级为 `AGENTS.md` 硬约束 #8 和 `useWindowManagement.ts` 棘轮条目；新增主窗口形态不得在业务 UI 内直接调用 Tauri 窗口几何 API。
+
+### RETRO-044: 新增窗口 API 未同步 Tauri capability 导致接诊事务失败 [已解决]
+
+- **现象**: 接诊、风险胶囊展开和窗口切换统一报错 `window.set_min_size not allowed`，患者接诊流程随窗口几何事务一起中断。
+- **根因**: 窗口优化新增 `Window.setMinSize()`，但 `src-tauri/capabilities/default.json` 只授权了 `set-size / set-position / set-resizable`，没有同步加入 `core:window:allow-set-min-size`；类型检查、单元测试、构建和 Rust 编译均不会覆盖运行时 capability 拒绝。
+- **解决方案**: 为现有主窗口与两个受控独立窗口的默认 capability 补充 `core:window:allow-set-min-size`，保持权限范围只覆盖已声明窗口，不扩大到全局或其他插件。
+- **后续防护**: 新增任何 Tauri JS API 调用时，Review 必须同时核对 `capabilities/*.json` 对应 allow permission，并至少执行一次会真实触发该 API 的 Tauri 运行时冒烟；仅通过 `cargo check` 或浏览器单测不视为权限验证完成。
+
+### RETRO-045: 结束就诊收球被迟到尺寸覆盖导致小球只显示半个 [已解决]
+
+- **现象**: 结束就诊后已经切回悬浮球 DOM，但原生窗口高度停留在接诊胶囊约 92px，球体、左右菜单和底部按钮沿同一水平线被裁掉。
+- **根因**: 普通视图/胶囊 resize 由 transition coordinator 串行处理，`exitWork()` 却直接调用窗口管理；在途风险评估、语音阶段或胶囊尺寸请求可能晚于收球落地。与此同时，旧实现遇到 `transitioning` 或 `isMoving` 会直接跳过退出，无法保证球态成为最终几何。
+- **解决方案**: 新增 terminal ball transition，让收球与所有窗口几何请求共用同一 latest-wins 队列；应用 `160×160`、最小尺寸和不可缩放后才提交 `isWorking=false`，并在球态或 terminal pending 期间忽略 `resizeCurrentView`。
+- **后续防护**: 已同步到 PRODUCT 窗口终态约束、ARCHITECTURE 窗口状态流和 AGENTS Review 门禁；新增任何结束/取消路径必须验证“在途 resize + stop consultation”竞态。
+
+### RETRO-046: 复诊配药把缺失事实写成模板化待核实文案 [已解决]
+
+- **现象**: 生成现病史重复患者年龄/性别和历史日期，以“病情控制、服药依从性及监测结果待医生核实”收尾，信息虽保守但不像医生自然书写；直接套医生案例又会臆造规律服药、病情平稳和阴性症状。
+- **根因**: Prompt 和规则 fallback 都强制输出待核实句式，后处理仅检查长度和库存词，没有本次事实确认环节；测试还把“服药依从性”固定为必含文案。
+- **解决方案**: 在生成病历前增加模型动态 Confirmation Plan，默认推荐仅作为 UI 初值，医生可通过选项、文字或语音一次确认；最终 Builder 只拼装确认 `recordText` 和历史事实。
+- **后续防护**: 已升级为 AGENTS Review 门禁 #12；任何复诊配药文案优化都必须区分历史证据、模型推荐和医生已确认事实。
+
+### RETRO-047: 医生补充说明回流确认计划造成重复等待与选项漂移 [已解决]
+
+- **现象**: 医生在复诊配药确认页补充文字或语音后，页面再次调用模型重生成确认项；医生需要额外等待，原先已浏览或修改的选项也会被推荐默认值覆盖。
+- **根因**: 将“补充病历事实”和“修订确认计划”合并成同一个动作，没有区分动态问项与医生自由补充说明的职责。
+- **解决方案**: 确认计划只在进入页面时生成一次；文字和语音只维护独立补充说明，语音转写后直接追加。最终病历调用负责把补充说明压缩为合规临床片段，再与医生确认选项和历史事实共同进入 Builder。
+- **后续防护**: 已同步 AGENTS Review 门禁 #12；新增补充入口不得隐式刷新确认项或覆盖医生已有选择。
+
+### RETRO-048: 历史药品只读 orderList 导致用药天数退化为模型猜测 [已解决]
+
+- **现象**: `loadClinicMedicalRecord.orderList` 没有药品天数字段，复诊推荐在历史天数缺失时采信模型生成的 `90天`，随后程序据此正确但不合理地计算出 9 盒、5 瓶。
+- **根因**: PHIS 完整处方属性实际位于 `presList[].presSubList[]`，旧 Adapter 只读取 `orderList` 并把药品压成文本，丢失 `takeDays` 以及结构化剂量、频次、用法和总量来源。
+- **解决方案**: 将 `presSubList` 映射为中性 `HisHistoricalMedication` 并作为历史药品属性主来源，`orderList` 保留分类与兜底；复诊药品逐项沿用最近一次可靠关联的历史 `days`，无历史依据时不再采信模型天数。
+- **后续防护**: 已升级为 AGENTS Review 门禁 #13；历史处方新增字段必须先在 Adapter 做厂商字段隔离和关联唯一性校验。
+
+### RETRO-049: 复诊 healthEducation 未映射导致注意事项落入通用兜底 [已解决]
+
+- **现象**: 复诊模型已经返回慢病健康教育，但结果页显示“注意休息，1周内复诊，必要时上级医院进一步检查治疗”。
+- **根因**: `ClinicalResultInput.healthEducation` 没有传给门诊病历 Builder 的 `precautions`，`buildPrecautions()` 因缺少显式内容落入普通场景默认分支。
+- **解决方案**: 共享结果页初始化时把 `healthEducation` 作为 `precautions` 的兼容来源；复诊 API 拒收固定一周复诊、无依据上转等泛化文案并使用慢病安全兜底。
+- **后续防护**: 临床结果新增或复用病历字段时必须补充“输入契约 → 可编辑字段 → outpatientRecord → 回写 payload”完整映射测试。
+
 > 新增条目请复制以下模板：
 
 ```markdown

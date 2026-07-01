@@ -11,6 +11,7 @@ import { DiagnosisPathWindow } from "@features/diagnosis-path";
 import { ReportInterpretationWindow, ReportInterpretationWorkspace } from "@features/report-interpretation";
 import Toast from "@shared/ui/Toast.vue";
 import {
+  ChronicRefillConfirmationPage,
   RiskAlertPanel,
 } from "@features/reception-risk";
 import {
@@ -31,10 +32,10 @@ import { DifferentialDiagnosisModalPage } from "@features/differential-diagnosis
 import Icon from "@shared/ui/Icon.vue";
 import { formatUserFacingError } from "@shared/lib/errorMessages";
 import { trackClick } from "./services/operationTracker";
-import { LogicalSize } from "@tauri-apps/api/dpi";
-import { getWindowSizeForView, WINDOW_SIZES, type ViewType } from "./constants/windowSizes";
+import { getWindowSizeForView, isLargeWorkspaceView, WINDOW_SIZES, type ViewType } from "./constants/windowSizes";
 import { useNavigation } from "@app/navigation/useNavigation";
 import { useWindowManagement } from "@app/shell/useWindowManagement";
+import { useWindowTransitionCoordinator } from "@app/shell/useWindowTransitionCoordinator";
 import { useWorkMode } from "@app/shell/useWorkMode";
 import { useVoiceConsultation } from "./composables/useVoiceConsultation";
 import { useEventListeners } from "./composables/useEventListeners";
@@ -135,7 +136,12 @@ const assistantTitle = computed(() => {
     case 'consultation':
       return currentPatient.value ? `智能问诊 - ${patientDisplayName.value}` : '智能问诊';
     case 'voice-consultation':
+      if (intentResult.value?.channel === 'chronic-refill') {
+        return currentPatient.value ? `复诊配药 - ${patientDisplayName.value}` : '复诊配药';
+      }
       return currentPatient.value ? `语音问诊 - ${patientDisplayName.value}` : '语音问诊';
+    case 'chronic-refill-confirmation':
+      return currentPatient.value ? `复诊配药确认 - ${patientDisplayName.value}` : '复诊配药确认';
     case 'treatment-plan':
       return currentPatient.value ? `诊疗方案 - ${patientDisplayName.value}` : '诊疗方案';
     case 'outpatient-follow-up':
@@ -161,7 +167,8 @@ const assistantTitle = computed(() => {
 const showSessionEntry = computed(
   () =>
     Boolean(currentPatient.value) &&
-    currentView.value !== 'consultation'
+    currentView.value !== 'consultation' &&
+    currentView.value !== 'chronic-refill-confirmation'
 );
 const feedbackDialogVisible = ref(false);
 const feedbackDialogSuspended = ref(false);
@@ -274,10 +281,16 @@ const windowMgmt = useWindowManagement({
 const {
   saveWindowPosition,
   updateCurrentMonitor,
-  smartExpand,
   handleWindowMove,
   persistCurrentWindowSize,
 } = windowMgmt;
+
+const windowTransition = useWindowTransitionCoordinator({
+  currentView,
+  isWorking,
+  transitioning,
+  windowMgmt,
+});
 
 const getCurrentReceptionWindowSize = () => getWindowSizeForView('reception-capsule', {
   expanded: !isRiskAnalyzing.value && riskItems.value.length > 0,
@@ -291,26 +304,26 @@ const getCurrentReceptionWindowSize = () => getWindowSizeForView('reception-caps
 const workMode = useWorkMode({
   appWindow,
   windowMgmt,
+  windowTransition,
   currentView,
   isWorking,
   transitioning,
   isHovered,
   currentPatient,
   getReceptionWindowSize: getCurrentReceptionWindowSize,
-  store: storeRef,
 });
 
 // 解构工作模式 API
-const { exiting, containerStyle, ballStyle, contentVisible } = workMode;
-const { enterWorkMode, exitWork, handleCollapse } = workMode;
+const { exiting, containerStyle, ballStyle } = workMode;
+const { contentVisible } = windowTransition;
+const { enterWorkMode, openReceptionCapsule, exitWork, handleCollapse } = workMode;
 
 // 初始化导航管理 composable
 const navigation = useNavigation({
-  appWindow,
   currentView,
   isWorking,
   currentPatient,
-  windowMgmt,
+  windowTransition,
   workMode,
 });
 
@@ -321,6 +334,7 @@ const {
   openHisIntegrationLog,
   openMedicalCatalogCache,
   openConsultation,
+  openChronicRefillConfirmation,
   openVoiceConsultation,
   openTreatmentPlan,
   openOutpatientFollowUp,
@@ -332,12 +346,10 @@ const {
 
 // 初始化语音问诊 composable
 const voiceConsultation = useVoiceConsultation({
-  appWindow,
-  currentView,
   currentPatient,
   showToast,
-  windowMgmt,
-  workMode,
+  openVoiceConsultation,
+  workMode: { exitWork },
 });
 
 // 解构语音问诊 API
@@ -372,6 +384,19 @@ async function cancelSymptomConsultation(): Promise<void> {
 
 async function closeTreatmentPlan(): Promise<void> {
   await handleUserCollapse();
+}
+
+async function closeChronicRefillConfirmation(): Promise<void> {
+  if (!currentPatient.value) {
+    await exitWork('cancelled');
+    return;
+  }
+  await openReceptionCapsule(getCurrentReceptionWindowSize());
+}
+
+async function handleChronicRefillGenerated(result: Parameters<typeof showGeneratedClinicalResult>[0]): Promise<void> {
+  await showGeneratedClinicalResult(result);
+  showToast('复诊配药病历草稿已生成，请确认后回写', 'success');
 }
 
 async function closeReportInterpretationWorkspace(): Promise<void> {
@@ -450,10 +475,9 @@ async function handleUserCollapse(): Promise<void> {
     // 语音采集页点击取消/收起：如果当前还有已接诊的患者上下文，
     // 返回接诊胶囊态，而不是一路退出到小球，避免医生丢失当前患者上下文。
     resetVoiceSessionState();
-    currentView.value = 'reception-capsule';
     const receptionSize = getCurrentReceptionWindowSize();
     try {
-      await enterWorkMode(receptionSize.width, receptionSize.height);
+      await openReceptionCapsule(receptionSize);
     } catch (e) {
       console.warn('[App] Failed to switch back to reception capsule on voice cancel:', e);
     }
@@ -474,8 +498,7 @@ async function handleConsultationRingClick(): Promise<void> {
   if (!hasResumableConsultation.value) return;
   const latest = minimizedSessions.latestType.value;
   if (latest === 'voice' && currentPatient.value) {
-    currentView.value = 'voice-consultation';
-    await enterWorkMode();
+    await openVoiceConsultation();
     return;
   }
   if (latest === 'inpatient-emr' && inpatientEmrRequest.value) {
@@ -487,9 +510,8 @@ async function handleConsultationRingClick(): Promise<void> {
     return;
   }
   if (currentPatient.value) {
-    currentView.value = 'reception-capsule';
     const targetSize = getCurrentReceptionWindowSize();
-    await enterWorkMode(targetSize.width, targetSize.height);
+    await openReceptionCapsule(targetSize);
     return;
   }
   await openConsultation();
@@ -506,8 +528,7 @@ async function handleConsultationRingClick(): Promise<void> {
 async function handleBallDblClick(): Promise<void> {
   const latest = minimizedSessions.latestType.value;
   if (latest === 'voice' && currentPatient.value) {
-    currentView.value = 'voice-consultation';
-    await enterWorkMode();
+    await openVoiceConsultation();
     return;
   }
   if (latest === 'symptom' && currentPatient.value) {
@@ -519,9 +540,8 @@ async function handleBallDblClick(): Promise<void> {
     return;
   }
   if (currentPatient.value) {
-    currentView.value = 'reception-capsule';
     const targetSize = getCurrentReceptionWindowSize();
-    await enterWorkMode(targetSize.width, targetSize.height);
+    await openReceptionCapsule(targetSize);
     return;
   }
   await openChat();
@@ -567,10 +587,7 @@ const handleRiskExpand = async (expanded: boolean) => {
   });
 
   try {
-    if (appWindow.value) {
-      await smartExpand(targetSize.width, targetSize.height);
-      await appWindow.value.setSize(new LogicalSize(targetSize.width, targetSize.height));
-    }
+    await windowTransition.resizeCurrentView(targetSize, { resizable: false });
   } catch (e) {
     console.error('Failed to resize for risk details:', e);
   }
@@ -593,12 +610,11 @@ const eventListeners = useEventListeners({
   showToast,
   handleWindowMove,
   persistCurrentWindowSize,
-  workMode: { enterWorkMode, exitWork },
-  navigation: { openConsultation, openVoiceConsultation, openTreatmentPlan, openOutpatientFollowUp, openReportInterpretation, openInpatientEmr, openDifferentialDiagnosis, startVoiceInteraction },
+  workMode: { enterWorkMode, openReceptionCapsule, exitWork },
+  navigation: { openConsultation, openChronicRefillConfirmation, openVoiceConsultation, openTreatmentPlan, openOutpatientFollowUp, openReportInterpretation, openInpatientEmr, openDifferentialDiagnosis, startVoiceInteraction },
   resetVoiceSessionState,
   clearVoiceConsultationCache,
   clearMinimizedConsultationSessions: minimizedSessions.clearAll,
-  showGeneratedClinicalResult,
   hasCachedVoiceResult,
   queueConsultationAssistTrigger,
   exiting,
@@ -626,11 +642,12 @@ async function applyForceUpdateWindowState(state: ForceUpdateState): Promise<voi
   feedbackDialogVisible.value = false;
   feedbackDialogSuspended.value = false;
   isWorking.value = true;
-  currentView.value = 'settings';
   try {
     if (appWindow.value) {
-      await smartExpand(760, 620);
-      await appWindow.value.setSize(new LogicalSize(760, 620));
+      await windowTransition.transitionToView('settings', {
+        size: { width: 760, height: 620 },
+        resizable: true,
+      });
       await appWindow.value.show();
       await appWindow.value.setFocus();
     }
@@ -679,7 +696,11 @@ onMounted(async () => {
             currentView.value = 'chat';
             
             if (appWindow.value) {
-                await appWindow.value.setSize(new LogicalSize(WINDOW_SIZES.BALL.width, WINDOW_SIZES.BALL.height));
+                await windowMgmt.resizeWorkWindow(
+                  WINDOW_SIZES.BALL.width,
+                  WINDOW_SIZES.BALL.height,
+                  { minSize: WINDOW_SIZES.BALL, resizable: false },
+                );
                 
                 // 【核心修复】：不要在这里调用 restoreWindowPosition！
                 // 因为 Rust 后端已经在窗口启动前，读取本地文件并完美赋予了物理坐标。
@@ -792,7 +813,7 @@ const openInsideCloudHome = async () => {
 
   <div class="state-layer" id="main-content" tabindex="-1">
     <Transition name="morph">
-      <div v-show="!isWorking" class="ball-layer" :style="containerStyle">
+      <div v-show="!isWorking" class="ball-layer" :class="{ 'is-content-hidden': !contentVisible }" :style="containerStyle">
         <div 
           class="ball-container" 
           :class="{ 'no-interaction': transitioning }"
@@ -865,7 +886,7 @@ const openInsideCloudHome = async () => {
       <div v-show="isWorking" class="assistant-layer" :style="containerStyle">
         <div 
           class="assistant-container" 
-          :class="{ 'no-toolbar': isForceUpdateRequired || currentView === 'risk-alert' || currentView === 'voice-interaction' || currentView === 'reception-capsule' || currentView === 'differential-diagnosis', 'is-content-hidden': !contentVisible }"
+          :class="{ 'no-toolbar': isForceUpdateRequired || currentView === 'risk-alert' || currentView === 'voice-interaction' || currentView === 'reception-capsule' || currentView === 'differential-diagnosis', 'is-content-hidden': !contentVisible, 'is-large-workspace': isLargeWorkspaceView(currentView) }"
           :style="currentView === 'reception-capsule' || currentView === 'differential-diagnosis' ? { borderRadius: '16px', background: 'transparent', backdropFilter: 'none', WebkitBackdropFilter: 'none', border: 'none', boxShadow: 'none' } : currentView === 'chat' ? { borderRadius: '8px', paddingTop: '0' } : { borderRadius: '20px' }"
         >
           <ForceUpdateGate v-if="isForceUpdateRequired" :state="forceUpdateState" />
@@ -873,7 +894,7 @@ const openInsideCloudHome = async () => {
           <!-- 工具栏 (risk-alert, voice-interaction, reception-capsule 视图不显示) -->
           <div v-if="currentView !== 'risk-alert' && currentView !== 'voice-interaction' && currentView !== 'reception-capsule' && currentView !== 'differential-diagnosis' && currentView !== 'chat'" class="assistant-toolbar" data-tauri-drag-region>
             <div class="toolbar-left" data-tauri-drag-region>
-	              <button v-if="currentView === 'settings' || currentView === 'analytics' || currentView === 'his-log' || currentView === 'medical-cache' || currentView === 'knowledge-base' || currentView === 'treatment-plan' || currentView === 'outpatient-follow-up' || currentView === 'report-interpretation' || currentView === 'inpatient-emr'" class="icon-btn back-btn" @click="currentView === 'analytics' ? openChat() : currentView === 'report-interpretation' ? closeReportInterpretationWorkspace() : handleUserCollapse()" title="返回">
+	              <button v-if="currentView === 'settings' || currentView === 'analytics' || currentView === 'his-log' || currentView === 'medical-cache' || currentView === 'knowledge-base' || currentView === 'chronic-refill-confirmation' || currentView === 'treatment-plan' || currentView === 'outpatient-follow-up' || currentView === 'report-interpretation' || currentView === 'inpatient-emr'" class="icon-btn back-btn" @click="currentView === 'analytics' ? openChat() : currentView === 'chronic-refill-confirmation' ? closeChronicRefillConfirmation() : currentView === 'report-interpretation' ? closeReportInterpretationWorkspace() : handleUserCollapse()" title="返回">
 	                 <Icon icon="lucide:arrow-left" class="toolbar-icon" size="20" />
 	              </button>
 	              <span class="assistant-title" data-tauri-drag-region>{{ assistantTitle }}</span>
@@ -933,6 +954,7 @@ const openInsideCloudHome = async () => {
             @stop="handleVoiceStop"
             @error="handleVoiceError"
             @close="handleUserCollapse"
+            @window-stage-change="windowTransition.resizeVoiceInteractionStage"
           />
 
           <!-- Reception Service (Risk) Capsule -->
@@ -954,6 +976,14 @@ const openInsideCloudHome = async () => {
             @confirm-report-assistant="eventListeners.confirmReportAssistant"
           />
 
+          <ChronicRefillConfirmationPage
+            v-if="currentView === 'chronic-refill-confirmation' && currentPatient && chronicRefillCandidate"
+            :patient="currentPatient"
+            :candidate="chronicRefillCandidate"
+            @close="closeChronicRefillConfirmation"
+            @generated="handleChronicRefillGenerated"
+          />
+
           <AnalyticsPanel
             v-if="currentView === 'analytics'"
             @close="openChat"
@@ -966,6 +996,7 @@ const openInsideCloudHome = async () => {
             :intentResult="intentResult"
             :intentSource="intentSource"
             :consultationRoundId="consultationRoundId"
+            :channel="intentResult?.channel"
             @close="handleUserCollapse"
             @cancel="cancelVoiceResult"
           />
@@ -1031,7 +1062,6 @@ const openInsideCloudHome = async () => {
       </div>
     </div>
   </Transition>
-  <div v-if="transitioning" class="transition-mask" />
   <Toast ref="toastRef" />
   </template>
 </template>

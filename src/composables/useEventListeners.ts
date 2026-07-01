@@ -22,8 +22,6 @@ import {
   trackSmartConsultationEntry,
   trackVoiceConsultationEntry,
 } from '../services/featureUsageEntryTracker';
-import { generateChronicRefillRecord } from '@features/reception-risk';
-import type { ClinicalResultInput } from '@features/clinical-result';
 import {
   resolveIncomingPatientTracking,
   useOutpatientScenarioRouter,
@@ -91,11 +89,13 @@ export interface EventListenersOptions {
   /** 工作模式相关函数 */
   workMode: {
     enterWorkMode: (customW?: number, customH?: number) => Promise<void>;
+    openReceptionCapsule: (size: { width: number; height: number }) => Promise<void>;
     exitWork: (sessionStatus?: 'completed' | 'cancelled' | 'error') => Promise<void>;
   };
   /** 导航函数 */
   navigation: {
     openConsultation: () => Promise<void>;
+    openChronicRefillConfirmation: () => Promise<void>;
     openVoiceConsultation: () => Promise<void>;
     openTreatmentPlan: () => Promise<void>;
     openOutpatientFollowUp: () => Promise<void>;
@@ -110,7 +110,6 @@ export interface EventListenersOptions {
   clearVoiceConsultationCache: (patient?: AppPatient | null) => void;
   /** 清理问诊最小化恢复入口 */
   clearMinimizedConsultationSessions: () => void;
-  showGeneratedClinicalResult: (result: ClinicalResultInput) => Promise<void>;
   /** 检查指定患者是否存在未提交语音缓存 */
   hasCachedVoiceResult: (patient?: AppPatient | null) => boolean;
   /** 队列化快进模式自动触发请求 */
@@ -153,7 +152,6 @@ export function useEventListeners(options: EventListenersOptions) {
     resetVoiceSessionState,
     clearVoiceConsultationCache,
     clearMinimizedConsultationSessions,
-    showGeneratedClinicalResult,
     hasCachedVoiceResult,
     queueConsultationAssistTrigger,
     exiting,
@@ -167,8 +165,6 @@ export function useEventListeners(options: EventListenersOptions) {
     mergeCurrentPatient,
     showPatientRisks,
   } = useReceptionController({
-    currentView,
-    isWorking,
     currentPatient,
     receptionSession,
     showToast,
@@ -189,8 +185,7 @@ export function useEventListeners(options: EventListenersOptions) {
         buildOutpatientFollowUpPatientOverrides(currentPatient.value, followUpContext),
       );
     },
-    generateChronicRefillRecord,
-    showGeneratedClinicalResult,
+    openChronicRefillConfirmation: navigation.openChronicRefillConfirmation,
     resetVoiceSessionState,
     openOutpatientFollowUp: navigation.openOutpatientFollowUp,
     openReportInterpretation: navigation.openReportInterpretation,
@@ -352,10 +347,8 @@ export function useEventListeners(options: EventListenersOptions) {
     // 被 mergeCurrentPatient 用残留的 patient 填充，绕过几个入口的
     // "请先接诊患者" guard。
     currentPatient.value = null;
-    // Force exit work mode regardless of current view
-    if (isWorking.value) {
-      await workMode.exitWork();
-    }
+    // 无条件重申球态几何；即使响应式状态已先变为 ball，也要修复可能被迟到 resize 留下的错误外窗高度。
+    await workMode.exitWork();
   }
 
   /**

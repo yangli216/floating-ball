@@ -34,8 +34,8 @@
  * 助手面板进入前 / 离开后状态
  *
  * 视觉效果：
- * - 从悬浮球中心位置（scale 0.35）展开到全尺寸
  * - 透明度从 0 渐变到 1
+ * - 仅做 6px 轻位移，避免 Windows WebView2 对大工作台整层缩放造成额外合成压力
  *
  * transform-origin 由动态计算的 morphOrigin 控制，
  * 确保动画原点始终位于悬浮球的中心位置。
@@ -43,7 +43,7 @@
 .morph-enter-from.assistant-layer,
 .morph-leave-to.assistant-layer {
   opacity: 0;
-  transform: scale(0.35);
+  transform: translateY(6px);
 }
 
 /* ========== 悬浮球动画 ========== */

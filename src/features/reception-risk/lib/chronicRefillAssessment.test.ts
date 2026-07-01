@@ -68,6 +68,38 @@ describe('assessChronicRefillCandidate', () => {
     expect(result?.chronicVisits).toHaveLength(2);
   });
 
+  it('keeps the latest structured prescription attributes for each medicine', () => {
+    const now = new Date('2026-06-25T08:00:00+08:00').getTime();
+    const result = assessChronicRefillCandidate(history([
+      {
+        visitTime: now - 3 * DAY,
+        diagnoses: ['糖尿病'],
+        medications: ['盐酸二甲双胍片（30天）'],
+        medicationOrders: [{
+          orderId: 'latest-order',
+          productId: 'med-metformin',
+          name: '盐酸二甲双胍片',
+          days: '30',
+        }],
+      },
+      {
+        visitTime: now - 20 * DAY,
+        diagnoses: ['糖尿病'],
+        medications: ['盐酸二甲双胍片（14天）'],
+        medicationOrders: [{
+          orderId: 'older-order',
+          productId: 'med-metformin',
+          name: '盐酸二甲双胍片',
+          days: '14',
+        }],
+      },
+    ]));
+
+    expect(result?.medicationOrders).toEqual([
+      expect.objectContaining({ orderId: 'latest-order', days: '30' }),
+    ]);
+  });
+
   it('preserves a specific historical diagnosis instead of replacing it with the chronic group name', () => {
     const now = new Date('2026-06-25T08:00:00+08:00').getTime();
     const result = assessChronicRefillCandidate(history([{

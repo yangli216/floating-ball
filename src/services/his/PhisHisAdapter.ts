@@ -29,6 +29,7 @@ import type {
 } from '../hisService';
 import type { HisAdapter, HisServiceContext } from './HisAdapter';
 import type {
+  HisHistoricalMedication,
   HisReportedApplication,
   HisReportedApplicationType,
   HisVisitRecord,
@@ -254,6 +255,150 @@ function sanitizeOrderDescription(value: unknown): string | undefined {
   return cleaned;
 }
 
+function positiveNumberText(record: Record<string, unknown>, keys: string[]): string | undefined {
+  const value = firstNumber(record, keys);
+  return value !== undefined && value > 0 ? String(value) : undefined;
+}
+
+function positiveIntegerText(record: Record<string, unknown>, keys: string[]): string | undefined {
+  const value = firstNumber(record, keys);
+  return value !== undefined && value > 0 && Number.isInteger(value) ? String(value) : undefined;
+}
+
+function normalizeMedicationIdentity(value: unknown): string {
+  return (trim(value) || '')
+    .replace(/^[\s☆★*·•]+/u, '')
+    .replace(/[（(][^）)]*[）)]/gu, '')
+    .replace(/\d+(?:\.\d+)?\s*(?:μg|ug|mg|g|ml|片|粒|支|盒|瓶|袋)/giu, '')
+    .replace(/[\s,，、;；:：\-_/]/gu, '')
+    .toLowerCase();
+}
+
+function findReliableMedicationOrder(
+  prescriptionRaw: Record<string, unknown>,
+  medicationOrders: HisVisitDetailOrder[],
+): HisVisitDetailOrder | undefined {
+  const orderId = firstTrim(prescriptionRaw, ['idOrd']);
+  if (orderId) {
+    const exact = medicationOrders.find((order) => trim(order.idOrd) === orderId);
+    if (exact) return exact;
+  }
+
+  const productId = firstTrim(prescriptionRaw, ['idMedPro']);
+  if (productId) {
+    const matches = medicationOrders.filter((order) => (
+      firstTrim(order as Record<string, unknown>, ['idMedPro', 'idMed']) === productId
+    ));
+    if (matches.length === 1) return matches[0];
+  }
+
+  const normalizedName = normalizeMedicationIdentity(prescriptionRaw.naMedPro);
+  if (!normalizedName) return undefined;
+  const matches = medicationOrders.filter((order) => (
+    normalizeMedicationIdentity(order.naOrd) === normalizedName
+  ));
+  return matches.length === 1 ? matches[0] : undefined;
+}
+
+function mapPrescriptionMedication(
+  raw: Record<string, unknown>,
+  medicationOrders: HisVisitDetailOrder[],
+): HisHistoricalMedication | null {
+  const relatedOrder = findReliableMedicationOrder(raw, medicationOrders);
+  const name = firstTrim(raw, ['naMedPro']) ?? trim(relatedOrder?.naOrd);
+  if (!name) return null;
+
+  return {
+    orderId: firstTrim(raw, ['idOrd']) ?? trim(relatedOrder?.idOrd),
+    productId: firstTrim(raw, ['idMedPro'])
+      ?? firstTrim((relatedOrder || {}) as Record<string, unknown>, ['idMedPro', 'idMed']),
+    name,
+    spec: firstTrim(raw, ['specSale']),
+    dose: positiveNumberText(raw, ['doseOnce', 'dose']),
+    doseUnit: firstTrim(raw, ['unitDose']),
+    frequency: firstTrim(raw, ['idFreqText']),
+    frequencyKey: firstTrim(raw, ['idFreq']),
+    route: firstTrim(raw, ['idUsgeText']),
+    routeKey: firstTrim(raw, ['idUsge']),
+    days: positiveIntegerText(raw, ['takeDays']),
+    totalQty: positiveNumberText(raw, ['amount']),
+    totalUnit: firstTrim(raw, ['unitSale']),
+    raw: { ...raw },
+  };
+}
+
+function isReliablyCoveredByPrescription(
+  order: HisVisitDetailOrder,
+  medicationOrders: HisVisitDetailOrder[],
+  prescriptions: HisHistoricalMedication[],
+): boolean {
+  const orderId = trim(order.idOrd);
+  if (orderId && prescriptions.some((item) => item.orderId === orderId)) return true;
+
+  const productId = firstTrim(order as Record<string, unknown>, ['idMedPro', 'idMed']);
+  if (productId) {
+    const matchingOrders = medicationOrders.filter((item) => (
+      firstTrim(item as Record<string, unknown>, ['idMedPro', 'idMed']) === productId
+    ));
+    const matchingPrescriptions = prescriptions.filter((item) => item.productId === productId);
+    if (matchingOrders.length === 1 && matchingPrescriptions.length === 1) return true;
+  }
+
+  const normalizedName = normalizeMedicationIdentity(order.naOrd);
+  if (!normalizedName) return false;
+  const matchingOrders = medicationOrders.filter((item) => (
+    normalizeMedicationIdentity(item.naOrd) === normalizedName
+  ));
+  const matchingPrescriptions = prescriptions.filter((item) => (
+    normalizeMedicationIdentity(item.name) === normalizedName
+  ));
+  return matchingOrders.length === 1 && matchingPrescriptions.length === 1;
+}
+
+function mapFallbackOrderMedication(order: HisVisitDetailOrder): HisHistoricalMedication | null {
+  const name = trim(order.naOrd);
+  if (!name) return null;
+  const raw = order as Record<string, unknown>;
+  return {
+    orderId: trim(order.idOrd),
+    productId: firstTrim(raw, ['idMedPro', 'idMed']),
+    name,
+    totalQty: positiveNumberText(raw, ['amount']),
+    totalUnit: trim(order.unitOrd),
+    raw: { ...raw },
+  };
+}
+
+function formatHistoricalMedication(item: HisHistoricalMedication): string {
+  const fallbackDescription = !item.dose && !item.frequency && !item.route && !item.days
+    ? sanitizeOrderDescription(item.raw?.desOrd)
+    : undefined;
+  const details = [
+    fallbackDescription || '',
+    item.dose && item.doseUnit ? `每次${item.dose}${item.doseUnit}` : '',
+    item.frequency || '',
+    item.route || '',
+    item.days ? `${item.days}天` : '',
+    item.totalQty && item.totalUnit ? `共${item.totalQty}${item.totalUnit}` : '',
+  ].filter(Boolean);
+  return details.length > 0 ? `${item.name}（${details.join(' ')}）` : item.name;
+}
+
+function mapHistoricalMedications(detail: HisVisitDetailBody): HisHistoricalMedication[] {
+  const medicationOrders = (detail.orderList ?? []).filter(isMedicationOrder);
+  const prescriptions = (detail.presList ?? [])
+    .flatMap((prescription) => prescription.presSubList ?? [])
+    .map((item) => mapPrescriptionMedication(item as Record<string, unknown>, medicationOrders))
+    .filter((item): item is HisHistoricalMedication => Boolean(item));
+
+  const fallbackOrders = medicationOrders
+    .filter((order) => !isReliablyCoveredByPrescription(order, medicationOrders, prescriptions))
+    .map(mapFallbackOrderMedication)
+    .filter((item): item is HisHistoricalMedication => Boolean(item));
+
+  return [...prescriptions, ...fallbackOrders];
+}
+
 function resolveReportedApplicationType(
   group: NonNullable<HisVisitDetailBody['applyList']>[number],
   item: NonNullable<NonNullable<HisVisitDetailBody['applyList']>[number]['items']>[number],
@@ -336,20 +481,8 @@ function mapVisitDetail(
     .map((d) => trim(d.naDiag) ?? trim(d.naIcd10))
     .filter((value): value is string => Boolean(value));
 
-  const medications = (detail.orderList ?? [])
-    .filter(isMedicationOrder)
-    .map((order) => {
-      const name = trim(order.naOrd);
-      if (!name) return undefined;
-      const desc = sanitizeOrderDescription(order.desOrd);
-      // 保留药品医嘱描述与处方总量，供慢病续方提取剂量和包装信息。
-      const amount = typeof order.amount === 'number' ? order.amount : undefined;
-      const unit = trim(order.unitOrd);
-      const qty = amount !== undefined ? `${amount}${unit ?? ''}` : '';
-      const tail = [desc, qty].filter(Boolean).join(' ');
-      return tail ? `${name}（${tail}）` : name;
-    })
-    .filter((value): value is string => Boolean(value));
+  const medicationOrders = mapHistoricalMedications(detail);
+  const medications = medicationOrders.map(formatHistoricalMedication);
   const reportedApplications = mapReportedApplications(detail);
   const deptName = firstTrim(visit as Record<string, unknown>, [
     'idDeptText',
@@ -371,6 +504,7 @@ function mapVisitDetail(
     presentIllness,
     diagnoses: diagnoses.length > 0 ? diagnoses : undefined,
     medications: medications.length > 0 ? medications : undefined,
+    medicationOrders: medicationOrders.length > 0 ? medicationOrders : undefined,
     reportedApplications: reportedApplications.length > 0 ? reportedApplications : undefined,
   };
 }

@@ -238,6 +238,7 @@ watch(
 .record-field-document {
   position: relative;
   display: block;
+  padding-right: 135px;
 }
 
 .record-field-document-text {
@@ -285,7 +286,7 @@ watch(
 .record-field-document .record-field-actions {
   position: absolute;
   top: 0;
-  right: -42px;
+  right: 0;
   z-index: 4;
   opacity: 0;
   pointer-events: none;

@@ -1,0 +1,186 @@
+import { ref } from 'vue';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import type { ViewType, WindowSize } from '@/constants/windowSizes';
+import type { useWindowManagement } from './useWindowManagement';
+import { useWindowTransitionCoordinator } from './useWindowTransitionCoordinator';
+
+function createWindowManagementMock(
+  resize?: (width: number, height: number) => Promise<void>,
+): ReturnType<typeof useWindowManagement> {
+  return {
+    getPreferredWindowSize: vi.fn(async (view: ViewType): Promise<WindowSize> => (
+      view === 'consultation'
+        ? { width: 1120, height: 760 }
+        : { width: 1280, height: 760 }
+    )),
+    resizeWorkWindow: vi.fn(resize ?? (async () => undefined)),
+  } as unknown as ReturnType<typeof useWindowManagement>;
+}
+
+describe('useWindowTransitionCoordinator', () => {
+  beforeEach(() => {
+    vi.stubGlobal('window', {
+      matchMedia: () => ({ matches: true }),
+    });
+    vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback) => {
+      callback(0);
+      return 1;
+    });
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it('commits the new view only after the target geometry is applied', async () => {
+    const currentView = ref<ViewType>('reception-capsule');
+    const transitioning = ref(false);
+    const order: string[] = [];
+    const windowMgmt = createWindowManagementMock(async () => {
+      order.push(`resize:${currentView.value}`);
+    });
+    const coordinator = useWindowTransitionCoordinator({
+      currentView,
+      isWorking: ref(true),
+      transitioning,
+      windowMgmt,
+    });
+
+    await coordinator.transitionToView('consultation', {
+      commitViewState: () => {
+        order.push(`commit:${currentView.value}`);
+      },
+    });
+    order.push(`view:${currentView.value}`);
+
+    expect(order).toEqual([
+      'resize:reception-capsule',
+      'commit:consultation',
+      'view:consultation',
+    ]);
+    expect(windowMgmt.resizeWorkWindow).toHaveBeenCalledWith(1120, 760, {
+      minSize: { width: 1120, height: 760 },
+      preferredPosition: undefined,
+      resizable: true,
+    });
+    expect(coordinator.contentVisible.value).toBe(true);
+    expect(transitioning.value).toBe(false);
+  });
+
+  it('drops a stale queued target and leaves the latest view visible', async () => {
+    const currentView = ref<ViewType>('reception-capsule');
+    const transitioning = ref(false);
+    let releaseFirstResize!: () => void;
+    let markFirstResizeStarted: (() => void) | null = null;
+    const firstResizeStarted = new Promise<void>((resolve) => {
+      markFirstResizeStarted = resolve;
+    });
+    let resizeCount = 0;
+    const windowMgmt = createWindowManagementMock(async () => {
+      resizeCount += 1;
+      if (resizeCount === 1) {
+        markFirstResizeStarted?.();
+        await new Promise<void>((resolve) => {
+          releaseFirstResize = resolve;
+        });
+      }
+    });
+    const coordinator = useWindowTransitionCoordinator({
+      currentView,
+      isWorking: ref(true),
+      transitioning,
+      windowMgmt,
+    });
+
+    const first = coordinator.transitionToView('consultation');
+    await firstResizeStarted;
+    const second = coordinator.transitionToView('report-interpretation');
+    releaseFirstResize();
+
+    await Promise.all([first, second]);
+
+    expect(currentView.value).toBe('report-interpretation');
+    expect(windowMgmt.resizeWorkWindow).toHaveBeenCalledTimes(2);
+    expect(coordinator.contentVisible.value).toBe(true);
+    expect(transitioning.value).toBe(false);
+  });
+
+  it('keeps the old view visible when native geometry application fails', async () => {
+    const currentView = ref<ViewType>('reception-capsule');
+    const transitioning = ref(false);
+    const windowMgmt = createWindowManagementMock(async () => {
+      throw new Error('native resize failed');
+    });
+    const coordinator = useWindowTransitionCoordinator({
+      currentView,
+      isWorking: ref(true),
+      transitioning,
+      windowMgmt,
+    });
+
+    await expect(coordinator.transitionToView('consultation')).rejects.toThrow('native resize failed');
+
+    expect(currentView.value).toBe('reception-capsule');
+    expect(coordinator.contentVisible.value).toBe(true);
+    expect(transitioning.value).toBe(false);
+  });
+
+  it('serializes the terminal ball geometry after an in-flight view resize', async () => {
+    const currentView = ref<ViewType>('reception-capsule');
+    const isWorking = ref(true);
+    const transitioning = ref(false);
+    let releaseFirstResize!: () => void;
+    let markFirstResizeStarted: (() => void) | null = null;
+    const firstResizeStarted = new Promise<void>((resolve) => {
+      markFirstResizeStarted = resolve;
+    });
+    let resizeCount = 0;
+    const windowMgmt = createWindowManagementMock(async () => {
+      resizeCount += 1;
+      if (resizeCount === 1) {
+        markFirstResizeStarted?.();
+        await new Promise<void>((resolve) => {
+          releaseFirstResize = resolve;
+        });
+      }
+    });
+    const coordinator = useWindowTransitionCoordinator({
+      currentView,
+      isWorking,
+      transitioning,
+      windowMgmt,
+    });
+
+    const staleViewTransition = coordinator.transitionToView('consultation');
+    await firstResizeStarted;
+    const ballTransition = coordinator.transitionToBall({
+      preferredPosition: { x: 1800, y: 400 },
+      commitBallState: () => {
+        isWorking.value = false;
+      },
+    });
+    releaseFirstResize();
+
+    await Promise.all([staleViewTransition, ballTransition]);
+
+    expect(currentView.value).toBe('reception-capsule');
+    expect(isWorking.value).toBe(false);
+    expect(windowMgmt.resizeWorkWindow).toHaveBeenLastCalledWith(160, 160, {
+      minSize: { width: 160, height: 160 },
+      preferredPosition: { x: 1800, y: 400 },
+      resizable: false,
+    });
+
+    await coordinator.resizeVoiceInteractionStage('processing');
+    expect(windowMgmt.resizeWorkWindow).toHaveBeenCalledTimes(2);
+
+    await coordinator.transitionToView('consultation', {
+      commitViewState: () => {
+        isWorking.value = true;
+      },
+    });
+    expect(isWorking.value).toBe(true);
+    expect(currentView.value).toBe('consultation');
+    expect(windowMgmt.resizeWorkWindow).toHaveBeenCalledTimes(3);
+  });
+});
