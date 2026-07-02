@@ -280,7 +280,7 @@ export interface ConsultationEvent {
   payload: ConsultationResultPayload;
 }
 
-/** consultation/events/poll 返回的事件 envelope */
+/** consultation/events/ws 推送的事件 envelope */
 export interface ConsultationEventEnvelope {
   state: ConsultationResultState;
   event: ConsultationEvent | null;
@@ -305,14 +305,10 @@ export interface BrowserContext {
 export interface MedHermesOptions {
   /** 本地桥接地址，默认 http://127.0.0.1:8081/api */
   baseUrl?: string;
-  /** 轮询间隔（毫秒），默认 2000 */
-  pollInterval?: number;
-  /** 事件通道策略，默认 auto：优先 WebSocket，失败回退长轮询 */
-  eventTransport?: 'auto' | 'websocket' | 'polling';
-  /** WebSocket 断线重连间隔（毫秒），默认 1000 */
+  /** WebSocket 首次重连等待时间（毫秒），默认 1000，后续按指数增长 */
   wsReconnectMs?: number;
-  /** 业务调用后是否自动轮询，默认 true */
-  autoPoll?: boolean;
+  /** WebSocket 重连退避上限（毫秒），默认 30000 */
+  wsReconnectMaxMs?: number;
   /** 深度链接协议名，默认 med-hermes */
   scheme?: string;
   /** 协议拉起后等待重连时间（毫秒），默认 3000 */
@@ -340,7 +336,7 @@ export interface MedHermesEvents {
   'error': (err: Error) => void;
   'subscription-start': () => void;
   'subscription-stop': () => void;
-  'subscription-transport': (info: { transport: 'websocket' | 'polling'; state: 'connected' | 'closed' | 'error' }) => void;
+  'subscription-transport': (info: { transport: 'websocket'; state: 'connected' | 'closed' | 'error' }) => void;
 }
 
 /** 握手响应 */
@@ -428,17 +424,8 @@ export declare class MedHermes {
     items?: ReferenceItem[]
   ): Promise<ApiResponse>;
 
-  /** 手动长轮询一次事件 */
-  pollEvent(): Promise<ConsultationEventEnvelope | null>;
-
   /** 订阅事件流，返回取消订阅函数 */
   subscribe(listener: (event: ConsultationEventEnvelope) => void): () => void;
-
-  /** 启动事件消费；若 init/debugHandshake 已成功，底层 WebSocket 交互通道会常驻并被业务复用 */
-  startPolling(): void;
-
-  /** 停止事件消费；不会主动关闭已建立的持久 WebSocket 通道 */
-  stopPolling(): void;
 
   /** 销毁实例 */
   destroy(): void;

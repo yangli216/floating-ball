@@ -274,7 +274,7 @@
 - **后续防护**: 任何复用共享结果页的专属场景，只要“空推荐”不等于“请自动生成通用推荐”，就必须显式携带 recommendation policy；场景专属治疗范围必须在数据契约和 UI 自动行为两层同时约束。
 - **后续防护**: 调整住院病历模板字段关键词时，必须同时验证“宽泛排除词”和“明确 AI 字段词”的优先级，尤其关注入院、首次、ry 等会同时出现在文书类型和正文字段名中的词。
 
-### RETRO-031: 一键回写被非关键埋点和 WebSocket 兜底缺口阻断 [已解决]
+### RETRO-031: 一键回写被非关键埋点和 WebSocket 兜底缺口阻断 [历史方案，已由 RETRO-050 收敛]
 
 - **现象**: 打包安装包中医生点击“一键回写”后，HIS 页面控制台反复出现 `WebSocket connection to ws://127.0.0.1:8081/api/consultation/events/ws failed`，并且 HIS 侧收不到 `record-confirmed`。
 - **根因**: SDK 声明了 `auto/websocket/polling` 事件通道策略，但实现未真正按 `eventTransport` 切换，且 `_startLongPollingEvents()` 缺失，WebSocket 失败后没有可靠进入 `/events/poll` 兜底。同时新增推荐偏好记录在回写前同步调用 `crypto.randomUUID()`，旧版 HIS 内嵌浏览器不支持时会在 `complete_consultation` 之前抛错，导致回写事件根本没有写入 Bridge。
@@ -406,6 +406,13 @@
 - **根因**: `ClinicalResultInput.healthEducation` 没有传给门诊病历 Builder 的 `precautions`，`buildPrecautions()` 因缺少显式内容落入普通场景默认分支。
 - **解决方案**: 共享结果页初始化时把 `healthEducation` 作为 `precautions` 的兼容来源；复诊 API 拒收固定一周复诊、无依据上转等泛化文案并使用慢病安全兜底。
 - **后续防护**: 临床结果新增或复用病历字段时必须补充“输入契约 → 可编辑字段 → outpatientRecord → 回写 payload”完整映射测试。
+
+### RETRO-050: HIS 长轮询被部分恢复导致契约漂移与退出后请求风暴 [已解决]
+
+- **现象**: 桌面应用退出后，PHIS DevTools 持续出现 `handshake` 与 `poll?after=...` 的 `ERR_CONNECTION_REFUSED`；桌面端在线但 WebSocket 建链失败时，SDK 还会请求一个 Rust Bridge 实际未注册的 `/api/consultation/events/poll`。
+- **根因**: 2026-06-12 已同时删除 SDK 长轮询和 Rust poll 路由；2026-06-22 为处理旧 HIS WebSocket 回写漏收，只恢复了 SDK fallback、类型和文档，没有恢复服务端路由，也没有把通道取舍记录为摇摆决策。WebSocket 重连仍使用固定 1 秒握手，桌面端离线后不会进入退避状态。
+- **解决方案**: 收敛 `/api/consultation/events/ws` 为唯一 HIS 结果通道，删除 SDK 的 `pollEvent`、长轮询循环和 polling 配置，文档与类型声明同步移除 poll 契约；WebSocket 断线继续携带最后 `event.id` 补发，握手失败按 1/2/4/8/16/30 秒上限指数退避，并只在状态切换时发送 connected/disconnected 事件。
+- **后续防护**: 结果通道变更必须同时核对 `http_server.rs + sdk/med-hermes-sdk.js + d.ts + api.md + ARCHITECTURE.md + AGENTS.md + CODE_MAP.md`；不得只恢复客户端 fallback。若 WebSocket 兼容性再出现问题，应修复握手、授权、缓存或重连，不得未经人工确认重新引入第二套事件通道。
 
 > 新增条目请复制以下模板：
 

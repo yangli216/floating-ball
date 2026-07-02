@@ -345,7 +345,7 @@
         </div>
         <p class="help">
           将向桌面端 <code>POST /api/report/interpret</code>。
-          报告解读会打开独立结果窗，不进入问诊事件轮询，也不会触发 PHIS 回写。
+          报告解读会打开独立结果窗，不进入问诊 WebSocket 事件流，也不会触发 PHIS 回写。
         </p>
       </fieldset>
 
@@ -398,7 +398,7 @@
     <!-- ==================== 右：日志 + 结果回流 ==================== -->
     <section class="panel">
       <h2>③ 日志 / 结果回流
-        <span id="poll-badge" class="badge">轮询：关</span>
+        <span id="stream-badge" class="badge">WebSocket：未订阅</span>
       </h2>
 
       <div id="latest-result-card" class="result-card" style="display:none;">
@@ -408,7 +408,7 @@
       </div>
 
       <div class="row tight">
-        <button id="btn-toggle-poll">开始轮询结果</button>
+        <button id="btn-toggle-stream">订阅 WebSocket 结果</button>
         <button id="btn-clear-log" class="secondary">清空日志</button>
       </div>
 
@@ -426,7 +426,7 @@
     var $ = function (id) { return document.getElementById(id); };
     var logEl = $('log');
     var connBadge = $('conn-badge');
-    var pollBadge = $('poll-badge');
+    var streamBadge = $('stream-badge');
     var sdkVersionEl = $('sdk-version');
     var latestCard = $('latest-result-card');
     var latestPills = $('latest-result-pills');
@@ -671,11 +671,9 @@
       return;
     }
 
-    var sdk = new window.MedHermes({
-      autoPoll: false,
-      pollInterval: 2000,
-    });
+    var sdk = new window.MedHermes();
     var unsubscribeStream = null;
+    var latestEnvelope = null;
     sdkVersionEl.textContent = (window.MedHermes.VERSION || sdk._opts && sdk._opts.sdkVersion || '1.x');
     initReportSamples();
 
@@ -689,6 +687,7 @@
     sdk.on('launch-failed', function () { log('error', '[SDK] launch failed - 桌面端未启动'); });
 
     function renderLatestResult(envelope) {
+      latestEnvelope = envelope;
       latestCard.style.display = '';
       latestPills.innerHTML = '';
 
@@ -854,11 +853,10 @@
     }));
 
     $('btn-fill-from-result').addEventListener('click', withBusy($('btn-fill-from-result'), function () {
-      return sdk.pollEvent().then(function (envelope) {
-        autoFillRequestId(envelope);
-        renderLatestResult(envelope);
-        return envelope;
-      });
+      if (!latestEnvelope) throw new Error('尚未通过 WebSocket 收到结果事件');
+      autoFillRequestId(latestEnvelope);
+      renderLatestResult(latestEnvelope);
+      return Promise.resolve(latestEnvelope);
     }));
 
     $('btn-risks').addEventListener('click', withBusy($('btn-risks'), function () {
@@ -872,31 +870,31 @@
       return sdk.sendRisks(p, risks);
     }));
 
-    var polling = false;
-    $('btn-toggle-poll').addEventListener('click', function () {
-      var btn = $('btn-toggle-poll');
-      if (!polling) {
+    var subscribed = false;
+    $('btn-toggle-stream').addEventListener('click', function () {
+      var btn = $('btn-toggle-stream');
+      if (!subscribed) {
         unsubscribeStream = sdk.subscribe(function (envelope) {
           log('recv', '[SDK ← 桌面端] event', envelope);
           renderLatestResult(envelope);
           autoFillRequestId(envelope);
         });
-        polling = true;
-        btn.textContent = '停止轮询';
+        subscribed = true;
+        btn.textContent = '停止 WebSocket 订阅';
         btn.classList.add('danger');
-        pollBadge.textContent = '轮询：开';
-        pollBadge.className = 'badge ok';
+        streamBadge.textContent = 'WebSocket：已订阅';
+        streamBadge.className = 'badge ok';
         log('event', '[订阅] 已开启');
       } else {
         if (unsubscribeStream) {
           unsubscribeStream();
           unsubscribeStream = null;
         }
-        polling = false;
-        btn.textContent = '开始轮询结果';
+        subscribed = false;
+        btn.textContent = '订阅 WebSocket 结果';
         btn.classList.remove('danger');
-        pollBadge.textContent = '轮询：关';
-        pollBadge.className = 'badge';
+        streamBadge.textContent = 'WebSocket：未订阅';
+        streamBadge.className = 'badge';
         log('event', '[订阅] 已关闭');
       }
     });

@@ -38,13 +38,13 @@ yarn tauri dev
 1. 选择一个患者，确认中间草稿区已经带入患者上下文。
 2. 点击“启动完整症状问诊”，验证 `/api/consultation/start` 能唤起 `med-hermes`。
 3. 点击“AI 生成 / AI 推荐”按钮，验证 `/api/consultation/assist` 会把桌面端带入 `ConsultationPage` 快进模式。
-4. 在 `med-hermes` 里完成“回写病历”或“引用诊断 / 用药 / 检查”，观察联调页是否通过 `/api/consultation/events/poll` 收到 `draft` 或 `reference-request`。
-5. 若联调页出现“PHIS 引用回执模拟”面板，点击“模拟保存成功/失败”，验证 `/api/consultation/reference-feedback` 能把结果回推到桌面端和轮询结果通道。
-6. 点击“启动语音接诊”时，联调页现在会把当前患者上下文一起发给 `/api/consultation/start-voice`，并自动开始轮询结果。
+4. 在 `med-hermes` 里完成“回写病历”或“引用诊断 / 用药 / 检查”，观察联调页是否通过 `/api/consultation/events/ws` 收到 `draft` 或 `reference-request`。
+5. 若联调页出现“PHIS 引用回执模拟”面板，点击“模拟保存成功/失败”，验证 `/api/consultation/reference-feedback` 能把结果回推到桌面端和 WebSocket 结果通道。
+6. 点击“启动语音接诊”时，联调页会把当前患者上下文一起发给 `/api/consultation/start-voice`，结果继续通过同一 WebSocket 订阅返回。
 
 ### 4. 常见现象
 
-1. `/api/consultation/events/poll` 是单通道，联调页会用 `consultationId` 过滤，只回填当前患者结果。
+1. `/api/consultation/events/ws` 是唯一结果通道，联调页会用 `consultationId` 过滤，只回填当前患者结果；断线后 SDK 携带 `event.id` 自动重连补发。
 2. `reference-feedback` 如果找不到当前匹配的 pending request，会返回 `409 REFERENCE_REQUEST_MISMATCH`，这是为了防止旧回执串到别的患者。
 3. “再次打开恢复现场”当前只保证同一运行期内的内存状态保留；如果桌面端重启，需要重新进入本次患者流程。
 

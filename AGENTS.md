@@ -115,7 +115,7 @@
 1. `start-consultation` 能正确唤起完整问诊主流程
 2. `/api/consultation/assist`（内部仍复用 `start-consultation-session` 事件名）会打开 `ConsultationPage` 灵活模式，并且每次只消费一个目标动作
 3. 病历详情里的“回写病历”会写入 `draft` 结果；“引用诊断/用药/检查”会写入 `reference-request`
-4. `POST /api/consultation/reference-feedback` 返回后，当前页面和 `/api/consultation/events/poll` 都能看到最新 `referenceStatus`
+4. `POST /api/consultation/reference-feedback` 返回后，当前页面和 `/api/consultation/events/ws` 订阅方都能看到最新 `referenceStatus`
 5. `consultationId` 与当前患者/当前就诊上下文匹配，不读到旧结果
 6. 诊断保持单选并引用当前选中项；推荐用药、检查检验支持多选后按分组一次引入所选项
 7. 点击“引用诊断/用药/检查”后窗口不会自动收起，医生仍可继续当前问诊；PHIS 回执返回后当前页面状态会即时更新
@@ -127,7 +127,7 @@
 以下改动模式已反复出现问题，必须在提交前逐条核对（不是建议，是门禁）：
 
 1. `currentPatient` 的标识字段映射必须优先考虑 `idPi / patientId`，不能只依赖宽泛的 `id`
-2. 任何写回本地结果通道的代码都要核对 `consultationId`、`resultType`、`requestId`、`referenceStatus`、可选字段和 HIS 轮询行为
+2. 任何写回本地结果通道的代码都要核对 `consultationId`、`resultType`、`requestId`、`referenceStatus`、可选字段和 HIS WebSocket 订阅行为；不得重新引入 `/api/consultation/events/poll` 长轮询出口
 3. `ConsultationPage` 灵活模式不能重新引入一套独立于完整问诊的诊断/用药/检查推荐规则
 4. 诊断路径缓存相关改动，必须评估“同患者重复接诊”污染风险与缓存误命中风险
 5. 涉及 `emit('minimize')`、`exitWork()`、`handleCollapse()` 的改动，必须区分“同一运行期内保留现场”和“真正持久化恢复”，不要把内存保活误写成已落盘；结束就诊收球必须走统一 transition 队列并以完整 `160×160` 球态作为终态，不得被迟到的胶囊/语音 resize 覆盖

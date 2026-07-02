@@ -20,7 +20,7 @@
 
 - 本地服务地址: `http://127.0.0.1:8081`
 - 接口前缀: `/api`
-- 协议: REST 命令 + WebSocket 事件流（长轮询保留为兜底）
+- 协议: REST 命令 + WebSocket 事件流
 - 数据格式: `application/json`
 - 编码: `UTF-8`
 
@@ -28,7 +28,7 @@
 
 1. `MedHermes` 必须先在医生本机启动，否则接口不可访问。
 2. 当前服务只监听 `127.0.0.1:8081`，默认供本机 HIS / 联调页调用。
-3. 当前结果通道是内存事件队列，桌面端保留最近事件用于 WebSocket 重连补发；`GET /api/consultation/events/poll` 仍返回同一 envelope，但仅作为 WebSocket 不可用时的兜底。
+3. `/api/consultation/events/ws` 是唯一结果通道。桌面端以内存事件队列保留最近事件，SDK 断线重连时携带最后消费的 `event.id` 补发；不提供 HTTP 长轮询结果接口。
 4. 接诊类 REST 接口的同步响应仍回传 `idPi / patientId` 作为基础 `consultationId`；进入前端结果/回执链路后，桌面端会优先使用当前就诊锚点 `idVis / visitId`，缺失时回退到 `idPi / patientId`。
    如果 HIS 存在“同患者多次接诊”场景，必须传入 `idVis`，避免旧就诊结果或回执误命中当前就诊。
 5. 当前 Bridge 会为业务接口生成 `traceId` 并写入本地 HIS 集成日志，方便三方 HIS / PHIS 联调时按一次调用链路排查请求、响应和错误。
@@ -42,7 +42,7 @@
 ### 第一步: 打通基础接诊
 
 1. HIS 选择患者后，调用 `POST /api/consultation/start`
-2. 调用成功后通过 SDK 订阅 `GET /api/consultation/events/ws` WebSocket 事件流；WebSocket 不可用时 SDK 自动回退到 `GET /api/consultation/events/poll`
+2. 调用成功后通过 SDK 订阅 `GET /api/consultation/events/ws` WebSocket 事件流；HIS 内嵌浏览器必须支持 WebSocket
 3. 收到 `draft` 或 `record-confirmed` 后回填医生站草稿
 
 适用场景：
@@ -91,11 +91,11 @@
 
 ### 第三步: 打通 PHIS 回写与引用回执闭环
 
-1. HIS / PHIS 轮询到 `record-confirmed` 或 `reference-request`
+1. HIS / PHIS 通过 WebSocket 收到 `record-confirmed` 或 `reference-request`
 2. 收到 `record-confirmed` 时，读取 `requestId`、`diagList`、`orderList` 与 `referenceType/action = batch`，按 PHIS 调入确认格式一次性处理整张病历
 3. 收到 `reference-request` 时，读取 `requestId`、`action/referenceType`、`referenceItems`，按引用对象类型处理历史或单项引用
 4. 处理成功或失败后，**必须**调用 `POST /api/consultation/reference-feedback`
-5. `MedHermes` 收到回执后会更新当前页面状态，并通过 WebSocket 事件流推送 `reference-feedback`；长轮询接口同步保留兜底读取能力
+5. `MedHermes` 收到回执后会更新当前页面状态，并通过 WebSocket 事件流推送 `reference-feedback`
 
 这是当前联调最关键的一步，也是推荐诊断 / 用药 / 检查 / 独立诊疗方案真正写入 HIS 的闭环。
 
@@ -155,7 +155,7 @@
 
 1. HIS 调用 `POST /api/consultation/start`
 2. `MedHermes` 置顶并进入完整问诊主流程
-3. HIS 轮询 `GET /api/consultation/events/poll`
+3. HIS 订阅 `GET /api/consultation/events/ws`
 4. 医生在 `MedHermes` 中完成问诊或草稿回写
 5. HIS 收到 `draft` 或 `record-confirmed` 后更新医生站；其中 `record-confirmed` 在 HIS 完成最终调入确认后，仍需继续调用 `POST /api/consultation/reference-feedback` 回执成功或失败
 
@@ -164,7 +164,7 @@
 1. HIS 调用 `POST /api/consultation/assist`
 2. `MedHermes` 直接进入对应辅助界面：单项推荐仍落到 `ConsultationPage` 灵活模式，`treatment_plan` 落到独立诊疗方案推荐页
 3. 医生在当前界面中继续补充病历、看推荐、勾选方案并发起回写
-4. HIS 持续轮询 `GET /api/consultation/events/poll`
+4. HIS 继续复用同一条 WebSocket 订阅
 5. 如果收到 `record-confirmed`，进入 PHIS 最终调入确认；如果收到 `reference-request`，进入历史/单项 PHIS 引用处理
 
 ### 5.3 最终回写闭环时序（一键回写）
@@ -172,14 +172,14 @@
 医生点击“一键回写”后，`MedHermes` 会发出**一条** `record-confirmed`，`referenceType/action` 为 `batch`，`diagList` 包含标准诊断，`orderList` 包含所有选中医嘱（药品 + 检查 + 检验 + 处置）：
 
 1. `MedHermes` 发出 `record-confirmed`（`referenceType/action: "batch"`），`diagList/orderList` 包含全部可回写内容
-2. PHIS 轮询到该结果，按 `diagList` 处理诊断，按 `orderList` 的 `sdSrv/idSrv/idDeptExec/idPart/jsonField` 等字段填充调入确认
+2. PHIS 通过 WebSocket 收到该结果，按 `diagList` 处理诊断，按 `orderList` 的 `sdSrv/idSrv/idDeptExec/idPart/jsonField` 等字段填充调入确认
 3. PHIS **必须**调用 `POST /api/consultation/reference-feedback` 回执
 4. `MedHermes` 收到回执，页面更新最终回写状态
 
 ```text
 PHIS                                MedHermes
  |                                       |
- |  <-- GET /api/consultation/events/poll (record-confirmed, batch)
+ |  <-- WebSocket /api/consultation/events/ws (record-confirmed, batch)
  |  读取 diagList/orderList 完成调入确认   |
  |  POST /reference-feedback (success) -->|
  |                                       |  回写完成
@@ -189,7 +189,7 @@ PHIS                                MedHermes
 
 ### 5.4 联调日志与 traceId
 
-1. `POST /api/handshake`、`POST /api/consultation/start`、`POST /api/consultation/assist`、`POST /api/consultation/start-voice`、`POST /api/consultation/stop`、`GET /api/consultation/events/poll`、`POST /api/consultation/reference-feedback`、`POST /api/patient/risks`、`POST /api/report/interpret` 会写入本地 HIS 集成日志。
+1. `POST /api/handshake`、`POST /api/consultation/start`、`POST /api/consultation/assist`、`POST /api/consultation/start-voice`、`POST /api/consultation/stop`、`POST /api/consultation/reference-feedback`、`POST /api/patient/risks`、`POST /api/report/interpret` 会写入本地 HIS 集成日志；WebSocket 连接与异常断开按状态记录。
 2. 上述业务响应会额外返回 `traceId` 字段。三方联调时请把该值提供给桌面端开发或从“设置 -> HIS 联调日志”入口中筛选查看。
 3. 日志会记录接口方向、路径、请求摘要、响应摘要、HTTP 状态、业务 `code/msg`、耗时、患者 / 问诊 / 回执标识和错误摘要；`Cookie`、`Authorization`、`token`、手机号、身份证号等敏感字段会默认脱敏。
 4. 桌面端主动调用 PHIS 的字典、药品详情、库存校验等出站接口也写入同一日志文件，便于用一次 `traceId` 串联 Bridge 入站与 PHIS 出站排查。
@@ -300,7 +300,7 @@ http://127.0.0.1:8081/api/handshake
 
 1. 除 `POST /api/handshake` 与 `/sdk/*` 静态文件接口外，其余本地桌面服务接口都要求先完成一次成功握手。
 2. 若未握手，或握手中未携带有效的 `extra.emrAccessToken`，桌面端将统一返回 `401 Unauthorized`。
-3. 推荐 HIS 仅在收到握手成功响应后，再调用完整问诊、灵活问诊、语音问诊、结果轮询、风险提示及知识代理等桌面服务接口。
+3. 推荐 HIS 仅在收到握手成功响应后，再调用完整问诊、灵活问诊、语音问诊、结果订阅、风险提示及知识代理等桌面服务接口。
 
 ### 6.2 `POST /api/consultation/start`
 
@@ -662,7 +662,7 @@ http://127.0.0.1:8081/api/consultation/start-voice
 
 1. 如果请求体为空，则沿用桌面端当前内存中的患者上下文。
 2. 如果当前桌面端没有患者上下文，前端会提示先接诊患者。
-3. 语音结果最终仍通过 `GET /api/consultation/events/poll` 返回。
+3. 语音结果最终通过 `/api/consultation/events/ws` 推送。
 4. 未诊毕且未放弃时，同一接诊上下文内再次调用会恢复上一张语音结果页；但桌面端当前接诊切换到其他患者后，上一患者的语音缓存会失效，之后再切回该患者也会重新开始语音问诊。
 5. 桌面端在接诊上下文校验通过并准备打开语音问诊页时，上报一次 `voice_consultation` 功能调用事件；同一就诊再次显式触发语音问诊入口按新调用计数，后续提交语音日志不再补记功能统计。
 6. 桌面端进入语音流程前会先复用接诊阶段已获取的当前就诊信息和本次门诊病历文本；当 `loadClinicMedicalRecord.applyList[].items[].sdApply === "3"` 表示存在已出报告时，再通过 HIS Adapter 调用 PHIS 报告结果服务 `api/phis.aiInpatientEmrContextService/buildOutpatientFollowUpReportResults`。若本次病历文本和至少一份已报告且有实际结果内容的检验/检查结果均存在，则按报告回诊场景生成后续治疗方案；诊断只作为可选参考，不再阻断取数、推荐或回写。否则继续原语音录音问诊。
@@ -819,7 +819,7 @@ http://127.0.0.1:8081/api/report/interpret
 
 1. 若当前桌面端存在接诊患者，且请求未显式传入 `patient`，则默认使用当前患者上下文补强 prompt。
 2. 若当前桌面端存在接诊患者，且请求同时传入 `patient`，桌面端会以当前患者为主、用显式入参补齐缺失字段；调用方不应借此切换当前接诊患者。
-3. 报告解读结果不进入 `/api/consultation/events/ws` 或 `/api/consultation/events/poll`，调用方应把它视为桌面端即时展示能力，而不是回写事件。
+3. 报告解读结果不进入 `/api/consultation/events/ws`，调用方应把它视为桌面端即时展示能力，而不是回写事件。
 4. `taskId` 当前仅用于提示词和窗口标题分流：`inspectReport` 偏实验室检验解释，`checkReport` 偏影像/器械检查解释。
 
 ### 6.3B `POST /api/inpatient/emr/generate`
@@ -1009,43 +1009,13 @@ HTTP Bridge 受理响应：
 4. 生成内容是医生审核草稿，不替代医生签署。
 5. 轻量质控只影响桌面端是否弹出确认提醒，不改变 `record-confirmed` payload 字段结构；HIS 侧仍按 `fieldValues` 回填当前模板。
 
-### 6.4 `GET /api/consultation/events/poll`
-
-用途：WebSocket 不可用时，获取当前问诊流程里的事件 envelope。**此接口采用长轮询（Long Polling）方案，作为 WebSocket 事件流的兜底通道。**
-
-完整地址：
-
-```text
-http://127.0.0.1:8081/api/consultation/events/poll
-```
-
-可选查询参数：
-
-| 参数 | 类型 | 说明 |
-| :--- | :--- | :--- |
-| `after` | String | 已消费的上一条 `event.id`。当它与当前最新事件相同，服务端不会立即重复返回该事件，而是继续长轮询等待下一条变化。 |
-
-实现逻辑：
-
-1. 如果内存事件队列里存在 `after` 之后的新事件，立即返回下一条新事件。
-2. 如果当前无新事件，服务器会挂起请求。
-3. 当结果生成或发生变更时，立即返回下一条新事件。
-4. 如果挂起超过 `10 秒` 仍无新事件，返回 `200 OK`，状态为 `pending`。
-
-结果通道说明：
-
-1. 这是当前唯一的结果回传通道。
-2. 返回内容可能来自完整问诊、病历草稿回写、推荐项引用请求、PHIS 回执、语音问诊确认。
-3. 事件队列仅保留最近一小段运行期事件，用于 SDK 断线重连补发；HIS 仍必须按 `event.id / consultationId / requestId` 做幂等处理。
-4. 从语义上看，`/api/consultation/events/poll` 返回的不是“最终结果”，而是“当前事件”；新接入应只读取通用 envelope 字段 `state / event`，并从 `event.type / event.terminal / event.payload` 消费业务内容。
-
-### 6.4.0 SDK 静态文件缓存策略
+### 6.4 SDK 静态文件缓存策略
 
 `/sdk/med-hermes-sdk.js` 与 `/sdk/med-hermes-loader.js` 由本地 Bridge 按当前安装包内置文件直接返回，并带 `Cache-Control: no-store, no-cache, must-revalidate, max-age=0`。Loader 在探测到桌面端版本后，会给本地 SDK URL 追加 `?v=<version>`，避免 HIS 内嵌浏览器在升级安装包后继续执行旧版 SDK。
 
 ### 6.4.1 `GET /api/consultation/events/ws`
 
-用途：订阅当前问诊流程的实时事件流。SDK 默认 `eventTransport: "auto"` 会优先使用此通道，失败时立即启动 `GET /api/consultation/events/poll` 兜底，并在后台继续尝试恢复 WebSocket。若 HIS 内嵌浏览器或网关环境明确不支持 WebSocket，可初始化 SDK 时指定 `eventTransport: "polling"`。
+用途：订阅当前问诊流程的实时事件流。**这是唯一的 HIS 结果回传通道。** HIS 内嵌浏览器必须支持 WebSocket；SDK 不提供 HTTP 长轮询兜底。
 
 完整地址：
 
@@ -1061,11 +1031,12 @@ ws://127.0.0.1:8081/api/consultation/events/ws
 
 推送消息：
 
-1. 每条业务消息都是与 `/events/poll` 一致的事件 envelope。
+1. 每条业务消息都是统一的事件 envelope，可能来自完整问诊、病历草稿回写、推荐项引用请求、PHIS 回执或语音问诊确认。
 2. 服务端支持浏览器标准 `ping/pong/close` 交互。
 3. 客户端重连时应带上最后处理过的 `event.id`，避免漏事件或重复消费。
-4. SDK 在 `init()` / `debugHandshake()` 成功后会尽量维持这条 WebSocket 为长寿命交互通道；具体业务只复用该通道消费事件，而不是按单次业务临时建链。`auto` 模式下 WebSocket 失败不会阻断一键回写事件消费，SDK 会使用长轮询继续接收同一套 envelope。
-5. SDK 会对 `event.id` 做本地去重，业务方监听 `subscribe()` 即可。
+4. SDK 在 `init()` / `debugHandshake()` 成功后维持这条 WebSocket 为长寿命交互通道；具体业务只复用该通道消费事件，而不是按单次业务临时建链。
+5. WebSocket 异常断开后，SDK 先重新握手再建链；握手失败按 `1/2/4/8/16/30 秒`上限指数退避。重连成功后从最后 `event.id` 继续补发，不会并行启动其它结果通道。
+6. SDK 会对 `event.id` 做本地去重，业务方监听 `subscribe()` 即可；HIS 仍必须按 `event.id / consultationId / requestId` 做幂等处理。
 
 #### 通用响应 envelope
 
@@ -1508,7 +1479,7 @@ HIS 处理建议：
    - `reference-feedback + examination` = 检查保存回执
    - `reference-feedback + lab_test` = 检验保存回执
    - `reference-feedback + procedure` = 处置保存回执
-4. 收到 `reference-request` 或 `record-confirmed` 后**必须尽快调用 `/reference-feedback` 回执**。回执完成后继续轮询可取到 `reference-feedback` 确认状态。
+4. 收到 `reference-request` 或 `record-confirmed` 后**必须尽快调用 `/reference-feedback` 回执**。回执完成后，`reference-feedback` 确认状态会继续通过同一条 WebSocket 推送。
 
 ### 6.5 `POST /api/consultation/reference-feedback`（必须）
 
@@ -1762,10 +1733,10 @@ HIS 侧至少要识别以下 5 类结果：
 
 推荐策略：
 
-1. HIS 页面初始化后调用 SDK `init()` 或 `debugHandshake()`，SDK 默认会优先建立 `/api/consultation/events/ws` 长寿命交互通道；如所在容器无法建立 WebSocket，可显式配置 `eventTransport: "polling"` 只使用长轮询。
+1. HIS 页面初始化后调用 SDK `init()` 或 `debugHandshake()`，SDK 建立 `/api/consultation/events/ws` 长寿命交互通道；所在容器必须支持 WebSocket。
 2. `subscribe()` 只负责声明“当前页面要消费哪些事件”，不再等同于“临时创建一条新的业务专用 WebSocket”。
 3. 调用 `/start`、`/assist` 或 `/start-voice` 成功后，继续复用同一条通道接收事件。
-4. WebSocket 断开时，SDK 会携带最后处理过的 `event.id` 自动重连；`auto` 模式下若 WebSocket 不可用，会立即回退到 `/events/poll?after=...` 继续消费事件，避免医生点击“一键回写”后 HIS 侧漏收 `record-confirmed`。
+4. WebSocket 断开时，SDK 会携带最后处理过的 `event.id` 自动重连；握手失败使用最高 30 秒的指数退避，重连成功后由内存事件队列补发未消费事件。
 5. 收到 `reference-request` 或 `record-confirmed` 后，PHIS 必须调用 `/reference-feedback` 回执；回执会继续通过同一事件流推送。
 6. SDK 内部已封装连接、重连、补发和去重逻辑，HIS 接入建议直接使用 SDK 的事件监听。
 
@@ -1779,7 +1750,7 @@ consultationId + resultType + requestId + timestamp
 
 1. 当前完整 HIS 联调参考页是 `web_project/public/mock-his.html`；报告解读专用测试页是 `web_project/public/report-interpretation-test.html`；SDK 位于 `sdk/med-hermes-sdk.js`。
 2. `consultationId` 当前来自 HIS 下发的就诊锚点或患者标识；HIS 侧应尽量传入 `idVis / visitId`，并防止缺失就诊锚点时“同患者旧结果误命中当前就诊”。
-3. `/assist` 每次调用都会清空上一次结果通道；不要在旧轮询结果未消费完成时复用旧状态。
+3. `/assist` 每次调用都会重置当前业务上下文；不要在上一动作事件尚未消费完成时复用旧状态。
 4. `reference-feedback` 只接受与“当前最新待处理回写或引用请求”匹配的回执。
 5. 当前页面恢复依赖同一运行期内的前端内存状态；如果 `MedHermes` 进程已经退出或重启，不保证还能恢复到回执前页面。
 6. `MedHermes` 内所有推荐结果本质上都是医生确认前的草稿，HIS / PHIS 仍应保留最终校验与保存逻辑。
@@ -1801,10 +1772,12 @@ curl -X POST 'http://127.0.0.1:8081/api/consultation/start' \
   }'
 ```
 
-### 10.2 轮询结果
+### 10.2 订阅结果事件
 
-```bash
-curl 'http://127.0.0.1:8081/api/consultation/events/poll'
+```js
+const unsubscribe = mh.subscribe((envelope) => {
+  console.log(envelope.event?.type, envelope.event?.payload);
+});
 ```
 
 ### 10.3 回执最终一键回写结果（record-confirmed batch）

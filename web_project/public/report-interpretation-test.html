@@ -612,7 +612,7 @@
       state.sdk = null;
       state.sdkLoading = new Promise(function (resolve, reject) {
         if (typeof window.MedHermes === 'function') {
-          state.sdk = new window.MedHermes({ baseUrl: baseUrl, autoPoll: false, timeout: 20000 });
+          state.sdk = new window.MedHermes({ baseUrl: baseUrl, timeout: 20000 });
           resolve(state.sdk);
           return;
         }
@@ -624,7 +624,7 @@
             reject(new Error('SDK 加载完成，但 window.MedHermes 不存在'));
             return;
           }
-          state.sdk = new window.MedHermes({ baseUrl: baseUrl, autoPoll: false, timeout: 20000 });
+          state.sdk = new window.MedHermes({ baseUrl: baseUrl, timeout: 20000 });
           resolve(state.sdk);
         };
         script.onerror = function () {

@@ -23,7 +23,7 @@
 
 - 服务地址：`http://127.0.0.1:8081`
 - 接口前缀：`/api`
-- 协议：`HTTP`
+- 协议：REST 命令 + WebSocket 结果事件流
 - 数据格式：`application/json`
 - 编码：`UTF-8`
 
@@ -31,14 +31,14 @@
 
 1. 医生本机必须先启动 `med-hermes`，否则本地接口不可访问。
 2. 当前服务只监听 `127.0.0.1`，默认只供本机 HIS / 联调页调用。
-3. 当前结果回传通道是单槽内存态，不是历史队列。
+3. `/api/consultation/events/ws` 是唯一结果回传通道；桌面端保留有限内存事件队列供断线重连补发，不提供 HTTP 长轮询。
 4. 当前 `consultationId` 默认直接使用 `idPi / patientId`，不是独立就诊流水号。
 
 ### 2.3 标准接入建议
 
 建议按以下 3 步推进：
 
-1. 先接 `POST /api/consultation/start` + `GET /api/consultation/events/poll`
+1. 先接 `POST /api/consultation/start` + `GET /api/consultation/events/ws`
 2. 再接 `POST /api/consultation/assist`，打通灵活模式
 3. 最后接 `POST /api/consultation/reference-feedback`，完成 PHIS 引用闭环
 
@@ -84,7 +84,7 @@
 ### 4.1 基础接诊流程
 
 1. HIS 选中患者后调用 `POST /api/consultation/start`
-2. 调用成功后立即轮询 `GET /api/consultation/events/poll`
+2. 调用成功后通过 SDK 订阅 `GET /api/consultation/events/ws`
 3. 收到 `draft` 或 `final-report` 后回填医生站草稿
 
 适用场景：
@@ -96,7 +96,7 @@
 
 1. HIS 在当前患者上下文下调用 `POST /api/consultation/assist`
 2. 传入 `action`
-3. 继续轮询 `GET /api/consultation/events/poll`
+3. 继续复用同一条 WebSocket 订阅
 4. 如收到 `reference-request`，说明医生在 `med-hermes` 中发起了引用
 
 `action` 支持：
@@ -115,12 +115,12 @@
 
 ### 4.3 PHIS 引用闭环流程
 
-1. HIS / PHIS 轮询到 `reference-request`
+1. HIS / PHIS 通过 WebSocket 收到 `reference-request`
 2. 读取 `requestId`、`referenceType`、`referenceItems`
 3. 在 HIS / PHIS 内完成保存
 4. 保存成功或失败后调用 `POST /api/consultation/reference-feedback`
 5. `med-hermes` 收到回执后更新页面状态
-6. HIS 继续轮询 `GET /api/consultation/events/poll`，直到读到 `reference-feedback`
+6. HIS 通过同一条 WebSocket 收到 `reference-feedback`
 
 这是当前推荐诊断 / 用药 / 检查真正写入业务系统的闭环。
 
@@ -232,23 +232,23 @@ http://127.0.0.1:8081/api/consultation/start-voice
 
 1. 请求体可以为空。
 2. 若不为空，字段结构与 `/start` 基本一致。
-3. 语音接诊结果最终仍通过 `GET /api/consultation/events/poll` 返回。
+3. 语音接诊结果最终通过 `GET /api/consultation/events/ws` 推送。
 
-### 5.4 `GET /api/consultation/events/poll`
+### 5.4 `GET /api/consultation/events/ws`
 
-用途：获取当前最新一条问诊结果。
+用途：订阅问诊、回写与 PHIS 回执事件。
 
 完整地址：
 
 ```text
-http://127.0.0.1:8081/api/consultation/events/poll
+ws://127.0.0.1:8081/api/consultation/events/ws
 ```
 
 结果说明：
 
-1. 这是当前唯一结果回传通道。
-2. 当前采用“最新结果覆盖旧结果”的单槽模型。
-3. HIS 必须自己做去重和当前患者校验。
+1. 这是当前唯一结果回传通道，HIS 内嵌浏览器必须支持 WebSocket。
+2. SDK 断线后会先重新握手，再按最高 30 秒的指数退避重连，并携带最后消费的 `event.id` 补发。
+3. HIS 必须按 `event.id` 做去重，并校验 `consultationId` 与当前患者/就诊一致。
 
 #### 结果类型
 
@@ -276,8 +276,8 @@ http://127.0.0.1:8081/api/consultation/events/poll
 
 1. 必须先校验 `consultationId` 是否匹配当前患者。
 2. 判断回执类型时，建议优先看 `resultType + referenceType`。
-3. 收到 `reference-request` 后不要停止轮询，应继续等待 `reference-feedback`。
-4. `404 RESULT_NOT_READY` 视为正常等待，不应当作错误中断。
+3. 收到 `reference-request` 后保持 WebSocket 订阅，继续等待 `reference-feedback`。
+4. WebSocket 断线时由 SDK 携带最后 `event.id` 自动重连；业务侧不另起 HTTP 结果请求。
 
 ### 5.5 `POST /api/consultation/reference-feedback`
 
@@ -378,16 +378,16 @@ http://127.0.0.1:8081/api/consultation/stop
 
 该接口不是主链路必需项，可以后补。
 
-## 6. 推荐轮询与去重策略
+## 6. 推荐订阅与去重策略
 
 推荐策略：
 
-1. 调用 `/start`、`/assist`、`/start-voice` 成功后，立即开始轮询 `/result`
-2. 轮询间隔建议 `1~2 秒`
-3. 收到 `404 RESULT_NOT_READY` 时继续等待
-4. 收到非当前患者 `consultationId` 的结果直接忽略
-5. 收到 `reference-request` 后继续轮询，直到拿到 `reference-feedback`
-6. 收到重复结果时按唯一键去重
+1. 页面初始化并握手成功后，通过 SDK 建立 `/api/consultation/events/ws` 长寿命订阅。
+2. 调用 `/start`、`/assist`、`/start-voice` 后复用同一条 WebSocket，不按单次业务重复建链。
+3. WebSocket 断线时由 SDK 按指数退避重连，并携带最后 `event.id` 请求补发。
+4. 收到非当前患者 `consultationId` 的结果直接忽略。
+5. 收到 `reference-request` 后保持订阅，直到拿到 `reference-feedback`。
+6. 收到重复结果时按唯一键去重。
 
 推荐唯一键：
 
@@ -432,10 +432,12 @@ curl -X POST 'http://127.0.0.1:8081/api/consultation/start' \
   }'
 ```
 
-### 8.2 轮询结果
+### 8.2 订阅结果
 
-```bash
-curl 'http://127.0.0.1:8081/api/consultation/events/poll'
+```js
+const unsubscribe = mh.subscribe((envelope) => {
+  console.log(envelope.event?.type, envelope.event?.payload);
+});
 ```
 
 ### 8.3 回执引用结果
@@ -466,9 +468,9 @@ curl -X POST 'http://127.0.0.1:8081/api/consultation/reference-feedback' \
 
 1. `POST /api/consultation/start` 能唤起完整问诊
 2. `POST /api/consultation/assist` 能进入对应灵活模式阶段
-3. `GET /api/consultation/events/poll` 能回收到当前患者的 `draft` 或 `record-confirmed`
+3. `GET /api/consultation/events/ws` 能推送当前患者的 `draft` 或 `record-confirmed`
 4. 发起推荐诊断 / 用药 / 检查引用时能先收到 `reference-request`
-5. PHIS 调用 `POST /api/consultation/reference-feedback` 后，`GET /api/consultation/events/poll` 能继续返回 `reference-feedback`
+5. PHIS 调用 `POST /api/consultation/reference-feedback` 后，`GET /api/consultation/events/ws` 能继续推送 `reference-feedback`
 6. 切换患者后不会把上一位患者的结果误回填到当前医生站
 7. 语音接诊结果也能走同一条 `/result` 通道回写
 
@@ -556,8 +558,8 @@ setActiveHisVendor('myHis');
   * 患者与住院上下文：`HisPatientInfo` / `HisPatientHistory` / `HisInpatientDiagnosis` / `HisInpatientOrder` / `HisInpatientTemperatureChart` / `HisInpatientRegistrationInfo`
   原始 PHIS 字段仅通过返回值的 `raw` / `properties` 透传下游使用，业务通用代码不依赖。
 - `PharmacyOption` 仍保留 `idDept` / `idSto` PHIS 字段。药房体系本身是双层标识（部门与库房），其他厂商接入时可再考虑抽象。
-- 写回 HIS 暂不在适配器范围内：当前所有结果回写都走"前端经 invoke → Tauri → HTTP `/api/consultation/events/poll`
-  → HIS 长轮询拉取"模式（详见第 5-7 节），无 `writeBack(record)` 类的同步出站调用。
+- 写回 HIS 暂不在适配器范围内：当前所有结果回写都走“前端经 invoke → Tauri → WebSocket `/api/consultation/events/ws`
+  → HIS 订阅接收”模式（详见第 5-7 节），无 `writeBack(record)` 类的同步出站调用。
   若未来某厂商需要主动 PUSH 回 HIS，可作为 `HisAdapter` 的 optional 方法扩展。
 
 ### 11.6 中性 DTO 字段对照表（PHIS → 通用）

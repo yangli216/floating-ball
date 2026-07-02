@@ -7,12 +7,14 @@
 | 文件 | 部署方式 | 说明 |
 |------|----------|------|
 | `med-hermes-loader.js` | **HIS 本地部署** | 引导加载器，负责检测在线、协议拉起、CDN 加载。功能纯粹，极少更新 |
-| `med-hermes-sdk.js` | **CDN 托管** | 完整 SDK，封装全部 API + WebSocket 事件订阅 + 长轮询兜底 + 去重 |
+| `med-hermes-sdk.js` | **CDN 托管** | 完整 SDK，封装全部 API + WebSocket 事件订阅、断线重连与去重 |
 | `med-hermes-sdk.d.ts` | 随 SDK 分发 | TypeScript 类型声明（可选） |
 
 **推荐架构：** HIS 本地只部署 `loader.js`，SDK 从 CDN 加载。这样 loader 几乎不需要更新，SDK 通过 CDN 自动获取最新版本。
 
 如果直接从桌面端本地 Bridge 加载 `/sdk/med-hermes-loader.js` 或 `/sdk/med-hermes-sdk.js`，Bridge 会返回 `no-store` 缓存头；Loader 自动推导本地 SDK 地址时，也会在 URL 后追加 `?v=<桌面端版本>`，避免升级安装包后 HIS 内嵌浏览器继续执行旧 SDK。
+
+SDK 3.0 起，`/api/consultation/events/ws` 是唯一结果通道；已移除 `pollEvent()`、`startPolling()`、`stopPolling()` 以及 `pollInterval / eventTransport / autoPoll` 配置。旧接入应改用 `subscribe()` 消费 WebSocket 事件。
 
 ---
 
@@ -182,7 +184,7 @@ mh.startConsultation({
 });
 ```
 
-完成！SDK 会在 `init()` / `debugHandshake()` 成功后尽量维持一条长寿命 WebSocket 交互通道，并自动处理断线重连、`event.id` 补发和去重；WebSocket 不可用时才回退到长轮询。
+完成！SDK 会在 `init()` / `debugHandshake()` 成功后维持一条长寿命 WebSocket 交互通道，并自动处理指数退避重连、`event.id` 补发和去重。HIS 内嵌浏览器必须支持 WebSocket，SDK 不提供 HTTP 长轮询结果通道。
 
 ---
 
@@ -286,10 +288,8 @@ const mh = new MedHermes(options?)
 | 参数 | 类型 | 默认值 | 说明 |
 |------|------|--------|------|
 | `baseUrl` | string | `http://127.0.0.1:8081/api` | 本地桥接地址 |
-| `pollInterval` | number | `2000` | 轮询间隔（毫秒） |
-| `eventTransport` | `'auto' \| 'websocket' \| 'polling'` | `'auto'` | 事件通道策略；`auto` 优先 WebSocket，失败时用长轮询兜底 |
-| `wsReconnectMs` | number | `1000` | WebSocket 断线后后台重连间隔 |
-| `autoPoll` | boolean | `true` | 业务调用后自动轮询 |
+| `wsReconnectMs` | number | `1000` | WebSocket 首次重连等待时间；后续按指数增长 |
+| `wsReconnectMaxMs` | number | `30000` | WebSocket 重连退避上限 |
 | `scheme` | string | `med-hermes` | 深度链接协议名 |
 | `launchRetryMs` | number | `3000` | 协议拉起后等待重连时间 |
 | `timeout` | number | `5000` | HTTP 请求超时 |
@@ -452,27 +452,13 @@ await mh.sendFeedback(record.requestId, 'success', 'HIS 已成功回填住院病
 发送 PHIS 引用回执。每收到一条 `reference-request` 或等待闭环中的 `record-confirmed`，都应调用此方法回执。
 SDK 会优先使用最近一次事件的 `consultationId` 回执；如果当前患者传入了 `idVis / visitId`，该值会作为结果/回执锚点。
 
-#### `pollEvent(): Promise`
-
-手动长轮询一次事件 envelope。通常只用于调试或 WebSocket 不可用时的兜底验证。
-
-返回值是统一 envelope：
-
-- `state`: `pending / ready / cancelled`
-- `event`: 当前事件对象
-- `event.type`: 事件类型，对应 `draft / record-confirmed / reference-request / reference-feedback ...`
-- `event.terminal`: 当前事件是否已到终态
-- `event.payload`: 规范化业务 payload
-
-当 `state = pending` 时，返回 `null`。
-
 #### `ping(): Promise`
 
 检测桌面端桥接服务是否在线，不会执行授权握手。
 
 #### `subscribe(listener): () => void`
 
-订阅统一事件流。底层 WebSocket 交互通道在 `init()` / `debugHandshake()` 成功后会尽量常驻，`subscribe()` 只是声明当前页面开始消费该通道上的事件；默认 `eventTransport: 'auto'` 会在 WebSocket 不可用时自动回退长轮询，并在后台继续重试 WebSocket。返回取消订阅函数。
+订阅统一事件流。底层 WebSocket 交互通道在 `init()` / `debugHandshake()` 成功后常驻，`subscribe()` 声明当前页面消费该通道上的事件。断线后 SDK 先重新握手，再按最高 30 秒的指数退避重建 WebSocket；返回取消订阅函数。
 
 ```js
 const unsubscribe = mh.subscribe((envelope) => {
@@ -483,10 +469,6 @@ const unsubscribe = mh.subscribe((envelope) => {
 
 unsubscribe();
 ```
-
-#### `startPolling() / stopPolling()`
-
-手动控制当前页面是否消费事件。它不会主动关闭已经建立的持久 WebSocket 通道；该通道仍会保持连接，供后续业务继续复用。若初始化时指定 `eventTransport: 'polling'`，则只启动 `/consultation/events/poll` 长轮询，不建立 WebSocket。
 
 #### `destroy()`
 
@@ -508,8 +490,8 @@ unsubscribe();
 | `launching` | - | 正在通过协议拉起桌面端 |
 | `launch-failed` | - | 协议拉起失败 |
 | `error` | `err` | 通信异常 |
-| `subscription-start` | - | 开始事件订阅循环 |
-| `subscription-stop` | - | 停止事件订阅循环 |
+| `subscription-start` | - | 页面开始消费 WebSocket 事件 |
+| `subscription-stop` | - | 页面停止消费 WebSocket 事件；持久连接仍可供后续业务复用 |
 
 ---
 
@@ -558,13 +540,9 @@ mh.on('launch-failed', () => {
 
 SDK 通过 `fetch` 调用本地 `127.0.0.1:8081`，请确认 MedHermes 桌面端已启动，并且已经成功执行 `init()` / `debugHandshake()`。如果返回 401，通常是尚未握手或握手缺少有效的 `extra.emrAccessToken`。
 
-### Q: 轮询什么时候自动停止？
+### Q: 桌面端退出后 SDK 如何重连？
 
-SDK 会根据事件 envelope 里的 `event.terminal` 自动决定是否停止轮询。
-
-- `draft`、`final-report`、`batch`、`reference-feedback`、`cancelled` 默认都会停止
-- `reference-request` 会继续轮询，等待 PHIS 回执
-- `record-confirmed` 在 `referenceStatus = pending` 时也会继续轮询，直到收到最终 `reference-feedback`
+WebSocket 断开后，SDK 会先重新握手，再按 `1/2/4/8/16/30 秒`上限指数退避。桌面端恢复后，SDK 携带最后消费的 `event.id` 重建 WebSocket 并接收内存队列中的未消费事件；不会启动 HTTP 长轮询。
 
 ### Q: 如何在 Vue/React 中使用？
 
