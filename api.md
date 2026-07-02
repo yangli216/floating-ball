@@ -198,9 +198,9 @@ PHIS                                MedHermes
 ### 5.5 门诊用药推荐的有效库存目录
 
 1. 桌面端按当前用户可见发药药房调用 `api/phis.medicineDrpQueryService/queryInvSubList`，单个药房请求参数为 `[{"start":0,"limit":-1,"sort":null,"params":{"idSto":"药房ID","naMedPro":null,"sdBasMed":null,"amountType":"1","fgActiveType":"1","sdMed":null,"sdMedType":null}}]`。
-2. 返回的同一 `idMedPro` 多批次记录在 HIS Adapter 内合并；只有启用、未失效且可用数量大于 0 的药品进入 AI 候选目录。
+2. 返回的同一 `idMedPro` 多批次记录在 HIS Adapter 内合并；只有启用、未失效且可用数量大于 0 的药品进入 AI 候选目录。合并项保留近效期有效批次的 `priceSale` 作为当前药房库存单价；近效期批次未返回有效价格时，顺延取下一个有效批次价格。
 3. 合并后的目录按机构、租户、药房缓存，短时间内重复生成方案不重复访问 PHIS；刷新失败时保留最近一次非空缓存作为降级。
-4. AI 上下文使用紧凑的药品名和规格列表约束推荐范围；该目录是推荐依据，不是提交时的库存承诺，最终回写前仍调用实时库存校验接口。
+4. AI 上下文使用紧凑的药品名和规格列表约束推荐范围；该目录是推荐依据，不是提交时的库存承诺，最终回写前仍调用实时库存校验接口。库存校验请求中的单价必须按 `药房 storeId + 药品 idMedPro` 从有效库存目录获取，不得使用药品详情接口返回的单价；目录中无有效库存单价时应拦截校验和回写。
 
 ## 6. 接口清单
 

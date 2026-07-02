@@ -68,6 +68,7 @@ import {
   syncTreatmentExecDeptSelections as syncSharedTreatmentExecDeptSelections,
   toManualMatchCandidateView,
   type ClinicalResultInput,
+  type ClinicalResultChannel,
   type ClinicalResultRecordSummaryInput,
   type MedicinePrimaryField,
   type ManualMatchRawCandidate,
@@ -98,6 +99,7 @@ import {
   useBodySiteOptions,
   useClinicalResultCancelController,
   useClinicalResultChannelStrategy,
+  useClinicalResultDiagnosisChecklist,
   useClinicalResultIntentReset,
   useClinicalResultPatientContext,
   useClinicalResultWritebackPayload,
@@ -139,7 +141,7 @@ type TreatmentAttributeOption = Pick<UsageOption, 'key' | 'text'> & Partial<Pick
 const props = withDefaults(defineProps<{
   initialPatientData?: AppPatient;
   intentResult: ClinicalResultInput | VoiceIntentResult | null;
-  channel?: 'voice' | 'symptom' | 'chronic-refill';
+  channel?: ClinicalResultChannel;
   showPatientHeader?: boolean;
   /**
    * intentResult 的来源。
@@ -203,23 +205,7 @@ const treatmentLoading = ref(false);
 const treatmentRequestSeq = ref(0);
 const autoTreatmentFetchAttemptKey = ref('');
 
-interface ChecklistItem {
-  question: string;
-  recordText: string;
-}
-
-interface DiagnosisChecklistResponse {
-  isNeeded?: boolean;
-  severity?: string;
-  items?: ChecklistItem[];
-}
-
 const lastAppliedIntentKey = ref('');
-const showChecklistModal = ref(false);
-const isChecklistLoading = ref(false);
-const checklistItems = ref<ChecklistItem[]>([]);
-const checklistGenerationError = ref('');
-const activeChecklistDiagnosis = ref<Diagnosis | null>(null);
 
 const submitting = ref(false);
 const writebackStatus = useWritebackStatus({
@@ -241,12 +227,50 @@ const channelStrategy = useClinicalResultChannelStrategy({
   showPatientHeader: () => props.showPatientHeader,
 });
 const {
+  channel: resultChannel,
   userLogType: consultationUserLogType,
   shouldUseVoiceCache,
   shouldShowPatientHeader,
   cancelDialogTitle,
   cancelDialogText,
+  diagnosisChecklistTraceContext,
+  buildPreferenceContext: buildChannelPreferenceContext,
 } = channelStrategy;
+
+const diagnosisChecklist = useClinicalResultDiagnosisChecklist({
+  getChiefComplaint: () => chiefComplaint.value,
+  getHistoryOfPresentIllness: () => historyOfPresentIllness.value,
+  request: async ({ diagnosisName, chiefComplaint: complaint, historyOfPresentIllness: history }) => {
+    const userPrompt = PROMPTS.consultation.diagnosisChecklist.buildUserPrompt({
+      diagnosisName,
+      chiefComplaint: complaint,
+      historyOfPresentIllness: history,
+    });
+    return chat([
+      { role: 'system', content: PROMPTS.consultation.diagnosisChecklist.system },
+      { role: 'user', content: userPrompt },
+    ], undefined, undefined, undefined, {
+      traceContext: {
+        ...diagnosisChecklistTraceContext.value,
+        consultationId: resolveConsultationId(),
+      },
+    });
+  },
+  formatError: (error) => formatUserFacingError(error, {
+    context: '诊断鉴别生成失败',
+    fallback: '请稍后重试。',
+  }),
+  notify: showToast,
+});
+const {
+  activeChecklistDiagnosis,
+  checklistGenerationError,
+  checklistItems,
+  isChecklistLoading,
+  showChecklistModal,
+  closeChecklistModal,
+  openDiagnosisChecklist,
+} = diagnosisChecklist;
 
 const patientContext = useClinicalResultPatientContext({
   patient: computed(() => props.initialPatientData),
@@ -303,12 +327,7 @@ const getPatientAnchorId = (): string => patientAnchorId.value;
 const resolveConsultationId = (): string => consultationId.value;
 
 function buildPreferenceContext(sceneSuffix: string) {
-  const isSymptomChannel = props.channel === 'symptom';
-  return {
-    consultationId: resolveConsultationId(),
-    sourceModule: isSymptomChannel ? 'consultation' : 'voice_consultation',
-    scene: `${isSymptomChannel ? 'smart-consultation' : 'voice-consultation'}-${sceneSuffix}`,
-  };
+  return buildChannelPreferenceContext(resolveConsultationId(), sceneSuffix);
 }
 
 // ---- 编辑器快照（用于跨会话恢复全部病历，避免重新调 fetchAITreatment） ----
@@ -783,7 +802,7 @@ function buildIntentTreatmentKey(item: ClinicalResultInput['treatments'][number]
 
 function buildIntentResultKey(result: ClinicalResultInput | VoiceIntentResult): string {
   return JSON.stringify({
-    channel: props.channel,
+    channel: resultChannel.value,
     source: props.intentSource || '',
     patient: patientAnchorId.value,
     record: {
@@ -926,96 +945,10 @@ function toggleDiagnosis(diag: Diagnosis): void {
   toggleDiagnosisSelection(diag);
 }
 
-function closeChecklistModal(): void {
-  showChecklistModal.value = false;
-  checklistGenerationError.value = '';
-}
-
-function normalizeChecklistItems(result: DiagnosisChecklistResponse): ChecklistItem[] {
-  if (!result?.isNeeded || !Array.isArray(result.items)) {
-    return [];
-  }
-  return result.items
-    .map((item) => ({
-      question: normalizeIntentKeyPart(item?.question),
-      recordText: normalizeIntentKeyPart(item?.recordText),
-    }))
-    .filter((item) => item.question);
-}
-
-function buildDiagnosisMismatchError(result: DiagnosisChecklistResponse): string {
-  if (!result?.isNeeded) {
-    return '';
-  }
-
-  const items = normalizeChecklistItems(result);
-  const combinedText = items
-    .map((item) => `${item.question} ${item.recordText}`)
-    .join(' ');
-  const isCritical = result.severity === 'critical'
-    || /不匹配|不相符|明显不符|不能解释|无法解释|复核诊断方向|诊断方向.*错误|诊断.*错误/.test(combinedText);
-
-  if (!isCritical) {
-    return '';
-  }
-
-  const primary = items[0];
-  return primary?.question || '当前诊断与主诉、现病史明显不符，请先复核诊断方向。';
-}
-
 async function handleDiagnosisDifferential(diag: Diagnosis, event?: Event): Promise<void> {
   event?.stopPropagation();
   closeReasonTooltipIfOpen();
-  activeChecklistDiagnosis.value = diag;
-  checklistItems.value = [];
-  checklistGenerationError.value = '';
-  showChecklistModal.value = true;
-  isChecklistLoading.value = true;
-  const isSymptomChannel = props.channel === 'symptom';
-
-  try {
-    const userPrompt = PROMPTS.consultation.diagnosisChecklist.buildUserPrompt({
-      diagnosisName: diag.name,
-      chiefComplaint: chiefComplaint.value,
-      historyOfPresentIllness: historyOfPresentIllness.value,
-    });
-
-    const response = await chat([
-      { role: 'system', content: PROMPTS.consultation.diagnosisChecklist.system },
-      { role: 'user', content: userPrompt },
-    ], undefined, undefined, undefined, {
-      traceContext: {
-        scene: isSymptomChannel ? 'symptom-consultation-diagnosis-checklist' : 'voice-consultation-diagnosis-checklist',
-        sourceModule: isSymptomChannel ? 'symptom_consultation_result' : 'voice_consultation_result',
-        operationModule: isSymptomChannel ? 'consultation' : 'voice_consultation',
-        operationAction: 'generate_diagnosis_checklist',
-        title: isSymptomChannel ? '智能问诊生成鉴别排查建议' : '语音问诊生成鉴别排查建议',
-        consultationId: resolveConsultationId(),
-      },
-    });
-
-    const parsed = parseLLMJson<DiagnosisChecklistResponse>(response);
-    const mismatchError = buildDiagnosisMismatchError(parsed);
-    if (mismatchError) {
-      checklistItems.value = [];
-      checklistGenerationError.value = mismatchError;
-      return;
-    }
-
-    checklistItems.value = normalizeChecklistItems(parsed);
-    if (checklistItems.value.length === 0) {
-      showToast?.('当前诊断暂无需要复核或鉴别排查的提示。', 'info');
-    }
-  } catch (error: unknown) {
-    checklistItems.value = [];
-    checklistGenerationError.value = formatUserFacingError(error, {
-      context: '诊断鉴别生成失败',
-      fallback: '请稍后重试。',
-    });
-    showToast?.(checklistGenerationError.value, 'error');
-  } finally {
-    isChecklistLoading.value = false;
-  }
+  await openDiagnosisChecklist(diag);
 }
 
 function setPrimaryDiagnosis(diag: Diagnosis, event?: Event): void {
@@ -2097,7 +2030,7 @@ watch(
     }
 
     console.info('[VoiceConsultationNew] Patient context changed, reset clinical result state', {
-      channel: props.channel,
+      channel: resultChannel.value,
       previousAnchorId,
       currentAnchorId,
     });

@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   buildMedicineQuantityExplanation,
   calculateMedicineQuantity,
+  resolveMedicineDispensingQuantity,
 } from './clinicalResultMedicineQuantity';
 
 describe('clinicalResultMedicineQuantity', () => {
@@ -93,5 +94,32 @@ describe('clinicalResultMedicineQuantity', () => {
       dosage: '10',
       dosageUnit: 'mg',
     })).toBe('');
+  });
+
+  it('falls back to one sale package when a valid frequency cannot be quantified', () => {
+    const rec = {
+      type: 'medicine' as const,
+      name: '布洛芬缓释胶囊',
+      reason: '必要时止痛',
+      spec: '0.3g*24粒/盒',
+      dosage: '0.3',
+      dosageUnit: 'g',
+      frequency: '必要时',
+      frequencyKey: 'PRN',
+      days: '3',
+      totalQty: '',
+      totalUnit: '盒',
+    };
+
+    expect(calculateMedicineQuantity(rec)).toBeNull();
+    expect(resolveMedicineDispensingQuantity(rec)).toEqual({
+      packageCount: 1,
+      saleUnit: '盒',
+      source: 'single-package-fallback',
+      calculation: null,
+    });
+    expect(buildMedicineQuantityExplanation(rec)).toBe(
+      '当前频次“必要时”无法精确换算包装总量，暂按1盒发药，请医生确认。',
+    );
   });
 });

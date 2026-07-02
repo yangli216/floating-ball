@@ -1415,45 +1415,69 @@ class MedicalDataService {
   private calculateScore(query: string, target: string, keywords?: string[]): number {
     const q = query.toLowerCase();
     const t = target.toLowerCase();
+    let score = 0;
 
     if (t.includes(q)) {
       const ratio = q.length / t.length;
-      return ratio >= 0.4 ? 0.9 : 0.9 * ratio;
-    }
-
-    if (q.includes(t)) {
+      score = ratio >= 0.4 ? 0.9 : 0.9 * ratio;
+    } else if (q.includes(t)) {
       const ratio = t.length / q.length;
-      if (ratio >= 0.5) return 0.8;
-      if (ratio >= 0.33) return 0.65;
-      return ratio * 1.5;
-    }
-
-    if (keywords) {
-      let bestKeywordScore = 0;
-      for (const k of keywords) {
-        if (k.length < 2) continue;
-        const kl = k.toLowerCase();
-        if (q.includes(kl)) {
-          const ratio = kl.length / q.length;
-          const score = ratio >= 0.4 ? 0.85 : 0.85 * ratio;
-          bestKeywordScore = Math.max(bestKeywordScore, score);
+      if (ratio >= 0.5) score = 0.8;
+      else if (ratio >= 0.33) score = 0.65;
+      else score = ratio * 1.5;
+    } else {
+      let keywordMatched = false;
+      if (keywords) {
+        let bestKeywordScore = 0;
+        for (const k of keywords) {
+          if (k.length < 2) continue;
+          const kl = k.toLowerCase();
+          if (q.includes(kl)) {
+            const ratio = kl.length / q.length;
+            const s = ratio >= 0.4 ? 0.85 : 0.85 * ratio;
+            bestKeywordScore = Math.max(bestKeywordScore, s);
+            keywordMatched = true;
+          }
+        }
+        if (keywordMatched) {
+          score = bestKeywordScore;
         }
       }
-      if (bestKeywordScore > 0) return bestKeywordScore;
+
+      if (!keywordMatched) {
+        const qSet = new Set(q.split(''));
+        const tSet = new Set(t.split(''));
+        let intersection = 0;
+        for (const char of qSet) {
+          if (tSet.has(char)) intersection++;
+        }
+
+        const union = qSet.size + tSet.size - intersection;
+        const rawJaccard = union === 0 ? 0 : intersection / union;
+        const lengthRatio = tSet.size / qSet.size;
+        const penalty = lengthRatio < 0.4 ? lengthRatio : 1;
+        score = rawJaccard * penalty;
+      }
     }
 
-    const qSet = new Set(q.split(''));
-    const tSet = new Set(t.split(''));
-    let intersection = 0;
-    for (const char of qSet) {
-      if (tSet.has(char)) intersection++;
-    }
+    // Apply lateralization (left/right/bilateral) mismatch penalties
+    const qLeft = q.includes('左');
+    const qRight = q.includes('右');
+    const qBilateral = q.includes('双') || q.includes('两');
 
-    const union = qSet.size + tSet.size - intersection;
-    const rawJaccard = union === 0 ? 0 : intersection / union;
-    const lengthRatio = tSet.size / qSet.size;
-    const penalty = lengthRatio < 0.4 ? lengthRatio : 1;
-    return rawJaccard * penalty;
+    const tLeft = t.includes('左');
+    const tRight = t.includes('右');
+    const tBilateral = t.includes('双') || t.includes('两');
+
+    if (tBilateral && !qBilateral) score *= 0.5;
+    if (tLeft && !qLeft) score *= 0.5;
+    if (tRight && !qRight) score *= 0.5;
+
+    if (qBilateral && !tBilateral) score *= 0.5;
+    if (qLeft && !tLeft) score *= 0.5;
+    if (qRight && !tRight) score *= 0.5;
+
+    return score;
   }
 
   private isIcd10CategoryInRange(categoryCode: string, start: string, end: string): boolean {

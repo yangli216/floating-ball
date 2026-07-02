@@ -9,8 +9,8 @@ import {
   writePersistentString,
 } from '@/services/persistentStore';
 
-const CACHE_VERSION = 1;
-const CACHE_PREFIX = 'AVAILABLE_MEDICINE_INVENTORY_V1';
+const CACHE_VERSION = 2;
+const CACHE_PREFIX = 'AVAILABLE_MEDICINE_INVENTORY_V2';
 const FRESH_TTL_MS = 5 * 60 * 1000;
 const STALE_FALLBACK_TTL_MS = 30 * 60 * 1000;
 
@@ -49,6 +49,13 @@ export interface LoadAvailableMedicineInventoryOptions {
   adapter?: HisAdapter | null;
   pharmacies?: PharmacyOption[];
   forceRefresh?: boolean;
+  now?: number;
+}
+
+export interface ResolveAvailableMedicineInventoryUnitPriceOptions {
+  adapter: HisAdapter;
+  storeId: string;
+  productId: string;
   now?: number;
 }
 
@@ -161,6 +168,35 @@ async function loadStoreInventory(
 
   inFlightRequests.set(cacheKey, request);
   return request;
+}
+
+/**
+ * 按当前药房和药品读取有效库存目录合并项中的销售单价。
+ * 该值只来自 availableMedicineInventory，不回退到 medicineDetail。
+ */
+export async function resolveAvailableMedicineInventoryUnitPrice(
+  options: ResolveAvailableMedicineInventoryUnitPriceOptions,
+): Promise<number | null> {
+  const storeId = options.storeId.trim();
+  const productId = options.productId.trim();
+  if (!storeId || !productId) return null;
+
+  const result = await loadStoreInventory(
+    options.adapter,
+    storeId,
+    false,
+    options.now ?? Date.now(),
+  );
+  const item = result.items.find((candidate) => (
+    candidate.storeId.trim() === storeId
+    && candidate.productId.trim() === productId
+    && candidate.availableQuantity > 0
+  ));
+  return typeof item?.unitPrice === 'number'
+    && Number.isFinite(item.unitPrice)
+    && item.unitPrice >= 0
+    ? item.unitPrice
+    : null;
 }
 
 export function mergeAvailableMedicineInventoryCatalog(

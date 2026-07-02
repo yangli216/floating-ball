@@ -5,6 +5,7 @@ import {
   formatAvailableMedicineInventoryPrompt,
   loadAvailableMedicineInventoryContext,
   mergeAvailableMedicineInventoryCatalog,
+  resolveAvailableMedicineInventoryUnitPrice,
 } from './availableMedicineInventory';
 
 vi.mock('@/services/persistentStore', () => ({
@@ -130,5 +131,30 @@ describe('available medicine inventory AI context', () => {
 
     expect(fetchInventory).toHaveBeenCalledTimes(1);
     expect(second.promptContext).toContain('缓存药品');
+  });
+
+  it('resolves the pharmacy-scoped unit price from the available inventory cache', async () => {
+    const fetchInventory = vi.fn().mockResolvedValue([{
+      productId: 'med-priced',
+      productName: '有价库存药品',
+      storeId: 'priced-store',
+      availableQuantity: 8,
+      unitPrice: 59.3,
+    }]);
+    const adapter = {
+      vendor: 'price-test',
+      getContextScope: () => ({ orgCode: 'org-price', tenantId: 'tenant-price' }),
+      fetchAvailableMedicineInventory: fetchInventory,
+    } as unknown as HisAdapter;
+
+    const unitPrice = await resolveAvailableMedicineInventoryUnitPrice({
+      adapter,
+      storeId: 'priced-store',
+      productId: 'med-priced',
+      now: 200_000,
+    });
+
+    expect(unitPrice).toBe(59.3);
+    expect(fetchInventory).toHaveBeenCalledTimes(1);
   });
 });

@@ -63,6 +63,7 @@ function buildTCMDiagnosis(
     result.id = matched.id;
     result.code = matched.code;
     result.name = matched.name;
+    result.originalName = diagnosis.name;
   } else {
     result.id = undefined;
     result.code = diagnosis.code || `TCM${String(index + 1).padStart(3, '0')}`;

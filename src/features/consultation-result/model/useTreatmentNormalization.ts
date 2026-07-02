@@ -13,9 +13,9 @@
 import type { Ref } from 'vue';
 import type { TreatmentRecommendation } from '@/types/consultation';
 import {
-  calculateMedicineQuantity,
   getMatchedItemRaw,
   readFirstString,
+  resolveMedicineDispensingQuantity,
 } from '@features/clinical-result';
 import {
   inferExecCountFromFrequencyText,
@@ -198,11 +198,14 @@ export function useTreatmentNormalization(deps: TreatmentNormalizationDeps): Tre
     if ((rec.type || 'medicine') !== 'medicine') {
       return { totalQty: rec.totalQty || '', totalUnit: rec.totalUnit || '' };
     }
-    const calculation = calculateMedicineQuantity(rec, {
+    const dispensingQuantity = resolveMedicineDispensingQuantity(rec, {
       execCount: getFrequencyExecCount(rec),
     });
-    return calculation
-      ? { totalQty: String(calculation.packageCount), totalUnit: calculation.saleUnit }
+    return dispensingQuantity
+      ? {
+          totalQty: String(dispensingQuantity.packageCount),
+          totalUnit: dispensingQuantity.saleUnit,
+        }
       : { totalQty: rec.totalQty || '', totalUnit: rec.totalUnit || '' };
   }
 

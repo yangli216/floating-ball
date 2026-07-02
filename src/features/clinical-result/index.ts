@@ -7,6 +7,7 @@ export type {
   SymptomClinicalResultInput,
 } from './clinicalResultAdapter';
 export type {
+  ClinicalResultChannel,
   ClinicalResultDiagnosis,
   ClinicalResultInput,
   ClinicalResultMatchedDiagnosis,
@@ -73,6 +74,18 @@ export {
 } from './clinicalResultLlmJsonParser';
 
 export {
+  buildDiagnosisChecklistMismatchError,
+  buildDiagnosisChecklistRiskIssues,
+  normalizeDiagnosisChecklistItems,
+  parseDiagnosisChecklistResponse,
+} from './diagnosisChecklist';
+export type {
+  DiagnosisChecklistItem,
+  DiagnosisChecklistResponse,
+  DiagnosisChecklistRiskIssue,
+} from './diagnosisChecklist';
+
+export {
   formatDiagnosisConfidence,
   hasClinicalResultTreatmentState,
   initClinicalDiagnoses,
@@ -117,9 +130,11 @@ export type {
 export {
   buildMedicineQuantityExplanation,
   calculateMedicineQuantity,
+  resolveMedicineDispensingQuantity,
 } from './clinicalResultMedicineQuantity';
 export type {
   CalculateMedicineQuantityOptions,
+  MedicineDispensingQuantity,
   MedicineQuantityCalculation,
 } from './clinicalResultMedicineQuantity';
 
@@ -208,12 +223,14 @@ export {
   formatAvailableMedicineInventoryPrompt,
   loadAvailableMedicineInventoryContext,
   mergeAvailableMedicineInventoryCatalog,
+  resolveAvailableMedicineInventoryUnitPrice,
 } from './api/availableMedicineInventory';
 export type {
   AvailableMedicineInventoryCatalogItem,
   AvailableMedicineInventoryContext,
   LoadAvailableMedicineInventoryOptions,
   MedicineRecommendationLike,
+  ResolveAvailableMedicineInventoryUnitPriceOptions,
 } from './api/availableMedicineInventory';
 
 export {

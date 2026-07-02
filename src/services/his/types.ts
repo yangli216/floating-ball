@@ -220,6 +220,8 @@ export interface AvailableMedicineInventoryItem {
   storeName?: string;
   availableQuantity: number;
   nearestExpiryDate?: string;
+  /** 当前药房近效期有效库存批次的销售单价；仅来源于库存目录。 */
+  unitPrice?: number;
   raw?: Record<string, unknown>;
 }
 

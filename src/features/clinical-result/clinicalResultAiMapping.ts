@@ -95,6 +95,7 @@ export function mapClinicalResultAiDiagnoses(input: MapClinicalResultAiDiagnoses
         code: matched.code,
         name: matched.name,
         id: matched.id,
+        originalName: diag.name,
       };
     }
 

@@ -8,6 +8,7 @@ export { default as TreatmentRecommendationCard } from './ui/TreatmentRecommenda
 export { default as TreatmentRecommendationSection } from './ui/TreatmentRecommendationSection.vue';
 export { useBodySiteOptions } from './model/useBodySiteOptions';
 export { useClinicalResultCancelController } from './model/useClinicalResultCancelController';
+export { useClinicalResultDiagnosisChecklist } from './model/useClinicalResultDiagnosisChecklist';
 export { useClinicalResultIntentReset } from './model/useClinicalResultIntentReset';
 export {
   createClinicalResultOrderItemResolvers,
@@ -54,6 +55,11 @@ export type {
   ClinicalResultCancelNotify,
 } from './model/useClinicalResultCancelController';
 export type {
+  ClinicalResultDiagnosisChecklist,
+  ClinicalResultDiagnosisChecklistOptions,
+  ClinicalResultDiagnosisChecklistRequest,
+} from './model/useClinicalResultDiagnosisChecklist';
+export type {
   ClinicalResultIntentRecordInput,
   ClinicalResultIntentReset,
   ClinicalResultIntentResetOptions,
@@ -77,8 +83,10 @@ export type {
 } from './model/useConsultationReferenceFeedbackListener';
 export type {
   ClinicalResultChannel,
+  ClinicalResultPreferenceContext,
   ClinicalResultChannelStrategy,
   ClinicalResultChannelStrategyInput,
+  ClinicalResultTraceContext,
   ClinicalResultUserLogType,
 } from './model/useClinicalResultChannelStrategy';
 export type {

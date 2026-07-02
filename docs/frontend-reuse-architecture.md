@@ -93,7 +93,7 @@
 
 当前第一刀：
 
-- `features/consultation-result/model/useClinicalResultChannelStrategy.ts` 只收敛 `channel -> userLogType / voiceCache / patientHeader / cancelDialog` 这类无副作用派生；真正的缓存读写、日志提交、`emit('cancel')` 和 Tauri 回写仍留在页面编排层。
+- `features/consultation-result/model/useClinicalResultChannelStrategy.ts` 只收敛 `channel -> userLogType / voiceCache / patientHeader / cancelDialog / tracking context` 这类无副作用派生；`voice / symptom / chronic-refill` 的偏好追踪和诊断鉴别 trace 元数据也由该 Strategy 统一生成。真正的缓存读写、日志提交、`emit('cancel')` 和 Tauri 回写仍留在页面编排层。
 - `features/consultation-result/model/useClinicalResultCancelController.ts` 只管理结果页放弃确认弹窗、提交中 / 等待 HIS 回执时的拦截和提示注入；真正的反馈草稿清理、放弃日志提交和 `emit('cancel')` 通过 `onConfirm` 注入。
 - `features/consultation-result/model/useClinicalResultUserLogController.ts` 只管理首版、最终和放弃三类用户日志快照的提交节奏、首版快照记忆、最终选择快照和可选变更摘要；页面仍通过 options 注入 `buildSnapshot`、患者上下文、提交函数和语音病例字段变更判断。
 - `features/consultation-result/model/useWritebackFeedbackController.ts` 只管理一键回写回执被 `useWritebackStatus` 接受后的 success / failed 分发和默认提示；页面仍通过 options 注入成功后的缓存持久化、用户日志、整页反馈弹窗，以及失败提示展示。
@@ -138,12 +138,14 @@
 | 能力 | 权威归属 | 可复用对象 | 不应复用的部分 |
 | --- | --- | --- | --- |
 | 问诊结果中性输入 | `features/clinical-result` | 语音结果、症状结果到 `ClinicalResultInput` 的 Adapter | 具体页面缓存、取消/诊毕语义 |
-| 临床结果基础契约 | `features/clinical-result/clinicalResultContract.ts` | `ClinicalResultInput`、诊断和治疗中性结构；语音、症状、复诊配药等渠道共同依赖 | ASR、语音缓存、具体页面状态、渠道命名 |
+| 临床结果基础契约 | `features/clinical-result/clinicalResultContract.ts` | `ClinicalResultInput`、`ClinicalResultChannel`、诊断和治疗中性结构；语音、症状、复诊配药等渠道共同依赖 | ASR、语音缓存、具体页面状态 |
 | LLM JSON 宽容解析 | `features/clinical-result/clinicalResultLlmJsonParser.ts` | 症状问诊、语音结果页等 LLM 文本响应到 JSON 对象 / 数组的纯解析 | LLM 请求、错误 toast、日志、页面状态覆盖 |
+| 诊断鉴别 checklist 规则 | `features/clinical-result/diagnosisChecklist.ts` | 共享结果页与独立鉴别诊断窗口共用的响应类型、条目归一、关键诊断不匹配判断和风险项映射 | LLM 请求、弹窗状态、toast、窗口生命周期 |
 | AI 推荐请求规格 | `features/clinical-result/clinicalResultAiRequest.ts` | 语音 / 症状诊断推荐和 medication / exam / lab / procedure 治疗推荐的 prompt messages 与 trace config 纯构造；支持单路和多路治疗推荐规格，trace 基础字段和具体 scene/title/action 可由调用方注入，默认保持语音问诊取值 | `chat()` 调用、并发策略、loading、错误处理、状态覆盖、日志、缓存、PHIS 回写 |
 | AI 推荐 raw 映射 | `features/clinical-result/clinicalResultAiMapping.ts` | 语音结果页诊断 / 治疗 LLM raw 结果到标准诊断和治疗推荐的纯转换；智能问诊 western 诊断 raw 数组复用同一 mapper，并通过 lookup/未匹配 ID 策略保持原行为；智能问诊 western 治疗推荐 raw 数组按目标类型过滤并转换为治疗推荐项；治疗多路响应按 allSettled 结果解析、单路失败隔离并合并，标准库匹配与归一化由调用方注入 | LLM 请求、loading、当前诊断防串线、toast、事实核查、日志、缓存、PHIS 回写 |
 | 诊断/治疗推荐卡片与分组 | `features/consultation-result` | 单条卡片 UI、用药/检查/检验/处置推荐分组、推荐依据、反馈入口、手动匹配入口、治疗项主字段与二级属性编辑模板 | LLM 请求、推荐刷新、toast、PHIS 提交 |
-| 结果页渠道策略 | `features/consultation-result/model/useClinicalResultChannelStrategy.ts` | `voice/symptom` 渠道到日志类型、语音缓存开关、患者头展示和取消文案的派生 | 缓存读写、日志提交、取消事件、诊毕清理 |
+| 结果页渠道策略 | `features/consultation-result/model/useClinicalResultChannelStrategy.ts` | `voice/symptom/chronic-refill` 渠道到日志类型、语音缓存开关、患者头展示、取消文案、偏好追踪 context 和诊断鉴别 trace context 的派生 | 缓存读写、日志提交、取消事件、诊毕清理 |
+| 结果页诊断鉴别流程 | `features/consultation-result/model/useClinicalResultDiagnosisChecklist.ts` | 共享结果页 checklist 弹窗状态、LLM 请求生命周期、响应解析、空态和错误态 | Prompt/LLM 供应商调用、trace 构造、toast 实现、独立窗口状态 |
 | 结果页取消流程 | `features/consultation-result/model/useClinicalResultCancelController.ts` | 放弃确认弹窗开合、提交中 / 等待回执时的拦截提示、确认动作编排入口 | 清理反馈草稿、提交放弃日志、`emit('cancel')` |
 | 结果页用户日志三态 | `features/consultation-result/model/useClinicalResultUserLogController.ts` | 首版 / 诊毕 / 放弃日志提交节奏、首版快照记忆、最终选择快照、语音可选变更摘要 | 病历字段读取、患者来源解析、区域化提交实现、反馈草稿清理 |
 | 回写回执结果分发 | `features/consultation-result/model/useWritebackFeedbackController.ts` | 已命中 requestId 的 HIS 回执 success / failed 分发、默认提示文案 | `complete_consultation` 调用、PHIS payload、缓存持久化、用户日志、整页反馈弹窗 |
@@ -211,9 +213,9 @@
 
 后续顺序：
 
-1. 先定义 `ClinicalResultChannelStrategy` 类型草案，并从无副作用派生开始接入。
+1. `ClinicalResultChannelStrategy` 已覆盖 `voice / symptom / chronic-refill` 的无副作用派生，后续新增渠道必须先扩展中性 `ClinicalResultChannel` 与 Strategy 测试，不得在结果页主体新增渠道判断。
 2. 再把取消/回写/缓存/日志这些渠道差异从结果页主体中参数化。用户日志优先抽成三态 controller，回写回执优先抽成结果分发 controller，页面只注入快照构造、提交副作用和渠道后置动作。
-3. 最后再移动 `VoiceConsultationNew.vue` 到 feature 入口，旧路径保留 wrapper。
+3. App 与症状问诊已经统一从 `ConsultationResultPage` 公开入口消费；后续再移动 `VoiceConsultationNew.vue` 到 feature 内部并删除根级实现路径。
 
 ### 智能问诊主流程
 

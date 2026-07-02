@@ -11,24 +11,29 @@
     <div class="card-row diagnosis-card-row">
       <div class="card-main diagnosis-card-main">
         <div class="card-title-line diagnosis-title-line">
-          <div class="card-title-wrap">
-            <FactCheckHighlight :issue="issue">
-              <span class="card-title">
-                <span v-if="showTcmBadge && diag.isTCM" class="tcm-badge">中</span>
-                {{ diag.name }}
+          <div class="card-title-wrap-group" style="display: flex; flex-direction: column; min-width: 0; flex-grow: 1;">
+            <div class="card-title-wrap">
+              <FactCheckHighlight :issue="issue">
+                <span class="card-title">
+                  <span v-if="showTcmBadge && diag.isTCM" class="tcm-badge">中</span>
+                  {{ diag.name }}
+                </span>
+              </FactCheckHighlight>
+              <span
+                v-if="diag.rationale"
+                class="reason-tooltip-trigger"
+                :class="{ open: reasonOpen }"
+                @click.stop
+              >
+                <button class="reason-icon-btn" type="button" aria-label="查看诊断依据" title="查看诊断依据" @click.stop="emit('toggle-reason', $event)">
+                  <Icon icon="lucide:circle-help" size="14" />
+                </button>
+                <span class="hover-reason-tooltip">{{ diag.rationale }}</span>
               </span>
-            </FactCheckHighlight>
-            <span
-              v-if="diag.rationale"
-              class="reason-tooltip-trigger"
-              :class="{ open: reasonOpen }"
-              @click.stop
-            >
-              <button class="reason-icon-btn" type="button" aria-label="查看诊断依据" title="查看诊断依据" @click.stop="emit('toggle-reason', $event)">
-                <Icon icon="lucide:circle-help" size="14" />
-              </button>
-              <span class="hover-reason-tooltip">{{ diag.rationale }}</span>
-            </span>
+            </div>
+            <div v-if="diag.originalName && diag.originalName !== diag.name" class="diagnosis-original-name">
+              AI 原建议：{{ diag.originalName }}
+            </div>
           </div>
           <div class="diagnosis-meta-row">
             <span v-if="displayRate" class="diag-rate-token" :class="rateToneClass">{{ displayRate }}</span>
@@ -603,5 +608,12 @@ const emit = defineEmits<{
     left: 0;
     right: auto;
   }
+}
+
+.diagnosis-original-name {
+  margin-top: 4px;
+  font-size: 11px;
+  color: #94a3b8;
+  line-height: 1.3;
 }
 </style>

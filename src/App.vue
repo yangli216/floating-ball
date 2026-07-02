@@ -20,7 +20,7 @@ import {
 import { VoiceCapsule, clearVoiceConsultationCache } from "@features/voice-consultation";
 import SvgIcon from "./components/svgIcon.vue";
 import { KnowledgeBasePanel } from "@features/knowledge";
-import VoiceConsultationNew from "./components/VoiceConsultationNew.vue";
+import { ConsultationResultPage } from "@features/consultation-result";
 import { FeedbackSubmissionPanel } from "@features/feedback";
 import { HisIntegrationLogPanel } from "@features/settings";
 import { MedicalCatalogCachePanel } from "@features/medical-catalog";
@@ -983,7 +983,7 @@ const openInsideCloudHome = async () => {
 
           <HisIntegrationLogPanel v-if="currentView === 'his-log'" />
           <MedicalCatalogCachePanel v-if="currentView === 'medical-cache'" />
-          <VoiceConsultationNew
+          <ConsultationResultPage
             v-if="currentView === 'voice-consultation'"
             :initialPatientData="currentPatient ?? undefined"
             :intentResult="intentResult"

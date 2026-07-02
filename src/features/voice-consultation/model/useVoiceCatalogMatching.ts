@@ -58,6 +58,7 @@ export function useVoiceCatalogMatching() {
         if (!diagnosis.code) {
           const match = medicalDataService.matchDiagnosis(diagnosis.name);
           if (match) {
+            diagnosis.originalName = diagnosis.name;
             diagnosis.name = match.name;
             diagnosis.code = match.code;
             diagnosis.matched = true;
@@ -67,6 +68,7 @@ export function useVoiceCatalogMatching() {
 
           const tcmMatch = medicalDataService.matchTCMDiagnosis(diagnosis.name);
           if (tcmMatch) {
+            diagnosis.originalName = diagnosis.name;
             diagnosis.name = tcmMatch.name;
             diagnosis.code = tcmMatch.code;
             diagnosis.matched = true;
@@ -79,6 +81,7 @@ export function useVoiceCatalogMatching() {
             const matchContext = { icdCode: diagnosis.code };
             const nameMatch = medicalDataService.matchDiagnosis(diagnosis.name, matchContext);
             if (nameMatch && nameMatch.code !== diagnosis.code) {
+              diagnosis.originalName = diagnosis.name;
               diagnosis.name = nameMatch.name;
               diagnosis.code = nameMatch.code;
               diagnosis.matched = true;

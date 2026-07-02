@@ -31,6 +31,13 @@ export interface MedicineQuantityCalculation {
   totalConsistent: boolean | null;
 }
 
+export interface MedicineDispensingQuantity {
+  packageCount: number;
+  saleUnit: string;
+  source: 'calculated' | 'single-package-fallback';
+  calculation: MedicineQuantityCalculation | null;
+}
+
 export interface CalculateMedicineQuantityOptions {
   execCount?: number | null;
 }
@@ -135,11 +142,65 @@ export function calculateMedicineQuantity(
   };
 }
 
+/**
+ * 解析最终发药包装数。能精确换算时使用公式结果；对于“必要时”等无法折算
+ * 固定每日次数的处方，仅在核心处方字段和销售包装单位均完整时兜底为 1 个包装。
+ */
+export function resolveMedicineDispensingQuantity(
+  rec: Partial<TreatmentRecommendation>,
+  options: CalculateMedicineQuantityOptions = {},
+): MedicineDispensingQuantity | null {
+  const calculation = calculateMedicineQuantity(rec, options);
+  if (calculation) {
+    return {
+      packageCount: calculation.packageCount,
+      saleUnit: calculation.saleUnit,
+      source: 'calculated',
+      calculation,
+    };
+  }
+
+  if ((rec.type || 'medicine') !== 'medicine') return null;
+  const raw = getMatchedRaw(rec);
+  const spec = rec.spec
+    || (rec.matchedItem as { spec?: string } | undefined)?.spec
+    || readFirstString(raw, ['specSale', 'spec']);
+  const parsedSpec = parsePackageSpec(spec || '');
+  const frequencyValue = (rec.frequencyKey || rec.frequency || '').trim();
+  const execCount = options.execCount
+    ?? inferExecCountFromFrequencyText(frequencyValue);
+  if (execCount !== null) return null;
+  const saleUnit = readFirstString(raw, ['unitSale'])
+    || (rec.totalUnit || '').trim()
+    || parsedSpec?.saleUnit
+    || '';
+  const hasCompleteFallbackBasis = Boolean(
+    parsePositiveNumber(rec.dosage)
+    && (rec.dosageUnit || '').trim()
+    && frequencyValue
+    && parsePositiveNumber(rec.days)
+    && saleUnit,
+  );
+  if (!hasCompleteFallbackBasis) return null;
+
+  return {
+    packageCount: 1,
+    saleUnit,
+    source: 'single-package-fallback',
+    calculation: null,
+  };
+}
+
 export function buildMedicineQuantityExplanation(
   rec: Partial<TreatmentRecommendation>,
 ): string {
-  const calculation = calculateMedicineQuantity(rec);
-  if (!calculation) return '';
+  const dispensingQuantity = resolveMedicineDispensingQuantity(rec);
+  if (!dispensingQuantity) return '';
+  if (dispensingQuantity.source === 'single-package-fallback') {
+    const frequency = (rec.frequency || rec.frequencyKey || '').trim();
+    return `当前频次“${frequency}”无法精确换算包装总量，暂按1${dispensingQuantity.saleUnit}发药，请医生确认。`;
+  }
+  const calculation = dispensingQuantity.calculation as MedicineQuantityCalculation;
 
   const dosageText = `${rec.dosage || ''}${rec.dosageUnit || ''}`;
   const formula = [

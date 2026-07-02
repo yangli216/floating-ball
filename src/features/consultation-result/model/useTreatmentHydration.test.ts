@@ -20,6 +20,7 @@ vi.hoisted(() => {
 const mocks = vi.hoisted(() => ({
   fetchMedicineProDetail: vi.fn(),
   checkMedicineInventoryEnough: vi.fn(),
+  resolveMedicineInventoryUnitPrice: vi.fn(),
 }));
 
 vi.mock('@/services/his', () => ({
@@ -31,6 +32,8 @@ vi.mock('@/services/his', () => ({
 
 const frequencyOptions = ref([{
   key: 'TID', text: '每日3次', execCount: 3, py: '', wb: '', mcode: '', normalizedTokens: [],
+}, {
+  key: 'PRN', text: '必要时', py: '', wb: '', mcode: '', normalizedTokens: [],
 }]);
 const routeOptions = ref([{
   key: 'PO', text: '口服', py: '', wb: '', mcode: '', normalizedTokens: [],
@@ -81,6 +84,7 @@ function createFinalizer() {
     getCandidatePharmaciesForMedicine: () => pharmacyOptions.value,
     findFrequencyOptionByValue: normalization.findFrequencyOptionByValue,
     findRouteOptionByValue: normalization.findRouteOptionByValue,
+    resolveMedicineInventoryUnitPrice: mocks.resolveMedicineInventoryUnitPrice,
   });
   return { normalization, hydration };
 }
@@ -115,6 +119,7 @@ describe('medicine recommendation finalization', () => {
       },
     });
     mocks.checkMedicineInventoryEnough.mockResolvedValue({ code: 200, message: '' });
+    mocks.resolveMedicineInventoryUnitPrice.mockResolvedValue(59.3);
   });
 
   it('uses hydrated dose and package data before checking inventory', async () => {
@@ -135,7 +140,47 @@ describe('medicine recommendation finalization', () => {
       selected: true,
     });
     expect(mocks.checkMedicineInventoryEnough).toHaveBeenCalledWith([
-      expect.objectContaining({ productId: 'med-metformin', storeId: 'store-1', quantity: 3 }),
+      expect.objectContaining({
+        productId: 'med-metformin',
+        storeId: 'store-1',
+        quantity: 3,
+        unitPrice: 59.3,
+      }),
+    ]);
+  });
+
+  it('does not fall back to medicine detail price when inventory has no valid price', async () => {
+    const rec = createTreatment();
+    mocks.resolveMedicineInventoryUnitPrice.mockResolvedValueOnce(null);
+    const { hydration } = createFinalizer();
+
+    const result = await hydration.finalizeMedicineRecommendation(rec, { checkInventory: true });
+
+    expect(result.ready).toBe(false);
+    expect(result.issues).toContain('盐酸二甲双胍片 未取得当前药房有效库存单价，暂不能校验库存');
+    expect(rec.selected).toBe(false);
+    expect(mocks.checkMedicineInventoryEnough).not.toHaveBeenCalled();
+  });
+
+  it('uses one sale package when PRN frequency cannot produce an exact total', async () => {
+    const rec = createTreatment();
+    rec.frequency = '必要时';
+    rec.frequencyKey = 'PRN';
+    rec.days = '3';
+    const { hydration } = createFinalizer();
+
+    const result = await hydration.finalizeMedicineRecommendation(rec, { checkInventory: true });
+
+    expect(result.ready).toBe(true);
+    expect(rec).toMatchObject({
+      frequency: '必要时',
+      frequencyKey: 'PRN',
+      totalQty: '1',
+      totalUnit: '瓶',
+      selected: true,
+    });
+    expect(mocks.checkMedicineInventoryEnough).toHaveBeenCalledWith([
+      expect.objectContaining({ quantity: 1 }),
     ]);
   });
 

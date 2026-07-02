@@ -4,26 +4,17 @@ import Icon from '@shared/ui/Icon.vue';
 import { PROMPTS } from '@/prompts';
 import { chat } from '@/services/llm';
 import { medicalDataService } from '@/services/medicalData';
-import { parseLLMJson } from '@features/clinical-result';
+import {
+  buildDiagnosisChecklistMismatchError,
+  buildDiagnosisChecklistRiskIssues,
+  normalizeDiagnosisChecklistItems,
+  parseDiagnosisChecklistResponse,
+  type DiagnosisChecklistItem,
+  type DiagnosisChecklistRiskIssue,
+} from '@features/clinical-result';
 import type { AppPatient } from '@/types/appState';
 import { formatUserFacingError } from '@shared/lib/errorMessages';
 import SvgIcon from "@/components/svgIcon.vue";
-
-interface ChecklistItem {
-  question: string;
-  recordText: string;
-}
-
-interface DiagnosisChecklistResponse {
-  isNeeded?: boolean;
-  severity?: string;
-  items?: ChecklistItem[];
-}
-
-interface DifferentialRiskIssue {
-  issue: string;
-  target: string;
-}
 
 const props = defineProps<{
   patient: AppPatient | null;
@@ -34,8 +25,8 @@ const emit = defineEmits(['close']);
 const showToast = inject<(msg: string, type?: string) => void>('showToast');
 
 const isChecklistLoading = ref(false);
-const checklistItems = ref<ChecklistItem[]>([]);
-const riskIssues = ref<DifferentialRiskIssue[]>([]);
+const checklistItems = ref<DiagnosisChecklistItem[]>([]);
+const riskIssues = ref<DiagnosisChecklistRiskIssue[]>([]);
 const hasRequested = ref(false);
 const generationError = ref('');
 const isCollapsed = ref(false);
@@ -57,53 +48,6 @@ const historyOfPresentIllness = computed(() => (
 ).trim());
 const matchedDiagnosis = computed(() => medicalDataService.matchDiagnosis(diagnosisName.value));
 const displayDiagnosisName = computed(() => matchedDiagnosis.value?.name || diagnosisName.value || '当前诊断');
-
-function normalizeText(value: unknown): string {
-  if (typeof value === 'string') return value.trim();
-  if (typeof value === 'number' || typeof value === 'boolean') return String(value);
-  return '';
-}
-
-function normalizeChecklistItems(result: DiagnosisChecklistResponse): ChecklistItem[] {
-  if (!result?.isNeeded || !Array.isArray(result.items)) {
-    return [];
-  }
-  return result.items
-    .map((item) => ({
-      question: normalizeText(item?.question),
-      recordText: normalizeText(item?.recordText),
-    }))
-    .filter((item) => item.question);
-}
-
-function buildDiagnosisMismatchError(result: DiagnosisChecklistResponse): string {
-  if (!result?.isNeeded) {
-    return '';
-  }
-
-  const items = normalizeChecklistItems(result);
-  const combinedText = items
-    .map((item) => `${item.question} ${item.recordText}`)
-    .join(' ');
-  const isCritical = result.severity === 'critical'
-    || /不匹配|不相符|明显不符|不能解释|无法解释|复核诊断方向|诊断方向.*错误|诊断.*错误/.test(combinedText);
-
-  if (!isCritical) {
-    return '';
-  }
-
-  const primary = items[0];
-  return primary?.question || '当前诊断与主诉、现病史明显不符，请先复核诊断方向。';
-}
-
-function buildRiskIssues(result: DiagnosisChecklistResponse): DifferentialRiskIssue[] {
-  return normalizeChecklistItems(result)
-    .map((item) => ({
-      issue: item.question,
-      target: item.recordText || displayDiagnosisName.value,
-    }))
-    .filter((item) => item.issue);
-}
 
 async function generateChecklist(): Promise<void> {
   if (isChecklistLoading.value) {
@@ -146,17 +90,17 @@ async function generateChecklist(): Promise<void> {
       },
     });
 
-    const parsed = parseLLMJson<DiagnosisChecklistResponse>(response);
-    const mismatchError = buildDiagnosisMismatchError(parsed);
+    const parsed = parseDiagnosisChecklistResponse(response);
+    const mismatchError = buildDiagnosisChecklistMismatchError(parsed);
     if (mismatchError) {
       generationError.value = mismatchError;
       checklistItems.value = [];
-      riskIssues.value = buildRiskIssues(parsed);
+      riskIssues.value = buildDiagnosisChecklistRiskIssues(parsed, displayDiagnosisName.value);
       isCollapsed.value = false;
       return;
     }
 
-    checklistItems.value = normalizeChecklistItems(parsed);
+    checklistItems.value = normalizeDiagnosisChecklistItems(parsed);
     if (checklistItems.value.length === 0) {
       showToast?.('当前诊断暂无需要复核或鉴别排查的提示。', 'info');
     }

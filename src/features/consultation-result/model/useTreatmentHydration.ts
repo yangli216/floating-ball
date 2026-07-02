@@ -31,10 +31,11 @@ import {
 } from '@/utils/treatmentInference';
 import { parsePositiveNumber } from '@/utils/medicalDictionaryHelpers';
 import {
-  calculateMedicineQuantity,
   getMatchedMedicalItemClientId,
   readFirstString,
   getMatchedItemRaw,
+  resolveAvailableMedicineInventoryUnitPrice,
+  resolveMedicineDispensingQuantity,
 } from '@features/clinical-result';
 import type { UsageOption } from '@/utils/medicalDictionaryHelpers';
 
@@ -51,6 +52,12 @@ interface Deps {
   getInventoryKey?: (rec: TreatmentRecommendation) => string;
   applyMedicalItemPartOptions?: (rec: TreatmentRecommendation, options: MedicalItemPartOption[]) => void;
   afterMedicalItemHydrated?: () => void;
+  /** 测试或厂商扩展注入；默认只从当前药房有效库存目录解析单价。 */
+  resolveMedicineInventoryUnitPrice?: (
+    adapter: HisAdapter,
+    storeId: string,
+    productId: string,
+  ) => Promise<number | null>;
   logContext?: string;
   /** 注入的 toast；symptom 侧只支持 'info'|'success'|'error'，所以默认级别为 'info'。 */
   notify?: (message: string, level?: 'info' | 'success' | 'error') => void;
@@ -118,9 +125,15 @@ export function useTreatmentHydration(deps: Deps) {
     getInventoryKey: getKeyOverride,
     applyMedicalItemPartOptions,
     afterMedicalItemHydrated,
+    resolveMedicineInventoryUnitPrice: resolveMedicineInventoryUnitPriceOverride,
     logContext = 'useTreatmentHydration',
     notify,
   } = deps;
+
+  const resolveMedicineInventoryUnitPrice = resolveMedicineInventoryUnitPriceOverride
+    ?? ((adapter: HisAdapter, storeId: string, productId: string) => (
+      resolveAvailableMedicineInventoryUnitPrice({ adapter, storeId, productId })
+    ));
 
   const inventoryWarnings = ref<Record<string, string>>({});
   const inventoryChecking = ref<Set<string>>(new Set());
@@ -434,21 +447,19 @@ export function useTreatmentHydration(deps: Deps) {
 
   function buildMedicineInventoryCheckItem(
     rec: TreatmentRecommendation,
-  ): InventoryCheckRequest | null {
+  ): Omit<InventoryCheckRequest, 'unitPrice'> | null {
     const raw = getMatchedItemRaw(rec);
     const selectedPharmacy = pharmacyOptions.value.find((p) => p.name === (rec.pharmacy || '').trim());
     const storeId = selectedPharmacy?.idSto || readFirstString(raw, ['idSto']);
     const productId = readFirstString(raw, ['idMedPro']) || rec.matchedItem?.id || rec.matchedItem?.idSrv || '';
     const medicineName = readFirstString(raw, ['naMedPro', 'naMed']) || rec.matchedItem?.name || rec.name || '';
     const quantity = parsePositiveNumber(rec.totalQty);
-    const unitPrice = parsePositiveNumber(readFirstString(raw, ['priceSale'])) ?? 0;
     if (!storeId || !productId || !medicineName || !quantity) return null;
     return {
       storeId,
       productId,
       medicineName,
       quantity,
-      unitPrice,
       businessType: 'outpatient',
     };
   }
@@ -466,7 +477,19 @@ export function useTreatmentHydration(deps: Deps) {
 
     setMedicineInventoryChecking(rec, true);
     try {
-      const result = await his.checkMedicineInventoryEnough([checkItem]);
+      const unitPrice = await resolveMedicineInventoryUnitPrice(
+        his,
+        checkItem.storeId,
+        checkItem.productId,
+      );
+      if (unitPrice === null) {
+        const message = `${rec.name} 未取得当前药房有效库存单价，暂不能校验库存`;
+        setMedicineInventoryWarning(rec, message);
+        if (showNotify) notify?.(message, 'info');
+        return false;
+      }
+      const inventoryCheckItem: InventoryCheckRequest = { ...checkItem, unitPrice };
+      const result = await his.checkMedicineInventoryEnough([inventoryCheckItem]);
       if (result.code === 200) {
         clearMedicineInventoryWarning(rec);
         return true;
@@ -502,10 +525,11 @@ export function useTreatmentHydration(deps: Deps) {
       issues.push('用法未匹配 HIS 字典');
     }
     if (parsePositiveNumber(rec.days) === null) issues.push('用药天数不完整');
-    const quantityCalculation = calculateMedicineQuantity(rec);
-    if (!quantityCalculation) {
+    const dispensingQuantity = resolveMedicineDispensingQuantity(rec);
+    if (!dispensingQuantity) {
       issues.push('包装总量不可计算');
-    } else {
+    } else if (dispensingQuantity.calculation) {
+      const quantityCalculation = dispensingQuantity.calculation;
       if (quantityCalculation.doseCountPerAdministration > 20) {
         issues.push('单次制剂数量异常');
       }
@@ -513,6 +537,11 @@ export function useTreatmentHydration(deps: Deps) {
         && parsePositiveNumber(rec.totalQty) !== quantityCalculation.packageCount) {
         issues.push('包装总量与程序计算结果不一致');
       }
+    } else if (
+      !rec.totalManualEdited
+      && parsePositiveNumber(rec.totalQty) !== dispensingQuantity.packageCount
+    ) {
+      issues.push('包装总量与单包装兜底结果不一致');
     }
     if (parsePositiveNumber(rec.totalQty) === null || !(rec.totalUnit || '').trim()) {
       issues.push('包装总量不完整');

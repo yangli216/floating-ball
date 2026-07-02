@@ -5,6 +5,7 @@ export interface Diagnosis {
     rate: string;
     rationale: string;
     isTCM?: boolean; // 标记是否为中医诊断
+    originalName?: string; // AI 原始推荐的诊断名称
     // 中医辨证论治相关字段
     syndrome?: string; // 证候(如:风寒束表证)
     syndromeCode?: string;

@@ -1,19 +1,21 @@
 <script setup lang="ts">
 import VoiceConsultationNew from '@/components/VoiceConsultationNew.vue';
 import type { AppPatient } from '@/types/appState';
-import type { ClinicalResultInput } from '@features/clinical-result';
+import type { ClinicalResultChannel, ClinicalResultInput } from '@features/clinical-result';
 
 const props = withDefaults(defineProps<{
   initialPatientData?: AppPatient;
   intentResult: ClinicalResultInput | null;
   intentSource?: 'llm' | 'cache' | null;
-  channel?: 'voice' | 'symptom';
+  channel?: ClinicalResultChannel;
+  consultationRoundId?: string | null;
   showPatientHeader?: boolean;
   secondaryFooterActionText?: string;
   secondaryFooterActionDisabled?: boolean;
 }>(), {
   intentSource: null,
   channel: 'voice',
+  consultationRoundId: null,
   showPatientHeader: true,
   secondaryFooterActionText: '',
   secondaryFooterActionDisabled: false,
@@ -28,6 +30,7 @@ const emit = defineEmits(['close', 'cancel', 'secondary-footer-action']);
     :intent-result="props.intentResult"
     :intent-source="props.intentSource"
     :channel="props.channel"
+    :consultation-round-id="props.consultationRoundId"
     :show-patient-header="props.showPatientHeader"
     :secondary-footer-action-text="props.secondaryFooterActionText"
     :secondary-footer-action-disabled="props.secondaryFooterActionDisabled"

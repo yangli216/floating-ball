@@ -111,6 +111,10 @@ export function withOverride(
   cdPrompt: string,
   localPrompt: { system: string; buildUserPrompt?: (...args: any[]) => string }
 ): { system: string; buildUserPrompt?: (...args: any[]) => string } {
+  // 开发环境下禁用远程 Prompt 覆盖，以确保本地 prompts.ts 文件的修改可直接生效调试
+  if (import.meta.env.DEV) {
+    return localPrompt;
+  }
   const override = getSystemPromptOverride(cdPrompt);
   if (!override) return localPrompt;
 

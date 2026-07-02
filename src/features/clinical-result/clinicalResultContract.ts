@@ -2,6 +2,8 @@ import type { Diagnosis, TreatmentRecommendation } from '@/types/consultation';
 import type { DiagnosisHint, TreatmentHint } from '@/prompts';
 import type { OutpatientRecord } from './outpatientRecord';
 
+export type ClinicalResultChannel = 'voice' | 'symptom' | 'chronic-refill';
+
 export interface ClinicalResultMatchedItem {
   id: string;
   name: string;
@@ -63,5 +65,5 @@ export interface ClinicalResultInput {
   healthEducation: string;
   outpatientRecord?: OutpatientRecord;
   recommendationPolicy?: ClinicalResultRecommendationPolicy;
-  channel?: 'voice' | 'symptom' | 'chronic-refill';
+  channel?: ClinicalResultChannel;
 }

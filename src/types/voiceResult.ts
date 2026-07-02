@@ -11,6 +11,7 @@ export interface DiagnosisEntry {
   treatment?: string;
   treatmentCode?: string;
   treatmentMatched?: boolean;
+  originalName?: string;
 }
 
 export interface MedicationEntry {

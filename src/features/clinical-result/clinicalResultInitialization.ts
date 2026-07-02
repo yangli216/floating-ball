@@ -73,6 +73,7 @@ export function initClinicalDiagnoses(
       rate: inheritedDiagnosis.rate || formatDiagnosisConfidence(item.confidence),
       rationale: options.buildRationale(item, name),
       isTCM: inheritedDiagnosis.isTCM,
+      originalName: inheritedDiagnosis.originalName || (item.matchedItem ? item.name : undefined),
       syndrome: inheritedDiagnosis.syndrome,
       syndromeCode: inheritedDiagnosis.syndromeCode,
       syndromeMatched: inheritedDiagnosis.syndromeMatched,

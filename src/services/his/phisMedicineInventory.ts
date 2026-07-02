@@ -36,7 +36,12 @@ export function mergePhisAvailableMedicineInventory(
   storeId: string,
   now = Date.now(),
 ): AvailableMedicineInventoryItem[] {
-  const merged = new Map<string, AvailableMedicineInventoryItem & { batchCount: number }>();
+  type MergedInventoryItem = AvailableMedicineInventoryItem & {
+    batchCount: number;
+    nearestExpiryTimestamp?: number;
+    unitPriceExpiryTimestamp?: number;
+  };
+  const merged = new Map<string, MergedInventoryItem>();
 
   for (const batch of batches) {
     const productId = cleanText(batch.idMedPro);
@@ -51,12 +56,36 @@ export function mergePhisAvailableMedicineInventory(
     if (availableQuantity <= 0) continue;
 
     const expiryDate = cleanText(batch.dtEffect);
+    const batchUnitPrice = toFiniteNumber(batch.priceSale);
+    const validUnitPrice = batchUnitPrice !== undefined && batchUnitPrice >= 0
+      ? batchUnitPrice
+      : undefined;
+    const unitPriceExpiryTimestamp = expiryTimestamp ?? Number.POSITIVE_INFINITY;
     const existing = merged.get(productId);
     if (existing) {
       existing.availableQuantity += availableQuantity;
       existing.batchCount += 1;
-      if (expiryDate && (!existing.nearestExpiryDate || expiryDate < existing.nearestExpiryDate)) {
+      if (
+        expiryDate
+        && expiryTimestamp !== undefined
+        && (
+          existing.nearestExpiryTimestamp === undefined
+          || expiryTimestamp < existing.nearestExpiryTimestamp
+        )
+      ) {
         existing.nearestExpiryDate = expiryDate;
+        existing.nearestExpiryTimestamp = expiryTimestamp;
+      }
+      if (
+        validUnitPrice !== undefined
+        && (
+          existing.unitPrice === undefined
+          || existing.unitPriceExpiryTimestamp === undefined
+          || unitPriceExpiryTimestamp < existing.unitPriceExpiryTimestamp
+        )
+      ) {
+        existing.unitPrice = validUnitPrice;
+        existing.unitPriceExpiryTimestamp = unitPriceExpiryTimestamp;
       }
       continue;
     }
@@ -71,6 +100,11 @@ export function mergePhisAvailableMedicineInventory(
       storeName: cleanText(batch.idStoText),
       availableQuantity,
       nearestExpiryDate: expiryDate,
+      nearestExpiryTimestamp: expiryTimestamp,
+      unitPrice: validUnitPrice,
+      unitPriceExpiryTimestamp: validUnitPrice === undefined
+        ? undefined
+        : unitPriceExpiryTimestamp,
       batchCount: 1,
       raw: {
         idOrg: cleanText(batch.idOrg),
@@ -79,7 +113,12 @@ export function mergePhisAvailableMedicineInventory(
   }
 
   return Array.from(merged.values())
-    .map(({ batchCount, ...item }) => ({
+    .map(({
+      batchCount,
+      nearestExpiryTimestamp: _nearestExpiryTimestamp,
+      unitPriceExpiryTimestamp: _unitPriceExpiryTimestamp,
+      ...item
+    }) => ({
       ...item,
       raw: { ...item.raw, batchCount },
     }))
