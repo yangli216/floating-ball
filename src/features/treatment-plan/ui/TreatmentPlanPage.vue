@@ -898,7 +898,7 @@ onMounted(() => {
   display: grid;
   grid-template-columns: minmax(320px, 0.78fr) minmax(590px, 1.45fr);
   gap: 16px;
-  padding: 16px 20px;
+  padding: 8px 12px;
 }
 
 .evidence-slot {

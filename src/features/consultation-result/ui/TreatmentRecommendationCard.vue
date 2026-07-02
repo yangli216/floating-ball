@@ -2,19 +2,21 @@
   <article
     class="vcn-treatment-item"
     :class="[layoutVariant, { selected, locked, matching }]"
-    @click="emit('toggle')"
   >
-    <div v-if="selected && layoutVariant !== 'worklist'" class="card-selected-mark">
-      <svg xmlns="http://www.w3.org/2000/svg" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="20 6 9 17 4 12"></polyline></svg>
-    </div>
-
     <template v-if="layoutVariant === 'worklist'">
       <div class="worklist-row">
-        <div class="worklist-select-indicator" :class="{ selected }" aria-hidden="true">
+        <button
+          class="treatment-select-button"
+          :class="{ selected }"
+          type="button"
+          :aria-label="selected ? `将${rec.name}移出方案` : `将${rec.name}纳入方案`"
+          :aria-pressed="selected"
+          @click.stop="emit('toggle')"
+        >
           <span class="worklist-select-dot">
             <svg v-if="selected" xmlns="http://www.w3.org/2000/svg" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.4" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>
           </span>
-        </div>
+        </button>
 
         <div class="worklist-content">
           <div class="worklist-top-row">
@@ -84,8 +86,9 @@
                 </div>
               </div>
               <button v-if="showEditorToggle" class="inline-arrow-btn action-arrow" type="button"
-                :title="editorExpanded ? '收起更多编辑' : '展开更多编辑'" :aria-label="editorExpanded ? '收起更多编辑' : '展开更多编辑'"
+                :title="editorActionLabel" :aria-label="editorActionLabel"
                 @click.stop="emit('toggle-editor', $event)">
+                <span>{{ editorActionLabel }}</span>
                 <span class="inline-arrow" :class="{ open: editorExpanded }"></span>
               </button>
             </div>
@@ -93,15 +96,12 @@
 
           <div v-if="inlineSummary || originalName || usageToken" class="worklist-bottom-row">
             <div class="worklist-secondary-row">
-              <button
+              <div
                 v-if="inlineSummary"
                 class="medicine-inline-summary worklist-inline-text"
-                :class="{ clickable: showEditorToggle && !editorExpanded }"
-                type="button"
-                @click.stop="showEditorToggle && !editorExpanded ? emit('toggle-editor', $event) : undefined"
               >
                 {{ inlineSummary }}
-              </button>
+              </div>
               <div v-if="originalName" class="manual-match-origin-note worklist-inline-text worklist-inline-origin">
                 AI 原建议：{{ originalName }}
               </div>
@@ -135,6 +135,18 @@
 
     <template v-else>
       <div class="card-row treatment-card-row default-treatment-card-row">
+        <button
+          class="treatment-select-button"
+          :class="{ selected }"
+          type="button"
+          :aria-label="selected ? `将${rec.name}移出方案` : `将${rec.name}纳入方案`"
+          :aria-pressed="selected"
+          @click.stop="emit('toggle')"
+        >
+          <span class="worklist-select-dot">
+            <svg v-if="selected" xmlns="http://www.w3.org/2000/svg" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.4" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>
+          </span>
+        </button>
         <div class="card-main">
           <div class="default-card-top-row">
             <div class="card-title-line default-card-title-line">
@@ -192,10 +204,11 @@
                 v-if="showEditorToggle"
                 class="inline-arrow-btn action-arrow"
                 type="button"
-                :title="editorExpanded ? '收起更多编辑' : '展开更多编辑'"
-                :aria-label="editorExpanded ? '收起更多编辑' : '展开更多编辑'"
+                :title="editorActionLabel"
+                :aria-label="editorActionLabel"
                 @click.stop="emit('toggle-editor', $event)"
               >
+                <span>{{ editorActionLabel }}</span>
                 <span class="inline-arrow" :class="{ open: editorExpanded }"></span>
               </button>
             </div>
@@ -203,15 +216,12 @@
 
           <div class="default-card-bottom-row">
             <div class="default-card-summary">
-              <button
+              <div
                 v-if="inlineSummary"
                 class="medicine-inline-summary"
-                :class="{ clickable: showEditorToggle && !editorExpanded }"
-                type="button"
-                @click.stop="showEditorToggle && !editorExpanded ? emit('toggle-editor', $event) : undefined"
               >
                 {{ inlineSummary }}
-              </button>
+              </div>
               <div v-if="originalName" class="manual-match-origin-note">
                 AI 原建议：{{ originalName }}
               </div>
@@ -426,6 +436,11 @@ const reasonDisplay = computed(() => [
   buildMedicineQuantityExplanation(props.rec),
 ].filter(Boolean).join(' '));
 
+const editorActionLabel = computed(() => {
+  if (props.editorExpanded) return '收起编辑';
+  return props.rec.type === 'medicine' ? '编辑处方' : '编辑详情';
+});
+
 const emit = defineEmits<{
   (e: 'toggle'): void;
   (e: 'toggle-reason', event?: Event): void;
@@ -443,11 +458,11 @@ const emit = defineEmits<{
 <style scoped>
 .vcn-treatment-item {
   position: relative;
-  padding: 12px 14px 12px 34px;
+  padding: 12px 14px;
   border: 1px solid var(--voice-border);
   border-radius: 14px;
   background: var(--voice-surface);
-  cursor: pointer;
+  cursor: default;
   transition: border-color 0.18s ease, box-shadow 0.18s ease, transform 0.18s ease, background-color 0.18s ease;
 }
 
@@ -476,33 +491,6 @@ const emit = defineEmits<{
     0 10px 20px rgba(15, 23, 42, 0.03);
 }
 
-.card-selected-mark {
-  position: absolute;
-  top: -1px;
-  left: -1px;
-  width: 26px;
-  height: 26px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  border-radius: 14px 0 12px 0;
-  background: var(--voice-accent-softer);
-  color: var(--voice-accent-strong);
-  border-right: 1px solid var(--voice-accent-soft);
-  border-bottom: 1px solid var(--voice-accent-soft);
-  z-index: 2;
-}
-
-.card-selected-mark::after {
-  content: '';
-  position: absolute;
-  inset: 0;
-  border-top: 1px solid rgba(255, 255, 255, 0.38);
-  border-left: 1px solid rgba(255, 255, 255, 0.28);
-  border-radius: inherit;
-  pointer-events: none;
-}
-
 .card-row {
   display: flex;
   align-items: center;
@@ -516,6 +504,9 @@ const emit = defineEmits<{
 }
 
 .default-treatment-card-row {
+  display: grid;
+  grid-template-columns: 22px minmax(0, 1fr);
+  gap: 10px;
   align-items: stretch;
 }
 
@@ -617,10 +608,23 @@ const emit = defineEmits<{
   align-items: center;
 }
 
-.worklist-select-indicator {
+.treatment-select-button {
   display: flex;
   justify-content: center;
   align-items: center;
+  align-self: start;
+  width: 22px;
+  height: 28px;
+  padding: 0;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  cursor: pointer;
+}
+
+.treatment-select-button:focus-visible {
+  outline: 2px solid var(--voice-accent-soft);
+  outline-offset: 2px;
 }
 
 .worklist-select-dot {
@@ -636,7 +640,7 @@ const emit = defineEmits<{
   transition: all 0.18s ease;
 }
 
-.worklist-select-indicator.selected .worklist-select-dot {
+.treatment-select-button.selected .worklist-select-dot {
   border-color: #3b82f6;
   background: #eff6ff;
   color: #2563eb;
@@ -907,14 +911,6 @@ const emit = defineEmits<{
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-}
-
-.medicine-inline-summary.clickable {
-  cursor: pointer;
-}
-
-.medicine-inline-summary.clickable:hover {
-  color: var(--voice-accent);
 }
 
 .worklist .medicine-inline-summary {
@@ -1195,22 +1191,27 @@ const emit = defineEmits<{
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 22px;
-  height: 22px;
-  border: none;
+  gap: 6px;
+  min-height: 28px;
+  padding: 0 10px;
+  border: 1px solid var(--voice-border);
   border-radius: 999px;
-  background: transparent;
-  padding: 0;
-  color: var(--voice-text-muted);
+  background: var(--voice-surface);
+  color: var(--voice-text);
+  font-size: var(--voice-font-min);
+  font-weight: 600;
+  white-space: nowrap;
   cursor: pointer;
 }
 
 .inline-arrow-btn:hover {
+  border-color: var(--voice-accent);
   color: var(--voice-accent);
+  background: var(--voice-accent-softer);
 }
 
 .action-arrow {
-  background: var(--voice-surface-soft);
+  background: var(--voice-surface);
 }
 
 .inline-arrow {

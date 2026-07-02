@@ -724,8 +724,8 @@ function handleRemarkInput(event: Event): void {
 
 .medicine-primary-fields {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 10px 12px;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
 }
 
 .primary-field {
@@ -949,5 +949,17 @@ function handleRemarkInput(event: Event): void {
   border-color: rgba(220, 38, 38, 0.72);
   background: rgba(254, 242, 242, 0.94);
   box-shadow: 0 0 0 2px rgba(248, 113, 113, 0.18);
+}
+
+@media (max-width: 1280px) {
+  .medicine-primary-fields {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 720px) {
+  .medicine-primary-fields {
+    grid-template-columns: 1fr;
+  }
 }
 </style>

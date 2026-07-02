@@ -414,6 +414,13 @@
 - **解决方案**: 收敛 `/api/consultation/events/ws` 为唯一 HIS 结果通道，删除 SDK 的 `pollEvent`、长轮询循环和 polling 配置，文档与类型声明同步移除 poll 契约；WebSocket 断线继续携带最后 `event.id` 补发，握手失败按 1/2/4/8/16/30 秒上限指数退避，并只在状态切换时发送 connected/disconnected 事件。
 - **后续防护**: 结果通道变更必须同时核对 `http_server.rs + sdk/med-hermes-sdk.js + d.ts + api.md + ARCHITECTURE.md + AGENTS.md + CODE_MAP.md`；不得只恢复客户端 fallback。若 WebSocket 兼容性再出现问题，应修复握手、授权、缓存或重连，不得未经人工确认重新引入第二套事件通道。
 
+### RETRO-051: 定性阳性结果被上游 normal 标记覆盖 [已解决]
+
+- **现象**: 尿常规中尿糖、酮体、维生素 C、胆红素等结果明确为“阳性”，报告工作台的“方向”仍显示绿色“正常”，AI 异常项也可能漏掉这些结果。
+- **根因**: PHIS 报告聚合返参把部分定性阳性项目标记为 `abnormal: false + direction: normal`；客户端 `resolveLabItemDirection()` 又在看到任意 `direction` 时直接返回，没有用结果文本、异常标记和参考范围复核冲突字段。
+- **解决方案**: 报告展示与异常提炼统一按“非正常 direction → 非正常 abnormalFlag → 阳性/阴性定性结果 → 数值参考范围 → abnormal 布尔值”的确定性顺序复核；阳性结果可以纠正冲突的 normal/false，医生仍可查看 HIS 原始结果文本。
+- **后续防护**: 定性检验不能只依赖数值上下限或单个上游布尔值；新增报告项目映射必须覆盖“阳性结果 + normal/false 冲突”和“阴性正常”回归测试。
+
 > 新增条目请复制以下模板：
 
 ```markdown

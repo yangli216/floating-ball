@@ -68,9 +68,13 @@ function flagDirection(flag: string | undefined): HisOutpatientFollowUpLabItem['
 export function resolveLabItemDirection(
   item: HisOutpatientFollowUpLabItem,
 ): HisOutpatientFollowUpLabItem['direction'] {
-  if (item.direction) return item.direction;
+  if (item.direction && item.direction !== 'normal') return item.direction;
+
   const fromFlag = flagDirection(item.abnormalFlag);
   if (fromFlag && fromFlag !== 'normal') return fromFlag;
+
+  const fromResult = flagDirection(item.result);
+  if (fromResult && fromResult !== 'normal') return fromResult;
 
   const result = parseNumericValue(item.result);
   const rangeBounds = parseReferenceBounds(item.referenceRange);
@@ -78,6 +82,7 @@ export function resolveLabItemDirection(
   const high = parseNumericValue(item.referenceHigh) ?? rangeBounds.high;
   if (result !== null && low !== null && result < low) return 'down';
   if (result !== null && high !== null && result > high) return 'up';
+  if (item.abnormal === true) return 'abnormal';
   return 'normal';
 }
 
@@ -94,7 +99,7 @@ export function buildStructuredLabAbnormalItems(
 ): ReportInterpretationAbnormalItem[] {
   return (items || []).flatMap((item) => {
     const direction = resolveLabItemDirection(item);
-    const abnormal = item.abnormal ?? direction !== 'normal';
+    const abnormal = direction !== 'normal' || item.abnormal === true;
     if (!abnormal) return [];
     const directionMap: Record<Exclude<HisOutpatientFollowUpLabItem['direction'], undefined>, ReportInterpretationAbnormalDirection> = {
       normal: 'neutral',
@@ -107,7 +112,9 @@ export function buildStructuredLabAbnormalItems(
       ? '高于当前报告参考上限，请结合病情与动态变化判断。'
       : direction === 'down'
         ? '低于当前报告参考下限，请结合病情与动态变化判断。'
-        : '报告标记为异常结果，请结合临床判断。';
+        : direction === 'positive'
+          ? '报告结果为阳性，请结合项目性质与临床表现判断。'
+          : '报告标记为异常结果，请结合临床判断。';
     return [{
       name: item.itemName || '未命名项目',
       result: [item.result, item.unit].filter(Boolean).join(' ') || '未提供',

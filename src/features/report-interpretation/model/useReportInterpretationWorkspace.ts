@@ -4,6 +4,8 @@ import type { AppPatient } from '@/types/appState';
 import type { ReportInterpretationWindowPayload } from '@/types/reportInterpretation';
 import type { ReportHistoryEntry, ReportHistoryFilter } from '../types';
 
+type ReportWorkspaceView = 'source' | 'interpretation';
+
 interface ReportInterpretationWorkspaceOptions {
   patient: Ref<AppPatient | null>;
   visits: Ref<HisVisitRecord[]>;
@@ -28,6 +30,7 @@ export function useReportInterpretationWorkspace(options: ReportInterpretationWo
   const interpretation = ref<ReportInterpretationWindowPayload | null>(null);
   const interpreting = ref(false);
   const interpretationError = ref('');
+  const activeView = ref<ReportWorkspaceView>('source');
   const payloadCache = new Map<string, ReportInterpretationWindowPayload>();
   let requestVersion = 0;
 
@@ -42,24 +45,43 @@ export function useReportInterpretationWorkspace(options: ReportInterpretationWo
   const canOpenFollowUp = computed(() => Boolean(
     selectedReport.value?.isFollowUpSource && options.followUpContext.value?.followUpEligible,
   ));
+  const canInterpret = computed(() => Boolean(
+    selectedReport.value?.available && selectedReport.value?.sourceQuery,
+  ));
 
-  async function selectReport(report: ReportHistoryEntry): Promise<void> {
+  function selectReport(report: ReportHistoryEntry): void {
+    requestVersion += 1;
     selectedId.value = report.id;
     interpretationError.value = '';
     interpretation.value = payloadCache.get(report.id) || null;
-    const currentVersion = ++requestVersion;
-    if (interpretation.value) return;
-    if (!report.available || !report.sourceQuery) {
+    interpreting.value = false;
+    activeView.value = 'source';
+  }
+
+  async function runInterpretation(options_: { force?: boolean } = {}): Promise<void> {
+    const report = selectedReport.value;
+    if (!report?.available || !report.sourceQuery) {
       interpretationError.value = '报告结果正文暂未加载，请稍后重试。';
       return;
     }
 
+    const cached = payloadCache.get(report.id);
+    if (cached && !options_.force) {
+      interpretation.value = cached;
+      activeView.value = 'interpretation';
+      return;
+    }
+
+    const currentVersion = ++requestVersion;
+    interpretationError.value = '';
     interpreting.value = true;
+    activeView.value = 'source';
     try {
       const payload = await options.buildInterpretation(report, options.patient.value);
       if (currentVersion !== requestVersion || selectedId.value !== report.id) return;
       payloadCache.set(report.id, payload);
       interpretation.value = payload;
+      activeView.value = 'interpretation';
     } catch (error) {
       if (currentVersion !== requestVersion) return;
       interpretationError.value = error instanceof Error ? error.message : '报告解读失败，请稍后重试。';
@@ -75,13 +97,16 @@ export function useReportInterpretationWorkspace(options: ReportInterpretationWo
     loadingHistory.value = true;
     historyError.value = '';
     interpretation.value = null;
+    interpretationError.value = '';
+    activeView.value = 'source';
+    requestVersion += 1;
     try {
       reports.value = patientId
         ? await options.loadHistory(patientId, options.visits.value, options.followUpContext.value)
         : [];
       const first = reports.value[0];
       if (first) {
-        await selectReport(first);
+        selectReport(first);
       } else {
         selectedId.value = '';
       }
@@ -101,6 +126,16 @@ export function useReportInterpretationWorkspace(options: ReportInterpretationWo
     }
   }
 
+  function showSource(): void {
+    activeView.value = 'source';
+  }
+
+  function showInterpretation(): void {
+    if (interpretation.value) {
+      activeView.value = 'interpretation';
+    }
+  }
+
   return {
     reports,
     filteredReports,
@@ -112,9 +147,14 @@ export function useReportInterpretationWorkspace(options: ReportInterpretationWo
     interpretation,
     interpreting,
     interpretationError,
+    activeView,
     canOpenFollowUp,
+    canInterpret,
     load,
     selectReport,
+    runInterpretation,
     setFilter,
+    showSource,
+    showInterpretation,
   };
 }

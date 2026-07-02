@@ -504,10 +504,6 @@ function isMedicineDaysMissing(item: TreatmentRecommendation): boolean {
   return item.type === 'medicine' && !hasPositiveNumber(item.days);
 }
 
-function isMedicinePharmacyMissing(item: TreatmentRecommendation): boolean {
-  return item.type === 'medicine' && !props.hasRequiredPharmacy(item);
-}
-
 function isBodySiteInputMissing(item: TreatmentRecommendation): boolean {
   return item.type === 'exam' && !props.hasRequiredBodySite(item);
 }
@@ -815,6 +811,48 @@ function getFeedbackSubmittedLabel(item: TreatmentRecommendation): string {
         <template #editor>
           <div v-if="shouldShowTreatmentEditor(item)" class="editor-shell" @click.stop>
             <template v-if="item.type === 'medicine'">
+              <div
+                v-if="isSecondarySelectorOpen(item, 'pharmacy')"
+                class="header-quick-selector-panel"
+                @focusout="emit('closeSecondarySelector', item, 'pharmacy', $event)"
+              >
+                <div class="header-quick-selector-heading">选择发药药房</div>
+                <div class="field-editor route-field-editor">
+                  <input
+                    v-bind="getInputDataAttrs(item, 'pharmacy')"
+                    :value="getAttributeKeyword(item, 'pharmacy')"
+                    type="text"
+                    :placeholder="getAttributePlaceholder('pharmacy')"
+                    class="edit-input"
+                    @focus="openAttribute(item, 'pharmacy', $event)"
+                    @input="updateAttributeKeyword(item, 'pharmacy', $event)"
+                  />
+                  <button
+                    v-if="hasAttributeValue(item, 'pharmacy')"
+                    class="field-clear-button"
+                    type="button"
+                    :aria-label="getAttributeClearLabel('pharmacy')"
+                    :title="getAttributeClearLabel('pharmacy')"
+                    @mousedown.prevent.stop="clearAttribute(item, 'pharmacy')"
+                  >
+                    <Icon icon="lucide:x" :size="14" aria-hidden="true" />
+                  </button>
+                  <div class="route-option-list header-quick-option-list" role="listbox" :aria-label="getAttributeAriaLabel('pharmacy')">
+                    <button
+                      v-for="option in getAttributeOptions(item, 'pharmacy').slice(0, 8)"
+                      :key="option.key"
+                      class="route-option-item"
+                      type="button"
+                      @mousedown.prevent.stop="selectAttributeOption(item, 'pharmacy', option)"
+                    >
+                      <span class="route-option-text">{{ option.text }}</span>
+                      <span v-if="option.mcode" class="route-option-meta">{{ option.mcode }}</span>
+                    </button>
+                    <div v-if="getAttributeOptions(item, 'pharmacy').length === 0" class="route-option-empty">{{ getAttributeEmptyText('pharmacy') }}</div>
+                  </div>
+                </div>
+              </div>
+
               <TreatmentItemEditor
                 :rec="item"
                 mode="inline"
@@ -838,14 +876,11 @@ function getFeedbackSubmittedLabel(item: TreatmentRecommendation): string {
               </div>
 
               <div v-if="isTreatmentEditorExpanded(item)" class="secondary-field-grid">
-                <div class="secondary-field">
-                  <label>规定病</label>
-                  <input v-model="item.regulatedDisease" type="text" placeholder="规定病" class="edit-input" />
-                </div>
                 <div class="secondary-field required numeric-secondary-field" :class="{ missing: isMedicineDaysMissing(item) || isNumericFieldInvalid(item, 'days') }">
                   <label>天数</label>
                   <div class="numeric-field">
                     <input
+                      :data-treatment-days-input="getEditorKey(item)"
                       :value="item.days || ''"
                       type="text"
                       inputmode="numeric"
@@ -867,75 +902,11 @@ function getFeedbackSubmittedLabel(item: TreatmentRecommendation): string {
                     </div>
                   </div>
                 </div>
-                <div class="secondary-field required" :class="{ missing: isMedicinePharmacyMissing(item) }">
-                  <label>药房</label>
-                  <div class="field-editor route-field-editor" :class="{ missing: isMedicinePharmacyMissing(item) }" @focusout="emit('closeSecondarySelector', item, 'pharmacy', $event)">
-                    <input
-                      v-bind="getInputDataAttrs(item, 'pharmacy')"
-                      :value="getAttributeKeyword(item, 'pharmacy')"
-                      type="text"
-                      :placeholder="getAttributePlaceholder('pharmacy')"
-                      class="edit-input"
-                      :aria-invalid="isMedicinePharmacyMissing(item) ? 'true' : undefined"
-                      @focus="openAttribute(item, 'pharmacy', $event)"
-                      @input="updateAttributeKeyword(item, 'pharmacy', $event)"
-                    />
-                    <button
-                      v-if="hasAttributeValue(item, 'pharmacy')"
-                      class="field-clear-button"
-                      type="button"
-                      :aria-label="getAttributeClearLabel('pharmacy')"
-                      :title="getAttributeClearLabel('pharmacy')"
-                      @mousedown.prevent.stop="clearAttribute(item, 'pharmacy')"
-                    >
-                      <Icon icon="lucide:x" :size="14" aria-hidden="true" />
-                    </button>
-                    <div v-if="isSecondarySelectorOpen(item, 'pharmacy')" class="route-option-list" role="listbox" :aria-label="getAttributeAriaLabel('pharmacy')">
-                      <button
-                        v-for="option in getAttributeOptions(item, 'pharmacy').slice(0, 8)"
-                        :key="option.key"
-                        class="route-option-item"
-                        type="button"
-                        @mousedown.prevent.stop="selectAttributeOption(item, 'pharmacy', option)"
-                      >
-                        <span class="route-option-text">{{ option.text }}</span>
-                        <span v-if="option.mcode" class="route-option-meta">{{ option.mcode }}</span>
-                      </button>
-                      <div v-if="getAttributeOptions(item, 'pharmacy').length === 0" class="route-option-empty">{{ getAttributeEmptyText('pharmacy') }}</div>
-                    </div>
-                  </div>
-                </div>
-                <div class="secondary-field remark-secondary-field" :class="{ 'is-over-limit': isRemarkOverLimit(item) }">
-                  <label>备注</label>
-                  <div class="remark-field">
-                    <input
-                      :value="item.remark || ''"
-                      type="text"
-                      placeholder="备注"
-                      class="edit-input"
-                      :aria-invalid="isRemarkOverLimit(item) ? 'true' : undefined"
-                      :aria-describedby="getRemarkMetaId(item)"
-                      @beforeinput="handleRemarkBeforeInput(item, $event)"
-                      @paste="handleRemarkPaste(item, $event)"
-                      @input="handleRemarkInput(item, $event)"
-                    />
-                    <div
-                      :id="getRemarkMetaId(item)"
-                      class="remark-field-meta"
-                      :class="{
-                        'is-warning': isRemarkAtLimit(item) || isRemarkInputBlocked(item),
-                        'is-error': isRemarkOverLimit(item),
-                      }"
-                    >
-                      <span>{{ getRemarkLength(item) }}/{{ TREATMENT_REMARK_MAX_LENGTH }}</span>
-                      <span v-if="getRemarkLimitMessage(item)" class="remark-field-message">{{ getRemarkLimitMessage(item) }}</span>
-                    </div>
-                  </div>
-                </div>
                 <div class="secondary-field required" :class="{ missing: isInsuranceInputMissing(item) }">
                   <label>医保限用</label>
                   <div class="field-editor route-field-editor" :class="{ missing: isInsuranceInputMissing(item) }" @focusout="emit('closeSecondarySelector', item, 'insurance', $event)">
                     <input
+                      :data-treatment-insurance-input="getEditorKey(item)"
                       :value="getAttributeKeyword(item, 'insurance')"
                       type="text"
                       :placeholder="getAttributePlaceholder('insurance')"
@@ -965,6 +936,37 @@ function getFeedbackSubmittedLabel(item: TreatmentRecommendation): string {
                         <span class="route-option-text">{{ option.text }}</span>
                       </button>
                       <div v-if="getAttributeOptions(item, 'insurance').length === 0" class="route-option-empty">{{ getAttributeEmptyText('insurance') }}</div>
+                    </div>
+                  </div>
+                </div>
+                <div class="secondary-field">
+                  <label>规定病</label>
+                  <input v-model="item.regulatedDisease" type="text" placeholder="规定病" class="edit-input" />
+                </div>
+                <div class="secondary-field remark-secondary-field" :class="{ 'is-over-limit': isRemarkOverLimit(item) }">
+                  <label>备注</label>
+                  <div class="remark-field">
+                    <input
+                      :value="item.remark || ''"
+                      type="text"
+                      placeholder="备注"
+                      class="edit-input"
+                      :aria-invalid="isRemarkOverLimit(item) ? 'true' : undefined"
+                      :aria-describedby="getRemarkMetaId(item)"
+                      @beforeinput="handleRemarkBeforeInput(item, $event)"
+                      @paste="handleRemarkPaste(item, $event)"
+                      @input="handleRemarkInput(item, $event)"
+                    />
+                    <div
+                      :id="getRemarkMetaId(item)"
+                      class="remark-field-meta"
+                      :class="{
+                        'is-warning': isRemarkAtLimit(item) || isRemarkInputBlocked(item),
+                        'is-error': isRemarkOverLimit(item),
+                      }"
+                    >
+                      <span>{{ getRemarkLength(item) }}/{{ TREATMENT_REMARK_MAX_LENGTH }}</span>
+                      <span v-if="getRemarkLimitMessage(item)" class="remark-field-message">{{ getRemarkLimitMessage(item) }}</span>
                     </div>
                   </div>
                 </div>
@@ -1150,6 +1152,12 @@ function getFeedbackSubmittedLabel(item: TreatmentRecommendation): string {
                 </div>
               </div>
             </template>
+
+            <div v-if="!item.selected" class="editor-selection-actions">
+              <button class="complete-and-select-button" type="button" @click.stop="emit('toggle', item)">
+                完成并选中
+              </button>
+            </div>
           </div>
         </template>
       </TreatmentRecommendationCard>
@@ -1237,8 +1245,8 @@ function getFeedbackSubmittedLabel(item: TreatmentRecommendation): string {
 }
 
 .editor-shell {
-  margin-top: 8px;
-  padding-top: 8px;
+  margin-top: 6px;
+  padding-top: 10px;
   border-top: 1px solid var(--voice-border);
 }
 
@@ -1260,26 +1268,46 @@ function getFeedbackSubmittedLabel(item: TreatmentRecommendation): string {
   background: rgba(201, 122, 17, 0.1);
 }
 
+.header-quick-selector-panel {
+  max-width: 360px;
+  margin-bottom: 10px;
+  padding: 10px;
+  border: 1px solid var(--voice-accent-soft);
+  border-radius: 10px;
+  background: var(--voice-accent-softer);
+}
+
+.header-quick-selector-heading {
+  margin-bottom: 6px;
+  color: var(--voice-text);
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.header-quick-option-list {
+  top: calc(100% + 4px);
+}
+
 .secondary-field-grid {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 8px;
-  margin-top: 8px;
+  margin-top: 10px;
 }
 
 .treatment-recommendation-section.worklist .secondary-field-grid {
-  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+  grid-template-columns: repeat(4, minmax(0, 1fr));
 }
 
 .secondary-field {
   display: flex;
-  align-items: center;
-  gap: 8px;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 5px;
   min-width: 0;
-  padding: 8px 10px;
-  border-radius: 12px;
-  border: 1px solid var(--voice-border);
-  background: var(--voice-surface-soft);
+  padding: 0;
+  border: 0;
+  background: transparent;
 }
 
 .remark-secondary-field {
@@ -1393,10 +1421,10 @@ function getFeedbackSubmittedLabel(item: TreatmentRecommendation): string {
 
 .edit-input {
   width: 100%;
-  min-height: 38px;
+  min-height: 34px;
   padding: 0 10px;
   border: 1px solid var(--voice-border);
-  border-radius: 12px;
+  border-radius: 10px;
   color: var(--voice-text);
   font-size: var(--voice-font-main);
   background: var(--voice-surface);
@@ -1406,7 +1434,30 @@ function getFeedbackSubmittedLabel(item: TreatmentRecommendation): string {
 }
 
 .edit-input.mini {
-  max-width: 74px;
+  max-width: none;
+}
+
+.editor-selection-actions {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 10px;
+}
+
+.complete-and-select-button {
+  min-height: 34px;
+  padding: 0 16px;
+  border: 1px solid var(--voice-accent);
+  border-radius: 10px;
+  background: var(--voice-accent);
+  color: #fff;
+  font-size: var(--voice-font-main);
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.complete-and-select-button:hover {
+  border-color: var(--voice-accent-strong);
+  background: var(--voice-accent-strong);
 }
 
 .edit-input:focus {
@@ -1601,7 +1652,8 @@ function getFeedbackSubmittedLabel(item: TreatmentRecommendation): string {
 }
 
 @media (max-width: 1280px) {
-  .secondary-field-grid {
+  .secondary-field-grid,
+  .treatment-recommendation-section.worklist .secondary-field-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
@@ -1612,7 +1664,8 @@ function getFeedbackSubmittedLabel(item: TreatmentRecommendation): string {
     align-items: stretch;
   }
 
-  .secondary-field-grid {
+  .secondary-field-grid,
+  .treatment-recommendation-section.worklist .secondary-field-grid {
     grid-template-columns: 1fr;
   }
 }

@@ -25,21 +25,20 @@ export function useTreatmentEditorState(options: Options) {
   function toggleTreatmentEditor(rec: TreatmentRecommendation, event?: Event): void {
     event?.stopPropagation();
     const key = options.getEditorKey(rec);
-    const nextEditors = new Set(expandedTreatmentEditors.value);
-    if (nextEditors.has(key)) {
-      nextEditors.delete(key);
-    } else {
-      nextEditors.add(key);
-    }
-    expandedTreatmentEditors.value = nextEditors;
+    const isClosing = expandedTreatmentEditors.value.has(key);
+    expandedTreatmentEditors.value = isClosing ? new Set() : new Set([key]);
+    activeEditableFieldKey.value = null;
+    options.resetDependents?.();
   }
 
   function expandTreatmentEditor(rec: TreatmentRecommendation): void {
     const key = options.getEditorKey(rec);
-    if (expandedTreatmentEditors.value.has(key)) {
+    if (expandedTreatmentEditors.value.size === 1 && expandedTreatmentEditors.value.has(key)) {
       return;
     }
-    expandedTreatmentEditors.value = new Set([...expandedTreatmentEditors.value, key]);
+    expandedTreatmentEditors.value = new Set([key]);
+    activeEditableFieldKey.value = null;
+    options.resetDependents?.();
   }
 
   function collapseTreatmentEditor(rec: TreatmentRecommendation): void {
@@ -47,9 +46,7 @@ export function useTreatmentEditorState(options: Options) {
     if (!expandedTreatmentEditors.value.has(editorKey)) {
       return;
     }
-    const nextEditors = new Set(expandedTreatmentEditors.value);
-    nextEditors.delete(editorKey);
-    expandedTreatmentEditors.value = nextEditors;
+    expandedTreatmentEditors.value = new Set();
     if (activeEditableFieldKey.value?.startsWith(`${editorKey}:`)) {
       activeEditableFieldKey.value = null;
     }

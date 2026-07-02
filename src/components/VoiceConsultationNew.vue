@@ -458,7 +458,6 @@ const {
   isTreatmentEditorExpanded,
   toggleTreatmentEditor,
   expandTreatmentEditor,
-  collapseTreatmentEditor,
   shouldShowTreatmentEditor,
   registerEditableFieldElement,
   isEditableFieldActive,
@@ -578,7 +577,7 @@ function getTreatmentIssue(rec: TreatmentRecommendation) {
 }
 
 function shouldShowTreatmentEditorToggle(rec: TreatmentRecommendation): boolean {
-  return !!rec.selected;
+  return !requiresManualMatchBeforeSelect(rec);
 }
 
 function getRecommendationDraft(recommendationKey: string): VoiceRecommendationFeedbackDraft {
@@ -930,13 +929,56 @@ async function toggleTreatment(item: TreatmentRecommendation): Promise<void> {
     bodySiteMissingMessage: '请先设置检查部位后再选中该项目',
     hydrateNonMedicine: item.type !== 'medicine',
   }))) {
+    focusFirstMissingMedicinePrimaryField(item);
     return;
   }
 
   item.selected = nextSelected;
+}
 
-  if (!item.selected) {
-    collapseTreatmentEditor(item);
+function focusFirstMissingMedicinePrimaryField(item: TreatmentRecommendation): void {
+  if (item.type !== 'medicine') return;
+
+  expandTreatmentEditor(item);
+  if (!hasRequiredPharmacy(item)) {
+    openPharmacyQuickSelector(item);
+    return;
+  }
+
+  const normalized = normalizeTreatmentRecommendation(item);
+  const dosage = Number((normalized.dosage || '').trim());
+  const totalQty = Number((normalized.totalQty || '').trim());
+  let field: MedicinePrimaryField | null = null;
+
+  if (!Number.isFinite(dosage) || dosage <= 0 || !(normalized.dosageUnit || '').trim()) {
+    field = 'dosage';
+  } else if (!(normalized.frequencyKey || '').trim()) {
+    field = 'frequency';
+  } else if (!(normalized.routeKey || '').trim()) {
+    field = 'route';
+  } else if (!Number.isFinite(totalQty) || totalQty <= 0) {
+    field = 'total';
+  }
+
+  if (field) {
+    setActiveEditableField(item, field);
+    focusActiveEditableField();
+    return;
+  }
+
+  if (!Number.isFinite(Number((normalized.days || '').trim())) || Number((normalized.days || '').trim()) <= 0) {
+    void nextTick(() => {
+      const editorKey = getTreatmentEditorKey(item);
+      const input = Array.from(document.querySelectorAll<HTMLInputElement>('[data-treatment-days-input]'))
+        .find((element) => element.dataset.treatmentDaysInput === editorKey);
+      input?.focus();
+      input?.select();
+    });
+    return;
+  }
+
+  if (!(normalized.insuranceType || '').trim()) {
+    openInsuranceQuickSelector(item);
   }
 }
 
@@ -1651,6 +1693,13 @@ function openInsuranceQuickSelector(rec: TreatmentRecommendation, event?: Event)
   event?.stopPropagation();
   expandTreatmentEditor(rec);
   openSecondarySelector(rec, 'insurance');
+  void nextTick(() => {
+    const editorKey = getTreatmentEditorKey(rec);
+    const input = Array.from(document.querySelectorAll<HTMLInputElement>('[data-treatment-insurance-input]'))
+      .find((element) => element.dataset.treatmentInsuranceInput === editorKey);
+    input?.focus();
+    input?.select();
+  });
 }
 
 onMounted(() => {

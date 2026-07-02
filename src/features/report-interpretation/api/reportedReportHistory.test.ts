@@ -80,4 +80,32 @@ describe('reported report serialization', () => {
       referenceRange: '3.5-9.5',
     })).toBe('up');
   });
+
+  it('corrects a conflicting normal marker when the qualitative result is positive', () => {
+    const item = {
+      itemName: '尿糖',
+      result: '阳性',
+      referenceRange: '阴性',
+      abnormal: false,
+      direction: 'normal' as const,
+    };
+
+    expect(resolveLabItemDirection(item)).toBe('positive');
+    expect(buildStructuredLabAbnormalItems([item])).toEqual([
+      expect.objectContaining({
+        name: '尿糖',
+        result: '阳性',
+        direction: 'positive',
+      }),
+    ]);
+  });
+
+  it('keeps a qualitative negative result normal', () => {
+    expect(resolveLabItemDirection({
+      result: '阴性',
+      referenceRange: '阴性',
+      abnormal: false,
+      direction: 'normal',
+    })).toBe('normal');
+  });
 });

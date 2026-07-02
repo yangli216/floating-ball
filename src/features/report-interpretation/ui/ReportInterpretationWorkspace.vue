@@ -98,6 +98,12 @@ function printReport(): void {
   window.print();
 }
 
+function triggerInterpretation(): void {
+  void controller.runInterpretation({
+    force: Boolean(controller.interpretation.value),
+  });
+}
+
 onMounted(() => {
   void controller.load();
 });
@@ -167,11 +173,56 @@ onMounted(() => {
 
     <main class="interpretation-pane">
       <header class="interpretation-toolbar">
-        <div class="selected-report-title">
-          <span>{{ controller.selectedReport.value?.taskId === 'checkReport' ? '检查报告' : '检验报告' }}</span>
-          <strong>{{ controller.selectedReport.value?.title || '请选择报告' }}</strong>
+        <div class="toolbar-main">
+          <div class="selected-report-title">
+            <span>{{ controller.selectedReport.value?.taskId === 'checkReport' ? '检查报告' : '检验报告' }}</span>
+            <strong>{{ controller.selectedReport.value?.title || '请选择报告' }}</strong>
+          </div>
+          <div v-if="controller.selectedReport.value" class="report-view-tabs" role="tablist" aria-label="报告内容视图">
+            <button
+              type="button"
+              role="tab"
+              :aria-selected="controller.activeView.value === 'source'"
+              :class="{ active: controller.activeView.value === 'source' }"
+              @click="controller.showSource"
+            >原始报告</button>
+            <button
+              type="button"
+              role="tab"
+              :aria-selected="controller.activeView.value === 'interpretation'"
+              :class="{ active: controller.activeView.value === 'interpretation' }"
+              :disabled="!controller.interpretation.value"
+              @click="controller.showInterpretation"
+            >
+              AI 解读
+              <span v-if="controller.interpreting.value" class="tab-status-dot" aria-label="生成中"></span>
+            </button>
+          </div>
         </div>
         <div class="interpretation-actions">
+          <button
+            v-if="controller.selectedReport.value"
+            class="ai-action-button"
+            :class="{ 'ai-action-button--secondary': controller.interpretation.value }"
+            type="button"
+            :disabled="!controller.canInterpret.value || controller.interpreting.value"
+            @click="triggerInterpretation"
+          >
+            <Icon
+              :class="{ spinning: controller.interpreting.value }"
+              :icon="controller.interpreting.value
+                ? 'lucide:loader-circle'
+                : controller.interpretation.value
+                  ? 'lucide:refresh-cw'
+                  : 'lucide:sparkles'"
+              size="17"
+            />
+            {{ controller.interpreting.value
+              ? 'AI 解读中'
+              : controller.interpretation.value
+                ? '重新解读'
+                : '开始 AI 解读' }}
+          </button>
           <button
             v-if="controller.canOpenFollowUp.value"
             class="follow-up-button"
@@ -189,7 +240,7 @@ onMounted(() => {
 
       <div class="interpretation-scroll">
         <ReportInterpretationContent
-          v-if="controller.interpretation.value"
+          v-if="controller.activeView.value === 'interpretation' && controller.interpretation.value"
           :payload="controller.interpretation.value"
           compact
         />
@@ -198,7 +249,7 @@ onMounted(() => {
             <Icon class="spinning" icon="lucide:loader-circle" size="18" />
             <div>
               <strong>AI 正在解读</strong>
-              <span>原始报告已可阅读，综合判断完成后会自动显示。</span>
+              <span>你可以继续核对原始报告，完成后将自动切换到 AI 解读。</span>
             </div>
           </div>
           <div v-else-if="controller.interpretationError.value" class="interpretation-progress interpretation-progress--error">
@@ -207,7 +258,14 @@ onMounted(() => {
               <strong>AI 解读暂时不可用</strong>
               <span>{{ controller.interpretationError.value }}</span>
             </div>
-            <button type="button" @click="controller.selectReport(controller.selectedReport.value)">重新解读</button>
+            <button type="button" @click="triggerInterpretation">重新解读</button>
+          </div>
+          <div v-else-if="!controller.canInterpret.value" class="interpretation-progress interpretation-progress--muted">
+            <Icon icon="lucide:file-warning" size="18" />
+            <div>
+              <strong>报告正文暂不可用</strong>
+              <span>当前仅有报告申请摘要，暂时无法发起 AI 解读。</span>
+            </div>
           </div>
           <ReportSourcePreview :report="controller.selectedReport.value" />
         </div>
@@ -251,27 +309,51 @@ onMounted(() => {
 .timeline-state, .content-state { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px; color: #748197; text-align: center; }
 .timeline-state { flex: 1; padding: 28px; font-size: 13px; }
 .timeline-state--error, .content-state--error { color: #b45309; }
-.interpretation-pane { min-width: 0; min-height: 0; display: grid; grid-template-rows: 50px minmax(0, 1fr); background: #fff; }
+.interpretation-pane { min-width: 0; min-height: 0; display: grid; grid-template-rows: 58px minmax(0, 1fr); background: #fff; }
 .interpretation-toolbar { padding: 0 18px; border-bottom: 1px solid #dce4ee; background: #fff; }
+.toolbar-main { min-width: 0; display: flex; align-items: center; gap: 18px; }
 .selected-report-title { min-width: 0; display: flex; align-items: baseline; gap: 10px; }
 .selected-report-title span { flex: none; color: #6b7b8d; font-size: 12px; }
 .selected-report-title strong { overflow: hidden; font-size: 15px; text-overflow: ellipsis; white-space: nowrap; }
+.report-view-tabs { align-self: center; display: grid; grid-template-columns: repeat(2, minmax(78px, auto)); gap: 2px; height: 36px; padding: 3px; box-sizing: border-box; border-radius: 9px; }
+.report-view-tabs button { position: relative; min-width: 78px; padding: 0 12px; border: 0; border-radius: 6px; background: transparent; color: #5f6f82; font-size: 13px; font-weight: 600; line-height: 28px; white-space: nowrap; cursor: pointer; transition: color .16s ease, background-color .16s ease, box-shadow .16s ease; }
+.report-view-tabs button:hover:not(:disabled):not(.active) { color: #245f9f; background: #eaf1f9; }
+.report-view-tabs button.active { background: #fff; color: #1769d2; font-weight: 700; box-shadow: 0 1px 3px rgba(31, 78, 134, .16); }
+.report-view-tabs button:disabled { color: #9aa7b7; opacity: .72; cursor: default; }
+.report-view-tabs button:focus-visible { outline: 2px solid #7eb3f2; outline-offset: 1px; }
+.tab-status-dot { position: absolute; top: 6px; right: 6px; width: 5px; height: 5px; border-radius: 50%; background: #3b82f6; box-shadow: 0 0 0 3px #eaf3ff; }
 .interpretation-actions { display: flex; align-items: center; gap: 8px; }
-.follow-up-button, .content-state button { min-height: 34px; display: inline-flex; align-items: center; gap: 7px; padding: 0 12px; border: 1px solid #9dc4f5; border-radius: 7px; background: #edf5ff; color: #1769d2; font-weight: 600; cursor: pointer; }
+.ai-action-button, .follow-up-button, .content-state button { min-height: 36px; display: inline-flex; align-items: center; gap: 7px; padding: 0 13px; border: 1px solid #9dc4f5; border-radius: 8px; background: #edf5ff; color: #1769d2; font-size: 13px; font-weight: 700; line-height: 1; white-space: nowrap; cursor: pointer; }
+.ai-action-button { min-width: 116px; justify-content: center; border-color: #1769d2; background: #1769d2; color: #fff; box-shadow: 0 2px 5px rgba(23, 105, 210, .22); transition: background-color .16s ease, border-color .16s ease, box-shadow .16s ease, transform .16s ease; }
+.ai-action-button:hover:not(:disabled) { border-color: #115bb8; background: #115fbe; box-shadow: 0 3px 8px rgba(23, 105, 210, .28); }
+.ai-action-button:active:not(:disabled) { transform: translateY(1px); box-shadow: 0 1px 3px rgba(23, 105, 210, .2); }
+.ai-action-button--secondary { border-color: #9bc0ed; background: #edf5ff; color: #155aa8; box-shadow: none; }
+.ai-action-button--secondary:hover:not(:disabled) { border-color: #76abe7; background: #e2efff; color: #104f96; box-shadow: none; }
+.ai-action-button:disabled { border-color: #d8e1ec; background: #eef2f7; color: #8795a7; box-shadow: none; cursor: default; }
 .interpretation-scroll { position: relative; min-height: 0; overflow-y: auto; background: #fff; }
-.source-stage { width: min(940px, 100%); min-height: 100%; margin: 0 auto; padding: 14px 26px 22px; box-sizing: border-box; }
+.source-stage { width: min(940px, 100%); min-height: 100%; margin: 0 auto; padding: 14px 28px 22px; box-sizing: border-box; }
 .interpretation-progress { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; padding: 8px 11px; border: 1px solid #cfe1f7; border-radius: 7px; background: #f3f8ff; color: #1769d2; }
 .interpretation-progress div { min-width: 0; display: flex; flex-direction: column; gap: 3px; }
 .interpretation-progress strong { font-size: 13px; }
 .interpretation-progress span { color: #60758f; font-size: 12px; line-height: 1.5; }
 .interpretation-progress button { min-height: 30px; margin-left: auto; padding: 0 10px; border: 1px solid #d8b4a0; border-radius: 6px; background: #fff; color: #b45309; cursor: pointer; }
 .interpretation-progress--error { border-color: #f1d2bd; background: #fff8f2; color: #b45309; }
+.interpretation-progress--muted { border-color: #dce4ee; background: #f8fafc; color: #64748b; }
 .content-state { height: 100%; padding: 32px; }
 .content-state h3 { margin: 0; color: #334155; font-size: 16px; }
 .content-state p { max-width: 420px; margin: 0; font-size: 13px; line-height: 1.7; }
 .spinning { animation: spin .9s linear infinite; }
 @keyframes spin { to { transform: rotate(360deg); } }
-@media (max-width: 900px) { .report-workspace { grid-template-columns: 280px minmax(0,1fr); } }
+@media (max-width: 1080px) {
+  .report-view-tabs { grid-template-columns: repeat(2, minmax(70px, auto)); }
+  .report-view-tabs button { min-width: 70px; padding: 0 9px; }
+  .follow-up-button { padding: 0 9px; }
+}
+@media (max-width: 900px) {
+  .report-workspace { grid-template-columns: 280px minmax(0,1fr); }
+  .selected-report-title span { display: none; }
+  .follow-up-button { display: none; }
+}
 @media (max-width: 820px) { .source-stage { padding: 20px 18px 28px; } }
 @media print {
   .report-workspace { display: block; height: auto; background: #fff; }
