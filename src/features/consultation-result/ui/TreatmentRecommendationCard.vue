@@ -58,12 +58,15 @@
                   <span v-if="execDeptMissing" class="exec-dept-chip-label">执行科室</span>
                   <span class="exec-dept-chip-value">{{ execDeptDisplay || '待设置' }}</span>
                 </button>
-                <button v-if="showPharmacyChip" class="exec-dept-chip pharmacy-chip worklist-chip"
-                  :class="{ missing: pharmacyMissing }" type="button" :title="pharmacyTitle"
-                  @click.stop="emit('open-pharmacy', $event)">
-                  <span v-if="pharmacyMissing" class="exec-dept-chip-label">发药药房</span>
-                  <span class="exec-dept-chip-value">{{ pharmacyDisplay || '待设置' }}</span>
-                </button>
+                <div v-if="showPharmacyChip" class="pharmacy-chip-anchor" @click.stop>
+                  <button class="exec-dept-chip pharmacy-chip worklist-chip"
+                    :class="{ missing: pharmacyMissing }" type="button" :title="pharmacyTitle"
+                    @click.stop="emit('open-pharmacy', $event)">
+                    <span v-if="pharmacyMissing" class="exec-dept-chip-label">发药药房</span>
+                    <span class="exec-dept-chip-value">{{ pharmacyDisplay || '待设置' }}</span>
+                  </button>
+                  <slot name="pharmacy-popover" />
+                </div>
               </div>
               <div v-if="$slots.actions" class="worklist-extra-attr-col">
                 <slot name="actions" />
@@ -246,17 +249,19 @@
                 <span v-if="execDeptMissing" class="exec-dept-chip-label">执行科室</span>
                 <span class="exec-dept-chip-value">{{ execDeptDisplay || '待设置' }}</span>
               </button>
-              <button
-                v-if="showPharmacyChip"
-                class="exec-dept-chip pharmacy-chip"
-                :class="{ missing: pharmacyMissing }"
-                type="button"
-                :title="pharmacyTitle"
-                @click.stop="emit('open-pharmacy', $event)"
-              >
-                <span v-if="pharmacyMissing" class="exec-dept-chip-label">发药药房</span>
-                <span class="exec-dept-chip-value">{{ pharmacyDisplay || '待设置' }}</span>
-              </button>
+              <div v-if="showPharmacyChip" class="pharmacy-chip-anchor" @click.stop>
+                <button
+                  class="exec-dept-chip pharmacy-chip"
+                  :class="{ missing: pharmacyMissing }"
+                  type="button"
+                  :title="pharmacyTitle"
+                  @click.stop="emit('open-pharmacy', $event)"
+                >
+                  <span v-if="pharmacyMissing" class="exec-dept-chip-label">发药药房</span>
+                  <span class="exec-dept-chip-value">{{ pharmacyDisplay || '待设置' }}</span>
+                </button>
+                <slot name="pharmacy-popover" />
+              </div>
               <slot name="actions" />
             </div>
           </div>
@@ -438,7 +443,7 @@ const reasonDisplay = computed(() => [
 
 const editorActionLabel = computed(() => {
   if (props.editorExpanded) return '收起编辑';
-  return props.rec.type === 'medicine' ? '编辑处方' : '编辑详情';
+  return props.rec.type === 'medicine' ? '编辑' : '编辑详情';
 });
 
 const emit = defineEmits<{
@@ -1009,6 +1014,12 @@ const emit = defineEmits<{
   cursor: pointer;
   font-size: var(--voice-font-min);
   font-weight: 700;
+}
+
+.pharmacy-chip-anchor {
+  position: relative;
+  display: inline-flex;
+  min-width: 0;
 }
 
 .default-card-status-row .exec-dept-chip {

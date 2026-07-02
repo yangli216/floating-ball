@@ -1016,6 +1016,11 @@ useOutsideInteraction({
       selectors: ['.voice-feedback-anchor'],
       onOutside: recommendationFeedbackPopover.close,
     },
+    {
+      isActive: () => Boolean(secondarySelector.activeKey.value?.endsWith(':pharmacy')),
+      selectors: ['.pharmacy-chip-anchor'],
+      onOutside: () => secondarySelector.closeAll(),
+    },
   ],
 });
 
@@ -1686,7 +1691,12 @@ function hasRequiredPharmacy(rec: TreatmentRecommendation): boolean {
 }
 
 function openPharmacyQuickSelector(rec: TreatmentRecommendation, event?: Event): void {
-  openQuickSelector(rec, 'pharmacy', event);
+  event?.stopPropagation();
+  if (secondarySelector.isOpen(rec, 'pharmacy')) {
+    secondarySelector.closeAll();
+    return;
+  }
+  openSecondarySelector(rec, 'pharmacy');
 }
 
 function openInsuranceQuickSelector(rec: TreatmentRecommendation, event?: Event): void {

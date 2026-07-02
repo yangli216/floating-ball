@@ -587,6 +587,13 @@ function hasAttributeValue(item: TreatmentRecommendation, field: SecondarySelect
   }
 }
 
+function isPharmacyOptionSelected(
+  item: TreatmentRecommendation,
+  option: TreatmentRecommendationAttributeOption,
+): boolean {
+  return (item.pharmacy || '').trim() === option.text.trim();
+}
+
 function getAttributeClearLabel(field: SecondarySelectorField): string {
   switch (field) {
     case 'pharmacy':
@@ -797,6 +804,32 @@ function getFeedbackSubmittedLabel(item: TreatmentRecommendation): string {
           </button>
         </template>
 
+        <template #pharmacy-popover>
+          <div
+            v-if="item.type === 'medicine' && isSecondarySelectorOpen(item, 'pharmacy')"
+            class="route-option-list pharmacy-chip-option-list"
+            role="listbox"
+            :aria-label="getAttributeAriaLabel('pharmacy')"
+          >
+            <button
+              v-for="option in getAttributeOptions(item, 'pharmacy').slice(0, 8)"
+              :key="option.key"
+              class="route-option-item pharmacy-chip-option"
+              :class="{ selected: isPharmacyOptionSelected(item, option) }"
+              type="button"
+              role="option"
+              :aria-selected="isPharmacyOptionSelected(item, option)"
+              @mousedown.prevent.stop="selectAttributeOption(item, 'pharmacy', option)"
+            >
+              <span class="route-option-text">{{ option.text }}</span>
+              <Icon v-if="isPharmacyOptionSelected(item, option)" icon="lucide:check" :size="14" aria-hidden="true" />
+            </button>
+            <div v-if="getAttributeOptions(item, 'pharmacy').length === 0" class="route-option-empty">
+              {{ getAttributeEmptyText('pharmacy') }}
+            </div>
+          </div>
+        </template>
+
         <template #manual-match>
           <ManualMatchPicker
             v-if="!item.matchedItem && isManualMatchOpen(item)"
@@ -811,48 +844,6 @@ function getFeedbackSubmittedLabel(item: TreatmentRecommendation): string {
         <template #editor>
           <div v-if="shouldShowTreatmentEditor(item)" class="editor-shell" @click.stop>
             <template v-if="item.type === 'medicine'">
-              <div
-                v-if="isSecondarySelectorOpen(item, 'pharmacy')"
-                class="header-quick-selector-panel"
-                @focusout="emit('closeSecondarySelector', item, 'pharmacy', $event)"
-              >
-                <div class="header-quick-selector-heading">选择发药药房</div>
-                <div class="field-editor route-field-editor">
-                  <input
-                    v-bind="getInputDataAttrs(item, 'pharmacy')"
-                    :value="getAttributeKeyword(item, 'pharmacy')"
-                    type="text"
-                    :placeholder="getAttributePlaceholder('pharmacy')"
-                    class="edit-input"
-                    @focus="openAttribute(item, 'pharmacy', $event)"
-                    @input="updateAttributeKeyword(item, 'pharmacy', $event)"
-                  />
-                  <button
-                    v-if="hasAttributeValue(item, 'pharmacy')"
-                    class="field-clear-button"
-                    type="button"
-                    :aria-label="getAttributeClearLabel('pharmacy')"
-                    :title="getAttributeClearLabel('pharmacy')"
-                    @mousedown.prevent.stop="clearAttribute(item, 'pharmacy')"
-                  >
-                    <Icon icon="lucide:x" :size="14" aria-hidden="true" />
-                  </button>
-                  <div class="route-option-list header-quick-option-list" role="listbox" :aria-label="getAttributeAriaLabel('pharmacy')">
-                    <button
-                      v-for="option in getAttributeOptions(item, 'pharmacy').slice(0, 8)"
-                      :key="option.key"
-                      class="route-option-item"
-                      type="button"
-                      @mousedown.prevent.stop="selectAttributeOption(item, 'pharmacy', option)"
-                    >
-                      <span class="route-option-text">{{ option.text }}</span>
-                      <span v-if="option.mcode" class="route-option-meta">{{ option.mcode }}</span>
-                    </button>
-                    <div v-if="getAttributeOptions(item, 'pharmacy').length === 0" class="route-option-empty">{{ getAttributeEmptyText('pharmacy') }}</div>
-                  </div>
-                </div>
-              </div>
-
               <TreatmentItemEditor
                 :rec="item"
                 mode="inline"
@@ -1268,26 +1259,6 @@ function getFeedbackSubmittedLabel(item: TreatmentRecommendation): string {
   background: rgba(201, 122, 17, 0.1);
 }
 
-.header-quick-selector-panel {
-  max-width: 360px;
-  margin-bottom: 10px;
-  padding: 10px;
-  border: 1px solid var(--voice-accent-soft);
-  border-radius: 10px;
-  background: var(--voice-accent-softer);
-}
-
-.header-quick-selector-heading {
-  margin-bottom: 6px;
-  color: var(--voice-text);
-  font-size: 13px;
-  font-weight: 700;
-}
-
-.header-quick-option-list {
-  top: calc(100% + 4px);
-}
-
 .secondary-field-grid {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
@@ -1415,6 +1386,11 @@ function getFeedbackSubmittedLabel(item: TreatmentRecommendation): string {
   position: relative;
 }
 
+.secondary-field > .route-field-editor {
+  flex: 0 0 auto;
+  align-self: stretch;
+}
+
 .route-field-editor .edit-input {
   padding-right: 34px;
 }
@@ -1512,7 +1488,8 @@ function getFeedbackSubmittedLabel(item: TreatmentRecommendation): string {
 
 .field-clear-button {
   position: absolute;
-  top: 50%;
+  top: 0;
+  bottom: 0;
   right: 8px;
   z-index: 2;
   display: inline-flex;
@@ -1526,7 +1503,8 @@ function getFeedbackSubmittedLabel(item: TreatmentRecommendation): string {
   color: #94a3b8;
   background: transparent;
   cursor: pointer;
-  transform: translateY(-50%);
+  margin: auto 0;
+  transform: none;
   transition: color 0.16s ease, background-color 0.16s ease;
 }
 
@@ -1559,6 +1537,21 @@ function getFeedbackSubmittedLabel(item: TreatmentRecommendation): string {
   border-radius: 12px;
   background: var(--voice-surface-glass);
   box-shadow: 0 12px 24px rgba(15, 23, 42, 0.12);
+}
+
+.pharmacy-chip-option-list {
+  top: calc(100% + 6px);
+  left: auto;
+  right: 0;
+  min-width: 150px;
+  max-width: 240px;
+  z-index: 60;
+}
+
+.pharmacy-chip-option.selected {
+  color: var(--voice-accent-strong);
+  background: var(--voice-accent-softer);
+  font-weight: 700;
 }
 
 .route-option-item {
