@@ -29,6 +29,7 @@ export interface UseConsultationAssistControllerInput {
   notify: (message: string, level?: 'success' | 'error' | 'info') => void;
   afterContextReady: () => Promise<void>;
   fetchAIDiagnosis: () => Promise<void>;
+  shouldRefreshDiagnosis?: () => boolean;
   fetchTreatmentRecommendation: () => Promise<void>;
   fetchExamRecommendation: () => Promise<void>;
   fetchLabTestRecommendation: () => Promise<void>;
@@ -89,7 +90,10 @@ export function useConsultationAssistController(input: UseConsultationAssistCont
           if (!ensureRecordContext()) {
             return;
           }
-          if (input.aiDiagnoses.value.length === 0 && !input.aiLoading.value) {
+          if (
+            !input.aiLoading.value
+            && (input.aiDiagnoses.value.length === 0 || input.shouldRefreshDiagnosis?.())
+          ) {
             await input.fetchAIDiagnosis();
           }
           if (input.aiDiagnoses.value.length > 0) {

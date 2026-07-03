@@ -819,6 +819,7 @@ const isWritingRecord = ref(false);
 const aiLoading = ref(false);
 const aiError = ref<string | null>(null);
 const aiDiagnoses = ref<Diagnosis[]>([]);
+const lastDiagnosisRecordKey = ref('');
 const selectedDiagnosis = ref<Diagnosis | null>(null);
 const relatedDiagnoses = ref<DiagnosisItem[]>([]);
 const collapsedDiagnosisGroups = ref<Record<string, boolean>>({});
@@ -1137,6 +1138,7 @@ const resetWorkflowState = () => {
   aiLoading.value = false;
   aiError.value = null;
   aiDiagnoses.value = [];
+  lastDiagnosisRecordKey.value = '';
   selectedDiagnosis.value = null;
   relatedDiagnoses.value = [];
   collapsedDiagnosisGroups.value = {};
@@ -1540,6 +1542,9 @@ useConsultationReferenceFeedbackListener<ReferenceFeedbackPayload>({
 
 onMounted(() => {
   const restoredSnapshot = symptomCacheSession.restoreCachedSnapshot();
+  if (restoredSnapshot && aiDiagnoses.value.length > 0) {
+    lastDiagnosisRecordKey.value = buildDiagnosisRequestRecordKey();
+  }
   if (!restoredSnapshot) {
     symptoms.value = currentTemplatesData.value;
   }
@@ -1734,8 +1739,25 @@ const buildConsultationTraceConfig = (
   },
 });
 
+function buildDiagnosisRequestRecordKey(): string {
+  return JSON.stringify({
+    mode: consultationMode.value,
+    chiefComplaint: generatedRecord.value.chiefComplaint.trim(),
+    historyOfPresentIllness: generatedRecord.value.historyOfPresentIllness.trim(),
+    tcmSigns: consultationMode.value === 'tcm'
+      ? buildTcmSignsPromptText(tcmInquiryConfig, formData.value['tcm_signs']).trim()
+      : '',
+  });
+}
+
+function shouldRefreshDiagnosisRecommendation(): boolean {
+  return aiDiagnoses.value.length > 0
+    && lastDiagnosisRecordKey.value !== buildDiagnosisRequestRecordKey();
+}
+
 const fetchAIDiagnosis = async (options?: { trackSmartConsultation?: boolean }) => {
   const requestSeq = ++aiDiagnosisRequestSeq;
+  const requestRecordKey = buildDiagnosisRequestRecordKey();
   aiLoading.value = true;
   aiError.value = null;
   try {
@@ -1802,6 +1824,15 @@ const fetchAIDiagnosis = async (options?: { trackSmartConsultation?: boolean }) 
       fullResponse = await chat(requestSpec.messages, undefined, undefined, undefined, requestSpec.config);
       console.timeEnd('[AI分析] 2. LLM 请求 (西医)');
     }
+    if (requestSeq !== aiDiagnosisRequestSeq || requestRecordKey !== buildDiagnosisRequestRecordKey()) {
+      console.info('[ConsultationPage] Ignore stale diagnosis response before parsing', {
+        requestSeq,
+        latest: aiDiagnosisRequestSeq,
+        requestRecordKey,
+        currentRecordKey: buildDiagnosisRequestRecordKey(),
+      });
+      return;
+    }
     const latencyMs = Date.now() - startTime;
 
     console.time('[AI分析] 3. 解析数据和匹配标准词典');
@@ -1827,12 +1858,18 @@ const fetchAIDiagnosis = async (options?: { trackSmartConsultation?: boolean }) 
       },
     );
 
-    if (requestSeq !== aiDiagnosisRequestSeq) {
-      console.info('[ConsultationPage] Ignore stale diagnosis response', { requestSeq, latest: aiDiagnosisRequestSeq });
+    if (requestSeq !== aiDiagnosisRequestSeq || requestRecordKey !== buildDiagnosisRequestRecordKey()) {
+      console.info('[ConsultationPage] Ignore stale diagnosis response', {
+        requestSeq,
+        latest: aiDiagnosisRequestSeq,
+        requestRecordKey,
+        currentRecordKey: buildDiagnosisRequestRecordKey(),
+      });
       return;
     }
 
     aiDiagnoses.value = diagnoses;
+    lastDiagnosisRecordKey.value = requestRecordKey;
     selectedDiagnosis.value = null;
 
     console.timeEnd('[AI分析] 3. 解析数据和匹配标准词典');
@@ -2334,6 +2371,7 @@ const consultationAssistController = useConsultationAssistController({
   notify: (message, level) => showToast(message, level || 'info'),
   afterContextReady: () => nextTick(),
   fetchAIDiagnosis: () => fetchAIDiagnosis(),
+  shouldRefreshDiagnosis: shouldRefreshDiagnosisRecommendation,
   fetchTreatmentRecommendation,
   fetchExamRecommendation,
   fetchLabTestRecommendation,
