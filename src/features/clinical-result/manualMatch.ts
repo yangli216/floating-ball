@@ -54,13 +54,16 @@ export function findManualMatchCandidates(
 }
 
 export function toManualMatchCandidateView(candidate: ManualMatchRawCandidate): ManualMatchCandidateView {
-  return {
+  const view: ManualMatchCandidateView = {
     id: candidate.id,
     name: candidate.name,
-    meta: isMedicineManualMatchCandidate(candidate)
-      ? candidate.spec || ''
-      : candidate.code || '',
   };
+
+  if (isMedicineManualMatchCandidate(candidate)) {
+    view.meta = candidate.spec || '';
+  }
+
+  return view;
 }
 
 export function applyManualMatchCandidate(
