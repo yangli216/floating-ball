@@ -3,7 +3,7 @@
 > 最后更新: 2026-07-01
 >
 > 本文档面向准备接入 `MedHermes` 的 HIS / 医生站 / PHIS 项目。
-> 当前真实运行契约以 `src-tauri/src/http_server.rs` 与当前前端实现为准；`docs/regionalization/*.md` 仍属于规划文档，不能替代本文档。
+> 当前真实运行契约以 `src-tauri/src/http_server.rs` 与当前前端实现为准；旧区域化草案已归档，不能替代本文档。
 
 ## 1. 文档目标
 
