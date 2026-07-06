@@ -53,4 +53,24 @@ describe('consultationUserLog', () => {
     });
     expect(snapshot.scenario?.abnormalItems).toHaveLength(1);
   });
+
+  it('records an explicit medicine rejection as a treatment change', async () => {
+    const {
+      buildConsultationUserLogSnapshot,
+      computeChangeSummary,
+    } = await import('./consultationUserLog');
+    const first = buildConsultationUserLogSnapshot({
+      chiefComplaint: '',
+      historyOfPresentIllness: '',
+      treatments: [{ type: 'medicine', name: '对乙酰氨基酚片', reason: '', selected: false }],
+    });
+    const final = buildConsultationUserLogSnapshot({
+      chiefComplaint: '',
+      historyOfPresentIllness: '',
+      treatments: [{ type: 'medicine', name: '对乙酰氨基酚片', reason: '', selected: false, rejected: true }],
+    });
+
+    expect(final.medicines[0].rejected).toBe(true);
+    expect(computeChangeSummary(first, final).treatmentChanges).toBe(1);
+  });
 });

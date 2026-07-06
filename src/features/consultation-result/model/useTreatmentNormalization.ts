@@ -232,6 +232,7 @@ export function useTreatmentNormalization(deps: TreatmentNormalizationDeps): Tre
       matchStatus: rec.matchStatus || (rec.matchedItem ? 'exact' : 'unmatched'),
       manualMatched: !!rec.manualMatched,
       selected: !!rec.selected,
+      rejected: !!rec.rejected,
       dosage: rec.dosage || '',
       dosageUnit: rec.dosageUnit || '',
       dosageManualEdited: !!rec.dosageManualEdited,

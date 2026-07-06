@@ -1,7 +1,7 @@
 <template>
   <article
     class="vcn-treatment-item"
-    :class="[layoutVariant, { selected, locked, matching }]"
+    :class="[layoutVariant, { selected, locked, matching, rejected }]"
   >
     <template v-if="layoutVariant === 'worklist'">
       <div class="worklist-row">
@@ -80,6 +80,14 @@
                 <span v-if="manualMatchButtonText === '已更换'" class="match-icon-status">✓</span>
                 {{ manualMatchButtonText }}
               </button>
+              <button
+                v-if="showRejectButton"
+                class="recommendation-reject-btn"
+                :class="{ active: rejected }"
+                type="button"
+                :title="rejected ? '恢复该药品推荐，但不会自动选中' : '明确不采用该药品推荐'"
+                @click.stop="emit('toggle-rejected', $event)"
+              >{{ rejected ? '撤销不采用' : '不采用' }}</button>
               <div v-if="showFeedback" class="voice-feedback-anchor" @click.stop>
                 <button class="voice-feedback-trigger" :class="{ submitted: !!feedbackSubmittedLabel }" type="button"
                   @click.stop="emit('toggle-feedback', $event)">反馈</button>
@@ -189,6 +197,14 @@
                 <span v-if="manualMatchButtonText === '已更换'" class="match-icon-status">✓</span>
                 {{ manualMatchButtonText }}
               </button>
+              <button
+                v-if="showRejectButton"
+                class="recommendation-reject-btn"
+                :class="{ active: rejected }"
+                type="button"
+                :title="rejected ? '恢复该药品推荐，但不会自动选中' : '明确不采用该药品推荐'"
+                @click.stop="emit('toggle-rejected', $event)"
+              >{{ rejected ? '撤销不采用' : '不采用' }}</button>
               <div v-if="showFeedback" class="voice-feedback-anchor" @click.stop>
                 <button
                   class="voice-feedback-trigger"
@@ -425,6 +441,14 @@ const props = defineProps({
     type: String,
     default: '手动匹配',
   },
+  showRejectButton: {
+    type: Boolean,
+    default: false,
+  },
+  rejected: {
+    type: Boolean,
+    default: false,
+  },
   showEditorToggle: {
     type: Boolean,
     default: false,
@@ -459,6 +483,7 @@ const emit = defineEmits<{
   (e: 'update:feedbackDraft', draft: VoiceRecommendationFeedbackDraft): void;
   (e: 'submit-feedback', draft: VoiceRecommendationFeedbackDraft): void;
   (e: 'toggle-manual-match', event?: Event): void;
+  (e: 'toggle-rejected', event?: Event): void;
   (e: 'toggle-editor', event?: Event): void;
 }>();
 </script>
@@ -485,6 +510,12 @@ const emit = defineEmits<{
   box-shadow:
     0 0 0 1px var(--voice-accent-soft),
     0 8px 18px rgba(15, 23, 42, 0.028);
+}
+
+.vcn-treatment-item.rejected {
+  border-color: var(--voice-border);
+  background: color-mix(in srgb, var(--voice-surface) 88%, #f8fafc);
+  opacity: 0.72;
 }
 
 .vcn-treatment-item.locked {
@@ -1094,6 +1125,7 @@ const emit = defineEmits<{
 
 .worklist-actions .voice-feedback-anchor,
 .worklist-actions .manual-match-btn,
+.worklist-actions .recommendation-reject-btn,
 .worklist-actions .inline-arrow-btn,
 .worklist-actions .voice-feedback-trigger {
   flex-shrink: 0;
@@ -1101,6 +1133,7 @@ const emit = defineEmits<{
 
 .worklist-actions .voice-feedback-trigger,
 .worklist-actions .manual-match-btn,
+.worklist-actions .recommendation-reject-btn,
 .worklist-actions .action-arrow {
   min-height: 20px;
   border-radius: 999px;
@@ -1196,6 +1229,24 @@ const emit = defineEmits<{
 .manual-match-btn.is-warning:hover {
   border-color: #c25e00;
   background: rgba(220, 115, 30, 0.12);
+}
+
+.recommendation-reject-btn {
+  min-height: 20px;
+  padding: 0 8px;
+  border: 1px solid rgba(100, 116, 139, 0.24);
+  border-radius: 999px;
+  background: rgba(248, 250, 252, 0.9);
+  color: var(--voice-text-muted);
+  font-size: var(--voice-font-min);
+  cursor: pointer;
+}
+
+.recommendation-reject-btn:hover,
+.recommendation-reject-btn.active {
+  border-color: rgba(185, 28, 28, 0.28);
+  background: rgba(185, 28, 28, 0.07);
+  color: #b91c1c;
 }
 
 .match-icon-status {

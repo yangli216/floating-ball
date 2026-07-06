@@ -40,6 +40,7 @@ export interface ConsultationSnapshotItem {
   code?: string;
   type?: string;
   selected?: boolean;
+  rejected?: boolean;
   primary?: boolean;
   spec?: string;
   dosage?: string;
@@ -147,6 +148,7 @@ function normalizeTreatment(item: TreatmentRecommendation): ConsultationSnapshot
     code: text((item.matchedItem as any)?.code || (item.matchedItem as any)?.cdSrv || (item.matchedItem as any)?.id),
     type: text(item.type),
     selected: Boolean(item.selected),
+    rejected: Boolean(item.rejected),
     spec: text(item.spec || (item.matchedItem as any)?.spec),
     dosage: [item.dosage, item.dosageUnit].map(text).filter(Boolean).join(''),
     frequency: text(item.frequency),
@@ -286,7 +288,7 @@ export function computeChangeSummary(
   const diagnosisFields: (keyof ConsultationSnapshotItem)[] = ['selected', 'primary'];
   const diagnosisChanges = countItemListChanges(first.diagnoses, final.diagnoses, diagnosisFields);
 
-  const treatmentFields: (keyof ConsultationSnapshotItem)[] = ['selected', 'spec', 'dosage', 'frequency', 'route', 'totalQty', 'execDept'];
+  const treatmentFields: (keyof ConsultationSnapshotItem)[] = ['selected', 'rejected', 'spec', 'dosage', 'frequency', 'route', 'totalQty', 'execDept'];
   const medicineChanges = countItemListChanges(first.medicines, final.medicines, treatmentFields);
   const examChanges = countItemListChanges(first.examinations, final.examinations, treatmentFields);
   const labChanges = countItemListChanges(first.labTests, final.labTests, treatmentFields);

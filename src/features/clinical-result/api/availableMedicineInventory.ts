@@ -4,6 +4,7 @@ import type {
   PharmacyOption,
 } from '@/services/his';
 import { getHisAdapter } from '@/services/his';
+import { medicalDataService } from '@/services/medicalData';
 import {
   readPersistentString,
   writePersistentString,
@@ -395,6 +396,10 @@ export async function loadAvailableMedicineInventoryContext(
   });
 
   const items = mergeAvailableMedicineInventoryCatalog(loadedItems);
+
+  // 自动将当前拥有的真实库存有货产品同步给药品标准目录匹配服务
+  medicalDataService.setActiveInStockProductIds(items.map((item) => item.productId));
+
   return {
     items,
     promptContext: formatAvailableMedicineInventoryPrompt(items),

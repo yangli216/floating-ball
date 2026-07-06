@@ -62,6 +62,7 @@ export interface TreatmentRecommendation {
     matchStatus?: 'exact' | 'probable' | 'confirmed' | 'manual' | 'unmatched';
     manualMatched?: boolean;
     selected?: boolean;
+    rejected?: boolean; // 医生明确不采用该推荐；不等同于暂未勾选
     sourceType?: 'explicit' | 'inferred' | 'uncertain';
     evidenceText?: string;
     goal?: string;

@@ -86,6 +86,7 @@ const emit = defineEmits<{
   toggleManualMatch: [item: TreatmentRecommendation];
   updateManualMatchKeyword: [item: TreatmentRecommendation, value: string];
   selectManualMatchCandidate: [item: TreatmentRecommendation, candidate: ManualMatchCandidate];
+  toggleRejected: [item: TreatmentRecommendation, event?: Event];
 }>();
 
 function requiresManualMatchBeforeSelect(item: TreatmentRecommendation): boolean {
@@ -179,5 +180,6 @@ function getDisplayTreatmentMatchLabel(item: TreatmentRecommendation): string {
     @toggle-manual-match="(item) => emit('toggleManualMatch', item)"
     @update-manual-match-keyword="(item, value) => emit('updateManualMatchKeyword', item, value)"
     @select-manual-match-candidate="(item, candidate) => emit('selectManualMatchCandidate', item, candidate)"
+    @toggle-rejected="(item, event) => emit('toggleRejected', item, event)"
   />
 </template>

@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import type { HisAdapter } from '@/services/his';
+import { medicalDataService } from '@/services/medicalData';
 import {
   alignMedicineRecommendationsToInventory,
   formatAvailableMedicineInventoryPrompt,
@@ -8,10 +9,22 @@ import {
   resolveAvailableMedicineInventoryUnitPrice,
 } from './availableMedicineInventory';
 
-vi.mock('@/services/persistentStore', () => ({
-  readPersistentString: vi.fn().mockResolvedValue(null),
-  writePersistentString: vi.fn().mockResolvedValue(undefined),
-}));
+vi.mock('@/services/persistentStore', () => {
+  if (typeof (global as any).localStorage === 'undefined') {
+    (global as any).localStorage = {
+      getItem: vi.fn().mockReturnValue(null),
+      setItem: vi.fn(),
+      removeItem: vi.fn(),
+      clear: vi.fn(),
+      length: 0,
+      key: vi.fn().mockReturnValue(null),
+    };
+  }
+  return {
+    readPersistentString: vi.fn().mockResolvedValue(null),
+    writePersistentString: vi.fn().mockResolvedValue(undefined),
+  };
+});
 
 describe('available medicine inventory AI context', () => {
   it('merges the same product across pharmacies and emits a compact prompt', () => {
@@ -156,5 +169,42 @@ describe('available medicine inventory AI context', () => {
 
     expect(unitPrice).toBe(59.3);
     expect(fetchInventory).toHaveBeenCalledTimes(1);
+  });
+
+  it('syncs in-stock product IDs to medicalDataService on successful load', async () => {
+    const originalMedicines = (medicalDataService as any).catalog.medicines;
+    const originalActiveInStock = (medicalDataService as any).activeInStockProductIds;
+
+    try {
+      (medicalDataService as any).catalog.medicines = [
+        { id: 'med-in-stock', name: '有库存药品', storeIds: ['sync-store'] },
+        { id: 'med-out-of-stock', name: '无库存药品', storeIds: ['sync-store'] },
+      ];
+      medicalDataService.setActivePharmacyStoreIds(['sync-store']);
+
+      const fetchInventory = vi.fn().mockResolvedValue([{
+        productId: 'med-in-stock',
+        productName: '有库存药品',
+        storeId: 'sync-store',
+        availableQuantity: 10,
+        unitPrice: 10.0,
+      }]);
+      const adapter = {
+        vendor: 'sync-test',
+        getContextScope: () => ({ orgCode: 'org-sync', tenantId: 'tenant-sync' }),
+        fetchAvailablePharmacies: vi.fn().mockResolvedValue([]),
+        fetchAvailableMedicineInventory: fetchInventory,
+      } as unknown as HisAdapter;
+      const pharmacies = [{ idDept: 'dept', idSto: 'sync-store', name: '测试药房' }];
+
+      await loadAvailableMedicineInventoryContext({ adapter, pharmacies, now: 300_000 });
+
+      const matchables = medicalDataService.getMatchableMedicines();
+      expect(matchables.map((m) => m.id)).toEqual(['med-in-stock']);
+    } finally {
+      (medicalDataService as any).catalog.medicines = originalMedicines;
+      (medicalDataService as any).activeInStockProductIds = originalActiveInStock;
+      medicalDataService.setActivePharmacyStoreIds(null);
+    }
   });
 });

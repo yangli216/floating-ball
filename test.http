@@ -67,3 +67,25 @@ Content-Type: application/json
 cookie: tk=6a38f7abc1946b430432fa55
 
 [{}]
+
+### 查询可用库存药品
+POST http://192.168.201.140:5680/rbmh-phis/api/phis.medicineDrpQueryService/queryInvSubList
+Content-Type: application/json
+cookie: tk=6a169dcba5e9236070cfff5d
+
+[
+  {
+    "limit": -1,
+    "params": {
+      "amountType": "1",
+      "fgActiveType": "1",
+      "idSto": "1760",
+      "naMedPro": null,
+      "sdBasMed": null,
+      "sdMed": null,
+      "sdMedType": null
+    },
+    "sort": null,
+    "start": 0
+  }
+]

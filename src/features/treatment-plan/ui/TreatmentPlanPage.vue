@@ -706,6 +706,7 @@ async function confirmSuggestedMatch(item: TreatmentRecommendation): Promise<voi
   Object.assign(item, candidate);
   item.suggestedMatchItem = undefined;
   item.selected = true;
+  item.rejected = false;
   trackTreatmentMatchPreference(item, 'confirm_match', {
     consultationId: getPatientContextAnchorId(props.patient || null) || '',
     sourceModule: 'treatment_plan',
@@ -742,6 +743,7 @@ async function applyManualMatch(item: TreatmentRecommendation, candidate: Manual
 
   Object.assign(item, candidateItem);
   item.selected = true;
+  item.rejected = false;
   trackTreatmentMatchPreference(item, 'manual_match', {
     consultationId: getPatientContextAnchorId(props.patient || null) || '',
     sourceModule: 'treatment_plan',
@@ -752,6 +754,9 @@ async function applyManualMatch(item: TreatmentRecommendation, candidate: Manual
 }
 
 async function toggleTreatment(item: TreatmentRecommendation): Promise<void> {
+  if (item.rejected) {
+    item.rejected = false;
+  }
   if (!item.selected && requiresManualMatchBeforeSelect(item)) {
     if (hasProbableMatch(item)) {
       showToast?.('该推荐存在候选标准项，请先确认匹配或改为手动匹配。', 'info');
@@ -770,12 +775,27 @@ async function toggleTreatment(item: TreatmentRecommendation): Promise<void> {
   }
 
   item.selected = !item.selected;
+  if (item.selected) {
+    item.rejected = false;
+  }
   if (item.selected && item.type === 'medicine') {
     Object.assign(item, normalizeTreatment(item));
   }
   if (!item.selected) {
     treatmentHydration.clearMedicineInventoryWarning(item);
   }
+}
+
+function toggleTreatmentRejected(item: TreatmentRecommendation, event?: Event): void {
+  event?.stopPropagation();
+  if (item.type !== 'medicine') return;
+
+  item.rejected = !item.rejected;
+  item.selected = false;
+  closeManualMatch();
+  treatmentEditorState.collapseTreatmentEditor(item);
+  treatmentHydration.clearMedicineInventoryWarning(item);
+  showToast?.(item.rejected ? `已标记不采用：${item.name}` : `已恢复药品推荐：${item.name}`, 'info');
 }
 
 function getGroupSelectedCount(type: TreatmentRecommendation['type']): number {
@@ -892,6 +912,7 @@ onMounted(() => {
               @toggle-manual-match="toggleManualMatchState"
               @update-manual-match-keyword="setManualMatchKeyword"
               @select-manual-match-candidate="applyManualMatch"
+              @toggle-rejected="toggleTreatmentRejected"
             />
           </template>
         </div>

@@ -236,8 +236,9 @@ class MedicalDataService {
   private availableExamLabCache: { key: string; loadedAt: number; items: MedicalItem[] } | null = null;
   private availableExamLabPromise: Promise<MedicalItem[]> | null = null;
   private availableExamLabPromiseKey = '';
-  /** 仅匹配这些发药药房（idSto）下的药品；null 表示尚未获得药房上下文，空集合表示无可用药房 */
   private activeMedicineStoreIds: Set<string> | null = null;
+  /** 仅匹配这些有真实库存的药品 productId；null 表示不启用过滤 */
+  private activeInStockProductIds: Set<string> | null = null;
 
   constructor() {
     this.catalog = {
@@ -825,6 +826,22 @@ class MedicalDataService {
     this.activeMedicineStoreIds = new Set(normalized);
   }
 
+  /**
+   * 设定当前拥有真实库存（availableQuantity > 0）的药品 productId 范围。
+   * 传入 null 或 undefined 表示不启用该过滤（如系统初始化或单机故障时）。
+   */
+  public setActiveInStockProductIds(productIds: string[] | null | undefined): void {
+    if (!productIds) {
+      this.activeInStockProductIds = null;
+      return;
+    }
+    this.activeInStockProductIds = new Set(
+      productIds
+        .map((value) => (typeof value === 'string' ? value.trim() : ''))
+        .filter(Boolean)
+    );
+  }
+
   private normalizeStoreIds(storeIds: string[] | null | undefined): string[] {
     if (!storeIds || storeIds.length === 0) {
       return [];
@@ -943,7 +960,11 @@ class MedicalDataService {
       });
       return [];
     }
-    return scopedMedicines.filter((item) => item.storeIds?.some((idSto) => active.has(idSto)));
+    const filtered = scopedMedicines.filter((item) => item.storeIds?.some((idSto) => active.has(idSto)));
+    if (this.activeInStockProductIds !== null) {
+      return filtered.filter((item) => this.activeInStockProductIds!.has(item.id));
+    }
+    return filtered;
   }
 
   public searchMedicines(query: string, aliases?: string[], limit = 8): MedicineItem[] {

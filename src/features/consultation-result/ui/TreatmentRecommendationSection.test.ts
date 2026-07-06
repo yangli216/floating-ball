@@ -2,9 +2,11 @@ import { describe, expect, it } from 'vitest';
 import source from './TreatmentRecommendationSection.vue?raw';
 
 describe('TreatmentRecommendationSection match adjustment', () => {
-  it('keeps the directory picker available after an item has matched', () => {
-    expect(source).toContain(':show-manual-match-button="true"');
-    expect(source).toContain('item.manualMatched ? \'已更换\'');
-    expect(source).toContain('v-if="isManualMatchOpen(item)"');
+  it('allows matched auxiliary items to change while limiting medicines to initial catalog alignment', () => {
+    expect(source).toContain("item.type !== 'medicine' || !item.matchedItem");
+    expect(source).toContain("if (item.type === 'medicine') return '匹配院内药品'");
+    expect(source).toContain('仅用于将 AI 药名对齐到院内库存');
+    expect(source).toContain(':show-reject-button="item.type === \'medicine\' && item.sourceType !== \'explicit\'"');
+    expect(source).toContain('@toggle-rejected="emit(\'toggleRejected\', item, $event)"');
   });
 });

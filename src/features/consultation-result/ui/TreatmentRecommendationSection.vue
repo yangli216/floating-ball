@@ -144,6 +144,7 @@ const emit = defineEmits<{
   toggleManualMatch: [item: TreatmentRecommendation, event?: Event];
   updateManualMatchKeyword: [item: TreatmentRecommendation, value: string];
   selectManualMatchCandidate: [item: TreatmentRecommendation, candidate: ManualMatchCandidate];
+  toggleRejected: [item: TreatmentRecommendation, event?: Event];
 }>();
 
 const resolvedSelectedCount = computed(() => (
@@ -182,8 +183,34 @@ function getDisplayMatchLabel(item: TreatmentRecommendation): string {
     : '未匹配标准库';
 }
 
-function getManualMatchTitle(sectionTitle: string): string {
+function shouldShowManualMatchButton(item: TreatmentRecommendation): boolean {
+  return !item.rejected && (item.type !== 'medicine' || !item.matchedItem);
+}
+
+function getManualMatchTitle(item: TreatmentRecommendation, sectionTitle: string): string {
+  if (item.type === 'medicine') return '匹配院内药品';
   return `从标准库选择${sectionTitle.replace(/^推荐/, '').replace('项目', '')}`;
+}
+
+function getManualMatchButtonText(item: TreatmentRecommendation): string {
+  if (props.isManualMatchOpen(item)) return '收起';
+  if (item.type === 'medicine') return '匹配院内药品';
+  return item.manualMatched ? '已更换' : '更换';
+}
+
+function getManualMatchActionTitle(item: TreatmentRecommendation): string {
+  if (props.isManualMatchOpen(item)) return '收起目录选择';
+  if (item.type === 'medicine') return '将 AI 药名对齐到当前院内库存药品';
+  return item.manualMatched ? '重新选择标准目录项目' : '选择标准目录项目';
+}
+
+function getManualMatchDescription(item: TreatmentRecommendation): string {
+  if (item.type === 'medicine') {
+    return '仅用于将 AI 药名对齐到院内库存；匹配后将重新校验规格、处方字段、药房和库存';
+  }
+  return item.matchedItem
+    ? '当前已匹配，可重新选择；更换后将重新校验执行科室和检查部位'
+    : '匹配成功后才可纳入本次回写';
 }
 
 function getUsageToken(item: TreatmentRecommendation): string {
@@ -773,10 +800,12 @@ function getFeedbackSubmittedLabel(item: TreatmentRecommendation): string {
         :feedback-submitting="isFeedbackSubmitting(item)"
         :feedback-submitted-label="getFeedbackSubmittedLabel(item)"
         :show-feedback="showFeedback"
-        :show-manual-match-button="true"
-        :manual-match-title="isManualMatchOpen(item) ? '收起目录选择' : item.manualMatched ? '重新选择标准目录项目' : '选择标准目录项目'"
-        :manual-match-button-text="isManualMatchOpen(item) ? '收起' : item.manualMatched ? '已更换' : '更换'"
-        :show-editor-toggle="shouldShowEditorToggle(item)"
+        :show-manual-match-button="shouldShowManualMatchButton(item)"
+        :manual-match-title="getManualMatchActionTitle(item)"
+        :manual-match-button-text="getManualMatchButtonText(item)"
+        :show-reject-button="item.type === 'medicine' && item.sourceType !== 'explicit'"
+        :rejected="!!item.rejected"
+        :show-editor-toggle="!item.rejected && shouldShowEditorToggle(item)"
         :editor-expanded="isTreatmentEditorExpanded(item)"
         :layout-variant="layoutVariant"
         @toggle="emit('toggle', item)"
@@ -788,6 +817,7 @@ function getFeedbackSubmittedLabel(item: TreatmentRecommendation): string {
         @update:feedback-draft="emit('updateFeedbackDraft', item, $event)"
         @submit-feedback="emit('submitFeedback', item, $event)"
         @toggle-manual-match="emit('toggleManualMatch', item, $event)"
+        @toggle-rejected="emit('toggleRejected', item, $event)"
         @toggle-editor="emit('toggleTreatmentEditor', item, $event)"
       >
         <template #actions>
@@ -832,9 +862,9 @@ function getFeedbackSubmittedLabel(item: TreatmentRecommendation): string {
 
         <template #manual-match>
           <ManualMatchPicker
-            v-if="isManualMatchOpen(item)"
-            :title="getManualMatchTitle(section.title)"
-            :description="item.matchedItem ? '当前已匹配，可重新选择；更换后将重新校验执行科室和检查部位' : '匹配成功后才可纳入本次回写'"
+            v-if="!item.rejected && isManualMatchOpen(item)"
+            :title="getManualMatchTitle(item, section.title)"
+            :description="getManualMatchDescription(item)"
             :keyword="getManualMatchKeyword(item)"
             :candidates="getManualMatchCandidates(item)"
             @update:keyword="emit('updateManualMatchKeyword', item, $event)"
@@ -843,7 +873,7 @@ function getFeedbackSubmittedLabel(item: TreatmentRecommendation): string {
         </template>
 
         <template #editor>
-          <div v-if="shouldShowTreatmentEditor(item)" class="editor-shell" @click.stop>
+          <div v-if="!item.rejected && shouldShowTreatmentEditor(item)" class="editor-shell" @click.stop>
             <template v-if="item.type === 'medicine'">
               <TreatmentItemEditor
                 :rec="item"

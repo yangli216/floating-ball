@@ -817,6 +817,7 @@ function buildIntentTreatmentKey(item: ClinicalResultInput['treatments'][number]
     suggested?.name,
     inherited.matchStatus,
     inherited.selected,
+    inherited.rejected,
     inherited.manualMatched,
     item.spec,
     item.frequency,
@@ -924,6 +925,7 @@ async function confirmSuggestedMatch(rec: TreatmentRecommendation, event?: Event
   }
 
   rec.selected = true;
+  rec.rejected = false;
   collapseTreatmentEditor(rec);
   trackTreatmentMatchPreference(rec, 'confirm_match', buildPreferenceContext('treatment'));
 
@@ -948,6 +950,7 @@ async function applyManualMatch(rec: TreatmentRecommendation, candidate: ManualM
   }
 
   rec.selected = true;
+  rec.rejected = false;
   collapseTreatmentEditor(rec);
   trackTreatmentMatchPreference(rec, 'manual_match', buildPreferenceContext('treatment'));
   closeManualMatch();
@@ -956,6 +959,9 @@ async function applyManualMatch(rec: TreatmentRecommendation, candidate: ManualM
 
 async function toggleTreatment(item: TreatmentRecommendation): Promise<void> {
   closeReasonTooltipIfOpen();
+  if (item.rejected) {
+    item.rejected = false;
+  }
   if (!item.selected && requiresManualMatchBeforeSelect(item)) {
     if (hasProbableMatch(item)) {
       showToast?.('该推荐存在候选标准项，请先确认匹配或改为手动匹配', 'warning');
@@ -980,8 +986,23 @@ async function toggleTreatment(item: TreatmentRecommendation): Promise<void> {
 
   item.selected = nextSelected;
   if (nextSelected) {
+    item.rejected = false;
+  }
+  if (nextSelected) {
     collapseTreatmentEditor(item);
   }
+}
+
+function toggleTreatmentRejected(item: TreatmentRecommendation, event?: Event): void {
+  event?.stopPropagation();
+  if (item.type !== 'medicine') return;
+
+  item.rejected = !item.rejected;
+  item.selected = false;
+  closeManualMatch();
+  collapseTreatmentEditor(item);
+  clearMedicineInventoryWarning(item);
+  showToast?.(item.rejected ? `已标记不采用：${item.name}` : `已恢复药品推荐：${item.name}`, 'info');
 }
 
 function focusFirstMissingMedicinePrimaryField(item: TreatmentRecommendation): void {
@@ -2638,6 +2659,7 @@ watch(
                 @toggle-manual-match="toggleManualMatch"
                 @update-manual-match-keyword="setManualMatchKeyword"
                 @select-manual-match-candidate="handleManualMatchPickerSelect"
+                @toggle-rejected="toggleTreatmentRejected"
               />
             </template>
 

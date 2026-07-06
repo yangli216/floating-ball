@@ -44,6 +44,7 @@ export function hasClinicalResultTreatmentState(item: MatchedTreatment): boolean
     candidate.suggestedMatchItem
     || candidate.matchStatus
     || typeof candidate.selected === 'boolean'
+    || candidate.rejected
     || candidate.manualMatched
     || candidate.route
     || candidate.routeKey
@@ -143,6 +144,7 @@ export function initClinicalTreatments(
       suggestedMatchItem: assessment.suggestedMatchItem,
       matchStatus: assessment.matchStatus,
       manualMatched: !!inherited.manualMatched,
+      rejected: !!inherited.rejected,
       selected: typeof inherited.selected === 'boolean'
         ? inherited.selected
         : assessment.matchStatus === 'exact' && options.shouldAutoSelect(selectionBasis),
