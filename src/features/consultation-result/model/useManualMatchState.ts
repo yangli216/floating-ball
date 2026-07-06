@@ -3,7 +3,7 @@ import type { TreatmentRecommendation } from '@/types/consultation';
 import {
   getManualMatchKey,
   getManualMatchSearchKey,
-} from '@features/clinical-result';
+} from '@features/clinical-result/manualMatch';
 
 export function useManualMatchState() {
   const activeManualMatchKey = ref<string | null>(null);
@@ -11,7 +11,11 @@ export function useManualMatchState() {
 
   function getManualMatchKeyword(rec: TreatmentRecommendation): string {
     const cached = manualMatchKeywords.value[getManualMatchSearchKey(rec)];
-    return typeof cached === 'string' ? cached : rec.name;
+    if (typeof cached === 'string') return cached;
+    return (rec.originalName || rec.name)
+      .replace(/[（(]?免费[）)]?/gu, '')
+      .replace(/\s+/gu, ' ')
+      .trim();
   }
 
   function setManualMatchKeyword(rec: TreatmentRecommendation, value: string): void {

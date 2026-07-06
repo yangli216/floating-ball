@@ -10,10 +10,15 @@ export type {
   ClinicalResultChannel,
   ClinicalResultDiagnosis,
   ClinicalResultInput,
+  ClinicalResultGenerationSection,
+  ClinicalResultGenerationState,
   ClinicalResultMatchedDiagnosis,
   ClinicalResultMatchedItem,
   ClinicalResultMatchedTreatment,
+  ClinicalResultRecommendationMode,
+  ClinicalResultRecommendationPlan,
   ClinicalResultRecommendationPolicy,
+  ClinicalResultRecommendationType,
   ClinicalResultTreatment,
 } from './clinicalResultContract';
 
@@ -197,6 +202,10 @@ export type {
   ManualMatchCandidateView,
   ManualMatchRawCandidate,
 } from './manualMatch';
+export {
+  rememberManualCatalogMatch,
+  resolveRememberedCatalogTarget,
+} from './manualMatchCache';
 
 export {
   assessTreatmentCatalogMatch,
@@ -217,6 +226,17 @@ export {
 export type {
   TreatmentMatchLabelStyle,
 } from './recommendationHelpers';
+
+export {
+  buildInstitutionAuxiliaryCatalogContext,
+  mapAuxiliaryCatalogRecommendations,
+} from './institutionAuxiliaryCatalog';
+export type {
+  AuxiliaryCatalogEntry,
+  AuxiliaryCatalogRecommendationItem,
+  AuxiliaryCatalogRecommendationResponse,
+  InstitutionAuxiliaryCatalogContext,
+} from './institutionAuxiliaryCatalog';
 
 export {
   alignMedicineRecommendationsToInventory,

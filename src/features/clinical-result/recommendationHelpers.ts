@@ -4,6 +4,7 @@ import {
   type MedicalItem,
   type MedicineItem,
 } from '../../services/medicalData';
+import { resolveRememberedCatalogTarget } from './manualMatchCache';
 
 export type TreatmentMatchLabelStyle = 'compact' | 'detailed';
 
@@ -152,6 +153,17 @@ export function assessTreatmentCatalogMatch(
   aliases?: string[],
   spec?: string,
 ): Pick<TreatmentRecommendation, 'matchedItem' | 'suggestedMatchItem' | 'matchStatus'> {
+  const remembered = resolveRememberedCatalogTarget(type, name);
+  if (remembered) {
+    return {
+      matchedItem: type === 'medicine' && 'spec' in remembered
+        ? buildMedicineMatchedItem(remembered)
+        : buildMedicalItemMatchedItem(remembered as MedicalItem),
+      suggestedMatchItem: undefined,
+      matchStatus: 'confirmed',
+    };
+  }
+
   switch (type) {
     case 'medicine': {
       const result = medicalDataService.assessMedicineMatch(name, aliases, spec);

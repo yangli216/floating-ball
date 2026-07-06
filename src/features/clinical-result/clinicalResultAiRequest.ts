@@ -22,6 +22,9 @@ export interface ClinicalResultTreatmentPromptParams {
   chiefComplaint: string;
   clinicalContext?: string;
   availableMedicineInventory?: string;
+  availableExamLabCatalog?: string;
+  requestedTypes?: Array<'exam' | 'lab_test'>;
+  explicitItemNames?: string[];
 }
 
 export interface ClinicalResultPromptAsset<TParams> {

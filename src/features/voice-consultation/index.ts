@@ -10,6 +10,11 @@ export { useVoiceEditorSnapshotPersistence } from './model/useVoiceEditorSnapsho
 export { useVoiceFeedbackActions } from './model/useVoiceFeedbackActions';
 export { useVoiceCatalogMatching } from './model/useVoiceCatalogMatching';
 export { useVoiceIntentRecognition } from './model/useVoiceIntentRecognition';
+export { generateVoiceTreatmentRecommendations } from './model/voiceTreatmentRecommendationGeneration';
+export type {
+  VoiceTreatmentGenerationInput,
+  VoiceTreatmentGenerationTaskResult,
+} from './model/voiceTreatmentRecommendationGeneration';
 export { useVoiceKnowledgeSearch } from './model/useVoiceKnowledgeSearch';
 export { useVoiceRecordFieldFeedbackState } from './model/useVoiceRecordFieldFeedbackState';
 export { useVoiceResultRecord } from './model/useVoiceResultRecord';

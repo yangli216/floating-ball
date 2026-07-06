@@ -6,6 +6,11 @@ import type {
   MedicineCatalogEntry,
 } from './his';
 import { regionalGet } from './regionalClient';
+import {
+  adjustRestrictedMedicalItemScore,
+  explicitlyRequestsRestrictedMedicalItem,
+  isRestrictedMedicalCatalogItem,
+} from './medicalCatalogPolicy';
 
 export interface DiagnosisItem {
   id: string;
@@ -63,6 +68,9 @@ export interface MedicalItem {
   idPart?: string;
   jsonField?: string;
   fgCheckOrd?: string;
+  unitPrice?: number;
+  restricted?: boolean;
+  restrictionReason?: string;
   raw?: Record<string, unknown>;
 }
 
@@ -225,6 +233,9 @@ class MedicalDataService {
   private currentOrgCode: string | null = null;
   private currentTenantId: string | null = null;
   private localSyncPromise: Promise<void> | null = null;
+  private availableExamLabCache: { key: string; loadedAt: number; items: MedicalItem[] } | null = null;
+  private availableExamLabPromise: Promise<MedicalItem[]> | null = null;
+  private availableExamLabPromiseKey = '';
   /** 仅匹配这些发药药房（idSto）下的药品；null 表示尚未获得药房上下文，空集合表示无可用药房 */
   private activeMedicineStoreIds: Set<string> | null = null;
 
@@ -477,6 +488,13 @@ class MedicalDataService {
     return this.catalog.items;
   }
 
+  public getCatalogContext(): Required<MedicalCatalogContext> {
+    return {
+      orgCode: this.currentOrgCode,
+      tenantId: this.currentTenantId,
+    };
+  }
+
   public getAllIcd10CategoryGroups(): Icd10CategoryInfo[] {
     return [...ICD10_CATEGORY_GROUPS];
   }
@@ -503,9 +521,58 @@ class MedicalDataService {
 
     if (orgChanged || tenantChanged) {
       this.resetOrgScopedCatalogs();
+      this.availableExamLabCache = null;
     }
 
     await this.ensureLocalCatalogsSynced(options);
+  }
+
+  /**
+   * 直接查询当前 PHIS 用户上下文可开立的检查/检验项目。
+   * 不使用区域映射包或机构通用项目缓存；缓存键包含默认科室，避免跨科室复用。
+   */
+  public async fetchAvailableExamLabItems(options: { force?: boolean } = {}): Promise<MedicalItem[]> {
+    const hisService = getHisAdapter();
+    if (!hisService) {
+      throw new Error('HIS 尚未初始化，无法查询可用检验检查目录');
+    }
+    const scope = hisService.getContextScope();
+    const orgCode = scope.orgCode?.trim() || this.currentOrgCode || '';
+    const tenantId = scope.tenantId?.trim() || this.currentTenantId || '';
+    const deptId = hisService.getDefaultExecDeptId().trim();
+    const cacheKey = `${orgCode}|${tenantId}|${deptId}`;
+    const now = Date.now();
+    if (!options.force
+      && this.availableExamLabCache?.key === cacheKey
+      && now - this.availableExamLabCache.loadedAt < 5 * 60 * 1000) {
+      return [...this.availableExamLabCache.items];
+    }
+    if (this.availableExamLabPromise && this.availableExamLabPromiseKey === cacheKey) {
+      return this.availableExamLabPromise;
+    }
+
+    // 新接口失败时也不能回退到机构通用项目，否则会把“存在”误当成“当前可开立”。
+    this.catalog.items = this.catalog.items.filter(
+      (item) => item.category !== '检查' && item.category !== '检验',
+    );
+    this.availableExamLabPromiseKey = cacheKey;
+    this.availableExamLabPromise = (async () => {
+      const items = this.normalizeMedicalItems(
+        await hisService.fetchInstitutionMedicalItemsCatalog(orgCode),
+      ).filter((item) => item.category === '检查' || item.category === '检验');
+      this.catalog.items = [
+        ...this.catalog.items.filter((item) => item.category !== '检查' && item.category !== '检验'),
+        ...items,
+      ];
+      this.availableExamLabCache = { key: cacheKey, loadedAt: Date.now(), items };
+      return [...items];
+    })().finally(() => {
+      if (this.availableExamLabPromiseKey === cacheKey) {
+        this.availableExamLabPromise = null;
+        this.availableExamLabPromiseKey = '';
+      }
+    });
+    return this.availableExamLabPromise;
   }
 
   public async ensureLocalCatalogsSynced(options: MedicalCatalogSyncOptions = {}): Promise<void> {
@@ -1087,7 +1154,7 @@ class MedicalDataService {
     const candidates: Array<ScoredCandidate<MedicalItem>> = [];
 
     for (const item of items) {
-      const primaryScore = Math.max(
+      let primaryScore = Math.max(
         this.calculateScore(primaryVariant.normalized, item.name, item.keywords),
         this.normalizeRoutineItemAlias(item.name) === primaryVariant.normalizedRoutineAlias ? 0.99 : 0,
       );
@@ -1105,6 +1172,9 @@ class MedicalDataService {
           : 0;
         score = Math.max(score, baseScore, routineAliasScore);
       }
+
+      primaryScore = adjustRestrictedMedicalItemScore(primaryScore, item, primaryVariant.normalized);
+      score = adjustRestrictedMedicalItemScore(score, item, primaryVariant.normalized);
 
       candidates.push({ item, score, primaryScore });
     }
@@ -1321,7 +1391,10 @@ class MedicalDataService {
       return null;
     }
 
-    return items.find((item) => this.normalizeExactMatchText(item.name) === normalizedQuery || item.code.trim().toLowerCase() === query.trim().toLowerCase()) || null;
+    return items.find((item) => (
+      (!isRestrictedMedicalCatalogItem(item) || explicitlyRequestsRestrictedMedicalItem(query))
+      && (this.normalizeExactMatchText(item.name) === normalizedQuery || item.code.trim().toLowerCase() === query.trim().toLowerCase())
+    )) || null;
   }
 
   /**
@@ -1629,11 +1702,19 @@ class MedicalDataService {
       }
 
       const partial = item as Partial<MedicalItem>;
+      const entry = item as MedicalItemCatalogEntry;
       const raw = (item.raw && typeof item.raw === 'object' ? item.raw : {}) as Record<string, unknown>;
       const readRawString = (key: string) => {
         const v = raw[key];
         return typeof v === 'string' ? v.trim() : '';
       };
+      const rawPrice = raw.priceSale;
+      const unitPrice = typeof partial.unitPrice === 'number'
+        ? partial.unitPrice
+        : typeof entry.unitPrice === 'number'
+          ? entry.unitPrice
+          : typeof rawPrice === 'number' ? rawPrice : undefined;
+      const rawRestricted = raw.restricted;
 
       normalized.push({
         id: item.id?.toString().trim() || `${index + 1}`,
@@ -1648,6 +1729,12 @@ class MedicalDataService {
         idPart: partial.idPart?.toString().trim() || readRawString('idPart') || '',
         jsonField: partial.jsonField?.toString().trim() || readRawString('jsonField') || '',
         fgCheckOrd: partial.fgCheckOrd?.toString().trim() || readRawString('fgCheckOrd') || '1',
+        unitPrice,
+        restricted: partial.restricted === true || entry.restricted === true || rawRestricted === true || rawRestricted === '1',
+        restrictionReason: partial.restrictionReason?.trim()
+          || entry.restrictionReason?.trim()
+          || readRawString('restrictionReason')
+          || '',
         raw: item.raw && typeof item.raw === 'object' ? item.raw : undefined,
       });
     });

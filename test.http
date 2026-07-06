@@ -36,3 +36,34 @@ Content-Type: application/json
 cookie: tk=6a38f7abc1946b430432fa55
 
 [{"idPi":"660851762d699a12a8e7e697","idVis":"6a3ddb5fa5e9234cf95ff24e"}]
+
+
+
+### 检验开单项目查询
+POST http://192.168.201.140:5680/rbmh-phis/api/phis.hiCliLisCategorySubService/queryItemListByIdLisCategory
+Content-Type: application/json
+cookie: tk=6a38f7abc1946b430432fa55
+
+[{"start":0,"limit":10,"sort":null,"cnd":[],"cndData":{},"params":{"instr":"_"}}]
+
+
+### AI报告信息上下文获取(测试环境)
+POST http://192.168.201.140:5680/rbmh-phis/api/phis.aiInpatientEmrContextService/buildOutpatientFollowUpReportResults
+Content-Type: application/json
+cookie: tk=6a38f7abc1946b430432fa55
+
+[{"idVis":"6a4200b6a5e92373835abdc7","idPi":"675e4d60402c9700010fc11b"}]
+
+### AI报告信息上下文获取(正式环境)
+POST http://192.168.204.13:30010/phis/api/phis.aiInpatientEmrContextService/buildOutpatientFollowUpReportResults
+Content-Type: application/json
+cookie: tk=6a4450eddb972f0001dbc52f
+
+[{"idVis":"6a4af922eb95720001f8276a","idPi":"66084e8c2d699a12a8b71f69"}]
+
+### 查询可开具的检查检验项目
+POST http://192.168.201.140:5680/rbmh-phis/api/phis.aiInpatientEmrContextService/queryAvailableExamLabItems
+Content-Type: application/json
+cookie: tk=6a38f7abc1946b430432fa55
+
+[{}]

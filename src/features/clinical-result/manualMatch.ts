@@ -8,6 +8,10 @@ import {
   buildMedicalItemMatchedItem,
   buildMedicineMatchedItem,
 } from './recommendationHelpers';
+import { rememberManualCatalogMatch } from './manualMatchCache';
+import {
+  getMedicalCatalogRestrictionReason,
+} from '../../services/medicalCatalogPolicy';
 
 export interface ManualMatchCandidateView {
   id: string;
@@ -54,12 +58,15 @@ export function findManualMatchCandidates(
 }
 
 export function toManualMatchCandidateView(candidate: ManualMatchRawCandidate): ManualMatchCandidateView {
+  const restriction = isMedicineManualMatchCandidate(candidate)
+    ? ''
+    : getMedicalCatalogRestrictionReason(candidate);
   return {
     id: candidate.id,
     name: candidate.name,
-    meta: isMedicineManualMatchCandidate(candidate)
-      ? candidate.spec || ''
-      : candidate.code || '',
+    meta: restriction
+      ? `受限项目 · ${restriction}`
+      : isMedicineManualMatchCandidate(candidate) ? candidate.spec || '' : candidate.code || '',
   };
 }
 
@@ -67,11 +74,16 @@ export function applyManualMatchCandidate(
   rec: TreatmentRecommendation,
   candidate: ManualMatchRawCandidate
 ): boolean {
+  const sourceName = rec.originalName || rec.name;
   if (rec.type === 'medicine' && isMedicineManualMatchCandidate(candidate)) {
     rec.matchedItem = buildMedicineMatchedItem(candidate);
     rec.spec = candidate.spec || rec.spec || '';
   } else if (rec.type !== 'medicine' && !isMedicineManualMatchCandidate(candidate)) {
     rec.matchedItem = buildMedicalItemMatchedItem(candidate);
+    rec.execDept = '';
+    rec.bodySite = '';
+    rec.bodySiteId = '';
+    rec.bodySiteOptions = [];
   } else {
     return false;
   }
@@ -82,5 +94,6 @@ export function applyManualMatchCandidate(
   rec.matchStatus = 'manual';
   rec.selected = false;
   rec.suggestedMatchItem = undefined;
+  rememberManualCatalogMatch(rec.type, sourceName, candidate);
   return true;
 }

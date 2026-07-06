@@ -196,6 +196,9 @@ function mapMedicalItemCatalog(item: HisMedicalItemCatalogItem): MedicalItemCata
     name: trim(item.name) ?? '',
     category: trim(item.category),
     keywords: item.keywords,
+    unitPrice: typeof item.priceSale === 'number' ? item.priceSale : undefined,
+    restricted: item.restricted === true,
+    restrictionReason: trim(item.restrictionReason),
     raw: {
       ...(item.raw && typeof item.raw === 'object' ? item.raw : {}),
       idSrv: item.idSrv,

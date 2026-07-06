@@ -62,3 +62,32 @@ describe('HisService buildOutpatientFollowUpReportResults', () => {
     );
   });
 });
+
+describe('HisService fetchInstitutionMedicalItemsCatalog', () => {
+  it('uses the AI context service exam/lab catalog instead of the synchronized institution catalog', async () => {
+    const service = new HisService('http://localhost/', 'token');
+    const post = vi.spyOn(service, 'post').mockResolvedValue({
+      code: 200,
+      body: {
+        items: [
+          { id: 'exam-part-1', code: 'exam-1', name: '胸部CT（胸部）', category: '检查', idSrv: 'exam-1' },
+          { id: 'lab-1', code: 'lab-1', name: '血常规', category: '检验', idSrv: 'lab-1' },
+        ],
+        examinationCount: 1,
+        labTestCount: 1,
+        total: 2,
+      },
+    });
+
+    const result = await service.fetchInstitutionMedicalItemsCatalog('org-1');
+
+    expect(post).toHaveBeenCalledWith(
+      'api/phis.aiInpatientEmrContextService/queryAvailableExamLabItems',
+      [{ orgCode: 'org-1' }],
+    );
+    expect(result.map((item) => [item.name, item.category])).toEqual([
+      ['胸部CT（胸部）', '检查'],
+      ['血常规', '检验'],
+    ]);
+  });
+});

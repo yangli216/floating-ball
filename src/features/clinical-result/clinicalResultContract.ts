@@ -4,6 +4,39 @@ import type { OutpatientRecord } from './outpatientRecord';
 
 export type ClinicalResultChannel = 'voice' | 'symptom' | 'chronic-refill';
 
+export type ClinicalResultRecommendationType = 'medicine' | 'exam' | 'lab_test' | 'procedure';
+
+export type ClinicalResultRecommendationMode =
+  | 'diagnostic_first'
+  | 'treatment_first'
+  | 'parallel'
+  | 'explicit_only'
+  | 'urgent_referral';
+
+export interface ClinicalResultRecommendationPlan {
+  mode: ClinicalResultRecommendationMode;
+  recommendNow: ClinicalResultRecommendationType[];
+  defer: ClinicalResultRecommendationType[];
+  skip: ClinicalResultRecommendationType[];
+  reason: string;
+  resumeCondition: 'report_available' | 'doctor_request' | '';
+  confidence: 'high' | 'medium' | 'low';
+}
+
+export type ClinicalResultGenerationSection =
+  | 'record_core'
+  | 'history_context'
+  | 'explicit_orders'
+  | 'diagnoses'
+  | 'recommendation_plan'
+  | 'record_extra';
+
+export interface ClinicalResultGenerationState {
+  status: 'streaming' | 'complete';
+  readySections: ClinicalResultGenerationSection[];
+  message?: string;
+}
+
 export interface ClinicalResultMatchedItem {
   id: string;
   name: string;
@@ -48,6 +81,8 @@ export interface ClinicalResultRecommendationPolicy {
   allowTreatmentRefresh?: boolean;
   /** 限定该场景允许出现的治疗类型。 */
   allowedTreatmentTypes?: Array<'medicine' | 'examination' | 'labTest' | 'procedure'>;
+  /** 语音病例抽取阶段给出的按类型推荐路由。 */
+  plan?: ClinicalResultRecommendationPlan;
 }
 
 export interface ClinicalResultInput {
@@ -65,5 +100,7 @@ export interface ClinicalResultInput {
   healthEducation: string;
   outpatientRecord?: OutpatientRecord;
   recommendationPolicy?: ClinicalResultRecommendationPolicy;
+  /** 语音结构化分区流式生成状态；非语音场景可不提供。 */
+  generation?: ClinicalResultGenerationState;
   channel?: ClinicalResultChannel;
 }

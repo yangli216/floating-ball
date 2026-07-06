@@ -9,6 +9,7 @@ const props = withDefaults(defineProps<{
   intentSource?: 'llm' | 'cache' | null;
   channel?: ClinicalResultChannel;
   consultationRoundId?: string | null;
+  processing?: boolean;
   showPatientHeader?: boolean;
   secondaryFooterActionText?: string;
   secondaryFooterActionDisabled?: boolean;
@@ -16,6 +17,7 @@ const props = withDefaults(defineProps<{
   intentSource: null,
   channel: 'voice',
   consultationRoundId: null,
+  processing: false,
   showPatientHeader: true,
   secondaryFooterActionText: '',
   secondaryFooterActionDisabled: false,
@@ -31,6 +33,7 @@ const emit = defineEmits(['close', 'cancel', 'secondary-footer-action']);
     :intent-source="props.intentSource"
     :channel="props.channel"
     :consultation-round-id="props.consultationRoundId"
+    :processing="props.processing"
     :show-patient-header="props.showPatientHeader"
     :secondary-footer-action-text="props.secondaryFooterActionText"
     :secondary-footer-action-disabled="props.secondaryFooterActionDisabled"

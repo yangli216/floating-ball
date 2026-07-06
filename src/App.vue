@@ -989,6 +989,7 @@ const openInsideCloudHome = async () => {
             :intentResult="intentResult"
             :intentSource="intentSource"
             :consultationRoundId="consultationRoundId"
+            :processing="isProcessingVoice"
             :channel="intentResult?.channel"
             @close="handleUserCollapse"
             @cancel="cancelVoiceResult"

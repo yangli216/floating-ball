@@ -1,4 +1,5 @@
 export { default as ConsultationResultPage } from './ui/ConsultationResultPage.vue';
+export { default as ClinicalGenerationProgress } from './ui/ClinicalGenerationProgress.vue';
 export { default as DiagnosisRecommendationCard } from './ui/DiagnosisRecommendationCard.vue';
 export { default as ManualMatchPicker } from './ui/ManualMatchPicker.vue';
 export { default as MedicineUsageFieldSelector } from './ui/MedicineUsageFieldSelector.vue';

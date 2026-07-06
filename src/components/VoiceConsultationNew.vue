@@ -30,12 +30,10 @@ import type { TreatmentRecommendation, Diagnosis } from '../types/consultation';
 import type { AppPatient } from '../types/appState';
 import type { VoiceIntentResult, MatchedTreatment, MatchedDiagnosis } from '@features/voice-consultation';
 import {
-  alignMedicineRecommendationsToInventory,
   applyManualMatchCandidate,
   assessTreatmentCatalogMatch,
   buildClinicalResultDiagnosisRequestSpec,
   buildDiagnosisRationale as buildSharedDiagnosisRationale,
-  buildClinicalResultTreatmentRequestSpecs,
   buildInventoryBlockedSubmitMessage,
   buildRecordConfirmedPayload,
   buildSelectedTreatments,
@@ -59,16 +57,16 @@ import {
   getTreatmentSpec,
   hasProbableMatch,
   initClinicalDiagnoses,
-  loadAvailableMedicineInventoryContext,
   initClinicalTreatments,
   mapClinicalResultAiDiagnoses,
-  mergeClinicalResultAiTreatmentResponses,
   parseLLMJson,
+  rememberManualCatalogMatch,
   shouldAutoSelectTreatment,
   syncTreatmentExecDeptSelections as syncSharedTreatmentExecDeptSelections,
   toManualMatchCandidateView,
   type ClinicalResultInput,
   type ClinicalResultChannel,
+  type ClinicalResultRecommendationType,
   type ClinicalResultRecordSummaryInput,
   type MedicinePrimaryField,
   type ManualMatchRawCandidate,
@@ -87,6 +85,7 @@ import {
   VoiceSessionFeedbackBar,
   getVoiceConsultationEditorSnapshot,
   updateVoiceConsultationCache,
+  generateVoiceTreatmentRecommendations,
   useVoiceEditorSnapshotPersistence,
   useVoiceFeedbackActions,
   useVoiceRecordFieldFeedbackState,
@@ -94,6 +93,7 @@ import {
   type VoiceEditorSnapshot,
 } from '@features/voice-consultation';
 import {
+  ClinicalGenerationProgress,
   DiagnosisRecommendationCard,
   TreatmentRecommendationSection,
   useBodySiteOptions,
@@ -156,6 +156,8 @@ const props = withDefaults(defineProps<{
    * 贯穿该轮所有用户日志提交（speech → firstSnapshot → finalSnapshot/abandoned）。
    */
   consultationRoundId?: string | null;
+  /** M1 仍在分区流式生成时为 true；页面展示已就绪区块但禁止回写。 */
+  processing?: boolean;
   secondaryFooterActionText?: string;
   secondaryFooterActionDisabled?: boolean;
 }>(), {
@@ -163,6 +165,7 @@ const props = withDefaults(defineProps<{
   showPatientHeader: true,
   intentSource: null,
   consultationRoundId: null,
+  processing: false,
   secondaryFooterActionText: '',
   secondaryFooterActionDisabled: false,
 });
@@ -171,6 +174,9 @@ const emit = defineEmits(['close', 'cancel', 'secondary-footer-action']);
 
 const showToast = inject<(msg: string, type?: string) => void>('showToast');
 const recommendationPolicy = computed(() => props.intentResult?.recommendationPolicy);
+const isResultGenerating = computed(() => (
+  props.processing || props.intentResult?.generation?.status === 'streaming'
+));
 const allowTreatmentRefresh = computed(() => recommendationPolicy.value?.allowTreatmentRefresh !== false);
 const autoFetchTreatments = computed(() => recommendationPolicy.value?.autoFetchTreatments !== false);
 
@@ -204,6 +210,34 @@ const treatments = ref<TreatmentRecommendation[]>([]);
 const treatmentLoading = ref(false);
 const treatmentRequestSeq = ref(0);
 const autoTreatmentFetchAttemptKey = ref('');
+type TreatmentGenerationStatus = 'idle' | 'loading' | 'ready' | 'deferred' | 'skipped' | 'error';
+const treatmentGenerationState = ref<Record<ClinicalResultRecommendationType, TreatmentGenerationStatus>>({
+  medicine: 'idle',
+  exam: 'idle',
+  lab_test: 'idle',
+  procedure: 'idle',
+});
+
+function resolveRequestedTreatmentTypes(): ClinicalResultRecommendationType[] {
+  const plan = recommendationPolicy.value?.plan;
+  if (plan) return [...plan.recommendNow];
+  const allowed = recommendationPolicy.value?.allowedTreatmentTypes;
+  if (!allowed) return ['medicine', 'exam', 'lab_test', 'procedure'];
+  return allowed.map((type) => type === 'examination' ? 'exam' : type === 'labTest' ? 'lab_test' : type);
+}
+
+function resetTreatmentGenerationState(): void {
+  const plan = recommendationPolicy.value?.plan;
+  const requested = new Set(resolveRequestedTreatmentTypes());
+  const deferred = new Set(plan?.defer || []);
+  const skipped = new Set(plan?.skip || []);
+  treatmentGenerationState.value = {
+    medicine: deferred.has('medicine') ? 'deferred' : skipped.has('medicine') || !requested.has('medicine') ? 'skipped' : 'idle',
+    exam: deferred.has('exam') ? 'deferred' : skipped.has('exam') || !requested.has('exam') ? 'skipped' : 'idle',
+    lab_test: deferred.has('lab_test') ? 'deferred' : skipped.has('lab_test') || !requested.has('lab_test') ? 'skipped' : 'idle',
+    procedure: deferred.has('procedure') ? 'deferred' : skipped.has('procedure') || !requested.has('procedure') ? 'skipped' : 'idle',
+  };
+}
 
 const lastAppliedIntentKey = ref('');
 
@@ -285,6 +319,9 @@ const {
 } = patientContext;
 
 const lastTreatmentDiagnosisKey = ref('');
+const isInitialTreatmentGeneration = computed(() => (
+  treatmentLoading.value && !lastTreatmentDiagnosisKey.value
+));
 const suppressDiagnosisTreatmentRefetch = ref(false);
 const canRefreshDiagnosis = computed(() => (
   chiefComplaint.value.trim().length > 0
@@ -314,8 +351,10 @@ const {
   treatmentSections,
 } = treatmentSectionState;
 const displayedTreatmentEmptyText = computed(() => (
-  allowTreatmentRefresh.value
-    ? treatmentEmptyText.value
+  recommendationPolicy.value?.plan?.mode === 'diagnostic_first'
+    ? (recommendationPolicy.value.plan.reason || '当前先完善必要的检验检查，药品建议将在结果返回后继续生成。')
+    : allowTreatmentRefresh.value
+      ? treatmentEmptyText.value
     : (props.intentResult?.treatmentPlan || '当前有效库存中没有可直接续方的历史药品，请医生核实后手工调整。')
 ));
 
@@ -409,7 +448,7 @@ async function applyEditorSnapshot(snapshot: VoiceEditorSnapshot): Promise<void>
   }
 }
 
-const canSubmit = computed(() => chiefComplaint.value.trim().length > 0 && selectedDiagnosis.value !== null && selectedDiagnoses.value.length > 0 && !isWritebackBusy.value);
+const canSubmit = computed(() => !isResultGenerating.value && chiefComplaint.value.trim().length > 0 && selectedDiagnosis.value !== null && selectedDiagnoses.value.length > 0 && !isWritebackBusy.value);
 
 async function handleCancelConfirmed(): Promise<void> {
   clearVoiceFeedbackDraft();
@@ -816,13 +855,14 @@ function buildIntentResultKey(result: ClinicalResultInput | VoiceIntentResult): 
     diagnoses: result.diagnoses.map(buildIntentDiagnosisKey),
     treatments: result.treatments.map(buildIntentTreatmentKey),
     recommendationPolicy: result.recommendationPolicy,
+    generation: result.generation,
   });
 }
 
 function getAllowedIntentTreatments(result: ClinicalResultInput): ClinicalResultInput['treatments'] {
   const allowed = result.recommendationPolicy?.allowedTreatmentTypes;
-  if (!allowed?.length) return result.treatments;
-  return result.treatments.filter((item) => allowed.includes(item.type));
+  if (!allowed) return result.treatments;
+  return result.treatments.filter((item) => item.sourceType === 'explicit' || allowed.includes(item.type));
 }
 
 function getManualMatchPickerCandidates(rec: TreatmentRecommendation): ManualMatchCandidate[] {
@@ -863,7 +903,8 @@ async function confirmSuggestedMatch(rec: TreatmentRecommendation, event?: Event
     return;
   }
 
-  rec.originalName = rec.originalName || rec.name;
+  const sourceName = rec.originalName || rec.name;
+  rec.originalName = sourceName;
   rec.matchedItem = { ...rec.suggestedMatchItem };
   rec.name = rec.suggestedMatchItem.name || rec.name;
   rec.matchStatus = 'confirmed';
@@ -873,6 +914,7 @@ async function confirmSuggestedMatch(rec: TreatmentRecommendation, event?: Event
   rec.execDeptCleared = false;
   rec.insuranceCleared = false;
   rec.suggestedMatchItem = undefined;
+  rememberManualCatalogMatch(rec.type, sourceName, rec.matchedItem);
 
   if (!(await ensureTreatmentSelectable(rec, {
     medicineUnavailableMessage: `${rec.name} 已确认匹配，但当前药房无药品详情，暂不能选中`,
@@ -1155,66 +1197,74 @@ async function fetchAITreatment(): Promise<void> {
     diagnosisCode: requestDiagnosis.code,
     chiefComplaint: chiefComplaint.value,
   };
+  const requestedTypes = resolveRequestedTreatmentTypes();
+  if (requestedTypes.length === 0) {
+    lastTreatmentDiagnosisKey.value = diagnosisIdentity;
+    treatmentLoading.value = false;
+    return;
+  }
+  requestedTypes.forEach((type) => {
+    treatmentGenerationState.value[type] = 'loading';
+  });
+  const stagedRecommendations: TreatmentRecommendation[] = [];
 
   try {
-    await fetchPharmacyOptions();
-    if (!isCurrentTreatmentRequest()) {
-      console.info('[VoiceConsultationNew] Stop stale treatment request before AI calls', {
-        requestSeq,
-        latest: treatmentRequestSeq.value,
-        requestPatientAnchorId,
-        currentPatientAnchorId: patientAnchorId.value,
-        diagnosisIdentity,
-        currentDiagnosisIdentity: getDiagnosisIdentity(selectedDiagnosis.value),
-      });
-      return;
+    if (requestedTypes.includes('medicine')) {
+      await fetchPharmacyOptions();
     }
-    const inventoryContext = await loadAvailableMedicineInventoryContext({
-      pharmacies: pharmacyOptions.value,
-    });
-
-    const treatmentRequestSpecs = buildClinicalResultTreatmentRequestSpecs({
+    if (!isCurrentTreatmentRequest()) return;
+    await generateVoiceTreatmentRecommendations({
       ...baseParams,
-      availableMedicineInventory: inventoryContext.promptContext,
-    }, {
-      medication: PROMPTS.consultation.treatmentRecommendation,
-      exam: PROMPTS.consultation.examinationRecommendation,
-      lab_test: PROMPTS.consultation.labTestRecommendation,
-      procedure: PROMPTS.consultation.procedureRecommendation,
-    }, {
+      clinicalContext: historyOfPresentIllness.value,
+      requestedTypes,
+      explicitTreatments: treatments.value.filter((item) => item.sourceType === 'explicit'),
+      pharmacies: pharmacyOptions.value,
       consultationId: resolveConsultationId(),
-    });
-    const [medResponse, examResponse, labResponse, procResponse] = await Promise.allSettled(
-      treatmentRequestSpecs.map((spec) => chat(spec.messages, undefined, undefined, undefined, spec.config)),
-    );
-
-    if (!isCurrentTreatmentRequest()) {
-      console.info('[VoiceConsultationNew] Ignore stale treatment response before parsing', {
-        requestSeq,
-        latest: treatmentRequestSeq.value,
-        requestPatientAnchorId,
-        currentPatientAnchorId: patientAnchorId.value,
-        diagnosisIdentity,
-        currentDiagnosisIdentity: getDiagnosisIdentity(selectedDiagnosis.value),
-      });
-      return;
-    }
-
-    const nextTreatments = mergeClinicalResultAiTreatmentResponses({
-      responses: [medResponse, examResponse, labResponse, procResponse],
-      parse: (value) => alignMedicineRecommendationsToInventory(
-        parseLLMJson<TreatmentRecommendation[]>(value),
-        inventoryContext.items,
-      ),
-      assessCatalogMatch: assessTreatmentCatalogMatch,
       normalize: normalizeTreatmentRecommendation,
-      onParseFailure: ({ error, responsePreview }) => {
-        console.warn('[VoiceConsultationNew] Failed to parse treatment recommendation response', {
-          error: error instanceof Error ? error.message : String(error),
-          responsePreview,
-        });
+      onTaskResult: async (task) => {
+        if (!isCurrentTreatmentRequest()) return;
+        if (task.error) {
+          task.types.forEach((type) => { treatmentGenerationState.value[type] = 'error'; });
+          console.warn('[VoiceConsultationNew] Treatment recommendation task failed', {
+            key: task.key,
+            error: task.error instanceof Error ? task.error.message : String(task.error),
+          });
+          return;
+        }
+        const ranked = await applyRecommendationPreferenceRanking(
+          task.items,
+          buildTreatmentPreferenceCandidate,
+          buildPreferenceContext(`treatment-${task.key}`),
+        );
+        if (!isCurrentTreatmentRequest()) return;
+        stagedRecommendations.push(...ranked);
+        task.types.forEach((type) => { treatmentGenerationState.value[type] = 'ready'; });
       },
     });
+
+    if (!isCurrentTreatmentRequest()) return;
+    // 各目录请求仍可并行完成，但只在全部任务结束后一次性替换推荐项，
+    // 避免检查、检验、药品先后返回时让医生看到治疗列表反复加载。
+    const preserved = treatments.value.filter((item) => (
+      !requestedTypes.includes(item.type as ClinicalResultRecommendationType)
+      || item.sourceType === 'explicit'
+      || item.manualMatched
+    ));
+    const seen = new Set(preserved.map((item) => `${item.type}:${item.matchedItem?.id || item.name}`));
+    const requestedOrder = new Map(requestedTypes.map((type, index) => [type, index]));
+    const generated = stagedRecommendations
+      .sort((left, right) => (
+        (requestedOrder.get(left.type as ClinicalResultRecommendationType) ?? requestedTypes.length)
+        - (requestedOrder.get(right.type as ClinicalResultRecommendationType) ?? requestedTypes.length)
+      ))
+      .filter((item) => {
+        const key = `${item.type}:${item.matchedItem?.id || item.name}`;
+        if (seen.has(key)) return false;
+        seen.add(key);
+        return true;
+      });
+    treatments.value = [...preserved, ...generated];
+    const nextTreatments = treatments.value;
 
     console.info('[VoiceConsultationNew] Treatment recommendations loaded', {
       requestSeq,
@@ -1238,11 +1288,6 @@ async function fetchAITreatment(): Promise<void> {
       return;
     }
 
-    treatments.value = await applyRecommendationPreferenceRanking(
-      nextTreatments,
-      buildTreatmentPreferenceCandidate,
-      buildPreferenceContext('treatment'),
-    );
     lastTreatmentDiagnosisKey.value = diagnosisIdentity;
     autoTreatmentFetchAttemptKey.value = buildTreatmentAutoFetchKey(diagnosisIdentity);
     await reconcileAutoSelectedMedicineInventory(treatments.value);
@@ -1275,8 +1320,9 @@ async function fetchAITreatment(): Promise<void> {
 }
 
 function maybeAutoFetchMissingTreatment(reason: string): void {
+  if (!autoFetchTreatments.value || isResultGenerating.value) return;
   if (suppressDiagnosisTreatmentRefetch.value || treatmentLoading.value) return;
-  if (treatments.value.length > 0 || lastTreatmentDiagnosisKey.value) return;
+  if (lastTreatmentDiagnosisKey.value) return;
 
   const diagnosisIdentity = getDiagnosisIdentity(selectedDiagnosis.value);
   if (!diagnosisIdentity || !selectedDiagnosis.value) return;
@@ -2098,6 +2144,7 @@ watch(
     invalidateTreatmentRequests();
     autoTreatmentFetchAttemptKey.value = '';
     resetForIntent({});
+    resetTreatmentGenerationState();
     await nextTick();
     suppressDiagnosisTreatmentRefetch.value = false;
     maybeAutoFetchMissingTreatment('patient-context-reset');
@@ -2125,6 +2172,7 @@ watch(
     invalidateTreatmentRequests();
     autoTreatmentFetchAttemptKey.value = '';
     resetForIntent(result);
+    resetTreatmentGenerationState();
 
     if (result.diagnoses?.length) {
       aiDiagnoses.value = initDiagnosesFromIntent(result.diagnoses);
@@ -2136,11 +2184,17 @@ watch(
 
     const allowedIntentTreatments = getAllowedIntentTreatments(result);
     if (allowedIntentTreatments.length > 0) {
-      await fetchPharmacyOptions();
+      if (allowedIntentTreatments.some((item) => item.type === 'medicine')) {
+        await fetchPharmacyOptions();
+      }
       treatments.value = initTreatmentsFromIntent(allowedIntentTreatments);
       normalizeMedicinePharmacyValues(treatments.value);
-      lastTreatmentDiagnosisKey.value = getDiagnosisIdentity(selectedDiagnosis.value);
-      await reconcileAutoSelectedMedicineInventory(treatments.value);
+      lastTreatmentDiagnosisKey.value = autoFetchTreatments.value
+        ? ''
+        : getDiagnosisIdentity(selectedDiagnosis.value);
+      if (treatments.value.some((item) => item.type === 'medicine')) {
+        await reconcileAutoSelectedMedicineInventory(treatments.value);
+      }
       void registerCurrentRecommendations();
       console.info('[VoiceConsultationNew] Applied voice intent treatments', {
         diagnosisIdentity: lastTreatmentDiagnosisKey.value,
@@ -2149,6 +2203,12 @@ watch(
         medicineWithDosageCount: treatments.value.filter((item) => item.type === 'medicine' && !!item.dosage).length,
         medicineWithTotalQtyCount: treatments.value.filter((item) => item.type === 'medicine' && !!item.totalQty).length,
       });
+    }
+
+    if (result.generation?.status === 'streaming') {
+      await nextTick();
+      suppressDiagnosisTreatmentRefetch.value = false;
+      return;
     }
 
     // 仅在“同就诊缓存恢复”路径上叠加编辑快照，避免上一会话的治疗方案/诊断
@@ -2174,18 +2234,6 @@ watch(
     suppressDiagnosisTreatmentRefetch.value = false;
     submitVoiceGeneratedUserLog();
     maybeAutoFetchMissingTreatment('intent-result-applied');
-
-    const primaryDiagnosis = selectedDiagnosis.value;
-    const primaryDiagnosisName = primaryDiagnosis && typeof primaryDiagnosis.name === 'string'
-      ? primaryDiagnosis.name
-      : '';
-    if (treatments.value.length === 0 && primaryDiagnosis && autoFetchTreatments.value) {
-      console.info('[VoiceConsultationNew] No voice intent treatments found, fetching default recommendations for selected diagnosis', {
-        diagnosisIdentity: getDiagnosisIdentity(primaryDiagnosis),
-        diagnosisName: primaryDiagnosisName,
-      });
-      void fetchAITreatment();
-    }
   },
   { immediate: true },
 );
@@ -2226,7 +2274,12 @@ watch(
       <p class="loading-title">AI 正在识别语音意图...</p>
     </div>
 
-    <div v-else class="medical-record-page">
+    <div v-else :class="['medical-record-page', { 'is-result-generating': isResultGenerating }]">
+      <ClinicalGenerationProgress
+        :generation="props.intentResult?.generation"
+        :treatment-loading="treatmentLoading"
+        :treatment-states="treatmentGenerationState"
+      />
       <div v-if="writebackBannerText" :class="['writeback-status-banner', `writeback-status-banner-${writebackBannerTone}`]">
         {{ writebackBannerText }}
       </div>
@@ -2385,7 +2438,7 @@ watch(
                   class="refresh-recommendation-btn"
                   type="button"
                   title="基于当前病历重新生成诊断建议"
-                  :disabled="diagnosisLoading || !canRefreshDiagnosis"
+                  :disabled="isResultGenerating || diagnosisLoading || !canRefreshDiagnosis"
                   @click="handleDiagnosisRefresh"
                 >
                   <Icon
@@ -2454,7 +2507,7 @@ watch(
                   class="refresh-recommendation-btn"
                   type="button"
                   title="基于当前主诊断重新生成治疗方案"
-                  :disabled="!selectedDiagnosis || treatmentLoading"
+                  :disabled="isResultGenerating || !selectedDiagnosis || treatmentLoading"
                   @click="handleTreatmentRefresh"
                 >
                   <Icon
@@ -2472,15 +2525,7 @@ watch(
               已切换主诊断，当前方案仍保留上一版；点击“刷新方案”获取当前诊断方案。
             </div>
 
-            <div v-if="treatmentLoading" class="loading-inline">
-              <div class="ai-spinner small">
-                <div class="spinner-ring"></div>
-                <div class="spinner-core"></div>
-              </div>
-              <span>正在匹配方案...</span>
-            </div>
-
-            <template v-else-if="hasTreatments">
+            <template v-if="hasTreatments && !isInitialTreatmentGeneration">
               <TreatmentRecommendationSection
                 v-for="section in treatmentSections"
                 :key="section.type"
@@ -2569,7 +2614,7 @@ watch(
               />
             </template>
 
-            <div v-else class="empty-text">{{ displayedTreatmentEmptyText }}</div>
+            <div v-else-if="!treatmentLoading" class="empty-text">{{ displayedTreatmentEmptyText }}</div>
           </div>
         </section>
       </div>
@@ -2679,6 +2724,15 @@ watch(
 <style scoped src="../features/consultation-result/ui/ClinicalResultEditor.css"></style>
 
 <style scoped>
+.is-result-generating .record-content {
+  pointer-events: none;
+}
+
+.is-result-generating .voice-footer {
+  pointer-events: none;
+  opacity: 0.72;
+}
+
 .checklist-critical-error {
   padding: 12px 14px;
   border: 1px solid rgba(207, 74, 60, 0.24);

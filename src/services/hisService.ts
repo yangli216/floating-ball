@@ -148,6 +148,9 @@ export interface HisMedicalItemCatalogItem {
   idPart?: string;
   jsonField?: string;
   fgCheckOrd?: string;
+  priceSale?: number;
+  restricted?: boolean;
+  restrictionReason?: string;
   raw?: Record<string, unknown>;
 }
 
@@ -193,28 +196,11 @@ interface HiBdDieListBody {
   }>;
 }
 
-interface HiBdCliOrgListBody {
-  start?: number;
-  limit?: number;
+interface AiAvailableExamLabCatalogBody {
+  items?: HisMedicalItemCatalogItem[];
+  examinationCount?: number;
+  labTestCount?: number;
   total?: number;
-  items?: Array<{
-    id?: string;
-    idCli?: string;
-    naCli?: string;
-    unit?: string;
-    sdCli?: string;
-    sdCliText?: string;
-    py?: string;
-    fgActive?: string;
-    naCstmg?: string;
-    sdSrv?: string;
-    idDeptExec?: string;
-    idPart?: string;
-    jsonField?: string;
-    fgCheckOrd?: string;
-    idLisCategory?: string;
-    fgCombination?: string;
-  }>;
 }
 
 
@@ -553,7 +539,7 @@ interface OrganDeptListBody {
 
 const HIS_CATALOG_ENDPOINTS = {
   diagnoses: 'api/base.hiBdDieService/queryList',
-  medicalItems: 'api/phis.hiBdCliOrgService/queryHiBdCliOrgList',
+  availableExamLabItems: 'api/phis.aiInpatientEmrContextService/queryAvailableExamLabItems',
   medicalItemDetail: 'api/phis.hiBdCliService/loadHiBdCliDetail',
   medicalItemParts: 'api/phis.hiBdCliPacsPartService/queryExaPartAndWayList',
   medicineStores: 'api/phis.medicineDispensingService/queryDispensingSto',
@@ -847,85 +833,35 @@ export class HisService {
     return normalizedItems;
   }
 
-  /**
-   * 同步诊疗项目目录（检查 / 检验 / 治疗）
-   */
+  /** 从 AI 上下文聚合服务查询当前机构、科室真正可开立的检验检查目录。 */
   async fetchInstitutionMedicalItemsCatalog(orgCode: string): Promise<HisMedicalItemCatalogItem[]> {
-    const pageSize = 500;
-    let start = 0;
-    let total = 0;
-    const items: NonNullable<HiBdCliOrgListBody['items']> = [];
-    const pageSummaries: Array<{ start: number; rawCount: number; total: number }> = [];
-
-    do {
-      const response = await this.post<HiBdCliOrgListBody>(
-        HIS_CATALOG_ENDPOINTS.medicalItems,
-        [{ start, limit: pageSize, params: { fgActive: '1', fgSingle: '1', source: '-1' } }]
-      );
-      this.assertBusinessSuccess(HIS_CATALOG_ENDPOINTS.medicalItems, response);
-
-      const pageItems = response.body?.items ?? [];
-      total = Number(response.body?.total ?? 0);
-      items.push(...pageItems);
-      pageSummaries.push({
-        start,
-        rawCount: pageItems.length,
-        total,
-      });
-
-      start += pageSize;
-
-      if (pageItems.length === 0) {
-        break;
-      }
-    } while (total > 0 && items.length < total);
-
-    const activeItems = items.filter((item) => item.fgActive !== '0');
-    const normalizedItems = new Map<string, HisMedicalItemCatalogItem>();
-    let duplicateCount = 0;
-
-    activeItems.forEach((item) => {
-      const name = item.naCli?.trim() || '';
-      if (!name) {
-        return;
-      }
-
-      const sdCliText = item.sdCliText?.trim() || '';
-      const keywords = [item.py?.trim(), item.naCstmg?.trim(), sdCliText]
-        .filter((part): part is string => Boolean(part));
-      const id = item.id?.trim() || item.idCli?.trim() || name;
-
-      if (normalizedItems.has(id)) {
-        duplicateCount += 1;
-        return;
-      }
-
-      normalizedItems.set(id, {
+    const response = await this.post<AiAvailableExamLabCatalogBody>(
+      HIS_CATALOG_ENDPOINTS.availableExamLabItems,
+      [{ orgCode }],
+    );
+    this.assertBusinessSuccess(HIS_CATALOG_ENDPOINTS.availableExamLabItems, response);
+    const body = response.body ?? response.data ?? {};
+    const unique = new Map<string, HisMedicalItemCatalogItem>();
+    (body.items ?? []).forEach((item) => {
+      const id = item.id?.trim();
+      const name = item.name?.trim();
+      if (!id || !name || unique.has(id)) return;
+      unique.set(id, {
+        ...item,
         id,
-        code: item.idCli?.trim() || id,
         name,
-        category: this.mapCliCategory(sdCliText, item.sdCli?.trim()),
-        keywords: keywords.length > 0 ? Array.from(new Set(keywords)) : undefined,
-        idSrv: item.id?.trim() || item.idCli?.trim() || id,
-        naSrv: name,
-        sdSrv: item.sdSrv?.trim() || this.mapOrderServiceCode(this.mapCliCategory(sdCliText, item.sdCli?.trim())),
-        idDeptExec: item.idDeptExec?.trim() || '',
-        idPart: item.idPart?.trim() || '',
-        jsonField: item.jsonField?.trim() || this.buildJsonField(item.idLisCategory?.trim(), item.fgCombination?.trim()),
-        fgCheckOrd: item.fgCheckOrd?.trim() || '1',
+        code: item.code?.trim() || id,
+        category: item.category?.trim() || '其他',
         raw: item as unknown as Record<string, unknown>,
       });
     });
+    const normalizedList = Array.from(unique.values());
 
-    const normalizedList = Array.from(normalizedItems.values());
-
-    console.log('[HisService] Medical items catalog summary', {
+    console.log('[HisService] Available exam/lab catalog summary', {
       orgCode,
-      total,
-      pages: pageSummaries,
-      rawCount: items.length,
-      inactiveFiltered: items.length - activeItems.length,
-      duplicateCount,
+      total: body.total ?? normalizedList.length,
+      examinationCount: body.examinationCount ?? 0,
+      labTestCount: body.labTestCount ?? 0,
       normalizedCount: normalizedList.length,
       sample: normalizedList[0] ?? null,
     });
@@ -1587,39 +1523,6 @@ export class HisService {
     return this.orgCode;
   }
 
-  private mapCliCategory(sdCliText?: string, sdCli?: string): string {
-    const normalizedText = sdCliText?.trim();
-    if (normalizedText) {
-      if (normalizedText.includes('检验')) {
-        return '检验';
-      }
-      if (normalizedText.includes('检查')) {
-        return '检查';
-      }
-      return '治疗';
-    }
-
-    switch (sdCli) {
-      case '1':
-        return '检查';
-      case '2':
-        return '检验';
-      default:
-        return '治疗';
-    }
-  }
-
-  private mapOrderServiceCode(category: string): string {
-    switch (category) {
-      case '检查':
-        return '31';
-      case '检验':
-        return '41';
-      default:
-        return '51';
-    }
-  }
-
   async fetchMedicineStoreIds(orgCode: string): Promise<string[]> {
     const availablePharmacies = await this.fetchAvailablePharmacies();
     if (availablePharmacies.length > 0) {
@@ -1689,17 +1592,6 @@ export class HisService {
     }
 
     return specSale || unitSale || '';
-  }
-
-  private buildJsonField(idLisCategory?: string, fgCombination?: string): string {
-    const payload: Record<string, string> = {};
-    if (idLisCategory) {
-      payload.idLisCategory = idLisCategory;
-    }
-    if (fgCombination) {
-      payload.fgCombination = fgCombination;
-    }
-    return Object.keys(payload).length > 0 ? JSON.stringify(payload) : '';
   }
 
   private assertBusinessSuccess<T>(endpoint: string, response: HisResponse<T>): void {

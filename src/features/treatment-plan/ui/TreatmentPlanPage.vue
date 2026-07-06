@@ -36,6 +36,7 @@ import {
   getTreatmentEditorKey,
   getTreatmentEditorFieldKey,
   hasProbableMatch,
+  rememberManualCatalogMatch,
   syncTreatmentExecDeptSelections as syncSharedTreatmentExecDeptSelections,
   toManualMatchCandidateView,
   type MedicinePrimaryField,
@@ -655,6 +656,7 @@ async function confirmSuggestedMatch(item: TreatmentRecommendation): Promise<voi
     insuranceCleared: false,
     suggestedMatchItem: undefined,
   });
+  rememberManualCatalogMatch(item.type, originalName, candidate.matchedItem);
 
   if (!(await ensureMatchedTreatmentSelectable(candidate))) {
     Object.assign(item, candidate);

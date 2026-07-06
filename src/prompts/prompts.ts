@@ -91,6 +91,25 @@ export const MedicalRecordGenerationPrompt = {
 
 export type HintSourceType = 'explicit' | 'inferred' | 'uncertain';
 
+export type VoiceRecommendationType = 'medicine' | 'exam' | 'lab_test' | 'procedure';
+
+export type VoiceRecommendationMode =
+  | 'diagnostic_first'
+  | 'treatment_first'
+  | 'parallel'
+  | 'explicit_only'
+  | 'urgent_referral';
+
+export interface VoiceRecommendationPlan {
+  mode: VoiceRecommendationMode;
+  recommendNow: VoiceRecommendationType[];
+  defer?: VoiceRecommendationType[];
+  skip?: VoiceRecommendationType[];
+  reason?: string;
+  resumeCondition?: 'report_available' | 'doctor_request' | '';
+  confidence?: 'high' | 'medium' | 'low';
+}
+
 export interface VoiceRecordDraft {
   chiefComplaint: string;
   historyOfPresentIllness: string;
@@ -177,6 +196,10 @@ export interface VoiceExtractionResult {
   diagnosisHints?: DiagnosisHint[];
   /** 模型分析出的治疗方案提示 */
   treatmentHints?: TreatmentHint[];
+  /** 医生在本次对话中明确表达的医嘱；AI 补充推荐不得写入此字段 */
+  explicitTreatmentHints?: TreatmentHint[];
+  /** 当前诊疗阶段和后续推荐类型路由 */
+  recommendationPlan?: VoiceRecommendationPlan;
   /** 既往史 */
   pastMedicalHistory?: string;
   /** 过敏史 */
@@ -196,9 +219,18 @@ export interface VoiceExtractionResult {
 }
 
 export const VoiceIntentRecognitionPrompt = {
-  system: `你是一名专业的门诊病历整理助手。你的目标不是只给出几个建议，而是基于医患对话先整理出一份“医生可直接编辑引用”的门诊病例草稿，并同时输出可用于 HIS 标准映射的诊断、检查、检验、处方结构化字段。
+  system: `你是一名专业的门诊病历整理与诊疗阶段路由助手。你的任务是基于医患对话整理病例草稿、给出初步诊断提示、提取医生明确表达的医嘱，并判断当前应生成哪些类型的补充推荐。你不负责在本步骤生成完整药品、检查、检验或处置方案。
 
-输出必须为纯 JSON，不要包含 markdown 标记、解释文字或额外前后缀。默认输出格式如下：
+为了让客户端分区渐进展示，你必须严格按下列顺序输出 NDJSON：每行只能包含一个完整 JSON 对象，不要输出 JSON 数组外壳、markdown、代码块或解释文字。
+{"event":"record_core","data":{"chiefComplaint":"主诉，尽量写成主要症状+持续时间","historyOfPresentIllness":"按临床书写逻辑整理的现病史","symptoms":[],"negativeSymptoms":[]}}
+{"event":"history_context","data":{"pastMedicalHistory":"既往史","allergyHistory":"过敏史","currentMedicationHistory":"长期或当前用药史"}}
+{"event":"explicit_orders","data":[]}
+{"event":"diagnoses","data":[]}
+{"event":"recommendation_plan","data":{"mode":"parallel","recommendNow":["medicine","exam","lab_test","procedure"],"defer":[],"skip":[],"reason":"路由依据","resumeCondition":"","confidence":"high"}}
+{"event":"record_extra","data":{"familyHistory":"家族史","treatmentPlan":"其他处理意见","healthEducation":"健康宣教"}}
+{"event":"done","data":{"error":false,"message":""}}
+
+其中各 data 对象合并后的兼容结构如下：
 {
   "recordDraft": {
     "chiefComplaint": "主诉，尽量写成主要症状+持续时间",
@@ -223,7 +255,7 @@ export const VoiceIntentRecognitionPrompt = {
       "confidence": "high"
     }
   ],
-  "treatmentHints": [
+  "explicitTreatmentHints": [
     {
       "type": "medicine",
       "name": "药品名称",
@@ -270,6 +302,15 @@ export const VoiceIntentRecognitionPrompt = {
       "totalUnit": "对话中明确提到的数量单位；未明确时留空"
     }
   ],
+  "recommendationPlan": {
+    "mode": "diagnostic_first | treatment_first | parallel | explicit_only | urgent_referral",
+    "recommendNow": ["medicine | exam | lab_test | procedure"],
+    "defer": [],
+    "skip": [],
+    "reason": "为什么当前应生成或延期这些方案",
+    "resumeCondition": "report_available | doctor_request | 空字符串",
+    "confidence": "high | medium | low"
+  },
   "error": false,
   "message": ""
 }
@@ -284,15 +325,15 @@ export const VoiceIntentRecognitionPrompt = {
 6.1 pastMedicalHistory 只记录与本次就诊可能相关的既往慢性病、手术史、外伤史、输血史等长期健康信息，不要把家族成员的疾病写入既往史。与本次主诉/现病史无明显关联的既往疾病不要写入，避免干扰医生判断。
 6.2 pastMedicalHistory 不要写入历次门诊就诊流水（如"2026-05-13 诊断急性上呼吸道感染"），门诊就诊记录属于就诊历史而非既往史。既往史应提炼为疾病名称+病程（如"高血压3年""2年前阑尾切除术"），而非按就诊日期逐条罗列。
 6.3 familyHistory 记录直系亲属（父母、兄弟姐妹、子女）的遗传性、过敏性或慢性疾病；如"父亲有皮肤过敏史""母亲有高血压"。若对话未提及家族成员健康状况，写"无特殊"。不要把患者本人的既往史、过敏史混入家族史。
-7. diagnosisHints 和 treatmentHints 允许在病例事实基础上做合理补全，但所有推断项必须把 sourceType 标记为 inferred，对话明确提到的内容标记为 explicit；信息不足但仍给出谨慎提示时标记为 uncertain。
+7. diagnosisHints 允许在病例事实基础上做合理补全，推断项必须把 sourceType 标记为 inferred，对话明确提到的内容标记为 explicit；信息不足但仍给出谨慎提示时标记为 uncertain。
 7.1 diagnosisHints 允许返回多条诊断，但前提必须是病例中存在明确的并存诊断或需要同时成立的诊断；如果只是鉴别诊断、待排除方向或可能性排序，不要直接并列写进 diagnosisHints。
 7.2 diagnosisHints 如返回多条，第一条必须是主诊断，后续条目才是伴随诊断或并存诊断。
 7.3 diagnosisHints 的 name 必须是标准疾病诊断名称，严禁使用症状名称。症状是患者主观感受（如"反酸""咳嗽""头痛""腹痛""乏力"），诊断是疾病分类学名称（如"胃食管反流病""急性支气管炎""偏头痛""慢性胃炎"）。当患者描述的是症状时，必须推断到最可能的疾病诊断再输出，不得把症状原样写入 name 字段。
 7.4 诊断名称精准保留解剖部位与侧别：如果患者对话或病历中明确包含具体的解剖部位、侧别（如“左膝”、“右足”、“双侧膝关节”、“左侧乳腺”等），模型在推断出的疾病诊断名称中必须精准保留这些侧别与部位信息（例如：患者诉“左膝关节痛”，应推断为“左膝关节病”或“左膝骨性关节炎”，绝对不要泛化为“膝关节病”或臆造为“双侧膝关节骨性关节病”），以保持临床精确度并利于精准的 ICD 标准化匹配。
-8. 对于药品，必须严格区分三类信息：
-  - 患者已自行服用、既往长期服用、院外先行处理过的药，默认写入 currentMedicationHistory，不要直接作为当前 treatmentHints 输出；
-  - 只有医生在当前计划中明确建议继续、调整、补开、开立的药，才能进入当前 treatmentHints；
-  - “如果化验提示细菌感染再用阿奇霉素”“必要时再考虑某药”这类条件性方案，不要作为当前已确定药品输出到 treatmentHints，应写入 treatmentPlan。
+8. explicitTreatmentHints 只能提取医生在本次对话中明确决定开立、继续、调整或执行的项目，sourceType 必须为 explicit。不得把模型自行补充的推荐写入 explicitTreatmentHints。对于药品，必须严格区分三类信息：
+  - 患者已自行服用、既往长期服用、院外先行处理过的药，默认写入 currentMedicationHistory，不要直接作为当前 explicitTreatmentHints 输出；
+  - 只有医生在当前计划中明确建议继续、调整、补开、开立的药，才能进入当前 explicitTreatmentHints；
+  - “如果化验提示细菌感染再用阿奇霉素”“必要时再考虑某药”这类条件性方案，不要作为当前已确定药品输出到 explicitTreatmentHints，应写入 treatmentPlan，并在 recommendationPlan 中把 medicine 延期到 report_available。
 9. 对于当前已明确推荐的药品，尽量补充库存目录中的完整名称和规格 spec；临床一次剂量只写 targetDose/targetDoseUnit，dosage/dosageUnit 必须留空；频次和用法优先输出文本，同时在能确定标准简码时补充 frequencyKey、usageKey，否则留空。
 10. 药品 totalQty/totalUnit 必须留空，禁止模型计算包装总量；程序会在匹配库存药品详情后，根据最终一次剂量、频次、天数和包装因子计算并校验库存。
 11. 如果对话已明确当前要用某药，但没有给出目标剂量、频次或疗程，可结合基层门诊常见方案谨慎补全 targetDose、frequency 和 days；此时必须将该药的 sourceType 设为 inferred，并在 evidenceText 或 goal 中明确说明“处方细节为模型按常用门诊方案补全”。
@@ -302,7 +343,14 @@ export const VoiceIntentRecognitionPrompt = {
 15. 诊断、检查、检验、处置、药品名称应尽量标准化，但不要为了标准化篡改原意。
 16. 如果输入与医疗问诊场景无关，返回 {"error": true, "message": "输入内容与医疗问诊场景无关"}。
 17. 如果语音转写质量太差，导致关键病情无法理解，返回 {"error": true, "message": "语音识别质量不足，请重新录制"}。
-18. 除 error/message 外，其余字段尽量补全；实在没有内容时，字符串字段给空字符串，数组字段给空数组。`,
+18. recommendationPlan 路由规则：
+  - 当前诊断或感染性质需要先依赖检验检查结果时，mode=diagnostic_first，recommendNow 只包含当前需要的 exam/lab_test，把 medicine 放入 defer，resumeCondition=report_available。
+  - 诊断明确且无需新增检验检查即可治疗时，mode=treatment_first，recommendNow 以 medicine/procedure 为主。
+  - 治疗和辅助检查都应同时进行时，mode=parallel。
+  - 医生明确要求只按其医嘱执行、不需要AI补充时，mode=explicit_only，recommendNow 为空。
+  - 有明确急危重症或需要立即转诊的高风险时，mode=urgent_referral，recommendNow 为空；但这只是路由提示，不能删除医生明确医嘱。
+  - 只有高置信度时才可通过 defer/skip 抑制某类推荐；信心不足时 confidence=low 并使用 parallel。
+19. 除 error/message 外，其余字段尽量补全；实在没有内容时，字符串字段给空字符串，数组字段给空数组。`,
 
   buildUserPrompt(transcribedText: string): string {
     return `医患对话内容：\n${transcribedText}`;
@@ -332,12 +380,21 @@ export const VoiceIntentRepairPrompt = {
     "healthEducation": ""
   },
   "diagnosisHints": [],
-  "treatmentHints": [],
+  "explicitTreatmentHints": [],
+  "recommendationPlan": {
+    "mode": "parallel",
+    "recommendNow": ["medicine", "exam", "lab_test", "procedure"],
+    "defer": [],
+    "skip": [],
+    "reason": "未能从原结果恢复路由，使用兼容默认值",
+    "resumeCondition": "",
+    "confidence": "low"
+  },
   "error": false,
   "message": ""
 }
 6. error 必须是 boolean；如果原始输出明确表达“非医疗内容”或“无法识别”，才设置为 true。
-7. 对 diagnosisHints 和 treatmentHints 中的每一项：
+7. 对 diagnosisHints 和 explicitTreatmentHints 中的每一项：
    - 能保留的 evidenceText、sourceType、goal、targetDose、targetDoseUnit、frequency、frequencyKey、usage、usageKey、days 都尽量保留
    - 药品 dosage、dosageUnit、totalQty、totalUnit 必须清空，后续由程序结合库存药品详情生成
    - 如果没有足够信息，不要编造，保留空字符串或空数组
@@ -1196,6 +1253,55 @@ ${params.clinicalContext}
   }
 };
 
+// ==================== 院内目录约束的检验检查联合推荐 ====================
+
+export const AuxiliaryCatalogRecommendationPrompt = {
+  system: `你是一名基层全科医生。你需要根据病例和当前机构真实可用的检查、检验目录，选择必要的辅助检查项目。
+
+规则：
+1. 只能返回目录中存在的 catalogRef，禁止自造项目名称或编号。
+2. exam 仅能从检查目录选择，lab_test 仅能从检验目录选择。
+3. 避免过度检查；一般合计推荐 0-3 项，确有必要时最多 5 项。
+4. 优先选择能直接回答当前临床问题的组合项目；不要同时选择明显重复的组合项和其全部单项。
+5. 医生已经明确开立的项目不要重复推荐。
+6. 若目录中没有合适项目，对应数组返回空；不得为了凑数选择相似但临床含义不同的项目。
+7. 标记为“受限”的免费/专项项目只适用于特定人群；除非病例上下文明确提供患者符合该项目资格的证据，否则不得选择，也不得把“免费”作为推荐理由或优势。
+8. 严格返回 JSON 对象，不要输出 markdown 或额外说明。`,
+
+  buildUserPrompt(params: {
+    patientName: string;
+    gender: string;
+    age: string;
+    diagnosisName: string;
+    diagnosisCode: string;
+    chiefComplaint: string;
+    clinicalContext?: string;
+    availableExamLabCatalog?: string;
+    requestedTypes?: Array<'exam' | 'lab_test'>;
+    explicitItemNames?: string[];
+  }): string {
+    return `请在当前机构目录内推荐必要的辅助检查。
+
+患者：${params.patientName}，${params.gender}，${params.age}
+诊断：${params.diagnosisName}${params.diagnosisCode ? ` (${params.diagnosisCode})` : ''}
+主诉：${params.chiefComplaint}
+${params.clinicalContext ? `临床上下文：${params.clinicalContext}\n` : ''}本次允许推荐的类型：${(params.requestedTypes || ['exam', 'lab_test']).join('、')}
+医生已明确项目：${params.explicitItemNames?.length ? params.explicitItemNames.join('、') : '无'}
+
+当前机构可用目录：
+${params.availableExamLabCatalog || '目录为空'}
+
+再次强调：目录中标记“受限”的免费/专项项目，只有病例明确说明患者符合相应资格时才允许选择；普通患者不得优先或默认选择。
+
+返回格式：
+{
+  "exams": [{"catalogRef":"E001","reason":"推荐依据"}],
+  "labTests": [{"catalogRef":"L001","reason":"推荐依据"}],
+  "unavailableNeeds": []
+}`;
+  },
+};
+
 // ==================== 处置推荐 ====================
 
 export const ProcedureRecommendationPrompt = {
@@ -1973,7 +2079,7 @@ export const MedicalRecordCheckPrompt = {
  */
 export const PROMPT_VERSION = {
   medicalRecordGeneration: 'v1.0',
-  voiceIntentRecognition: 'v2.2',
+  voiceIntentRecognition: 'v3.0',
   voiceIntentRepair: 'v1.0',
   riskAnalysis: 'v1.0',
   diagnosisRecommendation: 'v1.0',
@@ -1982,6 +2088,7 @@ export const PROMPT_VERSION = {
   treatmentRecommendation: 'v2.3',
   examinationRecommendation: 'v1.0',
   labTestRecommendation: 'v1.0',
+  auxiliaryCatalogRecommendation: 'v1.1',
   procedureRecommendation: 'v1.1',
   unifiedTreatmentPlanRecommendation: 'v1.2',
   chatAssistant: 'v1.0',
@@ -2014,6 +2121,7 @@ export const PROMPTS = {
     tcmTreatmentRecommendation: TCMTreatmentRecommendationPrompt,
     examinationRecommendation: ExaminationRecommendationPrompt,
     labTestRecommendation: LabTestRecommendationPrompt,
+    auxiliaryCatalogRecommendation: AuxiliaryCatalogRecommendationPrompt,
     procedureRecommendation: ProcedureRecommendationPrompt,
     unifiedTreatmentPlanRecommendation: UnifiedTreatmentPlanRecommendationPrompt
   },

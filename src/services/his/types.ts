@@ -276,6 +276,11 @@ export interface MedicalItemCatalogEntry {
   /** 项目分类（检查 / 检验 / 处置 等） */
   category?: string;
   keywords?: string[] | string;
+  /** 当前机构价格，仅用于目录展示与推荐排序，不作为收费结算依据。 */
+  unitPrice?: number;
+  /** 免费专项、特定人群等不能作为通用首选的受限项目。 */
+  restricted?: boolean;
+  restrictionReason?: string;
   /** 厂商透传 */
   raw?: Record<string, unknown>;
 }

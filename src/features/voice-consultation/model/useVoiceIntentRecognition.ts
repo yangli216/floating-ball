@@ -6,14 +6,14 @@
  */
 
 import { ref } from 'vue';
-import { chat, type ChatMessage } from '@/services/llm';
+import { chat, chatStream, type ChatMessage } from '@/services/llm';
 import { isTestModeEnabled } from '@/services/aliyunSpeech';
 import { medicalDataService } from '@/services/medicalData';
 import {
-  alignMedicineRecommendationsToInventory,
   buildOutpatientRecord,
+  assessTreatmentCatalogMatch,
   extractLLMJsonCandidate,
-  loadAvailableMedicineInventoryContext,
+  type ClinicalResultGenerationSection,
   type ClinicalResultInput,
   type ClinicalResultMatchedDiagnosis,
   type ClinicalResultMatchedTreatment,
@@ -23,10 +23,18 @@ import {
   withOverride,
   type VoiceExtractionResult,
   type VoiceRecordDraft,
+  type VoiceRecommendationPlan,
+  type VoiceRecommendationType,
   type TreatmentHint,
   type DiagnosisHint,
 } from '@/prompts';
 import { trackError } from '@/services/operationTracker';
+import {
+  applyVoiceIntentStreamEvent,
+  createVoiceIntentStreamAccumulator,
+  createVoiceIntentStreamParser,
+} from './voiceIntentStream';
+import { resolveExplicitTreatmentCatalogHints } from './explicitTreatmentCatalogResolver';
 
 /** Mock 模式下缓存的意图识别结果，避免重复调用 LLM */
 let cachedTestModeTranscript = '';
@@ -40,8 +48,14 @@ interface NormalizedVoiceExtractionResult {
   recordDraft: VoiceRecordDraft;
   diagnosisHints: DiagnosisHint[];
   treatmentHints: TreatmentHint[];
+  recommendationPlan: VoiceRecommendationPlan;
   error: boolean;
   message?: string;
+}
+
+export interface VoiceIntentProgress {
+  result: VoiceIntentResult;
+  readySections: ClinicalResultGenerationSection[];
 }
 
 interface VoiceIntentDebugSnapshot {
@@ -234,6 +248,12 @@ function normalizeTreatmentHints(hints: TreatmentHint[] | undefined): TreatmentH
   return hints
     .map((hint) => {
       const legacyHint = hint as TreatmentHint & { specification?: unknown; count?: unknown };
+      const rawType = (hint as unknown as { type?: string })?.type;
+      const normalizedType = rawType === 'exam'
+        ? 'examination'
+        : rawType === 'lab_test'
+          ? 'labTest'
+          : hint?.type;
       const rawDosage = getText(hint?.dosage);
       const rawDosageUnit = getText(hint?.dosageUnit);
       const dosageParts = rawDosageUnit
@@ -248,6 +268,7 @@ function normalizeTreatmentHints(hints: TreatmentHint[] | undefined): TreatmentH
 
       return {
         ...hint,
+        type: normalizedType as TreatmentHint['type'],
         name: getText(hint?.name),
         aliases: getTextList((hint as TreatmentHint & { aliases?: unknown }).aliases)
           .map((item) => item.trim())
@@ -274,6 +295,53 @@ function normalizeTreatmentHints(hints: TreatmentHint[] | undefined): TreatmentH
       };
     })
     .filter((hint) => hint.name);
+}
+
+const RECOMMENDATION_TYPES: VoiceRecommendationType[] = ['medicine', 'exam', 'lab_test', 'procedure'];
+
+function normalizeRecommendationTypes(value: unknown): VoiceRecommendationType[] {
+  if (!Array.isArray(value)) return [];
+  return Array.from(new Set(value.filter(
+    (item): item is VoiceRecommendationType => RECOMMENDATION_TYPES.includes(item as VoiceRecommendationType),
+  )));
+}
+
+function normalizeRecommendationPlan(value: VoiceRecommendationPlan | undefined): VoiceRecommendationPlan {
+  const mode = value?.mode;
+  const normalizedMode = mode === 'diagnostic_first'
+    || mode === 'treatment_first'
+    || mode === 'parallel'
+    || mode === 'explicit_only'
+    || mode === 'urgent_referral'
+    ? mode
+    : 'parallel';
+  const confidence = value?.confidence === 'high' || value?.confidence === 'medium' || value?.confidence === 'low'
+    ? value.confidence
+    : 'low';
+  const requested = normalizeRecommendationTypes(value?.recommendNow);
+  const recommendNow = confidence === 'low' && normalizedMode !== 'explicit_only' && normalizedMode !== 'urgent_referral'
+    ? [...RECOMMENDATION_TYPES]
+    : requested;
+
+  return {
+    mode: normalizedMode,
+    recommendNow,
+    defer: normalizeRecommendationTypes(value?.defer),
+    skip: normalizeRecommendationTypes(value?.skip),
+    reason: getText(value?.reason),
+    resumeCondition: value?.resumeCondition === 'report_available' || value?.resumeCondition === 'doctor_request'
+      ? value.resumeCondition
+      : '',
+    confidence,
+  };
+}
+
+function mapRecommendationTypeToClinicalType(
+  type: VoiceRecommendationType,
+): 'medicine' | 'examination' | 'labTest' | 'procedure' {
+  if (type === 'exam') return 'examination';
+  if (type === 'lab_test') return 'labTest';
+  return type;
 }
 
 function normalizeSentence(value: string): string {
@@ -371,10 +439,16 @@ function normalizeVoiceExtraction(parsed: VoiceExtractionResult): NormalizedVoic
     recordDraft.negativeSymptoms || [],
   );
 
+  const explicitHints = normalizeTreatmentHints(
+    parsed.explicitTreatmentHints
+      || parsed.treatmentHints?.filter((hint) => hint?.sourceType !== 'inferred' && hint?.sourceType !== 'uncertain'),
+  ).map((hint) => ({ ...hint, sourceType: 'explicit' as const }));
+
   return {
     recordDraft,
     diagnosisHints: normalizeDiagnosisHints(parsed.diagnosisHints),
-    treatmentHints: normalizeTreatmentHints(parsed.treatmentHints),
+    treatmentHints: explicitHints,
+    recommendationPlan: normalizeRecommendationPlan(parsed.recommendationPlan),
     error: !!parsed.error,
     message: getText(parsed.message),
   };
@@ -448,25 +522,31 @@ function validateVoiceExtractionPayload(payload: unknown): string[] {
     });
   }
 
-  if (typeof record.treatmentHints !== 'undefined' && !Array.isArray(record.treatmentHints)) {
-    issues.push('字段 treatmentHints 必须是数组');
+  const treatmentHints = record.explicitTreatmentHints ?? record.treatmentHints;
+  if (typeof treatmentHints !== 'undefined' && !Array.isArray(treatmentHints)) {
+    issues.push('字段 explicitTreatmentHints 必须是数组');
   }
 
-  if (Array.isArray(record.treatmentHints)) {
-    record.treatmentHints.forEach((item, index) => {
+  if (Array.isArray(treatmentHints)) {
+    treatmentHints.forEach((item, index) => {
       if (!item || typeof item !== 'object' || Array.isArray(item)) {
-        issues.push(`treatmentHints[${index}] 必须是对象`);
+        issues.push(`explicitTreatmentHints[${index}] 必须是对象`);
         return;
       }
 
       const treatmentItem = item as Record<string, unknown>;
       if (typeof treatmentItem.type !== 'string') {
-        issues.push(`treatmentHints[${index}].type 必须是 string`);
+        issues.push(`explicitTreatmentHints[${index}].type 必须是 string`);
       }
       if (typeof treatmentItem.name !== 'string') {
-        issues.push(`treatmentHints[${index}].name 必须是 string`);
+        issues.push(`explicitTreatmentHints[${index}].name 必须是 string`);
       }
     });
+  }
+
+  if (typeof record.recommendationPlan !== 'undefined'
+    && (!record.recommendationPlan || typeof record.recommendationPlan !== 'object' || Array.isArray(record.recommendationPlan))) {
+    issues.push('字段 recommendationPlan 必须是对象');
   }
 
   return issues;
@@ -576,6 +656,82 @@ export function useVoiceIntentRecognition() {
     return rawTranscripts.value.join('\n');
   }
 
+  function buildIntentResult(
+    normalizedExtraction: NormalizedVoiceExtractionResult,
+    generationStatus: 'streaming' | 'complete',
+    readySections: ClinicalResultGenerationSection[] = [],
+    resolvedTreatments?: MatchedTreatment[],
+  ): {
+    intentResult: VoiceIntentResult;
+    matchedDiagnoses: MatchedDiagnosis[];
+    matchedTreatments: MatchedTreatment[];
+    segregatedTreatments: TreatmentSegregationResult;
+  } {
+    const matchedDiagnoses = normalizedExtraction.diagnosisHints.map((hint) => matchDiagnosisHint(hint));
+    const matchedTreatments = resolvedTreatments
+      || normalizedExtraction.treatmentHints.map((hint) => matchTreatmentHint(hint));
+    const segregatedTreatments = segregateTreatmentHints(matchedTreatments);
+    const currentMedicationHistory = mergeNarrative(
+      normalizedExtraction.recordDraft.currentMedicationHistory || '无特殊',
+      segregatedTreatments.historicalMedicationNotes,
+    );
+    const pastMedicalHistory = composePastMedicalHistory({
+      ...normalizedExtraction.recordDraft,
+      currentMedicationHistory,
+    });
+    const familyHistory = normalizedExtraction.recordDraft.familyHistory || '无特殊';
+    const plan = normalizedExtraction.recommendationPlan;
+    const autoFetchTreatments = plan.mode !== 'explicit_only' && plan.mode !== 'urgent_referral';
+
+    const intentResult: VoiceIntentResult = {
+      chiefComplaint: normalizedExtraction.recordDraft.chiefComplaint,
+      historyOfPresentIllness: normalizedExtraction.recordDraft.historyOfPresentIllness,
+      pastMedicalHistory,
+      allergyHistory: normalizedExtraction.recordDraft.allergyHistory || '无特殊',
+      currentMedicationHistory,
+      familyHistory,
+      symptoms: normalizedExtraction.recordDraft.symptoms || [],
+      negativeSymptoms: normalizedExtraction.recordDraft.negativeSymptoms || [],
+      diagnoses: matchedDiagnoses,
+      // 流式 explicit_orders 尚未完成院内目录解析，提前展示会在最终解析及
+      // M2 推荐返回时造成治疗列表二次加载；病历与诊断仍保持渐进呈现。
+      treatments: generationStatus === 'streaming' ? [] : segregatedTreatments.currentTreatments,
+      treatmentPlan: mergeNarrative(
+        normalizedExtraction.recordDraft.treatmentPlan || '',
+        segregatedTreatments.deferredPlanNotes,
+      ),
+      healthEducation: normalizedExtraction.recordDraft.healthEducation || '',
+      outpatientRecord: buildOutpatientRecord({
+        chiefComplaint: normalizedExtraction.recordDraft.chiefComplaint,
+        historyOfPresentIllness: normalizedExtraction.recordDraft.historyOfPresentIllness,
+        pastMedicalHistory,
+        familyHistory,
+        diagnosisNames: matchedDiagnoses.map((item) => item.name),
+      }),
+      recommendationPolicy: {
+        autoFetchTreatments: generationStatus === 'complete' && autoFetchTreatments,
+        allowTreatmentRefresh: plan.mode !== 'urgent_referral',
+        allowedTreatmentTypes: plan.recommendNow.map(mapRecommendationTypeToClinicalType),
+        plan: {
+          mode: plan.mode,
+          recommendNow: [...plan.recommendNow],
+          defer: [...(plan.defer || [])],
+          skip: [...(plan.skip || [])],
+          reason: plan.reason || '',
+          resumeCondition: plan.resumeCondition || '',
+          confidence: plan.confidence || 'low',
+        },
+      },
+      generation: {
+        status: generationStatus,
+        readySections: [...readySections],
+        message: generationStatus === 'streaming' ? '正在整理语音病历' : '',
+      },
+    };
+
+    return { intentResult, matchedDiagnoses, matchedTreatments, segregatedTreatments };
+  }
+
   async function processTranscript(
     transcribedText?: string,
     options?: {
@@ -586,6 +742,7 @@ export function useVoiceIntentRecognition() {
         currentMedicationHistory?: string | null;
       };
       consultationId?: string;
+      onProgress?: (progress: VoiceIntentProgress) => void;
     },
   ): Promise<VoiceIntentResult | null> {
     const text = transcribedText || getFullTranscript();
@@ -645,30 +802,20 @@ export function useVoiceIntentRecognition() {
       }
       const patientContextBlock = patientContextLines.length ? `\n${patientContextLines.join('\n')}` : '';
 
-      let medicineContextBlock = '';
-      let availableMedicineInventory: Awaited<ReturnType<typeof loadAvailableMedicineInventoryContext>>['items'] = [];
-      try {
-        const inventoryContext = await loadAvailableMedicineInventoryContext();
-        availableMedicineInventory = inventoryContext.items;
-        if (inventoryContext.promptContext) {
-          medicineContextBlock = `\n${inventoryContext.promptContext}`;
-        }
-      } catch (e) {
-        console.warn('[VoiceIntent] Failed to inject available medicine inventory context:', e);
-      }
-
       const recognitionPrompt = withOverride(
         'voiceIntentRecognition',
         PROMPTS.consultation.voiceIntentRecognition,
       ) as typeof PROMPTS.consultation.voiceIntentRecognition;
       const baseUserPrompt = recognitionPrompt.buildUserPrompt(text);
-      const userContent = `${baseUserPrompt}${patientContextBlock}${medicineContextBlock}${memoryBlock ? `\n${memoryBlock}` : ''}`;
+      const outputProtocolReminder = `
+【本次输出协议】请按 record_core、history_context、explicit_orders、diagnoses、recommendation_plan、record_extra、done 的顺序逐行输出 NDJSON。explicit_orders 只能包含医生明确医嘱；recommendation_plan 必须包含 mode、recommendNow、defer、skip、reason、resumeCondition、confidence。`;
+      const userContent = `${baseUserPrompt}${patientContextBlock}${memoryBlock ? `\n${memoryBlock}` : ''}${outputProtocolReminder}`;
       const messages: ChatMessage[] = [
         { role: 'system', content: recognitionPrompt.system },
         { role: 'user', content: userContent },
       ];
 
-      rawOutput = await chat(messages, undefined, undefined, undefined, {
+      const traceConfig = {
         traceContext: {
           scene: 'voice-intent-recognition',
           sourceModule: 'voice_intent',
@@ -677,63 +824,80 @@ export function useVoiceIntentRecognition() {
           title: '语音记录结构化抽取',
           consultationId: options?.consultationId,
         },
+      };
+      let streamAccumulator = createVoiceIntentStreamAccumulator();
+      let streamParser = createVoiceIntentStreamParser((event) => {
+        applyVoiceIntentStreamEvent(streamAccumulator, event);
+        if (!options?.onProgress || event.event === 'done') return;
+        const partialExtraction = normalizeVoiceExtraction(streamAccumulator.payload);
+        const partial = buildIntentResult(
+          partialExtraction,
+          'streaming',
+          streamAccumulator.readySections,
+        );
+        options.onProgress({
+          result: partial.intentResult,
+          readySections: [...streamAccumulator.readySections],
+        });
       });
-      const { payload: parsed, repairUsed } = await parseOrRepairVoiceExtraction(normalizedText, rawOutput, options?.consultationId);
+
+      try {
+        await chatStream(
+          messages,
+          (chunk) => {
+            rawOutput += chunk;
+            streamParser.push(chunk);
+          },
+          undefined,
+          undefined,
+          undefined,
+          traceConfig,
+        );
+      } catch (streamError) {
+        console.warn('[VoiceIntent] Streaming extraction failed, falling back to non-stream response', streamError);
+        rawOutput = await chat(messages, undefined, undefined, undefined, traceConfig);
+        streamAccumulator = createVoiceIntentStreamAccumulator();
+        streamParser = createVoiceIntentStreamParser((event) => {
+          applyVoiceIntentStreamEvent(streamAccumulator, event);
+        });
+        streamParser.push(rawOutput);
+      }
+      streamParser.flush();
+
+      let parsed: VoiceExtractionResult;
+      let repairUsed = false;
+      const hasRequiredStreamSections = ['record_core', 'diagnoses', 'recommendation_plan']
+        .every((section) => streamAccumulator.readySections.includes(section as ClinicalResultGenerationSection));
+      if (streamAccumulator.eventCount > 0 && hasRequiredStreamSections) {
+        parsed = streamAccumulator.payload;
+      } else {
+        const repaired = await parseOrRepairVoiceExtraction(normalizedText, rawOutput, options?.consultationId);
+        parsed = repaired.payload;
+        repairUsed = repaired.repairUsed;
+      }
       const normalizedExtraction = normalizeVoiceExtraction(parsed);
-      normalizedExtraction.treatmentHints = alignMedicineRecommendationsToInventory(
-        normalizedExtraction.treatmentHints,
-        availableMedicineInventory,
-      );
 
       if (normalizedExtraction.error) {
         processingError.value = normalizedExtraction.message || '无法识别有效的医疗内容';
         return null;
       }
 
-      // Step 2: 匹配诊断提示到诊断数据库
-      const matchedDiagnoses: MatchedDiagnosis[] = normalizedExtraction.diagnosisHints.map(
-        (hint) => matchDiagnosisHint(hint)
+      const resolvedTreatments = await resolveExplicitTreatmentCatalogHints(
+        normalizedExtraction.treatmentHints,
+        options?.consultationId,
       );
-
-      // Step 3: 匹配治疗方案提示到医疗数据库
-      const matchedTreatments: MatchedTreatment[] = normalizedExtraction.treatmentHints.map(
-        (hint) => matchTreatmentHint(hint)
+      const built = buildIntentResult(
+        normalizedExtraction,
+        'complete',
+        streamAccumulator.readySections,
+        resolvedTreatments,
       );
-      const segregatedTreatments = segregateTreatmentHints(matchedTreatments);
-      const currentMedicationHistory = mergeNarrative(
-        normalizedExtraction.recordDraft.currentMedicationHistory || '无特殊',
-        segregatedTreatments.historicalMedicationNotes,
-      );
-      const pastMedicalHistory = composePastMedicalHistory({
-        ...normalizedExtraction.recordDraft,
-        currentMedicationHistory,
-      });
-      const familyHistory = normalizedExtraction.recordDraft.familyHistory || '无特殊';
-
-      const intentResult: VoiceIntentResult = {
-        chiefComplaint: normalizedExtraction.recordDraft.chiefComplaint,
-        historyOfPresentIllness: normalizedExtraction.recordDraft.historyOfPresentIllness,
-        pastMedicalHistory,
-        allergyHistory: normalizedExtraction.recordDraft.allergyHistory || '无特殊',
-        currentMedicationHistory,
-        familyHistory,
-        symptoms: normalizedExtraction.recordDraft.symptoms || [],
-        negativeSymptoms: normalizedExtraction.recordDraft.negativeSymptoms || [],
-        diagnoses: matchedDiagnoses,
-        treatments: segregatedTreatments.currentTreatments,
-        treatmentPlan: mergeNarrative(
-          normalizedExtraction.recordDraft.treatmentPlan || '',
-          segregatedTreatments.deferredPlanNotes,
-        ),
-        healthEducation: normalizedExtraction.recordDraft.healthEducation || '',
-        outpatientRecord: buildOutpatientRecord({
-          chiefComplaint: normalizedExtraction.recordDraft.chiefComplaint,
-          historyOfPresentIllness: normalizedExtraction.recordDraft.historyOfPresentIllness,
-          pastMedicalHistory,
-          familyHistory,
-          diagnosisNames: matchedDiagnoses.map((item) => item.name),
-        }),
-      };
+      const {
+        intentResult,
+        matchedDiagnoses,
+        matchedTreatments,
+        segregatedTreatments,
+      } = built;
 
       result.value = intentResult;
 
@@ -786,87 +950,9 @@ export function useVoiceIntentRecognition() {
   }
 
   function matchTreatmentHint(hint: TreatmentHint): MatchedTreatment {
-    let matchedItem: MatchedTreatment['matchedItem'] = null;
-
-    switch (hint.type) {
-      case 'medicine': {
-        const medicine = medicalDataService.matchMedicine(hint.name, hint.aliases);
-        if (medicine) {
-          matchedItem = {
-            id: medicine.id,
-            name: medicine.name,
-            spec: medicine.spec,
-            idSrv: medicine.idSrv,
-            naSrv: medicine.naSrv,
-            sdSrv: medicine.sdSrv,
-            idDeptExec: medicine.idDeptExec,
-            fgCheckOrd: medicine.fgCheckOrd,
-            fgSkintest: medicine.fgSkintest,
-            raw: medicine.raw,
-          };
-        }
-        break;
-      }
-      case 'examination': {
-        const item = medicalDataService.matchExamItem(hint.name, hint.aliases);
-        if (item) {
-          matchedItem = {
-            id: item.id,
-            name: item.name,
-            code: item.code,
-            idSrv: item.idSrv,
-            naSrv: item.naSrv,
-            sdSrv: item.sdSrv,
-            idDeptExec: item.idDeptExec,
-            idPart: item.idPart,
-            jsonField: item.jsonField,
-            fgCheckOrd: item.fgCheckOrd,
-            raw: item.raw,
-          };
-        }
-        break;
-      }
-      case 'labTest': {
-        const item = medicalDataService.matchLabTestItem(hint.name, hint.aliases);
-        if (item) {
-          matchedItem = {
-            id: item.id,
-            name: item.name,
-            code: item.code,
-            idSrv: item.idSrv,
-            naSrv: item.naSrv,
-            sdSrv: item.sdSrv,
-            idDeptExec: item.idDeptExec,
-            idPart: item.idPart,
-            jsonField: item.jsonField,
-            fgCheckOrd: item.fgCheckOrd,
-            raw: item.raw,
-          };
-        }
-        break;
-      }
-      case 'procedure': {
-        const item = medicalDataService.matchProcedureItem(hint.name, hint.aliases);
-        if (item) {
-          matchedItem = {
-            id: item.id,
-            name: item.name,
-            code: item.code,
-            idSrv: item.idSrv,
-            naSrv: item.naSrv,
-            sdSrv: item.sdSrv,
-            idDeptExec: item.idDeptExec,
-            idPart: item.idPart,
-            jsonField: item.jsonField,
-            fgCheckOrd: item.fgCheckOrd,
-            raw: item.raw,
-          };
-        }
-        break;
-      }
-    }
-
-    return { ...hint, matchedItem };
+    const type = hint.type === 'examination' ? 'exam' : hint.type === 'labTest' ? 'lab_test' : hint.type;
+    const assessment = assessTreatmentCatalogMatch(type, hint.name, hint.aliases, hint.spec);
+    return { ...hint, matchedItem: assessment.matchedItem || null };
   }
 
   return {

@@ -10,7 +10,7 @@
  * @module composables/useVoiceConsultation
  */
 
-import { ref, type Ref } from 'vue';
+import { nextTick, ref, type Ref } from 'vue';
 import { invoke } from '@tauri-apps/api/core';
 import { trackClick, trackError, trackRecommendationAction } from '@services/operationTracker';
 import type { AppPatient } from '@/types/appState';
@@ -139,6 +139,43 @@ export function useVoiceConsultation(options: VoiceConsultationOptions) {
     clearVoiceConsultationCacheById(consultationId);
   }
 
+  function createStreamingClinicalResult(message = '正在整理语音病历'): ClinicalResultInput {
+    return {
+      chiefComplaint: '',
+      historyOfPresentIllness: '',
+      pastMedicalHistory: '',
+      allergyHistory: '',
+      currentMedicationHistory: '',
+      familyHistory: '',
+      symptoms: [],
+      negativeSymptoms: [],
+      diagnoses: [],
+      treatments: [],
+      treatmentPlan: '',
+      healthEducation: '',
+      recommendationPolicy: {
+        autoFetchTreatments: false,
+        allowTreatmentRefresh: false,
+        allowedTreatmentTypes: [],
+      },
+      generation: {
+        status: 'streaming',
+        readySections: [],
+        message,
+      },
+    };
+  }
+
+  async function openStreamingClinicalResult(): Promise<void> {
+    intentSource.value = 'llm';
+    intentResult.value = createStreamingClinicalResult();
+    try {
+      await openVoiceConsultation();
+    } catch (error) {
+      console.error('[VoiceConsultation] Failed to open streaming result page:', error);
+    }
+  }
+
   async function showClinicalResult(result: ClinicalResultInput, source: 'llm' | 'cache'): Promise<void> {
     intentSource.value = source;
     intentResult.value = cloneClinicalResultInput(result);
@@ -228,7 +265,6 @@ export function useVoiceConsultation(options: VoiceConsultationOptions) {
 
     const currentToken = processingToken + 1;
     processingToken = currentToken;
-    isProcessingVoice.value = true;
     try {
       const normalizedText = transcribedText.trim();
       const consultationId = resolveVoiceConsultationId(currentPatient.value);
@@ -256,6 +292,15 @@ export function useVoiceConsultation(options: VoiceConsultationOptions) {
         return;
       }
 
+      // 先进入共享结果页并展示分区骨架，后续 M1 流式事件逐块填充，避免医生停留在整页 loading。
+      await openStreamingClinicalResult();
+      // 必须等 voice-interaction 组件完成卸载后再切 processing。
+      // 否则 VoiceCapsule 的 processing watcher 会补发一次胶囊 resize transition，
+      // 与结果页导航竞争并把视图切回录音完成页。
+      await nextTick();
+      if (currentToken !== processingToken) return;
+      isProcessingVoice.value = true;
+
       intentRecognition.clearTranscripts();
       intentRecognition.addTranscript(transcribedText);
       const result = await intentRecognition.processTranscript(transcribedText, {
@@ -265,6 +310,11 @@ export function useVoiceConsultation(options: VoiceConsultationOptions) {
           pastMedicalHistory: getPatientContextPastMedicalHistory(currentPatient.value) || null,
           allergyHistory: getPatientContextAllergyHistory(currentPatient.value) || null,
           currentMedicationHistory: getPatientContextCurrentMedicationHistory(currentPatient.value) || null,
+        },
+        onProgress: ({ result: partialResult }) => {
+          if (currentToken !== processingToken) return;
+          intentSource.value = 'llm';
+          intentResult.value = cloneClinicalResultInput(partialResult);
         },
       });
 
@@ -292,7 +342,8 @@ export function useVoiceConsultation(options: VoiceConsultationOptions) {
         intentResult: result,
         savedAt: Date.now(),
       });
-      await showClinicalResult(result, 'llm');
+      intentSource.value = 'llm';
+      intentResult.value = cloneClinicalResultInput(result);
 
       console.log('[VoiceConsultation] Intent recognition completed successfully');
     } catch (err: unknown) {

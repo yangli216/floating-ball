@@ -773,9 +773,9 @@ function getFeedbackSubmittedLabel(item: TreatmentRecommendation): string {
         :feedback-submitting="isFeedbackSubmitting(item)"
         :feedback-submitted-label="getFeedbackSubmittedLabel(item)"
         :show-feedback="showFeedback"
-        :show-manual-match-button="!item.matchedItem"
-        :manual-match-title="isManualMatchOpen(item) ? '收起手动匹配' : '手动匹配标准库项目'"
-        :manual-match-button-text="isManualMatchOpen(item) ? '收起匹配' : '手动匹配'"
+        :show-manual-match-button="true"
+        :manual-match-title="isManualMatchOpen(item) ? '收起目录选择' : item.matchedItem ? '重新选择标准目录项目' : '手动匹配标准目录项目'"
+        :manual-match-button-text="isManualMatchOpen(item) ? '收起匹配' : item.matchedItem ? '调整匹配' : '手动匹配'"
         :show-editor-toggle="shouldShowEditorToggle(item)"
         :editor-expanded="isTreatmentEditorExpanded(item)"
         :layout-variant="layoutVariant"
@@ -832,8 +832,9 @@ function getFeedbackSubmittedLabel(item: TreatmentRecommendation): string {
 
         <template #manual-match>
           <ManualMatchPicker
-            v-if="!item.matchedItem && isManualMatchOpen(item)"
+            v-if="isManualMatchOpen(item)"
             :title="getManualMatchTitle(section.title)"
+            :description="item.matchedItem ? '当前已匹配，可重新选择；更换后将重新校验执行科室和检查部位' : '匹配成功后才可纳入本次回写'"
             :keyword="getManualMatchKeyword(item)"
             :candidates="getManualMatchCandidates(item)"
             @update:keyword="emit('updateManualMatchKeyword', item, $event)"
