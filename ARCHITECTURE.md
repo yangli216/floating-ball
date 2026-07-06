@@ -34,7 +34,7 @@
 补充说明：
 
 1. 当前真实运行契约以 `src-tauri/src/http_server.rs` + `api.md` 为准。
-2. `docs/regionalization/*.md` 仍然保留，但属于未来区域化改造设计稿，不代表当前运行态。
+2. 旧区域化改造草案已归档，不代表当前运行态；远端 `/v1/*` 契约以 `floating-ball-server/API.md`、真实调用代码和签名实现为准。
 
 ### 设计原则
 
@@ -143,7 +143,7 @@
 2.4 区域化签名时间戳使用 epoch 毫秒。`requestSigner.ts` 会根据 `/v1/*` 响应体顶层 `timestamp` 维护“本机到服务端”的时钟偏移；遇到 `SIG-401` 且响应带服务端时间时，HTTP/SSE 请求会刷新偏移后重签重试一次，避免桌面端系统时间与后台服务器相差超过 5 分钟时阻断诊断推荐。
 2.5 区域化客户端版本升级、WebView 存储域变化或本地签名密钥重建时，桌面端仍以同机构同 `cdDevice` 调用 `POST /v1/client/register`；若本地仍持有旧 `deviceToken`，注册请求会携带该令牌作为同终端证明，后台负责更新设备公钥并返回设备令牌，桌面端不应因同设备码已存在而提示医生手工更新密钥。
 3. HIS 联调通过本地 HTTP Bridge 完成，不依赖独立登录态。
-4. `docs/regionalization/*.md` 中关于 `auth.ts`、`AuthGate.vue` 的更完整登录态设计仍未进入当前实现。
+4. 归档旧区域化草案中的独立登录态设想未进入当前实现；恢复登录态能力必须重新补架构、API 和数据迁移文档。
 
 ### 前端分层设计
 
@@ -1097,14 +1097,12 @@ floating-ball 保持当前问诊页面展开，并在同一运行期内更新页
 
 ---
 
-### 1.1 区域化实时事件流（规划中，当前未启用）
+### 1.1 区域化实时事件流（历史草案已归档）
 
 ```
-docs/regionalization/*.md
-    ↓
-未来新增 realtime client / auth / ack 机制
-    ↓
-当前代码库尚未实现
+旧 realtime client / auth / ack 草案已经归档
+当前代码库尚未实现该事件流
+若恢复该能力，必须以 floating-ball-server/API.md 和真实调用代码重新定义契约
 ```
 
 ---
