@@ -242,7 +242,7 @@ export const VoiceIntentRecognitionPrompt = {
     "symptoms": ["症状1", "症状2"],
     "negativeSymptoms": ["症状1", "症状2"],
     "treatmentPlan": "其他处理意见，没有则空字符串",
-    "healthEducation": "健康宣教，没有则空字符串"
+    "healthEducation": "针对性的健康宣教/处方内容（根据患者诊断及病情定制个性化饮食、调养、用药注意事项等建议，忌假大空套话），没有则空字符串"
   },
   "diagnosisHints": [
     {
@@ -350,7 +350,8 @@ export const VoiceIntentRecognitionPrompt = {
   - 医生明确要求只按其医嘱执行、不需要AI补充时，mode=explicit_only，recommendNow 为空。
   - 有明确急危重症或需要立即转诊的高风险时，mode=urgent_referral，recommendNow 为空；但这只是路由提示，不能删除医生明确医嘱。
   - 只有高置信度时才可通过 defer/skip 抑制某类推荐；信心不足时 confidence=low 并使用 parallel。
-19. 除 error/message 外，其余字段尽量补全；实在没有内容时，字符串字段给空字符串，数组字段给空数组。`,
+19. 除 error/message 外，其余字段尽量补全；实在没有内容时，字符串字段给空字符串，数组字段给空数组。
+20. healthEducation（健康宣教/健康处方）必须根据患者的具体诊断和病情，给出极其专业且针对性的生活调养、饮食禁忌、运动限制或服药注意事项等个性化健康处方内容，严禁使用通用的“注意休息、多喝热水、必要时复诊”等套话。`,
 
   buildUserPrompt(transcribedText: string): string {
     return `医患对话内容：\n${transcribedText}`;

@@ -64,6 +64,48 @@ describe('outpatientRecord', () => {
       expect.objectContaining({ severity: 'warning', field: 'physicalExam' }),
     ]));
   });
+
+  it('generates customized health prescriptions based on specific diagnoses', () => {
+    const record = buildOutpatientRecord({
+      chiefComplaint: '多饮多食多尿1个月',
+      historyOfPresentIllness: '患者1个月前出现多饮多食多尿，伴体重下降。',
+      diagnosisNames: ['II型糖尿病'],
+    });
+
+    expect(record.precautions).toContain('控制总热量摄入');
+    expect(record.precautions).toContain('每天监测血糖');
+  });
+
+  it('merges health prescriptions using round-robin logic and respects safety limits', () => {
+    const record = buildOutpatientRecord({
+      chiefComplaint: '头晕1周，伴口渴多饮',
+      historyOfPresentIllness: '患者既往高血压多年，最近出现口渴多饮。',
+      diagnosisNames: ['原发性高血压', 'II型糖尿病'],
+    });
+
+    // 验证高血压和糖尿病的两项最核心建议被合理提取
+    expect(record.precautions).toContain('少吃咸菜'); // 高血压第1项
+    expect(record.precautions).toContain('控制总热量摄入'); // 糖尿病第1项
+    expect(record.precautions).toContain('多吃新鲜蔬菜'); // 高血压第2项
+    expect(record.precautions).toContain('遵医嘱规律服药'); // 糖尿病第2项
+    
+    // 验证合并后的总条数限制（共6条）
+    const countMatches = (record.precautions.match(/\d\./g) || []).length;
+    expect(countMatches).toBe(6);
+  });
+
+  it('does not mismatch digestive advice due to negative gastrointestinal symptoms in history text when no digestive diagnosis exists', () => {
+    const record = buildOutpatientRecord({
+      chiefComplaint: '发热伴咽痛1天',
+      historyOfPresentIllness: '患者受凉后发热，伴咽痛。无流涕，无腹痛及腹泻。',
+      diagnosisNames: ['急性上呼吸道感染'],
+    });
+
+    // 应该只匹配到呼吸道感染的注意事项，不应该出现消化道的条款
+    expect(record.precautions).toContain('多喝温开水');
+    expect(record.precautions).not.toContain('胃肠药');
+    expect(record.precautions).not.toContain('电解质水');
+  });
 });
 
 describe('buildRecordConfirmedPayload outpatientRecord', () => {

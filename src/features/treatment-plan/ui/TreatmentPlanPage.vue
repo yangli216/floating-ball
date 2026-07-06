@@ -8,10 +8,15 @@ import type { Diagnosis, TreatmentRecommendation } from '@/types/consultation';
 import { getHisAdapter } from '@/services/his';
 import { medicalDataService } from '@/services/medicalData';
 import { trackTreatmentMatchPreference } from '@/services/recommendationPreferenceTracker';
+import {
+  buildConsultationUserLogSnapshot,
+  submitConsultationUserLog,
+} from '@/services/consultationUserLog';
 import { getPatientContextAnchorId } from '@/utils/patientContext';
 import { formatUserFacingError } from '@shared/lib/errorMessages';
 import {
   useBodySiteOptions,
+  useClinicalResultUserLogController,
   useMedicineFieldEditing,
   useMedicineUsageSearch,
   useManualMatchState,
@@ -68,6 +73,7 @@ const showToast = inject<((msg: string, type?: 'success' | 'error' | 'info') => 
 
 const currentDiagnosis = ref<Diagnosis | null>(null);
 const treatments = ref<TreatmentRecommendation[]>([]);
+const reportConsultationRoundId = ref(crypto.randomUUID());
 
 const dictionaries = useMedicalDictionaries();
 const {
@@ -227,7 +233,7 @@ const writeback = useTreatmentPlanWriteback({
   hasRequiredPharmacy: treatmentGates.hasRequiredPharmacy,
   hasRequiredExecDept: treatmentGates.hasRequiredExecDept,
   hasRequiredBodySite: treatmentGates.hasRequiredBodySite,
-  onWritebackSuccess: () => emit('close'),
+  onWritebackSuccess: handleWritebackSuccess,
   notify: (message, type) => showToast?.(message, type),
 });
 
@@ -243,6 +249,21 @@ const planSubtitle = computed(() => {
     return '基于左侧本次病历和已出报告生成，勾选后可一键回写到 PHIS。';
   }
   return '勾选需要同步到 PHIS 的处置项目，一键回写会按所选项生成诊断和医嘱清单。';
+});
+const reportConsultationUserLog = useClinicalResultUserLogController({
+  consultationId: computed(() => getPatientContextAnchorId(props.patient || null) || ''),
+  consultationRoundId: reportConsultationRoundId,
+  consultationType: 'report_consultation',
+  patient: computed(() => props.patient || null),
+  buildSnapshot: () => buildConsultationUserLogSnapshot({
+    chiefComplaint: recommendations.recordContext.value.chiefComplaint,
+    historyOfPresentIllness: recommendations.recordContext.value.historyOfPresentIllness,
+    diagnoses: currentDiagnosis.value ? [currentDiagnosis.value] : [],
+    selectedDiagnosis: currentDiagnosis.value,
+    treatments: treatments.value,
+  }),
+  submit: submitConsultationUserLog,
+  includeChangeSummary: true,
 });
 const missingPlanContextText = computed(() => {
   if (isFollowUpMode.value) {
@@ -318,6 +339,9 @@ async function refreshRecommendations(): Promise<void> {
     await treatmentHydration.hydrateMatchedMedicalItemDetails(
       treatments.value.filter((item) => item.type !== 'medicine'),
     );
+    if (isFollowUpMode.value && !reportConsultationUserLog.firstUserLogSnapshot.value) {
+      reportConsultationUserLog.submitGeneratedUserLog();
+    }
   } catch (error) {
     console.error('[TreatmentPlan] refresh failed', error);
     showToast?.(formatUserFacingError(error, {
@@ -325,6 +349,20 @@ async function refreshRecommendations(): Promise<void> {
       fallback: '请稍后重试。',
     }), 'error');
   }
+}
+
+function handleWritebackSuccess(): void {
+  if (isFollowUpMode.value) {
+    reportConsultationUserLog.submitFinalUserLog();
+  }
+  emit('close');
+}
+
+async function handleClose(): Promise<void> {
+  if (isFollowUpMode.value) {
+    await reportConsultationUserLog.submitAbandonedUserLog();
+  }
+  emit('close');
 }
 
 function requiresManualMatchBeforeSelect(item: TreatmentRecommendation): boolean {
@@ -866,7 +904,7 @@ onMounted(() => {
         <span>{{ selectedCount }} 项已选</span>
       </div>
       <div class="footer-actions">
-        <button class="secondary-btn" @click="emit('close')">放弃</button>
+        <button class="secondary-btn" @click="handleClose">放弃</button>
         <button
           class="primary-btn"
           :disabled="!canSubmit"

@@ -252,7 +252,7 @@ export async function generateChronicRefillRecord(
           '目标剂量只写targetDose/targetDoseUnit，例如500mg写为targetDose="500"、targetDoseUnit="mg"；dosage/dosageUnit必须留空，由程序结合PHIS药品详情换算。frequencyKey优先使用QD/BID/TID/QID，routeKey口服优先使用PO。',
           'days、totalQty、totalUnit必须留空；用药天数只允许程序沿用可靠关联的历史处方，包装总量由程序根据最终一次剂量、频次、天数和库存包装规格计算并校验库存。',
           'reason只说明诊断、历史用药和适应证等临床推荐依据，不得复述或计算单次剂量、频次、疗程、总量和包装数量。',
-          'healthEducation只写规律用药、相关指标监测、已知药物不良反应和合理复诊条件；无明确依据时不得写“注意休息”“1周内复诊”或“必要时上级医院进一步治疗”。',
+          'healthEducation必须针对患者的具体慢性病诊断和病情，给出具体的规律用药注意事项、自我指标监测、饮食调养和复诊条件等个性化健康处方，严禁写入通用的“注意休息”、“1周内复诊”或“必要时上级医院进一步治疗”。',
           '只返回 JSON 对象。',
         ].join('\n'),
       },

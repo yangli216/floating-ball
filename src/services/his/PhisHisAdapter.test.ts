@@ -13,7 +13,7 @@ describe('PhisHisAdapter.fetchPatientHistory', () => {
         idDeptText: '全科门诊',
       }]),
       loadClinicMedicalRecord: vi.fn().mockResolvedValue({
-        diagList: [{ naDiag: '2型糖尿病' }],
+        diagList: [{ naDiag: '2型糖尿病', cdIcd10: 'E11.900' }],
         orderList: [
           {
             idOrd: 'order-acarbose',
@@ -135,6 +135,8 @@ describe('PhisHisAdapter.fetchPatientHistory', () => {
     expect(history?.visits?.[0]).toMatchObject({
       visitId: 'visit-1',
       deptName: '全科门诊',
+      diagnoses: ['2型糖尿病'],
+      diagnosisEntries: [{ name: '2型糖尿病', code: 'E11.900' }],
       reportedApplications: [{
         applicationId: 'apply-1',
         applicationGroupId: 'apply-group-1',

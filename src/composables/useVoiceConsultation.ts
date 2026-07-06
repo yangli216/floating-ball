@@ -191,6 +191,8 @@ export function useVoiceConsultation(options: VoiceConsultationOptions) {
 
   async function showGeneratedClinicalResult(result: ClinicalResultInput): Promise<void> {
     resetVoiceSessionState();
+    // 慢病配药等非语音场景同样复用共享结果页，需要独立轮次聚合首版、回写和放弃日志。
+    consultationRoundId.value = crypto.randomUUID();
     await showClinicalResult(result, 'llm');
   }
 

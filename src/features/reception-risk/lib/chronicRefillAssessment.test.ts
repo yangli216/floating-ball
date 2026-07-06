@@ -208,6 +208,85 @@ describe('assessChronicRefillCandidate', () => {
     });
   });
 
+  it.each([
+    ['甲状腺功能亢进症', 'E05.900', '甲状腺功能亢进'],
+    ['前列腺增生症', 'N40.x00', '前列腺增生'],
+    ['骨质疏松症', 'M81.900', '骨质疏松'],
+    ['脑梗死后遗症', 'I69.300', '脑血管病后遗症'],
+  ])('recognizes common maintenance conditions beyond hypertension and diabetes: %s', (
+    diagnosis,
+    code,
+    group,
+  ) => {
+    const now = new Date('2026-06-25T08:00:00+08:00').getTime();
+    const result = assessChronicRefillCandidate(history([{
+      visitTime: now - 5 * DAY,
+      diagnosisEntries: [{ name: diagnosis, code }],
+    }]));
+
+    expect(result?.diagnosis).toBe(diagnosis);
+    expect(result?.diagnosisGroups).toEqual([group]);
+  });
+
+  it('uses the ICD code when the HIS diagnosis name is not one of the configured aliases', () => {
+    const now = new Date('2026-06-25T08:00:00+08:00').getTime();
+    const result = assessChronicRefillCandidate(history([{
+      visitTime: now - 5 * DAY,
+      diagnosisEntries: [{ name: '肾功能不全3期', code: 'N18.3' }],
+    }]));
+
+    expect(result?.diagnosis).toBe('肾功能不全3期');
+    expect(result?.diagnosisGroups).toEqual(['慢性肾脏病']);
+  });
+
+  it('accepts an explicit chronic diagnosis outside stable groups only with medication evidence', () => {
+    const now = new Date('2026-06-25T08:00:00+08:00').getTime();
+    const result = assessChronicRefillCandidate(history([{
+      visitTime: now - 5 * DAY,
+      diagnoses: ['慢性鼻窦炎'],
+      medications: ['糠酸莫米松鼻喷雾剂'],
+    }]));
+
+    expect(result?.diagnosis).toBe('慢性鼻窦炎');
+    expect(result?.diagnosisGroups).toEqual(['慢性鼻窦炎']);
+  });
+
+  it('does not use the generic chronic fallback without same-visit medication evidence', () => {
+    const now = new Date('2026-06-25T08:00:00+08:00').getTime();
+    const result = assessChronicRefillCandidate(history([{
+      visitTime: now - 5 * DAY,
+      diagnoses: ['慢性鼻窦炎'],
+    }]));
+
+    expect(result).toBeNull();
+  });
+
+  it.each([
+    '慢性粒细胞白血病',
+    '慢性乙肝病毒感染',
+    '陈旧性骨折术后',
+  ])('does not route excluded generic chronic wording into refill: %s', (diagnosis) => {
+    const now = new Date('2026-06-25T08:00:00+08:00').getTime();
+    const result = assessChronicRefillCandidate(history([{
+      visitTime: now - 5 * DAY,
+      diagnoses: [diagnosis],
+      medications: ['历史处方药品'],
+    }]));
+
+    expect(result).toBeNull();
+  });
+
+  it('rejects an acute exacerbation even when its ICD code belongs to a stable chronic group', () => {
+    const now = new Date('2026-06-25T08:00:00+08:00').getTime();
+    const result = assessChronicRefillCandidate(history([{
+      visitTime: now - 5 * DAY,
+      diagnosisEntries: [{ name: '支气管哮喘急性发作', code: 'J45.901' }],
+      medications: ['布地奈德福莫特罗吸入粉雾剂'],
+    }]));
+
+    expect(result).toBeNull();
+  });
+
   it('suppresses chronic refill when the current encounter is a report follow-up', () => {
     const now = new Date('2026-06-25T08:00:00+08:00').getTime();
     const result = assessChronicRefillCandidate(history([

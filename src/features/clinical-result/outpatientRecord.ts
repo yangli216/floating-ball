@@ -197,6 +197,105 @@ function buildPhysicalExam(
   }
 }
 
+interface HealthPrescriptionRule {
+  key: string;
+  name: string;
+  pattern: RegExp;
+  rules: string[];
+}
+
+const HEALTH_PRESCRIPTION_RULES: HealthPrescriptionRule[] = [
+  {
+    key: 'hypertension',
+    name: '高血压',
+    pattern: /高血压|血压高/u,
+    rules: [
+      '少吃咸菜、腌制食品，每日食盐量不超过5克。',
+      '多吃新鲜蔬菜、水果和豆类等富钾食物，少吃肥肉、动物内脏等高脂肪食物。',
+      '遵医嘱坚持长期药物治疗，不要自行停药或调整药物。',
+      '定期监测血压，复查血糖、血脂和肝肾功能。'
+    ]
+  },
+  {
+    key: 'diabetes',
+    name: '糖尿病',
+    pattern: /糖尿病|血糖高|糖耐量/u,
+    rules: [
+      '控制总热量摄入，少食多餐，多吃粗粮和蔬菜，限制精制糖和高糖水果。',
+      '遵医嘱规律服药或注射胰岛素，切勿擅自停药或更改剂量。',
+      '每天监测血糖，注意防范低血糖（随身携带糖果，出现心慌出冷汗时及时食用）。',
+      '注意足部清洁与防伤，保暖防燥，防止糖尿病足。',
+      '定期复查糖化血红蛋白、肾功能和眼底检查。'
+    ]
+  },
+  {
+    key: 'hyperlipidemia',
+    name: '高脂血症',
+    pattern: /高脂血症|血脂异常|高胆固醇|甘油三酯/u,
+    rules: [
+      '限制高胆固醇食物（蛋黄、动物内脏）和高脂肪食物的摄入，少吃油炸食品。',
+      '多吃富含膳食纤维的粗粮和蔬菜，坚持适度有氧运动（如快走、慢跑）。',
+      '遵医嘱规律服用调脂药，注意观察是否有肌肉酸痛等不良反应。',
+      '定期监测血脂、肝功能 and 肌酸激酶指标。'
+    ]
+  },
+  {
+    key: 'coronary_heart_disease',
+    name: '冠心病',
+    pattern: /冠心病|心肌缺血|心绞痛/u,
+    rules: [
+      '低盐低脂饮食，少食多餐，避免暴饮暴食和用力排便。',
+      '随身携带硝酸甘油等急救药品，注意防寒保暖，避免情绪激动。',
+      '遵医嘱规律服用抗血小板、降脂及改善心肌供血药物。',
+      '若出现胸痛、胸闷加重且休息或含服硝酸甘油不缓解，应立即就医。'
+    ]
+  },
+  {
+    key: 'gout',
+    name: '痛风',
+    pattern: /痛风|高尿酸/u,
+    rules: [
+      '严格限制饮酒（尤其是啤酒）及高糖饮料，每日饮水量保持在2000毫升以上。',
+      '限制高嘌呤食物的摄入（红肉、海鲜、动物内脏、浓肉汤）。',
+      '遵医嘱规律服用降尿酸药物，定期监测血尿酸和肾功能。',
+      '急性发作期注意患肢抬高休息，避免热敷和剧烈运动。'
+    ]
+  },
+  {
+    key: 'respiratory',
+    name: '呼吸道感染',
+    pattern: /感冒|上呼吸道感染|支气管炎|咳嗽|咽喉炎|扁桃体炎/u,
+    rules: [
+      '多喝温开水，保持室内空气流通和适宜的湿度。',
+      '饮食清淡易消化，保证充足睡眠和休息，避免过度劳累。',
+      '遵医嘱合理服药，若有开立抗生素需严格按医嘱足量足疗程。',
+      '注意观察体温和咳嗽情况，若持续高热超过3天或气促应及时复诊。'
+    ]
+  },
+  {
+    key: 'gastrointestinal',
+    name: '消化道疾病',
+    pattern: /胃肠炎|肠胃炎|腹泻|呕吐|胃痛|消化不良|胃炎/u,
+    rules: [
+      '饮食清淡易消化，急性期可食稀粥、面条，忌食生冷、油腻和辛辣刺激性食物。',
+      '适量补充温水或电解质水防止脱水，注意饮食卫生和餐具消毒。',
+      '遵医嘱规律服用胃肠药，切勿自行盲目使用止泻药或抗生素。',
+      '若出现精神萎靡、口渴尿少、大便带血或持续高热，应立即复诊。'
+    ]
+  },
+  {
+    key: 'orthopedic',
+    name: '关节及骨骼疾病',
+    pattern: /颈椎病|腰椎|骨关节炎|关节痛|骨质疏松/u,
+    rules: [
+      '避免长时间低头、久坐、久站，每45-60分钟起身活动，避免弯腰负重。',
+      '局部防寒保暖，使用高度适中的护颈枕，硬度适中的床垫。',
+      '急性期注意关节休息制动，缓解期在指导下进行康复锻炼。',
+      '遵医嘱服用消炎镇痛药物或贴敷膏药，必要时进行物理治疗。'
+    ]
+  }
+];
+
 function buildPrecautions(
   input: BuildOutpatientRecordInput,
   scenario: OutpatientRecordScenario,
@@ -207,8 +306,35 @@ function buildPrecautions(
   }
 
   const diagnosisNamesText = (input.diagnosisNames || []).join('、');
-  if (/高血压/u.test(diagnosisNamesText) || /高血压/u.test(joinedContext(input))) {
-    return '1.少吃咸菜、腌制食品，每日食盐量不超过5克。2.多吃新鲜蔬菜、水果和豆类等富钾食物。3.少吃肥肉、动物内脏、油炸食品等高脂肪食物。4.遵医嘱坚持长期药物治疗，不要自行停药或调整药物。5.定期复查血压、血糖、血脂等指标。';
+
+  const matchedRules: string[][] = [];
+  for (const rule of HEALTH_PRESCRIPTION_RULES) {
+    if (rule.pattern.test(diagnosisNamesText)) {
+      matchedRules.push(rule.rules);
+    }
+  }
+
+  if (matchedRules.length > 0) {
+    const combined: string[] = [];
+    const maxStatements = 6;
+    let round = 0;
+    while (combined.length < maxStatements) {
+      let addedInThisRound = false;
+      for (const rules of matchedRules) {
+        if (round < rules.length) {
+          combined.push(rules[round]);
+          addedInThisRound = true;
+          if (combined.length >= maxStatements) {
+            break;
+          }
+        }
+      }
+      if (!addedInThisRound) {
+        break;
+      }
+      round++;
+    }
+    return combined.map((text, index) => `${index + 1}.${text}`).join('');
   }
 
   switch (scenario) {

@@ -26,6 +26,11 @@ import {
   getPatientContextPastMedicalHistory,
 } from '../utils/patientContext';
 import { formatUserFacingError } from '@shared/lib/errorMessages';
+import {
+  buildConsultationSelectionSnapshot,
+  buildReportInterpretationUserLogSnapshot,
+  submitConsultationUserLog,
+} from './consultationUserLog';
 
 const REPORT_INTERPRETATION_WINDOW_LABEL = 'report-interpretation-window';
 const REPORT_INTERPRETATION_WINDOW_URL = 'index.html?window=report-interpretation';
@@ -899,6 +904,7 @@ export async function buildReportInterpretationPayload(
     },
   ];
 
+  let result: ReportInterpretationWindowPayload;
   try {
     const response = await withTimeout(
       chat(messages, undefined, undefined, undefined, {
@@ -915,11 +921,29 @@ export async function buildReportInterpretationPayload(
     );
 
     const parsed = extractJsonObject<ReportInterpretationLLMResponse>(response);
-    return sanitizeLLMResponse(request, parsed, fallback);
+    result = sanitizeLLMResponse(request, parsed, fallback);
   } catch (error) {
     console.warn('[ReportInterpretation] Falling back to local interpretation:', error);
-    return fallback;
+    result = fallback;
   }
+
+  const snapshot = buildReportInterpretationUserLogSnapshot(request, result);
+  void submitConsultationUserLog({
+    consultationId: request.patient?.visitId || request.patient?.patientId || request.requestId,
+    consultationRoundId: crypto.randomUUID(),
+    consultationType: 'report_interpretation',
+    patient: request.patient,
+    firstSnapshot: snapshot,
+    finalSnapshot: snapshot,
+    selectionSnapshot: buildConsultationSelectionSnapshot(snapshot),
+    changeSummary: {
+      totalChanges: 0,
+      recordFieldChanges: 0,
+      diagnosisChanges: 0,
+      treatmentChanges: 0,
+    },
+  });
+  return result;
 }
 
 async function ensureReportInterpretationWindow(): Promise<{ window: WebviewWindow; isNewWindow: boolean }> {

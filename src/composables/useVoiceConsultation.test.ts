@@ -80,4 +80,18 @@ describe('useVoiceConsultation result navigation ordering', () => {
     expect(api.isProcessingVoice.value).toBe(false);
     expect(api.intentResult.value?.chiefComplaint).toBe('咳嗽2天');
   });
+
+  it('creates a user-log round for a non-voice generated clinical result', async () => {
+    const api = useVoiceConsultation({
+      currentPatient: ref({ idPi: 'patient-1' } as never),
+      showToast: vi.fn(),
+      openVoiceConsultation: vi.fn(async () => undefined),
+      workMode: { exitWork: vi.fn(async () => undefined) },
+    });
+
+    await api.showGeneratedClinicalResult(result);
+
+    expect(api.consultationRoundId.value).toMatch(/[0-9a-f-]{36}/u);
+    expect(api.intentResult.value?.chiefComplaint).toBe('咳嗽2天');
+  });
 });

@@ -3,7 +3,7 @@ import { computed, toValue } from 'vue';
 import type { ClinicalResultChannel } from '@features/clinical-result';
 
 export type { ClinicalResultChannel } from '@features/clinical-result';
-export type ClinicalResultUserLogType = 'voice' | 'smart';
+export type ClinicalResultUserLogType = 'voice' | 'smart' | 'chronic_refill';
 
 export interface ClinicalResultPreferenceContext {
   consultationId: string;
@@ -61,7 +61,7 @@ const CHANNEL_PROFILES: Record<ClinicalResultChannel, ClinicalResultChannelProfi
     cancelDialogText: '放弃后将清空当前未提交的问诊结果，并退回小球状态。',
   },
   'chronic-refill': {
-    userLogType: 'smart',
+    userLogType: 'chronic_refill',
     useVoiceCache: false,
     preferenceSourceModule: 'chronic_refill_result',
     preferenceScenePrefix: 'chronic-refill',

@@ -2,6 +2,10 @@ import { getFeedbackActor } from './feedbackContext';
 import { buildRegionalSpeechUploadPayload, regionalPost } from './regionalClient';
 import type { Diagnosis, Patient, TreatmentRecommendation } from '../types/consultation';
 import type { AppPatient } from '../types/appState';
+import type {
+  ReportInterpretationResolvedRequest,
+  ReportInterpretationWindowPayload,
+} from '../types/reportInterpretation';
 import {
   getPatientContextAgeText,
   getPatientContextGenderText,
@@ -9,7 +13,27 @@ import {
   getPatientContextName,
 } from '../utils/patientContext';
 
-export type ConsultationUserLogType = 'voice' | 'smart';
+export type ConsultationUserLogType =
+  | 'voice'
+  | 'smart'
+  | 'chronic_refill'
+  | 'report_consultation'
+  | 'report_interpretation';
+
+export interface ReportInterpretationUserLogSnapshot {
+  scene: 'report_interpretation';
+  reportKindLabel: string;
+  reportTitle?: string;
+  reportItem?: string;
+  reportDate?: string;
+  sourceText: string;
+  summary: string;
+  conclusion: string;
+  abnormalItems: ReportInterpretationWindowPayload['abnormalItems'];
+  keyPoints: ReportInterpretationWindowPayload['keyPoints'];
+  recommendations: string[];
+  cautions: string[];
+}
 
 export interface ConsultationSnapshotItem {
   name: string;
@@ -33,6 +57,7 @@ export interface ConsultationUserLogSnapshot {
   examinations: ConsultationSnapshotItem[];
   labTests: ConsultationSnapshotItem[];
   procedures: ConsultationSnapshotItem[];
+  scenario?: ReportInterpretationUserLogSnapshot;
 }
 
 export interface ConsultationSelectionSnapshot {
@@ -62,7 +87,7 @@ interface SubmitConsultationUserLogInput {
   consultationId: string;
   consultationRoundId: string;
   consultationType: ConsultationUserLogType;
-  patient?: Patient | AppPatient | null;
+  patient?: Patient | AppPatient | ReportInterpretationResolvedRequest['patient'] | null;
   speech?: ConsultationSpeechLogInput;
   firstSnapshot?: ConsultationUserLogSnapshot;
   finalSnapshot?: ConsultationUserLogSnapshot;
@@ -89,7 +114,10 @@ function text(value: unknown): string {
   return '';
 }
 
-function patientValue(patient: Patient | AppPatient | null | undefined, keys: string[]): string {
+function patientValue(
+  patient: Patient | AppPatient | ReportInterpretationResolvedRequest['patient'] | null | undefined,
+  keys: string[],
+): string {
   const record = (patient || {}) as Record<string, unknown>;
   for (const key of keys) {
     const value = text(record[key]);
@@ -157,6 +185,35 @@ export function buildConsultationUserLogSnapshot(input: BuildSnapshotInput): Con
     examinations: examinations.map(normalizeTreatment),
     labTests: labTests.map(normalizeTreatment),
     procedures: procedures.map(normalizeTreatment),
+  };
+}
+
+export function buildReportInterpretationUserLogSnapshot(
+  request: ReportInterpretationResolvedRequest,
+  result: ReportInterpretationWindowPayload,
+): ConsultationUserLogSnapshot {
+  return {
+    chiefComplaint: request.patient?.chiefComplaint || '',
+    historyOfPresentIllness: request.patient?.historyOfPresentIllness || '',
+    diagnoses: request.patient?.diagnosis ? [{ name: request.patient.diagnosis, selected: true, primary: true }] : [],
+    medicines: [],
+    examinations: [],
+    labTests: [],
+    procedures: [],
+    scenario: {
+      scene: 'report_interpretation',
+      reportKindLabel: result.reportKindLabel,
+      reportTitle: result.reportMeta.reportTitle,
+      reportItem: result.reportMeta.reportItem,
+      reportDate: result.reportMeta.reportDate || result.reportMeta.resultTime,
+      sourceText: result.sourceQuery,
+      summary: result.summary,
+      conclusion: result.conclusion,
+      abnormalItems: result.abnormalItems,
+      keyPoints: result.keyPoints,
+      recommendations: result.recommendations,
+      cautions: result.cautions,
+    },
   };
 }
 
@@ -247,10 +304,9 @@ export function computeChangeSummary(
 export async function submitConsultationUserLog(input: SubmitConsultationUserLogInput): Promise<void> {
   if (!input.consultationId || !input.consultationRoundId) return;
 
-  const actor = getFeedbackActor();
-  const patient = input.patient;
-
   try {
+    const actor = getFeedbackActor();
+    const patient = input.patient;
     const speechPayload = input.speech?.audioBlob
       ? await buildRegionalSpeechUploadPayload(input.speech.audioBlob, {
         mimeType: input.speech.mimeType || input.speech.audioBlob.type || 'audio/wav',
@@ -267,7 +323,7 @@ export async function submitConsultationUserLog(input: SubmitConsultationUserLog
       consultationTime: Date.now(),
       patientId: getPatientContextId(patient as AppPatient) || patientValue(patient, ['idPi', 'patientId', 'id', 'idTet', 'idMpi']),
       patientName: getPatientContextName(patient as AppPatient) || patientValue(patient, ['naPi', 'patientName', 'name']),
-      patientGender: getPatientContextGenderText(patient as AppPatient) || patientValue(patient, ['sdSexText', 'gender', 'sdSex']),
+      patientGender: getPatientContextGenderText(patient as AppPatient) || patientValue(patient, ['sdSexText', 'genderText', 'gender', 'sdSex']),
       patientAge: getPatientContextAgeText(patient as AppPatient) || patientValue(patient, ['ageText', 'age', 'ageNum']),
       doctorId: actor.doctorId,
       doctorName: actor.doctorName,

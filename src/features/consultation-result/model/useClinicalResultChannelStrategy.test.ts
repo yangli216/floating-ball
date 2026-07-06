@@ -60,7 +60,7 @@ describe('useClinicalResultChannelStrategy', () => {
   it('uses dedicated chronic-refill tracking metadata without enabling voice cache', () => {
     const strategy = useClinicalResultChannelStrategy({ channel: 'chronic-refill' });
 
-    expect(strategy.userLogType.value).toBe('smart');
+    expect(strategy.userLogType.value).toBe('chronic_refill');
     expect(strategy.shouldUseVoiceCache.value).toBe(false);
     expect(strategy.cancelDialogTitle.value).toContain('配药结果');
     expect(strategy.buildPreferenceContext('consultation-3', 'writeback')).toEqual({

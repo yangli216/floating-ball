@@ -480,9 +480,21 @@ function mapVisitDetail(
   const chiefComplaint = trim((soap as Record<string, unknown>)['chiefComplaint'] as string | undefined);
   const presentIllness = trim((soap as Record<string, unknown>)['presentIllness'] as string | undefined);
 
-  const diagnoses = (detail.diagList ?? [])
-    .map((d) => trim(d.naDiag) ?? trim(d.naIcd10))
-    .filter((value): value is string => Boolean(value));
+  const diagnosisEntries = Array.from(new Map(
+    (detail.diagList ?? [])
+      .map((diagnosis) => {
+        const name = trim(diagnosis.naDiag) ?? trim(diagnosis.naIcd10);
+        if (!name) return null;
+        const code = trim(diagnosis.cdIcd10);
+        return {
+          name,
+          ...(code ? { code } : {}),
+        };
+      })
+      .filter((diagnosis): diagnosis is { name: string; code?: string } => Boolean(diagnosis))
+      .map((diagnosis) => [`${diagnosis.name}\u0000${diagnosis.code || ''}`, diagnosis]),
+  ).values());
+  const diagnoses = Array.from(new Set(diagnosisEntries.map((diagnosis) => diagnosis.name)));
 
   const medicationOrders = mapHistoricalMedications(detail);
   const medications = medicationOrders.map(formatHistoricalMedication);
@@ -506,6 +518,7 @@ function mapVisitDetail(
     chiefComplaint,
     presentIllness,
     diagnoses: diagnoses.length > 0 ? diagnoses : undefined,
+    diagnosisEntries: diagnosisEntries.length > 0 ? diagnosisEntries : undefined,
     medications: medications.length > 0 ? medications : undefined,
     medicationOrders: medicationOrders.length > 0 ? medicationOrders : undefined,
     reportedApplications: reportedApplications.length > 0 ? reportedApplications : undefined,

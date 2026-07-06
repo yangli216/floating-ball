@@ -26,7 +26,7 @@ const progress = computed(() => buildClinicalGenerationProgress({
 <template>
   <div v-if="progress.visible" class="generation-progress" role="status" aria-live="polite">
     <div class="generation-progress-heading">
-      <Icon icon="lucide:sparkles" size="16" aria-hidden="true" />
+      <Icon class="progress-sparkles-icon" icon="lucide:sparkles" size="16" aria-hidden="true" />
       <div>
         <strong>{{ progress.title }}</strong>
         <p>{{ progress.detail }}</p>
@@ -87,8 +87,34 @@ const progress = computed(() => buildClinicalGenerationProgress({
   display: block;
   height: 100%;
   border-radius: inherit;
-  background: linear-gradient(90deg, #4e82d5, #72a4ed);
+  background: linear-gradient(
+    45deg,
+    rgba(255, 255, 255, 0.15) 25%,
+    transparent 25%,
+    transparent 50%,
+    rgba(255, 255, 255, 0.15) 50%,
+    rgba(255, 255, 255, 0.15) 75%,
+    transparent 75%,
+    transparent
+  ), linear-gradient(90deg, #4e82d5, #72a4ed);
+  background-size: 20px 20px, 100% 100%;
+  animation: progress-bar-stripes 1s linear infinite;
   transition: width 240ms ease;
+}
+
+.progress-sparkles-icon {
+  animation: spin-and-pulse 2s linear infinite;
+}
+
+@keyframes progress-bar-stripes {
+  from { background-position: 0 0, 0 0; }
+  to { background-position: 20px 0, 0 0; }
+}
+
+@keyframes spin-and-pulse {
+  0% { transform: scale(1) rotate(0deg); opacity: 0.8; }
+  50% { transform: scale(1.15) rotate(180deg); opacity: 1; }
+  100% { transform: scale(1) rotate(360deg); opacity: 0.8; }
 }
 
 .generation-progress-steps { display: flex; flex-wrap: wrap; gap: 6px; }

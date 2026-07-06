@@ -327,6 +327,12 @@ export interface HisHistoricalMedication {
   raw?: Record<string, unknown>;
 }
 
+/** 历史门诊诊断的中性摘要；编码当前为 HIS 提供的 ICD-10。 */
+export interface HisHistoricalDiagnosis {
+  name: string;
+  code?: string;
+}
+
 export interface HisVisitRecord {
   /** 历史门诊就诊 ID，供后续按就诊加载报告正文。 */
   visitId?: string;
@@ -340,6 +346,8 @@ export interface HisVisitRecord {
   presentIllness?: string;
   /** 诊断列表文本 */
   diagnoses?: string[];
+  /** 同时保留临床名称与标准编码的历史诊断；业务识别优先消费此字段。 */
+  diagnosisEntries?: HisHistoricalDiagnosis[];
   /** 处方药品列表文本 */
   medications?: string[];
   /** 历史处方中的中性结构化药品属性。 */
