@@ -497,6 +497,7 @@ const {
   isTreatmentEditorExpanded,
   toggleTreatmentEditor,
   expandTreatmentEditor,
+  collapseTreatmentEditor,
   shouldShowTreatmentEditor,
   registerEditableFieldElement,
   isEditableFieldActive,
@@ -923,6 +924,7 @@ async function confirmSuggestedMatch(rec: TreatmentRecommendation, event?: Event
   }
 
   rec.selected = true;
+  collapseTreatmentEditor(rec);
   trackTreatmentMatchPreference(rec, 'confirm_match', buildPreferenceContext('treatment'));
 
   showToast?.(`${rec.name} 已确认匹配`, 'success');
@@ -946,6 +948,7 @@ async function applyManualMatch(rec: TreatmentRecommendation, candidate: ManualM
   }
 
   rec.selected = true;
+  collapseTreatmentEditor(rec);
   trackTreatmentMatchPreference(rec, 'manual_match', buildPreferenceContext('treatment'));
   closeManualMatch();
   showToast?.(`${candidate.name} 已完成标准库匹配`, 'success');
@@ -976,6 +979,9 @@ async function toggleTreatment(item: TreatmentRecommendation): Promise<void> {
   }
 
   item.selected = nextSelected;
+  if (nextSelected) {
+    collapseTreatmentEditor(item);
+  }
 }
 
 function focusFirstMissingMedicinePrimaryField(item: TreatmentRecommendation): void {
@@ -1878,6 +1884,13 @@ function selectPharmacyOption(rec: TreatmentRecommendation, option: TreatmentAtt
     void checkMedicineInventoryEnough(rec, true);
   }
   secondarySelector.closeAll();
+  if (rec.selected) {
+    void ensureTreatmentSelectable(rec, { hydrateNonMedicine: false }).then((selectable) => {
+      if (selectable) {
+        collapseTreatmentEditor(rec);
+      }
+    });
+  }
 }
 
 function clearPharmacySelection(rec: TreatmentRecommendation): void {
@@ -1922,6 +1935,13 @@ function selectExecDeptOption(rec: TreatmentRecommendation, option: TreatmentAtt
   rec.execDeptCleared = false;
   setExecDeptSearchKeyword(rec, option.text);
   secondarySelector.closeAll();
+  if (rec.selected) {
+    void ensureTreatmentSelectable(rec, { hydrateNonMedicine: false }).then((selectable) => {
+      if (selectable) {
+        collapseTreatmentEditor(rec);
+      }
+    });
+  }
 }
 
 function clearExecDeptSelection(rec: TreatmentRecommendation): void {
@@ -1971,6 +1991,13 @@ function selectBodySiteOption(rec: TreatmentRecommendation, option: TreatmentAtt
   }
   setBodySiteSearchKeyword(rec, option.text);
   secondarySelector.closeAll();
+  if (rec.selected) {
+    void ensureTreatmentSelectable(rec, { hydrateNonMedicine: false }).then((selectable) => {
+      if (selectable) {
+        collapseTreatmentEditor(rec);
+      }
+    });
+  }
 }
 
 function clearBodySiteSelection(rec: TreatmentRecommendation): void {

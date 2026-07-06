@@ -42,13 +42,6 @@
             </div>
 
             <div class="worklist-status-row">
-              <div class="worklist-status-col">
-                <span class="meta-token worklist-status"
-                  :class="{ warning: matchTone === 'warning', success: matchTone === 'success' }">
-                  {{ matchLabel }}
-                </span>
-              </div>
-
               <div v-if="$slots['title-meta'] || showExecDeptChip || showPharmacyChip" class="worklist-attr-col">
                 <div v-if="$slots['title-meta']" class="card-title-meta worklist-title-meta">
                   <slot name="title-meta" />
@@ -74,8 +67,17 @@
             </div>
 
             <div class="card-actions treatment-card-actions worklist-actions">
-              <button v-if="showManualMatchButton" class="manual-match-btn" type="button" :title="manualMatchTitle"
-                @click.stop="emit('toggle-manual-match', $event)">
+              <button
+                v-if="showManualMatchButton"
+                class="manual-match-btn"
+                :class="{
+                  'is-success': manualMatchButtonText === '已更换'
+                }"
+                type="button"
+                :title="manualMatchTitle"
+                @click.stop="emit('toggle-manual-match', $event)"
+              >
+                <span v-if="manualMatchButtonText === '已更换'" class="match-icon-status">✓</span>
                 {{ manualMatchButtonText }}
               </button>
               <div v-if="showFeedback" class="voice-feedback-anchor" @click.stop>
@@ -177,10 +179,14 @@
               <button
                 v-if="showManualMatchButton"
                 class="manual-match-btn"
+                :class="{
+                  'is-success': manualMatchButtonText === '已更换'
+                }"
                 type="button"
                 :title="manualMatchTitle"
                 @click.stop="emit('toggle-manual-match', $event)"
               >
+                <span v-if="manualMatchButtonText === '已更换'" class="match-icon-status">✓</span>
                 {{ manualMatchButtonText }}
               </button>
               <div v-if="showFeedback" class="voice-feedback-anchor" @click.stop>
@@ -232,9 +238,6 @@
             </div>
 
             <div class="default-card-status-row">
-              <span class="meta-token match-token" :class="{ warning: matchTone === 'warning', success: matchTone === 'success' }">
-                {{ matchLabel }}
-              </span>
               <div v-if="$slots['title-meta']" class="card-title-meta">
                 <slot name="title-meta" />
               </div>
@@ -1163,11 +1166,41 @@ const emit = defineEmits<{
   color: var(--voice-accent);
   font-size: var(--voice-font-min);
   cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
 }
 
 .manual-match-btn:hover {
   border-color: var(--voice-accent);
   background: var(--voice-accent-soft);
+}
+
+.manual-match-btn.is-success {
+  border-color: rgba(31, 138, 91, 0.25);
+  background: rgba(31, 138, 91, 0.06);
+  color: #1f8a5b;
+}
+
+.manual-match-btn.is-success:hover {
+  border-color: #1f8a5b;
+  background: rgba(31, 138, 91, 0.12);
+}
+
+.manual-match-btn.is-warning {
+  border-color: rgba(220, 115, 30, 0.25);
+  background: rgba(220, 115, 30, 0.06);
+  color: #c25e00;
+}
+
+.manual-match-btn.is-warning:hover {
+  border-color: #c25e00;
+  background: rgba(220, 115, 30, 0.12);
+}
+
+.match-icon-status {
+  font-weight: bold;
+  font-size: 11px;
 }
 
 .confirm-match-btn {
