@@ -327,6 +327,36 @@ export interface HisHistoricalMedication {
   raw?: Record<string, unknown>;
 }
 
+/** 单次门诊详情中的中性生命体征摘要。 */
+export interface HisVisitVitalSigns {
+  /** 收缩压，mmHg。 */
+  systolicBloodPressure?: number;
+  /** 舒张压，mmHg。 */
+  diastolicBloodPressure?: number;
+  /** 心率，次/分。 */
+  heartRate?: number;
+  /** 脉搏，次/分。 */
+  pulseRate?: number;
+  /** 呼吸，次/分。 */
+  respiratoryRate?: number;
+  /** 体温，℃。 */
+  temperature?: number;
+  /** 体温类型文本，如 体温 / 腋温 / 肛温 / 耳温。 */
+  temperatureTypeText?: string;
+  /** 身高，cm。 */
+  heightCm?: number;
+  /** 体重，kg。 */
+  weightKg?: number;
+  /** 腰围，cm。 */
+  waistCm?: number;
+  /** 是否首诊测压。 */
+  firstBloodPressureMeasured?: boolean;
+  /** 记录/测量时间。 */
+  measuredAt?: string;
+  /** 最近更新时间。 */
+  updatedAt?: string;
+}
+
 /** 历史门诊诊断的中性摘要；编码当前为 HIS 提供的 ICD-10。 */
 export interface HisHistoricalDiagnosis {
   name: string;
@@ -352,6 +382,8 @@ export interface HisVisitRecord {
   medications?: string[];
   /** 历史处方中的中性结构化药品属性。 */
   medicationOrders?: HisHistoricalMedication[];
+  /** 本次历史就诊详情中的生命体征。 */
+  vitalSigns?: HisVisitVitalSigns;
   /** 本次历史就诊中已出结果的检验检查申请摘要。 */
   reportedApplications?: HisReportedApplication[];
 }
@@ -504,6 +536,8 @@ export interface HisOutpatientMedicalRecord {
   diagnosis?: string;
   /** 治疗意见/处置 */
   treatmentPlan?: string;
+  /** 本次门急诊病历详情中的生命体征。 */
+  vitalSigns?: HisVisitVitalSigns;
   /** 厂商透传 */
   raw?: Record<string, unknown>;
 }

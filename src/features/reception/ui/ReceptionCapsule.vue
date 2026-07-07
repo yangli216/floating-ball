@@ -53,7 +53,32 @@
             <Icon icon="lucide:circle-check" size="14" />
             暂无已识别风险
           </span>
+          <button
+            v-if="hasPatientPortraitDetail"
+            type="button"
+            class="rc-detail-link"
+            aria-label="查看患者健康画像详情"
+            @click.stop="openPatientMemory"
+          >
+            详情
+            <Icon icon="lucide:chevron-right" size="12" />
+          </button>
         </div>
+      </div>
+    </div>
+
+    <!-- Risk items -->
+    <div v-if="expanded && risks.length > 0" class="rc-risks">
+      <div v-for="(r, i) in risks" :key="i" class="rc-risk-row">
+        <span
+          class="rc-tag"
+          :style="{
+            color: tagColor(r.category),
+            borderColor: tagColor(r.category),
+            background: tagBg(r.category),
+          }"
+        >{{ tagLabel(r.category) }}</span>
+        <span class="rc-risk-text">{{ r.content }}</span>
       </div>
     </div>
 
@@ -89,25 +114,10 @@
       </span>
       <span class="rc-refill-copy">
         <strong>{{ chronicRefillGenerating ? '正在生成配药病历' : '复诊配药' }}</strong>
-        <span>{{ chronicRefillCandidate.diagnoses.join('、') }} · {{ chronicRefillCandidate.medications.length > 0 ? '有历史用药参考' : '暂无历史用药参考' }}</span>
+        <span>{{ chronicRefillSubtitle }}</span>
       </span>
       <Icon v-if="!chronicRefillGenerating" icon="lucide:chevron-right" size="15" />
     </button>
-
-    <!-- Risk items -->
-    <div v-if="expanded && risks.length > 0" class="rc-risks">
-      <div v-for="(r, i) in risks" :key="i" class="rc-risk-row">
-        <span
-          class="rc-tag"
-          :style="{
-            color: tagColor(r.category),
-            borderColor: tagColor(r.category),
-            background: tagBg(r.category),
-          }"
-        >{{ tagLabel(r.category) }}</span>
-        <span class="rc-risk-text">{{ r.content }}</span>
-      </div>
-    </div>
   </div>
 </template>
 
@@ -118,6 +128,8 @@ import { trackClick } from '@services/operationTracker';
 import { resolvePatientAvatar, PATIENT_AVATAR_FALLBACK } from '@/utils/patientAvatar';
 import type { ChronicRefillCandidate, RiskItem } from '@features/reception-risk';
 import type { HisOutpatientFollowUpContext, HisVisitRecord } from '@/services/his/types';
+import type { PatientMemoryBrief } from '@entities/patient-memory';
+import type { PatientMemorySyncStatus } from '@features/patient-memory';
 
 const props = defineProps<{
   patientName: string;
@@ -130,6 +142,8 @@ const props = defineProps<{
   outpatientFollowUpContext?: HisOutpatientFollowUpContext | null;
   reportInterpretationVisits?: HisVisitRecord[];
   reportAssistantOpening?: boolean;
+  patientMemoryStatus?: PatientMemorySyncStatus;
+  patientMemoryBrief?: PatientMemoryBrief | null;
 }>();
 
 const emit = defineEmits<{
@@ -137,6 +151,7 @@ const emit = defineEmits<{
   (e: 'toggle-expand', expanded: boolean): void;
   (e: 'confirm-chronic-refill'): void;
   (e: 'confirm-report-assistant'): void;
+  (e: 'open-patient-memory'): void;
 }>();
 
 const expanded = ref(false);
@@ -158,6 +173,13 @@ const reportAssistantSubtitle = computed(() => (
   props.outpatientFollowUpContext
     ? '本次报告已出 · 可生成后续方案'
     : `近7天 ${reportCount.value} 份已出报告`
+));
+const chronicRefillSubtitle = computed(() => {
+  const diagnosisText = props.chronicRefillCandidate?.diagnoses.join('、') || '慢病复诊';
+  return `${diagnosisText} · 点击确认配药需求`;
+});
+const hasPatientPortraitDetail = computed(() => (
+  props.patientMemoryStatus === 'ready' && Boolean(props.patientMemoryBrief)
 ));
 
 const stateClass = computed(() => {
@@ -209,6 +231,20 @@ function confirmReportAssistant() {
     reportCount: reportCount.value,
   });
   emit('confirm-report-assistant');
+}
+
+function openPatientMemory() {
+  trackClick('reception_patient_memory_open', {
+    memoryVersion: props.patientMemoryBrief?.memoryVersion,
+    factCount: props.patientMemoryBrief
+      ? props.patientMemoryBrief.allergies.length
+        + props.patientMemoryBrief.chronicConditions.length
+        + props.patientMemoryBrief.recentDiagnoses.length
+        + props.patientMemoryBrief.recentMedications.length
+        + props.patientMemoryBrief.otherFacts.length
+      : 0,
+  });
+  emit('open-patient-memory');
 }
 
 const CATEGORY_COLORS: Record<string, string> = {
@@ -342,17 +378,24 @@ function tagLabel(cat: string) { return CATEGORY_LABELS[cat] || '其他'; }
 .rc-meta { font-size: 13px; color: #94a3b8; }
 
 /* ---- badge ---- */
-.rc-badge-row { display: flex; }
+.rc-badge-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
 
 .rc-badge {
   display: inline-flex;
   align-items: center;
+  flex: none;
   gap: 4px;
-  padding: 2px 10px;
+  padding: 2px 8px;
   border-radius: 12px;
-  font-size: 12.5px;
+  font-size: 12px;
   font-weight: 600;
   line-height: 18px;
+  white-space: nowrap;
 }
 .rc-badge--green { background: #dcfce7; color: #16a34a; }
 .rc-badge--orange { background: #fff4e5; color: #ea580c; }
@@ -368,6 +411,35 @@ function tagLabel(cat: string) { return CATEGORY_LABELS[cat] || '其他'; }
   opacity: 0.75;
 }
 
+.rc-detail-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 1px;
+  flex: none;
+  margin-left: auto;
+  padding: 1px 0;
+  border: 0;
+  color: #0f766e;
+  background: transparent;
+  cursor: pointer;
+  font-size: 11.5px;
+  font-weight: 600;
+  line-height: 18px;
+  -webkit-app-region: no-drag;
+}
+
+.rc-detail-link:hover,
+.rc-detail-link:focus-visible {
+  color: #115e59;
+  text-decoration: underline;
+}
+
+.rc-detail-link:focus-visible {
+  outline: 2px solid rgba(13, 148, 136, 0.28);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
 .rc-dot {
   width: 6px; height: 6px; border-radius: 50%;
   background: #3b82f6;
@@ -380,7 +452,7 @@ function tagLabel(cat: string) { return CATEGORY_LABELS[cat] || '其他'; }
   gap: 9px;
   width: 100%;
   min-height: 42px;
-  margin-top: 10px;
+  margin-top: 9px;
   padding: 6px 9px;
   border: 1px solid #ddd6fe;
   border-radius: 8px;
@@ -438,7 +510,7 @@ function tagLabel(cat: string) { return CATEGORY_LABELS[cat] || '其他'; }
   gap: 9px;
   width: 100%;
   min-height: 42px;
-  margin-top: 10px;
+  margin-top: 9px;
   padding: 6px 9px;
   border: 1px solid #bfdbfe;
   border-radius: 8px;
@@ -499,12 +571,12 @@ function tagLabel(cat: string) { return CATEGORY_LABELS[cat] || '其他'; }
 .rc-risks {
   margin-top: 12px;
   display: flex;
+  flex: 0 1 auto;
   flex-direction: column;
   gap: 10px;
   min-height: 0;
   padding-right: 4px;
   overflow-y: auto;
-  flex: 1;
 }
 
 .rc-risk-row {

@@ -1,4 +1,4 @@
-import type { HisPatientHistory } from '../services/his/types';
+import type { HisPatientHistory, HisVisitVitalSigns } from '../services/his/types';
 
 export interface PatientContextIdentity {
   patientId: string;
@@ -30,6 +30,7 @@ export interface PatientContextClinical {
   currentOutpatientRecordText?: string;
   currentOutpatientRecordTitle?: string;
   currentOutpatientRecordTime?: string;
+  currentVitalSigns?: HisVisitVitalSigns;
 }
 
 export interface PatientContext {
@@ -62,6 +63,7 @@ export interface PatientContext {
   currentOutpatientRecordText?: string;
   currentOutpatientRecordTitle?: string;
   currentOutpatientRecordTime?: string;
+  currentVitalSigns?: HisVisitVitalSigns;
 
   // Legacy aliases to keep current call sites compiling during migration.
   id?: string;

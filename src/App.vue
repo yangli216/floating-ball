@@ -28,6 +28,7 @@ import { TreatmentPlanPage } from "@features/treatment-plan";
 import { OutpatientFollowUpPage } from "@features/outpatient-follow-up";
 import { InpatientEmrPage, type InpatientEmrGenerationRequest } from "@features/inpatient-emr";
 import { DifferentialDiagnosisModalPage } from "@features/differential-diagnosis";
+import { PatientMemoryWorkspace } from '@features/patient-memory';
 import Icon from "@shared/ui/Icon.vue";
 import { formatUserFacingError } from "@shared/lib/errorMessages";
 import { trackClick } from "./services/operationTracker";
@@ -119,6 +120,8 @@ const {
   outpatientFollowUpContext,
   reportInterpretationVisits,
   reportAssistantOpening,
+  patientMemoryStatus,
+  patientMemoryBrief,
 } = receptionSession;
 
 // 语音问诊状态
@@ -147,6 +150,8 @@ const assistantTitle = computed(() => {
       return currentPatient.value ? `门诊复诊 - ${patientDisplayName.value}` : '门诊复诊';
     case 'report-interpretation':
       return currentPatient.value ? `报告助手 - ${patientDisplayName.value}` : '报告助手';
+    case 'patient-memory':
+      return currentPatient.value ? `健康画像 - ${patientDisplayName.value}` : '健康画像';
     case 'inpatient-emr':
       return '住院病历生成';
     case 'differential-diagnosis':
@@ -336,6 +341,7 @@ const {
   openTreatmentPlan,
   openOutpatientFollowUp,
   openReportInterpretation,
+  openPatientMemory,
   openInpatientEmr,
   openDifferentialDiagnosis,
   startVoiceInteraction: startVoiceInteractionBase,
@@ -344,6 +350,7 @@ const {
 // 初始化语音问诊 composable
 const voiceConsultation = useVoiceConsultation({
   currentPatient,
+  patientMemoryBrief,
   showToast,
   openVoiceConsultation,
   workMode: { exitWork },
@@ -398,6 +405,10 @@ async function handleChronicRefillGenerated(result: Parameters<typeof showGenera
 
 async function closeReportInterpretationWorkspace(): Promise<void> {
   await handleUserCollapse();
+}
+
+async function closePatientMemoryWorkspace(): Promise<void> {
+  await openReceptionCapsule(getCurrentReceptionWindowSize());
 }
 
 // 可见性/可点击门禁：
@@ -967,10 +978,20 @@ const openInsideCloudHome = async () => {
             :outpatient-follow-up-context="outpatientFollowUpContext"
             :report-interpretation-visits="reportInterpretationVisits"
             :report-assistant-opening="reportAssistantOpening"
+            :patient-memory-status="patientMemoryStatus"
+            :patient-memory-brief="patientMemoryBrief"
             @close="closeRiskAlert"
             @toggle-expand="handleRiskExpand"
             @confirm-chronic-refill="eventListeners.confirmChronicRefill"
             @confirm-report-assistant="eventListeners.confirmReportAssistant"
+            @open-patient-memory="openPatientMemory"
+          />
+
+          <PatientMemoryWorkspace
+            v-if="currentView === 'patient-memory'"
+            :patient="currentPatient"
+            :brief="patientMemoryBrief"
+            @close="closePatientMemoryWorkspace"
           />
 
           <ChronicRefillConfirmationPage

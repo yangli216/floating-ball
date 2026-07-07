@@ -42,8 +42,27 @@ describe('useReceptionSessionController', () => {
     expect(session.risks.value).toHaveLength(1);
     expect(session.chronicRefillCandidate.value?.diagnosis).toBe('高血压');
 
+    session.startPatientMemorySync();
+    expect(session.patientMemoryStatus.value).toBe('syncing');
+    session.setPatientMemoryBrief({
+      memoryId: 'memory-1',
+      memoryVersion: 2,
+      patientId: 'patient-1',
+      qualityStatus: 'fresh',
+      conflictCount: 0,
+      allergies: [],
+      chronicConditions: [],
+      recentDiagnoses: [],
+      recentMedications: [],
+      otherFacts: [],
+    });
+    expect(session.patientMemoryStatus.value).toBe('ready');
+    expect(session.patientMemoryBrief.value?.memoryVersion).toBe(2);
+
     session.reset();
     expect(session.status.value).toBe('idle');
     expect(session.opportunities.value).toEqual([]);
+    expect(session.patientMemoryStatus.value).toBe('idle');
+    expect(session.patientMemoryBrief.value).toBeNull();
   });
 });

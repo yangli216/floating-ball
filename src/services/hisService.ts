@@ -371,10 +371,32 @@ export interface HisVisitDetailApplyGroup {
   [key: string]: unknown;
 }
 
+export interface HisVisitDetailVitalSigns {
+  id?: string;
+  idTet?: string;
+  idVis?: string;
+  idOrg?: string;
+  bph?: string | number;
+  bpl?: string | number;
+  healthRate?: string | number;
+  pulseRate?: string | number;
+  breathRate?: string | number;
+  temp?: string | number;
+  sdTemp?: string | number;
+  height?: string | number;
+  weight?: string | number;
+  waist?: string | number;
+  bloodFlag?: string | number | boolean;
+  insertTime?: string;
+  updateTime?: string;
+  [key: string]: unknown;
+}
+
 export interface HisVisitDetailBody {
   soapData?: {
     chiefComplaint?: string;
     presentIllness?: string;
+    vitlSigns?: HisVisitDetailVitalSigns | null;
     [key: string]: unknown;
   };
   diagList?: HisVisitDetailDiag[];

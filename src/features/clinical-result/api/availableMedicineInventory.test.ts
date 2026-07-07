@@ -10,8 +10,8 @@ import {
 } from './availableMedicineInventory';
 
 vi.mock('@/services/persistentStore', () => {
-  if (typeof (global as any).localStorage === 'undefined') {
-    (global as any).localStorage = {
+  if (typeof (globalThis as any).localStorage === 'undefined') {
+    (globalThis as any).localStorage = {
       getItem: vi.fn().mockReturnValue(null),
       setItem: vi.fn(),
       removeItem: vi.fn(),

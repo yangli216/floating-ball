@@ -171,6 +171,13 @@ export function useNavigation(options: NavigationOptions) {
     await openView('report-interpretation');
   }
 
+  async function openPatientMemory(): Promise<void> {
+    trackViewChange(currentView.value, 'patient-memory', {
+      patientId: currentPatient.value?.patientId,
+    });
+    await openView('patient-memory');
+  }
+
   /**
    * 打开住院病历辅助生成页
    */
@@ -223,6 +230,7 @@ export function useNavigation(options: NavigationOptions) {
     openTreatmentPlan,
     openOutpatientFollowUp,
     openReportInterpretation,
+    openPatientMemory,
     openInpatientEmr,
     openDifferentialDiagnosis,
     openKnowledgeBase,

@@ -38,3 +38,16 @@ describe('chronic refill confirmation window', () => {
     });
   });
 });
+
+describe('patient memory workspace', () => {
+  it('uses a readable bounded workspace size', () => {
+    expect(getWindowSizeForView('patient-memory')).toEqual({
+      width: 1120,
+      height: 760,
+    });
+    expect(getWindowSizeConstraints('patient-memory')).toEqual({
+      minWidth: 980,
+      minHeight: 620,
+    });
+  });
+});

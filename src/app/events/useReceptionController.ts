@@ -12,8 +12,13 @@ import { getWindowSizeForView } from '@/constants/windowSizes';
 import { analyzePatientRisks } from '@/services/llm';
 import { trackApiCall, trackError } from '@/services/operationTracker';
 import { getHisAdapter } from '@/services/his';
-import type { HisOutpatientFollowUpContext, HisOutpatientMedicalRecord } from '@/services/his/types';
+import type {
+  HisOutpatientFollowUpContext,
+  HisOutpatientMedicalRecord,
+  HisVisitVitalSigns,
+} from '@/services/his/types';
 import type { AppPatient } from '@/types/appState';
+import type { PatientMemoryBrief } from '@entities/patient-memory';
 import {
   buildPatientContext,
   getPatientContextAnchorId,
@@ -88,6 +93,7 @@ export interface ReceptionControllerOptions {
   clearVoiceConsultationCache: (patient?: AppPatient | null) => void;
   clearMinimizedConsultationSessions: () => void;
   fetchFollowUpContext?: (patient: AppPatient | null) => Promise<HisOutpatientFollowUpContext | null>;
+  syncPatientMemory?: (patient: AppPatient | null) => Promise<PatientMemoryBrief | null>;
 }
 
 function buildCurrentOutpatientRecordText(record: HisOutpatientMedicalRecord | null): string {
@@ -167,6 +173,7 @@ async function hydratePatientContextFromHis(
   let currentOutpatientRecordText = '';
   let currentOutpatientRecordTitle = '';
   let currentOutpatientRecordTime = '';
+  let currentVitalSigns: HisVisitVitalSigns | undefined;
   let resolvedDiagnosis = '';
 
   let resolvedVisitId = nextVisitId;
@@ -219,6 +226,7 @@ async function hydratePatientContextFromHis(
         || record?.documents?.[0]?.insertedAt
         || ''
       ).trim();
+      currentVitalSigns = record?.vitalSigns;
     } catch (error) {
       console.warn('[ReceptionController] Failed to check outpatient reported apply results:', error);
     }
@@ -245,6 +253,7 @@ async function hydratePatientContextFromHis(
     hydrated.currentOutpatientRecordText = currentOutpatientRecordText || undefined;
     hydrated.currentOutpatientRecordTitle = currentOutpatientRecordTitle || undefined;
     hydrated.currentOutpatientRecordTime = currentOutpatientRecordTime || undefined;
+    hydrated.currentVitalSigns = currentVitalSigns;
     if (resolvedDiagnosis) {
       hydrated.diagnosis = resolvedDiagnosis;
     }
@@ -253,6 +262,7 @@ async function hydratePatientContextFromHis(
       currentOutpatientRecordText: currentOutpatientRecordText || undefined,
       currentOutpatientRecordTitle: currentOutpatientRecordTitle || undefined,
       currentOutpatientRecordTime: currentOutpatientRecordTime || undefined,
+      currentVitalSigns,
       diagnosis: resolvedDiagnosis || hydrated.clinical?.diagnosis || undefined,
     };
   }
@@ -338,6 +348,30 @@ export function useReceptionController(options: ReceptionControllerOptions) {
       'chronic-refill',
       candidate ? { type: 'chronic-refill', candidate } : null,
     );
+  }
+
+  async function syncPatientMemoryState(
+    flowVersion: number,
+    patient: AppPatient | null,
+  ): Promise<void> {
+    if (!options.syncPatientMemory || !patient || !isReceptionFlowCurrent(flowVersion)) {
+      return;
+    }
+    receptionSession.startPatientMemorySync();
+    try {
+      const brief = await options.syncPatientMemory(patient);
+      if (!isReceptionFlowCurrent(flowVersion)) {
+        return;
+      }
+      receptionSession.setPatientMemoryBrief(brief);
+    } catch (error) {
+      if (!isReceptionFlowCurrent(flowVersion)) {
+        return;
+      }
+      console.warn('[ReceptionController] Patient memory sync failed; reception continues', error);
+      trackError('patient_memory_sync_failed', error);
+      receptionSession.failPatientMemorySync();
+    }
   }
 
   async function syncFollowUpState(
@@ -468,6 +502,7 @@ export function useReceptionController(options: ReceptionControllerOptions) {
         }
         clearVoiceStateWhenPatientSwitches(currentPatient.value, nextPatient);
         currentPatient.value = nextPatient;
+        void syncPatientMemoryState(flowVersion, currentPatient.value);
 
         await openReceptionCapsule();
         if (!isReceptionFlowCurrent(flowVersion)) {
@@ -602,6 +637,7 @@ export function useReceptionController(options: ReceptionControllerOptions) {
       }
       clearVoiceStateWhenPatientSwitches(currentPatient.value, nextPatient);
       currentPatient.value = nextPatient;
+      void syncPatientMemoryState(flowVersion, currentPatient.value);
       receptionSession.startAssessing();
 
       const receptionSize = getWindowSizeForView('reception-capsule', {

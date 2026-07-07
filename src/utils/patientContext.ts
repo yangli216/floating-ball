@@ -240,6 +240,7 @@ export function buildPatientContext(input: BuildPatientContextInput): AppPatient
     || text(encounterFallback?.currentOutpatientRecordTitle || encounterFallback?.clinical?.currentOutpatientRecordTitle);
   const currentOutpatientRecordTime = pickFirstText(payload, ['currentOutpatientRecordTime'])
     || text(encounterFallback?.currentOutpatientRecordTime || encounterFallback?.clinical?.currentOutpatientRecordTime);
+  const currentVitalSigns = encounterFallback?.currentVitalSigns || encounterFallback?.clinical?.currentVitalSigns;
   const receptionEnsured = input.receptionEnsured
     ?? patientFallback?.receptionEnsured
     ?? patientFallback?._receptionEnsured
@@ -273,6 +274,7 @@ export function buildPatientContext(input: BuildPatientContextInput): AppPatient
       currentOutpatientRecordText: currentOutpatientRecordText || undefined,
       currentOutpatientRecordTitle: currentOutpatientRecordTitle || undefined,
       currentOutpatientRecordTime: currentOutpatientRecordTime || undefined,
+      currentVitalSigns,
     },
     receptionEnsured,
     source: input.source || patientFallback?.source,
@@ -302,6 +304,7 @@ export function buildPatientContext(input: BuildPatientContextInput): AppPatient
     currentOutpatientRecordText: currentOutpatientRecordText || undefined,
     currentOutpatientRecordTitle: currentOutpatientRecordTitle || undefined,
     currentOutpatientRecordTime: currentOutpatientRecordTime || undefined,
+    currentVitalSigns,
 
     id: text(patientFallback?.id) || patientId,
     idTet: tetId || undefined,

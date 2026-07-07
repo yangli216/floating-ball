@@ -14,6 +14,8 @@ import { nextTick, ref, type Ref } from 'vue';
 import { invoke } from '@tauri-apps/api/core';
 import { trackClick, trackError, trackRecommendationAction } from '@services/operationTracker';
 import type { AppPatient } from '@/types/appState';
+import type { PatientMemoryBrief } from '@entities/patient-memory';
+import { buildPatientMemoryPromptContext } from '@features/patient-memory/lib/patientMemoryPromptContext';
 import {
   clearVoiceConsultationCacheById,
   hasVoiceConsultationCache,
@@ -49,6 +51,8 @@ export type { VoiceEditorSnapshot } from '@features/voice-consultation';
 export interface VoiceConsultationOptions {
   /** 当前患者信息 */
   currentPatient: Ref<AppPatient | null>;
+  /** 服务端纵向患者记忆；只作为本次问诊核对线索。 */
+  patientMemoryBrief?: Ref<PatientMemoryBrief | null>;
   /** Toast 提示函数 */
   showToast: (msg: string, type?: 'success' | 'error' | 'info', duration?: number) => void;
   /** 打开共享语音结果页 */
@@ -307,7 +311,7 @@ export function useVoiceConsultation(options: VoiceConsultationOptions) {
       intentRecognition.addTranscript(transcribedText);
       const result = await intentRecognition.processTranscript(transcribedText, {
         consultationId,
-        memoryContext: '',
+        memoryContext: buildPatientMemoryPromptContext(options.patientMemoryBrief?.value),
         patientContext: {
           pastMedicalHistory: getPatientContextPastMedicalHistory(currentPatient.value) || null,
           allergyHistory: getPatientContextAllergyHistory(currentPatient.value) || null,

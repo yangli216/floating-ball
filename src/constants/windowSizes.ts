@@ -48,6 +48,7 @@ export type ViewType =
   | 'treatment-plan'
   | 'outpatient-follow-up'
   | 'report-interpretation'
+  | 'patient-memory'
   | 'inpatient-emr'
   | 'differential-diagnosis'
   | 'reception-capsule'
@@ -110,6 +111,9 @@ export const WINDOW_SIZES = {
   /** 报告助手工作台：左侧报告时间轴，右侧报告单式解读 */
   REPORT_INTERPRETATION: { width: 1280, height: 760 } as WindowSize,
 
+  /** 患者健康画像工作台：三栏画像摘要、病程时间线与行动建议 */
+  PATIENT_MEMORY: { width: 1120, height: 760 } as WindowSize,
+
   /** 住院病历辅助生成：1120×760px */
   INPATIENT_EMR: { width: 1120, height: 760 } as WindowSize,
 
@@ -132,6 +136,7 @@ const WINDOW_SIZE_CONSTRAINTS: Partial<Record<ViewType, WindowSizeConstraints>> 
   'treatment-plan': { minWidth: 900, minHeight: 620 },
   'outpatient-follow-up': { minWidth: 1000, minHeight: 620 },
   'report-interpretation': { minWidth: 1000, minHeight: 620 },
+  'patient-memory': { minWidth: 980, minHeight: 620 },
   'inpatient-emr': { minWidth: 900, minHeight: 620 },
   'differential-diagnosis': { minWidth: 360, minHeight: 560 },
   'his-log': { minWidth: 760, minHeight: 520 },
@@ -226,6 +231,9 @@ export function getWindowSizeForView(view: ViewType, options?: WindowSizeOptions
 
     case 'report-interpretation':
       return WINDOW_SIZES.REPORT_INTERPRETATION;
+
+    case 'patient-memory':
+      return WINDOW_SIZES.PATIENT_MEMORY;
 
     case 'inpatient-emr':
       return WINDOW_SIZES.INPATIENT_EMR;

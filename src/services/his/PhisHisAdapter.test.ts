@@ -13,6 +13,22 @@ describe('PhisHisAdapter.fetchPatientHistory', () => {
         idDeptText: '全科门诊',
       }]),
       loadClinicMedicalRecord: vi.fn().mockResolvedValue({
+        soapData: {
+          vitlSigns: {
+            bph: 130,
+            bpl: 80,
+            healthRate: 76,
+            pulseRate: 78,
+            breathRate: 18,
+            temp: 36.5,
+            sdTemp: '2',
+            height: 170,
+            weight: '60',
+            waist: '82',
+            bloodFlag: '1',
+            insertTime: '2026-05-18 17:20:28',
+          },
+        },
         diagList: [{ naDiag: '2型糖尿病', cdIcd10: 'E11.900' }],
         orderList: [
           {
@@ -144,6 +160,20 @@ describe('PhisHisAdapter.fetchPatientHistory', () => {
         type: 'lab',
         status: 'reported',
       }],
+      vitalSigns: {
+        systolicBloodPressure: 130,
+        diastolicBloodPressure: 80,
+        heartRate: 76,
+        pulseRate: 78,
+        respiratoryRate: 18,
+        temperature: 36.5,
+        temperatureTypeText: '腋温',
+        heightCm: 170,
+        weightKg: 60,
+        waistCm: 82,
+        firstBloodPressureMeasured: true,
+        measuredAt: '2026-05-18 17:20:28',
+      },
     });
   });
 

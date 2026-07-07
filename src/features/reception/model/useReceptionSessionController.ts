@@ -7,6 +7,7 @@ import {
   getPatientContextName,
 } from '@/utils/patientContext';
 import type { RiskItem } from '@features/reception-risk';
+import type { PatientMemoryBrief } from '@entities/patient-memory';
 import type {
   ReceptionOpportunity,
   ReceptionOpportunityType,
@@ -19,11 +20,15 @@ export type ReceptionSessionStatus =
   | 'ready'
   | 'error';
 
+export type ReceptionPatientMemoryStatus = 'idle' | 'syncing' | 'ready' | 'error';
+
 export function useReceptionSessionController(currentPatient: Ref<AppPatient | null>) {
   const status = ref<ReceptionSessionStatus>('idle');
   const risks = ref<RiskItem[]>([]);
   const opportunities = ref<ReceptionOpportunity[]>([]);
   const executingOpportunity = ref<ReceptionOpportunityType | null>(null);
+  const patientMemoryStatus = ref<ReceptionPatientMemoryStatus>('idle');
+  const patientMemoryBrief = ref<PatientMemoryBrief | null>(null);
 
   const patientName = computed(() => getPatientContextName(currentPatient.value) || '未知患者');
   const patientGender = computed<'M' | 'F'>(() => {
@@ -59,6 +64,8 @@ export function useReceptionSessionController(currentPatient: Ref<AppPatient | n
 
   function startHydrating(): void {
     clearAssessment();
+    patientMemoryStatus.value = 'idle';
+    patientMemoryBrief.value = null;
     status.value = 'hydrating';
   }
 
@@ -70,6 +77,21 @@ export function useReceptionSessionController(currentPatient: Ref<AppPatient | n
 
   function setRisks(nextRisks: RiskItem[]): void {
     risks.value = [...nextRisks];
+  }
+
+  function startPatientMemorySync(): void {
+    patientMemoryStatus.value = 'syncing';
+    patientMemoryBrief.value = null;
+  }
+
+  function setPatientMemoryBrief(nextBrief: PatientMemoryBrief | null): void {
+    patientMemoryBrief.value = nextBrief;
+    patientMemoryStatus.value = nextBrief ? 'ready' : 'idle';
+  }
+
+  function failPatientMemorySync(): void {
+    patientMemoryBrief.value = null;
+    patientMemoryStatus.value = 'error';
   }
 
   function finishAssessment(): void {
@@ -103,6 +125,8 @@ export function useReceptionSessionController(currentPatient: Ref<AppPatient | n
 
   function reset(): void {
     clearAssessment();
+    patientMemoryStatus.value = 'idle';
+    patientMemoryBrief.value = null;
     status.value = 'idle';
   }
 
@@ -111,6 +135,8 @@ export function useReceptionSessionController(currentPatient: Ref<AppPatient | n
     risks: shallowReadonly(risks),
     opportunities: shallowReadonly(opportunities),
     executingOpportunity: shallowReadonly(executingOpportunity),
+    patientMemoryStatus: shallowReadonly(patientMemoryStatus),
+    patientMemoryBrief: shallowReadonly(patientMemoryBrief),
     chronicRefillCandidate: shallowReadonly(chronicRefillCandidate),
     outpatientFollowUpContext: shallowReadonly(outpatientFollowUpContext),
     reportInterpretationVisits: shallowReadonly(reportInterpretationVisits),
@@ -123,6 +149,9 @@ export function useReceptionSessionController(currentPatient: Ref<AppPatient | n
     startHydrating,
     startAssessing,
     setRisks,
+    startPatientMemorySync,
+    setPatientMemoryBrief,
+    failPatientMemorySync,
     finishAssessment,
     fail,
     replaceOpportunity,

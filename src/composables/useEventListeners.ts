@@ -47,6 +47,7 @@ import {
   type SessionAssistPayload,
   type StartConsultationPayload,
 } from '@app/events/useReceptionController';
+import { usePatientMemorySync } from '@features/patient-memory';
 import {
   useSdkHandshakeController,
   type SdkHandshakePayload,
@@ -131,6 +132,7 @@ interface ReportInterpretationEventPayload extends ReportInterpretationRequestPa
  * @returns 事件监听管理 API
  */
 export function useEventListeners(options: EventListenersOptions) {
+  const patientMemorySync = usePatientMemorySync();
   const {
     appWindow,
     currentView,
@@ -173,6 +175,7 @@ export function useEventListeners(options: EventListenersOptions) {
     clearVoiceConsultationCache,
     clearMinimizedConsultationSessions,
     fetchFollowUpContext: fetchOutpatientFollowUpContext,
+    syncPatientMemory: patientMemorySync.syncForPatient,
   });
   const outpatientScenarioRouter = useOutpatientScenarioRouter({
     currentPatient,

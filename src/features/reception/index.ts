@@ -13,6 +13,7 @@ export {
   useReceptionSessionController,
   type ReceptionSessionController,
   type ReceptionSessionStatus,
+  type ReceptionPatientMemoryStatus,
 } from './model/useReceptionSessionController';
 export {
   resolveOutpatientVoiceEntry,

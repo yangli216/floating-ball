@@ -33,6 +33,7 @@ import type {
   HisReportedApplication,
   HisReportedApplicationType,
   HisVisitRecord,
+  HisVisitVitalSigns,
 } from './types';
 import type {
   AvailableMedicineInventoryItem,
@@ -454,6 +455,45 @@ function mapReportedApplications(detail: HisVisitDetailBody): HisReportedApplica
   ).values());
 }
 
+const TEMPERATURE_TYPE_TEXT: Record<string, string> = {
+  '1': '体温',
+  '2': '腋温',
+  '3': '肛温',
+  '4': '耳温',
+};
+
+function hasVitalSignsValue(vitalSigns: HisVisitVitalSigns): boolean {
+  return Object.values(vitalSigns).some((value) => typeof value !== 'undefined' && value !== '');
+}
+
+function mapVisitVitalSigns(detail: HisVisitDetailBody | null | undefined): HisVisitVitalSigns | undefined {
+  const source = detail?.soapData?.vitlSigns;
+  if (!source || typeof source !== 'object') return undefined;
+
+  const raw = source as Record<string, unknown>;
+  const temperatureTypeCode = firstTrim(raw, ['sdTemp', 'SD_TEMP']);
+  const temperatureTypeText = temperatureTypeCode
+    ? TEMPERATURE_TYPE_TEXT[temperatureTypeCode] || temperatureTypeCode
+    : undefined;
+  const vitalSigns: HisVisitVitalSigns = {
+    systolicBloodPressure: firstNumber(raw, ['bph', 'BPH']),
+    diastolicBloodPressure: firstNumber(raw, ['bpl', 'BPL']),
+    heartRate: firstNumber(raw, ['healthRate', 'HEALTH_RATE']),
+    pulseRate: firstNumber(raw, ['pulseRate', 'PULSE_RATE']),
+    respiratoryRate: firstNumber(raw, ['breathRate', 'BREATH_RATE']),
+    temperature: firstNumber(raw, ['temp', 'TEMP']),
+    temperatureTypeText,
+    heightCm: firstNumber(raw, ['height', 'HEIGHT']),
+    weightKg: firstNumber(raw, ['weight', 'WEIGHT']),
+    waistCm: firstNumber(raw, ['waist', 'WAIST']),
+    firstBloodPressureMeasured: firstBool(raw, ['bloodFlag', 'BLOOD_FLAG']),
+    measuredAt: firstTrim(raw, ['insertTime', 'INSERT_TIME']),
+    updatedAt: firstTrim(raw, ['updateTime', 'UPDATE_TIME']),
+  };
+
+  return hasVitalSignsValue(vitalSigns) ? vitalSigns : undefined;
+}
+
 /**
  * 把 PHIS 单次就诊详情映射为中性 HisVisitRecord。
  *
@@ -499,6 +539,7 @@ function mapVisitDetail(
   const medicationOrders = mapHistoricalMedications(detail);
   const medications = medicationOrders.map(formatHistoricalMedication);
   const reportedApplications = mapReportedApplications(detail);
+  const vitalSigns = mapVisitVitalSigns(detail);
   const deptName = firstTrim(visit as Record<string, unknown>, [
     'idDeptText',
     'deptName',
@@ -521,6 +562,7 @@ function mapVisitDetail(
     diagnosisEntries: diagnosisEntries.length > 0 ? diagnosisEntries : undefined,
     medications: medications.length > 0 ? medications : undefined,
     medicationOrders: medicationOrders.length > 0 ? medicationOrders : undefined,
+    vitalSigns,
     reportedApplications: reportedApplications.length > 0 ? reportedApplications : undefined,
   };
 }
@@ -1037,10 +1079,14 @@ export class PhisHisAdapter implements HisAdapter {
           });
           const record = content ? mapOutpatientMedicalRecordContent(idVis, document, documents, content) : null;
           if (record) {
+            const vitalSigns = mapVisitVitalSigns(detail);
             record.raw = {
               ...(record.raw || {}),
               detail,
             };
+            if (vitalSigns) {
+              record.vitalSigns = vitalSigns;
+            }
             return record;
           }
         } catch (error) {
@@ -1057,6 +1103,7 @@ export class PhisHisAdapter implements HisAdapter {
         visitId: idVis,
         documents,
         contentPending: true,
+        vitalSigns: mapVisitVitalSigns(detail),
         htmlContent: buildOutpatientDocumentListHtml(idVis, documents),
         plainText: documents.map((doc) => [doc.title, doc.titleTime || doc.createdAt].filter(Boolean).join(' / ')).join('\n'),
         raw: {
@@ -1101,6 +1148,7 @@ export class PhisHisAdapter implements HisAdapter {
 
       const deptName = trim(detail.deptName as string) ?? trim(detail.naDept as string) ?? '未知科室';
       const visitDate = trim(detail.visitTime as string) ?? trim(detail.dtVis as string) ?? new Date().toISOString().split('T')[0];
+      const vitalSigns = mapVisitVitalSigns(detail);
 
       // 生成精美的 HTML 病历
       const htmlContent = `
@@ -1181,6 +1229,7 @@ export class PhisHisAdapter implements HisAdapter {
         auxiliaryExamination,
         diagnosis,
         treatmentPlan,
+        vitalSigns,
         htmlContent,
         raw: {
           ...(detail as unknown as Record<string, unknown>),
