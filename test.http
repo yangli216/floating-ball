@@ -64,7 +64,7 @@ cookie: tk=6a4450eddb972f0001dbc52f
 ### 查询可开具的检查检验项目
 POST http://192.168.201.140:5680/rbmh-phis/api/phis.aiInpatientEmrContextService/queryAvailableExamLabItems
 Content-Type: application/json
-cookie: tk=6a38f7abc1946b430432fa55
+cookie: tk=6a4b4b32a5e9235103c3f464
 
 [{}]
 

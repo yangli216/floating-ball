@@ -56,6 +56,11 @@ describe('report interpretation presentation', () => {
       abnormalItems: [],
       abnormalAssessmentComplete: true,
       keyPoints: [{ title: '危险信号', detail: '建议优先处理', urgency: 'high' }],
+    }).level).toBe('normal');
+    expect(resolveReportOverallStatus({
+      abnormalItems: [{ name: '影像发现', result: '骨折', urgency: 'high' }],
+      abnormalAssessmentComplete: true,
+      keyPoints: [],
     }).level).toBe('high');
   });
 

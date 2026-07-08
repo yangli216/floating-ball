@@ -133,6 +133,9 @@ const HIGH_RISK_FINDING_PATTERN = /出血|梗死|梗阻|栓塞|夹层|气胸|穿
 const ABNORMAL_MARK_PATTERN = /↑|↓|阳性|异常|升高|降低|增高|减少|偏高|偏低|高于|低于|\(\+\)|（\+）|\+{1,3}/i;
 const LAB_ABNORMAL_PATTERN = /↑|↓|阳性|异常|升高|降低|增高|减少|偏高|偏低|高于|低于|[A-Za-z]{2,}[A-Za-z0-9%/.-]*\s*[:：]?\s*\d/i;
 const CHECK_FINDING_PATTERN = /阳性|高密度影|低密度影|斑片|结节|实变|磨玻璃|积液|增粗|阴影|占位|肿块|狭窄|扩张|骨折|脱位|出血|梗死|梗阻|钙化/i;
+const NEGATED_FINDING_PREFIX_PATTERN = /(?:未见|未发现|未提示|未显示|未检出|无|否认|排除|可排除)/i;
+const NORMAL_FINDING_TEXT_PATTERN = /(?:未见明显异常|未见异常|未发现异常|未发现结构性异常|无明显异常|阴性|正常|结构完整|骨质结构完整|序列线连续|生理曲度正常)/i;
+const CHECK_FINDING_CLAUSE_SPLIT_PATTERN = /[，,；;。.!！?？\n]+/;
 const REFERENCE_RANGE_PATTERN = /(?:参考范围|参考值|正常范围|正常值)\s*[:：]?\s*([^）)\n，,；;]+)/i;
 const DATE_TIME_VALUE_PATTERN = /\d{4}[-/年]\d{1,2}(?:[-/月]\d{1,2}日?)?(?:\s+\d{1,2}:\d{2}(?::\d{2})?)?/;
 
@@ -381,6 +384,19 @@ function buildReportMeta(
 }
 
 function pickFindingRule(taskId: ReportInterpretationTaskId, finding: string): ReportInterpretationFindingRule {
+  if (isNormalOrNegatedFinding(taskId, finding)) {
+    return {
+      pattern: /.*/,
+      meaning: taskId === 'inspectReport'
+        ? '当前文本未提示明确异常或阳性结果，仍需结合原始项目、参考范围和动态变化判断。'
+        : '当前影像描述未提示明确阳性结构性改变，仍需结合症状、查体和既往同类检查判断。',
+      action: taskId === 'inspectReport'
+        ? '如症状持续或与结果不符，可结合参考范围和动态复查进一步确认。'
+        : '如症状持续、体征不符或外伤后疼痛加重，可结合既往片或复查进一步确认。',
+      urgency: 'low',
+    };
+  }
+
   const rules = taskId === 'inspectReport' ? LAB_FINDING_RULES : CHECK_FINDING_RULES;
   const matched = rules.find((rule) => rule.pattern.test(finding));
   if (matched) {
@@ -435,9 +451,39 @@ function resolveAbnormalDirection(line: string): ReportInterpretationAbnormalDir
   return 'neutral';
 }
 
+function isNegatedFindingClause(clause: string): boolean {
+  const normalized = normalizeText(clause);
+  if (!normalized) return false;
+  if (NORMAL_FINDING_TEXT_PATTERN.test(normalized)) return true;
+  return NEGATED_FINDING_PREFIX_PATTERN.test(normalized)
+    && /(阳性|异常|升高|降低|增高|减少|偏高|偏低|高于|低于|病变|改变|损伤|高密度影|低密度影|斑片|结节|实变|磨玻璃|积液|增粗|阴影|占位|肿块|狭窄|扩张|骨折|脱位|出血|梗死|梗阻|钙化|破坏)/i.test(normalized);
+}
+
+function extractCheckFindingClauses(line: string): string[] {
+  const clauses = normalizeText(line)
+    .split(CHECK_FINDING_CLAUSE_SPLIT_PATTERN)
+    .map((item) => normalizeText(item))
+    .filter(Boolean);
+
+  return clauses.filter((clause) => CHECK_FINDING_PATTERN.test(clause) && !isNegatedFindingClause(clause));
+}
+
+function isNormalOrNegatedFinding(taskId: ReportInterpretationTaskId, text: string): boolean {
+  const normalized = normalizeText(text);
+  if (!normalized) return false;
+
+  if (taskId === 'checkReport') {
+    return CHECK_FINDING_PATTERN.test(normalized) && extractCheckFindingClauses(normalized).length === 0;
+  }
+
+  return ABNORMAL_MARK_PATTERN.test(normalized)
+    && !/[↑↓]|\(\+\)|（\+）|\+{1,3}|阳性|升高|降低|增高|减少|偏高|偏低|高于|低于/i.test(normalized.replace(NORMAL_FINDING_TEXT_PATTERN, ''))
+    && (NORMAL_FINDING_TEXT_PATTERN.test(normalized) || isNegatedFindingClause(normalized));
+}
+
 function parseLabAbnormalItem(line: string, taskId: ReportInterpretationTaskId): ReportInterpretationAbnormalItem | null {
   const normalized = normalizeText(line);
-  if (!normalized || !ABNORMAL_MARK_PATTERN.test(normalized)) {
+  if (!normalized || !ABNORMAL_MARK_PATTERN.test(normalized) || isNormalOrNegatedFinding(taskId, normalized)) {
     return null;
   }
 
@@ -470,14 +516,16 @@ function buildCheckAbnormalItem(
   index: number,
 ): ReportInterpretationAbnormalItem | null {
   const normalized = normalizeText(line);
-  if (!normalized || !CHECK_FINDING_PATTERN.test(normalized)) {
+  const findingClauses = extractCheckFindingClauses(normalized);
+  if (!normalized || findingClauses.length === 0) {
     return null;
   }
 
-  const rule = pickFindingRule(taskId, normalized);
+  const findingText = uniqueStrings(findingClauses).join('；');
+  const rule = pickFindingRule(taskId, findingText);
   return {
     name: index === 0 ? '核心影像发现' : '阳性所见',
-    result: normalized,
+    result: findingText,
     direction: rule.urgency === 'high' ? 'abnormal' : 'positive',
     referenceRange: '影像/检查描述',
     meaning: rule.meaning,
@@ -531,7 +579,10 @@ function analyzeReportQuery(request: ReportInterpretationResolvedRequest): Repor
       ]);
 
   const reportHighlights = rawCandidates.slice(0, 4);
-  const redFlagLines = reportHighlights.filter((line) => HIGH_RISK_FINDING_PATTERN.test(line) || pickFindingRule(request.taskId, line).urgency === 'high');
+  const redFlagLines = reportHighlights.filter((line) => (
+    !isNormalOrNegatedFinding(request.taskId, line)
+    && (HIGH_RISK_FINDING_PATTERN.test(line) || pickFindingRule(request.taskId, line).urgency === 'high')
+  ));
   const recommendedActions = uniqueStrings(
     reportHighlights.map((line) => pickFindingRule(request.taskId, line).action)
   ).slice(0, 4);

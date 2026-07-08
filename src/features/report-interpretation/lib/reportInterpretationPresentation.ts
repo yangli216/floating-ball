@@ -95,16 +95,13 @@ export function resolveReportOverallStatus(
   payload: Pick<ReportInterpretationWindowPayload, 'abnormalItems' | 'abnormalAssessmentComplete' | 'keyPoints'>,
 ): ReportOverallStatus {
   const abnormalItems = payload.abnormalItems || [];
-  const hasHighRisk = abnormalItems.some((item) => item.urgency === 'high')
-    || (payload.keyPoints || []).some((item) => item.urgency === 'high');
+  const hasHighRisk = abnormalItems.some((item) => item.urgency === 'high');
   if (hasHighRisk) {
     return {
       level: 'high',
       label: '重点异常',
       title: '存在重点异常，建议优先评估',
-      description: abnormalItems.length > 0
-        ? `报告识别到 ${abnormalItems.length} 项异常或阳性结果，并包含高风险提示。`
-        : '报告解读包含高风险提示，请结合临床表现优先评估。',
+      description: `报告识别到 ${abnormalItems.length} 项异常或阳性结果，并包含高风险提示。`,
       icon: 'lucide:triangle-alert',
     };
   }
