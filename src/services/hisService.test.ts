@@ -27,6 +27,23 @@ describe('HisService queryPatientVisitHistory', () => {
   });
 });
 
+describe('HisService fetchFrequencyDictionary', () => {
+  it('passes an argument array through the AI adapter service', async () => {
+    const service = new HisService('http://localhost/', 'token');
+    const post = vi.spyOn(service, 'post').mockResolvedValue({
+      code: 200,
+      body: { items: [] },
+    });
+
+    await service.fetchFrequencyDictionary();
+
+    expect(post).toHaveBeenCalledWith(
+      'api/phis.aiAdapterService/frequency',
+      [{}],
+    );
+  });
+});
+
 describe('HisService buildOutpatientFollowUpReportResults', () => {
   it('calls the dedicated AI context service for report results only', async () => {
     const service = new HisService('http://localhost/', 'token');

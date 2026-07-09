@@ -89,3 +89,11 @@ cookie: tk=6a169dcba5e9236070cfff5d
     "start": 0
   }
 ]
+
+####
+POST http://192.168.201.140:5680/rbmh-phis/api/phis.aiAdapterService/frequency
+Content-Type: application/json
+cookie: tk=6a4b4b32a5e9235103c3f464
+
+[{}]
+

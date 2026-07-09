@@ -1009,7 +1009,7 @@ export class HisService {
   async fetchFrequencyDictionary(): Promise<HisDictionaryItem[]> {
     const response = await this.post<{ items?: HisDictionaryItem[] }>(
       HIS_CATALOG_ENDPOINTS.medicineFrequency,
-      {},
+      [{}],
     );
     return Array.isArray(response?.body?.items) ? (response.body!.items as HisDictionaryItem[]) : [];
   }
