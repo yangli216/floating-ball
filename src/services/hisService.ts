@@ -560,23 +560,24 @@ interface OrganDeptListBody {
 }
 
 const HIS_CATALOG_ENDPOINTS = {
-  diagnoses: 'api/base.hiBdDieService/queryList',
+  diagnoses: 'api/phis.aiAdapterService/queryDiagnosisCatalog',
   availableExamLabItems: 'api/phis.aiInpatientEmrContextService/queryAvailableExamLabItems',
-  medicalItemDetail: 'api/phis.hiBdCliService/loadHiBdCliDetail',
-  medicalItemParts: 'api/phis.hiBdCliPacsPartService/queryExaPartAndWayList',
-  medicineStores: 'api/phis.medicineDispensingService/queryDispensingSto',
-  orgMedicineStores: 'api/phis.orgMedStoManageService/queryOrgSto',
-  execDepartments: 'api/base.organDicService/deptListByTec',
-  medicines: 'api/phis.orgMedicineConfig/queryList',
-  medicineDetail: 'api/phis.orgMedicineConfig/loadMedicinePro',
-  availableMedicineInventory: 'api/phis.medicineDrpQueryService/queryInvSubList',
-  medicineInventoryCheck: 'api/phis.medicineInventoryService/checkInvEnough',
-  patientSearchByIdPi: 'api/phis.patientService/searchByIdPi',
-  patientAllergy: 'api/phis.clinicPatientService/queryHisAllergy',
-  patientVisitHistory: 'api/phis.clinicPatientService/queryVisitHistory',
-  patientVisitDetail: 'api/phis.clinicDoctorCoreService/loadClinicMedicalRecord',
-  outpatientMedicalRecordDocuments: 'api/otms.rpcEmrEditorLookService/getLookMedList',
-  outpatientMedicalRecordContent: 'api/otms.rpcEmrEditorLookService/getMedContentLook',
+  medicalItemDetail: 'api/phis.aiAdapterService/loadHiBdCliDetail',
+  medicalItemParts: 'api/phis.aiAdapterService/queryExaPartAndWayList',
+  medicineStores: 'api/phis.aiAdapterService/queryDispensingSto',
+  orgMedicineStores: 'api/phis.aiAdapterService/queryOrgSto',
+  execDepartments: 'api/phis.aiAdapterService/deptListByTec',
+  medicineFrequency: 'api/phis.aiAdapterService/frequency',
+  medicines: 'api/phis.aiAdapterService/queryMedicineList',
+  medicineDetail: 'api/phis.aiAdapterService/loadMedicinePro',
+  availableMedicineInventory: 'api/phis.aiAdapterService/queryInvSubList',
+  medicineInventoryCheck: 'api/phis.aiAdapterService/checkInvEnough',
+  patientSearchByIdPi: 'api/phis.aiAdapterService/searchByIdPi',
+  patientAllergy: 'api/phis.aiAdapterService/queryHisAllergy',
+  patientVisitHistory: 'api/phis.aiAdapterService/queryVisitHistory',
+  patientVisitDetail: 'api/phis.aiAdapterService/loadClinicMedicalRecord',
+  outpatientMedicalRecordDocuments: 'api/phis.aiAdapterService/getLookMedList',
+  outpatientMedicalRecordContent: 'api/phis.aiAdapterService/getMedContentLook',
   inpatientEmrContext: 'api/phis.aiInpatientEmrContextService/buildContext',
   outpatientFollowUpContext: 'api/phis.aiInpatientEmrContextService/buildOutpatientFollowUpContext',
   outpatientFollowUpReportResults: 'api/phis.aiInpatientEmrContextService/buildOutpatientFollowUpReportResults',
@@ -776,7 +777,7 @@ export class HisService {
 
   /**
    * 同步全局诊断目录
-   * 真实 HIS 服务：api/base.hiBdDieService/queryList
+   * 真实 HIS 服务经院端 api/phis.aiAdapterService/queryDiagnosisCatalog 适配。
    */
   async fetchDiagnosisCatalog(): Promise<HisDiagnosisCatalogItem[]> {
     const pageSize = 1000;
@@ -1002,12 +1003,12 @@ export class HisService {
 
   /**
    * 获取频次字典（每日 X 次 / Q12H 等）。
-   * 该方法把 PHIS 私有路径 `api/base.tenantDicService/frequency` 封装到 service 内部，
+   * 该方法把 PHIS 私有路径经 `api/phis.aiAdapterService/frequency` 封装到 service 内部，
    * 调用方走 HisAdapter 接口而不再直接走 raw POST。
    */
   async fetchFrequencyDictionary(): Promise<HisDictionaryItem[]> {
     const response = await this.post<{ items?: HisDictionaryItem[] }>(
-      'api/base.tenantDicService/frequency',
+      HIS_CATALOG_ENDPOINTS.medicineFrequency,
       {},
     );
     return Array.isArray(response?.body?.items) ? (response.body!.items as HisDictionaryItem[]) : [];
@@ -1187,7 +1188,7 @@ export class HisService {
 
   /**
    * 根据 idPi 查询患者基本信息
-   * PHIS 接口：api/phis.patientService/searchByIdPi
+   * PHIS 接口经 api/phis.aiAdapterService/searchByIdPi 适配
    * 入参：[idPi]，出参 body 为患者详情对象
    */
   async searchPatientByIdPi(idPi: string): Promise<HisPatientDetailBody | null> {
@@ -1207,7 +1208,7 @@ export class HisService {
 
   /**
    * 查询患者过敏史
-   * PHIS 接口：api/phis.clinicPatientService/queryHisAllergy
+   * PHIS 接口经 api/phis.aiAdapterService/queryHisAllergy 适配
    */
   async queryPatientAllergy(idPi: string): Promise<HisAllergyItem[]> {
     const normalizedIdPi = idPi.trim();
@@ -1225,7 +1226,7 @@ export class HisService {
 
   /**
    * 查询患者就诊历史列表
-   * PHIS 接口：api/phis.clinicPatientService/queryVisitHistory
+   * PHIS 接口经 api/phis.aiAdapterService/queryVisitHistory 适配
    */
   async queryPatientVisitHistory(
     idPi: string,
@@ -1254,7 +1255,7 @@ export class HisService {
 
   /**
    * 加载单次就诊明细（含诊断与医嘱）
-   * PHIS 接口：api/phis.clinicDoctorCoreService/loadClinicMedicalRecord
+   * PHIS 接口经 api/phis.aiAdapterService/loadClinicMedicalRecord 适配
    */
   async loadClinicMedicalRecord(idVis: string, idPi: string): Promise<HisVisitDetailBody | null> {
     const normalizedIdVis = idVis.trim();
@@ -1280,7 +1281,7 @@ export class HisService {
 
   /**
    * 获取门诊病历文书列表。
-   * PHIS 接口：api/otms.rpcEmrEditorLookService/getLookMedList
+   * PHIS 接口经 api/phis.aiAdapterService/getLookMedList 适配
    * 入参：[{"idApp":"42","idTet":"租户ID","idHospital":"门诊idVis"}]
    */
   async queryOutpatientMedicalRecordDocuments(
@@ -1320,7 +1321,7 @@ export class HisService {
 
   /**
    * 获取门诊病历正文。
-   * PHIS 接口：api/otms.rpcEmrEditorLookService/getMedContentLook
+   * PHIS 接口经 api/phis.aiAdapterService/getMedContentLook 适配
    * 入参：[{"idApp":"42","idTet":"租户ID","idMedrecdoc":"文书ID","courseShow":0}]
    */
   async queryOutpatientMedicalRecordContent(

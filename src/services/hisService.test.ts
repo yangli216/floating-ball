@@ -15,7 +15,7 @@ describe('HisService queryPatientVisitHistory', () => {
     });
 
     expect(post).toHaveBeenCalledWith(
-      'api/phis.clinicPatientService/queryVisitHistory',
+      'api/phis.aiAdapterService/queryVisitHistory',
       [{
         limit: 5,
         params: {
