@@ -21,7 +21,6 @@ const TREATMENT_SECTION_DEFINITIONS: Array<{
   { type: 'medicine', title: '药品' },
   { type: 'exam', title: '检查项目' },
   { type: 'lab_test', title: '检验项目' },
-  { type: 'procedure', title: '处置项目' },
 ];
 
 export function useTreatmentSections(options: TreatmentSectionsOptions) {

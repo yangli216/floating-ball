@@ -57,6 +57,7 @@ export async function generateVoiceTreatmentRecommendations(
   input: VoiceTreatmentGenerationInput,
 ): Promise<VoiceTreatmentGenerationTaskResult[]> {
   const requestedSet = new Set(input.requestedTypes);
+  requestedSet.delete('procedure');
   const baseParams = createBaseParams(input);
   const runners: Array<{
     key: VoiceTreatmentGenerationTaskResult['key'];

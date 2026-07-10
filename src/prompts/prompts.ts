@@ -226,11 +226,11 @@ export const VoiceIntentRecognitionPrompt = {
 {"event":"history_context","data":{"pastMedicalHistory":"既往史","allergyHistory":"过敏史","currentMedicationHistory":"长期或当前用药史"}}
 {"event":"explicit_orders","data":[]}
 {"event":"diagnoses","data":[]}
-{"event":"recommendation_plan","data":{"mode":"parallel","recommendNow":["medicine","exam","lab_test","procedure"],"defer":[],"skip":[],"reason":"路由依据","resumeCondition":"","confidence":"high"}}
+{"event":"recommendation_plan","data":{"mode":"parallel","recommendNow":["medicine","exam","lab_test"],"defer":[],"skip":[],"reason":"路由依据","resumeCondition":"","confidence":"high"}}
 {"event":"record_extra","data":{"familyHistory":"家族史","treatmentPlan":"其他处理意见","healthEducation":"健康宣教"}}
 {"event":"done","data":{"error":false,"message":""}}
 
-其中各 data 对象合并后的兼容结构如下：
+其中各 data 对象合并后的兼容 structure 如下：
 {
   "recordDraft": {
     "chiefComplaint": "主诉，尽量写成主要症状+持续时间",
@@ -290,21 +290,11 @@ export const VoiceIntentRecognitionPrompt = {
       "evidenceText": "对话证据片段",
       "sourceType": "explicit",
       "goal": "检验目的"
-    },
-    {
-      "type": "procedure",
-      "name": "处置名称",
-      "aliases": ["医院常用简称1", "常见别名2"],
-      "evidenceText": "对话证据片段",
-      "sourceType": "explicit",
-      "goal": "处置目的",
-      "totalQty": "对话中明确提到的数量值；未明确时留空",
-      "totalUnit": "对话中明确提到的数量单位；未明确时留空"
     }
   ],
   "recommendationPlan": {
     "mode": "diagnostic_first | treatment_first | parallel | explicit_only | urgent_referral",
-    "recommendNow": ["medicine | exam | lab_test | procedure"],
+    "recommendNow": ["medicine | exam | lab_test"],
     "defer": [],
     "skip": [],
     "reason": "为什么当前应生成或延期这些方案",
@@ -337,15 +327,15 @@ export const VoiceIntentRecognitionPrompt = {
 9. 对于当前已明确推荐的药品，尽量补充库存目录中的完整名称和规格 spec；临床一次剂量只写 targetDose/targetDoseUnit，dosage/dosageUnit 必须留空；频次和用法优先输出文本，同时在能确定标准简码时补充 frequencyKey、usageKey，否则留空。
 10. 药品 totalQty/totalUnit 必须留空，禁止模型计算包装总量；程序会在匹配库存药品详情后，根据最终一次剂量、频次、天数和包装因子计算并校验库存。
 11. 如果对话已明确当前要用某药，但没有给出目标剂量、频次或疗程，可结合基层门诊常见方案谨慎补全 targetDose、frequency 和 days；此时必须将该药的 sourceType 设为 inferred，并在 evidenceText 或 goal 中明确说明“处方细节为模型按常用门诊方案补全”。
-12. 如果对话中出现“A+B”“A和B”“先做A再做B”等组合表述，必须拆分为独立的诊断、药品、检查、检验、处置项目。
+12. 如果对话中出现“A+B”“A和B”“先做A再做B”等组合表述，必须拆分为独立的诊断、药品、检查、检验项目。
 13. evidenceText 要尽量保留与该项最相关的对话证据，便于结果页展示“为什么提了这条”。
-14. 对于药品、检查、检验、处置项目，name 尽量填写规范名称；如果日常医院使用中常存在 1-3 个稳定简称或别名，请同步填写 aliases，优先写门诊医生常说的简称，不要编造冷门别名。
-15. 诊断、检查、检验、处置、药品名称应尽量标准化，但不要为了标准化篡改原意。
+14. 对于药品、检查、检验项目，name 尽量填写规范名称；如果日常医院使用中常存在 1-3 个稳定简称或别名，请同步填写 aliases，优先写门诊医生常说的简称，不要编造冷门别名。
+15. 诊断、检查、检验、药品名称应尽量标准化，但不要为了标准化篡改原意。
 16. 如果输入与医疗问诊场景无关，返回 {"error": true, "message": "输入内容与医疗问诊场景无关"}。
 17. 如果语音转写质量太差，导致关键病情无法理解，返回 {"error": true, "message": "语音识别质量不足，请重新录制"}。
 18. recommendationPlan 路由规则：
   - 当前诊断或感染性质需要先依赖检验检查结果时，mode=diagnostic_first，recommendNow 只包含当前需要的 exam/lab_test，把 medicine 放入 defer，resumeCondition=report_available。
-  - 诊断明确且无需新增检验检查即可治疗时，mode=treatment_first，recommendNow 以 medicine/procedure 为主。
+  - 诊断明确且无需新增检验检查即可治疗时，mode=treatment_first，recommendNow 以 medicine 为主。
   - 治疗和辅助检查都应同时进行时，mode=parallel。
   - 医生明确要求只按其医嘱执行、不需要AI补充时，mode=explicit_only，recommendNow 为空。
   - 有明确急危重症或需要立即转诊的高风险时，mode=urgent_referral，recommendNow 为空；但这只是路由提示，不能删除医生明确医嘱。

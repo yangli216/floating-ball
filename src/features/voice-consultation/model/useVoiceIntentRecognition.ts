@@ -297,7 +297,7 @@ function normalizeTreatmentHints(hints: TreatmentHint[] | undefined): TreatmentH
     .filter((hint) => hint.name);
 }
 
-const RECOMMENDATION_TYPES: VoiceRecommendationType[] = ['medicine', 'exam', 'lab_test', 'procedure'];
+const RECOMMENDATION_TYPES: VoiceRecommendationType[] = ['medicine', 'exam', 'lab_test'];
 
 function normalizeRecommendationTypes(value: unknown): VoiceRecommendationType[] {
   if (!Array.isArray(value)) return [];
@@ -668,8 +668,10 @@ export function useVoiceIntentRecognition() {
     segregatedTreatments: TreatmentSegregationResult;
   } {
     const matchedDiagnoses = normalizedExtraction.diagnosisHints.map((hint) => matchDiagnosisHint(hint));
-    const matchedTreatments = resolvedTreatments
-      || normalizedExtraction.treatmentHints.map((hint) => matchTreatmentHint(hint));
+    const matchedTreatments = (
+      resolvedTreatments
+      || normalizedExtraction.treatmentHints.map((hint) => matchTreatmentHint(hint))
+    ).filter((item) => item.type !== 'procedure');
     const segregatedTreatments = segregateTreatmentHints(matchedTreatments);
     const currentMedicationHistory = mergeNarrative(
       normalizedExtraction.recordDraft.currentMedicationHistory || '无特殊',
