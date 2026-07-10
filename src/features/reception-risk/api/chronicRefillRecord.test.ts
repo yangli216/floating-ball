@@ -168,7 +168,7 @@ describe('generateChronicRefillRecord', () => {
         storeIds: ['1760'],
         storeNames: ['西药房'],
       }],
-      promptContext: '- 盐酸二甲双胍片｜0.25g*60片/瓶｜可用库存20瓶',
+      promptContext: '- 盐酸二甲双胍片｜0.25g*60片/瓶',
       pharmacyCount: 1,
       staleStoreCount: 0,
     });
@@ -242,7 +242,8 @@ describe('generateChronicRefillRecord', () => {
 
     const messages = vi.mocked(chat).mock.calls[0][0];
     const prompt = messages.map((message) => message.content).join('\n');
-    expect(prompt).toContain('盐酸二甲双胍片｜0.25g*60片/瓶｜可用库存20瓶');
+    expect(prompt).toContain('盐酸二甲双胍片｜0.25g*60片/瓶');
+    expect(prompt).not.toContain('可用库存');
     expect(prompt).toContain('recommendedMedicines 必须返回结构化药品对象');
     expect(prompt).toContain('"targetDose":"目标临床一次剂量数值"');
     expect(prompt).toContain('days、totalQty、totalUnit必须留空');
@@ -308,7 +309,7 @@ describe('generateChronicRefillRecord', () => {
         storeIds: ['1760'],
         storeNames: ['西药房'],
       }],
-      promptContext: '- 盐酸二甲双胍片｜0.25g*60片/瓶｜可用库存20瓶',
+      promptContext: '- 盐酸二甲双胍片｜0.25g*60片/瓶',
       pharmacyCount: 1,
       staleStoreCount: 0,
     });

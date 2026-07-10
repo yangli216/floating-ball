@@ -11,6 +11,10 @@ describe('reported report serialization', () => {
     const text = serializeLabReport({
       reportName: '血常规',
       reportTime: '2026-06-30 09:30:00',
+      applications: [
+        { applicationId: 'apply-1', applicationName: '血常规' },
+        { applicationId: 'apply-2', applicationName: 'C反应蛋白' },
+      ],
       items: [{
         itemName: '白细胞计数',
         result: '12.8',
@@ -23,6 +27,7 @@ describe('reported report serialization', () => {
     expect(text).toContain('白细胞计数：12.8 10^9/L');
     expect(text).toContain('参考范围：3.5-9.5');
     expect(text).toContain('异常标记：H');
+    expect(text).toContain('本报告单覆盖申请项目：血常规、C反应蛋白');
   });
 
   it('preserves imaging findings and conclusions', () => {

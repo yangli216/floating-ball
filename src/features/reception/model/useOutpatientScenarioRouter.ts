@@ -1,5 +1,6 @@
 import type { Ref } from 'vue';
 import type { HisOutpatientFollowUpContext } from '@/services/his/types';
+import type { ReportFollowUpAssessment } from '@/types/reportInterpretation';
 import type { AppPatient } from '@/types/appState';
 import { getPatientContextAnchorId } from '@/utils/patientContext';
 import { hasPatientReportedLabOrExamResults } from '../lib/reportedApplyResults';
@@ -102,7 +103,7 @@ export function useOutpatientScenarioRouter(options: OutpatientScenarioRouterOpt
     }
   }
 
-  async function confirmFollowUp(): Promise<void> {
+  async function confirmFollowUp(assessment?: ReportFollowUpAssessment): Promise<void> {
     const patient = currentPatient.value;
     const opportunity = session.getOpportunity('report-follow-up');
     if (
@@ -116,7 +117,11 @@ export function useOutpatientScenarioRouter(options: OutpatientScenarioRouterOpt
     const patientAnchorId = getPatientContextAnchorId(patient);
     session.setExecutingOpportunity('report-follow-up');
     try {
-      applyFollowUpContext(opportunity.context);
+      const context = assessment
+        ? { ...opportunity.context, assessment }
+        : opportunity.context;
+      session.replaceOpportunity('report-follow-up', { type: 'report-follow-up', context });
+      applyFollowUpContext(context);
       resetVoiceSessionState();
       await openOutpatientFollowUp();
     } catch (error) {
@@ -124,7 +129,7 @@ export function useOutpatientScenarioRouter(options: OutpatientScenarioRouterOpt
       showToast('进入回诊失败，请稍后重试', 'error');
     } finally {
       if (
-        isCurrentOpportunity(opportunity, patientAnchorId)
+        getPatientContextAnchorId(currentPatient.value) === patientAnchorId
         && session.executingOpportunity.value === 'report-follow-up'
       ) {
         session.setExecutingOpportunity(null);
@@ -174,9 +179,7 @@ export function useOutpatientScenarioRouter(options: OutpatientScenarioRouterOpt
 
     const opportunity = session.getOpportunity('report-follow-up');
     if (opportunity?.type === 'report-follow-up') {
-      applyFollowUpContext(opportunity.context);
-      resetVoiceSessionState();
-      await openOutpatientFollowUp();
+      await openReportInterpretation();
       return { type: 'report-follow-up', context: opportunity.context };
     }
 
@@ -187,9 +190,7 @@ export function useOutpatientScenarioRouter(options: OutpatientScenarioRouterOpt
         && getPatientContextAnchorId(currentPatient.value) === patientAnchorId
       ) {
         session.replaceOpportunity('report-follow-up', { type: 'report-follow-up', context });
-        applyFollowUpContext(context);
-        resetVoiceSessionState();
-        await openOutpatientFollowUp();
+        await openReportInterpretation();
         return { type: 'report-follow-up', context };
       }
     }

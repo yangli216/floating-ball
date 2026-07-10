@@ -1,5 +1,6 @@
 import { getHisAdapter } from '@/services/his';
 import type { HisOutpatientFollowUpContext } from '@/services/his/types';
+import type { ReportFollowUpActionability } from '@/types/reportInterpretation';
 import type { AppPatient } from '@/types/appState';
 import {
   getPatientContextId,
@@ -39,6 +40,18 @@ function readCurrentOutpatientRecordTitle(patient: AppPatient | null): string {
 
 function readCurrentOutpatientRecordTime(patient: AppPatient | null): string {
   return readPatientText(patient, ['currentOutpatientRecordTime']);
+}
+
+const MAX_TREATMENT_RECORD_TEXT_LENGTH = 3_000;
+
+function actionabilityLabel(value: ReportFollowUpActionability): string {
+  const labels: Record<ReportFollowUpActionability, string> = {
+    no_treatment_needed: '当前无需新增治疗',
+    observe: '观察随访',
+    needs_follow_up: '需复查、转诊或进一步处置',
+    needs_treatment: '需药物治疗',
+  };
+  return labels[value];
 }
 
 
@@ -181,4 +194,40 @@ export function buildOutpatientFollowUpEvidence(context: HisOutpatientFollowUpCo
   }
 
   return parts.join('\n\n');
+}
+
+/** 报告回诊仅消费已确认的解读结论与必要病历摘要，避免重复传入全部报告明细。 */
+export function buildOutpatientFollowUpTreatmentEvidence(
+  context: HisOutpatientFollowUpContext | null | undefined,
+): string {
+  if (!context?.followUpEligible || !context.assessment) return '';
+
+  const assessment = context.assessment;
+  const parts = [
+    `报告处置结论：${actionabilityLabel(assessment.actionability)}。${assessment.summary}`,
+  ];
+  if (assessment.problems.length > 0) {
+    parts.push(`需处理问题：\n${assessment.problems.map((item) => (
+      `- ${item.title}：${item.evidence}${item.urgency ? `（${item.urgency}）` : ''}`
+    )).join('\n')}`);
+  }
+  if (assessment.actionability === 'needs_treatment' && assessment.medicationIntents.length > 0) {
+    parts.push(`药物治疗意图（非处方）：\n${assessment.medicationIntents.map((item) => (
+      `- ${item.indication}：优先${item.preferredGenericNames.join('、')}${item.route ? `；${item.route}` : ''}`
+    )).join('\n')}`);
+  }
+  if (context.medicalRecordText?.trim()) {
+    const record = context.medicalRecordText.trim();
+    parts.push(`本次门诊病历：\n${record.slice(0, MAX_TREATMENT_RECORD_TEXT_LENGTH)}${
+      record.length > MAX_TREATMENT_RECORD_TEXT_LENGTH ? '\n（病历正文已裁剪，报告处置结论优先）' : ''
+    }`);
+  }
+  return parts.join('\n\n');
+}
+
+export function isOutpatientFollowUpActionable(
+  context: HisOutpatientFollowUpContext | null | undefined,
+): boolean {
+  const actionability = context?.assessment?.actionability;
+  return actionability === 'needs_follow_up' || actionability === 'needs_treatment';
 }

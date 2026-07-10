@@ -15,6 +15,16 @@ const labReports = computed(() => props.context.labReports || []);
 const examReports = computed(() => props.context.examReports || []);
 const reportCount = computed(() => labReports.value.length + examReports.value.length);
 const diagnosisText = computed(() => props.context.currentDiagnosis?.trim() || '');
+const assessment = computed(() => props.context.assessment);
+const assessmentLabel = computed(() => {
+  const labels = {
+    no_treatment_needed: '无需新增治疗',
+    observe: '观察随访',
+    needs_follow_up: '需进一步处置',
+    needs_treatment: '需药物治疗',
+  };
+  return assessment.value ? labels[assessment.value.actionability] : '';
+});
 function isLabItemAbnormal(item: { abnormal?: boolean; abnormalFlag?: string }): boolean {
   if (typeof item.abnormal === 'boolean') {
     return item.abnormal;
@@ -94,6 +104,10 @@ function formatLabResult(item: { result?: string; unit?: string }): string {
         <div v-if="diagnosisText" class="diagnosis-reference">
           <span>诊断参考</span>
           <strong>{{ diagnosisText }}</strong>
+        </div>
+        <div v-if="assessment" class="assessment-reference">
+          <strong>报告处置结论：{{ assessmentLabel }}</strong>
+          <span>{{ assessment.summary }}</span>
         </div>
         <div class="document-meta">
           <span>{{ context.source?.documentTitle || '本次门诊病历' }}</span>
@@ -278,6 +292,23 @@ function formatLabResult(item: { result?: string; unit?: string }): string {
 
 .diagnosis-reference strong {
   color: #0f172a;
+}
+
+.assessment-reference {
+  display: grid;
+  gap: 4px;
+  margin-bottom: 12px;
+  padding: 10px;
+  border: 1px solid #bfdbfe;
+  border-radius: 8px;
+  color: #1d4ed8;
+  background: #eff6ff;
+  font-size: 12px;
+  line-height: 1.55;
+}
+
+.assessment-reference strong {
+  color: #1e3a8a;
 }
 
 .document-meta {

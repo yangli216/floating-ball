@@ -39,6 +39,12 @@ describe('consultationUserLog', () => {
       sections: [],
       recommendations: ['结合症状复诊'],
       cautions: ['高热时及时就医'],
+      followUpAssessment: {
+        actionability: 'needs_follow_up',
+        summary: '建议结合症状复诊。',
+        problems: [{ title: '白细胞升高', evidence: '12.0×10^9/L', urgency: 'medium' }],
+        medicationIntents: [],
+      },
       generatedAt: '2026-07-06T10:00:00+08:00',
     };
 

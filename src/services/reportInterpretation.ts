@@ -7,6 +7,11 @@ import type {
   ReportInterpretationAbnormalDirection,
   ReportInterpretationAbnormalItem,
   ReportInterpretationKeyPoint,
+  ReportInterpretationUrgency,
+  ReportFollowUpActionability,
+  ReportFollowUpAssessment,
+  ReportFollowUpMedicationIntent,
+  ReportFollowUpProblem,
   ReportInterpretationPatientInput,
   ReportInterpretationPatientProfile,
   ReportInterpretationReportMeta,
@@ -64,6 +69,21 @@ interface ReportInterpretationLLMResponse {
   }>;
   recommendations?: string[] | string;
   cautions?: string[] | string;
+  followUpAssessment?: {
+    actionability?: string;
+    summary?: string;
+    problems?: Array<{
+      title?: string;
+      evidence?: string;
+      urgency?: string;
+    }>;
+    medicationIntents?: Array<{
+      indication?: string;
+      preferredGenericNames?: string[] | string;
+      aliases?: string[] | string;
+      route?: string;
+    }>;
+  };
 }
 
 interface ReportInterpretationFindingRule {
@@ -264,6 +284,100 @@ function taskLabel(taskId: ReportInterpretationTaskId): string {
 
 function uniqueStrings(values: string[]): string[] {
   return Array.from(new Set(values.map((item) => normalizeText(item)).filter(Boolean)));
+}
+
+function normalizeUrgency(value: unknown): ReportInterpretationUrgency | undefined {
+  return value === 'low' || value === 'medium' || value === 'high' ? value : undefined;
+}
+
+function normalizeFollowUpActionability(value: unknown): ReportFollowUpActionability | null {
+  if (value === 'no_treatment_needed' || value === 'observe' || value === 'needs_follow_up' || value === 'needs_treatment') {
+    return value;
+  }
+  return null;
+}
+
+function normalizeStringList(value: unknown, limit = 6): string[] {
+  const values = Array.isArray(value) ? value : typeof value === 'string' ? [value] : [];
+  return uniqueStrings(values.filter((item): item is string => typeof item === 'string')).slice(0, limit);
+}
+
+function buildFallbackFollowUpAssessment(
+  request: ReportInterpretationResolvedRequest,
+  insight: ReportInterpretationQueryInsight,
+): ReportFollowUpAssessment {
+  const hasHighRisk = insight.redFlagLines.length > 0
+    || insight.abnormalItems.some((item) => item.urgency === 'high');
+  const hasAbnormality = insight.abnormalItems.length > 0 || insight.reportHighlights.length > 0;
+  const actionability: ReportFollowUpActionability = hasHighRisk
+    ? 'needs_follow_up'
+    : hasAbnormality
+      ? 'observe'
+      : 'no_treatment_needed';
+  const problems = insight.abnormalItems.slice(0, 4).map((item) => ({
+    title: item.name,
+    evidence: [item.result, item.referenceRange ? `参考范围${item.referenceRange}` : ''].filter(Boolean).join('；'),
+    urgency: item.urgency,
+  }));
+  return {
+    actionability,
+    summary: actionability === 'no_treatment_needed'
+      ? '当前报告未见需要新增治疗的明确依据。'
+      : actionability === 'needs_follow_up'
+        ? '报告存在需优先复查、转诊或进一步临床评估的信号。'
+        : `报告存在需结合病历观察随访的结果${request.reportKindLabel ? `（${request.reportKindLabel}）` : ''}。`,
+    problems,
+    medicationIntents: [],
+  };
+}
+
+function normalizeFollowUpAssessment(
+  response: ReportInterpretationLLMResponse['followUpAssessment'],
+  fallback: ReportFollowUpAssessment,
+): ReportFollowUpAssessment {
+  const actionability = normalizeFollowUpActionability(response?.actionability) || fallback.actionability;
+  const problems: ReportFollowUpProblem[] = Array.isArray(response?.problems)
+    ? response.problems.map((item) => ({
+        title: normalizeText(item?.title),
+        evidence: normalizeText(item?.evidence),
+        urgency: normalizeUrgency(item?.urgency),
+      })).filter((item) => item.title && item.evidence).slice(0, 4)
+    : fallback.problems;
+  const medicationIntents: ReportFollowUpMedicationIntent[] = Array.isArray(response?.medicationIntents)
+    ? response.medicationIntents.map((item) => ({
+        indication: normalizeText(item?.indication),
+        preferredGenericNames: normalizeStringList(item?.preferredGenericNames, 4),
+        aliases: normalizeStringList(item?.aliases, 6),
+        route: normalizeText(item?.route) || undefined,
+      })).filter((item) => item.indication && item.preferredGenericNames.length > 0).slice(0, 3)
+    : [];
+
+  // 无药物治疗意图时，不能把模型的药物名称误带入后续处方生成。
+  if (actionability !== 'needs_treatment') {
+    return {
+      actionability,
+      summary: normalizeText(response?.summary) || fallback.summary,
+      problems,
+      medicationIntents: [],
+    };
+  }
+
+  // 模型未能给出可检索的规范通用名时，降级为进一步临床处置，避免空依据处方。
+  if (medicationIntents.length === 0) {
+    return {
+      ...fallback,
+      actionability: 'needs_follow_up',
+      summary: '报告提示需进一步结合临床评估；当前未形成可安全检索的药物治疗意图。',
+      problems,
+    };
+  }
+
+  return {
+    actionability,
+    summary: normalizeText(response?.summary) || fallback.summary,
+    problems,
+    medicationIntents,
+  };
 }
 
 function splitReportLines(query: string): string[] {
@@ -809,6 +923,7 @@ export function formatPatientSummary(patient: ReportInterpretationPatientProfile
 
 function buildFallbackPayload(request: ReportInterpretationResolvedRequest): ReportInterpretationWindowPayload {
   const insight = analyzeReportQuery(request);
+  const followUpAssessment = buildFallbackFollowUpAssessment(request, insight);
   const patientSummary = formatPatientSummary(request.patient);
   const lines = request.query
     .split(/\n+/)
@@ -886,6 +1001,7 @@ function buildFallbackPayload(request: ReportInterpretationResolvedRequest): Rep
         ? '请结合原始报告数值、参考范围、采样时点和动态变化趋势判断。'
         : '请结合原始影像描述、查体和既往同类检查共同判断。',
     ],
+    followUpAssessment,
     generatedAt: new Date().toLocaleString('zh-CN', {
       year: 'numeric',
       month: '2-digit',
@@ -930,6 +1046,10 @@ function sanitizeLLMResponse(
     sections: sections.length > 0 ? sections : fallback.sections,
     recommendations: normalizeMeaningfulList(response.recommendations, fallback.recommendations, clues),
     cautions: normalizeMeaningfulList(response.cautions, fallback.cautions, clues),
+    followUpAssessment: normalizeFollowUpAssessment(
+      response.followUpAssessment,
+      fallback.followUpAssessment,
+    ),
   };
 }
 

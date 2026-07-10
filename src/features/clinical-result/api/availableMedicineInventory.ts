@@ -46,6 +46,12 @@ export interface MedicineRecommendationLike {
   spec?: string;
 }
 
+/** 第一阶段临床结论产生的药物检索意图，不等同于最终处方。 */
+export interface MedicineInventoryCandidateIntent {
+  preferredGenericNames: string[];
+  aliases?: string[];
+}
+
 export interface LoadAvailableMedicineInventoryOptions {
   adapter?: HisAdapter | null;
   pharmacies?: PharmacyOption[];
@@ -248,6 +254,60 @@ function normalizeMedicineLookupText(value: string): string {
     .toLowerCase();
 }
 
+function normalizeMedicineGenericName(value: string): string {
+  return cleanMedicineNameForPrompt(value)
+    .replace(/[（(][^）)]*[）)]/gu, '')
+    .replace(/\d+(?:\.\d+)?\s*(?:μg|ug|mg|g|ml)/giu, '')
+    .replace(/(分散片|缓释片|肠溶片|咀嚼片|滴丸|颗粒|胶囊|片剂|片|丸|口服液|注射液|滴剂|喷雾剂|软膏|乳膏|栓|贴剂)$/u, '')
+    .replace(/[\s,，、;；:：\-_/]/gu, '')
+    .toLowerCase();
+}
+
+function intentNames(intent: MedicineInventoryCandidateIntent): string[] {
+  return Array.from(new Set([
+    ...(intent.preferredGenericNames || []),
+    ...(intent.aliases || []),
+  ].map(normalizeMedicineGenericName).filter(Boolean)));
+}
+
+function matchesInventoryIntent(
+  item: AvailableMedicineInventoryCatalogItem,
+  intent: MedicineInventoryCandidateIntent,
+): boolean {
+  const itemGenericName = normalizeMedicineGenericName(item.productName);
+  return Boolean(itemGenericName) && intentNames(intent).includes(itemGenericName);
+}
+
+/** 只按规范通用名/别名精确匹配有效库存，未配置审核知识映射时不猜测临床等效药。 */
+export function selectAvailableMedicineInventoryCandidates(
+  items: AvailableMedicineInventoryCatalogItem[],
+  intents: MedicineInventoryCandidateIntent[],
+  limit = 16,
+): AvailableMedicineInventoryCatalogItem[] {
+  const matched = new Map<string, AvailableMedicineInventoryCatalogItem>();
+  for (const intent of intents) {
+    for (const item of items) {
+      if (matchesInventoryIntent(item, intent)) {
+        matched.set(item.productId, item);
+      }
+    }
+  }
+  return Array.from(matched.values())
+    .sort((left, right) => left.productName.localeCompare(right.productName, 'zh-CN'))
+    .slice(0, limit);
+}
+
+export function findUnmatchedMedicineInventoryIntentNames(
+  items: AvailableMedicineInventoryCatalogItem[],
+  intents: MedicineInventoryCandidateIntent[],
+): string[] {
+  return Array.from(new Set(intents.flatMap((intent) => (
+    items.some((item) => matchesInventoryIntent(item, intent))
+      ? []
+      : intent.preferredGenericNames.map(cleanMedicineNameForPrompt).filter(Boolean)
+  ))));
+}
+
 function extractMedicineStrengthMg(value: string | undefined): number | null {
   const matched = (value || '').match(/(\d+(?:\.\d+)?)\s*(g|mg|ug|μg|毫克|克|微克)/iu);
   if (!matched) return null;
@@ -326,18 +386,13 @@ export function alignMedicineRecommendationsToInventory<T>(
   });
 }
 
-function formatQuantity(value: number): string {
-  return Number.isInteger(value) ? String(value) : String(Number(value.toFixed(4)));
-}
-
 export function formatAvailableMedicineInventoryPrompt(
   items: AvailableMedicineInventoryCatalogItem[],
 ): string {
   const lines = items.map((item) => {
     const name = cleanMedicineNameForPrompt(item.productName);
     const spec = item.spec ? `｜${item.spec}` : '';
-    const quantity = `｜可用库存${formatQuantity(item.availableQuantity)}${item.unit || ''}`;
-    return `- ${name}${spec}${quantity}`;
+    return `- ${name}${spec}`;
   });
 
   return [
@@ -345,6 +400,20 @@ export function formatAvailableMedicineInventoryPrompt(
     ...(lines.length > 0 ? lines : ['- 当前未取得可用库存药品']),
     '药品推荐顺序必须是：①优先选择目录内同品同规格；②同品不可用时选择目录内临床等效药；③只有目录内既无同品也无合适等效药时，才返回规范通用名作为无库存参考。',
     '库存命中项必须保持目录中的药品名称和规格；无库存参考不得写商品名，不得声称院内有库存。',
+  ].join('\n');
+}
+
+export function formatAvailableMedicineInventoryCandidatesPrompt(
+  items: AvailableMedicineInventoryCatalogItem[],
+): string {
+  const lines = items.map((item) => {
+    const name = cleanMedicineNameForPrompt(item.productName);
+    return `- ${name}${item.spec ? `｜${item.spec}` : ''}`;
+  });
+  return [
+    '【与当前报告处置结论精确匹配的院内有效库存候选】',
+    ...(lines.length > 0 ? lines : ['- 未命中院内有效库存候选']),
+    '仅可从以上候选中选择院内库存药品；候选以外的药品不得声称院内有库存。',
   ].join('\n');
 }
 

@@ -31,6 +31,12 @@ const payload: ReportInterpretationWindowPayload = {
   sections: [],
   recommendations: [],
   cautions: [],
+  followUpAssessment: {
+    actionability: 'observe',
+    summary: '建议结合临床观察随访。',
+    problems: [],
+    medicationIntents: [],
+  },
   generatedAt: '2026-07-02 10:00:00',
 };
 

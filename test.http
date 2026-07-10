@@ -59,7 +59,14 @@ POST http://192.168.204.13:30010/phis/api/phis.aiInpatientEmrContextService/buil
 Content-Type: application/json
 cookie: tk=6a4450eddb972f0001dbc52f
 
-[{"idVis":"6a4af922eb95720001f8276a","idPi":"66084e8c2d699a12a8b71f69"}]
+[{"idVis":"6a4c3b1ca884e1000130b7ff","idPi":"66084e5b2d699a12a8b3d881"}]
+
+### 门诊上下文
+POST http://192.168.204.13:30010/phis/api/phis.aiInpatientEmrContextService/buildOutpatientFollowUpContext
+Content-Type: application/json
+cookie: tk=6a4450eddb972f0001dbc52f
+
+[{"idVis":"6a505d7f8f0117000188886d","idPi":"66084e5b2d699a12a8b3d881"}]
 
 ### 查询可开具的检查检验项目
 POST http://192.168.201.140:5680/rbmh-phis/api/phis.aiInpatientEmrContextService/queryAvailableExamLabItems

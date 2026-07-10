@@ -1,5 +1,6 @@
 import type { ReportInterpretationTaskId } from '@/types/reportInterpretation';
 import type { HisOutpatientFollowUpLabItem } from '@/services/his/types';
+import type { HisOutpatientFollowUpReportApplication } from '@/services/his/types';
 
 export interface ReportHistoryEntry {
   id: string;
@@ -13,6 +14,7 @@ export interface ReportHistoryEntry {
   reportId?: string;
   applicationId?: string;
   labItems?: HisOutpatientFollowUpLabItem[];
+  applications?: HisOutpatientFollowUpReportApplication[];
   examFinding?: string;
   examConclusion?: string;
   sourceQuery: string;

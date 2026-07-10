@@ -242,6 +242,14 @@ const totalCount = computed(() => treatments.value.length);
 const canRecommend = computed(() => recommendations.canRecommend.value);
 const missingContextTipsText = computed(() => recommendations.missingContextTips.value.join('、'));
 const isFollowUpMode = computed(() => Boolean(props.followUpContext?.followUpEligible));
+const followUpAssessment = computed(() => props.followUpContext?.assessment);
+const isFollowUpNoTreatment = computed(() => isFollowUpMode.value && Boolean(
+  followUpAssessment.value
+  && (followUpAssessment.value.actionability === 'no_treatment_needed' || followUpAssessment.value.actionability === 'observe'),
+));
+const followUpNoTreatmentTitle = computed(() => (
+  followUpAssessment.value?.actionability === 'observe' ? '当前以观察随访为主' : '当前无需新增治疗'
+));
 const diagnosisReferenceText = computed(() => recommendations.recordContext.value.diagnosisText);
 const planTitle = computed(() => (isFollowUpMode.value ? '后续治疗方案' : '推荐方案'));
 const planSubtitle = computed(() => {
@@ -277,6 +285,20 @@ const recommendationSections = computed(() => {
   );
 });
 const recommendationsLoading = computed(() => recommendations.isLoading.value);
+const hasEmptyRecommendation = computed(() => (
+  canRecommend.value
+  && !recommendationsLoading.value
+  && totalCount.value === 0
+  && recommendationSections.value.length === 0
+));
+const emptyRecommendationTitle = computed(() => (
+  isFollowUpMode.value ? '本次方案已生成，暂无可回写医嘱' : '本次方案已生成，暂无可回写推荐'
+));
+const emptyRecommendationDescription = computed(() => (
+  isFollowUpMode.value
+    ? 'AI 已完成本次生成，但未推荐药品、检查、检验或处置项目。这不等同于临床无需处理，请结合原始报告、患者症状与查体决定观察随访、健康宣教、复查或手动开立。'
+    : 'AI 已完成本次生成，但未给出可直接回写的推荐项目，请结合临床情况补充或手动开立。'
+));
 const selectedCountByType = computed(() => {
   const counts = new Map<TreatmentRecommendation['type'], number>();
   treatments.value.forEach((item) => {
@@ -831,7 +853,7 @@ onMounted(() => {
               <span v-else class="muted">未读取到诊断，不阻断方案生成</span>
             </div>
           </div>
-          <button class="icon-action" title="刷新方案" :disabled="recommendationsLoading" @click="refreshRecommendations">
+          <button class="icon-action" title="刷新方案" :disabled="recommendationsLoading || isFollowUpNoTreatment" @click="refreshRecommendations">
             <Icon icon="lucide:refresh-cw" :size="18" aria-hidden="true" />
           </button>
         </header>
@@ -844,6 +866,22 @@ onMounted(() => {
           <div v-if="recommendationsLoading" class="unified-plan-loading">
             <div class="loading-spinner"></div>
             <div class="loading-text">正在生成后续治疗方案，请稍候...</div>
+          </div>
+          <div v-else-if="isFollowUpNoTreatment" class="follow-up-no-treatment">
+            <Icon icon="lucide:circle-check" :size="28" aria-hidden="true" />
+            <h3>{{ followUpNoTreatmentTitle }}</h3>
+            <p>{{ followUpAssessment?.summary || '已完成报告解读，当前未发现需要新增处方的明确依据。' }}</p>
+            <ul v-if="followUpAssessment?.problems.length">
+              <li v-for="problem in followUpAssessment.problems" :key="`${problem.title}-${problem.evidence}`">
+                <strong>{{ problem.title }}</strong>：{{ problem.evidence }}
+              </li>
+            </ul>
+          </div>
+          <div v-else-if="hasEmptyRecommendation" class="empty-treatment-plan">
+            <Icon icon="lucide:clipboard-check" :size="30" aria-hidden="true" />
+            <h3>{{ emptyRecommendationTitle }}</h3>
+            <p>{{ emptyRecommendationDescription }}</p>
+            <p class="empty-treatment-plan__hint">如需重新判断，可点击右上角刷新方案。</p>
           </div>
           <template v-else>
             <TreatmentPlanGroup
@@ -1171,6 +1209,70 @@ onMounted(() => {
   font-size: 14px;
   font-weight: 500;
   color: #475569;
+}
+
+.follow-up-no-treatment {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  max-width: 720px;
+  margin: 28px auto;
+  padding: 22px;
+  border: 1px solid #bbf7d0;
+  border-radius: 12px;
+  color: #166534;
+  background: #f0fdf4;
+}
+
+.follow-up-no-treatment h3 {
+  margin: 12px 0 6px;
+  color: #166534;
+  font-size: 17px;
+}
+
+.follow-up-no-treatment p,
+.follow-up-no-treatment ul {
+  margin: 0;
+  color: #3f6212;
+  font-size: 14px;
+  line-height: 1.7;
+}
+
+.empty-treatment-plan {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  max-width: 720px;
+  margin: 28px auto;
+  padding: 24px;
+  border: 1px solid #bfdbfe;
+  border-radius: 12px;
+  color: #1d4ed8;
+  background: #eff6ff;
+}
+
+.empty-treatment-plan h3 {
+  margin: 12px 0 6px;
+  color: #1e3a8a;
+  font-size: 17px;
+}
+
+.empty-treatment-plan p {
+  margin: 0;
+  color: #334155;
+  font-size: 14px;
+  line-height: 1.75;
+}
+
+.empty-treatment-plan .empty-treatment-plan__hint {
+  margin-top: 12px;
+  color: #2563eb;
+  font-weight: 600;
+}
+
+.follow-up-no-treatment ul {
+  margin-top: 10px;
+  padding-left: 20px;
 }
 
 @keyframes unified-spin {

@@ -3,10 +3,13 @@ import type { HisAdapter } from '@/services/his';
 import { medicalDataService } from '@/services/medicalData';
 import {
   alignMedicineRecommendationsToInventory,
+  findUnmatchedMedicineInventoryIntentNames,
+  formatAvailableMedicineInventoryCandidatesPrompt,
   formatAvailableMedicineInventoryPrompt,
   loadAvailableMedicineInventoryContext,
   mergeAvailableMedicineInventoryCatalog,
   resolveAvailableMedicineInventoryUnitPrice,
+  selectAvailableMedicineInventoryCandidates,
 } from './availableMedicineInventory';
 
 vi.mock('@/services/persistentStore', () => {
@@ -56,7 +59,9 @@ describe('available medicine inventory AI context', () => {
     })]);
 
     const prompt = formatAvailableMedicineInventoryPrompt(catalog);
-    expect(prompt).toContain('脯氨酸恒格列净片｜10mg*10片/盒｜可用库存15盒');
+    expect(prompt).toContain('脯氨酸恒格列净片｜10mg*10片/盒');
+    expect(prompt).not.toContain('可用库存');
+    expect(prompt).not.toContain('15盒');
     expect(prompt).not.toContain('☆');
     expect(prompt).toContain('目录内临床等效药');
     expect(prompt).toContain('规范通用名');
@@ -120,6 +125,22 @@ describe('available medicine inventory AI context', () => {
     const prompt = formatAvailableMedicineInventoryPrompt([]);
     expect(prompt).toContain('当前未取得可用库存药品');
     expect(prompt).toContain('规范通用名作为无库存参考');
+  });
+
+  it('only returns exact generic-name inventory candidates for report follow-up intents', () => {
+    const inventory = [
+      { productId: 'amoxicillin', productName: '阿莫西林胶囊', spec: '0.25g*24粒/盒', availableQuantity: 10, storeIds: ['s'], storeNames: ['西药房'] },
+      { productId: 'compound', productName: '阿莫西林克拉维酸钾片', spec: '0.375g*12片/盒', availableQuantity: 10, storeIds: ['s'], storeNames: ['西药房'] },
+      { productId: 'ibuprofen', productName: '布洛芬缓释胶囊', spec: '0.3g*20粒/盒', availableQuantity: 10, storeIds: ['s'], storeNames: ['西药房'] },
+    ];
+    const intents = [{ preferredGenericNames: ['阿莫西林'], aliases: ['阿莫西林片'] }, { preferredGenericNames: ['对乙酰氨基酚'] }];
+
+    const candidates = selectAvailableMedicineInventoryCandidates(inventory, intents);
+
+    expect(candidates.map((item) => item.productId)).toEqual(['amoxicillin']);
+    expect(findUnmatchedMedicineInventoryIntentNames(inventory, intents)).toEqual(['对乙酰氨基酚']);
+    expect(formatAvailableMedicineInventoryCandidatesPrompt(candidates)).toContain('阿莫西林胶囊｜0.25g*24粒/盒');
+    expect(formatAvailableMedicineInventoryCandidatesPrompt(candidates)).not.toContain('可用库存');
   });
 
   it('reuses the fresh pharmacy-scoped cache instead of refetching inventory', async () => {

@@ -42,6 +42,41 @@ describe('resolveOutpatientVoiceEntry', () => {
 });
 
 describe('useOutpatientScenarioRouter', () => {
+  it('allows entering report follow-up without AI interpretation and preserves one when available', async () => {
+    const currentPatient = ref(buildPatientContext({
+      payload: { patientId: 'patient-1', visitId: 'visit-1', name: '张建国' },
+    }));
+    const session = useReceptionSessionController(currentPatient);
+    session.replaceOpportunity('report-follow-up', { type: 'report-follow-up', context: followUpContext });
+    const applyFollowUpContext = vi.fn();
+    const openOutpatientFollowUp = vi.fn();
+    const showToast = vi.fn();
+    const router = useOutpatientScenarioRouter({
+      currentPatient,
+      session,
+      hasCachedVoiceResult: () => false,
+      applyFollowUpContext,
+      openChronicRefillConfirmation: vi.fn(),
+      resetVoiceSessionState: vi.fn(),
+      openOutpatientFollowUp,
+      openReportInterpretation: vi.fn(),
+      startVoiceInteraction: vi.fn(),
+      showToast,
+      trackError: vi.fn(),
+    });
+
+    await router.confirmFollowUp();
+    expect(applyFollowUpContext).toHaveBeenCalledWith(followUpContext);
+    expect(openOutpatientFollowUp).toHaveBeenCalledOnce();
+
+    const assessment = { actionability: 'needs_follow_up' as const, summary: '建议复查', problems: [], medicationIntents: [] };
+    await router.confirmFollowUp(assessment);
+
+    expect(applyFollowUpContext).toHaveBeenCalledWith(expect.objectContaining({ assessment }));
+    expect(openOutpatientFollowUp).toHaveBeenCalledTimes(2);
+    expect(showToast).not.toHaveBeenCalled();
+  });
+
   it('opens the refill confirmation page before generating a record', async () => {
     const currentPatient = ref(buildPatientContext({
       payload: {
@@ -102,6 +137,7 @@ describe('useOutpatientScenarioRouter', () => {
     const session = useReceptionSessionController(currentPatient);
     const applyFollowUpContext = vi.fn();
     const openOutpatientFollowUp = vi.fn();
+    const openReportInterpretation = vi.fn();
     const startVoiceInteraction = vi.fn();
     const router = useOutpatientScenarioRouter({
       currentPatient,
@@ -112,7 +148,7 @@ describe('useOutpatientScenarioRouter', () => {
       openChronicRefillConfirmation: vi.fn(),
       resetVoiceSessionState: vi.fn(),
       openOutpatientFollowUp,
-      openReportInterpretation: vi.fn(),
+      openReportInterpretation,
       startVoiceInteraction,
       showToast: vi.fn(),
       trackError: vi.fn(),
@@ -123,8 +159,9 @@ describe('useOutpatientScenarioRouter', () => {
       context: followUpContext,
     });
 
-    expect(applyFollowUpContext).toHaveBeenCalledWith(followUpContext);
-    expect(openOutpatientFollowUp).toHaveBeenCalled();
+    expect(applyFollowUpContext).not.toHaveBeenCalled();
+    expect(openOutpatientFollowUp).not.toHaveBeenCalled();
+    expect(openReportInterpretation).toHaveBeenCalledOnce();
     expect(startVoiceInteraction).not.toHaveBeenCalled();
     expect(session.getOpportunity('report-follow-up')).toEqual({
       type: 'report-follow-up',

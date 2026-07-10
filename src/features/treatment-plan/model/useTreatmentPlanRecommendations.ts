@@ -10,6 +10,7 @@ import {
 import { PROMPTS } from '@/prompts';
 import type { AppPatient } from '@/types/appState';
 import type { Diagnosis, TreatmentRecommendation } from '@/types/consultation';
+import type { ReportFollowUpActionability } from '@/types/reportInterpretation';
 import {
   getPatientContextAgeText,
   getPatientContextAllergyHistory,
@@ -23,16 +24,23 @@ import {
   assessTreatmentCatalogMatch,
   buildClinicalResultTreatmentRequestSpec,
   buildClinicalResultTreatmentRecommendationsFromRaw,
+  findUnmatchedMedicineInventoryIntentNames,
+  formatAvailableMedicineInventoryCandidatesPrompt,
   loadAvailableMedicineInventoryContext,
   mapClinicalResultAiDiagnoses,
   parseLLMJson,
   readFirstString,
+  selectAvailableMedicineInventoryCandidates,
   type RawClinicalResultTreatmentRecommendationInput,
 } from '@features/clinical-result';
 import type {
   ClinicalResultTreatmentRequestKind,
 } from '@features/clinical-result';
-import { buildOutpatientFollowUpEvidence } from '@features/outpatient-follow-up/api/outpatientFollowUpContext';
+import {
+  buildOutpatientFollowUpEvidence,
+  buildOutpatientFollowUpTreatmentEvidence,
+  isOutpatientFollowUpActionable,
+} from '@features/outpatient-follow-up/api/outpatientFollowUpContext';
 
 export interface TreatmentPlanRecordContext {
   chiefComplaint: string;
@@ -41,6 +49,7 @@ export interface TreatmentPlanRecordContext {
   allergyHistory: string;
   diagnosisText: string;
   followUpEvidence: string;
+  followUpActionability?: ReportFollowUpActionability;
   isFollowUp: boolean;
 }
 
@@ -116,7 +125,9 @@ function buildRecordContext(
   patient: AppPatient | null,
   followUpContext: HisOutpatientFollowUpContext | null,
 ): TreatmentPlanRecordContext {
-  const followUpEvidence = buildOutpatientFollowUpEvidence(followUpContext);
+  const followUpEvidence = followUpContext?.assessment
+    ? buildOutpatientFollowUpTreatmentEvidence(followUpContext)
+    : buildOutpatientFollowUpEvidence(followUpContext);
   const diagnosisText = followUpContext?.currentDiagnosis?.trim()
     || readPatientText(patient, ['diagnosis', 'diagnosisText', 'diagnosis_text']);
   return {
@@ -126,6 +137,7 @@ function buildRecordContext(
     allergyHistory: getPatientContextAllergyHistory(patient) || readPatientText(patient, ['allergyHistory', 'allergy_history']),
     diagnosisText,
     followUpEvidence,
+    followUpActionability: followUpContext?.assessment?.actionability,
     isFollowUp: Boolean(followUpContext?.followUpEligible),
   };
 }
@@ -176,7 +188,9 @@ export function useTreatmentPlanRecommendations(options: TreatmentPlanRecommenda
   ));
   const canRecommend = computed(() => {
     if (recordContext.value.isFollowUp) {
-      return Boolean(recordContext.value.followUpEvidence);
+      return Boolean(recordContext.value.followUpEvidence)
+        && (!options.followUpContext.value?.assessment
+          || isOutpatientFollowUpActionable(options.followUpContext.value));
     }
     return Boolean(
       recordContext.value.diagnosisText
@@ -187,7 +201,10 @@ export function useTreatmentPlanRecommendations(options: TreatmentPlanRecommenda
   const missingContextTips = computed(() => {
     const tips: string[] = [];
     if (recordContext.value.isFollowUp) {
-      if (!recordContext.value.followUpEvidence) tips.push('本次病历及已出报告');
+      if (options.followUpContext.value?.assessment && !isOutpatientFollowUpActionable(options.followUpContext.value)) {
+        tips.push('当前报告无新增治疗指征');
+      }
+      else if (!recordContext.value.followUpEvidence) tips.push('本次病历及报告处置结论');
       return tips;
     }
     if (!recordContext.value.chiefComplaint) tips.push('主诉');
@@ -233,9 +250,29 @@ export function useTreatmentPlanRecommendations(options: TreatmentPlanRecommenda
     const patient = options.patient.value;
     const currentDiagnosis = options.diagnosis.value;
     try {
-      const inventoryContext = ((task.key as string) === 'medication' || (task.key as string) === 'unified')
+      const followUpAssessment = options.followUpContext.value?.assessment;
+      const requiresMedicine = !recordContext.value.isFollowUp
+        || !followUpAssessment
+        || followUpAssessment?.actionability === 'needs_treatment';
+      const inventoryContext = requiresMedicine && ((task.key as string) === 'medication' || (task.key as string) === 'unified')
         ? await loadAvailableMedicineInventoryContext({ pharmacies: options.pharmacies.value })
         : null;
+      const medicationIntents = followUpAssessment?.medicationIntents || [];
+      const medicineCandidates = recordContext.value.isFollowUp && inventoryContext
+        ? selectAvailableMedicineInventoryCandidates(inventoryContext.items, medicationIntents)
+        : inventoryContext?.items || [];
+      const unmatchedMedicineReferences = recordContext.value.isFollowUp && inventoryContext
+        ? findUnmatchedMedicineInventoryIntentNames(inventoryContext.items, medicationIntents)
+        : [];
+      const medicineRecommendationPolicy = recordContext.value.isFollowUp && followUpAssessment
+        ? followUpAssessment?.actionability === 'needs_treatment'
+          ? medicineCandidates.length > 0
+            ? unmatchedMedicineReferences.length > 0
+              ? 'candidates-or-standard-reference' as const
+              : 'candidates-only' as const
+            : 'standard-name-only' as const
+          : 'not-needed' as const
+        : undefined;
       const diagnosisName = currentDiagnosis?.name
         || recordContext.value.diagnosisText
         || '未读取到本次诊断，请基于本次病历和报告结果判断后续处理';
@@ -249,7 +286,13 @@ export function useTreatmentPlanRecommendations(options: TreatmentPlanRecommenda
           diagnosisCode: currentDiagnosis?.code || '',
           chiefComplaint: recordContext.value.chiefComplaint || '携本次病历及检验检查报告复诊',
           clinicalContext: recordContext.value.followUpEvidence,
-          availableMedicineInventory: inventoryContext?.promptContext,
+          availableMedicineInventory: recordContext.value.isFollowUp
+            ? medicineCandidates.length > 0
+              ? formatAvailableMedicineInventoryCandidatesPrompt(medicineCandidates)
+              : undefined
+            : inventoryContext?.promptContext,
+          medicineRecommendationPolicy,
+          unavailableMedicineReferences: unmatchedMedicineReferences,
         },
         task.prompt,
         {
@@ -266,9 +309,12 @@ export function useTreatmentPlanRecommendations(options: TreatmentPlanRecommenda
       if (runKey !== lastRunKey.value) return;
 
       const rawResults = parseLLMJson<RawClinicalResultTreatmentRecommendationInput[]>(response);
-      const alignedResults = ((task.key as string) === 'medication' || (task.key as string) === 'unified')
-        ? alignMedicineRecommendationsToInventory(rawResults, inventoryContext?.items || [])
+      const policyFilteredResults = medicineRecommendationPolicy === 'not-needed'
+        ? rawResults.filter((item) => item?.type !== 'medicine')
         : rawResults;
+      const alignedResults = ((task.key as string) === 'medication' || (task.key as string) === 'unified')
+        ? alignMedicineRecommendationsToInventory(policyFilteredResults, medicineCandidates)
+        : policyFilteredResults;
 
       for (const itemType of task.itemTypes) {
         let mapped = buildClinicalResultTreatmentRecommendationsFromRaw({

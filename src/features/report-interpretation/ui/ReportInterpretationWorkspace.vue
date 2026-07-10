@@ -3,6 +3,7 @@ import { computed, onMounted, toRef } from 'vue';
 import Icon from '@shared/ui/Icon.vue';
 import type { AppPatient } from '@/types/appState';
 import type { HisOutpatientFollowUpContext, HisVisitRecord } from '@/services/his/types';
+import type { ReportFollowUpAssessment } from '@/types/reportInterpretation';
 import {
   buildReportInterpretationPayload,
   resolveReportInterpretationRequest,
@@ -23,7 +24,7 @@ const props = defineProps<{
 }>();
 
 const emit = defineEmits<{
-  (event: 'open-follow-up'): void;
+  (event: 'open-follow-up', assessment?: ReportFollowUpAssessment): void;
 }>();
 
 const controller = useReportInterpretationWorkspace({
@@ -70,6 +71,10 @@ const groups = computed(() => {
   return result;
 });
 
+const reportedApplicationCount = computed(() => controller.reports.value.reduce((count, report) => (
+  count + (report.taskId === 'inspectReport' ? report.applications?.length || 0 : 0)
+), 0));
+
 const filterOptions: Array<{ value: ReportHistoryFilter; label: string }> = [
   { value: 'all', label: '全部' },
   { value: 'lab', label: '检验' },
@@ -115,7 +120,12 @@ onMounted(() => {
       <div class="timeline-header">
         <div>
           <h2>近7天报告</h2>
-          <p>{{ controller.reports.value.length }} 份已出结果</p>
+          <p>
+            {{ controller.reports.value.length }} 份报告单
+            <template v-if="reportedApplicationCount > controller.reports.value.length">
+              · 覆盖 {{ reportedApplicationCount }} 个已出结果申请
+            </template>
+          </p>
         </div>
       </div>
 
@@ -227,7 +237,7 @@ onMounted(() => {
             v-if="controller.canOpenFollowUp.value"
             class="follow-up-button"
             type="button"
-            @click="emit('open-follow-up')"
+            @click="emit('open-follow-up', controller.interpretation.value?.followUpAssessment)"
           >
             <Icon icon="lucide:clipboard-plus" size="17" />
             生成后续诊疗方案

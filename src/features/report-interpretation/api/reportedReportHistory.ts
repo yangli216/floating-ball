@@ -127,9 +127,13 @@ export function buildStructuredLabAbnormalItems(
 }
 
 export function serializeLabReport(report: HisOutpatientFollowUpLabReport): string {
+  const applicationNames = (report.applications || [])
+    .map((item) => item.applicationName?.trim() || '')
+    .filter(Boolean);
   const lines = [
     `报告名称：${report.reportName || '检验报告'}`,
     report.reportTime ? `报告时间：${report.reportTime}` : '',
+    applicationNames.length > 0 ? `本报告单覆盖申请项目：${applicationNames.join('、')}` : '',
     '检验结果：',
     ...(report.items || []).map((item) => {
       const result = [item.result, item.unit].filter(Boolean).join(' ') || '未提供';
@@ -176,6 +180,7 @@ function mapReportResults(
       reportTime: report.reportTime,
       reportId: report.reportId || report.reportGroupId,
       applicationId: report.applicationId,
+      applications: report.applications || [],
       labItems: report.items || [],
       sourceQuery,
       available: Boolean((report.items || []).length && sourceQuery),

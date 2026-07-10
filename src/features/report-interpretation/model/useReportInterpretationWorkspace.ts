@@ -43,7 +43,8 @@ export function useReportInterpretationWorkspace(options: ReportInterpretationWo
     reports.value.find((report) => report.id === selectedId.value) || null
   ));
   const canOpenFollowUp = computed(() => Boolean(
-    selectedReport.value?.isFollowUpSource && options.followUpContext.value?.followUpEligible,
+    selectedReport.value?.isFollowUpSource
+      && options.followUpContext.value?.followUpEligible,
   ));
   const canInterpret = computed(() => Boolean(
     selectedReport.value?.available && selectedReport.value?.sourceQuery,

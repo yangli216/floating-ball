@@ -852,7 +852,8 @@ export const ReportInterpretationPrompt = {
 6. 如果原文里已经出现“影像诊断/检查结论/提示”，要优先围绕这些结论做临床解释，而不是重复免责声明。
 7. 语言要简洁、医学化、可直接给医生阅读，避免空泛套话。
 8. summary 和 conclusion 必须直接从报告发现或总体判断开始，不要重复患者姓名、性别、年龄等已经在报告头部展示的基本信息；患者背景仅在确实影响临床解释时写入 keyPoints 或 sections。
-9. 严格返回 JSON 对象，不要包含 markdown、代码块或额外解释。
+9. 必须额外输出 followUpAssessment：它用于决定是否进入报告回诊，不能把“异常”直接等同于“需要开药”。actionability 只能是 no_treatment_needed、observe、needs_follow_up、needs_treatment。只有报告证据和患者背景已明确支持药物治疗时才能取 needs_treatment；此时 medicationIntents 只填写规范通用名/别名和用药目的，不填写剂量、频次、包装或商品名。其余情形 medicationIntents 必须为空。
+10. 严格返回 JSON 对象，不要包含 markdown、代码块或额外解释。
 
 返回格式：
 {
@@ -871,7 +872,13 @@ export const ReportInterpretationPrompt = {
     { "title": "建议", "content": "..." }
   ],
   "recommendations": ["建议1", "建议2"],
-  "cautions": ["注意事项1", "注意事项2"]
+  "cautions": ["注意事项1", "注意事项2"],
+  "followUpAssessment": {
+    "actionability": "no_treatment_needed | observe | needs_follow_up | needs_treatment",
+    "summary": "用于报告回诊的简短处置结论",
+    "problems": [{ "title": "问题", "evidence": "报告中的具体证据", "urgency": "low | medium | high" }],
+    "medicationIntents": [{ "indication": "用药目的", "preferredGenericNames": ["规范通用名"], "aliases": ["别名"], "route": "口服" }]
+  }
 }`,
 
   buildUserPrompt(params: {
@@ -1415,6 +1422,8 @@ export const UnifiedTreatmentPlanRecommendationPrompt = {
     chiefComplaint: string;
     clinicalContext?: string;
     availableMedicineInventory?: string;
+    medicineRecommendationPolicy?: 'not-needed' | 'candidates-only' | 'standard-name-only' | 'candidates-or-standard-reference';
+    unavailableMedicineReferences?: string[];
   }): string {
     const contextPart = params.clinicalContext
       ? `**复诊/报告回诊依据（含已出报告结果）：**\n${params.clinicalContext}\n`
@@ -1422,6 +1431,15 @@ export const UnifiedTreatmentPlanRecommendationPrompt = {
     const inventoryPart = params.availableMedicineInventory
       ? `${params.availableMedicineInventory}\n`
       : '';
+    const medicinePolicyPart = params.medicineRecommendationPolicy === 'not-needed'
+      ? '报告处置结论当前不需要新增药物：不得返回任何 type 为 "medicine" 的项目。'
+      : params.medicineRecommendationPolicy === 'candidates-only'
+        ? '如确有药物治疗需要，只能从“精确匹配的院内有效库存候选”中选择；不得生成候选以外的药品或声称其有院内库存。'
+        : params.medicineRecommendationPolicy === 'standard-name-only'
+          ? `报告提示可能需要药物治疗，但当前有效库存未精确命中。只可在以下规范通用名参考中选择，且必须明确作为无库存参考，不得声称院内有库存：${(params.unavailableMedicineReferences || []).join('、') || '无'}。`
+          : params.medicineRecommendationPolicy === 'candidates-or-standard-reference'
+            ? `优先从“精确匹配的院内有效库存候选”中选择；以下未命中的规范通用名仅可作为无库存参考，不得声称院内有库存：${(params.unavailableMedicineReferences || []).join('、') || '无'}。`
+          : '药品优先选择当前有效库存目录内同品；库存内无同品时仅在有可靠临床依据时选择合适等效药，否则返回规范通用名作为无库存参考。';
 
     return `
 请为以下患者制定后续治疗方案，推荐必要的药品、检查、检验或处置操作：
@@ -1438,10 +1456,11 @@ ${params.chiefComplaint}
 ${contextPart}
 ${inventoryPart}
 **任务要求：**
-1. 推荐 3-5 个药品（type: "medicine"），并根据复诊依据判断是否需要开具检查/检验/处置。报告回诊时一般无需检查检验，若无需要相关类型返回空。
+1. 根据临床证据决定是否需要药品、检查、检验或处置；不得为了凑数量开药。报告回诊时一般无需检查检验，若无明确复查指征或新病情，相关类型返回空。
 2. 头孢呋辛酯片等二代头孢成人常规单次剂量为 0.25g-0.5g，严禁推荐 1.0g 等异常单次用量。
 3. 药品必须填写 targetDose/targetDoseUnit，dosage/dosageUnit 必须留空；不要把制剂数或未经换算的质量剂量写入 dosage。
 4. 严格按 JSON 数组格式返回，不要包含 markdown 标记。
+5. ${medicinePolicyPart}
 
 **返回格式：**
 [

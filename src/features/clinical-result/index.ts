@@ -240,15 +240,19 @@ export type {
 
 export {
   alignMedicineRecommendationsToInventory,
+  findUnmatchedMedicineInventoryIntentNames,
+  formatAvailableMedicineInventoryCandidatesPrompt,
   formatAvailableMedicineInventoryPrompt,
   loadAvailableMedicineInventoryContext,
   mergeAvailableMedicineInventoryCatalog,
   resolveAvailableMedicineInventoryUnitPrice,
+  selectAvailableMedicineInventoryCandidates,
 } from './api/availableMedicineInventory';
 export type {
   AvailableMedicineInventoryCatalogItem,
   AvailableMedicineInventoryContext,
   LoadAvailableMedicineInventoryOptions,
+  MedicineInventoryCandidateIntent,
   MedicineRecommendationLike,
   ResolveAvailableMedicineInventoryUnitPriceOptions,
 } from './api/availableMedicineInventory';

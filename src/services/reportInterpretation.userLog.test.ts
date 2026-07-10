@@ -34,6 +34,12 @@ describe('report interpretation user log', () => {
       sections: [],
       recommendations: ['结合症状复诊'],
       cautions: [],
+      followUpAssessment: {
+        actionability: 'needs_treatment',
+        summary: '考虑感染相关改变，需要抗感染治疗。',
+        problems: [{ title: '白细胞升高', evidence: '12.0×10^9/L', urgency: 'medium' }],
+        medicationIntents: [{ indication: '感染治疗', preferredGenericNames: ['阿莫西林'], aliases: ['阿莫西林片'], route: '口服' }],
+      },
     }));
     const snapshot: ConsultationUserLogSnapshot = {
       chiefComplaint: '',
@@ -50,7 +56,7 @@ describe('report interpretation user log', () => {
 
   it('submits a completed report interpretation log after payload generation', async () => {
     const { buildReportInterpretationPayload } = await import('./reportInterpretation');
-    await buildReportInterpretationPayload({
+    const payload = await buildReportInterpretationPayload({
       requestId: 'report-request-1',
       taskId: 'inspectReport',
       reportKindLabel: '检验报告',
@@ -59,6 +65,10 @@ describe('report interpretation user log', () => {
     });
 
     expect(mocks.buildSnapshot).toHaveBeenCalledTimes(1);
+    expect(payload.followUpAssessment).toMatchObject({
+      actionability: 'needs_treatment',
+      medicationIntents: [{ preferredGenericNames: ['阿莫西林'] }],
+    });
     expect(mocks.submit).toHaveBeenCalledWith(expect.objectContaining({
       consultationId: 'visit-1',
       consultationType: 'report_interpretation',

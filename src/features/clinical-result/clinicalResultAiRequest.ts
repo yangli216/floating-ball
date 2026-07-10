@@ -22,6 +22,9 @@ export interface ClinicalResultTreatmentPromptParams {
   chiefComplaint: string;
   clinicalContext?: string;
   availableMedicineInventory?: string;
+  /** 报告回诊两阶段用药策略；普通门诊不传，继续由完整有效目录约束。 */
+  medicineRecommendationPolicy?: 'not-needed' | 'candidates-only' | 'standard-name-only' | 'candidates-or-standard-reference';
+  unavailableMedicineReferences?: string[];
   availableExamLabCatalog?: string;
   requestedTypes?: Array<'exam' | 'lab_test'>;
   explicitItemNames?: string[];

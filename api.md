@@ -200,7 +200,7 @@ PHIS                                MedHermes
 1. 桌面端按当前用户可见发药药房调用 `api/phis.aiAdapterService/queryInvSubList`，单个药房请求参数为 `[{"start":0,"limit":-1,"sort":null,"params":{"idSto":"药房ID","naMedPro":null,"sdBasMed":null,"amountType":"1","fgActiveType":"1","sdMed":null,"sdMedType":null}}]`。
 2. 返回的同一 `idMedPro` 多批次记录在 HIS Adapter 内合并；只有启用、未失效且可用数量大于 0 的药品进入 AI 候选目录。合并项保留近效期有效批次的 `priceSale` 作为当前药房库存单价；近效期批次未返回有效价格时，顺延取下一个有效批次价格。
 3. 合并后的目录按机构、租户、药房缓存，短时间内重复生成方案不重复访问 PHIS；刷新失败时保留最近一次非空缓存作为降级。
-4. AI 上下文使用紧凑的药品名和规格列表约束推荐范围；该目录是推荐依据，不是提交时的库存承诺，最终回写前仍调用实时库存校验接口。库存校验请求中的单价必须按 `药房 storeId + 药品 idMedPro` 从有效库存目录获取，不得使用药品详情接口返回的单价；目录中无有效库存单价时应拦截校验和回写。
+4. 常规用药推荐的 AI 上下文只使用紧凑的药品名和规格列表约束推荐范围，不传入具体库存数量。报告回诊等先判断是否需要治疗的场景采用两阶段：第一阶段仅输出用药意图、首选规范通用名及别名；客户端按这些名称在有效库存目录精确检索，第二阶段只传入命中的候选药品名和规格。没有经审核的药品治疗类别/替代知识映射时，不以模型猜测等效药；精确候选为空时返回规范通用名无库存参考。该目录是推荐依据，不是提交时的库存承诺，最终回写前仍调用实时库存校验接口。库存校验请求中的单价和可用数量必须按 `药房 storeId + 药品 idMedPro` 从有效库存目录获取，不得使用药品详情接口返回的单价；目录中无有效库存单价时应拦截校验和回写。
 
 ## 6. 接口清单
 
@@ -665,7 +665,7 @@ http://127.0.0.1:8081/api/consultation/start-voice
 3. 语音结果最终通过 `/api/consultation/events/ws` 推送。
 4. 未诊毕且未放弃时，同一接诊上下文内再次调用会恢复上一张语音结果页；但桌面端当前接诊切换到其他患者后，上一患者的语音缓存会失效，之后再切回该患者也会重新开始语音问诊。
 5. 桌面端在接诊上下文校验通过并准备打开语音问诊页时，上报一次 `voice_consultation` 功能调用事件；同一就诊再次显式触发语音问诊入口按新调用计数，后续提交语音日志不再补记功能统计。
-6. 桌面端进入语音流程前会先复用接诊阶段已获取的当前就诊信息和本次门诊病历文本；当 `loadClinicMedicalRecord.applyList[].items[].sdApply === "3"` 表示存在已出报告时，再通过 HIS Adapter 调用 PHIS 报告结果服务 `api/phis.aiInpatientEmrContextService/buildOutpatientFollowUpReportResults`。若本次病历文本和至少一份已报告且有实际结果内容的检验/检查结果均存在，则按报告回诊场景生成后续治疗方案；诊断只作为可选参考，不再阻断取数、推荐或回写。否则继续原语音录音问诊。
+6. 桌面端进入语音流程前会先复用接诊阶段已获取的当前就诊信息和本次门诊病历文本；当 `loadClinicMedicalRecord.applyList[].items[].sdApply === "3"` 表示存在已出报告时，再通过 HIS Adapter 调用 PHIS 报告结果服务 `api/phis.aiInpatientEmrContextService/buildOutpatientFollowUpReportResults`。若本次病历文本和至少一份已报告且有实际结果内容的检验/检查结果均存在，则进入统一报告工作台；医生可自行选择仅查看原始报告、触发 AI 解读，或直接升级到报告回诊后续方案。若已执行解读，后续方案优先使用其结构化处置结论；未执行时使用本次病历和结构化原始报告。诊断只作为可选参考，不再阻断取数或报告解读。否则继续原语音录音问诊。
 
 #### 6.3.1 PHIS 门诊复诊报告结果服务
 
@@ -694,7 +694,7 @@ rbmh-phis-boot/src/main/java/com/bsoft/rbmh/phis/ai/AiInpatientEmrContextService
 | 字段名 | 类型 | 说明 |
 | :--- | :--- | :--- |
 | `followUpEligible` | Boolean | 是否存在可用于报告回诊的已出报告结果 |
-| `labReports` | Array | 已出具的检验报告；每份报告包含时间、名称和完整检验项目结果 |
+| `labReports` | Array | 已出具的检验报告单；按 LIS `idReportGroup` 聚合。每份报告包含时间、完整检验项目结果，以及该报告单覆盖的全部已出结果申请项目 `applications[]`（申请单 ID、名称）。报告单数量不等于开立申请项目数量。 |
 | `examReports` | Array | 已出具的检查报告；只保留时间、项目名称、所见和结论 |
 | `ineligibleReason` | String/null | 不满足报告结果获取条件的原因；满足条件时为 `null` |
 

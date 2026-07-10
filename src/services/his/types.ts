@@ -1,3 +1,5 @@
+import type { ReportFollowUpAssessment } from '@/types/reportInterpretation';
+
 /**
  * HIS 适配器层 vendor-neutral DTO
  *
@@ -577,12 +579,20 @@ export interface HisOutpatientFollowUpLabItem {
   abnormal?: boolean;
 }
 
+/** 一份 LIS 报告单覆盖的已出结果申请项目。 */
+export interface HisOutpatientFollowUpReportApplication {
+  applicationId?: string;
+  applicationName?: string;
+}
+
 export interface HisOutpatientFollowUpLabReport {
   reportId?: string;
   reportGroupId?: string;
   applicationId?: string;
   reportTime?: string;
   reportName?: string;
+  /** 同一 idReportGroup 下的全部申请项目，不与报告单数量一一对应。 */
+  applications?: HisOutpatientFollowUpReportApplication[];
   items?: HisOutpatientFollowUpLabItem[];
 }
 
@@ -606,6 +616,8 @@ export interface HisOutpatientFollowUpContext {
   medicalRecordText?: string;
   labReports?: HisOutpatientFollowUpLabReport[];
   examReports?: HisOutpatientFollowUpExam[];
+  /** 由报告解读生成、仅在本次工作台会话中保存的临床处置结论。 */
+  assessment?: ReportFollowUpAssessment;
   ineligibleReason?: string | null;
 }
 

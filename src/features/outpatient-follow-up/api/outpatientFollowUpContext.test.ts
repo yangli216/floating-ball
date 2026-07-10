@@ -3,7 +3,9 @@ import { getHisAdapter } from '@/services/his';
 import type { HisOutpatientFollowUpContext } from '@/services/his/types';
 import {
   buildOutpatientFollowUpEvidence,
+  buildOutpatientFollowUpTreatmentEvidence,
   fetchOutpatientFollowUpContext,
+  isOutpatientFollowUpActionable,
 } from './outpatientFollowUpContext';
 
 vi.mock('@/services/his', () => ({
@@ -77,6 +79,29 @@ describe('buildOutpatientFollowUpEvidence', () => {
       examReports: [],
       ineligibleReason: null,
     })).toBe('');
+  });
+
+  it('uses confirmed interpretation conclusions instead of serializing every report item for treatment', () => {
+    const context: HisOutpatientFollowUpContext = {
+      followUpEligible: true,
+      medicalRecordText: '本次门诊病历。'.repeat(600),
+      labReports: [{ items: [{ itemName: '白细胞', result: '12.8' }] }],
+      assessment: {
+        actionability: 'needs_treatment',
+        summary: '结合肺部感染表现，需抗感染治疗。',
+        problems: [{ title: '肺部感染性病变', evidence: '胸部CT提示右下肺感染', urgency: 'medium' }],
+        medicationIntents: [{ indication: '社区获得性肺炎抗感染', preferredGenericNames: ['阿莫西林'], route: '口服' }],
+      },
+    };
+
+    const evidence = buildOutpatientFollowUpTreatmentEvidence(context);
+
+    expect(evidence).toContain('需药物治疗');
+    expect(evidence).toContain('阿莫西林');
+    expect(evidence).not.toContain('白细胞：12.8');
+    expect(evidence.length).toBeLessThan(4_000);
+    expect(isOutpatientFollowUpActionable(context)).toBe(true);
+    expect(isOutpatientFollowUpActionable({ ...context, assessment: { ...context.assessment!, actionability: 'observe' } })).toBe(false);
   });
 });
 

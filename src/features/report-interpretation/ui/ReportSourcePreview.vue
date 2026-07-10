@@ -15,6 +15,9 @@ const labRows = computed(() => (props.report.labItems || []).map((item) => ({
   direction: resolveLabItemDirection(item),
   referenceRange: buildLabReferenceRange(item),
 })));
+const applicationNames = computed(() => (props.report.applications || [])
+  .map((item) => item.applicationName?.trim() || '')
+  .filter(Boolean));
 
 function directionText(direction: string | undefined): string {
   if (direction === 'up') return '↑ 偏高';
@@ -40,6 +43,10 @@ function displayText(value: string | undefined): string {
     </header>
 
     <template v-if="report.taskId === 'inspectReport'">
+      <div v-if="applicationNames.length" class="application-coverage">
+        <strong>本报告单覆盖 {{ applicationNames.length }} 个已出结果申请项目</strong>
+        <span>{{ applicationNames.join('、') }}</span>
+      </div>
       <div v-if="labRows.length" class="lab-table" role="table" aria-label="检验结果">
         <div class="lab-row lab-row--head" role="row">
           <span>检验项目</span><span>结果</span><span>方向</span><span>参考范围</span>
@@ -75,6 +82,8 @@ function displayText(value: string | undefined): string {
 .source-report header span { color: #60758f; font-size: 12px; font-weight: 700; }
 .source-report h2 { margin: 3px 0 0; font-size: 18px; line-height: 1.35; }
 .source-report time { flex: none; color: #64748b; font-size: 13px; }
+.application-coverage { display: grid; gap: 3px; margin-top: 12px; padding: 9px 10px; border: 1px solid #bfdbfe; border-radius: 7px; color: #1d4ed8; background: #eff6ff; font-size: 12px; line-height: 1.5; }
+.application-coverage strong { color: #1e3a8a; }
 .lab-table { margin-top: 9px; }
 .lab-row { display: grid; grid-template-columns: minmax(150px, 1.35fr) minmax(110px, .85fr) 82px minmax(130px, 1fr); gap: 12px; align-items: center; min-height: 36px; padding: 4px 0; border-bottom: 1px solid #e3e9f1; font-size: 13px; line-height: 1.4; }
 .lab-row--head { min-height: auto; color: #64748b; font-size: 12px; font-weight: 700; }

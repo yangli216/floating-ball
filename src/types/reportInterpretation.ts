@@ -2,6 +2,36 @@ export type ReportInterpretationTaskId = 'inspectReport' | 'checkReport';
 
 export type ReportInterpretationUrgency = 'low' | 'medium' | 'high';
 
+/** 报告解读后用于决定是否可进入报告回诊方案的处置结论。 */
+export type ReportFollowUpActionability =
+  | 'no_treatment_needed'
+  | 'observe'
+  | 'needs_follow_up'
+  | 'needs_treatment';
+
+export interface ReportFollowUpProblem {
+  title: string;
+  evidence: string;
+  urgency?: ReportInterpretationUrgency;
+}
+
+/**
+ * 这是治疗意图而不是处方：只用于从当前有效库存精确找候选，不能携带剂量或包装数量。
+ */
+export interface ReportFollowUpMedicationIntent {
+  indication: string;
+  preferredGenericNames: string[];
+  aliases?: string[];
+  route?: string;
+}
+
+export interface ReportFollowUpAssessment {
+  actionability: ReportFollowUpActionability;
+  summary: string;
+  problems: ReportFollowUpProblem[];
+  medicationIntents: ReportFollowUpMedicationIntent[];
+}
+
 export interface ReportInterpretationPatientInput {
   patientId?: string;
   idPi?: string;
@@ -103,6 +133,8 @@ export interface ReportInterpretationWindowPayload {
   sections: ReportInterpretationSection[];
   recommendations: string[];
   cautions: string[];
+  /** 报告回诊只消费该结构化结论，不以展示文案反向推断处方需求。 */
+  followUpAssessment: ReportFollowUpAssessment;
   generatedAt: string;
 }
 
