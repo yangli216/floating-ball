@@ -1,6 +1,6 @@
 import { getCachedBootstrap } from './regionalClient';
 
-export type SpeechProvider = 'aliyun-dashscope' | 'openai-compatible';
+export type SpeechProvider = 'aliyun-dashscope' | 'openai-compatible' | 'funasr-websocket';
 
 export interface SpeechConfig {
   provider: SpeechProvider;
@@ -17,7 +17,13 @@ export const DEFAULT_SPEECH_CONFIG: SpeechConfig = {
 };
 
 function normalizeSpeechProvider(raw?: string | null): SpeechProvider {
-  return raw === 'openai-compatible' ? 'openai-compatible' : 'aliyun-dashscope';
+  if (raw === 'openai-compatible') return 'openai-compatible';
+  if (raw === 'funasr-websocket' || raw === 'funasr') return 'funasr-websocket';
+  return 'aliyun-dashscope';
+}
+
+export function supportsRealtimeSpeech(provider: SpeechProvider): boolean {
+  return provider === 'aliyun-dashscope' || provider === 'funasr-websocket';
 }
 
 export function getSpeechConfig(): SpeechConfig {
@@ -28,7 +34,9 @@ export function getSpeechConfig(): SpeechConfig {
     model: bootstrap?.speech?.model
       || (provider === 'openai-compatible'
         ? bootstrap?.llm?.audioModel || 'whisper-1'
-        : DEFAULT_SPEECH_CONFIG.model),
+        : provider === 'funasr-websocket'
+          ? 'funasr-2pass'
+          : DEFAULT_SPEECH_CONFIG.model),
     sampleRate: DEFAULT_SPEECH_CONFIG.sampleRate,
     format: DEFAULT_SPEECH_CONFIG.format,
   };

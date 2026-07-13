@@ -153,7 +153,7 @@
 4. Windows 内网更新源采用本地配置驱动：测试环境地址、正式环境地址和当前生效环境保存在 `localStorage`，前端只负责展示与选择，真正的 updater endpoint 在 Rust 侧通过 `updater_builder()` 运行时注入。客户端会按当前更新通道访问 `floating-ball-server` 的 `/v1/client/releases/{channel}/policy.json`；若服务端发布策略要求强制更新且当前版本低于 `minSupportedVersion`，应用进入强制更新门禁，只保留更新源配置、检查更新、下载安装并重启能力。
 5. 主窗口的聊天、设置、问诊等可调整工作视图会将用户最后一次手动调整后的窗口尺寸写入 `.settings.dat`，再次打开对应视图时优先恢复该尺寸；聊天视图会丢弃低于标准工作面板高度的历史扁窗尺寸并回到默认窄高比例，智能问诊视图会丢弃低于当前默认尺寸的历史记录并回到适度放大的双栏比例，避免欢迎区、病历编辑区、推荐清单或底部操作区被不合适的历史尺寸继续影响；悬浮球启动阶段在 Rust 层读取 `.settings.dat` 的历史位置，并按当前显示器 `workArea`、实际窗口物理尺寸和最近边缘吸附策略夹回可见安全区域，若历史位置已不属于当前工作区则回落到主屏右侧居中位置。
 6. 通用设置页新增音频输入设备配置，首选麦克风 `deviceId` 保存在 `localStorage`；聊天录音和语音接诊共用同一配置，若指定设备不存在则自动回退到系统默认输入设备。设置页首次进入时会按权限状态自动补做一次设备列表预热，尽量避免初次枚举不完整、必须手动刷新后才看到全部麦克风。
-7. `VoiceCapsule.vue` 实时语音和 `ChatPanel.vue` 录音转写共用 bootstrap 下发的 speech config；`aliyun-dashscope` 优先使用区域 WebSocket，`openai-compatible` 与实时失败场景统一使用区域批量转写接口。
+7. `VoiceCapsule.vue` 实时语音和 `ChatPanel.vue` 录音转写共用 bootstrap 下发的 speech config；`aliyun-dashscope` 与 `funasr-websocket` 优先使用区域 WebSocket，`openai-compatible` 与实时失败场景统一使用区域批量转写接口。桌面端只连接签名 `/v1/ai/speech/realtime/ws`，不接收或直连第三方实时地址。
 
 ### 与主流程关系
 
@@ -1019,7 +1019,7 @@ Windows 安装包只发布 Tauri WiX MSI，不再同时生成 NSIS `.exe`，避�
 ### 语音转写网络策略
 
 - `llm.ts` 中 `transcribeAudio` 只调用签名 `/v1/ai/speech/transcribe`，客户端不持有语音供应商 key 或直连地址。
-- `aliyunSpeech.ts` 中 `RealtimeSpeechService` 统一采集 PCM：`aliyun-dashscope` 走签名 `/v1/ai/speech/realtime/ws`，WebSocket 启动失败时在停止后调用 `/v1/ai/speech/realtime` 批量兜底；`openai-compatible` 统一走批量转写。
+- `aliyunSpeech.ts` 中 `RealtimeSpeechService` 统一采集 PCM：`aliyun-dashscope` 与 `funasr-websocket` 走签名 `/v1/ai/speech/realtime/ws`，WebSocket 启动失败时在停止后调用 `/v1/ai/speech/realtime` 批量兜底；`openai-compatible` 统一走批量转写。FunASR 原生地址和协议仅由服务端托管。
 - `ChatPanel.vue` 与 `VoiceCapsule.vue` 共用 bootstrap 下发的 speech provider/model/sampleRate/format；`SPEECH_TEST_MODE` 仅用于开发测试夹具，不提供生产本地执行路径。
 - 审查 AI（`factChecker.ts` -> `llm.ts/chat`）复用签名 `/v1/ai/chat`，启用状态、模型和 `checkExaminationEnabled` 来自 bootstrap。
 

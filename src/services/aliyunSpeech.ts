@@ -6,7 +6,7 @@
  */
 
 import { transcribeAudio } from './llm';
-import { getSpeechConfig } from './speechConfig';
+import { getSpeechConfig, supportsRealtimeSpeech } from './speechConfig';
 import {
     regionalPost,
     buildRegionalSpeechUploadPayload,
@@ -146,8 +146,8 @@ export class RealtimeSpeechService {
             return;
         }
 
-        if (getSpeechConfig().provider !== 'aliyun-dashscope') {
-            console.log('[Speech] Non-Aliyun provider configured, using batch mode');
+        if (!supportsRealtimeSpeech(getSpeechConfig().provider)) {
+            console.log('[Speech] Batch-only provider configured, using batch mode');
             return;
         }
         try {
