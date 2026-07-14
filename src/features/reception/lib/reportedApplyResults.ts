@@ -43,7 +43,7 @@ export function getRecentReportedVisits(
 ): HisVisitRecord[] {
   const start = new Date(now);
   start.setHours(0, 0, 0, 0);
-  start.setDate(start.getDate() - 6);
+  start.setDate(start.getDate() - 13);
   const end = new Date(now);
   end.setHours(23, 59, 59, 999);
 

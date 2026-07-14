@@ -172,7 +172,7 @@ const reportAssistantTitle = computed(() => (
 const reportAssistantSubtitle = computed(() => (
   props.outpatientFollowUpContext
     ? '本次报告已出 · 可生成后续方案'
-    : `近7天 ${reportCount.value} 份已出报告`
+    : `近14天 ${reportCount.value} 份已出报告`
 ));
 const chronicRefillSubtitle = computed(() => {
   const diagnosisText = props.chronicRefillCandidate?.diagnoses.join('、') || '慢病复诊';

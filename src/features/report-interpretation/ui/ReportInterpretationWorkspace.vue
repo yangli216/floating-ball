@@ -116,10 +116,10 @@ onMounted(() => {
 
 <template>
   <section class="report-workspace">
-    <aside class="report-timeline" aria-label="近7天报告列表">
+    <aside class="report-timeline" aria-label="近14天报告列表">
       <div class="timeline-header">
         <div>
-          <h2>近7天报告</h2>
+          <h2>近14天报告</h2>
           <p>
             {{ controller.reports.value.length }} 份报告单
             <template v-if="reportedApplicationCount > controller.reports.value.length">

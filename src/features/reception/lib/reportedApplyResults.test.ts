@@ -27,14 +27,14 @@ describe('hasReportedApplyResult', () => {
     })).toBe(false);
   });
 
-  it('keeps only reported visits from the latest seven calendar days', () => {
+  it('keeps only reported visits from the latest fourteen calendar days', () => {
     const now = new Date('2026-06-30T10:00:00+08:00');
     const visits = getRecentReportedVisits({
       patientId: 'p1',
       visits: [
         {
-          visitId: 'recent-reported',
-          visitTime: new Date('2026-06-24T08:00:00+08:00').getTime(),
+          visitId: 'fourteenth-day-reported',
+          visitTime: new Date('2026-06-17T00:00:00+08:00').getTime(),
           reportedApplications: [{
             applicationId: 'apply-1',
             name: '血常规',
@@ -48,7 +48,7 @@ describe('hasReportedApplyResult', () => {
         },
         {
           visitId: 'too-old',
-          visitTime: new Date('2026-06-23T23:59:59+08:00').getTime(),
+          visitTime: new Date('2026-06-16T23:59:59+08:00').getTime(),
           reportedApplications: [{
             applicationId: 'apply-2',
             name: '胸部CT',
@@ -59,7 +59,7 @@ describe('hasReportedApplyResult', () => {
       ],
     }, now);
 
-    expect(visits.map((visit) => visit.visitId)).toEqual(['recent-reported']);
+    expect(visits.map((visit) => visit.visitId)).toEqual(['fourteenth-day-reported']);
   });
 
 });
