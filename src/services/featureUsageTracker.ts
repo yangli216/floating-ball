@@ -35,6 +35,8 @@ export interface FeatureUsageDraft {
   doctorName?: string | null;
   deptId?: string | null;
   deptName?: string | null;
+  hisOrgId?: string | null;
+  hisOrgName?: string | null;
   payload?: Record<string, unknown>;
   timestamp?: number;
 }
@@ -155,6 +157,8 @@ function toRequestEvent(event: FeatureUsageEvent) {
     doctorName: event.doctorName ?? actor.doctorName,
     deptId: event.deptId ?? actor.deptId,
     deptName: event.deptName ?? actor.deptName,
+    hisOrgId: event.hisOrgId ?? actor.hisOrgId,
+    hisOrgName: event.hisOrgName ?? actor.orgName,
     payload: normalizePayload(event.payload),
     timestamp: event.timestamp,
   };
@@ -164,6 +168,7 @@ export function trackFeatureUsage(draft: FeatureUsageDraft): void {
   ensureQueueLoaded();
 
   const eventId = randomId();
+  const actor = getFeedbackActor();
   const event: FeatureUsageEvent = {
     ...draft,
     eventId,
@@ -174,6 +179,8 @@ export function trackFeatureUsage(draft: FeatureUsageDraft): void {
     sessionId: normalizeText(draft.sessionId),
     sourceModule: normalizeText(draft.sourceModule),
     scene: normalizeText(draft.scene),
+    hisOrgId: normalizeText(draft.hisOrgId ?? actor.hisOrgId),
+    hisOrgName: normalizeText(draft.hisOrgName ?? actor.orgName),
     timestamp: draft.timestamp || Date.now(),
   };
 

@@ -5,6 +5,7 @@
  * 本地只保留轻量离线队列，供失败或断网时自动重传。
  */
 import { regionalPost } from './regionalClient';
+import { getFeedbackActor } from './feedbackContext';
 
 // ─── 类型定义 ─────────────────────────────────────────────────────────────
 
@@ -13,6 +14,8 @@ interface AuditEvent {
   eventType: 'operation' | 'feedback' | 'metric' | 'session';
   payload: Record<string, unknown>;
   timestamp: number;
+  hisOrgId?: string;
+  hisOrgName?: string;
   uploaded?: boolean;
 }
 
@@ -87,12 +90,15 @@ export function enqueueAuditEvent(
   payload: Record<string, unknown>
 ): void {
   ensureQueueLoaded();
+  const actor = getFeedbackActor();
 
   eventQueue.push({
     id: crypto.randomUUID(),
     eventType,
     payload,
     timestamp: Date.now(),
+    hisOrgId: actor.hisOrgId || undefined,
+    hisOrgName: actor.orgName || undefined,
   });
 
   saveQueue();
@@ -113,10 +119,13 @@ export async function flushAuditEvents(): Promise<number> {
     const batch = eventQueue.slice(0, BATCH_SIZE);
 
     try {
+      const actor = getFeedbackActor();
       await regionalPost<{ accepted: number }>('/v1/client/audit/events/batch', {
         events: batch.map(e => ({
           eventId: e.id,
           eventType: e.eventType,
+          hisOrgId: e.hisOrgId ?? actor.hisOrgId ?? undefined,
+          hisOrgName: e.hisOrgName ?? actor.orgName ?? undefined,
           payload: e.payload,
           timestamp: e.timestamp,
         })),
