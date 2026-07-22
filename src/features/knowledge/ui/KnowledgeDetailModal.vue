@@ -62,6 +62,7 @@
 <script setup lang="ts">
 import { ref, watch, computed } from 'vue';
 import { pmphaiService, type SearchResult, type ClipData } from '@services/pmphai';
+import { sanitizeExternalHtml } from '@shared/lib/safeHtml';
 
 const props = defineProps<{
   modelValue: boolean;
@@ -103,20 +104,8 @@ async function loadContent() {
   }
 }
 
-// 简单的 HTML 清理（移除危险标签）
 const sanitizedContent = computed(() => {
-  if (!clipData.value?.xml) return '';
-
-  let html = clipData.value.xml;
-
-  // 移除 script 和 style 标签
-  html = html.replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, '');
-  html = html.replace(/<style\b[^<]*(?:(?!<\/style>)<[^<]*)*<\/style>/gi, '');
-
-  // 移除事件处理器
-  html = html.replace(/\s+on\w+\s*=\s*("[^"]*"|'[^']*'|[^\s>]*)/gi, '');
-
-  return html;
+  return sanitizeExternalHtml(clipData.value?.xml);
 });
 
 function handleOverlayClick() {

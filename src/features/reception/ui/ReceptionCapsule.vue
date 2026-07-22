@@ -5,9 +5,9 @@
     data-tauri-drag-region
   >
     <!-- Close -->
-    <div class="rc-close" @click="trackClick('reception_close'); $emit('close')">
-      <Icon icon="lucide:x" size="14" />
-    </div>
+    <button type="button" class="rc-close" aria-label="关闭接诊胶囊" @click="closeCapsule">
+      <Icon icon="lucide:x" size="14" aria-hidden="true" />
+    </button>
 
     <!-- Header row -->
     <div class="rc-header">
@@ -34,11 +34,14 @@
             <span class="rc-dot"></span>
             正在评估...
           </span>
-          <span
+          <button
             v-else-if="risks.length > 0"
+            type="button"
             class="rc-badge rc-badge--orange rc-badge--clickable"
             @click="toggle"
-            role="button"
+            :aria-expanded="expanded"
+            :aria-label="`${expanded ? '收起' : '展开'}${risks.length}项健康风险详情`"
+            aria-controls="reception-risk-list"
             :title="expanded ? '收起风险详情' : '展开风险详情'"
           >
             <Icon icon="lucide:alert-circle" size="14" />
@@ -48,7 +51,7 @@
               :icon="expanded ? 'lucide:chevron-up' : 'lucide:chevron-down'"
               size="14"
             />
-          </span>
+          </button>
           <span v-else class="rc-badge rc-badge--green">
             <Icon icon="lucide:circle-check" size="14" />
             暂无已识别风险
@@ -68,7 +71,7 @@
     </div>
 
     <!-- Risk items -->
-    <div v-if="expanded && risks.length > 0" class="rc-risks">
+    <div v-if="expanded && risks.length > 0" id="reception-risk-list" class="rc-risks">
       <div v-for="(r, i) in risks" :key="i" class="rc-risk-row">
         <span
           class="rc-tag"
@@ -217,6 +220,11 @@ function toggle() {
   emit('toggle-expand', expanded.value);
 }
 
+function closeCapsule(): void {
+  trackClick('reception_close');
+  emit('close');
+}
+
 function confirmChronicRefill() {
   trackClick('reception_chronic_refill_confirm', {
     diagnosis: props.chronicRefillCandidate?.diagnosis,
@@ -321,6 +329,8 @@ function tagLabel(cat: string) { return CATEGORY_LABELS[cat] || '其他'; }
   width: 22px;
   height: 22px;
   border-radius: 50%;
+  padding: 0;
+  border: 0;
   background: rgba(0,0,0,0.06);
   display: flex;
   align-items: center;
@@ -331,6 +341,10 @@ function tagLabel(cat: string) { return CATEGORY_LABELS[cat] || '其他'; }
   -webkit-app-region: no-drag;
 }
 .rc-close:hover { background: rgba(0,0,0,0.12); color: #475569; }
+.rc-close:focus-visible, .rc-badge--clickable:focus-visible {
+  outline: 3px solid rgba(43, 127, 227, 0.38);
+  outline-offset: 2px;
+}
 
 /* ---- header ---- */
 .rc-header {
@@ -401,6 +415,8 @@ function tagLabel(cat: string) { return CATEGORY_LABELS[cat] || '其他'; }
 .rc-badge--orange { background: #fff4e5; color: #ea580c; }
 .rc-badge--blue { background: #dbeafe; color: #3b82f6; gap: 6px; }
 .rc-badge--clickable {
+  border: 0;
+  font: inherit;
   cursor: pointer;
   -webkit-app-region: no-drag;
   transition: background 0.15s ease;

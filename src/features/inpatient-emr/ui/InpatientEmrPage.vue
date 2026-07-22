@@ -356,7 +356,7 @@
           <div
             v-else-if="previewVisitRecord"
             class="preview-html-container"
-            v-html="previewVisitRecord.htmlContent"
+            v-html="safePreviewVisitHtml"
           ></div>
           <div v-else class="preview-error">
             <Icon icon="lucide:triangle-alert" :size="20" />
@@ -412,6 +412,7 @@ import {
   isAdmissionTemplate,
 } from '../lib/inpatientEmrTemplate';
 import { buildInpatientEmrFieldPrompt } from '../lib/inpatientEmrPrompts';
+import { sanitizeExternalHtml } from '@shared/lib/safeHtml';
 // import { buildInpatientEmrQualityIssues } from '../lib/inpatientEmrQuality';
 import InpatientEmrProcessPanel from './InpatientEmrProcessPanel.vue';
 import InpatientEmrWritebackQualityDialog from './InpatientEmrWritebackQualityDialog.vue';
@@ -472,6 +473,7 @@ const outpatientHistoryRangeOptions: Array<{ key: OutpatientHistoryRangeKey; lab
 const showOutpatientPreview = ref(false);
 const isDetailLoading = ref(false);
 const previewVisitRecord = ref<HisOutpatientMedicalRecord | null>(null);
+const safePreviewVisitHtml = computed(() => sanitizeExternalHtml(previewVisitRecord.value?.htmlContent));
 let outpatientVisitsLoadSeq = 0;
 
 const isAdmission = computed(() => {

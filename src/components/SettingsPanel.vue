@@ -14,19 +14,28 @@ import { trackClick, trackError, trackFormSubmit } from '../services/operationTr
 import { setPreferredAudioInputDeviceId } from '../services/audioRecorder';
 import {
   DEFAULT_AUDIO_INPUT_VALUE,
+  getDefaultKeyboardShortcuts,
   SettingsGeneralTab,
   SettingsSaveBar,
   UpdateChecker,
   useSettingsAudioInput,
   useSettingsSaveState,
   useSettingsVoiceRecordingDirectory,
+  type KeyboardShortcutBindings,
 } from '@features/settings';
 import Icon from '@shared/ui/Icon.vue';
 import { formatUserFacingError } from '@shared/lib/errorMessages';
 
+const props = withDefaults(defineProps<{
+  keyboardShortcuts?: KeyboardShortcutBindings;
+}>(), {
+  keyboardShortcuts: () => getDefaultKeyboardShortcuts(),
+});
+
 const emit = defineEmits<{
   'open-his-log': [];
   'open-medical-cache': [];
+  'save-keyboard-shortcuts': [bindings: KeyboardShortcutBindings];
 }>();
 
 const showToast = inject('showToast') as ((msg: string, type: 'success' | 'error' | 'info') => void) | undefined;
@@ -47,6 +56,7 @@ const regionalDefaults = getRegionalConnectionDefaults();
 const regionalConnectResult = ref<{ success: boolean; message: string } | null>(null);
 const savingSettings = ref(false);
 const testingRegionalConnection = ref(false);
+const keyboardShortcutDraft = ref<KeyboardShortcutBindings>({ ...props.keyboardShortcuts });
 
 const {
   audioDeviceError,
@@ -79,6 +89,7 @@ const currentSettingsSnapshot = computed(() => JSON.stringify({
   regionalBaseUrl: regionalBaseUrl.value,
   regionalOrgCode: regionalOrgCode.value,
   selectedAudioInputDeviceId: selectedAudioInputDeviceId.value,
+  keyboardShortcuts: keyboardShortcutDraft.value,
 }));
 
 const {
@@ -154,6 +165,7 @@ async function saveSettings(): Promise<void> {
     }
 
     await applyAlwaysOnTop();
+    emit('save-keyboard-shortcuts', { ...keyboardShortcutDraft.value });
     updateSavedSnapshot();
   } catch (error) {
     const message = formatUserFacingError(error, { fallback: '保存失败，请稍后重试。' });
@@ -205,7 +217,6 @@ onMounted(async () => {
   updateSavedSnapshot();
   markSettingsLoaded();
   navigator.mediaDevices?.addEventListener?.('devicechange', handleAudioDeviceChange);
-  window.addEventListener('keydown', handleSaveShortcut);
   if (getCachedBootstrap()) {
     regionalConnectResult.value = {
       success: true,
@@ -216,7 +227,6 @@ onMounted(async () => {
 
 onUnmounted(() => {
   navigator.mediaDevices?.removeEventListener?.('devicechange', handleAudioDeviceChange);
-  window.removeEventListener('keydown', handleSaveShortcut);
 });
 
 watch(activeTab, tab => trackClick('settings_tab_change', { tab }));
@@ -224,11 +234,12 @@ watch([regionalBaseUrl, regionalOrgCode], () => { regionalConnectResult.value = 
 </script>
 
 <template>
-  <div class="settings-panel">
+  <div class="settings-panel" @keydown="handleSaveShortcut">
     <div class="tabs-header">
       <button
         v-for="tab in tabs"
         :key="tab.id"
+        type="button"
         :class="['tab-btn', { active: activeTab === tab.id }]"
         @click="activeTab = tab.id"
       >
@@ -244,6 +255,7 @@ watch([regionalBaseUrl, regionalOrgCode], () => { regionalConnectResult.value = 
         v-model:regional-base-url="regionalBaseUrl"
         v-model:regional-org-code="regionalOrgCode"
         v-model:selected-audio-input-device-id="selectedAudioInputDeviceId"
+        v-model:keyboard-shortcuts="keyboardShortcutDraft"
         :audio-device-error="audioDeviceError"
         :audio-device-loading="audioDeviceLoading"
         :audio-input-devices="audioInputDevices"
@@ -322,6 +334,11 @@ watch([regionalBaseUrl, regionalOrgCode], () => { regionalConnectResult.value = 
 .tab-btn.active {
   border-bottom-color: var(--medical-primary);
   color: var(--medical-primary);
+}
+
+.tab-btn:focus-visible {
+  outline: 3px solid color-mix(in srgb, var(--medical-primary) 35%, transparent);
+  outline-offset: -1px;
 }
 
 .settings-content {

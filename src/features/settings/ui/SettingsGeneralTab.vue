@@ -3,6 +3,8 @@ import type { AudioInputDeviceOption } from '@services/audioRecorder';
 import type { RegionalConnectionConfig } from '@services/regionalClient';
 import type { Theme } from '@services/themeService';
 import Icon from '@shared/ui/Icon.vue';
+import KeyboardShortcutSettings from './KeyboardShortcutSettings.vue';
+import type { KeyboardShortcutBindings } from '../model/keyboardShortcuts';
 
 type RegionalConnectionDefaults = Pick<RegionalConnectionConfig, 'baseUrl' | 'orgCode'>;
 
@@ -29,6 +31,7 @@ defineProps<{
   audioDeviceError: string;
   voiceRecordingDir: string;
   voicePickingDir: boolean;
+  keyboardShortcuts: KeyboardShortcutBindings;
 }>();
 
 const emit = defineEmits<{
@@ -37,6 +40,7 @@ const emit = defineEmits<{
   'update:regionalBaseUrl': [value: string];
   'update:regionalOrgCode': [value: string];
   'update:selectedAudioInputDeviceId': [value: string];
+  'update:keyboardShortcuts': [value: KeyboardShortcutBindings];
   'test-regional-connection': [];
   'refresh-audio-input-devices': [];
   'pick-voice-recording-dir': [];
@@ -91,6 +95,11 @@ function readSelectValue(event: Event): string {
         </button>
       </div>
     </div>
+
+    <KeyboardShortcutSettings
+      :model-value="keyboardShortcuts"
+      @update:model-value="emit('update:keyboardShortcuts', $event)"
+    />
 
     <div class="settings-section">
       <div class="section-header">
@@ -282,7 +291,7 @@ function readSelectValue(event: Event): string {
       </div>
     </div>
 
-    <div class="settings-section clickable-section" @click="emit('open-medical-cache')">
+    <button type="button" class="settings-section clickable-section" @click="emit('open-medical-cache')">
       <div class="section-header no-border settings-link-header">
         <div class="header-left">
           <Icon icon="lucide:database" :size="20" />
@@ -293,9 +302,9 @@ function readSelectValue(event: Event): string {
         </div>
       </div>
       <p class="section-desc settings-link-desc">查看诊断、诊疗项目和药品目录等本地基础数据缓存</p>
-    </div>
+    </button>
 
-    <div class="settings-section clickable-section" @click="emit('open-his-log')">
+    <button type="button" class="settings-section clickable-section" @click="emit('open-his-log')">
       <div class="section-header no-border settings-link-header">
         <div class="header-left">
           <Icon icon="lucide:scroll-text" :size="20" />
@@ -306,7 +315,7 @@ function readSelectValue(event: Event): string {
         </div>
       </div>
       <p class="section-desc settings-link-desc">查看 Bridge 入站与 PHIS 出站调用流水，支持按 traceId 排查和导出</p>
-    </div>
+    </button>
   </div>
 </template>
 
@@ -611,14 +620,23 @@ function readSelectValue(event: Event): string {
 }
 
 .clickable-section {
+  width: 100%;
+  color: inherit;
+  font: inherit;
+  text-align: left;
   cursor: pointer;
-  transition: all var(--duration-normal) var(--ease-out);
+  transition: border-color var(--duration-normal) var(--ease-out), box-shadow var(--duration-normal) var(--ease-out), transform var(--duration-normal) var(--ease-out);
 }
 
 .clickable-section:hover {
   border-color: var(--medical-primary);
   transform: translateY(-2px);
   box-shadow: 0 4px 12px rgba(8, 145, 178, 0.15);
+}
+
+.clickable-section:focus-visible {
+  outline: 3px solid color-mix(in srgb, var(--medical-primary) 35%, transparent);
+  outline-offset: 2px;
 }
 
 .settings-link-header {

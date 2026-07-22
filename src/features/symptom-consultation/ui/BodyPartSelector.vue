@@ -3,13 +3,13 @@
     <div class="selector-header">
       <span class="selector-hint">选择症状</span>
       <div>
-        <button class="clear-btn" @click="clearSelection" v-if="selectedPart">
+        <button v-if="selectedPart" type="button" class="clear-btn" aria-label="清除已选部位" @click="clearSelection">
           <svg viewBox="0 0 1024 1024" version="1.1" xmlns="http://www.w3.org/2000/svg" p-id="9585" width="14" height="14"><path d="M781.28 851.36a58.56 58.56 0 0 1-58.56 58.56H301.28a58.72 58.72 0 0 1-58.56-58.56V230.4h538.56zM359.68 125.44a11.84 11.84 0 0 1 12-12h281.28a11.84 11.84 0 0 1 12 12V160H359.68zM956.8 160H734.72V125.44a81.76 81.76 0 0 0-81.76-81.76H371.68a82.08 82.08 0 0 0-81.76 81.76V160H67.2a35.36 35.36 0 0 0 0 70.56h105.12v620.8a128.96 128.96 0 0 0 128.96 128.96h421.44a128.96 128.96 0 0 0 128.96-128.96V230.4h105.12a35.2 35.2 0 0 0 35.2-35.2 34.56 34.56 0 0 0-35.2-35.2zM512 804.16a35.2 35.2 0 0 0 35.2-35.36V393.92a35.2 35.2 0 1 0-70.4 0v374.88a35.2 35.2 0 0 0 35.2 35.36m-164.32 0a35.36 35.36 0 0 0 35.36-35.36V393.92a35.36 35.36 0 1 0-70.56 0v374.88a36.32 36.32 0 0 0 35.2 35.36m328.64 0a35.36 35.36 0 0 0 35.2-35.36V393.92a35.36 35.36 0 1 0-70.56 0v374.88a35.36 35.36 0 0 0 35.36 35.36" fill="#d81e06" p-id="9586"></path></svg>
         </button>
-        <button :class="['front-btn',{ active: viewMode === 'front' }]" @click="viewMode = 'front'">
+        <button type="button" :class="['front-btn',{ active: viewMode === 'front' }]" :aria-pressed="viewMode === 'front'" @click="viewMode = 'front'">
           正面
         </button>
-        <button :class="['back-btn',{ active: viewMode === 'back' }]" @click="viewMode = 'back'">
+        <button type="button" :class="['back-btn',{ active: viewMode === 'back' }]" :aria-pressed="viewMode === 'back'" @click="viewMode = 'back'">
           背面
         </button>
       </div>
@@ -31,10 +31,10 @@
 <!--    </div>-->
 
     <div class="body-diagram">
-      <div v-if="gender === 'male' && viewMode === 'front'" class="body-view" v-html="maleFrontSVG"></div>
-      <div v-if="gender === 'male' && viewMode === 'back'" class="body-view" v-html="maleBackSVG"></div>
-      <div v-if="gender === 'female' && viewMode === 'front'" class="body-view" v-html="femaleFrontSVG"></div>
-      <div v-if="gender === 'female' && viewMode === 'back'" class="body-view" v-html="femaleBackSVG"></div>
+      <div v-if="gender === 'male' && viewMode === 'front'" ref="bodyView" class="body-view" v-html="maleFrontSVG" @click="activateBodyPart" @keydown="activateBodyPart"></div>
+      <div v-if="gender === 'male' && viewMode === 'back'" ref="bodyView" class="body-view" v-html="maleBackSVG" @click="activateBodyPart" @keydown="activateBodyPart"></div>
+      <div v-if="gender === 'female' && viewMode === 'front'" ref="bodyView" class="body-view" v-html="femaleFrontSVG" @click="activateBodyPart" @keydown="activateBodyPart"></div>
+      <div v-if="gender === 'female' && viewMode === 'back'" ref="bodyView" class="body-view" v-html="femaleBackSVG" @click="activateBodyPart" @keydown="activateBodyPart"></div>
     </div>
 
     <!-- 症状区域：显示部位相关症状 -->
@@ -46,7 +46,9 @@
             <button
               v-for="symptom in filteredSymptoms"
               :key="symptom.key"
+              type="button"
               :class="['symptom-chip', { active: isSymptomSelected(symptom.key) }]"
+              :aria-pressed="isSymptomSelected(symptom.key)"
               @click="handleSymptomClick(symptom)"
             >
               {{ symptom.name }}
@@ -60,7 +62,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, PropType, onMounted, watch } from 'vue';
+import { ref, computed, nextTick, onMounted, PropType, useTemplateRef, watch } from 'vue';
 
 interface Symptom {
   key: string;
@@ -96,6 +98,7 @@ const handleSymptomClick = (symptom: Symptom) => {
 const gender = ref<'male' | 'female'>(props.patientGender);
 const viewMode = ref<'front' | 'back'>('front');
 const selectedPart = ref<string | null>(null);
+const bodyViewRef = useTemplateRef<HTMLElement>('bodyView');
 
 // 监听患者性别变化
 watch(() => props.patientGender, (newGender) => {
@@ -154,12 +157,19 @@ const selectPart = (svgId: string) => {
 };
 
 const updateSVGHighlight = () => {
-  const svg = document.querySelector('.body-view svg');
+  const svg = bodyViewRef.value?.querySelector('.body-svg');
   if (!svg) return;
 
   // 移除所有已有的高亮
   svg.querySelectorAll('.body-part-group').forEach((group) => {
     group.classList.remove('active');
+    const id = group.querySelector<SVGElement>('[id]')?.id;
+    const part = id ? partIdMap[id] : null;
+    if (!part) return;
+    group.setAttribute('role', 'button');
+    group.setAttribute('tabindex', '0');
+    group.setAttribute('aria-label', `选择${bodyPartLabels[part]}`);
+    group.setAttribute('aria-pressed', String(part === selectedPart.value));
   });
 
   // 找到当前选中部位对应的所有 SVG ID，添加高亮
@@ -342,30 +352,25 @@ const femaleBackSVG = `<svg version="1.1" xmlns="http://www.w3.org/2000/svg" x="
   </g>
 </svg>`;
 
-// 添加点击事件监听
-const setupClickHandlers = () => {
-  const svg = document.querySelector('.body-svg');
-  if (!svg) return;
+function activateBodyPart(event: MouseEvent | KeyboardEvent): void {
+  if (event instanceof KeyboardEvent && event.key !== 'Enter' && event.key !== ' ') return;
+  const target = event.target instanceof Element ? event.target : null;
+  const group = target?.closest('.body-part-group');
+  const id = target?.closest('[id]')?.id || group?.querySelector<SVGElement>('[id]')?.id;
+  if (!id || !partIdMap[id]) return;
+  if (event instanceof KeyboardEvent) event.preventDefault();
+  selectPart(id);
+}
 
-  svg.addEventListener('click', (e: Event) => {
-    const target = e.target as SVGElement;
-    const id = target.id || target.parentElement?.id;
-    if (id && partIdMap[id]) {
-      selectPart(id);
-    }
-  });
-};
-
-// 监听 SVG 变化，重新绑定事件和恢复高亮
-watch([gender, viewMode], () => {
-  setTimeout(() => {
-    setupClickHandlers();
-    updateSVGHighlight();
-  }, 100);
+// 监听 SVG 变化，恢复语义属性和高亮
+watch([gender, viewMode], async () => {
+  await nextTick();
+  updateSVGHighlight();
 });
 
-onMounted(() => {
-  setupClickHandlers();
+onMounted(async () => {
+  await nextTick();
+  updateSVGHighlight();
 });
 </script>
 
@@ -517,6 +522,12 @@ onMounted(() => {
 /* SVG 样式 */
 .body-view :deep(.body-part-group) {
   cursor: pointer;
+}
+
+.body-view :deep(.body-part-group:focus-visible path) {
+  stroke: #1a6fd5;
+  stroke-width: 8px;
+  filter: drop-shadow(0 0 8px rgba(43, 127, 227, 0.45));
 }
 
 .body-view :deep(.body-part-group path) {

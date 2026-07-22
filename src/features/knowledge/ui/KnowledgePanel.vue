@@ -95,7 +95,7 @@
               @click="openListDetail(item)"
             >
               <div class="list-item-header">
-                <h4 class="list-item-title" v-html="stripHtmlTags(item.name)"></h4>
+                <h4 class="list-item-title">{{ stripHtmlTags(item.name) }}</h4>
               </div>
               <div class="list-item-meta">
                 <span v-if="item.kgBaseDisplayName || item.kgBaseName" class="meta-tag">

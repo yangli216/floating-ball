@@ -30,7 +30,7 @@
       </div>
 
       <div class="update-section">
-        <UpdateChecker forced />
+        <UpdateChecker forced :force-update-state="state" />
       </div>
     </div>
   </div>

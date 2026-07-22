@@ -143,6 +143,17 @@ function normalizeMessage(meta: ErrorMeta, fallback: string): string {
   }
 
   if (
+    lower.includes('is not iterable')
+    || lower.includes('is not a function')
+    || lower.includes('cannot read properties of')
+    || lower.includes('cannot read property')
+    || lower.includes('undefined is not')
+    || lower.includes('null is not')
+  ) {
+    return fallback;
+  }
+
+  if (
     /(^|\s)(java|org|com)\.[\w.]+/.test(raw)
     || /ORA-\d{5}/i.test(raw)
     || hasAny(lower, ['sqlexception', 'nullpointerexception', 'stack trace'])

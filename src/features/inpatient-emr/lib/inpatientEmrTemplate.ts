@@ -4,6 +4,7 @@ import type {
   InpatientEmrTemplateField,
   InpatientEmrTemplateParseResult,
 } from '../types';
+import { sanitizeExternalHtml } from '@shared/lib/safeHtml';
 
 function normalizeText(value: unknown): string {
   return String(value || '').replace(/\s+/g, ' ').trim();
@@ -197,8 +198,9 @@ export function isAdmissionTemplate(templateName: string): boolean {
 }
 
 export function parseInpatientEmrTemplate(htmlContent: string): InpatientEmrTemplateParseResult {
-  const cacheKey = hashText(htmlContent);
-  const doc = new DOMParser().parseFromString(htmlContent, 'text/html');
+  const safeHtml = sanitizeExternalHtml(htmlContent);
+  const cacheKey = hashText(safeHtml);
+  const doc = new DOMParser().parseFromString(safeHtml, 'text/html');
   const seen = new Set<string>();
   const fields = Array.from(doc.querySelectorAll('[data-id][data-type]'))
     .map((node): InpatientEmrTemplateField => {
@@ -238,7 +240,8 @@ export function formatInpatientEmrDateMinute(value: Date = new Date()): string {
 }
 
 export function fillInpatientEmrTemplateHtml(htmlContent: string, values: Record<string, string>): string {
-  const doc = new DOMParser().parseFromString(htmlContent, 'text/html');
+  const safeHtml = sanitizeExternalHtml(htmlContent);
+  const doc = new DOMParser().parseFromString(safeHtml, 'text/html');
   Array.from(doc.querySelectorAll('[data-id][data-type]')).forEach((node) => {
     const id = node.getAttribute('data-id') || '';
     if (!Object.prototype.hasOwnProperty.call(values, id)) return;
@@ -254,7 +257,8 @@ export function buildEditableInpatientEmrPreviewHtml(
   fields: InpatientEmrTemplateField[],
   editable: boolean = true,
 ): string {
-  const doc = new DOMParser().parseFromString(htmlContent, 'text/html');
+  const safeHtml = sanitizeExternalHtml(htmlContent);
+  const doc = new DOMParser().parseFromString(safeHtml, 'text/html');
   const aiFieldIds = new Set(fields.filter((field) => field.aiSuitable).map((field) => field.id));
   const fieldNameMap = new Map(fields.map((field) => [field.id, field.name || field.id]));
 

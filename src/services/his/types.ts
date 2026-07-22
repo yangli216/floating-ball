@@ -516,7 +516,7 @@ export interface HisOutpatientMedicalRecord {
   documentId?: string;
   /** 当前用于预览 / AI 参考的文书标题 */
   documentTitle?: string;
-  /** HTML 格式的完整病历，可直接用于 iframe/v-html 预览 */
+  /** HTML 格式的完整病历；展示前必须经过共享 HTML 白名单净化，禁止直接交给 iframe/v-html */
   htmlContent: string;
   /** 从 HTML 正文中提取的纯文本，供 AI 参考 */
   plainText?: string;

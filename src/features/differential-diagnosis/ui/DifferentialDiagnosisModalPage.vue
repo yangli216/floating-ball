@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, inject, onMounted, ref, watch } from 'vue';
+import { computed, inject, onMounted, ref, shallowRef, watch } from 'vue';
 import Icon from '@shared/ui/Icon.vue';
 import { PROMPTS } from '@/prompts';
 import { chat } from '@/services/llm';
@@ -15,6 +15,7 @@ import {
 import type { AppPatient } from '@/types/appState';
 import { formatUserFacingError } from '@shared/lib/errorMessages';
 import SvgIcon from "@/components/svgIcon.vue";
+import { resolveDifferentialDiagnosisPresentation } from '../model/differentialDiagnosisPresentation';
 
 const props = defineProps<{
   patient: AppPatient | null;
@@ -28,7 +29,8 @@ const isChecklistLoading = ref(false);
 const checklistItems = ref<DiagnosisChecklistItem[]>([]);
 const riskIssues = ref<DiagnosisChecklistRiskIssue[]>([]);
 const hasRequested = ref(false);
-const generationError = ref('');
+const systemError = shallowRef('');
+const clinicalRiskSummary = shallowRef('');
 const isCollapsed = ref(false);
 
 const diagnosisName = computed(() => (
@@ -48,6 +50,18 @@ const historyOfPresentIllness = computed(() => (
 ).trim());
 const matchedDiagnosis = computed(() => medicalDataService.matchDiagnosis(diagnosisName.value));
 const displayDiagnosisName = computed(() => matchedDiagnosis.value?.name || diagnosisName.value || '当前诊断');
+const canRetry = computed(() => Boolean(
+  diagnosisName.value && chiefComplaint.value && historyOfPresentIllness.value,
+));
+const clinicalRiskIssues = computed<DiagnosisChecklistRiskIssue[]>(() => {
+  if (riskIssues.value.length > 0) return riskIssues.value;
+  if (!clinicalRiskSummary.value) return [];
+  return [{ issue: clinicalRiskSummary.value, target: displayDiagnosisName.value }];
+});
+const presentation = computed(() => resolveDifferentialDiagnosisPresentation({
+  systemError: systemError.value,
+  clinicalRiskCount: clinicalRiskIssues.value.length,
+}));
 
 async function generateChecklist(): Promise<void> {
   if (isChecklistLoading.value) {
@@ -55,20 +69,21 @@ async function generateChecklist(): Promise<void> {
   }
 
   isCollapsed.value = false;
+  hasRequested.value = true;
 
   if (!diagnosisName.value || !chiefComplaint.value || !historyOfPresentIllness.value) {
-    generationError.value = '当前缺少诊断、主诉或现病史，无法生成鉴别排查建议。';
+    systemError.value = '当前缺少诊断、主诉或现病史，无法生成鉴别排查建议。';
+    clinicalRiskSummary.value = '';
     checklistItems.value = [];
     riskIssues.value = [];
-    isCollapsed.value = true;
     return;
   }
 
   isChecklistLoading.value = true;
-  generationError.value = '';
+  systemError.value = '';
+  clinicalRiskSummary.value = '';
   checklistItems.value = [];
   riskIssues.value = [];
-  hasRequested.value = true;
 
   try {
     const userPrompt = PROMPTS.consultation.diagnosisChecklist.buildUserPrompt({
@@ -93,7 +108,7 @@ async function generateChecklist(): Promise<void> {
     const parsed = parseDiagnosisChecklistResponse(response);
     const mismatchError = buildDiagnosisChecklistMismatchError(parsed);
     if (mismatchError) {
-      generationError.value = mismatchError;
+      clinicalRiskSummary.value = mismatchError;
       checklistItems.value = [];
       riskIssues.value = buildDiagnosisChecklistRiskIssues(parsed, displayDiagnosisName.value);
       isCollapsed.value = false;
@@ -107,11 +122,12 @@ async function generateChecklist(): Promise<void> {
   } catch (error: unknown) {
     checklistItems.value = [];
     riskIssues.value = [];
-    generationError.value = formatUserFacingError(error, {
+    clinicalRiskSummary.value = '';
+    systemError.value = formatUserFacingError(error, {
       context: '诊断鉴别生成失败',
       fallback: '请稍后重试。',
     });
-    showToast?.(generationError.value, 'error');
+    showToast?.(systemError.value, 'error');
   } finally {
     isChecklistLoading.value = false;
   }
@@ -136,20 +152,20 @@ onMounted(() => {
 <template>
   <div ref="dialogRef" class="voice-consultation-new differential-modal-page" data-tauri-drag-region>
     <div class="confirm-overlay checklist-overlay differential-checklist-overlay" data-tauri-drag-region>
-      <div :class="['checklist-dialog', 'pane-card', generationError ? 'error-dialog' : '', isCollapsed ? 'collapsed' : '']" role="dialog" aria-modal="true" aria-labelledby="standalone-checklist-title" data-tauri-drag-region>
+      <div :class="['checklist-dialog', 'pane-card', presentation.kind === 'clinical-risk' ? 'error-dialog' : '', presentation.kind === 'system-error' ? 'system-error-dialog' : '', isCollapsed ? 'collapsed' : '']" role="dialog" aria-modal="true" aria-labelledby="standalone-checklist-title" data-tauri-drag-region>
         <div class="checklist-dialog-head">
           <div>
-            <img class="checklist-dialog-icon" :src="generationError ? '/error.png' : '/normal.png'" alt="">
+            <img class="checklist-dialog-icon" :src="presentation.kind === 'clinical-risk' ? '/error.png' : '/normal.png'" alt="">
           </div>
           <div>
             <p id="standalone-checklist-title" class="confirm-dialog-title">
-              {{ generationError ? `发现${Math.max(riskIssues.length, 1)}个问题` : '诊断鉴别' }}
+              {{ presentation.title }}
             </p>
             <p v-if="isCollapsed" class="checklist-dialog-subtitle">点击展开查看详情</p>
           </div>
-          <div v-if="generationError" class="checklist-dialog-down" @click="isCollapsed = !isCollapsed">
+          <button v-if="systemError || clinicalRiskIssues.length > 0" type="button" class="checklist-dialog-down" :aria-label="isCollapsed ? '展开详情' : '收起详情'" @click="isCollapsed = !isCollapsed">
             <svgIcon file="/down.svg" :color="'#2469F2'" :hoverColor="'#2469F2'" :fontSize="'16px'" :class="{'down-icon': true, 'rotate-icon': isCollapsed }"></svgIcon>
-          </div>
+          </button>
         </div>
 
         <div class="checklist-dialog-content" v-show="!isCollapsed">
@@ -161,9 +177,18 @@ onMounted(() => {
             <span>正在生成鉴别排查建议...</span>
           </div>
 
-          <div v-else-if="generationError" class="risk-issue-list">
+          <div v-else-if="systemError" class="system-error-state" role="status">
+            <Icon icon="lucide:circle-alert" size="18" />
+            <div class="system-error-copy">
+              <strong>暂时无法生成鉴别排查建议</strong>
+              <span>{{ systemError }}</span>
+            </div>
+            <button v-if="canRetry" type="button" class="system-error-retry" @click="generateChecklist">重试</button>
+          </div>
+
+          <div v-else-if="clinicalRiskIssues.length > 0" class="risk-issue-list">
             <div
-              v-for="(issue, index) in riskIssues.length > 0 ? riskIssues : [{ issue: generationError, target: displayDiagnosisName }]"
+              v-for="(issue, index) in clinicalRiskIssues"
               :key="`${index}-${issue.issue}`"
               class="risk-issue-item"
             >
@@ -238,6 +263,49 @@ onMounted(() => {
   border: 1px solid #F25C2C;
 }
 
+.checklist-dialog.system-error-dialog {
+  background: linear-gradient(180deg, #eef5ff 0%, #ffffff 100%);
+  border-color: #8aa9d8;
+}
+
+.system-error-state {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 10px;
+  align-items: start;
+  color: #385270;
+}
+
+.system-error-copy {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+
+.system-error-copy strong {
+  color: #213b5a;
+  font-size: 14px;
+}
+
+.system-error-copy span {
+  color: #526b86;
+  font-size: 13px;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+
+.system-error-retry {
+  grid-column: 2;
+  justify-self: start;
+  border: 1px solid #8aa9d8;
+  border-radius: 6px;
+  padding: 6px 14px;
+  background: #ffffff;
+  color: #285f9f;
+  cursor: pointer;
+}
+
 .checklist-dialog-head {
   position: relative;
   justify-content: flex-start;
@@ -281,10 +349,16 @@ onMounted(() => {
   margin-left: auto;
   width: 19px;
   height: 19px;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   color: #2469F2;
   border: 1px solid #2469F2;
   border-radius: 50%;
+  background: transparent;
   line-height: 16px;
+  cursor: pointer;
 }
 
 .checklist-dialog-down img {

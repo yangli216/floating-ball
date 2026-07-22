@@ -44,18 +44,18 @@
         <div class="endpoint-preview">{{ activeEndpoint || '未配置，回退到应用内默认更新地址' }}</div>
       </div>
 
-      <div v-if="checking" class="status-loading">
+      <div v-if="checkerStatus.kind === 'loading'" class="status-loading">
         <div class="spinner"></div>
-        <span>正在检查更新...</span>
+        <span>{{ checkerStatus.message }}</span>
       </div>
       
-      <div v-else-if="error" class="status-error">
-        <span>{{ error }}</span>
+      <div v-else-if="checkerStatus.kind === 'error' || checkerStatus.kind === 'forced-unavailable'" class="status-error">
+        <span>{{ checkerStatus.message }}</span>
         <button @click="checkAndStore" class="retry-btn">重试</button>
       </div>
       
-      <div v-else-if="!updateAvailable" class="status-latest">
-        <span>当前已是最新版本</span>
+      <div v-else-if="checkerStatus.kind === 'latest'" class="status-latest">
+        <span>{{ checkerStatus.message }}</span>
         <button @click="checkAndStore" class="check-btn">检查更新</button>
       </div>
       
@@ -98,7 +98,12 @@ import {
   saveUpdateConfig,
   type UpdateEnvironment,
 } from '@services/updateConfig';
-import { checkForceUpdateRequired, notifyForceUpdateRequired } from '@services/updatePolicy';
+import {
+  checkForceUpdateRequired,
+  notifyForceUpdateRequired,
+  type ForceUpdateState,
+} from '@services/updatePolicy';
+import { resolveUpdateCheckerStatus } from '../model/updateCheckerStatus';
 
 interface UpdateInfo {
   version: string;
@@ -130,7 +135,18 @@ const showAdvancedConfig = ref(false);
 const showToast = inject('showToast', null) as ((msg: string, type: 'success' | 'error' | 'info') => void) | null;
 const props = defineProps<{
   forced?: boolean;
+  forceUpdateState?: ForceUpdateState;
 }>();
+
+const checkerStatus = computed(() => resolveUpdateCheckerStatus({
+  checking: checking.value,
+  error: error.value,
+  updateAvailable: updateAvailable.value,
+  forced: Boolean(props.forced),
+  policyRequired: props.forceUpdateState?.required ?? Boolean(props.forced),
+  currentVersion: props.forceUpdateState?.currentVersion || currentVersion.value,
+  minSupportedVersion: props.forceUpdateState?.minSupportedVersion,
+}));
 
 const updateProgressListener = useTauriEventListener<UpdateProgressPayload>({
   eventName: 'update-download-progress',

@@ -141,6 +141,9 @@
       </div>
       <iframe
         :src="iframeUrl"
+        sandbox=""
+        referrerpolicy="no-referrer"
+        title="知识库详情"
         frameborder="0"
         class="knowledge-iframe"
       ></iframe>

@@ -346,6 +346,24 @@
   color: #1A6FD5;
 }
 
+.symptom-option {
+  width: 100%;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.symptom-option:focus-visible,
+.category-trigger:focus-visible,
+.category-option:focus-visible {
+  outline: 3px solid rgba(43, 127, 227, 0.38);
+  outline-offset: 2px;
+}
+
 .ai-add-symptom {
   flex: 1;
   display: flex;
@@ -2308,6 +2326,7 @@
   align-items: center;
   justify-content: space-between;
   transition: all var(--duration-normal) var(--ease-out);
+  font: inherit;
 }
 
 .category-trigger:hover {
@@ -2363,6 +2382,12 @@
 }
 
 .category-option {
+  width: 100%;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
   padding: 8px 12px;
   display: flex;
   align-items: center;

@@ -19,10 +19,13 @@
         <!-- Mode Switch: 西医 / 中医 - vertical tabs on left edge -->
         <div class="sidebar-mode-switch">
           <button
+            type="button"
             :class="['sidebar-switch-btn', { active: consultationMode === 'western' }]"
+            :aria-pressed="consultationMode === 'western'"
             @click="consultationMode = 'western'"
           >西医</button>
           <button
+            type="button"
             :class="['sidebar-switch-btn', { active: consultationMode === 'tcm' }]"
             @click="showToast('中医模块开发中', 'info')"
           >中医</button>
@@ -32,19 +35,25 @@
         <!-- Selection Mode Tabs (always visible) -->
         <div class="selection-tabs">
           <button
+            type="button"
             :class="['tab-btn', { active: selectionMode === 'common' }]"
+            :aria-pressed="selectionMode === 'common'"
             @click="selectionMode = 'common'"
           >
             常用症状
           </button>
           <button
+            type="button"
             :class="['tab-btn', { active: selectionMode === 'bodyPart' }]"
+            :aria-pressed="selectionMode === 'bodyPart'"
             @click="selectionMode = 'bodyPart'"
           >
             按部位
           </button>
           <button
+            type="button"
             :class="['tab-btn', { active: selectionMode === 'system' }]"
+            :aria-pressed="selectionMode === 'system'"
             @click="selectionMode = 'system'"
           >
             按系统
@@ -55,6 +64,7 @@
           <input
             type="text"
             v-model="searchQuery"
+            aria-label="搜索症状"
             placeholder="搜索症状(支持首字母)"
             class="search-input"
           />
@@ -64,28 +74,24 @@
         </div>
 
         <template v-if="!searchQuery.trim()">
-          <!-- placeholder to keep template structure -->
-          <span style="display:none"></span>
-
-          <!-- Common Symptoms View -->
           <div v-if="selectionMode === 'common'" class="selection-content">
             <div class="common-filter-header">
               <div class="category-filter-container" ref="categoryFilterRef">
-                <div class="category-trigger" @click="toggleCategoryDropdown" :class="{ active: isCategoryDropdownOpen }">
+                <button type="button" class="category-trigger" :class="{ active: isCategoryDropdownOpen }" :aria-expanded="isCategoryDropdownOpen" aria-controls="symptom-category-dropdown" @click="toggleCategoryDropdown">
                   <span class="trigger-text">{{ categoryButtonText }}</span>
                   <svg class="trigger-icon" :class="{ rotate: isCategoryDropdownOpen }" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg>
-                </div>
+                </button>
 
-                <div v-show="isCategoryDropdownOpen" class="category-dropdown">
-                  <div class="category-option" @click="toggleCategory('all')" :class="{ selected: selectedCategories.length === 0 }">
-                      <div class="checkbox-custom" :class="{ checked: selectedCategories.length === 0 }"></div>
+                <div v-show="isCategoryDropdownOpen" id="symptom-category-dropdown" class="category-dropdown" role="group" aria-label="筛选症状系统">
+                  <button type="button" class="category-option" :class="{ selected: selectedCategories.length === 0 }" :aria-pressed="selectedCategories.length === 0" @click="toggleCategory('all')">
+                      <span class="checkbox-custom" :class="{ checked: selectedCategories.length === 0 }" aria-hidden="true"></span>
                       <span>全部系统</span>
-                  </div>
+                  </button>
                   <div class="dropdown-divider"></div>
-                  <div v-for="cat in uniqueCategories" :key="cat.key" class="category-option" @click="toggleCategory(cat.key)" :class="{ selected: selectedCategories.includes(cat.key) }">
-                      <div class="checkbox-custom" :class="{ checked: selectedCategories.includes(cat.key) }"></div>
+                  <button v-for="cat in uniqueCategories" :key="cat.key" type="button" class="category-option" :class="{ selected: selectedCategories.includes(cat.key) }" :aria-pressed="selectedCategories.includes(cat.key)" @click="toggleCategory(cat.key)">
+                      <span class="checkbox-custom" :class="{ checked: selectedCategories.includes(cat.key) }" aria-hidden="true"></span>
                       <span>{{ cat.label }}</span>
-                  </div>
+                  </button>
                 </div>
               </div>
             </div>
@@ -94,14 +100,12 @@
                 v-for="symptom in filteredSymptoms"
                 :key="symptom.key"
                 :class="{ active: selectedSymptoms.some(s => s.key === symptom.key) }"
-                @click="selectSymptom(symptom)"
               >
-                {{ symptom.name }}
+                <button type="button" class="symptom-option" :aria-pressed="selectedSymptoms.some(s => s.key === symptom.key)" @click="selectSymptom(symptom)">{{ symptom.name }}</button>
               </li>
             </ul>
           </div>
 
-          <!-- Body Part Selector View -->
           <div v-if="selectionMode === 'bodyPart'" class="selection-content">
             <BodyPartSelector
               :symptoms="allSymptoms"
@@ -111,7 +115,6 @@
             />
           </div>
 
-          <!-- System Category Selector View -->
           <div v-if="selectionMode === 'system'" class="selection-content">
             <SystemCategorySelector
               :symptoms="allSymptoms"
@@ -121,28 +124,25 @@
           </div>
         </template>
 
-        <!-- Immersive Search Results View -->
         <template v-else>
           <div class="selection-content immersive-search">
-            <!-- Global Search Results List -->
             <ul class="symptom-list" v-if="filteredSymptoms.length > 0">
               <li
                 v-for="symptom in filteredSymptoms"
                 :key="symptom.key"
                 :class="{ active: selectedSymptoms.some(s => s.key === symptom.key) }"
-                @click="selectSymptom(symptom)"
               >
-                {{ symptom.name }}
+                <button type="button" class="symptom-option" :aria-pressed="selectedSymptoms.some(s => s.key === symptom.key)" @click="selectSymptom(symptom)">{{ symptom.name }}</button>
               </li>
             </ul>
 
-            <!-- AI Add Custom Symptom Button (Empty State) -->
             <div v-else class="ai-add-symptom">
                <div class="empty-state-icon">
                  <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-muted"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
                </div>
                <p class="empty-state-text">未找到相关症状</p>
                <button 
+                 type="button"
                  class="ai-add-btn" 
                  :disabled="isGeneratingSymptom"
                  @click="handleGenerateDynamicSymptom(searchQuery.trim())"

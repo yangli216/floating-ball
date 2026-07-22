@@ -34,6 +34,7 @@ import { formatUserFacingError } from "@shared/lib/errorMessages";
 import { trackClick } from "./services/operationTracker";
 import { getWindowSizeForView, isLargeWorkspaceView, WINDOW_SIZES, type ViewType } from "./constants/windowSizes";
 import { useNavigation } from "@app/navigation/useNavigation";
+import { useAppKeyboardShortcuts } from "@app/shortcuts/useAppKeyboardShortcuts";
 import { useWindowManagement } from "@app/shell/useWindowManagement";
 import { useWindowTransitionCoordinator } from "@app/shell/useWindowTransitionCoordinator";
 import { useWorkMode } from "@app/shell/useWorkMode";
@@ -555,6 +556,28 @@ async function handleBallDblClick(): Promise<void> {
   await openChat();
 }
 
+function handleBallKeyboardActivate(event: MouseEvent): void {
+  if (event.detail === 0) void handleBallDblClick();
+}
+
+const keyboardShortcutsEnabled = computed(() => (
+  !isStandaloneWindow
+  && !isForceUpdateRequired.value
+  && !transitioning.value
+  && !feedbackDialogVisible.value
+));
+const {
+  bindings: keyboardShortcutBindings,
+  updateBindings: updateKeyboardShortcuts,
+} = useAppKeyboardShortcuts({
+  enabled: keyboardShortcutsEnabled,
+  actions: {
+    'toggle-assistant': () => (isWorking.value ? handleUserCollapse() : handleBallDblClick()),
+    'open-chat': openChat,
+    'open-settings': openSettings,
+  },
+});
+
 async function cancelInpatientEmrGeneration(): Promise<void> {
   minimizedSessions.clear('inpatient-emr');
   inpatientEmrRequest.value = null;
@@ -830,7 +853,9 @@ const openInsideCloudHome = async () => {
           <!-- 环绕菜单 -->
           <div ref="ringMenuRef" class="ring-menu" :class="{ 'is-active': isHovered }" role="navigation" aria-label="主菜单">
             <button
+              type="button"
               class="ring-btn right"
+              :tabindex="isHovered ? 0 : -1"
               :class="{ 'manual-hover': hoveredBtnIndex === 1 }"
               @click.stop="openChat"
               aria-label="打开对话"
@@ -839,7 +864,9 @@ const openInsideCloudHome = async () => {
               <svgIcon file="/chat.svg" :color="'#262626'" :hoverColor="'#2B7FE3'" :fontSize="'18px'"></svgIcon>
             </button>
             <button
+              type="button"
               class="ring-btn bottom"
+              :tabindex="isHovered ? 0 : -1"
               :class="{ 'manual-hover': hoveredBtnIndex === 2 }"
               @click.stop="openSettings"
               aria-label="打开设置"
@@ -848,7 +875,9 @@ const openInsideCloudHome = async () => {
               <svgIcon file="/setting.svg" :color="'#262626'" :hoverColor="'#2B7FE3'" :fontSize="'18px'"></svgIcon>
             </button>
             <button
+              type="button"
               class="ring-btn top"
+              :tabindex="isHovered ? 0 : -1"
               :class="{ 'manual-hover': hoveredBtnIndex === 0 }"
               @click.stop="handleExitApp"
               aria-label="退出应用"
@@ -857,7 +886,9 @@ const openInsideCloudHome = async () => {
               <svgIcon file="/off.svg" :color="'#262626'" :hoverColor="'#2B7FE3'" :fontSize="'18px'"></svgIcon>
             </button>
 	             <button
+	              type="button"
 	              class="ring-btn left"
+	              :tabindex="isHovered ? 0 : -1"
 	              :class="{ 'manual-hover': hoveredBtnIndex === 3, 'is-disabled': !hasResumableConsultation }"
 	              :disabled="!hasResumableConsultation"
 	              @click.stop="handleConsultationRingClick"
@@ -868,10 +899,12 @@ const openInsideCloudHome = async () => {
             </button>
           </div>
           
-          <div
+          <button
+            type="button"
             class="floating-ball"
-            tabindex="0"
+            aria-label="打开或恢复智医助理"
             :class="{ 'is-focused': isFocused, 'is-hovered': isHovered }"
+            @click="handleBallKeyboardActivate"
             @mousedown="handleMouseDown"
             @focus="handleFocus"
             @blur="handleBlur"
@@ -882,11 +915,11 @@ const openInsideCloudHome = async () => {
               <img 
                 class="robot-avatar" 
                 src="/robot-avatar.png"
-                alt="Robot"
+                alt=""
                 draggable="false"
               />
             </div>
-          </div>
+          </button>
         </div>
       </div>
     </Transition>
@@ -1049,8 +1082,10 @@ const openInsideCloudHome = async () => {
           <KnowledgeBasePanel v-if="currentView === 'knowledge-base'" @close="handleUserCollapse" />
           <SettingsPanel
             v-if="currentView === 'settings'"
+            :keyboard-shortcuts="keyboardShortcutBindings"
             @open-medical-cache="openMedicalCatalogCache"
             @open-his-log="openHisIntegrationLog"
+            @save-keyboard-shortcuts="updateKeyboardShortcuts"
           />
           </template>
         </div>
@@ -1112,6 +1147,8 @@ const openInsideCloudHome = async () => {
   align-items: center;
   justify-content: center;
   cursor: move;
+  padding: 0;
+  border: 0;
   user-select: none;
   transition: all 0.35s cubic-bezier(0.34, 1.56, 0.64, 1);
   will-change: transform, box-shadow;
@@ -1121,7 +1158,12 @@ const openInsideCloudHome = async () => {
   box-shadow:
     0 2px 8px rgba(43, 127, 227, 0.3),
     0 4px 16px rgba(43, 127, 227, 0.15);
-  outline: none;
+}
+
+.floating-ball:focus-visible {
+  outline: 3px solid #fff;
+  outline-offset: 4px;
+  box-shadow: 0 0 0 7px rgba(43, 127, 227, 0.38), 0 4px 16px rgba(43, 127, 227, 0.3);
 }
 
 /* 呼吸光晕动画 */

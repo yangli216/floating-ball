@@ -2,24 +2,26 @@
   <div class="system-category-selector">
     <div class="selector-header">
       <h4>选择症状</h4>
-      <button class="clear-btn" @click="clearSelection" v-if="selectedCategories.length > 0">
+      <button v-if="selectedCategories.length > 0" type="button" class="clear-btn" @click="clearSelection">
         <svg viewBox="0 0 1024 1024" version="1.1" xmlns="http://www.w3.org/2000/svg" p-id="9585" width="14" height="14"><path d="M781.28 851.36a58.56 58.56 0 0 1-58.56 58.56H301.28a58.72 58.72 0 0 1-58.56-58.56V230.4h538.56zM359.68 125.44a11.84 11.84 0 0 1 12-12h281.28a11.84 11.84 0 0 1 12 12V160H359.68zM956.8 160H734.72V125.44a81.76 81.76 0 0 0-81.76-81.76H371.68a82.08 82.08 0 0 0-81.76 81.76V160H67.2a35.36 35.36 0 0 0 0 70.56h105.12v620.8a128.96 128.96 0 0 0 128.96 128.96h421.44a128.96 128.96 0 0 0 128.96-128.96V230.4h105.12a35.2 35.2 0 0 0 35.2-35.2 34.56 34.56 0 0 0-35.2-35.2zM512 804.16a35.2 35.2 0 0 0 35.2-35.36V393.92a35.2 35.2 0 1 0-70.4 0v374.88a35.2 35.2 0 0 0 35.2 35.36m-164.32 0a35.36 35.36 0 0 0 35.36-35.36V393.92a35.36 35.36 0 1 0-70.56 0v374.88a36.32 36.32 0 0 0 35.2 35.36m328.64 0a35.36 35.36 0 0 0 35.2-35.36V393.92a35.36 35.36 0 1 0-70.56 0v374.88a35.36 35.36 0 0 0 35.36 35.36" fill="#d81e06" p-id="9586"></path></svg>
         清空
       </button>
     </div>
 
     <div class="systems-grid">
-      <div
+      <button
         v-for="system in systems"
         :key="system.key"
+        type="button"
         :class="['system-card', { active: isSelected(system.key) }]"
+        :aria-pressed="isSelected(system.key)"
         @click="toggleSystem(system.key)"
       >
         <div class="system-icon">
           <svgIcon :file="system.icon" :color="isSelected(system.key)?'#FFFFFF':'#CCCCCC'" :fontSize="'28px'"></svgIcon>
         </div>
         <span class="system-label">{{ system.label }}</span>
-      </div>
+      </button>
     </div>
 
     <!-- 症状区域：按系统显示 -->
@@ -34,7 +36,9 @@
             <button
               v-for="symptom in filteredSymptoms"
               :key="symptom.key"
+              type="button"
               :class="['symptom-chip', { active: isSymptomSelected(symptom.key) }]"
+              :aria-pressed="isSymptomSelected(symptom.key)"
               @click="handleSymptomClick(symptom)"
             >
               {{ symptom.name }}
@@ -209,6 +213,7 @@ const filteredSymptoms = computed(() => {
 }
 
 .system-card {
+  font: inherit;
   display: flex;
   flex-direction: column;
   align-items: center;
