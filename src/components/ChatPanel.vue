@@ -1,9 +1,10 @@
 <script setup lang="ts">
-import { ref, computed, inject } from "vue";
+import { ref, computed, inject, onBeforeUnmount } from "vue";
 import type { ChatMessage } from "../services/llm";
 import { chatStream } from "../services/llm";
-import { transcribeSpeech } from "../services/aliyunSpeech";
+import { RealtimeSpeechService } from "../services/aliyunSpeech";
 import { audioRecorder, getMicrophoneErrorMessage } from "../services/audioRecorder";
+import { useChatVoiceInput } from "@features/chat";
 import { PROMPTS } from "../prompts";
 import { feedbackService } from "../services/feedback";
 import { trackClick, trackError } from "../services/operationTracker";
@@ -61,8 +62,11 @@ const input = ref("");
 const imageDataUrl = ref<string | null>(null);
 const sending = ref(false);
 
-// 录音相关
-const recording = ref(false);
+const chatVoiceInput = useChatVoiceInput({
+  recorder: audioRecorder,
+  createSpeechSession: () => new RealtimeSpeechService(),
+});
+const { recording } = chatVoiceInput;
 
 function scrollToBottom() {
   requestAnimationFrame(() => {
@@ -229,8 +233,7 @@ function handleEnter(e: KeyboardEvent) {
 
 async function startRecording() {
   try {
-    await audioRecorder.start();
-    recording.value = true;
+    await chatVoiceInput.startRecording();
     trackClick('chat_voice_start');
   } catch (err) {
     trackError('chat_mic_permission_error', err);
@@ -241,10 +244,8 @@ async function startRecording() {
 
 async function stopRecording() {
   try {
-    const blob = await audioRecorder.stop();
-    recording.value = false;
+    const text = await chatVoiceInput.stopRecording();
     trackClick('chat_voice_stop');
-    const text = await transcribeSpeech(blob);
     input.value = text;
   } catch (err) {
     trackError('chat_transcription_failed', err);
@@ -258,6 +259,10 @@ async function stopRecording() {
     scrollToBottom();
   }
 }
+
+onBeforeUnmount(() => {
+  void chatVoiceInput.discardRecording();
+});
 
 // 处理反馈
 async function handleFeedback(messageId: string, feedbackType: 'positive' | 'negative') {

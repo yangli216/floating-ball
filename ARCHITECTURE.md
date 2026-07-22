@@ -697,7 +697,7 @@ eventListeners.unregisterAllListeners();
 
 | 组件 | 职责 | 文件 |
 |------|------|------|
-| `ChatPanel.vue` | LLM 对话界面 | [src/components/ChatPanel.vue](src/components/ChatPanel.vue) |
+| `ChatPanel.vue` | LLM 对话界面；聊天语音按钮只编排 UI、输入回填与错误提示，录音和实时语音会话交由 `features/chat/model/useChatVoiceInput.ts` | [src/components/ChatPanel.vue](src/components/ChatPanel.vue) |
 | `SettingsPanel.vue` | 系统设置 shell：只保留通用设置与关于版本，负责主题、窗口置顶、区域后台地址/机构编码、连接测试、音频输入设备、语音录音目录、缓存管理和 HIS 联调日志入口；不再提供模式开关或模型/语音/知识库密钥配置。音频输入设备、录音目录和保存快照分别下沉到 settings model，通用页签与保存条为受控 UI | [src/components/SettingsPanel.vue](src/components/SettingsPanel.vue) |
 | `ConsultationPage.vue` | 完整症状问诊主链路，同时承接新的“内嵌灵活模式”；支持根据 `/assist` 上下文直接跳过症状采集进入病历详情页，继续复用现有推荐诊断、诊断鉴别、推荐用药、推荐检查与诊断路径能力；进入 `record` 阶段后不再继续内嵌维护旧结果页，而是把当前病历、诊断、治疗快照切换到独立的症状结果页包装组件，由后者复用共享结果页主体；PHIS 引用闭环状态仍由症状包装层承接；患者 / 就诊锚点变化时是硬 reset 边界，必须清空上一患者的症状、诊断、治疗方案、缓存快照和事实核查状态，并递增 AI 请求序列作废慢响应；页面 scoped 样式原样外置到 `features/symptom-consultation/ui/ConsultationPage.css`，SFC 继续保留模板、脚本和问诊状态机；AI 推荐链路采用成功后覆盖与当前诊断上下文校验，解析失败或慢请求过期时保留上一版结果；患者文本读取、既往史解析、患者草稿/诊断预填、诊断 identity / AI 请求防串线、同类诊断候选 / 替换列表更新、病历草稿 AI 请求规格与本地兜底、病历草稿主诉 / 现病史本地拼装、中医诊断证候 / 治法映射、诊断展示分组、诊断 / 治疗事实核查编排、LLM JSON 宽容解析、诊断/治疗推荐反馈目标落库 / 注册编排、完成问诊推荐采纳 / 拒绝埋点编排、医嘱文案生成、最终报告数据拼装、当前医疗 payload、智能问诊用户日志快照、PHIS 引用 key / 状态图 / 回执归一 / 引用展示判断等数据处理逐步下沉到 `features/symptom-consultation/lib|model`；western 诊断 raw 映射、western 治疗推荐 raw 映射和 PHIS 提交前治疗选择 / 库存提示 / 处理意见摘要复用 `features/clinical-result`；同类诊断卡片内联下拉开合与候选状态复用 `features/consultation-result/model/useRelatedDiagnosisDropdown.ts`，页面仅保留候选来源、诊断替换、选中同步和埋点；页面层只保留状态、副作用依赖注入和流程编排 | [src/components/ConsultationPage.vue](src/components/ConsultationPage.vue) |
 | `entities/patient/*` | 患者实体展示与后续稳定转换归属。当前 `PatientHeader.vue` 是无副作用患者头部展示组件，接收 patient/payType/avatar props 和 actions slot，复用既有 patientContext / patientAvatar 工具解析姓名、性别、年龄、过敏史和头像；不持有问诊流程状态、不调用 Tauri / HIS / toast。智能问诊和语音问诊均通过 `@entities/patient` 复用，旧 `src/components/PatientHeader.vue` 已删除 | [src/entities/patient](src/entities/patient) |
@@ -910,7 +910,7 @@ src/styles/
 | 服务 | 职责 | 文件 |
 |------|------|------|
 | `llm.ts` / `services/llm/*` | LLM facade 与服务端代理编排。`chat/chatStream/chatFast/transcribeAudio` 全部通过 `regionalClient.ts` 的签名 HTTP/SSE 出口调用 `/v1/ai/*`；`config.ts` 只读取 bootstrap 非敏感视图，`retry.ts` 提供指数退避，`payload.ts` 负责消息 payload 与摘要。客户端不存在第三方 API Key、Base URL 或本地 OpenAI 兼容客户端 | [src/services/llm.ts](src/services/llm.ts) / [src/services/llm](src/services/llm/types.ts) |
-| `aliyunSpeech.ts` | 语音转写编排（DashScope + OpenAI 兼容降级） | [src/services/aliyunSpeech.ts](src/services/aliyunSpeech.ts) |
+| `aliyunSpeech.ts` | 语音转写编排：DashScope / FunASR 优先走服务端托管实时 WebSocket，OpenAI 兼容和实时失败场景走服务端批量降级 | [src/services/aliyunSpeech.ts](src/services/aliyunSpeech.ts) |
 | `audioRecorder.ts` | Web Audio API 录音、音频输入设备枚举与首选设备回退 | [src/services/audioRecorder.ts](src/services/audioRecorder.ts) |
 | `medicalData.ts` | 医疗数据目录加载、缓存恢复与匹配（诊断、药品、检查项）：先恢复 `localStorage`/SQLite 缓存，再同步服务端 mappings delta；当前药房药品目录仍可按有效 HIS 握手上下文从 HIS 刷新并按 `orgCode + tenantId + storeId` 落库，确保真实库存 scope。缓存管理页的显式强制同步继续允许刷新 HIS 目录。这些本地缓存/HIS 能力属于桌面基础设施，不是本地运行模式 | [src/services/medicalData.ts](src/services/medicalData.ts) |
 | `hisService.ts` | HIS HTTP 调用封装（PHIS 形态默认实现）：统一处理鉴权头、POST/GET 请求，以及诊断/药品/诊疗项目目录与药品频次、用法等字典读取，供主问诊和语音问诊复用；PHIS 分散 RPC 不再由客户端直接打 `base/phis/otms` 旧服务名，而是统一经院端 `api/phis.aiAdapterService/*` 薄适配入口，由各项目处理不同 PHIS 版本差异；住院病历 AI 上下文仍保留 PHIS `api/phis.aiInpatientEmrContextService/buildContext` 聚合接口，登记 / 诊断 / 医嘱 / 体温单等明细由后端裁剪后一次性返回，不再维护桌面端分散 RPC 回退。**业务方不应直接 import 本文件**：所有出站调用应通过 `services/his` 适配器层 | [src/services/hisService.ts](src/services/hisService.ts) |
@@ -1024,7 +1024,7 @@ Windows 安装包只发布 Tauri WiX MSI，不再同时生成 NSIS `.exe`，避�
 
 - `llm.ts` 中 `transcribeAudio` 只调用签名 `/v1/ai/speech/transcribe`，客户端不持有语音供应商 key 或直连地址。
 - `aliyunSpeech.ts` 中 `RealtimeSpeechService` 统一采集 PCM：`aliyun-dashscope` 与 `funasr-websocket` 走签名 `/v1/ai/speech/realtime/ws`，WebSocket 启动失败时在停止后调用 `/v1/ai/speech/realtime` 批量兜底；`openai-compatible` 统一走批量转写。FunASR 原生地址和协议仅由服务端托管。
-- `ChatPanel.vue` 与 `VoiceCapsule.vue` 共用 bootstrap 下发的 speech provider/model/sampleRate/format；`SPEECH_TEST_MODE` 仅用于开发测试夹具，不提供生产本地执行路径。
+- `ChatPanel.vue` 通过 `features/chat/model/useChatVoiceInput.ts` 把 `audioRecorder` 的 PCM 数据持续交给 `RealtimeSpeechService`，与 `VoiceCapsule.vue` 共用 bootstrap 下发的 speech provider/model/sampleRate/format；配置为 `funasr-websocket` 时，聊天麦克风不得在录音结束后直接跳到 `/v1/ai/speech/realtime` 批量接口。`SPEECH_TEST_MODE` 仅用于开发测试夹具，不提供生产本地执行路径。
 - 审查 AI（`factChecker.ts` -> `llm.ts/chat`）复用签名 `/v1/ai/chat`，启用状态、模型和 `checkExaminationEnabled` 来自 bootstrap。
 
 ---
