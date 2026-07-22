@@ -53,6 +53,11 @@ export interface ConsultationSnapshotItem {
 export interface ConsultationUserLogSnapshot {
   chiefComplaint: string;
   historyOfPresentIllness: string;
+  pastMedicalHistory: string;
+  personalHistory: string;
+  familyHistory: string;
+  physicalExam: string;
+  precautions: string;
   diagnoses: ConsultationSnapshotItem[];
   medicines: ConsultationSnapshotItem[];
   examinations: ConsultationSnapshotItem[];
@@ -100,6 +105,11 @@ interface SubmitConsultationUserLogInput {
 interface BuildSnapshotInput {
   chiefComplaint: string;
   historyOfPresentIllness: string;
+  pastMedicalHistory?: string;
+  personalHistory?: string;
+  familyHistory?: string;
+  physicalExam?: string;
+  precautions?: string;
   diagnoses?: Diagnosis[];
   selectedDiagnosis?: Diagnosis | null;
   treatments?: TreatmentRecommendation[];
@@ -182,6 +192,11 @@ export function buildConsultationUserLogSnapshot(input: BuildSnapshotInput): Con
   return {
     chiefComplaint: text(input.chiefComplaint),
     historyOfPresentIllness: text(input.historyOfPresentIllness),
+    pastMedicalHistory: text(input.pastMedicalHistory),
+    personalHistory: text(input.personalHistory),
+    familyHistory: text(input.familyHistory),
+    physicalExam: text(input.physicalExam),
+    precautions: text(input.precautions),
     diagnoses: (input.diagnoses || []).map(item => normalizeDiagnosis(item, input.selectedDiagnosis)),
     medicines: medicines.map(normalizeTreatment),
     examinations: examinations.map(normalizeTreatment),
@@ -197,6 +212,11 @@ export function buildReportInterpretationUserLogSnapshot(
   return {
     chiefComplaint: request.patient?.chiefComplaint || '',
     historyOfPresentIllness: request.patient?.historyOfPresentIllness || '',
+    pastMedicalHistory: request.patient?.pastMedicalHistory || '',
+    personalHistory: '',
+    familyHistory: '',
+    physicalExam: '',
+    precautions: '',
     diagnoses: request.patient?.diagnosis ? [{ name: request.patient.diagnosis, selected: true, primary: true }] : [],
     medicines: [],
     examinations: [],
@@ -279,11 +299,16 @@ export function computeChangeSummary(
   let recordFieldChanges = 0;
   if (first.chiefComplaint.trim() !== final.chiefComplaint.trim()) recordFieldChanges++;
   if (first.historyOfPresentIllness.trim() !== final.historyOfPresentIllness.trim()) recordFieldChanges++;
-  if (extra?.pastMedicalHistoryChanged) recordFieldChanges++;
-  if (extra?.personalHistoryChanged) recordFieldChanges++;
-  if (extra?.familyHistoryChanged) recordFieldChanges++;
-  if (extra?.physicalExamChanged) recordFieldChanges++;
-  if (extra?.precautionsChanged) recordFieldChanges++;
+  if (first.pastMedicalHistory.trim() !== final.pastMedicalHistory.trim()
+    || extra?.pastMedicalHistoryChanged) recordFieldChanges++;
+  if (first.personalHistory.trim() !== final.personalHistory.trim()
+    || extra?.personalHistoryChanged) recordFieldChanges++;
+  if (first.familyHistory.trim() !== final.familyHistory.trim()
+    || extra?.familyHistoryChanged) recordFieldChanges++;
+  if (first.physicalExam.trim() !== final.physicalExam.trim()
+    || extra?.physicalExamChanged) recordFieldChanges++;
+  if (first.precautions.trim() !== final.precautions.trim()
+    || extra?.precautionsChanged) recordFieldChanges++;
 
   const diagnosisFields: (keyof ConsultationSnapshotItem)[] = ['selected', 'primary'];
   const diagnosisChanges = countItemListChanges(first.diagnoses, final.diagnoses, diagnosisFields);

@@ -20,10 +20,12 @@ const props = withDefaults(defineProps<{
   examinations: TreatmentRecommendation[];
   labTests: TreatmentRecommendation[];
   procedures: TreatmentRecommendation[];
+  consultationRoundId?: string | null;
   secondaryFooterActionText?: string;
   secondaryFooterActionDisabled?: boolean;
 }>(), {
   selectedDiagnosis: null,
+  consultationRoundId: null,
   secondaryFooterActionText: '',
   secondaryFooterActionDisabled: false,
 });
@@ -56,6 +58,7 @@ const clinicalResultInput = computed(() => buildSymptomClinicalResultInput({
     :initial-patient-data="props.initialPatientData"
     :intent-result="clinicalResultInput"
     channel="symptom"
+    :consultation-round-id="props.consultationRoundId"
     :secondary-footer-action-text="resolvedSecondaryFooterActionText"
     :secondary-footer-action-disabled="props.secondaryFooterActionDisabled"
     @close="emit('close')"

@@ -79,4 +79,47 @@ describe('consultationUserLog', () => {
     expect(final.medicines[0].rejected).toBe(true);
     expect(computeChangeSummary(first, final).treatmentChanges).toBe(1);
   });
+
+  it('keeps the complete generated record and counts each edited record field once', async () => {
+    const {
+      buildConsultationUserLogSnapshot,
+      computeChangeSummary,
+    } = await import('./consultationUserLog');
+    const first = buildConsultationUserLogSnapshot({
+      chiefComplaint: '咽痛、鼻塞1天',
+      historyOfPresentIllness: '昨日午后起病。',
+      pastMedicalHistory: '2型糖尿病',
+      personalHistory: '否认吸烟、饮酒史。',
+      familyHistory: '否认家族重大遗传病史。',
+      physicalExam: '双肺呼吸音清。',
+      precautions: '监测体温和血糖。',
+    });
+    const final = buildConsultationUserLogSnapshot({
+      chiefComplaint: '咽痛、鼻塞1天',
+      historyOfPresentIllness: '昨日午后起病。',
+      pastMedicalHistory: '2型糖尿病10年',
+      personalHistory: '否认吸烟史，偶尔饮酒。',
+      familyHistory: '父亲有高血压病史。',
+      physicalExam: '双肺呼吸音粗。',
+      precautions: '监测体温和血糖，症状加重及时复诊。',
+    });
+
+    expect(first).toMatchObject({
+      pastMedicalHistory: '2型糖尿病',
+      personalHistory: '否认吸烟、饮酒史。',
+      familyHistory: '否认家族重大遗传病史。',
+      physicalExam: '双肺呼吸音清。',
+      precautions: '监测体温和血糖。',
+    });
+    expect(computeChangeSummary(first, final, {
+      pastMedicalHistoryChanged: true,
+      personalHistoryChanged: true,
+      familyHistoryChanged: true,
+      physicalExamChanged: true,
+      precautionsChanged: true,
+    })).toMatchObject({
+      totalChanges: 5,
+      recordFieldChanges: 5,
+    });
+  });
 });

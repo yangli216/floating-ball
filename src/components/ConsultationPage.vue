@@ -366,6 +366,7 @@
         :examinations="examRecommendations"
         :lab-tests="labTestRecommendations"
         :procedures="procedureRecommendations"
+        :consultation-round-id="smartConsultationRoundId"
         @cancel="handleAbandonConsultation"
         @secondary-footer-action="currentView = 'consultation'"
         @close="$emit('close')"
@@ -1051,7 +1052,6 @@ const smartUserLogController = useClinicalResultUserLogController({
 const {
   submitGeneratedUserLog: submitSmartGeneratedUserLog,
   submitFinalUserLog: submitSmartFinalUserLog,
-  submitAbandonedUserLog: submitSmartAbandonedUserLog,
 } = smartUserLogController;
 
 const prefillGeneratedRecordFromPatient = (force = false): boolean => {
@@ -1513,7 +1513,6 @@ const handleEndSession = () => {
 
 const handleAbandonConsultation = () => {
   trackClick('abandon_symptom_consultation', { consultationId: resolveConsultationId() });
-  submitSmartAbandonedUserLog();
   symptomCacheSession.clearSnapshot();
   resetWorkflowState();
   initFormData(generalConditionConfig);

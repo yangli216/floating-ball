@@ -40,6 +40,11 @@ export interface BuildCurrentMedicalPayloadInput {
 export interface BuildSmartUserLogSnapshotInput {
   chiefComplaint: string;
   historyOfPresentIllness: string;
+  pastMedicalHistory?: string;
+  personalHistory?: string;
+  familyHistory?: string;
+  physicalExam?: string;
+  precautions?: string;
   diagnoses: Diagnosis[];
   selectedDiagnosis?: Diagnosis | null;
   medicines: TreatmentRecommendation[];
@@ -170,6 +175,11 @@ export function buildSmartUserLogSnapshot(
   return buildConsultationUserLogSnapshot({
     chiefComplaint: input.chiefComplaint,
     historyOfPresentIllness: input.historyOfPresentIllness,
+    pastMedicalHistory: input.pastMedicalHistory,
+    personalHistory: input.personalHistory,
+    familyHistory: input.familyHistory,
+    physicalExam: input.physicalExam,
+    precautions: input.precautions,
     diagnoses: input.diagnoses,
     selectedDiagnosis: input.selectedDiagnosis,
     medicines: input.medicines,

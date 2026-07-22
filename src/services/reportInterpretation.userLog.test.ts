@@ -44,6 +44,11 @@ describe('report interpretation user log', () => {
     const snapshot: ConsultationUserLogSnapshot = {
       chiefComplaint: '',
       historyOfPresentIllness: '',
+      pastMedicalHistory: '',
+      personalHistory: '',
+      familyHistory: '',
+      physicalExam: '',
+      precautions: '',
       diagnoses: [],
       medicines: [],
       examinations: [],

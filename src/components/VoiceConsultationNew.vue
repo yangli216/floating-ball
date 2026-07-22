@@ -644,6 +644,11 @@ function buildVoiceUserLogSnapshot() {
   return buildConsultationUserLogSnapshot({
     chiefComplaint: chiefComplaint.value,
     historyOfPresentIllness: historyOfPresentIllness.value,
+    pastMedicalHistory: pastMedicalHistory.value,
+    personalHistory: personalHistory.value,
+    familyHistory: familyHistory.value,
+    physicalExam: physicalExam.value,
+    precautions: precautions.value,
     diagnoses: aiDiagnoses.value,
     selectedDiagnosis: selectedDiagnosis.value,
     treatments: treatments.value,
