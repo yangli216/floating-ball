@@ -3,7 +3,7 @@
 > 最后更新: 2026-07-01
 >
 > 本文档面向准备接入 `MedHermes` 的 HIS / 医生站 / PHIS 项目。
-> 当前真实运行契约以 `src-tauri/src/http_server.rs` 与当前前端实现为准；旧区域化草案已归档，不能替代本文档。
+> 当前真实运行契约以 `src-tauri/src/http_server.rs` 与当前前端实现为准；历史双模式草案已经删除，不能替代本文档。
 
 ## 1. 文档目标
 
@@ -1603,6 +1603,8 @@ http://127.0.0.1:8081/api/consultation/stop
 
 用途：把 HIS 当前患者的风险信息推送到 `MedHermes`，触发患者风险评估提醒。
 
+两慢病专用联调页 `web_project/public/chronic-disease-mock.html` 通过正式 SDK `sendRisks(patient, risks)` 调用本接口。该页面不渲染 floating-ball，只负责下发带 `rqflStatus` 公卫管理字段及中性历史上下文的 mock 患者并展示 Bridge 回执；实际患者胶囊和慢病详情由桌面端窗口呈现。
+
 完整地址：
 
 ```text
@@ -1623,7 +1625,38 @@ http://127.0.0.1:8081/api/patient/risks
 | `pastMedicalHistory` | String | 否 | 既往史 |
 | `diagnosis` | String | 否 | 当前诊断 |
 | `allergyHistory` | String | 否 | 过敏史 |
+| `currentMedicationHistory` | String | 否 | 当前用药史文本，仅作为待核实事实 |
+| `currentVitalSigns` | HisVisitVitalSigns | 否 | 本次体征；结构见下文 |
+| `hisHistory` | HisPatientHistory | 否 | 可选的中性历史上下文；HIS adapter 可用时仍以实时拉取结果为准 |
 | `risks` | RiskItem[] | 否 | 预计算的风险项（若为空数组或不传，则由 LLM 自动分析） |
+
+#### 可选历史上下文
+
+`currentVitalSigns` 和 `hisHistory` 用于 HIS 已经掌握标准化历史数据、或 Mock HIS 需要验证真实趋势链路的场景。不要把厂商私有完整响应塞入这些字段。
+
+`HisVisitVitalSigns` 当前支持：
+
+| 字段名 | 类型 | 说明 |
+| :--- | :--- | :--- |
+| `systolicBloodPressure` | Number | 收缩压，mmHg |
+| `diastolicBloodPressure` | Number | 舒张压，mmHg |
+| `heartRate` / `pulseRate` | Number | 心率 / 脉搏，次/分 |
+| `heightCm` / `weightKg` / `waistCm` | Number | 身高、体重、腰围 |
+| `measuredAt` | String | ISO 8601 测量时间 |
+
+`HisPatientHistory` 使用 `{ patientId, pastMedicalHistory?, allergyHistory?, visits? }`；每个 `visits[]` 条目可携带：
+
+| 字段名 | 类型 | 说明 |
+| :--- | :--- | :--- |
+| `visitId` | String | 历史就诊标识 |
+| `visitTime` | Number | 毫秒时间戳 |
+| `deptName` / `chiefComplaint` | String | 就诊科室与主诉摘要 |
+| `diagnoses` | String[] | 历史诊断 |
+| `vitalSigns` | HisVisitVitalSigns | 该次随访体征 |
+| `labResults` | HisHistoricalLabResult[] | 结构化历史检验；血糖趋势读取名称、数值、单位和测量时间 |
+| `medicationOrders` | HisHistoricalMedication[] | 结构化历史处方；名称、剂量、频次和用法均作为历史事实 |
+
+`HisHistoricalLabResult` 至少包含 `name + value`，可选 `code / unit / measuredAt`。这些字段是事实输入，不表示系统推荐用药或自动调整治疗方案。
 
 #### RiskItem 结构
 
@@ -1748,7 +1781,7 @@ consultationId + resultType + requestId + timestamp
 
 ## 9. 联调注意事项
 
-1. 当前完整 HIS 联调参考页是 `web_project/public/mock-his.html`；报告解读专用测试页是 `web_project/public/report-interpretation-test.html`；SDK 位于 `sdk/med-hermes-sdk.js`。
+1. 当前完整 HIS 联调参考页是 `web_project/public/mock-his.html`；两慢病真实浮球唤起页是 `web_project/public/chronic-disease-mock.html`；报告解读专用测试页是 `web_project/public/report-interpretation-test.html`；SDK 位于 `sdk/med-hermes-sdk.js`。
 2. `consultationId` 当前来自 HIS 下发的就诊锚点或患者标识；HIS 侧应尽量传入 `idVis / visitId`，并防止缺失就诊锚点时“同患者旧结果误命中当前就诊”。
 3. `/assist` 每次调用都会重置当前业务上下文；不要在上一动作事件尚未消费完成时复用旧状态。
 4. `reference-feedback` 只接受与“当前最新待处理回写或引用请求”匹配的回执。

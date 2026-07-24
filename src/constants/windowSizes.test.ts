@@ -2,26 +2,26 @@ import { describe, expect, it } from 'vitest';
 import { getReceptionCapsuleSize, getWindowSizeConstraints, getWindowSizeForView } from './windowSizes';
 
 describe('getReceptionCapsuleSize', () => {
-  it('avoids a fixed tall blank area for a short risk list', () => {
-    expect(getReceptionCapsuleSize({ expanded: true, riskCount: 1 })).toEqual({
-      width: 280,
-      height: 196,
+  it('uses the compact patient capsule until the chronic-disease detail is requested', () => {
+    expect(getReceptionCapsuleSize({ expanded: false })).toEqual({
+      width: 224,
+      height: 68,
     });
-    expect(getReceptionCapsuleSize({ expanded: true, riskCount: 4 })).toEqual({
-      width: 280,
-      height: 316,
+    expect(getReceptionCapsuleSize({ expanded: true, riskCount: 1 })).toEqual({
+      width: 404,
+      height: 712,
     });
   });
 
-  it('reserves action space and caps the capsule height', () => {
+  it('keeps a stable narrow plugin size regardless of legacy risk action count', () => {
     expect(getReceptionCapsuleSize({
       expanded: true,
       riskCount: 8,
       hasChronicRefill: true,
       hasReportInterpretation: true,
     })).toEqual({
-      width: 280,
-      height: 520,
+      width: 404,
+      height: 712,
     });
   });
 });

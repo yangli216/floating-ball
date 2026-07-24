@@ -359,6 +359,20 @@ export interface HisVisitVitalSigns {
   updatedAt?: string;
 }
 
+/** 历史就诊中的中性结构化检验结果。 */
+export interface HisHistoricalLabResult {
+  /** 检验项目名称，如“空腹血糖”。 */
+  name: string;
+  /** 标准或院内项目编码。 */
+  code?: string;
+  /** 结构化结果值；允许保留 HIS 原始数字文本。 */
+  value: number | string;
+  /** 结果单位，如 mmol/L。 */
+  unit?: string;
+  /** 采样或报告时间，优先使用 ISO 8601。 */
+  measuredAt?: string;
+}
+
 /** 历史门诊诊断的中性摘要；编码当前为 HIS 提供的 ICD-10。 */
 export interface HisHistoricalDiagnosis {
   name: string;
@@ -386,6 +400,8 @@ export interface HisVisitRecord {
   medicationOrders?: HisHistoricalMedication[];
   /** 本次历史就诊详情中的生命体征。 */
   vitalSigns?: HisVisitVitalSigns;
+  /** 本次历史就诊中的结构化检验结果。 */
+  labResults?: HisHistoricalLabResult[];
   /** 本次历史就诊中已出结果的检验检查申请摘要。 */
   reportedApplications?: HisReportedApplication[];
 }

@@ -437,3 +437,22 @@ HIS POST /api/consultation/assist {action: "suggestedDx", chiefComplaint: "..."}
 6. **静态资源增减**
 
 > 参考 [AGENTS.md 文档更新矩阵](./AGENTS.md) 中的完整更新规则。
+
+## 两慢病插件代码地图
+
+| 职责 | 位置 |
+| --- | --- |
+| 接诊三态外壳 | `src/features/reception/ui/ReceptionCapsule.vue` |
+| 患者慢病摘要与真实趋势数据映射 | `src/features/chronic-disease/lib/chronicDiseaseSummary.ts` |
+| 原始 TcdVisitForm 字段、显示规则、校验与序列化 | `src/features/chronic-disease/model/followUpFormModel.ts` |
+| 受控路径发布清单 | `src/features/chronic-disease/lib/publishedCatalog.ts` |
+| 原两慢病系统流程图、热点与说明 | `public/assets/chronic-disease/clinical-paths/` + `src/features/chronic-disease/lib/clinicalPathDiagram.ts` + `src/features/chronic-disease/ui/ClinicalPathDiagram.vue` + `src/features/chronic-disease/ui/ClinicalPathDrawer.vue` |
+| 签名随访 API | `src/features/chronic-disease/api/chronicDiseaseApi.ts` |
+| 健康处方/年度评估打印快照 API | `src/features/chronic-disease/api/chronicDiseaseApi.ts` |
+| 独立业务窗创建与 ready/ack | `src/features/chronic-disease/api/chronicDiseaseWindowService.ts` |
+| 年度自然年聚合 | `src/features/chronic-disease/lib/annualAssessment.ts` |
+| 慢病检查检验到诊疗方案 seed | `src/features/chronic-disease/lib/chronicTreatmentPlanDraft.ts` + `src/features/treatment-plan/model/treatmentPlanInitialDraft.ts` |
+| 趋势图与业务窗 UI | `src/features/chronic-disease/ui/`；融合随访章节组件位于 `ui/follow-up/`，只通过显式 `v-model` 接收原实例表单状态 |
+| 两慢病 Mock HIS 唤起页 | `web_project/public/chronic-disease-mock.html`；通过正式 SDK `sendRisks()` 和 `/api/patient/risks` 唤起真实 floating-ball，并用中性 `currentVitalSigns / hisHistory` 载荷模拟血压、血糖和随访用药，不在网页内渲染插件 |
+| Tauri 独立窗入口组合 | `src/App.vue` |
+| 产品与安全边界 | `docs/two-chronic-disease-plugin.md` |

@@ -14,6 +14,7 @@ import type { ReportFollowUpActionability } from '@/types/reportInterpretation';
 import {
   getPatientContextAgeText,
   getPatientContextAllergyHistory,
+  getPatientContextAnchorId,
   getPatientContextId,
   getPatientContextName,
   getPatientContextPastMedicalHistory,
@@ -28,6 +29,7 @@ import {
   formatAvailableMedicineInventoryCandidatesPrompt,
   loadAvailableMedicineInventoryContext,
   mapClinicalResultAiDiagnoses,
+  mapClinicalResultAiTreatments,
   parseLLMJson,
   readFirstString,
   selectAvailableMedicineInventoryCandidates,
@@ -41,6 +43,7 @@ import {
   buildOutpatientFollowUpTreatmentEvidence,
   isOutpatientFollowUpActionable,
 } from '@features/outpatient-follow-up/api/outpatientFollowUpContext';
+import type { TreatmentPlanInitialDraft } from './treatmentPlanInitialDraft';
 
 export interface TreatmentPlanRecordContext {
   chiefComplaint: string;
@@ -68,6 +71,7 @@ export interface TreatmentPlanRecommendationOptions {
   diagnosis: Ref<Diagnosis | null>;
   treatments: Ref<TreatmentRecommendation[]>;
   pharmacies: Ref<PharmacyOption[]>;
+  initialDraft: Ref<TreatmentPlanInitialDraft | null>;
   normalizeTreatment: (rec: Partial<TreatmentRecommendation>) => TreatmentRecommendation;
 }
 
@@ -214,6 +218,14 @@ export function useTreatmentPlanRecommendations(options: TreatmentPlanRecommenda
   });
   const isLoading = computed(() => Object.values(loadingByKind.value).some(Boolean));
   const selectedTreatments = computed(() => options.treatments.value.filter((item) => item.selected));
+  const hasInitialDraft = computed(() => {
+    const draft = options.initialDraft.value;
+    return Boolean(
+      draft
+      && draft.patientAnchorId === getPatientContextAnchorId(options.patient.value)
+      && draft.items.length > 0,
+    );
+  });
   const sections = computed<TreatmentPlanRecommendationSection[]>(() => UI_SECTIONS.map((config) => ({
     key: config.key,
     title: config.title,
@@ -239,6 +251,28 @@ export function useTreatmentPlanRecommendations(options: TreatmentPlanRecommenda
       ...options.treatments.value.filter((item) => item.type !== type),
       ...items,
     ];
+  }
+
+  function initializeFromDraft(): boolean {
+    const draft = options.initialDraft.value;
+    if (!draft || !hasInitialDraft.value) return false;
+    const diagnosis = buildDiagnosisFromText(recordContext.value.diagnosisText);
+    options.diagnosis.value = diagnosis;
+    options.treatments.value = mapClinicalResultAiTreatments({
+      rawTreatments: draft.items.map((item) => ({
+        type: item.type,
+        name: item.name,
+        originalName: item.name,
+        reason: item.reason,
+        evidenceText: item.reason,
+        sourceType: 'explicit',
+      })),
+      assessCatalogMatch: assessTreatmentCatalogMatch,
+      normalize: options.normalizeTreatment,
+    });
+    initialized.value = true;
+    lastRunKey.value = `${buildRunKey()}|draft:${draft.requestId}`;
+    return true;
   }
 
   async function fetchTask(task: (typeof RECOMMENDATION_TASKS)[number], runKey: string): Promise<void> {
@@ -378,6 +412,7 @@ export function useTreatmentPlanRecommendations(options: TreatmentPlanRecommenda
     canRecommend,
     diagnosis: options.diagnosis,
     errorByKind,
+    hasInitialDraft,
     initialized,
     isLoading,
     missingContextTips,
@@ -386,6 +421,7 @@ export function useTreatmentPlanRecommendations(options: TreatmentPlanRecommenda
     sections,
     selectedTreatments,
     treatments: options.treatments,
+    initializeFromDraft,
     refresh,
     toggleSelection,
   };

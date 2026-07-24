@@ -90,11 +90,11 @@ export const WINDOW_SIZES = {
   /** 语音胶囊展开编辑：360×248px */
   CAPSULE_EXPANDED: { width: 360, height: 248 } as WindowSize,
 
-  /** 风险评估卡片：280×92px，仅展示头部（头像+姓名+状态徽章） */
-  RISK_CARD: { width: 280, height: 92 } as WindowSize,
+  /** 接诊患者胶囊：窄幅患者身份与慢病状态提示。 */
+  RISK_CARD: { width: 224, height: 68 } as WindowSize,
 
-  /** 风险评估卡片单条详情基线：280×196px；更多风险按行增高 */
-  RISK_CARD_EXPANDED: { width: 280, height: 196 } as WindowSize,
+  /** 两慢病详情插件：404×712px 原始窄栏比例，内容区内部滚动。 */
+  RISK_CARD_EXPANDED: { width: 404, height: 712 } as WindowSize,
 
   /** 语音问诊页面：1080×720px */
   VOICE_CONSULTATION: { width: 1080, height: 720 } as WindowSize,
@@ -170,26 +170,11 @@ export function isLargeWorkspaceView(view: ViewType): boolean {
  */
 export function getReceptionCapsuleSize(options?: Pick<WindowSizeOptions, 'expanded' | 'riskCount' | 'hasChronicRefill' | 'hasFollowUp' | 'hasReportInterpretation'>): WindowSize {
   const expanded = options?.expanded ?? false;
-  const hasReportAction = Boolean(options?.hasFollowUp || options?.hasReportInterpretation);
-  const actionHeight = (Number(Boolean(options?.hasChronicRefill)) + Number(hasReportAction)) * 54;
   if (!expanded) {
-    return {
-      width: WINDOW_SIZES.RISK_CARD.width,
-      height: WINDOW_SIZES.RISK_CARD.height + actionHeight,
-    };
+    return WINDOW_SIZES.RISK_CARD;
   }
 
-  const riskCount = Math.max(options?.riskCount ?? 0, 1);
-  const visibleRiskRows = Math.min(riskCount, 6);
-  const estimatedHeight = 108 + visibleRiskRows * 52 + actionHeight;
-
-  return {
-    width: WINDOW_SIZES.RISK_CARD.width,
-    height: Math.min(
-      Math.max(estimatedHeight, WINDOW_SIZES.RISK_CARD_EXPANDED.height),
-      520,
-    ),
-  };
+  return WINDOW_SIZES.RISK_CARD_EXPANDED;
 }
 
 export function getVoiceInteractionWindowSize(stage: VoiceInteractionWindowStage = 'recording'): WindowSize {

@@ -29,6 +29,12 @@ import { OutpatientFollowUpPage } from "@features/outpatient-follow-up";
 import { InpatientEmrPage, type InpatientEmrGenerationRequest } from "@features/inpatient-emr";
 import { DifferentialDiagnosisModalPage } from "@features/differential-diagnosis";
 import { PatientMemoryWorkspace } from '@features/patient-memory';
+import {
+  ChronicDiseaseWindow,
+  closeChronicDiseaseWindow,
+  openChronicDiseaseWindow,
+} from '@features/chronic-disease';
+import type { TreatmentPlanInitialDraft } from '@features/treatment-plan';
 import Icon from "@shared/ui/Icon.vue";
 import { formatUserFacingError } from "@shared/lib/errorMessages";
 import { trackClick } from "./services/operationTracker";
@@ -86,12 +92,15 @@ const appWindow = shallowRef<TauriWindow | null>(null);
 const standaloneWindowParam = typeof window !== 'undefined'
   ? new URLSearchParams(window.location.search).get('window')
   : null;
-const standaloneWindowKind = standaloneWindowParam === 'diagnosis-path' || standaloneWindowParam === 'report-interpretation'
+const standaloneWindowKind = standaloneWindowParam === 'diagnosis-path'
+  || standaloneWindowParam === 'report-interpretation'
+  || standaloneWindowParam === 'chronic-disease'
   ? standaloneWindowParam
   : 'main';
 const isStandaloneWindow = standaloneWindowKind !== 'main';
 const isDiagnosisPathWindow = standaloneWindowKind === 'diagnosis-path';
 const isReportInterpretationWindow = standaloneWindowKind === 'report-interpretation';
+const isChronicDiseaseWindow = standaloneWindowKind === 'chronic-disease';
 const toastRef = ref<InstanceType<typeof Toast> | null>(null);
 const showToast = (msg: string, type: 'success' | 'error' | 'info' = 'info', duration = 3000) => {
   const displayMessage = type === 'error' ? formatUserFacingError(msg) : msg;
@@ -123,11 +132,13 @@ const {
   reportAssistantOpening,
   patientMemoryStatus,
   patientMemoryBrief,
+  detailExpanded: receptionDetailExpanded,
 } = receptionSession;
 
 // 语音问诊状态
 const voiceInteractionSessionKey = ref(0);
 const consultationAssistTrigger = ref<{ kind: ConsultationAssistAction; token: number } | null>(null);
+const chronicTreatmentPlanDraft = shallowRef<TreatmentPlanInitialDraft | null>(null);
 const inpatientEmrRequest = ref<InpatientEmrGenerationRequest | null>(null);
 const patientDisplayName = computed(
   () => getPatientContextName(currentPatient.value) || '未知患者'
@@ -296,7 +307,7 @@ const windowTransition = useWindowTransitionCoordinator({
 });
 
 const getCurrentReceptionWindowSize = () => getWindowSizeForView('reception-capsule', {
-  expanded: !isRiskAnalyzing.value && riskItems.value.length > 0,
+  expanded: receptionDetailExpanded.value,
   riskCount: riskItems.value.length,
   hasChronicRefill: Boolean(chronicRefillCandidate.value),
   hasFollowUp: Boolean(outpatientFollowUpContext.value),
@@ -339,7 +350,7 @@ const {
   openConsultation,
   openChronicRefillConfirmation,
   openVoiceConsultation,
-  openTreatmentPlan,
+  openTreatmentPlan: openTreatmentPlanBase,
   openOutpatientFollowUp,
   openReportInterpretation,
   openPatientMemory,
@@ -347,6 +358,21 @@ const {
   openDifferentialDiagnosis,
   startVoiceInteraction: startVoiceInteractionBase,
 } = navigation;
+
+async function openTreatmentPlan(): Promise<void> {
+  chronicTreatmentPlanDraft.value = null;
+  await openTreatmentPlanBase();
+}
+
+async function openChronicTreatmentPlan(draft: TreatmentPlanInitialDraft): Promise<void> {
+  const currentAnchorId = getPatientContextAnchorId(currentPatient.value);
+  if (!currentAnchorId || draft.patientAnchorId !== currentAnchorId) {
+    showToast('慢病医嘱草稿与当前患者不匹配，请重新打开慢病插件。', 'error');
+    return;
+  }
+  chronicTreatmentPlanDraft.value = draft;
+  await openTreatmentPlanBase();
+}
 
 // 初始化语音问诊 composable
 const voiceConsultation = useVoiceConsultation({
@@ -388,6 +414,7 @@ async function cancelSymptomConsultation(): Promise<void> {
 }
 
 async function closeTreatmentPlan(): Promise<void> {
+  chronicTreatmentPlanDraft.value = null;
   await handleUserCollapse();
 }
 
@@ -609,6 +636,7 @@ const closeRiskAlert = async () => {
 
 const handleRiskExpand = async (expanded: boolean) => {
   console.log('[App] handleRiskExpand:', expanded);
+  receptionSession.setDetailExpanded(expanded);
   const targetSize = getWindowSizeForView('reception-capsule', {
     expanded,
     riskCount: riskItems.value.length,
@@ -688,6 +716,17 @@ async function applyForceUpdateWindowState(state: ForceUpdateState): Promise<voi
 }
 
 // 监听状态变化并持久化
+watch(
+  () => getPatientContextAnchorId(currentPatient.value),
+  (nextAnchorId, previousAnchorId) => {
+    if (isStandaloneWindow || !previousAnchorId || nextAnchorId === previousAnchorId) return;
+    chronicTreatmentPlanDraft.value = null;
+    void closeChronicDiseaseWindow().catch((error) => {
+      console.warn('[App] Failed to close chronic-disease window after patient switch:', error);
+    });
+  },
+);
+
 watch([isWorking, currentView], async () => {
   if (isStandaloneWindow) return;
   if (!store) return;
@@ -839,6 +878,7 @@ const openInsideCloudHome = async () => {
 <template>
   <DiagnosisPathWindow v-if="isDiagnosisPathWindow" />
   <ReportInterpretationWindow v-else-if="isReportInterpretationWindow" />
+  <ChronicDiseaseWindow v-else-if="isChronicDiseaseWindow" />
   <template v-else>
   <a href="#main-content" class="skip-link">跳转到主要内容</a>
 
@@ -1001,6 +1041,7 @@ const openInsideCloudHome = async () => {
           <!-- Reception Service (Risk) Capsule -->
           <ReceptionCapsule
             v-if="currentView === 'reception-capsule'"
+            :patient="currentPatient"
             :patient-name="riskPatientName"
             :gender="riskPatientGender"
             :age="riskPatientAge"
@@ -1018,6 +1059,8 @@ const openInsideCloudHome = async () => {
             @confirm-chronic-refill="eventListeners.confirmChronicRefill"
             @confirm-report-assistant="eventListeners.confirmReportAssistant"
             @open-patient-memory="openPatientMemory"
+            @open-chronic-disease="openChronicDiseaseWindow"
+            @open-chronic-treatment-plan="openChronicTreatmentPlan"
           />
 
           <PatientMemoryWorkspace
@@ -1051,6 +1094,7 @@ const openInsideCloudHome = async () => {
           <TreatmentPlanPage
             v-if="currentView === 'treatment-plan'"
             :patient="currentPatient"
+            :initial-draft="chronicTreatmentPlanDraft"
             @close="closeTreatmentPlan"
           />
           <OutpatientFollowUpPage

@@ -1,4 +1,8 @@
-import type { HisPatientHistory, HisPatientInfo } from '../services/his/types';
+import type {
+  HisPatientHistory,
+  HisPatientInfo,
+  HisVisitVitalSigns,
+} from '../services/his/types';
 import type { Patient } from '../types/consultation';
 import type { AppPatient, PatientContext } from '../types/appState';
 
@@ -33,6 +37,33 @@ function pickFirstText(source: PatientSourceRecord | null | undefined, keys: str
 
 function toRecord(value: unknown): PatientSourceRecord | null {
   return value && typeof value === 'object' ? value as PatientSourceRecord : null;
+}
+
+function readPatientHistory(
+  source: PatientSourceRecord | null,
+  patientId: string,
+): HisPatientHistory | undefined {
+  const value = toRecord(source?.hisHistory) || toRecord(source?.patientHistory);
+  if (!value) return undefined;
+  const visits = Array.isArray(value.visits) ? value.visits : [];
+  const allergyHistory = Array.isArray(value.allergyHistory)
+    ? value.allergyHistory.filter((item): item is string => typeof item === 'string')
+    : undefined;
+  const pastMedicalHistory = Array.isArray(value.pastMedicalHistory)
+    ? value.pastMedicalHistory.filter((item): item is string => typeof item === 'string')
+    : undefined;
+  return {
+    ...(value as unknown as HisPatientHistory),
+    patientId: text(value.patientId) || patientId,
+    allergyHistory,
+    pastMedicalHistory,
+    visits: visits as HisPatientHistory['visits'],
+  };
+}
+
+function readVisitVitalSigns(source: PatientSourceRecord | null): HisVisitVitalSigns | undefined {
+  const value = toRecord(source?.currentVitalSigns);
+  return value ? value as HisVisitVitalSigns : undefined;
 }
 
 export function normalizePatientGenderCode(raw: unknown): 'M' | 'F' | 'O' | string | undefined {
@@ -221,7 +252,9 @@ export function buildPatientContext(input: BuildPatientContextInput): AppPatient
   const mobilePhone = pickFirstText(payload, ['mobilePhone', 'phone']) || input.hisInfo?.mobilePhone || text(patientFallback?.mobilePhone);
   const insuranceType = pickFirstText(payload, ['insuranceType']) || input.hisInfo?.insuranceType || text(patientFallback?.insuranceType);
 
-  const hisHistory = input.hisHistory ?? getPatientContextHistory(patientFallback);
+  const hisHistory = input.hisHistory
+    ?? readPatientHistory(payload, patientId)
+    ?? getPatientContextHistory(patientFallback);
   const pastMedicalHistory = pickFirstText(payload, ['pastMedicalHistory', 'past_medical_history', 'pastMedicalHistoryText'])
     || getPatientContextPastMedicalHistory(patientFallback);
   const allergyHistory = pickFirstText(payload, ['allergyHistory', 'allergy_history', 'allergyHistoryText'])
@@ -240,7 +273,9 @@ export function buildPatientContext(input: BuildPatientContextInput): AppPatient
     || text(encounterFallback?.currentOutpatientRecordTitle || encounterFallback?.clinical?.currentOutpatientRecordTitle);
   const currentOutpatientRecordTime = pickFirstText(payload, ['currentOutpatientRecordTime'])
     || text(encounterFallback?.currentOutpatientRecordTime || encounterFallback?.clinical?.currentOutpatientRecordTime);
-  const currentVitalSigns = encounterFallback?.currentVitalSigns || encounterFallback?.clinical?.currentVitalSigns;
+  const currentVitalSigns = readVisitVitalSigns(payload)
+    || encounterFallback?.currentVitalSigns
+    || encounterFallback?.clinical?.currentVitalSigns;
   const receptionEnsured = input.receptionEnsured
     ?? patientFallback?.receptionEnsured
     ?? patientFallback?._receptionEnsured

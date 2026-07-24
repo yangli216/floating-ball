@@ -87,7 +87,8 @@ export async function regionalFetch<T>(
   }
   const clientVersion = await getCurrentClientVersion();
   const updateChannel = getActiveUpdateChannel();
-  const requestId = crypto.randomUUID();
+  const requestedRequestId = (options.headers as Record<string, string> | undefined)?.['X-Request-Id'];
+  const requestId = requestedRequestId?.trim() || crypto.randomUUID();
 
   let signatureHeaders: SignatureHeaders = {} as SignatureHeaders;
   if (path !== '/v1/client/register') {
@@ -206,9 +207,14 @@ export async function regionalGet<T>(path: string): Promise<T> {
   return regionalFetch<T>(path);
 }
 
-export async function regionalPost<T>(path: string, body: unknown): Promise<T> {
+export async function regionalPost<T>(
+  path: string,
+  body: unknown,
+  requestId?: string,
+): Promise<T> {
   return regionalFetch<T>(path, {
     method: 'POST',
     body: JSON.stringify(body),
+    ...(requestId ? { headers: { 'X-Request-Id': requestId } } : {}),
   });
 }

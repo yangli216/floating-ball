@@ -277,6 +277,26 @@ function buildVisitObservations(patient: AppPatient): PatientMemoryObservation[]
       }
     }
 
+    for (const labResult of visit.labResults || []) {
+      const name = cleanText(labResult.name, 256);
+      const code = cleanText(labResult.code, 128);
+      const value = typeof labResult.value === 'number' && Number.isFinite(labResult.value)
+        ? String(labResult.value)
+        : cleanText(labResult.value, 128);
+      const unit = cleanText(labResult.unit, 64);
+      if ((!name && !code) || !value) continue;
+      facts.push({
+        factKey: `lab-result:${normalizeKeyPart(code || name)}`,
+        factType: 'lab_result',
+        code: code || undefined,
+        name: name || code,
+        valueText: [value, unit].filter(Boolean).join(' '),
+        status: 'historical',
+        confidence: 'structured',
+        evidenceText,
+      });
+    }
+
     facts.push(...buildVitalFacts(visit.vitalSigns, evidenceText));
 
     return {

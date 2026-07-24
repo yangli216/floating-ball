@@ -41,6 +41,13 @@ function patientFixture(): AppPatient {
             days: '30',
             raw: { idMedPro: 'PRIVATE-VALUE' },
           }],
+          labResults: [{
+            name: '空腹血糖',
+            code: 'GLU-F',
+            value: 7.8,
+            unit: 'mmol/L',
+            measuredAt: '2026-07-05T08:20:00+08:00',
+          }],
         }],
         raw: { visitItems: [{ privateField: 'DO-NOT-UPLOAD' }] },
       },
@@ -93,6 +100,12 @@ describe('buildPatientMemorySyncRequest', () => {
     expect(visit?.facts).toEqual(expect.arrayContaining([
       expect.objectContaining({ factType: 'diagnosis', code: 'E11.9', name: '2型糖尿病' }),
       expect.objectContaining({ factType: 'medication', code: 'MED-001', name: '盐酸二甲双胍片' }),
+      expect.objectContaining({
+        factType: 'lab_result',
+        code: 'GLU-F',
+        name: '空腹血糖',
+        valueText: '7.8 mmol/L',
+      }),
       expect.objectContaining({ factType: 'vital', name: '血压', valueText: '130/80 mmHg' }),
       expect.objectContaining({ factType: 'vital', name: '体温（腋温）', valueText: '36.5 ℃' }),
     ]));

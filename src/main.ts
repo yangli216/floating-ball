@@ -4,7 +4,9 @@ import App from "./App.vue";
 // 离线图标集：预注册本地 JSON，避免内网环境从 Iconify CDN 拉取
 import { addCollection } from "@iconify/vue/offline";
 import { iconifyCollections } from "./icons/iconifyCollections";
+import { chronicDiseaseIconCollections } from "./icons/chronicDiseaseIcons";
 iconifyCollections.forEach((collection) => addCollection(collection as never));
+chronicDiseaseIconCollections.forEach((collection) => addCollection(collection as never));
 
 // 导入全局设计令牌和样式覆盖
 import "./styles/design-tokens.css";

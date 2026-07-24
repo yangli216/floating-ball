@@ -1462,3 +1462,18 @@ describe('useWindowManagement', () => {
 **文档维护**: 任何架构级别的修改都必须同步更新此文档。
 
 **最后更新**: 2026-02-10
+
+## 两慢病插件模块
+
+`src/features/chronic-disease/` 负责高血压与 2 型糖尿病插件，不把相关规则继续堆入 `App.vue` 或 `ReceptionCapsule.vue`：
+
+- `lib/`：从 `PatientContext + PatientMemoryBrief` 生成可追溯摘要；保存受控模板、路径发布清单与旧系统正式流程图的热点/说明配置。
+- `model/`：独立业务窗状态、随访表单校验与 AI 健康处方草稿状态。
+- `api/`：通过 `regionalPost` 调用签名 `/v1/*`，以及独立 Tauri 窗口的 ready/ack 事件桥。
+- `ui/`：趋势图、随访表、正式流程图与高血压热点说明抽屉、健康处方和年度评估。
+
+接诊模块只负责组合三态外壳并派发动作。慢病识别分为“公卫管理”和“临床识别”：二者都可展示路径与健康建议，只有公卫管理标签可派生正式随访资格。随访窗口不再接收“当前选中病种”作为表单主状态，而是从 `summary.managedDiseaseTypes` 派生只读 `sdVisitKind` 与字段组合：高血压为 `["1"]`，糖尿病为 `["2"]`，双病种为 `["1","2"]`。`model/followUpFormModel.ts` 是原始 `TcdVisitForm` 字段、显示条件、校验和序列化的唯一客户端落点；UI 内多选字段保持数组，提交时按原 `getFormData()` 转成逗号字符串，`drugList` 保持对象数组并过滤没有 `idDrug` 的空行。单病种和联合随访都只构造一条融合记录，业务正文不再使用 `diseaseType/systolicPressure/symptomCodes` 等替代字段。稳定幂等键由签名 HTTP 层放入 `X-Request-Id`，不污染慢病系统原表单结构。临床路径视图以 `public/assets/chronic-disease/clinical-paths/` 中从旧系统迁入的高血压、糖尿病完整流程图为唯一视觉底图；`lib/clinicalPathDiagram.ts` 只描述旧高血压页面已有的热点坐标和说明内容，`ClinicalPathDiagram.vue` 与 `ClinicalPathDrawer.vue` 负责只读交互，不使用患者证据或 AI 结果改写正式流程。插件勾选的检查检验转换为 typed treatment-plan seed，进入既有 `TreatmentPlanPage` 完成标准目录匹配、医生确认与 PHIS 回写，不在接诊组件中维护第二套医嘱状态。
+
+主窗口尺寸继续由 `useWindowTransitionCoordinator` 管理；业务窗复用显式 `ready` 事件后再传 payload 的握手，避免独立窗口丢失首包。当前患者/就诊锚点变化时主窗口关闭旧业务窗，独立窗按 `patientAnchor + requestId + kind` 为子页面设置 key，保证随访本地状态不会跨患者复用。正式随访记录由 `floating-ball-server` 持久化：`c_ai_chronic_followup.form_data_json` 保存完整原实例快照，`id_phr/id_record/sd_visit_kind` 等关键锚点独立列化便于幂等冲突判断与查询；健康处方与年度评估打印前保存 `c_ai_chronic_artifact` 快照。管理端本期无配置入口。
+
+`web_project/public/chronic-disease-mock.html` 是两慢病专用 Mock HIS 唤起页。它不挂载 Vue 慢病组件，通过桌面端正式 `MedHermes` SDK 执行 `debugHandshake()` 和 `sendRisks()`，沿 `/api/patient/risks -> show-patient-risks -> useReceptionController -> ReceptionCapsule` 真实事件链唤起 floating-ball。联调页使用空 HIS origin，避免把静态页宿主误初始化为 PHIS 服务地址；`MOCK-CD-*` 患者可通过正式中性字段 `currentVitalSigns + hisHistory.visits[].vitalSigns/labResults/medicationOrders` 提供血压、血糖和随访用药事实，继续复用 `buildPatientContext`、患者记忆同步与 `buildChronicDiseaseSummary`，不形成另一套业务实现。Mock 用药只作为历史事实，不作为推荐或处方。

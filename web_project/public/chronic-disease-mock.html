@@ -1,0 +1,1142 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 64 64%22><text y=%2252%22 font-size=%2252%22>⚕</text></svg>" />
+  <title>两慢病 Mock HIS · floating-ball 唤起台</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --blue-900: #123a63;
+      --blue-700: #1769aa;
+      --blue-600: #1684c7;
+      --blue-100: #e9f5fc;
+      --ink: #152334;
+      --muted: #62748a;
+      --line: #d9e3ec;
+      --panel: #ffffff;
+      --canvas: #eef3f7;
+      --success: #087f5b;
+      --danger: #c92a2a;
+      --warning: #d97706;
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      color: var(--ink);
+      background:
+        radial-gradient(circle at 88% 4%, rgba(22, 132, 199, .12), transparent 28rem),
+        var(--canvas);
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+    }
+
+    button, input { font: inherit; }
+
+    .topbar {
+      min-height: 66px;
+      padding: 0 28px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 20px;
+      color: #fff;
+      background: linear-gradient(110deg, var(--blue-900), var(--blue-700));
+      box-shadow: 0 4px 18px rgba(18, 58, 99, .18);
+    }
+
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .brand-mark {
+      width: 36px;
+      height: 36px;
+      display: grid;
+      place-items: center;
+      background: rgba(255, 255, 255, .14);
+      border: 1px solid rgba(255, 255, 255, .22);
+      border-radius: 9px;
+      font-size: 20px;
+    }
+
+    .brand h1 {
+      margin: 0;
+      font-size: 17px;
+      font-weight: 700;
+    }
+
+    .brand p {
+      margin: 3px 0 0;
+      color: rgba(255, 255, 255, .7);
+      font-size: 11px;
+    }
+
+    .top-meta {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      font-size: 11px;
+    }
+
+    .top-meta a { color: #dff4ff; }
+
+    .shell {
+      width: min(1320px, calc(100% - 32px));
+      margin: 18px auto 28px;
+      display: grid;
+      grid-template-columns: minmax(0, 1.45fr) minmax(340px, .75fr);
+      gap: 16px;
+    }
+
+    .panel {
+      overflow: hidden;
+      background: var(--panel);
+      border: 1px solid rgba(203, 213, 225, .85);
+      border-radius: 12px;
+      box-shadow: 0 10px 34px rgba(50, 72, 94, .08);
+    }
+
+    .panel-header {
+      padding: 17px 19px;
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 12px;
+      border-bottom: 1px solid var(--line);
+    }
+
+    .panel-header h2 {
+      margin: 0;
+      font-size: 15px;
+    }
+
+    .panel-header p {
+      margin: 5px 0 0;
+      color: var(--muted);
+      font-size: 11px;
+      line-height: 1.55;
+    }
+
+    .step {
+      width: 24px;
+      height: 24px;
+      flex: 0 0 auto;
+      display: inline-grid;
+      place-items: center;
+      color: #fff;
+      background: var(--blue-600);
+      border-radius: 50%;
+      font-size: 11px;
+      font-weight: 700;
+    }
+
+    .content {
+      padding: 18px;
+    }
+
+    .status-grid {
+      margin-bottom: 16px;
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 8px;
+    }
+
+    .status-card {
+      padding: 11px 12px;
+      background: #f8fafc;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+    }
+
+    .status-card small {
+      display: block;
+      color: var(--muted);
+      font-size: 9px;
+      text-transform: uppercase;
+      letter-spacing: .06em;
+    }
+
+    .status-card strong {
+      margin-top: 5px;
+      display: block;
+      font-size: 11px;
+    }
+
+    .status-card strong.ok { color: var(--success); }
+    .status-card strong.warn { color: var(--warning); }
+    .status-card strong.error { color: var(--danger); }
+
+    .scenario-list {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 9px;
+    }
+
+    .scenario {
+      min-height: 112px;
+      padding: 13px;
+      display: grid;
+      grid-template-columns: auto minmax(0, 1fr);
+      align-content: start;
+      gap: 8px;
+      color: var(--ink);
+      text-align: left;
+      background: #fff;
+      border: 1px solid var(--line);
+      border-radius: 9px;
+      cursor: pointer;
+    }
+
+    .scenario:hover { border-color: #8ec9e9; }
+
+    .scenario.active {
+      background: var(--blue-100);
+      border-color: var(--blue-600);
+      box-shadow: 0 0 0 2px rgba(22, 132, 199, .08);
+    }
+
+    .radio {
+      width: 15px;
+      height: 15px;
+      margin-top: 2px;
+      border: 2px solid #9aabba;
+      border-radius: 50%;
+    }
+
+    .scenario.active .radio { border: 5px solid var(--blue-600); }
+
+    .scenario strong {
+      display: block;
+      font-size: 12px;
+    }
+
+    .scenario p {
+      margin: 4px 0 7px;
+      color: var(--muted);
+      font-size: 10px;
+      line-height: 1.55;
+    }
+
+    .tag {
+      margin-right: 4px;
+      padding: 2px 6px;
+      display: inline-block;
+      color: #255b7f;
+      background: #dceff9;
+      border-radius: 3px;
+      font-size: 9px;
+    }
+
+    .scenario[data-id="clinical-only"] .tag {
+      color: #8a5a12;
+      background: #fff3d6;
+    }
+
+    .scenario[data-id="ordinary"] .tag {
+      color: #667085;
+      background: #eef1f4;
+    }
+
+    .action-block {
+      margin-top: 15px;
+      padding: 14px;
+      background: #f8fafc;
+      border: 1px solid var(--line);
+      border-radius: 9px;
+    }
+
+    .token-row {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      gap: 8px;
+    }
+
+    input {
+      width: 100%;
+      padding: 9px 10px;
+      color: var(--ink);
+      background: #fff;
+      border: 1px solid #bdcad6;
+      border-radius: 6px;
+      outline: none;
+    }
+
+    input:focus {
+      border-color: var(--blue-600);
+      box-shadow: 0 0 0 3px rgba(22, 132, 199, .12);
+    }
+
+    button.action {
+      padding: 9px 14px;
+      color: #fff;
+      background: var(--blue-700);
+      border: 1px solid var(--blue-700);
+      border-radius: 6px;
+      cursor: pointer;
+      font-weight: 650;
+    }
+
+    button.action:hover:not(:disabled) { background: #12598f; }
+
+    button.action.primary {
+      width: 100%;
+      margin-top: 9px;
+      padding: 12px 14px;
+      background: linear-gradient(100deg, #137bb8, #0d98bb);
+      border: 0;
+      font-size: 13px;
+    }
+
+    button.action.secondary {
+      color: #35536c;
+      background: #fff;
+      border-color: #bdcad6;
+      font-weight: 500;
+    }
+
+    button.action.danger {
+      color: var(--danger);
+      background: #fff;
+      border-color: #efb6b6;
+    }
+
+    button:disabled { opacity: .58; cursor: wait; }
+
+    .secondary-actions {
+      margin-top: 8px;
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 8px;
+    }
+
+    .notice {
+      margin: 12px 0 0;
+      padding: 10px 11px;
+      display: flex;
+      gap: 8px;
+      color: #406078;
+      background: #edf7fc;
+      border-left: 3px solid var(--blue-600);
+      font-size: 10px;
+      line-height: 1.6;
+    }
+
+    .preview {
+      margin: 0;
+      padding: 13px;
+      max-height: 310px;
+      overflow: auto;
+      color: #d8e6f3;
+      background: #122336;
+      border-radius: 8px;
+      font-family: ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
+      font-size: 10px;
+      line-height: 1.55;
+      white-space: pre-wrap;
+      word-break: break-all;
+    }
+
+    .log {
+      height: 330px;
+      padding: 9px;
+      overflow: auto;
+      background: #f8fafc;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+    }
+
+    .log-empty {
+      padding: 44px 8px;
+      color: #9aa8b6;
+      text-align: center;
+      font-size: 11px;
+    }
+
+    .log-entry {
+      margin-bottom: 7px;
+      padding: 9px 10px;
+      background: #fff;
+      border: 1px solid var(--line);
+      border-left: 3px solid #8da3b6;
+      border-radius: 6px;
+    }
+
+    .log-entry.success { border-left-color: var(--success); }
+    .log-entry.error { border-left-color: var(--danger); }
+    .log-entry.event { border-left-color: var(--blue-600); }
+
+    .log-entry header {
+      display: flex;
+      justify-content: space-between;
+      gap: 10px;
+    }
+
+    .log-entry b { font-size: 10px; }
+    .log-entry time { color: #93a1af; font-size: 9px; }
+
+    .log-entry pre {
+      margin: 7px 0 0;
+      max-height: 150px;
+      overflow: auto;
+      color: #576a7e;
+      font-size: 9px;
+      white-space: pre-wrap;
+      word-break: break-all;
+    }
+
+    .footer-note {
+      padding: 0 4px;
+      grid-column: 1 / -1;
+      color: #7b8c9e;
+      font-size: 10px;
+      line-height: 1.6;
+    }
+
+    @media (max-width: 900px) {
+      .topbar { padding: 14px 18px; align-items: flex-start; }
+      .top-meta { display: none; }
+      .shell { grid-template-columns: 1fr; }
+      .scenario-list { grid-template-columns: 1fr; }
+      .status-grid { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <div class="brand-mark" aria-hidden="true">⚕</div>
+      <div>
+        <h1>两慢病 Mock HIS · floating-ball 唤起台</h1>
+        <p>网页只模拟 HIS 下发事件，慢病胶囊与业务窗口由真实桌面应用显示</p>
+      </div>
+    </div>
+    <div class="top-meta">
+      <span>Bridge <code>127.0.0.1:8081</code></span>
+      <span>·</span>
+      <span>SDK <code id="sdk-version">检测中</code></span>
+      <span>·</span>
+      <a href="./mock-his.html">完整 Mock HIS</a>
+    </div>
+  </header>
+
+  <main class="shell">
+    <section class="panel">
+      <header class="panel-header">
+        <div>
+          <h2>选择患者场景并唤起真实 floating-ball</h2>
+          <p>选择场景后点击“唤起”，页面将通过正式 SDK 向桌面端推送患者风险事件。</p>
+        </div>
+        <span class="step">1</span>
+      </header>
+      <div class="content">
+        <div class="status-grid" aria-label="联调状态">
+          <div class="status-card">
+            <small>桌面 Bridge</small>
+            <strong id="bridge-status" class="warn">检测中</strong>
+          </div>
+          <div class="status-card">
+            <small>SDK 授权</small>
+            <strong id="auth-status" class="warn">尚未握手</strong>
+          </div>
+          <div class="status-card">
+            <small>当前场景</small>
+            <strong id="scenario-status">高糖双病种在管</strong>
+          </div>
+        </div>
+
+        <div id="scenario-list" class="scenario-list" role="radiogroup" aria-label="患者场景"></div>
+
+        <div class="action-block">
+          <div class="token-row">
+            <input
+              id="emr-token"
+              type="text"
+              value="mock-token-for-local-debug"
+              aria-label="本地联调 emrAccessToken"
+            />
+            <button id="connect-button" type="button" class="action secondary">仅握手</button>
+          </div>
+          <button id="invoke-button" type="button" class="action primary">
+            唤起 floating-ball 慢病胶囊
+          </button>
+          <div class="secondary-actions">
+            <button id="ping-button" type="button" class="action secondary">检测桌面端</button>
+            <button id="stop-button" type="button" class="action danger">结束当前接诊</button>
+          </div>
+          <p class="notice">
+            <span aria-hidden="true">ⓘ</span>
+            <span>收到 Bridge 成功回执只代表事件已交给桌面端；请在真实 floating-ball 窗口中继续检查胶囊、慢病详情、随访、路径、健康处方和年度评估。</span>
+          </p>
+        </div>
+      </div>
+    </section>
+
+    <aside>
+      <section class="panel">
+        <header class="panel-header">
+          <div>
+            <h2>将发送的患者载荷</h2>
+            <p><code>POST /api/patient/risks</code></p>
+          </div>
+          <span class="step">2</span>
+        </header>
+        <div class="content">
+          <pre id="payload-preview" class="preview"></pre>
+        </div>
+      </section>
+
+      <section class="panel" style="margin-top: 16px;">
+        <header class="panel-header">
+          <div>
+            <h2>Bridge 调用日志</h2>
+            <p>只显示握手、请求和桌面端 HTTP 回执</p>
+          </div>
+          <span class="step">3</span>
+        </header>
+        <div class="content">
+          <div id="log" class="log" aria-live="polite">
+            <div class="log-empty">等待检测桌面端…</div>
+          </div>
+        </div>
+      </section>
+    </aside>
+
+    <p class="footer-note">
+      安全边界：所有患者均使用 <code>MOCK-CD-*</code> 标识；握手不注入 HIS origin，不调用测试网页宿主上的 PHIS 接口。Mock 用药仅表示历史随访事实，不是处方建议。该页面不会在浏览器中绘制 floating-ball。
+    </p>
+  </main>
+
+  <script>
+    (function () {
+      'use strict';
+
+      function medication(productId, name, spec, dose, doseUnit, frequency, route) {
+        return {
+          productId: productId,
+          name: name,
+          spec: spec,
+          dose: dose,
+          doseUnit: doseUnit,
+          frequency: frequency,
+          route: route,
+          days: '30'
+        };
+      }
+
+      function glucose(name, value, measuredAt) {
+        return {
+          name: name,
+          code: name.indexOf('餐后') >= 0 ? 'GLU-2H' : 'GLU-F',
+          value: value,
+          unit: 'mmol/L',
+          measuredAt: measuredAt
+        };
+      }
+
+      function followUpVisit(input) {
+        var visit = {
+          visitId: input.visitId,
+          visitTime: Date.parse(input.measuredAt),
+          deptName: '全科慢病门诊',
+          chiefComplaint: input.chiefComplaint,
+          diagnoses: input.diagnoses,
+          labResults: input.labResults || [],
+          medicationOrders: input.medicationOrders || []
+        };
+        if (Number.isFinite(input.systolic) && Number.isFinite(input.diastolic)) {
+          visit.vitalSigns = {
+            systolicBloodPressure: input.systolic,
+            diastolicBloodPressure: input.diastolic,
+            heartRate: input.heartRate || 76,
+            measuredAt: input.measuredAt
+          };
+        }
+        return visit;
+      }
+
+      var dualMedications = [
+        medication('MOCK-MED-AML-005', '苯磺酸氨氯地平片', '5mg×28片', '5', 'mg', '每日1次', '口服'),
+        medication('MOCK-MED-MET-500', '盐酸二甲双胍缓释片', '0.5g×30片', '0.5', 'g', '每日2次', '口服'),
+        medication('MOCK-MED-DAP-010', '达格列净片', '10mg×14片', '10', 'mg', '每日1次', '口服')
+      ];
+      var hypertensionMedications = [
+        medication('MOCK-MED-AML-005', '苯磺酸氨氯地平片', '5mg×28片', '5', 'mg', '每日1次', '口服'),
+        medication('MOCK-MED-VAL-080', '缬沙坦胶囊', '80mg×28粒', '80', 'mg', '每日1次', '口服')
+      ];
+      var diabetesMedications = [
+        medication('MOCK-MED-MET-500', '盐酸二甲双胍缓释片', '0.5g×30片', '0.5', 'g', '每日2次', '口服'),
+        medication('MOCK-MED-DAP-010', '达格列净片', '10mg×14片', '10', 'mg', '每日1次', '口服')
+      ];
+
+      var scenarios = [
+        {
+          id: 'dual-managed',
+          label: '高糖双病种在管',
+          description: '含连续血压、空腹/餐后血糖和最近随访用药。',
+          tags: ['高血压管理', '2 型糖尿病管理', '4 条血压', '4 条血糖', '3 项随访用药'],
+          patient: {
+            idPi: 'MOCK-CD-DUAL-001',
+            idVis: 'MOCK-CD-DUAL-VIS-001',
+            naPi: '林女士',
+            sdSexText: '女性',
+            ageText: '62岁',
+            chiefComplaint: '高血压、2型糖尿病慢病随访',
+            historyOfPresentIllness: '规律门诊随访，本次拟复核血压、血糖与年度检查完成情况。',
+            pastMedicalHistory: '原发性高血压病史12年；2型糖尿病病史8年',
+            diagnosis: '原发性高血压；2型糖尿病',
+            currentMedicationHistory: '最近随访记录：苯磺酸氨氯地平片、盐酸二甲双胍缓释片、达格列净片；均为 Mock 历史事实，待医生核对。',
+            currentVitalSigns: {
+              systolicBloodPressure: 136,
+              diastolicBloodPressure: 82,
+              heartRate: 74,
+              heightCm: 160,
+              weightKg: 66,
+              waistCm: 88,
+              measuredAt: '2026-07-24T09:10:00+08:00'
+            },
+            hisHistory: {
+              patientId: 'MOCK-CD-DUAL-001',
+              pastMedicalHistory: ['原发性高血压病史12年', '2型糖尿病病史8年'],
+              visits: [
+                followUpVisit({
+                  visitId: 'MOCK-CD-DUAL-FU-202604',
+                  measuredAt: '2026-04-15T08:20:00+08:00',
+                  chiefComplaint: '高血压、2型糖尿病联合随访',
+                  diagnoses: ['原发性高血压', '2型糖尿病'],
+                  systolic: 148,
+                  diastolic: 92,
+                  labResults: [glucose('空腹血糖', 8.6, '2026-04-15T08:10:00+08:00')]
+                }),
+                followUpVisit({
+                  visitId: 'MOCK-CD-DUAL-FU-202605',
+                  measuredAt: '2026-05-20T08:30:00+08:00',
+                  chiefComplaint: '高血压、2型糖尿病联合随访',
+                  diagnoses: ['原发性高血压', '2型糖尿病'],
+                  systolic: 142,
+                  diastolic: 88,
+                  labResults: [glucose('空腹血糖', 7.9, '2026-05-20T08:15:00+08:00')]
+                }),
+                followUpVisit({
+                  visitId: 'MOCK-CD-DUAL-FU-202606',
+                  measuredAt: '2026-06-24T09:00:00+08:00',
+                  chiefComplaint: '高血压、2型糖尿病联合随访',
+                  diagnoses: ['原发性高血压', '2型糖尿病'],
+                  systolic: 138,
+                  diastolic: 84,
+                  labResults: [
+                    glucose('空腹血糖', 7.3, '2026-06-24T08:20:00+08:00'),
+                    glucose('餐后2小时血糖', 10.2, '2026-06-24T10:30:00+08:00')
+                  ],
+                  medicationOrders: dualMedications
+                })
+              ]
+            },
+            rqflStatus: '3,6',
+            contractStatus: '已签约',
+            orgId: 'MOCK-HIS-001',
+            orgName: '某某街道社区卫生服务中心',
+            doctorId: 'MOCK-D001',
+            doctorName: '李医生'
+          },
+          risks: [
+            { level: 2, category: 'chronic', content: '高血压与2型糖尿病均已纳入公卫管理' },
+            { level: 3, category: 'vital', content: '已带入4条血压和4条血糖 Mock 趋势，需医生核实' },
+            { level: 3, category: 'medication', content: '已带入3项历史随访用药，仅用于核对，不表示处方建议' }
+          ]
+        },
+        {
+          id: 'hypertension-managed',
+          label: '仅高血压在管',
+          description: '含连续血压和最近降压药随访记录。',
+          tags: ['高血压管理', '4 条血压', '2 项随访用药'],
+          patient: {
+            idPi: 'MOCK-CD-HTN-001',
+            idVis: 'MOCK-CD-HTN-VIS-001',
+            naPi: '王先生',
+            sdSexText: '男性',
+            ageText: '68岁',
+            chiefComplaint: '高血压慢病随访',
+            historyOfPresentIllness: '近期居家血压记录待医生核实。',
+            pastMedicalHistory: '原发性高血压病史10年',
+            diagnosis: '原发性高血压',
+            currentMedicationHistory: '最近随访记录：苯磺酸氨氯地平片、缬沙坦胶囊；均为 Mock 历史事实，待医生核对。',
+            currentVitalSigns: {
+              systolicBloodPressure: 134,
+              diastolicBloodPressure: 82,
+              heartRate: 72,
+              heightCm: 172,
+              weightKg: 73,
+              waistCm: 91,
+              measuredAt: '2026-07-24T09:20:00+08:00'
+            },
+            hisHistory: {
+              patientId: 'MOCK-CD-HTN-001',
+              pastMedicalHistory: ['原发性高血压病史10年'],
+              visits: [
+                followUpVisit({
+                  visitId: 'MOCK-CD-HTN-FU-202604',
+                  measuredAt: '2026-04-11T09:00:00+08:00',
+                  chiefComplaint: '高血压慢病随访',
+                  diagnoses: ['原发性高血压'],
+                  systolic: 152,
+                  diastolic: 94
+                }),
+                followUpVisit({
+                  visitId: 'MOCK-CD-HTN-FU-202605',
+                  measuredAt: '2026-05-16T09:10:00+08:00',
+                  chiefComplaint: '高血压慢病随访',
+                  diagnoses: ['原发性高血压'],
+                  systolic: 145,
+                  diastolic: 90
+                }),
+                followUpVisit({
+                  visitId: 'MOCK-CD-HTN-FU-202606',
+                  measuredAt: '2026-06-20T09:05:00+08:00',
+                  chiefComplaint: '高血压慢病随访',
+                  diagnoses: ['原发性高血压'],
+                  systolic: 139,
+                  diastolic: 86,
+                  medicationOrders: hypertensionMedications
+                })
+              ]
+            },
+            rqflStatus: '3',
+            contractStatus: '已签约',
+            orgId: 'MOCK-HIS-001',
+            orgName: '某某街道社区卫生服务中心',
+            doctorId: 'MOCK-D001',
+            doctorName: '李医生'
+          },
+          risks: [
+            { level: 2, category: 'chronic', content: '高血压已纳入公卫管理' },
+            { level: 3, category: 'vital', content: '已带入4条血压 Mock 趋势，需医生核实' },
+            { level: 3, category: 'medication', content: '已带入2项历史降压用药，仅用于核对' }
+          ]
+        },
+        {
+          id: 'diabetes-managed',
+          label: '仅糖尿病在管',
+          description: '含空腹/餐后血糖和最近降糖药随访记录。',
+          tags: ['2 型糖尿病管理', '4 条血糖', '2 项随访用药'],
+          patient: {
+            idPi: 'MOCK-CD-DM-001',
+            idVis: 'MOCK-CD-DM-VIS-001',
+            naPi: '赵女士',
+            sdSexText: '女性',
+            ageText: '57岁',
+            chiefComplaint: '2型糖尿病慢病随访',
+            historyOfPresentIllness: '近期空腹及餐后血糖记录待医生核实。',
+            pastMedicalHistory: '2型糖尿病病史6年',
+            diagnosis: '2型糖尿病',
+            currentMedicationHistory: '最近随访记录：盐酸二甲双胍缓释片、达格列净片；均为 Mock 历史事实，待医生核对。',
+            currentVitalSigns: {
+              systolicBloodPressure: 128,
+              diastolicBloodPressure: 78,
+              heartRate: 76,
+              heightCm: 158,
+              weightKg: 61,
+              waistCm: 85,
+              measuredAt: '2026-07-24T09:30:00+08:00'
+            },
+            hisHistory: {
+              patientId: 'MOCK-CD-DM-001',
+              pastMedicalHistory: ['2型糖尿病病史6年'],
+              visits: [
+                followUpVisit({
+                  visitId: 'MOCK-CD-DM-FU-202604',
+                  measuredAt: '2026-04-13T08:30:00+08:00',
+                  chiefComplaint: '2型糖尿病慢病随访',
+                  diagnoses: ['2型糖尿病'],
+                  labResults: [glucose('空腹血糖', 9.2, '2026-04-13T08:10:00+08:00')]
+                }),
+                followUpVisit({
+                  visitId: 'MOCK-CD-DM-FU-202605',
+                  measuredAt: '2026-05-18T08:40:00+08:00',
+                  chiefComplaint: '2型糖尿病慢病随访',
+                  diagnoses: ['2型糖尿病'],
+                  labResults: [glucose('空腹血糖', 8.4, '2026-05-18T08:15:00+08:00')]
+                }),
+                followUpVisit({
+                  visitId: 'MOCK-CD-DM-FU-202606',
+                  measuredAt: '2026-06-22T08:50:00+08:00',
+                  chiefComplaint: '2型糖尿病慢病随访',
+                  diagnoses: ['2型糖尿病'],
+                  labResults: [
+                    glucose('空腹血糖', 7.6, '2026-06-22T08:20:00+08:00'),
+                    glucose('餐后2小时血糖', 10.8, '2026-06-22T10:30:00+08:00')
+                  ],
+                  medicationOrders: diabetesMedications
+                })
+              ]
+            },
+            rqflStatus: '6',
+            contractStatus: '已签约',
+            orgId: 'MOCK-HIS-001',
+            orgName: '某某街道社区卫生服务中心',
+            doctorId: 'MOCK-D001',
+            doctorName: '李医生'
+          },
+          risks: [
+            { level: 2, category: 'chronic', content: '2型糖尿病已纳入公卫管理' },
+            { level: 3, category: 'vital', content: '已带入4条血糖 Mock 趋势，需医生核实' },
+            { level: 3, category: 'medication', content: '已带入2项历史降糖用药，仅用于核对' }
+          ]
+        },
+        {
+          id: 'clinical-only',
+          label: '临床识别未纳管',
+          description: '含异常血压血糖，但不伪造公卫管理身份。',
+          tags: ['临床识别', '2 条血压', '2 条血糖', '公卫身份待核实'],
+          patient: {
+            idPi: 'MOCK-CD-CLINICAL-001',
+            idVis: 'MOCK-CD-CLINICAL-VIS-001',
+            naPi: '陈先生',
+            sdSexText: '男性',
+            ageText: '51岁',
+            chiefComplaint: '血压、血糖异常复诊',
+            historyOfPresentIllness: '临床诊断明确，基本公卫管理身份尚未核实。',
+            pastMedicalHistory: '原发性高血压；2型糖尿病',
+            diagnosis: '原发性高血压；2型糖尿病',
+            currentMedicationHistory: '自述间断服用苯磺酸氨氯地平片、盐酸二甲双胍缓释片；Mock 事实待核对。',
+            currentVitalSigns: {
+              systolicBloodPressure: 158,
+              diastolicBloodPressure: 96,
+              heartRate: 82,
+              measuredAt: '2026-07-24T10:00:00+08:00'
+            },
+            hisHistory: {
+              patientId: 'MOCK-CD-CLINICAL-001',
+              visits: [
+                followUpVisit({
+                  visitId: 'MOCK-CD-CLINICAL-202606',
+                  measuredAt: '2026-06-12T09:00:00+08:00',
+                  chiefComplaint: '血压血糖异常复诊',
+                  diagnoses: ['原发性高血压', '2型糖尿病'],
+                  systolic: 164,
+                  diastolic: 100,
+                  labResults: [
+                    glucose('空腹血糖', 10.1, '2026-06-12T08:20:00+08:00'),
+                    glucose('餐后2小时血糖', 13.6, '2026-06-12T10:30:00+08:00')
+                  ],
+                  medicationOrders: [
+                    dualMedications[0],
+                    dualMedications[1]
+                  ]
+                })
+              ]
+            },
+            contractStatus: '签约信息待核实',
+            orgId: 'MOCK-HIS-001',
+            orgName: '某某街道社区卫生服务中心',
+            doctorId: 'MOCK-D001',
+            doctorName: '李医生'
+          },
+          risks: [
+            { level: 2, category: 'chronic', content: '临床已识别高血压与2型糖尿病，公卫管理身份待核实' },
+            { level: 2, category: 'vital', content: 'Mock 血压血糖记录偏高，需医生按真实情况复核' }
+          ]
+        },
+        {
+          id: 'ordinary',
+          label: '普通患者对照',
+          description: '无高血压、2型糖尿病诊断及公卫代码。',
+          tags: ['普通接诊', '无慢病入口'],
+          patient: {
+            idPi: 'MOCK-CD-ORDINARY-001',
+            idVis: 'MOCK-CD-ORDINARY-VIS-001',
+            naPi: '周先生',
+            sdSexText: '男性',
+            ageText: '45岁',
+            chiefComplaint: '咽痛、咳嗽2天',
+            historyOfPresentIllness: '受凉后出现咽痛、轻咳，无明显气促。',
+            pastMedicalHistory: '否认高血压、糖尿病病史',
+            diagnosis: '上呼吸道感染',
+            contractStatus: '未签约',
+            orgId: 'MOCK-HIS-001',
+            orgName: '某某街道社区卫生服务中心',
+            doctorId: 'MOCK-D001',
+            doctorName: '李医生'
+          },
+          risks: [
+            { level: 3, category: 'other', content: '普通门诊接诊对照场景' }
+          ]
+        }
+      ];
+
+      var selectedScenario = scenarios[0];
+      var sdk = null;
+      var sdkLoadPromise = null;
+      var connected = false;
+      var busy = false;
+
+      function element(id) {
+        return document.getElementById(id);
+      }
+
+      function setStatus(id, text, className) {
+        var target = element(id);
+        target.textContent = text;
+        target.className = className || '';
+      }
+
+      function timestamp() {
+        return new Intl.DateTimeFormat('zh-CN', {
+          hour: '2-digit',
+          minute: '2-digit',
+          second: '2-digit',
+          hour12: false
+        }).format(new Date());
+      }
+
+      function appendLog(kind, title, payload) {
+        var log = element('log');
+        var empty = log.querySelector('.log-empty');
+        if (empty) empty.remove();
+
+        var article = document.createElement('article');
+        article.className = 'log-entry ' + kind;
+
+        var header = document.createElement('header');
+        var heading = document.createElement('b');
+        heading.textContent = title;
+        var time = document.createElement('time');
+        time.textContent = timestamp();
+        header.appendChild(heading);
+        header.appendChild(time);
+        article.appendChild(header);
+
+        if (payload !== undefined) {
+          var pre = document.createElement('pre');
+          try {
+            pre.textContent = typeof payload === 'string' ? payload : JSON.stringify(payload, null, 2);
+          } catch (_) {
+            pre.textContent = '[无法序列化]';
+          }
+          article.appendChild(pre);
+        }
+
+        log.prepend(article);
+      }
+
+      function payloadForScenario(scenario) {
+        return Object.assign({}, scenario.patient, {
+          mockScenarioId: scenario.id,
+          risks: scenario.risks
+        });
+      }
+
+      function renderPreview() {
+        element('scenario-status').textContent = selectedScenario.label;
+        element('payload-preview').textContent = JSON.stringify(
+          payloadForScenario(selectedScenario),
+          null,
+          2
+        );
+      }
+
+      function selectScenario(id) {
+        var next = scenarios.find(function (scenario) { return scenario.id === id; });
+        if (!next) return;
+        selectedScenario = next;
+        Array.prototype.forEach.call(document.querySelectorAll('.scenario'), function (button) {
+          var isActive = button.dataset.id === id;
+          button.classList.toggle('active', isActive);
+          button.setAttribute('aria-checked', isActive ? 'true' : 'false');
+        });
+        renderPreview();
+      }
+
+      function renderScenarios() {
+        var list = element('scenario-list');
+        scenarios.forEach(function (scenario, index) {
+          var button = document.createElement('button');
+          button.type = 'button';
+          button.className = 'scenario' + (index === 0 ? ' active' : '');
+          button.dataset.id = scenario.id;
+          button.setAttribute('role', 'radio');
+          button.setAttribute('aria-checked', index === 0 ? 'true' : 'false');
+
+          var radio = document.createElement('span');
+          radio.className = 'radio';
+          radio.setAttribute('aria-hidden', 'true');
+
+          var copy = document.createElement('span');
+          var title = document.createElement('strong');
+          title.textContent = scenario.label;
+          var description = document.createElement('p');
+          description.textContent = scenario.description;
+          var tags = document.createElement('span');
+          scenario.tags.forEach(function (label) {
+            var tag = document.createElement('span');
+            tag.className = 'tag';
+            tag.textContent = label;
+            tags.appendChild(tag);
+          });
+
+          copy.appendChild(title);
+          copy.appendChild(description);
+          copy.appendChild(tags);
+          button.appendChild(radio);
+          button.appendChild(copy);
+          button.addEventListener('click', function () { selectScenario(scenario.id); });
+          list.appendChild(button);
+        });
+      }
+
+      function setBusy(nextBusy) {
+        busy = nextBusy;
+        ['connect-button', 'invoke-button', 'ping-button', 'stop-button'].forEach(function (id) {
+          element(id).disabled = busy;
+        });
+      }
+
+      function initializeSdk() {
+        if (sdk) return sdk;
+        if (typeof window.MedHermes !== 'function') return null;
+
+        sdk = new window.MedHermes({ timeout: 20000 });
+        element('sdk-version').textContent = window.MedHermes.VERSION || '1.x';
+
+        sdk.on('connected', function (info) {
+          connected = true;
+          setStatus('auth-status', '握手成功', 'ok');
+          appendLog('success', 'SDK connected 事件', info);
+        });
+        sdk.on('launching', function () {
+          appendLog('event', '正在通过 deep link 尝试启动桌面端');
+        });
+        sdk.on('launch-failed', function () {
+          appendLog('error', 'deep link 启动 floating-ball 失败');
+        });
+        return sdk;
+      }
+
+      function loadSdk() {
+        var initialized = initializeSdk();
+        if (initialized) return Promise.resolve(initialized);
+        if (sdkLoadPromise) return sdkLoadPromise;
+
+        sdkLoadPromise = new Promise(function (resolve, reject) {
+          var script = document.createElement('script');
+          script.src = 'http://127.0.0.1:8081/sdk/med-hermes-sdk.js?mock=' + Date.now();
+          script.onload = function () {
+            var loadedSdk = initializeSdk();
+            if (loadedSdk) {
+              resolve(loadedSdk);
+            } else {
+              reject(new Error('SDK 文件已加载，但 window.MedHermes 不存在'));
+            }
+          };
+          script.onerror = function () {
+            reject(new Error('无法从 127.0.0.1:8081 加载 MedHermes SDK，请先启动 floating-ball'));
+          };
+          document.head.appendChild(script);
+        }).finally(function () {
+          sdkLoadPromise = null;
+        });
+
+        return sdkLoadPromise;
+      }
+
+      async function connect() {
+        var activeSdk = await loadSdk();
+        var token = element('emr-token').value.trim();
+        if (!token) throw new Error('请输入本地联调 emrAccessToken');
+
+        appendLog('event', '发送 SDK debugHandshake', {
+          origin: '',
+          href: window.location.href,
+          hasEmrAccessToken: true
+        });
+
+        var response = await activeSdk.debugHandshake({
+          origin: '',
+          href: window.location.href,
+          extra: {
+            emrAccessToken: token,
+            orgId: 'MOCK-HIS-001',
+            orgName: '某某街道社区卫生服务中心'
+          }
+        });
+        connected = true;
+        setStatus('auth-status', '握手成功', 'ok');
+        appendLog('success', 'SDK 握手成功', response);
+        return response;
+      }
+
+      async function ensureConnected() {
+        if (!connected) await connect();
+      }
+
+      async function ping() {
+        var activeSdk = await loadSdk();
+        var response = await activeSdk.ping();
+        setStatus('bridge-status', '桌面端在线', 'ok');
+        appendLog('success', 'Bridge health 检测成功', response);
+        return response;
+      }
+
+      async function invokeFloatingBall() {
+        await ensureConnected();
+        var payload = payloadForScenario(selectedScenario);
+        appendLog('event', '发送患者风险事件：' + selectedScenario.label, payload);
+        var patient = Object.assign({}, selectedScenario.patient, {
+          mockScenarioId: selectedScenario.id
+        });
+        var activeSdk = await loadSdk();
+        var response = await activeSdk.sendRisks(patient, selectedScenario.risks);
+        appendLog('success', 'Bridge 已接收，检查真实 floating-ball 窗口', response);
+        return response;
+      }
+
+      async function stopConsultation() {
+        await ensureConnected();
+        appendLog('event', '发送结束接诊');
+        var activeSdk = await loadSdk();
+        var response = await activeSdk.stop();
+        appendLog('success', '当前接诊已结束', response);
+        return response;
+      }
+
+      function run(action) {
+        if (busy) return;
+        setBusy(true);
+        Promise.resolve()
+          .then(action)
+          .catch(function (error) {
+            var message = error && error.message ? error.message : String(error);
+            appendLog('error', message);
+            if (/SDK|桌面端|fetch|Network|连接|Failed/i.test(message)) {
+              setStatus('bridge-status', '桌面端不可用', 'error');
+            }
+          })
+          .then(function () { setBusy(false); });
+      }
+
+      renderScenarios();
+      renderPreview();
+
+      element('connect-button').addEventListener('click', function () {
+        run(connect);
+      });
+      element('ping-button').addEventListener('click', function () {
+        run(ping);
+      });
+      element('invoke-button').addEventListener('click', function () {
+        run(invokeFloatingBall);
+      });
+      element('stop-button').addEventListener('click', function () {
+        run(stopConsultation);
+      });
+
+      run(ping);
+    })();
+  </script>
+</body>
+</html>

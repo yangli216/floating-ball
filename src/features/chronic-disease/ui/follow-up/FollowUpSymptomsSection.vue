@@ -1,0 +1,154 @@
+<script setup lang="ts">
+import {
+  ARTERIOPALMUS_OPTIONS,
+  DIABETES_SYMPTOM_OPTIONS,
+  HYPERTENSION_SYMPTOM_OPTIONS,
+  ORIGINAL_DICTIONARY_IDS,
+  toggleArteriopalmusCode,
+  toggleSymptomCode,
+  type FusedFollowUpFormState,
+} from '../../model/followUpFormModel';
+
+defineProps<{
+  hasHypertension: boolean;
+  hasDiabetes: boolean;
+}>();
+
+const form = defineModel<FusedFollowUpFormState>({ required: true });
+
+function toggle(field: 'sdHySymptom' | 'sdDbsSymptom', code: string): void {
+  form.value[field] = toggleSymptomCode(form.value[field], code);
+}
+
+function togglePulse(code: string): void {
+  form.value.sdArteriopalmus = toggleArteriopalmusCode(
+    form.value.sdArteriopalmus,
+    code,
+  );
+}
+</script>
+
+<template>
+  <div class="symptom-panel">
+    <p>
+      字段名与数组互斥规则来自原实例；Mock 标签用于展示，正式码值以原系统
+      <code>{{ ORIGINAL_DICTIONARY_IDS.hypertensionSymptoms }}</code> 等字典为准。
+    </p>
+
+    <section v-if="hasHypertension" class="symptom-group">
+      <h3>高血压症状 sdHySymptom<span class="required">*</span></h3>
+      <div class="choice-grid">
+        <label v-for="option in HYPERTENSION_SYMPTOM_OPTIONS" :key="option.value">
+          <input
+            type="checkbox"
+            :checked="form.sdHySymptom.includes(option.value)"
+            @change="toggle('sdHySymptom', option.value)"
+          />
+          {{ option.label }}
+        </label>
+      </div>
+    </section>
+
+    <section v-if="hasDiabetes" class="symptom-group">
+      <h3>糖尿病症状 sdDbsSymptom<span class="required">*</span></h3>
+      <div class="choice-grid">
+        <label v-for="option in DIABETES_SYMPTOM_OPTIONS" :key="option.value">
+          <input
+            type="checkbox"
+            :checked="form.sdDbsSymptom.includes(option.value)"
+            @change="toggle('sdDbsSymptom', option.value)"
+          />
+          {{ option.label }}
+        </label>
+      </div>
+    </section>
+
+    <div class="form-grid symptom-details">
+      <label class="full-span">其他体征 desOther
+        <input v-model="form.desOther" maxlength="255" />
+      </label>
+
+      <fieldset v-if="hasDiabetes" class="full-span choice-fieldset">
+        <legend>足背动脉搏动 sdArteriopalmus</legend>
+        <div class="choice-grid">
+          <label v-for="option in ARTERIOPALMUS_OPTIONS" :key="option.value">
+            <input
+              type="checkbox"
+              :checked="form.sdArteriopalmus.includes(option.value)"
+              @change="togglePulse(option.value)"
+            />
+            {{ option.label }}
+          </label>
+        </div>
+      </fieldset>
+
+      <label>遵医行为 sdProAct
+        <select v-model="form.sdProAct">
+          <option value="">请选择</option>
+          <option value="1">良好</option>
+          <option value="2">一般</option>
+          <option value="3">差</option>
+        </select>
+      </label>
+      <label>心理调整 sdPsychicAdj<span class="required">*</span>
+        <select v-model="form.sdPsychicAdj">
+          <option value="">请选择</option>
+          <option value="1">良好</option>
+          <option value="2">一般</option>
+          <option value="3">差</option>
+        </select>
+      </label>
+
+      <label v-if="hasHypertension">早发心血管家族史 fgCardiovascular
+        <select v-model="form.fgCardiovascular">
+          <option value="">请选择</option>
+          <option value="1">有</option>
+          <option value="0">无</option>
+        </select>
+      </label>
+      <label v-if="hasDiabetes">低血糖反应 lowEffects
+        <select v-model="form.lowEffects">
+          <option value="">请选择</option>
+          <option value="0">无</option>
+          <option value="1">偶尔</option>
+          <option value="2">频繁</option>
+        </select>
+      </label>
+      <label>其他疾病 otherDisease
+        <input v-model="form.otherDisease" maxlength="255" />
+      </label>
+      <label>备注 note
+        <input v-model="form.note" maxlength="255" />
+      </label>
+    </div>
+  </div>
+</template>
+
+<style scoped>
+.symptom-group + .symptom-group,
+.symptom-details {
+  margin-top: 18px;
+  padding-top: 16px;
+  border-top: 1px solid #e2e8f0;
+}
+
+.symptom-group h3 {
+  margin: 0 0 9px;
+  color: #334155;
+  font-size: 12px;
+}
+
+.choice-fieldset {
+  margin: 0;
+  padding: 12px;
+  border: 1px solid #e2e8f0;
+  border-radius: 6px;
+}
+
+.choice-fieldset legend {
+  padding: 0 5px;
+  color: #475569;
+  font-size: 11px;
+  font-weight: 650;
+}
+</style>

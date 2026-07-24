@@ -13,6 +13,7 @@ import { analyzePatientRisks } from '@/services/llm';
 import { trackApiCall, trackError } from '@/services/operationTracker';
 import { getHisAdapter } from '@/services/his';
 import type {
+  HisPatientHistory,
   HisOutpatientFollowUpContext,
   HisOutpatientMedicalRecord,
   HisVisitVitalSigns,
@@ -57,6 +58,9 @@ export interface PatientRisksPayload {
   pastMedicalHistory?: string;
   diagnosis?: string;
   allergyHistory?: string;
+  currentMedicationHistory?: string;
+  currentVitalSigns?: HisVisitVitalSigns;
+  hisHistory?: HisPatientHistory;
   risks?: RiskItem[];
   [key: string]: unknown;
 }

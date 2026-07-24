@@ -51,6 +51,7 @@ import type { UsageOption } from '@/utils/medicalDictionaryHelpers';
 import {
   useTreatmentPlanRecommendations,
 } from '../model/useTreatmentPlanRecommendations';
+import type { TreatmentPlanInitialDraft } from '../model/treatmentPlanInitialDraft';
 import {
   useTreatmentPlanWriteback,
 } from '../model/useTreatmentPlanWriteback';
@@ -61,6 +62,7 @@ type TreatmentPlanAttributeOption = { key: string; text: string; mcode?: string 
 const props = defineProps<{
   patient?: AppPatient | null;
   followUpContext?: HisOutpatientFollowUpContext | null;
+  initialDraft?: TreatmentPlanInitialDraft | null;
 }>();
 
 const emit = defineEmits<{
@@ -213,6 +215,7 @@ const recommendations = useTreatmentPlanRecommendations({
   diagnosis: currentDiagnosis,
   treatments,
   pharmacies: pharmacyOptions,
+  initialDraft: computed(() => props.initialDraft ?? null),
   normalizeTreatment,
 });
 
@@ -251,8 +254,14 @@ const followUpNoTreatmentTitle = computed(() => (
   followUpAssessment.value?.actionability === 'observe' ? '当前以观察随访为主' : '当前无需新增治疗'
 ));
 const diagnosisReferenceText = computed(() => recommendations.recordContext.value.diagnosisText);
-const planTitle = computed(() => (isFollowUpMode.value ? '后续治疗方案' : '推荐方案'));
+const planTitle = computed(() => {
+  if (recommendations.hasInitialDraft.value) return props.initialDraft?.title || '检查检验草稿';
+  return isFollowUpMode.value ? '后续治疗方案' : '推荐方案';
+});
 const planSubtitle = computed(() => {
+  if (recommendations.hasInitialDraft.value) {
+    return '来自慢病插件的医生勾选项，需完成标准目录匹配与必填属性确认后才能回写 PHIS。';
+  }
   if (isFollowUpMode.value) {
     return '基于左侧本次病历和已出报告生成，勾选后可一键回写到 PHIS。';
   }
@@ -369,6 +378,27 @@ async function refreshRecommendations(): Promise<void> {
     showToast?.(formatUserFacingError(error, {
       context: '方案推荐失败',
       fallback: '请稍后重试。',
+    }), 'error');
+  }
+}
+
+async function initializeRecommendations(): Promise<void> {
+  if (!props.initialDraft) {
+    await refreshRecommendations();
+    return;
+  }
+  try {
+    await loadDictionaries();
+    if (!recommendations.initializeFromDraft()) {
+      showToast?.('慢病医嘱草稿与当前患者不匹配，已拒绝加载。', 'error');
+      return;
+    }
+    await treatmentHydration.hydrateMatchedMedicalItemDetails(treatments.value);
+  } catch (error) {
+    console.error('[TreatmentPlan] initial draft load failed', error);
+    showToast?.(formatUserFacingError(error, {
+      context: '慢病医嘱草稿加载失败',
+      fallback: '请返回慢病插件后重试。',
     }), 'error');
   }
 }
@@ -825,7 +855,7 @@ function getGroupSelectedCount(type: TreatmentRecommendation['type']): number {
 }
 
 onMounted(() => {
-  void refreshRecommendations();
+  void initializeRecommendations();
 });
 </script>
 

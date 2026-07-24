@@ -12,3 +12,8 @@ export type {
   TreatmentPlanNotifyType,
   TreatmentPlanWriteback,
 } from './model/useTreatmentPlanWriteback';
+export type {
+  TreatmentPlanDraftItemType,
+  TreatmentPlanInitialDraft,
+  TreatmentPlanInitialDraftItem,
+} from './model/treatmentPlanInitialDraft';

@@ -29,6 +29,7 @@ export function useReceptionSessionController(currentPatient: Ref<AppPatient | n
   const executingOpportunity = ref<ReceptionOpportunityType | null>(null);
   const patientMemoryStatus = ref<ReceptionPatientMemoryStatus>('idle');
   const patientMemoryBrief = ref<PatientMemoryBrief | null>(null);
+  const detailExpanded = ref(false);
 
   const patientName = computed(() => getPatientContextName(currentPatient.value) || '未知患者');
   const patientGender = computed<'M' | 'F'>(() => {
@@ -60,6 +61,7 @@ export function useReceptionSessionController(currentPatient: Ref<AppPatient | n
     risks.value = [];
     opportunities.value = [];
     executingOpportunity.value = null;
+    detailExpanded.value = false;
   }
 
   function startHydrating(): void {
@@ -123,6 +125,10 @@ export function useReceptionSessionController(currentPatient: Ref<AppPatient | n
     executingOpportunity.value = type;
   }
 
+  function setDetailExpanded(expanded: boolean): void {
+    detailExpanded.value = expanded;
+  }
+
   function reset(): void {
     clearAssessment();
     patientMemoryStatus.value = 'idle';
@@ -137,6 +143,7 @@ export function useReceptionSessionController(currentPatient: Ref<AppPatient | n
     executingOpportunity: shallowReadonly(executingOpportunity),
     patientMemoryStatus: shallowReadonly(patientMemoryStatus),
     patientMemoryBrief: shallowReadonly(patientMemoryBrief),
+    detailExpanded: shallowReadonly(detailExpanded),
     chronicRefillCandidate: shallowReadonly(chronicRefillCandidate),
     outpatientFollowUpContext: shallowReadonly(outpatientFollowUpContext),
     reportInterpretationVisits: shallowReadonly(reportInterpretationVisits),
@@ -157,6 +164,7 @@ export function useReceptionSessionController(currentPatient: Ref<AppPatient | n
     replaceOpportunity,
     getOpportunity,
     setExecutingOpportunity,
+    setDetailExpanded,
     reset,
   };
 }

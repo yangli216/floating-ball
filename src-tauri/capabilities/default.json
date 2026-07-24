@@ -2,7 +2,7 @@
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
   "description": "Capability for the main window",
-  "windows": ["main", "diagnosis-path-window", "report-interpretation-window"],
+  "windows": ["main", "diagnosis-path-window", "report-interpretation-window", "chronic-disease-window"],
   "permissions": [
     "core:default",
     "core:window:default",
