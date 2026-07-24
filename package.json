@@ -1,7 +1,8 @@
 {
   "name": "med-hermes",
+  "description": "Primary Care Intelligent Expert desktop application",
   "private": true,
-  "version": "1.2.98",
+  "version": "1.2.99",
   "packageManager": "yarn@1.22.22",
   "type": "module",
   "scripts": {
