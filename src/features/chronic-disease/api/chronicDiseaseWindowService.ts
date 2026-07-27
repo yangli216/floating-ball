@@ -7,8 +7,9 @@ import type {
   ChronicDiseaseWindowPayload,
 } from '../types';
 import { isChronicFollowUpEligible } from '../lib/chronicDiseaseEligibility';
+import { CHRONIC_DISEASE_WINDOW_LABEL } from './chronicDiseaseWindowContract';
 
-const WINDOW_LABEL = 'chronic-disease-window';
+const WINDOW_LABEL = CHRONIC_DISEASE_WINDOW_LABEL;
 const WINDOW_URL = 'index.html?window=chronic-disease';
 export const CHRONIC_DISEASE_WINDOW_UPDATE_EVENT = 'chronic-disease:update';
 export const CHRONIC_DISEASE_WINDOW_READY_EVENT = 'chronic-disease:ready';

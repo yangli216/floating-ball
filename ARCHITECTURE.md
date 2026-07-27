@@ -1469,7 +1469,7 @@ describe('useWindowManagement', () => {
 
 - `lib/`：从 `PatientContext.raw` 中的真实慢病接口原字段生成可追溯摘要；保存受控模板、路径发布清单与旧系统正式流程图的热点/说明配置。
 - `model/`：独立业务窗状态、随访表单校验与 AI 健康处方草稿状态。
-- `api/`：通过 `regionalPost` 调用签名 `/v1/*`，以及独立 Tauri 窗口的 ready/ack 事件桥。
+- `api/`：封装真实 HIS Adapter 调用，以及独立 Tauri 窗口的 ready/ack 与保存请求/响应事件桥。
 - `ui/`：趋势图、随访表、正式流程图与高血压热点说明抽屉、健康处方和年度评估。
 
 接诊模块只负责组合三态外壳并派发动作。慢病识别分为“公卫管理”和“临床识别”：二者都可展示路径与健康建议，只有公卫管理标签可派生正式随访资格。HIS 主动唤起慢病详情使用本地 `POST /api/chronic-disease/open`，由 SDK `openChronicDisease(patient)` 触发 `open-chronic-disease-management`。
@@ -1478,10 +1478,10 @@ describe('useWindowManagement', () => {
 
 慢病数据取得后 `ReceptionSessionController.detailExpanded` 设为 `true`，直接渲染展开详情；该链路不携带风险列表、不调用 `analyzePatientRisks`。既有 `POST /api/patient/risks -> show-patient-risks` 只保留风险评估职责。随访窗口不再接收“当前选中病种”作为表单主状态，而是从 `summary.managedDiseaseTypes` 派生只读 `sdVisitKind` 与字段组合：高血压为 `["1"]`，糖尿病为 `["2"]`，双病种为 `["1","2"]`。
 
-`model/followUpFormModel.ts` 是原始 `TcdVisitForm` 字段、显示条件、校验和序列化的唯一客户端落点；UI 内多选字段保持数组，提交时按原 `getFormData()` 转成逗号字符串，补齐原字段 `advBmi`，`drugList` 保持对象数组并过滤没有 `idDrug` 的空行。单病种和联合随访都只构造一条融合记录。`features/chronic-disease/api/chronicDiseaseApi.ts` 通过 `getHisAdapter()` 调用 `HisAdapter.saveTcdForm(request)`；`PhisHisAdapter` 委托 `HisService.saveTcdForm(request)`，底层固定向 Adapter 发布的 `api/phis.aiAdapterService/saveTcdForm` 发送 `[request]`，由 Adapter 后端适配 `chis.tcdService/saveTcdForm`。该链路不再经过区域后端 `/v1/client/chronic-disease/follow-ups`，不增加 `requestId / managementSource / templateVersion` 等接口未声明字段，也不把未知响应翻译成平台自定义成功对象。
+`model/followUpFormModel.ts` 是原始 `TcdVisitForm` 字段、显示条件、校验和序列化的唯一客户端落点；UI 内多选字段保持数组，提交时按原 `getFormData()` 转成逗号字符串，补齐原字段 `advBmi`，`drugList` 保持对象数组并过滤没有 `idDrug` 的空行。单病种和联合随访都只构造一条融合记录。慢病随访表单运行在独立 Webview，不能直接读取只在主窗口 SDK handshake 后初始化的 `HisService` 单例；`features/chronic-disease/api/chronicDiseaseApi.ts` 因此使用类型化 Tauri 请求/响应事件把原始 `TcdVisitForm` 交给主窗口，关联 `requestId` 只存在于窗口通信信封中，不进入 `form`。主窗口的 `chronicDiseaseSaveHandler.ts` 取得 `getHisAdapter()` 后原样调用 `HisAdapter.saveTcdForm(form)`；`PhisHisAdapter` 委托 `HisService.saveTcdForm(form)`，底层固定向 Adapter 发布的 `api/phis.aiAdapterService/saveTcdForm` 发送 `[form]`，由 Adapter 后端适配 `chis.tcdService/saveTcdForm`。该链路不再经过区域后端 `/v1/client/chronic-disease/follow-ups`，不增加 `requestId / managementSource / templateVersion` 等接口未声明字段，也不把未知响应翻译成平台自定义成功对象。
 
 临床路径视图以 `public/assets/chronic-disease/clinical-paths/` 中从旧系统迁入的高血压、糖尿病完整流程图为唯一视觉底图；`lib/clinicalPathDiagram.ts` 只描述旧高血压页面已有的热点坐标和说明内容，`ClinicalPathDiagram.vue` 与 `ClinicalPathDrawer.vue` 负责只读交互，不使用患者证据或 AI 结果改写正式流程。插件勾选的检查检验转换为 typed treatment-plan seed，进入既有 `TreatmentPlanPage` 完成标准目录匹配、医生确认与 PHIS 回写，不在接诊组件中维护第二套医嘱状态。
 
-主窗口尺寸继续由 `useWindowTransitionCoordinator` 管理；业务窗复用显式 `ready` 事件后再传 payload 的握手，避免独立窗口丢失首包。当前患者/就诊锚点变化时主窗口关闭旧业务窗，独立窗按 `patientAnchor + requestId + kind` 为子页面设置 key，保证随访本地状态不会跨患者复用。正式随访记录只通过 HIS Adapter 的 `saveTcdForm` 进入真实业务系统，`floating-ball-server` 不再持久化慢病随访或打印快照；健康处方与年度评估由医生确认后在桌面端本地打印。管理端本期无配置入口。
+主窗口尺寸继续由 `useWindowTransitionCoordinator` 管理；业务窗复用显式 `ready` 事件后再传 payload 的握手，避免独立窗口丢失首包。当前患者/就诊锚点变化时主窗口关闭旧业务窗，独立窗按 `patientAnchor + requestId + kind` 为子页面设置 key，保证随访本地状态不会跨患者复用。主窗口是 HIS 凭据与 Adapter 的唯一持有者：独立慢病窗提交 `chronic-disease:save-tcd-form-request`，主窗口完成真实 Adapter 调用后定向返回 `chronic-disease:save-tcd-form-result`；结果按请求 ID 关联并设超时清理，禁止把 token/base URL 复制到业务窗。正式随访记录只通过 HIS Adapter 的 `saveTcdForm` 进入真实业务系统，`floating-ball-server` 不再持久化慢病随访或打印快照；健康处方与年度评估由医生确认后在桌面端本地打印。管理端本期无配置入口。
 
 `web_project/public/chronic-disease-mock.html` 是两慢病专用 Mock HIS 唤起页。它不挂载 Vue 慢病组件，通过桌面端 `MedHermes` 兼容 SDK 执行 `debugHandshake()` 和 `openChronicDisease()`，沿 `/api/chronic-disease/open -> open-chronic-disease-management -> useReceptionController -> ReceptionCapsule(expanded)` 真实事件链唤起全医慧助桌面端；它不再构造或发送 `risks`。生产链路中的慢病事实只能来自 Adapter 发布的 `api/phis.aiAdapterService/queryPatientVisitHistoryData` 原字段响应；联调 mock 若需要提供曲线和随访数据，也必须使用 `idCard / pressureList / pressureHist（或 pressureHList）/ gluList / visitInfos / drugList` 原字段 fixture，不再把 `currentVitalSigns + hisHistory.visits[]` 当作慢病接口替代结构。Mock 用药只作为历史事实，不作为推荐或处方。

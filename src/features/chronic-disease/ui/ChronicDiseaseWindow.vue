@@ -8,6 +8,7 @@ import {
   CHRONIC_DISEASE_WINDOW_READY_EVENT,
   CHRONIC_DISEASE_WINDOW_UPDATE_EVENT,
 } from '../api/chronicDiseaseWindowService';
+import { MAIN_WINDOW_LABEL } from '../api/chronicDiseaseWindowContract';
 import type { ChronicDiseaseWindowPayload } from '../types';
 import { buildChronicDiseaseViewKey } from '../lib/chronicDiseaseWindowSession';
 import AnnualAssessmentView from './AnnualAssessmentView.vue';
@@ -16,7 +17,6 @@ import FollowUpForm from './FollowUpForm.vue';
 import HealthPrescriptionView from './HealthPrescriptionView.vue';
 
 const appWindow = getCurrentWindow();
-const MAIN_WINDOW_LABEL = 'main';
 const payload = ref<ChronicDiseaseWindowPayload | null>(null);
 const viewKey = computed(() => payload.value ? buildChronicDiseaseViewKey(payload.value) : 'empty');
 

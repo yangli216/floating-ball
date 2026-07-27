@@ -38,6 +38,11 @@ import {
   buildOutpatientFollowUpPatientOverrides,
   fetchOutpatientFollowUpContext,
 } from '@features/outpatient-follow-up/api/outpatientFollowUpContext';
+import {
+  CHRONIC_DISEASE_SAVE_REQUEST_EVENT,
+  type ChronicDiseaseSaveRequest,
+} from '@features/chronic-disease/api/chronicDiseaseWindowContract';
+import { handleTcdFormSaveRequest } from '@features/chronic-disease/api/chronicDiseaseSaveHandler';
 import { getPatientContextId } from '../utils/patientContext';
 import { useTauriEventListener } from '@shared/composables/useTauriEventListener';
 import { formatUserFacingError } from '@shared/lib/errorMessages';
@@ -513,6 +518,18 @@ export function useEventListeners(options: EventListenersOptions) {
     throwOnError: true,
   });
 
+  const chronicDiseaseSaveListener = useTauriEventListener<ChronicDiseaseSaveRequest>({
+    eventName: CHRONIC_DISEASE_SAVE_REQUEST_EVENT,
+    handler: (event) => {
+      void handleTcdFormSaveRequest(event.payload).catch((error) => {
+        console.error('[EventListeners] Failed to return chronic disease save result:', error);
+      });
+    },
+    logContext: 'EventListeners',
+    autoStart: false,
+    throwOnError: true,
+  });
+
   const startConsultationListener = useTauriEventListener<StartConsultationPayload>({
     eventName: 'start-consultation',
     handler: (event) => { void handleStartConsultationEvent(event); },
@@ -588,6 +605,7 @@ export function useEventListeners(options: EventListenersOptions) {
   const appEventListeners = [
     patientRisksListener,
     chronicDiseaseOpenListener,
+    chronicDiseaseSaveListener,
     startConsultationListener,
     consultationAssistListener,
     stopConsultationListener,

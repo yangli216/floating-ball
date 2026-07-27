@@ -1834,6 +1834,19 @@ POST api/phis.aiAdapterService/saveTcdForm
 
 `drugList` 条目只使用 `id / idDrug / idPherec / naDrug / sdDrugFreq / perDose / doseUnit / insulin`。DOCX 字段表与入参示例对部分数值字段采用了不同 JSON 表示（例如表中 `bmi` 为 String，示例中为 Number）；客户端保持原表单产生的可接受值，不为此引入另一套改名 DTO。接口文档没有给出成功响应结构或幂等请求头，客户端不得自行声明 `followUpId / savedAt / version` 等响应字段。
 
+慢病随访表单位于独立 Tauri Webview，而 SDK handshake 初始化的 HIS Adapter 只保存在主窗口 JavaScript 上下文。保存必须使用以下内部窗口事件代理，不能在业务窗复制 HIS token 或自行重新初始化 Adapter：
+
+```text
+chronic-disease-window
+  -> chronic-disease:save-tcd-form-request { requestId, form: TcdVisitForm }
+main
+  -> api/phis.aiAdapterService/saveTcdForm [form]
+main
+  -> chronic-disease:save-tcd-form-result { requestId, ok, data? / error? }
+```
+
+内部 `requestId` 只关联窗口请求与响应，不属于 `TcdVisitForm`。主窗口必须把 `form` 对象原样传给 `HisAdapter.saveTcdForm(form)`，底层仍只发送 `[form]`；不得增加字段、改名、翻译成中性 DTO 或构造平台自定义成功响应。独立窗口必须先监听结果再发出请求，只接受相同 `requestId` 的响应，并在成功、失败或超时后注销监听器。
+
 边界约束：
 
 1. `idPi` 是唯一硬要求字段，`idVis` 强烈建议传入。
