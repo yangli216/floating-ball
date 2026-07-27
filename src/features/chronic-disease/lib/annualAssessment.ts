@@ -28,18 +28,26 @@ function latestTimestamp(timestamps: Array<string | undefined>): string | undefi
   return sorted[sorted.length - 1];
 }
 
+function sortByTimestamp<T extends { measuredAt: string }>(items: T[]): T[] {
+  return items.slice().sort((left, right) => (
+    new Date(left.measuredAt).getTime() - new Date(right.measuredAt).getTime()
+  ));
+}
+
 export function buildAnnualChronicAssessment(
   summary: ChronicDiseasePatientSummary,
   year: number,
 ): AnnualChronicAssessment {
-  const bloodPressurePoints = summary.bloodPressurePoints.filter((point) => (
+  const bloodPressurePoints = sortByTimestamp(summary.bloodPressurePoints.filter((point) => (
     isInYear(point.measuredAt, year)
-  ));
-  const bloodGlucosePoints = summary.bloodGlucosePoints.filter((point) => (
+  )));
+  const bloodGlucosePoints = sortByTimestamp(summary.bloodGlucosePoints.filter((point) => (
     isInYear(point.measuredAt, year)
-  ));
+  )));
   const medicationFacts = summary.recentMedicationFacts.filter((fact) => (
     isInYear(fact.observedAt, year)
+  )).sort((left, right) => (
+    new Date(left.observedAt || '').getTime() - new Date(right.observedAt || '').getTime()
   ));
 
   return {

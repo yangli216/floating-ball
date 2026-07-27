@@ -1217,3 +1217,182 @@ export interface HisInpatientRegistrationInfo {
   diagnoses?: HisInpatientDiagnosis[];
   raw?: Record<string, unknown>;
 }
+
+/** `ClinicDoctorCoreService.loadVisCliList` 的单个查询项。 */
+export interface VisMidQryCliVO {
+  idSrv: string;
+  idPart?: string;
+  naSrv: string;
+  /** `1` 检验，`2` 检查。 */
+  itemKind?: string;
+}
+
+/**
+ * `loadVisCliList` 返回的动态 Map。
+ *
+ * 后端契约没有固定完整字段表；已知字段显式声明，其余字段只允许经 `raw`
+ * 语义透传，不在业务层猜测。
+ */
+export interface VisCliLoadedItem extends Record<string, unknown> {
+  idSrv?: string;
+  idCli?: string;
+  idPart?: string;
+  naSrv?: string;
+  naApply?: string;
+  itemKind?: string;
+  priceSale?: number;
+  idDeptExec?: string;
+}
+
+/** `saveOdsImp` 西成药 / 疫苗明细。 */
+export interface OdsImpPresVO {
+  idsDie?: string;
+  idSim?: string;
+  sdMed?: string;
+  idSto?: string;
+  idMedPro?: string;
+  naMedPro?: string;
+  amount?: number;
+  idFreq?: string;
+  idUsge?: string;
+  doseOnce?: string;
+  takeDays?: number;
+  idsDiag?: string;
+  disease?: string;
+  naDisease?: string;
+  idOrgExec?: string;
+  fgCheck?: string;
+  unitSaleFactor?: number;
+  sdRound?: string;
+  dose?: string;
+  priceSale?: number;
+  memo?: string;
+  sdOrd?: string;
+  unitSale?: string;
+  unitDose?: string;
+  unitPre?: string;
+  sdBasMed?: string;
+  fgSkintest?: string;
+  fgMedRx?: string;
+  fgTcd?: string;
+  fgCollPur?: string;
+  fgSelf?: string;
+  sdSpeMed?: string;
+  cdGroup?: string;
+  fgLmtUsed?: string;
+  hiLmtScp?: string;
+  fgHasTd?: string;
+  fgTd?: string;
+  idCstmg?: string;
+  fgAnti?: string;
+  sdAnti?: string;
+}
+
+/** `saveOdsImp` 草药明细。 */
+export interface OdsImpHerbVO {
+  idsDie?: string;
+  idSim?: string;
+  sdMed?: string;
+  idSto?: string;
+  idMedPro?: string;
+  naMedPro?: string;
+  amount?: number;
+  idFreq?: string;
+  idUsge?: string;
+  doseOnce?: string;
+  takeDays?: number;
+  idsDiag?: string;
+  disease?: string;
+  naDisease?: string;
+  idOrgExec?: string;
+  fgCheck?: string;
+  naPresHerb?: string;
+  amtPosts?: number;
+  herbDose?: string;
+  herbDayTake?: string;
+  herbUsage?: string;
+  doseRemain?: string;
+  fgInOut?: string;
+  herbInoutUsage?: string;
+  fgMadeHelp?: string;
+  fgPaste?: string;
+  treat?: string;
+  memo?: string;
+  sdMadeHelp?: string;
+  sdPaste?: string;
+  fgDistribution?: string;
+  sdDistribution?: string;
+  unitSaleFactor?: number;
+  sdRound?: string;
+  dose?: string;
+  priceSale?: number;
+  sdOrd?: string;
+  unitSale?: string;
+  unitDose?: string;
+  unitPre?: string;
+  naSto?: string;
+  cdGroup?: string;
+  fgLmtUsed?: string;
+  hiLmtScp?: string;
+}
+
+/** `saveOdsImp` 检查检验申请单明细。 */
+export interface OdsImpApplyVO {
+  idsDie?: string;
+  idCli: string;
+  /** `1` 检验，`2` 检查。 */
+  sdDisp: string;
+  idSim?: string;
+  priceSale?: number;
+  naApply: string;
+  idDeptExec?: string;
+  idOrgExec?: string;
+  fgCheck?: string;
+  amount?: number;
+  disease?: string;
+  naDisease?: string;
+  sdOrd?: string;
+  idPart?: string;
+  memo?: string;
+  partAndWay?: string;
+  desHlthExa?: string;
+  desCurDie?: string;
+  freeParts?: number;
+}
+
+/** `saveOdsImp` 处置、耗材明细。 */
+export interface OdsImpOrderVO {
+  idsDie?: string;
+  idSrv?: string;
+  naSrv?: string;
+  sdOrd?: string;
+  amount?: number;
+  cdGroup?: string;
+  idDeptExec?: string;
+  fgCheck?: string;
+  idOrgExec?: string;
+  disease?: string;
+  naDisease?: string;
+  priceSale?: number;
+  idCstmg?: string;
+  unitOrd?: string;
+  specSale?: string;
+  sdMed?: string;
+  unitSaleFactor?: number;
+}
+
+/** `ClinicDoctorCoreService.saveOdsImp` 的原始请求。 */
+export interface OdsImpReqVO {
+  forceSave: '0' | '1';
+  idVis: string;
+  presVOList: OdsImpPresVO[];
+  herbVOList: OdsImpHerbVO[];
+  applyVOS: OdsImpApplyVO[];
+  orderDispCons: OdsImpOrderVO[];
+}
+
+/** `ClinicDoctorCoreService.saveOdsImp` 的原始业务响应。 */
+export interface OdsImpResVO {
+  code: '200' | '401' | '500' | string;
+  msg: string;
+}

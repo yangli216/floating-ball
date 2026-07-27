@@ -1,6 +1,8 @@
-# MedHermes JS SDK 使用文档
+# 全医慧助（PCIE）JS SDK 使用文档
 
-> 智医助理 (MedHermes) 第三方 HIS 集成 SDK
+> 全医慧助（PCIE，Primary Care Intelligent Expert）第三方 HIS 集成 SDK
+
+为兼容已接入的 HIS 页面，SDK 文件名、全局构造器 `window.MedHermes`、Loader 门面 `window.MedHermesLoader`、深链协议 `med-hermes://` 与相关 HTTP 路径继续保留。`MedHermes` 在本文档中仅表示兼容 API 标识，不再作为正式产品名称。
 
 ## 文件说明
 
@@ -46,7 +48,7 @@ SDK 3.0 起，`/api/consultation/events/ws` 是唯一结果通道；已移除 `p
 
   // 错误处理
   MedHermesLoader.onError(function(err) {
-    console.error('智医助理加载失败:', err.message);
+    console.error('全医慧助加载失败:', err.message);
   });
 </script>
 ```
@@ -123,7 +125,7 @@ MedHermesLoader.generateInpatientEmr({ admissionId, templateId, templateName, ht
 <script src="https://cdn.example.com/med-hermes-sdk.js"></script>
 ```
 
-零依赖、单文件，通过 `<script>` 标签引入即可完成与本地 MedHermes 桌面端的全部对接。
+零依赖、单文件，通过 `<script>` 标签引入即可完成与本地全医慧助（PCIE）桌面端的全部对接。
 
 ## 快速开始（5 分钟接入）
 
@@ -519,7 +521,7 @@ SDK 初始化时会自动采集以下浏览器信息并传递给桌面端：
 
 ## 离线拉起
 
-当 MedHermes 桌面端未启动时，SDK 会自动通过 `med-hermes://` 协议尝试拉起：
+当全医慧助（PCIE）桌面端未启动时，SDK 会自动通过兼容协议 `med-hermes://` 尝试拉起：
 
 1. 首先尝试 HTTP 调用
 2. 如果失败（桌面端离线），触发 `launching` 事件
@@ -529,11 +531,11 @@ SDK 初始化时会自动采集以下浏览器信息并传递给桌面端：
 
 ```js
 mh.on('launching', () => {
-  showLoading('正在启动智医助理...');
+  showLoading('正在启动全医慧助...');
 });
 
 mh.on('launch-failed', () => {
-  showAlert('请手动启动智医助理桌面端');
+  showAlert('请手动启动全医慧助桌面端');
 });
 ```
 
@@ -543,7 +545,7 @@ mh.on('launch-failed', () => {
 
 ### Q: 调用接口报 CORS 或 401 错误？
 
-SDK 通过 `fetch` 调用本地 `127.0.0.1:8081`，请确认 MedHermes 桌面端已启动，并且已经成功执行 `init()` / `debugHandshake()`。如果返回 401，通常是尚未握手或握手缺少有效的 `extra.emrAccessToken`。
+SDK 通过 `fetch` 调用本地 `127.0.0.1:8081`，请确认全医慧助（PCIE）桌面端已启动，并且已经成功执行 `init()` / `debugHandshake()`。如果返回 401，通常是尚未握手或握手缺少有效的 `extra.emrAccessToken`。
 
 ### Q: 桌面端退出后 SDK 如何重连？
 

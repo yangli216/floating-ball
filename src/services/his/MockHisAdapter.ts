@@ -35,6 +35,8 @@ import type {
   MedicalItemPartOption,
   MedicineCatalogEntry,
   MedicineDetail,
+  OdsImpReqVO,
+  OdsImpResVO,
   HisPatientInfo,
   HisPatientHistory,
   HisPatientHistoryQuery,
@@ -54,6 +56,8 @@ import type {
   HisInpatientRegistrationInfo,
   HisInpatientTemperatureChart,
   TcdVisitForm,
+  VisCliLoadedItem,
+  VisMidQryCliVO,
 } from './types';
 
 const MOCK_DIAGNOSES: DiagnosisCatalogEntry[] = [
@@ -257,6 +261,19 @@ export class MockHisAdapter implements HisAdapter {
 
   async saveTcdForm(_form: TcdVisitForm): Promise<unknown> {
     return null;
+  }
+
+  async loadVisCliList(items: VisMidQryCliVO[]): Promise<VisCliLoadedItem[]> {
+    return items.map((item) => ({
+      ...item,
+      idCli: item.idSrv,
+      priceSale: 1,
+      idDeptExec: 'mock-exec-dept',
+    }));
+  }
+
+  async saveOdsImp(_request: OdsImpReqVO): Promise<OdsImpResVO> {
+    return { code: '200', msg: '' };
   }
 
   async fetchPatientHistory(

@@ -1,6 +1,6 @@
 /**
  * MedHermes JS SDK v3.0.0
- * 智医助理 (MedHermes) 第三方 HIS 集成 SDK
+ * 全医慧助（PCIE）第三方 HIS 集成兼容 SDK
  *
  * 零依赖、单文件，通过 <script> 标签或 ES Module 引入即可使用。
  * 封装全部本地 HTTP Bridge 接口 + WebSocket 事件订阅分发 + 协议拉起 + 浏览器上下文同步。
@@ -396,7 +396,7 @@
   MedHermes.prototype.init = function (extra) {
     var self = this;
     if (typeof WebSocket === 'undefined') {
-      var unsupportedError = new Error('当前 HIS 浏览器不支持 WebSocket，无法初始化 MedHermes 结果事件通道');
+      var unsupportedError = new Error('当前 HIS 浏览器不支持 WebSocket，无法初始化全医慧助结果事件通道');
       unsupportedError.code = 'WEBSOCKET_UNSUPPORTED';
       this._emitter.emit('error', unsupportedError);
       return Promise.reject(unsupportedError);
@@ -442,7 +442,7 @@
               .catch(function () {
                 self._connected = false;
                 self._emitter.emit('launch-failed');
-                reject(new Error('MedHermes 桌面端未启动，协议拉起失败'));
+                reject(new Error('全医慧助桌面端未启动，协议拉起失败'));
               });
           }, self._opts.launchRetryMs);
         });
@@ -512,7 +512,7 @@
    */
   MedHermes.prototype.debugHandshake = function (overrides) {
     if (typeof WebSocket === 'undefined') {
-      var unsupportedError = new Error('当前 HIS 浏览器不支持 WebSocket，无法初始化 MedHermes 结果事件通道');
+      var unsupportedError = new Error('当前 HIS 浏览器不支持 WebSocket，无法初始化全医慧助结果事件通道');
       unsupportedError.code = 'WEBSOCKET_UNSUPPORTED';
       this._emitter.emit('error', unsupportedError);
       return Promise.reject(unsupportedError);
@@ -545,7 +545,7 @@
   };
 
   /**
-   * 检测 MedHermes 桌面端是否在线
+   * 检测全医慧助桌面端是否在线
    * @returns {Promise<Object>} 包含版本号等信息
    */
   MedHermes.prototype.ping = function () {
@@ -876,7 +876,7 @@
     if (this._ws || this._isWsConnecting) return;
 
     if (typeof WebSocket === 'undefined') {
-      var unsupportedError = new Error('当前 HIS 浏览器不支持 WebSocket，无法订阅 MedHermes 结果事件');
+      var unsupportedError = new Error('当前 HIS 浏览器不支持 WebSocket，无法订阅全医慧助结果事件');
       unsupportedError.code = 'WEBSOCKET_UNSUPPORTED';
       this._markDisconnected();
       this._emitter.emit('error', unsupportedError);
@@ -1127,7 +1127,7 @@
                 httpCall()
                   .then(resolve)
                   .catch(function () {
-                    var offlineErr = new Error('MedHermes 桌面端未启动');
+                    var offlineErr = new Error('全医慧助桌面端未启动');
                     offlineErr.code = 'OFFLINE';
                     self._emitter.emit('launch-failed');
                     self._emitter.emit('error', offlineErr);

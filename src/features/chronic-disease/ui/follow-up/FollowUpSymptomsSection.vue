@@ -29,7 +29,7 @@ function togglePulse(code: string): void {
 
 <template>
   <div class="symptom-panel">
-    <p>症状选项及互斥规则按业务系统随访字典执行。</p>
+    <p>请选择本次随访症状，互斥选项会自动处理。</p>
 
     <section v-if="hasHypertension" class="symptom-group">
       <h3>高血压症状<span class="required">*</span></h3>

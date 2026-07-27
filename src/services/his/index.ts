@@ -40,6 +40,12 @@ export type {
   MedicalItemPartOption,
   MedicineCatalogEntry,
   MedicineDetail,
+  OdsImpApplyVO,
+  OdsImpHerbVO,
+  OdsImpOrderVO,
+  OdsImpPresVO,
+  OdsImpReqVO,
+  OdsImpResVO,
   HisPatientInfo,
   HisPatientHistory,
   HisPatientHistoryQuery,
@@ -63,6 +69,8 @@ export type {
   TcdVisitForm,
   TcdVisitKind,
   TcdVisitStatus,
+  VisCliLoadedItem,
+  VisMidQryCliVO,
 } from './types';
 export { PhisHisAdapter } from './PhisHisAdapter';
 export { MockHisAdapter } from './MockHisAdapter';

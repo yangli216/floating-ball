@@ -1,8 +1,12 @@
 import { computed, ref, type Ref } from 'vue';
 import { invoke } from '@tauri-apps/api/core';
+import { confirm as confirmDialog } from '@tauri-apps/plugin-dialog';
 import type { AppPatient } from '@/types/appState';
 import type { Diagnosis, TreatmentRecommendation } from '@/types/consultation';
-import { getPatientContextAnchorId } from '@/utils/patientContext';
+import {
+  getPatientContextAnchorId,
+  getPatientContextVisitId,
+} from '@/utils/patientContext';
 import { trackFinalRecommendationPreferences } from '@/services/recommendationPreferenceTracker';
 import type { ExecDeptOption, UsageOption } from '@/utils/medicalDictionaryHelpers';
 import { getHisAdapter } from '@/services/his';
@@ -20,6 +24,8 @@ import {
   type WritebackFeedbackPayload,
 } from '@features/consultation-result';
 import type { TreatmentPlanRecordContext } from './useTreatmentPlanRecommendations';
+import { buildOdsImpRequest } from './odsImportPayload';
+import { submitOdsImpWithConfirmation } from './odsImportSubmission';
 
 export type TreatmentPlanNotifyType = 'success' | 'error' | 'info';
 export type TreatmentPlanNotify = (message: string, type?: TreatmentPlanNotifyType) => void;
@@ -44,6 +50,7 @@ export interface TreatmentPlanWritebackOptions {
   hasRequiredPharmacy: (rec: TreatmentRecommendation) => boolean;
   hasRequiredExecDept: (rec: TreatmentRecommendation) => boolean;
   hasRequiredBodySite: (rec: TreatmentRecommendation) => boolean;
+  odsImportEnabled?: Readonly<Ref<boolean>>;
   onWritebackSuccess?: (payload: WritebackFeedbackPayload) => void;
   notify?: TreatmentPlanNotify;
 }
@@ -151,8 +158,70 @@ export function useTreatmentPlanWriteback(options: TreatmentPlanWritebackOptions
         return false;
       }
 
-      const requestId = `record-confirmed-${Date.now()}`;
+      const requestId = options.odsImportEnabled?.value
+        ? `ods-imp-${Date.now()}`
+        : `record-confirmed-${Date.now()}`;
       const selected = preflight.selected;
+      const orderList = buildOrderList(selected);
+      const trackSelections = () => trackFinalRecommendationPreferences({
+        diagnoses: selectedDiagnoses.value,
+        primaryDiagnosis: options.diagnosis.value,
+        treatments: selected,
+        context: {
+          consultationId: resolveConsultationId(),
+          sourceModule: options.odsImportEnabled?.value ? 'chronic_disease' : 'treatment_plan',
+          scene: options.odsImportEnabled?.value
+            ? 'chronic-disease-ods-import'
+            : 'treatment-plan-writeback',
+        },
+      });
+
+      if (options.odsImportEnabled?.value) {
+        const his = getHisAdapter();
+        if (!his) {
+          notify('HIS 尚未连接，暂不能保存慢病检查检验医嘱。', 'error');
+          return false;
+        }
+        const odsRequest = buildOdsImpRequest({
+          idVis: getPatientContextVisitId(options.patient.value),
+          requestId,
+          diagnosis: options.diagnosis.value,
+          treatments: selected,
+          orderList,
+        });
+        const odsOutcome = await submitOdsImpWithConfirmation({
+          request: odsRequest,
+          save: (request) => his.saveOdsImp(request),
+          confirmForceSave: (message) => confirmDialog(
+            `${message || 'HIS 校验未通过，是否继续保存？'}\n\n确认后将按 HIS 要求跳过本次重复校验。`,
+          ),
+        });
+        if (odsOutcome.cancelled) {
+          notify('已取消继续保存，当前诊疗方案仍保留。', 'info');
+          return false;
+        }
+        const odsResult = odsOutcome.result;
+
+        if (odsResult.code !== '200') {
+          notify(odsResult.msg || `HIS 医嘱保存失败（code=${odsResult.code}）`, 'error');
+          return false;
+        }
+
+        trackSelections();
+        const successFeedback: WritebackFeedbackPayload = {
+          consultationId: resolveConsultationId(),
+          requestId,
+          referenceType: 'batch',
+          action: 'batch',
+          status: 'success',
+          message: odsResult.msg || 'HIS 已完成慢病检查检验医嘱保存。',
+          timestamp: Date.now(),
+        };
+        notify(successFeedback.message || '诊疗方案已完成回写。', 'success');
+        options.onWritebackSuccess?.(successFeedback);
+        return true;
+      }
+
       const chiefComplaint = options.recordContext.value.chiefComplaint
         || (options.recordContext.value.isFollowUp ? '门诊复诊，查看检验检查报告结果' : '');
       const historyOfPresentIllness = options.recordContext.value.historyOfPresentIllness
@@ -166,7 +235,7 @@ export function useTreatmentPlanWriteback(options: TreatmentPlanWritebackOptions
         historyOfPresentIllness,
         pastMedicalHistory: options.recordContext.value.pastMedicalHistory,
         diagList: buildDiagList(),
-        orderList: buildOrderList(selected),
+        orderList,
         treatmentPlan: buildTreatmentPlanSummary(selected),
         extra: {
           referenceType: 'batch',
@@ -177,16 +246,7 @@ export function useTreatmentPlanWriteback(options: TreatmentPlanWritebackOptions
         },
       });
 
-      trackFinalRecommendationPreferences({
-        diagnoses: selectedDiagnoses.value,
-        primaryDiagnosis: options.diagnosis.value,
-        treatments: selected,
-        context: {
-          consultationId: resolveConsultationId(),
-          sourceModule: 'treatment_plan',
-          scene: 'treatment-plan-writeback',
-        },
-      });
+      trackSelections();
       await invoke('complete_consultation', { result });
       markWritebackPending(requestId, '诊疗方案已发送至 HIS，等待处理结果回执。');
       notify('诊疗方案已发送至 HIS，等待处理结果回执。');

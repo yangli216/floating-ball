@@ -146,7 +146,7 @@ const patientDisplayName = computed(
 const assistantTitle = computed(() => {
   switch (currentView.value) {
     case 'chat':
-      return '智医助理';
+      return '全医慧助';
     case 'consultation':
       return currentPatient.value ? `智能问诊 - ${patientDisplayName.value}` : '智能问诊';
     case 'voice-consultation':
@@ -942,7 +942,7 @@ const openInsideCloudHome = async () => {
           <button
             type="button"
             class="floating-ball"
-            aria-label="打开或恢复智医助理"
+            aria-label="打开或恢复全医慧助"
             :class="{ 'is-focused': isFocused, 'is-hovered': isHovered }"
             @click="handleBallKeyboardActivate"
             @mousedown="handleMouseDown"

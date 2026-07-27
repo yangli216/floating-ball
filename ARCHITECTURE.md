@@ -1,6 +1,8 @@
-# 架构文档 (ARCHITECTURE.md)
+# 全医慧助（PCIE）桌面端架构文档
 
-> **最后更新**: 2026-07-22
+> **正式英文名称**: Primary Care Intelligent Expert
+>
+> **最后更新**: 2026-07-27
 >
 > **重要**: 此文档是项目架构的唯一真实来源。任何架构级别的代码修改都必须同步更新此文档。
 
@@ -24,7 +26,7 @@
 
 ## 概述
 
-这是一个 Tauri 2.0 + Vue 3 桌面应用，采用**组合式架构 (Composition Architecture)** 模式。运行时由本地桌面 UI、Rust Bridge 与唯一远程业务后端 `floating-ball-server` 共同组成：
+全医慧助（PCIE）是一个面向基层医疗场景的 Tauri 2.0 + Vue 3 桌面智能专家辅助应用，采用**组合式架构 (Composition Architecture)** 模式。运行时由本地桌面 UI、Rust Bridge 与唯一远程业务后端 `floating-ball-server` 共同组成：
 
 - **UI 层**: Vue 组件负责渲染和用户交互
 - **逻辑层**: Composables 封装可复用的业务逻辑
@@ -36,6 +38,7 @@
 1. 当前真实运行契约以 `src-tauri/src/http_server.rs` + `api.md` 为准。
 2. 桌面端已取消“本地/区域”双模式；远端 `/v1/*` 契约以 `floating-ball-server/API.md`、真实调用代码和签名实现为准。
 3. 本地 `/api/*` 只承担 HIS/SDK 桥接和结果事件；`/api/consultation/events/ws` 是唯一结果通道，不提供 HTTP 长轮询兜底。
+4. `floating-ball`、`med-hermes://`、`com.med-hermes.app`、`window.MedHermes` 与 `med-hermes-*.js` 是既有工程或兼容技术标识；正式项目名称统一为“全医慧助（PCIE）”，不得在用户可见文案中继续把 `MedHermes` 当作产品名称。
 
 ### 设计原则
 
@@ -1468,11 +1471,11 @@ describe('useWindowManagement', () => {
 `src/features/chronic-disease/` 负责高血压与 2 型糖尿病插件，不把相关规则继续堆入 `App.vue` 或 `ReceptionCapsule.vue`：
 
 - `lib/`：从 `PatientContext.raw` 中的真实慢病接口原字段生成可追溯摘要；保存受控模板、路径发布清单与旧系统正式流程图的热点/说明配置。
-- `model/`：独立业务窗状态、随访表单校验与 AI 健康处方草稿状态。
-- `api/`：封装真实 HIS Adapter 调用，以及独立 Tauri 窗口的 ready/ack 与保存请求/响应事件桥。
-- `ui/`：趋势图、随访表、正式流程图与高血压热点说明抽屉、健康处方和年度评估。
+- `model/`：独立业务窗状态、随访表单校验、慢病 AI 推荐选择状态与其他 AI 草稿状态。
+- `api/`：封装真实 HIS Adapter 调用、基于当前院内可开立检查/检验目录的慢病 AI 推荐、健康处方/年度评估的签名 LLM 请求，以及独立 Tauri 窗口的 ready/ack 与保存请求/响应事件桥。
+- `ui/`：趋势图、院内目录约束的 AI 推荐清单、随访表、正式流程图与高血压热点说明抽屉、健康处方，以及由年度证据面板和 AI 评估结果组成的年度评估。
 
-接诊模块只负责组合三态外壳并派发动作。慢病识别分为“公卫管理”和“临床识别”：二者都可展示路径与健康建议，只有公卫管理标签可派生正式随访资格。HIS 主动唤起慢病详情使用本地 `POST /api/chronic-disease/open`，由 SDK `openChronicDisease(patient)` 触发 `open-chronic-disease-management`。
+接诊模块只负责组合三态外壳并派发动作。`ReceptionCapsule.vue` 编排四个折叠步骤；`ReceptionChronicRefillSection.vue` 只以 typed props/emits 展示第 3 步的候选、空态与生成中状态，并把医生确认动作上报给既有 `reception-risk -> useOutpatientScenarioRouter -> chronic-refill-confirmation -> consultation-result` 链路，不持有候选判定、病历生成、药品定稿或回写规则。原临床诊疗建议顺延为第 4 步。慢病识别分为“公卫管理”和“临床识别”：二者都可展示路径与健康建议，只有公卫管理标签可派生正式随访资格。HIS 主动唤起慢病详情使用本地 `POST /api/chronic-disease/open`，由 SDK `openChronicDisease(patient)` 触发 `open-chronic-disease-management`。
 
 `useReceptionController` 先通过 `HisAdapter.fetchPatientInfo(idPi)` 取得真实 `idCard`，随后调用 `HisAdapter.fetchChronicDiseasePatientVisitHistory(idCard)`；`PhisHisAdapter` 只把调用委托给 `HisService.queryPatientVisitHistoryData(idCard)`。底层请求 Adapter 发布的 `api/phis.aiAdapterService/queryPatientVisitHistoryData`，请求体保持 `[{"idCard":"..."}]`，Adapter 后端再适配 `chis.hyVisitService/queryPatientVisitHistoryData`。响应不构造 vendor-neutral 慢病 DTO，也不把顶层 `idPhr / idRecord` 或 `pressureList / pressureHist（或真实示例中的 pressureHList）/ gluList / visitInfos / drugList` 翻译成 `patientId / visitId / currentVitalSigns / hisHistory / medications`。原始 `body` 与入口患者信息一起进入 `buildPatientContext.raw`，`features/chronic-disease/lib/chronicDiseaseSummary.ts` 直接读取这些原字段做只读展示计算；慢病摘要中的两个主键也继续命名为 `idPhr / idRecord`。
 
@@ -1480,8 +1483,8 @@ describe('useWindowManagement', () => {
 
 `model/followUpFormModel.ts` 是原始 `TcdVisitForm` 字段、显示条件、校验和序列化的唯一客户端落点；表单初始化时直接从本次查询摘要复制 `idPhr / idRecord`，不得用入口 `idVis` 或历史随访 `idPherec` 代替登记表主键。`idRecord` 是保存必填项，缺失时在调用 Adapter 前拦截；`HisService.saveTcdForm` 在最终 HTTP 出站前再次校验，防止其他调用路径发送无登记表主键的请求。UI 内多选字段保持数组，提交时按原 `getFormData()` 转成逗号字符串，补齐原字段 `advBmi`，`drugList` 保持对象数组并过滤没有 `idDrug` 的空行。单病种和联合随访都只构造一条融合记录。慢病随访表单运行在独立 Webview，不能直接读取只在主窗口 SDK handshake 后初始化的 `HisService` 单例；`features/chronic-disease/api/chronicDiseaseApi.ts` 因此使用类型化 Tauri 请求/响应事件把原始 `TcdVisitForm` 交给主窗口，关联 `requestId` 只存在于窗口通信信封中，不进入 `form`。主窗口的 `chronicDiseaseSaveHandler.ts` 取得 `getHisAdapter()` 后原样调用 `HisAdapter.saveTcdForm(form)`；`PhisHisAdapter` 委托 `HisService.saveTcdForm(form)`，底层固定向 Adapter 发布的 `api/phis.aiAdapterService/saveTcdForm` 发送 `[form]`，由 Adapter 后端适配 `chis.tcdService/saveTcdForm`。该链路不再经过区域后端 `/v1/client/chronic-disease/follow-ups`，不增加 `requestId / managementSource / templateVersion` 等接口未声明字段，也不把未知响应翻译成平台自定义成功对象。
 
-临床路径视图以 `public/assets/chronic-disease/clinical-paths/` 中从旧系统迁入的高血压、糖尿病完整流程图为唯一视觉底图；`lib/clinicalPathDiagram.ts` 只描述旧高血压页面已有的热点坐标和说明内容，`ClinicalPathDiagram.vue` 与 `ClinicalPathDrawer.vue` 负责只读交互，不使用患者证据或 AI 结果改写正式流程。插件勾选的检查检验转换为 typed treatment-plan seed，进入既有 `TreatmentPlanPage` 完成标准目录匹配、医生确认与 PHIS 回写，不在接诊组件中维护第二套医嘱状态。
+临床路径视图以 `public/assets/chronic-disease/clinical-paths/` 中从旧系统迁入的高血压、糖尿病完整流程图为唯一视觉底图；`lib/clinicalPathDiagram.ts` 只描述旧高血压页面已有的热点坐标和说明内容，`ClinicalPathDiagram.vue` 与 `ClinicalPathDrawer.vue` 负责只读交互，不使用患者证据或 AI 结果改写正式流程。慢病详情的第二折叠区命名为“AI 推荐”：`chronicAiRecommendationService.ts` 先通过既有 `medicalDataService.fetchAvailableExamLabItems()` 查询当前 HIS 上下文实际可开立的检查/检验目录，再复用 `institutionAuxiliaryCatalog` 和签名 `services/llm.chat`，要求模型只返回目录 `catalogRef`；映射后的项目从源头携带标准 `matchedItem`。`useChronicAiRecommendations.ts` 维护加载、错误、空态、医生勾选与“加入诊疗方案”准备态；点击加入时通过 `HisAdapter.loadVisCliList` 调用 `ClinicDoctorCoreService.loadVisCliList`，用真实调入映射补全所选标准项，再生成以当前 `idVis` 为患者锚点的 typed treatment-plan seed。`ChronicAiRecommendationPanel.vue` 只以 typed props/emits 展示这些状态。`TreatmentPlanPage` 继续负责执行科室、检查部位等必填属性和医生最终确认；当 `initialDraft.sourceModule = chronic_disease` 时，`useTreatmentPlanWriteback.ts` 把已确认的检查/检验映射到 `OdsImpReqVO.applyVOS` 并经 `HisAdapter.saveOdsImp` 调用 `ClinicDoctorCoreService.saveOdsImp`，处理 `200 / 401 / 500`。`401` 只有在医生确认后才以同一请求和 `forceSave=1` 重试。该慢病分支不再额外写 `record-confirmed`，其他诊疗方案入口继续使用 `record-confirmed/orderList + reference-feedback`。接诊组件不维护第二套医嘱或保存状态。
 
-主窗口尺寸继续由 `useWindowTransitionCoordinator` 管理；业务窗复用显式 `ready` 事件后再传 payload 的握手，避免独立窗口丢失首包。当前患者/就诊锚点变化时主窗口关闭旧业务窗，独立窗按 `patientAnchor + requestId + kind` 为子页面设置 key，保证随访本地状态不会跨患者复用。主窗口是 HIS 凭据与 Adapter 的唯一持有者：独立慢病窗提交 `chronic-disease:save-tcd-form-request`，主窗口完成真实 Adapter 调用后定向返回 `chronic-disease:save-tcd-form-result`；结果按请求 ID 关联并设超时清理，禁止把 token/base URL 复制到业务窗。正式随访记录只通过 HIS Adapter 的 `saveTcdForm` 进入真实业务系统，`floating-ball-server` 不再持久化慢病随访或打印快照；健康处方与年度评估由医生确认后在桌面端本地打印。管理端本期无配置入口。
+主窗口尺寸继续由 `useWindowTransitionCoordinator` 管理；业务窗复用显式 `ready` 事件后再传 payload 的握手，避免独立窗口丢失首包。当前患者/就诊锚点变化时主窗口关闭旧业务窗，独立窗按 `patientAnchor + requestId + kind` 为子页面设置 key，保证随访本地状态不会跨患者复用。主窗口是 HIS 凭据与 Adapter 的唯一持有者：独立慢病窗提交 `chronic-disease:save-tcd-form-request`，主窗口完成真实 Adapter 调用后定向返回 `chronic-disease:save-tcd-form-result`；结果按请求 ID 关联并设超时清理，禁止把 token/base URL 复制到业务窗。正式随访记录只通过 HIS Adapter 的 `saveTcdForm` 进入真实业务系统，`floating-ball-server` 不再持久化慢病随访或打印快照；健康处方与年度评估使用现有 `services/llm.chat`，统一经过签名 `/v1/ai/chat`，由医生确认后在桌面端本地打印。年度评估的数据流为 `annualAssessment.ts` 按自然年确定性筛选真实事实，`annualAssessmentService.ts` 仅把去标识化的年度证据发送给 LLM，并将输出限制为控制趋势、心血管风险与共病、并发症/靶器官筛查、用药安全、生活方式和随访重点六类结构化草稿；解析失败或上游不可用时返回同样六类的受控降级草稿。模型不得补写缺失检查、生活方式或依从性事实，也不得自动诊断、调药、给出个体控制目标或修改已发布规则。管理端本期无配置入口。
 
 `web_project/public/chronic-disease-mock.html` 是两慢病专用 Mock HIS 唤起页。它不挂载 Vue 慢病组件，通过桌面端 `MedHermes` 兼容 SDK 执行 `debugHandshake()` 和 `openChronicDisease()`，沿 `/api/chronic-disease/open -> open-chronic-disease-management -> useReceptionController -> ReceptionCapsule(expanded)` 真实事件链唤起全医慧助桌面端；它不再构造或发送 `risks`。生产链路中的慢病事实只能来自 Adapter 发布的 `api/phis.aiAdapterService/queryPatientVisitHistoryData` 原字段响应；联调 mock 若需要提供曲线和随访数据，也必须使用 `idCard / idPhr / idRecord / pressureList / pressureHist（或 pressureHList）/ gluList / visitInfos / drugList` 原字段 fixture，不再把 `currentVitalSigns + hisHistory.visits[]` 当作慢病接口替代结构。Mock 用药只作为历史事实，不作为推荐或处方。

@@ -295,7 +295,7 @@ async function handleFeedback(messageId: string, feedbackType: 'positive' | 'neg
   <div class="chat-panel">
    <div class="chat-panel-header" data-tauri-drag-region>
       <div class="toolbar-left" data-tauri-drag-region>
-        <span class="assistant-title" data-tauri-drag-region>智医助理</span>
+        <span class="assistant-title" data-tauri-drag-region>全医慧助</span>
       </div>
       <div class="toolbar-right" style="display: flex; gap: 8px;">
         <!-- <button class="icon-btn" aria-label="灵活触发" title="灵活触发" @click="emit('open-consultation-assist')">
@@ -317,7 +317,7 @@ async function handleFeedback(messageId: string, feedbackType: 'positive' | 'neg
         <div v-if="m.isDefault" class="default-msg">
           <img class="default-msg-icon" src="/loading.png" alt="AI Agent" />
           <div class="default-msg-content">
-            <div class="default-msg-title">Hi，我是智医助理</div>
+            <div class="default-msg-title">Hi，我是全医慧助</div>
             <div class="markdown-body" v-html="renderMarkdown(m.content)"></div>
           </div>
         </div>

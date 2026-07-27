@@ -87,23 +87,7 @@ export interface DictionaryOption {
   label: string;
 }
 
-export const ORIGINAL_DICTIONARY_IDS = {
-  hypertensionSymptoms: 'chis.dictionary.hySymptoms',
-  diabetesSymptoms: 'chis.dbsSymptoms',
-  arteriopalmus: 'chis.tcd.dpp',
-  drinking: 'chis.tcd.drink',
-  drinkingType: 'chis.tcd.drinkType',
-  medicationAdherence: 'chis.tcd.medicationAdjustment',
-  complications: 'chis.tcd.complications',
-  comorbidity: 'chis.tcd.comorbidity',
-  majorCc: 'chis.tcd.majorCc',
-  targetOrganDamage: 'chis.tcd.targetOrganDamage',
-  referralStatus: 'chis.tcd.refStatus',
-  referralReason: 'chis.tcd.referralReason',
-} as const;
-
-// 原始 HTML/JS 只给出字典 ID，没有内嵌完整码表。这里的标签用于 Mock 可视化，
-// 业务值仍以原系统字典服务返回值为准，服务端按字符串原样保存。
+// 这些标签只用于随访表单展示，业务值仍按对接系统原值保存。
 export const HYPERTENSION_SYMPTOM_OPTIONS: DictionaryOption[] = [
   { value: '1', label: '无症状' },
   { value: '2', label: '头痛头晕' },
@@ -372,17 +356,17 @@ export function validateFusedFollowUpForm(input: {
   form: FusedFollowUpFormState;
 }): FollowUpValidationIssue | null {
   const { form } = input;
-  let issue = required(form.idPhr, '缺少人员主键', 0);
+  let issue = required(form.idPhr, '患者随访信息不完整，请重新进入随访后再试', 0);
   if (issue) return issue;
-  issue = required(form.idRecord, '缺少登记表主键', 0);
+  issue = required(form.idRecord, '随访登记信息不完整，请返回 HIS 核对后重试', 0);
   if (issue) return issue;
   if (form.sdVisitKind.length === 0) {
     return { message: '缺少明确公卫在管标记，不能保存正式随访', sectionIndex: 0 };
   }
   if (form.status === '3') {
-    issue = required(form.inputUser, '请输入录入医生', 0);
+    issue = required(form.inputUser, '当前医生信息不完整，请重新接诊后再试', 0);
     if (issue) return issue;
-    issue = required(form.idUser, '请输入责任医生', 0);
+    issue = required(form.idUser, '责任医生信息不完整，请返回 HIS 核对后重试', 0);
     if (issue) return issue;
   }
 

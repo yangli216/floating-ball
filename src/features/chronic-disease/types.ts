@@ -1,5 +1,6 @@
 import type { PatientMemoryBrief } from '@entities/patient-memory';
 import type { AppPatient } from '@/types/appState';
+import type { TreatmentRecommendation } from '@/types/consultation';
 
 export type {
   TcdVisitDrugItem,
@@ -80,6 +81,14 @@ export interface ChronicDiseasePatientSummary {
   sourceQuality: 'ready' | 'partial' | 'unavailable';
 }
 
+export interface ChronicAiRecommendation {
+  id: string;
+  type: 'exam' | 'lab_test';
+  name: string;
+  reason: string;
+  matchedItem: NonNullable<TreatmentRecommendation['matchedItem']>;
+}
+
 export interface ChronicDiseaseSummaryInput {
   patient: AppPatient | null | undefined;
   patientMemoryBrief?: PatientMemoryBrief | null;
@@ -145,5 +154,41 @@ export interface HealthPrescriptionDraft {
   source: 'ai' | 'controlled-fallback';
   summary: string;
   suggestions: HealthPrescriptionSuggestion[];
+  safetyNote: string;
+}
+
+export type AnnualAssessmentSectionKey =
+  | 'control-trend'
+  | 'cardiovascular-risk'
+  | 'complication-screening'
+  | 'medication-safety'
+  | 'lifestyle-management'
+  | 'follow-up-plan';
+
+export type AnnualAssessmentEvidenceState = 'supported' | 'insufficient';
+export type AnnualAssessmentPriority = 'routine' | 'attention';
+
+export interface AnnualAssessmentFinding {
+  content: string;
+  evidence: string;
+  evidenceState: AnnualAssessmentEvidenceState;
+  priority: AnnualAssessmentPriority;
+}
+
+export interface AnnualAssessmentSection {
+  key: AnnualAssessmentSectionKey;
+  title: string;
+  summary: string;
+  findings: AnnualAssessmentFinding[];
+}
+
+export interface AnnualAssessmentDraft {
+  generatedAt: string;
+  year: number;
+  source: 'ai' | 'controlled-fallback';
+  overallSummary: string;
+  sections: AnnualAssessmentSection[];
+  missingData: string[];
+  doctorReviewPoints: string[];
   safetyNote: string;
 }

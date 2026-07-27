@@ -1,52 +1,129 @@
 import type { TreatmentPlanInitialDraft } from '@features/treatment-plan';
-import type { ChronicDiseasePatientSummary } from '../types';
+import type {
+  VisCliLoadedItem,
+  VisMidQryCliVO,
+} from '@/services/his';
+import type {
+  ChronicAiRecommendation,
+} from '../types';
 
-export interface ChronicCheckSuggestion {
-  id: string;
-  label: string;
-  purpose: string;
-  type: 'exam' | 'lab_test';
+function text(value: unknown): string {
+  if (typeof value === 'string') return value.trim();
+  if (typeof value === 'number' && Number.isFinite(value)) return String(value);
+  return '';
 }
 
-export function buildChronicCheckSuggestions(
-  summary: ChronicDiseasePatientSummary,
-): ChronicCheckSuggestion[] {
-  const items: ChronicCheckSuggestion[] = [];
-  if (summary.diseaseTags.some((item) => item.diseaseType === 'hypertension')) {
-    items.push(
-      { id: 'lipid', label: '血脂四项', purpose: '心血管总体风险复核', type: 'lab_test' },
-      { id: 'renal', label: '肾功能（肌酐 / eGFR）', purpose: '靶器官损害与用药安全复核', type: 'lab_test' },
-    );
+function readMatchedText(
+  item: ChronicAiRecommendation,
+  keys: string[],
+): string {
+  const matched = item.matchedItem as Record<string, unknown>;
+  const raw = matched.raw && typeof matched.raw === 'object'
+    ? matched.raw as Record<string, unknown>
+    : undefined;
+  for (const key of keys) {
+    const value = text(matched[key]) || text(raw?.[key]);
+    if (value) return value;
   }
-  if (summary.diseaseTags.some((item) => item.diseaseType === 'type2_diabetes')) {
-    items.push(
-      { id: 'hba1c', label: '糖化血红蛋白（HbA1c）', purpose: '近期血糖控制评估', type: 'lab_test' },
-      { id: 'urine', label: '尿白蛋白/肌酐比值', purpose: '糖尿病肾病筛查记录复核', type: 'lab_test' },
-      { id: 'fundus', label: '眼底检查', purpose: '糖尿病视网膜病变筛查核实', type: 'exam' },
-    );
-  }
-  return Array.from(new Map(items.map((item) => [item.id, item])).values());
+  return '';
+}
+
+export function buildChronicVisCliQueryItems(
+  suggestions: ChronicAiRecommendation[],
+): VisMidQryCliVO[] {
+  return suggestions.map((item) => {
+    const idSrv = readMatchedText(item, ['idSrv', 'idCli', 'id', 'code']);
+    if (!idSrv) {
+      throw new Error(`${item.name} 缺少诊疗项目 ID，无法加载医嘱调入映射`);
+    }
+    const idPart = readMatchedText(item, ['idPart']);
+    return {
+      idSrv,
+      naSrv: item.matchedItem.name || item.name,
+      itemKind: item.type === 'lab_test' ? '1' : '2',
+      ...(idPart ? { idPart } : {}),
+    };
+  });
+}
+
+function findLoadedItem(
+  request: VisMidQryCliVO,
+  loadedItems: VisCliLoadedItem[],
+): VisCliLoadedItem | undefined {
+  return loadedItems.find((item) => {
+    const loadedId = text(item.idSrv) || text(item.idCli);
+    return Boolean(loadedId && loadedId === request.idSrv);
+  }) || loadedItems.find((item) => {
+    const loadedName = text(item.naSrv) || text(item.naApply);
+    return loadedName === request.naSrv
+      && (!item.itemKind || text(item.itemKind) === text(request.itemKind));
+  });
+}
+
+export function mergeChronicVisCliLoadedItems(
+  suggestions: ChronicAiRecommendation[],
+  loadedItems: VisCliLoadedItem[],
+): ChronicAiRecommendation[] {
+  const requests = buildChronicVisCliQueryItems(suggestions);
+  return suggestions.map((item, index) => {
+    const loaded = findLoadedItem(requests[index], loadedItems);
+    if (!loaded) {
+      throw new Error(`${item.name} 未返回医嘱调入映射，请在 HIS 核对项目后重试`);
+    }
+
+    const matched = item.matchedItem as Record<string, unknown>;
+    const raw = matched.raw && typeof matched.raw === 'object'
+      ? matched.raw as Record<string, unknown>
+      : {};
+    const idSrv = text(loaded.idSrv) || requests[index].idSrv;
+    const idCli = text(loaded.idCli) || idSrv;
+    const name = text(loaded.naSrv) || text(loaded.naApply) || item.matchedItem.name || item.name;
+    return {
+      ...item,
+      name,
+      matchedItem: {
+        ...item.matchedItem,
+        id: idCli || item.matchedItem.id,
+        idSrv,
+        idCli,
+        name,
+        naSrv: name,
+        ...(text(loaded.idPart) ? { idPart: text(loaded.idPart) } : {}),
+        ...(text(loaded.idDeptExec) ? { idDeptExec: text(loaded.idDeptExec) } : {}),
+        ...(typeof loaded.priceSale === 'number' ? { priceSale: loaded.priceSale } : {}),
+        raw: {
+          ...raw,
+          ...loaded,
+          idSrv,
+          idCli,
+          naSrv: name,
+        },
+      },
+    };
+  });
 }
 
 export function buildChronicTreatmentPlanInitialDraft(input: {
-  summary: ChronicDiseasePatientSummary;
-  suggestions: ChronicCheckSuggestion[];
+  patientAnchorId: string;
+  suggestions: ChronicAiRecommendation[];
   selectedIds: string[];
   requestId: string;
 }): TreatmentPlanInitialDraft {
   const selected = new Set(input.selectedIds);
   return {
     requestId: input.requestId,
-    patientAnchorId: input.summary.idRecord || input.summary.idPhr,
+    patientAnchorId: input.patientAnchorId,
     sourceModule: 'chronic_disease',
-    title: '两慢病检查检验草稿',
+    title: '两慢病 AI 推荐',
     items: input.suggestions
       .filter((item) => selected.has(item.id))
       .map((item) => ({
         sourceId: item.id,
         type: item.type,
-        name: item.label,
-        reason: item.purpose,
+        name: item.name,
+        reason: item.reason,
+        matchedItem: item.matchedItem,
+        matchStatus: 'exact',
       })),
   };
 }

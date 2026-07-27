@@ -13,21 +13,11 @@ const props = defineProps<{
 const form = defineModel<FusedFollowUpFormState>({ required: true });
 
 function changeDrugAdjustment(): void {
-  if (form.value.fgDrugChange === '1' && form.value.drugList.length === 0) {
-    form.value.drugList.push(emptyDrugItem());
-  }
   if (form.value.fgDrugChange !== '1') form.value.drugList = [];
-}
-
-function addDrug(index: number): void {
-  form.value.drugList.splice(index + 1, 0, emptyDrugItem());
 }
 
 function removeDrug(index: number): void {
   form.value.drugList.splice(index, 1);
-  if (form.value.drugList.length === 0 && form.value.fgDrugChange === '1') {
-    form.value.drugList.push(emptyDrugItem());
-  }
 }
 
 function importHistoricalMedications(): void {
@@ -43,7 +33,7 @@ function importHistoricalMedications(): void {
       insulin: item.insulin || '',
     }));
   form.value.fgDrugChange = '1';
-  form.value.drugList = rows.length > 0 ? rows : [emptyDrugItem()];
+  form.value.drugList = rows;
 }
 </script>
 
@@ -65,7 +55,7 @@ function importHistoricalMedications(): void {
     </label>
     <label>服药依从性<span class="required">*</span>
       <select v-model="form.sdDrugPro">
-        <option value="">请选择原系统字典值</option>
+        <option value="">请选择</option>
         <option value="1">规律</option>
         <option value="2">间断</option>
         <option value="3">医嘱无需服药</option>
@@ -88,14 +78,18 @@ function importHistoricalMedications(): void {
     </label>
 
     <div v-if="form.fgDrugChange === '1'" class="full-span drug-table-wrap">
-      <p>只有填写药品标识的行会保存到本次随访。</p>
-      <div class="drug-table">
-        <div class="drug-row drug-head">
-          <span>药品标识</span><span>药品名称</span><span>每日频次</span><span>剂量</span>
+      <p>药品关联信息由系统保留，本页仅核对已有系统关联的用药内容。</p>
+      <div v-if="form.drugList.length > 0" class="drug-table">
+        <div class="drug-row drug-head" :class="{ 'without-insulin': !hasDiabetes }">
+          <span>药品名称</span><span>每日频次</span><span>剂量</span>
           <span>单位</span><span v-if="hasDiabetes">胰岛素</span><span>操作</span>
         </div>
-        <div v-for="(drug, index) in form.drugList" :key="index" class="drug-row">
-          <input v-model="drug.idDrug" placeholder="请输入药品标识" />
+        <div
+          v-for="(drug, index) in form.drugList"
+          :key="`${drug.idDrug}-${index}`"
+          class="drug-row"
+          :class="{ 'without-insulin': !hasDiabetes }"
+        >
           <input v-model="drug.naDrug" placeholder="请输入药品名称" />
           <input v-model="drug.sdDrugFreq" inputmode="numeric" placeholder="请输入每日频次" />
           <input v-model="drug.perDose" inputmode="decimal" placeholder="请输入单次剂量" />
@@ -106,10 +100,17 @@ function importHistoricalMedications(): void {
             <option value="2">否</option>
           </select>
           <div class="drug-actions">
-            <button type="button" @click="addDrug(index)">＋</button>
-            <button type="button" @click="removeDrug(index)">－</button>
+            <button
+              type="button"
+              :aria-label="`移除${drug.naDrug || '本行用药'}`"
+              title="移除本行"
+              @click="removeDrug(index)"
+            >－</button>
           </div>
         </div>
+      </div>
+      <div v-else class="drug-empty">
+        暂无可核对的历史随访用药，请先核对上游用药记录。
       </div>
     </div>
   </div>
@@ -158,10 +159,14 @@ function importHistoricalMedications(): void {
 .drug-row {
   padding: 6px;
   display: grid;
-  grid-template-columns: 1fr 1.5fr 0.8fr 0.8fr 0.7fr 0.8fr 72px;
+  grid-template-columns: 1.5fr 0.8fr 0.8fr 0.7fr 0.8fr 72px;
   gap: 6px;
   align-items: center;
   border-top: 1px solid #eef2f6;
+}
+
+.drug-row.without-insulin {
+  grid-template-columns: 1.5fr 0.8fr 0.8fr 0.7fr 72px;
 }
 
 .drug-head {
@@ -170,6 +175,15 @@ function importHistoricalMedications(): void {
   border-top: 0;
   font-size: 10px;
   font-weight: 700;
+}
+
+.drug-empty {
+  padding: 12px;
+  color: #64748b;
+  background: #f8fafc;
+  border: 1px dashed #cbd5e1;
+  border-radius: 6px;
+  font-size: 11px;
 }
 
 .drug-row input,

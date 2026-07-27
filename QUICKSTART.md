@@ -1,10 +1,10 @@
-# 快速开始指南
+# 全医慧助（PCIE）桌面端快速开始指南
 
 ## 运行项目
 
 ### 1. 进入项目目录
 ```bash
-cd med-hermes
+cd floating-ball
 ```
 
 ### 2. 确保依赖已安装
@@ -31,7 +31,7 @@ yarn tauri dev
 
 ### 2. 打开联调页
 
-直接打开 [mock_his.html](./docs/mock_his.html) 即可，或自行用静态文件服务器托管后在浏览器访问。
+使用静态文件服务器托管并打开 [mock-his.html](./web_project/public/mock-his.html)。
 
 ### 3. 推荐联调顺序
 

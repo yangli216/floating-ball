@@ -666,7 +666,7 @@
     }
 
     if (typeof window.MedHermes !== 'function') {
-      log('error', '[FATAL] 未能加载 MedHermes SDK。请确认桌面端正在 8081 端口运行。');
+      log('error', '[FATAL] 未能加载 MedHermes 兼容 SDK。请确认全医慧助桌面端正在 8081 端口运行。');
       connBadge.textContent = 'SDK 未加载';
       connBadge.className = 'badge warn';
       return;

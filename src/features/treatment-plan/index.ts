@@ -13,7 +13,9 @@ export type {
   TreatmentPlanWriteback,
 } from './model/useTreatmentPlanWriteback';
 export type {
+  MapTreatmentPlanInitialDraftItemsOptions,
   TreatmentPlanDraftItemType,
   TreatmentPlanInitialDraft,
   TreatmentPlanInitialDraftItem,
 } from './model/treatmentPlanInitialDraft';
+export { mapTreatmentPlanInitialDraftItems } from './model/treatmentPlanInitialDraft';

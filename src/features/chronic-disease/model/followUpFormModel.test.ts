@@ -124,12 +124,23 @@ describe('TcdVisitForm fused follow-up model', () => {
     expect(validateFusedFollowUpForm({ form })).toBeNull();
   });
 
+  it('populates system-managed identifiers from the patient and doctor context', () => {
+    const form = createFusedFollowUpFormState(summary(['hypertension']));
+
+    expect(form).toEqual(expect.objectContaining({
+      idPhr: 'PHR001',
+      idRecord: 'RECORD001',
+      inputUser: 'D001',
+      idUser: 'D001',
+    }));
+  });
+
   it('rejects save before HIS invocation when the query response has no idRecord', () => {
     const form = validForm(['hypertension']);
     form.idRecord = ' ';
 
     expect(validateFusedFollowUpForm({ form })).toEqual({
-      message: '缺少登记表主键',
+      message: '随访登记信息不完整，请返回 HIS 核对后重试',
       sectionIndex: 0,
     });
   });

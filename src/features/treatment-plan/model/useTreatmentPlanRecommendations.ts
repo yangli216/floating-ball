@@ -29,7 +29,6 @@ import {
   formatAvailableMedicineInventoryCandidatesPrompt,
   loadAvailableMedicineInventoryContext,
   mapClinicalResultAiDiagnoses,
-  mapClinicalResultAiTreatments,
   parseLLMJson,
   readFirstString,
   selectAvailableMedicineInventoryCandidates,
@@ -43,7 +42,10 @@ import {
   buildOutpatientFollowUpTreatmentEvidence,
   isOutpatientFollowUpActionable,
 } from '@features/outpatient-follow-up/api/outpatientFollowUpContext';
-import type { TreatmentPlanInitialDraft } from './treatmentPlanInitialDraft';
+import {
+  mapTreatmentPlanInitialDraftItems,
+  type TreatmentPlanInitialDraft,
+} from './treatmentPlanInitialDraft';
 
 export interface TreatmentPlanRecordContext {
   chiefComplaint: string;
@@ -258,15 +260,8 @@ export function useTreatmentPlanRecommendations(options: TreatmentPlanRecommenda
     if (!draft || !hasInitialDraft.value) return false;
     const diagnosis = buildDiagnosisFromText(recordContext.value.diagnosisText);
     options.diagnosis.value = diagnosis;
-    options.treatments.value = mapClinicalResultAiTreatments({
-      rawTreatments: draft.items.map((item) => ({
-        type: item.type,
-        name: item.name,
-        originalName: item.name,
-        reason: item.reason,
-        evidenceText: item.reason,
-        sourceType: 'explicit',
-      })),
+    options.treatments.value = mapTreatmentPlanInitialDraftItems({
+      items: draft.items,
       assessCatalogMatch: assessTreatmentCatalogMatch,
       normalize: options.normalizeTreatment,
     });

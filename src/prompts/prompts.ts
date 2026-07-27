@@ -1539,7 +1539,7 @@ export const ChatAssistantPrompt = {
   /**
    * 默认欢迎消息
    */
-  welcomeMessage: '您好，我是您的智能医疗助手，请问有什么可以帮您？'
+  welcomeMessage: '您好，我是全医慧助，请问有什么可以帮您？'
 };
 
 // ==================== 事实核查（Fact Checking）====================

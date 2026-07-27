@@ -236,6 +236,7 @@ const writeback = useTreatmentPlanWriteback({
   hasRequiredPharmacy: treatmentGates.hasRequiredPharmacy,
   hasRequiredExecDept: treatmentGates.hasRequiredExecDept,
   hasRequiredBodySite: treatmentGates.hasRequiredBodySite,
+  odsImportEnabled: computed(() => props.initialDraft?.sourceModule === 'chronic_disease'),
   onWritebackSuccess: handleWritebackSuccess,
   notify: (message, type) => showToast?.(message, type),
 });
@@ -341,6 +342,7 @@ async function loadDictionaries(): Promise<void> {
     loadRouteOptions(),
     loadPharmacyOptions(),
     loadExecDeptOptions(),
+    medicalDataService.fetchAvailableExamLabItems(),
   ]);
 
   const his = getHisAdapter();

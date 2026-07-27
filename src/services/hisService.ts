@@ -27,7 +27,11 @@ import type {
   HisOutpatientFollowUpContextQuery,
   HisOutpatientFollowUpReportResults,
   HisOutpatientFollowUpReportResultsQuery,
+  OdsImpReqVO,
+  OdsImpResVO,
   TcdVisitForm,
+  VisCliLoadedItem,
+  VisMidQryCliVO,
 } from './his/types';
 
 /**
@@ -577,6 +581,8 @@ const HIS_CATALOG_ENDPOINTS = {
   patientSearchByIdPi: 'api/phis.aiAdapterService/searchByIdPi',
   chronicDiseasePatientVisitHistory: 'api/phis.aiAdapterService/queryPatientVisitHistoryData',
   chronicDiseaseSaveTcdForm: 'api/phis.aiAdapterService/saveTcdForm',
+  clinicDoctorLoadVisCliList: 'api/phis.clinicDoctorCoreService/loadVisCliList',
+  clinicDoctorSaveOdsImp: 'api/phis.clinicDoctorCoreService/saveOdsImp',
   patientAllergy: 'api/phis.aiAdapterService/queryHisAllergy',
   patientVisitHistory: 'api/phis.aiAdapterService/queryVisitHistory',
   patientVisitDetail: 'api/phis.aiAdapterService/loadClinicMedicalRecord',
@@ -1239,7 +1245,7 @@ export class HisService {
    */
   async saveTcdForm(form: TcdVisitForm): Promise<unknown> {
     if (!form.idRecord?.trim()) {
-      throw new Error('缺少登记表主键，无法保存两慢病随访');
+      throw new Error('随访登记信息不完整，无法保存，请返回 HIS 核对后重试');
     }
     const response = await this.post<unknown>(
       HIS_CATALOG_ENDPOINTS.chronicDiseaseSaveTcdForm,
@@ -1248,6 +1254,63 @@ export class HisService {
     this.assertBusinessSuccess(HIS_CATALOG_ENDPOINTS.chronicDiseaseSaveTcdForm, response);
 
     return response.body ?? response.data ?? response;
+  }
+
+  /**
+   * 加载诊中助手检查检验调入映射。
+   *
+   * RPC 方法只有一个 `List<VisMidQryCliVO>` 参数，因此 HTTP 请求体为
+   * `[items]`，不是把项目列表直接作为 RPC 参数数组发送。
+   */
+  async loadVisCliList(items: VisMidQryCliVO[]): Promise<VisCliLoadedItem[]> {
+    if (items.length === 0) return [];
+    const response = await this.post<VisCliLoadedItem[] | { items?: VisCliLoadedItem[] }>(
+      HIS_CATALOG_ENDPOINTS.clinicDoctorLoadVisCliList,
+      [items],
+    );
+    const directResponse = response as unknown;
+    if (Array.isArray(directResponse)) {
+      return directResponse as VisCliLoadedItem[];
+    }
+
+    this.assertBusinessSuccess(HIS_CATALOG_ENDPOINTS.clinicDoctorLoadVisCliList, response);
+    const payload = response.body ?? response.data;
+    if (Array.isArray(payload)) {
+      return payload;
+    }
+    if (payload && typeof payload === 'object' && Array.isArray(payload.items)) {
+      return payload.items;
+    }
+    return [];
+  }
+
+  /**
+   * 调用门诊医嘱调入公共方法。
+   *
+   * `401` 是 `OdsImpResVO` 的业务确认状态，必须原样交给 UI；只有 RPC
+   * 外层 envelope 失败或响应结构非法时才抛异常。
+   */
+  async saveOdsImp(request: OdsImpReqVO): Promise<OdsImpResVO> {
+    const response = await this.post<OdsImpResVO>(
+      HIS_CATALOG_ENDPOINTS.clinicDoctorSaveOdsImp,
+      [request],
+    );
+    const nested = response.body ?? response.data;
+    const normalizedNested = this.normalizeOdsImpResponse(nested);
+    if (normalizedNested) {
+      this.assertBusinessSuccess(HIS_CATALOG_ENDPOINTS.clinicDoctorSaveOdsImp, response);
+      return normalizedNested;
+    }
+
+    const direct = this.normalizeOdsImpResponse(response);
+    if (direct) {
+      return direct;
+    }
+
+    this.assertBusinessSuccess(HIS_CATALOG_ENDPOINTS.clinicDoctorSaveOdsImp, response);
+    throw new Error(
+      `[HisService] ${HIS_CATALOG_ENDPOINTS.clinicDoctorSaveOdsImp} returned an invalid response`,
+    );
   }
 
   /**
@@ -1674,6 +1737,20 @@ export class HisService {
       message,
     });
     throw new Error(`[HisService] ${endpoint} failed: ${message} (code=${String(code ?? 'unknown')})`);
+  }
+
+  private normalizeOdsImpResponse(value: unknown): OdsImpResVO | null {
+    if (!value || typeof value !== 'object') return null;
+    const record = value as Record<string, unknown>;
+    const code = record.code === undefined || record.code === null
+      ? ''
+      : String(record.code).trim();
+    if (!code) return null;
+    const rawMessage = record.msg ?? record.message;
+    return {
+      code,
+      msg: typeof rawMessage === 'string' ? rawMessage : '',
+    };
   }
 
   private buildUrlWithQuery(base: string, query?: Record<string, string | number | boolean | null | undefined>): string {

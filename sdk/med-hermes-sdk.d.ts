@@ -1,5 +1,5 @@
 /**
- * MedHermes JS SDK TypeScript 类型声明
+ * 全医慧助（PCIE）MedHermes 兼容 SDK TypeScript 类型声明
  */
 
 /** 患者信息 */

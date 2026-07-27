@@ -43,7 +43,7 @@
 
 ![真实 Tauri 悬浮球](/Users/das/SourceCode/regional-ai-workspace/floating-ball/output/playwright/01-floating-ball-tauri-runtime.png)
 
-### 02 智医助理聊天
+### 02 全医慧助聊天
 
 结论：420×620 窄高布局合理，欢迎区、消息区、输入区层级清楚；输入框和图标按钮已有可访问名称，Markdown 禁用了原始 HTML。实现文件仍偏大（842 行），但本轮未发现阻断问题。
 

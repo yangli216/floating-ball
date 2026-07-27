@@ -9,6 +9,7 @@ export { buildChronicDiseaseSummary } from './lib/chronicDiseaseSummary';
 export {
   buildAnnualChronicAssessment,
 } from './lib/annualAssessment';
+export { generateAnnualAssessmentDraft } from './api/annualAssessmentService';
 export {
   getManagedFollowUpDiseases,
   getPrimaryManagedDisease,
@@ -19,9 +20,10 @@ export {
 } from './lib/followUpPresentation';
 export { buildChronicDiseaseViewKey } from './lib/chronicDiseaseWindowSession';
 export {
-  buildChronicCheckSuggestions,
   buildChronicTreatmentPlanInitialDraft,
 } from './lib/chronicTreatmentPlanDraft';
+export { generateChronicAiRecommendations } from './api/chronicAiRecommendationService';
+export { useChronicAiRecommendations } from './model/useChronicAiRecommendations';
 export { generateHealthPrescriptionDraft } from './api/healthPrescriptionService';
 export {
   CHRONIC_RULE_VERSION,
@@ -32,4 +34,5 @@ export {
 } from './lib/publishedCatalog';
 export type * from './types';
 export { default as ChronicDiseaseWindow } from './ui/ChronicDiseaseWindow.vue';
+export { default as ChronicAiRecommendationPanel } from './ui/ChronicAiRecommendationPanel.vue';
 export { default as ChronicTrendChart } from './ui/ChronicTrendChart.vue';

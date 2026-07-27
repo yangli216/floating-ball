@@ -33,6 +33,8 @@ import type {
   MedicalItemPartOption,
   MedicineCatalogEntry,
   MedicineDetail,
+  OdsImpReqVO,
+  OdsImpResVO,
   HisPatientInfo,
   HisPatientHistory,
   HisPatientHistoryQuery,
@@ -47,6 +49,8 @@ import type {
   HisInpatientEmrContextPackage,
   HisInpatientEmrContextQuery,
   TcdVisitForm,
+  VisCliLoadedItem,
+  VisMidQryCliVO,
 } from './types';
 
 export type { HisServiceContext, PharmacyOption };
@@ -63,6 +67,8 @@ export type {
   MedicalItemPartOption,
   MedicineCatalogEntry,
   MedicineDetail,
+  OdsImpReqVO,
+  OdsImpResVO,
   HisPatientInfo,
   HisPatientHistory,
   HisPatientHistoryQuery,
@@ -86,6 +92,8 @@ export type {
   TcdVisitForm,
   TcdVisitKind,
   TcdVisitStatus,
+  VisCliLoadedItem,
+  VisMidQryCliVO,
 } from './types';
 
 /**
@@ -181,6 +189,21 @@ export interface HisAdapter {
    * Adapter 实现负责按真实接口要求把单条表单包装成 `[TcdVisitForm]`。
    */
   saveTcdForm(form: TcdVisitForm): Promise<unknown>;
+
+  /**
+   * 为诊中助手加载检查/检验调入映射。
+   *
+   * PHIS 实现对应 `ClinicDoctorCoreService.loadVisCliList`。
+   */
+  loadVisCliList(items: VisMidQryCliVO[]): Promise<VisCliLoadedItem[]>;
+
+  /**
+   * 保存门诊医嘱调入请求。
+   *
+   * PHIS 实现对应 `ClinicDoctorCoreService.saveOdsImp`；`401` 作为业务确认
+   * 结果原样返回，不得在 Adapter 层抛成认证异常。
+   */
+  saveOdsImp(request: OdsImpReqVO): Promise<OdsImpResVO>;
 
   /**
    * 拉取患者就诊历史（用于完善本地记忆系统）

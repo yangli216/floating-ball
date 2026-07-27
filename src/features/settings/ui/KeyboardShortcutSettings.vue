@@ -77,7 +77,7 @@ function restoreDefaults(): void {
         恢复默认
       </button>
     </div>
-    <p class="section-desc">以下全局导航键仅在智医助理窗口聚焦且不在输入框、输入法组合态或弹窗内时生效；设置页保存固定使用 Cmd/Ctrl+S。</p>
+    <p class="section-desc">以下全局导航键仅在全医慧助窗口聚焦且不在输入框、输入法组合态或弹窗内时生效；设置页保存固定使用 Cmd/Ctrl+S。</p>
 
     <div class="shortcut-list">
       <div v-for="definition in KEYBOARD_SHORTCUT_DEFINITIONS" :key="definition.id" class="shortcut-row">

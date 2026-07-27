@@ -19,8 +19,9 @@ function summary(): ChronicDiseasePatientSummary {
     diagnosisText: '2 型糖尿病',
     lastVisitLabel: '待核实',
     bloodPressurePoints: [
-      { measuredAt: '2025-12-31T09:00:00+08:00', systolic: 140, diastolic: 88, sourceLabel: '门诊' },
       { measuredAt: '2026-03-02T09:00:00+08:00', systolic: 136, diastolic: 84, sourceLabel: '门诊' },
+      { measuredAt: '2025-12-31T09:00:00+08:00', systolic: 140, diastolic: 88, sourceLabel: '门诊' },
+      { measuredAt: '2026-01-02T09:00:00+08:00', systolic: 138, diastolic: 86, sourceLabel: '门诊' },
     ],
     bloodGlucosePoints: [
       { measuredAt: '2026-05-01T09:00:00+08:00', value: 7.2, measurementType: 'fasting', sourceLabel: '检验' },
@@ -39,10 +40,11 @@ describe('buildAnnualChronicAssessment', () => {
   it('keeps only traceable facts from the selected natural year', () => {
     const assessment = buildAnnualChronicAssessment(summary(), 2026);
 
-    expect(assessment.bloodPressurePoints).toHaveLength(1);
+    expect(assessment.bloodPressurePoints).toHaveLength(2);
     expect(assessment.bloodGlucosePoints).toHaveLength(1);
     expect(assessment.medicationFacts.map((item) => item.name)).toEqual(['二甲双胍']);
     expect(assessment.latestPressure?.systolic).toBe(136);
+    expect(assessment.bloodPressurePoints[0].systolic).toBe(138);
     expect(assessment.latestDataAt).toBe('2026-05-01T09:00:00+08:00');
   });
 });

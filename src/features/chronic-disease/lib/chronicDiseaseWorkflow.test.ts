@@ -10,7 +10,6 @@ import {
 } from './chronicDiseaseEligibility';
 import { buildChronicDiseaseViewKey } from './chronicDiseaseWindowSession';
 import {
-  buildChronicCheckSuggestions,
   buildChronicTreatmentPlanInitialDraft,
 } from './chronicTreatmentPlanDraft';
 
@@ -57,19 +56,53 @@ describe('chronic disease workflow boundaries', () => {
   });
 
   it('converts doctor-selected chronic checks into a patient-bound treatment draft', () => {
-    const patientSummary = summary('clinical');
-    const suggestions = buildChronicCheckSuggestions(patientSummary);
+    const suggestions = [
+      {
+        id: 'lab-hba1c',
+        type: 'lab_test' as const,
+        name: '糖化血红蛋白',
+        reason: '近期血糖控制评估',
+        matchedItem: {
+          id: 'lab-hba1c',
+          code: 'LAB001',
+          name: '糖化血红蛋白',
+          idSrv: 'SRV001',
+          sdSrv: 'LAB',
+        },
+      },
+      {
+        id: 'exam-fundus',
+        type: 'exam' as const,
+        name: '眼底检查',
+        reason: '糖尿病视网膜病变筛查核实',
+        matchedItem: {
+          id: 'exam-fundus',
+          code: 'EXAM001',
+          name: '眼底检查',
+          idSrv: 'SRV002',
+          sdSrv: 'EXAM',
+        },
+      },
+    ];
     const draft = buildChronicTreatmentPlanInitialDraft({
-      summary: patientSummary,
+      patientAnchorId: 'VIS001',
       suggestions,
-      selectedIds: ['hba1c', 'fundus'],
+      selectedIds: ['lab-hba1c', 'exam-fundus'],
       requestId: 'REQ001',
     });
 
-    expect(draft.patientAnchorId).toBe('RECORD001');
+    expect(draft.patientAnchorId).toBe('VIS001');
     expect(draft.items).toEqual([
-      expect.objectContaining({ sourceId: 'hba1c', type: 'lab_test' }),
-      expect.objectContaining({ sourceId: 'fundus', type: 'exam' }),
+      expect.objectContaining({
+        sourceId: 'lab-hba1c',
+        type: 'lab_test',
+        matchedItem: expect.objectContaining({ idSrv: 'SRV001' }),
+      }),
+      expect.objectContaining({
+        sourceId: 'exam-fundus',
+        type: 'exam',
+        matchedItem: expect.objectContaining({ idSrv: 'SRV002' }),
+      }),
     ]);
   });
 

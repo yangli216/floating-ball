@@ -3,6 +3,7 @@ import { computed, ref, watch } from 'vue';
 import Icon from '@shared/ui/Icon.vue';
 import { trackClick } from '@services/operationTracker';
 import { resolvePatientAvatar, PATIENT_AVATAR_FALLBACK } from '@/utils/patientAvatar';
+import { getPatientContextVisitId } from '@/utils/patientContext';
 import type { AppPatient } from '@/types/appState';
 import type { HisOutpatientFollowUpContext, HisVisitRecord } from '@/services/his/types';
 import type { PatientMemoryBrief } from '@entities/patient-memory';
@@ -10,12 +11,16 @@ import type { PatientMemorySyncStatus } from '@features/patient-memory';
 import type { ChronicRefillCandidate, RiskItem } from '@features/reception-risk';
 import type { TreatmentPlanInitialDraft } from '@features/treatment-plan';
 import {
-  buildChronicCheckSuggestions,
+  buildReceptionChronicRefillPresentation,
+} from '../lib/receptionChronicRefillPresentation';
+import ReceptionChronicRefillSection from './ReceptionChronicRefillSection.vue';
+import {
   buildChronicDiseaseSummary,
-  buildChronicTreatmentPlanInitialDraft,
+  ChronicAiRecommendationPanel,
   getPrimaryManagedDisease,
   getPublishedClinicalPath,
   isChronicFollowUpEligible,
+  useChronicAiRecommendations,
   type ChronicDiseasePatientSummary,
   type ChronicDiseaseType,
   type ChronicDiseaseWindowKind,
@@ -58,14 +63,18 @@ const emit = defineEmits<{
 }>();
 
 const detailExpanded = computed(() => props.expanded);
-const openSection = ref(3);
+const openSection = ref(4);
 const metric = ref<ChronicMetricKind>('blood-glucose');
-const selectedSuggestions = ref<string[]>([]);
 
 const summary = computed(() => buildChronicDiseaseSummary({
   patient: props.patient,
   patientMemoryBrief: props.patientMemoryBrief,
 }));
+const patientAnchorId = computed(() => getPatientContextVisitId(props.patient));
+const chronicAiRecommendations = useChronicAiRecommendations({
+  summary,
+  patientAnchorId,
+});
 
 const avatarSrc = ref(resolvePatientAvatar({ gender: props.gender, age: props.age }));
 watch(
@@ -93,23 +102,15 @@ const reportAssistantSubtitle = computed(() => (
     ? '本次报告已出 · 可生成后续方案'
     : `近 14 天 ${reportCount.value} 份已出报告`
 ));
-const chronicRefillSubtitle = computed(() => {
-  const diagnosisText = props.chronicRefillCandidate?.diagnoses.join('、') || '慢病复诊';
-  return `${diagnosisText} · 确认配药需求`;
-});
+const chronicRefillPresentation = computed(() => (
+  buildReceptionChronicRefillPresentation(
+    props.chronicRefillCandidate,
+    props.chronicRefillGenerating,
+  )
+));
 const hasPatientPortraitDetail = computed(() => (
   props.patientMemoryStatus === 'ready' && Boolean(props.patientMemoryBrief)
 ));
-
-const defaultSuggestions = computed(() => buildChronicCheckSuggestions(summary.value));
-
-watch(
-  () => summary.value.diseaseTags.map((item) => item.diseaseType).join(','),
-  () => {
-    selectedSuggestions.value = defaultSuggestions.value.slice(0, 2).map((item) => item.id);
-  },
-  { immediate: true },
-);
 
 const primaryFollowUpDisease = computed<ChronicDiseaseType | undefined>(() => (
   getPrimaryManagedDisease(summary.value)
@@ -182,28 +183,22 @@ function handleCapsuleKeydown(event: KeyboardEvent): void {
 }
 
 function toggleSection(index: number): void {
-  openSection.value = openSection.value === index ? 0 : index;
+  const nextSection = openSection.value === index ? 0 : index;
+  openSection.value = nextSection;
+  if (nextSection === 2) void chronicAiRecommendations.load();
 }
 
-function toggleSuggestion(id: string): void {
-  selectedSuggestions.value = selectedSuggestions.value.includes(id)
-    ? selectedSuggestions.value.filter((item) => item !== id)
-    : [...selectedSuggestions.value, id];
-}
-
-function addSuggestionsToDraft(): void {
-  const draft = buildChronicTreatmentPlanInitialDraft({
-    summary: summary.value,
-    suggestions: defaultSuggestions.value,
-    selectedIds: selectedSuggestions.value,
-    requestId: crypto.randomUUID(),
-  });
-  if (draft.items.length === 0) return;
-  trackClick('reception_chronic_treatment_plan_open', {
-    itemCount: draft.items.length,
-    patientAnchorId: draft.patientAnchorId,
-  });
-  emit('open-chronic-treatment-plan', draft);
+async function addAiRecommendationsToDraft(): Promise<void> {
+  try {
+    const draft = await chronicAiRecommendations.prepareDraft(crypto.randomUUID());
+    trackClick('reception_chronic_treatment_plan_open', {
+      itemCount: draft.items.length,
+      patientAnchorId: draft.patientAnchorId,
+    });
+    emit('open-chronic-treatment-plan', draft);
+  } catch (error) {
+    console.warn('[ReceptionCapsule] Failed to prepare chronic treatment plan', error);
+  }
 }
 
 function confirmChronicRefill(): void {
@@ -355,39 +350,25 @@ function openWindow(kind: ChronicDiseaseWindowKind, diseaseType?: ChronicDisease
           <button type="button" class="accordion-trigger" :aria-expanded="openSection === 2" @click="toggleSection(2)">
             <span class="section-number">2</span>
             <span class="section-copy">
-              <span class="section-title">检验检查建议</span>
-              <span class="section-summary">
-                {{ summary.hasSupportedDisease ? `${selectedSuggestions.length} 项已选 · ${selectedSuggestions.length}/${defaultSuggestions.length}` : '暂无慢病建议' }}
-              </span>
+              <span class="section-title">AI 推荐</span>
+              <span class="section-summary">{{ chronicAiRecommendations.summaryText.value }}</span>
             </span>
             <Icon :icon="openSection === 2 ? 'lucide:chevron-up' : 'lucide:chevron-down'" size="19" />
           </button>
           <div v-if="openSection === 2" class="accordion-content">
-            <template v-if="summary.hasSupportedDisease">
-              <div class="subsection-heading">
-                <strong>未来 90 天建议核实</strong>
-                <span>选择后只加入医嘱草稿</span>
-              </div>
-              <div class="check-list">
-                <label v-for="item in defaultSuggestions" :key="item.id">
-                  <input
-                    type="checkbox"
-                    :checked="selectedSuggestions.includes(item.id)"
-                    @change="toggleSuggestion(item.id)"
-                  />
-                  <span><b>{{ item.label }}</b><small>{{ item.purpose }}</small></span>
-                </label>
-              </div>
-              <button
-                type="button"
-                class="inline-action"
-                :disabled="selectedSuggestions.length === 0"
-                @click="addSuggestionsToDraft"
-              >
-                <Icon icon="lucide:circle-plus" size="16" />加入医嘱草稿
-              </button>
-            </template>
-            <div v-else class="empty-section">该患者未识别为高血压或 2 型糖尿病管理对象，不生成慢病检查检验建议。</div>
+            <ChronicAiRecommendationPanel
+              :eligible="summary.hasSupportedDisease"
+              :items="chronicAiRecommendations.items.value"
+              :selected-ids="chronicAiRecommendations.selectedIds.value"
+              :loading="chronicAiRecommendations.loading.value"
+              :loaded="chronicAiRecommendations.loaded.value"
+              :error="chronicAiRecommendations.error.value"
+              :preparing="chronicAiRecommendations.preparing.value"
+              :prepare-error="chronicAiRecommendations.prepareError.value"
+              @retry="chronicAiRecommendations.load(true)"
+              @toggle="chronicAiRecommendations.toggleSelection"
+              @submit="addAiRecommendationsToDraft"
+            />
 
             <div v-if="risks.length > 0" class="existing-group">
               <strong>接诊风险</strong>
@@ -396,9 +377,8 @@ function openWindow(kind: ChronicDiseaseWindowKind, diseaseType?: ChronicDisease
               </div>
             </div>
 
-            <div v-if="hasReportAssistant || chronicRefillCandidate" class="existing-actions">
+            <div v-if="hasReportAssistant" class="existing-actions">
               <button
-                v-if="hasReportAssistant"
                 type="button"
                 :disabled="reportAssistantOpening"
                 @click="confirmReportAssistant"
@@ -407,29 +387,37 @@ function openWindow(kind: ChronicDiseaseWindowKind, diseaseType?: ChronicDisease
                 <span><strong>{{ reportAssistantTitle }}</strong><small>{{ reportAssistantSubtitle }}</small></span>
                 <Icon icon="lucide:chevron-right" size="15" />
               </button>
-              <button
-                v-if="chronicRefillCandidate"
-                type="button"
-                :disabled="chronicRefillGenerating"
-                @click="confirmChronicRefill"
-              >
-                <Icon :icon="chronicRefillGenerating ? 'lucide:loader-circle' : 'mdi:pill'" size="16" />
-                <span><strong>复诊配药</strong><small>{{ chronicRefillSubtitle }}</small></span>
-                <Icon icon="lucide:chevron-right" size="15" />
-              </button>
             </div>
           </div>
         </section>
 
-        <section class="accordion-section clinical-section" :class="{ open: openSection === 3 }">
+        <section class="accordion-section refill-section" :class="{ open: openSection === 3 }">
           <button type="button" class="accordion-trigger" :aria-expanded="openSection === 3" @click="toggleSection(3)">
             <span class="section-number">3</span>
             <span class="section-copy">
-              <span class="section-title">临床诊疗建议</span>
+              <span class="section-title">慢病复诊配药</span>
+              <span class="section-summary">{{ chronicRefillPresentation.sectionSummary }}</span>
             </span>
             <Icon :icon="openSection === 3 ? 'lucide:chevron-up' : 'lucide:chevron-down'" size="19" />
           </button>
           <div v-if="openSection === 3" class="accordion-content">
+            <ReceptionChronicRefillSection
+              :presentation="chronicRefillPresentation"
+              :generating="chronicRefillGenerating"
+              @confirm="confirmChronicRefill"
+            />
+          </div>
+        </section>
+
+        <section class="accordion-section clinical-section" :class="{ open: openSection === 4 }">
+          <button type="button" class="accordion-trigger" :aria-expanded="openSection === 4" @click="toggleSection(4)">
+            <span class="section-number">4</span>
+            <span class="section-copy">
+              <span class="section-title">临床诊疗建议</span>
+            </span>
+            <Icon :icon="openSection === 4 ? 'lucide:chevron-up' : 'lucide:chevron-down'" size="19" />
+          </button>
+          <div v-if="openSection === 4" class="accordion-content">
             <div v-if="summary.hasSupportedDisease" class="pathway-summary">
               <button
                 v-for="tag in summary.diseaseTags"
@@ -640,24 +628,13 @@ button:focus-visible, input:focus-visible {
 .section-title { font-size: 15px; font-weight: 700; }
 .section-summary { overflow: hidden; color: #64748b; font-size: 10px; text-overflow: ellipsis; white-space: nowrap; }
 .accordion-content { padding: 0 0 16px 41px; background: transparent; }
-.clinical-section .accordion-content { padding-left: 0; }
+.refill-section .accordion-content, .clinical-section .accordion-content { padding-left: 0; }
 .visit-meta { padding: 0 3px 9px; display: grid; gap: 5px; color: #475569; font-size: 10px; }
 .visit-meta b { margin-right: 5px; color: #64748b; }
 .segmented { display: flex; border-bottom: 1px solid #e2e8f0; }
 .segmented button { flex: 1; padding: 8px 10px; color: #64748b; background: #fff; border: 0; border-bottom: 2px solid transparent; font-size: 11px; }
 .segmented button.active { color: #2b7fe3; border-bottom-color: #2b7fe3; font-weight: 700; }
 .text-action { margin-top: 6px; padding: 0; display: inline-flex; align-items: center; gap: 3px; color: #2b7fe3; background: transparent; border: 0; font-size: 10px; }
-.subsection-heading { margin-bottom: 7px; display: flex; align-items: center; justify-content: space-between; color: #1e293b; font-size: 11px; }
-.subsection-heading span { color: #64748b; font-size: 8px; }
-.check-list { border-top: 1px solid #eef2f6; }
-.check-list > label { min-height: 43px; padding: 6px 3px; display: flex; align-items: center; gap: 8px; border-bottom: 1px solid #eef2f6; }
-.check-list input { width: 15px; height: 15px; accent-color: #2b7fe3; }
-.check-list label > span { display: grid; gap: 2px; }
-.check-list b { color: #334155; font-size: 10px; }
-.check-list small { color: #94a3b8; font-size: 8px; }
-.inline-action { min-height: 34px; padding: 7px 10px; margin-top: 10px; display: inline-flex; align-items: center; gap: 5px; color: #2b7fe3; background: #fff; border: 1px solid #2b7fe3; border-radius: 5px; font-size: 10px; }
-.inline-action:disabled { color: #94a3b8; border-color: #cbd5e1; cursor: not-allowed; }
-.inline-message { margin: 7px 0 0; color: #047857; font-size: 9px; }
 .empty-section { padding: 14px 8px; color: #64748b; background: #f8fafc; border-radius: 6px; font-size: 11px; line-height: 1.6; }
 .existing-group { margin-top: 14px; }
 .existing-group > strong { color: #475569; font-size: 10px; }

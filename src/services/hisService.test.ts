@@ -71,7 +71,7 @@ describe('HisService saveTcdForm', () => {
     } as unknown as Parameters<HisService['saveTcdForm']>[0];
 
     await expect(service.saveTcdForm(form))
-      .rejects.toThrow('缺少登记表主键');
+      .rejects.toThrow('随访登记信息不完整');
     expect(post).not.toHaveBeenCalled();
   });
 
@@ -99,6 +99,67 @@ describe('HisService saveTcdForm', () => {
       [form],
     );
     expect(result).toBe(body);
+  });
+});
+
+describe('HisService ClinicDoctorCoreService order import', () => {
+  it('wraps the List<VisMidQryCliVO> as one RPC argument', async () => {
+    const service = new HisService('http://localhost/', 'token');
+    const items = [{
+      idSrv: 'SRV001',
+      naSrv: '血常规',
+      idPart: '',
+      itemKind: '1',
+    }];
+    const loaded = [{
+      idSrv: 'SRV001',
+      idCli: 'CLI001',
+      naSrv: '血常规',
+      priceSale: 25,
+      idDeptExec: 'DEPT-LAB',
+    }];
+    const post = vi.spyOn(service, 'post').mockResolvedValue({
+      code: 200,
+      body: loaded,
+    });
+
+    await expect(service.loadVisCliList(items)).resolves.toEqual(loaded);
+    expect(post).toHaveBeenCalledWith(
+      'api/phis.clinicDoctorCoreService/loadVisCliList',
+      [items],
+    );
+  });
+
+  it('returns the saveOdsImp 401 business confirmation without throwing', async () => {
+    const service = new HisService('http://localhost/', 'token');
+    const request = {
+      forceSave: '0' as const,
+      idVis: 'VIS001',
+      presVOList: [],
+      herbVOList: [],
+      applyVOS: [{
+        idCli: 'CLI001',
+        sdDisp: '1',
+        naApply: '血常规',
+      }],
+      orderDispCons: [],
+    };
+    const post = vi.spyOn(service, 'post').mockResolvedValue({
+      code: 200,
+      body: {
+        code: '401',
+        msg: '检查检验项目与已存在申请单重复，是否继续保存？',
+      },
+    });
+
+    await expect(service.saveOdsImp(request)).resolves.toEqual({
+      code: '401',
+      msg: '检查检验项目与已存在申请单重复，是否继续保存？',
+    });
+    expect(post).toHaveBeenCalledWith(
+      'api/phis.clinicDoctorCoreService/saveOdsImp',
+      [request],
+    );
   });
 });
 

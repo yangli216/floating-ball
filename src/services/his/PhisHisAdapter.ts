@@ -47,6 +47,8 @@ import type {
   MedicalItemPartOption,
   MedicineCatalogEntry,
   MedicineDetail,
+  OdsImpReqVO,
+  OdsImpResVO,
   HisPatientInfo,
   HisPatientHistory,
   HisPatientHistoryQuery,
@@ -61,6 +63,8 @@ import type {
   HisOutpatientFollowUpReportResults,
   HisOutpatientFollowUpReportResultsQuery,
   TcdVisitForm,
+  VisCliLoadedItem,
+  VisMidQryCliVO,
 } from './types';
 import { mergePhisAvailableMedicineInventory } from './phisMedicineInventory';
 
@@ -898,6 +902,14 @@ export class PhisHisAdapter implements HisAdapter {
 
   saveTcdForm(form: TcdVisitForm): Promise<unknown> {
     return this.service.saveTcdForm(form);
+  }
+
+  loadVisCliList(items: VisMidQryCliVO[]): Promise<VisCliLoadedItem[]> {
+    return this.service.loadVisCliList(items);
+  }
+
+  saveOdsImp(request: OdsImpReqVO): Promise<OdsImpResVO> {
+    return this.service.saveOdsImp(request);
   }
 
   async fetchPatientHistory(

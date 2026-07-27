@@ -1,8 +1,8 @@
 # AGENTS.md
 
-`floating-ball` 项目的协作规则。
+全医慧助（PCIE，Primary Care Intelligent Expert）桌面端工程 `floating-ball` 的协作规则。
 
-本项目是一个 `Tauri 2 + Vue 3 + TypeScript + Rust` 的基层医疗桌面工作站，当前真实运行形态包含：
+本项目是一个 `Tauri 2 + Vue 3 + TypeScript + Rust` 的基层医疗智能专家辅助工作站，当前真实运行形态包含：
 
 1. 完整症状问诊主链路与主问诊内嵌灵活模式（`ConsultationPage.vue`）
 2. 独立诊断路径窗口（`DiagnosisPathWindow.vue`）
@@ -12,21 +12,22 @@
 
 ## 必读顺序
 
-1. 先读 [CODE_MAP.md](./CODE_MAP.md) 快速定位要改的模块，按需深入
-2. 再读 [ARCHITECTURE.md](./ARCHITECTURE.md) 理解整体架构
-3. 涉及前端重构、复用、拆分或路径迁移时，先读 [frontend-reuse-architecture.md](./docs/frontend-reuse-architecture.md)，再读 [frontend-file-structure-plan.md](./docs/frontend-file-structure-plan.md)
-4. 涉及本地 HIS 联调时再读 [api.md](./api.md)
-5. 涉及交互、产品约束时再读 [PRODUCT.md](./PRODUCT.md)
-6. 遇到疑似踩过的坑时，先查 [RETRO.md](./RETRO.md) 已有经验
-7. 涉及历史上反复摇摆的设计决策时，先查 [DECISION_DRIFT.md](./DECISION_DRIFT.md)
-8. 涉及服务端接入、设备签名或 `/v1/*` 契约时，读取 [../floating-ball-server/API.md](../floating-ball-server/API.md)、真实调用代码和 `requestSigner.ts`；旧区域化草案已归档，不作为当前契约
+1. 先读 [HARNESS.md](./HARNESS.md) 明确项目内执行流程和跨仓升级条件
+2. 再读 [CODE_MAP.md](./CODE_MAP.md) 快速定位要改的模块，按需深入
+3. 再读 [ARCHITECTURE.md](./ARCHITECTURE.md) 理解整体架构
+4. 涉及前端重构、复用、拆分或路径迁移时，先读 [frontend-reuse-architecture.md](./docs/frontend-reuse-architecture.md)，再读 [frontend-file-structure-plan.md](./docs/frontend-file-structure-plan.md)
+5. 涉及本地 HIS 联调时再读 [api.md](./api.md)
+6. 涉及交互、产品约束时再读 [PRODUCT.md](./PRODUCT.md)
+7. 遇到疑似踩过的坑时，先查 [RETRO.md](./RETRO.md) 已有经验
+8. 涉及历史上反复摇摆的设计决策时，先查 [DECISION_DRIFT.md](./DECISION_DRIFT.md)
+9. 涉及服务端接入、设备签名或 `/v1/*` 契约时，读取 [../development-harness/HARNESS.md](../development-harness/HARNESS.md)、[../floating-ball-server/HARNESS.md](../floating-ball-server/HARNESS.md)、[../floating-ball-server/API.md](../floating-ball-server/API.md)、真实调用代码和 `requestSigner.ts`
 
 ## 强制流程
 
 1. 文档先行：架构、窗口形态、事件流、回写行为、模块职责变化，先改文档再改代码。
 2. 契约同步：`src-tauri/src/http_server.rs` 或 `complete_consultation` 结果结构变化时，必须同步更新 `api.md`。
 3. 规则同步：包管理器、验证命令、目录职责、Review 关注点变化时，必须同步更新本文件。
-4. 交付顺序：`ARCHITECTURE/API/PRODUCT/AGENTS -> 代码 -> 构建/测试/手测说明`
+4. 交付顺序：`HARNESS/ARCHITECTURE/API/PRODUCT/AGENTS -> 代码 -> 构建/测试/手测说明`
 
 ## 硬约束（禁止）
 
@@ -139,6 +140,7 @@
 11. **Tauri capability 同步**：新增或首次调用 Tauri JS API 时，必须同时核对 `src-tauri/capabilities/*.json` 中对应的 `allow-*` 权限，并执行会真实触发该 API 的 Tauri 运行时冒烟；`type-check`、浏览器单测和 `cargo check` 不能替代 capability 验证。
 12. **复诊配药确认事实门禁**：动态确认项可以由模型生成并默认推荐，但推荐值不得在医生点击最终确认前写入现病史；文字/语音补充是医生独立补充说明，不得反向重生成或改写确认项。最终现病史只消费已确认 `recordText`、模型压缩后的医生补充和必要历史事实，禁止直接原样拼接冗余口语、库存、推荐方案或模型未确认推断；药品在正文中只保留规范名称。
 13. **PHIS 历史处方属性来源**：药品一次剂量、频次、用法、天数、总量和包装单位优先读取 `loadClinicMedicalRecord.presList[].presSubList[]`，在 `services/his` Adapter 内映射为中性字段；`orderList` 只作医嘱分类、检验检查关联和缺失兜底。不得把 `takeDays` 等 PHIS 命名字段加入中性 DTO，也不得在无法按 `idOrd / idMedPro / 唯一规范药名` 关联时猜测继承。
+14. **正式产品辅助文案门禁**：正式业务界面只常驻展示用户完成当前任务所需的信息、状态和操作。不得为了说明实现流程、设计意图或安全立场，在卡片、按钮或区块下方追加“小说明”式辅助文字；安全与流程约束优先由操作状态、确认步骤和程序门禁表达。只有用户必须据此作出决定或处理异常时，才展示简洁、可行动的提示。
 
 ## 推荐提交流程
 
