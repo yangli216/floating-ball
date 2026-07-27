@@ -2,6 +2,55 @@ import { describe, expect, it, vi } from 'vitest';
 import type { HisService } from '../hisService';
 import { PhisHisAdapter } from './PhisHisAdapter';
 
+describe('PhisHisAdapter.fetchChronicDiseasePatientVisitHistory', () => {
+  it('returns the real interface body unchanged', async () => {
+    const body = {
+      idPi: 'P001',
+      naPi: '林女士',
+      sdSexText: '女性',
+      ageText: '62岁',
+      rqflStatus: '3,6',
+      pressureList: [{ fieldName: 'pressureL', fieldValue: '82', bisDate: '2026-07-24 00:00:00' }],
+      pressureHList: [{ fieldName: 'pressureH', fieldValue: '136', bisDate: '2026-07-24 00:00:00' }],
+      gluList: [{ fieldName: 'glu', fieldValue: '7.8', bisDate: '2026-07-24 00:00:00' }],
+      visitInfos: [],
+    };
+    const service = {
+      queryPatientVisitHistoryData: vi.fn().mockResolvedValue(body),
+    } as unknown as HisService;
+
+    const result = await new PhisHisAdapter(service)
+      .fetchChronicDiseasePatientVisitHistory('150206199306039948');
+
+    expect(service.queryPatientVisitHistoryData)
+      .toHaveBeenCalledWith('150206199306039948');
+    expect(result).toBe(body);
+  });
+});
+
+describe('PhisHisAdapter.saveTcdForm', () => {
+  it('delegates the original form unchanged', async () => {
+    const form = {
+      idPhr: 'PHR001',
+      idRecord: 'RECORD001',
+      id: '',
+      status: '3',
+      sdVisitKind: '1,2',
+      advBmi: '23.89',
+      drugList: [],
+    } as unknown as Parameters<HisService['saveTcdForm']>[0];
+    const body = { id: 'visit-follow-up-1' };
+    const service = {
+      saveTcdForm: vi.fn().mockResolvedValue(body),
+    } as unknown as HisService;
+
+    const result = await new PhisHisAdapter(service).saveTcdForm(form);
+
+    expect(service.saveTcdForm).toHaveBeenCalledWith(form);
+    expect(result).toBe(body);
+  });
+});
+
 describe('PhisHisAdapter.fetchPatientHistory', () => {
   it('maps medication orders and reported applications into neutral history', async () => {
     const service = {

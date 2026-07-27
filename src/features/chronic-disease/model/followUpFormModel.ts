@@ -1,8 +1,8 @@
 import type {
-  ChronicDiseaseFollowUpRequest,
   ChronicDiseasePatientSummary,
   ChronicDiseaseType,
   TcdVisitDrugItem,
+  TcdVisitForm,
   TcdVisitKind,
   TcdVisitStatus,
 } from '../types';
@@ -20,6 +20,7 @@ export interface FusedFollowUpFormState {
   avoirdupois: string;
   advAdp: string;
   bmi: string;
+  advBmi: string;
   waistline: string;
   advWaistline: string;
   pressureH: string;
@@ -233,6 +234,7 @@ export function createFusedFollowUpFormState(
     avoirdupois: summary.latestWeightKg?.toString() || '',
     advAdp: '',
     bmi: '',
+    advBmi: '',
     waistline: summary.latestWaistCm?.toString() || '',
     advWaistline: '',
     pressureH: latestPressure?.systolic?.toString() || '',
@@ -305,6 +307,7 @@ export function calculateBmi(heightCm: string, weightKg: string): string {
 
 export function updateCalculatedBmi(form: FusedFollowUpFormState): void {
   form.bmi = calculateBmi(form.stature, form.avoirdupois);
+  form.advBmi = calculateBmi(form.stature, form.advAdp);
 }
 
 export function toggleExclusiveCode(
@@ -473,7 +476,7 @@ function normalizeRichText(value: string): string {
 
 export function buildFusedFollowUpRequest(
   form: FusedFollowUpFormState,
-): ChronicDiseaseFollowUpRequest {
+): TcdVisitForm {
   const smokingDisabled = form.sdWehtherSmoke === '0' || form.sdWehtherSmoke === '2';
   const drinkingDisabled = form.sdWhetherDrink === '0' || form.sdWhetherDrink === '4';
   const diabetes = hasDiabetes(form);
@@ -492,6 +495,7 @@ export function buildFusedFollowUpRequest(
     avoirdupois: form.avoirdupois,
     advAdp: form.advAdp,
     bmi: calculateBmi(form.stature, form.avoirdupois),
+    advBmi: calculateBmi(form.stature, form.advAdp),
     waistline: form.waistline,
     advWaistline: form.advWaistline,
     pressureH: form.pressureH,
@@ -551,10 +555,4 @@ export function buildFusedFollowUpRequest(
     targetOrganDamage: hypertension ? joined(form.targetOrganDamage) : '',
     desPresAdvice: normalizeRichText(form.desPresAdvice),
   };
-}
-
-export function stableFollowUpRequestId(baseRequestId: string): string {
-  const suffix = '-tcd';
-  const value = baseRequestId.trim() || crypto.randomUUID();
-  return `${value.slice(0, 64 - suffix.length)}${suffix}`;
 }

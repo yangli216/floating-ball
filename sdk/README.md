@@ -450,7 +450,7 @@ await mh.sendFeedback(record.requestId, 'success', 'HIS 已成功回填住院病
 
 #### `openChronicDisease(patient): Promise`
 
-通过独立的 `POST /api/chronic-disease/open` 直接打开两慢病展开详情。`patient` 可携带 `rqflStatus / contractStatus / currentVitalSigns / hisHistory` 等慢病上下文，但不得携带 `risks`；该方法不会触发患者风险分析。
+通过独立的 `POST /api/chronic-disease/open` 直接打开两慢病展开详情。生产调用只需传患者 `idPi`（建议同时传 `idVis`）；桌面端补全患者并取得 `idCard` 后，会以 `[{"idCard":"..."}]` 调用 Adapter 发布的 `api/phis.aiAdapterService/queryPatientVisitHistoryData`（后端适配 `chis.hyVisitService/queryPatientVisitHistoryData`）。慢病事实直接使用接口原字段 `rqflStatus / pressureList / pressureHist（或真实示例中的 pressureHList）/ gluList / visitInfos / drugList`，不再接收 `currentVitalSigns / hisHistory / medicationOrders` 作为慢病替代结构。医生保存随访时，由同一 Adapter 发布的 `api/phis.aiAdapterService/saveTcdForm` 接收 `[TcdVisitForm]` 并适配 `chis.tcdService/saveTcdForm`。此入口不得携带 `risks`，也不会触发患者风险分析。
 
 #### `sendFeedback(requestId, status, message?, items?): Promise`
 

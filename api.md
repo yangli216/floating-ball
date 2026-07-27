@@ -1632,7 +1632,7 @@ http://127.0.0.1:8081/api/patient/risks
 
 #### 可选历史上下文
 
-`currentVitalSigns` 和 `hisHistory` 用于 HIS 已经掌握标准化历史数据、或 Mock HIS 需要验证真实趋势链路的场景。不要把厂商私有完整响应塞入这些字段。
+`currentVitalSigns` 和 `hisHistory` 只用于风险评估和通用患者上下文补全。它们不是 6.8 两慢病查询的入参或响应结构；两慢病趋势、随访和用药必须使用 `queryPatientVisitHistoryData` 的原字段，不能复用本节中性字段。不要把厂商私有完整响应塞入这些字段。
 
 `HisVisitVitalSigns` 当前支持：
 
@@ -1759,39 +1759,91 @@ MedHermesLoader.ready(function (medHermes) {
   medHermes.openChronicDisease({
     idPi: '766842939207974912',
     idVis: 'VIS-20260507-001',
-    naPi: '林女士',
-    sdSexText: '女性',
-    ageText: '62岁',
-    rqflStatus: '3,6',
-    contractStatus: '已签约',
-    currentVitalSigns: {
-      systolicBloodPressure: 136,
-      diastolicBloodPressure: 82,
-      measuredAt: '2026-07-27T09:10:00+08:00'
-    },
-    hisHistory: {
-      patientId: '766842939207974912',
-      visits: []
-    }
+    naPi: '林女士'
   });
 });
 ```
 
-请求字段沿用 6.7 的患者身份、就诊、病历、`currentVitalSigns` 和 `hisHistory` 中性上下文字段，并额外支持：
+入口请求只负责提供患者和当前就诊锚点。桌面端按 `idPi` 补全患者信息并取得 `idCard` 后，必须和其他 HIS 请求一样调用 `AiAdapterService` 发布的操作：
 
-| 字段名 | 类型 | 必填 | 说明 |
-| :--- | :--- | :--- | :--- |
-| `rqflStatus` | String / String[] | 否 | 公卫管理状态；高血压为 `3`，糖尿病为 `6`，双病种为 `3,6` |
-| `contractStatus` | String | 否 | 签约状态展示文本 |
-| `orgId` / `orgName` | String | 否 | 当前机构标识和名称 |
-| `doctorId` / `doctorName` | String | 否 | 当前医生标识和姓名 |
+```text
+POST api/phis.aiAdapterService/queryPatientVisitHistoryData
+```
+
+该操作在 HIS Adapter 后端适配 `chis.hyVisitService/queryPatientVisitHistoryData`；桌面端不得绕过 Adapter 直连 `chis.*` 路径。
+
+```json
+[
+  {
+    "idCard": "150206199306039948"
+  }
+]
+```
+
+慢病查询返回的 `body` 直接采用真实系统原字段：
+
+| 字段名 | 类型 | 说明 |
+| :--- | :--- | :--- |
+| `idPi` | String | 个人健康档案唯一标识 |
+| `naPi` | String | 姓名 |
+| `sdSexText` | String | 性别 |
+| `ageText` | String | 年龄 |
+| `pastMedicalHistory` | String | 既往史 |
+| `diagnosis` | String | 当前临床诊断 |
+| `chiefComplaint` | String | 主诉 |
+| `rqflStatus` | String | 公卫管理身份 |
+| `pressureList` | List | 近两年舒张压曲线；条目直接使用 `fieldName / fieldValue / bisDate` |
+| `pressureHist` / `pressureHList` | List | 近两年收缩压曲线；字段表写 `pressureHist`，真实返回示例写 `pressureHList`，两者均按原名接收，不自造别名 |
+| `gluList` | List | 近两年空腹血糖曲线；条目直接使用 `fieldName / fieldValue / bisDate` |
+| `visitInfos` | List | 近两年随访数据；直接使用 `sdFate / sdVisitCata / idDoctor / desOther / sdArteriopalmus / advSportWeek / sdPresAdvice / desHealthRx / sdVisitWay / sdSideEffects / sdSymptom / desSymptom / sportWeek / dtHgb / advDaySmoke / sportMinute / glu / lowEffects / sdPsychicAdj / hgb / daySmoke / targRice / sdProAct / fbgMeal / idPherec / dtVisit / sdDrugPro / desSideEffects / fgRef / desRef / refUnit / refDep / avoirdupois / rice / dtNextVisit / advDayDrink / advSportMinute / pressureL / advBmi / pressureH / stature / dayDrink / bmi / waistline / subCheck / heartRate / advAdp / sdSalt / sdAdvSalt / drugList` |
+| `drugList` | List | 随访用药；直接使用 `naDrug / sdDrugFreq / perDose / doseUnit` |
+
+医生确认随访表单后，客户端必须通过同一个 Adapter 保存：
+
+```text
+POST api/phis.aiAdapterService/saveTcdForm
+```
+
+该操作在 HIS Adapter 后端适配 `chis.tcdService/saveTcdForm`。请求体固定为数组，联合随访也只提交一条融合记录：
+
+```json
+[
+  {
+    "sdVisitKind": "1,2",
+    "idPhr": "个人健康档案标识",
+    "idRecord": "两慢病登记表主键",
+    "id": "",
+    "status": "3",
+    "advBmi": "23.89",
+    "drugList": []
+  }
+]
+```
+
+`TcdVisitForm` 顶层字段必须保留文档原名：
+
+| 字段组 | 原字段 |
+| :--- | :--- |
+| 计划与来源 | `sdVisitKind / dtHyPlan / dtDbsPlan / sdDataWay / status` |
+| 体格与目标 | `stature / avoirdupois / advAdp / bmi / advBmi / waistline / advWaistline / pressureH / pressureL / heartRate / glu / fbgMeal / isGlu` |
+| 人员与主键 | `idPhr / idRecord / id / inputUser / idUser` |
+| 症状与体征 | `sdHySymptom / sdDbsSymptom / desOther / sdArteriopalmus / sdProAct / sdPsychicAdj / fgCardiovascular / lowEffects / otherDisease / note` |
+| 生活方式 | `sdWehtherSmoke / daySmoke / advDaySmoke / sdWhetherDrink / dayDrink / advDayDrink / sdMainDrinking / sportWeek / advSportWeek / sportMinute / advSportMinute / sdSalt / sdAdvSalt / rice / targRice` |
+| 用药 | `fgDrugChange / sdDrugPro / sdSideEffects / desSideEffects / drugList` |
+| 转诊与评估 | `fgRef / sdRefStatus / desRef / refDep / desNoRef / desAdr / sdComplications / desComplications / desComor / sdComorbidity / desComorbidity / sdMajorCc / targetOrganDamage / desPresAdvice` |
+
+`drugList` 条目只使用 `id / idDrug / idPherec / naDrug / sdDrugFreq / perDose / doseUnit / insulin`。DOCX 字段表与入参示例对部分数值字段采用了不同 JSON 表示（例如表中 `bmi` 为 String，示例中为 Number）；客户端保持原表单产生的可接受值，不为此引入另一套改名 DTO。接口文档没有给出成功响应结构或幂等请求头，客户端不得自行声明 `followUpId / savedAt / version` 等响应字段。
 
 边界约束：
 
 1. `idPi` 是唯一硬要求字段，`idVis` 强烈建议传入。
 2. 请求体禁止携带 `risks`；SDK 会在发起请求前拒绝，Bridge 对直接 HTTP 调用也返回 `400 CHRONIC_DISEASE_RISKS_NOT_ALLOWED`。
-3. 入口只补全患者与慢病事实上下文，并把接诊详情状态直接设置为展开；不会调用 `analyzePatientRisks`，也不会复用 `show-patient-risks` 事件。
-4. `rqflStatus` 是公卫在管身份依据；诊断或异常体征只用于临床识别，不得由调用方据此伪造公卫身份。
+3. 入口取得 `idCard` 后才调用 `queryPatientVisitHistoryData`；没有 `idCard` 时不得改用 `idPi` 冒充请求字段。
+4. 慢病接口响应必须以原字段强类型接收并直接用于慢病事实计算；不得先翻译成 `patientId / name / currentVitalSigns / hisHistory / medications` 再传给慢病插件。
+5. 入口只补全患者与慢病事实上下文，并把接诊详情状态直接设置为展开；不会调用 `analyzePatientRisks`，也不会复用 `show-patient-risks` 事件。
+6. `rqflStatus` 是公卫在管身份依据；诊断或异常体征只用于临床识别，不得由调用方据此伪造公卫身份。
+7. 查询和保存都通过 `api/phis.aiAdapterService/*` 发布路径；`chis.hyVisitService/*` 与 `chis.tcdService/*` 仅作为 Adapter 后端适配目标记录。
+8. 保存请求必须是 `[TcdVisitForm]`，不得提交裸对象，不得增加 `requestId / managementSource / templateVersion` 等真实接口未声明的业务字段。
 
 成功响应：
 

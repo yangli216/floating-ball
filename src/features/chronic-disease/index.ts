@@ -1,6 +1,6 @@
 export {
   saveChronicArtifactSnapshot,
-  saveChronicDiseaseFollowUp,
+  saveTcdForm,
 } from './api/chronicDiseaseApi';
 export {
   CHRONIC_DISEASE_WINDOW_READY_EVENT,

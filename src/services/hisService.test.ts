@@ -27,6 +27,66 @@ describe('HisService queryPatientVisitHistory', () => {
   });
 });
 
+describe('HisService queryPatientVisitHistoryData', () => {
+  it('uses the real chronic-disease endpoint and idCard field without renaming', async () => {
+    const service = new HisService('http://localhost/', 'token');
+    const post = vi.spyOn(service, 'post').mockResolvedValue({
+      code: 200,
+      body: {
+        idPi: 'P001',
+        naPi: '林女士',
+        sdSexText: '女性',
+        ageText: '62岁',
+        rqflStatus: '3,6',
+        pressureList: [],
+        pressureHList: [],
+        gluList: [],
+        visitInfos: [],
+      },
+    });
+
+    const result = await service.queryPatientVisitHistoryData('150206199306039948');
+
+    expect(post).toHaveBeenCalledWith(
+      'api/phis.aiAdapterService/queryPatientVisitHistoryData',
+      [{ idCard: '150206199306039948' }],
+    );
+    expect(result).toEqual(expect.objectContaining({
+      idPi: 'P001',
+      naPi: '林女士',
+      rqflStatus: '3,6',
+    }));
+  });
+});
+
+describe('HisService saveTcdForm', () => {
+  it('uses the AI adapter endpoint and wraps one original form in an array', async () => {
+    const service = new HisService('http://localhost/', 'token');
+    const body = { id: 'visit-follow-up-1' };
+    const post = vi.spyOn(service, 'post').mockResolvedValue({
+      code: 200,
+      body,
+    });
+    const form = {
+      idPhr: 'PHR001',
+      idRecord: 'RECORD001',
+      id: '',
+      status: '3',
+      sdVisitKind: '1,2',
+      advBmi: '23.89',
+      drugList: [],
+    } as unknown as Parameters<HisService['saveTcdForm']>[0];
+
+    const result = await service.saveTcdForm(form);
+
+    expect(post).toHaveBeenCalledWith(
+      'api/phis.aiAdapterService/saveTcdForm',
+      [form],
+    );
+    expect(result).toBe(body);
+  });
+});
+
 describe('HisService fetchFrequencyDictionary', () => {
   it('passes an argument array through the AI adapter service', async () => {
     const service = new HisService('http://localhost/', 'token');

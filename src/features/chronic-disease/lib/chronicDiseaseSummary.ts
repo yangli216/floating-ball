@@ -1,7 +1,6 @@
 import type {
-  HisHistoricalLabResult,
-  HisVisitRecord,
-  HisVisitVitalSigns,
+  ChronicDiseaseHistoryField,
+  ChronicDiseaseVisitInfo,
 } from '@/services/his/types';
 import {
   getPatientContextAgeText,
@@ -11,7 +10,6 @@ import {
   getPatientContextName,
   getPatientContextVisitId,
 } from '@/utils/patientContext';
-import type { PatientMemoryFactItem } from '@entities/patient-memory';
 import type {
   BloodGlucosePoint,
   BloodPressurePoint,
@@ -24,10 +22,6 @@ import type {
 
 const HYPERTENSION_PATTERN = /高血压|原发性高血压|\bI1[0-5](?:\.\w+)?\b/i;
 const TYPE2_DIABETES_PATTERN = /2\s*型糖尿病|Ⅱ\s*型糖尿病|II\s*型糖尿病|非胰岛素依赖型糖尿病|\bE11(?:\.\w+)?\b/i;
-const GLUCOSE_PATTERN = /血糖|葡萄糖|GLU|fasting glucose|FPG/i;
-const FASTING_PATTERN = /空腹|FPG|fasting/i;
-const POSTPRANDIAL_PATTERN = /餐后|2\s*h|postprandial/i;
-const RANDOM_PATTERN = /随机|random/i;
 
 function toText(value: unknown): string {
   if (typeof value === 'string') return value.trim();
@@ -63,10 +57,34 @@ function numericValue(value: unknown): number | undefined {
   return Number.isFinite(parsed) ? parsed : undefined;
 }
 
+function readObjectList<T extends Record<string, unknown>>(
+  raw: Record<string, unknown> | undefined,
+  key: string,
+): T[] {
+  const value = raw?.[key];
+  return Array.isArray(value)
+    ? value.filter((item): item is T => Boolean(item) && typeof item === 'object')
+    : [];
+}
+
+function readHistoryFields(
+  raw: Record<string, unknown> | undefined,
+  key: 'pressureList' | 'pressureHist' | 'pressureHList' | 'gluList',
+): ChronicDiseaseHistoryField[] {
+  return readObjectList<ChronicDiseaseHistoryField & Record<string, unknown>>(raw, key);
+}
+
+function readVisitInfos(raw: Record<string, unknown> | undefined): ChronicDiseaseVisitInfo[] {
+  return readObjectList<ChronicDiseaseVisitInfo & Record<string, unknown>>(raw, 'visitInfos');
+}
+
 function collectDiagnosisText(input: ChronicDiseaseSummaryInput): string[] {
   const patient = input.patient;
+  const raw = patient?.raw;
   const history = getPatientContextHistory(patient);
   const values = [
+    toText(raw?.diagnosis),
+    toText(raw?.pastMedicalHistory),
     toText(patient?.diagnosis),
     toText(patient?.clinical?.diagnosis),
     ...(history?.pastMedicalHistory || []),
@@ -151,161 +169,80 @@ function buildDiseaseTags(
 }
 
 function collectMedicationFacts(input: ChronicDiseaseSummaryInput): ChronicMedicationFact[] {
-  const memoryFacts = (input.patientMemoryBrief?.recentMedications || [])
-    .filter((item) => item.status !== 'inactive' && item.status !== 'disputed')
-    .map((item): ChronicMedicationFact | null => {
-      const name = toText(item.name || item.valueText);
-      if (!name) return null;
-      const observedAt = normalizeDate(item.lastObservedAt);
-      return {
-        name,
-        observedAt: observedAt || undefined,
-        sourceLabel: item.sourceType ? `用药事实 · ${item.sourceType}` : '用药事实',
-      };
-    })
-    .filter((item): item is ChronicMedicationFact => Boolean(item));
-
-  const historyFacts = (getPatientContextHistory(input.patient)?.visits || [])
-    .flatMap((visit): ChronicMedicationFact[] => {
-      const observedAt = normalizeDate(undefined, visit.visitTime) || undefined;
-      const sourcePrefix = /随访/u.test(toText(visit.chiefComplaint)) ? '随访用药' : '历史用药';
-      const sourceLabel = visit.deptName ? `${sourcePrefix} · ${visit.deptName}` : sourcePrefix;
-      if (visit.medicationOrders?.length) {
-        return visit.medicationOrders
-          .map((item): ChronicMedicationFact | null => {
-            const name = toText(item.name);
-            if (!name) return null;
-            const dose = [toText(item.dose), toText(item.doseUnit)].filter(Boolean).join('');
-            const regimenText = [
-              dose,
-              toText(item.frequency),
-              toText(item.route),
-            ].filter(Boolean).join(' · ');
-            return {
-              name,
-              idDrug: toText(item.productId) || undefined,
-              regimenText: regimenText || undefined,
-              sdDrugFreq: toText(item.frequency).match(/\d+(?:\.\d+)?/)?.[0],
-              perDose: toText(item.dose) || undefined,
-              doseUnit: toText(item.doseUnit) || undefined,
-              insulin: /胰岛素/u.test(name) ? '1' : '2',
-              observedAt,
-              sourceLabel,
-            };
-          })
-          .filter((item): item is ChronicMedicationFact => Boolean(item));
-      }
-      return (visit.medications || [])
-        .map((name) => toText(name))
-        .filter(Boolean)
-        .map((name) => ({ name, observedAt, sourceLabel }));
-    });
-
   const unique = new Map<string, ChronicMedicationFact>();
-  [...memoryFacts, ...historyFacts].forEach((item) => {
-    const key = `${item.name}:${item.observedAt || '-'}`;
-    unique.set(key, item);
+  readVisitInfos(input.patient?.raw).forEach((visitInfo) => {
+    const observedAt = normalizeDate(visitInfo.dtVisit) || undefined;
+    const sourceLabel = visitInfo.idDoctorText
+      ? `慢病随访 · ${visitInfo.idDoctorText}`
+      : '慢病随访';
+    (visitInfo.drugList || []).forEach((drug) => {
+      const name = toText(drug.naDrug);
+      if (!name) return;
+      const dose = [toText(drug.perDose), toText(drug.doseUnit)].filter(Boolean).join('');
+      const regimenText = [dose, toText(drug.sdDrugFreq)].filter(Boolean).join(' · ');
+      const item: ChronicMedicationFact = {
+        name,
+        regimenText: regimenText || undefined,
+        sdDrugFreq: toText(drug.sdDrugFreq) || undefined,
+        perDose: toText(drug.perDose) || undefined,
+        doseUnit: toText(drug.doseUnit) || undefined,
+        insulin: /胰岛素/u.test(name) ? '1' : '2',
+        observedAt,
+        sourceLabel,
+      };
+      unique.set(`${name}:${observedAt || '-'}`, item);
+    });
   });
   return Array.from(unique.values())
     .sort((left, right) => Date.parse(left.observedAt || '') - Date.parse(right.observedAt || ''))
     .slice(-12);
 }
 
-function buildBloodPressurePoint(
-  vital: HisVisitVitalSigns | undefined,
-  visit?: HisVisitRecord,
-): BloodPressurePoint | null {
-  if (!vital || !Number.isFinite(vital.systolicBloodPressure) || !Number.isFinite(vital.diastolicBloodPressure)) {
-    return null;
-  }
-  const measuredAt = normalizeDate(vital.measuredAt || vital.updatedAt, visit?.visitTime);
-  if (!measuredAt) return null;
-  return {
-    measuredAt,
-    systolic: vital.systolicBloodPressure as number,
-    diastolic: vital.diastolicBloodPressure as number,
-    sourceLabel: visit?.deptName ? `门诊测量 · ${visit.deptName}` : '门诊测量',
-  };
-}
-
 function collectBloodPressurePoints(input: ChronicDiseaseSummaryInput): BloodPressurePoint[] {
-  const patient = input.patient;
-  const history = getPatientContextHistory(patient);
-  const points = (history?.visits || [])
-    .map((visit) => buildBloodPressurePoint(visit.vitalSigns, visit))
+  const raw = input.patient?.raw;
+  const pressureLByDate = new Map<string, ChronicDiseaseHistoryField>();
+  readHistoryFields(raw, 'pressureList').forEach((item) => {
+    const measuredAt = normalizeDate(item.bisDate);
+    if (measuredAt) pressureLByDate.set(measuredAt, item);
+  });
+  const pressureHItems = readHistoryFields(raw, 'pressureHist');
+  const resolvedPressureHItems = pressureHItems.length > 0
+    ? pressureHItems
+    : readHistoryFields(raw, 'pressureHList');
+  const points = resolvedPressureHItems
+    .map((pressureH): BloodPressurePoint | null => {
+      const measuredAt = normalizeDate(pressureH.bisDate);
+      const pressureL = pressureLByDate.get(measuredAt);
+      const systolic = numericValue(pressureH.fieldValue);
+      const diastolic = numericValue(pressureL?.fieldValue);
+      if (!measuredAt || systolic === undefined || diastolic === undefined) return null;
+      return {
+        measuredAt,
+        systolic,
+        diastolic,
+        sourceLabel: toText(pressureH.sourceText || pressureL?.sourceText) || '慢病系统',
+      };
+    })
     .filter((item): item is BloodPressurePoint => Boolean(item));
-  const current = buildBloodPressurePoint(patient?.currentVitalSigns || patient?.clinical?.currentVitalSigns);
-  if (current) points.push(current);
-
-  const unique = new Map<string, BloodPressurePoint>();
-  points.forEach((point) => unique.set(
-    `${point.measuredAt}:${point.systolic}:${point.diastolic}`,
-    point,
-  ));
-  return Array.from(unique.values())
+  return points
     .sort((left, right) => Date.parse(left.measuredAt) - Date.parse(right.measuredAt))
     .slice(-12);
 }
 
-function glucoseType(text: string): BloodGlucosePoint['measurementType'] {
-  if (FASTING_PATTERN.test(text)) return 'fasting';
-  if (POSTPRANDIAL_PATTERN.test(text)) return 'postprandial';
-  if (RANDOM_PATTERN.test(text)) return 'random';
-  return 'unknown';
-}
-
-function glucosePointFromFact(fact: PatientMemoryFactItem): BloodGlucosePoint | null {
-  const descriptor = [fact.name, fact.valueText, fact.evidenceText, fact.code]
-    .map((item) => toText(item))
-    .filter(Boolean)
-    .join(' ');
-  if (fact.factType !== 'lab_result' || !GLUCOSE_PATTERN.test(descriptor)) return null;
-  if (fact.status === 'inactive' || fact.status === 'disputed') return null;
-  const value = numericValue(fact.valueText || fact.evidenceText);
-  const measuredAt = normalizeDate(fact.lastObservedAt);
-  if (value === undefined || !measuredAt) return null;
-  return {
-    measuredAt,
-    value,
-    measurementType: glucoseType(descriptor),
-    sourceLabel: fact.sourceType ? `检验结果 · ${fact.sourceType}` : '检验结果',
-  };
-}
-
-function glucosePointFromHistoricalLab(
-  result: HisHistoricalLabResult,
-  visit: HisVisitRecord,
-): BloodGlucosePoint | null {
-  const descriptor = [result.name, result.code].map((item) => toText(item)).filter(Boolean).join(' ');
-  if (!GLUCOSE_PATTERN.test(descriptor)) return null;
-  const value = numericValue(result.value);
-  const measuredAt = normalizeDate(result.measuredAt, visit.visitTime);
-  if (value === undefined || !measuredAt) return null;
-  return {
-    measuredAt,
-    value,
-    measurementType: glucoseType(descriptor),
-    sourceLabel: visit.deptName ? `随访检验 · ${visit.deptName}` : '随访检验',
-  };
-}
-
 function collectBloodGlucosePoints(input: ChronicDiseaseSummaryInput): BloodGlucosePoint[] {
-  const facts = [
-    ...(input.patientMemoryBrief?.otherFacts || []),
-    ...(input.patientMemoryBrief?.chronicConditions || []),
-  ];
-  const memoryPoints = facts
-    .map(glucosePointFromFact)
-    .filter((item): item is BloodGlucosePoint => Boolean(item));
-  const historyPoints = (getPatientContextHistory(input.patient)?.visits || [])
-    .flatMap((visit) => (visit.labResults || [])
-      .map((result) => glucosePointFromHistoricalLab(result, visit))
-      .filter((item): item is BloodGlucosePoint => Boolean(item)));
-  const unique = new Map<string, BloodGlucosePoint>();
-  [...memoryPoints, ...historyPoints].forEach((point) => {
-    unique.set(`${point.measuredAt}:${point.measurementType}:${point.value}`, point);
-  });
-  return Array.from(unique.values())
+  return readHistoryFields(input.patient?.raw, 'gluList')
+    .map((item): BloodGlucosePoint | null => {
+      const measuredAt = normalizeDate(item.bisDate);
+      const value = numericValue(item.fieldValue);
+      if (!measuredAt || value === undefined) return null;
+      return {
+        measuredAt,
+        value,
+        measurementType: 'fasting',
+        sourceLabel: toText(item.sourceText) || '慢病系统',
+      };
+    })
+    .filter((item): item is BloodGlucosePoint => Boolean(item))
     .sort((left, right) => Date.parse(left.measuredAt) - Date.parse(right.measuredAt))
     .slice(-12);
 }
@@ -347,19 +284,16 @@ export function buildChronicDiseaseSummary(input: ChronicDiseaseSummaryInput): C
   const diseaseTags = buildDiseaseTags(diagnoses, readPublicHealthStatus(raw));
   const pressurePoints = collectBloodPressurePoints(input);
   const glucosePoints = collectBloodGlucosePoints(input);
-  const history = getPatientContextHistory(patient);
-  const lastVisitTimestamp = (history?.visits || [])
-    .map((visit) => visit.visitTime)
-    .filter(Number.isFinite)
-    .sort((left, right) => right - left)[0];
-  const lastVisitAt = lastVisitTimestamp ? new Date(lastVisitTimestamp).toISOString() : undefined;
+  const visitInfos = readVisitInfos(raw)
+    .slice()
+    .sort((left, right) => (
+      Date.parse(toText(left.dtVisit).replace(/\//g, '-'))
+      - Date.parse(toText(right.dtVisit).replace(/\//g, '-'))
+    ));
+  const latestVisitInfo = visitInfos[visitInfos.length - 1];
+  const lastVisitAt = normalizeDate(latestVisitInfo?.dtVisit) || undefined;
   const contract = readContractLabel(raw);
   const recentMedicationFacts = collectMedicationFacts(input);
-  const latestVitalSigns = patient?.currentVitalSigns
-    || patient?.clinical?.currentVitalSigns
-    || [...(history?.visits || [])]
-      .sort((left, right) => right.visitTime - left.visitTime)
-      .find((visit) => visit.vitalSigns)?.vitalSigns;
   const managedDiseaseTypes = diseaseTags
     .filter((item) => item.source === 'public-health')
     .map((item) => item.diseaseType);
@@ -367,21 +301,26 @@ export function buildChronicDiseaseSummary(input: ChronicDiseaseSummaryInput): C
     ...pressurePoints.map((item) => item.measuredAt),
     ...glucosePoints.map((item) => item.measuredAt),
     ...recentMedicationFacts.map((item) => item.observedAt || ''),
-    input.patientMemoryBrief?.lastSourceTime || '',
   ].filter(Boolean).sort((left, right) => Date.parse(right) - Date.parse(left))[0];
-  const gender = getPatientContextGenderText(patient) || '未知';
+  const gender = toText(raw?.sdSexText) || getPatientContextGenderText(patient) || '未知';
+  const hasOriginalChronicDiseaseData = Boolean(toText(raw?.idPi))
+    || Array.isArray(raw?.pressureList)
+    || Array.isArray(raw?.pressureHist)
+    || Array.isArray(raw?.pressureHList)
+    || Array.isArray(raw?.gluList)
+    || Array.isArray(raw?.visitInfos);
 
   return {
-    patientId: getPatientContextId(patient) || '',
+    patientId: toText(raw?.idPi) || getPatientContextId(patient) || '',
     visitId: getPatientContextVisitId(patient) || undefined,
-    name: getPatientContextName(patient) || '未知患者',
+    name: toText(raw?.naPi) || getPatientContextName(patient) || '未知患者',
     gender,
-    ageText: getPatientContextAgeText(patient) || '年龄待核实',
+    ageText: toText(raw?.ageText) || getPatientContextAgeText(patient) || '年龄待核实',
     avatarGender: gender.includes('女') ? 'F' : 'M',
     organizationId: toText(readRawValue(raw, ['orgId', 'hisOrgId', 'organizationId', 'idOrg'])) || undefined,
     organizationName: toText(readRawValue(raw, ['orgName', 'hisOrgName', 'organizationName'])) || undefined,
-    doctorId: toText(readRawValue(raw, ['doctorId', 'idDoctor'])) || undefined,
-    doctorName: toText(readRawValue(raw, ['doctorName', 'naDoctor'])) || undefined,
+    doctorId: toText(latestVisitInfo?.idDoctor) || undefined,
+    doctorName: toText(latestVisitInfo?.idDoctorText) || undefined,
     contractLabel: contract.label,
     contractSource: contract.source,
     diseaseTags,
@@ -392,10 +331,10 @@ export function buildChronicDiseaseSummary(input: ChronicDiseaseSummaryInput): C
     lastVisitAt,
     lastVisitLabel: formatDateLabel(lastVisitAt),
     latestDataAt,
-    latestHeightCm: latestVitalSigns?.heightCm,
-    latestWeightKg: latestVitalSigns?.weightKg,
-    latestWaistCm: latestVitalSigns?.waistCm,
-    latestHeartRate: latestVitalSigns?.heartRate || latestVitalSigns?.pulseRate,
+    latestHeightCm: latestVisitInfo?.stature,
+    latestWeightKg: latestVisitInfo?.avoirdupois,
+    latestWaistCm: latestVisitInfo?.waistline,
+    latestHeartRate: latestVisitInfo?.heartRate,
     bloodPressurePoints: pressurePoints,
     bloodGlucosePoints: glucosePoints,
     recentMedicationFacts,
@@ -407,7 +346,7 @@ export function buildChronicDiseaseSummary(input: ChronicDiseaseSummaryInput): C
         item.regimenText ? `${item.name}（${item.regimenText}）` : item.name
       )),
     )).slice(0, 8),
-    sourceQuality: input.patientMemoryBrief?.qualityStatus === 'fresh'
+    sourceQuality: hasOriginalChronicDiseaseData
       ? 'ready'
       : patient
         ? 'partial'

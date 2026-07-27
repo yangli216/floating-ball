@@ -25,6 +25,10 @@ export type {
   PharmacyOption,
 } from './HisAdapter';
 export type {
+  ChronicDiseaseHistoryField,
+  ChronicDiseasePatientVisitHistoryData,
+  ChronicDiseaseVisitDrug,
+  ChronicDiseaseVisitInfo,
   DiagnosisCatalogEntry,
   AvailableMedicineInventoryItem,
   DictionaryEntry,
@@ -55,6 +59,10 @@ export type {
   HisInpatientRegistrationInfo,
   HisInpatientTemperatureChart,
   HisInpatientTemperatureRecord,
+  TcdVisitDrugItem,
+  TcdVisitForm,
+  TcdVisitKind,
+  TcdVisitStatus,
 } from './types';
 export { PhisHisAdapter } from './PhisHisAdapter';
 export { MockHisAdapter } from './MockHisAdapter';

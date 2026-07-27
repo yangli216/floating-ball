@@ -36,12 +36,61 @@ export interface PatientInfo {
   vitals?: string;
 }
 
+/** 真实慢病查询接口的血压/血糖曲线条目。 */
+export interface ChronicDiseaseHistoryField {
+  fieldName: string;
+  fieldValue: string;
+  bisDate: string;
+  primaryValue?: string;
+  dtInsert?: string;
+  sourceText?: string;
+  dtBis?: string;
+  source?: string;
+  primaryKey?: string;
+}
+
+/** 真实慢病查询接口的随访用药条目。 */
+export interface ChronicDiseaseVisitDrug {
+  id?: string;
+  idPherec?: string;
+  naDrug: string;
+  sdDrugFreq: string;
+  perDose: number;
+  doseUnit: string;
+}
+
+/** 真实慢病查询接口的随访条目；未列出的上游原字段继续原样透传。 */
+export interface ChronicDiseaseVisitInfo {
+  idPherec?: string;
+  dtVisit?: string;
+  idDoctor?: string;
+  idDoctorText?: string;
+  pressureH?: number;
+  pressureL?: number;
+  glu?: number;
+  fbgMeal?: number;
+  stature?: number;
+  avoirdupois?: number;
+  bmi?: string;
+  waistline?: number;
+  heartRate?: number;
+  drugList?: ChronicDiseaseVisitDrug[];
+  [key: string]: unknown;
+}
+
 /** 两慢病详情直接唤起所需的患者上下文；禁止携带风险评估结果。 */
-export interface ChronicDiseasePatientInfo extends PatientInfo {
-  currentMedicationHistory?: string;
-  currentVitalSigns?: Record<string, any>;
-  hisHistory?: Record<string, any>;
-  rqflStatus?: string | string[];
+export interface ChronicDiseasePatientInfo
+  extends Omit<PatientInfo, 'naPi' | 'sdSexText' | 'ageText'> {
+  naPi?: string;
+  sdSexText?: string;
+  ageText?: string;
+  rqflStatus?: string;
+  pressureList?: ChronicDiseaseHistoryField[];
+  pressureHist?: ChronicDiseaseHistoryField[];
+  /** 真实响应示例使用的收缩压列表原字段。 */
+  pressureHList?: ChronicDiseaseHistoryField[];
+  gluList?: ChronicDiseaseHistoryField[];
+  visitInfos?: ChronicDiseaseVisitInfo[];
   contractStatus?: string;
   orgId?: string;
   orgName?: string;

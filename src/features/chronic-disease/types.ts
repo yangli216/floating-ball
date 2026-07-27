@@ -1,6 +1,13 @@
 import type { PatientMemoryBrief } from '@entities/patient-memory';
 import type { AppPatient } from '@/types/appState';
 
+export type {
+  TcdVisitDrugItem,
+  TcdVisitForm,
+  TcdVisitKind,
+  TcdVisitStatus,
+} from '@/services/his';
+
 export type ChronicDiseaseType = 'hypertension' | 'type2_diabetes';
 export type ChronicDiseaseWindowKind = 'follow-up' | 'path' | 'prescription' | 'assessment';
 export type ChronicMetricKind = 'blood-pressure' | 'blood-glucose';
@@ -85,103 +92,6 @@ export interface ChronicDiseaseWindowPayload {
   patientAnchor: string;
   summary: ChronicDiseasePatientSummary;
   openedAt: string;
-}
-
-export type TcdVisitKind = '1' | '2';
-export type TcdVisitStatus = '1' | '2' | '3';
-
-export interface TcdVisitDrugItem {
-  id: string;
-  idDrug: string;
-  idPherec: string;
-  naDrug: string;
-  sdDrugFreq: string;
-  perDose: string;
-  doseUnit: string;
-  insulin: string;
-}
-
-/**
- * 对接系统原始 TcdVisitForm.getFormData() 的网络结构。
- * 原页面中的多选数组在提交前被 join(',')，因此这里必须是字符串。
- */
-export interface ChronicDiseaseFollowUpRequest {
-  idPhr: string;
-  idRecord: string;
-  id: string;
-  status: TcdVisitStatus;
-  sdVisitKind: string;
-  dtHyPlan: string;
-  dtDbsPlan: string;
-  sdDataWay: string;
-  stature: string;
-  avoirdupois: string;
-  advAdp: string;
-  bmi: string;
-  waistline: string;
-  advWaistline: string;
-  pressureH: string;
-  pressureL: string;
-  heartRate: string;
-  glu: string;
-  fbgMeal: string;
-  isGlu: string;
-  inputUser: string;
-  idUser: string;
-  sdHySymptom: string;
-  sdDbsSymptom: string;
-  desOther: string;
-  sdArteriopalmus: string;
-  sdProAct: string;
-  sdPsychicAdj: string;
-  fgCardiovascular: string;
-  lowEffects: string;
-  otherDisease: string;
-  note: string;
-  sdWehtherSmoke: string;
-  daySmoke: string;
-  advDaySmoke: string;
-  sdWhetherDrink: string;
-  dayDrink: string;
-  advDayDrink: string;
-  sdMainDrinking: string;
-  sportWeek: string;
-  advSportWeek: string;
-  sportMinute: string;
-  advSportMinute: string;
-  sdSalt: string;
-  sdAdvSalt: string;
-  rice: string;
-  targRice: string;
-  fgDrugChange: string;
-  sdDrugPro: string;
-  sdSideEffects: string;
-  desSideEffects: string;
-  drugList: TcdVisitDrugItem[];
-  fgRef: string;
-  sdRefStatus: string;
-  desRef: string;
-  refDep: string;
-  desNoRef: string;
-  desAdr: string;
-  sdComplications: string;
-  desComplications: string;
-  desComor: string;
-  sdComorbidity: string;
-  desComorbidity: string;
-  sdMajorCc: string;
-  targetOrganDamage: string;
-  desPresAdvice: string;
-}
-
-export interface ChronicDiseaseFollowUpResponse {
-  followUpId: string;
-  requestId: string;
-  status: 'saved';
-  savedAt: string;
-  idPhr: string;
-  idRecord: string;
-  sdVisitKind: string;
 }
 
 export type ChronicArtifactType = 'health_prescription' | 'annual_assessment';

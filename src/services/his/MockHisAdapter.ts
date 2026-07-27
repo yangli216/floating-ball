@@ -25,6 +25,7 @@
 import type { HisAdapter, HisServiceContext, PharmacyOption } from './HisAdapter';
 import type {
   AvailableMedicineInventoryItem,
+  ChronicDiseasePatientVisitHistoryData,
   DiagnosisCatalogEntry,
   DictionaryEntry,
   InventoryCheckRequest,
@@ -52,6 +53,7 @@ import type {
   HisInpatientQuery,
   HisInpatientRegistrationInfo,
   HisInpatientTemperatureChart,
+  TcdVisitForm,
 } from './types';
 
 const MOCK_DIAGNOSES: DiagnosisCatalogEntry[] = [
@@ -241,10 +243,20 @@ export class MockHisAdapter implements HisAdapter {
       gender: 'M',
       age: 35,
       ageText: '35岁',
-      idNo: '110105198801011234',
+      idCard: '110105198801011234',
       insuranceType: '自费',
       raw: { mock: true },
     };
+  }
+
+  async fetchChronicDiseasePatientVisitHistory(
+    _idCard: string,
+  ): Promise<ChronicDiseasePatientVisitHistoryData | null> {
+    return null;
+  }
+
+  async saveTcdForm(_form: TcdVisitForm): Promise<unknown> {
+    return null;
   }
 
   async fetchPatientHistory(

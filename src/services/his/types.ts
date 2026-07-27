@@ -300,12 +300,214 @@ export interface HisPatientInfo {
   gender: 'M' | 'F' | 'O';
   age?: number;
   ageText?: string;
-  /** 身份证号 / 医保卡号等可选标识 */
-  idNo?: string;
+  /** 身份证号；字段名与真实慢病查询接口的 idCard 入参保持一致。 */
+  idCard?: string;
   mobilePhone?: string;
   insuranceType?: string;
   /** 厂商透传 */
   raw?: Record<string, unknown>;
+}
+
+// ============================================================================
+// 两慢病真实业务接口（保留原字段，不做 vendor-neutral 改名）
+// ============================================================================
+
+/**
+ * Adapter 发布的 `queryPatientVisitHistoryData` 曲线条目。
+ *
+ * 真实响应示例还会返回来源和主键追溯字段；均以原名保留。
+ */
+export interface ChronicDiseaseHistoryField {
+  fieldName: string;
+  fieldValue: string;
+  bisDate: string;
+  primaryValue?: string;
+  dtInsert?: string;
+  sourceText?: string;
+  dtBis?: string;
+  source?: string;
+  primaryKey?: string;
+}
+
+/** `visitInfos[].drugList[]` 原始用药字段。 */
+export interface ChronicDiseaseVisitDrug {
+  id?: string;
+  idPherec?: string;
+  naDrug: string;
+  sdDrugFreq: string;
+  perDose: number;
+  doseUnit: string;
+  insulin?: string;
+  insulinText?: string;
+}
+
+/** `visitInfos[]` 原始随访字段。 */
+export interface ChronicDiseaseVisitInfo {
+  sdFate?: string;
+  sdVisitCata?: string;
+  idDoctor?: string;
+  idDoctorText?: string;
+  desOther?: string;
+  sdArteriopalmus?: string;
+  advSportWeek?: number;
+  sdPresAdvice?: string;
+  desHealthRx?: string;
+  sdVisitWay?: string;
+  sdSideEffects?: string;
+  sdSymptom?: string;
+  desSymptom?: string;
+  sportWeek?: number;
+  dtHgb?: string;
+  advDaySmoke?: number;
+  sportMinute?: number;
+  glu?: number;
+  lowEffects?: string;
+  sdPsychicAdj?: string;
+  hgb?: number;
+  daySmoke?: number;
+  targRice?: number;
+  sdProAct?: string;
+  fbgMeal?: number;
+  idPherec?: string;
+  dtVisit?: string;
+  sdDrugPro?: string;
+  desSideEffects?: string;
+  fgRef?: string;
+  desRef?: string;
+  refUnit?: string;
+  refDep?: string;
+  avoirdupois?: number;
+  rice?: number;
+  dtNextVisit?: string;
+  advDayDrink?: number;
+  advSportMinute?: number;
+  pressureL?: number;
+  advBmi?: string;
+  pressureH?: number;
+  stature?: number;
+  dayDrink?: number;
+  bmi?: string;
+  waistline?: number;
+  subCheck?: string;
+  heartRate?: number;
+  advAdp?: number;
+  sdSalt?: string;
+  sdAdvSalt?: string;
+  drugList?: ChronicDiseaseVisitDrug[];
+  [key: string]: unknown;
+}
+
+/**
+ * Adapter 发布的 `queryPatientVisitHistoryData` 原始 `body`。
+ *
+ * 接口字段表将收缩压列表写为 `pressureHist`，真实返回示例使用
+ * `pressureHList`。二者均按上游原名声明，不生成平台别名。
+ */
+export interface ChronicDiseasePatientVisitHistoryData {
+  idPi: string;
+  naPi: string;
+  sdSexText: string;
+  ageText: string;
+  pastMedicalHistory?: string;
+  diagnosis?: string;
+  chiefComplaint?: string;
+  rqflStatus?: string;
+  pressureList?: ChronicDiseaseHistoryField[];
+  pressureHist?: ChronicDiseaseHistoryField[];
+  pressureHList?: ChronicDiseaseHistoryField[];
+  gluList?: ChronicDiseaseHistoryField[];
+  visitInfos?: ChronicDiseaseVisitInfo[];
+}
+
+export type TcdVisitKind = '1' | '2';
+export type TcdVisitStatus = '1' | '2' | '3';
+
+/** `saveTcdForm` 的原始 `drugList[]` 字段。 */
+export interface TcdVisitDrugItem {
+  id: string;
+  idDrug: string;
+  idPherec: string;
+  naDrug: string;
+  sdDrugFreq: string;
+  perDose: string;
+  doseUnit: string;
+  insulin: string;
+}
+
+/**
+ * Adapter 发布的 `saveTcdForm` 原始表单。
+ *
+ * DOCX 字段表与示例对部分数字采用不同 JSON 表示；这里保持原
+ * `TcdVisitForm.getFormData()` 的字符串表单值，不建立改名 DTO。
+ */
+export interface TcdVisitForm {
+  idPhr: string;
+  idRecord: string;
+  id: string;
+  status: TcdVisitStatus;
+  sdVisitKind: string;
+  dtHyPlan: string;
+  dtDbsPlan: string;
+  sdDataWay: string;
+  stature: string;
+  avoirdupois: string;
+  advAdp: string;
+  bmi: string;
+  advBmi: string;
+  waistline: string;
+  advWaistline: string;
+  pressureH: string;
+  pressureL: string;
+  heartRate: string;
+  glu: string;
+  fbgMeal: string;
+  isGlu: string;
+  inputUser: string;
+  idUser: string;
+  sdHySymptom: string;
+  sdDbsSymptom: string;
+  desOther: string;
+  sdArteriopalmus: string;
+  sdProAct: string;
+  sdPsychicAdj: string;
+  fgCardiovascular: string;
+  lowEffects: string;
+  otherDisease: string;
+  note: string;
+  sdWehtherSmoke: string;
+  daySmoke: string;
+  advDaySmoke: string;
+  sdWhetherDrink: string;
+  dayDrink: string;
+  advDayDrink: string;
+  sdMainDrinking: string;
+  sportWeek: string;
+  advSportWeek: string;
+  sportMinute: string;
+  advSportMinute: string;
+  sdSalt: string;
+  sdAdvSalt: string;
+  rice: string;
+  targRice: string;
+  fgDrugChange: string;
+  sdDrugPro: string;
+  sdSideEffects: string;
+  desSideEffects: string;
+  drugList: TcdVisitDrugItem[];
+  fgRef: string;
+  sdRefStatus: string;
+  desRef: string;
+  refDep: string;
+  desNoRef: string;
+  desAdr: string;
+  sdComplications: string;
+  desComplications: string;
+  desComor: string;
+  sdComorbidity: string;
+  desComorbidity: string;
+  sdMajorCc: string;
+  targetOrganDamage: string;
+  desPresAdvice: string;
 }
 
 /**

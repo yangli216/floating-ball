@@ -9,8 +9,8 @@
  * 设计原则：
  * 1. **业务方法粒度**：一个方法 = 一个业务用例（拉诊断目录 / 拉药品目录 / 校验库存…），
  *    不暴露原始 HTTP 路径或 PHIS 风格的 `body/items` 包装结构。
- * 2. **入参 / 返回结构中性化**：调用方只面向 `his/types.ts` 中的中性 DTO 编程；
- *    厂商私有字段一律通过 `raw` 透传，业务通用代码不读 `raw`。
+ * 2. **入参 / 返回结构**：通用业务面向 `his/types.ts` 中性 DTO；明确要求
+ *    对接原系统字段的两慢病查询 / 保存是显式例外，直接使用原字段类型，不再翻译。
  * 3. **失败语义统一**：方法以 `Promise.reject(Error)` 抛错，调用方按 `Error` 处理；
  *    具体厂商在实现内部把私有错误码翻译成业务异常。
  * 4. **认证上下文**：通过 `updateContext` 刷新；adapter 自身不感知 token 来源（HIS 网页端
@@ -21,6 +21,7 @@
 
 import type { HisServiceContext, PharmacyOption } from '../hisService';
 import type {
+  ChronicDiseasePatientVisitHistoryData,
   DiagnosisCatalogEntry,
   AvailableMedicineInventoryItem,
   DictionaryEntry,
@@ -45,10 +46,12 @@ import type {
   HisOutpatientFollowUpReportResultsQuery,
   HisInpatientEmrContextPackage,
   HisInpatientEmrContextQuery,
+  TcdVisitForm,
 } from './types';
 
 export type { HisServiceContext, PharmacyOption };
 export type {
+  ChronicDiseasePatientVisitHistoryData,
   DiagnosisCatalogEntry,
   AvailableMedicineInventoryItem,
   DictionaryEntry,
@@ -79,6 +82,10 @@ export type {
   HisInpatientQuery,
   HisInpatientRegistrationInfo,
   HisInpatientTemperatureChart,
+  TcdVisitDrugItem,
+  TcdVisitForm,
+  TcdVisitKind,
+  TcdVisitStatus,
 } from './types';
 
 /**
@@ -158,6 +165,22 @@ export interface HisAdapter {
    * 拉取患者基本信息（用于接诊时初始化上下文）
    */
   fetchPatientInfo(patientId: string): Promise<HisPatientInfo | null>;
+
+  /**
+   * 按真实慢病系统字段查询患者近两年随访数据。
+   *
+   * 入参必须是身份证号 `idCard`，返回值保留上游原字段。
+   */
+  fetchChronicDiseasePatientVisitHistory(
+    idCard: string,
+  ): Promise<ChronicDiseasePatientVisitHistoryData | null>;
+
+  /**
+   * 保存一条原始两慢病随访表单。
+   *
+   * Adapter 实现负责按真实接口要求把单条表单包装成 `[TcdVisitForm]`。
+   */
+  saveTcdForm(form: TcdVisitForm): Promise<unknown>;
 
   /**
    * 拉取患者就诊历史（用于完善本地记忆系统）

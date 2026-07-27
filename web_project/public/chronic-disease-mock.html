@@ -516,62 +516,85 @@
     (function () {
       'use strict';
 
-      function medication(productId, name, spec, dose, doseUnit, frequency, route) {
+      function medication(productId, name, dose, doseUnit, frequency) {
         return {
-          productId: productId,
-          name: name,
-          spec: spec,
-          dose: dose,
+          id: productId,
+          naDrug: name,
+          perDose: Number(dose),
           doseUnit: doseUnit,
-          frequency: frequency,
-          route: route,
-          days: '30'
+          sdDrugFreq: frequency
         };
       }
 
       function glucose(name, value, measuredAt) {
         return {
-          name: name,
-          code: name.indexOf('餐后') >= 0 ? 'GLU-2H' : 'GLU-F',
-          value: value,
-          unit: 'mmol/L',
-          measuredAt: measuredAt
+          fieldName: name.indexOf('餐后') >= 0 ? 'fbgMeal' : 'glu',
+          fieldValue: String(value),
+          bisDate: measuredAt,
+          sourceText: '糖尿病随访'
         };
       }
 
       function followUpVisit(input) {
-        var visit = {
-          visitId: input.visitId,
-          visitTime: Date.parse(input.measuredAt),
-          deptName: '全科慢病门诊',
-          chiefComplaint: input.chiefComplaint,
-          diagnoses: input.diagnoses,
-          labResults: input.labResults || [],
-          medicationOrders: input.medicationOrders || []
+        var gluItem = (input.gluList || []).find(function (item) { return item.fieldName === 'glu'; });
+        var visitInfo = {
+          idPherec: input.idPherec,
+          dtVisit: input.dtVisit,
+          idDoctor: 'MOCK-D001',
+          idDoctorText: '李医生',
+          pressureH: input.pressureH,
+          pressureL: input.pressureL,
+          heartRate: input.heartRate || 76,
+          drugList: input.drugList || [],
+          gluList: input.gluList || []
         };
-        if (Number.isFinite(input.systolic) && Number.isFinite(input.diastolic)) {
-          visit.vitalSigns = {
-            systolicBloodPressure: input.systolic,
-            diastolicBloodPressure: input.diastolic,
-            heartRate: input.heartRate || 76,
-            measuredAt: input.measuredAt
-          };
-        }
-        return visit;
+        if (gluItem) visitInfo.glu = Number(gluItem.fieldValue);
+        return visitInfo;
+      }
+
+      function chronicHistory(visits) {
+        return {
+          pressureList: visits
+            .filter(function (visit) { return Number.isFinite(visit.pressureL); })
+            .map(function (visit) {
+              return {
+                fieldName: 'pressureL',
+                fieldValue: String(visit.pressureL),
+                bisDate: visit.dtVisit,
+                sourceText: '慢病随访'
+              };
+            }),
+          pressureHList: visits
+            .filter(function (visit) { return Number.isFinite(visit.pressureH); })
+            .map(function (visit) {
+              return {
+                fieldName: 'pressureH',
+                fieldValue: String(visit.pressureH),
+                bisDate: visit.dtVisit,
+                sourceText: '慢病随访'
+              };
+            }),
+          gluList: visits.flatMap(function (visit) { return visit.gluList || []; }),
+          visitInfos: visits.map(function (visit) {
+            var copy = Object.assign({}, visit);
+            delete copy.gluList;
+            return copy;
+          })
+        };
       }
 
       var dualMedications = [
-        medication('MOCK-MED-AML-005', '苯磺酸氨氯地平片', '5mg×28片', '5', 'mg', '每日1次', '口服'),
-        medication('MOCK-MED-MET-500', '盐酸二甲双胍缓释片', '0.5g×30片', '0.5', 'g', '每日2次', '口服'),
-        medication('MOCK-MED-DAP-010', '达格列净片', '10mg×14片', '10', 'mg', '每日1次', '口服')
+        medication('MOCK-MED-AML-005', '苯磺酸氨氯地平片', '5', 'mg', '每日1次'),
+        medication('MOCK-MED-MET-500', '盐酸二甲双胍缓释片', '0.5', 'g', '每日2次'),
+        medication('MOCK-MED-DAP-010', '达格列净片', '10', 'mg', '每日1次')
       ];
       var hypertensionMedications = [
-        medication('MOCK-MED-AML-005', '苯磺酸氨氯地平片', '5mg×28片', '5', 'mg', '每日1次', '口服'),
-        medication('MOCK-MED-VAL-080', '缬沙坦胶囊', '80mg×28粒', '80', 'mg', '每日1次', '口服')
+        medication('MOCK-MED-AML-005', '苯磺酸氨氯地平片', '5', 'mg', '每日1次'),
+        medication('MOCK-MED-VAL-080', '缬沙坦胶囊', '80', 'mg', '每日1次')
       ];
       var diabetesMedications = [
-        medication('MOCK-MED-MET-500', '盐酸二甲双胍缓释片', '0.5g×30片', '0.5', 'g', '每日2次', '口服'),
-        medication('MOCK-MED-DAP-010', '达格列净片', '10mg×14片', '10', 'mg', '每日1次', '口服')
+        medication('MOCK-MED-MET-500', '盐酸二甲双胍缓释片', '0.5', 'g', '每日2次'),
+        medication('MOCK-MED-DAP-010', '达格列净片', '10', 'mg', '每日1次')
       ];
 
       var scenarios = [
@@ -590,53 +613,48 @@
             historyOfPresentIllness: '规律门诊随访，本次拟复核血压、血糖与年度检查完成情况。',
             pastMedicalHistory: '原发性高血压病史12年；2型糖尿病病史8年',
             diagnosis: '原发性高血压；2型糖尿病',
-            currentMedicationHistory: '最近随访记录：苯磺酸氨氯地平片、盐酸二甲双胍缓释片、达格列净片；均为 Mock 历史事实，待医生核对。',
-            currentVitalSigns: {
-              systolicBloodPressure: 136,
-              diastolicBloodPressure: 82,
-              heartRate: 74,
-              heightCm: 160,
-              weightKg: 66,
-              waistCm: 88,
-              measuredAt: '2026-07-24T09:10:00+08:00'
-            },
-            hisHistory: {
-              patientId: 'MOCK-CD-DUAL-001',
-              pastMedicalHistory: ['原发性高血压病史12年', '2型糖尿病病史8年'],
-              visits: [
+            idCard: '150206199306039948',
+            ...chronicHistory([
                 followUpVisit({
-                  visitId: 'MOCK-CD-DUAL-FU-202604',
-                  measuredAt: '2026-04-15T08:20:00+08:00',
+                  idPherec: 'MOCK-CD-DUAL-FU-202604',
+                  dtVisit: '2026-04-15T08:20:00+08:00',
                   chiefComplaint: '高血压、2型糖尿病联合随访',
                   diagnoses: ['原发性高血压', '2型糖尿病'],
-                  systolic: 148,
-                  diastolic: 92,
-                  labResults: [glucose('空腹血糖', 8.6, '2026-04-15T08:10:00+08:00')]
+                  pressureH: 148,
+                  pressureL: 92,
+                  gluList: [glucose('空腹血糖', 8.6, '2026-04-15T08:10:00+08:00')]
                 }),
                 followUpVisit({
-                  visitId: 'MOCK-CD-DUAL-FU-202605',
-                  measuredAt: '2026-05-20T08:30:00+08:00',
+                  idPherec: 'MOCK-CD-DUAL-FU-202605',
+                  dtVisit: '2026-05-20T08:30:00+08:00',
                   chiefComplaint: '高血压、2型糖尿病联合随访',
                   diagnoses: ['原发性高血压', '2型糖尿病'],
-                  systolic: 142,
-                  diastolic: 88,
-                  labResults: [glucose('空腹血糖', 7.9, '2026-05-20T08:15:00+08:00')]
+                  pressureH: 142,
+                  pressureL: 88,
+                  gluList: [glucose('空腹血糖', 7.9, '2026-05-20T08:15:00+08:00')]
                 }),
                 followUpVisit({
-                  visitId: 'MOCK-CD-DUAL-FU-202606',
-                  measuredAt: '2026-06-24T09:00:00+08:00',
+                  idPherec: 'MOCK-CD-DUAL-FU-202606',
+                  dtVisit: '2026-06-24T09:00:00+08:00',
                   chiefComplaint: '高血压、2型糖尿病联合随访',
                   diagnoses: ['原发性高血压', '2型糖尿病'],
-                  systolic: 138,
-                  diastolic: 84,
-                  labResults: [
+                  pressureH: 138,
+                  pressureL: 84,
+                  gluList: [
                     glucose('空腹血糖', 7.3, '2026-06-24T08:20:00+08:00'),
                     glucose('餐后2小时血糖', 10.2, '2026-06-24T10:30:00+08:00')
                   ],
-                  medicationOrders: dualMedications
+                  drugList: dualMedications
+                }),
+                followUpVisit({
+                  idPherec: 'MOCK-CD-DUAL-FU-202607',
+                  dtVisit: '2026-07-24T09:10:00+08:00',
+                  pressureH: 136,
+                  pressureL: 82,
+                  heartRate: 74,
+                  gluList: [glucose('空腹血糖', 7.1, '2026-07-24T09:10:00+08:00')]
                 })
-              ]
-            },
+            ]),
             rqflStatus: '3,6',
             contractStatus: '已签约',
             orgId: 'MOCK-HIS-001',
@@ -660,47 +678,41 @@
             historyOfPresentIllness: '近期居家血压记录待医生核实。',
             pastMedicalHistory: '原发性高血压病史10年',
             diagnosis: '原发性高血压',
-            currentMedicationHistory: '最近随访记录：苯磺酸氨氯地平片、缬沙坦胶囊；均为 Mock 历史事实，待医生核对。',
-            currentVitalSigns: {
-              systolicBloodPressure: 134,
-              diastolicBloodPressure: 82,
-              heartRate: 72,
-              heightCm: 172,
-              weightKg: 73,
-              waistCm: 91,
-              measuredAt: '2026-07-24T09:20:00+08:00'
-            },
-            hisHistory: {
-              patientId: 'MOCK-CD-HTN-001',
-              pastMedicalHistory: ['原发性高血压病史10年'],
-              visits: [
+            idCard: '150206196001019933',
+            ...chronicHistory([
                 followUpVisit({
-                  visitId: 'MOCK-CD-HTN-FU-202604',
-                  measuredAt: '2026-04-11T09:00:00+08:00',
+                  idPherec: 'MOCK-CD-HTN-FU-202604',
+                  dtVisit: '2026-04-11T09:00:00+08:00',
                   chiefComplaint: '高血压慢病随访',
                   diagnoses: ['原发性高血压'],
-                  systolic: 152,
-                  diastolic: 94
+                  pressureH: 152,
+                  pressureL: 94
                 }),
                 followUpVisit({
-                  visitId: 'MOCK-CD-HTN-FU-202605',
-                  measuredAt: '2026-05-16T09:10:00+08:00',
+                  idPherec: 'MOCK-CD-HTN-FU-202605',
+                  dtVisit: '2026-05-16T09:10:00+08:00',
                   chiefComplaint: '高血压慢病随访',
                   diagnoses: ['原发性高血压'],
-                  systolic: 145,
-                  diastolic: 90
+                  pressureH: 145,
+                  pressureL: 90
                 }),
                 followUpVisit({
-                  visitId: 'MOCK-CD-HTN-FU-202606',
-                  measuredAt: '2026-06-20T09:05:00+08:00',
+                  idPherec: 'MOCK-CD-HTN-FU-202606',
+                  dtVisit: '2026-06-20T09:05:00+08:00',
                   chiefComplaint: '高血压慢病随访',
                   diagnoses: ['原发性高血压'],
-                  systolic: 139,
-                  diastolic: 86,
-                  medicationOrders: hypertensionMedications
+                  pressureH: 139,
+                  pressureL: 86,
+                  drugList: hypertensionMedications
+                }),
+                followUpVisit({
+                  idPherec: 'MOCK-CD-HTN-FU-202607',
+                  dtVisit: '2026-07-24T09:20:00+08:00',
+                  pressureH: 134,
+                  pressureL: 82,
+                  heartRate: 72
                 })
-              ]
-            },
+            ]),
             rqflStatus: '3',
             contractStatus: '已签约',
             orgId: 'MOCK-HIS-001',
@@ -724,47 +736,42 @@
             historyOfPresentIllness: '近期空腹及餐后血糖记录待医生核实。',
             pastMedicalHistory: '2型糖尿病病史6年',
             diagnosis: '2型糖尿病',
-            currentMedicationHistory: '最近随访记录：盐酸二甲双胍缓释片、达格列净片；均为 Mock 历史事实，待医生核对。',
-            currentVitalSigns: {
-              systolicBloodPressure: 128,
-              diastolicBloodPressure: 78,
-              heartRate: 76,
-              heightCm: 158,
-              weightKg: 61,
-              waistCm: 85,
-              measuredAt: '2026-07-24T09:30:00+08:00'
-            },
-            hisHistory: {
-              patientId: 'MOCK-CD-DM-001',
-              pastMedicalHistory: ['2型糖尿病病史6年'],
-              visits: [
+            idCard: '150206196903039922',
+            ...chronicHistory([
                 followUpVisit({
-                  visitId: 'MOCK-CD-DM-FU-202604',
-                  measuredAt: '2026-04-13T08:30:00+08:00',
+                  idPherec: 'MOCK-CD-DM-FU-202604',
+                  dtVisit: '2026-04-13T08:30:00+08:00',
                   chiefComplaint: '2型糖尿病慢病随访',
                   diagnoses: ['2型糖尿病'],
-                  labResults: [glucose('空腹血糖', 9.2, '2026-04-13T08:10:00+08:00')]
+                  gluList: [glucose('空腹血糖', 9.2, '2026-04-13T08:10:00+08:00')]
                 }),
                 followUpVisit({
-                  visitId: 'MOCK-CD-DM-FU-202605',
-                  measuredAt: '2026-05-18T08:40:00+08:00',
+                  idPherec: 'MOCK-CD-DM-FU-202605',
+                  dtVisit: '2026-05-18T08:40:00+08:00',
                   chiefComplaint: '2型糖尿病慢病随访',
                   diagnoses: ['2型糖尿病'],
-                  labResults: [glucose('空腹血糖', 8.4, '2026-05-18T08:15:00+08:00')]
+                  gluList: [glucose('空腹血糖', 8.4, '2026-05-18T08:15:00+08:00')]
                 }),
                 followUpVisit({
-                  visitId: 'MOCK-CD-DM-FU-202606',
-                  measuredAt: '2026-06-22T08:50:00+08:00',
+                  idPherec: 'MOCK-CD-DM-FU-202606',
+                  dtVisit: '2026-06-22T08:50:00+08:00',
                   chiefComplaint: '2型糖尿病慢病随访',
                   diagnoses: ['2型糖尿病'],
-                  labResults: [
+                  gluList: [
                     glucose('空腹血糖', 7.6, '2026-06-22T08:20:00+08:00'),
                     glucose('餐后2小时血糖', 10.8, '2026-06-22T10:30:00+08:00')
                   ],
-                  medicationOrders: diabetesMedications
+                  drugList: diabetesMedications
+                }),
+                followUpVisit({
+                  idPherec: 'MOCK-CD-DM-FU-202607',
+                  dtVisit: '2026-07-24T09:30:00+08:00',
+                  pressureH: 128,
+                  pressureL: 78,
+                  heartRate: 76,
+                  gluList: [glucose('空腹血糖', 7.2, '2026-07-24T09:30:00+08:00')]
                 })
-              ]
-            },
+            ]),
             rqflStatus: '6',
             contractStatus: '已签约',
             orgId: 'MOCK-HIS-001',
@@ -788,34 +795,33 @@
             historyOfPresentIllness: '临床诊断明确，基本公卫管理身份尚未核实。',
             pastMedicalHistory: '原发性高血压；2型糖尿病',
             diagnosis: '原发性高血压；2型糖尿病',
-            currentMedicationHistory: '自述间断服用苯磺酸氨氯地平片、盐酸二甲双胍缓释片；Mock 事实待核对。',
-            currentVitalSigns: {
-              systolicBloodPressure: 158,
-              diastolicBloodPressure: 96,
-              heartRate: 82,
-              measuredAt: '2026-07-24T10:00:00+08:00'
-            },
-            hisHistory: {
-              patientId: 'MOCK-CD-CLINICAL-001',
-              visits: [
+            idCard: '150206197503039911',
+            ...chronicHistory([
                 followUpVisit({
-                  visitId: 'MOCK-CD-CLINICAL-202606',
-                  measuredAt: '2026-06-12T09:00:00+08:00',
+                  idPherec: 'MOCK-CD-CLINICAL-202606',
+                  dtVisit: '2026-06-12T09:00:00+08:00',
                   chiefComplaint: '血压血糖异常复诊',
                   diagnoses: ['原发性高血压', '2型糖尿病'],
-                  systolic: 164,
-                  diastolic: 100,
-                  labResults: [
+                  pressureH: 164,
+                  pressureL: 100,
+                  gluList: [
                     glucose('空腹血糖', 10.1, '2026-06-12T08:20:00+08:00'),
                     glucose('餐后2小时血糖', 13.6, '2026-06-12T10:30:00+08:00')
                   ],
-                  medicationOrders: [
+                  drugList: [
                     dualMedications[0],
                     dualMedications[1]
                   ]
+                }),
+                followUpVisit({
+                  idPherec: 'MOCK-CD-CLINICAL-202607',
+                  dtVisit: '2026-07-24T10:00:00+08:00',
+                  pressureH: 158,
+                  pressureL: 96,
+                  heartRate: 82,
+                  gluList: [glucose('空腹血糖', 9.6, '2026-07-24T10:00:00+08:00')]
                 })
-              ]
-            },
+            ]),
             contractStatus: '签约信息待核实',
             orgId: 'MOCK-HIS-001',
             orgName: '某某街道社区卫生服务中心',
@@ -838,6 +844,11 @@
             historyOfPresentIllness: '受凉后出现咽痛、轻咳，无明显气促。',
             pastMedicalHistory: '否认高血压、糖尿病病史',
             diagnosis: '上呼吸道感染',
+            idCard: '150206198103039900',
+            pressureList: [],
+            pressureHList: [],
+            gluList: [],
+            visitInfos: [],
             contractStatus: '未签约',
             orgId: 'MOCK-HIS-001',
             orgName: '某某街道社区卫生服务中心',
@@ -1011,7 +1022,7 @@
             }
           };
           script.onerror = function () {
-            reject(new Error('无法从 127.0.0.1:8081 加载 MedHermes SDK，请先启动 floating-ball'));
+            reject(new Error('无法从 127.0.0.1:8081 加载 MedHermes 兼容 SDK，请先启动全医慧助桌面端'));
           };
           document.head.appendChild(script);
         }).finally(function () {

@@ -13,6 +13,8 @@ import { analyzePatientRisks } from '@/services/llm';
 import { trackApiCall, trackError } from '@/services/operationTracker';
 import { getHisAdapter } from '@/services/his';
 import type {
+  ChronicDiseasePatientVisitHistoryData,
+  HisPatientInfo,
   HisPatientHistory,
   HisOutpatientFollowUpContext,
   HisOutpatientMedicalRecord,
@@ -158,6 +160,7 @@ async function hydratePatientContextFromHis(
   });
   const patientId = getPatientContextId(nextDraft);
   const nextVisitId = getPatientContextVisitId(nextDraft);
+  const isChronicDiseaseSource = source === 'open-chronic-disease-management';
   console.log('[ReceptionController] parsed context ids:', {
     patientId,
     nextVisitId,
@@ -173,20 +176,50 @@ async function hydratePatientContextFromHis(
     && getPatientContextVisitId(currentPatient) === nextVisitId
     && (currentPatient.receptionEnsured || currentPatient._receptionEnsured)
     && existingHistory;
-  if (samePatientLoaded) {
+  const hasChronicDiseaseData = Array.isArray(nextDraft?.raw?.visitInfos)
+    || Array.isArray(nextDraft?.raw?.pressureList)
+    || Array.isArray(nextDraft?.raw?.gluList);
+  if (samePatientLoaded && (!isChronicDiseaseSource || hasChronicDiseaseData)) {
     return nextDraft;
   }
 
   const adapter = getHisAdapter();
   if (!adapter) {
+    if (isChronicDiseaseSource && !hasChronicDiseaseData) {
+      throw new Error('HIS 尚未初始化，无法取得 idCard 并查询两慢病数据');
+    }
     return nextDraft;
   }
 
-  const hisInfo = await adapter.fetchPatientInfo(patientId);
-  const hisHistory = await adapter.fetchPatientHistory(patientId, {
+  const hisInfoPromise = adapter.fetchPatientInfo(patientId);
+  const hisHistoryPromise = adapter.fetchPatientHistory(patientId, {
     currentVisitId: nextVisitId,
     limit: 5,
   });
+  let hisInfo: HisPatientInfo | null;
+  let hisHistory: HisPatientHistory | null;
+  let chronicDiseaseData: ChronicDiseasePatientVisitHistoryData | null = null;
+  if (isChronicDiseaseSource) {
+    hisInfo = await hisInfoPromise;
+    const idCard = (
+      hisInfo?.idCard
+      || nextDraft?.idCard
+      || nextDraft?.demographics?.idCard
+      || ''
+    ).trim();
+    if (!idCard) {
+      throw new Error('患者信息缺少 idCard，无法查询两慢病数据');
+    }
+    [chronicDiseaseData, hisHistory] = await Promise.all([
+      adapter.fetchChronicDiseasePatientVisitHistory(idCard),
+      hisHistoryPromise,
+    ]);
+    if (!chronicDiseaseData) {
+      throw new Error('queryPatientVisitHistoryData 未返回患者慢病数据');
+    }
+  } else {
+    [hisInfo, hisHistory] = await Promise.all([hisInfoPromise, hisHistoryPromise]);
+  }
 
   // 拉取本次申请单状态；applyList.items.sdApply=3 表示检验/检查已出报告。
   let hasReportedResults = false;
@@ -252,9 +285,13 @@ async function hydratePatientContextFromHis(
     }
   }
 
+  const hydratedPayload = {
+    ...((payload || {}) as Record<string, unknown>),
+    ...(chronicDiseaseData || {}),
+  };
   let hydrated = buildPatientContext({
     existing: nextDraft,
-    payload: payload as Record<string, unknown> | null | undefined,
+    payload: hydratedPayload,
     hisInfo,
     hisHistory,
     source,

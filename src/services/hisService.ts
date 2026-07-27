@@ -20,12 +20,14 @@ import {
   summarizeHisPayload,
 } from './hisIntegrationLog';
 import type {
+  ChronicDiseasePatientVisitHistoryData,
   HisInpatientEmrContextPackage,
   HisInpatientEmrContextQuery,
   HisOutpatientFollowUpContext,
   HisOutpatientFollowUpContextQuery,
   HisOutpatientFollowUpReportResults,
   HisOutpatientFollowUpReportResultsQuery,
+  TcdVisitForm,
 } from './his/types';
 
 /**
@@ -573,6 +575,8 @@ const HIS_CATALOG_ENDPOINTS = {
   availableMedicineInventory: 'api/phis.aiAdapterService/queryInvSubList',
   medicineInventoryCheck: 'api/phis.aiAdapterService/checkInvEnough',
   patientSearchByIdPi: 'api/phis.aiAdapterService/searchByIdPi',
+  chronicDiseasePatientVisitHistory: 'api/phis.aiAdapterService/queryPatientVisitHistoryData',
+  chronicDiseaseSaveTcdForm: 'api/phis.aiAdapterService/saveTcdForm',
   patientAllergy: 'api/phis.aiAdapterService/queryHisAllergy',
   patientVisitHistory: 'api/phis.aiAdapterService/queryVisitHistory',
   patientVisitDetail: 'api/phis.aiAdapterService/loadClinicMedicalRecord',
@@ -1204,6 +1208,43 @@ export class HisService {
     this.assertBusinessSuccess(HIS_CATALOG_ENDPOINTS.patientSearchByIdPi, response);
 
     return response.body ?? response.data ?? null;
+  }
+
+  /**
+   * 按身份证号查询近两年两慢病随访数据。
+   *
+   * 请求 Adapter 发布的 `queryPatientVisitHistoryData`，请求和响应均保留
+   * `chis.hyVisitService/queryPatientVisitHistoryData` 文档原字段。
+   */
+  async queryPatientVisitHistoryData(
+    idCard: string,
+  ): Promise<ChronicDiseasePatientVisitHistoryData | null> {
+    const normalizedIdCard = idCard.trim();
+    if (!normalizedIdCard) return null;
+
+    const response = await this.post<ChronicDiseasePatientVisitHistoryData>(
+      HIS_CATALOG_ENDPOINTS.chronicDiseasePatientVisitHistory,
+      [{ idCard: normalizedIdCard }],
+    );
+    this.assertBusinessSuccess(HIS_CATALOG_ENDPOINTS.chronicDiseasePatientVisitHistory, response);
+
+    return response.body ?? response.data ?? null;
+  }
+
+  /**
+   * 保存一条两慢病随访记录。
+   *
+   * Adapter 发布路径为 `api/phis.aiAdapterService/saveTcdForm`，其后端
+   * 适配 `chis.tcdService/saveTcdForm`。真实请求体固定为 `[TcdVisitForm]`。
+   */
+  async saveTcdForm(form: TcdVisitForm): Promise<unknown> {
+    const response = await this.post<unknown>(
+      HIS_CATALOG_ENDPOINTS.chronicDiseaseSaveTcdForm,
+      [form],
+    );
+    this.assertBusinessSuccess(HIS_CATALOG_ENDPOINTS.chronicDiseaseSaveTcdForm, response);
+
+    return response.body ?? response.data ?? response;
   }
 
   /**

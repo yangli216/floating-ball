@@ -1,20 +1,17 @@
 import { regionalPost } from '@/services/regionalClient';
+import { getHisAdapter } from '@/services/his';
 import type {
   ChronicArtifactSnapshotRequest,
   ChronicArtifactSnapshotResponse,
-  ChronicDiseaseFollowUpRequest,
-  ChronicDiseaseFollowUpResponse,
+  TcdVisitForm,
 } from '../types';
 
-export function saveChronicDiseaseFollowUp(
-  request: ChronicDiseaseFollowUpRequest,
-  requestId: string,
-): Promise<ChronicDiseaseFollowUpResponse> {
-  return regionalPost<ChronicDiseaseFollowUpResponse>(
-    '/v1/client/chronic-disease/follow-ups',
-    request,
-    requestId,
-  );
+export function saveTcdForm(form: TcdVisitForm): Promise<unknown> {
+  const adapter = getHisAdapter();
+  if (!adapter) {
+    return Promise.reject(new Error('HIS 尚未初始化，无法保存两慢病随访'));
+  }
+  return adapter.saveTcdForm(form);
 }
 
 export function saveChronicArtifactSnapshot(

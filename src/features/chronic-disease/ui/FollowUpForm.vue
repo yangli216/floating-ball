@@ -2,19 +2,15 @@
 import { computed, ref, shallowRef } from 'vue';
 import Icon from '@shared/ui/Icon.vue';
 import { formatUserFacingError } from '@shared/lib/errorMessages';
-import { saveChronicDiseaseFollowUp } from '../api/chronicDiseaseApi';
+import { saveTcdForm } from '../api/chronicDiseaseApi';
 import { getManagedFollowUpDiseases } from '../lib/chronicDiseaseEligibility';
 import { buildFollowUpPresentation } from '../lib/followUpPresentation';
 import {
   buildFusedFollowUpRequest,
   createFusedFollowUpFormState,
-  stableFollowUpRequestId,
   validateFusedFollowUpForm,
 } from '../model/followUpFormModel';
-import type {
-  ChronicDiseaseFollowUpResponse,
-  ChronicDiseaseWindowPayload,
-} from '../types';
+import type { ChronicDiseaseWindowPayload } from '../types';
 import FollowUpBasicSection from './follow-up/FollowUpBasicSection.vue';
 import FollowUpConclusionSection from './follow-up/FollowUpConclusionSection.vue';
 import FollowUpLifestyleSection from './follow-up/FollowUpLifestyleSection.vue';
@@ -41,7 +37,7 @@ const sections = [
 const activeSection = shallowRef(0);
 const saving = shallowRef(false);
 const errorMessage = shallowRef('');
-const savedRecord = ref<ChronicDiseaseFollowUpResponse | null>(null);
+const saved = shallowRef(false);
 
 const diseaseTypes = computed(() => getManagedFollowUpDiseases(props.payload.summary));
 const presentation = computed(() => buildFollowUpPresentation(diseaseTypes.value));
@@ -59,7 +55,7 @@ const latestFasting = computed(() => [...props.payload.summary.bloodGlucosePoint
 const form = ref(createFusedFollowUpFormState(props.payload.summary));
 
 const savedStatusText = computed(() => (
-  savedRecord.value ? `${presentation.value.label}已保存` : ''
+  saved.value ? `${presentation.value.label}已保存` : ''
 ));
 
 async function save(): Promise<void> {
@@ -77,8 +73,8 @@ async function save(): Promise<void> {
 
   try {
     const request = buildFusedFollowUpRequest(form.value);
-    const requestId = stableFollowUpRequestId(props.payload.requestId);
-    savedRecord.value = await saveChronicDiseaseFollowUp(request, requestId);
+    await saveTcdForm(request);
+    saved.value = true;
   } catch (error) {
     errorMessage.value = formatUserFacingError(error, {
       fallback: '随访保存失败，表单内容已保留，请重试。',

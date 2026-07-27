@@ -248,7 +248,7 @@ export function buildPatientContext(input: BuildPatientContextInput): AppPatient
   );
   const ageText = buildAgeText(payload, input.hisInfo) || getPatientContextAgeText(patientFallback);
   const ageYears = parseAgeYears(ageText, input.hisInfo?.age);
-  const idCard = pickFirstText(payload, ['idCard', 'idNo']) || input.hisInfo?.idNo || text(patientFallback?.idCard);
+  const idCard = pickFirstText(payload, ['idCard']) || input.hisInfo?.idCard || text(patientFallback?.idCard);
   const mobilePhone = pickFirstText(payload, ['mobilePhone', 'phone']) || input.hisInfo?.mobilePhone || text(patientFallback?.mobilePhone);
   const insuranceType = pickFirstText(payload, ['insuranceType']) || input.hisInfo?.insuranceType || text(patientFallback?.insuranceType);
 

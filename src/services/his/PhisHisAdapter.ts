@@ -37,6 +37,7 @@ import type {
 } from './types';
 import type {
   AvailableMedicineInventoryItem,
+  ChronicDiseasePatientVisitHistoryData,
   DiagnosisCatalogEntry,
   DictionaryEntry,
   InventoryCheckRequest,
@@ -59,6 +60,7 @@ import type {
   HisOutpatientFollowUpContextQuery,
   HisOutpatientFollowUpReportResults,
   HisOutpatientFollowUpReportResultsQuery,
+  TcdVisitForm,
 } from './types';
 import { mergePhisAvailableMedicineInventory } from './phisMedicineInventory';
 
@@ -882,10 +884,20 @@ export class PhisHisAdapter implements HisAdapter {
       gender,
       age,
       ageText: trim(detail.ageText),
-      idNo: trim(detail.idCard),
+      idCard: trim(detail.idCard),
       mobilePhone: trim(detail.mobilePhone),
       raw: detail as unknown as Record<string, unknown>,
     };
+  }
+
+  fetchChronicDiseasePatientVisitHistory(
+    idCard: string,
+  ): Promise<ChronicDiseasePatientVisitHistoryData | null> {
+    return this.service.queryPatientVisitHistoryData(idCard);
+  }
+
+  saveTcdForm(form: TcdVisitForm): Promise<unknown> {
+    return this.service.saveTcdForm(form);
   }
 
   async fetchPatientHistory(

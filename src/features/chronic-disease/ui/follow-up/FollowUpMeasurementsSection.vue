@@ -30,6 +30,9 @@ const form = defineModel<FusedFollowUpFormState>({ required: true });
     <label>BMI
       <input :value="calculateBmi(form.stature, form.avoirdupois)" readonly />
     </label>
+    <label>目标 BMI advBmi
+      <input :value="calculateBmi(form.stature, form.advAdp)" readonly />
+    </label>
     <label>身高 stature<span class="required">*</span>
       <input v-model="form.stature" inputmode="decimal" maxlength="5" />
     </label>
