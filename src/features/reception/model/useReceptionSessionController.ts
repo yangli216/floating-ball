@@ -77,6 +77,12 @@ export function useReceptionSessionController(currentPatient: Ref<AppPatient | n
     status.value = 'assessing';
   }
 
+  function finishHydrating(): void {
+    if (status.value === 'hydrating') {
+      status.value = 'ready';
+    }
+  }
+
   function setRisks(nextRisks: RiskItem[]): void {
     risks.value = [...nextRisks];
   }
@@ -154,6 +160,7 @@ export function useReceptionSessionController(currentPatient: Ref<AppPatient | n
     patientAge,
     isAnalyzing,
     startHydrating,
+    finishHydrating,
     startAssessing,
     setRisks,
     startPatientMemorySync,

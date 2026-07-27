@@ -36,6 +36,21 @@ export interface PatientInfo {
   vitals?: string;
 }
 
+/** 两慢病详情直接唤起所需的患者上下文；禁止携带风险评估结果。 */
+export interface ChronicDiseasePatientInfo extends PatientInfo {
+  currentMedicationHistory?: string;
+  currentVitalSigns?: Record<string, any>;
+  hisHistory?: Record<string, any>;
+  rqflStatus?: string | string[];
+  contractStatus?: string;
+  orgId?: string;
+  orgName?: string;
+  doctorId?: string;
+  doctorName?: string;
+  risks?: never;
+  [key: string]: unknown;
+}
+
 /** 风险项 */
 export interface RiskItem {
   /** 1=红色(高危), 2=橙色(中危), 3=黄色(低危) */
@@ -361,6 +376,7 @@ export interface HandshakeContext {
 /** API 响应 */
 export interface ApiResponse {
   status: string;
+  idPi?: string;
   consultationId?: string;
   action?: string;
   traceId?: string;
@@ -369,6 +385,7 @@ export interface ApiResponse {
   requestId?: string;
   referenceType?: string;
   timestamp?: number;
+  view?: string;
 }
 
 export declare class MedHermes {
@@ -415,6 +432,9 @@ export declare class MedHermes {
 
   /** 推送患者风险信息 */
   sendRisks(patient: PatientInfo, risks?: RiskItem[]): Promise<ApiResponse>;
+
+  /** 直接打开两慢病展开详情；不执行风险分析，且 patient 禁止携带 risks */
+  openChronicDisease(patient: ChronicDiseasePatientInfo): Promise<ApiResponse>;
 
   /** 发送 PHIS 引用回执 */
   sendFeedback(
@@ -467,6 +487,7 @@ export interface MedHermesLoaderApi {
     options: Omit<InpatientEmrGenerationRequest, 'admissionId' | 'htmlContent'>
   ): Promise<InpatientEmrWritebackPayload>;
   receivePatient(patientId: string, optionalInfo?: Partial<PatientInfo>): Promise<ApiResponse>;
+  openChronicDisease(patient: ChronicDiseasePatientInfo): Promise<ApiResponse>;
   sendRisks(patient: PatientInfo, risks?: RiskItem[]): Promise<ApiResponse>;
   sendFeedback(
     requestId: string,

@@ -350,6 +350,10 @@
       return callInstance('receivePatient', [patientId, optionalInfo]);
     },
 
+    openChronicDisease: function (patient) {
+      return callInstance('openChronicDisease', [patient]);
+    },
+
     sendRisks: function (patient, risks) {
       return callInstance('sendRisks', [patient, risks]);
     },

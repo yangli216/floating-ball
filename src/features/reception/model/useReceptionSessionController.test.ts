@@ -20,6 +20,12 @@ describe('useReceptionSessionController', () => {
     expect(session.patientGender.value).toBe('F');
     expect(session.patientAge.value).toBe(63);
 
+    session.startHydrating();
+    session.setDetailExpanded(true);
+    session.finishHydrating();
+    expect(session.status.value).toBe('ready');
+    expect(session.detailExpanded.value).toBe(true);
+
     session.startAssessing();
     session.setRisks([{ level: 2, category: 'chronic', content: '高血压随访' }]);
     session.replaceOpportunity('chronic-refill', {

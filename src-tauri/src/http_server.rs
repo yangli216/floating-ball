@@ -1680,6 +1680,150 @@ async fn reference_feedback(
     HttpResponse::Ok().json(response_body)
 }
 
+fn validate_chronic_disease_open(
+    patient: &PatientInfo,
+) -> Result<(), (&'static str, &'static str)> {
+    if patient.id_pi.trim().is_empty() {
+        return Err((
+            "CHRONIC_DISEASE_PATIENT_REQUIRED",
+            "两慢病唤起必须提供 idPi 或 patientId",
+        ));
+    }
+    if patient.extra.contains_key("risks") {
+        return Err((
+            "CHRONIC_DISEASE_RISKS_NOT_ALLOWED",
+            "两慢病唤起接口不接受 risks，请使用 /api/patient/risks 处理风险评估",
+        ));
+    }
+    Ok(())
+}
+
+async fn open_chronic_disease(
+    data: web::Json<PatientInfo>,
+    app_handle: web::Data<tauri::AppHandle>,
+    state: web::Data<SharedAppState>,
+) -> impl Responder {
+    let started_at = Instant::now();
+    let trace_id = his_integration_log::new_trace_id();
+    if let Err(response) = ensure_http_service_access(&state) {
+        return response;
+    }
+
+    let patient = data.into_inner();
+    let request_summary = summarize_for_his_log(&patient);
+    if let Err((code, message)) = validate_chronic_disease_open(&patient) {
+        let response_body = serde_json::json!({
+            "status": "error",
+            "code": code,
+            "message": message,
+            "traceId": trace_id
+        });
+        record_bridge_log(
+            &app_handle,
+            response_body["traceId"].as_str().unwrap_or_default(),
+            "chronicDisease.open",
+            "POST",
+            "/api/chronic-disease/open",
+            "business_error",
+            400,
+            started_at,
+            Some(request_summary),
+            Some(response_body.clone()),
+            if patient.id_pi.trim().is_empty() {
+                None
+            } else {
+                Some(patient.id_pi.clone())
+            },
+            None,
+            None,
+            Some(message.to_string()),
+        );
+        return HttpResponse::BadRequest().json(response_body);
+    }
+
+    {
+        let mut current = state.current_consultation.lock().unwrap();
+        *current = Some(patient.clone());
+    }
+    if let Err(error) = clear_consultation_events(state.get_ref()) {
+        eprintln!(
+            "Failed to clear consultation events before opening chronic disease detail: {}",
+            error
+        );
+    }
+
+    if let Some(window) = app_handle.get_webview_window("main") {
+        if let Err(error) = window.emit("open-chronic-disease-management", &patient) {
+            eprintln!("Failed to emit chronic disease event: {}", error);
+            let response_body = bridge_dispatch_error(&trace_id);
+            record_bridge_log(
+                &app_handle,
+                response_body["traceId"].as_str().unwrap_or_default(),
+                "chronicDisease.open",
+                "POST",
+                "/api/chronic-disease/open",
+                "error",
+                500,
+                started_at,
+                Some(request_summary),
+                Some(response_body.clone()),
+                Some(patient.id_pi.clone()),
+                None,
+                None,
+                Some(error.to_string()),
+            );
+            return HttpResponse::InternalServerError().json(response_body);
+        }
+
+        let _ = window.set_focus();
+        let _ = window.unminimize();
+        let _ = window.show();
+    } else {
+        let response_body = bridge_window_missing_error(&trace_id);
+        record_bridge_log(
+            &app_handle,
+            response_body["traceId"].as_str().unwrap_or_default(),
+            "chronicDisease.open",
+            "POST",
+            "/api/chronic-disease/open",
+            "error",
+            500,
+            started_at,
+            Some(request_summary),
+            Some(response_body.clone()),
+            Some(patient.id_pi.clone()),
+            None,
+            None,
+            Some("Main window not found".to_string()),
+        );
+        return HttpResponse::InternalServerError().json(response_body);
+    }
+
+    let response_body = serde_json::json!({
+        "status": "success",
+        "idPi": patient.id_pi,
+        "view": "chronic-disease",
+        "traceId": trace_id
+    });
+    record_bridge_log(
+        &app_handle,
+        response_body["traceId"].as_str().unwrap_or_default(),
+        "chronicDisease.open",
+        "POST",
+        "/api/chronic-disease/open",
+        "success",
+        200,
+        started_at,
+        Some(request_summary),
+        Some(response_body.clone()),
+        Some(patient.id_pi.clone()),
+        None,
+        None,
+        None,
+    );
+    HttpResponse::Ok().json(response_body)
+}
+
 async fn show_patient_risks(
     data: web::Json<PatientRiskData>,
     app_handle: web::Data<tauri::AppHandle>,
@@ -1955,6 +2099,10 @@ pub fn run_server(app_handle: tauri::AppHandle, state: SharedAppState) {
                         "/api/consultation/events/ws",
                         web::get().to(consultation_events_ws),
                     )
+                    .route(
+                        "/api/chronic-disease/open",
+                        web::post().to(open_chronic_disease),
+                    )
                     .route("/api/patient/risks", web::post().to(show_patient_risks))
                     // SDK static files
                     .route("/sdk/med-hermes-sdk.js", web::get().to(serve_sdk_js))
@@ -1972,6 +2120,46 @@ pub fn run_server(app_handle: tauri::AppHandle, state: SharedAppState) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn chronic_disease_patient(extra: serde_json::Map<String, serde_json::Value>) -> PatientInfo {
+        PatientInfo {
+            id_pi: "patient-1".to_string(),
+            na_pi: "林女士".to_string(),
+            sd_sex_text: "女性".to_string(),
+            age_text: "62岁".to_string(),
+            id_vis: Some("visit-1".to_string()),
+            department: None,
+            chief_complaint: None,
+            history_of_present_illness: None,
+            past_medical_history: None,
+            allergy_history: None,
+            extra,
+        }
+    }
+
+    #[test]
+    fn chronic_disease_open_rejects_risks_payload() {
+        let mut extra = serde_json::Map::new();
+        extra.insert("risks".to_string(), serde_json::json!([]));
+        let patient = chronic_disease_patient(extra);
+
+        assert_eq!(
+            validate_chronic_disease_open(&patient),
+            Err((
+                "CHRONIC_DISEASE_RISKS_NOT_ALLOWED",
+                "两慢病唤起接口不接受 risks，请使用 /api/patient/risks 处理风险评估",
+            ))
+        );
+    }
+
+    #[test]
+    fn chronic_disease_open_accepts_patient_context_without_risks() {
+        let mut extra = serde_json::Map::new();
+        extra.insert("rqflStatus".to_string(), serde_json::json!("3,6"));
+        let patient = chronic_disease_patient(extra);
+
+        assert_eq!(validate_chronic_disease_open(&patient), Ok(()));
+    }
 
     #[test]
     fn normal_websocket_disconnect_detects_payload_eof() {

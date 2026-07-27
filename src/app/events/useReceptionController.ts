@@ -27,19 +27,19 @@ import {
   getPatientContextId,
   getPatientContextVisitId,
 } from '@/utils/patientContext';
-import {
-  assessChronicRefillCandidate,
-  type RiskItem,
-} from '@features/reception-risk';
+import { assessChronicRefillCandidate } from '@features/reception-risk/lib/chronicRefillAssessment';
+import type { RiskItem } from '@features/reception-risk/types';
 import {
   applyReceptionClinicalHistorySummaries,
   buildReceptionPatientDraft,
+  resolveIncomingPatientTracking,
+} from '@features/reception/lib/receptionPatientSummary';
+import {
   getRecentReportedVisits,
   hasPatientReportedLabOrExamResults,
   hasReportedApplyResult,
-  resolveIncomingPatientTracking,
-  type ReceptionSessionController,
-} from '@features/reception';
+} from '@features/reception/lib/reportedApplyResults';
+import type { ReceptionSessionController } from '@features/reception/model/useReceptionSessionController';
 import { createReceptionFlowGuard } from './receptionFlowGuard';
 
 export interface PatientRisksPayload {
@@ -63,6 +63,16 @@ export interface PatientRisksPayload {
   hisHistory?: HisPatientHistory;
   risks?: RiskItem[];
   [key: string]: unknown;
+}
+
+export interface ChronicDiseaseOpenPayload extends Omit<PatientRisksPayload, 'risks'> {
+  risks?: never;
+  rqflStatus?: string | string[];
+  contractStatus?: string;
+  orgId?: string;
+  orgName?: string;
+  doctorId?: string;
+  doctorName?: string;
 }
 
 export interface StartConsultationPayload {
@@ -120,7 +130,13 @@ function buildCurrentOutpatientRecordText(record: HisOutpatientMedicalRecord | n
 
 async function hydratePatientContextFromHis(
   currentPatient: AppPatient | null,
-  payload: StartConsultationPayload | SessionAssistPayload | PatientRisksPayload | null | undefined,
+  payload:
+    | StartConsultationPayload
+    | SessionAssistPayload
+    | PatientRisksPayload
+    | ChronicDiseaseOpenPayload
+    | null
+    | undefined,
   source: string,
 ): Promise<AppPatient | null> {
   console.log('[ReceptionController] hydratePatientContextFromHis entering:', {
@@ -686,11 +702,91 @@ export function useReceptionController(options: ReceptionControllerOptions) {
     }
   }
 
+  async function openChronicDisease(data: ChronicDiseaseOpenPayload): Promise<void> {
+    const tracking = resolveIncomingPatientTracking(data as Record<string, unknown> | null | undefined);
+    if (!tracking.patientId) {
+      showToast('两慢病唤起失败：未提供患者ID', 'error');
+      return;
+    }
+
+    if (activeReceptionPromise) {
+      if (activeReceptionPatientId && tracking.patientId !== activeReceptionPatientId) {
+        showToast('系统正在接诊其他患者，请稍候再试', 'error');
+        return;
+      }
+      const waitingFlowVersion = receptionFlowGuard.current();
+      await activeReceptionPromise;
+      if (!receptionFlowGuard.isCurrent(waitingFlowVersion)) {
+        console.info('[ReceptionController] Ignore chronic disease event after reception invalidation:', tracking.patientId);
+        return;
+      }
+    }
+
+    const flowVersion = beginReceptionFlow();
+    trackApiCall('his_open_chronic_disease', true, undefined, {
+      patientId: tracking.patientId,
+      patientName: tracking.patientName,
+    });
+
+    try {
+      const nextPatient = await hydratePatientContextFromHis(
+        currentPatient.value,
+        data,
+        'open-chronic-disease-management',
+      );
+      if (!isReceptionFlowCurrent(flowVersion)) {
+        console.info('[ReceptionController] Ignore stale chronic disease context:', tracking.patientId);
+        return;
+      }
+      if (!nextPatient) {
+        throw new Error('患者上下文初始化失败');
+      }
+
+      clearVoiceStateWhenPatientSwitches(currentPatient.value, nextPatient);
+      currentPatient.value = nextPatient;
+      void syncPatientMemoryState(flowVersion, currentPatient.value);
+      receptionSession.setDetailExpanded(true);
+
+      await workMode.openReceptionCapsule(getWindowSizeForView('reception-capsule', {
+        expanded: true,
+        riskCount: 0,
+      }));
+      if (!isReceptionFlowCurrent(flowVersion)) {
+        return;
+      }
+
+      await syncFollowUpState(flowVersion, currentPatient.value);
+      syncReportInterpretationState(flowVersion, currentPatient.value);
+      await syncChronicRefillState(flowVersion, currentPatient.value);
+      receptionSession.finishHydrating();
+
+      void workMode.openReceptionCapsule(getWindowSizeForView('reception-capsule', {
+        expanded: true,
+        riskCount: 0,
+        hasChronicRefill: Boolean(receptionSession.chronicRefillCandidate.value),
+        hasFollowUp: Boolean(receptionSession.outpatientFollowUpContext.value),
+        hasReportInterpretation: receptionSession.reportInterpretationVisits.value.length > 0,
+      }));
+    } catch (error) {
+      if (!isReceptionFlowCurrent(flowVersion)) {
+        console.info('[ReceptionController] Ignore stale chronic disease error:', tracking.patientId, error);
+        return;
+      }
+      console.error('[ReceptionController] Failed to open chronic disease detail', error);
+      trackError('open_chronic_disease_failed', error, {
+        patientId: tracking.patientId,
+      });
+      showToast('两慢病信息加载失败', 'error');
+      receptionSession.fail();
+    }
+  }
+
   return {
     executeReceptionFlow,
     ensureReceptionContext,
     invalidateReceptionFlow,
     mergeCurrentPatient,
+    openChronicDisease,
     showPatientRisks,
   };
 }

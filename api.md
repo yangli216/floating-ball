@@ -189,7 +189,7 @@ PHIS                                MedHermes
 
 ### 5.4 联调日志与 traceId
 
-1. `POST /api/handshake`、`POST /api/consultation/start`、`POST /api/consultation/assist`、`POST /api/consultation/start-voice`、`POST /api/consultation/stop`、`POST /api/consultation/reference-feedback`、`POST /api/patient/risks`、`POST /api/report/interpret` 会写入本地 HIS 集成日志；WebSocket 连接与异常断开按状态记录。
+1. `POST /api/handshake`、`POST /api/consultation/start`、`POST /api/consultation/assist`、`POST /api/consultation/start-voice`、`POST /api/consultation/stop`、`POST /api/consultation/reference-feedback`、`POST /api/patient/risks`、`POST /api/chronic-disease/open`、`POST /api/report/interpret` 会写入本地 HIS 集成日志；WebSocket 连接与异常断开按状态记录。
 2. 上述业务响应会额外返回 `traceId` 字段。三方联调时请把该值提供给桌面端开发或从“设置 -> HIS 联调日志”入口中筛选查看。
 3. 日志会记录接口方向、路径、请求摘要、响应摘要、HTTP 状态、业务 `code/msg`、耗时、患者 / 问诊 / 回执标识和错误摘要；`Cookie`、`Authorization`、`token`、手机号、身份证号等敏感字段会默认脱敏。
 4. 桌面端主动调用 PHIS 的字典、药品详情、库存校验等出站接口也写入同一日志文件，便于用一次 `traceId` 串联 Bridge 入站与 PHIS 出站排查。
@@ -1603,7 +1603,7 @@ http://127.0.0.1:8081/api/consultation/stop
 
 用途：把 HIS 当前患者的风险信息推送到 `MedHermes`，触发患者风险评估提醒。
 
-两慢病专用联调页 `web_project/public/chronic-disease-mock.html` 通过正式 SDK `sendRisks(patient, risks)` 调用本接口。该页面不渲染 floating-ball，只负责下发带 `rqflStatus` 公卫管理字段及中性历史上下文的 mock 患者并展示 Bridge 回执；实际患者胶囊和慢病详情由桌面端窗口呈现。
+该接口只承担风险评估职责，不得作为两慢病详情入口复用。需要直接打开高血压 / 2 型糖尿病管理详情时，必须使用 6.8 的 `POST /api/chronic-disease/open`。
 
 完整地址：
 
@@ -1741,6 +1741,77 @@ http://127.0.0.1:8081/api/patient/risks
 4. 如果仅有 level 3 低危风险，面板将在 10 秒后自动关闭。
 
 该接口不是问诊主链路必需项，可以后补。
+
+### 6.8 `POST /api/chronic-disease/open`（两慢病专用）
+
+用途：由 HIS 或两慢病联调页直接唤起高血压 / 2 型糖尿病展开详情。该接口使用独立事件链，不执行风险评估，也不调用 LLM 风险分析。
+
+完整地址：
+
+```text
+http://127.0.0.1:8081/api/chronic-disease/open
+```
+
+推荐通过 SDK 调用：
+
+```javascript
+MedHermesLoader.ready(function (medHermes) {
+  medHermes.openChronicDisease({
+    idPi: '766842939207974912',
+    idVis: 'VIS-20260507-001',
+    naPi: '林女士',
+    sdSexText: '女性',
+    ageText: '62岁',
+    rqflStatus: '3,6',
+    contractStatus: '已签约',
+    currentVitalSigns: {
+      systolicBloodPressure: 136,
+      diastolicBloodPressure: 82,
+      measuredAt: '2026-07-27T09:10:00+08:00'
+    },
+    hisHistory: {
+      patientId: '766842939207974912',
+      visits: []
+    }
+  });
+});
+```
+
+请求字段沿用 6.7 的患者身份、就诊、病历、`currentVitalSigns` 和 `hisHistory` 中性上下文字段，并额外支持：
+
+| 字段名 | 类型 | 必填 | 说明 |
+| :--- | :--- | :--- | :--- |
+| `rqflStatus` | String / String[] | 否 | 公卫管理状态；高血压为 `3`，糖尿病为 `6`，双病种为 `3,6` |
+| `contractStatus` | String | 否 | 签约状态展示文本 |
+| `orgId` / `orgName` | String | 否 | 当前机构标识和名称 |
+| `doctorId` / `doctorName` | String | 否 | 当前医生标识和姓名 |
+
+边界约束：
+
+1. `idPi` 是唯一硬要求字段，`idVis` 强烈建议传入。
+2. 请求体禁止携带 `risks`；SDK 会在发起请求前拒绝，Bridge 对直接 HTTP 调用也返回 `400 CHRONIC_DISEASE_RISKS_NOT_ALLOWED`。
+3. 入口只补全患者与慢病事实上下文，并把接诊详情状态直接设置为展开；不会调用 `analyzePatientRisks`，也不会复用 `show-patient-risks` 事件。
+4. `rqflStatus` 是公卫在管身份依据；诊断或异常体征只用于临床识别，不得由调用方据此伪造公卫身份。
+
+成功响应：
+
+```json
+{
+  "status": "success",
+  "idPi": "766842939207974912",
+  "view": "chronic-disease",
+  "traceId": "his-20260727-7c4543b4"
+}
+```
+
+常见错误：
+
+| HTTP | `code` | 说明 |
+| :--- | :--- | :--- |
+| `400` | `CHRONIC_DISEASE_PATIENT_REQUIRED` | SDK 调用缺少 `idPi` / `patientId`，或 Bridge 收到空患者标识；原始 HTTP 缺少必填字段时也可能由 JSON 解析器直接返回 `400` |
+| `400` | `CHRONIC_DISEASE_RISKS_NOT_ALLOWED` | 请求误带 `risks`，应改用 `/api/patient/risks` 处理风险评估 |
+| `401` | - | 尚未完成 SDK 授权握手或授权上下文失效 |
+| `500` | - | 主窗口不存在或事件分发失败 |
 
 ## 7. `resultType` 处理约定
 

@@ -735,6 +735,36 @@
   };
 
   /**
+   * 直接打开高血压 / 2 型糖尿病管理详情。
+   * 该入口与患者风险评估完全分离，不接受 risks。
+   * @param {Object} patient 患者及慢病上下文
+   * @returns {Promise<Object>}
+   */
+  MedHermes.prototype.openChronicDisease = function (patient) {
+    if (!patient || !getPatientId(patient)) {
+      var patientError = new Error('openChronicDisease 必须提供 idPi 或 patientId');
+      patientError.code = 'CHRONIC_DISEASE_PATIENT_REQUIRED';
+      return Promise.reject(patientError);
+    }
+    if (Object.prototype.hasOwnProperty.call(patient, 'risks')) {
+      var risksError = new Error('openChronicDisease 不接受 risks；风险评估请使用 sendRisks');
+      risksError.code = 'CHRONIC_DISEASE_RISKS_NOT_ALLOWED';
+      return Promise.reject(risksError);
+    }
+
+    var self = this;
+    var payload = assign({}, patient);
+    this._currentPatientId = getPatientId(payload);
+    this._currentConsultationId = getPatientAnchorId(payload);
+
+    return this._callWithFallback(
+      function () { return self._http.post('/chronic-disease/open', payload); },
+      'chronic-disease-open',
+      payload
+    );
+  };
+
+  /**
    * 推送患者风险信息
    * @param {Object} patient 患者信息
    * @param {Array} [risks] 预计算风险项（不传则由 LLM 自动分析）
@@ -1285,6 +1315,9 @@
       },
       receivePatient: function (patientId, optionalInfo) {
         return call('receivePatient', [patientId, optionalInfo]);
+      },
+      openChronicDisease: function (patient) {
+        return call('openChronicDisease', [patient]);
       },
       sendRisks: function (patient, risks) {
         return call('sendRisks', [patient, risks]);

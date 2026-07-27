@@ -29,6 +29,7 @@ const props = defineProps<{
   gender: 'M' | 'F';
   age: number;
   risks: RiskItem[];
+  expanded: boolean;
   analyzing?: boolean;
   chronicRefillCandidate?: ChronicRefillCandidate | null;
   chronicRefillGenerating?: boolean;
@@ -56,7 +57,7 @@ const emit = defineEmits<{
   ): void;
 }>();
 
-const detailExpanded = ref(false);
+const detailExpanded = computed(() => props.expanded);
 const openSection = ref(3);
 const metric = ref<ChronicMetricKind>('blood-glucose');
 const selectedSuggestions = ref<string[]>([]);
@@ -153,7 +154,6 @@ function onAvatarError(): void {
 
 function expandDetail(): void {
   if (detailExpanded.value) return;
-  detailExpanded.value = true;
   trackClick('reception_chronic_plugin_expand', {
     chronicManaged: summary.value.isChronicManaged,
     diseases: summary.value.diseaseTags.map((item) => item.diseaseType),
@@ -162,7 +162,6 @@ function expandDetail(): void {
 }
 
 function collapseDetail(): void {
-  detailExpanded.value = false;
   trackClick('reception_chronic_plugin_collapse');
   emit('toggle-expand', false);
 }

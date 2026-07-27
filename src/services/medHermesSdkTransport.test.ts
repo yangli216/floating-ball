@@ -28,6 +28,7 @@ class FakeWebSocket {
 type FetchMock = ReturnType<typeof vi.fn>;
 type MedHermesInstance = {
   init(): Promise<unknown>;
+  openChronicDisease(patient: Record<string, unknown>): Promise<unknown>;
   destroy(): void;
   on(event: string, handler: (...args: unknown[]) => void): MedHermesInstance;
 };
@@ -77,6 +78,39 @@ describe('MedHermes WebSocket-only event transport', () => {
     expect(sdkSource).not.toContain('prototype.pollEvent');
     expect(sdkSource).not.toContain('prototype.startPolling');
     expect(sdkSource).not.toContain('prototype.stopPolling');
+  });
+
+  it('uses an isolated chronic-disease endpoint and rejects risk payloads', async () => {
+    const fetchMock = vi.fn(successfulResponse);
+    const MedHermes = loadSdk(fetchMock);
+    const sdk = new MedHermes();
+
+    await sdk.openChronicDisease({
+      idPi: 'patient-1',
+      idVis: 'visit-1',
+      rqflStatus: '3,6',
+      contractStatus: '已签约',
+    });
+
+    const fetchCalls = fetchMock.mock.calls as unknown as unknown[][];
+    const chronicCall = fetchCalls
+      .find((call) => String(call[0]).endsWith('/api/chronic-disease/open'));
+    expect(chronicCall).toBeDefined();
+    const requestOptions = chronicCall?.[1] as { body?: string };
+    expect(JSON.parse(requestOptions.body || '{}')).toEqual(expect.objectContaining({
+      idPi: 'patient-1',
+      rqflStatus: '3,6',
+    }));
+    expect(requestOptions.body).not.toContain('"risks"');
+    expect(fetchCalls.some((call) => String(call[0]).includes('/api/patient/risks'))).toBe(false);
+
+    await expect(sdk.openChronicDisease({
+      idPi: 'patient-1',
+      risks: [],
+    })).rejects.toMatchObject({
+      code: 'CHRONIC_DISEASE_RISKS_NOT_ALLOWED',
+    });
+    sdk.destroy();
   });
 
   it('opens WebSocket after the initial handshake without a duplicate handshake', async () => {

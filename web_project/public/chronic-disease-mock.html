@@ -429,8 +429,8 @@
     <section class="panel">
       <header class="panel-header">
         <div>
-          <h2>选择患者场景并唤起真实 floating-ball</h2>
-          <p>选择场景后点击“唤起”，页面将通过正式 SDK 向桌面端推送患者风险事件。</p>
+          <h2>选择患者场景并唤起全医慧助</h2>
+          <p>选择场景后点击“唤起”，页面将通过两慢病专用 SDK 方法直接打开慢病详情。</p>
         </div>
         <span class="step">1</span>
       </header>
@@ -463,7 +463,7 @@
             <button id="connect-button" type="button" class="action secondary">仅握手</button>
           </div>
           <button id="invoke-button" type="button" class="action primary">
-            唤起 floating-ball 慢病胶囊
+            唤起全医慧助两慢病详情
           </button>
           <div class="secondary-actions">
             <button id="ping-button" type="button" class="action secondary">检测桌面端</button>
@@ -471,7 +471,7 @@
           </div>
           <p class="notice">
             <span aria-hidden="true">ⓘ</span>
-            <span>收到 Bridge 成功回执只代表事件已交给桌面端；请在真实 floating-ball 窗口中继续检查胶囊、慢病详情、随访、路径、健康处方和年度评估。</span>
+            <span>收到 Bridge 成功回执只代表事件已交给桌面端；请在全医慧助窗口中继续检查慢病详情、随访、路径、健康处方和年度评估。</span>
           </p>
         </div>
       </div>
@@ -482,7 +482,7 @@
         <header class="panel-header">
           <div>
             <h2>将发送的患者载荷</h2>
-            <p><code>POST /api/patient/risks</code></p>
+            <p><code>POST /api/chronic-disease/open</code></p>
           </div>
           <span class="step">2</span>
         </header>
@@ -643,12 +643,7 @@
             orgName: '某某街道社区卫生服务中心',
             doctorId: 'MOCK-D001',
             doctorName: '李医生'
-          },
-          risks: [
-            { level: 2, category: 'chronic', content: '高血压与2型糖尿病均已纳入公卫管理' },
-            { level: 3, category: 'vital', content: '已带入4条血压和4条血糖 Mock 趋势，需医生核实' },
-            { level: 3, category: 'medication', content: '已带入3项历史随访用药，仅用于核对，不表示处方建议' }
-          ]
+          }
         },
         {
           id: 'hypertension-managed',
@@ -712,12 +707,7 @@
             orgName: '某某街道社区卫生服务中心',
             doctorId: 'MOCK-D001',
             doctorName: '李医生'
-          },
-          risks: [
-            { level: 2, category: 'chronic', content: '高血压已纳入公卫管理' },
-            { level: 3, category: 'vital', content: '已带入4条血压 Mock 趋势，需医生核实' },
-            { level: 3, category: 'medication', content: '已带入2项历史降压用药，仅用于核对' }
-          ]
+          }
         },
         {
           id: 'diabetes-managed',
@@ -781,12 +771,7 @@
             orgName: '某某街道社区卫生服务中心',
             doctorId: 'MOCK-D001',
             doctorName: '李医生'
-          },
-          risks: [
-            { level: 2, category: 'chronic', content: '2型糖尿病已纳入公卫管理' },
-            { level: 3, category: 'vital', content: '已带入4条血糖 Mock 趋势，需医生核实' },
-            { level: 3, category: 'medication', content: '已带入2项历史降糖用药，仅用于核对' }
-          ]
+          }
         },
         {
           id: 'clinical-only',
@@ -836,11 +821,7 @@
             orgName: '某某街道社区卫生服务中心',
             doctorId: 'MOCK-D001',
             doctorName: '李医生'
-          },
-          risks: [
-            { level: 2, category: 'chronic', content: '临床已识别高血压与2型糖尿病，公卫管理身份待核实' },
-            { level: 2, category: 'vital', content: 'Mock 血压血糖记录偏高，需医生按真实情况复核' }
-          ]
+          }
         },
         {
           id: 'ordinary',
@@ -862,10 +843,7 @@
             orgName: '某某街道社区卫生服务中心',
             doctorId: 'MOCK-D001',
             doctorName: '李医生'
-          },
-          risks: [
-            { level: 3, category: 'other', content: '普通门诊接诊对照场景' }
-          ]
+          }
         }
       ];
 
@@ -926,8 +904,7 @@
 
       function payloadForScenario(scenario) {
         return Object.assign({}, scenario.patient, {
-          mockScenarioId: scenario.id,
-          risks: scenario.risks
+          mockScenarioId: scenario.id
         });
       }
 
@@ -1085,13 +1062,13 @@
       async function invokeFloatingBall() {
         await ensureConnected();
         var payload = payloadForScenario(selectedScenario);
-        appendLog('event', '发送患者风险事件：' + selectedScenario.label, payload);
+        appendLog('event', '发送两慢病详情唤起事件：' + selectedScenario.label, payload);
         var patient = Object.assign({}, selectedScenario.patient, {
           mockScenarioId: selectedScenario.id
         });
         var activeSdk = await loadSdk();
-        var response = await activeSdk.sendRisks(patient, selectedScenario.risks);
-        appendLog('success', 'Bridge 已接收，检查真实 floating-ball 窗口', response);
+        var response = await activeSdk.openChronicDisease(patient);
+        appendLog('success', 'Bridge 已接收，检查全医慧助两慢病详情', response);
         return response;
       }
 

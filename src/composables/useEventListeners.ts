@@ -43,6 +43,7 @@ import { useTauriEventListener } from '@shared/composables/useTauriEventListener
 import { formatUserFacingError } from '@shared/lib/errorMessages';
 import {
   useReceptionController,
+  type ChronicDiseaseOpenPayload,
   type PatientRisksPayload,
   type SessionAssistPayload,
   type StartConsultationPayload,
@@ -165,6 +166,7 @@ export function useEventListeners(options: EventListenersOptions) {
     ensureReceptionContext,
     invalidateReceptionFlow,
     mergeCurrentPatient,
+    openChronicDisease,
     showPatientRisks,
   } = useReceptionController({
     currentPatient,
@@ -250,6 +252,16 @@ export function useEventListeners(options: EventListenersOptions) {
   async function handlePatientRisksEvent(event: TauriEvent<PatientRisksPayload>): Promise<void> {
     console.log('Received patient risks request:', event.payload);
     await showPatientRisks(event.payload);
+  }
+
+  /**
+   * 注册两慢病详情直接唤起事件监听
+   */
+  async function handleChronicDiseaseOpenEvent(
+    event: TauriEvent<ChronicDiseaseOpenPayload>,
+  ): Promise<void> {
+    console.log('Received chronic disease open request:', event.payload);
+    await openChronicDisease(event.payload);
   }
 
   /**
@@ -493,6 +505,14 @@ export function useEventListeners(options: EventListenersOptions) {
     throwOnError: true,
   });
 
+  const chronicDiseaseOpenListener = useTauriEventListener<ChronicDiseaseOpenPayload>({
+    eventName: 'open-chronic-disease-management',
+    handler: (event) => { void handleChronicDiseaseOpenEvent(event); },
+    logContext: 'EventListeners',
+    autoStart: false,
+    throwOnError: true,
+  });
+
   const startConsultationListener = useTauriEventListener<StartConsultationPayload>({
     eventName: 'start-consultation',
     handler: (event) => { void handleStartConsultationEvent(event); },
@@ -567,6 +587,7 @@ export function useEventListeners(options: EventListenersOptions) {
 
   const appEventListeners = [
     patientRisksListener,
+    chronicDiseaseOpenListener,
     startConsultationListener,
     consultationAssistListener,
     stopConsultationListener,

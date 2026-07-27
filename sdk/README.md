@@ -87,6 +87,7 @@ MedHermesLoader.detect().then(function(online) { ... });
 // 兼容旧 HIS 工具封装：可直接通过 Loader 代理调用 SDK 方法
 MedHermesLoader.startConsultation(patient);
 MedHermesLoader.assist(patient, 'suggestedDx');
+MedHermesLoader.openChronicDisease(patient);
 MedHermesLoader.startVoice(patient);
 MedHermesLoader.interpretReport({ taskId: 'inspectReport', query: '...' });
 MedHermesLoader.generateInpatientEmr({ admissionId, templateId, templateName, htmlContent });
@@ -445,7 +446,11 @@ await mh.sendFeedback(record.requestId, 'success', 'HIS 已成功回填住院病
 
 #### `sendRisks(patient, risks?): Promise`
 
-推送患者风险信息。`risks` 为空时由 AI 自动分析。
+推送患者风险信息。`risks` 为空时由 AI 自动分析。此方法只属于风险评估，不用于唤起两慢病详情。
+
+#### `openChronicDisease(patient): Promise`
+
+通过独立的 `POST /api/chronic-disease/open` 直接打开两慢病展开详情。`patient` 可携带 `rqflStatus / contractStatus / currentVitalSigns / hisHistory` 等慢病上下文，但不得携带 `risks`；该方法不会触发患者风险分析。
 
 #### `sendFeedback(requestId, status, message?, items?): Promise`
 

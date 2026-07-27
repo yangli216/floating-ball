@@ -271,6 +271,14 @@ const API_CALL_SPECS: Record<string, OperationDescriptor> = {
     scene: 'reception',
     operationType: 'api_call',
   },
+  his_open_chronic_disease: {
+    module: 'his_bridge',
+    action: 'open_chronic_disease',
+    title: '接收 HIS 两慢病唤起请求',
+    sourceModule: 'his_bridge',
+    scene: 'chronic-disease',
+    operationType: 'api_call',
+  },
   his_start_consultation: {
     module: 'his_bridge',
     action: 'start_consultation',

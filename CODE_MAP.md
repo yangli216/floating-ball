@@ -320,6 +320,7 @@ Pinia 跨组件共享状态（仅两个，新增需人工审批）。
 | POST | `/api/consultation/reference-feedback` | PHIS 引用回执 |
 | POST | `/api/consultation/start-voice` | 触发语音问诊 |
 | POST | `/api/patient/risks` | 患者风险数据 |
+| POST | `/api/chronic-disease/open` | 直接唤起两慢病展开详情；不执行风险分析 |
 
 ---
 
@@ -453,6 +454,6 @@ HIS POST /api/consultation/assist {action: "suggestedDx", chiefComplaint: "..."}
 | 年度自然年聚合 | `src/features/chronic-disease/lib/annualAssessment.ts` |
 | 慢病检查检验到诊疗方案 seed | `src/features/chronic-disease/lib/chronicTreatmentPlanDraft.ts` + `src/features/treatment-plan/model/treatmentPlanInitialDraft.ts` |
 | 趋势图与业务窗 UI | `src/features/chronic-disease/ui/`；融合随访章节组件位于 `ui/follow-up/`，只通过显式 `v-model` 接收原实例表单状态 |
-| 两慢病 Mock HIS 唤起页 | `web_project/public/chronic-disease-mock.html`；通过正式 SDK `sendRisks()` 和 `/api/patient/risks` 唤起真实 floating-ball，并用中性 `currentVitalSigns / hisHistory` 载荷模拟血压、血糖和随访用药，不在网页内渲染插件 |
+| 两慢病 Mock HIS 唤起页 | `web_project/public/chronic-disease-mock.html`；通过正式 SDK `openChronicDisease()` 和 `/api/chronic-disease/open` 直接唤起真实两慢病展开详情，并用中性 `currentVitalSigns / hisHistory` 载荷模拟血压、血糖和随访用药；不发送 `risks`，不在网页内渲染插件 |
 | Tauri 独立窗入口组合 | `src/App.vue` |
 | 产品与安全边界 | `docs/two-chronic-disease-plugin.md` |

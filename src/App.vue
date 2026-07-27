@@ -1046,6 +1046,7 @@ const openInsideCloudHome = async () => {
             :gender="riskPatientGender"
             :age="riskPatientAge"
             :risks="riskItems"
+            :expanded="receptionDetailExpanded"
             :analyzing="isRiskAnalyzing"
             :chronic-refill-candidate="chronicRefillCandidate"
             :chronic-refill-generating="chronicRefillGenerating"
