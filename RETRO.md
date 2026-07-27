@@ -442,6 +442,13 @@
 - **解决方案**: `ReceptionCapsule` 从当前 `AppPatient` 显式解析 `idVis` 并注入慢病推荐 composable，草稿只使用该值做就诊绑定；`idRecord / idPhr` 继续只用于慢病事实查询和 `TcdVisitForm` 随访保存。
 - **后续防护**: 新增跨页面草稿或缓存绑定时必须显式写明主键语义；只需患者/就诊隔离的通用状态可使用 `getPatientContextAnchorId()`，但后续必须保存到本次门诊的草稿从创建时起就要使用 `getPatientContextVisitId()` 并拒绝缺失值，不得回退到业务表主键、健康档案主键或患者主键。
 
+### RETRO-055: 发布矩阵并发创建同标签草稿导致跨平台附件分裂 [已解决]
+
+- **现象**: `v1.3.6` 的 macOS 与 Windows 构建均成功，但 GitHub 生成两份同标签 Draft Release；一份只有 Windows MSI，另一份只有 macOS DMG / App 更新包，任意一份都不是完整交付。
+- **根因**: `release.yml` 的两个矩阵任务并发执行 `tauri-action`，在同标签草稿尚未建立时同时进入创建逻辑，触发 Draft Release 创建竞态。
+- **解决方案**: 为发布矩阵增加 `max-parallel: 1`，让首个平台建立草稿、第二个平台复用同一草稿上传附件；失败版本标签保持不动，使用下一补丁版本重新发布。
+- **后续防护**: 已升级为 `AGENTS.md` 版本发布门禁；发布完成必须确认只有一份目标版本草稿，且同时包含 macOS、Windows 与合并后的更新清单。
+
 > 新增条目请复制以下模板：
 
 ```markdown

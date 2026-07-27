@@ -30,6 +30,9 @@ jobs:
     environment: TAURI_SIGNING_PRIVATE_KEY
     strategy:
       fail-fast: false
+      # tauri-action creates/reuses one draft release per tag. Serialize the
+      # platform jobs to prevent concurrent draft creation from splitting assets.
+      max-parallel: 1
       matrix:
         # 升级 macos-latest 到 macos-14 (M1) 以获得更快的编译速度
         platform: [macos-14, windows-latest]

@@ -153,6 +153,12 @@
    - `yarn test:unit`（引入 Vitest 且命中已覆盖模块时）
    - 必要的手测结论
 
+## 版本发布门禁
+
+1. macOS / Windows 共用同一版本标签和 Draft Release 时，发布矩阵必须串行上传；不得让多个 `tauri-action` 任务并发创建同标签草稿。
+2. 发布完成必须分别核对分支提交、远端标签、Actions 终态和唯一 Draft Release。完整客户端草稿至少包含 macOS universal DMG、App 更新包及签名、Windows MSI 及签名，以及合并后的 `latest.json`。
+3. 出现重复或缺平台附件的草稿时不得宣称发布完成，也不得移动已经推送的标签；修复发布流程后使用下一个补丁版本重新发布。
+
 ## 工具使用
 [Calicat MCP 使用说明]
 
