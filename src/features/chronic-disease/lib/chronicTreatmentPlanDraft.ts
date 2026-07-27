@@ -37,7 +37,7 @@ export function buildChronicTreatmentPlanInitialDraft(input: {
   const selected = new Set(input.selectedIds);
   return {
     requestId: input.requestId,
-    patientAnchorId: input.summary.visitId || input.summary.patientId,
+    patientAnchorId: input.summary.idRecord || input.summary.idPhr,
     sourceModule: 'chronic_disease',
     title: '两慢病检查检验草稿',
     items: input.suggestions

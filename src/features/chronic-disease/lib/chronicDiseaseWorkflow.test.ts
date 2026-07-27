@@ -16,8 +16,8 @@ import {
 
 function summary(source: 'public-health' | 'clinical'): ChronicDiseasePatientSummary {
   return {
-    patientId: 'P001',
-    visitId: 'V001',
+    idPhr: 'PHR001',
+    idRecord: 'RECORD001',
     name: '林女士',
     gender: '女',
     ageText: '62岁',
@@ -66,7 +66,7 @@ describe('chronic disease workflow boundaries', () => {
       requestId: 'REQ001',
     });
 
-    expect(draft.patientAnchorId).toBe('V001');
+    expect(draft.patientAnchorId).toBe('RECORD001');
     expect(draft.items).toEqual([
       expect.objectContaining({ sourceId: 'hba1c', type: 'lab_test' }),
       expect.objectContaining({ sourceId: 'fundus', type: 'exam' }),
@@ -77,7 +77,7 @@ describe('chronic disease workflow boundaries', () => {
     const payload: ChronicDiseaseWindowPayload = {
       requestId: 'REQ001',
       kind: 'assessment',
-      patientAnchor: 'P001:V001',
+      patientAnchor: 'PHR001:RECORD001',
       summary: summary('public-health'),
       openedAt: '2026-07-24T10:00:00+08:00',
     };

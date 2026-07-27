@@ -130,7 +130,7 @@ export async function openChronicDiseaseWindow(input: {
   summary: ChronicDiseasePatientSummary;
   diseaseType?: ChronicDiseaseType;
 }): Promise<ChronicDiseaseWindowPayload> {
-  if (!input.summary.patientId) {
+  if (!input.summary.idPhr) {
     throw new Error('缺少患者标识，无法打开慢病业务窗口。');
   }
   if (!input.summary.hasSupportedDisease) {
@@ -144,7 +144,7 @@ export async function openChronicDiseaseWindow(input: {
     requestId: createRequestId(),
     kind: input.kind,
     diseaseType: input.kind === 'follow-up' ? undefined : input.diseaseType,
-    patientAnchor: `${input.summary.patientId}:${input.summary.visitId || '-'}`,
+    patientAnchor: `${input.summary.idPhr}:${input.summary.idRecord || '-'}`,
     summary: input.summary,
     openedAt: new Date().toISOString(),
   };

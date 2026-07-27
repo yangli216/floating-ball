@@ -6,9 +6,7 @@ import {
   getPatientContextAgeText,
   getPatientContextGenderText,
   getPatientContextHistory,
-  getPatientContextId,
   getPatientContextName,
-  getPatientContextVisitId,
 } from '@/utils/patientContext';
 import type {
   BloodGlucosePoint,
@@ -303,7 +301,8 @@ export function buildChronicDiseaseSummary(input: ChronicDiseaseSummaryInput): C
     ...recentMedicationFacts.map((item) => item.observedAt || ''),
   ].filter(Boolean).sort((left, right) => Date.parse(right) - Date.parse(left))[0];
   const gender = toText(raw?.sdSexText) || getPatientContextGenderText(patient) || '未知';
-  const hasOriginalChronicDiseaseData = Boolean(toText(raw?.idPi))
+  const hasOriginalChronicDiseaseData = Boolean(toText(raw?.idPhr))
+    || Boolean(toText(raw?.idRecord))
     || Array.isArray(raw?.pressureList)
     || Array.isArray(raw?.pressureHist)
     || Array.isArray(raw?.pressureHList)
@@ -311,8 +310,8 @@ export function buildChronicDiseaseSummary(input: ChronicDiseaseSummaryInput): C
     || Array.isArray(raw?.visitInfos);
 
   return {
-    patientId: toText(raw?.idPi) || getPatientContextId(patient) || '',
-    visitId: getPatientContextVisitId(patient) || undefined,
+    idPhr: toText(raw?.idPhr),
+    idRecord: toText(raw?.idRecord),
     name: toText(raw?.naPi) || getPatientContextName(patient) || '未知患者',
     gender,
     ageText: toText(raw?.ageText) || getPatientContextAgeText(patient) || '年龄待核实',

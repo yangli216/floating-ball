@@ -222,8 +222,8 @@ export function createFusedFollowUpFormState(
   const doctorId = summary.doctorId || '';
 
   return {
-    idPhr: summary.patientId,
-    idRecord: summary.visitId || '',
+    idPhr: summary.idPhr,
+    idRecord: summary.idRecord,
     id: '',
     status: '3',
     sdVisitKind: visitKinds(summary.managedDiseaseTypes),

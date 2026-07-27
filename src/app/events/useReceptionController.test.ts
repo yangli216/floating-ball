@@ -82,7 +82,8 @@ describe('useReceptionController openChronicDisease', () => {
 
   it('queries the real chronic-disease service with idCard and keeps response field names', async () => {
     const fetchChronicDiseasePatientVisitHistory = vi.fn().mockResolvedValue({
-      idPi: 'patient-1',
+      idPhr: 'phr-1',
+      idRecord: 'record-1',
       naPi: '林女士',
       sdSexText: '女性',
       ageText: '62岁',
@@ -141,7 +142,8 @@ describe('useReceptionController openChronicDisease', () => {
       .toHaveBeenCalledWith('150206199306039948');
     expect(currentPatient.value?.idCard).toBe('150206199306039948');
     expect(currentPatient.value?.raw).toEqual(expect.objectContaining({
-      idPi: 'patient-1',
+      idPhr: 'phr-1',
+      idRecord: 'record-1',
       naPi: '林女士',
       rqflStatus: '3,6',
       pressureList: [expect.objectContaining({ fieldName: 'pressureL' })],

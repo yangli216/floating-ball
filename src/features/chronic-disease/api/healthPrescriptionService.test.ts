@@ -11,8 +11,8 @@ const mockedChat = vi.mocked(chat);
 
 function summary(): ChronicDiseasePatientSummary {
   return {
-    patientId: 'P001',
-    visitId: 'V001',
+    idPhr: 'PHR001',
+    idRecord: 'RECORD001',
     name: '林女士',
     gender: '女',
     ageText: '62岁',

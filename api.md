@@ -1784,7 +1784,7 @@ POST api/phis.aiAdapterService/queryPatientVisitHistoryData
 
 | 字段名 | 类型 | 说明 |
 | :--- | :--- | :--- |
-| `idPi` | String | 个人健康档案唯一标识 |
+| `idPhr` | String | 个人健康档案唯一标识 |
 | `naPi` | String | 姓名 |
 | `sdSexText` | String | 性别 |
 | `ageText` | String | 年龄 |
@@ -1797,6 +1797,7 @@ POST api/phis.aiAdapterService/queryPatientVisitHistoryData
 | `gluList` | List | 近两年空腹血糖曲线；条目直接使用 `fieldName / fieldValue / bisDate` |
 | `visitInfos` | List | 近两年随访数据；直接使用 `sdFate / sdVisitCata / idDoctor / desOther / sdArteriopalmus / advSportWeek / sdPresAdvice / desHealthRx / sdVisitWay / sdSideEffects / sdSymptom / desSymptom / sportWeek / dtHgb / advDaySmoke / sportMinute / glu / lowEffects / sdPsychicAdj / hgb / daySmoke / targRice / sdProAct / fbgMeal / idPherec / dtVisit / sdDrugPro / desSideEffects / fgRef / desRef / refUnit / refDep / avoirdupois / rice / dtNextVisit / advDayDrink / advSportMinute / pressureL / advBmi / pressureH / stature / dayDrink / bmi / waistline / subCheck / heartRate / advAdp / sdSalt / sdAdvSalt / drugList` |
 | `drugList` | List | 随访用药；直接使用 `naDrug / sdDrugFreq / perDose / doseUnit` |
+| `idRecord` | String | 两慢病登记表主键；保存随访时必须原样带入 |
 
 医生确认随访表单后，客户端必须通过同一个 Adapter 保存：
 
@@ -1834,6 +1835,8 @@ POST api/phis.aiAdapterService/saveTcdForm
 
 `drugList` 条目只使用 `id / idDrug / idPherec / naDrug / sdDrugFreq / perDose / doseUnit / insulin`。DOCX 字段表与入参示例对部分数值字段采用了不同 JSON 表示（例如表中 `bmi` 为 String，示例中为 Number）；客户端保持原表单产生的可接受值，不为此引入另一套改名 DTO。接口文档没有给出成功响应结构或幂等请求头，客户端不得自行声明 `followUpId / savedAt / version` 等响应字段。
 
+查询响应顶层 `idPhr` 与 `idRecord` 必须沿慢病摘要、随访窗口状态和 `TcdVisitForm` 全程保留原字段名。`idRecord` 是保存必填项；缺失或仅为空白时必须由随访表单在调用 HIS Adapter 前拦截，最终 `HisService.saveTcdForm` 出站边界也必须拒绝发送，不能用入口 `idVis`、历史随访 `idPherec` 或其他就诊标识代替。
+
 慢病随访表单位于独立 Tauri Webview，而 SDK handshake 初始化的 HIS Adapter 只保存在主窗口 JavaScript 上下文。保存必须使用以下内部窗口事件代理，不能在业务窗复制 HIS token 或自行重新初始化 Adapter：
 
 ```text
@@ -1852,11 +1855,11 @@ main
 1. `idPi` 是唯一硬要求字段，`idVis` 强烈建议传入。
 2. 请求体禁止携带 `risks`；SDK 会在发起请求前拒绝，Bridge 对直接 HTTP 调用也返回 `400 CHRONIC_DISEASE_RISKS_NOT_ALLOWED`。
 3. 入口取得 `idCard` 后才调用 `queryPatientVisitHistoryData`；没有 `idCard` 时不得改用 `idPi` 冒充请求字段。
-4. 慢病接口响应必须以原字段强类型接收并直接用于慢病事实计算；不得先翻译成 `patientId / name / currentVitalSigns / hisHistory / medications` 再传给慢病插件。
+4. 慢病接口响应必须以原字段强类型接收并直接用于慢病事实计算；顶层主键保持 `idPhr / idRecord`，不得先翻译成 `patientId / visitId / name / currentVitalSigns / hisHistory / medications` 再传给慢病插件。
 5. 入口只补全患者与慢病事实上下文，并把接诊详情状态直接设置为展开；不会调用 `analyzePatientRisks`，也不会复用 `show-patient-risks` 事件。
 6. `rqflStatus` 是公卫在管身份依据；诊断或异常体征只用于临床识别，不得由调用方据此伪造公卫身份。
 7. 查询和保存都通过 `api/phis.aiAdapterService/*` 发布路径；`chis.hyVisitService/*` 与 `chis.tcdService/*` 仅作为 Adapter 后端适配目标记录。
-8. 保存请求必须是 `[TcdVisitForm]`，不得提交裸对象，不得增加 `requestId / managementSource / templateVersion` 等真实接口未声明的业务字段。
+8. 保存请求必须是 `[TcdVisitForm]`，其中 `idRecord` 必填且只能来自本次查询响应；不得提交裸对象，不得增加 `requestId / managementSource / templateVersion` 等真实接口未声明的业务字段。
 
 成功响应：
 

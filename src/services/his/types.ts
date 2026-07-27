@@ -404,7 +404,8 @@ export interface ChronicDiseaseVisitInfo {
  * `pressureHList`。二者均按上游原名声明，不生成平台别名。
  */
 export interface ChronicDiseasePatientVisitHistoryData {
-  idPi: string;
+  idPhr: string;
+  idRecord: string;
   naPi: string;
   sdSexText: string;
   ageText: string;

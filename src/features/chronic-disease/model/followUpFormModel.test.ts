@@ -17,8 +17,8 @@ import {
 
 function summary(diseaseTypes: ChronicDiseaseType[]): ChronicDiseasePatientSummary {
   return {
-    patientId: 'P001',
-    visitId: 'V001',
+    idPhr: 'PHR001',
+    idRecord: 'RECORD001',
     name: '林女士',
     gender: '女',
     ageText: '62岁',
@@ -124,6 +124,16 @@ describe('TcdVisitForm fused follow-up model', () => {
     expect(validateFusedFollowUpForm({ form })).toBeNull();
   });
 
+  it('rejects save before HIS invocation when the query response has no idRecord', () => {
+    const form = validForm(['hypertension']);
+    form.idRecord = ' ';
+
+    expect(validateFusedFollowUpForm({ form })).toEqual({
+      message: '缺少登记表主键 idRecord',
+      sectionIndex: 0,
+    });
+  });
+
   it('serializes one exact legacy request and joins the original array fields', () => {
     const form = validForm(['hypertension', 'type2_diabetes']);
     form.sdHySymptom = ['2', '6'];
@@ -151,8 +161,8 @@ describe('TcdVisitForm fused follow-up model', () => {
     const request = buildFusedFollowUpRequest(form);
 
     expect(request).toEqual(expect.objectContaining({
-      idPhr: 'P001',
-      idRecord: 'V001',
+      idPhr: 'PHR001',
+      idRecord: 'RECORD001',
       status: '3',
       sdVisitKind: '1,2',
       pressureH: '138',

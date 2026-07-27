@@ -166,7 +166,7 @@ export async function generateHealthPrescriptionDraft(
         operationModule: 'chronic_disease',
         operationAction: 'generate_health_prescription',
         title: '生成慢病健康处方草稿',
-        consultationId: summary.visitId || summary.patientId,
+        consultationId: summary.idRecord || summary.idPhr,
       },
     });
     return sanitizeAiDraft(parseJsonObject<AiDraft>(response), fallback);

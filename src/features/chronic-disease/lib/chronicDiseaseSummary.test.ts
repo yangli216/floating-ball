@@ -15,7 +15,8 @@ function patient(overrides: Partial<AppPatient> = {}): AppPatient {
     ageText: '62岁',
     diagnosis: '原发性高血压、2型糖尿病',
     raw: {
-      idPi: 'P001',
+      idPhr: 'PHR001',
+      idRecord: 'RECORD001',
       naPi: '林女士',
       sdSexText: '女',
       ageText: '62岁',
@@ -75,6 +76,8 @@ describe('buildChronicDiseaseSummary', () => {
     ]);
     expect(summary.contractLabel).toBe('已签约');
     expect(summary.organizationId).toBe('HIS001');
+    expect(summary.idPhr).toBe('PHR001');
+    expect(summary.idRecord).toBe('RECORD001');
     expect(summary.bloodGlucosePoints).toEqual([
       expect.objectContaining({ value: 7.8, measurementType: 'fasting' }),
     ]);
@@ -108,7 +111,8 @@ describe('buildChronicDiseaseSummary', () => {
     const summary = buildChronicDiseaseSummary({
       patient: patient({
         raw: {
-          idPi: 'P001',
+          idPhr: 'PHR001',
+          idRecord: 'RECORD001',
           naPi: '林女士',
           sdSexText: '女性',
           ageText: '62岁',

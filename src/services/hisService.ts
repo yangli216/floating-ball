@@ -1238,6 +1238,9 @@ export class HisService {
    * 适配 `chis.tcdService/saveTcdForm`。真实请求体固定为 `[TcdVisitForm]`。
    */
   async saveTcdForm(form: TcdVisitForm): Promise<unknown> {
+    if (!form.idRecord?.trim()) {
+      throw new Error('缺少登记表主键 idRecord，无法保存两慢病随访');
+    }
     const response = await this.post<unknown>(
       HIS_CATALOG_ENDPOINTS.chronicDiseaseSaveTcdForm,
       [form],

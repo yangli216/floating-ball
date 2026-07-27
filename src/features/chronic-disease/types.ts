@@ -48,8 +48,8 @@ export interface ChronicMedicationFact {
 }
 
 export interface ChronicDiseasePatientSummary {
-  patientId: string;
-  visitId?: string;
+  idPhr: string;
+  idRecord: string;
   name: string;
   gender: string;
   ageText: string;

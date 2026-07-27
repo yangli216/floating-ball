@@ -33,7 +33,8 @@ describe('HisService queryPatientVisitHistoryData', () => {
     const post = vi.spyOn(service, 'post').mockResolvedValue({
       code: 200,
       body: {
-        idPi: 'P001',
+        idPhr: 'PHR001',
+        idRecord: 'RECORD001',
         naPi: '林女士',
         sdSexText: '女性',
         ageText: '62岁',
@@ -52,7 +53,8 @@ describe('HisService queryPatientVisitHistoryData', () => {
       [{ idCard: '150206199306039948' }],
     );
     expect(result).toEqual(expect.objectContaining({
-      idPi: 'P001',
+      idPhr: 'PHR001',
+      idRecord: 'RECORD001',
       naPi: '林女士',
       rqflStatus: '3,6',
     }));
@@ -60,6 +62,19 @@ describe('HisService queryPatientVisitHistoryData', () => {
 });
 
 describe('HisService saveTcdForm', () => {
+  it('rejects a missing idRecord before sending the adapter request', async () => {
+    const service = new HisService('http://localhost/', 'token');
+    const post = vi.spyOn(service, 'post');
+    const form = {
+      idPhr: 'PHR001',
+      idRecord: ' ',
+    } as unknown as Parameters<HisService['saveTcdForm']>[0];
+
+    await expect(service.saveTcdForm(form))
+      .rejects.toThrow('缺少登记表主键 idRecord');
+    expect(post).not.toHaveBeenCalled();
+  });
+
   it('uses the AI adapter endpoint and wraps one original form in an array', async () => {
     const service = new HisService('http://localhost/', 'token');
     const body = { id: 'visit-follow-up-1' };
