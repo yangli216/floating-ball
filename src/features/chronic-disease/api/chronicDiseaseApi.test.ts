@@ -6,10 +6,6 @@ import { saveTcdForm } from './chronicDiseaseApi';
 vi.mock('@/services/his', () => ({
   getHisAdapter: vi.fn(),
 }));
-vi.mock('@/services/regionalClient', () => ({
-  regionalPost: vi.fn(),
-}));
-
 function formFixture(): TcdVisitForm {
   return {
     idPhr: 'PHR001',

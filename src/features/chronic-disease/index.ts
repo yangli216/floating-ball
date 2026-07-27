@@ -1,7 +1,4 @@
-export {
-  saveChronicArtifactSnapshot,
-  saveTcdForm,
-} from './api/chronicDiseaseApi';
+export { saveTcdForm } from './api/chronicDiseaseApi';
 export {
   CHRONIC_DISEASE_WINDOW_READY_EVENT,
   CHRONIC_DISEASE_WINDOW_UPDATE_EVENT,
@@ -12,10 +9,6 @@ export { buildChronicDiseaseSummary } from './lib/chronicDiseaseSummary';
 export {
   buildAnnualChronicAssessment,
 } from './lib/annualAssessment';
-export {
-  buildAnnualAssessmentSnapshotRequest,
-  buildHealthPrescriptionSnapshotRequest,
-} from './lib/chronicArtifactSnapshot';
 export {
   getManagedFollowUpDiseases,
   getPrimaryManagedDisease,

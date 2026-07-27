@@ -1,10 +1,7 @@
 <script setup lang="ts">
-import { computed, nextTick, ref, watch } from 'vue';
+import { computed, nextTick, ref } from 'vue';
 import Icon from '@shared/ui/Icon.vue';
-import { formatUserFacingError } from '@shared/lib/errorMessages';
-import { saveChronicArtifactSnapshot } from '../api/chronicDiseaseApi';
 import { generateHealthPrescriptionDraft } from '../api/healthPrescriptionService';
-import { buildHealthPrescriptionSnapshotRequest } from '../lib/chronicArtifactSnapshot';
 import type {
   ChronicDiseaseWindowPayload,
   HealthPrescriptionDraft,
@@ -21,9 +18,6 @@ const draft = ref<HealthPrescriptionDraft | null>(null);
 const errorMessage = ref('');
 const doctorNotes = ref('');
 const doctorName = ref(props.payload.summary.doctorName || '');
-const savingSnapshot = ref(false);
-const savedMessage = ref('');
-const pendingRequestId = ref('');
 
 const categoryLabels: Record<PrescriptionSuggestionCategory, string> = {
   test: '检查检验',
@@ -40,9 +34,6 @@ const groupedSuggestions = computed(() => {
 });
 
 const acceptedCount = computed(() => draft.value?.suggestions.filter((item) => item.accepted).length || 0);
-const acceptedSignature = computed(() => (
-  draft.value?.suggestions.filter((item) => item.accepted).map((item) => item.id).sort().join('|') || ''
-));
 const latestPressure = computed(() => {
   const points = props.payload.summary.bloodPressurePoints;
   return points[points.length - 1];
@@ -61,8 +52,6 @@ async function generate(): Promise<void> {
   errorMessage.value = '';
   try {
     draft.value = await generateHealthPrescriptionDraft(props.payload.summary);
-    savedMessage.value = '';
-    pendingRequestId.value = '';
   } catch (error) {
     errorMessage.value = error instanceof Error ? error.message : '健康处方草稿生成失败。';
   } finally {
@@ -74,11 +63,6 @@ function toggle(item: HealthPrescriptionSuggestion): void {
   item.accepted = !item.accepted;
 }
 
-watch([acceptedSignature, doctorNotes, doctorName], () => {
-  pendingRequestId.value = '';
-  savedMessage.value = '';
-});
-
 async function printPrescription(): Promise<void> {
   if (!draft.value || acceptedCount.value === 0) {
     errorMessage.value = '请至少采纳一项建议后再打印。';
@@ -89,30 +73,9 @@ async function printPrescription(): Promise<void> {
     return;
   }
 
-  savingSnapshot.value = true;
   errorMessage.value = '';
-  savedMessage.value = '';
-  pendingRequestId.value ||= crypto.randomUUID();
-
-  try {
-    const response = await saveChronicArtifactSnapshot(buildHealthPrescriptionSnapshotRequest({
-      requestId: pendingRequestId.value,
-      payload: props.payload,
-      draft: draft.value,
-      doctorName: doctorName.value,
-      doctorNotes: doctorNotes.value,
-    }));
-    savedMessage.value = `已留痕：${response.snapshotId}`;
-    pendingRequestId.value = '';
-    await nextTick();
-    window.print();
-  } catch (error) {
-    errorMessage.value = formatUserFacingError(error, {
-      fallback: '健康处方留痕失败，尚未进入打印。',
-    });
-  } finally {
-    savingSnapshot.value = false;
-  }
+  await nextTick();
+  window.print();
 }
 </script>
 
@@ -226,11 +189,10 @@ async function printPrescription(): Promise<void> {
 
     <footer class="window-footer">
       <span v-if="errorMessage" class="error-footer">{{ errorMessage }}</span>
-      <span v-else-if="savedMessage" class="saved-footer">{{ savedMessage }}</span>
-      <span v-else>{{ draft ? `已采纳 ${acceptedCount} 项；打印前将保存确认快照` : '等待生成草稿' }}</span>
-      <button type="button" class="primary-button" :disabled="!draft || acceptedCount === 0 || !doctorName.trim() || savingSnapshot" @click="printPrescription">
-        <Icon :icon="savingSnapshot ? 'lucide:loader-circle' : 'lucide:printer'" size="17" :class="{ spinning: savingSnapshot }" />
-        {{ savingSnapshot ? '正在留痕…' : '存档并打印' }}
+      <span v-else>{{ draft ? `已采纳 ${acceptedCount} 项；确认后仅在本机打印` : '等待生成草稿' }}</span>
+      <button type="button" class="primary-button" :disabled="!draft || acceptedCount === 0 || !doctorName.trim()" @click="printPrescription">
+        <Icon icon="lucide:printer" size="17" />
+        打印健康处方
       </button>
     </footer>
   </div>
@@ -280,7 +242,6 @@ async function printPrescription(): Promise<void> {
 .window-footer { min-height: 60px; padding: 10px 16px; display: flex; align-items: center; justify-content: flex-end; gap: 10px; color: #64748b; border-top: 1px solid #e2e8f0; font-size: 10px; }
 .window-footer > span { margin-right: auto; }
 .error-footer { color: #b91c1c; }
-.saved-footer { color: #047857; }
 .primary-button { min-height: 36px; padding: 8px 15px; display: inline-flex; align-items: center; gap: 6px; color: #fff; background: #2b7fe3; border: 1px solid #2b7fe3; border-radius: 6px; }
 button:disabled { opacity: 0.55; cursor: not-allowed; }
 .spinning { animation: spin 0.9s linear infinite; }

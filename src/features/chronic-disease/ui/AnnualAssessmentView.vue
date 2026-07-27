@@ -1,10 +1,7 @@
 <script setup lang="ts">
-import { computed, nextTick, ref, watch } from 'vue';
+import { computed, nextTick, ref } from 'vue';
 import Icon from '@shared/ui/Icon.vue';
-import { formatUserFacingError } from '@shared/lib/errorMessages';
-import { saveChronicArtifactSnapshot } from '../api/chronicDiseaseApi';
 import { buildAnnualChronicAssessment } from '../lib/annualAssessment';
-import { buildAnnualAssessmentSnapshotRequest } from '../lib/chronicArtifactSnapshot';
 import type { ChronicDiseaseWindowPayload } from '../types';
 
 const props = defineProps<{
@@ -13,20 +10,12 @@ const props = defineProps<{
 const currentYear = new Date().getFullYear();
 const selectedYear = ref(currentYear);
 const doctorName = ref(props.payload.summary.doctorName || '');
-const savingSnapshot = ref(false);
 const errorMessage = ref('');
-const savedMessage = ref('');
-const pendingRequestId = ref('');
 
 const assessment = computed(() => buildAnnualChronicAssessment(
   props.payload.summary,
   selectedYear.value,
 ));
-
-watch([selectedYear, doctorName], () => {
-  pendingRequestId.value = '';
-  savedMessage.value = '';
-});
 
 async function printAssessment(): Promise<void> {
   if (!doctorName.value.trim()) {
@@ -34,29 +23,9 @@ async function printAssessment(): Promise<void> {
     return;
   }
 
-  savingSnapshot.value = true;
   errorMessage.value = '';
-  savedMessage.value = '';
-  pendingRequestId.value ||= crypto.randomUUID();
-
-  try {
-    const response = await saveChronicArtifactSnapshot(buildAnnualAssessmentSnapshotRequest({
-      requestId: pendingRequestId.value,
-      payload: props.payload,
-      assessment: assessment.value,
-      doctorName: doctorName.value,
-    }));
-    savedMessage.value = `已留痕：${response.snapshotId}`;
-    pendingRequestId.value = '';
-    await nextTick();
-    window.print();
-  } catch (error) {
-    errorMessage.value = formatUserFacingError(error, {
-      fallback: '年度评估留痕失败，尚未进入打印。',
-    });
-  } finally {
-    savingSnapshot.value = false;
-  }
+  await nextTick();
+  window.print();
 }
 </script>
 
@@ -121,15 +90,14 @@ async function printAssessment(): Promise<void> {
 
     <footer class="window-footer">
       <span v-if="errorMessage" class="error-message">{{ errorMessage }}</span>
-      <span v-else-if="savedMessage" class="saved-message">{{ savedMessage }}</span>
-      <span v-else>只读聚合；打印前保存年度、证据版本与数据快照</span>
+      <span v-else>只读聚合；医生确认后仅在本机打印</span>
       <label class="doctor-field">
         打印医生
         <input v-model="doctorName" maxlength="64" placeholder="请输入姓名" />
       </label>
-      <button type="button" class="primary-button" :disabled="savingSnapshot || !doctorName.trim()" @click="printAssessment">
-        <Icon :icon="savingSnapshot ? 'lucide:loader-circle' : 'lucide:printer'" size="17" :class="{ spinning: savingSnapshot }" />
-        {{ savingSnapshot ? '正在留痕…' : '存档并打印' }}
+      <button type="button" class="primary-button" :disabled="!doctorName.trim()" @click="printAssessment">
+        <Icon icon="lucide:printer" size="17" />
+        打印年度评估
       </button>
     </footer>
   </div>
@@ -159,11 +127,8 @@ async function printAssessment(): Promise<void> {
 .doctor-field { display: flex; align-items: center; gap: 7px; white-space: nowrap; }
 .doctor-field input { width: 110px; padding: 7px 9px; color: #1e293b; border: 1px solid #cbd5e1; border-radius: 5px; }
 .error-message { color: #b91c1c; }
-.saved-message { color: #047857; }
 .primary-button { min-height: 36px; padding: 8px 15px; display: inline-flex; align-items: center; gap: 6px; color: #fff; background: #2b7fe3; border: 1px solid #2b7fe3; border-radius: 6px; }
 button:disabled { opacity: 0.55; cursor: not-allowed; }
-.spinning { animation: spin 0.9s linear infinite; }
-@keyframes spin { to { transform: rotate(360deg); } }
 @media print {
   .window-footer { display: none; }
   .assessment-view { height: auto; }

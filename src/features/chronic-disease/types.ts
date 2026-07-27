@@ -94,51 +94,6 @@ export interface ChronicDiseaseWindowPayload {
   openedAt: string;
 }
 
-export type ChronicArtifactType = 'health_prescription' | 'annual_assessment';
-
-export interface ChronicArtifactAcceptedItem {
-  itemId: string;
-  category: PrescriptionSuggestionCategory;
-  title: string;
-  detail: string;
-  reason: string;
-}
-
-export interface ChronicArtifactSnapshotRequest {
-  requestId: string;
-  artifactType: ChronicArtifactType;
-  hisOrgId?: string;
-  hisOrgName?: string;
-  patientId: string;
-  visitId?: string;
-  patientName: string;
-  diseaseTypes: ChronicDiseaseType[];
-  dataAsOf: string;
-  assessmentYear?: number;
-  templateVersions: string[];
-  pathVersions: string[];
-  evidenceVersions: string[];
-  ruleVersion: string;
-  summaryText: string;
-  systolicPressure?: number;
-  diastolicPressure?: number;
-  bloodGlucose?: number;
-  bloodPressureRecordCount: number;
-  bloodGlucoseRecordCount: number;
-  acceptedItems: ChronicArtifactAcceptedItem[];
-  doctorNotes?: string;
-  doctorId?: string;
-  doctorName: string;
-}
-
-export interface ChronicArtifactSnapshotResponse {
-  snapshotId: string;
-  requestId: string;
-  status: 'saved';
-  savedAt: string;
-  artifactType: ChronicArtifactType;
-}
-
 export type ClinicalPathNodeState = 'satisfied' | 'verify' | 'not-applicable';
 
 export interface ClinicalPathNodeDefinition {
