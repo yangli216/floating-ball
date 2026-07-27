@@ -372,9 +372,9 @@ export function validateFusedFollowUpForm(input: {
   form: FusedFollowUpFormState;
 }): FollowUpValidationIssue | null {
   const { form } = input;
-  let issue = required(form.idPhr, '缺少人员主键 idPhr', 0);
+  let issue = required(form.idPhr, '缺少人员主键', 0);
   if (issue) return issue;
-  issue = required(form.idRecord, '缺少登记表主键 idRecord', 0);
+  issue = required(form.idRecord, '缺少登记表主键', 0);
   if (issue) return issue;
   if (form.sdVisitKind.length === 0) {
     return { message: '缺少明确公卫在管标记，不能保存正式随访', sectionIndex: 0 };

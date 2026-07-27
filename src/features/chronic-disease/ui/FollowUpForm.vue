@@ -41,7 +41,6 @@ const saved = shallowRef(false);
 
 const diseaseTypes = computed(() => getManagedFollowUpDiseases(props.payload.summary));
 const presentation = computed(() => buildFollowUpPresentation(diseaseTypes.value));
-const templateVersions = computed(() => ['TcdVisitForm-instance']);
 
 const latestPressure = computed(() => {
   const points = props.payload.summary.bloodPressurePoints;
@@ -100,7 +99,6 @@ async function save(): Promise<void> {
     <FollowUpTypeIndicator
       :disease-types="diseaseTypes"
       :mode-label="presentation.label"
-      :template-versions="templateVersions"
     />
 
     <div class="follow-up-layout">

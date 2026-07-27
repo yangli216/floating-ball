@@ -129,7 +129,7 @@ describe('TcdVisitForm fused follow-up model', () => {
     form.idRecord = ' ';
 
     expect(validateFusedFollowUpForm({ form })).toEqual({
-      message: '缺少登记表主键 idRecord',
+      message: '缺少登记表主键',
       sectionIndex: 0,
     });
   });

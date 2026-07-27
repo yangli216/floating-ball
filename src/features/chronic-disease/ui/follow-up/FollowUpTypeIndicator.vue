@@ -4,7 +4,6 @@ import type { ChronicDiseaseType } from '../../types';
 const props = defineProps<{
   diseaseTypes: readonly ChronicDiseaseType[];
   modeLabel: string;
-  templateVersions: string[];
 }>();
 
 function selected(diseaseType: ChronicDiseaseType): boolean {
@@ -26,9 +25,6 @@ function selected(diseaseType: ChronicDiseaseType): boolean {
       </label>
       <span>{{ modeLabel }}</span>
     </div>
-    <div class="version-list">
-      <span v-for="version in templateVersions" :key="version">{{ version }}</span>
-    </div>
   </section>
 </template>
 
@@ -38,7 +34,7 @@ function selected(diseaseType: ChronicDiseaseType): boolean {
   padding: 8px 16px;
   display: flex;
   align-items: center;
-  justify-content: space-between;
+  justify-content: flex-start;
   gap: 12px;
   color: #64748b;
   background: #f8fafc;
@@ -46,8 +42,7 @@ function selected(diseaseType: ChronicDiseaseType): boolean {
   font-size: 11px;
 }
 
-.type-options,
-.version-list {
+.type-options {
   display: flex;
   align-items: center;
   gap: 10px;
@@ -78,14 +73,6 @@ function selected(diseaseType: ChronicDiseaseType): boolean {
 .type-options > span {
   padding-left: 4px;
   color: #475569;
-}
-
-.version-list span {
-  padding: 3px 6px;
-  color: #1d4ed8;
-  background: #eff6ff;
-  border-radius: 4px;
-  font-size: 9px;
 }
 
 @media (max-width: 980px) {

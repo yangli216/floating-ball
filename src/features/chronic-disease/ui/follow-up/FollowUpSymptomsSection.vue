@@ -3,7 +3,6 @@ import {
   ARTERIOPALMUS_OPTIONS,
   DIABETES_SYMPTOM_OPTIONS,
   HYPERTENSION_SYMPTOM_OPTIONS,
-  ORIGINAL_DICTIONARY_IDS,
   toggleArteriopalmusCode,
   toggleSymptomCode,
   type FusedFollowUpFormState,
@@ -30,13 +29,10 @@ function togglePulse(code: string): void {
 
 <template>
   <div class="symptom-panel">
-    <p>
-      字段名与数组互斥规则来自原实例；Mock 标签用于展示，正式码值以原系统
-      <code>{{ ORIGINAL_DICTIONARY_IDS.hypertensionSymptoms }}</code> 等字典为准。
-    </p>
+    <p>症状选项及互斥规则按业务系统随访字典执行。</p>
 
     <section v-if="hasHypertension" class="symptom-group">
-      <h3>高血压症状 sdHySymptom<span class="required">*</span></h3>
+      <h3>高血压症状<span class="required">*</span></h3>
       <div class="choice-grid">
         <label v-for="option in HYPERTENSION_SYMPTOM_OPTIONS" :key="option.value">
           <input
@@ -50,7 +46,7 @@ function togglePulse(code: string): void {
     </section>
 
     <section v-if="hasDiabetes" class="symptom-group">
-      <h3>糖尿病症状 sdDbsSymptom<span class="required">*</span></h3>
+      <h3>糖尿病症状<span class="required">*</span></h3>
       <div class="choice-grid">
         <label v-for="option in DIABETES_SYMPTOM_OPTIONS" :key="option.value">
           <input
@@ -64,12 +60,12 @@ function togglePulse(code: string): void {
     </section>
 
     <div class="form-grid symptom-details">
-      <label class="full-span">其他体征 desOther
+      <label class="full-span">其他体征
         <input v-model="form.desOther" maxlength="255" />
       </label>
 
       <fieldset v-if="hasDiabetes" class="full-span choice-fieldset">
-        <legend>足背动脉搏动 sdArteriopalmus</legend>
+        <legend>足背动脉搏动</legend>
         <div class="choice-grid">
           <label v-for="option in ARTERIOPALMUS_OPTIONS" :key="option.value">
             <input
@@ -82,7 +78,7 @@ function togglePulse(code: string): void {
         </div>
       </fieldset>
 
-      <label>遵医行为 sdProAct
+      <label>遵医行为
         <select v-model="form.sdProAct">
           <option value="">请选择</option>
           <option value="1">良好</option>
@@ -90,7 +86,7 @@ function togglePulse(code: string): void {
           <option value="3">差</option>
         </select>
       </label>
-      <label>心理调整 sdPsychicAdj<span class="required">*</span>
+      <label>心理调整<span class="required">*</span>
         <select v-model="form.sdPsychicAdj">
           <option value="">请选择</option>
           <option value="1">良好</option>
@@ -99,14 +95,14 @@ function togglePulse(code: string): void {
         </select>
       </label>
 
-      <label v-if="hasHypertension">早发心血管家族史 fgCardiovascular
+      <label v-if="hasHypertension">早发心血管家族史
         <select v-model="form.fgCardiovascular">
           <option value="">请选择</option>
           <option value="1">有</option>
           <option value="0">无</option>
         </select>
       </label>
-      <label v-if="hasDiabetes">低血糖反应 lowEffects
+      <label v-if="hasDiabetes">低血糖反应
         <select v-model="form.lowEffects">
           <option value="">请选择</option>
           <option value="0">无</option>
@@ -114,10 +110,10 @@ function togglePulse(code: string): void {
           <option value="2">频繁</option>
         </select>
       </label>
-      <label>其他疾病 otherDisease
+      <label>其他疾病
         <input v-model="form.otherDisease" maxlength="255" />
       </label>
-      <label>备注 note
+      <label>备注
         <input v-model="form.note" maxlength="255" />
       </label>
     </div>

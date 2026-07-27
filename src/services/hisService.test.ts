@@ -71,7 +71,7 @@ describe('HisService saveTcdForm', () => {
     } as unknown as Parameters<HisService['saveTcdForm']>[0];
 
     await expect(service.saveTcdForm(form))
-      .rejects.toThrow('缺少登记表主键 idRecord');
+      .rejects.toThrow('缺少登记表主键');
     expect(post).not.toHaveBeenCalled();
   });
 

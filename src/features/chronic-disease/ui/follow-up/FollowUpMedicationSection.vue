@@ -56,14 +56,14 @@ function importHistoricalMedications(): void {
       </div>
       <button type="button" @click="importHistoricalMedications">导入核对</button>
     </div>
-    <label>是否用药调整 fgDrugChange<span class="required">*</span>
+    <label>是否用药调整<span class="required">*</span>
       <select v-model="form.fgDrugChange" @change="changeDrugAdjustment">
         <option value="">请选择</option>
         <option value="1">是</option>
         <option value="0">否</option>
       </select>
     </label>
-    <label>服药依从性 sdDrugPro<span class="required">*</span>
+    <label>服药依从性<span class="required">*</span>
       <select v-model="form.sdDrugPro">
         <option value="">请选择原系统字典值</option>
         <option value="1">规律</option>
@@ -72,14 +72,14 @@ function importHistoricalMedications(): void {
         <option value="4">不服药</option>
       </select>
     </label>
-    <label>药物不良反应 sdSideEffects<span class="required">*</span>
+    <label>药物不良反应<span class="required">*</span>
       <select v-model="form.sdSideEffects">
         <option value="">请选择</option>
         <option value="1">无</option>
         <option value="2">有</option>
       </select>
     </label>
-    <label>不良反应说明 desSideEffects
+    <label>不良反应说明
       <input
         v-model="form.desSideEffects"
         maxlength="255"
@@ -88,18 +88,18 @@ function importHistoricalMedications(): void {
     </label>
 
     <div v-if="form.fgDrugChange === '1'" class="full-span drug-table-wrap">
-      <p>只有填写 <code>idDrug</code> 的行会进入原实例 <code>drugList</code>。</p>
+      <p>只有填写药品标识的行会保存到本次随访。</p>
       <div class="drug-table">
         <div class="drug-row drug-head">
-          <span>药品 ID</span><span>药品名称</span><span>每日频次</span><span>剂量</span>
+          <span>药品标识</span><span>药品名称</span><span>每日频次</span><span>剂量</span>
           <span>单位</span><span v-if="hasDiabetes">胰岛素</span><span>操作</span>
         </div>
         <div v-for="(drug, index) in form.drugList" :key="index" class="drug-row">
-          <input v-model="drug.idDrug" placeholder="idDrug" />
-          <input v-model="drug.naDrug" placeholder="naDrug" />
-          <input v-model="drug.sdDrugFreq" inputmode="numeric" placeholder="sdDrugFreq" />
-          <input v-model="drug.perDose" inputmode="decimal" placeholder="perDose" />
-          <input v-model="drug.doseUnit" maxlength="10" placeholder="doseUnit" />
+          <input v-model="drug.idDrug" placeholder="请输入药品标识" />
+          <input v-model="drug.naDrug" placeholder="请输入药品名称" />
+          <input v-model="drug.sdDrugFreq" inputmode="numeric" placeholder="请输入每日频次" />
+          <input v-model="drug.perDose" inputmode="decimal" placeholder="请输入单次剂量" />
+          <input v-model="drug.doseUnit" maxlength="10" placeholder="请输入剂量单位" />
           <select v-if="hasDiabetes" v-model="drug.insulin">
             <option value="">请选择</option>
             <option value="1">是</option>

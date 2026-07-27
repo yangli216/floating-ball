@@ -34,7 +34,7 @@ function toggle(
 <template>
   <div class="form-grid">
     <template v-if="hasDiabetes">
-      <label>并发症 desAdr
+      <label>并发症
         <select v-model="form.desAdr">
           <option value="">请选择</option>
           <option value="1">无并发症</option>
@@ -43,7 +43,7 @@ function toggle(
         </select>
       </label>
       <fieldset class="full-span choice-fieldset">
-        <legend>并发症类型 sdComplications</legend>
+        <legend>并发症类型</legend>
         <div class="choice-grid">
           <label v-for="option in COMPLICATION_OPTIONS" :key="option.value">
             <input
@@ -55,12 +55,12 @@ function toggle(
           </label>
         </div>
       </fieldset>
-      <label v-if="form.sdComplications.includes('0')" class="full-span">并发症其他描述 desComplications
+      <label v-if="form.sdComplications.includes('0')" class="full-span">并发症其他描述
         <input v-model="form.desComplications" maxlength="255" />
       </label>
     </template>
 
-    <label>合并症 desComor
+    <label>合并症
       <select v-model="form.desComor">
         <option value="">请选择</option>
         <option value="1">无合并症</option>
@@ -69,7 +69,7 @@ function toggle(
       </select>
     </label>
     <fieldset class="full-span choice-fieldset">
-      <legend>合并症类型 sdComorbidity</legend>
+      <legend>合并症类型</legend>
       <div class="choice-grid">
         <label v-for="option in COMORBIDITY_OPTIONS" :key="option.value">
           <input
@@ -81,13 +81,13 @@ function toggle(
         </label>
       </div>
     </fieldset>
-    <label v-if="form.sdComorbidity.includes('0')" class="full-span">合并症其他描述 desComorbidity
+    <label v-if="form.sdComorbidity.includes('0')" class="full-span">合并症其他描述
       <input v-model="form.desComorbidity" maxlength="255" />
     </label>
 
     <template v-if="hasHypertension">
       <fieldset class="full-span choice-fieldset">
-        <legend>并发症/合并症 sdMajorCc</legend>
+        <legend>并发症/合并症</legend>
         <div class="choice-grid">
           <label v-for="option in MAJOR_CC_OPTIONS" :key="option.value">
             <input
@@ -100,7 +100,7 @@ function toggle(
         </div>
       </fieldset>
       <fieldset class="full-span choice-fieldset">
-        <legend>靶器官损伤 targetOrganDamage</legend>
+        <legend>靶器官损伤</legend>
         <div class="choice-grid">
           <label v-for="option in TARGET_ORGAN_DAMAGE_OPTIONS" :key="option.value">
             <input
@@ -114,7 +114,7 @@ function toggle(
       </fieldset>
     </template>
 
-    <label class="full-span">健康指导 desPresAdvice
+    <label class="full-span">健康指导
       <textarea v-model="form.desPresAdvice" rows="8" maxlength="5007" />
     </label>
   </div>
