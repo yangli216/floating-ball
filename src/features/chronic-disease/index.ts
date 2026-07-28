@@ -22,6 +22,9 @@ export { buildChronicDiseaseViewKey } from './lib/chronicDiseaseWindowSession';
 export {
   buildChronicTreatmentPlanInitialDraft,
 } from './lib/chronicTreatmentPlanDraft';
+export {
+  resolveChronicStandardDiagnoses,
+} from './lib/chronicStandardDiagnosis';
 export { generateChronicAiRecommendations } from './api/chronicAiRecommendationService';
 export { useChronicAiRecommendations } from './model/useChronicAiRecommendations';
 export { generateHealthPrescriptionDraft } from './api/healthPrescriptionService';

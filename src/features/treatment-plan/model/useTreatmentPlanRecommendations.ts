@@ -44,6 +44,7 @@ import {
 } from '@features/outpatient-follow-up/api/outpatientFollowUpContext';
 import {
   mapTreatmentPlanInitialDraftItems,
+  mapTreatmentPlanInitialDraftStandardDiagnoses,
   type TreatmentPlanInitialDraft,
 } from './treatmentPlanInitialDraft';
 
@@ -71,6 +72,7 @@ export interface TreatmentPlanRecommendationOptions {
   patient: Ref<AppPatient | null>;
   followUpContext: Ref<HisOutpatientFollowUpContext | null>;
   diagnosis: Ref<Diagnosis | null>;
+  diagnoses: Ref<Diagnosis[]>;
   treatments: Ref<TreatmentRecommendation[]>;
   pharmacies: Ref<PharmacyOption[]>;
   initialDraft: Ref<TreatmentPlanInitialDraft | null>;
@@ -130,17 +132,32 @@ function readPatientText(patient: AppPatient | null, keys: string[]): string {
 function buildRecordContext(
   patient: AppPatient | null,
   followUpContext: HisOutpatientFollowUpContext | null,
+  initialDraft: TreatmentPlanInitialDraft | null,
 ): TreatmentPlanRecordContext {
+  const matchedInitialDraft = initialDraft?.patientAnchorId === getPatientContextAnchorId(patient)
+    ? initialDraft
+    : null;
+  const draftRecordContext = matchedInitialDraft?.recordContext;
   const followUpEvidence = followUpContext?.assessment
     ? buildOutpatientFollowUpTreatmentEvidence(followUpContext)
     : buildOutpatientFollowUpEvidence(followUpContext);
   const diagnosisText = followUpContext?.currentDiagnosis?.trim()
+    || matchedInitialDraft?.standardDiagnoses
+      ?.map((item) => item.name.trim())
+      .filter(Boolean)
+      .join('、')
     || readPatientText(patient, ['diagnosis', 'diagnosisText', 'diagnosis_text']);
   return {
-    chiefComplaint: readPatientText(patient, ['chiefComplaint', 'chief_complaint']),
-    historyOfPresentIllness: readPatientText(patient, ['historyOfPresentIllness', 'history_of_present_illness']),
-    pastMedicalHistory: getPatientContextPastMedicalHistory(patient) || readPatientText(patient, ['pastMedicalHistory', 'past_medical_history']),
-    allergyHistory: getPatientContextAllergyHistory(patient) || readPatientText(patient, ['allergyHistory', 'allergy_history']),
+    chiefComplaint: draftRecordContext?.chiefComplaint.trim()
+      || readPatientText(patient, ['chiefComplaint', 'chief_complaint']),
+    historyOfPresentIllness: draftRecordContext?.historyOfPresentIllness.trim()
+      || readPatientText(patient, ['historyOfPresentIllness', 'history_of_present_illness']),
+    pastMedicalHistory: draftRecordContext?.pastMedicalHistory.trim()
+      || getPatientContextPastMedicalHistory(patient)
+      || readPatientText(patient, ['pastMedicalHistory', 'past_medical_history']),
+    allergyHistory: draftRecordContext?.allergyHistory.trim()
+      || getPatientContextAllergyHistory(patient)
+      || readPatientText(patient, ['allergyHistory', 'allergy_history']),
     diagnosisText,
     followUpEvidence,
     followUpActionability: followUpContext?.assessment?.actionability,
@@ -191,6 +208,7 @@ export function useTreatmentPlanRecommendations(options: TreatmentPlanRecommenda
   const recordContext = computed(() => buildRecordContext(
     options.patient.value,
     options.followUpContext.value,
+    options.initialDraft.value,
   ));
   const canRecommend = computed(() => {
     if (recordContext.value.isFollowUp) {
@@ -258,8 +276,12 @@ export function useTreatmentPlanRecommendations(options: TreatmentPlanRecommenda
   function initializeFromDraft(): boolean {
     const draft = options.initialDraft.value;
     if (!draft || !hasInitialDraft.value) return false;
-    const diagnosis = buildDiagnosisFromText(recordContext.value.diagnosisText);
-    options.diagnosis.value = diagnosis;
+    const diagnoses = Array.isArray(draft.standardDiagnoses)
+      ? mapTreatmentPlanInitialDraftStandardDiagnoses(draft.standardDiagnoses)
+      : [buildDiagnosisFromText(recordContext.value.diagnosisText)]
+          .filter((item): item is Diagnosis => Boolean(item));
+    options.diagnoses.value = diagnoses;
+    options.diagnosis.value = diagnoses[0] || null;
     options.treatments.value = mapTreatmentPlanInitialDraftItems({
       items: draft.items,
       assessCatalogMatch: assessTreatmentCatalogMatch,
@@ -391,7 +413,9 @@ export function useTreatmentPlanRecommendations(options: TreatmentPlanRecommenda
     lastRunKey.value = runKey;
     refreshing.value = true;
     options.treatments.value = [];
-    options.diagnosis.value = buildDiagnosisFromText(recordContext.value.diagnosisText);
+    const diagnosis = buildDiagnosisFromText(recordContext.value.diagnosisText);
+    options.diagnosis.value = diagnosis;
+    options.diagnoses.value = diagnosis ? [diagnosis] : [];
     initialized.value = true;
 
     await Promise.all(RECOMMENDATION_TASKS.map((task) => fetchTask(task, runKey)));
@@ -406,6 +430,7 @@ export function useTreatmentPlanRecommendations(options: TreatmentPlanRecommenda
   return {
     canRecommend,
     diagnosis: options.diagnosis,
+    diagnoses: options.diagnoses,
     errorByKind,
     hasInitialDraft,
     initialized,

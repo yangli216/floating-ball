@@ -818,16 +818,21 @@ onUnmounted(() => {
   }
 });
 
-// 使用 Tauri 原生拖拽
-const handleMouseDown = async (e: MouseEvent) => {
-  // 只有左键且在球体上才能拖拽 (利用 target 判断，避免拖拽按钮)
-  const target = e.target as HTMLElement;
-  if (e.button === 0 && appWindow.value && target.closest('.floating-ball')) {
-    try {
-      await appWindow.value.startDragging();
-    } catch (error) {
-      console.error('拖拽失败:', error);
-    }
+// 使用 Tauri 原生拖拽；鼠标事件只允许球体入口，无参数调用来自页面显式拖拽把手。
+const startWindowDragging = async (event?: MouseEvent) => {
+  const target = event?.target;
+  if (
+    event
+    && (event.button !== 0 || !(target instanceof Element) || !target.closest('.floating-ball'))
+  ) {
+    return;
+  }
+  if (!appWindow.value) return;
+
+  try {
+    await appWindow.value.startDragging();
+  } catch (error) {
+    console.error('拖拽失败:', error);
   }
 };
 
@@ -945,7 +950,7 @@ const openInsideCloudHome = async () => {
             aria-label="打开或恢复全医慧助"
             :class="{ 'is-focused': isFocused, 'is-hovered': isHovered }"
             @click="handleBallKeyboardActivate"
-            @mousedown="handleMouseDown"
+            @mousedown="startWindowDragging"
             @focus="handleFocus"
             @blur="handleBlur"
             @contextmenu.stop
@@ -1050,6 +1055,7 @@ const openInsideCloudHome = async () => {
             :analyzing="isRiskAnalyzing"
             :chronic-refill-candidate="chronicRefillCandidate"
             :chronic-refill-generating="chronicRefillGenerating"
+            :chronic-refill-record="intentResult?.channel === 'chronic-refill' ? intentResult : null"
             :outpatient-follow-up-context="outpatientFollowUpContext"
             :report-interpretation-visits="reportInterpretationVisits"
             :report-assistant-opening="reportAssistantOpening"
@@ -1060,6 +1066,7 @@ const openInsideCloudHome = async () => {
             @confirm-chronic-refill="eventListeners.confirmChronicRefill"
             @confirm-report-assistant="eventListeners.confirmReportAssistant"
             @open-patient-memory="openPatientMemory"
+            @start-window-drag="startWindowDragging"
             @open-chronic-disease="openChronicDiseaseWindow"
             @open-chronic-treatment-plan="openChronicTreatmentPlan"
           />

@@ -168,4 +168,77 @@ describe('buildChronicDiseaseSummary', () => {
     expect(summary.latestHeightCm).toBeUndefined();
     expect(summary.doctorName).toBe('沈医生');
   });
+
+  it('maps each API next-visit date to the matching read-only disease plan field', () => {
+    const summary = buildChronicDiseaseSummary({
+      patient: patient({
+        raw: {
+          idPhr: 'PHR001',
+          idRecord: 'RECORD001',
+          naPi: '林女士',
+          sdSexText: '女性',
+          ageText: '62岁',
+          diagnosis: '原发性高血压;2型糖尿病',
+          rqflStatus: '3,6',
+          visitInfos: [
+            {
+              dtVisit: '2026-06-23 09:00:00',
+              dtNextVisit: '2026-06-30 00:00:00',
+              sdSalt: '1',
+            },
+            {
+              dtVisit: '2026-07-24 09:00:00',
+              dtNextVisit: '2026/08/08 00:00:00',
+              glu: 7.2,
+              rice: 250,
+            },
+          ],
+        },
+      }),
+    });
+
+    expect(summary.dtHyPlan).toBe('2026-06-30');
+    expect(summary.dtDbsPlan).toBe('2026-08-08');
+  });
+
+  it('uses an explicitly combined visit kind for both disease plan fields', () => {
+    const summary = buildChronicDiseaseSummary({
+      patient: patient({
+        raw: {
+          idPhr: 'PHR001',
+          idRecord: 'RECORD001',
+          diagnosis: '原发性高血压;2型糖尿病',
+          rqflStatus: '3,6',
+          visitInfos: [{
+            sdVisitKind: '1,2',
+            dtVisit: '2026-07-24 09:00:00',
+            dtNextVisit: '2026-10-23T00:00:00+08:00',
+          }],
+        },
+      }),
+    });
+
+    expect(summary.dtHyPlan).toBe('2026-10-23');
+    expect(summary.dtDbsPlan).toBe('2026-10-23');
+  });
+
+  it('keeps the documented API order fallback for two unclassified plan records', () => {
+    const summary = buildChronicDiseaseSummary({
+      patient: patient({
+        raw: {
+          idPhr: 'PHR001',
+          idRecord: 'RECORD001',
+          diagnosis: '原发性高血压;2型糖尿病',
+          rqflStatus: '3,6',
+          visitInfos: [
+            { dtNextVisit: '2026-09-01 00:00:00' },
+            { dtNextVisit: '2026-09-15 00:00:00' },
+          ],
+        },
+      }),
+    });
+
+    expect(summary.dtHyPlan).toBe('2026-09-01');
+    expect(summary.dtDbsPlan).toBe('2026-09-15');
+  });
 });

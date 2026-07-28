@@ -1,6 +1,10 @@
 import { describe, expect, it, vi } from 'vitest';
 import type { TreatmentRecommendation } from '@/types/consultation';
-import { mapTreatmentPlanInitialDraftItems } from './treatmentPlanInitialDraft';
+import {
+  buildTreatmentPlanInitialDraftRecordContext,
+  mapTreatmentPlanInitialDraftItems,
+  mapTreatmentPlanInitialDraftStandardDiagnoses,
+} from './treatmentPlanInitialDraft';
 
 const normalize = (
   recommendation: Partial<TreatmentRecommendation>,
@@ -63,5 +67,54 @@ describe('mapTreatmentPlanInitialDraftItems', () => {
     expect(assessCatalogMatch).toHaveBeenCalledWith('exam', '眼底检查');
     expect(result.selected).toBe(true);
     expect(result.matchedItem?.name).toBe('眼底照相');
+  });
+});
+
+describe('mapTreatmentPlanInitialDraftStandardDiagnoses', () => {
+  it('maps every typed draft diagnosis to a standard Diagnosis without losing the HIS id', () => {
+    expect(mapTreatmentPlanInitialDraftStandardDiagnoses([
+      { id: 'HTN-ID', code: 'I10.x09', name: '原发性高血压' },
+      { id: 'DM2-ID', code: 'E11.900', name: '2型糖尿病' },
+    ])).toEqual([
+      {
+        id: 'HTN-ID',
+        code: 'I10.x09',
+        name: '原发性高血压',
+        rate: 'HIS标准诊断',
+        rationale: '来自慢病助手疾病标签与 HIS 标准诊断目录匹配',
+      },
+      {
+        id: 'DM2-ID',
+        code: 'E11.900',
+        name: '2型糖尿病',
+        rate: 'HIS标准诊断',
+        rationale: '来自慢病助手疾病标签与 HIS 标准诊断目录匹配',
+      },
+    ]);
+  });
+});
+
+describe('buildTreatmentPlanInitialDraftRecordContext', () => {
+  it('copies and trims the generated refill record without treating it as a saved HIS record', () => {
+    expect(buildTreatmentPlanInitialDraftRecordContext({
+      chiefComplaint: ' 2型糖尿病复诊配药 ',
+      historyOfPresentIllness: ' 既往确诊2型糖尿病，今复诊配药。 ',
+      pastMedicalHistory: ' 2型糖尿病 ',
+      allergyHistory: ' 未发现 ',
+      currentMedicationHistory: '',
+      familyHistory: '',
+      symptoms: [],
+      negativeSymptoms: [],
+      diagnoses: [],
+      treatments: [],
+      treatmentPlan: '',
+      healthEducation: '',
+      channel: 'chronic-refill',
+    })).toEqual({
+      chiefComplaint: '2型糖尿病复诊配药',
+      historyOfPresentIllness: '既往确诊2型糖尿病，今复诊配药。',
+      pastMedicalHistory: '2型糖尿病',
+      allergyHistory: '未发现',
+    });
   });
 });

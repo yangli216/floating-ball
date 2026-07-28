@@ -17,5 +17,11 @@ export type {
   TreatmentPlanDraftItemType,
   TreatmentPlanInitialDraft,
   TreatmentPlanInitialDraftItem,
+  TreatmentPlanInitialDraftRecordContext,
+  TreatmentPlanInitialDraftStandardDiagnosis,
 } from './model/treatmentPlanInitialDraft';
-export { mapTreatmentPlanInitialDraftItems } from './model/treatmentPlanInitialDraft';
+export {
+  buildTreatmentPlanInitialDraftRecordContext,
+  mapTreatmentPlanInitialDraftItems,
+  mapTreatmentPlanInitialDraftStandardDiagnoses,
+} from './model/treatmentPlanInitialDraft';

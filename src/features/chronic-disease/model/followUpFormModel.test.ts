@@ -135,6 +135,17 @@ describe('TcdVisitForm fused follow-up model', () => {
     }));
   });
 
+  it('populates the read-only plan dates produced from the patient API response', () => {
+    const patientSummary = summary(['hypertension', 'type2_diabetes']);
+    patientSummary.dtHyPlan = '2026-06-30';
+    patientSummary.dtDbsPlan = '2026-08-08';
+
+    const form = createFusedFollowUpFormState(patientSummary);
+
+    expect(form.dtHyPlan).toBe('2026-06-30');
+    expect(form.dtDbsPlan).toBe('2026-08-08');
+  });
+
   it('rejects save before HIS invocation when the query response has no idRecord', () => {
     const form = validForm(['hypertension']);
     form.idRecord = ' ';

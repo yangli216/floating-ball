@@ -1,12 +1,8 @@
 import { computed, ref, type Ref } from 'vue';
 import { invoke } from '@tauri-apps/api/core';
-import { confirm as confirmDialog } from '@tauri-apps/plugin-dialog';
 import type { AppPatient } from '@/types/appState';
 import type { Diagnosis, TreatmentRecommendation } from '@/types/consultation';
-import {
-  getPatientContextAnchorId,
-  getPatientContextVisitId,
-} from '@/utils/patientContext';
+import { getPatientContextAnchorId } from '@/utils/patientContext';
 import { trackFinalRecommendationPreferences } from '@/services/recommendationPreferenceTracker';
 import type { ExecDeptOption, UsageOption } from '@/utils/medicalDictionaryHelpers';
 import { getHisAdapter } from '@/services/his';
@@ -24,17 +20,18 @@ import {
   type WritebackFeedbackPayload,
 } from '@features/consultation-result';
 import type { TreatmentPlanRecordContext } from './useTreatmentPlanRecommendations';
-import { buildOdsImpRequest } from './odsImportPayload';
-import { submitOdsImpWithConfirmation } from './odsImportSubmission';
 
 export type TreatmentPlanNotifyType = 'success' | 'error' | 'info';
 export type TreatmentPlanNotify = (message: string, type?: TreatmentPlanNotifyType) => void;
+export type TreatmentPlanSourceModule = 'treatment_plan' | 'chronic_disease';
 
 export interface TreatmentPlanWritebackOptions {
   patient: Ref<AppPatient | null>;
+  diagnoses: Ref<Diagnosis[]>;
   diagnosis: Ref<Diagnosis | null>;
   treatments: Ref<TreatmentRecommendation[]>;
   recordContext: Readonly<Ref<TreatmentPlanRecordContext>>;
+  sourceModule: Readonly<Ref<TreatmentPlanSourceModule>>;
   execDeptOptions: Ref<ExecDeptOption[]>;
   normalizeTreatment: (rec: Partial<TreatmentRecommendation>) => TreatmentRecommendation;
   findFrequencyOptionByValue: (value?: string) => UsageOption | undefined;
@@ -50,7 +47,6 @@ export interface TreatmentPlanWritebackOptions {
   hasRequiredPharmacy: (rec: TreatmentRecommendation) => boolean;
   hasRequiredExecDept: (rec: TreatmentRecommendation) => boolean;
   hasRequiredBodySite: (rec: TreatmentRecommendation) => boolean;
-  odsImportEnabled?: Readonly<Ref<boolean>>;
   onWritebackSuccess?: (payload: WritebackFeedbackPayload) => void;
   notify?: TreatmentPlanNotify;
 }
@@ -64,9 +60,6 @@ function toNotifyType(type?: string): TreatmentPlanNotifyType {
 
 export function useTreatmentPlanWriteback(options: TreatmentPlanWritebackOptions) {
   const submitting = ref(false);
-  const selectedDiagnoses = computed<Diagnosis[]>(() => (
-    options.diagnosis.value ? [options.diagnosis.value] : []
-  ));
 
   function notify(message: string, type?: string): void {
     options.notify?.(message, toNotifyType(type));
@@ -84,12 +77,14 @@ export function useTreatmentPlanWriteback(options: TreatmentPlanWritebackOptions
 
   const {
     clearLastFeedback,
+    waitingWritebackFeedback,
     markWritebackPending,
+    resetWritebackState,
     applyWritebackFeedback: applyWritebackFeedbackStatus,
   } = writebackStatus;
 
   const { buildDiagList, buildOrderList, orderItemResolvers } = useClinicalResultWritebackPayload({
-    selectedDiagnoses: selectedDiagnoses as unknown as Ref<Diagnosis[]>,
+    selectedDiagnoses: options.diagnoses,
     primaryDiagnosis: options.diagnosis,
     patientTetId: computed(() => options.patient.value?.idTet || '') as unknown as Ref<string>,
     execDeptOptions: options.execDeptOptions,
@@ -102,7 +97,7 @@ export function useTreatmentPlanWriteback(options: TreatmentPlanWritebackOptions
   });
 
   const { run: runWritebackPreflight } = useClinicalResultWritebackPreflight({
-    selectedDiagnoses,
+    selectedDiagnoses: options.diagnoses,
     treatments: options.treatments,
     ensureMedicineSelectable: options.ensureMedicineSelectable,
     checkMedicineInventoryEnough: options.checkMedicineInventoryEnough,
@@ -158,69 +153,22 @@ export function useTreatmentPlanWriteback(options: TreatmentPlanWritebackOptions
         return false;
       }
 
-      const requestId = options.odsImportEnabled?.value
-        ? `ods-imp-${Date.now()}`
-        : `record-confirmed-${Date.now()}`;
+      const requestId = `record-confirmed-${Date.now()}`;
       const selected = preflight.selected;
       const orderList = buildOrderList(selected);
+      const sourceModule = options.sourceModule.value;
       const trackSelections = () => trackFinalRecommendationPreferences({
-        diagnoses: selectedDiagnoses.value,
+        diagnoses: options.diagnoses.value,
         primaryDiagnosis: options.diagnosis.value,
         treatments: selected,
         context: {
           consultationId: resolveConsultationId(),
-          sourceModule: options.odsImportEnabled?.value ? 'chronic_disease' : 'treatment_plan',
-          scene: options.odsImportEnabled?.value
-            ? 'chronic-disease-ods-import'
+          sourceModule,
+          scene: sourceModule === 'chronic_disease'
+            ? 'chronic-disease-writeback'
             : 'treatment-plan-writeback',
         },
       });
-
-      if (options.odsImportEnabled?.value) {
-        const his = getHisAdapter();
-        if (!his) {
-          notify('HIS 尚未连接，暂不能保存慢病检查检验医嘱。', 'error');
-          return false;
-        }
-        const odsRequest = buildOdsImpRequest({
-          idVis: getPatientContextVisitId(options.patient.value),
-          requestId,
-          diagnosis: options.diagnosis.value,
-          treatments: selected,
-          orderList,
-        });
-        const odsOutcome = await submitOdsImpWithConfirmation({
-          request: odsRequest,
-          save: (request) => his.saveOdsImp(request),
-          confirmForceSave: (message) => confirmDialog(
-            `${message || 'HIS 校验未通过，是否继续保存？'}\n\n确认后将按 HIS 要求跳过本次重复校验。`,
-          ),
-        });
-        if (odsOutcome.cancelled) {
-          notify('已取消继续保存，当前诊疗方案仍保留。', 'info');
-          return false;
-        }
-        const odsResult = odsOutcome.result;
-
-        if (odsResult.code !== '200') {
-          notify(odsResult.msg || `HIS 医嘱保存失败（code=${odsResult.code}）`, 'error');
-          return false;
-        }
-
-        trackSelections();
-        const successFeedback: WritebackFeedbackPayload = {
-          consultationId: resolveConsultationId(),
-          requestId,
-          referenceType: 'batch',
-          action: 'batch',
-          status: 'success',
-          message: odsResult.msg || 'HIS 已完成慢病检查检验医嘱保存。',
-          timestamp: Date.now(),
-        };
-        notify(successFeedback.message || '诊疗方案已完成回写。', 'success');
-        options.onWritebackSuccess?.(successFeedback);
-        return true;
-      }
 
       const chiefComplaint = options.recordContext.value.chiefComplaint
         || (options.recordContext.value.isFollowUp ? '门诊复诊，查看检验检查报告结果' : '');
@@ -242,14 +190,21 @@ export function useTreatmentPlanWriteback(options: TreatmentPlanWritebackOptions
           action: 'batch',
           referenceStatus: 'pending',
           referenceMessage: '等待 HIS 完成诊疗方案回写并回执。',
-          sourceModule: 'treatment_plan',
+          sourceModule,
         },
       });
 
       trackSelections();
-      await invoke('complete_consultation', { result });
       markWritebackPending(requestId, '诊疗方案已发送至 HIS，等待处理结果回执。');
-      notify('诊疗方案已发送至 HIS，等待处理结果回执。');
+      try {
+        await invoke('complete_consultation', { result });
+      } catch (error) {
+        resetWritebackState();
+        throw error;
+      }
+      if (waitingWritebackFeedback.value) {
+        notify('诊疗方案已发送至 HIS，等待处理结果回执。');
+      }
       return true;
     } catch (error) {
       console.error('[TreatmentPlan] Failed to submit treatment plan', error);

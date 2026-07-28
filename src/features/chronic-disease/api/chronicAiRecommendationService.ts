@@ -14,21 +14,65 @@ import type {
   ChronicDiseasePatientSummary,
 } from '../types';
 
-function formatLatestMeasurement(summary: ChronicDiseasePatientSummary): string {
-  const latestPressure = summary.bloodPressurePoints[summary.bloodPressurePoints.length - 1];
-  const latestGlucose = summary.bloodGlucosePoints[summary.bloodGlucosePoints.length - 1];
-  const facts = [
-    latestPressure
-      ? `最近血压 ${latestPressure.systolic}/${latestPressure.diastolic} mmHg（${latestPressure.measuredAt}）`
-      : '',
-    latestGlucose
-      ? `最近血糖 ${latestGlucose.value} mmol/L（${latestGlucose.measuredAt}）`
-      : '',
-    summary.recentMedicationNames.length > 0
-      ? `近期用药：${summary.recentMedicationNames.join('、')}`
-      : '',
+const MAX_RECOMMENDATION_COUNT = 5;
+const MAX_RECENT_MEASUREMENT_COUNT = 5;
+
+function formatDate(value: string | undefined): string {
+  if (!value) return '';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  return date.toISOString().slice(0, 10);
+}
+
+function formatGlucoseMeasurementType(
+  value: ChronicDiseasePatientSummary['bloodGlucosePoints'][number]['measurementType'],
+): string {
+  switch (value) {
+    case 'fasting':
+      return '空腹';
+    case 'postprandial':
+      return '餐后';
+    case 'random':
+      return '随机';
+    default:
+      return '时点待核实';
+  }
+}
+
+function formatRecentMeasurements(summary: ChronicDiseasePatientSummary): string[] {
+  const bloodPressure = summary.bloodPressurePoints
+    .slice(-MAX_RECENT_MEASUREMENT_COUNT)
+    .map((item) => (
+      `${formatDate(item.measuredAt)} ${item.systolic}/${item.diastolic} mmHg`
+    ));
+  const bloodGlucose = summary.bloodGlucosePoints
+    .slice(-MAX_RECENT_MEASUREMENT_COUNT)
+    .map((item) => (
+      `${formatDate(item.measuredAt)} ${item.value} mmol/L（${formatGlucoseMeasurementType(item.measurementType)}）`
+    ));
+
+  return [
+    bloodPressure.length > 0 ? `近期血压序列：${bloodPressure.join('；')}` : '',
+    bloodGlucose.length > 0 ? `近期血糖序列：${bloodGlucose.join('；')}` : '',
   ].filter(Boolean);
-  return facts.length > 0 ? facts.join('；') : '暂无可用的近期测量或用药事实';
+}
+
+function formatLatestVisitFacts(summary: ChronicDiseasePatientSummary): string {
+  const facts = [
+    summary.latestHeightCm ? `身高 ${summary.latestHeightCm} cm` : '',
+    summary.latestWeightKg ? `体重 ${summary.latestWeightKg} kg` : '',
+    summary.latestWaistCm ? `腰围 ${summary.latestWaistCm} cm` : '',
+    summary.latestHeartRate ? `心率 ${summary.latestHeartRate} 次/分` : '',
+  ].filter(Boolean);
+  if (facts.length === 0) return '';
+  return `最近随访体征（${summary.lastVisitLabel}）：${facts.join('，')}`;
+}
+
+function formatRecentMedications(summary: ChronicDiseasePatientSummary): string {
+  const medications = summary.recentMedicationSummaries?.length
+    ? summary.recentMedicationSummaries
+    : summary.recentMedicationNames;
+  return medications.length > 0 ? `近期用药：${medications.join('、')}` : '';
 }
 
 function buildChronicRecommendationContext(summary: ChronicDiseasePatientSummary): string {
@@ -37,17 +81,27 @@ function buildChronicRecommendationContext(summary: ChronicDiseasePatientSummary
   ));
   return [
     `管理病种：${diseaseLabels.join('、') || summary.diagnosisText || '待核实'}`,
-    formatLatestMeasurement(summary),
+    `现有诊断资料：${summary.diagnosisText || '待核实'}`,
+    ...formatRecentMeasurements(summary),
+    formatLatestVisitFacts(summary),
+    formatRecentMedications(summary),
+    summary.latestDataAt ? `最新慢病数据日期：${formatDate(summary.latestDataAt)}` : '',
+    summary.sourceQuality === 'ready'
+      ? ''
+      : '当前慢病资料不完整：只能基于已经明确提供的事实选择项目，不得把缺失信息推断为正常或异常。',
     '本次仅评估未来 90 天内确有必要核实的慢病复查或并发症筛查项目；不得自动诊断、调整用药或改变已发布临床规则。',
-  ].join('\n');
+  ].filter(Boolean).join('\n');
 }
 
 export async function generateChronicAiRecommendations(
   summary: ChronicDiseasePatientSummary,
+  options: { forceCatalog?: boolean } = {},
 ): Promise<ChronicAiRecommendation[]> {
   if (!summary.hasSupportedDisease) return [];
 
-  const availableItems = await medicalDataService.fetchAvailableExamLabItems();
+  const availableItems = await medicalDataService.fetchAvailableExamLabItems({
+    force: options.forceCatalog,
+  });
   const catalog = buildInstitutionAuxiliaryCatalogContext(
     availableItems,
     ['exam', 'lab_test'],
@@ -100,14 +154,16 @@ export async function generateChronicAiRecommendations(
     (item) => item as TreatmentRecommendation,
   );
 
-  return recommendations.flatMap((item) => {
-    if (!item.matchedItem) return [];
-    return [{
-      id: String(item.matchedItem.id || `${item.type}:${item.name}`),
-      type: item.type === 'exam' ? 'exam' : 'lab_test',
-      name: item.matchedItem.name || item.name,
-      reason: item.reason || '结合当前慢病资料与院内可开立目录推荐',
-      matchedItem: item.matchedItem,
-    }];
-  });
+  return recommendations
+    .flatMap((item) => {
+      if (!item.matchedItem) return [];
+      return [{
+        id: String(item.matchedItem.id || `${item.type}:${item.name}`),
+        type: item.type === 'exam' ? 'exam' as const : 'lab_test' as const,
+        name: item.matchedItem.name || item.name,
+        reason: item.reason || '结合当前慢病资料与院内可开立目录推荐',
+        matchedItem: item.matchedItem,
+      }];
+    })
+    .slice(0, MAX_RECOMMENDATION_COUNT);
 }

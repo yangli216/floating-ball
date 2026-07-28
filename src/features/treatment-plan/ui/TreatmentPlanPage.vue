@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, inject, onMounted, ref, useSlots } from 'vue';
+import { computed, inject, onMounted, ref, useSlots, type Ref } from 'vue';
 import { PatientHeader } from '@entities/patient';
 import Icon from '@shared/ui/Icon.vue';
 import type { AppPatient } from '@/types/appState';
@@ -38,6 +38,7 @@ import {
   getMatchedItemRaw,
   getMedicineCollapsedSummary,
   getMedicineFieldDisplay as getSharedMedicineFieldDisplay,
+  getDiagnosisKey,
   getTreatmentEditorKey,
   getTreatmentEditorFieldKey,
   hasProbableMatch,
@@ -54,6 +55,7 @@ import {
 import type { TreatmentPlanInitialDraft } from '../model/treatmentPlanInitialDraft';
 import {
   useTreatmentPlanWriteback,
+  type TreatmentPlanSourceModule,
 } from '../model/useTreatmentPlanWriteback';
 import TreatmentPlanGroup from './TreatmentPlanGroup.vue';
 
@@ -73,9 +75,26 @@ const hasEvidencePanel = computed(() => Boolean(slots.evidence));
 
 const showToast = inject<((msg: string, type?: 'success' | 'error' | 'info') => void)>('showToast');
 
-const currentDiagnosis = ref<Diagnosis | null>(null);
+const currentDiagnoses: Ref<Diagnosis[]> = ref([]);
+const currentDiagnosis = computed<Diagnosis | null>({
+  get: () => currentDiagnoses.value[0] || null,
+  set: (diagnosis) => {
+    if (!diagnosis) {
+      currentDiagnoses.value = [];
+      return;
+    }
+    const diagnosisKey = getDiagnosisKey(diagnosis);
+    currentDiagnoses.value = [
+      diagnosis,
+      ...currentDiagnoses.value.filter((item) => getDiagnosisKey(item) !== diagnosisKey),
+    ];
+  },
+});
 const treatments = ref<TreatmentRecommendation[]>([]);
 const reportConsultationRoundId = ref(crypto.randomUUID());
+const sourceModule = computed<TreatmentPlanSourceModule>(() => (
+  props.initialDraft?.sourceModule || 'treatment_plan'
+));
 
 const dictionaries = useMedicalDictionaries();
 const {
@@ -213,6 +232,7 @@ const recommendations = useTreatmentPlanRecommendations({
   patient: computed(() => props.patient ?? null),
   followUpContext: computed(() => props.followUpContext ?? null),
   diagnosis: currentDiagnosis,
+  diagnoses: currentDiagnoses,
   treatments,
   pharmacies: pharmacyOptions,
   initialDraft: computed(() => props.initialDraft ?? null),
@@ -222,8 +242,10 @@ const recommendations = useTreatmentPlanRecommendations({
 const writeback = useTreatmentPlanWriteback({
   patient: computed(() => props.patient ?? null),
   diagnosis: currentDiagnosis,
+  diagnoses: currentDiagnoses,
   treatments,
   recordContext: recommendations.recordContext,
+  sourceModule,
   execDeptOptions,
   normalizeTreatment,
   findFrequencyOptionByValue: treatmentNormalization.findFrequencyOptionByValue,
@@ -236,7 +258,6 @@ const writeback = useTreatmentPlanWriteback({
   hasRequiredPharmacy: treatmentGates.hasRequiredPharmacy,
   hasRequiredExecDept: treatmentGates.hasRequiredExecDept,
   hasRequiredBodySite: treatmentGates.hasRequiredBodySite,
-  odsImportEnabled: computed(() => props.initialDraft?.sourceModule === 'chronic_disease'),
   onWritebackSuccess: handleWritebackSuccess,
   notify: (message, type) => showToast?.(message, type),
 });
@@ -254,7 +275,14 @@ const isFollowUpNoTreatment = computed(() => isFollowUpMode.value && Boolean(
 const followUpNoTreatmentTitle = computed(() => (
   followUpAssessment.value?.actionability === 'observe' ? '当前以观察随访为主' : '当前无需新增治疗'
 ));
-const diagnosisReferenceText = computed(() => recommendations.recordContext.value.diagnosisText);
+const diagnosisReferenceText = computed(() => {
+  const standardDiagnosisNames = currentDiagnoses.value
+    .map((item) => item.name.trim())
+    .filter(Boolean);
+  return standardDiagnosisNames.length > 0
+    ? Array.from(new Set(standardDiagnosisNames)).join('、')
+    : recommendations.recordContext.value.diagnosisText;
+});
 const planTitle = computed(() => {
   if (recommendations.hasInitialDraft.value) return props.initialDraft?.title || '检查检验草稿';
   return isFollowUpMode.value ? '后续治疗方案' : '推荐方案';
@@ -276,7 +304,7 @@ const reportConsultationUserLog = useClinicalResultUserLogController({
   buildSnapshot: () => buildConsultationUserLogSnapshot({
     chiefComplaint: recommendations.recordContext.value.chiefComplaint,
     historyOfPresentIllness: recommendations.recordContext.value.historyOfPresentIllness,
-    diagnoses: currentDiagnosis.value ? [currentDiagnosis.value] : [],
+    diagnoses: currentDiagnoses.value,
     selectedDiagnosis: currentDiagnosis.value,
     treatments: treatments.value,
   }),
@@ -763,8 +791,10 @@ async function confirmSuggestedMatch(item: TreatmentRecommendation): Promise<voi
   item.rejected = false;
   trackTreatmentMatchPreference(item, 'confirm_match', {
     consultationId: getPatientContextAnchorId(props.patient || null) || '',
-    sourceModule: 'treatment_plan',
-    scene: 'treatment-plan',
+    sourceModule: sourceModule.value,
+    scene: sourceModule.value === 'chronic_disease'
+      ? 'chronic-disease-treatment-plan'
+      : 'treatment-plan',
   });
   closeManualMatch();
   showToast?.(`${item.name} 已确认匹配`, 'success');
@@ -800,8 +830,10 @@ async function applyManualMatch(item: TreatmentRecommendation, candidate: Manual
   item.rejected = false;
   trackTreatmentMatchPreference(item, 'manual_match', {
     consultationId: getPatientContextAnchorId(props.patient || null) || '',
-    sourceModule: 'treatment_plan',
-    scene: 'treatment-plan',
+    sourceModule: sourceModule.value,
+    scene: sourceModule.value === 'chronic_disease'
+      ? 'chronic-disease-treatment-plan'
+      : 'treatment-plan',
   });
   closeManualMatch();
   showToast?.(`${candidate.name} 已完成标准库匹配`, 'success');

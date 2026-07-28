@@ -80,6 +80,7 @@ export function getMatchedOrderServiceId(
     id?: unknown;
     idMedPro?: unknown;
     idCli?: unknown;
+    idSrv?: unknown;
     code?: unknown;
   } | undefined;
 
@@ -90,7 +91,12 @@ export function getMatchedOrderServiceId(
     ).trim();
   }
 
-  return getMatchedMedicalItemClientId(rec);
+  return (
+    readFirstString(raw, ['idCli'])
+    || readFirstString(matchedItem as Record<string, unknown> | undefined, ['idCli'])
+    || readFirstString(raw, ['idSrv'])
+    || readFirstString(matchedItem as Record<string, unknown> | undefined, ['idSrv', 'code'])
+  ).trim();
 }
 
 export function getDefaultOrderServiceCode(type: TreatmentRecommendation['type']): string {
@@ -244,7 +250,7 @@ export function buildDiagList(input: BuildDiagListInput): Array<Record<string, s
 export interface OrderItemResolvers {
   /** PHIS 服务分类 sdSrv：药=11 检=31 验=41 处=21 */
   getServiceCode: (rec: TreatmentRecommendation) => string;
-  /** PHIS 标准服务 ID：药品取 idMedPro，非药品取 idCli */
+  /** PHIS 标准服务 ID：药品取 idMedPro，非药品优先取映射 idCli，否则取当前目录 idSrv */
   getServiceId: (rec: TreatmentRecommendation) => string;
   /** PHIS 标准服务名 */
   getServiceName: (rec: TreatmentRecommendation) => string;

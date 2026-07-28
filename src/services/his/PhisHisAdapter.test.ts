@@ -52,7 +52,7 @@ describe('PhisHisAdapter.saveTcdForm', () => {
 });
 
 describe('PhisHisAdapter ClinicDoctorCoreService delegation', () => {
-  it('delegates loadVisCliList and saveOdsImp without renaming fields', async () => {
+  it('delegates loadVisCliList without renaming fields', async () => {
     const query = [{
       idSrv: 'SRV001',
       naSrv: '血常规',
@@ -63,28 +63,13 @@ describe('PhisHisAdapter ClinicDoctorCoreService delegation', () => {
       idCli: 'CLI001',
       naSrv: '血常规',
     }];
-    const request = {
-      forceSave: '0' as const,
-      idVis: 'VIS001',
-      presVOList: [],
-      herbVOList: [],
-      applyVOS: [{
-        idCli: 'CLI001',
-        sdDisp: '1',
-        naApply: '血常规',
-      }],
-      orderDispCons: [],
-    };
     const service = {
       loadVisCliList: vi.fn().mockResolvedValue(loaded),
-      saveOdsImp: vi.fn().mockResolvedValue({ code: '200', msg: '' }),
     } as unknown as HisService;
     const adapter = new PhisHisAdapter(service);
 
     await expect(adapter.loadVisCliList(query)).resolves.toBe(loaded);
-    await expect(adapter.saveOdsImp(request)).resolves.toEqual({ code: '200', msg: '' });
     expect(service.loadVisCliList).toHaveBeenCalledWith(query);
-    expect(service.saveOdsImp).toHaveBeenCalledWith(request);
   });
 });
 

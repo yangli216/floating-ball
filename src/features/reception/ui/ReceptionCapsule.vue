@@ -9,10 +9,15 @@ import type { HisOutpatientFollowUpContext, HisVisitRecord } from '@/services/hi
 import type { PatientMemoryBrief } from '@entities/patient-memory';
 import type { PatientMemorySyncStatus } from '@features/patient-memory';
 import type { ChronicRefillCandidate, RiskItem } from '@features/reception-risk';
-import type { TreatmentPlanInitialDraft } from '@features/treatment-plan';
+import type { ClinicalResultInput } from '@features/clinical-result';
+import {
+  buildTreatmentPlanInitialDraftRecordContext,
+  type TreatmentPlanInitialDraft,
+} from '@features/treatment-plan';
 import {
   buildReceptionChronicRefillPresentation,
 } from '../lib/receptionChronicRefillPresentation';
+import { shouldRequestReceptionWindowDrag } from '../lib/receptionWindowDrag';
 import ReceptionChronicRefillSection from './ReceptionChronicRefillSection.vue';
 import {
   buildChronicDiseaseSummary,
@@ -38,6 +43,7 @@ const props = defineProps<{
   analyzing?: boolean;
   chronicRefillCandidate?: ChronicRefillCandidate | null;
   chronicRefillGenerating?: boolean;
+  chronicRefillRecord?: ClinicalResultInput | null;
   outpatientFollowUpContext?: HisOutpatientFollowUpContext | null;
   reportInterpretationVisits?: HisVisitRecord[];
   reportAssistantOpening?: boolean;
@@ -51,6 +57,7 @@ const emit = defineEmits<{
   (event: 'confirm-chronic-refill'): void;
   (event: 'confirm-report-assistant'): void;
   (event: 'open-patient-memory'): void;
+  (event: 'start-window-drag'): void;
   (event: 'open-chronic-treatment-plan', value: TreatmentPlanInitialDraft): void;
   (
     event: 'open-chronic-disease',
@@ -71,9 +78,13 @@ const summary = computed(() => buildChronicDiseaseSummary({
   patientMemoryBrief: props.patientMemoryBrief,
 }));
 const patientAnchorId = computed(() => getPatientContextVisitId(props.patient));
+const chronicRefillRecordContext = computed(() => (
+  buildTreatmentPlanInitialDraftRecordContext(props.chronicRefillRecord)
+));
 const chronicAiRecommendations = useChronicAiRecommendations({
   summary,
   patientAnchorId,
+  recordContext: chronicRefillRecordContext,
 });
 
 const avatarSrc = ref(resolvePatientAvatar({ gender: props.gender, age: props.age }));
@@ -185,7 +196,7 @@ function handleCapsuleKeydown(event: KeyboardEvent): void {
 function toggleSection(index: number): void {
   const nextSection = openSection.value === index ? 0 : index;
   openSection.value = nextSection;
-  if (nextSection === 2) void chronicAiRecommendations.load();
+  if (nextSection === 3) void chronicAiRecommendations.load();
 }
 
 async function addAiRecommendationsToDraft(): Promise<void> {
@@ -224,6 +235,11 @@ function openPatientMemory(): void {
   emit('open-patient-memory');
 }
 
+function requestWindowDrag(event: MouseEvent): void {
+  if (!shouldRequestReceptionWindowDrag(event.currentTarget, event.target)) return;
+  emit('start-window-drag');
+}
+
 function openWindow(kind: ChronicDiseaseWindowKind, diseaseType?: ChronicDiseaseType): void {
   if (kind === 'follow-up' && !isChronicFollowUpEligible(summary.value, diseaseType)) return;
   trackClick(`reception_chronic_${kind}_open`, { diseaseType });
@@ -243,6 +259,7 @@ function openWindow(kind: ChronicDiseaseWindowKind, diseaseType?: ChronicDisease
         class="patient-capsule"
         :aria-label="`当前患者 ${patientName}，双击或按回车展开慢病插件`"
         title="双击展开慢病插件"
+        @mousedown.left="requestWindowDrag"
         @dblclick="expandDetail"
         @keydown="handleCapsuleKeydown"
       >
@@ -268,7 +285,7 @@ function openWindow(kind: ChronicDiseaseWindowKind, diseaseType?: ChronicDisease
     </template>
 
     <aside v-else class="plugin-panel" aria-label="慢病助手详情">
-      <header class="plugin-patient-header">
+      <header class="plugin-patient-header" @mousedown.left="requestWindowDrag">
         <div class="patient-main-row">
           <img class="patient-avatar" :src="avatarSrc" alt="" draggable="false" @error="onAvatarError" />
           <div class="patient-summary">
@@ -346,16 +363,34 @@ function openWindow(kind: ChronicDiseaseWindowKind, diseaseType?: ChronicDisease
           </div>
         </section>
 
-        <section class="accordion-section" :class="{ open: openSection === 2 }">
+        <section class="accordion-section refill-section" :class="{ open: openSection === 2 }">
           <button type="button" class="accordion-trigger" :aria-expanded="openSection === 2" @click="toggleSection(2)">
             <span class="section-number">2</span>
             <span class="section-copy">
-              <span class="section-title">AI 推荐</span>
-              <span class="section-summary">{{ chronicAiRecommendations.summaryText.value }}</span>
+              <span class="section-title">慢病复诊配药</span>
+              <span class="section-summary">{{ chronicRefillPresentation.sectionSummary }}</span>
             </span>
             <Icon :icon="openSection === 2 ? 'lucide:chevron-up' : 'lucide:chevron-down'" size="19" />
           </button>
           <div v-if="openSection === 2" class="accordion-content">
+            <ReceptionChronicRefillSection
+              :presentation="chronicRefillPresentation"
+              :generating="chronicRefillGenerating"
+              @confirm="confirmChronicRefill"
+            />
+          </div>
+        </section>
+
+        <section class="accordion-section" :class="{ open: openSection === 3 }">
+          <button type="button" class="accordion-trigger" :aria-expanded="openSection === 3" @click="toggleSection(3)">
+            <span class="section-number">3</span>
+            <span class="section-copy">
+              <span class="section-title">AI 推荐</span>
+              <span class="section-summary">{{ chronicAiRecommendations.summaryText.value }}</span>
+            </span>
+            <Icon :icon="openSection === 3 ? 'lucide:chevron-up' : 'lucide:chevron-down'" size="19" />
+          </button>
+          <div v-if="openSection === 3" class="accordion-content">
             <ChronicAiRecommendationPanel
               :eligible="summary.hasSupportedDisease"
               :items="chronicAiRecommendations.items.value"
@@ -388,24 +423,6 @@ function openWindow(kind: ChronicDiseaseWindowKind, diseaseType?: ChronicDisease
                 <Icon icon="lucide:chevron-right" size="15" />
               </button>
             </div>
-          </div>
-        </section>
-
-        <section class="accordion-section refill-section" :class="{ open: openSection === 3 }">
-          <button type="button" class="accordion-trigger" :aria-expanded="openSection === 3" @click="toggleSection(3)">
-            <span class="section-number">3</span>
-            <span class="section-copy">
-              <span class="section-title">慢病复诊配药</span>
-              <span class="section-summary">{{ chronicRefillPresentation.sectionSummary }}</span>
-            </span>
-            <Icon :icon="openSection === 3 ? 'lucide:chevron-up' : 'lucide:chevron-down'" size="19" />
-          </button>
-          <div v-if="openSection === 3" class="accordion-content">
-            <ReceptionChronicRefillSection
-              :presentation="chronicRefillPresentation"
-              :generating="chronicRefillGenerating"
-              @confirm="confirmChronicRefill"
-            />
           </div>
         </section>
 
@@ -516,8 +533,11 @@ button:focus-visible, input:focus-visible {
   border: 1px solid #fdba74;
   border-radius: 18px;
   box-shadow: 0 8px 24px rgba(15, 23, 42, 0.13);
+  cursor: grab;
+  user-select: none;
   -webkit-app-region: no-drag;
 }
+.patient-capsule:active { cursor: grabbing; }
 .capsule-robot { width: 50px; height: 50px; flex: none; object-fit: contain; }
 .capsule-copy { min-width: 0; display: grid; gap: 2px; }
 .capsule-copy strong { overflow: hidden; font-size: 15px; text-overflow: ellipsis; white-space: nowrap; }
@@ -560,7 +580,10 @@ button:focus-visible, input:focus-visible {
   min-width: 0;
   padding: 17px 39px 8px 8px;
   position: relative;
+  cursor: grab;
+  user-select: none;
 }
+.plugin-patient-header:active { cursor: grabbing; }
 .patient-main-row { min-width: 0; display: flex; align-items: flex-start; gap: 10px; }
 .patient-avatar { width: 45px; height: 45px; flex: none; object-fit: cover; border: 3px solid #eff6ff; border-radius: 50%; }
 .patient-summary { min-width: 0; padding-top: 4px; display: grid; gap: 13px; }
@@ -572,7 +595,7 @@ button:focus-visible, input:focus-visible {
 .header-tag { color: #1d4ed8; background: #eff6ff; border: 1px solid #bfdbfe; }
 .due-tag { display: inline-flex; align-items: center; gap: 3px; color: #c2410c; background: #fff7ed; border: 1px solid #fed7aa; }
 .neutral-tag { color: #64748b; background: #f8fafc; border: 1px solid #e2e8f0; }
-.close-panel { position: absolute; top: 13px; right: 4px; width: 34px; height: 34px; z-index: 5; display: grid; place-items: center; color: #94a3b8; background: rgba(241,245,249,.92); border: 0; border-radius: 50%; -webkit-app-region: no-drag; }
+.close-panel { position: absolute; top: 13px; right: 4px; width: 34px; height: 34px; z-index: 5; display: grid; place-items: center; color: #94a3b8; background: rgba(241,245,249,.92); border: 0; border-radius: 50%; cursor: pointer; -webkit-app-region: no-drag; }
 
 .public-health-row {
   min-width: 0;

@@ -195,7 +195,14 @@ PHIS                                全医慧助（PCIE）
 4. 桌面端主动调用 PHIS 的字典、药品详情、库存校验等出站接口也写入同一日志文件，便于用一次 `traceId` 串联 Bridge 入站与 PHIS 出站排查。
 5. 日志仅保存在医生本机本地数据目录，可在日志面板中刷新、筛选、复制、导出或清空。
 
-### 5.5 门诊用药推荐的有效库存目录
+### 5.5 PHIS 标准疾病目录
+
+1. 桌面端通过 HIS Adapter 调用 `api/base.hiBdDieService/queryList` 获取 PHIS 标准疾病目录；不得再经 `api/phis.aiAdapterService/queryDiagnosisCatalog` 间接调用错误的 `phis.hiBdDieService` Bean。
+2. 请求使用 RPC 单参数数组和分页对象，首屏为 `[{"start":0,"limit":1000}]`，后续按 1000 条递增 `start`，直到达到 `total` 或当前页不足 1000 条。
+3. 返回的 `idDie / cdIcd / naIcd / py / instr / fgActive` 按原字段解析；`fgActive = "0"` 的停用疾病不得进入客户端标准诊断目录。
+4. `diagList.idDiag` 最终只能使用该目录返回的 `idDie`，不得使用 AI 文本、ICD 编码或前端临时 ID 代替。
+
+### 5.6 门诊用药推荐的有效库存目录
 
 1. 桌面端按当前用户可见发药药房调用 `api/phis.aiAdapterService/queryInvSubList`，单个药房请求参数为 `[{"start":0,"limit":-1,"sort":null,"params":{"idSto":"药房ID","naMedPro":null,"sdBasMed":null,"amountType":"1","fgActiveType":"1","sdMed":null,"sdMedType":null}}]`。
 2. 返回的同一 `idMedPro` 多批次记录在 HIS Adapter 内合并；只有启用、未失效且可用数量大于 0 的药品进入 AI 候选目录。合并项保留近效期有效批次的 `priceSale` 作为当前药房库存单价；近效期批次未返回有效价格时，顺延取下一个有效批次价格。
@@ -1149,7 +1156,7 @@ ws://127.0.0.1:8081/api/consultation/events/ws
 
 #### 成功响应: 问诊一键确认回写（record-confirmed）
 
-`record-confirmed` 类型来自问诊最终确认提交。**症状问诊（`ConsultationPage` 完成问诊）、语音问诊（`VoiceConsultationNew` 提交病历）和独立诊疗方案推荐页（`treatment_plan` 聚合推荐后“一键回写”）共用此契约**，由 `src/features/clinical-result/recordConfirmedPayload.ts` 作为唯一构造点产出，字段结构、默认值、PHIS 中性化策略完全一致。与 `reference-request` 不同，这是医生在结果页直接确认后一次性提交的完整数据，不再拆成逐项引用请求；但 PHIS 在完成最终调入确认后，仍必须调用 `POST /api/consultation/reference-feedback` 回执成功或失败，桌面端会在收到回执前保持结果页处于等待态；成功回执后再进入对应页面的收口动作，失败回执保留当前编辑现场。
+`record-confirmed` 类型来自问诊最终确认提交。**症状问诊（`ConsultationPage` 完成问诊）、语音问诊（`VoiceConsultationNew` 提交病历）、独立诊疗方案推荐页（`treatment_plan` 聚合推荐后“一键回写”）和两慢病 AI 检查检验推荐进入的诊疗方案页共用此契约**，由 `src/features/clinical-result/recordConfirmedPayload.ts` 作为唯一构造点产出，字段结构、默认值、PHIS 中性化策略完全一致。与 `reference-request` 不同，这是医生在结果页直接确认后一次性提交的完整数据，不再拆成逐项引用请求；但 PHIS 在完成最终调入确认后，仍必须调用 `POST /api/consultation/reference-feedback` 回执成功或失败，桌面端会在收到回执前保持结果页处于等待态；成功回执后再进入对应页面的收口动作，失败回执保留当前编辑现场。两慢病来源的 `diagList` 由 typed draft 携带的 HIS 标准诊断生成：高血压限定名称语义与 `I10` 家族，2 型糖尿病限定名称语义与 `E11` 家族，双病种同时提交两条诊断。
 
 ```json
 {
@@ -1799,6 +1806,13 @@ POST api/phis.aiAdapterService/queryPatientVisitHistoryData
 | `drugList` | List | 随访用药；直接使用 `naDrug / sdDrugFreq / perDose / doseUnit` |
 | `idRecord` | String | 两慢病登记表主键；保存随访时必须原样带入 |
 
+随访表单中的 `dtHyPlan / dtDbsPlan` 是只读计划日期。客户端必须从
+`visitInfos[].dtNextVisit` 取值并规范为 `yyyy-MM-dd`：优先使用记录中可选的
+`sdVisitKind=1/2` 区分高血压与糖尿病；旧响应未返回该标记时，按高血压/
+糖尿病专属随访字段识别。若双病种响应恰好只有两条均无法识别病种的计划
+记录，则兼容现有接口样例顺序，第一条作为高血压、第二条作为糖尿病。无法
+可靠归属的日期不得跨病种复制；单病种患者只填充其当前管理病种。
+
 医生确认随访表单后，客户端必须通过同一个 Adapter 保存：
 
 ```text
@@ -1881,15 +1895,22 @@ main
 | `401` | - | 尚未完成 SDK 授权握手或授权上下文失效 |
 | `500` | - | 主窗口不存在或事件分发失败 |
 
-### 6.9 两慢病检查检验调入 `ClinicDoctorCoreService`
+### 6.9 两慢病检查检验目录与可选调入映射
 
-用途：两慢病插件中医生勾选 AI 推荐的检查/检验后，先加载诊中助手调入映射，再在诊疗方案工作台完成必要属性确认并保存到当前门诊就诊。该接口只用于 `initialDraft.sourceModule = chronic_disease` 的检查/检验调入，不得扩展为其他页面的通用保存捷径。
+用途：两慢病插件先读取当前 HIS 用户、机构与科室上下文实际可开立的检查/检验目录，让 LLM 只在该目录中选择；医生勾选后进入诊疗方案工作台完成项目详情、执行科室、检查部位和其他必要属性确认。最终保存仍走第 6.4 节定义的共享 `record-confirmed + reference-feedback` 闭环。
 
-当前客户端通过 HIS Adapter 调用以下 RPC 发布路径：
+当前可开立目录来自：
+
+```text
+POST api/phis.aiInpatientEmrContextService/queryAvailableExamLabItems
+```
+
+该接口返回的 `items[]` 已包含当前上下文真实目录项目的 `id / idSrv / name / naSrv / sdSrv / idDeptExec / idPart / fgCheckOrd` 等字段。LLM 只接收患者慢病事实与由客户端临时生成的目录 `catalogRef`，返回结果必须映射回同一次请求的 `items[]`；未命中的引用直接丢弃，模型自由文本不得生成标准项目。
+
+客户端还可以通过 HIS Adapter 调用以下可选 PHIS 映射路径：
 
 ```text
 POST api/phis.clinicDoctorCoreService/loadVisCliList
-POST api/phis.clinicDoctorCoreService/saveOdsImp
 ```
 
 对应后端类为：
@@ -1898,7 +1919,7 @@ POST api/phis.clinicDoctorCoreService/saveOdsImp
 com.bsoft.rbmh.phis.ods.service.ClinicDoctorCoreService
 ```
 
-#### 6.9.1 调入映射 `loadVisCliList`
+#### 6.9.1 可选调入映射 `loadVisCliList`
 
 `loadVisCliList` 的方法入参本身是 `List<VisMidQryCliVO>`；按当前 PHIS RPC 参数信封，请求体使用单参数数组，因此外层还需包装一层：
 
@@ -1930,57 +1951,23 @@ com.bsoft.rbmh.phis.ods.service.ClinicDoctorCoreService
 | `idPart` | 否 | 检查部位 ID |
 | `itemKind` | 否 | `1` 检验、`2` 检查 |
 
-返回值为 `List<Map<String, Object>>`。客户端只读取当前业务需要的 `idSrv / idCli / naSrv / idPart / itemKind / priceSale / idDeptExec`，其余字段合并到 `matchedItem.raw` 透传，不把 PHIS 私有字段升级为跨厂商中性 DTO。返回缺少任一已选项目时，不得打开工作台或猜测映射。
+返回值为 `List<Map<String, Object>>`。客户端只读取当前业务需要的 `idSrv / idCli / naSrv / idPart / itemKind / priceSale / idDeptExec`，其余字段合并到 `matchedItem.raw` 透传，不把 PHIS 私有字段升级为跨厂商中性 DTO。返回中存在与已选目录项目对应的条目时，客户端使用其 `idCli / idDeptExec / idPart` 增强 `matchedItem`；没有对应条目或接口不可用时保留原目录项目，不伪造 `idCli`，也不删除推荐。
 
-#### 6.9.2 保存医嘱 `saveOdsImp`
+慢病 AI 推荐的数据流固定为：
 
-`saveOdsImp` 入参为单个 `OdsImpReqVO`，RPC 参数信封请求体为 `[OdsImpReqVO]`。两慢病当前只支持检查/检验，因此 `presVOList / herbVOList / orderDispCons` 固定为空数组，医生确认项进入 `applyVOS`：
+1. 客户端查询 `queryAvailableExamLabItems`，把真实慢病数据和该目录交给 LLM；模型只返回 0-5 个目录 `catalogRef`。
+2. 客户端把引用映射回本次目录项目后立即展示并默认勾选，不额外依赖 `loadVisCliList` 作为展示门禁。
+3. 医生点击“加入诊疗方案”时，以当前勾选项尽力调用 `loadVisCliList` 做字段增强；该调用失败或返回空时仍使用目录快照进入工作台。
+4. 工作台通过项目详情、执行科室、检查部位和共享必要字段校验逐项确认；字段仍不完整的具体项目在最终提交前被拦截并引导医生补齐。
 
-```json
-[
-  {
-    "forceSave": "0",
-    "idVis": "VIS202607270001",
-    "presVOList": [],
-    "herbVOList": [],
-    "applyVOS": [
-      {
-        "idCli": "CLI001",
-        "naApply": "血常规",
-        "sdDisp": "1",
-        "idSim": "REQ001-1",
-        "priceSale": 25,
-        "idDeptExec": "DEPT_LAB",
-        "fgCheck": "0",
-        "amount": 1,
-        "sdOrd": "41",
-        "idPart": "",
-        "memo": ""
-      }
-    ],
-    "orderDispCons": []
-  }
-]
-```
+`queryAvailableExamLabItems` 的成功目录映射只说明项目来自当前可开立目录，不等同于已经保存；真正保存成功仍以匹配的 `reference-feedback` 为准。不得用模型名称或本地硬编码 ID 替代目录项目，也不得因可选映射接口的空响应把整批真实目录推荐判为不可用。
 
-关键约束：
+#### 6.9.2 标准诊断与最终回写
 
-1. `idVis` 必须来自当前接诊的 `idVis / visitId`，不得用两慢病登记表主键 `idRecord`、健康档案主键 `idPhr` 或患者 `idPi` 代替。
-2. 插件草稿的患者绑定同样使用当前 `idVis`；`idRecord / idPhr` 只保留给两慢病查询与正式随访表单，不能再与就诊锚点比较。
-3. `applyVOS.sdDisp`：检验为 `1`，检查为 `2`；`amount` 固定为 `1`。
-4. `idCli / idDeptExec / idPart / priceSale` 优先使用 `loadVisCliList` 与工作台医生确认后的值，不得按名称猜测。
-5. `saveOdsImp` 带 `@DAOTransaction`，一次请求中的所选项目作为一个事务保存。
-6. 该慢病分支保存时不得再发送 `record-confirmed`，否则会造成同一医嘱被两个通道重复处理。
-
-响应为 `OdsImpResVO`：
-
-| `code` | 客户端行为 |
-| :--- | :--- |
-| `200` | 保存成功，提示医生并关闭诊疗方案工作台 |
-| `401` | 展示原始 `msg`；医生确认继续后，以完全相同的业务字段重提，仅把 `forceSave` 从 `0` 改为 `1` |
-| `500` | 保留当前工作台，展示原始 `msg`，不自动重试 |
-
-`401` 是业务确认状态，不是 SDK 授权失败；调用层不得把它提前翻译成网络异常。`forceSave=1` 只允许由本次 `401` 后的医生明确确认触发。
+1. 插件草稿的患者绑定使用当前接诊 `idVis / visitId`；`idRecord / idPhr` 只保留给两慢病查询与正式随访表单。
+2. 客户端按本次 `summary.diseaseTags` 中首次出现的病种顺序稳定去重后查询并匹配 HIS 标准诊断；公卫管理与临床识别标签都属于当前慢病助手入口，不能只读取 `managedDiseaseTypes`。高血压要求诊断名称包含高血压语义且 ICD-10 编码属于 `I10` 家族；2 型糖尿病要求名称包含糖尿病语义且编码属于 `E11` 家族，编码族负责排除 1 型等其他糖尿病。不得按摘要自由文本生成诊断，不得硬编码机构诊断 ID；双病种必须同时找到并通过 typed draft 的 `standardDiagnoses` 携带两条标准诊断，任一缺失即停止进入工作台。只有历史 runtime 草稿完全缺少 `standardDiagnoses` 字段时，诊疗方案旧入口才保留原诊断兼容读取。
+3. 医生确认后，检查/检验与标准诊断统一进入第 6.4 节的 `record-confirmed`：诊断写入 `diagList`，项目写入 `orderList`。PHIS 完成调入后必须按同一 `consultationId + requestId` 调用 `/api/consultation/reference-feedback`。
+4. 桌面端只在匹配的成功回执到达后关闭诊疗方案工作台；失败或不匹配回执保留医生当前编辑现场。两慢病入口不得并行调用另一条直接保存通道。
 
 ## 7. `resultType` 处理约定
 
@@ -1990,14 +1977,14 @@ HIS 侧至少要识别以下 5 类结果：
 | :--- | :--- | :--- |
 | `draft` | 病历草稿回写（早期病历字段） | 回填主诉、现病史等医生站草稿字段 |
 | `final-report` | 【已废弃】完整问诊最终报告（含诊断、治疗方案） | 仅作历史兼容，新链路不产生此类型，统一使用 `record-confirmed` |
-| `record-confirmed` | 问诊一键确认回写（`orderList` 统一格式） | 直接用于 PHIS 调入确认弹窗，不走 `reference-request` 引用请求 |
+| `record-confirmed` | 医生一键确认回写（`diagList/orderList` 统一格式） | 直接用于 PHIS 调入确认弹窗，不走 `reference-request` 引用请求 |
 | `reference-request` | 全医慧助（PCIE）请求 PHIS 保存引用 | 调用 PHIS 保存，并准备回执 |
 | `reference-feedback` | PHIS 回执后的最新状态 | 更新医生站状态，提示成功或失败 |
 
 补充说明：
 
 1. `draft` 仅携带主诉 / 现病史等早期字段；`record-confirmed` 才携带完整的 `outpatientRecord`、`diagList` 和 `orderList`。`final-report` 仅作历史兼容保留，新代码不再产生。
-2. `record-confirmed` 来自问诊结果确认提交或独立诊疗方案推荐提交，其 `diagList` 和 `orderList` 已转换成 PHIS 可直接消费的结构。PHIS 收到后可直接按 `fgMain` 识别主诊断并生成病历诊断行，再按 `sdSrv`、`idSrv`、`idDeptExec`、`doseOnce`、`idFreq`、`idUsge`、`jsonField`、`idPart` 等字段填充调入确认弹窗，无需二次补录。
+2. `record-confirmed` 来自问诊结果确认、独立诊疗方案推荐或两慢病检查检验推荐确认，其 `diagList` 和 `orderList` 已转换成 PHIS 可直接消费的结构。PHIS 收到后可直接按 `fgMain` 识别主诊断并生成病历诊断行，再按 `sdSrv`、`idSrv`、`idDeptExec`、`doseOnce`、`idFreq`、`idUsge`、`jsonField`、`idPart` 等字段填充调入确认弹窗，无需二次补录。
 3. `reference-request` 和 `reference-feedback` 都可能附带同一份病历上下文，便于 HIS 在当前界面直接处理。
 4. 对回写 / 引用闭环结果，HIS 应继续结合 `resultType + referenceType` 判断具体业务对象，不建议只看 `referenceType`。
 5. 当前一键回写场景下，`record-confirmed.referenceType/action` 为 `batch`，`diagList/orderList` 包含诊断和所有选中治疗项目；旧 `reference-request + batch` 才使用 `referenceItems` 按 `type` 区分业务类型。单项引用场景下 `referenceType` 仍为具体类型（如 `diagnosis`）。
@@ -2094,5 +2081,6 @@ HIS 接入完成后，至少验证以下场景：
 8. 切换患者后不会把上一位患者的结果误回填到当前医生站
 9. 问诊一键确认回写：PHIS 收到 `resultType: "record-confirmed"` 结果后，读取 `orderList` 即可。药品、检查、检验、处置已经统一转换成 PHIS 调入确认格式，可直接用于回填弹窗
 10. 独立诊疗方案推荐：`POST /assist` 使用 `action: "treatment_plan"` 可打开聚合方案页；医生勾选后同样产生 `record-confirmed + referenceType: "batch"`，PHIS 按第 9 条处理并回执
+11. 两慢病检查检验推荐：候选必须来自 `queryAvailableExamLabItems` 当前可开立目录，LLM 只返回目录 `catalogRef`；`loadVisCliList` 仅做可选字段增强，高血压 / 2 型糖尿病按需匹配 `I10 / E11` 标准诊断。医生在诊疗方案页补齐必要属性并确认后只产生一条 `record-confirmed`，双病种 `diagList` 同时包含两条诊断，PHIS 回执成功后页面才关闭
 
 如果你们 HIS 需要，我建议下一步可以再按这份文档继续拆一版“给后端开发直接对接的字段清单”和“一版给联调测试直接执行的验收用例”。

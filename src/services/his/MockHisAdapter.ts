@@ -35,8 +35,6 @@ import type {
   MedicalItemPartOption,
   MedicineCatalogEntry,
   MedicineDetail,
-  OdsImpReqVO,
-  OdsImpResVO,
   HisPatientInfo,
   HisPatientHistory,
   HisPatientHistoryQuery,
@@ -64,6 +62,7 @@ const MOCK_DIAGNOSES: DiagnosisCatalogEntry[] = [
   { id: 'mock-dx-1', code: 'J00', name: '急性鼻咽炎[普通感冒]', keywords: ['感冒', 'gm', 'ganmao'] },
   { id: 'mock-dx-2', code: 'J20.9', name: '急性支气管炎', keywords: ['支气管炎', 'zqgy'] },
   { id: 'mock-dx-3', code: 'I10.x00', name: '原发性高血压', keywords: ['高血压', 'gxy'] },
+  { id: 'mock-dx-4', code: 'E11.900', name: '2型糖尿病', keywords: ['糖尿病', 'tnb'] },
 ];
 
 const MOCK_MEDICINES: MedicineCatalogEntry[] = [
@@ -266,14 +265,10 @@ export class MockHisAdapter implements HisAdapter {
   async loadVisCliList(items: VisMidQryCliVO[]): Promise<VisCliLoadedItem[]> {
     return items.map((item) => ({
       ...item,
-      idCli: item.idSrv,
+      idCli: `mock-cli-${item.idSrv}`,
       priceSale: 1,
       idDeptExec: 'mock-exec-dept',
     }));
-  }
-
-  async saveOdsImp(_request: OdsImpReqVO): Promise<OdsImpResVO> {
-    return { code: '200', msg: '' };
   }
 
   async fetchPatientHistory(

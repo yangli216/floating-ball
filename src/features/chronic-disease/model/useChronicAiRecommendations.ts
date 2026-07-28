@@ -13,14 +13,21 @@ import {
   buildChronicVisCliQueryItems,
   mergeChronicVisCliLoadedItems,
 } from '../lib/chronicTreatmentPlanDraft';
+import {
+  resolveChronicStandardDiagnoses,
+} from '../lib/chronicStandardDiagnosis';
 import type {
   ChronicAiRecommendation,
   ChronicDiseasePatientSummary,
 } from '../types';
+import type {
+  TreatmentPlanInitialDraftRecordContext,
+} from '@features/treatment-plan';
 
 export interface UseChronicAiRecommendationsOptions {
   summary: Readonly<Ref<ChronicDiseasePatientSummary>>;
   patientAnchorId: Readonly<Ref<string>>;
+  recordContext?: Readonly<Ref<TreatmentPlanInitialDraftRecordContext | undefined>>;
 }
 
 export function useChronicAiRecommendations(
@@ -71,7 +78,10 @@ export function useChronicAiRecommendations(
     loading.value = true;
     error.value = '';
     try {
-      const nextItems = await generateChronicAiRecommendations(options.summary.value);
+      const nextItems = await generateChronicAiRecommendations(
+        options.summary.value,
+        { forceCatalog: force },
+      );
       if (sequence !== requestSequence) return;
       items.value = nextItems;
       selectedIds.value = nextItems.map((item) => item.id);
@@ -114,8 +124,24 @@ export function useChronicAiRecommendations(
     preparing.value = true;
     prepareError.value = '';
     try {
-      const loadedItems = await his.loadVisCliList(
-        buildChronicVisCliQueryItems(selectedItems),
+      const mappingPromise = (async () => {
+        try {
+          return await his.loadVisCliList(buildChronicVisCliQueryItems(selectedItems));
+        } catch (cause) {
+          console.warn('[ChronicDisease] Optional loadVisCliList enrichment unavailable', {
+            itemCount: selectedItems.length,
+            cause: cause instanceof Error ? cause.name : typeof cause,
+          });
+          return [];
+        }
+      })();
+      const [diagnosisCatalog, loadedItems] = await Promise.all([
+        his.fetchDiagnosisCatalog(),
+        mappingPromise,
+      ]);
+      const standardDiagnoses = resolveChronicStandardDiagnoses(
+        options.summary.value.diseaseTags,
+        diagnosisCatalog,
       );
       const preparedItems = mergeChronicVisCliLoadedItems(selectedItems, loadedItems);
       return buildChronicTreatmentPlanInitialDraft({
@@ -123,6 +149,8 @@ export function useChronicAiRecommendations(
         suggestions: preparedItems,
         selectedIds: preparedItems.map((item) => item.id),
         requestId,
+        standardDiagnoses,
+        recordContext: options.recordContext?.value,
       });
     } catch (cause) {
       prepareError.value = formatUserFacingError(cause, {

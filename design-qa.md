@@ -1,21 +1,21 @@
 # 慢病复诊配药四步界面 Design QA
 
-- Source visual truth: `/var/folders/35/4z0sm8cs2j79r4rv6hcdl7kc0000gn/T/codex-clipboard-36a2d16d-dd09-4c3d-a3fa-28a1e67f0b44.png`
-- Implementation screenshot: `/Users/das/SourceCode/regional-ai-workspace/floating-ball/output/playwright/reception-chronic-refill-step-no-helper.png`
+- Source visual truth: `/var/folders/35/4z0sm8cs2j79r4rv6hcdl7kc0000gn/T/codex-clipboard-e0d0aa18-6baf-4d11-8d29-74c04a094cb2.png`
+- Implementation screenshot: `/Users/das/SourceCode/regional-ai-workspace/floating-ball/output/playwright/reception-accordion-2-3-swapped.png`
 - Browser viewport: `404 × 712` CSS px
 - Component viewport: `404 × 712` CSS px
 - Implementation pixels: `404 × 712`
-- State: high blood pressure candidate; section 3 expanded; historical medication reference present; section 4 collapsed.
+- State: high blood pressure candidate; section 2 expanded; historical medication reference present; sections 1, 3, and 4 collapsed.
 
 ## Full-view comparison evidence
 
-The final implementation capture confirms that the warm-white narrow panel, patient header, blue numbered accordion hierarchy, purple chronic-disease action language, sticky three-button footer, robot asset, and rounded content card remain visually consistent. The new step 3 sits between the current step 2 and the renumbered clinical recommendations without clipping the 404 × 712 frame or obscuring the persistent footer.
+The source image records the pre-change order. The requested swap is reflected in the final implementation capture as `1 就诊历史信息 → 2 慢病复诊配药 → 3 AI 推荐 → 4 临床诊疗建议`.
 
-The source shows the earlier three-step layout. The implementation intentionally reflects the current product baseline for step 2 (`AI 推荐`) while applying this task's requested change: `3 慢病复诊配药` and `4 临床诊疗建议`.
+The warm-white narrow panel, patient header, blue numbered accordion hierarchy, purple chronic-disease action language, sticky three-button footer, robot asset, and rounded content card remain visually consistent. The swapped sections fit within the `404 × 712` frame without clipping or obscuring the persistent footer.
 
 ## Focused region comparison evidence
 
-The step 3/4 region is readable at native implementation size in the final capture, so a separate crop was not needed. The expanded step 3 shows:
+The step 2/3 region is readable at native implementation size in the final capture, so a separate crop was not needed. The expanded step 2 shows:
 
 - specific historical diagnoses instead of a generalized disease group;
 - historical-medication availability without exposing visit-count statistics;
@@ -34,12 +34,12 @@ The step 3/4 region is readable at native implementation size in the final captu
 
 ## Interaction and browser evidence
 
-- Opened section 3 from the four-step accordion.
+- Confirmed the accessible-name order is `1 就诊历史信息`, `2 慢病复诊配药`, `3 AI 推荐`, `4 临床诊疗建议`.
+- Opened section 2 from the four-step accordion and verified that it displays the chronic-refill action card.
+- Opened section 3 and observed the AI recommendation request path run under the new number; the isolated audit harness showed the expected actionable “HIS 尚未连接” state.
 - Verified the action card is exactly `76 px` high, its panel is also `76 px` high, and it has no explanatory sibling below it.
 - Confirmed the refill card is uniquely reachable by its accessible name.
-- Clicked the refill card and observed one `confirm-chronic-refill` event in the preview wrapper.
-- Verified the clean preview tab reported no console errors.
-- Verified the local Bridge health endpoint, SDK handshake, and `/api/chronic-disease/open` event returned success against the running desktop app.
+- Verified the browser snapshot reported no console errors during the swap check.
 
 ## Comparison history
 
@@ -55,9 +55,15 @@ The step 3/4 region is readable at native implementation size in the final captu
 - Adjustment from product feedback: removed the standalone explanatory line below the refill card while retaining the necessary “待确认” action state.
 - Post-adjustment evidence: `reception-chronic-refill-step-no-helper.png`.
 
+### Pass 3
+
+- P0/P1/P2 findings: none.
+- Adjustment from product feedback: swapped accordion sections 2 and 3, and moved the AI lazy-load trigger to section 3.
+- Post-adjustment evidence: `reception-accordion-2-3-swapped.png` and the corresponding Playwright accessibility snapshots.
+
 ## Findings
 
-No actionable P0, P1, or P2 differences remain for the requested step insertion and renumbering.
+No actionable P0, P1, or P2 differences remain for the requested section 2/3 swap.
 
 ## Follow-up polish
 

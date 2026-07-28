@@ -27,8 +27,6 @@ import type {
   HisOutpatientFollowUpContextQuery,
   HisOutpatientFollowUpReportResults,
   HisOutpatientFollowUpReportResultsQuery,
-  OdsImpReqVO,
-  OdsImpResVO,
   TcdVisitForm,
   VisCliLoadedItem,
   VisMidQryCliVO,
@@ -566,7 +564,7 @@ interface OrganDeptListBody {
 }
 
 const HIS_CATALOG_ENDPOINTS = {
-  diagnoses: 'api/phis.aiAdapterService/queryDiagnosisCatalog',
+  diagnoses: 'api/base.hiBdDieService/queryList',
   availableExamLabItems: 'api/phis.aiInpatientEmrContextService/queryAvailableExamLabItems',
   medicalItemDetail: 'api/phis.aiAdapterService/loadHiBdCliDetail',
   medicalItemParts: 'api/phis.aiAdapterService/queryExaPartAndWayList',
@@ -582,7 +580,6 @@ const HIS_CATALOG_ENDPOINTS = {
   chronicDiseasePatientVisitHistory: 'api/phis.aiAdapterService/queryPatientVisitHistoryData',
   chronicDiseaseSaveTcdForm: 'api/phis.aiAdapterService/saveTcdForm',
   clinicDoctorLoadVisCliList: 'api/phis.clinicDoctorCoreService/loadVisCliList',
-  clinicDoctorSaveOdsImp: 'api/phis.clinicDoctorCoreService/saveOdsImp',
   patientAllergy: 'api/phis.aiAdapterService/queryHisAllergy',
   patientVisitHistory: 'api/phis.aiAdapterService/queryVisitHistory',
   patientVisitDetail: 'api/phis.aiAdapterService/loadClinicMedicalRecord',
@@ -787,7 +784,9 @@ export class HisService {
 
   /**
    * 同步全局诊断目录
-   * 真实 HIS 服务经院端 api/phis.aiAdapterService/queryDiagnosisCatalog 适配。
+   * 真实 HIS 服务：api/base.hiBdDieService/queryList。
+   * 该目录不能经 aiAdapterService 转发，否则错误 Bean 名
+   * `phis.hiBdDieService` 会触发注册中心 601。
    */
   async fetchDiagnosisCatalog(): Promise<HisDiagnosisCatalogItem[]> {
     const pageSize = 1000;
@@ -1285,35 +1284,6 @@ export class HisService {
   }
 
   /**
-   * 调用门诊医嘱调入公共方法。
-   *
-   * `401` 是 `OdsImpResVO` 的业务确认状态，必须原样交给 UI；只有 RPC
-   * 外层 envelope 失败或响应结构非法时才抛异常。
-   */
-  async saveOdsImp(request: OdsImpReqVO): Promise<OdsImpResVO> {
-    const response = await this.post<OdsImpResVO>(
-      HIS_CATALOG_ENDPOINTS.clinicDoctorSaveOdsImp,
-      [request],
-    );
-    const nested = response.body ?? response.data;
-    const normalizedNested = this.normalizeOdsImpResponse(nested);
-    if (normalizedNested) {
-      this.assertBusinessSuccess(HIS_CATALOG_ENDPOINTS.clinicDoctorSaveOdsImp, response);
-      return normalizedNested;
-    }
-
-    const direct = this.normalizeOdsImpResponse(response);
-    if (direct) {
-      return direct;
-    }
-
-    this.assertBusinessSuccess(HIS_CATALOG_ENDPOINTS.clinicDoctorSaveOdsImp, response);
-    throw new Error(
-      `[HisService] ${HIS_CATALOG_ENDPOINTS.clinicDoctorSaveOdsImp} returned an invalid response`,
-    );
-  }
-
-  /**
    * 查询患者过敏史
    * PHIS 接口经 api/phis.aiAdapterService/queryHisAllergy 适配
    */
@@ -1737,20 +1707,6 @@ export class HisService {
       message,
     });
     throw new Error(`[HisService] ${endpoint} failed: ${message} (code=${String(code ?? 'unknown')})`);
-  }
-
-  private normalizeOdsImpResponse(value: unknown): OdsImpResVO | null {
-    if (!value || typeof value !== 'object') return null;
-    const record = value as Record<string, unknown>;
-    const code = record.code === undefined || record.code === null
-      ? ''
-      : String(record.code).trim();
-    if (!code) return null;
-    const rawMessage = record.msg ?? record.message;
-    return {
-      code,
-      msg: typeof rawMessage === 'string' ? rawMessage : '',
-    };
   }
 
   private buildUrlWithQuery(base: string, query?: Record<string, string | number | boolean | null | undefined>): string {

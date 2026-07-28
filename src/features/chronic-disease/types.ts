@@ -73,6 +73,8 @@ export interface ChronicDiseasePatientSummary {
   latestWeightKg?: number;
   latestWaistCm?: number;
   latestHeartRate?: number;
+  dtHyPlan?: string;
+  dtDbsPlan?: string;
   bloodPressurePoints: BloodPressurePoint[];
   bloodGlucosePoints: BloodGlucosePoint[];
   recentMedicationFacts: ChronicMedicationFact[];

@@ -27,7 +27,7 @@ const emit = defineEmits<{
 
   <div v-else-if="loading" class="recommendation-state loading" role="status">
     <Icon icon="lucide:loader-circle" size="17" />
-    <span><b>正在生成 AI 推荐</b><small>读取当前 HIS 可开立检查/检验目录</small></span>
+    <span><b>正在生成 AI 推荐</b><small>分析慢病资料与 HIS 可开立目录</small></span>
   </div>
 
   <div v-else-if="error" class="recommendation-state error" role="alert">
@@ -69,13 +69,18 @@ const emit = defineEmits<{
       @click="emit('submit')"
     >
       <Icon :icon="preparing ? 'lucide:loader-circle' : 'lucide:circle-plus'" size="16" />
-      {{ preparing ? '正在加载调入映射…' : '加入诊疗方案' }}
+      {{ preparing ? '正在准备诊疗方案…' : '加入诊疗方案' }}
     </button>
     <p v-if="prepareError" class="prepare-error" role="alert">{{ prepareError }}</p>
   </template>
 
   <div v-else-if="loaded" class="recommendation-state">
-    AI 已完成本次生成，当前院内目录中暂无适合直接回写的检查/检验项目，请结合临床情况决定是否手动开立。
+    <span>
+      <b>暂无可直接回写的推荐</b>
+      <small>
+        AI 已完成本次分析，当前院内目录中没有适合推荐的检查/检验项目。
+      </small>
+    </span>
   </div>
 
   <div v-else class="recommendation-state">

@@ -129,36 +129,42 @@ describe('HisService ClinicDoctorCoreService order import', () => {
       [items],
     );
   });
+});
 
-  it('returns the saveOdsImp 401 business confirmation without throwing', async () => {
+describe('HisService fetchDiagnosisCatalog', () => {
+  it('queries the registered base.hiBdDieService directly', async () => {
     const service = new HisService('http://localhost/', 'token');
-    const request = {
-      forceSave: '0' as const,
-      idVis: 'VIS001',
-      presVOList: [],
-      herbVOList: [],
-      applyVOS: [{
-        idCli: 'CLI001',
-        sdDisp: '1',
-        naApply: '血常规',
-      }],
-      orderDispCons: [],
-    };
     const post = vi.spyOn(service, 'post').mockResolvedValue({
       code: 200,
       body: {
-        code: '401',
-        msg: '检查检验项目与已存在申请单重复，是否继续保存？',
+        total: 2,
+        items: [
+          {
+            idDie: 'DIE001',
+            cdIcd: 'I10',
+            naIcd: '原发性高血压',
+            py: 'YFXGXY',
+            fgActive: '1',
+          },
+          {
+            idDie: 'DIE002',
+            cdIcd: 'E11.9',
+            naIcd: '2型糖尿病',
+            fgActive: '0',
+          },
+        ],
       },
     });
 
-    await expect(service.saveOdsImp(request)).resolves.toEqual({
-      code: '401',
-      msg: '检查检验项目与已存在申请单重复，是否继续保存？',
-    });
+    await expect(service.fetchDiagnosisCatalog()).resolves.toEqual([{
+      id: 'DIE001',
+      code: 'I10',
+      name: '原发性高血压',
+      keywords: ['YFXGXY'],
+    }]);
     expect(post).toHaveBeenCalledWith(
-      'api/phis.clinicDoctorCoreService/saveOdsImp',
-      [request],
+      'api/base.hiBdDieService/queryList',
+      [{ start: 0, limit: 1000 }],
     );
   });
 });

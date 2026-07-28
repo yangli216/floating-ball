@@ -1,4 +1,8 @@
-import type { TreatmentPlanInitialDraft } from '@features/treatment-plan';
+import type {
+  TreatmentPlanInitialDraft,
+  TreatmentPlanInitialDraftRecordContext,
+  TreatmentPlanInitialDraftStandardDiagnosis,
+} from '@features/treatment-plan';
 import type {
   VisCliLoadedItem,
   VisMidQryCliVO,
@@ -60,6 +64,42 @@ function findLoadedItem(
   });
 }
 
+function mergeLoadedItem(
+  item: ChronicAiRecommendation,
+  request: VisMidQryCliVO,
+  loaded: VisCliLoadedItem,
+): ChronicAiRecommendation {
+  const matched = item.matchedItem as Record<string, unknown>;
+  const raw = matched.raw && typeof matched.raw === 'object'
+    ? matched.raw as Record<string, unknown>
+    : {};
+  const idSrv = text(loaded.idSrv) || request.idSrv;
+  const idCli = text(loaded.idCli);
+  const name = text(loaded.naSrv) || text(loaded.naApply) || item.matchedItem.name || item.name;
+  return {
+    ...item,
+    name,
+    matchedItem: {
+      ...item.matchedItem,
+      id: idCli || item.matchedItem.id,
+      idSrv,
+      name,
+      naSrv: name,
+      ...(idCli ? { idCli } : {}),
+      ...(text(loaded.idPart) ? { idPart: text(loaded.idPart) } : {}),
+      ...(text(loaded.idDeptExec) ? { idDeptExec: text(loaded.idDeptExec) } : {}),
+      ...(typeof loaded.priceSale === 'number' ? { priceSale: loaded.priceSale } : {}),
+      raw: {
+        ...raw,
+        ...loaded,
+        idSrv,
+        naSrv: name,
+        ...(idCli ? { idCli } : {}),
+      },
+    },
+  };
+}
+
 export function mergeChronicVisCliLoadedItems(
   suggestions: ChronicAiRecommendation[],
   loadedItems: VisCliLoadedItem[],
@@ -67,39 +107,7 @@ export function mergeChronicVisCliLoadedItems(
   const requests = buildChronicVisCliQueryItems(suggestions);
   return suggestions.map((item, index) => {
     const loaded = findLoadedItem(requests[index], loadedItems);
-    if (!loaded) {
-      throw new Error(`${item.name} 未返回医嘱调入映射，请在 HIS 核对项目后重试`);
-    }
-
-    const matched = item.matchedItem as Record<string, unknown>;
-    const raw = matched.raw && typeof matched.raw === 'object'
-      ? matched.raw as Record<string, unknown>
-      : {};
-    const idSrv = text(loaded.idSrv) || requests[index].idSrv;
-    const idCli = text(loaded.idCli) || idSrv;
-    const name = text(loaded.naSrv) || text(loaded.naApply) || item.matchedItem.name || item.name;
-    return {
-      ...item,
-      name,
-      matchedItem: {
-        ...item.matchedItem,
-        id: idCli || item.matchedItem.id,
-        idSrv,
-        idCli,
-        name,
-        naSrv: name,
-        ...(text(loaded.idPart) ? { idPart: text(loaded.idPart) } : {}),
-        ...(text(loaded.idDeptExec) ? { idDeptExec: text(loaded.idDeptExec) } : {}),
-        ...(typeof loaded.priceSale === 'number' ? { priceSale: loaded.priceSale } : {}),
-        raw: {
-          ...raw,
-          ...loaded,
-          idSrv,
-          idCli,
-          naSrv: name,
-        },
-      },
-    };
+    return loaded ? mergeLoadedItem(item, requests[index], loaded) : item;
   });
 }
 
@@ -108,6 +116,8 @@ export function buildChronicTreatmentPlanInitialDraft(input: {
   suggestions: ChronicAiRecommendation[];
   selectedIds: string[];
   requestId: string;
+  standardDiagnoses: TreatmentPlanInitialDraftStandardDiagnosis[];
+  recordContext?: TreatmentPlanInitialDraftRecordContext;
 }): TreatmentPlanInitialDraft {
   const selected = new Set(input.selectedIds);
   return {
@@ -115,6 +125,8 @@ export function buildChronicTreatmentPlanInitialDraft(input: {
     patientAnchorId: input.patientAnchorId,
     sourceModule: 'chronic_disease',
     title: '两慢病 AI 推荐',
+    standardDiagnoses: input.standardDiagnoses,
+    ...(input.recordContext ? { recordContext: input.recordContext } : {}),
     items: input.suggestions
       .filter((item) => selected.has(item.id))
       .map((item) => ({

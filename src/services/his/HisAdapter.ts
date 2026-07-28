@@ -33,8 +33,6 @@ import type {
   MedicalItemPartOption,
   MedicineCatalogEntry,
   MedicineDetail,
-  OdsImpReqVO,
-  OdsImpResVO,
   HisPatientInfo,
   HisPatientHistory,
   HisPatientHistoryQuery,
@@ -67,8 +65,6 @@ export type {
   MedicalItemPartOption,
   MedicineCatalogEntry,
   MedicineDetail,
-  OdsImpReqVO,
-  OdsImpResVO,
   HisPatientInfo,
   HisPatientHistory,
   HisPatientHistoryQuery,
@@ -196,14 +192,6 @@ export interface HisAdapter {
    * PHIS 实现对应 `ClinicDoctorCoreService.loadVisCliList`。
    */
   loadVisCliList(items: VisMidQryCliVO[]): Promise<VisCliLoadedItem[]>;
-
-  /**
-   * 保存门诊医嘱调入请求。
-   *
-   * PHIS 实现对应 `ClinicDoctorCoreService.saveOdsImp`；`401` 作为业务确认
-   * 结果原样返回，不得在 Adapter 层抛成认证异常。
-   */
-  saveOdsImp(request: OdsImpReqVO): Promise<OdsImpResVO>;
 
   /**
    * 拉取患者就诊历史（用于完善本地记忆系统）

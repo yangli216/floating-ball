@@ -540,6 +540,8 @@
         var visitInfo = {
           idPherec: input.idPherec,
           dtVisit: input.dtVisit,
+          dtNextVisit: input.dtNextVisit,
+          sdVisitKind: input.sdVisitKind,
           idDoctor: 'MOCK-D001',
           idDoctorText: '李医生',
           pressureH: input.pressureH,
@@ -649,6 +651,8 @@
                 followUpVisit({
                   idPherec: 'MOCK-CD-DUAL-FU-202607',
                   dtVisit: '2026-07-24T09:10:00+08:00',
+                  dtNextVisit: '2026-10-24T00:00:00+08:00',
+                  sdVisitKind: '1,2',
                   pressureH: 136,
                   pressureL: 82,
                   heartRate: 74,
@@ -708,6 +712,8 @@
                 followUpVisit({
                   idPherec: 'MOCK-CD-HTN-FU-202607',
                   dtVisit: '2026-07-24T09:20:00+08:00',
+                  dtNextVisit: '2026-10-24T00:00:00+08:00',
+                  sdVisitKind: '1',
                   pressureH: 134,
                   pressureL: 82,
                   heartRate: 72
@@ -766,6 +772,8 @@
                 followUpVisit({
                   idPherec: 'MOCK-CD-DM-FU-202607',
                   dtVisit: '2026-07-24T09:30:00+08:00',
+                  dtNextVisit: '2026-10-24T00:00:00+08:00',
+                  sdVisitKind: '2',
                   pressureH: 128,
                   pressureL: 78,
                   heartRate: 76,

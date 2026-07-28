@@ -46,6 +46,29 @@ function normalizeDate(value: unknown, fallbackTimestamp?: number): string {
     : '';
 }
 
+function normalizeDateInput(value: unknown): string {
+  const match = toText(value).match(/^(\d{4})[-/](\d{1,2})[-/](\d{1,2})/);
+  if (!match) return '';
+
+  const year = Number.parseInt(match[1], 10);
+  const month = Number.parseInt(match[2], 10);
+  const day = Number.parseInt(match[3], 10);
+  const date = new Date(Date.UTC(year, month - 1, day));
+  if (
+    date.getUTCFullYear() !== year
+    || date.getUTCMonth() !== month - 1
+    || date.getUTCDate() !== day
+  ) {
+    return '';
+  }
+
+  return [
+    String(year).padStart(4, '0'),
+    String(month).padStart(2, '0'),
+    String(day).padStart(2, '0'),
+  ].join('-');
+}
+
 function numericValue(value: unknown): number | undefined {
   if (typeof value === 'number' && Number.isFinite(value)) return value;
   const text = toText(value).replace(/,/g, '');
@@ -74,6 +97,131 @@ function readHistoryFields(
 
 function readVisitInfos(raw: Record<string, unknown> | undefined): ChronicDiseaseVisitInfo[] {
   return readObjectList<ChronicDiseaseVisitInfo & Record<string, unknown>>(raw, 'visitInfos');
+}
+
+type FollowUpVisitKind = '1' | '2';
+
+interface FollowUpPlanCandidate {
+  index: number;
+  visitAt: number;
+  date: string;
+  kinds: FollowUpVisitKind[];
+}
+
+const HYPERTENSION_VISIT_FIELDS = [
+  'sdSalt',
+  'sdAdvSalt',
+  'fgCardiovascular',
+  'sdMajorCc',
+  'targetOrganDamage',
+] as const;
+
+const DIABETES_VISIT_FIELDS = [
+  'glu',
+  'fbgMeal',
+  'hgb',
+  'dtHgb',
+  'rice',
+  'targRice',
+  'lowEffects',
+  'sdArteriopalmus',
+  'sdComplications',
+  'sdComorbidity',
+] as const;
+
+function hasVisitField(
+  visitInfo: ChronicDiseaseVisitInfo,
+  fields: readonly string[],
+): boolean {
+  return fields.some((field) => {
+    const value = visitInfo[field];
+    return value !== undefined && value !== null && toText(value) !== '';
+  });
+}
+
+function readFollowUpVisitKinds(visitInfo: ChronicDiseaseVisitInfo): FollowUpVisitKind[] {
+  const rawValue = visitInfo.sdVisitKind;
+  const values = Array.isArray(rawValue)
+    ? rawValue.map((item) => toText(item))
+    : toText(rawValue).split(/[,，;；|]/).map((item) => item.trim());
+  const explicit = Array.from(new Set(values))
+    .filter((item): item is FollowUpVisitKind => item === '1' || item === '2');
+  if (explicit.length > 0) return explicit;
+
+  if (hasVisitField(visitInfo, DIABETES_VISIT_FIELDS)) return ['2'];
+  if (hasVisitField(visitInfo, HYPERTENSION_VISIT_FIELDS)) return ['1'];
+  return [];
+}
+
+function latestPlanCandidate(
+  candidates: readonly FollowUpPlanCandidate[],
+  kind?: FollowUpVisitKind,
+): FollowUpPlanCandidate | undefined {
+  const sorted = candidates
+    .filter((candidate) => !kind || candidate.kinds.includes(kind))
+    .slice()
+    .sort((left, right) => left.visitAt - right.visitAt || left.index - right.index);
+  return sorted[sorted.length - 1];
+}
+
+function buildFollowUpPlanDates(
+  raw: Record<string, unknown> | undefined,
+  managedDiseaseTypes: readonly ChronicDiseaseType[],
+): Pick<ChronicDiseasePatientSummary, 'dtHyPlan' | 'dtDbsPlan'> {
+  const nested = raw?.rqflInfo && typeof raw.rqflInfo === 'object'
+    ? raw.rqflInfo as Record<string, unknown>
+    : undefined;
+  let dtHyPlan = normalizeDateInput(
+    readRawValue(raw, ['dtHyPlan']) ?? readRawValue(nested, ['dtHyPlan']),
+  );
+  let dtDbsPlan = normalizeDateInput(
+    readRawValue(raw, ['dtDbsPlan']) ?? readRawValue(nested, ['dtDbsPlan']),
+  );
+
+  const candidates = readVisitInfos(raw)
+    .map((visitInfo, index): FollowUpPlanCandidate | null => {
+      const date = normalizeDateInput(visitInfo.dtNextVisit);
+      if (!date) return null;
+      const visitAt = Date.parse(normalizeDate(visitInfo.dtVisit));
+      return {
+        index,
+        visitAt: Number.isFinite(visitAt) ? visitAt : index,
+        date,
+        kinds: readFollowUpVisitKinds(visitInfo),
+      };
+    })
+    .filter((item): item is FollowUpPlanCandidate => Boolean(item));
+
+  const hasHypertension = managedDiseaseTypes.includes('hypertension');
+  const hasDiabetes = managedDiseaseTypes.includes('type2_diabetes');
+
+  if (hasHypertension && !dtHyPlan) {
+    dtHyPlan = latestPlanCandidate(candidates, '1')?.date || '';
+  }
+  if (hasDiabetes && !dtDbsPlan) {
+    dtDbsPlan = latestPlanCandidate(candidates, '2')?.date || '';
+  }
+
+  if (hasHypertension !== hasDiabetes) {
+    const latest = latestPlanCandidate(candidates)?.date || '';
+    if (hasHypertension && !dtHyPlan) dtHyPlan = latest;
+    if (hasDiabetes && !dtDbsPlan) dtDbsPlan = latest;
+  } else if (hasHypertension && hasDiabetes) {
+    const unclassified = candidates.filter((candidate) => candidate.kinds.length === 0);
+    if (!dtHyPlan && !dtDbsPlan && candidates.length === 2) {
+      const ordered = candidates.slice().sort((left, right) => left.index - right.index);
+      [dtHyPlan, dtDbsPlan] = [ordered[0].date, ordered[1].date];
+    } else if (!dtHyPlan && unclassified.length === 1) {
+      dtHyPlan = unclassified[0].date;
+    } else if (!dtDbsPlan && unclassified.length === 1) {
+      dtDbsPlan = unclassified[0].date;
+    }
+  }
+
+  return {
+    dtHyPlan: hasHypertension ? dtHyPlan || undefined : undefined,
+    dtDbsPlan: hasDiabetes ? dtDbsPlan || undefined : undefined,
+  };
 }
 
 function collectDiagnosisText(input: ChronicDiseaseSummaryInput): string[] {
@@ -295,6 +443,7 @@ export function buildChronicDiseaseSummary(input: ChronicDiseaseSummaryInput): C
   const managedDiseaseTypes = diseaseTags
     .filter((item) => item.source === 'public-health')
     .map((item) => item.diseaseType);
+  const followUpPlanDates = buildFollowUpPlanDates(raw, managedDiseaseTypes);
   const latestDataAt = [
     ...pressurePoints.map((item) => item.measuredAt),
     ...glucosePoints.map((item) => item.measuredAt),
@@ -334,6 +483,7 @@ export function buildChronicDiseaseSummary(input: ChronicDiseaseSummaryInput): C
     latestWeightKg: latestVisitInfo?.avoirdupois,
     latestWaistCm: latestVisitInfo?.waistline,
     latestHeartRate: latestVisitInfo?.heartRate,
+    ...followUpPlanDates,
     bloodPressurePoints: pressurePoints,
     bloodGlucosePoints: glucosePoints,
     recentMedicationFacts,

@@ -89,9 +89,19 @@ describe('chronic disease workflow boundaries', () => {
       suggestions,
       selectedIds: ['lab-hba1c', 'exam-fundus'],
       requestId: 'REQ001',
+      standardDiagnoses: [{
+        id: 'DM2-ID',
+        code: 'E11.900',
+        name: '2型糖尿病',
+      }],
     });
 
     expect(draft.patientAnchorId).toBe('VIS001');
+    expect(draft.standardDiagnoses).toEqual([{
+      id: 'DM2-ID',
+      code: 'E11.900',
+      name: '2型糖尿病',
+    }]);
     expect(draft.items).toEqual([
       expect.objectContaining({
         sourceId: 'lab-hba1c',

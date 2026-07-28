@@ -47,8 +47,6 @@ import type {
   MedicalItemPartOption,
   MedicineCatalogEntry,
   MedicineDetail,
-  OdsImpReqVO,
-  OdsImpResVO,
   HisPatientInfo,
   HisPatientHistory,
   HisPatientHistoryQuery,
@@ -906,10 +904,6 @@ export class PhisHisAdapter implements HisAdapter {
 
   loadVisCliList(items: VisMidQryCliVO[]): Promise<VisCliLoadedItem[]> {
     return this.service.loadVisCliList(items);
-  }
-
-  saveOdsImp(request: OdsImpReqVO): Promise<OdsImpResVO> {
-    return this.service.saveOdsImp(request);
   }
 
   async fetchPatientHistory(

@@ -39,6 +39,11 @@ export function useClinicalResultWritebackPreflight(options: ClinicalResultWrite
   }
 
   async function run(): Promise<ClinicalResultWritebackPreflightResult> {
+    if (options.selectedDiagnoses.value.length === 0) {
+      options.notify?.('缺少当前诊断，请先在 HIS 中补齐标准诊断后再回写', 'warning');
+      return block();
+    }
+
     const invalidDiagnosis = options.selectedDiagnoses.value.find((item) => !getStandardDiagnosisId(item));
     if (invalidDiagnosis) {
       options.notify?.(`${invalidDiagnosis.name} 未匹配标准诊断库，请先切换为标准诊断后再回写`, 'warning');
