@@ -1,7 +1,7 @@
 /**
  * 审计事件批量上报服务
  *
- * 审计事件通过此服务直接上报到 floating-ball-server。
+ * 审计事件通过此服务直接上报到 PCIE Server。
  * 本地只保留轻量离线队列，供失败或断网时自动重传。
  */
 import { regionalPost } from './regionalClient';

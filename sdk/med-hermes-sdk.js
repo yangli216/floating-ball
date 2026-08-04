@@ -1,12 +1,12 @@
 /**
  * MedHermes JS SDK v3.0.0
- * 智医助理 (MedHermes) 第三方 HIS 集成 SDK
+ * 全医慧助（PCIE）第三方 HIS 集成 SDK（保留 MedHermes 全局对象兼容旧接入）
  *
  * 零依赖、单文件，通过 <script> 标签或 ES Module 引入即可使用。
  * 封装全部本地 HTTP Bridge 接口 + WebSocket 事件订阅分发 + 协议拉起 + 浏览器上下文同步。
  *
  * @license MIT
- * @see https://github.com/yangli216/floating-ball
+ * @see https://github.com/yangli216/pcie
  */
 (function (root, factory) {
   if (typeof define === 'function' && define.amd) {
@@ -442,7 +442,7 @@
               .catch(function () {
                 self._connected = false;
                 self._emitter.emit('launch-failed');
-                reject(new Error('MedHermes 桌面端未启动，协议拉起失败'));
+                reject(new Error('全医慧助（PCIE）桌面端未启动，协议拉起失败'));
               });
           }, self._opts.launchRetryMs);
         });
@@ -545,7 +545,7 @@
   };
 
   /**
-   * 检测 MedHermes 桌面端是否在线
+   * 检测全医慧助（PCIE）桌面端是否在线
    * @returns {Promise<Object>} 包含版本号等信息
    */
   MedHermes.prototype.ping = function () {
@@ -1097,7 +1097,7 @@
                 httpCall()
                   .then(resolve)
                   .catch(function () {
-                    var offlineErr = new Error('MedHermes 桌面端未启动');
+                    var offlineErr = new Error('全医慧助（PCIE）桌面端未启动');
                     offlineErr.code = 'OFFLINE';
                     self._emitter.emit('launch-failed');
                     self._emitter.emit('error', offlineErr);

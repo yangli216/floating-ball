@@ -1,6 +1,6 @@
 # AGENTS.md
 
-`floating-ball` 项目的协作规则。
+全医慧助（PCIE，Primary Care Intelligent Expert）项目的协作规则；GitHub 仓库名为 `pcie`。
 
 本项目是一个 `Tauri 2 + Vue 3 + TypeScript + Rust` 的基层医疗桌面工作站，当前真实运行形态包含：
 
@@ -40,6 +40,7 @@
 6. **锁文件混用禁止**：除非任务明确是"统一包管理器"，否则不得混用 npm/yarn/pnpm 安装或刷新锁文件。
 7. **服务端请求签名禁止绕过**：所有 `regionalFetch`、`createRegionalSSE`、`createRegionalWebSocketUrl` 出口必须经过 `requestSigner.ts` 签名；新增 `/v1/*` 请求出口必须集成签名，不得由业务代码直接 fetch。
 8. **主窗口几何出口禁止绕过**：业务组件和 feature composable 不得直接调用 Tauri `setSize / setPosition`；主窗口尺寸与位置统一由 `app/shell/useWindowTransitionCoordinator.ts` 编排，并经 `useWindowManagement.ts` 应用，纯 `workArea` / DPI / clamp 规则归 `windowGeometry.ts`。独立原生窗口的创建尺寸仍由各自窗口 service 管理，但必须设置合理 min size 并校验当前工作区。
+9. **品牌与兼容协议禁止混改**：正式产品名统一为“全医慧助（PCIE）”，英文展开统一为“Primary Care Intelligent Expert”；历史 `MedHermes` / `med-hermes` 只允许在已发布的 HIS SDK 全局对象、SDK 文件/路由、深链 scheme、HTTP Header、Bundle Identifier 和迁移说明中作为兼容标识保留。品牌更新不得直接全局替换这些技术契约；如需废弃，必须先提供双栈迁移、版本计划和 HIS 联调验证。
 
 ## 棘轮式治理
 

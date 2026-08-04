@@ -4,7 +4,7 @@
 
 ## 结论
 
-`floating-ball` 已取消本地/区域双模式。生产业务中的 AI 文本、语音转写、PMPHAI/内置知识库、Prompt/模板同步、反馈、审计和功能统计都只通过设备签名后的 `floating-ball-server /v1/*` 接口；客户端不再持有第三方 API Key、OAuth Secret 或供应商直连地址。
+全医慧助（PCIE）桌面端已取消本地/区域双模式。生产业务中的 AI 文本、语音转写、PMPHAI/内置知识库、Prompt/模板同步、反馈、审计和功能统计都只通过设备签名后的 `PCIE Server /v1/*` 接口；客户端不再持有第三方 API Key、OAuth Secret 或供应商直连地址。
 
 服务端不可达时相关远程能力明确失败，不回退到客户端直连第三方服务。
 
@@ -12,11 +12,11 @@
 
 | 能力 | 客户端出口 | 凭据归属 |
 | --- | --- | --- |
-| LLM 流式/非流式 | `/v1/ai/chat` | `floating-ball-server` |
-| 批量语音转写 | `/v1/ai/speech/transcribe` | `floating-ball-server` |
-| 实时语音 | `/v1/ai/speech/realtime/ws`，失败后 `/v1/ai/speech/realtime` | `floating-ball-server` |
-| PMPHAI | `/v1/knowledge/pmphai/*` | `floating-ball-server` |
-| 内置知识库页面 | bootstrap 配置 + 服务端 page URL | `floating-ball-server` |
+| LLM 流式/非流式 | `/v1/ai/chat` | `PCIE Server` |
+| 批量语音转写 | `/v1/ai/speech/transcribe` | `PCIE Server` |
+| 实时语音 | `/v1/ai/speech/realtime/ws`，失败后 `/v1/ai/speech/realtime` | `PCIE Server` |
+| PMPHAI | `/v1/knowledge/pmphai/*` | `PCIE Server` |
+| 内置知识库页面 | bootstrap 配置 + 服务端 page URL | `PCIE Server` |
 | Prompt/模板/目录 | `/v1/client/*/delta` | 设备签名 |
 | 反馈/审计/功能统计 | `/v1/client/*` | 设备签名 |
 

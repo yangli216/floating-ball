@@ -89,14 +89,14 @@ fn bridge_user_error(message: &str, trace_id: &str) -> serde_json::Value {
 
 fn bridge_dispatch_error(trace_id: &str) -> serde_json::Value {
     bridge_user_error(
-        "桌面端暂时无法处理该请求，请确认 MedHermes 主窗口已启动后重试",
+        "桌面端暂时无法处理该请求，请确认全医慧助（PCIE）主窗口已启动后重试",
         trace_id,
     )
 }
 
 fn bridge_window_missing_error(trace_id: &str) -> serde_json::Value {
     bridge_user_error(
-        "桌面端主窗口暂不可用，请确认 MedHermes 正常运行后重试",
+        "桌面端主窗口暂不可用，请确认全医慧助（PCIE）正常运行后重试",
         trace_id,
     )
 }

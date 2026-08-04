@@ -153,7 +153,7 @@ const forceUpdateState = {
 };
 
 const pageTitle = computed(() => ({
-  chat: '智医助理', settings: '系统设置', consultation: '智能问诊', 'clinical-result': '问诊结果',
+  chat: '全医慧助（PCIE）', settings: '系统设置', consultation: '智能问诊', 'clinical-result': '问诊结果',
   'risk-alert': '风险提示', 'reception-capsule': '接诊风险胶囊', 'chronic-refill': '复诊配药确认',
   'treatment-plan': '诊疗方案', 'outpatient-follow-up': '门诊复诊', 'report-workspace': '报告助手',
   'patient-memory': '患者健康画像', 'inpatient-emr': '住院病历生成', 'differential-diagnosis': '鉴别诊断',
@@ -168,7 +168,7 @@ const standalone = computed(() => ['diagnosis-path', 'report-window', 'voice-cap
 <template>
   <main :class="['audit-stage', { 'audit-standalone': standalone }]" :data-audit-page="page">
     <div v-if="page === 'floating-ball'" class="audit-floating-ball">
-      <div class="audit-floating-ball__orb"><img src="/robot-avatar.png" alt="智医助理" /></div>
+      <div class="audit-floating-ball__orb"><img src="/robot-avatar.png" alt="全医慧助（PCIE）" /></div>
     </div>
 
     <DiagnosisPathWindow v-else-if="page === 'diagnosis-path'" />

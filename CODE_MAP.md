@@ -48,7 +48,7 @@
 当前结构是迁移前基线。复用边界、设计模式和“什么时候不该继续拆”见 [docs/frontend-reuse-architecture.md](docs/frontend-reuse-architecture.md)，目标结构与分阶段迁移规则见 [docs/frontend-file-structure-plan.md](docs/frontend-file-structure-plan.md)。新业务代码不再默认新增到根级 `components/`、`composables/`、`services/`；应优先按功能域落到 `features/<feature>/ui|model|api|lib`，通用 UI / 工具落到 `shared/*`，稳定实体类型落到 `entities/*`，外部系统适配继续落到 `services/<integration>`。
 
 ```
-floating-ball/
+pcie/
 ├── src/                        # Vue 3 前端源码
 │   ├── components/             # 历史扁平组件目录（当前 46 个 Vue 文件，逐步迁移到 features/shared）
 │   ├── composables/            # 历史组合函数目录（逐步迁移到 app/features/shared）
@@ -305,7 +305,7 @@ Pinia 跨组件共享状态（仅两个，新增需人工审批）。
 | **lib.rs** | ~390 | Tauri 初始化、窗口命令（拖拽/位置/毛玻璃）、AppState 共享状态 |
 | **http_server.rs** | ~831 | HIS Bridge（Actix-web, `127.0.0.1:8081`）：REST 命令、唯一 WebSocket 结果事件订阅、引用回执、语音触发、报告解读触发，并为入站联调请求生成 `traceId` 与结构化日志 |
 | **aliyun_speech.rs** | ~326 | 阿里云语音 WebSocket + Token 刷新 |
-| **main.rs** | ~6 | 入口，调用 `floating_ball_lib::run()` |
+| **main.rs** | ~6 | 入口，调用 `pcie_lib::run()` |
 | **commands/** | -- | 扩展 Tauri 命令（反馈、医学目录、设备 MAC 读取等） |
 | **db/** | -- | 数据库模型 |
 

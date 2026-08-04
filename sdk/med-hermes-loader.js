@@ -1,9 +1,9 @@
 /**
  * MedHermes Loader v1.0.0
- * 智医助理引导加载器 —— HIS 本地部署，功能纯粹，极少更新
+ * 全医慧助（PCIE）兼容引导加载器 —— HIS 本地部署，功能纯粹，极少更新
  *
  * 职责：
- *  1. 检测 MedHermes 桌面端是否在线
+ *  1. 检测全医慧助（PCIE）桌面端是否在线
  *  2. 不在线时通过 med-hermes:// 协议尝试拉起
  *  3. 从 CDN 动态加载完整 SDK (med-hermes-sdk.js)
  *  4. 加载完成后自动初始化并通知 HIS
@@ -190,7 +190,7 @@
             }, DEFAULTS.retryInterval);
           });
         } else {
-          log('桌面端未检测到，请手动启动智医助理');
+          log('桌面端未检测到，请手动启动全医慧助（PCIE）');
           return false;
         }
       });

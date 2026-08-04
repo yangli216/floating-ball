@@ -6,7 +6,7 @@ NO EMOJI
 
 ## Project Overview
 
-This is an AI-powered medical assistant desktop application built with Tauri 2.0 + Vue 3 + TypeScript. It presents as a transparent floating ball that expands into various medical consultation interfaces. The app integrates with external HIS (Hospital Information Systems) via HTTP and supports voice-based consultation using Aliyun real-time speech recognition.
+全医慧助（PCIE，Primary Care Intelligent Expert）is an AI-powered desktop workstation for primary care clinicians, built with Tauri 2.0 + Vue 3 + TypeScript. It presents as a transparent floating ball that expands into multiple consultation interfaces, integrates with external HIS (Hospital Information Systems) via HTTP, and supports voice-based consultation.
 
 **Key Technologies:**
 - Frontend: Vue 3 (Composition API) + TypeScript + Vite
@@ -132,7 +132,7 @@ HIS System (HTTP) → Rust HTTP Server → Tauri Events → Vue Components
 
 **Configuration Source:**
 
-模型、语音和知识库配置由 `floating-ball-server` bootstrap 下发，客户端不保存第三方 API Key，也不直连 OpenAI 兼容上游。客户端构建只需预置 `VITE_REGIONAL_BASE_URL` / `VITE_REGIONAL_ORG_CODE` 等服务端接入参数。
+模型、语音和知识库配置由 `PCIE Server` bootstrap 下发，客户端不保存第三方 API Key，也不直连 OpenAI 兼容上游。客户端构建只需预置 `VITE_REGIONAL_BASE_URL` / `VITE_REGIONAL_ORG_CODE` 等服务端接入参数。
 
 **Functions:**
 - `chatStream()`: Streaming chat (SSE parsing)
@@ -221,7 +221,7 @@ curl -X POST http://localhost:8899/api/patient/consultation/start \
 - **Windows:** Uses `installMode: passive` for silent updates
 - **Linux:** Builds AppImage and deb packages
 
-**Updater:** Auto-checks `https://github.com/yangli216/med-hermes/releases/latest/download/latest.json` on startup. Users can manually check via Settings panel.
+**Updater:** Auto-checks `https://github.com/yangli216/pcie/releases/latest/download/latest.json` on startup. Users can manually check via Settings panel.
 
 ## Known Issues & Workarounds
 

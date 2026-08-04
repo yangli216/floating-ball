@@ -129,7 +129,7 @@ function readSelectValue(event: Event): string {
         <Icon icon="lucide:server" :size="20" />
         <h3>服务端接入</h3>
       </div>
-      <p class="section-desc">桌面端始终向 floating-ball-server 注册设备、拉取 bootstrap 配置，并统一走签名 `/v1/*` 代理；实际生效模型和上游凭据由后台管理。</p>
+      <p class="section-desc">桌面端始终向 PCIE Server 注册设备、拉取 bootstrap 配置，并统一走签名 `/v1/*` 代理；实际生效模型和上游凭据由后台管理。</p>
 
       <div class="form-group">
         <label for="regional-base-url">后端地址</label>
@@ -197,7 +197,7 @@ function readSelectValue(event: Event): string {
           />
           {{ testingRegionalConnection ? '测试中...' : '测试 server 连通性' }}
         </button>
-        <span class="test-message testing">验证桌面端到 floating-ball-server 的注册与 bootstrap 链路</span>
+        <span class="test-message testing">验证桌面端到 PCIE Server 的注册与 bootstrap 链路</span>
       </div>
     </div>
 

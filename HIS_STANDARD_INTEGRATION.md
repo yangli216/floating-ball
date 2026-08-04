@@ -1,15 +1,16 @@
-# med-hermes 标准接入文档
+# 全医慧助（PCIE）标准接入文档
 
 > 最后更新: 2026-03-23
 >
 > 本文档用于给 HIS / 医生站 / PHIS 后端开发、联调测试、项目实施直接对接使用。
 > 当前详细运行契约仍以 [api.md](./api.md) 与 `src-tauri/src/http_server.rs` 为准；本文档是标准接入口径，不替代底层真实契约。
+> 历史 `MedHermes` / `med-hermes` 名称仅作为 SDK、深链和 Header 等兼容技术标识保留。
 
 ## 1. 文档目的
 
 本文档回答 5 个问题：
 
-1. HIS 应该按什么顺序接入 `med-hermes`
+1. HIS 应该按什么顺序接入全医慧助（PCIE）
 2. 接入时最少需要准备哪些患者字段
 3. 本地 HTTP Bridge 暴露了哪些标准接口
 4. 推荐诊断 / 用药 / 检查的引用闭环怎么做
@@ -19,7 +20,7 @@
 
 ### 2.1 当前对接方式
 
-`med-hermes` 当前通过本地 HTTP Bridge 与 HIS 对接：
+全医慧助（PCIE）当前通过本地 HTTP Bridge 与 HIS 对接：
 
 - 服务地址：`http://127.0.0.1:8081`
 - 接口前缀：`/api`
@@ -29,7 +30,7 @@
 
 ### 2.2 接入前提
 
-1. 医生本机必须先启动 `med-hermes`，否则本地接口不可访问。
+1. 医生本机必须先启动全医慧助（PCIE），否则本地接口不可访问。
 2. 当前服务只监听 `127.0.0.1`，默认只供本机 HIS / 联调页调用。
 3. `/api/consultation/events/ws` 是唯一结果回传通道；桌面端保留有限内存事件队列供断线重连补发，不提供 HTTP 长轮询。
 4. 当前 `consultationId` 默认直接使用 `idPi / patientId`，不是独立就诊流水号。
@@ -97,7 +98,7 @@
 1. HIS 在当前患者上下文下调用 `POST /api/consultation/assist`
 2. 传入 `action`
 3. 继续复用同一条 WebSocket 订阅
-4. 如收到 `reference-request`，说明医生在 `med-hermes` 中发起了引用
+4. 如收到 `reference-request`，说明医生在全医慧助（PCIE）中发起了引用
 
 `action` 支持：
 
@@ -119,7 +120,7 @@
 2. 读取 `requestId`、`referenceType`、`referenceItems`
 3. 在 HIS / PHIS 内完成保存
 4. 保存成功或失败后调用 `POST /api/consultation/reference-feedback`
-5. `med-hermes` 收到回执后更新页面状态
+5. 全医慧助（PCIE）收到回执后更新页面状态
 6. HIS 通过同一条 WebSocket 收到 `reference-feedback`
 
 这是当前推荐诊断 / 用药 / 检查真正写入业务系统的闭环。
@@ -256,7 +257,7 @@ ws://127.0.0.1:8081/api/consultation/events/ws
 | :--- | :--- | :--- |
 | `draft` | 病历草稿回写 | 回填主诉、现病史、诊断和建议 |
 | `final-report` | 完整问诊最终报告 | 作为完整结构化结果回写 |
-| `reference-request` | `med-hermes` 请求 PHIS 保存引用 | 调用 PHIS 保存，并准备回执 |
+| `reference-request` | 全医慧助（PCIE）请求 PHIS 保存引用 | 调用 PHIS 保存，并准备回执 |
 | `reference-feedback` | PHIS 回执后的最新状态 | 更新医生站状态，提示成功或失败 |
 
 #### 重点字段
@@ -281,7 +282,7 @@ ws://127.0.0.1:8081/api/consultation/events/ws
 
 ### 5.5 `POST /api/consultation/reference-feedback`
 
-用途：PHIS 保存推荐诊断 / 用药 / 检查后，把成功或失败结果回执给 `med-hermes`。
+用途：PHIS 保存推荐诊断 / 用药 / 检查后，把成功或失败结果回执给全医慧助（PCIE）。
 
 完整地址：
 
@@ -374,7 +375,7 @@ http://127.0.0.1:8081/api/consultation/stop
 
 ### 5.7 `POST /api/patient/risks`（可选）
 
-用途：把 HIS 当前患者风险信息推送到 `med-hermes`，用于风险提醒展示。
+用途：把 HIS 当前患者风险信息推送到全医慧助（PCIE），用于风险提醒展示。
 
 该接口不是主链路必需项，可以后补。
 
@@ -476,21 +477,21 @@ curl -X POST 'http://127.0.0.1:8081/api/consultation/reference-feedback' \
 
 ## 10. 联调注意事项
 
-1. 当前真实联调参考页是 `med-hermes/mock_his.html`。
+1. 当前真实联调参考页是 `pcie/web_project/public/mock-his.html`。
 2. `consultationId` 当前不是独立就诊流水，HIS 必须防止同患者旧结果误命中当前就诊。
 3. `/assist` 每次调用都会清空上一次结果通道，不要复用旧状态。
 4. `reference-feedback` 只接受与“当前最新待处理引用请求”匹配的回执。
 5. 当前页面恢复依赖同一运行期内的前端内存状态，不代表重启后仍可恢复。
-6. `med-hermes` 内所有推荐结果本质上都是医生确认前草稿，HIS / PHIS 仍应保留最终校验和保存逻辑。
+6. 全医慧助（PCIE）内所有推荐结果本质上都是医生确认前草稿，HIS / PHIS 仍应保留最终校验和保存逻辑。
 
 ## 11. 出站方向：HIS 厂商适配器
 
-第 1-10 节描述的是 **HIS → med-hermes**（入站）的标准接口；本节描述
-**med-hermes → HIS**（出站）的对接方式：从 HIS 拉取诊断/药品/检查目录、字典、详情、库存校验。
+第 1-10 节描述的是 **HIS → 全医慧助（PCIE）**（入站）的标准接口；本节描述
+**全医慧助（PCIE）→ HIS**（出站）的对接方式：从 HIS 拉取诊断/药品/检查目录、字典、详情、库存校验。
 
 ### 11.1 设计目标
 
-不同 HIS 厂商的私有接口形态差异极大，但 med-hermes 业务层关心的能力是**有限且收敛**的：
+不同 HIS 厂商的私有接口形态差异极大，但全医慧助（PCIE）业务层关心的能力是**有限且收敛**的：
 
 - 同步标准诊断目录（中央 ICD）
 - 同步机构维度的药品 / 检查 / 检验目录

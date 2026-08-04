@@ -1,4 +1,4 @@
-/** 人卫 Inside 知识库客户端。凭据与上游协议只存在于 floating-ball-server。 */
+/** 人卫 Inside 知识库客户端。凭据与上游协议只存在于 PCIE Server。 */
 import { getCachedBootstrap, regionalGet, regionalPost } from './regionalClient';
 import { trackFeatureUsage } from './featureUsageTracker';
 

@@ -1,22 +1,23 @@
-# MedHermes HIS 接入指南 / 接口说明
+# 全医慧助（PCIE）HIS 接入指南 / 接口说明
 
 > 最后更新: 2026-07-01
 >
-> 本文档面向准备接入 `MedHermes` 的 HIS / 医生站 / PHIS 项目。
+> 本文档面向准备接入全医慧助（PCIE）的 HIS / 医生站 / PHIS 项目。
 > 当前真实运行契约以 `src-tauri/src/http_server.rs` 与当前前端实现为准；旧区域化草案已归档，不能替代本文档。
+> 为兼容既有院端部署，SDK 全局对象 `MedHermes`、SDK 文件名、`med-hermes://` 深链和 `X-MedHermes-Version` Header 保持不变。
 
 ## 1. 文档目标
 
 本文档回答 4 件事：
 
-1. HIS 应该按什么顺序接入 `MedHermes`
+1. HIS 应该按什么顺序接入全医慧助（PCIE）
 2. 当前本地 HTTP Bridge 暴露了哪些接口
 3. 各接口的请求字段、响应字段、异常场景是什么
 4. 推荐诊断 / 用药 / 检查 / 独立诊疗方案的最终回写、历史/单项引用与 PHIS 回执闭环应该怎么做
 
 ## 2. 当前接入形态
 
-`MedHermes` 当前通过本地 Bridge 与 HIS 对接：
+全医慧助（PCIE）当前通过本地 Bridge 与 HIS 对接：
 
 - 本地服务地址: `http://127.0.0.1:8081`
 - 接口前缀: `/api`
@@ -26,14 +27,14 @@
 
 约束说明：
 
-1. `MedHermes` 必须先在医生本机启动，否则接口不可访问。
+1. 全医慧助（PCIE）必须先在医生本机启动，否则接口不可访问。
 2. 当前服务只监听 `127.0.0.1:8081`，默认供本机 HIS / 联调页调用。
 3. `/api/consultation/events/ws` 是唯一结果通道。桌面端以内存事件队列保留最近事件，SDK 断线重连时携带最后消费的 `event.id` 补发；不提供 HTTP 长轮询结果接口。
 4. 接诊类 REST 接口的同步响应仍回传 `idPi / patientId` 作为基础 `consultationId`；进入前端结果/回执链路后，桌面端会优先使用当前就诊锚点 `idVis / visitId`，缺失时回退到 `idPi / patientId`。
    如果 HIS 存在“同患者多次接诊”场景，必须传入 `idVis`，避免旧就诊结果或回执误命中当前就诊。
 5. 当前 Bridge 会为业务接口生成 `traceId` 并写入本地 HIS 集成日志，方便三方 HIS / PHIS 联调时按一次调用链路排查请求、响应和错误。
 6. Bridge 与 SDK 对外展示的失败信息应使用可读中文说明，并优先带出 `traceId`；底层网络异常、Rust/JavaScript 异常、PHIS 原始错误体和堆栈只进入本地 HIS 集成日志，不应作为唯一错误提示直接展示给医生或 HIS 操作员。
-7. 本地 Bridge 只承担 HIS/SDK 接入，不提供 AI、语音或知识库第三方代理；历史 `/api/pmphai/*` 路由已删除。PMPHAI 统一通过设备签名后的 `floating-ball-server /v1/knowledge/pmphai/*` 调用。
+7. 本地 Bridge 只承担 HIS/SDK 接入，不提供 AI、语音或知识库第三方代理；历史 `/api/pmphai/*` 路由已删除。PMPHAI 统一通过设备签名后的 `PCIE Server /v1/knowledge/pmphai/*` 调用。
 
 ## 3. 推荐接入顺序
 
@@ -66,8 +67,8 @@
 
 1. HIS 在需要解读报告时调用 `POST /api/report/interpret`
 2. 传入 `taskId + query`，`query` 直接承载报告日期、检查项目、检查结果、阴阳性或影像诊断等原始文本
-3. 若当前桌面端已有接诊患者，MedHermes 会自动补入该患者的性别、年龄、既往史、过敏史等上下文；若当前无接诊患者，可在 `patient` 字段显式传入患者基础信息
-4. MedHermes 打开独立“报告解读”窗口并输出摘要结论、关键异常、临床意义、建议动作与风险提示
+3. 若当前桌面端已有接诊患者，全医慧助（PCIE）会自动补入该患者的性别、年龄、既往史、过敏史等上下文；若当前无接诊患者，可在 `patient` 字段显式传入患者基础信息
+4. 全医慧助（PCIE）打开独立“报告解读”窗口并输出摘要结论、关键异常、临床意义、建议动作与风险提示
 
 适用场景：
 
@@ -78,8 +79,8 @@
 
 1. HIS 在住院电子病历书写页调用 `POST /api/inpatient/emr/generate`
 2. 传入 `admissionId + templateId + templateName + htmlContent`，可选传入 `recordTime` 指定本次病程记录书写时间；`admissionId` 对应 PHIS `idAdsn`，`templateId` 是病历模板主键，`htmlContent` 是当前病历模板 HTML
-3. `MedHermes` 从悬浮球切换到“住院病历生成”界面，按步骤展示“住院上下文 -> 医嘱整理 -> 体温单整理 -> 模板解析 -> AI 生成”
-4. 如果当前模板是入院记录，`MedHermes` 会按患者 `idPi` 通过 HIS Adapter 查询门诊就诊历史；若入口请求未直接携带 `patient.idPi / patient.patientId`，则要求 `api/phis.aiInpatientEmrContextService/buildContext` 返回的 `hisContext.patient.patientId` 保留患者主键。当前 PHIS 实现先调用 `api/phis.aiAdapterService/queryVisitHistory`，默认查询近 7 天，医生可切换近 1 月 / 近 3 月；时间范围入参放在 `params.dtBgn`，形如 `[{"limit":-1,"params":{"idPi":"患者ID","dtBgn":["2026-06-08 00:00:00","2026-06-15 23:59:59"]}}]`，并把 `idVis / idReg / cdClinic / dtBgn / idDeptText / idDocText / idOrgText / fgStatusText / visiting / naDiag` 等字段映射为中性门诊就诊列表。桌面端只展示“有有效诊断且存在门诊病历文书”的就诊记录：无诊断或 `getLookMedList` 无文书的就诊会被过滤。医生选定一次门诊就诊后，再调用 `api/phis.aiAdapterService/getLookMedList` 获取该就诊下的门诊病历文书列表；入参形如 `[{"idApp":"42","idTet":"xswjj","idHospital":"门诊idVis"}]`。其中 `idApp` 固定为 `42`，`idHospital` 取门诊就诊记录 `idVis`，`idTet` 优先取门诊记录原始字段，其次取 SDK 握手解析出的租户。随后按列表返回的 `idMedrecdoc` 调用 `api/phis.aiAdapterService/getMedContentLook` 获取 HTML 正文；入参形如 `[{"idApp":"42","idTet":"xswjj","idMedrecdoc":"文书ID","courseShow":0}]`。门诊病历正文会进入预览和 AI 参考上下文；若正文接口失败，桌面端才退回只展示文书列表。
+3. `全医慧助（PCIE）` 从悬浮球切换到“住院病历生成”界面，按步骤展示“住院上下文 -> 医嘱整理 -> 体温单整理 -> 模板解析 -> AI 生成”
+4. 如果当前模板是入院记录，`全医慧助（PCIE）` 会按患者 `idPi` 通过 HIS Adapter 查询门诊就诊历史；若入口请求未直接携带 `patient.idPi / patient.patientId`，则要求 `api/phis.aiInpatientEmrContextService/buildContext` 返回的 `hisContext.patient.patientId` 保留患者主键。当前 PHIS 实现先调用 `api/phis.aiAdapterService/queryVisitHistory`，默认查询近 7 天，医生可切换近 1 月 / 近 3 月；时间范围入参放在 `params.dtBgn`，形如 `[{"limit":-1,"params":{"idPi":"患者ID","dtBgn":["2026-06-08 00:00:00","2026-06-15 23:59:59"]}}]`，并把 `idVis / idReg / cdClinic / dtBgn / idDeptText / idDocText / idOrgText / fgStatusText / visiting / naDiag` 等字段映射为中性门诊就诊列表。桌面端只展示“有有效诊断且存在门诊病历文书”的就诊记录：无诊断或 `getLookMedList` 无文书的就诊会被过滤。医生选定一次门诊就诊后，再调用 `api/phis.aiAdapterService/getLookMedList` 获取该就诊下的门诊病历文书列表；入参形如 `[{"idApp":"42","idTet":"xswjj","idHospital":"门诊idVis"}]`。其中 `idApp` 固定为 `42`，`idHospital` 取门诊就诊记录 `idVis`，`idTet` 优先取门诊记录原始字段，其次取 SDK 握手解析出的租户。随后按列表返回的 `idMedrecdoc` 调用 `api/phis.aiAdapterService/getMedContentLook` 获取 HTML 正文；入参形如 `[{"idApp":"42","idTet":"xswjj","idMedrecdoc":"文书ID","courseShow":0}]`。门诊病历正文会进入预览和 AI 参考上下文；若正文接口失败，桌面端才退回只展示文书列表。
 5. 医生审核预览内容后点击“一键回写”
 6. HIS 可继续通过 SDK 事件流收到 `record-confirmed`，也可直接等待 `sdk.generateInpatientEmr(...).then(record => ...)`；两种方式返回同一份回写 payload，读取其中的 `fieldValues`（`{ [data-id]: 文本 }`）回填当前住院病历编辑器
 7. HIS 完成回填后，仍建议调用 `POST /api/consultation/reference-feedback` 回执成功或失败，桌面端会更新页面状态
@@ -87,7 +88,7 @@
 适用场景：
 
 - 住院出入院记录、病程记录等病历模板已有 HTML 结构
-- HIS 希望 `MedHermes` 利用 PHIS 住院登记、诊断、医嘱、体温单等业务数据生成可审核草稿
+- HIS 希望 `全医慧助（PCIE）` 利用 PHIS 住院登记、诊断、医嘱、体温单等业务数据生成可审核草稿
 
 ### 第三步: 打通 PHIS 回写与引用回执闭环
 
@@ -95,11 +96,11 @@
 2. 收到 `record-confirmed` 时，读取 `requestId`、`diagList`、`orderList` 与 `referenceType/action = batch`，按 PHIS 调入确认格式一次性处理整张病历
 3. 收到 `reference-request` 时，读取 `requestId`、`action/referenceType`、`referenceItems`，按引用对象类型处理历史或单项引用
 4. 处理成功或失败后，**必须**调用 `POST /api/consultation/reference-feedback`
-5. `MedHermes` 收到回执后会更新当前页面状态，并通过 WebSocket 事件流推送 `reference-feedback`
+5. `全医慧助（PCIE）` 收到回执后会更新当前页面状态，并通过 WebSocket 事件流推送 `reference-feedback`
 
 这是当前联调最关键的一步，也是推荐诊断 / 用药 / 检查 / 独立诊疗方案真正写入 HIS 的闭环。
 
-**重要：回执是强制要求的。** 当前医生点击“一键回写”时，`MedHermes` 会发出**一条** `record-confirmed`（`referenceType/action` 为 `batch`），其中 `diagList` 承载标准诊断，`orderList` 承载药品、检查、检验、处置等全部选中医嘱。PHIS 收到后应一次性处理整张病历，处理完成后**必须**调用回执接口。`reference-request` 仅保留给历史引用或单项引用场景，不再作为当前一键回写的主契约。
+**重要：回执是强制要求的。** 当前医生点击“一键回写”时，`全医慧助（PCIE）` 会发出**一条** `record-confirmed`（`referenceType/action` 为 `batch`），其中 `diagList` 承载标准诊断，`orderList` 承载药品、检查、检验、处置等全部选中医嘱。PHIS 收到后应一次性处理整张病历，处理完成后**必须**调用回执接口。`reference-request` 仅保留给历史引用或单项引用场景，不再作为当前一键回写的主契约。
 
 ## 4. 标准字段与映射规则
 
@@ -154,30 +155,30 @@
 ### 5.1 完整问诊时序
 
 1. HIS 调用 `POST /api/consultation/start`
-2. `MedHermes` 置顶并进入完整问诊主流程
+2. `全医慧助（PCIE）` 置顶并进入完整问诊主流程
 3. HIS 订阅 `GET /api/consultation/events/ws`
-4. 医生在 `MedHermes` 中完成问诊或草稿回写
+4. 医生在 `全医慧助（PCIE）` 中完成问诊或草稿回写
 5. HIS 收到 `draft` 或 `record-confirmed` 后更新医生站；其中 `record-confirmed` 在 HIS 完成最终调入确认后，仍需继续调用 `POST /api/consultation/reference-feedback` 回执成功或失败
 
 ### 5.2 灵活模式时序
 
 1. HIS 调用 `POST /api/consultation/assist`
-2. `MedHermes` 直接进入对应辅助界面：单项推荐仍落到 `ConsultationPage` 灵活模式，`treatment_plan` 落到独立诊疗方案推荐页
+2. `全医慧助（PCIE）` 直接进入对应辅助界面：单项推荐仍落到 `ConsultationPage` 灵活模式，`treatment_plan` 落到独立诊疗方案推荐页
 3. 医生在当前界面中继续补充病历、看推荐、勾选方案并发起回写
 4. HIS 继续复用同一条 WebSocket 订阅
 5. 如果收到 `record-confirmed`，进入 PHIS 最终调入确认；如果收到 `reference-request`，进入历史/单项 PHIS 引用处理
 
 ### 5.3 最终回写闭环时序（一键回写）
 
-医生点击“一键回写”后，`MedHermes` 会发出**一条** `record-confirmed`，`referenceType/action` 为 `batch`，`diagList` 包含标准诊断，`orderList` 包含所有选中医嘱（药品 + 检查 + 检验 + 处置）：
+医生点击“一键回写”后，`全医慧助（PCIE）` 会发出**一条** `record-confirmed`，`referenceType/action` 为 `batch`，`diagList` 包含标准诊断，`orderList` 包含所有选中医嘱（药品 + 检查 + 检验 + 处置）：
 
-1. `MedHermes` 发出 `record-confirmed`（`referenceType/action: "batch"`），`diagList/orderList` 包含全部可回写内容
+1. `全医慧助（PCIE）` 发出 `record-confirmed`（`referenceType/action: "batch"`），`diagList/orderList` 包含全部可回写内容
 2. PHIS 通过 WebSocket 收到该结果，按 `diagList` 处理诊断，按 `orderList` 的 `sdSrv/idSrv/idDeptExec/idPart/jsonField` 等字段填充调入确认
 3. PHIS **必须**调用 `POST /api/consultation/reference-feedback` 回执
-4. `MedHermes` 收到回执，页面更新最终回写状态
+4. `全医慧助（PCIE）` 收到回执，页面更新最终回写状态
 
 ```text
-PHIS                                MedHermes
+PHIS                                全医慧助（PCIE）
  |                                       |
  |  <-- WebSocket /api/consultation/events/ws (record-confirmed, batch)
  |  读取 diagList/orderList 完成调入确认   |
@@ -343,7 +344,7 @@ http://127.0.0.1:8081/api/consultation/start
 
 1. 此接口会刷新当前患者上下文。
 2. 此接口会清空上一条本地结果，避免直接读到旧结果。
-3. `MedHermes` 收到后会尝试置顶主窗口并进入完整问诊。
+3. `全医慧助（PCIE）` 收到后会尝试置顶主窗口并进入完整问诊。
 4. 桌面端在接诊上下文校验通过并准备打开完整问诊页时，上报一次 `smart_consultation` 功能调用事件；同一就诊再次显式触发完整问诊入口按新调用计数，统计分析以该事件为事实源，不再从本地 Bridge 日志、问诊用户日志或 AI 代理日志推断。
 
 ### 6.2 `POST /api/consultation/assist`
@@ -406,7 +407,7 @@ http://127.0.0.1:8081/api/consultation/assist
 
 #### 单独诊断推荐调用 `action: "suggestedDx"`
 
-用途：HIS 已经有当前患者主诉、现病史等病历上下文，只希望单独打开“诊断推荐”能力，由 `MedHermes` 基于病历生成 AI 诊断建议。此调用不需要、也不建议传入 `diagnosis` 字段。
+用途：HIS 已经有当前患者主诉、现病史等病历上下文，只希望单独打开“诊断推荐”能力，由 `全医慧助（PCIE）` 基于病历生成 AI 诊断建议。此调用不需要、也不建议传入 `diagnosis` 字段。
 
 完整地址：
 
@@ -462,12 +463,12 @@ http://127.0.0.1:8081/api/consultation/assist
 后续事件：
 
 1. 接口成功只表示桌面端已接收指令并进入诊断推荐流程，不表示 AI 诊断已生成或 PHIS 已保存。
-2. 医生在 `MedHermes` 中确认诊断只记录当前页面状态；只有点击“引用诊断”才会产生 `reference-request + referenceType: "diagnosis"`。
+2. 医生在 `全医慧助（PCIE）` 中确认诊断只记录当前页面状态；只有点击“引用诊断”才会产生 `reference-request + referenceType: "diagnosis"`。
 3. PHIS 收到诊断引用请求并保存后，必须调用 `POST /api/consultation/reference-feedback` 回执同一个 `consultationId` 与 `requestId`。
 
 #### 单独鉴别诊断调用 `action: "diffDx"`
 
-用途：HIS 已经有当前患者主诉、现病史和诊断草稿，只希望单独打开“鉴别诊断”能力，由 `MedHermes` 基于当前诊断与病历上下文辅助医生做鉴别排查。入参字段与 `treatment_plan` 基本一致。
+用途：HIS 已经有当前患者主诉、现病史和诊断草稿，只希望单独打开“鉴别诊断”能力，由 `全医慧助（PCIE）` 基于当前诊断与病历上下文辅助医生做鉴别排查。入参字段与 `treatment_plan` 基本一致。
 
 完整地址：
 
@@ -525,12 +526,12 @@ http://127.0.0.1:8081/api/consultation/assist
 
 1. 接口成功只表示桌面端已接收指令并进入鉴别诊断流程，不表示 PHIS 已保存。
 2. 桌面端会打开独立小窗弹出“鉴别排查确认”，并基于当前诊断、主诉和现病史开始生成鉴别排查建议；不会进入后面的问诊结果页 / 工作站页面。
-3. 鉴别诊断本身是医生辅助判断，不直接产生 PHIS 回写；确认结果只记录在 `MedHermes` 页面状态和日志中。
+3. 鉴别诊断本身是医生辅助判断，不直接产生 PHIS 回写；确认结果只记录在 `全医慧助（PCIE）` 页面状态和日志中。
 4. 如果医生在诊断推荐卡片上另行点击“引用诊断”，仍按 `reference-request + referenceType: "diagnosis"` 的单项引用闭环处理。
 
 #### 单独诊疗方案推荐调用 `action: "treatment_plan"`
 
-用途：HIS 已经有当前患者主诉、现病史和诊断草稿，只希望单独打开“诊疗方案推荐”页，由 `MedHermes` 基于当前诊断生成用药、检查、检验、处置四类建议，医生勾选后一次性回写给 PHIS。
+用途：HIS 已经有当前患者主诉、现病史和诊断草稿，只希望单独打开“诊疗方案推荐”页，由 `全医慧助（PCIE）` 基于当前诊断生成用药、检查、检验、处置四类建议，医生勾选后一次性回写给 PHIS。
 
 完整地址：
 
@@ -1483,7 +1484,7 @@ HIS 处理建议：
 
 ### 6.5 `POST /api/consultation/reference-feedback`（必须）
 
-用途：PHIS 在处理最终一键回写、历史引用、单项推荐诊断 / 用药 / 检查 / 独立诊疗方案后，**必须**将成功或失败结果回执给 `MedHermes`。
+用途：PHIS 在处理最终一键回写、历史引用、单项推荐诊断 / 用药 / 检查 / 独立诊疗方案后，**必须**将成功或失败结果回执给 `全医慧助（PCIE）`。
 
 **强制要求：** 每收到一条 `reference-request` 或 `record-confirmed`，PHIS 都必须调用本接口回执。一键回写场景下只回执一次即可；`reference-request` 走批量引用语义，`record-confirmed` 走最终调入确认语义，但两者都通过同一个接口回传成功或失败。
 
@@ -1564,7 +1565,7 @@ HTTP 状态码：`409`
 1. 当前回执必须匹配“最新一条结果”里的 `requestId`，且其 `resultType` 必须还是 `reference-request` 或 `record-confirmed`。
 2. 如果 HIS 传错 `consultationId` 或 `requestId`，会返回 `409 REFERENCE_REQUEST_MISMATCH`。
 3. `referenceType` 与 `action` 如果同时传入，语义必须一致；不一致时接口会返回 `400 INVALID_REFERENCE_TYPE`。若当前待确认结果是 `record-confirmed` 且两者都未传，服务端会默认按 `batch` 处理。
-4. 建议 `status = failed` 时，把失败原因写进 `message`，便于医生在 `MedHermes` 里理解失败原因。
+4. 建议 `status = failed` 时，把失败原因写进 `message`，便于医生在 `全医慧助（PCIE）` 里理解失败原因。
 5. 如果想让页面上的逐项“已引用/引用失败”状态更准确，建议原样回传本次成功或失败的 `items`。
 
 ### 6.6 `POST /api/consultation/stop`
@@ -1601,7 +1602,7 @@ http://127.0.0.1:8081/api/consultation/stop
 
 ### 6.7 `POST /api/patient/risks`（可选）
 
-用途：把 HIS 当前患者的风险信息推送到 `MedHermes`，触发患者风险评估提醒。
+用途：把 HIS 当前患者的风险信息推送到 `全医慧助（PCIE）`，触发患者风险评估提醒。
 
 完整地址：
 
@@ -1702,7 +1703,7 @@ http://127.0.0.1:8081/api/patient/risks
 
 #### 前端展示行为
 
-1. 收到请求后，`MedHermes` 会置顶窗口并展示风险提醒面板。
+1. 收到请求后，`全医慧助（PCIE）` 会置顶窗口并展示风险提醒面板。
 2. 风险项按 `level` 排序展示（红色在前，黄色在后）。
 3. 如果存在 level 1 或 level 2 的高危/中危风险，医生必须手动点击"我已知悉"才能关闭面板。
 4. 如果仅有 level 3 低危风险，面板将在 10 秒后自动关闭。
@@ -1718,7 +1719,7 @@ HIS 侧至少要识别以下 5 类结果：
 | `draft` | 病历草稿回写（早期病历字段） | 回填主诉、现病史等医生站草稿字段 |
 | `final-report` | 【已废弃】完整问诊最终报告（含诊断、治疗方案） | 仅作历史兼容，新链路不产生此类型，统一使用 `record-confirmed` |
 | `record-confirmed` | 问诊一键确认回写（`orderList` 统一格式） | 直接用于 PHIS 调入确认弹窗，不走 `reference-request` 引用请求 |
-| `reference-request` | `MedHermes` 请求 PHIS 保存引用 | 调用 PHIS 保存，并准备回执 |
+| `reference-request` | `全医慧助（PCIE）` 请求 PHIS 保存引用 | 调用 PHIS 保存，并准备回执 |
 | `reference-feedback` | PHIS 回执后的最新状态 | 更新医生站状态，提示成功或失败 |
 
 补充说明：
@@ -1752,8 +1753,8 @@ consultationId + resultType + requestId + timestamp
 2. `consultationId` 当前来自 HIS 下发的就诊锚点或患者标识；HIS 侧应尽量传入 `idVis / visitId`，并防止缺失就诊锚点时“同患者旧结果误命中当前就诊”。
 3. `/assist` 每次调用都会重置当前业务上下文；不要在上一动作事件尚未消费完成时复用旧状态。
 4. `reference-feedback` 只接受与“当前最新待处理回写或引用请求”匹配的回执。
-5. 当前页面恢复依赖同一运行期内的前端内存状态；如果 `MedHermes` 进程已经退出或重启，不保证还能恢复到回执前页面。
-6. `MedHermes` 内所有推荐结果本质上都是医生确认前的草稿，HIS / PHIS 仍应保留最终校验与保存逻辑。
+5. 当前页面恢复依赖同一运行期内的前端内存状态；如果 `全医慧助（PCIE）` 进程已经退出或重启，不保证还能恢复到回执前页面。
+6. `全医慧助（PCIE）` 内所有推荐结果本质上都是医生确认前的草稿，HIS / PHIS 仍应保留最终校验与保存逻辑。
 
 ## 10. 最小接入示例
 

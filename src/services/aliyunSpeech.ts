@@ -1,6 +1,6 @@
 /**
  * 阿里云 DashScope Paraformer 实时语音转写服务
- * 统一通过 floating-ball-server 的签名 HTTP/WebSocket 代理。
+ * 统一通过 PCIE Server 的签名 HTTP/WebSocket 代理。
  *
  * 官方文档: https://help.aliyun.com/zh/model-studio/websocket-for-paraformer-real-time-service
  */
@@ -48,7 +48,7 @@ export function isTestModeEnabled(): boolean {
 }
 
 /**
- * 通过 floating-ball-server 进行语音识别
+ * 通过 PCIE Server 进行语音识别
  */
 export async function transcribeWithAliyun(
     audioBlob: Blob,
@@ -162,7 +162,7 @@ export class RealtimeSpeechService {
 
     /**
      * 接收音频数据块
-     * 流式模式：通过签名 WebSocket 发送到 floating-ball-server
+     * 流式模式：通过签名 WebSocket 发送到 PCIE Server
      * 批量模式：存储到缓冲区
      */
     sendAudio(pcmData: Int16Array): void {

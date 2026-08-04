@@ -20,7 +20,7 @@ export const KEYBOARD_SHORTCUT_DEFINITIONS: readonly KeyboardShortcutDefinition[
   {
     id: 'toggle-assistant',
     label: '切换悬浮球 / 当前工作区',
-    description: '收起正在使用的工作区，或唤起并恢复智医助理。',
+    description: '收起正在使用的工作区，或唤起并恢复全医慧助。',
     defaultBinding: 'Mod+Shift+Space',
   },
   {

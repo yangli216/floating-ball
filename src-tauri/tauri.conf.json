@@ -1,6 +1,6 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "MedHermes",
+  "productName": "全医慧助（PCIE）",
   "version": "1.2.98",
   "identifier": "com.med-hermes.app",
   "build": {
@@ -13,7 +13,7 @@
     "macOSPrivateApi": true,
     "windows": [
       {
-        "title": "智医助理",
+        "title": "全医慧助（PCIE）",
         "label": "main",
         "width": 160,
         "height": 160,
@@ -52,6 +52,8 @@
   "bundle": {
     "createUpdaterArtifacts": true,
     "active": true,
+    "shortDescription": "全医慧助（PCIE）基层医疗智能全科专家工作站",
+    "longDescription": "Primary Care Intelligent Expert，为基层医生提供智能问诊、病历生成、诊疗建议、报告解读和安全复核辅助。",
     "targets": "all",
     "icon": [
       "icons/32x32.png",
@@ -78,7 +80,7 @@
       "active": true,
       "dangerous-insecure-transport-protocol": true,
       "endpoints": [
-        "https://github.com/yangli216/floating-ball/releases/latest/download/latest.json"
+        "https://github.com/yangli216/pcie/releases/latest/download/latest.json"
       ],
       "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDM0MUE5REVEQkMwOEE0RTgKUldUb3BBaTg3WjBhTk9WREQxN3dlSm1uYklSbGNNZldhbnBpV3Rpb1pscnBVZisxcTNDM08zRncK",
       "windows": {
