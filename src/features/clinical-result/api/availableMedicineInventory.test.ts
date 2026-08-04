@@ -67,6 +67,35 @@ describe('available medicine inventory AI context', () => {
     expect(prompt).toContain('规范通用名');
   });
 
+  it('deduplicates prompt-only entries by cleaned medicine name and spec', () => {
+    const catalog = [
+      {
+        productId: 'med-a',
+        productName: ' ☆生脉饮',
+        spec: '10支/盒',
+        availableQuantity: 10,
+        storeIds: ['store-a'],
+        storeNames: ['西药房'],
+      },
+      {
+        productId: 'med-b',
+        productName: '⊙生脉饮',
+        spec: ' 10支/盒 ',
+        availableQuantity: 20,
+        storeIds: ['store-a'],
+        storeNames: ['西药房'],
+      },
+    ];
+
+    const prompt = formatAvailableMedicineInventoryPrompt(catalog);
+    const candidatesPrompt = formatAvailableMedicineInventoryCandidatesPrompt(catalog);
+
+    expect(catalog).toHaveLength(2);
+    expect(prompt.match(/^- 生脉饮｜10支\/盒$/gmu)).toHaveLength(1);
+    expect(candidatesPrompt.match(/^- 生脉饮｜10支\/盒$/gmu)).toHaveLength(1);
+    expect(prompt).not.toMatch(/[☆⊙]/u);
+  });
+
   it('aligns inventory hits and keeps a clean standard-name fallback', () => {
     const aligned = alignMedicineRecommendationsToInventory([
       { type: 'medicine', name: ' ☆脯氨酸恒格列净片', spec: '10mg' },

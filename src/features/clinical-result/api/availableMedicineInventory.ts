@@ -243,7 +243,37 @@ export function mergeAvailableMedicineInventoryCatalog(
 }
 
 function cleanMedicineNameForPrompt(value: string): string {
-  return value.replace(/^[\s☆★*·•]+/u, '').trim();
+  return value.replace(/^[\s☆★*·•⊙]+/u, '').trim();
+}
+
+function normalizeMedicinePromptIdentityPart(value: string): string {
+  return value
+    .normalize('NFKC')
+    .replace(/\s+/gu, '')
+    .toLocaleLowerCase();
+}
+
+function buildAvailableMedicineInventoryPromptLines(
+  items: AvailableMedicineInventoryCatalogItem[],
+): string[] {
+  const seen = new Set<string>();
+  const lines: string[] = [];
+
+  for (const item of items) {
+    const name = cleanMedicineNameForPrompt(item.productName);
+    if (!name) continue;
+    const spec = item.spec?.trim() || '';
+    const identity = [
+      normalizeMedicinePromptIdentityPart(name),
+      normalizeMedicinePromptIdentityPart(spec),
+    ].join('|');
+    if (seen.has(identity)) continue;
+
+    seen.add(identity);
+    lines.push(`- ${name}${spec ? `｜${spec}` : ''}`);
+  }
+
+  return lines;
 }
 
 function normalizeMedicineLookupText(value: string): string {
@@ -389,11 +419,7 @@ export function alignMedicineRecommendationsToInventory<T>(
 export function formatAvailableMedicineInventoryPrompt(
   items: AvailableMedicineInventoryCatalogItem[],
 ): string {
-  const lines = items.map((item) => {
-    const name = cleanMedicineNameForPrompt(item.productName);
-    const spec = item.spec ? `｜${item.spec}` : '';
-    return `- ${name}${spec}`;
-  });
+  const lines = buildAvailableMedicineInventoryPromptLines(items);
 
   return [
     '【当前可用发药药房有效库存目录】',
@@ -406,10 +432,7 @@ export function formatAvailableMedicineInventoryPrompt(
 export function formatAvailableMedicineInventoryCandidatesPrompt(
   items: AvailableMedicineInventoryCatalogItem[],
 ): string {
-  const lines = items.map((item) => {
-    const name = cleanMedicineNameForPrompt(item.productName);
-    return `- ${name}${item.spec ? `｜${item.spec}` : ''}`;
-  });
+  const lines = buildAvailableMedicineInventoryPromptLines(items);
   return [
     '【与当前报告处置结论精确匹配的院内有效库存候选】',
     ...(lines.length > 0 ? lines : ['- 未命中院内有效库存候选']),
