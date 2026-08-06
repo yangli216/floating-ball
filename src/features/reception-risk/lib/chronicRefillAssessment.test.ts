@@ -208,6 +208,56 @@ describe('assessChronicRefillCandidate', () => {
     });
   });
 
+  it('uses explicit two-chronic follow-up evidence when generic outpatient history is empty', () => {
+    const result = assessChronicRefillCandidate(
+      history([]),
+      null,
+      false,
+      {
+        diagnoses: [
+          { name: '原发性高血压' },
+          { name: '2型糖尿病' },
+        ],
+        medications: [
+          '苯磺酸氨氯地平片（5mg · 每天一次）',
+          '盐酸二甲双胍片（250mg · 每天一次）',
+        ],
+        visitCount: 2,
+        evidenceLabel: '两慢病历史记录',
+      },
+    );
+
+    expect(result).toMatchObject({
+      diagnosis: '原发性高血压',
+      diagnoses: ['原发性高血压', '2型糖尿病'],
+      diagnosisGroups: ['高血压', '糖尿病'],
+      medications: [
+        '苯磺酸氨氯地平片（5mg · 每天一次）',
+        '盐酸二甲双胍片（250mg · 每天一次）',
+      ],
+      chronicVisitCount: 2,
+      chronicVisits: [],
+      diagnosisEvidenceText: '两慢病历史记录有“原发性高血压、2型糖尿病”诊断',
+    });
+    expect(result?.medicationOrders).toBeUndefined();
+  });
+
+  it('does not treat supplemental diagnoses without a historical follow-up as refill evidence', () => {
+    const result = assessChronicRefillCandidate(
+      history([]),
+      null,
+      false,
+      {
+        diagnoses: [{ name: '2型糖尿病' }],
+        medications: ['盐酸二甲双胍片'],
+        visitCount: 0,
+        evidenceLabel: '两慢病历史记录',
+      },
+    );
+
+    expect(result).toBeNull();
+  });
+
   it.each([
     ['甲状腺功能亢进症', 'E05.900', '甲状腺功能亢进'],
     ['前列腺增生症', 'N40.x00', '前列腺增生'],

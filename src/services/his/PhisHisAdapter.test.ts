@@ -85,6 +85,8 @@ describe('PhisHisAdapter.fetchPatientHistory', () => {
       }]),
       loadClinicMedicalRecord: vi.fn().mockResolvedValue({
         soapData: {
+          desProb: '发现血压升高',
+          desCurDie: '头疼，四肢麻木',
           vitlSigns: {
             bph: 130,
             bpl: 80,
@@ -222,6 +224,8 @@ describe('PhisHisAdapter.fetchPatientHistory', () => {
     expect(history?.visits?.[0]).toMatchObject({
       visitId: 'visit-1',
       deptName: '全科门诊',
+      chiefComplaint: '发现血压升高',
+      presentIllness: '头疼，四肢麻木',
       diagnoses: ['2型糖尿病'],
       diagnosisEntries: [{ name: '2型糖尿病', code: 'E11.900' }],
       reportedApplications: [{

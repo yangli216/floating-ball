@@ -153,6 +153,66 @@ describe('useReceptionController openChronicDisease', () => {
     }));
   });
 
+  it('opens refill confirmation opportunity from real two-chronic follow-up evidence', async () => {
+    getHisAdapterMock.mockReturnValue({
+      fetchPatientInfo: vi.fn().mockResolvedValue({
+        patientId: 'patient-1',
+        name: '晓康',
+        gender: 'M',
+        ageText: '81岁',
+        idCard: '150206194508030011',
+      }),
+      fetchPatientHistory: vi.fn().mockResolvedValue({
+        patientId: 'patient-1',
+        visits: [],
+      }),
+      fetchOutpatientMedicalRecord: vi.fn().mockResolvedValue(null),
+      fetchChronicDiseasePatientVisitHistory: vi.fn().mockResolvedValue({
+        idPhr: 'phr-1',
+        idRecord: 'record-1',
+        naPi: '晓康',
+        sdSexText: '男',
+        ageText: '81岁',
+        rqflStatus: '3',
+        diagnosis: '原发性高血压;2型糖尿病',
+        visitInfos: [{
+          idPherec: 'follow-up-1',
+          dtVisit: '2026-07-28 17:23:52',
+          drugList: [{
+            naDrug: '盐酸二甲双胍片',
+            sdDrugFreq: '每天一次',
+            perDose: 250,
+            doseUnit: 'mg',
+          }],
+        }],
+      }),
+    });
+    const currentPatient = ref<AppPatient | null>(null);
+    const receptionSession = useReceptionSessionController(currentPatient);
+    const controller = useReceptionController({
+      currentPatient,
+      receptionSession,
+      showToast: vi.fn(),
+      workMode: { openReceptionCapsule: vi.fn().mockResolvedValue(undefined) },
+      resetVoiceSessionState: vi.fn(),
+      clearVoiceConsultationCache: vi.fn(),
+      clearMinimizedConsultationSessions: vi.fn(),
+    });
+
+    await controller.openChronicDisease({
+      idPi: 'patient-1',
+      idVis: 'current-visit-1',
+    });
+
+    expect(receptionSession.chronicRefillCandidate.value).toMatchObject({
+      diagnoses: ['原发性高血压', '2型糖尿病'],
+      diagnosisGroups: ['高血压', '糖尿病'],
+      medications: ['盐酸二甲双胍片（250mg · 每天一次）'],
+      chronicVisitCount: 1,
+      chronicVisits: [],
+    });
+  });
+
   it('does not substitute idPi when patient information has no idCard', async () => {
     const fetchChronicDiseasePatientVisitHistory = vi.fn();
     getHisAdapterMock.mockReturnValue({

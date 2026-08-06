@@ -470,6 +470,13 @@
 - **解决方案**: LLM 只返回本次可开立目录的 `catalogRef`，映射成功后直接展示真实目录项目；`loadVisCliList` 仅在进入诊疗方案时尽力补充 `idCli / idDeptExec / idPart`，空响应不删除项目。最终由诊疗方案页加载项目详情并执行必要字段门禁，共享 `record-confirmed + reference-feedback` 继续作为唯一保存闭环。
 - **后续防护**: 新增目录、详情、映射或保存接口时必须分别标注其权威语义；读接口的空响应不得跨层升级为整批业务对象不可用，除非对接契约明确声明该接口是唯一可用性真源并有现场证据。
 
+### RETRO-059: 两慢病顶部已识别病种但复诊配药仍显示空态 [已解决]
+
+- **现象**: 两慢病详情顶部已经基于 `queryPatientVisitHistoryData` 显示“高血压管理、2 型糖尿病”和最近随访日期，第 2 区仍提示“暂未识别复诊配药需求”；现场 `loadClinicMedicalRecord` 同时可见 `E11 / I10` 诊断与历史药品。
+- **根因**: 复诊候选只消费 `queryVisitHistory + loadClinicMedicalRecord` 映射出的 `HisPatientHistory`。两慢病直接打开虽然已经取得原始 `diagnosis / visitInfos / drugList`，但这些可靠慢病事实没有显式进入候选规则；通用历史列表为空、明细失败或院端历史口径与慢病随访口径不一致时，详情展示与复诊入口发生脱节。真实 PHIS 病历还使用 `soapData.desProb / desCurDie`，旧映射只读取 `chiefComplaint / presentIllness`，导致历史叙事进一步缺失。
+- **解决方案**: 两慢病直接打开时，从原始响应提取“至少一条历史随访 + 详情已通过公卫或临床证据明确识别的诊断 + 随访药品文本”作为 supplemental evidence，与通用历史候选合并；临床诊断不要求重复出现在 `rqflStatus`，同时不把临床识别升级为公卫管理。不改写成 `HisPatientHistory`，不使用当前诊中处方，不为慢病随访药品补造结构化处方属性。PHIS Adapter 同时兼容 `desProb / desCurDie` 的真实主诉和现病史字段。
+- **后续防护**: 两慢病详情顶部的已识别病种、最近随访与第 2 区候选必须覆盖同一份真实慢病事实回归测试；任何新增兜底必须标注证据来源和历史/当前边界，禁止把管理标签、当前处方或模型建议直接升级为历史用药事实。
+
 > 新增条目请复制以下模板：
 
 ```markdown

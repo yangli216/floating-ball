@@ -521,8 +521,9 @@ function mapVisitDetail(
   }
 
   const soap = detail.soapData ?? {};
-  const chiefComplaint = trim((soap as Record<string, unknown>)['chiefComplaint'] as string | undefined);
-  const presentIllness = trim((soap as Record<string, unknown>)['presentIllness'] as string | undefined);
+  const soapRecord = soap as Record<string, unknown>;
+  const chiefComplaint = firstTrim(soapRecord, ['desProb', 'chiefComplaint']);
+  const presentIllness = firstTrim(soapRecord, ['desCurDie', 'presentIllness']);
 
   const diagnosisEntries = Array.from(new Map(
     (detail.diagList ?? [])

@@ -30,6 +30,7 @@ import {
   getPatientContextVisitId,
 } from '@/utils/patientContext';
 import { assessChronicRefillCandidate } from '@features/reception-risk/lib/chronicRefillAssessment';
+import { buildTwoChronicRefillEvidence } from '@features/chronic-disease/lib/twoChronicRefillEvidence';
 import type { RiskItem } from '@features/reception-risk/types';
 import {
   applyReceptionClinicalHistorySummaries,
@@ -400,6 +401,7 @@ export function useReceptionController(options: ReceptionControllerOptions) {
         diagnosis: patient?.diagnosis || patient?.clinical?.diagnosis,
       },
       hasFollowUpReport,
+      buildTwoChronicRefillEvidence(patient),
     );
     receptionSession.replaceOpportunity(
       'chronic-refill',

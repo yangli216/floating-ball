@@ -27,6 +27,13 @@ export interface CurrentEncounterIntentContext {
   diagnosis?: string;
 }
 
+export interface ChronicRefillSupplementalEvidence {
+  diagnoses: HisHistoricalDiagnosis[];
+  medications?: string[];
+  visitCount: number;
+  evidenceLabel: string;
+}
+
 interface ChronicDiagnosisGroup {
   name: string;
   keywords: string[];
@@ -217,59 +224,77 @@ export function assessChronicRefillCandidate(
   history: HisPatientHistory | null | undefined,
   currentEncounter?: CurrentEncounterIntentContext | null,
   hasFollowUpReport?: boolean,
+  supplementalEvidence?: ChronicRefillSupplementalEvidence | null,
 ): ChronicRefillCandidate | null {
   if (hasFollowUpReport || isReportFollowUpIntent(currentEncounter)) return null;
 
   const visits = latestVisits(history);
   const diagnosisGroups: string[] = [];
   const preferredDiagnosisByGroup = new Map<string, ChronicDiagnosisMatch>();
+  const registerDiagnosis = (diagnosis: ChronicDiagnosisMatch): void => {
+    const current = preferredDiagnosisByGroup.get(diagnosis.groupName);
+    if (!current) {
+      diagnosisGroups.push(diagnosis.groupName);
+      preferredDiagnosisByGroup.set(diagnosis.groupName, diagnosis);
+      return;
+    }
+    if (!current.isSpecific && diagnosis.isSpecific) {
+      preferredDiagnosisByGroup.set(diagnosis.groupName, diagnosis);
+    }
+  };
   const chronicVisits = visits.filter((visit) => {
     const allowGenericFallback = hasVisitMedicationEvidence(visit);
     const visitDiagnoses = getVisitDiagnosisEntries(visit)
       .map((diagnosis) => findChronicDiagnosis(diagnosis, allowGenericFallback))
       .filter((item): item is ChronicDiagnosisMatch => Boolean(item));
-    visitDiagnoses.forEach((diagnosis) => {
-      const current = preferredDiagnosisByGroup.get(diagnosis.groupName);
-      if (!current) {
-        diagnosisGroups.push(diagnosis.groupName);
-        preferredDiagnosisByGroup.set(diagnosis.groupName, diagnosis);
-        return;
-      }
-      if (!current.isSpecific && diagnosis.isSpecific) {
-        preferredDiagnosisByGroup.set(diagnosis.groupName, diagnosis);
-      }
-    });
+    visitDiagnoses.forEach(registerDiagnosis);
     return visitDiagnoses.length > 0;
   });
-  if (chronicVisits.length === 0) return null;
+
+  const supplementalDiagnoses = supplementalEvidence && supplementalEvidence.visitCount > 0
+    ? supplementalEvidence.diagnoses
+      .map((diagnosis) => findChronicDiagnosis(diagnosis, false))
+      .filter((item): item is ChronicDiagnosisMatch => Boolean(item))
+    : [];
+  supplementalDiagnoses.forEach(registerDiagnosis);
+  if (chronicVisits.length === 0 && supplementalDiagnoses.length === 0) return null;
 
   const chronicDiagnoses = diagnosisGroups
     .map((groupName) => preferredDiagnosisByGroup.get(groupName)?.diagnosisName || groupName);
 
   const medications = new Map<string, string>();
   const medicationOrders = new Map<string, HisHistoricalMedication>();
+  const registerMedication = (medication: string): void => {
+    const normalized = normalizeMedicationName(medication);
+    if (!normalized || medications.has(normalized)) return;
+    medications.set(normalized, medication.trim());
+  };
   chronicVisits.forEach((visit) => {
     (visit.medicationOrders || []).forEach((medication) => {
       const normalized = normalizeMedicationName(medication.name);
       if (!normalized || medicationOrders.has(normalized)) return;
       medicationOrders.set(normalized, medication);
     });
-    (visit.medications || []).forEach((medication) => {
-      const normalized = normalizeMedicationName(medication);
-      if (!normalized) return;
-      if (!medications.has(normalized)) {
-        medications.set(normalized, medication.trim());
-      }
-    });
+    (visit.medications || []).forEach(registerMedication);
   });
+  if (supplementalDiagnoses.length > 0) {
+    (supplementalEvidence?.medications || []).forEach(registerMedication);
+  }
   const chronicMedications = Array.from(medications.values()).slice(0, 8);
   const chronicMedicationOrders = Array.from(medicationOrders.values()).slice(0, 8);
 
   const diagnosis = chronicDiagnoses[0];
-  const diagnosisEvidenceText = `近期历史就诊记录有“${chronicDiagnoses.join('、')}”诊断`;
+  const supplementalLabel = supplementalEvidence?.evidenceLabel.trim() || '补充历史记录';
+  const diagnosisEvidenceSource = chronicVisits.length > 0
+    ? (supplementalDiagnoses.length > 0 ? `近期门诊及${supplementalLabel}` : '近期历史就诊记录')
+    : supplementalLabel;
+  const diagnosisEvidenceText = `${diagnosisEvidenceSource}有“${chronicDiagnoses.join('、')}”诊断`;
   const medicationEvidenceText = chronicMedications.length > 0
     ? `历史用药记录：${chronicMedications.join('、')}`
     : '未获取到可确认的历史用药记录';
+  const supplementalVisitCount = supplementalDiagnoses.length > 0
+    ? supplementalEvidence?.visitCount || 0
+    : 0;
 
   return {
     diagnosis,
@@ -277,7 +302,7 @@ export function assessChronicRefillCandidate(
     diagnosisGroups,
     medications: chronicMedications,
     medicationOrders: chronicMedicationOrders.length > 0 ? chronicMedicationOrders : undefined,
-    chronicVisitCount: chronicVisits.length,
+    chronicVisitCount: Math.max(chronicVisits.length, supplementalVisitCount),
     chronicVisits,
     diagnosisEvidenceText,
     medicationEvidenceText,
