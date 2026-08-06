@@ -2,7 +2,7 @@
 
 > 状态：规划稿，作为后续路径迁移的目标结构与门禁依据。当前任务不做大规模文件搬迁。
 >
-> 适用范围：`floating-ball/src` 下 Vue 3 + TypeScript 前端代码。
+> 适用范围：`pcie/src` 下 Vue 3 + TypeScript 前端代码。
 >
 > 配套准则：路径迁移前先阅读 [frontend-reuse-architecture.md](frontend-reuse-architecture.md)，先判断能力是否应复用、归属哪个层级，再决定文件是否移动或新增。
 

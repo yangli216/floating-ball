@@ -4,7 +4,7 @@
 
 ### 1. 进入项目目录
 ```bash
-cd floating-ball
+cd pcie
 ```
 
 ### 2. 确保依赖已安装

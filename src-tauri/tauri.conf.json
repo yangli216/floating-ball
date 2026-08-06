@@ -78,7 +78,7 @@
       "active": true,
       "dangerous-insecure-transport-protocol": true,
       "endpoints": [
-        "https://github.com/yangli216/floating-ball/releases/latest/download/latest.json"
+        "https://github.com/yangli216/pcie/releases/latest/download/latest.json"
       ],
       "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDM0MUE5REVEQkMwOEE0RTgKUldUb3BBaTg3WjBhTk9WREQxN3dlSm1uYklSbGNNZldhbnBpV3Rpb1pscnBVZisxcTNDM08zRncK",
       "windows": {

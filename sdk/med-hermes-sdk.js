@@ -6,7 +6,7 @@
  * 封装全部本地 HTTP Bridge 接口 + WebSocket 事件订阅分发 + 协议拉起 + 浏览器上下文同步。
  *
  * @license MIT
- * @see https://github.com/yangli216/floating-ball
+ * @see https://github.com/yangli216/pcie
  */
 (function (root, factory) {
   if (typeof define === 'function' && define.amd) {

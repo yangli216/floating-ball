@@ -2,7 +2,7 @@
 
 全医慧助（PCIE，Primary Care Intelligent Expert）是一款面向基层医疗场景的桌面智能专家辅助应用，旨在为医疗从业者提供智能问诊、病历辅助生成、诊疗建议、报告解读、慢病协同及医疗知识检索等能力。
 
-当前工程名仍为 `floating-ball`。为保障既有 HIS 接入、升级和本地数据兼容，`med-hermes://`、`com.med-hermes.app`、`window.MedHermes` 及 `med-hermes-*.js` 等技术标识继续保留；它们不再代表正式产品名称。
+当前工程名仍为 `pcie`。为保障既有 HIS 接入、升级和本地数据兼容，`med-hermes://`、`com.med-hermes.app`、`window.MedHermes` 及 `med-hermes-*.js` 等技术标识继续保留；它们不再代表正式产品名称。
 
 ## 核心特性
 - **AI 智能问诊**: 基于大模型能力，通过语音或表单形式采集患者症状，自动生成标准主诉与现病史。

@@ -4,7 +4,7 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 64 64%22><text y=%2252%22 font-size=%2252%22>⚕</text></svg>" />
-  <title>两慢病 Mock HIS · floating-ball 唤起台</title>
+  <title>两慢病 Mock HIS · pcie 唤起台</title>
   <style>
     :root {
       color-scheme: light;
@@ -412,7 +412,7 @@
     <div class="brand">
       <div class="brand-mark" aria-hidden="true">⚕</div>
       <div>
-        <h1>两慢病 Mock HIS · floating-ball 唤起台</h1>
+        <h1>两慢病 Mock HIS · pcie 唤起台</h1>
         <p>网页只模拟 HIS 下发事件，慢病胶囊与业务窗口由真实桌面应用显示</p>
       </div>
     </div>
@@ -508,7 +508,7 @@
     </aside>
 
     <p class="footer-note">
-      安全边界：所有患者均使用 <code>MOCK-CD-*</code> 标识；握手不注入 HIS origin，不调用测试网页宿主上的 PHIS 接口。Mock 用药仅表示历史随访事实，不是处方建议。该页面不会在浏览器中绘制 floating-ball。
+      安全边界：所有患者均使用 <code>MOCK-CD-*</code> 标识；握手不注入 HIS origin，不调用测试网页宿主上的 PHIS 接口。Mock 用药仅表示历史随访事实，不是处方建议。该页面不会在浏览器中绘制 pcie。
     </p>
   </main>
 
@@ -1008,7 +1008,7 @@
           appendLog('event', '正在通过 deep link 尝试启动桌面端');
         });
         sdk.on('launch-failed', function () {
-          appendLog('error', 'deep link 启动 floating-ball 失败');
+          appendLog('error', 'deep link 启动 pcie 失败');
         });
         return sdk;
       }

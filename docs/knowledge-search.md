@@ -12,7 +12,7 @@
 | 智能问诊 / 语音问诊共用的批量检索状态 | `src/features/knowledge/model/useKnowledgeSearchController.ts` |
 | 诊断、药品、检查分类词提取 | `src/features/knowledge/lib/knowledgeSearchCategories.ts` |
 | 语音问诊到知识库 controller 的轻包装 | `src/features/voice-consultation/model/useVoiceKnowledgeSearch.ts` |
-| 配置来源 | `floating-ball-server` bootstrap（客户端设置页仅配置服务端地址/机构/设备） |
+| 配置来源 | `pcie-server` bootstrap（客户端设置页仅配置服务端地址/机构/设备） |
 
 ## 运行链路
 

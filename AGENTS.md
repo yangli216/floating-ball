@@ -1,6 +1,6 @@
 # AGENTS.md
 
-全医慧助（PCIE，Primary Care Intelligent Expert）桌面端工程 `floating-ball` 的协作规则。
+全医慧助（PCIE，Primary Care Intelligent Expert）桌面端工程 `pcie` 的协作规则。
 
 本项目是一个 `Tauri 2 + Vue 3 + TypeScript + Rust` 的基层医疗智能专家辅助工作站，当前真实运行形态包含：
 
@@ -20,7 +20,7 @@
 6. 涉及交互、产品约束时再读 [PRODUCT.md](./PRODUCT.md)
 7. 遇到疑似踩过的坑时，先查 [RETRO.md](./RETRO.md) 已有经验
 8. 涉及历史上反复摇摆的设计决策时，先查 [DECISION_DRIFT.md](./DECISION_DRIFT.md)
-9. 涉及服务端接入、设备签名或 `/v1/*` 契约时，读取 [../development-harness/HARNESS.md](../development-harness/HARNESS.md)、[../floating-ball-server/HARNESS.md](../floating-ball-server/HARNESS.md)、[../floating-ball-server/API.md](../floating-ball-server/API.md)、真实调用代码和 `requestSigner.ts`
+9. 涉及服务端接入、设备签名或 `/v1/*` 契约时，读取 [../development-harness/HARNESS.md](../development-harness/HARNESS.md)、[../pcie-server/HARNESS.md](../pcie-server/HARNESS.md)、[../pcie-server/API.md](../pcie-server/API.md)、真实调用代码和 `requestSigner.ts`
 
 ## 强制流程
 

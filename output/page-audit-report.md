@@ -1,4 +1,4 @@
-# floating-ball 页面实现审查与截图
+# PCIE 页面实现审查与截图
 
 审查日期：2026-07-22
 
@@ -37,137 +37,137 @@
 
 结论：视觉简洁，初始球态与 160×160 原生窗口一致。P2 已修复：悬浮球使用原生按钮，Enter/Space 等同于双击唤起或恢复，并提供清晰的 `:focus-visible`；环形菜单仍遵守产品约束，只随鼠标悬停展开，键盘用户通过统一快捷键进入对话和设置。
 
-![悬浮球](/Users/das/SourceCode/regional-ai-workspace/floating-ball/output/playwright/01-floating-ball-code.png)
+![悬浮球](/Users/das/SourceCode/regional-ai-workspace/pcie/output/playwright/01-floating-ball-code.png)
 
 真实 Tauri WebView 启动冒烟：
 
-![真实 Tauri 悬浮球](/Users/das/SourceCode/regional-ai-workspace/floating-ball/output/playwright/01-floating-ball-tauri-runtime.png)
+![真实 Tauri 悬浮球](/Users/das/SourceCode/regional-ai-workspace/pcie/output/playwright/01-floating-ball-tauri-runtime.png)
 
 ### 02 全医慧助聊天
 
 结论：420×620 窄高布局合理，欢迎区、消息区、输入区层级清楚；输入框和图标按钮已有可访问名称，Markdown 禁用了原始 HTML。实现文件仍偏大（842 行），但本轮未发现阻断问题。
 
-![聊天页](/Users/das/SourceCode/regional-ai-workspace/floating-ball/output/playwright/02-chat.png)
+![聊天页](/Users/das/SourceCode/regional-ai-workspace/pcie/output/playwright/02-chat.png)
 
 ### 03 系统设置
 
 结论：主题选择清楚，页签结构稳定。P2 已修复：通用设置首屏新增快捷键卡片，可重新录入、单项清除、恢复默认，并与原设置保存栏共用未保存/保存状态；重复或保留键会即时提示，缓存管理和 HIS 日志入口已改为原生按钮。固定保存栏在“已保存”状态仍占用约两行高度，继续作为 P3 观察项。
 
-![系统设置与默认快捷键](/Users/das/SourceCode/regional-ai-workspace/floating-ball/output/playwright/03-settings-keyboard-shortcuts.png)
+![系统设置与默认快捷键](/Users/das/SourceCode/regional-ai-workspace/pcie/output/playwright/03-settings-keyboard-shortcuts.png)
 
 ### 04 智能问诊
 
 结论：患者上下文与左右分区明确，但初始态主内容区留白偏大，底部主动作离当前选择区域较远。P2 已修复：常用症状分类、症状列表、按系统卡片与人体 SVG 部位均能通过 Tab 定位并用 Enter/Space 操作，选中态通过 `aria-pressed` 暴露；`ConsultationPage.vue` 本次保持净零行增长，页面整体 2433 行的拆分风险仍存在。
 
-![智能问诊](/Users/das/SourceCode/regional-ai-workspace/floating-ball/output/playwright/04-consultation.png)
+![智能问诊](/Users/das/SourceCode/regional-ai-workspace/pcie/output/playwright/04-consultation.png)
 
 ### 05 风险提示
 
 结论：风险颜色、内容和“我已知悉”动作清楚，关键风险不会自动关闭；仅 level 3 风险会在 10 秒后自动关闭，需产品确认。建议容器增加 `role="alert"` 或可访问的优先级文本。
 
-![风险提示](/Users/das/SourceCode/regional-ai-workspace/floating-ball/output/playwright/05-risk-alert.png)
+![风险提示](/Users/das/SourceCode/regional-ai-workspace/pcie/output/playwright/05-risk-alert.png)
 
 ### 06 语音采集胶囊
 
 结论：360×80 录音态非常紧凑，计时和暂停/结束/收起动作一眼可见。图标按钮主要依赖 `title`，建议补 `aria-label`；停录预览行使用点击容器，也需键盘等价操作。
 
-![语音采集胶囊](/Users/das/SourceCode/regional-ai-workspace/floating-ball/output/playwright/06-voice-capsule.png)
+![语音采集胶囊](/Users/das/SourceCode/regional-ai-workspace/pcie/output/playwright/06-voice-capsule.png)
 
 ### 07 接诊风险胶囊
 
 结论：患者、风险、报告助手、复诊配药在 280×200 内仍能形成清楚顺序。P2 已修复：关闭和风险展开均为原生按钮，风险按钮提供动态可访问名称、`aria-expanded` 与详情关联，并具备可见键盘焦点。
 
-![接诊风险胶囊](/Users/das/SourceCode/regional-ai-workspace/floating-ball/output/playwright/07-reception-capsule.png)
+![接诊风险胶囊](/Users/das/SourceCode/regional-ai-workspace/pcie/output/playwright/07-reception-capsule.png)
 
 ### 08 复诊配药确认
 
 结论：本轮完成度最好的页面之一。事实依据、确认项、补充说明和最终动作层级清晰，主按钮也明确表达“确认并生成病历”。模拟环境没有真实生成服务，但静态交互结构成立。
 
-![复诊配药确认](/Users/das/SourceCode/regional-ai-workspace/floating-ball/output/playwright/08-chronic-refill.png)
+![复诊配药确认](/Users/das/SourceCode/regional-ai-workspace/pcie/output/playwright/08-chronic-refill.png)
 
 ### 09 问诊结果 / 语音问诊
 
 结论：病历与诊疗建议双栏编辑结构完整，必填、匹配状态和底部动作可识别；信息密度高但可滚动。截图中的目录未匹配是模拟环境限制。主实现 `VoiceConsultationNew.vue` 达 2798 行，建议按病历编辑、推荐编辑、反馈与提交状态拆分。
 
-![问诊结果](/Users/das/SourceCode/regional-ai-workspace/floating-ball/output/playwright/09-clinical-result.png)
+![问诊结果](/Users/das/SourceCode/regional-ai-workspace/pcie/output/playwright/09-clinical-result.png)
 
 ### 10 独立诊疗方案
 
 结论：药品、检查、检验、处置按类分区，失败状态局部化且保留其他内容，底部回写动作结构清楚。截图中的四类生成失败由审查构建未接远端服务造成，不作为生产缺陷；当前仅提供全局刷新，后续可考虑分区重试。
 
-![独立诊疗方案](/Users/das/SourceCode/regional-ai-workspace/floating-ball/output/playwright/10-treatment-plan.png)
+![独立诊疗方案](/Users/das/SourceCode/regional-ai-workspace/pcie/output/playwright/10-treatment-plan.png)
 
 ### 11 门诊复诊工作台
 
 结论：左侧复诊依据、右侧方案的空间关系合理，医生能同时核对原病历/报告与后续处置。模拟环境中的生成失败不计入生产缺陷；真实联调时应重点验证四类推荐的部分成功和回写门禁。
 
-![门诊复诊](/Users/das/SourceCode/regional-ai-workspace/floating-ball/output/playwright/11-outpatient-follow-up.png)
+![门诊复诊](/Users/das/SourceCode/regional-ai-workspace/pcie/output/playwright/11-outpatient-follow-up.png)
 
 ### 12 报告助手工作台
 
 结论：近 14 天时间轴和原始报告/AI 解读切换清晰。在只有报告摘要、没有正文时，页面会明确禁用 AI 解读，没有把摘要冒充完整报告，这一安全边界是正确的；空白区域可以再增强下一步说明。
 
-![报告助手工作台](/Users/das/SourceCode/regional-ai-workspace/floating-ball/output/playwright/12-report-workspace.png)
+![报告助手工作台](/Users/das/SourceCode/regional-ai-workspace/pcie/output/playwright/12-report-workspace.png)
 
 ### 13 患者健康画像
 
 结论：三栏结构、冲突警示、纵向时间线、风险与趋势形成了很强的临床概览。当前“依据”和“查看证据”是无行为按钮；行动勾选与医生备注也只存在本地组件状态。页面 1530 行，建议先补行为契约再拆分。
 
-![患者健康画像](/Users/das/SourceCode/regional-ai-workspace/floating-ball/output/playwright/13-patient-memory.png)
+![患者健康画像](/Users/das/SourceCode/regional-ai-workspace/pcie/output/playwright/13-patient-memory.png)
 
 ### 14 住院病历生成
 
 结论：生成前补充要点的弹窗流程清楚，时间范围、字段快捷补充和主动作合理。P1 已修复：模板/HIS HTML 在解析和渲染前统一经过白名单净化，Tauri 已启用 CSP；仍需用院端真实长病历、图片和复杂表格验证兼容性。
 
-![住院病历生成](/Users/das/SourceCode/regional-ai-workspace/floating-ball/output/playwright/14-inpatient-emr.png)
+![住院病历生成](/Users/das/SourceCode/regional-ai-workspace/pcie/output/playwright/14-inpatient-emr.png)
 
 ### 15 鉴别诊断
 
 结论：360×640 小窗可以承载鉴别清单。P1 已修复并重拍：系统生成失败现在显示为中性“鉴别诊断生成失败”，提供重试动作，不再出现临床高风险徽标或原始 JS 错误；成功解析出的诊断不匹配仍保留原临床风险表达。
 
-![鉴别诊断](/Users/das/SourceCode/regional-ai-workspace/floating-ball/output/playwright/15-differential-diagnosis.png)
+![鉴别诊断](/Users/das/SourceCode/regional-ai-workspace/pcie/output/playwright/15-differential-diagnosis.png)
 
 ### 16 知识库检索
 
 结论：未配置状态的说明直接、没有伪造检索能力。P1 已修复：服务端知识正文改用共享白名单净化，外部知识页使用空权限 `sandbox` 与 `no-referrer`，并由 Tauri CSP 提供第二层限制。
 
-![知识库检索](/Users/das/SourceCode/regional-ai-workspace/floating-ball/output/playwright/16-knowledge-base.png)
+![知识库检索](/Users/das/SourceCode/regional-ai-workspace/pcie/output/playwright/16-knowledge-base.png)
 
 ### 17 HIS 联调日志
 
 结论：主从列表、traceId、方向/状态、请求/响应摘要都适合排障，清空前已有系统确认。筛选输入与下拉缺少显式 label/aria-label，键盘和读屏体验可补齐；真实联调还需复核脱敏字段覆盖。
 
-![HIS 联调日志](/Users/das/SourceCode/regional-ai-workspace/floating-ball/output/playwright/17-his-log.png)
+![HIS 联调日志](/Users/das/SourceCode/regional-ai-workspace/pcie/output/playwright/17-his-log.png)
 
 ### 18 基础数据缓存
 
 结论：目录数量、总缓存、最近同步、数据库位置和同步动作一屏可见，结构清晰。清理/强制同步属于高影响动作，真实手测需覆盖确认、失败恢复和机构/租户范围，当前截图未执行这些写操作。
 
-![基础数据缓存](/Users/das/SourceCode/regional-ai-workspace/floating-ball/output/playwright/18-medical-cache.png)
+![基础数据缓存](/Users/das/SourceCode/regional-ai-workspace/pcie/output/playwright/18-medical-cache.png)
 
 ### 19 诊断推理路径
 
 结论：右侧结论、证据与鉴别点便于解释模型结果；Sankey 初始视图上半区留白较多、主要节点集中在下方，建议按节点数量自适应垂直分布。缩放/拖动/重置入口清楚。
 
-![诊断推理路径](/Users/das/SourceCode/regional-ai-workspace/floating-ball/output/playwright/19-diagnosis-path.png)
+![诊断推理路径](/Users/das/SourceCode/regional-ai-workspace/pcie/output/playwright/19-diagnosis-path.png)
 
 ### 20 单报告 AI 解读
 
 结论：患者/门诊/报告元数据、异常项、综合判断和临床意义层级完整，异常数值与解释关系清楚；下载与关闭动作位置合理。仍需在真实报告数据上验证长表格、超长单位和打印/导出分页。
 
-![单报告 AI 解读](/Users/das/SourceCode/regional-ai-workspace/floating-ball/output/playwright/20-report-window.png)
+![单报告 AI 解读](/Users/das/SourceCode/regional-ai-workspace/pcie/output/playwright/20-report-window.png)
 
 ### 21 强制升级
 
 结论：版本三元组和阻断原因表达清楚。P1 已修复并重拍：内层更新检查消费外层强更策略；当未获取到安装包时，页面明确说明当前版本仍低于最低要求，并给出检查更新源、联系管理员和重试动作，不再展示“当前已是最新版本”。
 
-![强制升级](/Users/das/SourceCode/regional-ai-workspace/floating-ball/output/playwright/21-force-update.png)
+![强制升级](/Users/das/SourceCode/regional-ai-workspace/pcie/output/playwright/21-force-update.png)
 
 ### 22 问题反馈
 
 结论：评分、问题类型、补充说明、字符计数和可选截图组成完整反馈表单，未填写时禁用提交符合预期。截图入口默认折叠，减少视觉负担；真实 Tauri 中仍需验证屏幕捕获权限、拒绝授权和图片大小限制。
 
-![问题反馈](/Users/das/SourceCode/regional-ai-workspace/floating-ball/output/playwright/22-feedback.png)
+![问题反馈](/Users/das/SourceCode/regional-ai-workspace/pcie/output/playwright/22-feedback.png)
 
 ## 建议处理顺序
 

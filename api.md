@@ -33,7 +33,7 @@
    如果 HIS 存在“同患者多次接诊”场景，必须传入 `idVis`，避免旧就诊结果或回执误命中当前就诊。
 5. 当前 Bridge 会为业务接口生成 `traceId` 并写入本地 HIS 集成日志，方便三方 HIS / PHIS 联调时按一次调用链路排查请求、响应和错误。
 6. Bridge 与 SDK 对外展示的失败信息应使用可读中文说明，并优先带出 `traceId`；底层网络异常、Rust/JavaScript 异常、PHIS 原始错误体和堆栈只进入本地 HIS 集成日志，不应作为唯一错误提示直接展示给医生或 HIS 操作员。
-7. 本地 Bridge 只承担 HIS/SDK 接入，不提供 AI、语音或知识库第三方代理；历史 `/api/pmphai/*` 路由已删除。PMPHAI 统一通过设备签名后的 `floating-ball-server /v1/knowledge/pmphai/*` 调用。
+7. 本地 Bridge 只承担 HIS/SDK 接入，不提供 AI、语音或知识库第三方代理；历史 `/api/pmphai/*` 路由已删除。PMPHAI 统一通过设备签名后的 `pcie-server /v1/knowledge/pmphai/*` 调用。
 
 ## 3. 推荐接入顺序
 

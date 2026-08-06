@@ -1,7 +1,7 @@
 # 慢病复诊配药四步界面 Design QA
 
 - Source visual truth: `/var/folders/35/4z0sm8cs2j79r4rv6hcdl7kc0000gn/T/codex-clipboard-e0d0aa18-6baf-4d11-8d29-74c04a094cb2.png`
-- Implementation screenshot: `/Users/das/SourceCode/regional-ai-workspace/floating-ball/output/playwright/reception-accordion-2-3-swapped.png`
+- Implementation screenshot: `/Users/das/SourceCode/regional-ai-workspace/pcie/output/playwright/reception-accordion-2-3-swapped.png`
 - Browser viewport: `404 × 712` CSS px
 - Component viewport: `404 × 712` CSS px
 - Implementation pixels: `404 × 712`

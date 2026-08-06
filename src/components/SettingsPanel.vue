@@ -109,7 +109,7 @@ const {
 
 function formatRegionalConnectionError(baseUrl: string, error: unknown): string {
   const message = formatUserFacingError(error, {
-    fallback: `无法连接 ${baseUrl}，请确认 floating-ball-server 已启动，且该地址可访问。`,
+    fallback: `无法连接 ${baseUrl}，请确认 pcie-server 已启动，且该地址可访问。`,
   }).trim();
   if (message.includes('授权已失效') || message.includes('设备鉴权失败')) {
     return `参数已保存，但设备鉴权失败：${message}`;
