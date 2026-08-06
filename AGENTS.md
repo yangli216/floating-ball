@@ -140,6 +140,7 @@
 11. **Tauri capability 同步**：新增或首次调用 Tauri JS API 时，必须同时核对 `src-tauri/capabilities/*.json` 中对应的 `allow-*` 权限，并执行会真实触发该 API 的 Tauri 运行时冒烟；`type-check`、浏览器单测和 `cargo check` 不能替代 capability 验证。
 12. **复诊配药确认事实门禁**：动态确认项可以由模型生成并默认推荐，但推荐值不得在医生点击最终确认前写入现病史；文字/语音补充是医生独立补充说明，不得反向重生成或改写确认项。最终现病史只消费已确认 `recordText`、模型压缩后的医生补充和必要历史事实，禁止直接原样拼接冗余口语、库存、推荐方案或模型未确认推断；药品在正文中只保留规范名称。
 13. **PHIS 历史处方属性来源**：药品一次剂量、频次、用法、天数、总量和包装单位优先读取 `loadClinicMedicalRecord.presList[].presSubList[]`，在 `services/his` Adapter 内映射为中性字段；`orderList` 只作医嘱分类、检验检查关联和缺失兜底。不得把 `takeDays` 等 PHIS 命名字段加入中性 DTO，也不得在无法按 `idOrd / idMedPro / 唯一规范药名` 关联时猜测继承。
+14. **多慢病复诊范围门禁**：患者历史存在多个慢病时，确认计划、病历生成、初始诊断和用药推荐必须只消费医生已确认的 scoped candidate；未选慢病的诊断、就诊和药品不得混入。同次就诊含多慢病且 HIS 无处方-诊断归属关系时，部分选中不得自动沿用该次处方。
 
 ## 推荐提交流程
 

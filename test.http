@@ -57,9 +57,9 @@ cookie: tk=6a38f7abc1946b430432fa55
 ### AI报告信息上下文获取(正式环境)
 POST http://192.168.204.13:30010/phis/api/phis.aiInpatientEmrContextService/buildOutpatientFollowUpReportResults
 Content-Type: application/json
-cookie: tk=6a4450eddb972f0001dbc52f
+cookie: tk=6a4450e19713ac00013eda7c
 
-[{"idVis":"6a4c3b1ca884e1000130b7ff","idPi":"66084e5b2d699a12a8b3d881"}]
+[{"idVis":"6a717bf62f6ffb00014b948b","idPi":"66084e5e2d699a12a8b407eb"}]
 
 ### 门诊上下文
 POST http://192.168.204.13:30010/phis/api/phis.aiInpatientEmrContextService/buildOutpatientFollowUpContext

@@ -911,6 +911,7 @@ export class PhisHisAdapter implements HisAdapter {
       this.service.queryPatientVisitHistory(idPi, {
         limit: query.limit ?? 5,
         idVis: query.currentVisitId,
+        dtBgn: query.dateRange,
       }).catch((error) => {
         console.warn('[PhisHisAdapter] queryPatientVisitHistory failed', error);
         return [] as HisVisitHistoryItem[];

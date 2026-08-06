@@ -28,6 +28,7 @@ import {
 } from '@/utils/patientContext';
 import {
   assessChronicRefillCandidate,
+  buildChronicRefillHistoryQuery,
   type RiskItem,
 } from '@features/reception-risk';
 import {
@@ -163,9 +164,10 @@ async function hydratePatientContextFromHis(
   }
 
   const hisInfo = await adapter.fetchPatientInfo(patientId);
+  const chronicRefillHistoryQuery = buildChronicRefillHistoryQuery();
   const hisHistory = await adapter.fetchPatientHistory(patientId, {
     currentVisitId: nextVisitId,
-    limit: 5,
+    ...chronicRefillHistoryQuery,
   });
 
   // 拉取本次申请单状态；applyList.items.sdApply=3 表示检验/检查已出报告。

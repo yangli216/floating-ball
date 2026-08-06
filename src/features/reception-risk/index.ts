@@ -5,10 +5,18 @@ export { generateChronicRefillRecord } from './api/chronicRefillRecord';
 export { generateChronicRefillConfirmationPlan } from './api/chronicRefillConfirmation';
 export {
   assessChronicRefillCandidate,
+  getChronicRefillConditionOptions,
   isReportFollowUpIntent,
+  scopeChronicRefillCandidate,
 } from './lib/chronicRefillAssessment';
+export {
+  buildChronicRefillHistoryQuery,
+  CHRONIC_REFILL_HISTORY_LOOKBACK_DAYS,
+  CHRONIC_REFILL_HISTORY_QUERY_LIMIT,
+} from './lib/chronicRefillHistoryWindow';
 export type {
   ChronicRefillCandidate,
+  ChronicRefillConditionOption,
   CurrentEncounterIntentContext,
 } from './lib/chronicRefillAssessment';
 export { buildChronicRefillInventoryTreatments } from './lib/chronicRefillInventory';

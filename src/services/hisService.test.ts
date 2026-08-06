@@ -10,17 +10,19 @@ describe('HisService queryPatientVisitHistory', () => {
     });
 
     await service.queryPatientVisitHistory('patient-1', {
-      limit: 5,
+      limit: 1000,
       idVis: 'visit-current',
+      dtBgn: ['2026-05-06 00:00:00', '2026-08-04 23:59:59'],
     });
 
     expect(post).toHaveBeenCalledWith(
       'api/phis.aiAdapterService/queryVisitHistory',
       [{
-        limit: 5,
+        limit: 1000,
         params: {
           idPi: 'patient-1',
           idVis: 'visit-current',
+          dtBgn: ['2026-05-06 00:00:00', '2026-08-04 23:59:59'],
         },
       }],
     );

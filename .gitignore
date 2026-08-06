@@ -41,6 +41,9 @@ CONSULTATION_UX_IMPROVEMENTS.md
 QUICK_REFERENCE.md
 design-system/ai-medical-assistant/MASTER.md
 docs/*
+!docs/architecture/
+!docs/architecture/README.md
+!docs/architecture/*.png
 !docs/frontend-file-structure-plan.md
 !docs/frontend-reuse-architecture.md
 !docs/frontend-ui-reference.md

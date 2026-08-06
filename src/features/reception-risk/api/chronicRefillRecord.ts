@@ -236,7 +236,8 @@ export async function generateChronicRefillRecord(
         role: 'system',
         content: [
           '你是基层门诊慢性病复诊配药病历助手。',
-          '根据患者最近3次就诊中的慢病就诊记录和配药信息生成本次可编辑病历草稿，不得编造当前症状、生命体征、检查结果或病情稳定程度。',
+          '慢病范围已由医生确认；主诉、现病史、诊断和推荐用药只能围绕已选慢病，不得加入患者其他慢病。',
+          '根据患者近90天就诊中的慢病就诊记录和配药信息生成本次可编辑病历草稿，不得编造当前症状、生命体征、检查结果或病情稳定程度。',
           '主诉应写明具体慢病和“复诊配药”目的。',
           '如已提供本次医生确认信息，现病史只能使用其中带有病历事实的确认项和医生补充原文；不得自行补写病情稳定、规律服药、无不适或监测结果。',
           '医生补充原文是本次医生明确提供的病历依据。请将其压缩为supplementRecordText，保留临床事实、去掉口语重复，不得改变事实含义。',
@@ -261,12 +262,12 @@ export async function generateChronicRefillRecord(
         content: [
           `患者：${getPatientContextName(patient)}，${getPatientContextGenderText(patient)}，${getPatientContextAgeText(patient)}`,
           `过敏史：${getPatientContextAllergyHistory(patient) || '未记录'}`,
-          `历史临床诊断：${candidate.diagnoses.join('、')}`,
+          `医生已确认的本次慢病：${candidate.diagnoses.join('、')}`,
           `慢病分类（仅用于场景识别）：${candidate.diagnosisGroups.join('、')}`,
           `历史慢病配药：${candidate.medicationEvidenceText}`,
           `当前库存内可续方药品：${buildMedicationSummary(availableMedicationNames)}`,
           inventoryContext.promptContext,
-          '最近3次中的慢病就诊依据：',
+          '近90天内的慢病就诊依据：',
           buildHistoryEvidence(candidate),
           '本次医生已确认信息：',
           confirmation?.answers.length

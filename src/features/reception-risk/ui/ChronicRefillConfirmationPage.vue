@@ -10,7 +10,10 @@ import { getPatientContextName } from '@/utils/patientContext';
 import { generateChronicRefillConfirmationPlan } from '../api/chronicRefillConfirmation';
 import { generateChronicRefillRecord } from '../api/chronicRefillRecord';
 import { useChronicRefillConfirmation } from '../model/useChronicRefillConfirmation';
-import type { ChronicRefillCandidate } from '../lib/chronicRefillAssessment';
+import type {
+  ChronicRefillCandidate,
+  ChronicRefillConditionOption,
+} from '../lib/chronicRefillAssessment';
 
 const props = defineProps<{
   patient: AppPatient;
@@ -61,11 +64,18 @@ async function handleClose(): Promise<void> {
   emit('close');
 }
 
+function conditionStatus(condition: ChronicRefillConditionOption): string {
+  if (condition.medicationEvidenceScope === 'shared') return '同次多病种处方，需合并确认';
+  return condition.hasMedicationEvidence ? '有历史用药参考' : '暂无历史用药参考';
+}
+
 onMounted(() => {
   trackClick('chronic_refill_confirmation_open', {
     diagnosisCount: props.candidate.diagnoses.length,
   });
-  void confirmation.loadPlan();
+  if (confirmation.conditionOptions.length === 1) {
+    void confirmation.confirmConditions();
+  }
 });
 
 onBeforeUnmount(() => {
@@ -87,7 +97,73 @@ onBeforeUnmount(() => {
     </header>
 
     <div class="page-body">
-      <div class="intro-row">
+      <section class="condition-card" aria-labelledby="condition-heading">
+        <div class="condition-heading-row">
+          <div>
+            <h2 id="condition-heading">确认本次复诊慢病</h2>
+            <p>可多选；病历、诊断和用药将只基于已选慢病生成。</p>
+          </div>
+          <button
+            v-if="confirmation.conditionsConfirmed.value"
+            type="button"
+            class="text-button"
+            :disabled="confirmation.isBusy.value"
+            @click="confirmation.resetConditions"
+          >
+            <Icon icon="lucide:pencil" size="14" />
+            重新选择
+          </button>
+        </div>
+
+        <div class="condition-grid" role="group" aria-label="本次复诊慢病类型">
+          <button
+            v-for="condition in confirmation.conditionOptions"
+            :key="condition.id"
+            type="button"
+            :class="[
+              'condition-option',
+              {
+                selected: confirmation.selectedConditionIds.value.includes(condition.id),
+                locked: confirmation.conditionsConfirmed.value,
+              },
+            ]"
+            role="checkbox"
+            :aria-checked="confirmation.selectedConditionIds.value.includes(condition.id)"
+            :disabled="confirmation.conditionsConfirmed.value"
+            @click="confirmation.toggleCondition(condition.id)"
+          >
+            <span class="condition-check" aria-hidden="true">
+              <Icon
+                :icon="confirmation.selectedConditionIds.value.includes(condition.id) ? 'lucide:check' : 'lucide:plus'"
+                size="14"
+              />
+            </span>
+            <span class="condition-copy">
+              <strong>{{ condition.diagnosis }}</strong>
+              <small>
+                {{ condition.diagnosisGroup !== condition.diagnosis ? `${condition.diagnosisGroup} · ` : '' }}{{ conditionStatus(condition) }}
+              </small>
+            </span>
+          </button>
+        </div>
+
+        <div v-if="!confirmation.conditionsConfirmed.value" class="condition-actions">
+          <span v-if="confirmation.conditionOptions.length > 1">请根据本次就诊目的选择，不必勾选患者所有慢病。</span>
+          <span v-else>已识别到单一慢病，正在生成确认项。</span>
+          <button
+            v-if="confirmation.conditionOptions.length > 1"
+            type="button"
+            class="confirm-condition-button"
+            :disabled="!confirmation.canConfirmConditions.value"
+            @click="confirmation.confirmConditions"
+          >
+            <Icon icon="lucide:arrow-right" size="15" />
+            确认慢病并继续
+          </button>
+        </div>
+      </section>
+
+      <div v-if="confirmation.conditionsConfirmed.value" class="intro-row">
         <div>
           <strong>{{ confirmation.plan.value?.summary || '正在结合历史病历生成最少确认项' }}</strong>
           <p>推荐项已预选；点击生成即表示本次问诊已确认当前选择。</p>
@@ -152,7 +228,7 @@ onBeforeUnmount(() => {
         </article>
       </div>
 
-      <section class="supplement-card" aria-labelledby="supplement-heading">
+      <section v-if="confirmation.plan.value" class="supplement-card" aria-labelledby="supplement-heading">
         <div class="supplement-heading-row">
           <div>
             <h2 id="supplement-heading">补充本次问诊信息</h2>
@@ -200,7 +276,9 @@ onBeforeUnmount(() => {
       >
         <Icon v-if="confirmation.generatingRecord.value" icon="lucide:loader-circle" size="17" class="spin" />
         <Icon v-else icon="lucide:file-check-2" size="17" />
-        {{ confirmation.generatingRecord.value ? '正在生成病历' : '按当前选择生成病历' }}
+        {{ confirmation.generatingRecord.value
+          ? '正在生成病历'
+          : confirmation.conditionsConfirmed.value ? '按当前选择生成病历' : '请先确认慢病类型' }}
       </button>
     </footer>
   </section>
@@ -266,6 +344,80 @@ onBeforeUnmount(() => {
   justify-content: space-between;
   gap: 12px;
 }
+
+.condition-card {
+  padding: 14px;
+  border: 1px solid #bfdbfe;
+  border-radius: 12px;
+  background: #fff;
+  box-shadow: 0 2px 8px rgba(15, 23, 42, 0.035);
+}
+.condition-heading-row,
+.condition-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.condition-heading-row h2 { margin: 0; font-size: 14px; }
+.condition-heading-row p { margin: 4px 0 0; color: #64748b; font-size: 11px; }
+.condition-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  margin-top: 12px;
+}
+.condition-option {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 9px;
+  padding: 10px;
+  border: 1px solid #dbe3ee;
+  border-radius: 10px;
+  color: #334155;
+  background: #fff;
+  cursor: pointer;
+  text-align: left;
+}
+.condition-option:hover:not(:disabled) { border-color: #93c5fd; background: #f8fbff; }
+.condition-option.selected { border-color: #3b82f6; background: #eff6ff; }
+.condition-option.locked:not(.selected) { display: none; }
+.condition-check {
+  display: flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 7px;
+  color: #64748b;
+  background: #f1f5f9;
+}
+.condition-option.selected .condition-check { color: #fff; background: #2563eb; }
+.condition-copy { display: flex; min-width: 0; flex-direction: column; gap: 2px; }
+.condition-copy strong { overflow: hidden; font-size: 13px; text-overflow: ellipsis; white-space: nowrap; }
+.condition-copy small { color: #64748b; font-size: 10px; }
+.condition-actions { margin-top: 11px; }
+.condition-actions > span { color: #64748b; font-size: 11px; }
+.confirm-condition-button {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-height: 34px;
+  padding: 6px 11px;
+  border: 0;
+  border-radius: 9px;
+  color: #fff;
+  background: #2563eb;
+  cursor: pointer;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 600;
+}
+.confirm-condition-button:disabled { cursor: not-allowed; opacity: 0.5; }
 .intro-row strong { font-size: 14px; }
 .intro-row p { margin: 4px 0 0; color: #64748b; font-size: 12px; }
 

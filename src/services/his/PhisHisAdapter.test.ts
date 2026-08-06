@@ -3,6 +3,26 @@ import type { HisService } from '../hisService';
 import { PhisHisAdapter } from './PhisHisAdapter';
 
 describe('PhisHisAdapter.fetchPatientHistory', () => {
+  it('forwards the bounded history date range and current visit to PHIS', async () => {
+    const service = {
+      queryPatientAllergy: vi.fn().mockResolvedValue([]),
+      queryPatientVisitHistory: vi.fn().mockResolvedValue([]),
+      loadClinicMedicalRecord: vi.fn(),
+    } as unknown as HisService;
+
+    await new PhisHisAdapter(service).fetchPatientHistory('patient-1', {
+      currentVisitId: 'visit-current',
+      limit: 1000,
+      dateRange: ['2026-05-06 00:00:00', '2026-08-04 23:59:59'],
+    });
+
+    expect(service.queryPatientVisitHistory).toHaveBeenCalledWith('patient-1', {
+      limit: 1000,
+      idVis: 'visit-current',
+      dtBgn: ['2026-05-06 00:00:00', '2026-08-04 23:59:59'],
+    });
+  });
+
   it('maps medication orders and reported applications into neutral history', async () => {
     const service = {
       queryPatientAllergy: vi.fn().mockResolvedValue([]),

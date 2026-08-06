@@ -41,6 +41,7 @@ export async function generateChronicRefillConfirmationPlan(
         role: 'system',
         content: [
           '你是基层门诊慢病复诊配药的确认计划助手。',
+          '慢病范围已由医生确认；只能围绕“历史临床诊断”中的已选慢病提问，不得扩展到患者其他慢病。',
           '不要直接写完整病历；根据当前上下文动态生成最少且必要的3到5个单选确认项，减少医生操作。',
           '问题应覆盖真正影响本次现病史和续方安全的信息，例如当前实际用药、依从性、控制或监测情况、疾病相关不适、药物不良反应；具体问法和选项必须由当前疾病与上下文决定，不使用固定病种模板。',
           '每项提供2到4个互斥选项、recommendedValue、confidence、evidence和basis。',
@@ -55,7 +56,7 @@ export async function generateChronicRefillConfirmationPlan(
         role: 'user',
         content: [
           `患者基本条件：${getPatientContextGenderText(patient)}，${getPatientContextAgeText(patient)}（仅用于决定问题，不得写进recordText）`,
-          `历史临床诊断：${candidate.diagnoses.join('、')}`,
+          `医生已确认的本次慢病：${candidate.diagnoses.join('、')}`,
           `历史用药：${getChronicRefillNarrativeMedicationNames(candidate).join('、') || '未取得'}`,
           '最近慢病就诊证据：',
           buildHistoryEvidence(candidate) || '无可用病历正文',

@@ -3,6 +3,7 @@ import type { HisVisitRecord } from '@/services/his/types';
 import {
   assessChronicRefillCandidate,
   isReportFollowUpIntent,
+  scopeChronicRefillCandidate,
 } from './chronicRefillAssessment';
 
 const DAY = 24 * 60 * 60 * 1000;
@@ -15,7 +16,7 @@ function history(visits: HisVisitRecord[]) {
 }
 
 describe('assessChronicRefillCandidate', () => {
-  it('accepts one chronic visit with medication in the latest three visits', () => {
+  it('accepts one chronic visit with medication in the queried history window', () => {
     const now = new Date('2026-06-25T08:00:00+08:00').getTime();
     const result = assessChronicRefillCandidate(history([
       {
@@ -37,7 +38,7 @@ describe('assessChronicRefillCandidate', () => {
     expect(result?.medicationEvidenceText).toContain('阿司匹林肠溶片');
   });
 
-  it('collects chronic visits and medications from the latest three visits without requiring repetition', () => {
+  it('collects chronic visits and medications from the queried history window without requiring repetition', () => {
     const now = new Date('2026-06-25T08:00:00+08:00').getTime();
     const result = assessChronicRefillCandidate(history([
       {
@@ -66,6 +67,65 @@ describe('assessChronicRefillCandidate', () => {
       '盐酸二甲双胍片 0.5g',
     ]);
     expect(result?.chronicVisits).toHaveLength(2);
+    expect(result?.conditions).toEqual([
+      expect.objectContaining({ id: '高血压', diagnosis: '高血压', diagnosisGroup: '高血压' }),
+      expect.objectContaining({ id: '糖尿病', diagnosis: '糖尿病', diagnosisGroup: '糖尿病' }),
+    ]);
+  });
+
+  it('scopes a multi-condition candidate to the chronic disease confirmed by the doctor', () => {
+    const now = new Date('2026-06-25T08:00:00+08:00').getTime();
+    const candidate = assessChronicRefillCandidate(history([
+      {
+        visitTime: now - 7 * DAY,
+        diagnoses: ['高血压病'],
+        medications: ['苯磺酸氨氯地平片'],
+      },
+      {
+        visitTime: now - 35 * DAY,
+        diagnoses: ['2型糖尿病'],
+        medications: ['盐酸二甲双胍片'],
+      },
+    ]));
+
+    const scoped = scopeChronicRefillCandidate(candidate!, ['高血压']);
+
+    expect(scoped).toMatchObject({
+      diagnosis: '高血压病',
+      diagnoses: ['高血压病'],
+      diagnosisGroups: ['高血压'],
+      medications: ['苯磺酸氨氯地平片'],
+      chronicVisitCount: 1,
+    });
+    expect(scoped?.chronicVisits[0].diagnoses).toEqual(['高血压病']);
+    expect(scoped?.evidenceText).not.toContain('糖尿病');
+    expect(scoped?.medications).not.toContain('盐酸二甲双胍片');
+  });
+
+  it('does not inherit an ambiguous mixed prescription when only part of that visit conditions are selected', () => {
+    const now = new Date('2026-06-25T08:00:00+08:00').getTime();
+    const candidate = assessChronicRefillCandidate(history([{
+      visitTime: now - 7 * DAY,
+      diagnoses: ['高血压', '2型糖尿病'],
+      medications: ['苯磺酸氨氯地平片', '盐酸二甲双胍片'],
+      medicationOrders: [
+        { orderId: 'hypertension-med', name: '苯磺酸氨氯地平片' },
+        { orderId: 'diabetes-med', name: '盐酸二甲双胍片' },
+      ],
+    }]));
+
+    const hypertensionOnly = scopeChronicRefillCandidate(candidate!, ['高血压']);
+    const bothConditions = scopeChronicRefillCandidate(candidate!, ['高血压', '糖尿病']);
+
+    expect(candidate?.conditions?.map((condition) => condition.medicationEvidenceScope)).toEqual([
+      'shared',
+      'shared',
+    ]);
+    expect(hypertensionOnly?.chronicVisits).toHaveLength(1);
+    expect(hypertensionOnly?.medications).toEqual([]);
+    expect(hypertensionOnly?.medicationOrders).toBeUndefined();
+    expect(bothConditions?.medications).toEqual(['苯磺酸氨氯地平片', '盐酸二甲双胍片']);
+    expect(bothConditions?.medicationOrders).toHaveLength(2);
   });
 
   it('keeps the latest structured prescription attributes for each medicine', () => {
@@ -147,12 +207,16 @@ describe('assessChronicRefillCandidate', () => {
     expect(result?.diagnosisGroups).toEqual(['糖尿病']);
   });
 
-  it('ignores chronic visits outside the latest three visits', () => {
+  it('keeps a prescription from 90 days ago even when five newer acute visits would have pushed it beyond the old limit', () => {
     const now = new Date('2026-06-25T08:00:00+08:00').getTime();
     const result = assessChronicRefillCandidate(history([
       {
         visitTime: now - 5 * DAY,
         diagnoses: ['普通感冒'],
+      },
+      {
+        visitTime: now - 10 * DAY,
+        diagnoses: ['急性咽炎'],
       },
       {
         visitTime: now - 20 * DAY,
@@ -163,13 +227,18 @@ describe('assessChronicRefillCandidate', () => {
         diagnoses: ['外伤'],
       },
       {
-        visitTime: now - 40 * DAY,
+        visitTime: now - 45 * DAY,
+        diagnoses: ['急性支气管炎'],
+      },
+      {
+        visitTime: now - 90 * DAY,
         diagnoses: ['高血压'],
         medications: ['苯磺酸氨氯地平片'],
       },
     ]));
 
-    expect(result).toBeNull();
+    expect(result?.diagnosis).toBe('高血压');
+    expect(result?.medications).toEqual(['苯磺酸氨氯地平片']);
   });
 
   it('keeps the chronic candidate but excludes medication from an unrelated acute visit', () => {

@@ -19,6 +19,18 @@ export interface ChronicRefillCandidate {
   diagnosisEvidenceText: string;
   medicationEvidenceText: string;
   evidenceText: string;
+  /** 供医生确认本次复诊范围的慢病选项。 */
+  conditions?: ChronicRefillConditionOption[];
+}
+
+export interface ChronicRefillConditionOption {
+  /** 以稳定慢病分组作为选择标识，不替代临床诊断名称。 */
+  id: string;
+  diagnosis: string;
+  diagnosisGroup: string;
+  hasMedicationEvidence: boolean;
+  /** direct 可按单一慢病就诊安全归属；shared 来自同次多慢病就诊。 */
+  medicationEvidenceScope?: 'direct' | 'shared' | 'none';
 }
 
 export interface CurrentEncounterIntentContext {
@@ -207,10 +219,123 @@ function normalizeMedicationName(value: string): string {
     .trim();
 }
 
-function latestVisits(history: HisPatientHistory | null | undefined): HisVisitRecord[] {
+function orderedVisits(history: HisPatientHistory | null | undefined): HisVisitRecord[] {
   return [...(history?.visits || [])]
-    .sort((left, right) => right.visitTime - left.visitTime)
-    .slice(0, 3);
+    .sort((left, right) => right.visitTime - left.visitTime);
+}
+
+function getVisitChronicMatches(visit: HisVisitRecord): ChronicDiagnosisMatch[] {
+  const allowGenericFallback = hasVisitMedicationEvidence(visit);
+  return getVisitDiagnosisEntries(visit)
+    .map((diagnosis) => findChronicDiagnosis(diagnosis, allowGenericFallback))
+    .filter((item): item is ChronicDiagnosisMatch => Boolean(item));
+}
+
+function collectMedicationEvidence(visits: HisVisitRecord[]): {
+  medications: string[];
+  medicationOrders?: HisHistoricalMedication[];
+} {
+  const medications = new Map<string, string>();
+  const medicationOrders = new Map<string, HisHistoricalMedication>();
+  visits.forEach((visit) => {
+    (visit.medicationOrders || []).forEach((medication) => {
+      const normalized = normalizeMedicationName(medication.name);
+      if (!normalized || medicationOrders.has(normalized)) return;
+      medicationOrders.set(normalized, medication);
+    });
+    (visit.medications || []).forEach((medication) => {
+      const normalized = normalizeMedicationName(medication);
+      if (!normalized || medications.has(normalized)) return;
+      medications.set(normalized, medication.trim());
+    });
+  });
+
+  const normalizedOrders = Array.from(medicationOrders.values()).slice(0, 8);
+  return {
+    medications: Array.from(medications.values()).slice(0, 8),
+    medicationOrders: normalizedOrders.length > 0 ? normalizedOrders : undefined,
+  };
+}
+
+export function getChronicRefillConditionOptions(
+  candidate: ChronicRefillCandidate,
+): ChronicRefillConditionOption[] {
+  if (candidate.conditions?.length) return candidate.conditions;
+  return candidate.diagnoses.map((diagnosis, index) => ({
+    id: candidate.diagnosisGroups[index] || diagnosis,
+    diagnosis,
+    diagnosisGroup: candidate.diagnosisGroups[index] || diagnosis,
+    hasMedicationEvidence: candidate.medications.length > 0,
+    medicationEvidenceScope: candidate.medications.length > 0 ? 'direct' : 'none',
+  }));
+}
+
+/**
+ * 按医生确认的慢病范围裁剪后续病历与用药上下文。
+ * 同次就诊含多个慢病且处方无法归属时，只有全部相关慢病均被选中才继承药品。
+ */
+export function scopeChronicRefillCandidate(
+  candidate: ChronicRefillCandidate,
+  selectedConditionIds: string[],
+): ChronicRefillCandidate | null {
+  const options = getChronicRefillConditionOptions(candidate);
+  const selectedIds = new Set(selectedConditionIds);
+  const selectedConditions = options.filter((condition) => selectedIds.has(condition.id));
+  if (selectedConditions.length === 0) return null;
+
+  const selectedGroups = new Set(selectedConditions.map((condition) => condition.diagnosisGroup));
+  const visitMatches = new Map<HisVisitRecord, ChronicDiagnosisMatch[]>();
+  const relatedVisits = candidate.chronicVisits.filter((visit) => {
+    const matches = getVisitChronicMatches(visit);
+    visitMatches.set(visit, matches);
+    return matches.some((match) => selectedGroups.has(match.groupName));
+  });
+  const chronicVisits = relatedVisits.map((visit) => {
+    const matches = visitMatches.get(visit) || [];
+    const groups = new Set((visitMatches.get(visit) || []).map((match) => match.groupName));
+    const canInheritMedication = groups.size > 0
+      && Array.from(groups).every((group) => selectedGroups.has(group));
+    const selectedDiagnosisNames = matches
+      .filter((match) => selectedGroups.has(match.groupName))
+      .map((match) => match.diagnosisName);
+    return {
+      ...visit,
+      diagnoses: Array.from(new Set(selectedDiagnosisNames)),
+      diagnosisEntries: visit.diagnosisEntries?.filter((diagnosis) => {
+        const match = findChronicDiagnosis(diagnosis, hasVisitMedicationEvidence(visit));
+        return Boolean(match && selectedGroups.has(match.groupName));
+      }),
+      medications: canInheritMedication ? visit.medications : undefined,
+      medicationOrders: canInheritMedication ? visit.medicationOrders : undefined,
+    };
+  });
+  const selectedAllConditions = options.every((condition) => selectedIds.has(condition.id));
+  const medicationEvidence = chronicVisits.length > 0
+    ? collectMedicationEvidence(chronicVisits)
+    : {
+      medications: selectedAllConditions ? candidate.medications : [],
+      medicationOrders: selectedAllConditions ? candidate.medicationOrders : undefined,
+    };
+  const diagnoses = selectedConditions.map((condition) => condition.diagnosis);
+  const diagnosisGroups = selectedConditions.map((condition) => condition.diagnosisGroup);
+  const diagnosisEvidenceText = `近期历史就诊记录有“${diagnoses.join('、')}”诊断`;
+  const medicationEvidenceText = medicationEvidence.medications.length > 0
+    ? `历史用药记录：${medicationEvidence.medications.join('、')}`
+    : '未获取到可确认的历史用药记录';
+
+  return {
+    diagnosis: diagnoses[0],
+    diagnoses,
+    diagnosisGroups,
+    medications: medicationEvidence.medications,
+    medicationOrders: medicationEvidence.medicationOrders,
+    chronicVisitCount: chronicVisits.length,
+    chronicVisits,
+    diagnosisEvidenceText,
+    medicationEvidenceText,
+    evidenceText: `${diagnosisEvidenceText}；${medicationEvidenceText}`,
+    conditions: selectedConditions,
+  };
 }
 
 export function assessChronicRefillCandidate(
@@ -220,14 +345,13 @@ export function assessChronicRefillCandidate(
 ): ChronicRefillCandidate | null {
   if (hasFollowUpReport || isReportFollowUpIntent(currentEncounter)) return null;
 
-  const visits = latestVisits(history);
+  const visits = orderedVisits(history);
   const diagnosisGroups: string[] = [];
   const preferredDiagnosisByGroup = new Map<string, ChronicDiagnosisMatch>();
+  const visitMatches = new Map<HisVisitRecord, ChronicDiagnosisMatch[]>();
   const chronicVisits = visits.filter((visit) => {
-    const allowGenericFallback = hasVisitMedicationEvidence(visit);
-    const visitDiagnoses = getVisitDiagnosisEntries(visit)
-      .map((diagnosis) => findChronicDiagnosis(diagnosis, allowGenericFallback))
-      .filter((item): item is ChronicDiagnosisMatch => Boolean(item));
+    const visitDiagnoses = getVisitChronicMatches(visit);
+    visitMatches.set(visit, visitDiagnoses);
     visitDiagnoses.forEach((diagnosis) => {
       const current = preferredDiagnosisByGroup.get(diagnosis.groupName);
       if (!current) {
@@ -246,24 +370,8 @@ export function assessChronicRefillCandidate(
   const chronicDiagnoses = diagnosisGroups
     .map((groupName) => preferredDiagnosisByGroup.get(groupName)?.diagnosisName || groupName);
 
-  const medications = new Map<string, string>();
-  const medicationOrders = new Map<string, HisHistoricalMedication>();
-  chronicVisits.forEach((visit) => {
-    (visit.medicationOrders || []).forEach((medication) => {
-      const normalized = normalizeMedicationName(medication.name);
-      if (!normalized || medicationOrders.has(normalized)) return;
-      medicationOrders.set(normalized, medication);
-    });
-    (visit.medications || []).forEach((medication) => {
-      const normalized = normalizeMedicationName(medication);
-      if (!normalized) return;
-      if (!medications.has(normalized)) {
-        medications.set(normalized, medication.trim());
-      }
-    });
-  });
-  const chronicMedications = Array.from(medications.values()).slice(0, 8);
-  const chronicMedicationOrders = Array.from(medicationOrders.values()).slice(0, 8);
+  const medicationEvidence = collectMedicationEvidence(chronicVisits);
+  const chronicMedications = medicationEvidence.medications;
 
   const diagnosis = chronicDiagnoses[0];
   const diagnosisEvidenceText = `近期历史就诊记录有“${chronicDiagnoses.join('、')}”诊断`;
@@ -276,11 +384,29 @@ export function assessChronicRefillCandidate(
     diagnoses: chronicDiagnoses,
     diagnosisGroups,
     medications: chronicMedications,
-    medicationOrders: chronicMedicationOrders.length > 0 ? chronicMedicationOrders : undefined,
+    medicationOrders: medicationEvidence.medicationOrders,
     chronicVisitCount: chronicVisits.length,
     chronicVisits,
     diagnosisEvidenceText,
     medicationEvidenceText,
     evidenceText: `${diagnosisEvidenceText}；${medicationEvidenceText}`,
+    conditions: diagnosisGroups.map((groupName, index) => {
+      const medicationVisits = chronicVisits.filter((visit) => (
+        visitMatches.get(visit)?.some((match) => match.groupName === groupName)
+        && hasVisitMedicationEvidence(visit)
+      ));
+      const hasDirectMedicationEvidence = medicationVisits.some((visit) => (
+        new Set((visitMatches.get(visit) || []).map((match) => match.groupName)).size === 1
+      ));
+      return {
+        id: groupName,
+        diagnosis: chronicDiagnoses[index],
+        diagnosisGroup: groupName,
+        hasMedicationEvidence: medicationVisits.length > 0,
+        medicationEvidenceScope: hasDirectMedicationEvidence
+          ? 'direct'
+          : (medicationVisits.length > 0 ? 'shared' : 'none'),
+      };
+    }),
   };
 }

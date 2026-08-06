@@ -425,6 +425,8 @@ export interface HisPatientHistoryQuery {
   currentVisitId?: string;
   /** 最大返回历史就诊数。 */
   limit?: number;
+  /** 业务时间窗；具体 HIS Adapter 负责映射为厂商查询参数。 */
+  dateRange?: [string, string];
 }
 
 /**

@@ -5,7 +5,11 @@ import {
   buildConfirmedAnswers,
   type ChronicRefillConfirmationPlan,
 } from '../lib/chronicRefillConfirmation';
-import type { ChronicRefillCandidate } from '../lib/chronicRefillAssessment';
+import {
+  getChronicRefillConditionOptions,
+  scopeChronicRefillCandidate,
+  type ChronicRefillCandidate,
+} from '../lib/chronicRefillAssessment';
 
 export interface ChronicRefillConfirmationDependencies {
   patient: AppPatient;
@@ -33,6 +37,11 @@ export function useChronicRefillConfirmation(
 ) {
   const plan = ref<ChronicRefillConfirmationPlan | null>(null);
   const selections = ref<Record<string, string>>({});
+  const conditionOptions = getChronicRefillConditionOptions(dependencies.candidate);
+  const selectedConditionIds = ref<string[]>(
+    conditionOptions.length === 1 ? [conditionOptions[0].id] : [],
+  );
+  const confirmedCandidate = ref<ChronicRefillCandidate | null>(null);
   const supplementText = ref('');
   const loadingPlan = ref(false);
   const generatingRecord = ref(false);
@@ -49,11 +58,26 @@ export function useChronicRefillConfirmation(
   ));
 
   const canGenerate = computed(() => Boolean(
-    plan.value
+    confirmedCandidate.value
+    && plan.value
     && plan.value.items.length > 0
     && !isBusy.value
     && !isRecording.value,
   ));
+
+  const conditionsConfirmed = computed(() => Boolean(confirmedCandidate.value));
+  const canConfirmConditions = computed(() => (
+    selectedConditionIds.value.length > 0
+    && !isBusy.value
+    && !isRecording.value
+  ));
+
+  function toggleCondition(conditionId: string): void {
+    if (conditionsConfirmed.value) return;
+    selectedConditionIds.value = selectedConditionIds.value.includes(conditionId)
+      ? selectedConditionIds.value.filter((id) => id !== conditionId)
+      : [...selectedConditionIds.value, conditionId];
+  }
 
   function selectOption(itemId: string, value: string): void {
     selections.value = { ...selections.value, [itemId]: value };
@@ -67,12 +91,21 @@ export function useChronicRefillConfirmation(
   }
 
   async function loadPlan(): Promise<void> {
+    const scopedCandidate = confirmedCandidate.value || scopeChronicRefillCandidate(
+      dependencies.candidate,
+      selectedConditionIds.value,
+    );
+    if (!scopedCandidate) {
+      errorMessage.value = '请先选择本次复诊涉及的慢病';
+      return;
+    }
+    confirmedCandidate.value = scopedCandidate;
     loadingPlan.value = true;
     errorMessage.value = '';
     try {
       plan.value = await dependencies.generatePlan(
         dependencies.patient,
-        dependencies.candidate,
+        scopedCandidate,
       );
       applyRecommended();
     } catch (error) {
@@ -80,6 +113,22 @@ export function useChronicRefillConfirmation(
     } finally {
       loadingPlan.value = false;
     }
+  }
+
+  async function confirmConditions(): Promise<void> {
+    if (!canConfirmConditions.value) return;
+    plan.value = null;
+    selections.value = {};
+    await loadPlan();
+  }
+
+  function resetConditions(): void {
+    if (isBusy.value || isRecording.value) return;
+    confirmedCandidate.value = null;
+    plan.value = null;
+    selections.value = {};
+    supplementText.value = '';
+    errorMessage.value = '';
   }
 
   function startTimer(): void {
@@ -153,13 +202,13 @@ export function useChronicRefillConfirmation(
   }
 
   async function generateRecord(): Promise<ClinicalResultInput | null> {
-    if (!plan.value || !canGenerate.value) return null;
+    if (!plan.value || !confirmedCandidate.value || !canGenerate.value) return null;
     generatingRecord.value = true;
     errorMessage.value = '';
     try {
       return await dependencies.generateRecord(
         dependencies.patient,
-        dependencies.candidate,
+        confirmedCandidate.value,
         {
           supplementText: supplementText.value.trim() || undefined,
           answers: buildConfirmedAnswers(plan.value, selections.value),
@@ -176,6 +225,9 @@ export function useChronicRefillConfirmation(
   return {
     plan,
     selections,
+    conditionOptions,
+    selectedConditionIds,
+    confirmedCandidate,
     supplementText,
     loadingPlan,
     generatingRecord,
@@ -185,7 +237,12 @@ export function useChronicRefillConfirmation(
     errorMessage,
     isBusy,
     canGenerate,
+    conditionsConfirmed,
+    canConfirmConditions,
     loadPlan,
+    toggleCondition,
+    confirmConditions,
+    resetConditions,
     selectOption,
     applyRecommended,
     toggleVoiceSupplement,

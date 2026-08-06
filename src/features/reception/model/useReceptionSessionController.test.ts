@@ -33,7 +33,7 @@ describe('useReceptionSessionController', () => {
         chronicVisits: [],
         diagnosisEvidenceText: '近期历史就诊记录有“高血压”诊断',
         medicationEvidenceText: '历史用药记录：苯磺酸氨氯地平片',
-        evidenceText: '最近3次就诊中存在高血压慢病就诊和配药',
+        evidenceText: '近90天就诊中存在高血压慢病就诊和配药',
       },
     });
     session.finishAssessment();
