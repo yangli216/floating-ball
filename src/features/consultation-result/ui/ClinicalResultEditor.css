@@ -447,7 +447,7 @@
 }
 
 .vcn-left-panel > .section-heading {
-  display: none;
+  margin: -16px -18px 12px;
 }
 
 .decision-card > .section-heading {
@@ -507,27 +507,6 @@
   font-size: 14px;
   font-weight: 800;
 }
-
-.vcn-left-panel .section-title::before {
-  content: '';
-  width: 17px;
-  height: 17px;
-  border-radius: 5px;
-  background:
-    linear-gradient(180deg, rgba(15, 143, 123, 0.16), rgba(15, 143, 123, 0.08)),
-    #eef8f4;
-  border: 1px solid rgba(15, 143, 123, 0.22);
-}
-
-/* .section-title::before {
-  content: '';
-  display: inline-block;
-  width: 3px;
-  height: 14px;
-  background: #2B7FE3;
-  margin-right: 10px;
-  border-radius: 2px;
-} */
 
 .section-meta {
   flex-shrink: 0;
@@ -1705,8 +1684,8 @@
   }
 
   .vcn-left-panel > .section-heading {
-    margin: 0 0 10px;
-    padding: 0;
+    margin: -14px -16px 10px;
+    padding: 10px 14px;
   }
 
   .vcn-left-panel .record-fields {

@@ -369,6 +369,7 @@ const {
   hasCachedVoiceResult,
   handleVoiceStop,
   handleVoiceError,
+  abandonVoiceCapture: abandonVoiceCaptureRaw,
   cancelVoiceResult: cancelVoiceResultRaw,
 } = voiceConsultation;
 
@@ -380,6 +381,16 @@ const minimizedSessions = useMinimizedSessions();
 async function cancelVoiceResult(): Promise<void> {
   await cancelVoiceResultRaw();
   minimizedSessions.clear('voice');
+}
+
+async function abandonVoiceCapture(): Promise<void> {
+  await abandonVoiceCaptureRaw();
+  minimizedSessions.clear('voice');
+  if (!currentPatient.value) {
+    await exitWork('cancelled');
+    return;
+  }
+  await openReceptionCapsule(getCurrentReceptionWindowSize());
 }
 
 async function cancelSymptomConsultation(): Promise<void> {
@@ -994,6 +1005,7 @@ const openInsideCloudHome = async () => {
             :processing="isProcessingVoice"
             @stop="handleVoiceStop"
             @error="handleVoiceError"
+            @abandon="abandonVoiceCapture"
             @close="handleUserCollapse"
             @window-stage-change="windowTransition.resizeVoiceInteractionStage"
           />

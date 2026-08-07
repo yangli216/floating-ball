@@ -25,6 +25,7 @@ const {
   toggleRecording,
   transcribing,
   voiceButtonText,
+  waveformLevels,
 } = supplement;
 
 watch(
@@ -85,6 +86,25 @@ function confirm(): void {
           placeholder="例如：患者补充昨晚开始发热，最高 38.6℃，伴咽痛，无胸闷气促……"
         />
 
+        <div v-if="recording" class="recording-monitor" role="status" aria-live="polite">
+          <div class="recording-status">
+            <span class="recording-pulse" aria-hidden="true"></span>
+            <span>正在采集声音</span>
+          </div>
+          <div class="recording-waveform" aria-hidden="true">
+            <span
+              v-for="(level, index) in waveformLevels"
+              :key="index"
+              class="recording-waveform-bar"
+              :style="{
+                height: `${Math.round(5 + level * 23)}px`,
+                opacity: String(0.45 + level * 0.55),
+              }"
+            ></span>
+          </div>
+          <span class="recording-time">{{ recordingDuration }}</span>
+        </div>
+
         <div class="supplement-input-actions">
           <button
             class="voice-input-button"
@@ -99,7 +119,6 @@ function confirm(): void {
               size="16"
             />
             <span>{{ voiceButtonText }}</span>
-            <span v-if="recording" class="recording-time">{{ recordingDuration }}</span>
           </button>
           <span class="character-count">{{ text.length }}/2000</span>
         </div>
@@ -118,7 +137,7 @@ function confirm(): void {
             @click="confirm"
           >
             <Icon icon="lucide:sparkles" size="16" />
-            带补充重新生成
+            重新生成病历
           </button>
         </footer>
       </section>
@@ -232,6 +251,55 @@ function confirm(): void {
   margin-top: 10px;
 }
 
+.recording-monitor {
+  display: grid;
+  grid-template-columns: auto minmax(120px, 1fr) auto;
+  align-items: center;
+  gap: 14px;
+  min-height: 48px;
+  margin-top: 10px;
+  padding: 8px 12px;
+  border: 1px solid color-mix(in srgb, var(--color-primary, #0891b2) 24%, transparent);
+  border-radius: 11px;
+  background: color-mix(in srgb, var(--color-primary, #0891b2) 7%, #fff);
+  color: var(--color-text-primary, #164e63);
+}
+
+.recording-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.recording-pulse {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--color-danger, #dc2626);
+  box-shadow: 0 0 0 0 color-mix(in srgb, var(--color-danger, #dc2626) 38%, transparent);
+  animation: recording-pulse 1.4s ease-out infinite;
+}
+
+.recording-waveform {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+  height: 30px;
+  overflow: hidden;
+}
+
+.recording-waveform-bar {
+  width: 3px;
+  min-height: 3px;
+  border-radius: 999px;
+  background: linear-gradient(180deg, var(--color-primary, #0891b2), #38bdf8);
+  transition: height 80ms linear, opacity 80ms linear;
+}
+
 .voice-input-button {
   gap: 7px;
   padding: 8px 12px;
@@ -250,6 +318,9 @@ function confirm(): void {
 }
 
 .recording-time {
+  color: var(--color-text-secondary, #64748b);
+  font-size: 12px;
+  font-weight: 700;
   font-variant-numeric: tabular-nums;
 }
 
@@ -312,5 +383,20 @@ textarea:focus-visible {
 
 @keyframes spin {
   to { transform: rotate(360deg); }
+}
+
+@keyframes recording-pulse {
+  70% { box-shadow: 0 0 0 6px transparent; }
+  100% { box-shadow: 0 0 0 0 transparent; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .recording-pulse {
+    animation: none;
+  }
+
+  .recording-waveform-bar {
+    transition: none;
+  }
 }
 </style>

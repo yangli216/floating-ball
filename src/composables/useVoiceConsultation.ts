@@ -386,6 +386,17 @@ export function useVoiceConsultation(options: VoiceConsultationOptions) {
     exitWork('error');
   }
 
+  /**
+   * 医生在音频审核态主动放弃本轮语音问诊。
+   * 这里只负责业务状态与取消结果，返回患者胶囊由 App 的统一窗口出口编排。
+   */
+  async function abandonVoiceCapture(): Promise<void> {
+    trackClick('voice_recording_abandon', withConsultationId());
+    resetVoiceSessionState();
+    clearCache(resolveVoiceConsultationId(currentPatient.value));
+    await writeCancelledResult('用户主动放弃语音问诊采集');
+  }
+
   // ========== 结果处理 ==========
 
   /**
@@ -413,6 +424,7 @@ export function useVoiceConsultation(options: VoiceConsultationOptions) {
     hasCachedVoiceResult: (patient?: AppPatient | null) => hasVoiceConsultationCache(patient ?? currentPatient.value),
     handleVoiceStop,
     handleVoiceError,
+    abandonVoiceCapture,
     cancelVoiceResult,
   };
 }

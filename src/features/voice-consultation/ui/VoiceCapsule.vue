@@ -69,7 +69,7 @@
         <div class="avatar-wrapper">
           <img src="/robot-avatar.png" alt="AI Agent" />
         </div>
-        <span class="stopped-label">录音完成</span>
+        <span class="stopped-label">音频采集完成</span>
         <span class="timer">{{ formatTime(duration) }}</span>
         <span class="spacer"></span>
         <button class="ctl-btn" @click="isExpanded = !isExpanded" :title="isExpanded ? '收起' : '展开'">
@@ -93,9 +93,22 @@
       </div>
 
       <!-- Action buttons -->
-      <div class="stopped-actions">
-        <button class="action-btn cancel" @click="handleCancel">取消</button>
-        <button class="action-btn confirm" @click="handleConfirm" :disabled="!editableText.trim()">确认</button>
+      <div v-if="confirmingAbandon" class="stopped-actions abandon-confirmation">
+        <span class="abandon-confirmation-text">确认放弃本次语音问诊？</span>
+        <button class="action-btn compact" :disabled="isFinalizing" @click="confirmingAbandon = false">返回</button>
+        <button class="action-btn compact abandon-confirm" :disabled="isFinalizing" @click="handleAbandon">
+          {{ isFinalizing ? '处理中...' : '确认放弃' }}
+        </button>
+      </div>
+      <div v-else class="stopped-actions">
+        <button class="action-btn abandon" :disabled="isFinalizing" @click="requestAbandon">放弃</button>
+        <button class="action-btn resume" :disabled="isFinalizing" @click="handleContinue">
+          <Icon icon="lucide:mic" size="15" aria-hidden="true" />
+          继续采集
+        </button>
+        <button class="action-btn confirm" @click="handleConfirm" :disabled="isFinalizing || !editableText.trim()">
+          {{ isFinalizing ? '处理中...' : '确认' }}
+        </button>
       </div>
     </template>
   </div>
@@ -114,6 +127,10 @@ const getPrimaryColor = () => {
 };
 import { RealtimeSpeechService } from '@/services/aliyunSpeech';
 import Icon from '@shared/ui/Icon.vue';
+import {
+  appendVoiceTranscript,
+  mergeVoiceRecordingSegments,
+} from '../lib/voiceRecordingContinuation';
 
 const props = withDefaults(defineProps<{
   processing?: boolean;
@@ -125,6 +142,7 @@ const emit = defineEmits<{
   stop: [blob: Blob, transcriptionText: string];
   error: [error: any];
   close: [];
+  abandon: [];
   'window-stage-change': [stage: VoiceInteractionWindowStage];
 }>();
 
@@ -138,7 +156,13 @@ const prefersReducedMotion = ref(false);
 const isStopped = ref(false);
 const isExpanded = ref(false);
 const editableText = ref('');
+const isFinalizing = ref(false);
+const confirmingAbandon = ref(false);
 let stoppedBlob: Blob | null = null;
+let completedAudioSegments: Blob[] = [];
+let completedDurationSeconds = 0;
+let reviewedTranscriptPrefix = '';
+let currentSegmentTranscript = '';
 
 // Resize window when entering stopped state
 watch(isStopped, (stopped) => {
@@ -223,7 +247,13 @@ const resetRecordingState = () => {
   isStopped.value = false;
   isExpanded.value = false;
   editableText.value = '';
+  isFinalizing.value = false;
+  confirmingAbandon.value = false;
   stoppedBlob = null;
+  completedAudioSegments = [];
+  completedDurationSeconds = 0;
+  reviewedTranscriptPrefix = '';
+  currentSegmentTranscript = '';
   realtimeText.value = '';
   duration.value = 0;
   startTime.value = 0;
@@ -329,11 +359,20 @@ const drawVisualizer = () => {
   draw();
 };
 
-const startRecording = async () => {
+const startRecording = async (continueExisting = false) => {
   console.time('[VoiceCapsule] startRecording');
   try {
     await cleanupRecordingResources();
-    resetRecordingState();
+    if (!continueExisting) {
+      resetRecordingState();
+    } else {
+      isPaused.value = false;
+      isStopped.value = false;
+      isExpanded.value = false;
+      stoppedBlob = null;
+      currentSegmentTranscript = '';
+      realtimeText.value = reviewedTranscriptPrefix;
+    }
 
     // 先获取麦克风权限并开始录音，不阻塞在语音服务初始化上
     console.log('[VoiceCapsule] Requesting microphone access...');
@@ -346,7 +385,7 @@ const startRecording = async () => {
     startTime.value = Date.now();
     timerInterval = setInterval(() => {
         if (!isPaused.value) {
-            duration.value = Math.floor((Date.now() - startTime.value) / 1000);
+            duration.value = completedDurationSeconds + Math.floor((Date.now() - startTime.value) / 1000);
         }
     }, 1000);
     drawVisualizer();
@@ -356,7 +395,8 @@ const startRecording = async () => {
     // 后台初始化流式语音识别服务（不阻塞录音）
     speechService = new RealtimeSpeechService();
     speechService.start((text, _isFinal) => {
-      realtimeText.value = text;
+      currentSegmentTranscript = text;
+      realtimeText.value = appendVoiceTranscript(reviewedTranscriptPrefix, text);
     }).then(() => {
       // 语音服务就绪，开始发送音频
       audioRecorder.setOnAudioChunk((pcmData) => {
@@ -422,18 +462,16 @@ const handleStop = async () => {
       speechService = null;
     }
 
-    let finalTranscription = (transcription || realtimeText.value || '').trim();
-
-    // 与音频成对落盘到本地（音频 + 转写文本）
-    try {
-      await saveAudioForDebug(blob, finalTranscription);
-    } catch (e) {
-      console.warn('[VoiceCapsule] saveAudioForDebug failed', e);
-    }
+    const finalSegmentTranscription = (transcription || currentSegmentTranscript || '').trim();
+    const finalTranscription = appendVoiceTranscript(
+      reviewedTranscriptPrefix,
+      finalSegmentTranscription,
+    );
 
     // 进入已停止状态，允许医生审核/编辑文字
     stoppedBlob = blob;
     editableText.value = finalTranscription;
+    realtimeText.value = finalTranscription;
     isStopped.value = true;
     console.log('[VoiceCapsule] Entered stopped state for review');
   } catch (err) {
@@ -446,19 +484,58 @@ const handleStop = async () => {
   }
 };
 
-const handleConfirm = () => {
+const handleConfirm = async () => {
+  if (isFinalizing.value || !editableText.value.trim()) return;
   trackClick('voice_transcription_confirm');
-  if (stoppedBlob) {
-    emit('stop', stoppedBlob, editableText.value);
+  if (!stoppedBlob) return;
+
+  isFinalizing.value = true;
+  const segments = [...completedAudioSegments, stoppedBlob];
+  let finalBlob = stoppedBlob;
+  try {
+    finalBlob = await mergeVoiceRecordingSegments(segments);
+  } catch (error) {
+    console.warn('[VoiceCapsule] Failed to merge continued recording segments; using latest segment', error);
   }
+
+  try {
+    await saveAudioForDebug(finalBlob, editableText.value.trim());
+  } catch (error) {
+    console.warn('[VoiceCapsule] saveAudioForDebug failed', error);
+  }
+
+  emit('stop', finalBlob, editableText.value.trim());
 };
 
-const handleCancel = async () => {
-  trackClick('voice_transcription_cancel');
-  await cleanupRecordingResources();
-  resetRecordingState();
+const handleContinue = async () => {
+  if (isFinalizing.value) return;
+  confirmingAbandon.value = false;
+  trackClick('voice_transcription_continue', {
+    durationSeconds: duration.value,
+    completedSegments: completedAudioSegments.length + Number(Boolean(stoppedBlob)),
+  });
+
+  if (stoppedBlob?.size) {
+    completedAudioSegments.push(stoppedBlob);
+  }
+  reviewedTranscriptPrefix = editableText.value.trim();
+  completedDurationSeconds = duration.value;
   emit('window-stage-change', 'recording');
-  await startRecording();
+  await startRecording(true);
+};
+
+const requestAbandon = () => {
+  if (isFinalizing.value) return;
+  trackClick('voice_recording_abandon_request', { durationSeconds: duration.value });
+  confirmingAbandon.value = true;
+};
+
+const handleAbandon = async () => {
+  if (isFinalizing.value) return;
+  isFinalizing.value = true;
+  trackClick('voice_recording_abandon_confirm', { durationSeconds: duration.value });
+  await cleanupRecordingResources();
+  emit('abandon');
 };
 
 const handleClose = async () => {
@@ -723,13 +800,63 @@ onUnmounted(() => {
   transition: all 0.15s;
 }
 
-.action-btn.cancel {
-  background: #f1f5f9;
-  color: #64748b;
+.action-btn.abandon {
+  flex: 0 0 56px;
+  border: 1px solid #fecaca;
+  color: #b91c1c;
+  background: #fff7f7;
 }
 
-.action-btn.cancel:hover {
+.action-btn.abandon:hover:not(:disabled) {
+  background: #fee2e2;
+}
+
+.action-btn.resume {
+  background: #f1f5f9;
+  color: #64748b;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+}
+
+.action-btn.resume:hover:not(:disabled) {
   background: #e2e8f0;
+}
+
+.action-btn:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+.abandon-confirmation {
+  align-items: center;
+}
+
+.abandon-confirmation-text {
+  flex: 1;
+  color: #7f1d1d;
+  font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.action-btn.compact {
+  flex: 0 0 auto;
+  min-width: 54px;
+  padding: 0 10px;
+  color: #64748b;
+  background: #f1f5f9;
+}
+
+.action-btn.abandon-confirm {
+  min-width: 72px;
+  color: #fff;
+  background: #dc2626;
+}
+
+.action-btn.abandon-confirm:hover:not(:disabled) {
+  background: #b91c1c;
 }
 
 .action-btn.confirm {

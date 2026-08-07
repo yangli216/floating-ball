@@ -6,9 +6,11 @@ const mocks = vi.hoisted(() => ({
   addTranscript: vi.fn(),
   processTranscript: vi.fn(),
   persistCache: vi.fn(),
+  clearCache: vi.fn(),
+  invoke: vi.fn(),
 }));
 
-vi.mock('@tauri-apps/api/core', () => ({ invoke: vi.fn() }));
+vi.mock('@tauri-apps/api/core', () => ({ invoke: mocks.invoke }));
 vi.mock('@services/operationTracker', () => ({
   trackClick: vi.fn(), trackError: vi.fn(), trackRecommendationAction: vi.fn(),
 }));
@@ -21,7 +23,7 @@ vi.mock('@/utils/patientContext', () => ({
 vi.mock('@shared/lib/errorMessages', () => ({ formatUserFacingError: vi.fn(() => 'error') }));
 vi.mock('@features/clinical-result', () => ({ cloneClinicalResultInput: vi.fn((value) => value) }));
 vi.mock('@features/voice-consultation', () => ({
-  clearVoiceConsultationCacheById: vi.fn(),
+  clearVoiceConsultationCacheById: mocks.clearCache,
   hasVoiceConsultationCache: vi.fn(() => false),
   loadVoiceConsultationCacheEntry: vi.fn(() => null),
   persistVoiceConsultationCacheEntry: mocks.persistCache,
@@ -93,5 +95,29 @@ describe('useVoiceConsultation result navigation ordering', () => {
 
     expect(api.consultationRoundId.value).toMatch(/[0-9a-f-]{36}/u);
     expect(api.intentResult.value?.chiefComplaint).toBe('咳嗽2天');
+  });
+
+  it('abandons the capture without exiting work so App can return to the patient capsule', async () => {
+    const exitWork = vi.fn(async () => undefined);
+    const api = useVoiceConsultation({
+      currentPatient: ref({ idPi: 'patient-1' } as never),
+      showToast: vi.fn(),
+      openVoiceConsultation: vi.fn(async () => undefined),
+      workMode: { exitWork },
+    });
+    await api.showGeneratedClinicalResult(result);
+
+    await api.abandonVoiceCapture();
+
+    expect(api.intentResult.value).toBeNull();
+    expect(api.consultationRoundId.value).toBeNull();
+    expect(mocks.clearCache).toHaveBeenCalledWith('visit-1');
+    expect(mocks.invoke).toHaveBeenCalledWith('complete_consultation', expect.objectContaining({
+      result: expect.objectContaining({
+        resultType: 'cancelled',
+        reason: '用户主动放弃语音问诊采集',
+      }),
+    }));
+    expect(exitWork).not.toHaveBeenCalled();
   });
 });

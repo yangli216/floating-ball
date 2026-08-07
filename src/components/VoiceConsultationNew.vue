@@ -2521,7 +2521,8 @@ watch(
             <button
               class="refresh-recommendation-btn"
               type="button"
-              title="补充遗漏信息并重新生成完整问诊结果"
+              aria-label="补充说明并重新生成病历"
+              title="补充文字或语音说明，并重新生成病历、诊断和适用的治疗方案"
               :disabled="isResultGenerating || diagnosisLoading || treatmentLoading || isWritebackBusy"
               @click="showSupplementDialog = true"
             >
@@ -2531,7 +2532,7 @@ watch(
                 size="14"
                 aria-hidden="true"
               />
-              <span>{{ resultRegenerating ? '重新生成中...' : '补充并重新生成' }}</span>
+              <span>{{ resultRegenerating ? '重新生成中...' : '补充说明' }}</span>
             </button>
           </div>
 

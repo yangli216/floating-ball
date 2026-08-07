@@ -12,9 +12,50 @@ vi.mock('@/services/aliyunSpeech', () => ({
   transcribeSpeech: vi.fn(),
 }));
 
-import { useClinicalResultSupplementInput } from './useClinicalResultSupplementInput';
+import {
+  buildSupplementWaveformLevels,
+  useClinicalResultSupplementInput,
+} from './useClinicalResultSupplementInput';
 
 describe('useClinicalResultSupplementInput', () => {
+  it('maps microphone frequency data to visible waveform levels', () => {
+    const levels = buildSupplementWaveformLevels(
+      new Uint8Array([0, 32, 128, 255]),
+      4,
+    );
+
+    expect(levels).toHaveLength(4);
+    expect(levels[0]).toBe(0.08);
+    expect(levels[3]).toBe(1);
+    expect(levels[2]).toBeGreaterThan(levels[1]);
+  });
+
+  it('updates the recording waveform from the active microphone analyser', async () => {
+    vi.useFakeTimers();
+    try {
+      const recorder = {
+        start: vi.fn(async () => undefined),
+        stop: vi.fn(async () => new Blob()),
+        getByteFrequencyData: vi.fn(() => new Uint8Array(64).fill(220)),
+      };
+      const input = useClinicalResultSupplementInput({
+        recorder,
+        transcribe: vi.fn(async () => ''),
+      });
+
+      await input.toggleRecording();
+      await vi.advanceTimersByTimeAsync(100);
+
+      expect(recorder.getByteFrequencyData).toHaveBeenCalled();
+      expect(Math.min(...input.waveformLevels.value)).toBeGreaterThan(0.8);
+
+      await input.discardRecording();
+      expect(Math.max(...input.waveformLevels.value)).toBeLessThanOrEqual(0.12);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it('appends a voice transcript after existing manually entered text', async () => {
     const recorder = {
       start: vi.fn(async () => undefined),
