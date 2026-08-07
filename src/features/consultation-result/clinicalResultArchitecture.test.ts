@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import appSource from '@/App.vue?raw';
+import resultImplementationSource from '@/components/VoiceConsultationNew.vue?raw';
 import symptomResultEntrySource from '@features/symptom-consultation/ui/SymptomResultEntry.vue?raw';
 import consultationResultPageSource from './ui/ConsultationResultPage.vue?raw';
 
@@ -18,5 +19,10 @@ describe('clinical result architecture boundary', () => {
 
   it('confines the root implementation dependency to the public result page facade', () => {
     expect(consultationResultPageSource).toContain(INTERNAL_IMPLEMENTATION_NAME);
+  });
+
+  it('keeps supplement regeneration in the shared result implementation', () => {
+    expect(resultImplementationSource).toContain('ClinicalResultSupplementDialog');
+    expect(resultImplementationSource).toContain('handleSupplementRegenerate');
   });
 });

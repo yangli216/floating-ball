@@ -33,6 +33,7 @@ import {
   applyManualMatchCandidate,
   assessTreatmentCatalogMatch,
   buildClinicalResultDiagnosisRequestSpec,
+  buildClinicalResultRegenerationRequest,
   buildDiagnosisRationale as buildSharedDiagnosisRationale,
   buildInventoryBlockedSubmitMessage,
   buildRecordConfirmedPayload,
@@ -60,6 +61,7 @@ import {
   initClinicalTreatments,
   mapClinicalResultAiDiagnoses,
   parseLLMJson,
+  normalizeClinicalResultRegenerationOutput,
   rememberManualCatalogMatch,
   shouldAutoSelectTreatment,
   syncTreatmentExecDeptSelections as syncSharedTreatmentExecDeptSelections,
@@ -68,6 +70,7 @@ import {
   type ClinicalResultChannel,
   type ClinicalResultRecommendationType,
   type ClinicalResultRecordSummaryInput,
+  type ClinicalResultRegenerationRecord,
   type MedicinePrimaryField,
   type ManualMatchRawCandidate,
 } from '@features/clinical-result';
@@ -94,6 +97,7 @@ import {
 } from '@features/voice-consultation';
 import {
   ClinicalGenerationProgress,
+  ClinicalResultSupplementDialog,
   DiagnosisRecommendationCard,
   TreatmentRecommendationSection,
   useBodySiteOptions,
@@ -174,8 +178,12 @@ const emit = defineEmits(['close', 'cancel', 'secondary-footer-action']);
 
 const showToast = inject<(msg: string, type?: string) => void>('showToast');
 const recommendationPolicy = computed(() => props.intentResult?.recommendationPolicy);
+const resultRegenerating = ref(false);
+const showSupplementDialog = ref(false);
 const isResultGenerating = computed(() => (
-  props.processing || props.intentResult?.generation?.status === 'streaming'
+  resultRegenerating.value
+  || props.processing
+  || props.intentResult?.generation?.status === 'streaming'
 ));
 const allowTreatmentRefresh = computed(() => recommendationPolicy.value?.allowTreatmentRefresh !== false);
 const autoFetchTreatments = computed(() => recommendationPolicy.value?.autoFetchTreatments !== false);
@@ -1113,11 +1121,13 @@ useConsultationReferenceFeedbackListener<ReferenceFeedbackPayload>({
   },
 });
 
-async function fetchAIDiagnosis(): Promise<void> {
-  if (diagnosisLoading.value) return;
+async function fetchAIDiagnosis(
+  options: { notifyOnError?: boolean; deferSideEffects?: boolean } = {},
+): Promise<boolean> {
+  if (diagnosisLoading.value) return false;
   if (!canRefreshDiagnosis.value) {
     showToast?.('请先填写主诉或现病史', 'warning');
-    return;
+    return false;
   }
 
   const requestSeq = diagnosisRequestSeq.value + 1;
@@ -1153,7 +1163,7 @@ async function fetchAIDiagnosis(): Promise<void> {
         requestRecordKey,
         currentRecordKey,
       });
-      return;
+      return false;
     }
 
     aiDiagnoses.value = await applyRecommendationPreferenceRanking(
@@ -1171,14 +1181,19 @@ async function fetchAIDiagnosis(): Promise<void> {
       resetDiagnosisSelection();
     }
 
-    void registerCurrentRecommendations();
-
-    void performDiagnosisFactCheck(aiDiagnoses.value);
+    if (!options.deferSideEffects) {
+      void registerCurrentRecommendations();
+      void performDiagnosisFactCheck(aiDiagnoses.value);
+    }
+    return aiDiagnoses.value.length > 0;
   } catch (error: unknown) {
-    showToast?.(formatUserFacingError(error, {
-      context: '诊断推荐失败',
-      fallback: '请稍后重试。',
-    }), 'error');
+    if (options.notifyOnError !== false) {
+      showToast?.(formatUserFacingError(error, {
+        context: '诊断推荐失败',
+        fallback: '请稍后重试。',
+      }), 'error');
+    }
+    return false;
   } finally {
     if (requestSeq === diagnosisRequestSeq.value) {
       diagnosisLoading.value = false;
@@ -1194,8 +1209,10 @@ async function handleDiagnosisRefresh(event?: Event): Promise<void> {
   await fetchAIDiagnosis();
 }
 
-async function fetchAITreatment(): Promise<void> {
-  if (treatmentLoading.value || !selectedDiagnosis.value || !allowTreatmentRefresh.value) return;
+async function fetchAITreatment(
+  options: { notifyOnError?: boolean; requireAll?: boolean; deferSideEffects?: boolean } = {},
+): Promise<boolean> {
+  if (treatmentLoading.value || !selectedDiagnosis.value || !allowTreatmentRefresh.value) return false;
 
   const requestSeq = treatmentRequestSeq.value + 1;
   treatmentRequestSeq.value = requestSeq;
@@ -1203,7 +1220,7 @@ async function fetchAITreatment(): Promise<void> {
   const requestDiagnosis = selectedDiagnosis.value;
   const diagnosisIdentity = getDiagnosisIdentity(requestDiagnosis);
   if (!diagnosisIdentity) {
-    return;
+    return false;
   }
   const isCurrentTreatmentRequest = () => (
     requestSeq === treatmentRequestSeq.value
@@ -1233,7 +1250,7 @@ async function fetchAITreatment(): Promise<void> {
   if (requestedTypes.length === 0) {
     lastTreatmentDiagnosisKey.value = diagnosisIdentity;
     treatmentLoading.value = false;
-    return;
+    return true;
   }
   requestedTypes.forEach((type) => {
     treatmentGenerationState.value[type] = 'loading';
@@ -1244,7 +1261,7 @@ async function fetchAITreatment(): Promise<void> {
     if (requestedTypes.includes('medicine')) {
       await fetchPharmacyOptions();
     }
-    if (!isCurrentTreatmentRequest()) return;
+    if (!isCurrentTreatmentRequest()) return false;
     await generateVoiceTreatmentRecommendations({
       ...baseParams,
       clinicalContext: historyOfPresentIllness.value,
@@ -1274,7 +1291,15 @@ async function fetchAITreatment(): Promise<void> {
       },
     });
 
-    if (!isCurrentTreatmentRequest()) return;
+    if (!isCurrentTreatmentRequest()) return false;
+    if (options.requireAll) {
+      const failedTypes = requestedTypes.filter(
+        (type) => treatmentGenerationState.value[type] === 'error',
+      );
+      if (failedTypes.length > 0) {
+        throw new Error('部分治疗方案生成失败');
+      }
+    }
     // 各目录请求仍可并行完成，但只在全部任务结束后一次性替换推荐项，
     // 避免检查、检验、药品先后返回时让医生看到治疗列表反复加载。
     const preserved = treatments.value.filter((item) => (
@@ -1317,17 +1342,20 @@ async function fetchAITreatment(): Promise<void> {
         diagnosisIdentity,
         currentDiagnosisIdentity: getDiagnosisIdentity(selectedDiagnosis.value),
       });
-      return;
+      return false;
     }
 
     lastTreatmentDiagnosisKey.value = diagnosisIdentity;
     autoTreatmentFetchAttemptKey.value = buildTreatmentAutoFetchKey(diagnosisIdentity);
     await reconcileAutoSelectedMedicineInventory(treatments.value);
-    void registerCurrentRecommendations();
-    void performTreatmentFactCheck(treatments.value);
-    submitVoiceGeneratedUserLog();
-    // 把 LLM 推荐的诊疗方案写回缓存，下次同就诊恢复时直接复用、跳过 fetchAITreatment
-    persistEditorSnapshotImmediate();
+    if (!options.deferSideEffects) {
+      void registerCurrentRecommendations();
+      void performTreatmentFactCheck(treatments.value);
+      submitVoiceGeneratedUserLog();
+      // 把 LLM 推荐的诊疗方案写回缓存，下次同就诊恢复时直接复用、跳过 fetchAITreatment
+      persistEditorSnapshotImmediate();
+    }
+    return true;
   } catch (error: unknown) {
     if (!isCurrentTreatmentRequest()) {
       console.info('[VoiceConsultationNew] Ignore stale treatment error', {
@@ -1338,16 +1366,161 @@ async function fetchAITreatment(): Promise<void> {
         diagnosisIdentity,
         currentDiagnosisIdentity: getDiagnosisIdentity(selectedDiagnosis.value),
       });
-      return;
+      return false;
     }
-    showToast?.(formatUserFacingError(error, {
-      context: '方案推荐失败',
-      fallback: '请稍后重试。',
-    }), 'error');
+    if (options.notifyOnError !== false) {
+      showToast?.(formatUserFacingError(error, {
+        context: '方案推荐失败',
+        fallback: '请稍后重试。',
+      }), 'error');
+    }
+    return false;
   } finally {
     if (requestSeq === treatmentRequestSeq.value) {
       treatmentLoading.value = false;
     }
+  }
+}
+
+function getCurrentRegenerationRecord(): ClinicalResultRegenerationRecord {
+  return {
+    chiefComplaint: chiefComplaint.value,
+    historyOfPresentIllness: historyOfPresentIllness.value,
+    pastMedicalHistory: pastMedicalHistory.value,
+    personalHistory: personalHistory.value,
+    familyHistory: familyHistory.value,
+    physicalExam: physicalExam.value,
+    precautions: precautions.value,
+  };
+}
+
+function applyRegenerationRecord(record: ClinicalResultRegenerationRecord): void {
+  chiefComplaint.value = record.chiefComplaint;
+  historyOfPresentIllness.value = record.historyOfPresentIllness;
+  pastMedicalHistory.value = record.pastMedicalHistory;
+  personalHistory.value = record.personalHistory;
+  familyHistory.value = record.familyHistory;
+  physicalExam.value = record.physicalExam;
+  precautions.value = record.precautions;
+}
+
+async function handleSupplementRegenerate(doctorSupplement: string): Promise<void> {
+  if (
+    resultRegenerating.value
+    || diagnosisLoading.value
+    || treatmentLoading.value
+    || isWritebackBusy.value
+  ) return;
+
+  const previousRecord = getCurrentRegenerationRecord();
+  const previousDiagnoses = aiDiagnoses.value.map((item) => ({ ...item }));
+  const previousSelectedDiagnosisIdentity = getDiagnosisIdentity(selectedDiagnosis.value);
+  const previousSelectedDiagnosisIdentities = new Set(
+    selectedDiagnoses.value.map((item) => getDiagnosisIdentity(item)).filter(Boolean),
+  );
+  const previousTreatments = treatments.value.map((item) => ({ ...item }));
+  const previousTreatmentDiagnosisKey = lastTreatmentDiagnosisKey.value;
+  const previousAutoTreatmentFetchAttemptKey = autoTreatmentFetchAttemptKey.value;
+  const previousTreatmentGenerationState = { ...treatmentGenerationState.value };
+
+  showSupplementDialog.value = false;
+  resultRegenerating.value = true;
+  suppressDiagnosisTreatmentRefetch.value = true;
+  closeReasonTooltipIfOpen();
+  closeRelatedDropdown();
+  recommendationFeedbackPopover.close();
+  console.info('[VoiceConsultationNew] Regenerate result with doctor supplement', {
+    consultationId: resolveConsultationId(),
+    channel: resultChannel.value,
+    supplementLength: doctorSupplement.trim().length,
+  });
+
+  try {
+    const requestSpec = buildClinicalResultRegenerationRequest({
+      channel: resultChannel.value,
+      patient: {
+        name: patientName.value,
+        gender: patientGender.value,
+        age: patientAge.value,
+      },
+      currentRecord: previousRecord,
+      doctorSupplement,
+      consultationId: resolveConsultationId(),
+    });
+    const response = await chat(
+      requestSpec.messages,
+      undefined,
+      undefined,
+      undefined,
+      requestSpec.config,
+    );
+    const regeneratedRecord = normalizeClinicalResultRegenerationOutput(
+      parseLLMJson(response),
+      previousRecord,
+    );
+
+    applyRegenerationRecord(regeneratedRecord);
+    diagnosisRequestSeq.value += 1;
+    invalidateTreatmentRequests();
+    const diagnosisReady = await fetchAIDiagnosis({
+      notifyOnError: false,
+      deferSideEffects: true,
+    });
+    if (!diagnosisReady) {
+      throw new Error('病例已生成，但诊断建议刷新失败');
+    }
+
+    if (allowTreatmentRefresh.value) {
+      const treatmentReady = await fetchAITreatment({
+        notifyOnError: false,
+        requireAll: true,
+        deferSideEffects: true,
+      });
+      if (!treatmentReady) {
+        throw new Error('病例和诊断已生成，但治疗方案刷新失败');
+      }
+    }
+
+    setInitialRecordSnapshot(regeneratedRecord);
+    void registerCurrentRecommendations();
+    void performDiagnosisFactCheck(aiDiagnoses.value);
+    void performTreatmentFactCheck(treatments.value);
+    resetFirstUserLogSnapshot();
+    submitVoiceGeneratedUserLog();
+    showToast?.('已结合补充信息重新生成问诊结果', 'success');
+  } catch (error) {
+    applyRegenerationRecord(previousRecord);
+    aiDiagnoses.value = previousDiagnoses;
+    const previousSelectedDiagnosis = previousDiagnoses.find(
+      (item) => getDiagnosisIdentity(item) === previousSelectedDiagnosisIdentity,
+    ) || previousDiagnoses[0] || null;
+    const previousSelectedDiagnoses = previousDiagnoses.filter(
+      (item) => previousSelectedDiagnosisIdentities.has(getDiagnosisIdentity(item)),
+    );
+    replaceDiagnosisSelection(
+      previousSelectedDiagnoses.length > 0
+        ? previousSelectedDiagnoses
+        : previousSelectedDiagnosis ? [previousSelectedDiagnosis] : [],
+      previousSelectedDiagnosis,
+    );
+    treatments.value = previousTreatments;
+    lastTreatmentDiagnosisKey.value = previousTreatmentDiagnosisKey;
+    autoTreatmentFetchAttemptKey.value = previousAutoTreatmentFetchAttemptKey;
+    treatmentGenerationState.value = previousTreatmentGenerationState;
+    console.error('[VoiceConsultationNew] Result regeneration failed', {
+      error,
+      consultationId: resolveConsultationId(),
+      channel: resultChannel.value,
+    });
+    showToast?.(formatUserFacingError(error, {
+      context: '重新生成失败',
+      fallback: '已保留当前结果，请稍后重试。',
+    }), 'error');
+  } finally {
+    await nextTick();
+    suppressDiagnosisTreatmentRefetch.value = false;
+    resultRegenerating.value = false;
+    persistEditorSnapshotImmediate();
   }
 }
 
@@ -2333,16 +2506,33 @@ watch(
         :treatment-loading="treatmentLoading"
         :treatment-states="treatmentGenerationState"
       />
+      <div v-if="resultRegenerating" class="writeback-status-banner writeback-status-banner-info">
+        正在结合补充信息重新生成问诊结果，请稍候……
+      </div>
       <div v-if="writebackBannerText" :class="['writeback-status-banner', `writeback-status-banner-${writebackBannerTone}`]">
         {{ writebackBannerText }}
       </div>
       <div class="record-content">
         <section class="vcn-panel pane-card vcn-left-panel">
           <div class="section-heading">
-            <div>
-
+            <div class="section-heading-main">
               <h3 class="section-title">病历详情</h3>
             </div>
+            <button
+              class="refresh-recommendation-btn"
+              type="button"
+              title="补充遗漏信息并重新生成完整问诊结果"
+              :disabled="isResultGenerating || diagnosisLoading || treatmentLoading || isWritebackBusy"
+              @click="showSupplementDialog = true"
+            >
+              <Icon
+                :icon="resultRegenerating ? 'lucide:loader-2' : 'lucide:message-square-plus'"
+                :class="{ spin: resultRegenerating }"
+                size="14"
+                aria-hidden="true"
+              />
+              <span>{{ resultRegenerating ? '重新生成中...' : '补充并重新生成' }}</span>
+            </button>
           </div>
 
           <div class="record-fields">
@@ -2681,7 +2871,7 @@ watch(
         v-if="secondaryFooterActionText"
         class="footer-secondary-btn"
         type="button"
-        :disabled="secondaryFooterActionDisabled || isWritebackBusy"
+        :disabled="secondaryFooterActionDisabled || isWritebackBusy || isResultGenerating"
         @click="emit('secondary-footer-action')"
       >
         {{ secondaryFooterActionText }}
@@ -2695,8 +2885,15 @@ watch(
       >
         {{ submitButtonText }}
       </button>
-      <button class="footer-cancel-btn" type="button" :disabled="isWritebackBusy" @click="handleCancelClick">放弃</button>
+      <button class="footer-cancel-btn" type="button" :disabled="isWritebackBusy || isResultGenerating" @click="handleCancelClick">放弃</button>
     </div>
+
+    <ClinicalResultSupplementDialog
+      :open="showSupplementDialog"
+      :disabled="resultRegenerating || diagnosisLoading || treatmentLoading || isWritebackBusy"
+      @close="showSupplementDialog = false"
+      @confirm="handleSupplementRegenerate"
+    />
 
     <Teleport to="body">
       <div v-if="showSessionFeedbackDialog" class="confirm-overlay session-feedback-overlay" @click.self="completeVoiceConsultationFlow">

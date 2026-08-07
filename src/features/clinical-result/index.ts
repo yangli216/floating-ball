@@ -2,6 +2,15 @@ export {
   buildSymptomClinicalResultInput,
   cloneClinicalResultInput,
 } from './clinicalResultAdapter';
+export {
+  buildClinicalResultRegenerationRequest,
+  normalizeClinicalResultRegenerationOutput,
+} from './clinicalResultRegeneration';
+export type {
+  BuildClinicalResultRegenerationRequestInput,
+  ClinicalResultRegenerationRecord,
+  ClinicalResultRegenerationRequestSpec,
+} from './clinicalResultRegeneration';
 export type {
   ClinicalResultRecordInput,
   SymptomClinicalResultInput,

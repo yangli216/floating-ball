@@ -1,5 +1,6 @@
 export { default as ConsultationResultPage } from './ui/ConsultationResultPage.vue';
 export { default as ClinicalGenerationProgress } from './ui/ClinicalGenerationProgress.vue';
+export { default as ClinicalResultSupplementDialog } from './ui/ClinicalResultSupplementDialog.vue';
 export { default as DiagnosisRecommendationCard } from './ui/DiagnosisRecommendationCard.vue';
 export { default as ManualMatchPicker } from './ui/ManualMatchPicker.vue';
 export { default as MedicineUsageFieldSelector } from './ui/MedicineUsageFieldSelector.vue';
@@ -26,6 +27,7 @@ export {
 } from './model/useClinicalResultChannelStrategy';
 export { useClinicalResultPatientContext } from './model/useClinicalResultPatientContext';
 export { useClinicalResultUserLogController } from './model/useClinicalResultUserLogController';
+export { useClinicalResultSupplementInput } from './model/useClinicalResultSupplementInput';
 export { useDiagnosisSelection } from './model/useDiagnosisSelection';
 export { useManualMatchState } from './model/useManualMatchState';
 export { useMedicalDictionaries } from './model/useMedicalDictionaries';

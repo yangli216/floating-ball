@@ -114,16 +114,25 @@ export async function transcribeSpeech(audioBlob: Blob): Promise<string> {
  */
 export class RealtimeSpeechService {
     private audioChunks: Int16Array[] = [];
+    private pendingAudioChunks: Int16Array[] = [];
     private onTextCallback?: (text: string, isFinal: boolean) => void;
     private isStarted: boolean = false;
     private isStreaming: boolean = false;
+    private isFinishing: boolean = false;
+    private hasStreamingStarted: boolean = false;
+    private hadStreamingInterruption: boolean = false;
     private regionalSocket: WebSocket | null = null;
     private regionalFinalPromise: Promise<string> | null = null;
     private regionalFinalResolve?: (text: string) => void;
     private regionalFinalReject?: (error: Error) => void;
     private regionalFinalSettled: boolean = false;
+    private reconnectPromise: Promise<void> | null = null;
+    private reconnectTimer: number | null = null;
+    private reconnectDelayResolve?: () => void;
+    private socketGeneration: number = 0;
     private finalizedText: string = '';
     private currentSentence: string = '';
+    private sessionTextPrefix: string = '';
 
     constructor() {
     }
@@ -133,12 +142,19 @@ export class RealtimeSpeechService {
      * 优先尝试流式模式，失败则降级为批量模式
      */
     async start(onText?: (text: string, isFinal: boolean) => void): Promise<void> {
+        this.cleanupRegionalSocket();
         this.onTextCallback = onText;
         this.audioChunks = [];
+        this.pendingAudioChunks = [];
         this.isStarted = true;
         this.isStreaming = false;
+        this.isFinishing = false;
+        this.hasStreamingStarted = false;
+        this.hadStreamingInterruption = false;
         this.finalizedText = '';
         this.currentSentence = '';
+        this.sessionTextPrefix = '';
+        this.initializeRegionalFinalPromise();
 
         // 测试模式不走流式
         if (isTestModeEnabled()) {
@@ -155,7 +171,7 @@ export class RealtimeSpeechService {
             console.log('[Speech] Regional streaming session started');
         } catch (error) {
             console.warn('[Speech] Failed to start streaming, falling back to batch mode:', error);
-            this.cleanupRegionalSocket();
+            this.disposeRegionalSocket();
             this.isStreaming = false;
         }
     }
@@ -168,20 +184,18 @@ export class RealtimeSpeechService {
     sendAudio(pcmData: Int16Array): void {
         if (!this.isStarted) return;
 
-        if (this.isStreaming) {
-            if (this.regionalSocket) {
-                // 保留流式录音副本，WebSocket 中途失败时可在停止后批量兜底。
-                this.audioChunks.push(new Int16Array(pcmData));
-                const bytes = new Uint8Array(pcmData.byteLength);
-                bytes.set(new Uint8Array(pcmData.buffer, pcmData.byteOffset, pcmData.byteLength));
-                if (this.regionalSocket.readyState === WebSocket.OPEN) {
-                    this.regionalSocket.send(bytes.buffer);
-                }
-                return;
-            }
-        } else {
-            // 批量模式：收集音频
-            this.audioChunks.push(new Int16Array(pcmData));
+        const chunk = new Int16Array(pcmData);
+        // 始终保留完整录音副本：首次建链失败和中途断线都能在停止后批量补录。
+        this.audioChunks.push(chunk);
+
+        if (this.isStreaming && this.regionalSocket?.readyState === WebSocket.OPEN) {
+            this.sendPcmChunk(this.regionalSocket, chunk);
+            return;
+        }
+
+        if (this.hasStreamingStarted && !this.isFinishing) {
+            this.enqueuePendingAudio(chunk);
+            this.scheduleReconnect();
         }
     }
 
@@ -194,24 +208,20 @@ export class RealtimeSpeechService {
         }
 
         this.isStarted = false;
-
-        if (this.isStreaming) {
-            return await this.finishRegionalStreaming();
-        }
-
-        // 批量模式：合并音频并转写
-        const audioBlob = this.buildBufferedAudioBlob();
-        console.log('[Speech] Batch mode, total audio:', audioBlob.size, 'bytes');
+        this.isFinishing = true;
+        this.cancelReconnectDelay();
 
         try {
-            const text = await transcribeSpeech(audioBlob);
-            this.onTextCallback?.(text, true);
-            return text;
-        } catch (error: any) {
-            console.error('[Speech] Transcription failed:', error);
-            throw error;
+            if (!this.hasStreamingStarted) {
+                return await this.transcribeBufferedAudio();
+            }
+            return await this.finishRegionalStreaming();
         } finally {
             this.audioChunks = [];
+            this.pendingAudioChunks = [];
+            this.cleanupRegionalSocket();
+            this.isStreaming = false;
+            this.isFinishing = false;
         }
     }
 
@@ -220,13 +230,11 @@ export class RealtimeSpeechService {
      */
     close(): void {
         this.isStarted = false;
+        this.isFinishing = false;
         this.audioChunks = [];
-        if (this.isStreaming) {
-            this.cleanupRegionalSocket();
-            this.isStreaming = false;
-            return;
-        }
+        this.pendingAudioChunks = [];
         this.cleanupRegionalSocket();
+        this.isStreaming = false;
     }
 
     /**
@@ -238,51 +246,87 @@ export class RealtimeSpeechService {
 
     private async startRegionalStreaming(): Promise<void> {
         const socketUrl = await createRegionalWebSocketUrl('/v1/ai/speech/realtime/ws');
+        if (!this.isStarted || this.isFinishing) {
+            throw new Error('实时语音会话已结束');
+        }
         const socket = new WebSocket(socketUrl);
         socket.binaryType = 'arraybuffer';
+        const generation = ++this.socketGeneration;
         this.regionalSocket = socket;
-        this.regionalFinalSettled = false;
-        this.regionalFinalPromise = new Promise<string>((resolve, reject) => {
-            this.regionalFinalResolve = resolve;
-            this.regionalFinalReject = reject;
-        });
-
-        socket.onmessage = (event) => {
-            this.handleRegionalSocketMessage(event.data);
-        };
-
-        socket.onclose = () => {
-            const accumulated = `${this.finalizedText}${this.currentSentence}`;
-            if (!this.regionalFinalSettled && accumulated) {
-                this.resolveRegionalFinal(accumulated);
-            }
-        };
-
-        socket.onerror = () => {
-            if (!this.regionalFinalSettled) {
-                this.rejectRegionalFinal(new Error('服务端实时语音 WebSocket 连接异常'));
-            }
-        };
 
         await new Promise<void>((resolve, reject) => {
+            let opened = false;
+            let settled = false;
             const timer = window.setTimeout(() => {
+                if (settled) return;
+                settled = true;
+                this.detachSocket(socket, true);
                 reject(new Error('服务端实时语音 WebSocket 连接超时'));
             }, 8000);
+
+            socket.onmessage = (event) => {
+                if (!this.isActiveSocket(socket, generation)) return;
+                this.handleRegionalSocketMessage(event.data, socket, generation);
+            };
+
             socket.onopen = () => {
+                if (!this.isActiveSocket(socket, generation) || !this.isStarted || this.isFinishing) {
+                    this.detachSocket(socket, true);
+                    return;
+                }
+                opened = true;
+                settled = true;
                 window.clearTimeout(timer);
                 this.isStreaming = true;
+                this.hasStreamingStarted = true;
+                this.sessionTextPrefix = `${this.finalizedText}${this.currentSentence}`;
+                this.flushPendingAudio(socket, generation);
                 resolve();
             };
-            const originalOnError = socket.onerror;
-            socket.onerror = (event) => {
+
+            socket.onerror = () => {
                 window.clearTimeout(timer);
-                originalOnError?.call(socket, event);
-                reject(new Error('服务端实时语音 WebSocket 连接失败'));
+                const error = new Error('服务端实时语音 WebSocket 连接异常');
+                if (!opened) {
+                    if (!settled) {
+                        settled = true;
+                        this.detachSocket(socket, true);
+                        reject(error);
+                    }
+                    return;
+                }
+                this.handleStreamingInterruption(error, socket, generation);
+            };
+
+            socket.onclose = (event) => {
+                window.clearTimeout(timer);
+                if (!opened) {
+                    if (!settled) {
+                        settled = true;
+                        this.detachSocket(socket, false);
+                        reject(new Error(`服务端实时语音 WebSocket 建链后关闭（${event.code}）`));
+                    }
+                    return;
+                }
+                if (!this.isActiveSocket(socket, generation)) return;
+                if (this.isFinishing) {
+                    this.detachSocket(socket, false);
+                    this.isStreaming = false;
+                    if (!this.regionalFinalSettled) {
+                        this.rejectRegionalFinal(new Error(`实时语音结束前连接已关闭（${event.code}）`));
+                    }
+                    return;
+                }
+                this.handleStreamingInterruption(
+                    new Error(`实时语音连接已关闭（${event.code}）`),
+                    socket,
+                    generation,
+                );
             };
         });
     }
 
-    private handleRegionalSocketMessage(rawData: unknown): void {
+    private handleRegionalSocketMessage(rawData: unknown, socket: WebSocket, generation: number): void {
         if (typeof rawData !== 'string') {
             return;
         }
@@ -307,49 +351,83 @@ export class RealtimeSpeechService {
             }
 
             if (payload.type === 'final') {
-                const accumulated = `${this.finalizedText}${this.currentSentence}`;
-                const remoteFinal = payload.text || '';
-                this.resolveRegionalFinal(remoteFinal.length >= accumulated.length ? remoteFinal : accumulated);
+                const accumulated = this.acceptRemoteFinal(payload.text || '');
+                this.onTextCallback?.(accumulated, true);
+                if (this.isFinishing) {
+                    this.resolveRegionalFinal(accumulated);
+                } else {
+                    this.handleStreamingInterruption(
+                        new Error('上游实时语音任务提前结束'),
+                        socket,
+                        generation,
+                    );
+                }
                 return;
             }
 
             if (payload.type === 'error') {
-                this.rejectRegionalFinal(new Error(payload.message || '服务端实时语音识别失败'));
+                const error = new Error(payload.message || '服务端实时语音识别失败');
+                if (this.isFinishing) {
+                    this.rejectRegionalFinal(error);
+                } else {
+                    this.handleStreamingInterruption(error, socket, generation);
+                }
             }
         } catch (error) {
-            this.rejectRegionalFinal(error instanceof Error ? error : new Error(String(error)));
+            const normalized = error instanceof Error ? error : new Error(String(error));
+            if (this.isFinishing) {
+                this.rejectRegionalFinal(normalized);
+            } else {
+                this.handleStreamingInterruption(normalized, socket, generation);
+            }
         }
     }
 
     private async finishRegionalStreaming(): Promise<string> {
+        let streamedText = `${this.finalizedText}${this.currentSentence}`;
+        let finishError: unknown;
         try {
             if (this.regionalSocket?.readyState === WebSocket.OPEN) {
                 this.regionalSocket.send(JSON.stringify({ type: 'finish' }));
+                const finalText = await Promise.race([
+                    this.regionalFinalPromise || Promise.resolve(streamedText),
+                    new Promise<string>((_, reject) => window.setTimeout(
+                        () => reject(new Error('等待实时语音最终结果超时')),
+                        30000,
+                    )),
+                ]);
+                streamedText = finalText || streamedText;
+            } else {
+                finishError = new Error('实时语音连接在停止录音前已中断');
             }
-
-            const accumulated = `${this.finalizedText}${this.currentSentence}`;
-            const finalText = await Promise.race([
-                this.regionalFinalPromise || Promise.resolve(accumulated),
-                new Promise<string>((resolve) => window.setTimeout(() => resolve(accumulated), 30000)),
-            ]);
-            const result = finalText || accumulated;
-            this.onTextCallback?.(result, true);
-            return result;
-        } catch (error: any) {
-            const collected = this.finalizedText + this.currentSentence;
-            if (collected) return collected;
-            if (this.audioChunks.length > 0) {
-                console.warn('[Speech] Regional streaming failed, falling back to batch transcription:', error);
-                const fallbackText = await transcribeSpeech(this.buildBufferedAudioBlob());
-                this.onTextCallback?.(fallbackText, true);
-                return fallbackText;
-            }
-            throw error;
-        } finally {
-            this.audioChunks = [];
-            this.cleanupRegionalSocket();
-            this.isStreaming = false;
+        } catch (error) {
+            finishError = error;
         }
+
+        if (this.hadStreamingInterruption || finishError) {
+            console.warn('[Speech] Streaming session was interrupted, reconciling with batch transcription:', finishError);
+            try {
+                return await this.transcribeBufferedAudio();
+            } catch (batchError) {
+                if (streamedText) {
+                    console.warn('[Speech] Batch reconciliation failed, keeping streamed text:', batchError);
+                    this.onTextCallback?.(streamedText, true);
+                    return streamedText;
+                }
+                throw batchError;
+            }
+        }
+
+        this.onTextCallback?.(streamedText, true);
+        return streamedText;
+    }
+
+    private async transcribeBufferedAudio(): Promise<string> {
+        const audioBlob = this.buildBufferedAudioBlob();
+        console.log('[Speech] Batch mode, total audio:', audioBlob.size, 'bytes');
+        const text = await transcribeSpeech(audioBlob);
+        this.onTextCallback?.(text, true);
+        return text;
     }
 
     private buildBufferedAudioBlob(): Blob {
@@ -380,19 +458,146 @@ export class RealtimeSpeechService {
     }
 
     private cleanupRegionalSocket(): void {
-        if (this.regionalSocket) {
-            this.regionalSocket.onopen = null;
-            this.regionalSocket.onmessage = null;
-            this.regionalSocket.onerror = null;
-            this.regionalSocket.onclose = null;
-            if (this.regionalSocket.readyState === WebSocket.OPEN || this.regionalSocket.readyState === WebSocket.CONNECTING) {
-                this.regionalSocket.close();
-            }
-        }
-        this.regionalSocket = null;
+        this.cancelReconnectDelay();
+        this.socketGeneration += 1;
+        this.disposeRegionalSocket();
+        this.reconnectPromise = null;
         this.regionalFinalPromise = null;
         this.regionalFinalResolve = undefined;
         this.regionalFinalReject = undefined;
         this.regionalFinalSettled = false;
+    }
+
+    private initializeRegionalFinalPromise(): void {
+        this.regionalFinalSettled = false;
+        this.regionalFinalPromise = new Promise<string>((resolve, reject) => {
+            this.regionalFinalResolve = resolve;
+            this.regionalFinalReject = reject;
+        });
+    }
+
+    private disposeRegionalSocket(): void {
+        if (this.regionalSocket) {
+            this.detachSocket(this.regionalSocket, true);
+        }
+    }
+
+    private isActiveSocket(socket: WebSocket, generation: number): boolean {
+        return this.regionalSocket === socket && this.socketGeneration === generation;
+    }
+
+    private detachSocket(socket: WebSocket, close: boolean): void {
+        socket.onopen = null;
+        socket.onmessage = null;
+        socket.onerror = null;
+        socket.onclose = null;
+        if (this.regionalSocket === socket) {
+            this.regionalSocket = null;
+            this.socketGeneration += 1;
+        }
+        if (close && (socket.readyState === WebSocket.OPEN || socket.readyState === WebSocket.CONNECTING)) {
+            socket.close();
+        }
+    }
+
+    private handleStreamingInterruption(error: Error, socket: WebSocket, generation: number): void {
+        if (!this.isActiveSocket(socket, generation)) return;
+        console.warn('[Speech] Realtime connection interrupted, scheduling reconnect:', error);
+        this.hadStreamingInterruption = true;
+        this.isStreaming = false;
+        if (this.currentSentence) {
+            this.finalizedText += this.currentSentence;
+            this.currentSentence = '';
+            this.onTextCallback?.(this.finalizedText, true);
+        }
+        this.detachSocket(socket, true);
+        if (this.isStarted && !this.isFinishing) {
+            this.scheduleReconnect();
+        }
+    }
+
+    private scheduleReconnect(): void {
+        if (this.reconnectPromise || !this.isStarted || this.isFinishing || !this.hasStreamingStarted) {
+            return;
+        }
+
+        this.reconnectPromise = (async () => {
+            const delays = [0, 500, 1000, 2000, 5000];
+            let attempt = 0;
+            while (this.isStarted && !this.isFinishing && !this.isStreaming) {
+                const delay = delays[Math.min(attempt, delays.length - 1)];
+                await this.waitForReconnectDelay(delay);
+                if (!this.isStarted || this.isFinishing || this.isStreaming) return;
+                try {
+                    await this.startRegionalStreaming();
+                    console.log('[Speech] Realtime connection restored');
+                    return;
+                } catch (error) {
+                    this.hadStreamingInterruption = true;
+                    attempt += 1;
+                    console.warn('[Speech] Realtime reconnect failed:', error);
+                }
+            }
+        })().finally(() => {
+            this.reconnectPromise = null;
+        });
+    }
+
+    private waitForReconnectDelay(delay: number): Promise<void> {
+        if (delay <= 0) return Promise.resolve();
+        return new Promise((resolve) => {
+            this.reconnectDelayResolve = resolve;
+            this.reconnectTimer = window.setTimeout(() => {
+                this.reconnectTimer = null;
+                this.reconnectDelayResolve = undefined;
+                resolve();
+            }, delay);
+        });
+    }
+
+    private cancelReconnectDelay(): void {
+        if (this.reconnectTimer !== null) {
+            window.clearTimeout(this.reconnectTimer);
+            this.reconnectTimer = null;
+        }
+        const resolve = this.reconnectDelayResolve;
+        this.reconnectDelayResolve = undefined;
+        resolve?.();
+    }
+
+    private enqueuePendingAudio(chunk: Int16Array): void {
+        const maxPendingChunks = 240;
+        this.pendingAudioChunks.push(new Int16Array(chunk));
+        if (this.pendingAudioChunks.length > maxPendingChunks) {
+            this.pendingAudioChunks.splice(0, this.pendingAudioChunks.length - maxPendingChunks);
+        }
+    }
+
+    private flushPendingAudio(socket: WebSocket, generation: number): void {
+        const pending = this.pendingAudioChunks.splice(0);
+        for (let index = 0; index < pending.length; index += 1) {
+            if (!this.isActiveSocket(socket, generation) || socket.readyState !== WebSocket.OPEN) {
+                this.pendingAudioChunks.unshift(...pending.slice(index));
+                return;
+            }
+            this.sendPcmChunk(socket, pending[index]);
+        }
+    }
+
+    private sendPcmChunk(socket: WebSocket, pcmData: Int16Array): void {
+        const bytes = new Uint8Array(pcmData.byteLength);
+        bytes.set(new Uint8Array(pcmData.buffer, pcmData.byteOffset, pcmData.byteLength));
+        socket.send(bytes.buffer);
+    }
+
+    private acceptRemoteFinal(remoteFinal: string): string {
+        const accumulated = `${this.finalizedText}${this.currentSentence}`;
+        const sessionText = accumulated.startsWith(this.sessionTextPrefix)
+            ? accumulated.slice(this.sessionTextPrefix.length)
+            : accumulated;
+        const finalSessionText = remoteFinal.length >= sessionText.length ? remoteFinal : sessionText;
+        this.finalizedText = `${this.sessionTextPrefix}${finalSessionText}`;
+        this.currentSentence = '';
+        return this.finalizedText;
     }
 }
