@@ -32,6 +32,7 @@ export interface FeatureUsageDraft {
   scene?: string;
   status?: 'success' | 'failure';
   doctorId?: string | null;
+  doctorWorkNo?: string | null;
   doctorName?: string | null;
   deptId?: string | null;
   deptName?: string | null;
@@ -43,6 +44,7 @@ export interface FeatureUsageDraft {
 
 interface FeatureUsageEvent extends FeatureUsageDraft {
   eventId: string;
+  clientVersion?: string;
   timestamp: number;
 }
 
@@ -62,6 +64,7 @@ let uploadTimer: ReturnType<typeof setInterval> | null = null;
 let flushSoonTimer: ReturnType<typeof setTimeout> | null = null;
 let flushInFlight: Promise<number> | null = null;
 let queueLoaded = false;
+let currentClientVersion: string | undefined;
 
 function loadQueue(): void {
   try {
@@ -118,6 +121,15 @@ function normalizeText(value: unknown): string | undefined {
   return undefined;
 }
 
+function normalizeClientVersion(value: unknown): string | undefined {
+  const version = normalizeText(value);
+  return version && version.toLowerCase() !== 'unknown' ? version : undefined;
+}
+
+export function setFeatureUsageClientVersion(version: string | null | undefined): void {
+  currentClientVersion = normalizeClientVersion(version);
+}
+
 function randomId(): string {
   return crypto.randomUUID();
 }
@@ -154,11 +166,13 @@ function toRequestEvent(event: FeatureUsageEvent) {
     scene: event.scene,
     status: event.status || 'success',
     doctorId: event.doctorId ?? actor.doctorId,
+    doctorWorkNo: event.doctorWorkNo ?? actor.doctorWorkNo,
     doctorName: event.doctorName ?? actor.doctorName,
     deptId: event.deptId ?? actor.deptId,
     deptName: event.deptName ?? actor.deptName,
     hisOrgId: event.hisOrgId ?? actor.hisOrgId,
     hisOrgName: event.hisOrgName ?? actor.orgName,
+    clientVersion: event.clientVersion ?? currentClientVersion,
     payload: normalizePayload(event.payload),
     timestamp: event.timestamp,
   };
@@ -179,8 +193,14 @@ export function trackFeatureUsage(draft: FeatureUsageDraft): void {
     sessionId: normalizeText(draft.sessionId),
     sourceModule: normalizeText(draft.sourceModule),
     scene: normalizeText(draft.scene),
+    doctorId: normalizeText(draft.doctorId ?? actor.doctorId),
+    doctorWorkNo: normalizeText(draft.doctorWorkNo ?? actor.doctorWorkNo),
+    doctorName: normalizeText(draft.doctorName ?? actor.doctorName),
+    deptId: normalizeText(draft.deptId ?? actor.deptId),
+    deptName: normalizeText(draft.deptName ?? actor.deptName),
     hisOrgId: normalizeText(draft.hisOrgId ?? actor.hisOrgId),
     hisOrgName: normalizeText(draft.hisOrgName ?? actor.orgName),
+    clientVersion: currentClientVersion,
     timestamp: draft.timestamp || Date.now(),
   };
 

@@ -353,6 +353,7 @@ export async function submitConsultationUserLog(input: SubmitConsultationUserLog
       patientGender: getPatientContextGenderText(patient as AppPatient) || patientValue(patient, ['sdSexText', 'genderText', 'gender', 'sdSex']),
       patientAge: getPatientContextAgeText(patient as AppPatient) || patientValue(patient, ['ageText', 'age', 'ageNum']),
       doctorId: actor.doctorId,
+      doctorWorkNo: actor.doctorWorkNo,
       doctorName: actor.doctorName,
       orgCode: actor.orgCode,
       hisOrgId: actor.hisOrgId,

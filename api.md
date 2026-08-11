@@ -250,7 +250,7 @@ http://127.0.0.1:8081/api/handshake
 | `userAgent` | String | 否 | 浏览器 `navigator.userAgent` |
 | `timestamp` | Number | 否 | 初始化时间戳 |
 | `sdkVersion` | String | 否 | SDK 版本号 |
-| `extra` | Object | 否 | HIS 自定义扩展字段，必须包含有效的 `emrAccessToken`；可附带 `{ hospitalCode: "H001", userId: "doc-123" }` 等额外字段 |
+| `extra` | Object | 否 | HIS 自定义扩展字段，必须包含有效的 `emrAccessToken`；SDK 会把 `$env.globalContext.get('urt')` 原样放入 `extra.urt`。桌面端从 `urt.personCd` 读取真实人员编码/工号，从 `urt.userId`、`urt.personId`、`urt.idDoctor` 等字段读取到的内部主键不得冒充工号 |
 
 请求示例：
 
@@ -264,8 +264,12 @@ http://127.0.0.1:8081/api/handshake
   "sdkVersion": "1.0.0",
   "extra": {
     "emrAccessToken": "valid-token-from-his-sdk",
-    "hospitalCode": "H001",
-    "userId": "doc-123"
+    "urt": {
+      "personCd": "0123",
+      "userId": "HIS-INTERNAL-USER-ID",
+      "userName": "张医生",
+      "orgPureName": "示范社区卫生服务中心"
+    }
   }
 }
 ```

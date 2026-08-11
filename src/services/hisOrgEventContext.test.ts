@@ -41,13 +41,26 @@ describe('HIS organization event context', () => {
     vi.unstubAllGlobals();
   });
 
-  it('keeps the enqueue-time HIS organization on feature events', async () => {
+  it('keeps enqueue-time doctor, organization, and client version on feature events', async () => {
     const actorContext = await import('./feedbackContext');
     const tracker = await import('./featureUsageTracker');
-    actorContext.setFeedbackActor({ hisOrgId: 'HIS-ORG-A', orgName: '甲医院' });
+    tracker.setFeatureUsageClientVersion('1.3.9');
+    actorContext.setFeedbackActor({
+      doctorId: 'DOCTOR-ID-A',
+      doctorWorkNo: '0123',
+      doctorName: '张医生',
+      hisOrgId: 'HIS-ORG-A',
+      orgName: '甲医院',
+    });
 
     tracker.trackFeatureUsage({ featureCode: 'chat' });
-    actorContext.setFeedbackActor({ hisOrgId: 'HIS-ORG-B', orgName: '乙医院' });
+    actorContext.setFeedbackActor({
+      doctorId: 'DOCTOR-ID-B',
+      doctorWorkNo: '0999',
+      doctorName: '李医生',
+      hisOrgId: 'HIS-ORG-B',
+      orgName: '乙医院',
+    });
     await tracker.flushFeatureUsageEvents();
     tracker.stopFeatureUsageUploader();
 
@@ -55,8 +68,12 @@ describe('HIS organization event context', () => {
       '/v1/client/feature-events/batch',
       expect.objectContaining({
         events: [expect.objectContaining({
+          doctorId: 'DOCTOR-ID-A',
+          doctorWorkNo: '0123',
+          doctorName: '张医生',
           hisOrgId: 'HIS-ORG-A',
           hisOrgName: '甲医院',
+          clientVersion: '1.3.9',
         })],
       }),
     );

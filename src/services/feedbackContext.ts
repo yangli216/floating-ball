@@ -8,6 +8,7 @@
 
 export interface FeedbackActor {
   doctorId?: string | null;
+  doctorWorkNo?: string | null;
   doctorName?: string | null;
   orgCode?: string | null;
   hisOrgId?: string | null;
@@ -32,6 +33,7 @@ function trim(value: unknown): string | null {
 export function setFeedbackActor(actor: FeedbackActor): void {
   cachedActor = {
     doctorId: trim(actor.doctorId),
+    doctorWorkNo: trim(actor.doctorWorkNo),
     doctorName: trim(actor.doctorName),
     orgCode: trim(actor.orgCode),
     hisOrgId: trim(actor.hisOrgId),
@@ -56,6 +58,7 @@ export function getFeedbackActor(): FeedbackActor {
  * {
  *   orgCode, orgPureName, orgName, hospitalName,
  *   userId / idEmp / idDoctor / idUser,
+ *   personCd（真实人员编码 / 工号，不从其它 ID 或账号字段兜底）,
  *   userName / naDoctor / naEmp,
  *   deptId / deptName,
  *   userRoleDepts: { orgId, orgCd, orgName, deptId, deptName, ... } | [{ ... }] | string(JSON)
@@ -82,6 +85,8 @@ export function resolveFeedbackActorFromUrt(
     ?? trim(urt.userName)
     ?? trim(urt.naUser)
     ?? trim((urt as Record<string, unknown>)['na_user']);
+
+  const doctorWorkNo = trim(urt.personCd);
 
   const orgCode = trim(urt.orgCode)
     ?? trim(urt.cdOrg)
@@ -113,6 +118,7 @@ export function resolveFeedbackActorFromUrt(
 
   return {
     doctorId,
+    doctorWorkNo,
     doctorName,
     orgCode,
     hisOrgId,

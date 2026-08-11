@@ -10,6 +10,7 @@ describe('feedbackContext', () => {
   it('maps HIS handshake org and dept fields for user logs', () => {
     const actor = resolveFeedbackActorFromUrt({
       orgCode: 'HIS-ORG-CODE',
+      personCd: '0123',
       orgPureName: '瓜沥镇社区卫生服务中心',
       orgName: '不应优先使用的机构名',
       deptId: 'TOP-LEVEL-DEPT-ID',
@@ -24,6 +25,7 @@ describe('feedbackContext', () => {
     }, 'FALLBACK-ORG');
 
     expect(actor.orgCode).toBe('HIS-ORG-CODE');
+    expect(actor.doctorWorkNo).toBe('0123');
     expect(actor.hisOrgId).toBe('ROLE-HIS-ORG-ID');
     expect(actor.orgName).toBe('瓜沥镇社区卫生服务中心');
     expect(actor.deptId).toBe('ROLE-DEPT-ID');
@@ -93,5 +95,28 @@ describe('feedbackContext', () => {
 
     expect(actor.orgCode).toBe('FALLBACK-ORG-CODE');
     expect(actor.hisOrgId).toBeUndefined();
+  });
+
+  it('uses only personCd as the doctor work number', () => {
+    const actor = resolveFeedbackActorFromUrt({
+      personCd: ' 0123 ',
+      loginName: 'login-account',
+      userId: '63aa8b503c6f4942d5d918c1',
+      personId: '63aa8b503c6f4942d5d918c2',
+      idDoctor: '63aa8b503c6f4942d5d918c3',
+    });
+
+    expect(actor.doctorWorkNo).toBe('0123');
+  });
+
+  it('does not use an internal id or login name as the doctor work number', () => {
+    const actor = resolveFeedbackActorFromUrt({
+      loginName: '0123',
+      userId: '63aa8b503c6f4942d5d918c1',
+      personId: '63aa8b503c6f4942d5d918c2',
+      idDoctor: '63aa8b503c6f4942d5d918c3',
+    });
+
+    expect(actor.doctorWorkNo).toBeNull();
   });
 });

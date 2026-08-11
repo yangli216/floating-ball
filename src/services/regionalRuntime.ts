@@ -4,7 +4,11 @@ import {
   shutdownRegionalClient,
 } from './regionalClient';
 import { startAuditUploader, stopAuditUploader } from './auditUploader';
-import { startFeatureUsageUploader, stopFeatureUsageUploader } from './featureUsageTracker';
+import {
+  setFeatureUsageClientVersion,
+  startFeatureUsageUploader,
+  stopFeatureUsageUploader,
+} from './featureUsageTracker';
 import { startRecommendationPreferenceUploader, stopRecommendationPreferenceUploader } from './recommendationPreferenceTracker';
 import { syncRemotePrompts } from './promptOverride';
 import { syncRemoteTemplates } from './templateService';
@@ -26,6 +30,7 @@ export async function initializeRegionalRuntime(options?: {
   skipAuditLog?: boolean;
 }): Promise<BootstrapConfig | null> {
   const updateState = await checkForceUpdateRequired();
+  setFeatureUsageClientVersion(updateState.currentVersion);
   if (updateState.required) {
     return null;
   }
