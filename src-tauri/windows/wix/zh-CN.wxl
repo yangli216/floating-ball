@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<WixLocalization Culture="zh-CN" xmlns="http://schemas.microsoft.com/wix/2006/localization">
+  <String Id="LaunchApp">启动全医慧助（PCIE）</String>
+  <String Id="DowngradeErrorMessage">已安装更新版本的全医慧助（PCIE）。</String>
+  <String Id="PathEnvVarFeature">将全医慧助（PCIE）的安装目录加入系统 PATH。</String>
+  <String Id="InstallAppFeature">安装全医慧助（PCIE）。</String>
+</WixLocalization>

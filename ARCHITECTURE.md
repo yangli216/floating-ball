@@ -1021,7 +1021,9 @@ startAuditUploader() (startup flush + enqueue flush + 30s retry)
 
 `main` 是当前仓库唯一正式桌面客户端发布线，自 `1.4.0` 起继续单调递增；`feature/two-chronic-diseases` 属于另一产品方向，不合并回 `main`，后续移出当前仓库，也不得再使用本仓库正式更新通道或复用正式版本号。为保证已经安装的 `1.2.x` 与另一分支曾发布的 `1.3.x` 客户端都能升级，正式版本必须严格高于仓库所有历史公开版本，并继续保留 `com.med-hermes.app` Bundle Identifier、既有 updater 公钥和兼容更新地址。GitHub 发布先以 draft 汇聚 macOS / Windows 产物，只有在统一 `latest.json` 的版本、平台 URL、安装包文件名和 `.sig` 内容与同一次构建产物逐项匹配后才转为 latest 正式发布；不得复用旧 tag、旧 draft 或旧 `latest.json`。公开发布成功后，历史 `floating-ball` 仓库地址依赖 GitHub 仓库重命名重定向继续访问同一 release，当前及后续客户端直接使用 `pcie` 地址。
 
-Tauri `productName` 固定使用 ASCII 产物标识 `PCIE`，窗口标题、说明和界面仍使用正式中文品牌“全医慧助（PCIE）”。这样可以让跨平台安装包、`.sig` 与 `latest.json` 始终使用稳定文件名，避免发布 action 对中文及全角括号二次清洗后找不到签名。Windows 安装包只发布 Tauri WiX MSI，不再同时生成 NSIS `.exe`，避免同一版本出现两个可安装产物导致桌面图标重复。Windows 专用配置位于 `src-tauri/tauri.windows.conf.json`，其中 `bundle.targets = "msi"` 且 `bundle.windows.wix.language = "zh-CN"`；因此 Windows release 产物文件名稳定使用 `PCIE` 前缀，安装器 UI 继续使用中文语言包。
+Tauri `productName` 固定使用 ASCII 产物标识 `PCIE`，让跨平台安装包、`.sig` 与 `latest.json` 始终使用稳定文件名，避免发布 action 对中文及全角括号二次清洗后找不到签名；该字段不再直接决定 Windows 客户可见名称。Windows 安装包只发布 Tauri WiX MSI，不再同时生成 NSIS `.exe`。Windows 专用配置位于 `src-tauri/tauri.windows.conf.json`，其中 `bundle.targets = "msi"`、`bundle.windows.wix.language = "zh-CN"`，并通过 `windows/wix/main.wxs` 将“已安装的应用”、桌面快捷方式和开始菜单统一显示为正式中文品牌“全医慧助（PCIE）”，安装目录及 release 产物仍保持 `PCIE`。
+
+Windows MSI 的主 `UpgradeCode` 固定为 `3b611483-0215-50cb-b961-cf1a889c5546`（已发布 `PCIE` 安装线），禁止再由 `productName` 隐式推导。自定义 WiX 模板同时检测并迁移 `MedHermes` 的 `14565492-a50a-59b4-b895-f9ebb5c21055` 与早期中文产品名的 `b12fd688-122f-51fe-bec8-022d41a503e1`，使从 `1.2.97/1.2.98`、`1.2.99`、`1.3.x/1.4.1` 升级时都只保留一套当前应用；安装阶段还要清理历史 `MedHermes` / `PCIE` 桌面与开始菜单快捷方式。发布 preflight 必须同时验证主升级码、模板路径、中文显示名和两套历史迁移码，Windows 真实冒烟至少覆盖 `1.2.97 -> 新版` 与 `1.4.1 -> 新版`。
 
 ### 当前本地基础设施边界
 

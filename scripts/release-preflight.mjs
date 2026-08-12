@@ -5,6 +5,14 @@ import { fileURLToPath } from 'url';
 export const MINIMUM_MAIN_RELEASE = '1.4.0';
 export const COMPATIBLE_IDENTIFIER = 'com.med-hermes.app';
 export const STABLE_PRODUCT_NAME = 'PCIE';
+export const WINDOWS_DISPLAY_NAME = '全医慧助（PCIE）';
+export const WINDOWS_WIX_UPGRADE_CODE = '3b611483-0215-50cb-b961-cf1a889c5546';
+export const LEGACY_WINDOWS_WIX_UPGRADE_CODES = [
+  '14565492-a50a-59b4-b895-f9ebb5c21055',
+  'b12fd688-122f-51fe-bec8-022d41a503e1',
+];
+export const WINDOWS_WIX_TEMPLATE = './windows/wix/main.wxs';
+export const WINDOWS_WIX_LOCALE = './windows/wix/zh-CN.wxl';
 export const COMPATIBLE_UPDATER_PUBLIC_KEY =
   'dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDM0MUE5REVEQkMwOEE0RTgKUldUb3BBaTg3WjBhTk9WREQxN3dlSm1uYklSbGNNZldhbnBpV3Rpb1pscnBVZisxcTNDM08zRncK';
 
@@ -56,7 +64,16 @@ export function readCargoPackageVersion(cargoToml) {
   return version;
 }
 
-export function validateReleaseConfiguration({ tag, previousVersion, packageJson, tauriConfig, cargoVersion }) {
+export function validateReleaseConfiguration({
+  tag,
+  previousVersion,
+  packageJson,
+  tauriConfig,
+  windowsConfig,
+  windowsInstallerTemplate,
+  windowsInstallerLocale,
+  cargoVersion,
+}) {
   if (!tag || !/^v\d+\.\d+\.\d+$/.test(tag)) {
     throw new Error(`release tag must use vX.Y.Z, received: ${tag || '(empty)'}`);
   }
@@ -100,6 +117,52 @@ export function validateReleaseConfiguration({ tag, previousVersion, packageJson
     throw new Error('bundle.createUpdaterArtifacts must remain true');
   }
 
+  const windowsBundle = windowsConfig?.bundle;
+  const wix = windowsBundle?.windows?.wix;
+  if (windowsBundle?.targets !== 'msi') {
+    throw new Error('Windows releases must only build the MSI target');
+  }
+  if (wix?.upgradeCode?.toLowerCase() !== WINDOWS_WIX_UPGRADE_CODE) {
+    throw new Error(`Windows WiX upgradeCode must remain ${WINDOWS_WIX_UPGRADE_CODE}`);
+  }
+  if (wix?.template !== WINDOWS_WIX_TEMPLATE) {
+    throw new Error(`Windows WiX template must remain ${WINDOWS_WIX_TEMPLATE}`);
+  }
+  if (wix?.language?.['zh-CN']?.localePath !== WINDOWS_WIX_LOCALE) {
+    throw new Error(`Windows WiX zh-CN locale must remain ${WINDOWS_WIX_LOCALE}`);
+  }
+
+  const displayNameMarker = `<?define DisplayName = "${WINDOWS_DISPLAY_NAME}" ?>`;
+  const requiredTemplateMarkers = [
+    displayNameMarker,
+    'Name="$(var.DisplayName)"\n            UpgradeCode="{{upgrade_code}}"',
+    'Id="ApplicationDesktopShortcut" Name="$(var.DisplayName)"',
+    'Id="ApplicationStartMenuShortcut"',
+    'Name="卸载全医慧助（PCIE）"',
+    'RemoveLegacyPcieDesktopShortcut',
+    'RemoveLegacyMedHermesDesktopShortcut',
+    'CleanupLegacyPcieStartMenu',
+    'CleanupLegacyMedHermesStartMenu',
+  ];
+  if (
+    typeof windowsInstallerTemplate !== 'string' ||
+    requiredTemplateMarkers.some((marker) => !windowsInstallerTemplate.includes(marker))
+  ) {
+    throw new Error(`Windows WiX template must expose the display name ${WINDOWS_DISPLAY_NAME}`);
+  }
+  for (const legacyUpgradeCode of LEGACY_WINDOWS_WIX_UPGRADE_CODES) {
+    if (!windowsInstallerTemplate.toLowerCase().includes(legacyUpgradeCode)) {
+      throw new Error(`Windows WiX template must migrate legacy upgrade code ${legacyUpgradeCode}`);
+    }
+  }
+  if (
+    typeof windowsInstallerLocale !== 'string' ||
+    !windowsInstallerLocale.includes(`启动${WINDOWS_DISPLAY_NAME}`) ||
+    !windowsInstallerLocale.includes(`安装${WINDOWS_DISPLAY_NAME}`)
+  ) {
+    throw new Error(`Windows WiX locale must use the display name ${WINDOWS_DISPLAY_NAME}`);
+  }
+
   const endpoints = updater.endpoints ?? [];
   if (!endpoints.includes('https://github.com/yangli216/pcie/releases/latest/download/latest.json')) {
     throw new Error('the current GitHub updater endpoint is missing');
@@ -111,12 +174,26 @@ export function validateReleaseConfiguration({ tag, previousVersion, packageJson
 export function runReleasePreflight(rootDir, tag, previousVersion) {
   const packageJson = JSON.parse(fs.readFileSync(path.join(rootDir, 'package.json'), 'utf8'));
   const tauriConfig = JSON.parse(fs.readFileSync(path.join(rootDir, 'src-tauri', 'tauri.conf.json'), 'utf8'));
+  const windowsConfigPath = path.join(rootDir, 'src-tauri', 'tauri.windows.conf.json');
+  const windowsConfig = JSON.parse(fs.readFileSync(windowsConfigPath, 'utf8'));
+  const wix = windowsConfig.bundle.windows.wix;
+  const windowsInstallerTemplate = fs.readFileSync(
+    path.resolve(path.dirname(windowsConfigPath), wix.template),
+    'utf8',
+  );
+  const windowsInstallerLocale = fs.readFileSync(
+    path.resolve(path.dirname(windowsConfigPath), wix.language['zh-CN'].localePath),
+    'utf8',
+  );
   const cargoToml = fs.readFileSync(path.join(rootDir, 'src-tauri', 'Cargo.toml'), 'utf8');
   return validateReleaseConfiguration({
     tag,
     previousVersion,
     packageJson,
     tauriConfig,
+    windowsConfig,
+    windowsInstallerTemplate,
+    windowsInstallerLocale,
     cargoVersion: readCargoPackageVersion(cargoToml),
   });
 }

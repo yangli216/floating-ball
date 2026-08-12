@@ -3,7 +3,13 @@
     "targets": "msi",
     "windows": {
       "wix": {
-        "language": "zh-CN"
+        "language": {
+          "zh-CN": {
+            "localePath": "./windows/wix/zh-CN.wxl"
+          }
+        },
+        "upgradeCode": "3b611483-0215-50cb-b961-cf1a889c5546",
+        "template": "./windows/wix/main.wxs"
       }
     }
   }

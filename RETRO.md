@@ -477,6 +477,13 @@
 - **解决方案**: `main` 确认为唯一正式发布线并从 `1.4.0` 起步，另一分支后续移出；保留 Bundle Identifier、updater 公钥与兼容更新入口，新增发布 preflight 和统一 release 资产校验，所有平台完成后才把 draft 转为 latest。
 - **后续防护**: 已升级为 AGENTS.md 硬约束 #10；任何正式发版不得复用旧 tag / draft / `latest.json`，必须执行历史版本升级冒烟。
 
+### RETRO-060: 产品改名改变 WiX 升级码导致新旧应用并存 [未解决]
+
+- **现象**: 从 `1.2.97` 安装或升级到改名后的版本后，桌面仍保留 `MedHermes`，同时新增英文 `PCIE` 快捷方式；Windows 将它们显示为两款应用。
+- **根因**: Tauri WiX 在未显式配置时会按 `<productName>.exe.app.x64` 生成 `UpgradeCode`。历史发布依次使用过 `MedHermes`、`全医慧助（PCIE）` 和 `PCIE`，因此形成三套互不识别的 MSI 安装身份；为稳定 updater 产物而把 `productName` 固定为 ASCII `PCIE`，又直接把英文内部名暴露到了桌面快捷方式。
+- **解决方案**: 保留 `PCIE` 作为稳定产物名并显式固定当前主 `UpgradeCode`；Windows 自定义 WiX 模板单独提供中文 Product/快捷方式展示名，同时把 `MedHermes` 和早期中文产品名的升级码加入迁移检测，安装时清理历史快捷方式，使新包同时替换历史安装线。
+- **后续防护**: 配置与自动校验已落地，并升级为 AGENTS.md 硬约束 #11；在 Windows 分别完成 `1.2.97 -> 新版` 与 `1.4.1 -> 新版` 原位升级冒烟、确认最终只剩一个中文应用后，再将本条标记为已解决。
+
 > 新增条目请复制以下模板：
 
 ```markdown

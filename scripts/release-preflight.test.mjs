@@ -3,7 +3,12 @@ import test from 'node:test';
 import {
   COMPATIBLE_IDENTIFIER,
   COMPATIBLE_UPDATER_PUBLIC_KEY,
+  LEGACY_WINDOWS_WIX_UPGRADE_CODES,
   STABLE_PRODUCT_NAME,
+  WINDOWS_DISPLAY_NAME,
+  WINDOWS_WIX_LOCALE,
+  WINDOWS_WIX_TEMPLATE,
+  WINDOWS_WIX_UPGRADE_CODE,
   validateReleaseConfiguration,
 } from './release-preflight.mjs';
 
@@ -25,6 +30,39 @@ function validConfiguration() {
         },
       },
     },
+    windowsConfig: {
+      bundle: {
+        targets: 'msi',
+        windows: {
+          wix: {
+            language: { 'zh-CN': { localePath: WINDOWS_WIX_LOCALE } },
+            upgradeCode: WINDOWS_WIX_UPGRADE_CODE,
+            template: WINDOWS_WIX_TEMPLATE,
+          },
+        },
+      },
+    },
+    windowsInstallerTemplate: `
+      <?define DisplayName = "${WINDOWS_DISPLAY_NAME}" ?>
+      <Product
+            Name="$(var.DisplayName)"
+            UpgradeCode="{{upgrade_code}}">
+        <Upgrade Id="${LEGACY_WINDOWS_WIX_UPGRADE_CODES[0]}" />
+        <Upgrade Id="${LEGACY_WINDOWS_WIX_UPGRADE_CODES[1]}" />
+        <Shortcut Id="ApplicationDesktopShortcut" Name="$(var.DisplayName)" />
+        <Shortcut Id="ApplicationStartMenuShortcut"
+          Name="$(var.DisplayName)" />
+        <Shortcut Id="UninstallShortcut" Name="卸载全医慧助（PCIE）" />
+        <RemoveFile Id="RemoveLegacyPcieDesktopShortcut" />
+        <RemoveFile Id="RemoveLegacyMedHermesDesktopShortcut" />
+        <Component Id="CleanupLegacyPcieStartMenu" />
+        <Component Id="CleanupLegacyMedHermesStartMenu" />
+      </Product>
+    `,
+    windowsInstallerLocale: `
+      <String Id="LaunchApp">启动${WINDOWS_DISPLAY_NAME}</String>
+      <String Id="InstallAppFeature">安装${WINDOWS_DISPLAY_NAME}。</String>
+    `,
   };
 }
 
@@ -55,4 +93,28 @@ test('rejects an updater identity or key change', () => {
   const keyConfiguration = validConfiguration();
   keyConfiguration.tauriConfig.plugins.updater.pubkey = 'different-key';
   assert.throws(() => validateReleaseConfiguration(keyConfiguration), /compatibility public key/);
+});
+
+test('rejects an implicit or changed Windows MSI upgrade identity', () => {
+  const configuration = validConfiguration();
+  delete configuration.windowsConfig.bundle.windows.wix.upgradeCode;
+  assert.throws(() => validateReleaseConfiguration(configuration), /upgradeCode must remain/);
+});
+
+test('rejects a Windows installer that drops a historical installation family', () => {
+  const configuration = validConfiguration();
+  configuration.windowsInstallerTemplate = configuration.windowsInstallerTemplate.replace(
+    LEGACY_WINDOWS_WIX_UPGRADE_CODES[0],
+    'removed-legacy-upgrade-code',
+  );
+  assert.throws(() => validateReleaseConfiguration(configuration), /must migrate legacy upgrade code/);
+});
+
+test('rejects an English-only Windows installer display name', () => {
+  const configuration = validConfiguration();
+  configuration.windowsInstallerTemplate = configuration.windowsInstallerTemplate.replace(
+    WINDOWS_DISPLAY_NAME,
+    'PCIE',
+  );
+  assert.throws(() => validateReleaseConfiguration(configuration), /must expose the display name/);
 });
