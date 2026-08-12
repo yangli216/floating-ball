@@ -39,7 +39,10 @@ vi.mock('./aiTrace', () => ({
   finishAiTrace: vi.fn(),
 }));
 
-import { RealtimeSpeechService } from './aliyunSpeech';
+import {
+  calculateRealtimeReconnectDelay,
+  RealtimeSpeechService,
+} from './aliyunSpeech';
 
 class FakeWebSocket {
   static readonly CONNECTING = 0;
@@ -91,8 +94,11 @@ class FakeWebSocket {
   }
 }
 
-async function startStreamingService(onText = vi.fn()) {
-  const service = new RealtimeSpeechService();
+async function startStreamingService(
+  onText = vi.fn(),
+  reconnectRandom: () => number = () => 0.5,
+) {
+  const service = new RealtimeSpeechService(reconnectRandom);
   const starting = service.start(onText);
   await vi.waitFor(() => expect(FakeWebSocket.instances).toHaveLength(1));
   FakeWebSocket.instances[0].open();
@@ -102,19 +108,35 @@ async function startStreamingService(onText = vi.fn()) {
 
 describe('RealtimeSpeechService recovery', () => {
   beforeEach(() => {
+    vi.useFakeTimers();
     FakeWebSocket.instances = [];
     localStorage.removeItem('SPEECH_TEST_MODE');
     mocks.buildRegionalSpeechUploadPayload.mockClear();
     mocks.createRegionalWebSocketUrl.mockClear();
+    mocks.createRegionalWebSocketUrl.mockImplementation(async () => (
+      `wss://pcie.example/v1/ai/speech/realtime/ws?nonce=${mocks.createRegionalWebSocketUrl.mock.calls.length}`
+    ));
     mocks.regionalPost.mockClear();
     vi.stubGlobal('WebSocket', FakeWebSocket);
   });
 
   afterEach(() => {
     vi.unstubAllGlobals();
+    vi.useRealTimers();
   });
 
-  it('reconnects after an unexpected close and flushes PCM captured during recovery', async () => {
+  it('calculates non-zero full-jitter delays within the 1/2/4/8/15 second caps', () => {
+    const caps = [1000, 2000, 4000, 8000, 15000];
+
+    caps.forEach((cap, attempt) => {
+      expect(calculateRealtimeReconnectDelay(attempt, () => 0)).toBe(1);
+      expect(calculateRealtimeReconnectDelay(attempt, () => 0.5)).toBe(cap / 2);
+      expect(calculateRealtimeReconnectDelay(attempt, () => 1)).toBe(cap);
+    });
+    expect(calculateRealtimeReconnectDelay(99, () => 1)).toBe(15000);
+  });
+
+  it('re-signs after jittered retries and flushes PCM when streaming recovers', async () => {
     const { service } = await startStreamingService();
     const firstSocket = FakeWebSocket.instances[0];
 
@@ -122,16 +144,59 @@ describe('RealtimeSpeechService recovery', () => {
     expect(firstSocket.sent).toHaveLength(1);
 
     firstSocket.remoteClose();
-    await vi.waitFor(() => expect(FakeWebSocket.instances).toHaveLength(2));
-
     service.sendAudio(new Int16Array([3, 4]));
+
+    await vi.advanceTimersByTimeAsync(499);
+    expect(FakeWebSocket.instances).toHaveLength(1);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(FakeWebSocket.instances).toHaveLength(2);
+
     const secondSocket = FakeWebSocket.instances[1];
     expect(secondSocket.sent).toHaveLength(0);
 
-    secondSocket.open();
-    expect(secondSocket.sent).toHaveLength(1);
-    expect(secondSocket.sent[0]).toBeInstanceOf(ArrayBuffer);
+    secondSocket.remoteClose();
+    await vi.advanceTimersByTimeAsync(999);
+    expect(FakeWebSocket.instances).toHaveLength(2);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(FakeWebSocket.instances).toHaveLength(3);
 
+    const thirdSocket = FakeWebSocket.instances[2];
+    thirdSocket.open();
+    expect(thirdSocket.sent).toHaveLength(1);
+    expect(thirdSocket.sent[0]).toBeInstanceOf(ArrayBuffer);
+    expect(mocks.createRegionalWebSocketUrl).toHaveBeenCalledTimes(3);
+    expect(new Set(FakeWebSocket.instances.map(socket => socket.url)).size).toBe(3);
+
+    service.close();
+  });
+
+  it('cancels a pending reconnect when the recording session closes', async () => {
+    const { service } = await startStreamingService();
+    FakeWebSocket.instances[0].remoteClose();
+    expect(vi.getTimerCount()).toBe(1);
+
+    service.close();
+    await vi.runAllTimersAsync();
+
+    expect(FakeWebSocket.instances).toHaveLength(1);
+    expect(mocks.createRegionalWebSocketUrl).toHaveBeenCalledTimes(1);
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it('does not let a cancelled reconnect revive inside a newly started session', async () => {
+    const { service } = await startStreamingService();
+    FakeWebSocket.instances[0].remoteClose();
+    expect(vi.getTimerCount()).toBe(1);
+
+    service.close();
+    const restarted = service.start();
+    await vi.waitFor(() => expect(FakeWebSocket.instances).toHaveLength(2));
+    FakeWebSocket.instances[1].open();
+    await restarted;
+    await vi.runAllTimersAsync();
+
+    expect(FakeWebSocket.instances).toHaveLength(2);
+    expect(mocks.createRegionalWebSocketUrl).toHaveBeenCalledTimes(2);
     service.close();
   });
 
@@ -143,7 +208,8 @@ describe('RealtimeSpeechService recovery', () => {
     service.sendAudio(new Int16Array([1, 2]));
 
     firstSocket.remoteClose();
-    await vi.waitFor(() => expect(FakeWebSocket.instances).toHaveLength(2));
+    await vi.advanceTimersByTimeAsync(500);
+    expect(FakeWebSocket.instances).toHaveLength(2);
     const secondSocket = FakeWebSocket.instances[1];
     service.sendAudio(new Int16Array([3, 4]));
     secondSocket.open();

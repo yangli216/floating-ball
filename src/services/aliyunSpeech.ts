@@ -14,6 +14,24 @@ import {
 } from './regionalClient';
 import { beginAiTrace, failAiTrace, finishAiTrace } from './aiTrace';
 
+const REALTIME_RECONNECT_BACKOFF_CAPS_MS = [1000, 2000, 4000, 8000, 15000] as const;
+
+/**
+ * 计算实时语音重连等待时间：full jitter，且至少等待 1ms，避免立即重试。
+ */
+export function calculateRealtimeReconnectDelay(
+    attempt: number,
+    random: () => number = Math.random,
+): number {
+    const safeAttempt = Number.isFinite(attempt) ? Math.max(0, Math.floor(attempt)) : 0;
+    const cap = REALTIME_RECONNECT_BACKOFF_CAPS_MS[
+        Math.min(safeAttempt, REALTIME_RECONNECT_BACKOFF_CAPS_MS.length - 1)
+    ];
+    const sample = random();
+    const normalizedSample = Number.isFinite(sample) ? Math.min(1, Math.max(0, sample)) : 0;
+    return Math.max(1, Math.ceil(normalizedSample * cap));
+}
+
 /**
  * 快速测试模式示例文本
  * 启用测试模式时，直接返回此文本而不调用实际语音识别
@@ -130,11 +148,12 @@ export class RealtimeSpeechService {
     private reconnectTimer: number | null = null;
     private reconnectDelayResolve?: () => void;
     private socketGeneration: number = 0;
+    private sessionEpoch: number = 0;
     private finalizedText: string = '';
     private currentSentence: string = '';
     private sessionTextPrefix: string = '';
 
-    constructor() {
+    constructor(private readonly reconnectRandom: () => number = Math.random) {
     }
 
     /**
@@ -143,6 +162,7 @@ export class RealtimeSpeechService {
      */
     async start(onText?: (text: string, isFinal: boolean) => void): Promise<void> {
         this.cleanupRegionalSocket();
+        const sessionEpoch = this.sessionEpoch;
         this.onTextCallback = onText;
         this.audioChunks = [];
         this.pendingAudioChunks = [];
@@ -167,9 +187,11 @@ export class RealtimeSpeechService {
             return;
         }
         try {
-            await this.startRegionalStreaming();
+            await this.startRegionalStreaming(sessionEpoch);
+            if (this.sessionEpoch !== sessionEpoch) return;
             console.log('[Speech] Regional streaming session started');
         } catch (error) {
+            if (this.sessionEpoch !== sessionEpoch) return;
             console.warn('[Speech] Failed to start streaming, falling back to batch mode:', error);
             this.disposeRegionalSocket();
             this.isStreaming = false;
@@ -244,9 +266,9 @@ export class RealtimeSpeechService {
         return this.isStarted;
     }
 
-    private async startRegionalStreaming(): Promise<void> {
+    private async startRegionalStreaming(expectedSessionEpoch: number = this.sessionEpoch): Promise<void> {
         const socketUrl = await createRegionalWebSocketUrl('/v1/ai/speech/realtime/ws');
-        if (!this.isStarted || this.isFinishing) {
+        if (this.sessionEpoch !== expectedSessionEpoch || !this.isStarted || this.isFinishing) {
             throw new Error('实时语音会话已结束');
         }
         const socket = new WebSocket(socketUrl);
@@ -270,7 +292,10 @@ export class RealtimeSpeechService {
             };
 
             socket.onopen = () => {
-                if (!this.isActiveSocket(socket, generation) || !this.isStarted || this.isFinishing) {
+                if (this.sessionEpoch !== expectedSessionEpoch
+                    || !this.isActiveSocket(socket, generation)
+                    || !this.isStarted
+                    || this.isFinishing) {
                     this.detachSocket(socket, true);
                     return;
                 }
@@ -458,6 +483,7 @@ export class RealtimeSpeechService {
     }
 
     private cleanupRegionalSocket(): void {
+        this.sessionEpoch += 1;
         this.cancelReconnectDelay();
         this.socketGeneration += 1;
         this.disposeRegionalSocket();
@@ -521,15 +547,22 @@ export class RealtimeSpeechService {
             return;
         }
 
+        const reconnectEpoch = this.sessionEpoch;
         this.reconnectPromise = (async () => {
-            const delays = [0, 500, 1000, 2000, 5000];
             let attempt = 0;
-            while (this.isStarted && !this.isFinishing && !this.isStreaming) {
-                const delay = delays[Math.min(attempt, delays.length - 1)];
+            while (this.sessionEpoch === reconnectEpoch
+                && this.isStarted
+                && !this.isFinishing
+                && !this.isStreaming) {
+                const delay = calculateRealtimeReconnectDelay(attempt, this.reconnectRandom);
                 await this.waitForReconnectDelay(delay);
-                if (!this.isStarted || this.isFinishing || this.isStreaming) return;
+                if (this.sessionEpoch !== reconnectEpoch
+                    || !this.isStarted
+                    || this.isFinishing
+                    || this.isStreaming) return;
                 try {
-                    await this.startRegionalStreaming();
+                    await this.startRegionalStreaming(reconnectEpoch);
+                    if (this.sessionEpoch !== reconnectEpoch) return;
                     console.log('[Speech] Realtime connection restored');
                     return;
                 } catch (error) {
@@ -539,7 +572,9 @@ export class RealtimeSpeechService {
                 }
             }
         })().finally(() => {
-            this.reconnectPromise = null;
+            if (this.sessionEpoch === reconnectEpoch) {
+                this.reconnectPromise = null;
+            }
         });
     }
 

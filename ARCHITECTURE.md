@@ -1036,7 +1036,7 @@ Windows 安装包只发布 Tauri WiX MSI，不再同时生成 NSIS `.exe`，避�
 ### 语音转写网络策略
 
 - `llm.ts` 中 `transcribeAudio` 只调用签名 `/v1/ai/speech/transcribe`，客户端不持有语音供应商 key 或直连地址。
-- `aliyunSpeech.ts` 中 `RealtimeSpeechService` 统一采集 PCM：`aliyun-dashscope` 与 `funasr-websocket` 走签名 `/v1/ai/speech/realtime/ws`；首次建链失败时转入批量模式，录音中途收到非主动 `error` / `final` / `close` 时按短退避自动重连并暂存待发 PCM。只要实时链路发生过中断，停止录音后就使用完整本地音频调用 `/v1/ai/speech/realtime` 批量补录，失败时才保留已收到的实时文字；`openai-compatible` 统一走批量转写。FunASR 原生地址和协议仅由服务端托管。
+- `aliyunSpeech.ts` 中 `RealtimeSpeechService` 统一采集 PCM：`aliyun-dashscope` 与 `funasr-websocket` 走签名 `/v1/ai/speech/realtime/ws`；首次建链失败时转入批量模式，录音中途收到非主动 `error` / `final` / `close` 时按 `1/2/4/8/15 秒`上限的 full-jitter capped exponential backoff 自动重连，不允许 0ms 立即重试。每次重连都重新申请签名 WebSocket URL 和 nonce，避免复用过期或已消费凭据；等待期间暂存待发 PCM。每轮录音使用独立会话 epoch，关闭或重新开始后，上一轮尚未完成的退避协程不得在新会话中复活。重连只会建立新的实时识别任务，不保证把原节点上的上游识别会话迁移到新节点。只要实时链路发生过中断，停止录音后就使用完整本地音频调用 `/v1/ai/speech/realtime` 批量补录，失败时才保留已收到的实时文字；`openai-compatible` 统一走批量转写。FunASR 原生地址和协议仅由服务端托管。
 - `ChatPanel.vue` 通过 `features/chat/model/useChatVoiceInput.ts` 把 `audioRecorder` 的 PCM 数据持续交给 `RealtimeSpeechService`，与 `VoiceCapsule.vue` 共用 bootstrap 下发的 speech provider/model/sampleRate/format；配置为 `funasr-websocket` 时，聊天麦克风不得在录音结束后直接跳到 `/v1/ai/speech/realtime` 批量接口。`SPEECH_TEST_MODE` 仅用于开发测试夹具，不提供生产本地执行路径。
 - 审查 AI（`factChecker.ts` -> `llm.ts/chat`）复用签名 `/v1/ai/chat`，启用状态、模型和 `checkExaminationEnabled` 来自 bootstrap。
 
