@@ -1,7 +1,7 @@
 {
   "name": "pcie",
   "private": true,
-  "version": "1.2.99",
+  "version": "1.4.0",
   "description": "全医慧助（PCIE）— Primary Care Intelligent Expert，面向基层医疗机构的桌面端智能全科专家工作站。",
   "repository": {
     "type": "git",
@@ -16,7 +16,8 @@
     "build": "vue-tsc --noEmit && vite build",
     "preview": "vite preview",
     "tauri": "tauri",
-    "release": "node scripts/release.mjs"
+    "release": "node scripts/release.mjs",
+    "test:release": "node --test scripts/*.test.mjs"
   },
   "dependencies": {
     "@iconify-json/healthicons": "^1.2.12",

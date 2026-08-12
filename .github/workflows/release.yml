@@ -12,10 +12,10 @@ on:
       channel:
         description: '内网更新通道'
         required: false
-        default: 'stable'
+        default: 'production'
         type: string
       publish_base_url:
-        description: '内网更新根地址，例如 https://intra.example.com/pcie/stable'
+        description: '内网更新根地址，例如 https://intra.example.com/pcie/production'
         required: false
         type: string
       release_notes:
@@ -24,12 +24,49 @@ on:
         type: string
 
 jobs:
+  preflight:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    outputs:
+      release_tag: ${{ steps.release.outputs.release_tag }}
+    steps:
+      - name: Checkout release tag
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.inputs.tag || github.ref }}
+          fetch-depth: 0
+
+      - name: Validate main release lineage
+        id: release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ github.event.inputs.tag || github.ref_name }}
+        run: |
+          git fetch origin main --tags
+          if ! git merge-base --is-ancestor HEAD origin/main; then
+            echo "Formal releases must point to a commit on main."
+            exit 1
+          fi
+          if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
+            echo "Release $RELEASE_TAG already exists. Delete the stale draft or choose a new version; releases cannot be reused."
+            exit 1
+          fi
+          PREVIOUS_TAG="$(gh release view --json tagName --jq '.tagName')"
+          node scripts/release-preflight.mjs --tag "$RELEASE_TAG" --previous-version "$PREVIOUS_TAG"
+          echo "release_tag=$RELEASE_TAG" >> "$GITHUB_OUTPUT"
+
   release:
+    needs: preflight
     permissions:
       contents: write
     environment: TAURI_SIGNING_PRIVATE_KEY
     strategy:
-      fail-fast: false
+      fail-fast: true
+      # Both platforms append assets to one draft release. Serial execution
+      # prevents duplicate drafts and partially overwritten latest.json files.
+      max-parallel: 1
       matrix:
         # 升级 macos-latest 到 macos-14 (M1) 以获得更快的编译速度
         platform: [macos-14, windows-latest]
@@ -38,6 +75,8 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.preflight.outputs.release_tag }}
 
       - name: Install dependencies (Ubuntu)
         if: matrix.platform == 'ubuntu-22.04'
@@ -75,88 +114,6 @@ jobs:
         env:
           VITE_REGIONAL_BASE_URL: ${{ vars.VITE_REGIONAL_BASE_URL }}
 
-      - name: Debug signing key (Unix)
-        if: matrix.platform != 'windows-latest'
-        env:
-          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
-        run: |
-          echo "=== TAURI_SIGNING_PRIVATE_KEY Debug ==="
-          echo "Length: ${#TAURI_SIGNING_PRIVATE_KEY}"
-          
-          # 检查是否包含空格
-          if [[ "$TAURI_SIGNING_PRIVATE_KEY" == *" "* ]]; then
-            echo "⚠️ WARNING: Key contains SPACES!"
-            echo "Space positions:"
-            echo "$TAURI_SIGNING_PRIVATE_KEY" | grep -bo ' ' | head -5
-          else
-            echo "✓ No spaces found"
-          fi
-          
-          # 检查是否包含换行
-          linecount=$(echo "$TAURI_SIGNING_PRIVATE_KEY" | wc -l)
-          echo "Line count: $linecount"
-          
-          # 显示前20个字符（安全，只是 base64 前缀）
-          echo "First 20 chars: ${TAURI_SIGNING_PRIVATE_KEY:0:20}"
-          
-          # 显示最后10个字符
-          echo "Last 10 chars: ${TAURI_SIGNING_PRIVATE_KEY: -10}"
-          
-          # 检查是否是有效的 base64
-          if echo "$TAURI_SIGNING_PRIVATE_KEY" | base64 -d > /dev/null 2>&1; then
-            echo "✓ Valid base64 format"
-          else
-            echo "⚠️ WARNING: Invalid base64 format!"
-          fi
-          
-          # 检查字符9位置
-          echo "Character at position 9: '${TAURI_SIGNING_PRIVATE_KEY:8:1}' (ASCII: $(printf '%d' "'${TAURI_SIGNING_PRIVATE_KEY:8:1}"))"
-
-      - name: Debug signing key (Windows)
-        if: matrix.platform == 'windows-latest'
-        shell: pwsh
-        env:
-          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
-        run: |
-          Write-Host "=== TAURI_SIGNING_PRIVATE_KEY Debug ==="
-          $key = $env:TAURI_SIGNING_PRIVATE_KEY
-          Write-Host "Length: $($key.Length)"
-          
-          # 检查是否包含空格
-          if ($key -match ' ') {
-            Write-Host "⚠️ WARNING: Key contains SPACES!"
-            $spaceIndex = $key.IndexOf(' ')
-            Write-Host "First space at position: $spaceIndex"
-          } else {
-            Write-Host "✓ No spaces found"
-          }
-          
-          # 检查行数
-          $lines = $key -split "`n"
-          Write-Host "Line count: $($lines.Count)"
-          
-          # 显示前20个字符
-          Write-Host "First 20 chars: $($key.Substring(0, [Math]::Min(20, $key.Length)))"
-          
-          # 显示最后10个字符
-          if ($key.Length -gt 10) {
-            Write-Host "Last 10 chars: $($key.Substring($key.Length - 10))"
-          }
-          
-          # 检查字符9位置
-          if ($key.Length -gt 8) {
-            $char9 = $key[8]
-            Write-Host "Character at position 9: '$char9' (ASCII: $([int][char]$char9))"
-          }
-          
-          # 验证 base64
-          try {
-            $decoded = [System.Convert]::FromBase64String($key)
-            Write-Host "✓ Valid base64 format"
-          } catch {
-            Write-Host "⚠️ WARNING: Invalid base64 format! Error: $_"
-          }
-
       - name: Build the app
         # Keep this pinned: the floating v0 tag moved to node24 and can fail on
         # runners that do not provide that action runtime yet.
@@ -170,7 +127,7 @@ jobs:
           RUSTC_WRAPPER: sccache
           SCCACHE_GHA_ENABLED: "true"
         with:
-          tagName: ${{ github.event.inputs.tag || github.ref_name }}
+          tagName: ${{ needs.preflight.outputs.release_tag }}
           releaseName: '全医慧助（PCIE）v__VERSION__'
           releaseBody: '全医慧助（PCIE）/ Primary Care Intelligent Expert 桌面端发布版本。'
           releaseDraft: true
@@ -181,8 +138,8 @@ jobs:
         if: matrix.platform == 'windows-latest'
         shell: bash
         env:
-          RELEASE_TAG: ${{ github.event.inputs.tag || github.ref_name }}
-          RELEASE_CHANNEL: ${{ github.event.inputs.channel || 'stable' }}
+          RELEASE_TAG: ${{ needs.preflight.outputs.release_tag }}
+          RELEASE_CHANNEL: ${{ github.event.inputs.channel || 'production' }}
           PUBLISH_BASE_URL: ${{ github.event.inputs.publish_base_url || vars.INTRANET_UPDATE_BASE_URL }}
           RELEASE_NOTES: ${{ github.event.inputs.release_notes || '' }}
         run: |
@@ -204,6 +161,53 @@ jobs:
         if: matrix.platform == 'windows-latest'
         uses: actions/upload-artifact@v4
         with:
-          name: windows-internal-update-${{ github.event.inputs.tag || github.ref_name }}
+          name: windows-internal-update-${{ needs.preflight.outputs.release_tag }}
           path: dist/intranet-update/**
           if-no-files-found: error
+
+  publish:
+    needs: [preflight, release]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout release validation scripts
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.preflight.outputs.release_tag }}
+
+      - name: Download the complete draft release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ needs.preflight.outputs.release_tag }}
+        run: gh release download "$RELEASE_TAG" --dir release-assets
+
+      - name: Download the Windows intranet release bundle
+        uses: actions/download-artifact@v4
+        with:
+          name: windows-internal-update-${{ needs.preflight.outputs.release_tag }}
+          path: intranet-assets
+
+      - name: Verify updater artifacts and signatures
+        env:
+          RELEASE_TAG: ${{ needs.preflight.outputs.release_tag }}
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y minisign
+          node scripts/validate-release-assets.mjs \
+            --assets-dir release-assets \
+            --tag "$RELEASE_TAG" \
+            --tauri-config src-tauri/tauri.conf.json \
+            --minisign minisign
+          node scripts/validate-release-assets.mjs \
+            --assets-dir intranet-assets \
+            --tag "$RELEASE_TAG" \
+            --targets windows-x86_64 \
+            --tauri-config src-tauri/tauri.conf.json \
+            --minisign minisign
+
+      - name: Publish as the latest release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ needs.preflight.outputs.release_tag }}
+        run: gh release edit "$RELEASE_TAG" --draft=false --latest

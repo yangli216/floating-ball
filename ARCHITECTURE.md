@@ -1019,7 +1019,9 @@ startAuditUploader() (startup flush + enqueue flush + 30s retry)
 
 `PCIE Server` 后台上传版本后生成 Tauri 兼容 `latest.json` 和公开下载地址；这些公开地址不携带设备令牌，避免 updater 下载阶段无法附带自定义鉴权头。内网部署允许使用 `http://` 更新源，`tauri.conf.json` 已通过 updater 的 `dangerous-insecure-transport-protocol` 开启非安全传输协议，运行时注入的 updater endpoint 同样继承该配置；安装包签名校验仍由 Tauri updater 强制执行。
 
-Windows 安装包只发布 Tauri WiX MSI，不再同时生成 NSIS `.exe`，避免同一版本出现两个可安装产物导致桌面图标重复。Windows 专用配置位于 `src-tauri/tauri.windows.conf.json`，其中 `bundle.targets = "msi"` 且 `bundle.windows.wix.language = "zh-CN"`；因此 Windows release 产物文件名与安装器 UI 使用中文语言包。
+`main` 是当前仓库唯一正式桌面客户端发布线，自 `1.4.0` 起继续单调递增；`feature/two-chronic-diseases` 属于另一产品方向，不合并回 `main`，后续移出当前仓库，也不得再使用本仓库正式更新通道或复用正式版本号。为保证已经安装的 `1.2.x` 与另一分支曾发布的 `1.3.x` 客户端都能升级，正式版本必须严格高于仓库所有历史公开版本，并继续保留 `com.med-hermes.app` Bundle Identifier、既有 updater 公钥和兼容更新地址。GitHub 发布先以 draft 汇聚 macOS / Windows 产物，只有在统一 `latest.json` 的版本、平台 URL、安装包文件名和 `.sig` 内容与同一次构建产物逐项匹配后才转为 latest 正式发布；不得复用旧 tag、旧 draft 或旧 `latest.json`。公开发布成功后，历史 `floating-ball` 仓库地址依赖 GitHub 仓库重命名重定向继续访问同一 release，当前及后续客户端直接使用 `pcie` 地址。
+
+Tauri `productName` 固定使用 ASCII 产物标识 `PCIE`，窗口标题、说明和界面仍使用正式中文品牌“全医慧助（PCIE）”。这样可以让跨平台安装包、`.sig` 与 `latest.json` 始终使用稳定文件名，避免发布 action 对中文及全角括号二次清洗后找不到签名。Windows 安装包只发布 Tauri WiX MSI，不再同时生成 NSIS `.exe`，避免同一版本出现两个可安装产物导致桌面图标重复。Windows 专用配置位于 `src-tauri/tauri.windows.conf.json`，其中 `bundle.targets = "msi"` 且 `bundle.windows.wix.language = "zh-CN"`；因此 Windows release 产物文件名稳定使用 `PCIE` 前缀，安装器 UI 继续使用中文语言包。
 
 ### 当前本地基础设施边界
 

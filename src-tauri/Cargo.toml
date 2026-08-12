@@ -1,6 +1,6 @@
 [package]
 name = "pcie"
-version = "1.2.99"
+version = "1.4.0"
 description = "Primary Care Intelligent Expert desktop workstation for primary care clinicians"
 authors = ["PCIE Team"]
 repository = "https://github.com/yangli216/pcie"
@@ -13,7 +13,9 @@ edition = "2021"
 # to make the lib name unique and wouldn't conflict with the bin name.
 # This seems to be only an issue on Windows, see https://github.com/rust-lang/cargo/issues/8519
 name = "pcie_lib"
-crate-type = ["staticlib", "cdylib", "rlib"]
+# This product ships as a desktop app. Mobile-only static/dynamic library
+# outputs duplicate hundreds of MB on every dev build, so keep the Rust rlib.
+crate-type = ["rlib"]
 
 [build-dependencies]
 tauri-build = { version = "2", features = [] }
@@ -45,6 +47,14 @@ window-vibrancy = "0.5"
 [target.'cfg(windows)'.dependencies]
 windows-sys = { version = "0.61.2", features = ["Win32_Foundation", "Win32_NetworkManagement_IpHelper", "Win32_NetworkManagement_Ndis", "Win32_Networking_WinSock"] }
 
+[profile.dev]
+# Keep useful file/line information while avoiding full dependency debug data.
+debug = "line-tables-only"
+incremental = true
+
+[profile.dev.package."*"]
+debug = false
+
 [profile.release]
 # 增加并行编译单元数量，加快构建速度
 codegen-units = 16
@@ -52,7 +62,7 @@ codegen-units = 16
 lto = false
 # 保持高优化级别，确保运行速度
 opt-level = 3
-# 开启增量编译，有助于缓存利用
-incremental = true
+# Release builds are infrequent; incremental caches otherwise accumulate quickly.
+incremental = false
 # 去除符号信息以进一步缩小包体积并略微加快链接
 strip = true

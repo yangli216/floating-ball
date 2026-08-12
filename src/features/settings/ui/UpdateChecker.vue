@@ -25,13 +25,13 @@
         <div class="form-group">
           <label for="production-url">正式内网地址</label>
           <input id="production-url" v-model="productionUrl" type="text" class="form-input"
-            placeholder="http://intra.example.com/pcie/stable/latest.json" />
+            placeholder="http://intra.example.com/v1/client/releases/production/latest.json" />
         </div>
 
         <div class="form-group">
           <label for="testing-url">测试内网地址</label>
           <input id="testing-url" v-model="testingUrl" type="text" class="form-input"
-            placeholder="http://intra-test.example.com/pcie/stable/latest.json" />
+            placeholder="http://intra-test.example.com/v1/client/releases/testing/latest.json" />
         </div>
 
         <div class="config-footer">
