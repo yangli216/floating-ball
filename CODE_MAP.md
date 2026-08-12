@@ -140,7 +140,7 @@ pcie/
 |------|------|------|---------|
 | **useEventListeners.ts** | ~575 | 全局事件枢纽：HIS HTTP 事件、深链接、鼠标/窗口事件、Tauri 事件监听；`start-voice-consultation` 会按目标患者判断是否恢复未提交语音缓存，同患者有缓存则恢复结果页，否则开启新语音会话；仅在已处于录音胶囊页时对重复请求做幂等处理；App 级 Tauri 事件注册/解绑样板已复用 `shared/composables/useTauriEventListener.ts` 并按原顺序批量显式启动，接诊状态机已下沉到 `app/events/useReceptionController.ts`，SDK handshake 初始化已下沉到 `app/events/useSdkHandshakeController.ts` | HIS 事件绑定、deep link 处理、window 事件和事件分发；后续继续按事件域拆 controller |
 | **useReceptionController.ts** | ~505 | App 级接诊状态机，位于 `src/app/events/useReceptionController.ts`；处理 HIS 患者补全、过敏史 / 历史就诊摘要合并、同患者并发接诊复用、自动静默接诊 guard、患者切换时语音缓存 / 最小化入口清理，以及风险胶囊加载 | 不注册 Tauri 事件、不处理 SDK handshake、不打开具体问诊 / 语音结果页、不提交 PHIS 回写 |
-| **useSdkHandshakeController.ts** | ~240 | App 级 SDK handshake controller，位于 `src/app/events/useSdkHandshakeController.ts`；解析 handshake payload 的 HIS origin/token、机构/租户、角色科室和 URT，初始化 / 重置 HIS 服务与反馈 actor，并同步医学目录上下文 | 不注册 Tauri 事件、不读写患者上下文、不打开页面、不提交 PHIS 回写 |
+| **useSdkHandshakeController.ts** | ~240 | App 级 SDK handshake controller，位于 `src/app/events/useSdkHandshakeController.ts`；解析 handshake payload 的 HIS origin/token、机构/租户、角色科室和 URT，保留 SDK origin 的 contextPath 并移除 userinfo/query/fragment，初始化 / 重置 HIS 服务与反馈 actor，并同步医学目录上下文 | 不注册 Tauri 事件、不读写患者上下文、不打开页面、不提交 PHIS 回写 |
 | **useWindowManagement.ts** | ~422 | 窗口位置/尺寸/显示器管理；真实实现已迁至 `src/app/shell/useWindowManagement.ts`，旧 `src/composables/useWindowManagement.ts` 兼容 re-export 已删除 | `saveWindowPosition()`, `restoreWindowPosition()`, `smartExpand()`, `resizeWorkWindow()` |
 | **useWorkMode.ts** | ~422 | 球体 <-> 工作面板的切换；真实实现已迁至 `src/app/shell/useWorkMode.ts`，旧 `src/composables/useWorkMode.ts` 兼容 re-export 已删除 | `enterWorkMode()`, `exitWork()`, `handleCollapse()` |
 | **useSymptomConsultationCache.ts** | -- | 智能问诊未结束现场缓存；按就诊锚点保存内部页面、症状/表单、病历草稿、诊断/推荐和引用状态；诊毕/放弃清理，跨自然日失效 | `read/write/clear` 快照 |
@@ -215,8 +215,8 @@ useEventListeners (全局事件) -> 触发 useNavigation & useWorkMode
 
 | 服务 | 行数 | 职责 |
 |------|------|------|
-| **hisService.ts** | ~80 | @internal 底层 PHIS HTTP 客户端；仅供 `services/his/*` 包装使用。业务代码禁止跨层 import，必须走 [his](src/services/his/index.ts) 入口（业务调用 `getHisAdapter()`；SDK handshake 走 `getHisService()`）；底层 `post/get` 会写入 HIS 联调出站日志；诊断目录按 1000 条/页循环同步，避免弱网下一次性拉取数万条超时；封装检查项目部位 / 方式候选查询 |
-| **hisIntegrationLog.ts** | -- | HIS 联调日志 Tauri 客户端：结构化记录、查询、清空、导出 Bridge / PHIS 调用流水 |
+| **hisService.ts** | ~80 | @internal 底层 PHIS HTTP 客户端；仅供 `services/his/*` 包装使用。业务代码禁止跨层 import，必须走 [his](src/services/his/index.ts) 入口（业务调用 `getHisAdapter()`；SDK handshake 走 `getHisService()`）；底层 `post/get` 会写入已移除 URL userinfo/query/fragment 且请求摘要脱敏的 HIS 联调出站日志，控制台同样只记录方法、接口路径、状态、耗时和数量；诊断目录按 1000 条/页循环同步，避免弱网下一次性拉取数万条超时；封装检查项目部位 / 方式候选查询 |
+| **hisIntegrationLog.ts** | -- | HIS 联调日志 Tauri 客户端：TS 出站写入前递归遮蔽患者、就诊、住院、人员、机构、科室、凭据及自由文本值，并提供结构化记录、查询、清空、导出 Bridge / PHIS 调用流水；不改写 Rust Bridge 入站日志的既有本地调试字段 |
 | **his/HisAdapter.ts** | ~120 | 厂商无关的 HIS 适配器接口契约，14 个方法分 5 组（会话 / 目录 / 字典 / 详情 / 检查部位）；新厂商接入只需实现本接口 |
 | **his/types.ts** | ~140 | vendor-neutral DTO：详情（`MedicineDetail` / `MedicalItemDetail`）+ 检查部位（`MedicalItemPartOption`）+ 目录（`DiagnosisCatalogEntry` / `MedicineCatalogEntry` / `MedicalItemCatalogEntry`）+ 字典（`DictionaryEntry`）+ 库存（`InventoryCheckRequest` / `InventoryCheckResult`）；语义化字段命名，PHIS 私有字段统一通过 `raw` / `properties` 透传 |
 | **his/PhisHisAdapter.ts** | ~120 | 默认厂商实现：thin wrapper 包装 `HisService` 类，详情与检查部位方法在此处把 PHIS 字段映射为中性 DTO |
@@ -226,7 +226,7 @@ useEventListeners (全局事件) -> 触发 useNavigation & useWorkMode
 | **medical_catalog.rs** | -- | 医学目录 SQLite 持久化命令：诊断全局缓存、诊疗项目按机构+租户缓存、药品按机构+租户+药房缓存与同步状态管理，并提供调试态查看/清理命令 | 供 `medicalData.ts` 调用 |
 | **factChecker.ts** | ~399 | AI 输出验证（医学指南核查） |
 | **feedback.ts** | -- | 反馈与结构化操作日志适配：把前端事件转换为服务端审计需要的 `module/action/result/details` 载荷；不再写本地产品分析 SQLite |
-| **featureUsageTracker.ts / featureUsageEntryTracker.ts** | -- | 辅诊功能调用统计事件入口：按产品功能维度向 `/v1/client/feature-events/batch` 上报一次真实用户调用，默认用本地队列事件自身 `idempotencyKey` 支持离线/重试去重；`featureUsageEntryTracker.ts` 归一 HIS Bridge 的完整问诊、语音问诊和独立辅助入口计数，同一就诊再次显式触发入口按新调用计数，与 `operationTracker.ts` 的审计日志和 `consultationUserLog.ts` 的运维日志分离 |
+| **featureUsageTracker.ts / featureUsageEntryTracker.ts** | -- | 辅诊功能调用统计事件入口：按产品功能维度向 `/v1/client/feature-events/batch` 上报一次真实用户调用，所有事件均使用 UUID `eventId` 与由 `featureCode + eventId` 重建的安全幂等键支持离线/重试去重；功能统计不保存或发送顶层 `consultationId`、payload、traceId、sessionId、调用方原始幂等文本，旧主队列与拒绝诊断队列会在任何启动早退判断前同步按允许字段重建并替换非法事件 ID，动作/来源/场景字段只接受有界技术编码；批量响应按 accepted/skipped/rejected 逐条结算，拒绝项进入只含最小诊断字段的有界隔离队列，隔离持久化失败或响应畸形时保留整批；`featureUsageEntryTracker.ts` 归一 HIS Bridge 的完整问诊、语音问诊和独立辅助入口计数，同一就诊再次显式触发入口按新调用计数，与 `operationTracker.ts` 的审计日志和 `consultationUserLog.ts` 的运维日志分离 |
 | **recommendationPreferenceTracker.ts** | -- | 服务端推荐偏好采集与轻量重排入口：只学习目录匹配后的诊断/医嘱标准项，后台 `features.recommendationPreferenceCollection` 显式开启后，最终确认、手动匹配和 probable match 确认才会写入本地队列并通过 `/v1/client/recommendation-preferences/events/batch` 批量上传；若后台虽开启但未提供该上传接口并返回 404，本次运行暂停上传重试以避免控制台刷屏，本地队列仍保留；诊断/医嘱完成 `medicalDataService` 匹配后可调用 `/v1/client/recommendation-preferences/rank` 获取服务端 boost，但只重排已有候选、不新增候选、不修改 Prompt |
 | **voiceFeedback.ts** | -- | 语音反馈 payload 组装、本地草稿、病例字段差异摘要与待同步队列；通过 `submitVoicePendingPayloadToBackend` 映射到统一 `/v1/client/feedbacks` |
 | **aiTrace.ts** | ~200 | AI 调用链路缓存 + AI 代理结构化日志桥：补齐 traceId、scene、sourceModule 以及业务发起方 |

@@ -193,22 +193,34 @@ function resolveHandshakeUserRoleDeptIds(ctx: SdkHandshakePayload): string[] {
 }
 
 function resolveHandshakeBaseUrl(ctx: SdkHandshakePayload): string | null {
-  const origin = String(ctx.origin || '').trim();
-  if (!origin) {
+  const rawOrigin = String(ctx.origin || '').trim();
+  if (!rawOrigin) {
     return null;
   }
 
-  if (!/^https?:\/\//i.test(origin)) {
-    console.warn('[SdkHandshakeController] Ignored unsupported HIS origin from handshake:', origin);
+  try {
+    const parsed = new URL(rawOrigin);
+    if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+      console.warn('[SdkHandshakeController] Ignored unsupported HIS origin from handshake');
+      return null;
+    }
+
+    parsed.username = '';
+    parsed.password = '';
+    parsed.search = '';
+    parsed.hash = '';
+
+    const contextPath = parsed.pathname.replace(/\/+$/, '');
+    return `${parsed.origin}${contextPath}`;
+  } catch {
+    console.warn('[SdkHandshakeController] Ignored invalid HIS origin from handshake');
     return null;
   }
-
-  return origin;
 }
 
 export function useSdkHandshakeController() {
   async function handleSdkHandshake(ctx: SdkHandshakePayload): Promise<void> {
-    console.log('[SdkHandshakeController] SDK Handshake received:', ctx);
+    console.log('[SdkHandshakeController] SDK handshake received');
 
     const baseUrl = resolveHandshakeBaseUrl(ctx);
     const token = ctx.extra?.emrAccessToken;
@@ -222,11 +234,12 @@ export function useSdkHandshakeController() {
     if (baseUrl && token) {
       getHisService(baseUrl, { token, userRoleDeptIds, orgCode, tenantId });
       resetHisAdapter();
-      console.log('[SdkHandshakeController] HisService initialized with origin:', baseUrl, {
+      console.log('[SdkHandshakeController] HisService initialized', {
+        hasBaseUrl: true,
         hasToken: Boolean(token),
-        orgCode,
-        tenantId,
-        userRoleDeptIds,
+        hasOrgCode: Boolean(orgCode),
+        hasTenantId: Boolean(tenantId),
+        deptCount: userRoleDeptIds.length,
       });
     } else {
       resetHisService();
@@ -234,9 +247,9 @@ export function useSdkHandshakeController() {
       console.warn('[SdkHandshakeController] Handshake missing baseUrl or tk token, medical catalog sync skipped', {
         hasBaseUrl: Boolean(baseUrl),
         hasToken: Boolean(token),
-        orgCode,
-        tenantId,
-        userRoleDeptIds,
+        hasOrgCode: Boolean(orgCode),
+        hasTenantId: Boolean(tenantId),
+        deptCount: userRoleDeptIds.length,
       });
     }
 

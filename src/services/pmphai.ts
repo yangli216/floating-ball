@@ -96,21 +96,13 @@ interface SearchCache {
 }
 
 const CACHE_TTL = 5 * 60 * 1000;
-let knowledgeUsageSequence = 0;
 
-function nextKnowledgeUsageKey(action: string, target?: string): string {
-  knowledgeUsageSequence += 1;
-  return `knowledge:${action}:${Date.now()}:${knowledgeUsageSequence}:${target || 'na'}`;
-}
-
-function trackKnowledgeUsage(eventAction: string, payload?: Record<string, unknown>): void {
+function trackKnowledgeUsage(eventAction: string): void {
   trackFeatureUsage({
     featureCode: 'knowledge_usage',
     eventAction,
-    idempotencyKey: nextKnowledgeUsageKey(eventAction, typeof payload?.query === 'string' ? payload.query : undefined),
     sourceModule: 'pmphai',
     scene: 'knowledge-base',
-    payload,
   });
 }
 
@@ -152,7 +144,7 @@ class PMPHAIService {
       });
       this.searchCache.set(cacheKey, { results, timestamp: Date.now() });
       if (params.trackUsage) {
-        trackKnowledgeUsage('knowledge_search', { query: params.query, type: params.type ?? SearchType.Knowledge, resultCount: results.length });
+        trackKnowledgeUsage('knowledge_search');
       }
       return results;
     } catch (error) {
@@ -165,7 +157,7 @@ class PMPHAIService {
     if (!isPMPHAIConfigured()) return null;
     try {
       const clip = await knowledgePost<ClipData>('/clip', { id });
-      if (clip) trackKnowledgeUsage('knowledge_clip', { id });
+      if (clip) trackKnowledgeUsage('knowledge_clip');
       return clip;
     } catch (error) {
       console.error('获取文档内容失败:', error);
@@ -191,10 +183,7 @@ class PMPHAIService {
     })));
     const resultMap = new Map(entries.map(entry => [entry.query, entry.results]));
     if (shouldTrack && uniqueQueries.length > 0) {
-      trackKnowledgeUsage('knowledge_batch_search', {
-        queryCount: uniqueQueries.length,
-        resultCount: Array.from(resultMap.values()).flat().length,
-      });
+      trackKnowledgeUsage('knowledge_batch_search');
     }
     return resultMap;
   }
@@ -214,12 +203,7 @@ class PMPHAIService {
       this.batchSearchInternal(examinations, { limit: 3, enableAbstract: true }, false),
     ]);
     if (options?.trackUsage && diagnoses.length + medications.length + examinations.length > 0) {
-      trackKnowledgeUsage('knowledge_category_search', {
-        diagnosisQueryCount: diagnoses.filter(Boolean).length,
-        medicationQueryCount: medications.filter(Boolean).length,
-        examinationQueryCount: examinations.filter(Boolean).length,
-        resultCount: [...diagnosisResults.values(), ...medicationResults.values(), ...examinationResults.values()].flat().length,
-      });
+      trackKnowledgeUsage('knowledge_category_search');
     }
     return { diagnoses: diagnosisResults, medications: medicationResults, examinations: examinationResults };
   }
@@ -238,7 +222,7 @@ class PMPHAIService {
     try {
       const result = await knowledgePost<{ url: string }>('/page-url', params);
       const url = result?.url || null;
-      if (url) trackKnowledgeUsage('knowledge_page_url', { pageName: params.pageName, id: params.id, kgBaseId: params.kgBaseId });
+      if (url) trackKnowledgeUsage('knowledge_page_url');
       return url;
     } catch (error) {
       console.error('获取页面URL失败:', error);
@@ -267,7 +251,9 @@ class PMPHAIService {
         pageSize: params.pageSize || 10,
         page: params.page || 0,
       });
-      if (response) trackKnowledgeUsage('knowledge_list_search', { query: params.key, kgBaseId: params.kgBaseId, resultCount: response.rows?.length || 0 });
+      if (response) {
+        trackKnowledgeUsage('knowledge_list_search');
+      }
       return response;
     } catch (error) {
       console.error('列表搜索失败:', error);

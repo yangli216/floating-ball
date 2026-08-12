@@ -904,16 +904,16 @@ export class PhisHisAdapter implements HisAdapter {
 
     // 1) 并发拉过敏史与就诊列表；任一失败不中断另一路
     const [allergyItems, visitItems] = await Promise.all([
-      this.service.queryPatientAllergy(idPi).catch((error) => {
-        console.warn('[PhisHisAdapter] queryPatientAllergy failed', error);
+      this.service.queryPatientAllergy(idPi).catch(() => {
+        console.warn('[PhisHisAdapter] queryPatientAllergy failed');
         return [];
       }),
       this.service.queryPatientVisitHistory(idPi, {
         limit: query.limit ?? 5,
         idVis: query.currentVisitId,
         dtBgn: query.dateRange,
-      }).catch((error) => {
-        console.warn('[PhisHisAdapter] queryPatientVisitHistory failed', error);
+      }).catch(() => {
+        console.warn('[PhisHisAdapter] queryPatientVisitHistory failed');
         return [] as HisVisitHistoryItem[];
       }),
     ]);
@@ -931,8 +931,8 @@ export class PhisHisAdapter implements HisAdapter {
         try {
           const detail = await this.service.loadClinicMedicalRecord(idVis, visitIdPi);
           return detail ? { visit, detail } : null;
-        } catch (error) {
-          console.warn('[PhisHisAdapter] loadClinicMedicalRecord failed', { idVis, error });
+        } catch {
+          console.warn('[PhisHisAdapter] loadClinicMedicalRecord failed');
           return null;
         }
       })
@@ -1017,8 +1017,8 @@ export class PhisHisAdapter implements HisAdapter {
       }));
 
       return visitsWithDocumentStatus.filter((visit) => visit.hasMedicalRecord);
-    } catch (error) {
-      console.error('[PhisHisAdapter] fetchOutpatientVisitHistory failed', error);
+    } catch {
+      console.error('[PhisHisAdapter] fetchOutpatientVisitHistory failed');
       return [];
     }
   }
@@ -1043,11 +1043,9 @@ export class PhisHisAdapter implements HisAdapter {
         .filter((item): item is HisOutpatientMedicalRecordDocument => Boolean(item));
       this.visitDocumentCache.set(idVis, mappedDocuments);
       return mappedDocuments;
-    } catch (error) {
+    } catch {
       console.error('[PhisHisAdapter] fetchOutpatientMedicalRecordDocuments failed', {
-        visitId: idVis,
         hasTenant: Boolean(idTet),
-        error,
       });
       return [];
     }
@@ -1062,8 +1060,10 @@ export class PhisHisAdapter implements HisAdapter {
     if (idPi) {
       try {
         detail = await this.service.loadClinicMedicalRecord(idVis, idPi);
-      } catch (error) {
-        console.warn('[PhisHisAdapter] Failed to load clinic medical record for raw merge', { idVis, idPi, error });
+      } catch {
+        console.warn('[PhisHisAdapter] Failed to load clinic medical record for raw merge', {
+          hasPatient: true,
+        });
       }
     }
 
@@ -1090,12 +1090,10 @@ export class PhisHisAdapter implements HisAdapter {
             }
             return record;
           }
-        } catch (error) {
+        } catch {
           console.error('[PhisHisAdapter] fetchOutpatientMedicalRecord content failed', {
-            visitId: idVis,
-            documentId: document.documentId,
             hasTenant: Boolean(idTet),
-            error,
+            hasDocument: true,
           });
         }
       }
@@ -1116,7 +1114,7 @@ export class PhisHisAdapter implements HisAdapter {
     }
 
     if (!idPi) {
-      console.warn('[PhisHisAdapter] Cannot resolve patientId for visitId', idVis);
+      console.warn('[PhisHisAdapter] Cannot resolve patient for outpatient visit');
       return null;
     }
 
@@ -1237,8 +1235,10 @@ export class PhisHisAdapter implements HisAdapter {
           detail,
         },
       };
-    } catch (error) {
-      console.error('[PhisHisAdapter] fetchOutpatientMedicalRecord failed', error);
+    } catch {
+      console.error('[PhisHisAdapter] fetchOutpatientMedicalRecord failed', {
+        hasPatient: true,
+      });
       return null;
     }
   }

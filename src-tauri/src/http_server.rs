@@ -19,6 +19,26 @@ fn summarize_for_his_log<T: Serialize>(value: &T) -> serde_json::Value {
         .unwrap_or_else(|_| serde_json::Value::Null)
 }
 
+fn summarize_handshake_for_his_log(ctx: &BrowserContext) -> serde_json::Value {
+    serde_json::json!({
+        "hasOrigin": !ctx.origin.trim().is_empty(),
+        "hasHref": !ctx.href.trim().is_empty(),
+        "hasCookie": !ctx.cookie.trim().is_empty(),
+        "hasUserAgent": !ctx.user_agent.trim().is_empty(),
+        "hasSdkVersion": !ctx.sdk_version.trim().is_empty(),
+        "hasEmrAccessToken": ctx.emr_access_token().is_some(),
+        "timestamp": ctx.timestamp,
+    })
+}
+
+fn handshake_console_message(ctx: &BrowserContext) -> String {
+    format!(
+        "[Handshake] SDK connected: has_origin={}, has_sdk_version={}",
+        !ctx.origin.trim().is_empty(),
+        !ctx.sdk_version.trim().is_empty()
+    )
+}
+
 #[allow(clippy::too_many_arguments)]
 fn record_bridge_log(
     app_handle: &web::Data<tauri::AppHandle>,
@@ -1798,7 +1818,7 @@ async fn handshake(
     let started_at = Instant::now();
     let trace_id = his_integration_log::new_trace_id();
     let ctx = data.into_inner();
-    let request_summary = summarize_for_his_log(&ctx);
+    let request_summary = summarize_handshake_for_his_log(&ctx);
 
     if let Err(message) = validate_browser_context(&ctx) {
         {
@@ -1834,10 +1854,7 @@ async fn handshake(
         return HttpResponse::Unauthorized().json(response_body);
     }
 
-    println!(
-        "[Handshake] SDK connected from origin={}, sdk_version={}",
-        ctx.origin, ctx.sdk_version
-    );
+    println!("{}", handshake_console_message(&ctx));
 
     // Store browser context in shared state
     {
@@ -1987,5 +2004,41 @@ mod tests {
         let error = actix_ws::ProtocolError::Overflow;
 
         assert!(!is_normal_websocket_disconnect(&error));
+    }
+
+    #[test]
+    fn handshake_logs_only_presence_flags_for_origin_and_href() {
+        let ctx = BrowserContext {
+            origin: "https://USER-SENTINEL:PASSWORD-SENTINEL@his.example/his-web".to_string(),
+            href: "https://his.example/his-web/doctor?patient=PATIENT-SENTINEL".to_string(),
+            cookie: "SESSION=COOKIE-SENTINEL".to_string(),
+            user_agent: "USER-AGENT-SENTINEL".to_string(),
+            timestamp: 1_704_355_200_000,
+            sdk_version: "SDK-VERSION-SENTINEL".to_string(),
+            extra: serde_json::json!({
+                "emrAccessToken": "TOKEN-SENTINEL",
+                "urt": { "personCd": "PERSON-SENTINEL" }
+            }),
+        };
+
+        let console_message = handshake_console_message(&ctx);
+        let log_summary = summarize_handshake_for_his_log(&ctx).to_string();
+        let combined = format!("{} {}", console_message, log_summary);
+
+        assert!(console_message.contains("has_origin=true"));
+        assert!(log_summary.contains("\"hasOrigin\":true"));
+        for secret in [
+            "his.example",
+            "USER-SENTINEL",
+            "PASSWORD-SENTINEL",
+            "PATIENT-SENTINEL",
+            "COOKIE-SENTINEL",
+            "USER-AGENT-SENTINEL",
+            "SDK-VERSION-SENTINEL",
+            "TOKEN-SENTINEL",
+            "PERSON-SENTINEL",
+        ] {
+            assert!(!combined.contains(secret));
+        }
     }
 }

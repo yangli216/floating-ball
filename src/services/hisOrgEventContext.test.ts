@@ -32,9 +32,14 @@ describe('HIS organization event context', () => {
   beforeEach(() => {
     vi.resetModules();
     mocks.regionalPost.mockReset();
-    mocks.regionalPost.mockResolvedValue({ accepted: 1, skipped: 0 });
+    mocks.regionalPost.mockResolvedValue({
+      accepted: 1,
+      skipped: 0,
+      rejected: 0,
+      rejections: [],
+    });
     vi.stubGlobal('localStorage', new MemoryStorage());
-    vi.stubGlobal('crypto', { randomUUID: vi.fn(() => 'EVENT-001') });
+    vi.stubGlobal('crypto', { randomUUID: vi.fn(() => '550e8400-e29b-41d4-a716-446655440008') });
   });
 
   afterEach(() => {

@@ -1,6 +1,22 @@
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { HisService } from '../hisService';
 import { PhisHisAdapter } from './PhisHisAdapter';
+
+afterEach(() => {
+  vi.restoreAllMocks();
+});
+
+const collectConsoleOutput = (...spies: Array<ReturnType<typeof vi.spyOn>>): string => spies
+  .flatMap((spy) => spy.mock.calls)
+  .map((args) => args.map((arg) => {
+    if (typeof arg === 'string') return arg;
+    try {
+      return JSON.stringify(arg);
+    } catch {
+      return String(arg);
+    }
+  }).join(' '))
+  .join('\n');
 
 describe('PhisHisAdapter.fetchPatientHistory', () => {
   it('forwards the bounded history date range and current visit to PHIS', async () => {
@@ -233,5 +249,141 @@ describe('PhisHisAdapter.fetchPatientHistory', () => {
         totalUnit: '盒',
       }),
     ]);
+  });
+});
+
+describe('PhisHisAdapter console privacy boundary', () => {
+  it('does not log raw patient or visit identifiers, free text, or errors from patient history failures', async () => {
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+    const patientId = 'PATIENT-ID-SENTINEL';
+    const visitId = 'VISIT-ID-SENTINEL';
+    const allergyError = new Error('ALLERGY-FREE-TEXT-SENTINEL');
+    const historyError = new Error('HISTORY-FREE-TEXT-SENTINEL');
+    const detailError = new Error('DETAIL-FREE-TEXT-SENTINEL');
+
+    const failedListService = {
+      queryPatientAllergy: vi.fn().mockRejectedValue(allergyError),
+      queryPatientVisitHistory: vi.fn().mockRejectedValue(historyError),
+      loadClinicMedicalRecord: vi.fn(),
+    } as unknown as HisService;
+    const failedListResult = await new PhisHisAdapter(failedListService).fetchPatientHistory(patientId, {
+      currentVisitId: visitId,
+    });
+
+    const failedDetailService = {
+      queryPatientAllergy: vi.fn().mockResolvedValue([]),
+      queryPatientVisitHistory: vi.fn().mockResolvedValue([{ idVis: visitId, idPi: patientId }]),
+      loadClinicMedicalRecord: vi.fn().mockRejectedValue(detailError),
+    } as unknown as HisService;
+    const failedDetailResult = await new PhisHisAdapter(failedDetailService).fetchPatientHistory(patientId);
+
+    expect(failedListResult).toEqual({
+      patientId,
+      allergyHistory: undefined,
+      pastMedicalHistory: undefined,
+      visits: undefined,
+      raw: { allergyItems: [], visitItems: [] },
+    });
+    expect(failedDetailResult?.visits).toBeUndefined();
+    expect(failedListService.queryPatientAllergy).toHaveBeenCalledWith(patientId);
+    expect(failedListService.queryPatientVisitHistory).toHaveBeenCalledWith(patientId, expect.objectContaining({
+      idVis: visitId,
+    }));
+    expect(failedDetailService.loadClinicMedicalRecord).toHaveBeenCalledWith(visitId, patientId);
+
+    const output = collectConsoleOutput(warnSpy);
+    expect(output).not.toContain(patientId);
+    expect(output).not.toContain(visitId);
+    expect(output).not.toContain(allergyError.message);
+    expect(output).not.toContain(historyError.message);
+    expect(output).not.toContain(detailError.message);
+  });
+
+  it('keeps outpatient failure logs diagnostic without exposing identifiers or free text', async () => {
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    const patientId = 'OUTPATIENT-PATIENT-SENTINEL';
+    const visitId = 'OUTPATIENT-VISIT-SENTINEL';
+    const tenantId = 'OUTPATIENT-TENANT-SENTINEL';
+    const documentId = 'OUTPATIENT-DOCUMENT-SENTINEL';
+    const historyError = new Error('OUTPATIENT-HISTORY-FREE-TEXT-SENTINEL');
+    const documentListError = new Error('DOCUMENT-LIST-FREE-TEXT-SENTINEL');
+    const rawMergeError = new Error('RAW-MERGE-FREE-TEXT-SENTINEL');
+    const contentError = new Error('CONTENT-FREE-TEXT-SENTINEL');
+    const finalRecordError = new Error('FINAL-RECORD-FREE-TEXT-SENTINEL');
+
+    const failedHistoryService = {
+      queryPatientVisitHistory: vi.fn().mockRejectedValue(historyError),
+    } as unknown as HisService;
+    expect(await new PhisHisAdapter(failedHistoryService).fetchOutpatientVisitHistory(patientId)).toEqual([]);
+    expect(failedHistoryService.queryPatientVisitHistory).toHaveBeenCalledWith(patientId, expect.any(Object));
+
+    const failedDocumentsService = {
+      getTenantId: vi.fn().mockReturnValue(tenantId),
+      queryOutpatientMedicalRecordDocuments: vi.fn().mockRejectedValue(documentListError),
+    } as unknown as HisService;
+    expect(await new PhisHisAdapter(failedDocumentsService).fetchOutpatientMedicalRecordDocuments(visitId)).toEqual([]);
+    expect(failedDocumentsService.queryOutpatientMedicalRecordDocuments).toHaveBeenCalledWith(visitId, {
+      idTet: tenantId,
+      idApp: '42',
+    });
+
+    const failedContentService = {
+      getTenantId: vi.fn().mockReturnValue(tenantId),
+      queryPatientVisitHistory: vi.fn().mockResolvedValue([{ idVis: visitId, idPi: patientId }]),
+      loadClinicMedicalRecord: vi.fn().mockRejectedValue(rawMergeError),
+      queryOutpatientMedicalRecordDocuments: vi.fn().mockResolvedValue([{
+        idMedrecdoc: documentId,
+        idHospital: visitId,
+        idTet: tenantId,
+        idApp: '42',
+        naMed: 'DOCUMENT-TITLE-FREE-TEXT-SENTINEL',
+      }]),
+      queryOutpatientMedicalRecordContent: vi.fn().mockRejectedValue(contentError),
+    } as unknown as HisService;
+    const failedContentAdapter = new PhisHisAdapter(failedContentService);
+    await failedContentAdapter.fetchOutpatientVisitHistory(patientId);
+    const pendingRecord = await failedContentAdapter.fetchOutpatientMedicalRecord(visitId);
+    expect(pendingRecord).toMatchObject({ visitId, contentPending: true });
+    expect(failedContentService.loadClinicMedicalRecord).toHaveBeenCalledWith(visitId, patientId);
+    expect(failedContentService.queryOutpatientMedicalRecordContent).toHaveBeenCalledWith(documentId, {
+      idTet: tenantId,
+      idApp: '42',
+      courseShow: 0,
+    });
+
+    const missingPatientService = {
+      getTenantId: vi.fn().mockReturnValue(tenantId),
+      queryOutpatientMedicalRecordDocuments: vi.fn().mockResolvedValue([]),
+    } as unknown as HisService;
+    expect(await new PhisHisAdapter(missingPatientService).fetchOutpatientMedicalRecord(visitId)).toBeNull();
+
+    const failedFinalRecordService = {
+      getTenantId: vi.fn().mockReturnValue(tenantId),
+      queryPatientVisitHistory: vi.fn().mockResolvedValue([]),
+      queryOutpatientMedicalRecordDocuments: vi.fn().mockResolvedValue([]),
+      loadClinicMedicalRecord: vi.fn().mockRejectedValue(finalRecordError),
+    } as unknown as HisService;
+    const failedFinalRecordAdapter = new PhisHisAdapter(failedFinalRecordService);
+    await failedFinalRecordAdapter.fetchOutpatientVisitHistory(patientId);
+    expect(await failedFinalRecordAdapter.fetchOutpatientMedicalRecord(visitId)).toBeNull();
+    expect(failedFinalRecordService.loadClinicMedicalRecord).toHaveBeenCalledWith(visitId, patientId);
+
+    const output = collectConsoleOutput(warnSpy, errorSpy);
+    [
+      patientId,
+      visitId,
+      tenantId,
+      documentId,
+      historyError.message,
+      documentListError.message,
+      rawMergeError.message,
+      contentError.message,
+      finalRecordError.message,
+      'DOCUMENT-TITLE-FREE-TEXT-SENTINEL',
+    ].forEach((sentinel) => expect(output).not.toContain(sentinel));
+    expect(output).toContain('hasTenant');
+    expect(output).toContain('hasPatient');
+    expect(output).toContain('hasDocument');
   });
 });

@@ -5,6 +5,7 @@ import {
 } from './regionalClient';
 import { startAuditUploader, stopAuditUploader } from './auditUploader';
 import {
+  sanitizeFeatureUsageStorage,
   setFeatureUsageClientVersion,
   startFeatureUsageUploader,
   stopFeatureUsageUploader,
@@ -29,6 +30,7 @@ export async function initializeRegionalRuntime(options?: {
   skipDataSync?: boolean;
   skipAuditLog?: boolean;
 }): Promise<BootstrapConfig | null> {
+  sanitizeFeatureUsageStorage();
   const updateState = await checkForceUpdateRequired();
   setFeatureUsageClientVersion(updateState.currentVersion);
   if (updateState.required) {

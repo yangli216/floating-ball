@@ -17,6 +17,7 @@ import {
   getHisBusinessMessage,
   recordHisIntegrationLog,
   resolveHisLogStatus,
+  sanitizeHisLogUrl,
   summarizeHisPayload,
 } from './hisIntegrationLog';
 import type {
@@ -620,6 +621,7 @@ export class HisService {
     const startedAt = Date.now();
     let failedHttpStatus: number | undefined;
     const fullUrl = this.baseUrl + url;
+    const logUrl = sanitizeHisLogUrl(fullUrl);
     const requestSummary = summarizeHisPayload(data);
     const headers: Record<string, string> = {
       'Content-Type': 'application/json',
@@ -629,8 +631,8 @@ export class HisService {
     };
     console.log('[HisService] POST', {
       traceId,
-      url: fullUrl,
-      body: this.summarizePayload(data),
+      path: logUrl,
+      summary: requestSummary,
       hasToken: true,
     });
 
@@ -653,40 +655,39 @@ export class HisService {
       const status = resolveHisLogStatus(hisResponse);
       console.log('[HisService] RESPONSE', {
         traceId,
-        url: fullUrl,
-        code: hisResponse.code,
-        message: hisResponse.message,
-        summary: this.summarizePayload(hisResponse.body ?? hisResponse.data),
+        path: logUrl,
+        hasBusinessCode: getHisBusinessCode(hisResponse) !== undefined,
+        summary: responseSummary,
       });
       void recordHisIntegrationLog({
         traceId,
         direction: 'outbound',
-        operation: url,
+        operation: logUrl || 'his-post',
         method: 'POST',
-        path: url,
-        url: fullUrl,
+        path: logUrl || 'his-post',
+        url: logUrl,
         status,
         httpStatus: response.status,
         businessCode: getHisBusinessCode(hisResponse),
         businessMessage: getHisBusinessMessage(hisResponse),
         durationMs: Date.now() - startedAt,
-        requestSummary,
-        responseSummary,
+        requestSummary: data,
+        responseSummary: hisResponse.body ?? hisResponse.data ?? hisResponse,
       });
       return hisResponse;
     } catch (error) {
-      console.error(`[HisService] Request failed: ${fullUrl}`, error);
+      console.error('[HisService] POST request failed', { traceId, path: logUrl });
       void recordHisIntegrationLog({
         traceId,
         direction: 'outbound',
-        operation: url,
+        operation: logUrl || 'his-post',
         method: 'POST',
-        path: url,
-        url: fullUrl,
+        path: logUrl || 'his-post',
+        url: logUrl,
         status: 'error',
         httpStatus: failedHttpStatus,
         durationMs: Date.now() - startedAt,
-        requestSummary,
+        requestSummary: data,
         errorMessage: error instanceof Error ? error.message : String(error),
       });
       throw error;
@@ -707,6 +708,7 @@ export class HisService {
     const startedAt = Date.now();
     let failedHttpStatus: number | undefined;
     const fullUrl = this.buildUrlWithQuery(this.baseUrl + url, query);
+    const logUrl = sanitizeHisLogUrl(fullUrl);
     const requestSummary = summarizeHisPayload(query ?? {});
     const headers: Record<string, string> = {
       'Accept': 'application/json',
@@ -716,7 +718,8 @@ export class HisService {
     };
     console.log('[HisService] GET', {
       traceId,
-      url: fullUrl,
+      path: logUrl,
+      summary: requestSummary,
       hasToken: true,
     });
 
@@ -737,38 +740,38 @@ export class HisService {
       const status = resolveHisLogStatus(result);
       console.log('[HisService] RESPONSE', {
         traceId,
-        url: fullUrl,
-        summary: this.summarizePayload(result),
+        path: logUrl,
+        summary: responseSummary,
       });
       void recordHisIntegrationLog({
         traceId,
         direction: 'outbound',
-        operation: url,
+        operation: logUrl || 'his-get',
         method: 'GET',
-        path: url,
-        url: fullUrl,
+        path: logUrl || 'his-get',
+        url: logUrl,
         status,
         httpStatus: response.status,
         businessCode: getHisBusinessCode(result),
         businessMessage: getHisBusinessMessage(result),
         durationMs: Date.now() - startedAt,
-        requestSummary,
-        responseSummary,
+        requestSummary: query ?? {},
+        responseSummary: result,
       });
       return result as T;
     } catch (error) {
-      console.error(`[HisService] Request failed: ${fullUrl}`, error);
+      console.error('[HisService] GET request failed', { traceId, path: logUrl });
       void recordHisIntegrationLog({
         traceId,
         direction: 'outbound',
-        operation: url,
+        operation: logUrl || 'his-get',
         method: 'GET',
-        path: url,
-        url: fullUrl,
+        path: logUrl || 'his-get',
+        url: logUrl,
         status: 'error',
         httpStatus: failedHttpStatus,
         durationMs: Date.now() - startedAt,
-        requestSummary,
+        requestSummary: query ?? {},
         errorMessage: error instanceof Error ? error.message : String(error),
       });
       throw error;
@@ -846,11 +849,10 @@ export class HisService {
 
     console.log('[HisService] Diagnosis catalog summary', {
       total,
-      pages: pageSummaries,
+      pageCount: pageSummaries.length,
       rawCount: items.length,
       inactiveFiltered: items.length - activeItems.length,
       normalizedCount: normalizedItems.length,
-      sample: normalizedItems[0] ?? null,
     });
 
     return normalizedItems;
@@ -881,12 +883,8 @@ export class HisService {
     const normalizedList = Array.from(unique.values());
 
     console.log('[HisService] Available exam/lab catalog summary', {
-      orgCode,
-      total: body.total ?? normalizedList.length,
-      examinationCount: body.examinationCount ?? 0,
-      labTestCount: body.labTestCount ?? 0,
+      rawCount: (body.items ?? []).length,
       normalizedCount: normalizedList.length,
-      sample: normalizedList[0] ?? null,
     });
 
     return normalizedList;
@@ -898,9 +896,7 @@ export class HisService {
   async fetchInstitutionMedicineCatalog(orgCode: string): Promise<HisMedicineCatalogItem[]> {
     const storeIds = await this.fetchMedicineStoreIds(orgCode);
     if (storeIds.length === 0) {
-      console.warn('[HisService] Medicine catalog skipped because no valid western medicine stores were matched', {
-        orgCode,
-      });
+      console.warn('[HisService] Medicine catalog skipped because no valid western medicine stores were matched');
       return [];
     }
 
@@ -912,13 +908,6 @@ export class HisService {
     );
     responses.forEach((response) => this.assertBusinessSuccess(HIS_CATALOG_ENDPOINTS.medicines, response));
 
-    const responseSummaries = responses.map((response, index) => {
-      const items = response.body?.items ?? response.data?.items ?? [];
-      return {
-        idSto: storeIds[index],
-        rawCount: items.length,
-      };
-    });
     const perStoreEntries = responses.map((response, index) => ({
       idSto: storeIds[index],
       items: response.body?.items ?? response.data?.items ?? [],
@@ -979,15 +968,13 @@ export class HisService {
     const totalRawCount = perStoreEntries.reduce((sum, entry) => sum + entry.items.length, 0);
 
     console.log('[HisService] Medicine catalog summary', {
-      orgCode,
-      storeIds,
-      responses: responseSummaries,
+      storeCount: storeIds.length,
+      responseCount: responses.length,
       mergedCount: totalRawCount,
       inactiveFiltered: inactiveCount,
       sdMedFiltered,
       missingNameCount,
       normalizedCount: normalizedMedicines.length,
-      sample: normalizedMedicines[0] ?? null,
     });
 
     return normalizedMedicines;
@@ -1085,12 +1072,8 @@ export class HisService {
       );
       this.assertBusinessSuccess(HIS_CATALOG_ENDPOINTS.medicineDetail, response);
       return response.body ?? response.data ?? null;
-    } catch (error) {
-      console.warn('[HisService] Failed to fetch medicine pro detail', {
-        id: normalizedId,
-        idSto: normalizedIdSto,
-        error,
-      });
+    } catch {
+      console.warn('[HisService] Failed to fetch medicine pro detail');
       return null;
     }
   }
@@ -1269,12 +1252,8 @@ export class HisService {
       );
       this.assertBusinessSuccess(HIS_CATALOG_ENDPOINTS.patientVisitDetail, response);
       return response.body ?? response.data ?? null;
-    } catch (error) {
-      console.warn('[HisService] Failed to load clinic medical record', {
-        idVis: normalizedIdVis,
-        idPi: normalizedIdPi,
-        error,
-      });
+    } catch {
+      console.warn('[HisService] Failed to load clinic medical record');
       return null;
     }
   }
@@ -1507,9 +1486,8 @@ export class HisService {
       sdUseFiltered,
       deptFiltered,
       deptBypassed,
-      userRoleDeptIds: this.userRoleDeptIds,
-      matchedPharmacies: pharmacyList,
-      sampleItem: items[0] ?? null,
+      roleDeptCount: this.userRoleDeptIds.length,
+      matchedCount: pharmacyList.length,
     });
 
     return pharmacyList;
@@ -1552,9 +1530,8 @@ export class HisService {
       const availableStoreIds = this.extractUniqueStoreIds(availablePharmacies);
 
       console.log('[HisService] Medicine store filter summary (available pharmacies)', {
-        orgCode,
         matchedCount: availablePharmacies.length,
-        matchedStoreIds: availableStoreIds,
+        matchedStoreCount: availableStoreIds.length,
       });
 
       return availableStoreIds;
@@ -1590,12 +1567,11 @@ export class HisService {
     ));
 
     console.log('[HisService] Medicine store filter summary (fallback stores)', {
-      orgCode,
       rawCount: stores.length,
       sdDispFiltered,
       sdUseFiltered,
       matchedCount: fallbackStores.length,
-      matchedStoreIds: storeIds,
+      matchedStoreCount: storeIds.length,
     });
 
     return storeIds;
@@ -1625,9 +1601,7 @@ export class HisService {
 
     const message = response.message?.trim() || `HIS business error: ${String(code ?? 'unknown')}`;
     console.warn('[HisService] Business response rejected', {
-      endpoint,
-      code,
-      message,
+      hasBusinessCode: getHisBusinessCode(response) !== undefined,
     });
     throw new Error(`[HisService] ${endpoint} failed: ${message} (code=${String(code ?? 'unknown')})`);
   }
@@ -1645,32 +1619,6 @@ export class HisService {
       url.searchParams.set(key, String(value));
     });
     return url.toString();
-  }
-
-  private summarizePayload(payload: unknown): unknown {
-    if (Array.isArray(payload)) {
-      return {
-        type: 'array',
-        length: payload.length,
-        first: payload[0] ?? null,
-      };
-    }
-
-    if (payload && typeof payload === 'object') {
-      const record = payload as Record<string, unknown>;
-      if (Array.isArray(record.items)) {
-        return {
-          keys: Object.keys(record),
-          itemsLength: record.items.length,
-        };
-      }
-
-      return {
-        keys: Object.keys(record),
-      };
-    }
-
-    return payload;
   }
 
   private normalizeDeptIds(values?: Array<string | null | undefined> | string[]): string[] {

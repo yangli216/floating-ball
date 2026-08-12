@@ -25,6 +25,7 @@ export interface AiTraceContext {
   startedAt: number;
   finishedAt?: number;
   durationMs?: number;
+  featureUsageTracked?: boolean;
   updatedAt: number;
 }
 
@@ -149,7 +150,7 @@ export function finishAiTrace(traceId: string, input: FinishAiTraceInput): AiTra
     durationMs: finishedAt - matched.startedAt,
     updatedAt: finishedAt,
   };
-  const stored = upsertTrace(next);
+  let stored = upsertTrace(next);
   trackBusinessOperation({
     module: stored.operationModule || 'ai_proxy',
     action: stored.operationAction || stored.channel,
@@ -175,7 +176,9 @@ export function finishAiTrace(traceId: string, input: FinishAiTraceInput): AiTra
       errorMessage: stored.errorMessage,
     },
   });
-  trackFeatureUsageFromAiTrace(stored);
+  if (!stored.featureUsageTracked && trackFeatureUsageFromAiTrace(stored)) {
+    stored = upsertTrace({ ...stored, featureUsageTracked: true });
+  }
   return stored;
 }
 
@@ -208,28 +211,19 @@ function featureCodeForTrace(context: AiTraceContext): FeatureCode | null {
   }
 }
 
-function trackFeatureUsageFromAiTrace(context: AiTraceContext): void {
-  if (context.success === false) return;
+function trackFeatureUsageFromAiTrace(context: AiTraceContext): boolean {
+  if (context.success === false) return false;
 
   const featureCode = featureCodeForTrace(context);
-  if (!featureCode) return;
+  if (!featureCode) return false;
 
   trackFeatureUsage({
     featureCode,
     eventAction: context.operationAction || context.channel,
-    idempotencyKey: `ai:${context.traceId}`,
-    traceId: context.traceId,
-    sessionId: context.sessionId,
     sourceModule: context.sourceModule,
     scene: context.scene,
     status: 'success',
-    payload: {
-      channel: context.channel,
-      operationModule: context.operationModule,
-      configProfile: context.configProfile,
-      model: context.model,
-      durationMs: context.durationMs,
-    },
     timestamp: context.finishedAt || context.updatedAt,
   });
+  return true;
 }

@@ -1,6 +1,10 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-const mocks = vi.hoisted(() => ({ regionalPost: vi.fn(), regionalGet: vi.fn() }));
+const mocks = vi.hoisted(() => ({
+  regionalPost: vi.fn(),
+  regionalGet: vi.fn(),
+  trackFeatureUsage: vi.fn(),
+}));
 
 vi.mock('./regionalClient', () => ({
   getCachedBootstrap: () => ({ pmphai: { enabled: true } }),
@@ -8,7 +12,7 @@ vi.mock('./regionalClient', () => ({
   regionalGet: mocks.regionalGet,
 }));
 
-vi.mock('./featureUsageTracker', () => ({ trackFeatureUsage: vi.fn() }));
+vi.mock('./featureUsageTracker', () => ({ trackFeatureUsage: mocks.trackFeatureUsage }));
 
 import { pmphaiService } from './pmphai';
 
@@ -16,7 +20,21 @@ describe('server-managed PMPHAI routing', () => {
   beforeEach(() => {
     mocks.regionalPost.mockReset();
     mocks.regionalGet.mockReset();
+    mocks.trackFeatureUsage.mockReset();
     pmphaiService.clearCache();
+  });
+
+  it('tracks knowledge searches without persisting the raw query', async () => {
+    mocks.regionalPost.mockResolvedValue([{ id: '1', name: 'result', content: 'content' }]);
+
+    await pmphaiService.search({ query: '张三的糖尿病用药', trackUsage: true });
+
+    expect(mocks.trackFeatureUsage).toHaveBeenCalledWith(expect.objectContaining({
+      featureCode: 'knowledge_usage',
+      eventAction: 'knowledge_search',
+    }));
+    expect(mocks.trackFeatureUsage.mock.calls[0][0]).not.toHaveProperty('payload');
+    expect(mocks.trackFeatureUsage.mock.calls[0][0]).not.toHaveProperty('idempotencyKey');
   });
 
   it('uses server proxy for search, clip, list and page URL', async () => {

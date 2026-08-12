@@ -192,9 +192,11 @@ PHIS                                全医慧助（PCIE）
 
 1. `POST /api/handshake`、`POST /api/consultation/start`、`POST /api/consultation/assist`、`POST /api/consultation/start-voice`、`POST /api/consultation/stop`、`POST /api/consultation/reference-feedback`、`POST /api/patient/risks`、`POST /api/report/interpret` 会写入本地 HIS 集成日志；WebSocket 连接与异常断开按状态记录。
 2. 上述业务响应会额外返回 `traceId` 字段。三方联调时请把该值提供给桌面端开发或从“设置 -> HIS 联调日志”入口中筛选查看。
-3. 日志会记录接口方向、路径、请求摘要、响应摘要、HTTP 状态、业务 `code/msg`、耗时、患者 / 问诊 / 回执标识和错误摘要；`Cookie`、`Authorization`、`token`、手机号、身份证号等敏感字段会默认脱敏。
-4. 桌面端主动调用 PHIS 的字典、药品详情、库存校验等出站接口也写入同一日志文件，便于用一次 `traceId` 串联 Bridge 入站与 PHIS 出站排查。
+3. Bridge 入站日志会记录接口方向、路径、请求摘要、响应摘要、HTTP 状态、业务 `code/msg`、耗时、患者 / 问诊 / 回执标识和错误摘要；`Cookie`、`Authorization`、`token`、手机号、身份证号等敏感字段会默认脱敏，日志仅用于本机联调。
+4. 桌面端主动调用 PHIS 的字典、药品详情、库存校验等出站接口也写入同一日志文件，便于用一次 `traceId` 串联 Bridge 入站与 PHIS 出站排查。出站记录只保存净化后的接口路径和结构摘要：完整 URL 的 userinfo、query、fragment 以及患者、就诊、住院、人员、机构、科室、凭据和自由文本值不得进入控制台或出站持久日志。
 5. 日志仅保存在医生本机本地数据目录，可在日志面板中刷新、筛选、复制、导出或清空。
+6. 前端处理 `sdk-handshake` 时不得把 raw ctx、`emrAccessToken`、完整 `urt`、HIS 地址、机构/租户/科室明细输出到浏览器控制台；只允许记录握手阶段、字段存在性和数量。
+7. 控制台日志不得记录 HIS origin/baseUrl 的具体值，即使已去除 userinfo、路径和查询参数；只允许记录 `hasBaseUrl/hasToken/hasOrgCode/hasTenantId` 与科室数量等布尔或计数摘要。
 
 ### 5.5 门诊用药推荐的有效库存目录
 
@@ -244,7 +246,7 @@ http://127.0.0.1:8081/api/handshake
 
 | 字段名 | 类型 | 必填 | 说明 |
 | :--- | :--- | :--- | :--- |
-| `origin` | String | 否 | 浏览器 `location.origin`，如 `https://his.hospital.com` |
+| `origin` | String | 否 | SDK 采集的 HIS 基地址：浏览器 `location.origin` 加页面路径首段作为 contextPath，例如 `https://his.hospital.com/his-web` |
 | `href` | String | 否 | 浏览器 `location.href`（完整 URL） |
 | `cookie` | String | 否 | 浏览器 `document.cookie`，桌面端可借此调用 HIS 后端服务 |
 | `userAgent` | String | 否 | 浏览器 `navigator.userAgent` |
@@ -300,6 +302,7 @@ http://127.0.0.1:8081/api/handshake
 3. 如果握手失败，桌面端会清空已缓存的浏览器上下文，并拒绝后续桌面应用服务调用。
 4. 此接口支持重复调用，每次成功调用都会更新存储的浏览器上下文。
 5. 推荐 HIS 在页面加载时调用一次，在用户重新登录、刷新 token 或切换组织后再调用一次以刷新授权上下文。
+6. 前端初始化 HIS 服务时会保留 `origin` 中 SDK 已提取的 contextPath，只移除 userinfo、query、fragment，并去除末尾多余 `/`；握手的控制台与本地联调日志均不得记录 origin/href 的具体值。
 
 授权门禁说明：
 
@@ -350,6 +353,9 @@ http://127.0.0.1:8081/api/consultation/start
 2. 此接口会清空上一条本地结果，避免直接读到旧结果。
 3. `全医慧助（PCIE）` 收到后会尝试置顶主窗口并进入完整问诊。
 4. 桌面端在接诊上下文校验通过并准备打开完整问诊页时，上报一次 `smart_consultation` 功能调用事件；同一就诊再次显式触发完整问诊入口按新调用计数，统计分析以该事件为事实源，不再从本地 Bridge 日志、问诊用户日志或 AI 代理日志推断。
+5. 功能调用事件只保留产品功能、调用场景和必要的医生/机构/版本上下文，不发送顶层 `consultationId`、`payload`、`traceId` 或 `sessionId`。每条事件使用 `crypto.randomUUID()` 生成稳定 `eventId`，本地幂等键对所有功能统一只由功能编码与该 UUID 重建；旧离线队列加载时按允许字段重建，非 UUID 事件 ID 会被替换，调用方原始幂等文本、患者/就诊标识、跨表可关联伪标识、认证凭据以及 query/prompt/message/content/text 等自由文本不会再次落盘或上传。AI 技术链路关联只保留在独立审计链路。
+6. `/v1/client/feature-events/batch` 的成功 HTTP 响应仍需逐条核对 `accepted / skipped / rejected / rejections[]`；拒绝项转入本地有界诊断隔离队列，且隔离记录只保存 eventId、featureCode、响应 index、reason 和 rejectedAt。隔离持久化失败、响应结构或计数畸形时保留整批待上传事件，不得静默删除。
+7. 应用启动后、执行任何强制更新或后台初始化检查之前，必须同步清洗功能事件主队列和拒绝诊断队列；即使本次因强更、无配置或网络失败不启动上传器，旧 payload、关联标识、原始幂等文本和不可信拒绝原因也不得继续留在本地存储。`eventAction/sourceModule/scene` 只接受有长度上限的技术编码字符，不接受临床自由文本。
 
 ### 6.2 `POST /api/consultation/assist`
 

@@ -15,10 +15,20 @@ const TRACE_STAGE_TITLES: Record<InpatientEmrTraceStageKey, string> = {
   writebackFeedback: 'HIS 回执',
 };
 
+const SAFE_INPATIENT_EMR_TRACE_SEED_PATTERNS = [
+  /^inpatient-emr-\d{10,16}$/,
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i,
+];
+
+function isSafeInpatientEmrTraceSeed(seed: unknown): seed is string {
+  return typeof seed === 'string'
+    && SAFE_INPATIENT_EMR_TRACE_SEED_PATTERNS.some((pattern) => pattern.test(seed));
+}
+
 export function createInpatientEmrTrace(seed?: string): InpatientEmrGenerationTrace {
   const startedAt = Date.now();
   return {
-    traceId: seed || `inpatient-emr-${startedAt}`,
+    traceId: isSafeInpatientEmrTraceSeed(seed) ? seed : `inpatient-emr-${startedAt}`,
     startedAt,
     stages: [],
   };
