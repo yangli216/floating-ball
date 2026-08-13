@@ -35,6 +35,7 @@ import type {
   HisVisitRecord,
   HisVisitVitalSigns,
 } from './types';
+import { formatPatientAgeText } from '@entities/patient/lib/patientAge';
 import type {
   AvailableMedicineInventoryItem,
   DiagnosisCatalogEntry,
@@ -875,13 +876,15 @@ export class PhisHisAdapter implements HisAdapter {
     // ageNum 不是岁数，留空让上层只用 ageText 展示
     const ageUnit = trim(detail.ageUnit)?.toUpperCase();
     const age = ageUnit === 'Y' && typeof detail.ageNum === 'number' ? detail.ageNum : undefined;
+    const ageText = formatPatientAgeText(detail.ageText, ageUnit)
+      || formatPatientAgeText(detail.ageNum, ageUnit);
 
     return {
       patientId: trim(detail.idPi) ?? idPi,
       name: trim(detail.naPi) ?? '',
       gender,
       age,
-      ageText: trim(detail.ageText),
+      ageText: ageText || undefined,
       idNo: trim(detail.idCard),
       mobilePhone: trim(detail.mobilePhone),
       raw: detail as unknown as Record<string, unknown>,

@@ -1,6 +1,7 @@
 import type { HisPatientHistory, HisPatientInfo } from '../services/his/types';
 import type { Patient } from '../types/consultation';
 import type { AppPatient, PatientContext } from '../types/appState';
+import { formatPatientAgeText } from '@entities/patient/lib/patientAge';
 
 type PatientSourceRecord = Record<string, unknown>;
 
@@ -65,36 +66,42 @@ export function normalizePatientGenderText(raw: unknown): string {
 }
 
 function parseAgeYears(ageText: string, fallbackAge?: number): number | undefined {
-  if (typeof fallbackAge === 'number' && Number.isFinite(fallbackAge)) {
-    return fallbackAge;
+  const match = ageText.match(/(\d+(?:\.\d+)?)\s*岁/u);
+  if (match) {
+    const parsed = Number.parseFloat(match[1]);
+    return Number.isFinite(parsed) ? parsed : undefined;
   }
 
-  const match = ageText.match(/(\d+(?:\.\d+)?)\s*岁/u);
-  if (!match) {
+  if (/(?:月|天|日)/u.test(ageText)) {
     return undefined;
   }
 
-  const parsed = Number.parseFloat(match[1]);
-  return Number.isFinite(parsed) ? parsed : undefined;
+  return typeof fallbackAge === 'number' && Number.isFinite(fallbackAge)
+    ? fallbackAge
+    : undefined;
 }
 
 function buildAgeText(source: PatientSourceRecord | null, hisInfo?: HisPatientInfo | null): string {
+  const hisAgeText = formatPatientAgeText(
+    hisInfo?.ageText,
+    hisInfo?.raw?.ageUnit,
+  );
+  if (hisAgeText) {
+    return hisAgeText;
+  }
+
   const sourceAgeText = pickFirstText(source, ['ageText']);
   if (sourceAgeText) {
-    return sourceAgeText;
+    return formatPatientAgeText(sourceAgeText, pickFirstText(source, ['ageUnit']));
+  }
+
+  if (typeof hisInfo?.age === 'number' && Number.isFinite(hisInfo.age)) {
+    return formatPatientAgeText(hisInfo.age, '岁');
   }
 
   const ageNum = pickFirstText(source, ['ageNum']);
   if (ageNum) {
-    return `${ageNum}${pickFirstText(source, ['ageUnit']) || '岁'}`;
-  }
-
-  if (hisInfo?.ageText) {
-    return hisInfo.ageText;
-  }
-
-  if (typeof hisInfo?.age === 'number' && Number.isFinite(hisInfo.age)) {
-    return `${hisInfo.age}岁`;
+    return formatPatientAgeText(ageNum, pickFirstText(source, ['ageUnit']));
   }
 
   const age = pickFirstText(source, ['age']);
@@ -102,7 +109,7 @@ function buildAgeText(source: PatientSourceRecord | null, hisInfo?: HisPatientIn
     return '';
   }
 
-  return /岁|月|天/u.test(age) ? age : `${age}岁`;
+  return formatPatientAgeText(age);
 }
 
 export function getPatientContextId(patient: AppPatient | null | undefined): string {
