@@ -1,7 +1,7 @@
 <template>
   <li
     class="vcn-diagnosis-item"
-    :class="{ selected, primary: isPrimary }"
+    :class="{ selected, primary: isPrimary, 'differential-open': differentialOpen }"
     @click="emit('toggle')"
   >
     <div v-if="selected" class="diag-selected-mark">
@@ -61,12 +61,73 @@
 
       <div class="card-actions">
         <slot name="actions" />
-        <button
-          v-if="showDifferential"
-          class="diag-action-btn"
-          type="button"
-          @click.stop="emit('diagnosis-differential', $event)"
-        >诊断鉴别</button>
+        <div v-if="showDifferential" class="diagnosis-differential-anchor" @click.stop>
+          <button
+            class="diag-action-btn differential-status"
+            :class="`is-${differentialStatus.state}`"
+            type="button"
+            @click.stop="emit('diagnosis-differential', $event)"
+          >{{ differentialButtonLabel }}</button>
+
+          <section
+            v-if="selected && differentialOpen && differentialPreview.state !== 'idle'"
+            class="diagnosis-differential-panel"
+            :class="`is-${differentialPreview.state}`"
+            role="dialog"
+            aria-label="主诊断核查要点"
+            tabindex="-1"
+            @click.stop
+            @keydown.esc.stop="emit('close-differential', $event)"
+          >
+            <header class="diagnosis-differential-panel-head">
+              <strong>
+                <Icon icon="lucide:list-checks" size="15" aria-hidden="true" />
+                主诊断核查要点
+              </strong>
+              <span class="diagnosis-differential-panel-actions">
+                <span>{{ differentialPreviewStateLabel }}</span>
+                <button
+                  type="button"
+                  class="diagnosis-differential-close"
+                  aria-label="关闭主诊断核查要点"
+                  title="关闭"
+                  @click.stop="emit('close-differential', $event)"
+                >
+                  <Icon icon="lucide:x" size="16" aria-hidden="true" />
+                </button>
+              </span>
+            </header>
+
+            <p v-if="differentialPreview.state === 'loading'" class="diagnosis-differential-state">
+              正在生成鉴别信息…
+            </p>
+            <p v-else-if="differentialPreview.state === 'clear'" class="diagnosis-differential-state is-clear">
+              暂无需要额外核查的鉴别项
+            </p>
+            <p v-else-if="differentialPreview.state === 'error'" class="diagnosis-differential-state is-error">
+              {{ differentialPreview.message || '鉴别信息加载失败，请点击重试' }}
+            </p>
+            <ul v-else-if="differentialPreviewPoints.length" class="diagnosis-differential-points">
+              <li v-for="(point, pointIndex) in differentialPreviewPoints" :key="`${pointIndex}-${point.text}`">
+                <span class="diagnosis-differential-point-text">
+                  <template v-for="(segment, segmentIndex) in point.segments" :key="`${segmentIndex}-${segment.text}`">
+                    <mark v-if="segment.highlighted" class="diagnosis-differential-keyword">{{ segment.text }}</mark>
+                    <span v-else>{{ segment.text }}</span>
+                  </template>
+                </span>
+              </li>
+            </ul>
+
+            <footer v-if="differentialPreviewPoints.length" class="diagnosis-differential-panel-footer">
+              <button
+                type="button"
+                class="diagnosis-differential-confirm"
+                aria-label="已确认并关闭主诊断核查要点"
+                @click.stop="emit('close-differential', $event)"
+              >已确认</button>
+            </footer>
+          </section>
+        </div>
         <div v-if="showFeedback" class="voice-feedback-anchor" @click.stop>
           <button
             class="voice-feedback-trigger"
@@ -117,6 +178,11 @@ import VoiceRecommendationFeedbackPopover from '@features/voice-consultation/ui/
 import type { Diagnosis } from '@/types/consultation';
 import type { VoiceRecommendationFeedbackDraft } from '@/types/voiceFeedback';
 import type { FactCheckIssue } from '@services/factChecker';
+import type {
+  DiagnosisChecklistPrefetchStatus,
+  DiagnosisChecklistPreview,
+} from '../model/useClinicalResultDiagnosisChecklist';
+import { buildDiagnosisChecklistHighlightSegments } from '@features/clinical-result';
 
 interface RelatedDiagnosisCandidate {
   id?: string;
@@ -169,6 +235,18 @@ const props = defineProps({
     type: Boolean,
     default: false,
   },
+  differentialStatus: {
+    type: Object as PropType<DiagnosisChecklistPrefetchStatus>,
+    default: () => ({ state: 'idle', itemCount: 0 }),
+  },
+  differentialPreview: {
+    type: Object as PropType<DiagnosisChecklistPreview>,
+    default: () => ({ state: 'idle', items: [], message: '' }),
+  },
+  differentialOpen: {
+    type: Boolean,
+    default: false,
+  },
   feedbackVisible: {
     type: Boolean,
     default: false,
@@ -205,6 +283,31 @@ const rateToneClass = computed(() => {
 });
 
 const displayRate = computed(() => props.diag.rate || 'AI分析');
+const differentialButtonLabel = computed(() => {
+  const { state, itemCount } = props.differentialStatus;
+  if (state === 'loading') return '主诊核查中…';
+  if (state === 'risk') return '核查需关注';
+  if (state === 'ready') return `主诊核查 ${itemCount}项`;
+  if (state === 'clear') return '主诊核查完成';
+  return '主诊核查';
+});
+const differentialPreviewPoints = computed(() => {
+  const { state } = props.differentialPreview;
+  const texts = state === 'risk' && props.differentialPreview.message
+    ? [props.differentialPreview.message]
+    : props.differentialPreview.items.map((item) => item.question || item.recordText);
+  return texts
+    .filter(Boolean)
+    .map((text) => ({ text, segments: buildDiagnosisChecklistHighlightSegments(text) }));
+});
+const differentialPreviewStateLabel = computed(() => {
+  const { state } = props.differentialPreview;
+  if (state === 'loading') return '分析中';
+  if (state === 'clear') return '无需额外核查';
+  if (state === 'error') return '加载失败';
+  if (state === 'risk') return '优先核查';
+  return `${differentialPreviewPoints.value.length} 项`;
+});
 
 const emit = defineEmits<{
   (e: 'toggle'): void;
@@ -214,6 +317,7 @@ const emit = defineEmits<{
   (e: 'toggle-related', event?: Event): void;
   (e: 'swap-related', diag: RelatedDiagnosisCandidate): void;
   (e: 'diagnosis-differential', event?: Event): void;
+  (e: 'close-differential', event?: Event): void;
   (e: 'toggle-feedback', event?: Event): void;
   (e: 'update:feedbackDraft', draft: VoiceRecommendationFeedbackDraft): void;
   (e: 'submit-feedback', draft: VoiceRecommendationFeedbackDraft): void;
@@ -249,6 +353,10 @@ const emit = defineEmits<{
   box-shadow:
     0 0 0 1px var(--voice-accent-soft),
     0 10px 20px rgba(15, 23, 42, 0.03);
+}
+
+.vcn-diagnosis-item.differential-open {
+  z-index: 24;
 }
 
 .diag-selected-mark {
@@ -474,6 +582,171 @@ const emit = defineEmits<{
 .diag-action-btn.subtle:hover {
   color: var(--voice-text);
   border-color: var(--voice-border-strong);
+}
+
+.differential-status.is-loading {
+  color: var(--voice-text-muted);
+}
+
+.differential-status.is-ready,
+.differential-status.is-clear {
+  color: var(--voice-accent-strong);
+  border-color: var(--voice-accent-soft);
+  background: var(--voice-accent-softer);
+}
+
+.differential-status.is-risk {
+  color: #a83f1f;
+  border-color: rgba(234, 88, 12, 0.35);
+  background: rgba(255, 237, 213, 0.75);
+}
+
+.diagnosis-differential-anchor {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+}
+
+.diagnosis-differential-panel {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  z-index: 30;
+  display: flex;
+  flex-direction: column;
+  width: min(520px, 70vw);
+  max-height: min(480px, 62vh);
+  overflow: hidden;
+  padding: 12px 14px 10px;
+  border: 1px solid rgba(44, 119, 180, .18);
+  border-radius: 10px;
+  background: var(--voice-surface-glass);
+  color: var(--voice-text);
+  box-shadow: 0 16px 34px rgba(15, 23, 42, .16);
+}
+
+.diagnosis-differential-panel.is-risk {
+  border-color: rgba(234, 88, 12, .28);
+  background: rgba(255, 247, 237, .98);
+}
+
+.diagnosis-differential-panel-head,
+.diagnosis-differential-panel-head strong,
+.diagnosis-differential-panel-actions,
+.diagnosis-differential-close {
+  display: flex;
+  align-items: center;
+}
+
+.diagnosis-differential-panel-head { flex: 0 0 auto; justify-content: space-between; gap: 12px; }
+.diagnosis-differential-panel-head strong { gap: 6px; color: var(--voice-text); font-size: 14px; }
+.diagnosis-differential-panel-actions { gap: 6px; }
+.diagnosis-differential-panel-actions > span {
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: rgba(44, 119, 180, .08);
+  color: var(--voice-accent-strong);
+  font-size: 11px;
+  white-space: nowrap;
+}
+.diagnosis-differential-panel.is-risk .diagnosis-differential-panel-actions > span {
+  background: rgba(234, 88, 12, .1);
+  color: #9a3412;
+}
+.diagnosis-differential-close {
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--voice-text-muted);
+  cursor: pointer;
+}
+.diagnosis-differential-close:hover,
+.diagnosis-differential-close:focus-visible {
+  background: var(--voice-surface-hover);
+  color: var(--voice-text);
+  outline: 2px solid var(--voice-accent-soft);
+  outline-offset: 1px;
+}
+
+.diagnosis-differential-state { min-height: 0; margin: 9px 0 2px; overflow-y: auto; color: var(--voice-text-muted); font-size: 13px; line-height: 1.6; }
+.diagnosis-differential-state.is-clear { color: var(--voice-success); }
+.diagnosis-differential-state.is-error { color: var(--voice-danger); }
+
+.diagnosis-differential-points {
+  min-height: 0;
+  margin: 7px 0 0;
+  padding: 0 6px 0 0;
+  overflow-y: auto;
+  list-style: none;
+  scrollbar-gutter: stable;
+  scrollbar-width: thin;
+  scrollbar-color: var(--voice-border-strong) transparent;
+}
+.diagnosis-differential-points::-webkit-scrollbar { width: 6px; }
+.diagnosis-differential-points::-webkit-scrollbar-thumb {
+  border-radius: 999px;
+  background: var(--voice-border-strong);
+}
+.diagnosis-differential-points li {
+  position: relative;
+  margin-top: 7px;
+  padding-left: 15px;
+  color: var(--voice-text);
+  font-size: 13px;
+  line-height: 1.65;
+}
+.diagnosis-differential-points li::before {
+  content: '';
+  position: absolute;
+  top: .62em;
+  left: 1px;
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--voice-accent);
+}
+.diagnosis-differential-point-text {
+  display: block;
+  overflow-wrap: anywhere;
+}
+.diagnosis-differential-keyword {
+  margin: 0;
+  padding: 0;
+  background: transparent;
+  color: #8a4b08;
+  font-weight: 700;
+}
+.diagnosis-differential-panel.is-risk .diagnosis-differential-keyword {
+  color: #9a3412;
+}
+
+.diagnosis-differential-panel-footer {
+  flex: 0 0 auto;
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 8px;
+  padding-top: 6px;
+  border-top: 1px solid var(--voice-border);
+}
+.diagnosis-differential-confirm {
+  min-height: 28px;
+  padding: 0 4px;
+  border: 0;
+  background: transparent;
+  color: var(--voice-accent-strong);
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.diagnosis-differential-confirm:hover { text-decoration: underline; }
+.diagnosis-differential-confirm:focus-visible {
+  border-radius: 4px;
+  outline: 2px solid var(--voice-accent-soft);
+  outline-offset: 2px;
 }
 
 .card-actions {

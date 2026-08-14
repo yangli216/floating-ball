@@ -32,6 +32,47 @@ export type {
 } from './clinicalResultContract';
 
 export {
+  appendConfirmedClinicalRecordFact,
+  buildClinicalRecordFactSuggestionRequest,
+  extractExplicitClinicalRecordFacts,
+  getClinicalRecordFactFieldLabel,
+  getPendingCriticalFactSuggestions,
+  normalizeClinicalRecordFactSuggestions,
+} from './clinicalRecordFactConfirmation';
+export type {
+  BuildClinicalRecordFactSuggestionRequestInput,
+  ClinicalRecordExplicitFact,
+  ClinicalRecordFactField,
+  ClinicalRecordFactPolarity,
+  ClinicalRecordFactPriority,
+  ClinicalRecordFactRecord,
+  ClinicalRecordFactSource,
+  ClinicalRecordFactStatus,
+  ClinicalRecordFactSuggestion,
+  ClinicalRecordFactSuggestionRequestSpec,
+  ClinicalRecordFactSuggestionResponse,
+} from './clinicalRecordFactConfirmation';
+
+export {
+  buildClinicalRecordAnnotationSegments,
+  hasClinicalRecordCandidateText,
+  replaceClinicalRecordCandidateText,
+} from './clinicalRecordAnnotation';
+export type {
+  ClinicalRecordAnnotationFactSegment,
+  ClinicalRecordAnnotationSegment,
+  ClinicalRecordAnnotationSuggestionSegment,
+  ClinicalRecordAnnotationTextSegment,
+} from './clinicalRecordAnnotation';
+
+export {
+  buildDiagnosisSuggestionSections,
+  parseDiagnosisMatchRate,
+} from './diagnosisSuggestionPresentation';
+export type { DiagnosisSuggestionSections } from './diagnosisSuggestionPresentation';
+
+export {
+  buildDiagnosisScopedPrecautions,
   buildOutpatientRecord,
   detectOutpatientRecordScenario,
   OUTPATIENT_RECORD_SCHEMA_VERSION,
@@ -43,6 +84,16 @@ export type {
   OutpatientRecordQualityIssue,
   OutpatientRecordScenario,
 } from './outpatientRecord';
+
+export {
+  CHRONIC_PAST_MEDICAL_HISTORY_NEGATIVE_TEMPLATE,
+  DEFAULT_FAMILY_HISTORY_TEMPLATE,
+  DEFAULT_HEALTH_EXAM_PAST_MEDICAL_HISTORY_TEMPLATE,
+  DEFAULT_PAST_MEDICAL_HISTORY_TEMPLATE,
+  DEFAULT_PERSONAL_HISTORY_TEMPLATE,
+  isHistoryRecordTemplate,
+} from './historyRecordTemplates';
+export type { HistoryRecordTemplateField } from './historyRecordTemplates';
 
 export {
   buildBodySiteUsageOptions,
@@ -88,16 +139,20 @@ export {
 } from './clinicalResultLlmJsonParser';
 
 export {
+  buildDiagnosisChecklistCacheKey,
   buildDiagnosisChecklistMismatchError,
   buildDiagnosisChecklistRiskIssues,
   normalizeDiagnosisChecklistItems,
   parseDiagnosisChecklistResponse,
 } from './diagnosisChecklist';
 export type {
+  DiagnosisChecklistCacheContext,
   DiagnosisChecklistItem,
   DiagnosisChecklistResponse,
   DiagnosisChecklistRiskIssue,
 } from './diagnosisChecklist';
+export { buildDiagnosisChecklistHighlightSegments } from './diagnosisChecklistPresentation';
+export type { DiagnosisChecklistHighlightSegment } from './diagnosisChecklistPresentation';
 
 export {
   formatDiagnosisConfidence,

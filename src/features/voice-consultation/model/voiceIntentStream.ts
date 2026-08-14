@@ -82,6 +82,7 @@ export function createVoiceIntentStreamAccumulator(): VoiceIntentStreamAccumulat
         pastMedicalHistory: '',
         allergyHistory: '',
         currentMedicationHistory: '',
+        personalHistory: '',
         familyHistory: '',
         symptoms: [],
         negativeSymptoms: [],
@@ -150,4 +151,3 @@ export function applyVoiceIntentStreamEvent(
       break;
   }
 }
-

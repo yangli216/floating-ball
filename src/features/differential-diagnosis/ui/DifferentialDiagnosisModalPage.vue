@@ -1,8 +1,6 @@
 <script setup lang="ts">
 import { computed, inject, onMounted, ref, shallowRef, watch } from 'vue';
 import Icon from '@shared/ui/Icon.vue';
-import { PROMPTS } from '@/prompts';
-import { chat } from '@/services/llm';
 import { medicalDataService } from '@/services/medicalData';
 import {
   buildDiagnosisChecklistMismatchError,
@@ -12,6 +10,7 @@ import {
   type DiagnosisChecklistItem,
   type DiagnosisChecklistRiskIssue,
 } from '@features/clinical-result';
+import { requestDiagnosisChecklist } from '@features/clinical-result/api/diagnosisChecklistRequest';
 import type { AppPatient } from '@/types/appState';
 import { formatUserFacingError } from '@shared/lib/errorMessages';
 import SvgIcon from "@/components/svgIcon.vue";
@@ -86,23 +85,16 @@ async function generateChecklist(): Promise<void> {
   riskIssues.value = [];
 
   try {
-    const userPrompt = PROMPTS.consultation.diagnosisChecklist.buildUserPrompt({
+    const response = await requestDiagnosisChecklist({
       diagnosisName: displayDiagnosisName.value,
       chiefComplaint: chiefComplaint.value,
       historyOfPresentIllness: historyOfPresentIllness.value,
-    });
-
-    const response = await chat([
-      { role: 'system', content: PROMPTS.consultation.diagnosisChecklist.system },
-      { role: 'user', content: userPrompt },
-    ], undefined, undefined, undefined, {
-      traceContext: {
-        scene: 'standalone-differential-diagnosis-checklist',
-        sourceModule: 'differential_diagnosis_modal',
-        operationModule: 'consultation',
-        operationAction: 'generate_diagnosis_checklist',
-        title: '独立鉴别诊断生成鉴别排查建议',
-      },
+    }, {
+      scene: 'standalone-differential-diagnosis-checklist',
+      sourceModule: 'differential_diagnosis_modal',
+      operationModule: 'consultation',
+      operationAction: 'generate_diagnosis_checklist',
+      title: '独立鉴别诊断生成鉴别排查建议',
     });
 
     const parsed = parseDiagnosisChecklistResponse(response);

@@ -14,7 +14,6 @@ import {
   checkExamination,
   isReviewerEnabled,
 } from '../services/factChecker';
-import { getVoiceRecordFieldLabel } from '../services/voiceFeedback';
 import {
   buildConsultationUserLogSnapshot,
   submitConsultationUserLog,
@@ -33,7 +32,10 @@ import {
   applyManualMatchCandidate,
   assessTreatmentCatalogMatch,
   buildClinicalResultDiagnosisRequestSpec,
+  buildDiagnosisScopedPrecautions,
+  buildClinicalRecordFactSuggestionRequest,
   buildClinicalResultRegenerationRequest,
+  buildDiagnosisSuggestionSections,
   buildDiagnosisRationale as buildSharedDiagnosisRationale,
   buildInventoryBlockedSubmitMessage,
   buildRecordConfirmedPayload,
@@ -60,9 +62,11 @@ import {
   initClinicalDiagnoses,
   initClinicalTreatments,
   mapClinicalResultAiDiagnoses,
+  appendConfirmedClinicalRecordFact,
   parseLLMJson,
   normalizeClinicalResultRegenerationOutput,
   rememberManualCatalogMatch,
+  replaceClinicalRecordCandidateText,
   shouldAutoSelectTreatment,
   syncTreatmentExecDeptSelections as syncSharedTreatmentExecDeptSelections,
   toManualMatchCandidateView,
@@ -71,9 +75,11 @@ import {
   type ClinicalResultRecommendationType,
   type ClinicalResultRecordSummaryInput,
   type ClinicalResultRegenerationRecord,
+  type ClinicalRecordFactField,
   type MedicinePrimaryField,
   type ManualMatchRawCandidate,
 } from '@features/clinical-result';
+import { requestDiagnosisChecklist } from '@features/clinical-result/api/diagnosisChecklistRequest';
 import {
   type UsageOption,
 } from '../utils/medicalDictionaryHelpers';
@@ -91,20 +97,25 @@ import {
   generateVoiceTreatmentRecommendations,
   useVoiceEditorSnapshotPersistence,
   useVoiceFeedbackActions,
-  useVoiceRecordFieldFeedbackState,
+  useVoiceRecordFieldState,
   useVoiceResultFactCheckState,
   type VoiceEditorSnapshot,
 } from '@features/voice-consultation';
 import {
   ClinicalGenerationProgress,
+  ClinicalDecisionDisclaimer,
+  ClinicalRecordFactPanel,
   ClinicalResultSupplementDialog,
+  DiagnosisDifferentialList,
   DiagnosisRecommendationCard,
   TreatmentRecommendationSection,
   useBodySiteOptions,
   useClinicalResultCancelController,
+  useClinicalRecordFactConfirmation,
   useClinicalResultChannelStrategy,
   useClinicalResultDiagnosisChecklist,
   useClinicalResultIntentReset,
+  useClinicalResultPrecautionsScope,
   useClinicalResultPatientContext,
   useClinicalResultWritebackPayload,
   useClinicalResultWritebackPreflight,
@@ -197,7 +208,10 @@ const physicalExam = ref('');
 const precautions = ref('');
 
 const aiDiagnoses = ref<Diagnosis[]>([]);
-const diagnosisSelection = useDiagnosisSelection({ diagnoses: aiDiagnoses });
+const diagnosisSuggestionSections = computed(() => buildDiagnosisSuggestionSections(aiDiagnoses.value));
+const formalDiagnoses = computed(() => diagnosisSuggestionSections.value.formal);
+const differentialDiagnoses = computed(() => diagnosisSuggestionSections.value.differential);
+const diagnosisSelection = useDiagnosisSelection({ diagnoses: formalDiagnoses });
 const {
   selectedDiagnosis,
   selectedDiagnoses,
@@ -279,41 +293,6 @@ const {
   buildPreferenceContext: buildChannelPreferenceContext,
 } = channelStrategy;
 
-const diagnosisChecklist = useClinicalResultDiagnosisChecklist({
-  getChiefComplaint: () => chiefComplaint.value,
-  getHistoryOfPresentIllness: () => historyOfPresentIllness.value,
-  request: async ({ diagnosisName, chiefComplaint: complaint, historyOfPresentIllness: history }) => {
-    const userPrompt = PROMPTS.consultation.diagnosisChecklist.buildUserPrompt({
-      diagnosisName,
-      chiefComplaint: complaint,
-      historyOfPresentIllness: history,
-    });
-    return chat([
-      { role: 'system', content: PROMPTS.consultation.diagnosisChecklist.system },
-      { role: 'user', content: userPrompt },
-    ], undefined, undefined, undefined, {
-      traceContext: {
-        ...diagnosisChecklistTraceContext.value,
-        consultationId: resolveConsultationId(),
-      },
-    });
-  },
-  formatError: (error) => formatUserFacingError(error, {
-    context: '诊断鉴别生成失败',
-    fallback: '请稍后重试。',
-  }),
-  notify: showToast,
-});
-const {
-  activeChecklistDiagnosis,
-  checklistGenerationError,
-  checklistItems,
-  isChecklistLoading,
-  showChecklistModal,
-  closeChecklistModal,
-  openDiagnosisChecklist,
-} = diagnosisChecklist;
-
 const patientContext = useClinicalResultPatientContext({
   patient: computed(() => props.initialPatientData),
 });
@@ -325,6 +304,29 @@ const {
   patientName,
   patientTetId,
 } = patientContext;
+
+const diagnosisChecklist = useClinicalResultDiagnosisChecklist({
+  getConsultationId: () => consultationId.value,
+  getPrimaryDiagnosis: () => selectedDiagnosis.value,
+  getChiefComplaint: () => chiefComplaint.value,
+  getHistoryOfPresentIllness: () => historyOfPresentIllness.value,
+  request: (input) => requestDiagnosisChecklist(input, {
+    ...diagnosisChecklistTraceContext.value,
+    consultationId: consultationId.value,
+  }),
+  formatError: (error) => formatUserFacingError(error, {
+    context: '诊断鉴别生成失败',
+    fallback: '请稍后重试。',
+  }),
+  notify: showToast,
+});
+const {
+  closeDiagnosisChecklist,
+  getDiagnosisChecklistPreview,
+  getDiagnosisChecklistStatus,
+  isDiagnosisChecklistOpen,
+  openDiagnosisChecklist,
+} = diagnosisChecklist;
 
 const lastTreatmentDiagnosisKey = ref('');
 const isInitialTreatmentGeneration = computed(() => (
@@ -373,6 +375,90 @@ const displayedTreatmentEmptyText = computed(() => (
 const getPatientAnchorId = (): string => patientAnchorId.value;
 const resolveConsultationId = (): string => consultationId.value;
 
+function getFactRecord() {
+  return {
+    chiefComplaint: chiefComplaint.value,
+    historyOfPresentIllness: historyOfPresentIllness.value,
+    pastMedicalHistory: pastMedicalHistory.value,
+    personalHistory: personalHistory.value,
+    familyHistory: familyHistory.value,
+    physicalExam: physicalExam.value,
+  };
+}
+
+function applyConfirmedRecordFact(field: ClinicalRecordFactField, text: string, replaceText?: string): void {
+  const nextValue = (current: string) => {
+    if (replaceText) {
+      const replaced = replaceClinicalRecordCandidateText(current, replaceText, text);
+      if (replaced !== current) return replaced;
+    }
+    return appendConfirmedClinicalRecordFact(current, text);
+  };
+  if (field === 'historyOfPresentIllness') historyOfPresentIllness.value = nextValue(historyOfPresentIllness.value);
+  if (field === 'pastMedicalHistory') pastMedicalHistory.value = nextValue(pastMedicalHistory.value);
+  if (field === 'personalHistory') personalHistory.value = nextValue(personalHistory.value);
+  if (field === 'familyHistory') familyHistory.value = nextValue(familyHistory.value);
+  if (field === 'physicalExam') physicalExam.value = nextValue(physicalExam.value);
+}
+
+const recordFactConfirmation = useClinicalRecordFactConfirmation({
+  getRecord: getFactRecord,
+  getDiagnoses: () => formalDiagnoses.value,
+  getNegativeSymptoms: () => props.intentResult?.negativeSymptoms || [],
+  getPositiveSymptoms: () => props.intentResult?.symptoms || [],
+  request: async ({ record, diagnoses, explicitFacts }) => {
+    const requestSpec = buildClinicalRecordFactSuggestionRequest({
+      channel: resultChannel.value,
+      consultationId: resolveConsultationId(),
+      patient: {
+        gender: patientGender.value,
+        age: patientAge.value,
+      },
+      record,
+      diagnoses,
+      explicitFacts,
+    });
+    return chat(requestSpec.messages, undefined, undefined, undefined, requestSpec.config);
+  },
+  applyConfirmedFact: applyConfirmedRecordFact,
+  formatError: (error) => formatUserFacingError(error, {
+    context: '病历补问分析失败',
+    fallback: '请稍后重试，当前病历内容不会受到影响。',
+  }),
+  notify: showToast,
+});
+const {
+  error: factSuggestionError,
+  expanded: factPanelExpanded,
+  explicitFacts,
+  loading: factSuggestionLoading,
+  suggestions: factSuggestions,
+  confirmNegative: confirmNegativeFact,
+  confirmPositive: confirmPositiveFact,
+  ensureWritebackReady: ensureFactWritebackReady,
+  generateSuggestions: generateFactSuggestions,
+  getFieldHighlights: getRecordFieldFactHighlights,
+  getFieldSuggestions: getRecordFieldFactSuggestions,
+  markNotApplicable: markFactNotApplicable,
+  reset: resetFactConfirmation,
+  restoreSuggestions: restoreFactSuggestions,
+  setExpanded: setFactPanelExpanded,
+} = recordFactConfirmation;
+const hasPendingFactSuggestions = computed(() => (
+  factSuggestions.value.some((item) => item.status === 'pending')
+));
+
+let factSuggestionTimer: ReturnType<typeof setTimeout> | null = null;
+function scheduleFactSuggestionGeneration(): void {
+  if (factSuggestionTimer) clearTimeout(factSuggestionTimer);
+  factSuggestionTimer = setTimeout(() => {
+    factSuggestionTimer = null;
+    if (!isResultGenerating.value && factSuggestions.value.length === 0) {
+      void generateFactSuggestions();
+    }
+  }, 350);
+}
+
 function buildPreferenceContext(sceneSuffix: string) {
   return buildChannelPreferenceContext(resolveConsultationId(), sceneSuffix);
 }
@@ -390,6 +476,7 @@ const editorSnapshotPersistence = useVoiceEditorSnapshotPersistence({
     familyHistory: familyHistory.value,
     physicalExam: physicalExam.value,
     precautions: precautions.value,
+    factSuggestions: factSuggestions.value as unknown[],
     treatments: treatments.value as unknown[],
     diagnoses: aiDiagnoses.value as unknown[],
     selectedDiagnosisIdentity: getDiagnosisIdentity(selectedDiagnosis.value),
@@ -431,15 +518,18 @@ async function applyEditorSnapshot(snapshot: VoiceEditorSnapshot): Promise<void>
   if (typeof snapshot.precautions === 'string') {
     precautions.value = snapshot.precautions;
   }
+  if (Array.isArray(snapshot.factSuggestions)) {
+    restoreFactSuggestions(snapshot.factSuggestions);
+  }
   if (Array.isArray(snapshot.diagnoses) && snapshot.diagnoses.length > 0) {
     aiDiagnoses.value = snapshot.diagnoses as Diagnosis[];
     const matchedKey = snapshot.selectedDiagnosisIdentity;
     const target = matchedKey
-      ? aiDiagnoses.value.find((diag) => getDiagnosisIdentity(diag) === matchedKey)
+      ? formalDiagnoses.value.find((diag) => getDiagnosisIdentity(diag) === matchedKey)
       : null;
-    const fallback = aiDiagnoses.value.find((diag) => diag.id || diag.code) || aiDiagnoses.value[0] || null;
+    const fallback = formalDiagnoses.value.find((diag) => diag.id || diag.code) || formalDiagnoses.value[0] || null;
     const chosen = target || fallback;
-    replaceDiagnosisSelection(chosen ? [chosen] : aiDiagnoses.value.slice(0, 1), chosen);
+    replaceDiagnosisSelection(chosen ? [chosen] : [], chosen);
   }
   if (Array.isArray(snapshot.treatments) && snapshot.treatments.length > 0) {
     await fetchPharmacyOptions();
@@ -525,19 +615,14 @@ const showSessionFeedbackDialog = ref(false);
 const {
   sessionDraft,
   recommendationSubmittingKey,
-  recordFieldSubmittingKey,
   sessionSubmitting,
   recommendationSubmittedMap,
-  recordFieldSubmittedMap,
   sessionSubmittedAt,
   ensureRecommendationDraft,
-  ensureRecordFieldDraft,
   updateRecommendationDraft,
-  updateRecordFieldDraft,
   updateSessionDraft,
   registerRecommendations,
   submitRecommendationFeedback,
-  submitRecordFieldFeedback,
   submitSessionFeedback,
   clearVoiceFeedbackDraft,
 } = useVoiceFeedback({
@@ -546,13 +631,8 @@ const {
   patientName,
   chiefComplaint,
   historyOfPresentIllness,
-  pastMedicalHistory,
-  personalHistory,
-  familyHistory,
-  physicalExam,
-  precautions,
 });
-const recordFieldFeedbackState = useVoiceRecordFieldFeedbackState({
+const recordFieldState = useVoiceRecordFieldState({
   fields: {
     chiefComplaint,
     historyOfPresentIllness,
@@ -562,19 +642,35 @@ const recordFieldFeedbackState = useVoiceRecordFieldFeedbackState({
     physicalExam,
     precautions,
   },
-  ensureDraft: ensureRecordFieldDraft,
-  submittedMap: recordFieldSubmittedMap,
 });
 const {
-  initialRecordSnapshot,
-  getRecordFieldDraft,
-  getRecordFieldFeedbackKey,
-  getRecordFieldOriginalValue,
-  getRecordFieldSubmittedLabel,
-  getRecordFieldValue,
   isRecordFieldModified,
+  setInitialRecordFieldValue,
   setInitialRecordSnapshot,
-} = recordFieldFeedbackState;
+} = recordFieldState;
+const precautionsScope = useClinicalResultPrecautionsScope({
+  precautions,
+  buildScopedPrecautions: (diagnosisNames) => buildDiagnosisScopedPrecautions({
+    chiefComplaint: chiefComplaint.value,
+    historyOfPresentIllness: historyOfPresentIllness.value,
+    diagnosisNames,
+  }),
+  setSystemBaseline: (value) => setInitialRecordFieldValue('precautions', value),
+});
+const {
+  captureGeneratedPrecautions,
+  resetPrecautionsScope,
+  syncToSelectedDiagnoses: syncPrecautionsToSelectedDiagnoses,
+} = precautionsScope;
+const suppressPrecautionsScopeSync = ref(false);
+
+function getDiagnosisNames(items: readonly Diagnosis[]): string[] {
+  return items.map((item) => item.name?.trim()).filter(Boolean);
+}
+
+function syncPrecautionsToSelection(): void {
+  syncPrecautionsToSelectedDiagnoses(getDiagnosisNames(selectedDiagnoses.value));
+}
 const recommendationFeedbackPopover = useRecommendationFeedbackPopover({
   ensureDraft: ensureRecommendationDraft,
   submittedMap: recommendationSubmittedMap,
@@ -688,18 +784,13 @@ const {
 const {
   completeVoiceConsultationFlow,
   handleDiagnosisFeedbackSubmit,
-  handleRecordFieldFeedbackSubmit,
   handleSessionFeedbackSubmit,
   handleTreatmentFeedbackSubmit,
 } = useVoiceFeedbackActions({
   isDiagnosisSelected,
   isPrimaryDiagnosis,
   submitRecommendationFeedback,
-  submitRecordFieldFeedback,
   submitSessionFeedback,
-  getRecordFieldOriginalValue,
-  getRecordFieldValue,
-  getRecordFieldLabel: getVoiceRecordFieldLabel,
   getSelectedDiagnoses: () => selectedDiagnoses.value,
   getSelectedTreatments: () => selectedTreatments.value,
   closeRecommendationFeedback: () => {
@@ -812,6 +903,8 @@ function buildIntentDiagnosisKey(item: ClinicalResultInput['diagnoses'][number])
     item.name,
     inherited.rate,
     item.confidence,
+    inherited.suggestionType,
+    inherited.missingInformation,
   ].map(normalizeIntentKeyPart).join('~');
 }
 
@@ -1075,6 +1168,11 @@ async function handleDiagnosisDifferential(diag: Diagnosis, event?: Event): Prom
   await openDiagnosisChecklist(diag);
 }
 
+function handleCloseDiagnosisDifferential(diag: Diagnosis, event?: Event): void {
+  event?.stopPropagation();
+  closeDiagnosisChecklist(diag);
+}
+
 function setPrimaryDiagnosis(diag: Diagnosis, event?: Event): void {
   event?.stopPropagation();
   setPrimaryDiagnosisSelection(diag);
@@ -1175,17 +1273,22 @@ async function fetchAIDiagnosis(
       buildPreferenceContext('diagnosis'),
     );
 
-    if (aiDiagnoses.value.length > 0) {
-      replaceDiagnosisSelection([aiDiagnoses.value[0]], aiDiagnoses.value[0]);
+    if (formalDiagnoses.value.length > 0) {
+      replaceDiagnosisSelection([formalDiagnoses.value[0]], formalDiagnoses.value[0]);
     } else {
       resetDiagnosisSelection();
     }
+    if (!suppressPrecautionsScopeSync.value) {
+      syncPrecautionsToSelection();
+    }
+    resetFactConfirmation();
 
     if (!options.deferSideEffects) {
       void registerCurrentRecommendations();
-      void performDiagnosisFactCheck(aiDiagnoses.value);
+      void performDiagnosisFactCheck(formalDiagnoses.value);
+      scheduleFactSuggestionGeneration();
     }
-    return aiDiagnoses.value.length > 0;
+    return formalDiagnoses.value.length > 0;
   } catch (error: unknown) {
     if (options.notifyOnError !== false) {
       showToast?.(formatUserFacingError(error, {
@@ -1422,6 +1525,7 @@ async function handleSupplementRegenerate(doctorSupplement: string): Promise<voi
   const previousTreatmentDiagnosisKey = lastTreatmentDiagnosisKey.value;
   const previousAutoTreatmentFetchAttemptKey = autoTreatmentFetchAttemptKey.value;
   const previousTreatmentGenerationState = { ...treatmentGenerationState.value };
+  const previousFactSuggestions = factSuggestions.value.map((item) => ({ ...item }));
 
   showSupplementDialog.value = false;
   resultRegenerating.value = true;
@@ -1459,6 +1563,7 @@ async function handleSupplementRegenerate(doctorSupplement: string): Promise<voi
       previousRecord,
     );
 
+    suppressPrecautionsScopeSync.value = true;
     applyRegenerationRecord(regeneratedRecord);
     diagnosisRequestSeq.value += 1;
     invalidateTreatmentRequests();
@@ -1469,6 +1574,11 @@ async function handleSupplementRegenerate(doctorSupplement: string): Promise<voi
     if (!diagnosisReady) {
       throw new Error('病例已生成，但诊断建议刷新失败');
     }
+    captureGeneratedPrecautions(
+      getDiagnosisNames(aiDiagnoses.value),
+      regeneratedRecord.precautions,
+    );
+    syncPrecautionsToSelection();
 
     if (allowTreatmentRefresh.value) {
       const treatmentReady = await fetchAITreatment({
@@ -1481,9 +1591,14 @@ async function handleSupplementRegenerate(doctorSupplement: string): Promise<voi
       }
     }
 
-    setInitialRecordSnapshot(regeneratedRecord);
+    setInitialRecordSnapshot({
+      ...regeneratedRecord,
+      precautions: precautions.value,
+    });
+    resetFactConfirmation();
+    scheduleFactSuggestionGeneration();
     void registerCurrentRecommendations();
-    void performDiagnosisFactCheck(aiDiagnoses.value);
+    void performDiagnosisFactCheck(formalDiagnoses.value);
     void performTreatmentFactCheck(treatments.value);
     resetFirstUserLogSnapshot();
     submitVoiceGeneratedUserLog();
@@ -1507,6 +1622,7 @@ async function handleSupplementRegenerate(doctorSupplement: string): Promise<voi
     lastTreatmentDiagnosisKey.value = previousTreatmentDiagnosisKey;
     autoTreatmentFetchAttemptKey.value = previousAutoTreatmentFetchAttemptKey;
     treatmentGenerationState.value = previousTreatmentGenerationState;
+    restoreFactSuggestions(previousFactSuggestions);
     console.error('[VoiceConsultationNew] Result regeneration failed', {
       error,
       consultationId: resolveConsultationId(),
@@ -1518,6 +1634,7 @@ async function handleSupplementRegenerate(doctorSupplement: string): Promise<voi
     }), 'error');
   } finally {
     await nextTick();
+    suppressPrecautionsScopeSync.value = false;
     suppressDiagnosisTreatmentRefetch.value = false;
     resultRegenerating.value = false;
     persistEditorSnapshotImmediate();
@@ -1611,6 +1728,19 @@ function swapDiagnosis(originalDiag: Diagnosis, newItem: { id?: string; code: st
   completeRelatedSwap();
   void registerCurrentRecommendations();
 }
+
+watch(
+  () => selectedDiagnoses.value
+    .map((item) => getDiagnosisIdentity(item))
+    .filter(Boolean)
+    .sort()
+    .join('|'),
+  () => {
+    if (!suppressPrecautionsScopeSync.value) {
+      syncPrecautionsToSelection();
+    }
+  },
+);
 
 watch(
   () => getDiagnosisIdentity(selectedDiagnosis.value),
@@ -1969,6 +2099,7 @@ onMounted(() => {
 
 onUnmounted(() => {
   clearPendingSnapshotPersist();
+  if (factSuggestionTimer) clearTimeout(factSuggestionTimer);
 });
 
 const {
@@ -2285,6 +2416,8 @@ async function reconcileAutoSelectedMedicineInventory(items: TreatmentRecommenda
 
 async function handleBatchWriteBack(): Promise<void> {
   if (!canSubmit.value) return;
+  if (!ensureFactWritebackReady()) return;
+  syncPrecautionsToSelection();
   persistEditorSnapshotImmediate();
   submitting.value = true;
   clearLastFeedback();
@@ -2369,7 +2502,9 @@ watch(
     lastAppliedIntentKey.value = '';
     invalidateTreatmentRequests();
     autoTreatmentFetchAttemptKey.value = '';
+    resetPrecautionsScope();
     resetForIntent({});
+    resetFactConfirmation();
     resetTreatmentGenerationState();
     await nextTick();
     suppressDiagnosisTreatmentRefetch.value = false;
@@ -2382,6 +2517,7 @@ watch(
   async (result) => {
     if (!result) {
       lastAppliedIntentKey.value = '';
+      resetPrecautionsScope();
       return;
     }
 
@@ -2397,15 +2533,21 @@ watch(
 
     invalidateTreatmentRequests();
     autoTreatmentFetchAttemptKey.value = '';
+    resetPrecautionsScope();
     resetForIntent(result);
+    resetFactConfirmation();
     resetTreatmentGenerationState();
 
     if (result.diagnoses?.length) {
       aiDiagnoses.value = initDiagnosesFromIntent(result.diagnoses);
-      const firstStandard = aiDiagnoses.value.find((diag) => getStandardDiagnosisId(diag));
-      const firstSelectable = firstStandard || aiDiagnoses.value[0] || null;
+      captureGeneratedPrecautions(getDiagnosisNames(aiDiagnoses.value), precautions.value);
+      const firstStandard = formalDiagnoses.value.find((diag) => getStandardDiagnosisId(diag));
+      const firstSelectable = firstStandard || formalDiagnoses.value[0] || null;
       replaceDiagnosisSelection(firstSelectable ? [firstSelectable] : [], firstSelectable);
+      syncPrecautionsToSelection();
       void registerCurrentRecommendations();
+    } else {
+      captureGeneratedPrecautions([], precautions.value);
     }
 
     const allowedIntentTreatments = getAllowedIntentTreatments(result);
@@ -2446,8 +2588,10 @@ watch(
       }
     }
 
-    if (aiDiagnoses.value.length > 0) {
-      void performDiagnosisFactCheck(aiDiagnoses.value);
+    scheduleFactSuggestionGeneration();
+
+    if (formalDiagnoses.value.length > 0) {
+      void performDiagnosisFactCheck(formalDiagnoses.value);
     } else if (canRefreshDiagnosis.value) {
       void fetchAIDiagnosis();
     }
@@ -2475,6 +2619,7 @@ watch(
     familyHistory.value,
     physicalExam.value,
     precautions.value,
+    factSuggestions.value,
     treatments.value,
     aiDiagnoses.value,
     selectedDiagnosis.value,
@@ -2536,135 +2681,100 @@ watch(
             </button>
           </div>
 
+          <div v-if="hasPendingFactSuggestions" class="clinical-record-ai-notice" role="note">
+            <Icon icon="lucide:info" size="14" aria-hidden="true" />
+            <span>病历中带 AI 或 ! 标记的内容由 AI 补充，尚待医生核查；确认前不会写入正式病历。</span>
+          </div>
+
           <div class="record-fields">
             <VoiceRecordFieldEditor
               v-model="chiefComplaint"
-              field-key="chiefComplaint"
               title="主诉"
               presentation="document"
-              :original-value="initialRecordSnapshot.chiefComplaint"
-              :draft="getRecordFieldDraft('chiefComplaint')"
-              :feedback-key="getRecordFieldFeedbackKey('chiefComplaint')"
-              :feedback-open="isRecommendationFeedbackOpen(getRecordFieldFeedbackKey('chiefComplaint'))"
-              :modified="isRecordFieldModified('chiefComplaint')"
               :rows="2"
               placeholder="请输入主诉..."
-              :submitted-label="getRecordFieldSubmittedLabel('chiefComplaint')"
-              :submitting="recordFieldSubmittingKey === getRecordFieldFeedbackKey('chiefComplaint')"
-              @toggle-feedback="toggleRecommendationFeedback"
-              @update:draft="updateRecordFieldDraft"
-              @submit-feedback="handleRecordFieldFeedbackSubmit"
             />
             <VoiceRecordFieldEditor
               v-model="historyOfPresentIllness"
-              field-key="historyOfPresentIllness"
               title="现病史"
               presentation="document"
-              :original-value="initialRecordSnapshot.historyOfPresentIllness"
-              :draft="getRecordFieldDraft('historyOfPresentIllness')"
-              :feedback-key="getRecordFieldFeedbackKey('historyOfPresentIllness')"
-              :feedback-open="isRecommendationFeedbackOpen(getRecordFieldFeedbackKey('historyOfPresentIllness'))"
-              :modified="isRecordFieldModified('historyOfPresentIllness')"
               :rows="6"
+              :fact-highlights="getRecordFieldFactHighlights('historyOfPresentIllness')"
+              :fact-suggestions="getRecordFieldFactSuggestions('historyOfPresentIllness')"
               placeholder="请输入现病史..."
-              :submitted-label="getRecordFieldSubmittedLabel('historyOfPresentIllness')"
-              :submitting="recordFieldSubmittingKey === getRecordFieldFeedbackKey('historyOfPresentIllness')"
               grow
-              @toggle-feedback="toggleRecommendationFeedback"
-              @update:draft="updateRecordFieldDraft"
-              @submit-feedback="handleRecordFieldFeedbackSubmit"
+              @confirm-negative-fact="confirmNegativeFact"
+              @confirm-positive-fact="confirmPositiveFact"
+              @not-applicable-fact="markFactNotApplicable"
             />
             <VoiceRecordFieldEditor
               v-model="pastMedicalHistory"
-              field-key="pastMedicalHistory"
               title="既往史"
               presentation="document"
-              :original-value="initialRecordSnapshot.pastMedicalHistory"
-              :draft="getRecordFieldDraft('pastMedicalHistory')"
-              :feedback-key="getRecordFieldFeedbackKey('pastMedicalHistory')"
-              :feedback-open="isRecommendationFeedbackOpen(getRecordFieldFeedbackKey('pastMedicalHistory'))"
-              :modified="isRecordFieldModified('pastMedicalHistory')"
               :rows="4"
+              :fact-highlights="getRecordFieldFactHighlights('pastMedicalHistory')"
+              :fact-suggestions="getRecordFieldFactSuggestions('pastMedicalHistory')"
               placeholder="请输入既往史..."
-              :submitted-label="getRecordFieldSubmittedLabel('pastMedicalHistory')"
-              :submitting="recordFieldSubmittingKey === getRecordFieldFeedbackKey('pastMedicalHistory')"
-              @toggle-feedback="toggleRecommendationFeedback"
-              @update:draft="updateRecordFieldDraft"
-              @submit-feedback="handleRecordFieldFeedbackSubmit"
+              @confirm-negative-fact="confirmNegativeFact"
+              @confirm-positive-fact="confirmPositiveFact"
+              @not-applicable-fact="markFactNotApplicable"
             />
             <VoiceRecordFieldEditor
               v-model="personalHistory"
-              field-key="personalHistory"
               title="个人史"
               presentation="document"
-              :original-value="initialRecordSnapshot.personalHistory"
-              :draft="getRecordFieldDraft('personalHistory')"
-              :feedback-key="getRecordFieldFeedbackKey('personalHistory')"
-              :feedback-open="isRecommendationFeedbackOpen(getRecordFieldFeedbackKey('personalHistory'))"
-              :modified="isRecordFieldModified('personalHistory')"
               :rows="3"
+              :fact-highlights="getRecordFieldFactHighlights('personalHistory')"
+              :fact-suggestions="getRecordFieldFactSuggestions('personalHistory')"
               placeholder="请输入个人史..."
-              :submitted-label="getRecordFieldSubmittedLabel('personalHistory')"
-              :submitting="recordFieldSubmittingKey === getRecordFieldFeedbackKey('personalHistory')"
-              @toggle-feedback="toggleRecommendationFeedback"
-              @update:draft="updateRecordFieldDraft"
-              @submit-feedback="handleRecordFieldFeedbackSubmit"
+              @confirm-negative-fact="confirmNegativeFact"
+              @confirm-positive-fact="confirmPositiveFact"
+              @not-applicable-fact="markFactNotApplicable"
             />
             <VoiceRecordFieldEditor
               v-model="familyHistory"
-              field-key="familyHistory"
               title="家族史"
               presentation="document"
-              :original-value="initialRecordSnapshot.familyHistory"
-              :draft="getRecordFieldDraft('familyHistory')"
-              :feedback-key="getRecordFieldFeedbackKey('familyHistory')"
-              :feedback-open="isRecommendationFeedbackOpen(getRecordFieldFeedbackKey('familyHistory'))"
-              :modified="isRecordFieldModified('familyHistory')"
               :rows="3"
+              :fact-highlights="getRecordFieldFactHighlights('familyHistory')"
+              :fact-suggestions="getRecordFieldFactSuggestions('familyHistory')"
               placeholder="请输入家族史..."
-              :submitted-label="getRecordFieldSubmittedLabel('familyHistory')"
-              :submitting="recordFieldSubmittingKey === getRecordFieldFeedbackKey('familyHistory')"
-              @toggle-feedback="toggleRecommendationFeedback"
-              @update:draft="updateRecordFieldDraft"
-              @submit-feedback="handleRecordFieldFeedbackSubmit"
+              @confirm-negative-fact="confirmNegativeFact"
+              @confirm-positive-fact="confirmPositiveFact"
+              @not-applicable-fact="markFactNotApplicable"
             />
             <VoiceRecordFieldEditor
               v-model="physicalExam"
-              field-key="physicalExam"
               title="体格检查"
               presentation="document"
-              :original-value="initialRecordSnapshot.physicalExam"
-              :draft="getRecordFieldDraft('physicalExam')"
-              :feedback-key="getRecordFieldFeedbackKey('physicalExam')"
-              :feedback-open="isRecommendationFeedbackOpen(getRecordFieldFeedbackKey('physicalExam'))"
-              :modified="isRecordFieldModified('physicalExam')"
               :rows="4"
+              :fact-highlights="getRecordFieldFactHighlights('physicalExam')"
+              :fact-suggestions="getRecordFieldFactSuggestions('physicalExam')"
               placeholder="请输入体格检查..."
-              :submitted-label="getRecordFieldSubmittedLabel('physicalExam')"
-              :submitting="recordFieldSubmittingKey === getRecordFieldFeedbackKey('physicalExam')"
-              @toggle-feedback="toggleRecommendationFeedback"
-              @update:draft="updateRecordFieldDraft"
-              @submit-feedback="handleRecordFieldFeedbackSubmit"
+              @confirm-negative-fact="confirmNegativeFact"
+              @confirm-positive-fact="confirmPositiveFact"
+              @not-applicable-fact="markFactNotApplicable"
             />
             <VoiceRecordFieldEditor
               v-model="precautions"
-              field-key="precautions"
               title="注意事项"
               presentation="document"
-              :original-value="initialRecordSnapshot.precautions"
-              :draft="getRecordFieldDraft('precautions')"
-              :feedback-key="getRecordFieldFeedbackKey('precautions')"
-              :feedback-open="isRecommendationFeedbackOpen(getRecordFieldFeedbackKey('precautions'))"
-              :modified="isRecordFieldModified('precautions')"
               :rows="3"
               placeholder="请输入注意事项..."
-              :submitted-label="getRecordFieldSubmittedLabel('precautions')"
-              :submitting="recordFieldSubmittingKey === getRecordFieldFeedbackKey('precautions')"
-              @toggle-feedback="toggleRecommendationFeedback"
-              @update:draft="updateRecordFieldDraft"
-              @submit-feedback="handleRecordFieldFeedbackSubmit"
             />
           </div>
+          <ClinicalRecordFactPanel
+            :explicit-facts="explicitFacts"
+            :suggestions="factSuggestions"
+            :loading="factSuggestionLoading"
+            :error="factSuggestionError"
+            :expanded="factPanelExpanded"
+            @toggle="setFactPanelExpanded"
+            @refresh="generateFactSuggestions"
+            @confirm-negative="confirmNegativeFact"
+            @confirm-positive="confirmPositiveFact"
+            @not-applicable="markFactNotApplicable"
+          />
         </section>
 
         <section class="vcn-right-panel">
@@ -2704,9 +2814,9 @@ watch(
               <span>AI 正在分析...</span>
             </div>
 
-            <ul v-else-if="aiDiagnoses.length > 0" class="vcn-diagnosis-list">
+            <ul v-else-if="formalDiagnoses.length > 0" class="vcn-diagnosis-list">
               <DiagnosisRecommendationCard
-                v-for="diag in aiDiagnoses"
+                v-for="diag in formalDiagnoses"
                 :key="diag.code + diag.name"
                 :diag="diag"
                 :selected="isDiagnosisSelected(diag)"
@@ -2717,6 +2827,9 @@ watch(
                 :related-diagnoses="getRelatedDropdownCandidates(diag)"
                 :issue="getIssueForDiagnosis(diag.code)"
                 :show-differential="true"
+                :differential-status="getDiagnosisChecklistStatus(diag)"
+                :differential-preview="getDiagnosisChecklistPreview(diag)"
+                :differential-open="isDiagnosisChecklistOpen(diag)"
                 :feedback-visible="isRecommendationFeedbackOpen(getDiagnosisFeedbackKey(diag))"
                 :feedback-draft="getRecommendationDraft(getDiagnosisFeedbackKey(diag))"
                 :feedback-submitting="recommendationSubmittingKey === getDiagnosisFeedbackKey(diag)"
@@ -2728,6 +2841,7 @@ watch(
                 @toggle-related="toggleRelatedDropdown(diag, $event)"
                 @swap-related="swapDiagnosis(diag, $event)"
                 @diagnosis-differential="handleDiagnosisDifferential(diag, $event)"
+                @close-differential="handleCloseDiagnosisDifferential(diag, $event)"
                 @toggle-feedback="toggleRecommendationFeedback(getDiagnosisFeedbackKey(diag), $event)"
                 @update:feedback-draft="updateRecommendationDraft(getDiagnosisFeedbackKey(diag), $event)"
                 @submit-feedback="handleDiagnosisFeedbackSubmit(diag, $event)"
@@ -2738,7 +2852,11 @@ watch(
               </DiagnosisRecommendationCard>
             </ul>
 
-            <div v-else class="empty-text">暂无诊断建议</div>
+            <div v-else class="empty-text">
+              当前病历暂无可以直接成立的正式诊断
+            </div>
+
+            <DiagnosisDifferentialList :diagnoses="differentialDiagnoses" />
           </div>
 
           <div class="decision-card pane-card">
@@ -2868,6 +2986,7 @@ watch(
     </div>
 
     <div class="voice-footer">
+      <ClinicalDecisionDisclaimer />
       <button
         v-if="secondaryFooterActionText"
         class="footer-secondary-btn"
@@ -2931,45 +3050,6 @@ watch(
       </div>
     </div>
 
-    <div v-if="showChecklistModal" class="confirm-overlay checklist-overlay" @click.self="closeChecklistModal">
-      <div class="checklist-dialog pane-card" role="dialog" aria-modal="true" aria-labelledby="voice-checklist-title">
-        <div class="checklist-dialog-head">
-          <div>
-            <p id="voice-checklist-title" class="confirm-dialog-title">鉴别排查确认</p>
-            <p class="checklist-dialog-subtitle">{{ activeChecklistDiagnosis?.name || '当前诊断' }}</p>
-          </div>
-          <button class="checklist-close-btn" type="button" aria-label="关闭" @click="closeChecklistModal">
-            <Icon icon="lucide:x" size="18" />
-          </button>
-        </div>
-
-        <div v-if="isChecklistLoading" class="loading-inline checklist-loading">
-          <div class="ai-spinner small">
-            <div class="spinner-ring"></div>
-            <div class="spinner-core"></div>
-          </div>
-          <span>正在生成鉴别排查建议...</span>
-        </div>
-
-        <div v-else-if="checklistGenerationError" class="checklist-critical-error">
-          {{ checklistGenerationError }}
-        </div>
-
-        <div v-else-if="checklistItems.length > 0" class="checklist-dialog-body">
-          <p class="checklist-intro">
-            为防止诊断与病历不匹配或高危疾病漏诊，系统建议进一步复核以下要点：
-          </p>
-          <div class="checklist-items">
-            <div v-for="(item, index) in checklistItems" :key="`${index}-${item.question}`" class="checklist-item-label">
-              <span class="checklist-text">{{ item.question }}</span>
-              <span v-if="item.recordText" class="checklist-record-text">{{ item.recordText }}</span>
-            </div>
-          </div>
-        </div>
-
-        <div v-else class="empty-text checklist-empty">当前诊断暂无需要复核或鉴别排查的提示。</div>
-      </div>
-    </div>
   </div>
 </template>
 
@@ -2985,12 +3065,4 @@ watch(
   opacity: 0.72;
 }
 
-.checklist-critical-error {
-  padding: 12px 14px;
-  border: 1px solid rgba(207, 74, 60, 0.24);
-  border-radius: 12px;
-  background: var(--voice-danger-soft);
-  color: var(--voice-danger);
-  line-height: 1.6;
-}
 </style>

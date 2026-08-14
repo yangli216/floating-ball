@@ -1012,8 +1012,6 @@ const {
   patientName: computed(() => patientPromptProfile.value.patientName),
   chiefComplaint: computed(() => generatedRecord.value.chiefComplaint || ''),
   historyOfPresentIllness: computed(() => generatedRecord.value.historyOfPresentIllness || ''),
-  pastMedicalHistory: computed(() => resolvePastMedicalHistory()),
-  familyHistory: computed(() => generatedRecord.value.familyHistory || ''),
 });
 
 const setReferenceStatuses = (

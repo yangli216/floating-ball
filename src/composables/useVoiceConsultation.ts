@@ -33,7 +33,9 @@ import { submitConsultationUserLog } from '@services/consultationUserLog';
 import {
   getPatientContextAllergyHistory,
   getPatientContextCurrentMedicationHistory,
+  getPatientContextFamilyHistory,
   getPatientContextPastMedicalHistory,
+  getPatientContextPersonalHistory,
 } from '@/utils/patientContext';
 import { formatUserFacingError } from '@shared/lib/errorMessages';
 
@@ -316,6 +318,8 @@ export function useVoiceConsultation(options: VoiceConsultationOptions) {
           pastMedicalHistory: getPatientContextPastMedicalHistory(currentPatient.value) || null,
           allergyHistory: getPatientContextAllergyHistory(currentPatient.value) || null,
           currentMedicationHistory: getPatientContextCurrentMedicationHistory(currentPatient.value) || null,
+          personalHistory: getPatientContextPersonalHistory(currentPatient.value) || null,
+          familyHistory: getPatientContextFamilyHistory(currentPatient.value) || null,
         },
         onProgress: ({ result: partialResult }) => {
           if (currentToken !== processingToken) return;

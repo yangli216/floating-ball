@@ -7,7 +7,7 @@ import {
 } from '@features/clinical-result';
 
 interface Options {
-  diagnoses: Ref<Diagnosis[]>;
+  diagnoses: Readonly<Ref<readonly Diagnosis[]>>;
 }
 
 export function useDiagnosisSelection(options: Options) {

@@ -24,6 +24,7 @@ export interface PatientContextClinical {
   pastMedicalHistory?: string;
   allergyHistory?: string;
   currentMedicationHistory?: string;
+  personalHistory?: string;
   familyHistory?: string;
   diagnosis?: string;
   hisHistory?: HisPatientHistory | null;
@@ -57,6 +58,7 @@ export interface PatientContext {
   pastMedicalHistory?: string;
   allergyHistory?: string;
   currentMedicationHistory?: string;
+  personalHistory?: string;
   familyHistory?: string;
   diagnosis?: string;
   hisHistory?: HisPatientHistory | null;

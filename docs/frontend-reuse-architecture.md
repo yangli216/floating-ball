@@ -140,12 +140,13 @@
 | 问诊结果中性输入 | `features/clinical-result` | 语音结果、症状结果到 `ClinicalResultInput` 的 Adapter | 具体页面缓存、取消/诊毕语义 |
 | 临床结果基础契约 | `features/clinical-result/clinicalResultContract.ts` | `ClinicalResultInput`、`ClinicalResultChannel`、诊断和治疗中性结构；语音、症状、复诊配药等渠道共同依赖 | ASR、语音缓存、具体页面状态 |
 | LLM JSON 宽容解析 | `features/clinical-result/clinicalResultLlmJsonParser.ts` | 症状问诊、语音结果页等 LLM 文本响应到 JSON 对象 / 数组的纯解析 | LLM 请求、错误 toast、日志、页面状态覆盖 |
-| 诊断鉴别 checklist 规则 | `features/clinical-result/diagnosisChecklist.ts` | 共享结果页与独立鉴别诊断窗口共用的响应类型、条目归一、关键诊断不匹配判断和风险项映射 | LLM 请求、弹窗状态、toast、窗口生命周期 |
+| 诊断鉴别 checklist 规则 | `features/clinical-result/diagnosisChecklist.ts` | 共享结果页与独立鉴别诊断窗口共用的响应类型、上下文缓存 key、条目归一、关键诊断不匹配判断和风险项映射 | LLM 请求、弹窗状态、toast、窗口生命周期 |
 | AI 推荐请求规格 | `features/clinical-result/clinicalResultAiRequest.ts` | 语音 / 症状诊断推荐和 medication / exam / lab / procedure 治疗推荐的 prompt messages 与 trace config 纯构造；支持单路和多路治疗推荐规格，trace 基础字段和具体 scene/title/action 可由调用方注入，默认保持语音问诊取值 | `chat()` 调用、并发策略、loading、错误处理、状态覆盖、日志、缓存、PHIS 回写 |
 | AI 推荐 raw 映射 | `features/clinical-result/clinicalResultAiMapping.ts` | 语音结果页诊断 / 治疗 LLM raw 结果到标准诊断和治疗推荐的纯转换；智能问诊 western 诊断 raw 数组复用同一 mapper，并通过 lookup/未匹配 ID 策略保持原行为；智能问诊 western 治疗推荐 raw 数组按目标类型过滤并转换为治疗推荐项；治疗多路响应按 allSettled 结果解析、单路失败隔离并合并，标准库匹配与归一化由调用方注入 | LLM 请求、loading、当前诊断防串线、toast、事实核查、日志、缓存、PHIS 回写 |
 | 诊断/治疗推荐卡片与分组 | `features/consultation-result` | 单条卡片 UI、用药/检查/检验/处置推荐分组、推荐依据、反馈入口、手动匹配入口、治疗项主字段与二级属性编辑模板 | LLM 请求、推荐刷新、toast、PHIS 提交 |
 | 结果页渠道策略 | `features/consultation-result/model/useClinicalResultChannelStrategy.ts` | `voice/symptom/chronic-refill` 渠道到日志类型、语音缓存开关、患者头展示、取消文案、偏好追踪 context 和诊断鉴别 trace context 的派生 | 缓存读写、日志提交、取消事件、诊毕清理 |
-| 结果页诊断鉴别流程 | `features/consultation-result/model/useClinicalResultDiagnosisChecklist.ts` | 共享结果页 checklist 弹窗状态、LLM 请求生命周期、响应解析、空态和错误态 | Prompt/LLM 供应商调用、trace 构造、toast 实现、独立窗口状态 |
+| 结果页诊断鉴别流程 | `features/consultation-result/model/useClinicalResultDiagnosisChecklist.ts` | 主诊断稳定后的后台预取、按就诊/诊断/病历上下文隔离的会话缓存、并发复用、卡片状态、严重风险主动展开，以及 checklist 弹窗空态和错误态 | Prompt/LLM 供应商调用、trace 构造、toast 实现、独立窗口状态 |
+| 诊断鉴别请求网关 | `features/clinical-result/api/diagnosisChecklistRequest.ts` | 共享结果页和独立鉴别窗口统一使用轻量模型、同一 Prompt 与可注入 trace 发起签名 LLM 请求 | Vue 状态、缓存、弹窗、toast、PHIS 回写 |
 | 结果页取消流程 | `features/consultation-result/model/useClinicalResultCancelController.ts` | 放弃确认弹窗开合、提交中 / 等待回执时的拦截提示、确认动作编排入口 | 清理反馈草稿、提交放弃日志、`emit('cancel')` |
 | 结果页用户日志三态 | `features/consultation-result/model/useClinicalResultUserLogController.ts` | 首版 / 诊毕 / 放弃日志提交节奏、首版快照记忆、最终选择快照、语音可选变更摘要 | 病历字段读取、患者来源解析、区域化提交实现、反馈草稿清理 |
 | 回写回执结果分发 | `features/consultation-result/model/useWritebackFeedbackController.ts` | 已命中 requestId 的 HIS 回执 success / failed 分发、默认提示文案 | `complete_consultation` 调用、PHIS payload、缓存持久化、用户日志、整页反馈弹窗 |
@@ -180,13 +181,13 @@
 | 接诊 session 状态 | `features/reception/model/useReceptionSessionController.ts` | App 生命周期内的局部 `status / risks / opportunities / executing` 状态、患者展示信息派生、报告复诊上下文派生和显式状态 action | HIS / LLM 请求、窗口调整、导航、toast、第二份患者资料、把流程上下文写入 `patient.raw`、Pinia 全局状态 |
 | 门诊场景路由 | `features/reception/model/useOutpatientScenarioRouter.ts` | `ReceptionOpportunity` 执行、语音缓存优先、报告复诊和普通录音的统一 Strategy；生成、上下文查询、导航和提示均通过 options 注入 | Tauri 事件注册、患者补全、风险评估、直接 import HIS / LLM 单例、PHIS 回写 |
 | SDK handshake 初始化 | `app/events/useSdkHandshakeController.ts` | HIS origin/token、机构/租户、角色科室和 URT 解析，HIS 服务 / adapter / feedback actor / 医学目录上下文初始化 | Tauri 事件注册、患者上下文、页面导航、PHIS 回写 |
-| 结果页反馈编排 | `features/feedback/model/useVoiceFeedback.ts` | 症状问诊和语音结果页共用的推荐 target 登记、推荐反馈 / 病例字段反馈 / 整页评分草稿状态、提交到本地反馈服务和 voice feedback backend payload 队列 | 弹层 UI、toast、PHIS 回写、用户日志、AI 请求、结果页关闭 |
+| 结果页反馈编排 | `features/feedback/model/useVoiceFeedback.ts` | 症状问诊和语音结果页共用的推荐 target 登记、推荐反馈 / 整页评分草稿状态、提交到本地反馈服务和 voice feedback backend payload 队列；病例字段级反馈已移除 | 弹层 UI、toast、PHIS 回写、用户日志、AI 请求、结果页关闭 |
 | 语音意图结构化抽取 | `features/voice-consultation/model/useVoiceIntentRecognition.ts` | 录音文本到病例草稿、诊断提示和治疗提示的 LLM 抽取、JSON 结构校验 / 一次修复、标准目录匹配、条件性用药和患者自服药分流 | 录音控制、语音缓存恢复、结果页 UI、PHIS 回写、窗口切换、诊毕 / 放弃语义 |
 | 语音问诊缓存 | `features/voice-consultation/model/voiceConsultationCache.ts` | 按患者就诊锚点生成语音问诊缓存 key、读写原始 intent 结果、跨自然日失效、清理和 editorSnapshot 增量合并 | 录音控制、LLM 抽取、结果页恢复副作用、窗口切换、PHIS 回写、诊毕 / 放弃语义 |
 | 语音编辑快照持久化 | `features/voice-consultation/model/useVoiceEditorSnapshotPersistence.ts` | editorSnapshot 构建触发、600ms 节流写入、立即写入、pending timer 清理 | 快照恢复、诊断/治疗副作用、药房加载、库存校验、推荐登记、PHIS 回写 |
-| 语音病例字段反馈状态 | `features/voice-consultation/model/useVoiceRecordFieldFeedbackState.ts` | 主诉 / 现病史 / 既往史 / 家族史的初始快照、当前值读取、人工修改判断、字段反馈 key、草稿读取和已提交标签 | 字段反馈提交、toast、用户日志、弹层开合、缓存、PHIS 回写 |
+| 病例字段编辑状态 | `features/voice-consultation/model/useVoiceRecordFieldState.ts` | 主诉、现病史及其他病例字段的初始快照、当前值读取和人工修改判断 | 反馈草稿、反馈 key、提交、toast、弹层、缓存、PHIS 回写 |
 | 语音结果事实核查状态 | `features/voice-consultation/model/useVoiceResultFactCheckState.ts` | 诊断 / 治疗 fact-check 结果 Map、issue getter 和逐条核查循环 | 触发时机、病历文本来源、当前主诊断、toast、日志、缓存、PHIS 回写 |
-| 语音反馈提交动作 | `features/voice-consultation/model/useVoiceFeedbackActions.ts` | 推荐项反馈、病例字段反馈、整页反馈的提交编排、成功提示、弹层关闭和完成回调注入 | 草稿状态、推荐目标登记、PHIS 回写、缓存读写、用户日志、AI 请求 |
+| 语音反馈提交动作 | `features/voice-consultation/model/useVoiceFeedbackActions.ts` | 推荐项反馈与整页反馈的提交编排、成功提示、弹层关闭和完成回调注入 | 病例字段反馈、草稿状态、推荐目标登记、PHIS 回写、缓存读写、用户日志、AI 请求 |
 | 语音知识库检索编排 | `features/voice-consultation/model/useVoiceKnowledgeSearch.ts` | 语音生成病历到知识库分类检索的轻包装，复用 knowledge controller 并注入 PMPHAI / 埋点 / 错误记录 | 知识库结果 UI、PMPHAI 服务实现、问诊页知识库状态、PHIS 回写 |
 | 语音标准目录匹配 | `features/voice-consultation/model/useVoiceCatalogMatching.ts` | 语音生成病历中的诊断、药品、检查、检验和处置标准目录匹配，以及组合检查项拆分后的重新匹配 | 结果页 UI、治疗推荐编辑、PHIS 回写、缓存、toast、用户日志 |
 | 语音结果记录状态 | `features/voice-consultation/model/useVoiceResultRecord.ts` | 语音生成病历的当前记录 / 原始记录 clone、字段编辑埋点和最终采纳埋点 | 缓存恢复、PHIS 回写、结果页关闭、反馈提交、AI 请求 |

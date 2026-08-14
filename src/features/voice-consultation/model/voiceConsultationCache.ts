@@ -30,6 +30,8 @@ export interface VoiceEditorSnapshot {
   familyHistory?: string;
   physicalExam?: string;
   precautions?: string;
+  /** 病历事实补问及医生确认状态。 */
+  factSuggestions?: unknown[];
   /** TreatmentRecommendation[] 形态 */
   treatments?: unknown[];
   /** Diagnosis[] 形态 */

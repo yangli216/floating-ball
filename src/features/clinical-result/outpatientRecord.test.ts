@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  buildDiagnosisScopedPrecautions,
   buildOutpatientRecord,
   OUTPATIENT_RECORD_SCHEMA_VERSION,
   type OutpatientRecord,
@@ -8,7 +9,7 @@ import {
 import { buildRecordConfirmedPayload } from './recordConfirmedPayload';
 
 describe('outpatientRecord', () => {
-  it('builds a health exam record without fabricating vital signs or diagnosisText', () => {
+  it('prefills standard history templates while keeping unsupported examination facts empty', () => {
     const record = buildOutpatientRecord({
       chiefComplaint: '办理健康证查体',
       historyOfPresentIllness: '患者自诉无发热、咳嗽、腹痛等不适。',
@@ -19,7 +20,7 @@ describe('outpatientRecord', () => {
     expect(record.pastMedicalHistory).toContain('否认高血压病史');
     expect(record.personalHistory).toContain('否认吸烟史');
     expect(record.familyHistory).toContain('否认家族重大遗传病史');
-    expect(record.physicalExam).toContain('心肺腹查体未见明显异常');
+    expect(record.physicalExam).toBe('');
     expect(record.physicalExam).not.toMatch(/体温|血压|脉搏|呼吸\d/u);
     expect(record).not.toHaveProperty('diagnosisText');
   });
@@ -33,6 +34,7 @@ describe('outpatientRecord', () => {
 
     expect(record.pastMedicalHistory).toContain('既往有原发性高血压病史');
     expect(record.pastMedicalHistory).not.toContain('否认高血压');
+    expect(record.pastMedicalHistory).toContain('否认手术史');
     expect(validateOutpatientRecord(record, {
       chiefComplaint: '高血压复诊配药',
       historyOfPresentIllness: '患者既往高血压多年，规律服药，今来续方。',
@@ -105,6 +107,30 @@ describe('outpatientRecord', () => {
     expect(record.precautions).toContain('多喝温开水');
     expect(record.precautions).not.toContain('胃肠药');
     expect(record.precautions).not.toContain('电解质水');
+  });
+
+  it('rebuilds scoped precautions without reusing unselected diagnosis content', () => {
+    const precautions = buildDiagnosisScopedPrecautions({
+      chiefComplaint: '腹痛伴尿频',
+      historyOfPresentIllness: '初始候选曾包含膀胱炎。',
+      precautions: '膀胱炎患者应注意多饮水并监测尿路症状。',
+      diagnosisNames: ['输尿管结石'],
+    });
+
+    expect(precautions).not.toContain('膀胱炎');
+    expect(precautions).not.toContain('尿路症状');
+  });
+
+  it('uses only the selected diagnosis rules when rebuilding scoped precautions', () => {
+    const precautions = buildDiagnosisScopedPrecautions({
+      chiefComplaint: '发热伴腹泻',
+      historyOfPresentIllness: '同时存在呼吸道和消化道症状。',
+      diagnosisNames: ['急性上呼吸道感染'],
+    });
+
+    expect(precautions).toContain('多喝温开水');
+    expect(precautions).not.toContain('胃肠药');
+    expect(precautions).not.toContain('电解质水');
   });
 });
 

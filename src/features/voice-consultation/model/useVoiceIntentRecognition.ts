@@ -215,7 +215,7 @@ function appendNegativeSymptoms(historyOfPresentIllness: string, negativeSymptom
 function composePastMedicalHistory(recordDraft: VoiceRecordDraft): string {
   const pastMedicalHistory = getText(recordDraft.pastMedicalHistory);
   if (!pastMedicalHistory || pastMedicalHistory === '无特殊') {
-    return '无特殊';
+    return '';
   }
   return /^既往史[:：]/u.test(pastMedicalHistory) ? pastMedicalHistory : `既往史：${pastMedicalHistory}`;
 }
@@ -236,6 +236,11 @@ function normalizeDiagnosisHints(hints: DiagnosisHint[] | undefined): DiagnosisH
       confidence: hint?.confidence === 'high' || hint?.confidence === 'medium' || hint?.confidence === 'low'
         ? hint.confidence
         : undefined,
+      suggestionType: hint?.suggestionType === 'differential'
+        || (hint?.suggestionType !== 'formal' && (hint?.sourceType === 'uncertain' || hint?.confidence === 'low'))
+        ? 'differential' as const
+        : 'formal' as const,
+      missingInformation: getText(hint?.missingInformation),
     }))
     .filter((hint) => hint.name);
 }
@@ -388,7 +393,7 @@ function mergeNarrative(base: string, additions: string[]): string {
   const normalizedBase = normalizeSentence(base || '');
   const preservedBase = !normalizedBase || normalizedBase === '无特殊' ? '' : normalizedBase;
   const segments = [preservedBase, ...uniqueAdditions].filter(Boolean);
-  return segments.length > 0 ? segments.join('；') : '无特殊';
+  return segments.join('；');
 }
 
 function segregateTreatmentHints(hints: MatchedTreatment[]): TreatmentSegregationResult {
@@ -424,10 +429,11 @@ function normalizeVoiceExtraction(parsed: VoiceExtractionResult): NormalizedVoic
   const recordDraft: VoiceRecordDraft = {
     chiefComplaint: getText(parsed.recordDraft?.chiefComplaint || parsed.chiefComplaint),
     historyOfPresentIllness: getText(parsed.recordDraft?.historyOfPresentIllness || parsed.historyOfPresentIllness),
-    pastMedicalHistory: getText(parsed.recordDraft?.pastMedicalHistory || parsed.pastMedicalHistory) || '无特殊',
-    allergyHistory: getText(parsed.recordDraft?.allergyHistory || parsed.allergyHistory) || '无特殊',
-    currentMedicationHistory: getText(parsed.recordDraft?.currentMedicationHistory || parsed.currentMedicationHistory) || '无特殊',
-    familyHistory: getText(parsed.recordDraft?.familyHistory || parsed.familyHistory) || '无特殊',
+    pastMedicalHistory: getText(parsed.recordDraft?.pastMedicalHistory || parsed.pastMedicalHistory),
+    allergyHistory: getText(parsed.recordDraft?.allergyHistory || parsed.allergyHistory),
+    currentMedicationHistory: getText(parsed.recordDraft?.currentMedicationHistory || parsed.currentMedicationHistory),
+    personalHistory: getText(parsed.recordDraft?.personalHistory || parsed.personalHistory),
+    familyHistory: getText(parsed.recordDraft?.familyHistory || parsed.familyHistory),
     symptoms: getTextList(parsed.recordDraft?.symptoms || parsed.symptoms),
     negativeSymptoms: getTextList(parsed.recordDraft?.negativeSymptoms || parsed.negativeSymptoms),
     treatmentPlan: getText(parsed.recordDraft?.treatmentPlan || parsed.treatmentPlan),
@@ -484,6 +490,12 @@ function validateVoiceExtractionPayload(payload: unknown): string[] {
       }
       if (typeof recordDraftObject.pastMedicalHistory !== 'undefined' && typeof recordDraftObject.pastMedicalHistory !== 'string') {
         issues.push('recordDraft.pastMedicalHistory 必须是 string');
+      }
+      if (typeof recordDraftObject.personalHistory !== 'undefined' && typeof recordDraftObject.personalHistory !== 'string') {
+        issues.push('recordDraft.personalHistory 必须是 string');
+      }
+      if (typeof recordDraftObject.familyHistory !== 'undefined' && typeof recordDraftObject.familyHistory !== 'string') {
+        issues.push('recordDraft.familyHistory 必须是 string');
       }
       if (typeof recordDraftObject.symptoms !== 'undefined' && !Array.isArray(recordDraftObject.symptoms)) {
         issues.push('recordDraft.symptoms 必须是数组');
@@ -674,14 +686,15 @@ export function useVoiceIntentRecognition() {
     ).filter((item) => item.type !== 'procedure');
     const segregatedTreatments = segregateTreatmentHints(matchedTreatments);
     const currentMedicationHistory = mergeNarrative(
-      normalizedExtraction.recordDraft.currentMedicationHistory || '无特殊',
+      normalizedExtraction.recordDraft.currentMedicationHistory || '',
       segregatedTreatments.historicalMedicationNotes,
     );
     const pastMedicalHistory = composePastMedicalHistory({
       ...normalizedExtraction.recordDraft,
       currentMedicationHistory,
     });
-    const familyHistory = normalizedExtraction.recordDraft.familyHistory || '无特殊';
+    const personalHistory = normalizedExtraction.recordDraft.personalHistory || '';
+    const familyHistory = normalizedExtraction.recordDraft.familyHistory || '';
     const plan = normalizedExtraction.recommendationPlan;
     const autoFetchTreatments = plan.mode !== 'explicit_only' && plan.mode !== 'urgent_referral';
 
@@ -689,7 +702,7 @@ export function useVoiceIntentRecognition() {
       chiefComplaint: normalizedExtraction.recordDraft.chiefComplaint,
       historyOfPresentIllness: normalizedExtraction.recordDraft.historyOfPresentIllness,
       pastMedicalHistory,
-      allergyHistory: normalizedExtraction.recordDraft.allergyHistory || '无特殊',
+      allergyHistory: normalizedExtraction.recordDraft.allergyHistory || '',
       currentMedicationHistory,
       familyHistory,
       symptoms: normalizedExtraction.recordDraft.symptoms || [],
@@ -707,6 +720,7 @@ export function useVoiceIntentRecognition() {
         chiefComplaint: normalizedExtraction.recordDraft.chiefComplaint,
         historyOfPresentIllness: normalizedExtraction.recordDraft.historyOfPresentIllness,
         pastMedicalHistory,
+        personalHistory,
         familyHistory,
         diagnosisNames: matchedDiagnoses.map((item) => item.name),
       }),
@@ -742,6 +756,8 @@ export function useVoiceIntentRecognition() {
         pastMedicalHistory?: string | null;
         allergyHistory?: string | null;
         currentMedicationHistory?: string | null;
+        personalHistory?: string | null;
+        familyHistory?: string | null;
       };
       consultationId?: string;
       onProgress?: (progress: VoiceIntentProgress) => void;
@@ -793,16 +809,26 @@ export function useVoiceIntentRecognition() {
       const ctxAllergy = cleanCtx(patientCtx?.allergyHistory);
       const ctxPmh = cleanCtx(patientCtx?.pastMedicalHistory);
       const ctxMed = cleanCtx(patientCtx?.currentMedicationHistory);
-      if (ctxAllergy || ctxPmh || ctxMed) {
+      const ctxPersonal = cleanCtx(patientCtx?.personalHistory);
+      const ctxFamily = cleanCtx(patientCtx?.familyHistory);
+      if (ctxAllergy || ctxPmh || ctxMed || ctxPersonal || ctxFamily) {
         patientContextLines.push('【患者已有档案信息】');
         if (ctxAllergy) patientContextLines.push(`过敏史：${ctxAllergy}`);
         if (ctxPmh) patientContextLines.push(`既往史：${ctxPmh}`);
         if (ctxMed) patientContextLines.push(`长期用药：${ctxMed}`);
+        if (ctxPersonal) patientContextLines.push(`个人史：${ctxPersonal}`);
+        if (ctxFamily) patientContextLines.push(`家族史：${ctxFamily}`);
         patientContextLines.push(
-          '请在 recordDraft 中保留以上档案信息：若对话未明确撤销或修订，必须原样保留对应字段，不要因为对话未提及就改写为"无特殊"。既往史仅记录慢性病、手术史、外伤史等长期健康信息，不要将门诊就诊流水写入既往史。'
+          '请在 recordDraft 中保留以上档案信息：若对话未明确撤销或修订，必须原样保留对应字段，不要因为对话未提及就改写为"无特殊"。既往史仅记录慢性病、手术史、外伤史等长期健康信息，不要将门诊就诊流水写入既往史；个人史与家族史必须分别放入对应字段。'
         );
       }
       const patientContextBlock = patientContextLines.length ? `\n${patientContextLines.join('\n')}` : '';
+      const normalizeWithKnownHistories = (payload: VoiceExtractionResult): NormalizedVoiceExtractionResult => {
+        const normalized = normalizeVoiceExtraction(payload);
+        normalized.recordDraft.personalHistory ||= ctxPersonal;
+        normalized.recordDraft.familyHistory ||= ctxFamily;
+        return normalized;
+      };
 
       const recognitionPrompt = withOverride(
         'voiceIntentRecognition',
@@ -831,7 +857,7 @@ export function useVoiceIntentRecognition() {
       let streamParser = createVoiceIntentStreamParser((event) => {
         applyVoiceIntentStreamEvent(streamAccumulator, event);
         if (!options?.onProgress || event.event === 'done') return;
-        const partialExtraction = normalizeVoiceExtraction(streamAccumulator.payload);
+        const partialExtraction = normalizeWithKnownHistories(streamAccumulator.payload);
         const partial = buildIntentResult(
           partialExtraction,
           'streaming',
@@ -877,7 +903,7 @@ export function useVoiceIntentRecognition() {
         parsed = repaired.payload;
         repairUsed = repaired.repairUsed;
       }
-      const normalizedExtraction = normalizeVoiceExtraction(parsed);
+      const normalizedExtraction = normalizeWithKnownHistories(parsed);
 
       if (normalizedExtraction.error) {
         processingError.value = normalizedExtraction.message || '无法识别有效的医疗内容';

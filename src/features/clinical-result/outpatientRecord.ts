@@ -1,3 +1,11 @@
+import {
+  CHRONIC_PAST_MEDICAL_HISTORY_NEGATIVE_TEMPLATE,
+  DEFAULT_FAMILY_HISTORY_TEMPLATE,
+  DEFAULT_HEALTH_EXAM_PAST_MEDICAL_HISTORY_TEMPLATE,
+  DEFAULT_PAST_MEDICAL_HISTORY_TEMPLATE,
+  DEFAULT_PERSONAL_HISTORY_TEMPLATE,
+} from './historyRecordTemplates';
+
 export const OUTPATIENT_RECORD_SCHEMA_VERSION = 'outpatient-record.v1' as const;
 
 export type OutpatientRecordScenario =
@@ -39,11 +47,6 @@ export interface OutpatientRecordQualityIssue {
   field: keyof OutpatientRecord | 'diagList';
   message: string;
 }
-
-const DEFAULT_PAST_MEDICAL_HISTORY = '平素体健；否认肝炎史，否认结核史，否认疟疾史，否认其他传染病史；否认肺部疾病史；否认肾脏疾病史；否认其他重大疾病史；否认手术史；否认外伤史；否认输血史；否认过敏史。';
-const DEFAULT_HEALTH_EXAM_PAST_MEDICAL_HISTORY = '平素体健；否认肝炎史，否认结核史，否认疟疾史，否认其他传染病史；否认高血压病史；否认糖尿病史；否认心脏病史；否认脑血管病史；否认肺部疾病史；否认肾脏疾病史；否认其他重大疾病史；否认手术史；否认外伤史；否认输血史；否认过敏史。';
-const DEFAULT_PERSONAL_HISTORY = '否认外地久居史，否认疫水疫源接触史，否认牧区、矿山、高氟区、低碘区居住史，否认化学性物质、粉尘、放射性物质、有毒物质接触史，否认吸烟史，否认饮酒史，否认药物嗜好史。';
-const DEFAULT_FAMILY_HISTORY = '否认家族重大遗传病史，否认家族肿瘤病史，否认家族传染病史，否认家族精神病史。';
 
 const EMPTY_RECORD_VALUES = new Set([
   '',
@@ -126,27 +129,27 @@ function buildPastMedicalHistory(
   }
 
   if (scenario === 'health_exam') {
-    return DEFAULT_HEALTH_EXAM_PAST_MEDICAL_HISTORY;
+    return DEFAULT_HEALTH_EXAM_PAST_MEDICAL_HISTORY_TEMPLATE;
   }
 
   const chronicDiagnoses = (input.diagnosisNames || [])
     .map((item) => normalizeText(item))
     .filter((item) => /高血压|糖尿病|高脂血症|甲减|甲状腺功能减退|痛风/u.test(item));
   if (chronicDiagnoses.length > 0) {
-    return `既往有${Array.from(new Set(chronicDiagnoses)).join('、')}病史；否认肝炎史，否认结核史，否认其他重大传染病史；否认手术史、输血史及药物过敏史。`;
+    return `既往有${Array.from(new Set(chronicDiagnoses)).join('、')}病史；${CHRONIC_PAST_MEDICAL_HISTORY_NEGATIVE_TEMPLATE}`;
   }
 
-  return DEFAULT_PAST_MEDICAL_HISTORY;
+  return DEFAULT_PAST_MEDICAL_HISTORY_TEMPLATE;
 }
 
 function buildPersonalHistory(input: BuildOutpatientRecordInput): string {
   const provided = stripFieldLabel(normalizeFreeText(input.personalHistory), ['个人史']);
-  return isMeaningfulRecordText(provided) ? provided : DEFAULT_PERSONAL_HISTORY;
+  return isMeaningfulRecordText(provided) ? provided : DEFAULT_PERSONAL_HISTORY_TEMPLATE;
 }
 
 function buildFamilyHistory(input: BuildOutpatientRecordInput): string {
   const provided = stripFieldLabel(normalizeFreeText(input.familyHistory), ['家族史']);
-  return isMeaningfulRecordText(provided) ? provided : DEFAULT_FAMILY_HISTORY;
+  return isMeaningfulRecordText(provided) ? provided : DEFAULT_FAMILY_HISTORY_TEMPLATE;
 }
 
 function normalizeVitals(vitals?: string): string {
@@ -157,14 +160,9 @@ function normalizeVitals(vitals?: string): string {
   return /[。.]$/u.test(normalized) ? normalized : `${normalized}。`;
 }
 
-function inferBodySite(text: string): string {
-  const match = text.match(/(前额|全身|咽喉部|腹部|[左右]?(?:手掌|足背|足拇趾|中指|跟部|膝关节|足|手|指|趾|耳|鼻))/u);
-  return match?.[0] || '';
-}
-
 function buildPhysicalExam(
   input: BuildOutpatientRecordInput,
-  scenario: OutpatientRecordScenario,
+  _scenario: OutpatientRecordScenario,
 ): string {
   const provided = stripFieldLabel(normalizeFreeText(input.physicalExam), ['体格检查', '查体']);
   if (isMeaningfulRecordText(provided)) {
@@ -172,29 +170,9 @@ function buildPhysicalExam(
   }
 
   const vitals = normalizeVitals(input.vitals);
-  const contextText = joinedContext(input);
-  const bodySite = inferBodySite(contextText);
-
-  switch (scenario) {
-    case 'health_exam':
-      return `${vitals}一般情况可，心肺腹查体未见明显异常。`;
-    case 'chronic_refill':
-      return `${vitals}面部无浮肿，双肺呼吸音清晰，未闻及啰音，心律齐，腹无特殊，双下肢无水肿。`;
-    case 'external_procedure':
-      return provided || '暂无';
-    case 'wound_care':
-      return `${vitals}${bodySite ? `${bodySite}局部` : '局部'}查体待医生结合实际补充。`;
-    case 'respiratory':
-      return `${vitals}双肺呼吸音清，未及干湿啰音。`;
-    case 'gastrointestinal':
-      return `${vitals}腹软，未及压痛及反跳痛。`;
-    case 'skin_allergy':
-      return `${vitals}${bodySite || '皮肤'}查体待医生结合实际补充。`;
-    case 'local_inflammation':
-      return `${vitals}${bodySite ? `${bodySite}局部` : '局部'}红肿及压痛情况待医生查体确认。`;
-    default:
-      return `${vitals}一般情况可，心肺腹查体未见明显异常。`;
-  }
+  // 结构化生命体征可以直接保留；其他正常查体必须来自医生实际输入或确认，
+  // 不能按场景模板自动制造“未见异常”事实。
+  return vitals;
 }
 
 interface HealthPrescriptionRule {
@@ -347,6 +325,29 @@ function buildPrecautions(
     default:
       return '注意休息，1周内复诊，必要时上级医院进一步检查治疗。';
   }
+}
+
+/**
+ * 只使用医生当前已选正式诊断重建注意事项。
+ *
+ * 这个入口故意忽略上游 `precautions`、主诉和现病史，避免初始 AI
+ * 多诊断文案或症状语义把未选/待鉴别疾病的健康教育重新带回。
+ */
+export function buildDiagnosisScopedPrecautions(
+  input: BuildOutpatientRecordInput,
+): string {
+  const diagnosisNames = Array.from(new Set(
+    (input.diagnosisNames || [])
+      .map((item) => normalizeFreeText(item))
+      .filter(Boolean),
+  ));
+  const scopedInput: BuildOutpatientRecordInput = {
+    chiefComplaint: '',
+    historyOfPresentIllness: '',
+    diagnosisNames,
+  };
+
+  return buildPrecautions(scopedInput, detectOutpatientRecordScenario(scopedInput));
 }
 
 export function buildOutpatientRecord(input: BuildOutpatientRecordInput): OutpatientRecord {

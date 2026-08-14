@@ -172,6 +172,14 @@ export function getPatientContextCurrentMedicationHistory(patient: AppPatient | 
   return patient?.currentMedicationHistory || patient?.clinical?.currentMedicationHistory || '';
 }
 
+export function getPatientContextPersonalHistory(patient: AppPatient | null | undefined): string {
+  return patient?.personalHistory || patient?.clinical?.personalHistory || '';
+}
+
+export function getPatientContextFamilyHistory(patient: AppPatient | null | undefined): string {
+  return patient?.familyHistory || patient?.clinical?.familyHistory || '';
+}
+
 export function getPatientContextHistory(patient: AppPatient | null | undefined): HisPatientHistory | null {
   return patient?.hisHistory || patient?.clinical?.hisHistory || patient?.patientHistory || null;
 }
@@ -235,6 +243,10 @@ export function buildPatientContext(input: BuildPatientContextInput): AppPatient
     || getPatientContextAllergyHistory(patientFallback);
   const currentMedicationHistory = pickFirstText(payload, ['currentMedicationHistory'])
     || text(encounterFallback?.currentMedicationHistory || encounterFallback?.clinical?.currentMedicationHistory);
+  const personalHistory = pickFirstText(payload, ['personalHistory', 'personal_history', 'personalHistoryText'])
+    || getPatientContextPersonalHistory(patientFallback);
+  const familyHistory = pickFirstText(payload, ['familyHistory', 'family_history', 'familyHistoryText'])
+    || getPatientContextFamilyHistory(patientFallback);
   const chiefComplaint = pickFirstText(payload, ['chiefComplaint'])
     || text(encounterFallback?.chiefComplaint || encounterFallback?.clinical?.chiefComplaint);
   const historyOfPresentIllness = pickFirstText(payload, ['historyOfPresentIllness'])
@@ -276,6 +288,8 @@ export function buildPatientContext(input: BuildPatientContextInput): AppPatient
       pastMedicalHistory: pastMedicalHistory || undefined,
       allergyHistory: allergyHistory || undefined,
       currentMedicationHistory: currentMedicationHistory || undefined,
+      personalHistory: personalHistory || undefined,
+      familyHistory: familyHistory || undefined,
       diagnosis: diagnosis || undefined,
       hisHistory,
       currentOutpatientRecordText: currentOutpatientRecordText || undefined,
@@ -306,6 +320,8 @@ export function buildPatientContext(input: BuildPatientContextInput): AppPatient
     pastMedicalHistory: pastMedicalHistory || undefined,
     allergyHistory: allergyHistory || undefined,
     currentMedicationHistory: currentMedicationHistory || undefined,
+    personalHistory: personalHistory || undefined,
+    familyHistory: familyHistory || undefined,
     diagnosis: diagnosis || undefined,
     hisHistory,
     currentOutpatientRecordText: currentOutpatientRecordText || undefined,

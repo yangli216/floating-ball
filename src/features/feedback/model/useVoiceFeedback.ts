@@ -3,18 +3,13 @@ import { getLatestAiTrace } from '@/services/aiTrace';
 import { feedbackService } from '@/services/feedback';
 import {
   buildVoiceFeedbackReason,
-  buildVoiceRecordFieldDiffSummary,
-  buildVoiceRecordFieldFeedbackPayload,
   buildVoiceRecommendationFeedbackPayload,
   buildVoiceSessionFeedbackPayload,
   clearVoiceFeedbackDraftStorage,
-  createEmptyRecordFieldDraft,
   createEmptyRecommendationDraft,
   createEmptySessionDraft,
   enqueueVoiceFeedbackPayload,
   getVoiceFeedbackActionLabel,
-  getVoiceRecordFieldFeedbackKey,
-  getVoiceRecordFieldLabel,
   loadVoiceFeedbackDraft,
   saveVoiceFeedbackDraft,
   submitVoicePendingPayloadToBackend,
@@ -28,8 +23,6 @@ import {
 import type { Diagnosis, TreatmentRecommendation } from '@/types/consultation';
 import type { FeedbackType, RecommendationType, TargetType } from '@/types/feedback';
 import type {
-  VoiceRecordFieldFeedbackDraft,
-  VoiceRecordFieldKey,
   VoiceRecommendationFeedbackDraft,
   VoiceSessionFeedbackDraft,
   VoiceFeedbackSubmissionSummary,
@@ -41,11 +34,6 @@ interface UseVoiceFeedbackInput {
   patientName: Ref<string>;
   chiefComplaint: Ref<string>;
   historyOfPresentIllness: Ref<string>;
-  pastMedicalHistory: Ref<string>;
-  personalHistory?: Ref<string>;
-  familyHistory: Ref<string>;
-  physicalExam?: Ref<string>;
-  precautions?: Ref<string>;
 }
 
 interface RegisteredRecommendationTarget {
@@ -77,33 +65,20 @@ function mapActionToFeedbackType(action: VoiceRecommendationFeedbackDraft['actio
 export function useVoiceFeedback(input: UseVoiceFeedbackInput) {
   const recommendationTargets = ref<Record<string, RegisteredRecommendationTarget>>({});
   const recommendationDrafts = ref<Record<string, VoiceRecommendationFeedbackDraft>>({});
-  const recordFieldDrafts = ref<Record<string, VoiceRecordFieldFeedbackDraft>>({});
   const sessionDraft = ref<VoiceSessionFeedbackDraft>(createEmptySessionDraft());
   const recommendationSubmittingKey = ref<string | null>(null);
-  const recordFieldSubmittingKey = ref<string | null>(null);
   const sessionSubmitting = ref(false);
   const recommendationSubmittedMap = ref<Record<string, VoiceFeedbackSubmissionSummary>>({});
-  const recordFieldSubmittedMap = ref<Record<string, VoiceFeedbackSubmissionSummary>>({});
   const sessionSubmittedAt = ref<number | null>(null);
 
   const draftState = computed(() => ({
     recommendationDrafts: recommendationDrafts.value,
-    recordFieldDrafts: recordFieldDrafts.value,
+    recordFieldDrafts: {},
     sessionDraft: sessionDraft.value,
   }));
 
   function rebuildSubmissionState(): void {
     recommendationSubmittedMap.value = Object.entries(recommendationDrafts.value).reduce<Record<string, VoiceFeedbackSubmissionSummary>>((acc, [key, draft]) => {
-      if (draft.action && draft.submittedAt) {
-        acc[key] = {
-          actionLabel: getVoiceFeedbackActionLabel(draft.action),
-          submittedAt: draft.submittedAt,
-        };
-      }
-      return acc;
-    }, {});
-
-    recordFieldSubmittedMap.value = Object.entries(recordFieldDrafts.value).reduce<Record<string, VoiceFeedbackSubmissionSummary>>((acc, [key, draft]) => {
       if (draft.action && draft.submittedAt) {
         acc[key] = {
           actionLabel: getVoiceFeedbackActionLabel(draft.action),
@@ -119,7 +94,6 @@ export function useVoiceFeedback(input: UseVoiceFeedbackInput) {
   function restoreVoiceFeedbackDraft(): void {
     const restored = loadVoiceFeedbackDraft(input.consultationId.value);
     recommendationDrafts.value = restored.recommendationDrafts;
-    recordFieldDrafts.value = restored.recordFieldDrafts;
     sessionDraft.value = restored.sessionDraft;
     rebuildSubmissionState();
   }
@@ -130,10 +104,8 @@ export function useVoiceFeedback(input: UseVoiceFeedbackInput) {
 
   function clearVoiceFeedbackDraft(): void {
     recommendationDrafts.value = {};
-    recordFieldDrafts.value = {};
     sessionDraft.value = createEmptySessionDraft();
     recommendationSubmittedMap.value = {};
-    recordFieldSubmittedMap.value = {};
     sessionSubmittedAt.value = null;
     clearVoiceFeedbackDraftStorage(input.consultationId.value);
   }
@@ -147,22 +119,6 @@ export function useVoiceFeedback(input: UseVoiceFeedbackInput) {
       ...recommendationDrafts.value,
       [recommendationKey]: {
         ...createEmptyRecommendationDraft(),
-        ...draft,
-      },
-    };
-    persistDraft();
-  }
-
-  function ensureRecordFieldDraft(fieldKey: VoiceRecordFieldKey): VoiceRecordFieldFeedbackDraft {
-    return recordFieldDrafts.value[getVoiceRecordFieldFeedbackKey(fieldKey)] || createEmptyRecordFieldDraft();
-  }
-
-  function updateRecordFieldDraft(fieldKey: VoiceRecordFieldKey, draft: VoiceRecordFieldFeedbackDraft): void {
-    const recordFieldKey = getVoiceRecordFieldFeedbackKey(fieldKey);
-    recordFieldDrafts.value = {
-      ...recordFieldDrafts.value,
-      [recordFieldKey]: {
-        ...createEmptyRecordFieldDraft(),
         ...draft,
       },
     };
@@ -337,91 +293,6 @@ export function useVoiceFeedback(input: UseVoiceFeedbackInput) {
     }
   }
 
-  async function submitRecordFieldFeedback(payload: {
-    fieldKey: VoiceRecordFieldKey;
-    draft: VoiceRecordFieldFeedbackDraft;
-    originalValue: string;
-    currentValue: string;
-  }): Promise<void> {
-    const sessionId = feedbackService.getCurrentSessionId();
-    if (!sessionId) {
-      throw new Error('当前没有可用的反馈会话');
-    }
-
-    const recordFieldKey = getVoiceRecordFieldFeedbackKey(payload.fieldKey);
-    const diffSummary = buildVoiceRecordFieldDiffSummary(payload.originalValue, payload.currentValue);
-    const correctedValue = payload.draft.action === 'corrected'
-      ? (payload.draft.correctedValue.trim() || payload.currentValue.trim())
-      : undefined;
-    const modifiedValue = diffSummary.changed || correctedValue
-      ? JSON.stringify({
-          currentValue: payload.currentValue,
-          correctedValue: correctedValue || null,
-          modifiedByDoctor: diffSummary.changed,
-          diffSummary,
-        })
-      : undefined;
-
-    recordFieldSubmittingKey.value = recordFieldKey;
-    try {
-      const reason = buildVoiceFeedbackReason(payload.draft.issueTags, payload.draft.comment);
-      await feedbackService.saveFeedback({
-        sessionId,
-        targetType: 'record',
-        targetId: `${input.consultationId.value}:${payload.fieldKey}`,
-        feedbackType: mapActionToFeedbackType(payload.draft.action),
-        reason: reason || undefined,
-        originalValue: JSON.stringify({
-          fieldKey: payload.fieldKey,
-          fieldLabel: getVoiceRecordFieldLabel(payload.fieldKey),
-          value: payload.originalValue,
-        }),
-        modifiedValue,
-      });
-
-      const pendingPayload = buildVoiceRecordFieldFeedbackPayload({
-        consultationId: input.consultationId.value,
-        sessionId,
-        patientId: input.patientId.value,
-        patientName: input.patientName.value,
-        fieldKey: payload.fieldKey,
-        action: payload.draft.action,
-        issueTags: payload.draft.issueTags,
-        comment: payload.draft.comment.trim(),
-        correctedValue,
-        originalValue: payload.originalValue,
-        currentValue: payload.currentValue,
-        chiefComplaint: input.chiefComplaint.value,
-        historyOfPresentIllness: input.historyOfPresentIllness.value,
-        pastMedicalHistory: input.pastMedicalHistory.value,
-        personalHistory: input.personalHistory?.value || '',
-        familyHistory: input.familyHistory.value,
-        physicalExam: input.physicalExam?.value || '',
-        precautions: input.precautions?.value || '',
-        aiTrace: getLatestAiTrace(),
-      });
-
-      enqueueVoiceFeedbackPayload(pendingPayload);
-      void submitVoicePendingPayloadToBackend(pendingPayload);
-      const submittedAt = Date.now();
-      const nextRevision = (payload.draft.revision || 0) + 1;
-      updateRecordFieldDraft(payload.fieldKey, {
-        ...payload.draft,
-        submittedAt,
-        revision: nextRevision,
-      });
-      recordFieldSubmittedMap.value = {
-        ...recordFieldSubmittedMap.value,
-        [recordFieldKey]: {
-          actionLabel: getVoiceFeedbackActionLabel(payload.draft.action),
-          submittedAt,
-        },
-      };
-    } finally {
-      recordFieldSubmittingKey.value = null;
-    }
-  }
-
   async function submitSessionFeedback(payload: {
     diagnoses: Diagnosis[];
     selectedTreatments: TreatmentRecommendation[];
@@ -478,23 +349,17 @@ export function useVoiceFeedback(input: UseVoiceFeedbackInput) {
 
   return {
     recommendationDrafts,
-    recordFieldDrafts,
     sessionDraft,
     recommendationSubmittingKey,
-    recordFieldSubmittingKey,
     sessionSubmitting,
     recommendationSubmittedMap,
-    recordFieldSubmittedMap,
     sessionSubmittedAt,
     ensureRecommendationDraft,
-    ensureRecordFieldDraft,
     updateRecommendationDraft,
-    updateRecordFieldDraft,
     updateSessionDraft,
     registerRecommendations,
     registerExternalRecommendationTarget,
     submitRecommendationFeedback,
-    submitRecordFieldFeedback,
     submitSessionFeedback,
     restoreVoiceFeedbackDraft,
     clearVoiceFeedbackDraft,

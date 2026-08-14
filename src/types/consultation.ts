@@ -4,6 +4,10 @@ export interface Diagnosis {
     name: string;
     rate: string;
     rationale: string;
+    /** 正式诊断建议或仅供补充信息后判断的待鉴别方向。 */
+    suggestionType?: 'formal' | 'differential';
+    /** 待鉴别方向仍需补充的问诊、查体或检查信息。 */
+    missingInformation?: string;
     isTCM?: boolean; // 标记是否为中医诊断
     originalName?: string; // AI 原始推荐的诊断名称
     // 中医辨证论治相关字段

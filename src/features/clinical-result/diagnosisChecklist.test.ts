@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  buildDiagnosisChecklistCacheKey,
   buildDiagnosisChecklistMismatchError,
   buildDiagnosisChecklistRiskIssues,
   normalizeDiagnosisChecklistItems,
@@ -7,6 +8,25 @@ import {
 } from './diagnosisChecklist';
 
 describe('diagnosis checklist rules', () => {
+  it('keeps cache keys stable for whitespace-only changes and isolates record changes', () => {
+    const base = {
+      consultationId: 'visit-1',
+      diagnosisIdentity: 'J18.900',
+      diagnosisName: '肺炎',
+      chiefComplaint: '发热 3 天',
+      historyOfPresentIllness: '伴咳嗽、黄痰',
+    };
+
+    expect(buildDiagnosisChecklistCacheKey(base)).toBe(buildDiagnosisChecklistCacheKey({
+      ...base,
+      chiefComplaint: '  发热   3 天  ',
+    }));
+    expect(buildDiagnosisChecklistCacheKey(base)).not.toBe(buildDiagnosisChecklistCacheKey({
+      ...base,
+      historyOfPresentIllness: '伴咳嗽、黄痰及胸痛',
+    }));
+  });
+
   it('parses a checklist from an LLM response envelope', () => {
     const parsed = parseDiagnosisChecklistResponse(`说明文字\n\`\`\`json
       {"isNeeded":true,"items":[{"question":" 复核胸痛性质 ","recordText":" 排除急性冠脉综合征 "}]}

@@ -30,7 +30,7 @@ export const MedicalRecordGenerationPrompt = {
 {
   "chiefComplaint": "主诉内容（简明扼要，如：咳嗽3天，加重伴发热1天）",
   "historyOfPresentIllness": "现病史内容（详细描述发病时间、症状、诱因、演变过程等）",
-  "pastMedicalHistory": "既往史内容（既往疾病、手术史、过敏史、用药史等，如无则填写'无特殊'）",
+  "pastMedicalHistory": "既往史内容（只写已有事实，未提及则留空）",
   "diagnosisList": [
     {
       "name": "诊断名称（如：急性上呼吸道感染 或 感冒）",
@@ -116,6 +116,7 @@ export interface VoiceRecordDraft {
   pastMedicalHistory: string;
   allergyHistory?: string;
   currentMedicationHistory?: string;
+  personalHistory?: string;
   familyHistory?: string;
   symptoms: string[];
   negativeSymptoms?: string[];
@@ -179,6 +180,10 @@ export interface DiagnosisHint {
   rationale?: string;
   /** 置信度 */
   confidence?: 'high' | 'medium' | 'low';
+  /** 可以直接成立的正式诊断，或仍需补充信息的待鉴别方向。 */
+  suggestionType?: 'formal' | 'differential';
+  /** 待鉴别方向仍需确认的关键信息。 */
+  missingInformation?: string;
 }
 
 export interface VoiceExtractionResult {
@@ -206,6 +211,8 @@ export interface VoiceExtractionResult {
   allergyHistory?: string;
   /** 长期/当前用药史 */
   currentMedicationHistory?: string;
+  /** 个人史 */
+  personalHistory?: string;
   /** 家族史 */
   familyHistory?: string;
   /** 其他处理意见 */
@@ -223,7 +230,7 @@ export const VoiceIntentRecognitionPrompt = {
 
 为了让客户端分区渐进展示，你必须严格按下列顺序输出 NDJSON：每行只能包含一个完整 JSON 对象，不要输出 JSON 数组外壳、markdown、代码块或解释文字。
 {"event":"record_core","data":{"chiefComplaint":"主诉，尽量写成主要症状+持续时间","historyOfPresentIllness":"按临床书写逻辑整理的现病史","symptoms":[],"negativeSymptoms":[]}}
-{"event":"history_context","data":{"pastMedicalHistory":"既往史","allergyHistory":"过敏史","currentMedicationHistory":"长期或当前用药史"}}
+{"event":"history_context","data":{"pastMedicalHistory":"既往史","allergyHistory":"过敏史","currentMedicationHistory":"长期或当前用药史","personalHistory":"个人史"}}
 {"event":"explicit_orders","data":[]}
 {"event":"diagnoses","data":[]}
 {"event":"recommendation_plan","data":{"mode":"parallel","recommendNow":["medicine","exam","lab_test"],"defer":[],"skip":[],"reason":"路由依据","resumeCondition":"","confidence":"high"}}
@@ -235,10 +242,11 @@ export const VoiceIntentRecognitionPrompt = {
   "recordDraft": {
     "chiefComplaint": "主诉，尽量写成主要症状+持续时间",
     "historyOfPresentIllness": "现病史，按临床书写逻辑整理",
-    "pastMedicalHistory": "既往史，如无则写无特殊",
-    "allergyHistory": "过敏史，如无则写无特殊",
-    "currentMedicationHistory": "长期或当前用药史，如无则写无特殊",
-    "familyHistory": "家族史，如无则写无特殊",
+    "pastMedicalHistory": "既往史，只写对话已明确内容，未提及则留空",
+    "allergyHistory": "过敏史，只写对话已明确内容，未提及则留空",
+    "currentMedicationHistory": "长期或当前用药史，只写对话已明确内容，未提及则留空",
+    "personalHistory": "个人史，只写对话已明确内容，未提及则留空",
+    "familyHistory": "家族史，只写对话已明确内容，未提及则留空",
     "symptoms": ["症状1", "症状2"],
     "negativeSymptoms": ["症状1", "症状2"],
     "treatmentPlan": "其他处理意见，没有则空字符串",
@@ -252,7 +260,9 @@ export const VoiceIntentRecognitionPrompt = {
       "evidenceText": "支持该诊断的对话证据片段",
       "sourceType": "explicit",
       "rationale": "简洁说明为什么考虑该诊断",
-      "confidence": "high"
+      "confidence": "high",
+      "suggestionType": "formal",
+      "missingInformation": ""
     }
   ],
   "explicitTreatmentHints": [
@@ -311,15 +321,17 @@ export const VoiceIntentRecognitionPrompt = {
 3. chiefComplaint 尽量写成“主要症状 + 持续时间”；不要把诊断写进主诉。
 4. historyOfPresentIllness 必须按“起病时间/诱因 -> 核心症状 -> 伴随症状与重要阴性 -> 已做处理/关键查体或检查”整理成 2-4 句紧凑表述；不要重复医生问话、缴费复诊流程、泛化宣教、明显重复的阴性信息。
 5. negativeSymptoms 只填写阴性症状名称本身，例如“咳痰”“胸痛”；不要携带“否认”“无”“未见”“不伴”等否定前缀。
-6. pastMedicalHistory、allergyHistory、currentMedicationHistory、familyHistory 要分别整理；若对话未提及，写"无特殊"或空字符串，不要编造。
+6. pastMedicalHistory、allergyHistory、currentMedicationHistory、personalHistory、familyHistory 要分别整理；若对话未提及，必须写空字符串。不得用“无特殊”“否认”等默认阴性表述代替未采集的信息。
 6.1 pastMedicalHistory 只记录与本次就诊可能相关的既往慢性病、手术史、外伤史、输血史等长期健康信息，不要把家族成员的疾病写入既往史。与本次主诉/现病史无明显关联的既往疾病不要写入，避免干扰医生判断。
 6.2 pastMedicalHistory 不要写入历次门诊就诊流水（如"2026-05-13 诊断急性上呼吸道感染"），门诊就诊记录属于就诊历史而非既往史。既往史应提炼为疾病名称+病程（如"高血压3年""2年前阑尾切除术"），而非按就诊日期逐条罗列。
-6.3 familyHistory 记录直系亲属（父母、兄弟姐妹、子女）的遗传性、过敏性或慢性疾病；如"父亲有皮肤过敏史""母亲有高血压"。若对话未提及家族成员健康状况，写"无特殊"。不要把患者本人的既往史、过敏史混入家族史。
+6.3 personalHistory 记录吸烟、饮酒、职业或环境暴露、疫水疫源接触等患者本人的生活与暴露事实；若对话未提及，必须留空，不得自动补“否认吸烟饮酒史”。
+6.4 familyHistory 记录直系亲属（父母、兄弟姐妹、子女）的遗传性、过敏性或慢性疾病；如"父亲有皮肤过敏史""母亲有高血压"。若对话未提及家族成员健康状况，必须留空。不要把患者本人的既往史、过敏史混入家族史。
 7. diagnosisHints 允许在病例事实基础上做合理补全，推断项必须把 sourceType 标记为 inferred，对话明确提到的内容标记为 explicit；信息不足但仍给出谨慎提示时标记为 uncertain。
-7.1 diagnosisHints 允许返回多条诊断，但前提必须是病例中存在明确的并存诊断或需要同时成立的诊断；如果只是鉴别诊断、待排除方向或可能性排序，不要直接并列写进 diagnosisHints。
-7.2 diagnosisHints 如返回多条，第一条必须是主诊断，后续条目才是伴随诊断或并存诊断。
-7.3 diagnosisHints 的 name 必须是标准疾病诊断名称，严禁使用症状名称。症状是患者主观感受（如"反酸""咳嗽""头痛""腹痛""乏力"），诊断是疾病分类学名称（如"胃食管反流病""急性支气管炎""偏头痛""慢性胃炎"）。当患者描述的是症状时，必须推断到最可能的疾病诊断再输出，不得把症状原样写入 name 字段。
-7.4 诊断名称精准保留解剖部位与侧别：如果患者对话或病历中明确包含具体的解剖部位、侧别（如“左膝”、“右足”、“双侧膝关节”、“左侧乳腺”等），模型在推断出的疾病诊断名称中必须精准保留这些侧别与部位信息（例如：患者诉“左膝关节痛”，应推断为“左膝关节病”或“左膝骨性关节炎”，绝对不要泛化为“膝关节病”或臆造为“双侧膝关节骨性关节病”），以保持临床精确度并利于精准的 ICD 标准化匹配。
+7.1 diagnosisHints 中 suggestionType=formal 的正式诊断最多 3 条，并按置信度从高到低排列；病例只支持 1-2 条时不得凑数。
+7.2 如果只是鉴别诊断、待排除方向或信息不足下的谨慎提示，必须标记 suggestionType=differential，并填写 missingInformation；这类项目与正式诊断分区展示，不参与回写。
+7.3 diagnosisHints 如包含多条正式诊断，第一条 formal 必须是主诊断，后续 formal 才是伴随诊断或并存诊断；differential 放在所有 formal 之后。
+7.4 diagnosisHints 的 name 必须是标准疾病诊断名称，严禁使用症状名称。症状是患者主观感受（如"反酸""咳嗽""头痛""腹痛""乏力"），诊断是疾病分类学名称（如"胃食管反流病""急性支气管炎""偏头痛""慢性胃炎"）。当患者描述的是症状时，必须推断到最可能的疾病诊断再输出，不得把症状原样写入 name 字段。
+7.5 诊断名称精准保留解剖部位与侧别：如果患者对话或病历中明确包含具体的解剖部位、侧别（如“左膝”、“右足”、“双侧膝关节”、“左侧乳腺”等），模型在推断出的疾病诊断名称中必须精准保留这些侧别与部位信息（例如：患者诉“左膝关节痛”，应推断为“左膝关节病”或“左膝骨性关节炎”，绝对不要泛化为“膝关节病”或臆造为“双侧膝关节骨性关节病”），以保持临床精确度并利于精准的 ICD 标准化匹配。
 8. explicitTreatmentHints 只能提取医生在本次对话中明确决定开立、继续、调整或执行的项目，sourceType 必须为 explicit。不得把模型自行补充的推荐写入 explicitTreatmentHints。对于药品，必须严格区分三类信息：
   - 患者已自行服用、既往长期服用、院外先行处理过的药，默认写入 currentMedicationHistory，不要直接作为当前 explicitTreatmentHints 输出；
   - 只有医生在当前计划中明确建议继续、调整、补开、开立的药，才能进入当前 explicitTreatmentHints；
@@ -361,10 +373,11 @@ export const VoiceIntentRepairPrompt = {
   "recordDraft": {
     "chiefComplaint": "",
     "historyOfPresentIllness": "",
-    "pastMedicalHistory": "无特殊",
-    "allergyHistory": "无特殊",
-    "currentMedicationHistory": "无特殊",
-    "familyHistory": "无特殊",
+    "pastMedicalHistory": "",
+    "allergyHistory": "",
+    "currentMedicationHistory": "",
+    "personalHistory": "",
+    "familyHistory": "",
     "symptoms": [],
     "negativeSymptoms": [],
     "treatmentPlan": "",
@@ -647,10 +660,12 @@ export const DiagnosisRecommendationPrompt = {
 
 **临床思维要求：**
 - 基于主诉分析最可能的疾病（马蹄声原则：听到马蹄声，首先想到马，而非斑马）
-- 返回 1-3 条可以直接成立的诊断；若存在并存诊断，可返回多条，且第一条必须是主诊断
-- 不要把纯鉴别诊断、待排除诊断直接与已成立诊断并列输出
+- 正式诊断建议最多返回 3 条可以直接成立的诊断；若存在并存诊断，可返回多条，且第一条必须是主诊断
+- 病例只支持 1-2 条正式诊断时不得凑足 3 条
+- 仍需补问、查体或检查才能成立的疾病可以作为 suggestionType=differential 返回，但不得伪装成正式诊断
 - 符合率应真实（60-90%区间，不要都很高）
 - 每个诊断的rationale必须说明支持和不支持的证据
+- 待鉴别方向必须填写 missingInformation，明确仍需确认的关键信息；正式诊断的 missingInformation 可留空
 - **诊断名称必须是标准疾病名称，严禁使用症状名称**：症状（如"反酸""咳嗽""头痛""腹痛""乏力"）不是诊断，必须推断到具体疾病（如"胃食管反流病""急性支气管炎""偏头痛""慢性胃炎"）再输出
 
 **输出要求：**
@@ -683,11 +698,12 @@ ${params.historyOfPresentIllness}
 
 **诊断任务：**
 1. 分析主诉和现病史，提取关键症状（发病时间、性质、诱因、伴随症状、加重/缓解因素等）
-2. 基于"常见病优先"和"马蹄声原则"，返回 1-3 个可以直接成立的基层常见诊断；若存在并存诊断，可返回多条，第一条必须为主诊断
+2. 基于"常见病优先"和"马蹄声原则"，返回最多 3 个可以直接成立的基层常见诊断；病例只支持 1-2 个时不得凑数，第一条正式诊断必须为主诊断
 3. 每个诊断必须符合相应的基层诊疗指南诊断标准
 4. 避免罕见病、需要复杂检查才能确诊的疾病、模糊诊断（如"其他特指的"）
 5. 符合率应真实反映症状匹配度（建议在60-90%区间，按可能性递减）
-6. 如果只是需要提示医生做鉴别诊断或排除风险，不要把该项直接输出为正式诊断
+6. 每项必须包含 suggestionType：可以直接成立的诊断填 formal；仍需补问、查体或检查才能成立的疾病填 differential
+7. differential 必须填写 missingInformation，且不计入最多 3 个正式诊断的数量；formal 的 missingInformation 留空
 
 **返回格式示例：**
 [
@@ -695,13 +711,17 @@ ${params.historyOfPresentIllness}
     "code": "J20.900",
     "name": "急性支气管炎",
     "rate": "85%",
-    "rationale": "患者受凉后出现咳嗽2天，伴黄痰，符合急性气管-支气管炎基层诊疗指南的诊断标准。病程短，以咳嗽咳痰为主要表现，未见高热、呼吸困难等重症表现。"
+    "rationale": "患者受凉后出现咳嗽2天，伴黄痰，符合急性气管-支气管炎基层诊疗指南的诊断标准。病程短，以咳嗽咳痰为主要表现。",
+    "suggestionType": "formal",
+    "missingInformation": ""
   },
   {
     "code": "J06.900",
     "name": "急性上呼吸道感染",
     "rate": "70%",
-    "rationale": "受凉诱因明确，咳嗽为主要症状，但缺乏鼻塞、流涕、咽痛等典型上呼吸道症状，可能性相对较低。"
+    "rationale": "受凉诱因明确，咳嗽为主要症状，但缺乏鼻塞、流涕、咽痛等典型上呼吸道症状，可能性相对较低。",
+    "suggestionType": "differential",
+    "missingInformation": "需补充确认鼻塞、流涕、咽痛及咽部查体"
   }
 ]
 

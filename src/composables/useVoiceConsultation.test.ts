@@ -8,6 +8,8 @@ const mocks = vi.hoisted(() => ({
   persistCache: vi.fn(),
   clearCache: vi.fn(),
   invoke: vi.fn(),
+  getPatientContextPersonalHistory: vi.fn(() => '吸烟20年。'),
+  getPatientContextFamilyHistory: vi.fn(() => '父亲有高血压病史。'),
 }));
 
 vi.mock('@tauri-apps/api/core', () => ({ invoke: mocks.invoke }));
@@ -18,7 +20,9 @@ vi.mock('@services/consultationUserLog', () => ({ submitConsultationUserLog: vi.
 vi.mock('@/utils/patientContext', () => ({
   getPatientContextAllergyHistory: vi.fn(() => ''),
   getPatientContextCurrentMedicationHistory: vi.fn(() => ''),
+  getPatientContextFamilyHistory: mocks.getPatientContextFamilyHistory,
   getPatientContextPastMedicalHistory: vi.fn(() => ''),
+  getPatientContextPersonalHistory: mocks.getPatientContextPersonalHistory,
 }));
 vi.mock('@shared/lib/errorMessages', () => ({ formatUserFacingError: vi.fn(() => 'error') }));
 vi.mock('@features/clinical-result', () => ({ cloneClinicalResultInput: vi.fn((value) => value) }));
@@ -79,6 +83,12 @@ describe('useVoiceConsultation result navigation ordering', () => {
 
     expect(openVoiceConsultation).toHaveBeenCalledTimes(1);
     expect(mocks.processTranscript).toHaveBeenCalledTimes(1);
+    expect(mocks.processTranscript).toHaveBeenCalledWith('真实语音文本', expect.objectContaining({
+      patientContext: expect.objectContaining({
+        personalHistory: '吸烟20年。',
+        familyHistory: '父亲有高血压病史。',
+      }),
+    }));
     expect(api.isProcessingVoice.value).toBe(false);
     expect(api.intentResult.value?.chiefComplaint).toBe('咳嗽2天');
   });

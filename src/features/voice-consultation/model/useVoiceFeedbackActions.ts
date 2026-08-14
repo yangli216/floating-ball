@@ -1,7 +1,5 @@
 import type { Diagnosis, TreatmentRecommendation } from '@/types/consultation';
 import type {
-  VoiceRecordFieldFeedbackDraft,
-  VoiceRecordFieldKey,
   VoiceRecommendationFeedbackDraft,
 } from '@/types/voiceFeedback';
 import {
@@ -17,19 +15,10 @@ export interface VoiceFeedbackActionsOptions {
   isDiagnosisSelected: (diag: Diagnosis) => boolean;
   isPrimaryDiagnosis: (diag: Diagnosis) => boolean;
   submitRecommendationFeedback: (payload: RecommendationFeedbackSubmitPayload) => Promise<void>;
-  submitRecordFieldFeedback: (payload: {
-    fieldKey: VoiceRecordFieldKey;
-    draft: VoiceRecordFieldFeedbackDraft;
-    originalValue: string;
-    currentValue: string;
-  }) => Promise<void>;
   submitSessionFeedback: (payload: {
     diagnoses: Diagnosis[];
     selectedTreatments: TreatmentRecommendation[];
   }) => Promise<void>;
-  getRecordFieldOriginalValue: (fieldKey: VoiceRecordFieldKey) => string;
-  getRecordFieldValue: (fieldKey: VoiceRecordFieldKey) => string;
-  getRecordFieldLabel: (fieldKey: VoiceRecordFieldKey) => string;
   getSelectedDiagnoses: () => Diagnosis[];
   getSelectedTreatments: () => TreatmentRecommendation[];
   closeRecommendationFeedback: () => void;
@@ -76,24 +65,6 @@ export function useVoiceFeedbackActions(options: VoiceFeedbackActionsOptions) {
     }
   }
 
-  async function handleRecordFieldFeedbackSubmit(
-    fieldKey: VoiceRecordFieldKey,
-    draft: VoiceRecordFieldFeedbackDraft,
-  ): Promise<void> {
-    try {
-      await options.submitRecordFieldFeedback({
-        fieldKey,
-        draft,
-        originalValue: options.getRecordFieldOriginalValue(fieldKey),
-        currentValue: options.getRecordFieldValue(fieldKey),
-      });
-      options.closeRecommendationFeedback();
-      options.notify?.(`${options.getRecordFieldLabel(fieldKey)}反馈已记录`, 'success');
-    } catch (error) {
-      options.notify?.(`提交反馈失败: ${getErrorMessage(error)}`, 'error');
-    }
-  }
-
   async function handleSessionFeedbackSubmit(): Promise<void> {
     try {
       await options.submitSessionFeedback({
@@ -117,7 +88,6 @@ export function useVoiceFeedbackActions(options: VoiceFeedbackActionsOptions) {
   return {
     completeVoiceConsultationFlow,
     handleDiagnosisFeedbackSubmit,
-    handleRecordFieldFeedbackSubmit,
     handleSessionFeedbackSubmit,
     handleTreatmentFeedbackSubmit,
   };

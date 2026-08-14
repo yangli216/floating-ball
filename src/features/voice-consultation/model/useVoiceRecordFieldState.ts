@@ -1,17 +1,10 @@
 import { ref, type Ref } from 'vue';
-import { getVoiceRecordFieldFeedbackKey } from '@/services/voiceFeedback';
-import type {
-  VoiceFeedbackSubmissionSummary,
-  VoiceRecordFieldFeedbackDraft,
-  VoiceRecordFieldKey,
-} from '@/types/voiceFeedback';
+import type { VoiceRecordFieldKey } from '@/types/voiceFeedback';
 
 export type VoiceRecordFieldSnapshot = Record<VoiceRecordFieldKey, string>;
 
-export interface VoiceRecordFieldFeedbackStateOptions {
+export interface VoiceRecordFieldStateOptions {
   fields: Record<VoiceRecordFieldKey, Ref<string>>;
-  ensureDraft: (fieldKey: VoiceRecordFieldKey) => VoiceRecordFieldFeedbackDraft;
-  submittedMap: Ref<Record<string, VoiceFeedbackSubmissionSummary>>;
 }
 
 function createEmptyVoiceRecordFieldSnapshot(): VoiceRecordFieldSnapshot {
@@ -26,7 +19,7 @@ function createEmptyVoiceRecordFieldSnapshot(): VoiceRecordFieldSnapshot {
   };
 }
 
-export function useVoiceRecordFieldFeedbackState(options: VoiceRecordFieldFeedbackStateOptions) {
+export function useVoiceRecordFieldState(options: VoiceRecordFieldStateOptions) {
   const initialRecordSnapshot = ref<VoiceRecordFieldSnapshot>(createEmptyVoiceRecordFieldSnapshot());
 
   function setInitialRecordSnapshot(snapshot: Partial<VoiceRecordFieldSnapshot>): void {
@@ -36,24 +29,19 @@ export function useVoiceRecordFieldFeedbackState(options: VoiceRecordFieldFeedba
     };
   }
 
-  function getRecordFieldFeedbackKey(fieldKey: VoiceRecordFieldKey): string {
-    return getVoiceRecordFieldFeedbackKey(fieldKey);
+  function setInitialRecordFieldValue(fieldKey: VoiceRecordFieldKey, value: string): void {
+    initialRecordSnapshot.value = {
+      ...initialRecordSnapshot.value,
+      [fieldKey]: value,
+    };
   }
 
   function getRecordFieldValue(fieldKey: VoiceRecordFieldKey): string {
     return options.fields[fieldKey]?.value || '';
   }
 
-  function getRecordFieldDraft(fieldKey: VoiceRecordFieldKey): VoiceRecordFieldFeedbackDraft {
-    return options.ensureDraft(fieldKey);
-  }
-
   function getRecordFieldOriginalValue(fieldKey: VoiceRecordFieldKey): string {
     return initialRecordSnapshot.value[fieldKey] || '';
-  }
-
-  function getRecordFieldSubmittedLabel(fieldKey: VoiceRecordFieldKey): string {
-    return options.submittedMap.value[getRecordFieldFeedbackKey(fieldKey)]?.actionLabel || '';
   }
 
   function isRecordFieldModified(fieldKey: VoiceRecordFieldKey): boolean {
@@ -62,12 +50,12 @@ export function useVoiceRecordFieldFeedbackState(options: VoiceRecordFieldFeedba
 
   return {
     initialRecordSnapshot,
-    getRecordFieldDraft,
-    getRecordFieldFeedbackKey,
     getRecordFieldOriginalValue,
-    getRecordFieldSubmittedLabel,
     getRecordFieldValue,
     isRecordFieldModified,
+    setInitialRecordFieldValue,
     setInitialRecordSnapshot,
   };
 }
+
+export type VoiceRecordFieldState = ReturnType<typeof useVoiceRecordFieldState>;

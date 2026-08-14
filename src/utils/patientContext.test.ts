@@ -54,3 +54,20 @@ describe('patientContext age precedence', () => {
     expect(context?.ageYears).toBeUndefined();
   });
 });
+
+describe('patientContext clinical history mapping', () => {
+  it('preserves explicit personal and family history from the reception payload', () => {
+    const context = buildPatientContext({
+      payload: {
+        idPi: 'patient-history',
+        personalHistory: '吸烟20年，每日10支。',
+        familyHistory: '父亲有高血压病史。',
+      },
+    });
+
+    expect(context?.personalHistory).toBe('吸烟20年，每日10支。');
+    expect(context?.clinical.personalHistory).toBe('吸烟20年，每日10支。');
+    expect(context?.familyHistory).toBe('父亲有高血压病史。');
+    expect(context?.clinical.familyHistory).toBe('父亲有高血压病史。');
+  });
+});

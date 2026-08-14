@@ -16,10 +16,45 @@ export interface DiagnosisChecklistRiskIssue {
   target: string;
 }
 
+export interface DiagnosisChecklistCacheContext {
+  consultationId?: string;
+  diagnosisIdentity?: string;
+  diagnosisName: string;
+  chiefComplaint: string;
+  historyOfPresentIllness: string;
+}
+
 function normalizeChecklistText(value: unknown): string {
   if (typeof value === 'string') return value.trim();
   if (typeof value === 'number' || typeof value === 'boolean') return String(value);
   return '';
+}
+
+function normalizeChecklistCachePart(value: unknown): string {
+  return normalizeChecklistText(value).replace(/\s+/gu, ' ').toLocaleLowerCase();
+}
+
+function hashChecklistContext(value: string): string {
+  let hash = 2166136261;
+  for (let index = 0; index < value.length; index += 1) {
+    hash ^= value.charCodeAt(index);
+    hash = Math.imul(hash, 16777619);
+  }
+  return (hash >>> 0).toString(36);
+}
+
+export function buildDiagnosisChecklistCacheKey(
+  context: DiagnosisChecklistCacheContext,
+): string {
+  const consultationId = normalizeChecklistCachePart(context.consultationId) || 'no-consultation';
+  const diagnosisIdentity = normalizeChecklistCachePart(
+    context.diagnosisIdentity || context.diagnosisName,
+  ) || 'no-diagnosis';
+  const recordFingerprint = hashChecklistContext([
+    normalizeChecklistCachePart(context.chiefComplaint),
+    normalizeChecklistCachePart(context.historyOfPresentIllness),
+  ].join('|'));
+  return `diagnosis-checklist:v1:${consultationId}:${diagnosisIdentity}:${recordFingerprint}`;
 }
 
 export function parseDiagnosisChecklistResponse(response: string): DiagnosisChecklistResponse {

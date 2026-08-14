@@ -1,7 +1,6 @@
 export { default as VoiceCapsule } from './ui/VoiceCapsule.vue';
 export { default as VoiceRecommendationFeedbackPopover } from './ui/VoiceRecommendationFeedbackPopover.vue';
 export { default as VoiceRecordFieldEditor } from './ui/VoiceRecordFieldEditor.vue';
-export { default as VoiceRecordFeedbackPopover } from './ui/VoiceRecordFeedbackPopover.vue';
 export { default as VoiceResultHeader } from './ui/VoiceResultHeader.vue';
 export { default as VoiceRigidBlockBanner } from './ui/VoiceRigidBlockBanner.vue';
 export { default as VoiceSafetyReviewPanel } from './ui/VoiceSafetyReviewPanel.vue';
@@ -16,7 +15,7 @@ export type {
   VoiceTreatmentGenerationTaskResult,
 } from './model/voiceTreatmentRecommendationGeneration';
 export { useVoiceKnowledgeSearch } from './model/useVoiceKnowledgeSearch';
-export { useVoiceRecordFieldFeedbackState } from './model/useVoiceRecordFieldFeedbackState';
+export { useVoiceRecordFieldState } from './model/useVoiceRecordFieldState';
 export { useVoiceResultRecord } from './model/useVoiceResultRecord';
 export { useVoiceResultFactCheck } from './model/useVoiceResultFactCheck';
 export { useVoiceResultFactCheckState } from './model/useVoiceResultFactCheckState';

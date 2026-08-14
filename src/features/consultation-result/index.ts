@@ -1,6 +1,10 @@
 export { default as ConsultationResultPage } from './ui/ConsultationResultPage.vue';
 export { default as ClinicalGenerationProgress } from './ui/ClinicalGenerationProgress.vue';
+export { default as ClinicalDecisionDisclaimer } from './ui/ClinicalDecisionDisclaimer.vue';
+export { default as ClinicalRecordAnnotatedText } from './ui/ClinicalRecordAnnotatedText.vue';
 export { default as ClinicalResultSupplementDialog } from './ui/ClinicalResultSupplementDialog.vue';
+export { default as ClinicalRecordFactPanel } from './ui/ClinicalRecordFactPanel.vue';
+export { default as DiagnosisDifferentialList } from './ui/DiagnosisDifferentialList.vue';
 export { default as DiagnosisRecommendationCard } from './ui/DiagnosisRecommendationCard.vue';
 export { default as ManualMatchPicker } from './ui/ManualMatchPicker.vue';
 export { default as MedicineUsageFieldSelector } from './ui/MedicineUsageFieldSelector.vue';
@@ -10,6 +14,8 @@ export { default as TreatmentRecommendationCard } from './ui/TreatmentRecommenda
 export { default as TreatmentRecommendationSection } from './ui/TreatmentRecommendationSection.vue';
 export { useBodySiteOptions } from './model/useBodySiteOptions';
 export { useClinicalResultCancelController } from './model/useClinicalResultCancelController';
+export { useClinicalResultPrecautionsScope } from './model/useClinicalResultPrecautionsScope';
+export { useClinicalRecordFactConfirmation } from './model/useClinicalRecordFactConfirmation';
 export { useClinicalResultDiagnosisChecklist } from './model/useClinicalResultDiagnosisChecklist';
 export { useClinicalResultIntentReset } from './model/useClinicalResultIntentReset';
 export {
@@ -58,9 +64,21 @@ export type {
   ClinicalResultCancelNotify,
 } from './model/useClinicalResultCancelController';
 export type {
+  ClinicalResultPrecautionsScope,
+  ClinicalResultPrecautionsScopeOptions,
+  ClinicalResultPrecautionsScopeSyncResult,
+} from './model/useClinicalResultPrecautionsScope';
+export type {
+  ClinicalRecordFactConfirmation,
+  ClinicalRecordFactConfirmationOptions,
+} from './model/useClinicalRecordFactConfirmation';
+export type {
   ClinicalResultDiagnosisChecklist,
   ClinicalResultDiagnosisChecklistOptions,
   ClinicalResultDiagnosisChecklistRequest,
+  DiagnosisChecklistPrefetchState,
+  DiagnosisChecklistPrefetchStatus,
+  DiagnosisChecklistPreview,
 } from './model/useClinicalResultDiagnosisChecklist';
 export type {
   ClinicalResultIntentRecordInput,
