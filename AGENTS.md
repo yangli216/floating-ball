@@ -42,7 +42,6 @@
 8. **主窗口几何出口禁止绕过**：业务组件和 feature composable 不得直接调用 Tauri `setSize / setPosition`；主窗口尺寸与位置统一由 `app/shell/useWindowTransitionCoordinator.ts` 编排，并经 `useWindowManagement.ts` 应用，纯 `workArea` / DPI / clamp 规则归 `windowGeometry.ts`。独立原生窗口的创建尺寸仍由各自窗口 service 管理，但必须设置合理 min size 并校验当前工作区。
 9. **品牌与兼容协议禁止混改**：正式产品名统一为“全医慧助（PCIE）”，英文展开统一为“Primary Care Intelligent Expert”；历史 `MedHermes` / `med-hermes` 只允许在已发布的 HIS SDK 全局对象、SDK 文件/路由、深链 scheme、HTTP Header、Bundle Identifier 和迁移说明中作为兼容标识保留。品牌更新不得直接全局替换这些技术契约；如需废弃，必须先提供双栈迁移、版本计划和 HIS 联调验证。
 10. **正式发布线禁止分叉复用**：当前仓库只有 `main` 可以发布正式桌面客户端，自 `1.4.0` 起版本必须严格高于所有历史公开版本；`feature/two-chronic-diseases` 不合并回 `main`，后续移出当前仓库，不得继续使用本仓库正式更新通道、tag 或版本号。禁止复用历史 tag / draft / `latest.json`；发布前必须核对三处版本一致、兼容 Bundle Identifier 与 updater 公钥不变，并验证 `latest.json` 中每个平台的 URL 文件名和签名都来自同一次构建，验证成功后才允许把 draft 转为 latest 正式发布。
-11. **Windows 安装身份与展示名禁止耦合**：Tauri `productName` 继续使用稳定产物名 `PCIE`，Windows 客户可见名称由 WiX 模板统一为“全医慧助（PCIE）”；WiX 主 `UpgradeCode` 固定为 `3b611483-0215-50cb-b961-cf1a889c5546`，历史 `MedHermes` 与早期中文产品名升级码必须保留在迁移检测中。修改品牌、安装模板或 Windows bundle 配置时，必须执行 release preflight，并真实验证 `1.2.97 -> 新版`、`1.4.1 -> 新版` 最终只保留一个应用和一套中文快捷方式。
 
 ## 棘轮式治理
 
