@@ -325,6 +325,25 @@ export function buildOrderListItem(
 
 export type RecordConfirmedResultType = 'record-confirmed' | 'draft';
 
+export const RECORD_CONFIRMED_WRITEBACK_FIELDS = [
+  'chiefComplaint',
+  'historyOfPresentIllness',
+  'pastMedicalHistory',
+  'personalHistory',
+  'familyHistory',
+  'physicalExam',
+  'precautions',
+] as const;
+
+export type RecordConfirmedWritebackField = typeof RECORD_CONFIRMED_WRITEBACK_FIELDS[number];
+export type RecordConfirmedWritebackOrderType = 'medicine' | 'exam' | 'lab_test' | 'procedure';
+
+export interface RecordConfirmedWritebackScope {
+  recordFields: RecordConfirmedWritebackField[];
+  includeDiagnosis: boolean;
+  orderTypes: RecordConfirmedWritebackOrderType[];
+}
+
 export interface BuildRecordConfirmedPayloadInput {
   consultationId: string;
   requestId?: string;
@@ -346,6 +365,8 @@ export interface BuildRecordConfirmedPayloadInput {
   orderList: Array<Record<string, string | number>>;
   /** 自然语言摘要的治疗方案，用于 PHIS 文本字段 */
   treatmentPlan?: string;
+  /** 部分回写范围；未传时保持历史完整回写契约。 */
+  writebackScope?: RecordConfirmedWritebackScope;
   /** 额外字段（如 referenceStatus 等），会浅合并进 payload */
   extra?: Record<string, unknown>;
 }
@@ -370,11 +391,12 @@ export function buildRecordConfirmedPayload(
     diagList,
     orderList,
     treatmentPlan,
+    writebackScope,
     extra,
   } = input;
 
   const resolvedFamilyHistory = familyHistory || outpatientRecord?.familyHistory || '';
-  const outpatientRecordPayload = resultType === 'record-confirmed'
+  const fullOutpatientRecord = resultType === 'record-confirmed'
     ? buildOutpatientRecord({
         chiefComplaint: outpatientRecord?.chiefComplaint || chiefComplaint,
         historyOfPresentIllness: outpatientRecord?.historyOfPresentIllness || historyOfPresentIllness,
@@ -387,22 +409,39 @@ export function buildRecordConfirmedPayload(
         diagnosisNames: diagList.map((item) => item.naDiag).filter(Boolean),
       })
     : undefined;
-  const resolvedPrecautions = outpatientRecordPayload?.precautions || precautions || '';
+  const isScopedWriteback = resultType === 'record-confirmed' && Boolean(writebackScope);
+  const selectedRecordFields = new Set<RecordConfirmedWritebackField>(
+    isScopedWriteback ? writebackScope?.recordFields || [] : RECORD_CONFIRMED_WRITEBACK_FIELDS,
+  );
+  const outpatientRecordPayload = fullOutpatientRecord && selectedRecordFields.size > 0
+    ? RECORD_CONFIRMED_WRITEBACK_FIELDS.reduce<Record<string, string>>((record, field) => {
+        if (selectedRecordFields.has(field)) record[field] = fullOutpatientRecord[field];
+        return record;
+      }, { schemaVersion: fullOutpatientRecord.schemaVersion })
+    : undefined;
+  const resolvedPrecautions = fullOutpatientRecord?.precautions || precautions || '';
+  const includeDiagnosis = !isScopedWriteback || Boolean(writebackScope?.includeDiagnosis);
+  const includeOrders = !isScopedWriteback || Boolean(writebackScope?.orderTypes.length);
 
   return {
     consultationId,
     timestamp,
     resultType,
     ...(requestId ? { requestId } : {}),
-    chiefComplaint,
-    historyOfPresentIllness,
-    pastMedicalHistory,
-    ...(resolvedFamilyHistory ? { familyHistory: resolvedFamilyHistory } : {}),
-    ...(resultType === 'record-confirmed' ? { precautions: resolvedPrecautions } : {}),
-    diagList,
-    orderList,
-    ...(treatmentPlan ? { treatmentPlan } : {}),
+    ...(!isScopedWriteback || selectedRecordFields.has('chiefComplaint') ? { chiefComplaint } : {}),
+    ...(!isScopedWriteback || selectedRecordFields.has('historyOfPresentIllness') ? { historyOfPresentIllness } : {}),
+    ...(!isScopedWriteback || selectedRecordFields.has('pastMedicalHistory') ? { pastMedicalHistory } : {}),
+    ...((!isScopedWriteback || selectedRecordFields.has('familyHistory')) && resolvedFamilyHistory
+      ? { familyHistory: resolvedFamilyHistory }
+      : {}),
+    ...((!isScopedWriteback || selectedRecordFields.has('precautions')) && resultType === 'record-confirmed'
+      ? { precautions: resolvedPrecautions }
+      : {}),
+    ...(includeDiagnosis ? { diagList } : {}),
+    ...(includeOrders ? { orderList } : {}),
+    ...(treatmentPlan && includeOrders ? { treatmentPlan } : {}),
     ...(outpatientRecordPayload ? { outpatientRecord: outpatientRecordPayload } : {}),
     ...(extra || {}),
+    ...(isScopedWriteback ? { writebackScope } : {}),
   };
 }

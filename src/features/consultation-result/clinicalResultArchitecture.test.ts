@@ -8,6 +8,7 @@ import clinicalResultSupplementDialogSource from './ui/ClinicalResultSupplementD
 import clinicalDecisionDisclaimerSource from './ui/ClinicalDecisionDisclaimer.vue?raw';
 import clinicalRecordAnnotatedTextSource from './ui/ClinicalRecordAnnotatedText.vue?raw';
 import clinicalRecordFactPanelSource from './ui/ClinicalRecordFactPanel.vue?raw';
+import writebackScopeSelectorSource from './ui/ClinicalResultWritebackScopeSelector.vue?raw';
 import diagnosisRecommendationCardSource from './ui/DiagnosisRecommendationCard.vue?raw';
 import voiceRecordFieldEditorSource from '@features/voice-consultation/ui/VoiceRecordFieldEditor.vue?raw';
 
@@ -78,6 +79,20 @@ describe('clinical result architecture boundary', () => {
     expect(voiceRecordFieldEditorSource).not.toContain('padding-right: 135px');
     expect(resultImplementationSource).not.toContain('@submit-feedback="handleRecordFieldFeedbackSubmit"');
     expect(resultImplementationSource).not.toContain(':feedback-key="getRecordFieldFeedbackKey');
+  });
+
+  it('keeps partial writeback selection in a dedicated anchored scope component', () => {
+    expect(resultImplementationSource).toContain('ClinicalResultWritebackScopeSelector');
+    expect(resultImplementationSource).toContain('useClinicalResultWritebackScope');
+    expect(resultImplementationSource).toContain('writebackScope: selectedScope');
+    expect(resultImplementationSource).toMatch(/class="footer-submit-btn"[\s\S]*>\s*一键回写\s*<\/button>/);
+    expect(resultImplementationSource).not.toContain('回写已选内容');
+    expect(writebackScopeSelectorSource).toContain('选择回写内容');
+    expect(writebackScopeSelectorSource).toContain('门诊病历');
+    expect(writebackScopeSelectorSource).toContain('检查、检验与处置');
+    expect(writebackScopeSelectorSource).toContain("recordGroupIndeterminate ? 'mixed'");
+    expect(writebackScopeSelectorSource).toContain('未选内容保持 HIS 原值');
+    expect(writebackScopeSelectorSource).not.toContain('confirm-overlay');
   });
 
   it('shows highlighted differential points in a dismissible anchored layer', () => {

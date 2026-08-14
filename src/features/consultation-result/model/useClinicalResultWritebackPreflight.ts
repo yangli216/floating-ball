@@ -1,11 +1,11 @@
 import type { Ref } from 'vue';
 import type { Diagnosis, TreatmentRecommendation } from '@/types/consultation';
+import { buildInventoryBlockedSubmitMessage } from '../../clinical-result/consultationSubmitPayload';
+import { getStandardDiagnosisId } from '../../clinical-result/recordConfirmedPayload';
 import {
-  buildInventoryBlockedSubmitMessage,
-  getStandardDiagnosisId,
   validateTreatmentRequiredFields,
   type TreatmentRequiredFieldResolverOptions,
-} from '@features/clinical-result';
+} from '../../clinical-result/treatmentRequiredFields';
 
 export type ClinicalResultWritebackPreflightNotify = (message: string, type?: string) => void;
 
@@ -30,6 +30,11 @@ export interface ClinicalResultWritebackPreflightResult {
   selected: TreatmentRecommendation[];
 }
 
+export interface ClinicalResultWritebackPreflightInput {
+  includeDiagnosis?: boolean;
+  treatments?: readonly TreatmentRecommendation[];
+}
+
 export function useClinicalResultWritebackPreflight(options: ClinicalResultWritebackPreflightOptions) {
   function block(selected: TreatmentRecommendation[] = []): ClinicalResultWritebackPreflightResult {
     return {
@@ -38,14 +43,18 @@ export function useClinicalResultWritebackPreflight(options: ClinicalResultWrite
     };
   }
 
-  async function run(): Promise<ClinicalResultWritebackPreflightResult> {
-    const invalidDiagnosis = options.selectedDiagnoses.value.find((item) => !getStandardDiagnosisId(item));
-    if (invalidDiagnosis) {
-      options.notify?.(`${invalidDiagnosis.name} 未匹配标准诊断库，请先切换为标准诊断后再回写`, 'warning');
-      return block();
+  async function run(input: ClinicalResultWritebackPreflightInput = {}): Promise<ClinicalResultWritebackPreflightResult> {
+    if (input.includeDiagnosis !== false) {
+      const invalidDiagnosis = options.selectedDiagnoses.value.find((item) => !getStandardDiagnosisId(item));
+      if (invalidDiagnosis) {
+        options.notify?.(`${invalidDiagnosis.name} 未匹配标准诊断库，请先切换为标准诊断后再回写`, 'warning');
+        return block();
+      }
     }
 
-    const selected = options.treatments.value.filter((item) => item.selected);
+    const selected = input.treatments
+      ? [...input.treatments]
+      : options.treatments.value.filter((item) => item.selected);
     const medicinesReady = await Promise.all(selected
       .filter((item) => item.type === 'medicine')
       .map((item) => options.ensureMedicineSelectable(item, true)));

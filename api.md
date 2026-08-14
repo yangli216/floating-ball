@@ -93,14 +93,14 @@
 ### 第三步: 打通 PHIS 回写与引用回执闭环
 
 1. HIS / PHIS 通过 WebSocket 收到 `record-confirmed` 或 `reference-request`
-2. 收到 `record-confirmed` 时，读取 `requestId`、`diagList`、`orderList` 与 `referenceType/action = batch`，按 PHIS 调入确认格式一次性处理整张病历
+2. 收到 `record-confirmed` 时，读取 `requestId`、`writebackScope` 与 `referenceType/action = batch`；只处理 payload 中真实出现的 `outpatientRecord / diagList / orderList`，未出现范围保持 PHIS 原值
 3. 收到 `reference-request` 时，读取 `requestId`、`action/referenceType`、`referenceItems`，按引用对象类型处理历史或单项引用
 4. 处理成功或失败后，**必须**调用 `POST /api/consultation/reference-feedback`
 5. `全医慧助（PCIE）` 收到回执后会更新当前页面状态，并通过 WebSocket 事件流推送 `reference-feedback`
 
 这是当前联调最关键的一步，也是推荐诊断 / 用药 / 检查 / 独立诊疗方案真正写入 HIS 的闭环。
 
-**重要：回执是强制要求的。** 当前医生点击“一键回写”时，`全医慧助（PCIE）` 会发出**一条** `record-confirmed`（`referenceType/action` 为 `batch`），其中 `diagList` 承载标准诊断，`orderList` 承载药品、检查、检验、处置等全部选中医嘱。PHIS 收到后应一次性处理整张病历，处理完成后**必须**调用回执接口。`reference-request` 仅保留给历史引用或单项引用场景，不再作为当前一键回写的主契约。
+**重要：回执是强制要求的。** 当前医生点击“一键回写”或“回写已选内容”时，`全医慧助（PCIE）` 都只发出**一条** `record-confirmed`（`referenceType/action` 为 `batch`）。`writebackScope` 描述本次范围；出现的 `outpatientRecord / diagList / orderList` 分别承载已选病历字段、标准诊断和医嘱，未出现内容不得清空。PHIS 处理完成后**必须**调用一次回执接口。
 
 ## 4. 标准字段与映射规则
 
@@ -170,10 +170,10 @@
 
 ### 5.3 最终回写闭环时序（一键回写）
 
-医生点击“一键回写”后，`全医慧助（PCIE）` 会发出**一条** `record-confirmed`，`referenceType/action` 为 `batch`，`diagList` 包含标准诊断，`orderList` 包含所有选中医嘱（药品 + 检查 + 检验 + 处置）：
+医生点击“一键回写”或“回写已选内容”后，`全医慧助（PCIE）` 会发出**一条** `record-confirmed`，`referenceType/action` 为 `batch`；实际出现的病历字段、`diagList` 和 `orderList` 由 `writebackScope` 决定：
 
-1. `全医慧助（PCIE）` 发出 `record-confirmed`（`referenceType/action: "batch"`），`diagList/orderList` 包含全部可回写内容
-2. PHIS 通过 WebSocket 收到该结果，按 `diagList` 处理诊断，按 `orderList` 的 `sdSrv/idSrv/idDeptExec/idPart/jsonField` 等字段填充调入确认
+1. `全医慧助（PCIE）` 发出 `record-confirmed`（`referenceType/action: "batch"`），scope 与 payload 中实际字段保持一致
+2. PHIS 通过 WebSocket 收到该结果，只更新真实出现的病历字段、诊断和医嘱；缺失分组保持原值
 3. PHIS **必须**调用 `POST /api/consultation/reference-feedback` 回执
 4. `全医慧助（PCIE）` 收到回执，页面更新最终回写状态
 
@@ -181,7 +181,7 @@
 PHIS                                全医慧助（PCIE）
  |                                       |
  |  <-- WebSocket /api/consultation/events/ws (record-confirmed, batch)
- |  读取 diagList/orderList 完成调入确认   |
+ |  按 writebackScope 读取实际出现字段     |
  |  POST /reference-feedback (success) -->|
  |                                       |  回写完成
 ```
@@ -600,7 +600,7 @@ http://127.0.0.1:8081/api/consultation/assist
 1. 接口成功只表示桌面端已接收指令并打开独立诊疗方案页，不表示 AI 推荐已生成或 PHIS 已保存。
 2. 页面会基于 `chiefComplaint + historyOfPresentIllness + diagnosis` 并行生成用药、检查、检验、处置四路推荐；任一路失败时只影响该路建议，其它已生成建议仍可勾选回写。
 3. 医生点击“一键回写”后，事件流会产生 `record-confirmed`，其中 `requestId` 形如 `record-confirmed-1704355201000`，`referenceType/action` 按 `batch` 语义处理。
-4. `record-confirmed.diagList` 承载标准诊断，`record-confirmed.orderList` 承载药品、检查、检验、处置医嘱；PHIS 不再按旧的 `medications / examinations / labTests / procedures` 分组解析一键回写结果。
+4. 选择诊断时 `record-confirmed.diagList` 承载标准诊断；选择医嘱时 `record-confirmed.orderList` 承载对应药品、检查、检验、处置。未选择时字段省略，PHIS 不再按旧分组解析，也不得把缺失字段当作空数组处理。
 5. PHIS 完成最终调入确认后，必须调用 `POST /api/consultation/reference-feedback`，并带回同一个 `consultationId` 和 `requestId`。回执 `record-confirmed` 时 `referenceType` 可传 `batch`，也可留空由 Bridge 按 `batch` 处理。桌面端收到成功回执后会收起独立诊疗方案页；失败回执会保留当前页面和错误提示，方便医生调整后重试。
 
 诊疗方案回执示例：
@@ -1160,7 +1160,7 @@ ws://127.0.0.1:8081/api/consultation/events/ws
 
 #### 成功响应: 问诊一键确认回写（record-confirmed）
 
-`record-confirmed` 类型来自问诊最终确认提交。**症状问诊（`ConsultationPage` 完成问诊）、语音问诊（`VoiceConsultationNew` 提交病历）和独立诊疗方案推荐页（`treatment_plan` 聚合推荐后“一键回写”）共用此契约**，由 `src/features/clinical-result/recordConfirmedPayload.ts` 作为唯一构造点产出，字段结构、默认值、PHIS 中性化策略完全一致。与 `reference-request` 不同，这是医生在结果页直接确认后一次性提交的完整数据，不再拆成逐项引用请求；但 PHIS 在完成最终调入确认后，仍必须调用 `POST /api/consultation/reference-feedback` 回执成功或失败，桌面端会在收到回执前保持结果页处于等待态；成功回执后再进入对应页面的收口动作，失败回执保留当前编辑现场。
+`record-confirmed` 类型来自问诊最终确认提交。**症状问诊（`ConsultationPage` 完成问诊）、语音问诊（`VoiceConsultationNew` 提交病历）和独立诊疗方案推荐页（`treatment_plan` 聚合推荐后“一键回写”）共用此契约**，由 `src/features/clinical-result/recordConfirmedPayload.ts` 作为唯一构造点产出。共享结果页允许医生选择部分回写范围，但仍只产生一条 `record-confirmed + batch`；`writebackScope` 描述本次选择，未选门诊病历字段、诊断或医嘱类型在 payload 中完全省略，PHIS 必须保持对应原值，不能把缺失解释为清空。与 `reference-request` 不同，这仍是医生在结果页直接确认后的一次最终提交，不拆成逐项引用请求；PHIS 完成处理后仍必须调用 `POST /api/consultation/reference-feedback` 回执成功或失败。
 
 ```json
 {
@@ -1172,6 +1172,11 @@ ws://127.0.0.1:8081/api/consultation/events/ws
   "action": "batch",
   "referenceStatus": "pending",
   "referenceMessage": "等待 HIS 完成最终回写并回执",
+  "writebackScope": {
+    "recordFields": ["chiefComplaint", "historyOfPresentIllness", "pastMedicalHistory", "personalHistory", "familyHistory", "physicalExam", "precautions"],
+    "includeDiagnosis": true,
+    "orderTypes": ["medicine", "exam", "lab_test", "procedure"]
+  },
   "chiefComplaint": "咳嗽三天",
   "historyOfPresentIllness": "受凉后出现咳嗽、咳痰，无明显呼吸困难。",
   "pastMedicalHistory": "否认高血压、糖尿病病史。",
@@ -1237,17 +1242,19 @@ ws://127.0.0.1:8081/api/consultation/events/ws
 
 ##### record-confirmed 字段说明
 
-`record-confirmed` 现在将诊断收敛到 `diagList`，将药品、检查、检验、处置统一收敛到 `orderList`，并可通过 `outpatientRecord` 携带整张门诊病历字段。PHIS 不再按 `diagnosisList / medications / examinations / labTests / procedures` 这套旧结构解析。
+`record-confirmed` 将已选诊断收敛到 `diagList`，将已选药品、检查、检验、处置统一收敛到 `orderList`，并通过 `outpatientRecord` 携带医生选择的门诊病历字段。PHIS 不再按旧分组解析；部分回写时以字段是否存在作为更新边界。
 
 补充说明：
 
 1. `requestId` 是最终回写闭环的唯一请求标识，PHIS 在完成处理后必须带着同一个 `requestId` 调用 `POST /api/consultation/reference-feedback`。
-2. `referenceType/action` 在 `record-confirmed` 场景下固定按 `batch` 语义理解，表示一次性处理整张病历对应的诊断和全部医嘱。
+2. `referenceType/action` 在 `record-confirmed` 场景下固定按 `batch` 语义理解，表示本次选择范围通过一条请求一次处理，并不表示每个分组都必然出现。
 3. `referenceStatus = pending` 仅表示桌面端已发起最终回写请求，并不代表 HIS 已处理成功；真正成功/失败以后续 `reference-feedback` 回执为准。
 4. `diagList.idDiag` 必须是 PHIS 标准诊断目录主键（`ID_DIE`）。桌面端不得把 AI 自由文本、前端临时 key 或 PHIS 草稿文本生成的占位 ID 写入该字段；若当前诊断未匹配标准诊断库，应在提交前拦截并提示医生先切换或重新匹配标准诊断。
 5. `orderList` 必须来自已匹配标准库且通过前置非空校验的用药、检查、检验、处置推荐项。桌面端提交前必须拦截缺少标准服务 ID、服务名称、服务分类编码、执行位置 ID 或医保限用标识的医嘱；药品还必须具备一次剂量、剂量单位、频次 key、用法 key、总量、用药天数和发药药房；检查还必须具备检查部位；检验还必须具备非空检验附加 `jsonField`；处置还必须具备大于 0 的数量。医生手动清空检查 / 检验 / 处置的执行科室，或清空任一医嘱的医保限用后，桌面端必须按当前空输入拦截选中和提交，不得从 `matchedItem.idDeptExec`、`raw.idDeptExec/idDept`、详情 hydrate、默认执行科室或默认医保类型兜底生成必填字段。
-6. `outpatientRecord` 为完整门诊病历文书字段，包含主诉、现病史、既往史、个人史、家族史、体格检查和注意事项。该对象不包含 `diagnosisText`；HIS 应根据 `diagList` 自动生成病历诊断行，避免诊断文书来源与标准诊断回写来源分叉。
-7. 为兼容 PHIS 既有的顶层病历字段读取方式，`record-confirmed` 同时返回顶层 `precautions`，其值与 `outpatientRecord.precautions` 完全一致。新接入优先读取 `outpatientRecord.precautions`，旧接入可继续读取顶层 `precautions`；两者不得表达不同内容。
+6. `writebackScope.recordFields` 支持 `chiefComplaint / historyOfPresentIllness / pastMedicalHistory / personalHistory / familyHistory / physicalExam / precautions`；`includeDiagnosis` 控制 `diagList` 是否出现；`orderTypes` 支持 `medicine / exam / lab_test / procedure` 并控制 `orderList` 中允许出现的类型。scope 中未选择的范围必须在 payload 中省略，禁止固定传空数组或空字段。
+7. `outpatientRecord` 在完整回写时包含七个门诊病历字段，在部分回写时只包含 `schemaVersion` 与 `writebackScope.recordFields` 明确选择的字段。该对象不包含 `diagnosisText`；HIS 只更新对象中真实出现的字段，其余保持原值。
+8. 为兼容 PHIS 既有的顶层病历字段读取方式，选择 `precautions` 时 `record-confirmed` 同时返回顶层 `precautions`，其值与 `outpatientRecord.precautions` 完全一致；未选择时两处都不出现。主诉、现病史、既往史和家族史的顶层兼容字段同样只在对应 record field 被选择时出现。
+9. 没有 `writebackScope` 的历史客户端仍按完整回写契约处理，继续携带完整 `outpatientRecord`、`diagList` 与 `orderList`；PHIS 不得要求旧版本补传 scope。
 
 **outpatientRecord 字段：**
 
@@ -1734,11 +1741,11 @@ HIS 侧至少要识别以下 5 类结果：
 
 补充说明：
 
-1. `draft` 仅携带主诉 / 现病史等早期字段；`record-confirmed` 才携带完整的 `outpatientRecord`、`diagList` 和 `orderList`。`final-report` 仅作历史兼容保留，新代码不再产生。
+1. `draft` 仅携带主诉 / 现病史等早期字段；`record-confirmed` 携带 `writebackScope` 以及本次实际选择的 `outpatientRecord / diagList / orderList`。历史客户端未传 scope 时仍按三部分完整结构处理。`final-report` 仅作历史兼容保留，新代码不再产生。
 2. `record-confirmed` 来自问诊结果确认提交或独立诊疗方案推荐提交，其 `diagList` 和 `orderList` 已转换成 PHIS 可直接消费的结构。PHIS 收到后可直接按 `fgMain` 识别主诊断并生成病历诊断行，再按 `sdSrv`、`idSrv`、`idDeptExec`、`doseOnce`、`idFreq`、`idUsge`、`jsonField`、`idPart` 等字段填充调入确认弹窗，无需二次补录。
 3. `reference-request` 和 `reference-feedback` 都可能附带同一份病历上下文，便于 HIS 在当前界面直接处理。
 4. 对回写 / 引用闭环结果，HIS 应继续结合 `resultType + referenceType` 判断具体业务对象，不建议只看 `referenceType`。
-5. 当前一键回写场景下，`record-confirmed.referenceType/action` 为 `batch`，`diagList/orderList` 包含诊断和所有选中治疗项目；旧 `reference-request + batch` 才使用 `referenceItems` 按 `type` 区分业务类型。单项引用场景下 `referenceType` 仍为具体类型（如 `diagnosis`）。
+5. 当前一键回写场景下，`record-confirmed.referenceType/action` 为 `batch`；`diagList` 仅在选择诊断时出现，`orderList` 仅包含 `writebackScope.orderTypes` 范围内医生已经选中的治疗项目。旧 `reference-request + batch` 才使用 `referenceItems` 按 `type` 区分业务类型。单项引用场景下 `referenceType` 仍为具体类型（如 `diagnosis`）。
 
 ## 8. WebSocket 订阅与去重策略
 
@@ -1828,9 +1835,9 @@ HIS 接入完成后，至少验证以下场景：
 4. 单独鉴别诊断：`POST /assist` 使用 `action: "diffDx"` 并传入 `diagnosis`，可直接打开独立“鉴别排查确认”弹窗；确认鉴别不直接产生 PHIS 回写
 5. `/result` 能回收到当前患者的 `draft` 或 `record-confirmed`
 6. PHIS 调用 `/reference-feedback` 后，`/result` 能继续返回 `reference-feedback`
-7. 一键回写场景：PHIS 收到一条 `record-confirmed + referenceType/action: "batch"`，读取 `diagList/orderList` 完成调入确认，回执后页面显示“一键回写完成”
+7. 一键回写场景：PHIS 收到一条 `record-confirmed + referenceType/action: "batch"`，按 `writebackScope` 只处理 payload 中实际出现的 `outpatientRecord / diagList / orderList`；未出现范围保持原值，回执后页面显示“一键回写完成”
 8. 切换患者后不会把上一位患者的结果误回填到当前医生站
-9. 问诊一键确认回写：PHIS 收到 `resultType: "record-confirmed"` 结果后，读取 `orderList` 即可。药品、检查、检验、处置已经统一转换成 PHIS 调入确认格式，可直接用于回填弹窗
+9. 问诊一键确认回写：PHIS 收到 `resultType: "record-confirmed"` 结果后，只读取本次 payload 中实际出现的 `orderList`。出现时其中药品、检查、检验、处置已经统一转换成 PHIS 调入确认格式，可直接用于回填弹窗；未出现时不得清空 HIS 原医嘱
 10. 独立诊疗方案推荐：`POST /assist` 使用 `action: "treatment_plan"` 可打开聚合方案页；医生勾选后同样产生 `record-confirmed + referenceType: "batch"`，PHIS 按第 9 条处理并回执
 
 如果你们 HIS 需要，我建议下一步可以再按这份文档继续拆一版“给后端开发直接对接的字段清单”和“一版给联调测试直接执行的验收用例”。

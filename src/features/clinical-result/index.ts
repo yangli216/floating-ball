@@ -322,6 +322,7 @@ export type {
 } from './api/availableMedicineInventory';
 
 export {
+  RECORD_CONFIRMED_WRITEBACK_FIELDS,
   buildDiagList,
   buildOrderListItem,
   buildRecordConfirmedPayload,
@@ -350,6 +351,9 @@ export type {
   BuildRecordConfirmedPayloadInput,
   OrderItemResolvers,
   RecordConfirmedResultType,
+  RecordConfirmedWritebackField,
+  RecordConfirmedWritebackOrderType,
+  RecordConfirmedWritebackScope,
 } from './recordConfirmedPayload';
 
 export {

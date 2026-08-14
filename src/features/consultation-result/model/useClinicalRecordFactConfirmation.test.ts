@@ -101,6 +101,23 @@ describe('useClinicalRecordFactConfirmation', () => {
     expect(controller.ensureWritebackReady()).toBe(true);
   });
 
+  it('only blocks critical suggestions in record fields selected for writeback', async () => {
+    const { controller } = createController(async () => JSON.stringify({
+      items: [{
+        field: 'physicalExam',
+        question: '是否存在肺部啰音？',
+        negativeRecordText: '双肺未闻及啰音',
+        rationale: '核查肺部体征',
+        priority: 'critical',
+      }],
+    }));
+
+    await controller.generateSuggestions();
+
+    expect(controller.ensureWritebackReady(['historyOfPresentIllness'])).toBe(true);
+    expect(controller.ensureWritebackReady(['physicalExam'])).toBe(false);
+  });
+
   it('does not append an existing negative candidate and replaces it when an abnormal result is recorded', async () => {
     const applyConfirmedFact = vi.fn();
     const response = async () => JSON.stringify({

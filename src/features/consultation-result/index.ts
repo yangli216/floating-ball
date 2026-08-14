@@ -4,6 +4,7 @@ export { default as ClinicalDecisionDisclaimer } from './ui/ClinicalDecisionDisc
 export { default as ClinicalRecordAnnotatedText } from './ui/ClinicalRecordAnnotatedText.vue';
 export { default as ClinicalResultSupplementDialog } from './ui/ClinicalResultSupplementDialog.vue';
 export { default as ClinicalRecordFactPanel } from './ui/ClinicalRecordFactPanel.vue';
+export { default as ClinicalResultWritebackScopeSelector } from './ui/ClinicalResultWritebackScopeSelector.vue';
 export { default as DiagnosisDifferentialList } from './ui/DiagnosisDifferentialList.vue';
 export { default as DiagnosisRecommendationCard } from './ui/DiagnosisRecommendationCard.vue';
 export { default as ManualMatchPicker } from './ui/ManualMatchPicker.vue';
@@ -23,6 +24,10 @@ export {
   useClinicalResultWritebackPayload,
 } from './model/useClinicalResultWritebackPayload';
 export { useClinicalResultWritebackPreflight } from './model/useClinicalResultWritebackPreflight';
+export {
+  useClinicalResultWritebackScope,
+  WRITEBACK_RECORD_FIELD_LABELS,
+} from './model/useClinicalResultWritebackScope';
 export {
   CONSULTATION_REFERENCE_FEEDBACK_EVENT,
   useConsultationReferenceFeedbackListener,
@@ -93,10 +98,18 @@ export type {
 } from './model/useClinicalResultWritebackPayload';
 export type {
   ClinicalResultWritebackPreflight,
+  ClinicalResultWritebackPreflightInput,
   ClinicalResultWritebackPreflightNotify,
   ClinicalResultWritebackPreflightOptions,
   ClinicalResultWritebackPreflightResult,
 } from './model/useClinicalResultWritebackPreflight';
+export type {
+  ClinicalResultWritebackScope,
+  ClinicalResultWritebackScopeOptions,
+  ClinicalResultWritebackScopeSnapshot,
+  WritebackScopeRecordFieldOption,
+  WritebackScopeRecordValues,
+} from './model/useClinicalResultWritebackScope';
 export type {
   ConsultationReferenceFeedbackListener,
   ConsultationReferenceFeedbackListenerOptions,

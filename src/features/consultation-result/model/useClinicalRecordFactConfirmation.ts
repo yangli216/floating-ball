@@ -128,10 +128,14 @@ export function useClinicalRecordFactConfirmation(options: ClinicalRecordFactCon
     updateSuggestion(id, 'not-applicable');
   }
 
-  function ensureWritebackReady(): boolean {
-    if (!hasPendingCritical.value) return true;
+  function ensureWritebackReady(fields?: readonly ClinicalRecordFactField[]): boolean {
+    const fieldSet = fields ? new Set(fields) : null;
+    const blockingSuggestions = fieldSet
+      ? pendingCriticalSuggestions.value.filter((item) => fieldSet.has(item.field))
+      : pendingCriticalSuggestions.value;
+    if (blockingSuggestions.length === 0) return true;
     expanded.value = true;
-    options.notify?.(`还有 ${pendingCriticalSuggestions.value.length} 项重点 AI 补充待核查，请处理后再回写`, 'warning');
+    options.notify?.(`还有 ${blockingSuggestions.length} 项重点 AI 补充待核查，请处理后再回写`, 'warning');
     return false;
   }
 

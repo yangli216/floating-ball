@@ -106,6 +106,7 @@ import {
   ClinicalDecisionDisclaimer,
   ClinicalRecordFactPanel,
   ClinicalResultSupplementDialog,
+  ClinicalResultWritebackScopeSelector,
   DiagnosisDifferentialList,
   DiagnosisRecommendationCard,
   TreatmentRecommendationSection,
@@ -119,6 +120,7 @@ import {
   useClinicalResultPatientContext,
   useClinicalResultWritebackPayload,
   useClinicalResultWritebackPreflight,
+  useClinicalResultWritebackScope,
   useConsultationReferenceFeedbackListener,
   useClinicalResultUserLogController,
   useDiagnosisSelection,
@@ -270,7 +272,6 @@ const writebackStatus = useWritebackStatus({
 const {
   waitingWritebackFeedback,
   isWritebackBusy,
-  submitButtonText,
   writebackBannerTone,
   writebackBannerText,
   clearLastFeedback,
@@ -448,6 +449,69 @@ const hasPendingFactSuggestions = computed(() => (
   factSuggestions.value.some((item) => item.status === 'pending')
 ));
 
+const writebackScopeController = useClinicalResultWritebackScope({
+  getRecord: () => ({
+    chiefComplaint: chiefComplaint.value,
+    historyOfPresentIllness: historyOfPresentIllness.value,
+    pastMedicalHistory: pastMedicalHistory.value,
+    personalHistory: personalHistory.value,
+    familyHistory: familyHistory.value,
+    physicalExam: physicalExam.value,
+    precautions: precautions.value,
+  }),
+  getSelectedDiagnosisCount: () => selectedDiagnoses.value.length,
+  getSelectedTreatments: () => selectedTreatments.value,
+  notify: showToast,
+});
+const {
+  selectorOpen: writebackScopeOpen,
+  recordExpanded: writebackRecordExpanded,
+  recordFieldOptions: writebackRecordFields,
+  recordGroupChecked: writebackRecordGroupChecked,
+  recordGroupIndeterminate: writebackRecordGroupIndeterminate,
+  recordSelectionSummary: writebackRecordSelectionSummary,
+  availableRecordFieldCount: writebackAvailableRecordFieldCount,
+  selectedRecordFieldCount: writebackSelectedRecordFieldCount,
+  selectedDiagnosisCount: writebackDiagnosisCount,
+  selectedMedicineCount: writebackMedicineCount,
+  selectedClinicalOrderCount: writebackClinicalOrderCount,
+  diagnosisAvailable: writebackDiagnosisAvailable,
+  medicineAvailable: writebackMedicineAvailable,
+  clinicalOrdersAvailable: writebackClinicalOrdersAvailable,
+  includeDiagnosis: writebackIncludeDiagnosis,
+  includeMedicine: writebackIncludeMedicine,
+  includeClinicalOrders: writebackIncludeClinicalOrders,
+  selectedOptionCount: writebackSelectedOptionCount,
+  availableOptionCount: writebackAvailableOptionCount,
+  hasAnySelection: hasWritebackSelection,
+  allAvailableSelected: allWritebackContentSelected,
+  partialSelection: partialWritebackSelection,
+  writebackScope,
+  selectedFactFields: selectedWritebackFactFields,
+  toggleSelector: toggleWritebackScope,
+  closeSelector: closeWritebackScope,
+  setRecordExpanded: setWritebackRecordExpanded,
+  toggleRecordField: toggleWritebackRecordField,
+  toggleRecordGroup: toggleWritebackRecordGroup,
+  toggleDiagnosis: toggleWritebackDiagnosis,
+  toggleMedicine: toggleWritebackMedicine,
+  toggleClinicalOrders: toggleWritebackClinicalOrders,
+  toggleAll: toggleAllWritebackContent,
+  filterTreatments: filterWritebackTreatments,
+  ensureSelection: ensureWritebackSelection,
+  refreshAvailableContent: refreshWritebackScope,
+  reset: resetWritebackScope,
+  serialize: serializeWritebackScope,
+  restore: restoreWritebackScope,
+} = writebackScopeController;
+const hasExistingOutpatientRecord = computed(() => Boolean(
+  props.initialPatientData?.currentOutpatientRecordText?.trim(),
+));
+const creatingPartialOutpatientRecord = computed(() => (
+  !hasExistingOutpatientRecord.value
+  && writebackSelectedRecordFieldCount.value > 0
+  && writebackSelectedRecordFieldCount.value < writebackAvailableRecordFieldCount.value
+));
 let factSuggestionTimer: ReturnType<typeof setTimeout> | null = null;
 function scheduleFactSuggestionGeneration(): void {
   if (factSuggestionTimer) clearTimeout(factSuggestionTimer);
@@ -477,6 +541,7 @@ const editorSnapshotPersistence = useVoiceEditorSnapshotPersistence({
     physicalExam: physicalExam.value,
     precautions: precautions.value,
     factSuggestions: factSuggestions.value as unknown[],
+    writebackScope: serializeWritebackScope(),
     treatments: treatments.value as unknown[],
     diagnoses: aiDiagnoses.value as unknown[],
     selectedDiagnosisIdentity: getDiagnosisIdentity(selectedDiagnosis.value),
@@ -544,9 +609,18 @@ async function applyEditorSnapshot(snapshot: VoiceEditorSnapshot): Promise<void>
       diagnosisIdentity: lastTreatmentDiagnosisKey.value,
     });
   }
+  if (snapshot.writebackScope) {
+    restoreWritebackScope(snapshot.writebackScope);
+  } else {
+    resetWritebackScope();
+  }
 }
 
-const canSubmit = computed(() => !isResultGenerating.value && chiefComplaint.value.trim().length > 0 && selectedDiagnosis.value !== null && selectedDiagnoses.value.length > 0 && !isWritebackBusy.value);
+const canSubmit = computed(() => (
+  !isResultGenerating.value
+  && !isWritebackBusy.value
+  && hasWritebackSelection.value
+));
 
 async function handleCancelConfirmed(): Promise<void> {
   clearVoiceFeedbackDraft();
@@ -1591,6 +1665,8 @@ async function handleSupplementRegenerate(doctorSupplement: string): Promise<voi
       }
     }
 
+    refreshWritebackScope();
+
     setInitialRecordSnapshot({
       ...regeneratedRecord,
       precautions: precautions.value,
@@ -2416,20 +2492,33 @@ async function reconcileAutoSelectedMedicineInventory(items: TreatmentRecommenda
 
 async function handleBatchWriteBack(): Promise<void> {
   if (!canSubmit.value) return;
-  if (!ensureFactWritebackReady()) return;
-  syncPrecautionsToSelection();
+  if (!ensureWritebackSelection()) return;
+  const selectedScope = {
+    recordFields: [...writebackScope.value.recordFields],
+    includeDiagnosis: writebackScope.value.includeDiagnosis,
+    orderTypes: [...writebackScope.value.orderTypes],
+  };
+  if (!ensureFactWritebackReady(selectedWritebackFactFields.value)) return;
+  if (selectedScope.recordFields.includes('precautions')) {
+    syncPrecautionsToSelection();
+  }
+  closeWritebackScope();
   persistEditorSnapshotImmediate();
   submitting.value = true;
   clearLastFeedback();
 
   try {
-    const preflight = await runWritebackPreflight();
+    const selectedForWriteback = filterWritebackTreatments(selectedTreatments.value);
+    const preflight = await runWritebackPreflight({
+      includeDiagnosis: selectedScope.includeDiagnosis,
+      treatments: selectedForWriteback,
+    });
     if (!preflight.ready) {
       return;
     }
     const { selected } = preflight;
 
-    const diagList = buildDiagList();
+    const diagList = selectedScope.includeDiagnosis ? buildDiagList() : [];
     const orderList = buildOrderList(selected);
 
     const treatmentPlan = buildTreatmentPlanSummary(selected);
@@ -2454,24 +2543,25 @@ async function handleBatchWriteBack(): Promise<void> {
       diagList,
       orderList,
       treatmentPlan,
+      writebackScope: selectedScope,
       extra: {
         referenceType: 'batch',
         action: 'batch',
         referenceStatus: 'pending',
-        referenceMessage: '等待 HIS 完成最终回写并回执。',
+        referenceMessage: '等待 HIS 完成已选内容回写并回执。',
       },
     });
 
     trackFinalRecommendationPreferences({
-      diagnoses: selectedDiagnoses.value,
-      primaryDiagnosis: selectedDiagnosis.value,
+      diagnoses: selectedScope.includeDiagnosis ? selectedDiagnoses.value : [],
+      primaryDiagnosis: selectedScope.includeDiagnosis ? selectedDiagnosis.value : null,
       treatments: selected,
       context: buildPreferenceContext('writeback'),
     });
-    markWritebackPending(requestId, '病历已发送至 HIS，等待处理结果回执。');
+    markWritebackPending(requestId, '已选内容已发送至 HIS，等待处理结果回执。');
     await invoke('complete_consultation', { result });
     if (waitingWritebackFeedback.value) {
-      showToast?.('病历已发送至 HIS，等待处理结果回执。', 'info');
+      showToast?.('已选内容已发送至 HIS，等待处理结果回执。', 'info');
     }
   } catch (error: unknown) {
     if (waitingWritebackFeedback.value) {
@@ -2505,6 +2595,7 @@ watch(
     resetPrecautionsScope();
     resetForIntent({});
     resetFactConfirmation();
+    resetWritebackScope();
     resetTreatmentGenerationState();
     await nextTick();
     suppressDiagnosisTreatmentRefetch.value = false;
@@ -2518,6 +2609,7 @@ watch(
     if (!result) {
       lastAppliedIntentKey.value = '';
       resetPrecautionsScope();
+      resetWritebackScope();
       return;
     }
 
@@ -2573,6 +2665,8 @@ watch(
       });
     }
 
+    resetWritebackScope();
+
     if (result.generation?.status === 'streaming') {
       await nextTick();
       suppressDiagnosisTreatmentRefetch.value = false;
@@ -2624,6 +2718,7 @@ watch(
     aiDiagnoses.value,
     selectedDiagnosis.value,
     lastTreatmentDiagnosisKey.value,
+    serializeWritebackScope(),
   ],
   () => {
     schedulePersistEditorSnapshot();
@@ -2996,6 +3091,38 @@ watch(
       >
         {{ secondaryFooterActionText }}
       </button>
+      <ClinicalResultWritebackScopeSelector
+        :open="writebackScopeOpen"
+        :disabled="isWritebackBusy || isResultGenerating"
+        :record-expanded="writebackRecordExpanded"
+        :record-fields="writebackRecordFields"
+        :record-group-checked="writebackRecordGroupChecked"
+        :record-group-indeterminate="writebackRecordGroupIndeterminate"
+        :record-selection-summary="writebackRecordSelectionSummary"
+        :diagnosis-available="writebackDiagnosisAvailable"
+        :diagnosis-selected="writebackIncludeDiagnosis"
+        :diagnosis-count="writebackDiagnosisCount"
+        :medicine-available="writebackMedicineAvailable"
+        :medicine-selected="writebackIncludeMedicine"
+        :medicine-count="writebackMedicineCount"
+        :clinical-orders-available="writebackClinicalOrdersAvailable"
+        :clinical-orders-selected="writebackIncludeClinicalOrders"
+        :clinical-orders-count="writebackClinicalOrderCount"
+        :selected-option-count="writebackSelectedOptionCount"
+        :available-option-count="writebackAvailableOptionCount"
+        :all-available-selected="allWritebackContentSelected"
+        :partial-selection="partialWritebackSelection"
+        :creating-partial-record="creatingPartialOutpatientRecord"
+        @toggle="toggleWritebackScope"
+        @close="closeWritebackScope"
+        @toggle-all="toggleAllWritebackContent"
+        @toggle-record-group="toggleWritebackRecordGroup"
+        @toggle-record-expanded="setWritebackRecordExpanded(!writebackRecordExpanded)"
+        @toggle-record-field="toggleWritebackRecordField"
+        @toggle-diagnosis="toggleWritebackDiagnosis"
+        @toggle-medicine="toggleWritebackMedicine"
+        @toggle-clinical-orders="toggleWritebackClinicalOrders"
+      />
       <button
         class="footer-submit-btn"
         type="button"
@@ -3003,7 +3130,7 @@ watch(
         :aria-busy="isWritebackBusy"
         @click="handleBatchWriteBack"
       >
-        {{ submitButtonText }}
+        一键回写
       </button>
       <button class="footer-cancel-btn" type="button" :disabled="isWritebackBusy || isResultGenerating" @click="handleCancelClick">放弃</button>
     </div>

@@ -32,6 +32,8 @@ export interface VoiceEditorSnapshot {
   precautions?: string;
   /** 病历事实补问及医生确认状态。 */
   factSuggestions?: unknown[];
+  /** 医生本次选择的部分回写范围。 */
+  writebackScope?: unknown;
   /** TreatmentRecommendation[] 形态 */
   treatments?: unknown[];
   /** Diagnosis[] 形态 */

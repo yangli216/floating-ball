@@ -188,4 +188,68 @@ describe('buildRecordConfirmedPayload outpatientRecord', () => {
     expect(outpatientRecord.precautions).toBeTruthy();
     expect(payload.precautions).toBe(outpatientRecord.precautions);
   });
+
+  it('omits unselected record fields, diagnosis, and orders during partial writeback', () => {
+    const payload = buildRecordConfirmedPayload({
+      consultationId: 'consultation-partial',
+      chiefComplaint: '咳嗽3天',
+      historyOfPresentIllness: '受凉后出现咳嗽。',
+      pastMedicalHistory: '平素体健。',
+      outpatientRecord: {
+        personalHistory: '否认吸烟史。',
+        physicalExam: '双肺呼吸音清。',
+        precautions: '注意休息。',
+      },
+      diagList: [{ idDiag: 'D-1', naDiag: '急性上呼吸道感染' }],
+      orderList: [{ idSrv: 'M-1', naSrv: '药品A' }],
+      treatmentPlan: '用药：药品A',
+      writebackScope: {
+        recordFields: ['historyOfPresentIllness', 'personalHistory'],
+        includeDiagnosis: false,
+        orderTypes: [],
+      },
+    });
+
+    expect(payload.writebackScope).toEqual({
+      recordFields: ['historyOfPresentIllness', 'personalHistory'],
+      includeDiagnosis: false,
+      orderTypes: [],
+    });
+    expect(payload).not.toHaveProperty('chiefComplaint');
+    expect(payload.historyOfPresentIllness).toBe('受凉后出现咳嗽。');
+    expect(payload).not.toHaveProperty('pastMedicalHistory');
+    expect(payload).not.toHaveProperty('familyHistory');
+    expect(payload).not.toHaveProperty('precautions');
+    expect(payload).not.toHaveProperty('diagList');
+    expect(payload).not.toHaveProperty('orderList');
+    expect(payload).not.toHaveProperty('treatmentPlan');
+    expect(payload.outpatientRecord).toEqual({
+      schemaVersion: OUTPATIENT_RECORD_SCHEMA_VERSION,
+      historyOfPresentIllness: '受凉后出现咳嗽。',
+      personalHistory: '否认吸烟史。',
+    });
+  });
+
+  it('keeps the top-level precautions compatibility field only when selected', () => {
+    const payload = buildRecordConfirmedPayload({
+      consultationId: 'consultation-precautions',
+      chiefComplaint: '咳嗽3天',
+      historyOfPresentIllness: '受凉后出现咳嗽。',
+      pastMedicalHistory: '平素体健。',
+      precautions: '注意休息。',
+      diagList: [],
+      orderList: [],
+      writebackScope: {
+        recordFields: ['precautions'],
+        includeDiagnosis: false,
+        orderTypes: [],
+      },
+    });
+
+    expect(payload.precautions).toBe('注意休息。');
+    expect(payload.outpatientRecord).toEqual({
+      schemaVersion: OUTPATIENT_RECORD_SCHEMA_VERSION,
+      precautions: '注意休息。',
+    });
+  });
 });
