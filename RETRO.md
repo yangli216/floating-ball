@@ -640,3 +640,10 @@
 - **根因**: 新增 `Test Build` 工作流时只安装了 Rust 工具链，没有复用正式 Release 工作流的 Linux WebKitGTK、GTK、GLib 等 Tauri 系统依赖安装步骤。
 - **解决方案**: 在候选构建 `quality-gate` 中先安装与正式 Release 一致的 Ubuntu Tauri 构建依赖，再执行 `cargo check`；macOS 与 Windows 产物任务保持不变。
 - **后续防护**: 新增 Linux 上的 Tauri `cargo check/build` job 时必须复用统一系统依赖清单；不能以本机 macOS/Windows 的 Cargo 通过替代 Linux runner 验证。
+
+### RETRO-081: Yarn 吞掉候选版本参数且来源清单掩盖空产物 [已解决]
+
+- **现象**: 双平台候选 job 数秒内显示成功，但两个 Artifact 只有约 300 字节，解压后只有 `test-build-manifest.json`，没有 DMG、应用包或 MSI。
+- **根因**: GitHub runner 的 Yarn 1.22.22 把 `yarn release:test --version 1.4.4` 中的 `--version` 解释为 Yarn 自身参数，只打印 Yarn 版本便成功退出；上传步骤同时包含必然存在的来源清单，因此 `if-no-files-found: error` 无法识别安装包目录缺失。
+- **解决方案**: 工作流直接执行 `node scripts/test-release.mjs --version ...`，用户命令改用无参数歧义的 `yarn release:test X.Y.Z`；上传来源清单前增加独立门禁，要求目标 bundle 目录存在且至少包含一个大于 1 MB 的真实产物。
+- **后续防护**: CI 不通过 Yarn 转发与 Yarn 全局参数同名的业务参数；多路径 Artifact 上传必须为核心产物设置独立存在性和最小体积校验，辅助 manifest 不能让空构建变绿。

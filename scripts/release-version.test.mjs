@@ -94,6 +94,10 @@ test('test build workflow uploads artifacts without creating a release channel',
 
   assert.equal(packageJson.scripts['release:test'], 'node scripts/test-release.mjs');
   assert.match(workflow, /actions\/upload-artifact@v4/);
+  assert.match(workflow, /Verify candidate bundle exists/);
+  assert.match(workflow, /-size \+1M/);
+  assert.match(workflow, /node scripts\/test-release\.mjs --version/);
+  assert.doesNotMatch(workflow, /yarn release:test --version/);
   assert.match(workflow, /published: false/);
   assert.doesNotMatch(workflow, /gh release|releaseDraft|latest\.json|git tag/);
   assert.match(formalReleaseScript, /branch !== 'main'/);

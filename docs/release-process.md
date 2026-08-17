@@ -15,7 +15,7 @@ yarn release:test
 也可以明确指定准备验收的稳定版本：
 
 ```bash
-yarn release:test --version 1.4.4
+yarn release:test 1.4.4
 ```
 
 该命令会临时把 `package.json`、`src-tauri/tauri.conf.json` 和 `src-tauri/Cargo.toml` 设为候选版本，执行当前平台的 Tauri 构建，并在成功或失败后恢复全部原文件。它不会提交文件、创建 tag、GitHub Release、draft 或 `latest.json`。本机未配置 updater 私钥时，只生成可直接安装的测试包并临时关闭 updater artifact；GitHub `Test Build` 使用发布环境中的私钥生成带签名的候选包。
@@ -24,7 +24,7 @@ yarn release:test --version 1.4.4
 
 1. 在运行工作流时选择需要验收的分支或 commit。
 2. 输入候选稳定版本号，例如 `1.4.4`。
-3. 工作流先执行类型检查、单元测试、前端构建和 Rust 检查，再分别生成签名的 Windows 与 macOS 测试包。
+3. 工作流先执行类型检查、单元测试、前端构建和 Rust 检查，再分别生成签名的 Windows 与 macOS 测试包；上传前会检查目标目录中确实存在安装包，只有来源清单时必须失败。
 4. 从该次工作流的 Artifacts 下载测试包；这些文件不会出现在 GitHub Releases，也不会被客户端自动更新发现。
 
 测试包采用候选正式版本号，因此安装过候选包的测试机器不会把后续同版本正式包识别成更高版本。正式 updater 冒烟应另用仍停留在历史正式版本的环境执行。
@@ -34,7 +34,7 @@ yarn release:test --version 1.4.4
 功能验收通过、改动已合入 `main` 且工作区干净后，使用与测试包相同的版本：
 
 ```bash
-yarn release --version 1.4.4
+yarn release 1.4.4
 ```
 
 正式命令会核对当前分支、工作区、三处基线版本和 tag 唯一性，然后固化版本号、执行 release preflight、创建 release commit 与本地 tag。确认无误后推送：

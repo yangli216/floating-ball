@@ -29,7 +29,11 @@ function parseArgs(argv) {
     } else if (value === '--dry-run') {
       dryRun = true;
     } else if (!value.startsWith('--')) {
-      type = value;
+      if (/^\d+\.\d+\.\d+$/.test(value)) {
+        explicitVersion = value;
+      } else {
+        type = value;
+      }
     } else {
       throw new Error(`unknown test release option: ${value}`);
     }

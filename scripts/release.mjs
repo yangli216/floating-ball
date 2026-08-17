@@ -24,7 +24,11 @@ function parseArgs(argv) {
       explicitVersion = nextValue;
       index += 1;
     } else if (!value.startsWith('--')) {
-      type = value;
+      if (/^\d+\.\d+\.\d+$/.test(value)) {
+        explicitVersion = value;
+      } else {
+        type = value;
+      }
     } else {
       throw new Error(`unknown release option: ${value}`);
     }
