@@ -161,6 +161,7 @@ fn is_terminal_result(result_type: &str, reference_status: Option<&str>, state: 
     match result_type {
         "reference-request" => false,
         "record-confirmed" => reference_status != Some("pending"),
+        "reference-feedback" => reference_status != Some("pending"),
         _ => true,
     }
 }
@@ -373,10 +374,27 @@ pub struct InpatientEmrGenerationRequest {
 #[derive(Debug, Deserialize, Serialize, Clone)]
 #[serde(rename_all = "camelCase")]
 pub struct ConsultationReferenceItem {
-    pub name: String,
+    #[serde(default)]
+    pub name: Option<String>,
     pub code: Option<String>,
     #[serde(rename = "type")]
     pub item_type: Option<String>,
+    #[serde(default)]
+    pub id_srv: Option<String>,
+    #[serde(default)]
+    pub id_cli: Option<String>,
+    #[serde(default)]
+    pub na_srv: Option<String>,
+    #[serde(default)]
+    pub na_cli: Option<String>,
+    #[serde(default)]
+    pub sd_srv: Option<String>,
+    #[serde(default)]
+    pub mutual_recognition_code: Option<String>,
+    #[serde(default)]
+    pub price_sale: Option<serde_json::Value>,
+    #[serde(default, flatten)]
+    pub extra: serde_json::Map<String, serde_json::Value>,
 }
 
 #[derive(Debug, Deserialize, Serialize, Clone)]
@@ -388,7 +406,7 @@ pub struct ConsultationReferenceFeedbackRequest {
     pub action: Option<String>,
     pub status: String,
     pub message: Option<String>,
-    #[serde(default)]
+    #[serde(default, alias = "recognizableItems")]
     pub items: Vec<ConsultationReferenceItem>,
 }
 
@@ -1579,6 +1597,11 @@ async fn reference_feedback(
         request.consultation_id, request.request_id, existing_result_type, resolved_reference_type, request.status
     );
 
+    let recognizable_items = if request.status == "pending" {
+        serde_json::to_value(&request.items).unwrap_or_else(|_| serde_json::json!([]))
+    } else {
+        serde_json::Value::Null
+    };
     let feedback_payload = serde_json::json!({
         "consultationId": request.consultation_id.clone(),
         "requestId": request.request_id.clone(),
@@ -1587,6 +1610,7 @@ async fn reference_feedback(
         "status": request.status.clone(),
         "message": request.message.clone(),
         "items": request.items.clone(),
+        "recognizableItems": recognizable_items,
         "timestamp": timestamp
     });
 
@@ -1639,6 +1663,14 @@ async fn reference_feedback(
                 feedback_payload["items"].clone(),
             );
         }
+        if !feedback_payload["recognizableItems"].is_null() {
+            record_map.insert(
+                "recognizableItems".to_string(),
+                feedback_payload["recognizableItems"].clone(),
+            );
+        } else {
+            record_map.remove("recognizableItems");
+        }
         if let Some(message) = feedback_payload["message"].as_str() {
             record_map.insert(
                 "referenceMessage".to_string(),
@@ -1649,7 +1681,15 @@ async fn reference_feedback(
         }
 
         let result = ConsultationResult {
-            status: Some("success".to_string()),
+            status: Some(
+                match feedback_payload["status"].as_str().unwrap_or_default() {
+                    "pending" => "pending",
+                    "cancelled" => "cancelled",
+                    "failed" => "failed",
+                    _ => "success",
+                }
+                .to_string(),
+            ),
             consultation_id: feedback_payload["consultationId"]
                 .as_str()
                 .unwrap_or_default()
@@ -1683,10 +1723,11 @@ async fn reference_feedback(
         "consultation.referenceFeedback",
         "POST",
         "/api/consultation/reference-feedback",
-        if request.status == "success" {
-            "success"
-        } else {
-            "business_error"
+        match request.status.as_str() {
+            "success" => "success",
+            "pending" => "pending",
+            "cancelled" => "cancelled",
+            _ => "business_error",
         },
         200,
         started_at,
@@ -2040,5 +2081,55 @@ mod tests {
         ] {
             assert!(!combined.contains(secret));
         }
+    }
+
+    #[test]
+    fn reference_feedback_accepts_pending_recognizable_items_without_name_alias() {
+        let request: ConsultationReferenceFeedbackRequest =
+            serde_json::from_value(serde_json::json!({
+                "consultationId": "visit-1",
+                "requestId": "request-1",
+                "status": "pending",
+                "recognizableItems": [{
+                    "idSrv": "LAB-1",
+                    "idCli": "CLI-1",
+                    "naSrv": "血常规",
+                    "sdSrv": "41",
+                    "mutualRecognitionCode": "B32R1WZZZ-00",
+                    "priceSale": 20.0
+                }]
+            }))
+            .expect("pending feedback should deserialize");
+
+        assert_eq!(request.items.len(), 1);
+        assert_eq!(request.items[0].id_srv.as_deref(), Some("LAB-1"));
+        assert_eq!(request.items[0].na_srv.as_deref(), Some("血常规"));
+        assert_eq!(
+            request.items[0].mutual_recognition_code.as_deref(),
+            Some("B32R1WZZZ-00")
+        );
+    }
+
+    #[test]
+    fn pending_reference_feedback_event_is_not_terminal() {
+        let result = ConsultationResult {
+            status: Some("pending".to_string()),
+            consultation_id: "visit-1".to_string(),
+            timestamp: 123,
+            record: serde_json::json!({
+                "resultType": "reference-feedback",
+                "requestId": "request-1",
+                "referenceStatus": "pending"
+            }),
+        };
+
+        let event = build_consultation_event(&result);
+        assert_eq!(event["terminal"], false);
+        // `state=ready` means the event payload is available for SDK dispatch;
+        // business pending is represented by referenceStatus + terminal=false.
+        assert_eq!(
+            derive_result_state(&result, result.record.as_object().unwrap()),
+            "ready"
+        );
     }
 }

@@ -169,7 +169,7 @@ export interface InpatientEmrGenerationRequest {
 }
 
 /** 引用回执状态 */
-export type FeedbackStatus = 'success' | 'failed';
+export type FeedbackStatus = 'success' | 'failed' | 'pending' | 'cancelled';
 
 /** 结果类型 */
 export type ResultType =
@@ -231,6 +231,22 @@ export interface ReferenceItem {
   isTCM?: boolean;
 }
 
+/** PHIS 检验检查互认候选项 */
+export interface RecognizableItem {
+  idSrv: string;
+  idCli?: string;
+  naSrv: string;
+  naCli?: string;
+  sdSrv: '31' | '41' | string;
+  mutualRecognitionCode: string;
+  priceSale?: number;
+}
+
+export interface MutualRecognitionDecision {
+  decision: 'recognize' | 'not_recognize' | 'cancel';
+  recognizedItemIds?: string[];
+}
+
 /** 问诊结果 payload */
 export interface ConsultationResultPayload {
   resultType?: ResultType;
@@ -254,6 +270,8 @@ export interface ConsultationResultPayload {
   referenceStatus?: string;
   referenceMessage?: string;
   referenceItems?: ReferenceItem[];
+  recognizableItems?: RecognizableItem[];
+  recognitionDecision?: MutualRecognitionDecision;
 }
 
 /** 住院病历一键回写 payload */
@@ -421,7 +439,7 @@ export declare class MedHermes {
     requestId: string,
     status: FeedbackStatus,
     message?: string,
-    items?: ReferenceItem[]
+    items?: Array<ReferenceItem | RecognizableItem>
   ): Promise<ApiResponse>;
 
   /** 订阅事件流，返回取消订阅函数 */
@@ -472,7 +490,7 @@ export interface MedHermesLoaderApi {
     requestId: string,
     status: FeedbackStatus,
     message?: string,
-    items?: ReferenceItem[]
+    items?: Array<ReferenceItem | RecognizableItem>
   ): Promise<ApiResponse>;
   stop(): Promise<ApiResponse>;
 }

@@ -754,7 +754,7 @@
   /**
    * 发送 PHIS 引用回执
    * @param {string} requestId 对应 reference-request 中的 requestId
-   * @param {string} status 'success' 或 'failed'
+   * @param {string} status 'success' / 'failed' / 'pending' / 'cancelled'
    * @param {string} [message] 成功说明或失败原因
    * @param {Array} [items] 实际保存的项目列表
    * @returns {Promise<Object>}
@@ -767,7 +767,13 @@
       referenceType: 'batch',
       action: 'batch',
       status: status,
-      message: message || (status === 'success' ? 'PHIS 保存成功' : 'PHIS 保存失败'),
+      message: message || (status === 'success'
+        ? 'PHIS 保存成功'
+        : status === 'pending'
+          ? '等待医生完成互认决策'
+          : status === 'cancelled'
+            ? '医生取消了互认决策'
+            : 'PHIS 保存失败'),
       items: items || []
     };
 

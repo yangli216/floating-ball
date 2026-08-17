@@ -14,6 +14,7 @@ import {
   useClinicalResultWritebackPayload,
   useClinicalResultWritebackPreflight,
   useConsultationReferenceFeedbackListener,
+  useMutualRecognitionDecision,
   useWritebackFeedbackController,
   useWritebackStatus,
   type ClinicalResultWritebackPharmacyOption,
@@ -78,8 +79,16 @@ export function useTreatmentPlanWriteback(options: TreatmentPlanWritebackOptions
   const {
     clearLastFeedback,
     markWritebackPending,
+    pendingWritebackRequestId,
+    resetWritebackState,
     applyWritebackFeedback: applyWritebackFeedbackStatus,
   } = writebackStatus;
+
+  const mutualRecognition = useMutualRecognitionDecision({
+    resolveConsultationId,
+    resolvePendingRequestId: () => pendingWritebackRequestId.value,
+    notify,
+  });
 
   const { buildDiagList, buildOrderList, orderItemResolvers } = useClinicalResultWritebackPayload({
     selectedDiagnoses: selectedDiagnoses as unknown as Ref<Diagnosis[]>,
@@ -127,6 +136,7 @@ export function useTreatmentPlanWriteback(options: TreatmentPlanWritebackOptions
     resolveConsultationId,
     logContext: 'TreatmentPlanPage',
     onFeedback: (payload) => {
+      if (mutualRecognition.handleFeedback(payload)) return;
       writebackFeedbackController.applyWritebackFeedback(payload);
     },
   });
@@ -187,12 +197,14 @@ export function useTreatmentPlanWriteback(options: TreatmentPlanWritebackOptions
           scene: 'treatment-plan-writeback',
         },
       });
-      await invoke('complete_consultation', { result });
       markWritebackPending(requestId, '诊疗方案已发送至 HIS，等待处理结果回执。');
+      await invoke('complete_consultation', { result });
       notify('诊疗方案已发送至 HIS，等待处理结果回执。');
       return true;
     } catch (error) {
       console.error('[TreatmentPlan] Failed to submit treatment plan', error);
+      resetWritebackState();
+      mutualRecognition.clearDialog();
       notify('诊疗方案提交失败，请稍后重试。', 'error');
       return false;
     } finally {
@@ -204,6 +216,7 @@ export function useTreatmentPlanWriteback(options: TreatmentPlanWritebackOptions
     submitting,
     submit,
     writebackStatus,
+    mutualRecognition,
   };
 }
 

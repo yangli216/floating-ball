@@ -149,6 +149,7 @@
 18. **注意事项诊断作用域门禁**：AI 或规则自动生成的 `outpatientRecord.precautions` 只能消费医生已选正式诊断，不得带入待鉴别方向、未选诊断或上一次选择的教育内容。诊断选择变化时只允许重建尚未被医生修改的系统文案；医生手工文本不得被覆盖。回写前必须确认实际 `diagList` 与注意事项的诊断作用域一致。
 19. **部分回写省略语义门禁**：医生通过“选择回写”取消的门诊病历字段、诊断或医嘱类型，必须从 `record-confirmed` payload 中省略，禁止以空字符串、空对象或空数组表达，否则可能清空 HIS 既有内容。`writebackScope`、实际出现的 `outpatientRecord/diagList/orderList` 和前置校验范围必须一致；注意事项未选时顶层兼容字段 `precautions` 也必须省略。部分回写仍只产生一条 `record-confirmed + batch` 并等待一次回执，未选内容不得记录为医生拒绝建议。
 20. **慢病药品周期核查证据门禁**：慢病药品卡的近期处方核查必须消费已排除当前就诊的完整时间窗历史，按药品主键优先、唯一规范药名其次匹配；不得复用只保留最近处方的续方继承列表，也不得因历史就诊不是慢病诊断而漏掉同患者同药记录。累计量只允许汇总有效正数且单位一致的记录，单位不同或缺失时逐笔展示。没有院内权威医保周期与限量规则时只展示 HIS 处方事实，不得自动标记超量、违规、扣款风险或阻断回写。
+21. **检验检查互认闭环门禁**：`queryAvailableExamLabItems` 返回的 `mutualRecognitionCode` 必须经 HIS Adapter 和标准项目匹配完整进入检查 / 检验 `orderList`，空字符串表示不参与互认。PHIS `sendFeedback(..., "pending", ..., recognizableItems)` 是中间态，不得清空原回写等待状态或按失败收尾；医生决策必须沿用原 `requestId`，只发送一条 `reference-request + recognitionDecision`，`recognize` 才携带所选 `idSrv`。最终 `success / failed / cancelled` 到达前不得结束结果页，重复 pending、跨患者或 requestId 不匹配的反馈不得打开互认弹窗。
 
 ## 推荐提交流程
 

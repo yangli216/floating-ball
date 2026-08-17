@@ -6,7 +6,7 @@ export type SymptomConsultationMode = 'western' | 'tcm';
 export type SymptomSelectionMode = 'common' | 'bodyPart' | 'system';
 
 export interface SymptomReferenceStatusSnapshot {
-  status: 'pending' | 'success' | 'failed';
+  status: 'pending' | 'success' | 'failed' | 'cancelled';
   requestId: string;
   message?: string;
   updatedAt: number;
@@ -17,7 +17,7 @@ export interface SymptomReferenceRequestSnapshot {
   requestId: string;
   referenceType?: string;
   action: string;
-  status: 'pending' | 'success' | 'failed';
+  status: 'pending' | 'success' | 'failed' | 'cancelled';
   message?: string;
   items?: Array<{
     name: string;
@@ -26,6 +26,7 @@ export interface SymptomReferenceRequestSnapshot {
     isTCM?: boolean;
     idCli?: string;
   }>;
+  recognizableItems?: unknown[];
   timestamp?: number;
 }
 

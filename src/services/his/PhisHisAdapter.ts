@@ -201,6 +201,7 @@ function mapMedicalItemCatalog(item: HisMedicalItemCatalogItem): MedicalItemCata
     unitPrice: typeof item.priceSale === 'number' ? item.priceSale : undefined,
     restricted: item.restricted === true,
     restrictionReason: trim(item.restrictionReason),
+    mutualRecognitionCode: trim(item.mutualRecognitionCode) ?? '',
     raw: {
       ...(item.raw && typeof item.raw === 'object' ? item.raw : {}),
       idSrv: item.idSrv,
@@ -210,6 +211,7 @@ function mapMedicalItemCatalog(item: HisMedicalItemCatalogItem): MedicalItemCata
       idPart: item.idPart,
       jsonField: item.jsonField,
       fgCheckOrd: item.fgCheckOrd,
+      mutualRecognitionCode: trim(item.mutualRecognitionCode) ?? '',
     },
   };
 }

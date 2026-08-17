@@ -3,6 +3,14 @@ export { default as SymptomResultEntry } from './ui/SymptomResultEntry.vue';
 export { default as SystemCategorySelector } from './ui/SystemCategorySelector.vue';
 
 export {
+  useSymptomConsultationFinalWriteback,
+} from './model/useSymptomConsultationFinalWriteback';
+export type {
+  SymptomConsultationFinalWriteback,
+  SymptomConsultationFinalWritebackOptions,
+  SymptomFinalWritebackPreflightResult,
+} from './model/useSymptomConsultationFinalWriteback';
+export {
   buildCurrentMedicalPayload,
   buildCurrentSummary,
   buildCurrentDiagnosisList,

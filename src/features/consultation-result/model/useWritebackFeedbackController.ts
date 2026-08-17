@@ -7,6 +7,7 @@ export interface WritebackFeedbackControllerOptions {
   notify?: WritebackFeedbackNotify;
   onSuccess?: (payload: WritebackFeedbackPayload) => void;
   onFailed?: (payload: WritebackFeedbackPayload) => void;
+  onCancelled?: (payload: WritebackFeedbackPayload) => void;
   successMessage?: string;
   failedMessage?: string;
 }
@@ -21,6 +22,12 @@ export function useWritebackFeedbackController(options: WritebackFeedbackControl
     if (safePayload.status === 'success') {
       options.onSuccess?.(safePayload);
       options.notify?.(safePayload.message || options.successMessage || 'HIS 已完成回写。', 'success');
+      return safePayload;
+    }
+
+    if (safePayload.status === 'cancelled') {
+      options.onCancelled?.(safePayload);
+      options.notify?.(safePayload.message || '本次互认决策已取消，当前内容仍保留。', 'info');
       return safePayload;
     }
 

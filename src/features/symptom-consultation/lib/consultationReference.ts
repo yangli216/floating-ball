@@ -1,6 +1,6 @@
 export type ReferenceAction = 'diagnosis' | 'medication' | 'examination' | 'lab_test' | 'procedure' | 'batch';
 export type ReferenceItemType = Exclude<ReferenceAction, 'batch'>;
-export type ReferenceLifecycleStatus = 'pending' | 'success' | 'failed';
+export type ReferenceLifecycleStatus = 'pending' | 'success' | 'failed' | 'cancelled';
 
 export interface ReferenceItemPayload {
   name: string;
@@ -18,6 +18,7 @@ export interface ReferenceFeedbackPayload {
   status: ReferenceLifecycleStatus;
   message?: string;
   items?: ReferenceItemPayload[];
+  recognizableItems?: unknown[];
   timestamp?: number;
 }
 
@@ -155,6 +156,8 @@ export function getReferenceStatusLabel(status: ReferenceLifecycleStatus): strin
       return '已引用';
     case 'failed':
       return '引用失败';
+    case 'cancelled':
+      return '已取消';
     default:
       return '等待回执';
   }

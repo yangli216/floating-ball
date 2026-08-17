@@ -283,6 +283,8 @@ export interface MedicalItemCatalogEntry {
   /** 免费专项、特定人群等不能作为通用首选的受限项目。 */
   restricted?: boolean;
   restrictionReason?: string;
+  /** 检验检查互认编码；空字符串表示该项目不参与互认。 */
+  mutualRecognitionCode?: string;
   /** 厂商透传 */
   raw?: Record<string, unknown>;
 }

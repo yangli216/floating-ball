@@ -94,7 +94,7 @@
 
 1. HIS / PHIS 通过 WebSocket 收到 `record-confirmed` 或 `reference-request`
 2. 收到 `record-confirmed` 时，读取 `requestId`、`writebackScope` 与 `referenceType/action = batch`；只处理 payload 中真实出现的 `outpatientRecord / diagList / orderList`，未出现范围保持 PHIS 原值
-3. 收到 `reference-request` 时，读取 `requestId`、`action/referenceType`、`referenceItems`，按引用对象类型处理历史或单项引用
+3. 收到 `reference-request` 时，若存在 `recognitionDecision`，按原 `record-confirmed` 的互认中间决策继续保存；否则读取 `action/referenceType`、`referenceItems`，按引用对象类型处理历史或单项引用
 4. 处理成功或失败后，**必须**调用 `POST /api/consultation/reference-feedback`
 5. `全医慧助（PCIE）` 收到回执后会更新当前页面状态，并通过 WebSocket 事件流推送 `reference-feedback`
 
@@ -186,7 +186,27 @@ PHIS                                全医慧助（PCIE）
  |                                       |  回写完成
 ```
 
-`reference-request` 仍可能出现在历史兼容或单项引用场景，例如 `referenceType: "diagnosis"` 的诊断引用；它不再是当前一键回写主链路。
+`reference-request` 仍可能出现在历史兼容、单项引用，以及检验检查互认的医生中间决策场景；它不会替代当前一键回写的首条 `record-confirmed`。
+
+#### 5.3.1 检验检查互认中间决策
+
+当 `record-confirmed.orderList` 中的检查 / 检验项目命中 PHIS 可互认报告时，PHIS 不立即保存，而是通过同一回执接口返回中间态：
+
+1. PHIS 调用 `sendFeedback(requestId, "pending", "存在可互认的检验检查项目，请医生在智医端决策", recognizableItems)`；`requestId` 必须与原 `record-confirmed` 一致。
+2. 全医慧助保持原回写等待状态，弹出互认决策框。医生可部分勾选项目并选择互认、不互认或取消。
+3. 全医慧助通过 WebSocket 结果流发送一条 `reference-request`，仍使用原 `requestId`，并携带 `recognitionDecision`。
+4. PHIS 根据决策执行保存，再调用 `sendFeedback` 返回最终 `success / failed / cancelled`。
+
+```text
+PHIS                                全医慧助（PCIE）
+ |  <-- record-confirmed (requestId=R)    |
+ |  sendFeedback(R, pending, items) ----> |
+ |                                       |  医生部分勾选并决策
+ |  <-- reference-request                |
+ |      recognitionDecision, requestId=R |
+ |  sendFeedback(R, success/failed/      |
+ |               cancelled, savedItems)->|  最终收尾
+```
 
 ### 5.4 联调日志与 traceId
 
@@ -1207,7 +1227,7 @@ ws://127.0.0.1:8081/api/consultation/events/ws
       "sdSrv": "11",
       "naSrv": "感冒灵颗粒",
       "idSrv": "65b8a81c3c6f492a8908d8d2"
-    }
+    },
     {
       "amount": 1,
       "fgCheckOrd": "1",
@@ -1215,15 +1235,17 @@ ws://127.0.0.1:8081/api/consultation/events/ws
       "naSrv": "尿常规",
       "idSrv": "642546e0fc69e81ae058f3ad",
       "idDeptExec": "63e0bd493c6f495f34444b69",
-      "jsonField": "{\"idLisCategory\":\"63e1e5f362f1a02fb8e76ad8\",\"fgCombination\":\"1\"}"
-    }
+      "jsonField": "{\"idLisCategory\":\"63e1e5f362f1a02fb8e76ad8\",\"fgCombination\":\"1\"}",
+      "mutualRecognitionCode": "B32R1WZZZ-00"
+    },
     {
       "amount": 1,
       "fgCheckOrd": "1",
       "sdSrv": "31",
       "naSrv": "心电图",
       "idPart": "66c59143eda5140001f17fc1",
-      "idDeptExec": "63e0bd493c6f495f34444b69"
+      "idDeptExec": "63e0bd493c6f495f34444b69",
+      "mutualRecognitionCode": ""
     }
   ],
   "treatmentPlan": "用药：对乙酰氨基酚缓释片。检查：深部X线照射。检验：血常规（五分类）。处置：拔罐疗法(火罐)",
@@ -1311,10 +1333,11 @@ ws://127.0.0.1:8081/api/consultation/events/ws
 | :--- | :--- | :--- |
 | `idPart` | String | 检查部位 ID，检查项目必填 |
 | `jsonField` | String | 检验附加 JSON，检验项目必填且不能是空对象，常见为 `idLisCategory`、`fgCombination` 等组合信息 |
+| `mutualRecognitionCode` | String | 检验检查互认编码；检查 / 检验项目必传，原样来自 `queryAvailableExamLabItems`。空字符串表示该项目不参与互认；处置项目不传 |
 
 #### 成功响应: 引用请求（历史/单项引用）
 
-> 当前一键回写主链路使用上方 `record-confirmed` 契约；`reference-request` 仅保留给历史兼容或单项引用场景。若 `referenceType` 为 `batch`，仍按旧批量引用结构处理，但新接入不应再把它作为一键回写主路径。
+> 当前一键回写首条请求使用上方 `record-confirmed` 契约；`reference-request` 保留给历史兼容、单项引用，以及检验检查互认的医生中间决策。若 `referenceType` 为 `batch` 且存在 `recognitionDecision`，必须按互认决策处理；否则才按旧批量引用结构处理。
 
 ```json
 {
@@ -1489,7 +1512,8 @@ HIS 处理建议：
 2. 建议优先按 `event.id` 做去重；如果 HIS 需要自定义幂等键，可退化到 `event.consultationId + event.requestId + event.type + event.timestamp`。
 3. 判断“这是一条什么回执”时，建议优先看 `event.type + event.payload.referenceType`：
    - `record-confirmed + batch` = 当前一键回写请求，读取 `diagList/orderList` 完成 PHIS 调入确认
-   - `reference-request + batch` = 旧批量引用请求，`referenceItems` 包含所有类型项目，按每项 `type` 分类处理
+   - `reference-request + batch + recognitionDecision` = 检验检查互认决策，必须与原 `record-confirmed` 使用同一 `requestId`
+   - `reference-request + batch + referenceItems` = 旧批量引用请求，按每项 `type` 分类处理
    - `reference-request + diagnosis` = 请求 PHIS 保存诊断（单项引用场景）
    - `reference-feedback + batch` = 一键回写或旧批量引用回执；需结合此前的 `requestId` 对应的是 `record-confirmed` 还是 `reference-request`
    - `reference-feedback + diagnosis` = 诊断保存回执
@@ -1519,9 +1543,33 @@ http://127.0.0.1:8081/api/consultation/reference-feedback
 | `requestId` | String | 是 | 对应 `record-confirmed` 或 `reference-request` 中的请求 ID |
 | `referenceType` | String | 否 | 建议新接入显式传入的引用对象类型，支持 `diagnosis` / `medication` / `examination` / `lab_test` / `procedure` / `batch`；若回执的是 `record-confirmed`，留空时默认按 `batch` 处理 |
 | `action` | String | 否 | 兼容旧版字段，语义与 `referenceType` 相同；`reference-request` 场景下 `referenceType` 与 `action` 至少要传一个；回执 `record-confirmed` 时两者可同时省略 |
-| `status` | String | 是 | `success` / `failed` |
+| `status` | String | 是 | `success` / `failed` / `pending` / `cancelled`；`pending` 仅用于检验检查互认的医生中间决策，`cancelled` 表示医生取消互认决策 |
 | `message` | String | 否 | 成功说明或失败原因 |
-| `items` | Array | 否 | 本次实际保存的项目列表 |
+| `items` | Array | 否 | `pending` 时为可互认项目列表；最终状态时为本次实际保存项目列表。SDK 第四参数 `recognizableItems/items` 会写入此字段 |
+
+互认 `pending` 请求示例：
+
+```json
+{
+  "consultationId": "766842939207974912",
+  "requestId": "record-confirmed-1704355201000",
+  "referenceType": "batch",
+  "action": "batch",
+  "status": "pending",
+  "message": "存在可互认的检验检查项目，请医生在智医端决策",
+  "items": [
+    {
+      "idSrv": "LAB-001",
+      "idCli": "LAB-001",
+      "naSrv": "血常规",
+      "naCli": "血常规",
+      "sdSrv": "41",
+      "mutualRecognitionCode": "B32R1WZZZ-00",
+      "priceSale": 20.0
+    }
+  ]
+}
+```
 
 请求示例（record-confirmed batch 回执）：
 
@@ -1582,8 +1630,34 @@ HTTP 状态码：`409`
 1. 当前回执必须匹配“最新一条结果”里的 `requestId`，且其 `resultType` 必须还是 `reference-request` 或 `record-confirmed`。
 2. 如果 HIS 传错 `consultationId` 或 `requestId`，会返回 `409 REFERENCE_REQUEST_MISMATCH`。
 3. `referenceType` 与 `action` 如果同时传入，语义必须一致；不一致时接口会返回 `400 INVALID_REFERENCE_TYPE`。若当前待确认结果是 `record-confirmed` 且两者都未传，服务端会默认按 `batch` 处理。
-4. 建议 `status = failed` 时，把失败原因写进 `message`，便于医生在 `全医慧助（PCIE）` 里理解失败原因。
-5. 如果想让页面上的逐项“已引用/引用失败”状态更准确，建议原样回传本次成功或失败的 `items`。
+4. `status = pending` 只允许用于当前待处理 `record-confirmed + batch` 的检验检查互认中间态；桌面端不会把它当成最终回执。`items` 中至少应包含 `idSrv / naSrv / sdSrv / mutualRecognitionCode`，也兼容 `idCli / naCli / priceSale`。
+5. `status = failed` 时应把失败原因写进 `message`；`status = cancelled` 时应说明医生取消了互认决策。两者都会保留当前页面现场。
+6. 如果想让页面上的逐项“已引用/引用失败”状态更准确，建议原样回传本次成功或失败的 `items`。
+
+互认决策 `reference-request` payload：
+
+```json
+{
+  "resultType": "reference-request",
+  "consultationId": "766842939207974912",
+  "requestId": "record-confirmed-1704355201000",
+  "referenceType": "batch",
+  "action": "batch",
+  "referenceStatus": "pending",
+  "recognitionDecision": {
+    "decision": "recognize",
+    "recognizedItemIds": ["LAB-001"]
+  }
+}
+```
+
+`recognitionDecision.decision` 取值：
+
+| 值 | 含义 | `recognizedItemIds` |
+| :--- | :--- | :--- |
+| `recognize` | 互认全部或部分项目 | 必填，填写医生勾选项目的 `idSrv` 列表 |
+| `not_recognize` | 本次项目均不互认 | 省略 |
+| `cancel` | 医生取消本次互认决策 | 省略 |
 
 ### 6.6 `POST /api/consultation/stop`
 
@@ -1736,7 +1810,7 @@ HIS 侧至少要识别以下 5 类结果：
 | `draft` | 病历草稿回写（早期病历字段） | 回填主诉、现病史等医生站草稿字段 |
 | `final-report` | 【已废弃】完整问诊最终报告（含诊断、治疗方案） | 仅作历史兼容，新链路不产生此类型，统一使用 `record-confirmed` |
 | `record-confirmed` | 问诊一键确认回写（`orderList` 统一格式） | 直接用于 PHIS 调入确认弹窗，不走 `reference-request` 引用请求 |
-| `reference-request` | `全医慧助（PCIE）` 请求 PHIS 保存引用 | 调用 PHIS 保存，并准备回执 |
+| `reference-request` | `全医慧助（PCIE）` 请求 PHIS 保存引用，或回传检验检查互认决策 | 先判断 `recognitionDecision`，否则按历史 / 单项引用处理，并准备最终回执 |
 | `reference-feedback` | PHIS 回执后的最新状态 | 更新医生站状态，提示成功或失败 |
 
 补充说明：
@@ -1745,7 +1819,7 @@ HIS 侧至少要识别以下 5 类结果：
 2. `record-confirmed` 来自问诊结果确认提交或独立诊疗方案推荐提交，其 `diagList` 和 `orderList` 已转换成 PHIS 可直接消费的结构。PHIS 收到后可直接按 `fgMain` 识别主诊断并生成病历诊断行，再按 `sdSrv`、`idSrv`、`idDeptExec`、`doseOnce`、`idFreq`、`idUsge`、`jsonField`、`idPart` 等字段填充调入确认弹窗，无需二次补录。
 3. `reference-request` 和 `reference-feedback` 都可能附带同一份病历上下文，便于 HIS 在当前界面直接处理。
 4. 对回写 / 引用闭环结果，HIS 应继续结合 `resultType + referenceType` 判断具体业务对象，不建议只看 `referenceType`。
-5. 当前一键回写场景下，`record-confirmed.referenceType/action` 为 `batch`；`diagList` 仅在选择诊断时出现，`orderList` 仅包含 `writebackScope.orderTypes` 范围内医生已经选中的治疗项目。旧 `reference-request + batch` 才使用 `referenceItems` 按 `type` 区分业务类型。单项引用场景下 `referenceType` 仍为具体类型（如 `diagnosis`）。
+5. 当前一键回写场景下，`record-confirmed.referenceType/action` 为 `batch`；`diagList` 仅在选择诊断时出现，`orderList` 仅包含 `writebackScope.orderTypes` 范围内医生已经选中的治疗项目。互认决策使用 `reference-request + batch + recognitionDecision`；旧批量引用才使用 `referenceItems` 按 `type` 区分业务类型。单项引用场景下 `referenceType` 仍为具体类型（如 `diagnosis`）。
 
 ## 8. WebSocket 订阅与去重策略
 

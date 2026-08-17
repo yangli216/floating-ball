@@ -1,6 +1,6 @@
 import { computed, ref } from 'vue';
 
-export type WritebackLifecycleStatus = 'pending' | 'success' | 'failed';
+export type WritebackLifecycleStatus = 'pending' | 'success' | 'failed' | 'cancelled';
 export type WritebackReferenceType =
   | 'diagnosis'
   | 'medication'
@@ -16,6 +16,8 @@ export interface WritebackFeedbackPayload {
   action?: WritebackReferenceType;
   status: WritebackLifecycleStatus;
   message?: string;
+  items?: unknown[];
+  recognizableItems?: unknown[];
   timestamp?: number;
 }
 
@@ -48,6 +50,9 @@ export function useWritebackStatus(options: Options = {}) {
     }
     if (lastWritebackFeedback.value?.status === 'failed') {
       return lastWritebackFeedback.value.message || options.failedMessage || 'HIS 回写失败，请根据提示修改后重试。';
+    }
+    if (lastWritebackFeedback.value?.status === 'cancelled') {
+      return lastWritebackFeedback.value.message || '本次互认决策已取消，当前内容仍保留。';
     }
     return '';
   });

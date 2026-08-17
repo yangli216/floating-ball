@@ -71,6 +71,8 @@ export interface MedicalItem {
   unitPrice?: number;
   restricted?: boolean;
   restrictionReason?: string;
+  /** 检验检查互认编码；空字符串表示该项目不参与互认。 */
+  mutualRecognitionCode?: string;
   raw?: Record<string, unknown>;
 }
 
@@ -1752,6 +1754,10 @@ class MedicalDataService {
         restrictionReason: partial.restrictionReason?.trim()
           || entry.restrictionReason?.trim()
           || readRawString('restrictionReason')
+          || '',
+        mutualRecognitionCode: partial.mutualRecognitionCode?.trim()
+          || entry.mutualRecognitionCode?.trim()
+          || readRawString('mutualRecognitionCode')
           || '',
         raw: item.raw && typeof item.raw === 'object' ? item.raw : undefined,
       });

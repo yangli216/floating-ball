@@ -173,6 +173,15 @@ export function getOrderFgSkintest(rec: TreatmentRecommendation): string {
   return (rec.matchedItem?.fgSkintest || readFirstString(raw, ['fgSkintest']) || '0').trim() || '0';
 }
 
+export function getOrderMutualRecognitionCode(rec: TreatmentRecommendation): string {
+  const raw = getMatchedItemRaw(rec);
+  const matchedItem = rec.matchedItem as { mutualRecognitionCode?: unknown } | undefined;
+  return (
+    readFirstString(matchedItem as Record<string, unknown> | undefined, ['mutualRecognitionCode'])
+    || readFirstString(raw, ['mutualRecognitionCode'])
+  ).trim();
+}
+
 // ===== diagList =====
 
 export interface BuildDiagListInput {
@@ -318,6 +327,9 @@ export function buildOrderListItem(
     ...base,
     ...(partId ? { idPart: partId } : {}),
     ...(jsonField ? { jsonField } : { jsonField: '{}' }),
+    ...((rec.type === 'exam' || rec.type === 'lab_test')
+      ? { mutualRecognitionCode: getOrderMutualRecognitionCode(rec) }
+      : {}),
   };
 }
 

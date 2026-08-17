@@ -8,7 +8,7 @@
         </template>
         <template v-else>
              <button class="header-btn primary" @click="printReport">打印</button>
-             <button class="header-btn primary" @click="submitToHIS">完成问诊</button>
+             <button class="header-btn primary" :disabled="isWritingRecord" @click="submitToHIS">完成问诊</button>
         </template>
       </template>
     </PatientHeader>
@@ -533,6 +533,8 @@
       @close="showKnowledgePanel = false"
     />
 
+    <MutualRecognitionDecisionHost :decision="finalWriteback.mutualRecognition" />
+
   </div>
 </template>
 
@@ -541,7 +543,6 @@ import { ref, shallowRef, computed, onMounted, watch, onUnmounted, inject, nextT
 import symptomAssociations from '../assets/symptom-associations.json';
 import { medicalDataService, type DiagnosisItem } from '../services/medicalData';
 import { chat, chatFast } from '../services/llm';
-import { invoke } from '@tauri-apps/api/core';
 import { feedbackService } from '../services/feedback';
 import { getHisAdapter } from '../services/his';
 import { trackViewChange, trackClick, trackError, trackFormSubmit, trackRecommendationAction } from '../services/operationTracker';
@@ -557,6 +558,7 @@ import {
   FactCheckWidget,
 } from '@features/feedback';
 import {
+  MutualRecognitionDecisionHost,
   useClinicalResultUserLogController,
   useClinicalResultWritebackPreflight,
   useConsultationReferenceFeedbackListener,
@@ -624,6 +626,7 @@ import {
   tcmInquiryConfig,
   trackConsultationCompletion,
   useConsultationAssistController,
+  useSymptomConsultationFinalWriteback,
   useConsultationRecordDraftGeneration,
   useSymptomCollectionController,
   type DiagnosisDisplayGroup,
@@ -637,11 +640,7 @@ import {
   buildClinicalResultDiagnosisRequestSpec,
   buildClinicalResultTreatmentRecommendationsFromRaw,
   buildClinicalResultTreatmentRequestSpec,
-  buildDiagList as buildSharedDiagList,
-  buildOrderListItem as buildSharedOrderListItem,
-  buildRecordConfirmedPayload,
   buildSelectedTreatments,
-  buildTreatmentPlanSummary,
   getDiagnosisRecommendationFeedbackKey,
   getMatchedItemRaw,
   getMatchedOrderServiceId,
@@ -815,7 +814,6 @@ const assistFocus = ref<AssistAction | null>(null);
 const activeReferenceRequest = ref<ReferenceFeedbackPayload | null>(null);
 const lastReferenceFeedback = ref<ReferenceFeedbackPayload | null>(null);
 const referenceStatusMap = ref<Record<string, ReferenceStatusEntry>>({});
-const isWritingRecord = ref(false);
 
 const aiLoading = ref(false);
 const aiError = ref<string | null>(null);
@@ -1142,7 +1140,7 @@ const resetWorkflowState = () => {
   activeReferenceRequest.value = null;
   lastReferenceFeedback.value = null;
   referenceStatusMap.value = {};
-  isWritingRecord.value = false;
+  finalWriteback.reset();
   knowledgeLoading.value = false;
   hasKnowledgeResults.value = false;
   showKnowledgePanel.value = false;
@@ -1355,6 +1353,10 @@ const applyReferenceFeedback = (payload: ReferenceFeedbackPayload) => {
 
   if (safePayload.status === 'success') {
     showToast(safePayload.message || 'PHIS 已完成引用保存。', 'success');
+  } else if (safePayload.status === 'pending') {
+    showToast(safePayload.message || '等待医生完成检验检查互认决策。', 'info');
+  } else if (safePayload.status === 'cancelled') {
+    showToast(safePayload.message || '本次互认决策已取消。', 'info');
   } else {
     showToast(safePayload.message || 'PHIS 引用保存失败。', 'error');
   }
@@ -1432,69 +1434,35 @@ const { run: runWritebackPreflight } = useClinicalResultWritebackPreflight({
   notify: (message) => showToast(message, 'info'),
 });
 
-const submitToHIS = async () => {
-  if (!canSubmitToHIS.value) {
-    if (!selectedDiagnosis.value) {
-      showToast('请先选择一个诊断结果', 'info');
-      return;
-    }
-    showToast('请先完善主诉和现病史后再提交', 'info');
-    return;
-  }
-
-  const requestId = `record-confirmed-${Date.now()}`;
-  const consultationId = resolveConsultationId();
-  const treatmentPreflight = await runWritebackPreflight();
-
-  if (!treatmentPreflight.ready) {
-    return;
-  }
-
-  const selectedTreatmentsForSubmit = treatmentPreflight.selected;
-  const diagList = buildSharedDiagList({
-    selectedDiagnoses: selectedDiagnosis.value ? [selectedDiagnosis.value] : [],
-    primaryDiagnosis: selectedDiagnosis.value,
-    patientTetId: (patientInfo.value as unknown as { idTet?: string }).idTet || '',
-  });
-  const orderList = selectedTreatmentsForSubmit.map((item) => buildSharedOrderListItem(item, symptomOrderResolvers));
-  const treatmentPlan = buildTreatmentPlanSummary(selectedTreatmentsForSubmit);
-
-  const result = buildRecordConfirmedPayload({
-    consultationId,
-    requestId,
-    chiefComplaint: generatedRecord.value.chiefComplaint,
-    historyOfPresentIllness: generatedRecord.value.historyOfPresentIllness,
-    pastMedicalHistory: resolvePastMedicalHistory(),
-    diagList,
-    orderList,
-    treatmentPlan,
-  });
-
-  try {
-    trackFinalRecommendationPreferences({
-      diagnoses: selectedDiagnosis.value ? [selectedDiagnosis.value] : [],
-      primaryDiagnosis: selectedDiagnosis.value,
-      treatments: selectedTreatmentsForSubmit,
-      context: {
-        consultationId,
-        sourceModule: 'consultation',
-        scene: 'smart-consultation-writeback',
-      },
-    });
-    await invoke('complete_consultation', { result });
+const finalWriteback = useSymptomConsultationFinalWriteback({
+  resolveConsultationId,
+  canSubmit: () => canSubmitToHIS.value,
+  getSelectedDiagnosis: () => selectedDiagnosis.value,
+  getPatientTetId: () => (patientInfo.value as { idTet?: string }).idTet || '',
+  getRecord: () => generatedRecord.value,
+  getPastMedicalHistory: resolvePastMedicalHistory,
+  runPreflight: runWritebackPreflight,
+  orderItemResolvers: symptomOrderResolvers,
+  notify: showToast,
+  formatError: (error) => formatUserFacingError(error, {
+    context: '发送数据失败', fallback: '请稍后重试。',
+  }),
+  onBeforeSubmit: ({ consultationId, diagnosis, treatments }) => trackFinalRecommendationPreferences({
+    diagnoses: [diagnosis], primaryDiagnosis: diagnosis, treatments,
+    context: { consultationId, sourceModule: 'consultation', scene: 'smart-consultation-writeback' },
+  }),
+  onSuccess: (consultationId) => {
     submitSmartFinalUserLog();
     trackFormSubmit('submit_to_his', { patientId: consultationId });
-    showToast("问诊完成，数据已发送回HIS系统。", "success");
     handleEndSession();
-  } catch (e) {
-    console.error("Failed to submit", e);
-    trackError('submit_to_his_failed', e);
-    showToast(formatUserFacingError(e, {
-      context: '发送数据失败',
-      fallback: '请稍后重试。',
-    }), "error");
-  }
-};
+  },
+  onError: (error) => {
+    console.error('Failed to submit', error);
+    trackError('submit_to_his_failed', error);
+  },
+});
+const isWritingRecord = finalWriteback.busy;
+const submitToHIS = finalWriteback.submit;
 
 const printReport = () => {
   trackClick('print_report');
@@ -1531,7 +1499,9 @@ useConsultationReferenceFeedbackListener<ReferenceFeedbackPayload>({
   resolveConsultationId, isActive: () => props.active !== false && currentView.value !== 'record',
   logContext: 'ConsultationPage',
   onFeedback: (payload) => {
+    if (finalWriteback.consumeMutualRecognitionFeedback(payload)) return;
     applyReferenceFeedback(payload);
+    finalWriteback.finalizeFeedback(payload);
   },
 });
 

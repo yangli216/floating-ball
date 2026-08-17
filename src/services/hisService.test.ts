@@ -229,6 +229,7 @@ describe('HisService fetchInstitutionMedicalItemsCatalog', () => {
             name: 'LAB-NAME-SENTINEL',
             category: 'LAB-CATEGORY-SENTINEL',
             idSrv: 'LAB-SERVICE-SENTINEL',
+            mutualRecognitionCode: 'MUTUAL-CODE-SENTINEL',
           },
         ],
         examinationCount: 1,
@@ -247,6 +248,7 @@ describe('HisService fetchInstitutionMedicalItemsCatalog', () => {
       ['EXAM-NAME-SENTINEL', 'EXAM-CATEGORY-SENTINEL'],
       ['LAB-NAME-SENTINEL', 'LAB-CATEGORY-SENTINEL'],
     ]);
+    expect(result[1].mutualRecognitionCode).toBe('MUTUAL-CODE-SENTINEL');
     expect(JSON.stringify(log.mock.calls)).not.toContain('SENTINEL');
     expect(log).toHaveBeenCalledWith('[HisService] Available exam/lab catalog summary', {
       rawCount: 2,

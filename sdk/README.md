@@ -452,6 +452,19 @@ await mh.sendFeedback(record.requestId, 'success', 'HIS 已成功回填住院病
 发送 PHIS 引用回执。每收到一条 `reference-request` 或等待闭环中的 `record-confirmed`，都应调用此方法回执。
 SDK 会优先使用最近一次事件的 `consultationId` 回执；如果当前患者传入了 `idVis / visitId`，该值会作为结果/回执锚点。
 
+检验检查互认命中时，先发送中间态：
+
+```js
+await mh.sendFeedback(
+  requestId,
+  'pending',
+  '存在可互认的检验检查项目，请医生在智医端决策',
+  recognizableItems
+);
+```
+
+随后监听同一 `requestId` 的 `reference-request`，读取 `recognitionDecision.decision` 和可选的 `recognizedItemIds`。完成保存后再次调用 `sendFeedback` 返回最终 `success`、`failed` 或 `cancelled`。`pending` 不是最终回执。
+
 #### `ping(): Promise`
 
 检测桌面端桥接服务是否在线，不会执行授权握手。
@@ -483,7 +496,7 @@ unsubscribe();
 | `record-confirmed` | `result` | 收到最终确认回写事件 payload |
 | `final-report` | `result` | 收到完整问诊报告 |
 | `batch` | `result` | 收到语音问诊批量回写 |
-| `reference-request` | `result` | 收到引用请求，需 PHIS 保存并回执 |
+| `reference-request` | `result` | 收到引用请求或检验检查互认决策，需 PHIS 保存并回执 |
 | `reference-feedback` | `result` | 收到引用回执确认 |
 | `connected` | `info` | 与桌面端握手成功 |
 | `disconnected` | - | 连接断开 |

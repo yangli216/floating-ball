@@ -10,6 +10,8 @@ export { default as DiagnosisDifferentialList } from './ui/DiagnosisDifferential
 export { default as DiagnosisRecommendationCard } from './ui/DiagnosisRecommendationCard.vue';
 export { default as ManualMatchPicker } from './ui/ManualMatchPicker.vue';
 export { default as MedicineUsageFieldSelector } from './ui/MedicineUsageFieldSelector.vue';
+export { default as MutualRecognitionDecisionDialog } from './ui/MutualRecognitionDecisionDialog.vue';
+export { default as MutualRecognitionDecisionHost } from './ui/MutualRecognitionDecisionHost.vue';
 export { default as RecAttributeChip } from './ui/RecAttributeChip.vue';
 export { default as TreatmentItemEditor } from './ui/TreatmentItemEditor.vue';
 export { default as TreatmentRecommendationCard } from './ui/TreatmentRecommendationCard.vue';
@@ -47,6 +49,7 @@ export { useManualMatchState } from './model/useManualMatchState';
 export { useMedicalDictionaries } from './model/useMedicalDictionaries';
 export { useMedicineFieldEditing } from './model/useMedicineFieldEditing';
 export { useMedicineUsageSearch } from './model/useMedicineUsageSearch';
+export { useMutualRecognitionDecision } from './model/useMutualRecognitionDecision';
 export { useReasonTooltipState } from './model/useReasonTooltipState';
 export { useRecommendationFeedbackPopover } from './model/useRecommendationFeedbackPopover';
 export { useRelatedDiagnosisDropdown } from './model/useRelatedDiagnosisDropdown';
@@ -65,6 +68,11 @@ export { useWritebackStatus } from './model/useWritebackStatus';
 export type { ManualMatchCandidate } from './ui/ManualMatchPicker.vue';
 export type { AttrOption } from './ui/RecAttributeChip.vue';
 export type { MedicineUsageSearchField } from './model/useMedicineUsageSearch';
+export type {
+  MutualRecognitionDecision,
+  MutualRecognitionDecisionOptions,
+  MutualRecognitionFeedbackPayload,
+} from './model/useMutualRecognitionDecision';
 export type { BodySiteOptions } from './model/useBodySiteOptions';
 export type {
   ClinicalResultCancelController,

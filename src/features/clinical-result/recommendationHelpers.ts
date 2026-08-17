@@ -143,6 +143,7 @@ export function buildMedicalItemMatchedItem(item: MedicalItem): TreatmentRecomme
     idPart: item.idPart,
     jsonField: item.jsonField,
     fgCheckOrd: item.fgCheckOrd,
+    mutualRecognitionCode: item.mutualRecognitionCode || '',
     raw: item.raw,
   };
 }

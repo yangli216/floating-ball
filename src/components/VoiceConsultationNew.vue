@@ -109,6 +109,7 @@ import {
   ClinicalResultWritebackScopeSelector,
   DiagnosisDifferentialList,
   DiagnosisRecommendationCard,
+  MutualRecognitionDecisionHost,
   TreatmentRecommendationSection,
   useBodySiteOptions,
   useClinicalResultCancelController,
@@ -129,6 +130,7 @@ import {
   useMedicalDictionaries,
   useMedicineFieldEditing,
   useMedicineUsageSearch,
+  useMutualRecognitionDecision,
   useReasonTooltipState,
   useRecommendationFeedbackPopover,
   useRelatedDiagnosisDropdown,
@@ -271,6 +273,7 @@ const writebackStatus = useWritebackStatus({
 });
 const {
   waitingWritebackFeedback,
+  pendingWritebackRequestId,
   isWritebackBusy,
   writebackBannerTone,
   writebackBannerText,
@@ -376,6 +379,12 @@ const displayedTreatmentEmptyText = computed(() => (
 
 const getPatientAnchorId = (): string => patientAnchorId.value;
 const resolveConsultationId = (): string => consultationId.value;
+
+const mutualRecognition = useMutualRecognitionDecision({
+  resolveConsultationId,
+  resolvePendingRequestId: () => pendingWritebackRequestId.value,
+  notify: showToast,
+});
 
 function getFactRecord() {
   return {
@@ -1298,6 +1307,7 @@ useConsultationReferenceFeedbackListener<ReferenceFeedbackPayload>({
       action: payload.action,
       referenceType: payload.referenceType,
     });
+    if (mutualRecognition.handleFeedback(payload)) return;
     applyWritebackFeedback(payload);
   },
 });
@@ -1786,7 +1796,10 @@ const { resetForIntent } = useClinicalResultIntentReset({
     recommendationFeedbackPopover.close();
   },
   closeSessionFeedback: () => undefined,
-  resetWritebackState,
+  resetWritebackState: () => {
+    resetWritebackState();
+    mutualRecognition.clearDialog();
+  },
   resetDiagnosisSelection,
   resetFirstUserLogSnapshot,
   setInitialRecordSnapshot,
@@ -3170,6 +3183,8 @@ watch(
       @close="showSupplementDialog = false"
       @confirm="handleSupplementRegenerate"
     />
+
+    <MutualRecognitionDecisionHost :decision="mutualRecognition" />
 
     <div v-if="showCancelConfirm" class="confirm-overlay" @click.self="closeCancelConfirm">
       <div class="confirm-dialog pane-card" role="dialog" aria-modal="true" aria-labelledby="voice-cancel-title">

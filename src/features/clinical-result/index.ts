@@ -33,6 +33,17 @@ export type {
 } from './clinicalResultContract';
 
 export {
+  buildMutualRecognitionDecisionPayload,
+  normalizeMutualRecognitionItems,
+} from './mutualRecognition';
+export type {
+  BuildMutualRecognitionDecisionPayloadInput,
+  MutualRecognitionDecisionType,
+  MutualRecognitionFeedbackLike,
+  MutualRecognitionItem,
+} from './mutualRecognition';
+
+export {
   appendConfirmedClinicalRecordFact,
   buildClinicalRecordFactSuggestionRequest,
   extractExplicitClinicalRecordFacts,

@@ -20,6 +20,7 @@ import {
   useMedicineFieldEditing,
   useMedicineUsageSearch,
   useManualMatchState,
+  MutualRecognitionDecisionHost,
   useMedicalDictionaries,
   useSecondarySelector,
   useTreatmentAttributeSearch,
@@ -973,6 +974,8 @@ onMounted(() => {
         </button>
       </div>
     </footer>
+
+    <MutualRecognitionDecisionHost :decision="writeback.mutualRecognition" />
   </div>
 </template>
 

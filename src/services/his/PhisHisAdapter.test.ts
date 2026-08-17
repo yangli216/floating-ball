@@ -58,6 +58,25 @@ describe('PhisHisAdapter.fetchPatientInfo', () => {
   });
 });
 
+describe('PhisHisAdapter.fetchInstitutionMedicalItemsCatalog', () => {
+  it('preserves the mutual recognition code in neutral and raw fields', async () => {
+    const service = {
+      fetchInstitutionMedicalItemsCatalog: vi.fn().mockResolvedValue([{
+        id: 'LAB-1',
+        name: '血常规',
+        category: '检验',
+        sdSrv: '41',
+        mutualRecognitionCode: 'B32R1WZZZ-00',
+      }]),
+    } as unknown as HisService;
+
+    const [item] = await new PhisHisAdapter(service).fetchInstitutionMedicalItemsCatalog('org-1');
+
+    expect(item.mutualRecognitionCode).toBe('B32R1WZZZ-00');
+    expect(item.raw?.mutualRecognitionCode).toBe('B32R1WZZZ-00');
+  });
+});
+
 describe('PhisHisAdapter.fetchPatientHistory', () => {
   it('forwards the bounded history date range and current visit to PHIS', async () => {
     const service = {

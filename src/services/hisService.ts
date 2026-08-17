@@ -149,6 +149,7 @@ export interface HisMedicalItemCatalogItem {
   idPart?: string;
   jsonField?: string;
   fgCheckOrd?: string;
+  mutualRecognitionCode?: string;
   priceSale?: number;
   restricted?: boolean;
   restrictionReason?: string;

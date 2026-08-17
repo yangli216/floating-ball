@@ -375,6 +375,8 @@
               <select id="fb-status">
                 <option value="success">success</option>
                 <option value="failed">failed</option>
+                <option value="pending">pending（检验检查互认）</option>
+                <option value="cancelled">cancelled（医生取消互认）</option>
               </select>
             </label>
             <label>
@@ -830,7 +832,12 @@
       var refType = $('fb-ref-type').value;
 
       var items = [];
-      if (refType === 'batch') {
+      if (status === 'pending') {
+        items = [
+          { idSrv: 'LAB-001', idCli: 'LAB-001', naSrv: '血常规', naCli: '血常规', sdSrv: '41', mutualRecognitionCode: 'B32R1WZZZ-00', priceSale: 20 },
+          { idSrv: 'EXAM-001', idCli: 'EXAM-001', naSrv: '胸部DR', naCli: '胸部DR', sdSrv: '31', mutualRecognitionCode: 'B32R1WZZZ-01', priceSale: 60 }
+        ];
+      } else if (refType === 'batch') {
         items = [
           { name: '急性支气管炎', code: 'J20.9', type: 'diagnosis' },
           { name: '阿莫西林胶囊 0.25g x 24', code: 'M001', type: 'medicine' },

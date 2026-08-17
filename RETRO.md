@@ -647,3 +647,10 @@
 - **根因**: GitHub runner 的 Yarn 1.22.22 把 `yarn release:test --version 1.4.4` 中的 `--version` 解释为 Yarn 自身参数，只打印 Yarn 版本便成功退出；上传步骤同时包含必然存在的来源清单，因此 `if-no-files-found: error` 无法识别安装包目录缺失。
 - **解决方案**: 工作流直接执行 `node scripts/test-release.mjs --version ...`，用户命令改用无参数歧义的 `yarn release:test X.Y.Z`；上传来源清单前增加独立门禁，要求目标 bundle 目录存在且至少包含一个大于 1 MB 的真实产物。
 - **后续防护**: CI 不通过 Yarn 转发与 Yarn 全局参数同名的业务参数；多路径 Artifact 上传必须为核心产物设置独立存在性和最小体积校验，辅助 manifest 不能让空构建变绿。
+
+### RETRO-082: 发送回写后才登记 requestId 会漏掉快速到达的互认中间态 [已解决]
+
+- **现象**: 检验检查互认接入后，PHIS 若在 `complete_consultation` 返回前同步或快速发送 `pending` 回执，桌面端监听器已经收到事件，但当前待回执 requestId 尚未登记，事件会被当作非当前请求忽略，医生看不到互认决策框。
+- **根因**: 原回写流程默认远端回执总晚于本地调用完成，把 `markWritebackPending` 放在 `await invoke(...)` 之后；互认引入了必须响应的中间态，暴露了“先发送、后订阅关联”的竞争窗口。
+- **解决方案**: 所有会产生回执的回写入口都先生成 requestId 并登记 pending 状态，再调用 `complete_consultation`；调用失败时显式清理等待态和互认浮层。互认 controller 仍校验 consultationId、当前 requestId 和已决策集合，避免跨患者或重复 pending 打开弹窗。
+- **后续防护**: 事件请求链统一遵循“先建立关联状态，再发请求，失败时回滚”；单元测试必须覆盖回执在发送 Promise 完成前到达的场景，不以本机网络时序代替状态机验证。
