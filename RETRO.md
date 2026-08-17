@@ -633,3 +633,10 @@
 - **根因**: 原流程只有“开发构建”和“正式 release”两级，没有可安装、可签名但不进入更新通道的候选构建层；版本准备、Git 提交、tag 与产物构建被视为同一个动作。
 - **解决方案**: 新增 `yarn release:test` 和手动 `Test Build` 工作流。候选构建临时注入目标版本，结束后恢复仓库，只上传本机产物或 Actions Artifact；验收通过后才在干净 `main` 上以同一版本执行正式 release。
 - **后续防护**: 需要“给测试人员安装”的包默认走候选构建，不得通过正式 tag 或 GitHub draft 绕行；正式 release 必须核对验收版本、分支、干净工作区和 tag 唯一性。
+
+### RETRO-080: Linux 质量门禁执行 Cargo 检查但未安装 Tauri 系统库 [已解决]
+
+- **现象**: 候选构建的前端类型检查、单元测试和构建全部通过后，Ubuntu 上的 `cargo check` 在 `glib-sys` 构建阶段报找不到 `glib-2.0.pc`，双平台打包因此没有启动。
+- **根因**: 新增 `Test Build` 工作流时只安装了 Rust 工具链，没有复用正式 Release 工作流的 Linux WebKitGTK、GTK、GLib 等 Tauri 系统依赖安装步骤。
+- **解决方案**: 在候选构建 `quality-gate` 中先安装与正式 Release 一致的 Ubuntu Tauri 构建依赖，再执行 `cargo check`；macOS 与 Windows 产物任务保持不变。
+- **后续防护**: 新增 Linux 上的 Tauri `cargo check/build` job 时必须复用统一系统依赖清单；不能以本机 macOS/Windows 的 Cargo 通过替代 Linux runner 验证。
