@@ -28,13 +28,13 @@ describe('hasReportedApplyResult', () => {
   });
 
   it('keeps only reported visits from the latest fourteen calendar days', () => {
-    const now = new Date('2026-06-30T10:00:00+08:00');
+    const now = new Date(2026, 5, 30, 10, 0, 0);
     const visits = getRecentReportedVisits({
       patientId: 'p1',
       visits: [
         {
           visitId: 'fourteenth-day-reported',
-          visitTime: new Date('2026-06-17T00:00:00+08:00').getTime(),
+          visitTime: new Date(2026, 5, 17, 0, 0, 0).getTime(),
           reportedApplications: [{
             applicationId: 'apply-1',
             name: '血常规',
@@ -44,11 +44,11 @@ describe('hasReportedApplyResult', () => {
         },
         {
           visitId: 'recent-empty',
-          visitTime: new Date('2026-06-29T08:00:00+08:00').getTime(),
+          visitTime: new Date(2026, 5, 29, 8, 0, 0).getTime(),
         },
         {
           visitId: 'too-old',
-          visitTime: new Date('2026-06-16T23:59:59+08:00').getTime(),
+          visitTime: new Date(2026, 5, 16, 23, 59, 59).getTime(),
           reportedApplications: [{
             applicationId: 'apply-2',
             name: '胸部CT',
