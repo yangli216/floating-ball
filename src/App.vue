@@ -9,10 +9,7 @@ import ConsultationPage from "./components/ConsultationPage.vue";
 import { DiagnosisPathWindow } from "@features/diagnosis-path";
 import { ReportInterpretationWindow, ReportInterpretationWorkspace } from "@features/report-interpretation";
 import Toast from "@shared/ui/Toast.vue";
-import {
-  ChronicRefillConfirmationPage,
-  RiskAlertPanel,
-} from "@features/reception-risk";
+import { RiskAlertPanel } from "@features/reception-risk";
 import {
   ReceptionCapsule,
   useReceptionSessionController,
@@ -143,8 +140,6 @@ const assistantTitle = computed(() => {
         return currentPatient.value ? `复诊配药 - ${patientDisplayName.value}` : '复诊配药';
       }
       return currentPatient.value ? `语音问诊 - ${patientDisplayName.value}` : '语音问诊';
-    case 'chronic-refill-confirmation':
-      return currentPatient.value ? `复诊配药确认 - ${patientDisplayName.value}` : '复诊配药确认';
     case 'treatment-plan':
       return currentPatient.value ? `诊疗方案 - ${patientDisplayName.value}` : '诊疗方案';
     case 'outpatient-follow-up':
@@ -170,8 +165,7 @@ const assistantTitle = computed(() => {
 const showSessionEntry = computed(
   () =>
     Boolean(currentPatient.value) &&
-    currentView.value !== 'consultation' &&
-    currentView.value !== 'chronic-refill-confirmation'
+    currentView.value !== 'consultation'
 );
 const feedbackDialogVisible = ref(false);
 const feedbackDialogSuspended = ref(false);
@@ -271,6 +265,7 @@ let store: Store | null = null;
 const resizeTimeoutRef = ref<ReturnType<typeof setTimeout> | null>(null);
 const storeRef = shallowRef<AppStore | null>(null);
 const transitioning = ref(false);
+const chronicRefillScopeSelecting = ref(false);
 let unsubscribeForceUpdate: (() => void) | null = null;
 
 // 初始化窗口管理 composable
@@ -299,6 +294,7 @@ const getCurrentReceptionWindowSize = () => getWindowSizeForView('reception-caps
   expanded: !isRiskAnalyzing.value && riskItems.value.length > 0,
   riskCount: riskItems.value.length,
   hasChronicRefill: Boolean(chronicRefillCandidate.value),
+  chronicScopeSelecting: chronicRefillScopeSelecting.value,
   hasFollowUp: Boolean(outpatientFollowUpContext.value),
   hasReportInterpretation: reportInterpretationVisits.value.length > 0,
 });
@@ -337,7 +333,6 @@ const {
   openHisIntegrationLog,
   openMedicalCatalogCache,
   openConsultation,
-  openChronicRefillConfirmation,
   openVoiceConsultation,
   openTreatmentPlan,
   openOutpatientFollowUp,
@@ -364,7 +359,11 @@ const {
   isProcessingVoice,
   consultationRoundId,
   resetVoiceSessionState,
-  showGeneratedClinicalResult,
+  beginGeneratedClinicalResult,
+  completeGeneratedClinicalResult,
+  failGeneratedClinicalResult,
+  updateGeneratedClinicalResultProgress,
+  updateGeneratedClinicalResultPartial,
   resumeCachedVoiceResult,
   hasCachedVoiceResult,
   handleVoiceStop,
@@ -400,19 +399,6 @@ async function cancelSymptomConsultation(): Promise<void> {
 
 async function closeTreatmentPlan(): Promise<void> {
   await handleUserCollapse();
-}
-
-async function closeChronicRefillConfirmation(): Promise<void> {
-  if (!currentPatient.value) {
-    await exitWork('cancelled');
-    return;
-  }
-  await openReceptionCapsule(getCurrentReceptionWindowSize());
-}
-
-async function handleChronicRefillGenerated(result: Parameters<typeof showGeneratedClinicalResult>[0]): Promise<void> {
-  await showGeneratedClinicalResult(result);
-  showToast('复诊配药病历草稿已生成，请确认后回写', 'success');
 }
 
 async function closeReportInterpretationWorkspace(): Promise<void> {
@@ -624,6 +610,7 @@ const handleRiskExpand = async (expanded: boolean) => {
     expanded,
     riskCount: riskItems.value.length,
     hasChronicRefill: Boolean(chronicRefillCandidate.value),
+    chronicScopeSelecting: chronicRefillScopeSelecting.value,
     hasFollowUp: Boolean(outpatientFollowUpContext.value),
     hasReportInterpretation: reportInterpretationVisits.value.length > 0,
   });
@@ -632,6 +619,15 @@ const handleRiskExpand = async (expanded: boolean) => {
     await windowTransition.resizeCurrentView(targetSize, { resizable: false });
   } catch (e) {
     console.error('Failed to resize for risk details:', e);
+  }
+};
+
+const handleChronicRefillScopeSelecting = async (selecting: boolean) => {
+  chronicRefillScopeSelecting.value = selecting;
+  try {
+    await windowTransition.resizeCurrentView(getCurrentReceptionWindowSize(), { resizable: false });
+  } catch (error) {
+    console.error('Failed to resize chronic refill scope selector:', error);
   }
 };
 
@@ -653,7 +649,14 @@ const eventListeners = useEventListeners({
   handleWindowMove,
   persistCurrentWindowSize,
   workMode: { enterWorkMode, openReceptionCapsule, exitWork },
-  navigation: { openConsultation, openChronicRefillConfirmation, openVoiceConsultation, openTreatmentPlan, openOutpatientFollowUp, openReportInterpretation, openInpatientEmr, openDifferentialDiagnosis, startVoiceInteraction },
+  navigation: { openConsultation, openVoiceConsultation, openTreatmentPlan, openOutpatientFollowUp, openReportInterpretation, openInpatientEmr, openDifferentialDiagnosis, startVoiceInteraction },
+  generatedClinicalResultSession: {
+    begin: beginGeneratedClinicalResult,
+    updateProgress: updateGeneratedClinicalResultProgress,
+    updatePartial: updateGeneratedClinicalResultPartial,
+    complete: completeGeneratedClinicalResult,
+    fail: failGeneratedClinicalResult,
+  },
   resetVoiceSessionState,
   clearVoiceConsultationCache,
   clearMinimizedConsultationSessions: minimizedSessions.clearAll,
@@ -946,7 +949,7 @@ const openInsideCloudHome = async () => {
           <!-- 工具栏 (risk-alert, voice-interaction, reception-capsule 视图不显示) -->
           <div v-if="currentView !== 'risk-alert' && currentView !== 'voice-interaction' && currentView !== 'reception-capsule' && currentView !== 'differential-diagnosis' && currentView !== 'chat'" class="assistant-toolbar" data-tauri-drag-region>
             <div class="toolbar-left" data-tauri-drag-region>
-	              <button v-if="currentView === 'settings' || currentView === 'his-log' || currentView === 'medical-cache' || currentView === 'knowledge-base' || currentView === 'chronic-refill-confirmation' || currentView === 'treatment-plan' || currentView === 'outpatient-follow-up' || currentView === 'report-interpretation' || currentView === 'inpatient-emr'" class="icon-btn back-btn" @click="currentView === 'chronic-refill-confirmation' ? closeChronicRefillConfirmation() : currentView === 'report-interpretation' ? closeReportInterpretationWorkspace() : handleUserCollapse()" title="返回">
+	              <button v-if="currentView === 'settings' || currentView === 'his-log' || currentView === 'medical-cache' || currentView === 'knowledge-base' || currentView === 'treatment-plan' || currentView === 'outpatient-follow-up' || currentView === 'report-interpretation' || currentView === 'inpatient-emr'" class="icon-btn back-btn" @click="currentView === 'report-interpretation' ? closeReportInterpretationWorkspace() : handleUserCollapse()" title="返回">
 	                 <Icon icon="lucide:arrow-left" class="toolbar-icon" size="20" />
 	              </button>
 	              <span class="assistant-title" data-tauri-drag-region>{{ assistantTitle }}</span>
@@ -1027,6 +1030,7 @@ const openInsideCloudHome = async () => {
             :patient-memory-brief="patientMemoryBrief"
             @close="closeRiskAlert"
             @toggle-expand="handleRiskExpand"
+            @chronic-scope-selecting="handleChronicRefillScopeSelecting"
             @confirm-chronic-refill="eventListeners.confirmChronicRefill"
             @confirm-report-assistant="eventListeners.confirmReportAssistant"
             @open-patient-memory="openPatientMemory"
@@ -1037,14 +1041,6 @@ const openInsideCloudHome = async () => {
             :patient="currentPatient"
             :brief="patientMemoryBrief"
             @close="closePatientMemoryWorkspace"
-          />
-
-          <ChronicRefillConfirmationPage
-            v-if="currentView === 'chronic-refill-confirmation' && currentPatient && chronicRefillCandidate"
-            :patient="currentPatient"
-            :candidate="chronicRefillCandidate"
-            @close="closeChronicRefillConfirmation"
-            @generated="handleChronicRefillGenerated"
           />
 
           <HisIntegrationLogPanel v-if="currentView === 'his-log'" />

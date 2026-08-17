@@ -18,10 +18,11 @@ function createController(request: (input: {
   diagnosisName: string;
   chiefComplaint: string;
   historyOfPresentIllness: string;
-}) => Promise<string>) {
+}) => Promise<string>, isEnabled?: () => boolean) {
   const notify = vi.fn();
   const primaryDiagnosis = ref<Diagnosis | null>(null);
   const controller = useClinicalResultDiagnosisChecklist({
+    isEnabled,
     getConsultationId: () => 'visit-1',
     getPrimaryDiagnosis: () => primaryDiagnosis.value,
     getChiefComplaint: () => '发热伴咳嗽3天',
@@ -34,6 +35,17 @@ function createController(request: (input: {
 }
 
 describe('useClinicalResultDiagnosisChecklist', () => {
+  it('does not request the ordinary checklist when the channel provides its own review', async () => {
+    const request = vi.fn(async () => JSON.stringify({ isNeeded: true }));
+    const { controller, primaryDiagnosis } = createController(request, () => false);
+    primaryDiagnosis.value = diagnosis;
+    await nextTick();
+    await controller.openDiagnosisChecklist(diagnosis);
+    await controller.prefetchDiagnosisChecklist(diagnosis);
+    expect(request).not.toHaveBeenCalled();
+    expect(controller.isDiagnosisChecklistOpen(diagnosis)).toBe(false);
+  });
+
   it('opens the anchored layer, requests current record context and stores normalized items', async () => {
     const request = vi.fn(async () => JSON.stringify({
       isNeeded: true,

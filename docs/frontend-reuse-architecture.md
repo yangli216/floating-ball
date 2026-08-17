@@ -96,7 +96,7 @@
 - `features/consultation-result/model/useClinicalResultChannelStrategy.ts` 只收敛 `channel -> userLogType / voiceCache / patientHeader / cancelDialog / tracking context` 这类无副作用派生；`voice / symptom / chronic-refill` 的偏好追踪和诊断鉴别 trace 元数据也由该 Strategy 统一生成。真正的缓存读写、日志提交、`emit('cancel')` 和 Tauri 回写仍留在页面编排层。
 - `features/consultation-result/model/useClinicalResultCancelController.ts` 只管理结果页放弃确认弹窗、提交中 / 等待 HIS 回执时的拦截和提示注入；真正的反馈草稿清理、放弃日志提交和 `emit('cancel')` 通过 `onConfirm` 注入。
 - `features/consultation-result/model/useClinicalResultUserLogController.ts` 只管理首版、最终和放弃三类用户日志快照的提交节奏、首版快照记忆、最终选择快照和可选变更摘要；页面仍通过 options 注入 `buildSnapshot`、患者上下文、提交函数和语音病例字段变更判断。
-- `features/consultation-result/model/useWritebackFeedbackController.ts` 只管理一键回写回执被 `useWritebackStatus` 接受后的 success / failed 分发和默认提示；页面仍通过 options 注入成功后的缓存持久化、用户日志、整页反馈弹窗，以及失败提示展示。
+- `features/consultation-result/model/useWritebackFeedbackController.ts` 只管理一键回写回执被 `useWritebackStatus` 接受后的 success / failed 分发和默认提示；页面仍通过 options 注入成功后的缓存持久化、用户日志、结果页关闭，以及失败提示展示；成功后不得默认弹出问题反馈。
 - `features/consultation-result/model/useConsultationReferenceFeedbackListener.ts` 只管理 `consultation-reference-feedback` 事件名、调用方活跃门禁、当前 `consultationId` 防串线和 Tauri 监听生命周期接入；页面仍通过 options 注入当前就诊 ID 解析和回执后的业务状态写入。对 `v-show` 常驻保活页面，活跃门禁必须接入 App 外层 `currentView` 派生的 `active`，不能只看组件内部页签。
 
 ### 4. Composable Controller：组合多个轻状态
@@ -149,7 +149,7 @@
 | 诊断鉴别请求网关 | `features/clinical-result/api/diagnosisChecklistRequest.ts` | 共享结果页和独立鉴别窗口统一使用轻量模型、同一 Prompt 与可注入 trace 发起签名 LLM 请求 | Vue 状态、缓存、弹窗、toast、PHIS 回写 |
 | 结果页取消流程 | `features/consultation-result/model/useClinicalResultCancelController.ts` | 放弃确认弹窗开合、提交中 / 等待回执时的拦截提示、确认动作编排入口 | 清理反馈草稿、提交放弃日志、`emit('cancel')` |
 | 结果页用户日志三态 | `features/consultation-result/model/useClinicalResultUserLogController.ts` | 首版 / 诊毕 / 放弃日志提交节奏、首版快照记忆、最终选择快照、语音可选变更摘要 | 病历字段读取、患者来源解析、区域化提交实现、反馈草稿清理 |
-| 回写回执结果分发 | `features/consultation-result/model/useWritebackFeedbackController.ts` | 已命中 requestId 的 HIS 回执 success / failed 分发、默认提示文案 | `complete_consultation` 调用、PHIS payload、缓存持久化、用户日志、整页反馈弹窗 |
+| 回写回执结果分发 | `features/consultation-result/model/useWritebackFeedbackController.ts` | 已命中 requestId 的 HIS 回执 success / failed 分发、默认提示文案 | `complete_consultation` 调用、PHIS payload、缓存持久化、用户日志、结果页关闭 |
 | 回写清单 resolver | `features/consultation-result/model/useClinicalResultWritebackPayload.ts` | 基于已选诊断 / 治疗推荐生成 PHIS `diagList` 和 `orderList`，统一执行科室、药房、频次和用法解析注入 | 提交门禁、`complete_consultation` 调用、toast、等待回执状态、缓存、用户日志 |
 | 回写前置门禁 | `features/consultation-result/model/useClinicalResultWritebackPreflight.ts` | 诊断标准库匹配、药品详情、库存、药房、执行科室和检查部位的一键回写前校验编排 | `complete_consultation` 调用、PHIS payload 构造、等待回执状态、缓存、用户日志、提交中状态 |
 | PHIS 回执监听入口 | `features/consultation-result/model/useConsultationReferenceFeedbackListener.ts` | `consultation-reference-feedback` 事件名、调用方活跃门禁、`consultationId` 防串线、Tauri listener 生命周期组合 | requestId 匹配、引用状态 map、toast、缓存、日志 |
@@ -163,7 +163,7 @@
 | 治疗 quick selector 打开 | `features/consultation-result/model/useTreatmentQuickSelector.ts` | 展开治疗编辑器、打开药房 / 执行科室 / 部位二级选择器并聚焦输入框 | 候选过滤、字段写回、清空副作用、库存校验、toast、PHIS 回写 |
 | 治疗二级属性搜索过滤 | `features/consultation-result/model/useTreatmentAttributeSearch.ts` | 药房 / 执行科室 / 部位 / 医保候选构造、搜索关键字读写和过滤列表派生 | 字段写回、清空副作用、取消选中、库存校验、toast、PHIS 回写 |
 | 治疗归一化/门禁/hydration | `features/consultation-result/model` | 频次/用法、药房/执行科室门禁、药品详情轮询、库存状态 | 选中按钮的 toast、最终提交 |
-| PHIS 最终回写 payload | `features/clinical-result/recordConfirmedPayload.ts` | 语音问诊和智能问诊一键回写 | Tauri invoke、等待回执、成功后反馈弹窗 |
+| PHIS 最终回写 payload | `features/clinical-result/recordConfirmedPayload.ts` | 语音问诊和智能问诊一键回写 | Tauri invoke、等待回执、成功后结果页收尾 |
 | PHIS 引用闭环 | `features/symptom-consultation/lib/consultationReference.ts` | 引用 key、状态 map、回执归一 | HTTP Bridge 调用、页面即时状态写入 |
 | 症状采集 controller | `features/symptom-consultation/model/useSymptomCollectionController.ts` | 组合症状分类筛选、伴随症状、症状选择、过滤结果、渲染计划和表单 key 同步，形成 `useSymptomCollectionController` 入口 | 模板远端同步、动态症状 AI 生成、症状问诊缓存恢复、生成病历、AI 推荐、PHIS 引用/回写 |
 | 症状问诊表单渲染计划 | `features/symptom-consultation/lib/consultationRenderPlan.ts` | 选中症状、问诊模式和当前 formData 到 renderList、需初始化配置 key、需清理配置 key 的纯计划 | formData 写入/删除、toast、问诊模式切换、AI 请求、PHIS 回写 |
@@ -187,7 +187,7 @@
 | 语音编辑快照持久化 | `features/voice-consultation/model/useVoiceEditorSnapshotPersistence.ts` | editorSnapshot 构建触发、600ms 节流写入、立即写入、pending timer 清理 | 快照恢复、诊断/治疗副作用、药房加载、库存校验、推荐登记、PHIS 回写 |
 | 病例字段编辑状态 | `features/voice-consultation/model/useVoiceRecordFieldState.ts` | 主诉、现病史及其他病例字段的初始快照、当前值读取和人工修改判断 | 反馈草稿、反馈 key、提交、toast、弹层、缓存、PHIS 回写 |
 | 语音结果事实核查状态 | `features/voice-consultation/model/useVoiceResultFactCheckState.ts` | 诊断 / 治疗 fact-check 结果 Map、issue getter 和逐条核查循环 | 触发时机、病历文本来源、当前主诊断、toast、日志、缓存、PHIS 回写 |
-| 语音反馈提交动作 | `features/voice-consultation/model/useVoiceFeedbackActions.ts` | 推荐项反馈与整页反馈的提交编排、成功提示、弹层关闭和完成回调注入 | 病例字段反馈、草稿状态、推荐目标登记、PHIS 回写、缓存读写、用户日志、AI 请求 |
+| 语音反馈提交动作 | `features/voice-consultation/model/useVoiceFeedbackActions.ts` | 推荐项反馈提交、成功提示、推荐弹层关闭和结果页完成回调注入 | 病例字段/整页反馈、草稿状态、推荐目标登记、PHIS 回写、缓存读写、用户日志、AI 请求 |
 | 语音知识库检索编排 | `features/voice-consultation/model/useVoiceKnowledgeSearch.ts` | 语音生成病历到知识库分类检索的轻包装，复用 knowledge controller 并注入 PMPHAI / 埋点 / 错误记录 | 知识库结果 UI、PMPHAI 服务实现、问诊页知识库状态、PHIS 回写 |
 | 语音标准目录匹配 | `features/voice-consultation/model/useVoiceCatalogMatching.ts` | 语音生成病历中的诊断、药品、检查、检验和处置标准目录匹配，以及组合检查项拆分后的重新匹配 | 结果页 UI、治疗推荐编辑、PHIS 回写、缓存、toast、用户日志 |
 | 语音结果记录状态 | `features/voice-consultation/model/useVoiceResultRecord.ts` | 语音生成病历的当前记录 / 原始记录 clone、字段编辑埋点和最终采纳埋点 | 缓存恢复、PHIS 回写、结果页关闭、反馈提交、AI 请求 |

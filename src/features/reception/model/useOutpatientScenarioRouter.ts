@@ -3,6 +3,15 @@ import type { HisOutpatientFollowUpContext } from '@/services/his/types';
 import type { ReportFollowUpAssessment } from '@/types/reportInterpretation';
 import type { AppPatient } from '@/types/appState';
 import { getPatientContextAnchorId } from '@/utils/patientContext';
+import type {
+  ClinicalResultGenerationStage,
+  ClinicalResultInput,
+} from '@features/clinical-result';
+import {
+  getChronicRefillConditionOptions,
+  scopeChronicRefillCandidate,
+  type ChronicRefillCandidate,
+} from '@features/reception-risk/lib/chronicRefillAssessment';
 import { hasPatientReportedLabOrExamResults } from '../lib/reportedApplyResults';
 import type { ReceptionSessionController } from './useReceptionSessionController';
 import type {
@@ -36,7 +45,29 @@ export interface OutpatientScenarioRouterOptions {
   hasCachedVoiceResult: (patient?: AppPatient | null) => boolean;
   fetchFollowUpContext?: (patient: AppPatient | null) => Promise<HisOutpatientFollowUpContext | null>;
   applyFollowUpContext: (context: HisOutpatientFollowUpContext) => void;
-  openChronicRefillConfirmation: () => Promise<void>;
+  generateChronicRefillRecord: (
+    patient: AppPatient,
+    candidate: ChronicRefillCandidate,
+    options?: {
+      onProgress?: (stage: Extract<
+        ClinicalResultGenerationStage,
+        'generating-content' | 'finalizing-result'
+      >) => void;
+      onPartial?: (result: ClinicalResultInput) => void;
+    },
+  ) => Promise<ClinicalResultInput>;
+  beginGeneratedClinicalResult: (input: {
+    channel: 'chronic-refill';
+    message: string;
+    stage: 'preparing-context';
+  }) => Promise<string>;
+  updateGeneratedClinicalResultProgress: (sessionId: string, progress: {
+    message: string;
+    stage: ClinicalResultGenerationStage;
+  }) => boolean;
+  updateGeneratedClinicalResultPartial: (sessionId: string, result: ClinicalResultInput) => boolean;
+  completeGeneratedClinicalResult: (sessionId: string, result: ClinicalResultInput) => boolean;
+  failGeneratedClinicalResult: (sessionId: string, message: string) => boolean;
   resetVoiceSessionState: () => void;
   openOutpatientFollowUp: () => Promise<void>;
   openReportInterpretation: () => Promise<void>;
@@ -52,7 +83,12 @@ export function useOutpatientScenarioRouter(options: OutpatientScenarioRouterOpt
     hasCachedVoiceResult,
     fetchFollowUpContext,
     applyFollowUpContext,
-    openChronicRefillConfirmation,
+    generateChronicRefillRecord,
+    beginGeneratedClinicalResult,
+    updateGeneratedClinicalResultProgress,
+    updateGeneratedClinicalResultPartial,
+    completeGeneratedClinicalResult,
+    failGeneratedClinicalResult,
     resetVoiceSessionState,
     openOutpatientFollowUp,
     openReportInterpretation,
@@ -69,7 +105,7 @@ export function useOutpatientScenarioRouter(options: OutpatientScenarioRouterOpt
       && session.getOpportunity(opportunity.type) === opportunity;
   }
 
-  async function confirmChronicRefill(): Promise<void> {
+  async function confirmChronicRefill(selectedConditionIds: string[] = []): Promise<void> {
     const patient = currentPatient.value;
     const opportunity = session.getOpportunity('chronic-refill');
     if (
@@ -81,18 +117,56 @@ export function useOutpatientScenarioRouter(options: OutpatientScenarioRouterOpt
     }
 
     const patientAnchorId = getPatientContextAnchorId(patient);
+    let generationSessionId = '';
     session.setExecutingOpportunity('chronic-refill');
     try {
-      await openChronicRefillConfirmation();
+      const conditionOptions = getChronicRefillConditionOptions(opportunity.candidate);
+      const resolvedConditionIds = selectedConditionIds.length > 0
+        ? selectedConditionIds
+        : (conditionOptions.length === 1 ? [conditionOptions[0].id] : []);
+      const scopedCandidate = scopeChronicRefillCandidate(
+        opportunity.candidate,
+        resolvedConditionIds,
+      );
+      if (!scopedCandidate) {
+        showToast('请先选择本次需要续方的慢病', 'info');
+        return;
+      }
+      const diagnosisText = scopedCandidate.diagnoses.join('、');
+      generationSessionId = await beginGeneratedClinicalResult({
+        channel: 'chronic-refill',
+        stage: 'preparing-context',
+        message: `正在读取${diagnosisText}历史资料与院内药品`,
+      });
+      const result = await generateChronicRefillRecord(patient, scopedCandidate, {
+        onProgress: (stage) => {
+          if (!isCurrentOpportunity(opportunity, patientAnchorId)) return;
+          updateGeneratedClinicalResultProgress(generationSessionId, {
+            stage,
+            message: stage === 'generating-content'
+              ? `正在生成${diagnosisText}病历与核查项`
+              : '正在整理诊断与用药方案',
+          });
+        },
+        onPartial: (partialResult) => {
+          if (!isCurrentOpportunity(opportunity, patientAnchorId)) return;
+          updateGeneratedClinicalResultPartial(generationSessionId, partialResult);
+        },
+      });
       if (!isCurrentOpportunity(opportunity, patientAnchorId)) {
         return;
       }
+      if (!completeGeneratedClinicalResult(generationSessionId, result)) return;
+      showToast('复诊配药病历与核查项已生成，请核查后回写', 'success');
     } catch (error) {
       if (!isCurrentOpportunity(opportunity, patientAnchorId)) {
         return;
       }
-      trackError('open_chronic_refill_confirmation_failed', error);
-      showToast('进入复诊配药确认失败，请稍后重试', 'error');
+      trackError('generate_chronic_refill_result_failed', error);
+      if (generationSessionId) {
+        failGeneratedClinicalResult(generationSessionId, '慢病复诊结果生成失败，请收起页面后重试');
+      }
+      showToast('生成复诊配药结果失败，请稍后重试', 'error');
     } finally {
       if (
         isCurrentOpportunity(opportunity, patientAnchorId)

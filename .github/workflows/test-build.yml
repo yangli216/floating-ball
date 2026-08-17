@@ -1,0 +1,116 @@
+name: Test Build
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: '候选版本号（稳定 X.Y.Z，例如 1.4.4）'
+        required: true
+        type: string
+
+concurrency:
+  group: test-build-${{ github.ref }}-${{ inputs.version }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  quality-gate:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout selected ref
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: yarn
+
+      - name: Install Rust stable
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install frontend dependencies
+        run: yarn install --frozen-lockfile
+
+      - name: Validate candidate version and release scripts
+        env:
+          CANDIDATE_VERSION: ${{ inputs.version }}
+        run: |
+          node scripts/test-release.mjs --version "$CANDIDATE_VERSION" --dry-run
+          yarn test:release
+
+      - name: Run frontend quality gates
+        env:
+          VITE_REGIONAL_BASE_URL: ${{ vars.VITE_REGIONAL_BASE_URL }}
+        run: |
+          yarn type-check
+          yarn test:unit
+          yarn build
+
+      - name: Run Rust quality gate
+        working-directory: src-tauri
+        run: cargo check
+
+  build-candidate:
+    needs: quality-gate
+    environment: TAURI_SIGNING_PRIVATE_KEY
+    strategy:
+      fail-fast: true
+      matrix:
+        include:
+          - platform: macos-14
+            artifact: macos-universal
+            build_args: '--target universal-apple-darwin'
+            bundle_path: src-tauri/target/universal-apple-darwin/release/bundle
+          - platform: windows-latest
+            artifact: windows-x86_64
+            build_args: ''
+            bundle_path: src-tauri/target/release/bundle/msi
+    runs-on: ${{ matrix.platform }}
+    steps:
+      - name: Checkout selected ref
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: yarn
+
+      - name: Install Rust stable
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.platform == 'macos-14' && 'aarch64-apple-darwin,x86_64-apple-darwin' || '' }}
+
+      - name: Install frontend dependencies
+        run: yarn install --frozen-lockfile
+
+      - name: Build signed candidate without publishing
+        shell: bash
+        env:
+          CANDIDATE_VERSION: ${{ inputs.version }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+          VITE_REGIONAL_BASE_URL: ${{ vars.VITE_REGIONAL_BASE_URL }}
+        run: yarn release:test --version "$CANDIDATE_VERSION" -- ${{ matrix.build_args }}
+
+      - name: Record candidate provenance
+        shell: bash
+        env:
+          CANDIDATE_VERSION: ${{ inputs.version }}
+          CANDIDATE_PLATFORM: ${{ matrix.artifact }}
+        run: |
+          mkdir -p dist
+          node -e "require('fs').writeFileSync('dist/test-build-manifest.json', JSON.stringify({ version: process.env.CANDIDATE_VERSION, platform: process.env.CANDIDATE_PLATFORM, commit: process.env.GITHUB_SHA, ref: process.env.GITHUB_REF, published: false }, null, 2) + '\n')"
+
+      - name: Upload candidate artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: pcie-test-${{ inputs.version }}-${{ matrix.artifact }}-${{ github.sha }}
+          path: |
+            ${{ matrix.bundle_path }}
+            dist/test-build-manifest.json
+          if-no-files-found: error
+          retention-days: 14

@@ -20,6 +20,7 @@ export type {
   ClinicalResultDiagnosis,
   ClinicalResultInput,
   ClinicalResultGenerationSection,
+  ClinicalResultGenerationStage,
   ClinicalResultGenerationState,
   ClinicalResultMatchedDiagnosis,
   ClinicalResultMatchedItem,

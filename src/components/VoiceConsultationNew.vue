@@ -91,7 +91,6 @@ import { useOutsideInteraction } from '@shared/composables/useOutsideInteraction
 import { formatUserFacingError } from '@shared/lib/errorMessages';
 import {
   VoiceRecordFieldEditor,
-  VoiceSessionFeedbackBar,
   getVoiceConsultationEditorSnapshot,
   updateVoiceConsultationCache,
   generateVoiceTreatmentRecommendations,
@@ -105,6 +104,7 @@ import {
   ClinicalGenerationProgress,
   ClinicalDecisionDisclaimer,
   ClinicalRecordFactPanel,
+  ChronicRefillReviewPanel,
   ClinicalResultSupplementDialog,
   ClinicalResultWritebackScopeSelector,
   DiagnosisDifferentialList,
@@ -113,6 +113,7 @@ import {
   useBodySiteOptions,
   useClinicalResultCancelController,
   useClinicalRecordFactConfirmation,
+  useChronicRefillReview,
   useClinicalResultChannelStrategy,
   useClinicalResultDiagnosisChecklist,
   useClinicalResultIntentReset,
@@ -147,10 +148,7 @@ import {
   type SecondarySelectorField,
   type WritebackFeedbackPayload,
 } from '@features/consultation-result';
-import type {
-  VoiceRecommendationFeedbackDraft,
-  VoiceSessionFeedbackDraft,
-} from '../types/voiceFeedback';
+import type { VoiceRecommendationFeedbackDraft } from '../types/voiceFeedback';
 
 type ReferenceFeedbackPayload = WritebackFeedbackPayload;
 type TreatmentAttributeOption = Pick<UsageOption, 'key' | 'text'> & Partial<Pick<UsageOption, 'mcode'>>;
@@ -198,6 +196,8 @@ const isResultGenerating = computed(() => (
   || props.processing
   || props.intentResult?.generation?.status === 'streaming'
 ));
+const isResultGenerationFailed = computed(() => props.intentResult?.generation?.status === 'error');
+const isResultUnavailable = computed(() => isResultGenerating.value || isResultGenerationFailed.value);
 const allowTreatmentRefresh = computed(() => recommendationPolicy.value?.allowTreatmentRefresh !== false);
 const autoFetchTreatments = computed(() => recommendationPolicy.value?.autoFetchTreatments !== false);
 
@@ -307,6 +307,7 @@ const {
 } = patientContext;
 
 const diagnosisChecklist = useClinicalResultDiagnosisChecklist({
+  isEnabled: () => resultChannel.value !== 'chronic-refill',
   getConsultationId: () => consultationId.value,
   getPrimaryDiagnosis: () => selectedDiagnosis.value,
   getChiefComplaint: () => chiefComplaint.value,
@@ -449,6 +450,25 @@ const hasPendingFactSuggestions = computed(() => (
   factSuggestions.value.some((item) => item.status === 'pending')
 ));
 
+const chronicRefillReview = useChronicRefillReview({
+  getHistoryOfPresentIllness: () => historyOfPresentIllness.value,
+  setHistoryOfPresentIllness: (value) => { historyOfPresentIllness.value = value; },
+  getTreatments: () => treatments.value,
+  notify: showToast,
+});
+const {
+  expanded: chronicRefillReviewExpanded,
+  pendingCriticalCount: chronicRefillPendingCriticalCount,
+  plan: chronicRefillReviewPlan,
+  reviewedCount: chronicRefillReviewedCount,
+  selections: chronicRefillReviewSelections,
+  treatmentReviewTriggered: chronicRefillTreatmentReviewTriggered,
+  ensureWritebackReady: ensureChronicRefillWritebackReady,
+  reset: resetChronicRefillReview,
+  select: selectChronicRefillReview,
+  setExpanded: setChronicRefillReviewExpanded,
+} = chronicRefillReview;
+
 const writebackScopeController = useClinicalResultWritebackScope({
   getRecord: () => ({
     chiefComplaint: chiefComplaint.value,
@@ -517,7 +537,7 @@ function scheduleFactSuggestionGeneration(): void {
   if (factSuggestionTimer) clearTimeout(factSuggestionTimer);
   factSuggestionTimer = setTimeout(() => {
     factSuggestionTimer = null;
-    if (!isResultGenerating.value && factSuggestions.value.length === 0) {
+    if (!isResultUnavailable.value && factSuggestions.value.length === 0) {
       void generateFactSuggestions();
     }
   }, 350);
@@ -617,7 +637,7 @@ async function applyEditorSnapshot(snapshot: VoiceEditorSnapshot): Promise<void>
 }
 
 const canSubmit = computed(() => (
-  !isResultGenerating.value
+  !isResultUnavailable.value
   && !isWritebackBusy.value
   && hasWritebackSelection.value
 ));
@@ -685,19 +705,13 @@ const treatmentQuickSelector = useTreatmentQuickSelector({
 const {
   openQuickSelector,
 } = treatmentQuickSelector;
-const showSessionFeedbackDialog = ref(false);
 const {
-  sessionDraft,
   recommendationSubmittingKey,
-  sessionSubmitting,
   recommendationSubmittedMap,
-  sessionSubmittedAt,
   ensureRecommendationDraft,
   updateRecommendationDraft,
-  updateSessionDraft,
   registerRecommendations,
   submitRecommendationFeedback,
-  submitSessionFeedback,
   clearVoiceFeedbackDraft,
 } = useVoiceFeedback({
   consultationId,
@@ -802,10 +816,6 @@ function getRecommendationDraft(recommendationKey: string): VoiceRecommendationF
   return recommendationFeedbackPopover.getDraft(recommendationKey);
 }
 
-function getSessionFeedbackDraft(): VoiceSessionFeedbackDraft {
-  return sessionDraft.value;
-}
-
 function getRecommendationSubmittedLabel(recommendationKey: string): string {
   return recommendationFeedbackPopover.getSubmittedLabel(recommendationKey);
 }
@@ -858,20 +868,13 @@ const {
 const {
   completeVoiceConsultationFlow,
   handleDiagnosisFeedbackSubmit,
-  handleSessionFeedbackSubmit,
   handleTreatmentFeedbackSubmit,
 } = useVoiceFeedbackActions({
   isDiagnosisSelected,
   isPrimaryDiagnosis,
   submitRecommendationFeedback,
-  submitSessionFeedback,
-  getSelectedDiagnoses: () => selectedDiagnoses.value,
-  getSelectedTreatments: () => selectedTreatments.value,
   closeRecommendationFeedback: () => {
     recommendationFeedbackPopover.close();
-  },
-  closeSessionFeedback: () => {
-    showSessionFeedbackDialog.value = false;
   },
   clearVoiceFeedbackDraft,
   clearWritebackFeedback: clearLastFeedback,
@@ -885,13 +888,13 @@ const writebackFeedbackController = useWritebackFeedbackController({
   applyFeedback: applyWritebackFeedbackStatus,
   notify: showToast,
   onSuccess: (payload) => {
-    showSessionFeedbackDialog.value = true;
-    console.info('[VoiceConsultationNew] Show session feedback dialog after writeback success', {
+    console.info('[VoiceConsultationNew] Complete result flow after writeback success', {
       requestId: payload.requestId,
       consultationId: payload.consultationId,
     });
     persistEditorSnapshotImmediate();
     submitVoiceFinalUserLog();
+    completeVoiceConsultationFlow();
   },
 });
 const {
@@ -1036,8 +1039,14 @@ function buildIntentResultKey(result: ClinicalResultInput | VoiceIntentResult): 
     },
     diagnoses: result.diagnoses.map(buildIntentDiagnosisKey),
     treatments: result.treatments.map(buildIntentTreatmentKey),
+    chronicRefillReview: result.chronicRefillReview,
     recommendationPolicy: result.recommendationPolicy,
-    generation: result.generation,
+    generation: result.generation
+      ? {
+        status: result.generation.status,
+        readySections: result.generation.readySections,
+      }
+      : undefined,
   });
 }
 
@@ -1718,7 +1727,7 @@ async function handleSupplementRegenerate(doctorSupplement: string): Promise<voi
 }
 
 function maybeAutoFetchMissingTreatment(reason: string): void {
-  if (!autoFetchTreatments.value || isResultGenerating.value) return;
+  if (!autoFetchTreatments.value || isResultUnavailable.value) return;
   if (suppressDiagnosisTreatmentRefetch.value || treatmentLoading.value) return;
   if (lastTreatmentDiagnosisKey.value) return;
 
@@ -1776,9 +1785,7 @@ const { resetForIntent } = useClinicalResultIntentReset({
   closeRecommendationFeedback: () => {
     recommendationFeedbackPopover.close();
   },
-  closeSessionFeedback: () => {
-    showSessionFeedbackDialog.value = false;
-  },
+  closeSessionFeedback: () => undefined,
   resetWritebackState,
   resetDiagnosisSelection,
   resetFirstUserLogSnapshot,
@@ -2498,6 +2505,7 @@ async function handleBatchWriteBack(): Promise<void> {
     includeDiagnosis: writebackScope.value.includeDiagnosis,
     orderTypes: [...writebackScope.value.orderTypes],
   };
+  if (!ensureChronicRefillWritebackReady()) return;
   if (!ensureFactWritebackReady(selectedWritebackFactFields.value)) return;
   if (selectedScope.recordFields.includes('precautions')) {
     syncPrecautionsToSelection();
@@ -2595,6 +2603,7 @@ watch(
     resetPrecautionsScope();
     resetForIntent({});
     resetFactConfirmation();
+    resetChronicRefillReview();
     resetWritebackScope();
     resetTreatmentGenerationState();
     await nextTick();
@@ -2610,6 +2619,7 @@ watch(
       lastAppliedIntentKey.value = '';
       resetPrecautionsScope();
       resetWritebackScope();
+      resetChronicRefillReview();
       return;
     }
 
@@ -2628,6 +2638,7 @@ watch(
     resetPrecautionsScope();
     resetForIntent(result);
     resetFactConfirmation();
+    resetChronicRefillReview(result.chronicRefillReview);
     resetTreatmentGenerationState();
 
     if (result.diagnoses?.length) {
@@ -2696,8 +2707,10 @@ watch(
 
     await nextTick();
     suppressDiagnosisTreatmentRefetch.value = false;
-    submitVoiceGeneratedUserLog();
-    maybeAutoFetchMissingTreatment('intent-result-applied');
+    if (!result.generation || result.generation.status === 'complete') {
+      submitVoiceGeneratedUserLog();
+      maybeAutoFetchMissingTreatment('intent-result-applied');
+    }
   },
   { immediate: true },
 );
@@ -2740,7 +2753,10 @@ watch(
       <p class="loading-title">AI 正在识别语音意图...</p>
     </div>
 
-    <div v-else :class="['medical-record-page', { 'is-result-generating': isResultGenerating }]">
+    <div v-else :class="['medical-record-page', {
+      'is-result-generating': isResultGenerating,
+      'is-result-unavailable': isResultUnavailable,
+    }]">
       <ClinicalGenerationProgress
         :generation="props.intentResult?.generation"
         :treatment-loading="treatmentLoading"
@@ -2763,7 +2779,7 @@ watch(
               type="button"
               aria-label="补充说明并重新生成病历"
               title="补充文字或语音说明，并重新生成病历、诊断和适用的治疗方案"
-              :disabled="isResultGenerating || diagnosisLoading || treatmentLoading || isWritebackBusy"
+              :disabled="isResultUnavailable || diagnosisLoading || treatmentLoading || isWritebackBusy"
               @click="showSupplementDialog = true"
             >
               <Icon
@@ -2887,7 +2903,7 @@ watch(
                   class="refresh-recommendation-btn"
                   type="button"
                   title="基于当前病历重新生成诊断建议"
-                  :disabled="isResultGenerating || diagnosisLoading || !canRefreshDiagnosis"
+                  :disabled="isResultUnavailable || diagnosisLoading || !canRefreshDiagnosis"
                   @click="handleDiagnosisRefresh"
                 >
                   <Icon
@@ -2921,7 +2937,8 @@ watch(
                 :related-open="isRelatedDropdownOpen(diag)"
                 :related-diagnoses="getRelatedDropdownCandidates(diag)"
                 :issue="getIssueForDiagnosis(diag.code)"
-                :show-differential="true"
+                :show-differential="resultChannel !== 'chronic-refill'"
+                :actions-overlay-open="resultChannel === 'chronic-refill' && isPrimaryDiagnosis(diag) && chronicRefillReviewExpanded"
                 :differential-status="getDiagnosisChecklistStatus(diag)"
                 :differential-preview="getDiagnosisChecklistPreview(diag)"
                 :differential-open="isDiagnosisChecklistOpen(diag)"
@@ -2942,6 +2959,18 @@ watch(
                 @submit-feedback="handleDiagnosisFeedbackSubmit(diag, $event)"
               >
                 <template #actions>
+                  <ChronicRefillReviewPanel
+                    v-if="resultChannel === 'chronic-refill' && isPrimaryDiagnosis(diag) && chronicRefillReviewPlan"
+                    :plan="chronicRefillReviewPlan"
+                    :selections="chronicRefillReviewSelections"
+                    :expanded="chronicRefillReviewExpanded"
+                    :pending-critical-count="chronicRefillPendingCriticalCount"
+                    :reviewed-count="chronicRefillReviewedCount"
+                    :treatment-review-triggered="chronicRefillTreatmentReviewTriggered"
+                    :disabled="isResultUnavailable"
+                    @toggle="setChronicRefillReviewExpanded"
+                    @select="selectChronicRefillReview"
+                  />
                   <slot name="diagnosis-actions" :diag="diag" />
                 </template>
               </DiagnosisRecommendationCard>
@@ -2964,7 +2993,7 @@ watch(
                   class="refresh-recommendation-btn"
                   type="button"
                   title="基于当前主诊断重新生成治疗方案"
-                  :disabled="isResultGenerating || !selectedDiagnosis || treatmentLoading"
+                  :disabled="isResultUnavailable || !selectedDiagnosis || treatmentLoading"
                   @click="handleTreatmentRefresh"
                 >
                   <Icon
@@ -3086,14 +3115,14 @@ watch(
         v-if="secondaryFooterActionText"
         class="footer-secondary-btn"
         type="button"
-        :disabled="secondaryFooterActionDisabled || isWritebackBusy || isResultGenerating"
+        :disabled="secondaryFooterActionDisabled || isWritebackBusy || isResultUnavailable"
         @click="emit('secondary-footer-action')"
       >
         {{ secondaryFooterActionText }}
       </button>
       <ClinicalResultWritebackScopeSelector
         :open="writebackScopeOpen"
-        :disabled="isWritebackBusy || isResultGenerating"
+        :disabled="isWritebackBusy || isResultUnavailable"
         :record-expanded="writebackRecordExpanded"
         :record-fields="writebackRecordFields"
         :record-group-checked="writebackRecordGroupChecked"
@@ -3142,28 +3171,6 @@ watch(
       @confirm="handleSupplementRegenerate"
     />
 
-    <Teleport to="body">
-      <div v-if="showSessionFeedbackDialog" class="confirm-overlay session-feedback-overlay" @click.self="completeVoiceConsultationFlow">
-        <div class="session-feedback-dialog pane-card" @click.stop>
-          <div class="session-feedback-dialog-head">
-            <div>
-              <h3 class="confirm-dialog-title">本次结果已回写成功</h3>
-              <p class="confirm-dialog-text">如有时间，请将您的使用体验反馈给我们，我们会及时处理并改善！</p>
-            </div>
-            <button class="session-feedback-skip" type="button" @click="completeVoiceConsultationFlow">暂不反馈</button>
-          </div>
-
-          <VoiceSessionFeedbackBar
-            :draft="getSessionFeedbackDraft()"
-            :submitting="sessionSubmitting"
-            :submitted-at="sessionSubmittedAt"
-            @update:draft="updateSessionDraft($event)"
-            @submit="handleSessionFeedbackSubmit"
-          />
-        </div>
-      </div>
-    </Teleport>
-
     <div v-if="showCancelConfirm" class="confirm-overlay" @click.self="closeCancelConfirm">
       <div class="confirm-dialog pane-card" role="dialog" aria-modal="true" aria-labelledby="voice-cancel-title">
         <div class="confirm-dialog-body">
@@ -3183,7 +3190,7 @@ watch(
 <style scoped src="../features/consultation-result/ui/ClinicalResultEditor.css"></style>
 
 <style scoped>
-.is-result-generating .record-content {
+.is-result-unavailable .record-content {
   pointer-events: none;
 }
 

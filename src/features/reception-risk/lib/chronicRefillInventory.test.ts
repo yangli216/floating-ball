@@ -285,4 +285,51 @@ describe('buildChronicRefillInventoryTreatments', () => {
       totalUnit: '',
     });
   });
+
+  it('attaches all same-drug prescriptions from the independent history window', () => {
+    const treatments = buildChronicRefillInventoryTreatments([
+      '盐酸二甲双胍片',
+    ], [{
+      productId: 'med-metformin',
+      productName: '盐酸二甲双胍片',
+      spec: '0.5g*60片/瓶',
+      unit: '瓶',
+      availableQuantity: 20,
+      storeIds: ['1760'],
+      storeNames: ['西药房'],
+    }], undefined, {
+      prescriptionHistoryVisits: [{
+        visitId: 'acute-visit',
+        visitTime: 200,
+        diagnoses: ['普通感冒'],
+        medicationOrders: [{
+          orderId: 'order-2',
+          productId: 'med-metformin',
+          name: '盐酸二甲双胍片',
+          totalQty: '2',
+          totalUnit: '瓶',
+        }],
+      }, {
+        visitId: 'chronic-visit',
+        visitTime: 100,
+        diagnoses: ['糖尿病'],
+        medicationOrders: [{
+          orderId: 'order-1',
+          productId: 'med-metformin',
+          name: '盐酸二甲双胍片',
+          totalQty: '1',
+          totalUnit: '瓶',
+        }],
+      }],
+    });
+
+    expect(treatments[0].recentPrescriptionHistory).toMatchObject({
+      lookbackDays: 90,
+      matchBasis: 'product-id',
+      entries: [
+        expect.objectContaining({ orderId: 'order-2', totalQty: '2' }),
+        expect.objectContaining({ orderId: 'order-1', totalQty: '1' }),
+      ],
+    });
+  });
 });

@@ -50,4 +50,5 @@ docs/*
 !docs/his-inpatient-emr-ai-context-integration.md
 !docs/inpatient-emr-next-milestone.md
 !docs/knowledge-search.md
+!docs/release-process.md
 documents/*

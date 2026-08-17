@@ -24,7 +24,12 @@ const progress = computed(() => buildClinicalGenerationProgress({
 </script>
 
 <template>
-  <div v-if="progress.visible" class="generation-progress" role="status" aria-live="polite">
+  <div
+    v-if="progress.visible"
+    :class="['generation-progress', { 'is-error': generation?.status === 'error' }]"
+    role="status"
+    aria-live="polite"
+  >
     <div class="generation-progress-heading">
       <Icon class="progress-sparkles-icon" icon="lucide:sparkles" size="16" aria-hidden="true" />
       <div>
@@ -62,6 +67,14 @@ const progress = computed(() => buildClinicalGenerationProgress({
   background: linear-gradient(135deg, rgba(238, 244, 255, 0.96), rgba(246, 250, 255, 0.9));
   color: #365f9f;
 }
+
+.generation-progress.is-error {
+  border-color: rgba(190, 72, 72, 0.24);
+  background: rgba(255, 246, 246, 0.96);
+  color: #a13f3f;
+}
+
+.generation-progress.is-error .generation-progress-heading p { color: #a96565; }
 
 .generation-progress-heading {
   display: grid;

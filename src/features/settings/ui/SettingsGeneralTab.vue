@@ -291,31 +291,29 @@ function readSelectValue(event: Event): string {
       </div>
     </div>
 
-    <button type="button" class="settings-section clickable-section" @click="emit('open-medical-cache')">
-      <div class="section-header no-border settings-link-header">
-        <div class="header-left">
+    <div class="settings-tool-links">
+      <button type="button" class="settings-section settings-tool-card" @click="emit('open-medical-cache')">
+        <span class="settings-tool-icon" aria-hidden="true">
           <Icon icon="lucide:database" :size="20" />
-          <h3>缓存管理</h3>
-        </div>
-        <div class="arrow-icon">
-          <Icon icon="lucide:chevron-right" :size="20" />
-        </div>
-      </div>
-      <p class="section-desc settings-link-desc">查看诊断、诊疗项目和药品目录等本地基础数据缓存</p>
-    </button>
+        </span>
+        <span class="settings-tool-copy">
+          <span class="settings-tool-title">缓存管理</span>
+          <span class="settings-tool-desc">查看诊断、诊疗项目和药品目录等本地基础数据缓存</span>
+        </span>
+        <Icon class="settings-tool-arrow" icon="lucide:chevron-right" :size="20" aria-hidden="true" />
+      </button>
 
-    <button type="button" class="settings-section clickable-section" @click="emit('open-his-log')">
-      <div class="section-header no-border settings-link-header">
-        <div class="header-left">
+      <button type="button" class="settings-section settings-tool-card" @click="emit('open-his-log')">
+        <span class="settings-tool-icon" aria-hidden="true">
           <Icon icon="lucide:scroll-text" :size="20" />
-          <h3>HIS 联调日志</h3>
-        </div>
-        <div class="arrow-icon">
-          <Icon icon="lucide:chevron-right" :size="20" />
-        </div>
-      </div>
-      <p class="section-desc settings-link-desc">查看 Bridge 入站与 PHIS 出站调用流水，支持按 traceId 排查和导出</p>
-    </button>
+        </span>
+        <span class="settings-tool-copy">
+          <span class="settings-tool-title">HIS 联调日志</span>
+          <span class="settings-tool-desc">查看 Bridge 入站与 PHIS 出站调用流水，支持按 traceId 排查和导出</span>
+        </span>
+        <Icon class="settings-tool-arrow" icon="lucide:chevron-right" :size="20" aria-hidden="true" />
+      </button>
+    </div>
   </div>
 </template>
 
@@ -615,48 +613,103 @@ function readSelectValue(event: Event): string {
   box-shadow: 0 1px 6px rgba(0, 0, 0, 0.2);
 }
 
-.arrow-icon {
-  color: var(--medical-text-muted);
+.settings-tool-links {
+  display: grid;
+  flex: 0 0 auto;
+  gap: 12px;
 }
 
-.clickable-section {
+.settings-tool-card {
+  display: flex;
+  align-items: center;
+  gap: 14px;
   width: 100%;
-  color: inherit;
+  min-height: 82px;
+  padding: 16px 18px;
+  overflow: hidden;
+  background: var(--medical-bg-primary);
+  border: 1px solid var(--medical-border-light);
+  border-radius: 12px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+  color: var(--medical-text-primary);
   font: inherit;
   text-align: left;
   cursor: pointer;
-  transition: border-color var(--duration-normal) var(--ease-out), box-shadow var(--duration-normal) var(--ease-out), transform var(--duration-normal) var(--ease-out);
+  transition:
+    border-color var(--duration-normal) var(--ease-out),
+    background-color var(--duration-normal) var(--ease-out),
+    box-shadow var(--duration-normal) var(--ease-out),
+    transform var(--duration-normal) var(--ease-out);
 }
 
-.clickable-section:hover {
+.settings-tool-card:hover {
   border-color: var(--medical-primary);
+  background: color-mix(in srgb, var(--medical-primary) 3%, var(--medical-bg-primary));
   transform: translateY(-2px);
   box-shadow: 0 4px 12px rgba(8, 145, 178, 0.15);
 }
 
-.clickable-section:focus-visible {
+.settings-tool-card:focus-visible {
   outline: 3px solid color-mix(in srgb, var(--medical-primary) 35%, transparent);
   outline-offset: 2px;
 }
 
-.settings-link-header {
-  justify-content: space-between;
-}
-
-.section-header.no-border {
-  border-bottom: none;
-  margin-bottom: 8px;
-  padding-bottom: 0;
-}
-
-.header-left {
-  display: flex;
+.settings-tool-icon {
+  display: inline-flex;
+  flex: 0 0 40px;
   align-items: center;
-  gap: 12px;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--medical-primary) 10%, transparent);
+  color: var(--medical-primary);
 }
 
-.settings-link-desc {
-  margin-top: 4px;
+.settings-tool-copy {
+  display: flex;
+  flex: 1 1 auto;
+  min-width: 0;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.settings-tool-title {
+  color: var(--medical-text-primary);
+  font-size: 16px;
+  font-weight: 600;
+  line-height: 1.35;
+}
+
+.settings-tool-desc {
+  color: var(--medical-text-muted);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.settings-tool-arrow {
+  flex: 0 0 auto;
+  color: var(--medical-text-muted);
+  transition: transform var(--duration-normal) var(--ease-out), color var(--duration-normal) var(--ease-out);
+}
+
+.settings-tool-card:hover .settings-tool-arrow {
+  color: var(--medical-primary);
+  transform: translateX(3px);
+}
+
+@media (max-width: 640px) {
+  .settings-tool-card {
+    gap: 12px;
+    min-height: 76px;
+    padding: 14px;
+  }
+
+  .settings-tool-icon {
+    flex-basis: 36px;
+    width: 36px;
+    height: 36px;
+  }
 }
 
 .spin {

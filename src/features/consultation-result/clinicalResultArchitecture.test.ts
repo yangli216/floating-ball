@@ -95,6 +95,14 @@ describe('clinical result architecture boundary', () => {
     expect(writebackScopeSelectorSource).not.toContain('confirm-overlay');
   });
 
+  it('finishes the result directly after writeback success without opening feedback', () => {
+    expect(resultImplementationSource).toContain('completeVoiceConsultationFlow();');
+    expect(resultImplementationSource).not.toContain('showSessionFeedbackDialog');
+    expect(resultImplementationSource).not.toContain('VoiceSessionFeedbackBar');
+    expect(resultImplementationSource).not.toContain('本次结果已回写成功');
+    expect(resultImplementationSource).not.toContain('暂不反馈');
+  });
+
   it('shows highlighted differential points in a dismissible anchored layer', () => {
     expect(resultImplementationSource).toContain(':differential-preview="getDiagnosisChecklistPreview(diag)"');
     expect(resultImplementationSource).toContain(':differential-open="isDiagnosisChecklistOpen(diag)"');

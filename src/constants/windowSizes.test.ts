@@ -24,17 +24,15 @@ describe('getReceptionCapsuleSize', () => {
       height: 520,
     });
   });
-});
 
-describe('chronic refill confirmation window', () => {
-  it('uses a bounded desktop workspace size that fits smaller displays', () => {
-    expect(getWindowSizeForView('chronic-refill-confirmation')).toEqual({
-      width: 820,
-      height: 720,
-    });
-    expect(getWindowSizeConstraints('chronic-refill-confirmation')).toEqual({
-      minWidth: 720,
-      minHeight: 620,
+  it('reserves compact inline space while choosing a multi-disease refill scope', () => {
+    expect(getReceptionCapsuleSize({
+      expanded: false,
+      hasChronicRefill: true,
+      chronicScopeSelecting: true,
+    })).toEqual({
+      width: 320,
+      height: 300,
     });
   });
 });

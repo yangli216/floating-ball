@@ -1,7 +1,7 @@
 <template>
   <li
     class="vcn-diagnosis-item"
-    :class="{ selected, primary: isPrimary, 'differential-open': differentialOpen }"
+    :class="{ selected, primary: isPrimary, 'differential-open': differentialOpen, 'actions-overlay-open': actionsOverlayOpen }"
     @click="emit('toggle')"
   >
     <div v-if="selected" class="diag-selected-mark">
@@ -235,6 +235,10 @@ const props = defineProps({
     type: Boolean,
     default: false,
   },
+  actionsOverlayOpen: {
+    type: Boolean,
+    default: false,
+  },
   differentialStatus: {
     type: Object as PropType<DiagnosisChecklistPrefetchStatus>,
     default: () => ({ state: 'idle', itemCount: 0 }),
@@ -355,7 +359,8 @@ const emit = defineEmits<{
     0 10px 20px rgba(15, 23, 42, 0.03);
 }
 
-.vcn-diagnosis-item.differential-open {
+.vcn-diagnosis-item.differential-open,
+.vcn-diagnosis-item.actions-overlay-open {
   z-index: 24;
 }
 

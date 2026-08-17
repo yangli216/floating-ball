@@ -52,6 +52,11 @@ import {
   useSdkHandshakeController,
   type SdkHandshakePayload,
 } from '@app/events/useSdkHandshakeController';
+import { generateChronicRefillRecord } from '@features/reception-risk';
+import type {
+  ClinicalResultGenerationStage,
+  ClinicalResultInput,
+} from '@features/clinical-result';
 
 /**
  * 事件监听配置参数
@@ -96,7 +101,6 @@ export interface EventListenersOptions {
   /** 导航函数 */
   navigation: {
     openConsultation: () => Promise<void>;
-    openChronicRefillConfirmation: () => Promise<void>;
     openVoiceConsultation: () => Promise<void>;
     openTreatmentPlan: () => Promise<void>;
     openOutpatientFollowUp: () => Promise<void>;
@@ -104,6 +108,21 @@ export interface EventListenersOptions {
     openInpatientEmr: () => Promise<void>;
     openDifferentialDiagnosis: () => Promise<void>;
     startVoiceInteraction: (options?: { skipCacheRestore?: boolean }) => Promise<void>;
+  };
+  /** 非语音场景共享结果页的生成会话；用于先展示状态、再原位填充。 */
+  generatedClinicalResultSession: {
+    begin: (input: {
+      channel: 'chronic-refill';
+      message: string;
+      stage: 'preparing-context';
+    }) => Promise<string>;
+    updateProgress: (sessionId: string, progress: {
+      message: string;
+      stage: ClinicalResultGenerationStage;
+    }) => boolean;
+    updatePartial: (sessionId: string, result: ClinicalResultInput) => boolean;
+    complete: (sessionId: string, result: ClinicalResultInput) => boolean;
+    fail: (sessionId: string, message: string) => boolean;
   };
   /** 重置语音会话状态 */
   resetVoiceSessionState: () => void;
@@ -188,7 +207,12 @@ export function useEventListeners(options: EventListenersOptions) {
         buildOutpatientFollowUpPatientOverrides(currentPatient.value, followUpContext),
       );
     },
-    openChronicRefillConfirmation: navigation.openChronicRefillConfirmation,
+    generateChronicRefillRecord,
+    beginGeneratedClinicalResult: options.generatedClinicalResultSession.begin,
+    updateGeneratedClinicalResultProgress: options.generatedClinicalResultSession.updateProgress,
+    updateGeneratedClinicalResultPartial: options.generatedClinicalResultSession.updatePartial,
+    completeGeneratedClinicalResult: options.generatedClinicalResultSession.complete,
+    failGeneratedClinicalResult: options.generatedClinicalResultSession.fail,
     resetVoiceSessionState,
     openOutpatientFollowUp: navigation.openOutpatientFollowUp,
     openReportInterpretation: navigation.openReportInterpretation,

@@ -16,6 +16,7 @@ import {
 } from '@features/clinical-result';
 import type { SecondarySelectorField } from '../model/useSecondarySelector';
 import ManualMatchPicker, { type ManualMatchCandidate } from './ManualMatchPicker.vue';
+import MedicationPrescriptionHistoryReview from './MedicationPrescriptionHistoryReview.vue';
 import TreatmentItemEditor from './TreatmentItemEditor.vue';
 import TreatmentRecommendationCard from './TreatmentRecommendationCard.vue';
 
@@ -222,6 +223,24 @@ function getInlineSummary(item: TreatmentRecommendation): string {
   return item.type === 'medicine' && !props.isTreatmentEditorExpanded(item)
     ? props.getMedicineInlineSummary(item)
     : '';
+}
+
+function normalizeMedicineIdentity(value: string): string {
+  return value
+    .replace(/[（(][^）)]*[）)]/gu, '')
+    .replace(/\d+(?:\.\d+)?\s*(?:μg|ug|mg|g|ml|片|粒|支|盒|瓶|袋)/giu, '')
+    .replace(/[\s,，、;；:：\-_/]/gu, '')
+    .toLowerCase();
+}
+
+function shouldShowPrescriptionHistory(item: TreatmentRecommendation): boolean {
+  const history = item.recentPrescriptionHistory;
+  if (!history || item.type !== 'medicine') return false;
+  const currentProductId = String(item.matchedItem?.id || '').trim();
+  if (history.matchedProductId && currentProductId) {
+    return history.matchedProductId === currentProductId;
+  }
+  return normalizeMedicineIdentity(history.matchedName) === normalizeMedicineIdentity(item.name);
 }
 
 function shouldShowEditorToggle(item: TreatmentRecommendation): boolean {
@@ -869,6 +888,15 @@ function getFeedbackSubmittedLabel(item: TreatmentRecommendation): string {
             :candidates="getManualMatchCandidates(item)"
             @update:keyword="emit('updateManualMatchKeyword', item, $event)"
             @select="emit('selectManualMatchCandidate', item, $event)"
+          />
+        </template>
+
+        <template #body>
+          <MedicationPrescriptionHistoryReview
+            v-if="shouldShowPrescriptionHistory(item) && item.recentPrescriptionHistory"
+            :history="item.recentPrescriptionHistory"
+            :current-total-qty="item.totalQty"
+            :current-total-unit="item.totalUnit"
           />
         </template>
 

@@ -1,75 +1,99 @@
-import fs from 'fs';
-import path from 'path';
-import { execSync } from 'child_process';
-import { fileURLToPath } from 'url';
+import path from 'node:path';
+import { execFileSync } from 'node:child_process';
+import { fileURLToPath } from 'node:url';
+import {
+  assertProjectVersionsAligned,
+  readProjectVersionState,
+  resolveTargetVersion,
+  restoreProjectVersionState,
+  writeProjectVersion,
+} from './release-version.mjs';
 
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const rootDir = path.resolve(__dirname, '..');
+const rootDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 
-// File paths
-const packageJsonPath = path.join(rootDir, 'package.json');
-const tauriConfPath = path.join(rootDir, 'src-tauri', 'tauri.conf.json');
-const cargoTomlPath = path.join(rootDir, 'src-tauri', 'Cargo.toml');
-
-// Read current version
-const packageJson = JSON.parse(fs.readFileSync(packageJsonPath, 'utf-8'));
-const currentVersion = packageJson.version;
-
-// Parse arguments
-const args = process.argv.slice(2);
-const type = args[0] || 'patch'; // patch, minor, major
-
-// Calculate new version
-let [major, minor, patch] = currentVersion.split('.').map(Number);
-
-if (type === 'major') {
-  major++;
-  minor = 0;
-  patch = 0;
-} else if (type === 'minor') {
-  minor++;
-  patch = 0;
-} else if (type === 'patch') {
-  patch++;
-} else {
-  console.error('Invalid release type. Use: patch, minor, or major');
-  process.exit(1);
+function parseArgs(argv) {
+  let explicitVersion;
+  let type = 'patch';
+  for (let index = 0; index < argv.length; index += 1) {
+    const value = argv[index];
+    if (value === '--version') {
+      const nextValue = argv[index + 1];
+      if (!nextValue || nextValue.startsWith('--')) {
+        throw new Error('--version requires a stable X.Y.Z value');
+      }
+      explicitVersion = nextValue;
+      index += 1;
+    } else if (!value.startsWith('--')) {
+      type = value;
+    } else {
+      throw new Error(`unknown release option: ${value}`);
+    }
+  }
+  return { explicitVersion, type };
 }
 
-const newVersion = `${major}.${minor}.${patch}`;
-console.log(`🚀 Releasing version: ${currentVersion} -> ${newVersion}`);
+function git(args, options = {}) {
+  const output = execFileSync('git', args, { cwd: rootDir, encoding: 'utf8', ...options });
+  return typeof output === 'string' ? output.trim() : '';
+}
 
-// Update package.json
-packageJson.version = newVersion;
-fs.writeFileSync(packageJsonPath, JSON.stringify(packageJson, null, 2) + '\n');
-console.log('✅ Updated package.json');
+function tagExists(tag) {
+  try {
+    git(['rev-parse', '--verify', '--quiet', `refs/tags/${tag}`]);
+    return true;
+  } catch {
+    return false;
+  }
+}
 
-// Update tauri.conf.json
-const tauriConf = JSON.parse(fs.readFileSync(tauriConfPath, 'utf-8'));
-tauriConf.version = newVersion;
-fs.writeFileSync(tauriConfPath, JSON.stringify(tauriConf, null, 2) + '\n');
-console.log('✅ Updated tauri.conf.json');
+function assertFormalReleaseWorkspace(targetVersion) {
+  const branch = git(['branch', '--show-current']);
+  if (branch !== 'main') {
+    throw new Error(`formal releases must run on main, current branch: ${branch || '(detached HEAD)'}`);
+  }
+  const status = git(['status', '--porcelain']);
+  if (status) {
+    throw new Error('formal releases require a clean working tree; commit or stash changes first');
+  }
+  if (tagExists(`v${targetVersion}`)) {
+    throw new Error(`tag v${targetVersion} already exists`);
+  }
+}
 
-// Update Cargo.toml
-let cargoToml = fs.readFileSync(cargoTomlPath, 'utf-8');
-// Replace version = "x.y.z" strictly under [package]
-// We assume [package] is at the top or we look for the specific pattern
-cargoToml = cargoToml.replace(/^version = ".*"/m, `version = "${newVersion}"`);
-fs.writeFileSync(cargoTomlPath, cargoToml);
-console.log('✅ Updated Cargo.toml');
-
-// Git operations
 try {
-  console.log('📦 Committing changes...');
-  execSync(`git add "${packageJsonPath}" "${tauriConfPath}" "${cargoTomlPath}"`, { stdio: 'inherit' });
-  execSync(`git commit -m "chore: release v${newVersion}"`, { stdio: 'inherit' });
-  
-  console.log('🏷️ Creating tag...');
-  execSync(`git tag v${newVersion}`, { stdio: 'inherit' });
-  
-  console.log('\n✨ Release prepared successfully!');
-  console.log(`\nTo publish, run:\n  git push && git push origin v${newVersion}`);
+  const state = readProjectVersionState(rootDir);
+  const currentVersion = assertProjectVersionsAligned(state);
+  const targetVersion = resolveTargetVersion(currentVersion, parseArgs(process.argv.slice(2)));
+  assertFormalReleaseWorkspace(targetVersion);
+
+  console.log(`Preparing formal release: ${currentVersion} -> ${targetVersion}`);
+  let committed = false;
+  try {
+    writeProjectVersion(state, targetVersion);
+    execFileSync(
+      process.execPath,
+      [path.join(rootDir, 'scripts', 'release-preflight.mjs'), '--tag', `v${targetVersion}`],
+      { cwd: rootDir, stdio: 'inherit' },
+    );
+    git(['add', 'package.json', 'src-tauri/tauri.conf.json', 'src-tauri/Cargo.toml'], { stdio: 'inherit' });
+    git(['commit', '-m', `chore: release v${targetVersion}`], { stdio: 'inherit' });
+    committed = true;
+    git(['tag', `v${targetVersion}`], { stdio: 'inherit' });
+  } catch (error) {
+    if (!committed) {
+      restoreProjectVersionState(state);
+      try {
+        git(['restore', '--staged', 'package.json', 'src-tauri/tauri.conf.json', 'src-tauri/Cargo.toml']);
+      } catch {
+        // The files may not have reached the staging step yet.
+      }
+    }
+    throw error;
+  }
+
+  console.log(`Formal release v${targetVersion} prepared successfully.`);
+  console.log(`Push with:\n  git push origin main\n  git push origin v${targetVersion}`);
 } catch (error) {
-  console.error('❌ Failed to run git commands:', error.message);
-  process.exit(1);
+  console.error(error instanceof Error ? error.message : error);
+  process.exitCode = 1;
 }

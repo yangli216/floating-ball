@@ -188,46 +188,8 @@
   box-shadow: 0 18px 48px rgba(15, 23, 42, 0.18);
 }
 
-.session-feedback-overlay {
-  z-index: 1200;
-}
-
-.session-feedback-dialog {
-  width: min(720px, 100%);
-  padding: 18px;
-  border-radius: 22px;
-  background: #ffffff;
-  border: 1px solid rgba(203, 213, 225, 0.9);
-  color: #0f172a;
-  box-shadow: 0 24px 64px rgba(15, 23, 42, 0.28);
-}
-
 .checklist-empty {
   margin: 18px 0 4px;
-}
-
-.session-feedback-dialog-head {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 12px;
-  margin-bottom: 12px;
-}
-
-.session-feedback-skip {
-  min-height: 34px;
-  padding: 0 12px;
-  border: 1px solid var(--voice-border, #dbe4ef);
-  border-radius: 10px;
-  background: var(--voice-surface, #ffffff);
-  color: var(--voice-text-muted, #475569);
-  font-size: var(--voice-font-min, 13px);
-  cursor: pointer;
-}
-
-.session-feedback-skip:hover {
-  border-color: var(--voice-border-strong, #cbd7e6);
-  color: var(--voice-text, #0f172a);
 }
 
 .confirm-dialog-body {
@@ -1550,10 +1512,6 @@
 
   .voice-topbar {
     align-items: flex-start;
-  }
-
-  .session-feedback-dialog-head {
-    flex-direction: column;
   }
 
   .voice-footer {

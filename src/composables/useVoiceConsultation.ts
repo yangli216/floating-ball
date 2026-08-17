@@ -38,6 +38,7 @@ import {
   getPatientContextPersonalHistory,
 } from '@/utils/patientContext';
 import { formatUserFacingError } from '@shared/lib/errorMessages';
+import { useGeneratedClinicalResultSession } from '@features/consultation-result/model/useGeneratedClinicalResultSession';
 
 export {
   clearVoiceConsultationCache,
@@ -108,6 +109,7 @@ export function useVoiceConsultation(options: VoiceConsultationOptions) {
   const intentSource = ref<'llm' | 'cache' | null>(null);
   const isProcessingVoice = ref(false);
   let processingToken = 0;
+  let invalidateGeneratedClinicalResultSession: () => void = () => undefined;
 
   /**
    * 当前语音问诊轮次 ID。
@@ -173,6 +175,7 @@ export function useVoiceConsultation(options: VoiceConsultationOptions) {
   }
 
   async function openStreamingClinicalResult(): Promise<void> {
+    invalidateGeneratedClinicalResultSession();
     intentSource.value = 'llm';
     intentResult.value = createStreamingClinicalResult();
     try {
@@ -183,6 +186,7 @@ export function useVoiceConsultation(options: VoiceConsultationOptions) {
   }
 
   async function showClinicalResult(result: ClinicalResultInput, source: 'llm' | 'cache'): Promise<void> {
+    invalidateGeneratedClinicalResultSession();
     intentSource.value = source;
     intentResult.value = cloneClinicalResultInput(result);
 
@@ -196,10 +200,12 @@ export function useVoiceConsultation(options: VoiceConsultationOptions) {
   }
 
   async function showGeneratedClinicalResult(result: ClinicalResultInput): Promise<void> {
-    resetVoiceSessionState();
-    // 慢病配药等非语音场景同样复用共享结果页，需要独立轮次聚合首版、回写和放弃日志。
-    consultationRoundId.value = crypto.randomUUID();
-    await showClinicalResult(result, 'llm');
+    const sessionId = await generatedClinicalResultSession.begin({
+      channel: result.channel || 'voice',
+      stage: 'finalizing-result',
+      message: '正在整理结果',
+    });
+    generatedClinicalResultSession.complete(sessionId, result);
   }
 
   // ========== 语音处理 ==========
@@ -236,6 +242,7 @@ export function useVoiceConsultation(options: VoiceConsultationOptions) {
   }
 
   function resetVoiceSessionState(): void {
+    invalidateGeneratedClinicalResultSession();
     processingToken += 1;
     isProcessingVoice.value = false;
     intentResult.value = null;
@@ -243,6 +250,20 @@ export function useVoiceConsultation(options: VoiceConsultationOptions) {
     intentRecognition.clearTranscripts();
     consultationRoundId.value = null;
   }
+
+  const generatedClinicalResultSession = useGeneratedClinicalResultSession({
+    intentResult,
+    intentSource,
+    consultationRoundId,
+    resetCurrentSession: resetVoiceSessionState,
+    openResultView: openVoiceConsultation,
+    cloneResult: cloneClinicalResultInput,
+    onOpenError: (error) => {
+      console.error('[VoiceConsultation] Failed to open generated result page:', error);
+      showToast('无法打开结果页面，请稍后重试', 'error');
+    },
+  });
+  invalidateGeneratedClinicalResultSession = generatedClinicalResultSession.invalidate;
 
   async function resumeCachedVoiceResult(): Promise<boolean> {
     const consultationId = resolveVoiceConsultationId(currentPatient.value);
@@ -423,6 +444,11 @@ export function useVoiceConsultation(options: VoiceConsultationOptions) {
     isProcessingVoice,
     consultationRoundId,
     resetVoiceSessionState,
+    beginGeneratedClinicalResult: generatedClinicalResultSession.begin,
+    completeGeneratedClinicalResult: generatedClinicalResultSession.complete,
+    failGeneratedClinicalResult: generatedClinicalResultSession.fail,
+    updateGeneratedClinicalResultPartial: generatedClinicalResultSession.updatePartial,
+    updateGeneratedClinicalResultProgress: generatedClinicalResultSession.updateProgress,
     showGeneratedClinicalResult,
     resumeCachedVoiceResult,
     hasCachedVoiceResult: (patient?: AppPatient | null) => hasVoiceConsultationCache(patient ?? currentPatient.value),

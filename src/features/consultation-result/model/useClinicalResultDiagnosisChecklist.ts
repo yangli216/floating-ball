@@ -34,6 +34,7 @@ export interface DiagnosisChecklistPreview {
 }
 
 export interface ClinicalResultDiagnosisChecklistOptions {
+  isEnabled?: () => boolean;
   getConsultationId: () => string;
   getPrimaryDiagnosis: () => Diagnosis | null;
   getChiefComplaint: () => string;
@@ -162,12 +163,14 @@ export function useClinicalResultDiagnosisChecklist(
   }
 
   async function prefetchDiagnosisChecklist(diagnosis: Diagnosis): Promise<void> {
+    if (options.isEnabled?.() === false) return;
     const snapshot = buildSnapshot(diagnosis);
     if (!isRequestable(snapshot)) return;
     await requestChecklist(snapshot);
   }
 
   async function openDiagnosisChecklist(diagnosis: Diagnosis): Promise<void> {
+    if (options.isEnabled?.() === false) return;
     const snapshot = buildSnapshot(diagnosis);
     if (!isRequestable(snapshot)) {
       options.notify?.('当前缺少诊断、主诉或现病史，无法生成鉴别排查建议。', 'warning');
@@ -217,6 +220,10 @@ export function useClinicalResultDiagnosisChecklist(
 
   watch(
     () => {
+      if (options.isEnabled?.() === false) {
+        floatingChecklistKey.value = '';
+        return;
+      }
       const diagnosis = options.getPrimaryDiagnosis();
       return diagnosis ? buildSnapshot(diagnosis).key : '';
     },

@@ -255,6 +255,7 @@ export function useTreatmentNormalization(deps: TreatmentNormalizationDeps): Tre
       execDept: rec.execDept || '',
       insuranceCleared: !!rec.insuranceCleared,
       insuranceType: rec.insuranceCleared ? '' : (rec.insuranceType || '医保使用'),
+      recentPrescriptionHistory: rec.recentPrescriptionHistory,
     };
 
     if (!isExecDeptSatisfied(base)) {

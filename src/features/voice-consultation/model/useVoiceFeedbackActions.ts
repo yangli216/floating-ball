@@ -15,14 +15,7 @@ export interface VoiceFeedbackActionsOptions {
   isDiagnosisSelected: (diag: Diagnosis) => boolean;
   isPrimaryDiagnosis: (diag: Diagnosis) => boolean;
   submitRecommendationFeedback: (payload: RecommendationFeedbackSubmitPayload) => Promise<void>;
-  submitSessionFeedback: (payload: {
-    diagnoses: Diagnosis[];
-    selectedTreatments: TreatmentRecommendation[];
-  }) => Promise<void>;
-  getSelectedDiagnoses: () => Diagnosis[];
-  getSelectedTreatments: () => TreatmentRecommendation[];
   closeRecommendationFeedback: () => void;
-  closeSessionFeedback: () => void;
   clearVoiceFeedbackDraft: () => void;
   clearWritebackFeedback: () => void;
   closeResult: () => void;
@@ -65,21 +58,7 @@ export function useVoiceFeedbackActions(options: VoiceFeedbackActionsOptions) {
     }
   }
 
-  async function handleSessionFeedbackSubmit(): Promise<void> {
-    try {
-      await options.submitSessionFeedback({
-        diagnoses: options.getSelectedDiagnoses(),
-        selectedTreatments: options.getSelectedTreatments(),
-      });
-      options.notify?.('整页反馈已记录', 'success');
-      completeVoiceConsultationFlow();
-    } catch (error) {
-      options.notify?.(`提交整页反馈失败: ${getErrorMessage(error)}`, 'error');
-    }
-  }
-
   function completeVoiceConsultationFlow(): void {
-    options.closeSessionFeedback();
     options.clearVoiceFeedbackDraft();
     options.clearWritebackFeedback();
     options.closeResult();
@@ -88,7 +67,6 @@ export function useVoiceFeedbackActions(options: VoiceFeedbackActionsOptions) {
   return {
     completeVoiceConsultationFlow,
     handleDiagnosisFeedbackSubmit,
-    handleSessionFeedbackSubmit,
     handleTreatmentFeedbackSubmit,
   };
 }

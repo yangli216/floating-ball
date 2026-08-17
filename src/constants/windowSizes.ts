@@ -23,6 +23,7 @@ export interface WindowSizeOptions {
   expanded?: boolean;
   riskCount?: number;
   hasChronicRefill?: boolean;
+  chronicScopeSelecting?: boolean;
   hasFollowUp?: boolean;
   hasReportInterpretation?: boolean;
   voiceStage?: VoiceInteractionWindowStage;
@@ -43,7 +44,6 @@ export type ViewType =
   | 'consultation'
   | 'risk-alert'
   | 'voice-interaction'
-  | 'chronic-refill-confirmation'
   | 'voice-consultation'
   | 'treatment-plan'
   | 'outpatient-follow-up'
@@ -99,9 +99,6 @@ export const WINDOW_SIZES = {
   /** 语音问诊页面：1080×720px */
   VOICE_CONSULTATION: { width: 1080, height: 720 } as WindowSize,
 
-  /** 复诊配药确认页：820×720px，容纳动态确认项与语音/文字补充区 */
-  CHRONIC_REFILL_CONFIRMATION: { width: 820, height: 720 } as WindowSize,
-
   /** 独立诊疗方案推荐：1080×720px */
   TREATMENT_PLAN: { width: 1080, height: 720 } as WindowSize,
 
@@ -131,7 +128,6 @@ const WINDOW_SIZE_CONSTRAINTS: Partial<Record<ViewType, WindowSizeConstraints>> 
   chat: { minWidth: WINDOW_SIZES.WORK.width, minHeight: WINDOW_SIZES.WORK.height },
   settings: { minWidth: WINDOW_SIZES.WORK.width, minHeight: WINDOW_SIZES.WORK.height },
   consultation: { minWidth: WINDOW_SIZES.CONSULTATION.width, minHeight: WINDOW_SIZES.CONSULTATION.height },
-  'chronic-refill-confirmation': { minWidth: 720, minHeight: 620 },
   'voice-consultation': { minWidth: 900, minHeight: 620 },
   'treatment-plan': { minWidth: 900, minHeight: 620 },
   'outpatient-follow-up': { minWidth: 1000, minHeight: 620 },
@@ -168,26 +164,27 @@ export function isLargeWorkspaceView(view: ViewType): boolean {
  * // => { width: 1120, height: 760 }
  * ```
  */
-export function getReceptionCapsuleSize(options?: Pick<WindowSizeOptions, 'expanded' | 'riskCount' | 'hasChronicRefill' | 'hasFollowUp' | 'hasReportInterpretation'>): WindowSize {
+export function getReceptionCapsuleSize(options?: Pick<WindowSizeOptions, 'expanded' | 'riskCount' | 'hasChronicRefill' | 'hasFollowUp' | 'hasReportInterpretation' | 'chronicScopeSelecting'>): WindowSize {
   const expanded = options?.expanded ?? false;
   const hasReportAction = Boolean(options?.hasFollowUp || options?.hasReportInterpretation);
   const actionHeight = (Number(Boolean(options?.hasChronicRefill)) + Number(hasReportAction)) * 54;
+  const chronicScopeHeight = options?.chronicScopeSelecting ? 154 : 0;
   if (!expanded) {
     return {
-      width: WINDOW_SIZES.RISK_CARD.width,
-      height: WINDOW_SIZES.RISK_CARD.height + actionHeight,
+      width: options?.chronicScopeSelecting ? 320 : WINDOW_SIZES.RISK_CARD.width,
+      height: WINDOW_SIZES.RISK_CARD.height + actionHeight + chronicScopeHeight,
     };
   }
 
   const riskCount = Math.max(options?.riskCount ?? 0, 1);
   const visibleRiskRows = Math.min(riskCount, 6);
-  const estimatedHeight = 108 + visibleRiskRows * 52 + actionHeight;
+  const estimatedHeight = 108 + visibleRiskRows * 52 + actionHeight + chronicScopeHeight;
 
   return {
-    width: WINDOW_SIZES.RISK_CARD.width,
+    width: options?.chronicScopeSelecting ? 320 : WINDOW_SIZES.RISK_CARD.width,
     height: Math.min(
       Math.max(estimatedHeight, WINDOW_SIZES.RISK_CARD_EXPANDED.height),
-      520,
+      options?.chronicScopeSelecting ? 620 : 520,
     ),
   };
 }
@@ -219,9 +216,6 @@ export function getWindowSizeForView(view: ViewType, options?: WindowSizeOptions
 
     case 'voice-consultation':
       return WINDOW_SIZES.VOICE_CONSULTATION;
-
-    case 'chronic-refill-confirmation':
-      return WINDOW_SIZES.CHRONIC_REFILL_CONFIRMATION;
 
     case 'treatment-plan':
       return WINDOW_SIZES.TREATMENT_PLAN;
@@ -262,7 +256,6 @@ export function supportsPersistentWindowSize(view: ViewType): boolean {
   return view === 'chat'
     || view === 'settings'
     || view === 'consultation'
-    || view === 'chronic-refill-confirmation'
     || view === 'voice-consultation'
     || view === 'treatment-plan'
     || view === 'outpatient-follow-up'

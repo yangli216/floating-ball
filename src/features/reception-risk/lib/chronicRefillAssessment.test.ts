@@ -67,6 +67,7 @@ describe('assessChronicRefillCandidate', () => {
       '盐酸二甲双胍片 0.5g',
     ]);
     expect(result?.chronicVisits).toHaveLength(2);
+    expect(result?.prescriptionHistoryVisits).toHaveLength(3);
     expect(result?.conditions).toEqual([
       expect.objectContaining({ id: '高血压', diagnosis: '高血压', diagnosisGroup: '高血压' }),
       expect.objectContaining({ id: '糖尿病', diagnosis: '糖尿病', diagnosisGroup: '糖尿病' }),
@@ -100,6 +101,7 @@ describe('assessChronicRefillCandidate', () => {
     expect(scoped?.chronicVisits[0].diagnoses).toEqual(['高血压病']);
     expect(scoped?.evidenceText).not.toContain('糖尿病');
     expect(scoped?.medications).not.toContain('盐酸二甲双胍片');
+    expect(scoped?.prescriptionHistoryVisits).toHaveLength(2);
   });
 
   it('does not inherit an ambiguous mixed prescription when only part of that visit conditions are selected', () => {

@@ -50,6 +50,64 @@ export interface Patient {
     [key: string]: any; // Allow flexibility for extra fields
 }
 
+export interface RecentPrescriptionHistoryEntry {
+    visitId?: string;
+    prescribedAt: number;
+    deptName?: string;
+    orderId?: string;
+    productId?: string;
+    name: string;
+    spec?: string;
+    dosage?: string;
+    dosageUnit?: string;
+    frequency?: string;
+    route?: string;
+    days?: string;
+    totalQty?: string;
+    totalUnit?: string;
+}
+
+export interface RecentPrescriptionHistory {
+    lookbackDays: number;
+    matchedName: string;
+    matchedProductId?: string;
+    matchBasis: 'product-id' | 'exact-name' | 'ambiguous-name' | 'none';
+    entries: RecentPrescriptionHistoryEntry[];
+}
+
+export type ChronicRefillReviewConfidence = 'high' | 'medium' | 'low';
+export type ChronicRefillReviewEvidence =
+    | 'current-explicit'
+    | 'historical-consistent'
+    | 'model-inference'
+    | 'unknown';
+
+export interface ChronicRefillReviewOption {
+    value: string;
+    label: string;
+    /** 医生点击确认后才允许进入现病史。 */
+    recordText: string;
+    /** 当前选择意味着续方方案需要医生重新核查。 */
+    treatmentReviewRequired?: boolean;
+}
+
+export interface ChronicRefillReviewItem {
+    id: string;
+    question: string;
+    description: string;
+    options: ChronicRefillReviewOption[];
+    recommendedValue: string;
+    confidence: ChronicRefillReviewConfidence;
+    evidence: ChronicRefillReviewEvidence;
+    basis: string;
+    priority: 'critical' | 'general';
+}
+
+export interface ChronicRefillReviewPlan {
+    summary: string;
+    items: ChronicRefillReviewItem[];
+}
+
 export interface TreatmentRecommendation {
     type: 'medicine' | 'exam' | 'lab_test' | 'procedure' | 'acupuncture';
     name: string; // AI recommended name
@@ -99,6 +157,8 @@ export interface TreatmentRecommendation {
     remark?: string;        // 备注
     insuranceType?: string; // 医保限用 (all types)
     insuranceCleared?: boolean; // 医生已手动清空医保限用，禁止用默认医保类型自动补回
+    /** 慢病配药场景的近期开药核查证据；仅用于医生复核，不代表医保规则判定。 */
+    recentPrescriptionHistory?: RecentPrescriptionHistory;
 }
 
 export interface FinalRecord {

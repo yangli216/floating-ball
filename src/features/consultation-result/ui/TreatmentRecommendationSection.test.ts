@@ -9,4 +9,10 @@ describe('TreatmentRecommendationSection match adjustment', () => {
     expect(source).toContain(':show-reject-button="item.type === \'medicine\' && item.sourceType !== \'explicit\'"');
     expect(source).toContain('@toggle-rejected="emit(\'toggleRejected\', item, $event)"');
   });
+
+  it('shows recent prescription review only while it still matches the current medicine', () => {
+    expect(source).toContain('shouldShowPrescriptionHistory(item)');
+    expect(source).toContain('history.matchedProductId === currentProductId');
+    expect(source).toContain('<MedicationPrescriptionHistoryReview');
+  });
 });

@@ -48,13 +48,26 @@ describe('chronic refill confirmation', () => {
           evidence: 'current-explicit',
           basis: '医生本次补充',
         },
+        {
+          id: 'symptoms',
+          question: '近期有无相关不适？',
+          options: [
+            { value: 'none', label: '无明显不适', recordText: '近期无明显相关不适' },
+            { value: 'unknown', label: '暂未询问', recordText: '' },
+          ],
+          recommendedValue: 'unknown',
+          confidence: 'low',
+          evidence: 'unknown',
+          basis: '待本次问诊确认',
+        },
       ],
     }, candidate);
 
-    expect(plan.items).toHaveLength(2);
+    expect(plan.items).toHaveLength(3);
     expect(buildConfirmedAnswers(plan, {})).toEqual([
       expect.objectContaining({ itemId: 'adherence', value: 'regular', recordText: '规律服用降压药物' }),
       expect.objectContaining({ itemId: 'control', value: 'stable', recordText: '近期血压平稳' }),
+      expect.objectContaining({ itemId: 'symptoms', value: 'unknown', recordText: '' }),
     ]);
   });
 
@@ -79,10 +92,19 @@ describe('chronic refill confirmation', () => {
           ],
           recommendedValue: 'age',
         },
+        {
+          id: 'unknown',
+          question: '确认项三',
+          options: [
+            { value: 'unknown', label: '暂未确认', recordText: '待确认' },
+            { value: 'none', label: '无异常', recordText: '近期无异常' },
+          ],
+          recommendedValue: 'unknown',
+        },
       ],
     }, candidate);
 
-    expect(buildConfirmedAnswers(plan, {}).map((answer) => answer.recordText)).toEqual(['', '']);
+    expect(buildConfirmedAnswers(plan, {}).map((answer) => answer.recordText)).toEqual(['', '', '']);
   });
 
   it('builds the HPI only from confirmed facts and historical context', () => {

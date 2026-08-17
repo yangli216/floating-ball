@@ -56,7 +56,12 @@ describe('useOutpatientScenarioRouter', () => {
       session,
       hasCachedVoiceResult: () => false,
       applyFollowUpContext,
-      openChronicRefillConfirmation: vi.fn(),
+      generateChronicRefillRecord: vi.fn(),
+      beginGeneratedClinicalResult: vi.fn(),
+      updateGeneratedClinicalResultProgress: vi.fn(),
+      updateGeneratedClinicalResultPartial: vi.fn(),
+      completeGeneratedClinicalResult: vi.fn(),
+      failGeneratedClinicalResult: vi.fn(),
       resetVoiceSessionState: vi.fn(),
       openOutpatientFollowUp,
       openReportInterpretation: vi.fn(),
@@ -77,7 +82,7 @@ describe('useOutpatientScenarioRouter', () => {
     expect(showToast).not.toHaveBeenCalled();
   });
 
-  it('opens the refill confirmation page before generating a record', async () => {
+  it('opens the result workspace before waiting for the refill result and fills it in place', async () => {
     const currentPatient = ref(buildPatientContext({
       payload: {
         patientId: 'patient-1',
@@ -101,7 +106,26 @@ describe('useOutpatientScenarioRouter', () => {
       },
     });
 
-    const openChronicRefillConfirmation = vi.fn();
+    const generatedResult = { channel: 'chronic-refill' } as any;
+    let resolveGeneration!: (value: typeof generatedResult) => void;
+    const generationPromise = new Promise<typeof generatedResult>((resolve) => {
+      resolveGeneration = resolve;
+    });
+    const generateChronicRefillRecord = vi.fn(async (_patient, _candidate, generationOptions) => {
+      generationOptions?.onProgress?.('generating-content');
+      generationOptions?.onPartial?.({
+        ...generatedResult,
+        chiefComplaint: '高血压复诊配药',
+        generation: { status: 'streaming', readySections: ['record_core'] },
+      });
+      const value = await generationPromise;
+      generationOptions?.onProgress?.('finalizing-result');
+      return value;
+    });
+    const beginGeneratedClinicalResult = vi.fn(async () => 'generation-1');
+    const updateGeneratedClinicalResultProgress = vi.fn(() => true);
+    const completeGeneratedClinicalResult = vi.fn(() => true);
+    const updateGeneratedClinicalResultPartial = vi.fn(() => true);
     const showToast = vi.fn();
     const router = useOutpatientScenarioRouter({
       currentPatient,
@@ -109,7 +133,12 @@ describe('useOutpatientScenarioRouter', () => {
       hasCachedVoiceResult: () => false,
       fetchFollowUpContext: async () => null,
       applyFollowUpContext: vi.fn(),
-      openChronicRefillConfirmation,
+      generateChronicRefillRecord,
+      beginGeneratedClinicalResult,
+      updateGeneratedClinicalResultProgress,
+      updateGeneratedClinicalResultPartial,
+      completeGeneratedClinicalResult,
+      failGeneratedClinicalResult: vi.fn(() => true),
       resetVoiceSessionState: vi.fn(),
       openOutpatientFollowUp: vi.fn(),
       openReportInterpretation: vi.fn(),
@@ -118,10 +147,35 @@ describe('useOutpatientScenarioRouter', () => {
       trackError: vi.fn(),
     });
 
-    await router.confirmChronicRefill();
+    const confirmation = router.confirmChronicRefill();
+    await vi.waitFor(() => expect(beginGeneratedClinicalResult).toHaveBeenCalledOnce());
+    expect(completeGeneratedClinicalResult).not.toHaveBeenCalled();
+    resolveGeneration(generatedResult);
+    await confirmation;
 
-    expect(openChronicRefillConfirmation).toHaveBeenCalledOnce();
-    expect(showToast).not.toHaveBeenCalled();
+    expect(generateChronicRefillRecord).toHaveBeenCalledWith(
+      currentPatient.value,
+      expect.objectContaining({ diagnoses: ['高血压'] }),
+      expect.objectContaining({ onProgress: expect.any(Function) }),
+    );
+    expect(beginGeneratedClinicalResult).toHaveBeenCalledWith(expect.objectContaining({
+      channel: 'chronic-refill',
+      stage: 'preparing-context',
+    }));
+    expect(updateGeneratedClinicalResultProgress).toHaveBeenNthCalledWith(1, 'generation-1', {
+      stage: 'generating-content',
+      message: '正在生成高血压病历与核查项',
+    });
+    expect(updateGeneratedClinicalResultProgress).toHaveBeenNthCalledWith(2, 'generation-1', {
+      stage: 'finalizing-result',
+      message: '正在整理诊断与用药方案',
+    });
+    expect(updateGeneratedClinicalResultPartial).toHaveBeenCalledWith(
+      'generation-1',
+      expect.objectContaining({ chiefComplaint: '高血压复诊配药' }),
+    );
+    expect(completeGeneratedClinicalResult).toHaveBeenCalledWith('generation-1', generatedResult);
+    expect(showToast).toHaveBeenCalledWith('复诊配药病历与核查项已生成，请核查后回写', 'success');
     expect(session.executingOpportunity.value).toBeNull();
   });
 
@@ -145,7 +199,12 @@ describe('useOutpatientScenarioRouter', () => {
       hasCachedVoiceResult: () => false,
       fetchFollowUpContext: async () => followUpContext,
       applyFollowUpContext,
-      openChronicRefillConfirmation: vi.fn(),
+      generateChronicRefillRecord: vi.fn(),
+      beginGeneratedClinicalResult: vi.fn(),
+      updateGeneratedClinicalResultProgress: vi.fn(),
+      updateGeneratedClinicalResultPartial: vi.fn(),
+      completeGeneratedClinicalResult: vi.fn(),
+      failGeneratedClinicalResult: vi.fn(),
       resetVoiceSessionState: vi.fn(),
       openOutpatientFollowUp,
       openReportInterpretation,
@@ -186,7 +245,12 @@ describe('useOutpatientScenarioRouter', () => {
       hasCachedVoiceResult: () => false,
       fetchFollowUpContext,
       applyFollowUpContext: vi.fn(),
-      openChronicRefillConfirmation: vi.fn(),
+      generateChronicRefillRecord: vi.fn(),
+      beginGeneratedClinicalResult: vi.fn(),
+      updateGeneratedClinicalResultProgress: vi.fn(),
+      updateGeneratedClinicalResultPartial: vi.fn(),
+      completeGeneratedClinicalResult: vi.fn(),
+      failGeneratedClinicalResult: vi.fn(),
       resetVoiceSessionState: vi.fn(),
       openOutpatientFollowUp: vi.fn(),
       openReportInterpretation: vi.fn(),
@@ -225,7 +289,12 @@ describe('useOutpatientScenarioRouter', () => {
       session,
       hasCachedVoiceResult: () => false,
       applyFollowUpContext: vi.fn(),
-      openChronicRefillConfirmation: vi.fn(),
+      generateChronicRefillRecord: vi.fn(),
+      beginGeneratedClinicalResult: vi.fn(),
+      updateGeneratedClinicalResultProgress: vi.fn(),
+      updateGeneratedClinicalResultPartial: vi.fn(),
+      completeGeneratedClinicalResult: vi.fn(),
+      failGeneratedClinicalResult: vi.fn(),
       resetVoiceSessionState: vi.fn(),
       openOutpatientFollowUp: vi.fn(),
       openReportInterpretation,

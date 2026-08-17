@@ -1,4 +1,4 @@
-import { chat } from '@/services/llm';
+import { chatStream } from '@/services/llm';
 import { medicalDataService } from '@/services/medicalData';
 import type { AppPatient } from '@/types/appState';
 import {
@@ -10,21 +10,36 @@ import {
 } from '@/utils/patientContext';
 import {
   loadAvailableMedicineInventoryContext,
+  formatAvailableMedicineInventoryPrompt,
   parseLLMJson,
+  type ClinicalResultGenerationStage,
   type ClinicalResultDiagnosis,
   type ClinicalResultInput,
 } from '@features/clinical-result';
 import type { ChronicRefillCandidate } from '../lib/chronicRefillAssessment';
 import {
-  buildConfirmedChronicRefillNarrative,
-  normalizeChronicRefillSupplementRecordText,
-  type ChronicRefillConfirmationContext,
+  normalizeChronicRefillConfirmationPlan,
+  type ChronicRefillConfirmationPlan,
+  type RawChronicRefillConfirmationPlan,
 } from '../lib/chronicRefillConfirmation';
 import {
   buildChronicRefillInventoryTreatments,
   type ChronicRefillMedicineInput,
   type ChronicRefillMedicineRecommendation,
 } from '../lib/chronicRefillInventory';
+import {
+  applyChronicRefillRecordStreamEvent,
+  createChronicRefillRecordStreamAccumulator,
+  createChronicRefillRecordStreamParser,
+} from '../lib/chronicRefillRecordStream';
+
+export interface ChronicRefillRecordGenerationOptions {
+  onProgress?: (stage: Extract<
+    ClinicalResultGenerationStage,
+    'generating-content' | 'finalizing-result'
+  >) => void;
+  onPartial?: (result: ClinicalResultInput) => void;
+}
 
 interface ChronicRefillDraft {
   chiefComplaint?: string;
@@ -33,8 +48,19 @@ interface ChronicRefillDraft {
   currentMedicationHistory?: string;
   treatmentPlan?: string;
   healthEducation?: string;
-  supplementRecordText?: string;
   recommendedMedicines?: ChronicRefillMedicineInput[];
+  reviewPlan?: RawChronicRefillConfirmationPlan;
+}
+
+interface NormalizedChronicRefillDraft {
+  chiefComplaint: string;
+  historyOfPresentIllness: string;
+  pastMedicalHistory: string;
+  currentMedicationHistory: string;
+  treatmentPlan: string;
+  healthEducation: string;
+  recommendedMedicines: ChronicRefillMedicineInput[];
+  reviewPlan: ChronicRefillConfirmationPlan;
 }
 
 function buildHistoryEvidence(candidate: ChronicRefillCandidate): string {
@@ -57,7 +83,7 @@ function buildMedicationSummary(medications: string[]): string {
 
 function isPatientFactHistory(value: string): boolean {
   if (value.length < 30 || /未提供新发不适信息/u.test(value)) return false;
-  return !/(?:当前(?:有效)?库存|库存内|可续方药品|可参考药品|推荐药品|推荐使用|建议使用|后续治疗方案为)/u.test(value);
+  return !/(?:当前(?:有效)?库存|库存内|可续方药品|可参考药品|推荐药品|推荐使用|建议使用|后续治疗方案为|待(?:医生)?核实|规律(?:服药|用药)|按时服药|依从性良好|病情(?:控制)?平稳|控制(?:良好|平稳)|无明显(?:相关)?不适|未见(?:明显)?不良反应|监测(?:结果|指标)?(?:正常|平稳))/u.test(value);
 }
 
 function normalizeChronicRefillHealthEducation(value: unknown, fallback: string): string {
@@ -126,7 +152,7 @@ function fallbackDraft(
   patient: AppPatient,
   candidate: ChronicRefillCandidate,
   availableMedications: string[],
-): Required<ChronicRefillDraft> {
+): NormalizedChronicRefillDraft {
   const diagnosisText = candidate.diagnoses.join('、');
   const medicationText = availableMedications.length > 0
     ? availableMedications.join('、')
@@ -145,8 +171,8 @@ function fallbackDraft(
       ? `医生核实病情控制、依从性及禁忌证后，可从当前有效库存中的历史处方药品续方：${medicationText}。`
       : `未取得可直接沿用的历史用药方案，请结合${diagnosisText}、当前病情及有效库存由医生确认后续治疗。`,
     healthEducation: '按医嘱规律服药并记录家庭监测结果；出现症状变化或指标异常时及时复诊。',
-    supplementRecordText: '',
     recommendedMedicines: candidate.medications,
+    reviewPlan: normalizeChronicRefillConfirmationPlan(null, candidate),
   };
 }
 
@@ -155,7 +181,7 @@ function normalizeDraft(
   patient: AppPatient,
   candidate: ChronicRefillCandidate,
   availableMedications: string[],
-): Required<ChronicRefillDraft> {
+): NormalizedChronicRefillDraft {
   const fallback = fallbackDraft(patient, candidate, availableMedications);
   const chiefComplaint = value.chiefComplaint?.trim() || '';
   const historyOfPresentIllness = value.historyOfPresentIllness?.trim() || '';
@@ -165,7 +191,9 @@ function normalizeDraft(
       .filter((item): item is ChronicRefillMedicineInput => Boolean(item))
     : [];
   return {
-    chiefComplaint: chiefComplaint.length >= 6 && /复诊|续方|配药/u.test(chiefComplaint)
+    chiefComplaint: chiefComplaint.length >= 6
+      && /复诊|续方|配药/u.test(chiefComplaint)
+      && candidate.diagnoses.every((diagnosis) => chiefComplaint.includes(diagnosis))
       ? chiefComplaint
       : fallback.chiefComplaint,
     historyOfPresentIllness: isPatientFactHistory(historyOfPresentIllness)
@@ -178,13 +206,10 @@ function normalizeDraft(
       value.healthEducation,
       fallback.healthEducation,
     ),
-    supplementRecordText: normalizeChronicRefillSupplementRecordText(
-      value.supplementRecordText,
-      candidate,
-    ),
     recommendedMedicines: recommendedMedicines.length > 0
       ? recommendedMedicines
       : fallback.recommendedMedicines,
+    reviewPlan: normalizeChronicRefillConfirmationPlan(value.reviewPlan, candidate),
   };
 }
 
@@ -206,121 +231,13 @@ function matchDiagnosis(
   };
 }
 
-export async function generateChronicRefillRecord(
+function buildChronicRefillClinicalResult(
   patient: AppPatient,
   candidate: ChronicRefillCandidate,
-  confirmation?: ChronicRefillConfirmationContext,
-): Promise<ClinicalResultInput> {
-  const inventoryContext = await loadAvailableMedicineInventoryContext().catch((error) => {
-    console.warn('[ChronicRefill] Failed to load available inventory, no refill medicine will be preselected', error);
-    return {
-      items: [],
-      promptContext: '',
-      pharmacyCount: 0,
-      staleStoreCount: 0,
-    };
-  });
-  const initialTreatments = buildChronicRefillInventoryTreatments(
-    candidate.medications,
-    inventoryContext.items,
-    standardizeMedicineName,
-    { historicalMedicationOrders: candidate.medicationOrders },
-  );
-  const availableMedicationNames = initialTreatments
-    .filter((item) => item.matchStatus === 'exact')
-    .map((item) => item.name);
-  let draft = fallbackDraft(patient, candidate, availableMedicationNames);
-  try {
-    const response = await chat([
-      {
-        role: 'system',
-        content: [
-          '你是基层门诊慢性病复诊配药病历助手。',
-          '慢病范围已由医生确认；主诉、现病史、诊断和推荐用药只能围绕已选慢病，不得加入患者其他慢病。',
-          '根据患者近90天就诊中的慢病就诊记录和配药信息生成本次可编辑病历草稿，不得编造当前症状、生命体征、检查结果或病情稳定程度。',
-          '主诉应写明具体慢病和“复诊配药”目的。',
-          '如已提供本次医生确认信息，现病史只能使用其中带有病历事实的确认项和医生补充原文；不得自行补写病情稳定、规律服药、无不适或监测结果。',
-          '医生补充原文是本次医生明确提供的病历依据。请将其压缩为supplementRecordText，保留临床事实、去掉口语重复，不得改变事实含义。',
-          'supplementRecordText只保留已确认recordText尚未表达的新增事实；若补充内容与确认项完全重复则返回空字符串，避免现病史重复。',
-          'supplementRecordText中的药品只保留规范药名，不写商品标记、商品名、厂家、规格、包装、单次剂量、频次、天数或总量；这些信息仅进入recommendedMedicines。',
-          'historyOfPresentIllness禁止写入年龄、性别、当前库存、可续方药品、可参考药品、推荐药品、待医生核实或后续治疗方案；库存信息只能用于recommendedMedicines。',
-          '禁止使用“未提供新发不适信息”作为主诉或现病史主体，也不要写“无不适”或“病情稳定”。',
-          '药品按“库存同品 → 库存等效药 → 规范通用名兜底”选择；无库存通用名仅供医生参考。',
-          '若未获取到可确认的历史用药，仍需根据具体慢病诊断、患者信息和当前有效库存推荐合理的候选药品，不得返回空方案。',
-          '未获取到历史用药时，currentMedicationHistory只能写“历史用药方案待医生核实”等待核实表述，不得把本次推荐药品伪装成既往用药。',
-          'recommendedMedicines 必须返回结构化药品对象，不生成检查、检验或处置。',
-          '每个药品必须结合候选慢病、历史用药和库存规格给出合理的目标临床一次剂量、频次和用法；不得把包装规格直接当成一次剂量，也不得把所有药品统一写成一次1剂量单位。',
-          '目标剂量只写targetDose/targetDoseUnit，例如500mg写为targetDose="500"、targetDoseUnit="mg"；dosage/dosageUnit必须留空，由程序结合PHIS药品详情换算。frequencyKey优先使用QD/BID/TID/QID，routeKey口服优先使用PO。',
-          'days、totalQty、totalUnit必须留空；用药天数只允许程序沿用可靠关联的历史处方，包装总量由程序根据最终一次剂量、频次、天数和库存包装规格计算并校验库存。',
-          'reason只说明诊断、历史用药和适应证等临床推荐依据，不得复述或计算单次剂量、频次、疗程、总量和包装数量。',
-          'healthEducation必须针对患者的具体慢性病诊断和病情，给出具体的规律用药注意事项、自我指标监测、饮食调养和复诊条件等个性化健康处方，严禁写入通用的“注意休息”、“1周内复诊”或“必要时上级医院进一步治疗”。',
-          '只返回 JSON 对象。',
-        ].join('\n'),
-      },
-      {
-        role: 'user',
-        content: [
-          `患者：${getPatientContextName(patient)}，${getPatientContextGenderText(patient)}，${getPatientContextAgeText(patient)}`,
-          `过敏史：${getPatientContextAllergyHistory(patient) || '未记录'}`,
-          `医生已确认的本次慢病：${candidate.diagnoses.join('、')}`,
-          `慢病分类（仅用于场景识别）：${candidate.diagnosisGroups.join('、')}`,
-          `历史慢病配药：${candidate.medicationEvidenceText}`,
-          `当前库存内可续方药品：${buildMedicationSummary(availableMedicationNames)}`,
-          inventoryContext.promptContext,
-          '近90天内的慢病就诊依据：',
-          buildHistoryEvidence(candidate),
-          '本次医生已确认信息：',
-          confirmation?.answers.length
-            ? confirmation.answers.map((answer) => (
-              `${answer.question}：${answer.label}${answer.recordText ? `（病历事实：${answer.recordText}）` : ''}`
-            )).join('\n')
-            : '暂无结构化确认信息',
-          `本次医生补充原文：${confirmation?.supplementText?.trim() || '无'}`,
-          [
-            '请生成字段：chiefComplaint、historyOfPresentIllness、pastMedicalHistory、currentMedicationHistory、treatmentPlan、healthEducation、supplementRecordText、recommendedMedicines。',
-            'recommendedMedicines格式：',
-            '[{"name":"库存中的完整药品名称","spec":"库存规格","targetDose":"目标临床一次剂量数值","targetDoseUnit":"mg/g/ml","frequency":"频次文本","frequencyKey":"频次编码","route":"用法文本","routeKey":"用法编码","days":"","reason":"推荐依据"}]',
-          ].join('\n'),
-        ].join('\n'),
-      },
-    ], undefined, undefined, undefined, {
-      configProfile: 'fast',
-      traceContext: {
-        scene: 'reception-chronic-refill-record',
-        sourceModule: 'reception_risk',
-        operationModule: 'reception',
-        operationAction: 'generate_chronic_refill_record',
-        title: '接诊生成复诊配药病历',
-      },
-    });
-    draft = normalizeDraft(
-      parseLLMJson<ChronicRefillDraft>(response),
-      patient,
-      candidate,
-      availableMedicationNames,
-    );
-  } catch (error) {
-    console.warn('[ChronicRefill] AI draft failed, using deterministic fallback', error);
-  }
-  if (confirmation) {
-    const narrative = buildConfirmedChronicRefillNarrative(
-      candidate,
-      confirmation,
-      draft.supplementRecordText,
-    );
-    draft.chiefComplaint = narrative.chiefComplaint;
-    draft.historyOfPresentIllness = narrative.historyOfPresentIllness;
-  }
-  const treatments = buildChronicRefillInventoryTreatments(
-    draft.recommendedMedicines,
-    inventoryContext.items,
-    standardizeMedicineName,
-    {
-      historicalMedications: candidate.medications,
-      historicalMedicationOrders: candidate.medicationOrders,
-    },
-  );
-
+  draft: NormalizedChronicRefillDraft,
+  treatments: ClinicalResultInput['treatments'],
+  generation?: ClinicalResultInput['generation'],
+): ClinicalResultInput {
   return {
     chiefComplaint: draft.chiefComplaint,
     historyOfPresentIllness: draft.historyOfPresentIllness,
@@ -339,6 +256,210 @@ export async function generateChronicRefillRecord(
       allowTreatmentRefresh: false,
       allowedTreatmentTypes: ['medicine'],
     },
+    chronicRefillReview: draft.reviewPlan,
+    generation,
     channel: 'chronic-refill',
   };
+}
+
+export async function generateChronicRefillRecord(
+  patient: AppPatient,
+  candidate: ChronicRefillCandidate,
+  options?: ChronicRefillRecordGenerationOptions,
+): Promise<ClinicalResultInput> {
+  let draft = fallbackDraft(patient, candidate, []);
+  options?.onPartial?.(buildChronicRefillClinicalResult(patient, candidate, draft, [], {
+    status: 'streaming',
+    readySections: ['record_core', 'history_context', 'diagnoses', 'review_plan'],
+    stage: 'preparing-context',
+    message: '已整理历史病历，正在读取院内药品',
+  }));
+
+  const inventoryContext = await loadAvailableMedicineInventoryContext().catch((error) => {
+    console.warn('[ChronicRefill] Failed to load available inventory, no refill medicine will be preselected', error);
+    return {
+      items: [],
+      promptContext: '',
+      pharmacyCount: 0,
+      staleStoreCount: 0,
+    };
+  });
+  const initialTreatments = buildChronicRefillInventoryTreatments(
+    candidate.medications,
+    inventoryContext.items,
+    standardizeMedicineName,
+    {
+      historicalMedicationOrders: candidate.medicationOrders,
+      prescriptionHistoryVisits: candidate.prescriptionHistoryVisits || candidate.chronicVisits,
+    },
+  );
+  const availableMedicationNames = initialTreatments
+    .filter((item) => item.matchStatus === 'exact')
+    .map((item) => item.name);
+  draft = fallbackDraft(patient, candidate, availableMedicationNames);
+  options?.onProgress?.('generating-content');
+  options?.onPartial?.(buildChronicRefillClinicalResult(patient, candidate, draft, [], {
+    status: 'streaming',
+    readySections: ['record_core', 'history_context', 'diagnoses', 'review_plan'],
+    message: '病历基础内容已就绪，正在生成复诊核查与用药方案',
+  }));
+
+  const exactInventoryIds = new Set(
+    initialTreatments
+      .map((item) => item.matchedItem?.id)
+      .filter((id): id is string => Boolean(id)),
+  );
+  const inventoryPromptContext = candidate.medications.length > 0
+    ? formatAvailableMedicineInventoryPrompt(
+      inventoryContext.items.filter((item) => exactInventoryIds.has(item.productId)),
+    )
+    : inventoryContext.promptContext;
+  const rawDraft: ChronicRefillDraft = { ...draft };
+  const streamAccumulator = createChronicRefillRecordStreamAccumulator(rawDraft);
+  let rawOutput = '';
+  let receivedRecommendedMedicines = false;
+
+  const emitStreamPartial = (): void => {
+    draft = normalizeDraft(
+      streamAccumulator.draft,
+      patient,
+      candidate,
+      availableMedicationNames,
+    );
+    receivedRecommendedMedicines = streamAccumulator.readySections.includes('recommended_medicines');
+    const partialTreatments = receivedRecommendedMedicines
+      ? buildChronicRefillInventoryTreatments(
+        draft.recommendedMedicines,
+        inventoryContext.items,
+        standardizeMedicineName,
+        {
+          historicalMedications: candidate.medications,
+          historicalMedicationOrders: candidate.medicationOrders,
+          prescriptionHistoryVisits: candidate.prescriptionHistoryVisits || candidate.chronicVisits,
+        },
+      )
+      : [];
+    options?.onPartial?.(buildChronicRefillClinicalResult(
+      patient,
+      candidate,
+      draft,
+      partialTreatments,
+      {
+        status: 'streaming',
+        readySections: [...streamAccumulator.readySections],
+        message: receivedRecommendedMedicines
+          ? '用药候选已就绪，正在完成结果校验'
+          : '病历内容正在逐步生成',
+      },
+    ));
+  };
+  const streamParser = createChronicRefillRecordStreamParser((event) => {
+    applyChronicRefillRecordStreamEvent(streamAccumulator, event);
+    if (event.event !== 'done') emitStreamPartial();
+  });
+
+  try {
+    await chatStream([
+      {
+        role: 'system',
+        content: [
+          '你是基层门诊慢性病复诊配药病历助手。',
+          '慢病范围已由医生确认；主诉、现病史、诊断和推荐用药只能围绕已选慢病，不得加入患者其他慢病。',
+          '根据患者近90天就诊中的慢病就诊记录和配药信息生成本次可编辑病历草稿，不得编造当前症状、生命体征、检查结果或病情稳定程度。',
+          '主诉应写明具体慢病和“复诊配药”目的。',
+          '本次尚未完成当前用药、依从性、控制情况、不适和不良反应核查；historyOfPresentIllness只能写历史明确诊断、历史曾开具的规范药名和本次复诊配药目的，不得提前写规律服药、控制平稳、无不适或监测结果。',
+          'historyOfPresentIllness禁止写入年龄、性别、当前库存、可续方药品、可参考药品、推荐药品、待医生核实或后续治疗方案；库存信息只能用于recommendedMedicines。',
+          '禁止使用“未提供新发不适信息”作为主诉或现病史主体，也不要写“无不适”或“病情稳定”。',
+          '药品按“库存同品 → 库存等效药 → 规范通用名兜底”选择；无库存通用名仅供医生参考。',
+          '若未获取到可确认的历史用药，仍需根据具体慢病诊断、患者信息和当前有效库存推荐合理的候选药品，不得返回空方案。',
+          '未获取到历史用药时，currentMedicationHistory只能写“历史用药方案待医生核实”等待核实表述，不得把本次推荐药品伪装成既往用药。',
+          'recommendedMedicines 必须返回结构化药品对象，不生成检查、检验或处置。',
+          '每个药品必须结合候选慢病、历史用药和库存规格给出合理的目标临床一次剂量、频次和用法；不得把包装规格直接当成一次剂量，也不得把所有药品统一写成一次1剂量单位。',
+          '目标剂量只写targetDose/targetDoseUnit，例如500mg写为targetDose="500"、targetDoseUnit="mg"；dosage/dosageUnit必须留空，由程序结合PHIS药品详情换算。frequencyKey优先使用QD/BID/TID/QID，routeKey口服优先使用PO。',
+          'days、totalQty、totalUnit必须留空；用药天数只允许程序沿用可靠关联的历史处方，包装总量由程序根据最终一次剂量、频次、天数和库存包装规格计算并校验库存。',
+          'reason只说明诊断、历史用药和适应证等临床推荐依据，不得复述或计算单次剂量、频次、疗程、总量和包装数量。',
+          '同一次返回reviewPlan，动态生成3到5个最少且必要的复诊核查项，覆盖当前实际用药、依从性、病情或监测控制、疾病相关不适和药物不良反应。',
+          'reviewPlan每项提供2到4个互斥选项、recommendedValue、confidence、evidence、basis和priority；推荐只用于界面提示，不代表医生已确认。',
+          '每个选项提供recordText；未知/未评估/未询问选项recordText必须为空。会影响续方安全的选项（用药调整或停用、控制波动或欠佳、存在相关不适或不良反应）必须设置treatmentReviewRequired=true。',
+          'priority只允许critical或general；当前用药、控制情况、相关不适和不良反应默认属于critical。',
+          'healthEducation必须针对患者的具体慢性病诊断和病情，给出具体的规律用药注意事项、自我指标监测、饮食调养和复诊条件等个性化健康处方，严禁写入通用的“注意休息”、“1周内复诊”或“必要时上级医院进一步治疗”。',
+          '必须逐行输出 NDJSON；每行只包含一个完整 JSON 对象，不要输出数组外壳、markdown、代码块或解释。',
+          '严格按 record_core、review_plan、recommended_medicines、record_extra、done 的顺序输出。',
+          '格式为 {"event":"事件名","data":对应数据}。record_core.data包含chiefComplaint、historyOfPresentIllness、pastMedicalHistory、currentMedicationHistory；review_plan.data为完整reviewPlan；recommended_medicines.data为药品数组；record_extra.data包含healthEducation；done.data可为空对象。',
+        ].join('\n'),
+      },
+      {
+        role: 'user',
+        content: [
+          `患者：${getPatientContextName(patient)}，${getPatientContextGenderText(patient)}，${getPatientContextAgeText(patient)}`,
+          `过敏史：${getPatientContextAllergyHistory(patient) || '未记录'}`,
+          `医生已确认的本次慢病：${candidate.diagnoses.join('、')}`,
+          `慢病分类（仅用于场景识别）：${candidate.diagnosisGroups.join('、')}`,
+          `历史慢病配药：${candidate.medicationEvidenceText}`,
+          `当前库存内可续方药品：${buildMedicationSummary(availableMedicationNames)}`,
+          inventoryPromptContext,
+          '近90天内的慢病就诊依据：',
+          buildHistoryEvidence(candidate),
+          [
+            '请生成字段：chiefComplaint、historyOfPresentIllness、pastMedicalHistory、currentMedicationHistory、treatmentPlan、healthEducation、recommendedMedicines、reviewPlan。',
+            'recommendedMedicines格式：',
+            '[{"name":"库存中的完整药品名称","spec":"库存规格","targetDose":"目标临床一次剂量数值","targetDoseUnit":"mg/g/ml","frequency":"频次文本","frequencyKey":"频次编码","route":"用法文本","routeKey":"用法编码","days":"","reason":"推荐依据"}]',
+            'reviewPlan格式：',
+            '{"summary":"核查提示","items":[{"id":"stable-id","question":"核查问题","description":"简短说明","options":[{"value":"值","label":"选项","recordText":"确认后写入的事实","treatmentReviewRequired":false}],"recommendedValue":"值","confidence":"high|medium|low","evidence":"current-explicit|historical-consistent|model-inference|unknown","basis":"推荐依据","priority":"critical|general"}]}',
+          ].join('\n'),
+        ].join('\n'),
+      },
+    ], (chunk) => {
+      rawOutput += chunk;
+      streamParser.push(chunk);
+    }, undefined, undefined, undefined, {
+      configProfile: 'fast',
+      traceContext: {
+        scene: 'reception-chronic-refill-record',
+        sourceModule: 'reception_risk',
+        operationModule: 'reception',
+        operationAction: 'generate_chronic_refill_record',
+        title: '接诊生成复诊配药病历',
+      },
+    });
+    streamParser.flush();
+    if (streamAccumulator.eventCount === 0 && rawOutput.trim()) {
+      draft = normalizeDraft(
+        parseLLMJson<ChronicRefillDraft>(rawOutput),
+        patient,
+        candidate,
+        availableMedicationNames,
+      );
+      receivedRecommendedMedicines = true;
+    } else {
+      draft = normalizeDraft(
+        streamAccumulator.draft,
+        patient,
+        candidate,
+        availableMedicationNames,
+      );
+    }
+  } catch (error) {
+    streamParser.flush();
+    console.warn('[ChronicRefill] Streaming draft stopped, retaining available partial result', error);
+    draft = normalizeDraft(
+      streamAccumulator.draft,
+      patient,
+      candidate,
+      availableMedicationNames,
+    );
+  }
+  options?.onProgress?.('finalizing-result');
+  const treatments = buildChronicRefillInventoryTreatments(
+    draft.recommendedMedicines,
+    inventoryContext.items,
+    standardizeMedicineName,
+    {
+      historicalMedications: candidate.medications,
+      historicalMedicationOrders: candidate.medicationOrders,
+      prescriptionHistoryVisits: candidate.prescriptionHistoryVisits || candidate.chronicVisits,
+    },
+  );
+
+  return buildChronicRefillClinicalResult(patient, candidate, draft, treatments);
 }

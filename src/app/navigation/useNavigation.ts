@@ -140,13 +140,6 @@ export function useNavigation(options: NavigationOptions) {
     await openView('voice-consultation');
   }
 
-  async function openChronicRefillConfirmation(): Promise<void> {
-    trackViewChange(currentView.value, 'chronic-refill-confirmation', {
-      patientId: currentPatient.value?.patientId,
-    });
-    await openView('chronic-refill-confirmation');
-  }
-
   /**
    * 打开独立诊疗方案推荐页
    */
@@ -225,7 +218,6 @@ export function useNavigation(options: NavigationOptions) {
     openHisIntegrationLog,
     openMedicalCatalogCache,
     openConsultation,
-    openChronicRefillConfirmation,
     openVoiceConsultation,
     openTreatmentPlan,
     openOutpatientFollowUp,

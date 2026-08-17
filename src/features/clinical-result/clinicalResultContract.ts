@@ -1,4 +1,8 @@
-import type { Diagnosis, TreatmentRecommendation } from '@/types/consultation';
+import type {
+  ChronicRefillReviewPlan,
+  Diagnosis,
+  TreatmentRecommendation,
+} from '@/types/consultation';
 import type { DiagnosisHint, TreatmentHint } from '@/prompts';
 import type { OutpatientRecord } from './outpatientRecord';
 
@@ -29,11 +33,20 @@ export type ClinicalResultGenerationSection =
   | 'explicit_orders'
   | 'diagnoses'
   | 'recommendation_plan'
+  | 'review_plan'
+  | 'recommended_medicines'
   | 'record_extra';
 
+export type ClinicalResultGenerationStage =
+  | 'preparing-context'
+  | 'generating-content'
+  | 'finalizing-result';
+
 export interface ClinicalResultGenerationState {
-  status: 'streaming' | 'complete';
+  status: 'streaming' | 'complete' | 'error';
   readySections: ClinicalResultGenerationSection[];
+  /** 非流式生成的真实任务节点；语音分区流可继续只使用 readySections。 */
+  stage?: ClinicalResultGenerationStage;
   message?: string;
 }
 
@@ -100,7 +113,9 @@ export interface ClinicalResultInput {
   healthEducation: string;
   outpatientRecord?: OutpatientRecord;
   recommendationPolicy?: ClinicalResultRecommendationPolicy;
-  /** 语音结构化分区流式生成状态；非语音场景可不提供。 */
+  /** 慢病复诊结果页的回写前核查；推荐值不等于医生已确认。 */
+  chronicRefillReview?: ChronicRefillReviewPlan;
+  /** 共享结果页的分区流式生成状态；非流式场景可不提供。 */
   generation?: ClinicalResultGenerationState;
   channel?: ClinicalResultChannel;
 }

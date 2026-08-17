@@ -1,34 +1,17 @@
 import type { ChronicRefillCandidate } from './chronicRefillAssessment';
+import type {
+  ChronicRefillReviewConfidence,
+  ChronicRefillReviewEvidence,
+  ChronicRefillReviewItem,
+  ChronicRefillReviewOption,
+  ChronicRefillReviewPlan,
+} from '@/types/consultation';
 
-export type ChronicRefillConfirmationConfidence = 'high' | 'medium' | 'low';
-export type ChronicRefillConfirmationEvidence =
-  | 'current-explicit'
-  | 'historical-consistent'
-  | 'model-inference'
-  | 'unknown';
-
-export interface ChronicRefillConfirmationOption {
-  value: string;
-  label: string;
-  /** 医生选中后可进入现病史的短事实片段；未知/待确认选项应为空。 */
-  recordText: string;
-}
-
-export interface ChronicRefillConfirmationItem {
-  id: string;
-  question: string;
-  description: string;
-  options: ChronicRefillConfirmationOption[];
-  recommendedValue: string;
-  confidence: ChronicRefillConfirmationConfidence;
-  evidence: ChronicRefillConfirmationEvidence;
-  basis: string;
-}
-
-export interface ChronicRefillConfirmationPlan {
-  summary: string;
-  items: ChronicRefillConfirmationItem[];
-}
+export type ChronicRefillConfirmationConfidence = ChronicRefillReviewConfidence;
+export type ChronicRefillConfirmationEvidence = ChronicRefillReviewEvidence;
+export type ChronicRefillConfirmationOption = ChronicRefillReviewOption;
+export type ChronicRefillConfirmationItem = ChronicRefillReviewItem;
+export type ChronicRefillConfirmationPlan = ChronicRefillReviewPlan;
 
 export interface ChronicRefillConfirmedAnswer {
   itemId: string;
@@ -162,8 +145,8 @@ function createGenericFallbackPlan(candidate: ChronicRefillCandidate): ChronicRe
         options: medicationText
           ? [
             { value: 'continued', label: '仍按近期方案服用', recordText: `规律服用${medicationText}` },
-            { value: 'partial', label: '部分药品已调整', recordText: '近期用药方案已有调整' },
-            { value: 'stopped', label: '已经停用', recordText: '近期已停用原用药方案' },
+            { value: 'partial', label: '部分药品已调整', recordText: '近期用药方案已有调整', treatmentReviewRequired: true },
+            { value: 'stopped', label: '已经停用', recordText: '近期已停用原用药方案', treatmentReviewRequired: true },
             { value: 'unknown', label: '暂未确认', recordText: '' },
           ]
           : [
@@ -174,6 +157,7 @@ function createGenericFallbackPlan(candidate: ChronicRefillCandidate): ChronicRe
         confidence: medicationText ? 'medium' : 'low',
         evidence: medicationText ? 'historical-consistent' : 'unknown',
         basis: medicationText ? '基于近期历史处方推荐，需医生确认当前仍在服用' : '当前缺少历史用药事实',
+        priority: 'critical',
       },
       {
         id: 'control-status',
@@ -181,14 +165,15 @@ function createGenericFallbackPlan(candidate: ChronicRefillCandidate): ChronicRe
         description: '请选择本次问诊已经确认的状态',
         options: [
           { value: 'stable', label: '控制平稳', recordText: '近期病情及相关监测指标控制平稳' },
-          { value: 'fluctuating', label: '存在波动', recordText: '近期病情或相关监测指标存在波动' },
-          { value: 'poor', label: '控制欠佳', recordText: '近期病情或相关监测指标控制欠佳' },
+          { value: 'fluctuating', label: '存在波动', recordText: '近期病情或相关监测指标存在波动', treatmentReviewRequired: true },
+          { value: 'poor', label: '控制欠佳', recordText: '近期病情或相关监测指标控制欠佳', treatmentReviewRequired: true },
           { value: 'unknown', label: '暂未评估', recordText: '' },
         ],
         recommendedValue: 'unknown',
         confidence: 'low',
         evidence: 'unknown',
         basis: '历史处方不能证明本次控制情况',
+        priority: 'critical',
       },
       {
         id: 'current-symptoms',
@@ -196,13 +181,14 @@ function createGenericFallbackPlan(candidate: ChronicRefillCandidate): ChronicRe
         description: '没有本次问诊证据时请选择暂未询问',
         options: [
           { value: 'none', label: '无明显相关不适', recordText: '近期无明显相关不适及药物不良反应' },
-          { value: 'present', label: '存在相关不适', recordText: '近期存在相关不适' },
+          { value: 'present', label: '存在相关不适', recordText: '近期存在相关不适', treatmentReviewRequired: true },
           { value: 'unknown', label: '暂未询问', recordText: '' },
         ],
         recommendedValue: 'unknown',
         confidence: 'low',
         evidence: 'unknown',
         basis: '未发现可作为本次阴性症状的明确记录',
+        priority: 'critical',
       },
     ],
   };
@@ -218,7 +204,12 @@ export function normalizeChronicRefillConfirmationPlan(
       const label = cleanText(option.label);
       if (!label) return [];
       const value = cleanText(option.value) || `option-${optionIndex + 1}`;
-      return [{ value, label, recordText: cleanRecordText(option.recordText) }];
+      return [{
+        value,
+        label,
+        recordText: cleanRecordText(option.recordText),
+        treatmentReviewRequired: option.treatmentReviewRequired === true,
+      }];
     });
     if (!question || options.length < 2) return [];
 
@@ -235,10 +226,11 @@ export function normalizeChronicRefillConfirmationPlan(
       confidence: normalizeConfidence(rawItem.confidence),
       evidence: normalizeEvidence(rawItem.evidence),
       basis: cleanText(rawItem.basis) || '模型根据当前复诊上下文生成',
+      priority: rawItem.priority === 'general' ? 'general' : 'critical',
     } satisfies ChronicRefillConfirmationItem];
   });
 
-  if (normalizedItems.length < 2) {
+  if (normalizedItems.length < 3) {
     return createGenericFallbackPlan(candidate);
   }
 

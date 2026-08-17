@@ -356,7 +356,6 @@ export function useWorkMode(options: WorkModeOptions) {
   const handleCollapse = async (): Promise<void> => {
     const shouldReturnToReception =
       (currentView.value === 'consultation' ||
-       currentView.value === 'chronic-refill-confirmation' ||
        currentView.value === 'voice-consultation' ||
        currentView.value === 'treatment-plan' ||
        currentView.value === 'outpatient-follow-up' ||

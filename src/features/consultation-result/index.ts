@@ -4,6 +4,7 @@ export { default as ClinicalDecisionDisclaimer } from './ui/ClinicalDecisionDisc
 export { default as ClinicalRecordAnnotatedText } from './ui/ClinicalRecordAnnotatedText.vue';
 export { default as ClinicalResultSupplementDialog } from './ui/ClinicalResultSupplementDialog.vue';
 export { default as ClinicalRecordFactPanel } from './ui/ClinicalRecordFactPanel.vue';
+export { default as ChronicRefillReviewPanel } from './ui/ChronicRefillReviewPanel.vue';
 export { default as ClinicalResultWritebackScopeSelector } from './ui/ClinicalResultWritebackScopeSelector.vue';
 export { default as DiagnosisDifferentialList } from './ui/DiagnosisDifferentialList.vue';
 export { default as DiagnosisRecommendationCard } from './ui/DiagnosisRecommendationCard.vue';
@@ -17,6 +18,8 @@ export { useBodySiteOptions } from './model/useBodySiteOptions';
 export { useClinicalResultCancelController } from './model/useClinicalResultCancelController';
 export { useClinicalResultPrecautionsScope } from './model/useClinicalResultPrecautionsScope';
 export { useClinicalRecordFactConfirmation } from './model/useClinicalRecordFactConfirmation';
+export { useChronicRefillReview } from './model/useChronicRefillReview';
+export { useGeneratedClinicalResultSession } from './model/useGeneratedClinicalResultSession';
 export { useClinicalResultDiagnosisChecklist } from './model/useClinicalResultDiagnosisChecklist';
 export { useClinicalResultIntentReset } from './model/useClinicalResultIntentReset';
 export {
@@ -77,6 +80,16 @@ export type {
   ClinicalRecordFactConfirmation,
   ClinicalRecordFactConfirmationOptions,
 } from './model/useClinicalRecordFactConfirmation';
+export type {
+  ChronicRefillReview,
+  ChronicRefillReviewOptions,
+} from './model/useChronicRefillReview';
+export type {
+  BeginGeneratedClinicalResultInput,
+  GeneratedClinicalResultProgress,
+  GeneratedClinicalResultSession,
+  GeneratedClinicalResultSessionOptions,
+} from './model/useGeneratedClinicalResultSession';
 export type {
   ClinicalResultDiagnosisChecklist,
   ClinicalResultDiagnosisChecklistOptions,

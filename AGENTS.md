@@ -42,6 +42,7 @@
 8. **主窗口几何出口禁止绕过**：业务组件和 feature composable 不得直接调用 Tauri `setSize / setPosition`；主窗口尺寸与位置统一由 `app/shell/useWindowTransitionCoordinator.ts` 编排，并经 `useWindowManagement.ts` 应用，纯 `workArea` / DPI / clamp 规则归 `windowGeometry.ts`。独立原生窗口的创建尺寸仍由各自窗口 service 管理，但必须设置合理 min size 并校验当前工作区。
 9. **品牌与兼容协议禁止混改**：正式产品名统一为“全医慧助（PCIE）”，英文展开统一为“Primary Care Intelligent Expert”；历史 `MedHermes` / `med-hermes` 只允许在已发布的 HIS SDK 全局对象、SDK 文件/路由、深链 scheme、HTTP Header、Bundle Identifier 和迁移说明中作为兼容标识保留。品牌更新不得直接全局替换这些技术契约；如需废弃，必须先提供双栈迁移、版本计划和 HIS 联调验证。
 10. **正式发布线禁止分叉复用**：当前仓库只有 `main` 可以发布正式桌面客户端，自 `1.4.0` 起版本必须严格高于所有历史公开版本；`feature/two-chronic-diseases` 不合并回 `main`，后续移出当前仓库，不得继续使用本仓库正式更新通道、tag 或版本号。禁止复用历史 tag / draft / `latest.json`；发布前必须核对三处版本一致、兼容 Bundle Identifier 与 updater 公钥不变，并验证 `latest.json` 中每个平台的 URL 文件名和签名都来自同一次构建，验证成功后才允许把 draft 转为 latest 正式发布。
+11. **测试构建与正式发布禁止混用**：功能验收必须优先使用 `yarn release:test --version X.Y.Z` 或手动 `Test Build` 工作流。测试构建只能产生本机产物或 GitHub Actions Artifact，禁止修改或提交三处正式版本、创建 tag / GitHub Release / draft / `latest.json`，也禁止上传到客户端正式或测试更新源。验收通过后只能在干净 `main` 上用同一候选版本执行 `yarn release --version X.Y.Z`；正式 tag 仍须满足唯一、单调递增和 release preflight。
 
 ## 棘轮式治理
 
@@ -139,14 +140,15 @@
 9. **HIS 调用边界**：业务代码（`components/` / `composables/` / `services/` 中除 `services/his/*` 之外）禁止直接 `import ... from 'services/hisService'`。必须经 `services/his` 入口：业务调用走 `getHisAdapter()`，仅 SDK handshake / 服务端 bootstrap 等认证场景允许使用 `services/his` 重导出的 `getHisService` / `resetHisService`。新增 PHIS 私有字段读取必须通过 `entry.raw.xxx` 透传，不允许在中性 DTO 上加 PHIS 命名字段。
 10. **药品定稿流水线**：任何 AI 或历史上下文产生的药品，在自动选中、缓存、库存校验和回写前必须调用共享 `finalizeMedicineRecommendation(s)`，依次完成当前库存对齐、药品详情、一次剂量换算、标准频次 / 用法、程序总量和最终库存校验。模型包装总量不得直接进入药品处方；只调用 hydrate、只在展示层 normalize 或只在提交 payload 时补字段均不满足门禁。
 11. **Tauri capability 同步**：新增或首次调用 Tauri JS API 时，必须同时核对 `src-tauri/capabilities/*.json` 中对应的 `allow-*` 权限，并执行会真实触发该 API 的 Tauri 运行时冒烟；`type-check`、浏览器单测和 `cargo check` 不能替代 capability 验证。
-12. **复诊配药确认事实门禁**：动态确认项可以由模型生成并默认推荐，但推荐值不得在医生点击最终确认前写入现病史；文字/语音补充是医生独立补充说明，不得反向重生成或改写确认项。最终现病史只消费已确认 `recordText`、模型压缩后的医生补充和必要历史事实，禁止直接原样拼接冗余口语、库存、推荐方案或模型未确认推断；药品在正文中只保留规范名称。
+12. **复诊配药确认事实门禁**：慢病病历与复诊核查项必须由同一次生成返回，禁止恢复独立确认页或串行“确认计划 → 病历”两次模型调用。确认慢病范围后必须先进入共享结果页并立即展示确定性历史事实；同一次 SSE 必须按病历核心、复诊核查、药品建议和健康指导分段更新，禁止只改进度文案却继续等待完整 JSON 一次性落地，也禁止流式失败后追加第二次模型请求。迟到 partial / complete 必须同时经过 session token、患者锚点和机会校验。慢病复诊核查必须锚定主诊断卡片浮层并替代普通主诊核查，避免同位置双浮层和额外模型调用。推荐值不得在医生点击确认前写入现病史；初始现病史只消费必要历史事实和复诊目的，禁止写入库存、推荐方案或模型未确认推断。结果页确认只允许增量写入当前选择的 `recordText`，不得覆盖医生手工文本；药品在正文中只保留规范名称。重点项未处理时阻断回写并重新打开复诊核查浮层，确认异常状态时必须取消续方药品自动选中。
 13. **PHIS 历史处方属性来源**：药品一次剂量、频次、用法、天数、总量和包装单位优先读取 `loadClinicMedicalRecord.presList[].presSubList[]`，在 `services/his` Adapter 内映射为中性字段；`orderList` 只作医嘱分类、检验检查关联和缺失兜底。不得把 `takeDays` 等 PHIS 命名字段加入中性 DTO，也不得在无法按 `idOrd / idMedPro / 唯一规范药名` 关联时猜测继承。
-14. **多慢病复诊范围门禁**：患者历史存在多个慢病时，确认计划、病历生成、初始诊断和用药推荐必须只消费医生已确认的 scoped candidate；未选慢病的诊断、就诊和药品不得混入。同次就诊含多慢病且 HIS 无处方-诊断归属关系时，部分选中不得自动沿用该次处方。
+14. **多慢病复诊范围门禁**：患者历史存在多个慢病时，复诊核查项、病历生成、初始诊断和用药推荐必须只消费医生已确认的 scoped candidate；未选慢病的诊断、就诊和药品不得混入。同次就诊含多慢病且 HIS 无处方-诊断归属关系时，部分选中不得自动沿用该次处方。
 15. **患者年龄单位门禁**：患者年龄必须把数值与单位作为同一事实处理；PHIS/HIS 补全返回的完整 `ageText` 优先于接诊事件的裸 `ageNum / age`。`M / D` 或“月 / 天”不得默认成“岁”，不得写入 `ageYears`；修改患者 mapper/selector 时必须覆盖月龄、日龄和成年年龄测试。
 16. **模板病史与 AI 候选阴性内容门禁**：既往史、个人史、家族史允许使用统一标准模板预制到可编辑病历草稿；模板来源只用于内部去重与安全规则，正文不显示“模板预制”提示，医生执行一键回写视为对未单独标记模板内容的整体确认。AI 还可基于当前病例、正式诊断或病历书写要求生成候选阴性/正常表述，即使当前没有明确问诊依据；与当前诊断高度相关或属于重点安全核查的条目，必须在原句上以 `AI` / `!`、虚线和文字样式标记，不得在每个片段后重复来源提示。在医生选择“确认无异常并写入 / 记录实际异常 / 本次不适用”前，待核查候选不得重复进入字段 `modelValue`、正式缓存、`outpatientRecord` 或 PHIS 回写。重点安全项未处理时必须阻断一键回写；禁止把 AI 候选伪装成问诊已明确事实。
 17. **诊断建议分区门禁**：正式诊断建议最多 3 项且按匹配度排序，低置信或仍需补问/查体/检查才能成立的结果进入待鉴别方向；待鉴别项不得被选中、设为主诊断、触发治疗推荐或进入 `diagList`。病例只支持 1～2 项时不得凑足 3 项。
 18. **注意事项诊断作用域门禁**：AI 或规则自动生成的 `outpatientRecord.precautions` 只能消费医生已选正式诊断，不得带入待鉴别方向、未选诊断或上一次选择的教育内容。诊断选择变化时只允许重建尚未被医生修改的系统文案；医生手工文本不得被覆盖。回写前必须确认实际 `diagList` 与注意事项的诊断作用域一致。
 19. **部分回写省略语义门禁**：医生通过“选择回写”取消的门诊病历字段、诊断或医嘱类型，必须从 `record-confirmed` payload 中省略，禁止以空字符串、空对象或空数组表达，否则可能清空 HIS 既有内容。`writebackScope`、实际出现的 `outpatientRecord/diagList/orderList` 和前置校验范围必须一致；注意事项未选时顶层兼容字段 `precautions` 也必须省略。部分回写仍只产生一条 `record-confirmed + batch` 并等待一次回执，未选内容不得记录为医生拒绝建议。
+20. **慢病药品周期核查证据门禁**：慢病药品卡的近期处方核查必须消费已排除当前就诊的完整时间窗历史，按药品主键优先、唯一规范药名其次匹配；不得复用只保留最近处方的续方继承列表，也不得因历史就诊不是慢病诊断而漏掉同患者同药记录。累计量只允许汇总有效正数且单位一致的记录，单位不同或缺失时逐笔展示。没有院内权威医保周期与限量规则时只展示 HIS 处方事实，不得自动标记超量、违规、扣款风险或阻断回写。
 
 ## 推荐提交流程
 
@@ -158,6 +160,7 @@
    - `cargo check`
    - `yarn test:unit`（引入 Vitest 且命中已覆盖模块时）
    - 必要的手测结论
+   - 测试构建附上候选版本、源 commit/ref 和 Actions Artifact 名称；不得把 Artifact 描述成已发布版本
    - 发布版本额外附上 release preflight、统一 `latest.json` 校验，以及至少一个历史正式版本到新版本的真实 updater 冒烟结果
 
 ## 工具使用

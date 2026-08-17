@@ -4,7 +4,8 @@ import {
   type ClinicalResultTreatment,
 } from '@features/clinical-result';
 import { medicalDataService } from '@/services/medicalData';
-import type { HisHistoricalMedication } from '@/services/his/types';
+import type { HisHistoricalMedication, HisVisitRecord } from '@/services/his/types';
+import { buildRecentPrescriptionHistory } from './chronicRefillMedicationHistory';
 
 export interface ParsedMedication {
   dosage?: string;
@@ -39,6 +40,7 @@ export type ChronicRefillMedicineInput = string | ChronicRefillMedicineRecommend
 export interface BuildChronicRefillTreatmentsOptions {
   historicalMedications?: string[];
   historicalMedicationOrders?: HisHistoricalMedication[];
+  prescriptionHistoryVisits?: HisVisitRecord[];
 }
 
 export function parseHistoricalMedication(medicationText: string): ParsedMedication {
@@ -204,6 +206,7 @@ export function buildChronicRefillInventoryTreatments(
   const historicalMedications = options.historicalMedications
     || medicationInputs.filter((item): item is string => typeof item === 'string');
   const historicalMedicationOrders = options.historicalMedicationOrders || [];
+  const prescriptionHistoryVisits = options.prescriptionHistoryVisits || [];
 
   medicationInputs.forEach((input) => {
     const medicineName = getMedicineInputName(input);
@@ -232,6 +235,10 @@ export function buildChronicRefillInventoryTreatments(
         selected: false,
         reason: '院内无库存参考，不能直接回写处方',
         matchedItem: null,
+        recentPrescriptionHistory: buildRecentPrescriptionHistory(
+          { name: standardName },
+          prescriptionHistoryVisits,
+        ),
       });
       return;
     }
@@ -308,6 +315,10 @@ export function buildChronicRefillInventoryTreatments(
       days,
       totalQty,
       totalUnit,
+      recentPrescriptionHistory: buildRecentPrescriptionHistory(
+        { name: matched.productName, productId: matched.productId },
+        prescriptionHistoryVisits,
+      ),
       matchedItem: {
         id: matched.productId,
         name: matched.productName,
