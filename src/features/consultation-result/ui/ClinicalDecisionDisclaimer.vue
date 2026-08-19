@@ -17,13 +17,13 @@ import Icon from '@shared/ui/Icon.vue';
   gap: 6px;
   min-width: 240px;
   margin: 0 auto 0 0;
-  color: var(--voice-text-muted, #475569);
+  color: var(--voice-warning, #c97a11);
   font-size: 12px;
   line-height: 1.45;
 }
 
 .clinical-decision-disclaimer :deep(svg) {
   flex: 0 0 auto;
-  color: var(--voice-accent, #2b7fe3);
+  color: var(--voice-warning, #c97a11);
 }
 </style>

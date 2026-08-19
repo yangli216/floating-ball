@@ -18,7 +18,7 @@ describe('useReceptionSessionController', () => {
 
     expect(session.patientName.value).toBe('张建国');
     expect(session.patientGender.value).toBe('F');
-    expect(session.patientAge.value).toBe(63);
+    expect(session.patientAgeText.value).toBe('63岁');
 
     session.startAssessing();
     session.setRisks([{ level: 2, category: 'chronic', content: '高血压随访' }]);
@@ -64,5 +64,20 @@ describe('useReceptionSessionController', () => {
     expect(session.opportunities.value).toEqual([]);
     expect(session.patientMemoryStatus.value).toBe('idle');
     expect(session.patientMemoryBrief.value).toBeNull();
+  });
+
+  it('preserves a composite infant age instead of parsing it as years', () => {
+    const patient = ref(buildPatientContext({
+      payload: {
+        patientId: 'patient-infant',
+        visitId: 'visit-infant',
+        name: '婴儿患者',
+        gender: 'F',
+        ageText: '6月15天',
+      },
+    }));
+    const session = useReceptionSessionController(patient);
+
+    expect(session.patientAgeText.value).toBe('6月15天');
   });
 });

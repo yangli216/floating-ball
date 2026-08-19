@@ -23,18 +23,12 @@ withDefaults(defineProps<{
 
 const emit = defineEmits<{
   (event: 'update:modelValue', value: string): void;
-  (event: 'confirm-negative-fact', id: string): void;
-  (event: 'confirm-positive-fact', id: string, text: string): void;
-  (event: 'not-applicable-fact', id: string): void;
+  (event: 'dismiss-fact-suggestion', id: string): void;
 }>();
 
 function handleInput(event: Event): void {
   const target = event.target as HTMLTextAreaElement | null;
   emit('update:modelValue', target?.value || '');
-}
-
-function forwardConfirmPositive(id: string, text: string): void {
-  emit('confirm-positive-fact', id, text);
 }
 
 </script>
@@ -53,9 +47,7 @@ function forwardConfirmPositive(id: string, text: string): void {
         :facts="factHighlights"
         :suggestions="factSuggestions"
         @update:model-value="emit('update:modelValue', $event)"
-        @confirm-negative="emit('confirm-negative-fact', $event)"
-        @confirm-positive="forwardConfirmPositive"
-        @not-applicable="emit('not-applicable-fact', $event)"
+        @dismiss-suggestion="emit('dismiss-fact-suggestion', $event)"
       />
     </template>
 

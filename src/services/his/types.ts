@@ -607,6 +607,8 @@ export interface HisOutpatientFollowUpExam {
   examName?: string;
   finding?: string;
   conclusion?: string;
+  /** PACS/检查系统提供的原报告 HTTP(S) 页面；不得作为 AI 临床正文。 */
+  reportUrl?: string;
 }
 
 export interface HisOutpatientFollowUpContext {

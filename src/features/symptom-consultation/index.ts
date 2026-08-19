@@ -114,6 +114,12 @@ export {
   type ConsultationRecordView,
 } from './lib/consultationRecommendationPresentation';
 export {
+  buildConsultationTreatmentRecommendationContext,
+  type BuildConsultationTreatmentRecommendationContextInput,
+  type ConsultationTreatmentPatientProfile,
+  type ConsultationTreatmentRecordContext,
+} from './lib/consultationTreatmentRecommendationContext';
+export {
   getDiagnosisIdentity,
   isCurrentDiagnosisContext,
   isStaleRecommendationContext,

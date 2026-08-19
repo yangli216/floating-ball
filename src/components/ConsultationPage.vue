@@ -599,6 +599,7 @@ import {
 import {
   applyCheckboxFieldChange,
   buildConsultationFormValidationResult,
+  buildConsultationTreatmentRecommendationContext,
   buildDiagnosisDisplayGroups,
   buildDiagnosisRecommendationsFromRaw,
   buildDiagnosisPrefill,
@@ -1918,6 +1919,12 @@ const performTreatmentFactCheck = async (treatments: TreatmentRecommendation[]) 
   });
 };
 
+const getTreatmentRecommendationContext = () => buildConsultationTreatmentRecommendationContext({
+  patient: patientPromptProfile.value,
+  diagnosis: selectedDiagnosis.value!,
+  record: generatedRecord.value,
+});
+
 const fetchTreatmentRecommendation = async () => {
   if (!selectedDiagnosis.value) return;
   const requestSeq = ++treatmentRecommendationRequestSeq;
@@ -1946,12 +1953,7 @@ const fetchTreatmentRecommendation = async () => {
       ));
     } else {
       const requestSpec = buildClinicalResultTreatmentRequestSpec('medication', {
-        patientName: patientPromptProfile.value.patientName,
-        gender: patientPromptProfile.value.gender,
-        age: patientPromptProfile.value.age,
-        diagnosisName: selectedDiagnosis.value.name,
-        diagnosisCode: selectedDiagnosis.value.code || '',
-        chiefComplaint: generatedRecord.value.chiefComplaint,
+        ...getTreatmentRecommendationContext(),
         availableMedicineInventory: inventoryContext.promptContext,
       }, PROMPTS.consultation.treatmentRecommendation, {
         sourceModule: 'consultation_ai', operationModule: 'consultation',
@@ -2031,14 +2033,8 @@ const fetchExamRecommendation = async () => {
 
   try {
     const startTime = Date.now();
-    const requestSpec = buildClinicalResultTreatmentRequestSpec('exam', {
-      patientName: patientPromptProfile.value.patientName,
-      gender: patientPromptProfile.value.gender,
-      age: patientPromptProfile.value.age,
-      diagnosisName: selectedDiagnosis.value.name,
-      diagnosisCode: selectedDiagnosis.value.code || '',
-      chiefComplaint: generatedRecord.value.chiefComplaint
-    }, PROMPTS.consultation.examinationRecommendation, {
+    const requestSpec = buildClinicalResultTreatmentRequestSpec(
+      'exam', getTreatmentRecommendationContext(), PROMPTS.consultation.examinationRecommendation, {
       sourceModule: 'consultation_ai',
       operationModule: 'consultation',
     }, {
@@ -2113,14 +2109,8 @@ const fetchLabTestRecommendation = async () => {
 
   try {
     const startTime = Date.now();
-    const requestSpec = buildClinicalResultTreatmentRequestSpec('lab_test', {
-      patientName: patientPromptProfile.value.patientName,
-      gender: patientPromptProfile.value.gender,
-      age: patientPromptProfile.value.age,
-      diagnosisName: selectedDiagnosis.value.name,
-      diagnosisCode: selectedDiagnosis.value.code || '',
-      chiefComplaint: generatedRecord.value.chiefComplaint
-    }, PROMPTS.consultation.labTestRecommendation, {
+    const requestSpec = buildClinicalResultTreatmentRequestSpec(
+      'lab_test', getTreatmentRecommendationContext(), PROMPTS.consultation.labTestRecommendation, {
       sourceModule: 'consultation_ai',
       operationModule: 'consultation',
     }, {
@@ -2195,14 +2185,8 @@ const fetchProcedureRecommendation = async () => {
 
   try {
     const startTime = Date.now();
-    const requestSpec = buildClinicalResultTreatmentRequestSpec('procedure', {
-      patientName: patientPromptProfile.value.patientName,
-      gender: patientPromptProfile.value.gender,
-      age: patientPromptProfile.value.age,
-      diagnosisName: selectedDiagnosis.value.name,
-      diagnosisCode: selectedDiagnosis.value.code || '',
-      chiefComplaint: generatedRecord.value.chiefComplaint
-    }, PROMPTS.consultation.procedureRecommendation, {
+    const requestSpec = buildClinicalResultTreatmentRequestSpec(
+      'procedure', getTreatmentRecommendationContext(), PROMPTS.consultation.procedureRecommendation, {
       sourceModule: 'consultation_ai',
       operationModule: 'consultation',
     }, {

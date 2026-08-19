@@ -27,7 +27,7 @@
         <div class="rc-name-row">
           <span class="rc-name">{{ patientName }}</span>
           <span class="rc-meta">{{ gender === 'F' ? '女' : '男' }}</span>
-          <span class="rc-meta">{{ age }}岁</span>
+          <span v-if="ageText" class="rc-meta">{{ ageText }}</span>
         </div>
         <div class="rc-badge-row">
           <span v-if="analyzing" class="rc-badge rc-badge--blue">
@@ -173,7 +173,7 @@ import type { PatientMemorySyncStatus } from '@features/patient-memory';
 const props = defineProps<{
   patientName: string;
   gender: 'M' | 'F';
-  age: number;
+  ageText: string;
   risks: RiskItem[];
   analyzing?: boolean;
   chronicRefillCandidate?: ChronicRefillCandidate | null;
@@ -240,12 +240,12 @@ const stateClass = computed(() => {
 // 头像加载策略：依据性别 + 年龄映射到 public/avatar/ 下的切图，
 // 加载失败时回退默认头像。
 const avatarSrc = ref<string>(
-  resolvePatientAvatar({ gender: props.gender, age: props.age })
+  resolvePatientAvatar({ gender: props.gender, ageText: props.ageText })
 );
 watch(
-  () => [props.gender, props.age] as const,
+  () => [props.gender, props.ageText] as const,
   ([g, a]) => {
-    avatarSrc.value = resolvePatientAvatar({ gender: g, age: a });
+    avatarSrc.value = resolvePatientAvatar({ gender: g, ageText: a });
   }
 );
 function onAvatarError() {

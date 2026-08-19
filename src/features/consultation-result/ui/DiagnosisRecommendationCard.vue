@@ -229,7 +229,7 @@ const props = defineProps({
   },
   showFeedback: {
     type: Boolean,
-    default: true,
+    default: false,
   },
   showDifferential: {
     type: Boolean,

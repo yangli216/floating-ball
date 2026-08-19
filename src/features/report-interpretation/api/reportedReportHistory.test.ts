@@ -41,6 +41,34 @@ describe('reported report serialization', () => {
     expect(text).toContain('检查结论：考虑感染性病变。');
   });
 
+  it('ignores empty PACS fields and interprets the remaining valid field', () => {
+    const text = serializeExamReport({
+      examName: '心电图',
+      finding: '[NULL]',
+      conclusion: '窦性心律',
+    });
+
+    expect(text).toContain('报告名称：心电图');
+    expect(text).toContain('检查结论：窦性心律');
+    expect(text).not.toContain('[NULL]');
+    expect(text).not.toContain('检查所见：');
+  });
+
+  it('never serializes the PACS report URL as clinical evidence', () => {
+    const reportUrl = 'http://192.168.201.53:8083/Report/Report/?AccessionNumber=XTUS32432';
+    const text = serializeExamReport({
+      examName: '乳腺超声',
+      finding: '双乳腺组织结构紊乱，右乳见囊实性结节。',
+      conclusion: '右乳结节 BI-RADS分类 3类；双侧腋下淋巴结探及。',
+      reportUrl,
+    });
+
+    expect(text).toContain('检查所见：双乳腺组织结构紊乱');
+    expect(text).toContain('检查结论：右乳结节 BI-RADS分类 3类');
+    expect(text).not.toContain(reportUrl);
+    expect(text).not.toContain('AccessionNumber');
+  });
+
   it('does not promote a normal item into the abnormal list', () => {
     const items = buildStructuredLabAbnormalItems([{
       itemName: 'C-反应蛋白',

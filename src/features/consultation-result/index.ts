@@ -1,9 +1,9 @@
 export { default as ConsultationResultPage } from './ui/ConsultationResultPage.vue';
 export { default as ClinicalGenerationProgress } from './ui/ClinicalGenerationProgress.vue';
+export { default as ClinicalResultColumnNavigator } from './ui/ClinicalResultColumnNavigator.vue';
 export { default as ClinicalDecisionDisclaimer } from './ui/ClinicalDecisionDisclaimer.vue';
 export { default as ClinicalRecordAnnotatedText } from './ui/ClinicalRecordAnnotatedText.vue';
 export { default as ClinicalResultSupplementDialog } from './ui/ClinicalResultSupplementDialog.vue';
-export { default as ClinicalRecordFactPanel } from './ui/ClinicalRecordFactPanel.vue';
 export { default as ChronicRefillReviewPanel } from './ui/ChronicRefillReviewPanel.vue';
 export { default as ClinicalResultWritebackScopeSelector } from './ui/ClinicalResultWritebackScopeSelector.vue';
 export { default as DiagnosisDifferentialList } from './ui/DiagnosisDifferentialList.vue';
@@ -18,11 +18,20 @@ export { default as TreatmentRecommendationCard } from './ui/TreatmentRecommenda
 export { default as TreatmentRecommendationSection } from './ui/TreatmentRecommendationSection.vue';
 export { useBodySiteOptions } from './model/useBodySiteOptions';
 export { useClinicalResultCancelController } from './model/useClinicalResultCancelController';
+export {
+  buildClinicalResultNavigationItems,
+  useClinicalResultColumnNavigation,
+} from './model/useClinicalResultColumnNavigation';
 export { useClinicalResultPrecautionsScope } from './model/useClinicalResultPrecautionsScope';
 export { useClinicalRecordFactConfirmation } from './model/useClinicalRecordFactConfirmation';
 export { useChronicRefillReview } from './model/useChronicRefillReview';
 export { useGeneratedClinicalResultSession } from './model/useGeneratedClinicalResultSession';
 export { useClinicalResultDiagnosisChecklist } from './model/useClinicalResultDiagnosisChecklist';
+export { useDifferentialDiagnosisDirection } from './model/useDifferentialDiagnosisDirection';
+export type {
+  DifferentialDiagnosisDirection,
+  DifferentialDiagnosisDirectionSnapshot,
+} from './model/useDifferentialDiagnosisDirection';
 export { useClinicalResultIntentReset } from './model/useClinicalResultIntentReset';
 export {
   createClinicalResultOrderItemResolvers,
@@ -63,6 +72,13 @@ export { useTreatmentPharmacyResolution } from './model/useTreatmentPharmacyReso
 export { useTreatmentQuickSelector } from './model/useTreatmentQuickSelector';
 export { useTreatmentSelectionReadiness } from './model/useTreatmentSelectionReadiness';
 export { useTreatmentSections } from './model/useTreatmentSections';
+export {
+  buildAuxiliaryRecommendationGroups,
+  getAuxiliaryNecessityLabel,
+  getAuxiliaryRecommendationPurpose,
+  isAuxiliaryRecommendation,
+} from './model/auxiliaryRecommendationPresentation';
+export type { AuxiliaryRecommendationGroup } from './model/auxiliaryRecommendationPresentation';
 export { useWritebackFeedbackController } from './model/useWritebackFeedbackController';
 export { useWritebackStatus } from './model/useWritebackStatus';
 export type { ManualMatchCandidate } from './ui/ManualMatchPicker.vue';
@@ -79,6 +95,12 @@ export type {
   ClinicalResultCancelControllerOptions,
   ClinicalResultCancelNotify,
 } from './model/useClinicalResultCancelController';
+export type {
+  ClinicalResultColumnNavigation,
+  ClinicalResultNavigationItem,
+  ClinicalResultNavigationKey,
+  ClinicalResultNavigationTreatmentSection,
+} from './model/useClinicalResultColumnNavigation';
 export type {
   ClinicalResultPrecautionsScope,
   ClinicalResultPrecautionsScopeOptions,

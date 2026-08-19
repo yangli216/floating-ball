@@ -62,6 +62,10 @@ import type {
   HisOutpatientFollowUpReportResultsQuery,
 } from './types';
 import { mergePhisAvailableMedicineInventory } from './phisMedicineInventory';
+import {
+  normalizeHisOutpatientFollowUpContext,
+  normalizeHisOutpatientFollowUpReportResults,
+} from './reportNormalization';
 
 const trim = (value: unknown): string | undefined => {
   if (typeof value !== 'string') return undefined;
@@ -962,13 +966,15 @@ export class PhisHisAdapter implements HisAdapter {
   async fetchOutpatientFollowUpContext(
     query: HisOutpatientFollowUpContextQuery,
   ): Promise<HisOutpatientFollowUpContext | null> {
-    return this.service.buildOutpatientFollowUpContext(query);
+    const context = await this.service.buildOutpatientFollowUpContext(query);
+    return normalizeHisOutpatientFollowUpContext(context);
   }
 
   async fetchOutpatientFollowUpReportResults(
     query: HisOutpatientFollowUpReportResultsQuery,
   ): Promise<HisOutpatientFollowUpReportResults | null> {
-    return this.service.buildOutpatientFollowUpReportResults(query);
+    const results = await this.service.buildOutpatientFollowUpReportResults(query);
+    return normalizeHisOutpatientFollowUpReportResults(results);
   }
 
   // ---- 住院上下文 ----

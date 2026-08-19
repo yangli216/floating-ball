@@ -6,7 +6,6 @@ import {
   type RecordConfirmedWritebackOrderType,
   type RecordConfirmedWritebackScope,
 } from '../../clinical-result/recordConfirmedPayload';
-import type { ClinicalRecordFactField } from '../../clinical-result/clinicalRecordFactConfirmation';
 
 export const WRITEBACK_RECORD_FIELD_LABELS: Record<RecordConfirmedWritebackField, string> = {
   chiefComplaint: '主诉',
@@ -17,14 +16,6 @@ export const WRITEBACK_RECORD_FIELD_LABELS: Record<RecordConfirmedWritebackField
   physicalExam: '体格检查',
   precautions: '注意事项',
 };
-
-const FACT_WRITEBACK_FIELDS = new Set<ClinicalRecordFactField>([
-  'historyOfPresentIllness',
-  'pastMedicalHistory',
-  'personalHistory',
-  'familyHistory',
-  'physicalExam',
-]);
 
 export interface WritebackScopeRecordValues {
   chiefComplaint: string;
@@ -190,12 +181,6 @@ export function useClinicalResultWritebackScope(options: ClinicalResultWriteback
       orderTypes: Array.from(orderTypes),
     };
   });
-
-  const selectedFactFields = computed<ClinicalRecordFactField[]>(() => (
-    writebackScope.value.recordFields.filter(
-      (field): field is ClinicalRecordFactField => FACT_WRITEBACK_FIELDS.has(field as ClinicalRecordFactField),
-    )
-  ));
 
   function markCustomized(): void {
     customized.value = true;
@@ -383,7 +368,6 @@ export function useClinicalResultWritebackScope(options: ClinicalResultWriteback
     partialSelection,
     customized,
     writebackScope,
-    selectedFactFields,
     toggleSelector,
     closeSelector,
     setRecordExpanded,

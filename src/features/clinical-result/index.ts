@@ -44,11 +44,9 @@ export type {
 } from './mutualRecognition';
 
 export {
-  appendConfirmedClinicalRecordFact,
   buildClinicalRecordFactSuggestionRequest,
   extractExplicitClinicalRecordFacts,
   getClinicalRecordFactFieldLabel,
-  getPendingCriticalFactSuggestions,
   normalizeClinicalRecordFactSuggestions,
 } from './clinicalRecordFactConfirmation';
 export type {
@@ -66,9 +64,8 @@ export type {
 } from './clinicalRecordFactConfirmation';
 
 export {
+  applyClinicalRecordSuggestionEdit,
   buildClinicalRecordAnnotationSegments,
-  hasClinicalRecordCandidateText,
-  replaceClinicalRecordCandidateText,
 } from './clinicalRecordAnnotation';
 export type {
   ClinicalRecordAnnotationFactSegment,
@@ -79,6 +76,7 @@ export type {
 
 export {
   buildDiagnosisSuggestionSections,
+  getDiagnosisSuggestionDirectionKey,
   parseDiagnosisMatchRate,
 } from './diagnosisSuggestionPresentation';
 export type { DiagnosisSuggestionSections } from './diagnosisSuggestionPresentation';

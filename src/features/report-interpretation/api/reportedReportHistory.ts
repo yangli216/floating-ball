@@ -13,6 +13,10 @@ import type {
   ReportInterpretationTaskId,
 } from '@/types/reportInterpretation';
 import type { ReportHistoryEntry } from '../types';
+import {
+  normalizeHisOutpatientExam,
+  normalizeHisReportText,
+} from '@/services/his/reportNormalization';
 
 function parseTime(value: string | undefined, fallback: number): number {
   if (!value) return fallback;
@@ -151,11 +155,14 @@ export function serializeLabReport(report: HisOutpatientFollowUpLabReport): stri
 }
 
 export function serializeExamReport(report: HisOutpatientFollowUpExam): string {
+  const normalized = normalizeHisOutpatientExam(report);
   return [
-    `报告名称：${report.examName || '检查报告'}`,
-    report.reportTime ? `报告时间：${report.reportTime}` : '',
-    report.finding ? `检查所见：${report.finding}` : '',
-    report.conclusion ? `检查结论：${report.conclusion}` : '',
+    `报告名称：${normalizeHisReportText(normalized.examName) || '检查报告'}`,
+    normalizeHisReportText(normalized.reportTime)
+      ? `报告时间：${normalizeHisReportText(normalized.reportTime)}`
+      : '',
+    normalized.finding ? `检查所见：${normalized.finding}` : '',
+    normalized.conclusion ? `检查结论：${normalized.conclusion}` : '',
   ].filter(Boolean).join('\n');
 }
 
@@ -188,8 +195,9 @@ function mapReportResults(
     };
   });
   const examEntries = (results.examReports || []).map((report, index) => {
-    const title = report.examName || '检查报告';
-    const sourceQuery = serializeExamReport(report);
+    const normalized = normalizeHisOutpatientExam(report);
+    const title = normalizeHisReportText(normalized.examName) || '检查报告';
+    const sourceQuery = serializeExamReport(normalized);
     return {
       id: createEntryId(visitId, 'checkReport', title, report.reportTime, index),
       visitId,
@@ -198,13 +206,14 @@ function mapReportResults(
       diagnosisNames: diagnoses,
       taskId: 'checkReport' as const,
       title,
-      reportTime: report.reportTime,
-      reportId: report.reportId,
-      applicationId: report.applicationId,
-      examFinding: report.finding,
-      examConclusion: report.conclusion,
+      reportTime: normalized.reportTime,
+      reportId: normalized.reportId,
+      applicationId: normalized.applicationId,
+      examFinding: normalized.finding,
+      examConclusion: normalized.conclusion,
+      reportUrl: normalized.reportUrl,
       sourceQuery,
-      available: Boolean((report.finding || report.conclusion) && sourceQuery),
+      available: Boolean((normalized.finding || normalized.conclusion) && sourceQuery),
       isFollowUpSource,
     };
   });

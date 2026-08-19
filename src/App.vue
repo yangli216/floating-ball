@@ -110,7 +110,7 @@ const receptionSession = useReceptionSessionController(currentPatient);
 const {
   patientName: riskPatientName,
   patientGender: riskPatientGender,
-  patientAge: riskPatientAge,
+  patientAgeText: riskPatientAgeText,
   risks: riskItems,
   isAnalyzing: isRiskAnalyzing,
   chronicRefillCandidate,
@@ -996,7 +996,7 @@ const openInsideCloudHome = async () => {
             v-if="currentView === 'risk-alert'"
             :patientName="riskPatientName"
             :gender="riskPatientGender"
-            :age="riskPatientAge"
+            :age-text="riskPatientAgeText"
             :risks="riskItems"
             @close="closeRiskAlert"
             @confirm="closeRiskAlert"
@@ -1018,7 +1018,7 @@ const openInsideCloudHome = async () => {
             v-if="currentView === 'reception-capsule'"
             :patient-name="riskPatientName"
             :gender="riskPatientGender"
-            :age="riskPatientAge"
+            :age-text="riskPatientAgeText"
             :risks="riskItems"
             :analyzing="isRiskAnalyzing"
             :chronic-refill-candidate="chronicRefillCandidate"

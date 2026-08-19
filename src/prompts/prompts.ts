@@ -1158,6 +1158,8 @@ export const ExaminationRecommendationPrompt = {
 3. 考虑检查的性价比和可及性
 4. 检查项目名称使用基层医疗机构标准名称
 5. 如果基层日常存在常用简称或别名，请一并补充，便于与院内目录匹配
+6. 按明确临床目标组织项目，每项必须说明简短开立目的，并区分优先项目与补充项目
+7. 不得重复推荐医生已明确开立的项目，也不得同时推荐组合项目及其已经覆盖的全部单项
 
 **输出要求：**
 严格返回JSON数组格式，不包含markdown标记`,
@@ -1188,10 +1190,12 @@ ${params.clinicalContext}
 
 ` : ''}
 **任务要求：**
-1. 推荐1-3个必要的影像或器械类检查项目（X线、CT、B超、心电图等）
-2. 仅推荐基层可开展的检查
-3. 不要推荐实验室检验项目（血常规、尿常规等归检验类）
-4. 不要推荐药品或处置操作
+1. 没有必要时返回空数组；常规推荐 0-3 个，存在多个明确临床目标时可扩展至 4-5 个
+2. 每个临床目标原则上不超过 2-3 个项目，不得为了凑数推荐
+3. 仅推荐基层可开展的检查
+4. 不要推荐实验室检验项目（血常规、尿常规等归检验类）
+5. 不要推荐药品或处置操作
+6. goal 使用 8-20 个汉字说明该项目的开立目的；goalGroup 是简短临床目标组名；goalGroupPurpose 用一句话说明本组共同解决的问题；necessity 只能是 core 或 supplementary
 
 **返回格式：**
 [
@@ -1199,6 +1203,10 @@ ${params.clinicalContext}
     "type": "exam",
     "name": "胸部X线检查",
     "aliases": ["胸片", "胸部平片"],
+    "goal": "排查肺部感染",
+    "goalGroup": "感染与并发症评估",
+    "goalGroupPurpose": "判断是否存在肺部感染或相关并发症",
+    "necessity": "core",
     "reason": "排除肺部感染，基层常规检查项目"
   }
 ]
@@ -1222,6 +1230,8 @@ export const LabTestRecommendationPrompt = {
 3. 考虑检验对诊断和治疗的实际指导价值
 4. 检验项目名称使用基层医疗机构标准名称
 5. 如果临床日常常用简称稳定明确，可补充 1-3 个 aliases 便于目录匹配
+6. 按明确临床目标组织项目，每项必须说明简短开立目的，并区分优先项目与补充项目
+7. 不得重复推荐医生已明确开立的项目，也不得同时推荐组合项目及其已经覆盖的全部单项
 
 **输出要求：**
 严格返回JSON数组格式，不包含markdown标记`,
@@ -1252,10 +1262,12 @@ ${params.clinicalContext}
 
 ` : ''}
 **任务要求：**
-1. 推荐1-3个必要的实验室检验项目（血常规、尿常规、生化等）
-2. 重点推荐对诊断和治疗有直接指导意义的检验
-3. 不要推荐影像检查项目（X线、CT等归检查类）
-4. 不要推荐药品或处置操作
+1. 没有必要时返回空数组；常规推荐 0-3 个，存在多个明确临床目标时可扩展至 4-5 个
+2. 每个临床目标原则上不超过 2-3 个项目，不得为了凑数推荐
+3. 重点推荐对诊断和治疗有直接指导意义的检验
+4. 不要推荐影像检查项目（X线、CT等归检查类）
+5. 不要推荐药品或处置操作
+6. goal 使用 8-20 个汉字说明该项目的开立目的；goalGroup 是简短临床目标组名；goalGroupPurpose 用一句话说明本组共同解决的问题；necessity 只能是 core 或 supplementary
 
 **返回格式：**
 [
@@ -1263,6 +1275,10 @@ ${params.clinicalContext}
     "type": "lab_test",
     "name": "血常规",
     "aliases": ["血常规检查", "全血细胞计数"],
+    "goal": "评估感染及血细胞变化",
+    "goalGroup": "感染与炎症评估",
+    "goalGroupPurpose": "判断感染证据并评估炎症程度",
+    "necessity": "core",
     "reason": "鉴别细菌性或病毒性感染，指导抗生素使用"
   }
 ]
@@ -1279,12 +1295,14 @@ export const AuxiliaryCatalogRecommendationPrompt = {
 规则：
 1. 只能返回目录中存在的 catalogRef，禁止自造项目名称或编号。
 2. exam 仅能从检查目录选择，lab_test 仅能从检验目录选择。
-3. 避免过度检查；一般合计推荐 0-3 项，确有必要时最多 5 项。
-4. 优先选择能直接回答当前临床问题的组合项目；不要同时选择明显重复的组合项和其全部单项。
+3. 避免过度检查；简单病例允许返回 0 项，常规病例检查与检验合计推荐 0-5 项，存在多个明确临床目标、正式诊断或安全监测需求时可扩展至 6-8 项。
+4. 每个临床目标原则上不超过 2-3 项；优先选择能直接回答当前临床问题的组合项目，不要同时选择明显重复的组合项和其全部单项。
 5. 医生已经明确开立的项目不要重复推荐。
 6. 若目录中没有合适项目，对应数组返回空；不得为了凑数选择相似但临床含义不同的项目。
 7. 标记为“受限”的免费/专项项目只适用于特定人群；除非病例上下文明确提供患者符合该项目资格的证据，否则不得选择，也不得把“免费”作为推荐理由或优势。
-8. 严格返回 JSON 对象，不要输出 markdown 或额外说明。`,
+8. 每项必须返回：goal（8-20 个汉字的简短开立目的）、goalGroup（临床目标组名）、goalGroupPurpose（本组共同解决的问题）、necessity（core 或 supplementary）和 reason（结合当前病例的完整推荐依据）。
+9. 临床目标分组仅用于医生阅读，不代表 PHIS/LIS 申请单分组。
+10. 严格返回 JSON 对象，不要输出 markdown 或额外说明。`,
 
   buildUserPrompt(params: {
     patientName: string;
@@ -1313,8 +1331,8 @@ ${params.availableExamLabCatalog || '目录为空'}
 
 返回格式：
 {
-  "exams": [{"catalogRef":"E001","reason":"推荐依据"}],
-  "labTests": [{"catalogRef":"L001","reason":"推荐依据"}],
+  "exams": [{"catalogRef":"E001","goal":"排查肺部感染","goalGroup":"感染与并发症评估","goalGroupPurpose":"判断是否存在肺部感染或相关并发症","necessity":"core","reason":"结合当前病例的完整推荐依据"}],
+  "labTests": [{"catalogRef":"L001","goal":"评估感染及血细胞变化","goalGroup":"感染与炎症评估","goalGroupPurpose":"判断感染证据并评估炎症程度","necessity":"core","reason":"结合当前病例的完整推荐依据"}],
   "unavailableNeeds": []
 }`;
   },
@@ -1419,6 +1437,11 @@ export const UnifiedTreatmentPlanRecommendationPrompt = {
    - 先选有效库存内同品，再选库存内临床等效药；均无合适选择时才返回规范通用名。
    - spec 必须是**制剂规格**（每片/粒的含量，如 "0.25g"），不要写包装规格（如 "0.25g*24粒/盒"）。
    - targetDose 填写临床标准一次剂量数值；dosage/dosageUnit 必须留空，由程序结合 HIS 药品详情换算为 PHIS 临床一次剂量。
+4. **检验检查推荐原则**：
+   - 普通门诊按最小充分原则推荐：简单病例可为 0 项，常规病例检查与检验合计 0-5 项；存在多个明确临床目标、正式诊断或用药安全监测需求时可扩展至 6-8 项。
+   - 每个临床目标原则上不超过 2-3 项，不得为了凑数推荐；不得重复推荐同一项目，也不得同时推荐组合项目及其已经覆盖的全部单项。
+   - 每个 exam / lab_test 项目必须提供 goal、goalGroup、goalGroupPurpose、necessity 和 reason。goal 是直接展示给医生的简短开立目的；necessity 只能为 core 或 supplementary。
+   - 临床目标分组仅用于医生阅读，不代表 PHIS/LIS 申请单分组。
 
 **输出要求：**
 严格返回单一JSON数组格式，不要包含markdown标记。`,
@@ -1466,7 +1489,7 @@ ${params.chiefComplaint}
 ${contextPart}
 ${inventoryPart}
 **任务要求：**
-1. 根据临床证据决定是否需要药品、检查、检验或处置；不得为了凑数量开药。报告回诊时一般无需检查检验，若无明确复查指征或新病情，相关类型返回空。
+1. 根据临床证据决定是否需要药品、检查、检验或处置；不得为了凑数量开药或开单。普通门诊检查与检验遵循最小充分原则，常规合计 0-5 项，确有多个明确临床目标时可为 6-8 项；报告回诊时一般无需检查检验，若无明确复查指征或新病情，相关类型返回空。
 2. 头孢呋辛酯片等二代头孢成人常规单次剂量为 0.25g-0.5g，严禁推荐 1.0g 等异常单次用量。
 3. 药品必须填写 targetDose/targetDoseUnit，dosage/dosageUnit 必须留空；不要把制剂数或未经换算的质量剂量写入 dosage。
 4. 严格按 JSON 数组格式返回，不要包含 markdown 标记。
@@ -1487,6 +1510,16 @@ ${inventoryPart}
     "usage": "口服",
     "usageKey": "po",
     "days": "5"
+  },
+  {
+    "type": "lab_test",
+    "name": "血常规",
+    "aliases": ["全血细胞计数"],
+    "goal": "评估感染及血细胞变化",
+    "goalGroup": "感染与炎症评估",
+    "goalGroupPurpose": "判断感染证据并评估炎症程度",
+    "necessity": "core",
+    "reason": "结合当前症状评估感染证据，并为是否需要抗感染治疗提供参考"
   },
   {
     "type": "procedure",
@@ -2116,11 +2149,11 @@ export const PROMPT_VERSION = {
   diagnosisPathReasoning: 'v1.0',
   reportInterpretation: 'v1.2',
   treatmentRecommendation: 'v2.3',
-  examinationRecommendation: 'v1.0',
-  labTestRecommendation: 'v1.0',
-  auxiliaryCatalogRecommendation: 'v1.1',
+  examinationRecommendation: 'v1.1',
+  labTestRecommendation: 'v1.1',
+  auxiliaryCatalogRecommendation: 'v1.2',
   procedureRecommendation: 'v1.1',
-  unifiedTreatmentPlanRecommendation: 'v1.2',
+  unifiedTreatmentPlanRecommendation: 'v1.3',
   chatAssistant: 'v1.0',
   diagnosisCheck: 'v1.0',
   medicineCheck: 'v1.0',

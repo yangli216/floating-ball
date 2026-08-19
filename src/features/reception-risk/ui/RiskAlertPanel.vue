@@ -13,7 +13,7 @@
       </div>
       <div class="patient-info">
         <span class="patient-name">{{ patientName }}</span>
-        <span class="patient-meta">{{ genderText }} · {{ age }}岁</span>
+        <span class="patient-meta">{{ genderText }}<template v-if="ageText"> · {{ ageText }}</template></span>
       </div>
     </div>
 
@@ -54,7 +54,7 @@ import type { RiskItem } from '../types';
 interface Props {
   patientName: string;
   gender: 'M' | 'F';
-  age: number;
+  ageText: string;
   risks: RiskItem[];
 }
 
@@ -80,12 +80,12 @@ const sortedRisks = computed(() => {
 const genderText = computed(() => props.gender === 'F' ? '女' : '男');
 
 const avatarSrc = ref<string>(
-  resolvePatientAvatar({ gender: props.gender, age: props.age })
+  resolvePatientAvatar({ gender: props.gender, ageText: props.ageText })
 );
 watch(
-  () => [props.gender, props.age] as const,
+  () => [props.gender, props.ageText] as const,
   ([g, a]) => {
-    avatarSrc.value = resolvePatientAvatar({ gender: g, age: a });
+    avatarSrc.value = resolvePatientAvatar({ gender: g, ageText: a });
   }
 );
 function onAvatarError() {

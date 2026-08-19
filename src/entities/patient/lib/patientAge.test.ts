@@ -12,6 +12,7 @@ describe('patientAge', () => {
     expect(formatPatientAgeText(10, 'M')).toBe('10个月');
     expect(formatPatientAgeText(10, 'D')).toBe('10天');
     expect(formatPatientAgeText('10月')).toBe('10个月');
+    expect(formatPatientAgeText('6月15天')).toBe('6月15天');
   });
 
   it('does not guess a unit for a bare number', () => {

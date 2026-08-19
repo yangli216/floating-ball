@@ -10,10 +10,10 @@ export type ClinicalRecordFactField =
   | 'familyHistory'
   | 'physicalExam';
 
-export type ClinicalRecordFactSource = 'record-explicit' | 'structured-answer' | 'doctor-confirmed';
+export type ClinicalRecordFactSource = 'record-explicit' | 'structured-answer';
 export type ClinicalRecordFactPolarity = 'positive' | 'negative';
 export type ClinicalRecordFactPriority = 'critical' | 'general';
-export type ClinicalRecordFactStatus = 'pending' | 'confirmed-negative' | 'confirmed-positive' | 'not-applicable';
+export type ClinicalRecordFactStatus = 'pending' | 'dismissed';
 
 export interface ClinicalRecordFactRecord {
   chiefComplaint: string;
@@ -40,7 +40,6 @@ export interface ClinicalRecordFactSuggestion {
   rationale: string;
   priority: ClinicalRecordFactPriority;
   status: ClinicalRecordFactStatus;
-  confirmedText?: string;
 }
 
 export interface ClinicalRecordFactSuggestionResponse {
@@ -271,23 +270,4 @@ export function normalizeClinicalRecordFactSuggestions(
     })
     .filter((item): item is ClinicalRecordFactSuggestion => Boolean(item))
     .slice(0, 8);
-}
-
-export function appendConfirmedClinicalRecordFact(currentValue: string, factText: string): string {
-  const current = normalizeText(currentValue);
-  const fact = normalizeText(factText);
-  if (!fact) return current;
-  const comparableCurrent = normalizeComparable(current);
-  const comparableFact = normalizeComparable(fact);
-  if (comparableCurrent.includes(comparableFact)) return current;
-  const normalizedFact = /[。；;]$/u.test(fact) ? fact : `${fact}。`;
-  if (!current) return normalizedFact;
-  const separator = /[。；;]$/u.test(current) ? '' : '。';
-  return `${current}${separator}${normalizedFact}`;
-}
-
-export function getPendingCriticalFactSuggestions(
-  suggestions: readonly ClinicalRecordFactSuggestion[],
-): ClinicalRecordFactSuggestion[] {
-  return suggestions.filter((item) => item.priority === 'critical' && item.status === 'pending');
 }

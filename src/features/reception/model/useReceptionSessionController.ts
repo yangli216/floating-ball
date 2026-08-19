@@ -36,10 +36,7 @@ export function useReceptionSessionController(currentPatient: Ref<AppPatient | n
     const genderText = getPatientContextGenderText(currentPatient.value);
     return genderCode === 'F' || genderText.includes('女') ? 'F' : 'M';
   });
-  const patientAge = computed(() => {
-    const age = Number.parseInt(getPatientContextAgeText(currentPatient.value), 10);
-    return Number.isFinite(age) ? age : 0;
-  });
+  const patientAgeText = computed(() => getPatientContextAgeText(currentPatient.value));
   const isAnalyzing = computed(() => status.value === 'hydrating' || status.value === 'assessing');
   const chronicRefillCandidate = computed(() => {
     const opportunity = opportunities.value.find((item) => item.type === 'chronic-refill');
@@ -144,7 +141,7 @@ export function useReceptionSessionController(currentPatient: Ref<AppPatient | n
     reportAssistantOpening: shallowReadonly(reportAssistantOpening),
     patientName,
     patientGender,
-    patientAge,
+    patientAgeText,
     isAnalyzing,
     startHydrating,
     startAssessing,

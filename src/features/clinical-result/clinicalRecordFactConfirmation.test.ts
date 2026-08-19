@@ -1,9 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
-  appendConfirmedClinicalRecordFact,
   buildClinicalRecordFactSuggestionRequest,
   extractExplicitClinicalRecordFacts,
-  getPendingCriticalFactSuggestions,
   normalizeClinicalRecordFactSuggestions,
   type ClinicalRecordFactRecord,
 } from './clinicalRecordFactConfirmation';
@@ -109,20 +107,4 @@ describe('clinicalRecordFactConfirmation', () => {
     ]));
   });
 
-  it('blocks only unresolved critical suggestions and appends confirmed text once', () => {
-    const critical = {
-      id: 'critical-1',
-      field: 'historyOfPresentIllness' as const,
-      question: '是否胸痛？',
-      negativeRecordText: '否认胸痛',
-      rationale: '',
-      priority: 'critical' as const,
-      status: 'pending' as const,
-    };
-    const general = { ...critical, id: 'general-1', priority: 'general' as const };
-
-    expect(getPendingCriticalFactSuggestions([critical, general])).toEqual([critical]);
-    expect(appendConfirmedClinicalRecordFact('咳嗽2天。', '否认胸痛')).toBe('咳嗽2天。否认胸痛。');
-    expect(appendConfirmedClinicalRecordFact('咳嗽2天。否认胸痛。', '否认胸痛')).toBe('咳嗽2天。否认胸痛。');
-  });
 });

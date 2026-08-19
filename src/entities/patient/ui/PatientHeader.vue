@@ -39,6 +39,7 @@
 import { computed } from 'vue';
 import { resolvePatientAvatar, PATIENT_AVATAR_FALLBACK } from '@/utils/patientAvatar';
 import { getPatientContextAgeText, getPatientContextGenderText, getPatientContextName } from '@/utils/patientContext';
+import { formatPatientAgeText } from '../lib/patientAge';
 
 interface PatientLike {
   naPi?: string;
@@ -97,7 +98,7 @@ const age = computed((): string => {
   const p = props.patient || {};
   if (s(p.ageText)) return s(p.ageText);
   if (p.ageNum != null && p.ageNum !== '') {
-    return `${p.ageNum}${s(p.ageUnit) || '岁'}`;
+    return formatPatientAgeText(p.ageNum, p.ageUnit);
   }
   return '';
 });

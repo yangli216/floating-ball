@@ -20,6 +20,10 @@ export interface InstitutionAuxiliaryCatalogContext {
 
 export interface AuxiliaryCatalogRecommendationItem {
   catalogRef?: string;
+  goal?: string;
+  goalGroup?: string;
+  goalGroupPurpose?: string;
+  necessity?: 'core' | 'supplementary';
   reason?: string;
 }
 
@@ -120,6 +124,10 @@ export function mapAuxiliaryCatalogRecommendations(
         type: expectedType,
         name: entry.item.name,
         originalName: entry.item.name,
+        goal: (recommendation.goal || '').trim(),
+        goalGroup: (recommendation.goalGroup || '').trim(),
+        goalGroupPurpose: (recommendation.goalGroupPurpose || '').trim(),
+        necessity: recommendation.necessity === 'supplementary' ? 'supplementary' : 'core',
         reason: (recommendation.reason || '').trim(),
         sourceType: 'inferred',
         matchedItem: buildMedicalItemMatchedItem(entry.item),

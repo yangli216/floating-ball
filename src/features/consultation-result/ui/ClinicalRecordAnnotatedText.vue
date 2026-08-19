@@ -1,8 +1,10 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue';
 import {
+  applyClinicalRecordSuggestionEdit,
   buildClinicalRecordAnnotationSegments,
   type ClinicalRecordExplicitFact,
+  type ClinicalRecordAnnotationSuggestionSegment,
   type ClinicalRecordFactSuggestion,
 } from '@features/clinical-result';
 
@@ -16,18 +18,19 @@ const props = defineProps<{
 
 const emit = defineEmits<{
   (event: 'update:modelValue', value: string): void;
-  (event: 'confirm-negative', id: string): void;
-  (event: 'confirm-positive', id: string, text: string): void;
-  (event: 'not-applicable', id: string): void;
+  (event: 'dismiss-suggestion', id: string): void;
 }>();
 
 const annotationRootRef = ref<HTMLElement | null>(null);
 const editableContentRef = ref<HTMLElement | null>(null);
 const editing = ref(false);
-const activeFactId = ref('');
-const activeSuggestionId = ref('');
-const positiveDrafts = reactive<Record<string, string>>({});
+const editingSuggestionId = ref('');
+const activeAnnotationKey = ref('');
+const copiedText = ref('');
 const popoverPosition = reactive({ top: 0, left: 0 });
+const selectionCopy = reactive({ text: '', top: 0, left: 0 });
+const suggestionDrafts = reactive<Record<string, string>>({});
+let copyFeedbackTimer: ReturnType<typeof setTimeout> | undefined;
 
 const pendingSuggestions = computed(() => props.suggestions.filter((item) => item.status === 'pending'));
 const segments = computed(() => {
@@ -54,7 +57,6 @@ const segments = computed(() => {
   return combined;
 });
 function sourceLabel(fact: ClinicalRecordExplicitFact): string {
-  if (fact.source === 'doctor-confirmed') return '医生已确认';
   if (fact.source === 'structured-answer') return '结构化问诊已明确';
   return '问诊中已明确';
 }
@@ -70,7 +72,8 @@ function syncEditableContent(): void {
 }
 
 async function startEditing(): Promise<void> {
-  if (activeFactId.value || activeSuggestionId.value) return;
+  if (window.getSelection()?.toString().trim() || selectionCopy.text) return;
+  activeAnnotationKey.value = '';
   editing.value = true;
   await nextTick();
   syncEditableContent();
@@ -86,12 +89,10 @@ function finishEditing(): void {
   editing.value = false;
 }
 
-function positionPopover(event: MouseEvent): void {
+function positionPopover(event: MouseEvent, expectedWidth = 360, expectedHeight = 340): void {
   const target = event.currentTarget as HTMLElement | null;
   if (!target) return;
   const rect = target.getBoundingClientRect();
-  const expectedWidth = 330;
-  const expectedHeight = 280;
   popoverPosition.left = Math.max(12, Math.min(rect.left, window.innerWidth - expectedWidth - 12));
   popoverPosition.top = rect.bottom + 7 + expectedHeight > window.innerHeight
     ? Math.max(12, rect.top - expectedHeight - 7)
@@ -99,43 +100,159 @@ function positionPopover(event: MouseEvent): void {
 }
 
 function toggleFact(id: string, event: MouseEvent): void {
-  activeSuggestionId.value = '';
-  positionPopover(event);
-  activeFactId.value = activeFactId.value === id ? '' : id;
+  positionPopover(event, 280, 230);
+  const key = `fact:${id}`;
+  activeAnnotationKey.value = activeAnnotationKey.value === key ? '' : key;
+  selectionCopy.text = '';
 }
 
-function toggleSuggestion(id: string, event: MouseEvent): void {
-  activeFactId.value = '';
-  positionPopover(event);
-  activeSuggestionId.value = activeSuggestionId.value === id ? '' : id;
+function toggleSuggestion(id: string, text: string, event: MouseEvent): void {
+  positionPopover(event, 330, 240);
+  const key = `suggestion:${id}`;
+  activeAnnotationKey.value = activeAnnotationKey.value === key ? '' : key;
+  editingSuggestionId.value = '';
+  suggestionDrafts[id] = text;
+  selectionCopy.text = '';
 }
 
-function confirmNegative(id: string): void {
-  emit('confirm-negative', id);
-  activeSuggestionId.value = '';
+function closeAnnotationPopover(): void {
+  activeAnnotationKey.value = '';
+  editingSuggestionId.value = '';
 }
 
-function confirmPositive(id: string): void {
-  const value = positiveDrafts[id]?.trim() || '';
-  if (!value) return;
-  emit('confirm-positive', id, value);
-  activeSuggestionId.value = '';
+function startSuggestionEdit(segment: ClinicalRecordAnnotationSuggestionSegment): void {
+  suggestionDrafts[segment.suggestion.id] = segment.text;
+  editingSuggestionId.value = segment.suggestion.id;
 }
 
-function markNotApplicable(id: string): void {
-  emit('not-applicable', id);
-  activeSuggestionId.value = '';
+function cancelSuggestionEdit(segment: ClinicalRecordAnnotationSuggestionSegment): void {
+  suggestionDrafts[segment.suggestion.id] = segment.text;
+  editingSuggestionId.value = '';
+}
+
+function applySuggestionEdit(segment: ClinicalRecordAnnotationSuggestionSegment): void {
+  const nextText = suggestionDrafts[segment.suggestion.id]?.trim() || '';
+  if (!nextText) return;
+  emit('update:modelValue', applyClinicalRecordSuggestionEdit(props.modelValue, segment, nextText));
+  emit('dismiss-suggestion', segment.suggestion.id);
+  closeAnnotationPopover();
+}
+
+function removeSuggestion(segment: ClinicalRecordAnnotationSuggestionSegment): void {
+  const nextValue = applyClinicalRecordSuggestionEdit(props.modelValue, segment, '');
+  if (nextValue !== props.modelValue) emit('update:modelValue', nextValue);
+  emit('dismiss-suggestion', segment.suggestion.id);
+  closeAnnotationPopover();
+}
+
+function clearCopyFeedback(): void {
+  if (copyFeedbackTimer) clearTimeout(copyFeedbackTimer);
+  copyFeedbackTimer = undefined;
+  copiedText.value = '';
+}
+
+function showCopyFeedback(value: string): void {
+  clearCopyFeedback();
+  copiedText.value = value;
+  copyFeedbackTimer = setTimeout(() => {
+    copiedText.value = '';
+    copyFeedbackTimer = undefined;
+  }, 1200);
+}
+
+async function copyText(value: string): Promise<void> {
+  const text = value.trim();
+  if (!text) return;
+  try {
+    if (navigator.clipboard?.writeText) {
+      await navigator.clipboard.writeText(text);
+    } else {
+      const textarea = document.createElement('textarea');
+      textarea.value = text;
+      textarea.setAttribute('readonly', '');
+      textarea.style.position = 'fixed';
+      textarea.style.opacity = '0';
+      document.body.appendChild(textarea);
+      textarea.select();
+      const copied = document.execCommand('copy');
+      textarea.remove();
+      if (!copied) throw new Error('copy command failed');
+    }
+    showCopyFeedback(text);
+  } catch (error) {
+    console.warn('[ClinicalRecordAnnotatedText] 复制失败', error);
+  }
+}
+
+function clearSelectionCopy(): void {
+  selectionCopy.text = '';
+}
+
+function handleTextSelection(event: MouseEvent | KeyboardEvent): void {
+  const root = annotationRootRef.value;
+  const selection = window.getSelection();
+  if (!root || !selection || selection.isCollapsed || selection.rangeCount === 0) {
+    clearSelectionCopy();
+    return;
+  }
+  const range = selection.getRangeAt(0);
+  if (!root.contains(range.commonAncestorContainer)) {
+    clearSelectionCopy();
+    return;
+  }
+  const target = event.target as HTMLElement | null;
+  if (target?.closest('.clinical-record-popover, .clinical-record-selection-copy')) return;
+  const text = selection.toString().trim();
+  if (!text) {
+    clearSelectionCopy();
+    return;
+  }
+  const rect = range.getBoundingClientRect();
+  const fallbackX = event instanceof MouseEvent ? event.clientX : rect.left;
+  const fallbackY = event instanceof MouseEvent ? event.clientY : rect.bottom;
+  const centerX = rect.width > 0 ? rect.left + rect.width / 2 : fallbackX;
+  const anchorTop = rect.height > 0 ? rect.top : fallbackY;
+  const anchorBottom = rect.height > 0 ? rect.bottom : fallbackY;
+  const expectedWidth = 82;
+  selectionCopy.text = text;
+  selectionCopy.left = Math.max(12, Math.min(centerX - expectedWidth / 2, window.innerWidth - expectedWidth - 12));
+  selectionCopy.top = anchorTop >= 48 ? anchorTop - 42 : anchorBottom + 8;
+  activeAnnotationKey.value = '';
+}
+
+async function copySelectedText(): Promise<void> {
+  await copyText(selectionCopy.text);
 }
 
 function closeOnOutside(event: MouseEvent): void {
   const target = event.target as Node | null;
   if (target && annotationRootRef.value?.contains(target)) return;
-  activeFactId.value = '';
-  activeSuggestionId.value = '';
+  activeAnnotationKey.value = '';
+  clearSelectionCopy();
 }
 
-onMounted(() => document.addEventListener('mousedown', closeOnOutside));
-onBeforeUnmount(() => document.removeEventListener('mousedown', closeOnOutside));
+function closeTransientLayers(): void {
+  activeAnnotationKey.value = '';
+  clearSelectionCopy();
+}
+
+function closeOnEscape(event: KeyboardEvent): void {
+  if (event.key === 'Escape') closeTransientLayers();
+}
+
+onMounted(() => {
+  document.addEventListener('mousedown', closeOnOutside);
+  document.addEventListener('keydown', closeOnEscape);
+  document.addEventListener('scroll', closeTransientLayers, true);
+  window.addEventListener('resize', closeTransientLayers);
+});
+onBeforeUnmount(() => {
+  document.removeEventListener('mousedown', closeOnOutside);
+  document.removeEventListener('keydown', closeOnEscape);
+  document.removeEventListener('scroll', closeTransientLayers, true);
+  window.removeEventListener('resize', closeTransientLayers);
+  clearCopyFeedback();
+});
 watch(() => props.modelValue, () => void nextTick(syncEditableContent));
 </script>
 
@@ -158,8 +275,10 @@ watch(() => props.modelValue, () => void nextTick(syncEditableContent));
     <p
       v-else
       class="clinical-record-line"
-      :aria-label="`${title}，点击正文可编辑，点击标记可查看来源或确认`"
+      :aria-label="`${title}，点击正文可编辑，选择文字可快速复制，点击 AI 标记可查看核查参考`"
       @click="startEditing"
+      @mouseup="handleTextSelection"
+      @keyup="handleTextSelection"
     >
       <label>{{ title }}：</label>
       <template v-if="segments.length">
@@ -177,23 +296,29 @@ watch(() => props.modelValue, () => void nextTick(syncEditableContent));
               @click.stop="toggleFact(segment.fact.id, $event)"
             >
               <span class="clinical-record-annotation-sign" aria-hidden="true">
-                {{ segment.fact.source === 'doctor-confirmed' ? '✓' : segment.fact.polarity === 'positive' ? '+' : '−' }}
+                {{ segment.fact.polarity === 'positive' ? '+' : '−' }}
               </span>
               {{ segment.text }}
             </button>
             <span
-              v-if="activeFactId === segment.fact.id"
+              v-if="activeAnnotationKey === `fact:${segment.fact.id}`"
               class="clinical-record-popover is-fact"
               role="dialog"
+              aria-label="病历事实来源"
               :style="{ top: `${popoverPosition.top}px`, left: `${popoverPosition.left}px` }"
               @click.stop
             >
-              <strong>{{ sourceLabel(segment.fact) }}</strong>
+              <span class="clinical-record-popover-header">
+                <strong>{{ sourceLabel(segment.fact) }}</strong>
+                <button type="button" class="clinical-record-popover-close" aria-label="关闭事实说明" @click="closeAnnotationPopover">×</button>
+              </span>
               <span class="clinical-record-popover-tags">
                 <span>{{ segment.fact.polarity === 'positive' ? '阳性指标' : '阴性事实' }}</span>
-                <span v-if="segment.fact.source === 'doctor-confirmed'">已完成确认</span>
               </span>
               <span>该内容已属于正式病历，点击正文空白处可继续编辑。</span>
+              <button type="button" class="clinical-record-copy-button" @click="copyText(segment.text)">
+                {{ copiedText === segment.text.trim() ? '已复制' : '复制此段' }}
+              </button>
             </span>
           </span>
           <span v-else class="clinical-record-annotation-anchor">
@@ -202,45 +327,78 @@ watch(() => props.modelValue, () => void nextTick(syncEditableContent));
               class="clinical-record-annotation is-suggestion"
               :class="{ 'is-critical': segment.suggestion.priority === 'critical' }"
               :data-clinical-fact-id="segment.suggestion.id"
-              :aria-label="`${segment.text}，AI 补充，尚非患者事实，${segment.suggestion.priority === 'critical' ? '重点待核查' : '一般待核查'}`"
-              @click.stop="toggleSuggestion(segment.suggestion.id, $event)"
+              :aria-label="`${segment.text}，AI 补充建议，${segment.suggestion.priority === 'critical' ? '重点提示' : '一般提示'}，点击查看核查参考`"
+              @click.stop="toggleSuggestion(segment.suggestion.id, segment.text, $event)"
             >
-              <span class="clinical-record-annotation-sign" aria-hidden="true">{{ segment.suggestion.priority === 'critical' ? '!' : 'AI' }}</span>
+              <span class="clinical-record-annotation-sign" aria-hidden="true">AI</span>
               {{ segment.text }}
             </button>
             <span
-              v-if="activeSuggestionId === segment.suggestion.id"
-              class="clinical-record-popover"
+              v-if="activeAnnotationKey === `suggestion:${segment.suggestion.id}`"
+              class="clinical-record-popover is-suggestion-detail"
               role="dialog"
+              aria-label="AI 核查"
               :style="{ top: `${popoverPosition.top}px`, left: `${popoverPosition.left}px` }"
               @click.stop
             >
-              <span class="clinical-record-popover-head">
-                <strong>{{ segment.suggestion.question }}</strong>
-                <span :class="['clinical-record-priority', { 'is-critical': segment.suggestion.priority === 'critical' }]">
-                  {{ segment.suggestion.priority === 'critical' ? '重点待核查' : '一般待核查' }}
-                </span>
+              <span class="clinical-record-popover-header">
+                <strong>AI 核查</strong>
+                <button type="button" class="clinical-record-popover-close" aria-label="关闭 AI 核查" @click="closeAnnotationPopover">×</button>
               </span>
-              <span v-if="segment.suggestion.rationale" class="clinical-record-rationale">{{ segment.suggestion.rationale }}</span>
-              <span class="clinical-record-preview">AI 候选阴性表述：{{ segment.suggestion.negativeRecordText }}</span>
               <textarea
-                v-model="positiveDrafts[segment.suggestion.id]"
-                rows="2"
-                aria-label="填写实际异常情况"
-                placeholder="如存在异常，请填写实际情况"
+                v-if="editingSuggestionId === segment.suggestion.id"
+                v-model="suggestionDrafts[segment.suggestion.id]"
+                class="clinical-record-suggestion-editor"
+                rows="3"
+                aria-label="调整 AI 病历表述"
+                @click.stop
               ></textarea>
-              <span class="clinical-record-popover-actions">
-                <button type="button" class="is-negative" @click="confirmNegative(segment.suggestion.id)">确认无异常并写入</button>
-                <button type="button" :disabled="!positiveDrafts[segment.suggestion.id]?.trim()" @click="confirmPositive(segment.suggestion.id)">记录实际异常</button>
-                <button type="button" class="is-subtle" @click="markNotApplicable(segment.suggestion.id)">本次不适用</button>
+              <span v-else class="clinical-record-suggestion-text">{{ segment.text }}</span>
+              <span class="clinical-record-popover-line">
+                <strong>核查</strong>
+                <span>{{ segment.suggestion.question }}</span>
               </span>
-              <span class="clinical-record-safety-note">AI 生成，尚非患者事实；完成核查前不会写入正式病历。</span>
+              <span v-if="segment.suggestion.rationale" class="clinical-record-popover-line is-muted">
+                <strong>依据</strong>
+                <span>{{ segment.suggestion.rationale }}</span>
+              </span>
+              <span class="clinical-record-popover-actions">
+                <template v-if="editingSuggestionId === segment.suggestion.id">
+                  <button type="button" class="clinical-record-text-button" @click="cancelSuggestionEdit(segment)">取消</button>
+                  <button
+                    type="button"
+                    class="clinical-record-copy-button"
+                    :disabled="!suggestionDrafts[segment.suggestion.id]?.trim()"
+                    @click="applySuggestionEdit(segment)"
+                  >应用</button>
+                </template>
+                <template v-else>
+                  <button type="button" class="clinical-record-text-button is-danger" @click="removeSuggestion(segment)">移除</button>
+                  <button type="button" class="clinical-record-text-button" @click="startSuggestionEdit(segment)">调整</button>
+                  <button type="button" class="clinical-record-copy-button" @click="copyText(segment.text)">
+                    {{ copiedText === segment.text.trim() ? '已复制' : '复制' }}
+                  </button>
+                </template>
+              </span>
             </span>
           </span>
         </template>
       </template>
       <span v-else class="clinical-record-placeholder">未记录（点击补充）</span>
     </p>
+    <span
+      v-if="selectionCopy.text && !editing"
+      class="clinical-record-selection-copy"
+      role="toolbar"
+      aria-label="选中文本操作"
+      :style="{ top: `${selectionCopy.top}px`, left: `${selectionCopy.left}px` }"
+      @mousedown.prevent
+      @click.stop
+    >
+      <button type="button" @click="copySelectedText">
+        {{ copiedText === selectionCopy.text.trim() ? '已复制' : '复制' }}
+      </button>
+    </span>
   </div>
 </template>
 
@@ -259,28 +417,37 @@ watch(() => props.modelValue, () => void nextTick(syncEditableContent));
 .clinical-record-annotation.is-positive .clinical-record-annotation-sign { color: #a75b00; }
 .clinical-record-annotation.is-negative { background: rgba(15, 143, 123, .035); box-shadow: inset 0 -1px 0 rgba(15, 143, 123, .4); }
 .clinical-record-annotation.is-negative .clinical-record-annotation-sign { color: var(--voice-accent-strong); }
-.clinical-record-annotation.is-doctor-confirmed { background: rgba(31, 138, 91, .045); box-shadow: inset 0 -1px 0 rgba(31, 138, 91, .5); }
-.clinical-record-annotation.is-doctor-confirmed .clinical-record-annotation-sign { color: var(--voice-success); }
 .clinical-record-annotation.is-suggestion { padding: 0 1px; border-bottom: 1px dashed rgba(44, 119, 180, .72); border-radius: 0; background: rgba(44, 119, 180, .035); color: #285f8f; }
+.clinical-record-annotation.is-suggestion { cursor: pointer; }
 .clinical-record-annotation.is-suggestion .clinical-record-annotation-sign { min-width: 17px; color: #285f8f; }
 .clinical-record-annotation.is-suggestion.is-critical { border-color: rgba(197, 48, 48, .75); background: rgba(197, 48, 48, .035); color: #9f2929; }
-.clinical-record-annotation.is-suggestion.is-critical .clinical-record-annotation-sign { min-width: 11px; color: #b52f2f; }
+.clinical-record-annotation.is-suggestion.is-critical .clinical-record-annotation-sign { min-width: 17px; color: #b52f2f; }
 .clinical-record-annotation:focus-visible { outline: 2px solid var(--voice-accent); outline-offset: 2px; }
-.clinical-record-popover { position: fixed; z-index: 120; width: min(330px, calc(100vw - 24px)); max-height: calc(100vh - 24px); overflow-y: auto; padding: 12px; border: 1px solid var(--voice-border); border-radius: 11px; background: var(--voice-surface); color: var(--voice-text); box-shadow: 0 12px 30px rgba(15, 23, 42, .16); font-size: 12px; line-height: 1.5; white-space: normal; cursor: default; }
-.clinical-record-popover, .clinical-record-popover-head, .clinical-record-popover-tags, .clinical-record-popover-actions { display: flex; }
+.clinical-record-popover { position: fixed; z-index: 120; width: min(330px, calc(100vw - 24px)); max-height: calc(100vh - 24px); overflow-y: auto; padding: 12px; border: 1px solid var(--voice-border); border-radius: 11px; background: var(--voice-surface); color: var(--voice-text); box-shadow: 0 12px 30px rgba(15, 23, 42, .16); font-size: 13px; line-height: 1.55; white-space: normal; cursor: default; }
+.clinical-record-popover, .clinical-record-popover-header, .clinical-record-popover-tags, .clinical-record-popover-line { display: flex; }
 .clinical-record-popover { flex-direction: column; gap: 8px; }
-.clinical-record-popover-head { align-items: flex-start; justify-content: space-between; gap: 8px; }
-.clinical-record-popover-head strong { font-size: 13px; }
-.clinical-record-popover-tags, .clinical-record-popover-actions { flex-wrap: wrap; gap: 6px; }
-.clinical-record-popover-tags > span, .clinical-record-priority { padding: 2px 7px; border-radius: 999px; background: var(--voice-accent-soft); color: var(--voice-accent-strong); font-size: 11px; white-space: nowrap; }
-.clinical-record-priority.is-critical { background: var(--voice-danger-soft); color: var(--voice-danger); }
-.clinical-record-rationale, .clinical-record-safety-note { color: var(--voice-text-muted); }
-.clinical-record-preview { padding: 6px 8px; border-radius: 7px; background: var(--voice-surface-soft); }
-.clinical-record-popover textarea { width: 100%; padding: 7px 9px; border: 1px solid var(--voice-border); border-radius: 8px; background: var(--voice-surface); color: var(--voice-text); font: inherit; resize: vertical; }
-.clinical-record-popover-actions button { min-height: 30px; padding: 0 10px; border: 1px solid var(--voice-border); border-radius: 8px; background: var(--voice-surface); color: var(--voice-text); cursor: pointer; }
-.clinical-record-popover-actions .is-negative { border-color: rgba(15, 143, 123, .35); color: var(--voice-accent-strong); }
-.clinical-record-popover-actions .is-subtle { color: var(--voice-text-muted); }
-.clinical-record-popover-actions button:disabled { opacity: .45; cursor: not-allowed; }
-.clinical-record-popover.is-fact { width: 250px; }
+.clinical-record-popover-header { align-items: center; justify-content: space-between; gap: 12px; }
+.clinical-record-popover-header strong { font-size: 14px; }
+.clinical-record-popover-close { display: inline-flex; align-items: center; justify-content: center; width: 24px; height: 24px; padding: 0; border: 0; border-radius: 6px; background: transparent; color: var(--voice-text-secondary); font: inherit; font-size: 20px; line-height: 1; cursor: pointer; }
+.clinical-record-popover-close:hover { background: var(--voice-hover-bg, rgba(100, 116, 139, .09)); color: var(--voice-text); }
+.clinical-record-popover-tags { flex-wrap: wrap; gap: 6px; }
+.clinical-record-popover-tags > span { padding: 2px 7px; border-radius: 999px; background: var(--voice-accent-soft); color: var(--voice-accent-strong); font-size: 11px; white-space: nowrap; }
+.clinical-record-popover-line { align-items: flex-start; gap: 8px; }
+.clinical-record-popover-line > strong { flex: 0 0 auto; color: var(--voice-text-secondary); font-size: 12px; font-weight: 600; }
+.clinical-record-popover-line.is-muted > span { color: var(--voice-text-secondary); }
+.clinical-record-suggestion-text { padding-left: 9px; border-left: 3px solid currentColor; color: inherit; font-weight: 600; }
+.clinical-record-suggestion-editor { width: 100%; min-height: 72px; padding: 8px 9px; border: 1px solid var(--voice-accent); border-radius: 7px; background: var(--voice-surface); color: var(--voice-text); font: inherit; line-height: 1.55; resize: vertical; outline: none; box-sizing: border-box; }
+.clinical-record-suggestion-editor:focus { box-shadow: 0 0 0 3px var(--voice-accent-soft); }
+.clinical-record-popover-actions { display: flex; align-items: center; justify-content: flex-end; gap: 6px; }
+.clinical-record-copy-button { align-self: flex-end; min-width: 76px; min-height: 30px; padding: 5px 11px; border: 1px solid var(--voice-accent); border-radius: 7px; background: transparent; color: var(--voice-accent-strong); font: inherit; font-size: 12px; cursor: pointer; }
+.clinical-record-copy-button:hover { background: var(--voice-accent-soft); }
+.clinical-record-copy-button:disabled { cursor: not-allowed; opacity: .45; }
+.clinical-record-text-button { min-height: 30px; padding: 5px 9px; border: 0; border-radius: 7px; background: transparent; color: var(--voice-text-secondary); font: inherit; font-size: 12px; cursor: pointer; }
+.clinical-record-text-button:hover { background: var(--voice-hover-bg, rgba(100, 116, 139, .09)); color: var(--voice-text); }
+.clinical-record-text-button.is-danger { color: var(--voice-danger, #c53030); }
+.clinical-record-popover.is-fact { width: min(280px, calc(100vw - 24px)); }
+.clinical-record-selection-copy { position: fixed; z-index: 130; display: inline-flex; padding: 3px; border: 1px solid var(--voice-border); border-radius: 8px; background: var(--voice-surface); box-shadow: 0 8px 22px rgba(15, 23, 42, .18); }
+.clinical-record-selection-copy button { min-width: 74px; min-height: 30px; padding: 4px 12px; border: 0; border-radius: 6px; background: var(--voice-accent); color: #fff; font: inherit; font-size: 12px; font-weight: 600; cursor: pointer; }
+.clinical-record-selection-copy button:hover { filter: brightness(.97); }
 @media (max-width: 720px) { .clinical-record-popover { top: auto !important; right: 16px; bottom: 16px; left: 16px !important; width: auto; } }
 </style>

@@ -25,13 +25,27 @@ describe('institutionAuxiliaryCatalog', () => {
 
   it('accepts only valid references in the requested category', () => {
     const result = mapAuxiliaryCatalogRecommendations({
-      exams: [{ catalogRef: 'E001', reason: '排查肺部感染' }],
+      exams: [{
+        catalogRef: 'E001',
+        reason: '排查肺部感染',
+        goal: '明确肺部感染证据',
+        goalGroup: '感染病灶评估',
+        goalGroupPurpose: '定位感染病灶并评估范围',
+        necessity: 'core',
+      }],
       labTests: [{ catalogRef: 'E001' }, { catalogRef: 'L001', reason: '评估感染' }],
     }, context, ['exam', 'lab_test'], normalize);
 
     expect(result).toHaveLength(2);
     expect(result.map((item) => item.matchedItem?.id)).toEqual(['exam-1', 'lab-1']);
     expect(result.every((item) => item.selected === false)).toBe(true);
+    expect(result[0]).toMatchObject({
+      goal: '明确肺部感染证据',
+      goalGroup: '感染病灶评估',
+      goalGroupPurpose: '定位感染病灶并评估范围',
+      necessity: 'core',
+    });
+    expect(result[1]?.necessity).toBe('core');
   });
 
   it('places restricted free-program items behind general items and labels their eligibility constraint', () => {

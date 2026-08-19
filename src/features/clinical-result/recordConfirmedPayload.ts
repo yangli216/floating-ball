@@ -434,6 +434,8 @@ export function buildRecordConfirmedPayload(
   const resolvedPrecautions = fullOutpatientRecord?.precautions || precautions || '';
   const includeDiagnosis = !isScopedWriteback || Boolean(writebackScope?.includeDiagnosis);
   const includeOrders = !isScopedWriteback || Boolean(writebackScope?.orderTypes.length);
+  // PHIS 会直接遍历 orderList；未选医嘱时仍传空数组，并由空 orderTypes 表达“不处理”。
+  const orderListPayload = includeOrders ? orderList : [];
 
   return {
     consultationId,
@@ -450,7 +452,7 @@ export function buildRecordConfirmedPayload(
       ? { precautions: resolvedPrecautions }
       : {}),
     ...(includeDiagnosis ? { diagList } : {}),
-    ...(includeOrders ? { orderList } : {}),
+    orderList: orderListPayload,
     ...(treatmentPlan && includeOrders ? { treatmentPlan } : {}),
     ...(outpatientRecordPayload ? { outpatientRecord: outpatientRecordPayload } : {}),
     ...(extra || {}),

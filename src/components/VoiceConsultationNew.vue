@@ -45,6 +45,7 @@ import {
   findManualMatchCandidates,
   findUsageOptionByValue,
   getDiagnosisRecommendationFeedbackKey,
+  getDiagnosisSuggestionDirectionKey,
   getMatchedItemRaw,
   getMedicineCollapsedSummary as getSharedMedicineCollapsedSummary,
   getMedicineFieldDisplay as getSharedMedicineFieldDisplay,
@@ -62,11 +63,9 @@ import {
   initClinicalDiagnoses,
   initClinicalTreatments,
   mapClinicalResultAiDiagnoses,
-  appendConfirmedClinicalRecordFact,
   parseLLMJson,
   normalizeClinicalResultRegenerationOutput,
   rememberManualCatalogMatch,
-  replaceClinicalRecordCandidateText,
   shouldAutoSelectTreatment,
   syncTreatmentExecDeptSelections as syncSharedTreatmentExecDeptSelections,
   toManualMatchCandidateView,
@@ -75,7 +74,6 @@ import {
   type ClinicalResultRecommendationType,
   type ClinicalResultRecordSummaryInput,
   type ClinicalResultRegenerationRecord,
-  type ClinicalRecordFactField,
   type MedicinePrimaryField,
   type ManualMatchRawCandidate,
 } from '@features/clinical-result';
@@ -103,7 +101,7 @@ import {
 import {
   ClinicalGenerationProgress,
   ClinicalDecisionDisclaimer,
-  ClinicalRecordFactPanel,
+  ClinicalResultColumnNavigator,
   ChronicRefillReviewPanel,
   ClinicalResultSupplementDialog,
   ClinicalResultWritebackScopeSelector,
@@ -111,12 +109,15 @@ import {
   DiagnosisRecommendationCard,
   MutualRecognitionDecisionHost,
   TreatmentRecommendationSection,
+  buildClinicalResultNavigationItems,
   useBodySiteOptions,
   useClinicalResultCancelController,
+  useClinicalResultColumnNavigation,
   useClinicalRecordFactConfirmation,
   useChronicRefillReview,
   useClinicalResultChannelStrategy,
   useClinicalResultDiagnosisChecklist,
+  useDifferentialDiagnosisDirection,
   useClinicalResultIntentReset,
   useClinicalResultPrecautionsScope,
   useClinicalResultPatientContext,
@@ -193,6 +194,7 @@ const showToast = inject<(msg: string, type?: string) => void>('showToast');
 const recommendationPolicy = computed(() => props.intentResult?.recommendationPolicy);
 const resultRegenerating = ref(false);
 const showSupplementDialog = ref(false);
+const supplementGuidance = ref('');
 const isResultGenerating = computed(() => (
   resultRegenerating.value
   || props.processing
@@ -212,7 +214,22 @@ const physicalExam = ref('');
 const precautions = ref('');
 
 const aiDiagnoses = ref<Diagnosis[]>([]);
-const diagnosisSuggestionSections = computed(() => buildDiagnosisSuggestionSections(aiDiagnoses.value));
+const differentialDiagnosisDirection = useDifferentialDiagnosisDirection();
+const {
+  includedKeys: includedDifferentialDiagnosisKeys,
+  promotedKeys: promotedDifferentialDiagnosisKeys,
+  include: includeDifferentialDiagnosisDirection,
+  remove: removeDifferentialDiagnosisDirection,
+  promote: promoteDifferentialDiagnosisDirection,
+  reset: resetDifferentialDiagnosisDirection,
+  restore: restoreDifferentialDiagnosisDirection,
+  serialize: serializeDifferentialDiagnosisDirection,
+} = differentialDiagnosisDirection;
+const diagnosisSuggestionSections = computed(() => buildDiagnosisSuggestionSections(
+  aiDiagnoses.value,
+  3,
+  promotedDifferentialDiagnosisKeys.value,
+));
 const formalDiagnoses = computed(() => diagnosisSuggestionSections.value.formal);
 const differentialDiagnoses = computed(() => diagnosisSuggestionSections.value.differential);
 const diagnosisSelection = useDiagnosisSelection({ diagnoses: formalDiagnoses });
@@ -365,6 +382,26 @@ const {
   treatmentEmptyText,
   treatmentSections,
 } = treatmentSectionState;
+const clinicalResultNavigationItems = computed(() => buildClinicalResultNavigationItems(
+  formalDiagnoses.value.length,
+  treatmentSections.value,
+));
+const clinicalResultColumnNavigation = useClinicalResultColumnNavigation(
+  () => clinicalResultNavigationItems.value,
+);
+const {
+  containerRef: clinicalResultRightColumnRef,
+  activeKey: activeClinicalResultSection,
+  navigateTo: navigateClinicalResultSection,
+  revealOverlayAnchor: revealClinicalResultOverlayAnchor,
+  syncActiveSection: syncActiveClinicalResultSection,
+} = clinicalResultColumnNavigation;
+watch(clinicalResultNavigationItems, (items) => {
+  if (!items.some((item) => item.key === activeClinicalResultSection.value)) {
+    activeClinicalResultSection.value = 'diagnosis';
+  }
+  void nextTick(syncActiveClinicalResultSection);
+}, { flush: 'post' });
 const displayedTreatmentEmptyText = computed(() => (
   recommendationPolicy.value?.plan?.mode === 'diagnostic_first'
     ? (recommendationPolicy.value.plan.reason || '当前先完善必要的检验检查，药品建议将在结果返回后继续生成。')
@@ -397,21 +434,6 @@ function getFactRecord() {
   };
 }
 
-function applyConfirmedRecordFact(field: ClinicalRecordFactField, text: string, replaceText?: string): void {
-  const nextValue = (current: string) => {
-    if (replaceText) {
-      const replaced = replaceClinicalRecordCandidateText(current, replaceText, text);
-      if (replaced !== current) return replaced;
-    }
-    return appendConfirmedClinicalRecordFact(current, text);
-  };
-  if (field === 'historyOfPresentIllness') historyOfPresentIllness.value = nextValue(historyOfPresentIllness.value);
-  if (field === 'pastMedicalHistory') pastMedicalHistory.value = nextValue(pastMedicalHistory.value);
-  if (field === 'personalHistory') personalHistory.value = nextValue(personalHistory.value);
-  if (field === 'familyHistory') familyHistory.value = nextValue(familyHistory.value);
-  if (field === 'physicalExam') physicalExam.value = nextValue(physicalExam.value);
-}
-
 const recordFactConfirmation = useClinicalRecordFactConfirmation({
   getRecord: getFactRecord,
   getDiagnoses: () => formalDiagnoses.value,
@@ -431,7 +453,6 @@ const recordFactConfirmation = useClinicalRecordFactConfirmation({
     });
     return chat(requestSpec.messages, undefined, undefined, undefined, requestSpec.config);
   },
-  applyConfirmedFact: applyConfirmedRecordFact,
   formatError: (error) => formatUserFacingError(error, {
     context: '病历补问分析失败',
     fallback: '请稍后重试，当前病历内容不会受到影响。',
@@ -439,21 +460,13 @@ const recordFactConfirmation = useClinicalRecordFactConfirmation({
   notify: showToast,
 });
 const {
-  error: factSuggestionError,
-  expanded: factPanelExpanded,
-  explicitFacts,
-  loading: factSuggestionLoading,
   suggestions: factSuggestions,
-  confirmNegative: confirmNegativeFact,
-  confirmPositive: confirmPositiveFact,
-  ensureWritebackReady: ensureFactWritebackReady,
   generateSuggestions: generateFactSuggestions,
   getFieldHighlights: getRecordFieldFactHighlights,
   getFieldSuggestions: getRecordFieldFactSuggestions,
-  markNotApplicable: markFactNotApplicable,
+  dismissSuggestion: dismissFactSuggestion,
   reset: resetFactConfirmation,
   restoreSuggestions: restoreFactSuggestions,
-  setExpanded: setFactPanelExpanded,
 } = recordFactConfirmation;
 const hasPendingFactSuggestions = computed(() => (
   factSuggestions.value.some((item) => item.status === 'pending')
@@ -516,7 +529,6 @@ const {
   allAvailableSelected: allWritebackContentSelected,
   partialSelection: partialWritebackSelection,
   writebackScope,
-  selectedFactFields: selectedWritebackFactFields,
   toggleSelector: toggleWritebackScope,
   closeSelector: closeWritebackScope,
   setRecordExpanded: setWritebackRecordExpanded,
@@ -570,10 +582,14 @@ const editorSnapshotPersistence = useVoiceEditorSnapshotPersistence({
     physicalExam: physicalExam.value,
     precautions: precautions.value,
     factSuggestions: factSuggestions.value as unknown[],
+    differentialDiagnosisDirection: serializeDifferentialDiagnosisDirection(),
     writebackScope: serializeWritebackScope(),
     treatments: treatments.value as unknown[],
     diagnoses: aiDiagnoses.value as unknown[],
     selectedDiagnosisIdentity: getDiagnosisIdentity(selectedDiagnosis.value),
+    selectedDiagnosisIdentities: selectedDiagnoses.value
+      .map((item) => getDiagnosisIdentity(item))
+      .filter(Boolean),
     treatmentDiagnosisKey: lastTreatmentDiagnosisKey.value,
   }),
   persist: updateVoiceConsultationCache,
@@ -615,15 +631,29 @@ async function applyEditorSnapshot(snapshot: VoiceEditorSnapshot): Promise<void>
   if (Array.isArray(snapshot.factSuggestions)) {
     restoreFactSuggestions(snapshot.factSuggestions);
   }
+  if (snapshot.differentialDiagnosisDirection) {
+    restoreDifferentialDiagnosisDirection(snapshot.differentialDiagnosisDirection);
+  }
   if (Array.isArray(snapshot.diagnoses) && snapshot.diagnoses.length > 0) {
     aiDiagnoses.value = snapshot.diagnoses as Diagnosis[];
     const matchedKey = snapshot.selectedDiagnosisIdentity;
+    const selectedKeys = new Set(
+      Array.isArray(snapshot.selectedDiagnosisIdentities)
+        ? snapshot.selectedDiagnosisIdentities.filter((item): item is string => typeof item === 'string' && Boolean(item))
+        : matchedKey ? [matchedKey] : [],
+    );
     const target = matchedKey
       ? formalDiagnoses.value.find((diag) => getDiagnosisIdentity(diag) === matchedKey)
       : null;
     const fallback = formalDiagnoses.value.find((diag) => diag.id || diag.code) || formalDiagnoses.value[0] || null;
     const chosen = target || fallback;
-    replaceDiagnosisSelection(chosen ? [chosen] : [], chosen);
+    const restoredSelected = formalDiagnoses.value.filter(
+      (diag) => selectedKeys.has(getDiagnosisIdentity(diag)),
+    );
+    replaceDiagnosisSelection(
+      restoredSelected.length > 0 ? restoredSelected : chosen ? [chosen] : [],
+      chosen,
+    );
   }
   if (Array.isArray(snapshot.treatments) && snapshot.treatments.length > 0) {
     await fetchPharmacyOptions();
@@ -834,7 +864,13 @@ function isRecommendationFeedbackOpen(recommendationKey: string): boolean {
 }
 
 function toggleRecommendationFeedback(recommendationKey: string, event?: Event): void {
+  revealClinicalResultOverlayAnchor(event);
   recommendationFeedbackPopover.toggle(recommendationKey, event);
+}
+
+function toggleClinicalResultReasonTooltip(reasonKey: string, event?: Event): void {
+  revealClinicalResultOverlayAnchor(event);
+  toggleReasonTooltip(reasonKey, event);
 }
 
 function buildVoiceUserLogSnapshot() {
@@ -1254,8 +1290,105 @@ function toggleDiagnosis(diag: Diagnosis): void {
   toggleDiagnosisSelection(diag);
 }
 
+function includeDifferentialDirection(diag: Diagnosis): void {
+  includeDifferentialDiagnosisDirection(getDiagnosisSuggestionDirectionKey(diag));
+  persistEditorSnapshotImmediate();
+}
+
+function removeDifferentialDirection(diag: Diagnosis): void {
+  removeDifferentialDiagnosisDirection(getDiagnosisSuggestionDirectionKey(diag));
+  persistEditorSnapshotImmediate();
+}
+
+function openGeneralSupplementDialog(): void {
+  supplementGuidance.value = '';
+  showSupplementDialog.value = true;
+}
+
+function closeSupplementDialog(): void {
+  showSupplementDialog.value = false;
+  supplementGuidance.value = '';
+}
+
+function supplementDifferentialDirection(diag: Diagnosis): void {
+  includeDifferentialDirection(diag);
+  const missingInformation = diag.missingInformation?.trim()
+    || '与该方向相关的症状特征、持续时间、查体或检查结果';
+  supplementGuidance.value = `当前关注方向：${diag.name}。建议重点补充：${missingInformation}`;
+  showSupplementDialog.value = true;
+}
+
+async function promoteDifferentialToFormal(diag: Diagnosis): Promise<void> {
+  const originalDirectionKey = getDiagnosisSuggestionDirectionKey(diag);
+  const standardMatch = getStandardDiagnosisId(diag)
+    ? null
+    : medicalDataService.matchDiagnosis(diag.name, diag.code ? { icdCode: diag.code } : undefined)
+      || (diag.originalName
+        ? medicalDataService.matchDiagnosis(diag.originalName, diag.code ? { icdCode: diag.code } : undefined)
+        : null);
+
+  if (!getStandardDiagnosisId(diag) && !standardMatch) {
+    showToast?.(`${diag.name} 未匹配院内标准诊断库，暂不能转为正式诊断`, 'warning');
+    return;
+  }
+
+  const promotedDiagnosis: Diagnosis = standardMatch
+    ? {
+        ...diag,
+        id: standardMatch.id,
+        code: standardMatch.code,
+        name: standardMatch.name,
+        originalName: diag.originalName || diag.name,
+      }
+    : diag;
+  const diagnosisIndex = aiDiagnoses.value.findIndex(
+    (item) => getDiagnosisSuggestionDirectionKey(item) === originalDirectionKey,
+  );
+  if (diagnosisIndex < 0) return;
+
+  aiDiagnoses.value[diagnosisIndex] = promotedDiagnosis;
+  const promotedDirectionKey = getDiagnosisSuggestionDirectionKey(promotedDiagnosis);
+  promoteDifferentialDiagnosisDirection(originalDirectionKey, promotedDirectionKey);
+  await nextTick();
+
+  const formalDiagnosis = formalDiagnoses.value.find(
+    (item) => getDiagnosisSuggestionDirectionKey(item) === promotedDirectionKey,
+  );
+  if (!formalDiagnosis) return;
+
+  const primaryDiagnosis = selectedDiagnosis.value;
+  const formalIdentity = getDiagnosisIdentity(formalDiagnosis);
+  const nextSelectedDiagnoses = selectedDiagnoses.value.some(
+    (item) => getDiagnosisIdentity(item) === formalIdentity,
+  )
+    ? [...selectedDiagnoses.value]
+    : [...selectedDiagnoses.value, formalDiagnosis];
+  const previousTreatmentRefetchSuppression = suppressDiagnosisTreatmentRefetch.value;
+  suppressDiagnosisTreatmentRefetch.value = true;
+  try {
+    replaceDiagnosisSelection(
+      nextSelectedDiagnoses,
+      primaryDiagnosis || formalDiagnosis,
+    );
+    await nextTick();
+  } finally {
+    suppressDiagnosisTreatmentRefetch.value = previousTreatmentRefetchSuppression;
+  }
+  refreshWritebackScope();
+  persistEditorSnapshotImmediate();
+  void registerCurrentRecommendations();
+  void performDiagnosisFactCheck([formalDiagnosis]);
+  showToast?.(
+    primaryDiagnosis
+      ? `已将 ${formalDiagnosis.name} 转为正式次诊断，原主诊断保持不变`
+      : `已将 ${formalDiagnosis.name} 转为正式主诊断`,
+    'success',
+  );
+}
+
 async function handleDiagnosisDifferential(diag: Diagnosis, event?: Event): Promise<void> {
   event?.stopPropagation();
+  revealClinicalResultOverlayAnchor(event);
   closeReasonTooltipIfOpen();
   await openDiagnosisChecklist(diag);
 }
@@ -1620,7 +1753,7 @@ async function handleSupplementRegenerate(doctorSupplement: string): Promise<voi
   const previousTreatmentGenerationState = { ...treatmentGenerationState.value };
   const previousFactSuggestions = factSuggestions.value.map((item) => ({ ...item }));
 
-  showSupplementDialog.value = false;
+  closeSupplementDialog();
   resultRegenerating.value = true;
   suppressDiagnosisTreatmentRefetch.value = true;
   closeReasonTooltipIfOpen();
@@ -2147,10 +2280,12 @@ function hasRequiredBodySite(rec: TreatmentRecommendation): boolean {
 }
 
 function openExecDeptQuickSelector(rec: TreatmentRecommendation, event?: Event): void {
+  revealClinicalResultOverlayAnchor(event);
   openQuickSelector(rec, 'execDept', event);
 }
 
 function openBodySiteQuickSelector(rec: TreatmentRecommendation, event?: Event): void {
+  revealClinicalResultOverlayAnchor(event);
   openQuickSelector(rec, 'bodySite', event);
 }
 
@@ -2173,11 +2308,13 @@ function openPharmacyQuickSelector(rec: TreatmentRecommendation, event?: Event):
     secondarySelector.closeAll();
     return;
   }
+  revealClinicalResultOverlayAnchor(event);
   openSecondarySelector(rec, 'pharmacy');
 }
 
 function openInsuranceQuickSelector(rec: TreatmentRecommendation, event?: Event): void {
   event?.stopPropagation();
+  revealClinicalResultOverlayAnchor(event);
   expandTreatmentEditor(rec);
   openSecondarySelector(rec, 'insurance');
   void nextTick(() => {
@@ -2519,7 +2656,6 @@ async function handleBatchWriteBack(): Promise<void> {
     orderTypes: [...writebackScope.value.orderTypes],
   };
   if (!ensureChronicRefillWritebackReady()) return;
-  if (!ensureFactWritebackReady(selectedWritebackFactFields.value)) return;
   if (selectedScope.recordFields.includes('precautions')) {
     syncPrecautionsToSelection();
   }
@@ -2615,6 +2751,7 @@ watch(
     autoTreatmentFetchAttemptKey.value = '';
     resetPrecautionsScope();
     resetForIntent({});
+    resetDifferentialDiagnosisDirection();
     resetFactConfirmation();
     resetChronicRefillReview();
     resetWritebackScope();
@@ -2633,6 +2770,7 @@ watch(
       resetPrecautionsScope();
       resetWritebackScope();
       resetChronicRefillReview();
+      resetDifferentialDiagnosisDirection();
       return;
     }
 
@@ -2650,6 +2788,7 @@ watch(
     autoTreatmentFetchAttemptKey.value = '';
     resetPrecautionsScope();
     resetForIntent(result);
+    resetDifferentialDiagnosisDirection();
     resetFactConfirmation();
     resetChronicRefillReview(result.chronicRefillReview);
     resetTreatmentGenerationState();
@@ -2740,6 +2879,8 @@ watch(
     physicalExam.value,
     precautions.value,
     factSuggestions.value,
+    includedDifferentialDiagnosisKeys.value,
+    promotedDifferentialDiagnosisKeys.value,
     treatments.value,
     aiDiagnoses.value,
     selectedDiagnosis.value,
@@ -2782,7 +2923,11 @@ watch(
         {{ writebackBannerText }}
       </div>
       <div class="record-content">
-        <section class="vcn-panel pane-card vcn-left-panel">
+        <section
+          class="vcn-panel pane-card vcn-left-panel"
+          tabindex="0"
+          aria-label="病历详情，可独立滚动"
+        >
           <div class="section-heading">
             <div class="section-heading-main">
               <h3 class="section-title">病历详情</h3>
@@ -2793,7 +2938,7 @@ watch(
               aria-label="补充说明并重新生成病历"
               title="补充文字或语音说明，并重新生成病历、诊断和适用的治疗方案"
               :disabled="isResultUnavailable || diagnosisLoading || treatmentLoading || isWritebackBusy"
-              @click="showSupplementDialog = true"
+              @click="openGeneralSupplementDialog"
             >
               <Icon
                 :icon="resultRegenerating ? 'lucide:loader-2' : 'lucide:message-square-plus'"
@@ -2807,7 +2952,7 @@ watch(
 
           <div v-if="hasPendingFactSuggestions" class="clinical-record-ai-notice" role="note">
             <Icon icon="lucide:info" size="14" aria-hidden="true" />
-            <span>病历中带 AI 或 ! 标记的内容由 AI 补充，尚待医生核查；确认前不会写入正式病历。</span>
+            <span>病历中带 AI 标记的内容由 AI 补充，红色 AI 为重点提示；请结合患者实际情况核查，必要时直接编辑病历。</span>
           </div>
 
           <div class="record-fields">
@@ -2826,10 +2971,8 @@ watch(
               :fact-highlights="getRecordFieldFactHighlights('historyOfPresentIllness')"
               :fact-suggestions="getRecordFieldFactSuggestions('historyOfPresentIllness')"
               placeholder="请输入现病史..."
+              @dismiss-fact-suggestion="dismissFactSuggestion"
               grow
-              @confirm-negative-fact="confirmNegativeFact"
-              @confirm-positive-fact="confirmPositiveFact"
-              @not-applicable-fact="markFactNotApplicable"
             />
             <VoiceRecordFieldEditor
               v-model="pastMedicalHistory"
@@ -2839,9 +2982,7 @@ watch(
               :fact-highlights="getRecordFieldFactHighlights('pastMedicalHistory')"
               :fact-suggestions="getRecordFieldFactSuggestions('pastMedicalHistory')"
               placeholder="请输入既往史..."
-              @confirm-negative-fact="confirmNegativeFact"
-              @confirm-positive-fact="confirmPositiveFact"
-              @not-applicable-fact="markFactNotApplicable"
+              @dismiss-fact-suggestion="dismissFactSuggestion"
             />
             <VoiceRecordFieldEditor
               v-model="personalHistory"
@@ -2851,9 +2992,7 @@ watch(
               :fact-highlights="getRecordFieldFactHighlights('personalHistory')"
               :fact-suggestions="getRecordFieldFactSuggestions('personalHistory')"
               placeholder="请输入个人史..."
-              @confirm-negative-fact="confirmNegativeFact"
-              @confirm-positive-fact="confirmPositiveFact"
-              @not-applicable-fact="markFactNotApplicable"
+              @dismiss-fact-suggestion="dismissFactSuggestion"
             />
             <VoiceRecordFieldEditor
               v-model="familyHistory"
@@ -2863,9 +3002,7 @@ watch(
               :fact-highlights="getRecordFieldFactHighlights('familyHistory')"
               :fact-suggestions="getRecordFieldFactSuggestions('familyHistory')"
               placeholder="请输入家族史..."
-              @confirm-negative-fact="confirmNegativeFact"
-              @confirm-positive-fact="confirmPositiveFact"
-              @not-applicable-fact="markFactNotApplicable"
+              @dismiss-fact-suggestion="dismissFactSuggestion"
             />
             <VoiceRecordFieldEditor
               v-model="physicalExam"
@@ -2875,9 +3012,7 @@ watch(
               :fact-highlights="getRecordFieldFactHighlights('physicalExam')"
               :fact-suggestions="getRecordFieldFactSuggestions('physicalExam')"
               placeholder="请输入体格检查..."
-              @confirm-negative-fact="confirmNegativeFact"
-              @confirm-positive-fact="confirmPositiveFact"
-              @not-applicable-fact="markFactNotApplicable"
+              @dismiss-fact-suggestion="dismissFactSuggestion"
             />
             <VoiceRecordFieldEditor
               v-model="precautions"
@@ -2887,22 +3022,23 @@ watch(
               placeholder="请输入注意事项..."
             />
           </div>
-          <ClinicalRecordFactPanel
-            :explicit-facts="explicitFacts"
-            :suggestions="factSuggestions"
-            :loading="factSuggestionLoading"
-            :error="factSuggestionError"
-            :expanded="factPanelExpanded"
-            @toggle="setFactPanelExpanded"
-            @refresh="generateFactSuggestions"
-            @confirm-negative="confirmNegativeFact"
-            @confirm-positive="confirmPositiveFact"
-            @not-applicable="markFactNotApplicable"
-          />
         </section>
 
-        <section class="vcn-right-panel">
-          <div class="decision-card pane-card">
+        <section
+          ref="clinicalResultRightColumnRef"
+          class="vcn-right-panel"
+          tabindex="0"
+          aria-label="诊断与治疗建议，可独立滚动"
+          @scroll.passive="syncActiveClinicalResultSection"
+        >
+          <ClinicalResultColumnNavigator
+            :primary-diagnosis-name="selectedDiagnosis?.name || ''"
+            :items="clinicalResultNavigationItems"
+            :active-key="activeClinicalResultSection"
+            @navigate="navigateClinicalResultSection"
+          />
+
+          <div class="decision-card pane-card" data-clinical-section="diagnosis">
             <div class="section-heading">
               <div class="section-heading-main">
                 <h3 class="section-title">诊断建议</h3>
@@ -2910,7 +3046,6 @@ watch(
               <div class="diagnosis-heading-actions">
                 <div v-if="selectedDiagnoses.length > 0" class="section-meta">
                   已纳入 {{ selectedDiagnoses.length }} 项
-                  <span v-if="selectedDiagnosis" class="section-meta-strong">主：{{ selectedDiagnosis.name }}</span>
                 </div>
                 <button
                   class="refresh-recommendation-btn"
@@ -2960,7 +3095,7 @@ watch(
                 :feedback-submitting="recommendationSubmittingKey === getDiagnosisFeedbackKey(diag)"
                 :submitted-label="getRecommendationSubmittedLabel(getDiagnosisFeedbackKey(diag))"
                 @toggle="toggleDiagnosis(diag)"
-                @toggle-reason="toggleReasonTooltip(getReasonTooltipKey('diagnosis', diag.code, diag.name), $event)"
+                @toggle-reason="toggleClinicalResultReasonTooltip(getReasonTooltipKey('diagnosis', diag.code, diag.name), $event)"
                 @set-primary="setPrimaryDiagnosis(diag, $event)"
                 @remove="removeDiagnosis(diag, $event)"
                 @toggle-related="toggleRelatedDropdown(diag, $event)"
@@ -2993,7 +3128,15 @@ watch(
               当前病历暂无可以直接成立的正式诊断
             </div>
 
-            <DiagnosisDifferentialList :diagnoses="differentialDiagnoses" />
+            <DiagnosisDifferentialList
+              :diagnoses="differentialDiagnoses"
+              :included-keys="includedDifferentialDiagnosisKeys"
+              :disabled="isResultUnavailable || isWritebackBusy"
+              @include="includeDifferentialDirection"
+              @remove="removeDifferentialDirection"
+              @supplement="supplementDifferentialDirection"
+              @promote="promoteDifferentialToFormal"
+            />
           </div>
 
           <div class="decision-card pane-card">
@@ -3028,6 +3171,7 @@ watch(
               <TreatmentRecommendationSection
                 v-for="section in treatmentSections"
                 :key="section.type"
+                :data-clinical-section="section.type"
                 :section="section"
                 :selected-count="section.items.filter((item) => item.selected).length"
                 :total-count="section.items.length"
@@ -3077,7 +3221,7 @@ watch(
                 :is-feedback-submitting="isTreatmentFeedbackSubmitting"
                 :get-feedback-submitted-label="getTreatmentFeedbackSubmittedLabel"
                 @toggle="toggleTreatment"
-                @toggle-reason="(rec, event) => toggleReasonTooltip(getTreatmentReasonKey(rec), event)"
+                @toggle-reason="(rec, event) => toggleClinicalResultReasonTooltip(getTreatmentReasonKey(rec), event)"
                 @confirm-match="confirmSuggestedMatch"
                 @toggle-feedback="(rec, event) => toggleRecommendationFeedback(getTreatmentFeedbackKey(rec), event)"
                 @update-feedback-draft="(rec, draft) => updateRecommendationDraft(getTreatmentFeedbackKey(rec), draft)"
@@ -3180,7 +3324,8 @@ watch(
     <ClinicalResultSupplementDialog
       :open="showSupplementDialog"
       :disabled="resultRegenerating || diagnosisLoading || treatmentLoading || isWritebackBusy"
-      @close="showSupplementDialog = false"
+      :guidance="supplementGuidance"
+      @close="closeSupplementDialog"
       @confirm="handleSupplementRegenerate"
     />
 

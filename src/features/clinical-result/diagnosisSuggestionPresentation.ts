@@ -5,6 +5,16 @@ export interface DiagnosisSuggestionSections {
   differential: Diagnosis[];
 }
 
+export function getDiagnosisSuggestionDirectionKey(diagnosis: Diagnosis): string {
+  return [
+    diagnosis.id || '',
+    diagnosis.code || '',
+    diagnosis.originalName || diagnosis.name || '',
+  ]
+    .map((item) => item.trim().toLocaleLowerCase())
+    .join('|');
+}
+
 export function parseDiagnosisMatchRate(rate: string | undefined): number | null {
   const match = (rate || '').match(/(\d+(?:\.\d+)?)\s*%/u);
   if (match) return Number.parseFloat(match[1]);
@@ -27,15 +37,19 @@ function shouldBeDifferential(diagnosis: Diagnosis): boolean {
 export function buildDiagnosisSuggestionSections(
   diagnoses: readonly Diagnosis[],
   maxFormal = 3,
+  doctorPromotedKeys: ReadonlySet<string> = new Set(),
 ): DiagnosisSuggestionSections {
   const sorted = [...diagnoses].sort((left, right) => (
     (parseDiagnosisMatchRate(right.rate) ?? -1) - (parseDiagnosisMatchRate(left.rate) ?? -1)
   ));
   const formalCandidates: Diagnosis[] = [];
+  const doctorPromoted: Diagnosis[] = [];
   const differential: Diagnosis[] = [];
 
   for (const diagnosis of sorted) {
-    if (shouldBeDifferential(diagnosis)) {
+    if (doctorPromotedKeys.has(getDiagnosisSuggestionDirectionKey(diagnosis))) {
+      doctorPromoted.push(diagnosis);
+    } else if (shouldBeDifferential(diagnosis)) {
       differential.push(diagnosis);
     } else {
       formalCandidates.push(diagnosis);
@@ -43,7 +57,10 @@ export function buildDiagnosisSuggestionSections(
   }
 
   return {
-    formal: formalCandidates.slice(0, Math.max(0, maxFormal)),
+    formal: [
+      ...formalCandidates.slice(0, Math.max(0, maxFormal)),
+      ...doctorPromoted,
+    ],
     differential,
   };
 }

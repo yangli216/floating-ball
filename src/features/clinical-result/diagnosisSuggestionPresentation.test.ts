@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import type { Diagnosis } from '@/types/consultation';
 import {
   buildDiagnosisSuggestionSections,
+  getDiagnosisSuggestionDirectionKey,
   parseDiagnosisMatchRate,
 } from './diagnosisSuggestionPresentation';
 
@@ -25,7 +26,7 @@ describe('diagnosisSuggestionPresentation', () => {
     expect(single.formal).toHaveLength(1);
   });
 
-  it('keeps low-confidence or explicitly differential items in a separate read-only section', () => {
+  it('keeps low-confidence or explicitly differential items in a separate section', () => {
     const sections = buildDiagnosisSuggestionSections([
       diagnosis('正式诊断', '85%', { suggestionType: 'formal' }),
       diagnosis('待排诊断', '55%', { missingInformation: '补充影像检查' }),
@@ -35,6 +36,29 @@ describe('diagnosisSuggestionPresentation', () => {
 
     expect(sections.formal.map((item) => item.name)).toEqual(['正式诊断']);
     expect(sections.differential.map((item) => item.name)).toEqual(['模型鉴别诊断', '待排诊断', '误标正式诊断']);
+  });
+
+  it('lets an explicitly doctor-promoted direction bypass the AI formal limit', () => {
+    const promoted = diagnosis('医生转入诊断', '45%', {
+      id: 'standard-promoted',
+      suggestionType: 'differential',
+    });
+    const promotedKeys = new Set([getDiagnosisSuggestionDirectionKey(promoted)]);
+    const sections = buildDiagnosisSuggestionSections([
+      diagnosis('诊断A', '95%'),
+      diagnosis('诊断B', '90%'),
+      diagnosis('诊断C', '85%'),
+      diagnosis('诊断D', '80%'),
+      promoted,
+    ], 3, promotedKeys);
+
+    expect(sections.formal.map((item) => item.name)).toEqual([
+      '诊断A',
+      '诊断B',
+      '诊断C',
+      '医生转入诊断',
+    ]);
+    expect(sections.differential.map((item) => item.name)).not.toContain('医生转入诊断');
   });
 
   it('parses numeric and textual confidence labels', () => {

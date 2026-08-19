@@ -17,6 +17,7 @@ export interface ReportHistoryEntry {
   applications?: HisOutpatientFollowUpReportApplication[];
   examFinding?: string;
   examConclusion?: string;
+  reportUrl?: string;
   sourceQuery: string;
   available: boolean;
   isFollowUpSource: boolean;

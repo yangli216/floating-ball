@@ -189,7 +189,7 @@ describe('buildRecordConfirmedPayload outpatientRecord', () => {
     expect(payload.precautions).toBe(outpatientRecord.precautions);
   });
 
-  it('omits unselected record fields, diagnosis, and orders during partial writeback', () => {
+  it('omits unselected record fields and diagnosis while returning an empty order list', () => {
     const payload = buildRecordConfirmedPayload({
       consultationId: 'consultation-partial',
       chiefComplaint: '咳嗽3天',
@@ -221,7 +221,7 @@ describe('buildRecordConfirmedPayload outpatientRecord', () => {
     expect(payload).not.toHaveProperty('familyHistory');
     expect(payload).not.toHaveProperty('precautions');
     expect(payload).not.toHaveProperty('diagList');
-    expect(payload).not.toHaveProperty('orderList');
+    expect(payload.orderList).toEqual([]);
     expect(payload).not.toHaveProperty('treatmentPlan');
     expect(payload.outpatientRecord).toEqual({
       schemaVersion: OUTPATIENT_RECORD_SCHEMA_VERSION,

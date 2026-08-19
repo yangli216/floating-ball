@@ -127,7 +127,14 @@ export interface TreatmentRecommendation {
     rejected?: boolean; // 医生明确不采用该推荐；不等同于暂未勾选
     sourceType?: 'explicit' | 'inferred' | 'uncertain';
     evidenceText?: string;
+    /** 简明开立目的，检查/检验卡片直接展示。 */
     goal?: string;
+    /** 面向医生阅读的临床目标分组，不等同于 PHIS/LIS 申请单分类。 */
+    goalGroup?: string;
+    /** 临床目标分组的一句话目的说明。 */
+    goalGroupPurpose?: string;
+    /** 推荐必要性；AI 扩充项仍由医生决定是否勾选。 */
+    necessity?: 'core' | 'supplementary';
     // Editable fields for PHIS import
     dosage?: string;        // 每次剂量 (medicine)
     dosageUnit?: string;    // 剂量单位 (medicine)

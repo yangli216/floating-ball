@@ -22,6 +22,7 @@ export interface ClinicalGenerationProgress {
   visible: boolean;
   title: string;
   detail: string;
+  stepText: string;
   percent: number;
   steps: ClinicalGenerationProgressStep[];
 }
@@ -36,7 +37,7 @@ const RECORD_PHASES = [
   { key: 'record', label: '病历要点', sections: ['record_core', 'history_context'] as const },
   { key: 'orders', label: '明确医嘱', sections: ['explicit_orders'] as const },
   { key: 'diagnosis', label: '诊断建议', sections: ['diagnoses'] as const },
-  { key: 'route', label: '推荐路径', sections: ['recommendation_plan', 'record_extra'] as const },
+  { key: 'route', label: '诊疗方案', sections: ['recommendation_plan', 'record_extra'] as const },
 ];
 
 const CHRONIC_REFILL_PHASES = [
@@ -60,7 +61,17 @@ const GENERATED_STAGE_STEPS = [
 ] as const;
 
 function emptyProgress(): ClinicalGenerationProgress {
-  return { visible: false, title: '', detail: '', percent: 0, steps: [] };
+  return { visible: false, title: '', detail: '', stepText: '', percent: 0, steps: [] };
+}
+
+function formatStepText(current: number, total: number): string {
+  return `第 ${Math.min(Math.max(current, 1), Math.max(total, 1))}/${Math.max(total, 1)} 步`;
+}
+
+function progressPercentForStep(current: number, total: number): number {
+  if (total <= 1) return 88;
+  const normalizedCurrent = Math.min(Math.max(current, 1), total);
+  return Math.round(18 + ((normalizedCurrent - 1) / (total - 1)) * 70);
 }
 
 export function buildClinicalGenerationProgress(
@@ -71,6 +82,7 @@ export function buildClinicalGenerationProgress(
       visible: true,
       title: '生成未完成',
       detail: input.generation.message || '生成过程遇到问题，请返回后重试',
+      stepText: '生成失败',
       percent: 100,
       steps: [{ key: 'generation-error', label: '生成失败', status: 'error' }],
     };
@@ -85,14 +97,12 @@ export function buildClinicalGenerationProgress(
         ? 'complete' as const
         : index === activeIndex ? 'active' as const : 'pending' as const,
     }));
-    const percents = [12, 48, 86];
     return {
       visible: true,
       title: input.generation.message || `正在${GENERATED_STAGE_STEPS[activeIndex]?.label || '生成结果'}`,
-      detail: activeIndex === 1
-        ? '病历、复诊核查和方案将一次生成，完成后在本页直接展示'
-        : '当前页面会保留，完成后结果将在原位置自动出现',
-      percent: percents[Math.max(activeIndex, 0)],
+      detail: '',
+      stepText: formatStepText(activeIndex + 1, steps.length),
+      percent: progressPercentForStep(activeIndex + 1, steps.length),
       steps,
     };
   }
@@ -111,13 +121,15 @@ export function buildClinicalGenerationProgress(
         ? 'complete' as const
         : index === activeIndex ? 'active' as const : 'pending' as const,
     }));
-    const completeCount = completed.filter(Boolean).length;
-    const activeLabel = activeIndex >= 0 ? phases[activeIndex].label : '结果校验';
+    const activeLabel = activeIndex >= 0 ? phases[activeIndex].label : '生成结果';
     return {
       visible: true,
-      title: input.generation.message || `正在分析：${activeLabel}`,
-      detail: `已完成 ${completeCount}/${phases.length} 个分析阶段，内容会逐步呈现`,
-      percent: Math.max(8, Math.round((completeCount / phases.length) * 78)),
+      title: activeIndex >= 0 ? `正在整理${activeLabel}` : '正在校验生成结果',
+      detail: '',
+      stepText: formatStepText(activeIndex >= 0 ? activeIndex + 1 : phases.length, phases.length),
+      percent: activeIndex >= 0
+        ? progressPercentForStep(activeIndex + 1, phases.length)
+        : 96,
       steps,
     };
   }
@@ -139,10 +151,9 @@ export function buildClinicalGenerationProgress(
   return {
     visible: true,
     title: '正在匹配院内诊疗目录',
-    detail: completeCount > 0
-      ? `已完成 ${completeCount}/${activeEntries.length} 类目录匹配，完成后统一展示方案`
-      : '正在并行核对机构可用项目，完成后统一展示方案',
-    percent: 78 + Math.round((completeCount / Math.max(1, activeEntries.length)) * 20),
+    detail: '',
+    stepText: formatStepText(completeCount + 1, activeEntries.length),
+    percent: progressPercentForStep(completeCount + 1, activeEntries.length),
     steps,
   };
 }

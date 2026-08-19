@@ -18,6 +18,8 @@ export interface ClinicalRecordAnnotationSuggestionSegment {
   kind: 'suggestion';
   text: string;
   suggestion: ClinicalRecordFactSuggestion;
+  start?: number;
+  end?: number;
 }
 
 export type ClinicalRecordAnnotationSegment =
@@ -34,7 +36,6 @@ interface AnnotationRange {
 }
 
 function sourceWeight(fact: ClinicalRecordExplicitFact): number {
-  if (fact.source === 'doctor-confirmed') return 3;
   if (fact.source === 'structured-answer') return 2;
   return 1;
 }
@@ -94,47 +95,6 @@ function findTextRange(recordText: string, targetText: string): AnnotationRange 
   return null;
 }
 
-function buildSemanticNegativeReplacement(
-  matchedText: string,
-  candidateText: string,
-  replacementText: string,
-): string {
-  const negativeMatch = matchedText.match(/^(否认|不伴|未见|未闻及|未及|无)/u);
-  if (!negativeMatch) return replacementText.trim();
-  const candidateTerms = candidateText
-    .replace(/(?:否认|不伴|未见|未闻及|未及|无)/gu, '')
-    .split(/[、，,及和与]/u)
-    .map((item) => item.trim())
-    .filter(Boolean);
-  const remainingTerms = matchedText
-    .slice(negativeMatch[0].length)
-    .split(/[、，,及和与]/u)
-    .map((item) => item.trim())
-    .filter((item) => item && !candidateTerms.some((term) => item.includes(term) || term.includes(item)));
-  const remainingNegative = remainingTerms.length
-    ? `${negativeMatch[0]}${remainingTerms.join('、')}`
-    : '';
-  return [remainingNegative, replacementText.trim()].filter(Boolean).join('；');
-}
-
-export function hasClinicalRecordCandidateText(recordText: string, candidateText: string): boolean {
-  return Boolean(findTextRange(recordText, candidateText));
-}
-
-export function replaceClinicalRecordCandidateText(
-  recordText: string,
-  candidateText: string,
-  replacementText: string,
-): string {
-  const range = findTextRange(recordText, candidateText);
-  if (!range) return recordText;
-  const matchedText = recordText.slice(range.start, range.end);
-  const replacement = range.match === 'semantic-negative'
-    ? buildSemanticNegativeReplacement(matchedText, candidateText, replacementText)
-    : replacementText.trim();
-  return `${recordText.slice(0, range.start)}${replacement}${recordText.slice(range.end)}`;
-}
-
 /**
  * Splits only the persisted record value. Suggestions are used solely to mark
  * matching ranges; unmatched reading-layer text is appended by the UI component
@@ -184,7 +144,13 @@ export function buildClinicalRecordAnnotationSegments(
     }
     const text = recordText.slice(item.start, item.end);
     if (item.suggestion) {
-      segments.push({ kind: 'suggestion', text, suggestion: item.suggestion });
+      segments.push({
+        kind: 'suggestion',
+        text,
+        suggestion: item.suggestion,
+        start: item.start,
+        end: item.end,
+      });
     } else if (item.fact) {
       segments.push({ kind: 'fact', text, fact: item.fact });
     }
@@ -194,4 +160,51 @@ export function buildClinicalRecordAnnotationSegments(
     segments.push({ kind: 'text', text: recordText.slice(cursor) });
   }
   return segments;
+}
+
+function cleanRecordAfterRangeEdit(value: string): string {
+  return value
+    .replace(/\s+([，。；、！？])/gu, '$1')
+    .replace(/([，。；、！？])(?:\s*[，。；、！？])+/gu, (sequence) => {
+      const terminal = sequence.match(/[。！？]/u)?.[0];
+      if (terminal) return terminal;
+      if (sequence.includes('；')) return '；';
+      if (sequence.includes('，')) return '，';
+      return '、';
+    })
+    .replace(/^[\s，。；、]+/gu, '')
+    .replace(/[\s，；、]+$/gu, '')
+    .trim();
+}
+
+/**
+ * Applies an explicit doctor edit to the persisted record. A matched suggestion
+ * replaces its exact rendered range. An unmatched reading-layer suggestion is
+ * appended only when the doctor supplies non-empty text; removing it leaves the
+ * persisted record untouched.
+ */
+export function applyClinicalRecordSuggestionEdit(
+  recordText: string,
+  segment: ClinicalRecordAnnotationSuggestionSegment,
+  nextText: string,
+): string {
+  const edited = nextText.trim();
+  const hasStableRange = (
+    typeof segment.start === 'number'
+    && typeof segment.end === 'number'
+    && segment.start >= 0
+    && segment.end >= segment.start
+    && recordText.slice(segment.start, segment.end) === segment.text
+  );
+  if (hasStableRange) {
+    return cleanRecordAfterRangeEdit(
+      `${recordText.slice(0, segment.start)}${edited}${recordText.slice(segment.end)}`,
+    );
+  }
+  if (!edited) return recordText;
+  const current = recordText.trim().replace(/[，、]\s*$/u, '');
+  const normalizedEdited = /[。；！？]$/u.test(edited) ? edited : `${edited}。`;
+  if (!current) return normalizedEdited;
+  const separator = /[。；！？]$/u.test(current) ? '' : '。';
+  return `${current}${separator}${normalizedEdited}`;
 }

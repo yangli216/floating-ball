@@ -44,4 +44,27 @@ describe('useTreatmentNormalization', () => {
 
     expect(result.recentPrescriptionHistory).toEqual(recentPrescriptionHistory);
   });
+
+  it('preserves the visible clinical purpose fields for exam and lab recommendations', () => {
+    const { normalize } = useTreatmentNormalization({
+      frequencyOptions: ref([]),
+      routeOptions: ref([]),
+    });
+
+    const result = normalize({
+      type: 'lab_test',
+      name: '血常规',
+      goal: '评估感染及血细胞变化',
+      goalGroup: '感染与炎症评估',
+      goalGroupPurpose: '判断感染证据并评估炎症程度',
+      necessity: 'supplementary',
+    });
+
+    expect(result).toMatchObject({
+      goal: '评估感染及血细胞变化',
+      goalGroup: '感染与炎症评估',
+      goalGroupPurpose: '判断感染证据并评估炎症程度',
+      necessity: 'supplementary',
+    });
+  });
 });

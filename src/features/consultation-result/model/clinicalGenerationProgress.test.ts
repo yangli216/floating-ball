@@ -19,7 +19,10 @@ describe('buildClinicalGenerationProgress', () => {
       treatmentStates: idleTreatmentStates,
     });
 
-    expect(progress.title).toBe('正在分析：诊断建议');
+    expect(progress.title).toBe('正在整理诊断建议');
+    expect(progress.stepText).toBe('第 3/4 步');
+    expect(progress.percent).toBe(65);
+    expect(progress.detail).toBe('');
     expect(progress.steps.map((step) => step.status)).toEqual([
       'complete', 'complete', 'active', 'pending',
     ]);
@@ -38,7 +41,9 @@ describe('buildClinicalGenerationProgress', () => {
     });
 
     expect(progress.title).toBe('正在匹配院内诊疗目录');
-    expect(progress.detail).toContain('2/3');
+    expect(progress.stepText).toBe('第 3/3 步');
+    expect(progress.percent).toBe(88);
+    expect(progress.detail).toBe('');
     expect(progress.steps.map((step) => step.label)).toEqual(['药品目录', '检查目录', '检验目录']);
   });
 
@@ -52,7 +57,8 @@ describe('buildClinicalGenerationProgress', () => {
       treatmentStates: idleTreatmentStates,
     });
 
-    expect(progress.title).toBe('正在分析：用药方案');
+    expect(progress.title).toBe('正在整理用药方案');
+    expect(progress.stepText).toBe('第 3/4 步');
     expect(progress.steps.map((step) => step.label)).toEqual([
       '病历基础', '复诊核查', '用药方案', '健康指导',
     ]);
@@ -74,8 +80,31 @@ describe('buildClinicalGenerationProgress', () => {
     });
 
     expect(progress.title).toBe('正在生成高血压病历与核查项');
-    expect(progress.percent).toBe(48);
+    expect(progress.stepText).toBe('第 2/3 步');
+    expect(progress.percent).toBe(53);
     expect(progress.steps.map((step) => step.status)).toEqual(['complete', 'active', 'pending']);
+  });
+
+  it('keeps the bar label and fill aligned with the active final phase', () => {
+    const progress = buildClinicalGenerationProgress({
+      generation: {
+        status: 'streaming',
+        readySections: ['record_core', 'history_context', 'explicit_orders', 'diagnoses'],
+        message: '正在整理语音病历',
+      },
+      treatmentLoading: false,
+      treatmentStates: idleTreatmentStates,
+    });
+
+    expect(progress).toMatchObject({
+      title: '正在整理诊疗方案',
+      detail: '',
+      stepText: '第 4/4 步',
+      percent: 88,
+    });
+    expect(progress.steps.map((step) => step.label)).toEqual([
+      '病历要点', '明确医嘱', '诊断建议', '诊疗方案',
+    ]);
   });
 
   it('ends the waiting state with a clear generation error', () => {
@@ -93,6 +122,7 @@ describe('buildClinicalGenerationProgress', () => {
       visible: true,
       title: '生成未完成',
       detail: '慢病复诊结果生成失败，请收起页面后重试',
+      stepText: '生成失败',
     });
     expect(progress.steps[0].status).toBe('error');
   });

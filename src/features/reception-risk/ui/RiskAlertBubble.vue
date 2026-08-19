@@ -5,7 +5,7 @@
       <div class="bubble-header">
         <div class="patient-info">
           <span class="patient-name">{{ patientName }}</span>
-          <span class="patient-meta">{{ genderText }} · {{ age }}岁</span>
+          <span class="patient-meta">{{ genderText }}<template v-if="ageText"> · {{ ageText }}</template></span>
         </div>
         <button
           v-if="!hasCriticalRisk"
@@ -57,7 +57,7 @@ import type { RiskItem } from '../types';
 interface Props {
   patientName: string;
   gender: 'M' | 'F';
-  age: number;
+  ageText: string;
   risks: RiskItem[];
   visible: boolean;
 }

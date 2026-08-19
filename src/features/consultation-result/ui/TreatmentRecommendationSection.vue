@@ -15,6 +15,7 @@ import {
   type TreatmentNumericField,
 } from '@features/clinical-result';
 import type { SecondarySelectorField } from '../model/useSecondarySelector';
+import { buildAuxiliaryRecommendationGroups } from '../model/auxiliaryRecommendationPresentation';
 import ManualMatchPicker, { type ManualMatchCandidate } from './ManualMatchPicker.vue';
 import MedicationPrescriptionHistoryReview from './MedicationPrescriptionHistoryReview.vue';
 import TreatmentItemEditor from './TreatmentItemEditor.vue';
@@ -96,7 +97,7 @@ const props = withDefaults(defineProps<{
   layoutVariant: 'default',
   showHeader: true,
   showStats: true,
-  showFeedback: true,
+  showFeedback: false,
   showBodySiteChip: false,
   showExecDeptChipForAllNonMedicine: false,
   emptyText: '当前暂无推荐项目',
@@ -158,7 +159,23 @@ const resolvedTotalCount = computed(() => (
     ? props.totalCount
     : props.section.items.length
 ));
+const isAuxiliarySection = computed(() => (
+  props.section.type === 'exam'
+  || props.section.type === 'lab_test'
+  || props.section.itemType === 'exam'
+  || props.section.itemType === 'lab_test'
+));
+const coreRecommendationCount = computed(() => (
+  props.section.items.filter((item) => item.necessity === 'core').length
+));
+const supplementaryRecommendationCount = computed(() => (
+  props.section.items.filter((item) => item.necessity === 'supplementary').length
+));
 const resolvedLoadingText = computed(() => props.loadingText || `正在生成${props.section.title}...`);
+const recommendationGroups = computed(() => buildAuxiliaryRecommendationGroups(
+  props.section.type || props.section.itemType || props.section.items[0]?.type,
+  props.section.items,
+));
 const remarkInputBlockedByKey = ref<Record<string, boolean>>({});
 const remarkMetaIdPrefix = useId();
 const numericInputBlockedByKey = ref<Record<string, TreatmentNumericField | undefined>>({});
@@ -770,8 +787,10 @@ function getFeedbackSubmittedLabel(item: TreatmentRecommendation): string {
         <h3>{{ section.title }}</h3>
       </div>
       <div v-if="showStats" class="treatment-recommendation-section-stats">
-        <span>{{ resolvedTotalCount }} 项推荐</span>
-        <span>{{ resolvedSelectedCount }} 项已选</span>
+        <span>推荐 {{ resolvedTotalCount }}</span>
+        <span v-if="isAuxiliarySection && coreRecommendationCount > 0" class="is-core">优先 {{ coreRecommendationCount }}</span>
+        <span v-if="isAuxiliarySection && supplementaryRecommendationCount > 0">可选 {{ supplementaryRecommendationCount }}</span>
+        <span class="is-selected">已选 {{ resolvedSelectedCount }}</span>
       </div>
     </header>
 
@@ -790,55 +809,73 @@ function getFeedbackSubmittedLabel(item: TreatmentRecommendation): string {
     </div>
 
     <div v-else class="treatment-recommendation-list">
-      <TreatmentRecommendationCard
-        v-for="(item, index) in section.items"
-        :key="getItemKey(item, index)"
-        :rec="item"
-        :selected="!!item.selected"
-        :locked="requiresManualMatchBeforeSelect(item)"
-        :matching="isManualMatchOpen(item)"
-        :issue="getIssue?.(item)"
-        :spec="getTreatmentSpec(item)"
-        :reason-open="activeReasonKey === getReasonKey(item)"
-        :match-label="getDisplayMatchLabel(item)"
-        :match-tone="getMatchTone(item)"
-        :show-exec-dept-chip="shouldShowExecDeptChip(item)"
-        :exec-dept-display="getExecDeptDisplay(item)"
-        :exec-dept-missing="isExecDeptChipMissing(item)"
-        :exec-dept-title="getExecDeptChipTitle(item)"
-        :show-pharmacy-chip="isPharmacyRequired(item)"
-        :pharmacy-display="getPharmacyDisplay(item)"
-        :pharmacy-missing="!hasRequiredPharmacy(item)"
-        :pharmacy-title="hasRequiredPharmacy(item) ? '点击调整发药药房' : '发药药房未设置或不在当前药品可用药房列表，点击选择'"
-        :usage-token="getUsageToken(item)"
-        :probable-match-name="hasProbableMatch(item) ? getSuggestedMatchName(item) : ''"
-        :original-name="getTreatmentOriginalName(item)"
-        :inline-summary="getInlineSummary(item)"
-        :feedback-visible="isFeedbackOpen(item)"
-        :feedback-draft="getFeedbackDraft(item)"
-        :feedback-submitting="isFeedbackSubmitting(item)"
-        :feedback-submitted-label="getFeedbackSubmittedLabel(item)"
-        :show-feedback="showFeedback"
-        :show-manual-match-button="shouldShowManualMatchButton(item)"
-        :manual-match-title="getManualMatchActionTitle(item)"
-        :manual-match-button-text="getManualMatchButtonText(item)"
-        :show-reject-button="item.type === 'medicine' && item.sourceType !== 'explicit'"
-        :rejected="!!item.rejected"
-        :show-editor-toggle="!item.rejected && shouldShowEditorToggle(item)"
-        :editor-expanded="isTreatmentEditorExpanded(item)"
-        :layout-variant="layoutVariant"
-        @toggle="emit('toggle', item)"
-        @toggle-reason="emit('toggleReason', item, $event)"
-        @open-pharmacy="emit('openPharmacy', item, $event)"
-        @open-exec-dept="emit('openExecDept', item, $event)"
-        @confirm-probable-match="emit('confirmMatch', item, $event)"
-        @toggle-feedback="emit('toggleFeedback', item, $event)"
-        @update:feedback-draft="emit('updateFeedbackDraft', item, $event)"
-        @submit-feedback="emit('submitFeedback', item, $event)"
-        @toggle-manual-match="emit('toggleManualMatch', item, $event)"
-        @toggle-rejected="emit('toggleRejected', item, $event)"
-        @toggle-editor="emit('toggleTreatmentEditor', item, $event)"
+      <section
+        v-for="group in recommendationGroups"
+        :key="group.key"
+        class="clinical-goal-group"
+        :class="{ 'has-header': group.showHeader, 'is-multi-item': group.showHeader && group.items.length > 1 }"
       >
+        <header v-if="group.showHeader" class="clinical-goal-group-header">
+          <div class="clinical-goal-group-title-row">
+            <h4>{{ group.title }}</h4>
+          </div>
+          <p>{{ group.purpose }}</p>
+          <span class="clinical-goal-group-count">{{ group.items.length }} 项</span>
+        </header>
+        <div class="clinical-goal-group-items">
+          <TreatmentRecommendationCard
+            v-for="(item, index) in group.items"
+            :key="`${group.key}:${getItemKey(item, index)}`"
+            :rec="item"
+            :selected="!!item.selected"
+            :locked="requiresManualMatchBeforeSelect(item)"
+            :matching="isManualMatchOpen(item)"
+            :issue="getIssue?.(item)"
+            :spec="getTreatmentSpec(item)"
+            :reason-open="activeReasonKey === getReasonKey(item)"
+            :match-label="getDisplayMatchLabel(item)"
+            :match-tone="getMatchTone(item)"
+            :show-exec-dept-chip="shouldShowExecDeptChip(item)"
+            :exec-dept-display="getExecDeptDisplay(item)"
+            :exec-dept-missing="isExecDeptChipMissing(item)"
+            :exec-dept-title="getExecDeptChipTitle(item)"
+            :show-pharmacy-chip="isPharmacyRequired(item)"
+            :pharmacy-display="getPharmacyDisplay(item)"
+            :pharmacy-missing="!hasRequiredPharmacy(item)"
+            :pharmacy-title="hasRequiredPharmacy(item) ? '点击调整发药药房' : '发药药房未设置或不在当前药品可用药房列表，点击选择'"
+            :usage-token="getUsageToken(item)"
+            :probable-match-name="hasProbableMatch(item) ? getSuggestedMatchName(item) : ''"
+            :original-name="getTreatmentOriginalName(item)"
+            :inline-summary="getInlineSummary(item)"
+            :feedback-visible="isFeedbackOpen(item)"
+            :feedback-draft="getFeedbackDraft(item)"
+            :feedback-submitting="isFeedbackSubmitting(item)"
+            :feedback-submitted-label="getFeedbackSubmittedLabel(item)"
+            :show-feedback="showFeedback"
+            :show-manual-match-button="shouldShowManualMatchButton(item)"
+            :manual-match-title="getManualMatchActionTitle(item)"
+            :manual-match-button-text="getManualMatchButtonText(item)"
+            :show-reject-button="item.type === 'medicine' && item.sourceType !== 'explicit'"
+            :rejected="!!item.rejected"
+            :show-editor-toggle="!item.rejected && shouldShowEditorToggle(item)"
+            :editor-expanded="isTreatmentEditorExpanded(item)"
+            :layout-variant="layoutVariant"
+            :class="{
+              'grouped-recommendation-row': group.showHeader,
+              'grouped-recommendation-row-last': group.showHeader && index === group.items.length - 1,
+            }"
+            @toggle="emit('toggle', item)"
+            @toggle-reason="emit('toggleReason', item, $event)"
+            @open-pharmacy="emit('openPharmacy', item, $event)"
+            @open-exec-dept="emit('openExecDept', item, $event)"
+            @confirm-probable-match="emit('confirmMatch', item, $event)"
+            @toggle-feedback="emit('toggleFeedback', item, $event)"
+            @update:feedback-draft="emit('updateFeedbackDraft', item, $event)"
+            @submit-feedback="emit('submitFeedback', item, $event)"
+            @toggle-manual-match="emit('toggleManualMatch', item, $event)"
+            @toggle-rejected="emit('toggleRejected', item, $event)"
+            @toggle-editor="emit('toggleTreatmentEditor', item, $event)"
+          >
         <template #actions>
           <button
             v-if="showBodySiteChip && item.type === 'exam'"
@@ -1210,7 +1247,9 @@ function getFeedbackSubmittedLabel(item: TreatmentRecommendation): string {
             </div>
           </div>
         </template>
-      </TreatmentRecommendationCard>
+          </TreatmentRecommendationCard>
+        </div>
+      </section>
     </div>
   </section>
 </template>
@@ -1240,6 +1279,13 @@ function getFeedbackSubmittedLabel(item: TreatmentRecommendation): string {
   margin-top: 14px;
 }
 
+.treatment-recommendation-section.worklist {
+  --voice-accent: var(--color-info, #2563eb);
+  --voice-accent-soft: color-mix(in srgb, var(--color-info, #2563eb) 14%, transparent);
+  --voice-accent-softer: color-mix(in srgb, var(--color-info, #2563eb) 6%, transparent);
+  --voice-accent-strong: #1d4ed8;
+}
+
 .treatment-recommendation-section-header {
   display: flex;
   align-items: center;
@@ -1263,10 +1309,30 @@ function getFeedbackSubmittedLabel(item: TreatmentRecommendation): string {
 .treatment-recommendation-section-stats {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 7px;
   flex-shrink: 0;
   font-size: var(--voice-font-min);
   color: var(--voice-text-muted);
+}
+
+.treatment-recommendation-section-stats > span {
+  white-space: nowrap;
+}
+
+.treatment-recommendation-section-stats > span + span::before {
+  content: "·";
+  margin-right: 7px;
+  color: var(--voice-border-strong);
+}
+
+.treatment-recommendation-section-stats .is-core {
+  color: var(--voice-accent-strong);
+  font-weight: 700;
+}
+
+.treatment-recommendation-section-stats .is-selected {
+  color: var(--voice-text);
+  font-weight: 650;
 }
 
 .treatment-recommendation-section-state {
@@ -1292,6 +1358,95 @@ function getFeedbackSubmittedLabel(item: TreatmentRecommendation): string {
   margin: 0;
   padding: 0;
   list-style: none;
+}
+
+.clinical-goal-group,
+.clinical-goal-group-items {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+}
+
+.clinical-goal-group + .clinical-goal-group {
+  margin-top: 8px;
+}
+
+.clinical-goal-group-header {
+  padding: 9px 12px;
+  border-left: 3px solid var(--voice-accent);
+  border-radius: 0 8px 8px 0;
+  background: var(--voice-accent-softer);
+}
+
+.clinical-goal-group-title-row {
+  grid-area: title;
+  min-width: 0;
+}
+
+.clinical-goal-group-title-row h4 {
+  margin: 0;
+  color: var(--voice-text);
+  font-size: 14.5px;
+  font-weight: 650;
+  line-height: 1.5;
+  white-space: nowrap;
+}
+
+.clinical-goal-group-count {
+  grid-area: count;
+  flex: 0 0 auto;
+  color: var(--voice-text-muted);
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.clinical-goal-group-header p {
+  min-width: 0;
+  margin: 0;
+  color: #475569;
+  font-size: var(--voice-font-main, 14px);
+  line-height: 1.5;
+}
+
+.clinical-goal-group.has-header {
+  gap: 0;
+  overflow: visible;
+  border: 0;
+  border-radius: 10px;
+  background: var(--voice-surface);
+}
+
+.clinical-goal-group.has-header .clinical-goal-group-header {
+  display: grid;
+  grid-template-areas: "title problem count";
+  grid-template-columns: max-content minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 4px 10px;
+  padding: 9px 12px;
+  border-left: 0;
+  border-radius: 9px 9px 0 0;
+  background: color-mix(in srgb, var(--voice-surface) 80%, #dff3f6);
+}
+
+.clinical-goal-group.has-header .clinical-goal-group-header p {
+  grid-area: problem;
+}
+
+.clinical-goal-group.has-header .clinical-goal-group-items {
+  gap: 0;
+  overflow: hidden;
+  border-radius: 0 0 9px 9px;
+}
+
+.grouped-recommendation-row {
+  margin: 0;
+  border-radius: 0;
+  box-shadow: none;
+}
+
+.grouped-recommendation-row-last {
+  border-radius: 0 0 10px 10px;
 }
 
 .editor-shell {
@@ -1719,6 +1874,14 @@ function getFeedbackSubmittedLabel(item: TreatmentRecommendation): string {
   .secondary-field-grid,
   .treatment-recommendation-section.worklist .secondary-field-grid {
     grid-template-columns: 1fr;
+  }
+
+  .clinical-goal-group.has-header .clinical-goal-group-header {
+    grid-template-areas:
+      "title count"
+      "problem problem";
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 3px 8px;
   }
 }
 </style>

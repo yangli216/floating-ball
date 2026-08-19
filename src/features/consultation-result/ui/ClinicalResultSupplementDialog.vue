@@ -6,6 +6,7 @@ import { useClinicalResultSupplementInput } from '../model/useClinicalResultSupp
 const props = defineProps<{
   open: boolean;
   disabled?: boolean;
+  guidance?: string;
 }>();
 
 const emit = defineEmits<{
@@ -76,6 +77,11 @@ function confirm(): void {
             <Icon icon="lucide:x" size="18" />
           </button>
         </header>
+
+        <p v-if="props.guidance" class="supplement-guidance" role="note">
+          <Icon icon="lucide:route" size="16" aria-hidden="true" />
+          <span>{{ props.guidance }}</span>
+        </p>
 
         <textarea
           v-model="text"
@@ -237,6 +243,22 @@ function confirm(): void {
   border-color: var(--color-primary, #0891b2);
   box-shadow: 0 0 0 3px var(--color-primary-100, rgba(8, 145, 178, 0.1));
 }
+
+.supplement-guidance {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin: 0 0 12px;
+  padding: 10px 12px;
+  border: 1px solid rgba(37, 99, 235, .18);
+  border-radius: 10px;
+  background: rgba(37, 99, 235, .05);
+  color: #355b86;
+  font-size: 13px;
+  line-height: 1.55;
+}
+
+.supplement-guidance :deep(svg) { flex: 0 0 auto; margin-top: 2px; }
 
 .supplement-input-actions,
 .supplement-footer,

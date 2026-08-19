@@ -1,7 +1,8 @@
 <template>
   <article
     class="vcn-treatment-item"
-    :class="[layoutVariant, { selected, locked, matching, rejected }]"
+    :class="[layoutVariant, { selected, locked, matching, rejected, 'is-card-selectable': !rejected }]"
+    @click="handleCardToggle"
   >
     <template v-if="layoutVariant === 'worklist'">
       <div class="worklist-row">
@@ -27,6 +28,11 @@
                   <span class="card-title">{{ rec.name }}</span>
                 </FactCheckHighlight>
                 <span v-if="spec" class="meta-token worklist-spec-text">{{ spec }}</span>
+                <span
+                  v-if="necessityLabel"
+                  class="auxiliary-necessity-label"
+                  :class="{ supplementary: rec.necessity === 'supplementary' }"
+                >{{ necessityLabel }}</span>
                 <span
                   v-if="reasonDisplay"
                   class="reason-tooltip-trigger"
@@ -101,14 +107,17 @@
               <button v-if="showEditorToggle" class="inline-arrow-btn action-arrow" type="button"
                 :title="editorActionLabel" :aria-label="editorActionLabel"
                 @click.stop="emit('toggle-editor', $event)">
-                <span>{{ editorActionLabel }}</span>
+                <span>{{ worklistEditorActionLabel }}</span>
                 <span class="inline-arrow" :class="{ open: editorExpanded }"></span>
               </button>
             </div>
           </div>
 
-          <div v-if="inlineSummary || originalName || usageToken" class="worklist-bottom-row">
+          <div v-if="purposeDisplay || inlineSummary || originalName || usageToken" class="worklist-bottom-row">
             <div class="worklist-secondary-row">
+            <div v-if="purposeDisplay" class="auxiliary-purpose-line worklist-purpose-line">
+              <span class="auxiliary-purpose-text">{{ purposeDisplay }}</span>
+            </div>
               <div
                 v-if="inlineSummary"
                 class="medicine-inline-summary worklist-inline-text"
@@ -169,6 +178,11 @@
                   <span class="card-title">{{ rec.name }}</span>
                 </FactCheckHighlight>
                 <span v-if="spec" class="meta-token default-spec-text">{{ spec }}</span>
+                <span
+                  v-if="necessityLabel"
+                  class="auxiliary-necessity-label"
+                  :class="{ supplementary: rec.necessity === 'supplementary' }"
+                >{{ necessityLabel }}</span>
                 <span
                   v-if="reasonDisplay"
                   class="reason-tooltip-trigger"
@@ -241,6 +255,9 @@
 
           <div class="default-card-bottom-row">
             <div class="default-card-summary">
+            <div v-if="purposeDisplay" class="auxiliary-purpose-line">
+              <span class="auxiliary-purpose-text">{{ purposeDisplay }}</span>
+            </div>
               <div
                 v-if="inlineSummary"
                 class="medicine-inline-summary"
@@ -318,6 +335,10 @@ import type { TreatmentRecommendation } from '@/types/consultation';
 import type { VoiceRecommendationFeedbackDraft } from '@/types/voiceFeedback';
 import type { FactCheckIssue } from '@services/factChecker';
 import { buildMedicineQuantityExplanation } from '@features/clinical-result';
+import {
+  getAuxiliaryNecessityLabel,
+  getAuxiliaryRecommendationPurpose,
+} from '../model/auxiliaryRecommendationPresentation';
 
 const props = defineProps({
   rec: {
@@ -467,10 +488,16 @@ const reasonDisplay = computed(() => [
   (props.rec.reason || '').trim(),
   buildMedicineQuantityExplanation(props.rec),
 ].filter(Boolean).join(' '));
+const purposeDisplay = computed(() => getAuxiliaryRecommendationPurpose(props.rec));
+const necessityLabel = computed(() => getAuxiliaryNecessityLabel(props.rec));
 
 const editorActionLabel = computed(() => {
   if (props.editorExpanded) return '收起编辑';
   return props.rec.type === 'medicine' ? '编辑' : '编辑详情';
+});
+const worklistEditorActionLabel = computed(() => {
+  if (props.editorExpanded) return '收起';
+  return props.rec.type === 'medicine' ? '编辑' : '详情';
 });
 
 const emit = defineEmits<{
@@ -486,6 +513,22 @@ const emit = defineEmits<{
   (e: 'toggle-rejected', event?: Event): void;
   (e: 'toggle-editor', event?: Event): void;
 }>();
+
+function handleCardToggle(event: MouseEvent): void {
+  if (props.rejected) return;
+  const target = event.target as HTMLElement | null;
+  if (!target || target.closest([
+    'button',
+    'input',
+    'select',
+    'textarea',
+    'a',
+    '[role="button"]',
+    '[role="listbox"]',
+    '.worklist-detail-stack',
+  ].join(','))) return;
+  emit('toggle');
+}
 </script>
 
 <style scoped>
@@ -499,13 +542,17 @@ const emit = defineEmits<{
   transition: border-color 0.18s ease, box-shadow 0.18s ease, transform 0.18s ease, background-color 0.18s ease;
 }
 
+.vcn-treatment-item.is-card-selectable {
+  cursor: pointer;
+}
+
 .vcn-treatment-item:hover {
   border-color: var(--voice-border-strong);
   box-shadow: 0 8px 18px rgba(15, 23, 42, 0.035);
 }
 
 .vcn-treatment-item.selected {
-  background: var(--voice-surface);
+  background: color-mix(in srgb, var(--voice-surface) 94%, var(--voice-accent));
   border-color: var(--voice-accent);
   box-shadow:
     0 0 0 1px var(--voice-accent-soft),
@@ -544,8 +591,8 @@ const emit = defineEmits<{
 
 .default-treatment-card-row {
   display: grid;
-  grid-template-columns: 22px minmax(0, 1fr);
-  gap: 10px;
+  grid-template-columns: 32px minmax(0, 1fr);
+  gap: 8px;
   align-items: stretch;
 }
 
@@ -569,9 +616,35 @@ const emit = defineEmits<{
 }
 
 .vcn-treatment-item.worklist.selected {
+  background: color-mix(in srgb, var(--voice-surface) 97%, var(--voice-accent));
+  border-color: #dbe3ee;
+  box-shadow: none;
+}
+
+.vcn-treatment-item.worklist.grouped-recommendation-row,
+.vcn-treatment-item.worklist.grouped-recommendation-row:hover,
+.vcn-treatment-item.worklist.grouped-recommendation-row.selected {
+  border: 0;
+  box-shadow: none;
+}
+
+.vcn-treatment-item.worklist.grouped-recommendation-row {
   background: var(--voice-surface);
-  border-color: var(--voice-accent);
-  box-shadow: 0 0 0 1px var(--voice-accent-soft), 0 10px 20px rgba(15, 23, 42, 0.03);
+  border-left: 3px solid transparent;
+}
+
+.vcn-treatment-item.worklist.grouped-recommendation-row:hover {
+  background: color-mix(in srgb, var(--voice-surface) 98%, var(--voice-accent));
+}
+
+.vcn-treatment-item.worklist.grouped-recommendation-row.selected {
+  border-left: 3px solid var(--voice-accent);
+  background: color-mix(in srgb, var(--voice-surface) 94%, var(--voice-accent));
+}
+
+.vcn-treatment-item.worklist.grouped-recommendation-row
+  + .vcn-treatment-item.worklist.grouped-recommendation-row {
+  border-top: 1px solid rgba(148, 163, 184, 0.2);
 }
 
 .card-main {
@@ -642,7 +715,7 @@ const emit = defineEmits<{
 
 .worklist-row {
   display: grid;
-  grid-template-columns: 22px minmax(0, 1fr);
+  grid-template-columns: 32px minmax(0, 1fr);
   gap: 8px;
   align-items: center;
 }
@@ -652,8 +725,8 @@ const emit = defineEmits<{
   justify-content: center;
   align-items: center;
   align-self: start;
-  width: 22px;
-  height: 28px;
+  width: 32px;
+  height: 32px;
   padding: 0;
   border: 0;
   border-radius: 999px;
@@ -667,8 +740,8 @@ const emit = defineEmits<{
 }
 
 .worklist-select-dot {
-  width: 16px;
-  height: 16px;
+  width: 20px;
+  height: 20px;
   border-radius: 50%;
   border: 1.5px solid #cbd5e1;
   background: #ffffff;
@@ -680,10 +753,10 @@ const emit = defineEmits<{
 }
 
 .treatment-select-button.selected .worklist-select-dot {
-  border-color: #3b82f6;
-  background: #eff6ff;
-  color: #2563eb;
-  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.12);
+  border-color: var(--voice-accent);
+  background: var(--voice-accent);
+  color: #ffffff;
+  box-shadow: none;
 }
 
 .worklist-content {
@@ -740,6 +813,44 @@ const emit = defineEmits<{
   gap: 4px 8px;
   flex-wrap: wrap;
   min-width: 0;
+}
+
+.auxiliary-purpose-line {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  min-width: 0;
+  font-size: 13.5px;
+  line-height: 1.45;
+}
+
+.worklist-purpose-line {
+  flex: 1 1 100%;
+}
+
+.auxiliary-purpose-text {
+  min-width: 0;
+  color: #526579;
+  font-weight: 500;
+  word-break: break-word;
+}
+
+.auxiliary-necessity-label {
+  display: inline-flex;
+  align-items: center;
+  flex: 0 0 auto;
+  min-height: 20px;
+  padding: 0 7px;
+  border-radius: 999px;
+  background: rgba(37, 99, 235, 0.1);
+  color: #2563eb;
+  font-size: 11.5px;
+  font-weight: 700;
+}
+
+.auxiliary-necessity-label.supplementary {
+  background: rgba(100, 116, 139, 0.1);
+  color: #64748b;
 }
 
 .worklist-inline-text {
@@ -815,7 +926,7 @@ const emit = defineEmits<{
 
 .card-title {
   display: block;
-  font-size: var(--voice-font-strong);
+  font-size: 14.5px;
   font-weight: 700;
   color: var(--voice-text);
   white-space: nowrap;
@@ -824,9 +935,9 @@ const emit = defineEmits<{
 }
 
 .worklist .card-title {
-  font-size: 13px;
-  font-weight: 600;
-  line-height: 1.25;
+  font-size: 15px;
+  font-weight: 700;
+  line-height: 1.4;
 }
 
 .reason-tooltip-trigger {
@@ -1071,6 +1182,30 @@ const emit = defineEmits<{
   color: var(--voice-warning);
 }
 
+.exec-dept-chip.missing:not(.pharmacy-chip) {
+  padding-right: 3px;
+  padding-left: 3px;
+  border-color: transparent;
+  background: transparent;
+  color: #64748b;
+  font-weight: 500;
+}
+
+.exec-dept-chip.missing:not(.pharmacy-chip):hover {
+  border-color: rgba(201, 122, 17, 0.22);
+  background: rgba(201, 122, 17, 0.055);
+}
+
+.exec-dept-chip.missing:not(.pharmacy-chip) .exec-dept-chip-label {
+  color: #64748b;
+  font-weight: 500;
+}
+
+.exec-dept-chip.missing:not(.pharmacy-chip) .exec-dept-chip-value {
+  color: #9a6200;
+  font-weight: 600;
+}
+
 .exec-dept-chip-label {
   flex-shrink: 0;
   font-size: var(--voice-font-min);
@@ -1111,10 +1246,24 @@ const emit = defineEmits<{
 .worklist-chip {
   min-height: 20px;
   max-width: 132px;
-  padding: 0 8px;
-  border-color: rgba(37, 99, 235, 0.18);
-  background: rgba(248, 250, 252, 0.96);
+  padding: 0 3px;
+  border-color: transparent;
+  background: transparent;
+  color: #526579;
+  font-weight: 600;
+}
+
+.worklist-chip:not(.missing):hover {
+  border-color: rgba(37, 99, 235, 0.14);
+  background: rgba(37, 99, 235, 0.045);
   color: #1d4ed8;
+}
+
+.vcn-treatment-item.worklist .worklist-chip:not(.missing) {
+  border-color: transparent;
+  border-radius: 4px;
+  background: transparent;
+  box-shadow: none;
 }
 
 .worklist-chip.missing {
@@ -1136,7 +1285,29 @@ const emit = defineEmits<{
 .worklist-actions .recommendation-reject-btn,
 .worklist-actions .action-arrow {
   min-height: 20px;
-  border-radius: 999px;
+  border-radius: 4px;
+}
+
+.worklist-actions .voice-feedback-trigger,
+.worklist-actions .manual-match-btn:not(.is-warning),
+.worklist-actions .recommendation-reject-btn,
+.worklist-actions .action-arrow {
+  border-color: transparent;
+  background: transparent;
+  box-shadow: none;
+}
+
+.worklist-actions .voice-feedback-trigger:hover,
+.worklist-actions .manual-match-btn:not(.is-warning):hover,
+.worklist-actions .recommendation-reject-btn:hover,
+.worklist-actions .action-arrow:hover {
+  border-color: transparent;
+  background: var(--voice-accent-softer);
+}
+
+.worklist-actions .action-arrow {
+  color: var(--voice-accent-strong);
+  font-weight: 650;
 }
 
 :slotted(.doc-icon-btn) {
@@ -1350,7 +1521,7 @@ const emit = defineEmits<{
   }
 
   .worklist-row {
-    grid-template-columns: 22px minmax(0, 1fr);
+    grid-template-columns: 32px minmax(0, 1fr);
   }
 
   .worklist-top-row,
@@ -1384,7 +1555,7 @@ const emit = defineEmits<{
   }
 
   .worklist-detail-stack {
-    margin-left: 22px;
+    margin-left: 32px;
   }
 }
 </style>

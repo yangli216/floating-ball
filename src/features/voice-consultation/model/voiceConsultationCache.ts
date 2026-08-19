@@ -30,8 +30,10 @@ export interface VoiceEditorSnapshot {
   familyHistory?: string;
   physicalExam?: string;
   precautions?: string;
-  /** 病历事实补问及医生确认状态。 */
+  /** 病历 AI 阅读提示。 */
   factSuggestions?: unknown[];
+  /** 医生纳入的待鉴别方向及显式转为正式诊断的状态。 */
+  differentialDiagnosisDirection?: unknown;
   /** 医生本次选择的部分回写范围。 */
   writebackScope?: unknown;
   /** TreatmentRecommendation[] 形态 */
@@ -40,6 +42,8 @@ export interface VoiceEditorSnapshot {
   diagnoses?: unknown[];
   /** 当前选中的诊断身份键（用于跳过 fetchAITreatment） */
   selectedDiagnosisIdentity?: string | null;
+  /** 当前已纳入的全部正式诊断身份键。 */
+  selectedDiagnosisIdentities?: string[];
   /** 上一次 fetchAITreatment 完成时对应的诊断键 */
   treatmentDiagnosisKey?: string;
   /** 快照写入时间，用于将来扩展更细粒度的失效策略 */
