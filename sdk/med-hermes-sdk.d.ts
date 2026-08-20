@@ -30,6 +30,8 @@ export interface PatientInfo {
   historyOfPresentIllness?: string;
   /** 既往史 */
   pastMedicalHistory?: string;
+  /** 女性患者月经史；仅在有明确内容且本次选择回写时出现 */
+  menstrualHistory?: string;
   /** 当前诊断 */
   diagnosis?: string;
   /** 体征摘要 */
@@ -247,6 +249,20 @@ export interface MutualRecognitionDecision {
   recognizedItemIds?: string[];
 }
 
+export interface RecordTemplateSlotChange {
+  field: 'pastMedicalHistory' | 'personalHistory' | 'familyHistory';
+  slotKey: string;
+  fromValue: '否认';
+  toValue: '有';
+  templateMarker: string;
+  replacementMarker: string;
+}
+
+export interface RecordTemplateChanges {
+  schemaVersion: 'outpatient-record-template-changes.v1';
+  items: RecordTemplateSlotChange[];
+}
+
 /** 问诊结果 payload */
 export interface ConsultationResultPayload {
   resultType?: ResultType;
@@ -258,6 +274,8 @@ export interface ConsultationResultPayload {
   chiefComplaint?: string;
   historyOfPresentIllness?: string;
   pastMedicalHistory?: string;
+  /** 女性患者月经史；仅在有明确内容且本次选择回写时出现 */
+  menstrualHistory?: string;
   diagnosisList?: DiagnosisItem[];
   medications?: MedicationItem[];
   examinations?: ExamItem[];
@@ -265,6 +283,8 @@ export interface ConsultationResultPayload {
   procedures?: ExamItem[];
   treatmentPlan?: string;
   medicalSummary?: string;
+  /** 固定病史模板的结构化槽位变化；PHIS 按 field + slotKey 精确更新 */
+  recordTemplateChanges?: RecordTemplateChanges;
   /** 引用闭环字段 */
   referenceType?: string;
   referenceStatus?: string;

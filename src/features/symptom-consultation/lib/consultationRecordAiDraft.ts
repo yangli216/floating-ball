@@ -1,4 +1,5 @@
 import type { ChatMessage, LLMConfigOverride } from '@services/llm';
+import { normalizeGeneratedClinicalRecordNarrative } from '@features/clinical-result/clinicalRecordNarrativeQuality';
 import type { ConsultationGeneratedRecordDraft } from './consultationGeneratedRecord';
 
 export type ConsultationRecordAiDraftMode = 'western' | 'tcm';
@@ -77,7 +78,8 @@ const USER_INSTRUCTIONS = [
   '5. 只写有价值的阴性症状；不要机械输出“不清楚、无、以上都无、未查、不详、不记得”。',
   '6. 现病史可以用一段或两段，整体控制在基层门诊可读长度。',
   '7. 不写诊断结论，不写处理意见，不写体格检查。',
-  '8. 输出 JSON 格式：{"chiefComplaint":"...","historyOfPresentIllness":"..."}。',
+  '8. 未采集到的内容保持空字符串，不得写“待医生补充完善、待医生核实、建议询问、信息不足、未提供相关信息”等工作流提示。',
+  '9. 输出 JSON 格式：{"chiefComplaint":"...","historyOfPresentIllness":"..."}。',
 ].join('\n');
 
 const EMPTY_VALUES = new Set(['', '不清楚', '无', '以上都无', '未查', '不详', '不记得', '其他']);
@@ -198,12 +200,14 @@ export function normalizeConsultationRecordAiDraftOutput(value: unknown): Consul
   }
 
   const record = value as Partial<Record<keyof ConsultationRecordAiDraftOutput, unknown>>;
-  const chiefComplaint = typeof record.chiefComplaint === 'string'
-    ? record.chiefComplaint.trim()
-    : '';
-  const historyOfPresentIllness = typeof record.historyOfPresentIllness === 'string'
-    ? record.historyOfPresentIllness.trim()
-    : '';
+  const chiefComplaint = normalizeGeneratedClinicalRecordNarrative(
+    record.chiefComplaint,
+    'chiefComplaint',
+  ).text;
+  const historyOfPresentIllness = normalizeGeneratedClinicalRecordNarrative(
+    record.historyOfPresentIllness,
+    'historyOfPresentIllness',
+  ).text;
 
   if (!chiefComplaint || !historyOfPresentIllness) {
     throw new Error('AI 病历草稿缺少主诉或现病史');

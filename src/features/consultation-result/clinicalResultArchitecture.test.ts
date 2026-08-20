@@ -42,6 +42,18 @@ describe('clinical result architecture boundary', () => {
     expect(clinicalResultSupplementDialogSource).toContain('waveformLevels');
   });
 
+  it('shows an independent menstrual history field only for female patients below personal history', () => {
+    expect(resultImplementationSource).toContain('v-if="isFemalePatient"');
+    expect(resultImplementationSource).toContain('v-model="menstrualHistory"');
+    expect(resultImplementationSource).toContain('title="月经史"');
+    expect(resultImplementationSource.indexOf('v-model="personalHistory"')).toBeLessThan(
+      resultImplementationSource.indexOf('v-model="menstrualHistory"'),
+    );
+    expect(resultImplementationSource.indexOf('v-model="menstrualHistory"')).toBeLessThan(
+      resultImplementationSource.indexOf('v-model="familyHistory"'),
+    );
+  });
+
   it('keeps the record and decision columns independently readable on desktop', () => {
     expect(resultImplementationSource).toContain('ClinicalResultColumnNavigator');
     expect(resultImplementationSource).toContain('ref="clinicalResultRightColumnRef"');
@@ -64,7 +76,7 @@ describe('clinical result architecture boundary', () => {
     expect(clinicalDecisionDisclaimerSource).toContain('color: var(--voice-warning, #c97a11)');
   });
 
-  it('renders record facts in the original text and keeps pending AI text out of the field value', () => {
+  it('renders AI source marks from persisted field text without a separate reading layer', () => {
     expect(voiceRecordFieldEditorSource).toContain('ClinicalRecordAnnotatedText');
     expect(voiceRecordFieldEditorSource).not.toContain('record-field-fact-highlights');
     expect(clinicalRecordAnnotatedTextSource).toContain('pendingSuggestions');
@@ -94,6 +106,11 @@ describe('clinical result architecture boundary', () => {
     expect(clinicalRecordAnnotatedTextSource).toContain('>移除</button>');
     expect(clinicalRecordAnnotatedTextSource).toContain('>调整</button>');
     expect(clinicalRecordAnnotatedTextSource).toContain('>应用</button>');
+    expect(clinicalRecordAnnotatedTextSource).not.toContain('includeSuggestionInRecord');
+    expect(clinicalRecordAnnotatedTextSource).not.toContain('>纳入病历</button>');
+    expect(clinicalRecordAnnotatedTextSource).not.toContain('当前仅为阅读提示，不会回写');
+    expect(clinicalRecordAnnotatedTextSource).not.toContain('const appended =');
+    expect(clinicalRecordAnnotatedTextSource).toContain('已在病历正文中，将随当前所选病历字段回写');
     expect(clinicalRecordAnnotatedTextSource).toContain("emit('dismiss-suggestion', segment.suggestion.id)");
     expect(clinicalRecordAnnotatedTextSource).toContain('@mouseup="handleTextSelection"');
     expect(clinicalRecordAnnotatedTextSource).toContain('clinical-record-selection-copy');
@@ -109,7 +126,13 @@ describe('clinical result architecture boundary', () => {
     expect(resultImplementationSource).toContain('clinical-record-ai-notice');
     expect(resultImplementationSource).toContain('病历中带 AI 标记的内容由 AI 补充');
     expect(resultImplementationSource).toContain('红色 AI 为重点提示');
-    expect(resultImplementationSource).toContain('必要时直接编辑病历');
+    expect(resultImplementationSource).toContain('这些内容已进入当前病历草稿');
+    expect(resultImplementationSource).toContain('会随所选字段回写');
+    expect(resultImplementationSource).toContain('可点击 AI 调整或移除');
+    expect(resultImplementationSource).toContain('mergeSuggestionIntoRecord: mergeFactSuggestionIntoRecord');
+    expect(resultImplementationSource.indexOf('if (snapshot.writebackScope)')).toBeLessThan(
+      resultImplementationSource.indexOf('if (Array.isArray(snapshot.factSuggestions))'),
+    );
     expect(resultImplementationSource).not.toContain('ClinicalRecordFactPanel');
     expect(resultImplementationSource).not.toContain('ensureFactWritebackReady');
     expect(resultImplementationSource).not.toContain('formalDiagnoses.value.length > 0 && factSuggestions.value.length === 0');

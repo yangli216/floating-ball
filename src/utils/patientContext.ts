@@ -176,6 +176,24 @@ export function getPatientContextPersonalHistory(patient: AppPatient | null | un
   return patient?.personalHistory || patient?.clinical?.personalHistory || '';
 }
 
+export function extractMenstrualHistoryFromRecordText(value: unknown): string {
+  const recordText = text(value).replace(/\r\n?/gu, '\n');
+  if (!recordText) return '';
+
+  const matched = recordText.match(
+    /(?:^|[\n。；])\s*月经史\s*[：:]\s*([\s\S]*?)(?=(?:[\n。；]\s*(?:婚育史|个人史|家族史|既往史|体格检查|查体|注意事项|诊断)\s*[：:])|$)/u,
+  );
+  return matched?.[1]?.trim().replace(/[。；]+$/u, '') || '';
+}
+
+export function getPatientContextMenstrualHistory(patient: AppPatient | null | undefined): string {
+  return patient?.menstrualHistory
+    || patient?.clinical?.menstrualHistory
+    || extractMenstrualHistoryFromRecordText(
+      patient?.currentOutpatientRecordText || patient?.clinical?.currentOutpatientRecordText,
+    );
+}
+
 export function getPatientContextFamilyHistory(patient: AppPatient | null | undefined): string {
   return patient?.familyHistory || patient?.clinical?.familyHistory || '';
 }
@@ -243,8 +261,13 @@ export function buildPatientContext(input: BuildPatientContextInput): AppPatient
     || getPatientContextAllergyHistory(patientFallback);
   const currentMedicationHistory = pickFirstText(payload, ['currentMedicationHistory'])
     || text(encounterFallback?.currentMedicationHistory || encounterFallback?.clinical?.currentMedicationHistory);
+  const currentOutpatientRecordText = pickFirstText(payload, ['currentOutpatientRecordText'])
+    || text(encounterFallback?.currentOutpatientRecordText || encounterFallback?.clinical?.currentOutpatientRecordText);
   const personalHistory = pickFirstText(payload, ['personalHistory', 'personal_history', 'personalHistoryText'])
     || getPatientContextPersonalHistory(patientFallback);
+  const menstrualHistory = pickFirstText(payload, ['menstrualHistory', 'menstrual_history', 'menstrualHistoryText'])
+    || extractMenstrualHistoryFromRecordText(currentOutpatientRecordText)
+    || getPatientContextMenstrualHistory(patientFallback);
   const familyHistory = pickFirstText(payload, ['familyHistory', 'family_history', 'familyHistoryText'])
     || getPatientContextFamilyHistory(patientFallback);
   const chiefComplaint = pickFirstText(payload, ['chiefComplaint'])
@@ -253,8 +276,6 @@ export function buildPatientContext(input: BuildPatientContextInput): AppPatient
     || text(encounterFallback?.historyOfPresentIllness || encounterFallback?.clinical?.historyOfPresentIllness);
   const diagnosis = pickFirstText(payload, ['diagnosis'])
     || text(encounterFallback?.diagnosis || encounterFallback?.clinical?.diagnosis);
-  const currentOutpatientRecordText = pickFirstText(payload, ['currentOutpatientRecordText'])
-    || text(encounterFallback?.currentOutpatientRecordText || encounterFallback?.clinical?.currentOutpatientRecordText);
   const currentOutpatientRecordTitle = pickFirstText(payload, ['currentOutpatientRecordTitle'])
     || text(encounterFallback?.currentOutpatientRecordTitle || encounterFallback?.clinical?.currentOutpatientRecordTitle);
   const currentOutpatientRecordTime = pickFirstText(payload, ['currentOutpatientRecordTime'])
@@ -289,6 +310,7 @@ export function buildPatientContext(input: BuildPatientContextInput): AppPatient
       allergyHistory: allergyHistory || undefined,
       currentMedicationHistory: currentMedicationHistory || undefined,
       personalHistory: personalHistory || undefined,
+      menstrualHistory: menstrualHistory || undefined,
       familyHistory: familyHistory || undefined,
       diagnosis: diagnosis || undefined,
       hisHistory,
@@ -321,6 +343,7 @@ export function buildPatientContext(input: BuildPatientContextInput): AppPatient
     allergyHistory: allergyHistory || undefined,
     currentMedicationHistory: currentMedicationHistory || undefined,
     personalHistory: personalHistory || undefined,
+    menstrualHistory: menstrualHistory || undefined,
     familyHistory: familyHistory || undefined,
     diagnosis: diagnosis || undefined,
     hisHistory,

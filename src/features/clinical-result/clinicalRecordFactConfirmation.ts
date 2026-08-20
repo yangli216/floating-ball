@@ -1,7 +1,15 @@
 import type { ChatMessage, LLMConfigOverride } from '@/services/llm';
 import type { Diagnosis } from '@/types/consultation';
 import { parseLLMJson } from './clinicalResultLlmJsonParser';
-import { isHistoryRecordTemplate } from './historyRecordTemplates';
+import {
+  collectHistoryRecordTemplateChanges,
+  isHistoryRecordTemplate,
+  stripHistoryRecordTemplateMarkers,
+} from './historyRecordTemplates';
+import {
+  isNegativeClinicalStatementCovered,
+  normalizeGeneratedClinicalRecordNarrative,
+} from './clinicalRecordNarrativeQuality';
 
 export type ClinicalRecordFactField =
   | 'historyOfPresentIllness'
@@ -10,7 +18,7 @@ export type ClinicalRecordFactField =
   | 'familyHistory'
   | 'physicalExam';
 
-export type ClinicalRecordFactSource = 'record-explicit' | 'structured-answer';
+export type ClinicalRecordFactSource = 'record-explicit' | 'structured-answer' | 'template-context';
 export type ClinicalRecordFactPolarity = 'positive' | 'negative';
 export type ClinicalRecordFactPriority = 'critical' | 'general';
 export type ClinicalRecordFactStatus = 'pending' | 'dismissed';
@@ -114,6 +122,24 @@ export function extractExplicitClinicalRecordFacts(
   const seen = new Set<string>();
 
   for (const field of FACT_FIELDS) {
+    if (field === 'pastMedicalHistory' || field === 'personalHistory' || field === 'familyHistory') {
+      const templateChanges = collectHistoryRecordTemplateChanges({ [field]: record[field] }, [field]);
+      templateChanges?.items.forEach((change, index) => {
+        const text = record[field].includes(change.replacementMarker)
+          ? change.replacementMarker
+          : stripHistoryRecordTemplateMarkers(change.replacementMarker);
+        const comparable = `${field}:${normalizeComparable(text)}`;
+        if (seen.has(comparable)) return;
+        seen.add(comparable);
+        facts.push({
+          id: stableFactId(field, `${change.slotKey}-${text}`, index),
+          field,
+          text,
+          source: 'template-context',
+          polarity: 'positive',
+        });
+      });
+    }
     if (isHistoryRecordTemplate(field, record[field])) continue;
     extractNegativeClauses(record[field]).forEach((text, index) => {
       const comparable = `${field}:${normalizeComparable(text)}`;
@@ -177,7 +203,7 @@ export function buildClinicalRecordFactSuggestionRequest(
   const system = [
     '你是基层全科门诊的病历阴性内容核查助手。',
     '请识别两类候选：一是与当前主诉、病史或正式诊断相关的必要问诊/查体，二是门诊病历书写完整性通常需要核查的阴性或正常内容。',
-    '即使输入中没有明确问诊依据，也允许生成规范的候选阴性表述；这些内容只是“AI 补充·待核查”，不是患者已经否认或查体已经正常的事实。',
+    '即使输入中没有明确问诊依据，也允许生成规范的候选阴性表述；这些内容会作为带 AI 来源标记的可编辑病历草稿进入正文并随所选字段回写，不得描述成问诊已经明确的事实。',
     '既往史、个人史、家族史可能已经带有标准预制模板；只挑出与当前诊断高度相关或影响安全判断的少量条目核查，不要把整段模板全部设为待核查。',
     '不要重复输入中已经明确的阴性事实，不要生成与当前病例无关的大段全套模板，每个字段只保留最有价值的少量候选。',
     'critical 只用于急危重症排除、关键过敏或用药禁忌、重大鉴别风险；其他均为 general。',
@@ -238,23 +264,46 @@ export function normalizeClinicalRecordFactSuggestions(
     : response;
   if (!Array.isArray(parsed?.items)) return [];
 
-  const explicitCorpus = explicitFacts.map((item) => normalizeComparable(item.text));
+  const explicitCorpusByField = explicitFacts.reduce<Record<ClinicalRecordFactField, string[]>>((acc, item) => {
+    acc[item.field].push(item.text);
+    return acc;
+  }, {
+    historyOfPresentIllness: [],
+    pastMedicalHistory: [],
+    personalHistory: [],
+    familyHistory: [],
+    physicalExam: [],
+  });
   const seen = new Set<string>();
   return parsed.items
     .map((item, index): ClinicalRecordFactSuggestion | null => {
       const field = item.field;
       const question = normalizeText(item.question);
-      const negativeRecordText = normalizeText(item.negativeRecordText);
       if (
         !isFactField(field)
         || !question
-        || !negativeRecordText
+      ) return null;
+      const negativeRecordText = normalizeGeneratedClinicalRecordNarrative(
+        normalizeText(item.negativeRecordText),
+        field,
+      ).text;
+      if (
+        !negativeRecordText
         || GENERIC_NEGATIVE_VALUES.has(negativeRecordText.replace(/[。；;]$/u, ''))
       ) return null;
       const key = `${field}:${normalizeComparable(question)}`;
       if (seen.has(key)) return null;
       const proposedComparable = normalizeComparable(negativeRecordText);
-      if (explicitCorpus.some((fact) => fact === proposedComparable || fact.includes(proposedComparable) || proposedComparable.includes(fact))) {
+      const explicitCorpus = explicitCorpusByField[field];
+      if (
+        explicitCorpus.some((fact) => {
+          const comparable = normalizeComparable(fact);
+          return comparable === proposedComparable
+            || comparable.includes(proposedComparable)
+            || proposedComparable.includes(comparable);
+        })
+        || isNegativeClinicalStatementCovered(explicitCorpus.join('。'), negativeRecordText)
+      ) {
         return null;
       }
       seen.add(key);

@@ -1,11 +1,16 @@
 import type { ChatMessage, LLMConfigOverride } from '@services/llm';
 import type { ClinicalResultChannel } from './clinicalResultContract';
+import {
+  normalizeGeneratedClinicalRecordNarrative,
+  type ClinicalRecordNarrativeField,
+} from './clinicalRecordNarrativeQuality';
 
 export interface ClinicalResultRegenerationRecord {
   chiefComplaint: string;
   historyOfPresentIllness: string;
   pastMedicalHistory: string;
   personalHistory: string;
+  menstrualHistory: string;
   familyHistory: string;
   physicalExam: string;
   precautions: string;
@@ -34,6 +39,7 @@ const SYSTEM_PROMPT = [
   '医生补充信息的事实优先级高于当前草稿；若存在明确纠正，应替换冲突旧内容。',
   '不得编造补充信息和当前草稿中都未出现的症状、检查结果、诊断、治疗或体征。',
   '不得把“医生补充”“补充信息”等过程性措辞写进病例正文。',
+  '字段没有有效临床内容时输出空字符串，不得写“待医生补充完善、待医生核实、建议询问、信息不足、未提供相关信息”等工作流提示。',
   '只输出 JSON，不要输出 Markdown、解释、免责声明或多余文字。',
 ].join('\n');
 
@@ -43,8 +49,9 @@ const USER_INSTRUCTIONS = [
   '2. 现病史按时间线整合起病、演变、伴随症状、关键阴性和已明确诊疗经过。',
   '3. 未被补充信息影响的有效内容应保留，不得因重写而丢失。',
   '4. 既往史、个人史、家族史、体格检查、注意事项仅在有依据时更新；没有新依据则保留原值。',
+  '4.1 月经史仅适用于女性患者，只能使用医生补充或当前病历中的明确内容；非女性或无依据时输出空字符串，不得默认生成“月经规律”。',
   '5. 不在病例字段中输出诊断建议、药品推荐或模型分析过程。',
-  '6. 输出全部字段：chiefComplaint、historyOfPresentIllness、pastMedicalHistory、personalHistory、familyHistory、physicalExam、precautions。',
+  '6. 输出全部字段：chiefComplaint、historyOfPresentIllness、pastMedicalHistory、personalHistory、menstrualHistory、familyHistory、physicalExam、precautions。',
 ].join('\n');
 
 export function buildClinicalResultRegenerationRequest(
@@ -92,7 +99,13 @@ function readField(
   fallback: string,
 ): string {
   const candidate = value[key];
-  return typeof candidate === 'string' ? candidate.trim() : fallback;
+  if (typeof candidate !== 'string') return fallback;
+  const field = key as ClinicalRecordNarrativeField;
+  const normalized = normalizeGeneratedClinicalRecordNarrative(candidate, field);
+  if (!normalized.text && candidate.trim() && normalized.issues.length > 0) {
+    return fallback;
+  }
+  return normalized.text;
 }
 
 export function normalizeClinicalResultRegenerationOutput(
@@ -109,6 +122,7 @@ export function normalizeClinicalResultRegenerationOutput(
     historyOfPresentIllness: readField(record, 'historyOfPresentIllness', fallback.historyOfPresentIllness),
     pastMedicalHistory: readField(record, 'pastMedicalHistory', fallback.pastMedicalHistory),
     personalHistory: readField(record, 'personalHistory', fallback.personalHistory),
+    menstrualHistory: readField(record, 'menstrualHistory', fallback.menstrualHistory),
     familyHistory: readField(record, 'familyHistory', fallback.familyHistory),
     physicalExam: readField(record, 'physicalExam', fallback.physicalExam),
     precautions: readField(record, 'precautions', fallback.precautions),

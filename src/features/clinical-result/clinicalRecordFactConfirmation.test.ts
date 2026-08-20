@@ -5,7 +5,10 @@ import {
   normalizeClinicalRecordFactSuggestions,
   type ClinicalRecordFactRecord,
 } from './clinicalRecordFactConfirmation';
-import { DEFAULT_PERSONAL_HISTORY_TEMPLATE } from './historyRecordTemplates';
+import {
+  DEFAULT_PERSONAL_HISTORY_TEMPLATE,
+  resolveHistoryRecordTemplate,
+} from './historyRecordTemplates';
 
 const emptyRecord: ClinicalRecordFactRecord = {
   chiefComplaint: '',
@@ -17,7 +20,7 @@ const emptyRecord: ClinicalRecordFactRecord = {
 };
 
 describe('clinicalRecordFactConfirmation', () => {
-  it('allows clearly marked AI candidates based on record-writing requirements without treating them as facts', () => {
+  it('allows clearly marked AI draft content based on record-writing requirements', () => {
     const request = buildClinicalRecordFactSuggestionRequest({
       channel: 'voice',
       patient: {},
@@ -29,8 +32,9 @@ describe('clinicalRecordFactConfirmation', () => {
 
     expect(prompt).toContain('病历书写完整性');
     expect(prompt).toContain('即使输入中没有明确问诊依据，也允许生成');
-    expect(prompt).toContain('AI 补充·待核查');
-    expect(prompt).toContain('不是患者已经否认或查体已经正常的事实');
+    expect(prompt).toContain('带 AI 来源标记的可编辑病历草稿');
+    expect(prompt).toContain('随所选字段回写');
+    expect(prompt).toContain('不得描述成问诊已经明确的事实');
     expect(request.config.traceContext?.title).toBe('生成病历候选阴性内容');
   });
 
@@ -56,6 +60,28 @@ describe('clinicalRecordFactConfirmation', () => {
     });
 
     expect(facts.filter((item) => item.field === 'personalHistory')).toEqual([]);
+  });
+
+  it('marks a positive template slot as a context correction', () => {
+    const facts = extractExplicitClinicalRecordFacts({
+      ...emptyRecord,
+      pastMedicalHistory: resolveHistoryRecordTemplate(
+        'pastMedicalHistory',
+        '既往有高血压病史10年。',
+      ),
+    });
+
+    expect(facts).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        field: 'pastMedicalHistory',
+        text: '{有}高血压病史',
+        source: 'template-context',
+        polarity: 'positive',
+      }),
+    ]));
+    expect(facts).not.toEqual(expect.arrayContaining([
+      expect.objectContaining({ text: expect.stringContaining('否认糖尿病') }),
+    ]));
   });
 
   it('keeps AI output pending and removes suggestions that duplicate explicit facts', () => {
@@ -90,6 +116,40 @@ describe('clinicalRecordFactConfirmation', () => {
       priority: 'general',
       status: 'pending',
     });
+  });
+
+  it('removes a candidate already covered by a grouped explicit negative', () => {
+    const suggestions = normalizeClinicalRecordFactSuggestions({
+      items: [{
+        field: 'historyOfPresentIllness',
+        question: '是否伴流涕？',
+        negativeRecordText: '无流涕',
+        rationale: '核查伴随症状',
+        priority: 'general',
+      }],
+    }, [{
+      id: 'explicit-grouped-negative',
+      field: 'historyOfPresentIllness',
+      text: '无鼻塞、流涕',
+      source: 'record-explicit',
+      polarity: 'negative',
+    }]);
+
+    expect(suggestions).toEqual([]);
+  });
+
+  it('drops a workflow placeholder before it can be included in the record', () => {
+    const suggestions = normalizeClinicalRecordFactSuggestions({
+      items: [{
+        field: 'pastMedicalHistory',
+        question: '既往史是否完整？',
+        negativeRecordText: '待医生补充完善',
+        rationale: '完善病历',
+        priority: 'general',
+      }],
+    });
+
+    expect(suggestions).toEqual([]);
   });
 
   it('marks structured positive symptoms only when they are present outside negative clauses', () => {

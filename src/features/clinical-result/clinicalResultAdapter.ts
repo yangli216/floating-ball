@@ -9,6 +9,8 @@ import type {
 } from './clinicalResultContract';
 import {
   getPatientContextAllergyHistory,
+  getPatientContextGenderText,
+  getPatientContextMenstrualHistory,
   getPatientContextPastMedicalHistory,
 } from '@/utils/patientContext';
 import { getDiagnosisKey, getStandardDiagnosisId } from './recordConfirmedPayload';
@@ -22,6 +24,7 @@ export interface ClinicalResultRecordInput {
   currentMedicationHistory?: string;
   familyHistory?: string;
   personalHistory?: string;
+  menstrualHistory?: string;
   physicalExam?: string;
   precautions?: string;
   vitals?: string;
@@ -38,6 +41,7 @@ export interface SymptomClinicalResultInput {
     currentMedicationHistory?: string;
     familyHistory?: string;
     personalHistory?: string;
+    menstrualHistory?: string;
     physicalExam?: string;
     precautions?: string;
     vitals?: string;
@@ -128,16 +132,22 @@ export function buildSymptomClinicalResultInput(input: SymptomClinicalResultInpu
     record.pastMedicalHistory
     || getPatientContextPastMedicalHistory(input.patient)
     || '';
+  const allergyHistory =
+    record.allergyHistory
+    || getPatientContextAllergyHistory(input.patient)
+    || '';
   const familyHistory = record.familyHistory || '';
+  const menstrualHistory = record.menstrualHistory
+    || getPatientContextMenstrualHistory(input.patient)
+    || '';
+  const patientGender = getPatientContextGenderText(input.patient);
   return {
     chiefComplaint,
     historyOfPresentIllness,
     pastMedicalHistory,
-    allergyHistory:
-      record.allergyHistory
-      || getPatientContextAllergyHistory(input.patient)
-      || '',
+    allergyHistory,
     currentMedicationHistory: record.currentMedicationHistory || '',
+    ...(menstrualHistory ? { menstrualHistory } : {}),
     familyHistory,
     symptoms: [],
     negativeSymptoms: [],
@@ -149,12 +159,15 @@ export function buildSymptomClinicalResultInput(input: SymptomClinicalResultInpu
       chiefComplaint,
       historyOfPresentIllness,
       pastMedicalHistory,
+      allergyHistory,
       personalHistory: record.personalHistory,
+      menstrualHistory,
       familyHistory,
       physicalExam: record.physicalExam,
       precautions: record.precautions,
       vitals: record.vitals,
       diagnosisNames: diagnoses.map((item) => item.name),
+      patientGender,
     }),
   };
 }

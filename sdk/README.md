@@ -506,6 +506,10 @@ unsubscribe();
 | `subscription-start` | - | 页面开始消费 WebSocket 事件 |
 | `subscription-stop` | - | 页面停止消费 WebSocket 事件；持久连接仍可供后续业务复用 |
 
+`record-confirmed` 中的固定既往史、个人史、家族史正文保持兼容自然文本。若本次明确上下文把模板槽位从“否认”改为“有”，payload 会额外携带 `recordTemplateChanges`；PHIS 应按 `field + slotKey` 精确更新对应值，未选择回写的字段不会进入该清单。旧版接入可忽略该可选对象并继续读取原病历字段。
+
+女性患者在本次对话或 HIS 既有病历中存在明确月经史时，`record-confirmed` 可额外携带 `menstrualHistory`，并在 `outpatientRecord.menstrualHistory` 中保持相同内容。该字段独立于个人史；男性患者、无明确内容或医生未选择该字段时均省略，PHIS 应保持原值。
+
 ---
 
 ## 浏览器上下文

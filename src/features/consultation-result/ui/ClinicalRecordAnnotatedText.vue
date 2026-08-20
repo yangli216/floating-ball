@@ -33,30 +33,13 @@ const suggestionDrafts = reactive<Record<string, string>>({});
 let copyFeedbackTimer: ReturnType<typeof setTimeout> | undefined;
 
 const pendingSuggestions = computed(() => props.suggestions.filter((item) => item.status === 'pending'));
-const segments = computed(() => {
-  const annotated = buildClinicalRecordAnnotationSegments(
-    props.modelValue,
-    props.facts,
-    pendingSuggestions.value,
-  );
-  const inlineSuggestionIds = new Set(
-    annotated
-      .filter((item) => item.kind === 'suggestion')
-      .map((item) => item.suggestion.id),
-  );
-  const appended = pendingSuggestions.value.filter((item) => !inlineSuggestionIds.has(item.id));
-  const combined = [...annotated];
-  appended.forEach((suggestion) => {
-    if (combined.length > 0) combined.push({ kind: 'text' as const, text: ' ' });
-    combined.push({
-      kind: 'suggestion' as const,
-      text: suggestion.negativeRecordText,
-      suggestion,
-    });
-  });
-  return combined;
-});
+const segments = computed(() => buildClinicalRecordAnnotationSegments(
+  props.modelValue,
+  props.facts,
+  pendingSuggestions.value,
+));
 function sourceLabel(fact: ClinicalRecordExplicitFact): string {
+  if (fact.source === 'template-context') return '根据上下文修正';
   if (fact.source === 'structured-answer') return '结构化问诊已明确';
   return '问诊中已明确';
 }
@@ -327,7 +310,7 @@ watch(() => props.modelValue, () => void nextTick(syncEditableContent));
               class="clinical-record-annotation is-suggestion"
               :class="{ 'is-critical': segment.suggestion.priority === 'critical' }"
               :data-clinical-fact-id="segment.suggestion.id"
-              :aria-label="`${segment.text}，AI 补充建议，${segment.suggestion.priority === 'critical' ? '重点提示' : '一般提示'}，点击查看核查参考`"
+              :aria-label="`${segment.text}，AI 补充建议，${segment.suggestion.priority === 'critical' ? '重点提示' : '一般提示'}，已在病历正文，会随所选字段回写，点击查看核查参考`"
               @click.stop="toggleSuggestion(segment.suggestion.id, segment.text, $event)"
             >
               <span class="clinical-record-annotation-sign" aria-hidden="true">AI</span>
@@ -361,6 +344,9 @@ watch(() => props.modelValue, () => void nextTick(syncEditableContent));
               <span v-if="segment.suggestion.rationale" class="clinical-record-popover-line is-muted">
                 <strong>依据</strong>
                 <span>{{ segment.suggestion.rationale }}</span>
+              </span>
+              <span class="clinical-record-writeback-state is-included">
+                已在病历正文中，将随当前所选病历字段回写；如不准确请调整或移除。
               </span>
               <span class="clinical-record-popover-actions">
                 <template v-if="editingSuggestionId === segment.suggestion.id">
@@ -438,6 +424,8 @@ watch(() => props.modelValue, () => void nextTick(syncEditableContent));
 .clinical-record-suggestion-text { padding-left: 9px; border-left: 3px solid currentColor; color: inherit; font-weight: 600; }
 .clinical-record-suggestion-editor { width: 100%; min-height: 72px; padding: 8px 9px; border: 1px solid var(--voice-accent); border-radius: 7px; background: var(--voice-surface); color: var(--voice-text); font: inherit; line-height: 1.55; resize: vertical; outline: none; box-sizing: border-box; }
 .clinical-record-suggestion-editor:focus { box-shadow: 0 0 0 3px var(--voice-accent-soft); }
+.clinical-record-writeback-state { padding: 7px 9px; border-radius: 7px; background: var(--voice-hover-bg, rgba(100, 116, 139, .08)); color: var(--voice-text-secondary); font-size: 12px; line-height: 1.5; }
+.clinical-record-writeback-state.is-included { background: var(--voice-accent-soft); color: var(--voice-accent-strong); }
 .clinical-record-popover-actions { display: flex; align-items: center; justify-content: flex-end; gap: 6px; }
 .clinical-record-copy-button { align-self: flex-end; min-width: 76px; min-height: 30px; padding: 5px 11px; border: 1px solid var(--voice-accent); border-radius: 7px; background: transparent; color: var(--voice-accent-strong); font: inherit; font-size: 12px; cursor: pointer; }
 .clinical-record-copy-button:hover { background: var(--voice-accent-soft); }

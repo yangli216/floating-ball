@@ -123,6 +123,7 @@
 | `historyOfPresentIllness` | String | 否 | 现病史 |
 | `pastMedicalHistory` | String | 否 | 既往史 |
 | `personalHistory` | String | 否 | 个人史 |
+| `menstrualHistory` | String | 否 | 女性月经史；应与性别字段同时传入，独立于个人史 |
 | `familyHistory` | String | 否 | 家族史 |
 | `physicalExam` | String | 否 | 体格检查 |
 | `precautions` | String | 否 | 注意事项 / 医嘱提示 |
@@ -1196,13 +1197,14 @@ ws://127.0.0.1:8081/api/consultation/events/ws
   "referenceStatus": "pending",
   "referenceMessage": "等待 HIS 完成最终回写并回执",
   "writebackScope": {
-    "recordFields": ["chiefComplaint", "historyOfPresentIllness", "pastMedicalHistory", "personalHistory", "familyHistory", "physicalExam", "precautions"],
+    "recordFields": ["chiefComplaint", "historyOfPresentIllness", "pastMedicalHistory", "personalHistory", "menstrualHistory", "familyHistory", "physicalExam", "precautions"],
     "includeDiagnosis": true,
     "orderTypes": ["medicine", "exam", "lab_test", "procedure"]
   },
   "chiefComplaint": "咳嗽三天",
   "historyOfPresentIllness": "受凉后出现咳嗽、咳痰，无明显呼吸困难。",
   "pastMedicalHistory": "否认高血压、糖尿病病史。",
+  "menstrualHistory": "月经规律，末次月经2026-08-05。",
   "precautions": "注意休息，1周内复诊，必要时上级医院进一步检查治疗。",
   "diagList": [
     {
@@ -1256,11 +1258,25 @@ ws://127.0.0.1:8081/api/consultation/events/ws
     "schemaVersion": "outpatient-record.v1",
     "chiefComplaint": "咳嗽三天",
     "historyOfPresentIllness": "患者3天前受凉后出现咳嗽、咳痰，无胸痛、无呼吸困难，今来就诊。",
-    "pastMedicalHistory": "平素体健；否认肝炎史，否认结核史，否认疟疾史，否认其他传染病史；否认肺部疾病史；否认肾脏疾病史；否认其他重大疾病史；否认手术史；否认外伤史；否认输血史；否认过敏史。",
-    "personalHistory": "否认外地久居史，否认疫水疫源接触史，否认牧区、矿山、高氟区、低碘区居住史，否认化学性物质、粉尘、放射性物质、有毒物质接触史，否认吸烟史，否认饮酒史，否认药物嗜好史。",
+    "pastMedicalHistory": "平素体健；否认肝炎史，否认结核史，否认疟疾史，否认其他传染病史；有高血压病史；否认糖尿病史；否认心脏病史；否认脑血管病史；否认肺部疾病史；否认肾脏疾病史；否认其他重大疾病史；否认手术史；否认外伤史；否认输血史；否认食品、药品过敏史。",
+    "personalHistory": "否认外地久居史，否认疫水疫源接触史，否认牧区、矿山、高氟区、低碘区居住史，否认化学性物质、粉尘、放射性物质、有毒物质接触史，否认吸毒史，否认吸烟史，否认饮酒史，否认药物嗜好史，否认冶游史。",
+    "menstrualHistory": "月经规律，末次月经2026-08-05。",
     "familyHistory": "否认家族重大遗传病史，否认家族肿瘤病史，否认家族传染病史，否认家族精神病史。",
     "physicalExam": "体温36.5℃,脉搏78次/分,呼吸20次/分,血压120/60mmHg。双肺呼吸音清，未及干湿啰音。",
     "precautions": "注意休息，1周内复诊，必要时上级医院进一步检查治疗。"
+  },
+  "recordTemplateChanges": {
+    "schemaVersion": "outpatient-record-template-changes.v1",
+    "items": [
+      {
+        "field": "pastMedicalHistory",
+        "slotKey": "hypertensionHistory",
+        "fromValue": "否认",
+        "toValue": "有",
+        "templateMarker": "{否认}高血压病史",
+        "replacementMarker": "{有}高血压病史"
+      }
+    ]
   }
 }
 ```
@@ -1276,10 +1292,11 @@ ws://127.0.0.1:8081/api/consultation/events/ws
 3. `referenceStatus = pending` 仅表示桌面端已发起最终回写请求，并不代表 HIS 已处理成功；真正成功/失败以后续 `reference-feedback` 回执为准。
 4. `diagList.idDiag` 必须是 PHIS 标准诊断目录主键（`ID_DIE`）。桌面端不得把 AI 自由文本、前端临时 key 或 PHIS 草稿文本生成的占位 ID 写入该字段；若当前诊断未匹配标准诊断库，应在提交前拦截并提示医生先切换或重新匹配标准诊断。
 5. 非空 `orderList` 必须来自已匹配标准库且通过前置非空校验的用药、检查、检验、处置推荐项。桌面端提交前必须拦截缺少标准服务 ID、服务名称、服务分类编码、执行位置 ID 或医保限用标识的医嘱；药品还必须具备一次剂量、剂量单位、频次 key、用法 key、总量、用药天数和发药药房；检查还必须具备检查部位；检验还必须具备非空检验附加 `jsonField`；处置还必须具备大于 0 的数量。医生手动清空检查 / 检验 / 处置的执行科室，或清空任一医嘱的医保限用后，桌面端必须按当前空输入拦截选中和提交，不得从 `matchedItem.idDeptExec`、`raw.idDeptExec/idDept`、详情 hydrate、默认执行科室或默认医保类型兜底生成必填字段。没有选择任何医嘱时不执行这些校验并返回空数组。
-6. `writebackScope.recordFields` 支持 `chiefComplaint / historyOfPresentIllness / pastMedicalHistory / personalHistory / familyHistory / physicalExam / precautions`；`includeDiagnosis` 控制 `diagList` 是否出现；`orderTypes` 支持 `medicine / exam / lab_test / procedure` 并控制 `orderList` 中允许出现的类型。scope 中未选择的病历和诊断范围必须在 payload 中省略；`orderList` 是唯一例外，固定存在且在 `orderTypes` 为空时为 `[]`。
-7. `outpatientRecord` 在完整回写时包含七个门诊病历字段，在部分回写时只包含 `schemaVersion` 与 `writebackScope.recordFields` 明确选择的字段。该对象不包含 `diagnosisText`；HIS 只更新对象中真实出现的字段，其余保持原值。
-8. 为兼容 PHIS 既有的顶层病历字段读取方式，选择 `precautions` 时 `record-confirmed` 同时返回顶层 `precautions`，其值与 `outpatientRecord.precautions` 完全一致；未选择时两处都不出现。主诉、现病史、既往史和家族史的顶层兼容字段同样只在对应 record field 被选择时出现。
+6. `writebackScope.recordFields` 支持 `chiefComplaint / historyOfPresentIllness / pastMedicalHistory / personalHistory / menstrualHistory / familyHistory / physicalExam / precautions`；`includeDiagnosis` 控制 `diagList` 是否出现；`orderTypes` 支持 `medicine / exam / lab_test / procedure` 并控制 `orderList` 中允许出现的类型。`menstrualHistory` 仅适用于女性患者且必须有明确对话或既有病历依据。scope 中未选择的病历和诊断范围必须在 payload 中省略；`orderList` 是唯一例外，固定存在且在 `orderTypes` 为空时为 `[]`。
+7. `outpatientRecord` 在完整回写时包含七个通用门诊病历字段，女性患者有明确内容时可额外包含 `menstrualHistory`；在部分回写时只包含 `schemaVersion` 与 `writebackScope.recordFields` 明确选择的字段。该对象不包含 `diagnosisText`；HIS 只更新对象中真实出现的字段，其余保持原值。
+8. 为兼容 PHIS 既有的顶层病历字段读取方式，选择 `precautions` 时 `record-confirmed` 同时返回顶层 `precautions`，其值与 `outpatientRecord.precautions` 完全一致；未选择时两处都不出现。主诉、现病史、既往史、月经史和家族史的顶层兼容字段同样只在对应 record field 被选择时出现；男性患者或月经史为空时不得出现 `menstrualHistory`。
 9. 没有 `writebackScope` 的历史客户端仍按完整回写契约处理，继续携带完整 `outpatientRecord`、`diagList` 与 `orderList`；PHIS 不得要求旧版本补传 scope。
+10. 固定既往史、个人史、家族史模板在桌面端编辑时使用 `{体健}` / `{否认}` / `{有}` 状态槽位；为兼容既有 PHIS，顶层病历字段和 `outpatientRecord` 中发送的是去掉花括号后的自然文本。若医生选择回写的病史字段中存在由明确上下文改为 `{有}` 的槽位，payload 额外携带 `recordTemplateChanges`；PHIS 应优先按 `field + slotKey` 精确更新对应模板值。未选字段不出现在变化清单中；没有变化时整个对象省略。旧 PHIS 可忽略此新增对象并继续读取自然文本。
 
 **outpatientRecord 字段：**
 
@@ -1290,9 +1307,22 @@ ws://127.0.0.1:8081/api/consultation/events/ws
 | `historyOfPresentIllness` | String | 现病史；与顶层 `historyOfPresentIllness` 保持一致 |
 | `pastMedicalHistory` | String | 既往史；与顶层 `pastMedicalHistory` 保持一致 |
 | `personalHistory` | String | 个人史 |
+| `menstrualHistory` | String | 女性月经史；独立于个人史，仅在有明确内容且被医生选择时出现 |
 | `familyHistory` | String | 家族史；与顶层 `familyHistory` 保持一致 |
 | `physicalExam` | String | 体格检查；优先使用 HIS 已传入生命体征或医生确认后的模板 |
 | `precautions` | String | 注意事项 / 健康宣教 / 复诊提示；不等同于 `treatmentPlan` |
+
+**recordTemplateChanges 字段：**
+
+| 字段名 | 类型 | 说明 |
+| :--- | :--- | :--- |
+| `schemaVersion` | String | 当前固定为 `outpatient-record-template-changes.v1` |
+| `items[].field` | String | 固定模板所属病历字段：`pastMedicalHistory / personalHistory / familyHistory` |
+| `items[].slotKey` | String | 跨模板文案和标点稳定的槽位标识，例如高血压病史为 `hypertensionHistory` |
+| `items[].fromValue` | String | 模板默认状态，当前阳性变化固定为 `否认` |
+| `items[].toValue` | String | 本次明确事实对应的状态，当前固定为 `有` |
+| `items[].templateMarker` | String | 便于人工排查的原模板片段，例如 `{否认}高血压病史`；PHIS 定位应以 `field + slotKey` 为准 |
+| `items[].replacementMarker` | String | 结果页显示片段，例如 `{有}高血压病史`；兼容正文中的实际文本不含花括号 |
 
 **diagList 字段：**
 

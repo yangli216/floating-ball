@@ -34,6 +34,8 @@ import {
   getPatientContextAllergyHistory,
   getPatientContextCurrentMedicationHistory,
   getPatientContextFamilyHistory,
+  getPatientContextGenderText,
+  getPatientContextMenstrualHistory,
   getPatientContextPastMedicalHistory,
   getPatientContextPersonalHistory,
 } from '@/utils/patientContext';
@@ -340,7 +342,9 @@ export function useVoiceConsultation(options: VoiceConsultationOptions) {
           allergyHistory: getPatientContextAllergyHistory(currentPatient.value) || null,
           currentMedicationHistory: getPatientContextCurrentMedicationHistory(currentPatient.value) || null,
           personalHistory: getPatientContextPersonalHistory(currentPatient.value) || null,
+          menstrualHistory: getPatientContextMenstrualHistory(currentPatient.value) || null,
           familyHistory: getPatientContextFamilyHistory(currentPatient.value) || null,
+          gender: getPatientContextGenderText(currentPatient.value) || null,
         },
         onProgress: ({ result: partialResult }) => {
           if (currentToken !== processingToken) return;

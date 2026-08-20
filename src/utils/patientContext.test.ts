@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { buildPatientContext, toConsultationPatient } from './patientContext';
+import {
+  buildPatientContext,
+  extractMenstrualHistoryFromRecordText,
+  getPatientContextMenstrualHistory,
+  toConsultationPatient,
+} from './patientContext';
 
 describe('patientContext age precedence', () => {
   it('lets authoritative PHIS month age override a unitless reception ageNum', () => {
@@ -69,5 +74,27 @@ describe('patientContext clinical history mapping', () => {
     expect(context?.clinical.personalHistory).toBe('吸烟20年，每日10支。');
     expect(context?.familyHistory).toBe('父亲有高血压病史。');
     expect(context?.clinical.familyHistory).toBe('父亲有高血压病史。');
+  });
+
+  it('prefers an explicit menstrual history and can recover it from the current record', () => {
+    const explicit = buildPatientContext({
+      payload: {
+        idPi: 'female-explicit',
+        sdSexText: '女性',
+        menstrualHistory: '周期28天，经期5天。',
+        currentOutpatientRecordText: '个人史：无特殊。\n月经史：周期30天。\n家族史：无特殊。',
+      },
+    });
+    const fromRecord = buildPatientContext({
+      payload: {
+        idPi: 'female-record',
+        sdSexText: '女性',
+        currentOutpatientRecordText: '个人史：无特殊。\n月经史：周期30天，经期6天。\n家族史：无特殊。',
+      },
+    });
+
+    expect(getPatientContextMenstrualHistory(explicit)).toBe('周期28天，经期5天。');
+    expect(getPatientContextMenstrualHistory(fromRecord)).toBe('周期30天，经期6天');
+    expect(extractMenstrualHistoryFromRecordText('个人史：无特殊。')).toBe('');
   });
 });

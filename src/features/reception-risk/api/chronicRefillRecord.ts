@@ -11,6 +11,7 @@ import {
 import {
   loadAvailableMedicineInventoryContext,
   formatAvailableMedicineInventoryPrompt,
+  normalizeGeneratedClinicalRecordNarrative,
   parseLLMJson,
   type ClinicalResultGenerationStage,
   type ClinicalResultDiagnosis,
@@ -183,8 +184,22 @@ function normalizeDraft(
   availableMedications: string[],
 ): NormalizedChronicRefillDraft {
   const fallback = fallbackDraft(patient, candidate, availableMedications);
-  const chiefComplaint = value.chiefComplaint?.trim() || '';
-  const historyOfPresentIllness = value.historyOfPresentIllness?.trim() || '';
+  const chiefComplaint = normalizeGeneratedClinicalRecordNarrative(
+    value.chiefComplaint,
+    'chiefComplaint',
+  ).text;
+  const historyOfPresentIllness = normalizeGeneratedClinicalRecordNarrative(
+    value.historyOfPresentIllness,
+    'historyOfPresentIllness',
+  ).text;
+  const pastMedicalHistory = normalizeGeneratedClinicalRecordNarrative(
+    value.pastMedicalHistory,
+    'pastMedicalHistory',
+  ).text;
+  const healthEducation = normalizeGeneratedClinicalRecordNarrative(
+    value.healthEducation,
+    'precautions',
+  ).text;
   const recommendedMedicines = Array.isArray(value.recommendedMedicines)
     ? value.recommendedMedicines
       .map(normalizeMedicineRecommendation)
@@ -199,11 +214,11 @@ function normalizeDraft(
     historyOfPresentIllness: isPatientFactHistory(historyOfPresentIllness)
       ? historyOfPresentIllness
       : fallback.historyOfPresentIllness,
-    pastMedicalHistory: value.pastMedicalHistory?.trim() || fallback.pastMedicalHistory,
+    pastMedicalHistory: pastMedicalHistory || fallback.pastMedicalHistory,
     currentMedicationHistory: value.currentMedicationHistory?.trim() || fallback.currentMedicationHistory,
     treatmentPlan: fallback.treatmentPlan,
     healthEducation: normalizeChronicRefillHealthEducation(
-      value.healthEducation,
+      healthEducation,
       fallback.healthEducation,
     ),
     recommendedMedicines: recommendedMedicines.length > 0
@@ -369,6 +384,7 @@ export async function generateChronicRefillRecord(
           '主诉应写明具体慢病和“复诊配药”目的。',
           '本次尚未完成当前用药、依从性、控制情况、不适和不良反应核查；historyOfPresentIllness只能写历史明确诊断、历史曾开具的规范药名和本次复诊配药目的，不得提前写规律服药、控制平稳、无不适或监测结果。',
           'historyOfPresentIllness禁止写入年龄、性别、当前库存、可续方药品、可参考药品、推荐药品、待医生核实或后续治疗方案；库存信息只能用于recommendedMedicines。',
+          '正式病历字段不得写“待医生补充完善、建议询问、信息不足、未提供相关信息”等工作流提示；没有有效临床事实时保持字段为空。currentMedicationHistory 的历史用药待核实占位是唯一例外。',
           '禁止使用“未提供新发不适信息”作为主诉或现病史主体，也不要写“无不适”或“病情稳定”。',
           '药品按“库存同品 → 库存等效药 → 规范通用名兜底”选择；无库存通用名仅供医生参考。',
           '若未获取到可确认的历史用药，仍需根据具体慢病诊断、患者信息和当前有效库存推荐合理的候选药品，不得返回空方案。',

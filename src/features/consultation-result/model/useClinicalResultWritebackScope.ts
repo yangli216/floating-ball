@@ -12,6 +12,7 @@ export const WRITEBACK_RECORD_FIELD_LABELS: Record<RecordConfirmedWritebackField
   historyOfPresentIllness: '现病史',
   pastMedicalHistory: '既往史',
   personalHistory: '个人史',
+  menstrualHistory: '月经史',
   familyHistory: '家族史',
   physicalExam: '体格检查',
   precautions: '注意事项',
@@ -22,6 +23,7 @@ export interface WritebackScopeRecordValues {
   historyOfPresentIllness: string;
   pastMedicalHistory: string;
   personalHistory: string;
+  menstrualHistory: string;
   familyHistory: string;
   physicalExam: string;
   precautions: string;

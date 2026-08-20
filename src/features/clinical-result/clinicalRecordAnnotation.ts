@@ -2,6 +2,7 @@ import type {
   ClinicalRecordExplicitFact,
   ClinicalRecordFactSuggestion,
 } from './clinicalRecordFactConfirmation';
+import { isNegativeClinicalStatementCovered } from './clinicalRecordNarrativeQuality';
 
 export interface ClinicalRecordAnnotationTextSegment {
   kind: 'text';
@@ -36,6 +37,7 @@ interface AnnotationRange {
 }
 
 function sourceWeight(fact: ClinicalRecordExplicitFact): number {
+  if (fact.source === 'template-context') return 3;
   if (fact.source === 'structured-answer') return 2;
   return 1;
 }
@@ -72,18 +74,12 @@ function findTextRange(recordText: string, targetText: string): AnnotationRange 
 
   const negativePattern = /(?:否认|不伴|未见|未闻及|未及|无)/u;
   if (!negativePattern.test(targetText)) return null;
-  const targetTerms = targetText
-    .replace(/(?:否认|不伴|未见|未闻及|未及|无)/gu, '')
-    .split(/[、，,及和与]/u)
-    .map((item) => item.trim())
-    .filter((item) => item.length >= 2);
-  if (targetTerms.length < 2) return null;
   const sentencePattern = /[^。；;\n]+/gu;
   for (const match of recordText.matchAll(sentencePattern)) {
     const sentence = match[0];
     const negativeStart = sentence.search(negativePattern);
     if (negativeStart < 0) continue;
-    if (!targetTerms.every((term) => sentence.includes(term))) continue;
+    if (!isNegativeClinicalStatementCovered(sentence, targetText)) continue;
     const sentenceStart = match.index ?? -1;
     if (sentenceStart < 0) continue;
     return {
@@ -97,8 +93,8 @@ function findTextRange(recordText: string, targetText: string): AnnotationRange 
 
 /**
  * Splits only the persisted record value. Suggestions are used solely to mark
- * matching ranges; unmatched reading-layer text is appended by the UI component
- * and can never leak into save data.
+ * matching ranges; callers must merge unmatched suggestions into the field
+ * before rendering so every visible AI segment has the same writeback semantics.
  */
 export function buildClinicalRecordAnnotationSegments(
   recordText: string,
@@ -177,11 +173,24 @@ function cleanRecordAfterRangeEdit(value: string): string {
     .trim();
 }
 
+/** Returns whether the rendered suggestion belongs to the persisted field value. */
+export function isClinicalRecordSuggestionInRecord(
+  recordText: string,
+  segment: ClinicalRecordAnnotationSuggestionSegment,
+): boolean {
+  return (
+    typeof segment.start === 'number'
+    && typeof segment.end === 'number'
+    && segment.start >= 0
+    && segment.end >= segment.start
+    && recordText.slice(segment.start, segment.end) === segment.text
+  );
+}
+
 /**
  * Applies an explicit doctor edit to the persisted record. A matched suggestion
- * replaces its exact rendered range. An unmatched reading-layer suggestion is
- * appended only when the doctor supplies non-empty text; removing it leaves the
- * persisted record untouched.
+ * replaces its exact rendered range. The unmatched branch is also reused by the
+ * default merge helper before the suggestion is first rendered.
  */
 export function applyClinicalRecordSuggestionEdit(
   recordText: string,
@@ -189,13 +198,7 @@ export function applyClinicalRecordSuggestionEdit(
   nextText: string,
 ): string {
   const edited = nextText.trim();
-  const hasStableRange = (
-    typeof segment.start === 'number'
-    && typeof segment.end === 'number'
-    && segment.start >= 0
-    && segment.end >= segment.start
-    && recordText.slice(segment.start, segment.end) === segment.text
-  );
+  const hasStableRange = isClinicalRecordSuggestionInRecord(recordText, segment);
   if (hasStableRange) {
     return cleanRecordAfterRangeEdit(
       `${recordText.slice(0, segment.start)}${edited}${recordText.slice(segment.end)}`,
@@ -207,4 +210,32 @@ export function applyClinicalRecordSuggestionEdit(
   if (!current) return normalizedEdited;
   const separator = /[。；！？]$/u.test(current) ? '' : '。';
   return `${current}${separator}${normalizedEdited}`;
+}
+
+/**
+ * Merges an AI suggestion into the persisted field value before rendering.
+ * Existing exact, compact, or semantically-covered negative content remains
+ * unchanged so repeated generation and legacy cache recovery stay idempotent.
+ */
+export function mergeClinicalRecordSuggestionIntoText(
+  recordText: string,
+  suggestion: ClinicalRecordFactSuggestion,
+): string {
+  if (suggestion.status !== 'pending' || !suggestion.negativeRecordText.trim()) {
+    return recordText;
+  }
+
+  const existingSegment = buildClinicalRecordAnnotationSegments(recordText, [], [suggestion])
+    .find((item): item is ClinicalRecordAnnotationSuggestionSegment => (
+      item.kind === 'suggestion' && item.suggestion.id === suggestion.id
+    ));
+  if (existingSegment && isClinicalRecordSuggestionInRecord(recordText, existingSegment)) {
+    return recordText;
+  }
+
+  return applyClinicalRecordSuggestionEdit(recordText, {
+    kind: 'suggestion',
+    text: suggestion.negativeRecordText,
+    suggestion,
+  }, suggestion.negativeRecordText);
 }

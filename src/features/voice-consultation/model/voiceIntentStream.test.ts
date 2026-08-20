@@ -12,12 +12,13 @@ describe('voiceIntentStream', () => {
 
     parser.push('{"event":"record_core","data":{"chiefComplaint":"咳嗽2天"}}\n{"event":"diag');
     parser.push('noses","data":[{"name":"急性支气管炎"}]}\n');
-    parser.push('{"event":"history_context","data":{"personalHistory":"吸烟20年"}}\n');
+    parser.push('{"event":"history_context","data":{"personalHistory":"吸烟20年","menstrualHistory":"周期28天"}}\n');
     parser.push('{"event":"recommendation_plan","data":{"mode":"diagnostic_first","recommendNow":["lab_test"]}}');
     parser.flush();
 
     expect(accumulator.payload.recordDraft?.chiefComplaint).toBe('咳嗽2天');
     expect(accumulator.payload.recordDraft?.personalHistory).toBe('吸烟20年');
+    expect(accumulator.payload.recordDraft?.menstrualHistory).toBe('周期28天');
     expect(accumulator.payload.diagnosisHints?.[0]?.name).toBe('急性支气管炎');
     expect(accumulator.payload.recommendationPlan?.mode).toBe('diagnostic_first');
     expect(accumulator.readySections).toEqual(['record_core', 'diagnoses', 'history_context', 'recommendation_plan']);

@@ -63,6 +63,7 @@ import {
   initClinicalDiagnoses,
   initClinicalTreatments,
   mapClinicalResultAiDiagnoses,
+  mergeClinicalRecordSuggestionIntoText,
   parseLLMJson,
   normalizeClinicalResultRegenerationOutput,
   rememberManualCatalogMatch,
@@ -74,6 +75,8 @@ import {
   type ClinicalResultRecommendationType,
   type ClinicalResultRecordSummaryInput,
   type ClinicalResultRegenerationRecord,
+  type ClinicalRecordFactField,
+  type ClinicalRecordFactSuggestion,
   type MedicinePrimaryField,
   type ManualMatchRawCandidate,
 } from '@features/clinical-result';
@@ -209,6 +212,7 @@ const chiefComplaint = ref('');
 const historyOfPresentIllness = ref('');
 const pastMedicalHistory = ref('');
 const personalHistory = ref('');
+const menstrualHistory = ref('');
 const familyHistory = ref('');
 const physicalExam = ref('');
 const precautions = ref('');
@@ -325,6 +329,7 @@ const {
   patientName,
   patientTetId,
 } = patientContext;
+const isFemalePatient = computed(() => /^(?:F|2|女)/iu.test(patientGender.value.trim()));
 
 const diagnosisChecklist = useClinicalResultDiagnosisChecklist({
   isEnabled: () => resultChannel.value !== 'chronic-refill',
@@ -429,9 +434,35 @@ function getFactRecord() {
     historyOfPresentIllness: historyOfPresentIllness.value,
     pastMedicalHistory: pastMedicalHistory.value,
     personalHistory: personalHistory.value,
+    menstrualHistory: isFemalePatient.value ? menstrualHistory.value : '',
     familyHistory: familyHistory.value,
     physicalExam: physicalExam.value,
   };
+}
+
+function getFactRecordFieldValue(field: ClinicalRecordFactField): string {
+  return getFactRecord()[field];
+}
+
+function setFactRecordFieldValue(field: ClinicalRecordFactField, value: string): void {
+  if (field === 'historyOfPresentIllness') historyOfPresentIllness.value = value;
+  else if (field === 'pastMedicalHistory') pastMedicalHistory.value = value;
+  else if (field === 'personalHistory') personalHistory.value = value;
+  else if (field === 'familyHistory') familyHistory.value = value;
+  else physicalExam.value = value;
+}
+
+function mergeFactSuggestionIntoRecord(suggestion: ClinicalRecordFactSuggestion): boolean {
+  const currentValue = getFactRecordFieldValue(suggestion.field);
+  const nextValue = mergeClinicalRecordSuggestionIntoText(currentValue, suggestion);
+  const baselineValue = getRecordFieldOriginalValue(suggestion.field);
+  const nextBaseline = mergeClinicalRecordSuggestionIntoText(baselineValue, suggestion);
+  if (nextBaseline !== baselineValue) {
+    setInitialRecordFieldValue(suggestion.field, nextBaseline);
+  }
+  if (nextValue === currentValue) return false;
+  setFactRecordFieldValue(suggestion.field, nextValue);
+  return true;
 }
 
 const recordFactConfirmation = useClinicalRecordFactConfirmation({
@@ -458,6 +489,8 @@ const recordFactConfirmation = useClinicalRecordFactConfirmation({
     fallback: '请稍后重试，当前病历内容不会受到影响。',
   }),
   notify: showToast,
+  mergeSuggestionIntoRecord: mergeFactSuggestionIntoRecord,
+  onRecordChanged: () => refreshWritebackScope(),
 });
 const {
   suggestions: factSuggestions,
@@ -497,6 +530,7 @@ const writebackScopeController = useClinicalResultWritebackScope({
     historyOfPresentIllness: historyOfPresentIllness.value,
     pastMedicalHistory: pastMedicalHistory.value,
     personalHistory: personalHistory.value,
+    menstrualHistory: isFemalePatient.value ? menstrualHistory.value : '',
     familyHistory: familyHistory.value,
     physicalExam: physicalExam.value,
     precautions: precautions.value,
@@ -578,6 +612,7 @@ const editorSnapshotPersistence = useVoiceEditorSnapshotPersistence({
     historyOfPresentIllness: historyOfPresentIllness.value,
     pastMedicalHistory: pastMedicalHistory.value,
     personalHistory: personalHistory.value,
+    menstrualHistory: isFemalePatient.value ? menstrualHistory.value : '',
     familyHistory: familyHistory.value,
     physicalExam: physicalExam.value,
     precautions: precautions.value,
@@ -619,6 +654,11 @@ async function applyEditorSnapshot(snapshot: VoiceEditorSnapshot): Promise<void>
   if (typeof snapshot.personalHistory === 'string') {
     personalHistory.value = snapshot.personalHistory;
   }
+  if (isFemalePatient.value && typeof snapshot.menstrualHistory === 'string') {
+    menstrualHistory.value = snapshot.menstrualHistory;
+  } else if (!isFemalePatient.value) {
+    menstrualHistory.value = '';
+  }
   if (typeof snapshot.familyHistory === 'string') {
     familyHistory.value = snapshot.familyHistory;
   }
@@ -627,9 +667,6 @@ async function applyEditorSnapshot(snapshot: VoiceEditorSnapshot): Promise<void>
   }
   if (typeof snapshot.precautions === 'string') {
     precautions.value = snapshot.precautions;
-  }
-  if (Array.isArray(snapshot.factSuggestions)) {
-    restoreFactSuggestions(snapshot.factSuggestions);
   }
   if (snapshot.differentialDiagnosisDirection) {
     restoreDifferentialDiagnosisDirection(snapshot.differentialDiagnosisDirection);
@@ -672,6 +709,11 @@ async function applyEditorSnapshot(snapshot: VoiceEditorSnapshot): Promise<void>
     restoreWritebackScope(snapshot.writebackScope);
   } else {
     resetWritebackScope();
+  }
+  // 旧版缓存中的 AI 候选可能只存在于阅读层。先恢复医生的回写范围，再做字段迁移，
+  // 这样新增的非空字段可复用统一刷新规则：默认范围自动选中，自定义范围保持医生选择。
+  if (Array.isArray(snapshot.factSuggestions)) {
+    restoreFactSuggestions(snapshot.factSuggestions);
   }
 }
 
@@ -771,6 +813,7 @@ const recordFieldState = useVoiceRecordFieldState({
   },
 });
 const {
+  getRecordFieldOriginalValue,
   isRecordFieldModified,
   setInitialRecordFieldValue,
   setInitialRecordSnapshot,
@@ -879,6 +922,7 @@ function buildVoiceUserLogSnapshot() {
     historyOfPresentIllness: historyOfPresentIllness.value,
     pastMedicalHistory: pastMedicalHistory.value,
     personalHistory: personalHistory.value,
+    menstrualHistory: isFemalePatient.value ? menstrualHistory.value : '',
     familyHistory: familyHistory.value,
     physicalExam: physicalExam.value,
     precautions: precautions.value,
@@ -1078,6 +1122,7 @@ function buildIntentResultKey(result: ClinicalResultInput | VoiceIntentResult): 
       historyOfPresentIllness: normalizeIntentKeyPart(result.historyOfPresentIllness),
       pastMedicalHistory: normalizeIntentKeyPart(result.pastMedicalHistory),
       personalHistory: normalizeIntentKeyPart(result.outpatientRecord?.personalHistory),
+      menstrualHistory: normalizeIntentKeyPart(result.outpatientRecord?.menstrualHistory || result.menstrualHistory),
       familyHistory: normalizeIntentKeyPart(result.outpatientRecord?.familyHistory || result.familyHistory),
       physicalExam: normalizeIntentKeyPart(result.outpatientRecord?.physicalExam),
       precautions: normalizeIntentKeyPart(result.outpatientRecord?.precautions),
@@ -1717,6 +1762,7 @@ function getCurrentRegenerationRecord(): ClinicalResultRegenerationRecord {
     historyOfPresentIllness: historyOfPresentIllness.value,
     pastMedicalHistory: pastMedicalHistory.value,
     personalHistory: personalHistory.value,
+    menstrualHistory: isFemalePatient.value ? menstrualHistory.value : '',
     familyHistory: familyHistory.value,
     physicalExam: physicalExam.value,
     precautions: precautions.value,
@@ -1728,6 +1774,7 @@ function applyRegenerationRecord(record: ClinicalResultRegenerationRecord): void
   historyOfPresentIllness.value = record.historyOfPresentIllness;
   pastMedicalHistory.value = record.pastMedicalHistory;
   personalHistory.value = record.personalHistory;
+  menstrualHistory.value = isFemalePatient.value ? record.menstrualHistory : '';
   familyHistory.value = record.familyHistory;
   physicalExam.value = record.physicalExam;
   precautions.value = record.precautions;
@@ -1917,6 +1964,7 @@ const { resetForIntent } = useClinicalResultIntentReset({
   historyOfPresentIllness,
   pastMedicalHistory,
   personalHistory,
+  menstrualHistory,
   familyHistory,
   physicalExam,
   precautions,
@@ -2693,10 +2741,14 @@ async function handleBatchWriteBack(): Promise<void> {
         historyOfPresentIllness: historyOfPresentIllness.value,
         pastMedicalHistory: pastMedicalHistory.value,
         personalHistory: personalHistory.value,
+        ...(isFemalePatient.value && menstrualHistory.value.trim()
+          ? { menstrualHistory: menstrualHistory.value }
+          : {}),
         familyHistory: familyHistory.value,
         physicalExam: physicalExam.value,
         precautions: precautions.value,
       },
+      patientGender: patientGender.value,
       diagList,
       orderList,
       treatmentPlan,
@@ -2788,6 +2840,7 @@ watch(
     autoTreatmentFetchAttemptKey.value = '';
     resetPrecautionsScope();
     resetForIntent(result);
+    if (!isFemalePatient.value) menstrualHistory.value = '';
     resetDifferentialDiagnosisDirection();
     resetFactConfirmation();
     resetChronicRefillReview(result.chronicRefillReview);
@@ -2875,6 +2928,7 @@ watch(
     historyOfPresentIllness.value,
     pastMedicalHistory.value,
     personalHistory.value,
+    menstrualHistory.value,
     familyHistory.value,
     physicalExam.value,
     precautions.value,
@@ -2952,7 +3006,7 @@ watch(
 
           <div v-if="hasPendingFactSuggestions" class="clinical-record-ai-notice" role="note">
             <Icon icon="lucide:info" size="14" aria-hidden="true" />
-            <span>病历中带 AI 标记的内容由 AI 补充，红色 AI 为重点提示；请结合患者实际情况核查，必要时直接编辑病历。</span>
+            <span>病历中带 AI 标记的内容由 AI 补充，红色 AI 为重点提示；这些内容已进入当前病历草稿，会随所选字段回写，如不准确可点击 AI 调整或移除。</span>
           </div>
 
           <div class="record-fields">
@@ -2993,6 +3047,14 @@ watch(
               :fact-suggestions="getRecordFieldFactSuggestions('personalHistory')"
               placeholder="请输入个人史..."
               @dismiss-fact-suggestion="dismissFactSuggestion"
+            />
+            <VoiceRecordFieldEditor
+              v-if="isFemalePatient"
+              v-model="menstrualHistory"
+              title="月经史"
+              presentation="document"
+              :rows="3"
+              placeholder="请输入月经史..."
             />
             <VoiceRecordFieldEditor
               v-model="familyHistory"

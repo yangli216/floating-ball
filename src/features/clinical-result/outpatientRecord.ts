@@ -1,9 +1,9 @@
 import {
-  CHRONIC_PAST_MEDICAL_HISTORY_NEGATIVE_TEMPLATE,
   DEFAULT_FAMILY_HISTORY_TEMPLATE,
   DEFAULT_HEALTH_EXAM_PAST_MEDICAL_HISTORY_TEMPLATE,
   DEFAULT_PAST_MEDICAL_HISTORY_TEMPLATE,
   DEFAULT_PERSONAL_HISTORY_TEMPLATE,
+  resolveHistoryRecordTemplate,
 } from './historyRecordTemplates';
 
 export const OUTPATIENT_RECORD_SCHEMA_VERSION = 'outpatient-record.v1' as const;
@@ -25,6 +25,7 @@ export interface OutpatientRecord {
   historyOfPresentIllness: string;
   pastMedicalHistory: string;
   personalHistory: string;
+  menstrualHistory?: string;
   familyHistory: string;
   physicalExam: string;
   precautions: string;
@@ -34,12 +35,15 @@ export interface BuildOutpatientRecordInput {
   chiefComplaint: string;
   historyOfPresentIllness: string;
   pastMedicalHistory?: string;
+  allergyHistory?: string;
   personalHistory?: string;
+  menstrualHistory?: string;
   familyHistory?: string;
   physicalExam?: string;
   precautions?: string;
   vitals?: string;
   diagnosisNames?: readonly string[];
+  patientGender?: string;
 }
 
 export interface OutpatientRecordQualityIssue {
@@ -70,6 +74,7 @@ function normalizeText(value: unknown): string {
     return '';
   }
   return String(value)
+    .replace(/[{}]/gu, '')
     .replace(/\s+/gu, '')
     .replace(/([，。；、])+/gu, '$1')
     .trim();
@@ -124,32 +129,58 @@ function buildPastMedicalHistory(
   scenario: OutpatientRecordScenario,
 ): string {
   const provided = stripFieldLabel(normalizeFreeText(input.pastMedicalHistory), ['既往史']);
+  const allergyHistory = stripFieldLabel(normalizeFreeText(input.allergyHistory), ['过敏史']);
   if (isMeaningfulRecordText(provided)) {
-    return provided;
+    return resolveHistoryRecordTemplate(
+      'pastMedicalHistory',
+      [provided, allergyHistory].filter(Boolean).join('；'),
+      provided,
+    );
   }
 
-  if (scenario === 'health_exam') {
-    return DEFAULT_HEALTH_EXAM_PAST_MEDICAL_HISTORY_TEMPLATE;
-  }
-
-  const chronicDiagnoses = (input.diagnosisNames || [])
-    .map((item) => normalizeText(item))
-    .filter((item) => /高血压|糖尿病|高脂血症|甲减|甲状腺功能减退|痛风/u.test(item));
-  if (chronicDiagnoses.length > 0) {
-    return `既往有${Array.from(new Set(chronicDiagnoses)).join('、')}病史；${CHRONIC_PAST_MEDICAL_HISTORY_NEGATIVE_TEMPLATE}`;
-  }
-
-  return DEFAULT_PAST_MEDICAL_HISTORY_TEMPLATE;
+  const template = scenario === 'health_exam'
+    ? DEFAULT_HEALTH_EXAM_PAST_MEDICAL_HISTORY_TEMPLATE
+    : DEFAULT_PAST_MEDICAL_HISTORY_TEMPLATE;
+  const explicitPastHistoryContext = normalizeFreeText(input.historyOfPresentIllness)
+    .split(/[。；;\n]+/u)
+    .filter((clause) => /既往|病史|患有|确诊|长期|多年/u.test(clause))
+    .join('；');
+  return resolveHistoryRecordTemplate(
+    'pastMedicalHistory',
+    [explicitPastHistoryContext, allergyHistory].filter(Boolean).join('；'),
+    template,
+  );
 }
 
 function buildPersonalHistory(input: BuildOutpatientRecordInput): string {
   const provided = stripFieldLabel(normalizeFreeText(input.personalHistory), ['个人史']);
-  return isMeaningfulRecordText(provided) ? provided : DEFAULT_PERSONAL_HISTORY_TEMPLATE;
+  return isMeaningfulRecordText(provided)
+    ? resolveHistoryRecordTemplate('personalHistory', provided, provided)
+    : DEFAULT_PERSONAL_HISTORY_TEMPLATE;
+}
+
+function isExplicitMaleGender(value: unknown): boolean {
+  const normalized = normalizeFreeText(value).toLowerCase();
+  return normalized === 'm'
+    || normalized === '1'
+    || normalized === 'male'
+    || normalized.startsWith('男');
+}
+
+function buildMenstrualHistory(input: BuildOutpatientRecordInput): string {
+  if (isExplicitMaleGender(input.patientGender)) {
+    return '';
+  }
+
+  const provided = stripFieldLabel(normalizeFreeText(input.menstrualHistory), ['月经史']);
+  return isMeaningfulRecordText(provided) ? provided : '';
 }
 
 function buildFamilyHistory(input: BuildOutpatientRecordInput): string {
   const provided = stripFieldLabel(normalizeFreeText(input.familyHistory), ['家族史']);
-  return isMeaningfulRecordText(provided) ? provided : DEFAULT_FAMILY_HISTORY_TEMPLATE;
+  return isMeaningfulRecordText(provided)
+    ? resolveHistoryRecordTemplate('familyHistory', provided, provided)
+    : DEFAULT_FAMILY_HISTORY_TEMPLATE;
 }
 
 function normalizeVitals(vitals?: string): string {
@@ -355,12 +386,15 @@ export function buildOutpatientRecord(input: BuildOutpatientRecordInput): Outpat
   const chiefComplaint = normalizeFreeText(input.chiefComplaint);
   const historyOfPresentIllness = normalizeFreeText(input.historyOfPresentIllness);
 
+  const menstrualHistory = buildMenstrualHistory(input);
+
   return {
     schemaVersion: OUTPATIENT_RECORD_SCHEMA_VERSION,
     chiefComplaint,
     historyOfPresentIllness,
     pastMedicalHistory: buildPastMedicalHistory(input, scenario),
     personalHistory: buildPersonalHistory(input),
+    ...(menstrualHistory ? { menstrualHistory } : {}),
     familyHistory: buildFamilyHistory(input),
     physicalExam: buildPhysicalExam(input, scenario),
     precautions: buildPrecautions(input, scenario),

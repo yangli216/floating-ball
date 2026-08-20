@@ -13,6 +13,8 @@ import {
   buildOutpatientRecord,
   assessTreatmentCatalogMatch,
   extractLLMJsonCandidate,
+  mergeStructuredNegativeSymptoms,
+  normalizeGeneratedClinicalRecordNarrative,
   type ClinicalResultGenerationSection,
   type ClinicalResultInput,
   type ClinicalResultMatchedDiagnosis,
@@ -149,67 +151,12 @@ function getTextList(value: unknown): string[] {
     .filter(Boolean);
 }
 
-function normalizeNegativeSymptomItem(value: string): string {
-  return value
-    .replace(/^(?:(?:否认|无|未诉|未见|未及|没有|不伴有|不伴|未伴有|未伴)\s*)+/u, '')
-    .replace(/[。；;，,、\s]*$/u, '')
-    .trim();
-}
-
-function hasNegativeSymptomMention(historyOfPresentIllness: string, symptom: string): boolean {
-  if (!historyOfPresentIllness || !symptom) {
-    return false;
-  }
-
-  const compactHistory = historyOfPresentIllness.replace(/\s+/gu, '');
-  const candidates = [
-    `否认${symptom}`,
-    `无${symptom}`,
-    `未诉${symptom}`,
-    `未见${symptom}`,
-    `未及${symptom}`,
-    `没有${symptom}`,
-    `不伴${symptom}`,
-    `不伴有${symptom}`,
-    `未伴${symptom}`,
-    `未伴有${symptom}`,
-  ];
-
-  return candidates.some((candidate) => compactHistory.includes(candidate.replace(/\s+/gu, '')));
-}
-
 function getHintSourceType(value: unknown): 'explicit' | 'inferred' | 'uncertain' {
   if (value === 'explicit' || value === 'inferred' || value === 'uncertain') {
     return value;
   }
 
   return 'explicit';
-}
-
-function appendNegativeSymptoms(historyOfPresentIllness: string, negativeSymptoms: string[]): string {
-  if (negativeSymptoms.length === 0) {
-    return historyOfPresentIllness;
-  }
-
-  const normalizedNegativeSymptoms = Array.from(new Set(
-    negativeSymptoms
-      .map((item) => normalizeNegativeSymptomItem(item))
-      .filter(Boolean),
-  ));
-
-  const missingNegativeSymptoms = normalizedNegativeSymptoms
-    .filter((item) => !hasNegativeSymptomMention(historyOfPresentIllness, item));
-
-  if (missingNegativeSymptoms.length === 0) {
-    return historyOfPresentIllness;
-  }
-
-  const negativeSentence = `否认${missingNegativeSymptoms.join('、')}。`;
-  if (!historyOfPresentIllness) {
-    return negativeSentence;
-  }
-
-  return `${historyOfPresentIllness.replace(/[。；;，,\s]*$/u, '')}。${negativeSentence}`;
 }
 
 function composePastMedicalHistory(recordDraft: VoiceRecordDraft): string {
@@ -427,23 +374,45 @@ function segregateTreatmentHints(hints: MatchedTreatment[]): TreatmentSegregatio
 
 function normalizeVoiceExtraction(parsed: VoiceExtractionResult): NormalizedVoiceExtractionResult {
   const recordDraft: VoiceRecordDraft = {
-    chiefComplaint: getText(parsed.recordDraft?.chiefComplaint || parsed.chiefComplaint),
-    historyOfPresentIllness: getText(parsed.recordDraft?.historyOfPresentIllness || parsed.historyOfPresentIllness),
-    pastMedicalHistory: getText(parsed.recordDraft?.pastMedicalHistory || parsed.pastMedicalHistory),
+    chiefComplaint: normalizeGeneratedClinicalRecordNarrative(
+      getText(parsed.recordDraft?.chiefComplaint || parsed.chiefComplaint),
+      'chiefComplaint',
+    ).text,
+    historyOfPresentIllness: normalizeGeneratedClinicalRecordNarrative(
+      getText(parsed.recordDraft?.historyOfPresentIllness || parsed.historyOfPresentIllness),
+      'historyOfPresentIllness',
+    ).text,
+    pastMedicalHistory: normalizeGeneratedClinicalRecordNarrative(
+      getText(parsed.recordDraft?.pastMedicalHistory || parsed.pastMedicalHistory),
+      'pastMedicalHistory',
+    ).text,
     allergyHistory: getText(parsed.recordDraft?.allergyHistory || parsed.allergyHistory),
     currentMedicationHistory: getText(parsed.recordDraft?.currentMedicationHistory || parsed.currentMedicationHistory),
-    personalHistory: getText(parsed.recordDraft?.personalHistory || parsed.personalHistory),
-    familyHistory: getText(parsed.recordDraft?.familyHistory || parsed.familyHistory),
+    personalHistory: normalizeGeneratedClinicalRecordNarrative(
+      getText(parsed.recordDraft?.personalHistory || parsed.personalHistory),
+      'personalHistory',
+    ).text,
+    menstrualHistory: normalizeGeneratedClinicalRecordNarrative(
+      getText(parsed.recordDraft?.menstrualHistory || parsed.menstrualHistory),
+      'menstrualHistory',
+    ).text,
+    familyHistory: normalizeGeneratedClinicalRecordNarrative(
+      getText(parsed.recordDraft?.familyHistory || parsed.familyHistory),
+      'familyHistory',
+    ).text,
     symptoms: getTextList(parsed.recordDraft?.symptoms || parsed.symptoms),
     negativeSymptoms: getTextList(parsed.recordDraft?.negativeSymptoms || parsed.negativeSymptoms),
     treatmentPlan: getText(parsed.recordDraft?.treatmentPlan || parsed.treatmentPlan),
-    healthEducation: getText(parsed.recordDraft?.healthEducation || parsed.healthEducation),
+    healthEducation: normalizeGeneratedClinicalRecordNarrative(
+      getText(parsed.recordDraft?.healthEducation || parsed.healthEducation),
+      'precautions',
+    ).text,
   };
 
-  recordDraft.historyOfPresentIllness = appendNegativeSymptoms(
+  recordDraft.historyOfPresentIllness = mergeStructuredNegativeSymptoms(
     recordDraft.historyOfPresentIllness,
     recordDraft.negativeSymptoms || [],
-  );
+  ).text;
 
   const explicitHints = normalizeTreatmentHints(
     parsed.explicitTreatmentHints
@@ -493,6 +462,9 @@ function validateVoiceExtractionPayload(payload: unknown): string[] {
       }
       if (typeof recordDraftObject.personalHistory !== 'undefined' && typeof recordDraftObject.personalHistory !== 'string') {
         issues.push('recordDraft.personalHistory 必须是 string');
+      }
+      if (typeof recordDraftObject.menstrualHistory !== 'undefined' && typeof recordDraftObject.menstrualHistory !== 'string') {
+        issues.push('recordDraft.menstrualHistory 必须是 string');
       }
       if (typeof recordDraftObject.familyHistory !== 'undefined' && typeof recordDraftObject.familyHistory !== 'string') {
         issues.push('recordDraft.familyHistory 必须是 string');
@@ -673,6 +645,7 @@ export function useVoiceIntentRecognition() {
     generationStatus: 'streaming' | 'complete',
     readySections: ClinicalResultGenerationSection[] = [],
     resolvedTreatments?: MatchedTreatment[],
+    patientGender?: string,
   ): {
     intentResult: VoiceIntentResult;
     matchedDiagnoses: MatchedDiagnosis[];
@@ -694,6 +667,7 @@ export function useVoiceIntentRecognition() {
       currentMedicationHistory,
     });
     const personalHistory = normalizedExtraction.recordDraft.personalHistory || '';
+    const menstrualHistory = normalizedExtraction.recordDraft.menstrualHistory || '';
     const familyHistory = normalizedExtraction.recordDraft.familyHistory || '';
     const plan = normalizedExtraction.recommendationPlan;
     const autoFetchTreatments = plan.mode !== 'explicit_only' && plan.mode !== 'urgent_referral';
@@ -704,6 +678,7 @@ export function useVoiceIntentRecognition() {
       pastMedicalHistory,
       allergyHistory: normalizedExtraction.recordDraft.allergyHistory || '',
       currentMedicationHistory,
+      ...(menstrualHistory ? { menstrualHistory } : {}),
       familyHistory,
       symptoms: normalizedExtraction.recordDraft.symptoms || [],
       negativeSymptoms: normalizedExtraction.recordDraft.negativeSymptoms || [],
@@ -720,9 +695,12 @@ export function useVoiceIntentRecognition() {
         chiefComplaint: normalizedExtraction.recordDraft.chiefComplaint,
         historyOfPresentIllness: normalizedExtraction.recordDraft.historyOfPresentIllness,
         pastMedicalHistory,
+        allergyHistory: normalizedExtraction.recordDraft.allergyHistory,
         personalHistory,
+        menstrualHistory,
         familyHistory,
         diagnosisNames: matchedDiagnoses.map((item) => item.name),
+        patientGender,
       }),
       recommendationPolicy: {
         autoFetchTreatments: generationStatus === 'complete' && autoFetchTreatments,
@@ -757,7 +735,9 @@ export function useVoiceIntentRecognition() {
         allergyHistory?: string | null;
         currentMedicationHistory?: string | null;
         personalHistory?: string | null;
+        menstrualHistory?: string | null;
         familyHistory?: string | null;
+        gender?: string | null;
       };
       consultationId?: string;
       onProgress?: (progress: VoiceIntentProgress) => void;
@@ -810,22 +790,26 @@ export function useVoiceIntentRecognition() {
       const ctxPmh = cleanCtx(patientCtx?.pastMedicalHistory);
       const ctxMed = cleanCtx(patientCtx?.currentMedicationHistory);
       const ctxPersonal = cleanCtx(patientCtx?.personalHistory);
+      const isFemalePatient = /^(?:F|2|女)/iu.test((patientCtx?.gender || '').trim());
+      const ctxMenstrual = isFemalePatient ? cleanCtx(patientCtx?.menstrualHistory) : '';
       const ctxFamily = cleanCtx(patientCtx?.familyHistory);
-      if (ctxAllergy || ctxPmh || ctxMed || ctxPersonal || ctxFamily) {
+      if (ctxAllergy || ctxPmh || ctxMed || ctxPersonal || ctxMenstrual || ctxFamily) {
         patientContextLines.push('【患者已有档案信息】');
         if (ctxAllergy) patientContextLines.push(`过敏史：${ctxAllergy}`);
         if (ctxPmh) patientContextLines.push(`既往史：${ctxPmh}`);
         if (ctxMed) patientContextLines.push(`长期用药：${ctxMed}`);
         if (ctxPersonal) patientContextLines.push(`个人史：${ctxPersonal}`);
+        if (ctxMenstrual) patientContextLines.push(`月经史：${ctxMenstrual}`);
         if (ctxFamily) patientContextLines.push(`家族史：${ctxFamily}`);
         patientContextLines.push(
-          '请在 recordDraft 中保留以上档案信息：若对话未明确撤销或修订，必须原样保留对应字段，不要因为对话未提及就改写为"无特殊"。既往史仅记录慢性病、手术史、外伤史等长期健康信息，不要将门诊就诊流水写入既往史；个人史与家族史必须分别放入对应字段。'
+          '请在 recordDraft 中保留以上档案信息：若对话未明确撤销或修订，必须原样保留对应字段，不要因为对话未提及就改写为"无特殊"。既往史仅记录慢性病、手术史、外伤史等长期健康信息，不要将门诊就诊流水写入既往史；个人史、女性月经史与家族史必须分别放入对应字段。'
         );
       }
       const patientContextBlock = patientContextLines.length ? `\n${patientContextLines.join('\n')}` : '';
       const normalizeWithKnownHistories = (payload: VoiceExtractionResult): NormalizedVoiceExtractionResult => {
         const normalized = normalizeVoiceExtraction(payload);
         normalized.recordDraft.personalHistory ||= ctxPersonal;
+        normalized.recordDraft.menstrualHistory ||= ctxMenstrual;
         normalized.recordDraft.familyHistory ||= ctxFamily;
         return normalized;
       };
@@ -862,6 +846,8 @@ export function useVoiceIntentRecognition() {
           partialExtraction,
           'streaming',
           streamAccumulator.readySections,
+          undefined,
+          patientCtx?.gender || undefined,
         );
         options.onProgress({
           result: partial.intentResult,
@@ -919,6 +905,7 @@ export function useVoiceIntentRecognition() {
         'complete',
         streamAccumulator.readySections,
         resolvedTreatments,
+        patientCtx?.gender || undefined,
       );
       const {
         intentResult,

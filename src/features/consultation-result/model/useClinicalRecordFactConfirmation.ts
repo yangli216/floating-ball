@@ -21,6 +21,8 @@ export interface ClinicalRecordFactConfirmationOptions {
   }) => Promise<string>;
   formatError: (error: unknown) => string;
   notify?: (message: string, type?: string) => void;
+  mergeSuggestionIntoRecord: (suggestion: ClinicalRecordFactSuggestion) => boolean;
+  onRecordChanged?: (suggestions: readonly ClinicalRecordFactSuggestion[]) => void;
 }
 
 export function useClinicalRecordFactConfirmation(options: ClinicalRecordFactConfirmationOptions) {
@@ -35,6 +37,14 @@ export function useClinicalRecordFactConfirmation(options: ClinicalRecordFactCon
     options.getPositiveSymptoms?.() || [],
   ));
   const explicitFacts = computed<ClinicalRecordExplicitFact[]>(() => extractedFacts.value);
+
+  function mergePendingSuggestions(items: readonly ClinicalRecordFactSuggestion[]): void {
+    const merged = items.filter((item) => (
+      item.status === 'pending' && options.mergeSuggestionIntoRecord(item)
+    ));
+    if (merged.length > 0) options.onRecordChanged?.(merged);
+  }
+
   async function generateSuggestions(): Promise<void> {
     const currentRequest = ++requestSequence;
     loading.value = true;
@@ -46,7 +56,9 @@ export function useClinicalRecordFactConfirmation(options: ClinicalRecordFactCon
         explicitFacts: explicitFacts.value,
       });
       if (currentRequest !== requestSequence) return;
-      suggestions.value = normalizeClinicalRecordFactSuggestions(response, explicitFacts.value);
+      const nextSuggestions = normalizeClinicalRecordFactSuggestions(response, explicitFacts.value);
+      mergePendingSuggestions(nextSuggestions);
+      suggestions.value = nextSuggestions;
     } catch (cause) {
       if (currentRequest !== requestSequence) return;
       error.value = options.formatError(cause);
@@ -81,7 +93,7 @@ export function useClinicalRecordFactConfirmation(options: ClinicalRecordFactCon
       'familyHistory',
       'physicalExam',
     ]);
-    suggestions.value = value
+    const restored = value
       .filter((item): item is ClinicalRecordFactSuggestion => Boolean(
         item
         && typeof item === 'object'
@@ -93,6 +105,8 @@ export function useClinicalRecordFactConfirmation(options: ClinicalRecordFactCon
         && (item.status === 'pending' || item.status === 'dismissed')
       ))
       .map((item) => ({ ...item }));
+    mergePendingSuggestions(restored);
+    suggestions.value = restored;
   }
 
   function reset(): void {

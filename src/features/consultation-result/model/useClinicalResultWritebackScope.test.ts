@@ -18,6 +18,7 @@ function createFixture() {
     historyOfPresentIllness: '受凉后咳嗽。',
     pastMedicalHistory: '平素体健。',
     personalHistory: '',
+    menstrualHistory: '',
     familyHistory: '否认家族遗传病史。',
     physicalExam: '双肺呼吸音清。',
     precautions: '注意休息。',
@@ -79,6 +80,43 @@ describe('useClinicalResultWritebackScope', () => {
     const personalHistory = scope.recordFieldOptions.value.find((item) => item.key === 'personalHistory');
     expect(personalHistory).toMatchObject({ available: true, selected: false, isNew: true });
     expect(scope.writebackScope.value.recordFields).not.toContain('personalHistory');
+  });
+
+  it('selects a newly migrated AI field after restoring an uncustomized legacy scope', () => {
+    const { record, scope } = createFixture();
+
+    scope.restore({
+      recordFields: [
+        'chiefComplaint',
+        'historyOfPresentIllness',
+        'pastMedicalHistory',
+        'familyHistory',
+        'physicalExam',
+        'precautions',
+      ],
+      includeDiagnosis: true,
+      includeMedicine: true,
+      includeClinicalOrders: true,
+      customized: false,
+    });
+    record.personalHistory = '否认吸烟史。';
+    scope.refreshAvailableContent();
+
+    expect(scope.writebackScope.value.recordFields).toContain('personalHistory');
+  });
+
+  it('exposes menstrual history as a separately selectable record field when it has content', () => {
+    const { record, scope } = createFixture();
+
+    record.menstrualHistory = '周期28天，经期5天。';
+    scope.refreshAvailableContent();
+
+    expect(scope.recordFieldOptions.value.find((item) => item.key === 'menstrualHistory')).toMatchObject({
+      label: '月经史',
+      available: true,
+      selected: true,
+    });
+    expect(scope.writebackScope.value.recordFields).toContain('menstrualHistory');
   });
 
   it('filters treatments by the two selected order groups', () => {

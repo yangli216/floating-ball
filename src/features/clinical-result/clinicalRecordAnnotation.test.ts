@@ -2,6 +2,8 @@ import { describe, expect, it } from 'vitest';
 import {
   applyClinicalRecordSuggestionEdit,
   buildClinicalRecordAnnotationSegments,
+  isClinicalRecordSuggestionInRecord,
+  mergeClinicalRecordSuggestionIntoText,
 } from './clinicalRecordAnnotation';
 import type {
   ClinicalRecordExplicitFact,
@@ -83,6 +85,29 @@ describe('clinicalRecordAnnotation', () => {
     ]);
   });
 
+  it('marks a single-term candidate inside a grouped negative sentence', () => {
+    const text = '患者咽痛3天，无鼻塞、流涕。';
+    const suggestions: ClinicalRecordFactSuggestion[] = [{
+      id: 'check-rhinorrhea',
+      field: 'historyOfPresentIllness',
+      question: '是否伴流涕？',
+      negativeRecordText: '无流涕',
+      rationale: '核查上呼吸道伴随症状',
+      priority: 'general',
+      status: 'pending',
+    }];
+
+    const segments = buildClinicalRecordAnnotationSegments(text, [], suggestions);
+
+    expect(segments.map((item) => item.text).join('')).toBe(text);
+    expect(segments.filter((item) => item.kind === 'suggestion')).toEqual([
+      expect.objectContaining({
+        text: '无鼻塞、流涕',
+        suggestion: expect.objectContaining({ id: 'check-rhinorrhea' }),
+      }),
+    ]);
+  });
+
   it('does not match a positive sentence as an existing negative candidate', () => {
     const text = '患者胸痛伴呼吸困难。';
     const suggestions: ClinicalRecordFactSuggestion[] = [{
@@ -116,13 +141,14 @@ describe('clinicalRecordAnnotation', () => {
 
     expect(segment?.kind).toBe('suggestion');
     if (!segment || segment.kind !== 'suggestion') return;
+    expect(isClinicalRecordSuggestionInRecord(text, segment)).toBe(true);
     expect(applyClinicalRecordSuggestionEdit(text, segment, '否认胸痛，但活动后稍感气促')).toBe(
       '患者咳嗽，否认胸痛，但活动后稍感气促。',
     );
     expect(applyClinicalRecordSuggestionEdit(text, segment, '')).toBe('患者咳嗽。');
   });
 
-  it('only appends an unmatched reading-layer candidate after explicit application', () => {
+  it('merges an unmatched AI candidate into the persisted record by default and remains idempotent', () => {
     const suggestion: ClinicalRecordFactSuggestion = {
       id: 'check-medication',
       field: 'historyOfPresentIllness',
@@ -132,11 +158,24 @@ describe('clinicalRecordAnnotation', () => {
       priority: 'critical',
       status: 'pending',
     };
-    const segment = { kind: 'suggestion' as const, text: suggestion.negativeRecordText, suggestion };
+    const merged = mergeClinicalRecordSuggestionIntoText('血压控制平稳。', suggestion);
 
-    expect(applyClinicalRecordSuggestionEdit('血压控制平稳。', segment, '')).toBe('血压控制平稳。');
-    expect(applyClinicalRecordSuggestionEdit('血压控制平稳。', segment, '目前未使用利尿剂')).toBe(
-      '血压控制平稳。目前未使用利尿剂。',
-    );
+    expect(merged).toBe('血压控制平稳。目前未服用噻嗪类或袢利尿剂。');
+    expect(mergeClinicalRecordSuggestionIntoText(merged, suggestion)).toBe(merged);
+  });
+
+  it('does not append a candidate already covered by a grouped negative sentence', () => {
+    const suggestion: ClinicalRecordFactSuggestion = {
+      id: 'check-rhinorrhea',
+      field: 'historyOfPresentIllness',
+      question: '是否伴流涕？',
+      negativeRecordText: '无流涕',
+      rationale: '核查伴随症状',
+      priority: 'general',
+      status: 'pending',
+    };
+    const record = '患者咽痛3天，无鼻塞、流涕。';
+
+    expect(mergeClinicalRecordSuggestionIntoText(record, suggestion)).toBe(record);
   });
 });

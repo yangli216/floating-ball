@@ -7,6 +7,13 @@ import {
   validateOutpatientRecord,
 } from './outpatientRecord';
 import { buildRecordConfirmedPayload } from './recordConfirmedPayload';
+import { mergeClinicalRecordSuggestionIntoText } from './clinicalRecordAnnotation';
+import type { ClinicalRecordFactSuggestion } from './clinicalRecordFactConfirmation';
+import {
+  collectHistoryRecordTemplateChanges,
+  resolveHistoryRecordTemplate,
+  stripHistoryRecordTemplateMarkers,
+} from './historyRecordTemplates';
 
 describe('outpatientRecord', () => {
   it('prefills standard history templates while keeping unsupported examination facts empty', () => {
@@ -17,9 +24,9 @@ describe('outpatientRecord', () => {
     });
 
     expect(record.schemaVersion).toBe(OUTPATIENT_RECORD_SCHEMA_VERSION);
-    expect(record.pastMedicalHistory).toContain('否认高血压病史');
-    expect(record.personalHistory).toContain('否认吸烟史');
-    expect(record.familyHistory).toContain('否认家族重大遗传病史');
+    expect(record.pastMedicalHistory).toContain('{否认}高血压病史');
+    expect(record.personalHistory).toContain('{否认}吸烟史');
+    expect(record.familyHistory).toContain('{否认}家族重大遗传病史');
     expect(record.physicalExam).toBe('');
     expect(record.physicalExam).not.toMatch(/体温|血压|脉搏|呼吸\d/u);
     expect(record).not.toHaveProperty('diagnosisText');
@@ -32,9 +39,9 @@ describe('outpatientRecord', () => {
       diagnosisNames: ['原发性高血压'],
     });
 
-    expect(record.pastMedicalHistory).toContain('既往有原发性高血压病史');
-    expect(record.pastMedicalHistory).not.toContain('否认高血压');
-    expect(record.pastMedicalHistory).toContain('否认手术史');
+    expect(record.pastMedicalHistory).toContain('{有}高血压病史');
+    expect(record.pastMedicalHistory).not.toContain('{否认}高血压病史');
+    expect(record.pastMedicalHistory).toContain('{否认}手术史');
     expect(validateOutpatientRecord(record, {
       chiefComplaint: '高血压复诊配药',
       historyOfPresentIllness: '患者既往高血压多年，规律服药，今来续方。',
@@ -42,6 +49,75 @@ describe('outpatientRecord', () => {
     })).not.toEqual(expect.arrayContaining([
       expect.objectContaining({ severity: 'error', field: 'pastMedicalHistory' }),
     ]));
+  });
+
+  it('changes only explicitly positive fixed-template slots', () => {
+    const pastHistory = resolveHistoryRecordTemplate(
+      'pastMedicalHistory',
+      '既往有高血压病史10年，否认糖尿病史。',
+    );
+
+    expect(pastHistory).toContain('{有}高血压病史');
+    expect(pastHistory).toContain('{否认}糖尿病史');
+    expect(pastHistory).toContain('{否认}心脏病史');
+    expect(stripHistoryRecordTemplateMarkers(pastHistory)).toContain('有高血压病史');
+    expect(collectHistoryRecordTemplateChanges({ pastMedicalHistory: pastHistory })).toEqual({
+      schemaVersion: 'outpatient-record-template-changes.v1',
+      items: [expect.objectContaining({
+        field: 'pastMedicalHistory',
+        slotKey: 'hypertensionHistory',
+        fromValue: '否认',
+        toValue: '有',
+      })],
+    });
+  });
+
+  it('keeps grouped negative history slots negative while honoring a later explicit positive', () => {
+    const pastHistory = resolveHistoryRecordTemplate(
+      'pastMedicalHistory',
+      '否认高血压、糖尿病史，但确诊有心脏病史。',
+    );
+
+    expect(pastHistory).toContain('{否认}高血压病史');
+    expect(pastHistory).toContain('{否认}糖尿病史');
+    expect(pastHistory).toContain('{有}心脏病史');
+  });
+
+  it('maps an explicit standalone allergy history into the fixed past-history slot', () => {
+    const record = buildOutpatientRecord({
+      chiefComplaint: '咳嗽3天',
+      historyOfPresentIllness: '患者咳嗽3天。',
+      allergyHistory: '青霉素过敏。',
+      diagnosisNames: ['急性上呼吸道感染'],
+    });
+
+    expect(record.pastMedicalHistory).toContain('{有}食品、药品过敏史');
+    expect(collectHistoryRecordTemplateChanges(record)).toEqual(expect.objectContaining({
+      items: [expect.objectContaining({ slotKey: 'foodDrugAllergyHistory' })],
+    }));
+  });
+
+  it('keeps explicit menstrual history only for a non-male patient without inventing defaults', () => {
+    const femaleRecord = buildOutpatientRecord({
+      chiefComplaint: '下腹不适2天',
+      historyOfPresentIllness: '患者下腹不适2天。',
+      menstrualHistory: '月经史：周期28天，经期5天，末次月经2026-08-05。',
+      patientGender: '女性',
+    });
+    const maleRecord = buildOutpatientRecord({
+      chiefComplaint: '腹痛2天',
+      historyOfPresentIllness: '患者腹痛2天。',
+      menstrualHistory: '不应保留',
+      patientGender: '男性',
+    });
+
+    expect(femaleRecord.menstrualHistory).toBe('周期28天，经期5天，末次月经2026-08-05。');
+    expect(maleRecord).not.toHaveProperty('menstrualHistory');
+    expect(buildOutpatientRecord({
+      chiefComplaint: '头痛1天',
+      historyOfPresentIllness: '患者头痛1天。',
+      patientGender: '女性',
+    })).not.toHaveProperty('menstrualHistory');
   });
 
   it('flags diagnosisText leakage and left-right mismatch risks', () => {
@@ -135,6 +211,41 @@ describe('outpatientRecord', () => {
 });
 
 describe('buildRecordConfirmedPayload outpatientRecord', () => {
+  it('includes a merged AI record segment in one-click writeback when its field is selected', () => {
+    const suggestion: ClinicalRecordFactSuggestion = {
+      id: 'ai-check-chest-pain',
+      field: 'historyOfPresentIllness',
+      question: '是否伴胸痛？',
+      negativeRecordText: '否认胸痛',
+      rationale: '核查急性冠脉事件风险',
+      priority: 'critical',
+      status: 'pending',
+    };
+    const historyOfPresentIllness = mergeClinicalRecordSuggestionIntoText(
+      '患者胸闷1天。',
+      suggestion,
+    );
+    const payload = buildRecordConfirmedPayload({
+      consultationId: 'consultation-ai-writeback',
+      chiefComplaint: '胸闷1天',
+      historyOfPresentIllness,
+      pastMedicalHistory: '平素体健。',
+      diagList: [],
+      orderList: [],
+      writebackScope: {
+        recordFields: ['historyOfPresentIllness'],
+        includeDiagnosis: false,
+        orderTypes: [],
+      },
+    });
+
+    expect(payload.historyOfPresentIllness).toBe('患者胸闷1天。否认胸痛。');
+    expect(payload.outpatientRecord).toEqual({
+      schemaVersion: OUTPATIENT_RECORD_SCHEMA_VERSION,
+      historyOfPresentIllness: '患者胸闷1天。否认胸痛。',
+    });
+  });
+
   it('adds a full outpatientRecord while keeping diagnosis source in diagList', () => {
     const payload = buildRecordConfirmedPayload({
       consultationId: 'consultation-1',
@@ -250,6 +361,88 @@ describe('buildRecordConfirmedPayload outpatientRecord', () => {
     expect(payload.outpatientRecord).toEqual({
       schemaVersion: OUTPATIENT_RECORD_SCHEMA_VERSION,
       precautions: '注意休息。',
+    });
+  });
+
+  it('writes selected female menstrual history to both compatibility locations and omits it for males', () => {
+    const femalePayload = buildRecordConfirmedPayload({
+      consultationId: 'consultation-menstrual-history',
+      chiefComplaint: '下腹不适2天',
+      historyOfPresentIllness: '患者下腹不适2天。',
+      pastMedicalHistory: '平素体健。',
+      menstrualHistory: '周期28天，经期5天，末次月经2026-08-05。',
+      patientGender: '女性',
+      diagList: [],
+      orderList: [],
+      writebackScope: {
+        recordFields: ['menstrualHistory'],
+        includeDiagnosis: false,
+        orderTypes: [],
+      },
+    });
+    const malePayload = buildRecordConfirmedPayload({
+      consultationId: 'consultation-male-menstrual-history',
+      chiefComplaint: '腹痛2天',
+      historyOfPresentIllness: '患者腹痛2天。',
+      pastMedicalHistory: '平素体健。',
+      menstrualHistory: '不应保留',
+      patientGender: '男性',
+      diagList: [],
+      orderList: [],
+      writebackScope: {
+        recordFields: ['menstrualHistory'],
+        includeDiagnosis: false,
+        orderTypes: [],
+      },
+    });
+
+    expect(femalePayload.menstrualHistory).toBe('周期28天，经期5天，末次月经2026-08-05。');
+    expect(femalePayload.outpatientRecord).toEqual({
+      schemaVersion: OUTPATIENT_RECORD_SCHEMA_VERSION,
+      menstrualHistory: '周期28天，经期5天，末次月经2026-08-05。',
+    });
+    expect(malePayload).not.toHaveProperty('menstrualHistory');
+    expect(malePayload.outpatientRecord).toEqual({
+      schemaVersion: OUTPATIENT_RECORD_SCHEMA_VERSION,
+    });
+  });
+
+  it('writes plain history text plus scoped structured template changes', () => {
+    const pastMedicalHistory = resolveHistoryRecordTemplate(
+      'pastMedicalHistory',
+      '患者既往有高血压病史，否认糖尿病史。',
+    );
+    const personalHistory = resolveHistoryRecordTemplate(
+      'personalHistory',
+      '吸烟20年。',
+    );
+    const payload = buildRecordConfirmedPayload({
+      consultationId: 'consultation-template-slots',
+      chiefComplaint: '头晕1天',
+      historyOfPresentIllness: '患者头晕1天。',
+      pastMedicalHistory,
+      outpatientRecord: { pastMedicalHistory, personalHistory },
+      diagList: [],
+      orderList: [],
+      writebackScope: {
+        recordFields: ['pastMedicalHistory'],
+        includeDiagnosis: false,
+        orderTypes: [],
+      },
+    });
+
+    expect(payload.pastMedicalHistory).toContain('有高血压病史');
+    expect(payload.pastMedicalHistory).not.toContain('{');
+    expect(payload.outpatientRecord).toEqual(expect.objectContaining({
+      pastMedicalHistory: expect.not.stringContaining('{'),
+    }));
+    expect(payload.recordTemplateChanges).toEqual({
+      schemaVersion: 'outpatient-record-template-changes.v1',
+      items: [expect.objectContaining({
+        field: 'pastMedicalHistory',
+        slotKey: 'hypertensionHistory',
+        replacementMarker: '{有}高血压病史',
+      })],
     });
   });
 });

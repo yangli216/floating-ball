@@ -10,6 +10,7 @@ const currentRecord: ClinicalResultRegenerationRecord = {
   historyOfPresentIllness: '3天前出现咳嗽，无发热。',
   pastMedicalHistory: '否认高血压病史。',
   personalHistory: '无特殊。',
+  menstrualHistory: '周期28天，经期5天。',
   familyHistory: '无特殊。',
   physicalExam: '咽部稍红。',
   precautions: '病情加重及时复诊。',
@@ -28,6 +29,8 @@ describe('clinical result regeneration', () => {
     expect(spec.messages[0]?.content).toContain('医生补充信息的事实优先级高于当前草稿');
     expect(spec.messages[1]?.content).toContain('患者补充昨晚发热，最高38.6℃。');
     expect(spec.messages[1]?.content).toContain('咳嗽3天');
+    expect(spec.messages[0]?.content).toContain('不得编造');
+    expect(spec.messages[1]?.content).toContain('月经史仅适用于女性患者');
     expect(spec.config.traceContext).toMatchObject({
       scene: 'clinical-result-regeneration',
       sourceModule: 'symptom_consultation_result',
@@ -58,6 +61,17 @@ describe('clinical result regeneration', () => {
       historyOfPresentIllness: '3天前出现咳嗽，昨晚发热，最高38.6℃。',
       physicalExam: '咽部充血。',
     });
+  });
+
+  it('cleans workflow prompts and repeated sentences from regenerated fields', () => {
+    const normalized = normalizeClinicalResultRegenerationOutput({
+      chiefComplaint: '咳嗽3天',
+      historyOfPresentIllness: '患者咳嗽3天，其他情况待医生补充完善。否认发热。否认发热。',
+      pastMedicalHistory: '待医生核实。',
+    }, currentRecord);
+
+    expect(normalized.historyOfPresentIllness).toBe('患者咳嗽3天。否认发热。');
+    expect(normalized.pastMedicalHistory).toBe(currentRecord.pastMedicalHistory);
   });
 
   it('rejects malformed output instead of replacing the working result', () => {

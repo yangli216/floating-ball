@@ -11,6 +11,20 @@ export type {
   ClinicalResultRegenerationRecord,
   ClinicalResultRegenerationRequestSpec,
 } from './clinicalResultRegeneration';
+export {
+  extractNegativeClinicalTerms,
+  getClinicalTermPolarity,
+  isNegativeClinicalStatementCovered,
+  mergeStructuredNegativeSymptoms,
+  normalizeGeneratedClinicalRecordNarrative,
+} from './clinicalRecordNarrativeQuality';
+export type {
+  ClinicalRecordNarrativeField,
+  ClinicalRecordNarrativeIssueCode,
+  ClinicalRecordNarrativeQualityIssue,
+  ClinicalRecordNarrativeQualityResult,
+  ClinicalTermPolarity,
+} from './clinicalRecordNarrativeQuality';
 export type {
   ClinicalResultRecordInput,
   SymptomClinicalResultInput,
@@ -66,6 +80,8 @@ export type {
 export {
   applyClinicalRecordSuggestionEdit,
   buildClinicalRecordAnnotationSegments,
+  isClinicalRecordSuggestionInRecord,
+  mergeClinicalRecordSuggestionIntoText,
 } from './clinicalRecordAnnotation';
 export type {
   ClinicalRecordAnnotationFactSegment,
@@ -101,9 +117,18 @@ export {
   DEFAULT_HEALTH_EXAM_PAST_MEDICAL_HISTORY_TEMPLATE,
   DEFAULT_PAST_MEDICAL_HISTORY_TEMPLATE,
   DEFAULT_PERSONAL_HISTORY_TEMPLATE,
+  HISTORY_RECORD_TEMPLATE_CHANGE_SCHEMA_VERSION,
+  collectHistoryRecordTemplateChanges,
+  getDefaultHistoryRecordTemplate,
   isHistoryRecordTemplate,
+  resolveHistoryRecordTemplate,
+  stripHistoryRecordTemplateMarkers,
 } from './historyRecordTemplates';
-export type { HistoryRecordTemplateField } from './historyRecordTemplates';
+export type {
+  HistoryRecordTemplateChanges,
+  HistoryRecordTemplateField,
+  HistoryRecordTemplateSlotChange,
+} from './historyRecordTemplates';
 
 export {
   buildBodySiteUsageOptions,

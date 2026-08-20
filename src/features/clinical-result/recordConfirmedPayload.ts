@@ -16,6 +16,11 @@ import {
   buildOutpatientRecord,
   type OutpatientRecord,
 } from './outpatientRecord';
+import {
+  collectHistoryRecordTemplateChanges,
+  stripHistoryRecordTemplateMarkers,
+  type HistoryRecordTemplateField,
+} from './historyRecordTemplates';
 
 // ===== 通用小工具（与语音侧 readFirstString / toPositiveNumber 同源） =====
 
@@ -342,6 +347,7 @@ export const RECORD_CONFIRMED_WRITEBACK_FIELDS = [
   'historyOfPresentIllness',
   'pastMedicalHistory',
   'personalHistory',
+  'menstrualHistory',
   'familyHistory',
   'physicalExam',
   'precautions',
@@ -368,9 +374,11 @@ export interface BuildRecordConfirmedPayloadInput {
   familyHistory?: string;
   outpatientRecord?: Partial<OutpatientRecord>;
   personalHistory?: string;
+  menstrualHistory?: string;
   physicalExam?: string;
   precautions?: string;
   vitals?: string;
+  patientGender?: string;
   /** 已构造好的 diagList（调用 buildDiagList 得到） */
   diagList: Array<Record<string, string>>;
   /** 已构造好的 orderList（调用 buildOrderListItem 得到） */
@@ -397,9 +405,11 @@ export function buildRecordConfirmedPayload(
     familyHistory,
     outpatientRecord,
     personalHistory,
+    menstrualHistory,
     physicalExam,
     precautions,
     vitals,
+    patientGender,
     diagList,
     orderList,
     treatmentPlan,
@@ -414,24 +424,46 @@ export function buildRecordConfirmedPayload(
         historyOfPresentIllness: outpatientRecord?.historyOfPresentIllness || historyOfPresentIllness,
         pastMedicalHistory: outpatientRecord?.pastMedicalHistory || pastMedicalHistory,
         personalHistory: outpatientRecord?.personalHistory || personalHistory,
+        menstrualHistory: outpatientRecord?.menstrualHistory || menstrualHistory,
         familyHistory: resolvedFamilyHistory,
         physicalExam: outpatientRecord?.physicalExam || physicalExam,
         precautions: outpatientRecord?.precautions || precautions,
         vitals,
         diagnosisNames: diagList.map((item) => item.naDiag).filter(Boolean),
+        patientGender,
       })
     : undefined;
   const isScopedWriteback = resultType === 'record-confirmed' && Boolean(writebackScope);
   const selectedRecordFields = new Set<RecordConfirmedWritebackField>(
     isScopedWriteback ? writebackScope?.recordFields || [] : RECORD_CONFIRMED_WRITEBACK_FIELDS,
   );
-  const outpatientRecordPayload = fullOutpatientRecord && selectedRecordFields.size > 0
-    ? RECORD_CONFIRMED_WRITEBACK_FIELDS.reduce<Record<string, string>>((record, field) => {
-        if (selectedRecordFields.has(field)) record[field] = fullOutpatientRecord[field];
+  const writebackOutpatientRecord = fullOutpatientRecord
+    ? RECORD_CONFIRMED_WRITEBACK_FIELDS.reduce<OutpatientRecord>((record, field) => {
+        const value = fullOutpatientRecord[field] || '';
+        record[field] = stripHistoryRecordTemplateMarkers(value);
         return record;
-      }, { schemaVersion: fullOutpatientRecord.schemaVersion })
+      }, { ...fullOutpatientRecord })
     : undefined;
-  const resolvedPrecautions = fullOutpatientRecord?.precautions || precautions || '';
+  const outpatientRecordPayload = writebackOutpatientRecord && selectedRecordFields.size > 0
+    ? RECORD_CONFIRMED_WRITEBACK_FIELDS.reduce<Record<string, string>>((record, field) => {
+        const value = writebackOutpatientRecord[field] || '';
+        if (selectedRecordFields.has(field) && (field !== 'menstrualHistory' || value.trim())) {
+          record[field] = value;
+        }
+        return record;
+      }, { schemaVersion: writebackOutpatientRecord.schemaVersion })
+    : undefined;
+  const selectedHistoryTemplateFields = (['pastMedicalHistory', 'personalHistory', 'familyHistory'] as const)
+    .filter((field): field is HistoryRecordTemplateField => selectedRecordFields.has(field));
+  const recordTemplateChanges = fullOutpatientRecord
+    ? collectHistoryRecordTemplateChanges(fullOutpatientRecord, selectedHistoryTemplateFields)
+    : undefined;
+  const resolvedChiefComplaint = writebackOutpatientRecord?.chiefComplaint || chiefComplaint;
+  const resolvedHistoryOfPresentIllness = writebackOutpatientRecord?.historyOfPresentIllness || historyOfPresentIllness;
+  const resolvedPastMedicalHistory = writebackOutpatientRecord?.pastMedicalHistory || stripHistoryRecordTemplateMarkers(pastMedicalHistory);
+  const resolvedMenstrualHistory = writebackOutpatientRecord?.menstrualHistory || '';
+  const resolvedWritebackFamilyHistory = writebackOutpatientRecord?.familyHistory || stripHistoryRecordTemplateMarkers(resolvedFamilyHistory);
+  const resolvedPrecautions = writebackOutpatientRecord?.precautions || precautions || '';
   const includeDiagnosis = !isScopedWriteback || Boolean(writebackScope?.includeDiagnosis);
   const includeOrders = !isScopedWriteback || Boolean(writebackScope?.orderTypes.length);
   // PHIS 会直接遍历 orderList；未选医嘱时仍传空数组，并由空 orderTypes 表达“不处理”。
@@ -442,11 +474,14 @@ export function buildRecordConfirmedPayload(
     timestamp,
     resultType,
     ...(requestId ? { requestId } : {}),
-    ...(!isScopedWriteback || selectedRecordFields.has('chiefComplaint') ? { chiefComplaint } : {}),
-    ...(!isScopedWriteback || selectedRecordFields.has('historyOfPresentIllness') ? { historyOfPresentIllness } : {}),
-    ...(!isScopedWriteback || selectedRecordFields.has('pastMedicalHistory') ? { pastMedicalHistory } : {}),
-    ...((!isScopedWriteback || selectedRecordFields.has('familyHistory')) && resolvedFamilyHistory
-      ? { familyHistory: resolvedFamilyHistory }
+    ...(!isScopedWriteback || selectedRecordFields.has('chiefComplaint') ? { chiefComplaint: resolvedChiefComplaint } : {}),
+    ...(!isScopedWriteback || selectedRecordFields.has('historyOfPresentIllness') ? { historyOfPresentIllness: resolvedHistoryOfPresentIllness } : {}),
+    ...(!isScopedWriteback || selectedRecordFields.has('pastMedicalHistory') ? { pastMedicalHistory: resolvedPastMedicalHistory } : {}),
+    ...((!isScopedWriteback || selectedRecordFields.has('menstrualHistory')) && resolvedMenstrualHistory
+      ? { menstrualHistory: resolvedMenstrualHistory }
+      : {}),
+    ...((!isScopedWriteback || selectedRecordFields.has('familyHistory')) && resolvedWritebackFamilyHistory
+      ? { familyHistory: resolvedWritebackFamilyHistory }
       : {}),
     ...((!isScopedWriteback || selectedRecordFields.has('precautions')) && resultType === 'record-confirmed'
       ? { precautions: resolvedPrecautions }
@@ -456,6 +491,7 @@ export function buildRecordConfirmedPayload(
     ...(treatmentPlan && includeOrders ? { treatmentPlan } : {}),
     ...(outpatientRecordPayload ? { outpatientRecord: outpatientRecordPayload } : {}),
     ...(extra || {}),
+    ...(recordTemplateChanges ? { recordTemplateChanges } : {}),
     ...(isScopedWriteback ? { writebackScope } : {}),
   };
 }

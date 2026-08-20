@@ -27,6 +27,7 @@ export interface VoiceEditorSnapshot {
   historyOfPresentIllness?: string;
   pastMedicalHistory?: string;
   personalHistory?: string;
+  menstrualHistory?: string;
   familyHistory?: string;
   physicalExam?: string;
   precautions?: string;
