@@ -315,7 +315,7 @@ const workMode = useWorkMode({
 // 解构工作模式 API
 const { exiting, containerStyle, ballStyle } = workMode;
 const { contentVisible } = windowTransition;
-const { enterWorkMode, openReceptionCapsule, exitWork, handleCollapse } = workMode;
+const { enterWorkMode, openReceptionCapsule, resizeReceptionCapsule, exitWork, handleCollapse } = workMode;
 
 // 初始化导航管理 composable
 const navigation = useNavigation({
@@ -648,7 +648,7 @@ const eventListeners = useEventListeners({
   showToast,
   handleWindowMove,
   persistCurrentWindowSize,
-  workMode: { enterWorkMode, openReceptionCapsule, exitWork },
+  workMode: { enterWorkMode, openReceptionCapsule, resizeReceptionCapsule, exitWork },
   navigation: { openConsultation, openVoiceConsultation, openTreatmentPlan, openOutpatientFollowUp, openReportInterpretation, openInpatientEmr, openDifferentialDiagnosis, startVoiceInteraction },
   generatedClinicalResultSession: {
     begin: beginGeneratedClinicalResult,

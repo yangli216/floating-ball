@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from 'vitest';
+import { describe, expect, it } from 'vitest';
 import type { TreatmentRecommendation } from '@/types/consultation';
 import {
   updateChronicRefillReviewRecordText,
@@ -45,23 +45,20 @@ describe('updateChronicRefillReviewRecordText', () => {
 });
 
 describe('useChronicRefillReview', () => {
-  it('does not preselect recommendations and blocks writeback until critical items are reviewed', () => {
+  it('keeps review optional and only writes explicitly selected facts', () => {
     let history = '患者既往确诊高血压。今复诊配药。';
-    const notify = vi.fn();
     const controller = useChronicRefillReview({
       getHistoryOfPresentIllness: () => history,
       setHistoryOfPresentIllness: (value) => { history = value; },
       getTreatments: () => [],
-      notify,
     });
 
     controller.reset(plan);
     expect(controller.selections.value).toEqual({});
-    expect(controller.ensureWritebackReady()).toBe(false);
-    expect(notify).toHaveBeenCalledWith('还有 1 项重点复诊信息待核查，请处理后再回写', 'warning');
+    expect('ensureWritebackReady' in controller).toBe(false);
+    expect(history).toBe('患者既往确诊高血压。今复诊配药。');
 
     controller.select('control', plan.items[0].options[2]);
-    expect(controller.ensureWritebackReady()).toBe(true);
     expect(history).not.toContain('控制平稳');
   });
 

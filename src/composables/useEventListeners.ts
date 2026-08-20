@@ -96,6 +96,7 @@ export interface EventListenersOptions {
   workMode: {
     enterWorkMode: (customW?: number, customH?: number) => Promise<void>;
     openReceptionCapsule: (size: { width: number; height: number }) => Promise<void>;
+    resizeReceptionCapsule: (size: { width: number; height: number }) => Promise<void>;
     exitWork: (sessionStatus?: 'completed' | 'cancelled' | 'error') => Promise<void>;
   };
   /** 导航函数 */

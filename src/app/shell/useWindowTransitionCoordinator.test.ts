@@ -125,6 +125,58 @@ describe('useWindowTransitionCoordinator', () => {
     expect(transitioning.value).toBe(false);
   });
 
+  it('restores content without waiting for a browser animation frame', async () => {
+    const suspendedAnimationFrame = vi.fn();
+    vi.stubGlobal('requestAnimationFrame', suspendedAnimationFrame);
+    const currentView = ref<ViewType>('reception-capsule');
+    const transitioning = ref(false);
+    const coordinator = useWindowTransitionCoordinator({
+      currentView,
+      isWorking: ref(true),
+      transitioning,
+      windowMgmt: createWindowManagementMock(),
+    });
+
+    await coordinator.transitionToView('consultation');
+
+    expect(currentView.value).toBe('consultation');
+    expect(coordinator.contentVisible.value).toBe(true);
+    expect(transitioning.value).toBe(false);
+    expect(suspendedAnimationFrame).not.toHaveBeenCalled();
+  });
+
+  it('keeps voice content visible while resizing between recording stages', async () => {
+    const currentView = ref<ViewType>('voice-interaction');
+    const transitioning = ref(false);
+    let releaseResize!: () => void;
+    let markResizeStarted!: () => void;
+    const resizeStarted = new Promise<void>((resolve) => {
+      markResizeStarted = resolve;
+    });
+    const windowMgmt = createWindowManagementMock(async () => {
+      markResizeStarted();
+      await new Promise<void>((resolve) => {
+        releaseResize = resolve;
+      });
+    });
+    const coordinator = useWindowTransitionCoordinator({
+      currentView,
+      isWorking: ref(true),
+      transitioning,
+      windowMgmt,
+    });
+
+    const resize = coordinator.resizeVoiceInteractionStage('processing');
+    await resizeStarted;
+
+    expect(coordinator.contentVisible.value).toBe(true);
+    releaseResize();
+    await resize;
+
+    expect(currentView.value).toBe('voice-interaction');
+    expect(coordinator.contentVisible.value).toBe(true);
+  });
+
   it('serializes the terminal ball geometry after an in-flight view resize', async () => {
     const currentView = ref<ViewType>('reception-capsule');
     const isWorking = ref(true);

@@ -121,6 +121,7 @@ import {
   useClinicalResultChannelStrategy,
   useClinicalResultDiagnosisChecklist,
   useDifferentialDiagnosisDirection,
+  useClinicalResultFinalization,
   useClinicalResultIntentReset,
   useClinicalResultPrecautionsScope,
   useClinicalResultPatientContext,
@@ -198,8 +199,21 @@ const recommendationPolicy = computed(() => props.intentResult?.recommendationPo
 const resultRegenerating = ref(false);
 const showSupplementDialog = ref(false);
 const supplementGuidance = ref('');
+const clinicalResultFinalization = useClinicalResultFinalization({
+  getChannel: () => props.channel,
+  getGeneration: () => props.intentResult?.generation,
+});
+const {
+  allowsPostResultFactSuggestions,
+  applyingFinalResult,
+  begin: beginFinalResultApplication,
+  displayedGeneration,
+  finish: finishFinalResultApplication,
+  reset: resetFinalResultApplication,
+} = clinicalResultFinalization;
 const isResultGenerating = computed(() => (
   resultRegenerating.value
+  || applyingFinalResult.value
   || props.processing
   || props.intentResult?.generation?.status === 'streaming'
 ));
@@ -257,6 +271,7 @@ const treatments = ref<TreatmentRecommendation[]>([]);
 const treatmentLoading = ref(false);
 const treatmentRequestSeq = ref(0);
 const autoTreatmentFetchAttemptKey = ref('');
+let intentResultApplicationSequence = 0;
 type TreatmentGenerationStatus = 'idle' | 'loading' | 'ready' | 'deferred' | 'skipped' | 'error';
 const treatmentGenerationState = ref<Record<ClinicalResultRecommendationType, TreatmentGenerationStatus>>({
   medicine: 'idle',
@@ -513,12 +528,10 @@ const chronicRefillReview = useChronicRefillReview({
 });
 const {
   expanded: chronicRefillReviewExpanded,
-  pendingCriticalCount: chronicRefillPendingCriticalCount,
   plan: chronicRefillReviewPlan,
   reviewedCount: chronicRefillReviewedCount,
   selections: chronicRefillReviewSelections,
   treatmentReviewTriggered: chronicRefillTreatmentReviewTriggered,
-  ensureWritebackReady: ensureChronicRefillWritebackReady,
   reset: resetChronicRefillReview,
   select: selectChronicRefillReview,
   setExpanded: setChronicRefillReviewExpanded,
@@ -590,9 +603,14 @@ const creatingPartialOutpatientRecord = computed(() => (
 let factSuggestionTimer: ReturnType<typeof setTimeout> | null = null;
 function scheduleFactSuggestionGeneration(): void {
   if (factSuggestionTimer) clearTimeout(factSuggestionTimer);
+  if (!allowsPostResultFactSuggestions.value) return;
   factSuggestionTimer = setTimeout(() => {
     factSuggestionTimer = null;
-    if (!isResultUnavailable.value && factSuggestions.value.length === 0) {
+    if (
+      allowsPostResultFactSuggestions.value
+      && !isResultUnavailable.value
+      && factSuggestions.value.length === 0
+    ) {
       void generateFactSuggestions();
     }
   }, 350);
@@ -2715,7 +2733,6 @@ async function handleBatchWriteBack(): Promise<void> {
     includeDiagnosis: writebackScope.value.includeDiagnosis,
     orderTypes: [...writebackScope.value.orderTypes],
   };
-  if (!ensureChronicRefillWritebackReady()) return;
   if (selectedScope.recordFields.includes('precautions')) {
     syncPrecautionsToSelection();
   }
@@ -2809,6 +2826,8 @@ watch(
       previousAnchorId,
       currentAnchorId,
     });
+    intentResultApplicationSequence += 1;
+    resetFinalResultApplication();
     clearPendingSnapshotPersist();
     lastAppliedIntentKey.value = '';
     invalidateTreatmentRequests();
@@ -2830,6 +2849,8 @@ watch(
   () => props.intentResult,
   async (result) => {
     if (!result) {
+      intentResultApplicationSequence += 1;
+      resetFinalResultApplication();
       lastAppliedIntentKey.value = '';
       resetPrecautionsScope();
       resetWritebackScope();
@@ -2847,7 +2868,10 @@ watch(
       return;
     }
     lastAppliedIntentKey.value = intentKey;
+    const applicationSequence = ++intentResultApplicationSequence;
+    const isFinalApplication = beginFinalResultApplication(result.generation);
 
+    try {
     invalidateTreatmentRequests();
     autoTreatmentFetchAttemptKey.value = '';
     resetPrecautionsScope();
@@ -2874,6 +2898,7 @@ watch(
     if (allowedIntentTreatments.length > 0) {
       if (allowedIntentTreatments.some((item) => item.type === 'medicine')) {
         await fetchPharmacyOptions();
+        if (applicationSequence !== intentResultApplicationSequence) return;
       }
       treatments.value = initTreatmentsFromIntent(allowedIntentTreatments);
       normalizeMedicinePharmacyValues(treatments.value);
@@ -2882,6 +2907,7 @@ watch(
         : getDiagnosisIdentity(selectedDiagnosis.value);
       if (treatments.value.some((item) => item.type === 'medicine')) {
         await reconcileAutoSelectedMedicineInventory(treatments.value);
+        if (applicationSequence !== intentResultApplicationSequence) return;
       }
       void registerCurrentRecommendations();
       console.info('[VoiceConsultationNew] Applied voice intent treatments', {
@@ -2897,6 +2923,7 @@ watch(
 
     if (result.generation?.status === 'streaming') {
       await nextTick();
+      if (applicationSequence !== intentResultApplicationSequence) return;
       suppressDiagnosisTreatmentRefetch.value = false;
       return;
     }
@@ -2907,6 +2934,7 @@ watch(
       const editorSnapshot = getVoiceConsultationEditorSnapshot(props.initialPatientData);
       if (editorSnapshot) {
         await applyEditorSnapshot(editorSnapshot);
+        if (applicationSequence !== intentResultApplicationSequence) return;
       }
     }
 
@@ -2923,10 +2951,21 @@ watch(
     }
 
     await nextTick();
+    if (applicationSequence !== intentResultApplicationSequence) return;
     suppressDiagnosisTreatmentRefetch.value = false;
     if (!result.generation || result.generation.status === 'complete') {
       submitVoiceGeneratedUserLog();
       maybeAutoFetchMissingTreatment('intent-result-applied');
+    }
+    } finally {
+      if (
+        isFinalApplication
+        && applicationSequence === intentResultApplicationSequence
+        && lastAppliedIntentKey.value === intentKey
+      ) {
+        await nextTick();
+        finishFinalResultApplication();
+      }
     }
   },
   { immediate: true },
@@ -2978,7 +3017,7 @@ watch(
       'is-result-unavailable': isResultUnavailable,
     }]">
       <ClinicalGenerationProgress
-        :generation="props.intentResult?.generation"
+        :generation="displayedGeneration"
         :treatment-loading="treatmentLoading"
         :treatment-states="treatmentGenerationState"
       />
@@ -3186,7 +3225,6 @@ watch(
                     :plan="chronicRefillReviewPlan"
                     :selections="chronicRefillReviewSelections"
                     :expanded="chronicRefillReviewExpanded"
-                    :pending-critical-count="chronicRefillPendingCriticalCount"
                     :reviewed-count="chronicRefillReviewedCount"
                     :treatment-review-triggered="chronicRefillTreatmentReviewTriggered"
                     :disabled="isResultUnavailable"

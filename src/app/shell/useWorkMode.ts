@@ -268,10 +268,34 @@ export function useWorkMode(options: WorkModeOptions) {
       return;
     }
 
+    if (currentView.value === 'reception-capsule') {
+      await resizeReceptionCapsule(size);
+      return;
+    }
+
     await transitionToView('reception-capsule', {
       size,
       preferredPosition: lastBallPos.value,
       resizable: false,
+    });
+  };
+
+  /**
+   * 仅刷新当前患者胶囊尺寸。
+   *
+   * 接诊风险与机会分析可能晚于医生导航完成；这类迟到更新只能调整仍然显示的
+   * 患者胶囊，不能重新打开胶囊或覆盖语音采集/工作台。
+   */
+  const resizeReceptionCapsule = async (size: WindowSize): Promise<void> => {
+    if (!isWorking.value || currentView.value !== 'reception-capsule') {
+      console.info('[WorkMode] Ignore stale reception capsule resize outside reception view');
+      return;
+    }
+
+    await resizeCurrentView(size, {
+      preferredPosition: lastBallPos.value,
+      resizable: false,
+      fade: false,
     });
   };
 
@@ -395,6 +419,7 @@ export function useWorkMode(options: WorkModeOptions) {
     // 方法
     enterWorkMode,
     openReceptionCapsule,
+    resizeReceptionCapsule,
     exitWork,
     handleCollapse,
   };

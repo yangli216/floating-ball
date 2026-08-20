@@ -32,16 +32,6 @@ export interface WindowBallTransitionOptions {
   commitBallState: () => void | Promise<void>;
 }
 
-function nextVisualFrame(): Promise<void> {
-  if (typeof requestAnimationFrame !== 'function') {
-    return Promise.resolve();
-  }
-
-  return new Promise((resolve) => {
-    requestAnimationFrame(() => resolve());
-  });
-}
-
 export function useWindowTransitionCoordinator(options: WindowTransitionCoordinatorOptions) {
   const { currentView, isWorking, transitioning, windowMgmt } = options;
   const contentVisible = ref(true);
@@ -69,7 +59,8 @@ export function useWindowTransitionCoordinator(options: WindowTransitionCoordina
     await nextTick().catch((error) => {
       console.warn('[WindowTransition] Vue flush failed before showing content:', error);
     });
-    await nextVisualFrame();
+    // 不等待 requestAnimationFrame：macOS WebView 在后台或整窗透明时可能暂停帧回调，
+    // 若可见性恢复依赖该回调，会形成原生窗口存在但内容永久透明的死锁。
     contentVisible.value = true;
   };
 
@@ -179,6 +170,7 @@ export function useWindowTransitionCoordinator(options: WindowTransitionCoordina
     stage: VoiceInteractionWindowStage,
   ): Promise<void> => resizeCurrentView(getVoiceInteractionWindowSize(stage), {
     resizable: false,
+    fade: false,
   });
 
   return {

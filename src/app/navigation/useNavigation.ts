@@ -203,6 +203,8 @@ export function useNavigation(options: NavigationOptions) {
       await windowTransition.transitionToView('voice-interaction', {
         size: targetSize,
         resizable: false,
+        // 患者胶囊和录音胶囊都是连续小窗，避免整窗透明后 WebView 暂停帧回调。
+        fade: currentView.value !== 'reception-capsule',
       });
     }
   }

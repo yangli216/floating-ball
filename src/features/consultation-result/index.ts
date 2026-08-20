@@ -33,6 +33,7 @@ export type {
   DifferentialDiagnosisDirectionSnapshot,
 } from './model/useDifferentialDiagnosisDirection';
 export { useClinicalResultIntentReset } from './model/useClinicalResultIntentReset';
+export { useClinicalResultFinalization } from './model/useClinicalResultFinalization';
 export {
   createClinicalResultOrderItemResolvers,
   useClinicalResultWritebackPayload,

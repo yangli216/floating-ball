@@ -89,6 +89,7 @@ export interface ReceptionControllerOptions {
   showToast: (msg: string, type?: 'success' | 'error' | 'info', duration?: number) => void;
   workMode: {
     openReceptionCapsule: (size: { width: number; height: number }) => Promise<void>;
+    resizeReceptionCapsule: (size: { width: number; height: number }) => Promise<void>;
   };
   resetVoiceSessionState: () => void;
   clearVoiceConsultationCache: (patient?: AppPatient | null) => void;
@@ -540,7 +541,7 @@ export function useReceptionController(options: ReceptionControllerOptions) {
               hasReportInterpretation,
             });
             try {
-              await workMode.openReceptionCapsule(receptionSize);
+              await workMode.resizeReceptionCapsule(receptionSize);
             } catch (error) {
               console.warn('[ReceptionController] Failed to resize reception capsule after opportunity assessment', error);
             }
@@ -679,7 +680,7 @@ export function useReceptionController(options: ReceptionControllerOptions) {
           hasFollowUp: Boolean(receptionSession.outpatientFollowUpContext.value),
           hasReportInterpretation: receptionSession.reportInterpretationVisits.value.length > 0,
         });
-        void workMode.openReceptionCapsule(receptionSize);
+        void workMode.resizeReceptionCapsule(receptionSize);
       }
     }
   }

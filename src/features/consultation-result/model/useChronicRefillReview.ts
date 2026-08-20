@@ -41,11 +41,6 @@ export function useChronicRefillReview(options: ChronicRefillReviewOptions) {
   const expanded = ref(true);
   const treatmentReviewTriggered = ref(false);
 
-  const pendingCriticalCount = computed(() => (
-    plan.value?.items.filter((item) => (
-      item.priority === 'critical' && !selections.value[item.id]
-    )).length || 0
-  ));
   const reviewedCount = computed(() => Object.keys(selections.value).length);
 
   function reset(value?: ChronicRefillReviewPlan | null): void {
@@ -91,21 +86,12 @@ export function useChronicRefillReview(options: ChronicRefillReviewOptions) {
     }
   }
 
-  function ensureWritebackReady(): boolean {
-    if (pendingCriticalCount.value === 0) return true;
-    expanded.value = true;
-    options.notify?.(`还有 ${pendingCriticalCount.value} 项重点复诊信息待核查，请处理后再回写`, 'warning');
-    return false;
-  }
-
   return {
     expanded,
-    pendingCriticalCount,
     plan,
     reviewedCount,
     selections,
     treatmentReviewTriggered,
-    ensureWritebackReady,
     reset,
     select,
     setExpanded: (value: boolean) => { expanded.value = value; },

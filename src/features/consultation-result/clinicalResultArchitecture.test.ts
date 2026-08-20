@@ -33,6 +33,14 @@ describe('clinical result architecture boundary', () => {
     expect(resultImplementationSource).toContain(':is-exec-dept-hydrating="isMedicalItemDetailHydrating"');
   });
 
+  it('keeps chronic refill finalization visible and skips post-result record mutation', () => {
+    expect(resultImplementationSource).toContain(':generation="displayedGeneration"');
+    expect(resultImplementationSource).toContain('beginFinalResultApplication(result.generation)');
+    expect(resultImplementationSource).toContain('finishFinalResultApplication()');
+    expect(resultImplementationSource).toContain('if (!allowsPostResultFactSuggestions.value) return');
+    expect(resultImplementationSource).toContain('applicationSequence !== intentResultApplicationSequence');
+  });
+
   it('confines the root implementation dependency to the public result page facade', () => {
     expect(consultationResultPageSource).toContain(INTERNAL_IMPLEMENTATION_NAME);
   });
