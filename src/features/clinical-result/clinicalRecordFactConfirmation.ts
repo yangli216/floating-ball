@@ -212,7 +212,7 @@ export function buildClinicalRecordFactSuggestionRequest(
   const instructions = [
     '输出格式：{"items":[{"field":"historyOfPresentIllness|pastMedicalHistory|personalHistory|familyHistory|physicalExam","question":"医生要核查的具体问题","negativeRecordText":"医生确认无异常后可直接写入的规范阴性表述","rationale":"病例相关性或病历书写要求","priority":"critical|general"}]}。',
     '最多 8 项；没有必要补问时返回 {"items":[]}。',
-    'negativeRecordText 必须是简短的候选病历表述，不得在正文中加入“建议询问、待确认、考虑”等过程措辞，来源标记由界面单独展示。',
+    'negativeRecordText 必须是医生确认后可成立的简短、规范临床阴性或正常表述，不得写“对话中未提及、问诊中未说明、资料中未记录、建议询问、待确认、考虑”等来源或过程措辞，来源标记由界面单独展示。',
     '如果要核查的阴性内容已经存在于 record 模板或正文，negativeRecordText 优先复制其中能够唯一定位的原句或最短连续片段，界面会在原句上标记，不得另写同义重复句。',
     '空的个人史、家族史或体格检查可以按当前病例和门诊书写要求生成少量候选；体格检查候选不得暗示已经实际完成查体。',
   ].join('\n');

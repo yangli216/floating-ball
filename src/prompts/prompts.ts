@@ -119,6 +119,7 @@ export interface VoiceRecordDraft {
   personalHistory?: string;
   menstrualHistory?: string;
   familyHistory?: string;
+  physicalExam?: string;
   symptoms: string[];
   negativeSymptoms?: string[];
   treatmentPlan?: string;
@@ -218,6 +219,8 @@ export interface VoiceExtractionResult {
   menstrualHistory?: string;
   /** 家族史 */
   familyHistory?: string;
+  /** 对话中明确提及的查体与生命体征（兼容旧结构） */
+  physicalExam?: string;
   /** 其他处理意见 */
   treatmentPlan?: string;
   /** 健康宣教 */
@@ -237,7 +240,7 @@ export const VoiceIntentRecognitionPrompt = {
 {"event":"explicit_orders","data":[]}
 {"event":"diagnoses","data":[]}
 {"event":"recommendation_plan","data":{"mode":"parallel","recommendNow":["medicine","exam","lab_test"],"defer":[],"skip":[],"reason":"路由依据","resumeCondition":"","confidence":"high"}}
-{"event":"record_extra","data":{"familyHistory":"家族史","treatmentPlan":"其他处理意见","healthEducation":"健康宣教"}}
+{"event":"record_extra","data":{"familyHistory":"家族史","physicalExam":"对话中明确提及的查体与生命体征","treatmentPlan":"其他处理意见","healthEducation":"健康宣教"}}
 {"event":"done","data":{"error":false,"message":""}}
 
 其中各 data 对象合并后的兼容 structure 如下：
@@ -251,6 +254,7 @@ export const VoiceIntentRecognitionPrompt = {
     "personalHistory": "个人史，只写对话已明确内容，未提及则留空",
     "menstrualHistory": "女性月经史，只写对话或患者既有病历中的明确内容，非女性或无依据时留空",
     "familyHistory": "家族史，只写对话已明确内容，未提及则留空",
+    "physicalExam": "查体与生命体征，只写对话明确内容；体温、脉搏/心率、呼吸、血压必须保留数值，未提及则留空",
     "symptoms": ["症状1", "症状2"],
     "negativeSymptoms": ["症状1", "症状2"],
     "treatmentPlan": "其他处理意见，没有则空字符串",
@@ -325,7 +329,7 @@ export const VoiceIntentRecognitionPrompt = {
 3. chiefComplaint 尽量写成“主要症状 + 持续时间”；不要把诊断写进主诉。
 4. historyOfPresentIllness 必须按“起病时间/诱因 -> 核心症状 -> 伴随症状与重要阴性 -> 已做处理/关键查体或检查”整理成 2-4 句紧凑表述；不要重复医生问话、缴费复诊流程、泛化宣教、明显重复的阴性信息。
 5. negativeSymptoms 只填写阴性症状名称本身，例如“咳痰”“胸痛”；不要携带“否认”“无”“未见”“不伴”等否定前缀。
-6. pastMedicalHistory、allergyHistory、currentMedicationHistory、personalHistory、menstrualHistory、familyHistory 要分别整理；若对话与患者既有病历均未提供明确内容，必须写空字符串。不得用“无特殊”“否认”等默认阴性表述代替未采集的信息。
+6. pastMedicalHistory、allergyHistory、currentMedicationHistory、personalHistory、menstrualHistory、familyHistory、physicalExam 要分别整理；若对话与患者既有病历均未提供明确内容，必须写空字符串。不得用“无特殊”“否认”等默认阴性表述代替未采集的信息。physicalExam 中对话明确提及的体温、脉搏/心率、呼吸频率、血压数值必须原样保留，客户端会将其映射到 T/P/R/BP 固定槽位；不得臆造未测量数值。
 6.1 pastMedicalHistory 只记录与本次就诊可能相关的既往慢性病、手术史、外伤史、输血史等长期健康信息，不要把家族成员的疾病写入既往史。与本次主诉/现病史无明显关联的既往疾病不要写入，避免干扰医生判断。
 6.2 pastMedicalHistory 不要写入历次门诊就诊流水（如"2026-05-13 诊断急性上呼吸道感染"），门诊就诊记录属于就诊历史而非既往史。既往史应提炼为疾病名称+病程（如"高血压3年""2年前阑尾切除术"），而非按就诊日期逐条罗列。
 6.3 personalHistory 记录吸烟、饮酒、职业或环境暴露、疫水疫源接触等患者本人的生活与暴露事实；若对话未提及，必须留空，不得自动补“否认吸烟饮酒史”。
@@ -385,6 +389,7 @@ export const VoiceIntentRepairPrompt = {
     "personalHistory": "",
     "menstrualHistory": "",
     "familyHistory": "",
+    "physicalExam": "",
     "symptoms": [],
     "negativeSymptoms": [],
     "treatmentPlan": "",

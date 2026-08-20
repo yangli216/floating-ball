@@ -511,18 +511,25 @@
 
 .clinical-record-ai-notice {
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   gap: 6px;
   margin: 8px 6px 2px;
   color: var(--voice-text-muted);
   font-size: 12px;
-  line-height: 1.5;
+  line-height: 1.4;
+  min-width: 0;
+  white-space: nowrap;
 }
 
 .clinical-record-ai-notice svg {
   flex: 0 0 auto;
-  margin-top: 2px;
   color: #285f8f;
+}
+
+.clinical-record-ai-notice span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .record-fields {

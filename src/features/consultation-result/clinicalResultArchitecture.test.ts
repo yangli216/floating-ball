@@ -26,6 +26,13 @@ describe('clinical result architecture boundary', () => {
     expect(symptomResultEntrySource).not.toContain(INTERNAL_IMPLEMENTATION_NAME);
   });
 
+  it('preloads visible non-medicine item details instead of waiting for selection', () => {
+    expect(resultImplementationSource).toMatch(
+      /watch\(\s*treatments,[\s\S]*?hydrateMatchedMedicalItemDetails\([\s\S]*?item\.type !== 'medicine'/,
+    );
+    expect(resultImplementationSource).toContain(':is-exec-dept-hydrating="isMedicalItemDetailHydrating"');
+  });
+
   it('confines the root implementation dependency to the public result page facade', () => {
     expect(consultationResultPageSource).toContain(INTERNAL_IMPLEMENTATION_NAME);
   });
@@ -115,6 +122,10 @@ describe('clinical result architecture boundary', () => {
     expect(clinicalRecordAnnotatedTextSource).toContain('@mouseup="handleTextSelection"');
     expect(clinicalRecordAnnotatedTextSource).toContain('clinical-record-selection-copy');
     expect(clinicalRecordAnnotatedTextSource).toContain('copySelectedText');
+    expect(clinicalRecordAnnotatedTextSource).toContain('@click="copySuggestionText(segment)"');
+    expect(clinicalRecordAnnotatedTextSource).toMatch(
+      /async function copySuggestionText[\s\S]*await copyText\(segment\.text\)[\s\S]*closeAnnotationPopover\(\)/,
+    );
     expect(clinicalRecordAnnotatedTextSource).not.toContain("emit('update:modelValue', segment.suggestion.negativeRecordText)");
     expect(voiceRecordFieldEditorSource).not.toContain('confirm-negative-fact');
     expect(voiceRecordFieldEditorSource).not.toContain('confirm-positive-fact');
@@ -124,11 +135,9 @@ describe('clinical result architecture boundary', () => {
     expect(resultImplementationSource).toContain('@dismiss-fact-suggestion="dismissFactSuggestion"');
     expect(resultImplementationSource).toContain('hasPendingFactSuggestions');
     expect(resultImplementationSource).toContain('clinical-record-ai-notice');
-    expect(resultImplementationSource).toContain('病历中带 AI 标记的内容由 AI 补充');
-    expect(resultImplementationSource).toContain('红色 AI 为重点提示');
-    expect(resultImplementationSource).toContain('这些内容已进入当前病历草稿');
+    expect(resultImplementationSource).toContain('AI 标记为补充内容，红色为重点');
     expect(resultImplementationSource).toContain('会随所选字段回写');
-    expect(resultImplementationSource).toContain('可点击 AI 调整或移除');
+    expect(resultImplementationSource).toContain('可点击调整或移除');
     expect(resultImplementationSource).toContain('mergeSuggestionIntoRecord: mergeFactSuggestionIntoRecord');
     expect(resultImplementationSource.indexOf('if (snapshot.writebackScope)')).toBeLessThan(
       resultImplementationSource.indexOf('if (Array.isArray(snapshot.factSuggestions))'),

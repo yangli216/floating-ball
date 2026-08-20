@@ -21,6 +21,7 @@ import {
   stripHistoryRecordTemplateMarkers,
   type HistoryRecordTemplateField,
 } from './historyRecordTemplates';
+import { collectPhysicalExamVitalSigns } from './physicalExamVitalTemplate';
 
 // ===== 通用小工具（与语音侧 readFirstString / toPositiveNumber 同源） =====
 
@@ -458,6 +459,9 @@ export function buildRecordConfirmedPayload(
   const recordTemplateChanges = fullOutpatientRecord
     ? collectHistoryRecordTemplateChanges(fullOutpatientRecord, selectedHistoryTemplateFields)
     : undefined;
+  const physicalExamVitalSigns = fullOutpatientRecord && selectedRecordFields.has('physicalExam')
+    ? collectPhysicalExamVitalSigns(fullOutpatientRecord.physicalExam)
+    : undefined;
   const resolvedChiefComplaint = writebackOutpatientRecord?.chiefComplaint || chiefComplaint;
   const resolvedHistoryOfPresentIllness = writebackOutpatientRecord?.historyOfPresentIllness || historyOfPresentIllness;
   const resolvedPastMedicalHistory = writebackOutpatientRecord?.pastMedicalHistory || stripHistoryRecordTemplateMarkers(pastMedicalHistory);
@@ -492,6 +496,7 @@ export function buildRecordConfirmedPayload(
     ...(outpatientRecordPayload ? { outpatientRecord: outpatientRecordPayload } : {}),
     ...(extra || {}),
     ...(recordTemplateChanges ? { recordTemplateChanges } : {}),
+    ...(physicalExamVitalSigns ? { physicalExamVitalSigns } : {}),
     ...(isScopedWriteback ? { writebackScope } : {}),
   };
 }

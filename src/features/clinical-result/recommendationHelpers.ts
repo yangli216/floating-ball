@@ -79,6 +79,12 @@ export function getTreatmentSpec(rec: TreatmentRecommendation): string {
   return rec.type === 'medicine' ? rec.spec || rec.matchedItem?.spec || '' : '';
 }
 
+export function getMedicineManufacturer(rec: TreatmentRecommendation): string {
+  return rec.type === 'medicine'
+    ? String(rec.matchedItem?.manufacturer || '').trim()
+    : '';
+}
+
 export function getTreatmentOriginalName(rec: TreatmentRecommendation): string {
   if (rec.matchStatus !== 'manual' && rec.matchStatus !== 'confirmed') {
     return '';

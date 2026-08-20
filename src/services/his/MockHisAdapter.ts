@@ -211,6 +211,7 @@ export class MockHisAdapter implements HisAdapter {
       productName: cat.name,
       medicineId: cat.id,
       medicineName: cat.name,
+      manufacturer: 'Mock 制药',
       active: true,
       specSale: cat.spec,
       unitSale: '盒',

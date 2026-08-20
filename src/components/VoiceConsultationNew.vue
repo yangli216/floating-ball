@@ -2224,6 +2224,8 @@ const treatmentAttributeSearch = useTreatmentAttributeSearch({
 // 注入：候选药房收窄、字典查找；toast 通过 notify 回调走 voice 侧的 'warning' 级别。
 const {
   hydrateMatchedMedicalItemDetail,
+  hydrateMatchedMedicalItemDetails,
+  isMedicalItemDetailHydrating,
   finalizeMedicineRecommendations,
   ensureMedicineSelectable,
   checkMedicineInventoryEnough,
@@ -2244,6 +2246,16 @@ const {
     showToast?.(message, 'warning');
   },
 });
+
+watch(
+  treatments,
+  (items) => {
+    void hydrateMatchedMedicalItemDetails(
+      items.filter((item) => item.type !== 'medicine' && !!item.matchedItem),
+    );
+  },
+  { flush: 'post' },
+);
 const treatmentSelectionReadiness = useTreatmentSelectionReadiness({
   ensureMedicineSelectable,
   hydrateMedicalItemDetail: hydrateMatchedMedicalItemDetail,
@@ -3006,7 +3018,7 @@ watch(
 
           <div v-if="hasPendingFactSuggestions" class="clinical-record-ai-notice" role="note">
             <Icon icon="lucide:info" size="14" aria-hidden="true" />
-            <span>病历中带 AI 标记的内容由 AI 补充，红色 AI 为重点提示；这些内容已进入当前病历草稿，会随所选字段回写，如不准确可点击 AI 调整或移除。</span>
+            <span title="AI 标记为补充内容，红色为重点；会随所选字段回写，可点击调整或移除。">AI 标记为补充内容，红色为重点；会随所选字段回写，可点击调整或移除。</span>
           </div>
 
           <div class="record-fields">
@@ -3253,6 +3265,7 @@ watch(
                 :is-exec-dept-required="isExecDeptRequired"
                 :get-exec-dept-display="getExecDeptDisplay"
                 :has-required-exec-dept="hasRequiredExecDept"
+                :is-exec-dept-hydrating="isMedicalItemDetailHydrating"
                 :get-body-site-display="treatmentGates.getBodySiteDisplay"
                 :has-required-body-site="hasRequiredBodySite"
                 :frequency-options="frequencyOptions"

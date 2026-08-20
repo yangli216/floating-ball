@@ -5,6 +5,7 @@ import {
   DEFAULT_PERSONAL_HISTORY_TEMPLATE,
   resolveHistoryRecordTemplate,
 } from './historyRecordTemplates';
+import { buildPhysicalExamWithVitalTemplate } from './physicalExamVitalTemplate';
 
 export const OUTPATIENT_RECORD_SCHEMA_VERSION = 'outpatient-record.v1' as const;
 
@@ -183,27 +184,17 @@ function buildFamilyHistory(input: BuildOutpatientRecordInput): string {
     : DEFAULT_FAMILY_HISTORY_TEMPLATE;
 }
 
-function normalizeVitals(vitals?: string): string {
-  const normalized = normalizeFreeText(vitals);
-  if (!normalized) {
-    return '';
-  }
-  return /[。.]$/u.test(normalized) ? normalized : `${normalized}。`;
-}
-
 function buildPhysicalExam(
   input: BuildOutpatientRecordInput,
   _scenario: OutpatientRecordScenario,
 ): string {
   const provided = stripFieldLabel(normalizeFreeText(input.physicalExam), ['体格检查', '查体']);
-  if (isMeaningfulRecordText(provided)) {
-    return provided;
-  }
-
-  const vitals = normalizeVitals(input.vitals);
-  // 结构化生命体征可以直接保留；其他正常查体必须来自医生实际输入或确认，
-  // 不能按场景模板自动制造“未见异常”事实。
-  return vitals;
+  // T/P/R/BP 是 PHIS 固定字段槽位。未采集时保留具名占位符，不把占位符
+  // 解释为测量事实；已有查体正文只移除重复的生命体征片段后接在模板后。
+  return buildPhysicalExamWithVitalTemplate({
+    physicalExam: isMeaningfulRecordText(provided) ? provided : '',
+    vitals: input.vitals,
+  });
 }
 
 interface HealthPrescriptionRule {

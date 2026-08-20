@@ -8,6 +8,7 @@ import type { FactCheckIssue } from '@services/factChecker';
 import {
   getTreatmentNumericFieldConstraintText,
   getTreatmentNumericFieldIssue,
+  getMedicineManufacturer,
   getTreatmentRemarkLength,
   isTreatmentNumericInputAllowed,
   isTreatmentRemarkOverLimit,
@@ -64,6 +65,7 @@ const props = withDefaults(defineProps<{
   isExecDeptRequired: (item: TreatmentRecommendation) => boolean;
   getExecDeptDisplay: (item: TreatmentRecommendation) => string;
   hasRequiredExecDept: (item: TreatmentRecommendation) => boolean;
+  isExecDeptHydrating?: (item: TreatmentRecommendation) => boolean;
   getBodySiteDisplay: (item: TreatmentRecommendation) => string;
   hasRequiredBodySite: (item: TreatmentRecommendation) => boolean;
   frequencyOptions: UsageOption[];
@@ -105,6 +107,7 @@ const props = withDefaults(defineProps<{
   activeReasonKey: '',
   getIssue: undefined,
   shouldShowEditorToggle: undefined,
+  isExecDeptHydrating: () => false,
   isFeedbackOpen: undefined,
   getFeedbackDraft: undefined,
   isFeedbackSubmitting: undefined,
@@ -539,7 +542,9 @@ function shouldShowExecDeptChip(item: TreatmentRecommendation): boolean {
 }
 
 function isExecDeptChipMissing(item: TreatmentRecommendation): boolean {
-  return props.isExecDeptRequired(item) && !props.hasRequiredExecDept(item);
+  return props.isExecDeptRequired(item)
+    && !props.isExecDeptHydrating(item)
+    && !props.hasRequiredExecDept(item);
 }
 
 function isExecDeptInputMissing(item: TreatmentRecommendation): boolean {
@@ -576,6 +581,9 @@ function isProcedureTotalQtyMissing(item: TreatmentRecommendation): boolean {
 }
 
 function getExecDeptChipTitle(item: TreatmentRecommendation): string {
+  if (props.isExecDeptHydrating(item)) {
+    return '正在读取执行科室';
+  }
   if (props.hasRequiredExecDept(item) && props.getExecDeptDisplay(item)) {
     return '点击调整执行科室';
   }
@@ -832,12 +840,14 @@ function getFeedbackSubmittedLabel(item: TreatmentRecommendation): string {
             :matching="isManualMatchOpen(item)"
             :issue="getIssue?.(item)"
             :spec="getTreatmentSpec(item)"
+            :manufacturer="getMedicineManufacturer(item)"
             :reason-open="activeReasonKey === getReasonKey(item)"
             :match-label="getDisplayMatchLabel(item)"
             :match-tone="getMatchTone(item)"
             :show-exec-dept-chip="shouldShowExecDeptChip(item)"
             :exec-dept-display="getExecDeptDisplay(item)"
             :exec-dept-missing="isExecDeptChipMissing(item)"
+            :exec-dept-loading="isExecDeptHydrating(item)"
             :exec-dept-title="getExecDeptChipTitle(item)"
             :show-pharmacy-chip="isPharmacyRequired(item)"
             :pharmacy-display="getPharmacyDisplay(item)"
@@ -1435,7 +1445,7 @@ function getFeedbackSubmittedLabel(item: TreatmentRecommendation): string {
 
 .clinical-goal-group.has-header .clinical-goal-group-items {
   gap: 0;
-  overflow: hidden;
+  overflow: visible;
   border-radius: 0 0 9px 9px;
 }
 

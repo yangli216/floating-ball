@@ -18,6 +18,17 @@ describe('TreatmentRecommendationSection match adjustment', () => {
     expect(source).toContain('<MedicationPrescriptionHistoryReview');
   });
 
+  it('shows the currently matched medicine manufacturer as secondary information', () => {
+    expect(source).toContain(':manufacturer="getMedicineManufacturer(item)"');
+    expect(cardSource).toContain('{{ manufacturer }}');
+    expect(cardSource).not.toContain('厂家：{{ manufacturer }}');
+    expect(cardSource).toContain('class="meta-token medicine-manufacturer"');
+    expect(cardSource).not.toContain('class="medicine-manufacturer worklist-inline-text"');
+    expect(cardSource).toMatch(
+      /\.meta-token\.medicine-manufacturer\s*\{[^}]*max-width:\s*180px[^}]*color:\s*#64748b[^}]*text-overflow:\s*ellipsis/s,
+    );
+  });
+
   it('groups exam and lab items by clinical goal without changing order payload categories', () => {
     expect(source).toContain('buildAuxiliaryRecommendationGroups');
     expect(source).toContain('class="clinical-goal-group-header"');
@@ -66,6 +77,16 @@ describe('TreatmentRecommendationSection match adjustment', () => {
     expect(cardSource).toContain("@click.stop=\"emit('open-exec-dept', $event)\"");
   });
 
+  it('distinguishes an execution department being loaded from a confirmed missing value', () => {
+    expect(source).toContain('!props.isExecDeptHydrating(item)');
+    expect(source).toContain(':exec-dept-loading="isExecDeptHydrating(item)"');
+    expect(cardSource).toContain("execDeptLoading ? '读取中' : execDeptDisplay || '待设置'");
+    expect(cardSource).toContain(':aria-busy="execDeptLoading"');
+    expect(cardSource).toMatch(
+      /\.exec-dept-chip\.loading:not\(\.pharmacy-chip\)\s*\{[^}]*cursor:\s*progress/s,
+    );
+  });
+
   it('uses a quiet selected state and low-weight execution department text', () => {
     expect(cardSource).toMatch(
       /\.vcn-treatment-item\.worklist\.selected\s*\{[^}]*border-color:\s*#dbe3ee[^}]*box-shadow:\s*none/s,
@@ -88,12 +109,16 @@ describe('TreatmentRecommendationSection match adjustment', () => {
     expect(source).toMatch(
       /\.clinical-goal-group\.has-header \.clinical-goal-group-header\s*\{[^}]*background:\s*color-mix/s,
     );
-    expect(cardSource).toMatch(
-      /\.vcn-treatment-item\.worklist\.grouped-recommendation-row,[\s\S]*?\.selected\s*\{[^}]*border:\s*0[^}]*box-shadow:\s*none/s,
+    expect(source).toMatch(
+      /\.clinical-goal-group\.has-header \.clinical-goal-group-items\s*\{[^}]*overflow:\s*visible/s,
     );
     expect(cardSource).toMatch(
-      /\.vcn-treatment-item\.worklist\.grouped-recommendation-row\.selected\s*\{[^}]*border-left:\s*3px solid var\(--voice-accent\)[^}]*background:\s*color-mix/s,
+      /\.vcn-treatment-item\.grouped-recommendation-row,[\s\S]*?\.selected\s*\{[^}]*border:\s*0[^}]*box-shadow:\s*none/s,
     );
+    expect(cardSource).toMatch(
+      /\.vcn-treatment-item\.grouped-recommendation-row\.selected\s*\{[^}]*border-left:\s*3px solid var\(--voice-accent\)[^}]*background:\s*color-mix/s,
+    );
+    expect(cardSource).not.toContain('.vcn-treatment-item.worklist.grouped-recommendation-row');
     expect(cardSource).toContain('border-top: 1px solid rgba(148, 163, 184, 0.2)');
     expect(cardSource).toMatch(
       /\.worklist-actions \.voice-feedback-trigger,[\s\S]*?\.worklist-actions \.action-arrow\s*\{[^}]*border-color:\s*transparent/s,

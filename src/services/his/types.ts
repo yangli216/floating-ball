@@ -48,6 +48,8 @@ export interface MedicineDetail {
   medicineId?: string;
   /** 药品通用名 */
   medicineName?: string;
+  /** 本次药品商品的生产厂家 */
+  manufacturer?: string;
   /** 是否处于可用状态：false 表示已停用，不能选中 */
   active: boolean;
 
@@ -318,6 +320,8 @@ export interface HisHistoricalMedication {
   productId?: string;
   name: string;
   spec?: string;
+  /** 历史处方药品的生产厂家，仅用于可靠匹配当前同品。 */
+  manufacturer?: string;
   dose?: string;
   doseUnit?: string;
   frequency?: string;

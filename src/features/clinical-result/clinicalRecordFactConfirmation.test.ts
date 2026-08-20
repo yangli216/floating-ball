@@ -35,6 +35,7 @@ describe('clinicalRecordFactConfirmation', () => {
     expect(prompt).toContain('带 AI 来源标记的可编辑病历草稿');
     expect(prompt).toContain('随所选字段回写');
     expect(prompt).toContain('不得描述成问诊已经明确的事实');
+    expect(prompt).toContain('对话中未提及、问诊中未说明、资料中未记录');
     expect(request.config.traceContext?.title).toBe('生成病历候选阴性内容');
   });
 
@@ -146,6 +147,20 @@ describe('clinicalRecordFactConfirmation', () => {
         negativeRecordText: '待医生补充完善',
         rationale: '完善病历',
         priority: 'general',
+      }],
+    });
+
+    expect(suggestions).toEqual([]);
+  });
+
+  it('drops a source-oriented missing-information candidate before merging it into the record', () => {
+    const suggestions = normalizeClinicalRecordFactSuggestions({
+      items: [{
+        field: 'historyOfPresentIllness',
+        question: '近期是否有新发不适或病情变化？',
+        negativeRecordText: '对话中未提及新发不适症状或病情变化',
+        rationale: '补充本次复诊情况',
+        priority: 'critical',
       }],
     });
 

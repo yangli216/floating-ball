@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { ref } from 'vue';
 import type { TreatmentRecommendation } from '@/types/consultation';
+import type { MedicalItemDetail } from '@/services/his';
 import { useTreatmentNormalization } from './useTreatmentNormalization';
 import { useTreatmentHydration } from './useTreatmentHydration';
 
@@ -19,6 +20,8 @@ vi.hoisted(() => {
 
 const mocks = vi.hoisted(() => ({
   fetchMedicineProDetail: vi.fn(),
+  fetchMedicalItemDetail: vi.fn(),
+  fetchMedicalItemPartOptions: vi.fn(),
   checkMedicineInventoryEnough: vi.fn(),
   resolveMedicineInventoryUnitPrice: vi.fn(),
 }));
@@ -26,6 +29,8 @@ const mocks = vi.hoisted(() => ({
 vi.mock('@/services/his', () => ({
   getHisAdapter: () => ({
     fetchMedicineProDetail: mocks.fetchMedicineProDetail,
+    fetchMedicalItemDetail: mocks.fetchMedicalItemDetail,
+    fetchMedicalItemPartOptions: mocks.fetchMedicalItemPartOptions,
     checkMedicineInventoryEnough: mocks.checkMedicineInventoryEnough,
   }),
 }));
@@ -96,6 +101,7 @@ describe('medicine recommendation finalization', () => {
       productName: '盐酸二甲双胍片',
       medicineId: 'med-metformin',
       medicineName: '盐酸二甲双胍片',
+      manufacturer: '示例制药',
       active: true,
       specSale: '0.25g*60片/瓶',
       unitSale: '瓶',
@@ -119,6 +125,8 @@ describe('medicine recommendation finalization', () => {
       },
     });
     mocks.checkMedicineInventoryEnough.mockResolvedValue({ code: 200, message: '' });
+    mocks.fetchMedicalItemDetail.mockResolvedValue(null);
+    mocks.fetchMedicalItemPartOptions.mockResolvedValue([]);
     mocks.resolveMedicineInventoryUnitPrice.mockResolvedValue(59.3);
   });
 
@@ -138,6 +146,9 @@ describe('medicine recommendation finalization', () => {
       totalQty: '3',
       totalUnit: '瓶',
       selected: true,
+      matchedItem: expect.objectContaining({
+        manufacturer: '示例制药',
+      }),
     });
     expect(mocks.checkMedicineInventoryEnough).toHaveBeenCalledWith([
       expect.objectContaining({
@@ -237,5 +248,77 @@ describe('medicine recommendation finalization', () => {
     expect(result.issues).toContain('包装总量不可计算');
     expect(rec.selected).toBe(false);
     expect(mocks.checkMedicineInventoryEnough).not.toHaveBeenCalled();
+  });
+});
+
+describe('non-medicine recommendation detail hydration', () => {
+  beforeEach(() => {
+    mocks.fetchMedicalItemDetail.mockReset();
+    mocks.fetchMedicalItemPartOptions.mockReset();
+    mocks.fetchMedicalItemPartOptions.mockResolvedValue([]);
+  });
+
+  function createLabTreatment(): TreatmentRecommendation {
+    return {
+      type: 'lab_test',
+      name: '甲状腺功能5项',
+      reason: '评估甲状腺功能',
+      selected: false,
+      matchedItem: {
+        id: 'lab-thyroid',
+        code: 'lab-thyroid',
+        name: '甲状腺功能5项',
+        raw: { idCli: 'lab-thyroid' },
+      },
+    };
+  }
+
+  it('reuses an in-flight detail request and exposes the loading state', async () => {
+    let resolveDetail!: (value: MedicalItemDetail) => void;
+    mocks.fetchMedicalItemDetail.mockReturnValueOnce(new Promise<MedicalItemDetail>((resolve) => {
+      resolveDetail = resolve;
+    }));
+    const rec = createLabTreatment();
+    const { hydration } = createFinalizer();
+
+    const first = hydration.hydrateMatchedMedicalItemDetail(rec);
+    const second = hydration.hydrateMatchedMedicalItemDetail(rec);
+
+    expect(hydration.isMedicalItemDetailHydrating(rec)).toBe(true);
+    expect(mocks.fetchMedicalItemDetail).toHaveBeenCalledTimes(1);
+
+    resolveDetail({
+      itemId: 'lab-thyroid',
+      itemName: '甲状腺功能5项',
+      executingDeptId: 'dept-lab',
+      unit: '项',
+      raw: { idDeptExec: 'dept-lab' },
+    });
+    await Promise.all([first, second]);
+
+    expect(hydration.isMedicalItemDetailHydrating(rec)).toBe(false);
+    expect(rec.execDept).toBe('dept-lab');
+    expect(rec.totalUnit).toBe('项');
+    expect(rec.selected).toBe(false);
+
+    await hydration.hydrateMatchedMedicalItemDetail(rec);
+    expect(mocks.fetchMedicalItemDetail).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not restore an execution department that the doctor cleared', async () => {
+    mocks.fetchMedicalItemDetail.mockResolvedValueOnce({
+      itemId: 'lab-thyroid',
+      itemName: '甲状腺功能5项',
+      executingDeptId: 'dept-lab',
+      raw: { idDeptExec: 'dept-lab' },
+    });
+    const rec = createLabTreatment();
+    rec.execDeptCleared = true;
+    const { hydration } = createFinalizer();
+
+    await hydration.hydrateMatchedMedicalItemDetail(rec);
+
+    expect(rec.execDept).toBeUndefined();
+    expect(rec.matchedItem.raw.__detailLoaded).toBe(true);
   });
 });

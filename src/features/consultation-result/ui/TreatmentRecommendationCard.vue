@@ -28,6 +28,9 @@
                   <span class="card-title">{{ rec.name }}</span>
                 </FactCheckHighlight>
                 <span v-if="spec" class="meta-token worklist-spec-text">{{ spec }}</span>
+                <span v-if="manufacturer" class="meta-token medicine-manufacturer" :title="`生产厂家：${manufacturer}`">
+                  {{ manufacturer }}
+                </span>
                 <span
                   v-if="necessityLabel"
                   class="auxiliary-necessity-label"
@@ -52,10 +55,10 @@
                 <div v-if="$slots['title-meta']" class="card-title-meta worklist-title-meta">
                   <slot name="title-meta" />
                 </div>
-                <button v-if="showExecDeptChip" class="exec-dept-chip worklist-chip" :class="{ missing: execDeptMissing }"
-                  type="button" :title="execDeptTitle" @click.stop="emit('open-exec-dept', $event)">
-                  <span v-if="execDeptMissing" class="exec-dept-chip-label">执行科室</span>
-                  <span class="exec-dept-chip-value">{{ execDeptDisplay || '待设置' }}</span>
+                <button v-if="showExecDeptChip" class="exec-dept-chip worklist-chip" :class="{ missing: execDeptMissing, loading: execDeptLoading }"
+                  type="button" :title="execDeptTitle" :aria-busy="execDeptLoading" @click.stop="emit('open-exec-dept', $event)">
+                  <span v-if="execDeptMissing || execDeptLoading" class="exec-dept-chip-label">执行科室</span>
+                  <span class="exec-dept-chip-value">{{ execDeptLoading ? '读取中' : execDeptDisplay || '待设置' }}</span>
                 </button>
                 <div v-if="showPharmacyChip" class="pharmacy-chip-anchor" @click.stop>
                   <button class="exec-dept-chip pharmacy-chip worklist-chip"
@@ -178,6 +181,9 @@
                   <span class="card-title">{{ rec.name }}</span>
                 </FactCheckHighlight>
                 <span v-if="spec" class="meta-token default-spec-text">{{ spec }}</span>
+                <span v-if="manufacturer" class="meta-token medicine-manufacturer" :title="`生产厂家：${manufacturer}`">
+                  {{ manufacturer }}
+                </span>
                 <span
                   v-if="necessityLabel"
                   class="auxiliary-necessity-label"
@@ -277,13 +283,14 @@
               <button
                 v-if="showExecDeptChip"
                 class="exec-dept-chip"
-                :class="{ missing: execDeptMissing }"
+                :class="{ missing: execDeptMissing, loading: execDeptLoading }"
                 type="button"
                 :title="execDeptTitle"
+                :aria-busy="execDeptLoading"
                 @click.stop="emit('open-exec-dept', $event)"
               >
-                <span v-if="execDeptMissing" class="exec-dept-chip-label">执行科室</span>
-                <span class="exec-dept-chip-value">{{ execDeptDisplay || '待设置' }}</span>
+                <span v-if="execDeptMissing || execDeptLoading" class="exec-dept-chip-label">执行科室</span>
+                <span class="exec-dept-chip-value">{{ execDeptLoading ? '读取中' : execDeptDisplay || '待设置' }}</span>
               </button>
               <div v-if="showPharmacyChip" class="pharmacy-chip-anchor" @click.stop>
                 <button
@@ -365,6 +372,10 @@ const props = defineProps({
     type: String,
     default: '',
   },
+  manufacturer: {
+    type: String,
+    default: '',
+  },
   reasonOpen: {
     type: Boolean,
     default: false,
@@ -386,6 +397,10 @@ const props = defineProps({
     default: '',
   },
   execDeptMissing: {
+    type: Boolean,
+    default: false,
+  },
+  execDeptLoading: {
     type: Boolean,
     default: false,
   },
@@ -621,29 +636,29 @@ function handleCardToggle(event: MouseEvent): void {
   box-shadow: none;
 }
 
-.vcn-treatment-item.worklist.grouped-recommendation-row,
-.vcn-treatment-item.worklist.grouped-recommendation-row:hover,
-.vcn-treatment-item.worklist.grouped-recommendation-row.selected {
+.vcn-treatment-item.grouped-recommendation-row,
+.vcn-treatment-item.grouped-recommendation-row:hover,
+.vcn-treatment-item.grouped-recommendation-row.selected {
   border: 0;
   box-shadow: none;
 }
 
-.vcn-treatment-item.worklist.grouped-recommendation-row {
+.vcn-treatment-item.grouped-recommendation-row {
   background: var(--voice-surface);
   border-left: 3px solid transparent;
 }
 
-.vcn-treatment-item.worklist.grouped-recommendation-row:hover {
+.vcn-treatment-item.grouped-recommendation-row:hover {
   background: color-mix(in srgb, var(--voice-surface) 98%, var(--voice-accent));
 }
 
-.vcn-treatment-item.worklist.grouped-recommendation-row.selected {
+.vcn-treatment-item.grouped-recommendation-row.selected {
   border-left: 3px solid var(--voice-accent);
   background: color-mix(in srgb, var(--voice-surface) 94%, var(--voice-accent));
 }
 
-.vcn-treatment-item.worklist.grouped-recommendation-row
-  + .vcn-treatment-item.worklist.grouped-recommendation-row {
+.vcn-treatment-item.grouped-recommendation-row
+  + .vcn-treatment-item.grouped-recommendation-row {
   border-top: 1px solid rgba(148, 163, 184, 0.2);
 }
 
@@ -1014,6 +1029,16 @@ function handleCardToggle(event: MouseEvent): void {
   font-weight: 500 !important;
 }
 
+.meta-token.medicine-manufacturer {
+  flex: 0 1 auto;
+  min-width: 0;
+  max-width: 180px;
+  overflow: hidden;
+  color: #64748b;
+  font-weight: 400;
+  text-overflow: ellipsis;
+}
+
 .match-token {
   display: inline-flex;
   align-items: center;
@@ -1204,6 +1229,22 @@ function handleCardToggle(event: MouseEvent): void {
 .exec-dept-chip.missing:not(.pharmacy-chip) .exec-dept-chip-value {
   color: #9a6200;
   font-weight: 600;
+}
+
+.exec-dept-chip.loading:not(.pharmacy-chip) {
+  padding-right: 3px;
+  padding-left: 3px;
+  border-color: transparent;
+  background: transparent;
+  color: #64748b;
+  cursor: progress;
+  font-weight: 500;
+}
+
+.exec-dept-chip.loading:not(.pharmacy-chip) .exec-dept-chip-label,
+.exec-dept-chip.loading:not(.pharmacy-chip) .exec-dept-chip-value {
+  color: #64748b;
+  font-weight: 500;
 }
 
 .exec-dept-chip-label {

@@ -77,6 +77,28 @@ describe('PhisHisAdapter.fetchInstitutionMedicalItemsCatalog', () => {
   });
 });
 
+describe('PhisHisAdapter.fetchMedicineProDetail', () => {
+  it('maps the PHIS manufacturer into the neutral medicine detail', async () => {
+    const service = {
+      fetchMedicineProDetail: vi.fn().mockResolvedValue({
+        idMedPro: 'med-1',
+        naMedPro: '苯磺酸氨氯地平片',
+        naFac: '原处方制药',
+        fgActive: '1',
+        idSto: 'store-1',
+      }),
+    } as unknown as HisService;
+
+    const detail = await new PhisHisAdapter(service).fetchMedicineProDetail('med-1', 'store-1');
+
+    expect(detail).toMatchObject({
+      productId: 'med-1',
+      manufacturer: '原处方制药',
+      storeId: 'store-1',
+    });
+  });
+});
+
 describe('PhisHisAdapter.fetchPatientHistory', () => {
   it('forwards the bounded history date range and current visit to PHIS', async () => {
     const service = {
@@ -167,6 +189,7 @@ describe('PhisHisAdapter.fetchPatientHistory', () => {
             idOrd: 'order-acarbose',
             idMedPro: 'med-acarbose',
             naMedPro: '☆阿卡波糖片(卡博平)',
+            naFac: '拜耳医药',
             specSale: '50mg*30片/盒',
             doseOnce: '50',
             unitDose: 'mg',
@@ -223,6 +246,7 @@ describe('PhisHisAdapter.fetchPatientHistory', () => {
         orderId: 'order-acarbose',
         productId: 'med-acarbose',
         name: '☆阿卡波糖片(卡博平)',
+        manufacturer: '拜耳医药',
         days: '14',
         totalQty: '2',
         totalUnit: '盒',

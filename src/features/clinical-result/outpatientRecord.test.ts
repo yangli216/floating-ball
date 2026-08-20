@@ -16,7 +16,7 @@ import {
 } from './historyRecordTemplates';
 
 describe('outpatientRecord', () => {
-  it('prefills standard history templates while keeping unsupported examination facts empty', () => {
+  it('prefills standard history templates and named vital-sign slots without inventing values', () => {
     const record = buildOutpatientRecord({
       chiefComplaint: '办理健康证查体',
       historyOfPresentIllness: '患者自诉无发热、咳嗽、腹痛等不适。',
@@ -27,8 +27,10 @@ describe('outpatientRecord', () => {
     expect(record.pastMedicalHistory).toContain('{否认}高血压病史');
     expect(record.personalHistory).toContain('{否认}吸烟史');
     expect(record.familyHistory).toContain('{否认}家族重大遗传病史');
-    expect(record.physicalExam).toBe('');
-    expect(record.physicalExam).not.toMatch(/体温|血压|脉搏|呼吸\d/u);
+    expect(record.physicalExam).toBe(
+      'T:{体温}℃ P:{脉搏}次/分 R:{呼吸}次/分 Bp:{收缩压}/{舒张压}mmHg。',
+    );
+    expect(record.physicalExam).not.toMatch(/\{\d/u);
     expect(record).not.toHaveProperty('diagnosisText');
   });
 
@@ -272,7 +274,9 @@ describe('buildRecordConfirmedPayload outpatientRecord', () => {
 
     expect(outpatientRecord.schemaVersion).toBe(OUTPATIENT_RECORD_SCHEMA_VERSION);
     expect(outpatientRecord.personalHistory).toBe('否认吸烟史，否认饮酒史。');
-    expect(outpatientRecord.physicalExam).toBe('双肺呼吸音清，未闻及干湿啰音。');
+    expect(outpatientRecord.physicalExam).toBe(
+      'T:{体温}℃ P:{脉搏}次/分 R:{呼吸}次/分 Bp:{收缩压}/{舒张压}mmHg。双肺呼吸音清，未闻及干湿啰音。',
+    );
     expect(outpatientRecord.precautions).toBe('注意休息，必要时复诊。');
     expect(payload.precautions).toBe('注意休息，必要时复诊。');
     expect(outpatientRecord).not.toHaveProperty('diagnosisText');
@@ -444,5 +448,56 @@ describe('buildRecordConfirmedPayload outpatientRecord', () => {
         replacementMarker: '{有}高血压病史',
       })],
     });
+  });
+
+  it('writes independently marked vital signs only when physical examination is selected', () => {
+    const selectedPayload = buildRecordConfirmedPayload({
+      consultationId: 'consultation-vital-slots',
+      chiefComplaint: '头晕1天',
+      historyOfPresentIllness: '患者头晕1天。',
+      pastMedicalHistory: '平素体健。',
+      outpatientRecord: {
+        physicalExam: 'T:{36.6}℃ P:{76}次/分 R:{18}次/分 Bp:{128}/{82}mmHg。神志清。',
+      },
+      diagList: [],
+      orderList: [],
+      writebackScope: {
+        recordFields: ['physicalExam'],
+        includeDiagnosis: false,
+        orderTypes: [],
+      },
+    });
+    const unselectedPayload = buildRecordConfirmedPayload({
+      consultationId: 'consultation-vital-slots-unselected',
+      chiefComplaint: '头晕1天',
+      historyOfPresentIllness: '患者头晕1天。',
+      pastMedicalHistory: '平素体健。',
+      outpatientRecord: {
+        physicalExam: 'T:{36.6}℃ P:{76}次/分 R:{18}次/分 Bp:{128}/{82}mmHg。',
+      },
+      diagList: [],
+      orderList: [],
+      writebackScope: {
+        recordFields: ['chiefComplaint'],
+        includeDiagnosis: false,
+        orderTypes: [],
+      },
+    });
+
+    expect(selectedPayload.outpatientRecord).toEqual({
+      schemaVersion: OUTPATIENT_RECORD_SCHEMA_VERSION,
+      physicalExam: 'T:{36.6}℃ P:{76}次/分 R:{18}次/分 Bp:{128}/{82}mmHg。神志清。',
+    });
+    expect(selectedPayload.physicalExamVitalSigns).toEqual({
+      schemaVersion: 'outpatient-record-physical-exam-vitals.v1',
+      items: [
+        { slotKey: 'temperature', value: '36.6', unit: '℃', marker: '{36.6}' },
+        { slotKey: 'pulse', value: '76', unit: '次/分', marker: '{76}' },
+        { slotKey: 'respiration', value: '18', unit: '次/分', marker: '{18}' },
+        { slotKey: 'systolicBloodPressure', value: '128', unit: 'mmHg', marker: '{128}' },
+        { slotKey: 'diastolicBloodPressure', value: '82', unit: 'mmHg', marker: '{82}' },
+      ],
+    });
+    expect(unselectedPayload).not.toHaveProperty('physicalExamVitalSigns');
   });
 });

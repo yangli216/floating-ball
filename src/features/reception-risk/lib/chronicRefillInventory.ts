@@ -121,6 +121,12 @@ function normalizeMedicineName(value: string): string {
     .toLowerCase();
 }
 
+function normalizeMedicineAttribute(value: string | undefined): string {
+  return (value || '')
+    .replace(/[\s,，、;；:：\-_/（）()]/gu, '')
+    .toLowerCase();
+}
+
 function readText(value: unknown): string {
   return typeof value === 'string' ? value.trim() : '';
 }
@@ -177,22 +183,57 @@ function findHistoricalMedicationOrder(
 function findInventoryMatch(
   medication: string,
   inventory: AvailableMedicineInventoryCatalogItem[],
+  options: {
+    historicalOrder?: HisHistoricalMedication | null;
+    preferredSpec?: string;
+  } = {},
 ): AvailableMedicineInventoryCatalogItem | null {
   const normalizedMedication = normalizeMedicineName(medication);
   if (!normalizedMedication) return null;
 
-  const exact = inventory.find((item) => normalizeMedicineName(item.productName) === normalizedMedication);
-  if (exact) return exact;
+  const historicalProductId = readText(options.historicalOrder?.productId);
+  if (historicalProductId) {
+    return inventory.find((item) => item.productId === historicalProductId) || null;
+  }
 
-  return inventory.find((item) => {
-    const normalizedInventoryName = normalizeMedicineName(item.productName);
-    return normalizedInventoryName.length >= 4
-      && normalizedMedication.length >= 4
-      && (
-        normalizedMedication.includes(normalizedInventoryName)
-        || normalizedInventoryName.includes(normalizedMedication)
-      );
-  }) || null;
+  const exactCandidates = inventory.filter(
+    (item) => normalizeMedicineName(item.productName) === normalizedMedication,
+  );
+  const candidates = exactCandidates.length > 0
+    ? exactCandidates
+    : inventory.filter((item) => {
+      const normalizedInventoryName = normalizeMedicineName(item.productName);
+      return normalizedInventoryName.length >= 4
+        && normalizedMedication.length >= 4
+        && (
+          normalizedMedication.includes(normalizedInventoryName)
+          || normalizedInventoryName.includes(normalizedMedication)
+        );
+    });
+  if (candidates.length === 0) return null;
+
+  const expectedManufacturer = normalizeMedicineAttribute(options.historicalOrder?.manufacturer);
+  const expectedSpec = normalizeMedicineAttribute(options.historicalOrder?.spec || options.preferredSpec);
+  if (expectedManufacturer) {
+    const manufacturerMatches = candidates.filter(
+      (item) => normalizeMedicineAttribute(item.manufacturer) === expectedManufacturer,
+    );
+    const manufacturerAndSpecMatches = expectedSpec
+      ? manufacturerMatches.filter((item) => normalizeMedicineAttribute(item.spec) === expectedSpec)
+      : manufacturerMatches;
+    if (manufacturerAndSpecMatches.length === 1) return manufacturerAndSpecMatches[0];
+    if (manufacturerMatches.length === 1) return manufacturerMatches[0];
+    return null;
+  }
+
+  if (expectedSpec) {
+    const specMatches = candidates.filter(
+      (item) => normalizeMedicineAttribute(item.spec) === expectedSpec,
+    );
+    if (specMatches.length === 1) return specMatches[0];
+  }
+
+  return candidates.length === 1 ? candidates[0] : null;
 }
 
 export function buildChronicRefillInventoryTreatments(
@@ -217,7 +258,10 @@ export function buildChronicRefillInventoryTreatments(
       medicineName,
       historicalMedicationOrders,
     );
-    const matched = findInventoryMatch(medicineName, inventory);
+    const matched = findInventoryMatch(medicineName, inventory, {
+      historicalOrder: historicalMedicationOrderByName,
+      preferredSpec: recommendation?.spec,
+    });
     if (!matched) {
       const standardName = standardizeMedicineName(medicineName).trim();
       const fallbackKey = `fallback:${normalizeMedicineName(standardName)}`;
@@ -254,8 +298,9 @@ export function buildChronicRefillInventoryTreatments(
     ) || historicalMedicationOrderByName;
     const hasHistoricalMedication = Boolean(historicalMedicationOrder || historicalMedication);
     const evidenceMedication = historicalMedicationOrder?.name || historicalMedication || medicineName;
+    const currentManufacturerText = matched.manufacturer ? `（${matched.manufacturer}）` : '';
     const evidenceText = hasHistoricalMedication
-      ? `历史用药：${evidenceMedication}；当前药房有效库存可用`
+      ? `历史用药：${evidenceMedication}；当前药房同品${currentManufacturerText}有效库存可用`
       : `模型结合慢病诊断与当前库存推荐：${medicineName}`;
     const parsed = parseHistoricalMedication(historicalMedication);
 
@@ -323,6 +368,7 @@ export function buildChronicRefillInventoryTreatments(
         id: matched.productId,
         name: matched.productName,
         spec: matched.spec,
+        manufacturer: matched.manufacturer,
         storeIds: matched.storeIds,
         raw: {
           idMedPro: matched.productId,

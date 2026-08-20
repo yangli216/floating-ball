@@ -325,6 +325,7 @@ function mapPrescriptionMedication(
       ?? firstTrim((relatedOrder || {}) as Record<string, unknown>, ['idMedPro', 'idMed']),
     name,
     spec: firstTrim(raw, ['specSale']),
+    manufacturer: firstTrim(raw, ['naFac', 'manufacturer']),
     dose: positiveNumberText(raw, ['doseOnce', 'dose']),
     doseUnit: firstTrim(raw, ['unitDose']),
     frequency: firstTrim(raw, ['idFreqText']),
@@ -825,6 +826,7 @@ export class PhisHisAdapter implements HisAdapter {
       productName: trim(detail.naMedPro) ?? '',
       medicineId: trim(detail.idMed),
       medicineName: trim(detail.naMed),
+      manufacturer: trim(detail.naFac),
       active: detail.fgActive !== '0',
 
       specSale: trim(detail.specSale),

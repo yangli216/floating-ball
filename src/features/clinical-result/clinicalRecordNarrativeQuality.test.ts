@@ -60,6 +60,32 @@ describe('clinicalRecordNarrativeQuality', () => {
     expect(normalizeGeneratedClinicalRecordNarrative('待医生补充完善。').text).toBe('');
   });
 
+  it('removes source-oriented missing-information wording without inventing a negative fact', () => {
+    const result = normalizeGeneratedClinicalRecordNarrative(
+      '患者为甲状腺恶性肿瘤术后及糖尿病患者，今日来院进行常规复诊。对话中未提及新发不适症状或病情变化，主要目的是随访监测既往疾病控制情况。',
+      'historyOfPresentIllness',
+    );
+
+    expect(result.text).toBe(
+      '患者为甲状腺恶性肿瘤术后及糖尿病患者，今日来院进行常规复诊。主要目的是随访监测既往疾病控制情况。',
+    );
+    expect(result.text).not.toMatch(/无新发不适|病情无变化/u);
+    expect(result.issues).toContainEqual(expect.objectContaining({
+      code: 'process-placeholder-removed',
+      text: '对话中未提及新发不适症状或病情变化',
+    }));
+  });
+
+  it('drops equivalent missing-information wording from other input sources', () => {
+    const result = normalizeGeneratedClinicalRecordNarrative(
+      '问诊中未说明近期不适症状。现有资料中未记录病情控制情况。',
+      'historyOfPresentIllness',
+    );
+
+    expect(result.text).toBe('');
+    expect(result.issues.filter((item) => item.code === 'process-placeholder-removed')).toHaveLength(2);
+  });
+
   it('removes exact duplicate sentences without changing the first one', () => {
     const result = normalizeGeneratedClinicalRecordNarrative('否认胸痛。否认胸痛。');
 

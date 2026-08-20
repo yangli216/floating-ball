@@ -137,6 +137,23 @@ export function useTreatmentHydration(deps: Deps) {
 
   const inventoryWarnings = ref<Record<string, string>>({});
   const inventoryChecking = ref<Set<string>>(new Set());
+  const medicalItemDetailHydrating = ref<Set<TreatmentRecommendation>>(new Set());
+  const medicalItemDetailRequests = new WeakMap<TreatmentRecommendation, Promise<boolean>>();
+
+  function isMedicalItemDetailHydrating(rec: TreatmentRecommendation): boolean {
+    return medicalItemDetailHydrating.value.has(rec);
+  }
+
+  function setMedicalItemDetailHydrating(rec: TreatmentRecommendation, hydrating: boolean): void {
+    const next = new Set(medicalItemDetailHydrating.value);
+    if (hydrating) next.add(rec);
+    else next.delete(rec);
+    medicalItemDetailHydrating.value = next;
+  }
+
+  function isMedicalItemDetailLoaded(rec: TreatmentRecommendation): boolean {
+    return getMatchedItemRaw(rec)?.__detailLoaded === true;
+  }
 
   const getInventoryKey = (rec: TreatmentRecommendation): string => {
     if (getKeyOverride) return getKeyOverride(rec);
@@ -260,6 +277,7 @@ export function useTreatmentHydration(deps: Deps) {
       rec.matchedItem = {
         ...rec.matchedItem,
         name: detail.productName?.trim() || rec.matchedItem.name || rec.name,
+        manufacturer: detail.manufacturer?.trim() || rec.matchedItem.manufacturer,
         fgSkintest: detail.needsSkinTest ? '1' : (rec.matchedItem.fgSkintest || '0'),
         raw: mergedRaw,
       };
@@ -362,7 +380,7 @@ export function useTreatmentHydration(deps: Deps) {
     applyMedicalItemPartOptions(rec, partOptions);
   }
 
-  async function hydrateMatchedMedicalItemDetail(rec: TreatmentRecommendation): Promise<boolean> {
+  async function performMatchedMedicalItemDetailHydration(rec: TreatmentRecommendation): Promise<boolean> {
     if (!rec.matchedItem) return false;
     if (rec.type === 'medicine') {
       return hydrateMatchedMedicineDetail(rec);
@@ -418,6 +436,29 @@ export function useTreatmentHydration(deps: Deps) {
         error,
       });
       return false;
+    }
+  }
+
+  async function hydrateMatchedMedicalItemDetail(rec: TreatmentRecommendation): Promise<boolean> {
+    if (rec.type === 'medicine') {
+      return performMatchedMedicalItemDetailHydration(rec);
+    }
+    if (!rec.matchedItem) return false;
+    if (isMedicalItemDetailLoaded(rec)) return true;
+
+    const pendingRequest = medicalItemDetailRequests.get(rec);
+    if (pendingRequest) return pendingRequest;
+
+    setMedicalItemDetailHydrating(rec, true);
+    const request = performMatchedMedicalItemDetailHydration(rec);
+    medicalItemDetailRequests.set(rec, request);
+    try {
+      return await request;
+    } finally {
+      if (medicalItemDetailRequests.get(rec) === request) {
+        medicalItemDetailRequests.delete(rec);
+        setMedicalItemDetailHydrating(rec, false);
+      }
     }
   }
 
@@ -607,6 +648,7 @@ export function useTreatmentHydration(deps: Deps) {
     hydrateMatchedMedicineDetail,
     hydrateMatchedMedicalItemDetail,
     hydrateMatchedMedicalItemDetails,
+    isMedicalItemDetailHydrating,
     ensureMedicineSelectable,
     isMedicineDetailLoadedForSelectedPharmacy,
     checkMedicineInventoryEnough,

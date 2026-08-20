@@ -56,6 +56,7 @@ describe('buildChronicRefillInventoryTreatments', () => {
       productName: '苯磺酸氨氯地平片',
       spec: '5mg*28片/盒',
       unit: '盒',
+      manufacturer: '原研制药',
       availableQuantity: 12,
       storeIds: ['1760'],
       storeNames: ['西药房'],
@@ -76,6 +77,7 @@ describe('buildChronicRefillInventoryTreatments', () => {
       totalUnit: '盒',
       matchedItem: {
         id: 'med-1',
+        manufacturer: '原研制药',
         storeIds: ['1760'],
       },
     });
@@ -85,6 +87,104 @@ describe('buildChronicRefillInventoryTreatments', () => {
       selected: false,
       matchStatus: 'unmatched',
       matchedItem: null,
+    });
+  });
+
+  it('uses the historical product id instead of the first same-name manufacturer', () => {
+    const treatments = buildChronicRefillInventoryTreatments([
+      '苯磺酸氨氯地平片',
+    ], [{
+      productId: 'med-other-factory',
+      productName: '苯磺酸氨氯地平片',
+      spec: '5mg*28片/盒',
+      manufacturer: '其它制药',
+      availableQuantity: 20,
+      storeIds: ['1760'],
+      storeNames: ['西药房'],
+    }, {
+      productId: 'med-original-factory',
+      productName: '苯磺酸氨氯地平片',
+      spec: '5mg*28片/盒',
+      manufacturer: '原处方制药',
+      availableQuantity: 20,
+      storeIds: ['1760'],
+      storeNames: ['西药房'],
+    }], undefined, {
+      historicalMedicationOrders: [{
+        productId: 'med-original-factory',
+        name: '苯磺酸氨氯地平片',
+        spec: '5mg*28片/盒',
+        manufacturer: '原处方制药',
+      }],
+    });
+
+    expect(treatments[0]).toMatchObject({
+      name: '苯磺酸氨氯地平片',
+      matchStatus: 'exact',
+      matchedItem: {
+        id: 'med-original-factory',
+        manufacturer: '原处方制药',
+      },
+    });
+  });
+
+  it('does not substitute another manufacturer when the historical product is unavailable', () => {
+    const treatments = buildChronicRefillInventoryTreatments([
+      '苯磺酸氨氯地平片',
+    ], [{
+      productId: 'med-other-factory',
+      productName: '苯磺酸氨氯地平片',
+      spec: '5mg*28片/盒',
+      manufacturer: '其它制药',
+      availableQuantity: 20,
+      storeIds: ['1760'],
+      storeNames: ['西药房'],
+    }], undefined, {
+      historicalMedicationOrders: [{
+        productId: 'med-original-factory',
+        name: '苯磺酸氨氯地平片',
+        spec: '5mg*28片/盒',
+        manufacturer: '原处方制药',
+      }],
+    });
+
+    expect(treatments[0]).toMatchObject({
+      selected: false,
+      matchStatus: 'unmatched',
+      matchedItem: null,
+    });
+  });
+
+  it('uses historical manufacturer to disambiguate same-name inventory without a product id', () => {
+    const treatments = buildChronicRefillInventoryTreatments([
+      '盐酸二甲双胍片',
+    ], [{
+      productId: 'metformin-a',
+      productName: '盐酸二甲双胍片',
+      spec: '0.5g*60片/瓶',
+      manufacturer: '甲制药',
+      availableQuantity: 20,
+      storeIds: ['1760'],
+      storeNames: ['西药房'],
+    }, {
+      productId: 'metformin-b',
+      productName: '盐酸二甲双胍片',
+      spec: '0.5g*60片/瓶',
+      manufacturer: '乙制药',
+      availableQuantity: 20,
+      storeIds: ['1760'],
+      storeNames: ['西药房'],
+    }], undefined, {
+      historicalMedicationOrders: [{
+        name: '盐酸二甲双胍片',
+        spec: '0.5g*60片/瓶',
+        manufacturer: '乙制药',
+      }],
+    });
+
+    expect(treatments[0].matchedItem).toMatchObject({
+      id: 'metformin-b',
+      manufacturer: '乙制药',
     });
   });
 

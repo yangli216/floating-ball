@@ -54,6 +54,7 @@ export interface ClinicalResultMatchedItem {
   id: string;
   name: string;
   spec?: string;
+  manufacturer?: string;
   code?: string;
   idSrv?: string;
   naSrv?: string;

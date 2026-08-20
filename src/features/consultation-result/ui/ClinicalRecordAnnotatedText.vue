@@ -143,9 +143,9 @@ function showCopyFeedback(value: string): void {
   }, 1200);
 }
 
-async function copyText(value: string): Promise<void> {
+async function copyText(value: string): Promise<boolean> {
   const text = value.trim();
-  if (!text) return;
+  if (!text) return false;
   try {
     if (navigator.clipboard?.writeText) {
       await navigator.clipboard.writeText(text);
@@ -162,9 +162,17 @@ async function copyText(value: string): Promise<void> {
       if (!copied) throw new Error('copy command failed');
     }
     showCopyFeedback(text);
+    return true;
   } catch (error) {
     console.warn('[ClinicalRecordAnnotatedText] 复制失败', error);
+    return false;
   }
+}
+
+async function copySuggestionText(segment: ClinicalRecordAnnotationSuggestionSegment): Promise<void> {
+  if (!(await copyText(segment.text))) return;
+  closeAnnotationPopover();
+  clearCopyFeedback();
 }
 
 function clearSelectionCopy(): void {
@@ -361,7 +369,7 @@ watch(() => props.modelValue, () => void nextTick(syncEditableContent));
                 <template v-else>
                   <button type="button" class="clinical-record-text-button is-danger" @click="removeSuggestion(segment)">移除</button>
                   <button type="button" class="clinical-record-text-button" @click="startSuggestionEdit(segment)">调整</button>
-                  <button type="button" class="clinical-record-copy-button" @click="copyText(segment.text)">
+                  <button type="button" class="clinical-record-copy-button" @click="copySuggestionText(segment)">
                     {{ copiedText === segment.text.trim() ? '已复制' : '复制' }}
                   </button>
                 </template>

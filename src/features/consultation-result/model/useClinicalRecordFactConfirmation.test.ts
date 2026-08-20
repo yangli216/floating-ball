@@ -141,4 +141,22 @@ describe('useClinicalRecordFactConfirmation', () => {
     expect(record.historyOfPresentIllness.match(/否认呼吸困难/gu)).toHaveLength(1);
     expect(onRecordChanged).toHaveBeenCalledOnce();
   });
+
+  it('does not restore a cached source-oriented missing-information candidate', () => {
+    const { controller, onRecordChanged, record } = createController(async () => '{"items":[]}');
+
+    controller.restoreSuggestions([{
+      id: 'legacy-process-wording',
+      field: 'historyOfPresentIllness',
+      question: '近期是否有新发不适或病情变化？',
+      negativeRecordText: '对话中未提及新发不适症状或病情变化',
+      rationale: '补充本次复诊情况',
+      priority: 'critical',
+      status: 'pending',
+    }]);
+
+    expect(controller.suggestions.value).toEqual([]);
+    expect(record.historyOfPresentIllness).toBe('患者胸闷1天。');
+    expect(onRecordChanged).not.toHaveBeenCalled();
+  });
 });

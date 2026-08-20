@@ -3,6 +3,7 @@ import type { Diagnosis } from '@/types/consultation';
 import {
   extractExplicitClinicalRecordFacts,
   normalizeClinicalRecordFactSuggestions,
+  normalizeGeneratedClinicalRecordNarrative,
   type ClinicalRecordExplicitFact,
   type ClinicalRecordFactField,
   type ClinicalRecordFactRecord,
@@ -104,7 +105,14 @@ export function useClinicalRecordFactConfirmation(options: ClinicalRecordFactCon
         && (item.priority === 'critical' || item.priority === 'general')
         && (item.status === 'pending' || item.status === 'dismissed')
       ))
-      .map((item) => ({ ...item }));
+      .map((item): ClinicalRecordFactSuggestion | null => {
+        const negativeRecordText = normalizeGeneratedClinicalRecordNarrative(
+          item.negativeRecordText,
+          item.field,
+        ).text;
+        return negativeRecordText ? { ...item, negativeRecordText } : null;
+      })
+      .filter((item): item is ClinicalRecordFactSuggestion => Boolean(item));
     mergePendingSuggestions(restored);
     suggestions.value = restored;
   }

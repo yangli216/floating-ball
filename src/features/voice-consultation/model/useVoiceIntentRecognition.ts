@@ -400,6 +400,10 @@ function normalizeVoiceExtraction(parsed: VoiceExtractionResult): NormalizedVoic
       getText(parsed.recordDraft?.familyHistory || parsed.familyHistory),
       'familyHistory',
     ).text,
+    physicalExam: normalizeGeneratedClinicalRecordNarrative(
+      getText(parsed.recordDraft?.physicalExam || parsed.physicalExam),
+      'physicalExam',
+    ).text,
     symptoms: getTextList(parsed.recordDraft?.symptoms || parsed.symptoms),
     negativeSymptoms: getTextList(parsed.recordDraft?.negativeSymptoms || parsed.negativeSymptoms),
     treatmentPlan: getText(parsed.recordDraft?.treatmentPlan || parsed.treatmentPlan),
@@ -468,6 +472,9 @@ function validateVoiceExtractionPayload(payload: unknown): string[] {
       }
       if (typeof recordDraftObject.familyHistory !== 'undefined' && typeof recordDraftObject.familyHistory !== 'string') {
         issues.push('recordDraft.familyHistory 必须是 string');
+      }
+      if (typeof recordDraftObject.physicalExam !== 'undefined' && typeof recordDraftObject.physicalExam !== 'string') {
+        issues.push('recordDraft.physicalExam 必须是 string');
       }
       if (typeof recordDraftObject.symptoms !== 'undefined' && !Array.isArray(recordDraftObject.symptoms)) {
         issues.push('recordDraft.symptoms 必须是数组');
@@ -646,6 +653,7 @@ export function useVoiceIntentRecognition() {
     readySections: ClinicalResultGenerationSection[] = [],
     resolvedTreatments?: MatchedTreatment[],
     patientGender?: string,
+    vitalSourceText?: string,
   ): {
     intentResult: VoiceIntentResult;
     matchedDiagnoses: MatchedDiagnosis[];
@@ -699,6 +707,8 @@ export function useVoiceIntentRecognition() {
         personalHistory,
         menstrualHistory,
         familyHistory,
+        physicalExam: normalizedExtraction.recordDraft.physicalExam,
+        vitals: vitalSourceText,
         diagnosisNames: matchedDiagnoses.map((item) => item.name),
         patientGender,
       }),
@@ -738,6 +748,7 @@ export function useVoiceIntentRecognition() {
         menstrualHistory?: string | null;
         familyHistory?: string | null;
         gender?: string | null;
+        vitals?: string | null;
       };
       consultationId?: string;
       onProgress?: (progress: VoiceIntentProgress) => void;
@@ -779,6 +790,7 @@ export function useVoiceIntentRecognition() {
       // 注入患者档案：HIS 已知的既往史/过敏史/长期用药史，避免 LLM 因对话未提及就丢失基础病历信息
       const patientContextLines: string[] = [];
       const patientCtx = options?.patientContext;
+      const vitalSourceText = [patientCtx?.vitals, normalizedText].filter(Boolean).join('\n');
       const cleanCtx = (value?: string | null) => {
         const trimmed = (value ?? '').trim();
         if (!trimmed) return '';
@@ -848,6 +860,7 @@ export function useVoiceIntentRecognition() {
           streamAccumulator.readySections,
           undefined,
           patientCtx?.gender || undefined,
+          vitalSourceText,
         );
         options.onProgress({
           result: partial.intentResult,
@@ -906,6 +919,7 @@ export function useVoiceIntentRecognition() {
         streamAccumulator.readySections,
         resolvedTreatments,
         patientCtx?.gender || undefined,
+        vitalSourceText,
       );
       const {
         intentResult,

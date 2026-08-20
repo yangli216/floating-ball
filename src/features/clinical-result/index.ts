@@ -112,6 +112,21 @@ export type {
 } from './outpatientRecord';
 
 export {
+  buildPhysicalExamWithVitalTemplate,
+  collectPhysicalExamVitalSigns,
+  DEFAULT_PHYSICAL_EXAM_VITAL_TEMPLATE,
+  extractPhysicalExamVitalValues,
+  formatPhysicalExamVitalTemplate,
+  PHYSICAL_EXAM_VITAL_SCHEMA_VERSION,
+} from './physicalExamVitalTemplate';
+export type {
+  PhysicalExamVitalSigns,
+  PhysicalExamVitalSignItem,
+  PhysicalExamVitalSlotKey,
+  PhysicalExamVitalValues,
+} from './physicalExamVitalTemplate';
+
+export {
   CHRONIC_PAST_MEDICAL_HISTORY_NEGATIVE_TEMPLATE,
   DEFAULT_FAMILY_HISTORY_TEMPLATE,
   DEFAULT_HEALTH_EXAM_PAST_MEDICAL_HISTORY_TEMPLATE,
@@ -313,6 +328,7 @@ export {
   buildMedicineMatchedItem,
   buildTreatmentFeedbackSnapshot,
   getClinicalDiagnosisIdentity,
+  getMedicineManufacturer,
   getReasonTooltipKey,
   getSuggestedMatchName,
   getTreatmentEditorFieldKey,

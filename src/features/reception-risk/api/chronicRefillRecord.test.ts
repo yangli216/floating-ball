@@ -260,6 +260,7 @@ describe('generateChronicRefillRecord', () => {
     expect(prompt).toContain('盐酸二甲双胍片｜0.25g*60片/瓶');
     expect(prompt).not.toContain('可用库存');
     expect(prompt).toContain('recommendedMedicines 必须返回结构化药品对象');
+    expect(prompt).toContain('对话中未提及、问诊中未说明、资料中未记录');
     expect(prompt).toContain('"targetDose":"目标临床一次剂量数值"');
     expect(prompt).toContain('days、totalQty、totalUnit必须留空');
     expect(prompt).toContain('reason只说明诊断、历史用药和适应证等临床推荐依据');

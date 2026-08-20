@@ -1262,7 +1262,7 @@ ws://127.0.0.1:8081/api/consultation/events/ws
     "personalHistory": "否认外地久居史，否认疫水疫源接触史，否认牧区、矿山、高氟区、低碘区居住史，否认化学性物质、粉尘、放射性物质、有毒物质接触史，否认吸毒史，否认吸烟史，否认饮酒史，否认药物嗜好史，否认冶游史。",
     "menstrualHistory": "月经规律，末次月经2026-08-05。",
     "familyHistory": "否认家族重大遗传病史，否认家族肿瘤病史，否认家族传染病史，否认家族精神病史。",
-    "physicalExam": "体温36.5℃,脉搏78次/分,呼吸20次/分,血压120/60mmHg。双肺呼吸音清，未及干湿啰音。",
+    "physicalExam": "T:{36.5}℃ P:{78}次/分 R:{20}次/分 Bp:{120}/{60}mmHg。双肺呼吸音清，未及干湿啰音。",
     "precautions": "注意休息，1周内复诊，必要时上级医院进一步检查治疗。"
   },
   "recordTemplateChanges": {
@@ -1276,6 +1276,16 @@ ws://127.0.0.1:8081/api/consultation/events/ws
         "templateMarker": "{否认}高血压病史",
         "replacementMarker": "{有}高血压病史"
       }
+    ]
+  },
+  "physicalExamVitalSigns": {
+    "schemaVersion": "outpatient-record-physical-exam-vitals.v1",
+    "items": [
+      { "slotKey": "temperature", "value": "36.5", "unit": "℃", "marker": "{36.5}" },
+      { "slotKey": "pulse", "value": "78", "unit": "次/分", "marker": "{78}" },
+      { "slotKey": "respiration", "value": "20", "unit": "次/分", "marker": "{20}" },
+      { "slotKey": "systolicBloodPressure", "value": "120", "unit": "mmHg", "marker": "{120}" },
+      { "slotKey": "diastolicBloodPressure", "value": "60", "unit": "mmHg", "marker": "{60}" }
     ]
   }
 }
@@ -1297,6 +1307,7 @@ ws://127.0.0.1:8081/api/consultation/events/ws
 8. 为兼容 PHIS 既有的顶层病历字段读取方式，选择 `precautions` 时 `record-confirmed` 同时返回顶层 `precautions`，其值与 `outpatientRecord.precautions` 完全一致；未选择时两处都不出现。主诉、现病史、既往史、月经史和家族史的顶层兼容字段同样只在对应 record field 被选择时出现；男性患者或月经史为空时不得出现 `menstrualHistory`。
 9. 没有 `writebackScope` 的历史客户端仍按完整回写契约处理，继续携带完整 `outpatientRecord`、`diagList` 与 `orderList`；PHIS 不得要求旧版本补传 scope。
 10. 固定既往史、个人史、家族史模板在桌面端编辑时使用 `{体健}` / `{否认}` / `{有}` 状态槽位；为兼容既有 PHIS，顶层病历字段和 `outpatientRecord` 中发送的是去掉花括号后的自然文本。若医生选择回写的病史字段中存在由明确上下文改为 `{有}` 的槽位，payload 额外携带 `recordTemplateChanges`；PHIS 应优先按 `field + slotKey` 精确更新对应模板值。未选字段不出现在变化清单中；没有变化时整个对象省略。旧 PHIS 可忽略此新增对象并继续读取自然文本。
+11. `physicalExam` 固定以 `T:{体温}℃ P:{脉搏}次/分 R:{呼吸}次/分 Bp:{收缩压}/{舒张压}mmHg。` 槽位开头；对话、结构化问诊或本次 HIS 上下文有明确数值时，各槽位分别替换为带花括号的值。花括号是 PHIS 体格检查字段标记，不等同于已确认状态。选择回写体格检查且至少一个槽位已有数值时，payload 额外携带 `physicalExamVitalSigns`；未选择体格检查或仍全部为具名占位词时省略该对象。
 
 **outpatientRecord 字段：**
 
@@ -1309,7 +1320,7 @@ ws://127.0.0.1:8081/api/consultation/events/ws
 | `personalHistory` | String | 个人史 |
 | `menstrualHistory` | String | 女性月经史；独立于个人史，仅在有明确内容且被医生选择时出现 |
 | `familyHistory` | String | 家族史；与顶层 `familyHistory` 保持一致 |
-| `physicalExam` | String | 体格检查；优先使用 HIS 已传入生命体征或医生确认后的模板 |
+| `physicalExam` | String | 体格检查；固定保留 T/P/R/BP 槽位标记，明确数值按槽位填入，其余查体正文接在槽位模板后 |
 | `precautions` | String | 注意事项 / 健康宣教 / 复诊提示；不等同于 `treatmentPlan` |
 
 **recordTemplateChanges 字段：**
@@ -1323,6 +1334,16 @@ ws://127.0.0.1:8081/api/consultation/events/ws
 | `items[].toValue` | String | 本次明确事实对应的状态，当前固定为 `有` |
 | `items[].templateMarker` | String | 便于人工排查的原模板片段，例如 `{否认}高血压病史`；PHIS 定位应以 `field + slotKey` 为准 |
 | `items[].replacementMarker` | String | 结果页显示片段，例如 `{有}高血压病史`；兼容正文中的实际文本不含花括号 |
+
+**physicalExamVitalSigns 字段：**
+
+| 字段名 | 类型 | 说明 |
+| :--- | :--- | :--- |
+| `schemaVersion` | String | 当前固定为 `outpatient-record-physical-exam-vitals.v1` |
+| `items[].slotKey` | String | 稳定槽位：`temperature / pulse / respiration / systolicBloodPressure / diastolicBloodPressure` |
+| `items[].value` | String | 本次明确获取的数值，不含单位；具名占位词不进入 items |
+| `items[].unit` | String | 体温为 `℃`，脉搏/呼吸为 `次/分`，血压为 `mmHg` |
+| `items[].marker` | String | 与 `physicalExam` 正文对应的独立标记，例如 `{120}`；PHIS 定位应优先使用 `slotKey` |
 
 **diagList 字段：**
 

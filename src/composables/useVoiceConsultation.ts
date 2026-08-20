@@ -27,6 +27,7 @@ import {
 } from '@features/voice-consultation';
 import {
   cloneClinicalResultInput,
+  formatPhysicalExamVitalTemplate,
   type ClinicalResultInput,
 } from '@features/clinical-result';
 import { submitConsultationUserLog } from '@services/consultationUserLog';
@@ -66,6 +67,28 @@ export interface VoiceConsultationOptions {
   workMode: {
     exitWork: (sessionStatus?: 'completed' | 'cancelled' | 'error') => Promise<void>;
   };
+}
+
+function getCurrentPatientVitalSource(patient: AppPatient | null): string {
+  const vitalSigns = patient?.currentVitalSigns || patient?.clinical?.currentVitalSigns;
+  if (!vitalSigns) return '';
+  return formatPhysicalExamVitalTemplate({
+    ...(typeof vitalSigns.temperature === 'number' ? { temperature: String(vitalSigns.temperature) } : {}),
+    ...(typeof vitalSigns.pulseRate === 'number'
+      ? { pulse: String(vitalSigns.pulseRate) }
+      : typeof vitalSigns.heartRate === 'number'
+        ? { pulse: String(vitalSigns.heartRate) }
+        : {}),
+    ...(typeof vitalSigns.respiratoryRate === 'number'
+      ? { respiration: String(vitalSigns.respiratoryRate) }
+      : {}),
+    ...(typeof vitalSigns.systolicBloodPressure === 'number'
+      ? { systolicBloodPressure: String(vitalSigns.systolicBloodPressure) }
+      : {}),
+    ...(typeof vitalSigns.diastolicBloodPressure === 'number'
+      ? { diastolicBloodPressure: String(vitalSigns.diastolicBloodPressure) }
+      : {}),
+  });
 }
 
 /**
@@ -345,6 +368,7 @@ export function useVoiceConsultation(options: VoiceConsultationOptions) {
           menstrualHistory: getPatientContextMenstrualHistory(currentPatient.value) || null,
           familyHistory: getPatientContextFamilyHistory(currentPatient.value) || null,
           gender: getPatientContextGenderText(currentPatient.value) || null,
+          vitals: getCurrentPatientVitalSource(currentPatient.value) || null,
         },
         onProgress: ({ result: partialResult }) => {
           if (currentToken !== processingToken) return;
