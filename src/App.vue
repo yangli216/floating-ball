@@ -209,7 +209,7 @@ function createMedicalCatalogDebugApi(): MedicalCatalogDebugApi {
         "window.__medicalCatalogDebug__.sync('机构ID')  // 仅切换机构并同步",
         "window.__medicalCatalogDebug__.sync({ orgCode: '机构ID', tenantId: '租户ID' })  // 切换机构/租户并同步",
         'window.__medicalCatalogDebug__.clear()  // 清空全部目录缓存',
-        "window.__medicalCatalogDebug__.clear({ catalogType: 'items', orgCode: '机构ID', tenantId: '租户ID' })  // 清理指定机构/租户诊疗项目",
+        "window.__medicalCatalogDebug__.clear({ catalogType: 'items', orgCode: '机构ID', tenantId: '租户ID' })  // 清理指定机构/租户的其他诊疗项目（检查检验不持久化）",
         "window.__medicalCatalogDebug__.clear({ catalogType: 'medicines', orgCode: '机构ID', tenantId: '租户ID', storeId: '药房ID' })  // 清理指定药房药品缓存",
         'window.__medicalCatalogDebug__.sample(5)  // 查看当前内存目录前几条'
       ];

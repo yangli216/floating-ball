@@ -10,6 +10,7 @@
 import type { Ref } from 'vue';
 import { getWindowSizeForView } from '@/constants/windowSizes';
 import { analyzePatientRisks } from '@/services/llm';
+import { medicalDataService } from '@/services/medicalData';
 import { trackApiCall, trackError } from '@/services/operationTracker';
 import { getHisAdapter } from '@/services/his';
 import type {
@@ -29,6 +30,7 @@ import {
 import {
   assessChronicRefillCandidate,
   buildChronicRefillHistoryQuery,
+  normalizeRiskPresentationItems,
   type RiskItem,
 } from '@features/reception-risk';
 import {
@@ -304,6 +306,24 @@ export function useReceptionController(options: ReceptionControllerOptions) {
     receptionSession.reset();
     activeReceptionPromise = null;
     activeReceptionPatientId = null;
+    medicalDataService.clearAvailableExamLabItems();
+  }
+
+  async function prepareAvailableExamLabCatalog(
+    flowVersion: number,
+    payload: StartConsultationPayload | PatientRisksPayload,
+  ): Promise<void> {
+    const receptionDraft = buildReceptionPatientDraft(payload as Record<string, unknown>);
+    const receptionKey = getPatientContextAnchorId(receptionDraft) || getPatientContextId(receptionDraft);
+    try {
+      await medicalDataService.beginAvailableExamLabReception(receptionKey);
+    } catch (error) {
+      if (!isReceptionFlowCurrent(flowVersion)) {
+        return;
+      }
+      console.warn('[ReceptionController] Available exam/lab catalog unavailable for current reception', error);
+      showToast('当前检验检查目录获取失败，相关项目暂不可匹配或回写', 'error', 5000);
+    }
   }
 
   function clearVoiceStateWhenPatientSwitches(
@@ -446,7 +466,7 @@ export function useReceptionController(options: ReceptionControllerOptions) {
     suppliedRisks?: RiskItem[],
   ): Promise<RiskItem[] | null> {
     if (suppliedRisks?.length) {
-      return suppliedRisks;
+      return normalizeRiskPresentationItems(suppliedRisks);
     }
 
     try {
@@ -454,7 +474,7 @@ export function useReceptionController(options: ReceptionControllerOptions) {
       if (!isReceptionFlowCurrent(flowVersion)) {
         return null;
       }
-      return risks || [];
+      return normalizeRiskPresentationItems(risks || []);
     } catch (error) {
       if (!isReceptionFlowCurrent(flowVersion)) {
         return null;
@@ -494,7 +514,10 @@ export function useReceptionController(options: ReceptionControllerOptions) {
     const receptionPromise = (async () => {
       trackApiCall('his_receive_patient', true, undefined, { patientId, auto: quietMode });
       try {
-        const nextPatient = await hydratePatientContextFromHis(currentPatient.value, payload, quietMode ? 'reception-auto' : 'receive-patient');
+        const [nextPatient] = await Promise.all([
+          hydratePatientContextFromHis(currentPatient.value, payload, quietMode ? 'reception-auto' : 'receive-patient'),
+          prepareAvailableExamLabCatalog(flowVersion, payload),
+        ]);
         if (!isReceptionFlowCurrent(flowVersion)) {
           console.info('[ReceptionController] Ignore stale reception result after flow invalidation:', patientId);
           return false;
@@ -633,7 +656,10 @@ export function useReceptionController(options: ReceptionControllerOptions) {
     });
 
     try {
-      const nextPatient = await hydratePatientContextFromHis(currentPatient.value, data, 'show-patient-risks');
+      const [nextPatient] = await Promise.all([
+        hydratePatientContextFromHis(currentPatient.value, data, 'show-patient-risks'),
+        prepareAvailableExamLabCatalog(flowVersion, data),
+      ]);
       if (!isReceptionFlowCurrent(flowVersion)) {
         console.info('[ReceptionController] Ignore stale patient risk context:', tracking.patientId);
         return;

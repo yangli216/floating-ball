@@ -158,6 +158,10 @@ interface RoutineMatchDescriptor {
   hasClassification: boolean;
 }
 
+function isExamOrLabItem(item: Pick<MedicalItem, 'category'>): boolean {
+  return item.category === '检查' || item.category === '检验';
+}
+
 export type CatalogMatchStatus = 'exact' | 'probable' | 'unmatched';
 
 export interface CatalogMatchAssessment<T> {
@@ -235,9 +239,11 @@ class MedicalDataService {
   private currentOrgCode: string | null = null;
   private currentTenantId: string | null = null;
   private localSyncPromise: Promise<void> | null = null;
-  private availableExamLabCache: { key: string; loadedAt: number; items: MedicalItem[] } | null = null;
+  private availableExamLabCache: { key: string; items: MedicalItem[] } | null = null;
   private availableExamLabPromise: Promise<MedicalItem[]> | null = null;
   private availableExamLabPromiseKey = '';
+  private availableExamLabGeneration = 0;
+  private availableExamLabReceptionKey = '';
   private activeMedicineStoreIds: Set<string> | null = null;
   /** 仅匹配这些有真实库存的药品 productId；null 表示不启用过滤 */
   private activeInStockProductIds: Set<string> | null = null;
@@ -382,18 +388,20 @@ class MedicalDataService {
       });
     }
 
+    const currentReceptionItems = this.catalog.items.filter(isExamOrLabItem);
     this.resetOrgScopedCatalogs();
 
     if (!this.currentOrgCode) {
       return;
     }
 
-    if (snapshot.items.length > 0) {
-      this.catalog.items = this.normalizeMedicalItems(snapshot.items);
-      console.log('[MedicalData] Item cache restored from SQLite', {
+    const persistedItems = this.normalizeMedicalItems(snapshot.items).filter((item) => !isExamOrLabItem(item));
+    this.catalog.items = [...currentReceptionItems, ...persistedItems];
+    if (persistedItems.length > 0) {
+      console.log('[MedicalData] Non-exam/lab item cache restored from SQLite', {
         hasOrgCode: Boolean(this.currentOrgCode),
         hasTenantId: Boolean(this.currentTenantId),
-        itemCount: snapshot.items.length,
+        itemCount: persistedItems.length,
         hasSyncDate: Boolean(snapshot.itemSyncDate),
       });
     }
@@ -422,16 +430,17 @@ class MedicalDataService {
     items: MedicalItem[],
     syncDate: string
   ): Promise<void> {
+    const persistableItems = items.filter((item) => !isExamOrLabItem(item));
     await invoke('replace_org_medical_item_catalog', {
       orgCode,
       tenantId,
-      items,
+      items: persistableItems,
       syncDate,
     });
-    console.log('[MedicalData] Medical items catalog persisted to SQLite', {
+    console.log('[MedicalData] Non-exam/lab items persisted to SQLite', {
       hasOrgCode: Boolean(orgCode),
       hasTenantId: Boolean(tenantId),
-      itemCount: items.length,
+      itemCount: persistableItems.length,
       hasSyncDate: Boolean(syncDate),
     });
   }
@@ -523,8 +532,8 @@ class MedicalDataService {
     this.currentTenantId = nextTenantId;
 
     if (orgChanged || tenantChanged) {
+      this.clearAvailableExamLabItems();
       this.resetOrgScopedCatalogs();
-      this.availableExamLabCache = null;
     }
 
     await this.ensureLocalCatalogsSynced(options);
@@ -532,7 +541,7 @@ class MedicalDataService {
 
   /**
    * 直接查询当前 PHIS 用户上下文可开立的检查/检验项目。
-   * 不使用区域映射包或机构通用项目缓存；缓存键包含默认科室，避免跨科室复用。
+   * 不使用持久化目录；缓存键包含默认科室，并只在当前接诊生命周期内复用。
    */
   public async fetchAvailableExamLabItems(options: { force?: boolean } = {}): Promise<MedicalItem[]> {
     const hisService = getHisAdapter();
@@ -544,10 +553,8 @@ class MedicalDataService {
     const tenantId = scope.tenantId?.trim() || this.currentTenantId || '';
     const deptId = hisService.getDefaultExecDeptId().trim();
     const cacheKey = `${orgCode}|${tenantId}|${deptId}`;
-    const now = Date.now();
     if (!options.force
-      && this.availableExamLabCache?.key === cacheKey
-      && now - this.availableExamLabCache.loadedAt < 5 * 60 * 1000) {
+      && this.availableExamLabCache?.key === cacheKey) {
       return [...this.availableExamLabCache.items];
     }
     if (this.availableExamLabPromise && this.availableExamLabPromiseKey === cacheKey) {
@@ -555,27 +562,54 @@ class MedicalDataService {
     }
 
     // 新接口失败时也不能回退到机构通用项目，否则会把“存在”误当成“当前可开立”。
-    this.catalog.items = this.catalog.items.filter(
-      (item) => item.category !== '检查' && item.category !== '检验',
-    );
+    this.catalog.items = this.catalog.items.filter((item) => !isExamOrLabItem(item));
+    this.availableExamLabCache = null;
+    const requestGeneration = this.availableExamLabGeneration;
     this.availableExamLabPromiseKey = cacheKey;
-    this.availableExamLabPromise = (async () => {
+    const requestPromise = (async () => {
       const items = this.normalizeMedicalItems(
         await hisService.fetchInstitutionMedicalItemsCatalog(orgCode),
-      ).filter((item) => item.category === '检查' || item.category === '检验');
+      ).filter(isExamOrLabItem);
+      if (requestGeneration !== this.availableExamLabGeneration) {
+        return [];
+      }
       this.catalog.items = [
-        ...this.catalog.items.filter((item) => item.category !== '检查' && item.category !== '检验'),
+        ...this.catalog.items.filter((item) => !isExamOrLabItem(item)),
         ...items,
       ];
-      this.availableExamLabCache = { key: cacheKey, loadedAt: Date.now(), items };
+      this.availableExamLabCache = { key: cacheKey, items };
       return [...items];
-    })().finally(() => {
-      if (this.availableExamLabPromiseKey === cacheKey) {
+    })();
+    this.availableExamLabPromise = requestPromise;
+    return requestPromise.finally(() => {
+      if (this.availableExamLabPromise === requestPromise) {
         this.availableExamLabPromise = null;
         this.availableExamLabPromiseKey = '';
       }
     });
-    return this.availableExamLabPromise;
+  }
+
+  /** 开始一次新的接诊目录生命周期：丢弃上一接诊结果并强制获取当前可开立目录。 */
+  public beginAvailableExamLabReception(receptionKey = ''): Promise<MedicalItem[]> {
+    const normalizedReceptionKey = receptionKey.trim();
+    if (normalizedReceptionKey
+      && normalizedReceptionKey === this.availableExamLabReceptionKey
+      && (this.availableExamLabCache || this.availableExamLabPromise)) {
+      return this.fetchAvailableExamLabItems();
+    }
+    this.clearAvailableExamLabItems();
+    this.availableExamLabReceptionKey = normalizedReceptionKey;
+    return this.fetchAvailableExamLabItems({ force: true });
+  }
+
+  /** 结束接诊或 HIS scope 变化时清除检查检验内存目录，并使迟到响应失效。 */
+  public clearAvailableExamLabItems(): void {
+    this.availableExamLabGeneration += 1;
+    this.availableExamLabCache = null;
+    this.availableExamLabPromise = null;
+    this.availableExamLabPromiseKey = '';
+    this.availableExamLabReceptionKey = '';
+    this.catalog.items = this.catalog.items.filter((item) => !isExamOrLabItem(item));
   }
 
   public async ensureLocalCatalogsSynced(options: MedicalCatalogSyncOptions = {}): Promise<void> {
@@ -1869,6 +1903,7 @@ class MedicalDataService {
         hasCacheDate: Boolean(snapshot?.itemSyncDate),
       });
       const items = this.normalizeMedicalItems(await hisService.fetchInstitutionMedicalItemsCatalog(orgCode));
+      const persistableItems = items.filter((item) => !isExamOrLabItem(item));
       if (!items.length) {
         console.warn('[MedicalData] Medical items catalog returned empty result', {
           hasOrgCode: Boolean(orgCode),
@@ -1876,12 +1911,15 @@ class MedicalDataService {
         return;
       }
 
-      this.catalog.items = items;
-      await this.persistMedicalItemCatalog(orgCode, this.currentTenantId, items, today);
-      console.log('[MedicalData] Medical items catalog synced', {
+      this.catalog.items = [
+        ...this.catalog.items.filter(isExamOrLabItem),
+        ...persistableItems,
+      ];
+      await this.persistMedicalItemCatalog(orgCode, this.currentTenantId, persistableItems, today);
+      console.log('[MedicalData] Non-exam/lab items synced', {
         hasOrgCode: Boolean(orgCode),
         hasTenantId: Boolean(this.currentTenantId),
-        itemCount: items.length,
+        itemCount: persistableItems.length,
       });
     } catch {
       console.warn('[MedicalData] Failed to sync medical items for current organization, keep current cache', {
@@ -2005,7 +2043,10 @@ class MedicalDataService {
         updated = true;
       }
       if (resp.items) {
-        this.catalog.items = this.loadItemsFromRaw(resp.items);
+        this.catalog.items = [
+          ...this.catalog.items.filter(isExamOrLabItem),
+          ...this.loadItemsFromRaw(resp.items).filter((item) => !isExamOrLabItem(item)),
+        ];
         updated = true;
       }
       if (resp.tcmDiagnoses) {
@@ -2022,8 +2063,11 @@ class MedicalDataService {
       }
 
       if (updated) {
-        // 缓存到 localStorage（用于离线场景）
-        localStorage.setItem(MedicalDataService.DATA_CACHE_KEY, JSON.stringify(this.catalog));
+        // 检查检验是接诊级实时事实，不进入离线 mappings 缓存。
+        localStorage.setItem(MedicalDataService.DATA_CACHE_KEY, JSON.stringify({
+          ...this.catalog,
+          items: this.catalog.items.filter((item) => !isExamOrLabItem(item)),
+        }));
         localStorage.setItem(MedicalDataService.DATA_VERSION_KEY, resp.version);
         console.log('[MedicalData] Remote data sync finished', {
           hasVersion: Boolean(resp.version),
@@ -2055,7 +2099,10 @@ class MedicalDataService {
             tcmDiagnoses: this.normalizeTCMItems(data.tcmDiagnoses || []),
             tcmSyndromes: this.normalizeTCMItems(data.tcmSyndromes || []),
             tcmTreatments: this.normalizeTCMItems(data.tcmTreatments || []),
-            items: this.normalizeMedicalItems(data.items || []),
+            items: [
+              ...this.catalog.items.filter(isExamOrLabItem),
+              ...this.normalizeMedicalItems(data.items || []).filter((item) => !isExamOrLabItem(item)),
+            ],
             medicines: this.normalizeMedicineItems(data.medicines || []),
           };
           console.log('[MedicalData] Restored from cache');

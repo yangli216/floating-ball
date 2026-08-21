@@ -150,6 +150,7 @@
 19. **部分回写省略语义门禁**：医生通过“选择回写”取消的门诊病历字段或诊断，必须从 `record-confirmed` payload 中省略；注意事项未选时顶层兼容字段 `precautions` 也必须省略。PHIS 当前会无条件遍历 `orderList`，因此医嘱是唯一兼容例外：`record-confirmed.orderList` 必须始终为数组，未选择药品、检查、检验或处置时固定传 `[]`，PHIS 必须以 `writebackScope.orderTypes` 为空判断“不处理医嘱”，不得将空数组解释为清空既有医嘱。`writebackScope`、实际病历/诊断字段、`orderList` 内容和前置校验范围必须一致；部分回写仍只产生一条 `record-confirmed + batch` 并等待一次回执，未选内容不得记录为医生拒绝建议。
 20. **慢病药品周期核查证据门禁**：慢病药品卡的近期处方核查必须消费已排除当前就诊的完整时间窗历史，按药品主键优先、唯一规范药名其次匹配；不得复用只保留最近处方的续方继承列表，也不得因历史就诊不是慢病诊断而漏掉同患者同药记录。累计量只允许汇总有效正数且单位一致的记录，单位不同或缺失时逐笔展示。没有院内权威医保周期与限量规则时只展示 HIS 处方事实，不得自动标记超量、违规、扣款风险或阻断回写。
 21. **检验检查互认闭环门禁**：`queryAvailableExamLabItems` 返回的 `mutualRecognitionCode` 必须经 HIS Adapter 和标准项目匹配完整进入检查 / 检验 `orderList`，空字符串表示不参与互认。PHIS `sendFeedback(..., "pending", ..., recognizableItems)` 是中间态，不得清空原回写等待状态或按失败收尾；医生决策必须沿用原 `requestId`，只发送一条 `reference-request + recognitionDecision`，`recognize` 才携带所选 `idSrv`。最终 `success / failed / cancelled` 到达前不得结束结果页，重复 pending、跨患者或 requestId 不匹配的反馈不得打开互认弹窗。
+22. **检验检查实时目录门禁**：检查 / 检验目录属于接诊级可开立事实，每次新接诊必须通过 `medicalDataService.beginAvailableExamLabReception()` 调用 `queryAvailableExamLabItems` 获取一次，并在同患者同就诊内存复用；结束接诊、患者 / 就诊或机构 / 租户 / 科室变化时必须失效。检查 / 检验项目不得写入或从 SQLite、`localStorage` mappings 恢复，实时查询失败时不得回退历史目录。普通问诊、语音问诊、独立治疗方案、手动匹配和回写必须消费同一实时目录，并完整保留 `jsonField.idLisCategory`、`idSrv`、执行科室、部位、互认编码和厂商 `raw`；迟到请求不得重新污染新接诊目录。
 
 ## 推荐提交流程
 

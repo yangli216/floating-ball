@@ -12,6 +12,30 @@ const resolvers: OrderItemResolvers = {
 };
 
 describe('record confirmed mutual recognition code', () => {
+  it('keeps the live lab jsonField including idLisCategory in orderList', () => {
+    const item = {
+      type: 'lab_test',
+      name: '血常规',
+      reason: '辅助判断感染',
+      matchedItem: {
+        id: 'LAB-1',
+        name: '血常规',
+        sdSrv: '41',
+        jsonField: '{"idLisCategory":"LIS-CATEGORY-1","fgCombination":"1"}',
+      },
+    } satisfies TreatmentRecommendation;
+    const liveCatalogResolvers: OrderItemResolvers = {
+      ...resolvers,
+      getJsonField: (recommendation) => recommendation.matchedItem?.jsonField || '',
+    };
+
+    expect(buildOrderListItem(item, liveCatalogResolvers)).toMatchObject({
+      idSrv: 'LAB-1',
+      sdSrv: '41',
+      jsonField: '{"idLisCategory":"LIS-CATEGORY-1","fgCombination":"1"}',
+    });
+  });
+
   it('keeps the code for examination and lab items', () => {
     const item = {
       type: 'lab_test',

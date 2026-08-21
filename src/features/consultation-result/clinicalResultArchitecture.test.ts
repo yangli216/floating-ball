@@ -41,6 +41,13 @@ describe('clinical result architecture boundary', () => {
     expect(resultImplementationSource).toContain('applicationSequence !== intentResultApplicationSequence');
   });
 
+  it('waits for missing voice treatments before ending final result application', () => {
+    expect(resultImplementationSource).toContain('allowsTreatmentAutoFetchWhileFinalizing');
+    expect(resultImplementationSource).toMatch(
+      /await maybeAutoFetchMissingTreatment\('intent-result-applied'\);[\s\S]*?finishFinalResultApplication\(\)/,
+    );
+  });
+
   it('confines the root implementation dependency to the public result page facade', () => {
     expect(consultationResultPageSource).toContain(INTERNAL_IMPLEMENTATION_NAME);
   });

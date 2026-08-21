@@ -241,6 +241,31 @@ fn create_scoped_catalog_tables(conn: &Connection) -> Result<(), String> {
     .map_err(|e| e.to_string())
 }
 
+fn purge_transient_exam_lab_cache(conn: &Connection) -> Result<(), String> {
+    conn.execute(
+        "DELETE FROM medical_item_catalog WHERE category IN ('检查', '检验')",
+        [],
+    )
+    .map_err(|e| e.to_string())?;
+    conn.execute_batch(
+        "
+        UPDATE catalog_sync_state
+        SET row_count = (
+            SELECT COUNT(*)
+            FROM medical_item_catalog
+            WHERE medical_item_catalog.org_code = catalog_sync_state.org_code
+              AND medical_item_catalog.tenant_id = catalog_sync_state.tenant_id
+        )
+        WHERE catalog_type = 'items';
+
+        DELETE FROM catalog_sync_state
+        WHERE catalog_type = 'items' AND row_count = 0;
+        ",
+    )
+    .map(|_| ())
+    .map_err(|e| e.to_string())
+}
+
 fn ensure_scoped_catalog_tables(conn: &mut Connection) -> Result<(), String> {
     let medical_item_ready = table_has_column(conn, "medical_item_catalog", "tenant_id")?;
     let medicine_tenant_ready = table_has_column(conn, "medicine_catalog", "tenant_id")?;
@@ -249,7 +274,8 @@ fn ensure_scoped_catalog_tables(conn: &mut Connection) -> Result<(), String> {
     let sync_store_ready = table_has_column(conn, "catalog_sync_state", "store_id")?;
 
     if medical_item_ready && medicine_tenant_ready && medicine_store_ready && sync_tenant_ready && sync_store_ready {
-        return create_scoped_catalog_tables(conn);
+        create_scoped_catalog_tables(conn)?;
+        return purge_transient_exam_lab_cache(conn);
     }
 
     let has_medical_item_table = table_exists(conn, "medical_item_catalog")?;
@@ -257,7 +283,8 @@ fn ensure_scoped_catalog_tables(conn: &mut Connection) -> Result<(), String> {
     let has_sync_table = table_exists(conn, "catalog_sync_state")?;
 
     if !has_medical_item_table && !has_medicine_table && !has_sync_table {
-        return create_scoped_catalog_tables(conn);
+        create_scoped_catalog_tables(conn)?;
+        return purge_transient_exam_lab_cache(conn);
     }
 
     let tx = conn.transaction().map_err(|e| e.to_string())?;
@@ -361,7 +388,7 @@ fn ensure_scoped_catalog_tables(conn: &mut Connection) -> Result<(), String> {
     .map_err(|e| e.to_string())?;
 
     tx.commit().map_err(|e| e.to_string())?;
-    Ok(())
+    purge_transient_exam_lab_cache(conn)
 }
 
 fn get_sync_state(
@@ -466,6 +493,7 @@ pub async fn load_medical_catalog_snapshot(
                 "SELECT id, code, name, category, keywords_json
                  FROM medical_item_catalog
                  WHERE org_code = ?1 AND tenant_id = ?2
+                   AND category NOT IN ('检查', '检验')
                  ORDER BY category, name",
             )
             .map_err(|e| e.to_string())?;
@@ -674,6 +702,10 @@ pub async fn replace_org_medical_item_catalog(
     let tx = conn.transaction().map_err(|e| e.to_string())?;
     let normalized_org_code = normalize_scope_value(Some(org_code));
     let normalized_tenant_id = normalize_scope_value(tenant_id);
+    let persistable_items = items
+        .iter()
+        .filter(|item| item.category != "检查" && item.category != "检验")
+        .collect::<Vec<_>>();
 
     tx.execute(
         "DELETE FROM medical_item_catalog WHERE org_code = ?1 AND tenant_id = ?2",
@@ -689,7 +721,7 @@ pub async fn replace_org_medical_item_catalog(
             )
             .map_err(|e| e.to_string())?;
 
-        for item in &items {
+        for item in &persistable_items {
             stmt.execute(params![
                 normalized_org_code.as_str(),
                 normalized_tenant_id.as_str(),
@@ -710,7 +742,7 @@ pub async fn replace_org_medical_item_catalog(
         normalized_org_code.as_str(),
         normalized_tenant_id.as_str(),
         "",
-        items.len(),
+        persistable_items.len(),
         Some(sync_date.as_str()),
     )?;
     tx.commit().map_err(|e| e.to_string())?;
@@ -999,4 +1031,50 @@ pub async fn clear_medical_catalog_cache(
 
     tx.commit().map_err(|e| e.to_string())?;
     Ok(result)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn purges_exam_lab_rows_and_keeps_other_scoped_items() {
+        let conn = Connection::open_in_memory().expect("open in-memory catalog db");
+        create_scoped_catalog_tables(&conn).expect("create catalog tables");
+        conn.execute(
+            "INSERT INTO medical_item_catalog
+             (org_code, tenant_id, id, code, name, category, keywords_json, updated_at)
+             VALUES ('ORG-1', 'TENANT-1', 'LAB-1', 'LAB-1', '血常规', '检验', NULL, 1),
+                    ('ORG-1', 'TENANT-1', 'PROC-1', 'PROC-1', '雾化治疗', '治疗', NULL, 1)",
+            [],
+        )
+        .expect("insert scoped items");
+        conn.execute(
+            "INSERT INTO catalog_sync_state
+             (catalog_type, org_code, tenant_id, store_id, last_sync_at, sync_date, row_count)
+             VALUES ('items', 'ORG-1', 'TENANT-1', '', 1, '2026-08-21', 2)",
+            [],
+        )
+        .expect("insert item sync state");
+
+        purge_transient_exam_lab_cache(&conn).expect("purge transient catalog rows");
+
+        let remaining_ids = conn
+            .prepare("SELECT id FROM medical_item_catalog ORDER BY id")
+            .expect("prepare item query")
+            .query_map([], |row| row.get::<_, String>(0))
+            .expect("query remaining items")
+            .collect::<Result<Vec<_>, _>>()
+            .expect("collect remaining items");
+        let row_count = conn
+            .query_row(
+                "SELECT row_count FROM catalog_sync_state WHERE catalog_type = 'items'",
+                [],
+                |row| row.get::<_, i64>(0),
+            )
+            .expect("read updated sync count");
+
+        assert_eq!(remaining_ids, vec!["PROC-1"]);
+        assert_eq!(row_count, 1);
+    }
 }

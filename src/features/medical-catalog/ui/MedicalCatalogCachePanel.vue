@@ -125,14 +125,14 @@ function getCatalogLabel(type: string): string {
   const labels: Record<string, string> = {
     all: '全部',
     diagnoses: '诊断目录',
-    items: '诊疗项目',
+    items: '其他诊疗项目',
     medicines: '药品目录',
   };
   return labels[type] || type;
 }
 
 function formatClearResult(result: MedicalCatalogClearResult): string {
-  return `已清理：诊断 ${result.diagnosisRows} 条，诊疗项目 ${result.itemRows} 条，药品 ${result.medicineRows} 条，同步状态 ${result.syncStateRows} 条`;
+  return `已清理：诊断 ${result.diagnosisRows} 条，其他诊疗项目 ${result.itemRows} 条，药品 ${result.medicineRows} 条，同步状态 ${result.syncStateRows} 条`;
 }
 
 function formatTimestamp(timestamp: number): string {
@@ -156,7 +156,7 @@ onMounted(refreshAll);
           <Icon icon="lucide:database" :size="20" />
           <h2>缓存管理</h2>
         </div>
-        <p>统一查看诊断、诊疗项目和药品等基础数据缓存，减少跨类型误操作。</p>
+        <p>统一查看诊断、其他诊疗项目和药品缓存；检查检验目录在每次接诊时实时获取。</p>
       </div>
     </div>
 
@@ -164,7 +164,7 @@ onMounted(refreshAll);
       <div class="section-heading">
         <div class="section-heading-main">
           <strong>基础数据缓存</strong>
-          <span>诊断、诊疗项目、药品目录</span>
+          <span>诊断、其他诊疗项目、药品目录</span>
         </div>
         <div class="section-actions">
           <button type="button" class="secondary-btn" @click="refreshState" :disabled="loading || syncing || clearing">
@@ -184,7 +184,7 @@ onMounted(refreshAll);
           <strong>{{ state?.diagnosisCount ?? '-' }}</strong>
         </div>
         <div class="summary-card">
-          <span>诊疗项目</span>
+          <span>其他诊疗项目</span>
           <strong>{{ state?.itemCount ?? '-' }}</strong>
         </div>
         <div class="summary-card">
@@ -215,7 +215,7 @@ onMounted(refreshAll);
             <select v-model="catalogType">
               <option value="all">全部基础数据</option>
               <option value="diagnoses">诊断目录</option>
-              <option value="items">诊疗项目</option>
+              <option value="items">其他诊疗项目</option>
               <option value="medicines">药品目录</option>
             </select>
           </label>
@@ -236,7 +236,7 @@ onMounted(refreshAll);
             清理缓存
           </button>
         </div>
-        <p class="hint">诊疗项目按机构 + 租户缓存；药品按机构 + 租户 + 药房缓存；强制同步会忽略当日缓存，但要求已建立有效的 HIS 握手上下文。</p>
+        <p class="hint">检查检验目录不持久化、也不计入本页统计；其他诊疗项目按机构 + 租户缓存，药品按机构 + 租户 + 药房缓存。</p>
       </div>
 
       <p v-if="message" :class="['message', `message-${messageTone}`]">{{ message }}</p>

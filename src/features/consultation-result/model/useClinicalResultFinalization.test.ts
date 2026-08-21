@@ -42,4 +42,26 @@ describe('useClinicalResultFinalization', () => {
     channel.value = 'voice';
     expect(controller.allowsPostResultFactSuggestions.value).toBe(true);
   });
+
+  it('allows normal voice treatment completion while finalizing but keeps chronic refill isolated', () => {
+    const channel = ref<ClinicalResultChannel>('voice');
+    const generation = ref<ClinicalResultGenerationState>({
+      status: 'complete',
+      readySections: ['record_core', 'diagnoses', 'recommendation_plan'],
+    });
+    const controller = useClinicalResultFinalization({
+      getChannel: () => channel.value,
+      getGeneration: () => generation.value,
+    });
+
+    controller.begin();
+    expect(controller.allowsTreatmentAutoFetchWhileFinalizing.value).toBe(true);
+
+    channel.value = 'chronic-refill';
+    expect(controller.allowsTreatmentAutoFetchWhileFinalizing.value).toBe(false);
+
+    channel.value = 'voice';
+    controller.finish();
+    expect(controller.allowsTreatmentAutoFetchWhileFinalizing.value).toBe(false);
+  });
 });

@@ -205,6 +205,7 @@ const clinicalResultFinalization = useClinicalResultFinalization({
 });
 const {
   allowsPostResultFactSuggestions,
+  allowsTreatmentAutoFetchWhileFinalizing,
   applyingFinalResult,
   begin: beginFinalResultApplication,
   displayedGeneration,
@@ -1934,16 +1935,17 @@ async function handleSupplementRegenerate(doctorSupplement: string): Promise<voi
   }
 }
 
-function maybeAutoFetchMissingTreatment(reason: string): void {
-  if (!autoFetchTreatments.value || isResultUnavailable.value) return;
-  if (suppressDiagnosisTreatmentRefetch.value || treatmentLoading.value) return;
-  if (lastTreatmentDiagnosisKey.value) return;
+async function maybeAutoFetchMissingTreatment(reason: string): Promise<boolean> {
+  if (!autoFetchTreatments.value) return false;
+  if (isResultUnavailable.value && !allowsTreatmentAutoFetchWhileFinalizing.value) return false;
+  if (suppressDiagnosisTreatmentRefetch.value || treatmentLoading.value) return false;
+  if (lastTreatmentDiagnosisKey.value) return false;
 
   const diagnosisIdentity = getDiagnosisIdentity(selectedDiagnosis.value);
-  if (!diagnosisIdentity || !selectedDiagnosis.value) return;
+  if (!diagnosisIdentity || !selectedDiagnosis.value) return false;
 
   const attemptKey = buildTreatmentAutoFetchKey(diagnosisIdentity);
-  if (autoTreatmentFetchAttemptKey.value === attemptKey) return;
+  if (autoTreatmentFetchAttemptKey.value === attemptKey) return false;
   autoTreatmentFetchAttemptKey.value = attemptKey;
 
   console.info('[VoiceConsultationNew] Auto fetching missing treatment recommendations', {
@@ -1952,7 +1954,7 @@ function maybeAutoFetchMissingTreatment(reason: string): void {
     diagnosisIdentity,
     diagnosisName: selectedDiagnosis.value.name,
   });
-  void fetchAITreatment();
+  return fetchAITreatment();
 }
 
 async function handleTreatmentRefresh(event?: Event): Promise<void> {
@@ -2097,7 +2099,7 @@ watch(
     suppressDiagnosisTreatmentRefetch.value,
   ],
   () => {
-    maybeAutoFetchMissingTreatment('stable-empty-treatment-state');
+    void maybeAutoFetchMissingTreatment('stable-empty-treatment-state');
   },
   { flush: 'post' },
 );
@@ -2841,7 +2843,7 @@ watch(
     resetTreatmentGenerationState();
     await nextTick();
     suppressDiagnosisTreatmentRefetch.value = false;
-    maybeAutoFetchMissingTreatment('patient-context-reset');
+    void maybeAutoFetchMissingTreatment('patient-context-reset');
   },
 );
 
@@ -2955,7 +2957,8 @@ watch(
     suppressDiagnosisTreatmentRefetch.value = false;
     if (!result.generation || result.generation.status === 'complete') {
       submitVoiceGeneratedUserLog();
-      maybeAutoFetchMissingTreatment('intent-result-applied');
+      await maybeAutoFetchMissingTreatment('intent-result-applied');
+      if (applicationSequence !== intentResultApplicationSequence) return;
     }
     } finally {
       if (

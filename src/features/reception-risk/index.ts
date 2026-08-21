@@ -23,6 +23,11 @@ export {
   getChronicRefillNarrativeMedicationNames,
   normalizeChronicRefillConfirmationPlan,
 } from './lib/chronicRefillConfirmation';
+export {
+  normalizeRiskPresentationItem,
+  normalizeRiskPresentationItems,
+  RISK_CAPSULE_CONTENT_MAX_LENGTH,
+} from './lib/riskPresentation';
 export type {
   ChronicRefillConfirmationItem,
   ChronicRefillConfirmationOption,

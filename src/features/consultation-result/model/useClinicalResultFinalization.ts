@@ -12,6 +12,12 @@ export interface ClinicalResultFinalizationOptions {
 export function useClinicalResultFinalization(options: ClinicalResultFinalizationOptions) {
   const applyingFinalResult = ref(false);
 
+  const allowsTreatmentAutoFetchWhileFinalizing = computed(() => (
+    applyingFinalResult.value
+    && options.getChannel() !== 'chronic-refill'
+    && options.getGeneration()?.status === 'complete'
+  ));
+
   const displayedGeneration = computed<ClinicalResultGenerationState | undefined>(() => {
     const generation = options.getGeneration();
     if (!applyingFinalResult.value || generation?.status !== 'complete') return generation;
@@ -43,6 +49,7 @@ export function useClinicalResultFinalization(options: ClinicalResultFinalizatio
 
   return {
     allowsPostResultFactSuggestions,
+    allowsTreatmentAutoFetchWhileFinalizing,
     applyingFinalResult,
     begin,
     displayedGeneration,
