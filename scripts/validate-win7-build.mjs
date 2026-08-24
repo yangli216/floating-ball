@@ -59,7 +59,7 @@ export function validateWin7Configuration({
 
   assert(/build-std\s*=\s*\[[^\]]*"std"/.test(cargoConfig), 'Cargo must build std for the Tier-3 Win7 target');
   assert(
-    win7Config.build?.runner?.cmd === 'scripts/win7-cargo-runner.cmd' &&
+    win7Config.build?.runner?.cmd === '../scripts/win7-cargo-runner.cmd' &&
       cargoLauncher.includes('win7-cargo-runner.mjs') &&
       cargoRunner.includes('8a97d387a3a1a52f7c501762517e294d8c94e119'),
     'Win7 flavor must pin the upstream tauri-utils ctor compatibility fix',
