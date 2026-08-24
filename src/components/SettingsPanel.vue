@@ -337,6 +337,7 @@ watch([regionalBaseUrl, regionalOrgCode], () => { regionalConnectResult.value = 
 }
 
 .tab-btn:focus-visible {
+  outline: 3px solid rgba(8, 145, 178, 0.35);
   outline: 3px solid color-mix(in srgb, var(--medical-primary) 35%, transparent);
   outline-offset: -1px;
 }

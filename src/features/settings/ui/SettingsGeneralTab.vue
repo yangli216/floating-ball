@@ -644,12 +644,14 @@ function readSelectValue(event: Event): string {
 
 .settings-tool-card:hover {
   border-color: var(--medical-primary);
+  background: #f7fcfd;
   background: color-mix(in srgb, var(--medical-primary) 3%, var(--medical-bg-primary));
   transform: translateY(-2px);
   box-shadow: 0 4px 12px rgba(8, 145, 178, 0.15);
 }
 
 .settings-tool-card:focus-visible {
+  outline: 3px solid rgba(8, 145, 178, 0.35);
   outline: 3px solid color-mix(in srgb, var(--medical-primary) 35%, transparent);
   outline-offset: 2px;
 }
@@ -662,6 +664,7 @@ function readSelectValue(event: Event): string {
   width: 40px;
   height: 40px;
   border-radius: 10px;
+  background: rgba(8, 145, 178, 0.1);
   background: color-mix(in srgb, var(--medical-primary) 10%, transparent);
   color: var(--medical-primary);
 }

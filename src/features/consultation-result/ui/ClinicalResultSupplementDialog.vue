@@ -281,8 +281,10 @@ function confirm(): void {
   min-height: 48px;
   margin-top: 10px;
   padding: 8px 12px;
+  border: 1px solid rgba(8, 145, 178, 0.24);
   border: 1px solid color-mix(in srgb, var(--color-primary, #0891b2) 24%, transparent);
   border-radius: 11px;
+  background: #f4fbfc;
   background: color-mix(in srgb, var(--color-primary, #0891b2) 7%, #fff);
   color: var(--color-text-primary, #164e63);
 }
@@ -301,6 +303,7 @@ function confirm(): void {
   height: 8px;
   border-radius: 50%;
   background: var(--color-danger, #dc2626);
+  box-shadow: 0 0 0 0 rgba(220, 38, 38, 0.38);
   box-shadow: 0 0 0 0 color-mix(in srgb, var(--color-danger, #dc2626) 38%, transparent);
   animation: recording-pulse 1.4s ease-out infinite;
 }
@@ -335,7 +338,9 @@ function confirm(): void {
 
 .voice-input-button.recording {
   color: var(--color-danger, #dc2626);
+  border-color: rgba(220, 38, 38, 0.45);
   border-color: color-mix(in srgb, var(--color-danger, #dc2626) 45%, transparent);
+  background: rgba(220, 38, 38, 0.08);
   background: color-mix(in srgb, var(--color-danger, #dc2626) 8%, transparent);
 }
 

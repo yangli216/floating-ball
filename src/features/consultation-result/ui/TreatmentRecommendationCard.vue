@@ -567,6 +567,7 @@ function handleCardToggle(event: MouseEvent): void {
 }
 
 .vcn-treatment-item.selected {
+  background: var(--voice-surface);
   background: color-mix(in srgb, var(--voice-surface) 94%, var(--voice-accent));
   border-color: var(--voice-accent);
   box-shadow:
@@ -576,6 +577,7 @@ function handleCardToggle(event: MouseEvent): void {
 
 .vcn-treatment-item.rejected {
   border-color: var(--voice-border);
+  background: #f8fafc;
   background: color-mix(in srgb, var(--voice-surface) 88%, #f8fafc);
   opacity: 0.72;
 }
@@ -631,6 +633,7 @@ function handleCardToggle(event: MouseEvent): void {
 }
 
 .vcn-treatment-item.worklist.selected {
+  background: var(--voice-surface);
   background: color-mix(in srgb, var(--voice-surface) 97%, var(--voice-accent));
   border-color: #dbe3ee;
   box-shadow: none;
@@ -649,11 +652,13 @@ function handleCardToggle(event: MouseEvent): void {
 }
 
 .vcn-treatment-item.grouped-recommendation-row:hover {
+  background: var(--voice-surface);
   background: color-mix(in srgb, var(--voice-surface) 98%, var(--voice-accent));
 }
 
 .vcn-treatment-item.grouped-recommendation-row.selected {
   border-left: 3px solid var(--voice-accent);
+  background: var(--voice-surface);
   background: color-mix(in srgb, var(--voice-surface) 94%, var(--voice-accent));
 }
 

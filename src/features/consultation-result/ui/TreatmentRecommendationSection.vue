@@ -1291,7 +1291,9 @@ function getFeedbackSubmittedLabel(item: TreatmentRecommendation): string {
 
 .treatment-recommendation-section.worklist {
   --voice-accent: var(--color-info, #2563eb);
+  --voice-accent-soft: rgba(37, 99, 235, 0.14);
   --voice-accent-soft: color-mix(in srgb, var(--color-info, #2563eb) 14%, transparent);
+  --voice-accent-softer: rgba(37, 99, 235, 0.06);
   --voice-accent-softer: color-mix(in srgb, var(--color-info, #2563eb) 6%, transparent);
   --voice-accent-strong: #1d4ed8;
 }
@@ -1436,6 +1438,7 @@ function getFeedbackSubmittedLabel(item: TreatmentRecommendation): string {
   padding: 9px 12px;
   border-left: 0;
   border-radius: 9px 9px 0 0;
+  background: #e8f5f7;
   background: color-mix(in srgb, var(--voice-surface) 80%, #dff3f6);
 }
 

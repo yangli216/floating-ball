@@ -1,0 +1,24 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "PCIE-Win7-Legacy",
+  "identifier": "com.med-hermes.app.win7",
+  "bundle": {
+    "createUpdaterArtifacts": false,
+    "windows": {
+      "webviewInstallMode": {
+        "type": "skip"
+      },
+      "wix": {
+        "upgradeCode": "da78477d-4f75-5ac1-b6dc-6251b65df041",
+        "language": "zh-CN",
+        "template": null
+      }
+    }
+  },
+  "plugins": {
+    "updater": {
+      "active": false,
+      "endpoints": []
+    }
+  }
+}

@@ -4,6 +4,8 @@ import { fileURLToPath, URL } from "node:url";
 
 // @ts-expect-error process is a nodejs global
 const host = process.env.TAURI_DEV_HOST;
+// @ts-expect-error process is a nodejs global
+const isWin7LegacyBuild = process.env.PCIE_WIN7_BUILD === "1";
 
 // https://vite.dev/config/
 export default defineConfig(async () => ({
@@ -19,6 +21,9 @@ export default defineConfig(async () => ({
     },
   },
   build: {
+    // WebView2 109 is the last runtime available on Windows 7. Keep this
+    // target opt-in so the normal release build retains Vite's defaults.
+    target: isWin7LegacyBuild ? "chrome109" : undefined,
     chunkSizeWarningLimit: 3500,
     rollupOptions: {
       output: {

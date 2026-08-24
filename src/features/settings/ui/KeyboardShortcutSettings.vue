@@ -136,7 +136,7 @@ kbd { justify-self: end; min-width: 98px; padding: 5px 8px; border: 1px solid #c
 .clear-btn { justify-content: center; width: 32px; height: 32px; padding: 0; }
 .clear-btn:disabled { opacity: .4; cursor: not-allowed; }
 .restore-btn:hover:not(:disabled), .record-btn:hover:not(:disabled), .clear-btn:hover:not(:disabled) { border-color: var(--medical-primary); color: var(--medical-primary-hover); }
-.restore-btn:focus-visible, .record-btn:focus-visible, .clear-btn:focus-visible { outline: 3px solid color-mix(in srgb, var(--medical-primary) 35%, transparent); outline-offset: 2px; }
+.restore-btn:focus-visible, .record-btn:focus-visible, .clear-btn:focus-visible { outline: 3px solid rgba(8, 145, 178, 0.35); outline: 3px solid color-mix(in srgb, var(--medical-primary) 35%, transparent); outline-offset: 2px; }
 .shortcut-message { margin: 0; color: #b91c1c; font-size: 12px; }
 .shortcut-tip { margin: 0; }
 @media (max-width: 720px) {

@@ -1,0 +1,5 @@
+# The ordinary Windows targets ignore this section. The pinned nightly used by
+# the isolated Windows 7 validation workflow needs it to build the Tier-3
+# x86_64-win7-windows-msvc standard library from rust-src.
+[unstable]
+build-std = ["std", "panic_abort"]
