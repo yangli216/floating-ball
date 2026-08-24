@@ -51,7 +51,7 @@ tag 推送后才会触发正式 Release 工作流。该工作流继续以 draft 
 Windows 7 不属于正式桌面客户端支持范围。为验证仍在使用 Windows 7 SP1 x64 的院内环境是否具备临时迁移条件，仓库提供独立的 `Win7 Legacy Test Build` 手动工作流和 `src-tauri/tauri.win7.conf.json` 构建 flavor：
 
 1. 该工作流只允许手动触发，只生成 GitHub Actions Artifact，不创建 tag、Release、draft、`.sig` 或 `latest.json`，也不上传正式或测试更新源。
-2. 构建使用固定 nightly 工具链、`x86_64-win7-windows-msvc` Tier 3 目标和 `build-std`，不得复用正式构建的 `stable-x86_64-pc-windows-msvc` 产物。该 Tier 3 target 不在 `rustup target list` 的可下载组件中，工作流只在调用 Tauri CLI 时临时隐藏 `rustup.exe` 以跳过其 target 预检，并在 `finally` 中恢复；Cargo 和 rustc 仍必须使用固定 nightly 与 `rust-src`。
+2. 构建使用固定 nightly 工具链、`x86_64-win7-windows-msvc` Tier 3 目标和 `build-std`，不得复用正式构建的 `stable-x86_64-pc-windows-msvc` 产物。该 Tier 3 target 不在 `rustup target list` 的可下载组件中，工作流只在调用 Tauri CLI 时临时隐藏 `rustup.exe` 以跳过其 target 预检，并在 `finally` 中恢复；Cargo 和 rustc 仍必须使用固定 nightly 与 `rust-src`。当前 `tauri-utils 2.9.3` 的旧 `ctor 0.8` 不识别 `target_vendor = win7`，Win7 专用 Cargo runner 仅在该 flavor 内将 `tauri-utils` 固定到上游修复提交 `8a97d387a3a1a52f7c501762517e294d8c94e119`；普通和正式构建继续使用原 Cargo.lock。
 3. 验证包设置 `webviewInstallMode = skip`，CI 不下载、不安装也不内嵌 WebView2。验证人员必须在 Windows 7 SP1 x64 实机上另行安装 WebView2 109，并在冒烟记录中写明实际版本。
 4. Win7 flavor 使用独立 `identifier`、WiX `UpgradeCode` 和 Tauri 默认 WiX 模板，不继承正式模板中的历史安装线迁移规则；同时关闭 updater artifact 与运行时 updater，禁止覆盖正式 `PCIE` 安装身份。由于仍需保留历史 `med-hermes` HIS 深链，验证包不得与正式客户端安装在同一台机器。
 5. 候选包必须记录版本、源 commit/ref、Rust 工具链、Rust target 和要求的外置 WebView2 版本。Artifact 名称必须包含 `win7-legacy`，不得描述为已发布版本。

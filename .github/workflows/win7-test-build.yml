@@ -43,7 +43,7 @@ jobs:
         uses: swatinem/rust-cache@v2.8.2
         with:
           workspaces: './src-tauri -> target'
-          key: ${{ env.WIN7_RUST_TOOLCHAIN }}-${{ env.WIN7_TARGET }}
+          key: ${{ env.WIN7_RUST_TOOLCHAIN }}-${{ env.WIN7_TARGET }}-tauri-utils-win7
 
       - name: Install frontend dependencies
         run: yarn install --frozen-lockfile

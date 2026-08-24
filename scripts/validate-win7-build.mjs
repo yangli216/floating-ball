@@ -24,6 +24,7 @@ export function validateWin7Configuration({
   windowsConfig,
   win7Config,
   cargoConfig,
+  cargoRunner,
   viteConfig,
   workflow,
 }) {
@@ -56,6 +57,11 @@ export function validateWin7Configuration({
   assert(resolvedConfig.bundle.windows.wix.upgradeCode === win7UpgradeCode, 'Resolved Win7 MSI must retain its isolated UpgradeCode');
 
   assert(/build-std\s*=\s*\[[^\]]*"std"/.test(cargoConfig), 'Cargo must build std for the Tier-3 Win7 target');
+  assert(
+    win7Config.build?.runner?.args?.includes('scripts/win7-cargo-runner.mjs') &&
+      cargoRunner.includes('8a97d387a3a1a52f7c501762517e294d8c94e119'),
+    'Win7 flavor must pin the upstream tauri-utils ctor compatibility fix',
+  );
   assert(viteConfig.includes('PCIE_WIN7_BUILD') && viteConfig.includes('chrome109'), 'Vite must explicitly target WebView2/Chrome 109 for Win7');
   assert(workflow.includes('workflow_dispatch:'), 'Win7 workflow must be manual-only');
   assert(workflow.includes(WIN7_TARGET), `Win7 workflow must build ${WIN7_TARGET}`);
@@ -97,6 +103,7 @@ export function readWin7Configuration(rootDir) {
     windowsConfig: readJson('src-tauri/tauri.windows.conf.json'),
     win7Config: readJson('src-tauri/tauri.win7.conf.json'),
     cargoConfig: readText('src-tauri/.cargo/config.toml'),
+    cargoRunner: readText('scripts/win7-cargo-runner.mjs'),
     viteConfig: readText('vite.config.ts'),
     workflow: readText('.github/workflows/win7-test-build.yml'),
   };
