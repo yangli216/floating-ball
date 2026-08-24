@@ -61,6 +61,10 @@ export function validateWin7Configuration({
   assert(workflow.includes(WIN7_TARGET), `Win7 workflow must build ${WIN7_TARGET}`);
   assert(workflow.includes("WIN7_REQUIRED_WEBVIEW2_MAJOR: '109'"), 'Win7 workflow must record external WebView2 109');
   assert(/WIN7_RUST_TOOLCHAIN:\s*nightly-\d{4}-\d{2}-\d{2}/.test(workflow), 'Win7 workflow must pin a dated nightly toolchain');
+  assert(
+    workflow.includes('hiddenRustupPath') && workflow.includes('finally {'),
+    'Win7 workflow must bypass and restore the Tauri rustup-only target check',
+  );
   assert(workflow.includes('actions/upload-artifact@'), 'Win7 workflow must upload an Actions Artifact');
 
   const forbidden = [

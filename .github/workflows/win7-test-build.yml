@@ -79,7 +79,23 @@ jobs:
           RUSTUP_TOOLCHAIN: ${{ env.WIN7_RUST_TOOLCHAIN }}
           VITE_REGIONAL_BASE_URL: ${{ vars.VITE_REGIONAL_BASE_URL }}
         run: |
-          node scripts/test-release.mjs --version "$env:CANDIDATE_VERSION" -- --config src-tauri/tauri.win7.conf.json --target "$env:WIN7_TARGET"
+          # Tauri validates --target against rustup's downloadable component
+          # list. Tier-3 targets are built from rust-src and never appear in
+          # that list, so temporarily hide only the rustup command from Tauri.
+          # cargo.exe and rustc continue using the pinned RUSTUP_TOOLCHAIN.
+          $ErrorActionPreference = 'Stop'
+          $PSNativeCommandUseErrorActionPreference = $true
+          $rustupPath = (Get-Command rustup.exe -ErrorAction Stop).Source
+          $hiddenRustupPath = "$rustupPath.tauri-win7-target-check"
+          Move-Item $rustupPath $hiddenRustupPath
+          try {
+            cargo --version
+            rustc --version
+            node scripts/test-release.mjs --version "$env:CANDIDATE_VERSION" -- --config src-tauri/tauri.win7.conf.json --target "$env:WIN7_TARGET"
+          }
+          finally {
+            Move-Item $hiddenRustupPath $rustupPath
+          }
 
       - name: Verify installer and record provenance
         id: artifact
