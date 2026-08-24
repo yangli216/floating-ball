@@ -4,11 +4,8 @@
   "identifier": "com.med-hermes.app.win7",
   "build": {
     "runner": {
-      "cmd": "node",
-      "cwd": "..",
-      "args": [
-        "scripts/win7-cargo-runner.mjs"
-      ]
+      "cmd": "scripts/win7-cargo-runner.cmd",
+      "cwd": ".."
     }
   },
   "bundle": {

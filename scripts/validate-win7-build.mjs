@@ -24,6 +24,7 @@ export function validateWin7Configuration({
   windowsConfig,
   win7Config,
   cargoConfig,
+  cargoLauncher,
   cargoRunner,
   viteConfig,
   workflow,
@@ -58,7 +59,8 @@ export function validateWin7Configuration({
 
   assert(/build-std\s*=\s*\[[^\]]*"std"/.test(cargoConfig), 'Cargo must build std for the Tier-3 Win7 target');
   assert(
-    win7Config.build?.runner?.args?.includes('scripts/win7-cargo-runner.mjs') &&
+    win7Config.build?.runner?.cmd === 'scripts/win7-cargo-runner.cmd' &&
+      cargoLauncher.includes('win7-cargo-runner.mjs') &&
       cargoRunner.includes('8a97d387a3a1a52f7c501762517e294d8c94e119'),
     'Win7 flavor must pin the upstream tauri-utils ctor compatibility fix',
   );
@@ -103,6 +105,7 @@ export function readWin7Configuration(rootDir) {
     windowsConfig: readJson('src-tauri/tauri.windows.conf.json'),
     win7Config: readJson('src-tauri/tauri.win7.conf.json'),
     cargoConfig: readText('src-tauri/.cargo/config.toml'),
+    cargoLauncher: readText('scripts/win7-cargo-runner.cmd'),
     cargoRunner: readText('scripts/win7-cargo-runner.mjs'),
     viteConfig: readText('vite.config.ts'),
     workflow: readText('.github/workflows/win7-test-build.yml'),
