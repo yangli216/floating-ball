@@ -17,6 +17,10 @@ export interface WindowTransitionCoordinatorOptions {
   isWorking: Ref<boolean>;
   transitioning: Ref<boolean>;
   windowMgmt: ReturnType<typeof useWindowManagement>;
+  windowRegion?: {
+    prepareForGeometry: () => Promise<void>;
+    prepareBallContent?: () => Promise<void>;
+  };
 }
 
 export interface WindowViewTransitionOptions {
@@ -33,7 +37,7 @@ export interface WindowBallTransitionOptions {
 }
 
 export function useWindowTransitionCoordinator(options: WindowTransitionCoordinatorOptions) {
-  const { currentView, isWorking, transitioning, windowMgmt } = options;
+  const { currentView, isWorking, transitioning, windowMgmt, windowRegion } = options;
   const contentVisible = ref(true);
   let latestRequestId = 0;
   let transitionTail: Promise<void> = Promise.resolve();
@@ -83,6 +87,7 @@ export function useWindowTransitionCoordinator(options: WindowTransitionCoordina
     targetSize: WindowSize,
     resizeOptions: ResizeWindowOptions,
   ): Promise<void> => {
+    await windowRegion?.prepareForGeometry();
     await windowMgmt.resizeWorkWindow(targetSize.width, targetSize.height, resizeOptions);
   };
 
@@ -141,6 +146,7 @@ export function useWindowTransitionCoordinator(options: WindowTransitionCoordina
         if (requestId !== latestRequestId) return;
 
         await transitionOptions.commitBallState();
+        await windowRegion?.prepareBallContent?.();
         await showContent();
       } finally {
         if (requestId === latestRequestId) {

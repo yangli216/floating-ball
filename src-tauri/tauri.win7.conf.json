@@ -3,6 +3,9 @@
   "productName": "PCIE-Win7-Legacy",
   "identifier": "com.med-hermes.app.win7",
   "build": {
+    "features": [
+      "win7-legacy"
+    ],
     "runner": {
       "cmd": "../scripts/win7-cargo-runner.cmd"
     }

@@ -55,7 +55,8 @@ Windows 7 不属于正式桌面客户端支持范围。为验证仍在使用 Win
 3. 验证包设置 `webviewInstallMode = skip`，CI 不下载、不安装也不内嵌 WebView2。验证人员必须在 Windows 7 SP1 x64 实机上另行安装 WebView2 109，并在冒烟记录中写明实际版本。
 4. Win7 flavor 使用独立 `identifier`、WiX `UpgradeCode` 和 Tauri 默认 WiX 模板，不继承正式模板中的历史安装线迁移规则；同时关闭 updater artifact 与运行时 updater，禁止覆盖正式 `PCIE` 安装身份。由于仍需保留历史 `med-hermes` HIS 深链，验证包不得与正式客户端安装在同一台机器。
 5. 候选包必须记录版本、源 commit/ref、Rust 工具链、Rust target 和要求的外置 WebView2 版本。Artifact 名称必须包含 `win7-legacy`，不得描述为已发布版本。
-6. Actions 构建成功只证明安装包可生成；完成技术验证还必须在真实 Windows 7 SP1 x64 环境执行安装、进程启动、首屏渲染、本地 Bridge 健康检查、SDK handshake 和卸载手测。WebView2 109 不支持 `color-mix()` 等较新 Web 能力，关键页面还需检查样式 fallback。
+6. WebView2 在 Windows 7 上不支持透明默认背景，Win7 flavor 必须通过 `win7-legacy` Cargo feature 启用原生窗口 region 裁剪：待机仅保留中心球，菜单展开时保留中心球与四个菜单圆，进入工作态或任何几何变更前先恢复完整矩形 region。实机必须回归启动白底、菜单展开/收起、四个按钮点击、拖拽、球态↔工作态及混合 DPI。
+7. Actions 构建成功只证明安装包可生成；完成技术验证还必须在真实 Windows 7 SP1 x64 环境执行安装、进程启动、首屏渲染、本地 Bridge 健康检查、SDK handshake 和卸载手测。WebView2 109 不支持 `color-mix()` 等较新 Web 能力，关键页面还需检查样式 fallback。
 
 Win7 验证包不能直接转为正式发布。若验证通过且业务决定长期维护，必须另行确定独立仓库或独立更新通道、安全责任、版本策略和退出期限，再更新 `ARCHITECTURE.md / PRODUCT.md / AGENTS.md`。
 

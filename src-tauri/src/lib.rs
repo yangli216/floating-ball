@@ -7,6 +7,7 @@ use tauri_plugin_updater::UpdaterExt;
 use window_vibrancy::{apply_vibrancy, NSVisualEffectMaterial};
 
 mod http_server;
+mod win7_window_region;
 
 use serde::{Deserialize, Serialize};
 use serde_json;
@@ -842,6 +843,7 @@ pub fn run() {
             pick_voice_recording_dir,
             save_voice_recording,
             set_vibrancy,
+            win7_window_region::set_main_window_region,
             commands::his_integration_log::record_his_integration_log,
             commands::his_integration_log::list_his_integration_logs,
             commands::his_integration_log::clear_his_integration_logs,
@@ -877,6 +879,9 @@ pub fn run() {
                 FLOATING_BALL_LOGICAL_SIZE,
                 FLOATING_BALL_LOGICAL_SIZE,
             ));
+            if let Err(error) = win7_window_region::apply_initial_ball_region(&window) {
+                eprintln!("[Win7WindowRegion] Failed to apply startup ball region: {error}");
+            }
 
             // 尝试在 Rust 层直接读取本地存储并恢复悬浮球坐标，避免前端 Vue 初始化带来的闪烁和 macOS 隐藏渲染 Bug
             let mut restored = false;

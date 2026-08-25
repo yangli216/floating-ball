@@ -39,11 +39,15 @@ describe('useWindowTransitionCoordinator', () => {
     const windowMgmt = createWindowManagementMock(async () => {
       order.push(`resize:${currentView.value}`);
     });
+    const prepareForGeometry = vi.fn(async () => {
+      order.push('region:full');
+    });
     const coordinator = useWindowTransitionCoordinator({
       currentView,
       isWorking: ref(true),
       transitioning,
       windowMgmt,
+      windowRegion: { prepareForGeometry },
     });
 
     await coordinator.transitionToView('consultation', {
@@ -54,10 +58,12 @@ describe('useWindowTransitionCoordinator', () => {
     order.push(`view:${currentView.value}`);
 
     expect(order).toEqual([
+      'region:full',
       'resize:reception-capsule',
       'commit:consultation',
       'view:consultation',
     ]);
+    expect(prepareForGeometry).toHaveBeenCalledOnce();
     expect(windowMgmt.resizeWorkWindow).toHaveBeenCalledWith(1120, 760, {
       minSize: { width: 1120, height: 760 },
       preferredPosition: undefined,
@@ -123,6 +129,33 @@ describe('useWindowTransitionCoordinator', () => {
     expect(currentView.value).toBe('reception-capsule');
     expect(coordinator.contentVisible.value).toBe(true);
     expect(transitioning.value).toBe(false);
+  });
+
+  it('clips the stable ball before making its content visible', async () => {
+    const order: string[] = [];
+    const isWorking = ref(true);
+    const coordinator = useWindowTransitionCoordinator({
+      currentView: ref<ViewType>('chat'),
+      isWorking,
+      transitioning: ref(false),
+      windowMgmt: createWindowManagementMock(async () => {
+        order.push('resize');
+      }),
+      windowRegion: {
+        prepareForGeometry: async () => { order.push('region:full'); },
+        prepareBallContent: async () => { order.push('region:ball'); },
+      },
+    });
+
+    await coordinator.transitionToBall({
+      commitBallState: () => {
+        isWorking.value = false;
+        order.push('commit');
+      },
+    });
+
+    expect(order).toEqual(['region:full', 'resize', 'commit', 'region:ball']);
+    expect(coordinator.contentVisible.value).toBe(true);
   });
 
   it('restores content without waiting for a browser animation frame', async () => {

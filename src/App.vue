@@ -58,6 +58,7 @@ import {
 } from "./services/updatePolicy";
 import type { AppPatient, AppStore } from "./types/appState";
 import type { ConsultationAssistAction } from "./types/consultationAssist";
+import { useWin7WindowRegion } from '@/app/shell/useWin7WindowRegion';
 
 const ForceUpdateGate = defineAsyncComponent(() => import("@features/settings").then((module) => module.ForceUpdateGate));
 
@@ -283,11 +284,20 @@ const {
   persistCurrentWindowSize,
 } = windowMgmt;
 
+const win7WindowRegion = useWin7WindowRegion({
+  enabled: !isStandaloneWindow,
+  isWorking,
+  transitioning,
+  isHovered,
+  scaleFactor: computed(() => windowMgmt.cachedMonitor.value?.scaleFactor ?? null),
+});
+
 const windowTransition = useWindowTransitionCoordinator({
   currentView,
   isWorking,
   transitioning,
   windowMgmt,
+  windowRegion: win7WindowRegion,
 });
 
 const getCurrentReceptionWindowSize = () => getWindowSizeForView('reception-capsule', {

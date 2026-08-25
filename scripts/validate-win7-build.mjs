@@ -26,6 +26,8 @@ export function validateWin7Configuration({
   cargoConfig,
   cargoLauncher,
   cargoRunner,
+  win7RegionRust,
+  win7RegionController,
   viteConfig,
   workflow,
 }) {
@@ -63,6 +65,13 @@ export function validateWin7Configuration({
       cargoLauncher.includes('win7-cargo-runner.mjs') &&
       cargoRunner.includes('8a97d387a3a1a52f7c501762517e294d8c94e119'),
     'Win7 flavor must pin the upstream tauri-utils ctor compatibility fix',
+  );
+  assert(
+    win7Config.build?.features?.includes('win7-legacy') &&
+      win7RegionRust.includes('SetWindowRgn') &&
+      win7RegionRust.includes('BALL_MENU_REGIONS') &&
+      win7RegionController.includes("prepareForGeometry: () => applyMode('full')"),
+    'Win7 flavor must isolate native ball/menu region clipping and restore full region before geometry changes',
   );
   assert(viteConfig.includes('PCIE_WIN7_BUILD') && viteConfig.includes('chrome109'), 'Vite must explicitly target WebView2/Chrome 109 for Win7');
   assert(workflow.includes('workflow_dispatch:'), 'Win7 workflow must be manual-only');
@@ -107,6 +116,8 @@ export function readWin7Configuration(rootDir) {
     cargoConfig: readText('src-tauri/.cargo/config.toml'),
     cargoLauncher: readText('scripts/win7-cargo-runner.cmd'),
     cargoRunner: readText('scripts/win7-cargo-runner.mjs'),
+    win7RegionRust: readText('src-tauri/src/win7_window_region.rs'),
+    win7RegionController: readText('src/app/shell/useWin7WindowRegion.ts'),
     viteConfig: readText('vite.config.ts'),
     workflow: readText('.github/workflows/win7-test-build.yml'),
   };
