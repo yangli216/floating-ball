@@ -237,6 +237,8 @@ export function useTreatmentNormalization(deps: TreatmentNormalizationDeps): Tre
       manualMatched: !!rec.manualMatched,
       selected: !!rec.selected,
       rejected: !!rec.rejected,
+      sourceType: rec.sourceType,
+      evidenceText: rec.evidenceText || '',
       dosage: rec.dosage || '',
       dosageUnit: rec.dosageUnit || '',
       dosageManualEdited: !!rec.dosageManualEdited,

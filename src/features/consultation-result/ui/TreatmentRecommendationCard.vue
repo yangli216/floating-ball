@@ -128,7 +128,7 @@
                 {{ inlineSummary }}
               </div>
               <div v-if="originalName" class="manual-match-origin-note worklist-inline-text worklist-inline-origin">
-                AI 原建议：{{ originalName }}
+                {{ originalNameLabel }}：{{ originalName }}
               </div>
               <span v-if="usageToken" class="meta-token usage-summary-token worklist-usage-token">建议 {{ usageToken }}</span>
             </div>
@@ -271,7 +271,7 @@
                 {{ inlineSummary }}
               </div>
               <div v-if="originalName" class="manual-match-origin-note">
-                AI 原建议：{{ originalName }}
+                {{ originalNameLabel }}：{{ originalName }}
               </div>
               <span v-if="usageToken && !inlineSummary" class="meta-token usage-summary-token">建议 {{ usageToken }}</span>
             </div>
@@ -498,6 +498,10 @@ const props = defineProps({
     default: 'default',
   },
 });
+
+const originalNameLabel = computed(() => (
+  props.rec.sourceType === 'explicit' ? '对话表述' : 'AI 原建议'
+));
 
 const reasonDisplay = computed(() => [
   (props.rec.reason || '').trim(),

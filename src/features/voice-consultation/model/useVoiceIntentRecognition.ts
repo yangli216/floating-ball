@@ -37,6 +37,7 @@ import {
   applyVoiceIntentStreamEvent,
   createVoiceIntentStreamAccumulator,
   createVoiceIntentStreamParser,
+  sanitizeVoiceExtractionTreatmentSections,
 } from './voiceIntentStream';
 import { resolveExplicitTreatmentCatalogHints } from './explicitTreatmentCatalogResolver';
 
@@ -72,6 +73,7 @@ interface VoiceIntentDebugSnapshot {
   matchedTreatments?: MatchedTreatment[];
   excludedTreatments?: Array<{ treatment: MatchedTreatment; reason: 'conditional' | 'historical-self-medication' }>;
   repairUsed?: boolean;
+  protocolWarnings?: string[];
   fromCache?: boolean;
   errorMessage?: string;
 }
@@ -86,6 +88,7 @@ interface TreatmentSegregationResult {
 interface ParsedVoiceExtractionResult {
   payload: VoiceExtractionResult | null;
   issues: string[];
+  warnings: string[];
 }
 
 let cachedTestModeDebugSnapshot: VoiceIntentDebugSnapshot | null = null;
@@ -116,6 +119,9 @@ function publishVoiceIntentDebug(snapshot: VoiceIntentDebugSnapshot): void {
   }
   if (snapshot.errorMessage) {
     console.warn('Voice intent error:', snapshot.errorMessage);
+  }
+  if (snapshot.protocolWarnings?.length) {
+    console.warn('Voice intent protocol warnings:', snapshot.protocolWarnings);
   }
   if (snapshot.fromCache) {
     console.info('Snapshot source: test-mode cache');
@@ -553,17 +559,20 @@ function parseVoiceExtractionPayload(rawOutput: string): ParsedVoiceExtractionRe
   const jsonCandidate = extractLLMJsonCandidate(rawOutput);
 
   try {
-    const parsed = JSON.parse(jsonCandidate) as VoiceExtractionResult;
-    const issues = validateVoiceExtractionPayload(parsed);
+    const parsed = JSON.parse(jsonCandidate) as unknown;
+    const sanitized = sanitizeVoiceExtractionTreatmentSections(parsed);
+    const issues = validateVoiceExtractionPayload(sanitized.payload);
     return {
-      payload: issues.length === 0 ? parsed : parsed,
+      payload: sanitized.payload as VoiceExtractionResult,
       issues,
+      warnings: sanitized.warnings,
     };
   } catch (error) {
     const parseMessage = error instanceof Error ? error.message : String(error);
     return {
       payload: null,
       issues: [`JSON 解析失败: ${parseMessage}`],
+      warnings: [],
     };
   }
 }
@@ -573,7 +582,7 @@ async function repairVoiceExtractionPayload(
   rawOutput: string,
   issues: string[],
   consultationId?: string,
-): Promise<VoiceExtractionResult> {
+): Promise<{ payload: VoiceExtractionResult; warnings: string[] }> {
   const repairPrompt = withOverride(
     'voiceIntentRepair',
     PROMPTS.consultation.voiceIntentRepair,
@@ -603,32 +612,45 @@ async function repairVoiceExtractionPayload(
   if (!repairedParseResult.payload || repairedParseResult.issues.length > 0) {
     throw new Error(`语音结构化结果修复失败: ${repairedParseResult.issues.join('；')}`);
   }
+  if (repairedParseResult.warnings.length > 0) {
+    console.warn('[VoiceIntent] Repaired payload contained isolated explicit orders', {
+      warnings: repairedParseResult.warnings,
+    });
+  }
 
-  return repairedParseResult.payload;
+  return {
+    payload: repairedParseResult.payload,
+    warnings: repairedParseResult.warnings,
+  };
 }
 
 async function parseOrRepairVoiceExtraction(
   transcribedText: string,
   rawOutput: string,
   consultationId?: string,
-): Promise<{ payload: VoiceExtractionResult; repairUsed: boolean }> {
+): Promise<{ payload: VoiceExtractionResult; repairUsed: boolean; warnings: string[] }> {
   const firstPass = parseVoiceExtractionPayload(rawOutput);
   if (firstPass.payload && firstPass.issues.length === 0) {
-    return { payload: firstPass.payload, repairUsed: false };
+    if (firstPass.warnings.length > 0) {
+      console.warn('[VoiceIntent] Payload contained isolated explicit orders', {
+        warnings: firstPass.warnings,
+      });
+    }
+    return { payload: firstPass.payload, repairUsed: false, warnings: firstPass.warnings };
   }
 
   console.warn('[VoiceIntent] Voice extraction payload invalid, attempting repair', {
     issues: firstPass.issues,
   });
 
-  const repairedPayload = await repairVoiceExtractionPayload(
+  const repaired = await repairVoiceExtractionPayload(
     transcribedText,
     rawOutput,
     firstPass.issues,
     consultationId,
   );
 
-  return { payload: repairedPayload, repairUsed: true };
+  return { payload: repaired.payload, repairUsed: true, warnings: repaired.warnings };
 }
 
 export function useVoiceIntentRecognition() {
@@ -857,7 +879,7 @@ export function useVoiceIntentRecognition() {
       ) as typeof PROMPTS.consultation.voiceIntentRecognition;
       const baseUserPrompt = recognitionPrompt.buildUserPrompt(text);
       const outputProtocolReminder = `
-【本次输出协议】请按 record_core、history_context、record_suggestions、diagnoses、recommendation_plan、explicit_orders、record_extra、done 的顺序逐行输出 NDJSON。record_suggestions 是带 AI 来源标记的候选而非已确认事实；explicit_orders 只能包含医生明确医嘱；recommendation_plan 必须包含 mode、recommendNow、defer、skip、reason、resumeCondition、confidence。`;
+【本次输出协议】请按 record_core、history_context、record_suggestions、diagnoses、recommendation_plan、explicit_orders、record_extra、done 的顺序逐行输出 NDJSON。record_suggestions 是带 AI 来源标记的候选而非已确认事实；explicit_orders 只能包含医生明确医嘱，每项 name 必须是非空字符串，type 必须是 medicine、examination、labTest、procedure 之一的字符串，没有明确医嘱时输出空数组；recommendation_plan 必须包含 mode、recommendNow、defer、skip、reason、resumeCondition、confidence。`;
       const userContent = `${baseUserPrompt}${patientContextBlock}${memoryBlock ? `\n${memoryBlock}` : ''}${outputProtocolReminder}`;
       const messages: ChatMessage[] = [
         { role: 'system', content: recognitionPrompt.system },
@@ -931,6 +953,7 @@ export function useVoiceIntentRecognition() {
 
       let parsed: VoiceExtractionResult;
       let repairUsed = false;
+      let protocolWarnings = [...streamAccumulator.protocolWarnings];
       const hasRequiredStreamSections = ['record_core', 'diagnoses', 'recommendation_plan']
         .every((section) => streamAccumulator.readySections.includes(section as ClinicalResultGenerationSection));
       if (streamAccumulator.eventCount > 0 && hasRequiredStreamSections) {
@@ -939,6 +962,10 @@ export function useVoiceIntentRecognition() {
         const repaired = await parseOrRepairVoiceExtraction(normalizedText, rawOutput, options?.consultationId);
         parsed = repaired.payload;
         repairUsed = repaired.repairUsed;
+        protocolWarnings = repaired.warnings;
+      }
+      if (protocolWarnings.length > 0) {
+        console.warn('[VoiceIntent] Isolated malformed optional sections', { warnings: protocolWarnings });
       }
       const normalizedExtraction = normalizeWithKnownHistories(parsed);
 
@@ -950,6 +977,15 @@ export function useVoiceIntentRecognition() {
       const resolvedTreatments = await resolveExplicitTreatmentCatalogHints(
         normalizedExtraction.treatmentHints,
         options?.consultationId,
+        {
+          transcript: normalizedText,
+          chiefComplaint: normalizedExtraction.recordDraft.chiefComplaint,
+          historyOfPresentIllness: normalizedExtraction.recordDraft.historyOfPresentIllness,
+          pastMedicalHistory: normalizedExtraction.recordDraft.pastMedicalHistory,
+          physicalExam: normalizedExtraction.recordDraft.physicalExam,
+          diagnosisNames: normalizedExtraction.diagnosisHints.map((item) => item.name),
+          treatmentPlan: normalizedExtraction.recordDraft.treatmentPlan,
+        },
       );
       const built = buildIntentResult(
         normalizedExtraction,
@@ -977,6 +1013,7 @@ export function useVoiceIntentRecognition() {
         matchedTreatments,
         excludedTreatments: segregatedTreatments.excludedTreatments,
         repairUsed,
+        protocolWarnings,
       };
 
       publishVoiceIntentDebug(debugSnapshot);

@@ -54,6 +54,8 @@ describe('useTreatmentNormalization', () => {
     const result = normalize({
       type: 'lab_test',
       name: '血常规',
+      sourceType: 'explicit',
+      evidenceText: '医生明确提出查血常规',
       goal: '评估感染及血细胞变化',
       goalGroup: '感染与炎症评估',
       goalGroupPurpose: '判断感染证据并评估炎症程度',
@@ -65,6 +67,8 @@ describe('useTreatmentNormalization', () => {
       goalGroup: '感染与炎症评估',
       goalGroupPurpose: '判断感染证据并评估炎症程度',
       necessity: 'supplementary',
+      sourceType: 'explicit',
+      evidenceText: '医生明确提出查血常规',
     });
   });
 });

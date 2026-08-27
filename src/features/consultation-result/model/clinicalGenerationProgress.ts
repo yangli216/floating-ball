@@ -29,15 +29,16 @@ export interface ClinicalGenerationProgress {
 
 interface BuildClinicalGenerationProgressInput {
   generation?: ClinicalResultGenerationState;
-  treatmentLoading: boolean;
-  treatmentStates: Record<ClinicalResultRecommendationType, ClinicalTreatmentGenerationStatus>;
+  treatmentLoading?: boolean;
+  treatmentStates?: Record<ClinicalResultRecommendationType, ClinicalTreatmentGenerationStatus>;
+  showTreatmentProgress?: boolean;
 }
 
 const RECORD_PHASES = [
   { key: 'record', label: '病历要点', sections: ['record_core', 'history_context'] as const },
-  { key: 'orders', label: '明确医嘱', sections: ['explicit_orders'] as const },
   { key: 'diagnosis', label: '诊断建议', sections: ['diagnoses'] as const },
-  { key: 'route', label: '诊疗方案', sections: ['recommendation_plan', 'record_extra'] as const },
+  { key: 'route', label: '诊疗路由', sections: ['recommendation_plan'] as const },
+  { key: 'extra', label: '病历完善', sections: ['explicit_orders', 'record_extra'] as const },
 ];
 
 const CHRONIC_REFILL_PHASES = [
@@ -48,10 +49,10 @@ const CHRONIC_REFILL_PHASES = [
 ];
 
 const TREATMENT_LABELS: Record<ClinicalResultRecommendationType, string> = {
-  medicine: '药品',
-  exam: '检查',
-  lab_test: '检验',
-  procedure: '处置',
+  medicine: '药品方案',
+  exam: '检查方案',
+  lab_test: '检验方案',
+  procedure: '处置方案',
 };
 
 const GENERATED_STAGE_STEPS = [
@@ -134,23 +135,25 @@ export function buildClinicalGenerationProgress(
     };
   }
 
-  if (!input.treatmentLoading) return emptyProgress();
+  if (input.showTreatmentProgress === false || !input.treatmentLoading) return emptyProgress();
 
-  const activeEntries = (Object.entries(input.treatmentStates) as Array<[
+  const activeEntries = (Object.entries(input.treatmentStates || {}) as Array<[
     ClinicalResultRecommendationType,
     ClinicalTreatmentGenerationStatus,
   ]>).filter(([, status]) => !['idle', 'deferred', 'skipped'].includes(status));
+  if (activeEntries.length === 0) return emptyProgress();
+
   const completeCount = activeEntries.filter(([, status]) => status === 'ready' || status === 'error').length;
   const steps = activeEntries.map(([type, status]) => ({
     key: type,
-    label: `${TREATMENT_LABELS[type]}目录`,
+    label: TREATMENT_LABELS[type],
     status: status === 'ready'
       ? 'complete' as const
       : status === 'error' ? 'error' as const : 'active' as const,
   }));
   return {
     visible: true,
-    title: '正在匹配院内诊疗目录',
+    title: '正在生成诊疗方案',
     detail: '',
     stepText: formatStepText(completeCount + 1, activeEntries.length),
     percent: progressPercentForStep(completeCount + 1, activeEntries.length),

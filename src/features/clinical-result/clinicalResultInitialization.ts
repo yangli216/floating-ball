@@ -41,7 +41,8 @@ export function mapClinicalTreatmentType(
 export function hasClinicalResultTreatmentState(item: MatchedTreatment): boolean {
   const candidate = item as Partial<TreatmentRecommendation>;
   return Boolean(
-    candidate.suggestedMatchItem
+    candidate.matchedItem
+    || candidate.suggestedMatchItem
     || candidate.matchStatus
     || typeof candidate.selected === 'boolean'
     || candidate.rejected
@@ -142,6 +143,9 @@ export function initClinicalTreatments(
       sourceType: item.sourceType,
       evidenceText: item.evidenceText || item.text || '',
       goal: item.goal || '',
+      goalGroup: inherited.goalGroup || '',
+      goalGroupPurpose: inherited.goalGroupPurpose || '',
+      necessity: inherited.necessity,
       matchedItem: assessment.matchedItem,
       suggestedMatchItem: assessment.suggestedMatchItem,
       matchStatus: assessment.matchStatus,

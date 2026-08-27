@@ -407,7 +407,7 @@ export const VoiceIntentRecognitionStreamPrompt = {
 7. name 使用标准疾病诊断，不得用症状代替；保留明确解剖部位与侧别。explicit/inferred/uncertain 必须如实标记，证据和理由保持简洁。
 
 医嘱与路由规则：
-8. explicit_orders 只提取医生本次明确决定开立、继续或调整的项目，sourceType=explicit。患者既往/自行服药只进入 currentMedicationHistory；条件性方案进入 treatmentPlan，并在 recommendation_plan 中 defer。
+8. explicit_orders 只提取医生本次明确决定开立、继续或调整的项目，sourceType=explicit。每项必须是对象，name 必须为非空字符串，type 必须为 medicine、examination、labTest、procedure 之一的字符串；禁止把 type 输出为数组或对象。没有明确医嘱时输出空数组。患者既往/自行服药只进入 currentMedicationHistory；条件性方案进入 treatmentPlan，并在 recommendation_plan 中 defer。
 9. 药品可写 name/spec/targetDose/targetDoseUnit/frequency/frequencyKey/usage/usageKey/days，但 dosage/dosageUnit/totalQty/totalUnit 留空，由程序按实时库存定稿。检查和检验写规范名称、常用 aliases、证据及目的。组合项目拆开。
 10. 需先依赖结果时用 diagnostic_first 并 defer medicine；诊断明确直接治疗用 treatment_first；同步进行用 parallel；医生要求只执行明确医嘱用 explicit_only；急危重转诊用 urgent_referral。只有高置信才用 defer/skip 抑制类型，低置信使用 parallel。
 11. 非医疗内容或转写无法理解时，仍按事件顺序输出空分区，最后 done.error=true 并给出简短 message。其余缺失字符串用空串、数组用空数组。`,
@@ -446,7 +446,7 @@ export const VoiceIntentRepairPrompt = {
   "explicitTreatmentHints": [],
   "recommendationPlan": {
     "mode": "parallel",
-    "recommendNow": ["medicine", "exam", "lab_test", "procedure"],
+    "recommendNow": ["medicine", "exam", "lab_test"],
     "defer": [],
     "skip": [],
     "reason": "未能从原结果恢复路由，使用兼容默认值",
@@ -458,6 +458,7 @@ export const VoiceIntentRepairPrompt = {
 }
 6. error 必须是 boolean；如果原始输出明确表达“非医疗内容”或“无法识别”，才设置为 true。
 7. 对 diagnosisHints 和 explicitTreatmentHints 中的每一项：
+   - explicitTreatmentHints 的 name 必须为非空字符串，type 必须为 medicine、examination、labTest、procedure 之一的字符串；无法确认时删除该条，不得把 type 输出为数组或对象
    - 能保留的 evidenceText、sourceType、goal、targetDose、targetDoseUnit、frequency、frequencyKey、usage、usageKey、days 都尽量保留
    - 药品 dosage、dosageUnit、totalQty、totalUnit 必须清空，后续由程序结合库存药品详情生成
    - 如果没有足够信息，不要编造，保留空字符串或空数组
@@ -2204,8 +2205,8 @@ export const MedicalRecordCheckPrompt = {
 export const PROMPT_VERSION = {
   medicalRecordGeneration: 'v1.0',
   voiceIntentRecognition: 'v3.0',
-  voiceIntentRecognitionStream: 'v1.0',
-  voiceIntentRepair: 'v1.0',
+  voiceIntentRecognitionStream: 'v1.1',
+  voiceIntentRepair: 'v1.1',
   riskAnalysis: 'v1.0',
   diagnosisRecommendation: 'v1.0',
   diagnosisPathReasoning: 'v1.0',

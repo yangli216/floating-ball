@@ -76,6 +76,16 @@ export interface ClinicalResultMatchedDiagnosis extends DiagnosisHint {
 
 export interface ClinicalResultMatchedTreatment extends TreatmentHint {
   matchedItem?: ClinicalResultMatchedItem | null;
+  suggestedMatchItem?: ClinicalResultMatchedItem | null;
+  matchStatus?: TreatmentRecommendation['matchStatus'];
+  selected?: boolean;
+  rejected?: boolean;
+  manualMatched?: boolean;
+  originalName?: string;
+  reason?: string;
+  goalGroup?: string;
+  goalGroupPurpose?: string;
+  necessity?: TreatmentRecommendation['necessity'];
 }
 
 export type ClinicalResultDiagnosis = ClinicalResultMatchedDiagnosis & Partial<Diagnosis>;

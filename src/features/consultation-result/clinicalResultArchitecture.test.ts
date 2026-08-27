@@ -11,7 +11,9 @@ import clinicalRecordAnnotatedTextSource from './ui/ClinicalRecordAnnotatedText.
 import writebackScopeSelectorSource from './ui/ClinicalResultWritebackScopeSelector.vue?raw';
 import diagnosisRecommendationCardSource from './ui/DiagnosisRecommendationCard.vue?raw';
 import diagnosisDifferentialListSource from './ui/DiagnosisDifferentialList.vue?raw';
+import treatmentGenerationPlaceholderSource from './ui/TreatmentGenerationPlaceholder.vue?raw';
 import voiceRecordFieldEditorSource from '@features/voice-consultation/ui/VoiceRecordFieldEditor.vue?raw';
+import outpatientFollowUpPageSource from '@features/outpatient-follow-up/ui/OutpatientFollowUpPage.vue?raw';
 
 const INTERNAL_IMPLEMENTATION_NAME = 'VoiceConsultationNew';
 
@@ -56,6 +58,31 @@ describe('clinical result architecture boundary', () => {
     expect(resultImplementationSource).toMatch(
       /void maybeAutoFetchMissingTreatment\('intent-result-applied'\);[\s\S]*?finishFinalResultApplication\(\)/,
     );
+  });
+
+  it('orders ordinary voice presentation without leaking its recovery policy to other channels', () => {
+    expect(resultImplementationSource).toContain('useClinicalResultGenerationSequence');
+    expect(resultImplementationSource).toContain('canStartAutoTreatment');
+    expect(resultImplementationSource).toContain('shouldRecoverMissingDiagnosis');
+    expect(resultImplementationSource).toContain('TreatmentGenerationPlaceholder');
+    expect(treatmentGenerationPlaceholderSource).toContain('role="status"');
+    expect(treatmentGenerationPlaceholderSource).toContain('aria-live="polite"');
+    expect(treatmentGenerationPlaceholderSource).toContain('AI 正在生成建议');
+    expect(treatmentGenerationPlaceholderSource).not.toContain('匹配院内');
+    expect(resultImplementationSource).toContain(':show-treatment-progress="resultChannel !== \'voice\'"');
+    expect(resultImplementationSource).toContain("resultChannel.value === 'voice'");
+    expect(resultImplementationSource).toContain("resultChannel.value === 'symptom'");
+    expect(resultImplementationSource).not.toContain(
+      'formalDiagnoses.value.length === 0 && canRefreshDiagnosis.value',
+    );
+    expect(resultImplementationSource).toContain("resultChannel.value === 'chronic-refill'");
+  });
+
+  it('keeps report follow-up on its independent treatment-plan page', () => {
+    expect(outpatientFollowUpPageSource).toContain("import { TreatmentPlanPage } from '@features/treatment-plan'");
+    expect(outpatientFollowUpPageSource).toContain('<TreatmentPlanPage');
+    expect(outpatientFollowUpPageSource).not.toContain('ConsultationResultPage');
+    expect(outpatientFollowUpPageSource).not.toContain('useClinicalResultGenerationSequence');
   });
 
   it('confines the root implementation dependency to the public result page facade', () => {

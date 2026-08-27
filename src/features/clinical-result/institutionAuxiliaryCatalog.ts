@@ -118,16 +118,30 @@ export function mapAuxiliaryCatalogRecommendations(
       const ref = (recommendation.catalogRef || '').trim();
       const entry = byRef.get(ref);
       if (!entry || entry.type !== expectedType || seen.has(entry.item.id)) return [];
+      const goal = (recommendation.goal || '').trim();
+      const goalGroup = (recommendation.goalGroup || '').trim();
+      const goalGroupPurpose = (recommendation.goalGroupPurpose || '').trim();
+      const reason = (recommendation.reason || '').trim();
+      const necessity = recommendation.necessity;
+      if (
+        !goal
+        || !goalGroup
+        || !goalGroupPurpose
+        || !reason
+        || (necessity !== 'core' && necessity !== 'supplementary')
+      ) {
+        return [];
+      }
       seen.add(entry.item.id);
       return [normalize({
         type: expectedType,
         name: entry.item.name,
         originalName: entry.item.name,
-        goal: (recommendation.goal || '').trim(),
-        goalGroup: (recommendation.goalGroup || '').trim(),
-        goalGroupPurpose: (recommendation.goalGroupPurpose || '').trim(),
-        necessity: recommendation.necessity === 'supplementary' ? 'supplementary' : 'core',
-        reason: (recommendation.reason || '').trim(),
+        goal,
+        goalGroup,
+        goalGroupPurpose,
+        necessity,
+        reason,
         sourceType: 'inferred',
         matchedItem: buildMedicalItemMatchedItem(entry.item),
         matchStatus: 'exact',

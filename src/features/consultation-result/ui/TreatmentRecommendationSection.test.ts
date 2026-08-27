@@ -35,7 +35,7 @@ describe('TreatmentRecommendationSection match adjustment', () => {
     expect(source).toContain("'has-header': group.showHeader");
     expect(source).toContain("'grouped-recommendation-row': group.showHeader");
     expect(source).toContain("'grouped-recommendation-row-last': group.showHeader && index === group.items.length - 1");
-    expect(source).toContain('<p>{{ group.purpose }}</p>');
+    expect(source).toContain('<p v-if="group.purpose">{{ group.purpose }}</p>');
     expect(source).not.toContain('<span>临床问题</span>');
     expect(cardSource).toContain('<span class="auxiliary-purpose-text">{{ purposeDisplay }}</span>');
     expect(cardSource).not.toContain('>项目作用</span>');

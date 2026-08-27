@@ -34,7 +34,14 @@ describe('institutionAuxiliaryCatalog', () => {
         goalGroupPurpose: '定位感染病灶并评估范围',
         necessity: 'core',
       }],
-      labTests: [{ catalogRef: 'E001' }, { catalogRef: 'L001', reason: '评估感染' }],
+      labTests: [{ catalogRef: 'E001' }, {
+        catalogRef: 'L001',
+        reason: '评估感染证据',
+        goal: '评估感染及血细胞变化',
+        goalGroup: '感染与炎症评估',
+        goalGroupPurpose: '判断感染证据并评估炎症程度',
+        necessity: 'supplementary',
+      }],
     }, context, ['exam', 'lab_test'], normalize);
 
     expect(result).toHaveLength(2);
@@ -46,7 +53,30 @@ describe('institutionAuxiliaryCatalog', () => {
       goalGroupPurpose: '定位感染病灶并评估范围',
       necessity: 'core',
     });
-    expect(result[1]?.necessity).toBe('core');
+    expect(result[1]?.necessity).toBe('supplementary');
+  });
+
+  it('drops catalog-backed responses when clinical purpose metadata is incomplete', () => {
+    const result = mapAuxiliaryCatalogRecommendations({
+      exams: [{
+        catalogRef: 'E001',
+        reason: '排查肺部感染',
+        goal: '明确肺部感染证据',
+        goalGroup: '',
+        goalGroupPurpose: '定位感染病灶并评估范围',
+        necessity: 'core',
+      }],
+      labTests: [{
+        catalogRef: 'L999',
+        reason: '评估感染证据',
+        goal: '评估感染',
+        goalGroup: '感染评估',
+        goalGroupPurpose: '辅助判断感染',
+        necessity: 'core',
+      }],
+    }, context, ['exam', 'lab_test'], normalize);
+
+    expect(result).toEqual([]);
   });
 
   it('places restricted free-program items behind general items and labels their eligibility constraint', () => {

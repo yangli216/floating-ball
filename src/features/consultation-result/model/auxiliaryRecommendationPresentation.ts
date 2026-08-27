@@ -9,28 +9,24 @@ export interface AuxiliaryRecommendationGroup {
 }
 
 const AUXILIARY_TYPES = new Set<TreatmentRecommendation['type']>(['exam', 'lab_test']);
+const PURPOSE_PREVIEW_LENGTH = 32;
 
 function normalizeText(value: unknown): string {
   return typeof value === 'string' ? value.trim().replace(/\s+/gu, ' ') : '';
 }
 
-function getFallbackGroupTitle(type: TreatmentRecommendation['type']): string {
-  return type === 'exam' ? '综合检查评估' : '综合检验评估';
+function truncatePreview(value: string): string {
+  if (value.length <= PURPOSE_PREVIEW_LENGTH) return value;
+  return `${value.slice(0, PURPOSE_PREVIEW_LENGTH).replace(/[，,:：\s]+$/u, '')}…`;
 }
 
-function getFallbackGroupPurpose(type: TreatmentRecommendation['type']): string {
-  return type === 'exam'
-    ? '辅助当前诊断、鉴别与风险评估'
-    : '辅助当前诊断、病情评估与治疗决策';
-}
-
-function extractConciseReason(reason: string): string {
-  const firstClause = reason
+function extractConciseText(value: string): string {
+  const firstClause = value
     .replace(/^(?:推荐依据|开立依据|依据)[:：]?\s*/u, '')
     .split(/[。；;\n]/u)
     .map((part) => part.trim())
     .find(Boolean) || '';
-  return firstClause.length > 28 ? '' : firstClause;
+  return truncatePreview(firstClause);
 }
 
 export function isAuxiliaryRecommendation(item: TreatmentRecommendation): boolean {
@@ -39,9 +35,14 @@ export function isAuxiliaryRecommendation(item: TreatmentRecommendation): boolea
 
 export function getAuxiliaryRecommendationPurpose(item: TreatmentRecommendation): string {
   if (!isAuxiliaryRecommendation(item)) return '';
-  return normalizeText(item.goal)
-    || extractConciseReason(normalizeText(item.reason))
-    || (item.type === 'exam' ? '辅助当前病情检查评估' : '辅助当前病情检验评估');
+  const goal = normalizeText(item.goal);
+  if (goal) return goal;
+
+  const evidence = extractConciseText(normalizeText(item.evidenceText));
+  if (evidence) {
+    return item.sourceType === 'explicit' ? `对话明确：${evidence}` : evidence;
+  }
+  return extractConciseText(normalizeText(item.reason));
 }
 
 export function getAuxiliaryNecessityLabel(item: TreatmentRecommendation): string {
@@ -60,21 +61,37 @@ export function buildAuxiliaryRecommendationGroups(
 
   const groups = new Map<string, AuxiliaryRecommendationGroup>();
   for (const item of items) {
-    const title = normalizeText(item.goalGroup) || getFallbackGroupTitle(type);
-    const key = title.toLocaleLowerCase('zh-CN');
+    const isExplicit = item.sourceType === 'explicit';
+    const isMatchedExplicit = isExplicit && Boolean(item.matchedItem);
+    const explicitGoalGroup = isMatchedExplicit ? normalizeText(item.goalGroup) : '';
+    const title = isExplicit
+      ? explicitGoalGroup
+        ? `对话明确 · ${explicitGoalGroup}`
+        : isMatchedExplicit ? '对话明确项目' : '对话明确项目（待匹配）'
+      : normalizeText(item.goalGroup);
+    const purpose = isExplicit
+      ? explicitGoalGroup
+        ? normalizeText(item.goalGroupPurpose)
+        : isMatchedExplicit
+        ? '本次问诊中已明确提出，已匹配当前可用目录'
+        : '本次问诊中已明确提出，当前可用目录尚未匹配，匹配后方可回写'
+      : normalizeText(item.goalGroupPurpose);
+    const key = isExplicit
+      ? `explicit:${type}:${isMatchedExplicit ? 'matched' : 'unmatched'}${explicitGoalGroup ? `:${explicitGoalGroup.toLocaleLowerCase('zh-CN')}` : ''}`
+      : title ? title.toLocaleLowerCase('zh-CN') : `ungrouped:${type}`;
     const existing = groups.get(key);
     if (existing) {
       existing.items.push(item);
       if (!existing.purpose) {
-        existing.purpose = normalizeText(item.goalGroupPurpose);
+        existing.purpose = purpose;
       }
       continue;
     }
     groups.set(key, {
       key,
       title,
-      purpose: normalizeText(item.goalGroupPurpose) || getFallbackGroupPurpose(type),
-      showHeader: true,
+      purpose,
+      showHeader: isExplicit || Boolean(title),
       items: [item],
     });
   }

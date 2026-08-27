@@ -1,50 +1,64 @@
 import { describe, expect, it } from 'vitest';
 import { buildClinicalGenerationProgress } from './clinicalGenerationProgress';
 
-const idleTreatmentStates = {
-  medicine: 'idle' as const,
-  exam: 'idle' as const,
-  lab_test: 'idle' as const,
-  procedure: 'idle' as const,
-};
-
 describe('buildClinicalGenerationProgress', () => {
   it('reports the next concrete record-analysis phase', () => {
     const progress = buildClinicalGenerationProgress({
       generation: {
         status: 'streaming',
-        readySections: ['record_core', 'history_context', 'explicit_orders'],
+        readySections: ['record_core', 'history_context'],
       },
-      treatmentLoading: false,
-      treatmentStates: idleTreatmentStates,
     });
 
     expect(progress.title).toBe('正在整理诊断建议');
-    expect(progress.stepText).toBe('第 3/4 步');
-    expect(progress.percent).toBe(65);
+    expect(progress.stepText).toBe('第 2/4 步');
+    expect(progress.percent).toBe(41);
     expect(progress.detail).toBe('');
     expect(progress.steps.map((step) => step.status)).toEqual([
-      'complete', 'complete', 'active', 'pending',
+      'complete', 'active', 'pending', 'pending',
     ]);
   });
 
-  it('reports per-category catalog matching without exposing partial treatment results', () => {
+  it('does not expose treatment finalization as a standalone catalog-matching phase', () => {
     const progress = buildClinicalGenerationProgress({
       generation: { status: 'complete', readySections: [] },
       treatmentLoading: true,
       treatmentStates: {
-        ...idleTreatmentStates,
         medicine: 'loading',
         exam: 'ready',
         lab_test: 'ready',
+        procedure: 'skipped',
       },
+      showTreatmentProgress: false,
     });
 
-    expect(progress.title).toBe('正在匹配院内诊疗目录');
-    expect(progress.stepText).toBe('第 3/3 步');
-    expect(progress.percent).toBe(88);
-    expect(progress.detail).toBe('');
-    expect(progress.steps.map((step) => step.label)).toEqual(['药品目录', '检查目录', '检验目录']);
+    expect(progress).toEqual({
+      visible: false,
+      title: '',
+      detail: '',
+      stepText: '',
+      percent: 0,
+      steps: [],
+    });
+  });
+
+  it('keeps non-voice treatment feedback without describing it as catalog matching', () => {
+    const progress = buildClinicalGenerationProgress({
+      generation: { status: 'complete', readySections: [] },
+      treatmentLoading: true,
+      treatmentStates: {
+        medicine: 'loading',
+        exam: 'ready',
+        lab_test: 'ready',
+        procedure: 'skipped',
+      },
+      showTreatmentProgress: true,
+    });
+
+    expect(progress.title).toBe('正在生成诊疗方案');
+    expect(progress.steps.map((step) => step.label)).toEqual([
+      '药品方案', '检查方案', '检验方案',
+    ]);
   });
 
   it('uses chronic refill phases when review and medicine sections stream in', () => {
@@ -53,8 +67,6 @@ describe('buildClinicalGenerationProgress', () => {
         status: 'streaming',
         readySections: ['record_core', 'history_context', 'diagnoses', 'review_plan'],
       },
-      treatmentLoading: false,
-      treatmentStates: idleTreatmentStates,
     });
 
     expect(progress.title).toBe('正在整理用药方案');
@@ -75,8 +87,6 @@ describe('buildClinicalGenerationProgress', () => {
         stage: 'generating-content',
         message: '正在生成高血压病历与核查项',
       },
-      treatmentLoading: false,
-      treatmentStates: idleTreatmentStates,
     });
 
     expect(progress.title).toBe('正在生成高血压病历与核查项');
@@ -89,21 +99,19 @@ describe('buildClinicalGenerationProgress', () => {
     const progress = buildClinicalGenerationProgress({
       generation: {
         status: 'streaming',
-        readySections: ['record_core', 'history_context', 'explicit_orders', 'diagnoses'],
+        readySections: ['record_core', 'history_context', 'diagnoses', 'recommendation_plan'],
         message: '正在整理语音病历',
       },
-      treatmentLoading: false,
-      treatmentStates: idleTreatmentStates,
     });
 
     expect(progress).toMatchObject({
-      title: '正在整理诊疗方案',
+      title: '正在整理病历完善',
       detail: '',
       stepText: '第 4/4 步',
       percent: 88,
     });
     expect(progress.steps.map((step) => step.label)).toEqual([
-      '病历要点', '明确医嘱', '诊断建议', '诊疗方案',
+      '病历要点', '诊断建议', '诊疗路由', '病历完善',
     ]);
   });
 
@@ -114,8 +122,6 @@ describe('buildClinicalGenerationProgress', () => {
         readySections: [],
         message: '慢病复诊结果生成失败，请收起页面后重试',
       },
-      treatmentLoading: false,
-      treatmentStates: idleTreatmentStates,
     });
 
     expect(progress).toMatchObject({

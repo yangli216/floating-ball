@@ -65,7 +65,7 @@ describe('useClinicalResultFinalization', () => {
     expect(controller.allowsTreatmentAutoFetchInBackground.value).toBe(false);
   });
 
-  it('starts treatment after diagnoses and route are ready and keeps progress while it finishes', () => {
+  it('starts treatment after diagnoses and route are ready and exposes catalog progress while it finishes', () => {
     const treatmentPending = ref(true);
     const generation = ref<ClinicalResultGenerationState>({
       status: 'streaming',
@@ -82,11 +82,29 @@ describe('useClinicalResultFinalization', () => {
     expect(controller.allowsTreatmentAutoFetchInBackground.value).toBe(true);
 
     generation.value = { status: 'complete', readySections: [...generation.value.readySections] };
+    expect(controller.displayedGeneration.value?.status).toBe('complete');
+    treatmentPending.value = false;
+    expect(controller.displayedGeneration.value?.status).toBe('complete');
+  });
+
+  it('keeps initial voice diagnosis recovery visible without changing chronic finalization', () => {
+    const diagnosisPending = ref(true);
+    const generation = ref<ClinicalResultGenerationState>({
+      status: 'complete',
+      readySections: ['record_core'],
+    });
+    const channel = ref<ClinicalResultChannel>('voice');
+    const controller = useClinicalResultFinalization({
+      getChannel: () => channel.value,
+      getGeneration: () => generation.value,
+      getDiagnosisPending: () => diagnosisPending.value,
+    });
+
     expect(controller.displayedGeneration.value).toMatchObject({
       status: 'streaming',
-      message: '病历已可编辑，正在补全诊疗方案',
+      message: '病历已可编辑，正在形成诊断建议',
     });
-    treatmentPending.value = false;
+    channel.value = 'chronic-refill';
     expect(controller.displayedGeneration.value?.status).toBe('complete');
   });
 });

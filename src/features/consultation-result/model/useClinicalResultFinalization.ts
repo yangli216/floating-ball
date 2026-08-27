@@ -7,6 +7,7 @@ import type {
 export interface ClinicalResultFinalizationOptions {
   getChannel: () => ClinicalResultChannel;
   getGeneration: () => ClinicalResultGenerationState | undefined;
+  getDiagnosisPending?: () => boolean;
   getTreatmentPending?: () => boolean;
 }
 
@@ -24,14 +25,24 @@ export function useClinicalResultFinalization(options: ClinicalResultFinalizatio
 
   const displayedGeneration = computed<ClinicalResultGenerationState | undefined>(() => {
     const generation = options.getGeneration();
-    if (options.getTreatmentPending?.() && generation?.status === 'complete') {
+    if (
+      options.getChannel() === 'voice'
+      && options.getDiagnosisPending?.()
+      && generation?.status === 'complete'
+    ) {
       return {
         ...generation,
         status: 'streaming',
-        stage: 'finalizing-result',
-        message: '病历已可编辑，正在补全诊疗方案',
+        message: '病历已可编辑，正在形成诊断建议',
       };
     }
+    // A completed voice record should expose the real per-catalog treatment
+    // progress instead of pretending that the record stream is still running.
+    if (
+      options.getChannel() === 'voice'
+      && options.getTreatmentPending?.()
+      && generation?.status === 'complete'
+    ) return generation;
     if (!applyingFinalResult.value || generation?.status !== 'complete') return generation;
     return {
       ...generation,

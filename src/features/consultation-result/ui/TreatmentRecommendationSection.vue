@@ -827,7 +827,7 @@ function getFeedbackSubmittedLabel(item: TreatmentRecommendation): string {
           <div class="clinical-goal-group-title-row">
             <h4>{{ group.title }}</h4>
           </div>
-          <p>{{ group.purpose }}</p>
+          <p v-if="group.purpose">{{ group.purpose }}</p>
           <span class="clinical-goal-group-count">{{ group.items.length }} 项</span>
         </header>
         <div class="clinical-goal-group-items">

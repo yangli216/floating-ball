@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import type { TreatmentRecommendation } from '@/types/consultation';
-import { getMedicineManufacturer } from './recommendationHelpers';
+import { getMedicineManufacturer, getTreatmentOriginalName } from './recommendationHelpers';
 
 vi.hoisted(() => {
   Object.defineProperty(globalThis, 'localStorage', {
@@ -11,6 +11,19 @@ vi.hoisted(() => {
       removeItem: () => undefined,
       clear: () => undefined,
     },
+  });
+});
+
+describe('getTreatmentOriginalName', () => {
+  it('keeps the doctor wording visible after an explicit contextual catalog completion', () => {
+    expect(getTreatmentOriginalName({
+      type: 'exam',
+      name: '肝胆胰脾肾彩超',
+      originalName: 'B超',
+      reason: '结合上腹部不适补全',
+      sourceType: 'explicit',
+      matchStatus: 'exact',
+    })).toBe('B超');
   });
 });
 

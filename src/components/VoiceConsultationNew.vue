@@ -111,7 +111,10 @@ import {
   ClinicalResultWritebackScopeSelector,
   DiagnosisDifferentialList,
   DiagnosisRecommendationCard,
+  isDoctorOwnedTreatment,
+  mergeGeneratedTreatmentBranches,
   MutualRecognitionDecisionHost,
+  TreatmentGenerationPlaceholder,
   TreatmentRecommendationSection,
   buildClinicalResultIntentRecordSnapshot,
   buildClinicalResultNavigationItems,
@@ -125,6 +128,7 @@ import {
   useClinicalResultDiagnosisChecklist,
   useDifferentialDiagnosisDirection,
   useClinicalResultFinalization,
+  useClinicalResultGenerationSequence,
   useClinicalResultIntentReset,
   useClinicalResultProgressiveIntentApplication,
   useClinicalResultPrecautionsScope,
@@ -156,6 +160,7 @@ import {
   useWritebackFeedbackController,
   useWritebackStatus,
   type ManualMatchCandidate,
+  type ClinicalResultDiagnosisRequestMode,
   type SecondarySelectorField,
   type WritebackFeedbackPayload,
 } from '@features/consultation-result';
@@ -203,30 +208,6 @@ const recommendationPolicy = computed(() => props.intentResult?.recommendationPo
 const resultRegenerating = ref(false);
 const showSupplementDialog = ref(false);
 const supplementGuidance = ref('');
-const clinicalResultFinalization = useClinicalResultFinalization({
-  getChannel: () => props.channel,
-  getGeneration: () => props.intentResult?.generation,
-  getTreatmentPending: () => treatmentLoading.value && !lastTreatmentDiagnosisKey.value,
-});
-const {
-  allowsPostResultFactSuggestions,
-  allowsTreatmentAutoFetchInBackground,
-  applyingFinalResult,
-  begin: beginFinalResultApplication,
-  displayedGeneration,
-  finish: finishFinalResultApplication,
-  reset: resetFinalResultApplication,
-} = clinicalResultFinalization;
-const isResultGenerating = computed(() => (
-  resultRegenerating.value
-  || applyingFinalResult.value
-  || props.processing
-  || props.intentResult?.generation?.status === 'streaming'
-));
-const isResultGenerationFailed = computed(() => props.intentResult?.generation?.status === 'error');
-const isResultUnavailable = computed(() => isResultGenerating.value || isResultGenerationFailed.value);
-const allowTreatmentRefresh = computed(() => recommendationPolicy.value?.allowTreatmentRefresh !== false);
-const autoFetchTreatments = computed(() => recommendationPolicy.value?.autoFetchTreatments !== false);
 
 const chiefComplaint = ref('');
 const historyOfPresentIllness = ref('');
@@ -271,7 +252,6 @@ const {
   removeDiagnosis: removeDiagnosisSelection,
   replaceDiagnosisInSelection,
 } = diagnosisSelection;
-const diagnosisLoading = ref(false);
 const diagnosisRequestSeq = ref(0);
 
 const treatments = ref<TreatmentRecommendation[]>([]);
@@ -383,15 +363,66 @@ const {
 } = diagnosisChecklist;
 
 const lastTreatmentDiagnosisKey = ref('');
-const isInitialTreatmentGeneration = computed(() => (
-  treatmentLoading.value && !lastTreatmentDiagnosisKey.value
+const clinicalResultGenerationSequence = useClinicalResultGenerationSequence({
+  getChannel: () => props.channel,
+  getGeneration: () => props.intentResult?.generation,
+  getFormalDiagnosisCount: () => formalDiagnoses.value.length,
+  getSelectedDiagnosisKey: () => getDiagnosisIdentity(selectedDiagnosis.value),
+  getLastTreatmentDiagnosisKey: () => lastTreatmentDiagnosisKey.value,
+});
+const {
+  beginDiagnosis: beginDiagnosisGeneration,
+  beginTreatment: beginTreatmentGeneration,
+  canShowGeneratedTreatments,
+  canStartAutoTreatment,
+  coreRecordEditable,
+  diagnosisLoading,
+  diagnosisRequestMode,
+  finishDiagnosis: finishDiagnosisGeneration,
+  finishTreatment: finishTreatmentGeneration,
+  initialDiagnosisPending,
+  reset: resetGenerationSequence,
+  shouldRecoverMissingDiagnosis,
+  showBlockingDiagnosisLoading,
+  treatmentGenerationIsInitial,
+} = clinicalResultGenerationSequence;
+const clinicalResultFinalization = useClinicalResultFinalization({
+  getChannel: () => props.channel,
+  getGeneration: () => props.intentResult?.generation,
+  getDiagnosisPending: () => initialDiagnosisPending.value,
+  getTreatmentPending: () => treatmentLoading.value && !lastTreatmentDiagnosisKey.value,
+});
+const {
+  allowsPostResultFactSuggestions,
+  allowsTreatmentAutoFetchInBackground,
+  applyingFinalResult,
+  begin: beginFinalResultApplication,
+  displayedGeneration,
+  finish: finishFinalResultApplication,
+  reset: resetFinalResultApplication,
+} = clinicalResultFinalization;
+const isResultGenerating = computed(() => (
+  resultRegenerating.value
+  || applyingFinalResult.value
+  || initialDiagnosisPending.value
+  || props.processing
+  || props.intentResult?.generation?.status === 'streaming'
 ));
+const isResultGenerationFailed = computed(() => props.intentResult?.generation?.status === 'error');
+const isResultUnavailable = computed(() => isResultGenerating.value || isResultGenerationFailed.value);
+const allowTreatmentRefresh = computed(() => recommendationPolicy.value?.allowTreatmentRefresh !== false);
+const autoFetchTreatments = computed(() => recommendationPolicy.value?.autoFetchTreatments !== false);
 const suppressDiagnosisTreatmentRefetch = ref(false);
 const canRefreshDiagnosis = computed(() => (
   chiefComplaint.value.trim().length > 0
   || historyOfPresentIllness.value.trim().length > 0
 ));
-const selectedTreatments = computed(() => buildSelectedTreatments({ items: treatments.value }));
+const displayedTreatments = computed(() => (
+  canShowGeneratedTreatments.value
+    ? treatments.value
+    : treatments.value.filter(isDoctorOwnedTreatment)
+));
+const selectedTreatments = computed(() => buildSelectedTreatments({ items: displayedTreatments.value }));
 const treatmentRefreshNeeded = computed(() => {
   const currentIdentity = getDiagnosisIdentity(selectedDiagnosis.value);
   if (!currentIdentity || suppressDiagnosisTreatmentRefetch.value) {
@@ -404,14 +435,20 @@ const treatmentRefreshNeeded = computed(() => {
   return currentIdentity !== lastTreatmentDiagnosisKey.value;
 });
 const treatmentSectionState = useTreatmentSections({
-  treatments,
+  treatments: displayedTreatments,
   selectedDiagnosis,
   isRefreshNeeded: treatmentRefreshNeeded,
   getLastTreatmentDiagnosisKey: () => lastTreatmentDiagnosisKey.value,
+  generationStates: treatmentGenerationState,
+  showGenerationPlaceholders: computed(() => (
+    resultChannel.value === 'voice'
+    && treatmentLoading.value
+    && canShowGeneratedTreatments.value
+  )),
 });
 const {
-  hasTreatments,
   treatmentEmptyText,
+  treatmentPresentationRows,
   treatmentSections,
 } = treatmentSectionState;
 const clinicalResultNavigationItems = computed(() => buildClinicalResultNavigationItems(
@@ -435,7 +472,11 @@ watch(clinicalResultNavigationItems, (items) => {
   void nextTick(syncActiveClinicalResultSection);
 }, { flush: 'post' });
 const displayedTreatmentEmptyText = computed(() => (
-  recommendationPolicy.value?.plan?.mode === 'diagnostic_first'
+  resultChannel.value === 'voice'
+    && formalDiagnoses.value.length === 0
+    && differentialDiagnoses.value.length > 0
+    ? '当前只有待鉴别方向，请补充依据或由医生转为正式诊断后再生成治疗方案。'
+    : recommendationPolicy.value?.plan?.mode === 'diagnostic_first'
     ? (recommendationPolicy.value.plan.reason || '当前先完善必要的检验检查，药品建议将在结果返回后继续生成。')
     : allowTreatmentRefresh.value
       ? treatmentEmptyText.value
@@ -748,6 +789,7 @@ async function applyEditorSnapshot(snapshot: VoiceEditorSnapshot): Promise<void>
 
 const canSubmit = computed(() => (
   !isResultUnavailable.value
+  && !diagnosisLoading.value
   && !treatmentLoading.value
   && !isWritebackBusy.value
   && hasWritebackSelection.value
@@ -1081,6 +1123,12 @@ function normalizeIntentKeyPart(value: unknown): string {
 function invalidateTreatmentRequests(): void {
   treatmentRequestSeq.value += 1;
   treatmentLoading.value = false;
+  finishTreatmentGeneration();
+}
+
+function invalidateDiagnosisRequests(): void {
+  diagnosisRequestSeq.value += 1;
+  finishDiagnosisGeneration();
 }
 
 function buildTreatmentAutoFetchKey(diagnosisIdentity: string): string {
@@ -1522,13 +1570,19 @@ useConsultationReferenceFeedbackListener<ReferenceFeedbackPayload>({
 });
 
 async function fetchAIDiagnosis(
-  options: { notifyOnError?: boolean; deferSideEffects?: boolean } = {},
+  options: {
+    notifyOnError?: boolean;
+    deferSideEffects?: boolean;
+    requestMode?: Exclude<ClinicalResultDiagnosisRequestMode, 'idle'>;
+  } = {},
 ): Promise<boolean> {
   if (diagnosisLoading.value) return false;
   if (!canRefreshDiagnosis.value) {
     showToast?.('请先填写主诉或现病史', 'warning');
     return false;
   }
+  const requestMode = options.requestMode || 'manual-refresh';
+  if (!beginDiagnosisGeneration(requestMode)) return false;
 
   const requestSeq = diagnosisRequestSeq.value + 1;
   diagnosisRequestSeq.value = requestSeq;
@@ -1537,7 +1591,6 @@ async function fetchAIDiagnosis(
     chiefComplaint.value,
     historyOfPresentIllness.value,
   ].join('|');
-  diagnosisLoading.value = true;
   try {
     const requestSpec = buildClinicalResultDiagnosisRequestSpec({
       patientName: patientName.value,
@@ -1601,7 +1654,7 @@ async function fetchAIDiagnosis(
     return false;
   } finally {
     if (requestSeq === diagnosisRequestSeq.value) {
-      diagnosisLoading.value = false;
+      finishDiagnosisGeneration(requestMode);
     }
   }
 }
@@ -1611,7 +1664,7 @@ async function handleDiagnosisRefresh(event?: Event): Promise<void> {
   closeReasonTooltipIfOpen();
   closeRelatedDropdown();
   recommendationFeedbackPopover.close();
-  await fetchAIDiagnosis();
+  await fetchAIDiagnosis({ requestMode: 'manual-refresh' });
 }
 
 async function fetchAITreatment(
@@ -1634,6 +1687,7 @@ async function fetchAITreatment(
   );
 
   treatmentLoading.value = true;
+  beginTreatmentGeneration(diagnosisIdentity);
 
   console.info('[VoiceConsultationNew] Fetching treatment recommendations', {
     requestSeq,
@@ -1655,12 +1709,15 @@ async function fetchAITreatment(
   if (requestedTypes.length === 0) {
     lastTreatmentDiagnosisKey.value = diagnosisIdentity;
     treatmentLoading.value = false;
+    finishTreatmentGeneration(diagnosisIdentity);
     return true;
   }
   requestedTypes.forEach((type) => {
     treatmentGenerationState.value[type] = 'loading';
   });
   const stagedRecommendations: TreatmentRecommendation[] = [];
+  const commitBranchesIncrementally = treatmentGenerationIsInitial.value
+    && !treatments.value.some((item) => !isDoctorOwnedTreatment(item));
 
   try {
     if (requestedTypes.includes('medicine')) {
@@ -1693,6 +1750,18 @@ async function fetchAITreatment(
         if (!isCurrentTreatmentRequest()) return;
         stagedRecommendations.push(...ranked);
         task.types.forEach((type) => { treatmentGenerationState.value[type] = 'ready'; });
+        if (commitBranchesIncrementally) {
+          const nextTreatments = mergeGeneratedTreatmentBranches(
+            treatments.value,
+            task.types,
+            ranked,
+          );
+          if (task.types.includes('medicine')) {
+            await reconcileAutoSelectedMedicineInventory(nextTreatments);
+          }
+          if (!isCurrentTreatmentRequest()) return;
+          treatments.value = nextTreatments;
+        }
       },
     });
 
@@ -1705,27 +1774,19 @@ async function fetchAITreatment(
         throw new Error('部分治疗方案生成失败');
       }
     }
-    // 各目录请求仍可并行完成，但只在全部任务结束后一次性替换推荐项，
-    // 避免检查、检验、药品先后返回时让医生看到治疗列表反复加载。
-    const preserved = treatments.value.filter((item) => (
-      !requestedTypes.includes(item.type as ClinicalResultRecommendationType)
-      || item.sourceType === 'explicit'
-      || item.manualMatched
-    ));
-    const seen = new Set(preserved.map((item) => `${item.type}:${item.matchedItem?.id || item.name}`));
+    // 各目录请求并行完成；普通语音首次生成已经按分支原子落位，
+    // 此处再做一次确定性合并。手动刷新仍只在全部完成后替换旧方案。
     const requestedOrder = new Map(requestedTypes.map((type, index) => [type, index]));
     const generated = stagedRecommendations
       .sort((left, right) => (
         (requestedOrder.get(left.type as ClinicalResultRecommendationType) ?? requestedTypes.length)
         - (requestedOrder.get(right.type as ClinicalResultRecommendationType) ?? requestedTypes.length)
-      ))
-      .filter((item) => {
-        const key = `${item.type}:${item.matchedItem?.id || item.name}`;
-        if (seen.has(key)) return false;
-        seen.add(key);
-        return true;
-      });
-    treatments.value = [...preserved, ...generated];
+      ));
+    treatments.value = mergeGeneratedTreatmentBranches(
+      treatments.value,
+      requestedTypes,
+      generated,
+    );
     const nextTreatments = treatments.value;
 
     console.info('[VoiceConsultationNew] Treatment recommendations loaded', {
@@ -1783,6 +1844,7 @@ async function fetchAITreatment(
   } finally {
     if (requestSeq === treatmentRequestSeq.value) {
       treatmentLoading.value = false;
+      finishTreatmentGeneration(diagnosisIdentity);
     }
   }
 }
@@ -1869,11 +1931,12 @@ async function handleSupplementRegenerate(doctorSupplement: string): Promise<voi
 
     suppressPrecautionsScopeSync.value = true;
     applyRegenerationRecord(regeneratedRecord);
-    diagnosisRequestSeq.value += 1;
+    invalidateDiagnosisRequests();
     invalidateTreatmentRequests();
     const diagnosisReady = await fetchAIDiagnosis({
       notifyOnError: false,
       deferSideEffects: true,
+      requestMode: 'regeneration',
     });
     if (!diagnosisReady) {
       throw new Error('病例已生成，但诊断建议刷新失败');
@@ -1949,6 +2012,7 @@ async function handleSupplementRegenerate(doctorSupplement: string): Promise<voi
 
 async function maybeAutoFetchMissingTreatment(reason: string): Promise<boolean> {
   if (!autoFetchTreatments.value) return false;
+  if (!canStartAutoTreatment.value) return false;
   if (isResultUnavailable.value && !allowsTreatmentAutoFetchInBackground.value) return false;
   if (suppressDiagnosisTreatmentRefetch.value || treatmentLoading.value) return false;
   if (lastTreatmentDiagnosisKey.value) return false;
@@ -2101,10 +2165,29 @@ async function applyIntentExplicitTreatments(
   }
 
   const initialized = initTreatmentsFromIntent(allowedIntentTreatments);
+  const retainedManualKeys = new Set(
+    preserveGenerated
+      ? treatments.value
+        .filter((item) => item.manualMatched)
+        .map((item) => `${item.type}:${item.matchedItem?.id || item.name}`)
+      : [],
+  );
+  const nextExplicit = initialized.filter(
+    (item) => !retainedManualKeys.has(`${item.type}:${item.matchedItem?.id || item.name}`),
+  );
+  const explicitKeys = new Set(nextExplicit.map(
+    (item) => `${item.type}:${item.matchedItem?.id || item.name}`,
+  ));
   const preserved = preserveGenerated
-    ? treatments.value.filter((item) => item.sourceType !== 'explicit' && !item.manualMatched)
+    ? treatments.value.filter((item) => (
+      item.manualMatched
+      || (
+        item.sourceType !== 'explicit'
+        && !explicitKeys.has(`${item.type}:${item.matchedItem?.id || item.name}`)
+      )
+    ))
     : [];
-  treatments.value = [...initialized, ...preserved];
+  treatments.value = [...nextExplicit, ...preserved];
   normalizeMedicinePharmacyValues(treatments.value);
   if (!autoFetchTreatments.value) {
     lastTreatmentDiagnosisKey.value = getDiagnosisIdentity(selectedDiagnosis.value);
@@ -2155,7 +2238,9 @@ watch(
 
     if (!currentIdentity || !selectedDiagnosis.value) {
       invalidateTreatmentRequests();
-      treatments.value = [];
+      treatments.value = resultChannel.value === 'voice'
+        ? treatments.value.filter(isDoctorOwnedTreatment)
+        : [];
       lastTreatmentDiagnosisKey.value = '';
       resetTreatmentEditorState();
       return;
@@ -2179,7 +2264,11 @@ watch(
       && !lastTreatmentDiagnosisKey.value
       && treatments.value.length === 0;
 
-    if (shouldAutoFetchInitialTreatment && autoFetchTreatments.value) {
+    if (
+      shouldAutoFetchInitialTreatment
+      && autoFetchTreatments.value
+      && canStartAutoTreatment.value
+    ) {
       console.info('[VoiceConsultationNew] Auto fetching initial treatment recommendations', {
         currentIdentity,
       });
@@ -2940,6 +3029,8 @@ watch(
     progressiveIntentApplication.reset();
     progressiveMenstrualBaseline = '';
     resetFinalResultApplication();
+    invalidateDiagnosisRequests();
+    resetGenerationSequence();
     clearPendingSnapshotPersist();
     lastAppliedIntentKey.value = '';
     invalidateTreatmentRequests();
@@ -2965,6 +3056,8 @@ watch(
       progressiveIntentApplication.reset();
       progressiveMenstrualBaseline = '';
       resetFinalResultApplication();
+      invalidateDiagnosisRequests();
+      resetGenerationSequence();
       lastAppliedIntentKey.value = '';
       resetPrecautionsScope();
       resetFactConfirmation();
@@ -2996,7 +3089,9 @@ watch(
       suppressDiagnosisTreatmentRefetch.value = true;
 
       if (applicationPlan.mode === 'reset') {
+        invalidateDiagnosisRequests();
         invalidateTreatmentRequests();
+        resetGenerationSequence();
         autoTreatmentFetchAttemptKey.value = '';
         resetPrecautionsScope();
         resetForIntent(result);
@@ -3032,7 +3127,7 @@ watch(
         applyIntentDiagnoses(result);
       }
 
-      if (!isStreaming) {
+      if (!isStreaming || newSections.has('explicit_orders')) {
         await applyIntentExplicitTreatments(
           result,
           applicationPlan.continuesStreamingSession,
@@ -3071,8 +3166,22 @@ watch(
         scheduleFactSuggestionGeneration();
       }
 
-      if (formalDiagnoses.value.length === 0 && canRefreshDiagnosis.value) {
-        void fetchAIDiagnosis();
+      if (shouldRecoverMissingDiagnosis(canRefreshDiagnosis.value)) {
+        await fetchAIDiagnosis({
+          notifyOnError: false,
+          requestMode: 'initial-recovery',
+        });
+        if (applicationSequence !== intentResultApplicationSequence) return;
+      } else if (
+        resultChannel.value === 'symptom'
+        && formalDiagnoses.value.length === 0
+        && canRefreshDiagnosis.value
+        && !diagnosisLoading.value
+      ) {
+        // Preserve the symptom-result fallback. It is independent from the
+        // ordinary voice rule that treats a declared differential-only section
+        // as a complete diagnosis outcome.
+        void fetchAIDiagnosis({ requestMode: 'manual-refresh' });
       }
 
       if (treatments.value.length > 0) {
@@ -3141,11 +3250,13 @@ watch(
     <div v-else :class="['medical-record-page', {
       'is-result-generating': isResultGenerating,
       'is-result-unavailable': isResultUnavailable,
+      'is-core-record-editable': coreRecordEditable,
     }]">
       <ClinicalGenerationProgress
         :generation="displayedGeneration"
         :treatment-loading="treatmentLoading"
         :treatment-states="treatmentGenerationState"
+        :show-treatment-progress="resultChannel !== 'voice'"
       />
       <div v-if="resultRegenerating" class="writeback-status-banner writeback-status-banner-info">
         正在结合补充信息重新生成问诊结果，请稍候……
@@ -3299,17 +3410,22 @@ watch(
                     size="14"
                     aria-hidden="true"
                   />
-                  <span>{{ diagnosisLoading ? '刷新中...' : '刷新诊断' }}</span>
+                  <span>{{ diagnosisLoading ? (diagnosisRequestMode === 'initial-recovery' ? '生成中...' : '刷新中...') : '刷新诊断' }}</span>
                 </button>
               </div>
             </div>
 
-            <div v-if="diagnosisLoading" class="loading-inline">
+            <div
+              v-if="showBlockingDiagnosisLoading"
+              class="loading-inline"
+              role="status"
+              aria-live="polite"
+            >
               <div class="ai-spinner small">
                 <div class="spinner-ring"></div>
                 <div class="spinner-core"></div>
               </div>
-              <span>AI 正在分析...</span>
+              <span>正在形成诊断建议...</span>
             </div>
 
             <ul v-else-if="formalDiagnoses.length > 0" class="vcn-diagnosis-list">
@@ -3414,96 +3530,103 @@ watch(
               已切换主诊断，当前方案仍保留上一版；点击“刷新方案”获取当前诊断方案。
             </div>
 
-            <template v-if="hasTreatments && !isInitialTreatmentGeneration">
-              <TreatmentRecommendationSection
-                v-for="section in treatmentSections"
-                :key="section.type"
-                :data-clinical-section="section.type"
-                :section="section"
-                :selected-count="section.items.filter((item) => item.selected).length"
-                :total-count="section.items.length"
-                :requires-manual-match-before-select="requiresManualMatchBeforeSelect"
-                :get-issue="getTreatmentIssue"
-                :get-reason-key="getTreatmentReasonKey"
-                :active-reason-key="activeReasonTooltipKey || ''"
-                :get-treatment-spec="getTreatmentSpec"
-                :get-treatment-match-label="getTreatmentMatchLabel"
-                :has-probable-match="hasProbableMatch"
-                :get-suggested-match-name="getSuggestedMatchName"
-                :get-treatment-original-name="getTreatmentOriginalName"
-                :get-editor-key="getTreatmentEditorKey"
-                :is-pharmacy-required="isPharmacyRequired"
-                :get-pharmacy-display="getPharmacyDisplay"
-                :has-required-pharmacy="hasRequiredPharmacy"
-                :is-exec-dept-required="isExecDeptRequired"
-                :get-exec-dept-display="getExecDeptDisplay"
-                :has-required-exec-dept="hasRequiredExecDept"
-                :is-exec-dept-hydrating="isMedicalItemDetailHydrating"
-                :get-body-site-display="treatmentGates.getBodySiteDisplay"
-                :has-required-body-site="hasRequiredBodySite"
-                :frequency-options="frequencyOptions"
-                :route-options="routeOptions"
-                :should-show-treatment-editor="shouldShowTreatmentEditor"
-                :should-show-editor-toggle="shouldShowTreatmentEditorToggle"
-                :is-treatment-editor-expanded="isTreatmentEditorExpanded"
-                :is-editable-field-active="isEditableFieldActive"
-                :get-editable-field-key="getEditableFieldKey"
-                :get-medicine-field-display="getMedicineFieldDisplay"
-                :get-medicine-inline-summary="getMedicineCollapsedSummary"
-                :is-medicine-inventory-checking="isMedicineInventoryChecking"
-                :get-medicine-inventory-warning="getMedicineInventoryWarning"
-                :is-secondary-selector-open="isSecondarySelectorOpen"
-                :get-pharmacy-search-keyword="getPharmacySearchKeyword"
-                :get-filtered-pharmacy-options="getFilteredPharmacyOptionsForRecord"
-                :get-exec-dept-search-keyword="getExecDeptSearchKeyword"
-                :get-filtered-exec-dept-options="getFilteredExecDeptOptionsForRecord"
-                :get-body-site-search-keyword="getBodySiteSearchKeyword"
-                :get-filtered-body-site-options="getFilteredBodySiteOptionsForRecord"
-                :get-insurance-search-keyword="getInsuranceSearchKeyword"
-                :get-filtered-insurance-options="getFilteredInsuranceOptionsForRecord"
-                :is-manual-match-open="isManualMatchOpen"
-                :get-manual-match-keyword="getManualMatchKeyword"
-                :get-manual-match-candidates="getManualMatchPickerCandidates"
-                :is-feedback-open="isTreatmentFeedbackOpen"
-                :get-feedback-draft="getTreatmentFeedbackDraft"
-                :is-feedback-submitting="isTreatmentFeedbackSubmitting"
-                :get-feedback-submitted-label="getTreatmentFeedbackSubmittedLabel"
-                @toggle="toggleTreatment"
-                @toggle-reason="(rec, event) => toggleClinicalResultReasonTooltip(getTreatmentReasonKey(rec), event)"
-                @confirm-match="confirmSuggestedMatch"
-                @toggle-feedback="(rec, event) => toggleRecommendationFeedback(getTreatmentFeedbackKey(rec), event)"
-                @update-feedback-draft="(rec, draft) => updateRecommendationDraft(getTreatmentFeedbackKey(rec), draft)"
-                @submit-feedback="handleTreatmentFeedbackSubmit"
-                @toggle-treatment-editor="toggleTreatmentEditor"
-                @activate-editable-field="activateEditableField"
-                @editable-field-blur="handleEditableFieldBlur"
-                @register-editable-field-element="registerEditableFieldElement"
-                @total-qty-input="handleTotalQtyInput"
-                @frequency-open-change="handleFrequencyOpenChange"
-                @route-open-change="handleRouteOpenChange"
-                @usage-field-change="handleUsageFieldChange"
-                @open-pharmacy="openPharmacyQuickSelector"
-                @open-exec-dept="openExecDeptQuickSelector"
-                @open-body-site="openBodySiteQuickSelector"
-                @open-insurance="openInsuranceQuickSelector"
-                @close-secondary-selector="closeSecondarySelector"
-                @update-pharmacy-keyword="handlePharmacySearchInput"
-                @select-pharmacy="selectPharmacyOption"
-                @clear-pharmacy="clearPharmacySelection"
-                @update-exec-dept-keyword="handleExecDeptSearchInput"
-                @select-exec-dept="selectExecDeptOption"
-                @clear-exec-dept="clearExecDeptSelection"
-                @update-body-site-keyword="handleBodySiteSearchInput"
-                @select-body-site="selectBodySiteOption"
-                @clear-body-site="clearBodySiteSelection"
-                @update-insurance-keyword="handleInsuranceSearchInput"
-                @select-insurance="selectInsuranceOption"
-                @clear-insurance="clearInsuranceSelection"
-                @toggle-manual-match="toggleManualMatch"
-                @update-manual-match-keyword="setManualMatchKeyword"
-                @select-manual-match-candidate="handleManualMatchPickerSelect"
-                @toggle-rejected="toggleTreatmentRejected"
-              />
+            <template v-if="treatmentPresentationRows.length > 0">
+              <template v-for="section in treatmentPresentationRows" :key="section.presentationKey">
+                <TreatmentRecommendationSection
+                  v-if="section.items.length > 0"
+                  :data-clinical-section="section.type"
+                  :section="section"
+                  :selected-count="section.items.filter((item) => item.selected).length"
+                  :total-count="section.items.length"
+                  :requires-manual-match-before-select="requiresManualMatchBeforeSelect"
+                  :get-issue="getTreatmentIssue"
+                  :get-reason-key="getTreatmentReasonKey"
+                  :active-reason-key="activeReasonTooltipKey || ''"
+                  :get-treatment-spec="getTreatmentSpec"
+                  :get-treatment-match-label="getTreatmentMatchLabel"
+                  :has-probable-match="hasProbableMatch"
+                  :get-suggested-match-name="getSuggestedMatchName"
+                  :get-treatment-original-name="getTreatmentOriginalName"
+                  :get-editor-key="getTreatmentEditorKey"
+                  :is-pharmacy-required="isPharmacyRequired"
+                  :get-pharmacy-display="getPharmacyDisplay"
+                  :has-required-pharmacy="hasRequiredPharmacy"
+                  :is-exec-dept-required="isExecDeptRequired"
+                  :get-exec-dept-display="getExecDeptDisplay"
+                  :has-required-exec-dept="hasRequiredExecDept"
+                  :is-exec-dept-hydrating="isMedicalItemDetailHydrating"
+                  :get-body-site-display="treatmentGates.getBodySiteDisplay"
+                  :has-required-body-site="hasRequiredBodySite"
+                  :frequency-options="frequencyOptions"
+                  :route-options="routeOptions"
+                  :should-show-treatment-editor="shouldShowTreatmentEditor"
+                  :should-show-editor-toggle="shouldShowTreatmentEditorToggle"
+                  :is-treatment-editor-expanded="isTreatmentEditorExpanded"
+                  :is-editable-field-active="isEditableFieldActive"
+                  :get-editable-field-key="getEditableFieldKey"
+                  :get-medicine-field-display="getMedicineFieldDisplay"
+                  :get-medicine-inline-summary="getMedicineCollapsedSummary"
+                  :is-medicine-inventory-checking="isMedicineInventoryChecking"
+                  :get-medicine-inventory-warning="getMedicineInventoryWarning"
+                  :is-secondary-selector-open="isSecondarySelectorOpen"
+                  :get-pharmacy-search-keyword="getPharmacySearchKeyword"
+                  :get-filtered-pharmacy-options="getFilteredPharmacyOptionsForRecord"
+                  :get-exec-dept-search-keyword="getExecDeptSearchKeyword"
+                  :get-filtered-exec-dept-options="getFilteredExecDeptOptionsForRecord"
+                  :get-body-site-search-keyword="getBodySiteSearchKeyword"
+                  :get-filtered-body-site-options="getFilteredBodySiteOptionsForRecord"
+                  :get-insurance-search-keyword="getInsuranceSearchKeyword"
+                  :get-filtered-insurance-options="getFilteredInsuranceOptionsForRecord"
+                  :is-manual-match-open="isManualMatchOpen"
+                  :get-manual-match-keyword="getManualMatchKeyword"
+                  :get-manual-match-candidates="getManualMatchPickerCandidates"
+                  :is-feedback-open="isTreatmentFeedbackOpen"
+                  :get-feedback-draft="getTreatmentFeedbackDraft"
+                  :is-feedback-submitting="isTreatmentFeedbackSubmitting"
+                  :get-feedback-submitted-label="getTreatmentFeedbackSubmittedLabel"
+                  @toggle="toggleTreatment"
+                  @toggle-reason="(rec, event) => toggleClinicalResultReasonTooltip(getTreatmentReasonKey(rec), event)"
+                  @confirm-match="confirmSuggestedMatch"
+                  @toggle-feedback="(rec, event) => toggleRecommendationFeedback(getTreatmentFeedbackKey(rec), event)"
+                  @update-feedback-draft="(rec, draft) => updateRecommendationDraft(getTreatmentFeedbackKey(rec), draft)"
+                  @submit-feedback="handleTreatmentFeedbackSubmit"
+                  @toggle-treatment-editor="toggleTreatmentEditor"
+                  @activate-editable-field="activateEditableField"
+                  @editable-field-blur="handleEditableFieldBlur"
+                  @register-editable-field-element="registerEditableFieldElement"
+                  @total-qty-input="handleTotalQtyInput"
+                  @frequency-open-change="handleFrequencyOpenChange"
+                  @route-open-change="handleRouteOpenChange"
+                  @usage-field-change="handleUsageFieldChange"
+                  @open-pharmacy="openPharmacyQuickSelector"
+                  @open-exec-dept="openExecDeptQuickSelector"
+                  @open-body-site="openBodySiteQuickSelector"
+                  @open-insurance="openInsuranceQuickSelector"
+                  @close-secondary-selector="closeSecondarySelector"
+                  @update-pharmacy-keyword="handlePharmacySearchInput"
+                  @select-pharmacy="selectPharmacyOption"
+                  @clear-pharmacy="clearPharmacySelection"
+                  @update-exec-dept-keyword="handleExecDeptSearchInput"
+                  @select-exec-dept="selectExecDeptOption"
+                  @clear-exec-dept="clearExecDeptSelection"
+                  @update-body-site-keyword="handleBodySiteSearchInput"
+                  @select-body-site="selectBodySiteOption"
+                  @clear-body-site="clearBodySiteSelection"
+                  @update-insurance-keyword="handleInsuranceSearchInput"
+                  @select-insurance="selectInsuranceOption"
+                  @clear-insurance="clearInsuranceSelection"
+                  @toggle-manual-match="toggleManualMatch"
+                  @update-manual-match-keyword="setManualMatchKeyword"
+                  @select-manual-match-candidate="handleManualMatchPickerSelect"
+                  @toggle-rejected="toggleTreatmentRejected"
+                />
+                <TreatmentGenerationPlaceholder
+                  v-else-if="section.placeholder"
+                  :data-clinical-section="section.presentationKey"
+                  :title="section.title"
+                  :status="section.placeholder"
+                />
+              </template>
             </template>
 
             <div v-else-if="!treatmentLoading" class="empty-text">{{ displayedTreatmentEmptyText }}</div>
@@ -3520,14 +3643,14 @@ watch(
         v-if="secondaryFooterActionText"
         class="footer-secondary-btn"
         type="button"
-        :disabled="secondaryFooterActionDisabled || isWritebackBusy || isResultUnavailable"
+        :disabled="secondaryFooterActionDisabled || isWritebackBusy || isResultUnavailable || diagnosisLoading"
         @click="emit('secondary-footer-action')"
       >
         {{ secondaryFooterActionText }}
       </button>
       <ClinicalResultWritebackScopeSelector
         :open="writebackScopeOpen"
-        :disabled="isWritebackBusy || isResultUnavailable"
+        :disabled="isWritebackBusy || isResultUnavailable || diagnosisLoading"
         :record-expanded="writebackRecordExpanded"
         :record-fields="writebackRecordFields"
         :record-group-checked="writebackRecordGroupChecked"
@@ -3566,7 +3689,7 @@ watch(
       >
         一键回写
       </button>
-      <button class="footer-cancel-btn" type="button" :disabled="isWritebackBusy || isResultGenerating" @click="handleCancelClick">放弃</button>
+      <button class="footer-cancel-btn" type="button" :disabled="isWritebackBusy || isResultGenerating || diagnosisLoading" @click="handleCancelClick">放弃</button>
     </div>
 
     <ClinicalResultSupplementDialog
@@ -3600,6 +3723,10 @@ watch(
 <style scoped>
 .is-result-unavailable .record-content {
   pointer-events: none;
+}
+
+.is-result-unavailable.is-core-record-editable .vcn-left-panel {
+  pointer-events: auto;
 }
 
 .is-result-generating .voice-footer {

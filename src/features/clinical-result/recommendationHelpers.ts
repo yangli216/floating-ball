@@ -86,7 +86,11 @@ export function getMedicineManufacturer(rec: TreatmentRecommendation): string {
 }
 
 export function getTreatmentOriginalName(rec: TreatmentRecommendation): string {
-  if (rec.matchStatus !== 'manual' && rec.matchStatus !== 'confirmed') {
+  if (
+    rec.sourceType !== 'explicit'
+    && rec.matchStatus !== 'manual'
+    && rec.matchStatus !== 'confirmed'
+  ) {
     return '';
   }
 

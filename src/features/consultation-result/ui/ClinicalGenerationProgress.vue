@@ -14,12 +14,14 @@ const props = defineProps<{
   generation?: ClinicalResultGenerationState;
   treatmentLoading: boolean;
   treatmentStates: Record<ClinicalResultRecommendationType, ClinicalTreatmentGenerationStatus>;
+  showTreatmentProgress?: boolean;
 }>();
 
 const progress = computed(() => buildClinicalGenerationProgress({
   generation: props.generation,
   treatmentLoading: props.treatmentLoading,
   treatmentStates: props.treatmentStates,
+  showTreatmentProgress: props.showTreatmentProgress,
 }));
 </script>
 

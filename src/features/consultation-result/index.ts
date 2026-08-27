@@ -14,6 +14,7 @@ export { default as MutualRecognitionDecisionDialog } from './ui/MutualRecogniti
 export { default as MutualRecognitionDecisionHost } from './ui/MutualRecognitionDecisionHost.vue';
 export { default as RecAttributeChip } from './ui/RecAttributeChip.vue';
 export { default as TreatmentItemEditor } from './ui/TreatmentItemEditor.vue';
+export { default as TreatmentGenerationPlaceholder } from './ui/TreatmentGenerationPlaceholder.vue';
 export { default as TreatmentRecommendationCard } from './ui/TreatmentRecommendationCard.vue';
 export { default as TreatmentRecommendationSection } from './ui/TreatmentRecommendationSection.vue';
 export { useBodySiteOptions } from './model/useBodySiteOptions';
@@ -38,6 +39,11 @@ export {
   useClinicalResultIntentReset,
 } from './model/useClinicalResultIntentReset';
 export { useClinicalResultProgressiveIntentApplication } from './model/useClinicalResultProgressiveIntentApplication';
+export {
+  isDoctorOwnedTreatment,
+  mergeGeneratedTreatmentBranches,
+  useClinicalResultGenerationSequence,
+} from './model/useClinicalResultGenerationSequence';
 export { useClinicalResultFinalization } from './model/useClinicalResultFinalization';
 export {
   createClinicalResultOrderItemResolvers,
@@ -151,6 +157,11 @@ export type {
   ClinicalResultProgressiveIntentInput,
 } from './model/useClinicalResultProgressiveIntentApplication';
 export type {
+  ClinicalResultDiagnosisRequestMode,
+  ClinicalResultGenerationSequence,
+  ClinicalResultGenerationSequenceOptions,
+} from './model/useClinicalResultGenerationSequence';
+export type {
   ClinicalResultWritebackPayload,
   ClinicalResultWritebackPayloadOptions,
   ClinicalResultWritebackPharmacyOption,
@@ -212,7 +223,9 @@ export type {
   TreatmentQuickSelectorOptions,
 } from './model/useTreatmentQuickSelector';
 export type {
+  TreatmentPresentationRow,
   TreatmentSection,
+  TreatmentSectionGenerationStatus,
   TreatmentSectionsOptions,
 } from './model/useTreatmentSections';
 export type {

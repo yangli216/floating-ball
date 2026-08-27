@@ -47,6 +47,19 @@ function writeEntries(entries: ManualMatchCacheEntry[]): void {
   }
 }
 
+function isReceptionScopedAuxiliaryType(type: TreatmentRecommendation['type']): boolean {
+  return type === 'exam' || type === 'lab_test';
+}
+
+function readPersistentEntries(): ManualMatchCacheEntry[] {
+  const entries = readEntries();
+  const persistentEntries = entries.filter((entry) => !isReceptionScopedAuxiliaryType(entry.type));
+  if (persistentEntries.length !== entries.length) {
+    writeEntries(persistentEntries);
+  }
+  return persistentEntries;
+}
+
 function getCurrentScope(): { orgCode: string; tenantId: string } | null {
   const context = medicalDataService.getCatalogContext();
   const orgCode = normalizeScope(context.orgCode);
@@ -74,11 +87,13 @@ export function rememberManualCatalogMatch(
   sourceName: string,
   target: Pick<MedicalItem | MedicineItem, 'id' | 'name'>,
 ): void {
+  const entries = readPersistentEntries();
+  if (isReceptionScopedAuxiliaryType(type)) return;
+
   const scope = getCurrentScope();
   const sourceKey = normalizeSource(sourceName);
   if (!scope || !sourceKey || !target.id) return;
 
-  const entries = readEntries();
   const index = entries.findIndex((entry) => (
     entry.orgCode === scope.orgCode
     && entry.tenantId === scope.tenantId
@@ -104,11 +119,13 @@ export function resolveRememberedCatalogTarget(
   type: TreatmentRecommendation['type'],
   sourceName: string,
 ): MedicalItem | MedicineItem | undefined {
+  const entries = readPersistentEntries();
+  if (isReceptionScopedAuxiliaryType(type)) return undefined;
+
   const scope = getCurrentScope();
   const sourceKey = normalizeSource(sourceName);
   if (!scope || !sourceKey) return undefined;
 
-  const entries = readEntries();
   const entry = entries.find((candidate) => (
     candidate.orgCode === scope.orgCode
     && candidate.tenantId === scope.tenantId
