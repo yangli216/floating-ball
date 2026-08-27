@@ -155,6 +155,7 @@
 | PHIS 回执监听入口 | `features/consultation-result/model/useConsultationReferenceFeedbackListener.ts` | `consultation-reference-feedback` 事件名、调用方活跃门禁、`consultationId` 防串线、Tauri listener 生命周期组合 | requestId 匹配、引用状态 map、toast、缓存、日志 |
 | 结果页患者上下文派生 | `features/consultation-result/model/useClinicalResultPatientContext.ts` | 患者姓名、性别、年龄、`idTet`、就诊锚点和 `consultationId` 派生 | HIS 患者补全、患者切换、缓存、日志、PHIS payload 拼装、导航 |
 | 结果页 intent 初始化重置 | `features/consultation-result/model/useClinicalResultIntentReset.ts` | 新 `intentResult` 进入时的旧现场清理、病历字段回填和初始字段快照设置 | AI 请求、缓存 overlay、事实核查、推荐注册、PHIS 回写 |
+| 结果页渐进 intent 应用计划 | `features/consultation-result/model/useClinicalResultProgressiveIntentApplication.ts` | 同一患者 / 就诊 / 生成轮次内首次 reset、后续分区 patch、最终 finalize 的纯状态计划和新增分区去重 | 页面字段写入、诊断选择、治疗请求、缓存、PHIS 回写 |
 | 同类诊断下拉状态 | `features/consultation-result/model/useRelatedDiagnosisDropdown.ts` | 当前打开诊断 key、同类候选列表、打开 / 关闭 / 切换和替换后的收口 | 候选来源、诊断列表写回、选择状态同步、埋点、治疗刷新、反馈注册 |
 | 治疗推荐展示分组 | `features/consultation-result/model/useTreatmentSections.ts` + `features/consultation-result/ui/TreatmentRecommendationSection.vue` | 按类型生成治疗推荐展示分组、是否存在推荐、空状态文案，并用同一分组组件承载用药/检查/检验/处置的卡片、编辑器、手动匹配和二级属性选择器 | AI 请求、刷新方案、治疗项选中、库存校验、toast、PHIS 回写 |
 | 药品编辑字段事件 | `features/consultation-result/model/useMedicineFieldEditing.ts` | 用法用量字段激活、blur 收口、频次 / 用法 keyword 解析写回和总量输入事件 | 治疗项选中、打开二级属性、AI 请求、toast、PHIS 回写 |

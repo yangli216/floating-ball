@@ -5,6 +5,7 @@ import type {
 } from '@/types/consultation';
 import type { DiagnosisHint, TreatmentHint } from '@/prompts';
 import type { OutpatientRecord } from './outpatientRecord';
+import type { ClinicalRecordFactSuggestion } from './clinicalRecordFactConfirmation';
 
 export type ClinicalResultChannel = 'voice' | 'symptom' | 'chronic-refill';
 
@@ -30,6 +31,7 @@ export interface ClinicalResultRecommendationPlan {
 export type ClinicalResultGenerationSection =
   | 'record_core'
   | 'history_context'
+  | 'record_suggestions'
   | 'explicit_orders'
   | 'diagnoses'
   | 'recommendation_plan'
@@ -114,6 +116,8 @@ export interface ClinicalResultInput {
   treatmentPlan: string;
   healthEducation: string;
   outpatientRecord?: OutpatientRecord;
+  /** 同次结构化生成返回的 AI 病历候选；旧结果可缺省并走稳定态兜底。 */
+  factSuggestions?: ClinicalRecordFactSuggestion[];
   recommendationPolicy?: ClinicalResultRecommendationPolicy;
   /** 慢病复诊结果页的回写前核查；推荐值不等于医生已确认。 */
   chronicRefillReview?: ChronicRefillReviewPlan;

@@ -122,37 +122,12 @@
       <Icon v-if="!chronicRefillGenerating" icon="lucide:chevron-right" size="15" />
     </button>
 
-    <section v-if="chronicScopeSelecting" class="rc-refill-scope" aria-label="选择本次复诊慢病范围">
-      <div class="rc-refill-scope-head">
-        <strong>本次复诊涉及</strong>
-        <button type="button" aria-label="关闭慢病范围选择" @click="closeChronicScope">
-          <Icon icon="lucide:x" size="14" />
-        </button>
-      </div>
-      <p>只选择本次需要续方的慢病，未选病种不会进入病历和用药方案。</p>
-      <div class="rc-refill-condition-list">
-        <button
-          v-for="condition in chronicConditionOptions"
-          :key="condition.id"
-          type="button"
-          :class="['rc-refill-condition', { selected: selectedConditionIds.includes(condition.id) }]"
-          role="checkbox"
-          :aria-checked="selectedConditionIds.includes(condition.id)"
-          @click="toggleChronicCondition(condition.id)"
-        >
-          <Icon :icon="selectedConditionIds.includes(condition.id) ? 'lucide:check' : 'lucide:plus'" size="13" />
-          <span>{{ condition.diagnosis }}</span>
-        </button>
-      </div>
-      <button
-        class="rc-refill-scope-confirm"
-        type="button"
-        :disabled="selectedConditionIds.length === 0"
-        @click="submitChronicRefill"
-      >
-        生成病历与核查项
-      </button>
-    </section>
+    <ChronicRefillScopeSelector
+      v-if="chronicScopeSelecting && chronicRefillCandidate"
+      :candidate="chronicRefillCandidate"
+      @close="closeChronicScope"
+      @submit="submitChronicRefill"
+    />
   </div>
 </template>
 
@@ -162,10 +137,13 @@ import Icon from '@shared/ui/Icon.vue';
 import { trackClick } from '@services/operationTracker';
 import { resolvePatientAvatar, PATIENT_AVATAR_FALLBACK } from '@/utils/patientAvatar';
 import {
+  getChronicRefillCandidateKey,
   getChronicRefillConditionOptions,
   type ChronicRefillCandidate,
+  type ChronicRefillSelection,
   type RiskItem,
 } from '@features/reception-risk';
+import ChronicRefillScopeSelector from './ChronicRefillScopeSelector.vue';
 import type { HisOutpatientFollowUpContext, HisVisitRecord } from '@/services/his/types';
 import type { PatientMemoryBrief } from '@entities/patient-memory';
 import type { PatientMemorySyncStatus } from '@features/patient-memory';
@@ -188,7 +166,7 @@ const props = defineProps<{
 const emit = defineEmits<{
   (e: 'close'): void;
   (e: 'toggle-expand', expanded: boolean): void;
-  (e: 'confirm-chronic-refill', selectedConditionIds: string[]): void;
+  (e: 'confirm-chronic-refill', selection: ChronicRefillSelection): void;
   (e: 'chronic-scope-selecting', selecting: boolean): void;
   (e: 'confirm-report-assistant'): void;
   (e: 'open-patient-memory'): void;
@@ -196,11 +174,15 @@ const emit = defineEmits<{
 
 const expanded = ref(false);
 const chronicScopeSelecting = ref(false);
-const selectedConditionIds = ref<string[]>([]);
 const chronicConditionOptions = computed(() => (
   props.chronicRefillCandidate
     ? getChronicRefillConditionOptions(props.chronicRefillCandidate)
     : []
+));
+const chronicRefillCandidateKey = computed(() => (
+  props.chronicRefillCandidate
+    ? getChronicRefillCandidateKey(props.chronicRefillCandidate)
+    : ''
 ));
 
 const historicalReportCount = computed(() => (props.reportInterpretationVisits || [])
@@ -261,13 +243,11 @@ watch(() => props.risks, (r) => {
 }, { immediate: true });
 
 watch(
-  () => props.chronicRefillCandidate,
-  (candidate) => {
+  chronicRefillCandidateKey,
+  () => {
     if (chronicScopeSelecting.value) {
       emit('chronic-scope-selecting', false);
     }
-    const options = candidate ? getChronicRefillConditionOptions(candidate) : [];
-    selectedConditionIds.value = options.length === 1 ? [options[0].id] : [];
     chronicScopeSelecting.value = false;
   },
   { immediate: true },
@@ -296,13 +276,11 @@ function confirmChronicRefill() {
     }
     return;
   }
-  submitChronicRefill();
-}
-
-function toggleChronicCondition(conditionId: string): void {
-  selectedConditionIds.value = selectedConditionIds.value.includes(conditionId)
-    ? selectedConditionIds.value.filter((id) => id !== conditionId)
-    : [...selectedConditionIds.value, conditionId];
+  const condition = chronicConditionOptions.value[0];
+  if (!condition) return;
+  submitChronicRefill({
+    conditionIds: [condition.id],
+  });
 }
 
 function closeChronicScope(): void {
@@ -310,11 +288,10 @@ function closeChronicScope(): void {
   emit('chronic-scope-selecting', false);
 }
 
-function submitChronicRefill(): void {
-  if (selectedConditionIds.value.length === 0) return;
+function submitChronicRefill(selection: ChronicRefillSelection): void {
   chronicScopeSelecting.value = false;
   emit('chronic-scope-selecting', false);
-  emit('confirm-chronic-refill', [...selectedConditionIds.value]);
+  emit('confirm-chronic-refill', selection);
 }
 
 function confirmReportAssistant() {
@@ -660,90 +637,6 @@ function tagLabel(cat: string) { return CATEGORY_LABELS[cat] || '其他'; }
   line-height: 1.3;
   text-overflow: ellipsis;
   white-space: nowrap;
-}
-
-.rc-refill-scope {
-  margin-top: 8px;
-  padding: 9px;
-  border: 1px solid #bfdbfe;
-  border-radius: 9px;
-  background: #f8fbff;
-  -webkit-app-region: no-drag;
-}
-
-.rc-refill-scope-head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  color: #1e3a5f;
-  font-size: 12px;
-}
-
-.rc-refill-scope-head button {
-  width: 24px;
-  height: 24px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  padding: 0;
-  border: 0;
-  border-radius: 6px;
-  color: #64748b;
-  background: transparent;
-  cursor: pointer;
-}
-
-.rc-refill-scope p {
-  margin: 3px 0 8px;
-  color: #64748b;
-  font-size: 10.5px;
-  line-height: 1.4;
-}
-
-.rc-refill-condition-list {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-  max-height: 82px;
-  overflow-y: auto;
-}
-
-.rc-refill-condition {
-  min-height: 28px;
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  padding: 3px 8px;
-  border: 1px solid #cbd5e1;
-  border-radius: 8px;
-  color: #475569;
-  background: #fff;
-  cursor: pointer;
-  font-size: 11px;
-}
-
-.rc-refill-condition.selected {
-  border-color: #60a5fa;
-  color: #1d4ed8;
-  background: #dbeafe;
-}
-
-.rc-refill-scope-confirm {
-  width: 100%;
-  min-height: 30px;
-  margin-top: 8px;
-  border: 0;
-  border-radius: 8px;
-  color: #fff;
-  background: #2563eb;
-  cursor: pointer;
-  font-size: 11.5px;
-  font-weight: 600;
-}
-
-.rc-refill-scope-confirm:disabled {
-  cursor: not-allowed;
-  opacity: 0.48;
 }
 
 @keyframes rc-spin {

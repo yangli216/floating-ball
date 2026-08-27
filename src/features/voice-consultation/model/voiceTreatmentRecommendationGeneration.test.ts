@@ -1,12 +1,12 @@
 import { describe, expect, it, vi } from 'vitest';
-import { chat } from '@/services/llm';
+import { chat, chatFast } from '@/services/llm';
 import {
   loadAvailableMedicineInventoryContext,
   mapAuxiliaryCatalogRecommendations,
 } from '@features/clinical-result';
 import { generateVoiceTreatmentRecommendations } from './voiceTreatmentRecommendationGeneration';
 
-vi.mock('@/services/llm', () => ({ chat: vi.fn() }));
+vi.mock('@/services/llm', () => ({ chat: vi.fn(), chatFast: vi.fn() }));
 vi.mock('@/prompts', () => ({
   PROMPTS: {
     consultation: {
@@ -41,7 +41,7 @@ vi.mock('@features/clinical-result', () => ({
 
 describe('generateVoiceTreatmentRecommendations', () => {
   it('does not load medicine inventory when the M1 plan only requests lab tests', async () => {
-    vi.mocked(chat).mockResolvedValue('{"exams":[],"labTests":[{"catalogRef":"L001","reason":"评估感染"}]}');
+    vi.mocked(chatFast).mockResolvedValue('{"exams":[],"labTests":[{"catalogRef":"L001","reason":"评估感染"}]}');
     const taskResults: string[] = [];
 
     const results = await generateVoiceTreatmentRecommendations({
@@ -62,7 +62,8 @@ describe('generateVoiceTreatmentRecommendations', () => {
 
     expect(loadAvailableMedicineInventoryContext).not.toHaveBeenCalled();
     expect((await import('@/services/medicalData')).medicalDataService.fetchAvailableExamLabItems).toHaveBeenCalledTimes(1);
-    expect(chat).toHaveBeenCalledTimes(1);
+    expect(chat).not.toHaveBeenCalled();
+    expect(chatFast).toHaveBeenCalledTimes(1);
     expect(mapAuxiliaryCatalogRecommendations).toHaveBeenCalledTimes(1);
     expect(results[0].types).toEqual(['lab_test']);
     expect(taskResults).toEqual(['auxiliary']);

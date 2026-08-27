@@ -118,6 +118,32 @@ describe('assessChronicRefillCandidate', () => {
 
     const hypertensionOnly = scopeChronicRefillCandidate(candidate!, ['高血压']);
     const bothConditions = scopeChronicRefillCandidate(candidate!, ['高血压', '糖尿病']);
+    const hypertensionMedication = candidate?.medicationAttributions?.find((item) => (
+      item.medication.name === '苯磺酸氨氯地平片'
+    ));
+    const attributedCandidate = {
+      ...candidate!,
+      medicationAttributionStatus: 'ready' as const,
+      medicationAttributions: candidate?.medicationAttributions?.map((item) => (
+        item.id === hypertensionMedication?.id
+          ? {
+            ...item,
+            suggestedConditionId: '高血压',
+            confidence: 'high' as const,
+            reason: '常用降压药',
+          }
+          : {
+            ...item,
+            suggestedConditionId: '糖尿病',
+            confidence: 'high' as const,
+            reason: '常用降糖药',
+          }
+      )),
+    };
+    const automaticallyAttributedHypertensionMedication = scopeChronicRefillCandidate(
+      attributedCandidate,
+      ['高血压'],
+    );
 
     expect(candidate?.conditions?.map((condition) => condition.medicationEvidenceScope)).toEqual([
       'shared',
@@ -126,6 +152,13 @@ describe('assessChronicRefillCandidate', () => {
     expect(hypertensionOnly?.chronicVisits).toHaveLength(1);
     expect(hypertensionOnly?.medications).toEqual([]);
     expect(hypertensionOnly?.medicationOrders).toBeUndefined();
+    expect(candidate?.medicationAttributionStatus).toBe('loading');
+    expect(candidate?.medicationAttributions).toHaveLength(2);
+    expect(automaticallyAttributedHypertensionMedication?.medications).toEqual(['苯磺酸氨氯地平片']);
+    expect(automaticallyAttributedHypertensionMedication?.medicationOrders).toEqual([
+      expect.objectContaining({ orderId: 'hypertension-med' }),
+    ]);
+    expect(automaticallyAttributedHypertensionMedication?.medications).not.toContain('盐酸二甲双胍片');
     expect(bothConditions?.medications).toEqual(['苯磺酸氨氯地平片', '盐酸二甲双胍片']);
     expect(bothConditions?.medicationOrders).toHaveLength(2);
   });

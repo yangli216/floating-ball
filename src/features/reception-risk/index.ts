@@ -2,12 +2,23 @@ export { default as RiskAlertBubble } from './ui/RiskAlertBubble.vue';
 export { default as RiskAlertPanel } from './ui/RiskAlertPanel.vue';
 export { generateChronicRefillRecord } from './api/chronicRefillRecord';
 export type { ChronicRefillRecordGenerationOptions } from './api/chronicRefillRecord';
+export { suggestChronicRefillMedicationAttributions } from './api/chronicRefillMedicationAttribution';
 export {
   assessChronicRefillCandidate,
+  getChronicRefillCandidateKey,
   getChronicRefillConditionOptions,
   isReportFollowUpIntent,
   scopeChronicRefillCandidate,
 } from './lib/chronicRefillAssessment';
+export type {
+  ChronicRefillMedicationAttributionConfidence,
+  ChronicRefillMedicationAttributionItem,
+  ChronicRefillMedicationAttributionStatus,
+  ChronicRefillSelection,
+} from './lib/chronicRefillMedicationAttribution';
+export {
+  getAutoIncludedChronicRefillMedicationAttributions,
+} from './lib/chronicRefillMedicationAttribution';
 export {
   buildChronicRefillHistoryQuery,
   CHRONIC_REFILL_HISTORY_LOOKBACK_DAYS,

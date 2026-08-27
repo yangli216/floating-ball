@@ -72,6 +72,7 @@ import {
   toManualMatchCandidateView,
   type ClinicalResultInput,
   type ClinicalResultChannel,
+  type ClinicalResultGenerationSection,
   type ClinicalResultRecommendationType,
   type ClinicalResultRecordSummaryInput,
   type ClinicalResultRegenerationRecord,
@@ -112,17 +113,20 @@ import {
   DiagnosisRecommendationCard,
   MutualRecognitionDecisionHost,
   TreatmentRecommendationSection,
+  buildClinicalResultIntentRecordSnapshot,
   buildClinicalResultNavigationItems,
   useBodySiteOptions,
   useClinicalResultCancelController,
   useClinicalResultColumnNavigation,
   useClinicalRecordFactConfirmation,
+  useClinicalRecordFactSuggestionScheduler,
   useChronicRefillReview,
   useClinicalResultChannelStrategy,
   useClinicalResultDiagnosisChecklist,
   useDifferentialDiagnosisDirection,
   useClinicalResultFinalization,
   useClinicalResultIntentReset,
+  useClinicalResultProgressiveIntentApplication,
   useClinicalResultPrecautionsScope,
   useClinicalResultPatientContext,
   useClinicalResultWritebackPayload,
@@ -202,10 +206,11 @@ const supplementGuidance = ref('');
 const clinicalResultFinalization = useClinicalResultFinalization({
   getChannel: () => props.channel,
   getGeneration: () => props.intentResult?.generation,
+  getTreatmentPending: () => treatmentLoading.value && !lastTreatmentDiagnosisKey.value,
 });
 const {
   allowsPostResultFactSuggestions,
-  allowsTreatmentAutoFetchWhileFinalizing,
+  allowsTreatmentAutoFetchInBackground,
   applyingFinalResult,
   begin: beginFinalResultApplication,
   displayedGeneration,
@@ -246,7 +251,7 @@ const {
 } = differentialDiagnosisDirection;
 const diagnosisSuggestionSections = computed(() => buildDiagnosisSuggestionSections(
   aiDiagnoses.value,
-  3,
+  props.channel === 'chronic-refill' ? aiDiagnoses.value.length : 3,
   promotedDifferentialDiagnosisKeys.value,
 ));
 const formalDiagnoses = computed(() => diagnosisSuggestionSections.value.formal);
@@ -259,6 +264,7 @@ const {
   isDiagnosisSelected,
   isPrimaryDiagnosis,
   replaceDiagnosisSelection,
+  replaceInitialDiagnosisSelection,
   resetDiagnosisSelection,
   toggleDiagnosis: toggleDiagnosisSelection,
   setPrimaryDiagnosis: setPrimaryDiagnosisSelection,
@@ -348,7 +354,12 @@ const {
 const isFemalePatient = computed(() => /^(?:F|2|女)/iu.test(patientGender.value.trim()));
 
 const diagnosisChecklist = useClinicalResultDiagnosisChecklist({
-  isEnabled: () => resultChannel.value !== 'chronic-refill',
+  isEnabled: () => {
+    if (resultChannel.value === 'chronic-refill') return false;
+    const generation = props.intentResult?.generation;
+    return generation?.status !== 'streaming'
+      || generation.readySections.includes('record_suggestions');
+  },
   getConsultationId: () => consultationId.value,
   getPrimaryDiagnosis: () => selectedDiagnosis.value,
   getChiefComplaint: () => chiefComplaint.value,
@@ -514,12 +525,27 @@ const {
   getFieldHighlights: getRecordFieldFactHighlights,
   getFieldSuggestions: getRecordFieldFactSuggestions,
   dismissSuggestion: dismissFactSuggestion,
-  reset: resetFactConfirmation,
+  reset: resetFactConfirmationState,
   restoreSuggestions: restoreFactSuggestions,
 } = recordFactConfirmation;
 const hasPendingFactSuggestions = computed(() => (
   factSuggestions.value.some((item) => item.status === 'pending')
 ));
+const factSuggestionScheduler = useClinicalRecordFactSuggestionScheduler({
+  isAllowed: () => allowsPostResultFactSuggestions.value,
+  isBlocked: () => isResultUnavailable.value,
+  getSuggestionCount: () => factSuggestions.value.length,
+  generate: generateFactSuggestions,
+});
+const {
+  reset: resetFactSuggestionScheduler,
+  schedule: scheduleFactSuggestionGeneration,
+} = factSuggestionScheduler;
+
+function resetFactConfirmation(): void {
+  resetFactSuggestionScheduler();
+  resetFactConfirmationState();
+}
 
 const chronicRefillReview = useChronicRefillReview({
   getHistoryOfPresentIllness: () => historyOfPresentIllness.value,
@@ -601,22 +627,6 @@ const creatingPartialOutpatientRecord = computed(() => (
   && writebackSelectedRecordFieldCount.value > 0
   && writebackSelectedRecordFieldCount.value < writebackAvailableRecordFieldCount.value
 ));
-let factSuggestionTimer: ReturnType<typeof setTimeout> | null = null;
-function scheduleFactSuggestionGeneration(): void {
-  if (factSuggestionTimer) clearTimeout(factSuggestionTimer);
-  if (!allowsPostResultFactSuggestions.value) return;
-  factSuggestionTimer = setTimeout(() => {
-    factSuggestionTimer = null;
-    if (
-      allowsPostResultFactSuggestions.value
-      && !isResultUnavailable.value
-      && factSuggestions.value.length === 0
-    ) {
-      void generateFactSuggestions();
-    }
-  }, 350);
-}
-
 function buildPreferenceContext(sceneSuffix: string) {
   return buildChannelPreferenceContext(resolveConsultationId(), sceneSuffix);
 }
@@ -738,6 +748,7 @@ async function applyEditorSnapshot(snapshot: VoiceEditorSnapshot): Promise<void>
 
 const canSubmit = computed(() => (
   !isResultUnavailable.value
+  && !treatmentLoading.value
   && !isWritebackBusy.value
   && hasWritebackSelection.value
 ));
@@ -1148,6 +1159,7 @@ function buildIntentResultKey(result: ClinicalResultInput | VoiceIntentResult): 
     },
     diagnoses: result.diagnoses.map(buildIntentDiagnosisKey),
     treatments: result.treatments.map(buildIntentTreatmentKey),
+    factSuggestions: result.factSuggestions,
     chronicRefillReview: result.chronicRefillReview,
     recommendationPolicy: result.recommendationPolicy,
     generation: result.generation
@@ -1937,7 +1949,7 @@ async function handleSupplementRegenerate(doctorSupplement: string): Promise<voi
 
 async function maybeAutoFetchMissingTreatment(reason: string): Promise<boolean> {
   if (!autoFetchTreatments.value) return false;
-  if (isResultUnavailable.value && !allowsTreatmentAutoFetchWhileFinalizing.value) return false;
+  if (isResultUnavailable.value && !allowsTreatmentAutoFetchInBackground.value) return false;
   if (suppressDiagnosisTreatmentRefetch.value || treatmentLoading.value) return false;
   if (lastTreatmentDiagnosisKey.value) return false;
 
@@ -2005,6 +2017,103 @@ const { resetForIntent } = useClinicalResultIntentReset({
   resetFirstUserLogSnapshot,
   setInitialRecordSnapshot,
 });
+
+const progressiveIntentApplication = useClinicalResultProgressiveIntentApplication();
+let progressiveMenstrualBaseline = '';
+
+function getProgressiveIntentSessionKey(): string {
+  return [
+    resultChannel.value,
+    patientAnchorId.value,
+    props.consultationRoundId || props.intentSource || 'direct',
+  ].join('|');
+}
+
+function applyProgressiveIntentRecord(
+  result: ClinicalResultInput,
+  sections: readonly ClinicalResultGenerationSection[],
+): void {
+  const next = new Set(sections);
+  const snapshot = buildClinicalResultIntentRecordSnapshot(result);
+  const applyTrackedField = (
+    field: 'chiefComplaint' | 'historyOfPresentIllness' | 'pastMedicalHistory' | 'personalHistory' | 'familyHistory' | 'physicalExam' | 'precautions',
+    value: string,
+  ) => {
+    if (isRecordFieldModified(field)) return;
+    setInitialRecordFieldValue(field, value);
+    if (field === 'chiefComplaint') chiefComplaint.value = value;
+    else if (field === 'historyOfPresentIllness') historyOfPresentIllness.value = value;
+    else if (field === 'pastMedicalHistory') pastMedicalHistory.value = value;
+    else if (field === 'personalHistory') personalHistory.value = value;
+    else if (field === 'familyHistory') familyHistory.value = value;
+    else if (field === 'physicalExam') physicalExam.value = value;
+    else precautions.value = value;
+  };
+
+  if (next.has('record_core')) {
+    applyTrackedField('chiefComplaint', snapshot.chiefComplaint);
+    applyTrackedField('historyOfPresentIllness', snapshot.historyOfPresentIllness);
+  }
+  if (next.has('history_context')) {
+    applyTrackedField('pastMedicalHistory', snapshot.pastMedicalHistory);
+    applyTrackedField('personalHistory', snapshot.personalHistory);
+    if (
+      isFemalePatient.value
+      && menstrualHistory.value.trim() === progressiveMenstrualBaseline.trim()
+    ) {
+      menstrualHistory.value = snapshot.menstrualHistory;
+      progressiveMenstrualBaseline = snapshot.menstrualHistory;
+    }
+  }
+  if (next.has('record_extra')) {
+    applyTrackedField('familyHistory', snapshot.familyHistory);
+    applyTrackedField('physicalExam', snapshot.physicalExam);
+    applyTrackedField('precautions', snapshot.precautions);
+  }
+}
+
+function applyIntentDiagnoses(result: ClinicalResultInput): void {
+  aiDiagnoses.value = initDiagnosesFromIntent(result.diagnoses || []);
+  if (formalDiagnoses.value.length > 0) {
+    captureGeneratedPrecautions(getDiagnosisNames(aiDiagnoses.value), precautions.value);
+    replaceInitialDiagnosisSelection(
+      formalDiagnoses.value,
+      resultChannel.value === 'chronic-refill',
+    );
+    syncPrecautionsToSelection();
+    void registerCurrentRecommendations();
+  } else {
+    captureGeneratedPrecautions([], precautions.value);
+    resetDiagnosisSelection();
+  }
+}
+
+async function applyIntentExplicitTreatments(
+  result: ClinicalResultInput,
+  preserveGenerated: boolean,
+  applicationSequence: number,
+): Promise<void> {
+  const allowedIntentTreatments = getAllowedIntentTreatments(result);
+  if (allowedIntentTreatments.length === 0) return;
+  if (allowedIntentTreatments.some((item) => item.type === 'medicine')) {
+    await fetchPharmacyOptions();
+    if (applicationSequence !== intentResultApplicationSequence) return;
+  }
+
+  const initialized = initTreatmentsFromIntent(allowedIntentTreatments);
+  const preserved = preserveGenerated
+    ? treatments.value.filter((item) => item.sourceType !== 'explicit' && !item.manualMatched)
+    : [];
+  treatments.value = [...initialized, ...preserved];
+  normalizeMedicinePharmacyValues(treatments.value);
+  if (!autoFetchTreatments.value) {
+    lastTreatmentDiagnosisKey.value = getDiagnosisIdentity(selectedDiagnosis.value);
+  }
+  if (treatments.value.some((item) => item.type === 'medicine')) {
+    await reconcileAutoSelectedMedicineInventory(treatments.value);
+  }
+  void registerCurrentRecommendations();
+}
 
 function swapDiagnosis(originalDiag: Diagnosis, newItem: { id?: string; code: string; name: string }): void {
   const originalIdentity = getStandardDiagnosisKey(originalDiag);
@@ -2412,7 +2521,6 @@ onMounted(() => {
 
 onUnmounted(() => {
   clearPendingSnapshotPersist();
-  if (factSuggestionTimer) clearTimeout(factSuggestionTimer);
 });
 
 const {
@@ -2829,6 +2937,8 @@ watch(
       currentAnchorId,
     });
     intentResultApplicationSequence += 1;
+    progressiveIntentApplication.reset();
+    progressiveMenstrualBaseline = '';
     resetFinalResultApplication();
     clearPendingSnapshotPersist();
     lastAppliedIntentKey.value = '';
@@ -2852,9 +2962,12 @@ watch(
   async (result) => {
     if (!result) {
       intentResultApplicationSequence += 1;
+      progressiveIntentApplication.reset();
+      progressiveMenstrualBaseline = '';
       resetFinalResultApplication();
       lastAppliedIntentKey.value = '';
       resetPrecautionsScope();
+      resetFactConfirmation();
       resetWritebackScope();
       resetChronicRefillReview();
       resetDifferentialDiagnosisDirection();
@@ -2871,95 +2984,105 @@ watch(
     }
     lastAppliedIntentKey.value = intentKey;
     const applicationSequence = ++intentResultApplicationSequence;
+    const applicationPlan = progressiveIntentApplication.plan({
+      sessionKey: getProgressiveIntentSessionKey(),
+      generation: result.generation,
+    });
     const isFinalApplication = beginFinalResultApplication(result.generation);
+    const newSections = new Set(applicationPlan.newSections);
+    const isStreaming = result.generation?.status === 'streaming';
 
     try {
-    invalidateTreatmentRequests();
-    autoTreatmentFetchAttemptKey.value = '';
-    resetPrecautionsScope();
-    resetForIntent(result);
-    if (!isFemalePatient.value) menstrualHistory.value = '';
-    resetDifferentialDiagnosisDirection();
-    resetFactConfirmation();
-    resetChronicRefillReview(result.chronicRefillReview);
-    resetTreatmentGenerationState();
+      suppressDiagnosisTreatmentRefetch.value = true;
 
-    if (result.diagnoses?.length) {
-      aiDiagnoses.value = initDiagnosesFromIntent(result.diagnoses);
-      captureGeneratedPrecautions(getDiagnosisNames(aiDiagnoses.value), precautions.value);
-      const firstStandard = formalDiagnoses.value.find((diag) => getStandardDiagnosisId(diag));
-      const firstSelectable = firstStandard || formalDiagnoses.value[0] || null;
-      replaceDiagnosisSelection(firstSelectable ? [firstSelectable] : [], firstSelectable);
-      syncPrecautionsToSelection();
-      void registerCurrentRecommendations();
-    } else {
-      captureGeneratedPrecautions([], precautions.value);
-    }
+      if (applicationPlan.mode === 'reset') {
+        invalidateTreatmentRequests();
+        autoTreatmentFetchAttemptKey.value = '';
+        resetPrecautionsScope();
+        resetForIntent(result);
+        progressiveMenstrualBaseline = menstrualHistory.value;
+        if (!isFemalePatient.value) menstrualHistory.value = '';
+        resetDifferentialDiagnosisDirection();
+        resetFactConfirmation();
+        resetChronicRefillReview(result.chronicRefillReview);
+        resetTreatmentGenerationState();
+      } else {
+        applyProgressiveIntentRecord(result, applicationPlan.newSections);
+        if (newSections.has('recommendation_plan') && !treatmentLoading.value) {
+          resetTreatmentGenerationState();
+        }
+      }
 
-    const allowedIntentTreatments = getAllowedIntentTreatments(result);
-    if (allowedIntentTreatments.length > 0) {
-      if (allowedIntentTreatments.some((item) => item.type === 'medicine')) {
-        await fetchPharmacyOptions();
+      const receivedRecordPatch = [
+        'record_core',
+        'history_context',
+        'record_extra',
+      ].some((section) => newSections.has(section as ClinicalResultGenerationSection));
+      if (
+        (applicationPlan.mode === 'reset' || newSections.has('record_suggestions') || receivedRecordPatch)
+        && result.factSuggestions?.length
+      ) {
+        restoreFactSuggestions(result.factSuggestions);
+      }
+
+      const shouldApplyDiagnoses = applicationPlan.mode === 'reset'
+        ? result.diagnoses.length > 0
+        : newSections.has('diagnoses');
+      if (shouldApplyDiagnoses) {
+        applyIntentDiagnoses(result);
+      }
+
+      if (!isStreaming) {
+        await applyIntentExplicitTreatments(
+          result,
+          applicationPlan.continuesStreamingSession,
+          applicationSequence,
+        );
         if (applicationSequence !== intentResultApplicationSequence) return;
       }
-      treatments.value = initTreatmentsFromIntent(allowedIntentTreatments);
-      normalizeMedicinePharmacyValues(treatments.value);
-      lastTreatmentDiagnosisKey.value = autoFetchTreatments.value
-        ? ''
-        : getDiagnosisIdentity(selectedDiagnosis.value);
-      if (treatments.value.some((item) => item.type === 'medicine')) {
-        await reconcileAutoSelectedMedicineInventory(treatments.value);
-        if (applicationSequence !== intentResultApplicationSequence) return;
-      }
-      void registerCurrentRecommendations();
-      console.info('[VoiceConsultationNew] Applied voice intent treatments', {
-        diagnosisIdentity: lastTreatmentDiagnosisKey.value,
-        treatmentCount: treatments.value.length,
-        medicineCount: treatments.value.filter((item) => item.type === 'medicine').length,
-        medicineWithDosageCount: treatments.value.filter((item) => item.type === 'medicine' && !!item.dosage).length,
-        medicineWithTotalQtyCount: treatments.value.filter((item) => item.type === 'medicine' && !!item.totalQty).length,
-      });
-    }
 
-    resetWritebackScope();
+      if (applicationPlan.mode === 'reset') resetWritebackScope();
+      else refreshWritebackScope();
 
-    if (result.generation?.status === 'streaming') {
       await nextTick();
       if (applicationSequence !== intentResultApplicationSequence) return;
       suppressDiagnosisTreatmentRefetch.value = false;
-      return;
-    }
 
-    // 仅在“同就诊缓存恢复”路径上叠加编辑快照，避免上一会话的治疗方案/诊断
-    // 污染全新 LLM 语音问诊的默认推荐。
-    if (shouldUseVoiceCache.value && props.intentSource === 'cache') {
-      const editorSnapshot = getVoiceConsultationEditorSnapshot(props.initialPatientData);
-      if (editorSnapshot) {
-        await applyEditorSnapshot(editorSnapshot);
-        if (applicationSequence !== intentResultApplicationSequence) return;
+      if (shouldApplyDiagnoses && formalDiagnoses.value.length > 0) {
+        void performDiagnosisFactCheck(formalDiagnoses.value);
       }
-    }
 
-    scheduleFactSuggestionGeneration();
+      if (isStreaming) {
+        void maybeAutoFetchMissingTreatment('progressive-intent-ready');
+        return;
+      }
 
-    if (formalDiagnoses.value.length > 0) {
-      void performDiagnosisFactCheck(formalDiagnoses.value);
-    } else if (canRefreshDiagnosis.value) {
-      void fetchAIDiagnosis();
-    }
+      // 仅在“同就诊缓存恢复”路径上叠加编辑快照，避免上一会话的治疗方案/诊断
+      // 污染全新 LLM 语音问诊的默认推荐。
+      if (applicationPlan.mode === 'reset' && shouldUseVoiceCache.value && props.intentSource === 'cache') {
+        const editorSnapshot = getVoiceConsultationEditorSnapshot(props.initialPatientData);
+        if (editorSnapshot) {
+          await applyEditorSnapshot(editorSnapshot);
+          if (applicationSequence !== intentResultApplicationSequence) return;
+        }
+      }
 
-    if (treatments.value.length > 0) {
-      void performTreatmentFactCheck(treatments.value);
-    }
+      if (!result.factSuggestions?.length) {
+        scheduleFactSuggestionGeneration();
+      }
 
-    await nextTick();
-    if (applicationSequence !== intentResultApplicationSequence) return;
-    suppressDiagnosisTreatmentRefetch.value = false;
-    if (!result.generation || result.generation.status === 'complete') {
+      if (formalDiagnoses.value.length === 0 && canRefreshDiagnosis.value) {
+        void fetchAIDiagnosis();
+      }
+
+      if (treatments.value.length > 0) {
+        void performTreatmentFactCheck(treatments.value);
+      }
+
       submitVoiceGeneratedUserLog();
-      await maybeAutoFetchMissingTreatment('intent-result-applied');
-      if (applicationSequence !== intentResultApplicationSequence) return;
-    }
+      // 治疗分支可能已在 recommendation_plan 到达时启动；这里仅保证旧结果或
+      // 非流式入口仍能补发，不能再把它串行纳入核心病历的 finalizing。
+      void maybeAutoFetchMissingTreatment('intent-result-applied');
     } finally {
       if (
         isFinalApplication
@@ -3239,8 +3362,17 @@ watch(
               </DiagnosisRecommendationCard>
             </ul>
 
-            <div v-else class="empty-text">
-              当前病历暂无可以直接成立的正式诊断
+            <div v-else class="diagnosis-empty-state" role="status">
+              <Icon icon="lucide:info" size="15" aria-hidden="true" />
+              <div class="diagnosis-empty-copy">
+                <strong>当前信息不足，暂未形成正式诊断。</strong>
+                <span v-if="differentialDiagnoses.length > 0">
+                  可从下方纳入诊疗方向并补充依据，确认后再转为正式诊断。
+                </span>
+                <span v-else>
+                  请补充病史、查体或检查结果后刷新诊断。
+                </span>
+              </div>
             </div>
 
             <DiagnosisDifferentialList

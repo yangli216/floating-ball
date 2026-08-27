@@ -498,13 +498,11 @@ const handleConfirm = async () => {
     console.warn('[VoiceCapsule] Failed to merge continued recording segments; using latest segment', error);
   }
 
-  try {
-    await saveAudioForDebug(finalBlob, editableText.value.trim());
-  } catch (error) {
-    console.warn('[VoiceCapsule] saveAudioForDebug failed', error);
-  }
-
   emit('stop', finalBlob, editableText.value.trim());
+  // 审计音频落盘不参与病历生成关键路径；失败只记录日志，不能阻塞结果页打开。
+  void saveAudioForDebug(finalBlob, editableText.value.trim()).catch((error) => {
+    console.warn('[VoiceCapsule] saveAudioForDebug failed', error);
+  });
 };
 
 const handleContinue = async () => {

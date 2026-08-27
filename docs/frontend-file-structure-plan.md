@@ -138,6 +138,7 @@ features/<name>/
 | `ConsultationPage.vue` / `VoiceConsultationNew.vue` 内手动匹配弹层开合 / 搜索关键词缓存 | `src/features/consultation-result/model/useManualMatchState.ts` | 已收敛到结果页共享 composable：只管理当前打开的治疗项手动匹配 key、每条推荐的搜索关键词和打开时默认关键词；页面仍负责标准库候选搜索、应用匹配、toast、门禁和库存后置校验 |
 | `VoiceConsultationNew.vue` 内患者展示信息 / 就诊锚点派生 | `src/features/consultation-result/model/useClinicalResultPatientContext.ts` | 结果页共享 composable：只根据当前 patient 派生患者姓名、性别、年龄、`idTet`、就诊锚点和 `consultationId`；页面仍负责缓存、日志、PHIS payload 注入、患者切换副作用和展示组件 |
 | `VoiceConsultationNew.vue` 内新 intentResult 到来时的现场重置 / 病历字段落地 | `src/features/consultation-result/model/useClinicalResultIntentReset.ts` | 结果页共享 lifecycle controller：只清理上一次结果页现场、回填病历字段、设置病例字段初始快照；页面仍负责诊断 / 治疗初始化、缓存 overlay、AI 请求、事实核查、用户日志和 PHIS 回写 |
+| `VoiceConsultationNew.vue` 内同轮语音分区反复整页 reset | `src/features/consultation-result/model/useClinicalResultProgressiveIntentApplication.ts` | 以患者 / 就诊 / `consultationRoundId` 为锚点，规划首次 reset、后续 patch 和最终 finalize；只返回新增分区，不直接写页面状态或调用外部服务 |
 | `VoiceConsultationNew.vue` 内诊断勾选集合 / 主诊断同步 | `src/features/consultation-result/model/useDiagnosisSelection.ts` | 结果页共享 composable：只管理诊断 key 集合、主诊断、切换主诊断、移除诊断、替换诊断后同步 key；页面仍负责 AI 请求、同类诊断下拉、治疗方案刷新和推荐反馈注册 |
 | `ConsultationPage.vue` / `VoiceConsultationNew.vue` 内同类诊断下拉开合与替换状态 | `src/features/consultation-result/model/useRelatedDiagnosisDropdown.ts` | 结果页共享 composable：只管理当前打开诊断 key、候选列表、打开 / 关闭 / 切换和替换后的关闭；候选来源、诊断列表写回、选择状态同步、埋点、反馈注册和治疗刷新仍由页面注入 |
 | `VoiceConsultationNew.vue` 内药品频次 / 用法搜索关键字状态 | `src/features/consultation-result/model/useMedicineUsageSearch.ts` | 结果页共享 composable：只管理 frequency / route 搜索关键字缓存、同步和重置；页面仍负责字段激活、字段写回、归一化和库存校验 |
@@ -381,6 +382,8 @@ features/<name>/
 22. `features/consultation-result/model/useRecommendationFeedbackPopover.ts`：只负责推荐项反馈弹层的打开 key、草稿读取、提交标签读取和关闭；不能调用反馈提交接口、toast、PHIS、缓存或文档事件监听。
 23. `features/consultation-result/model/useClinicalResultPatientContext.ts`：只负责从 patient 派生结果页展示姓名、性别、年龄、`idTet`、就诊锚点和 `consultationId`；不能补全患者信息、切换患者、读写缓存、提交日志、拼装 PHIS payload、弹 toast 或触发页面导航。
 23a. `features/consultation-result/model/useClinicalResultIntentReset.ts`：只负责新 intentResult 到来时的旧现场清理、病历字段回填和初始字段快照设置；不能触发 AI 请求、缓存 overlay、事实核查、推荐注册、用户日志或 PHIS 回写。
+23b. `features/consultation-result/model/useClinicalRecordFactSuggestionScheduler.ts`：只负责通用病历 AI 候选生成的待执行、结果稳定门禁、去抖、同次并发复用和 reset；生成动作、渠道是否允许、结果是否阻塞和现有候选数必须由页面注入，不能直接调用 LLM、修改病历、弹 toast、读写缓存或提交 PHIS。
+23c. `features/consultation-result/model/useClinicalResultProgressiveIntentApplication.ts`：只负责同一生成轮次首次 reset、后续分区 patch 和 complete finalize 的计划判断与新增分区去重；页面字段、诊断选择、治疗任务、缓存与 PHIS 回写仍由调用方编排。
 24. `features/consultation-result/model/useDiagnosisSelection.ts`：只负责诊断勾选集合、主诊断同步、增删选择和诊断替换后的 key 同步；不能触发治疗方案刷新、AI 请求、toast、反馈注册、同类诊断搜索或 PHIS 回写。
 25. `features/consultation-result/model/useRelatedDiagnosisDropdown.ts`：只负责同类诊断下拉的打开 key、候选列表、打开 / 关闭 / 切换和替换后收口；候选来源由页面注入，不能修改诊断列表、同步选择状态、触发埋点、刷新治疗、注册反馈或 PHIS 回写。
 26. `features/consultation-result/model/useManualMatchState.ts`：只负责治疗项手动匹配弹层 key、搜索关键词缓存和打开时默认关键词；不能访问标准库服务、修改治疗项、应用匹配、触发库存校验、打开二级选择器或弹 toast。
@@ -413,7 +416,8 @@ features/<name>/
 36. `src/app/events/useReceptionController.ts`：只负责 App 级接诊状态机，包括 HIS 患者补全、统一 reception flow token、同患者并发接诊复用、跨患者接诊拒绝、风险评估失败降级、患者切换时语音缓存 / 最小化入口清理、风险胶囊加载和自动接诊 guard；所有异步状态写入必须先验证 token 仍有效；不能注册 Tauri 事件、处理 SDK handshake、打开具体问诊结果页、提交 PHIS 回写或保存问诊/语音业务缓存。
 36a. `features/reception/model/useReceptionSessionController.ts`：只负责接诊胶囊局部状态、`ReceptionOpportunity` 集合和患者展示 / 报告复诊上下文派生；必须以 `currentPatient` ref 作为唯一患者来源，通过显式 action 修改 `status / risks / opportunities / executingOpportunity`，不能调用 HIS、LLM、toast、导航、窗口 API、把流程上下文写入 `patient.raw` 或新增 Pinia store。
 36b. `features/reception/model/useOutpatientScenarioRouter.ts`：只负责 `ReceptionOpportunity` 的执行策略，以及语音入口在缓存恢复 / 报告复诊 / 普通录音之间的分流；外部查询、病历生成、患者上下文合并、导航、toast 和错误记录必须通过 options 或方法参数注入，不能注册 Tauri 事件、直接调用 HIS / LLM 单例或补全患者。
-36c. `features/reception/ui/ReceptionCapsule.vue`：只负责接诊 session 的患者摘要、风险列表和 opportunity 操作展示；风险规则与病历生成继续由 `features/reception-risk` 提供，组件不得直接调用 HIS、LLM 或导航。
+36c. `features/reception/ui/ReceptionCapsule.vue`：只负责接诊 session 的患者摘要、风险列表和 opportunity 操作展示，并编排慢病范围选择子组件的打开、关闭与结果转交；风险规则与病历生成继续由 `features/reception-risk` 提供，组件不得直接调用 HIS、LLM 或导航。
+36ca. `features/reception/ui/ChronicRefillScopeSelector.vue`：只负责当前胶囊内的慢病范围，向父组件输出只含诊断范围的 `ChronicRefillSelection`；不得渲染后台药品归类状态、恢复逐药勾选或调用 LLM、HIS、导航、toast、窗口 API，AI 请求状态只能作为内部提交门禁随 candidate prop 输入。
 36d. `features/reception/lib/receptionPatientSummary.ts`：只负责接诊 payload 到患者草稿、埋点身份摘要，以及 HIS 过敏史 / 既往史到统一患者上下文的纯转换；不能获取 HIS adapter、读取 Vue ref、触发风险评估、toast、导航或缓存清理。
 34. `src/app/events/useSdkHandshakeController.ts`：只负责 SDK handshake payload 解析、HIS 服务单例初始化 / 重置、HisAdapter 重置、反馈 actor 缓存和 `medicalDataService.setCatalogContext`；不能注册 Tauri 事件、读写患者上下文、打开页面、提交 PHIS 回写或触发问诊 / 语音业务状态。
 35. `ConsultationPage.vue` 继续持有页面状态、toast、PHIS 引用请求、缓存清理和事件处理；不得把副作用藏进 `lib`。

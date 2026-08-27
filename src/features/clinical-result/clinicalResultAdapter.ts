@@ -177,5 +177,6 @@ export function cloneClinicalResultInput(result: ClinicalResultInput): ClinicalR
     ...result,
     diagnoses: result.diagnoses.map((item) => cloneValue(item) as ClinicalResultDiagnosis),
     treatments: result.treatments.map((item) => cloneValue(item) as ClinicalResultTreatment),
+    factSuggestions: result.factSuggestions?.map((item) => cloneValue(item) as typeof item),
   };
 }

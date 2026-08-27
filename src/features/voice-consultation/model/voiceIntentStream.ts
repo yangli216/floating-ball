@@ -16,6 +16,7 @@ export interface VoiceIntentStreamEvent {
 const EVENT_NAMES = new Set<VoiceIntentStreamEventName>([
   'record_core',
   'history_context',
+  'record_suggestions',
   'explicit_orders',
   'diagnoses',
   'recommendation_plan',
@@ -122,6 +123,12 @@ export function applyVoiceIntentStreamEvent(
     case 'history_context':
       if (isObject(event.data)) Object.assign(recordDraft, event.data);
       markReady(accumulator, 'history_context');
+      break;
+    case 'record_suggestions':
+      accumulator.payload.recordFactSuggestions = Array.isArray(event.data)
+        ? event.data as NonNullable<VoiceExtractionResult['recordFactSuggestions']>
+        : [];
+      markReady(accumulator, 'record_suggestions');
       break;
     case 'explicit_orders':
       accumulator.payload.explicitTreatmentHints = Array.isArray(event.data)

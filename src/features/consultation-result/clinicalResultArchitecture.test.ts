@@ -37,14 +37,24 @@ describe('clinical result architecture boundary', () => {
     expect(resultImplementationSource).toContain(':generation="displayedGeneration"');
     expect(resultImplementationSource).toContain('beginFinalResultApplication(result.generation)');
     expect(resultImplementationSource).toContain('finishFinalResultApplication()');
-    expect(resultImplementationSource).toContain('if (!allowsPostResultFactSuggestions.value) return');
+    expect(resultImplementationSource).toContain('useClinicalRecordFactSuggestionScheduler');
+    expect(resultImplementationSource).toContain('isAllowed: () => allowsPostResultFactSuggestions.value');
+    expect(resultImplementationSource).toContain('isBlocked: () => isResultUnavailable.value');
+    expect(resultImplementationSource).not.toContain('factSuggestionTimer');
     expect(resultImplementationSource).toContain('applicationSequence !== intentResultApplicationSequence');
+    expect(resultImplementationSource).toContain(
+      "props.channel === 'chronic-refill' ? aiDiagnoses.value.length : 3",
+    );
+    expect(resultImplementationSource).toContain(
+      "resultChannel.value === 'chronic-refill'",
+    );
   });
 
-  it('waits for missing voice treatments before ending final result application', () => {
-    expect(resultImplementationSource).toContain('allowsTreatmentAutoFetchWhileFinalizing');
+  it('starts missing voice treatments in the background without holding core record finalization', () => {
+    expect(resultImplementationSource).toContain('allowsTreatmentAutoFetchInBackground');
+    expect(resultImplementationSource).toContain('useClinicalResultProgressiveIntentApplication');
     expect(resultImplementationSource).toMatch(
-      /await maybeAutoFetchMissingTreatment\('intent-result-applied'\);[\s\S]*?finishFinalResultApplication\(\)/,
+      /void maybeAutoFetchMissingTreatment\('intent-result-applied'\);[\s\S]*?finishFinalResultApplication\(\)/,
     );
   });
 
@@ -234,6 +244,9 @@ describe('clinical result architecture boundary', () => {
     expect(resultImplementationSource).toContain('previousTreatmentRefetchSuppression');
     expect(resultImplementationSource).toContain('selectedDiagnosisIdentities');
     expect(resultImplementationSource).not.toContain('setPrimaryDiagnosisSelection(formalDiagnosis)');
+    expect(resultImplementationSource).toContain('class="diagnosis-empty-state"');
+    expect(resultImplementationSource).toContain('当前信息不足，暂未形成正式诊断');
+    expect(resultImplementationSource).toContain('可从下方纳入诊疗方向并补充依据');
     expect(diagnosisDifferentialListSource).toContain('纳入诊疗方向');
     expect(diagnosisDifferentialListSource).toContain('支持依据');
     expect(diagnosisDifferentialListSource).toContain('需核查');
@@ -241,6 +254,13 @@ describe('clinical result architecture boundary', () => {
     expect(diagnosisDifferentialListSource).toContain('查看依据');
     expect(diagnosisDifferentialListSource).toContain(':aria-expanded="isSupportExpanded(diagnosis)"');
     expect(diagnosisDifferentialListSource).toContain('class="differential-summary-row"');
+    expect(diagnosisDifferentialListSource).toContain('class="differential-name" :title="diagnosis.name"');
+    expect(diagnosisDifferentialListSource).toMatch(
+      /article\.is-included \.differential-summary-row\s*\{[^}]*grid-template-columns:\s*minmax\(190px, 1fr\) auto/s,
+    );
+    expect(diagnosisDifferentialListSource).toMatch(
+      /\.differential-name\s*\{[^}]*white-space:\s*normal/s,
+    );
     expect(diagnosisDifferentialListSource).toContain('v-if="isSupportExpanded(diagnosis)" class="differential-detail-panel"');
     expect(diagnosisDifferentialListSource).toContain('补充依据');
     expect(diagnosisDifferentialListSource).toContain('转为正式诊断');

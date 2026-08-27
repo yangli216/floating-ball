@@ -24,6 +24,7 @@ export {
 } from './model/useClinicalResultColumnNavigation';
 export { useClinicalResultPrecautionsScope } from './model/useClinicalResultPrecautionsScope';
 export { useClinicalRecordFactConfirmation } from './model/useClinicalRecordFactConfirmation';
+export { useClinicalRecordFactSuggestionScheduler } from './model/useClinicalRecordFactSuggestionScheduler';
 export { useChronicRefillReview } from './model/useChronicRefillReview';
 export { useGeneratedClinicalResultSession } from './model/useGeneratedClinicalResultSession';
 export { useClinicalResultDiagnosisChecklist } from './model/useClinicalResultDiagnosisChecklist';
@@ -32,7 +33,11 @@ export type {
   DifferentialDiagnosisDirection,
   DifferentialDiagnosisDirectionSnapshot,
 } from './model/useDifferentialDiagnosisDirection';
-export { useClinicalResultIntentReset } from './model/useClinicalResultIntentReset';
+export {
+  buildClinicalResultIntentRecordSnapshot,
+  useClinicalResultIntentReset,
+} from './model/useClinicalResultIntentReset';
+export { useClinicalResultProgressiveIntentApplication } from './model/useClinicalResultProgressiveIntentApplication';
 export { useClinicalResultFinalization } from './model/useClinicalResultFinalization';
 export {
   createClinicalResultOrderItemResolvers,
@@ -112,6 +117,10 @@ export type {
   ClinicalRecordFactConfirmationOptions,
 } from './model/useClinicalRecordFactConfirmation';
 export type {
+  ClinicalRecordFactSuggestionScheduler,
+  ClinicalRecordFactSuggestionSchedulerOptions,
+} from './model/useClinicalRecordFactSuggestionScheduler';
+export type {
   ChronicRefillReview,
   ChronicRefillReviewOptions,
 } from './model/useChronicRefillReview';
@@ -135,6 +144,12 @@ export type {
   ClinicalResultIntentResetOptions,
   ClinicalResultIntentResetRecordSnapshot,
 } from './model/useClinicalResultIntentReset';
+export type {
+  ClinicalResultIntentApplicationMode,
+  ClinicalResultIntentApplicationPlan,
+  ClinicalResultProgressiveIntentApplication,
+  ClinicalResultProgressiveIntentInput,
+} from './model/useClinicalResultProgressiveIntentApplication';
 export type {
   ClinicalResultWritebackPayload,
   ClinicalResultWritebackPayloadOptions,

@@ -13,6 +13,7 @@ describe('voiceIntentStream', () => {
     parser.push('{"event":"record_core","data":{"chiefComplaint":"咳嗽2天"}}\n{"event":"diag');
     parser.push('noses","data":[{"name":"急性支气管炎"}]}\n');
     parser.push('{"event":"history_context","data":{"personalHistory":"吸烟20年","menstrualHistory":"周期28天"}}\n');
+    parser.push('{"event":"record_suggestions","data":[{"field":"physicalExam","question":"核查肺部听诊","negativeRecordText":"双肺未闻及啰音","priority":"general"}]}\n');
     parser.push('{"event":"record_extra","data":{"physicalExam":"血压128/76mmHg"}}\n');
     parser.push('{"event":"recommendation_plan","data":{"mode":"diagnostic_first","recommendNow":["lab_test"]}}');
     parser.flush();
@@ -21,9 +22,17 @@ describe('voiceIntentStream', () => {
     expect(accumulator.payload.recordDraft?.personalHistory).toBe('吸烟20年');
     expect(accumulator.payload.recordDraft?.menstrualHistory).toBe('周期28天');
     expect(accumulator.payload.recordDraft?.physicalExam).toBe('血压128/76mmHg');
+    expect(accumulator.payload.recordFactSuggestions?.[0]?.negativeRecordText).toBe('双肺未闻及啰音');
     expect(accumulator.payload.diagnosisHints?.[0]?.name).toBe('急性支气管炎');
     expect(accumulator.payload.recommendationPlan?.mode).toBe('diagnostic_first');
-    expect(accumulator.readySections).toEqual(['record_core', 'diagnoses', 'history_context', 'record_extra', 'recommendation_plan']);
+    expect(accumulator.readySections).toEqual([
+      'record_core',
+      'diagnoses',
+      'history_context',
+      'record_suggestions',
+      'record_extra',
+      'recommendation_plan',
+    ]);
   });
 
   it('ignores ordinary pretty-printed JSON so the legacy parser can handle it at completion', () => {

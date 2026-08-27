@@ -19,8 +19,9 @@ describe('institutionAuxiliaryCatalog', () => {
   ]);
 
   it('builds compact separated catalog references', () => {
-    expect(context.promptContext).toContain('E001|胸部正位片|单项|通用');
-    expect(context.promptContext).toContain('L001|血常规|组合|通用');
+    expect(context.promptContext).toContain('E001|胸部正位片');
+    expect(context.promptContext).not.toContain('E001|胸部正位片|单项|通用');
+    expect(context.promptContext).toContain('L001|血常规|组合');
   });
 
   it('accepts only valid references in the requested category', () => {
@@ -55,7 +56,7 @@ describe('institutionAuxiliaryCatalog', () => {
     ], ['lab_test'], { includeRestricted: true });
 
     expect(restrictedContext.entries.map((entry) => entry.item.id)).toEqual(['general', 'free']);
-    expect(restrictedContext.promptContext).toContain('L002|血常规（五分类）（免费）|单项|受限：仅适用于特定人群');
+    expect(restrictedContext.promptContext).toContain('L002|血常规（五分类）（免费）|受限：仅适用于特定人群');
   });
 
   it('excludes restricted items from automatic recommendation unless eligibility is explicit', () => {

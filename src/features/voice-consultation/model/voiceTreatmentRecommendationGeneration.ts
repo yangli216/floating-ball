@@ -1,4 +1,4 @@
-import { chat } from '@/services/llm';
+import { chat, chatFast } from '@/services/llm';
 import { medicalDataService } from '@/services/medicalData';
 import { explicitlyRequestsRestrictedMedicalItem } from '@/services/medicalCatalogPolicy';
 import type { PharmacyOption } from '@/services/his';
@@ -145,7 +145,7 @@ export async function generateVoiceTreatmentRecommendations(
         operationAction: 'generate_auxiliary_catalog_recommendation',
         title: '语音问诊生成院内目录检验检查推荐',
       });
-      const response = await chat(spec.messages, undefined, undefined, undefined, spec.config);
+      const response = await chatFast(spec.messages, undefined, undefined, undefined, spec.config);
       return {
         key: 'auxiliary',
         types: availableAuxiliaryTypes,

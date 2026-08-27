@@ -34,7 +34,7 @@ function getSupportText(diagnosis: Diagnosis): string {
 }
 
 function getMissingInformation(diagnosis: Diagnosis): string {
-  return diagnosis.missingInformation?.trim() || '结合进一步问诊、查体或检查确认关键诊断依据';
+  return diagnosis.missingInformation?.trim() || '请结合当前方向补充针对性问诊、查体或检查依据';
 }
 
 function isSupportExpanded(diagnosis: Diagnosis): boolean {
@@ -67,9 +67,11 @@ function toggleSupportExpanded(diagnosis: Diagnosis): void {
     >
       <div class="differential-summary-row">
         <div class="differential-identity">
-          <strong>{{ diagnosis.name }}</strong>
-          <span v-if="isIncluded(diagnosis)" class="included-token">已纳入</span>
-          <span v-if="diagnosis.rate" class="confidence-token">{{ diagnosis.rate }}</span>
+          <strong class="differential-name" :title="diagnosis.name">{{ diagnosis.name }}</strong>
+          <span v-if="isIncluded(diagnosis) || diagnosis.rate" class="differential-meta">
+            <span v-if="isIncluded(diagnosis)" class="included-token">已纳入</span>
+            <span v-if="diagnosis.rate" class="confidence-token">{{ diagnosis.rate }}</span>
+          </span>
         </div>
 
         <div class="differential-checkpoint" :title="getMissingInformation(diagnosis)">
@@ -162,6 +164,26 @@ article + article {
   min-height: 32px;
 }
 
+article.is-included .differential-summary-row {
+  grid-template-columns: minmax(190px, 1fr) auto;
+  row-gap: 8px;
+}
+
+article.is-included .differential-identity {
+  grid-column: 1;
+  grid-row: 1;
+}
+
+article.is-included .differential-next-step {
+  grid-column: 2;
+  grid-row: 1;
+}
+
+article.is-included .differential-checkpoint {
+  grid-column: 1 / -1;
+  grid-row: 2;
+}
+
 .differential-identity,
 .differential-checkpoint,
 .differential-next-step,
@@ -173,16 +195,27 @@ article + article {
 
 .differential-identity {
   gap: 6px;
+  align-items: flex-start;
+  flex-wrap: wrap;
 }
 
-.differential-identity strong {
+.differential-name {
+  flex: 1 1 9em;
   min-width: 0;
-  overflow: hidden;
   color: var(--voice-text);
   font-size: 14px;
   font-weight: 700;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+  white-space: normal;
+}
+
+.differential-meta {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 6px;
+  min-height: 19px;
 }
 
 .included-token,
@@ -309,6 +342,17 @@ article + article {
   .differential-next-step {
     grid-column: 1 / -1;
     justify-content: flex-start;
+  }
+
+  article.is-included .differential-summary-row {
+    grid-template-columns: 1fr;
+  }
+
+  article.is-included .differential-identity,
+  article.is-included .differential-checkpoint,
+  article.is-included .differential-next-step {
+    grid-column: 1;
+    grid-row: auto;
   }
 }
 

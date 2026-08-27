@@ -7,19 +7,31 @@ import type {
 export interface ClinicalResultFinalizationOptions {
   getChannel: () => ClinicalResultChannel;
   getGeneration: () => ClinicalResultGenerationState | undefined;
+  getTreatmentPending?: () => boolean;
 }
 
 export function useClinicalResultFinalization(options: ClinicalResultFinalizationOptions) {
   const applyingFinalResult = ref(false);
 
-  const allowsTreatmentAutoFetchWhileFinalizing = computed(() => (
-    applyingFinalResult.value
-    && options.getChannel() !== 'chronic-refill'
-    && options.getGeneration()?.status === 'complete'
-  ));
+  const allowsTreatmentAutoFetchInBackground = computed(() => {
+    if (options.getChannel() === 'chronic-refill') return false;
+    const generation = options.getGeneration();
+    if (applyingFinalResult.value && generation?.status === 'complete') return true;
+    if (generation?.status !== 'streaming') return false;
+    const ready = new Set(generation.readySections);
+    return ready.has('diagnoses') && ready.has('recommendation_plan');
+  });
 
   const displayedGeneration = computed<ClinicalResultGenerationState | undefined>(() => {
     const generation = options.getGeneration();
+    if (options.getTreatmentPending?.() && generation?.status === 'complete') {
+      return {
+        ...generation,
+        status: 'streaming',
+        stage: 'finalizing-result',
+        message: '病历已可编辑，正在补全诊疗方案',
+      };
+    }
     if (!applyingFinalResult.value || generation?.status !== 'complete') return generation;
     return {
       ...generation,
@@ -49,7 +61,7 @@ export function useClinicalResultFinalization(options: ClinicalResultFinalizatio
 
   return {
     allowsPostResultFactSuggestions,
-    allowsTreatmentAutoFetchWhileFinalizing,
+    allowsTreatmentAutoFetchInBackground,
     applyingFinalResult,
     begin,
     displayedGeneration,

@@ -46,12 +46,10 @@ function isCombinationItem(item: MedicalItem): boolean {
 
 function formatEntry(entry: AuxiliaryCatalogEntry): string {
   const restriction = getMedicalCatalogRestrictionReason(entry.item);
-  return [
-    entry.ref,
-    entry.item.name,
-    isCombinationItem(entry.item) ? '组合' : '单项',
-    restriction ? `受限：${restriction}` : '通用',
-  ].join('|');
+  const qualifiers: string[] = [];
+  if (isCombinationItem(entry.item)) qualifiers.push('组合');
+  if (restriction) qualifiers.push(`受限：${restriction}`);
+  return [entry.ref, entry.item.name, ...qualifiers].join('|');
 }
 
 function prioritizeGeneralItems(items: MedicalItem[]): MedicalItem[] {
@@ -93,6 +91,7 @@ export function buildInstitutionAuxiliaryCatalogContext(
     entries,
     counts: { exam: examLines.length, labTest: labLines.length },
     promptContext: [
+      '格式：ref|项目名称[|组合][|受限：适用条件]；未标记即通用单项',
       '【检查目录】',
       examLines.length ? examLines.join('\n') : '无',
       '【检验目录】',

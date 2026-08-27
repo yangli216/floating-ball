@@ -207,6 +207,14 @@ export interface VoiceExtractionResult {
   explicitTreatmentHints?: TreatmentHint[];
   /** 当前诊疗阶段和后续推荐类型路由 */
   recommendationPlan?: VoiceRecommendationPlan;
+  /** 同次生成的病历候选阴性 / 正常表述，客户端统一质控后写入草稿。 */
+  recordFactSuggestions?: Array<{
+    field?: 'historyOfPresentIllness' | 'pastMedicalHistory' | 'personalHistory' | 'familyHistory' | 'physicalExam';
+    question?: string;
+    negativeRecordText?: string;
+    rationale?: string;
+    priority?: 'critical' | 'general';
+  }>;
   /** 既往史 */
   pastMedicalHistory?: string;
   /** 过敏史 */
@@ -368,6 +376,45 @@ export const VoiceIntentRecognitionPrompt = {
   buildUserPrompt(transcribedText: string): string {
     return `医患对话内容：\n${transcribedText}`;
   }
+};
+
+/**
+ * 普通语音问诊的版本化流式协议。
+ * 使用独立 prompt code，避免历史已发布的纯 JSON override 覆盖 NDJSON 契约。
+ */
+export const VoiceIntentRecognitionStreamPrompt = {
+  system: `你是基层全科门诊的病历整理与诊疗路由助手。基于医患对话和输入的患者既有档案，生成可编辑门诊病历、诊断建议、AI 病历候选、医生明确医嘱及后续推荐路由。此步骤不生成完整 AI 药品或检验检查方案。
+
+严格逐行输出以下 NDJSON 事件；每行一个完整 JSON 对象，不要输出数组外壳、Markdown、代码块或解释，顺序不得改变：
+{"event":"record_core","data":{"chiefComplaint":"主要症状+持续时间","historyOfPresentIllness":"2-4句紧凑现病史","symptoms":[],"negativeSymptoms":[]}}
+{"event":"history_context","data":{"pastMedicalHistory":"","allergyHistory":"","currentMedicationHistory":"","personalHistory":"","menstrualHistory":""}}
+{"event":"record_suggestions","data":[{"field":"historyOfPresentIllness|pastMedicalHistory|personalHistory|familyHistory|physicalExam","question":"医生需核查的问题","negativeRecordText":"确认后可直接书写的规范阴性或正常表述","rationale":"相关性","priority":"critical|general"}]}
+{"event":"diagnoses","data":[{"name":"标准疾病诊断","code":"","evidenceText":"病例依据","sourceType":"explicit|inferred|uncertain","rationale":"推荐理由","confidence":"high|medium|low","suggestionType":"formal|differential","missingInformation":""}]}
+{"event":"recommendation_plan","data":{"mode":"diagnostic_first|treatment_first|parallel|explicit_only|urgent_referral","recommendNow":["medicine|exam|lab_test"],"defer":[],"skip":[],"reason":"路由依据","resumeCondition":"report_available|doctor_request|","confidence":"high|medium|low"}}
+{"event":"explicit_orders","data":[]}
+{"event":"record_extra","data":{"familyHistory":"","physicalExam":"","treatmentPlan":"","healthEducation":""}}
+{"event":"done","data":{"error":false,"message":""}}
+
+病历规则：
+1. 先理解完整病例再组织字段。主诉不写诊断；现病史按起病/诱因、核心症状、伴随与重要阴性、已处理或关键检查组织，删除问答过程、缴费流程和重复内容。
+2. negativeSymptoms 只写症状名，不带“否认/无”。各病史字段只写临床正文，不写“未提及、待补充、建议询问、信息不足”等过程提示。
+3. 对话和既有档案没有明确事实时，过敏、长期用药、个人史、月经史、家族史留空；不得把未采集改写成阴性。既有档案未被本次明确修订时保留。既往史只写长期健康事实，不写门诊流水；个人史、家族史分别归类。月经史只用于女性且不得推断。
+4. physicalExam 只写明确查体与生命体征，T/P/R/BP 数值原样保留，不得臆造。healthEducation 必须针对当前病例，避免“多休息、多喝水”等空泛套话。
+5. record_suggestions 是带 AI 来源标记的可编辑候选，不代表已经问诊或查体确认。最多 8 项，只输出与当前病例/正式诊断相关的必要阴性问诊或正常查体表述；不得重复 record_core、history_context 或既有模板已明确内容。negativeRecordText 必须是简短规范病历文字，不得出现来源和流程措辞。critical 仅用于急危重症排除、关键过敏/禁忌或重大鉴别风险。
+
+诊断规则：
+6. 正式诊断最多 3 项，按匹配度排序，不凑数；第一条 formal 为主诊断。仅可能、待排除或仍需补问/查体/检查者必须为 differential 并填写 missingInformation，排在 formal 后。
+7. name 使用标准疾病诊断，不得用症状代替；保留明确解剖部位与侧别。explicit/inferred/uncertain 必须如实标记，证据和理由保持简洁。
+
+医嘱与路由规则：
+8. explicit_orders 只提取医生本次明确决定开立、继续或调整的项目，sourceType=explicit。患者既往/自行服药只进入 currentMedicationHistory；条件性方案进入 treatmentPlan，并在 recommendation_plan 中 defer。
+9. 药品可写 name/spec/targetDose/targetDoseUnit/frequency/frequencyKey/usage/usageKey/days，但 dosage/dosageUnit/totalQty/totalUnit 留空，由程序按实时库存定稿。检查和检验写规范名称、常用 aliases、证据及目的。组合项目拆开。
+10. 需先依赖结果时用 diagnostic_first 并 defer medicine；诊断明确直接治疗用 treatment_first；同步进行用 parallel；医生要求只执行明确医嘱用 explicit_only；急危重转诊用 urgent_referral。只有高置信才用 defer/skip 抑制类型，低置信使用 parallel。
+11. 非医疗内容或转写无法理解时，仍按事件顺序输出空分区，最后 done.error=true 并给出简短 message。其余缺失字符串用空串、数组用空数组。`,
+
+  buildUserPrompt(transcribedText: string): string {
+    return `医患对话内容：\n${transcribedText}`;
+  },
 };
 
 export const VoiceIntentRepairPrompt = {
@@ -2157,6 +2204,7 @@ export const MedicalRecordCheckPrompt = {
 export const PROMPT_VERSION = {
   medicalRecordGeneration: 'v1.0',
   voiceIntentRecognition: 'v3.0',
+  voiceIntentRecognitionStream: 'v1.0',
   voiceIntentRepair: 'v1.0',
   riskAnalysis: 'v1.0',
   diagnosisRecommendation: 'v1.0',
@@ -2186,7 +2234,7 @@ export const PROMPT_VERSION = {
 export const PROMPTS = {
   consultation: {
     medicalRecordGeneration: MedicalRecordGenerationPrompt,
-    voiceIntentRecognition: VoiceIntentRecognitionPrompt,
+    voiceIntentRecognition: VoiceIntentRecognitionStreamPrompt,
     voiceIntentRepair: VoiceIntentRepairPrompt,
     patientRiskAnalysis: PatientRiskAnalysisPrompt,
     diagnosisRecommendation: DiagnosisRecommendationPrompt,

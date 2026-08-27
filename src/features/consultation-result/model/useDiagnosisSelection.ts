@@ -1,10 +1,11 @@
 import { computed, ref, type Ref } from 'vue';
 import type { Diagnosis } from '@/types/consultation';
+import { getClinicalDiagnosisIdentity } from '@features/clinical-result/recommendationHelpers';
 import {
-  getClinicalDiagnosisIdentity,
   getDiagnosisKey,
+  getStandardDiagnosisId,
   getStandardDiagnosisKey,
-} from '@features/clinical-result';
+} from '@features/clinical-result/recordConfirmedPayload';
 
 interface Options {
   diagnoses: Readonly<Ref<readonly Diagnosis[]>>;
@@ -57,6 +58,17 @@ export function useDiagnosisSelection(options: Options) {
   function replaceDiagnosisSelection(diags: Diagnosis[], primary?: Diagnosis | null): void {
     setDiagnosisSelection(diags.map((diag) => getDiagnosisKey(diag)));
     syncPrimaryDiagnosis(primary || diags[0] || null);
+  }
+
+  function replaceInitialDiagnosisSelection(
+    diags: Diagnosis[],
+    selectAllFormalDiagnoses = false,
+  ): void {
+    const primary = diags.find((diag) => getStandardDiagnosisId(diag)) || diags[0] || null;
+    replaceDiagnosisSelection(
+      selectAllFormalDiagnoses ? diags : (primary ? [primary] : []),
+      primary,
+    );
   }
 
   function resetDiagnosisSelection(): void {
@@ -136,6 +148,7 @@ export function useDiagnosisSelection(options: Options) {
     setDiagnosisSelection,
     syncPrimaryDiagnosis,
     replaceDiagnosisSelection,
+    replaceInitialDiagnosisSelection,
     resetDiagnosisSelection,
     toggleDiagnosis,
     setPrimaryDiagnosis,

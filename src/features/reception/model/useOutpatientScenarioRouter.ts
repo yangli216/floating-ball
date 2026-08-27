@@ -12,6 +12,7 @@ import {
   scopeChronicRefillCandidate,
   type ChronicRefillCandidate,
 } from '@features/reception-risk/lib/chronicRefillAssessment';
+import type { ChronicRefillSelection } from '@features/reception-risk/lib/chronicRefillMedicationAttribution';
 import { hasPatientReportedLabOrExamResults } from '../lib/reportedApplyResults';
 import type { ReceptionSessionController } from './useReceptionSessionController';
 import type {
@@ -105,7 +106,9 @@ export function useOutpatientScenarioRouter(options: OutpatientScenarioRouterOpt
       && session.getOpportunity(opportunity.type) === opportunity;
   }
 
-  async function confirmChronicRefill(selectedConditionIds: string[] = []): Promise<void> {
+  async function confirmChronicRefill(
+    selection: ChronicRefillSelection | string[] = [],
+  ): Promise<void> {
     const patient = currentPatient.value;
     const opportunity = session.getOpportunity('chronic-refill');
     if (
@@ -121,6 +124,9 @@ export function useOutpatientScenarioRouter(options: OutpatientScenarioRouterOpt
     session.setExecutingOpportunity('chronic-refill');
     try {
       const conditionOptions = getChronicRefillConditionOptions(opportunity.candidate);
+      const selectedConditionIds = Array.isArray(selection)
+        ? selection
+        : selection.conditionIds;
       const resolvedConditionIds = selectedConditionIds.length > 0
         ? selectedConditionIds
         : (conditionOptions.length === 1 ? [conditionOptions[0].id] : []);

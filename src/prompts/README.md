@@ -141,15 +141,15 @@ const messages = ref<ChatMessage[]>([
 
 ### Consultation（问诊辅助）
 
-#### `voiceIntentRecognition` - 语音意图识别
-- **用途**: 将录音转写文本整理为病例草稿、诊断提示、治疗提示，尽量直接服务语音结果页回写
+#### `voiceIntentRecognitionStream` - 语音渐进意图识别
+- **用途**: 将录音转写文本在同一次请求中整理为病例草稿、AI 病历候选、诊断提示、明确医嘱和诊疗路由，供结果页渐进应用
 - **输入**: 医患对话转写文本
-- **输出**: JSON 格式的结构化提取结果
+- **输出**: 按固定顺序逐行返回的 NDJSON 分区事件
 - **特点**:
-  - 同时输出病例草稿与诊断/检查/药品提示
+  - 使用独立版本化编码，避免历史 `voiceIntentRecognition` 纯 JSON override 覆盖新协议
+  - `record_suggestions` 与核心病历同次返回，缺失时客户端才走一次稳定态兜底
   - 区分对话明确表达的信息与模型推断结果（`explicit` / `inferred`）
-  - 药品提示尽量拆出剂量、频次、用法、总量、疗程等核心字段，服务 HIS 映射
-  - 支持药品、检查、检验、处置的拆分提取
+  - `explicit_orders` 只承载医生明确医嘱；AI 治疗推荐继续由实时院内目录与药品定稿链路生成
 
 #### `voiceIntentRepair` - 语音抽取结果修复
 - **用途**: 当 `voiceIntentRecognition` 首次输出不是合法 JSON 或缺少关键结构时，将原始输出修复为符合约定结构的 JSON
@@ -185,7 +185,8 @@ const messages = ref<ChatMessage[]>([
 
 ```typescript
 export const PROMPT_VERSION = {
-  voiceIntentRecognition: 'v2.1',
+  voiceIntentRecognition: 'v3.0',
+  voiceIntentRecognitionStream: 'v1.0',
   treatmentRecommendation: 'v2.1',
   procedureRecommendation: 'v1.1',
   chatAssistant: 'v1.0',

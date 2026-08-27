@@ -56,7 +56,9 @@ export interface ClinicalResultIntentResetOptions {
   setInitialRecordSnapshot: (snapshot: ClinicalResultIntentResetRecordSnapshot) => void;
 }
 
-function buildRecordSnapshot(input: ClinicalResultIntentRecordInput): ClinicalResultIntentResetRecordSnapshot {
+export function buildClinicalResultIntentRecordSnapshot(
+  input: ClinicalResultIntentRecordInput,
+): ClinicalResultIntentResetRecordSnapshot {
   const outpatientRecord = buildOutpatientRecord({
     chiefComplaint: input.outpatientRecord?.chiefComplaint || input.chiefComplaint || '',
     historyOfPresentIllness: input.outpatientRecord?.historyOfPresentIllness || input.historyOfPresentIllness || '',
@@ -93,7 +95,7 @@ export function useClinicalResultIntentReset(options: ClinicalResultIntentResetO
     options.treatments.value = [];
     options.resetFirstUserLogSnapshot();
 
-    const snapshot = buildRecordSnapshot(input);
+    const snapshot = buildClinicalResultIntentRecordSnapshot(input);
     options.setInitialRecordSnapshot(snapshot);
     options.chiefComplaint.value = snapshot.chiefComplaint;
     options.historyOfPresentIllness.value = snapshot.historyOfPresentIllness;

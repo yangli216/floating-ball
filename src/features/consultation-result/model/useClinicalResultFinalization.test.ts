@@ -55,13 +55,38 @@ describe('useClinicalResultFinalization', () => {
     });
 
     controller.begin();
-    expect(controller.allowsTreatmentAutoFetchWhileFinalizing.value).toBe(true);
+    expect(controller.allowsTreatmentAutoFetchInBackground.value).toBe(true);
 
     channel.value = 'chronic-refill';
-    expect(controller.allowsTreatmentAutoFetchWhileFinalizing.value).toBe(false);
+    expect(controller.allowsTreatmentAutoFetchInBackground.value).toBe(false);
 
     channel.value = 'voice';
     controller.finish();
-    expect(controller.allowsTreatmentAutoFetchWhileFinalizing.value).toBe(false);
+    expect(controller.allowsTreatmentAutoFetchInBackground.value).toBe(false);
+  });
+
+  it('starts treatment after diagnoses and route are ready and keeps progress while it finishes', () => {
+    const treatmentPending = ref(true);
+    const generation = ref<ClinicalResultGenerationState>({
+      status: 'streaming',
+      readySections: ['record_core', 'diagnoses'],
+    });
+    const controller = useClinicalResultFinalization({
+      getChannel: () => 'voice',
+      getGeneration: () => generation.value,
+      getTreatmentPending: () => treatmentPending.value,
+    });
+
+    expect(controller.allowsTreatmentAutoFetchInBackground.value).toBe(false);
+    generation.value.readySections.push('recommendation_plan');
+    expect(controller.allowsTreatmentAutoFetchInBackground.value).toBe(true);
+
+    generation.value = { status: 'complete', readySections: [...generation.value.readySections] };
+    expect(controller.displayedGeneration.value).toMatchObject({
+      status: 'streaming',
+      message: '病历已可编辑，正在补全诊疗方案',
+    });
+    treatmentPending.value = false;
+    expect(controller.displayedGeneration.value?.status).toBe('complete');
   });
 });
