@@ -1,4 +1,9 @@
 export type UpdateEnvironment = 'production' | 'testing';
+export type UpdateBuildFlavor = 'standard' | 'win7';
+export type UpdateChannel = UpdateEnvironment | 'win7-production' | 'win7-testing';
+
+const ACTIVE_BUILD_FLAVOR: UpdateBuildFlavor =
+  import.meta.env.VITE_PCIE_BUILD_FLAVOR === 'win7' ? 'win7' : 'standard';
 
 export interface UpdateConfig {
   environment: UpdateEnvironment;
@@ -7,16 +12,28 @@ export interface UpdateConfig {
 }
 
 export const DEFAULT_UPDATE_CONFIG: UpdateConfig = {
-  environment: (import.meta.env.VITE_UPDATE_ENVIRONMENT as UpdateEnvironment) || 'production',
-  productionUrl: import.meta.env.VITE_INTRANET_UPDATE_PRODUCTION_URL || '',
-  testingUrl: import.meta.env.VITE_INTRANET_UPDATE_TESTING_URL || '',
+  environment: normalizeUpdateEnvironment(import.meta.env.VITE_UPDATE_ENVIRONMENT),
+  productionUrl: ACTIVE_BUILD_FLAVOR === 'win7'
+    ? import.meta.env.VITE_WIN7_UPDATE_PRODUCTION_URL || ''
+    : import.meta.env.VITE_INTRANET_UPDATE_PRODUCTION_URL || '',
+  testingUrl: ACTIVE_BUILD_FLAVOR === 'win7'
+    ? import.meta.env.VITE_WIN7_UPDATE_TESTING_URL || ''
+    : import.meta.env.VITE_INTRANET_UPDATE_TESTING_URL || '',
 };
 
-const STORAGE_KEYS = {
+const STANDARD_STORAGE_KEYS = {
   environment: 'UPDATE_ENVIRONMENT',
   productionUrl: 'INTRANET_UPDATE_PRODUCTION_URL',
   testingUrl: 'INTRANET_UPDATE_TESTING_URL',
 } as const;
+
+const WIN7_STORAGE_KEYS = {
+  environment: 'WIN7_UPDATE_ENVIRONMENT',
+  productionUrl: 'WIN7_INTRANET_UPDATE_PRODUCTION_URL',
+  testingUrl: 'WIN7_INTRANET_UPDATE_TESTING_URL',
+} as const;
+
+const STORAGE_KEYS = ACTIVE_BUILD_FLAVOR === 'win7' ? WIN7_STORAGE_KEYS : STANDARD_STORAGE_KEYS;
 
 const REGIONAL_STORAGE_KEYS = {
   baseUrl: 'REGIONAL_BASE_URL',
@@ -40,7 +57,25 @@ function readStorageValue(key: string): string | null {
   return text ? text : null;
 }
 
-function buildRegionalReleaseEndpoint(channel: UpdateEnvironment): string {
+export function normalizeUpdateEnvironment(value?: string | null): UpdateEnvironment {
+  return value === 'testing' ? 'testing' : 'production';
+}
+
+export function resolveUpdateChannel(
+  environment: UpdateEnvironment,
+  flavor: UpdateBuildFlavor = ACTIVE_BUILD_FLAVOR,
+): UpdateChannel {
+  if (flavor === 'win7') {
+    return environment === 'testing' ? 'win7-testing' : 'win7-production';
+  }
+  return environment;
+}
+
+export function isWin7UpdateBuild(): boolean {
+  return ACTIVE_BUILD_FLAVOR === 'win7';
+}
+
+function buildRegionalReleaseEndpoint(channel: UpdateChannel): string {
   const baseUrl = normalizeUrl(readStorageValue(REGIONAL_STORAGE_KEYS.baseUrl) || DEFAULT_REGIONAL_BASE_URL);
   if (!baseUrl) {
     return '';
@@ -50,9 +85,9 @@ function buildRegionalReleaseEndpoint(channel: UpdateEnvironment): string {
 
 export function getUpdateConfig(): UpdateConfig {
   const storedEnvironment = localStorage.getItem(STORAGE_KEYS.environment);
-  const environment: UpdateEnvironment = storedEnvironment === 'testing' ? 'testing' : DEFAULT_UPDATE_CONFIG.environment;
-  const regionalProductionUrl = buildRegionalReleaseEndpoint('production');
-  const regionalTestingUrl = buildRegionalReleaseEndpoint('testing');
+  const environment = normalizeUpdateEnvironment(storedEnvironment || DEFAULT_UPDATE_CONFIG.environment);
+  const regionalProductionUrl = buildRegionalReleaseEndpoint(resolveUpdateChannel('production'));
+  const regionalTestingUrl = buildRegionalReleaseEndpoint(resolveUpdateChannel('testing'));
 
   return {
     environment,
@@ -64,8 +99,8 @@ export function getUpdateConfig(): UpdateConfig {
 export function resetUpdateConfigToRegionalDefaults(): UpdateConfig {
   const config: UpdateConfig = {
     environment: getUpdateConfig().environment,
-    productionUrl: buildRegionalReleaseEndpoint('production'),
-    testingUrl: buildRegionalReleaseEndpoint('testing'),
+    productionUrl: buildRegionalReleaseEndpoint(resolveUpdateChannel('production')),
+    testingUrl: buildRegionalReleaseEndpoint(resolveUpdateChannel('testing')),
   };
   saveUpdateConfig(config);
   return config;
@@ -81,8 +116,8 @@ export function getActiveUpdateEndpoint(config: UpdateConfig = getUpdateConfig()
   return config.environment === 'testing' ? config.testingUrl : config.productionUrl;
 }
 
-export function getActiveUpdateChannel(config: UpdateConfig = getUpdateConfig()): UpdateEnvironment {
-  return config.environment;
+export function getActiveUpdateChannel(config: UpdateConfig = getUpdateConfig()): UpdateChannel {
+  return resolveUpdateChannel(config.environment);
 }
 
 export function getActiveUpdatePolicyEndpoint(config: UpdateConfig = getUpdateConfig()): string {
@@ -96,6 +131,11 @@ export function getActiveUpdatePolicyEndpoint(config: UpdateConfig = getUpdateCo
   return `${endpoint.replace(/\/+$/, '')}/policy.json`;
 }
 
-export function getUpdateEnvironmentLabel(environment: UpdateEnvironment): string {
-  return environment === 'testing' ? '测试内网' : '正式内网';
+export function getUpdateEnvironmentLabel(environment: UpdateEnvironment | UpdateChannel): string {
+  const channel = environment.startsWith('win7-')
+    ? environment as UpdateChannel
+    : resolveUpdateChannel(environment as UpdateEnvironment);
+  if (channel === 'win7-testing') return 'Win7 测试内网';
+  if (channel === 'win7-production') return 'Win7 正式内网';
+  return channel === 'testing' ? '测试内网' : '正式内网';
 }

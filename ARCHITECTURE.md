@@ -1032,8 +1032,12 @@ startAuditUploader() (startup flush + enqueue flush + 30s retry)
 
 客户端版本更新链路仍由 Tauri updater 执行安装与签名校验，settings 功能域下的 `UpdateChecker.vue` 只负责更新源配置、检查按钮、进度与安装动作编排，`ForceUpdateGate.vue` 只在强制更新时承接门禁展示并复用同一检查/安装 UI。若用户未手工配置内网更新源，`updateConfig.ts` 会从当前服务端地址推导出：
 
-- 正式内网：`{REGIONAL_BASE_URL}/v1/client/releases/production/latest.json`
-- 测试内网：`{REGIONAL_BASE_URL}/v1/client/releases/testing/latest.json`
+- 普通正式内网：`{REGIONAL_BASE_URL}/v1/client/releases/production/latest.json`
+- 普通测试内网：`{REGIONAL_BASE_URL}/v1/client/releases/testing/latest.json`
+- Win7 正式内网：`{REGIONAL_BASE_URL}/v1/client/releases/win7-production/latest.json`
+- Win7 测试内网：`{REGIONAL_BASE_URL}/v1/client/releases/win7-testing/latest.json`
+
+`updateConfig.ts` 继续只向设置页暴露“正式/测试”环境选择，但会按构建 flavor 映射到普通或 Win7 通道；所有业务请求、设备注册、SSE 和 WebSocket 也携带映射后的 `X-Update-Channel / updateChannel`，使强更策略与安装包保持同一产品线。普通与 Win7 构建使用不同的本地更新源存储键，禁止因历史设置把 Win7 客户端导向普通 Windows 通道。
 
 `PCIE Server` 后台上传版本后生成 Tauri 兼容 `latest.json` 和公开下载地址；这些公开地址不携带设备令牌，避免 updater 下载阶段无法附带自定义鉴权头。内网部署允许使用 `http://` 更新源，`tauri.conf.json` 已通过 updater 的 `dangerous-insecure-transport-protocol` 开启非安全传输协议，运行时注入的 updater endpoint 同样继承该配置；安装包签名校验仍由 Tauri updater 强制执行。
 
@@ -1041,7 +1045,13 @@ startAuditUploader() (startup flush + enqueue flush + 30s retry)
 
 正式发布前增加独立候选构建层：`scripts/test-release.mjs` 根据当前三处一致的正式版本计算或接收候选版本，只在构建进程内临时改写 `package.json`、`src-tauri/tauri.conf.json` 和 `src-tauri/Cargo.toml`，构建结束后无论成功或失败都恢复原内容；`.github/workflows/test-build.yml` 允许从当前选定 ref 手动生成 macOS / Windows 签名测试包，但只上传 GitHub Actions Artifact，不创建 tag、Release、draft 或更新清单。候选通过后，`scripts/release.mjs` 在干净的 `main` 工作区显式固化同一版本、提交并创建正式 tag，随后 `.github/workflows/release.yml` 才能进入公开发布链路。完整操作见 `docs/release-process.md`。
 
-Windows 7 仅保留独立技术验证构建，不进入正式客户端支持范围。`src-tauri/tauri.win7.conf.json` 通过 Tauri config merge 覆盖独立 identifier、WiX UpgradeCode、WebView 安装模式和 updater 关闭状态，并移除正式 WiX 模板以避免执行历史安装线迁移；`.github/workflows/win7-test-build.yml` 固定 nightly 工具链，以 `x86_64-win7-windows-msvc + build-std` 生成 x64 MSI，并只上传带来源清单的 Actions Artifact。由于 Tier 3 target 不属于 rustup 可下载组件，构建步骤会临时隐藏 `rustup.exe` 绕过 Tauri CLI 的 rustup-only target 预检，并在结束时恢复；实际 Cargo/rustc 仍由固定 nightly、`rust-src` 和 `build-std` 驱动。Win7 flavor 还通过 `scripts/win7-cargo-runner.cmd` 把 Tauri 构建参数转交给 `scripts/win7-cargo-runner.mjs`，仅在该路径将 `tauri-utils 2.9.3` 固定到上游 ctor Win7 兼容修复提交，避免改变正式 Cargo.lock。验证包设置 `webviewInstallMode = skip`，不下载或内嵌运行时，Windows 7 SP1 x64 实机必须先由验证人员单独安装 WebView2 109。该 flavor 继续继承 `med-hermes` 深链以维持 HIS 技术契约，因此不得与正式客户端共机安装；构建成功也不能代替实机的安装、启动、WebView、Bridge 和 SDK handshake 冒烟。完整边界见 `docs/release-process.md`。
+Windows 7 使用同一 `main` 业务代码和独立构建 flavor，不维护长期业务分支，也不进入普通 Windows 正式支持范围。`src-tauri/tauri.win7.conf.json` 通过 Tauri config merge 覆盖独立 identifier、WiX UpgradeCode、WebView 安装模式和 updater 关闭状态，并移除正式 WiX 模板以避免执行历史安装线迁移；`.github/workflows/win7-test-build.yml` 继续只生成 Artifact-only 验证包。验证通过后的 `.github/workflows/win7-release-build.yml` 从同一 config 生成临时 release config，使用独立 Win7 updater 密钥构建签名 MSI，再把供 PCIE Server 上传的 `latest.json`、安装包、签名和来源清单作为 Artifact 输出；它不创建 tag、GitHub Release 或普通 Windows 更新元数据。
+
+Win7 发布通道固定为 `win7-testing / win7-production`，分别拥有独立策略、历史和回滚状态。Tauri updater 在 Win7 x64 与普通 Windows x64 上都会选择 `windows-x86_64` target，因此产品线隔离必须发生在通道层，禁止共用 `production / testing` 的 `latest.json`、签名密钥或强更策略。Win7 版本只在构建进程内临时注入；GitHub 托管 Runner 不探测内网发布服务，触发人必须提供目标通道前置版本供离线 preflight 使用，内网 PCIE Server 再以通道历史最高版本执行最终单调递增门禁，降级只能走回滚入口。构建产物同时记录前置版本、安全责任人与支持截止日期。
+
+历史 Win7 验证包编译时关闭 updater，首个 updater-enabled 引导版本只能通过 Artifact 中的 `direct-install/*.msi` 手工覆盖安装；此后 Tauri 更新元数据必须指向同批签名的 `*.msi.zip`，从引导版本的下一版开始验证应用内更新。原始 MSI 与 updater archive 用途不得互换。
+
+两条 Win7 工作流均固定 dated nightly，以 `x86_64-win7-windows-msvc + build-std` 生成 x64 MSI。由于 Tier 3 target 不属于 rustup 可下载组件，构建步骤会临时隐藏 `rustup.exe` 绕过 Tauri CLI 的 rustup-only target 预检，并在结束时恢复；实际 Cargo/rustc 仍由固定 nightly、`rust-src` 和 `build-std` 驱动。Win7 flavor 还通过 `scripts/win7-cargo-runner.cmd` 把 Tauri 构建参数转交给 `scripts/win7-cargo-runner.mjs`，仅在该路径将 `tauri-utils 2.9.3` 固定到上游 ctor Win7 兼容修复提交，避免改变正式 Cargo.lock。所有 Win7 包都设置 `webviewInstallMode = skip`，不下载或内嵌运行时，Windows 7 SP1 x64 实机必须先单独安装 WebView2 109。该 flavor 继续继承 `med-hermes` 深链以维持 HIS 技术契约，因此不得与普通正式客户端共机安装；构建成功也不能代替实机的安装、启动、WebView、Bridge、SDK handshake 和 `N -> N+1` updater 冒烟。完整边界见 `docs/release-process.md`。
 
 WebView2 在 Windows 7 上不支持透明默认背景，WRY 会为避免创建失败而忽略透明 alpha，因此 Win7 球态不依赖 WebView 透明合成。`tauri.win7.conf.json` 通过 `win7-legacy` Cargo feature 启用 `src-tauri/src/win7_window_region.rs`：待机球态使用中心椭圆原生 region，环绕菜单展开时使用“中心球 + 四个菜单圆”联合 region，从而裁掉 WebView2 的矩形白底。`app/shell/useWin7WindowRegion.ts` 只根据 `isWorking / transitioning / isHovered` 编排 region 模式；任何主窗口几何变更前必须先恢复 full region，球态稳定后才能重新裁剪，避免旧 region 截断工作面板。正式 Windows/macOS 构建不启用该 feature，原透明窗口路径保持不变。
 

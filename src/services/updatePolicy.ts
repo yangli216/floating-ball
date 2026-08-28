@@ -3,12 +3,12 @@ import {
   getActiveUpdateChannel,
   getActiveUpdatePolicyEndpoint,
   getUpdateEnvironmentLabel,
-  type UpdateEnvironment,
+  type UpdateChannel,
 } from './updateConfig';
 import { fetchWithTimeout } from '@shared/lib/fetchTimeout';
 
 export interface UpdatePolicy {
-  channel: UpdateEnvironment | string;
+  channel: UpdateChannel | string;
   latestVersion?: string | null;
   forceUpdate?: boolean | null;
   minSupportedVersion?: string | null;
@@ -21,7 +21,7 @@ export interface UpdatePolicy {
 export interface ForceUpdateState {
   required: boolean;
   message?: string;
-  channel: UpdateEnvironment;
+  channel: UpdateChannel;
   channelLabel: string;
   currentVersion: string;
   minSupportedVersion?: string | null;

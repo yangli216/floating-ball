@@ -1,5 +1,6 @@
 import fs from 'fs';
 import path from 'path';
+import { fileURLToPath } from 'node:url';
 
 function parseArgs(argv) {
   const args = {};
@@ -40,15 +41,23 @@ function normalizeBaseUrl(baseUrl) {
   return baseUrl.replace(/\/+$/, '');
 }
 
-function findInstaller(artifactsDir) {
+function findUpdaterArtifact(artifactsDir) {
   const entries = fs.readdirSync(artifactsDir, { withFileTypes: true });
   const files = entries.filter((entry) => entry.isFile()).map((entry) => entry.name);
-  const msiInstaller = files.find((file) => file.endsWith('.msi') && !file.endsWith('.msi.sig'));
-  if (msiInstaller) {
-    return msiInstaller;
+  const signedCandidates = files.filter((file) => {
+    const isWindowsUpdater = file.endsWith('.msi.zip') || file.endsWith('.msi');
+    return isWindowsUpdater && files.includes(`${file}.sig`);
+  });
+  const updaterArchive = signedCandidates.find((file) => file.endsWith('.msi.zip'));
+  if (updaterArchive) {
+    return updaterArchive;
+  }
+  const signedMsi = signedCandidates.find((file) => file.endsWith('.msi'));
+  if (signedMsi) {
+    return signedMsi;
   }
 
-  throw new Error(`No Windows MSI installer found in ${artifactsDir}`);
+  throw new Error(`No signed Windows MSI updater artifact found in ${artifactsDir}`);
 }
 
 function copyFile(source, target) {
@@ -61,8 +70,7 @@ function writeJson(filePath, data) {
   fs.writeFileSync(filePath, `${JSON.stringify(data, null, 2)}\n`);
 }
 
-function main() {
-  const args = parseArgs(process.argv.slice(2));
+export function packageWindowsInternalUpdate(args) {
   ensureRequired(args, ['artifacts-dir', 'output-dir', 'base-url', 'version']);
 
   const artifactsDir = path.resolve(args['artifacts-dir']);
@@ -79,7 +87,7 @@ function main() {
     throw new Error(`Artifacts directory does not exist: ${artifactsDir}`);
   }
 
-  const installerName = findInstaller(artifactsDir);
+  const installerName = findUpdaterArtifact(artifactsDir);
   const signatureName = `${installerName}.sig`;
   const installerPath = path.join(artifactsDir, installerName);
   const signaturePath = path.join(artifactsDir, signatureName);
@@ -124,6 +132,10 @@ function main() {
   writeJson(path.join(channelDir, 'release-manifest.json'), manifest);
 
   console.log(`Prepared Windows internal update bundle at ${channelDir}`);
+  return { channelDir, version, platform, installerName, signatureName };
 }
 
-main();
+const isMainModule = process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url);
+if (isMainModule) {
+  packageWindowsInternalUpdate(parseArgs(process.argv.slice(2)));
+}

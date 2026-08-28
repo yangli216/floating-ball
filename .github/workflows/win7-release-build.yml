@@ -1,0 +1,300 @@
+name: Win7 Legacy Release Build
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Win7 发布版本（稳定 X.Y.Z，必须高于源码及目标通道当前版本）'
+        required: true
+        type: string
+      previous_version:
+        description: '目标 Win7 通道当前版本（首次发布填写当前验证基线版本）'
+        required: true
+        type: string
+      channel:
+        description: 'Win7 独立发布通道'
+        required: true
+        default: win7-testing
+        type: choice
+        options:
+          - win7-testing
+          - win7-production
+      publish_base_url:
+        description: 'PCIE Server 根地址；留空使用 WIN7_UPDATE_SERVER_BASE_URL'
+        required: false
+        type: string
+      release_notes:
+        description: '更新说明'
+        required: false
+        type: string
+      security_owner:
+        description: '本次 Win7 兼容线安全责任人/团队'
+        required: true
+        type: string
+      support_until:
+        description: 'Win7 兼容线支持截止日期（YYYY-MM-DD）'
+        required: true
+        type: string
+
+concurrency:
+  group: win7-release-build-${{ inputs.channel }}-${{ inputs.version }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+env:
+  WIN7_TARGET: x86_64-win7-windows-msvc
+  WIN7_RUST_TOOLCHAIN: nightly-2025-08-01
+  WIN7_REQUIRED_WEBVIEW2_MAJOR: '109'
+  PCIE_WIN7_BUILD: '1'
+  VITE_PCIE_BUILD_FLAVOR: win7
+  RELEASE_CHANNEL: ${{ inputs.channel }}
+  CANDIDATE_VERSION: ${{ inputs.version }}
+  PREVIOUS_WIN7_VERSION: ${{ inputs.previous_version }}
+  PUBLISH_BASE_URL: ${{ inputs.publish_base_url || vars.WIN7_UPDATE_SERVER_BASE_URL }}
+  WIN7_TAURI_UPDATER_PUBLIC_KEY: ${{ vars.WIN7_TAURI_UPDATER_PUBLIC_KEY }}
+
+jobs:
+  build-win7-release:
+    runs-on: windows-2022
+    steps:
+      - name: Checkout selected main commit
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Verify source commit belongs to main
+        shell: pwsh
+        run: |
+          git fetch origin main
+          git merge-base --is-ancestor HEAD origin/main
+          if ($LASTEXITCODE -ne 0) {
+            throw 'Win7 releases must use a commit contained in main.'
+          }
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: yarn
+
+      - name: Install pinned Rust nightly with rust-src
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: ${{ env.WIN7_RUST_TOOLCHAIN }}
+          components: rust-src
+
+      - name: Cache Rust build output
+        uses: swatinem/rust-cache@v2.8.2
+        with:
+          workspaces: './src-tauri -> target'
+          key: ${{ env.WIN7_RUST_TOOLCHAIN }}-${{ env.WIN7_TARGET }}-tauri-utils-win7-release
+
+      - name: Install frontend dependencies
+        run: yarn install --frozen-lockfile
+
+      - name: Validate release inputs without accessing the intranet server
+        shell: pwsh
+        env:
+          SECURITY_OWNER: ${{ inputs.security_owner }}
+          SUPPORT_UNTIL: ${{ inputs.support_until }}
+        run: |
+          if ([string]::IsNullOrWhiteSpace($env:PUBLISH_BASE_URL)) {
+            throw 'publish_base_url or WIN7_UPDATE_SERVER_BASE_URL is required.'
+          }
+          if ([string]::IsNullOrWhiteSpace($env:WIN7_TAURI_UPDATER_PUBLIC_KEY)) {
+            throw 'WIN7_TAURI_UPDATER_PUBLIC_KEY repository variable is required.'
+          }
+          if ([string]::IsNullOrWhiteSpace($env:PREVIOUS_WIN7_VERSION)) {
+            throw 'previous_version is required for offline Win7 release preflight.'
+          }
+
+          $arguments = @(
+            'scripts/win7-release-preflight.mjs',
+            '--version', $env:CANDIDATE_VERSION,
+            '--previous-version', $env:PREVIOUS_WIN7_VERSION,
+            '--channel', $env:RELEASE_CHANNEL,
+            '--security-owner', $env:SECURITY_OWNER,
+            '--support-until', $env:SUPPORT_UNTIL
+          )
+          node @arguments
+          if ($LASTEXITCODE -ne 0) {
+            throw 'Win7 release preflight failed.'
+          }
+
+          $updateEnvironment = if ($env:RELEASE_CHANNEL -eq 'win7-testing') { 'testing' } else { 'production' }
+          "VITE_UPDATE_ENVIRONMENT=$updateEnvironment" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+
+      - name: Validate isolated build and release tooling
+        shell: pwsh
+        run: |
+          yarn test:win7-build
+          yarn test:release
+          node scripts/test-release.mjs --version "$env:CANDIDATE_VERSION" --dry-run
+          $targets = rustc --print target-list
+          if ($targets -notcontains $env:WIN7_TARGET) {
+            throw "Pinned Rust toolchain does not expose target $env:WIN7_TARGET"
+          }
+
+      - name: Prepare updater-enabled Win7 release config
+        shell: pwsh
+        run: |
+          node scripts/prepare-win7-release-config.mjs --output src-tauri/tauri.win7.release.generated.conf.json
+
+      - name: Run frontend quality gates for WebView2 109
+        shell: pwsh
+        env:
+          VITE_REGIONAL_BASE_URL: ${{ vars.VITE_REGIONAL_BASE_URL }}
+        run: |
+          yarn type-check
+          yarn test:unit
+          yarn build
+
+      - name: Build signed Win7 legacy updater package
+        shell: pwsh
+        env:
+          RUSTUP_TOOLCHAIN: ${{ env.WIN7_RUST_TOOLCHAIN }}
+          VITE_REGIONAL_BASE_URL: ${{ vars.VITE_REGIONAL_BASE_URL }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.WIN7_TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.WIN7_TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        run: |
+          if ([string]::IsNullOrWhiteSpace($env:TAURI_SIGNING_PRIVATE_KEY)) {
+            throw 'WIN7_TAURI_SIGNING_PRIVATE_KEY secret is required.'
+          }
+          $ErrorActionPreference = 'Stop'
+          $PSNativeCommandUseErrorActionPreference = $true
+          $rustupPath = (Get-Command rustup.exe -ErrorAction Stop).Source
+          $hiddenRustupPath = "$rustupPath.tauri-win7-target-check"
+          Move-Item $rustupPath $hiddenRustupPath
+          try {
+            cargo --version
+            rustc --version
+            node scripts/test-release.mjs --version "$env:CANDIDATE_VERSION" -- --config src-tauri/tauri.win7.release.generated.conf.json --target "$env:WIN7_TARGET"
+          }
+          finally {
+            Move-Item $hiddenRustupPath $rustupPath
+          }
+
+      - name: Package and validate PCIE Server upload bundle
+        shell: pwsh
+        env:
+          RELEASE_NOTES: ${{ inputs.release_notes }}
+        run: |
+          $baseUrl = $env:PUBLISH_BASE_URL.TrimEnd('/')
+          $downloadBaseUrl = "$baseUrl/v1/client/releases/$env:RELEASE_CHANNEL/files/windows-x86_64"
+          $bundlePath = "src-tauri/target/$env:WIN7_TARGET/release/bundle/msi"
+          node scripts/package-windows-internal-update.mjs `
+            --artifacts-dir "$bundlePath" `
+            --output-dir dist/win7-update `
+            --base-url "$downloadBaseUrl" `
+            --version "$env:CANDIDATE_VERSION" `
+            --channel "$env:RELEASE_CHANNEL" `
+            --platform windows-x86_64 `
+            --notes "$env:RELEASE_NOTES"
+
+          $rawInstaller = Get-ChildItem $bundlePath -File -Filter '*.msi' | Select-Object -First 1
+          if (-not $rawInstaller) {
+            throw 'Raw Win7 MSI for first installation is missing.'
+          }
+          New-Item -ItemType Directory -Force dist/win7-update/direct-install | Out-Null
+          Copy-Item $rawInstaller.FullName dist/win7-update/direct-install/
+
+          node scripts/validate-release-assets.mjs `
+            --assets-dir dist/win7-update `
+            --tag "v$env:CANDIDATE_VERSION" `
+            --tauri-config src-tauri/tauri.win7.release.generated.conf.json `
+            --targets windows-x86_64
+
+      - name: Record release provenance and support boundary
+        shell: pwsh
+        env:
+          SECURITY_OWNER: ${{ inputs.security_owner }}
+          SUPPORT_UNTIL: ${{ inputs.support_until }}
+        run: |
+          $releaseConfig = Get-Content src-tauri/tauri.win7.release.generated.conf.json -Raw | ConvertFrom-Json
+          $decodedKey = [Convert]::FromBase64String([string]$releaseConfig.plugins.updater.pubkey)
+          $sha256 = [System.Security.Cryptography.SHA256]::Create()
+          try {
+            $fingerprint = -join ($sha256.ComputeHash($decodedKey) | ForEach-Object { $_.ToString('x2') })
+          }
+          finally {
+            $sha256.Dispose()
+          }
+          $updateArtifact = Get-ChildItem "dist/win7-update/$env:RELEASE_CHANNEL/v$env:CANDIDATE_VERSION" -File -Filter '*.msi.zip' | Select-Object -First 1
+          $directInstaller = Get-ChildItem 'dist/win7-update/direct-install' -File -Filter '*.msi' | Select-Object -First 1
+          if (-not $updateArtifact -or -not $directInstaller) {
+            throw 'Packaged Win7 updater artifact or direct-install MSI is missing.'
+          }
+          $manifest = [ordered]@{
+            version = $env:CANDIDATE_VERSION
+            previousVersion = $env:PREVIOUS_WIN7_VERSION
+            channel = $env:RELEASE_CHANNEL
+            flavor = 'win7-legacy-release'
+            commit = $env:GITHUB_SHA
+            ref = $env:GITHUB_REF
+            sourceOnMain = $true
+            target = $env:WIN7_TARGET
+            rustToolchain = $env:WIN7_RUST_TOOLCHAIN
+            webView2InstallMode = 'external'
+            requiredExternalWebView2Major = $env:WIN7_REQUIRED_WEBVIEW2_MAJOR
+            updaterArtifact = $updateArtifact.Name
+            directInstaller = $directInstaller.Name
+            updaterEnabled = $true
+            readyForAdminUpload = $true
+            published = $false
+            updaterPublicKeySha256 = $fingerprint
+            securityOwner = $env:SECURITY_OWNER
+            supportUntil = $env:SUPPORT_UNTIL
+            realWin7UpgradeSmokeTestRequired = $true
+          }
+          $manifest | ConvertTo-Json | Set-Content dist/win7-update/win7-release-manifest.json -Encoding utf8
+          Copy-Item src-tauri/tauri.win7.release.generated.conf.json dist/win7-update/tauri.win7.release.conf.json
+
+      - name: Upload signed Win7 release bundle
+        uses: actions/upload-artifact@v4
+        with:
+          name: pcie-win7-release-${{ inputs.channel }}-${{ inputs.version }}-${{ github.sha }}
+          path: dist/win7-update/**
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Record manual publication boundary
+        shell: pwsh
+        run: |
+          @"
+          ## Windows 7 legacy signed release bundle
+
+          - Channel: ``$env:RELEASE_CHANNEL``
+          - Version: ``$env:CANDIDATE_VERSION``
+          - Operator-declared previous channel version: ``$env:PREVIOUS_WIN7_VERSION``
+          - Artifact is signed and ready for PCIE Server admin upload, but this workflow did not publish it.
+          - The workflow did not access the intranet release server; PCIE Server performs the final monotonic-version gate during admin upload.
+          - No tag, GitHub Release, draft, or regular ``production/testing`` metadata was created.
+          - External prerequisite: WebView2 ``$env:WIN7_REQUIRED_WEBVIEW2_MAJOR`` remains separately managed.
+          - A real Windows 7 SP1 x64 N -> N+1 updater smoke test is required before ``win7-production`` rollout.
+          "@ | Add-Content $env:GITHUB_STEP_SUMMARY
+
+  verify-win7-release:
+    needs: build-win7-release
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout release validation scripts
+        uses: actions/checkout@v4
+
+      - name: Download signed Win7 release bundle
+        uses: actions/download-artifact@v4
+        with:
+          name: pcie-win7-release-${{ inputs.channel }}-${{ inputs.version }}-${{ github.sha }}
+          path: verified-win7-update
+
+      - name: Verify updater archive with the Win7 public key
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y minisign
+          node scripts/validate-release-assets.mjs \
+            --assets-dir verified-win7-update \
+            --tag "v${{ inputs.version }}" \
+            --tauri-config verified-win7-update/tauri.win7.release.conf.json \
+            --targets windows-x86_64 \
+            --minisign minisign

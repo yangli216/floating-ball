@@ -836,3 +836,17 @@
 - **根因**: 明确医嘱目录解析只把单条原始名称和局部依据交给模型，没有提供主诉、现病史、正式诊断和完整对话；任一合法 `catalogRef` 都会被直接接受，未返回置信度与临床目标。随后共享治疗归一化又漏传 `sourceType / evidenceText`，初始化状态判断不识别仅有 `matchedItem` 的上游结果，导致来源、原话和已解析目录项可能再次丢失或被重算。
 - **解决方案**: 对名称明确项目继续确定性匹配；对“B超、CT、化验”等上位表达，在同一次目录映射中加入本次完整临床上下文，只允许从本次实时目录候选返回 high / medium 置信的标准项目，同时补齐 `goal / goalGroup / goalGroupPurpose / necessity / reason`。补全项保留医生原话、默认不选中，由医生勾选确认；低置信或无唯一候选继续待匹配。共享归一化和初始化完整保留来源、依据、临床目标及已有匹配状态。
 - **后续防护**: 回归必须覆盖“腹部症状 + B超”可在实时候选内补全、“信息不足 + B超”低置信不强配、模型返回目录外 ref 被拒绝、补全项默认未选中、原始对话与 AI 依据可见、`sourceType / evidenceText / matchedItem / goal*` 跨归一化不丢失；不得把目录内补全扩展成目录外项目生成。
+
+### RETRO-110: Windows 首次安装 MSI 与 updater 签名归档混用 [已解决]
+
+- **现象**: 内网更新打包脚本只查找原始 `*.msi` 及其同名 `.sig`，但 Tauri 2 Windows updater 实际通常生成并签名 `*.msi.zip`；脚本可能在真实 CI 中找不到签名，或让 `latest.json` 指向不属于同批 updater 签名的文件。
+- **根因**: 把“用户可双击的首次安装包”和“updater 下载、验签、解压后安装的归档”视为同一种发布产物，仅检查扩展名，没有按“目标文件必须存在同名 `.sig`”选择 updater artifact，也没有做完整公钥验签。
+- **解决方案**: 公共 Windows 内网打包脚本优先选择带同名 `.sig` 的 `*.msi.zip`，只在确有同名签名时兼容原始 MSI；Win7 release Artifact 把原始 MSI 单独放入 `direct-install`，`latest.json` 只指向 updater archive，并由独立 Linux job 使用 minisign 完整验签。
+- **后续防护**: 所有 Windows 发布回归必须同时断言 updater URL 文件名、同名 `.sig`、公钥和同批产物一致；首次安装文件与更新文件分目录、分用途记录，禁止为了让下载页可双击而把 `latest.json` 改指未按 updater 规则签名的原始 MSI。
+
+### RETRO-111: GitHub 托管发布构建错误依赖院内更新服务可达 [已解决]
+
+- **现象**: Win7 签名发布工作流虽然只计划生成 Artifact，却在真正编译前请求院内 PCIE Server 的 `latest.json`；更新服务只有内网地址时，GitHub 托管 Runner 会在版本预检阶段失败，实际构建尚未开始。
+- **根因**: 把“构建候选版本的离线校验”和“内网发布时核对通道真实状态”合并成同一步，默认云端 Runner 可以访问院内服务；同时服务端上传入口没有以完整历史最高版本做最终单调递增门禁。
+- **解决方案**: Win7 工作流改为必填 `previous_version` 并离线比较源码、前置版本和候选版本；内网地址只写入 `latest.json`，不在 CI 中发请求。PCIE Server 上传时按 Win7 通道全部历史快照的最高版本再次校验，同一当前版本允许补传，更低或历史旧版本拒绝，降级只允许显式回滚。
+- **后续防护**: Artifact-only 或人工内网发布工作流不得探测私网地址；CI 验证器必须拒绝 `Invoke-WebRequest / Invoke-RestMethod`。任何依赖操作者输入的版本门禁都必须在最终写入端按权威历史再校验，且先校验后写文件，避免失败上传留下未引用产物。

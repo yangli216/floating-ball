@@ -15,6 +15,7 @@ node_modules
 dist
 dist-ssr
 *.local
+/src-tauri/tauri.win7.release.generated.conf.json
 
 # Environment variables (use .env.example as template)
 .env

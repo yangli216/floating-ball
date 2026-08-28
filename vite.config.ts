@@ -10,6 +10,9 @@ const isWin7LegacyBuild = process.env.PCIE_WIN7_BUILD === "1";
 // https://vite.dev/config/
 export default defineConfig(async () => ({
   plugins: [vue()],
+  define: {
+    'import.meta.env.VITE_PCIE_BUILD_FLAVOR': JSON.stringify(isWin7LegacyBuild ? 'win7' : 'standard'),
+  },
   resolve: {
     alias: {
       "@": fileURLToPath(new URL("./src", import.meta.url)),

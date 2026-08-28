@@ -1,7 +1,7 @@
 <template>
   <div class="update-checker" :class="{ 'is-forced': forced }">
     <div class="header" v-if="!forced">
-      <span class="title">全医慧助（PCIE）版本更新</span>
+      <span class="title">全医慧助（PCIE）{{ isWin7Build ? ' Win7 兼容版' : '' }}版本更新</span>
       <span class="current-version">v{{ currentVersion }}</span>
     </div>
     
@@ -17,21 +17,21 @@
         <div class="form-group">
           <label for="update-environment">当前环境</label>
           <select id="update-environment" v-model="updateEnvironment" class="form-select">
-            <option value="production">正式内网</option>
-            <option value="testing">测试内网</option>
+            <option value="production">{{ getUpdateEnvironmentLabel('production') }}</option>
+            <option value="testing">{{ getUpdateEnvironmentLabel('testing') }}</option>
           </select>
         </div>
 
         <div class="form-group">
-          <label for="production-url">正式内网地址</label>
+          <label for="production-url">{{ getUpdateEnvironmentLabel('production') }}地址</label>
           <input id="production-url" v-model="productionUrl" type="text" class="form-input"
-            placeholder="http://intra.example.com/v1/client/releases/production/latest.json" />
+            :placeholder="`http://intra.example.com/v1/client/releases/${resolveUpdateChannel('production')}/latest.json`" />
         </div>
 
         <div class="form-group">
-          <label for="testing-url">测试内网地址</label>
+          <label for="testing-url">{{ getUpdateEnvironmentLabel('testing') }}地址</label>
           <input id="testing-url" v-model="testingUrl" type="text" class="form-input"
-            placeholder="http://intra-test.example.com/v1/client/releases/testing/latest.json" />
+            :placeholder="`http://intra-test.example.com/v1/client/releases/${resolveUpdateChannel('testing')}/latest.json`" />
         </div>
 
         <div class="config-footer">
@@ -94,7 +94,9 @@ import {
   getActiveUpdateEndpoint,
   getUpdateConfig,
   getUpdateEnvironmentLabel,
+  isWin7UpdateBuild,
   resetUpdateConfigToRegionalDefaults,
+  resolveUpdateChannel,
   saveUpdateConfig,
   type UpdateEnvironment,
 } from '@services/updateConfig';
@@ -132,6 +134,7 @@ const updateEnvironment = ref<UpdateEnvironment>('production');
 const productionUrl = ref('');
 const testingUrl = ref('');
 const showAdvancedConfig = ref(false);
+const isWin7Build = isWin7UpdateBuild();
 const showToast = inject('showToast', null) as ((msg: string, type: 'success' | 'error' | 'info') => void) | null;
 const props = defineProps<{
   forced?: boolean;

@@ -10,6 +10,7 @@ test('accepts the repository Win7 validation build configuration', () => {
   const result = validateWin7Configuration(readWin7Configuration(rootDir));
   assert.equal(result.target, 'x86_64-win7-windows-msvc');
   assert.equal(result.webView2, '109');
+  assert.deepEqual(result.releaseChannels, ['win7-testing', 'win7-production']);
 });
 
 test('rejects reuse of the formal Windows installer identity', () => {
@@ -29,4 +30,16 @@ test('rejects a formal release action in the Win7 workflow', () => {
   const configuration = readWin7Configuration(rootDir);
   configuration.workflow += '\nuses: tauri-apps/tauri-action@v0\n';
   assert.throws(() => validateWin7Configuration(configuration), /formal-release marker/);
+});
+
+test('rejects a Win7 release workflow without its dedicated production channel', () => {
+  const configuration = readWin7Configuration(rootDir);
+  configuration.releaseWorkflow = configuration.releaseWorkflow.replaceAll('win7-production', 'production');
+  assert.throws(() => validateWin7Configuration(configuration), /win7-production/);
+});
+
+test('rejects a Win7 release workflow that probes the intranet server', () => {
+  const configuration = readWin7Configuration(rootDir);
+  configuration.releaseWorkflow += '\nInvoke-WebRequest http://intranet/latest.json\n';
+  assert.throws(() => validateWin7Configuration(configuration), /Invoke-WebRequest/);
 });

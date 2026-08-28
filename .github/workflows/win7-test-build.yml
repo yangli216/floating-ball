@@ -19,6 +19,9 @@ env:
   WIN7_TARGET: x86_64-win7-windows-msvc
   WIN7_RUST_TOOLCHAIN: nightly-2025-08-01
   WIN7_REQUIRED_WEBVIEW2_MAJOR: '109'
+  PCIE_WIN7_BUILD: '1'
+  VITE_PCIE_BUILD_FLAVOR: win7
+  VITE_UPDATE_ENVIRONMENT: testing
 
 jobs:
   build-win7-legacy:
@@ -64,7 +67,6 @@ jobs:
       - name: Run frontend quality gates for WebView2 109
         shell: pwsh
         env:
-          PCIE_WIN7_BUILD: '1'
           VITE_REGIONAL_BASE_URL: ${{ vars.VITE_REGIONAL_BASE_URL }}
         run: |
           yarn type-check
@@ -75,7 +77,6 @@ jobs:
         shell: pwsh
         env:
           CANDIDATE_VERSION: ${{ inputs.version }}
-          PCIE_WIN7_BUILD: '1'
           RUSTUP_TOOLCHAIN: ${{ env.WIN7_RUST_TOOLCHAIN }}
           VITE_REGIONAL_BASE_URL: ${{ vars.VITE_REGIONAL_BASE_URL }}
         run: |
@@ -116,6 +117,7 @@ jobs:
           $manifest = [ordered]@{
             version = $env:CANDIDATE_VERSION
             flavor = 'win7-legacy-validation'
+            updateChannel = 'win7-testing'
             commit = $env:GITHUB_SHA
             ref = $env:GITHUB_REF
             target = $env:WIN7_TARGET

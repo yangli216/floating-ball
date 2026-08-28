@@ -30,6 +30,8 @@ export function validateWin7Configuration({
   win7RegionController,
   viteConfig,
   workflow,
+  releaseWorkflow,
+  releaseConfigBuilder,
 }) {
   assert(win7Config.productName === 'PCIE-Win7-Legacy', 'Win7 productName must identify the legacy build');
   assert(
@@ -77,6 +79,10 @@ export function validateWin7Configuration({
   assert(workflow.includes('workflow_dispatch:'), 'Win7 workflow must be manual-only');
   assert(workflow.includes(WIN7_TARGET), `Win7 workflow must build ${WIN7_TARGET}`);
   assert(workflow.includes("WIN7_REQUIRED_WEBVIEW2_MAJOR: '109'"), 'Win7 workflow must record external WebView2 109');
+  assert(
+    workflow.includes('VITE_PCIE_BUILD_FLAVOR: win7') && workflow.includes('VITE_UPDATE_ENVIRONMENT: testing'),
+    'Win7 validation builds must identify themselves with the isolated testing channel',
+  );
   assert(/WIN7_RUST_TOOLCHAIN:\s*nightly-\d{4}-\d{2}-\d{2}/.test(workflow), 'Win7 workflow must pin a dated nightly toolchain');
   assert(
     workflow.includes('hiddenRustupPath') && workflow.includes('finally {'),
@@ -98,11 +104,50 @@ export function validateWin7Configuration({
     assert(!workflow.includes(marker), `Win7 workflow must not contain formal-release marker: ${marker}`);
   }
 
+  const requiredReleaseMarkers = [
+    'workflow_dispatch:',
+    'win7-testing',
+    'win7-production',
+    WIN7_TARGET,
+    'WIN7_TAURI_SIGNING_PRIVATE_KEY',
+    'WIN7_TAURI_SIGNING_PRIVATE_KEY_PASSWORD',
+    'WIN7_TAURI_UPDATER_PUBLIC_KEY',
+    'prepare-win7-release-config.mjs',
+    'package-windows-internal-update.mjs',
+    'validate-release-assets.mjs',
+    'git merge-base --is-ancestor HEAD origin/main',
+    'actions/upload-artifact@',
+    'actions/download-artifact@',
+    '--minisign minisign',
+    'previous_version',
+    'PREVIOUS_WIN7_VERSION',
+    'security_owner',
+    'support_until',
+  ];
+  for (const marker of requiredReleaseMarkers) {
+    assert(releaseWorkflow.includes(marker), `Win7 release workflow is missing isolation marker: ${marker}`);
+  }
+  for (const marker of [
+    'tauri-apps/tauri-action',
+    'secrets.TAURI_SIGNING_PRIVATE_KEY',
+    'gh release',
+    'Invoke-WebRequest',
+    'Invoke-RestMethod',
+  ]) {
+    assert(!releaseWorkflow.includes(marker), `Win7 release workflow must not reuse regular release marker: ${marker}`);
+  }
+  assert(
+    releaseConfigBuilder.includes('must not reuse the regular client updater key') &&
+      releaseConfigBuilder.includes('createUpdaterArtifacts = true'),
+    'Win7 release config builder must enable updater artifacts only after enforcing a separate key',
+  );
+
   return {
     identifier: win7Config.identifier,
     target: WIN7_TARGET,
     webView2: WIN7_REQUIRED_WEBVIEW_MAJOR,
     upgradeCode: win7UpgradeCode,
+    releaseChannels: ['win7-testing', 'win7-production'],
   };
 }
 
@@ -120,6 +165,8 @@ export function readWin7Configuration(rootDir) {
     win7RegionController: readText('src/app/shell/useWin7WindowRegion.ts'),
     viteConfig: readText('vite.config.ts'),
     workflow: readText('.github/workflows/win7-test-build.yml'),
+    releaseWorkflow: readText('.github/workflows/win7-release-build.yml'),
+    releaseConfigBuilder: readText('scripts/prepare-win7-release-config.mjs'),
   };
 }
 
