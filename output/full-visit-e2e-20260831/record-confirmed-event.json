@@ -1,0 +1,59 @@
+{
+  "state": "ready",
+  "event": {
+    "type": "record-confirmed",
+    "consultationId": "SIM-PHIS-VIS-20260831-003",
+    "requestId": "record-confirmed-1788167002785",
+    "terminal": false,
+    "payload": {
+      "resultType": "record-confirmed",
+      "referenceType": "batch",
+      "referenceStatus": "pending",
+      "requestId": "record-confirmed-1788167002785",
+      "writebackScope": {
+        "recordFields": [
+          "chiefComplaint",
+          "historyOfPresentIllness",
+          "pastMedicalHistory",
+          "personalHistory",
+          "familyHistory",
+          "physicalExam",
+          "precautions"
+        ],
+        "includeDiagnosis": true,
+        "orderTypes": ["medicine"]
+      },
+      "outpatientRecord": {
+        "chiefComplaint": "咳嗽咳痰加重伴活动后气促1周",
+        "historyOfPresentIllness": "患者1周前受凉后出现咳嗽、咳痰加重，痰量较平时增多，初为白黏痰，近2日转为黄痰。伴有活动后气促较前明显。无高热（最高体温37.8℃），无胸痛及咯血。无双下肢水肿，无夜间阵发性呼吸困难。",
+        "pastMedicalHistory": "平素体健；否认肝炎史，否认结核史，否认疟疾史，否认其他传染病史；有高血压病史；否认糖尿病史；否认心脏病史；否认脑血管病史；否认肺部疾病史；否认肾脏疾病史；否认其他重大疾病史；否认手术史；否认外伤史；否认输血史；否认食品、药品过敏史。",
+        "personalHistory": "否认外地久居史，否认疫水疫源接触史，否认牧区、矿山、高氟区、低碘区居住史，否认化学性物质、粉尘、放射性物质、有毒物质接触史，否认吸毒史，否认吸烟史，否认饮酒史，否认药物嗜好史，否认冶游史。",
+        "familyHistory": "否认家族重大遗传病史，否认家族肿瘤病史，否认家族传染病史，否认家族精神病史。",
+        "physicalExam": "T:37.8℃ P:92次/分 R:22次/分 Bp:138/82mmHg。SpO2 94%；双肺呼吸音减弱，可闻及散在哮鸣音，未闻及湿啰音。",
+        "precautions": "多饮水、注意休息；遵医嘱用药，气喘加重、高热或胸痛时及时复诊。"
+      },
+      "diagList": [
+        {
+          "idDiag": "59523",
+          "naDiag": "慢性阻塞性肺病伴有急性加重",
+          "cdIcd10": "J44.100",
+          "fgMain": "1"
+        }
+      ],
+      "orderList": [
+        {
+          "idSrv": "mock-med-1",
+          "naSrv": "阿莫西林胶囊",
+          "sdSrv": "11",
+          "doseOnce": "1",
+          "unitDose": "粒",
+          "idFreq": "tid",
+          "idUsge": "po",
+          "amount": 3,
+          "takeDays": 5,
+          "idDeptExec": "sto-001"
+        }
+      ]
+    }
+  }
+}

@@ -346,6 +346,10 @@
       return callInstance('generateInpatientEmr', Array.prototype.slice.call(arguments));
     },
 
+    analyzeOutpatientEmr: function (request) {
+      return callInstance('analyzeOutpatientEmr', [request]);
+    },
+
     receivePatient: function (patientId, optionalInfo) {
       return callInstance('receivePatient', [patientId, optionalInfo]);
     },

@@ -90,6 +90,7 @@ MedHermesLoader.assist(patient, 'suggestedDx');
 MedHermesLoader.startVoice(patient);
 MedHermesLoader.interpretReport({ taskId: 'inspectReport', query: '...' });
 MedHermesLoader.generateInpatientEmr({ admissionId, templateId, templateName, htmlContent });
+MedHermesLoader.analyzeOutpatientEmr({ visitId, templateId, templateName, templateHtml, templateDefinition, targetFieldIds, recordContext, requestId });
 ```
 
 如果 HIS 页面只加载了 `med-hermes-sdk.js`，SDK 也会兜底挂载一个轻量 `window.MedHermesLoader`，避免旧封装直接访问 `MedHermesLoader` 时抛出 `ReferenceError`。直接调用 `MedHermesLoader.startConsultation(...)` 时，门面会先懒加载初始化 SDK，再转发到内部 `MedHermes` 实例。
@@ -346,6 +347,28 @@ await mh.startConsultation({
 
 启动语音问诊。`patient` 可选，不传则沿用桌面端当前上下文。
 
+若 HIS 已在医生站中选中门急诊动态模板，可在患者对象中附加严格的 `outpatientEmr` 模板规格；此模式必须同时传 `idVis`。医生先完成语音问诊、诊断和治疗选择，再进入模板字段确认，最终只产生一条合并 `record-confirmed`：
+
+```js
+await mh.startVoice({
+  idPi: 'P001',
+  idVis: 'VIS-20260831-001',
+  naPi: '张三',
+  sdSexText: '男性',
+  ageText: '45岁',
+  outpatientEmr: {
+    templateId: 'OPD-TPL-001',
+    templateName: '门诊通用病历',
+    templateHtml: currentEditor.getRenderedHtml(),
+    templateDefinition: currentEditor.getTemplateDefinitionJson(),
+    targetFieldIds: currentEditor.getVisibleWritableFieldIds(),
+    requestId: 'outpatient-voice-550e8400-e29b-41d4-a716-446655440000'
+  }
+});
+```
+
+`outpatientEmr` 只接受上例六个字段；身份和目标字段 ID 不修剪、不去重，模板两份原文不会进入联调日志。独立 `analyzeOutpatientEmr()` 仍只处理模板字段，不合并诊断和医嘱。
+
 #### `interpretReport(request): Promise`
 
 触发检验/检查报告解读，结果以独立窗口展示，不进入问诊事件流。
@@ -438,6 +461,53 @@ await mh.sendFeedback(record.requestId, 'success', 'HIS 已成功回填住院病
 - `hisContext`: 可选，HIS 直接传入的 AI 上下文包；存在时桌面端优先使用，字段规范见 `docs/his-inpatient-emr-ai-context-integration.md`
 - `requestId`: 可选；传入后也会作为一键回写的 `requestId`
 - `patient`: 可选患者兜底信息
+
+#### `analyzeOutpatientEmr(request): Promise`
+
+按 HIS 当前选中的门急诊病历模板执行一次结构化分析。HIS 必须显式提供 `requestId`，SDK 不生成、不修剪请求身份，并等待医生点击“返回参数”后产生的完整 `record-confirmed`；只有 payload 自身的 `emrType + visitId + requestId + templateMetadata.templateId` 全部匹配时 Promise 才会 resolve。
+
+```js
+const record = await mh.analyzeOutpatientEmr({
+  visitId: 'VIS-20260824-001',
+  templateId: 'OPD-TPL-001',
+  templateName: '门诊通用病历',
+  // 同一模板的渲染实例与结构定义必须成对传入
+  templateHtml: '<section data-id="article-personal" data-article="个人史" data-name="个人史"><div data-id="personalHistoryText" data-type="text" data-name="个人史内容" data-readonly="false">否认吸烟史。</div></section>',
+  templateDefinition: '[{"ID":"article-personal","NAME":"个人史","ARTICLE":"个人史","eles":[{"ID":"personalHistoryText","NAME":"个人史内容","TYPE":"text","READONLY":false,"VALUE":"","TEXT":"否认吸烟史。","RECORD_FIELD":"personalHistory"}]}]',
+  targetFieldIds: ['personalHistoryText'],
+  requestId: 'outpatient-emr-550e8400-e29b-41d4-a716-446655440000',
+  recordContext: {
+    recordText: '主诉：咳嗽3天。',
+    sections: {
+      personalHistory: '既往吸烟20年，已戒烟2年。'
+    }
+  },
+  patient: {
+    idPi: 'P001',
+    name: '张三',
+    sdSexText: '男性',
+    ageText: '45岁'
+  }
+});
+
+// fieldValues 按模板 data-id 返回显示文本；dictionarySelections 给出字典 VALUE/TEXT 命中项
+await writeBackToHis({
+  templateMetadata: record.templateMetadata,
+  fieldValues: record.fieldValues,
+  dictionarySelections: record.dictionarySelections,
+  outpatientRecord: record.outpatientRecord,
+  writebackScope: record.writebackScope
+});
+await mh.sendFeedback(record.requestId, 'success', 'HIS 已成功回填门诊病历模板');
+```
+
+`recordContext` 必须只含严格 JSON 值；`undefined`、非有限数值、日期对象、函数、循环引用及其他非 JSON 对象直接拒绝，不经 JSON 序列化静默删键或转型。
+
+门诊 `record-confirmed/cancelled` 业务订阅只接收自身身份及固定回参结构完整的 payload；不完整事件会报告协议错误，不会先交给订阅回调再由 Promise 拒绝。
+
+`visitId / templateId / templateName / templateHtml / templateDefinition / targetFieldIds / recordContext / requestId` 必填，`patient` 可选；请求及 `patient` 只接受文档化字段。`templateHtml` 是模板自带渲染器输出的当前实例，`templateDefinition` 是同一模板的顶层章节 JSON 定义，二者必须同时提供，旧 `htmlContent / templateSource / sourceFormat` 不再接受。SDK 不按文件名判断，也不把二者当作可选格式。解析器按章节 `ID + ARTICLE` 和字段 `ID` 严格配对；字段所属章节由最近的 `data-article` 祖先确定，所有非 `TYPE=import` 字段的类型、名称、只读状态、所属章节和当前显示值必须一致，渲染章节名与定义章节名可不同并分别保留。字典只读取定义中的 `BINDINGDATA[].VALUE/TEXT`，HTML 字典属性不再作为输入；`VALUE/TEXT` 归一化后同时为空的首项仅作为“请选择”占位排除，其余字典项仍严格禁止首尾空白。`targetFieldIds` 必须由 HIS 渲染器执行联动规则后生成，且至少包含一个当前实际显示、可写并需要 AI 分析的字段；全医慧助不执行模板脚本或扩充范围。模板当前字典选择不会成为本次结果；模型必须逐个返回生效字典字段，漏 key 时本次分析失败，显式空字符串或无法匹配时留空让医生选择。相同 `requestId` 只有在 `visitId / templateId / templateName / 原始 templateHtml / 原始 templateDefinition / targetFieldIds 集合 / patient / recordContext` 全部相同时才复用同一 Promise；任一输入变化都以 `REQUEST_ID_CONFLICT` 拒绝。模板对 hash 计算方式和完整字段约束见项目 `api.md` 6.3C。确认/取消 payload 必须自身身份和固定回参结构完整，SDK 不从事件外层补齐。
+
+同一模板的 HTML/定义原文和 `recordContext` 只通过本地 HTTP body 发送。离线兜底仅使用无参数 `med-hermes://launch` 拉起桌面端，不会把临床内容写入协议 URL。
 
 #### `stop(): Promise`
 

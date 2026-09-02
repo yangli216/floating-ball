@@ -1,0 +1,690 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Mock HIS - 智能医生工作站</title>
+    <style>
+        :root {
+            --primary-color: #1890ff;
+            --success-color: #52c41a;
+            --warning-color: #faad14;
+            --danger-color: #f5222d;
+            --bg-color: #f0f2f5;
+            --card-bg: #ffffff;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+            margin: 0;
+            padding: 20px;
+            background-color: var(--bg-color);
+            color: #333;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+
+        /* Views */
+        .view-section {
+            display: none;
+            opacity: 0;
+            transition: opacity 0.3s ease;
+        }
+
+        .view-section.active {
+            display: block;
+            opacity: 1;
+        }
+
+        /* Waiting Room */
+        .patient-list {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+            gap: 20px;
+            margin-top: 20px;
+        }
+
+        .patient-card {
+            background: var(--card-bg);
+            border-radius: 8px;
+            padding: 20px;
+            box-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
+            cursor: pointer;
+            transition: all 0.2s;
+            border-left: 4px solid transparent;
+        }
+
+        .patient-card:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+        }
+
+        .patient-card.priority-high {
+            border-left-color: var(--danger-color);
+        }
+
+        .patient-card.priority-normal {
+            border-left-color: var(--success-color);
+        }
+
+        .card-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 15px;
+        }
+
+        .card-name {
+            font-size: 18px;
+            font-weight: 600;
+        }
+
+        .card-tag {
+            background: #e6f7ff;
+            color: #1890ff;
+            padding: 2px 8px;
+            border-radius: 4px;
+            font-size: 12px;
+        }
+
+        .card-info {
+            color: #666;
+            font-size: 14px;
+            line-height: 1.6;
+        }
+
+        /* Workstation */
+        .workstation-layout {
+            display: grid;
+            grid-template-columns: 280px 1fr;
+            gap: 20px;
+            height: calc(100vh - 40px);
+        }
+
+        .sidebar {
+            background: var(--card-bg);
+            border-radius: 8px;
+            padding: 20px;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .main-content {
+            background: var(--card-bg);
+            border-radius: 8px;
+            padding: 20px;
+            display: flex;
+            flex-direction: column;
+            overflow-y: auto;
+        }
+
+        .patient-banner {
+            text-align: center;
+            padding-bottom: 20px;
+            border-bottom: 1px solid #eee;
+            margin-bottom: 20px;
+        }
+
+        .banner-avatar {
+            width: 80px;
+            height: 80px;
+            background: #e6f7ff;
+            border-radius: 50%;
+            margin: 0 auto 10px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 32px;
+        }
+
+        .action-list {
+            display: flex;
+            flex-direction: column;
+            gap: 15px;
+            margin-top: auto;
+        }
+
+        .action-btn {
+            padding: 12px;
+            border: none;
+            border-radius: 6px;
+            font-size: 14px;
+            font-weight: 500;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+            transition: all 0.2s;
+        }
+
+        .btn-primary {
+            background: var(--primary-color);
+            color: white;
+        }
+
+        .btn-primary:hover {
+            background: #40a9ff;
+        }
+
+        .btn-purple {
+            background: #722ed1;
+            color: white;
+        }
+
+        .btn-purple:hover {
+            background: #9254de;
+        }
+
+        .btn-danger {
+            background: #fff1f0;
+            color: var(--danger-color);
+            border: 1px solid #ffa39e;
+        }
+
+        .btn-danger:hover {
+            background: var(--danger-color);
+            color: white;
+        }
+
+        .form-section {
+            margin-bottom: 25px;
+        }
+
+        .form-title {
+            font-size: 16px;
+            font-weight: 600;
+            margin-bottom: 15px;
+            padding-left: 10px;
+            border-left: 4px solid var(--primary-color);
+        }
+
+        .info-grid {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 20px;
+        }
+
+        .form-group {
+            margin-bottom: 15px;
+        }
+
+        .form-group label {
+            display: block;
+            color: #666;
+            font-size: 12px;
+            margin-bottom: 5px;
+        }
+
+        .form-group input,
+        .form-group textarea {
+            width: 100%;
+            padding: 8px;
+            border: 1px solid #d9d9d9;
+            border-radius: 4px;
+            box-sizing: border-box;
+            font-size: 14px;
+        }
+
+        .form-group textarea {
+            resize: vertical;
+        }
+
+        .status-bar {
+            background: #f6ffed;
+            border: 1px solid #b7eb8f;
+            color: #52c41a;
+            padding: 10px;
+            border-radius: 4px;
+            margin-bottom: 20px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+    </style>
+</head>
+
+<body>
+
+    <!-- View 1: Waiting Room -->
+    <div id="view-waiting" class="view-section active container">
+        <h1>待诊患者列表 <span style="font-size: 14px; font-weight: normal; color: #666; margin-left:10px;">点击卡片开始接诊</span>
+        </h1>
+
+        <div class="patient-list" id="patientList">
+            <!-- Generated by JS -->
+        </div>
+    </div>
+
+    <!-- View 2: Workstation -->
+    <div id="view-workstation" class="view-section" style="height: 100vh; padding: 0; box-sizing: border-box;">
+        <div class="workstation-layout">
+            <!-- Sidebar: Patient Summary -->
+            <div class="sidebar">
+                <div class="patient-banner">
+                    <div class="banner-avatar">👤</div>
+                    <h2 id="ws-name">张三</h2>
+                    <div style="color: #666; font-size: 14px;">
+                        <span id="ws-gender">男</span> · <span id="ws-age">35岁</span>
+                    </div>
+                    <div style="margin-top: 5px; font-size: 12px; color: #999;" id="ws-id">ID: 123456</div>
+                </div>
+
+                <div class="form-group">
+                    <label>过敏史</label>
+                    <div id="ws-allergy" style="font-weight: 500; color: #f5222d;">无</div>
+                </div>
+            </div>
+
+            <!-- Main: EMR Editor -->
+            <div class="main-content">
+                <!-- Header Actions -->
+                <div class="header-bar"
+                    style="display: flex; justify-content: flex-end; gap: 10px; margin-bottom: 20px; border-bottom: 1px solid #eee; padding-bottom: 15px;">
+                    <button class="action-btn btn-primary" onclick="startConsultation()">
+                        <span>💬</span> 症状问诊
+                    </button>
+                    <button class="action-btn btn-purple" onclick="startVoiceConsultation()">
+                        <span>🎤</span> 语音接诊
+                    </button>
+                    <button class="action-btn btn-danger" onclick="finishReception()">
+                        <span>❌</span> 结束接诊
+                    </button>
+                </div>
+
+                <div class="form-section"
+                    style="margin-bottom:20px;padding:16px 18px;background:#f6ffed;border:1px solid #b7eb8f;border-radius:8px;">
+                    <div class="form-title" style="margin-bottom:10px;border-left-color:#52c41a;">本次病历模板</div>
+                    <div style="display:flex;align-items:center;gap:12px;">
+                        <select id="selected-outpatient-template"
+                            style="flex:1;padding:10px;border:1px solid #b7eb8f;border-radius:5px;background:white;font-size:14px;">
+                            <option selected>门急诊病例模板-E2E-OPD-20260831-1058-R2（83字段 / 65自动映射）</option>
+                            <option>门急诊病例模板-缓存分支复测</option>
+                        </select>
+                        <span style="padding:5px 10px;border-radius:12px;background:#d9f7be;color:#237804;font-size:12px;">已选中</span>
+                    </div>
+                    <div style="margin-top:8px;color:#666;font-size:12px;">
+                        模板主键：SIM-E2E-OPD-20260831-1058-R2-TPL001 · 病历ID：SIM-DEMO-MR-20260831-001
+                    </div>
+                </div>
+
+                <div class="status-bar" id="reception-status" style="display:none">
+                    <span>✅</span> <span>接诊服务已激活，正在进行后台风险评估...</span>
+                </div>
+
+                <!-- History View (Default) -->
+                <div id="history-view" class="form-section">
+                    <div class="form-title">历史病历信息 (上次就诊)</div>
+                    <div class="info-grid">
+                        <div class="form-group" style="grid-column: span 2">
+                            <label>上次主诉 (Last Chief Complaint)</label>
+                            <input type="text" id="ws-cc" readonly style="background-color: #f5f5f5; color: #666;">
+                        </div>
+                        <div class="form-group" style="grid-column: span 2">
+                            <label>上次现病史 (Last HPI)</label>
+                            <textarea id="ws-hpi" rows="3" readonly
+                                style="background-color: #f5f5f5; color: #666;"></textarea>
+                        </div>
+                        <div class="form-group" style="grid-column: span 2">
+                            <label>既往史 (PMH)</label>
+                            <textarea id="ws-pmh" rows="2" readonly
+                                style="background-color: #f5f5f5; color: #666;"></textarea>
+                        </div>
+                        <div class="form-group">
+                            <label>上次诊断</label>
+                            <input type="text" id="ws-diagnosis" readonly
+                                style="background-color: #f5f5f5; color: #666;">
+                        </div>
+                        <div class="form-group">
+                            <label>上次就诊科室</label>
+                            <input type="text" id="ws-dept" readonly style="background-color: #f5f5f5; color: #666;">
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Result View (Hidden initially) -->
+                <div id="result-view" class="form-section" style="display: none;">
+                    <div class="form-title" style="color: #1890ff; border-left-color: #1890ff;">本次就诊病历 (Current Visit)
+                    </div>
+                    <div id="result-content"
+                        style="background: #f0f9ff; padding: 20px; border-radius: 8px; border: 1px solid #bae7ff;">
+                        <!-- Content injected by JS -->
+                    </div>
+                </div>
+
+                <div class="form-section" id="log-section">
+                    <div class="form-title">系统日志</div>
+                    <div id="result-log"
+                        style="background: #fafafa; padding: 15px; border-radius: 4px; border: 1px dashed #d9d9d9; font-family: monospace; font-size: 12px; min-height: 40px; color: #999;">
+                        等待问诊...
+                    </div>
+                    <button onclick="checkResult()" style="margin-top:10px; font-size:12px;">刷新状态</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const API_BASE = 'http://127.0.0.1:8081/api';
+
+        // Mock Data
+        const patients = [
+            {
+                id: 'p001',
+                name: '李建国',
+                gender: 'M',
+                age: 68,
+                dept: '呼吸内科',
+                priority: 'normal',
+                cc: '反复咳嗽、咳痰20余年，加重伴气喘1周',
+                hpi: '患者20年前无明显诱因出现咳嗽、咳痰，冬春季好发。1周前受凉后上述症状加重，痰多色白质粘，伴胸闷气喘。',
+                pmh: '既往"高血压"病史10年，血压控制可。否认糖尿病冠心病史。',
+                allergy: '无',
+                diagnosis: '慢性阻塞性肺疾病急性加重'
+            },
+            {
+                id: 'p002',
+                name: '王小敏',
+                gender: 'F',
+                age: 24,
+                dept: '急诊科',
+                priority: 'high',
+                cc: '突发全身皮疹伴瘙痒30分钟',
+                hpi: '30分钟前食用海鲜后出现全身风团样皮疹，剧烈瘙痒，伴呼吸不畅。',
+                pmh: '既往有青霉素过敏史。',
+                allergy: '青霉素, 海鲜',
+                diagnosis: '急性荨麻疹'
+            },
+            {
+                id: 'p003',
+                name: '张梓轩',
+                gender: 'M',
+                age: 6,
+                dept: '儿科',
+                priority: 'normal',
+                cc: '发热1天，体温最高39.5℃',
+                hpi: '患儿昨日夜间起发热，无惊厥，偶有轻咳。精神尚可，食欲欠佳。',
+                pmh: '按期接种疫苗。',
+                allergy: '无',
+                diagnosis: '上呼吸道感染'
+            }
+        ];
+
+        let currentPatient = null;
+        let pollingInterval = null;
+
+        // Init Logic
+        window.onload = () => {
+            renderWaitingRoom();
+        };
+
+        function renderWaitingRoom() {
+            const list = document.getElementById('patientList');
+            list.innerHTML = patients.map((p, idx) => `
+            <div class="patient-card priority-${p.priority}" onclick="receivePatient(${idx})">
+                <div class="card-header">
+                    <span class="card-name">${p.name}</span>
+                    <span class="card-tag">${p.dept}</span>
+                </div>
+                <div class="card-info">
+                    <div>${p.gender === 'M' ? '男' : '女'} · ${p.age}岁</div>
+                    <div style="margin-top: 8px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: #999; font-size: 13px;">
+                        上次主诉: ${p.cc}
+                    </div>
+                </div>
+                <div style="margin-top: 15px; text-align: right;">
+                    <button style="padding: 6px 15px; cursor: pointer; border:1px solid #1890ff; background:white; color:#1890ff; border-radius:4px;">接诊</button>
+                </div>
+            </div>
+        `).join('');
+        }
+
+        function switchView(viewId) {
+            document.querySelectorAll('.view-section').forEach(el => el.classList.remove('active'));
+            document.getElementById(viewId).classList.add('active');
+            if (viewId === 'view-waiting') {
+                document.body.style.padding = '20px'; // Restore padding
+            } else {
+                document.body.style.padding = '20px'; // Keep padding
+            }
+        }
+
+        // --- Reception Logic ---
+
+        async function receivePatient(idx) {
+            const p = patients[idx];
+            currentPatient = p;
+
+            // Reset Views
+            document.getElementById('history-view').style.display = 'block';
+            document.getElementById('result-view').style.display = 'none';
+
+            // 1. Fill Workstation Data
+            document.getElementById('ws-name').textContent = p.name;
+            document.getElementById('ws-gender').textContent = p.gender === 'M' ? '男' : '女';
+            document.getElementById('ws-age').textContent = p.age + '岁';
+            document.getElementById('ws-id').textContent = 'ID: ' + p.id;
+            document.getElementById('ws-allergy').textContent = p.allergy;
+            document.getElementById('ws-allergy').style.color = p.allergy === '无' ? '#666' : '#f5222d';
+
+            document.getElementById('ws-cc').value = p.cc;
+            document.getElementById('ws-hpi').value = p.hpi;
+            document.getElementById('ws-pmh').value = p.pmh;
+            document.getElementById('ws-diagnosis').value = p.diagnosis;
+            document.getElementById('ws-dept').value = p.dept;
+
+            document.getElementById('result-log').textContent = '等待问诊结束...';
+            document.getElementById('reception-status').style.display = 'flex';
+
+            // Reset Views
+            document.getElementById('history-view').style.display = 'block';
+            document.getElementById('result-view').style.display = 'none';
+
+            // 2. Switch View
+            switchView('view-workstation');
+
+            // 3. Auto Call Reception Service (Risk Assessment)
+            try {
+                // Determine if this is a new visit or we are reviewing history.
+                // In this mock, p.cc/p.hpi are labeled "Last Visit" in the UI, so we treat them as history.
+                // We combine them into pastMedicalHistory for the Risk API.
+                const lastVisitInfo = `[上次就诊记录] 主诉：${p.cc}；现病史：${p.hpi}`;
+                const combinedHistory = p.pmh ? `${lastVisitInfo}。既往史：${p.pmh}` : lastVisitInfo;
+
+                const riskPayload = {
+                    patientId: p.id,
+                    patientName: p.name,
+                    gender: p.gender,
+                    age: p.age,
+                    chiefComplaint: '', // Current visit has no CC yet
+                    historyOfPresentIllness: '', // Current visit has no HPI yet
+                    pastMedicalHistory: combinedHistory,
+                    allergyHistory: p.allergy,
+                    diagnosis: p.diagnosis
+                };
+
+                await fetch(`${API_BASE}/patient/risks`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(riskPayload)
+                });
+
+                console.log('接诊服务已自动激活');
+
+            } catch (e) {
+                console.error('激活接诊服务失败', e);
+                alert('连接悬浮球失败，请确认应用已启动');
+            }
+        }
+
+        // --- Function Buttons ---
+
+        async function startConsultation() {
+            if (!currentPatient) return;
+            try {
+                await fetch(`${API_BASE}/consultation/start`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        idPi: currentPatient.id,
+                        naPi: currentPatient.name,
+                        sdSexText: currentPatient.gender === 'M' ? '男性' : '女性',
+                        ageText: currentPatient.age + '岁',
+                        department: currentPatient.dept
+                    })
+                });
+                startPolling();
+            } catch (e) {
+                alert('呼叫失败: ' + e);
+            }
+        }
+
+        async function startVoiceConsultation() {
+            try {
+                await fetch(`${API_BASE}/consultation/start-voice`, { method: 'POST' });
+                startPolling();
+            } catch (e) {
+                alert('呼叫语音失败: ' + e);
+            }
+        }
+
+        async function finishReception() {
+            // Clear state
+            try {
+                await fetch(`${API_BASE}/consultation/stop`, { method: 'POST' });
+            } catch (e) { }
+
+            currentPatient = null;
+            if (pollingInterval) clearInterval(pollingInterval);
+            switchView('view-waiting');
+        }
+
+        // --- Current PCIE record-confirmed contract demo ---
+
+        let latestRecordConfirmedEnvelope = null;
+
+        function escapeHtml(value) {
+            return String(value ?? '')
+                .replaceAll('&', '&amp;')
+                .replaceAll('<', '&lt;')
+                .replaceAll('>', '&gt;')
+                .replaceAll('"', '&quot;')
+                .replaceAll("'", '&#039;');
+        }
+
+        function renderRecordConfirmed(envelope, saved = false) {
+            const event = envelope.event || {};
+            const payload = event.payload || {};
+            const record = payload.outpatientRecord || {};
+            const diagnoses = Array.isArray(payload.diagList) ? payload.diagList : [];
+            const orders = Array.isArray(payload.orderList) ? payload.orderList : [];
+            const scope = payload.writebackScope || {};
+            const diagHtml = diagnoses.length
+                ? diagnoses.map(d => `<span class="card-tag">${escapeHtml(d.naDiag)} · ${escapeHtml(d.cdIcd10)}${d.fgMain === '1' ? ' · 主诊断' : ''}</span>`).join(' ')
+                : '本次不处理';
+            const orderHtml = orders.length
+                ? orders.map(order => `<div><strong>${escapeHtml(order.naSrv)}</strong>　${escapeHtml(order.doseOnce)}${escapeHtml(order.unitDose)} · ${escapeHtml(order.idFreq)} · ${escapeHtml(order.idUsge)} · ${escapeHtml(order.amount)}盒/${escapeHtml(order.takeDays)}天　<span style="color:#8c8c8c;">药房 ${escapeHtml(order.idDeptExec)}</span></div>`).join('')
+                : '本次不处理';
+            const stateColor = saved ? '#52c41a' : '#fa8c16';
+            const stateText = saved ? 'HIS 写入成功' : '待医生确认调入';
+            const html = `
+                <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:16px; padding-bottom:12px; border-bottom:1px solid #d9eefc;">
+                    <div>
+                        <strong style="font-size:16px;">PCIE 一键回写结果</strong>
+                        <div style="margin-top:4px; color:#8c8c8c; font-family:monospace; font-size:12px;">${escapeHtml(event.requestId)}</div>
+                    </div>
+                    <span id="writeback-state" style="padding:5px 12px; border-radius:14px; color:white; background:${stateColor};">${stateText}</span>
+                </div>
+                <div style="display:grid; grid-template-columns: 100px 1fr; gap:10px; font-size:14px; line-height:1.65;">
+                    <div style="font-weight:bold; color:#666;">主诉:</div><div>${escapeHtml(record.chiefComplaint) || '-'}</div>
+                    <div style="font-weight:bold; color:#666;">现病史:</div><div>${escapeHtml(record.historyOfPresentIllness) || '-'}</div>
+                    <div style="font-weight:bold; color:#666;">既往史:</div><div>${escapeHtml(record.pastMedicalHistory) || '-'}</div>
+                    <div style="font-weight:bold; color:#666;">体格检查:</div><div>${escapeHtml(record.physicalExam) || '-'}</div>
+                    <div style="font-weight:bold; color:#666;">主诊断:</div><div>${diagHtml}</div>
+                    <div style="font-weight:bold; color:#666;">药品医嘱:</div><div>${orderHtml}</div>
+                    <div style="font-weight:bold; color:#666;">回写范围:</div>
+                    <div>门诊病历 ${Array.isArray(scope.recordFields) ? scope.recordFields.length : 0} 项 · 诊断 ${scope.includeDiagnosis ? diagnoses.length : 0} 项 · 药品 ${orders.length} 项</div>
+                </div>
+                <div id="writeback-actions" style="margin-top:18px; text-align:right; ${saved ? 'display:none;' : ''}">
+                    <button onclick="confirmWriteback()" style="background:#1890ff; border-color:#1890ff; color:white; padding:9px 22px;">确认写入 HIS</button>
+                </div>
+            `;
+            document.getElementById('result-content').innerHTML = html;
+            document.getElementById('history-view').style.display = 'none';
+            document.getElementById('result-view').style.display = 'block';
+        }
+
+        async function confirmWriteback() {
+            if (!latestRecordConfirmedEnvelope) return;
+            const event = latestRecordConfirmedEnvelope.event || {};
+            const payload = event.payload || {};
+            const diagnoses = Array.isArray(payload.diagList) ? payload.diagList : [];
+            const orders = Array.isArray(payload.orderList) ? payload.orderList : [];
+            const items = [
+                ...diagnoses.map(d => ({ name: d.naDiag, code: d.cdIcd10, type: 'diagnosis' })),
+                ...orders.map(order => ({ name: order.naSrv, idCli: order.idSrv, type: 'medication' }))
+            ];
+            document.getElementById('result-log').innerHTML = `[${new Date().toLocaleTimeString()}] 正在写入 HIS 病历、诊断和处方...`;
+            try {
+                const response = await fetch(`${API_BASE}/consultation/reference-feedback`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        consultationId: event.consultationId,
+                        requestId: event.requestId,
+                        referenceType: 'batch',
+                        action: 'batch',
+                        status: 'success',
+                        message: '模拟 PHIS 已完成门诊病历、主诊断和药品医嘱调入确认',
+                        items
+                    })
+                });
+                if (!response.ok) throw new Error(`HTTP ${response.status}`);
+                renderRecordConfirmed(latestRecordConfirmedEnvelope, true);
+                document.getElementById('result-log').innerHTML = `<span style="color:#389e0d; font-weight:bold;">[${new Date().toLocaleTimeString()}] 回写完成：</span>门诊病历 7 项、主诊断 1 项、药品医嘱 1 项；成功回执已发送给 PCIE。`;
+            } catch (error) {
+                document.getElementById('result-log').innerHTML = `<span style="color:#cf1322;">回写失败：${escapeHtml(error.message)}</span>`;
+            }
+        }
+
+        // The historical mock page used a removed HTTP polling endpoint. For this
+        // isolated demo we persist the event captured from the current WebSocket
+        // contract and let the workstation perform the real feedback POST.
+
+        function startPolling() {
+            if (pollingInterval) clearInterval(pollingInterval);
+            pollingInterval = setInterval(checkResult, 2000);
+        }
+
+        async function checkResult() {
+            try {
+                const response = await fetch('./record-confirmed-event.json?ts=' + Date.now());
+                if (response.ok) {
+                    const envelope = await response.json();
+                    latestRecordConfirmedEnvelope = envelope;
+
+                    // Stop polling
+                    if (pollingInterval) {
+                        clearInterval(pollingInterval);
+                        pollingInterval = null;
+                    }
+
+                    // Log
+                    document.getElementById('result-log').innerHTML = `[${new Date().toLocaleTimeString()}] 已接收 record-confirmed，等待医生确认调入`;
+                    renderRecordConfirmed(envelope, false);
+                }
+            } catch (e) {
+                console.error(e);
+            }
+        }
+
+        // Reset view on receivePatient - REMOVED BROKEN CODE
+
+    </script>
+</body>
+
+</html>

@@ -1,6 +1,6 @@
 # 全医慧助（PCIE）HIS 接入指南 / 接口说明
 
-> 最后更新: 2026-07-01
+> 最后更新: 2026-08-31
 >
 > 本文档面向准备接入全医慧助（PCIE）的 HIS / 医生站 / PHIS 项目。
 > 当前真实运行契约以 `src-tauri/src/http_server.rs` 与当前前端实现为准；旧区域化草案已归档，不能替代本文档。
@@ -8,12 +8,15 @@
 
 ## 1. 文档目标
 
-本文档回答 4 件事：
+本文档回答 5 件事：
 
 1. HIS 应该按什么顺序接入全医慧助（PCIE）
 2. 当前本地 HTTP Bridge 暴露了哪些接口
 3. 各接口的请求字段、响应字段、异常场景是什么
 4. 推荐诊断 / 用药 / 检查 / 独立诊疗方案的最终回写、历史/单项引用与 PHIS 回执闭环应该怎么做
+5. 门急诊病历模板如何以“HTML 渲染实例 + JSON 结构定义”成对接入、生成参数并完成回填回执
+
+门急诊病历模板解析的 HIS 唯一外部入口是 [6.3C `POST /api/outpatient/emr/analyze`](#63c-post-apioutpatientemranalyze)。HIS 不直接调用 PCIE Server 的 `/v1/client/outpatient-emr/*`；历史快照查询、模板登记、设备签名和 LLM 调用均由桌面端内部完成。
 
 ## 2. 当前接入形态
 
@@ -89,6 +92,21 @@
 
 - 住院出入院记录、病程记录等病历模板已有 HTML 结构
 - HIS 希望 `全医慧助（PCIE）` 利用 PHIS 住院登记、诊断、医嘱、体温单等业务数据生成可审核草稿
+
+### 第二点七步: 打通门诊病历模板分析
+
+1. HIS 在当前门急诊病历编辑器调用 `POST /api/outpatient/emr/analyze`，或等待 `sdk.analyzeOutpatientEmr(...)`
+2. 每次传入本次 `visitId`、当前模板 `templateId + templateName + templateHtml + templateDefinition`、渲染器明确选择的 `targetFieldIds`、待分析 `recordContext` 和稳定 `requestId`
+3. 全医慧助（PCIE）净化模板并解析唯一 `data-id` 字段，同时以结构定义 JSON 的 `RECORD_FIELD`、标准字段 ID、确定性别名的优先级形成字段映射快照
+4. 桌面端通过现有签名 AI 通道只分析一次，在独立页面展示按原模板排版填入的字段草稿
+5. 医生直接在模板预览中修改，点击“返回参数”后，SDK Promise 和 `record-confirmed` 事件收到同一份映射快照、`fieldValues`，以及可确定映射的 `outpatientRecord + writebackScope`
+6. HIS 校验 `templateId + templateHash`，按当前编辑器的 `data-id` 回填，并用相同 `requestId` 发送 `reference-feedback`
+7. 成功回执后桌面端收起本次任务；失败回执保留模板预览和医生修改，允许再次返回参数
+
+适用场景：
+
+- HIS 已拥有门诊开放模板或医生收藏模板，并能把当前选中模板随请求传入
+- 需要先验证“一次分析 -> 医生审核 -> 按模板参数回填”闭环，暂不把模板目录、收藏同步或版本发布迁入 PCIE
 
 ### 第三步: 打通 PHIS 回写与引用回执闭环
 
@@ -669,6 +687,7 @@ http://127.0.0.1:8081/api/consultation/start-voice
 2. 如果请求体不为空，`idPi` 是唯一硬要求字段。
 3. 推荐同时传 `idVis`；`naPi / sdSexText / ageText` 为可选兜底展示字段。
 4. 如果 HIS adapter 已正常握手，桌面端会优先按患者主键补齐标准化上下文。
+5. 如果要把本次语音问诊结果写入当前选中的动态门诊模板，请额外传入严格的 `outpatientEmr` 对象；此时 `idVis` 也变为必填。`outpatientEmr` 只接受 `templateId / templateName / templateHtml / templateDefinition / targetFieldIds / requestId` 六个字段，不接受别名或未知字段。
 
 请求示例：
 
@@ -678,6 +697,26 @@ http://127.0.0.1:8081/api/consultation/start-voice
   "idVis": "VIS-20260507-001",
   "chiefComplaint": "咳嗽三天",
   "historyOfPresentIllness": "受凉后出现咳嗽、咳痰"
+}
+```
+
+选择动态门诊模板后启动语音问诊的示例：
+
+```json
+{
+  "idPi": "766842939207974912",
+  "idVis": "VIS-20260507-001",
+  "naPi": "张三",
+  "sdSexText": "男性",
+  "ageText": "45岁",
+  "outpatientEmr": {
+    "templateId": "OPD-TPL-001",
+    "templateName": "门诊通用病历",
+    "templateHtml": "<section data-id=\"article-chief\" data-article=\"主诉\" data-name=\"主诉\"><div data-id=\"chiefComplaint\" data-type=\"text\" data-name=\"主诉\" data-readonly=\"false\"></div></section>",
+    "templateDefinition": "[{\"ID\":\"article-chief\",\"NAME\":\"主诉\",\"ARTICLE\":\"主诉\",\"eles\":[{\"ID\":\"chiefComplaint\",\"NAME\":\"主诉\",\"TYPE\":\"text\",\"READONLY\":false,\"VALUE\":\"\",\"TEXT\":\"\",\"RECORD_FIELD\":\"chiefComplaint\"}]}]",
+    "targetFieldIds": ["chiefComplaint"],
+    "requestId": "outpatient-voice-550e8400-e29b-41d4-a716-446655440000"
+  }
 }
 ```
 
@@ -698,6 +737,30 @@ http://127.0.0.1:8081/api/consultation/start-voice
 4. 未诊毕且未放弃时，同一接诊上下文内再次调用会恢复上一张语音结果页；但桌面端当前接诊切换到其他患者后，上一患者的语音缓存会失效，之后再切回该患者也会重新开始语音问诊。
 5. 桌面端在接诊上下文校验通过并准备打开语音问诊页时，上报一次 `voice_consultation` 功能调用事件；同一就诊再次显式触发语音问诊入口按新调用计数，后续提交语音日志不再补记功能统计。
 6. 桌面端进入语音流程前会先复用接诊阶段已获取的当前就诊信息和本次门诊病历文本；当 `loadClinicMedicalRecord.applyList[].items[].sdApply === "3"` 表示存在已出报告时，再通过 HIS Adapter 调用 PHIS 报告结果服务 `api/phis.aiInpatientEmrContextService/buildOutpatientFollowUpReportResults`。若本次病历文本和至少一份已报告且有实际结果内容的检验/检查结果均存在，则进入统一报告工作台；医生可自行选择仅查看原始报告、触发 AI 解读，或直接升级到报告回诊后续方案。若已执行解读，后续方案优先使用其结构化处置结论；未执行时使用本次病历和结构化原始报告。诊断只作为可选参考，不再阻断取数或报告解读。否则继续原语音录音问诊。
+7. 携带 `outpatientEmr` 时，模板规格在本次语音会话开始前固定。医生在共享结果页点击“一键回写”后，桌面端先把已选病历、诊断和医嘱转换为当前模板分析上下文，再打开动态模板映射确认页；此时尚未向 PHIS 发送 `record-confirmed`。医生完成模板字段核对后才发送唯一一条合并结果，并等待一次回执。
+
+#### 开发联调：传入模拟语音转写
+
+本地 **debug 构建**额外提供 `POST /api/debug/voice-transcript`，仅用于自动化复测“已启动的语音问诊”。正式发布构建固定返回 `404`，HIS 生产对接不得依赖该路由。
+
+调用前必须已经完成 SDK 握手，并通过 `startVoice(...outpatientEmr)` 建立当前动态门诊模板会话。请求只接受当前模板的原始 `requestId` 和非空 `transcript`；Bridge 会核对当前患者、会话状态和 requestId 后，把模拟转写交给与真实录音确认相同的 `handleVoiceStop` 处理链。它不会伪造分析结果、医生选择、模板映射或 PHIS 回执。
+
+```json
+{
+  "requestId": "outpatient-voice-20260831-001",
+  "transcript": "医生：哪里不舒服？患者：咳嗽、咽痛三天……"
+}
+```
+
+联调日志只记录 `requestId` 与转写 UTF-8 字节数，不记录对话正文。该路由用于无麦克风或自动化环境；可操作桌面端时仍应优先在语音胶囊的转写确认框内检查并确认文本。
+
+#### 开发联调：提交已确认的合并结果
+
+本地 **debug 构建**额外提供 `POST /api/debug/complete-consultation`，用于桌面会话因锁屏等原因无法操作时，复测动态门诊模板链路的 WebSocket 终态和 PHIS 回执。正式发布构建固定返回 `404`，HIS 生产对接不得依赖该路由。
+
+该接口只接受当前 `startVoice(...outpatientEmr)` 会话已经准备好的单条合并 `record-confirmed`：`consultationId` 必须等于当前 `idVis`，`requestId` 必须等于已冻结模板的原始 requestId，`emrType` 必须为 `outpatient-emr`，`referenceType/action` 必须为 `batch`，`referenceStatus` 必须为 `pending`，且必须同时包含模板身份、字段参数和回写范围。Bridge 不负责生成或补齐任何病例、诊断、医嘱及映射值；校验通过后仅复用正式 `append_consultation_event` 事件队列，将该结果送入真实 SDK WebSocket 和后续 `/reference-feedback` 闭环。
+
+联调日志只记录请求身份以及模板字段、诊断、医嘱和回写范围的计数，不记录病历正文、字段值或模板源文件。该接口主要用于自动化视觉验收；可操作桌面端时仍应由医生在动态模板确认页点击“一键回写”。
 
 #### 6.3.1 PHIS 门诊复诊报告结果服务
 
@@ -1044,6 +1107,456 @@ HTTP Bridge 受理响应：
 4. 生成内容是医生审核草稿，不替代医生签署。
 5. 轻量质控只影响桌面端是否弹出确认提醒，不改变 `record-confirmed` payload 字段结构；HIS 侧仍按 `fieldValues` 回填当前模板。
 
+### 6.3C `POST /api/outpatient/emr/analyze`
+
+用途：把 HIS 当前门急诊病历模板的渲染实例与结构定义成对交给全医慧助（PCIE），按渲染器给出的字段范围完成一次结构化分析，打开独立预览供医生修改，并按模板稳定字段 ID 返回参数。PCIE 负责“模板对解析 → 参数组织 → 结果事件”逻辑闭环，不负责 PHIS 最终写入动作。
+
+本节是门急诊病例模板解析的**完整外部接入契约**。除本文明确列出的字段外，不接受旧字段、别名或自动兜底。
+
+#### 6.3C.1 接入边界与职责
+
+| 参与方 | 必须负责 | 不负责 |
+| --- | --- | --- |
+| HIS 模板渲染器 | 输出同一模板的当前 HTML 实例、JSON 结构定义和本次可写字段白名单；保留稳定字段 ID | 不需要解析后台历史快照，不直接调用 LLM |
+| HIS / 医生站 | 生成 `visitId`、`templateId`、`requestId`；提交当前病例事实；校验回参身份；按字段 ID 回填；发送最终回执 | 不直接调用 PCIE Server `/v1/*`，不自行判断模板是否需要重新解析 |
+| 全医慧助（PCIE）桌面端 | 校验模板对；查询或登记解析快照；调用项目 LLM；展示草稿；组织医生最终参数；等待回执 | 不执行 PHIS 最终保存，不执行模板自带脚本 |
+| PCIE Server | 按机构保存和复用模板解析快照；提供签名 AI 通道；供管理后台查看模板原文和解析结果 | 不接收 HIS 的直接匿名调用，不保存患者病例上下文或本次字段结果到模板快照 |
+
+独立调用本接口时只处理**模板字段参数**；它与 `startVoice(...outpatientEmr)` 的一体化链路共用模板解析器和预览，但回写范围不同：
+
+- 返回 `fieldValues`、`dictionarySelections`，并可附带标准病历投影 `outpatientRecord`。
+- 固定返回 `writebackScope.includeDiagnosis=false`、`writebackScope.orderTypes=[]`、`orderList=[]`。
+- 诊断和诊疗选择属于普通问诊结果链，不会自动合并进本接口结果。
+- 当前请求和结果都没有 `recordId / idMedrecdoc` 字段。HIS 如需关联当前病历记录，必须在调用侧维护 `requestId -> recordId` 的关联，并在回填事务中使用该关联；不得把 `recordId` 塞入未文档化字段。
+
+一体化语音链路不再次调用本 HTTP 接口：桌面端在共享结果页确认后内部构造同结构的 `OutpatientEmrAnalysisRequest`。最终结果仍以 `emrType="outpatient-emr"` 标识模板回填，但会保留医生在共享结果页已选的 `writebackScope`、`diagList` 和 `orderList`；模板映射只能更新 scope 内已经选择的标准病历字段，不能自动开启诊断或扩大医嘱类型。PHIS 必须在同一事务中处理模板参数和标准回写内容，并以同一 `requestId` 只发送一次 `reference-feedback`。
+
+#### 6.3C.2 完整调用链
+
+```text
+HIS 病历编辑器
+  -> SDK init / handshake，建立 WebSocket 事件通道
+  -> 读取当前模板的一套 HTML + JSON，并由渲染器给出 targetFieldIds
+  -> 组装当前病例 recordContext
+  -> sdk.analyzeOutpatientEmr(request)
+       -> 本地 Bridge 受理请求
+       -> PCIE 计算模板对 hash
+       -> PCIE Server 按 idOrg + templateId + templateHash 查询解析快照
+            -> 命中：只读复用历史 parseResult
+            -> 未命中：严格解析模板对并新增快照
+       -> 每次都按当前病例调用 LLM 生成目标字段
+       -> 医生在 PCIE 模板预览中审核、修改并点击“返回参数”
+  <- SDK Promise resolve，同一结果也通过 record-confirmed 事件送达
+  -> HIS 校验身份、按 data-id 回填当前模板
+  -> HIS 调用 sendFeedback(requestId, success | failed, message)
+  <- PCIE 收到 reference-feedback；成功时结束任务，失败时保留现场
+```
+
+模板解析快照复用与病例字段分析是两个不同层次：历史命中只跳过模板结构解析和快照登记，**不会跳过本次病例的 LLM 字段分析**。
+
+直接 HTTP 地址：
+
+```text
+http://127.0.0.1:8081/api/outpatient/emr/analyze
+```
+
+推荐使用 SDK：`sdk.analyzeOutpatientEmr({ visitId, templateId, templateName, templateHtml, templateDefinition, targetFieldIds, recordContext, patient, requestId })`。SDK 会等待医生确认后的终态结果；直接 HTTP 的 `200` 只表示任务已受理，不是病例分析结果。HIS 必须先完成 [6.1 握手](#61-post-apihandshake)，并保持 [6.4.1 WebSocket 事件通道](#641-get-apiconsultationeventsws) 在线。
+
+HIS 必须显式提供全部必填字段；客户端不生成、不修剪、不改写请求身份，也不接受旧 `htmlContent / templateSource / sourceFormat`。
+
+#### 6.3C.3 请求字段
+
+| 字段 | 类型 | 必填 | 约束与用途 |
+| --- | --- | --- | --- |
+| `visitId` | String | 是 | 当前门急诊就诊唯一标识；无首尾空白；最终原样成为 `consultationId` 和 `visitId` |
+| `templateId` | String | 是 | HIS 当前选中模板的稳定唯一标识；参与后台快照版本身份 |
+| `templateName` | String | 是 | 当前模板显示名称；不参与字段配对，但属于请求幂等快照 |
+| `templateHtml` | String | 是 | 同一模板正式渲染器输出的当前 HTML 实例；非空；UTF-8 原文最多 1 MiB |
+| `templateDefinition` | String | 是 | 与 HTML 属于同一套模板的 JSON 结构定义字符串；非空；UTF-8 原文最多 1 MiB |
+| `targetFieldIds` | String[] | 是 | 渲染器完成性别、年龄及联动后得出的当前可写字段白名单；至少 1 项、无空值、无首尾空白、无重复 |
+| `recordContext` | Object | 是 | 本次分析依据；必须是严格 JSON 对象，且至少包含一项非空临床事实 |
+| `patient` | Object | 否 | 只接受 `idPi / name / sdSexText / ageText`，用于患者主体和性别年龄校验 |
+| `requestId` | String | 是 | HIS 生成的单次任务唯一标识；无首尾空白；用于 Promise 匹配、事件去重和回执闭环 |
+
+`recordContext` 没有强制业务字段枚举，但推荐使用以下稳定结构，便于不同 HIS 保持一致：
+
+| 字段 | 类型 | 说明 |
+| --- | --- | --- |
+| `recordText` | String | 当前病历全文或已生成病历草稿 |
+| `sections` | Object | 按主诉、现病史、既往史、个人史、家族史、查体等章节组织的事实 |
+| `conversationText` | String | 可选，本次问诊对话摘要或转写文本 |
+| `structuredFacts` | Object | 可选，生命体征、症状时长、否认项等结构化事实 |
+
+PCIE 只把 `recordContext` 当作本次模型分析依据，不会把它写进模板快照。不得在其中放 Cookie、token、签名、身份证号、手机号等与病历生成无关的敏感接入信息。
+
+请求顶层采用严格白名单。`recordId`、`idMedrecdoc`、`htmlContent`、`templateSource`、`sourceFormat` 及任何其他未知字段都会被拒绝。
+
+请求示例：
+
+```json
+{
+  "visitId": "VIS-20260824-001",
+  "templateId": "OPD-TPL-001",
+  "templateName": "门诊通用病历",
+  "templateHtml": "<section data-id=\"article-personal\" data-article=\"个人史\" data-name=\"个人史\"><div data-id=\"personalHistoryText\" data-type=\"text\" data-name=\"个人史内容\" data-readonly=\"false\">否认吸烟史。</div></section>",
+  "templateDefinition": "[{\"ID\":\"article-personal\",\"NAME\":\"个人史\",\"ARTICLE\":\"个人史\",\"eles\":[{\"ID\":\"personalHistoryText\",\"NAME\":\"个人史内容\",\"TYPE\":\"text\",\"READONLY\":false,\"VALUE\":\"\",\"TEXT\":\"否认吸烟史。\",\"RECORD_FIELD\":\"personalHistory\"}]}]",
+  "targetFieldIds": ["personalHistoryText"],
+  "recordContext": {
+    "recordText": "主诉：咳嗽3天。",
+    "sections": {
+      "personalHistory": "既往吸烟20年，已戒烟2年。"
+    }
+  },
+  "patient": {
+    "idPi": "P001",
+    "name": "张三",
+    "sdSexText": "男性",
+    "ageText": "45岁"
+  },
+  "requestId": "outpatient-emr-550e8400-e29b-41d4-a716-446655440000"
+}
+```
+
+Bridge 同步受理响应：
+
+```json
+{
+  "status": "success",
+  "visitId": "VIS-20260824-001",
+  "requestId": "outpatient-emr-550e8400-e29b-41d4-a716-446655440000",
+  "traceId": "his-1787565660000-abcdef12",
+  "timestamp": 1787565660000
+}
+```
+
+`status=success` 仅代表请求已进入 PCIE 桌面端。HIS 不得把该响应当作分析成功，也不得据此回填模板。真正可回填的终态只有医生确认后产生的 `record-confirmed`；使用 SDK 时即为 `analyzeOutpatientEmr()` Promise 的 resolve 值。
+
+同步入口常见 HTTP 状态：
+
+| HTTP 状态 | 含义 | HIS 处理 |
+| --- | --- | --- |
+| `200` | 已受理 | 继续等待 SDK Promise 或 WebSocket 终态 |
+| `400` | 请求字段、身份或基础事实校验失败 | 修正请求，不自动换字段名或删除未知字段后猜测重试 |
+| `401` | 尚未完成有效 SDK 握手或授权已失效 | 重新执行握手；不得绕过授权直接调用 Bridge |
+| `500` | PCIE 主窗口不可用或任务分发失败 | 使用响应 `traceId` 排查；不要认为任务已进入分析 |
+
+#### 6.3C.4 模板对协议与快照身份
+
+模板对约束：
+
+1. `templateHtml` 与 `templateDefinition` 都是非空原文，分别最多 1 MiB。它们代表同一套模板而非两种可选格式：HTML 是模板正式渲染器已经执行联动规则后的实例，负责真实布局、当前显示状态和当前显示值；JSON 是同一模板的结构定义，负责字段、字典、映射扩展和关系元数据。任一半缺失都直接拒绝。
+2. `templateDefinition` 只接受顶层章节数组。章节严格使用 `ID / NAME / ARTICLE / eles`；叶子严格使用 `ID / NAME / TYPE / READONLY / KEY / HIDDEN / DEFAULTVALUE / VALUE / TEXT / BINDINGDATA`，可选扩展只认 `RECORD_FIELD / AI_SUITABLE`。`TYPE=import` 是动作元素，不进入参数表，可以不出现在 HTML。对象包装、大小写别名及 `elements / fields / options` 等替代键不作为兼容输入。
+3. HTML 章节必须显式携带 `data-id / data-article / data-name`；每个非动作字段必须位于且只位于一个这样的章节节点内，并显式携带唯一的 `data-id / data-type / data-name / data-readonly`。解析器按章节 `JSON ID + ARTICLE ↔ HTML data-id + data-article`、字段 `JSON ID ↔ HTML data-id` 配对；字段所属业务章节取最近的章节祖先，非动作字段的类型、名称、只读状态和所属业务章节必须完全一致。渲染章节 `data-name` 可与定义章节 `NAME` 不同，二者分别保留，不能按名称配对。HTML 多出字段、缺少非动作字段、重复 ID 或身份不一致均返回 `TEMPLATE_PAIR_MISMATCH`。
+4. HTML 当前字段显示值必须与 JSON 归一后的 `TEXT` 一致。字典只由 JSON `BINDINGDATA[].VALUE/TEXT` 定义；HTML 不再接受 `data-dictionary-items / data-dictionary-value / data-options`。字典项 `VALUE/TEXT` 归一化后同时为空时是不可选占位并排除，因此真实模板中的 `VALUE="" / TEXT=" "` 合法；除此之外，字典编码或文字带首尾空白、非空编码缺少文字、重复编码或重复文字均返回 `INVALID_DICTIONARY_DEFINITION`。字典当前 `VALUE + TEXT` 必须命中同一合法项且 `TEXT` 与 HTML 显示值一致，否则返回 `TEMPLATE_PAIR_MISMATCH`。当前选择只作为源元数据，不成为模型结果或兜底。
+5. 定义中的 `RECORD_FIELD / AI_SUITABLE` 是扩展元数据权威来源。HTML 若同时携带 `data-record-field / data-ai-suitable`，值必须一致；HTML 单边声明而 JSON 未声明时拒绝。PCIE 保留 `relationscript / relationdata / HIDDEN` 等定义信息用于审计，但不执行模板脚本。
+6. `targetFieldIds` 是 HIS 渲染器执行性别、年龄和其他联动后给出的非空、无首尾空白、无重复白名单，只包含当前实际显示且需要分析的可写字段。PCIE 不推断、不扩充、不静默忽略；未知或只读目标使整次请求失败。
+7. `recordContext` 必须是严格 JSON 对象且至少含一项非空事实；`patient` 可选，只接受 `idPi / name / sdSexText / ageText`。相同 `requestId` 仅在 `visitId + templateId + templateName + 原始 templateHtml + 原始 templateDefinition + targetFieldIds 集合 + patient + recordContext` 全部相同时幂等恢复，否则返回 `REQUEST_ID_CONFLICT`。
+
+模板对 hash：
+
+```text
+htmlHash       = sha256(templateHtml 的 UTF-8 原文)
+definitionHash = sha256(templateDefinition 的 UTF-8 原文)
+templateHash   = sha256("outpatient-emr-template-pair.v1:" + htmlHash + ":" + definitionHash)
+```
+
+两份原文任一字节变化都会产生新的模板版本。同步 HTTP 响应只表示桌面端受理；桌面端必须先计算模板对 hash，再通过签名 `/v1/client/outpatient-emr/templates/snapshots/resolve` 按当前机构、`templateId` 与 `templateHash` 查询历史解析。命中时必须直接复用后台返回的完整字段解析快照，不得再次执行模板定义解码、HTML/JSON 配对或快照登记；未命中（包括首次出现的模板或任一原文字节变化）时，才执行本地严格解析，并把两份原文和完整合并解析快照登记到签名 `/v1/client/outpatient-emr/templates/snapshots`。快照版本身份固定为 `idOrg + templateId + templateHash`：不同模板 ID 即使两份原文完全相同也必须分别形成解析记录；同一身份的重复登记只返回已有记录，不更新原文、解析结果、设备或时间。查询失败、命中结果损坏或新快照登记失败都必须在模型调用前终止，不得回退到重复解析或旧实验路径。
+
+HIS 每次调用都应传入当前完整模板对，不需要预先调用“模板上传”接口：
+
+| 场景 | PCIE 行为 | 后台快照行为 | 本次病例 LLM 分析 |
+| --- | --- | --- | --- |
+| 首次出现 `templateId + templateHash` | 严格解析 HTML/JSON | 新增一个版本 | 执行 |
+| 相同机构、相同 `templateId + templateHash` | 直接读取历史 `parseResult` | 不新增、不更新时间、不覆盖 | 执行 |
+| 同一 `templateId` 的 HTML 或 JSON 任一字节变化 | 计算出新 hash 并重新严格解析 | 新增版本，旧版本保留 | 执行 |
+| 查询失败、命中快照损坏或新快照登记失败 | 在模型调用前终止 | 不走旧解析兜底 | 不执行 |
+
+后台缓存只保存模板原文和确定性解析快照，不保存本次患者、`recordContext`、模型字段值或医生修改结果。
+
+#### 6.3C.5 医生确认结果
+
+医生确认后的 `record-confirmed` 核心结构：
+
+```json
+{
+  "consultationId": "VIS-20260824-001",
+  "visitId": "VIS-20260824-001",
+  "timestamp": 1787565660000,
+  "resultType": "record-confirmed",
+  "requestId": "outpatient-emr-550e8400-e29b-41d4-a716-446655440000",
+  "referenceType": "batch",
+  "action": "batch",
+  "referenceStatus": "pending",
+  "referenceMessage": "等待 HIS 完成门诊模板参数回填并回执",
+  "emrType": "outpatient-emr",
+  "templateMetadata": {
+    "schemaVersion": "outpatient-emr-template-pair.v1",
+    "templateId": "OPD-TPL-001",
+    "templateName": "门诊通用病历",
+    "templateHash": "64位小写SHA-256",
+    "fields": [
+      {
+        "id": "personalHistoryText",
+        "name": "个人史内容",
+        "type": "text",
+        "articleTemplateId": "article-personal",
+        "articleId": "个人史",
+        "articleName": "个人史",
+        "articleDefinitionName": "个人史",
+        "dictionaryItems": [],
+        "recordField": "personalHistory",
+        "mappingSource": "definition-record-field",
+        "projectionMode": "direct"
+      }
+    ]
+  },
+  "fieldValues": {
+    "personalHistoryText": "既往吸烟20年，已戒烟2年。"
+  },
+  "dictionarySelections": {},
+  "outpatientRecord": {
+    "schemaVersion": "outpatient-record.v1",
+    "personalHistory": "既往吸烟20年，已戒烟2年。"
+  },
+  "writebackScope": {
+    "recordFields": ["personalHistory"],
+    "includeDiagnosis": false,
+    "orderTypes": []
+  },
+  "orderList": []
+}
+```
+
+回传约束：
+
+1. `templateMetadata.fields` 只包含本次 `targetFieldIds` 范围内、与模板对 hash 绑定的字段映射快照，保留字段身份、定义章节 ID、业务章节 ID、渲染章节名、定义章节名、合法字典和固定映射；后台保存的完整解析快照可以包含模板中的其他非目标字段。最终事件不返回两份模板原文、提示词、原始 `recordContext` 或模型原文。
+2. `fieldValues` 必须逐一包含本次分析范围内全部模板字段。每个生效字典字段都必须由模型重新显式返回；漏 key 是模型输出协议错误，显式空字符串或模板外值保留为空让医生选择，禁止回退模板当前/默认选择。医生确认时字典值必须唯一命中模板项，`dictionarySelections[id].text` 必须与 `fieldValues[id]` 一致。
+3. `outpatientRecord` 只投影已映射标准字段；未映射字段仍通过 `fieldValues` 返回。同一章节的 `section-compose` 字段按模板顺序确定性归并。`fieldValues + dictionarySelections + outpatientRecord + writebackScope` 必须来自同一个医生最终值 Map，不得为不同结果重复调用模型。
+4. `writebackScope.includeDiagnosis=false`、`writebackScope.orderTypes=[]`、`orderList=[]`；本接口不处理诊断或医嘱。HIS 收到 `record-confirmed` 后自行按模板字段 ID 回填并通过 `/api/consultation/reference-feedback` 回执。
+5. SDK Promise 与业务订阅只消费 payload 自身身份和固定结构完整的确认/取消事件，不从事件 envelope 补字段。模板快照登记、模型分析或最终校验失败均不得产生部分 `record-confirmed`。
+
+结果字段说明：
+
+| 字段 | 必有 | HIS 用法 |
+| --- | --- | --- |
+| `consultationId / visitId` | 是 | 两者都必须等于请求 `visitId`；用于隔离不同就诊 |
+| `requestId` | 是 | 必须等于请求值；回填完成后原样用于回执 |
+| `resultType` | 是 | 固定为 `record-confirmed` |
+| `emrType` | 是 | 固定为 `outpatient-emr`，用于与普通问诊和住院病历结果区分 |
+| `templateMetadata` | 是 | 校验模板 ID、名称、hash，并读取每个字段的类型、字典和标准病历映射 |
+| `fieldValues` | 是 | 以模板字段 `data-id` 为 key 的最终显示文本；必须覆盖全部本次目标字段 |
+| `dictionarySelections` | 是 | 字典字段的最终 `{value,text}`；非字典字段不在此对象中 |
+| `outpatientRecord` | 否 | 可确定映射到标准病历字段时提供的便利投影；不能替代 `fieldValues` 回填模板 |
+| `writebackScope` | 是 | 说明本次标准病历投影范围；诊断恒为 false、医嘱范围恒为空 |
+| `orderList` | 是 | 当前接口固定为空数组；HIS 不得据此清空已有医嘱 |
+
+#### 6.3C.6 HIS 回填规则
+
+HIS 收到结果后必须按以下顺序处理：
+
+1. 校验 `emrType === "outpatient-emr"`、`resultType === "record-confirmed"`。
+2. 校验 `visitId / consultationId / requestId / templateMetadata.templateId` 与当前未完成任务完全一致。
+3. 按相同算法重算当前编辑器模板对的 `templateHash`，并与 `templateMetadata.templateHash` 比较。若医生站已切换模板或模板已刷新，禁止把旧结果写入新模板。
+4. 校验 `fieldValues` 恰好覆盖本次 `targetFieldIds`。缺 key 属于协议错误，不能用当前模板默认值补齐。
+5. 非字典字段按 `fieldValues[fieldId]` 写入当前模板 `data-id=fieldId`。
+6. 字典字段必须读取 `dictionarySelections[fieldId]`：用 `value` 回填字典编码，用 `text` 回填显示文字，并再次确认该 `{value,text}` 存在于 `templateMetadata.fields[].dictionaryItems`。`fieldValues[fieldId]` 必须等于该 `text`。
+7. `outpatientRecord` 只用于同时维护 HIS 的标准病历 DTO；模板渲染器回填仍以 `fieldValues + dictionarySelections` 为准。未映射模板字段也必须回填，不能因为 `outpatientRecord` 中不存在而丢弃。
+8. 在 HIS 自己的编辑器事务内完成全部字段写入。任一字段失败时，本次回填整体按失败处理，不得报告部分成功。
+9. 成功后以同一 `requestId` 调用 `reference-feedback(success)`；失败时调用 `reference-feedback(failed)` 并提供可读原因。只有成功回执后 PCIE 才结束当前模板任务。
+
+模型无法匹配字典时可以先把候选值留空，让医生在 PCIE 预览中选择；但医生点击“返回参数”时，每个字典字段都必须已经唯一命中模板字典项。因此最终 `record-confirmed` 中不存在“带着未匹配字典值让 HIS 猜测”的情况。
+
+#### 6.3C.7 SDK 完整接入示例
+
+下面示例中的 `hisEditor.begin/commit/rollback/setText/setDictionary` 代表 HIS 自身模板渲染器 API，需要由接入方替换；其余调用和校验顺序是正式契约。
+
+```js
+const mh = new MedHermes();
+await mh.init();
+
+async function sha256Hex(text) {
+  const bytes = new TextEncoder().encode(text);
+  const digest = await crypto.subtle.digest('SHA-256', bytes);
+  return Array.from(new Uint8Array(digest))
+    .map((value) => value.toString(16).padStart(2, '0'))
+    .join('');
+}
+
+async function calculateTemplateHash(templateHtml, templateDefinition) {
+  const htmlHash = await sha256Hex(templateHtml);
+  const definitionHash = await sha256Hex(templateDefinition);
+  return sha256Hex(`outpatient-emr-template-pair.v1:${htmlHash}:${definitionHash}`);
+}
+
+const request = {
+  visitId: currentVisit.id,
+  templateId: currentTemplate.id,
+  templateName: currentTemplate.name,
+  templateHtml: currentTemplate.renderedHtml,
+  templateDefinition: currentTemplate.definitionJson,
+  targetFieldIds: currentTemplate.visibleWritableFieldIds,
+  recordContext: {
+    recordText: currentRecord.fullText,
+    sections: currentRecord.sections,
+    structuredFacts: currentRecord.structuredFacts
+  },
+  patient: {
+    idPi: currentPatient.id,
+    name: currentPatient.name,
+    sdSexText: currentPatient.sexText,
+    ageText: currentPatient.ageText
+  },
+  requestId: hisRequestIdFactory()
+};
+
+// 当前接口不传 recordId；调用侧自行保存任务与病历记录的关联。
+pendingRecordIds.set(request.requestId, currentRecord.id);
+
+let result;
+try {
+  // 此 Promise 在医生于 PCIE 中确认“返回参数”后才 resolve。
+  result = await mh.analyzeOutpatientEmr(request);
+} catch (error) {
+  // CANCELLED 表示医生取消；其他错误按本文错误表处理。
+  pendingRecordIds.delete(request.requestId);
+  showAnalysisError(error);
+  throw error;
+}
+
+const expectedHash = await calculateTemplateHash(
+  request.templateHtml,
+  request.templateDefinition
+);
+if (
+  result.emrType !== 'outpatient-emr'
+  || result.resultType !== 'record-confirmed'
+  || result.visitId !== request.visitId
+  || result.consultationId !== request.visitId
+  || result.requestId !== request.requestId
+  || result.templateMetadata.templateId !== request.templateId
+  || result.templateMetadata.templateHash !== expectedHash
+) {
+  pendingRecordIds.delete(request.requestId);
+  throw new Error('门诊模板分析结果身份不匹配，已拒绝回填');
+}
+
+const metadataById = new Map(
+  result.templateMetadata.fields.map((field) => [field.id, field])
+);
+const targetFieldIdSet = new Set(request.targetFieldIds);
+const returnedFieldIds = Object.keys(result.fieldValues);
+if (
+  returnedFieldIds.length !== targetFieldIdSet.size
+  || returnedFieldIds.some((fieldId) => !targetFieldIdSet.has(fieldId))
+) {
+  pendingRecordIds.delete(request.requestId);
+  throw new Error('门诊模板字段返回范围与 targetFieldIds 不一致');
+}
+
+let writebackCommitted = false;
+try {
+  hisEditor.begin();
+
+  for (const fieldId of request.targetFieldIds) {
+    if (!Object.prototype.hasOwnProperty.call(result.fieldValues, fieldId)) {
+      throw new Error(`回参缺少模板字段：${fieldId}`);
+    }
+    const field = metadataById.get(fieldId);
+    if (!field) throw new Error(`回参缺少字段元数据：${fieldId}`);
+
+    if (field.dictionaryItems.length > 0) {
+      const selected = result.dictionarySelections[fieldId];
+      const isLegal = selected
+        && selected.text === result.fieldValues[fieldId]
+        && field.dictionaryItems.some((item) => (
+          item.value === selected.value && item.text === selected.text
+        ));
+      if (!isLegal) throw new Error(`字典字段不匹配：${fieldId}`);
+      hisEditor.setDictionary(fieldId, selected.value, selected.text);
+    } else {
+      hisEditor.setText(fieldId, result.fieldValues[fieldId]);
+    }
+  }
+
+  hisEditor.commit();
+  writebackCommitted = true;
+} catch (error) {
+  if (!writebackCommitted) hisEditor.rollback();
+  try {
+    await mh.sendFeedback(
+      result.requestId,
+      'failed',
+      'HIS 回填门诊病历模板失败'
+    );
+    // failed 回执后 PCIE 会保留医生现场，继续保留 recordId 关联以支持再次提交。
+    markWritebackAttemptFailed(result.requestId);
+  } catch (feedbackError) {
+    // 保留 requestId -> recordId，供 HIS 恢复网络后重发 failed 回执。
+    markFeedbackPending(result.requestId, 'failed', feedbackError);
+  }
+  throw error;
+}
+
+try {
+  await mh.sendFeedback(
+    result.requestId,
+    'success',
+    'HIS 已成功回填门诊病历模板'
+  );
+  pendingRecordIds.delete(request.requestId);
+} catch (feedbackError) {
+  // 字段已经提交，不能回滚或改报 failed；保留关联并重发同一个 success 回执。
+  markFeedbackPending(result.requestId, 'success', feedbackError);
+  throw feedbackError;
+}
+```
+
+`analyzeOutpatientEmr()` Promise 与 `record-confirmed` 事件承载同一份首次确认结果，HIS 不得在两个回调中重复执行回填。若 HIS 发送 `failed` 回执，PCIE 会保留预览并允许医生再次点击“返回参数”；Promise 不会第二次 resolve，后续再次提交通过常驻 WebSocket 的新 `record-confirmed` 事件送达。需要支持该场景的 HIS 应把“校验 -> 回填 -> 回执”提取为同一个幂等处理函数，并通过 `event.id` 去重：首次可以由 Promise 或事件二选一触发，后续重提由事件触发。
+
+如果字段已经在 HIS 成功提交、只是 `success` 回执发送失败，不得回滚字段或改发 `failed`。HIS 应持久保留 `requestId + visitId + recordId + success` 回执任务，网络恢复后用相同身份重发成功回执。
+
+直接使用 REST + WebSocket 时，执行顺序和校验规则完全相同：`POST /api/outpatient/emr/analyze` 的同步 `200` 之后继续等待 `/api/consultation/events/ws` 中与 `visitId + requestId + emrType` 匹配的终态事件，回填后再调用 [6.5 回执接口](#65-post-apiconsultationreference-feedback必须)。新接入优先使用 SDK，避免自行实现断线重连、事件补发、去重和 Promise 匹配。
+
+#### 6.3C.8 取消、错误与重试
+
+医生取消任务时产生 `cancelled` 终态，SDK Promise 以 `error.code = "CANCELLED"` reject，不返回部分字段，也不需要执行模板回填或成功回执：
+
+```json
+{
+  "consultationId": "VIS-20260824-001",
+  "visitId": "VIS-20260824-001",
+  "timestamp": 1787565660000,
+  "requestId": "outpatient-emr-550e8400-e29b-41d4-a716-446655440000",
+  "resultType": "cancelled",
+  "status": "cancelled",
+  "emrType": "outpatient-emr"
+}
+```
+
+常见错误分类：
+
+| 错误码/场景 | 含义 | 是否可原请求重试 |
+| --- | --- | --- |
+| `OFFLINE` / `WEBSOCKET_UNSUPPORTED` | 桌面端未启动，或 HIS 容器不支持结果通道 | 修复环境后可重试 |
+| HTTP `400` / `INVALID_RECORD_CONTEXT` | 请求字段不完整、含未知字段或没有临床事实 | 修正请求，并使用新 `requestId` |
+| `INVALID_TEMPLATE_JSON` | JSON 不是当前严格顶层章节数组 | 修复模板后使用新 `requestId` |
+| `TEMPLATE_PAIR_MISMATCH` | HTML 与 JSON 字段、章节、当前值或只读状态不一致 | 重新由同一渲染器导出模板对后使用新 `requestId` |
+| `INVALID_DICTIONARY_DEFINITION` / `MISSING_DICTIONARY_DEFINITION` | 字典缺失、重复、空白或编码文字不合法 | 修复模板字典后使用新 `requestId` |
+| `DUPLICATE_TEMPLATE_FIELD` / `INVALID_TARGET_FIELD_IDS` / `NO_SUPPORTED_TEMPLATE_FIELDS` | 字段 ID 重复，或目标范围未知、只读、为空 | 修复模板或白名单后使用新 `requestId` |
+| `INVALID_RECORD_FIELD_MAPPING` / `DUPLICATE_RECORD_FIELD_MAPPING` | 标准病历映射非法或形成一对多歧义 | 修复模板扩展映射后使用新 `requestId` |
+| `TEMPLATE_SNAPSHOT_FAILED` | 后台历史快照查询、校验或登记失败 | 排查 PCIE Server；不得转走本地旧解析兜底 |
+| `ANALYSIS_FAILED` | 本次病例 LLM 分析失败或输出不完整 | 可由医生在 PCIE 中重试；重新从 HIS 发起时使用新 `requestId` |
+| `INVALID_DICTIONARY_VALUE` / `WRITEBACK_FAILED` | 医生最终值仍无法形成合法完整参数 | 在 PCIE 中补齐/修正后再返回参数 |
+| `INVALID_OUTPATIENT_EMR_RESULT` | SDK 收到的终态结构或身份不完整 | 拒绝回填，按 `traceId/requestId` 排查契约 |
+| `REQUEST_ID_CONFLICT` | 同一活动 `requestId` 被用于不同输入快照 | 不得覆盖；为新任务生成新 `requestId` |
+
+重试与并发规则：
+
+1. 同一次传输重试只有在完整请求快照完全相同时才复用原 `requestId`；模板原文、目标字段、患者或病例事实任一变化都必须生成新 `requestId`。
+2. 一个 SDK 实例同一时刻只保留一个活动的门诊模板分析任务。新的不同任务会替换前一个等待中的任务；HIS 不应并行发起两个模板分析。
+3. 模板快照身份与 `requestId` 无关。即使使用新的 `requestId`，相同机构、模板 ID 和模板 hash 仍会复用历史解析。
+4. 未产生 `record-confirmed` 时不得回填；回填失败后发送 `failed` 回执，保留医生现场，再由医生决定是否重新提交。
+
 ### 6.4 SDK 静态文件缓存策略
 
 `/sdk/med-hermes-sdk.js` 与 `/sdk/med-hermes-loader.js` 由本地 Bridge 按当前安装包内置文件直接返回，并带 `Cache-Control: no-store, no-cache, must-revalidate, max-age=0`。Loader 在探测到桌面端版本后，会给本地 SDK URL 追加 `?v=<version>`，避免 HIS 内嵌浏览器在升级安装包后继续执行旧版 SDK。
@@ -1184,7 +1697,7 @@ ws://127.0.0.1:8081/api/consultation/events/ws
 
 #### 成功响应: 问诊一键确认回写（record-confirmed）
 
-`record-confirmed` 类型来自问诊最终确认提交。**症状问诊（`ConsultationPage` 完成问诊）、语音问诊（`VoiceConsultationNew` 提交病历）和独立诊疗方案推荐页（`treatment_plan` 聚合推荐后“一键回写”）共用此契约**，由 `src/features/clinical-result/recordConfirmedPayload.ts` 作为唯一构造点产出。共享结果页允许医生选择部分回写范围，但仍只产生一条 `record-confirmed + batch`；`writebackScope` 描述本次选择，未选门诊病历字段和诊断在 payload 中省略，PHIS 必须保持对应原值。为兼容 PHIS 既有遍历逻辑，`orderList` 始终为数组：没有选择任何药品、检查、检验或处置时返回 `[]`，并由 `writebackScope.orderTypes: []` 明确表示本次不处理医嘱，PHIS 不得据此清空既有医嘱。与 `reference-request` 不同，这仍是医生在结果页直接确认后的一次最终提交，不拆成逐项引用请求；PHIS 完成处理后仍必须调用 `POST /api/consultation/reference-feedback` 回执成功或失败。
+`record-confirmed` 类型来自问诊最终确认提交。**症状问诊（`ConsultationPage` 完成问诊）、语音问诊（`VoiceConsultationNew` 提交病历）和独立诊疗方案推荐页（`treatment_plan` 聚合推荐后“一键回写”）共用此契约**，由 `src/features/clinical-result/recordConfirmedPayload.ts` 作为标准病例/诊断/医嘱构造点产出。共享结果页允许医生选择部分回写范围，但仍只产生一条 `record-confirmed + batch`；`writebackScope` 描述本次选择，未选门诊病历字段和诊断在 payload 中省略，PHIS 必须保持对应原值。为兼容 PHIS 既有遍历逻辑，`orderList` 始终为数组：没有选择任何药品、检查、检验或处置时返回 `[]`，并由 `writebackScope.orderTypes: []` 明确表示本次不处理医嘱，PHIS 不得据此清空既有医嘱。与 `reference-request` 不同，这仍是医生在结果页直接确认后的一次最终提交，不拆成逐项引用请求；PHIS 完成处理后仍必须调用 `POST /api/consultation/reference-feedback` 回执成功或失败。若 `startVoice` 同时携带动态门诊模板，标准构造结果先作为待合并快照进入模板确认，最终由 `outpatientEmrWriteback.ts` 附加 `emrType/templateMetadata/fieldValues/dictionarySelections` 后才发送；不会先发送一条普通问诊结果再发送一条模板结果。
 
 ```json
 {
@@ -1967,5 +2480,6 @@ HIS 接入完成后，至少验证以下场景：
 8. 切换患者后不会把上一位患者的结果误回填到当前医生站
 9. 问诊一键确认回写：PHIS 收到 `resultType: "record-confirmed"` 结果后，可安全直接遍历始终存在的 `orderList`。非空时其中药品、检查、检验、处置已经统一转换成 PHIS 调入确认格式，可直接用于回填弹窗；为空且 `writebackScope.orderTypes` 为空时不处理、不得清空 HIS 原医嘱
 10. 独立诊疗方案推荐：`POST /assist` 使用 `action: "treatment_plan"` 可打开聚合方案页；医生勾选后同样产生 `record-confirmed + referenceType: "batch"`，PHIS 按第 9 条处理并回执
+11. 门诊模板正式接入：`POST /outpatient/emr/analyze` 与 SDK 能按本次模板 `data-id` 生成可编辑参数；显式/标准 ID/别名映射形成稳定快照，非法或一对多冲突被拒绝；模板字典项按 `VALUE/TEXT` 固化，缺定义、空选择和模板外值被阻止；`record-confirmed.fieldValues + dictionarySelections` 与可映射的 `outpatientRecord + writebackScope` 同源且逐项一致，接入方以相同 `requestId` 回执后页面才结束任务
 
 如果你们 HIS 需要，我建议下一步可以再按这份文档继续拆一版“给后端开发直接对接的字段清单”和“一版给联调测试直接执行的验收用例”。

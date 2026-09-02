@@ -61,3 +61,8 @@ export type {
   VoiceConsultationCacheEntry,
   VoiceEditorSnapshot,
 } from './model/voiceConsultationCache';
+export {
+  resolveSimulatedVoiceTranscript,
+  type SimulatedVoiceTranscriptPayload,
+  type SimulatedVoiceTranscriptResolution,
+} from './lib/simulatedVoiceTranscript';

@@ -191,6 +191,8 @@ const props = withDefaults(defineProps<{
   processing?: boolean;
   secondaryFooterActionText?: string;
   secondaryFooterActionDisabled?: boolean;
+  /** 动态门诊模板续接任务的 HIS requestId；存在时先发出待合并快照，不直接调用 PHIS。 */
+  deferredWritebackRequestId?: string;
 }>(), {
   channel: 'voice',
   showPatientHeader: true,
@@ -199,9 +201,15 @@ const props = withDefaults(defineProps<{
   processing: false,
   secondaryFooterActionText: '',
   secondaryFooterActionDisabled: false,
+  deferredWritebackRequestId: '',
 });
 
-const emit = defineEmits(['close', 'cancel', 'secondary-footer-action']);
+const emit = defineEmits<{
+  close: [];
+  cancel: [];
+  'secondary-footer-action': [];
+  'writeback-prepared': [payload: Record<string, unknown>];
+}>();
 
 const showToast = inject<(msg: string, type?: string) => void>('showToast');
 const recommendationPolicy = computed(() => props.intentResult?.recommendationPolicy);
@@ -2956,7 +2964,7 @@ async function handleBatchWriteBack(): Promise<void> {
 
     const treatmentPlan = buildTreatmentPlanSummary(selected);
 
-    const requestId = `record-confirmed-${Date.now()}`;
+    const requestId = props.deferredWritebackRequestId || `record-confirmed-${Date.now()}`;
     const result = buildRecordConfirmedPayload({
       consultationId: resolveConsultationId(),
       requestId,
@@ -2995,6 +3003,11 @@ async function handleBatchWriteBack(): Promise<void> {
       treatments: selected,
       context: buildPreferenceContext('writeback'),
     });
+    if (props.deferredWritebackRequestId) {
+      emit('writeback-prepared', result);
+      showToast?.('已确认诊疗内容，正在进入门诊模板映射。', 'info');
+      return;
+    }
     markWritebackPending(requestId, '已选内容已发送至 HIS，等待处理结果回执。');
     await invoke('complete_consultation', { result });
     if (waitingWritebackFeedback.value) {

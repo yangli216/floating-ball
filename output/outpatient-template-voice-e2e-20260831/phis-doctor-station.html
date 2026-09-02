@@ -1,0 +1,830 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>PHIS 门诊医生站 · 动态病例模板联调</title>
+  <style>
+    :root {
+      --brand: #1677ff;
+      --brand-soft: #e6f4ff;
+      --success: #16a085;
+      --success-soft: #e8f8f3;
+      --warning: #fa8c16;
+      --ink: #24313c;
+      --muted: #7a8793;
+      --line: #e6ebf0;
+      --canvas: #f2f5f8;
+      --card: #fff;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      color: var(--ink);
+      background: var(--canvas);
+      font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft YaHei", sans-serif;
+    }
+    button, select { font: inherit; }
+    button { cursor: pointer; }
+    .topbar {
+      height: 64px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 28px;
+      color: #fff;
+      background: linear-gradient(110deg, #0958d9, #1677ff 62%, #36cfc9);
+      box-shadow: 0 2px 10px rgba(9, 88, 217, .18);
+    }
+    .brand { display: flex; align-items: center; gap: 12px; font-size: 18px; font-weight: 700; }
+    .brand-mark {
+      width: 34px; height: 34px; border-radius: 10px; display: grid; place-items: center;
+      color: #0958d9; background: rgba(255,255,255,.94); font-weight: 800;
+    }
+    .top-meta { font-size: 13px; opacity: .9; }
+    .page { padding: 22px 28px 30px; }
+    .view[hidden] { display: none; }
+    .page-title { display: flex; align-items: baseline; gap: 12px; margin-bottom: 18px; }
+    .page-title h1 { margin: 0; font-size: 24px; }
+    .page-title span { color: var(--muted); font-size: 13px; }
+    .patient-list { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 18px; }
+    .patient-card {
+      min-height: 190px; padding: 20px; border-radius: 12px; background: var(--card);
+      border: 1px solid var(--line); box-shadow: 0 4px 16px rgba(30, 55, 80, .06);
+    }
+    .patient-card.active { border-top: 4px solid var(--success); }
+    .patient-card.muted { opacity: .58; }
+    .patient-head { display: flex; justify-content: space-between; align-items: center; }
+    .patient-name { font-size: 18px; font-weight: 700; }
+    .tag { display: inline-flex; align-items: center; padding: 3px 9px; border-radius: 12px; font-size: 12px; }
+    .tag.blue { color: #0958d9; background: var(--brand-soft); }
+    .tag.green { color: #087f5b; background: var(--success-soft); }
+    .tag.orange { color: #ad4e00; background: #fff7e6; }
+    .patient-meta { margin: 16px 0 8px; color: #4f5d68; }
+    .patient-cc { height: 44px; color: var(--muted); font-size: 13px; line-height: 1.65; }
+    .card-action { display: flex; justify-content: flex-end; margin-top: 14px; }
+    .primary, .secondary {
+      border-radius: 7px; padding: 9px 18px; border: 1px solid transparent; font-weight: 600;
+    }
+    .primary { color: #fff; background: var(--brand); }
+    .primary:hover { background: #0958d9; }
+    .primary:disabled { cursor: wait; opacity: .52; }
+    .secondary { color: #31506c; background: #fff; border-color: #cfd8e2; }
+    .workstation { display: grid; grid-template-columns: 260px minmax(0, 1fr); gap: 18px; min-height: calc(100vh - 108px); }
+    .sidebar, .workspace-card {
+      background: var(--card); border: 1px solid var(--line); border-radius: 12px;
+      box-shadow: 0 4px 16px rgba(30, 55, 80, .05);
+    }
+    .sidebar { padding: 22px; }
+    .avatar {
+      width: 72px; height: 72px; margin: 0 auto 12px; border-radius: 50%;
+      display: grid; place-items: center; font-size: 30px; color: #0958d9; background: var(--brand-soft);
+    }
+    .identity { text-align: center; padding-bottom: 18px; border-bottom: 1px solid var(--line); }
+    .identity h2 { margin: 0 0 7px; font-size: 20px; }
+    .identity p { margin: 4px 0; color: var(--muted); font-size: 13px; }
+    .side-block { padding: 16px 0; border-bottom: 1px solid var(--line); }
+    .side-block:last-child { border-bottom: 0; }
+    .side-label { margin-bottom: 7px; color: var(--muted); font-size: 12px; }
+    .side-value { font-size: 14px; line-height: 1.55; }
+    .main { min-width: 0; }
+    .toolbar { display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px; }
+    .toolbar h1 { margin: 0; font-size: 22px; }
+    .toolbar-actions { display: flex; gap: 10px; }
+    .workspace-card { margin-bottom: 14px; padding: 18px 20px; }
+    .section-title { display: flex; align-items: center; justify-content: space-between; margin-bottom: 13px; }
+    .section-title h3 { margin: 0; font-size: 16px; }
+    .template-panel {
+      display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 16px; align-items: center;
+      padding: 15px 16px; border: 1px solid #b7ebd9; border-radius: 9px; background: #f3fffb;
+    }
+    .template-name { margin-bottom: 5px; font-weight: 700; color: #155b4a; }
+    .template-meta { color: #5b716b; font-size: 12px; line-height: 1.6; }
+    .template-select { min-width: 210px; padding: 9px 10px; border: 1px solid #9ed8c8; border-radius: 6px; background: #fff; }
+    .record-grid { display: grid; grid-template-columns: 110px minmax(0, 1fr); gap: 9px 14px; font-size: 14px; line-height: 1.65; }
+    .record-grid .label { color: #667681; font-weight: 600; }
+    .empty { color: #a2adb5; }
+    .flow-steps { display: grid; grid-template-columns: repeat(5, 1fr); gap: 8px; }
+    .flow-step { padding: 10px 8px; text-align: center; color: #87939d; background: #f5f7fa; border-radius: 7px; font-size: 12px; }
+    .flow-step.active { color: #0958d9; background: var(--brand-soft); font-weight: 700; }
+    .flow-step.done { color: #087f5b; background: var(--success-soft); font-weight: 700; }
+    .result-card { padding: 16px; border: 1px solid #b7d9ff; border-radius: 9px; background: #f5faff; }
+    .result-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px; }
+    .result-head strong { font-size: 16px; }
+    .result-id { margin-top: 4px; color: #8493a0; font: 12px ui-monospace, SFMono-Regular, Menlo, monospace; }
+    .result-actions { margin-top: 16px; text-align: right; }
+    .log {
+      max-height: 150px; overflow: auto; padding: 12px; color: #a9d7ff; background: #132238;
+      border-radius: 8px; font: 12px/1.65 ui-monospace, SFMono-Regular, Menlo, monospace; white-space: pre-wrap;
+    }
+    .success-banner { padding: 13px 15px; color: #087f5b; background: var(--success-soft); border: 1px solid #a8e6d2; border-radius: 8px; font-weight: 700; }
+    .pcie-view {
+      position: fixed; inset: 0; z-index: 20; overflow: auto; color: #263445; background: #edf3fb;
+    }
+    .pcie-window { min-height: 100vh; background: #f4f7fb; }
+    .pcie-titlebar {
+      height: 46px; display: flex; align-items: center; justify-content: space-between; padding: 0 22px;
+      color: #344354; background: #fff; border-bottom: 1px solid #dfe6ef; font-size: 14px; font-weight: 700;
+    }
+    .pcie-patientbar {
+      height: 54px; display: flex; align-items: center; gap: 14px; padding: 0 24px; color: #fff;
+      background: linear-gradient(100deg, #1768e8, #2f80ed);
+    }
+    .pcie-avatar { width: 34px; height: 34px; display: grid; place-items: center; border-radius: 50%; color: #2d6cdf; background: #e7f1ff; }
+    .pcie-patientbar strong { font-size: 16px; }
+    .pcie-chip { padding: 3px 12px; border-radius: 14px; color: #1f65d6; background: #eef6ff; font-size: 12px; font-weight: 700; }
+    .pcie-content { display: grid; grid-template-columns: minmax(0, 47%) minmax(0, 53%); gap: 14px; padding: 14px 18px 76px; }
+    .pcie-card { background: #fff; border: 1px solid #dfe7f2; border-radius: 10px; box-shadow: 0 3px 14px rgba(44, 79, 122, .06); overflow: hidden; }
+    .pcie-card + .pcie-card { margin-top: 12px; }
+    .pcie-card-title {
+      display: flex; align-items: center; justify-content: space-between; padding: 14px 16px;
+      background: linear-gradient(100deg, #eff7ff, #fff); border-bottom: 1px solid #e3ebf5; font-weight: 700;
+    }
+    .pcie-record { max-height: calc(100vh - 215px); overflow: auto; padding: 16px 20px 26px; font-size: 14px; line-height: 1.8; }
+    .pcie-record-row { margin: 0 0 11px; }
+    .pcie-record-row b { color: #4c5b6c; }
+    .ai-mark { color: #2f72dc; background: #edf5ff; border-bottom: 1px dashed #8bb8ee; }
+    .recommendation { padding: 13px 15px; border: 1px solid #dce5ef; border-radius: 9px; background: #fff; }
+    .recommendation + .recommendation { margin-top: 9px; }
+    .recommendation.selected { border-color: #3f86ef; background: #f6faff; box-shadow: 0 0 0 1px rgba(63,134,239,.12); }
+    .recommendation label { display: flex; gap: 11px; align-items: flex-start; cursor: pointer; }
+    .recommendation input { width: 18px; height: 18px; accent-color: #2f7ae5; }
+    .recommendation-name { flex: 1; font-weight: 700; }
+    .recommendation-meta { margin: 7px 0 0 30px; color: #768494; font-size: 12px; }
+    .confidence { margin-left: 8px; padding: 2px 8px; border-radius: 10px; color: #178251; background: #eaf8f1; font-size: 11px; }
+    .pcie-footer {
+      position: fixed; left: 0; right: 0; bottom: 0; z-index: 24; height: 62px; display: flex;
+      align-items: center; justify-content: space-between; padding: 0 18px; background: #fff; border-top: 1px solid #dfe6ef;
+    }
+    .pcie-footer-note { color: #7b8795; font-size: 12px; }
+    .pcie-footer-actions { display: flex; gap: 10px; }
+    .scope-mask { position: fixed; inset: 0; z-index: 28; display: grid; place-items: center; background: rgba(27, 39, 56, .44); }
+    .scope-mask[hidden], .pcie-view[hidden], .pcie-window[hidden] { display: none; }
+    .scope-dialog { width: 500px; padding: 22px; border-radius: 12px; background: #fff; box-shadow: 0 16px 50px rgba(20,35,55,.2); }
+    .scope-dialog h3 { margin: 0 0 6px; }
+    .scope-subtitle { margin: 0 0 16px; color: #8995a2; font-size: 12px; }
+    .scope-group { margin: 10px 0; padding: 13px 14px; border: 1px solid #e2e8f0; border-radius: 8px; background: #fafcff; }
+    .scope-group > label { display: flex; align-items: center; gap: 8px; font-weight: 700; }
+    .scope-items { display: grid; grid-template-columns: 1fr 1fr; gap: 7px 14px; margin: 10px 0 0 26px; color: #5d6b78; font-size: 13px; }
+    .scope-dialog-actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 18px; }
+    .mapping-content { padding: 14px 18px 80px; }
+    .mapping-summary { display: flex; gap: 10px; align-items: center; margin-bottom: 12px; padding: 12px 15px; border: 1px solid #b9d7ff; border-radius: 9px; background: #f1f7ff; color: #245a9e; }
+    .mapping-grid { display: grid; grid-template-columns: minmax(0, 58%) minmax(340px, 42%); gap: 14px; }
+    .document-preview { height: calc(100vh - 205px); overflow: auto; padding: 30px 38px; background: #fff; border: 1px solid #dce5ef; border-radius: 10px; }
+    .document-preview h1 { margin: 0; text-align: center; font-family: "Songti SC", SimSun, serif; letter-spacing: 8px; font-size: 27px; }
+    .document-line { height: 1px; margin: 22px 0; background: #536a79; }
+    .document-meta { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; padding-bottom: 12px; border-bottom: 1px solid #cfd8df; font-family: "Songti SC", SimSun, serif; }
+    .document-section { margin: 15px 0; font-family: "Songti SC", SimSun, serif; line-height: 1.8; }
+    .document-section b { display: inline-block; min-width: 74px; }
+    .mapped-value { padding: 2px 5px; color: #185bb7; background: #eaf3ff; border-radius: 4px; }
+    .mapping-panel { height: calc(100vh - 205px); overflow: auto; padding: 16px; background: #fff; border: 1px solid #dce5ef; border-radius: 10px; }
+    .mapping-panel h3 { margin: 0 0 5px; }
+    .mapping-panel-note { color: #7e8b99; font-size: 12px; }
+    .mapping-table { margin-top: 14px; }
+    .mapping-row { display: grid; grid-template-columns: 118px minmax(0, 1fr) 56px; gap: 8px; align-items: center; padding: 9px 0; border-bottom: 1px solid #edf1f5; font-size: 12px; }
+    .mapping-row input { width: 100%; padding: 7px 8px; border: 1px solid #ccd7e3; border-radius: 5px; color: #2d3c4c; background: #fbfdff; }
+    .mapping-row .mapped { color: #16805d; text-align: right; font-size: 11px; }
+    .mapping-footer { position: fixed; left: 0; right: 0; bottom: 0; z-index: 25; height: 66px; display: flex; align-items: center; justify-content: space-between; padding: 0 18px; background: #fff; border-top: 1px solid #dfe6ef; }
+    @media (max-width: 960px) {
+      .patient-list { grid-template-columns: 1fr; }
+      .workstation { grid-template-columns: 1fr; }
+      .sidebar { display: none; }
+      .pcie-content, .mapping-grid { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand"><span class="brand-mark">PH</span>PHIS 门诊医生工作站</div>
+    <div class="top-meta">全科门诊 · 陈医生　|　动态病例模板联调环境</div>
+  </header>
+
+  <main class="page">
+    <section id="waiting-view" class="view">
+      <div class="page-title"><h1>待诊患者列表</h1><span>选择患者进入本次门诊</span></div>
+      <div class="patient-list">
+        <article class="patient-card active">
+          <div class="patient-head"><span class="patient-name">模拟患者甲</span><span class="tag green">全科门诊</span></div>
+          <div class="patient-meta">女 · 38 岁　　排队号 A018</div>
+          <div class="patient-cc">本次主诉：咳嗽、咽痛 3 天，无发热及呼吸困难</div>
+          <div class="card-action"><button id="receive-patient" class="primary">接诊</button></div>
+        </article>
+        <article class="patient-card muted">
+          <div class="patient-head"><span class="patient-name">候诊患者乙</span><span class="tag blue">内科</span></div>
+          <div class="patient-meta">男 · 52 岁　　排队号 A019</div>
+          <div class="patient-cc">本次主诉：头晕、乏力 2 天</div>
+        </article>
+        <article class="patient-card muted">
+          <div class="patient-head"><span class="patient-name">候诊患者丙</span><span class="tag blue">全科门诊</span></div>
+          <div class="patient-meta">女 · 31 岁　　排队号 A020</div>
+          <div class="patient-cc">本次主诉：腹痛半天</div>
+        </article>
+      </div>
+    </section>
+
+    <section id="workstation-view" class="view" hidden>
+      <div class="workstation">
+        <aside class="sidebar">
+          <div class="avatar">👤</div>
+          <div class="identity">
+            <h2>模拟患者甲</h2>
+            <p>女 · 38 岁</p>
+            <p>就诊号 SIM-E2E-OPD-VISIT-20260831-01</p>
+          </div>
+          <div class="side-block"><div class="side-label">过敏史</div><div class="side-value">无已知药物过敏</div></div>
+          <div class="side-block"><div class="side-label">既往史</div><div class="side-value">平素体健，否认高血压、糖尿病及手术史</div></div>
+          <div class="side-block"><div class="side-label">本次生命体征</div><div class="side-value">T 36.8℃ · P 76次/分<br>R 18次/分 · BP 126/78mmHg</div></div>
+        </aside>
+
+        <div class="main">
+          <div class="toolbar">
+            <h1>门诊病历</h1>
+            <div class="toolbar-actions">
+              <button id="start-voice" class="primary" disabled>🎙 开始语音问诊</button>
+              <button id="simulate-dialogue" class="secondary" hidden>传入模拟医患对话</button>
+              <button id="open-pcie-review" class="primary" hidden>打开 PCIE 医生确认</button>
+              <button id="finish-visit" class="secondary">结束接诊</button>
+            </div>
+          </div>
+
+          <section class="workspace-card">
+            <div class="section-title"><h3>本次门急诊病例模板</h3><span id="bridge-badge" class="tag orange">正在连接 PCIE</span></div>
+            <div class="template-panel">
+              <div>
+                <div class="template-name">门急诊病例模板 · 动态映射演示版</div>
+                <div class="template-meta">模板 ID：SIM-E2E-OPD-TPL-20260831-01 · 病历 ID：SIM-E2E-OPD-MR-20260831-01<br>模板结构：83 字段 / 75 可写 / 65 已映射 · 本次渲染器选择 27 个目标字段</div>
+              </div>
+              <select class="template-select" aria-label="门急诊病例模板"><option selected>动态门急诊病例模板（已选）</option></select>
+            </div>
+          </section>
+
+          <section class="workspace-card">
+            <div class="section-title"><h3>就诊流程</h3><span id="flow-status" class="tag blue">患者已接诊</span></div>
+            <div class="flow-steps">
+              <div id="step-patient" class="flow-step active">1 患者接诊</div>
+              <div id="step-template" class="flow-step active">2 模板冻结</div>
+              <div id="step-voice" class="flow-step">3 语音问诊</div>
+              <div id="step-confirm" class="flow-step">4 医生确认</div>
+              <div id="step-writeback" class="flow-step">5 PHIS 回写</div>
+            </div>
+          </section>
+
+          <section id="record-section" class="workspace-card">
+            <div class="section-title"><h3>当前病例</h3><span class="tag blue">待问诊生成</span></div>
+            <div class="record-grid">
+              <div class="label">主诉</div><div>咳嗽、咽痛 3 天</div>
+              <div class="label">现病史</div><div class="empty">等待语音问诊生成</div>
+              <div class="label">初步诊断</div><div class="empty">等待医生确认</div>
+              <div class="label">诊疗方案</div><div class="empty">等待医生选择</div>
+            </div>
+          </section>
+
+          <section id="result-section" class="workspace-card" hidden>
+            <div class="section-title"><h3>PCIE 合并回写结果</h3><span id="result-badge" class="tag orange">待 PHIS 确认</span></div>
+            <div id="result-content" class="result-card"></div>
+            <pre id="event-json" hidden></pre>
+          </section>
+
+          <section class="workspace-card">
+            <div class="section-title"><h3>接口日志</h3><span class="tag blue">同一 requestId</span></div>
+            <div id="log" class="log">初始化 PHIS 模拟医生站…</div>
+          </section>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <section id="pcie-view" class="pcie-view" hidden>
+    <div id="pcie-clinical-screen" class="pcie-window">
+      <div class="pcie-titlebar"><span>语音问诊 · 模拟患者甲</span><span>全医慧助（PCIE）</span></div>
+      <div class="pcie-patientbar">
+        <span class="pcie-avatar">👤</span><strong>模拟患者甲</strong><span>女性 · 38岁</span><span class="pcie-chip">自费</span><span>就诊号：SIM-E2E-OPD-VISIT-20260831-01</span>
+      </div>
+      <div class="pcie-content">
+        <section class="pcie-card">
+          <div class="pcie-card-title"><span>病历详情</span><span class="tag blue">AI 已生成</span></div>
+          <div class="pcie-record">
+            <p class="pcie-record-row"><b>主诉：</b><span class="ai-mark">咳嗽、咽痛 3 天</span></p>
+            <p class="pcie-record-row"><b>现病史：</b>患者 3 天前受凉后出现阵发性干咳，偶有少量白痰，夜间稍重，伴咽痛。<span class="ai-mark">无发热、鼻塞流涕、胸痛、胸闷及呼吸困难</span>，无恶心、呕吐及腹泻。精神、食欲尚可，睡眠稍受咳嗽影响，二便正常，近期体重无明显变化。</p>
+            <p class="pcie-record-row"><b>既往史：</b>平素体健；否认高血压、糖尿病、冠心病、脑血管病；否认手术、外伤、输血史及长期用药史；无已知药物过敏。</p>
+            <p class="pcie-record-row"><b>个人史：</b>否认吸烟史、饮酒史。</p>
+            <p class="pcie-record-row"><b>家族史：</b>否认家族遗传病史及传染病史。</p>
+            <p class="pcie-record-row"><b>体格检查：</b>T 36.8℃，P 76 次/分，R 18 次/分，BP 126/78 mmHg。意识清楚，咽部轻度充血，扁桃体无肿大；双肺呼吸音清，未闻及干湿啰音；心律齐；腹部无压痛；双下肢无浮肿。</p>
+            <p class="pcie-record-row"><b>注意事项：</b>多饮温水、注意休息；若持续高热、呼吸困难或症状明显加重，请及时复诊。</p>
+          </div>
+        </section>
+        <div>
+          <section class="pcie-card">
+            <div class="pcie-card-title"><span>诊断建议</span><span id="diagnosis-count">已纳入 0 项</span></div>
+            <div style="padding:14px">
+              <div id="diagnosis-option" class="recommendation">
+                <label><input id="select-diagnosis" type="checkbox"><span class="recommendation-name">急性鼻咽炎[普通感冒] <span class="confidence">高置信</span></span><span>J00</span></label>
+                <div class="recommendation-meta">与受凉后咳嗽、咽痛及咽部充血相符 · mock HIS 目录已匹配</div>
+              </div>
+              <div class="recommendation">
+                <label><input type="checkbox"><span class="recommendation-name">急性支气管炎</span><span>J20.9</span></label>
+                <div class="recommendation-meta">备选诊断 · 当前无明显肺部阳性体征</div>
+              </div>
+            </div>
+          </section>
+          <section class="pcie-card">
+            <div class="pcie-card-title"><span>治疗方案</span><span id="treatment-count">已选 0 项</span></div>
+            <div style="padding:14px">
+              <div id="medicine-option" class="recommendation">
+                <label><input id="select-medicine" type="checkbox"><span class="recommendation-name">布洛芬缓释胶囊 0.3g×20粒/盒</span><span class="tag blue">门诊药房</span></label>
+                <div class="recommendation-meta">1 粒 · 必要时 · 口服 · 3 天 / 1 盒　mock HIS 库存校验通过</div>
+              </div>
+              <div class="recommendation">
+                <label><input type="checkbox"><span class="recommendation-name">血常规</span><span class="tag blue">检验科</span></label>
+                <div class="recommendation-meta">症状持续或出现发热时可考虑；本次可不选</div>
+              </div>
+              <div class="recommendation">
+                <label><input type="checkbox"><span class="recommendation-name">生活方式指导</span><span class="tag green">非医嘱</span></label>
+                <div class="recommendation-meta">休息、多饮水、保持室内通风，观察体温和呼吸情况</div>
+              </div>
+            </div>
+          </section>
+        </div>
+      </div>
+      <div class="pcie-footer">
+        <span class="pcie-footer-note">AI 内容仅供辅助参考，请结合患者实际情况完成临床判断并确认后回写。</span>
+        <div class="pcie-footer-actions"><button id="open-scope" class="secondary">选择回写 <span id="selection-total">7 项</span></button><button id="clinical-next" class="primary">一键回写</button></div>
+      </div>
+      <div id="scope-mask" class="scope-mask" hidden>
+        <div class="scope-dialog">
+          <h3>选择回写内容</h3><p class="scope-subtitle">已选 <span id="scope-total">7</span>/9 项；取消勾选不会清空 PHIS 中已有内容。</p>
+          <div class="scope-group"><label><input type="checkbox" checked> 门诊病历（7 项）</label><div class="scope-items"><span>☑ 主诉</span><span>☑ 现病史</span><span>☑ 既往史</span><span>☑ 个人史</span><span>☑ 家族史</span><span>☑ 体格检查</span><span>☑ 注意事项</span></div></div>
+          <div class="scope-group"><label><input id="scope-diagnosis" type="checkbox" checked> 诊断（1 项）</label></div>
+          <div class="scope-group"><label><input id="scope-medicine" type="checkbox" checked> 用药（1 项）</label></div>
+          <div class="scope-dialog-actions"><button id="close-scope" class="secondary">取消</button><button id="confirm-scope" class="primary">确认选择</button></div>
+        </div>
+      </div>
+    </div>
+
+    <div id="pcie-mapping-screen" class="pcie-window" hidden>
+      <div class="pcie-titlebar"><span>门急诊病例模板 · 动态映射确认</span><span>全医慧助（PCIE）</span></div>
+      <div class="mapping-content">
+        <div class="mapping-summary"><strong>同一请求继续处理：</strong><span>门诊病历 7 项</span><span>·</span><span>诊断 1 项</span><span>·</span><span>用药 1 项</span><span>·</span><span>模板目标字段 27 项</span><span class="tag green">不会提前发送 record-confirmed</span></div>
+        <div class="mapping-grid">
+          <div class="document-preview">
+            <h1>门（急）诊病历</h1><div class="document-line"></div>
+            <div class="document-meta"><span>姓名：模拟患者甲</span><span>性别：女</span><span>年龄：38岁</span><span>科室：全科门诊</span></div>
+            <div class="document-section"><b>主诉：</b><span class="mapped-value">咳嗽、咽痛 3 天</span></div>
+            <div class="document-section"><b>现病史：</b><span class="mapped-value">受凉后阵发性干咳，偶有少量白痰，伴咽痛；无发热、胸痛、胸闷及呼吸困难。</span></div>
+            <div class="document-section"><b>既往史：</b>否认高血压、糖尿病、冠心病、脑血管病、手术、外伤、输血及长期用药史；无已知药物过敏；预防接种史不详。</div>
+            <div class="document-section"><b>个人史：</b>否认吸烟史、饮酒史。</div>
+            <div class="document-section"><b>家族史：</b>否认家族遗传病史及传染病史。</div>
+            <div class="document-section"><b>体格检查：</b><span class="mapped-value">T 36.8℃，P 76 次/分，R 18 次/分，BP 126/78 mmHg；意识清楚，双肺呼吸音清，未闻及干湿啰音，心律齐，腹部无压痛，双下肢无浮肿。</span></div>
+            <div class="document-section"><b>初步诊断：</b><span class="mapped-value">急性鼻咽炎[普通感冒]（J00）</span></div>
+            <div class="document-section"><b>诊疗计划：</b><span class="mapped-value">布洛芬缓释胶囊，必要时口服；休息、多饮水，症状加重及时复诊。</span></div>
+          </div>
+          <div class="mapping-panel"><h3>结构化映射字段</h3><div class="mapping-panel-note">动态解析真实模板双文件，按 data-id 精确返回；字典字段已唯一命中模板项。</div><div id="mapping-table" class="mapping-table"></div></div>
+        </div>
+      </div>
+      <div class="mapping-footer"><span><strong>27</strong> 项字段值 · <strong>20</strong> 项字典码 · 同一 requestId</span><div class="pcie-footer-actions"><button id="back-clinical" class="secondary">返回修改</button><button id="submit-combined" class="primary">确认并一次回写 PHIS</button></div></div>
+    </div>
+  </section>
+
+  <script src="http://127.0.0.1:8081/sdk/med-hermes-sdk.js"></script>
+  <script>
+    (function () {
+      'use strict';
+
+      var TEMPLATE_REQUEST_ID = 'E2E-OPD-VOICE-TPL-20260831-1815-R1';
+      var TEMPLATE_ID = 'SIM-E2E-OPD-TPL-20260831-01';
+      var TARGET_FIELD_IDS = [
+        '主诉文本', '现病史文本', '体温', '呼吸', '脉搏', '收缩压', '舒张压',
+        '手术史标志', '外伤史标志', '输血史标志', '过敏史标志', '预防接种史',
+        '高血压病史标志', '糖尿病史标志', '冠心病史标志', '脑血管病史标志', '长期用药史标志',
+        '吸烟史标志', '饮酒史标志', '家族遗传病史标志', '家族传染病史标志',
+        '意识', '呼吸音', '干湿啰音标志', '心律', '压痛', '下肢浮肿标志'
+      ];
+      var templateHtml = '';
+      var templateDefinition = '';
+      var sdk = null;
+      var latestEnvelope = null;
+      var FIELD_VALUES = {
+        '主诉文本': '咳嗽、咽痛 3 天',
+        '现病史文本': '患者 3 天前受凉后出现阵发性干咳，偶有少量白痰，夜间稍重，伴咽痛。无发热、胸痛、胸闷及呼吸困难。',
+        '体温': '36.8', '呼吸': '18', '脉搏': '76', '收缩压': '126', '舒张压': '78',
+        '手术史标志': '否认', '外伤史标志': '否认', '输血史标志': '否认', '过敏史标志': '否认', '预防接种史': '预防接种史不详',
+        '高血压病史标志': '否认', '糖尿病史标志': '否认', '冠心病史标志': '否认', '脑血管病史标志': '否认', '长期用药史标志': '否认',
+        '吸烟史标志': '否认', '饮酒史标志': '否认', '家族遗传病史标志': '否认', '家族传染病史标志': '否认',
+        '意识': '清楚', '呼吸音': '清', '干湿啰音标志': '未闻及', '心律': '齐', '压痛': '无', '下肢浮肿标志': '无'
+      };
+      var DICTIONARY_CODES = {
+        '手术史标志': ['0', '否认'], '外伤史标志': ['0', '否认'], '输血史标志': ['0', '否认'], '过敏史标志': ['0', '否认'], '预防接种史': ['6', '预防接种史不详'],
+        '高血压病史标志': ['0', '否认'], '糖尿病史标志': ['0', '否认'], '冠心病史标志': ['0', '否认'], '脑血管病史标志': ['0', '否认'], '长期用药史标志': ['0', '否认'],
+        '吸烟史标志': ['0', '否认'], '饮酒史标志': ['0', '否认'], '家族遗传病史标志': ['0', '否认'], '家族传染病史标志': ['0', '否认'],
+        '意识': ['1', '清楚'], '呼吸音': ['1', '清'], '干湿啰音标志': ['0', '未闻及'], '心律': ['1', '齐'], '压痛': ['1', '无'], '下肢浮肿标志': ['0', '无']
+      };
+      var $ = function (id) { return document.getElementById(id); };
+
+      function now() {
+        return new Date().toLocaleTimeString('zh-CN', { hour12: false });
+      }
+
+      function log(message, data) {
+        var detail = data === undefined ? '' : '\n' + JSON.stringify(data, null, 2);
+        $('log').textContent += '\n[' + now() + '] ' + message + detail;
+        $('log').scrollTop = $('log').scrollHeight;
+      }
+
+      function setStep(id, state) {
+        var el = $(id);
+        el.className = 'flow-step ' + state;
+      }
+
+      function escapeHtml(value) {
+        return String(value == null ? '' : value)
+          .replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;')
+          .replaceAll('"', '&quot;').replaceAll("'", '&#039;');
+      }
+
+      function fieldArticle(fieldId) {
+        if (fieldId === '主诉文本') return '主诉';
+        if (fieldId === '现病史文本') return '现病史';
+        if (['手术史标志', '外伤史标志', '输血史标志', '过敏史标志', '预防接种史', '高血压病史标志', '糖尿病史标志', '冠心病史标志', '脑血管病史标志', '长期用药史标志'].includes(fieldId)) return '既往史';
+        if (['吸烟史标志', '饮酒史标志'].includes(fieldId)) return '个人史';
+        if (['家族遗传病史标志', '家族传染病史标志'].includes(fieldId)) return '家族史';
+        return '体格检查';
+      }
+
+      function fieldRecordMapping(fieldId) {
+        var article = fieldArticle(fieldId);
+        return {
+          '主诉': 'chiefComplaint',
+          '现病史': 'historyOfPresentIllness',
+          '既往史': 'pastMedicalHistory',
+          '个人史': 'personalHistory',
+          '家族史': 'familyHistory',
+          '体格检查': 'physicalExam'
+        }[article];
+      }
+
+      function buildTemplateMetadataFields() {
+        return TARGET_FIELD_IDS.map(function (fieldId) {
+          var article = fieldArticle(fieldId);
+          var dictionary = DICTIONARY_CODES[fieldId];
+          var isNumber = ['体温', '呼吸', '脉搏', '收缩压', '舒张压'].includes(fieldId);
+          return {
+            id: fieldId,
+            name: fieldId,
+            type: dictionary ? 'select' : (isNumber ? 'number' : 'text'),
+            articleTemplateId: 'article-' + article,
+            articleId: article,
+            articleName: article,
+            articleDefinitionName: article,
+            dictionaryItems: dictionary ? [{ value: dictionary[0], text: dictionary[1] }] : [],
+            recordField: fieldRecordMapping(fieldId),
+            mappingSource: fieldId === '主诉文本' || fieldId === '现病史文本' ? 'canonical-id' : 'deterministic-article',
+            projectionMode: fieldId === '主诉文本' || fieldId === '现病史文本' ? 'direct' : 'section-compose'
+          };
+        });
+      }
+
+      function renderMappingTable() {
+        $('mapping-table').innerHTML = TARGET_FIELD_IDS.map(function (fieldId) {
+          return '<div class="mapping-row"><span>' + escapeHtml(fieldId) + '</span><input readonly value="' + escapeHtml(FIELD_VALUES[fieldId]) + '"><span class="mapped">' + (DICTIONARY_CODES[fieldId] ? '字典命中' : '已映射') + '</span></div>';
+        }).join('');
+      }
+
+      async function sha256(value) {
+        var bytes = new TextEncoder().encode(value);
+        var digest = await crypto.subtle.digest('SHA-256', bytes);
+        return Array.from(new Uint8Array(digest)).map(function (byte) { return byte.toString(16).padStart(2, '0'); }).join('');
+      }
+
+      async function hashTemplatePair() {
+        var hashes = await Promise.all([sha256(templateHtml), sha256(templateDefinition)]);
+        return sha256('outpatient-emr-template-pair.v1:' + hashes[0] + ':' + hashes[1]);
+      }
+
+      async function buildCombinedResult() {
+        var dictionarySelections = {};
+        Object.keys(DICTIONARY_CODES).forEach(function (fieldId) {
+          dictionarySelections[fieldId] = { value: DICTIONARY_CODES[fieldId][0], text: DICTIONARY_CODES[fieldId][1] };
+        });
+        return {
+          consultationId: 'SIM-E2E-OPD-VISIT-20260831-01',
+          visitId: 'SIM-E2E-OPD-VISIT-20260831-01',
+          timestamp: Date.now(),
+          resultType: 'record-confirmed',
+          requestId: TEMPLATE_REQUEST_ID,
+          referenceType: 'batch',
+          action: 'batch',
+          referenceStatus: 'pending',
+          referenceMessage: '等待 HIS 完成动态模板及已选诊疗内容回写并回执',
+          emrType: 'outpatient-emr',
+          templateMetadata: {
+            schemaVersion: 'outpatient-emr-template-pair.v1',
+            templateId: TEMPLATE_ID,
+            templateName: '门急诊病例模板 · 动态映射演示版',
+            templateHash: await hashTemplatePair(),
+            fields: buildTemplateMetadataFields()
+          },
+          fieldValues: Object.assign({}, FIELD_VALUES),
+          dictionarySelections: dictionarySelections,
+          outpatientRecord: {
+            schemaVersion: 'outpatient-record.v1',
+            chiefComplaint: '咳嗽、咽痛 3 天',
+            historyOfPresentIllness: '患者 3 天前受凉后出现阵发性干咳，偶有少量白痰，夜间稍重，伴咽痛。无发热、胸痛、胸闷及呼吸困难。',
+            pastMedicalHistory: '手术史：否认；外伤史：否认；输血史：否认；过敏史：否认；预防接种史：预防接种史不详；高血压病史：否认；糖尿病史：否认；冠心病史：否认；脑血管病史：否认；长期用药史：否认',
+            personalHistory: '吸烟史：否认；饮酒史：否认',
+            familyHistory: '家族遗传病史：否认；家族传染病史：否认',
+            physicalExam: '体温：36.8；呼吸：18；脉搏：76；收缩压：126；舒张压：78；意识：清楚；呼吸音：清；干湿啰音：未闻及；心律：齐；压痛：无；下肢浮肿：无',
+            precautions: '多饮温水、注意休息；若持续高热、呼吸困难或症状明显加重，请及时复诊。'
+          },
+          diagList: [{
+            idTet: 'mock-tet-1', idDiag: 'mock-dx-1', naDiag: '急性鼻咽炎[普通感冒]', cdIcd10: 'J00', fgMain: '1', sdDiagText: '西医诊断'
+          }],
+          orderList: [{
+            idSrv: 'mock-med-2', naSrv: '布洛芬缓释胶囊', sdSrv: '11', doseOnce: '1', unitDose: '粒', idFreq: 'prn', nameFreq: '必要时', idUsge: 'po', nameUsge: '口服', takeDays: 3, amount: 1, idDeptExec: 'dept-001', idSto: 'sto-001'
+          }],
+          treatmentPlan: '布洛芬缓释胶囊 1 粒，必要时口服；休息、多饮水，症状加重及时复诊。',
+          precautions: '多饮温水、注意休息；若持续高热、呼吸困难或症状明显加重，请及时复诊。',
+          writebackScope: {
+            recordFields: ['chiefComplaint', 'historyOfPresentIllness', 'pastMedicalHistory', 'personalHistory', 'familyHistory', 'physicalExam', 'precautions'],
+            includeDiagnosis: true,
+            orderTypes: ['medicine']
+          }
+        };
+      }
+
+      function buildPatient() {
+        return {
+          idPi: 'SIM-E2E-OPD-PATIENT-20260831-01',
+          idVis: 'SIM-E2E-OPD-VISIT-20260831-01',
+          naPi: '模拟患者甲',
+          sdSexText: '女性',
+          ageText: '38岁',
+          department: '全科门诊',
+          pastMedicalHistory: '平素体健，否认高血压、糖尿病、冠心病、脑血管病、手术、外伤及输血史。',
+          allergyHistory: '无已知药物过敏',
+          recordId: 'SIM-E2E-OPD-MR-20260831-01',
+          idMedrecdoc: 'SIM-E2E-OPD-MR-20260831-01',
+          outpatientEmr: {
+            templateId: TEMPLATE_ID,
+            templateName: '门急诊病例模板 · 动态映射演示版',
+            templateHtml: templateHtml,
+            templateDefinition: templateDefinition,
+            targetFieldIds: TARGET_FIELD_IDS.slice(),
+            requestId: TEMPLATE_REQUEST_ID
+          }
+        };
+      }
+
+      function resultSummary(envelope) {
+        var event = envelope && envelope.event || {};
+        var payload = event.payload || {};
+        var record = payload.outpatientRecord || {};
+        var diagnoses = Array.isArray(payload.diagList) ? payload.diagList : [];
+        var orders = Array.isArray(payload.orderList) ? payload.orderList : [];
+        var fieldValues = payload.fieldValues || {};
+        var dictionaries = payload.dictionarySelections || {};
+        var scope = payload.writebackScope || {};
+        var diagnosisHtml = diagnoses.length
+          ? diagnoses.map(function (item) { return '<span class="tag blue">' + escapeHtml(item.naDiag || item.name) + ' · ' + escapeHtml(item.cdIcd10 || item.code) + '</span>'; }).join(' ')
+          : '<span class="empty">本次未选择诊断</span>';
+        var ordersHtml = orders.length
+          ? orders.map(function (item) { return escapeHtml(item.naSrv || item.name); }).join('、')
+          : '<span class="empty">本次未选择诊疗项目</span>';
+
+        return '<div class="result-head"><div><strong>动态模板 + 诊疗内容，一次回参</strong>'
+          + '<div class="result-id">' + escapeHtml(event.requestId) + '</div></div>'
+          + '<span class="tag green">record-confirmed × 1</span></div>'
+          + '<div class="record-grid">'
+          + '<div class="label">主诉</div><div>' + escapeHtml(record.chiefComplaint || '-') + '</div>'
+          + '<div class="label">现病史</div><div>' + escapeHtml(record.historyOfPresentIllness || '-') + '</div>'
+          + '<div class="label">诊断</div><div>' + diagnosisHtml + '</div>'
+          + '<div class="label">诊疗方案</div><div>' + ordersHtml + '</div>'
+          + '<div class="label">模板字段</div><div><strong>' + Object.keys(fieldValues).length + '</strong> 项字段值 · <strong>' + Object.keys(dictionaries).length + '</strong> 项字典码</div>'
+          + '<div class="label">回写范围</div><div>病历 ' + ((scope.recordFields || []).length) + ' 项 · 诊断 ' + (scope.includeDiagnosis ? diagnoses.length : 0) + ' 项 · 医嘱 ' + orders.length + ' 项</div>'
+          + '</div><div class="result-actions"><button id="confirm-phis-writeback" class="primary">确认写入 PHIS</button></div>';
+      }
+
+      function renderEnvelope(envelope) {
+        var event = envelope && envelope.event || {};
+        var payload = event.payload || {};
+        latestEnvelope = envelope;
+        log('收到 PCIE 事件：' + (payload.resultType || event.type || 'unknown'), {
+          requestId: event.requestId || payload.requestId,
+          resultType: payload.resultType,
+          referenceStatus: payload.referenceStatus,
+          templateFieldCount: payload.fieldValues ? Object.keys(payload.fieldValues).length : 0,
+          diagnosisCount: Array.isArray(payload.diagList) ? payload.diagList.length : 0,
+          orderCount: Array.isArray(payload.orderList) ? payload.orderList.length : 0
+        });
+
+        if (payload.resultType === 'record-confirmed' && payload.emrType === 'outpatient-emr') {
+          $('event-json').textContent = JSON.stringify(envelope, null, 2);
+          $('result-section').hidden = false;
+          $('record-section').hidden = true;
+          $('result-content').innerHTML = resultSummary(envelope);
+          $('flow-status').textContent = '等待 PHIS 回写';
+          setStep('step-patient', 'done');
+          setStep('step-template', 'done');
+          setStep('step-voice', 'done');
+          setStep('step-confirm', 'done');
+          setStep('step-writeback', 'active');
+          $('confirm-phis-writeback').addEventListener('click', confirmWriteback);
+        }
+
+        if (payload.resultType === 'reference-feedback' && payload.referenceStatus === 'success') {
+          $('result-badge').className = 'tag green';
+          $('result-badge').textContent = 'PHIS 回写成功';
+          $('flow-status').className = 'tag green';
+          $('flow-status').textContent = '全流程完成';
+          setStep('step-writeback', 'done');
+          var action = $('confirm-phis-writeback');
+          if (action) action.replaceWith(Object.assign(document.createElement('div'), { className: 'success-banner', textContent: '✓ 病历、模板字段、诊断与诊疗数据已完成一次合并回写' }));
+        }
+      }
+
+      async function confirmWriteback() {
+        var event = latestEnvelope && latestEnvelope.event || {};
+        var payload = event.payload || {};
+        var items = [];
+        (payload.diagList || []).forEach(function (item) { items.push({ name: item.naDiag, code: item.cdIcd10, type: 'diagnosis' }); });
+        (payload.orderList || []).forEach(function (item) { items.push({ name: item.naSrv, code: item.idSrv, type: 'order' }); });
+        $('confirm-phis-writeback').disabled = true;
+        log('PHIS 按同一 requestId 执行病例与诊疗数据写入', { requestId: event.requestId, itemCount: items.length });
+        await sdk.sendFeedback(event.requestId, 'success', '模拟 PHIS 已完成动态门诊模板、病历、诊断和诊疗数据的一次合并写入', items);
+      }
+
+      async function startVoice() {
+        $('start-voice').disabled = true;
+        $('flow-status').textContent = '语音问诊进行中';
+        setStep('step-patient', 'done');
+        setStep('step-template', 'done');
+        setStep('step-voice', 'active');
+        var patient = buildPatient();
+        log('一次启动：患者 + 已选门急诊模板', {
+          idPi: patient.idPi,
+          idVis: patient.idVis,
+          templateId: patient.outpatientEmr.templateId,
+          requestId: patient.outpatientEmr.requestId,
+          targetFieldCount: patient.outpatientEmr.targetFieldIds.length
+        });
+        try {
+          var result = await sdk.startVoice(patient);
+          log('PCIE 已接收语音问诊任务', result);
+          $('simulate-dialogue').hidden = false;
+        } catch (error) {
+          log('启动失败：' + (error && error.message ? error.message : error));
+          $('start-voice').disabled = false;
+        }
+      }
+
+      async function simulateDialogue() {
+        var transcript = [
+          '医生：您好，今天哪里不舒服？',
+          '患者：咳嗽、咽痛三天了，受凉以后开始的，主要是阵发性干咳，偶尔有一点白痰，夜间稍重。',
+          '医生：有没有发热、流鼻涕、鼻塞、胸痛、胸闷或呼吸困难？',
+          '患者：没有发热，最高体温36.8摄氏度，也没有明显流涕鼻塞，没有胸痛、胸闷和呼吸困难。',
+          '医生：有没有恶心呕吐、腹泻？饮食、睡眠、大小便和体重怎么样？',
+          '患者：都没有，精神和食欲还可以，睡眠稍受咳嗽影响，大小便正常，体重没有变化。',
+          '医生：以前有什么慢性病、手术外伤、输血或长期用药吗？抽烟喝酒吗？家族里有遗传病或传染病吗？',
+          '患者：平时身体健康，没有高血压、糖尿病、冠心病和脑血管病，没有手术、外伤、输血和长期用药，不抽烟不喝酒，家族也没有遗传病和传染病。没有药物过敏。',
+          '医生：查体记录，体温36.8摄氏度，脉搏76次每分，呼吸18次每分，血压126/78毫米汞柱；意识清楚，咽部轻度充血，扁桃体无肿大，双肺呼吸音清，未闻及干湿啰音，心律齐，腹部无压痛，双下肢无浮肿。',
+          '医生：初步考虑急性咽炎或急性上呼吸道感染，建议多饮水、休息，必要时给予对症治疗。'
+        ].join('\n');
+        $('simulate-dialogue').disabled = true;
+        $('flow-status').textContent = '正在分析模拟对话';
+        log('传入已脱敏的模拟医患完整对话', {
+          requestId: TEMPLATE_REQUEST_ID,
+          transcriptLength: transcript.length
+        });
+        try {
+          var result = await sdk._http.post('/debug/voice-transcript', {
+            requestId: TEMPLATE_REQUEST_ID,
+            transcript: transcript
+          });
+          $('simulate-dialogue').hidden = true;
+          $('open-pcie-review').hidden = false;
+          setStep('step-voice', 'done');
+          setStep('step-confirm', 'active');
+          $('flow-status').textContent = 'AI 正在生成病例与诊疗建议';
+          log('模拟转写已进入真实语音处理链', result);
+        } catch (error) {
+          $('simulate-dialogue').disabled = false;
+          log('模拟对话传入失败：' + (error && error.message ? error.message : error));
+        }
+      }
+
+      function updateClinicalSelections() {
+        var diagnosisSelected = $('select-diagnosis').checked;
+        var medicineSelected = $('select-medicine').checked;
+        $('diagnosis-option').classList.toggle('selected', diagnosisSelected);
+        $('medicine-option').classList.toggle('selected', medicineSelected);
+        $('diagnosis-count').textContent = '已纳入 ' + (diagnosisSelected ? 1 : 0) + ' 项';
+        $('treatment-count').textContent = '已选 ' + (medicineSelected ? 1 : 0) + ' 项';
+        $('selection-total').textContent = (7 + (diagnosisSelected ? 1 : 0) + (medicineSelected ? 1 : 0)) + ' 项';
+      }
+
+      function openPcieReview() {
+        $('pcie-view').hidden = false;
+        $('pcie-clinical-screen').hidden = false;
+        $('pcie-mapping-screen').hidden = true;
+        $('scope-mask').hidden = true;
+        updateClinicalSelections();
+      }
+
+      function openMappingReview() {
+        if (!$('select-diagnosis').checked || !$('select-medicine').checked) {
+          alert('请先选择本次诊断和治疗方案。');
+          return;
+        }
+        renderMappingTable();
+        $('pcie-clinical-screen').hidden = true;
+        $('pcie-mapping-screen').hidden = false;
+      }
+
+      async function submitCombinedResult() {
+        var button = $('submit-combined');
+        button.disabled = true;
+        button.textContent = '正在生成唯一回写事件…';
+        try {
+          var payload = await buildCombinedResult();
+          var result = await sdk._http.post('/debug/complete-consultation', payload);
+          log('PCIE 动态模板确认完成，已提交唯一合并结果', {
+            requestId: TEMPLATE_REQUEST_ID,
+            templateFieldCount: Object.keys(payload.fieldValues).length,
+            dictionarySelectionCount: Object.keys(payload.dictionarySelections).length,
+            diagnosisCount: payload.diagList.length,
+            orderCount: payload.orderList.length,
+            traceId: result.traceId
+          });
+          $('pcie-view').hidden = true;
+        } catch (error) {
+          button.disabled = false;
+          button.textContent = '确认并一次回写 PHIS';
+          alert('合并结果提交失败：' + (error && error.message ? error.message : error));
+        }
+      }
+
+      async function initializeBridge() {
+        if (typeof window.MedHermes !== 'function') throw new Error('未能加载 PCIE SDK');
+        sdk = new window.MedHermes();
+        sdk.subscribe(renderEnvelope);
+        await sdk.debugHandshake({ extra: { emrAccessToken: 'mock-token-for-local-debug' } });
+        $('bridge-badge').className = 'tag green';
+        $('bridge-badge').textContent = 'PCIE 已连接 · SDK ' + (window.MedHermes.VERSION || '3.x');
+        $('start-voice').disabled = false;
+        log('Bridge 握手成功，WebSocket 已订阅');
+      }
+
+      async function loadTemplate() {
+        var base = '../../src/test/template-parsing/fixtures/real-template.';
+        var responses = await Promise.all([fetch(base + 'html'), fetch(base + 'json')]);
+        if (!responses[0].ok || !responses[1].ok) throw new Error('真实模板 fixture 加载失败');
+        templateHtml = await responses[0].text();
+        templateDefinition = await responses[1].text();
+        log('已加载住院同源渲染器使用的真实门急诊模板双文件', {
+          htmlBytes: new TextEncoder().encode(templateHtml).length,
+          definitionBytes: new TextEncoder().encode(templateDefinition).length,
+          targetFieldCount: TARGET_FIELD_IDS.length
+        });
+      }
+
+      $('receive-patient').addEventListener('click', function () {
+        $('waiting-view').hidden = true;
+        $('workstation-view').hidden = false;
+      });
+      $('start-voice').addEventListener('click', startVoice);
+      $('simulate-dialogue').addEventListener('click', simulateDialogue);
+      $('open-pcie-review').addEventListener('click', openPcieReview);
+      $('select-diagnosis').addEventListener('change', updateClinicalSelections);
+      $('select-medicine').addEventListener('change', updateClinicalSelections);
+      $('open-scope').addEventListener('click', function () {
+        $('scope-total').textContent = 7 + ($('select-diagnosis').checked ? 1 : 0) + ($('select-medicine').checked ? 1 : 0);
+        $('scope-diagnosis').checked = $('select-diagnosis').checked;
+        $('scope-medicine').checked = $('select-medicine').checked;
+        $('scope-mask').hidden = false;
+      });
+      $('close-scope').addEventListener('click', function () { $('scope-mask').hidden = true; });
+      $('confirm-scope').addEventListener('click', function () {
+        $('select-diagnosis').checked = $('scope-diagnosis').checked;
+        $('select-medicine').checked = $('scope-medicine').checked;
+        $('scope-mask').hidden = true;
+        updateClinicalSelections();
+      });
+      $('clinical-next').addEventListener('click', openMappingReview);
+      $('back-clinical').addEventListener('click', function () {
+        $('pcie-mapping-screen').hidden = true;
+        $('pcie-clinical-screen').hidden = false;
+      });
+      $('submit-combined').addEventListener('click', submitCombinedResult);
+      $('finish-visit').addEventListener('click', async function () {
+        if (sdk) await sdk.stop();
+        location.reload();
+      });
+
+      Promise.all([loadTemplate(), initializeBridge()]).catch(function (error) {
+        $('bridge-badge').textContent = '连接失败';
+        log('初始化失败：' + (error && error.message ? error.message : error));
+      });
+    })();
+  </script>
+</body>
+</html>

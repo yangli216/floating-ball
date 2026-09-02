@@ -1,0 +1,650 @@
+{
+  "state": "ready",
+  "traceId": "his-1788174480407-f182f3fa",
+  "code": "",
+  "message": "",
+  "event": {
+    "id": "SIM-E2E-OPD-VISIT-20260831-01:E2E-OPD-VOICE-TPL-20260831-1815-R1:record-confirmed:1788174480403",
+    "type": "record-confirmed",
+    "consultationId": "SIM-E2E-OPD-VISIT-20260831-01",
+    "requestId": "E2E-OPD-VOICE-TPL-20260831-1815-R1",
+    "timestamp": 1788174480403,
+    "terminal": false,
+    "payload": {
+      "action": "batch",
+      "consultationId": "SIM-E2E-OPD-VISIT-20260831-01",
+      "diagList": [
+        {
+          "cdIcd10": "J00",
+          "fgMain": "1",
+          "idDiag": "mock-dx-1",
+          "idTet": "mock-tet-1",
+          "naDiag": "急性鼻咽炎[普通感冒]",
+          "sdDiagText": "西医诊断"
+        }
+      ],
+      "dictionarySelections": {
+        "下肢浮肿标志": {
+          "text": "无",
+          "value": "0"
+        },
+        "冠心病史标志": {
+          "text": "否认",
+          "value": "0"
+        },
+        "压痛": {
+          "text": "无",
+          "value": "1"
+        },
+        "吸烟史标志": {
+          "text": "否认",
+          "value": "0"
+        },
+        "呼吸音": {
+          "text": "清",
+          "value": "1"
+        },
+        "外伤史标志": {
+          "text": "否认",
+          "value": "0"
+        },
+        "家族传染病史标志": {
+          "text": "否认",
+          "value": "0"
+        },
+        "家族遗传病史标志": {
+          "text": "否认",
+          "value": "0"
+        },
+        "干湿啰音标志": {
+          "text": "未闻及",
+          "value": "0"
+        },
+        "心律": {
+          "text": "齐",
+          "value": "1"
+        },
+        "意识": {
+          "text": "清楚",
+          "value": "1"
+        },
+        "手术史标志": {
+          "text": "否认",
+          "value": "0"
+        },
+        "糖尿病史标志": {
+          "text": "否认",
+          "value": "0"
+        },
+        "脑血管病史标志": {
+          "text": "否认",
+          "value": "0"
+        },
+        "输血史标志": {
+          "text": "否认",
+          "value": "0"
+        },
+        "过敏史标志": {
+          "text": "否认",
+          "value": "0"
+        },
+        "长期用药史标志": {
+          "text": "否认",
+          "value": "0"
+        },
+        "预防接种史": {
+          "text": "预防接种史不详",
+          "value": "6"
+        },
+        "饮酒史标志": {
+          "text": "否认",
+          "value": "0"
+        },
+        "高血压病史标志": {
+          "text": "否认",
+          "value": "0"
+        }
+      },
+      "emrType": "outpatient-emr",
+      "fieldValues": {
+        "下肢浮肿标志": "无",
+        "主诉文本": "咳嗽、咽痛 3 天",
+        "体温": "36.8",
+        "冠心病史标志": "否认",
+        "压痛": "无",
+        "吸烟史标志": "否认",
+        "呼吸": "18",
+        "呼吸音": "清",
+        "外伤史标志": "否认",
+        "家族传染病史标志": "否认",
+        "家族遗传病史标志": "否认",
+        "干湿啰音标志": "未闻及",
+        "心律": "齐",
+        "意识": "清楚",
+        "手术史标志": "否认",
+        "收缩压": "126",
+        "现病史文本": "患者 3 天前受凉后出现阵发性干咳，偶有少量白痰，夜间稍重，伴咽痛。无发热、胸痛、胸闷及呼吸困难。",
+        "糖尿病史标志": "否认",
+        "脉搏": "76",
+        "脑血管病史标志": "否认",
+        "舒张压": "78",
+        "输血史标志": "否认",
+        "过敏史标志": "否认",
+        "长期用药史标志": "否认",
+        "预防接种史": "预防接种史不详",
+        "饮酒史标志": "否认",
+        "高血压病史标志": "否认"
+      },
+      "orderList": [
+        {
+          "amount": 1,
+          "doseOnce": "1",
+          "idDeptExec": "dept-001",
+          "idFreq": "prn",
+          "idSrv": "mock-med-2",
+          "idSto": "sto-001",
+          "idUsge": "po",
+          "naSrv": "布洛芬缓释胶囊",
+          "nameFreq": "必要时",
+          "nameUsge": "口服",
+          "sdSrv": "11",
+          "takeDays": 3,
+          "unitDose": "粒"
+        }
+      ],
+      "outpatientRecord": {
+        "chiefComplaint": "咳嗽、咽痛 3 天",
+        "familyHistory": "家族遗传病史：否认；家族传染病史：否认",
+        "historyOfPresentIllness": "患者 3 天前受凉后出现阵发性干咳，偶有少量白痰，夜间稍重，伴咽痛。无发热、胸痛、胸闷及呼吸困难。",
+        "pastMedicalHistory": "手术史：否认；外伤史：否认；输血史：否认；过敏史：否认；预防接种史：预防接种史不详；高血压病史：否认；糖尿病史：否认；冠心病史：否认；脑血管病史：否认；长期用药史：否认",
+        "personalHistory": "吸烟史：否认；饮酒史：否认",
+        "physicalExam": "体温：36.8；呼吸：18；脉搏：76；收缩压：126；舒张压：78；意识：清楚；呼吸音：清；干湿啰音：未闻及；心律：齐；压痛：无；下肢浮肿：无",
+        "precautions": "多饮温水、注意休息；若持续高热、呼吸困难或症状明显加重，请及时复诊。",
+        "schemaVersion": "outpatient-record.v1"
+      },
+      "precautions": "多饮温水、注意休息；若持续高热、呼吸困难或症状明显加重，请及时复诊。",
+      "referenceMessage": "等待 HIS 完成动态模板及已选诊疗内容回写并回执",
+      "referenceStatus": "pending",
+      "referenceType": "batch",
+      "requestId": "E2E-OPD-VOICE-TPL-20260831-1815-R1",
+      "resultType": "record-confirmed",
+      "templateMetadata": {
+        "fields": [
+          {
+            "articleDefinitionName": "主诉",
+            "articleId": "主诉",
+            "articleName": "主诉",
+            "articleTemplateId": "article-主诉",
+            "dictionaryItems": [],
+            "id": "主诉文本",
+            "mappingSource": "canonical-id",
+            "name": "主诉文本",
+            "projectionMode": "direct",
+            "recordField": "chiefComplaint",
+            "type": "text"
+          },
+          {
+            "articleDefinitionName": "现病史",
+            "articleId": "现病史",
+            "articleName": "现病史",
+            "articleTemplateId": "article-现病史",
+            "dictionaryItems": [],
+            "id": "现病史文本",
+            "mappingSource": "canonical-id",
+            "name": "现病史文本",
+            "projectionMode": "direct",
+            "recordField": "historyOfPresentIllness",
+            "type": "text"
+          },
+          {
+            "articleDefinitionName": "体格检查",
+            "articleId": "体格检查",
+            "articleName": "体格检查",
+            "articleTemplateId": "article-体格检查",
+            "dictionaryItems": [],
+            "id": "体温",
+            "mappingSource": "deterministic-article",
+            "name": "体温",
+            "projectionMode": "section-compose",
+            "recordField": "physicalExam",
+            "type": "number"
+          },
+          {
+            "articleDefinitionName": "体格检查",
+            "articleId": "体格检查",
+            "articleName": "体格检查",
+            "articleTemplateId": "article-体格检查",
+            "dictionaryItems": [],
+            "id": "呼吸",
+            "mappingSource": "deterministic-article",
+            "name": "呼吸",
+            "projectionMode": "section-compose",
+            "recordField": "physicalExam",
+            "type": "number"
+          },
+          {
+            "articleDefinitionName": "体格检查",
+            "articleId": "体格检查",
+            "articleName": "体格检查",
+            "articleTemplateId": "article-体格检查",
+            "dictionaryItems": [],
+            "id": "脉搏",
+            "mappingSource": "deterministic-article",
+            "name": "脉搏",
+            "projectionMode": "section-compose",
+            "recordField": "physicalExam",
+            "type": "number"
+          },
+          {
+            "articleDefinitionName": "体格检查",
+            "articleId": "体格检查",
+            "articleName": "体格检查",
+            "articleTemplateId": "article-体格检查",
+            "dictionaryItems": [],
+            "id": "收缩压",
+            "mappingSource": "deterministic-article",
+            "name": "收缩压",
+            "projectionMode": "section-compose",
+            "recordField": "physicalExam",
+            "type": "number"
+          },
+          {
+            "articleDefinitionName": "体格检查",
+            "articleId": "体格检查",
+            "articleName": "体格检查",
+            "articleTemplateId": "article-体格检查",
+            "dictionaryItems": [],
+            "id": "舒张压",
+            "mappingSource": "deterministic-article",
+            "name": "舒张压",
+            "projectionMode": "section-compose",
+            "recordField": "physicalExam",
+            "type": "number"
+          },
+          {
+            "articleDefinitionName": "既往史",
+            "articleId": "既往史",
+            "articleName": "既往史",
+            "articleTemplateId": "article-既往史",
+            "dictionaryItems": [
+              {
+                "text": "否认",
+                "value": "0"
+              }
+            ],
+            "id": "手术史标志",
+            "mappingSource": "deterministic-article",
+            "name": "手术史标志",
+            "projectionMode": "section-compose",
+            "recordField": "pastMedicalHistory",
+            "type": "select"
+          },
+          {
+            "articleDefinitionName": "既往史",
+            "articleId": "既往史",
+            "articleName": "既往史",
+            "articleTemplateId": "article-既往史",
+            "dictionaryItems": [
+              {
+                "text": "否认",
+                "value": "0"
+              }
+            ],
+            "id": "外伤史标志",
+            "mappingSource": "deterministic-article",
+            "name": "外伤史标志",
+            "projectionMode": "section-compose",
+            "recordField": "pastMedicalHistory",
+            "type": "select"
+          },
+          {
+            "articleDefinitionName": "既往史",
+            "articleId": "既往史",
+            "articleName": "既往史",
+            "articleTemplateId": "article-既往史",
+            "dictionaryItems": [
+              {
+                "text": "否认",
+                "value": "0"
+              }
+            ],
+            "id": "输血史标志",
+            "mappingSource": "deterministic-article",
+            "name": "输血史标志",
+            "projectionMode": "section-compose",
+            "recordField": "pastMedicalHistory",
+            "type": "select"
+          },
+          {
+            "articleDefinitionName": "既往史",
+            "articleId": "既往史",
+            "articleName": "既往史",
+            "articleTemplateId": "article-既往史",
+            "dictionaryItems": [
+              {
+                "text": "否认",
+                "value": "0"
+              }
+            ],
+            "id": "过敏史标志",
+            "mappingSource": "deterministic-article",
+            "name": "过敏史标志",
+            "projectionMode": "section-compose",
+            "recordField": "pastMedicalHistory",
+            "type": "select"
+          },
+          {
+            "articleDefinitionName": "既往史",
+            "articleId": "既往史",
+            "articleName": "既往史",
+            "articleTemplateId": "article-既往史",
+            "dictionaryItems": [
+              {
+                "text": "预防接种史不详",
+                "value": "6"
+              }
+            ],
+            "id": "预防接种史",
+            "mappingSource": "deterministic-article",
+            "name": "预防接种史",
+            "projectionMode": "section-compose",
+            "recordField": "pastMedicalHistory",
+            "type": "select"
+          },
+          {
+            "articleDefinitionName": "既往史",
+            "articleId": "既往史",
+            "articleName": "既往史",
+            "articleTemplateId": "article-既往史",
+            "dictionaryItems": [
+              {
+                "text": "否认",
+                "value": "0"
+              }
+            ],
+            "id": "高血压病史标志",
+            "mappingSource": "deterministic-article",
+            "name": "高血压病史标志",
+            "projectionMode": "section-compose",
+            "recordField": "pastMedicalHistory",
+            "type": "select"
+          },
+          {
+            "articleDefinitionName": "既往史",
+            "articleId": "既往史",
+            "articleName": "既往史",
+            "articleTemplateId": "article-既往史",
+            "dictionaryItems": [
+              {
+                "text": "否认",
+                "value": "0"
+              }
+            ],
+            "id": "糖尿病史标志",
+            "mappingSource": "deterministic-article",
+            "name": "糖尿病史标志",
+            "projectionMode": "section-compose",
+            "recordField": "pastMedicalHistory",
+            "type": "select"
+          },
+          {
+            "articleDefinitionName": "既往史",
+            "articleId": "既往史",
+            "articleName": "既往史",
+            "articleTemplateId": "article-既往史",
+            "dictionaryItems": [
+              {
+                "text": "否认",
+                "value": "0"
+              }
+            ],
+            "id": "冠心病史标志",
+            "mappingSource": "deterministic-article",
+            "name": "冠心病史标志",
+            "projectionMode": "section-compose",
+            "recordField": "pastMedicalHistory",
+            "type": "select"
+          },
+          {
+            "articleDefinitionName": "既往史",
+            "articleId": "既往史",
+            "articleName": "既往史",
+            "articleTemplateId": "article-既往史",
+            "dictionaryItems": [
+              {
+                "text": "否认",
+                "value": "0"
+              }
+            ],
+            "id": "脑血管病史标志",
+            "mappingSource": "deterministic-article",
+            "name": "脑血管病史标志",
+            "projectionMode": "section-compose",
+            "recordField": "pastMedicalHistory",
+            "type": "select"
+          },
+          {
+            "articleDefinitionName": "既往史",
+            "articleId": "既往史",
+            "articleName": "既往史",
+            "articleTemplateId": "article-既往史",
+            "dictionaryItems": [
+              {
+                "text": "否认",
+                "value": "0"
+              }
+            ],
+            "id": "长期用药史标志",
+            "mappingSource": "deterministic-article",
+            "name": "长期用药史标志",
+            "projectionMode": "section-compose",
+            "recordField": "pastMedicalHistory",
+            "type": "select"
+          },
+          {
+            "articleDefinitionName": "个人史",
+            "articleId": "个人史",
+            "articleName": "个人史",
+            "articleTemplateId": "article-个人史",
+            "dictionaryItems": [
+              {
+                "text": "否认",
+                "value": "0"
+              }
+            ],
+            "id": "吸烟史标志",
+            "mappingSource": "deterministic-article",
+            "name": "吸烟史标志",
+            "projectionMode": "section-compose",
+            "recordField": "personalHistory",
+            "type": "select"
+          },
+          {
+            "articleDefinitionName": "个人史",
+            "articleId": "个人史",
+            "articleName": "个人史",
+            "articleTemplateId": "article-个人史",
+            "dictionaryItems": [
+              {
+                "text": "否认",
+                "value": "0"
+              }
+            ],
+            "id": "饮酒史标志",
+            "mappingSource": "deterministic-article",
+            "name": "饮酒史标志",
+            "projectionMode": "section-compose",
+            "recordField": "personalHistory",
+            "type": "select"
+          },
+          {
+            "articleDefinitionName": "家族史",
+            "articleId": "家族史",
+            "articleName": "家族史",
+            "articleTemplateId": "article-家族史",
+            "dictionaryItems": [
+              {
+                "text": "否认",
+                "value": "0"
+              }
+            ],
+            "id": "家族遗传病史标志",
+            "mappingSource": "deterministic-article",
+            "name": "家族遗传病史标志",
+            "projectionMode": "section-compose",
+            "recordField": "familyHistory",
+            "type": "select"
+          },
+          {
+            "articleDefinitionName": "家族史",
+            "articleId": "家族史",
+            "articleName": "家族史",
+            "articleTemplateId": "article-家族史",
+            "dictionaryItems": [
+              {
+                "text": "否认",
+                "value": "0"
+              }
+            ],
+            "id": "家族传染病史标志",
+            "mappingSource": "deterministic-article",
+            "name": "家族传染病史标志",
+            "projectionMode": "section-compose",
+            "recordField": "familyHistory",
+            "type": "select"
+          },
+          {
+            "articleDefinitionName": "体格检查",
+            "articleId": "体格检查",
+            "articleName": "体格检查",
+            "articleTemplateId": "article-体格检查",
+            "dictionaryItems": [
+              {
+                "text": "清楚",
+                "value": "1"
+              }
+            ],
+            "id": "意识",
+            "mappingSource": "deterministic-article",
+            "name": "意识",
+            "projectionMode": "section-compose",
+            "recordField": "physicalExam",
+            "type": "select"
+          },
+          {
+            "articleDefinitionName": "体格检查",
+            "articleId": "体格检查",
+            "articleName": "体格检查",
+            "articleTemplateId": "article-体格检查",
+            "dictionaryItems": [
+              {
+                "text": "清",
+                "value": "1"
+              }
+            ],
+            "id": "呼吸音",
+            "mappingSource": "deterministic-article",
+            "name": "呼吸音",
+            "projectionMode": "section-compose",
+            "recordField": "physicalExam",
+            "type": "select"
+          },
+          {
+            "articleDefinitionName": "体格检查",
+            "articleId": "体格检查",
+            "articleName": "体格检查",
+            "articleTemplateId": "article-体格检查",
+            "dictionaryItems": [
+              {
+                "text": "未闻及",
+                "value": "0"
+              }
+            ],
+            "id": "干湿啰音标志",
+            "mappingSource": "deterministic-article",
+            "name": "干湿啰音标志",
+            "projectionMode": "section-compose",
+            "recordField": "physicalExam",
+            "type": "select"
+          },
+          {
+            "articleDefinitionName": "体格检查",
+            "articleId": "体格检查",
+            "articleName": "体格检查",
+            "articleTemplateId": "article-体格检查",
+            "dictionaryItems": [
+              {
+                "text": "齐",
+                "value": "1"
+              }
+            ],
+            "id": "心律",
+            "mappingSource": "deterministic-article",
+            "name": "心律",
+            "projectionMode": "section-compose",
+            "recordField": "physicalExam",
+            "type": "select"
+          },
+          {
+            "articleDefinitionName": "体格检查",
+            "articleId": "体格检查",
+            "articleName": "体格检查",
+            "articleTemplateId": "article-体格检查",
+            "dictionaryItems": [
+              {
+                "text": "无",
+                "value": "1"
+              }
+            ],
+            "id": "压痛",
+            "mappingSource": "deterministic-article",
+            "name": "压痛",
+            "projectionMode": "section-compose",
+            "recordField": "physicalExam",
+            "type": "select"
+          },
+          {
+            "articleDefinitionName": "体格检查",
+            "articleId": "体格检查",
+            "articleName": "体格检查",
+            "articleTemplateId": "article-体格检查",
+            "dictionaryItems": [
+              {
+                "text": "无",
+                "value": "0"
+              }
+            ],
+            "id": "下肢浮肿标志",
+            "mappingSource": "deterministic-article",
+            "name": "下肢浮肿标志",
+            "projectionMode": "section-compose",
+            "recordField": "physicalExam",
+            "type": "select"
+          }
+        ],
+        "schemaVersion": "outpatient-emr-template-pair.v1",
+        "templateHash": "138b2fa4eb148619d49194d2b5e91c6f2ed70feed3424d9f7e51db67a793d614",
+        "templateId": "SIM-E2E-OPD-TPL-20260831-01",
+        "templateName": "门急诊病例模板 · 动态映射演示版"
+      },
+      "timestamp": 1788174480403,
+      "treatmentPlan": "布洛芬缓释胶囊 1 粒，必要时口服；休息、多饮水，症状加重及时复诊。",
+      "visitId": "SIM-E2E-OPD-VISIT-20260831-01",
+      "writebackScope": {
+        "includeDiagnosis": true,
+        "orderTypes": [
+          "medicine"
+        ],
+        "recordFields": [
+          "chiefComplaint",
+          "historyOfPresentIllness",
+          "pastMedicalHistory",
+          "personalHistory",
+          "familyHistory",
+          "physicalExam",
+          "precautions"
+        ]
+      }
+    }
+  }
+}

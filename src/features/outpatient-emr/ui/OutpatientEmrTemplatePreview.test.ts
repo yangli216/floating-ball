@@ -1,0 +1,107 @@
+// @vitest-environment jsdom
+import { createApp, nextTick, type App } from 'vue';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import type { OutpatientEmrTemplateField } from '../types';
+import OutpatientEmrTemplatePreview from './OutpatientEmrTemplatePreview.vue';
+
+let app: App<Element> | null = null;
+let root: HTMLDivElement | null = null;
+
+const fields: OutpatientEmrTemplateField[] = [{
+  id: 'personalHistory',
+  name: '个人史',
+  type: 'text',
+  articleTemplateId: 'article-personal-history',
+  articleId: '个人史',
+  articleName: '个人史',
+  articleDefinitionName: '个人史',
+  readonly: false,
+  aiSuitable: true,
+  baselineValue: '基线',
+  baselineDictionaryValue: '',
+  dictionaryItems: [],
+  recordField: 'personalHistory',
+  mappingSource: 'canonical-id',
+  projectionMode: 'direct',
+}];
+
+afterEach(() => {
+  app?.unmount();
+  root?.remove();
+  app = null;
+  root = null;
+});
+
+describe('OutpatientEmrTemplatePreview', () => {
+  it('renders sanitized text values and emits only plain doctor edits', async () => {
+    const onUpdateField = vi.fn();
+    root = document.createElement('div');
+    document.body.append(root);
+    app = createApp(OutpatientEmrTemplatePreview, {
+      sanitizedHtml: `
+        <script>alert(1)</script>
+        <div data-id="personalHistory" data-type="text" data-ai-suitable="true">基线</div>
+      `,
+      fields,
+      fieldValues: { personalHistory: '<b>医生值</b>' },
+      editable: true,
+      onUpdateField,
+    });
+    app.mount(root);
+    await nextTick();
+
+    expect(root.querySelector('script')).toBeNull();
+    const editor = root.querySelector<HTMLElement>('[data-outpatient-emr-field-id="personalHistory"]');
+    expect(editor?.textContent).toBe('<b>医生值</b>');
+    expect(editor?.querySelector('b')).toBeNull();
+    expect(editor?.getAttribute('contenteditable')).toBe('true');
+
+    if (!editor) throw new Error('missing editor');
+    editor.textContent = '医生手工修改';
+    editor.dispatchEvent(new InputEvent('input', { bubbles: true }));
+    await nextTick();
+    expect(onUpdateField).toHaveBeenCalledWith('personalHistory', '医生手工修改');
+  });
+
+  it('renders an unresolved dictionary as a constrained selector and lets the doctor select the template default', async () => {
+    const onUpdateField = vi.fn();
+    root = document.createElement('div');
+    document.body.append(root);
+    app = createApp(OutpatientEmrTemplatePreview, {
+      sanitizedHtml: '<span data-id="肝炎史标志" data-type="select"><span class="tag-value">否认</span></span>',
+      fields: [{
+        ...fields[0],
+        id: '肝炎史标志',
+        name: '肝炎史标志',
+        type: 'select',
+        baselineValue: '否认',
+        baselineDictionaryValue: '0',
+        dictionaryItems: [
+          { value: '0', text: '否认' },
+          { value: '1', text: '有' },
+        ],
+      }],
+      fieldValues: { 肝炎史标志: '' },
+      editable: true,
+      onUpdateField,
+    });
+    app.mount(root);
+    await nextTick();
+
+    const selector = root.querySelector<HTMLSelectElement>(
+      '[data-outpatient-emr-field-id="肝炎史标志"]',
+    );
+    expect(selector?.value).toBe('');
+    expect(Array.from(selector?.options || []).map((option) => option.text)).toEqual([
+      '请选择',
+      '否认',
+      '有',
+    ]);
+
+    if (!selector) throw new Error('missing dictionary selector');
+    selector.value = '否认';
+    selector.dispatchEvent(new Event('change', { bubbles: true }));
+    await nextTick();
+    expect(onUpdateField).toHaveBeenCalledWith('肝炎史标志', '否认');
+  });
+});

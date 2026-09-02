@@ -13,6 +13,7 @@ const props = withDefaults(defineProps<{
   showPatientHeader?: boolean;
   secondaryFooterActionText?: string;
   secondaryFooterActionDisabled?: boolean;
+  deferredWritebackRequestId?: string;
 }>(), {
   intentSource: null,
   channel: 'voice',
@@ -21,9 +22,15 @@ const props = withDefaults(defineProps<{
   showPatientHeader: true,
   secondaryFooterActionText: '',
   secondaryFooterActionDisabled: false,
+  deferredWritebackRequestId: '',
 });
 
-const emit = defineEmits(['close', 'cancel', 'secondary-footer-action']);
+const emit = defineEmits<{
+  close: [];
+  cancel: [];
+  'secondary-footer-action': [];
+  'writeback-prepared': [payload: Record<string, unknown>];
+}>();
 </script>
 
 <template>
@@ -37,9 +44,11 @@ const emit = defineEmits(['close', 'cancel', 'secondary-footer-action']);
     :show-patient-header="props.showPatientHeader"
     :secondary-footer-action-text="props.secondaryFooterActionText"
     :secondary-footer-action-disabled="props.secondaryFooterActionDisabled"
+    :deferred-writeback-request-id="props.deferredWritebackRequestId"
     @close="emit('close')"
     @cancel="emit('cancel')"
     @secondary-footer-action="emit('secondary-footer-action')"
+    @writeback-prepared="emit('writeback-prepared', $event)"
   >
     <template #diagnosis-actions="slotProps">
       <slot name="diagnosis-actions" v-bind="slotProps" />

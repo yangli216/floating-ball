@@ -50,6 +50,7 @@ export type ViewType =
   | 'report-interpretation'
   | 'patient-memory'
   | 'inpatient-emr'
+  | 'outpatient-emr'
   | 'differential-diagnosis'
   | 'reception-capsule'
   | 'his-log'
@@ -114,6 +115,9 @@ export const WINDOW_SIZES = {
   /** 住院病历辅助生成：1120×760px */
   INPATIENT_EMR: { width: 1120, height: 760 } as WindowSize,
 
+  /** 门诊病历模板分析：1120×760px */
+  OUTPATIENT_EMR: { width: 1120, height: 760 } as WindowSize,
+
   /** 独立鉴别诊断小窗：仅承载鉴别排查确认弹窗 */
   DIFFERENTIAL_DIAGNOSIS: { width: 360, height: 640 } as WindowSize,
 
@@ -134,6 +138,7 @@ const WINDOW_SIZE_CONSTRAINTS: Partial<Record<ViewType, WindowSizeConstraints>> 
   'report-interpretation': { minWidth: 1000, minHeight: 620 },
   'patient-memory': { minWidth: 980, minHeight: 620 },
   'inpatient-emr': { minWidth: 900, minHeight: 620 },
+  'outpatient-emr': { minWidth: 900, minHeight: 620 },
   'differential-diagnosis': { minWidth: 360, minHeight: 560 },
   'his-log': { minWidth: 760, minHeight: 520 },
   'medical-cache': { minWidth: 760, minHeight: 520 },
@@ -232,6 +237,9 @@ export function getWindowSizeForView(view: ViewType, options?: WindowSizeOptions
     case 'inpatient-emr':
       return WINDOW_SIZES.INPATIENT_EMR;
 
+    case 'outpatient-emr':
+      return WINDOW_SIZES.OUTPATIENT_EMR;
+
     case 'differential-diagnosis':
       return WINDOW_SIZES.DIFFERENTIAL_DIAGNOSIS;
 
@@ -261,6 +269,7 @@ export function supportsPersistentWindowSize(view: ViewType): boolean {
     || view === 'outpatient-follow-up'
     || view === 'report-interpretation'
     || view === 'inpatient-emr'
+    || view === 'outpatient-emr'
     || view === 'differential-diagnosis'
     || view === 'his-log'
     || view === 'medical-cache'
@@ -291,5 +300,6 @@ export function isLargePanelView(view: ViewType): boolean {
     || view === 'treatment-plan'
     || view === 'outpatient-follow-up'
     || view === 'report-interpretation'
-    || view === 'inpatient-emr';
+    || view === 'inpatient-emr'
+    || view === 'outpatient-emr';
 }

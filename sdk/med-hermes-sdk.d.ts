@@ -38,6 +38,22 @@ export interface PatientInfo {
   vitals?: string;
 }
 
+/** 语音问诊开始前由 HIS 固定的动态门诊模板规格 */
+export interface VoiceOutpatientEmrTemplateInput {
+  templateId: string;
+  templateName: string;
+  templateHtml: string;
+  templateDefinition: string;
+  targetFieldIds: string[];
+  requestId: string;
+}
+
+/** 携带动态门诊模板的语音问诊患者请求；必须有本次就诊 ID */
+export interface VoiceOutpatientEmrPatientInfo extends PatientInfo {
+  idVis: string;
+  outpatientEmr: VoiceOutpatientEmrTemplateInput;
+}
+
 /** 风险项 */
 export interface RiskItem {
   /** 1=红色(高危), 2=橙色(中危), 3=黄色(低危) */
@@ -168,6 +184,45 @@ export interface InpatientEmrGenerationRequest {
   requestId?: string;
   /** 可选患者兜底信息 */
   patient?: InpatientEmrPatientInfo;
+}
+
+/** 门急诊病历模板分析所使用的临床事实包 */
+export interface OutpatientEmrRecordContext {
+  recordText?: string;
+  sections?: Record<string, unknown>;
+  conversationText?: string;
+  structuredFacts?: Record<string, unknown>;
+  [key: string]: unknown;
+}
+
+/** 门急诊模板分析患者校验事实；不接受其他字段或历史别名 */
+export interface OutpatientEmrPatientInput {
+  idPi?: string;
+  name?: string;
+  sdSexText?: string;
+  ageText?: string;
+}
+
+/** 门急诊病历模板单次分析请求；所有身份字段由 HIS 显式提供 */
+export interface OutpatientEmrAnalysisRequest {
+  /** 本次门急诊就诊唯一标识，最终直接作为 consultationId */
+  visitId: string;
+  /** HIS 当前选中模板的唯一标识 */
+  templateId: string;
+  /** HIS 当前选中模板名称 */
+  templateName: string;
+  /** 同一模板经正式渲染器输出的当前 HTML 实例 */
+  templateHtml: string;
+  /** 同一模板的顶层章节 JSON 结构定义；与 templateHtml 按稳定 ID 配对 */
+  templateDefinition: string;
+  /** 模板渲染器确定的当前可写字段白名单；至少一项，桌面端不会执行模板联动脚本或自动扩充 */
+  targetFieldIds: string[];
+  /** 本次分析所依据的严格 JSON 临床事实；SDK 拒绝 undefined、非有限数值、Date、函数和循环引用 */
+  recordContext: OutpatientEmrRecordContext;
+  /** 可选患者主体、性别和年龄等校验事实 */
+  patient?: OutpatientEmrPatientInput;
+  /** HIS 生成的稳定请求 ID；SDK 不代生成、不修剪 */
+  requestId: string;
 }
 
 /** 引用回执状态 */
@@ -307,6 +362,82 @@ export interface InpatientEmrWritebackPayload extends ConsultationResultPayload 
   fieldValues: Record<string, string>;
 }
 
+export type OutpatientEmrRecordField =
+  | 'chiefComplaint'
+  | 'historyOfPresentIllness'
+  | 'pastMedicalHistory'
+  | 'personalHistory'
+  | 'menstrualHistory'
+  | 'familyHistory'
+  | 'physicalExam'
+  | 'precautions';
+
+export type OutpatientEmrProjectionMode = 'direct' | 'section-compose';
+export type OutpatientEmrWritebackOrderType = 'medicine' | 'exam' | 'lab_test' | 'procedure';
+
+export interface OutpatientEmrDictionaryItem {
+  value: string;
+  text: string;
+}
+
+export interface OutpatientEmrTemplateFieldMetadata {
+  id: string;
+  name: string;
+  type: string;
+  articleTemplateId: string;
+  articleId: string;
+  articleName: string;
+  articleDefinitionName: string;
+  dictionaryItems: OutpatientEmrDictionaryItem[];
+  recordField: OutpatientEmrRecordField | null;
+  mappingSource:
+    | 'definition-record-field'
+    | 'definition-article-record-field'
+    | 'canonical-id'
+    | 'deterministic-alias'
+    | 'deterministic-article'
+    | 'unmapped';
+  projectionMode: OutpatientEmrProjectionMode | null;
+}
+
+export interface OutpatientEmrTemplateMetadata {
+  schemaVersion: 'outpatient-emr-template-pair.v1';
+  templateId: string;
+  templateName: string;
+  templateHash: string;
+  fields: OutpatientEmrTemplateFieldMetadata[];
+}
+
+/** 门急诊模板参数回传 payload */
+export interface OutpatientEmrWritebackPayload extends ConsultationResultPayload {
+  consultationId: string;
+  visitId: string;
+  timestamp: number;
+  resultType: 'record-confirmed';
+  requestId: string;
+  referenceType: 'batch';
+  action: 'batch';
+  referenceStatus: 'pending';
+  referenceMessage:
+    | '等待 HIS 完成门诊模板参数回填并回执'
+    | '等待 HIS 完成动态模板及已选诊疗内容回写并回执';
+  emrType: 'outpatient-emr';
+  templateMetadata: OutpatientEmrTemplateMetadata;
+  fieldValues: Record<string, string>;
+  dictionarySelections: Record<string, OutpatientEmrDictionaryItem>;
+  outpatientRecord?: {
+    schemaVersion: 'outpatient-record.v1';
+  } & Partial<Record<OutpatientEmrRecordField, string>>;
+  writebackScope: {
+    recordFields: OutpatientEmrRecordField[];
+    includeDiagnosis: boolean;
+    orderTypes: OutpatientEmrWritebackOrderType[];
+  };
+  diagList?: Array<Record<string, string>>;
+  orderList: Array<Record<string, string | number>>;
+  treatmentPlan?: string;
+}
+
 /** 单条问诊事件 */
 export interface ConsultationEvent {
   id: string;
@@ -400,6 +531,7 @@ export interface HandshakeContext {
 export interface ApiResponse {
   status: string;
   consultationId?: string;
+  visitId?: string;
   action?: string;
   traceId?: string;
   taskId?: ReportInterpretationTaskId;
@@ -430,7 +562,9 @@ export declare class MedHermes {
   assist(patient: PatientInfo, action: AssistAction): Promise<ApiResponse>;
 
   /** 启动语音问诊 */
-  startVoice(patient?: PatientInfo): Promise<ApiResponse>;
+  startVoice(): Promise<ApiResponse>;
+  startVoice(patient: PatientInfo): Promise<ApiResponse>;
+  startVoice(patient: VoiceOutpatientEmrPatientInfo): Promise<ApiResponse>;
 
   /** 触发报告解读 */
   interpretReport(request: ReportInterpretationRequest): Promise<ApiResponse>;
@@ -447,6 +581,9 @@ export declare class MedHermes {
     htmlContent: string,
     options: Omit<InpatientEmrGenerationRequest, 'admissionId' | 'htmlContent'>
   ): Promise<InpatientEmrWritebackPayload>;
+
+  /** 单次分析门急诊病历模板；显式取消、请求失败或 SDK 销毁时 Promise reject */
+  analyzeOutpatientEmr(request: OutpatientEmrAnalysisRequest): Promise<OutpatientEmrWritebackPayload>;
 
   /** 结束当前接诊 */
   stop(): Promise<ApiResponse>;
@@ -491,7 +628,9 @@ export interface MedHermesLoaderApi {
   init(extra?: Record<string, any>): Promise<MedHermes>;
   startConsultation(patient: PatientInfo): Promise<ApiResponse>;
   assist(patient: PatientInfo, action: AssistAction): Promise<ApiResponse>;
-  startVoice(patient?: PatientInfo): Promise<ApiResponse>;
+  startVoice(): Promise<ApiResponse>;
+  startVoice(patient: PatientInfo): Promise<ApiResponse>;
+  startVoice(patient: VoiceOutpatientEmrPatientInfo): Promise<ApiResponse>;
   interpretReport(request: ReportInterpretationRequest): Promise<ApiResponse>;
   interpretReport(
     taskId: ReportInterpretationTaskId,
@@ -504,6 +643,7 @@ export interface MedHermesLoaderApi {
     htmlContent: string,
     options: Omit<InpatientEmrGenerationRequest, 'admissionId' | 'htmlContent'>
   ): Promise<InpatientEmrWritebackPayload>;
+  analyzeOutpatientEmr(request: OutpatientEmrAnalysisRequest): Promise<OutpatientEmrWritebackPayload>;
   receivePatient(patientId: string, optionalInfo?: Partial<PatientInfo>): Promise<ApiResponse>;
   sendRisks(patient: PatientInfo, risks?: RiskItem[]): Promise<ApiResponse>;
   sendFeedback(

@@ -61,9 +61,27 @@ const MOCK_DIAGNOSES: DiagnosisCatalogEntry[] = [
 ];
 
 const MOCK_MEDICINES: MedicineCatalogEntry[] = [
-  { id: 'mock-med-1', code: 'M001', name: '阿莫西林胶囊', spec: '0.25g*24粒/盒' },
-  { id: 'mock-med-2', code: 'M002', name: '布洛芬缓释胶囊', spec: '0.3g*20粒/盒' },
-  { id: 'mock-med-3', code: 'M003', name: '苯磺酸氨氯地平片', spec: '5mg*7片/盒' },
+  {
+    id: 'mock-med-1',
+    code: 'M001',
+    name: '阿莫西林胶囊',
+    spec: '0.25g*24粒/盒',
+    storeIds: ['sto-001', 'sto-002'],
+  },
+  {
+    id: 'mock-med-2',
+    code: 'M002',
+    name: '布洛芬缓释胶囊',
+    spec: '0.3g*20粒/盒',
+    storeIds: ['sto-001', 'sto-002'],
+  },
+  {
+    id: 'mock-med-3',
+    code: 'M003',
+    name: '苯磺酸氨氯地平片',
+    spec: '5mg*7片/盒',
+    storeIds: ['sto-001', 'sto-002'],
+  },
 ];
 
 const MOCK_MEDICAL_ITEMS: MedicalItemCatalogEntry[] = [
@@ -172,6 +190,7 @@ export class MockHisAdapter implements HisAdapter {
       storeName: MOCK_PHARMACIES.find((item) => item.idSto === storeId)?.name,
       availableQuantity: 20 + index,
       nearestExpiryDate: '2027-12-31',
+      unitPrice: 12.8 + index * 5,
       raw: { mock: true, batchCount: 1 },
     }));
   }
@@ -181,24 +200,30 @@ export class MockHisAdapter implements HisAdapter {
   async fetchMedicalItemDetail(itemId: string): Promise<MedicalItemDetail | null> {
     const cat = MOCK_MEDICAL_ITEMS.find((i) => i.id === itemId);
     if (!cat) return null;
+    const isLab = cat.category === '检验';
     return {
       itemId: cat.id,
       itemName: cat.name,
       unit: '次',
-      executingDeptId: this.execDeptId,
+      executingDeptId: isLab ? 'dept-002' : 'dept-003',
       defaultQuantity: 1,
-      raw: { mock: true },
+      raw: {
+        mock: true,
+        ...(isLab ? { jsonField: JSON.stringify({ idLisCategory: 'mock-lab' }) } : {}),
+      },
     };
   }
 
   async fetchMedicalItemPartOptions(itemId: string): Promise<MedicalItemPartOption[]> {
     const cat = MOCK_MEDICAL_ITEMS.find((i) => i.id === itemId || i.code === itemId);
-    if (!cat || cat.category !== 'exam') return [];
+    if (!cat || cat.category !== '检查') return [];
     return [{
-      partId: 'mock-part-none',
+      partId: cat.id === 'mock-itm-2' ? 'mock-part-chest' : 'mock-part-none',
       itemId: cat.id,
-      name: '无部位',
-      partAndWay: '无部位',
+      name: cat.id === 'mock-itm-2' ? '胸部正位' : '无部位',
+      partAndWay: cat.id === 'mock-itm-2' ? '胸部/正位' : '无部位',
+      partText: cat.id === 'mock-itm-2' ? '胸部' : '无部位',
+      wayText: cat.id === 'mock-itm-2' ? '正位' : '',
       raw: { mock: true },
     }];
   }
@@ -216,14 +241,22 @@ export class MockHisAdapter implements HisAdapter {
       specSale: cat.spec,
       unitSale: '盒',
       spec: cat.spec,
-      doseUnit: 'mg',
+      doseUnit: '粒',
       dose: '1',
       defaultSingleDose: '1',
       defaultFrequency: 'tid',
       defaultRoute: 'po',
       storeId,
       needsSkinTest: false,
-      raw: { mock: true },
+      raw: {
+        mock: true,
+        unitDose: '粒',
+        unitPre: '粒',
+        unitSale: '盒',
+        dftDoseOnce: '1',
+        dftFreq: 'tid',
+        dftUsge: 'po',
+      },
     };
   }
 

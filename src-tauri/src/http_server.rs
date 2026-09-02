@@ -2,7 +2,7 @@ use actix_cors::Cors;
 use actix_web::{web, App, HttpRequest, HttpResponse, HttpServer, Responder};
 use futures_util::StreamExt;
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::io;
 use std::time::Instant;
 use tauri::{Emitter, Manager};
@@ -28,6 +28,121 @@ fn summarize_handshake_for_his_log(ctx: &BrowserContext) -> serde_json::Value {
         "hasSdkVersion": !ctx.sdk_version.trim().is_empty(),
         "hasEmrAccessToken": ctx.emr_access_token().is_some(),
         "timestamp": ctx.timestamp,
+    })
+}
+
+fn summarize_outpatient_emr_for_his_log(
+    request: &OutpatientEmrAnalysisRequest,
+) -> serde_json::Value {
+    let context_bytes = serde_json::to_vec(&request.record_context)
+        .map(|value| value.len())
+        .unwrap_or_default();
+
+    serde_json::json!({
+        "visitId": request.visit_id,
+        "templateId": request.template_id,
+        "templateName": request.template_name,
+        "requestId": request.request_id,
+        "templateHtmlBytes": request.template_html.len(),
+        "templateDefinitionBytes": request.template_definition.len(),
+        "contextBytes": context_bytes,
+        "contextFieldCount": request.record_context.len(),
+        "targetFieldCount": request.target_field_ids.len(),
+        "hasPatient": request.patient.is_some(),
+    })
+}
+
+fn summarize_start_voice_for_his_log(patient: Option<&PatientInfo>) -> serde_json::Value {
+    let outpatient_emr = patient.and_then(|item| item.extra.get("outpatientEmr"));
+    let target_field_count = outpatient_emr
+        .and_then(|value| value.get("targetFieldIds"))
+        .and_then(|value| value.as_array())
+        .map(|value| value.len())
+        .unwrap_or_default();
+    let template_html_bytes = outpatient_emr
+        .and_then(|value| value.get("templateHtml"))
+        .and_then(|value| value.as_str())
+        .map(str::len)
+        .unwrap_or_default();
+    let template_definition_bytes = outpatient_emr
+        .and_then(|value| value.get("templateDefinition"))
+        .and_then(|value| value.as_str())
+        .map(str::len)
+        .unwrap_or_default();
+
+    serde_json::json!({
+        "hasPatient": patient.is_some(),
+        "hasPatientId": patient.map(|item| !item.id_pi.trim().is_empty()).unwrap_or(false),
+        "hasVisitId": patient.and_then(|item| item.id_vis.as_ref()).is_some(),
+        "hasOutpatientEmr": outpatient_emr.is_some(),
+        "targetFieldCount": target_field_count,
+        "templateHtmlBytes": template_html_bytes,
+        "templateDefinitionBytes": template_definition_bytes,
+    })
+}
+
+fn summarize_simulated_voice_transcript_for_his_log(
+    request: &SimulatedVoiceTranscriptRequest,
+) -> serde_json::Value {
+    serde_json::json!({
+        "requestId": request.request_id,
+        "transcriptBytes": request.transcript.len(),
+    })
+}
+
+fn summarize_debug_complete_consultation_for_his_log(
+    result: &ConsultationResult,
+) -> serde_json::Value {
+    let payload = result.record.as_object();
+    let field_value_count = payload
+        .and_then(|value| value.get("fieldValues"))
+        .and_then(serde_json::Value::as_object)
+        .map(serde_json::Map::len)
+        .unwrap_or_default();
+    let dictionary_selection_count = payload
+        .and_then(|value| value.get("dictionarySelections"))
+        .and_then(serde_json::Value::as_object)
+        .map(serde_json::Map::len)
+        .unwrap_or_default();
+    let diagnosis_count = payload
+        .and_then(|value| value.get("diagList"))
+        .and_then(serde_json::Value::as_array)
+        .map(Vec::len)
+        .unwrap_or_default();
+    let order_count = payload
+        .and_then(|value| value.get("orderList"))
+        .and_then(serde_json::Value::as_array)
+        .map(Vec::len)
+        .unwrap_or_default();
+    let scope = payload
+        .and_then(|value| value.get("writebackScope"))
+        .and_then(serde_json::Value::as_object);
+    let record_field_count = scope
+        .and_then(|value| value.get("recordFields"))
+        .and_then(serde_json::Value::as_array)
+        .map(Vec::len)
+        .unwrap_or_default();
+    let order_type_count = scope
+        .and_then(|value| value.get("orderTypes"))
+        .and_then(serde_json::Value::as_array)
+        .map(Vec::len)
+        .unwrap_or_default();
+
+    serde_json::json!({
+        "consultationId": result.consultation_id,
+        "requestId": payload
+            .and_then(|value| value.get("requestId"))
+            .and_then(serde_json::Value::as_str),
+        "fieldValueCount": field_value_count,
+        "dictionarySelectionCount": dictionary_selection_count,
+        "diagnosisCount": diagnosis_count,
+        "orderCount": order_count,
+        "recordFieldCount": record_field_count,
+        "includeDiagnosis": scope
+            .and_then(|value| value.get("includeDiagnosis"))
+            .and_then(serde_json::Value::as_bool)
+            .unwrap_or(false),
+        "orderTypeCount": order_type_count,
     })
 }
 
@@ -167,7 +282,7 @@ fn is_terminal_result(result_type: &str, reference_status: Option<&str>, state: 
 }
 
 fn build_consultation_event(result: &ConsultationResult) -> serde_json::Value {
-    let payload_map = match &result.record {
+    let mut payload_map = match &result.record {
         serde_json::Value::Object(map) => map.clone(),
         other => {
             let mut fallback = serde_json::Map::new();
@@ -175,6 +290,22 @@ fn build_consultation_event(result: &ConsultationResult) -> serde_json::Value {
             fallback
         }
     };
+    if payload_map.get("emrType").and_then(|value| value.as_str()) == Some("outpatient-emr") {
+        payload_map.insert(
+            "consultationId".to_string(),
+            serde_json::Value::String(result.consultation_id.clone()),
+        );
+        payload_map.insert(
+            "timestamp".to_string(),
+            serde_json::Value::Number(result.timestamp.into()),
+        );
+        if let Some(status) = result.status.as_ref() {
+            payload_map.insert(
+                "status".to_string(),
+                serde_json::Value::String(status.clone()),
+            );
+        }
+    }
 
     let result_type = payload_map
         .get("resultType")
@@ -287,8 +418,6 @@ fn queued_events_after(
     Vec::new()
 }
 
-
-
 fn build_event_poll_response(result: &ConsultationResult, trace_id: &str) -> serde_json::Value {
     let event = build_consultation_event(result);
     let payload = event
@@ -340,6 +469,19 @@ pub struct ReportInterpretationPatientInput {
     pub extra: serde_json::Map<String, serde_json::Value>,
 }
 
+#[derive(Debug, Deserialize, Serialize, Clone, Default)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct OutpatientEmrPatientInput {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub id_pi: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub name: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub sd_sex_text: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub age_text: Option<String>,
+}
+
 #[derive(Debug, Deserialize, Serialize, Clone)]
 #[serde(rename_all = "camelCase")]
 pub struct ReportInterpretationRequest {
@@ -369,6 +511,39 @@ pub struct InpatientEmrGenerationRequest {
     pub patient: Option<ReportInterpretationPatientInput>,
     #[serde(default, flatten)]
     pub extra: serde_json::Map<String, serde_json::Value>,
+}
+
+#[derive(Debug, Deserialize, Serialize, Clone)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct OutpatientEmrAnalysisRequest {
+    pub visit_id: String,
+    pub template_id: String,
+    pub template_name: String,
+    pub template_html: String,
+    pub template_definition: String,
+    pub target_field_ids: Vec<String>,
+    pub record_context: serde_json::Map<String, serde_json::Value>,
+    pub request_id: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub patient: Option<OutpatientEmrPatientInput>,
+}
+
+#[derive(Debug, Deserialize, Serialize, Clone)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct VoiceOutpatientEmrTemplateInput {
+    pub template_id: String,
+    pub template_name: String,
+    pub template_html: String,
+    pub template_definition: String,
+    pub target_field_ids: Vec<String>,
+    pub request_id: String,
+}
+
+#[derive(Debug, Deserialize, Serialize, Clone)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct SimulatedVoiceTranscriptRequest {
+    pub request_id: String,
+    pub transcript: String,
 }
 
 #[derive(Debug, Deserialize, Serialize, Clone)]
@@ -595,7 +770,37 @@ async fn start_voice_consultation(
     println!("Received voice consultation request");
 
     let patient = data.map(|payload| payload.into_inner());
-    let request_summary = summarize_for_his_log(&patient);
+    let request_summary = summarize_start_voice_for_his_log(patient.as_ref());
+    let voice_outpatient_emr = match validate_voice_outpatient_emr_request(patient.as_ref()) {
+        Ok(value) => value,
+        Err(message) => {
+            let response_body = serde_json::json!({
+                "status": "error",
+                "message": message,
+                "traceId": trace_id,
+            });
+            record_bridge_log(
+                &app_handle,
+                response_body["traceId"].as_str().unwrap_or_default(),
+                "consultation.startVoice",
+                "POST",
+                "/api/consultation/start-voice",
+                "error",
+                400,
+                started_at,
+                Some(request_summary),
+                Some(response_body.clone()),
+                patient.as_ref().map(|item| item.id_pi.clone()),
+                patient.as_ref().and_then(|item| item.id_vis.clone()),
+                None,
+                Some(message.to_string()),
+            );
+            return HttpResponse::BadRequest().json(response_body);
+        }
+    };
+    let voice_request_id = voice_outpatient_emr
+        .as_ref()
+        .map(|template| template.request_id.clone());
 
     if let Err(error) = clear_consultation_events(state.get_ref()) {
         eprintln!("Failed to clear consultation events: {}", error);
@@ -624,7 +829,7 @@ async fn start_voice_consultation(
                 Some(response_body.clone()),
                 patient.as_ref().map(|item| item.id_pi.clone()),
                 patient.as_ref().map(|item| item.id_pi.clone()),
-                None,
+                voice_request_id.clone(),
                 Some(e.to_string()),
             );
             return HttpResponse::InternalServerError().json(response_body);
@@ -648,7 +853,7 @@ async fn start_voice_consultation(
             Some(response_body.clone()),
             patient.as_ref().map(|item| item.id_pi.clone()),
             patient.as_ref().map(|item| item.id_pi.clone()),
-            None,
+            voice_request_id.clone(),
             Some("Main window not found".to_string()),
         );
         return HttpResponse::InternalServerError().json(response_body);
@@ -676,7 +881,7 @@ async fn start_voice_consultation(
         Some(response_body.clone()),
         patient.as_ref().map(|item| item.id_pi.clone()),
         Some(consultation_id),
-        None,
+        voice_request_id,
         None,
     );
     HttpResponse::Ok().json(response_body)
@@ -949,7 +1154,13 @@ async fn start_inpatient_emr_generation(
         .record_time
         .map(|value| value.trim().to_string())
         .filter(|value| !value.is_empty());
-    if request.request_id.as_deref().unwrap_or_default().trim().is_empty() {
+    if request
+        .request_id
+        .as_deref()
+        .unwrap_or_default()
+        .trim()
+        .is_empty()
+    {
         let timestamp = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap()
@@ -1132,6 +1343,645 @@ async fn start_inpatient_emr_generation(
     HttpResponse::Ok().json(response_body)
 }
 
+fn has_non_empty_clinical_fact(value: &serde_json::Value) -> bool {
+    match value {
+        serde_json::Value::Null => false,
+        serde_json::Value::Bool(_) | serde_json::Value::Number(_) => true,
+        serde_json::Value::String(value) => !value.trim().is_empty(),
+        serde_json::Value::Array(values) => values.iter().any(has_non_empty_clinical_fact),
+        serde_json::Value::Object(values) => values.values().any(has_non_empty_clinical_fact),
+    }
+}
+
+fn validate_voice_outpatient_emr_request(
+    patient: Option<&PatientInfo>,
+) -> Result<Option<VoiceOutpatientEmrTemplateInput>, &'static str> {
+    let Some(patient) = patient else {
+        return Ok(None);
+    };
+    let Some(raw_template) = patient.extra.get("outpatientEmr") else {
+        return Ok(None);
+    };
+    let Some(visit_id) = patient.id_vis.as_deref() else {
+        return Err("动态门诊模板语音问诊必须提供 idVis");
+    };
+    if visit_id.trim().is_empty() || visit_id != visit_id.trim() {
+        return Err("动态门诊模板语音问诊的 idVis 必须非空且不能包含首尾空白");
+    }
+    let template = serde_json::from_value::<VoiceOutpatientEmrTemplateInput>(raw_template.clone())
+        .map_err(|_| "outpatientEmr 必须且只能包含六个文档化字段")?;
+    for value in [
+        &template.template_id,
+        &template.template_name,
+        &template.request_id,
+    ] {
+        if value.trim().is_empty() || value != value.trim() {
+            return Err("outpatientEmr 模板身份必须非空且不能包含首尾空白");
+        }
+    }
+    if template.template_html.trim().is_empty() {
+        return Err("outpatientEmr.templateHtml 不能为空");
+    }
+    if template.template_definition.trim().is_empty() {
+        return Err("outpatientEmr.templateDefinition 不能为空");
+    }
+    if template.target_field_ids.is_empty() {
+        return Err("outpatientEmr.targetFieldIds 至少需要一个字段");
+    }
+    if template
+        .target_field_ids
+        .iter()
+        .any(|field_id| field_id.trim().is_empty() || field_id != field_id.trim())
+    {
+        return Err("outpatientEmr.targetFieldIds 不能包含空值或首尾空白");
+    }
+    let unique_target_ids = template.target_field_ids.iter().collect::<HashSet<_>>();
+    if unique_target_ids.len() != template.target_field_ids.len() {
+        return Err("outpatientEmr.targetFieldIds 不能包含重复字段 ID");
+    }
+    Ok(Some(template))
+}
+
+fn validate_simulated_voice_transcript_request(
+    request: &SimulatedVoiceTranscriptRequest,
+    patient: Option<&PatientInfo>,
+) -> Result<(), &'static str> {
+    if request.request_id.trim().is_empty() || request.request_id != request.request_id.trim() {
+        return Err("模拟语音转写 requestId 必须非空且不能包含首尾空白");
+    }
+    if request.transcript.trim().is_empty() || request.transcript != request.transcript.trim() {
+        return Err("模拟语音转写 transcript 必须非空且不能包含首尾空白");
+    }
+    if request.transcript.chars().count() > 20_000 {
+        return Err("模拟语音转写 transcript 不能超过 20000 字");
+    }
+
+    let template =
+        validate_voice_outpatient_emr_request(patient)?.ok_or("当前没有动态门诊模板语音会话")?;
+    if template.request_id != request.request_id {
+        return Err("模拟语音转写 requestId 与当前模板会话不一致");
+    }
+    Ok(())
+}
+
+#[cfg(debug_assertions)]
+async fn simulate_voice_transcript(
+    request: web::Json<SimulatedVoiceTranscriptRequest>,
+    app_handle: web::Data<tauri::AppHandle>,
+    state: web::Data<SharedAppState>,
+) -> impl Responder {
+    let started_at = Instant::now();
+    let trace_id = his_integration_log::new_trace_id();
+    if let Err(response) = ensure_http_service_access(&state) {
+        return response;
+    }
+
+    let request = request.into_inner();
+    let request_summary = summarize_simulated_voice_transcript_for_his_log(&request);
+    let patient = state
+        .current_consultation
+        .lock()
+        .ok()
+        .and_then(|value| value.clone());
+    if let Err(message) = validate_simulated_voice_transcript_request(&request, patient.as_ref()) {
+        let response_body = serde_json::json!({
+            "status": "error",
+            "message": message,
+            "traceId": trace_id,
+        });
+        record_bridge_log(
+            &app_handle,
+            response_body["traceId"].as_str().unwrap_or_default(),
+            "debug.simulateVoiceTranscript",
+            "POST",
+            "/api/debug/voice-transcript",
+            "error",
+            400,
+            started_at,
+            Some(request_summary),
+            Some(response_body.clone()),
+            patient.as_ref().map(|item| item.id_pi.clone()),
+            patient.as_ref().and_then(|item| item.id_vis.clone()),
+            Some(request.request_id.clone()),
+            Some(message.to_string()),
+        );
+        return HttpResponse::BadRequest().json(response_body);
+    }
+
+    let Some(window) = app_handle.get_webview_window("main") else {
+        return HttpResponse::ServiceUnavailable().json(bridge_window_missing_error(&trace_id));
+    };
+    if let Err(error) = window.emit("debug-simulate-voice-transcript", &request) {
+        let response_body = serde_json::json!({
+            "status": "error",
+            "message": "模拟语音转写发送到桌面端失败",
+            "traceId": trace_id,
+        });
+        record_bridge_log(
+            &app_handle,
+            response_body["traceId"].as_str().unwrap_or_default(),
+            "debug.simulateVoiceTranscript",
+            "POST",
+            "/api/debug/voice-transcript",
+            "error",
+            500,
+            started_at,
+            Some(request_summary),
+            Some(response_body.clone()),
+            patient.as_ref().map(|item| item.id_pi.clone()),
+            patient.as_ref().and_then(|item| item.id_vis.clone()),
+            Some(request.request_id.clone()),
+            Some(error.to_string()),
+        );
+        return HttpResponse::InternalServerError().json(response_body);
+    }
+
+    let response_body = serde_json::json!({
+        "status": "success",
+        "requestId": request.request_id,
+        "traceId": trace_id,
+    });
+    record_bridge_log(
+        &app_handle,
+        response_body["traceId"].as_str().unwrap_or_default(),
+        "debug.simulateVoiceTranscript",
+        "POST",
+        "/api/debug/voice-transcript",
+        "success",
+        200,
+        started_at,
+        Some(request_summary),
+        Some(response_body.clone()),
+        patient.as_ref().map(|item| item.id_pi.clone()),
+        patient.as_ref().and_then(|item| item.id_vis.clone()),
+        Some(request.request_id.clone()),
+        None,
+    );
+    HttpResponse::Ok().json(response_body)
+}
+
+fn validate_debug_complete_consultation(
+    result: &ConsultationResult,
+    patient: Option<&PatientInfo>,
+) -> Result<(), &'static str> {
+    let template =
+        validate_voice_outpatient_emr_request(patient)?.ok_or("当前没有动态门诊模板语音会话")?;
+    let visit_id = patient
+        .and_then(|value| value.id_vis.as_deref())
+        .ok_or("当前动态门诊模板语音会话缺少 idVis")?;
+    if result.consultation_id != visit_id {
+        return Err("联调完成结果 consultationId 与当前就诊不一致");
+    }
+    if result.timestamp == 0 {
+        return Err("联调完成结果 timestamp 必须大于 0");
+    }
+
+    let payload = result
+        .record
+        .as_object()
+        .ok_or("联调完成结果必须是 JSON 对象")?;
+    if payload.get("visitId").and_then(serde_json::Value::as_str) != Some(visit_id) {
+        return Err("联调完成结果 visitId 与当前就诊不一致");
+    }
+    if payload.get("requestId").and_then(serde_json::Value::as_str)
+        != Some(template.request_id.as_str())
+    {
+        return Err("联调完成结果 requestId 与当前模板会话不一致");
+    }
+    if payload
+        .get("resultType")
+        .and_then(serde_json::Value::as_str)
+        != Some("record-confirmed")
+    {
+        return Err("联调完成结果 resultType 必须为 record-confirmed");
+    }
+    if payload.get("emrType").and_then(serde_json::Value::as_str) != Some("outpatient-emr") {
+        return Err("联调完成结果 emrType 必须为 outpatient-emr");
+    }
+    if payload
+        .get("referenceType")
+        .and_then(serde_json::Value::as_str)
+        != Some("batch")
+        || payload.get("action").and_then(serde_json::Value::as_str) != Some("batch")
+    {
+        return Err("联调完成结果 referenceType/action 必须为 batch");
+    }
+    if payload
+        .get("referenceStatus")
+        .and_then(serde_json::Value::as_str)
+        != Some("pending")
+    {
+        return Err("联调完成结果 referenceStatus 必须为 pending");
+    }
+    if payload
+        .get("templateMetadata")
+        .and_then(serde_json::Value::as_object)
+        .and_then(|value| value.get("templateId"))
+        .and_then(serde_json::Value::as_str)
+        != Some(template.template_id.as_str())
+    {
+        return Err("联调完成结果 templateMetadata.templateId 与当前模板不一致");
+    }
+
+    let field_values = payload
+        .get("fieldValues")
+        .and_then(serde_json::Value::as_object)
+        .ok_or("联调完成结果 fieldValues 必须是对象")?;
+    if field_values.is_empty() {
+        return Err("联调完成结果 fieldValues 不能为空");
+    }
+    let allowed_fields = template.target_field_ids.iter().collect::<HashSet<_>>();
+    if field_values.iter().any(|(field_id, value)| {
+        !allowed_fields.contains(field_id)
+            || value
+                .as_str()
+                .map(|text| text.trim().is_empty())
+                .unwrap_or(true)
+    }) {
+        return Err("联调完成结果 fieldValues 只能包含当前目标字段及非空字符串值");
+    }
+    if payload
+        .get("dictionarySelections")
+        .and_then(serde_json::Value::as_object)
+        .is_none()
+    {
+        return Err("联调完成结果 dictionarySelections 必须是对象");
+    }
+    if payload
+        .get("orderList")
+        .and_then(serde_json::Value::as_array)
+        .is_none()
+    {
+        return Err("联调完成结果 orderList 必须是数组");
+    }
+    if payload.get("diagList").is_some()
+        && payload
+            .get("diagList")
+            .and_then(serde_json::Value::as_array)
+            .is_none()
+    {
+        return Err("联调完成结果 diagList 必须是数组");
+    }
+    let scope = payload
+        .get("writebackScope")
+        .and_then(serde_json::Value::as_object)
+        .ok_or("联调完成结果 writebackScope 必须是对象")?;
+    if scope
+        .get("recordFields")
+        .and_then(serde_json::Value::as_array)
+        .is_none()
+        || scope
+            .get("includeDiagnosis")
+            .and_then(serde_json::Value::as_bool)
+            .is_none()
+        || scope
+            .get("orderTypes")
+            .and_then(serde_json::Value::as_array)
+            .is_none()
+    {
+        return Err("联调完成结果 writebackScope 结构不完整");
+    }
+    Ok(())
+}
+
+fn has_matching_record_confirmed(
+    state: &SharedAppState,
+    consultation_id: &str,
+    request_id: &str,
+) -> bool {
+    let Ok(events) = state.event_queue.lock() else {
+        return true;
+    };
+    events.iter().any(|event| {
+        event.consultation_id == consultation_id
+            && event
+                .record
+                .get("requestId")
+                .and_then(serde_json::Value::as_str)
+                == Some(request_id)
+            && event
+                .record
+                .get("resultType")
+                .and_then(serde_json::Value::as_str)
+                == Some("record-confirmed")
+    })
+}
+
+#[cfg(debug_assertions)]
+async fn debug_complete_consultation(
+    result: web::Json<ConsultationResult>,
+    app_handle: web::Data<tauri::AppHandle>,
+    state: web::Data<SharedAppState>,
+) -> impl Responder {
+    let started_at = Instant::now();
+    let trace_id = his_integration_log::new_trace_id();
+    if let Err(response) = ensure_http_service_access(&state) {
+        return response;
+    }
+
+    let result = result.into_inner();
+    let request_summary = summarize_debug_complete_consultation_for_his_log(&result);
+    let patient = state
+        .current_consultation
+        .lock()
+        .ok()
+        .and_then(|value| value.clone());
+    let request_id = result
+        .record
+        .get("requestId")
+        .and_then(serde_json::Value::as_str)
+        .unwrap_or_default()
+        .to_string();
+    if let Err(message) = validate_debug_complete_consultation(&result, patient.as_ref()) {
+        let response_body = serde_json::json!({
+            "status": "error",
+            "message": message,
+            "traceId": trace_id,
+        });
+        record_bridge_log(
+            &app_handle,
+            response_body["traceId"].as_str().unwrap_or_default(),
+            "debug.completeConsultation",
+            "POST",
+            "/api/debug/complete-consultation",
+            "error",
+            400,
+            started_at,
+            Some(request_summary),
+            Some(response_body.clone()),
+            patient.as_ref().map(|item| item.id_pi.clone()),
+            patient.as_ref().and_then(|item| item.id_vis.clone()),
+            Some(request_id),
+            Some(message.to_string()),
+        );
+        return HttpResponse::BadRequest().json(response_body);
+    }
+
+    if has_matching_record_confirmed(&state, &result.consultation_id, &request_id) {
+        let response_body = serde_json::json!({
+            "status": "error",
+            "message": "当前 requestId 已存在 record-confirmed，拒绝重复提交",
+            "traceId": trace_id,
+        });
+        return HttpResponse::Conflict().json(response_body);
+    }
+
+    if let Err(error) = append_consultation_event(state.get_ref(), result.clone()) {
+        let response_body = serde_json::json!({
+            "status": "error",
+            "message": "联调完成结果写入事件队列失败",
+            "traceId": trace_id,
+        });
+        record_bridge_log(
+            &app_handle,
+            response_body["traceId"].as_str().unwrap_or_default(),
+            "debug.completeConsultation",
+            "POST",
+            "/api/debug/complete-consultation",
+            "error",
+            500,
+            started_at,
+            Some(request_summary),
+            Some(response_body.clone()),
+            patient.as_ref().map(|item| item.id_pi.clone()),
+            Some(result.consultation_id.clone()),
+            Some(request_id),
+            Some(error),
+        );
+        return HttpResponse::InternalServerError().json(response_body);
+    }
+
+    let response_body = serde_json::json!({
+        "status": "success",
+        "consultationId": result.consultation_id,
+        "requestId": request_id,
+        "traceId": trace_id,
+    });
+    record_bridge_log(
+        &app_handle,
+        response_body["traceId"].as_str().unwrap_or_default(),
+        "debug.completeConsultation",
+        "POST",
+        "/api/debug/complete-consultation",
+        "success",
+        200,
+        started_at,
+        Some(request_summary),
+        Some(response_body.clone()),
+        patient.as_ref().map(|item| item.id_pi.clone()),
+        Some(result.consultation_id),
+        Some(request_id),
+        None,
+    );
+    HttpResponse::Ok().json(response_body)
+}
+
+fn configure_debug_routes(config: &mut web::ServiceConfig) {
+    #[cfg(debug_assertions)]
+    config
+        .route(
+            "/api/debug/voice-transcript",
+            web::post().to(simulate_voice_transcript),
+        )
+        .route(
+            "/api/debug/complete-consultation",
+            web::post().to(debug_complete_consultation),
+        );
+}
+
+fn validate_outpatient_emr_request(
+    request: &OutpatientEmrAnalysisRequest,
+) -> Result<(), &'static str> {
+    if request.visit_id.trim().is_empty() {
+        return Err("visitId 不能为空");
+    }
+    if request.visit_id != request.visit_id.trim() {
+        return Err("visitId 不能包含首尾空白");
+    }
+    if request.template_id.trim().is_empty() {
+        return Err("templateId 不能为空");
+    }
+    if request.template_id != request.template_id.trim() {
+        return Err("templateId 不能包含首尾空白");
+    }
+    if request.template_name.trim().is_empty() {
+        return Err("templateName 不能为空");
+    }
+    if request.template_name != request.template_name.trim() {
+        return Err("templateName 不能包含首尾空白");
+    }
+    if request.template_html.trim().is_empty() {
+        return Err("templateHtml 不能为空");
+    }
+    if request.template_definition.trim().is_empty() {
+        return Err("templateDefinition 不能为空");
+    }
+    if request.target_field_ids.is_empty() {
+        return Err("targetFieldIds 至少需要一个当前可写字段");
+    }
+    if request
+        .target_field_ids
+        .iter()
+        .any(|field_id| field_id.trim().is_empty())
+    {
+        return Err("targetFieldIds 不能包含空字段 ID");
+    }
+    if request
+        .target_field_ids
+        .iter()
+        .any(|field_id| field_id != field_id.trim())
+    {
+        return Err("targetFieldIds 不能包含首尾空白");
+    }
+    let unique_target_field_ids = request.target_field_ids.iter().collect::<HashSet<_>>();
+    if unique_target_field_ids.len() != request.target_field_ids.len() {
+        return Err("targetFieldIds 不能包含重复字段 ID");
+    }
+    if !request
+        .record_context
+        .values()
+        .any(has_non_empty_clinical_fact)
+    {
+        return Err("recordContext 至少需要一项非空事实");
+    }
+    if request.request_id.trim().is_empty() {
+        return Err("requestId 不能为空");
+    }
+    if request.request_id != request.request_id.trim() {
+        return Err("requestId 不能包含首尾空白");
+    }
+    if let Some(patient) = request.patient.as_ref() {
+        for value in [
+            patient.id_pi.as_deref(),
+            patient.name.as_deref(),
+            patient.sd_sex_text.as_deref(),
+            patient.age_text.as_deref(),
+        ]
+        .into_iter()
+        .flatten()
+        {
+            if value != value.trim() {
+                return Err("patient 字段不能包含首尾空白");
+            }
+        }
+    }
+    Ok(())
+}
+
+async fn start_outpatient_emr_analysis(
+    data: web::Json<OutpatientEmrAnalysisRequest>,
+    app_handle: web::Data<tauri::AppHandle>,
+    state: web::Data<SharedAppState>,
+) -> impl Responder {
+    let started_at = Instant::now();
+    let trace_id = his_integration_log::new_trace_id();
+    if let Err(response) = ensure_http_service_access(&state) {
+        return response;
+    }
+
+    let request = data.into_inner();
+    let request_summary = summarize_outpatient_emr_for_his_log(&request);
+
+    if let Err(message) = validate_outpatient_emr_request(&request) {
+        let response_body = serde_json::json!({
+            "status": "error",
+            "message": message,
+            "traceId": trace_id,
+        });
+        record_bridge_log(
+            &app_handle,
+            response_body["traceId"].as_str().unwrap_or_default(),
+            "outpatientEmr.analyze",
+            "POST",
+            "/api/outpatient/emr/analyze",
+            "error",
+            400,
+            started_at,
+            Some(request_summary),
+            Some(response_body.clone()),
+            request.patient.as_ref().and_then(|item| item.id_pi.clone()),
+            Some(request.visit_id.clone()),
+            Some(request.request_id.clone()),
+            Some(message.to_string()),
+        );
+        return HttpResponse::BadRequest().json(response_body);
+    }
+
+    if let Some(window) = app_handle.get_webview_window("main") {
+        if let Err(error) = window.emit("start-outpatient-emr-analysis", &request) {
+            let response_body = bridge_dispatch_error(&trace_id);
+            record_bridge_log(
+                &app_handle,
+                response_body["traceId"].as_str().unwrap_or_default(),
+                "outpatientEmr.analyze",
+                "POST",
+                "/api/outpatient/emr/analyze",
+                "error",
+                500,
+                started_at,
+                Some(request_summary),
+                Some(response_body.clone()),
+                request.patient.as_ref().and_then(|item| item.id_pi.clone()),
+                Some(request.visit_id.clone()),
+                Some(request.request_id.clone()),
+                Some(error.to_string()),
+            );
+            return HttpResponse::InternalServerError().json(response_body);
+        }
+
+        let _ = window.set_focus();
+        let _ = window.unminimize();
+        let _ = window.show();
+    } else {
+        let response_body = bridge_window_missing_error(&trace_id);
+        record_bridge_log(
+            &app_handle,
+            response_body["traceId"].as_str().unwrap_or_default(),
+            "outpatientEmr.analyze",
+            "POST",
+            "/api/outpatient/emr/analyze",
+            "error",
+            500,
+            started_at,
+            Some(request_summary),
+            Some(response_body.clone()),
+            request.patient.as_ref().and_then(|item| item.id_pi.clone()),
+            Some(request.visit_id.clone()),
+            Some(request.request_id.clone()),
+            Some("Main window not found".to_string()),
+        );
+        return HttpResponse::InternalServerError().json(response_body);
+    }
+
+    let response_body = serde_json::json!({
+        "status": "success",
+        "visitId": request.visit_id,
+        "requestId": request.request_id,
+        "traceId": trace_id,
+        "timestamp": std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_millis() as u64,
+    });
+    record_bridge_log(
+        &app_handle,
+        response_body["traceId"].as_str().unwrap_or_default(),
+        "outpatientEmr.analyze",
+        "POST",
+        "/api/outpatient/emr/analyze",
+        "success",
+        200,
+        started_at,
+        Some(request_summary),
+        Some(response_body.clone()),
+        request.patient.as_ref().and_then(|item| item.id_pi.clone()),
+        Some(request.visit_id.clone()),
+        Some(request.request_id.clone()),
+        None,
+    );
+    HttpResponse::Ok().json(response_body)
+}
+
 async fn stop_consultation(
     app_handle: web::Data<tauri::AppHandle>,
     state: web::Data<SharedAppState>,
@@ -1212,8 +2062,6 @@ async fn stop_consultation(
     );
     HttpResponse::Ok().json(response_body)
 }
-
-
 
 async fn consultation_events_ws(
     req: HttpRequest,
@@ -1943,7 +2791,10 @@ async fn serve_sdk_js() -> impl Responder {
     const SDK_JS: &str = include_str!("../../sdk/med-hermes-sdk.js");
     HttpResponse::Ok()
         .content_type("application/javascript; charset=utf-8")
-        .insert_header(("Cache-Control", "no-store, no-cache, must-revalidate, max-age=0"))
+        .insert_header((
+            "Cache-Control",
+            "no-store, no-cache, must-revalidate, max-age=0",
+        ))
         .insert_header(("Pragma", "no-cache"))
         .insert_header(("Expires", "0"))
         .insert_header(("X-MedHermes-Version", env!("CARGO_PKG_VERSION")))
@@ -1956,7 +2807,10 @@ async fn serve_loader_js() -> impl Responder {
     const LOADER_JS: &str = include_str!("../../sdk/med-hermes-loader.js");
     HttpResponse::Ok()
         .content_type("application/javascript; charset=utf-8")
-        .insert_header(("Cache-Control", "no-store, no-cache, must-revalidate, max-age=0"))
+        .insert_header((
+            "Cache-Control",
+            "no-store, no-cache, must-revalidate, max-age=0",
+        ))
         .insert_header(("Pragma", "no-cache"))
         .insert_header(("Expires", "0"))
         .insert_header(("X-MedHermes-Version", env!("CARGO_PKG_VERSION")))
@@ -1980,6 +2834,7 @@ pub fn run_server(app_handle: tauri::AppHandle, state: SharedAppState) {
                     .wrap(cors)
                     .app_data(app_handle.clone())
                     .app_data(state.clone())
+                    .configure(configure_debug_routes)
                     .route("/api/health", web::get().to(health_check))
                     .route("/api/handshake", web::post().to(handshake))
                     .route("/api/consultation/receive", web::post().to(receive_patient))
@@ -2000,6 +2855,10 @@ pub fn run_server(app_handle: tauri::AppHandle, state: SharedAppState) {
                         web::post().to(start_inpatient_emr_generation),
                     )
                     .route(
+                        "/api/outpatient/emr/analyze",
+                        web::post().to(start_outpatient_emr_analysis),
+                    )
+                    .route(
                         "/api/consultation/start-voice",
                         web::post().to(start_voice_consultation),
                     )
@@ -2008,7 +2867,6 @@ pub fn run_server(app_handle: tauri::AppHandle, state: SharedAppState) {
                         "/api/consultation/reference-feedback",
                         web::post().to(reference_feedback),
                     )
-
                     .route(
                         "/api/consultation/events/ws",
                         web::get().to(consultation_events_ws),
@@ -2081,6 +2939,587 @@ mod tests {
         ] {
             assert!(!combined.contains(secret));
         }
+    }
+
+    #[test]
+    fn start_voice_accepts_an_exact_dynamic_outpatient_template() {
+        let patient: PatientInfo = serde_json::from_value(serde_json::json!({
+            "idPi": "patient-1",
+            "idVis": "visit-1",
+            "outpatientEmr": {
+                "templateId": "template-1",
+                "templateName": "门诊模板",
+                "templateHtml": "  <section data-id=\"chief\"></section>  ",
+                "templateDefinition": "  [{\"ID\":\"chief\"}]  ",
+                "targetFieldIds": ["chief"],
+                "requestId": "request-1"
+            }
+        }))
+        .expect("patient should deserialize");
+
+        let template = validate_voice_outpatient_emr_request(Some(&patient))
+            .expect("template should validate")
+            .expect("template should exist");
+
+        assert_eq!(template.template_id, "template-1");
+        assert_eq!(
+            template.template_html,
+            "  <section data-id=\"chief\"></section>  "
+        );
+        assert_eq!(template.template_definition, "  [{\"ID\":\"chief\"}]  ");
+        assert_eq!(template.target_field_ids, vec!["chief".to_string()]);
+        assert_eq!(template.request_id, "request-1");
+    }
+
+    #[test]
+    fn start_voice_rejects_invalid_dynamic_outpatient_template_contracts() {
+        let missing_visit: PatientInfo = serde_json::from_value(serde_json::json!({
+            "idPi": "patient-1",
+            "outpatientEmr": {
+                "templateId": "template-1",
+                "templateName": "门诊模板",
+                "templateHtml": "<section></section>",
+                "templateDefinition": "[]",
+                "targetFieldIds": ["chief"],
+                "requestId": "request-1"
+            }
+        }))
+        .expect("patient should deserialize");
+        let unknown_field: PatientInfo = serde_json::from_value(serde_json::json!({
+            "idPi": "patient-1",
+            "idVis": "visit-1",
+            "outpatientEmr": {
+                "templateId": "template-1",
+                "templateName": "门诊模板",
+                "templateHtml": "<section></section>",
+                "templateDefinition": "[]",
+                "targetFieldIds": ["chief"],
+                "requestId": "request-1",
+                "unsupported": true
+            }
+        }))
+        .expect("patient should deserialize");
+        let duplicate_target: PatientInfo = serde_json::from_value(serde_json::json!({
+            "idPi": "patient-1",
+            "idVis": "visit-1",
+            "outpatientEmr": {
+                "templateId": "template-1",
+                "templateName": "门诊模板",
+                "templateHtml": "<section></section>",
+                "templateDefinition": "[]",
+                "targetFieldIds": ["chief", "chief"],
+                "requestId": "request-1"
+            }
+        }))
+        .expect("patient should deserialize");
+
+        assert_eq!(
+            validate_voice_outpatient_emr_request(Some(&missing_visit)).unwrap_err(),
+            "动态门诊模板语音问诊必须提供 idVis"
+        );
+        assert_eq!(
+            validate_voice_outpatient_emr_request(Some(&unknown_field)).unwrap_err(),
+            "outpatientEmr 必须且只能包含六个文档化字段"
+        );
+        assert_eq!(
+            validate_voice_outpatient_emr_request(Some(&duplicate_target)).unwrap_err(),
+            "outpatientEmr.targetFieldIds 不能包含重复字段 ID"
+        );
+    }
+
+    #[test]
+    fn start_voice_log_summary_excludes_dynamic_template_sources() {
+        let patient: PatientInfo = serde_json::from_value(serde_json::json!({
+            "idPi": "PATIENT-SENTINEL",
+            "idVis": "VISIT-SENTINEL",
+            "outpatientEmr": {
+                "templateId": "TEMPLATE-ID-SENTINEL",
+                "templateName": "TEMPLATE-NAME-SENTINEL",
+                "templateHtml": "TEMPLATE-HTML-SENTINEL",
+                "templateDefinition": "TEMPLATE-DEFINITION-SENTINEL",
+                "targetFieldIds": ["FIELD-SENTINEL"],
+                "requestId": "REQUEST-SENTINEL"
+            }
+        }))
+        .expect("patient should deserialize");
+
+        let summary = summarize_start_voice_for_his_log(Some(&patient));
+        let serialized = summary.to_string();
+
+        for secret in [
+            "PATIENT-SENTINEL",
+            "VISIT-SENTINEL",
+            "TEMPLATE-ID-SENTINEL",
+            "TEMPLATE-NAME-SENTINEL",
+            "TEMPLATE-HTML-SENTINEL",
+            "TEMPLATE-DEFINITION-SENTINEL",
+            "FIELD-SENTINEL",
+            "REQUEST-SENTINEL",
+        ] {
+            assert!(!serialized.contains(secret));
+        }
+        assert_eq!(summary["hasOutpatientEmr"], true);
+        assert_eq!(summary["targetFieldCount"], 1);
+    }
+
+    #[test]
+    fn simulated_voice_transcript_requires_the_active_template_request() {
+        let patient: PatientInfo = serde_json::from_value(serde_json::json!({
+            "idPi": "patient-1",
+            "idVis": "visit-1",
+            "outpatientEmr": {
+                "templateId": "template-1",
+                "templateName": "门诊模板",
+                "templateHtml": "<section></section>",
+                "templateDefinition": "[]",
+                "targetFieldIds": ["chief"],
+                "requestId": "request-1"
+            }
+        }))
+        .expect("patient should deserialize");
+        let valid = SimulatedVoiceTranscriptRequest {
+            request_id: "request-1".to_string(),
+            transcript: "医生：哪里不舒服？患者：咳嗽三天。".to_string(),
+        };
+        let stale = SimulatedVoiceTranscriptRequest {
+            request_id: "request-old".to_string(),
+            transcript: "医生：哪里不舒服？患者：咳嗽三天。".to_string(),
+        };
+
+        assert!(validate_simulated_voice_transcript_request(&valid, Some(&patient)).is_ok());
+        assert_eq!(
+            validate_simulated_voice_transcript_request(&stale, Some(&patient)).unwrap_err(),
+            "模拟语音转写 requestId 与当前模板会话不一致"
+        );
+    }
+
+    #[test]
+    fn simulated_voice_transcript_log_summary_excludes_dialogue_text() {
+        let request = SimulatedVoiceTranscriptRequest {
+            request_id: "request-1".to_string(),
+            transcript: "DIALOGUE-CONTENT-SENTINEL".to_string(),
+        };
+
+        let summary = summarize_simulated_voice_transcript_for_his_log(&request);
+        let serialized = summary.to_string();
+
+        assert_eq!(summary["requestId"], "request-1");
+        assert_eq!(summary["transcriptBytes"], 25);
+        assert!(!serialized.contains("DIALOGUE-CONTENT-SENTINEL"));
+    }
+
+    fn debug_complete_patient() -> PatientInfo {
+        serde_json::from_value(serde_json::json!({
+            "idPi": "patient-1",
+            "idVis": "visit-1",
+            "outpatientEmr": {
+                "templateId": "template-1",
+                "templateName": "门诊模板",
+                "templateHtml": "<section data-id=\"chief\"></section>",
+                "templateDefinition": "[{\"ID\":\"chief\"}]",
+                "targetFieldIds": ["chief"],
+                "requestId": "request-1"
+            }
+        }))
+        .expect("patient should deserialize")
+    }
+
+    fn debug_complete_result() -> ConsultationResult {
+        ConsultationResult {
+            status: None,
+            consultation_id: "visit-1".to_string(),
+            timestamp: 123,
+            record: serde_json::json!({
+                "visitId": "visit-1",
+                "requestId": "request-1",
+                "resultType": "record-confirmed",
+                "referenceType": "batch",
+                "action": "batch",
+                "referenceStatus": "pending",
+                "emrType": "outpatient-emr",
+                "templateMetadata": {
+                    "templateId": "template-1"
+                },
+                "fieldValues": {
+                    "chief": "CLINICAL-CONTENT-SENTINEL"
+                },
+                "dictionarySelections": {},
+                "diagList": [{
+                    "naDiag": "DIAGNOSIS-CONTENT-SENTINEL"
+                }],
+                "orderList": [{
+                    "naSrv": "ORDER-CONTENT-SENTINEL"
+                }],
+                "writebackScope": {
+                    "recordFields": ["chiefComplaint"],
+                    "includeDiagnosis": true,
+                    "orderTypes": ["medicine"]
+                }
+            }),
+        }
+    }
+
+    #[test]
+    fn debug_complete_consultation_requires_the_active_combined_result_identity() {
+        let patient = debug_complete_patient();
+        let valid = debug_complete_result();
+        assert!(validate_debug_complete_consultation(&valid, Some(&patient)).is_ok());
+
+        let mut stale_request = valid.clone();
+        stale_request.record["requestId"] = serde_json::json!("request-old");
+        assert_eq!(
+            validate_debug_complete_consultation(&stale_request, Some(&patient)).unwrap_err(),
+            "联调完成结果 requestId 与当前模板会话不一致"
+        );
+
+        let mut foreign_field = valid;
+        foreign_field.record["fieldValues"] = serde_json::json!({
+            "outside": "不得写入"
+        });
+        assert_eq!(
+            validate_debug_complete_consultation(&foreign_field, Some(&patient)).unwrap_err(),
+            "联调完成结果 fieldValues 只能包含当前目标字段及非空字符串值"
+        );
+    }
+
+    #[test]
+    fn debug_complete_consultation_log_summary_excludes_clinical_content() {
+        let result = debug_complete_result();
+        let summary = summarize_debug_complete_consultation_for_his_log(&result);
+        let serialized = summary.to_string();
+
+        for secret in [
+            "CLINICAL-CONTENT-SENTINEL",
+            "DIAGNOSIS-CONTENT-SENTINEL",
+            "ORDER-CONTENT-SENTINEL",
+        ] {
+            assert!(!serialized.contains(secret));
+        }
+        assert_eq!(summary["fieldValueCount"], 1);
+        assert_eq!(summary["diagnosisCount"], 1);
+        assert_eq!(summary["orderCount"], 1);
+        assert_eq!(summary["recordFieldCount"], 1);
+        assert_eq!(summary["includeDiagnosis"], true);
+        assert_eq!(summary["orderTypeCount"], 1);
+    }
+
+    #[test]
+    fn outpatient_emr_request_deserializes_camel_case_without_rewriting_values() {
+        let request: OutpatientEmrAnalysisRequest = serde_json::from_value(serde_json::json!({
+            "visitId": "visit-1",
+            "templateId": "template-1",
+            "templateName": "门诊模板",
+            "templateHtml": "  <div data-id=\"history\"></div>  ",
+            "templateDefinition": "  [{\"ID\":\"article-history\"}]  ",
+            "targetFieldIds": ["history"],
+            "recordContext": { "recordText": "咳嗽三天" },
+            "requestId": "outpatient-emr-request-1"
+        }))
+        .expect("outpatient EMR request should deserialize");
+
+        assert_eq!(request.visit_id, "visit-1");
+        assert_eq!(request.template_id, "template-1");
+        assert_eq!(request.template_name, "门诊模板");
+        assert_eq!(request.template_html, "  <div data-id=\"history\"></div>  ");
+        assert_eq!(
+            request.template_definition,
+            "  [{\"ID\":\"article-history\"}]  "
+        );
+        assert_eq!(request.target_field_ids, vec!["history".to_string()]);
+        assert_eq!(request.request_id, "outpatient-emr-request-1");
+        assert!(validate_outpatient_emr_request(&request).is_ok());
+    }
+
+    #[test]
+    fn outpatient_emr_direct_request_requires_request_id() {
+        let request = serde_json::from_value::<OutpatientEmrAnalysisRequest>(serde_json::json!({
+            "visitId": "visit-1",
+            "templateId": "template-1",
+            "templateName": "门诊模板",
+            "templateHtml": "<div data-id=\"history\"></div>",
+            "templateDefinition": "[{\"ID\":\"article-history\"}]",
+            "targetFieldIds": ["history"],
+            "recordContext": { "recordText": "咳嗽三天" }
+        }));
+
+        assert!(request.is_err());
+    }
+
+    #[test]
+    fn outpatient_emr_request_rejects_unknown_top_level_fields() {
+        let request = serde_json::from_value::<OutpatientEmrAnalysisRequest>(serde_json::json!({
+            "visitId": "visit-1",
+            "templateId": "template-1",
+            "templateName": "门诊模板",
+            "templateHtml": "<div data-id=\"history\"></div>",
+            "templateDefinition": "[{\"ID\":\"article-history\"}]",
+            "unsupportedField": "unexpected",
+            "targetFieldIds": ["history"],
+            "recordContext": { "recordText": "咳嗽三天" },
+            "requestId": "outpatient-emr-request-1"
+        }));
+
+        assert!(request.is_err());
+    }
+
+    #[test]
+    fn outpatient_emr_patient_accepts_only_canonical_fields() {
+        let canonical = serde_json::from_value::<OutpatientEmrAnalysisRequest>(serde_json::json!({
+            "visitId": "visit-1",
+            "templateId": "template-1",
+            "templateName": "门诊模板",
+            "templateHtml": "<div data-id=\"history\"></div>",
+            "templateDefinition": "[{\"ID\":\"article-history\"}]",
+            "targetFieldIds": ["history"],
+            "recordContext": { "recordText": "咳嗽三天" },
+            "patient": {
+                "idPi": "patient-1",
+                "name": "张三",
+                "sdSexText": "男性",
+                "ageText": "45岁"
+            },
+            "requestId": "outpatient-emr-request-1"
+        }));
+        let unsupported =
+            serde_json::from_value::<OutpatientEmrAnalysisRequest>(serde_json::json!({
+                "visitId": "visit-1",
+                "templateId": "template-1",
+                "templateName": "门诊模板",
+                "templateHtml": "<div data-id=\"history\"></div>",
+                "templateDefinition": "[{\"ID\":\"article-history\"}]",
+                "targetFieldIds": ["history"],
+                "recordContext": { "recordText": "咳嗽三天" },
+                "patient": {
+                    "unsupportedPatientField": "patient-1"
+                },
+                "requestId": "outpatient-emr-request-1"
+            }));
+
+        assert!(canonical.is_ok());
+        assert!(unsupported.is_err());
+    }
+
+    #[test]
+    fn outpatient_emr_patient_rejects_values_that_require_trimming() {
+        let request: OutpatientEmrAnalysisRequest = serde_json::from_value(serde_json::json!({
+            "visitId": "visit-1",
+            "templateId": "template-1",
+            "templateName": "门诊模板",
+            "templateHtml": "<div data-id=\"history\"></div>",
+            "templateDefinition": "[{\"ID\":\"article-history\"}]",
+            "targetFieldIds": ["history"],
+            "recordContext": { "recordText": "咳嗽三天" },
+            "patient": { "name": " 张三" },
+            "requestId": "outpatient-emr-request-1"
+        }))
+        .expect("request should deserialize before semantic validation");
+
+        assert_eq!(
+            validate_outpatient_emr_request(&request),
+            Err("patient 字段不能包含首尾空白")
+        );
+    }
+
+    #[test]
+    fn outpatient_emr_request_rejects_blank_renderer_target_fields() {
+        let request: OutpatientEmrAnalysisRequest = serde_json::from_value(serde_json::json!({
+            "visitId": "visit-1",
+            "templateId": "template-1",
+            "templateName": "门诊模板",
+            "templateHtml": "<div data-id=\"history\"></div>",
+            "templateDefinition": "[{\"ID\":\"article-history\"}]",
+            "targetFieldIds": ["   ", ""],
+            "recordContext": { "recordText": "咳嗽三天" },
+            "requestId": "outpatient-emr-request-1"
+        }))
+        .expect("request should deserialize before semantic validation");
+
+        assert_eq!(
+            validate_outpatient_emr_request(&request),
+            Err("targetFieldIds 不能包含空字段 ID")
+        );
+    }
+
+    #[test]
+    fn outpatient_emr_request_requires_the_renderer_target_field_property() {
+        let request = serde_json::from_value::<OutpatientEmrAnalysisRequest>(serde_json::json!({
+            "visitId": "visit-1",
+            "templateId": "template-1",
+            "templateName": "门诊模板",
+            "templateHtml": "<div data-id=\"history\"></div>",
+            "templateDefinition": "[{\"ID\":\"article-history\"}]",
+            "recordContext": { "recordText": "咳嗽三天" },
+            "requestId": "outpatient-emr-request-1"
+        }));
+
+        assert!(request.is_err());
+    }
+
+    #[test]
+    fn outpatient_emr_request_rejects_an_empty_renderer_target_list() {
+        let request: OutpatientEmrAnalysisRequest = serde_json::from_value(serde_json::json!({
+            "visitId": "visit-1",
+            "templateId": "template-1",
+            "templateName": "门诊模板",
+            "templateHtml": "<div data-id=\"history\"></div>",
+            "templateDefinition": "[{\"ID\":\"article-history\"}]",
+            "targetFieldIds": [],
+            "recordContext": { "recordText": "咳嗽三天" },
+            "requestId": "outpatient-emr-request-1"
+        }))
+        .expect("request should deserialize before semantic validation");
+
+        assert_eq!(
+            validate_outpatient_emr_request(&request),
+            Err("targetFieldIds 至少需要一个当前可写字段")
+        );
+    }
+
+    #[test]
+    fn outpatient_emr_request_rejects_target_ids_that_require_trimming() {
+        let request: OutpatientEmrAnalysisRequest = serde_json::from_value(serde_json::json!({
+            "visitId": "visit-1",
+            "templateId": "template-1",
+            "templateName": "门诊模板",
+            "templateHtml": "<div data-id=\"history\"></div>",
+            "templateDefinition": "[{\"ID\":\"article-history\"}]",
+            "targetFieldIds": [" history"],
+            "recordContext": { "recordText": "咳嗽三天" },
+            "requestId": "outpatient-emr-request-1"
+        }))
+        .expect("request should deserialize before semantic validation");
+
+        assert_eq!(
+            validate_outpatient_emr_request(&request),
+            Err("targetFieldIds 不能包含首尾空白")
+        );
+    }
+
+    #[test]
+    fn outpatient_emr_request_rejects_duplicate_renderer_target_fields() {
+        let request: OutpatientEmrAnalysisRequest = serde_json::from_value(serde_json::json!({
+            "visitId": "visit-1",
+            "templateId": "template-1",
+            "templateName": "门诊模板",
+            "templateHtml": "<div data-id=\"history\"></div>",
+            "templateDefinition": "[{\"ID\":\"article-history\"}]",
+            "targetFieldIds": ["history", "history"],
+            "recordContext": { "recordText": "咳嗽三天" },
+            "requestId": "outpatient-emr-request-1"
+        }))
+        .expect("request should deserialize before semantic validation");
+
+        assert_eq!(
+            validate_outpatient_emr_request(&request),
+            Err("targetFieldIds 不能包含重复字段 ID")
+        );
+    }
+
+    #[test]
+    fn outpatient_emr_request_rejects_identity_whitespace_without_trimming() {
+        let request: OutpatientEmrAnalysisRequest = serde_json::from_value(serde_json::json!({
+            "visitId": " visit-1",
+            "templateId": "template-1",
+            "templateName": "门诊模板",
+            "templateHtml": "<div data-id=\"history\"></div>",
+            "templateDefinition": "[{\"ID\":\"article-history\"}]",
+            "targetFieldIds": ["history"],
+            "recordContext": { "recordText": "咳嗽三天" },
+            "requestId": "outpatient-emr-request-1"
+        }))
+        .expect("request should deserialize before semantic validation");
+
+        assert_eq!(
+            validate_outpatient_emr_request(&request),
+            Err("visitId 不能包含首尾空白")
+        );
+    }
+
+    #[test]
+    fn outpatient_emr_request_rejects_empty_record_context() {
+        let request: OutpatientEmrAnalysisRequest = serde_json::from_value(serde_json::json!({
+            "visitId": "visit-1",
+            "templateId": "template-1",
+            "templateName": "门诊模板",
+            "templateHtml": "<div data-id=\"history\"></div>",
+            "templateDefinition": "[{\"ID\":\"article-history\"}]",
+            "targetFieldIds": ["history"],
+            "recordContext": {
+                "recordText": " ",
+                "sections": {},
+                "structuredFacts": []
+            },
+            "requestId": "outpatient-emr-request-1"
+        }))
+        .expect("request should deserialize before semantic validation");
+
+        assert_eq!(
+            validate_outpatient_emr_request(&request),
+            Err("recordContext 至少需要一项非空事实")
+        );
+    }
+
+    #[test]
+    fn outpatient_emr_log_summary_excludes_template_and_clinical_content() {
+        let request: OutpatientEmrAnalysisRequest = serde_json::from_value(serde_json::json!({
+            "visitId": "visit-1",
+            "templateId": "template-1",
+            "templateName": "门诊模板",
+            "templateHtml": "<div>TEMPLATE-HTML-SENTINEL</div>",
+            "templateDefinition": "[{\"NAME\":\"TEMPLATE-DEFINITION-SENTINEL\"}]",
+            "targetFieldIds": ["personalHistory"],
+            "recordContext": {
+                "recordText": "RECORD-CONTEXT-SENTINEL"
+            },
+            "requestId": "outpatient-emr-request-1"
+        }))
+        .expect("outpatient EMR request should deserialize");
+
+        let summary = summarize_outpatient_emr_for_his_log(&request);
+        let serialized = summary.to_string();
+
+        assert!(summary.get("templateHtml").is_none());
+        assert!(summary.get("templateDefinition").is_none());
+        assert!(summary.get("recordContext").is_none());
+        assert!(!serialized.contains("TEMPLATE-HTML-SENTINEL"));
+        assert!(!serialized.contains("TEMPLATE-DEFINITION-SENTINEL"));
+        assert!(!serialized.contains("RECORD-CONTEXT-SENTINEL"));
+        assert_eq!(summary["targetFieldCount"], 1);
+        assert_eq!(summary["contextFieldCount"], 1);
+    }
+
+    #[test]
+    fn outpatient_emr_event_payload_preserves_the_complete_formal_result() {
+        let confirmed = ConsultationResult {
+            status: None,
+            consultation_id: "visit-1".to_string(),
+            timestamp: 123,
+            record: serde_json::json!({
+                "visitId": "visit-1",
+                "requestId": "request-1",
+                "resultType": "record-confirmed",
+                "emrType": "outpatient-emr"
+            }),
+        };
+        let confirmed_event = build_consultation_event(&confirmed);
+        assert_eq!(confirmed_event["payload"]["consultationId"], "visit-1");
+        assert_eq!(confirmed_event["payload"]["timestamp"], 123);
+
+        let cancelled = ConsultationResult {
+            status: Some("cancelled".to_string()),
+            consultation_id: "visit-1".to_string(),
+            timestamp: 456,
+            record: serde_json::json!({
+                "visitId": "visit-1",
+                "requestId": "request-1",
+                "resultType": "cancelled",
+                "emrType": "outpatient-emr"
+            }),
+        };
+        let cancelled_event = build_consultation_event(&cancelled);
+        assert_eq!(cancelled_event["payload"]["consultationId"], "visit-1");
+        assert_eq!(cancelled_event["payload"]["timestamp"], 456);
+        assert_eq!(cancelled_event["payload"]["status"], "cancelled");
     }
 
     #[test]

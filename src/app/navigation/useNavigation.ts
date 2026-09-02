@@ -181,6 +181,16 @@ export function useNavigation(options: NavigationOptions) {
     await openView('inpatient-emr');
   }
 
+  /**
+   * 打开门诊病历模板分析页
+   */
+  async function openOutpatientEmr(): Promise<void> {
+    trackViewChange(currentView.value, 'outpatient-emr', {
+      patientId: currentPatient.value?.patientId,
+    });
+    await openView('outpatient-emr');
+  }
+
   async function openDifferentialDiagnosis(): Promise<void> {
     trackViewChange(currentView.value, 'differential-diagnosis', {
       patientId: currentPatient.value?.patientId,
@@ -226,6 +236,7 @@ export function useNavigation(options: NavigationOptions) {
     openReportInterpretation,
     openPatientMemory,
     openInpatientEmr,
+    openOutpatientEmr,
     openDifferentialDiagnosis,
     openKnowledgeBase,
     startVoiceInteraction,

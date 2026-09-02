@@ -57,6 +57,10 @@ import type {
   ClinicalResultGenerationStage,
   ClinicalResultInput,
 } from '@features/clinical-result';
+import {
+  resolveSimulatedVoiceTranscript,
+  type SimulatedVoiceTranscriptPayload,
+} from '@features/voice-consultation';
 
 /**
  * 事件监听配置参数
@@ -135,6 +139,14 @@ export interface EventListenersOptions {
   hasCachedVoiceResult: (patient?: AppPatient | null) => boolean;
   /** 队列化快进模式自动触发请求 */
   queueConsultationAssistTrigger: (kind: ConsultationAssistAction) => void;
+  /** 读取并固定 start-voice 中可选的动态门诊模板续接规格 */
+  prepareVoiceOutpatientEmr?: (payload: unknown) => boolean;
+  /** 清理当前语音动态门诊模板续接现场 */
+  clearVoiceOutpatientEmr?: () => void;
+  /** 读取当前动态门诊模板语音会话的 requestId（仅 debug 模拟转写使用） */
+  getVoiceOutpatientEmrRequestId?: () => string | null;
+  /** 把已校验的 debug 模拟转写交给真实语音停止处理链 */
+  simulateVoiceTranscript?: (transcript: string) => Promise<void>;
   /** 退出标志（来自 workMode） */
   exiting: Ref<boolean>;
   /** 窗口大小变化防抖超时 */
@@ -176,6 +188,8 @@ export function useEventListeners(options: EventListenersOptions) {
     clearMinimizedConsultationSessions,
     hasCachedVoiceResult,
     queueConsultationAssistTrigger,
+    prepareVoiceOutpatientEmr,
+    clearVoiceOutpatientEmr,
     exiting,
     resizeTimeoutRef,
   } = options;
@@ -245,6 +259,7 @@ export function useEventListeners(options: EventListenersOptions) {
 
           // Simple routing based on URL
           if (url.includes('voice-consultation')) {
+            clearVoiceOutpatientEmr?.();
             resetVoiceSessionState();
             navigation.startVoiceInteraction();
           } else if (!isWorking.value) {
@@ -368,6 +383,7 @@ export function useEventListeners(options: EventListenersOptions) {
     const patientToClear = currentPatient.value;
     invalidateReceptionFlow();
     resetVoiceSessionState();
+    clearVoiceOutpatientEmr?.();
     clearVoiceConsultationCache(patientToClear);
     clearMinimizedConsultationSessions();
     // 清理患者上下文，保证"结束就诊后必须重新接诊"的机制生效：
@@ -393,11 +409,16 @@ export function useEventListeners(options: EventListenersOptions) {
 
     const success = await ensureReceptionContext(event.payload);
     if (!success) {
+      clearVoiceOutpatientEmr?.();
       return;
     }
 
     // 走到这里说明接诊上下文已存在且身份一致，payload 可能带额外字段需要合并
     mergeCurrentPatient(event.payload);
+
+    if (prepareVoiceOutpatientEmr && !prepareVoiceOutpatientEmr(event.payload)) {
+      return;
+    }
 
     if (isWorking.value && currentView.value === 'voice-interaction') {
       console.info('[EventListeners] Duplicate start voice request ignored while voice interaction is already active');
@@ -410,6 +431,34 @@ export function useEventListeners(options: EventListenersOptions) {
     });
 
     await outpatientScenarioRouter.openVoiceEntry();
+  }
+
+  async function handleSimulatedVoiceTranscriptEvent(
+    event: TauriEvent<SimulatedVoiceTranscriptPayload>,
+  ): Promise<void> {
+    if (!import.meta.env.DEV) return;
+
+    const resolution = resolveSimulatedVoiceTranscript(
+      event.payload,
+      options.getVoiceOutpatientEmrRequestId?.(),
+    );
+    if (resolution.kind === 'invalid') {
+      showToast(resolution.message, 'error');
+      return;
+    }
+    if (currentView.value !== 'voice-interaction' || !options.simulateVoiceTranscript) {
+      showToast('当前不在可接收模拟转写的语音采集阶段。', 'error');
+      return;
+    }
+
+    try {
+      await options.simulateVoiceTranscript(resolution.payload.transcript);
+    } catch (error) {
+      trackError('debug_simulated_voice_transcript_failed', error, {
+        requestId: resolution.payload.requestId,
+      });
+      showToast('模拟语音转写处理失败，请查看本地联调日志。', 'error');
+    }
   }
 
   async function handleReportInterpretationEvent(
@@ -558,6 +607,14 @@ export function useEventListeners(options: EventListenersOptions) {
     throwOnError: true,
   });
 
+  const simulatedVoiceTranscriptListener = useTauriEventListener<SimulatedVoiceTranscriptPayload>({
+    eventName: 'debug-simulate-voice-transcript',
+    handler: (event) => { void handleSimulatedVoiceTranscriptEvent(event); },
+    logContext: 'EventListeners',
+    autoStart: false,
+    throwOnError: true,
+  });
+
   const reportInterpretationListener = useTauriEventListener<ReportInterpretationEventPayload>({
     eventName: 'start-report-interpretation',
     handler: (event) => { void handleReportInterpretationEvent(event); },
@@ -596,6 +653,7 @@ export function useEventListeners(options: EventListenersOptions) {
     consultationAssistListener,
     stopConsultationListener,
     voiceConsultationListener,
+    simulatedVoiceTranscriptListener,
     reportInterpretationListener,
     inpatientEmrGenerationListener,
     receivePatientListener,

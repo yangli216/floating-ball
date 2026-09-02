@@ -1,5 +1,12 @@
 import { describe, expect, it } from 'vitest';
-import { getReceptionCapsuleSize, getWindowSizeConstraints, getWindowSizeForView } from './windowSizes';
+import {
+  getReceptionCapsuleSize,
+  getWindowSizeConstraints,
+  getWindowSizeForView,
+  isLargePanelView,
+  isLargeWorkspaceView,
+  supportsPersistentWindowSize,
+} from './windowSizes';
 
 describe('getReceptionCapsuleSize', () => {
   it('avoids a fixed tall blank area for a short risk list', () => {
@@ -47,5 +54,21 @@ describe('patient memory workspace', () => {
       minWidth: 980,
       minHeight: 620,
     });
+  });
+});
+
+describe('outpatient EMR workspace', () => {
+  it('uses a persistent large workspace with a bounded minimum size', () => {
+    expect(getWindowSizeForView('outpatient-emr')).toEqual({
+      width: 1120,
+      height: 760,
+    });
+    expect(getWindowSizeConstraints('outpatient-emr')).toEqual({
+      minWidth: 900,
+      minHeight: 620,
+    });
+    expect(isLargePanelView('outpatient-emr')).toBe(true);
+    expect(isLargeWorkspaceView('outpatient-emr')).toBe(true);
+    expect(supportsPersistentWindowSize('outpatient-emr')).toBe(true);
   });
 });

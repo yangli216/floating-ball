@@ -24,6 +24,10 @@ import { MedicalCatalogCachePanel } from "@features/medical-catalog";
 import { TreatmentPlanPage } from "@features/treatment-plan";
 import { OutpatientFollowUpPage } from "@features/outpatient-follow-up";
 import { InpatientEmrPage, type InpatientEmrGenerationRequest } from "@features/inpatient-emr";
+import {
+  OutpatientEmrPage,
+  useVoiceOutpatientEmrWorkflow,
+} from "@features/outpatient-emr";
 import { DifferentialDiagnosisModalPage } from "@features/differential-diagnosis";
 import { PatientMemoryWorkspace } from '@features/patient-memory';
 import Icon from "@shared/ui/Icon.vue";
@@ -31,6 +35,7 @@ import { formatUserFacingError } from "@shared/lib/errorMessages";
 import { trackClick } from "./services/operationTracker";
 import { getWindowSizeForView, isLargeWorkspaceView, WINDOW_SIZES, type ViewType } from "./constants/windowSizes";
 import { useNavigation } from "@app/navigation/useNavigation";
+import { useOutpatientEmrBridgeController } from "@app/events/useOutpatientEmrBridgeController";
 import { useAppKeyboardShortcuts } from "@app/shortcuts/useAppKeyboardShortcuts";
 import { useWindowManagement } from "@app/shell/useWindowManagement";
 import { useWindowTransitionCoordinator } from "@app/shell/useWindowTransitionCoordinator";
@@ -151,6 +156,8 @@ const assistantTitle = computed(() => {
       return currentPatient.value ? `健康画像 - ${patientDisplayName.value}` : '健康画像';
     case 'inpatient-emr':
       return '住院病历生成';
+    case 'outpatient-emr':
+      return '门诊模板分析';
     case 'differential-diagnosis':
       return currentPatient.value ? `鉴别诊断 - ${patientDisplayName.value}` : '鉴别诊断';
     case 'his-log':
@@ -349,9 +356,43 @@ const {
   openReportInterpretation,
   openPatientMemory,
   openInpatientEmr,
+  openOutpatientEmr,
   openDifferentialDiagnosis,
   startVoiceInteraction: startVoiceInteractionBase,
 } = navigation;
+
+const outpatientEmrBridge = useOutpatientEmrBridgeController({
+  openOutpatientEmr,
+  onCancelled: () => exitWork('cancelled'),
+  onCompleted: () => exitWork('completed'),
+  notify: showToast,
+  autoStart: !isStandaloneWindow,
+});
+const {
+  activeRequest: outpatientEmrRequest,
+  handleStartAnalysis: startOutpatientEmrAnalysis,
+  cancelAnalysis: cancelOutpatientEmrAnalysisRaw,
+  completeAnalysis: completeOutpatientEmrAnalysisRaw,
+} = outpatientEmrBridge;
+
+const voiceOutpatientEmrWorkflow = useVoiceOutpatientEmrWorkflow({
+  currentPatient,
+  startAnalysis: startOutpatientEmrAnalysis,
+  notify: showToast,
+});
+const outpatientEmrBaseWritebackPayload = computed(() => (
+  voiceOutpatientEmrWorkflow.resolveBaseWritebackPayload(outpatientEmrRequest.value)
+));
+
+async function cancelOutpatientEmrAnalysis(): Promise<void> {
+  voiceOutpatientEmrWorkflow.clear();
+  await cancelOutpatientEmrAnalysisRaw();
+}
+
+async function completeOutpatientEmrAnalysis(): Promise<void> {
+  voiceOutpatientEmrWorkflow.clear();
+  await completeOutpatientEmrAnalysisRaw();
+}
 
 // 初始化语音问诊 composable
 const voiceConsultation = useVoiceConsultation({
@@ -388,11 +429,13 @@ const minimizedSessions = useMinimizedSessions();
 
 // 语音问诊结束（取消）时一并清除最小化会话标记
 async function cancelVoiceResult(): Promise<void> {
+  voiceOutpatientEmrWorkflow.clear();
   await cancelVoiceResultRaw();
   minimizedSessions.clear('voice');
 }
 
 async function abandonVoiceCapture(): Promise<void> {
+  voiceOutpatientEmrWorkflow.clear();
   await abandonVoiceCaptureRaw();
   minimizedSessions.clear('voice');
   if (!currentPatient.value) {
@@ -672,6 +715,15 @@ const eventListeners = useEventListeners({
   clearMinimizedConsultationSessions: minimizedSessions.clearAll,
   hasCachedVoiceResult,
   queueConsultationAssistTrigger,
+  prepareVoiceOutpatientEmr: voiceOutpatientEmrWorkflow.prepareFromStartVoice,
+  clearVoiceOutpatientEmr: voiceOutpatientEmrWorkflow.clear,
+  getVoiceOutpatientEmrRequestId: () => (
+    voiceOutpatientEmrWorkflow.deferredWritebackRequestId.value || null
+  ),
+  simulateVoiceTranscript: (transcript) => handleVoiceStop(
+    new Blob([], { type: 'audio/wav' }),
+    transcript,
+  ),
   exiting,
   resizeTimeoutRef,
 });
@@ -959,7 +1011,7 @@ const openInsideCloudHome = async () => {
           <!-- 工具栏 (risk-alert, voice-interaction, reception-capsule 视图不显示) -->
           <div v-if="currentView !== 'risk-alert' && currentView !== 'voice-interaction' && currentView !== 'reception-capsule' && currentView !== 'differential-diagnosis' && currentView !== 'chat'" class="assistant-toolbar" data-tauri-drag-region>
             <div class="toolbar-left" data-tauri-drag-region>
-	              <button v-if="currentView === 'settings' || currentView === 'his-log' || currentView === 'medical-cache' || currentView === 'knowledge-base' || currentView === 'treatment-plan' || currentView === 'outpatient-follow-up' || currentView === 'report-interpretation' || currentView === 'inpatient-emr'" class="icon-btn back-btn" @click="currentView === 'report-interpretation' ? closeReportInterpretationWorkspace() : handleUserCollapse()" title="返回">
+	              <button v-if="currentView === 'settings' || currentView === 'his-log' || currentView === 'medical-cache' || currentView === 'knowledge-base' || currentView === 'treatment-plan' || currentView === 'outpatient-follow-up' || currentView === 'report-interpretation' || currentView === 'inpatient-emr' || currentView === 'outpatient-emr'" class="icon-btn back-btn" @click="currentView === 'report-interpretation' ? closeReportInterpretationWorkspace() : handleUserCollapse()" title="返回">
 	                 <Icon icon="lucide:arrow-left" class="toolbar-icon" size="20" />
 	              </button>
 	              <span class="assistant-title" data-tauri-drag-region>{{ assistantTitle }}</span>
@@ -1063,8 +1115,10 @@ const openInsideCloudHome = async () => {
             :consultationRoundId="consultationRoundId"
             :processing="isProcessingVoice"
             :channel="intentResult?.channel"
+            :deferred-writeback-request-id="voiceOutpatientEmrWorkflow.deferredWritebackRequestId.value"
             @close="handleUserCollapse"
             @cancel="cancelVoiceResult"
+            @writeback-prepared="voiceOutpatientEmrWorkflow.handleWritebackPrepared"
           />
           <TreatmentPlanPage
             v-if="currentView === 'treatment-plan'"
@@ -1091,6 +1145,14 @@ const openInsideCloudHome = async () => {
             @close="handleUserCollapse"
             @cancel="cancelInpatientEmrGeneration"
             @completed="completeInpatientEmrGeneration"
+          />
+          <OutpatientEmrPage
+            v-show="currentView === 'outpatient-emr'"
+            :request="outpatientEmrRequest"
+            :base-writeback-payload="outpatientEmrBaseWritebackPayload"
+            @close="handleUserCollapse"
+            @cancel="cancelOutpatientEmrAnalysis"
+            @completed="completeOutpatientEmrAnalysis"
           />
           <DifferentialDiagnosisModalPage
             v-if="currentView === 'differential-diagnosis'"

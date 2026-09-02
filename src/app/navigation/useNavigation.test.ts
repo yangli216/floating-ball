@@ -48,3 +48,13 @@ describe('useNavigation voice entry', () => {
     }));
   });
 });
+
+describe('useNavigation outpatient EMR entry', () => {
+  it('opens the dedicated outpatient EMR workspace', async () => {
+    const { navigation, transitionToView } = createNavigation('chat');
+
+    await navigation.openOutpatientEmr();
+
+    expect(transitionToView).toHaveBeenCalledWith('outpatient-emr');
+  });
+});
