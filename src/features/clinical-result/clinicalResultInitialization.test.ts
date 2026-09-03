@@ -2,10 +2,40 @@ import { describe, expect, it, vi } from 'vitest';
 import type { TreatmentRecommendation } from '@/types/consultation';
 import {
   hasClinicalResultTreatmentState,
+  initClinicalDiagnoses,
   initClinicalTreatments,
 } from './clinicalResultInitialization';
 
 describe('clinicalResultInitialization', () => {
+  it('preserves voice diagnosis evidence scope in editor snapshots', () => {
+    const [result] = initClinicalDiagnoses([{
+      name: '原发性高血压',
+      evidenceText: '既往有高血压，本次测得血压180/110mmHg',
+      clinicalRole: 'current_diagnosis',
+      diagnosisKind: 'disease',
+      evidenceScope: 'both',
+      currentVisitEvidenceText: '本次测得血压180/110mmHg',
+      confidence: 'high',
+      suggestionType: 'formal',
+      matchedItem: {
+        id: 'diag-i10',
+        code: 'I10.x00',
+        name: '原发性高血压',
+      },
+    }], {
+      buildRationale: () => '本次就诊证据充分',
+    });
+
+    expect(result).toMatchObject({
+      id: 'diag-i10',
+      clinicalRole: 'current_diagnosis',
+      diagnosisKind: 'disease',
+      evidenceScope: 'both',
+      currentVisitEvidenceText: '本次测得血压180/110mmHg',
+      suggestionType: 'formal',
+    });
+  });
+
   it('preserves an upstream contextual catalog match and its visible metadata', () => {
     const item = {
       type: 'examination' as const,

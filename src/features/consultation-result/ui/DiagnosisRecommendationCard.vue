@@ -38,6 +38,7 @@
           <div class="diagnosis-meta-row">
             <span v-if="displayRate" class="diag-rate-token" :class="rateToneClass">{{ displayRate }}</span>
             <span v-if="diag.code" class="meta-token">编码 {{ diag.code }}</span>
+            <span v-if="diag.diagnosisKind === 'symptom_working'" class="meta-token diag-working-token">症状性工作诊断</span>
             <span v-if="isPrimary" class="meta-token diag-role-token">主诊断</span>
             <span v-else-if="selected" class="meta-token diag-role-token">已纳入</span>
             <button

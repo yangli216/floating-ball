@@ -12,6 +12,7 @@
  */
 
 import type { Diagnosis, TreatmentRecommendation } from '@/types/consultation';
+import type { ClinicalResultChannel } from './clinicalResultContract';
 import {
   buildOutpatientRecord,
   type OutpatientRecord,
@@ -363,6 +364,20 @@ export interface RecordConfirmedWritebackScope {
   orderTypes: RecordConfirmedWritebackOrderType[];
 }
 
+export interface RecordConfirmedPrescriptionAttributes {
+  /** 慢病复诊处方头语义；PHIS 校验后映射为 slowMedicine。 */
+  chronicLongTerm: true;
+}
+
+export function resolveRecordConfirmedPrescriptionAttributes(
+  channel: ClinicalResultChannel,
+  orderList: Array<Record<string, string | number>>,
+): RecordConfirmedPrescriptionAttributes | undefined {
+  if (channel !== 'chronic-refill') return undefined;
+  const hasMedicine = orderList.some((item) => item.sdSrv === '11' || item.sdSrv === '12');
+  return hasMedicine ? { chronicLongTerm: true } : undefined;
+}
+
 export interface BuildRecordConfirmedPayloadInput {
   consultationId: string;
   requestId?: string;
@@ -388,6 +403,8 @@ export interface BuildRecordConfirmedPayloadInput {
   treatmentPlan?: string;
   /** 部分回写范围；未传时保持历史完整回写契约。 */
   writebackScope?: RecordConfirmedWritebackScope;
+  /** 处方头级中性属性；当前仅慢病复诊实际回写药品时使用。 */
+  prescriptionAttributes?: RecordConfirmedPrescriptionAttributes;
   /** 额外字段（如 referenceStatus 等），会浅合并进 payload */
   extra?: Record<string, unknown>;
 }
@@ -415,6 +432,7 @@ export function buildRecordConfirmedPayload(
     orderList,
     treatmentPlan,
     writebackScope,
+    prescriptionAttributes,
     extra,
   } = input;
 
@@ -498,5 +516,6 @@ export function buildRecordConfirmedPayload(
     ...(recordTemplateChanges ? { recordTemplateChanges } : {}),
     ...(physicalExamVitalSigns ? { physicalExamVitalSigns } : {}),
     ...(isScopedWriteback ? { writebackScope } : {}),
+    ...(prescriptionAttributes?.chronicLongTerm === true ? { prescriptionAttributes } : {}),
   };
 }

@@ -394,6 +394,7 @@ export {
   isFrontendDiagnosisId,
   isTreatmentRemarkOverLimit,
   readFirstString,
+  resolveRecordConfirmedPrescriptionAttributes,
   TREATMENT_REMARK_MAX_LENGTH,
   toPositiveNumber,
 } from './recordConfirmedPayload';
@@ -402,6 +403,7 @@ export type {
   BuildRecordConfirmedPayloadInput,
   OrderItemResolvers,
   RecordConfirmedResultType,
+  RecordConfirmedPrescriptionAttributes,
   RecordConfirmedWritebackField,
   RecordConfirmedWritebackOrderType,
   RecordConfirmedWritebackScope,

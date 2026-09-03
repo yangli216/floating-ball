@@ -67,6 +67,7 @@ import {
   parseLLMJson,
   normalizeClinicalResultRegenerationOutput,
   rememberManualCatalogMatch,
+  resolveRecordConfirmedPrescriptionAttributes,
   shouldAutoSelectTreatment,
   syncTreatmentExecDeptSelections as syncSharedTreatmentExecDeptSelections,
   toManualMatchCandidateView,
@@ -93,6 +94,7 @@ import { useOutsideInteraction } from '@shared/composables/useOutsideInteraction
 import { formatUserFacingError } from '@shared/lib/errorMessages';
 import {
   VoiceRecordFieldEditor,
+  guardOrdinaryVoiceDiagnosisHints,
   getVoiceConsultationEditorSnapshot,
   updateVoiceConsultationCache,
   generateVoiceTreatmentRecommendations,
@@ -2137,7 +2139,16 @@ function applyProgressiveIntentRecord(
 }
 
 function applyIntentDiagnoses(result: ClinicalResultInput): void {
-  aiDiagnoses.value = initDiagnosesFromIntent(result.diagnoses || []);
+  const guardedDiagnoses = resultChannel.value === 'voice'
+    ? guardOrdinaryVoiceDiagnosisHints(result.diagnoses || [], {
+        historicalContextText: [
+          pastMedicalHistory.value,
+          chiefComplaint.value,
+          historyOfPresentIllness.value,
+        ].filter(Boolean).join('\n'),
+      })
+    : result.diagnoses || [];
+  aiDiagnoses.value = initDiagnosesFromIntent(guardedDiagnoses);
   if (formalDiagnoses.value.length > 0) {
     captureGeneratedPrecautions(getDiagnosisNames(aiDiagnoses.value), precautions.value);
     replaceInitialDiagnosisSelection(
@@ -2981,6 +2992,10 @@ async function handleBatchWriteBack(): Promise<void> {
       orderList,
       treatmentPlan,
       writebackScope: selectedScope,
+      prescriptionAttributes: resolveRecordConfirmedPrescriptionAttributes(
+        resultChannel.value,
+        orderList,
+      ),
       extra: {
         referenceType: 'batch',
         action: 'batch',

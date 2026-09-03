@@ -6,7 +6,10 @@ import {
   type OutpatientRecord,
   validateOutpatientRecord,
 } from './outpatientRecord';
-import { buildRecordConfirmedPayload } from './recordConfirmedPayload';
+import {
+  buildRecordConfirmedPayload,
+  resolveRecordConfirmedPrescriptionAttributes,
+} from './recordConfirmedPayload';
 import { mergeClinicalRecordSuggestionIntoText } from './clinicalRecordAnnotation';
 import type { ClinicalRecordFactSuggestion } from './clinicalRecordFactConfirmation';
 import {
@@ -499,5 +502,35 @@ describe('buildRecordConfirmedPayload outpatientRecord', () => {
       ],
     });
     expect(unselectedPayload).not.toHaveProperty('physicalExamVitalSigns');
+  });
+
+  it('carries the neutral chronic long-term prescription attribute only when requested', () => {
+    const medicineOrders = [{ sdSrv: '11', idSrv: 'MED-1', naSrv: '氨氯地平片' }];
+    const chronicPayload = buildRecordConfirmedPayload({
+      consultationId: 'consultation-chronic-refill',
+      chiefComplaint: '高血压复诊配药',
+      historyOfPresentIllness: '既往高血压，本次复诊续方。',
+      pastMedicalHistory: '有高血压病史。',
+      diagList: [{ idDiag: 'D-HYPERTENSION', naDiag: '高血压病', fgMain: '1' }],
+      orderList: medicineOrders,
+      prescriptionAttributes: resolveRecordConfirmedPrescriptionAttributes(
+        'chronic-refill',
+        medicineOrders,
+      ),
+    });
+    const ordinaryPayload = buildRecordConfirmedPayload({
+      consultationId: 'consultation-ordinary',
+      chiefComplaint: '咳嗽3天',
+      historyOfPresentIllness: '受凉后咳嗽。',
+      pastMedicalHistory: '平素体健。',
+      diagList: [],
+      orderList: [{ sdSrv: '11', idSrv: 'MED-2', naSrv: '药品B' }],
+    });
+
+    expect(chronicPayload.prescriptionAttributes).toEqual({ chronicLongTerm: true });
+    expect(ordinaryPayload).not.toHaveProperty('prescriptionAttributes');
+    expect(resolveRecordConfirmedPrescriptionAttributes('voice', medicineOrders)).toBeUndefined();
+    expect(resolveRecordConfirmedPrescriptionAttributes('symptom', medicineOrders)).toBeUndefined();
+    expect(resolveRecordConfirmedPrescriptionAttributes('chronic-refill', [])).toBeUndefined();
   });
 });
