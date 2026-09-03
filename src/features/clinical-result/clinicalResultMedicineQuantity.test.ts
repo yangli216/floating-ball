@@ -122,4 +122,51 @@ describe('clinicalResultMedicineQuantity', () => {
       '当前频次“必要时”无法精确换算包装总量，暂按1盒发药，请医生确认。',
     );
   });
+
+  it('handles retail split dispensing when saleUnit matches baseUnit (e.g. 24片/盒 sold by 片)', () => {
+    const rec = {
+      type: 'medicine' as const,
+      name: '阿莫西林胶囊',
+      reason: '抗感染',
+      spec: '0.25g*24片/盒',
+      dosage: '0.25',
+      dosageUnit: 'g',
+      frequencyKey: 'TID',
+      days: '7',
+      totalUnit: '片',
+      matchedItem: {
+        raw: {
+          dose: '0.25',
+          unitDose: 'g',
+          unitPre: '片',
+          unitSale: '片',
+        },
+      },
+    };
+
+    const calculation = calculateMedicineQuantity(rec);
+    expect(calculation).toMatchObject({
+      doseCountPerAdministration: 1,
+      execCountPerDay: 3,
+      days: 7,
+      requiredBaseUnitCount: 21,
+      unitSaleFactor: 1,
+      packageCount: 21,
+      dispensedBaseUnitCount: 21,
+      baseUnit: '片',
+      saleUnit: '片',
+    });
+
+    const dispensing = resolveMedicineDispensingQuantity(rec);
+    expect(dispensing).toEqual({
+      packageCount: 21,
+      saleUnit: '片',
+      source: 'calculated',
+      calculation,
+    });
+
+    expect(buildMedicineQuantityExplanation(rec)).toBe(
+      '处方换算：单次0.25g（1片） × 每日3次 × 7天 = 21片；共21片。',
+    );
+  });
 });
